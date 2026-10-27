@@ -7,14 +7,14 @@
 - **路由面。** `GET B/me` 读本人的档案，`PATCH B/me` 改本人的档案；`B` 是普通面的基路径（`authn.gate.mount.bases.default`，缺省 `/api/v1/auth`，见 [authn-config](design-authn-config.md)）。
 - **身份取自上下文。** 路由经 `authn.FromContext` 取发起者的身份，账户由身份给出，不由路径或正文里的标识给出。授权依据是「发起者就是这个账户」这条无须策略的事实，自助范围的判据见 [authn-admin](design-authn-admin.md)。
 - **自写字段集。** 可自写的字段是一个封闭集：显示名、属性、语言、时区；其余字段不可自写。
-- **复用既有写面。** 写经根包接缝 `authn.AccountAdmin` 的 `SetDisplayName` 与 `SetAttributes` 落到账户模块；语言与时区是账户属性集里的具名用法，键由 `i18n.LocaleAttributeKey`、`i18n.TimeZoneAttributeKey` 命名，由 [i18n](../design-i18n.md) 的账户桥接读回，其存储归账户属性集的通用界面（[ADR-i18n-preferences-storage-2026-10-13](../../../adr/adr-i18n-preferences-storage-2026-10-13.md)）。本模块不另造写面、不新持状态、不新增存储。
-- **注册验证状态的只读面。** `GET B/me` 的 `verification` 取自账户模块的 `SignupVerification.SignupStateOf`，`identifiers` 的每一项带 `proven`（由 `Verification.Proves` 派生）。本模块不写注册验证状态；它由账户持有的邮箱标识与未证明预留派生，判定不区分账户是自助注册、管理员预置还是导入写出的（[authn-account](design-authn-account.md)、[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
+- **复用既有写面。** 写经根包接缝 `authn.AccountAdmin` 的 `SetDisplayName` 与 `SetAttributes` 落到账户模块；语言与时区是账户属性集里的具名用法，键由 `i18n.LocaleAttributeKey`、`i18n.TimeZoneAttributeKey` 命名，由 [i18n](../design-i18n.md) 的账户桥接读回，其存储归账户属性集的通用界面（[ADR-i18n-preferences-storage](../../../adr/adr-i18n-preferences-storage.md)）。本模块不另造写面、不新持状态、不新增存储。
+- **注册验证状态的只读面。** `GET B/me` 的 `verification` 取自账户模块的 `SignupVerification.SignupStateOf`，`identifiers` 的每一项带 `proven`（由 `Verification.Proves` 派生）。本模块不写注册验证状态；它由账户持有的邮箱标识与未证明预留派生，判定不区分账户是自助注册、管理员预置还是导入写出的（[authn-account](design-authn-account.md)、[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。
 - **不交付功能接口。** 本模块只挂路由，仿 `authn.admin`。
 
 ### 非职责
 
 - **不持账户数据与写规则。** 账户的形状、属性集的边界、显示名的上限归 `authn.account`（[authn-account](design-authn-account.md)）；本模块只调用接缝并把回绝映射成应答。
-- **不做管理面判定。** 本模块不经 `Decider`、不问权限点；管理面归 `authn.admin`（[authn-admin](design-authn-admin.md)）。自助面与管理面分立的判据见 [ADR-authn-selfservice-profile-2026-10-15](../../../adr/adr-authn-selfservice-profile-2026-10-15.md)。
+- **不做管理面判定。** 本模块不经 `Decider`、不问权限点；管理面归 `authn.admin`（[authn-admin](design-authn-admin.md)）。自助面与管理面分立的判据见 [ADR-authn-selfservice-profile](../../../adr/adr-authn-selfservice-profile.md)。
 - **不挂账户的其他自助路由。** 改口令、添加或更换手机、删除标识、解绑外部身份改动的是账户的认证事实，归登录引擎，在 [authn-login](design-authn-login.md)。
 - **不自写不可自写字段。** 账户状态、标识符（邮箱、手机、用户名）、外部身份绑定不在自写字段集里，各有其路由与更强的认证要求。
 - **不实现偏好存储。** 语言与时区在账户属性集里，键归 `pkg/i18n`；本模块不新增偏好表或偏好接缝。

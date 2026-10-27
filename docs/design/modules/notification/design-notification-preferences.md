@@ -4,17 +4,17 @@
 
 本模块交付**按通知类型的渠道偏好矩阵**，并作为**通知类型分类法的消费点**。它把各业务模块声明的通知类型（`notification.TypeSpec`）收成一份只读分类法，据以校验一条偏好写入点名的类型是否在册；它持有每个收件人对每个类型的渠道集合，回答「这个收件人、这个类型，走哪些渠道」。它在入口模块的登记面上挂 `/types`、`/preferences` 与 `PUT /preferences/:typeKey/:channel`。
 
-类型不是本模块声明的：一个类型是**发出它的那个业务模块的声明**。业务模块把 `notification.TypeSpec` 放进自己的 `Resources`，本模块在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐全部声明，构成分类法。本模块排他交付 `(*notification.Preferences)(nil)`（[ADR-notification-taxonomy-2026-10-15](../../../adr/adr-notification-taxonomy-2026-10-15.md)）。
+类型不是本模块声明的：一个类型是**发出它的那个业务模块的声明**。业务模块把 `notification.TypeSpec` 放进自己的 `Resources`，本模块在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐全部声明，构成分类法。本模块排他交付 `(*notification.Preferences)(nil)`（[ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)）。
 
 ### 非职责
 
 - **不发送，不渲染，不落收件箱。** 本模块只回答「这个收件人对这个类型走哪些渠道」，把消息送到渠道上归 [notification.delivery](design-notification-delivery.md)，收件箱行归 [notification.inbox](design-notification-inbox.md)。
 - **不声明通知类型。** 类型是业务模块的声明，本模块只收、只读、只据以校验（见「类型分类法是资源消费点」）。
-- **不做授权判定。** 路由不带本模块自己的权限闸。谁可以读某个收件人的偏好、谁可以改它，由宿主侧的授权决定；本模块不声明任何权限点（[ADR-notification-scope-2026-10-15](../../../adr/adr-notification-scope-2026-10-15.md)）。
+- **不做授权判定。** 路由不带本模块自己的权限闸。谁可以读某个收件人的偏好、谁可以改它，由宿主侧的授权决定；本模块不声明任何权限点（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
 - **不解释参数。** 类型声明里的 `RecipientVisibleParams` 是参数白名单，本模块只保存它、交给投递侧核对；本模块不认识参数的含义，也不读参数的值。
 - **不持外部联系人的同意台账。** 该台账刻意后置（见 [notification](design-notification.md) 的范围一节）。
 - **不区分收件人类别。** 偏好只按用户收件人存；`RecipientClass` 为 `external` 的收件人本轮没有生产者。
-- **不做渠道的可用性判定。** 渠道是否可用由装配决定，归 [notification.delivery](design-notification-delivery.md)；本模块只据类型声明与偏好行算出渠道集合。邮件与短信渠道能否兑现，由 `notification.delivery` 以条件[特性](../../../glossary.md) `notification.channel.email`、`notification.channel.sms` 发布；本模块的应答不带渠道可用性，`PUT` 照常接受渠道闭集里的每个渠道，偏好的取值集不因装配增减（[ADR-notification-channels-2026-10-15](../../../adr/adr-notification-channels-2026-10-15.md)、[ADR-feature-ownership-2026-10-17](../../../adr/adr-feature-ownership-2026-10-17.md)）。
+- **不做渠道的可用性判定。** 渠道是否可用由装配决定，归 [notification.delivery](design-notification-delivery.md)；本模块只据类型声明与偏好行算出渠道集合。邮件与短信渠道能否兑现，由 `notification.delivery` 以条件[特性](../../../glossary.md) `notification.channel.email`、`notification.channel.sms` 发布；本模块的应答不带渠道可用性，`PUT` 照常接受渠道闭集里的每个渠道，偏好的取值集不因装配增减（[ADR-notification-channels](../../../adr/adr-notification-channels.md)、[ADR-feature-ownership](../../../adr/adr-feature-ownership.md)）。
 
 ## 术语表
 
@@ -56,11 +56,11 @@ type Preferences interface {
 
 ### 类型分类法是资源消费点
 
-**取材域取可用集**（架构不变量 15）。消费点在 `New`：`core.Resources[notification.TypeSpec](reg)` 遍历全部已登记模块，收齐每一份 `notification.TypeSpec`，构成分类法。判据是**类型是词汇**：偏好写入与投递拿它当校验参照，同一个类型声明不能在这条命令下合法、在另一条命令下非法——那会让同一份偏好在一处写得进、在另一处被拒，而类型本身没变。**这个消费点不做减法**：一个本次未被运行级纳入、或消解落选的模块，它声明的类型照常留在分类法里，与既有资源消费点（settings、authz 的 policy 与 guard）一致（[ADR-module-resources-2026-09-21](../../../adr/adr-module-resources-2026-09-21.md)）。
+**取材域取可用集**（架构不变量 15）。消费点在 `New`：`core.Resources[notification.TypeSpec](reg)` 遍历全部已登记模块，收齐每一份 `notification.TypeSpec`，构成分类法。判据是**类型是词汇**：偏好写入与投递拿它当校验参照，同一个类型声明不能在这条命令下合法、在另一条命令下非法——那会让同一份偏好在一处写得进、在另一处被拒，而类型本身没变。**这个消费点不做减法**：一个本次未被运行级纳入、或消解落选的模块，它声明的类型照常留在分类法里，与既有资源消费点（settings、authz 的 policy 与 guard）一致（[ADR-module-resource-scope](../../../adr/adr-module-resource-scope.md)）。
 
 **减法只属于这样的消费点：这份声明所描述之物由这次运行产生或改写。** 通知类型不是由这次运行产生的：它是业务模块编译进来的一份供校验参照的词汇，跨命令不变，因此本消费点不适用减法。（对照：jobs 的周期声明 `jobs.Schedule` 描述的是「这次运行要做的活」，它的效果依赖声明它的模块真的被驱动，取材域取参与集——见 [jobs](../jobs/design-jobs.md) 的取材域裁定。两者判据的差别是「词汇」与「活」的差别。）
 
-**不引入任何运行期可变的注册表。** 模块描述符在驱动开始前已冻结，全部声明在 `New` 那一刻都已在注册表里，「业务模块可以在 notification 之后才声明类型」因此平凡成立，不需要任何进程级的登记座。被否决的选项与各自的否决理由见 [ADR-notification-taxonomy-2026-10-15](../../../adr/adr-notification-taxonomy-2026-10-15.md)。
+**不引入任何运行期可变的注册表。** 模块描述符在驱动开始前已冻结，全部声明在 `New` 那一刻都已在注册表里，「业务模块可以在 notification 之后才声明类型」因此平凡成立，不需要任何进程级的登记座。被否决的选项与各自的否决理由见 [ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)。
 
 **声明冲突在 `New` 报出。** 一个 `TypeSpec` 声明不自洽（`Key` 为空、`DefaultChannels` 为空、`DefaultChannels` 含未知渠道、`DefaultChannels` 内有重复、`RecipientVisibleParams` 内有重复），或两个模块声明同一个 `Key`，都是 `ErrInvalidConfig`，在 `New` 终止启动并点名那个类型键与声明方；不等到一次请求才发现分类法读不起来。
 
@@ -74,7 +74,7 @@ type Preferences interface {
 | `GET /api/v1/notifications/preferences` | 200，调用方的偏好矩阵 | 是 |
 | `PUT /api/v1/notifications/preferences/:typeKey/:channel` | 200，该类型的有效集 | 否 |
 
-**端名清单必填，因为本模块的路由不能落在每一个端上。** 一个已被通配路由（gin 的 `/*path`）独占路径空间的端不能再承载具体路由：路由引擎在同一方法树上拒绝这一对，入口模块在组装链时以路由冲突终止启动。**前端与 API 同进程**是既定拓扑之一，而前端模块正是在它拿到的那个端上挂通配路由，所以两种路由必须分端；本模块的路由落在 `notification.preferences.endpoints` 点名的那些端上。取舍见 [ADR-notification-endpoints-2026-10-15](../../../adr/adr-notification-endpoints-2026-10-15.md)。
+**端名清单必填，因为本模块的路由不能落在每一个端上。** 一个已被通配路由（gin 的 `/*path`）独占路径空间的端不能再承载具体路由：路由引擎在同一方法树上拒绝这一对，入口模块在组装链时以路由冲突终止启动。**前端与 API 同进程**是既定拓扑之一，而前端模块正是在它拿到的那个端上挂通配路由，所以两种路由必须分端；本模块的路由落在 `notification.preferences.endpoints` 点名的那些端上。取舍见 [ADR-notification-endpoints](../../../adr/adr-notification-endpoints.md)。
 
 **`GET /types` 与 `GET /preferences` 的应答带 `Vary: Accept-Language`。** 应答体不随语言变化，但这条端点的表示按协商语言分键，使共享缓存不把一种语言下算出的表示当作另一种的：本模块为这些路由写出的错误应答按协商语言渲染，端点因此把语言计入缓存键。
 
@@ -293,7 +293,7 @@ classDiagram
 ## 扩展点
 
 - **新增一个通知类型不是一个扩展点，而是一份声明。** 业务模块把一份 `notification.TypeSpec` 放进自己的 `Resources` 即可，本模块不改代码；分类法在下次装配的 `New` 里把它收进来。校验不合格即启动失败并点名。
-- **渠道不是扩展点。** 渠道是通知能力自己声明的**封闭平台词汇**（`in_app`、`email`、`sms`），业务模块从中挑选、不能扩展；新增一个渠道是通知模块自己的变更，落在根包的 `Channel` 常量与 `KnownChannel`（[ADR-notification-channels-2026-10-15](../../../adr/adr-notification-channels-2026-10-15.md)）。
+- **渠道不是扩展点。** 渠道是通知能力自己声明的**封闭平台词汇**（`in_app`、`email`、`sms`），业务模块从中挑选、不能扩展；新增一个渠道是通知模块自己的变更，落在根包的 `Channel` 常量与 `KnownChannel`（[ADR-notification-channels](../../../adr/adr-notification-channels.md)）。
 - **接缝由本模块排他交付，不是可替换的后端。** 换一套偏好存储是改本模块的代码，不是接一块实现。
 
 ## 实现状态

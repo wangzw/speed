@@ -1,0 +1,77 @@
+# 承接 Decider 接缝：Decision 形状不变，资源属性在模块内合成
+
+## 背景
+
+`pkg/authn` 定义判定接缝 `Decider`、值类型 `Decision` 与动作常量 `Action`，由宿主或授权模块实现（[ADR-authn-decision-seam](adr-authn-decision-seam.md)）。授权模块 import `pkg/authn` 根包并交付接缝的实现，方向与 `tenant/admission` import `pkg/authn` 同形（[ADR-authn-scope](adr-authn-scope.md)）。
+
+`Decision` 的字段是 `Action`、`Actor`、`Tenant`、`Target`、`TargetAccount` 与 `Params`，其形状与逐项填法是 authn 对授权的对外接口面。动作常量是闭集，归属判据是「作用于他人账户或租户级资源的管理面动作、冒充的开始与读写、非成员进入租户」；`Decision.Tenant` 为空表示平台范围、只用于账户级动作，租户级动作的 `Tenant` 一律由 `authn.admin` 解析对象归属后填入，`Decider` 不会收到租户为空的租户级动作。
+
+授权采用的模型是角色到权限、权限按（资源，动作）声明、租户即策略域（[ADR-authz-model](adr-authz-model.md)）。判定输入因此是「主体、域、资源、动作」，资源与动作要从 `Decision` 得出；`Decision` 携带这些信息里的 `Action`、`Target`、`TargetAccount` 与 `Tenant`，不携带资源的属性集或层级关系。
+
+authn 为这条接缝列了失效条件，「授权要求 `Decision` 携带当前字段表达不了的资源属性，例如属性集或层级关系」是其中之一（[ADR-authn-decision-seam](adr-authn-decision-seam.md)）。承接入参的形状够不够用，决定要不要回头重裁 authn。
+
+平台级角色（跨租户的客服、平台管理员）经平台域与 `authn.tenant.access` 落地：`Decision.Tenant` 为空映射到保留的平台域，而租户级动作在租户域判空之后有没有第二条路径，是接缝必须回答的。
+
+## 考虑过的选项
+
+### 扩展 Decision 携带资源的属性集或层级关系
+
+采纳它意味着授权可以按属性或角色层级判定，`Decision` 新增承载属性的字段，动作常量与填法随之扩展。
+
+**否决**：本设计的判定是（主体，域，资源，动作）的精确匹配，resource 与 action 由 `Action` 与 `Target` 经一张译表唯一得出，不需要属性集或层级。扩展 `Decision` 会触发 [ADR-authn-decision-seam](adr-authn-decision-seam.md) 的对应失效条件，把一次接缝内部的扩展变成对 authn 对外接口面的改动，而这份能力本设计用不上。
+
+### 批量判定
+
+采纳它意味着接缝增加「一次问一组动作」的形状，授权一次回答多条判定。
+
+**否决**：调用方不存在。authn 的每个取用方（管理面的每条路由、冒充、准入层）每次只问一个动作；一次请求里需要合并多处判定的场合在授权模块内部串行判定并合并（见决策），不改接缝的形状。
+
+### 要求 authn.admin 在 Decider 缺席时部分开放
+
+采纳它意味着没有 `Decider` 的装配里，某些管理路由或平台运营的放行名单仍然可用。
+
+**否决**：这与 authn 的缺省安全态相悖——「缺席即全拒」使宿主什么都不做也是安全的（[ADR-authn-failure](adr-authn-failure.md)）。要求 authn 在接缝缺席时开放一部分，正是 [ADR-authn-decision-seam](adr-authn-decision-seam.md) 列出的失效条件之一；平台运营的落点由授权一侧给出，不需要放宽 authn 的缺省态。
+
+### 另立一条跨租户通道，不经 Decider
+
+采纳它意味着平台级角色走一条 authn 之外的判定路径，准入层为它开一个旁路。
+
+**否决**：这条通道要落在准入层或 authn 内，等于改这两个模块；而它们已经把「非成员进入租户」这一个问题交给 `Decider` 的 `authn.tenant.access` 动作。复用同一个接缝，平台级角色不必改准入层与 authn。
+
+### 承接 Decider 接缝，不扩展 Decision，资源属性在模块内合成
+
+**采纳**，见决策。
+
+## 决策
+
+采纳：授权的强制点实现 authn 的 `Decider`，`Decision` 的形状不变；资源与相对规则在授权模块内合成，相对规则用 Go 谓词表达。
+
+- **实现与交付。** 强制点交付 `authn.Decider` 的产品实现，编译期断言它的实现，排他。资源与动作的对应由一张译表给出：从 `Decision` 的 `Action`、`Target`、`TargetAccount` 与 `Tenant` 得出判定的（域，资源，动作）三元组，判定主体取 `Actor` 的责任键。本能力自己携带译表的行，一个模块也可以经 `authz.TranslationSpec` 为它自己的权限声明行，`authz.guard` 在 `Init` 把这些行并入进程的同一份译表。译表的逐条内容与这份并集语义在设计文档 design-authz 里给出，不在本记录重述。
+- **资源属性在模块内合成，不落在接缝上。** 判定输入里 `Decision` 没有表达的资源面，由授权从它已有的字段合成；跨租户这类相对规则在模块内以 Go 谓词实现，不要求 `Decision` 新增字段。
+- **平台域。** `Decision.Tenant` 为空映射到保留的平台域，平台策略行以该域承载，主体可以是账户标识或口令表主体。
+- **租户域判空后回退平台域。** 对 `authn.tenant.access` 这一个动作，`Decider` 先在对象所属租户的域里判定，无匹配时再在平台域判一次，这是本接缝唯一的回退分支。它使跨租户的客服与平台管理员不改准入层即可落地；其余动作没有这条分支。这条分支由测试守住。
+- **未知动作。** `Decision.Action` 不在译表内时判定为拒绝，且不报错。
+
+**authn 接缝的失效条件都不触发：**
+
+- **`Decision` 不要求携带资源属性或层级。** 判定输入是（主体，域，资源，动作）的精确匹配，resource 与 action 由 `Action` 与 `Target` 经译表唯一得出；相对规则以 Go 谓词实现，不进入 `Decision`。因此「`Decision` 要携带属性集或层级关系」不成立。
+- **不要求批量判定。** 每个调用方每次只问一个动作；一次请求内需要多处判定的场合在授权内部串行判定并合并，接缝仍是单次判定。因此「要求一个接口承载多种判定形状」不成立。
+- **不要求 authn.admin 在 Decider 缺席时部分开放。** 授权向 authn 要的缺省行为就是全拒；平台运营的落点由授权一侧（平台域的运营角色与绑定）给出，不要求 authn 放开任何路由。因此「需要 `authn.admin` 的部分路由在 `Decider` 缺席时仍然开放」不成立。
+- **平台范围的单一判定不用于租户级动作。** 平台域回退发生在授权模块内部，authn 仍按 `authn.admin` 的填法把租户级动作的 `Tenant` 填为非空，接缝没有出现「租户为空而对象属于某个租户」的动作。因此「必须由平台范围的 `Decider` 判定的租户级动作」不成立。
+
+## 后果
+
+接缝的实现是一个编译期可断言的 `authn.Decider`；authn 的对外接口面（`Decision` 的字段与填法、动作常量）不被改动。平台级角色经平台域与 `authn.tenant.access` 的回退分支落地，准入层与 authn 都不改。
+
+**接受的代价：**
+
+- 授权能从 `Decision` 拿到的资源信息上限就是 `Target`、`TargetAccount` 与 `Params`。判定一旦需要 `Decision` 表达不了的资源属性或层级，本决策与 [ADR-authn-decision-seam](adr-authn-decision-seam.md) 的对应失效条件同时触发，接缝要重裁，授权一侧的译表与谓词随之返工。
+- 授权自己携带的译表对 `authn.Action` 是闭集：authn 新增动作常量时授权要同步，漏同步的新动作在授权侧按未知动作拒绝，这条同步没有类型系统强制。译表整体不是封闭的——一个模块可以经 `authz.TranslationSpec` 为它自己的（非 `authn.*`）权限声明行，`authz.guard` 在 `Init` 把这些行并入进程的同一份译表，模块的行与已有的行冲突是启动失败。
+- 资源属性在模块内合成，意味着「一次判定需要哪些资源面」由授权独占回答，宿主没有一处可注入资源属性的扩展点。
+- 平台域回退是 `authn.tenant.access` 独有的隐式分支：同一个 `Decider` 对同一动作判两次，平台域的绑定因此对「谁能进入任意租户」有直接效果，这条路径只能由测试守住。
+
+## 失效条件
+
+- 判定需要 `Decision` 表达不了的资源属性集或层级关系：本决策与 [ADR-authn-decision-seam](adr-authn-decision-seam.md) 的对应失效条件同时触发，接缝的形状要重新裁定。
+- 出现必须一次判定的一批动作（批量判定），或一次请求里跨多个租户合并判定，则单次判定接缝要重新评估。
+- 平台级角色的落地不再能由「租户域判空后回退平台域」表达（例如角色要按调用方声明的租户子集判定），则要另立通道并改准入层。

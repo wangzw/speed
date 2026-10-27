@@ -123,16 +123,12 @@ Every record states the constraints, the options and the price paid.
 
 ## Core
 
-| Record | Date | Status |
-|---|---|---|
-| [core owns registration](adr-core-scope-2026-01-02.md) | 2026-01-02 | Accepted |
+| Record |
+|---|
+| [core owns registration](adr-core-scope.md) |
 """
 
 ADR_RECORD = """# core owns registration
-
-## Status
-
-Accepted
 
 ## Context
 
@@ -165,7 +161,7 @@ BASELINE = {
     "docs/design/architecture.md": ARCHITECTURE,
     "docs/design/modules/design-core.md": MODULE,
     "docs/adr/README.md": ADR_README,
-    "docs/adr/adr-core-scope-2026-01-02.md": ADR_RECORD,
+    "docs/adr/adr-core-scope.md": ADR_RECORD,
 }
 
 
@@ -477,96 +473,60 @@ class ModuleSubdirectoryTests(CheckerCase):
 
 
 class AdrTreeTests(CheckerCase):
-    def test_proposed_status(self):
-        self.assert_red({"docs/adr/adr-core-scope-2026-01-02.md":
-                         ADR_RECORD.replace("\nAccepted\n", "\nProposed\n")},
-                        "status is Proposed")
-
-    def test_status_outside_the_vocabulary(self):
-        self.assert_red({"docs/adr/adr-core-scope-2026-01-02.md":
-                         ADR_RECORD.replace("\nAccepted\n", "\nAgreed\n")},
-                        "status is none of")
+    def test_status_section_is_refused(self):
+        self.assert_red({"docs/adr/adr-core-scope.md":
+                         ADR_RECORD.replace("## Context",
+                                            "## Status\n\nAccepted\n\n## Context")},
+                        "not part of this document type's fixed section set")
 
     def test_single_option(self):
         broken = ADR_RECORD.replace("### A registry in the host\n\nRejected: every host "
                                     "would reimplement it.\n\n", "")
-        self.assert_red({"docs/adr/adr-core-scope-2026-01-02.md": broken},
+        self.assert_red({"docs/adr/adr-core-scope.md": broken},
                         "lists 1 option(s)")
 
-    def test_file_name_without_a_date(self):
-        self.assert_red({"docs/adr/adr-core-scope-2026-01-02.md": None,
-                         "docs/adr/adr-core-scope.md": ADR_RECORD,
+    def test_file_name_with_a_date(self):
+        self.assert_red({"docs/adr/adr-core-scope.md": None,
+                         "docs/adr/adr-core-scope-2026-01-02.md": ADR_RECORD,
                          "docs/adr/README.md":
-                         ADR_README.replace("adr-core-scope-2026-01-02.md", "adr-core-scope.md")},
-                        "does not match adr-<slug>-<YYYY-MM-DD>")
+                         ADR_README.replace("adr-core-scope.md",
+                                            "adr-core-scope-2026-01-02.md")},
+                        "does not match adr-<slug>")
 
-    def test_file_name_with_an_impossible_date(self):
-        self.assert_red({"docs/adr/adr-core-scope-2026-01-02.md": None,
-                         "docs/adr/adr-core-scope-2026-02-31.md": ADR_RECORD,
-                         "docs/adr/README.md":
-                         ADR_README.replace("adr-core-scope-2026-01-02.md",
-                                            "adr-core-scope-2026-02-31.md")
-                                   .replace("| 2026-01-02 |", "| 2026-02-31 |")},
-                        "no real calendar date")
-
-    def test_supersession_naming_a_record_that_does_not_exist(self):
-        self.assert_red({"docs/adr/adr-core-scope-2026-01-02.md":
-                         ADR_RECORD.replace("\nAccepted\n",
-                                            "\nSuperseded by ADR-core-scope-2026-03-04\n")},
-                        "no such record exists")
-
-    def test_supersession_stated_in_one_record_only(self):
-        successor = (ADR_RECORD.replace("# core owns registration", "# core owns nothing")
-                     .replace("Adopt a registry in core.", "Adopt a registry in the host."))
-        overrides = {
-            "docs/adr/adr-core-scope-2026-01-02.md":
-                ADR_RECORD.replace("\nAccepted\n",
-                                   "\nSuperseded by ADR-core-scope-2026-03-04\n"),
-            "docs/adr/adr-core-scope-2026-03-04.md": successor,
+    def test_two_records_may_share_a_topic(self):
+        second = (ADR_RECORD.replace("# core owns registration", "# core owns nothing")
+                  .replace("Adopt a registry in core.", "Adopt a registry in the host."))
+        self.assert_green({
+            "docs/adr/adr-core-rights.md": second,
             "docs/adr/README.md": ADR_README + (
-                "| [core owns nothing](adr-core-scope-2026-03-04.md) | 2026-03-04 | Accepted |\n"),
-        }
-        self.assert_red(overrides, "does not state that it supersedes")
+                "| [core owns nothing](adr-core-rights.md) |\n"),
+        })
 
-    def test_supersession_stated_in_both_records_passes(self):
-        successor = (ADR_RECORD.replace("# core owns registration", "# core owns nothing")
-                     .replace("Adopt a registry in core.",
-                              "Adopt a registry in the host. This supersedes "
-                              "ADR-core-scope-2026-01-02."))
-        overrides = {
-            "docs/adr/adr-core-scope-2026-01-02.md":
-                ADR_RECORD.replace("\nAccepted\n",
-                                   "\nSuperseded by ADR-core-scope-2026-03-04\n"),
-            "docs/adr/adr-core-scope-2026-03-04.md": successor,
-            "docs/adr/README.md": (
-                ADR_README.replace("| 2026-01-02 | Accepted |",
-                                   "| 2026-01-02 | Superseded by ADR-core-scope-2026-03-04 |")
-                + "| [core owns nothing](adr-core-scope-2026-03-04.md) | 2026-03-04 | "
-                  "Accepted |\n"),
-        }
-        self.assert_green(overrides)
-
-    def test_index_row_disagrees_with_the_record(self):
+    def test_index_with_a_date_column(self):
         self.assert_red({"docs/adr/README.md":
-                         ADR_README.replace("| 2026-01-02 | Accepted |",
-                                            "| 2026-01-02 | Deprecated |")},
-                        "disagrees with the record's own status")
+                         ADR_README.replace("| Record |\n|---|",
+                                            "| Record | Date |\n|---|---|")
+                                   .replace("(adr-core-scope.md) |",
+                                            "(adr-core-scope.md) | 2026-01-02 |")},
+                        "date or status column")
 
-    def test_index_row_with_the_wrong_date(self):
+    def test_index_with_a_status_column(self):
         self.assert_red({"docs/adr/README.md":
-                         ADR_README.replace("| 2026-01-02 |", "| 2026-01-09 |")},
-                        "does not carry the record's own date")
+                         ADR_README.replace("| Record |\n|---|",
+                                            "| Record | Status |\n|---|---|")
+                                   .replace("(adr-core-scope.md) |",
+                                            "(adr-core-scope.md) | Accepted |")},
+                        "date or status column")
 
     def test_orphan_record(self):
-        self.assert_red({"docs/adr/adr-config-source-2026-01-05.md":
+        self.assert_red({"docs/adr/adr-config-source.md":
                          ADR_RECORD.replace("# core owns registration", "# one config source")},
                         "absent from the ADR index")
 
     def test_index_not_grouped_by_topic(self):
         self.assert_red({"docs/adr/README.md":
                          "# Architecture Decision Records\n\nRecords.\n\n"
-                         "| [core owns registration](adr-core-scope-2026-01-02.md) | "
-                         "2026-01-02 | Accepted |\n"},
+                         "| [core owns registration](adr-core-scope.md) | Accepted |\n"},
                         "not grouped by topic")
 
 
@@ -654,15 +614,11 @@ graph TD
 
 ## 模块机制
 
-| 记录 | 日期 | 状态 |
-|---|---|---|
-| [core 拥有注册](adr-core-scope-2026-01-02.md) | 2026-01-02 | 已接受 |
+| 记录 |
+|---|
+| [core 拥有注册](adr-core-scope.md) |
 """,
-    "docs/adr/adr-core-scope-2026-01-02.md": """# core 拥有注册
-
-## 状态
-
-已接受
+    "docs/adr/adr-core-scope.md": """# core 拥有注册
 
 ## 背景
 
@@ -731,29 +687,18 @@ classDiagram
                          .replace("| 注册 | 未实现 | — |", "| 注册 | 基本完成 | — |")},
                         "vague status", base=ZH_FILES)
 
-    def test_chinese_adr_proposed_status(self):
-        self.assert_red({"docs/adr/adr-core-scope-2026-01-02.md":
-                         ZH_FILES["docs/adr/adr-core-scope-2026-01-02.md"]
-                         .replace("\n已接受\n", "\n提议中\n")},
-                        "status is Proposed", base=ZH_FILES)
+    def test_chinese_status_section_is_refused(self):
+        self.assert_red({"docs/adr/adr-core-scope.md":
+                         ZH_FILES["docs/adr/adr-core-scope.md"]
+                         .replace("## 背景", "## 状态\n\n已接受\n\n## 背景")},
+                        "not part of this document type's fixed section set", base=ZH_FILES)
 
-    def test_chinese_supersession_pair(self):
-        successor = (ZH_FILES["docs/adr/adr-core-scope-2026-01-02.md"]
-                     .replace("# core 拥有注册", "# core 不拥有注册")
-                     .replace("采纳注册表放在 core。",
-                              "采纳注册表放在宿主。本记录取代 ADR-core-scope-2026-01-02。"))
-        overrides = {
-            "docs/adr/adr-core-scope-2026-01-02.md":
-                ZH_FILES["docs/adr/adr-core-scope-2026-01-02.md"]
-                .replace("\n已接受\n", "\n已被 ADR-core-scope-2026-03-04 取代\n"),
-            "docs/adr/adr-core-scope-2026-03-04.md": successor,
-            "docs/adr/README.md": (
-                ZH_FILES["docs/adr/README.md"]
-                .replace("| 2026-01-02 | 已接受 |",
-                         "| 2026-01-02 | 已被 ADR-core-scope-2026-03-04 取代 |")
-                + "| [core 不拥有注册](adr-core-scope-2026-03-04.md) | 2026-03-04 | 已接受 |\n"),
-        }
-        self.assert_green(overrides, base=ZH_FILES)
+    def test_chinese_index_with_a_date_column(self):
+        self.assert_red({"docs/adr/README.md":
+                         ZH_FILES["docs/adr/README.md"]
+                         .replace("| 记录 |\n|---|", "| 记录 | 日期 |\n|---|---|")
+                         .replace("(adr-core-scope.md) |", "(adr-core-scope.md) | 2026-01-02 |")},
+                        "date or status column", base=ZH_FILES)
 
 
 PRD_FILES = dict(BASELINE)

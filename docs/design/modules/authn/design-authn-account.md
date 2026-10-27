@@ -14,7 +14,7 @@
 - 持有失败退避的算法与表，以及 `authn_throttles`、`authn_service_secrets` 的清扫协程。
 - 承载外部身份绑定、自动关联、首登开户、自助注册开户与 JIT 并入的规则。规则约束的是本模块的数据（绑定、标识、联系方式预留、成员关系）与账户的会话和口令；首登开户与 JIT 并入的执行者是 `authn.login` 的账户解析步（[design-authn-login](design-authn-login.md)），自助注册开户经本模块的 `Signups.Register`。
 
-选型与取舍见 [ADR-authn-accounts-2026-10-10](../../../adr/adr-authn-accounts-2026-10-10.md)、[ADR-authn-account-lifecycle-2026-10-10](../../../adr/adr-authn-account-lifecycle-2026-10-10.md)、[ADR-authn-external-binding-2026-10-10](../../../adr/adr-authn-external-binding-2026-10-10.md)、[ADR-authn-password-hash-2026-10-10](../../../adr/adr-authn-password-hash-2026-10-10.md)、[ADR-authn-throttling-2026-10-10](../../../adr/adr-authn-throttling-2026-10-10.md)、[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)、[ADR-authn-contact-claim-2026-10-22](../../../adr/adr-authn-contact-claim-2026-10-22.md)；模块在 authn 里的位置与依赖图见 [design-authn](design-authn.md)。
+选型与取舍见 [ADR-authn-accounts](../../../adr/adr-authn-accounts.md)、[ADR-authn-account-lifecycle](../../../adr/adr-authn-account-lifecycle.md)、[ADR-authn-external-binding](../../../adr/adr-authn-external-binding.md)、[ADR-authn-password-hash](../../../adr/adr-authn-password-hash.md)、[ADR-authn-throttling](../../../adr/adr-authn-throttling.md)、[ADR-authn-signup](../../../adr/adr-authn-signup.md)、[ADR-authn-contact-claim](../../../adr/adr-authn-contact-claim.md)；模块在 authn 里的位置与依赖图见 [design-authn](design-authn.md)。
 
 ### 非职责
 
@@ -23,7 +23,7 @@
 - **不 import `pkg/tenant`。** 租户标识在本模块里是字符串；成员关系的请求期判定归 `tenant.admission`，它在 tenant 目录里经 `Memberships` 读取（[design-tenant-admission](../tenant/design-tenant-admission.md)）。
 - **不写别的模块的表。** 会话、因素、短信挑战各归 `authn.session`、`authn.mfa`、`authn.sms`；跨模块的清理走 `AccountLifecycle`、`MembershipLifecycle` 与事件，不进账户事务。
 - **不挂路由，不实现登录方式。** 登录路由与账户解析归 `authn.login`，自助与管理路由归 `authn.login`、`authn.session`、`authn.mfa`、`authn.admin` 各自的处理器；本模块只交付它们调用的接口。
-- **注册是用户名＋口令＋邮箱的匿名请求，开户后验证邮箱（REQ-signup-004、REQ-signup-028）。** 本模块不为短信首登、社交登录与企业 JIT 新增开户路径，但新增自助注册的开户入口 `Signups.Register`：一次事务写入启用的账户、`via = self` 的用户名标识、口令凭据与一条邮箱未证明预留。注册路由归 `authn.login`，邮箱验证复用已认证账户的自助回路，只有邮箱被证明才解除限制（REQ-signup-026；[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。口令账户也可由管理面或宿主代码创建。**验证状态的判定不区分账户来源**（REQ-signup-023、REQ-account-015）：本模块按同一条判据读同一个状态，不为来源开例外。
+- **注册是用户名＋口令＋邮箱的匿名请求，开户后验证邮箱（REQ-signup-004、REQ-signup-028）。** 本模块不为短信首登、社交登录与企业 JIT 新增开户路径，但新增自助注册的开户入口 `Signups.Register`：一次事务写入启用的账户、`via = self` 的用户名标识、口令凭据与一条邮箱未证明预留。注册路由归 `authn.login`，邮箱验证复用已认证账户的自助回路，只有邮箱被证明才解除限制（REQ-signup-026；[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。口令账户也可由管理面或宿主代码创建。**验证状态的判定不区分账户来源**（REQ-signup-023、REQ-account-015）：本模块按同一条判据读同一个状态，不为来源开例外。
 - **不解析手机号，不做口令泄露库比对，不折叠邮箱别名。** 手机号只接受 E.164，转换由客户端做。
 - **不替宿主保存资料字段。** 账户表不留自由字段，宿主扩展字段的途径见[扩展点](#扩展点)。
 - **不拥有口令表（`authn.static.subjects`）的退避与缓存。** 口令表与本模块共用 `pkg/authn/internal/password` 里的 PHC 编解码与派生，但不依赖本模块、不读 db（[design-authn-gate](design-authn-gate.md)）。
@@ -238,9 +238,9 @@ type AccountLifecycle interface {
 
 根包定义，持有以账户为键的数据的模块实现（`authn.session`、`authn.mfa`、`authn.sms`、`authz.policy` 是实现者；判据是持有以账户为键的数据，这份名单是例举而非封闭集）。实现并立、不排他，本模块在 `Init` 里经 `core.ResolveAll` 取用，不写进 `Requires`。每个方法幂等：账户已停用、已启用、已删除、数据已清时返回 nil。调用发生在账户事务提交之后，状态迁移与删除的实现不得读账户行（墓碑之外的内容已抹除）；`AccountCreated` 不受这条约束，它读得到刚提交的账户。
 
-**`AccountCreated` 在账户创建之后调用。** `Create` 与 `Signups.Register` 在事务提交之后同步调用它，失败返回 `ErrCleanupIncomplete`：账户已存在，重试同一次调用幂等地补完。创建是账户生命周期的一个事件，而个人租户在账户存在的那一刻就要存在（[ADR-starters-personal-tenant-2026-10-18](../../adr/adr-starters-personal-tenant-2026-10-18.md)）。实现可以读账户行：账户已经提交，读得到。实现要容忍账户已被删除：重试可能晚于一次删除，此时它什么也不做；只持有状态数据的实现（会话、因素、短信挑战、策略）返回 nil。
+**`AccountCreated` 在账户创建之后调用。** `Create` 与 `Signups.Register` 在事务提交之后同步调用它，失败返回 `ErrCleanupIncomplete`：账户已存在，重试同一次调用幂等地补完。创建是账户生命周期的一个事件，而个人租户在账户存在的那一刻就要存在（[ADR-starters-personal-tenant](../../../adr/adr-starters-personal-tenant.md)）。实现可以读账户行：账户已经提交，读得到。实现要容忍账户已被删除：重试可能晚于一次删除，此时它什么也不做；只持有状态数据的实现（会话、因素、短信挑战、策略）返回 nil。
 
-**`SetStatus` 按目标状态调用对应的钩子，不论那一行是否真的改了。** 转停用调 `AccountDisabled`，转启用调 `AccountEnabled`；账户已经是目标状态时同样调用一次，失败之后重复同一次调用补齐清理，停用与启用因而都成立（[ADR-authn-account-lifecycle-2026-10-24](../../../adr/adr-authn-account-lifecycle-2026-10-24.md)）。
+**`SetStatus` 按目标状态调用对应的钩子，不论那一行是否真的改了。** 转停用调 `AccountDisabled`，转启用调 `AccountEnabled`；账户已经是目标状态时同样调用一次，失败之后重复同一次调用补齐清理，停用与启用因而都成立（[ADR-authn-account-restoration](../../../adr/adr-authn-account-restoration.md)）。
 
 | 方法 | 实现者的义务 |
 |---|---|
@@ -273,10 +273,10 @@ type MembershipCleanup interface {
 }
 ```
 
-根包定义。`authz.policy` 实现 `MembershipLifecycle`，并实现最后租户管理员这一档的 `MembershipGuard`；宿主可以再并立一个自己的守卫，拒绝它的租户政策要拒绝的删除——示范宿主拒绝个人租户里的每一次删除。`MembershipLifecycle` 与 `MembershipGuard` 的实现都并立、不排他，本模块在 `Init` 里分别经 `core.ResolveAll` 取用；缺席合法，空列表就是没有守卫。两者都不写进 `Requires`。`MembershipCleanup` 由本模块排他交付，取用方是宿主在账户删除收尾里收集管理员加进来的成员关系行：它不问守卫，也不调用成员关系生命周期钩子，删除自己的收尾就是这一路的清理；它删除的每一行仍像显式删除一样发布 `authn.membership.changed`，订阅者据事件做的清理因而不会因为走的是收尾这条路而缺席。同步接缝、失败方向、事件补偿、账户删除例外与按租户锁的取舍见 [ADR-authn-membership-cleanup-2026-10-27](../../../adr/adr-authn-membership-cleanup-2026-10-27.md)。
+根包定义。`authz.policy` 实现 `MembershipLifecycle`，并实现最后租户管理员这一档的 `MembershipGuard`；宿主可以再并立一个自己的守卫，拒绝它的租户政策要拒绝的删除——示范宿主拒绝个人租户里的每一次删除。`MembershipLifecycle` 与 `MembershipGuard` 的实现都并立、不排他，本模块在 `Init` 里分别经 `core.ResolveAll` 取用；缺席合法，空列表就是没有守卫。两者都不写进 `Requires`。`MembershipCleanup` 由本模块排他交付，取用方是宿主在账户删除收尾里收集管理员加进来的成员关系行：它不问守卫，也不调用成员关系生命周期钩子，删除自己的收尾就是这一路的清理；它删除的每一行仍像显式删除一样发布 `authn.membership.changed`，订阅者据事件做的清理因而不会因为走的是收尾这条路而缺席。同步接缝、失败方向、事件补偿、账户删除例外与按租户锁的取舍见 [ADR-authn-membership-cleanup](../../../adr/adr-authn-membership-cleanup.md)。
 
 - **`MembershipRemoved` 在一次显式的成员关系删除提交之后同步调用。** 删除已生效，实现不得读成员关系行；它幂等，账户在租户里已无数据时返回 nil。钩子失败使本次调用返回 `ErrCleanupIncomplete`，重试同一调用幂等地补完。`authn.membership.changed` 事件仍在，作为提交与钩子之间进程崩掉的补偿。账户删除不调用它：删除由 `AccountDeleted` 与逐租户的成员关系事件处理。
-- **`Lock` 与 `CheckMembershipRemoval` 是显式删除的两段。** 本模块先取每个守卫的租户删除锁（`Lock(ctx, tenant)`），再读成员关系行、问每个守卫的 `CheckMembershipRemoval`，并把这些检查与删除的提交一起持在锁里，提交之后释放；所以同一租户上两次并发删除不会都通过检查后各自提交。锁按租户来自授权功能目录的 `authz.TenantLock`：宿主装配一个对象，`authz.Manager.DeleteBinding` 与每个 `MembershipGuard.Lock` 都取它；没装配时用授权模块的进程内默认实现，单实例即正确。多个守卫接同一个对象时经可选的 `SharedMembershipLock` 报告这个对象，本模块对每个不同对象只取一次——非重入的锁被同一次删除取第二次会等自己直到上下文结束。SQLite 上锁是进程内按租户的互斥量，PostgreSQL 上是数据库级会话锁，不共享数据库的副本之间不保证串行；数据库锁每个持有中的删除多占一条池化连接（见 [authn-admin](design-authn-admin.md) 与 [tenant](../../tenant/design-tenant.md) 的非保证）。锁取不到是 503，既不问守卫也不删除，绝不按放行处理。
+- **`Lock` 与 `CheckMembershipRemoval` 是显式删除的两段。** 本模块先取每个守卫的租户删除锁（`Lock(ctx, tenant)`），再读成员关系行、问每个守卫的 `CheckMembershipRemoval`，并把这些检查与删除的提交一起持在锁里，提交之后释放；所以同一租户上两次并发删除不会都通过检查后各自提交。锁按租户来自授权功能目录的 `authz.TenantLock`：宿主装配一个对象，`authz.Manager.DeleteBinding` 与每个 `MembershipGuard.Lock` 都取它；没装配时用授权模块的进程内默认实现，单实例即正确。多个守卫接同一个对象时经可选的 `SharedMembershipLock` 报告这个对象，本模块对每个不同对象只取一次——非重入的锁被同一次删除取第二次会等自己直到上下文结束。SQLite 上锁是进程内按租户的互斥量，PostgreSQL 上是数据库级会话锁，不共享数据库的副本之间不保证串行；数据库锁每个持有中的删除多占一条池化连接（见 [authn-admin](design-authn-admin.md) 与 [tenant](../tenant/design-tenant.md) 的非保证）。锁取不到是 503，既不问守卫也不删除，绝不按放行处理。
 - **`CheckMembershipRemoval` 在显式删除之前询问。** 删除会让租户不再有任何 `tenant-admin` 绑定时返回 `ErrLastTenantAdmin`，删除不执行；宿主自己的守卫返回它要拒绝的那一类。每个守卫都问一次，任何一个拒绝即拒绝，任何一个读不出即按检查不可用、按拒绝处理，不按放行。账户删除是明示的例外，不问这些守卫，因此一个租户的最后一名租户管理员被删除后可能没有管理员，直到有人写入一条新绑定。删除的收尾经 `RemoveMembershipForDeletion` 删除成员关系行：它不问守卫，也不调用 `MembershipRemoved`，与账户删除本身一样不经过显式删除的两段；这些行仍然发布 `authn.membership.changed`，事件订阅者照常收到。守卫在删除事务之前询问，因此它们的读不与成员关系存储共用事务。
 
 ### 对外接口面
@@ -300,7 +300,7 @@ type MembershipCleanup interface {
 | `pkg/authn/internal/clock` | 内部 | 写入数据库与绑定为查询参数的时间的来源，一律 UTC。 |
 | `github.com/google/uuid`、`golang.org/x/text/unicode/norm`、`github.com/alexedwards/argon2id`、`golang.org/x/crypto/argon2`、标准库 `crypto/pbkdf2` | 库 | 账户标识生成（`NewV7`）、用户名与口令的 NFKC、Argon2id 的 PHC 编码与派生、PBKDF2 派生。 |
 
-方向满足架构不变量：`authn.account` 只依赖根包、`pkg/db` 与可选的设置、事件、审计，不 import `pkg/tenant`，也不 import `authn.session`、`authn.mfa`、`authn.sms`；这些模块与 `authn.token`、`authn.login`、`authn.impersonation`、`authn.admin` 依赖本模块，反向依赖会成环。`authn.account` 取用 `AccountLifecycle` 经的是根包接口，不经具体模块。装配里不纳入 `authn.session`、`authn.mfa`、`authn.sms` 时，对应钩子不存在，本模块照常运行。选择与取舍见 [ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)、[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)。
+方向满足架构不变量：`authn.account` 只依赖根包、`pkg/db` 与可选的设置、事件、审计，不 import `pkg/tenant`，也不 import `authn.session`、`authn.mfa`、`authn.sms`；这些模块与 `authn.token`、`authn.login`、`authn.impersonation`、`authn.admin` 依赖本模块，反向依赖会成环。`authn.account` 取用 `AccountLifecycle` 经的是根包接口，不经具体模块。装配里不纳入 `authn.session`、`authn.mfa`、`authn.sms` 时，对应钩子不存在，本模块照常运行。选择与取舍见 [ADR-authn-packaging](../../../adr/adr-authn-packaging.md)、[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)。
 
 带表模块的迁移由施加迁移的命令静态级纳入（`IncludeAllDeclarations`）；本模块的 `Start` 探测自己的表是否存在（含 `authn_pending_contacts`），缺失即以 `ErrNotMigrated` 终止启动。`New` 里不读写自己的表（首次启动时表尚未建立）。
 
@@ -389,7 +389,7 @@ stateDiagram-v2
 
 ### 停用与删除的两段式清理
 
-事务只写本模块的表；会话、因素、短信挑战归别的模块，那些模块可能没被纳入。提交之后同步调用与目标状态对应的钩子——停用调 `AccountDisabled`，启用调 `AccountEnabled`，删除调 `AccountDeleted`；钩子失败或进程崩在提交与钩子之间时，由事件补偿，恢复那一个方向没有事件，靠重复同一次调用补齐。迁移的完整内容见[账户状态与生命周期](#账户状态与生命周期)，判据见 [ADR-authn-account-lifecycle-2026-10-10](../../../adr/adr-authn-account-lifecycle-2026-10-10.md)。
+事务只写本模块的表；会话、因素、短信挑战归别的模块，那些模块可能没被纳入。提交之后同步调用与目标状态对应的钩子——停用调 `AccountDisabled`，启用调 `AccountEnabled`，删除调 `AccountDeleted`；钩子失败或进程崩在提交与钩子之间时，由事件补偿，恢复那一个方向没有事件，靠重复同一次调用补齐。迁移的完整内容见[账户状态与生命周期](#账户状态与生命周期)，判据见 [ADR-authn-account-lifecycle](../../../adr/adr-authn-account-lifecycle.md)。
 
 ```mermaid
 sequenceDiagram
@@ -707,7 +707,7 @@ CREATE INDEX authn_throttles_decay ON authn_throttles (last_failure_at);   -- �
 
 ### 外部身份绑定与自动关联的规则
 
-登录引擎的账户解析一步按下面的流程图执行。分支的次序只在流程图里写；规则表按编号写每条规则独有的判据与理由，不重述次序。选型与取舍见 [ADR-authn-external-binding-2026-10-10](../../../adr/adr-authn-external-binding-2026-10-10.md)。
+登录引擎的账户解析一步按下面的流程图执行。分支的次序只在流程图里写；规则表按编号写每条规则独有的判据与理由，不重述次序。选型与取舍见 [ADR-authn-external-binding](../../../adr/adr-authn-external-binding.md)。
 
 ```mermaid
 flowchart TD
@@ -762,13 +762,13 @@ flowchart TD
 - 企业 SSO 按提供方的 `provisioning` 开户（A5）。
 - `Provisioner` 在场则先调用，宿主可改写拟创建的账户或拒绝开户（[扩展点](#扩展点)）。
 - 没有可作登录名的标识的账户（没有用户名、也没有邮箱标识，典型是只绑了微信或手机的账户）设口令得到 409 `login-identifier-required`：口令登录要有登录名，登录名是用户名或邮箱标识（REQ-account-012、REQ-signin-006），邮箱标识的证明渠道只决定它是否 `proven`；用户名由管理员经管理面添加，或由本人经自助路由添加。
-- 带口令凭据的账户不能删除最后一个可作登录名的标识：`RemoveIdentifier` 在事务内返回 `ErrIdentifierRequired`，删除不生效；无口令凭据的账户（短信或通行密钥账户）不受此限，删除手机从不触发该规则。换用户名要先有另一个登录名，通常先验证邮箱（[ADR-authn-login-identifier-2026-10-22](../../../adr/adr-authn-login-identifier-2026-10-22.md)）。
+- 带口令凭据的账户不能删除最后一个可作登录名的标识：`RemoveIdentifier` 在事务内返回 `ErrIdentifierRequired`，删除不生效；无口令凭据的账户（短信或通行密钥账户）不受此限，删除手机从不触发该规则。换用户名要先有另一个登录名，通常先验证邮箱（[ADR-authn-login-identifier](../../../adr/adr-authn-login-identifier.md)）。
 
 自助注册不经过首登开户：它由 `Signups.Register` 一次建号，见下一节。首登开户的 `closed` 取值不影响 `authn.account.password-signup`，反之亦然。
 
 ### 自助注册与注册验证状态
 
-自助注册是用户名＋口令＋邮箱的匿名请求，开户后验证邮箱；只有邮箱被证明才解除未验证账户的能力限制（REQ-signup-004、REQ-signup-026；[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。**判定不属于自助注册，属于账户**：注册只是把账户置为 `signup_state = 1` 的一种创建路径；管理员预置、导入、首登开户与企业 SSO 写出的用户账户用同一条判据读同一个状态，见下一节。`Signups.Register` 的处理次序：
+自助注册是用户名＋口令＋邮箱的匿名请求，开户后验证邮箱；只有邮箱被证明才解除未验证账户的能力限制（REQ-signup-004、REQ-signup-026；[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。**判定不属于自助注册，属于账户**：注册只是把账户置为 `signup_state = 1` 的一种创建路径；管理员预置、导入、首登开户与企业 SSO 写出的用户账户用同一条判据读同一个状态，见下一节。`Signups.Register` 的处理次序：
 
 1. 读设置 `authn.account.password-signup`，不是 `open` 即 `ErrSignupClosed`。这是注册开关的权威检查；注册路由与发现端点读同一个键只作预检查。
 2. 规范化用户名与邮箱，经口令策略校验口令。
@@ -800,7 +800,7 @@ flowchart TD
 
 ### 账户状态与生命周期
 
-迁移表里「账户事务内」只写本模块的表。完整的判据与被否决的替代见 [ADR-authn-account-lifecycle-2026-10-10](../../../adr/adr-authn-account-lifecycle-2026-10-10.md)。
+迁移表里「账户事务内」只写本模块的表。完整的判据与被否决的替代见 [ADR-authn-account-lifecycle](../../../adr/adr-authn-account-lifecycle.md)。
 
 | 迁移 | 账户事务内（本模块的表） | 提交之后 |
 |---|---|---|
@@ -818,11 +818,11 @@ flowchart TD
 
 **补偿。** `authn.session`、`authn.mfa`、`authn.sms` 订阅 `authn.account.status-changed` 与 `authn.account.deleted`（发件箱在场时至少一次，按 `Event.ID` 去重），重做各自的清理，处理函数幂等。没有发件箱的装配里，崩溃窗口内的残留行不能用于认证，但抹除不保证，启动诊断写一行 Warn 说明。
 
-**删除的保留面。** 软删除用墓碑行：行内的个人数据被抹除，并记录删除者（[ADR-authn-accounts-2026-10-10](../../../adr/adr-authn-accounts-2026-10-10.md)）。宿主表里引用账户标识的行不由 authn 清理，宿主订阅 `authn.account.deleted`。同一邮箱此后再注册得到新账户、新标识；审计行与 `authz.policy` 的角色绑定里残留的是不指向任何个人数据的旧标识。`authn_impersonations` 的记录按「谁冒充过谁」保留，只含标识与冒充理由，保留期是宿主的合规策略；冒充理由是管理员写的自由文本，可能含个人信息，是已知残留。法规要求连标识都不得留存时，本设计不满足。
+**删除的保留面。** 软删除用墓碑行：行内的个人数据被抹除，并记录删除者（[ADR-authn-accounts](../../../adr/adr-authn-accounts.md)）。宿主表里引用账户标识的行不由 authn 清理，宿主订阅 `authn.account.deleted`。同一邮箱此后再注册得到新账户、新标识；审计行与 `authz.policy` 的角色绑定里残留的是不指向任何个人数据的旧标识。`authn_impersonations` 的记录按「谁冒充过谁」保留，只含标识与冒充理由，保留期是宿主的合规策略；冒充理由是管理员写的自由文本，可能含个人信息，是已知残留。法规要求连标识都不得留存时，本设计不满足。
 
 ### 口令凭据（PHC）
 
-`authn_password_credentials.phc` 与口令表（`authn.static.subjects`）里的条目用同一套写法；分派靠首字符与第一段：以 `$` 起头按第一段分派，否则按遗留条目读。选型与被否决的替代见 [ADR-authn-password-hash-2026-10-10](../../../adr/adr-authn-password-hash-2026-10-10.md)。
+`authn_password_credentials.phc` 与口令表（`authn.static.subjects`）里的条目用同一套写法；分派靠首字符与第一段：以 `$` 起头按第一段分派，否则按遗留条目读。选型与被否决的替代见 [ADR-authn-password-hash](../../../adr/adr-authn-password-hash.md)。
 
 | 写法 | 例子 | 编解码 |
 |---|---|---|
@@ -830,7 +830,7 @@ flowchart TD
 | PBKDF2-SHA256 | `$pbkdf2-sha256$i=600000,l=32$<盐>$<哈希>` | 自写，取 RustCrypto 方言；盐与哈希用 B64（标准字母表、无填充，与现行条目的字母表一致），并显式写出输出长度；派生用标准库 `crypto/pbkdf2`，在 FIPS 140 模式下有效，保留「本进程能否派生」的探测。 |
 | 遗留（只读，仅口令表） | `pbkdf2-sha256$600000$<盐>$<密钥>`（无前导 `$`） | 只在 `authn.static.subjects` 里读；启动时每条记一行 Warn，提示用 `static.Hash` 重写；库里的哈希从不是这种写法；`ImportHash` 把遗留条目无损转成 PHC（盐与密钥字节相同，只改外壳）。 |
 
-分派、界限核对与 PBKDF2 条目的编解码在 authn 内实现，取舍见 [ADR-authn-password-hash-2026-10-10](../../../adr/adr-authn-password-hash-2026-10-10.md)。
+分派、界限核对与 PBKDF2 条目的编解码在 authn 内实现，取舍见 [ADR-authn-password-hash](../../../adr/adr-authn-password-hash.md)。
 
 **解析的界限。** 库里或导入的条目不得让校验去分配几个 GiB，所以每个条目在调用任何派生之前先解析并核对界限（Argon2id 用 `DecodeHash` 取出参数核对）：
 
@@ -862,13 +862,13 @@ flowchart TD
 
 **口令的规范化与长度。** 库里账户的口令先做 NFKC 再哈希，最短长度取设置，最长 128 字节，不得与本人任一标识相同。口令表条目不做 NFKC，原样按字节哈希：已写下的条目照原样读是现行契约。不做口令泄露库比对，因为那需要出站调用与隐私权衡。口令、验证码、令牌从不进事件、日志、审计、指标。
 
-**参数组合的回落与内存预算。** Argon2id 的各项设置各自只能在单项取值域内判，而 OWASP 下限按（m, t, p）的组合判：设置各自合法而组合低于下限时，`Passwords.Set` 与建账户改用默认组合（`m=19456, t=2, p=1`）并记一行 Error，启动诊断也逐项核对当前组合。Argon2id 一次分配 `m` KiB，所以并发信号量（`authn.account.password-concurrency`）之外另有按字节计的内存预算（`authn.account.password-memory-budget-mib`，启动时分配、不可运行期调）。预算归账户后端所有，不是进程里唯一的一份：口令表后端另持自己的一份（缺省 512 MiB，不设键），所以进程里口令派生占用内存的上界是各后端预算之和，容量规划按这个和算（[ADR-authn-password-hash-2026-10-10](../../../adr/adr-authn-password-hash-2026-10-10.md)）。一份预算的用法是：一次派生先占 `m` KiB 的份额，占不到的最多等 1 秒，仍无则 `ErrBusy`（503，`Retry-After: 1`）；PBKDF2 不占内存份额，只占并发名额。`m` 的取值域与解析上限都有上界，使单次派生只占预算的一小部分；预算相对该上界的下限由启动自检保证，不满足时启动以 `ErrInvalidConfig` 终止。设置被误改或导入条目的 `m` 很大时，每个登录请求吃掉的内存仍有界。**假设：** 默认预算与取值域上限下，并发口令派生的内存峰值落在预算的量级内；该峰值未实测，守住它的测试是在缺省预算与取值域上限下的并发压测。设置键、取值域、默认值与启动校验见 [design-authn-config](design-authn-config.md)。
+**参数组合的回落与内存预算。** Argon2id 的各项设置各自只能在单项取值域内判，而 OWASP 下限按（m, t, p）的组合判：设置各自合法而组合低于下限时，`Passwords.Set` 与建账户改用默认组合（`m=19456, t=2, p=1`）并记一行 Error，启动诊断也逐项核对当前组合。Argon2id 一次分配 `m` KiB，所以并发信号量（`authn.account.password-concurrency`）之外另有按字节计的内存预算（`authn.account.password-memory-budget-mib`，启动时分配、不可运行期调）。预算归账户后端所有，不是进程里唯一的一份：口令表后端另持自己的一份（缺省 512 MiB，不设键），所以进程里口令派生占用内存的上界是各后端预算之和，容量规划按这个和算（[ADR-authn-password-hash](../../../adr/adr-authn-password-hash.md)）。一份预算的用法是：一次派生先占 `m` KiB 的份额，占不到的最多等 1 秒，仍无则 `ErrBusy`（503，`Retry-After: 1`）；PBKDF2 不占内存份额，只占并发名额。`m` 的取值域与解析上限都有上界，使单次派生只占预算的一小部分；预算相对该上界的下限由启动自检保证，不满足时启动以 `ErrInvalidConfig` 终止。设置被误改或导入条目的 `m` 很大时，每个登录请求吃掉的内存仍有界。**假设：** 默认预算与取值域上限下，并发口令派生的内存峰值落在预算的量级内；该峰值未实测，守住它的测试是在缺省预算与取值域上限下的并发压测。设置键、取值域、默认值与启动校验见 [design-authn-config](design-authn-config.md)。
 
 **服务密钥。** 客户端密钥是 256 位随机数，熵足以使字典猜测不成立，库里只存 SHA-256 摘要，校验不经口令派生，因而没有派生成本与派生拒绝服务；`VerifyServiceSecret` 按摘要取行，再常量时间比对出示的 `clientID` 与行里的账户标识。
 
 ### 失败退避
 
-`Throttle` 的 db 实现，键是提交内容规范化形式的 SHA-256，与账户是否存在无关：未知标识与已知标识走同一条计数路径。判据见 [ADR-authn-throttling-2026-10-10](../../../adr/adr-authn-throttling-2026-10-10.md)。标识级退避的键由调用方（口令方法）按它自己的规则算出：去首尾空白并折小写，再取 SHA-256；账户的 `NormalizeIdentifier` 由账户包导出，但口令方法不 import `pkg/authn/account`，所以它按自己的规则算键，两者对某些拼写（NFKC、邮箱域名规则）不一致。这种不一致只让标识级计数更分散，不放过攻击者：账户级退避与标识拼写无关，把同一账户的不同拼写合在一起计数。
+`Throttle` 的 db 实现，键是提交内容规范化形式的 SHA-256，与账户是否存在无关：未知标识与已知标识走同一条计数路径。判据见 [ADR-authn-throttling](../../../adr/adr-authn-throttling.md)。标识级退避的键由调用方（口令方法）按它自己的规则算出：去首尾空白并折小写，再取 SHA-256；账户的 `NormalizeIdentifier` 由账户包导出，但口令方法不 import `pkg/authn/account`，所以它按自己的规则算键，两者对某些拼写（NFKC、邮箱域名规则）不一致。这种不一致只让标识级计数更分散，不放过攻击者：账户级退避与标识拼写无关，把同一账户的不同拼写合在一起计数。
 
 - **算法。** 窗口自最近一次失败起 `throttle-decay` 内无新失败，且这些失败赚得的等待（`locked_until`）已经走完，计数才归零，所以 `throttle-max-delay` 大于 `throttle-decay` 时窗口也不会在锁定期结束之前清掉计数；前 `throttle-free-attempts` 次失败不退避，之后每多一次失败退避 `min(throttle-max-delay, 2^(n-free) 秒)`；成功清零。成功清零只适用于这里的 `Throttle`：口令表后端的进程内退避面对逐请求出示的口令，成功不清零，写法见 [design-authn-gate](design-authn-gate.md)。这些参数都是 `authn.account.*` 的设置，对 `Throttle` 的全部范围同用一套（缺省与取值域见 [design-authn-config](design-authn-config.md)）。
 - **状态与原子性。** 状态在 `authn_throttles`，递增是一条原子语句，并发的失败不丢计数。
@@ -883,7 +883,7 @@ flowchart TD
 
 **访问路径。** 低频、希望被审计的写（建账户、改状态、删除、绑定与解绑、改成员关系）走模型路径，审计在场时每条写语句留一行语句级审计行，只记表、动作、受影响行数，不记值。高频或带竞争语义的写走原生 SQL，不产生审计行、不被租户插件触及：`Touch`、`last_used_at`、`authn_throttles` 的原子递增、口令哈希的升级重写（`UPDATE … SET phc = ? WHERE account_id = ? AND phc = <旧值>`）。口令与服务密钥的哈希是不加密列，写入走原生 SQL。**假设：** 语句级审计行不带列值；守住它的测试：模型路径的写之后，审计行里不得出现任何秘密字节。
 
-**时间一律 UTC。** 所有写入的时间与作为参数绑定的时间一律经 `pkg/authn/internal/clock` 取、一律 `.UTC()`；只在进程内比较时长、不写库也不绑定的计时（口令校验缓存、失败退避、账户快照缓存）可以直接取单调时钟，不受这条约束；模型路径的 `CreatedAt`、`UpdatedAt` 显式赋值，不靠 GORM 的 `NowFunc`，它默认取本地时间，`pkg/db` 没有覆盖它。SQLite 驱动把 `time.Time` 按其所在时区存成文本、比较是字符串比较，非 UTC 的值让 `idle_expires_at`、`locked_until`、`valid_after` 一类的比较判错；PostgreSQL 的 `TIMESTAMPTZ` 不受影响，同一规则统一适用。**假设：** 上述 SQLite 驱动行为（`glebarez/go-sqlite` v1.21.2：写入 `07:00-05:00`，即 12:00Z，之后 `WHERE at > 11:00Z` 命中 0 行）与 `pkg/db` 不覆盖 `NowFunc`，见 [ADR-authn-accounts-2026-10-10](../../../adr/adr-authn-accounts-2026-10-10.md) 的失效条件。守住它的测试：SQLite 夹具在 `TZ=America/New_York` 下用非 UTC 的 `time.Time` 写入，断言每个带时间比较的条件（会话有效性、退避锁定、刷新令牌空闲、断言去重清扫、挑战预算统计）结果仍然正确。
+**时间一律 UTC。** 所有写入的时间与作为参数绑定的时间一律经 `pkg/authn/internal/clock` 取、一律 `.UTC()`；只在进程内比较时长、不写库也不绑定的计时（口令校验缓存、失败退避、账户快照缓存）可以直接取单调时钟，不受这条约束；模型路径的 `CreatedAt`、`UpdatedAt` 显式赋值，不靠 GORM 的 `NowFunc`，它默认取本地时间，`pkg/db` 没有覆盖它。SQLite 驱动把 `time.Time` 按其所在时区存成文本、比较是字符串比较，非 UTC 的值让 `idle_expires_at`、`locked_until`、`valid_after` 一类的比较判错；PostgreSQL 的 `TIMESTAMPTZ` 不受影响，同一规则统一适用。**假设：** 上述 SQLite 驱动行为（`glebarez/go-sqlite` v1.21.2：写入 `07:00-05:00`，即 12:00Z，之后 `WHERE at > 11:00Z` 命中 0 行）与 `pkg/db` 不覆盖 `NowFunc`，见 [ADR-authn-accounts](../../../adr/adr-authn-accounts.md) 的失效条件。守住它的测试：SQLite 夹具在 `TZ=America/New_York` 下用非 UTC 的 `time.Time` 写入，断言每个带时间比较的条件（会话有效性、退避锁定、刷新令牌空闲、断言去重清扫、挑战预算统计）结果仍然正确。
 
 ### 清扫
 
@@ -972,7 +972,7 @@ flowchart TD
 
 ### 非保证
 
-下列性质明说不保证，每项写出上界或前提；它们不是缺陷，也不为它们改动别的模块（[ADR-authn-guarantees-2026-10-10](../../../adr/adr-authn-guarantees-2026-10-10.md)）。
+下列性质明说不保证，每项写出上界或前提；它们不是缺陷，也不为它们改动别的模块（[ADR-authn-guarantees](../../../adr/adr-authn-guarantees.md)）。
 
 - **跨模块的抹除是至少一次、非原子的。** 崩溃窗口内的残留行不能用于认证，但抹除本身不保证；没有发件箱的装配里，崩溃窗口没有补偿，启动诊断写一行 Warn。
 - **`authn_throttles` 的行数上界。** 键与账户是否存在无关，匿名攻击者用随机用户名可使每个失败请求多一行；上界是失败请求速率乘 `throttle-decay`。缓解是 `ratelimit` 的地址盾（按来源地址限制单位时间内的请求数）与清扫；地址盾由宿主装配。
@@ -1022,7 +1022,7 @@ flowchart TD
 
 账户表不留自由字段。下列途径由轻到重，都不改 authn 的表；名单是例举，不是封闭集，判据是不改动 authn 的表结构。
 
-1. **账户属性集 `Account.Attributes`。** 字符串到字符串，至多 24 项；键匹配 `^[a-z0-9][a-z0-9._-]{0,63}$`，保留前缀 `idp.` 与 `authn.` 不可用；值为合法 UTF-8 且无控制字符，至多 256 字节；键与值合计至多 2 KiB。存 `authn_accounts.attributes`（JSON，列至多 4 KiB），宿主经 `AccountAdmin.SetAttributes` 写，经 `Identity.Attribute` 只读到达所有层。适合授权需要读、想随身份走的少量标志（`region`、`tier`）。用户的语言与时区偏好是它的具名用法：语言存 `i18n.locale`（BCP 47 标签），时区存 `i18n.tz`（IANA 名称）；两个键都在 `authn.` 保留前缀之外，与宿主自有属性共存，读侧在账户没有这两个键或取值不在本运行支持的集合内时回落默认，写侧只经属性集的通用界面（[ADR-i18n-preferences-storage-2026-10-13](../../../adr/adr-i18n-preferences-storage-2026-10-13.md)）。账户属性与会话载荷里的 `idp.*`（另至多 8 项）合并之后受身份盖章处的总上限约束，各分项上限的和不超过它，见 [design-authn](design-authn.md)。属性集经账户快照读，宿主改了属性要等快照缓存过期才进身份。
+1. **账户属性集 `Account.Attributes`。** 字符串到字符串，至多 24 项；键匹配 `^[a-z0-9][a-z0-9._-]{0,63}$`，保留前缀 `idp.` 与 `authn.` 不可用；值为合法 UTF-8 且无控制字符，至多 256 字节；键与值合计至多 2 KiB。存 `authn_accounts.attributes`（JSON，列至多 4 KiB），宿主经 `AccountAdmin.SetAttributes` 写，经 `Identity.Attribute` 只读到达所有层。适合授权需要读、想随身份走的少量标志（`region`、`tier`）。用户的语言与时区偏好是它的具名用法：语言存 `i18n.locale`（BCP 47 标签），时区存 `i18n.tz`（IANA 名称）；两个键都在 `authn.` 保留前缀之外，与宿主自有属性共存，读侧在账户没有这两个键或取值不在本运行支持的集合内时回落默认，写侧只经属性集的通用界面（[ADR-i18n-preferences-storage](../../../adr/adr-i18n-preferences-storage.md)）。账户属性与会话载荷里的 `idp.*`（另至多 8 项）合并之后受身份盖章处的总上限约束，各分项上限的和不超过它，见 [design-authn](design-authn.md)。属性集经账户快照读，宿主改了属性要等快照缓存过期才进身份。
 2. **宿主自有表，以 `AccountID` 为键。** 不建指向 `authn_accounts` 的外键；账户删除时宿主订阅 `authn.account.deleted` 清理。适合强类型、较多的资料字段。
 3. **首登开户钩子 `Provisioner`。** 根包接口，非排他、可选，联合登录或短信首登开户之前调用。
 4. **生命周期事件。** `authn.account.created` 等带账户标识，宿主订阅后建画像行、做同步。

@@ -2,14 +2,16 @@
 Template for the decision-record index. Delete every comment block before
 committing.
 
-The index is grouped by TOPIC, and within a topic ordered by date. That
-grouping is what makes the index worth having: a reader sees a topic's
-decisions in order, and which of them are still in force.
+The index is grouped by TOPIC. A topic can hold several decisions that all
+still apply; each is a separate record and appears as its own row. Grouping is
+what makes the index worth having: a reader sees a topic's decisions together
+and which of them are in force.
 
 Every record appears exactly once. A record missing from the index is an
 orphan, and an orphan is an error.
 
-Each record is authoritative for its own status; this index rolls it up.
+There is no date column and no status column: a record's date is not part of
+its identity, and the tree holds only decisions in force.
 -->
 
 # Architecture Decision Records
@@ -18,13 +20,12 @@ Each record is authoritative for its own status; this index rolls it up.
 
 ## <Topic name>
 
-| Decision | Date | Status |
-|---|---|---|
-| [<decision title>](adr-<slug>-<date>.md) | <YYYY-MM-DD> | Superseded by [ADR-<slug>-<date>](adr-<slug>-<date>.md) |
-| [<decision title>](adr-<slug>-<date>.md) | <YYYY-MM-DD> | Accepted |
+| Decision |
+|---|
+| [<decision title>](adr-<slug>.md) |
 
 ## <Another topic name>
 
-| Decision | Date | Status |
-|---|---|---|
-| [<decision title>](adr-<slug>-<date>.md) | <YYYY-MM-DD> | Accepted |
+| Decision |
+|---|
+| [<decision title>](adr-<slug>.md) |

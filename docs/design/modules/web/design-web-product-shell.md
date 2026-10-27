@@ -58,7 +58,7 @@ export interface ProductShellSessionEndedActions {
 export function ProductShell(props: ProductShellProps): ReactElement
 ```
 
-- **框架 prop 原样透传。** `navItems`、`header`、`headerActions`、`userMenu`、`banner`、导航地标的可访问名 `navLabel`、抽屉纸内导航前后的两个槽 `navHeader`/`navFooter`、抽屉控制（移动开合 `mobileOpen`/`onMobileOpenChange` 与桌面收起 `sidebarCollapsed`/`onSidebarCollapsedChange`）、外壳形态 `shellLayout` 与 `sx` 被拾起后逐字转给 `AppShell`；本包不重解释、不重排序、不做路径匹配。加一个框架 prop 意味着加进那个 `Pick<AppShellProps, ...>`，而不是另建一套解释。`banner` 槽由 layout-kit 提供，用途见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)。
+- **框架 prop 原样透传。** `navItems`、`header`、`headerActions`、`userMenu`、`banner`、导航地标的可访问名 `navLabel`、抽屉纸内导航前后的两个槽 `navHeader`/`navFooter`、抽屉控制（移动开合 `mobileOpen`/`onMobileOpenChange` 与桌面收起 `sidebarCollapsed`/`onSidebarCollapsedChange`）、外壳形态 `shellLayout` 与 `sx` 被拾起后逐字转给 `AppShell`；本包不重解释、不重排序、不做路径匹配。加一个框架 prop 意味着加进那个 `Pick<AppShellProps, ...>`，而不是另建一套解释。`banner` 槽由 layout-kit 提供，用途见 [ADR-web-impersonation-shell](../../../adr/adr-web-impersonation-shell.md)。
 - **`signIn` 缺席时未登录分支什么都不渲染。** 缺省结束屏的「再次登录」动作需要这个视图存在：它把访问者送回登录分支，而视图机拒绝复位到一个什么都不渲染的分支，故没有 `signIn` 槽的宿主其会话中途结束时停在结束屏。
 - **`sessionEnded` 缺席时渲染 `auth-ui` 的 `SessionEndedScreen`**，并把它的「再次登录」动作接成返回登录分支。给出 `sessionEnded` 节点时原样渲染，视图机状态一并交给该节点，由它自持返回应用的出路；给出渲染函数时把 `ProductShellSessionEndedActions` 交给它并渲染其返回值，其中的 `returnToSignIn` 就是缺省结束屏动作所用的那一次复位（`signIn` 槽缺席时为空操作）。
 - **`children` 只在快照为已认证时渲染进框架的 `main` 地标内。**
@@ -173,7 +173,7 @@ export function createQueryClient(): QueryClient
 
 **列出四个族命名空间之一即替换其出厂资源。** 装配自身组合的四个族命名空间（ui-kit、layout-kit、auth-ui、product-shell 自己的）自动注册；在 `namespaces` 里列出其中之一时，它替换该命名空间的出厂语言包而不是被注册两次——这是整体替换平台文案的途径。平台错误包不经此途径替换，只经 `resourceOverrides` 覆盖。
 
-**`baseUrl` 缺省是 `window.location.origin`，即假设同源部署**——页面与 API 由同一个源提供。**跨域部署要在运行期给出该源地址**：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它（按入口文档所在源下的根路径解析）、把其中的 origin 作为 `baseUrl` 传给本包；取不到时回落到同源。机制归 [design-web](design-web.md) 与 [ADR-web-runtime-config-2026-10-15](../../../adr/adr-web-runtime-config-2026-10-15.md)；本包只消费注入后的值，不自行发现源。
+**`baseUrl` 缺省是 `window.location.origin`，即假设同源部署**——页面与 API 由同一个源提供。**跨域部署要在运行期给出该源地址**：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它（按入口文档所在源下的根路径解析）、把其中的 origin 作为 `baseUrl` 传给本包；取不到时回落到同源。机制归 [design-web](design-web.md) 与 [ADR-web-runtime-config](../../../adr/adr-web-runtime-config.md)；本包只消费注入后的值，不自行发现源。
 
 **`tenantProvider` 返回的是租户别名，不是租户标识。** 该值是请求的租户头（缺省 `x-tenant`，`client.tenantHeader` 可改名）的取值，后端租户解析层按名将它映射为租户标识；它与 [auth-core](design-web-auth-core.md) 的 `TenantProvider` 所持、用于查询键分域的租户标识是两个事实。别名与标识不同的宿主在此返回别名，并把标识留给 `TenantProvider`。
 

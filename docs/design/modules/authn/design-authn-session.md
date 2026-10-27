@@ -2,7 +2,7 @@
 
 ## 职责
 
-`authn.session` 是登录会话的唯一持有者。浏览器的 cookie 会话、非浏览器客户端的访问令牌与刷新令牌所挂靠的会话、服务账户每个密钥对应的会话，共用一张表 `authn_sessions` 与一套撤销面。包为 `pkg/authn/session`，模块名为 `authn.session`。本文的「会话」一律指登录会话。取舍见 [ADR-authn-session-2026-10-10](../../../adr/adr-authn-session-2026-10-10.md)，状态放置的判据见 [ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)。
+`authn.session` 是登录会话的唯一持有者。浏览器的 cookie 会话、非浏览器客户端的访问令牌与刷新令牌所挂靠的会话、服务账户每个密钥对应的会话，共用一张表 `authn_sessions` 与一套撤销面。包为 `pkg/authn/session`，模块名为 `authn.session`。本文的「会话」一律指登录会话。取舍见 [ADR-authn-session](../../../adr/adr-authn-session.md)，状态放置的判据见 [ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)。
 
 本模块负责下列事项（封闭集合，不在其内的事项归非职责一节点名的模块）：
 
@@ -442,7 +442,7 @@ stateDiagram-v2
 
 ### scs 的适配与必须绕开的部分
 
-本模块只用 scs 的令牌生成（32 字节随机、`base64.RawURLEncoding`）、存储里只留令牌的 SHA-256（`HashTokenInStore`）、cookie 属性的写出、`Load` 与 `Commit` 的创建路径、可换的 `Codec` 与 `CtxStore` 接缝；公开会话标识、按账户的索引与撤销、空闲期限的节流续期、令牌轮换、存储适配器与 gin 胶水由本模块自写。只显式调用 scs 的 `Load`、`Commit`、`WriteSessionCookie`，不用 `LoadAndSave` 中间件，提交点必须在首次写响应之前。绕开 scs 默认用法的各项取舍见 [ADR-authn-session-2026-10-10](../../../adr/adr-authn-session-2026-10-10.md)。
+本模块只用 scs 的令牌生成（32 字节随机、`base64.RawURLEncoding`）、存储里只留令牌的 SHA-256（`HashTokenInStore`）、cookie 属性的写出、`Load` 与 `Commit` 的创建路径、可换的 `Codec` 与 `CtxStore` 接缝；公开会话标识、按账户的索引与撤销、空闲期限的节流续期、令牌轮换、存储适配器与 gin 胶水由本模块自写。只显式调用 scs 的 `Load`、`Commit`、`WriteSessionCookie`，不用 `LoadAndSave` 中间件，提交点必须在首次写响应之前。绕开 scs 默认用法的各项取舍见 [ADR-authn-session](../../../adr/adr-authn-session.md)。
 
 令牌绝不由客户端指定：scs 对库里找不到的令牌创建一个新的空会话，不沿用客户端给的字符串；校验后端据载荷里没有 `sid` 判为无此会话，所以预置令牌的固定攻击不成立。登录与提权时仍换令牌，作为纵深。
 
@@ -492,7 +492,7 @@ stateDiagram-v2
 
 ### 轮换、撤销、列出与踢下线
 
-**轮换点**是下列动作（封闭集合）：登录完成；加强认证完成；改口令；删除因素；改手机或邮箱；解绑外部身份；添加登录标识；冒充的开始。登记因素与关联外部身份会撤销该账户的其余会话，但不轮换当前令牌 —— 它们收窄的是其他设备的会话，发起设备继续用原令牌。冒充的结束不是轮换点，只清除会话行上的标识（决策见 [ADR-authn-impersonation-2026-10-10](../../../adr/adr-authn-impersonation-2026-10-10.md)）。轮换指旧令牌脱钩、新令牌写入，对会话行的条件更新，行已被撤销则整件事失败。调用方在动作成功之后调用 `Rotate`（改口令、删除因素、改手机、解绑外部身份、添加登录标识）、`Elevate`（加强认证）或 `SetImpersonation`（冒充开始；结束只清标识，不换令牌也不写 cookie），再调用 `SetCookie`。改口令、删除已启用因素、改手机、添加登录标识、解绑外部身份成功之后，各自的处理器（删除因素是它的用户面 DELETE 路由）另调 `RevokeAccount(except = 当前会话)`；登记因素与关联外部身份完成之后也调它，只是不轮换当前令牌。`MFA.Remove` 自己不撤销，也就不依赖会话模块。`Rotate` 换当前会话的令牌，`RevokeAccount` 撤销其余会话，二者是两个动作。`Passwords.Set` 不替调用方撤销，使 `Passwords` 不依赖会话模块。
+**轮换点**是下列动作（封闭集合）：登录完成；加强认证完成；改口令；删除因素；改手机或邮箱；解绑外部身份；添加登录标识；冒充的开始。登记因素与关联外部身份会撤销该账户的其余会话，但不轮换当前令牌 —— 它们收窄的是其他设备的会话，发起设备继续用原令牌。冒充的结束不是轮换点，只清除会话行上的标识（决策见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)）。轮换指旧令牌脱钩、新令牌写入，对会话行的条件更新，行已被撤销则整件事失败。调用方在动作成功之后调用 `Rotate`（改口令、删除因素、改手机、解绑外部身份、添加登录标识）、`Elevate`（加强认证）或 `SetImpersonation`（冒充开始；结束只清标识，不换令牌也不写 cookie），再调用 `SetCookie`。改口令、删除已启用因素、改手机、添加登录标识、解绑外部身份成功之后，各自的处理器（删除因素是它的用户面 DELETE 路由）另调 `RevokeAccount(except = 当前会话)`；登记因素与关联外部身份完成之后也调它，只是不轮换当前令牌。`MFA.Remove` 自己不撤销，也就不依赖会话模块。`Rotate` 换当前会话的令牌，`RevokeAccount` 撤销其余会话，二者是两个动作。`Passwords.Set` 不替调用方撤销，使 `Passwords` 不依赖会话模块。
 
 登录完成时，请求若带着可解析的旧会话 cookie（经 `Sessions.Current`），旧会话被撤销，不让它继续并存。这不是会话固定的防线：防线是登录总是新建会话与新令牌，加上令牌只由服务端生成。SAML 的跨站 POST 不带 `SameSite=Lax` 的 cookie，旧会话无从撤销。
 
@@ -513,7 +513,7 @@ stateDiagram-v2
 
 ### 账户状态迁移与服务密钥撤销之后的清理
 
-每个模块只在自己的事务里写自己的表：`authn.account` 在账户事务里写自己的表并暂存事件，提交之后同步调用全部 `AccountLifecycle`；钩子失败或进程崩在提交与钩子之间时由事件补偿（[ADR-authn-account-lifecycle-2026-10-10](../../../adr/adr-authn-account-lifecycle-2026-10-10.md)，账户一侧的流程见 [design-authn-account](design-authn-account.md)）。每个钩子都幂等：账户已停用、已启用、已删除、数据已清时返回 nil；调用发生在账户事务提交之后，状态迁移与删除的实现不读账户行（`AccountCreated` 是例外，账户此时存在）。
+每个模块只在自己的事务里写自己的表：`authn.account` 在账户事务里写自己的表并暂存事件，提交之后同步调用全部 `AccountLifecycle`；钩子失败或进程崩在提交与钩子之间时由事件补偿（[ADR-authn-account-lifecycle](../../../adr/adr-authn-account-lifecycle.md)，账户一侧的流程见 [design-authn-account](design-authn-account.md)）。每个钩子都幂等：账户已停用、已启用、已删除、数据已清时返回 nil；调用发生在账户事务提交之后，状态迁移与删除的实现不读账户行（`AccountCreated` 是例外，账户此时存在）。
 
 | 钩子 | 本模块的动作 |
 |---|---|

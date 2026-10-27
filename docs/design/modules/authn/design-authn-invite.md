@@ -9,7 +9,7 @@
 
 ### 非职责
 
-- **不做组织树。** 没有节点、没有层级、没有子树数据范围，接受只落一条成员关系，不带任何位置。早期实现有一棵多级组织树，本方案刻意不做它（[ADR-org-invitation-2026-10-15](../../../adr/adr-org-invitation-2026-10-15.md)）。
+- **不做组织树。** 没有节点、没有层级、没有子树数据范围，接受只落一条成员关系，不带任何位置。早期实现有一棵多级组织树，本方案刻意不做它（[ADR-org-invitation](../../../adr/adr-org-invitation.md)）。
 - **不投递邀请，不排队，不重试。** 本模块不发送任何消息——邮件投递归 mail 模块，邀请的送达由签发者或宿主完成（[design-authn](design-authn.md)）。签发应答把接受链接连同令牌一次性交给签发者，投递交由签发者或宿主经它自己的渠道完成。没有提醒、没有自动重发：一条新的待接受邀请只能来自一次新的签发调用。
 - **不持账户、成员关系、口令的表与规则。** 接受的账户创建与标识写入经 `AccountAdmin.Create`、`AccountAdmin.AddIdentifier`，成员行写经 `Memberships.Put`；账户与成员关系的规则与哨兵在 [authn-account](design-authn-account.md)。
 - **不做邮件的送达证明。** 令牌证明持有者收到了这条链接，不证明地址可达。地址可达性由签发者按他送出链接的渠道承担。
@@ -31,7 +31,7 @@
 
 ### 交付的功能
 
-本模块排他交付接口 `Invites`，由本模块回答。接口、值类型与哨兵一并定义在 `pkg/authn/invite`，不随其余认证接缝放进根包 `pkg/authn`（[design-authn](design-authn.md)；理由见 [ADR-authn-invitation-2026-10-15](../../../adr/adr-authn-invitation-2026-10-15.md)）。
+本模块排他交付接口 `Invites`，由本模块回答。接口、值类型与哨兵一并定义在 `pkg/authn/invite`，不随其余认证接缝放进根包 `pkg/authn`（[design-authn](design-authn.md)；理由见 [ADR-authn-invitation](../../../adr/adr-authn-invitation.md)）。
 
 ```go
 // 邀请接缝：持有邀请的状态机，决定一条邀请能不能签发、能不能被一个令牌兑现。
@@ -91,11 +91,11 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 
 **`Invitation` 不含令牌。** 令牌的明文在 `Issued` 里出现一次，此后任何视图、列表、事件与诊断都不带它；`Invitation` 是给管理面读的只读视图。
 
-**`InvitationStatus` 的存量列是 `{待接受，已接受，已撤销}`，观察态是它加「已过期」。** 已过期不是一次写出的迁移，而是「状态为待接受、且当前时刻不早于 `ExpiresAt`」的推导；接受与列表都按当前时刻判定，不靠清扫器翻转状态。判据是状态放置的方向：一次丢失的过期翻转只让一条已经不能接受的邀请看起来还能接受，而接受路径自己会拒绝它，安全性不依赖这次翻转（[ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)）。
+**`InvitationStatus` 的存量列是 `{待接受，已接受，已撤销}`，观察态是它加「已过期」。** 已过期不是一次写出的迁移，而是「状态为待接受、且当前时刻不早于 `ExpiresAt`」的推导；接受与列表都按当前时刻判定，不靠清扫器翻转状态。判据是状态放置的方向：一次丢失的过期翻转只让一条已经不能接受的邀请看起来还能接受，而接受路径自己会拒绝它，安全性不依赖这次翻转（[ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)）。
 
 **`IssueInvite` 与 `AcceptInvite` 的字段语义是承诺**：`IssueInvite.Email` 是未规范化的原值，规范化归本模块；`Issued.Token` 是只交出一次的凭据；`AcceptInvite.Password` 只在为一条尚无账户的邀请建账户时读，已有账户时忽略。
 
-**接受的账户创建经 `AccountAdmin.Create`，不另开一条开户路径。** 该接口要求地址带一个合法的验证渠道，且没有可放待验证行的行——它只接纳一条已经成立的账户；邀请写入的渠道是 `invite`，一条真实的归属证明，因此新建的账户读作已验证而不是未验证。邀请因此自己持有待接受态：一条邀请是一行，直到接受才把已经成立的事实交给 `AccountAdmin.Create` 与 `Memberships.Put`（[ADR-authn-invitation-2026-10-15](../../../adr/adr-authn-invitation-2026-10-15.md)）。
+**接受的账户创建经 `AccountAdmin.Create`，不另开一条开户路径。** 该接口要求地址带一个合法的验证渠道，且没有可放待验证行的行——它只接纳一条已经成立的账户；邀请写入的渠道是 `invite`，一条真实的归属证明，因此新建的账户读作已验证而不是未验证。邀请因此自己持有待接受态：一条邀请是一行，直到接受才把已经成立的事实交给 `AccountAdmin.Create` 与 `Memberships.Put`（[ADR-authn-invitation](../../../adr/adr-authn-invitation.md)）。
 
 ### 接受的账户与成员行
 
@@ -133,7 +133,7 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 
 ### 管理面的判定顺序
 
-管理面路由的判定在 handler 内做出，不经请求中间件的声明判定，与 `authn.admin` 同形（[ADR-authn-invitation-2026-10-15](../../../adr/adr-authn-invitation-2026-10-15.md)）。顺序固定：
+管理面路由的判定在 handler 内做出，不经请求中间件的声明判定，与 `authn.admin` 同形（[ADR-authn-invitation](../../../adr/adr-authn-invitation.md)）。顺序固定：
 
 1. **读发起者。** 请求没有身份是 401 加强认证挑战，不询问接缝。
 2. **注册验证状态的门控。** 发起者是用户账户且读作未验证（`SignupPending`：有邮箱而没有一条已证明的）时，签发（含取代旧待接受邀请的那次重发）与撤销答 403 `contact-required`；列表是读，不受影响。门控在身份确定之后、判定接缝与强制审计之前，只收紧不放行，被拦下的请求不询问接缝、不写审计。状态经 `SignupVerification.SignupStateOf` 读取，读失败答 503，不按放行处理；服务账户与读作 `SignupNone`（没有任何邮箱）的发起者豁免。

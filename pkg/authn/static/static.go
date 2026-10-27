@@ -118,7 +118,7 @@ var _ authn.Verifier = (*backend)(nil)
 // carries its implementation. The go.sum and the `go mod tidy` fetch are not held
 // to that face — they follow the test closures of the imported packages — and
 // whole-graph reads see every library an implementation binds
-// (ADR-module-packaging-2026-09-22).
+// (ADR-module-layout).
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.

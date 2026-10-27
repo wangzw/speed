@@ -4,16 +4,16 @@
 
 `@speed/console-ui` 是平台员工的控制台面组件族：把后端的管理面渲染成一组由平台员工操作的页面。它对应后端的下列管理面：
 
-- **租户管理**：名册的读写，经 `/api/v1/system/tenants`（[tenant.admin](../tenant/design-tenant-admin.md)、[ADR-console-tenant-2026-10-15](../../../adr/adr-console-tenant-2026-10-15.md)）。
+- **租户管理**：名册的读写，经 `/api/v1/system/tenants`（[tenant.admin](../tenant/design-tenant-admin.md)、[ADR-console-tenant](../../../adr/adr-console-tenant.md)）。
 - **账户管理**：账户的列出、详情与写入，经 `/api/v1/system/auth/accounts`。
 - **会话管理**：按账户列出会话并撤销，经 `/api/v1/system/auth/accounts/:id/sessions` 与 `/api/v1/system/auth/sessions/:id`。
 - **冒充管理**：冒充记录的列出与终止，经 `/api/v1/tenants/{tenant}/impersonations`；运营者自身会话上的冒充状态读取与发起与结束，经 `/api/v1/auth/impersonation`。
 - **权限管理**：角色、授权、权限目录与账户绑定，经 `/api/v1/system`。
 - **邀请与成员**：按租户的邀请与成员，经 `/api/v1/tenants/{tenant}/invitations` 与 `/api/v1/tenants/{tenant}/members`。
 - **SSO 提供方**：按租户的提供方与域名，经 `/api/v1/tenants/{tenant}/sso/providers`。
-- **设置读写**：运行期设置的读写，经 `/api/v1/system/settings`（[settings.admin](../settings/design-settings-admin.md)、[ADR-console-settings-2026-10-15](../../../adr/adr-console-settings-2026-10-15.md)）。
+- **设置读写**：运行期设置的读写，经 `/api/v1/system/settings`（[settings.admin](../settings/design-settings-admin.md)、[ADR-console-settings](../../../adr/adr-console-settings.md)）。
 - **短信模板**：运行期短信模板的读写，经 `/api/v1/system/sms`。
-- **审计查询**：审计记录的检索与导出，经 `/api/v1/system/audit`（[audit.admin](../audit/design-audit-admin.md)、[ADR-audit-admin-2026-10-15](../../../adr/adr-audit-admin-2026-10-15.md)）。
+- **审计查询**：审计记录的检索与导出，经 `/api/v1/system/audit`（[audit.admin](../audit/design-audit-admin.md)、[ADR-audit-admin](../../../adr/adr-audit-admin.md)）。
 
 **控制台根（`/`）渲染仪表盘**，其指标与最近活动由名册读与审计读拼出；各管理面的列表页可链入其详情页。
 
@@ -25,13 +25,13 @@
 
 **按租户寻址的页面持租户选择器。** 权限面、邀请与成员面、SSO 提供方面把租户当作**路由段参数**（`/api/v1/system/tenants/:tenant/...`）；冒充面把租户当作路径段（`/api/v1/tenants/{tenant}/impersonations`）。这些页面仍是平台员工的页面，但每条请求指名它作用到的租户；租户是请求的一个实参，不是会话的当前租户。**服务端按那个租户域判定**：调用方要在该租户持有 `tenant-admin` 或相应权限，`platform-admin` 本身不放行——平台管理员要管理某个业务租户，得由该租户的管理员授予。页面因此持一个租户选择器（数据来自平台名册读 `GET /api/v1/system/tenants`），在其取值为空前禁用该页的租户作用域读。这四页各接受三个可选 prop：`tenant` 受控给出作用域（给出即锁定该值并隐藏选择器）、`defaultTenant` 作为初值（优先于 URL）与 `onTenantChange`（每次改选上报宿主）。三者都缺席时初值取自页面 URL 的 `tenant` 查询参数（缺省为空），故一条链接能把租户上下文带过页界；选择器仍是此后改变它的途径。这四页因此读 `tenant` 查询参数，README 写明这条。冒充页的发起表单与被冒充记录共用这一个选择：目标租户是请求的必填字段，被冒充账户必须是该租户的成员（REQ-platform-admin-024），故发起表单不另设租户输入，未选租户时提交不可用。
 
-**它复用声明式注册面。** 每个页面导出的一份声明即 [route-kit](design-web-route-kit.md) 的 `RouteDeclaration`：路径 pattern、视图回调、可选导航标签、可选权限码、该页依赖的特性名（`requires`）（[ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)）。`permission` 是数据，本包不据它判定；`label` 缺席即该页不进导航。`requires` 同样是数据，本包不据它判定：宿主经 route-kit 按特性在场收窄注册面，特性缺席的页面与未登记路径走同一个未命中回退，导航里也不出现（[ADR-web-route-seam-2026-10-17](../../../adr/adr-web-route-seam-2026-10-17.md)）。声明由应用的组合层收齐后交给路由层渲染；本包不 import `route-kit`，也不自己做路径匹配或导航。壳另交出一个 `onNavigate` 回调接缝：宿主给了它，帧内点一条导航项即把该项的路径交回调（由宿主的路由器就地跳转，不整页重载），不给则该项是整页链接。租户侧的 [product-shell](design-web-product-shell.md) 用同一份声明形状，两者只是壳不同。
+**它复用声明式注册面。** 每个页面导出的一份声明即 [route-kit](design-web-route-kit.md) 的 `RouteDeclaration`：路径 pattern、视图回调、可选导航标签、可选权限码、该页依赖的特性名（`requires`）（[ADR-web-route-seam](../../../adr/adr-web-route-seam.md)）。`permission` 是数据，本包不据它判定；`label` 缺席即该页不进导航。`requires` 同样是数据，本包不据它判定：宿主经 route-kit 按特性在场收窄注册面，特性缺席的页面与未登记路径走同一个未命中回退，导航里也不出现（[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）。声明由应用的组合层收齐后交给路由层渲染；本包不 import `route-kit`，也不自己做路径匹配或导航。壳另交出一个 `onNavigate` 回调接缝：宿主给了它，帧内点一条导航项即把该项的路径交回调（由宿主的路由器就地跳转，不整页重载），不给则该项是整页链接。租户侧的 [product-shell](design-web-product-shell.md) 用同一份声明形状，两者只是壳不同。
 
 ### 非职责
 
 - **不管理「当前租户」。** 切换当前租户是租户侧的动作，归 [tenancy-ui](design-web-tenancy-ui.md)；管理名册（开租户、改名、停用）是运维侧的动作，归本包。切换改的是宿主的路由，管理改的是名册，两者不共用控件、不共用查询键。按租户寻址的页面的租户选择器选的是**请求的实参**，不是当前租户，它与切换控件不共用状态。
 - **不做导航、不解析 URL。** 页面的路径匹配、链接构造、深链接解析与未命中回退归 `route-kit` 的收集方，特性缺席的页面落到未命中回退同样在那里发生；本包只提供页面与它们的声明，不做路径匹配。
-- **不读特性态。** 本包不取回特性文档，也不调用 auth-core 读特性态的钩子；页内控件所依赖的特性是否在场，由宿主经 `ConsoleShell` 的 `hasFeature` 给出（[ADR-web-feature-state-2026-10-17](../../../adr/adr-web-feature-state-2026-10-17.md)）。
+- **不读特性态。** 本包不取回特性文档，也不调用 auth-core 读特性态的钩子；页内控件所依赖的特性是否在场，由宿主经 `ConsoleShell` 的 `hasFeature` 给出（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）。
 - **不做判定。** 名册、账户、会话、冒充、权限、邀请与成员、SSO、设置与审计的授权判定都在服务端的平台域（设置的租户层在那个租户的域）做出，本包只渲染应答；路由级的授权是宿主的组合（经 [layout-kit](design-web-layout-kit.md) 的路由守卫与 [auth-core](design-web-auth-core.md) 的权限读数），不在本包内。
 - **不遮蔽敏感值。** 敏感设置项的值由 [settings.admin](../settings/design-settings-admin.md) 在应答里遮蔽；本包照渲染应答，不做第二处遮蔽。
 - **不持规则、不持数据。** 每条路的动作是一次生成的调用；名册的写入语义、账户的状态机、权限的取值、审计的列都在各自的模块里定义。
@@ -197,7 +197,7 @@ interface ConsoleProviderProps {
 - **详情页**（`TenantDetailPage`、`AuditDetailPage`）：标题区加主栏与固定宽侧栏。主栏承载主体与其写入，侧栏承载标识与回链。路径是列表页路径加一段 `:id`（`/tenants/:id`、`/audit/:id`），声明不带标签，故不进导航。列表页接收声明传入的该列表页匹配路径（`basePath`），据此为每行构造详情链接 `${basePath}/${id}`；详情页接收 `parentHref`（匹配路径去掉 id 段），据此回链列表页；详情声明另把匹配路径去掉最后两段得到的控制台根交给页面。租户详情页的兄弟链接按稳定 `id`（`permissions`、`invitations`、`sso`、`impersonations`）在壳发布的路由表里解析目标路径，不以字面 `/tenants` 匹配拼路径——控制台挂在任何前缀下都成立；声明缺席或目标页依赖的特性缺席时该链接不渲染，`relatedHref` 可逐条覆写目标链接。每条链接把租户放进 `tenant` 查询参数——目标页从该参数取得选择器初值。审计详情页对记录携带的空字段渲染占位符而不是只留标签：字段为空本身是记录的一部分（平台级事件没有租户、动作可以没有用途），省掉这一行会掩盖记录携带空值。
 - **设置页**（`SettingsPage`）：一条二级导航（按 namespace 分组，取出自全量设置读）、一张占满内容区的分页表（键／类型／当前值／状态／操作）、底部一条粘性保存条。键格在键之下另叠该行的声明：先是它的说明，再是带标签的声明默认值，与相邻的当前值分开；没有声明默认值时这一行不渲染，也不以标签配空值。每行只取自己的声明，不借用别行的说明或默认值。键行本身取主辨识列的共用上限（`primaryColumnMaxWidthSx`）并在上限内截断，完整键由复制控件承载；说明与声明默认值是散文，不套这个上限，按单元格可用宽度换行。整行按顶部对齐（`rowVerticalAlign: 'top'`），当前值输入与复制控件因此贴住键行，而不是落在多行键格的垂直中点。行的状态取自该层视图的 `has_row`：该层没有行时值走回落（标「默认」），持有行时标「已覆盖」。`written` 只用于显示，不参与判定——显式写入的空串与无行在文本上不可区分，行是否存在由 `has_row` 单独给出。只有持有行的行渲染可点的移除控件，默认行不渲染它——默认值没有可撤的覆盖行，摆一个只能空转的开关只会误导读屏与操作者；204 的幂等删除语义不变。**敏感项**：[settings.admin](../settings/design-settings-admin.md) 在应答里把敏感项的 `written` 与 `value` 换成遮蔽串，`has_row` 照常报出行是否存在，故页面按同一判据统计状态，并只对持有行的敏感项渲染移除控件；键格的「敏感」标记说明该行的值是遮蔽串。
 
-**冒充页承载两个面。** 记录面是一个按租户寻址的列表页：它列出租户的冒充记录并终止一条。运营者自身会话面读调用方自己会话上的冒充（`GET /api/v1/auth/impersonation`，无冒充时是裸 404）、以 `POST /api/v1/auth/impersonation` 发起一条、以 `DELETE /api/v1/auth/impersonation` 结束它。自身会话面作用到调用方自己的会话，不按租户寻址，故它不随租户选择器启用，其读取的键也不分租户；发起控件只在当前会话没有生效中的冒充时呈现——模块对同一会话上的第二次发起答 409。这三个操作是生成的调用方会话操作（`useAuthnImpersonationStatus`、`useAuthnImpersonationStart`、`useAuthnImpersonationEnd`），页面直接调用它们并经生成键工厂（`getAuthnImpersonationStatusQueryKey`）失效状态读，与记录面的操作束不是同一组。**状态读落定为有冒充时，记录面不渲染、其读不发出。** 记录面包括租户选择器、记录列表与终止控件，换成一条说明（冒充期间不能读取或终止冒充记录，结束冒充后在此查看），页面只剩「当前冒充」节与结束控件。平台管理面对冒充身份一律被网关拒绝（REQ-platform-admin-003），记录面的读与名册读在冒充期间必被拒，渲染成空列表加陈旧提示会被读成「没有记录」。状态读未落定或失败时记录面照常渲染；结束成功后记录面恢复并重读，不需要刷新页面。宿主给了 `onImpersonationChange` 时，发起与结束成功后页面各调用它一次，页面不等待它，它的拒绝被页面包住；发起之后宿主重读会话并把页面带离控制台（[design-starters](../design-starters.md) 的「冒充期间的壳」），记录面的收起因此只在宿主不做这些的装配里、或重读尚未落定的短暂窗口里被看到；结束之后宿主重读会话，页面留在原处，记录面恢复并重读。宿主给了 `onImpersonationStarting` 时，发起写入之前先同步调用它；这次尝试未落地（被拒、被步进门控接管或抛错）时页面调用其返回的释放函数，落地的尝试由宿主在 `onImpersonationChange('started')` 落定后自行释放。决策见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)。
+**冒充页承载两个面。** 记录面是一个按租户寻址的列表页：它列出租户的冒充记录并终止一条。运营者自身会话面读调用方自己会话上的冒充（`GET /api/v1/auth/impersonation`，无冒充时是裸 404）、以 `POST /api/v1/auth/impersonation` 发起一条、以 `DELETE /api/v1/auth/impersonation` 结束它。自身会话面作用到调用方自己的会话，不按租户寻址，故它不随租户选择器启用，其读取的键也不分租户；发起控件只在当前会话没有生效中的冒充时呈现——模块对同一会话上的第二次发起答 409。这三个操作是生成的调用方会话操作（`useAuthnImpersonationStatus`、`useAuthnImpersonationStart`、`useAuthnImpersonationEnd`），页面直接调用它们并经生成键工厂（`getAuthnImpersonationStatusQueryKey`）失效状态读，与记录面的操作束不是同一组。**状态读落定为有冒充时，记录面不渲染、其读不发出。** 记录面包括租户选择器、记录列表与终止控件，换成一条说明（冒充期间不能读取或终止冒充记录，结束冒充后在此查看），页面只剩「当前冒充」节与结束控件。平台管理面对冒充身份一律被网关拒绝（REQ-platform-admin-003），记录面的读与名册读在冒充期间必被拒，渲染成空列表加陈旧提示会被读成「没有记录」。状态读未落定或失败时记录面照常渲染；结束成功后记录面恢复并重读，不需要刷新页面。宿主给了 `onImpersonationChange` 时，发起与结束成功后页面各调用它一次，页面不等待它，它的拒绝被页面包住；发起之后宿主重读会话并把页面带离控制台（[design-starters](../design-starters.md) 的「冒充期间的壳」），记录面的收起因此只在宿主不做这些的装配里、或重读尚未落定的短暂窗口里被看到；结束之后宿主重读会话，页面留在原处，记录面恢复并重读。宿主给了 `onImpersonationStarting` 时，发起写入之前先同步调用它；这次尝试未落地（被拒、被步进门控接管或抛错）时页面调用其返回的释放函数，落地的尝试由宿主在 `onImpersonationChange('started')` 落定后自行释放。决策见 [ADR-web-impersonation-shell](../../../adr/adr-web-impersonation-shell.md)。
 
 **页内导航复用壳的接缝。** 控制台壳把它的 `onNavigate` 经内部上下文交给它渲染的页内容；页内的详情链接经该回调就地路由（不做整页重载，否则内存态会话会丢），壳未给回调时是普通链接。这条接缝与壳自身的导航项同一来源，故二者重载与否的行为一致：只有纯主键点击交回调，带修饰键、非主键与已由其它处理器声明的激活保持浏览器的行为，链接的 `href` 恒在。
 
@@ -379,7 +379,7 @@ graph TD
 
 ### 账户页的详情与创建面板
 
-账户页的账户详情与账户创建各由一个侧边面板承载；容器取舍的判据见 [layout](design-web-layout.md)，决策见 [ADR-web-side-panel-2026-10-17](../../../adr/adr-web-side-panel-2026-10-17.md)。账户详情没有独立路由，控制台里也没有页面链向它。
+账户页的账户详情与账户创建各由一个侧边面板承载；容器取舍的判据见 [layout](design-web-layout.md)，决策见 [ADR-web-side-panel](../../../adr/adr-web-side-panel.md)。账户详情没有独立路由，控制台里也没有页面链向它。
 
 **打开。** 列表行的「管理」按钮打开该行的详情面板，按钮带 `aria-haspopup="dialog"`，只负责打开：面板是模态的，打开期间行不可点击，关闭走面板自己的出口。页头操作里，刷新动作之后是「新建账户」按钮，它打开创建面板。两个面板都取 `wide` 档。创建表单不再常驻页面；面板打开与关闭期间，列表的数据、已应用的筛选与滚动位置保持不变。
 
@@ -426,7 +426,7 @@ graph TD
 
 ### 写入的反馈与读的刷新
 
-本包每个有写入的页面按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织反馈（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。应用于控制台页面的条款如下。
+本包每个有写入的页面按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织反馈（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。应用于控制台页面的条款如下。
 
 **作用域按控件组划分，页面不聚合。** 控件组的判据见 ui-kit。权限页的角色、授权、绑定、账户绑定查询各是一组，账户绑定查询表的解绑动作用它自己的作用域，区域在查询表之下，不用绑定组的作用域；其余页面同样按带标题的节划分。页面不聚合多个 mutation 的错误，也不各持错误选取函数。表格行内的动作按行是否带自己的草稿输入区分：单击型的行动作（撤销、移除）共用该表的作用域，区域在表之下，成功文案点名被操作的行；带各自草稿输入的行（租户名册的重命名与启停）每行一个作用域，区域在该行内。写入自身的效果会卸载它所在节的控件时（冒充的发起使发起表单卸载），区域放在写入之后仍存活的最近祖先里：冒充的发起与结束的区域在「当前冒充」状态节内，不在发起表单内。面板打开期间的落点见「账户页的详情与创建面板」。
 
@@ -444,7 +444,7 @@ graph TD
 
 **确认对话框在确认点击时关闭。** 破坏性动作的确认一律经 `usePendingConfirm`：写入在确认点击时发出，对话框在同一次点击里关闭、不等写入落定，失败在写入落定后落在区域里；权限页的角色删除同此，不以 `confirmLoading` 把对话框保持到落定。发起控件在写入进行中禁用并标忙，定义见 ui-kit。
 
-**写入失败的文案。** 写入失败经本包白名单渲染：裸 HTTP 403 渲染权限不足文案；未被步进拦截的裸 401（会话已不再成立，或该写入不经步进闸）渲染会话已结束文案；经步进闸的写入先由 `intercept` 判定，会话仍成立的 401 打开步进对话框，不进入文案层。403 与该类 401 都不并入裸 HTTP 状态通用的 `errors.client.http` 叶子（`client.http.<status>` 经它渲染带状态码的「请稍后重试」文本）。冒充发起与管理员重置因素、重置口令被 403 `authn.factor_not_seasoned` 拒绝时，写入失败渲染一条说明：需要一个已启用满规定时长的非短信因素（认证器应用或通行密钥），刚登记的因素要等；应答不带时长，文案不写具体数字。步进对话框不拦截它，加强认证解不了这一条。403 `authn.impersonation_restricted` 在界面上几乎总是冒充发起被拒：服务端对发起者、目标、参数三组的违反不区分是哪一条（[design-authn-impersonation](../authn/design-authn-impersonation.md)），文案因此不指向单一原因，也不写「冒充期间」，而是逐类陈述对目标与当前会话的要求：目标是该租户中已启用、未受保护的成员账户，当前会话没有进行中的冒充。这条码不拆出「目标不是成员」之类的子码：拆出任何一类，应答就多告诉发起者一条关于目标账户的事实，取舍见 [ADR-authn-impersonation-2026-10-10](../../../adr/adr-authn-impersonation-2026-10-10.md)。写入被 403 `authn.contact_required` 拒绝不是权限不足：发起者持有邮箱而没有一条已证明的邮箱，管理面的人类写按未验证账户拦下（REQ-platform-admin-017，见 [design-authn-admin](../authn/design-authn-admin.md)）。这条码的文案说明先到账户页的邮箱验证节证明邮箱，宿主的持续验证横幅提供前往该节的入口；步进对话框不拦截它，加强认证解不了这一条。判据与账户来源无关，管理员预置的账户在证明自己的邮箱之前同样会撞上它。
+**写入失败的文案。** 写入失败经本包白名单渲染：裸 HTTP 403 渲染权限不足文案；未被步进拦截的裸 401（会话已不再成立，或该写入不经步进闸）渲染会话已结束文案；经步进闸的写入先由 `intercept` 判定，会话仍成立的 401 打开步进对话框，不进入文案层。403 与该类 401 都不并入裸 HTTP 状态通用的 `errors.client.http` 叶子（`client.http.<status>` 经它渲染带状态码的「请稍后重试」文本）。冒充发起与管理员重置因素、重置口令被 403 `authn.factor_not_seasoned` 拒绝时，写入失败渲染一条说明：需要一个已启用满规定时长的非短信因素（认证器应用或通行密钥），刚登记的因素要等；应答不带时长，文案不写具体数字。步进对话框不拦截它，加强认证解不了这一条。403 `authn.impersonation_restricted` 在界面上几乎总是冒充发起被拒：服务端对发起者、目标、参数三组的违反不区分是哪一条（[design-authn-impersonation](../authn/design-authn-impersonation.md)），文案因此不指向单一原因，也不写「冒充期间」，而是逐类陈述对目标与当前会话的要求：目标是该租户中已启用、未受保护的成员账户，当前会话没有进行中的冒充。这条码不拆出「目标不是成员」之类的子码：拆出任何一类，应答就多告诉发起者一条关于目标账户的事实，取舍见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)。写入被 403 `authn.contact_required` 拒绝不是权限不足：发起者持有邮箱而没有一条已证明的邮箱，管理面的人类写按未验证账户拦下（REQ-platform-admin-017，见 [design-authn-admin](../authn/design-authn-admin.md)）。这条码的文案说明先到账户页的邮箱验证节证明邮箱，宿主的持续验证横幅提供前往该节的入口；步进对话框不拦截它，加强认证解不了这一条。判据与账户来源无关，管理员预置的账户在证明自己的邮箱之前同样会撞上它。
 
 **冒充的状态与记录。** 冒充状态读（`GET /api/v1/auth/impersonation`）的裸 404 是已落定的「未冒充」：该 404 不作为 `error` 交给 `ConsoleAsyncSection`，既不渲染失败占位也不渲染陈旧提示，并丢弃缓存里的旧授予；冒充经本页的结束、到期、另一个标签页或另一位管理员的终止而结束，重读都落到这条规则。结束请求答裸 404（已在别处结束）同样是已落定的「已结束」，按结束成功收尾：对状态读做 `resetQueries`、落成功确认、宿主给了回调时调用 `onImpersonationChange('ended')`；这条判定只用于结束，不用于其他写入。结束成功时对状态读做 `resetQueries` 并重取；发起与终止使状态读与记录列表失效重取。状态读经 `ConsoleAsyncSection` 渲染，其余失败走本包通用的占位与陈旧提示。
 

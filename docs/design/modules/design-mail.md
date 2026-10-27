@@ -6,7 +6,7 @@
 
 邮件的内容是**自由文本**，不是模板：正文（纯文本与 HTML 两份可选）与主题都由调用方渲染好，模块只把它们送出去。
 
-载体**排他交付**：一个进程里恰好一个载体生效，多于一个表态启用即启动失败。根包是接口包与工厂，不登记模块；实现子包绑定各自的库并登记模块（[ADR-mail-capability-2026-10-15](../../adr/adr-mail-capability-2026-10-15.md)）。
+载体**排他交付**：一个进程里恰好一个载体生效，多于一个表态启用即启动失败。根包是接口包与工厂，不登记模块；实现子包绑定各自的库并登记模块（[ADR-mail-capability](../../adr/adr-mail-capability.md)）。
 
 ### 非职责
 
@@ -113,11 +113,11 @@ type Receipt struct{ ProviderID string }
 | `pkg/internal/dedupe` | 与短信的载体共用的有界去重表 |
 | SMTP 库 `github.com/wneessen/go-mail` | 只被 SMTP 载体叶子包 `pkg/mail/smtp` import |
 
-**本模块不 import 任何上层功能目录，也不 import `pkg/authn`。** 判据是发送无关用途：`pkg/mail` 位于依赖图的底层之一，与 `pkg/kv`、`pkg/event`、`pkg/sms` 同级，任何要发通知的模块都能单独引入它（[ADR-mail-capability-2026-10-15](../../adr/adr-mail-capability-2026-10-15.md)）。
+**本模块不 import 任何上层功能目录，也不 import `pkg/authn`。** 判据是发送无关用途：`pkg/mail` 位于依赖图的底层之一，与 `pkg/kv`、`pkg/event`、`pkg/sms` 同级，任何要发通知的模块都能单独引入它（[ADR-mail-capability](../../adr/adr-mail-capability.md)）。
 
 **根包不 import 任何厂商库。** SMTP 库落在绑定它的载体叶子包 `pkg/mail/smtp` 里，只有 import 该子包的宿主的 `go.mod` 才背负它。这一条没有编译期强制（同一 `pkg` 模块内每个客户端都在一份依赖清单里），顶上它的是 `pkg/mail/deps_test.go` 的守卫：根包的传递闭包只含 `pkg/config`、`pkg/core`、`pkg/internal/literal`、`pkg/log`，不含任何厂商库，也不含 `pkg/authn` 或其他功能目录。SMTP 库在 `pkg/go.mod` 里精确钉版 `v0.8.1`，同样由该守卫守住。
 
-**`pkg/internal/literal` 与 `pkg/internal/dedupe` 是共享单元。** 两个能力的根包工厂都在 `New` 里 import `literal`，替自己的载体登记凭据的字面量脱敏匹配器；两个能力的载体也都持一张 `dedupe.Table`。`pkg/sms` 下的包不能 import `pkg/mail` 的 `internal` 包，所以这两个单元落在 `pkg/internal/` 下（[ADR-shared-backend-unit-2026-09-21](../../adr/adr-shared-backend-unit-2026-09-21.md)）。它们不登记模块，不交付功能，不参与生命周期。本模块的载体只经工厂取用它们，见「工厂的构造次序」。
+**`pkg/internal/literal` 与 `pkg/internal/dedupe` 是共享单元。** 两个能力的根包工厂都在 `New` 里 import `literal`，替自己的载体登记凭据的字面量脱敏匹配器；两个能力的载体也都持一张 `dedupe.Table`。`pkg/sms` 下的包不能 import `pkg/mail` 的 `internal` 包，所以这两个单元落在 `pkg/internal/` 下（[ADR-shared-backend-unit](../../adr/adr-shared-backend-unit.md)）。它们不登记模块，不交付功能，不参与生命周期。本模块的载体只经工厂取用它们，见「工厂的构造次序」。
 
 ## UML 图
 
@@ -190,7 +190,7 @@ type Spec[C any] struct {
 | `Prepare` | `Decode` 自己那份配置；读出配置后调 `Stance`，与自身性质不符即启动失败，错误点名缺的是哪一项 |
 | `New` | `Decode` 配置 → 调 `Secrets` 并经 `literal.Register` 登记字面量脱敏匹配器 → 调 `Open` 建立载体 |
 
-**次序固定：先登记脱敏字面量，再绑定任何带属性的 logger，最后 `Open`。** 日志脱敏规则只对它注册之后写出的记录起作用，所以凭据的登记必须发生在载体把任何属性绑到 logger 之前（[ADR-log-redaction-2026-10-15](../../adr/adr-log-redaction-2026-10-15.md)）。`Secrets` 钩子把「凭据先登记」这一步收进工厂，载体因此不 import `literal`，只交出凭据字符串。
+**次序固定：先登记脱敏字面量，再绑定任何带属性的 logger，最后 `Open`。** 日志脱敏规则只对它注册之后写出的记录起作用，所以凭据的登记必须发生在载体把任何属性绑到 logger 之前（[ADR-log-secret-redaction](../../adr/adr-log-secret-redaction.md)）。`Secrets` 钩子把「凭据先登记」这一步收进工厂，载体因此不 import `literal`，只交出凭据字符串。
 
 **工厂在装配期校验 `Spec`。** 一份缺模块名、缺配置命名空间、缺配置原型、缺表态或缺打开函数的 `Spec` 让 `NewModule` panic：载体在 `init` 里填这份 `Spec`，缺陷因此在本仓库自己的代码里，在任何 import 它的宿主的第一次运行上确定性地现形，不留给宿主处理。
 
@@ -200,7 +200,7 @@ type Spec[C any] struct {
 
 适配只做下列事：构造一次 SMTP 会话（一条连接、`MAIL FROM`、`RCPT TO`、`DATA`）、调用、把响应与错误归入哨兵。没有真实中继也能验证：适配层测试用手写的假 SMTP 服务器（`pkg/mail/smtp/fake_test.go`）驱动真实客户端，以标准库的解析器（`net/mail`、`mime`）判定落地的报文。
 
-**载体集合是 SMTP 一家**（[ADR-mail-capability-2026-10-15](../../adr/adr-mail-capability-2026-10-15.md)）。唯一的载体叶子包是 `pkg/mail/smtp`，它只认识提交协议、不认识任何厂商，所以一家厂商只要开放 SMTP 端点就经它接入，不另写厂商专属适配。
+**载体集合是 SMTP 一家**（[ADR-mail-capability](../../adr/adr-mail-capability.md)）。唯一的载体叶子包是 `pkg/mail/smtp`，它只认识提交协议、不认识任何厂商，所以一家厂商只要开放 SMTP 端点就经它接入，不另写厂商专属适配。
 
 | 项 | SMTP 载体 `mail.smtp` |
 |---|---|

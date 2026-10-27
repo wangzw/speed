@@ -239,7 +239,7 @@ it calls). Never import either of those from below this layer.
   a departing tenant's whole subtree -- called with the tenant id read
   *before* the change, since the new id names nothing. Do not build the
   key shape or the eviction anywhere else: a second copy is exactly the
-  repetition this convention removes (ADR-web-tenant-query-key-2026-10-15),
+  repetition this convention removes (ADR-web-tenant-query-key),
   and getting it wrong -- treating a key as cross-tenant stable, or
   missing a prefix -- leaves one tenant's rows under another's. The
   factory only shapes a key: it fetches nothing, evaluates nothing,

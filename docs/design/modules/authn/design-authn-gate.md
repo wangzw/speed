@@ -12,20 +12,20 @@
 - `authn.mount` 交付路由挂载口 `mount.Mounter`，使 authn 自己的路由与它的访问级别成对登记。
 - `authn.static` 是内置口令表后端，`basic` 的唯一认领者。
 
-模块的登记形态与包的拆分见 [ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)，网关不依赖存储、不挂业务路由的判据见 [ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)，按载体认领与账户命名空间声明见 [ADR-authn-credential-dispatch-2026-10-10](../../../adr/adr-authn-credential-dispatch-2026-10-10.md)。
+模块的登记形态与包的拆分见 [ADR-authn-packaging](../../../adr/adr-authn-packaging.md)，网关不依赖存储、不挂业务路由的判据见 [ADR-authn-wiring](../../../adr/adr-authn-wiring.md)，按载体认领与账户命名空间声明见 [ADR-authn-credential-dispatch](../../../adr/adr-authn-credential-dispatch.md)。
 
 ### 非职责
 
-- **不解释任何凭据。** 网关只读 `Authorization` 头与 cookie 的名字和值的原文，连 `Basic` 也由认领它的后端自己解。网关对 scheme 的分支只有一处：跨源检查要判载体会不会由浏览器自己附带，cookie 会，`Authorization` 头里只有 `Bearer` 不会，规则见请求期判定里跨源检查的一步；判据是载体的附带方式，不读凭据里的内容（[ADR-authn-credential-dispatch-2026-10-10](../../../adr/adr-authn-credential-dispatch-2026-10-10.md)）。凭据来源只有 `Authorization` 头与被某个后端认领的 cookie；请求体、查询串与其他头不是凭据来源。
+- **不解释任何凭据。** 网关只读 `Authorization` 头与 cookie 的名字和值的原文，连 `Basic` 也由认领它的后端自己解。网关对 scheme 的分支只有一处：跨源检查要判载体会不会由浏览器自己附带，cookie 会，`Authorization` 头里只有 `Bearer` 不会，规则见请求期判定里跨源检查的一步；判据是载体的附带方式，不读凭据里的内容（[ADR-authn-credential-dispatch](../../../adr/adr-authn-credential-dispatch.md)）。凭据来源只有 `Authorization` 头与被某个后端认领的 cookie；请求体、查询串与其他头不是凭据来源。
 - **不持有会话、令牌与账户的存储，不依赖 `pkg/db`。** 读库的校验在会话与令牌后端里（见 [design-authn-session](design-authn-session.md)、[design-authn-token](design-authn-token.md)）。
 - **不做授权判定，网关不写 403。** 跨源检查不通过的拒绝也是 401。「这个身份能不能做这件事」归授权与 `Decider`（见 [design-authn-admin](design-authn-admin.md)）。
 - **不定义响应体的形状。** 本模块决定拒绝的状态码与必要的响应头，响应体由入口模块的 `Fail` 写出（见 [design-http](../http/design-http.md)）。
 - **不判定租户成员关系与租户级认证强度，也不核对冒充身份的租户范围是否相符。** 这些由租户准入层判定（见 [design-tenant-admission](../tenant/design-tenant-admission.md)）；网关只决定冒充身份能否被放进某个端或某条路由。
-- **不提供配置式的豁免与可选清单。** 登记只来自代码（[ADR-authn-exemption-2026-10-10](../../../adr/adr-authn-exemption-2026-10-10.md)）。
+- **不提供配置式的豁免与可选清单。** 登记只来自代码（[ADR-authn-exemption](../../../adr/adr-authn-exemption.md)）。
 - **不读入口模块的路由表。** 登记面只列出端名，不枚举路由（见 [design-http](../http/design-http.md)）；网关无从核对一条登记是否对应一条已挂的路由。
 - **不规定其他层的位置。** 网关只给出自己的层、它所属的阶段与锚点 `(*authn.Gate)(nil)`；同处鉴别阶段的层用 `After`、`Before` 指向它，链上次序见 [design-authn](design-authn.md)。
-- **不决定哪条命令纳入网关。** 模块无从知道自己出现在哪条命令下（[ADR-command-tree-2026-09-20](../../../adr/adr-command-tree-2026-09-20.md)）。
-- **不承载运行期可变的参数。** 判据见 [ADR-config-scope-2026-09-13](../../../adr/adr-config-scope-2026-09-13.md)：在数据库可用之前被需要、或塑造启动结构且改变要重启的值归配置。网关守哪些端在其列；调用预算也归配置，因为它受网关的生产闭包约束（见下文 `authn.gate.call-budget`）；口令表的退避参数不在。
+- **不决定哪条命令纳入网关。** 模块无从知道自己出现在哪条命令下（[ADR-command-tree](../../../adr/adr-command-tree.md)）。
+- **不承载运行期可变的参数。** 判据见 [ADR-config-scope](../../../adr/adr-config-scope.md)：在数据库可用之前被需要、或塑造启动结构且改变要重启的值归配置。网关守哪些端在其列；调用预算也归配置，因为它受网关的生产闭包约束（见下文 `authn.gate.call-budget`）；口令表的退避参数不在。
 
 ## 外部接口契约
 
@@ -33,7 +33,7 @@
 
 本文承载的三个模块是 `authn.gate`、`authn.mount` 与 `authn.static`，各自的包、交付、排他与否、`Requires` 和取用见 [design-authn](design-authn.md#模块清单)，不在此重复。
 
-每个模块的包导出自己的 `ModuleName`，配置与设置的命名空间取同一个取值。每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`：是否运行是命令树上的决定，不是配置能推断的结论（[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。**每个模块在包内以 `var _ authn.X = (*product)(nil)` 做编译期断言，并在装配测试里用真实注册表核对交付**：网关的 `Gate`、`authn.mount` 的 `Mounter`、口令表的 `Verifier` 各自由不同的实例交付，宿主与测试预置自己的 `Gate` 替身时不必同时实现 `Mounter`。
+每个模块的包导出自己的 `ModuleName`，配置与设置的命名空间取同一个取值。每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`：是否运行是命令树上的决定，不是配置能推断的结论（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。**每个模块在包内以 `var _ authn.X = (*product)(nil)` 做编译期断言，并在装配测试里用真实注册表核对交付**：网关的 `Gate`、`authn.mount` 的 `Mounter`、口令表的 `Verifier` 各自由不同的实例交付，宿主与测试预置自己的 `Gate` 替身时不必同时实现 `Mounter`。
 
 网关的描述符以 `(*authn.Gate)(nil)` 作为 `Provides`，登记的中间件以同一个功能标识作为自己在链上代表的功能，声明鉴别阶段。**这个标识与它所属的阶段是别的层定序的稳定锚点**：同处鉴别阶段的租户解析用 `After` 指向它，落在认证之内；更内的阶段（限流、记录、授权）按阶段本身落在认证之内，不由这条锚点决定。反方向网关声明不了：入口模块内建的兜底层不是功能标识，网关因此自备 `recover`（见错误与失败语义）。
 
@@ -81,7 +81,7 @@ type CookieClearer interface {
 - **`Accepts()`** 在 `Init` 里读取一次。`Schemes` 与 `Cookies` 是整条认领的载体：带这些 scheme 的头、或带这些名字的 cookie，一律交给本后端。网关把 `Accepts` 里的 scheme 折叠为小写并去掉空白后入表，与交给后端的 `Credential.Scheme` 同一形式；后端按字面比较大小写形式的 scheme 永不命中，判据是 HTTP 的 scheme 大小写不敏感（RFC 9110）。`Accounts` 是账户命名空间声明，一个后端只声明一个前缀；需要交出多片命名空间的宿主后端拆成多个后端。
 - **`Verify`** 校验一条落在 `Accepts` 里的凭据，返回判决；`ctx` 携带网关给这次调用的预算作为 deadline，后端必须响应它。判决与 `Principal` 的形状见 [design-authn](design-authn.md)；`Verify` 没有调用方声称的主体入参，因为 cookie 与令牌里没有它，`Basic` 的用户名是登录名而不是账户标识。
 - **`Challenger`** 与 **`CookieClearer`** 由后端按需实现，网关用类型断言发现。令牌后端用 `Challenger` 在被拒时加 `error="invalid_token"`（RFC 6750、RFC 9068）；会话后端用 `CookieClearer` 清除失效的 cookie。`Challenge` 返回的每个字符串是一条完整的挑战，即方案名加它的参数（`Bearer realm="…", error="invalid_token"`），不是只有参数；含换行的字符串被丢弃，因为换行会开出第二个响应头。入参 `realm` 已转义，可以直接写进引号串。网关把各后端的挑战去重、按字典序、以逗号连接成该端 401 唯一的一条 `WWW-Authenticate` 头。
-- **交付声明**写作 `Provides: []core.Provision{{Token: (*Verifier)(nil)}}`，`Exclusive` 一律留空，这条不可局部违反：任何一个后端写成排他，结果按排他者自己的表态分：表态 `StateEnabled` 时，只要还有第二个启用的提供者，整组启动失败于 `ErrExclusiveViolated`；表态 `StateAuto` 时，同侪有表态 `StateEnabled` 的，它自己被传播静默踢掉而不产生任何失败，否则同样落到 `ErrExclusiveViolated`。本功能目录里的后端一律表态 `StateEnabled`，静默踢掉的分支只对宿主自写、表态 `StateAuto` 的后端可达（[ADR-module-enablement-2026-09-21](../../../adr/adr-module-enablement-2026-09-21.md)）。
+- **交付声明**写作 `Provides: []core.Provision{{Token: (*Verifier)(nil)}}`，`Exclusive` 一律留空，这条不可局部违反：任何一个后端写成排他，结果按排他者自己的表态分：表态 `StateEnabled` 时，只要还有第二个启用的提供者，整组启动失败于 `ErrExclusiveViolated`；表态 `StateAuto` 时，同侪有表态 `StateEnabled` 的，它自己被传播静默踢掉而不产生任何失败，否则同样落到 `ErrExclusiveViolated`。本功能目录里的后端一律表态 `StateEnabled`，静默踢掉的分支只对宿主自写、表态 `StateAuto` 的后端可达（[ADR-module-enablement](../../../adr/adr-module-enablement.md)）。
 
 ### 准入条件
 
@@ -123,7 +123,7 @@ type Gate interface {
 }
 ```
 
-各登记方法共用同一套规则（[ADR-authn-exemption-2026-10-10](../../../adr/adr-authn-exemption-2026-10-10.md)）：
+各登记方法共用同一套规则（[ADR-authn-exemption](../../../adr/adr-authn-exemption.md)）：
 
 - `method` 与 `path` 是登记方传给 `Endpoint.Route` 的那一对，路径取 gin 规整后的写法，网关不解释路径。登记方把传给 `Route` 的那一对值原样传给登记方法，即与 `c.FullPath()` 逐字相同。
 - **登记窗口借用 `Migrate` 到 `Start`**：登记只在这段时间内接受；窗口外调用登记方法一律 panic，这是调用点所处阶段的编程错误，不是运行期失败。登记方在自己的 `Init` 里 `core.Resolve[authn.Gate](reg)` 取登记面，不在 `Requires` 里声明它。取不到登记面时怎么处置由登记方自己决定；「取不到就跳过」这个默认写法落在放行一侧，列在 [design-authn](design-authn.md) 的非保证里。
@@ -131,7 +131,7 @@ type Gate interface {
 - 同一类别内对同一（方法，路径）的重复登记仍是一条登记，冻结时合并，启动诊断里只出现一次。
 - 审计行与诊断只写端名、方法与路径，不写自报的模块名：登记面拿不到调用方的身份。由此带来的非保证见 [design-authn](design-authn.md) 的非保证。
 
-宿主为网关预置的实例不是本模块的产物时，网关对从 `Migrate` 到 `Close` 的回调都不做事（以 `productOf` 判别），预置的一方持有窗口、校验与冻结；`mount.endpoint` 是否受守、`Impersonable` 与 `ScopeGuard` 的核对也随之缺席，由预置自己网关的宿主负责。脱敏规则同样不登记，非保证见 [design-authn](design-authn.md)。这样的宿主仍可纳入 `authn.mount` 与挂路由的 authn 模块，它们只经 `Gate` 的公开登记面登记（[ADR-supplied-instance-2026-10-08](../../../adr/adr-supplied-instance-2026-10-08.md)）。
+宿主为网关预置的实例不是本模块的产物时，网关对从 `Migrate` 到 `Close` 的回调都不做事（以 `productOf` 判别），预置的一方持有窗口、校验与冻结；`mount.endpoint` 是否受守、`Impersonable` 与 `ScopeGuard` 的核对也随之缺席，由预置自己网关的宿主负责。脱敏规则同样不登记，非保证见 [design-authn](design-authn.md)。这样的宿主仍可纳入 `authn.mount` 与挂路由的 authn 模块，它们只经 `Gate` 的公开登记面登记（[ADR-supplied-instance](../../../adr/adr-supplied-instance.md)）。
 
 ### 冒充范围守卫的取用
 
@@ -198,7 +198,7 @@ func ParseHash(encoded string) error         // 只校验形状与界限，PHC �
 var ErrMalformedHash error
 ```
 
-`Verify` 自己解 `Basic`（base64 的 `用户名:口令`，按第一个 `:` 切）：用户名按出示的原样在表里查找，区分大小写，不在表里即快速 `Denied`，不派生；在表里则校验口令，通过时交出 `Principal{Account: "static." + 名, Methods: [MethodStatic], Assurance: AssuranceSingle, AuthTime: 此刻}`，无会话。口令表主体不是库账户，没有成员关系。条目的 PHC 写法、遗留写法与解析界限见 [design-authn-account](design-authn-account.md)，选择依据见 [ADR-authn-password-hash-2026-10-10](../../../adr/adr-authn-password-hash-2026-10-10.md)。
+`Verify` 自己解 `Basic`（base64 的 `用户名:口令`，按第一个 `:` 切）：用户名按出示的原样在表里查找，区分大小写，不在表里即快速 `Denied`，不派生；在表里则校验口令，通过时交出 `Principal{Account: "static." + 名, Methods: [MethodStatic], Assurance: AssuranceSingle, AuthTime: 此刻}`，无会话。口令表主体不是库账户，没有成员关系。条目的 PHC 写法、遗留写法与解析界限见 [design-authn-account](design-authn-account.md)，选择依据见 [ADR-authn-password-hash](../../../adr/adr-authn-password-hash.md)。
 
 账户口令不经 `Basic`：账户口令走登录流程换会话或令牌，非交互客户端用服务账户。宿主要保留「账户口令经 `Basic`」的形态时，自写一个认领 `basic` 的后端，并且不纳入 `authn.static`，因为一个 scheme 只有一个认领者。
 
@@ -230,7 +230,7 @@ var ErrMalformedHash error
 
 下列各条与 [design-authn](design-authn.md) 列出的命令树纳入规则（逐条命令点名、不放进根命令、不对纳入 authn 的命令用 `IncludeAll()`、施加迁移的命令静态级纳入带表模块，以及对外提供服务的装配不为网关预置外来的实例）合起来，是网关在宿主一侧的全部前提，是封闭集。本模块既不能把它们声明出来，也没有检查它们的位置。
 
-- **默认守全部端，宿主没有想到的端也被守住。** 探活、指标与运维端要显式处理：把要守的端逐个写进 `endpoints` 收窄，或由挂路由的模块经 `Gate.Exempt` 开出豁免。这是 [ADR-http-endpoints-2026-09-14](../../../adr/adr-http-endpoints-2026-09-14.md) 的「认证与限流只加在业务端」与默认守全部之间的衔接方式。
+- **默认守全部端，宿主没有想到的端也被守住。** 探活、指标与运维端要显式处理：把要守的端逐个写进 `endpoints` 收窄，或由挂路由的模块经 `Gate.Exempt` 开出豁免。这是 [ADR-http-endpoints](../../../adr/adr-http-endpoints.md) 的「认证与限流只加在业务端」与默认守全部之间的衔接方式。
 - **宿主自己的路由用 `Route` 加 `Gate.Exempt`、`Gate.Optional` 或 `Gate.Impersonable` 配对登记**，并共用同一组常量。
 - **宿主自写校验后端时声明自己的账户前缀**，并自己负责它交回的账户标识的真伪。
 - **在允许冒充的端上不对业务路由开租户解析的豁免**：这样的路由没有租户上下文，冒充身份仍到得了它们（见 [design-authn](design-authn.md) 的非保证）。
@@ -250,7 +250,7 @@ var ErrMalformedHash error
 
 网关子包 import 根包、`pkg/core`、`pkg/config`、`pkg/http`、`pkg/log`，以及 `pkg/observability` 的接口包与它封装的指标 API；登记的中间件是 `gin.HandlerFunc`，gin 已在 `pkg/http` 的依赖闭包里；跨源检查用标准库 `net/http.CrossOriginProtection`。网关不 import `pkg/db`、`pkg/kv`、`pkg/event`、`pkg/settings`、`pkg/tenant`，也不 import `authn.static`，口令表后端同样不 import 网关；闭包守护测试按生产代码的闭包断言，网关的外部测试包为了对真实口令表跑集成用例而 import 后端，测试的 import 不是闭包的边。`authn.mount` import 根包、`pkg/core`、`pkg/config`、`pkg/http` 与 `internal/mount`。`authn.static` import 根包、`pkg/core`、`pkg/config`、`internal/password` 与 `pkg/settings`：设置存储的接口与它的实现声明在同一个包里，口令表后端的闭包因此含 `pkg/settings` 及其传递依赖（`pkg/db`、`pkg/event` 与 gorm），不含数据库驱动、消息与缓存客户端、网关与 `authntest`，闭包守护测试断言的正是这一份接受与不接受。校验后端子包 import 根包，以及它那个凭据来源所需的东西。
 
-**网关的 `Requires` 为空，只对 `log.Logger` 写 `Optional`**（[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。路由登记面、校验后端、`ScopeGuard` 与指标功能都在 `Init` 里取：`New` 里用不到它们，没有要排的构造次序；判据与否决的写法见该记录。取不到路由登记面是 `ErrNoRouter`，取到零个校验后端是 `ErrNoVerifier`，都是启动失败，不降级为放行。
+**网关的 `Requires` 为空，只对 `log.Logger` 写 `Optional`**（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。路由登记面、校验后端、`ScopeGuard` 与指标功能都在 `Init` 里取：`New` 里用不到它们，没有要排的构造次序；判据与否决的写法见该记录。取不到路由登记面是 `ErrNoRouter`，取到零个校验后端是 `ErrNoVerifier`，都是启动失败，不降级为放行。
 
 **日志功能是 `Optional` 依赖**：声明它使脱敏规则能在 `New` 里先于任何 logger 绑定登记；缺席合法，规则无处登记，脱敏层为空。**指标功能不构成依赖**：缺提供者时计数只留在进程内；取用得到缺提供者以外的错误，或仪表登记失败，都终止启动，把它读成缺席会让计数无声地不报。
 
@@ -433,7 +433,7 @@ sequenceDiagram
 
 **`Stop` 之后到达网关的请求**一律收口 503，不因进程正在关闭而放行；这类请求只出现在入口排空时限到期之后，其非保证见 [design-authn](design-authn.md) 的非保证。
 
-**未被推进到的阶段其回调不执行**（[ADR-lifecycle-drive-2026-09-20](../../../adr/adr-lifecycle-drive-2026-09-20.md)），网关的每一条启动期判定随它所在的阶段一起被跳过：深度浅于 `Init` 的驱动不建分派表，认领冲突检不出；深度浅于 `Start` 的驱动不冻结登记表，端名与受守的校验都不发生；深度止于 `Migrate` 的驱动打开窗口而无人关上。以施加迁移为目的的命令不纳入网关，这个耦合不体现在任何一方的声明里。
+**未被推进到的阶段其回调不执行**（[ADR-lifecycle-drive](../../../adr/adr-lifecycle-drive.md)），网关的每一条启动期判定随它所在的阶段一起被跳过：深度浅于 `Init` 的驱动不建分派表，认领冲突检不出；深度浅于 `Start` 的驱动不冻结登记表，端名与受守的校验都不发生；深度止于 `Migrate` 的驱动打开窗口而无人关上。以施加迁移为目的的命令不纳入网关，这个耦合不体现在任何一方的声明里。
 
 **`Prepare` 里的失败按成因指向不同的修复动作。** 取配置读取面得到 `ErrMissingProvider`，说明宿主漏了预置读取面，错误点名缺失的提供者；`Decode` 得到的缺项或取值错误指向本模块那份配置，错误点名那一项。
 
@@ -450,7 +450,7 @@ sequenceDiagram
 3. **取凭据**：先给响应加 `Vary: Authorization, Cookie`（此后的放行与拒绝都带它）。头优先且排他。`Authorization` 头恰有一个时凭据取自头，此时 cookie 不读、不校验；头多于一个、值为空白或 scheme 为空即 401（网关名下）。头无效时不回退到 cookie。没有头时按分派表里的 cookie 名取：同名 cookie 出现多于一次，或同时出现两个不同名、各被某个后端认领的 cookie，都视为歧义，整体 401（fail-closed）；不择一校验，也不清任何一个 cookie，因为没有一条凭据被评判过。
 4. **没有凭据**：`Optional` 命中则放行，无身份，`AccessOptional`，计 `anonymous`，写一条 Info；否则 401（网关名下）。
 5. **分派**：头来源的凭据按 scheme 查表，没有后端认领即 401（网关自产：「不认识的 scheme」不是后端的拒绝）。cookie 来源的凭据在取凭据时已按 cookie 名分派：没有后端认领的 cookie 不是凭据来源，读作没有这一载体。
-6. **载体可能由浏览器自己附带，且方法不安全**：过 `CrossOriginProtection.Check`，不过即 401（网关自产，不清 cookie，凭据不交给后端）。载体判据只在这里写：cookie 随浏览器自动发送；`Authorization` 头里，网关通告 `Basic` 挑战，浏览器因此缓存凭据，并在别的站点引起的导航与请求上自动带出，与 cookie 同形，`Digest`、`Negotiate`、`NTLM` 同样由浏览器自己处理；`Bearer` 头由页面自己的脚本写，同源策略不让别的站点的页面写它，不做这一道检查。网关不读凭据里的内容，无从判断一个它没有列出的 scheme 浏览器会不会自己处理，所以 `Bearer` 以外的头 scheme 一律受检，宿主后端认领的自定义 scheme 也在其内；要让别的站点的页面带着这类凭据调用，把那个来源列进 `trusted-origins`，或改用 `Bearer`（判据与否决项见 [ADR-authn-credential-dispatch-2026-10-10](../../../adr/adr-authn-credential-dispatch-2026-10-10.md)）。头里的凭据只在有后端认领它的 scheme 时才受检：没有认领者时请求先在分派一步被拒。安全方法按标准库的定义是 `GET`、`HEAD`、`OPTIONS`；既无 `Sec-Fetch-Site` 又无 `Origin` 的请求被标准库放行，所以这一道防线对不发送 `Sec-Fetch-Site` 与 `Origin` 的客户端不成立。
+6. **载体可能由浏览器自己附带，且方法不安全**：过 `CrossOriginProtection.Check`，不过即 401（网关自产，不清 cookie，凭据不交给后端）。载体判据只在这里写：cookie 随浏览器自动发送；`Authorization` 头里，网关通告 `Basic` 挑战，浏览器因此缓存凭据，并在别的站点引起的导航与请求上自动带出，与 cookie 同形，`Digest`、`Negotiate`、`NTLM` 同样由浏览器自己处理；`Bearer` 头由页面自己的脚本写，同源策略不让别的站点的页面写它，不做这一道检查。网关不读凭据里的内容，无从判断一个它没有列出的 scheme 浏览器会不会自己处理，所以 `Bearer` 以外的头 scheme 一律受检，宿主后端认领的自定义 scheme 也在其内；要让别的站点的页面带着这类凭据调用，把那个来源列进 `trusted-origins`，或改用 `Bearer`（判据与否决项见 [ADR-authn-credential-dispatch](../../../adr/adr-authn-credential-dispatch.md)）。头里的凭据只在有后端认领它的 scheme 时才受检：没有认领者时请求先在分派一步被拒。安全方法按标准库的定义是 `GET`、`HEAD`、`OPTIONS`；既无 `Sec-Fetch-Site` 又无 `Origin` 的请求被标准库放行，所以这一道防线对不发送 `Sec-Fetch-Site` 与 `Origin` 的客户端不成立。
 7. **调用**：占一格在飞闸门（满则 503；请求自己的 `ctx` 已结束则一个后端都不问，记在网关名下）、带 `call-budget` 的 deadline、带 `recover`，调用 `Verify`。超预算之后才交回的答案，通过也好、拒绝也好，一律作废为 503 并记在该后端名下。
 8. **收口**：
    - 零值判决：401，记在后端名下，Error，计 `unspoken`；
@@ -463,7 +463,7 @@ sequenceDiagram
 
 **`Optional` 路由上带了凭据而凭据不成立，仍是 401**：`Optional` 只回答「没有凭据怎么办」，有凭据就一定走完分派到收口。**凭据存在而后端答不了是 503，不是匿名**，可选路由上也一样：把服务故障读成没有凭据，会让攻击者靠制造故障绕开认证。
 
-**受守端上，不命中 `Exempt` 登记、也不是不带凭据而命中 `Optional` 登记的未认证请求，网关的应答与请求匹配了哪条路由、有没有匹配、方法是否被允许都无关**（[ADR-authn-exemption-2026-10-17](../../../adr/adr-authn-exemption-2026-10-17.md)）。这里的未认证请求指不带凭据的请求，以及网关没能从所带凭据得出一个通过出口检查的主体的请求，例如后端判否或未作答、没有后端认领该 scheme、载体有歧义、跨源检查不过、出口检查不过。主体成立、只因冒充范围不被该路由接纳而被拒的请求不在其列：那条拒绝读路由的 `Impersonable` 登记（见[冒充范围规则](#冒充范围规则)），它的调用方已认证。请求方法与 `c.FullPath()` 只用来查登记表：`FullPath` 为空串（没有匹配的路由，或路径存在而方法不被允许）时访问级别取零值，与已登记的受守路由走同一条判定。下列情形是这条承诺的实例，不穷举：
+**受守端上，不命中 `Exempt` 登记、也不是不带凭据而命中 `Optional` 登记的未认证请求，网关的应答与请求匹配了哪条路由、有没有匹配、方法是否被允许都无关**（[ADR-authn-unmatched-request](../../../adr/adr-authn-unmatched-request.md)）。这里的未认证请求指不带凭据的请求，以及网关没能从所带凭据得出一个通过出口检查的主体的请求，例如后端判否或未作答、没有后端认领该 scheme、载体有歧义、跨源检查不过、出口检查不过。主体成立、只因冒充范围不被该路由接纳而被拒的请求不在其列：那条拒绝读路由的 `Impersonable` 登记（见[冒充范围规则](#冒充范围规则)），它的调用方已认证。请求方法与 `c.FullPath()` 只用来查登记表：`FullPath` 为空串（没有匹配的路由，或路径存在而方法不被允许）时访问级别取零值，与已登记的受守路由走同一条判定。下列情形是这条承诺的实例，不穷举：
 
 - 不带凭据：同一个 401，带同一条挑战头与 `Vary`；
 - 带被拒绝的 `Authorization` 头凭据：同一个 401；
@@ -471,7 +471,7 @@ sequenceDiagram
 - 不安全方法上带由浏览器自己附带的载体、来源不被信任：同一个跨源拒绝的 401，不清 cookie；
 - `Optional` 路由上带被拒绝的凭据：与无匹配路径上带同一凭据的请求同答。
 
-网关先行拒绝时，gin 为方法不允许写下的 `Allow` 头由入口模块摘掉，不随 401 写出（见 [design-http](../http/design-http.md)）。入口模块按配置认领的前缀选端，与这条承诺合起来，是 [design-http](../http/design-http.md) 分派 handler 一节那条未认证应答性质的依据；那条性质的单位、前提与不覆盖的差异都写在该节（[ADR-http-dispatch-2026-10-17](../../../adr/adr-http-dispatch-2026-10-17.md)），网关一侧的前提见[对宿主的要求](#对宿主的要求)。
+网关先行拒绝时，gin 为方法不允许写下的 `Allow` 头由入口模块摘掉，不随 401 写出（见 [design-http](../http/design-http.md)）。入口模块按配置认领的前缀选端，与这条承诺合起来，是 [design-http](../http/design-http.md) 分派 handler 一节那条未认证应答性质的依据；那条性质的单位、前提与不覆盖的差异都写在该节（[ADR-http-dispatch](../../../adr/adr-http-dispatch.md)），网关一侧的前提见[对宿主的要求](#对宿主的要求)。
 
 ### 归因与收口
 
@@ -499,7 +499,7 @@ sequenceDiagram
 
 ### 出口检查
 
-通过的判决由网关逐项复核后才盖章，不符即一次网关自产的 401，Error 级，计入 `denied`，记在网关名下。检查不信任后端自报的任何一项，信任边界是进程内的代码：宿主选择哪些后端，就是在选择信任谁来自报。下表是检查的封闭集（[ADR-authn-verdict-2026-10-10](../../../adr/adr-authn-verdict-2026-10-10.md)）：
+通过的判决由网关逐项复核后才盖章，不符即一次网关自产的 401，Error 级，计入 `denied`，记在网关名下。检查不信任后端自报的任何一项，信任边界是进程内的代码：宿主选择哪些后端，就是在选择信任谁来自报。下表是检查的封闭集（[ADR-authn-verdict](../../../adr/adr-authn-verdict.md)）：
 
 | 检查项 | 内容 |
 |---|---|
@@ -536,7 +536,7 @@ sequenceDiagram
 
 ### 冒充范围规则
 
-冒充身份指 `Actor` 非零的身份。网关对它核对范围，规则如下（[ADR-authn-impersonation-2026-10-10](../../../adr/adr-authn-impersonation-2026-10-10.md)）：
+冒充身份指 `Actor` 非零的身份。网关对它核对范围，规则如下（[ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)）：
 
 - 判决通过且 `Actor` 非零时，放行要求下列至少一条成立：本次命中的路由登记为 `Impersonable`；所在的端被 `ScopeGuard.Covers` 守（`ScopeGuard` 在场时）。都不成立即 401，网关自产，记在后端名下，Info，成因 `impersonation-scope`，计入 `denied`。
 - `ScopeGuard` 缺席时只放 `Impersonable` 路由。
@@ -547,7 +547,7 @@ sequenceDiagram
 
 ### 登记的比对
 
-请求期用（请求方法，`c.FullPath()`）查该端对应类别的登记表，与登记的（方法，路径）逐字相同即命中。方法是比对的一部分：只豁免 `GET /both` 时，`POST /both` 照常要凭据。带路径参数与通配的路由，登记写成与路由登记时相同的写法，如 `GET /accounts/:id`、`GET /public/*path`。每请求的开销是对一张只读表的一次查询，路由匹配只发生一次，在 gin 里。各类命中的效果见 [ADR-authn-exemption-2026-10-10](../../../adr/adr-authn-exemption-2026-10-10.md)：`Exempt` 不取凭据；`Optional` 只改变「没有凭据」的结果；`Impersonable` 只改变冒充身份是否被放进这条路由，不改变凭据校验。
+请求期用（请求方法，`c.FullPath()`）查该端对应类别的登记表，与登记的（方法，路径）逐字相同即命中。方法是比对的一部分：只豁免 `GET /both` 时，`POST /both` 照常要凭据。带路径参数与通配的路由，登记写成与路由登记时相同的写法，如 `GET /accounts/:id`、`GET /public/*path`。每请求的开销是对一张只读表的一次查询，路由匹配只发生一次，在 gin 里。各类命中的效果见 [ADR-authn-exemption](../../../adr/adr-authn-exemption.md)：`Exempt` 不取凭据；`Optional` 只改变「没有凭据」的结果；`Impersonable` 只改变冒充身份是否被放进这条路由，不改变凭据校验。
 
 ### 可信来源的规范形式
 
@@ -568,7 +568,7 @@ sequenceDiagram
 
 ### 脱敏规则
 
-日志脱敏规则全由登记方自带，只管登记之后的记录（见 [design-log](../design-log.md)，[ADR-log-redaction-2026-09-13](../../../adr/adr-log-redaction-2026-09-13.md)）。键名规则与不依赖 scheme 的值形状规则由网关在 `New` 里登记；只有依赖各后端认领的 scheme 的那一条值形状规则要等 `Init` 才知道认领了哪些 scheme，由网关在 `Init` 登记；规则全集中其余部分的登记者是持有对应秘密的模块，它们在各自的 `New` 里先登记、再取 `Named` 日志器。下表是 authn 登记的规则全集：
+日志脱敏规则全由登记方自带，只管登记之后的记录（见 [design-log](../design-log.md)，[ADR-log-redaction](../../../adr/adr-log-redaction.md)）。键名规则与不依赖 scheme 的值形状规则由网关在 `New` 里登记；只有依赖各后端认领的 scheme 的那一条值形状规则要等 `Init` 才知道认领了哪些 scheme，由网关在 `Init` 登记；规则全集中其余部分的登记者是持有对应秘密的模块，它们在各自的 `New` 里先登记、再取 `Named` 日志器。下表是 authn 登记的规则全集：
 
 | 类别 | 内容 |
 |---|---|
@@ -591,7 +591,7 @@ sequenceDiagram
 口令派生、校验缓存与失败退避的实现放在 `internal/password`，任何逐请求出示口令的后端都能用。
 
 - **校验缓存**（进程内，仅逐请求出示口令的后端用）：键是 `HMAC-SHA256(进程启动时随机生成的密钥, 主体 ‖ 条目摘要 ‖ 口令)`，从不存口令或可逆形式；只缓存通过的结果；有效期取设置 `cache-ttl`（零关闭），容量取配置 `cache-size`（取值域见 [design-authn-config](design-authn-config.md)；要关缓存把 `cache-ttl` 设为零；淘汰最久未用，构造时分配）；条目一变，旧缓存自然失效。**有效期是绝对期限**：自一次真实派生通过起算，命中不续期，所以一个被反复出示的口令每个有效期内仍要重新派生一次。查表在缓存之前，缓存不绕过退避：命中前先做一次只读的等待检查，名字还在等待就不看缓存（见失败退避）。交互登录每次都派生，不经校验缓存。
-- **失败退避**：键是出示的主体字符串去掉空白、字母折成小写之后的 SHA-256，与存在与否无关；恒在进程内，与 db 的可用性解耦：口令表是 db 故障时的运维后路（[ADR-authn-throttling-2026-10-10](../../../adr/adr-authn-throttling-2026-10-10.md)）。键空间与账户的标识范围分开，`ops` 之类重名不会互相触发退避。参数是设置（命名空间 `authn.static`：`free-attempts`、`fail-window`、`max-backoff`），与 `authn.account` 的退避参数各自生效、互不影响；自由次数、指数退避的曲线与封顶的形状同账户的 `Throttle`（见 [design-authn-account](design-authn-account.md)），计数的写法不同，因为口令表的口令逐请求出示：
+- **失败退避**：键是出示的主体字符串去掉空白、字母折成小写之后的 SHA-256，与存在与否无关；恒在进程内，与 db 的可用性解耦：口令表是 db 故障时的运维后路（[ADR-authn-throttling](../../../adr/adr-authn-throttling.md)）。键空间与账户的标识范围分开，`ops` 之类重名不会互相触发退避。参数是设置（命名空间 `authn.static`：`free-attempts`、`fail-window`、`max-backoff`），与 `authn.account` 的退避参数各自生效、互不影响；自由次数、指数退避的曲线与封顶的形状同账户的 `Throttle`（见 [design-authn-account](design-authn-account.md)），计数的写法不同，因为口令表的口令逐请求出示：
   - **检查即预占。** 要派生的尝试，读等待时长与预占一次尝试在同一把锁下完成：键还在等待就不派生，直接拒绝；否则这次尝试先记作一次失败，再去派生。并发到达的尝试因此互相计数，免费的尝试数是自由次数，不是派生的并发宽度；「检查、派生、记失败」之间没有缺口。
   - **命中校验缓存的口令不预占。** 缓存里只有真实派生通过过的口令，命中的不是猜测，所以不计入自由次数，也不与并发的尝试互相计数：同名的命中请求再多，也不因此互相拒绝。它先做一次只读的等待检查，只看已经记下的失败与这些失败赚得的等待，不看在飞的预占，所以因失败而在等待的名字，连缓存里的口令也被拒绝。
   - **派生的结局决定预占的去留。** 通过则只退还这一次自己预占的尝试，此前的失败不动；不通过则保留。没有给出答案的派生不是一次猜测，同样退还：请求的上下文在派生给出答案之前已结束，或并发上限与内存预算已满。
@@ -614,7 +614,7 @@ sequenceDiagram
 
 ### 失败的方向
 
-网关的方向规则是：依赖不可用时拒绝，有界的放宽逐项列出（[ADR-authn-failure-2026-10-10](../../../adr/adr-authn-failure-2026-10-10.md)）。
+网关的方向规则是：依赖不可用时拒绝，有界的放宽逐项列出（[ADR-authn-failure](../../../adr/adr-authn-failure.md)）。
 
 | 失败 | 方向 |
 |---|---|
@@ -628,7 +628,7 @@ sequenceDiagram
 | 指标功能缺席 | 计数只留在进程内；取用得到缺提供者以外的错误则终止启动 |
 | 入口模块缺席 | `ErrNoRouter`，启动失败 |
 
-**判决为零值与判决为拒绝不混**：零值收口 401 并单独计 `unspoken`、记 Error，使拒绝那一桶不被缺陷污染、缺陷那一桶能拿来发现后端写错（[ADR-authn-verdict-2026-10-10](../../../adr/adr-authn-verdict-2026-10-10.md)）。**库返回成功而补充校验失败，一律按失败**：出口检查是网关对后端自报的补充校验，通过的判决也要过它。
+**判决为零值与判决为拒绝不混**：零值收口 401 并单独计 `unspoken`、记 Error，使拒绝那一桶不被缺陷污染、缺陷那一桶能拿来发现后端写错（[ADR-authn-verdict](../../../adr/adr-authn-verdict.md)）。**库返回成功而补充校验失败，一律按失败**：出口检查是网关对后端自报的补充校验，通过的判决也要过它。
 
 **网关不重试后端调用。** 校验对同一条凭据是幂等的，但口令表的退避对每次失败的尝试各计一次，所以重试会改变退避计数；网关把一次调用的结果收口成一个结论，调用方重试是调用方的事。
 
@@ -648,7 +648,7 @@ sequenceDiagram
 
 ### 本机制不作的保证
 
-跨模块可见与装配级的非保证（例举：未被写进 `endpoints` 的端、链上能绕过认证的层、未纳入网关时的全开、预置的外来网关、命令之间后端到场不一致、凭据向内泄漏、缓存串身份、凭据进日志、入口排空超时之后的认证、准入层覆盖面之外的冒充拦截等）只在 [design-authn](design-authn.md) 与 [ADR-authn-guarantees-2026-10-10](../../../adr/adr-authn-guarantees-2026-10-10.md) 里写，本节不重复。以下是口令表机制自身不作的保证，也是本节的全部条目：
+跨模块可见与装配级的非保证（例举：未被写进 `endpoints` 的端、链上能绕过认证的层、未纳入网关时的全开、预置的外来网关、命令之间后端到场不一致、凭据向内泄漏、缓存串身份、凭据进日志、入口排空超时之后的认证、准入层覆盖面之外的冒充拦截等）只在 [design-authn](design-authn.md) 与 [ADR-authn-guarantees](../../../adr/adr-authn-guarantees.md) 里写，本节不重复。以下是口令表机制自身不作的保证，也是本节的全部条目：
 
 - **口令表的失败退避在多副本下不保证总量**：每副本各算一份，有效尝试次数放大为副本数倍。
 - **口令表的失败退避表满时，被挤出的非固定键丢掉它的计数**：不在表里的名字没有口令可猜，丢掉的是它们自己的计数；表内主体的键是固定键，不在此列。

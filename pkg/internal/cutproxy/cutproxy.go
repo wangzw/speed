@@ -10,7 +10,7 @@
 // pkg module's internal/ tree: it is read by tests only, belongs to no public
 // surface, and the compiler holds that, keeping anything outside the module
 // from importing it. Its placement follows
-// docs/adr/adr-shared-backend-unit-2026-09-21.md: a fixture with no wrapper
+// docs/adr/adr-shared-backend-unit.md: a fixture with no wrapper
 // package of its own is a unit of its own under pkg's internal/.
 //
 // Await belongs to the same kit: a case around a cut watches the client notice

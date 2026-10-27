@@ -215,15 +215,15 @@
 
 | 类别 | 落点 | 决策记录 |
 |---|---|---|
-| 账户接管 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md)、[design-authn-mfa](design-authn-mfa.md)、[design-authn-sso](design-authn-sso.md) | [ADR-authn-throttling-2026-10-10](../../../adr/adr-authn-throttling-2026-10-10.md)、[ADR-authn-external-binding-2026-10-10](../../../adr/adr-authn-external-binding-2026-10-10.md)、[ADR-authn-accounts-2026-10-10](../../../adr/adr-authn-accounts-2026-10-10.md)、[ADR-authn-account-lifecycle-2026-10-10](../../../adr/adr-authn-account-lifecycle-2026-10-10.md)、[ADR-authn-mfa-2026-10-10](../../../adr/adr-authn-mfa-2026-10-10.md)、[ADR-authn-mfa-recovery-2026-10-10](../../../adr/adr-authn-mfa-recovery-2026-10-10.md)、[ADR-authn-password-hash-2026-10-10](../../../adr/adr-authn-password-hash-2026-10-10.md) |
-| 会话与 CSRF | [design-authn-session](design-authn-session.md)、[design-authn-gate](design-authn-gate.md) | [ADR-authn-session-2026-10-10](../../../adr/adr-authn-session-2026-10-10.md)、[ADR-authn-credential-dispatch-2026-10-10](../../../adr/adr-authn-credential-dispatch-2026-10-10.md) |
-| 令牌的窃取与重放 | [design-authn-token](design-authn-token.md) | [ADR-authn-token-2026-10-10](../../../adr/adr-authn-token-2026-10-10.md) |
-| 冒充滥用 | [design-authn-impersonation](design-authn-impersonation.md)、[design-authn-admin](design-authn-admin.md)、[design-tenant-admission](../tenant/design-tenant-admission.md) | [ADR-authn-impersonation-2026-10-10](../../../adr/adr-authn-impersonation-2026-10-10.md)、[ADR-authn-decision-seam-2026-10-10](../../../adr/adr-authn-decision-seam-2026-10-10.md)、[ADR-tenant-admission-2026-10-10](../../../adr/adr-tenant-admission-2026-10-10.md) |
-| SSO 断言攻击 | [design-authn-sso](design-authn-sso.md) | [ADR-authn-sso-2026-10-10](../../../adr/adr-authn-sso-2026-10-10.md) |
-| 短信、枚举与时序 | [design-authn-sms](design-authn-sms.md)、[design-authn-login](design-authn-login.md) | [ADR-authn-sms-2026-10-10](../../../adr/adr-authn-sms-2026-10-10.md)、[ADR-authn-throttling-2026-10-10](../../../adr/adr-authn-throttling-2026-10-10.md)、[ADR-authn-human-verification-2026-10-25](../../../adr/adr-authn-human-verification-2026-10-25.md) |
-| OAuth 与 OIDC 回调 | [design-authn-login](design-authn-login.md) | [ADR-authn-oauth-flow-2026-10-10](../../../adr/adr-authn-oauth-flow-2026-10-10.md)、[ADR-authn-wechat-2026-10-10](../../../adr/adr-authn-wechat-2026-10-10.md) |
-| 注册与邮件 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md)、[design-authn-admin](design-authn-admin.md) | [ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)、[ADR-authn-human-verification-2026-10-25](../../../adr/adr-authn-human-verification-2026-10-25.md) |
-| 基础设施与服务端 | [design-authn-config](design-authn-config.md)、[design-authn-events](design-authn-events.md)、[design-authn-failure](design-authn-failure.md)、[design-authn-gate](design-authn-gate.md) | [ADR-authn-settings-and-secrets-2026-10-10](../../../adr/adr-authn-settings-and-secrets-2026-10-10.md)、[ADR-authn-events-and-audit-2026-10-10](../../../adr/adr-authn-events-and-audit-2026-10-10.md)、[ADR-authn-failure-2026-10-10](../../../adr/adr-authn-failure-2026-10-10.md)、[ADR-authn-guarantees-2026-10-10](../../../adr/adr-authn-guarantees-2026-10-10.md)、[ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md) |
+| 账户接管 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md)、[design-authn-mfa](design-authn-mfa.md)、[design-authn-sso](design-authn-sso.md) | [ADR-authn-throttling](../../../adr/adr-authn-throttling.md)、[ADR-authn-external-binding](../../../adr/adr-authn-external-binding.md)、[ADR-authn-accounts](../../../adr/adr-authn-accounts.md)、[ADR-authn-account-lifecycle](../../../adr/adr-authn-account-lifecycle.md)、[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)、[ADR-authn-mfa-recovery](../../../adr/adr-authn-mfa-recovery.md)、[ADR-authn-password-hash](../../../adr/adr-authn-password-hash.md) |
+| 会话与 CSRF | [design-authn-session](design-authn-session.md)、[design-authn-gate](design-authn-gate.md) | [ADR-authn-session](../../../adr/adr-authn-session.md)、[ADR-authn-credential-dispatch](../../../adr/adr-authn-credential-dispatch.md) |
+| 令牌的窃取与重放 | [design-authn-token](design-authn-token.md) | [ADR-authn-token](../../../adr/adr-authn-token.md) |
+| 冒充滥用 | [design-authn-impersonation](design-authn-impersonation.md)、[design-authn-admin](design-authn-admin.md)、[design-tenant-admission](../tenant/design-tenant-admission.md) | [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)、[ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)、[ADR-tenant-admission](../../../adr/adr-tenant-admission.md) |
+| SSO 断言攻击 | [design-authn-sso](design-authn-sso.md) | [ADR-authn-sso](../../../adr/adr-authn-sso.md) |
+| 短信、枚举与时序 | [design-authn-sms](design-authn-sms.md)、[design-authn-login](design-authn-login.md) | [ADR-authn-sms](../../../adr/adr-authn-sms.md)、[ADR-authn-throttling](../../../adr/adr-authn-throttling.md)、[ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md) |
+| OAuth 与 OIDC 回调 | [design-authn-login](design-authn-login.md) | [ADR-authn-oauth-flow](../../../adr/adr-authn-oauth-flow.md)、[ADR-authn-wechat](../../../adr/adr-authn-wechat.md) |
+| 注册与邮件 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md)、[design-authn-admin](design-authn-admin.md) | [ADR-authn-signup](../../../adr/adr-authn-signup.md)、[ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md) |
+| 基础设施与服务端 | [design-authn-config](design-authn-config.md)、[design-authn-events](design-authn-events.md)、[design-authn-failure](design-authn-failure.md)、[design-authn-gate](design-authn-gate.md) | [ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)、[ADR-authn-events-and-audit](../../../adr/adr-authn-events-and-audit.md)、[ADR-authn-failure](../../../adr/adr-authn-failure.md)、[ADR-authn-guarantees](../../../adr/adr-authn-guarantees.md)、[ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md) |
 
 对策依赖的其他模块与库的性质如下，列表是例举，不是封闭集。「失守时」栏写依赖的性质不成立时受影响的对策。
 
@@ -287,7 +287,7 @@ flowchart LR
 - 外部身份提供方的信任有范围：IdP 声明的多因素只在该提供方所属租户内算数，邮箱验证声明只在 `auto-link` 开启时采信，租户 IdP 管理员只对自己租户新建的账户有登录控制权。
 - 外部资源服务器是令牌的校验方，不是 authn 的一部分：冒充范围与密钥撤销能否对它生效，取决于它读不读 `imp_tenant` 与何时刷新 JWKS（见[部署层前提](#部署层前提)）。
 - 人机验证提供方只在部署打开该机制时在场：Turnstile 由进程经受限出站客户端调用，自托管的工作量证明不经外部方；证明的有效性与一次性由提供方或它自己的存储保证，校验失败时发送不发生（见 [design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md)）。
-- db 持有权威状态，丢失会放宽校验的状态都在 db；kv 只持有丢失只会让流程失败的状态（[ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)）。
+- db 持有权威状态，丢失会放宽校验的状态都在 db；kv 只持有丢失只会让流程失败的状态（[ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)）。
 - 宿主是前提的提供方：本图里 authn 不信任它之外的任何东西，却依赖宿主提供的前提。
 
 ### 拦截位置
@@ -337,7 +337,7 @@ flowchart LR
 | 发送前的一次性人机证明 | 短信与邮件轰炸 | [design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md) |
 | 默认拒绝 | 端点漏守、管理面滥用、冒充、跨租户访问 | [design-authn-gate](design-authn-gate.md)、[design-authn-admin](design-authn-admin.md)、[design-tenant-admission](../tenant/design-tenant-admission.md) |
 | 放宽项各是显式开关、缺省取最严、启动诊断各占一行 Warn | 配置错误、设置写权限滥用 | [design-authn-config](design-authn-config.md) |
-| 状态按丢失的方向放置 | 缓存或 kv 丢失导致校验被放宽 | [ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md) |
+| 状态按丢失的方向放置 | 缓存或 kv 丢失导致校验被放宽 | [ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md) |
 | 凭据与秘密不以明文落地：哈希、摘要、加密列、脱敏 | 数据库转储、秘密进入日志与事件 | [design-authn-account](design-authn-account.md)、[design-authn-events](design-authn-events.md) |
 | 对库没做的校验由 authn 补，补充校验失败一律按失败 | XML 签名包装、SAML 空值跳过、JWT 缺 `exp` | [design-authn-sso](design-authn-sso.md)、[design-authn-token](design-authn-token.md) |
 | 撤销以账户状态与 `valid_after` 为准，不依赖时钟 | 撤销不及时、时钟偏差 | [design-authn-account](design-authn-account.md)、[design-authn-session](design-authn-session.md) |

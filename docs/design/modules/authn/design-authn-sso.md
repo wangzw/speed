@@ -2,11 +2,11 @@
 
 ## 职责
 
-企业单点登录由下列登记单元承担：`authn.sso`（包 `pkg/authn/sso`）、`authn.sso.saml`（包 `pkg/authn/sso/saml`）与 `authn.sso.oidc`（包 `pkg/authn/sso/oidc`）。它们持有租户自有身份提供方（IdP）的登记、邮箱域的所有权证明与发现、SAML 断言与企业 OIDC 的 ID 令牌的校验，以及这些校验用到的受限出站客户端。取舍见 [ADR-authn-sso-2026-10-10](../../../adr/adr-authn-sso-2026-10-10.md)，包与模块的划分见 [ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)。
+企业单点登录由下列登记单元承担：`authn.sso`（包 `pkg/authn/sso`）、`authn.sso.saml`（包 `pkg/authn/sso/saml`）与 `authn.sso.oidc`（包 `pkg/authn/sso/oidc`）。它们持有租户自有身份提供方（IdP）的登记、邮箱域的所有权证明与发现、SAML 断言与企业 OIDC 的 ID 令牌的校验，以及这些校验用到的受限出站客户端。取舍见 [ADR-authn-sso](../../../adr/adr-authn-sso.md)，包与模块的划分见 [ADR-authn-packaging](../../../adr/adr-authn-packaging.md)。
 
 本功能包括下列部分（封闭集合，不在其内的事项归非职责一节点名的模块）：
 
-- **提供方登记。** `SSOProviders` 由 `authn.sso` 排他交付，读写 `authn_idps`。提供方是表里的数据，不是模块，不进设置也不进配置：运行期才出现、数量不定、带秘密的配置是数据（[ADR-authn-sso-2026-10-10](../../../adr/adr-authn-sso-2026-10-10.md)）。`client_secret` 在加密列里，读取接口不交出它。
+- **提供方登记。** `SSOProviders` 由 `authn.sso` 排他交付，读写 `authn_idps`。提供方是表里的数据，不是模块，不进设置也不进配置：运行期才出现、数量不定、带秘密的配置是数据（[ADR-authn-sso](../../../adr/adr-authn-sso.md)）。`client_secret` 在加密列里，读取接口不交出它。
 - **域所有权与发现。** 租户为提供方声明邮箱域，经 DNS TXT 证明所有权；已验证的域全局唯一；`POST B/sso/discover` 按已验证的域返回入口列表。数据在 `authn_idp_domains`。
 - **SAML 登录方式。** `authn.sso.saml` 交付 `LoginMethod`（名 `saml`）：发起、SP 元数据、断言消费与逐项补充校验。断言标识的去重表 `authn_saml_assertions` 由 `authn.sso` 持有。
 - **企业 OIDC 登录方式。** `authn.sso.oidc` 交付 `LoginMethod`（名 `oidc`），与社交登录的 Google 走同一条校验代码路径，差别只在配置来源。
@@ -39,7 +39,7 @@
 
 `SSOProviders`、`SSOMetadataRefresher` 与 `LoginMethod` 的接口定义在 `pkg/authn` 根包，根包自身不登记模块。每个登记模块的包导出 `ModuleName`，配置命名空间取同一个取值。这些模块的 `Prepare` 只表态 `StateEnabled`，从不表态 `StateAuto`：是否运行是命令树上的决定。
 
-- **排他与并立。** `SSOProviders` 排他：宿主点名 `authn.sso.saml` 或 `authn.sso.oidc` 而漏点名 `authn.sso`，在 `Requires` 消解阶段以 `core.ErrMissingProvider` 失败。`LoginMethod` 与 `SSOMetadataRefresher` 并立，由消费方 `ResolveAll` 取用，从不写进 `Requires`（[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。
+- **排他与并立。** `SSOProviders` 排他：宿主点名 `authn.sso.saml` 或 `authn.sso.oidc` 而漏点名 `authn.sso`，在 `Requires` 消解阶段以 `core.ErrMissingProvider` 失败。`LoginMethod` 与 `SSOMetadataRefresher` 并立，由消费方 `ResolveAll` 取用，从不写进 `Requires`（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。
 - **一个模块一个方法名。** `authn.sso.saml` 的 `LoginMethod.Name()` 恒为 `saml`，`authn.sso.oidc` 的恒为 `oidc`；全局重名即 `ErrMethodConflict`。
 - **方法名两两不相交。** `authn.sso.saml` 交付的接口方法名为 `Name`、`Begin`、`Answer` 与 `Protocol`、`Refresh`，互不相交；包内为每个交付的接口加 `var _ authn.X = (*product)(nil)` 编译期断言。
 - **库只在叶子包里。** gosaml2 与 goxmldsig 只被 `authn.sso.saml` import；`authn.sso` 不 import 任何协议库，宿主只纳入 `authn.sso.oidc` 时 gosaml2 不进它的依赖闭包。**在 `authn.sso` 模块内**，go-oidc 只被 `authn.sso.oidc` import，x/oauth2 同样只被它 import；**在 `pkg/authn` 全树内**这两个库另被社交登录方式 import——go-oidc 另被 `authn.login.google` import，x/oauth2 另被 `authn.login.google` 与 `authn.login.github` import——因为它们与 Google 走同一条 OAuth/OIDC 共同事务（见 [design-authn-login](design-authn-login.md) 的「社交登录与企业 OIDC 的共同事务」）。
@@ -174,10 +174,10 @@ type SSOMetadataRefresher interface {
 
 依赖方向满足架构不变量：
 
-- `Requires` 只写排他功能与 `db.Database`；`LoginMethod`、`SSOMetadataRefresher` 并立，由消费方 `ResolveAll`（[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。`authn.login` 与 `authn.admin` 是本功能的消费方，本功能不依赖它们。
+- `Requires` 只写排他功能与 `db.Database`；`LoginMethod`、`SSOMetadataRefresher` 并立，由消费方 `ResolveAll`（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。`authn.login` 与 `authn.admin` 是本功能的消费方，本功能不依赖它们。
 - `authn.sso.saml` 与 `authn.sso.oidc` 依赖 `SSOProviders`，反向不成立；`authn.sso` 不 import 任何协议库。
-- 本模块不用 kv：断言标识去重与域所有权丢失会放宽校验，进 db；流程记录归登录引擎（[ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)）。
-- 不 import `pkg/tenant`。回调处理器不依赖租户解析：校验后端在租户解析之前运行、看不到租户，是平台的既有约束，提供方标识放进回调路径绕开了它，所以 [ADR-tenant-ordering-2026-09-21](../../../adr/adr-tenant-ordering-2026-09-21.md) 的失效条件不被触发。
+- 本模块不用 kv：断言标识去重与域所有权丢失会放宽校验，进 db；流程记录归登录引擎（[ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)）。
+- 不 import `pkg/tenant`。回调处理器不依赖租户解析：校验后端在租户解析之前运行、看不到租户，是平台的既有约束，提供方标识放进回调路径绕开了它，所以 [ADR-tenant-ordering](../../../adr/adr-tenant-ordering.md) 的失效条件不被触发。
 - 构造阶段（`New`）不读写自己的表；加密列探针、表存在性探测与清扫协程放在 `Start`。
 
 ## UML 图
@@ -331,7 +331,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 
 - 表之间没有外键：跨表的一致由 `Delete` 的事务与应用层维护，迁移顺序因此不成为隐含契约。
 - `status` 的零值是停用：一行被构造而没有显式启用，读作停用。
-- `authn_idps` 不嵌入 `tenant.Model`：域名发现与回调路由没有租户上下文，租户插件对「没有租户上下文的受约束语句」直接拒绝；取舍理由见 [ADR-authn-sso-2026-10-10](../../../adr/adr-authn-sso-2026-10-10.md)；该表的读写不依赖租户上下文。
+- `authn_idps` 不嵌入 `tenant.Model`：域名发现与回调路由没有租户上下文，租户插件对「没有租户上下文的受约束语句」直接拒绝；取舍理由见 [ADR-authn-sso](../../../adr/adr-authn-sso.md)；该表的读写不依赖租户上下文。
 - `client_secret` 与 `authn_idps` 的其他列同表，读取接口不选它；它是加密列，必须走模型路径写入，序列化器只对模型字段起作用。审计的语句级明细是否带列值未经核实，见「假设与守住它们的测试」。
 - `authn_idp_domains.tenant_id` 记录声明所属提供方的租户；邮箱「已验证」的判定按它取该租户的已验证域。
 
@@ -544,14 +544,14 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 
 ### 非保证
 
-下列是不保证的事项，列表是封闭集，各项的代价与取舍见 [ADR-authn-sso-2026-10-10](../../../adr/adr-authn-sso-2026-10-10.md)，威胁与对应的缓解见 [design-authn-threats](design-authn-threats.md)：
+下列是不保证的事项，列表是封闭集，各项的代价与取舍见 [ADR-authn-sso](../../../adr/adr-authn-sso.md)，威胁与对应的缓解见 [design-authn-threats](design-authn-threats.md)：
 
 - **IdP 一侧停用不立即生效。** 员工在 IdP 被停用后，其会话要到空闲或绝对期限才失效；`sso-absolute-timeout` 给出上限，只是缓解，不是消除。
 - **IdP 发起登录无法防登录 CSRF。** 开启后攻击者可把自己的断言投给受害者的浏览器；缓解只有断言新鲜度、标识唯一、受众与接收者精确、已签名。
 - **JIT 缺省不并入现有账户。** 已有账户的员工第一次企业 SSO 登录得到 `link-required`，要先用原方式登录再关联。`merge_existing` 开启即接受跨租户并入的风险：并入后该 IdP 对该账户有永久的登录能力，直到绑定被解除。
 - **租户的 IdP 管理员对自己租户新建的账户有登录控制权。** 这是企业 SSO 的信任边界；IdP 声明的多因素只在该提供方所属租户内算数。
 - **域所有权转手后有窗口。** 旧认领继续有效，直到管理者移除或重验失败；DNS TXT 验证不要求 DNSSEC，解析器被投毒时验证可被骗过。
-- **配置的解析器与额外信任根把校验交给部署。** `authn.sso.dns-resolver` 让域所有权证明采信该解析器的 TXT 答案，`authn.sso.oidc-ca-file` 让企业 OIDC 出站客户端采信文件里的根证书；恶意解析器或自签根证书等价于部署自己击败了它的校验，信任属于部署，不属于平台。两者的缺省都是系统解析器与系统根证书，所以两项都不配置的部署行为不变（[ADR-authn-sso-2026-10-26](../../../adr/adr-authn-sso-2026-10-26.md)）。
+- **配置的解析器与额外信任根把校验交给部署。** `authn.sso.dns-resolver` 让域所有权证明采信该解析器的 TXT 答案，`authn.sso.oidc-ca-file` 让企业 OIDC 出站客户端采信文件里的根证书；恶意解析器或自签根证书等价于部署自己击败了它的校验，信任属于部署，不属于平台。两者的缺省都是系统解析器与系统根证书，所以两项都不配置的部署行为不变（[ADR-authn-sso-trust-root](../../../adr/adr-authn-sso-trust-root.md)）。
 - **证书轮换靠管理员。** 手工更新或触发元数据刷新；刷新失败期间旧证书继续被接受。
 - **时间条件不设容差。** 副本与 IdP 的时钟偏差超过几秒就会零星拒掉合法断言，部署必须保证时间同步。
 - **整个部署共用一组 SP 密钥对。** 租户的 IdP 要登记统一 `public-url` 下的 ACS 与 `redirect_uri`；不支持按租户子域名的回调，不支持经出站代理访问 IdP。

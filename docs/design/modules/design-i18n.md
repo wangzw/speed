@@ -2,25 +2,25 @@
 
 ## 职责
 
-本功能目录交付**面向用户的文本的渲染机制，以及渲染它所用的语言偏好**：它定义消息目录、按一次请求的语言把带模块命名空间的消息键渲染成文案、按请求协商语言、按一条解析链定位语言与时区。一段文本由产生它的模块渲染，本功能目录提供渲染所依据的引擎与偏好，不替消费方集中渲染（[ADR-i18n-scope-2026-10-13](../../adr/adr-i18n-scope-2026-10-13.md)、[ADR-i18n-rendering-ownership-2026-10-13](../../adr/adr-i18n-rendering-ownership-2026-10-13.md)）。渲染是纯读取，不做授权、不改机器码、不与任何外部通道交互。
+本功能目录交付**面向用户的文本的渲染机制，以及渲染它所用的语言偏好**：它定义消息目录、按一次请求的语言把带模块命名空间的消息键渲染成文案、按请求协商语言、按一条解析链定位语言与时区。一段文本由产生它的模块渲染，本功能目录提供渲染所依据的引擎与偏好，不替消费方集中渲染（[ADR-i18n-scope](../../adr/adr-i18n-scope.md)、[ADR-i18n-rendering-ownership](../../adr/adr-i18n-rendering-ownership.md)）。渲染是纯读取，不做授权、不改机器码、不与任何外部通道交互。
 
-本功能目录按接口包加实现子包的方式拆分（[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。根包是接口包：它定义接口、值类型与资源类型，只依赖标准库，不登记任何模块。子包各自登记一个模块：
+本功能目录按接口包加实现子包的方式拆分（[ADR-module-layout](../../adr/adr-module-layout.md)）。根包是接口包：它定义接口、值类型与资源类型，只依赖标准库，不登记任何模块。子包各自登记一个模块：
 
 - `pkg/i18n/catalog/` 登记引擎模块 `i18n`：排他交付 `Localizer`、`Negotiator`、`Resolver`，收集全部已声明目录并并入配置项 `i18n.catalogs-dir` 指定的覆盖目录，从配置项 `i18n.default-locale` 读默认语言，非排他地取用可选的 `Profile`。
 - `pkg/i18n/http/` 登记模块 `i18n.http`：经 `http.Router` 在每个端注册两层中间件，把协商出的语言与账户偏好的语言时区写进请求上下文。
 - `pkg/i18n/account/` 登记模块 `i18n.account`：非排他交付 `Profile`，并实现 `authn.Provisioner`，在首登开户时把请求语言写进待建账户的属性。
 
-语言是偏好而不是授权事实（[ADR-i18n-locale-type-2026-10-13](../../adr/adr-i18n-locale-type-2026-10-13.md)）：写进与读出上下文的函数因此是导出的，与 `pkg/log` 的 `WithLogger` 同类，不采取 `pkg/authn` 把身份的写侧封进内部包的形态。谁能读到什么仍由 [authz](design-authz.md) 与 [authn](authn/design-authn.md) 判定，本功能目录不参与。
+语言是偏好而不是授权事实（[ADR-i18n-locale-type](../../adr/adr-i18n-locale-type.md)）：写进与读出上下文的函数因此是导出的，与 `pkg/log` 的 `WithLogger` 同类，不采取 `pkg/authn` 把身份的写侧封进内部包的形态。谁能读到什么仍由 [authz](design-authz.md) 与 [authn](authn/design-authn.md) 判定，本功能目录不参与。
 
 ### 非职责
 
 - **不做授权判定。** 语言与时区是偏好，任何判定都不以它们为依据；本功能目录不读身份，也不改变一次请求能到达的范围。
-- **不承载账户存储。** 语言与时区存进 `Account.Attributes` 的 `i18n.locale` 与 `i18n.tz`，写账户归 [authn](authn/design-authn.md) 的账户模块，本功能目录只读它，不动认证的表结构（[ADR-i18n-preferences-storage-2026-10-13](../../adr/adr-i18n-preferences-storage-2026-10-13.md)）。
+- **不承载账户存储。** 语言与时区存进 `Account.Attributes` 的 `i18n.locale` 与 `i18n.tz`，写账户归 [authn](authn/design-authn.md) 的账户模块，本功能目录只读它，不动认证的表结构（[ADR-i18n-preferences-storage](../../adr/adr-i18n-preferences-storage.md)）。
 - **不做 HTTP 机制。** 路由、中间件的排序与阶段归 [http](http/design-http.md)；`i18n.http` 只是使用它的登记面在每个端挂层。
-- **不改机器码与状态码。** 机器码 `Problem.Type`、`Problem.Status` 与 `Problem.Detail` 原样保留，不随语言变化；本功能目录渲染的是消息文本，不决定错误响应的形状（[ADR-i18n-error-rendering-2026-10-13](../../adr/adr-i18n-error-rendering-2026-10-13.md)）。
-- **不替消费方渲染消息。** 一条消息由产生它的模块渲染：那个模块承载自己的目录、取用引擎、把成品文本写出；本功能目录只提供引擎与目录机制，不集中渲染任何模块的文本，也不认识某条消息的插值上下文（[ADR-i18n-rendering-ownership-2026-10-13](../../adr/adr-i18n-rendering-ownership-2026-10-13.md)）。
-- **不决定返回形态。** 日期与时间的渲染归属由**返回形态**决定：一条消息里出现的日期与时间，与文本、计数（复数）、数字一样由引擎渲染，日期与时间另按账户时区（见核心算法与流程一节）；而**作为独立字段**返回给客户端的日期与时间走标准 ISO 格式、由客户端渲染。后者是模块选择不发复合字符串的场合，不是本功能目录的职责。本功能目录交出账户的 IANA 时区（`Resolver.TimeZoneOf`、`Resolver.TimeZoneFor`）供两者使用（[ADR-i18n-message-rendering-2026-10-13](../../adr/adr-i18n-message-rendering-2026-10-13.md)）。
-- **不做热加载。** 目录有内嵌声明与配置指定的覆盖目录两个来源，两者都在装配期读取，此后只读，运行期没有更换目录或增删消息的接口（[ADR-i18n-catalogs-2026-10-13](../../adr/adr-i18n-catalogs-2026-10-13.md)）。
+- **不改机器码与状态码。** 机器码 `Problem.Type`、`Problem.Status` 与 `Problem.Detail` 原样保留，不随语言变化；本功能目录渲染的是消息文本，不决定错误响应的形状（[ADR-i18n-error-rendering](../../adr/adr-i18n-error-rendering.md)）。
+- **不替消费方渲染消息。** 一条消息由产生它的模块渲染：那个模块承载自己的目录、取用引擎、把成品文本写出；本功能目录只提供引擎与目录机制，不集中渲染任何模块的文本，也不认识某条消息的插值上下文（[ADR-i18n-rendering-ownership](../../adr/adr-i18n-rendering-ownership.md)）。
+- **不决定返回形态。** 日期与时间的渲染归属由**返回形态**决定：一条消息里出现的日期与时间，与文本、计数（复数）、数字一样由引擎渲染，日期与时间另按账户时区（见核心算法与流程一节）；而**作为独立字段**返回给客户端的日期与时间走标准 ISO 格式、由客户端渲染。后者是模块选择不发复合字符串的场合，不是本功能目录的职责。本功能目录交出账户的 IANA 时区（`Resolver.TimeZoneOf`、`Resolver.TimeZoneFor`）供两者使用（[ADR-i18n-message-rendering](../../adr/adr-i18n-message-rendering.md)）。
+- **不做热加载。** 目录有内嵌声明与配置指定的覆盖目录两个来源，两者都在装配期读取，此后只读，运行期没有更换目录或增删消息的接口（[ADR-i18n-catalogs](../../adr/adr-i18n-catalogs.md)）。
 - **不发送消息。** 短信与邮件的模板与发送归各自的模块；本功能目录渲染的是本进程写出的文本，不投递给任何外部通道。
 
 ## 术语表
@@ -197,7 +197,7 @@ func ValidTimeZone(name string) bool
 
 **空值不是一种值。** `WithLocale` 与 `WithTimeZone` 收到空串时不写入，一个什么都没指名的上下文因此读作“未携带任何语言”，`FromContext` 与 `TimeZoneFromContext` 据实报告。回落发生在 `Resolver` 上：需要一种语言而上下文未携带它的调用方经 `Resolver.LocaleOf` 取，默认值只在那里。
 
-**形状检查不等于受支持检查。** `ValidLocaleTag` 只判形状，不判这个标签在本次运行里受不受支持——受支持集是目录承载的语言集，只有引擎知道，一个形状合法而不受支持的标签因此在这里可被接受，落到渲染时回落（[ADR-i18n-locale-type-2026-10-13](../../adr/adr-i18n-locale-type-2026-10-13.md)）。`ValidTimeZone` 用一个 IANA 名去 `time.LoadLocation`，空值合法；固定偏移（如 `+08:00`）与缩写（如 `CST`）不是 IANA 名而被拒，Go 的特殊名 `Local` 同样被拒——它不是 IANA 名，解析到的是宿主自己的时区，存进去会把用户可见文本渲染成服务器所在时区。**读取路径另有一道同样的守卫**：`engine.location` 把 `Local` 与空值、加载不出的名字一样读作 UTC，因为上下文存取函数是导出的、不对传进来的值复检。这两个检查是写入侧执行的判据，由写偏好的那一方调用，本包不对任何既有值回头复检。
+**形状检查不等于受支持检查。** `ValidLocaleTag` 只判形状，不判这个标签在本次运行里受不受支持——受支持集是目录承载的语言集，只有引擎知道，一个形状合法而不受支持的标签因此在这里可被接受，落到渲染时回落（[ADR-i18n-locale-type](../../adr/adr-i18n-locale-type.md)）。`ValidTimeZone` 用一个 IANA 名去 `time.LoadLocation`，空值合法；固定偏移（如 `+08:00`）与缩写（如 `CST`）不是 IANA 名而被拒，Go 的特殊名 `Local` 同样被拒——它不是 IANA 名，解析到的是宿主自己的时区，存进去会把用户可见文本渲染成服务器所在时区。**读取路径另有一道同样的守卫**：`engine.location` 把 `Local` 与空值、加载不出的名字一样读作 UTC，因为上下文存取函数是导出的、不对传进来的值复检。这两个检查是写入侧执行的判据，由写偏好的那一方调用，本包不对任何既有值回头复检。
 
 ### 各模块交付与取用的能力
 
@@ -221,7 +221,7 @@ func ValidTimeZone(name string) bool
 | `pkg/http` | `i18n.http` 取用 `Router` 登记层 |
 | `pkg/authn` | `i18n.http` 以 `(*authn.Gate)(nil)` 为锚点、读请求身份；`i18n.account` 经 `Accounts` 读账户属性、实现 `Provisioner` |
 
-**依赖方向。** 根包 `pkg/i18n` 只依赖标准库，因而一个只读语言的模块 import 它不拉进任何第三方库；这与 [authn](authn/design-authn.md) 根包的位置同一条。子包各自 import 根包与 `pkg/core`，并按其用途 import `pkg/http` 或 `pkg/authn`。**`pkg/authn` 的任何包都不 import `pkg/i18n` 的根包以外的部分，且 `pkg/authn` 根包不 import `pkg/i18n`**（[authn](authn/design-authn.md) 的依赖方向）：认证根包只依赖标准库与自己的内部包，一个语言偏好不改变这一点。需要同时读身份与语言的层要么在 `i18n.http` 里，要么在 `pkg/authn/login` 这类子包里——子包 import `pkg/i18n` 是许可的，本功能目录不 import 认证的任何子包。**`pkg/http` import `pkg/i18n` 的根包**：它渲染自己写出的四类拒绝（无匹配路由的 404、方法不允许的 405、请求体超限的 413、接住 panic 的 500），把 `i18n.Localizer` 作为可选依赖取用（[ADR-i18n-error-rendering-2026-10-13](../../adr/adr-i18n-error-rendering-2026-10-13.md)）。方向是本功能目录的根包被入口模块取用；根包只依赖标准库，因而不使入口模块的依赖预算增长（[ADR-i18n-locale-type-2026-10-13](../../adr/adr-i18n-locale-type-2026-10-13.md)）。
+**依赖方向。** 根包 `pkg/i18n` 只依赖标准库，因而一个只读语言的模块 import 它不拉进任何第三方库；这与 [authn](authn/design-authn.md) 根包的位置同一条。子包各自 import 根包与 `pkg/core`，并按其用途 import `pkg/http` 或 `pkg/authn`。**`pkg/authn` 的任何包都不 import `pkg/i18n` 的根包以外的部分，且 `pkg/authn` 根包不 import `pkg/i18n`**（[authn](authn/design-authn.md) 的依赖方向）：认证根包只依赖标准库与自己的内部包，一个语言偏好不改变这一点。需要同时读身份与语言的层要么在 `i18n.http` 里，要么在 `pkg/authn/login` 这类子包里——子包 import `pkg/i18n` 是许可的，本功能目录不 import 认证的任何子包。**`pkg/http` import `pkg/i18n` 的根包**：它渲染自己写出的四类拒绝（无匹配路由的 404、方法不允许的 405、请求体超限的 413、接住 panic 的 500），把 `i18n.Localizer` 作为可选依赖取用（[ADR-i18n-error-rendering](../../adr/adr-i18n-error-rendering.md)）。方向是本功能目录的根包被入口模块取用；根包只依赖标准库，因而不使入口模块的依赖预算增长（[ADR-i18n-locale-type](../../adr/adr-i18n-locale-type.md)）。
 
 **在本功能目录里，`golang.org/x/text` 只出现在引擎 `pkg/i18n/catalog`。** 它在本功能目录承担三处：`language` 用 `ParseAcceptLanguage` 解析 `Accept-Language` 头值、用 `language.Matcher` 在受支持语言集中匹配；`feature/plural` 按语言标签判定计数的 CLDR 类别；`message` 与 `number` 按语言把整数与数字格式化成十进制，分组与分隔取该语言的 CLDR 数据。三者都只在引擎里出现。根包与其余子包不拉它，`i18n.http` 经 `i18n.Negotiator` 取用协商结果，一个只读 `Locale` 的模块因而拿不到匹配或数字格式化库。
 
@@ -326,9 +326,9 @@ sequenceDiagram
 
 ### 目录的收集与装载
 
-引擎在装配期依次做 `Prepare` 校验与 `New` 建立。默认语言是配置项 `i18n.default-locale`，未设置时为 `en-US`，取值须是一个 BCP 47 标签的形状（`ValidLocaleTag`），否则启动失败；它在 `Prepare` 与 `New` 各读一次，两次读的是同一份快照。它归配置而非设置：入口模块自己写出的拒绝应答（`pkg/http` 的 `refusalTitle` 覆盖的 404、405、413、500）与鉴别阶段各模块的 503 problem 在数据库可用之前就要按它渲染，按 [ADR-config-scope-2026-09-13](../../adr/adr-config-scope-2026-09-13.md) 的判据 (a) 落在配置。
+引擎在装配期依次做 `Prepare` 校验与 `New` 建立。默认语言是配置项 `i18n.default-locale`，未设置时为 `en-US`，取值须是一个 BCP 47 标签的形状（`ValidLocaleTag`），否则启动失败；它在 `Prepare` 与 `New` 各读一次，两次读的是同一份快照。它归配置而非设置：入口模块自己写出的拒绝应答（`pkg/http` 的 `refusalTitle` 覆盖的 404、405、413、500）与鉴别阶段各模块的 503 problem 在数据库可用之前就要按它渲染，按 [ADR-config-scope](../../adr/adr-config-scope.md) 的判据 (a) 落在配置。
 
-**取材域取可用集**（架构不变量 15）。来源是 `core.Resources[i18n.Catalog](reg)` 的全体；判据是**一组消息文件是不是这个二进制的一部分**是静态事实，比任何一次命令长寿，因而未运行、消解落选与只被静态级纳入的模块，其目录一律进索引。**这个消费点不做减法**：声明的目录随二进制一起编译进来，一个本次不运行的模块，它的消息照常可被渲染——这正是“某个错误在某个装配下答得出键、在另一个装配下答不出”要避免的形态（[ADR-i18n-catalogs-2026-10-13](../../adr/adr-i18n-catalogs-2026-10-13.md)）。
+**取材域取可用集**（架构不变量 15）。来源是 `core.Resources[i18n.Catalog](reg)` 的全体；判据是**一组消息文件是不是这个二进制的一部分**是静态事实，比任何一次命令长寿，因而未运行、消解落选与只被静态级纳入的模块，其目录一律进索引。**这个消费点不做减法**：声明的目录随二进制一起编译进来，一个本次不运行的模块，它的消息照常可被渲染——这正是“某个错误在某个装配下答得出键、在另一个装配下答不出”要避免的形态（[ADR-i18n-catalogs](../../adr/adr-i18n-catalogs.md)）。
 
 **覆盖目录是第二个来源，不是模块声明。** 配置项 `i18n.catalogs-dir` 指定一个目录，与声明同形：一个语言一个 `{tag}.json`，文件名是语言，正文是键到消息的 JSON 对象；引擎用声明目录同一条装载路径读它（`i18n.Catalog{FS: os.DirFS(dir), Pattern: "*.json"}`）。它未设定、指名的路径不是一个存在的目录、或目录里没有 `*.json` 文件时，都读作「没有额外文案」，是合法配置，不失败。读出的条目并入同一索引，排在全部已声明目录之后：同名键上覆盖目录胜过声明，一个声明没有承载的语言因此进入索引、受支持的语言集与协商匹配器。这一读取只发生在装配期，此后不再读、不被监视。
 
@@ -345,7 +345,7 @@ sequenceDiagram
 
 ### 语言解析链
 
-一次请求的语言按三级定位（[ADR-i18n-locale-resolution-2026-10-13](../../adr/adr-i18n-locale-resolution-2026-10-13.md)）：
+一次请求的语言按三级定位（[ADR-i18n-locale-resolution](../../adr/adr-i18n-locale-resolution.md)）：
 
 | 次序 | 来源 | 何时命中 |
 |---|---|---|
@@ -361,7 +361,7 @@ sequenceDiagram
 
 ### 渲染
 
-引擎在装配期把每条消息解析成结点并校验（见目录的收集与装载），渲染因此只走结点、不再解析，也没有失败路径。渲染一次按下列规则展开（[ADR-i18n-message-rendering-2026-10-13](../../adr/adr-i18n-message-rendering-2026-10-13.md)）：
+引擎在装配期把每条消息解析成结点并校验（见目录的收集与装载），渲染因此只走结点、不再解析，也没有失败路径。渲染一次按下列规则展开（[ADR-i18n-message-rendering](../../adr/adr-i18n-message-rendering.md)）：
 
 - **字面文本原样写出。**
 - **一个 `{{name}}` 占位符**按 `Args` 的取值展开：值是字符串时原样写入，值是整数或数字时按消息的语言格式化；名字在 `Args` 里没有条目时该处连同 `{{}}` 原样保留，值是时间时同样原样保留——一个 `{{name}}` 写不出时间，时间只经时间段渲染。
@@ -417,7 +417,7 @@ sequenceDiagram
 
 ## 并发与事务边界
 
-**索引在装配之后只读。** 装载发生在生命周期驱动的单协程里，此前没有任何请求路径可达它；装载完成后索引与匹配器不再变化，渲染一段文本、计数、复数与数字，以及协商，因此是无锁、零 IO 的内存读。这是本功能目录没有热加载接口的直接结果：内嵌声明与配置指定的覆盖目录都在装配期读取，一个要求运行期更换目录的功能会引入一把读路径上的锁，本功能目录以“装配期读取后只读”免掉了它（[ADR-i18n-catalogs-2026-10-13](../../adr/adr-i18n-catalogs-2026-10-13.md)）。
+**索引在装配之后只读。** 装载发生在生命周期驱动的单协程里，此前没有任何请求路径可达它；装载完成后索引与匹配器不再变化，渲染一段文本、计数、复数与数字，以及协商，因此是无锁、零 IO 的内存读。这是本功能目录没有热加载接口的直接结果：内嵌声明与配置指定的覆盖目录都在装配期读取，一个要求运行期更换目录的功能会引入一把读路径上的锁，本功能目录以“装配期读取后只读”免掉了它（[ADR-i18n-catalogs](../../adr/adr-i18n-catalogs.md)）。
 
 **时间段是唯一一处读文件系统的渲染。** 一个 `{{name, time, <layout>}}` 段取渲染上下文的时区，`time.LoadLocation` 每次调用都重读 zoneinfo 文件、标准库不跨调用缓存，引擎为此持一份按名缓存的 `*time.Location`（`engine.location`），置于一把 `sync.RWMutex` 之后。**独占写锁**只在渲染一条带时间段的消息、且该时区名第一次出现（缓存未命中）时取一次；此后每渲染一次该名仍取一次**读锁**，只有完全不渲染时间段的运行才一次锁也不取。缓存是懒建的，只渲染文本、计数与数字的运行从不取锁、也从不读文件系统。写入侧的名字先经 `ValidTimeZone` 判形状，一个加载不出的名字读作 UTC 并同样缓存，因而它不会每渲染一次就重读一遍文件系统。
 

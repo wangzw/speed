@@ -12,9 +12,9 @@
 
 - **不投递、不渲染。** 站内信是“给自己人发消息”的一个渠道；写这一行的标题与正文由投递流水线渲染好之后交进来。渲染、渠道选择与出站投递属于[投递流水线](design-notification-delivery.md)。
 - **不推送。** 把“刚写入一行”推给在线客户端是[推送模块](design-notification-stream.md)的事；本模块只写行、读行、发一条总线事件。
-- **不判定谁能读谁的收件箱。** 本模块不声明权限点，路由不带自有权限闸。谁可以读某个收件人的收件箱由宿主侧的授权决定（[ADR-notification-scope-2026-10-15](../../../adr/adr-notification-scope-2026-10-15.md)）。
+- **不判定谁能读谁的收件箱。** 本模块不声明权限点，路由不带自有权限闸。谁可以读某个收件人的收件箱由宿主侧的授权决定（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
 - **不校验通知类型。** 一个 `type_key` 是不是已声明的类型，由[偏好与分类法](design-notification-preferences.md)这个消费点校验；本模块收下它并原样存下，不对照分类法。
-- **不接收非用户收件人。** 站内信的一行有一个账户收件人；外部联系人的同意台账本轮刻意后置（[ADR-notification-scope-2026-10-15](../../../adr/adr-notification-scope-2026-10-15.md)），因此没有生产者写到 `external` 类的收件人。
+- **不接收非用户收件人。** 站内信的一行有一个账户收件人；外部联系人的同意台账本轮刻意后置（[ADR-notification-scope](../../../adr/adr-notification-scope.md)），因此没有生产者写到 `external` 类的收件人。
 - **不做已读以外的改写。** HTTP 面只改 `read_at` 一列；行一旦写入，其余列不再变化。
 
 ## 外部接口契约
@@ -190,11 +190,11 @@ classDiagram
 
 ### 写行与去重键
 
-**写行的唯一入口是投递流水线的 `Write` 调用**（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。路由不调用 `Write`；HTTP 面只读行与改 `read_at`。
+**写行的唯一入口是投递流水线的 `Write` 调用**（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。路由不调用 `Write`；HTTP 面只读行与改 `read_at`。
 
-`Write` 在交付的库上做一次插入，按 `dedupe_key` 幂等：插入命中唯一索引即返回既有行的视图，不新建、不发事件。去重键由投递流水线按逐渠道的公式算出——`idempotency_key = hex(sha256(canonicalJSON{tenant, type_key, recipient_class, user_id, channel, locale, occurrence_id, params}))`，站内信渠道的取值固定为 `in_app`——本模块收下这个键，不重算它（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。
+`Write` 在交付的库上做一次插入，按 `dedupe_key` 幂等：插入命中唯一索引即返回既有行的视图，不新建、不发事件。去重键由投递流水线按逐渠道的公式算出——`idempotency_key = hex(sha256(canonicalJSON{tenant, type_key, recipient_class, user_id, channel, locale, occurrence_id, params}))`，站内信渠道的取值固定为 `in_app`——本模块收下这个键，不重算它（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。
 
-**行先提交、事件后发。** `Write` 先把行插入并在自己的事务里提交，提交成功之后才发布 `notification.inbox.created`。本模块是这条事件的唯一发布方：写这一行的是 `Write`，发事件的也是它，调用它的[投递流水线](design-notification-delivery.md)不发布。装配里有总线时事件照发，发布失败不回滚那一行、也不向调用方报错；装配里没有总线时事件不发，行照常落库。这一条使“一次送不到任何人的通告什么都不丢”——消费方回读那一行即可，事件只决定它多快得到提示（[ADR-notification-stream-2026-10-15](../../../adr/adr-notification-stream-2026-10-15.md)）。
+**行先提交、事件后发。** `Write` 先把行插入并在自己的事务里提交，提交成功之后才发布 `notification.inbox.created`。本模块是这条事件的唯一发布方：写这一行的是 `Write`，发事件的也是它，调用它的[投递流水线](design-notification-delivery.md)不发布。装配里有总线时事件照发，发布失败不回滚那一行、也不向调用方报错；装配里没有总线时事件不发，行照常落库。这一条使“一次送不到任何人的通告什么都不丢”——消费方回读那一行即可，事件只决定它多快得到提示（[ADR-notification-stream](../../../adr/adr-notification-stream.md)）。
 
 **事件载荷是封闭集**：`{message_id, tenant_id, recipient_user_id, type_key}`。事件的类型名常量 `EventInboxCreated` 由本模块在自己的包里声明；事件的标识由 `event.NewID` 赋予，发布方不预设它。审计动作不在此列——本模块不发审计事件，谁审计由宿主在配置里点名。
 

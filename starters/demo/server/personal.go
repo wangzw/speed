@@ -13,7 +13,7 @@ package main
 // still owns its personal tenant.
 //
 // The decision is recorded in
-// docs/adr/adr-starters-personal-tenant-2026-10-18.md and in the starter
+// docs/adr/adr-starters-personal-tenant.md and in the starter
 // design's 个人租户 section. It is a host policy and not a capability: it sits
 // above the tenant roster, the account store's memberships and the
 // authorization layer, it is switched by this host's configuration (off by

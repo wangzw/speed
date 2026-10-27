@@ -4,7 +4,7 @@
 
 - **因素登记簿。** 账户的每个因素在 `authn_factors` 里占一行，登记簿统一放在 `authn.mfa`；只有种类专属的数据（TOTP 种子、通行密钥的凭据）才放各因素子包自己的表。
 - **第二因素的策略判定。** 第一因素通过之后，按账户级与全局级策略回答账户是否还要第二因素，并给出可用的因素清单。租户级策略在请求期执行，不在这里（[tenant.admission](../tenant/design-tenant-admission.md)）。
-- **因素的登记、发码与校验的编排。** `MFA` 驱动各因素实现；失败退避、审计记录与事件发布在 `MFA` 里统一做一遍，因素实现不做（[ADR-authn-mfa-2026-10-10](../../../adr/adr-authn-mfa-2026-10-10.md)）。
+- **因素的登记、发码与校验的编排。** `MFA` 驱动各因素实现；失败退避、审计记录与事件发布在 `MFA` 里统一做一遍，因素实现不做（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）。
 - **保障等级的唯一合成处。** `MFA.Assurance` 是整个认证功能目录里计算保障等级的唯一位置；网关的校验后端、请求期的租户准入、`guard.Require` 与冒充发起读到的都是登录会话行里已记录的值。
 - **最高权限动作的因素门槛。** 回答 `MFA.Seasoned`；约定账户安全类动作对 `Requirement.Local` 与因素年龄的要求。
 - **因素的删除与重置，以及随账户删除的清理。** `MFA.Remove`、`MFA.Reset`，以及对账户生命周期钩子的实现。
@@ -172,7 +172,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 
 **`authn.mfa` 以[静态特性](../../../glossary.md) `authn.mfa` 声明多因素的自助面。** 描述符的 `Resources` 带 `feature.Spec{Name: "authn.mfa"}`（[feature](../design-feature.md)）。这个特性在场，表示本进程运行 `authn.mfa`、已挂出 `GET B/factors` 与 `DELETE B/factors/:id`。`mount.Mounter` 是必需依赖，模块进入启用集即挂出这组路由，挂与不挂不另取决于配置或装配，所以声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
 
-- **同一事实只有一个发布点。** 特性文档只说多因素的自助面是否存在，不按因素种类分出特性名；可登记的种类只经 `GET B/methods` 的 `mfa.factors` 发布（[authn-login](design-authn-login.md)、[ADR-feature-ownership-2026-10-17](../../../adr/adr-feature-ownership-2026-10-17.md)）。
+- **同一事实只有一个发布点。** 特性文档只说多因素的自助面是否存在，不按因素种类分出特性名；可登记的种类只经 `GET B/methods` 的 `mfa.factors` 发布（[authn-login](design-authn-login.md)、[ADR-feature-ownership](../../../adr/adr-feature-ownership.md)）。
 - **本模块的设置不发布。** 全局强制 MFA（`authn.mfa.global-required`）经登录流程的登记步送达；其余设置是时长、上限一类参数。
 
 ### 对外接口面
@@ -380,7 +380,7 @@ CREATE TABLE authn_webauthn_credentials (
 );
 ```
 
-- 因素登记簿放 db：丢失会放宽校验（账户读作没有因素），所以不放 kv（[ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)）。TOTP 的重放计数器同理，放在 `last_counter` 一列。
+- 因素登记簿放 db：丢失会放宽校验（账户读作没有因素），所以不放 kv（[ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)）。TOTP 的重放计数器同理，放在 `last_counter` 一列。
 - `secret` 是加密列，使用 `pkg/db` 的加密列能力；根密钥缺失时启动自检失败。
 - `public_key` 不加密：它不是秘密，完整性比保密重要。
 - WebAuthn 库文档的示例表是 PostgreSQL 专用写法，表里用两个方言都能表达的类型。
@@ -473,7 +473,7 @@ CREATE TABLE authn_webauthn_credentials (
 ### TOTP
 
 - **登记。** 用 `pquerna/otp` 的 `totp.Generate`：20 字节随机密钥、SHA-1、6 位、30 秒，与各认证器应用的公约一致。发行者名由配置给出（见 [authn-config](design-authn-config.md)）。写一行待确认因素与加密的种子，返回 `otpauth://` 地址；二维码由客户端画，服务端不调库里的图像函数。**种子只在这次应答里出现一次。** 登记的确认步要求提交一个有效码才转启用。
-- **校验。** 自写（取舍见 [ADR-authn-mfa-2026-10-10](../../../adr/adr-authn-mfa-2026-10-10.md)）：用 `GenerateCodeCustom` 对前一步、当前步、后一步各生成一次，逐个做常量时间比较，取命中的计数器 `c`，要求 `c > last_counter`，然后条件更新：
+- **校验。** 自写（取舍见 [ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）：用 `GenerateCodeCustom` 对前一步、当前步、后一步各生成一次，逐个做常量时间比较，取命中的计数器 `c`，要求 `c > last_counter`，然后条件更新：
 
   ```sql
   UPDATE authn_totp_secrets SET last_counter = ? WHERE factor_id = ? AND last_counter < ?
@@ -535,14 +535,14 @@ CREATE TABLE authn_webauthn_credentials (
 
 ### 找回途径
 
-找回途径限于下列各项（封闭集），排列顺序即使用顺序：依赖的外部判断由少到多，靠前的不可用时才退到靠后的（[ADR-authn-mfa-recovery-2026-10-10](../../../adr/adr-authn-mfa-recovery-2026-10-10.md)）。
+找回途径限于下列各项（封闭集），排列顺序即使用顺序：依赖的外部判断由少到多，靠前的不可用时才退到靠后的（[ADR-authn-mfa-recovery](../../../adr/adr-authn-mfa-recovery.md)）。
 
 1. **冗余。** 账户登记了不止一个因素时，丢了一个，用另一种做加强认证，撤销丢失的并重新登记。账户只有一个因素时，登录与登记的应答带 `warnings: ["single-factor"]`，建议再登记一个。
 2. **管理员重置因素。** 路由 `POST B/accounts/:id/mfa-reset`，效果见「删除与重置」。发起者必须有新鲜的本地多因素，其强认证里含非短信因素，名下有启用已满 `sensitive-min-age` 的非短信因素（`MFA.Seasoned`），不得是静态口令表主体，不得在冒充中。`Decider` 可以实现双人复核。
 3. **管理员重置口令。** 路由 `POST B/accounts/:id/password`，经 `Decider`（动作 `authn.account.update`，缺席即全拒）；发起者的要求同管理员重置因素；管理员提交的临时口令是请求体，从不回显、不进日志与审计，缺省置 `must_change`；强制审计；成功后撤销该账户的全部会话。这是只有口令登录名的管理员创建账户的唯一重置路径，也是忘记口令之后组织内的找回途径。
 4. **运维经 Go 接口。** 宿主的命令直接调用 `MFA.Reset` 与 `Passwords.Set`，不经 `Decider`，是最后手段。
 
-忘记口令没有自助找回流程（REQ-security-020），找回途径限于本节列出的各项；经其他登录方式登录同样要过该账户的第二因素。找回途径的判据见 [ADR-authn-mfa-recovery-2026-10-10](../../../adr/adr-authn-mfa-recovery-2026-10-10.md)。
+忘记口令没有自助找回流程（REQ-security-020），找回途径限于本节列出的各项；经其他登录方式登录同样要过该账户的第二因素。找回途径的判据见 [ADR-authn-mfa-recovery](../../../adr/adr-authn-mfa-recovery.md)。
 
 **接受的代价。**
 

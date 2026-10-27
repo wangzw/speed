@@ -116,7 +116,7 @@ interface NotificationPresenceProviderProps {
 }
 ```
 
-`NotificationPresenceProvider` 与 `NotificationStreamProvider` 同形：入参是宿主给出的特性在场事实，本包不为它读会话或特性态（[ADR-web-feature-state-2026-10-17](../../../adr/adr-web-feature-state-2026-10-17.md)）。宿主取特性 `notification.preferences` 给出 `preferences`，把特性在场的 `notification.channel.email`、`notification.channel.sms` 映射成 `channels`。没有 provider 时按 `preferences` 为假、`channels` 为空处理：偏好面与可选渠道都按特性缺席隐藏，方向是失败即关。
+`NotificationPresenceProvider` 与 `NotificationStreamProvider` 同形：入参是宿主给出的特性在场事实，本包不为它读会话或特性态（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）。宿主取特性 `notification.preferences` 给出 `preferences`，把特性在场的 `notification.channel.email`、`notification.channel.sms` 映射成 `channels`。没有 provider 时按 `preferences` 为假、`channels` 为空处理：偏好面与可选渠道都按特性缺席隐藏，方向是失败即关。
 
 收件箱与铃铛不经这个 provider：通知面的声明以 `requires` 列出 `notification.inbox`，特性缺席时由宿主的路由层渲染与未登记路径相同的 404（[route-kit](design-web-route-kit.md)）；铃铛由宿主按同一个特性决定挂不挂。
 
@@ -205,7 +205,7 @@ graph TD
 
 矩阵的行来自偏好读（每个在册类型一行），渠道列是 `in_app` 加 `NotificationPresenceProvider` 给出的、特性在场的可选渠道，按平台封闭渠道词表（`in_app`、`email`、`sms`）的次序排列，勾选态取该行的有效集。宿主列出可选渠道的次序不参与列序。没有 provider 时可选渠道为空，矩阵只有 `in_app` 一列；单独挂载的矩阵按同一规则渲染。类型分类法给出每类型的 `unsubscribable`：为 false 的类型整行禁用并标注不可退订（一次写入会被拒 409），分类法尚未到时按未知处理、保持可勾。一次勾选写上该渠道的目标态并回读，勾选态因而是最近一次成功读到的服务端应答；一次写只带被勾的那个渠道。
 
-**隐藏一个渠道列不改变偏好的取值。** 偏好按（类型，渠道）逐格写入，隐藏列的已存值不受影响，渠道的取值集也不因装配增减（[notification-preferences](../notification/design-notification-preferences.md)、[ADR-notification-channels-2026-10-15](../../../adr/adr-notification-channels-2026-10-15.md)）；渠道列只决定矩阵渲染哪些格。
+**隐藏一个渠道列不改变偏好的取值。** 偏好按（类型，渠道）逐格写入，隐藏列的已存值不受影响，渠道的取值集也不因装配增减（[notification-preferences](../notification/design-notification-preferences.md)、[ADR-notification-channels](../../../adr/adr-notification-channels.md)）；渠道列只决定矩阵渲染哪些格。
 
 ### 偏好面按特性在场渲染
 
@@ -225,7 +225,7 @@ graph TD
 
 ### 写入的反馈
 
-收件箱与偏好矩阵各是一个反馈作用域，按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。
+收件箱与偏好矩阵各是一个反馈作用域，按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。
 
 - **收件箱的标记已读与全部标记已读共用一个槽，作用域内的写入控件互锁。** 任一写入进行中，全部标记已读与每一行的标记已读同处禁用并标忙，与偏好矩阵同形；作用域内的尝试因此不重叠，一次全部已读的失败不会被并发的标记已读的成功替换。标记一条已读也落成功文案，不只靠行上的已读标记翻转。
 - **偏好矩阵的写入落成功文案，点明类型与渠道；失败渲染一条横幅，文本是该失败码的文本，紧贴矩阵。** 写入进行中整张矩阵禁用；失败的单元由矩阵回到服务端应答而可辨认，单元的 `aria-label` 给出它的类型与渠道。

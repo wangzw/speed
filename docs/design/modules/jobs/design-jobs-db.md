@@ -2,15 +2,15 @@
 
 ## 职责
 
-`jobs.db` 交付**跨副本的持久作业队列**与**handler 登记面**：`Queue`（提交、查询、取消）与 `Handlers`（登记执行者）两条接缝、一张作业表 `jobs`，以及把到期作业认领、执行、结清的驱动器。提交方经 `Queue.Enqueue` 在一个租户的上下文里落一行作业；每个副本的若干执行协程从这张表认领到期的行，经 `tenant.Catalog.Enter` 进入该行的租户，把行交给按 `Type` 登记的 `Handler` 执行，再按结果结清那一行——成功、按退避重试、或进入死信。作业因此至少执行一次；多副本之间靠有时限的认领分摊同一张表，不选主、不引入中间件（[ADR-jobs-claim-2026-10-15](../../../adr/adr-jobs-claim-2026-10-15.md)）。
+`jobs.db` 交付**跨副本的持久作业队列**与**handler 登记面**：`Queue`（提交、查询、取消）与 `Handlers`（登记执行者）两条接缝、一张作业表 `jobs`，以及把到期作业认领、执行、结清的驱动器。提交方经 `Queue.Enqueue` 在一个租户的上下文里落一行作业；每个副本的若干执行协程从这张表认领到期的行，经 `tenant.Catalog.Enter` 进入该行的租户，把行交给按 `Type` 登记的 `Handler` 执行，再按结果结清那一行——成功、按退避重试、或进入死信。作业因此至少执行一次；多副本之间靠有时限的认领分摊同一张表，不选主、不引入中间件（[ADR-jobs-claim](../../../adr/adr-jobs-claim.md)）。
 
-`Queue` 与 `Handlers` 都由本模块**排他交付**：一个进程里恰好一个队列。根包 `pkg/jobs` 是接口包与公共类型，不登记模块；本子包登记模块 `jobs.db`，配置命名空间取同一个取值（[ADR-jobs-packaging-2026-10-15](../../../adr/adr-jobs-packaging-2026-10-15.md)）。
+`Queue` 与 `Handlers` 都由本模块**排他交付**：一个进程里恰好一个队列。根包 `pkg/jobs` 是接口包与公共类型，不登记模块；本子包登记模块 `jobs.db`，配置命名空间取同一个取值（[ADR-jobs-packaging](../../../adr/adr-jobs-packaging.md)）。
 
 ### 非职责
 
 - **不含调度，不声明周期任务。** 周期声明 `jobs.Schedule`、窗口幂等键与按租户展开归 `jobs.scheduler`。本模块只执行提交进来的作业；它不认识「每个周期该做一次」这件事，落在作业行上的只是调用方给的 `idempotency_key`。
 - **不解释作业语义。** `Task.Type` 与 `Task.Payload` 对队列不透明；作业做什么、`Result` 是什么，由登记该 `Type` 的 `Handler` 定义。
-- **不替消费方去重。** 作业至少执行一次；一次因认领到期或副本崩溃带来的重复执行，由消费方按 `IdempotencyKey` 自行幂等，本模块不重放一次已结清作业的结果（[ADR-jobs-claim-2026-10-15](../../../adr/adr-jobs-claim-2026-10-15.md)）。
+- **不替消费方去重。** 作业至少执行一次；一次因认领到期或副本崩溃带来的重复执行，由消费方按 `IdempotencyKey` 自行幂等，本模块不重放一次已结清作业的结果（[ADR-jobs-claim](../../../adr/adr-jobs-claim.md)）。
 - **不选主，不持分布式锁。** 多副本的分摊靠有时限的认领，没有任何一个副本是唯一的认领者。
 - **不保证执行顺序。** 认领按优先与到期取，退避与跨租户轮转都会改变次序；需要顺序的消费方在载荷里携带序号。
 - **不拥有事件总线。** `(*event.Bus)(nil)` 是可选依赖；它缺席时终态事件不发，作业照常执行与结清。
@@ -51,7 +51,7 @@ type Handler interface {
 
 `Queue` 的契约，约束的主体是本模块交付的这一个 `Queue`：
 
-- **租户取自 `ctx`，不取自 `Task`。** `Task` 不带租户字段，租户经 `tenant.FromContext(ctx)` 读出，写行时由内嵌的 `tenant.Model` 落下 `tenant_id` 列。上下文里没有租户时，`Enqueue` 以租户功能目录的哨兵 `tenant.ErrNoTenantInContext` 拒绝，什么都不写。这与数据库的租户过滤是同一条判据（[ADR-jobs-claim-2026-10-15](../../../adr/adr-jobs-claim-2026-10-15.md)）。
+- **租户取自 `ctx`，不取自 `Task`。** `Task` 不带租户字段，租户经 `tenant.FromContext(ctx)` 读出，写行时由内嵌的 `tenant.Model` 落下 `tenant_id` 列。上下文里没有租户时，`Enqueue` 以租户功能目录的哨兵 `tenant.ErrNoTenantInContext` 拒绝，什么都不写。这与数据库的租户过滤是同一条判据（[ADR-jobs-claim](../../../adr/adr-jobs-claim.md)）。
 - **`Enqueue` 校验 `Task` 的形状再落一行。** `Type` 非空且有一个已登记的 `Handler`，否则以 `ErrInvalidTask` 或 `ErrNoHandler` 拒绝，不写行。`id` 是应用在该步生成的 UUID；`status` 起于 `pending`；`scheduled_at` 与 `available_at` 起于到期时刻。
 - **选项按传入次序应用。** `WithDelay(d)` 把 `scheduled_at` 置为当下加 `d`，`WithScheduledAt(t)` 置为 `t`；两者互斥，**后传入者胜**——后应用的那一个覆盖先应用的。`WithMaxRetries`、`WithTimeout`、`WithPriority` 各自覆盖对应的列。未给 `WithMaxRetries` 时取 `DefaultMaxRetries`，未给 `WithTimeout` 时取 `DefaultTimeout`，未给 `WithPriority` 时取 `PriorityNormal`，`Priority` 的类型零值 `PriorityLow` 只在调用方显式传 `Priority(0)` 时出现。
 - **`IdempotencyKey` 非空时 `Enqueue` 幂等。** `(tenant_id, idempotency_key)` 唯一，重复提交返回既有作业的 `JobID`，不新建行、不报错。
@@ -232,7 +232,7 @@ stateDiagram-v2
 | `Stop` | 不再认领；在飞作业跑完 `shutdown-grace`；持有的行全部交还 |
 | `Close` | 未经 `Stop` 时先执行它；库句柄属于数据库模块，本模块不关闭它 |
 
-生命周期阶段序是 `Prepare → New → Migrate → Init → Start → Serve`：`Migrate` 早于 `Init`，所以本模块在 `New` 里读不到表，首次读表落在 `Start` 的第一次读。宿主为本模块预置的实例不是本模块的产物时，`Start`、`Stop` 与 `Close` 都不对它做任何事（[ADR-supplied-instance-2026-10-08](../../../adr/adr-supplied-instance-2026-10-08.md)）。
+生命周期阶段序是 `Prepare → New → Migrate → Init → Start → Serve`：`Migrate` 早于 `Init`，所以本模块在 `New` 里读不到表，首次读表落在 `Start` 的第一次读。宿主为本模块预置的实例不是本模块的产物时，`Start`、`Stop` 与 `Close` 都不对它做任何事（[ADR-supplied-instance](../../../adr/adr-supplied-instance.md)）。
 
 ### 一轮认领
 
@@ -267,7 +267,7 @@ handler 返回错误、或执行上下文到期，都是本次执行失败：`at
 
 ### 终态事件与发布义务
 
-作业进入 `succeeded`、`dead_letter` 或 `cancelled` 时，队列尝试向总线发一条对应类型的事件（`jobs.job.succeeded`、`jobs.job.dead_letter`、`jobs.job.cancelled`）。**发布义务记在作业行自己身上**：`terminal_published_at` 为空即未发布，结清进终态时尝试一次，一轮里另有一段补发取终态且 `terminal_published_at` 为空的行补发并置上时刻。总线缺席、或一次发布失败，都不改变作业的终态，也不撤销结清——`terminal_published_at` 留空，下一次补发接手。发布义务落在行上，`pkg/event` 因此是**可选依赖**：装配里没有总线时，事件不发，作业照常执行、结清、进死信（[ADR-jobs-terminal-event-2026-10-15](../../../adr/adr-jobs-terminal-event-2026-10-15.md)）。
+作业进入 `succeeded`、`dead_letter` 或 `cancelled` 时，队列尝试向总线发一条对应类型的事件（`jobs.job.succeeded`、`jobs.job.dead_letter`、`jobs.job.cancelled`）。**发布义务记在作业行自己身上**：`terminal_published_at` 为空即未发布，结清进终态时尝试一次，一轮里另有一段补发取终态且 `terminal_published_at` 为空的行补发并置上时刻。总线缺席、或一次发布失败，都不改变作业的终态，也不撤销结清——`terminal_published_at` 留空，下一次补发接手。发布义务落在行上，`pkg/event` 因此是**可选依赖**：装配里没有总线时，事件不发，作业照常执行、结清、进死信（[ADR-jobs-terminal-event](../../../adr/adr-jobs-terminal-event.md)）。
 
 ### 公平性
 
@@ -307,7 +307,7 @@ handler 返回错误、或执行上下文到期，都是本次执行失败：`at
 ### 非保证
 
 - **不是恰好一次。** 作业至少执行一次，重复的来源是认领到期后的接手与副本崩溃；按 `IdempotencyKey` 去重归消费方。
-- **一次执行可能长过它的认领。** 作业 `timeout_ms` 大于 `lease` 时，一行在认领到期后可能被别的副本接手并与此处的执行并发跑；两处的结清都以 `claimed_by` 为条件，只有仍持有认领的那一处写得进。宿主把 `lease` 设到不小于它最长的 `Timeout`，可让一次执行在认领到期前结束（[ADR-jobs-claim-2026-10-15](../../../adr/adr-jobs-claim-2026-10-15.md)）。
+- **一次执行可能长过它的认领。** 作业 `timeout_ms` 大于 `lease` 时，一行在认领到期后可能被别的副本接手并与此处的执行并发跑；两处的结清都以 `claimed_by` 为条件，只有仍持有认领的那一处写得进。宿主把 `lease` 设到不小于它最长的 `Timeout`，可让一次执行在认领到期前结束（[ADR-jobs-claim](../../../adr/adr-jobs-claim.md)）。
 - **不保证顺序。** 优先、到期与退避都改变次序，跨副本之间更没有先后。
 - **死信不清理。** 进入 `dead_letter` 的行留在表里，直到运维处置；本模块不删它。
 - **重试期间没有时延上界。** 一次失败一直重试到 `attempts` 超过 `max_retries`，退避有上限，重试的次数没有别的上界。

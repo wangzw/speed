@@ -135,7 +135,7 @@ classDiagram
 
 ### 表面段
 
-**表面段的字段缺省即继承。** `surface` 的每个角色只为「主题需要加重的那几项」留位：`fill`、`opacity`、`borderColor`、`borderColorDark`、`borderWidth`、`elevation`、`backdropFilter` 全部可选，缺省值不是写死的颜色，而是表示「沿用主题本来读取的那个槽」——`page` 继承 `color.background.default`，`container` 与 `overlay` 继承 `color.background.paper`，边框继承 `color.divider`（`borderColorDark` 给出时只在深色模式取代它），`header` 继承 `color.neutral` 色阶（浅色取 50，深色由主题改取 900）。因此该段不携带任何表面颜色字面量：只覆写 `background.paper` 的项目，表面取值不会改变。缺省槽的解析由 [ui-kit](design-web-ui-kit.md) 主题工厂完成，本包只陈述这份继承契约。默认值为 `page: {}`、`container: { borderWidth: 1 }`、`overlay: {}`、`header: {}`；`elevation` 缺省时保留各 MUI 组件自身的层级，不被拉平；圆角复用 `shape.borderRadius`，不新增字段。语义分层与主题映射的决策见 [ADR-web-surface-system-2026-10-20](../../../adr/adr-web-surface-system-2026-10-20.md)。
+**表面段的字段缺省即继承。** `surface` 的每个角色只为「主题需要加重的那几项」留位：`fill`、`opacity`、`borderColor`、`borderColorDark`、`borderWidth`、`elevation`、`backdropFilter` 全部可选，缺省值不是写死的颜色，而是表示「沿用主题本来读取的那个槽」——`page` 继承 `color.background.default`，`container` 与 `overlay` 继承 `color.background.paper`，边框继承 `color.divider`（`borderColorDark` 给出时只在深色模式取代它），`header` 继承 `color.neutral` 色阶（浅色取 50，深色由主题改取 900）。因此该段不携带任何表面颜色字面量：只覆写 `background.paper` 的项目，表面取值不会改变。缺省槽的解析由 [ui-kit](design-web-ui-kit.md) 主题工厂完成，本包只陈述这份继承契约。默认值为 `page: {}`、`container: { borderWidth: 1 }`、`overlay: {}`、`header: {}`；`elevation` 缺省时保留各 MUI 组件自身的层级，不被拉平；圆角复用 `shape.borderRadius`，不新增字段。语义分层与主题映射的决策见 [ADR-web-surface-system](../../../adr/adr-web-surface-system.md)。
 
 **`opacity` 是填充色的 alpha，与模式无关。** 它取 0–1，缺省为 1（不透明）。主题适配器把它乘在**已按模式解析好的**填充色上：填充是 `#RRGGBB` 时转成同色相的 `rgba(...)`，明暗两种模式各自得到正确结果；填充不是六位十六进制时原样保留，与主题工厂其它颜色派生的口径一致。一个半透明表面因此只写一份填充色加一个 alpha，不必为明暗模式各写一份。
 

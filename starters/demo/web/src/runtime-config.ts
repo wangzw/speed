@@ -17,7 +17,7 @@
  * This module is the app's one hand-written request, and the reason
  * eslint.config.mjs exempts it from the no-direct-http rule: it reads a static
  * deployment asset, not an API endpoint, and the contract that puts it there
- * is the runtime-config decision (docs/adr/adr-web-runtime-config-2026-10-15.md).
+ * is the runtime-config decision (docs/adr/adr-web-runtime-config.md).
  * It runs before the client is built, so it cannot go through the client.
  */
 

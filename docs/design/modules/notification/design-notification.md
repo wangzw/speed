@@ -6,13 +6,13 @@
 
 一次派发由发出它的业务模块发起。业务模块声明自己的通知类型（`notification.TypeSpec`），构造一条 `notification.Dispatch`，经本能力的提交面校验并入队；投递流水线在消费这条作业时校验、解析生效渠道、逐渠道渲染与发送——站内信落到收件箱、邮件交 `pkg/mail`、短信交 `pkg/sms`——每一次尝试记一行投递账。
 
-本能力位于依赖图的底层之一：它不认识任何业务，只认识「一条消息、一个收件人、一组参数」。它拆成下列模块，各持自己的一张表与迁移集：`notification.inbox`（站内信收件箱）、`notification.preferences`（渠道偏好矩阵与类型分类法的消费点）、`notification.delivery`（出站投递流水线）、`notification.stream`（SSE 推送）。根包 `pkg/notification` 是接口包与公共类型，不登记模块（[ADR-notification-scope-2026-10-15](../../../adr/adr-notification-scope-2026-10-15.md)）。
+本能力位于依赖图的底层之一：它不认识任何业务，只认识「一条消息、一个收件人、一组参数」。它拆成下列模块，各持自己的一张表与迁移集：`notification.inbox`（站内信收件箱）、`notification.preferences`（渠道偏好矩阵与类型分类法的消费点）、`notification.delivery`（出站投递流水线）、`notification.stream`（SSE 推送）。根包 `pkg/notification` 是接口包与公共类型，不登记模块（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
 
 ### 非职责
 
 - **不声明通知类型。** 一个类型是发出它的那个业务模块的声明，本能力只收齐这份声明并拿它当校验参照（见「分类法与取材域」）。本能力不定义任何类型，也不持有类型的词表。
-- **不声明任何权限点。** 本能力的路由不带自有权限闸：没有任何模块为本能力的路由声明权限，路由在中间件的声明表里按需认证、不带权限判定。谁可以读某个收件人的收件箱、谁可以改某个收件人的偏好，由**宿主侧的授权**决定——宿主在自己的链上另加一层判定，或按他自己的模型约束这些端。本能力因此不进入 `authz.PermissionSpec` 与 `authz.TranslationSpec` 的声明面（[ADR-notification-scope-2026-10-15](../../../adr/adr-notification-scope-2026-10-15.md)）。
-- **非用户外部联系人的同意台账刻意后置。** 给**非用户的外部联系人**（手机号、邮箱地址这类不属于本系统账户的联系人）发消息，需要一份独立的同意台账：`verified_contacts` 表、`contact_type_unsubscribes` 表、平台级黑名单，以及 `/contacts` 一族路由（`POST /contacts`、`POST /contacts/:id/verify`、`POST /contacts/:id/resend`、`GET /contacts`）。**本轮刻意后置，不是漏项**（[ADR-notification-scope-2026-10-15](../../../adr/adr-notification-scope-2026-10-15.md)）。因此 `RecipientClass` 的闭集里保留 `external` 取值，但本轮**没有生产者**，相关的 `notification.contact.*` 审计动作本轮也不声明。
+- **不声明任何权限点。** 本能力的路由不带自有权限闸：没有任何模块为本能力的路由声明权限，路由在中间件的声明表里按需认证、不带权限判定。谁可以读某个收件人的收件箱、谁可以改某个收件人的偏好，由**宿主侧的授权**决定——宿主在自己的链上另加一层判定，或按他自己的模型约束这些端。本能力因此不进入 `authz.PermissionSpec` 与 `authz.TranslationSpec` 的声明面（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
+- **非用户外部联系人的同意台账刻意后置。** 给**非用户的外部联系人**（手机号、邮箱地址这类不属于本系统账户的联系人）发消息，需要一份独立的同意台账：`verified_contacts` 表、`contact_type_unsubscribes` 表、平台级黑名单，以及 `/contacts` 一族路由（`POST /contacts`、`POST /contacts/:id/verify`、`POST /contacts/:id/resend`、`GET /contacts`）。**本轮刻意后置，不是漏项**（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。因此 `RecipientClass` 的闭集里保留 `external` 取值，但本轮**没有生产者**，相关的 `notification.contact.*` 审计动作本轮也不声明。
 - **不发送邮件与短信本身。** 出站的外部渠道各经一条接缝：邮件交 `pkg/mail` 的 `Sender`，短信交 `pkg/sms` 的 `Registry` 与 `Sender`。本能力选择模板、渲染文本、构造请求，实际投递与厂商交互归 `pkg/mail` 与 `pkg/sms`。
 - **不聚合同类消息，不限频。** 一次派发就落一条消息、发一次；把短时间内的同类型消息合并成一条、按收件人给发送设上限，都不在本能力内。面向收件人的发送上限由宿主经 `pkg/ratelimit` 另行施加。
 - **不产生平台域的行。** 本能力的每一行都属于一个租户——收件人是一个账户，账户属于租户。平台级广播与非用户外部联系人的同意台账同属一类：它们需要一个不属于任何租户的收件人，而本轮没有这样的收件人。
@@ -159,9 +159,9 @@ type Message struct {
 
 **一个通知类型是发出它的那个业务模块的声明，不是通知模块的声明。** 业务模块把自己的 `notification.TypeSpec` 放进模块描述符的 `Resources`：`core.ProcessRegistry.Register(...)` 的一个 `core.Module` 的 `Resources []any` 里含这个值。**`notification.preferences` 与 `notification.delivery` 是两处消费点**，各自在它的 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐全部声明：偏好据以回答 `Types` 与 `Type` 并在写入时对照它校验，投递据以在发送前查类型。
 
-**取材域取「可用集」，不做减法。** 判据是：**类型是词汇**。偏好写入与投递拿它当校验参照——「这个类型键认不认识」是一个词汇问题，与这次命令装了什么无关；同一个声明不能在这条命令下合法、在另一条命令下非法。一个只被静态级纳入、没有被本次命令驱动的业务模块，它的类型声明照旧进得了分类法；消解落选的模块，其类型声明同样不退出。这与既有资源消费点（`settings.Schema`、`authz.PermissionSpec`、`authz.TranslationSpec`）同一条判据（[ADR-notification-taxonomy-2026-10-15](../../../adr/adr-notification-taxonomy-2026-10-15.md)、架构不变量 15）。
+**取材域取「可用集」，不做减法。** 判据是：**类型是词汇**。偏好写入与投递拿它当校验参照——「这个类型键认不认识」是一个词汇问题，与这次命令装了什么无关；同一个声明不能在这条命令下合法、在另一条命令下非法。一个只被静态级纳入、没有被本次命令驱动的业务模块，它的类型声明照旧进得了分类法；消解落选的模块，其类型声明同样不退出。这与既有资源消费点（`settings.Schema`、`authz.PermissionSpec`、`authz.TranslationSpec`）同一条判据（[ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)、架构不变量 15）。
 
-**不引入任何运行期可变的注册表。** 模块描述符在驱动开始前已冻结，全部声明在 `New` 那一刻都已在注册表里，「业务模块可以在 notification 之后才声明类型」因此平凡成立，不需要任何进程级的登记座。被否决的选项与各自的否决理由见 [ADR-notification-taxonomy-2026-10-15](../../../adr/adr-notification-taxonomy-2026-10-15.md)。
+**不引入任何运行期可变的注册表。** 模块描述符在驱动开始前已冻结，全部声明在 `New` 那一刻都已在注册表里，「业务模块可以在 notification 之后才声明类型」因此平凡成立，不需要任何进程级的登记座。被否决的选项与各自的否决理由见 [ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)。
 
 ### 路由
 
@@ -227,7 +227,7 @@ type Message struct {
 
 **渲染经由 i18n 引擎，文案目录归声明它的业务模块。** 一条文案的键形如 `<type_key>.<channel>.<part>`，由**声明该类型的业务模块**以 i18n 目录承载，装配期并入引擎；`notification.delivery` 在投递时按收件人语言经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题，引擎回落默认语言、再回落键本身，结果永不为空。渲染缝是投递模块的构造期必需依赖。文案的归属与 i18n 的「由产生消息的模块渲染」不冲突：目录归声明方，渲染发生在把文本写出的投递流水线（[design-i18n](../design-i18n.md)）。
 
-**`notification.delivery` 取用 `notification.Preferences` 读分类法与偏好。** 投递需要「这个类型走哪些渠道」（分类法的默认渠道，被收件人偏好改写后）与「这条收件人的生效渠道」，两者都归偏好模块；投递因此把 `(*notification.Preferences)(nil)` 列为构造期必需依赖（[ADR-notification-taxonomy-2026-10-15](../../../adr/adr-notification-taxonomy-2026-10-15.md)）。
+**`notification.delivery` 取用 `notification.Preferences` 读分类法与偏好。** 投递需要「这个类型走哪些渠道」（分类法的默认渠道，被收件人偏好改写后）与「这条收件人的生效渠道」，两者都归偏好模块；投递因此把 `(*notification.Preferences)(nil)` 列为构造期必需依赖（[ADR-notification-taxonomy](../../../adr/adr-notification-taxonomy.md)）。
 
 方向满足架构不变量：`notification.delivery` import 的是各功能目录的根包，不 import 任何别的功能目录的实现子包；各模块不相互 import 对方的实现子包，只经根包声明的功能接缝与资源类型相连。
 

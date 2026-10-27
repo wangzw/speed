@@ -6,11 +6,11 @@
 
 - **根包 `pkg/feature` 承载声明面**：资源类型 `Spec`、功能 `Board`、名字规则与哨兵错误。根包的非测试代码只 import 标准库，声明特性的模块 import 它不带进任何第三方库。
 - **模块 `feature.board`（包 `pkg/feature/board`）承载发布**：在 `Prepare` 校验可用集里的全部声明，在 `Migrate` 打开贴出窗口，在 `Init` 挂出 `GET /api/v1/features` 并向认证网关登记，在 `Start` 封板、算出本进程的特性集并冻结应答字节，请求期答出冻结的字节。
-- **特性文档是进程级的**：取值由本进程的装配决定，在 `Start` 冻结，与调用者身份无关，冒充开始或结束都不改变它（[ADR-feature-document-2026-10-17](../../adr/adr-feature-document-2026-10-17.md)）。
+- **特性文档是进程级的**：取值由本进程的装配决定，在 `Start` 冻结，与调用者身份无关，冒充开始或结束都不改变它（[ADR-feature-document](../../adr/adr-feature-document.md)）。
 
 ### 特性文档承载的事实
 
-**判据是存在性。** 特性文档只承载这样的事实：它回答「前端已带着代码的某个界面面——页面、区块或入口控件——在本进程是否成立」，取值是布尔，且只在登录后才需要（[ADR-feature-ownership-2026-10-17](../../adr/adr-feature-ownership-2026-10-17.md)）。例：手机号自助（`authn.phone`）、自助添加邮箱（`authn.identifiers.email`）、邮件渠道（`notification.channel.email`）、SSO 管理组（`authn.admin.sso`）。
+**判据是存在性。** 特性文档只承载这样的事实：它回答「前端已带着代码的某个界面面——页面、区块或入口控件——在本进程是否成立」，取值是布尔，且只在登录后才需要（[ADR-feature-ownership](../../adr/adr-feature-ownership.md)）。例：手机号自助（`authn.phone`）、自助添加邮箱（`authn.identifiers.email`）、邮件渠道（`notification.channel.email`）、SSO 管理组（`authn.admin.sso`）。
 
 不满足这条判据的事实按下面的判据归属；不发布的判据先于发现面的判据适用：
 
@@ -23,12 +23,12 @@
 
 特性文档不对匿名者发布：网关由网关模块构造时，匿名请求恒得网关的 401。登录前的事实不经特性文档，只经拥有该事实的模块自己的匿名发现面发布，准入判据见[架构的特性与前端定制](../architecture.md#特性与前端定制)。本模块不设匿名档。
 
-匿名者也不能借 HTTP 应答推断本模块是否运行，条件是网关由网关模块构造，且所在监听按配置把 `/api/v1/features` 交给点名的端（见[对宿主的要求](#对宿主的要求)）：本模块不运行时，`/api/v1/features` 照样由该端的链作答，匿名请求得到与本模块运行时相同的网关 401。其余前提见 [http](http/design-http.md) 的分派 handler（[ADR-http-dispatch-2026-10-17](../../adr/adr-http-dispatch-2026-10-17.md)）。
+匿名者也不能借 HTTP 应答推断本模块是否运行，条件是网关由网关模块构造，且所在监听按配置把 `/api/v1/features` 交给点名的端（见[对宿主的要求](#对宿主的要求)）：本模块不运行时，`/api/v1/features` 照样由该端的链作答，匿名请求得到与本模块运行时相同的网关 401。其余前提见 [http](http/design-http.md) 的分派 handler（[ADR-http-dispatch](../../adr/adr-http-dispatch.md)）。
 
 ### 非职责
 
 - **不发布登录前的事实，也不发布取值、形状与参数。** 归属见「特性文档承载的事实」与「匿名档边界」。
-- **不按权限过滤，也不按租户成员身份过滤。** 特性在场与授权是两件事：每个已认证调用者读到同一份集合，授权仍由各模块在服务端判定（[ADR-feature-document-2026-10-17](../../adr/adr-feature-document-2026-10-17.md)）。
+- **不按权限过滤，也不按租户成员身份过滤。** 特性在场与授权是两件事：每个已认证调用者读到同一份集合，授权仍由各模块在服务端判定（[ADR-feature-document](../../adr/adr-feature-document.md)）。
 - **不描述界面。** 特性名只承担「在不在」；页面路径、标签、图标与控件的形状都在前端产物里，本模块不发布渲染描述。前端只门控自己已带着代码的面。
 - **不认识任何具体特性。** 名字由服务它的模块声明或贴出，本模块只按名字规则校验、按取材域计算。哪个模块声明哪些特性，由该模块的设计文档承载。
 - **不核对特性与路由是否一致。** 一个静态特性的路由是否已登记、一份 `Spec` 与模块挂的路由是否对得上，本模块都不核对；声明模块受架构不变量 18 约束，各自以测试守住。
@@ -121,7 +121,7 @@ core.Module{
 
 **配置。** `feature.board.endpoint`：单个端名，只从主配置源取值，必填，无缺省。缺席即 `Prepare` 以 `config.ErrMissingRequired` 失败，错误以完整路径点名这一项。
 
-**片段。** `Resources` 里的 `Operations` 声明唯一一条 operation `feature.board.list`，并绑定 handler 的类型（输入为空、成功应答是特性文档）；`Spec` 以 `openapi/board.json` 为它的文档，片段由同一份声明生成，不是手写文件（[ADR-http-openapi-generation-2026-10-18](../../adr/adr-http-openapi-generation-2026-10-18.md)）。handler 不接触请求：`no-store` 与状态来自声明的应答。资源是 `init` 期的静态声明，写不进配置点名的端，片段因而按约定的端名 `account` 声明；挂载用配置点名的端，两者各自维护，与 [http](http/design-http.md) 对 `Spec` 的口径相同。
+**片段。** `Resources` 里的 `Operations` 声明唯一一条 operation `feature.board.list`，并绑定 handler 的类型（输入为空、成功应答是特性文档）；`Spec` 以 `openapi/board.json` 为它的文档，片段由同一份声明生成，不是手写文件（[ADR-http-openapi-generation](../../adr/adr-http-openapi-generation.md)）。handler 不接触请求：`no-store` 与状态来自声明的应答。资源是 `init` 期的静态声明，写不进配置点名的端，片段因而按约定的端名 `account` 声明；挂载用配置点名的端，两者各自维护，与 [http](http/design-http.md) 对 `Spec` 的口径相同。
 
 **路由。** 本模块在 `feature.board.endpoint` 点名的端上挂 `GET /api/v1/features`，并在 `Init` 登记：
 
@@ -269,7 +269,7 @@ sequenceDiagram
 { "features": [ { "name": "authn.phone", "module": "authn.login", "conditional": true } ] }
 ```
 
-它与 `contracts/api.json` 的片段同源，都来自同一个二进制的 import 闭包。宿主的 `gen` 命令写出它（[starters](design-starters.md)），前端据它生成特性名类型（[api-sdk](web/design-web-api-sdk.md)）。静态特性都在词表里，贴出又必须对应一条条件特性的声明，所以任何一份特性文档都是词表的子集，前端对特性名的静态检查因此成立（[ADR-feature-vocabulary-2026-10-17](../../adr/adr-feature-vocabulary-2026-10-17.md)）。
+它与 `contracts/api.json` 的片段同源，都来自同一个二进制的 import 闭包。宿主的 `gen` 命令写出它（[starters](design-starters.md)），前端据它生成特性名类型（[api-sdk](web/design-web-api-sdk.md)）。静态特性都在词表里，贴出又必须对应一条条件特性的声明，所以任何一份特性文档都是词表的子集，前端对特性名的静态检查因此成立（[ADR-feature-vocabulary](../../adr/adr-feature-vocabulary.md)）。
 
 ## 核心算法与流程
 
@@ -358,12 +358,12 @@ sequenceDiagram
 本模块的特性集是进程级的，不含租户级收窄。租户级收窄按以下形状接入，约束是**只做减法**：
 
 - **收窄集由一个可选功能给出**（`feature.Narrower`，形如 `Narrow(ctx, tenant) (absent []string, err error)`）。作答取「封板时冻结的进程集减去收窄集」，租户不能打开本进程没有服务的面。收窄出错时整份应答答 503，不给部分结果。
-- **收窄的取值放在设置的租户层**（架构不变量 14，[ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)）。
+- **收窄的取值放在设置的租户层**（架构不变量 14，[ADR-settings-scope](../../adr/adr-settings-scope.md)）。
 - **租户档的读面挂在租户解析端**：一个可选配置点名一个受 `tenant.resolve` 与 `tenant.admission` 守卫的端，在其上挂与 `GET /api/v1/features` 同形的读面。
 - **服务端强制由请求层承担**：按（端、方法、路径）登记特性名，对被收窄的特性答出与无匹配路由逐字节相同的 404。
 - **应答形状不变。** 契约描述写明内容可能随调用者与租户不同，应答带 `no-store`，外层是对象。前端一侧只扩缓存键（[auth-core](web/design-web-auth-core.md)），route-kit、各能力 UI 包与路由声明的 `requires` 都不变。
 
-authn 的登录前事实不按租户取值：登录不认识租户（[authn-login](authn/design-authn-login.md) 的非职责），放宽开关是只读全局层的设置项，读取时取全局行或声明默认值（[ADR-authn-settings-and-secrets-2026-10-10](../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。收窄因而只作用于特性文档。
+authn 的登录前事实不按租户取值：登录不认识租户（[authn-login](authn/design-authn-login.md) 的非职责），放宽开关是只读全局层的设置项，读取时取全局行或声明默认值（[ADR-authn-settings-and-secrets](../../adr/adr-authn-settings-and-secrets.md)）。收窄因而只作用于特性文档。
 
 ### 应用模块的特性
 

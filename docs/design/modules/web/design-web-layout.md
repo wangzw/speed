@@ -43,7 +43,7 @@
 
 **收起窄栏。** 侧栏形态的收起开关落在抽屉纸顶部行末尾，顶栏形态仍在顶栏。收起后的固定宽由主题间距基数算出，且不小于 44px 的触摸目标下限——间距基数较小的主题不会把窄栏压到下限之下。品牌容器在收起时裁剪但保留可及名。
 
-区域的地标与实现见 [layout-kit](design-web-layout-kit.md)，形态取舍见 [ADR-web-shell-layout-variant-2026-10-20](../../../adr/adr-web-shell-layout-variant-2026-10-20.md)。
+区域的地标与实现见 [layout-kit](design-web-layout-kit.md)，形态取舍见 [ADR-web-shell-layout-variant](../../../adr/adr-web-shell-layout-variant.md)。
 
 ### 侧栏的层次
 
@@ -71,7 +71,7 @@
 - **常驻侧栏是 chrome，不是卡片。** 它取 `container` 表面：整列、无圆角、只在与内容相邻的一侧留描边，与顶栏的“只在下沿分隔”同构。
 - **表面不引入宽度上限。** `SectionCard` 占满所在的内容列；控制台仍没有受限宽的内容区容器（见「内容区的宽度」）。
 
-表面取值与组件映射见 [ui-kit](design-web-ui-kit.md)，决策见 [ADR-web-surface-system-2026-10-20](../../../adr/adr-web-surface-system-2026-10-20.md)。
+表面取值与组件映射见 [ui-kit](design-web-ui-kit.md)，决策见 [ADR-web-surface-system](../../../adr/adr-web-surface-system.md)。
 
 ### 页型的骨架
 
@@ -97,7 +97,7 @@
 - **层级自下而上为内容区、固定头、侧边面板、对话框。** 固定头取主题 `zIndex.drawer + 1`（[layout-kit](design-web-layout-kit.md)），顶栏形态下即顶栏，侧栏形态下即横幅容器；侧边面板取 `zIndex.modal`，使面板的头部不被固定头遮挡；对话框同取 `zIndex.modal`，挂载晚于面板而位于其上。
 - **宽度取档按视口，不按容器。** 面板是锚定视口的覆盖层，不在内容区的流里；它在 `sm` 及以上取所选档位的固定宽度，`sm` 以下占满视口宽度。面板内的组件（`FormLayout`、`DataTable`）仍按各自的容器响应，面板的宽度档因此决定其内的表单取一列还是两列。
 - **同一页面同时打开的侧边面板至多一个，面板内不再打开另一个面板。** 面板内需要二次确认或步进验证时用对话框；需要更重的流程时该流程升为整页。
-- **面板的打开状态是页内状态，不进路由，不进 URL。** 刷新页面回到未打开的状态（[ADR-web-side-panel-2026-10-17](../../../adr/adr-web-side-panel-2026-10-17.md)）。
+- **面板的打开状态是页内状态，不进路由，不进 URL。** 刷新页面回到未打开的状态（[ADR-web-side-panel](../../../adr/adr-web-side-panel.md)）。
 
 ### 断点标度
 

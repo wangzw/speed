@@ -3,7 +3,7 @@
  * contact is still awaiting verification: two separate facts the host keys
  * on, deliberately not folded together.
  *
- * The ruling (ADR-authn-signup-2026-10-22) splits registration from setup. A
+ * The ruling (ADR-authn-signup) splits registration from setup. A
  * password registration opens the account with a pending email address, and
  * the account proves that address after signing in; an SMS first login opens
  * the account with a verified phone. Setup then adds the two pieces password

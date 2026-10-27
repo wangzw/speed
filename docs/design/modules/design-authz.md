@@ -2,11 +2,11 @@
 
 ## 职责
 
-`pkg/authz` 交付**授权**：在已认定的身份与已解析的租户之上，判定这个身份能否对某个资源做某个动作。模型是经典 RBAC——角色到权限，权限按（资源，动作）声明，**一个租户是一个策略域**（[ADR-authz-model-2026-10-12](../../adr/adr-authz-model-2026-10-12.md)）。引擎桥接 `github.com/casbin/casbin/v3`，策略持久化经 `pkg/db` 由本模块自写的一个薄 adapter 落到自己的表（[ADR-authz-engine-2026-10-12](../../adr/adr-authz-engine-2026-10-12.md)、[ADR-authz-store-2026-10-12](../../adr/adr-authz-store-2026-10-12.md)）。
+`pkg/authz` 交付**授权**：在已认定的身份与已解析的租户之上，判定这个身份能否对某个资源做某个动作。模型是经典 RBAC——角色到权限，权限按（资源，动作）声明，**一个租户是一个策略域**（[ADR-authz-model](../../adr/adr-authz-model.md)）。引擎桥接 `github.com/casbin/casbin/v3`，策略持久化经 `pkg/db` 由本模块自写的一个薄 adapter 落到自己的表（[ADR-authz-engine](../../adr/adr-authz-engine.md)、[ADR-authz-store](../../adr/adr-authz-store.md)）。
 
 归属本模块的判据是判定所需的输入：还需要资源、动作与策略，而认证事实（凭据、账户、标识、会话、令牌、因素、IdP 配置、冒充记录）不足以单独裁决的，归本模块；只需认证事实即可裁决的归认证。本模块的回答是：这个身份对（域，资源，动作）有没有匹配的策略行。
 
-本功能目录由接口包与子包组成，判据同时是依赖闭包（[ADR-authz-packaging-2026-10-12](../../adr/adr-authz-packaging-2026-10-12.md)）：
+本功能目录由接口包与子包组成，判据同时是依赖闭包（[ADR-authz-packaging](../../adr/adr-authz-packaging.md)）：
 
 - **根包 `pkg/authz`** 定义接口、数据类型、权限常量、Casbin 模型文本与哨兵；**自身不登记模块**。根包被每一个使用方 import，把第三方库留在根包里会把它带进每一个使用方的闭包，所以根包只依赖标准库。
 - **`pkg/authz/policy`（模块 `authz.policy`）** 交付策略表与迁移、薄 adapter、Casbin 引擎、主体持有权限的读取、权限目录、`Manager` 与账户生命周期清理，并实现成员关系生命周期与成员关系守卫。它取用 `pkg/db`，因此把库依赖限制在需要策略存储的装配里。
@@ -15,7 +15,7 @@
 - **`pkg/authz/self`（模块 `authz.self`）** 挂 `/api/v1/authz/me/permissions`，把主体持有的权限读给调用方自身，不交付功能；它取用 `policy` 的 `SubjectPermissions`，因此不需要管理面或强制点。
 - **`pkg/authz/internal/persist`、`pkg/authz/internal/policy` 与 `pkg/authz/authztest`** 不登记模块：两个 `internal` 包是库包，`authztest` 是测试构造夹具。
 
-本模块承接设计中划归授权的各权限点（[ADR-authn-decision-seam-2026-10-10](../../adr/adr-authn-decision-seam-2026-10-10.md)）：审计的检索与导出、设置的写入面、口令表主体（`static.*`）的角色、以及谁有权冒充谁。它们各自的形状见[承接的权限点](#承接的权限点)。
+本模块承接设计中划归授权的各权限点（[ADR-authn-decision-seam](../../adr/adr-authn-decision-seam.md)）：审计的检索与导出、设置的写入面、口令表主体（`static.*`）的角色、以及谁有权冒充谁。它们各自的形状见[承接的权限点](#承接的权限点)。
 
 ### 非职责
 
@@ -29,7 +29,7 @@
 - **不定义响应体的形状。** 本模块决定拒绝的状态码、`Problem.Type` 与必要的响应头；响应体经入口模块的 `Fail` 写出，形状由入口模块的默认形状或交付 `ErrorResponder` 的模块决定（[http](http/design-http.md)）。
 - **写出缺身份时的 401，且它与准入层的无身份 401 同形。** 这条不推翻「不做认证」：它是「路由需要认证而没有身份」的拒绝，与准入层写出的那个 401 是同一个判定，形状也保持相同——同为 `Problem{Status: 401}`（不带 `Type`），头按准入层无身份 401 的同一规则组装（[authn-gate](authn/design-authn-gate.md)）。它出现在这里，因为授权阶段也在网关之内：网关缺席或没守这个端时，授权层是链上唯一还能拒绝匿名请求的层，而准入层只在它自己所守的端上运行；两处写出同一个形状，调用方就不必按「谁拒的」分辨它们的读法（[tenant-admission](tenant/design-tenant-admission.md)、[authn](authn/design-authn.md)）。
 - **不实现管理面的访问控制之外的任何业务动作。** `authz.admin` 只把权限目录、角色、权限授予与角色绑定的读写暴露成 HTTP 路由，动作本身是 `policy` 的表操作。
-- **不决定哪条命令纳入本模块。** 每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`；是否运行是命令树上的决定（[ADR-command-tree-2026-09-20](../../adr/adr-command-tree-2026-09-20.md)）。
+- **不决定哪条命令纳入本模块。** 每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`；是否运行是命令树上的决定（[ADR-command-tree](../../adr/adr-command-tree.md)）。
 
 ## 术语表
 
@@ -247,7 +247,7 @@ const (
 
 下列各条即本模块承接的全部权限点，由本模块以权限常量与策略行的形状落地；策略数据由宿主经 `Manager` 写入，本模块不在迁移里种任何角色或绑定。
 
-- **审计的检索与导出**：权限 `audit.read` 与 `audit.export`。审计不提供查询面（[audit](audit/design-audit.md)），检索与导出的端点由审计的检索单元 [audit.admin](audit/design-audit-admin.md) 挂出，两者的判定都经本模块的 handler 内 API 落到 `audit.read` 上；`audit.export` 仍由本模块携带，框架内没有模块询问它，一个按另一份权限判定的导出由宿主自建（[ADR-audit-export-2026-10-24](../../adr/adr-audit-export-2026-10-24.md)）。
+- **审计的检索与导出**：权限 `audit.read` 与 `audit.export`。审计不提供查询面（[audit](audit/design-audit.md)），检索与导出的端点由审计的检索单元 [audit.admin](audit/design-audit-admin.md) 挂出，两者的判定都经本模块的 handler 内 API 落到 `audit.read` 上；`audit.export` 仍由本模块携带，框架内没有模块询问它，一个按另一份权限判定的导出由宿主自建（[ADR-audit-export](../../adr/adr-audit-export.md)）。
 - **设置的写入面**：权限 `settings.read` 与 `settings.write`。设置的写入面没有访问控制，由宿主经本模块鉴权（[settings](settings/design-settings.md)）。
 - **口令表主体（`static.*`）的角色**：本模块只提供形状——保留的平台域 `system`、内置的运营角色、以及绑定表；口令表主体的平台角色由宿主写入，不在迁移里种。`Identity.Account().IsStatic()` 的主体读不到任何成员关系，其权限只来自平台域上的绑定。
 - **谁有权冒充谁**：权限 `authn.impersonation.start`、`authn.impersonation.read`、`authn.impersonation.revoke`，在租户域上判定。冒充的结构性限制（发起者、目标、参数、并发）由 `authn.impersonation` 核对，本模块在其之上收紧「谁能冒充谁」（[authn-impersonation](authn/design-authn-impersonation.md)）。
@@ -284,7 +284,7 @@ const (
 
 **域。** 中间件的 `Query.Domain` 取 `tenant.FromContext` 的标识（无租户则 `PlatformDomain`）。`Decider` 的 `Query.Domain` 取 `Decision.Tenant`，其中 `authn.account.*` 在 `Decision.Tenant` 为空时取 `PlatformDomain`；`authn.tenant.access` 是唯一带平台域回退的动作，见[平台域与跨租户回退](#平台域与跨租户回退)。
 
-**未知动作 fail-closed。** `Decider` 收到的 `Decision.Action` 不在解析出的翻译集里时返回 `(false, nil)`：拒绝而不报错。`Action` 是开放的字符串类型，认证新增一个常量时，本模块在对齐更新之前对它的回答是拒绝，方向取拒绝（[ADR-authz-decision-seam-2026-10-12](../../adr/adr-authz-decision-seam-2026-10-12.md)）。
+**未知动作 fail-closed。** `Decider` 收到的 `Decision.Action` 不在解析出的翻译集里时返回 `(false, nil)`：拒绝而不报错。`Action` 是开放的字符串类型，认证新增一个常量时，本模块在对齐更新之前对它的回答是拒绝，方向取拒绝（[ADR-authz-decision-seam](../../adr/adr-authz-decision-seam.md)）。
 
 ### 配置与设置
 
@@ -297,7 +297,7 @@ const (
 - **`authz.admin.endpoints`**（配置，字符串列表）：管理面路由所挂的端，按入口模块自身配置给它们的名字。**必填、无缺省、不接受 `*`**——把管理面路由挂到每个端会挂到公开端上，那里没有网关守它们；只取主配置源。本模块没有自己的失败哨兵，一个跑不了的形状——空清单、空名、`*`、重名——是 `authn.ErrInvalidConfig`；入口模块不声明的端名是启动期 `ErrUnknownEndpoint`。
 - **`authz.self.endpoints`**（配置，字符串列表）：调用方自身权限读取所挂的端，按入口模块自身配置给它们的名字。**必填、无缺省、不接受 `*`**——这条读取属于已认证调用方，挂在没有网关的端上就只剩 handler 自己写的 401；只取主配置源。形状失败与 `authz.admin.endpoints` 同口径：空清单、空名、`*`、重名是 `authn.ErrInvalidConfig`，入口模块不声明的端名是启动期 `ErrUnknownEndpoint`。
 
-**配置承载启动必须项与改值要重启才生效的项，其余能在运行期生效的值一律归设置**（[ADR-config-scope-2026-09-13](../../adr/adr-config-scope-2026-09-13.md)）：`endpoints`、`load-timeout` 与 `refresh-interval` 都属配置——`endpoints` 与 `load-timeout` 在装配期或启动装载时就要读出来，`refresh-interval` 设定 `Start` 建立的 ticker，改值要重启进程才生效。**本模块没有设置型的放宽开关**：唯一会放宽的方向是 `undeclared`，它是配置项，改它要重启。
+**配置承载启动必须项与改值要重启才生效的项，其余能在运行期生效的值一律归设置**（[ADR-config-scope](../../adr/adr-config-scope.md)）：`endpoints`、`load-timeout` 与 `refresh-interval` 都属配置——`endpoints` 与 `load-timeout` 在装配期或启动装载时就要读出来，`refresh-interval` 设定 `Start` 建立的 ticker，改值要重启进程才生效。**本模块没有设置型的放宽开关**：唯一会放宽的方向是 `undeclared`，它是配置项，改它要重启。
 
 ### 对宿主的要求
 
@@ -399,8 +399,8 @@ const (
 ### 依赖方向
 
 - **根包只依赖标准库。** 它被每个使用方 import，第三方的 Casbin 库与 gin、gorm 不出现在根包签名里，也不进根包的非测试 import 闭包。`pkg/authz/deps_test.go` 守住这条断言。
-- **库类型只出现在叶子与库包里。** `github.com/casbin/casbin/v3` 落在 `internal/policy` 与 `internal/persist`，gin 落在 `guard` 与 `admin`，gorm 与 `pkg/db` 落在 `policy`。只有 import 该子包的宿主才背负它（[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。
-- **本模块 import `pkg/authn` 根包并交付其中的接缝，认证不 import 本模块**（[ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)）。`authz/guard` 实现 `authn.Decider`，读 `Identity` 的方法集；方向是授权指向认证。
+- **库类型只出现在叶子与库包里。** `github.com/casbin/casbin/v3` 落在 `internal/policy` 与 `internal/persist`，gin 落在 `guard` 与 `admin`，gorm 与 `pkg/db` 落在 `policy`。只有 import 该子包的宿主才背负它（[ADR-module-layout](../../adr/adr-module-layout.md)）。
+- **本模块 import `pkg/authn` 根包并交付其中的接缝，认证不 import 本模块**（[ADR-authn-scope](../../adr/adr-authn-scope.md)）。`authz/guard` 实现 `authn.Decider`，读 `Identity` 的方法集；方向是授权指向认证。
 - **本模块 import `pkg/tenant` 根包取 `tenant.FromContext` 与 `tenant.CrossTenant`，不 import 它的子包。** 准入层交付的 `(*tenant.Admission)(nil)` 是授权阶段内的定序锚点，本模块的中间件用 `After` 指向它（[tenant-admission](tenant/design-tenant-admission.md)）。
 - **`authz.admin` import `pkg/feature` 根包以声明特性，`feature.board` import 本模块的根包以登记开放路由。** `pkg/feature` 根包只依赖标准库，不扩大 `authz.admin` 的闭包；本模块的任何包都不 import `pkg/feature/board`（[feature](design-feature.md)）。
 - 方向满足架构不变量（[architecture](../architecture.md)）：本模块位于 `core`、`config`、`log`、`http`、`observability`、`db`、`event`、`authn`、`tenant` 之上，不被其中任何一个 import。本模块不 import `pkg/settings`：策略参数中塑造启动结构的部分在配置一侧，判定与装载不读设置存储。
@@ -581,7 +581,7 @@ flowchart TD
 
 ### Casbin 模型文本
 
-模型文本是根包的常量 `ModelText`，经 `model.NewModelFromString` 装载。宿主只写策略数据，不写模型文本：模型固定在代码里，见[扩展点](#扩展点)与 [ADR-authz-engine-2026-10-12](../../adr/adr-authz-engine-2026-10-12.md)。
+模型文本是根包的常量 `ModelText`，经 `model.NewModelFromString` 装载。宿主只写策略数据，不写模型文本：模型固定在代码里，见[扩展点](#扩展点)与 [ADR-authz-engine](../../adr/adr-authz-engine.md)。
 
 ```
 [request_definition]
@@ -596,7 +596,7 @@ e = some(where (p.eft == allow))
 m = g(r.sub, p.sub, r.dom) && r.dom == p.dom && r.obj == p.obj && r.act == p.act
 ```
 
-**无通配符、无角色继承、无 deny 行。** 匹配是逐字相等加一条 `g` 的角色解析；拒绝由「无匹配」表达，`policy_effect` 因而是「存在一条 allow 即允许」。`g` 的第三个参数是域，角色解析因此按域进行，一个账户在租户 A 的角色不解析到租户 B 的权限（[ADR-authz-model-2026-10-12](../../adr/adr-authz-model-2026-10-12.md)）。
+**无通配符、无角色继承、无 deny 行。** 匹配是逐字相等加一条 `g` 的角色解析；拒绝由「无匹配」表达，`policy_effect` 因而是「存在一条 allow 即允许」。`g` 的第三个参数是域，角色解析因此按域进行，一个账户在租户 A 的角色不解析到租户 B 的权限（[ADR-authz-model](../../adr/adr-authz-model.md)）。
 
 ### 表与迁移
 
@@ -663,7 +663,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 - **读（`LoadPolicy`）：** 必须**跨租户**读——判定进程持有全部租户的策略——用的就是构造时那条带标记的会话。这是本模块唯一一处对安全敏感表的跨租户读（[并发与事务边界](#并发与事务边界)）。
 - **`SavePolicy` 不实现「清表重写」，返回 `ErrNotImplemented`**（adapter 包自带的错误，不是根包哨兵）。本模块只经 `Manager` 逐条增删策略，一次全量重写会在读改写之间抹掉并发写入。
 
-策略落在以真实租户列领衔键的表上，由本模块自写这个 adapter，见 [ADR-authz-store-2026-10-12](../../adr/adr-authz-store-2026-10-12.md)。
+策略落在以真实租户列领衔键的表上，由本模块自写这个 adapter，见 [ADR-authz-store](../../adr/adr-authz-store.md)。
 
 ### 快照
 
@@ -697,7 +697,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 - **写路径：** 写库并提交 → 本地换指针（以新快照替换旧快照）→ 发 `authz.policy.changed` 事件。本地那次写入的生效不依赖事件：换指针在提交之后立即发生。
 - **跨副本失效：** 别的副本订阅 `authz.policy.changed`，收到的副本重载快照。没有 `event.Bus` 的装配靠配置 `authz.policy.refresh-interval` 周期重载兜底；间隔为 `0` 时不重载，撤销的生效延迟以别的副本的进程寿命为界。
 
-**撤销的生效延迟由本模块的换指针窗口与准入层的缓存分别界定**（[ADR-authz-cache-2026-10-12](../../adr/adr-authz-cache-2026-10-12.md)）：
+**撤销的生效延迟由本模块的换指针窗口与准入层的缓存分别界定**（[ADR-authz-cache](../../adr/adr-authz-cache.md)）：
 
 1. **本模块换指针与事件传播的窗口。** 本副本在提交后立即换指针；别的副本要等 `authz.policy.changed` 到达或 `refresh-interval` 到期，这是本模块一侧的上界。
 2. **准入层对 `Decider` 答复的 TTL 缓存。** `tenant.admission` 把它从 `Decider` 得到的 `authn.tenant.access` 放行结果按 `tenant.admission.check-ttl` 缓存在进程内（[tenant-admission](tenant/design-tenant-admission.md)），请求不会每次都问到本模块。一条平台级放行被撤销之后，准入层至多在 `check-ttl` 之内仍按缓存放行。这条上界与本模块的一侧无关，它与本模块的上界并存、不叠加取小——一个管本模块自己的快照，一个管准入层的缓存。
@@ -720,11 +720,11 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 **租户管理员至少保留一个。** `Manager.DeleteBinding` 删除 `TenantAdminRole` 的绑定时，若那是该域的最后一条，以 `ErrLastTenantAdmin` 拒绝。`authz.admin` 的绑定删除路由另拒绝调用方删除自己在某域 `TenantAdminRole` 的绑定：一个租户管理员不能取消自己的管理员权限，要离开由另一个管理员移除。
 
-**判底的两条路径共用一把按租户的锁。** 根包定义 `TenantLock`；`Manager.DeleteBinding` 在数租户管理员绑定之前取它，提交之后释放，`authn.MembershipGuard.CheckMembershipRemoval` 所在的成员关系删除路径取的是同一个对象——本模块的守卫 `Lock` 直接委托给这个 `TenantLock`，宿主自己的守卫必须接同一个对象，两个各锁各的等于没锁。装配没有提供它时，本模块用进程内按租户的默认实现（`authz.InProcessTenantLock`）：单实例无需配置即正确。多副本的正确性由宿主改提供数据库级锁承担——PostgreSQL 上是会话级 advisory lock，SQLite 仍是进程内（[ADR-authn-membership-cleanup-2026-10-27](../../adr/adr-authn-membership-cleanup-2026-10-27.md)）。锁不可重入：账户删除的收尾与成员关系删除的级联走**不取锁的清理路径**——`Manager.ClearAccountBindings`，或模块内部同等的直接删除（平台域级联即后者）；不得经 `DeleteBinding`，那会重入自己已持有的锁而死锁。每个持有中的数据库锁占一条池化连接，删除事务再占一条，N 个并发管理员删除因此至少要 2N+1 条连接，不足时取锁等待并以 503 结束；进程内默认不额外占连接。这是装配级的非保证，写在 [tenant](../tenant/design-tenant.md) 的串行化一节。
+**判底的两条路径共用一把按租户的锁。** 根包定义 `TenantLock`；`Manager.DeleteBinding` 在数租户管理员绑定之前取它，提交之后释放，`authn.MembershipGuard.CheckMembershipRemoval` 所在的成员关系删除路径取的是同一个对象——本模块的守卫 `Lock` 直接委托给这个 `TenantLock`，宿主自己的守卫必须接同一个对象，两个各锁各的等于没锁。装配没有提供它时，本模块用进程内按租户的默认实现（`authz.InProcessTenantLock`）：单实例无需配置即正确。多副本的正确性由宿主改提供数据库级锁承担——PostgreSQL 上是会话级 advisory lock，SQLite 仍是进程内（[ADR-authn-membership-cleanup](../../adr/adr-authn-membership-cleanup.md)）。锁不可重入：账户删除的收尾与成员关系删除的级联走**不取锁的清理路径**——`Manager.ClearAccountBindings`，或模块内部同等的直接删除（平台域级联即后者）；不得经 `DeleteBinding`，那会重入自己已持有的锁而死锁。每个持有中的数据库锁占一条池化连接，删除事务再占一条，N 个并发管理员删除因此至少要 2N+1 条连接，不足时取锁等待并以 503 结束；进程内默认不额外占连接。这是装配级的非保证，写在 [tenant](tenant/design-tenant.md) 的串行化一节。
 
 **被删除的账户经宿主清理路径清空其在某域内的绑定。** `Manager.ClearAccountBindings(ctx, tenant, account)` 删掉该账户在该域内的全部绑定，不受上一条规则约束：那条规则保护的是仍在服务的域，而账户删除收尾要清掉的正是它自己的绑定，其中一条可能恰是该域最后的租户管理员绑定。它作用于一个域与一个账户：同域内其他账户的绑定、该账户在其他域的绑定都不动，角色与授予也不在它的范围内。它是宿主收尾路径而非管理面路由；管理面逐条删除绑定时仍经过最后一条规则。账户删除收尾因此可以让一个仍在服务的域没有租户管理员绑定，这是这条路径的明示例外：域之后要由一条新绑定恢复治理。
 
-**移除平台域的成员关系撤销该账户在平台域的全部绑定。** 平台管理员的绑定要求成员关系，成员关系被移除之后，残留的绑定会替一个不再属于平台租户的账户继续判定平台权限。本模块把这条清理实现为 `authn.MembershipLifecycle.MembershipRemoved`：成员关系删除提交之后同步调用，按账户删掉平台域的全部绑定并重载快照。删除平台域以外租户的成员关系不触到平台域。钩子幂等，重复执行不删任何行、不报错。本模块同时订阅 `authn.membership.changed`：事件的租户是平台域且变更值是 `removed` 时执行同一清理，作为提交与钩子之间进程崩掉、或另一个副本没做这次删除的补偿。事件的投递至少一次、可能重复，处理器重复执行不删任何行、不报错；暂停不是移除；没有事件总线的装配里只有同步钩子，没有补偿（[ADR-tenant-administration-2026-10-26](../../adr/adr-tenant-administration-2026-10-26.md)）。
+**移除平台域的成员关系撤销该账户在平台域的全部绑定。** 平台管理员的绑定要求成员关系，成员关系被移除之后，残留的绑定会替一个不再属于平台租户的账户继续判定平台权限。本模块把这条清理实现为 `authn.MembershipLifecycle.MembershipRemoved`：成员关系删除提交之后同步调用，按账户删掉平台域的全部绑定并重载快照。删除平台域以外租户的成员关系不触到平台域。钩子幂等，重复执行不删任何行、不报错。本模块同时订阅 `authn.membership.changed`：事件的租户是平台域且变更值是 `removed` 时执行同一清理，作为提交与钩子之间进程崩掉、或另一个副本没做这次删除的补偿。事件的投递至少一次、可能重复，处理器重复执行不删任何行、不报错；暂停不是移除；没有事件总线的装配里只有同步钩子，没有补偿（[ADR-tenant-administration](../../adr/adr-tenant-administration.md)）。
 
 **移除成员关系前守住租户的最后一个管理员。** 本模块把 `authn.MembershipGuard.CheckMembershipRemoval` 实现为与 `DeleteBinding` 相同的读法：点名租户的 `tenant-admin` 绑定只有一条且属于被移除的账户时，以 `ErrLastTenantAdmin` 拒绝，成员关系不删。检查只读绑定、不看成员是否暂停——规则要的是域内保留一条管理员绑定。它在成员关系删改事务之前询问，不与成员关系存储共用一个事务；宿主路由把拒绝答成 409 `conflict`。`MembershipGuard.Lock` 取的是上一条的 `TenantLock`，`DeleteBinding` 取的也是它。账户删除不走这条守卫，因此它可以把一个租户的最后一个租户管理员一并带走。
 
@@ -766,7 +766,7 @@ const (
 
 ### 种入面
 
-**`Seeder` 是独立于 `Manager` 的种入能力，由 `authz.policy` 排他交付**（[ADR-authz-seeding-2026-10-17](../../adr/adr-authz-seeding-2026-10-17.md)）。它只有 `SeedGrants(ctx, tenant, role, grants) (int, error)` 一个方法：给一个已存在的角色（`builtin` 与否都可以）添加它尚未持有的（资源，动作）对，返回本次实际写入的行数。
+**`Seeder` 是独立于 `Manager` 的种入能力，由 `authz.policy` 排他交付**（[ADR-authz-seeding](../../adr/adr-authz-seeding.md)）。它只有 `SeedGrants(ctx, tenant, role, grants) (int, error)` 一个方法：给一个已存在的角色（`builtin` 与否都可以）添加它尚未持有的（资源，动作）对，返回本次实际写入的行数。
 
 **它是独立接口而不是 `Manager` 上的一个方法，因为管理面只取用 `Manager`。** `authz.admin` 的模块声明里没有 `Seeder`，它的 handler 也不持有它，因此 `/api/v1/system/*` 下的任何写路由都触不到这条路径——这不是 handler 里的分支约定，而是该模块拿到的类型所决定（[管理面](#管理面)）。
 
@@ -792,7 +792,7 @@ const (
 
 ### 启动期模型自检
 
-**模型文本写错会静默改变授权方向**（[ADR-authz-engine-2026-10-12](../../adr/adr-authz-engine-2026-10-12.md)）。一个写错的 matcher 不报错，它只是让某些判定恒真或恒假。`policy.Start` 在装载快照之后、开始服务之前跑一次自检，用一组固定的夹具断言模型的行为：
+**模型文本写错会静默改变授权方向**（[ADR-authz-engine](../../adr/adr-authz-engine.md)）。一个写错的 matcher 不报错，它只是让某些判定恒真或恒假。`policy.Start` 在装载快照之后、开始服务之前跑一次自检，用一组固定的夹具断言模型的行为：
 
 | 夹具 | 期望 |
 |---|---|
@@ -840,7 +840,7 @@ const (
 
 - **模型 DSL 写错会静默改变授权方向。** 模型文本固定在代码里，宿主改不了它；写错的是本模块的代码，一个错误的 matcher 不报错，只是让某些判定恒真或恒假。缓解是[启动期模型自检](#启动期模型自检)：自检覆盖域隔离、对象与动作的逐字相等、无绑定的拒绝与判定的纯函数性，未覆盖的模型错误（例如 `g` 的域参数写反）在装配里不会被拦住。
 - **两份词表会漂移。** `authn.Action` 与 `authz.Permission` 是两份字符串词表，[词表对齐守卫](#词表对齐守卫)在测试里断言它们对齐，但那是构建期的守卫：一个绕过测试的构建，或在认证侧新增动作而本模块未更新时，未知动作走 fail-closed（拒绝），因此方向仍是安全的一侧——代价是一个新动作在被登记之前不可用。
-- **`LoadPolicy` 是唯一的跨租户读，且每个副本持有全部租户的策略。** 判定进程要在一次匹配里回答任意租户的查询，所以 `LoadPolicy` 读全部租户的 `authz_grants` 与 `authz_bindings`（用 adapter 构造时那条带跨租户标记的会话，见[薄 adapter](#薄-adapter)），且快照在内存里含全部租户的策略行。这是本模块接受的代价：进程内的策略数据是全租户的，租户隔离对它靠「判定只在请求所属的那个域上进行」，不靠「进程只持有本租户的数据」（[ADR-authz-store-2026-10-12](../../adr/adr-authz-store-2026-10-12.md)）。
+- **`LoadPolicy` 是唯一的跨租户读，且每个副本持有全部租户的策略。** 判定进程要在一次匹配里回答任意租户的查询，所以 `LoadPolicy` 读全部租户的 `authz_grants` 与 `authz_bindings`（用 adapter 构造时那条带跨租户标记的会话，见[薄 adapter](#薄-adapter)），且快照在内存里含全部租户的策略行。这是本模块接受的代价：进程内的策略数据是全租户的，租户隔离对它靠「判定只在请求所属的那个域上进行」，不靠「进程只持有本租户的数据」（[ADR-authz-store](../../adr/adr-authz-store.md)）。
 - **撤销的生效延迟由两处窗口分别界定，且都不为零。** 本模块一侧是换指针与事件传播的窗口（无事件总线的装配以 `refresh-interval` 为界），准入层一侧是它对 `Decider` 答复的 `check-ttl` 缓存；一个撤销的平台级放行在准入层至多在 `check-ttl` 内仍被采信。两处上界并存，不是取小。
 - **不保证未纳入本模块的端上有任何权限层。** `authz.guard` 只在 `authz.guard.endpoints` 清单列出的端上登记中间件（清单必填、无缺省），清单外的端上全部路由没有权限判定；启动期不失败。察觉靠启动诊断里展开后的受守端名清单。
 - **不保证目录里的权限所属的模块在本进程运行。** 目录与翻译取全部已登记模块的声明，`authz.policy` 还无条件声明认证、审计与设置的权限；一个权限在目录里、可以被授予，不表示服务它的面在本进程挂出。目录是词汇，权限因而可以先于装配变更授予；一个面在不在由[特性文档](../../glossary.md)回答（[feature](design-feature.md)），管理面的目录读照列目录的全部权限，不按特性收窄。
@@ -859,7 +859,7 @@ const (
 
 ## 扩展点
 
-- **策略数据是数据，不是代码。** 宿主经 `Manager` 或 `authz.admin` 的管理面路由写角色、权限授予与绑定；本模块不在迁移里种任何策略行。这是模型 DSL 固定在代码里的另一面：可插拔的 model.conf 不开放，宿主只提供数据（[ADR-authz-engine-2026-10-12](../../adr/adr-authz-engine-2026-10-12.md)）。
+- **策略数据是数据，不是代码。** 宿主经 `Manager` 或 `authz.admin` 的管理面路由写角色、权限授予与绑定；本模块不在迁移里种任何策略行。这是模型 DSL 固定在代码里的另一面：可插拔的 model.conf 不开放，宿主只提供数据（[ADR-authz-engine](../../adr/adr-authz-engine.md)）。
 - **路由声明的登记面（`Gate`）。** 任何模块在 `Init` 里经 `Gate.Require`/`Gate.Open` 为一条（方法，路径）声明访问级别；`authz.guard` 用它同时服务请求期中间件与 `Decider`。一个模块也可以在自己的 handler 里经 `Guard` 问一句；判定域不是请求解析出的那个时，用它的显式域形式 `RequirePermissionIn` 点名域，`authz.admin` 就经它在平台域判定（见[管理面](#管理面)）。
 - **`Gate` 的登记不带端名。** 声明表以（方法，路径）为键，一条登记对本模块所守的每个端同样成立，在不受守的端上不改变任何判定。路由挂在哪个端由部署方配置的模块因此可以无条件登记：`feature.board` 取得到 `Gate` 时以 `Open(GET, "/api/v1/features")` 登记特性文档的读面，部署方把它挂到受授权守卫的端上、`authz.guard.undeclared` 为 `closed` 时，这条路由也不被答 403（[feature](design-feature.md)）。
 - **`authn.Decider` 由本模块交付。** 宿主若换上自己的实现，`authz.guard` 不再交付它；本模块的中间件与 handler API 不受影响，只有认证侧的管理面与冒充改走宿主的判定。

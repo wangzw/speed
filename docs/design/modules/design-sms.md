@@ -6,7 +6,7 @@
 
 模板是**一等声明**，由注册表持有，不在载体一侧。模板有两族形态：**厂商模板编号**（载体按编号发送，编号来自厂商的逐模板审核，或来自厂商侧创建的内容资源）与**本地渲染正文**（注册表按声明把参数填进正文，载体把渲染结果作为正文发出）。一个语言可以同时声明两族，实际走哪一族由载体的能力声明决定。载体不认识模板，只按解出的形状构造请求。
 
-载体**排他交付**：一个进程里恰好一个载体生效，多于一个表态启用即启动失败。载体由一个值交付发送与模板管理的接缝（`Sender` 与 `Provider`），并回答自己的能力声明（`Provider.Model`）。根包是接口包与工厂，不登记模块；实现子包绑定各自的厂商 SDK 并登记模块（[ADR-sms-capability-2026-10-13](../../adr/adr-sms-capability-2026-10-13.md)）。
+载体**排他交付**：一个进程里恰好一个载体生效，多于一个表态启用即启动失败。载体由一个值交付发送与模板管理的接缝（`Sender` 与 `Provider`），并回答自己的能力声明（`Provider.Model`）。根包是接口包与工厂，不登记模块；实现子包绑定各自的厂商 SDK 并登记模块（[ADR-sms-capability](../../adr/adr-sms-capability.md)）。
 
 ### 非职责
 
@@ -14,7 +14,7 @@
 - **不持预算，不限流，不计尝试次数。** 本能力不认识「这条短信该不该发」。发送预算、重发间隔、每号码与每账户的上限、放行前缀都在调用方，本能力对每个 `Send` 都尝试发出去。
 - **不持挑战状态，不生成也不校验验证码。** 验证码的生成、存放、比对与一次性消费归调用方；本能力不认识「验证码」这个概念，参数对它是不透明值。
 - **不重试。** 厂商的发送接口不幂等，超时之后调用方无从知道短信是否已发出，重试会重复投递并重复计费。载体在超时、网络错误与上下文结束时把结果归入 `ErrUncertain`，从不自行重发。是否重发归调用方；重试次数不是本能力的配置项。
-- **不管理登记。** 载体声明这个部署可用的发送身份（签名、发送方 ID、长号码、短号码、免费号码、号码池、消息服务）与这些身份覆盖的国家，但不登记、不跟踪、不声称任何身份在某个国家的登记或审核状态。美国 10DLC 的品牌与活动、印度 DLT、免费号码验证、短号码租用、逐国家发送方 ID 的申请都在厂商门户与合同里完成，本能力不读取也不缓存它们的状态（[ADR-sms-registration-out-of-scope-2026-10-22](../../adr/adr-sms-registration-out-of-scope-2026-10-22.md)）。
+- **不管理登记。** 载体声明这个部署可用的发送身份（签名、发送方 ID、长号码、短号码、免费号码、号码池、消息服务）与这些身份覆盖的国家，但不登记、不跟踪、不声称任何身份在某个国家的登记或审核状态。美国 10DLC 的品牌与活动、印度 DLT、免费号码验证、短号码租用、逐国家发送方 ID 的申请都在厂商门户与合同里完成，本能力不读取也不缓存它们的状态（[ADR-sms-registration-out-of-scope](../../adr/adr-sms-registration-out-of-scope.md)）。
 - **不做跨载体路由，不做故障转移。** 一条消息只交给一个载体；按目的地选路、多个厂商之间切换、失败后换一个厂商重发都不在本能力内。
 - **不声明语言闭集。** `Locale` 是不透明的非空字符串，用来索引模板的语言到编号与语言到正文两个映射。本能力不认识 `zh-CN`、`en-US` 这类取值，也不解释 `Accept-Language`；语言取值的取得与归一归调用方。
 - **不认识业务用途。** `Kind` 是模板的一个属性（`verification`／`notification`／`marketing`），载体把它映射到厂商自己的用途拼法；本能力不解释某个模板名属于哪种业务用途。
@@ -123,7 +123,7 @@ type Receipt struct{ ProviderID string }
 - 把厂商的回应与错误归入 `ErrThrottled`、`ErrRejected`、`ErrUnroutable`、`ErrUncertain` 之一；没有明确归入前三个的错误，与全部超时、网络错误，一律归 `ErrUncertain`。归类不了的失败从不当作确定结果。
 - `Resolved.Params` 里的值（例如验证码）与厂商凭据不写日志、不进错误文本、不进指标属性。
 
-**`Locale` 为空是调用方缺陷。** 注册表把空 `Locale` 读作缺参，`Resolve` 以 `ErrRejected` 拒绝，与「语言不在模板的语言映射里」同形；归一（把空串填成某个缺省语言）只由调用方做，认证一侧的归一在 `pkg/authn/sms`，其缺省语言取自共享的 `i18n.default-locale` 项；认证根包不声明语言集，也不提供 `LocaleOf`（[ADR-i18n-language-set-2026-10-13](../../adr/adr-i18n-language-set-2026-10-13.md)）。
+**`Locale` 为空是调用方缺陷。** 注册表把空 `Locale` 读作缺参，`Resolve` 以 `ErrRejected` 拒绝，与「语言不在模板的语言映射里」同形；归一（把空串填成某个缺省语言）只由调用方做，认证一侧的归一在 `pkg/authn/sms`，其缺省语言取自共享的 `i18n.default-locale` 项；认证根包不声明语言集，也不提供 `LocaleOf`（[ADR-i18n-language-set](../../adr/adr-i18n-language-set.md)）。
 
 ### 模板声明
 
@@ -263,7 +263,7 @@ type Resolved struct {
 - **配置命名空间与输入项**：`sms.registry` 下的 `templates`（容器叶子，`map[string]sms.TemplateSpec`，取主配置源）与 `poll-interval`（时长，缺省 `1m`，取主配置源与环境变量）；`sms.admin` 下的 `endpoints`（字符串列表，必填，无缺省，只收具体端名、不收 `*`，取主配置源）；每个载体自己的命名空间下的凭据、`region`、`endpoint`、`configuration-set-name`、`identities` 与 `default-identity`（见「配置与设置的划分」）。
 - **管理端点**：`sms.admin.endpoints` 列出的端，`/api/v1/system/sms/*` 下的模板读写路由与载体路由（路由见「管理面模块」一节）。
 
-**配置与设置的划分。** 启动期需要、改动要重启的取值是配置；运行期可改、不需要重启的取值是设置（[ADR-config-scope-2026-09-13](../../adr/adr-config-scope-2026-09-13.md)）。凭据、`region`、`endpoint`、`configuration-set-name`、`identities`、`default-identity`、模板集、`poll-interval` 与 `sms.admin.endpoints` 都是配置。唯一的设置项是 `sms.registry.sending-enabled`（布尔，缺省 `true`），每次 `Resolve` 都读一次：置为 `false` 时 `Resolve` 答 `ErrNotSendable`，运维不必重启即可停止发送。重试次数不是配置项：载体从不重试，一次 `Send` 对应一次厂商调用。
+**配置与设置的划分。** 启动期需要、改动要重启的取值是配置；运行期可改、不需要重启的取值是设置（[ADR-config-scope](../../adr/adr-config-scope.md)）。凭据、`region`、`endpoint`、`configuration-set-name`、`identities`、`default-identity`、模板集、`poll-interval` 与 `sms.admin.endpoints` 都是配置。唯一的设置项是 `sms.registry.sending-enabled`（布尔，缺省 `true`），每次 `Resolve` 都读一次：置为 `false` 时 `Resolve` 答 `ErrNotSendable`，运维不必重启即可停止发送。重试次数不是配置项：载体从不重试，一次 `Send` 对应一次厂商调用。
 
 `templates` 的形状是嵌套的：键是逻辑模板名，值是用途、有序参数名表、语言到编号的映射、语言到正文的映射与厂商登记标识。命名空间按 `.` 分段在配置数据里嵌套，所以 `sms.registry.templates` 写成：
 
@@ -329,11 +329,11 @@ sms:
 
 **本能力不 import 任何上层功能目录，也不 import `pkg/authn`。** 判据是发送无关用途：本能力位于依赖图的底层之一，与 `pkg/kv`、`pkg/event` 同级，任何要发通知的模块都能单独引入它，不必背上整套认证。方向是调用方（`pkg/authn/sms`）import `pkg/sms`，`pkg/sms` 不 import 它。`sms.admin` 是唯一例外的一层：它 import `pkg/authz`、`pkg/audit`、`pkg/authn`、`pkg/http` 来挂一条受保护的管理面，而它是可撤掉的一个叶子，发送能力本身不因它而背上这些依赖。
 
-**根包与注册表不 import 任何厂商 SDK。** 每个 SDK 落在绑定它的载体叶子包里，只有 import 该子包的宿主的 `go.mod` 才背负它。这一条没有编译期强制（同一 `pkg` 模块内每个客户端都在一份依赖清单里），顶上它的是 `pkg/sms/deps_test.go` 的守卫：根包的传递闭包不含任何厂商 SDK，也不含 `pkg/authn`。注册表只经 `sms.Provider` 接缝触达厂商，不 import 任何载体叶子包（否则会经根包闭出环、破掉载体封边）。各 SDK 在 `pkg/go.mod` 里精确钉版，同样由该守卫守住：阿里云用 `github.com/alibabacloud-go/dysmsapi-20170525/v5` v5.6.0，腾讯云用 `github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111` v1.3.172，AWS 用 `github.com/aws/aws-sdk-go-v2/service/pinpointsmsvoicev2`，Twilio 用 `github.com/twilio/twilio-go`（[ADR-sms-twilio-sdk-2026-10-22](../../adr/adr-sms-twilio-sdk-2026-10-22.md)）。
+**根包与注册表不 import 任何厂商 SDK。** 每个 SDK 落在绑定它的载体叶子包里，只有 import 该子包的宿主的 `go.mod` 才背负它。这一条没有编译期强制（同一 `pkg` 模块内每个客户端都在一份依赖清单里），顶上它的是 `pkg/sms/deps_test.go` 的守卫：根包的传递闭包不含任何厂商 SDK，也不含 `pkg/authn`。注册表只经 `sms.Provider` 接缝触达厂商，不 import 任何载体叶子包（否则会经根包闭出环、破掉载体封边）。各 SDK 在 `pkg/go.mod` 里精确钉版，同样由该守卫守住：阿里云用 `github.com/alibabacloud-go/dysmsapi-20170525/v5` v5.6.0，腾讯云用 `github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111` v1.3.172，AWS 用 `github.com/aws/aws-sdk-go-v2/service/pinpointsmsvoicev2`，Twilio 用 `github.com/twilio/twilio-go`（[ADR-sms-twilio-sdk](../../adr/adr-sms-twilio-sdk.md)）。
 
-**阿里云 SDK 经 `github.com/tjfoc/gmsm` 拖回未经模块图修剪的 `google.golang.org/genproto` 单体**：那个版本的 `googleapis` 包与拆分后的 `google.golang.org/genproto/googleapis/*` 模块重名，工作区构建因此报歧义导入。`go.work` 用一行 `replace` 把单体钉到拆分之后的版本（[ADR-sms-capability-2026-10-13](../../adr/adr-sms-capability-2026-10-13.md)）。gmsm 已是最新发布版，而这个钉版放进任一模块的 `go.mod` 都会被 `tidy` 当作无人引用的依赖删掉，所以它落在工作区层。
+**阿里云 SDK 经 `github.com/tjfoc/gmsm` 拖回未经模块图修剪的 `google.golang.org/genproto` 单体**：那个版本的 `googleapis` 包与拆分后的 `google.golang.org/genproto/googleapis/*` 模块重名，工作区构建因此报歧义导入。`go.work` 用一行 `replace` 把单体钉到拆分之后的版本（[ADR-sms-capability](../../adr/adr-sms-capability.md)）。gmsm 已是最新发布版，而这个钉版放进任一模块的 `go.mod` 都会被 `tidy` 当作无人引用的依赖删掉，所以它落在工作区层。
 
-**`pkg/internal/literal` 是共享单元。** SMS 载体各自 import 它来登记凭据的字面量脱敏匹配器，认证的登录叶子（`authn/login/{google,github,wechatweb,wechatmp}`）也用它，所以它是多个实现子包共用的单元，落在 `pkg/internal/` 下。它不登记模块，不交付功能，不参与生命周期，只导出登记字面量匹配器的构造（[ADR-shared-backend-unit-2026-09-21](../../adr/adr-shared-backend-unit-2026-09-21.md)）。载体只经工厂取用它，见「工厂的构造次序」。
+**`pkg/internal/literal` 是共享单元。** SMS 载体各自 import 它来登记凭据的字面量脱敏匹配器，认证的登录叶子（`authn/login/{google,github,wechatweb,wechatmp}`）也用它，所以它是多个实现子包共用的单元，落在 `pkg/internal/` 下。它不登记模块，不交付功能，不参与生命周期，只导出登记字面量匹配器的构造（[ADR-shared-backend-unit](../../adr/adr-shared-backend-unit.md)）。载体只经工厂取用它，见「工厂的构造次序」。
 
 ## UML 图
 
@@ -431,7 +431,7 @@ classDiagram
 | 身份 | `Identity` | 名字、种类、值、覆盖国家、属性；种类是 `IdentityKind` 的闭集 |
 | 记录 | `Record` | 运维视角的一条模板：名字、载体、用途、来源、参数、语言、正文、登记标识、按语言的审核、启用、版本、时间；不含编号 |
 
-**审核状态是本能力自己的词表，不是厂商的编号。** 厂商之间对编号的含义不一致——同一个 `0`，一家表示过审且在力，另一家表示审核中——所以调用方经本能力读到的是含义，永远不是一个裸码；映射归载体（见「厂商适配」）。`ApprovalNotRequired` 表示厂商没有逐模板审核，它**不是** `ApprovalUnknown`：后者表示这条审核存在而本进程不跟踪它。可发送的状态是 `Approved` 与 `ApprovalNotRequired`（[ADR-sms-template-review-is-carrier-capability-2026-10-22](../../adr/adr-sms-template-review-is-carrier-capability-2026-10-22.md)）。
+**审核状态是本能力自己的词表，不是厂商的编号。** 厂商之间对编号的含义不一致——同一个 `0`，一家表示过审且在力，另一家表示审核中——所以调用方经本能力读到的是含义，永远不是一个裸码；映射归载体（见「厂商适配」）。`ApprovalNotRequired` 表示厂商没有逐模板审核，它**不是** `ApprovalUnknown`：后者表示这条审核存在而本进程不跟踪它。可发送的状态是 `Approved` 与 `ApprovalNotRequired`（[ADR-sms-template-review-is-carrier-capability](../../adr/adr-sms-template-review-is-carrier-capability.md)）。
 
 **`Template`、`Record` 都不含厂商编号。** 编号是注册表的私有记账，只进请求，不进交出的视图，也不进启动诊断——消费方核对的是「这个模板、这个语言、这些参数在不在」，不必知道编号是多少。
 
@@ -592,7 +592,7 @@ type Spec[C any] struct {
 - 必须经 `Secrets` 钩子交出凭据，使其先于 logger 绑定被登记为日志的字面量匹配器。
 - 不得管理任何身份的登记状态：身份是配置写下的声明，登记在厂商门户与合同里完成。
 
-**注册表本身与发送接缝一样是排他的扩展点**：`pkg/sms/registry` 是这套接缝的默认实现，另一个实现若要点名同一个 `(*sms.Registry)(nil)`，两者同时纳入即在消解阶段以排他冲突失败（[ADR-config-parsing-2026-09-20](../../adr/adr-config-parsing-2026-09-20.md)）。
+**注册表本身与发送接缝一样是排他的扩展点**：`pkg/sms/registry` 是这套接缝的默认实现，另一个实现若要点名同一个 `(*sms.Registry)(nil)`，两者同时纳入即在消解阶段以排他冲突失败（[ADR-config-parsing](../../adr/adr-config-parsing.md)）。
 
 ## 实现状态
 

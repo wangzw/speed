@@ -7,7 +7,7 @@
 // take": the two copies would differ only in where their configuration hangs,
 // and neither could be covered by the other's tests. The cost of that sharing —
 // one shared unit whose changes reach two modules — is recorded in
-// docs/adr/adr-shared-backend-unit-2026-09-21.md.
+// docs/adr/adr-shared-backend-unit.md.
 //
 // The pool type is exposed as it is rather than behind an abstraction of this
 // package's own, so a caller that needs something this wrapper does not offer

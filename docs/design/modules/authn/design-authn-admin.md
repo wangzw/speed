@@ -2,12 +2,12 @@
 
 ## 职责
 
-- **对授权的承诺。** `pkg/authn` 不 import 授权功能目录（[authz](../design-authz.md)）；authn 交给授权的全部东西是根包里的接口、值类型与事件，`authz.guard` 与 `authz.policy` import 根包并交付其中的接缝，方向与 `tenant/resolve` import `pkg/authn` 同形（[ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)）。本文的承诺表是这些东西的清单，账户标识对授权的要求在其后单列。
-- **判定接缝。** 定义根包接口 `Decider`、值类型 `Decision`、动作常量 `Action`，以及冒充范围守卫 `ScopeGuard`。管理面动作、冒充的开始与读写、非成员进入租户，都经 `Decider` 判定（[ADR-authn-decision-seam-2026-10-10](../../../adr/adr-authn-decision-seam-2026-10-10.md)）。
+- **对授权的承诺。** `pkg/authn` 不 import 授权功能目录（[authz](../design-authz.md)）；authn 交给授权的全部东西是根包里的接口、值类型与事件，`authz.guard` 与 `authz.policy` import 根包并交付其中的接缝，方向与 `tenant/resolve` import `pkg/authn` 同形（[ADR-authn-scope](../../../adr/adr-authn-scope.md)）。本文的承诺表是这些东西的清单，账户标识对授权的要求在其后单列。
+- **判定接缝。** 定义根包接口 `Decider`、值类型 `Decision`、动作常量 `Action`，以及冒充范围守卫 `ScopeGuard`。管理面动作、冒充的开始与读写、非成员进入租户，都经 `Decider` 判定（[ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)）。
 - **管理面模块 `authn.admin`。** 挂 `B/*` 与 `Bt/:tenant/*` 下的全部管理路由；每条路由的处理顺序固定为注册验证状态的门控、`Decider`、发起者强度核验、强制审计、写、事件。门控只拦发起者为未验证账户的人类写，见「注册验证状态的门控」。按路由组声明[特性](../../../glossary.md)：恒挂的组是静态特性，随能力挂出的组是条件特性，在挂该组的同一处判定里经 `feature.Board` 的 `Post` 报告。
 - **`Decision` 的填法。** 路径里不带租户的租户级动作，`authn.admin` 在调用 `Decider` 之前自己解析对象的归属并填入 `Decision`。
 - **自助范围的判据。** 账户对自己的会话、因素、口令、标识与外部关联的读写不过接缝；判据在本文给出，自助路由由 `authn.login`、`authn.session`、`authn.mfa` 各自挂。
-- **403 的收窄。** 本文给出 authn 哪些位置可以写 403，以及网关与租户准入层写什么；判据与被否决的写法在 [ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)。
+- **403 的收窄。** 本文给出 authn 哪些位置可以写 403，以及网关与租户准入层写什么；判据与被否决的写法在 [ADR-authn-scope](../../../adr/adr-authn-scope.md)。
 
 ### 非职责
 
@@ -105,7 +105,7 @@ type Decider interface {
 | 项 | 承诺 |
 |---|---|
 | 动作常量 | 上列常量是动作的全集；归属判据是「作用于他人账户或租户级资源的管理面动作、冒充的开始与读写、非成员进入租户」。动作随新增的管理面能力增长，新增动作按此判据归入。 |
-| 排他与取用 | `Decider` 由宿主或 `authz.guard` 实现，排他。取用方 `authn.admin`、`authn.impersonation`、`tenant.admission` 在 `Init` 里以 `Optional` 取用，缺提供者（`core.ErrMissingProvider`）是合法配置，行为是全部拒绝；`Decider` 不写进任何模块的 `Requires`（[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。 |
+| 排他与取用 | `Decider` 由宿主或 `authz.guard` 实现，排他。取用方 `authn.admin`、`authn.impersonation`、`tenant.admission` 在 `Init` 里以 `Optional` 取用，缺提供者（`core.ErrMissingProvider`）是合法配置，行为是全部拒绝；`Decider` 不写进任何模块的 `Requires`（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。 |
 | 返回值 | `allow` 为真放行，为假拒绝；`err` 非空一律按 503 收口，不当作拒绝，也不当作放行。处理器对 `Decide` 的调用自带 `recover`，panic 按 `err` 非空处理，同样是 503，管理动作不执行。 |
 | 默认全拒的落点 | 在取用方，不在一个「默认拒绝」的模块里。没有任何模块交付 `Decider` 的装配，宿主什么都不做也是安全的。 |
 | 不内置名单 | `pkg/authn` 不内置任何放行名单。 |
@@ -141,7 +141,7 @@ type ScopeGuard interface {
 
 - **不纳入就没有管理路由。** 宿主不点名 `authn.admin` 时没有 `B/*` 或 `Bt/:tenant/*` 下的任何路由；`AccountAdmin`、`Memberships`、`Sessions`、`SSOProviders` 的 Go 接口照常可用。
 - **缺审计则启动失败。** `audit.Audit` 是必需依赖，漏纳入在任何实例构造之前以 `core.ErrMissingProvider` 失败，不留到第一次写操作才发现。
-- **每组路由随对应能力在场才挂。** 能力缺席时该组路由不存在，路由引擎对它按未命中处理；缺接缝的组不挂出，不做成挂出而全拒，理由与被否决的写法在 [ADR-authn-decision-seam-2026-10-10](../../../adr/adr-authn-decision-seam-2026-10-10.md)。启动诊断写出挂了哪几组。
+- **每组路由随对应能力在场才挂。** 能力缺席时该组路由不存在，路由引擎对它按未命中处理；缺接缝的组不挂出，不做成挂出而全拒，理由与被否决的写法在 [ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)。启动诊断写出挂了哪几组。
 
 下表是路由组的全集（封闭集），只写组名、挂出条件与该组对应的[特性](../../../glossary.md)；每条路由属于哪一组，由下节路由表的「组」列给出。新增路由归入其能力所在的组，或新增一组。
 
@@ -159,7 +159,7 @@ type ScopeGuard interface {
 **各组以特性声明。** 描述符的 `Resources` 为上表每个特性名带一条 `feature.Spec`，条件特性的 `Conditional` 为真（[feature](../design-feature.md)）。
 
 - **`authn.admin` 是[静态特性](../../../glossary.md)，指账户组与成员关系组。** 它们恒挂：所依赖的功能与 `mount.Mounter` 都是必需依赖，模块进入启用集即挂出它们，所以声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
-- **其余各组是[条件特性](../../../glossary.md)，在 `Init` 挂该组路由的同一处判定里报告**（`pkg/authn/admin/routes.go` `(*product).mountRoutes`、`mountAccountRoutes`）：会话、服务密钥、SSO 提供方与冒充记录各在挂该组的分支里报告；`authn.admin.sso.metadata` 在 SSO 提供方分支之内、挂刷新路由的那一处报告；`authn.admin.factors` 在 `mountAccountRoutes` 里 `MFA` 在场的分支报告。进程纳入了 `feature.board` 时，特性文档含一个条件分组名，当且仅当该组已挂出（[ADR-feature-ownership-2026-10-17](../../../adr/adr-feature-ownership-2026-10-17.md)）。
+- **其余各组是[条件特性](../../../glossary.md)，在 `Init` 挂该组路由的同一处判定里报告**（`pkg/authn/admin/routes.go` `(*product).mountRoutes`、`mountAccountRoutes`）：会话、服务密钥、SSO 提供方与冒充记录各在挂该组的分支里报告；`authn.admin.sso.metadata` 在 SSO 提供方分支之内、挂刷新路由的那一处报告；`authn.admin.factors` 在 `mountAccountRoutes` 里 `MFA` 在场的分支报告。进程纳入了 `feature.board` 时，特性文档含一个条件分组名，当且仅当该组已挂出（[ADR-feature-ownership](../../../adr/adr-feature-ownership.md)）。
 - **管理员重置口令随因素组，不另立特性名。** `authn.admin.factors` 的报告不看 `Passwords`，而重置口令的路由在同一分支内还要 `Passwords` 在场。服务前端的命令必须纳入 `authn.login`（[web](../web/design-web.md)），`authn.login` 把 `Passwords` 列为必需依赖（[authn-login](design-authn-login.md)），所以服务前端的装配里重置口令的路由与因素组同时挂出，`authn.admin.factors` 在场即指因素组连同重置口令的路由。
 - **`feature.Board` 经 `core.Resolve` 取用，不列入 `Requires`。** 取不到时（没有纳入 `feature.board` 的进程）不报告，各组照上表的条件挂出。
 
@@ -192,7 +192,7 @@ type ScopeGuard interface {
 
 - 发起者是本人：`Actor`、`Account` 与路径上的账户一致，路径不带账户的路由取上下文里的身份。
 - 发起者未在冒充。
-- 满足多因素的新鲜度要求（[ADR-authn-mfa-2026-10-10](../../../adr/adr-authn-mfa-2026-10-10.md)、[authn-mfa](design-authn-mfa.md)）。
+- 满足多因素的新鲜度要求（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)、[authn-mfa](design-authn-mfa.md)）。
 
 自助动作的授权依据是「发起者就是这个账户」，这是 authn 自己可以核对的事实，不需要策略。没有 `Decider` 的装配里，用户仍能改自己的口令。自助路由由 `authn.login`、`authn.session`、`authn.mfa`、`authn.profile` 挂，本模块不挂。
 
@@ -238,7 +238,7 @@ type ScopeGuard interface {
 
 **方向核对。** `authn.admin` 位于认证功能目录内，不 import `pkg/tenant`、授权功能目录、宿主与 `pkg/feature/board`，也不 import 认证功能目录里别的实现子包。`pkg/feature` 根包只依赖标准库，为声明特性 import 它不扩大本模块的闭包（[feature](../design-feature.md)）。`Decider` 与 `ScopeGuard` 都是根包接口：`authz.guard` 与 `tenant.admission` import 根包交付它们，反向没有依赖。
 
-被依赖方向：`authn.impersonation` 与 `tenant.admission` 取用同一个 `Decider`，各自在自己的处理路径上询问；`tenant.admission` 交付 `ScopeGuard`（[ADR-tenant-admission-2026-10-10](../../../adr/adr-tenant-admission-2026-10-10.md)）。
+被依赖方向：`authn.impersonation` 与 `tenant.admission` 取用同一个 `Decider`，各自在自己的处理路径上询问；`tenant.admission` 交付 `ScopeGuard`（[ADR-tenant-admission](../../../adr/adr-tenant-admission.md)）。
 
 ## UML 图
 
@@ -388,7 +388,7 @@ flowchart TD
 - **authn 的路由处理器可以写 403，位置是封闭集。** 它们是自己资源的所有者，只在转述认证之外的策略的拒绝时写 403：`Decider` 的拒绝（`forbidden`）、被全局设置关闭的登录方式（`method-disabled`）、外部登录路径上的账户不可用（`account-unavailable`）、冒充期间的限制（`impersonation-restricted`）、发起者名下没有启用已满规定时长的非短信因素（`factor-not-seasoned`）、发起者是未验证账户的人类写与冒充发起（`contact-required`）。本模块的处理器只写其中的 `forbidden`、`impersonation-restricted`、`factor-not-seasoned` 与 `contact-required`。
 - **其余一切「不够强」是 401。** 加强认证挑战的应答见 [authn-mfa](design-authn-mfa.md)。
 
-判据、被否决的 401 与 404 两种写法及其理由在 [ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)。调用方读到的 403 可能来自 authn 的处理函数，也可能来自链上的授权层（`authz.guard`）或宿主的 handler，仅凭状态码区分不了来源。
+判据、被否决的 401 与 404 两种写法及其理由在 [ADR-authn-scope](../../../adr/adr-authn-scope.md)。调用方读到的 403 可能来自 authn 的处理函数，也可能来自链上的授权层（`authz.guard`）或宿主的 handler，仅凭状态码区分不了来源。
 
 ### 失败方向
 
@@ -412,7 +412,7 @@ flowchart TD
 
 ### 非保证
 
-- **成员删除的串行化以共享数据库为界。** `DELETE Bt/:tenant/members/:account` 先取该租户的成员删除锁，再问 `MembershipGuard`，并把它与删除的提交一起持在锁里，所以同一租户上两次并发删除不会都通过检查后各自提交。这把锁是宿主的 `authz.TenantLock`，与 `authz.Manager.DeleteBinding` 取的是同一个对象；宿主不装配时用授权模块的进程内默认实现，只串行本进程。替换成数据库级锁（PostgreSQL 会话锁）后，共享同一个数据库的各副本一起串行。**不共享数据库的副本之间不保证串行**，两个副本可能各自通过检查——这是装配级的非保证，本模块与守卫都无从知道另一台副本连的是哪个库。数据库锁每个持有中的删除占一条池化连接，删除事务再占一条，N 个并发删除至少要 2N+1 条连接；进程内默认不额外占连接（见 [tenant](../../tenant/design-tenant.md) 的串行化一节与 [ADR-authn-membership-cleanup-2026-10-27](../../../adr/adr-authn-membership-cleanup-2026-10-27.md)）。锁取不到时删除答 503，绝不按放行处理。
+- **成员删除的串行化以共享数据库为界。** `DELETE Bt/:tenant/members/:account` 先取该租户的成员删除锁，再问 `MembershipGuard`，并把它与删除的提交一起持在锁里，所以同一租户上两次并发删除不会都通过检查后各自提交。这把锁是宿主的 `authz.TenantLock`，与 `authz.Manager.DeleteBinding` 取的是同一个对象；宿主不装配时用授权模块的进程内默认实现，只串行本进程。替换成数据库级锁（PostgreSQL 会话锁）后，共享同一个数据库的各副本一起串行。**不共享数据库的副本之间不保证串行**，两个副本可能各自通过检查——这是装配级的非保证，本模块与守卫都无从知道另一台副本连的是哪个库。数据库锁每个持有中的删除占一条池化连接，删除事务再占一条，N 个并发删除至少要 2N+1 条连接；进程内默认不额外占连接（见 [tenant](../tenant/design-tenant.md) 的串行化一节与 [ADR-authn-membership-cleanup](../../../adr/adr-authn-membership-cleanup.md)）。锁取不到时删除答 503，绝不按放行处理。
 - **`Decider` 的实现质量由宿主承担。** authn 保证它收到的输入，不保证它的判定；一个对 `authn.tenant.access` 一律返回 `true` 的实现，使每个租户对所有已认证的非成员敞开。准入层缓存判定结果，策略撤销在缓存期内不生效，期限由设置承载，见 [tenant.admission](../tenant/design-tenant-admission.md)。
 - **Go 接口的直接调用不经 `Decider`。** 宿主命令里的运维操作，其强度完全取决于宿主命令自己的访问控制。
 - **`Decider` 的拒绝不进网关的收口计数。** 询问发生在处理函数里、请求已过网关，拒绝只进各自的日志与审计。

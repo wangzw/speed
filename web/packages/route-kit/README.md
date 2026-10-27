@@ -300,7 +300,7 @@ The provider mounts react-router-dom's `BrowserRouter`: pages get real path
 URLs, and a deep link requires the server to fall back unknown paths to the
 entry document (the platform's static-hosting/SPA-fallback module provides
 that). The model is the package's, not a per-product option — see the
-`ADR-web-route-seam-2026-10-15` decision record.
+`ADR-web-route-seam` decision record.
 
 A deployment served under a path prefix passes it as `basename`:
 

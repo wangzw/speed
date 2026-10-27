@@ -5,7 +5,7 @@
 //
 // The line between configuration and settings is drawn by one judgement: a
 // value belongs to configuration when it is needed before a database is
-// reachable (ADR-config-scope-2026-09-13). This module carries everything on
+// reachable (ADR-config-scope). This module carries everything on
 // the other side of that line — rate-limit thresholds, feature switches,
 // notification templates.
 //

@@ -6,11 +6,11 @@
 
 **本模块是框架为审计查询面提供的那个提供者。** 审计能力本身不提供查询面，[design-audit](design-audit.md) 的两处原文是：
 
-> **不提供查询面。** 按条件的检索与导出要先回答「谁可以查谁」，那是授权判定，归 [authz](../design-authz.md) 的承接的权限点（[ADR-audit-scope-2026-09-21](../../../adr/adr-audit-scope-2026-09-21.md)）。框架另有一个可直接纳入的模块 [audit.admin](design-audit-admin.md) 承担检索与导出，判定在它自己的 handler 内经 `authz.guard` 做出；本模块自身仍不提供查询面。
+> **不提供查询面。** 按条件的检索与导出要先回答「谁可以查谁」，那是授权判定，归 [authz](../design-authz.md) 的承接的权限点（[ADR-audit-scope](../../../adr/adr-audit-scope.md)）。框架另有一个可直接纳入的模块 [audit.admin](design-audit-admin.md) 承担检索与导出，判定在它自己的 handler 内经 `authz.guard` 做出；本模块自身仍不提供查询面。
 
 > 本模块不交付查询面，宿主要读某个租户的那份轨迹，只能自己读这张表；这份读取的租户隔离全靠这几项承诺。
 
-[ADR-audit-scope-2026-09-21](../../../adr/adr-audit-scope-2026-09-21.md) 把承载者留白——「承载它们的模块不由本记录裁定，本记录只定它不在这里」——并把一个需要检索审计记录的宿主指向本模块之外，自带授权面。本模块正是它明文留出的位置：一个挂在固定基路径下的叶子，判定经授权能力的 handler 内 API，读经审计实现子包新加的读面。它不改变审计能力的立场——`pkg/audit/journal` 仍不带管理面——只把这一面从「宿主自建」补成「框架提供一个可选用的提供者」（[ADR-audit-admin-2026-10-15](../../../adr/adr-audit-admin-2026-10-15.md)）。
+[ADR-audit-scope](../../../adr/adr-audit-scope.md) 把承载者留白——「承载它们的模块不由本记录裁定，本记录只定它不在这里」——并把一个需要检索审计记录的宿主指向本模块之外，自带授权面。本模块正是它明文留出的位置：一个挂在固定基路径下的叶子，判定经授权能力的 handler 内 API，读经审计实现子包新加的读面。它不改变审计能力的立场——`pkg/audit/journal` 仍不带管理面——只把这一面从「宿主自建」补成「框架提供一个可选用的提供者」（[ADR-audit-admin](../../../adr/adr-audit-admin.md)）。
 
 承载这一面的授权经授权能力的 `Gate` 或 handler 内 API 落到 `audit.read` 上（[design-authz](../design-authz.md) 的承接的权限点）；本模块按 `sms.admin` 的形态取后者，判定在 handler 内做出（见「访问控制」）。
 
@@ -96,7 +96,7 @@ type Row struct {
 
 **判定由本模块在 handler 内做出，不经请求中间件的声明判定。** 查询面路由在中间件的声明表里全部登记为开放，好让中间件把请求放行到 handler；handler 先读调用方的身份，再经 `authz.guard` 的 handler 内判定 API 就本路由的权限 `audit.read` 问一句，不足即回绝。模块不给自己授予任何权限——`audit.read` 是授权能力自己携带的权限，本模块只问它。
 
-**导出与检索问同一份权限。** 导出路由问的也是 `audit.read`，不询问 `audit.export`；导出的权限范围与检索相同（REQ-platform-admin-112、REQ-platform-admin-113；[ADR-audit-export-2026-10-24](../../../adr/adr-audit-export-2026-10-24.md)）。`audit.export` 仍由授权能力携带，本模块不询问它。
+**导出与检索问同一份权限。** 导出路由问的也是 `audit.read`，不询问 `audit.export`；导出的权限范围与检索相同（REQ-platform-admin-112、REQ-platform-admin-113；[ADR-audit-export](../../../adr/adr-audit-export.md)）。`audit.export` 仍由授权能力携带，本模块不询问它。
 
 **判定顺序固定。** handler 先读调用方：请求没有身份是 401，只有状态、没有 `Type`，并带与准入层、授权层同形的 realm 质询，不询问 guard 即返回。再向 guard 要 `audit.read`：不足即由 guard 写出它自己的拒绝——拒绝 403、故障 503——并返回。判定之后才解析查询、调读面、渲染应答。
 
@@ -166,7 +166,7 @@ type Row struct {
 
 **本模块可撤掉，不改变调用方或审计模块的代码。** 它 import `pkg/authz`、`pkg/authn`、`pkg/http` 来挂一条受保护的管理面，是审计能力目录里唯一这样做的一层；审计的捕获与写入本身不 import 授权层，不因它背上这些依赖。这一形态与 `sms.admin`、`tenant.admin` 相同（[design-sms](../design-sms.md)、[tenant/design-tenant-admin](../tenant/design-tenant-admin.md)）。
 
-**读面在审计实现子包里，不在接口包里。** `pkg/audit` 是接口包、只依赖标准库；读面要经审计模块自己的表与模型读，落在 `pkg/audit/journal`（见 [design-audit](design-audit.md) 的依赖与 [ADR-audit-admin-2026-10-15](../../../adr/adr-audit-admin-2026-10-15.md)）。本模块 import 审计实现子包以取得读面的功能标识，这是管理面 import 实现子包以取接缝的既有形态——`authz.admin` 以同形 import `pkg/authz/guard` 取 `guard.Guard`——而两者同属 `pkg` 这一个 Go 模块，实现子包绑定的库不给宿主另增一份依赖清单条目。
+**读面在审计实现子包里，不在接口包里。** `pkg/audit` 是接口包、只依赖标准库；读面要经审计模块自己的表与模型读，落在 `pkg/audit/journal`（见 [design-audit](design-audit.md) 的依赖与 [ADR-audit-admin](../../../adr/adr-audit-admin.md)）。本模块 import 审计实现子包以取得读面的功能标识，这是管理面 import 实现子包以取接缝的既有形态——`authz.admin` 以同形 import `pkg/authz/guard` 取 `guard.Guard`——而两者同属 `pkg` 这一个 Go 模块，实现子包绑定的库不给宿主另增一份依赖清单条目。
 
 **本模块落在依赖图的上层，是一个叶子。** 它 import 审计实现子包与授权层来挂一面受保护的读；审计的捕获与写入不 import 本模块，也不 import 授权层。
 

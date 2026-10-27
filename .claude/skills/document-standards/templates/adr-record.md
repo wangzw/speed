@@ -1,37 +1,20 @@
 <!--
-Template for one architecture decision record, adr-<slug>-<date>.md. Delete
-every comment block before committing.
+Template for one architecture decision record, adr-<slug>.md. Delete every
+comment block before committing.
 
-The slug names the TOPIC, not this decision -- every record about the same
-topic carries the same slug, so the topic's decisions group together. The date
-is when the decision was made, ISO YYYY-MM-DD; it settles at the release.
+The slug names the decision and is unique in the tree; it carries no date and
+no sequence number. The record states the current decision and is revised in
+place when that decision changes: rewrite it, retitle it, rename the file,
+then recheck every document that cites it.
 
-This record stays a draft until a release ships it -- merging is not the
-boundary. Until then, revise it freely: rewrite it, retitle it, change its
-slug, merge or split it, and recheck every document that cites it. Once it
-ships, it freezes: change the decision by writing a new record that supersedes
-this one, and edit only the status field, typos and broken links.
-
-One decision per record. Write it impersonally -- "Adopt X", never "We decided
-to adopt X".
+Revising leaves no trace in the record -- no revision note, no date, no
+"originally". A displaced decision survives only as a rejected option in
+Options Considered. There is no status field: the tree holds only decisions in
+force. One decision per record. Write it impersonally -- "Adopt X", never "We
+decided to adopt X".
 -->
 
 # <Decision title>
-
-## Status
-
-Accepted
-
-<!--
-Or one of:
-  Superseded by [ADR-<slug>-<date>](adr-<slug>-<date>.md)
-  Deprecated
-
-Never "Proposed" -- an undecided decision belongs in the issue tracker, not
-here. When this record supersedes another, state it here AND update that
-record's status to point back to this one. That pair is the only bidirectional
-link this standard allows.
--->
 
 ## Context
 
@@ -46,8 +29,8 @@ Every rejected option states why it was rejected. An option listed with no
 rejection reason is decoration: it makes the record look thorough while
 carrying nothing a future reader can use.
 
-Describe options as they stood at the time. A better option found later
-belongs in a new record.
+This is the only place a displaced decision may appear: as an alternative that
+lost, with its rejection reason. No revision narrative.
 -->
 
 ### <Option A>

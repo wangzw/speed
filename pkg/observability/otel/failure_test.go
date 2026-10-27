@@ -80,7 +80,7 @@ func (unreachableMetrics) Shutdown(context.Context) error   { return nil }
 // Nothing being written there is not the property. The upstream also judges
 // internal errors of its own — while building a processor, a reader or an
 // instrument — and hands those to the same handler, which this module leaves at
-// the upstream default (ADR-observability-provider-2026-09-22). One of them
+// the upstream default (ADR-observability-provider). One of them
 // surfaces here under load: at the stop the periodic reader cancels the context
 // its collection loop runs on, and a collection already in flight comes back
 // with context.Canceled, which the handler prints as "context canceled". That

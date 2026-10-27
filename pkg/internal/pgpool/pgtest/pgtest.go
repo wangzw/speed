@@ -24,7 +24,7 @@
 // with the pool wrapper they share, in pkg/internal/pgpool/pgtest, inside the
 // pkg module's internal/ tree: it is read by tests only, belongs to no public
 // surface, and the compiler holds that, keeping anything outside the module from
-// importing it. See docs/adr/adr-shared-backend-unit-2026-09-21.md.
+// importing it. See docs/adr/adr-shared-backend-unit.md.
 package pgtest
 
 import (

@@ -9,7 +9,7 @@ import "github.com/vislake/speed/pkg/authn/internal/verdict"
 // that the zero value must have a settled reading, and it has one — it reads as
 // said-nothing, which ends the request in a refusal and is counted apart from a
 // refusal a backend meant. The shapes that were rejected, and why each was, are
-// in ADR-authn-verdict-2026-10-10.
+// in ADR-authn-verdict.
 //
 // Reading a verdict apart again is the gateway's work and is not on this
 // surface: a backend answers, it does not inspect.

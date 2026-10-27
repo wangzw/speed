@@ -19,7 +19,7 @@
  * tenant.
  *
  * The convention lives here, in auth-core, because the tenant is this
- * package's own fact (ADR-web-tenant-query-key-2026-10-15): api-client
+ * package's own fact (ADR-web-tenant-query-key): api-client
  * only broadcasts the host's tenant as transport (the tenantProvider
  * value wired to the X-Tenant header), inferring and storing no tenant
  * identifier, and its hooks take and infer no tenant -- so routing the

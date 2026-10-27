@@ -2,7 +2,7 @@
 
 ## 职责
 
-`pkg/authn` 功能目录各模块产生的可观察事实经事件、审计、日志、指标这几条通路离开认证。本文固定这些通路上认证名下的全部名字与形状：事件类型与载荷、审计动作与档位、日志字段与级别、指标仪器与属性。每个信号由产生它的模块在自己的代码里发出；本文不对应单独的包，不登记模块。取舍见 [ADR-authn-events-and-audit-2026-10-10](../../../adr/adr-authn-events-and-audit-2026-10-10.md)，身份的两个维度见 [ADR-authn-identity-2026-10-10](../../../adr/adr-authn-identity-2026-10-10.md)，冒充的审计先于动作见 [ADR-authn-impersonation-2026-10-10](../../../adr/adr-authn-impersonation-2026-10-10.md)。
+`pkg/authn` 功能目录各模块产生的可观察事实经事件、审计、日志、指标这几条通路离开认证。本文固定这些通路上认证名下的全部名字与形状：事件类型与载荷、审计动作与档位、日志字段与级别、指标仪器与属性。每个信号由产生它的模块在自己的代码里发出；本文不对应单独的包，不登记模块。取舍见 [ADR-authn-events-and-audit](../../../adr/adr-authn-events-and-audit.md)，身份的两个维度见 [ADR-authn-identity](../../../adr/adr-authn-identity.md)，冒充的审计先于动作见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)。
 
 本文承载下列事项（封闭集合，不在其内的事项归非职责一节点名的文档）：
 
@@ -114,7 +114,7 @@
 | `tenant.admission` | `authn.membership.changed` | 清成员关系缓存；处理见 [design-tenant-admission](../tenant/design-tenant-admission.md) |
 | 持有可在运行期改动的安全设置的模块（`authn.sms` 在其中） | `settings.changed` | 取值改到更宽松时写 Warn 并记尽力档审计 |
 
-上表之外的订阅方由各自文档承载，授权、审计与宿主是例举，判据是以事件为输入而不在上表之内的消费方。审计只订阅 `audit.journal` 配置里点名的类型；可观测性不订阅总线（[ADR-observability-events-2026-09-22](../../../adr/adr-observability-events-2026-09-22.md)）。「发件箱」列为「是」的类型在发件箱在场时经中继发布，到达订阅方的上下文是中继的，不带发布方的身份：审计订阅这些类型得到的行没有主体，也没有 `on_behalf_of`、`impersonation_scope` 与 `session`（规则见 [design-audit](../audit/design-audit.md) 的非保证）。
+上表之外的订阅方由各自文档承载，授权、审计与宿主是例举，判据是以事件为输入而不在上表之内的消费方。审计只订阅 `audit.journal` 配置里点名的类型；可观测性不订阅总线（[ADR-observability-events](../../../adr/adr-observability-events.md)）。「发件箱」列为「是」的类型在发件箱在场时经中继发布，到达订阅方的上下文是中继的，不带发布方的身份：审计订阅这些类型得到的行没有主体，也没有 `on_behalf_of`、`impersonation_scope` 与 `session`（规则见 [design-audit](../audit/design-audit.md) 的非保证）。
 
 ### 审计
 

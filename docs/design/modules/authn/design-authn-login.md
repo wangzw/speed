@@ -2,13 +2,13 @@
 
 ## 职责
 
-- 持有登录流程。一次登录是 kv 里的一条流程记录，由引擎驱动的多步状态机推进，每次迁移是对流程记录的比较并交换。引擎、流程记录、绑定、迁移表与终态动作只在 `authn/login` 一处实现（[ADR-authn-login-flow-2026-10-10](../../../adr/adr-authn-login-flow-2026-10-10.md)）。
+- 持有登录流程。一次登录是 kv 里的一条流程记录，由引擎驱动的多步状态机推进，每次迁移是对流程记录的比较并交换。引擎、流程记录、绑定、迁移表与终态动作只在 `authn/login` 一处实现（[ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)）。
 - 定义 `LoginMethod` 接缝与方法的准入条件。接缝在根包 `pkg/authn` 导出；方法只回答「这个人证明了什么」，以 `Proof` 交出事实，不做账户解析、开户、关联、第二因素判定、建会话或发令牌。
 - 在第一因素通过之后做与方式无关的全部动作：把证明解析成账户（含开户与关联）、向 `MFA` 询问是否还要第二因素或登记因素、建登录会话或发令牌。账户解析的规则归 [authn-account](design-authn-account.md)，因素、策略与保障等级的合成归 [authn-mfa](design-authn-mfa.md)，本文只写引擎怎样调用它们、怎样处理它们的结果。
 - 让目的 `login`、`link`、`step-up`、`enroll` 共用同一台状态机，终态动作按目的区分。目的取值是封闭集。
 - 在 `authn.gate.mount.endpoint` 指定的端、该作用域的基路径之下挂登录路由、回跳路由、方式列表与账户自助路由：未认证的登录流程与回调挂普通面的基路径。路由与访问级别经 `mount.Mounter` 用同一个调用声明（[authn-gate](design-authn-gate.md)）。账户自助里随装配成立的面声明为[条件特性](../../../glossary.md)，在决定它们是否成立的同一处判定里经 `feature.Board` 的 `Post` 报告：手机号自助在挂其路由的分支里，邮箱分支在与该分支答 503 同源的判定处（见「声明的特性」）。
-- 挂匿名注册路由 `POST B/register`，经账户模块的 `Signups.Register` 一次建号：注册收集用户名、口令与邮箱，不建立会话、不发送邮件；同一事务插入的邮箱预留以唯一索引仲裁地址占用（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)、[ADR-authn-contact-claim-2026-10-22](../../../adr/adr-authn-contact-claim-2026-10-22.md)）。开户后客户端走既有的 `POST B/flows` 口令方法登录，邮箱在登录后经账户自助回路验证。
-- 规定认证前的失败退避与枚举防护在登录路径上的形状：在何处计数、何时拒绝校验、应答怎样同形同时。退避状态的存取面 `Throttle` 与 `authn_throttles` 表归 [authn-account](design-authn-account.md)（[ADR-authn-throttling-2026-10-10](../../../adr/adr-authn-throttling-2026-10-10.md)）。
+- 挂匿名注册路由 `POST B/register`，经账户模块的 `Signups.Register` 一次建号：注册收集用户名、口令与邮箱，不建立会话、不发送邮件；同一事务插入的邮箱预留以唯一索引仲裁地址占用（[ADR-authn-signup](../../../adr/adr-authn-signup.md)、[ADR-authn-contact-claim](../../../adr/adr-authn-contact-claim.md)）。开户后客户端走既有的 `POST B/flows` 口令方法登录，邮箱在登录后经账户自助回路验证。
+- 规定认证前的失败退避与枚举防护在登录路径上的形状：在何处计数、何时拒绝校验、应答怎样同形同时。退避状态的存取面 `Throttle` 与 `authn_throttles` 表归 [authn-account](design-authn-account.md)（[ADR-authn-throttling](../../../adr/adr-authn-throttling.md)）。
 - 规定口令、社交登录（Google、GitHub）与微信各方式的流程。短信、通行密钥、企业 OIDC 与 SAML 作为方式接入同一接缝，各自的状态机与校验分别归 [authn-sms](design-authn-sms.md)、[authn-mfa](design-authn-mfa.md)、[authn-sso](design-authn-sso.md)。
 
 ### 非职责
@@ -28,7 +28,7 @@
 
 ### 登记单元
 
-根包 `pkg/authn` 只放接口与数据类型，不登记模块。`authn.login` 不交付任何功能，是流程引擎加路由；每个方法住在一个叶子包、登记一个模块、非排他地交付 `LoginMethod`，引擎经 `core.ResolveAll` 取用（[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)、[ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)）。本表列出本仓库交付的方法，是该范围内的封闭集；第三方方法自带名字，不在表内。配置键与设置键的全表见 [authn-config](design-authn-config.md)。
+根包 `pkg/authn` 只放接口与数据类型，不登记模块。`authn.login` 不交付任何功能，是流程引擎加路由；每个方法住在一个叶子包、登记一个模块、非排他地交付 `LoginMethod`，引擎经 `core.ResolveAll` 取用（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)、[ADR-authn-packaging](../../../adr/adr-authn-packaging.md)）。本表列出本仓库交付的方法，是该范围内的封闭集；第三方方法自带名字，不在表内。配置键与设置键的全表见 [authn-config](design-authn-config.md)。
 
 | 包 | 模块名 | 方法名（`Name()`） | 说明 |
 |---|---|---|---|
@@ -172,7 +172,7 @@ type Proof struct {
 | `authn.phone` | 手机号自助：`POST B/phone` 与 `POST B/phone/verify` | `SMSCodes` 在场；与挂这组路由的是同一个分支 |
 | `authn.identifiers.email` | `POST B/identifiers` 的邮箱分支 | `EmailCodeSender` 在场；路由恒挂，与邮箱分支在它缺席时答 503 的判定读同一个依赖 |
 
-- **报告与判定写在同一处。** 表中的判定都在 `Init` 里挂自助路由时做出（`pkg/authn/login/internal/selfservice/selfservice.go` `(*Service).Mount`，由 `pkg/authn/login/routes.go` `(*product).mountRoutes` 调用）。自助件不取 `feature.Board`：引擎把一个报告函数交给它的 `Mount`，它在表中的判定处调用。条件与报告写在一起，符合架构不变量 18（[architecture](../../architecture.md#架构不变量)，[ADR-feature-ownership-2026-10-17](../../../adr/adr-feature-ownership-2026-10-17.md)）。
+- **报告与判定写在同一处。** 表中的判定都在 `Init` 里挂自助路由时做出（`pkg/authn/login/internal/selfservice/selfservice.go` `(*Service).Mount`，由 `pkg/authn/login/routes.go` `(*product).mountRoutes` 调用）。自助件不取 `feature.Board`：引擎把一个报告函数交给它的 `Mount`，它在表中的判定处调用。条件与报告写在一起，符合架构不变量 18（[architecture](../../architecture.md#架构不变量)，[ADR-feature-ownership](../../../adr/adr-feature-ownership.md)）。
 - **`feature.Board` 经 `core.Resolve` 取用，不列入 `Requires`。** 取不到时（没有纳入 `feature.board` 的进程）不报告，路由照表中的条件挂出。
 - **本模块不声明静态特性。** 发现、流程、回跳与其余账户自助路由随模块恒挂；服务前端的命令必须纳入本模块，前端不经特性门控直接依赖它（[web](../web/design-web.md)）。改口令 `PUT B/password` 同样恒挂，不立特性名。
 - **守住它的测试**断言：`SMSCodes` 在场当且仅当报告 `authn.phone`、当且仅当 `POST B/phone` 已登记；`EmailCodeSender` 在场当且仅当报告 `authn.identifiers.email`。
@@ -187,7 +187,7 @@ type Proof struct {
 
 - **登录后才需要的存在性事实不进此应答。** 手机号自助与自助添加邮箱是否成立经[特性文档](../../../glossary.md)发布（见「声明的特性」），特性文档只对已认证调用者可读（[feature](../design-feature.md)）。
 - **描述符发布的是方法的常量，不是账户状态。** `binding_providers` 只说该方法把绑定存在哪些提供方取值下，不说任何账户是否已绑定；某个账户已绑定什么仍只经 `GET B/me` 的 `links` 读。
-- **同一事实只有一个发布点。** 可登记的因素种类只在 `mfa.factors` 里；特性文档里只有多因素的自助面是否存在（`authn.mfa`，[authn-mfa](design-authn-mfa.md)），不按因素种类分出特性名（[ADR-feature-ownership-2026-10-17](../../../adr/adr-feature-ownership-2026-10-17.md)）。
+- **同一事实只有一个发布点。** 可登记的因素种类只在 `mfa.factors` 里；特性文档里只有多因素的自助面是否存在（`authn.mfa`，[authn-mfa](design-authn-mfa.md)），不按因素种类分出特性名（[ADR-feature-ownership](../../../adr/adr-feature-ownership.md)）。
 - **只是参数、经流程应答送达或会暴露租户、IdP、账户维度的事实不发布。** 例：`authn.account.auto-link` 的结果经 401 `link-required` 送达，`authn.sms.allowed-prefixes` 的违反答 400 `unsupported-region`，全局强制 MFA（`authn.mfa.global-required`）经登录流程的登记步送达。
 - **别的模块的登录前事实不进此应答。** 它们经拥有该事实的模块自己的匿名发现面发布。
 
@@ -222,7 +222,7 @@ type Proof struct {
 - `username`、`email` 与 `password` 必填；邮箱先作为未证明预留写入，验证前不是登录名。`display_name`、`locale` 与 `time_zone` 可选，分别写到显示名与属性集的 `i18n.locale`、`i18n.tz` 键；`locale` 与 `time_zone` 按语言与时区的取值域校验，越界答 400。
 - 成功是 `201` 与 `{"state":"registered","account_id":"...","verification":{"state":"pending","email":"..."}}`。开户在一次事务里完成（`Signups.Register`），不建立会话、不发送邮件。
 - 客户端随后以 `POST B/flows` 的 `password` 方法登录，`input` 带 `identifier`（用户名）与 `password`；注册与验证都不自行铸造会话。
-- 邮箱验证在登录后走 `POST B/identifiers` 与 `POST B/identifiers/verify`。只有邮箱被证明才把账户的注册验证状态转为已验证，短信验证手机不解除限制（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
+- 邮箱验证在登录后走 `POST B/identifiers` 与 `POST B/identifiers/verify`。只有邮箱被证明才把账户的注册验证状态转为已验证，短信验证手机不解除限制（[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。
 - 失败：400 体不合法或口令不合策略；403 `signup-closed`（`authn.account.password-signup` 不是 `open`）；409 `username-taken`、409 `email-taken`；429 `throttled` 带 `Retry-After`；503 `unavailable`（db 或派生容量不可用）。
 - **注册开关的权威检查在 `Signups.Register`。** 本路由与 `GET B/methods` 读同一个设置项只作预检查，便于在校验与派生之前早拒；预检查放过的请求仍可能被 `Signups.Register` 以 `ErrSignupClosed` 拒绝，两处答同一个 403 `signup-closed`。
 - 注册按来源地址的分钟预算与全局小时预算限流，超限答 429；查用户名之前先按 `signup-username` 读一次退避，退避中同样答 429 带 `Retry-After`。用户名冲突与邮箱占用都是显式的 409：`Signups.Register` 在开户事务里插入邮箱预留，`(kind, value)` 的唯一索引是地址的唯一仲裁点，冲突返回 `ErrContactTaken`，路由答 409 `email-taken`；注册不在插入之前检查邮箱占用，冲突时整个开户事务回滚。
@@ -242,7 +242,7 @@ type Proof struct {
 | 409 | `conflict`、`login-identifier-required`、`username-taken`、`email-taken` | 外部身份冲突、解绑最后一种登录方式、删最后一个因素、某种因素已达上限；账户没有可作登录名的标识而设口令，或删除带口令凭据账户的最后一个登录名；自助注册的用户名已被占用；邮箱地址已被别的账户预留或持有 |
 | 415、429、503 | `unsupported-media-type`、`throttled`（带 `Retry-After`）、`unavailable` | `unavailable` 对外不区分是哪个依赖不可用 |
 
-401 一律带 `WWW-Authenticate`。挂在本模块路由上的 401 有三种来源。**网关自产的 401**（没有凭据、头不合规、出口检查不符、冒充范围不符，以及网关自己对浏览器会自行附带的凭据做的跨源检查不过）取网关为该端建成的挑战，含口令表后端在场时的 `Basic`。**本模块处理器答的 401**（`login-failed`、`flow-invalid`、`link-required`、`insufficient_user_authentication`）与 **`Mounter` 的 `Wrap` 为挂载路由写的跨源检查 401**，挑战去掉 `Basic`，只用 `Bearer` 与 `Cookie`：同源页面的 `fetch` 收到带 `Basic` 的 401 会让浏览器弹出原生口令框，而这些 401 不是在要求 Basic 凭据（[ADR-authn-credential-dispatch-2026-10-10](../../../adr/adr-authn-credential-dispatch-2026-10-10.md)）。三种 401 的 realm 都取该端点的端名，与网关写的 realm 同源：处理器与 `Wrap` 经 `mount.Mounter.Endpoint()` 得到端名，再交给路由部件的 401 写出函数（[authn-gate](design-authn-gate.md)）。
+401 一律带 `WWW-Authenticate`。挂在本模块路由上的 401 有三种来源。**网关自产的 401**（没有凭据、头不合规、出口检查不符、冒充范围不符，以及网关自己对浏览器会自行附带的凭据做的跨源检查不过）取网关为该端建成的挑战，含口令表后端在场时的 `Basic`。**本模块处理器答的 401**（`login-failed`、`flow-invalid`、`link-required`、`insufficient_user_authentication`）与 **`Mounter` 的 `Wrap` 为挂载路由写的跨源检查 401**，挑战去掉 `Basic`，只用 `Bearer` 与 `Cookie`：同源页面的 `fetch` 收到带 `Basic` 的 401 会让浏览器弹出原生口令框，而这些 401 不是在要求 Basic 凭据（[ADR-authn-credential-dispatch](../../../adr/adr-authn-credential-dispatch.md)）。三种 401 的 realm 都取该端点的端名，与网关写的 realm 同源：处理器与 `Wrap` 经 `mount.Mounter.Endpoint()` 得到端名，再交给路由部件的 401 写出函数（[authn-gate](design-authn-gate.md)）。
 
 自助路由没有 404 问题码：`ErrAccountNotFound` 在自助路由上读作身份已失效，答裸 401（不带问题码）。`impersonation-restricted` 在自助路由上实为兜底：主防线是网关对冒充身份的冒充范围核对与路由对冒充身份的整体拒绝，这条码只在处理器自己查到身份在冒充中时写出。
 
@@ -294,9 +294,9 @@ type Proof struct {
 | `audit.Audit`、`event.Bus` | 可选 | 登录审计与 `authn.login.succeeded`；缺席时对应输出不做，启动诊断写一行 |
 | `feature.Board` | 可选，`Init` 经 `core.Resolve` 取用，不列入 `Requires` | 报告 `authn.phone` 与 `authn.identifiers.email`；缺席时不报告 |
 
-方向满足架构不变量：`authn/login` 只依赖根包、内部包、`pkg/feature` 根包与依赖表里的功能接口，不依赖任何方法叶子包，也不 import `pkg/tenant`；`pkg/feature` 根包只依赖标准库，`authn/login` 为声明特性 import 它不扩大自己的闭包，也不 import `pkg/feature/board`（[feature](../design-feature.md)）；叶子包只依赖根包与 `internal/egress`、`internal/password` 这类内部包，库类型只出现在叶子包里，不出现在根包签名里（[ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)、[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。`authn.login` 把 `MFA` 当必需：装配里没有 MFA 模块而库里已有账户登记了因素时，登录不得无声跳过第二因素。
+方向满足架构不变量：`authn/login` 只依赖根包、内部包、`pkg/feature` 根包与依赖表里的功能接口，不依赖任何方法叶子包，也不 import `pkg/tenant`；`pkg/feature` 根包只依赖标准库，`authn/login` 为声明特性 import 它不扩大自己的闭包，也不 import `pkg/feature/board`（[feature](../design-feature.md)）；叶子包只依赖根包与 `internal/egress`、`internal/password` 这类内部包，库类型只出现在叶子包里，不出现在根包签名里（[ADR-authn-packaging](../../../adr/adr-authn-packaging.md)、[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。`authn.login` 把 `MFA` 当必需：装配里没有 MFA 模块而库里已有账户登记了因素时，登录不得无声跳过第二因素。
 
-状态放置按丢失的方向判：流程记录丢了只让流程失败，放 kv；退避计数、会话、账户丢了会放宽校验，放 db（[ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)）。
+状态放置按丢失的方向判：流程记录丢了只让流程失败，放 kv；退避计数、会话、账户丢了会放宽校验，放 db（[ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)）。
 
 ## UML 图
 
@@ -527,7 +527,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 `step-up` 在 `first` 起始时，方法证明的账户必须等于记录的 `account`，否则落入 `failed`，401 `login-failed`；`link` 的外部身份不按绑定解析账户，账户取记录的 `account`。
 
-**完成时的复核**由 `complete` 在终态动作之前做，`link`、`step-up`、`enroll` 共用：`StatusFresh(记录的 session)` 有效、会话账户与记录的 `account` 一致、会话不在冒充中，任一项不过为 401 `flow-invalid`；`link` 与 `enroll` 另按上表的起始要求再核对一次，不满足为 401 `insufficient_user_authentication`；该要求取流程开始时账户有无有效因素取定的那一份（记录的 `require_multi`），使登记在其最后一步刚置启用的因素不抬高它自己完成所按的门槛（[ADR-authn-login-flow-2026-10-10](../../../adr/adr-authn-login-flow-2026-10-10.md)）。
+**完成时的复核**由 `complete` 在终态动作之前做，`link`、`step-up`、`enroll` 共用：`StatusFresh(记录的 session)` 有效、会话账户与记录的 `account` 一致、会话不在冒充中，任一项不过为 401 `flow-invalid`；`link` 与 `enroll` 另按上表的起始要求再核对一次，不满足为 401 `insufficient_user_authentication`；该要求取流程开始时账户有无有效因素取定的那一份（记录的 `require_multi`），使登记在其最后一步刚置启用的因素不抬高它自己完成所按的门槛（[ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)）。
 
 ### 答复与迁移
 
@@ -565,7 +565,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 `GET|POST B/callback/:provider` 由引擎处理，分发给方法。引擎先核对：流程存在且处于 `first`；回跳路径的 `:provider` 与记录里的 `provider` 一致（社交方法的记录记方法名，企业 SSO 的记录记 `Begin` 时 `input.provider` 给的值）；绑定匹配。通过后引擎**在调用 `Answer` 之前**先把记录交换成 `processing`，`seq` 与方法状态不变。并发的第二次回跳败于这一步，当场得到 `flow-invalid`，所以授权码至多换一次、SAML 断言至多处理一次。
 
-`Answer` 返回之后，引擎再把记录交换成新状态；方法交回 `StepRefused` 或 `StepUnavailable` 时置 `failed` 墓碑。停在 `processing` 的记录，即进程崩溃而 `Answer` 没有返回的情形，一律按失效处理，用户重新开始。方法自己不对流程记录做任何写。这一做法的取舍见 [ADR-authn-login-flow-2026-10-10](../../../adr/adr-authn-login-flow-2026-10-10.md)。
+`Answer` 返回之后，引擎再把记录交换成新状态；方法交回 `StepRefused` 或 `StepUnavailable` 时置 `failed` 墓碑。停在 `processing` 的记录，即进程崩溃而 `Answer` 没有返回的情形，一律按失效处理，用户重新开始。方法自己不对流程记录做任何写。这一做法的取舍见 [ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)。
 
 ### 账户解析与策略判定
 
@@ -577,7 +577,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 - `Identifier` 非空（短信验证的手机）：按标识查账户；查不到时按注册设置决定开户或失败。
 - `External` 非空：按（提供方，主体）查绑定；无绑定时按外部身份的来源与设置走关联或首登开户；`Aliases` 用于旧键升级。键永远是（提供方，主体），不用邮箱。社交证明的提供方不带 `oidc:`、`saml:` 命名空间，企业证明的提供方属于一个租户；社交证明落在 `oidc:`、`saml:` 命名空间，或企业证明的 `ext.Tenant` 与提供方行的租户不一致，都按 `ErrInvalidArgument` 拒绝（fail-closed，判据隐含于 A1 的命名空间与 A5 的租户归属）。
 
-关联、自动并入、企业 SSO 的域核对与预开户、首登开户、`Provisioner` 钩子的判据全部归 [authn-account](design-authn-account.md)（[ADR-authn-external-binding-2026-10-10](../../../adr/adr-authn-external-binding-2026-10-10.md)）。引擎承担的是这些规则的结果怎样落到流程上：
+关联、自动并入、企业 SSO 的域核对与预开户、首登开户、`Provisioner` 钩子的判据全部归 [authn-account](design-authn-account.md)（[ADR-authn-external-binding](../../../adr/adr-authn-external-binding.md)）。引擎承担的是这些规则的结果怎样落到流程上：
 
 | 解析结果 | 流程 | 对外 |
 |---|---|---|
@@ -616,7 +616,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 - `login` 撤销旧会话不是会话固定防护所依赖的环节：登录总是新建会话、不沿用任何旧令牌。SAML 的跨站 POST 不带 `SameSite=Lax` 的 cookie，旧会话无从撤销，这是已知的例外。
 - 口令方式的 `must_change` 路径完成后，引擎调 `Sessions.RevokeAccount(except = 新会话)`，因为口令变了。引擎判断这条路径有没有走由 `Proof.PasswordChanged` 承载：口令方法在自己重设了凭据（`Passwords.Set` 成功）时把它的证明上的该字段置真，引擎据此在完成时撤销其余会话。撤销其余会话只对 `login` 生效；`step-up` 的 `must_change`（账户无因素时以口令走第一因素）同样置真，但 `step-up` 完成时不撤销其余会话，本设计不为它加这一动作。
-- `login` 的审计行用新认定的身份派生上下文，使 `actor` 是登录的账户而不是空串；登录失败写同名审计行，`actor` 为空，`identifier_mac` 作关联。失败不发事件，只走审计、日志与计数器，否则 `login.failed` 会成为枚举旁路（[authn-events](design-authn-events.md)、[ADR-authn-events-and-audit-2026-10-10](../../../adr/adr-authn-events-and-audit-2026-10-10.md)）。
+- `login` 的审计行用新认定的身份派生上下文，使 `actor` 是登录的账户而不是空串；登录失败写同名审计行，`actor` 为空，`identifier_mac` 作关联。失败不发事件，只走审计、日志与计数器，否则 `login.failed` 会成为枚举旁路（[authn-events](design-authn-events.md)、[ADR-authn-events-and-audit](../../../adr/adr-authn-events-and-audit.md)）。
 - 会话与令牌的期限、cookie 的属性与 CSRF 归 [authn-session](design-authn-session.md) 与 [authn-token](design-authn-token.md)。
 
 ### 回跳类的收尾
@@ -648,7 +648,7 @@ Location: <落地页>#authn_error=<码>
 - **不改变 API 客户端的形状。** 没有 `Sec-Fetch-Mode: navigate` 的请求照旧得到 `application/problem+json`。落地页读不出、或落地页不合规时同样退回问题文档，不把用户代理送到一个未经校验的地址。
 - **客户端呈现。** 登录面把片段里的码按 api-client 的推导归一到 `authn.<码>`（连字符换下划线），交给已有的内联错误渲染；白名单之外的码落通用文案。
 
-取舍见 [ADR-authn-callback-failure-landing-2026-10-23](../../../adr/adr-authn-callback-failure-landing-2026-10-23.md)。
+取舍见 [ADR-authn-callback-failure-landing](../../../adr/adr-authn-callback-failure-landing.md)。
 
 ### IdP 发起的 SAML
 
@@ -672,7 +672,7 @@ Location: <落地页>#authn_error=<码>
 所有可能泄露账户、标识、号码是否存在的分支都走同一个失败应答，耗时相当。口令路径上的诱饵派生与哈希参数变更后的计时差归 [authn-account](design-authn-account.md)；其余分支在登录路径上的形状如下：
 
 - 口令、验证码、因素、断言不成立，以及账户不存在、无口令、已停用，统一 `login-failed`。
-- 短信号码未登记且注册关闭时，照样写一行 `suppressed = true` 的挑战行，不入队、不发送，使重发间隔与各项预算按与已登记号码完全相同的路径累计；应答与「已发送」同形；随后的答复一律按 `login-failed` 失败，并经一次诱饵校验耗费同样的时间。预算与挑战行归 [authn-sms](design-authn-sms.md)（[ADR-authn-sms-2026-10-10](../../../adr/adr-authn-sms-2026-10-10.md)）。
+- 短信号码未登记且注册关闭时，照样写一行 `suppressed = true` 的挑战行，不入队、不发送，使重发间隔与各项预算按与已登记号码完全相同的路径累计；应答与「已发送」同形；随后的答复一律按 `login-failed` 失败，并经一次诱饵校验耗费同样的时间。预算与挑战行归 [authn-sms](design-authn-sms.md)（[ADR-authn-sms](../../../adr/adr-authn-sms.md)）。
 - 发现接口只回答与域名有关的公开信息（[authn-sso](design-authn-sso.md)）。
 - 外部登录路径上，调用方已在 IdP 处证明过身份，才会看到 `account-unavailable` 与 `link-required`；`link-required` 只在 `External.EmailVerified` 为真时给，因此只对已被提供方证明拥有该邮箱的调用者暴露其账户存在。
 - 因素清单只在第一因素通过之后给。
@@ -705,7 +705,7 @@ Location: <落地页>#authn_error=<码>
 
 ### 社交登录与企业 OIDC 的共同事务
 
-适用于 `google`、`github` 与企业 `oidc`。库的分工与自做部分的判据见 [ADR-authn-oauth-flow-2026-10-10](../../../adr/adr-authn-oauth-flow-2026-10-10.md)。本节与「微信」一节里的社交方法，连同企业 `oidc` 与 `saml`，服务 `login`、`link` 与 `step-up` 三个目的，不受理 `enroll`：只有交回 `External` 的方法能承担 `link`（外部绑定经它建立与解绑），而 `enroll` 是登记第二因素、由 `MFA.Enroll` 承担。空目的与 `enroll` 在读到任何参数之前被拒。
+适用于 `google`、`github` 与企业 `oidc`。库的分工与自做部分的判据见 [ADR-authn-oauth-flow](../../../adr/adr-authn-oauth-flow.md)。本节与「微信」一节里的社交方法，连同企业 `oidc` 与 `saml`，服务 `login`、`link` 与 `step-up` 三个目的，不受理 `enroll`：只有交回 `External` 的方法能承担 `link`（外部绑定经它建立与解绑），而 `enroll` 是登记第二因素、由 `MFA.Enroll` 承担。空目的与 `enroll` 在读到任何参数之前被拒。
 
 **`Begin`。** 方法生成 `state`（32 字节随机数的 base64url）、PKCE 校验串（`oauth2.GenerateVerifier`）、OIDC 的 `nonce`（32 字节随机数），连同绑定存入 `method_state`，`state` 存摘要。授权地址由 `oauth2.Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce))` 生成，PKCE 一律 S256。`redirect_uri` 是 `public-url + B/callback/<提供方>`，每个提供方的回跳路径不同，把 A 的回跳投给 B 因路径不同而不可能；回跳里若带 `iss` 仍与该提供方的 issuer 比对（RFC 9207）。
 
@@ -719,17 +719,17 @@ Location: <落地页>#authn_error=<码>
 
 出站客户端全经 `internal/egress`：超时、体上限、不跟随重定向、连接时拒绝非公网地址；并以 `oidc.ClientContext` 注入，未注入时库用无超时的默认客户端，所以未经注入的出站调用本身是缺陷。`google`、`github` 与企业 `oidc`、`saml` 的客户端在 `observability.Transport` 之内套 `log.Transport`，每次出站请求成功与失败各写一条记录：方法、主机、不含 query 的路径、对端状态、`outcome` 与耗时，无应答时带底层成因；授权码与令牌都不进记录，请求头与正文同样不记。方法交出的 `Proof.External` 带（提供方，主体）、邮箱与 `EmailVerified`，邮箱只是线索。
 
-`google` 与 `github` 各有一组可选覆盖项把方法指向别的提供方：前者是 `authn.login.google.issuer`，后者是 `authn.login.github.authorize-url`、`token-url` 与 `api-base`；缺省值就是内置的 Google issuer 与 GitHub 端点。两者的受限出站客户端另由 `allow-loopback` 与 `root-ca-file` 成形：缺省为拒回环、用系统根，根证书文件追加到系统根（不替换）并在启动时读取。指向自定义端点即由部署方承担对该端点与其证书的信任；缺省路径上的校验与行为不变（[ADR-authn-social-endpoints-2026-10-26](../../../adr/adr-authn-social-endpoints-2026-10-26.md)）。
+`google` 与 `github` 各有一组可选覆盖项把方法指向别的提供方：前者是 `authn.login.google.issuer`，后者是 `authn.login.github.authorize-url`、`token-url` 与 `api-base`；缺省值就是内置的 Google issuer 与 GitHub 端点。两者的受限出站客户端另由 `allow-loopback` 与 `root-ca-file` 成形：缺省为拒回环、用系统根，根证书文件追加到系统根（不替换）并在启动时读取。指向自定义端点即由部署方承担对该端点与其证书的信任；缺省路径上的校验与行为不变（[ADR-authn-social-endpoints](../../../adr/adr-authn-social-endpoints.md)）。
 
 **Google。** 对 issuer `https://accounts.google.com` 用 go-oidc 做发现（`authn.login.google.issuer` 可覆盖，覆盖值须是绝对 https 地址，回环主机的 http issuer 仅在 `allow-loopback` 为真时接受），首次使用时懒发现、缓存，失败不终止启动，期间该方式答 503。`sub` 作主体。配置了 `hosted-domain` 时检查 ID 令牌的 `hd` 声明：限定组织的依据是 `hd`，不是邮箱域名，授权请求里的 `hd` 参数只是界面优化。
 
 **验证路径上的取键集不受调用预算约束。** go-oidc 构造密钥集时用 `context.Background()` 而非本次调用的 `ctx`，叠加 `internal/egress` 按设计不设总超时，一个接受连接却不作答的密钥集端点能把这次登录请求拖过 `authn.login.call-budget`。这条缺陷的修法在 `egress`（加总超时选项）或引擎（并发跑方法、作废迟到的回答），不在方法叶子包里。受此影响，验证路径上取键集失败一律答 `StepRefused`，不答 `StepUnavailable`：go-oidc 把「取不到密钥集」与「验签失败」压成同一个错误字符串，两者无法区分；发现与换令牌的不可用仍答 `StepUnavailable`。
 
-**GitHub。** `x/oauth2` 加 `endpoints.GitHub`（授权、令牌与 API 基址可由 `authn.login.github.authorize-url`、`token-url` 与 `api-base` 覆盖，覆盖值须是绝对 https 地址），作用域 `read:user user:email`，PKCE S256。GitHub 是纯 OAuth 2.0，没有 discovery、没有 issuer，也从不发 `iss`，所以共同事务里「回跳带 `iss` 就与该提供方的 issuer 比对」对它不适用。授权码换到访问令牌后自写对 `/user` 与 `/user/emails` 的 GET：`/user` 取数字 `id` 作主体；`/user/emails` 取 `primary` 且 `verified` 的邮箱，没有这样的一条时邮箱为空、`EmailVerified` 为假，不报错。`/user` 返回的 `email` 没有已验证标记，不采用。**这两次 GET 返回非 200、或 `/user` 里没有正整数 `id`，都答 `StepRefused`（拒绝，fail-closed），不是 `StepUnavailable`；只有传输失败或响应体解不开才答 `StepUnavailable`。** 因此 `/user/emails` 临时抖动会让一个此前已绑定的身份也登录不上，这是 fail-closed 的代价。访问令牌用完即弃，不存、不刷新。取舍见 [ADR-authn-oauth-flow-2026-10-10](../../../adr/adr-authn-oauth-flow-2026-10-10.md)。
+**GitHub。** `x/oauth2` 加 `endpoints.GitHub`（授权、令牌与 API 基址可由 `authn.login.github.authorize-url`、`token-url` 与 `api-base` 覆盖，覆盖值须是绝对 https 地址），作用域 `read:user user:email`，PKCE S256。GitHub 是纯 OAuth 2.0，没有 discovery、没有 issuer，也从不发 `iss`，所以共同事务里「回跳带 `iss` 就与该提供方的 issuer 比对」对它不适用。授权码换到访问令牌后自写对 `/user` 与 `/user/emails` 的 GET：`/user` 取数字 `id` 作主体；`/user/emails` 取 `primary` 且 `verified` 的邮箱，没有这样的一条时邮箱为空、`EmailVerified` 为假，不报错。`/user` 返回的 `email` 没有已验证标记，不采用。**这两次 GET 返回非 200、或 `/user` 里没有正整数 `id`，都答 `StepRefused`（拒绝，fail-closed），不是 `StepUnavailable`；只有传输失败或响应体解不开才答 `StepUnavailable`。** 因此 `/user/emails` 临时抖动会让一个此前已绑定的身份也登录不上，这是 fail-closed 的代价。访问令牌用完即弃，不存、不刷新。取舍见 [ADR-authn-oauth-flow](../../../adr/adr-authn-oauth-flow.md)。
 
 ### 微信（wechat.web 与 wechat.mp）
 
-`wechat.web` 是网站应用扫码登录（`qrconnect`），作用域 `snsapi_login`；`wechat.mp` 是公众号网页授权，作用域 `snsapi_userinfo`。两个入口的授权地址末尾都必须带 `#wechat_redirect`——微信的 `qrconnect` 与网页授权端点都要求该片段——由共用客户端对两者统一带上。`authn.login.wechat-web` 与 `authn.login.wechat-mp` 各是一个模块，共用 `authn/login/internal/wechat` 里的薄客户端，客户端自写，不引任何微信 SDK（[ADR-authn-wechat-2026-10-10](../../../adr/adr-authn-wechat-2026-10-10.md)）。
+`wechat.web` 是网站应用扫码登录（`qrconnect`），作用域 `snsapi_login`；`wechat.mp` 是公众号网页授权，作用域 `snsapi_userinfo`。两个入口的授权地址末尾都必须带 `#wechat_redirect`——微信的 `qrconnect` 与网页授权端点都要求该片段——由共用客户端对两者统一带上。`authn.login.wechat-web` 与 `authn.login.wechat-mp` 各是一个模块，共用 `authn/login/internal/wechat` 里的薄客户端，客户端自写，不引任何微信 SDK（[ADR-authn-wechat](../../../adr/adr-authn-wechat.md)）。
 
 - **`state`**：32 字节随机数的十六进制，64 字符，满足公众号侧「字母数字、至多 128 字节」的限制。
 - **换令牌**：`GET https://api.weixin.qq.com/sns/oauth2/access_token?appid&secret&code&grant_type=authorization_code`；HTTP 200 加 `errcode` 非零按失败。
@@ -754,12 +754,12 @@ Location: <落地页>#authn_error=<码>
 |---|---|
 | `PUT B/password` | 改口令；请求体的当前口令可空（经提供方开户的账户没有口令），经 `SetPasswordOptions.Current` 交给 `Passwords.Set`，由账户模块校验当前口令与策略、失败即 `ErrPasswordPolicy`（400）或 `ErrInvalidCredentials`（401），本路由不单独计数退避；成功后处理器调 `Sessions.Rotate` 与 `Sessions.RevokeAccount(except = 当前会话)`；账户没有可作登录名的标识（没有用户名也没有邮箱标识）时 409 `login-identifier-required` |
 | `POST B/phone`、`POST B/phone/verify` | 添加或更换手机，经短信验证新号码（`verified_via = sms-code`）；成功后撤销其余会话；服务端状态与步骤见「手机号验证」 |
-| `POST B/identifiers` | 添加本人登录标识，体 `{kind, value}`：`kind` 取 `username` 或 `email`，手机走 `POST B/phone`。用户名是登录名，无所有权可证，一步写入，`verified_via = self`；邮箱先经 `EmailCodeSender` 发码并在 kv 写一条按会话的待验证记录，应答 `{state: "pending", expires_in, resend_after}`（用户名成功应答 `{state: "added"}`）；没有 `EmailCodeSender` 时邮箱分支答 503 `unavailable`；发码之前读 `Accounts.Lookup` 与 `SignupVerification.PendingAccountByContact`，地址已被**其他**账户持有或留有未证明预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算，读失败答 503。账户自己已经持有的地址不在此列：它是一次重发到该地址的证明请求，发码照常，兑现后由账户模块就地证明那一行。对同一收件箱的预算形式（局部部分从第一个 `+` 起的后缀在所有域丢弃，`gmail.com` 与 `googlemail.com` 另外去掉局部部分的点并归一为同一个域）、间隔内的重发答 429 `throttled`（窗口按收件箱持有，跨会话与账户共享，一个收件箱在一次窗口内只发一条码）；成功写入撤销其余会话。`verified_via` 由写标识的这一步定，非管理员自陈，见 [ADR-authn-selfservice-identifier-2026-10-16](../../../adr/adr-authn-selfservice-identifier-2026-10-16.md) |
+| `POST B/identifiers` | 添加本人登录标识，体 `{kind, value}`：`kind` 取 `username` 或 `email`，手机走 `POST B/phone`。用户名是登录名，无所有权可证，一步写入，`verified_via = self`；邮箱先经 `EmailCodeSender` 发码并在 kv 写一条按会话的待验证记录，应答 `{state: "pending", expires_in, resend_after}`（用户名成功应答 `{state: "added"}`）；没有 `EmailCodeSender` 时邮箱分支答 503 `unavailable`；发码之前读 `Accounts.Lookup` 与 `SignupVerification.PendingAccountByContact`，地址已被**其他**账户持有或留有未证明预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算，读失败答 503。账户自己已经持有的地址不在此列：它是一次重发到该地址的证明请求，发码照常，兑现后由账户模块就地证明那一行。对同一收件箱的预算形式（局部部分从第一个 `+` 起的后缀在所有域丢弃，`gmail.com` 与 `googlemail.com` 另外去掉局部部分的点并归一为同一个域）、间隔内的重发答 429 `throttled`（窗口按收件箱持有，跨会话与账户共享，一个收件箱在一次窗口内只发一条码）；成功写入撤销其余会话。`verified_via` 由写标识的这一步定，非管理员自陈，见 [ADR-authn-selfservice-identifier](../../../adr/adr-authn-selfservice-identifier.md) |
 | `POST B/identifiers/verify` | 提交自助邮箱验证码，体 `{code}`：读会话的待验证记录，比对码；不符计数、用尽五次即废、记录过期靠键的生存期；通过才以 `verified_via = email-code` 调 `AccountAdmin.AddIdentifier` 证明该地址、删记录并撤销其余会话。写标识是权威的占用判定：账户自己已经持有的同值邮箱标识由 `AddIdentifier` 就地提升为已证明（幂等，不新增第二行），所以对注册时留下的未证明地址或管理员预置的地址兑现验证码会成功；地址在发码之后被**别的**账户取得时 `ErrContactTaken` 答 409 `email-taken`，`ErrAccountExists` 只在绕过预留表的重复行上出现，同样答 409；没有待验证记录（或记录不属于本账户）与错码同答 401 `login-failed` |
 | `DELETE B/identifiers/:id` | 删本人持有的标识；标识不属本人与不存在同形，都答 400 `bad-request`；带口令凭据的账户删除最后一个用户名或邮箱时答 409 `login-identifier-required`，删除不生效；无口令凭据的账户可删最后一个登录名，删手机从不触发该规则；不撤销会话；`authn.identifier.changed` 由 [authn-account](design-authn-account.md) 在删除时发布 |
 | `DELETE B/links/:id` | 解绑外部身份；账户有因素时，IdP 声明的多因素不算；解绑后账户至少还剩一种可用登录方式，否则 409 `conflict`；成功后撤销其余会话并发 `authn.binding.changed` |
 
-邮箱与用户名此前只由管理员或 IdP 断言成为标识；自助添加见上表的 `POST B/identifiers` 与 `POST B/identifiers/verify`，`verified_via` 的归属与验证回路见 [ADR-authn-selfservice-identifier-2026-10-16](../../../adr/adr-authn-selfservice-identifier-2026-10-16.md)。规则的判据归 [authn-account](design-authn-account.md)。
+邮箱与用户名此前只由管理员或 IdP 断言成为标识；自助添加见上表的 `POST B/identifiers` 与 `POST B/identifiers/verify`，`verified_via` 的归属与验证回路见 [ADR-authn-selfservice-identifier](../../../adr/adr-authn-selfservice-identifier.md)。规则的判据归 [authn-account](design-authn-account.md)。
 
 用户名加口令的自助注册是匿名路由 `POST B/register`，不属于本节的已认证自助路由；建号、登录与邮箱验证的次序见「匿名注册」。`authn.account.password-signup` 与首登开户的 `authn.account.signup` 相互独立；后者仍由短信、社交方法自己的 `opens_account` 表达。
 
@@ -777,7 +777,7 @@ Location: <落地页>#authn_error=<码>
 
 ## 错误与失败语义
 
-登录路径的默认方向是依赖不可用时拒绝：对应路径答 503，不答 200，也不答 401——客户端会把 401 当作凭据无效而丢弃令牌与会话。对外不区分是哪个依赖不可用，应答是 `urn:speed:authn:unavailable`，成因只进日志。全部哨兵与全部路径的失败方向的权威表在 [authn-failure](design-authn-failure.md)，原则见 [ADR-authn-failure-2026-10-10](../../../adr/adr-authn-failure-2026-10-10.md)；本节只写登录引擎与登录路由涉及的部分。
+登录路径的默认方向是依赖不可用时拒绝：对应路径答 503，不答 200，也不答 401——客户端会把 401 当作凭据无效而丢弃令牌与会话。对外不区分是哪个依赖不可用，应答是 `urn:speed:authn:unavailable`，成因只进日志。全部哨兵与全部路径的失败方向的权威表在 [authn-failure](design-authn-failure.md)，原则见 [ADR-authn-failure](../../../adr/adr-authn-failure.md)；本节只写登录引擎与登录路由涉及的部分。
 
 ### 失败方向
 

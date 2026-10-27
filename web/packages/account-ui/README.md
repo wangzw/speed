@@ -515,7 +515,7 @@ interface MfaSectionProps {
 
 `StepUpDialog` is the package's step-up re-verification dialog, exported
 for the host (`src/internal/step-up-challenge.tsx` internally; see the
-ADR-web-auth-seams-2026-10-19 ruling). It drives one
+ADR-web-auth-seams ruling). It drives one
 `purpose: 'step-up'` flow: an account with a usable factor enters at the
 `factor` step and chooses one, where the flow then asks for its proof; a
 completion in state `elevated` (or the login-shaped `authenticated` body

@@ -299,7 +299,7 @@ func secretValues(cfg Config) []string {
 // assembly that goes on without one. A host that wants no database leaves this
 // implementation out of the command tree — the capability is delivered
 // exclusively, so the dependency closure does not pull a provider in on its own
-// (ADR-dependency-resolution-2026-09-13, ADR-module-enablement-2026-09-21).
+// (ADR-dependency-resolution, ADR-module-enablement).
 func (s Spec) prepare(reader config.Reader) (core.Enablement, error) {
 	cfg, err := s.read(reader)
 	if err != nil {

@@ -2,9 +2,9 @@
 
 Read together with `SKILL.md`, whose common rules apply in full and are not repeated here.
 
-**The premise for this document type**: the ADR tree is **the project's decision history**. Design and requirements documents carry no history precisely because history is delegated — text-level change to git, decision-level change to here.
+**The premise for this document type**: the ADR tree records the decisions in force. Each record states one architecturally significant decision: the constraints that forced it, the options weighed, the one adopted, and the price accepted. It carries the reasoning behind the decision, not the project's work history.
 
-This does not contradict the conclusions-only rule. What that rule bans is recording how a *document* was written; the options an ADR weighs are the **content of the decision**, not process residue. The line to hold: **an ADR is not meeting minutes.** It states what the options were at the moment of deciding. It does not narrate how the discussion got there, and it does not record who argued for what.
+This does not contradict the conclusions-only rule. What that rule bans is recording how a *document* was written; the options an ADR weighs are the **content of the decision**, not process residue. The line to hold: **an ADR is not meeting minutes and not a changelog.** It states what the options were and why each lost. It does not narrate how the discussion got there, who argued for what, or how the record itself has changed over time.
 
 ---
 
@@ -17,64 +17,38 @@ The failure mode of this document type is inflation: hundreds of records, none o
 - A choice that can be reversed within a day gets no record.
 - **One decision per record.** A record that needs many pages is several decisions that have not been separated.
 
-## 2. A Record Is Immutable — From Acceptance, Not From Authorship
+## 2. A Record Is Revised in Place
 
-**Immutability is a semantic property of an accepted decision, not a rule against editing a file.** Until the decision is accepted, the record is a draft like any other document: rewrite it, restructure it, retitle it, change its slug, merge it into another record, split it in two, or delete it outright. Drafting is where a record is made correct, and nothing in this standard constrains it. A draft that still reads badly, states the options imprecisely or gets the terminology wrong is fixed in place, not superseded.
+**A record states the current decision on its subject.** It is an ordinary document in this respect: when the decision changes, the record changes with it. There is no frozen original and no successor record.
 
-**A record freezes when the decision is accepted.** From that point, changing the decision means writing a new record that supersedes the old one, never editing the old one.
+**The tree holds only decisions in force.** A record whose decision no longer applies is rewritten into the decision that replaced it, or removed when nothing replaces it. Whether a decision is in force is therefore not a property the record carries: there is no status field, and a record that would need one does not belong in the tree.
 
-- Typographic fixes and broken-link repairs are allowed.
-- The status field is updated when the record is superseded or deprecated — that is the one substantive edit a frozen record accepts, and it exists only because a reader of the old record must not act on it unaware.
-- Context, options, decision and consequences **are never edited**.
+- Rewrite, restructure, retitle, rename the file, merge or split records — drafting and revision are the same operation.
+- **Revising a record leaves no trace in the record.** No revision note, no date, no "updated", no changelog, no "originally X, later changed to Y". An error found and fixed leaves a corrected record, nothing more. The record must read as if the current decision is the one that was always there.
+- **A replaced decision survives only as an option.** When the current decision displaces an earlier one, the earlier decision appears in *Options Considered* if it was a real alternative, with the reason it was rejected. It is not recorded as "what was decided before" and gets no separate paragraph. If it was not a real alternative, it is dropped.
+- **The reference check is the cost of this freedom.** Other documents cite the record, and code follows it. After revising, confirm that every citation still says something true — that a design document referencing `ADR-<slug>` has not been left asserting the option the record no longer takes.
 
-The reason is the whole point of keeping the tree: a record that can be rewritten cannot be trusted to say what was actually decided at the time, and then it has no value that git does not already provide.
-
-### When Acceptance Happens
-
-**Acceptance is a project event, not a field in the file.** The status field carries the decision's force in the project, not the document's editing state — which is why `Proposed` does not exist (section 4). Writing `Accepted` into a draft does not accept it.
-
-A decision is accepted when the project starts acting on it: the record lands in the documentation tree as the decision in force, and other documents may reference it.
-
-**The boundary is the release that ships the record, not the commit that merges it.** A record that has never shipped in a release is still a draft, however long it has been on the main branch and however much code already follows it. Revise it in place; once it ships, supersede instead. What counts as a release is the project's own event — its versioning scheme answers it, and this standard does not restate the answer.
-
-Merging is deliberately not the boundary. A record is most often found to be wrong by implementing it, and implementation starts after the merge; freezing at the merge would mean that the first thing anyone learns by building the system can only ever be recorded as a supersession of a record nobody has yet had the chance to act on. Terminology unification across a batch, a rewrite of an options section that turned out to be imprecise, or renaming a topic slug therefore stay ordinary drafting work right up to the release.
-
-**What replaces the merge boundary is a reference check, not nothing.** Once a record is merged, other documents may already cite it and code may already follow it. Revising an unreleased record means confirming that those citations still say something true — that the design document referencing `ADR-<slug>-<date>` has not been left asserting the option the record no longer takes. The freedom is to fix the record; it is not freedom to leave the tree inconsistent.
+**This is why the ADR is a supplement to the design.** Both are revised on the same rhythm, in place, from the same authority: the current state of the system. A supersession tree would put the two document types on different rules for no gain, and the ADR's value is its reasoning, which a fresh record does not preserve any better than a rewritten one.
 
 ## 3. Layout and Naming
 
 ```
 docs/adr/                       # relocatable via CLAUDE.md
 ├── README.md                   # entry point: brief introduction + index grouped by topic
-└── adr-<slug>-<date>.md
+└── adr-<slug>.md
 ```
 
 **Required:**
-- **The slug names the topic, not the individual decision, and is deliberately not unique.** Every decision about the same topic carries the same slug, so a topic's decisions group together in the directory listing and in the index. This is what makes the accumulated history of one topic readable.
-- **`<date>` is the date the decision was made, in ISO `YYYY-MM-DD`.** It is fixed at the release that ships the record; while the record is still unreleased and the decision itself changes, the date moves with it, because renaming a draft is ordinary drafting work.
-- The reference form is `ADR-<slug>-<date>`.
-- ISO dates sort lexicographically, so plain filename order puts a topic's records in chronological order. **No sequence number is needed, and none is used** — here as everywhere else in this standard.
-- **One topic, one date, one record.** Two decisions on the same topic on the same day are either one decision, or evidence the topic is drawn too coarsely. Resolve that; do not disambiguate with a suffix.
-- **The date is content, not metadata.** `SKILL.md` bans dates in documents, and that ban covers authorship and change tracking. A decision date is when the decision was reached and is what distinguishes one record from the next on the same topic.
+- **The slug names the decision, and is unique within the tree.** It is lowercase kebab-case ASCII. It carries no date and no sequence number: neither is part of the decision's identity, and a record's file name changes only when the decision it names changes enough to deserve a different slug.
+- The reference form is `ADR-<slug>`.
+- **Two records may share a topic without sharing a slug.** A topic can hold several decisions that all still apply; each gets a slug naming its own decision, and the README groups them under the topic. A record whose subject is the same decision as an existing one is that record, revised — not a second file.
+- **One decision, one record.** A record that needs many pages is several decisions that have not been separated. Resolve that by splitting, not by adding a file per revision.
 
 Template: `templates/adr-record.md`.
 
 ## 4. Sections
 
-Fixed order. Only the last is optional.
-
-### Status
-
-One of:
-- **`Accepted`** — in force.
-- **`Superseded by ADR-<slug>-<date>`** — replaced by a named record.
-- **`Deprecated`** — no longer applies, with nothing replacing it.
-
-**There is no `Proposed`.** An undecided decision is not a conclusion and does not belong in any document; a proposal under review lives in the issue tracker until it is decided.
-
-**The supersession pair is bidirectional, and it is the one exception to the one-way reference rule.** The new record states what it supersedes; the old record's status states what superseded it. It earns the exception because the failure it prevents is worse than the rot it risks: a reader who finds a superseded record and acts on it, not knowing it was replaced.
-
-**A newer record on the same topic does not automatically supersede an older one.** Supersession is stated explicitly in both records, or it did not happen. A topic normally accumulates decisions that all still hold.
+Fixed order. Only the last is optional. A record opens with its title and goes straight to the decision's context; there is no status and no other field between them.
 
 ### Context
 
@@ -87,7 +61,8 @@ Facts and constraints, not narrative. **DO NOT** write how the team came to look
 Each option, and what adopting it would have meant.
 
 - **Every rejected option states why it was rejected.** An option listed with no rejection reason is decoration — it makes the record look thorough while carrying no information, and it is the most common way this section degrades.
-- Options are described as they stood at the time of the decision. A better option discovered later belongs in a new record, not in this one.
+- **Options are the only place a displaced decision may appear.** It is an alternative that lost, stated as such; it is not a "previous decision" subsection and carries no revision narrative.
+- Options are described as they stand, not as a sequence of drafts. A better option found later is folded into this section with its rejection or adoption, not appended as an update.
 
 ### Decision
 
@@ -105,7 +80,7 @@ What the project is now committed to.
 
 **Optional.** What would show this decision to have been wrong: the measurement that would contradict it, the scale at which it stops holding, the assumption whose failure undoes it.
 
-Worth writing when the decision rests on an assumption that can actually be checked later.
+Worth writing when the decision rests on an assumption that can actually be checked later. The condition states when the decision stops holding; it does not say what will happen to the record, which is always the same — the record is revised.
 
 ## 5. Division of Labour with the Design Document
 
@@ -116,21 +91,24 @@ Both halves matter. Describing the same thing in both places guarantees the two 
 
 ## 6. `README.md`
 
-A brief introduction, then the index **grouped by topic**, each record listed with its date and status.
+A brief introduction, then the index **grouped by topic**, each record listed by its title.
 
 **Required:**
 - **The index covers every record, each appearing exactly once.** A record absent from the index is an orphan, and an orphan is an error.
-- The record is authoritative for its own status; the index rolls it up. Grouping by topic is what makes the index worth having: a reader sees a topic's decisions in order and which of them are still in force.
+- Grouping by topic is what makes the index worth having: a reader sees a topic's decisions together.
+- **No date column and no status column.** The index names the decision and links it. When the record is revised, the index row stays as it is unless the title changed.
 
 Template: `templates/adr-readme.md`.
 
 ## 7. What Never Appears in a Record
 
+- A status, state or acceptance field
 - Meeting minutes, discussion narrative, who argued for what
+- Change history in any form: revision notes, dates, "originally", "previously", "updated", a changelog, a list of fixes
 - The design detail that follows from the decision (that is the design document's)
+- A displaced decision recorded as history rather than as a rejected option
 - Proposals that have not been decided
 - TODO lists, schedules, owners
-- Edits to a released record's context, options, decision or consequences (an unreleased record is not yet accepted — see section 2)
 
 ## 8. Checklist
 
@@ -138,13 +116,14 @@ The common checklist in `SKILL.md` applies as well.
 
 - [ ] The decision is architecturally significant; a same-day-reversible choice got no record
 - [ ] One decision in the record
-- [ ] File name is `adr-<slug>-<date>` with an ISO date; the slug names the topic and matches the topic's other records
-- [ ] Status is `Accepted`, `Superseded by ...` or `Deprecated` — never `Proposed`
-- [ ] If it supersedes a record, both records state the relationship
+- [ ] File name is `adr-<slug>`, lowercase kebab-case, with no date and no sequence number; the slug names the decision and is unique
+- [ ] No status, state or acceptance field
 - [ ] Every rejected option states why it was rejected
+- [ ] A displaced decision, if it appears at all, appears as a rejected option with no revision narrative
 - [ ] The decision is stated impersonally: `Adopt X`
 - [ ] Consequences include the costs accepted, not only the benefits
+- [ ] No revision note, date, "originally", changelog or other change history anywhere in the record
 - [ ] No design detail that belongs to the design document
-- [ ] No edit to a released record beyond its status, typos and broken links; a still-unreleased record was revised in place, and every document citing it was rechecked
+- [ ] Every document citing this record was rechecked after the revision
 - [ ] The record appears in the README index exactly once, under its topic
 - [ ] `scripts/check_documents.py` was run and exits 0

@@ -21,7 +21,7 @@ const repoPrefix = "github.com/vislake/speed/"
 // What the module reaches is wider than what it adds. It reads its input items
 // through pkg/config, and that module parses with cobra, viper, pflag and
 // mapstructure; those travel into every host that logs, which is the cost
-// ADR-config-parsing-2026-09-20 records for delegating the parsing. The
+// ADR-config-parsing records for delegating the parsing. The
 // statement this case holds is therefore about the increment: nothing outside
 // the standard library, this repository and pkg/config's own closure.
 //

@@ -4,7 +4,7 @@
 
 `starters/demo` 是本仓库里一份可运行的示范程序，供拷走后当一个新产品的起点。它把「一个 speed 产品长什么样」写成可读、可编译、可部署的一整套：一个 Go 程序、一棵前端应用、一组部署栈、一套构建与打包的约定。**`demo` 说的是它是什么——一份示范**：它不演示某个功能，它本身就是产品骨架；使用者拷走 `starters/demo` 的一份副本、按自己的业务域改名，在其上长出业务。
 
-它在仓库顶层与 `pkg/`、`tools/` 并列。库本身（`pkg/`）交付模块与接缝，示范交付一个把它们装起来的程序。这是 [ADR-core-scope-2026-09-13](../../adr/adr-core-scope-2026-09-13.md) 失效条件段所指的那部分：该记录写明「组成什么样的应用」没有模板，把这块留给脚手架而不是 `core`。示范兑现那句话（[ADR-starters-skeleton-2026-10-15](../../adr/adr-starters-skeleton-2026-10-15.md)）。
+它在仓库顶层与 `pkg/`、`tools/` 并列。库本身（`pkg/`）交付模块与接缝，示范交付一个把它们装起来的程序。这是 [ADR-core-scope](../../adr/adr-core-scope.md) 失效条件段所指的那部分：该记录写明「组成什么样的应用」没有模板，把这块留给脚手架而不是 `core`。示范兑现那句话（[ADR-starters-skeleton](../../adr/adr-starters-skeleton.md)）。
 
 ### 非职责
 
@@ -56,13 +56,13 @@ starters/demo/
 
 **地址盾缺省守在 `account` 端。** 平台默认文档把限流分成两层并各自点名端：配额层守 `api`，地址盾（`ratelimit` 的地址防护层）守 `account`。登录与注册这些身份落定之前的请求落在 `account` 端，地址盾在这里按来源地址限制单位时间内的请求数，让反复被拒的来源在打到认证后端之前被挡下。Fly 部署、基线与审查装配都从这份默认文档继承这组分端，配置文件只写部署差异；审查装配放宽发送预算的数值，但不把地址盾从 `account` 上撤下。发送预算与地址盾不是同一件事：前者按收件人、来源与账户限制消息数，归发送它的能力（[design-ratelimit](design-ratelimit.md)、[authn-login](authn/design-authn-login.md)）。
 
-**卷上的数据库不做数据迁移。** 联系方式预留的 `(kind, value)` 全局唯一由 `0003_contact_claim.sql` 施加；该迁移只加约束、不对账已有数据，已有库里重复的联系方式预留会让它失败。升级到含这条迁移的版本时，Fly 部署删除 Machine 与卷、以空库重新部署，再由 `seed` 写入初始账户与租户；签名密钥与对象存储的本地根随卷一起重建（[ADR-authn-contact-claim-2026-10-22](../../adr/adr-authn-contact-claim-2026-10-22.md)）。
+**卷上的数据库不做数据迁移。** 联系方式预留的 `(kind, value)` 全局唯一由 `0003_contact_claim.sql` 施加；该迁移只加约束、不对账已有数据，已有库里重复的联系方式预留会让它失败。升级到含这条迁移的版本时，Fly 部署删除 Machine 与卷、以空库重新部署，再由 `seed` 写入初始账户与租户；签名密钥与对象存储的本地根随卷一起重建（[ADR-authn-contact-claim](../../adr/adr-authn-contact-claim.md)）。
 
 部署门禁是后端监听上 `GET /` 的检查，入口文档由嵌入的前端产物作答；就绪信号是运营端点的 `GET /ready`，以顶层检查声明——运营监听不是对外服务，顶层检查只报告 Machine 健康、不影响路由。`.github/workflows/deploy.yml` 在 `check` 于 `main` 上成功之后、以及手动触发时调用 `make deploy`。
 
 ### 命令树
 
-命令树照 [ADR-command-tree-2026-09-21](../../adr/adr-command-tree-2026-09-21.md) 的形态：根命令不纳入任何模块，命令挂在部署栈节点之下，纳入沿命令路径向下继承。示范的命令是 `serve`、`worker`、`migrate`、`seed`、`gen`，外加命令组。
+命令树照 [ADR-command-tree-inclusion](../../adr/adr-command-tree-inclusion.md) 的形态：根命令不纳入任何模块，命令挂在部署栈节点之下，纳入沿命令路径向下继承。示范的命令是 `serve`、`worker`、`migrate`、`seed`、`gen`，外加命令组。
 
 - **`serve`** 起 HTTP 入口并接受流量。
 - **`worker`** 跑后台模块，不起 HTTP 入口。
@@ -113,7 +113,7 @@ starters/demo/
 
 **审查装配只在回环地址上监听。** `server/review.go` 的 `reviewGuardModule` 在 `Prepare` 里、任何套接字绑定之前，读 `http.listeners` 每一项的地址，主机不是回环就拒绝启动：`localhost` 与 IP 回环地址算回环；空主机（所有网卡）、`0.0.0.0`、`::` 与其它不能判定为回环的写法都拒绝，误拒落在安全一侧。监听地址只能来自主配置文件，环境变量与命令行不能设置它，守卫与 http 模块读同一份配置，没有第二条通道绕过它。理由是审查装配带着公开的种子管理员口令与开放注册，能被网络访问的进程把这两样交给任何人。守卫只限定监听地址，不限定日志的去向：验证码写进进程日志，日志被收集或导出到别处时，验证码随之出机。
 
-**审查装配的两条控制路由是测试控制，不是产品 API。** `review.sms.control` 在 `admin` 端的 `/api/v1/system/sms/review/verdicts` 上落一个语言的审核判定，`review.notification` 在 `api` 端的 `/api/v1/notifications/review/notice` 上为调用方派发一次通知。两条路由都只在 `review` 构建标签下编译、只由审查装配登记，任何部署或基线二进制都不含它们。它们由认证网关识别调用方，认证之后不做权限判定；这条放行的依据是审查装配为只监听回环地址的测试进程，而不是它们对产品调用方安全。前端对应的两个控制仍由特性门控：特性 `review.sms.control` 与 `review.notification.control` 不在场时不渲染控件、不发请求（[ADR-starters-skeleton-2026-10-15](../../adr/adr-starters-skeleton-2026-10-15.md)）。
+**审查装配的两条控制路由是测试控制，不是产品 API。** `review.sms.control` 在 `admin` 端的 `/api/v1/system/sms/review/verdicts` 上落一个语言的审核判定，`review.notification` 在 `api` 端的 `/api/v1/notifications/review/notice` 上为调用方派发一次通知。两条路由都只在 `review` 构建标签下编译、只由审查装配登记，任何部署或基线二进制都不含它们。它们由认证网关识别调用方，认证之后不做权限判定；这条放行的依据是审查装配为只监听回环地址的测试进程，而不是它们对产品调用方安全。前端对应的两个控制仍由特性门控：特性 `review.sms.control` 与 `review.notification.control` 不在场时不渲染控件、不发请求（[ADR-starters-skeleton](../../adr/adr-starters-skeleton.md)）。
 
 **构建与运行**：从仓库根执行 `go -C starters/demo/server build -tags review -o demo-review .`，产物是 `starters/demo/server/demo-review`（由 `.gitignore` 挡在树外）；随后在 `starters/demo/server` 下以 `./demo-review --config file:review/sqlite.yaml sqlite seed` 与 `... sqlite serve` 先种入一次、再启动。`seed` 幂等。根 `Makefile` 的 `vet-review` 腿在每次提交以 `go vet -tags=review ./...` 编译这个变体、不运行它，与 `vet-integration` 同理，也是 `check_test_tiers.py` 对树中每个构建标签要求的腿；`make check` 包含它。只在 `review` 标签下编译的用例（回环守卫的用例）不能只被编译：它们在提交门禁里被执行，守卫被删或改坏时门禁变红。
 
@@ -121,7 +121,7 @@ starters/demo/
 
 `gen` 把二进制里各模块声明的 OpenAPI 片段合并成一份文档并写出。它调 [ops](design-ops.md) 的导出包 `pkg/ops/openapi` 里的 `Merge`——**一个纯函数**，模块在 `Init` 里合并、`/openapi.json` 交出的是它的结果，`gen` 写出制品的也是它。**不驱动生命周期、不绑端口、不构造任何模块**：合并读的是各模块的静态声明，不需要把任何模块跑起来，也不需要入口模块的登记面。这与 `ops` 模块在 `Init` 里合并、在运行面经 `/openapi.json` 交出是同一份合并逻辑的两种消费——运行面服务于一个活着的进程，`gen` 服务于构建与发布，把这份文档写进制品，供前端据它生成自己的 API 面。
 
-**`gen` 同时写出特性声明的清单。** 输入项 `--features` 点名一个路径，`gen` 把可用集里的全部 `feature.Spec` 声明写到那里，每项带名字、声明模块、所有者与是否条件特性，按名字排序。所有者按声明所在的包判定：取描述符第一个非空生命周期回调所在的包，在平台的模块路径之下为平台所有，其余为应用所有，经平台导出的工厂构造的宿主模块（审查装配里的短信载体）因此按平台所有；没有生命周期回调的模块使 `gen` 报错而不是猜测。合并文档里应用所有的操作**只带**标签 `speed.application`：`gen` 把合并器写下的模块标签换成所有者标签，并把该模块名从顶层 `tags` 里摘掉，再添上所有者标签。一条 operation 因此只属于一个分组——带两个标签的操作会在按标签分组的文档里出现两次。`gen` 写出的文档因此与运行面的 `/openapi.json` 在这个标签、以及 `gen` 缺省填写的 `info.description` 与 `servers` 上不同（运行面这两个成员来自 `ops.description` 与 `ops.servers`，且没有所有者标签的替换）。它与合并文档同源：两者读的都是同一个二进制里已登记模块的静态声明，同样不构造模块、不推进生命周期。示范把它写成 `contracts/features.json`，与 `contracts/api.json` 并列，示范前端的 `api:gen` 写出 `contracts/api.json` 时一并写出它。`@speed/api-sdk/features` 的特性名类型由平台级再生成命令（`web/package.json` 的 `api:gen`）从它生成；应用所有的名字由示范 `api:gen` 运行的骨架副本 `starters/demo/web/scripts/feature-names.mjs` 写到应用自己的 `src/app-api/features.ts`（[api-sdk](web/design-web-api-sdk.md)）。`starters/demo/server` 的 `TestCommittedFeatureVocabulary` 比对已提交的 `contracts/features.json` 与本二进制的声明，两者不一致即失败（[ADR-feature-vocabulary-2026-10-17](../../adr/adr-feature-vocabulary-2026-10-17.md)）。`contracts/api.json` 同样受一条测试约束：测试比对已提交的 `contracts/api.json` 与本二进制 `gen` 当前写出的合并文档，不一致即失败，使 Go 侧新增或改动一个平台路由而没有重新生成时，门禁变红，而不依赖前端生成面的某条测试恰好读到被改动的一端。
+**`gen` 同时写出特性声明的清单。** 输入项 `--features` 点名一个路径，`gen` 把可用集里的全部 `feature.Spec` 声明写到那里，每项带名字、声明模块、所有者与是否条件特性，按名字排序。所有者按声明所在的包判定：取描述符第一个非空生命周期回调所在的包，在平台的模块路径之下为平台所有，其余为应用所有，经平台导出的工厂构造的宿主模块（审查装配里的短信载体）因此按平台所有；没有生命周期回调的模块使 `gen` 报错而不是猜测。合并文档里应用所有的操作**只带**标签 `speed.application`：`gen` 把合并器写下的模块标签换成所有者标签，并把该模块名从顶层 `tags` 里摘掉，再添上所有者标签。一条 operation 因此只属于一个分组——带两个标签的操作会在按标签分组的文档里出现两次。`gen` 写出的文档因此与运行面的 `/openapi.json` 在这个标签、以及 `gen` 缺省填写的 `info.description` 与 `servers` 上不同（运行面这两个成员来自 `ops.description` 与 `ops.servers`，且没有所有者标签的替换）。它与合并文档同源：两者读的都是同一个二进制里已登记模块的静态声明，同样不构造模块、不推进生命周期。示范把它写成 `contracts/features.json`，与 `contracts/api.json` 并列，示范前端的 `api:gen` 写出 `contracts/api.json` 时一并写出它。`@speed/api-sdk/features` 的特性名类型由平台级再生成命令（`web/package.json` 的 `api:gen`）从它生成；应用所有的名字由示范 `api:gen` 运行的骨架副本 `starters/demo/web/scripts/feature-names.mjs` 写到应用自己的 `src/app-api/features.ts`（[api-sdk](web/design-web-api-sdk.md)）。`starters/demo/server` 的 `TestCommittedFeatureVocabulary` 比对已提交的 `contracts/features.json` 与本二进制的声明，两者不一致即失败（[ADR-feature-vocabulary](../../adr/adr-feature-vocabulary.md)）。`contracts/api.json` 同样受一条测试约束：测试比对已提交的 `contracts/api.json` 与本二进制 `gen` 当前写出的合并文档，不一致即失败，使 Go 侧新增或改动一个平台路由而没有重新生成时，门禁变红，而不依赖前端生成面的某条测试恰好读到被改动的一端。
 
 ### 端点集合
 
@@ -131,7 +131,7 @@ starters/demo/
 
 **这些端点由两条监听承载。** 端点挂在监听上，一条监听是一个监听套接字，`pkg/http` 据此把多个端点并在一个地址上（[http](http/design-http.md)）。示范的平台默认文档把这几个端挂在两条监听上：`api`、`account`、`admin` 与 `web` 挂在 `backend` 监听上，`ops` 自开一条 `ops` 监听；监听本身与它们的地址由每份配置声明。前端与 API 因而同源，浏览器直接访问 `web` 与 `api` 无需 CORS。
 
-**`backend` 监听上的各端由平台默认文档写出[认领前缀](../../glossary.md)，按能力命名空间认领。** 监听按认领为请求选端，不看本次装配挂了哪些路由（[http](http/design-http.md) 的分派 handler、[ADR-http-dispatch-2026-10-17](../../adr/adr-http-dispatch-2026-10-17.md)）。这张表由编译进二进制的 `server/defaults.yaml` 给出；`testdata/` 的每份配置与示范测试的配置都不再重复它，经加载器读到的是同一张表：
+**`backend` 监听上的各端由平台默认文档写出[认领前缀](../../glossary.md)，按能力命名空间认领。** 监听按认领为请求选端，不看本次装配挂了哪些路由（[http](http/design-http.md) 的分派 handler、[ADR-http-dispatch](../../adr/adr-http-dispatch.md)）。这张表由编译进二进制的 `server/defaults.yaml` 给出；`testdata/` 的每份配置与示范测试的配置都不再重复它，经加载器读到的是同一张表：
 
 | 端 | `prefixes` |
 |---|---|
@@ -142,7 +142,7 @@ starters/demo/
 
 `ops` 独占 `ops` 监听，省略 `prefixes`，即认领 `/`。
 
-每个模块的 API 路由都以 `/api/v1/<作用域>/<能力>` 为根（租户级是 `/api/v1/tenants/<租户>/…`）；ops 探针留在 `ops` 监听的根上（[ADR-http-api-prefix-2026-10-18](../../adr/adr-http-api-prefix-2026-10-18.md)）。
+每个模块的 API 路由都以 `/api/v1/<作用域>/<能力>` 为根（租户级是 `/api/v1/tenants/<租户>/…`）；ops 探针留在 `ops` 监听的根上（[ADR-http-api-prefix](../../adr/adr-http-api-prefix.md)）。
 
 - **认领是产品固定的命名空间表，去掉一项能力不删它的认领。** 撤出运行集也好，删掉 import 也好，那项能力的命名空间都留在认领里：示范的二进制 import 了 `sms.admin` 而基线不运行它，`admin` 仍认领 `/api/v1/system/sms`；从示范拷出、删掉 `tenant.admin` import 的产品，仍认领 `/api/v1/system/tenants`。认领表覆盖可用集里每个 operation 的命名空间，以及平台前端包会寻址的命名空间。
 - **前端页面路径不落在 `/` 以外的任何认领之下。** 落在这类认领之下的页面路径，整页导航得到那个端的应答，拿不到入口文档。
@@ -155,7 +155,7 @@ starters/demo/
 - **页面路径不相交。** 前端测试断言页面表里的每个页面路径与页面前缀，按段边界都不落在清单的任何前缀之下；每个代理键匹配前缀之下的路径，不匹配任何页面路径。
 - **去掉路由模块前后的未认证应答逐字节比较。** 差分测试在合一与分离两种拓扑下，以去掉若干路由模块的变体进程与基线进程比较未认证请求的应答，要求除 `Date` 外逐字节相同。凭据后端这类对端上每个请求都起作用的模块不在去掉之列；至少在一次运行中命中[匿名面路由](../../glossary.md)的请求不发送、不比较。同一端上匿名面路由与其余路由的匹配域不相交，由同一测试从网关冻结的登记表与在服的 `/openapi.json` 静态核对（[authn-gate](authn/design-authn-gate.md) 的对宿主的要求）；这一核对通过时，不发送的请求正是 [http](http/design-http.md) 术语表所界定的豁免请求。
 
-**特性文档挂在 `account` 端。** `testdata/` 的每份配置都以 `feature.board.endpoint: account` 点名它：该端受认证网关守卫、不解析租户，并认领 `/api/v1/features`，满足 [feature](design-feature.md) 对宿主的要求，匿名者读不到特性文档，选定租户之前的前端读得到（[ADR-feature-document-2026-10-17](../../adr/adr-feature-document-2026-10-17.md)）。
+**特性文档挂在 `account` 端。** `testdata/` 的每份配置都以 `feature.board.endpoint: account` 点名它：该端受认证网关守卫、不解析租户，并认领 `/api/v1/features`，满足 [feature](design-feature.md) 对宿主的要求，匿名者读不到特性文档，选定租户之前的前端读得到（[ADR-feature-document](../../adr/adr-feature-document.md)）。
 
 ### `main.go` 的保留内容
 
@@ -183,8 +183,8 @@ starters/demo/
 
 `/sign-in/callback` 与 `/account/callback` 依赖的是登录前的事实——部署有没有重定向类与企业类登录方式——它不在特性文档里，部署没有这类登录方式时它们怎样呈现，见「租户框架与回调落点」。控制台区的声明由 console-ui 导出，示范把它们挂在 `/console` 前缀下，`requires` 与权限码随声明自带（[console-ui](web/design-web-console-ui.md)）。
 
-- **页面表里的每个 `requires` 都属于 `@speed/api-sdk/features` 的 `FEATURE_NAMES`**，含 console-ui 与 notification-ui 的声明：示范的测试逐项断言，示范自己的声明以 `satisfies` 收紧到 `FeatureName`（[ADR-feature-vocabulary-2026-10-17](../../adr/adr-feature-vocabulary-2026-10-17.md)）。
-- **页面路径不落在 `backend-prefixes.json` 里任何前缀之下**，由测试守住，见「端点集合」（[ADR-http-dispatch-2026-10-17](../../adr/adr-http-dispatch-2026-10-17.md)）。
+- **页面表里的每个 `requires` 都属于 `@speed/api-sdk/features` 的 `FEATURE_NAMES`**，含 console-ui 与 notification-ui 的声明：示范的测试逐项断言，示范自己的声明以 `satisfies` 收紧到 `FeatureName`（[ADR-feature-vocabulary](../../adr/adr-feature-vocabulary.md)）。
+- **页面路径不落在 `backend-prefixes.json` 里任何前缀之下**，由测试守住，见「端点集合」（[ADR-http-dispatch](../../adr/adr-http-dispatch.md)）。
 
 ## 依赖
 
@@ -192,7 +192,7 @@ starters/demo/
 
 **示范的 `go.mod` 在 `pkg` 有发布版本之前带一条 `replace` 指向兄弟检出**：仓库自己的两条腿——`build` 的 standalone 段与 `tidy-check`——以 `GOWORK=off` 运行，没有 `replace` 时它们解析不到一个尚未发布的模块。**拷贝出去的树删掉这一条**，`require` 的那一行成为 `pkg` 的唯一来源；这正是那行注释写明的事。
 
-**「拷贝即用」的验收不得借助这条 `replace`。** 拷到仓库之外、把 module 路径与 `replace` 一并改掉、按发布版本构建，才算验到它——`replace` 留在验收里会把「本机恰好有这份仓库」当作前提，构建通过只证明本机检出可用，不证明一个真正的消费者能取到发布的版本。**这一步要等 `pkg` 有发布版本**，此前它跑不起来（[ADR-starters-skeleton-2026-10-15](../../adr/adr-starters-skeleton-2026-10-15.md)）。
+**「拷贝即用」的验收不得借助这条 `replace`。** 拷到仓库之外、把 module 路径与 `replace` 一并改掉、按发布版本构建，才算验到它——`replace` 留在验收里会把「本机恰好有这份仓库」当作前提，构建通过只证明本机检出可用，不证明一个真正的消费者能取到发布的版本。**这一步要等 `pkg` 有发布版本**，此前它跑不起来（[ADR-starters-skeleton](../../adr/adr-starters-skeleton.md)）。
 
 **前端应用住在 `starters/demo/web/`，不住在包库 `web/` 里。** 它是一个住在 `web/` 之外、却能被 `web/` 的工作区工具链安装、检查与构建的前端包：作为外部成员加入 `web/` 的 pnpm workspace（`web/pnpm-workspace.yaml`）。**它对 `@speed/*` 按 registry 版本范围声明**，不用 `workspace:*`——示范是拷出去的产品起点，不是仓库内的成员。
 
@@ -272,7 +272,7 @@ flowchart TD
 
 ### 前端的组合次序
 
-`starters/demo/web/src/app.tsx` 的 `AppFrame` 对每条路径按下列次序判定。`DemoApp` 给 `RouteProvider` 传 `presence`（auth-core 的 `featurePresence` 由特性态得出），以及 `pending`、`failed` 视图，route-kit 据此处理带 `requires` 的声明（[route-kit](web/design-web-route-kit.md)、[ADR-web-route-seam-2026-10-17](../../adr/adr-web-route-seam-2026-10-17.md)）。
+`starters/demo/web/src/app.tsx` 的 `AppFrame` 对每条路径按下列次序判定。`DemoApp` 给 `RouteProvider` 传 `presence`（auth-core 的 `featurePresence` 由特性态得出），以及 `pending`、`failed` 视图，route-kit 据此处理带 `requires` 的声明（[route-kit](web/design-web-route-kit.md)、[ADR-web-route-kit](../../adr/adr-web-route-kit.md)）。
 
 1. **回调落点先于任何会话门。** 路径是 `/sign-in/callback` 时，不论会话状态，直接渲染回调页（`AuthCallbackPage`）：重定向类与企业类登录的回调到达时会话尚不存在，回调处理器自己完成在途流程、渲染宿主给的 `absent` 视图或显示横幅（见「租户框架与回调落点」）。
 2. **区域按路径前缀判定。** 路径在 `/console` 前缀下的进控制台区，其余进租户区。区域与哪些页面特性在场无关。
@@ -293,7 +293,7 @@ flowchart TD
 
 - **先存在性、后权限。** 特性缺席的页面，对持有其权限码的员工同样是 404；特性在场而权限码未持有的页面渲染无权限面。
 - **非员工看不出控制台有哪些页面。** 区域只看路径前缀，平台权限集为空的已认证者访问任何 `/console/*` 路径都被重定向回首页，结果与页面特性在场与否无关。
-- **冒充期间不提供控制台，重定向同样静默。** 平台管理面既不在准入层所守的端上、也未登记为可冒充，对冒充身份一律被网关拒绝，与被冒充账户的平台权限集无关，所以控制台区在冒充期间一律重定向到租户区首页。重定向处不加说明，冒充者的解释由租户框架里的冒充横幅与应用栏的身份指示承担（[ADR-web-impersonation-shell-2026-10-18](../../adr/adr-web-impersonation-shell-2026-10-18.md)、「冒充期间的壳」）。
+- **冒充期间不提供控制台，重定向同样静默。** 平台管理面既不在准入层所守的端上、也未登记为可冒充，对冒充身份一律被网关拒绝，与被冒充账户的平台权限集无关，所以控制台区在冒充期间一律重定向到租户区首页。重定向处不加说明，冒充者的解释由租户框架里的冒充横幅与应用栏的身份指示承担（[ADR-web-impersonation-shell](../../adr/adr-web-impersonation-shell.md)、「冒充期间的壳」）。
 - **特性态未定时不误判为非员工。** 平台权限集的读取依赖特性态（见「宿主侧的特性读取」），特性态为 `pending` 或 `failed` 时权限集保持未知；控制台区先判特性态、再判权限集，取回失败的员工看到失败视图，不被重定向。控制台声明的收窄结果在 `pending`、`failed` 时恒为空，这一判同样排在特性态之后。
 - **权限读取先要一个租户名。** 两域权限集的读取走受租户解析守护的端点，没有租户名的请求在 handler 之前被答 404；当前租户未定时不读，两域保持未知，一次注定被拒的读不会记成「两域为空」。整页加载一个控制台路径时没有租户框架落定租户，控制台区因此自己从名册落定默认租户，否则平台员工会被自己的空集挡在门外。
 - **权限码不经前缀继承。** 未命中任何控制台声明的路径渲染 `NotFoundPage`，与调用者持有哪些权限码无关；没有导航标签的控制台详情声明因此各自带权限码（[console-ui](web/design-web-console-ui.md)）。
@@ -316,19 +316,19 @@ flowchart TD
 
 ### 个人租户
 
-决策见 [ADR-starters-personal-tenant-2026-10-18](../../adr/adr-starters-personal-tenant-2026-10-18.md)。宿主配置开启个人租户时（缺省关闭；示范的审查装配开启它，见「审查装配」），每个账户在创建时即拥有一个个人租户，账户本人是它的租户管理员。个人租户是单人租户：不能邀请成员，不能停用、删除或退出。邮箱是否验证不影响这份空间是否存在；验证状态只限制账户在空间内可用的能力。
+决策见 [ADR-starters-personal-tenant](../../adr/adr-starters-personal-tenant.md)。宿主配置开启个人租户时（缺省关闭；示范的审查装配开启它，见「审查装配」），每个账户在创建时即拥有一个个人租户，账户本人是它的租户管理员。个人租户是单人租户：不能邀请成员，不能停用、删除或退出。邮箱是否验证不影响这份空间是否存在；验证状态只限制账户在空间内可用的能力。
 
 - **服务端是一个宿主模块，不进 `pkg/` 的公共面。** 它实现 `authn.AccountLifecycle.AccountCreated`，账户创建时建立个人租户；另挂一条没有租户解析的补齐路由 `POST /api/v1/workspace/personal`，并声明特性 `workspace.personal`；开关关闭时路由不挂、特性不在场，创建钩子也不执行。`/api/v1/workspace` 作为 `account` 端的认领前缀写在每份配置与后端前缀清单里，认领与装配无关，开关关闭时该前缀对已认证调用答 404；未认证调用先被 `account` 端的网关拒绝为 401，这是各端认领前缀的普遍行为。契约属于应用自己的第二级契约：应用所有的操作与特性在合并文档里带所有者标记，平台包的生成面与特性名不含它们（[api-sdk](web/design-web-api-sdk.md)）。
 - **补齐路由对调用方的要求与应答。** 调用方须已认证、不在冒充中、不是静态凭据主体、不是服务账户，不满足答 403。它不判「成员关系为空」：调用方已有自己的个人租户时读回它，没有时建——这条路由是账户创建钩子失败之后就地的补齐路径，不是唯一的建立路径。租户行已存在而状态不是启用答 409 `tenant-unavailable`，不写任何东西；别名被别的租户占用或派生的标识越出名册域答 409 `identifier-unavailable`，重试不会成功。注册验证状态不是资格判据：未验证账户同样建出租户，验证只限制其可用能力。成功应答 `{ tenant: { id, alias, kind: "personal" }, created }`，`created` 表示这次调用建了租户。依赖不可用答 503，不带着半份结果放行。
 - **租户标识由账户标识确定性派生。** 标识与别名取同一个由固定前缀加账户标识组成的字符串，不取手机号、显示名或任何个人信息：别名随请求出现在日志、审计与路径里，是请求面标识，不翻译，也不含个人信息。确定性使并发的两次调用撞上同一个唯一约束，后到者读回既有租户。
-- **个人租户与账户同一生命周期：宿主模块实现 `AccountLifecycle`。** 模块在 `Provides` 里声明 `(*authn.AccountLifecycle)(nil)`，并立、不排他；`AccountCreated` 在账户创建之后建立个人租户，`AccountDisabled`、`AccountEnabled` 与 `AccountDeleted` 是其余动作，`ServiceSecretRevoked` 是空操作——服务账户没有个人租户，创建钩子与补齐路由对服务账户一律不建。钩子在账户事务提交之后同步调用，账户状态已经生效，失败返回 `ErrCleanupIncomplete`，重试同一次调用补齐（[authn-account](authn/design-authn-account.md) 的钩子一节、[ADR-authn-account-lifecycle-2026-10-24](../../adr/adr-authn-account-lifecycle-2026-10-24.md)）。发件箱在场时，模块另订阅 `authn.account.status-changed` 与 `authn.account.deleted`，用同一组幂等钩子补齐进程停在提交与同步钩子之间的窗口；状态变化的处理先读账户的当前状态（`authn.Accounts`），迟到或乱序的事件因此不会把账户已经离开的状态施加到租户上，账户已被存储读作不存在时按删除处理。开关关闭只收起路由、特性与创建钩子，状态与删除钩子及其订阅仍在：它们只收尾账户已有的个人租户，不新建。**这条联动是装配的结果**：模块不在这一次运行里时，账户的状态迁移与删除没有这一份收尾，租户行与授权行留在原处，名册的终态没有任何一处替它写入。那个租户继续在册，而账户的成员关系已随账户删除，准入层对它的请求答 404；运营者从名册上看不出它已经没有人。
-- **停用与恢复走名册的账户路径。** `AccountDisabled` 调 `tenant.Catalog.SetStatusByAccount` 把派生的租户停用，`AccountEnabled` 用同一个方法恢复。名册按停用来源约束状态迁移：运营者经 [tenant.admin](tenant/design-tenant-admin.md) 停用的租户不被账户恢复打开，账户造成的停用才随恢复撤销（REQ-tenancy-044、REQ-tenancy-030；[ADR-tenant-suspension-2026-10-24](../../adr/adr-tenant-suspension-2026-10-24.md)）。个人租户的标识由账户标识确定性派生，钩子不读账户行，也不需要另存账户与租户的对应。
+- **个人租户与账户同一生命周期：宿主模块实现 `AccountLifecycle`。** 模块在 `Provides` 里声明 `(*authn.AccountLifecycle)(nil)`，并立、不排他；`AccountCreated` 在账户创建之后建立个人租户，`AccountDisabled`、`AccountEnabled` 与 `AccountDeleted` 是其余动作，`ServiceSecretRevoked` 是空操作——服务账户没有个人租户，创建钩子与补齐路由对服务账户一律不建。钩子在账户事务提交之后同步调用，账户状态已经生效，失败返回 `ErrCleanupIncomplete`，重试同一次调用补齐（[authn-account](authn/design-authn-account.md) 的钩子一节、[ADR-authn-account-restoration](../../adr/adr-authn-account-restoration.md)）。发件箱在场时，模块另订阅 `authn.account.status-changed` 与 `authn.account.deleted`，用同一组幂等钩子补齐进程停在提交与同步钩子之间的窗口；状态变化的处理先读账户的当前状态（`authn.Accounts`），迟到或乱序的事件因此不会把账户已经离开的状态施加到租户上，账户已被存储读作不存在时按删除处理。开关关闭只收起路由、特性与创建钩子，状态与删除钩子及其订阅仍在：它们只收尾账户已有的个人租户，不新建。**这条联动是装配的结果**：模块不在这一次运行里时，账户的状态迁移与删除没有这一份收尾，租户行与授权行留在原处，名册的终态没有任何一处替它写入。那个租户继续在册，而账户的成员关系已随账户删除，准入层对它的请求答 404；运营者从名册上看不出它已经没有人。
+- **停用与恢复走名册的账户路径。** `AccountDisabled` 调 `tenant.Catalog.SetStatusByAccount` 把派生的租户停用，`AccountEnabled` 用同一个方法恢复。名册按停用来源约束状态迁移：运营者经 [tenant.admin](tenant/design-tenant-admin.md) 停用的租户不被账户恢复打开，账户造成的停用才随恢复撤销（REQ-tenancy-044、REQ-tenancy-030；[ADR-tenant-suspension](../../adr/adr-tenant-suspension.md)）。个人租户的标识由账户标识确定性派生，钩子不读账户行，也不需要另存账户与租户的对应。
 - **两个状态钩子先读名册，读不到那一行或读到墓碑都返回 nil。** 名册上没有派生出来的标识，说明这个账户没有个人租户——发动这一轮联动的是一次普通的账户状态迁移，钩子没有要做的事；把它当成失败会让每一次这样的迁移都以 `ErrCleanupIncomplete` 结束，管理员得为一个不存在的租户重试。读到墓碑时同样返回 nil：删除是终态，账户的状态迁移不把它带回来，`SetStatusByAccount` 的 `ErrTenantDeleted` 在钩子里按无事可做处置。其余失败原样返回，账户调用以 `ErrCleanupIncomplete` 结束。
 - **账户删除的收尾按固定次序做，每一步幂等，墓碑是完成标记。** `AccountDeleted` 先按派生的标识读名册：没有这一行（这个账户从未有过个人租户）即无事可做；已是已删除即跳过整段收尾，重复的钩子不再写任何东西。其余情形按下列次序做：
   1. 删掉租户内的成员关系：`Memberships.Members` 逐页读，`MembershipCleanup.RemoveMembershipForDeletion` 逐条删。账户自己那一行已在账户事务里删除，这一步收掉的是被管理员加进来的其他账户的行。这条删除不经过显式删除的守卫：宿主自己的 `MembershipGuard` 拒绝个人租户里的每一次删除，删除的收尾不能因此被挡住。它删除的每一行仍发布 `authn.membership.changed`，订阅该事件的清理照常收到。
   2. 清掉被删除账户在该租户内的绑定，再删掉租户管理员角色：`Manager.ClearAccountBindings(ctx, tenant, account)` 一次清空该账户在域内的全部绑定——它是不受「最后一条租户管理员」规则约束的宿主账户删除路径，删除不因此依赖策略模块的 `AccountDeleted` 钩子先跑，一个租户因此可能在账户删除后没有管理员——`Manager.DeleteRole` 再删掉 `tenant-admin` 角色并连带删掉它的授予与其余绑定。运营者把该角色标成内置角色时 `DeleteRole` 报 `ErrBuiltinRole`，这一步容忍它：内置角色删不掉，租户已是墓碑，没有一条请求解析得到它。
   3. 写一行删除审计。
-  4. `tenant.Catalog.Delete` 把租户写成已删除，标识与别名留在名册里、不再复用（[ADR-tenant-directory-2026-10-24](../../adr/adr-tenant-directory-2026-10-24.md)）。
+  4. `tenant.Catalog.Delete` 把租户写成已删除，标识与别名留在名册里、不再复用（[ADR-tenant-deletion](../../adr/adr-tenant-deletion.md)）。
 
   成员关系或绑定、角色的清理失败时，租户仍在册、审计行没写；审计写失败时前面清理的结果留着、租户仍在册；写墓碑失败时审计行已经落下、租户仍在册。重试从头做一遍，成员关系与绑定、角色的清理不再写任何东西，墓碑落定。代价是审计行可能重复一次——审计是只追加的，两行记的是同一次删除，事实不丢。
 - **业务数据与审计行都不由这个模块删除。** 受约束表里那个租户的行归声明它们的模块，每个持有以账户为键的数据的模块在自己的 `AccountDeleted` 里清除；本模块只清成员关系与授权策略。审计行不随任何东西删除，删除之后仍可凭账户与租户查到创建与删除两行（REQ-tenancy-048）。残留的租户数据要清除或导出时，经 `EnterRegistered` 进入墓碑，那是删除之后仍进得去租户的唯一途径（[tenant](tenant/design-tenant.md) 的不经请求面的路径）。
@@ -338,7 +338,7 @@ flowchart TD
 - **每次调用幂等地核对并补齐，但不覆盖运营者的决定。** 租户行（不存在时经 `Create` 建，已存在则读回，读回前先经 `EnterRegistered` 追平本副本的名册快照）；账户在该租户的成员关系（已有一行，不论状态，就不改写，没有才写）；租户内的租户管理员角色 `tenant-admin`（`Manager.PutRole`）；该角色的授予收敛到宿主声明的允许集（`Seeder.SeedGrants` 补入缺的，多出的撤销）；账户到该角色的绑定（`Manager.PutBinding`，缺才写）。账户创建时的建立与补齐路由走同一段幂等逻辑；某一步失败时前面各步留着，下次调用补齐，补齐的那次调用 `created` 为假。
 - **个人租户的 `tenant-admin` 权限集不含成员管理动作。** 允许集由宿主在代码里显式列出，内容是个人租户该有的业务资源面；成员管理、邀请与身份提供方管理不在其中——授予它们会让每个账户能邀请他人、管理 SSO，而个人租户是单人空间。允许集由宿主声明而不由目录推出，进程之后新声明的租户级权限因此不会自动进入个人租户。已按旧口径建出的个人租户，其 `owner` 角色与多余授予在下一次补齐时迁移并收敛为 `tenant-admin`。这个角色不置 `builtin`：宿主用 `authz.Seeder` 补授予、用 `authz.Manager` 撤销允许集之外的授予，内置标记会拒绝后一条；业务租户的 `tenant-admin` 则由 seed 与 `tenant.Provisioner` 置 `builtin`；`personal-` 前缀的标识在 `tenant.Provisioner` 这条路径上也按个人域处置，不置内置。个人租户域的策略写另由宿主的 `authz.WriteGuard` 拒绝：角色、授予与绑定的每条管理面写路由在 `personal-` 开头的域上都答 403。成员关系的增加由允许集（本人）与租户域授权判定（他人）挡住；删除由 `authn.MembershipGuard` 拒绝——个人租户是单成员空间，任何一次删除都不成立。宿主的接缝（`tenant.WriteGuard`、`tenant.Provisioner`、`authn.MembershipGuard`、`authz.WriteGuard`）都以标识前缀 `personal-` 认定个人域；前缀是宿主与它自己的服务端之间的约定，平台只收到普通租户标识，不为个人租户定义种类。宿主的 `authz.TenantLock` 不按前缀认定：它是判底的那把按租户锁，`authz.Manager.DeleteBinding`、策略模块的守卫与宿主自己的守卫都取同一个对象，多个守卫接同一对象时账户模块只取一次；宿主装配数据库级锁（PostgreSQL 会话锁），SQLite 用进程内实现。
 - **租户框架不再触发建户。** 个人租户在账户创建时已经存在，框架只读本人租户清单，不调用建户。账户创建钩子失败、清单里没有自己的个人租户时，框架以补齐路由重试一次；失败则按该读自己的失败呈现重试，账户级页面照常渲染。平台员工、普通成员与未验证账户的清单都含自己的个人租户；注册验证状态不决定空间是否存在，只限制可用能力。
-- **个人租户的展示取前端文案。** 本人租户读取的应答只有标识与别名，不带种类：个人租户是宿主的策略，平台名册不记它（[ADR-tenant-self-2026-10-24](../../adr/adr-tenant-self-2026-10-24.md)）。宿主按账户标识与固定前缀派生出个人租户的标识（与服务端同一个函数），标识与它逐字相等的那一行渲染个人空间的文案（zh-CN 与 en-US 各一键），其余行渲染别名；别名从不翻译。**按相等判定，不按前缀**：另一个账户的个人租户也可以出现在调用方的成员关系里，前缀会把别人的个人空间标成本人的。
+- **个人租户的展示取前端文案。** 本人租户读取的应答只有标识与别名，不带种类：个人租户是宿主的策略，平台名册不记它（[ADR-tenant-self](../../adr/adr-tenant-self.md)）。宿主按账户标识与固定前缀派生出个人租户的标识（与服务端同一个函数），标识与它逐字相等的那一行渲染个人空间的文案（zh-CN 与 en-US 各一键），其余行渲染别名；别名从不翻译。**按相等判定，不按前缀**：另一个账户的个人租户也可以出现在调用方的成员关系里，前缀会把别人的个人空间标成本人的。
 - **租户选择器列出本人有效租户。** 列表就是本人租户读取的应答，按标识升序原样渲染；当前租户那一行由宿主的 `currentTenantId` 相中并不可选中（REQ-tenancy-035、REQ-tenancy-036）。平台员工经决策接缝进入一个自己不是成员的租户时，清单里没有这个租户：宿主从平台名册读的别名缓存补一行当前租户，让触发器能命名它、也能离开它，那一行同样不可选中；缓存里没有那个别名、或平台名册读不在装配里时，触发器显示无当前租户状态，这是既有的一条已知限制。切换仍按「切换租户逐出离任租户的缓存」那一条逐出离任租户的查询子树。
 - **当前租户的落定。** 路由点名了一个租户时以它为准，邀请接受成功时以被接受的租户为准，选择器不覆盖它们。没有这些时按次序取第一个能成立的：平台员工经平台名册读到的第一个启用且不是个人租户的租户（名册读归平台员工，普通成员读到 403 或特性缺席），名字取自名册的别名缓存；清单里的个人租户那一行（账户自己的空间）；清单第一行。三者都不成立时当前租户未知。落定的当前租户必须落在选择器能命名的那一份里：清单里的行由清单给出名字，平台名册那一档由名册的别名缓存给出；一个既不在清单里、别名缓存也没有的租户会让调用方落进既无法命名、也无法离开的租户，而它的每个租户域请求都被拒绝。
 - **本人租户读取的时机与失败。** 已认证时读一次，冒充期间也读：服务端把应答收窄到授予的租户，清单因此成为整页重载后命名当前租户的唯一来源（见「冒充期间的壳」）。身份变更（`applyIdentityChange`）、补齐个人租户后与邀请受理成功后重读；会话结束时连同当前租户与别名缓存一起清空。切换租户不重读：清单只取决于身份，不取决于当前租户。读失败且已有落定的清单时保留它；没有落定的清单时当前租户保持未知、租户作用域的读保持禁用，选择器按它的属性渲染（见「租户清单为空或读不到时」）。
@@ -347,7 +347,7 @@ flowchart TD
 
 ### 冒充期间的壳
 
-决策见 [ADR-web-impersonation-shell-2026-10-18](../../adr/adr-web-impersonation-shell-2026-10-18.md)。冒充开始后会话的主体是被冒充账户，网关只把冒充身份放进准入层所守的端与登记为可冒充的路由，平台管理面一律被拒（[design-authn-impersonation](authn/design-authn-impersonation.md)）。示范在租户框架里给出下列几部分。
+决策见 [ADR-web-impersonation-shell](../../adr/adr-web-impersonation-shell.md)。冒充开始后会话的主体是被冒充账户，网关只把冒充身份放进准入层所守的端与登记为可冒充的路由，平台管理面一律被拒（[design-authn-impersonation](authn/design-authn-impersonation.md)）。示范在租户框架里给出下列几部分。
 
 - **横幅。** `TenantFrame` 把 auth-ui 的 `ImpersonationBanner` 经 `ProductShell` 的 `banner` 槽挂在应用栏之下，始终挂载（[auth-ui](web/design-web-auth-ui.md)、[product-shell](web/design-web-product-shell.md)）。`impersonation` 非空当且仅当快照的 `impersonating` 为真。`subject` 取快照 `principal` 的显示名，没有显示名时取账户标识；`tenant` 与 `expiresAt` 取自冒充状态读（`GET /api/v1/auth/impersonation`）应答里 `grant` 对象的 `tenant` 与 `ends_at`，`tenant` 就是租户标识，因为租户名册读属平台管理面、冒充期间不可达。状态读只在 `impersonating` 为真时启用，没有冒充的访问者不发这条读，也就没有一次裸 404。`impersonating` 为真时该读答裸 404，是已落定的「已无冒充」，与 console-ui 同一规则，宿主据此调用 `applyIdentityChange('ended')`；重读由查询客户端缺省的标签页重新可见重读承担（每项 `staleTime` 为 0；该重读只在标签页由隐藏变为可见时触发，窗口失焦再得焦不触发），本设计不另加轮询。其余失败读不到时，`tenant` 与 `expiresAt` 缺省，横幅与结束控件照常。横幅覆盖租户框架内的页面：邀请落点是公开落点页，渲染在租户框架之外，不挂横幅；控制台框架不挂横幅，冒充期间控制台区重定向到租户区，控制台框架不会在冒充期间渲染。
 - **横幅的隐藏、应用栏的身份指示与账户菜单的结束项。** `TenantFrame` 把 auth-ui 的 `ImpersonationNoticeProvider` 挂在 `ProductShell` 之外，三个部件从同一个提供者读：`banner` 槽里的横幅、`userMenu` 槽里账户菜单之前的 `ImpersonationIndicator`（冒充期间租户选择器不挂，它占的就是那个位置）、账户菜单里的 `ImpersonationEndMenuItem`。隐藏状态由提供者持有，是内存状态，不落任何存储，整页重载复位；复位的时刻与不复位的情形由 auth-ui 的「冒充横幅」给出，宿主只负责给出它们的输入：`grantId` 取状态读 `grant.id`，`identityKey` 取快照主体的账户标识加宿主的身份变更代数。结束尝试是宿主持有的一个 `useWriteFeedback` 作用域（`useImpersonationNoticeState`）：横幅的结束控件与菜单项都只调它的 `onEnd`，`pending`、`failureCode` 与 `successMessage` 由它派生后交给提供者。菜单项的文案取 auth-ui 的 `impersonation.end`，在途时取 `impersonation.ending`。
@@ -359,7 +359,7 @@ flowchart TD
 
 ### 注册与完成设置
 
-决策见 [ADR-authn-signup-2026-10-22](../../adr/adr-authn-signup-2026-10-22.md)。登录页是 auth-ui 的 `SignInScreen`，注册入口由它按发现文档给出：`signup.enabled` 为真，且 `signup.password.enabled` 为真或至少一个可见方法带 `opens_account` 时显示（[auth-ui](web/design-web-auth-ui.md)）；示范不自造注册入口，也不在文案里断言注册可用。重定向类与企业类方法的授权地址由登录页在当前窗口导航，流程的 `return_to` 是 `/sign-in/callback`，提供方的一次往返因此落回示范自己的回调页。
+决策见 [ADR-authn-signup](../../adr/adr-authn-signup.md)。登录页是 auth-ui 的 `SignInScreen`，注册入口由它按发现文档给出：`signup.enabled` 为真，且 `signup.password.enabled` 为真或至少一个可见方法带 `opens_account` 时显示（[auth-ui](web/design-web-auth-ui.md)）；示范不自造注册入口，也不在文案里断言注册可用。重定向类与企业类方法的授权地址由登录页在当前窗口导航，流程的 `return_to` 是 `/sign-in/callback`，提供方的一次往返因此落回示范自己的回调页。
 
 - **口令注册成功后落在账户页的验证节（REQ-signup-028）。** 注册表单提交用户名、邮箱与口令（邮箱必填，确认口令只在客户端比较）；注册不建立会话，前端随后以同一凭据起一次口令登录。`SignInView` 的 `onSignedIn` 收到 `mode: 'register'`、`channel: 'password'` 时导航到 `/account?verify=1`；自动登录被拒时退回登录表单并预填用户名，账户已经建成。这个落点只在登录屏是应用登录页本身时生效，嵌入邀请接受页、控制台会话门的登录屏登录之后留在原地址。注册屏位于邀请链接上时（匿名访客在邀请路径上看到的是租户区的登录面，见「前端的组合次序」），`SignInView` 在导航前把该邀请路径记进本标签页的会话存储；账户页在 `?verify=1` 落地、档案读作 `verified` 时清掉记录并回到该路径，邀请仍可受理。邀请令牌是链接的持有凭据，只存在会话存储里，不进 URL 查询、请求、日志或任何服务端记录。其它位置的口令注册没有可回的目标，验证完成后停在账户页。
 - **账户页的验证节与持续验证提示。** 账户页 `/account` 承载 account-ui 的 `ContactVerificationSection`，受会话门保护；`?verify=1` 落地时给它传 `autoSend`：未验证且有目标邮箱时自动发送一次验证码；`?change=email` 落地即展开更换表单，不自动发送；普通访问不传 `autoSend`，只在用户点击时发送。`verification.state` 是账户注册验证状态的读面，不是 `signup_state` 列的投影：`none` 是没有邮箱、`pending` 是有邮箱而没有一条已证明的、`verified` 是已有一条证明。判定与账户来源无关，所以管理员预置的 operator 带着未证明邮箱时同样读 `pending`。`TenantFrame` 在应用栏之下另挂一条持续验证提示（`role=region`，不是 live region），读 `GET /api/v1/auth/me` 的 `verification.state`：`pending` 时显示目标邮箱、去验证与更换邮箱，验证完成后消失；它不随会话内关闭而消失，与个人租户的一次性提示分开。「去验证」落在 `/account?verify=1`，从验证码一步开始；「更换邮箱」落在 `/account?change=email`，账户页据此让验证节直接展开更换邮箱表单。宿主用独立的 `contactVerificationPending` 判据（`verification.state === 'pending'`）决定是否显示，不并进 `setupIncomplete`——验证状态与注册入口无关，管理员预置的账户也在其中。
@@ -372,7 +372,7 @@ flowchart TD
 
 ### 宿主侧的特性读取
 
-前端里只有宿主读特性态：示范经 auth-core 的 `useFeature`、`useFeatureState`、`featurePresence` 与 route-kit 的 `useHasRoute`、`presentDeclarations` 读取，再经属性或上下文组件交给能力 UI 包，能力 UI 包不调用 auth-core 的钩子（[ADR-web-feature-state-2026-10-17](../../adr/adr-web-feature-state-2026-10-17.md)）。特性缺席的控件隐藏；特性在场而调用者无权限的写入控件照常渲染，授权由服务端判定（[架构](../architecture.md#特性与前端定制)）。下表列出示范宿主按特性门控的全部位置：
+前端里只有宿主读特性态：示范经 auth-core 的 `useFeature`、`useFeatureState`、`featurePresence` 与 route-kit 的 `useHasRoute`、`presentDeclarations` 读取，再经属性或上下文组件交给能力 UI 包，能力 UI 包不调用 auth-core 的钩子（[ADR-web-feature-state](../../adr/adr-web-feature-state.md)）。特性缺席的控件隐藏；特性在场而调用者无权限的写入控件照常渲染，授权由服务端判定（[架构](../architecture.md#特性与前端定制)）。下表列出示范宿主按特性门控的全部位置：
 
 | 位置 | 门控 |
 |---|---|

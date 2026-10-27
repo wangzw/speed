@@ -10,7 +10,7 @@ react 绑定只从这里再导出，组件包与宿主不直接 import `react-i1
 
 ### 非职责
 
-- **不渲染服务端生成的文案。** 错误响应、通知类的正文由产生它们的后端模块渲染，客户端与服务端的分工被记为 [ADR-i18n-scope-2026-10-13](../../../adr/adr-i18n-scope-2026-10-13.md)：客户端界面的文案由前端自己的机制承担，服务端文案不进这里。本包只渲染前端界面文案，机器码（如错误码）由前端按码解析成文本。
+- **不渲染服务端生成的文案。** 错误响应、通知类的正文由产生它们的后端模块渲染，客户端与服务端的分工被记为 [ADR-i18n-scope](../../../adr/adr-i18n-scope.md)：客户端界面的文案由前端自己的机制承担，服务端文案不进这里。本包只渲染前端界面文案，机器码（如错误码）由前端按码解析成文本。
 - **不持某个具体包的文案，也不在组件或 provider 内注册命名空间。** 每个包交付自己的双语资源，宿主在启动处调用一次 `registerNamespace`；命名空间注册两次会抛错，因此它不能落在组件生命周期里。
 - **不生成文案。** 后端错误码到前端文本的包在 `@speed/i18n/platform-errors`，当前手工维护（其生成器已随早期实现退役）；本包只承载并注册它。
 - **不做 MUI 本地化本身。** MUI 的本地化对象由 MUI 提供，本包只把语言标签映射到它（见扩展点）。
@@ -127,7 +127,7 @@ sequenceDiagram
 
 匹配先按规范标签大小写不敏感地精确匹配，再做双向的语言子标签放宽，且**从不跨语言**：一个带区域的请求（如 `ja-JP`）选中同语言的受支持裸标签（如 `ja`），一个裸请求（如 `en`）选中唯一带其主子标签的受支持标签。每个源在匹配前先规范化（下划线转连字符），匹配不到受支持语言的源被跳过。
 
-**未知的浏览器语言落到 `en-US` 是有意的协商默认**，可被 `defaultLanguage` 覆盖；它与缺键规则是两回事，后者从不回落。默认语言 `en-US` 是平台默认，与后端内容链的落点一致（[ADR-i18n-default-locale-2026-10-13](../../../adr/adr-i18n-default-locale-2026-10-13.md)）。
+**未知的浏览器语言落到 `en-US` 是有意的协商默认**，可被 `defaultLanguage` 覆盖；它与缺键规则是两回事，后者从不回落。默认语言 `en-US` 是平台默认，与后端内容链的落点一致（[ADR-i18n-default-locale](../../../adr/adr-i18n-default-locale.md)）。
 
 ### 命名空间注册的校验
 
@@ -204,7 +204,7 @@ sequenceDiagram
 
 ## 扩展点
 
-- **新增一种语言。** 平台随包发布新语言时触及：`DEFAULT_SUPPORTED_LANGUAGES` 与 `DEFAULT_LANGUAGE` 的选择、`muiLocaleFor` 的映射（MUI 本地化必须存在）、每个命名空间的双语夹具、每份 bundle 里每个复数族的覆盖，以及键集与覆盖测试。宿主也可以为平台命名空间补整套语言：平台错误包经 `registerPlatformErrors` 的第二个参数补齐，包命名空间经 `overlayResources` 补齐；注册期的覆盖、键集与复数校验照常运行，覆盖规则本身不放宽（[ADR-web-host-language-sets-2026-10-19](../../../adr/adr-web-host-language-sets-2026-10-19.md)）。
+- **新增一种语言。** 平台随包发布新语言时触及：`DEFAULT_SUPPORTED_LANGUAGES` 与 `DEFAULT_LANGUAGE` 的选择、`muiLocaleFor` 的映射（MUI 本地化必须存在）、每个命名空间的双语夹具、每份 bundle 里每个复数族的覆盖，以及键集与覆盖测试。宿主也可以为平台命名空间补整套语言：平台错误包经 `registerPlatformErrors` 的第二个参数补齐，包命名空间经 `overlayResources` 补齐；注册期的覆盖、键集与复数校验照常运行，覆盖规则本身不放宽（[ADR-web-host-language-sets](../../../adr/adr-web-host-language-sets.md)）。
 - **新增一个命名空间。** 消费包在自己的 `locales/` 下出 zh-CN 与 en-US、结构一致、无空串、每个复数族带齐类别，宿主在启动处注册一次。
 - **新增错误码家族。** 消费包组合自己的可达码与 `SESSION_LIFECYCLE_ERROR_CODES`、`CLIENT_TRANSPORT_ERROR_CODES`，把本命名空间的 `t` 绑进 `createErrorTextResolver`；在包内手搓键的构造会重新打开裸键与跨语言的缺口。
 

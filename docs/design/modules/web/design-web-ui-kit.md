@@ -63,7 +63,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 **等宽字体走模块扩充。** MUI 的排版面没有等宽槽，而 token 树有 `typography.fontFamily.mono`；工厂经 `declare module '@mui/material/styles'` 给它加一个 `fontFamilyMono` 槽并总是填入合并后的取值（主题选项里该字段可选，宿主自行组合主题时不强制）。取值方式与 `fontFamily` 相同，含 `sx` 回调。
 
-**颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景、文本与分隔线改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板。六个语义角色同守这条纪律：`main` 是浅色表面上的色调，`light` 是给深色表面的色调，故 `'dark'` 时每个角色的 `main` 取它的 `light` 色调、`contrastText` 取中性色阶的深端（900），使填充控件的标签在该底色上仍可读（对比度判据由测试钉住）。浅色模式下六个角色统一用 token 的 `contrastText`（白色）；warning、info、success 的 `main` 因此取各自的 700 调，使同一个值既作填充底色、又作提示与状态文案的文字色时都满足 4.5:1（[ADR-web-light-contrast-2026-10-20](../../../adr/adr-web-light-contrast-2026-10-20.md)）。MUI 的悬停填充读角色的 `dark` 槽，token 的最深一档在该标签下不足 4.5:1，故 `'dark'` 时的 `dark` 取 `light` 向白色混入 20% 的色调，既保留悬停步进又守住标签对比度。只覆写 `main` 不会作用于深色模式：给品牌换色需同时给出 `light`。缺省即原行为，未传该入参的宿主逐字节不受影响。
+**颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景、文本与分隔线改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板。六个语义角色同守这条纪律：`main` 是浅色表面上的色调，`light` 是给深色表面的色调，故 `'dark'` 时每个角色的 `main` 取它的 `light` 色调、`contrastText` 取中性色阶的深端（900），使填充控件的标签在该底色上仍可读（对比度判据由测试钉住）。浅色模式下六个角色统一用 token 的 `contrastText`（白色）；warning、info、success 的 `main` 因此取各自的 700 调，使同一个值既作填充底色、又作提示与状态文案的文字色时都满足 4.5:1（[ADR-web-light-contrast](../../../adr/adr-web-light-contrast.md)）。MUI 的悬停填充读角色的 `dark` 槽，token 的最深一档在该标签下不足 4.5:1，故 `'dark'` 时的 `dark` 取 `light` 向白色混入 20% 的色调，既保留悬停步进又守住标签对比度。只覆写 `main` 不会作用于深色模式：给品牌换色需同时给出 `light`。缺省即原行为，未传该入参的宿主逐字节不受影响。
 
 **返回的主题无本地化，是有意的**：MUI 的内建文本随语言变化，故本地化合并发生在渲染期——`AppThemeProvider` 把活动语言的 MUI 本地化并到基础主题上，或宿主自行 `createTheme(appTheme.theme, muiLocaleFor(i18n.language))`。
 
@@ -263,7 +263,7 @@ sequenceDiagram
 
 **两处不设覆写。** `MuiPaper.root` 不设：MUI 深色模式经 `backgroundImage` 给 elevation Paper 叠一层提亮，清掉它会让 Dialog 与 Menu 在深色下失去层次。`MuiTableContainer` 不设：内容节的表面由 `SectionCard` 承担，表格不再叠第二层表面。
 
-**组件表按槽深合并。** 多个来源的 `components`（触摸目标下限、表面映射与页面基线）按 `Mui*` 键、再按槽合并：变体数组拼接，同一槽上的两个回调组合为返回两份样式的回调。浅展开会让后者整体覆盖前者的 `styleOverrides`。决策见 [ADR-web-surface-system-2026-10-20](../../../adr/adr-web-surface-system-2026-10-20.md)。
+**组件表按槽深合并。** 多个来源的 `components`（触摸目标下限、表面映射与页面基线）按 `Mui*` 键、再按槽合并：变体数组拼接，同一槽上的两个回调组合为返回两份样式的回调。浅展开会让后者整体覆盖前者的 `styleOverrides`。决策见 [ADR-web-surface-system](../../../adr/adr-web-surface-system.md)。
 
 ### 内容节 SectionCard
 
@@ -315,7 +315,7 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 ### 侧边面板的地标、版式、关闭与焦点
 
-`SidePanel` 是 MUI `Drawer` 的 temporary 变体，锚定右缘。容器取舍与层级的约束见 [layout](design-web-layout.md)，决策见 [ADR-web-side-panel-2026-10-17](../../../adr/adr-web-side-panel-2026-10-17.md)。
+`SidePanel` 是 MUI `Drawer` 的 temporary 变体，锚定右缘。容器取舍与层级的约束见 [layout](design-web-layout.md)，决策见 [ADR-web-side-panel](../../../adr/adr-web-side-panel.md)。
 
 **地标与可及名。** MUI 在纸张上给出 `role="dialog"` 与 `aria-modal`；本组件以 `aria-labelledby` 指向标题，仅在给出 `description` 时以 `aria-describedby` 指向描述。标题渲染为 `h2`：页面的 `h1` 是 `PageHeader`，面板标题是其下一级，面板内各节的标题从 `h3` 起。关闭按钮的可及名取 `closeLabel`，缺省取命名空间的 `sidePanel.closeLabel`。
 
@@ -361,7 +361,7 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 
 ### 写入的反馈
 
-一次写入的结果落在一个**反馈作用域**里：作用域是一个 `useWriteFeedback` 实例加一个 `WriteFeedbackRegion`，区域紧贴发起写入的控件组之下。**控件组**是共用同一个结果位置的一组写控件，通常是页面上一个带标题的节，含它的表单与表内行内动作；一张表及其行内动作是一组。这条说明是判据，各包按自己的页面应用它，具体划分在各包的设计文档里。下列条款绑定每一个以反馈作用域报告写入结果的界面，各 UI 包以自己的错误码解析器与文案使用它们（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。
+一次写入的结果落在一个**反馈作用域**里：作用域是一个 `useWriteFeedback` 实例加一个 `WriteFeedbackRegion`，区域紧贴发起写入的控件组之下。**控件组**是共用同一个结果位置的一组写控件，通常是页面上一个带标题的节，含它的表单与表内行内动作；一张表及其行内动作是一组。这条说明是判据，各包按自己的页面应用它，具体划分在各包的设计文档里。下列条款绑定每一个以反馈作用域报告写入结果的界面，各 UI 包以自己的错误码解析器与文案使用它们（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。
 
 **单槽，最后落定的结果为准。** 作用域持有至多一个结果。`reset` 清空槽位，不取消在途的尝试；`succeed(message)` 与 `fail(error)` 各自替换槽位，成功与失败因此不会同时出现在一个作用域里；不同作用域的槽互不清除，新写入只替换自己作用域的槽，同页因此可以同时出现一个作用域的成功与另一个作用域的失败，成功文案点名对象、区域落在各自控件组的下方，两条结果各指向自己的对象；`pending` 在任一在途尝试落定之前为真。每次尝试以 `reset` 开头，包括被客户端校验拒绝、没有发出请求的提交，使上一次的服务端失败不与本次的字段错误并存。上下文变化也调用 `reset`，判据是变化之后旧结果会被读成描述另一个上下文，例如租户或所选对象改变、翻页与操作者点击的刷新；自动重读不是上下文变化，不调用 `reset`。结果不自动消失。`fail` 经 `errorCodeOf` 把任意抛出值折成码，文本由区域的 `resolve` 解析，不取 API 的 `message`。成功文案是调用 `succeed` 时刻的译文快照，不随之后的语言切换更新，语言切换也不是 `reset` 的触发；失败码经 `resolve` 随活动语言重新渲染。写入本身会切换语言的动作（偏好节的语言写入）在切换落定之后才调用 `succeed`，使确认文案取自新语言。
 

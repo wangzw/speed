@@ -7,8 +7,8 @@ standard for the documentation trees declared in CLAUDE.md's
 whether a sentence is subjective, whether a requirement traces to a real
 source, whether an option's rejection reason is honest. This script
 checks the part that is not: the STRUCTURE. Section presence and order,
-file naming, index coverage, status vocabulary, supersession pairing,
-diagram bodies and the metadata a document must never carry.
+file naming, index coverage, status vocabulary, diagram bodies and the
+metadata a document must never carry.
 
 A green run means the documents are shaped like the standard says. It
 does not mean they are correct; review owns the rest.
@@ -31,8 +31,7 @@ WHAT IS CHECKED
   Common to every document (SKILL.md section 2):
     * exactly one H1, and it opens the document
     * no process metadata: change history, version, author, date, review
-      record headings or field lines (an ADR's date lives in its file
-      name, which is content -- see the ADR standard)
+      record headings or field lines
     * no project management: TODO / FIXME / TBD markers
     * no code reference carrying a line number (path.go:123)
     * every mermaid block has a diagram type and a non-empty body
@@ -64,15 +63,12 @@ WHAT IS CHECKED
       roll-up is one row per sub-module document
 
   ADR tree (references/decision-records.md):
-    * file names match adr-<slug>-<ISO date>, with a real calendar date
-    * the fixed section order, with Invalidation Conditions optional
-    * status is Accepted, Superseded by ADR-<slug>-<date> or Deprecated
-      -- never Proposed
-    * a supersession is stated in both records, and the record named as
-      the successor exists
+    * file names match adr-<slug>, with no date and no sequence number
+    * the fixed section order, with Invalidation Conditions optional and
+      no Status section
     * Options Considered lists at least two options
-    * README index covers every record exactly once, and each index row
-      agrees with the record's own date and status
+    * README index covers every record exactly once and carries neither
+      a date column nor a status column
 
   Requirements tree (references/requirements-documents.md):
     * README.md and overview.md are present; journeys/journey-<slug> and
@@ -107,7 +103,6 @@ WHAT IS DELIBERATELY NOT CHECKED
 from __future__ import annotations
 
 import argparse
-import datetime
 import os
 import re
 import sys
@@ -163,7 +158,6 @@ MODULE_SECTIONS = [
 ]
 NON_RESPONSIBILITIES = names("Non-Responsibilities", "非职责")
 ADR_SECTIONS = [
-    ("status", names("Status", "状态"), True),
     ("context", names("Context", "背景"), True),
     ("options", names("Options Considered", "考虑过的选项"), True),
     ("decision", names("Decision", "决策"), True),
@@ -216,15 +210,8 @@ REQUIREMENT_STATUS = {
 }
 VAGUE_STATUS = ("mostly complete", "basically working", "almost done",
                 "基本完成", "大部分完成", "基本可用", "大致完成", "基本实现")
-ADR_ACCEPTED = names("Accepted", "已接受")
-ADR_DEPRECATED = names("Deprecated", "已废弃")
-ADR_PROPOSED = names("Proposed", "提议")
-SUPERSEDED_RE = re.compile(r"(?:Superseded by|已?被).{0,12}?(ADR-[a-z0-9]+(?:-[a-z0-9]+)*-\d{4}-\d{2}-\d{2})")
-SUPERSEDES_RE = re.compile(
-    r"(?:supersedes?\s+(ADR-[a-z0-9-]+-\d{4}-\d{2}-\d{2}))"
-    r"|(?:(ADR-[a-z0-9-]+-\d{4}-\d{2}-\d{2})[^\n]{0,24}?取代)"
-    r"|(?:取代[^\n]{0,24}?(ADR-[a-z0-9-]+-\d{4}-\d{2}-\d{2}))",
-    re.IGNORECASE)
+ADR_DATE_SUFFIX_RE = re.compile(r"-\d{4}-\d{2}-\d{2}$")
+ADR_FORBIDDEN_COLUMNS = ("date", "日期", "status", "状态")
 
 # Metadata a document never carries (SKILL.md section 2).
 METADATA_HEADINGS = ("change history", "revision history", "changelog", "version history",
@@ -244,7 +231,6 @@ FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})\s*(\S*)")
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?[\s:|-]+\|[\s:|-]*$")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 REQ_ID_RE = re.compile(r"^req-([a-z0-9]+(?:-[a-z0-9]+)*)-(\d+)$")
 CODE_ANCHOR_RE = re.compile(r"`[^`]*[./][^`]*`")
 
@@ -855,57 +841,31 @@ def adr_id(name: str) -> str | None:
     stem = name[:-3] if name.endswith(".md") else name
     if not stem.startswith("adr-"):
         return None
-    parts = stem.rsplit("-", 3)
-    if len(parts) < 4:
+    slug = stem[len("adr-"):]
+    if ADR_DATE_SUFFIX_RE.search(slug) or not SLUG_RE.match(slug):
         return None
-    slug, date = parts[0], "-".join(parts[1:])
-    if not ISO_DATE_RE.match(date) or not SLUG_RE.match(slug[len("adr-"):]):
-        return None
-    return f"ADR-{slug[len('adr-'):]}-{date}"
+    return f"ADR-{slug}"
 
 
-def check_adr_record(path: str, rel: str, text: str, language: str) -> tuple[list[Finding], str | None, str | None]:
-    """Findings, the record's own id, and the id it declares as its successor."""
+def check_adr_record(path: str, rel: str, text: str, language: str) -> tuple[list[Finding], str | None]:
+    """Findings and the record's own id."""
     found: list[Finding] = []
-    name = os.path.basename(path)
-    record_id = adr_id(name)
+    record_id = adr_id(os.path.basename(path))
     if record_id is None:
         found.append(Finding(rel, 0,
-                             "file name does not match adr-<slug>-<YYYY-MM-DD>"))
+                             "file name does not match adr-<slug>; an ADR's name carries "
+                             "no date and no sequence number"))
         found += check_filename_sequence(rel)
-        return found, None, None
-    date = record_id.rsplit("-", 3)
-    date_text = "-".join(date[1:])
-    try:
-        datetime.date.fromisoformat(date_text)
-    except ValueError:
-        found.append(Finding(rel, 0, f"file name carries no real calendar date ({date_text})"))
+        return found, None
 
     found += check_heading_language(rel, text, language, ADR_SECTIONS)
     found += check_section_order(rel, text, language, ADR_SECTIONS)
 
     sections = parse_sections(text)
-    superseded_by = None
     for section in sections:
         if section.level != 2:
             continue
         key, _ = match_section(section.title, ADR_SECTIONS, language)
-        if key == "status":
-            body = " ".join(t for _, t in section.prose_lines())
-            accepted = canonical(ADR_ACCEPTED, language).casefold() in body.casefold()
-            deprecated = canonical(ADR_DEPRECATED, language).casefold() in body.casefold()
-            supersession = SUPERSEDED_RE.search(body)
-            if canonical(ADR_PROPOSED, language).casefold() in body.casefold():
-                found.append(Finding(rel, section.line,
-                                     "status is Proposed; an undecided decision belongs to "
-                                     "the issue tracker, not to a record"))
-            elif supersession:
-                superseded_by = supersession.group(1)
-            elif not (accepted or deprecated):
-                found.append(Finding(rel, section.line,
-                                     f"status is none of {canonical(ADR_ACCEPTED, language)!r}, "
-                                     f"{canonical(ADR_DEPRECATED, language)!r} or a supersession by a "
-                                     f"named record"))
         if key == "options":
             options = [s for s in sections if s.level == 3 and s.line > section.line
                        and s.line < next((x.line for x in sections
@@ -914,7 +874,7 @@ def check_adr_record(path: str, rel: str, text: str, language: str) -> tuple[lis
                 found.append(Finding(rel, section.line,
                                      f"options considered lists {len(options)} option(s); a "
                                      f"decision weighs alternatives, each an H3"))
-    return found, record_id, superseded_by
+    return found, record_id
 
 
 def check_adr_tree(tree: str, root: str, language: str) -> list[Finding]:
@@ -923,11 +883,6 @@ def check_adr_tree(tree: str, root: str, language: str) -> list[Finding]:
     if not os.path.isfile(readme):
         found.append(Finding(os.path.relpath(readme, root), 0,
                              "the ADR tree has no README index"))
-    records: dict[str, str] = {}
-    successors: dict[str, str] = {}
-    bodies: dict[str, str] = {}
-    statuses: dict[str, tuple[str, int]] = {}
-
     for path in markdown_files(tree):
         rel = os.path.relpath(path, root)
         if os.path.basename(path) == "README.md":
@@ -937,28 +892,7 @@ def check_adr_tree(tree: str, root: str, language: str) -> list[Finding]:
             continue
         text = strip_comments(read(path))
         found += check_common(rel, text, language)
-        record_findings, record_id, superseded_by = check_adr_record(path, rel, text, language)
-        found += record_findings
-        if record_id:
-            records[record_id] = rel
-            bodies[record_id] = text
-            if superseded_by:
-                successors[record_id] = superseded_by
-            for section in parse_sections(text):
-                if section.level == 2 and match_section(
-                        section.title, ADR_SECTIONS, language)[0] == "status":
-                    statuses[record_id] = (" ".join(t for _, t in section.prose_lines()),
-                                           section.line)
-
-    for old, new in sorted(successors.items()):
-        if new not in records:
-            found.append(Finding(records[old], statuses[old][1],
-                                 f"status names {new} as the successor, and no such record exists"))
-            continue
-        if not SUPERSEDES_RE.search(bodies[new]) or old not in bodies[new]:
-            found.append(Finding(records[new], 0,
-                                 f"does not state that it supersedes {old}; the supersession "
-                                 f"pair is stated in both records"))
+        found += check_adr_record(path, rel, text, language)[0]
 
     if os.path.isfile(readme):
         rel_readme = os.path.relpath(readme, root)
@@ -968,31 +902,27 @@ def check_adr_tree(tree: str, root: str, language: str) -> list[Finding]:
         if not topics:
             found.append(Finding(rel_readme, 0,
                                  "the index is not grouped by topic; each topic is an H2"))
+        header: tuple[int, list[str]] | None = None
+        in_body = False
         for n, raw, in_fence, _ in scan_lines(text):
-            if in_fence or not raw.strip().startswith("|") or TABLE_SEPARATOR_RE.match(raw.strip()):
+            if in_fence or not raw.strip().startswith("|"):
+                header, in_body = None, False
                 continue
-            targets = [t for t in LINK_RE.findall(raw) if t.endswith(".md")]
-            if not targets:
+            cells = [cell.strip() for cell in raw.strip().strip("|").split("|")]
+            if TABLE_SEPARATOR_RE.match(raw.strip()):
+                if header and not in_body and any(
+                        col in cell.casefold().strip("*` ")
+                        for cell in header[1] for col in ADR_FORBIDDEN_COLUMNS):
+                    found.append(Finding(rel_readme, header[0],
+                                         "the index carries a date or status column; an ADR's "
+                                         "identity is its decision, nothing else"))
+                in_body = header is not None
                 continue
-            record_id = adr_id(os.path.basename(targets[0]))
-            if record_id is None or record_id not in records:
+            if header is None:
+                header = (n, cells)
                 continue
-            date_text = "-".join(record_id.rsplit("-", 3)[1:])
-            if date_text not in LINK_RE.sub("", raw):
-                found.append(Finding(rel_readme, n,
-                                     f"index row for {record_id} does not carry the record's "
-                                     f"own date"))
-            row_status = raw.split("|")
-            body = statuses.get(record_id, ("", 0))[0]
-            for key, name in (("accepted", ADR_ACCEPTED), ("deprecated", ADR_DEPRECATED)):
-                in_record = name[language].casefold() in body.casefold()
-                in_row = any(name[language].casefold() in cell.casefold()
-                             for cell in row_status[2:])
-                if in_record != in_row:
-                    found.append(Finding(rel_readme, n,
-                                         f"index row for {record_id} disagrees with the "
-                                         f"record's own status"))
-                    break
+            if not in_body:
+                continue
     return found
 
 

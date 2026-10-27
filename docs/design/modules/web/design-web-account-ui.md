@@ -2,7 +2,7 @@
 
 ## 职责
 
-`@speed/account-ui` 是一个 speed 前端已登录一方的账户管理组件族：一组节（section）组成宿主的账户页。账户自助写面归本包的理由见 [ADR-web-account-ui-selfservice-2026-10-16](../../../adr/adr-web-account-ui-selfservice-2026-10-16.md)。它交付下列面：
+`@speed/account-ui` 是一个 speed 前端已登录一方的账户管理组件族：一组节（section）组成宿主的账户页。账户自助写面归本包的理由见 [ADR-web-account-ui-selfservice](../../../adr/adr-web-account-ui-selfservice.md)。它交付下列面：
 
 - `ProfileSection`：账户显示名的编辑，读 `GET /api/v1/auth/me` 取存下的值、写 `PATCH /api/v1/auth/me` 提交单字段的修改，走账户档案的自写面（[authn-profile](../authn/design-authn-profile.md)）。
 - `PasswordSection`：改口令，走登录自助面的 `PUT /api/v1/auth/password`（[authn 登录](../authn/design-authn-login.md)）。账户 `password_set` 为假（经提供方开户、无口令）时不显示当前口令字段，只给新口令两项；确认口令是客户端自己的校验，不上线。账户没有可作登录名的标识（没有用户名也没有邮箱标识）时，`PUT /api/v1/auth/password` 答 409 `login-identifier-required`，口令节渲染这条码的文本，说明账户需要至少一个登录名。
@@ -17,11 +17,11 @@
 
 这些面是节，不是一个带路由的屏：拥有它们的页面、它们之上的标题、以及本包之外的其它面（通用属性集的编辑、登录历史）都是宿主内容。
 
-**特性在场由宿主给出，本包不读特性态**（[ADR-web-feature-state-2026-10-17](../../../adr/adr-web-feature-state-2026-10-17.md)）。宿主只在特性 `authn.phone` 在场时挂 `PhoneSection`，只在特性 `authn.mfa` 在场时挂 `MfaSection`；`IdentifiersSection` 的邮箱添加可用性经可选属性 `emailAvailable`（缺省为真）传入，宿主取特性 `authn.identifiers.email` 是否在场。`ContactVerificationSection` 不经特性门控：它读本人档案的验证状态，`none` 时不渲染，宿主把它挂在账户页。其余节读写的面由[不经特性门控的后端模块](design-web.md#不经特性门控的后端模块)服务，不受特性门控；`PasswordSection` 依赖的 `PUT /api/v1/auth/password` 随登录引擎恒挂。社交绑定可用的渠道集合只由发现文档发布，不经特性文档（[feature](../design-feature.md) 的「特性文档承载的事实」）。
+**特性在场由宿主给出，本包不读特性态**（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）。宿主只在特性 `authn.phone` 在场时挂 `PhoneSection`，只在特性 `authn.mfa` 在场时挂 `MfaSection`；`IdentifiersSection` 的邮箱添加可用性经可选属性 `emailAvailable`（缺省为真）传入，宿主取特性 `authn.identifiers.email` 是否在场。`ContactVerificationSection` 不经特性门控：它读本人档案的验证状态，`none` 时不渲染，宿主把它挂在账户页。其余节读写的面由[不经特性门控的后端模块](design-web.md#不经特性门控的后端模块)服务，不受特性门控；`PasswordSection` 依赖的 `PUT /api/v1/auth/password` 随登录引擎恒挂。社交绑定可用的渠道集合只由发现文档发布，不经特性文档（[feature](../design-feature.md) 的「特性文档承载的事实」）。
 
 ### 非职责
 
-- **不做通用属性集的编辑。** 自助档案面（`PATCH /api/v1/auth/me`）的自写字段集是显示名、通用属性集、语言与时区（[ADR-authn-selfservice-profile-2026-10-15](../../../adr/adr-authn-selfservice-profile-2026-10-15.md)）；本包交付显示名（`ProfileSection`）与语言、时区（`PreferencesSection`），不交付自由键值对的通用属性集编辑——那需要一个不属于账户页固定字段的通用编辑器，属宿主内容。
+- **不做通用属性集的编辑。** 自助档案面（`PATCH /api/v1/auth/me`）的自写字段集是显示名、通用属性集、语言与时区（[ADR-authn-selfservice-profile](../../../adr/adr-authn-selfservice-profile.md)）；本包交付显示名（`ProfileSection`）与语言、时区（`PreferencesSection`），不交付自由键值对的通用属性集编辑——那需要一个不属于账户页固定字段的通用编辑器，属宿主内容。
 - **自助添加标识的 `kind` 是封闭集，限于用户名与邮箱。** 手机走它自己的两步面（`PhoneSection`，`POST /api/v1/auth/phone`）；`IdentifiersSection` 的添加面只给用户名与邮箱两种（[authn 登录](../authn/design-authn-login.md)）；档案已列出用户名时，添加面不再提供用户名（REQ-account-008）：服务端对第二个用户名与对已被他人占用的用户名答同一个 409 `authn.conflict`，文案无法区分二者，客户端因此不发出第二个用户名。
 - **不交付登录历史节。** 登录历史没有自助端点，只有管理员面（[authn-admin](../authn/design-authn-admin.md) 的审计读）；普通账户看不到自己的登录历史，故本包不交付这一节。
 - **不交付恢复码。** 认证的因素面不提供恢复码（[authn-mfa](../authn/design-authn-mfa.md)），故本包不交付恢复码的显示或重生成。
@@ -36,7 +36,7 @@
 
 ## 外部接口契约
 
-`web/packages/account-ui/src/index.ts` 是公开面：`ProfileSection`（连同 `ProfileSectionProps`）；`PasswordSection`（连同 `PasswordSectionProps`）；`PhoneSection`（连同 `PhoneSectionProps`）；`IdentifiersSection`（连同 `IdentifiersSectionProps`）；`ContactVerificationSection`（连同 `ContactVerificationSectionProps`）；`PreferencesSection`（连同 `PreferencesSectionProps`）；`AppearanceSection`（连同 `AppearanceSectionProps`、`ThemePresetChoice`）；`SessionsSection`；`SocialBindingsSection`（连同 `SocialBindingsSectionProps`）；`BindingCallbackHandler`（连同 `BindingCallbackHandlerProps`）；`MfaSection`（连同 `MfaSectionProps`）；`StepUpDialog`（连同 `StepUpDialogProps`）；以及命名为 `ACCOUNT_UI_NAMESPACE`、`accountUiResources` 的资源对。`web/packages/account-ui/src/internal/` 下的错误文案解析器、失败横幅、流程步渲染器与翻译钩子是族内管线，不外导（`StepUpDialog` 是对内部对话框的有意外导）。提权对话框与门控的归属由 [ADR-web-auth-seams-2026-10-19](../../../adr/adr-web-auth-seams-2026-10-19.md) 裁定：对话框以 `StepUpDialog` 外导、**只给宿主用**（同层的 `console-ui` 与 `auth-ui` 不得 import 它，那是一条同层边），自助写的提权门控用 `@speed/auth-core` 的 `useStepUpGate`。
+`web/packages/account-ui/src/index.ts` 是公开面：`ProfileSection`（连同 `ProfileSectionProps`）；`PasswordSection`（连同 `PasswordSectionProps`）；`PhoneSection`（连同 `PhoneSectionProps`）；`IdentifiersSection`（连同 `IdentifiersSectionProps`）；`ContactVerificationSection`（连同 `ContactVerificationSectionProps`）；`PreferencesSection`（连同 `PreferencesSectionProps`）；`AppearanceSection`（连同 `AppearanceSectionProps`、`ThemePresetChoice`）；`SessionsSection`；`SocialBindingsSection`（连同 `SocialBindingsSectionProps`）；`BindingCallbackHandler`（连同 `BindingCallbackHandlerProps`）；`MfaSection`（连同 `MfaSectionProps`）；`StepUpDialog`（连同 `StepUpDialogProps`）；以及命名为 `ACCOUNT_UI_NAMESPACE`、`accountUiResources` 的资源对。`web/packages/account-ui/src/internal/` 下的错误文案解析器、失败横幅、流程步渲染器与翻译钩子是族内管线，不外导（`StepUpDialog` 是对内部对话框的有意外导）。提权对话框与门控的归属由 [ADR-web-auth-seams](../../../adr/adr-web-auth-seams.md) 裁定：对话框以 `StepUpDialog` 外导、**只给宿主用**（同层的 `console-ui` 与 `auth-ui` 不得 import 它，那是一条同层边），自助写的提权门控用 `@speed/auth-core` 的 `useStepUpGate`。
 
 ```tsx
 interface ProfileSectionProps {
@@ -183,7 +183,7 @@ sequenceDiagram
 
 ### 邮箱的验证节
 
-账户持有邮箱而没有一条已证明的邮箱时，档案读作 `pending`，不论这条邮箱由自助注册、管理员预置、导入还是首登开户写下；验证是登录后的账户动作，不建立会话（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
+账户持有邮箱而没有一条已证明的邮箱时，档案读作 `pending`，不论这条邮箱由自助注册、管理员预置、导入还是首登开户写下；验证是登录后的账户动作，不建立会话（[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。
 
 1. **读状态。** `ContactVerificationSection` 读 `GET /api/v1/auth/me` 的 `verification`。`none` 不渲染；`verified` 渲染完成态；`pending` 且 `email` 非空时渲染目标邮箱、发送与重发、验证码字段与更换邮箱；`pending` 且 `email` 为空时渲染「添加邮箱」表单，提交 `POST /api/v1/auth/identifiers`（`{kind: 'email', value}`）。`pending` 的目标地址可能是未证明预留，也可能是一条未证明的邮箱标识（管理员或导入写下）；本节一视同仁，验证即证明该地址。**服务端契约下 `pending` 必有目标地址**——未验证的定义就是持有邮箱——所以「`pending` 而无目标」的添加邮箱分支在现行契约下不可达，组件保留它作为防御性兜底。删除最后一个已证明邮箱后，账户若还持有另一条未证明邮箱，本节照常显示那一条；一条也不剩时档案读作 `none`，本节不再渲染，账户也不受限制。
 2. **发送与重发。** 发送调 `POST /api/v1/auth/identifiers`（`{kind: 'email', value: <目标邮箱>}`），验证调 `POST /api/v1/auth/identifiers/verify`（只带验证码）。重发是同一个发送动作，发往与展示同源的地址（本次挂载内已发送的地址，否则档案里的未证明预留），不会出现界面显示新地址而重发发往旧地址。发送落地后「验证码已发送」的目的地文字在验证码一步内持续显示，通知用先挂空、再填文本的 `role="status"` 播报一次，焦点落在验证码字段。重发控件在发送应答的 `resend_after` 给出的间隔内禁用并说明原因；被 429 拒绝时按 `Retry-After` 起算。间隔到点后倒计时计时器自行清除，不在页面上留下常驻计时器。
@@ -218,11 +218,11 @@ sequenceDiagram
 
 `BindingCallbackHandler` 挂在宿主的回调路由上，以 `session.readFlow()` 读回那条 `purpose: 'link'` 流程：流程已就绪（`next.kind = complete`）时以 `step: 'complete'` 取走结果，`link` 落地（`state: 'linked'`）后失效身份读取并触发 `onBound`；流程仍停在一步时渲染该步续接；交换失败渲染错误码文本与一个重试按钮。绑定的 `link` 不把任何人签进去。
 
-**本部署不提供社交绑定时的落点。** 回调路由在租户框架内，只有已认证者到达。宿主给了 `absent` 时，`readFlow()` 返回 `null` 之后处理器读一次 `session.listMethods()`：发现文档里没有 `kind=redirect` 的方法，即本部署不提供社交绑定，渲染 `absent`，宿主借此给出与未登记路径相同的 404（[ADR-web-route-seam-2026-10-17](../../../adr/adr-web-route-seam-2026-10-17.md)）；有这类方法或发现读取失败时，照常渲染错误码文本与重试按钮。读到流程时不读发现文档。宿主没给 `absent` 时，处理器不读发现文档，`readFlow()` 返回 `null` 即渲染错误码文本与重试按钮。
+**本部署不提供社交绑定时的落点。** 回调路由在租户框架内，只有已认证者到达。宿主给了 `absent` 时，`readFlow()` 返回 `null` 之后处理器读一次 `session.listMethods()`：发现文档里没有 `kind=redirect` 的方法，即本部署不提供社交绑定，渲染 `absent`，宿主借此给出与未登记路径相同的 404（[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）；有这类方法或发现读取失败时，照常渲染错误码文本与重试按钮。读到流程时不读发现文档。宿主没给 `absent` 时，处理器不读发现文档，`readFlow()` 返回 `null` 即渲染错误码文本与重试按钮。
 
 ### 写入的反馈
 
-每个节按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织反馈：一个控件组是一个反馈作用域，区域紧贴该控件组之下（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。偏好节的语言与时区各是一个控件组，各有自己的作用域与区域，一条的落定不清除另一条；档案、口令与手机各一个作用域。
+每个节按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织反馈：一个控件组是一个反馈作用域，区域紧贴该控件组之下（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。偏好节的语言与时区各是一个控件组，各有自己的作用域与区域，一条的落定不清除另一条；档案、口令与手机各一个作用域。
 
 - **成功确认只经区域渲染。** 成功由 `WriteFeedbackRegion` 渲染，间距经区域的 `sx`；本包没有第二种成功区域，调用点不单独渲染 `InlineSuccess`。
 - **每个由用户发起、落定且无一失败的动作都有成功文案**，含撤销单个会话、删除标识、两步验证的登记与移除，文案点明被改动的对象。档案的文案点名显示名；偏好节的文案点名语言或时区及其新值，清除时读「未选择」；手机验证的文案点名号码。社交绑定的完成是例外：`onBound` 是宿主离开回调路由的信号，离开的宿主以刷新后的绑定行呈现结果；留在该路由或未给 `onBound` 的宿主得到 `done` 阶段的绑定成功文案，挂在 `role="status"` 区域里。

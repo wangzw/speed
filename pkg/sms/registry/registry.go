@@ -18,7 +18,7 @@
 //
 // It is deliberately not built on pkg/settings. The assembly-time key set of
 // settings fixes which parameters exist at startup, and its container values
-// never enter the settings tree at all (ADR-settings-declaration-2026-09-21), so
+// never enter the settings tree at all (ADR-settings-declaration), so
 // a set of templates that grows and shrinks at runtime cannot be expressed
 // there.
 package registry

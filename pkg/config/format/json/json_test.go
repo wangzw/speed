@@ -251,7 +251,7 @@ func TestRegistersAsFormatResource(t *testing.T) {
 // closure of the root package. This package delivers its parser as a resource
 // of that package and is reached from it, so whatever reading a configuration
 // costs is already spent by the time anybody gets here; that cost is recorded
-// in ADR-config-parsing-2026-09-20. What is checked is the increment: parsing
+// in ADR-config-parsing. What is checked is the increment: parsing
 // JSON adds nothing on top of it.
 //
 // The budget is computed rather than written out, so that the root package

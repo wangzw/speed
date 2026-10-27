@@ -4,11 +4,11 @@
 
 本能力交付**面向分布式部署的作业执行**：一件要在稍后的某个时刻做、或要离开当前请求路径在别处做的活，交成一条持久的作业记录，由任一在运行的副本认领并执行。同一张作业表承载三类需求——**定时一次**（在一个远期的时刻做一件事）、**周期**（每隔一段做一次）、**异步执行**（把一件耗时的活推迟到请求路径之外）。提交侧只依赖提交面 `Queue`，执行侧由业务模块登记 `Handler`。
 
-根包 `pkg/jobs` 是接口包与公共类型，不登记模块。队列与登记面由 `pkg/jobs/db` 排他交付，它持一张作业表并组织消费者。周期调度由 `pkg/jobs/scheduler` 承担，它按业务模块声明的 `Schedule` 在 tick 上入队（[ADR-jobs-packaging-2026-10-15](../../../adr/adr-jobs-packaging-2026-10-15.md)）。
+根包 `pkg/jobs` 是接口包与公共类型，不登记模块。队列与登记面由 `pkg/jobs/db` 排他交付，它持一张作业表并组织消费者。周期调度由 `pkg/jobs/scheduler` 承担，它按业务模块声明的 `Schedule` 在 tick 上入队（[ADR-jobs-packaging](../../../adr/adr-jobs-packaging.md)）。
 
 ### 非职责
 
-- **单个进程内循环触发的任务不由本能力承载。** 判据是**这件事的触发是否必须跨副本收敛**：一件必须全平台只做一次的活归本能力，一件每个副本各做各的、不需要在副本之间收敛的活不由本能力承载。仓库现有各模块自起的 ticker 循环属于不需要跨副本收敛的那一类——刷新进程内快照（`pkg/authz/policy`、`pkg/settings`、`pkg/tenant/catalog`）、清扫过期行（`pkg/authn/session`、`pkg/authn/token`、`pkg/authn/account`、`pkg/authn/mfa`、`pkg/authn/sms`、`pkg/authn/sso`）、文件轮转（`pkg/log`）、轮询外部（`pkg/sms/registry` 的厂商审核），其中 `pkg/sms/registry` 的那一个循环既刷新快照也轮询外部——各持有自己的循环与间隔，统一形态是「间隔 ≤0 即关掉、失败只 Warn、各自持停机制约」。这些活是每副本各刷自己的进程内状态，触发不需要跨副本收敛（[ADR-jobs-scope-2026-10-15](../../../adr/adr-jobs-scope-2026-10-15.md)）。
+- **单个进程内循环触发的任务不由本能力承载。** 判据是**这件事的触发是否必须跨副本收敛**：一件必须全平台只做一次的活归本能力，一件每个副本各做各的、不需要在副本之间收敛的活不由本能力承载。仓库现有各模块自起的 ticker 循环属于不需要跨副本收敛的那一类——刷新进程内快照（`pkg/authz/policy`、`pkg/settings`、`pkg/tenant/catalog`）、清扫过期行（`pkg/authn/session`、`pkg/authn/token`、`pkg/authn/account`、`pkg/authn/mfa`、`pkg/authn/sms`、`pkg/authn/sso`）、文件轮转（`pkg/log`）、轮询外部（`pkg/sms/registry` 的厂商审核），其中 `pkg/sms/registry` 的那一个循环既刷新快照也轮询外部——各持有自己的循环与间隔，统一形态是「间隔 ≤0 即关掉、失败只 Warn、各自持停机制约」。这些活是每副本各刷自己的进程内状态，触发不需要跨副本收敛（[ADR-jobs-scope](../../../adr/adr-jobs-scope.md)）。
 - **不做工作流编排。** 一个作业的执行结果不驱动下一个作业；作业之间没有依赖、没有扇入扇出、没有有向无环图。需要按序做几件事的调用方自己在 `Handle` 里做，或自己在成功之后再入队。
 - **不在请求路径里同步执行。** `Enqueue` 只落一行并返回，执行发生在某个副本的消费者上；一件必须在调用返回前做完的活不在本能力的形态里。
 - **不解释作业类型的含义。** 类型名由调用方定义（`Handler.Type()`），载荷是不透明字节，本能力不解释它，也不据它分派到业务数据。
@@ -148,7 +148,7 @@ var (
 
 `Schedule` 是业务模块对外声明周期任务的资源类型；`pkg/jobs/scheduler` 是它的消费点。取材域取**参与集**。判据是：周期声明描述的是**这次运行要做的活**，它的效果依赖声明它的模块真的被驱动——那个模块的 handler 才登记得进去；只被静态级纳入的模块不构造、handler 不存在，它的声明因此不该被 tick。取材域之内，消解落选的模块其声明退出。
 
-对照是 notification 的[类型分类法](../notification/design-notification-preferences.md)，它取**可用集**：类型是**词汇**——偏好写入与投递拿它当校验参照，同一个声明不能在这条命令下合法、在另一条下非法；周期声明是**活**——它必须与这次装配的东西一致，只被静态级纳入、handler 不存在的声明不该被 tick。两者判据的差别即本条裁定与类型分类法裁定之间的实质（[ADR-jobs-schedule-2026-10-15](../../../adr/adr-jobs-schedule-2026-10-15.md)）。
+对照是 notification 的[类型分类法](../notification/design-notification-preferences.md)，它取**可用集**：类型是**词汇**——偏好写入与投递拿它当校验参照，同一个声明不能在这条命令下合法、在另一条下非法；周期声明是**活**——它必须与这次装配的东西一致，只被静态级纳入、handler 不存在的声明不该被 tick。两者判据的差别即本条裁定与类型分类法裁定之间的实质（[ADR-jobs-schedule](../../../adr/adr-jobs-schedule.md)）。
 
 ### 对外接口面
 

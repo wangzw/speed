@@ -72,8 +72,8 @@ var openAPILibraries = []string{
 // pkg/config and the closure of gin. This package declares its input items to
 // config and reads its endpoints through config's reader, which brings the
 // tools config parses configuration with, and the cost is recorded in
-// ADR-config-parsing-2026-09-20; it builds on gin, which brings gin's
-// dependencies, and the cost is recorded in ADR-http-surface-2026-09-14. What
+// ADR-config-parsing; it builds on gin, which brings gin's
+// dependencies, and the cost is recorded in ADR-http-surface. What
 // still holds, and what is checked here, is that this package adds nothing of
 // its own to either.
 //

@@ -3,7 +3,7 @@
  * sign-in surface finishes.
  *
  * The ruling is that a username-and-password registration is three existing
- * capabilities in a row (ADR-authn-signup-2026-10-18): the SMS first login
+ * capabilities in a row (ADR-authn-signup): the SMS first login
  * opens the account with a verified phone, POST /api/v1/auth/identifiers adds a
  * username, and PUT /api/v1/auth/password sets a password. This page is the host
  * half of the second and third steps -- account-ui's IdentifiersSection

@@ -16,7 +16,7 @@
 - **不拥有作业队列的执行。** 认领、租约、退避、多副本分摊归 [jobs](../jobs/design-jobs.md) 的队列模块；本模块只登记处理器、只用提交面。
 - **不做站内信的实时推送。** 一条新收件箱行推给已连接的客户端归 [notification.stream](design-notification-stream.md) 的 SSE Hub。
 - **不重试厂商。** 邮件与短信的载体都不重发；本模块对一次 `ErrUncertain` 不盲目重发（见错误与失败语义）。
-- **不声明权限点。** 提交面是代码接缝，读谁可提交由宿主侧的授权决定（[ADR-notification-scope-2026-10-15](../../../adr/adr-notification-scope-2026-10-15.md)）。
+- **不声明权限点。** 提交面是代码接缝，读谁可提交由宿主侧的授权决定（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
 - **不管外部联系人的同意台账。** 该台账刻意后置（见 [notification](design-notification.md) 的范围一节）。
 
 ## 外部接口契约
@@ -27,7 +27,7 @@
 |---|---|---|---|
 | `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*authn.Accounts)(nil)`、`(*kv.KV)(nil)`；可选 `(*settings.Store)(nil)`、`(*log.Logger)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
 
-`kv.KV` 承载投递预算的计数器，是硬依赖：没有它就无法在入队前计数，而不计数的预算会放行每一条投递，方向与要求相反。`authn.Accounts` 是目的地归属规则的读取面，同样是硬依赖：没有它就无法判定派发携带的目的地是否属于收件人，而判不了归属就放行任意地址，方向与要求相反。`settings.Store` 列为可选依赖，使 settings 模块先于本模块初始化、快照已加载；缺席时每个预算各读自己的声明默认值，是合法装配。可选依赖的缺席都不使本模块启动失败：`log.Logger` 缺席则外部发送记在进程默认 logger 上；`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见「渠道的条件特性」）。**提交面 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。
+`kv.KV` 承载投递预算的计数器，是硬依赖：没有它就无法在入队前计数，而不计数的预算会放行每一条投递，方向与要求相反。`authn.Accounts` 是目的地归属规则的读取面，同样是硬依赖：没有它就无法判定派发携带的目的地是否属于收件人，而判不了归属就放行任意地址，方向与要求相反。`settings.Store` 列为可选依赖，使 settings 模块先于本模块初始化、快照已加载；缺席时每个预算各读自己的声明默认值，是合法装配。可选依赖的缺席都不使本模块启动失败：`log.Logger` 缺席则外部发送记在进程默认 logger 上；`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见「渠道的条件特性」）。**提交面 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。
 
 ### 交付的功能
 
@@ -100,7 +100,7 @@ sequenceDiagram
 | `email` | `mail.Sender` 在场 | 该渠道跳过、落 `skipped` |
 | `sms` | `sms.Registry` 与 `sms.Sender` **都在场** | 该渠道跳过、落 `skipped` |
 
-**接缝缺席不是失败。** 一次投递到一个不可用的渠道记一条 `skipped` 结果、不产生错误、不进 `errors.Join`；这使「这次装配没有短信」与「这条短信被厂商拒绝」在账上分得开（[ADR-notification-channels-2026-10-15](../../../adr/adr-notification-channels-2026-10-15.md)）。`in_app` 依赖通知能力内的收件箱模块，该依赖是必需的，因此 `in_app` 恒可用。
+**接缝缺席不是失败。** 一次投递到一个不可用的渠道记一条 `skipped` 结果、不产生错误、不进 `errors.Join`；这使「这次装配没有短信」与「这条短信被厂商拒绝」在账上分得开（[ADR-notification-channels](../../../adr/adr-notification-channels.md)）。`in_app` 依赖通知能力内的收件箱模块，该依赖是必需的，因此 `in_app` 恒可用。
 
 ### 渠道的条件特性
 
@@ -111,10 +111,10 @@ feature.Spec{Name: "notification.channel.email", Conditional: true}
 feature.Spec{Name: "notification.channel.sms", Conditional: true}
 ```
 
-- **报告与发送路径用同一处判定。** 可选依赖 `mail.Sender`、`sms.Registry`、`sms.Sender` 由 `New` 解析并存进 `channelSeams`；`Init` 取得到 `feature.Board` 时按这份接缝报告：`emailReady()` 为真即报告 `notification.channel.email`，`smsReady()` 为真（`sms.Registry` 与 `sms.Sender` 都在场）即报告 `notification.channel.sms`。发送路径据以落 `skipped` 的正是这些判定，报告不另写条件。这是架构不变量 18 里「面由不挂路由的模块兑现」的那一支（[architecture](../../architecture.md#架构不变量)、[ADR-feature-ownership-2026-10-17](../../../adr/adr-feature-ownership-2026-10-17.md)）。
+- **报告与发送路径用同一处判定。** 可选依赖 `mail.Sender`、`sms.Registry`、`sms.Sender` 由 `New` 解析并存进 `channelSeams`；`Init` 取得到 `feature.Board` 时按这份接缝报告：`emailReady()` 为真即报告 `notification.channel.email`，`smsReady()` 为真（`sms.Registry` 与 `sms.Sender` 都在场）即报告 `notification.channel.sms`。发送路径据以落 `skipped` 的正是这些判定，报告不另写条件。这是架构不变量 18 里「面由不挂路由的模块兑现」的那一支（[architecture](../../architecture.md#架构不变量)、[ADR-feature-ownership](../../../adr/adr-feature-ownership.md)）。
 - **报告只在 `Init`。** 接缝在 `New` 就已解析，但 `New` 落在 `feature.Board` 接受 `Post` 的窗口之外，在那里调用 `Post` 即 panic。`feature.Board` 不在构造期依赖里，`Init` 经 `core.Resolve` 取用；进程里没有 `feature.board` 时报告静默跳过。
 - **`in_app` 不立特性名。** 它恒可用，没有缺席的情形。
-- **渠道特性缺席不改变偏好的取值集。** 偏好照旧按（类型，渠道）逐格存储，一个渠道的特性缺席时，它上面已存的偏好不变；装配补上该渠道的接缝之后，原值照旧生效（[ADR-notification-channels-2026-10-15](../../../adr/adr-notification-channels-2026-10-15.md)）。
+- **渠道特性缺席不改变偏好的取值集。** 偏好照旧按（类型，渠道）逐格存储，一个渠道的特性缺席时，它上面已存的偏好不变；装配补上该渠道的接缝之后，原值照旧生效（[ADR-notification-channels](../../../adr/adr-notification-channels.md)）。
 
 ### 去重键与幂等落账
 
@@ -132,7 +132,7 @@ idempotency_key = hex(sha256(canonicalJSON{
 
 ### 渲染按收件人的语言与类型声明
 
-消息的文本由本模块在后端渲染，不交给客户端：一条 `notification.Message` 的 `Title` 与 `Body`、一封邮件的主题与正文、一条短信的参数，都按**收件人的语言**（`Dispatch.Locale`）与该**类型的声明**（`TypeSpec` 的键与 `RecipientVisibleParams`）渲染而成。渲染经 i18n 引擎（`i18n.Localizer`），目录键按通知命名空间与类型键拼出；`RecipientVisibleParams` 白名单之外的参数进不了渲染上下文，也进不了载荷（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。渲染是纯读取，不触达厂商。
+消息的文本由本模块在后端渲染，不交给客户端：一条 `notification.Message` 的 `Title` 与 `Body`、一封邮件的主题与正文、一条短信的参数，都按**收件人的语言**（`Dispatch.Locale`）与该**类型的声明**（`TypeSpec` 的键与 `RecipientVisibleParams`）渲染而成。渲染经 i18n 引擎（`i18n.Localizer`），目录键按通知命名空间与类型键拼出；`RecipientVisibleParams` 白名单之外的参数进不了渲染上下文，也进不了载荷（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。渲染是纯读取，不触达厂商。
 
 **两个部件只在目录里有条目时才写。** 站内信的 `link` 与邮件的 `body_html` 是客户端会直接呈现的字段，目录里没有对应条目时留空，不把键串写进一个客户端当作链接或标记来处理的字段；其余部件按引擎的回落照常渲染——键串是文本，缺一条目录不是本模块可拒的事。
 
@@ -388,7 +388,7 @@ classDiagram
 
 ## 扩展点
 
-- **新增一个渠道不是扩展点。** 渠道是通知能力声明的封闭平台词汇，扩一个渠道要改根包的 `Channel` 常量与 `KnownChannel`，并在本模块的发送循环里加一支；这是通知模块自己的变更（[ADR-notification-channels-2026-10-15](../../../adr/adr-notification-channels-2026-10-15.md)）。
+- **新增一个渠道不是扩展点。** 渠道是通知能力声明的封闭平台词汇，扩一个渠道要改根包的 `Channel` 常量与 `KnownChannel`，并在本模块的发送循环里加一支；这是通知模块自己的变更（[ADR-notification-channels](../../../adr/adr-notification-channels.md)）。
 - **渠道接缝是可替换的实现。** `mail.Sender` 与 `sms.Sender` 由各自的载体叶子排他交付，本模块只经接口取用；换一个厂商是换一个载体叶子，不改本模块。
 - **提交面与处理器由本模块排他交付，不是可替换的后端。** 换一套投递策略是改本模块的代码。
 - **渲染接缝接入一个目录不改变本模块的调用面。** `i18n.Localizer` 是必需依赖；引擎对不受支持的语言回落默认语言、再回落键本身。

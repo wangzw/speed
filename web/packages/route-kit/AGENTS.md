@@ -71,7 +71,7 @@ not exported.
   mounts react-router-dom's `BrowserRouter` — real path URLs, deep links
   served by the platform's SPA fallback (see the package README's "Address
   model"). Do not add a host-facing prop to swap routers: the seam record
-  (`docs/adr/adr-web-route-seam-2026-10-15.md`) makes the third-party router
+  (`docs/adr/adr-web-route-seam.md`) makes the third-party router
   a package-level decision precisely so products do not each pick one.
   `RouteProvider`'s `basename` is the deployment prefix handed to that
   router, not a router choice, and its absence keeps the origin root.

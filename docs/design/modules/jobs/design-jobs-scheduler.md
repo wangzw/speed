@@ -4,15 +4,15 @@
 
 本模块交付**周期触发的驱动**：按各业务模块放进自己 `Resources` 的周期声明 `jobs.Schedule`，在每一个窗口起点向作业队列入队一条作业，使一次跨副本的运行中每个窗口恰好排入一个作业，无论有多少副本在跑。它只 tick 与入队，不执行作业——认领、执行、租约、退避与死信归 `jobs.db`（[design-jobs-db](design-jobs-db.md)）。
 
-本模块是 `jobs` 能力目录里的一个模块，包 `pkg/jobs/scheduler`，模块名 `jobs.scheduler`。根包 `pkg/jobs` 是接口包与公共类型，不登记模块；提交面 `Queue` 与登记面 `Handlers` 由 `jobs.db` 排他交付（[ADR-jobs-packaging-2026-10-15](../../../adr/adr-jobs-packaging-2026-10-15.md)）。本模块不认识任何作业类型：`Schedule.Type` 是别的模块定义的字符串，本模块原样交给 `Queue.Enqueue`。
+本模块是 `jobs` 能力目录里的一个模块，包 `pkg/jobs/scheduler`，模块名 `jobs.scheduler`。根包 `pkg/jobs` 是接口包与公共类型，不登记模块；提交面 `Queue` 与登记面 `Handlers` 由 `jobs.db` 排他交付（[ADR-jobs-packaging](../../../adr/adr-jobs-packaging.md)）。本模块不认识任何作业类型：`Schedule.Type` 是别的模块定义的字符串，本模块原样交给 `Queue.Enqueue`。
 
-**本模块没有表。** 窗口幂等键落在作业行的 `idempotency_key` 上，不需要本模块自己的表。判据：本模块的动作是入队，而「同一个窗口只入队一次」由队列侧 `(tenant_id, idempotency_key)` 的唯一约束给出——同一窗口的重复入队返回既有作业的标识，不新起一行，也不报错（[ADR-jobs-schedule-2026-10-15](../../../adr/adr-jobs-schedule-2026-10-15.md)）。
+**本模块没有表。** 窗口幂等键落在作业行的 `idempotency_key` 上，不需要本模块自己的表。判据：本模块的动作是入队，而「同一个窗口只入队一次」由队列侧 `(tenant_id, idempotency_key)` 的唯一约束给出——同一窗口的重复入队返回既有作业的标识，不新起一行，也不报错（[ADR-jobs-schedule](../../../adr/adr-jobs-schedule.md)）。
 
 ### 非职责
 
 - **不执行作业，不做工作池。** 作业的认领、执行、租约、退避与终态归 `jobs.db`；本模块入队之后不再碰那条作业。
-- **不选主，不引入分布式锁。** 多副本各跑自己的 ticker，靠窗口幂等键收敛（[ADR-jobs-schedule-2026-10-15](../../../adr/adr-jobs-schedule-2026-10-15.md)）。
-- **不承载单个进程内循环。** 快照刷新、过期行清扫、文件轮转、轮询外部这类活每个副本各做各的、不需要在副本之间收敛，由需要它的那个模块自己起 ticker；本模块只承载必须跨副本收敛的周期（[ADR-jobs-scope-2026-10-15](../../../adr/adr-jobs-scope-2026-10-15.md)）。
+- **不选主，不引入分布式锁。** 多副本各跑自己的 ticker，靠窗口幂等键收敛（[ADR-jobs-schedule](../../../adr/adr-jobs-schedule.md)）。
+- **不承载单个进程内循环。** 快照刷新、过期行清扫、文件轮转、轮询外部这类活每个副本各做各的、不需要在副本之间收敛，由需要它的那个模块自己起 ticker；本模块只承载必须跨副本收敛的周期（[ADR-jobs-scope](../../../adr/adr-jobs-scope.md)）。
 - **不补跑。** 本模块不在磁盘或表里记「已调度到哪个窗口」。一个进程停在启动之前、或停机期间跨过的窗口，不由它补入队。
 - **不认识作业类型，也不持有 handler 名册。** 本模块在 `Start` 经 `jobs.Handlers.Registered` 校验每一条启用声明的 `Type` 都已登记，缺一个即启动失败；`Type` 的含义与它对应的执行由别的模块定义。
 - **不要求宿主提供租户清单。** 每条周期声明按名册里的租户展开，经租户名册 `tenant.Catalog.List` 列出在册租户、逐个 `Enter`；宿主不在配置或资源里为本模块提供任何租户清单接缝。
@@ -43,7 +43,7 @@
 
 **`jobs.Schedule` 的消费点是本模块，取材域取「参与集」。** 判据：周期声明描述的是这次运行要做的活，它的效果依赖声明它的模块真的被驱动——那个模块的 handler 才登记得进去；只被静态级纳入的模块不构造、handler 不存在，它的声明因此不该被 tick。取材域之内，消解落选的模块其声明退出。
 
-对照是 notification 的[类型分类法](../notification/design-notification-preferences.md)，它取**可用集**：类型是**词汇**——偏好写入与投递拿它当校验参照，同一个声明不能在这条命令下合法、在另一条下非法；周期声明是**活**——它必须与这次装配的东西一致，只被静态级纳入、handler 不存在的声明不该被 tick。两者判据的差别即 [ADR-jobs-schedule-2026-10-15](../../../adr/adr-jobs-schedule-2026-10-15.md) 的实质。
+对照是 notification 的[类型分类法](../notification/design-notification-preferences.md)，它取**可用集**：类型是**词汇**——偏好写入与投递拿它当校验参照，同一个声明不能在这条命令下合法、在另一条下非法；周期声明是**活**——它必须与这次装配的东西一致，只被静态级纳入、handler 不存在的声明不该被 tick。两者判据的差别即 [ADR-jobs-schedule](../../../adr/adr-jobs-schedule.md) 的实质。
 
 **`core.Resources[jobs.Schedule](reg)` 本身遍历全部已登记模块，不做任何过滤**：`core` 不解释资源，也就无从知道这一种该按哪个集合裁断（架构不变量 15）。过滤由本模块自己做：`reg.Participating(声明.Module)` 为真的留下；为真而 `reg.Enablement(声明.Module)` 判为禁用时退出，那是这次装配给出的否定（消解落选）；其余不进来，即未被本次命令纳入、也没有预置实例的模块。宿主用 `AllResources` 令某个静态级纳入的模块的全部声明当作在册处理时，本消费点照这个覆盖收取（架构不变量 15）。过滤在 `New` 里做一次，结果冻结。
 

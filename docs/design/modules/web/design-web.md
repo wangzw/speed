@@ -29,12 +29,12 @@
 
 ### 非职责
 
-- **不做服务端渲染。** 产物在浏览器里渲染；服务端只交出产物，不渲染它（[ADR-web-static-hosting-2026-10-15](../../../adr/adr-web-static-hosting-2026-10-15.md)）。
+- **不做服务端渲染。** 产物在浏览器里渲染；服务端只交出产物，不渲染它（[ADR-web-static-hosting](../../../adr/adr-web-static-hosting.md)）。
 - **不内建业务页面。** 模块交付框架、组件族与装配入口，不交付任何具体业务页面。
 - **不决定业务模块的形态。** 业务模块的声明面由模块自己给出，前端只收集与渲染。
 - **不拥有后端契约。** `api-sdk` 的面由后端模块的 OpenAPI 片段生成；前端不定义端点，也不定义请求形状。特性名由服务它的后端模块声明，前端只引用生成的特性名类型，不定义特性名（[feature](../design-feature.md)）。
 - **不决定哪些特性在场。** 特性是否在场由后端的特性文档回答（[feature](../design-feature.md)）；前端只门控自己已带着代码的面，不按配置值、方法名或权限码推断一个面在不在。
-- **不托管构建产物。** 把产物经 HTTP 交出（静态应答、客户端路由回退、缓存口径）归后端的静态托管模块（[webui](../design-webui.md)）；前端只产出它（[ADR-web-static-hosting-2026-10-15](../../../adr/adr-web-static-hosting-2026-10-15.md)）。
+- **不托管构建产物。** 把产物经 HTTP 交出（静态应答、客户端路由回退、缓存口径）归后端的静态托管模块（[webui](../design-webui.md)）；前端只产出它（[ADR-web-static-hosting](../../../adr/adr-web-static-hosting.md)）。
 
 ## 外部接口契约
 
@@ -76,34 +76,34 @@ interface SpeedAppDefinition {
 
 ### 契约生成的两级形态
 
-平台契约生成发布的 `@speed/api-sdk`：它由后端模块的 OpenAPI 片段合并后经 orval 生成（`web/orval.config.ts`），被多个包 import，因此只含平台端点。应用自己的契约在应用内另生成一份：应用自己的合并契约经第二份 orval 配置生成到应用内（[ADR-web-two-build-artifacts-2026-10-15](../../../adr/adr-web-two-build-artifacts-2026-10-15.md)）。两级都经 `api-sdk` 的 runtime 接缝发请求，没有一处生成码或桥接码自己做 HTTP。
+平台契约生成发布的 `@speed/api-sdk`：它由后端模块的 OpenAPI 片段合并后经 orval 生成（`web/orval.config.ts`），被多个包 import，因此只含平台端点。应用自己的契约在应用内另生成一份：应用自己的合并契约经第二份 orval 配置生成到应用内（[ADR-web-two-build-artifacts](../../../adr/adr-web-two-build-artifacts.md)）。两级都经 `api-sdk` 的 runtime 接缝发请求，没有一处生成码或桥接码自己做 HTTP。
 
-特性名类型同样分两级：平台模块声明的特性名生成进 `@speed/api-sdk/features` 的 `FeatureName`；应用模块声明的特性名由生成器写成对同一个登记接口的模块增补，并入同一个 `FeatureName`（[api-sdk](design-web-api-sdk.md)、[ADR-feature-vocabulary-2026-10-17](../../../adr/adr-feature-vocabulary-2026-10-17.md)）。
+特性名类型同样分两级：平台模块声明的特性名生成进 `@speed/api-sdk/features` 的 `FeatureName`；应用模块声明的特性名由生成器写成对同一个登记接口的模块增补，并入同一个 `FeatureName`（[api-sdk](design-web-api-sdk.md)、[ADR-feature-vocabulary](../../../adr/adr-feature-vocabulary.md)）。
 
 ### 运行期的 API origin 注入
 
-`bootstrapSpeedApp` 的 `baseUrl` 缺省是 `window.location.origin`，即假设前后端同源。跨域部署要在运行期注入：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它、把其中的 API origin 作为 `baseUrl` 传给 `bootstrapSpeedApp`；文件不存在、不可读或没有 origin 时回落到同源（[ADR-web-runtime-config-2026-10-15](../../../adr/adr-web-runtime-config-2026-10-15.md)）。这份文件按**入口文档所在源下的根路径**解析，不按当前 URL 解析：深链接（如控制台页的 `/console/tenants`）因而仍取到根下的文件，而不是它自己目录下的同名文件。该解析不依赖已解析的 origin，故不陷入「取配置本身需要配置」的循环；它也不随部署拓扑变化，故同一份产物在合一拓扑与分离拓扑下共用。这份文件由部署方写出，不反映后端装配；后端服务哪些面由特性文档回答（见「特性门控」）。
+`bootstrapSpeedApp` 的 `baseUrl` 缺省是 `window.location.origin`，即假设前后端同源。跨域部署要在运行期注入：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它、把其中的 API origin 作为 `baseUrl` 传给 `bootstrapSpeedApp`；文件不存在、不可读或没有 origin 时回落到同源（[ADR-web-runtime-config](../../../adr/adr-web-runtime-config.md)）。这份文件按**入口文档所在源下的根路径**解析，不按当前 URL 解析：深链接（如控制台页的 `/console/tenants`）因而仍取到根下的文件，而不是它自己目录下的同名文件。该解析不依赖已解析的 origin，故不陷入「取配置本身需要配置」的循环；它也不随部署拓扑变化，故同一份产物在合一拓扑与分离拓扑下共用。这份文件由部署方写出，不反映后端装配；后端服务哪些面由特性文档回答（见「特性门控」）。
 
 **是否配置 CORS 由部署拓扑决定。** 合一拓扑是单端口同源：产物与 API 由同一个进程在同一个源答出，浏览器不发跨域请求，部署面里因而没有 CORS 这一环——demo 骨架即此拓扑。分离拓扑把前端交静态主机、后端只做 API，两者异源，跨域请求才出现，CORS 在此时进入部署面。跨域部署是受支持的形态，但它不是 demo 骨架的形态。
 
 ### 新增三件的契约
 
-**路由与导航独立成层（`@speed/route-kit`）。** 壳保持不做导航不变；路由与导航是独立一层，新增业务接入它而不动壳（[ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)）。
+**路由与导航独立成层（`@speed/route-kit`）。** 壳保持不做导航不变；路由与导航是独立一层，新增业务接入它而不动壳（[ADR-web-route-seam](../../../adr/adr-web-route-seam.md)）。
 
 **声明式注册面。** 业务模块导出结构相同的声明——路径、视图、导航标签、所需权限、所需特性——由收集方收齐后渲染。它与后端的命令树点名模块对称：它是「加一个业务模块」在前端的对应动作。所需特性（`requires`）与所需权限一样是数据；带它的声明只在其中特性全部在场时可渲染、可导航（[route-kit](design-web-route-kit.md)）。
 
-**租户作用域的查询键归框架。** 框架提供查询键工厂（形状 `tenantQueryKey(tenantId, ...tail)`，产出以租户标识为最外层段的键）与「切换租户时逐出整棵子树」的助手，落在 [auth-core](design-web-auth-core.md)（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。`api-sdk` 的生成面保持与 tenant 无关，不改。
+**租户作用域的查询键归框架。** 框架提供查询键工厂（形状 `tenantQueryKey(tenantId, ...tail)`，产出以租户标识为最外层段的键）与「切换租户时逐出整棵子树」的助手，落在 [auth-core](design-web-auth-core.md)（[ADR-web-tenant-query-key](../../../adr/adr-web-tenant-query-key.md)）。`api-sdk` 的生成面保持与 tenant 无关，不改。
 
 ### 特性门控
 
 特性缺席的页面，前端一律按 404 处理：导航里不出现，直接访问其链接得到与不存在的路径相同的 404；特性缺席的区块与控件不渲染。前端据后端发布的[特性文档](../../../glossary.md)（[feature](../design-feature.md)）门控页面、导航项与页内控件，各包的分工如下：
 
-- **会话层持有特性态。** [auth-core](design-web-auth-core.md) 随会话提交取回特性文档，作为快照的 `features` 字段与会话一起生效；读取失败是独立的状态，既不当作特性缺席，也不当作特性在场（[ADR-web-feature-state-2026-10-17](../../../adr/adr-web-feature-state-2026-10-17.md)）。
-- **只有宿主读特性态。** 读特性态的钩子（`useFeature`、`useFeatureState`）与 `featurePresence` 的使用者是宿主。能力 UI 包不读特性态：一个包的面依赖特性时，宿主经该包的属性或上下文组件给出特性在场的信息，各包「不读会话」「对 auth-core 只依赖步进认证」「会话只以属性传入」这类界不变（ADR-web-feature-state-2026-10-17）。
-- **路由层收窄注册面。** 页面声明以 `requires` 列出所需特性；[route-kit](design-web-route-kit.md) 按宿主给出的特性在场判定，让特性缺席的页面与未登记的路径走同一个回退视图，导航里也不出现（[ADR-web-route-seam-2026-10-17](../../../adr/adr-web-route-seam-2026-10-17.md)）。
+- **会话层持有特性态。** [auth-core](design-web-auth-core.md) 随会话提交取回特性文档，作为快照的 `features` 字段与会话一起生效；读取失败是独立的状态，既不当作特性缺席，也不当作特性在场（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）。
+- **只有宿主读特性态。** 读特性态的钩子（`useFeature`、`useFeatureState`）与 `featurePresence` 的使用者是宿主。能力 UI 包不读特性态：一个包的面依赖特性时，宿主经该包的属性或上下文组件给出特性在场的信息，各包「不读会话」「对 auth-core 只依赖步进认证」「会话只以属性传入」这类界不变（ADR-web-feature-state）。
+- **路由层收窄注册面。** 页面声明以 `requires` 列出所需特性；[route-kit](design-web-route-kit.md) 按宿主给出的特性在场判定，让特性缺席的页面与未登记的路径走同一个回退视图，导航里也不出现（[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）。
 - **判定次序是先存在性、后权限。** 特性缺席的页面落到回退视图，不进入宿主的权限守卫；特性在场的页面再由宿主组合的 `RouteGuard` 按权限判定。
 - **特性缺席的控件隐藏，无权限的写入控件照常渲染。** 特性缺席的控件所对的面不存在；无权限的写入控件只是示能，授权由服务端判定。
-- **特性名在编译期对齐。** 前端写特性名的位置一律取 `@speed/api-sdk/features` 的 `FeatureName`，名字拼错即编译失败；`route-kit` 不 import 同族包，它的 `requires` 是字符串数组。应答里出现前端不认识的名字一律忽略（ADR-feature-vocabulary-2026-10-17）。
+- **特性名在编译期对齐。** 前端写特性名的位置一律取 `@speed/api-sdk/features` 的 `FeatureName`，名字拼错即编译失败；`route-kit` 不 import 同族包，它的 `requires` 是字符串数组。应答里出现前端不认识的名字一律忽略（ADR-feature-vocabulary）。
 
 ### 对外接口面
 
@@ -141,7 +141,7 @@ interface SpeedAppDefinition {
 
 **`api-sdk` 是唯一 import 后端契约的包**，它只依赖 `api-client` 的请求函数类型，本身不 import 任何 UI 包。**`api-client` 不依赖任何同族包**，也不认识 tenant。**能力 UI 包之间同层不互依赖**：`auth-ui` 与 `account-ui` 各自只在内部保有 provider 标签回退词表，不共享类型。**`route-kit` 与 `product-shell` 都不 import 对方**，两者由应用的组合层分别消费。
 
-**`billing-ui` 不在新树里。** 后端不做计费，对应的前端包随早期实现一并删除，不进本模块的包清单（[ADR-web-reuse-2026-10-15](../../../adr/adr-web-reuse-2026-10-15.md)）。
+**`billing-ui` 不在新树里。** 后端不做计费，对应的前端包随早期实现一并删除，不进本模块的包清单（[ADR-web-reuse](../../../adr/adr-web-reuse.md)）。
 
 ### 不经特性门控的后端模块
 
@@ -231,11 +231,11 @@ graph TD
 
 ### 声明式注册面的收集
 
-一个业务模块导出它的路由声明（路径、视图、导航标签、所需权限、所需特性）。收集方把各模块的声明收齐，按路径匹配渲染对应视图，并按标签构造导航。带 `requires` 的声明只在宿主给出的特性在场判定就绪、且其中特性全部在场时渲染视图并进入导航；特性缺席时与未登记的路径同走回退视图，判定读取中或读取失败时渲染宿主给出的对应视图（[route-kit](design-web-route-kit.md)、[ADR-web-route-seam-2026-10-17](../../../adr/adr-web-route-seam-2026-10-17.md)）。路径与权限之间的关系不在这里建立，授权仍是宿主在内容区里的组合，排在存在性之后（[ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)）。
+一个业务模块导出它的路由声明（路径、视图、导航标签、所需权限、所需特性）。收集方把各模块的声明收齐，按路径匹配渲染对应视图，并按标签构造导航。带 `requires` 的声明只在宿主给出的特性在场判定就绪、且其中特性全部在场时渲染视图并进入导航；特性缺席时与未登记的路径同走回退视图，判定读取中或读取失败时渲染宿主给出的对应视图（[route-kit](design-web-route-kit.md)、[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）。路径与权限之间的关系不在这里建立，授权仍是宿主在内容区里的组合，排在存在性之后（[ADR-web-route-seam](../../../adr/adr-web-route-seam.md)）。
 
 ### 浏览器层
 
-jsdom 不求值媒体查询与容器查询，不做布局，也不判定可聚焦性，所以版面与可聚焦性的不变量由独立的浏览器层在真实 Chromium 里断言（[ADR-web-browser-tier-2026-10-18](../../../adr/adr-web-browser-tier-2026-10-18.md)）。浏览器用例写在与被测组件相邻的 `*.browser.test.tsx` 里，不进各包默认的 `test`，由根 `Makefile` 的 `web-browser` 入口运行，定时的 CI 任务调用同一个入口；它不进 `make check`。
+jsdom 不求值媒体查询与容器查询，不做布局，也不判定可聚焦性，所以版面与可聚焦性的不变量由独立的浏览器层在真实 Chromium 里断言（[ADR-web-browser-tier](../../../adr/adr-web-browser-tier.md)）。浏览器用例写在与被测组件相邻的 `*.browser.test.tsx` 里，不进各包默认的 `test`，由根 `Makefile` 的 `web-browser` 入口运行，定时的 CI 任务调用同一个入口；它不进 `make check`。
 
 ## 错误与失败语义
 

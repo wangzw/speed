@@ -6,7 +6,7 @@
 
 - **会话状态机（cookie 承载）。** `createAuthSession` 把生成的 authn 操作（登录流程的开始与推进、登出、方式列表、页面重载时的会话读取，以及已登录身份上的 link、step-up、enroll 流程）接成一个会话。会话由服务端 cookie 承载：cookie 路径的登录流程以 `delivery: 'session'` 开始，完成应答为 `{state: 'authenticated', session: {id, expires_at}}`，服务端在同一次应答里 `Set-Cookie`；浏览器自行把该 cookie 附到每个同源请求上，故本包不持有任何凭据——没有访问令牌，也没有刷新令牌。`restore()` 读 `GET /api/v1/auth/session` 从该 cookie 重建快照，这是页面重载后**仍保持登录**的机制，也是 cookie 失效时结束本地会话的机制。宿主另传一个 `AccessTokenStore` 时走**显式的令牌路径**：`delivery: 'token'` 的完成把访问令牌写进该存储（`@speed/api-client` 的桥），刷新令牌只活在会话闭包内，由 `refresh()` 驱动；平台自身的装配不传存储，故不持凭据。令牌路径的登录流程由宿主自己开始——用生成的 `authnLoginStart({ delivery: 'token' })`，再把每一步的答复交给 `answerFlow`，因为本包的 `startFlow` 一律强制 cookie 交付。令牌会话不经 `restore()` 重建（该方法读 `GET /api/v1/auth/session`，其应答来自会话 cookie，令牌宿主没有这条 cookie），页面重载即失去；`restore()` 只是 cookie 会话的静默腿。订阅者观察 `AuthSnapshot` 的翻转。
 - **登录按流程推进。** 一次登录是一条服务端流程记录，由前端经生成的 `authn.login` 操作分步推进：`POST /api/v1/auth/flows` 开始，`POST /api/v1/auth/flows/answer` 按步答复，`GET /api/v1/auth/flows/current` 供页面刷新后续接，`DELETE /api/v1/auth/flows/current` 放弃。流程绑定以 cookie 承载（开始请求的 `binding: 'cookie'`，缺省），前端从不读流程令牌——回跳类方式只在 cookie 绑定下走得完（[authn 登录](../authn/design-authn-login.md)）。流程在某一步就绪（`next.kind = complete`）时，客户端以 `step: 'complete'` 取走结果；`startFlow` 与 `useStepUp` 开始的一律是 cookie 流程（前者以 `delivery: 'session'` 开始，后者不设交付方式、服务端取其缺省的 cookie 会话），故这两者交回的完成是会话文档而非令牌对；`startAuthenticatedFlow` 把交付方式留给调用方，账户面不设，故同样是 cookie 会话。浏览器部署里前端与 API 必须**同站**：会话 cookie 是 `SameSite=Lax`（运维可收紧为 `Strict`），服务端拒绝 `None`，跨站前端带不上这条凭据。
-- **特性态。** 会话在登录提交与从匿名状态开始的恢复时，与 `GET /api/v1/auth/me` 并行取回[特性文档](../../../glossary.md)（`GET /api/v1/features`，[feature](../design-feature.md)），作为快照的 `features` 字段与主体一起提交；读取失败是独立的状态，既不当作特性缺席，也不当作特性在场。特性态与权限表同一套存活规则（[ADR-web-feature-state-2026-10-17](../../../adr/adr-web-feature-state-2026-10-17.md)）。
+- **特性态。** 会话在登录提交与从匿名状态开始的恢复时，与 `GET /api/v1/auth/me` 并行取回[特性文档](../../../glossary.md)（`GET /api/v1/features`，[feature](../design-feature.md)），作为快照的 `features` 字段与主体一起提交；读取失败是独立的状态，既不当作特性缺席，也不当作特性在场。特性态与权限表同一套存活规则（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）。
 - **React hook。** `attachSession` 在启动期把一个会话接上（后接者胜），`useAuthState` 暴露快照，`useCurrentTenant` 暴露宿主当前租户，`usePermission` 在宿主附上的按域权限表上做 fail-closed 的集合查询，`useFeature` 与 `useFeatureState` 读特性态。在接上会话之前与登出之后，读接上的会话的每个 hook 都 fail-closed：匿名快照、租户为 null、权限为 false、特性为 false、特性态为 `none`。`useStepUp` 不读接上的会话，在入参的会话上驱动一次步进认证。
 - **租户作用域的 query key 约定。** 交付一个 key 工厂与一个逐出助手，把「query 缓存按当前租户命名」这条约定收在一处（见「核心算法与流程」）。
 
@@ -80,7 +80,7 @@ export interface AuthSession {
 - **`restore()` 从 cookie 重建会话。** 它读 `GET /api/v1/auth/session`：cookie 仍指向一个会话时，读 `GET /api/v1/auth/me` 取主体、转已认证并 resolve `true`，主体与 `impersonating` 一起提交，`impersonating` 取自 `GET /api/v1/auth/session` 应答的同名字段，缺省为 `false`——从匿名状态开始的恢复同时并行读 `GET /api/v1/features`，已认证状态下的恢复只读主体、保留特性态（见「特性态」）；无人登录（含读被 401 拒）时清本地并 resolve `false`；传输或服务端失败重抛原始 `ApiError`、本地快照不动。页面加载时调用一次即保持登录，同时也是 `@speed/api-client` 在被拒的带凭据请求上跑的那条静默腿。**身份过渡窗口打开期间发出的恢复（无论应答何时落定），以及发出之后窗口才打开的那次恢复，无人登录的应答被丢弃**：resolve `false`、快照不动（见下一条）。它接受可选的 `issue`——`@speed/api-client` 交给刷新钩子的轮作用域请求函数：两次读都经它发出，故其中任一次被拒即浮出给钩子，而不会加入正在 await 该调用的刷新轮；缺省时走生成的绑定请求函数。令牌会话不经它重建：该会话没有会话 cookie，`restore()` 只会读到无人登录；令牌会话的静默腿是 `refresh()`，要跨重载保持登录的宿主自行重建它。
 - **`beginIdentityTransition()` 覆盖凭据被替换的那段短窗口。** 唯一会用到它的写入是开始冒充：服务端轮换会话 cookie，而会话本身继续。窗口内已发出的读带的是被换下的旧 cookie，可被 401 拒；传输层的静默腿随即用旧 cookie 跑 `restore()`，读到「无人登录」——会话并未结束，本地快照却翻成匿名，宿主看到一次假的登出。宿主在发出该写入之前调用 `beginIdentityTransition()`，在新身份落定之后（写入未落地时则立即）调用其返回的释放。窗口打开期间发出、或发出之后窗口才打开的恢复（无论应答何时落定）的无人登录应答被丢弃：`restore()` resolve `false`、快照不动，被拒的请求保留自己的 401；放行之后的下一次读落定真实状态——窗口内真的过期的会话也由那次读落定，不由带旧凭据的读落定。已认证的应答从不会被丢弃，故宿主在新凭据下的重读可在窗口内照常提交。释放按次幂等、窗口按次数计数：重叠的窗口要等每个释放都调用过才合上。**该守卫与身份无关，本包仍不知晓冒充的开始与结束**；它也不是世代守卫——轮换不是新会话，`restore()` 依旧不抬升世代。
 - **`refresh()` 用被持有的刷新令牌换新令牌对（令牌会话）。** 走 `POST /api/v1/auth/token` 的 `grant_type = refresh_token`，凭据为空（[api-client](design-web-api-client.md) 的凭据为空一档，即 `speedRequestCredentialless`）；其令牌的落地与世代守卫见「单飞刷新」与「世代守卫」。cookie 会话不持刷新令牌，`refresh()` 不发请求即 resolve `false`；其静默腿是 `restore()`。
-- **`listMethods` 读部署在场的登录方式发现文档。** 它转发 `GET /api/v1/auth/methods` 并解析成方法描述符文档（每个方法自报渲染类别、线协议、品牌标签、首步字段、是否可开户与绑定提供方，连同注册开关 `signup.enabled` 与 `signup.password.enabled` 以及部署级因素种类），随部署的 `authn.login.disabled-methods` 设置与在场模块而变，前端不写死；消费视图用它渲染渠道（[ADR-web-auth-channel-discovery-2026-10-16](../../../adr/adr-web-auth-channel-discovery-2026-10-16.md)、[ADR-authn-login-method-discovery-2026-10-16](../../../adr/adr-authn-login-method-discovery-2026-10-16.md)）。
+- **`listMethods` 读部署在场的登录方式发现文档。** 它转发 `GET /api/v1/auth/methods` 并解析成方法描述符文档（每个方法自报渲染类别、线协议、品牌标签、首步字段、是否可开户与绑定提供方，连同注册开关 `signup.enabled` 与 `signup.password.enabled` 以及部署级因素种类），随部署的 `authn.login.disabled-methods` 设置与在场模块而变，前端不写死；消费视图用它渲染渠道（[ADR-web-auth-channel-discovery](../../../adr/adr-web-auth-channel-discovery.md)、[ADR-authn-login-method-discovery](../../../adr/adr-authn-login-method-discovery.md)）。
 - **`register` 建号，不开启会话。** 它转发匿名注册操作 `POST /api/v1/auth/register`，请求体要求用户名、邮箱与口令，另可带显示名、语言与时区；交回 `AuthnLoginRegistration`（`state: 'registered'`、账户标识与未证明预留 `{state: 'pending', email}`）。快照、权限表与特性态都不变——注册不是登录，会话仍由随后的 `startFlow`／`answerFlow` 建立。自动登录被拒时账户已经建成，调用方退回登录表单。
 - **`discoverSso` 读一个邮箱域映射的企业提供方。** 它转发 `POST /api/v1/auth/sso/discover`，交回 `{id, name, protocol}` 列表；应答恒同形同长，无匹配时为空列表，故「无匹配」是一次成功的空读而非错误。企业提供方清单不多进发现文档：它按域发现，不泄露账户存在性（[authn-sso](../authn/design-authn-sso.md)）。
 - **`logout` 结束会话。** 它调 `POST /api/v1/auth/logout`（服务端撤销请求带来的会话并清 cookie），清本地令牌与主体、抬升世代、转匿名。
@@ -107,7 +107,7 @@ export type AuthnMethodDescriptor = AuthnMethodDescriptorModel
 export type AuthnSsoProvider = AuthnSsoProviderModel
 ```
 
-`AuthnPrincipal` 逐字段取自 `GET /api/v1/auth/me`（[authn-profile](../authn/design-authn-profile.md)）。`AuthnMethodList`、`AuthnMethodDescriptor` 与 `AuthnSsoProvider` 是发现面与企业发现面的生成模型，本包把它们经入口再导出（[ADR-web-auth-channel-discovery-2026-10-16](../../../adr/adr-web-auth-channel-discovery-2026-10-16.md)）。
+`AuthnPrincipal` 逐字段取自 `GET /api/v1/auth/me`（[authn-profile](../authn/design-authn-profile.md)）。`AuthnMethodList`、`AuthnMethodDescriptor` 与 `AuthnSsoProvider` 是发现面与企业发现面的生成模型，本包把它们经入口再导出（[ADR-web-auth-channel-discovery](../../../adr/adr-web-auth-channel-discovery.md)）。
 
 ### 失败契约的拒绝类型
 
@@ -129,7 +129,7 @@ export function isOperationSuperseded(value: unknown): value is OperationSuperse
 - `failed`：读取失败，带该次的错误。
 - `ready`：读取成功，带特性名集合。
 
-**取回与存活规则，约束的主体是每一条改变会话的提交路径。** 特性态与权限表同一套存活规则（[ADR-web-feature-state-2026-10-17](../../../adr/adr-web-feature-state-2026-10-17.md)）：
+**取回与存活规则，约束的主体是每一条改变会话的提交路径。** 特性态与权限表同一套存活规则（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）：
 
 | 提交 | 特性态 |
 |---|---|
@@ -145,7 +145,7 @@ export function isOperationSuperseded(value: unknown): value is OperationSuperse
 
 **冒充开始或结束都不重取。** 特性文档与调用者身份无关；冒充期间整页刷新时，从匿名状态开始的恢复照常读到它。
 
-**冒充开始与结束改变的是主体与 `impersonating`，auth-core 自己不得知这两个事件**（决策见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)）。冒充期间 `GET /api/v1/auth/me` 读的是被冒充账户，快照的 `principal` 因此是被冒充者；快照不携带发起者的标识，看着屏幕的就是发起者。开始或结束冒充的写入由宿主绑定的操作发出，宿主在它落定后调用 `restore()` 重读，快照随之改变。`restore()` 所读的 `GET /api/v1/auth/session` 与 `GET /api/v1/auth/me` 都登记为可冒充，冒充期间照常可读。**开始冒充会轮换会话 cookie**，这是 `beginIdentityTransition()` 存在的理由（见「外部接口契约」的「会话」）：宿主在发出该写入之前打开窗口、在新身份落定后释放。窗口覆盖的只是凭据替换：本包仍只知道凭据在被换，不知道换的是冒充；结束冒充不轮换令牌，宿主不为它打开窗口。
+**冒充开始与结束改变的是主体与 `impersonating`，auth-core 自己不得知这两个事件**（决策见 [ADR-web-impersonation-shell](../../../adr/adr-web-impersonation-shell.md)）。冒充期间 `GET /api/v1/auth/me` 读的是被冒充账户，快照的 `principal` 因此是被冒充者；快照不携带发起者的标识，看着屏幕的就是发起者。开始或结束冒充的写入由宿主绑定的操作发出，宿主在它落定后调用 `restore()` 重读，快照随之改变。`restore()` 所读的 `GET /api/v1/auth/session` 与 `GET /api/v1/auth/me` 都登记为可冒充，冒充期间照常可读。**开始冒充会轮换会话 cookie**，这是 `beginIdentityTransition()` 存在的理由（见「外部接口契约」的「会话」）：宿主在发出该写入之前打开窗口、在新身份落定后释放。窗口覆盖的只是凭据替换：本包仍只知道凭据在被换，不知道换的是冒充；结束冒充不轮换令牌，宿主不为它打开窗口。
 
 ### hook
 
@@ -187,7 +187,7 @@ export function isTenantAdmissionRefusal(error: unknown): boolean
 - **`useFeatureState` 交出特性态本身**，接上会话之前为 `none`。宿主需要区分读取中、读取失败与特性缺席时用它。
 - **`featurePresence` 把特性态映射为路由层的在场判定。** 它是纯函数：`ready` 映射为带 `has` 的就绪态，`failed` 映射为失败态，`pending` 与 `none` 都映射为读取中——匿名时没有特性态，按失败即关处理。它的结果与 [route-kit](design-web-route-kit.md) 的 `RoutePresence` 结构相同，本包不 import route-kit。
 - **`useStepUp` 驱动一次步进认证。** `active` 为真时在入参的会话上开一个 `purpose: 'step-up'` 的流程并停在首步；入参可带 `method`：账户没有启用因素时，步进要求的是重新证明第一因素，调用方带上会话建立时用的第一因素的方法名（短信会话带 `sms`，口令会话带 `password`），流程停在该方法的首步，完成后提权刷新认证时刻；账户有因素时不带 `method`；`StepUpState` 的 `answer` 逐步转交答复；流程认定加强完成时 `onElevated` 触发一次，调用方据此重跑被拒的动作；`active` 转为假时放弃在途流程。会话以 401 拒绝开启步进时（有因素，但没有能强化本会话的），`phase` 停在 `unavailable`；其余失败（400 等）停在 `failed` 并带错误码。本 hook 不登录、不导航，不读接上的会话，只用入参的会话。会发送验证消息的答复——选中短信第二因素，或短信第一因素复证提交手机号——先出示部署要求的证明；`StepUpState.human` 暴露门槛与证明，调用方据此在会发送的步骤上渲染证明块，证明出示后消耗。
-- **特性的 hook 与 `featurePresence` 只由宿主使用。** 能力 UI 包不调用它们，特性在场信息由宿主经属性或上下文组件交给它们（[web](design-web.md) 的「特性门控」、ADR-web-feature-state-2026-10-17）。
+- **特性的 hook 与 `featurePresence` 只由宿主使用。** 能力 UI 包不调用它们，特性在场信息由宿主经属性或上下文组件交给它们（[web](design-web.md) 的「特性门控」、ADR-web-feature-state）。
 - **`useStepUpGate` 记住一次被步进拒绝的动作并在挑战通过后原样重放它一次。** `arm` 记下动作（表单字段、行标识、重发写入的闭包），`succeed` 经 `onRetry` 重放一次并清空，`cancel` 什么都不重放；`intercept(error, action)` 是失败侧的同一条接线：判别为步进短耗时记下动作、置 `open` 并答 true，其余失败答 false 且不动门控。缺省判别认平台自己的拒绝码——`status` 为 401 且 `code` 为 `authn.insufficient_user_authentication`；只看 401 不够，一个结束了会话的 401 没有可提升的会话。会话自身已能区分两者的调用方把 `session.isStepUpShortfall` 作为第二入参传入。`onRetry` 与 `isShortfall` 经 ref 读取，调用方每次渲染传新闭包不会改变 `succeed` 的身份。
 - **`isTenantAdmissionRefusal` 结构判定准入层的裸 404。** 准入层拒绝一个调用者不可进入的租户时答裸 404（不带模块码），`@speed/api-client` 为它合成保留码 `client.http.404`；模块自己的类型化 404（`objectstore.not_found` 等）在同一状态上保留模块码。判定读码不读状态：`code` 为 `client.http.404` 即为准入拒绝；或 `status` 为 404 且 `code` 缺失或落在保留的 `client.` 命名空间里（合成之前同一应答的形态）。带模块码的 404 一律不是它。
 
@@ -274,7 +274,7 @@ export function evictTenantQueries(
 
 **`TenantProvider` 是宿主交来当前租户的接缝。** 宿主把它的路由解析出的租户标识挂在本 provider 上；`useCurrentTenant` 读它并交回 `{ tenantId }`，未挂 provider 时为 null。它以宿主交来的值为唯一来源，不由主体推导、不本地记住上次切换。
 
-**约定归本包，因为租户作用域的缓存命名是本包已在管的「主体变更使什么失效」的一部分**（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。「query 缓存按当前租户命名、一次切租户即逐出离任租户的整棵子树」与权限表的存活规则是同一件事在 query 缓存上的落点。归 `@speed/api-client` 则不成立：`api-client` 只把宿主交来的租户作传输播报（`tenantProvider` 的值接成 `X-Tenant` 头），不推导、不存租户标识，其 hook 不接受也不推断租户，且 `auth-core` 已 import `api-client`，工厂放那里要么反向 import `auth-core` 成环，要么把租户 id 当裸参数传入而把一个概念拆到两个包。故本项归 `auth-core`，本包之外不重复这份约定。
+**约定归本包，因为租户作用域的缓存命名是本包已在管的「主体变更使什么失效」的一部分**（[ADR-web-tenant-query-key](../../../adr/adr-web-tenant-query-key.md)）。「query 缓存按当前租户命名、一次切租户即逐出离任租户的整棵子树」与权限表的存活规则是同一件事在 query 缓存上的落点。归 `@speed/api-client` 则不成立：`api-client` 只把宿主交来的租户作传输播报（`tenantProvider` 的值接成 `X-Tenant` 头），不推导、不存租户标识，其 hook 不接受也不推断租户，且 `auth-core` 已 import `api-client`，工厂放那里要么反向 import `auth-core` 成环，要么把租户 id 当裸参数传入而把一个概念拆到两个包。故本项归 `auth-core`，本包之外不重复这份约定。
 
 **`tenantQueryKey` 把租户标识拼在生成的裸 spec 键之上作为最外层段**，一个租户下的全部读共用以租户标识为首的一个前缀。
 

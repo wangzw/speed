@@ -4,7 +4,7 @@
 
 `settings.admin` 是运行期设置的管理面，挂在固定基路径 `/api/v1/system/settings` 下，不交付任何功能接口，只把设置的读写暴露成路由。每条路由的动作是经 `settings.Store` 调设置模块——列出声明项、读一层的值、写一层的一行、删一层的一行——模块自己不持数据、不持规则：声明项、类型、取值域与三级回落归设置模块，本模块只决定谁可以问、答案长什么样。
 
-**本模块是设置能力不为它提供的那个管理面。** 设置能力交付的是接缝与实现，不是 HTTP 路由；它的立场是写面的调用点是宿主自己的代码或它写出的管理命令，写入面的访问控制由宿主负责（[design-settings](design-settings.md)）。一个想要管理面的宿主把本模块写进命令树，不必自己手写同一组路由、同一套按层判定与同一条审计前置。本模块正是那个「管理命令」的模块化形态，不改变设置能力的立场——`pkg/settings` 仍不做授权判定，判定归授权（[ADR-console-settings-2026-10-15](../../../adr/adr-console-settings-2026-10-15.md)、[ADR-settings-scope-2026-09-21](../../../adr/adr-settings-scope-2026-09-21.md)）。
+**本模块是设置能力不为它提供的那个管理面。** 设置能力交付的是接缝与实现，不是 HTTP 路由；它的立场是写面的调用点是宿主自己的代码或它写出的管理命令，写入面的访问控制由宿主负责（[design-settings](design-settings.md)）。一个想要管理面的宿主把本模块写进命令树，不必自己手写同一组路由、同一套按层判定与同一条审计前置。本模块正是那个「管理命令」的模块化形态，不改变设置能力的立场——`pkg/settings` 仍不做授权判定，判定归授权（[ADR-console-settings](../../../adr/adr-console-settings.md)、[ADR-settings-scope](../../../adr/adr-settings-scope.md)）。
 
 路由挂在配置 `settings.admin.endpoints` 列出的端上，基路径不做可配置。每条路由按设置项的键寻址——命名空间与键——路径里不出现任何不透明的行标识。
 
@@ -74,7 +74,7 @@
 
 **读的应答是 200 加一份视图，落地的写与删是 204 无正文。** 视图逐字段构造，从不把设置模块的值原样交给客户端：声明部分逐字段取自 `settings.DeclaredItem`，值部分由该层的行与 `Get` 的解析结果给出。设置项视图的字段：`key`、`namespace`（声明它的模块，即键的前缀段）、`type`（声明类型自己的文本形式）、`description`、`domain`（取值域的规则，`DeclaredItem.Item.Domain` 的 `Rule()`，没有取值域的项为空）、`sensitive`、`default`、`written`、`has_row`（该层是否持有这个键的行）、`value`。时间不在此列——一张设置行的时间不随视图交给客户端。
 
-**敏感项的值由本模块遮蔽。** `Declared` 的列表不带敏感项的默认值（`DeclaredItem.Default` 为空），`List` 与 `Get` 却照常交出敏感项的值；本模块按 `DeclaredItem.Sensitive` 把敏感项的 `default` 置空、把 `written` 与 `value` 换成一个固定遮蔽串再交出。漏了这一步不报错、凭据随响应出去。遮蔽只覆盖文本：`has_row` 照常报出该层是否持有行。视图里 `default`、`written`、`has_row`、`value` 的含义与遮蔽规则是宿主与前端据以读应答的契约（[ADR-settings-declaration-2026-09-29](../../../adr/adr-settings-declaration-2026-09-29.md)）。
+**敏感项的值由本模块遮蔽。** `Declared` 的列表不带敏感项的默认值（`DeclaredItem.Default` 为空），`List` 与 `Get` 却照常交出敏感项的值；本模块按 `DeclaredItem.Sensitive` 把敏感项的 `default` 置空、把 `written` 与 `value` 换成一个固定遮蔽串再交出。漏了这一步不报错、凭据随响应出去。遮蔽只覆盖文本：`has_row` 照常报出该层是否持有行。视图里 `default`、`written`、`has_row`、`value` 的含义与遮蔽规则是宿主与前端据以读应答的契约（[ADR-settings-key-listing](../../../adr/adr-settings-key-listing.md)）。
 
 ### 宿主可见面
 

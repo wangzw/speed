@@ -48,7 +48,7 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 ## 2. Rules Common to Every Document
 
 **Conclusions only.**
-- **DO NOT** record how the document was built: no change history, no version number, no author, no date, no review record, no "originally X, later changed to Y" narrative. Git is the authority for all of it. The single exception is an ADR's decision date, which is content rather than metadata — see the ADR standard.
+- **DO NOT** record how the document was built: no change history, no version number, no author, no date, no review record, no "originally X, later changed to Y" narrative. Git is the authority for all of it. An ADR obeys this in full: it records the decision and the alternatives weighed, never the work of revising it.
 - **DO NOT** record project management: no TODO, no schedule, no milestone, no owner, no priority.
 - **DO NOT** duplicate the half of another document that only it carries. A design document states the design, including decisions already recorded elsewhere; what belongs to the ADR alone is the context, the options weighed, why each was rejected and the costs accepted. Reference a requirement by id and a decision by ADR id, and do not restate that half.
 
@@ -57,7 +57,7 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 - **DO NOT** use second person or address the reader. A standard-conforming document is not a tutorial.
 - **DO NOT** use subjective modifiers and filler. The test is whether deleting the word changes what the document asserts; if it does not, it was praising, apologising or padding. `obviously`, `simply`, `easily`, `elegant`, `powerful`, `efficient`, `excellent`, `note that`, `it is worth noting`, `unfortunately`, `of course` and `in fact` are the common ones, not the whole of it — a word that passes the test is banned whether or not it appears here, in whatever language the document is written in. They add no information and routinely disguise unverified claims.
 - **DO NOT** use restating transitions — any phrase announcing that the previous sentence is about to be said again, `in other words`, `that is to say`, `in summary` and `to sum up` among them. Needing to say it in other words means the previous sentence should be rewritten instead.
-- **Replace every subjective judgement with a measurable quantity or an explicit constraint.** `Performance is good` becomes `P99 latency target 50ms`. `X was chosen because Y` becomes `Adopt X (ADR-tenant-isolation-2026-03-14)`.
+- **Replace every subjective judgement with a measurable quantity or an explicit constraint.** `Performance is good` becomes `P99 latency target 50ms`. `X was chosen because Y` becomes `Adopt X (ADR-tenant-isolation)`.
 
 **A rule names what it binds.**
 - **A normative sentence states the subject it constrains, not only the constraint.** `every`, `all`, `always` and `never` are the visible signal, but **a bare plural noun is the common one**: `Package-level functions and variables are limited to ...` contains no quantifier at all, and its subject is nonetheless every package-level function, including the unexported helpers no implementation can do without. `Exported package-level functions and variables ...` is the sentence that was meant.
@@ -85,7 +85,7 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 - **A local glossary never redefines, narrows or restates a project term.** Two definitions of one term is a defect regardless of which is right. A term that outgrows its context moves up — it enters the project glossary and leaves the local one; a project term never moves down.
 - An entry carries the term, its definition, and its counterpart in the source language when the document language differs from it.
 - **Once a term is registered, its wording is uniform throughout the scope that registered it** — the whole documentation for a project term, the owning context for a local one. Synonym drift is a defect.
-- **Uniformity binds the documents that can still be edited.** A record frozen by the ADR standard keeps the wording it froze with; renaming a term does not license editing it, and a reader meeting the old word there is reading what was decided at the time. Finish a rename before the records it touches freeze.
+- **Uniformity binds every document.** An ADR is revised in place like every other document, so a term rename reaches it too; no record keeps a superseded wording.
 
 **Examples convey intent, not runnability.**
 - Example code **is not required to compile**, to be complete, or to match the code verbatim. Omit imports, error-handling boilerplate and initialization; `...` for elided parts is fine.
@@ -105,9 +105,9 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 **References.**
 - Internal links are relative and point at files. Write the path from the documentation root consistently; mismatched directory depth is the most frequent link defect.
 - Reference code by **path plus symbol name, never a line number**. Line numbers rot on the next edit.
-- Reference a decision by its **ADR identifier (`ADR-<slug>-<date>`) plus link**.
+- Reference a decision by its **ADR identifier (`ADR-<slug>`) plus link**.
 - **References flow one way across document types**: a design document references requirements and ADRs; requirements and ADRs do not link back. Bidirectional links between the two layers rot, because the upper document changes on a different rhythm from the lower one.
-- **Within one type, documents reference each other freely.** Two design documents describing modules that call each other say so in both; one ADR cites another it depends on without superseding it. The rule above is about layers, not about neighbours. The supersession pair between two ADRs is an exception to the *one-way* part and is stated in both records — see the ADR standard for why it earns it.
+- **Within one type, documents reference each other freely.** Two design documents describing modules that call each other say so in both; one ADR cites another it depends on. The rule above is about layers, not about neighbours.
 
 ## 3. Document Types
 
@@ -124,9 +124,8 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 ## 5. Mechanical Check
 
 `scripts/check_documents.py` checks the structural half of this standard: section
-presence and order, file naming, index coverage, status vocabulary, ADR
-supersession pairing, diagram bodies and the process metadata a document never
-carries. It reads the paths and the language from the `## Documentation` block of
+presence and order, file naming, index coverage, status vocabulary, diagram
+bodies and the process metadata a document never carries. It reads the paths and the language from the `## Documentation` block of
 section 1, and skips a declared tree that does not exist.
 
 **Running it is mandatory, not advisory.** After creating or editing any document

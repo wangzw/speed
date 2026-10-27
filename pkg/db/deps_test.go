@@ -19,7 +19,7 @@ const repoPrefix = "github.com/vislake/speed/"
 // root package are one module, so the module's dependency list carries both
 // drivers whichever engine a host deploys on, and the split is a rule about
 // imports. This case is the gate that keeps it — the cost of having no compiler
-// support here is recorded in ADR-module-packaging-2026-09-22.
+// support here is recorded in ADR-module-layout.
 //
 // The observation is the root package's own dependency face: what a host
 // compiles by importing this package, and no more. It is the non-test face,
@@ -32,7 +32,7 @@ const repoPrefix = "github.com/vislake/speed/"
 // closure, and the closure of pkg/config. The last of those is what reading
 // configuration costs: this package takes its values up through pkg/config,
 // and pkg/config parses the command line and the config sources with
-// third-party libraries, which ADR-config-parsing-2026-09-20 records as the
+// third-party libraries, which ADR-config-parsing records as the
 // price of that delegation. It is written as that package's current closure
 // rather than as a list of library names, so a parsing library swapped for
 // another there does not have to be spelled out again here.

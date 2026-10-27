@@ -61,7 +61,7 @@ func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error)
 
 **它是纯函数**：输入是片段与选项，输出是文档或错误，没有别的输入。同一个二进制、同一组片段，模块在 `Init` 里合并的结果与 `gen` 写出的结果逐字节相同——两者的差别只在谁调用、把结果交付到哪里（一个挂在 `/openapi.json` 上，一个写进制品）。
 
-**片段里的 path 是相对写法**：合并时按声明它的 `Spec.Prefix`、`Spec.Version` 与 `Spec.Scope` 拼成完整路径，冲突也按拼出的路径判定（[ADR-http-spec-path-2026-10-18](../../adr/adr-http-spec-path-2026-10-18.md)、[ADR-http-api-path-scopes-2026-10-19](../../adr/adr-http-api-path-scopes-2026-10-19.md)）。本模块自己的片段三者皆空，三条探针路由因而保持根路径。
+**片段里的 path 是相对写法**：合并时按声明它的 `Spec.Prefix`、`Spec.Version` 与 `Spec.Scope` 拼成完整路径，冲突也按拼出的路径判定（[ADR-http-spec-path](../../adr/adr-http-spec-path.md)、[ADR-http-api-path-scopes](../../adr/adr-http-api-path-scopes.md)）。本模块自己的片段三者皆空，三条探针路由因而保持根路径。
 
 `pkg/ops/openapi` **不登记模块**：它没有生命周期、不交付功能、不声明资源。它是这一能力目录下供两个调用方共用的实现，也是本能力唯一需要被模块之外调用的面。
 
@@ -171,7 +171,7 @@ sequenceDiagram
 
 **合并文档带扩展键 `x-fragments` 与 `x-endpoint`。** `x-fragments` 列出参与合并的每份片段的来源（模块与端）；每个 operation 上的 `x-endpoint` 记下这条 operation 服务在哪个端上——一份文档描述多个端点，光凭路径说不出它由哪个端应答。
 
-**分组与鉴权也由合并写出。** 每个 operation 的 `tags` 带上声明它的模块名，顶层 `tags` 汇总这些名字并按序排列，读者因而按 `x-fragments` 用的同一套词汇分组。宿主写制品时可以把一个 operation 的模块标签换成它自己的所有者标签（`gen` 对应用所有的操作这么做，并从顶层 `tags` 里摘掉该模块名）：一个 operation 只带一个标签，按标签分组的读者不会把它列两次。`security` 来自 operation 自己的访问级别；片段没写 `security` 的 operation 被补成受保护要求，公开必须显式声明为 `[]`。`components.securitySchemes` 由合并统一写出 `bearerAuth`（`Authorization: Bearer`）与 `sessionCookie`（`sid` cookie 及其带前缀的写法），片段只引用名字、不自定义载体（[ADR-http-contract-metadata-2026-10-20](../../adr/adr-http-contract-metadata-2026-10-20.md)）。
+**分组与鉴权也由合并写出。** 每个 operation 的 `tags` 带上声明它的模块名，顶层 `tags` 汇总这些名字并按序排列，读者因而按 `x-fragments` 用的同一套词汇分组。宿主写制品时可以把一个 operation 的模块标签换成它自己的所有者标签（`gen` 对应用所有的操作这么做，并从顶层 `tags` 里摘掉该模块名）：一个 operation 只带一个标签，按标签分组的读者不会把它列两次。`security` 来自 operation 自己的访问级别；片段没写 `security` 的 operation 被补成受保护要求，公开必须显式声明为 `[]`。`components.securitySchemes` 由合并统一写出 `bearerAuth`（`Authorization: Bearer`）与 `sessionCookie`（`sid` cookie 及其带前缀的写法），片段只引用名字、不自定义载体（[ADR-http-contract-metadata](../../adr/adr-http-contract-metadata.md)）。
 
 ## 核心算法与流程
 
@@ -190,7 +190,7 @@ sequenceDiagram
 
 合并逐份读片段：一份 `Spec.Document` 解成 `fragment`，它声明的每个 `path` 与 `method` 并进文档，`components` 按段与名字并进文档。
 
-**冲突即启动失败，点名的对象是来源**（[ADR-ops-spec-reader-2026-10-15](../../adr/adr-ops-spec-reader-2026-10-15.md)）：
+**冲突即启动失败，点名的对象是来源**（[ADR-ops-spec-reader](../../adr/adr-ops-spec-reader.md)）：
 
 - **operation 撞车。** 同一个 `path` 的同一个 `method` 被不同的模块声明，报错并同时点名两个模块与各自的端——这是唯一能把两份片段连回来源的地方。冲突跨端判：一份文档只持一条 operation，一条挂在两个端上的相同路由是文档分不开的两条 operation。
 - **components 同名不同内容。** 两份片段声明同一段下同一个名字、内容不等，报错点名声明它的模块与那个名字。内容相等则并成一条，多份片段共用一个错误体 schema 是寻常情形。
@@ -199,7 +199,7 @@ sequenceDiagram
 
 ### 取材域
 
-**合并 OpenAPI 片段取可用集**（架构不变量 15，[ADR-ops-spec-reader-2026-10-15](../../adr/adr-ops-spec-reader-2026-10-15.md)）。来源是 `core.Resources[speedhttp.Spec](reg)` 的全体，与 `pkg/http` 里 `validateSpecs` 同口径。判据是「这个二进制提供哪些 API」是静态事实，比任何一次命令长寿：未运行、消解落选与只被静态级纳入的模块，其片段一律进合并。**这个消费点不做减法**：问的是这个二进制提供哪些 API，不是此刻在服务哪些；减法会让同一个二进制在两条命令下发布两份不同的规格，而声明本身没变。这条裁定是 [http](http/design-http.md) 交给读取方的——它交出全部片段、不让它们生效，`Spec` 文档明说合并与发布归读者，`ops` 就是那个读者。
+**合并 OpenAPI 片段取可用集**（架构不变量 15，[ADR-ops-spec-reader](../../adr/adr-ops-spec-reader.md)）。来源是 `core.Resources[speedhttp.Spec](reg)` 的全体，与 `pkg/http` 里 `validateSpecs` 同口径。判据是「这个二进制提供哪些 API」是静态事实，比任何一次命令长寿：未运行、消解落选与只被静态级纳入的模块，其片段一律进合并。**这个消费点不做减法**：问的是这个二进制提供哪些 API，不是此刻在服务哪些；减法会让同一个二进制在两条命令下发布两份不同的规格，而声明本身没变。这条裁定是 [http](http/design-http.md) 交给读取方的——它交出全部片段、不让它们生效，`Spec` 文档明说合并与发布归读者，`ops` 就是那个读者。
 
 ### 就绪判定
 

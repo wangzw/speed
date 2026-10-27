@@ -21,7 +21,7 @@ import (
 // package rather than out of go.mod because one go.mod now covers the whole of
 // pkg/: its requirements are the union of every capability's, and judging that
 // list would fail on dependencies this package never asked for. The cost of
-// having no compiler support here is recorded in ADR-module-packaging-2026-09-22.
+// having no compiler support here is recorded in ADR-module-layout.
 func TestConfigRootCarriesOnlyTheParsingTools(t *testing.T) {
 	allowed := []string{
 		"github.com/go-viper/mapstructure/v2",

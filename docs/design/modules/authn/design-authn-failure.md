@@ -2,7 +2,7 @@
 
 ## 职责
 
-本文承载 `pkg/authn` 整个功能目录的失败语义：哪些失败有名字、请求期依赖不可用时每条路径往哪个方向走、哪些放宽被写明并带着上界、时间如何使用，以及认证检不出而只能写成前提的部署条件。本文不对应一个包，也不注册模块；它描述的是贯穿各 `authn.*` 模块与 `tenant.admission` 的一个方面。取舍与否决的写法见 [ADR-authn-failure-2026-10-10](../../../adr/adr-authn-failure-2026-10-10.md)，状态放置的判据见 [ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)。
+本文承载 `pkg/authn` 整个功能目录的失败语义：哪些失败有名字、请求期依赖不可用时每条路径往哪个方向走、哪些放宽被写明并带着上界、时间如何使用，以及认证检不出而只能写成前提的部署条件。本文不对应一个包，也不注册模块；它描述的是贯穿各 `authn.*` 模块与 `tenant.admission` 的一个方面。取舍与否决的写法见 [ADR-authn-failure](../../../adr/adr-authn-failure.md)，状态放置的判据见 [ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)。
 
 本文承载下列事项（封闭集合，不在其内的事项归非职责一节点名的文档）：
 
@@ -18,7 +18,7 @@
 - **不承载配置键与设置键。** 键名、缺省值与取值域只在 [design-authn-config](design-authn-config.md) 给全；本文提到某个键，写的是它在失败语义里的角色。
 - **不承载各模块的流程与状态机。** 登录引擎、会话校验次序、令牌校验次序各在自己的文档里；本文只汇总它们的哨兵与失败方向，各模块文档里的失败表是本文对应行的细化，不与之相悖。网关的请求期判定顺序、收口表与出口检查在 [design-authn-gate](design-authn-gate.md)。
 - **不承载事件、审计、日志与指标的取值。** 审计的档位、事件名、指标名与属性取值在 [design-authn-events](design-authn-events.md)；本文只写失败时它们的方向。
-- **不承载入口模块的错误形状。** `Problem` 的字段与 `Fail` 的行为在 [design-http](../http/design-http.md) 与 [ADR-http-errors-2026-10-10](../../../adr/adr-http-errors-2026-10-10.md)；本文写 authn 取用它时填什么。
+- **不承载入口模块的错误形状。** `Problem` 的字段与 `Fail` 的行为在 [design-http](../http/design-http.md) 与 [ADR-http-errors](../../../adr/adr-http-errors.md)；本文写 authn 取用它时填什么。
 - **不承载威胁与残余风险。** 失败被诱发的攻击面与对策在 [design-authn-threats](design-authn-threats.md)。
 - **不规定相邻模块的失败方向。** 限流在计数后端不可达时放行、审计的请求级写失败放行，各在 [design-ratelimit](../design-ratelimit.md) 与 [design-audit](../audit/design-audit.md)；本文写的是 authn 自己的路径，以及 authn 调用它们时的方向。
 - **不检测时钟偏差，也不检查本机时钟。** 偏差由部署前提处理，不在运行期被检查，也不被读作保证。
@@ -56,7 +56,7 @@
 | 请求期默认拒绝 | 每条请求期依赖外部依赖的路径 | 依赖答不出来时该路径答 503，不答 200，也不答 401 |
 | 放宽只有封闭清单 | 请求期的全部路径 | 放宽只出现在放宽清单所列各项，每项带控制项与上界；新增依赖或路径时，不在清单里的按拒绝 |
 | 对外不区分成因 | 每个对外的 503 应答 | 应答体不携带是哪个依赖不可用；成因只进日志与指标 |
-| 没答与答了拒绝不混 | 网关对校验后端的收口 | 零值判决收口 401、单独计 `unspoken`、记 Error；凭据存在而后端答不了是 503，不是匿名，可选认证的路由上也一样（理由见 [ADR-authn-verdict-2026-10-10](../../../adr/adr-authn-verdict-2026-10-10.md)） |
+| 没答与答了拒绝不混 | 网关对校验后端的收口 | 零值判决收口 401、单独计 `unspoken`、记 Error；凭据存在而后端答不了是 503，不是匿名，可选认证的路由上也一样（理由见 [ADR-authn-verdict](../../../adr/adr-authn-verdict.md)） |
 | 补充校验不由库覆盖 | 本功能目录在库的校验之外另加的每一项检查 | 库返回成功而补充校验不通过，结果是失败，并记一条 Error |
 | 403 的位置 | 全部 authn 与准入层的拒绝 | 403 只带 `impersonation-restricted`、`forbidden`、`method-disabled`、`account-unavailable`、`factor-not-seasoned`、`signup-closed`、`contact-required`、`human-verification-required` 这些码，且只在 authn 自己的处理器里；`ErrImpersonationRestricted` 与 `ErrImpersonationNeedsSession` 同带 `impersonation-restricted`，`ErrFactorNotSeasoned` 带 `factor-not-seasoned`，`ErrSignupClosed` 在自助注册路由上带 `signup-closed`，`ErrContactRequired` 带 `contact-required`，`ErrHumanVerificationRequired` 带 `human-verification-required`；网关与 `tenant.admission` 不写 403 |
 | 撤销不依赖时钟 | 会话、刷新令牌与访问令牌的撤销 | 撤销以会话行的 `revoked_at` 为准、不比较时间；时钟偏差不会让撤销失效 |
@@ -66,7 +66,7 @@
 - **503 的形状。** authn 自己的处理器答 503 时，`Problem.Type` 为 `urn:speed:authn:unavailable`；令牌端点按 OAuth 的约定答 `temporarily_unavailable`。网关的 503 只带状态码（入口模块的 `Fail` 只带状态码），同样不区分成因。503 的应答里只有 `ErrBusy` 带 `Retry-After: 1`。
 - **其余形状。** 机器可读的码取 `urn:speed:authn:<码>`，码的集合与新增规则在 [design-authn-login](design-authn-login.md)；运行期哨兵表的 HTTP 列是码与状态的对应。
 - **注册与验证的冲突形状。** `POST B/register` 把用户名冲突答 409 `username-taken`，把邮箱地址冲突答 409 `email-taken`：注册在开户事务里插入邮箱预留，`(kind, value)` 的唯一索引是地址的唯一仲裁点，冲突返回 `ErrContactTaken`，账户、用户名与口令随事务回滚。自助添加邮箱也在发码之前读标识表与未证明预留，地址已被别的账户持有或预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算；写标识是权威拒绝，地址在发码之后被占用时 `ErrContactTaken` 与 `ErrAccountExists` 都答 409 `email-taken`。读预留或标识失败答 503，不按空闲处理。
-- **未验证账户的能力限制。** 要求已验证邮箱的能力对读作 `SignupPending` 的账户答 403 `contact-required`——持有邮箱而没有一条已证明的邮箱，不论账户是自助注册、管理员预置还是导入写出的；没有邮箱的账户读作 `SignupNone`，不受这条门控约束。状态读取失败答 503，不按放行处理（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
+- **未验证账户的能力限制。** 要求已验证邮箱的能力对读作 `SignupPending` 的账户答 403 `contact-required`——持有邮箱而没有一条已证明的邮箱，不论账户是自助注册、管理员预置还是导入写出的；没有邮箱的账户读作 `SignupNone`，不受这条门控约束。状态读取失败答 503，不按放行处理（[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。
 - **并入 `login-failed` 的哨兵。** 运行期哨兵表的 HTTP 列写作「并入 `login-failed`」的哨兵，其应答不暴露各自的成因，成因只进日志。
 
 ### 对外接口面
@@ -297,15 +297,15 @@ type ThrottledError struct{ RetryAfter time.Duration }
 
 ### 没答与答了拒绝
 
-- **零值判决是没答。** 校验后端交回零值判决，网关收口 401，记在后端名下，单独计入 `unspoken`，记 Error，使拒绝那一桶不被缺陷污染（[ADR-authn-verdict-2026-10-10](../../../adr/adr-authn-verdict-2026-10-10.md)）。
-- **凭据存在而后端答不了是 503，不是匿名。** 校验后端的 `Unavailable`、超出调用预算、panic 与网关的在飞闸门已满都收口 503；可选认证的路由上也一样，理由见 [ADR-authn-verdict-2026-10-10](../../../adr/adr-authn-verdict-2026-10-10.md)。
+- **零值判决是没答。** 校验后端交回零值判决，网关收口 401，记在后端名下，单独计入 `unspoken`，记 Error，使拒绝那一桶不被缺陷污染（[ADR-authn-verdict](../../../adr/adr-authn-verdict.md)）。
+- **凭据存在而后端答不了是 503，不是匿名。** 校验后端的 `Unavailable`、超出调用预算、panic 与网关的在飞闸门已满都收口 503；可选认证的路由上也一样，理由见 [ADR-authn-verdict](../../../adr/adr-authn-verdict.md)。
 - **库返回成功而补充校验失败，结果是失败**，见「补充校验的优先级」。
 
 ### 会话与 kv 的解耦
 
 - 会话与撤销在 db，所以 kv 不可用时已登录的用户照常使用，只是不能开始或继续登录流程与 WebAuthn 仪式。
 - db 不可用时，缓存未命中的 cookie 与令牌认证、登录、刷新、撤销、因素校验、管理面与冒充都答 503；不依赖 db 的口令表（`authn.static` 的 Basic）不受影响。
-- kv 只存流程记录，丢键的后果是流程失败，不是放宽；判据见 [ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)。
+- kv 只存流程记录，丢键的后果是流程失败，不是放宽；判据见 [ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)。
 
 ### 其他失败语义
 
@@ -331,7 +331,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 
 ### 本机制不作的保证
 
-下列性质声明不保证，每项写出上界或前提；它们不是缺陷，也不为它们改动别的模块（[ADR-authn-guarantees-2026-10-10](../../../adr/adr-authn-guarantees-2026-10-10.md)）。
+下列性质声明不保证，每项写出上界或前提；它们不是缺陷，也不为它们改动别的模块（[ADR-authn-guarantees](../../../adr/adr-authn-guarantees.md)）。
 
 - **放宽清单内的各项是写明的放宽。** 校验缓存有效期内、`check-session` 设为假后、设置传播窗口内、管理员更新证书之前，被撤销或被收紧的状态仍有请求通过。
 - **对外不区分成因，排障靠日志与指标。** 日志与指标因此要能按成因检索。
@@ -345,7 +345,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 
 ### 依赖未核实行为的断言
 
-下列断言依赖的行为没有核实，写成假设，各配一条守住它的测试；测试不通过时对应条目的设计需要重议（取舍见 [ADR-authn-failure-2026-10-10](../../../adr/adr-authn-failure-2026-10-10.md) 的失效条件）。
+下列断言依赖的行为没有核实，写成假设，各配一条守住它的测试；测试不通过时对应条目的设计需要重议（取舍见 [ADR-authn-failure](../../../adr/adr-authn-failure.md) 的失效条件）。
 
 | 假设 | 守住它的测试 |
 |---|---|

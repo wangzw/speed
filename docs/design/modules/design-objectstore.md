@@ -14,14 +14,14 @@
 
 **一条地址是持有即可用的能力凭证**，到它的到期时刻为止：本能力不记录签发对象是谁，不做二次校验，不做单次使用限制，也没有撤销 API；轮换是再要一条。
 
-**`Store` 的每个实现都排他交付**：一个进程里恰好一个生效，多于一个表态启用即启动失败（照 `pkg/sms` 的载体形态）。`fs` 落在本地目录，`s3` 落在 S3 兼容的对象存储；`s3` 另交付可选能力 `DirectURL`，`fs` 不交付。不装 `s3` 的装配不背那个 SDK（[architecture](../architecture.md) 不变量 11）。根包是接口包与公共类型，不登记模块（[ADR-objectstore-packaging-2026-10-15](../../adr/adr-objectstore-packaging-2026-10-15.md)）。
+**`Store` 的每个实现都排他交付**：一个进程里恰好一个生效，多于一个表态启用即启动失败（照 `pkg/sms` 的载体形态）。`fs` 落在本地目录，`s3` 落在 S3 兼容的对象存储；`s3` 另交付可选能力 `DirectURL`，`fs` 不交付。不装 `s3` 的装配不背那个 SDK（[architecture](../architecture.md) 不变量 11）。根包是接口包与公共类型，不登记模块（[ADR-objectstore-packaging](../../adr/adr-objectstore-packaging.md)）。
 
 **HTTP 面只有内容路由**：`metadata` 只挂 `/content`（GET/HEAD/PUT），且只在装配的字节后端不交付 `DirectURL` 时挂出（见「内容路由」与「装配契约」）。业务前端没有别的对象存储接口可调。
 
 ### 非职责
 
-- **内容复验与净化流水线刻意后置。** 本模块**不做格式化解析、病毒扫描、重编码一类的净化**。刻意后置，不是漏项（[ADR-objectstore-scope-2026-10-15](../../adr/adr-objectstore-scope-2026-10-15.md)）。
-- **缩略图派生刻意后置。** 本模块不从一个对象的字节派生缩略图或任何投影。刻意后置，不是漏项（[ADR-objectstore-scope-2026-10-15](../../adr/adr-objectstore-scope-2026-10-15.md)）。
+- **内容复验与净化流水线刻意后置。** 本模块**不做格式化解析、病毒扫描、重编码一类的净化**。刻意后置，不是漏项（[ADR-objectstore-scope](../../adr/adr-objectstore-scope.md)）。
+- **缩略图派生刻意后置。** 本模块不从一个对象的字节派生缩略图或任何投影。刻意后置，不是漏项（[ADR-objectstore-scope](../../adr/adr-objectstore-scope.md)）。
 - **不做终端用户授权判定，也不提供撤销。** 一条直连地址可以交给谁归业务后端判断；本模块只校验租户与对象状态，不声明权限点，不记录签发对象，也没有撤销 API。一条地址只因到期而死，删对象与清扫使既有地址立即读不到字节，那是生命周期的效应。
 - **不解释对象的内容与用途。** `Object.MIME` 是不透明值，`Declaration.Name` 是调用方给的标签，本模块只把它规整后存下、不读它的含义；本模块不知道一份字节是票据、头像还是日志归档。
 - **不认识内部键之外的存储布局。** 键的语法是本模块的私有约定；`fs` 与 `s3` 各自把它映射到自己的后端拼写（相对路径、对象键），映射细节不进接口，也不出现在任何应答里。
@@ -309,7 +309,7 @@ http:
 
 **`s3` 的 SDK 落在绑定它的实现子包。** 根包与 `fs` 的传递闭包不含任何对象存储 SDK，也不含 `pkg/db`、`pkg/authz` 这类上层功能目录；这条由 `pkg/objectstore/deps_test.go` 的守卫守住（照 `pkg/sms/deps_test.go` 的形态），并守住 `fs` 不引入 SDK 与 `pkg/http`。
 
-**`pkg/internal/literal` 是共享单元。** `s3` 经工厂的 `Secrets` 钩子交出凭据，工厂经 `pkg/internal/literal` 登记为日志的字面量脱敏匹配器；它与 SMS 载体、认证的登录叶子共用这一单元（[ADR-shared-backend-unit-2026-09-21](../../adr/adr-shared-backend-unit-2026-09-21.md)）。`s3` 因而不 import `literal`，只交出凭据字符串。
+**`pkg/internal/literal` 是共享单元。** `s3` 经工厂的 `Secrets` 钩子交出凭据，工厂经 `pkg/internal/literal` 登记为日志的字面量脱敏匹配器；它与 SMS 载体、认证的登录叶子共用这一单元（[ADR-shared-backend-unit](../../adr/adr-shared-backend-unit.md)）。`s3` 因而不 import `literal`，只交出凭据字符串。
 
 ## UML 图
 

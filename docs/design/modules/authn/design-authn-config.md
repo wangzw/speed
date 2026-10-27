@@ -2,7 +2,7 @@
 
 ## 职责
 
-本文是 `pkg/authn` 与 `tenant.admission` 全部输入项的唯一载体：配置键、设置键、秘密的存放，以及启动期自检与启动诊断。各模块的文档只写自己持有的键的语义并链接到本文，不复述键表。总览见 [design-authn](design-authn.md)，取舍见 [ADR-authn-settings-and-secrets-2026-10-10](../../../adr/adr-authn-settings-and-secrets-2026-10-10.md)。
+本文是 `pkg/authn` 与 `tenant.admission` 全部输入项的唯一载体：配置键、设置键、秘密的存放，以及启动期自检与启动诊断。各模块的文档只写自己持有的键的语义并链接到本文，不复述键表。总览见 [design-authn](design-authn.md)，取舍见 [ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)。
 
 本文承载下列事项（封闭集合，不在其内的事项归非职责一节点名的文档）：
 
@@ -18,12 +18,12 @@
 
 ### 非职责
 
-- **不承载取舍理由。** 为什么分界取这条判据、为什么放宽开关是设置、为什么签名私钥不进数据库，以及被否决的选项与接受的代价，归 [ADR-authn-settings-and-secrets-2026-10-10](../../../adr/adr-authn-settings-and-secrets-2026-10-10.md)。
+- **不承载取舍理由。** 为什么分界取这条判据、为什么放宽开关是设置、为什么签名私钥不进数据库，以及被否决的选项与接受的代价，归 [ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)。
 - **不承载键的行为语义。** 键表的「说明」列只写一句话；键起什么作用、与哪些流程相关，归持有它的文档：[design-authn-gate](design-authn-gate.md)、[design-authn-account](design-authn-account.md)、[design-authn-session](design-authn-session.md)、[design-authn-token](design-authn-token.md)、[design-authn-login](design-authn-login.md)、[design-authn-mfa](design-authn-mfa.md)、[design-authn-sms](design-authn-sms.md)、[design-authn-sso](design-authn-sso.md)、[design-authn-impersonation](design-authn-impersonation.md)、[design-tenant-admission](../tenant/design-tenant-admission.md)。
 - **不承载哨兵表全集与依赖不可用时每条路径的方向。** 自检表只列「这一项失败时报哪个哨兵」；哨兵的含义与修复动作、运行期的失败方向归 [design-authn-failure](design-authn-failure.md)。
 - **不承载 `authn.settings.relaxed` 的审计与事件契约。** 记录的档位、字段与名字归 [design-authn-events](design-authn-events.md)；本文只写何时记、记什么不记什么。
 - **不承载每租户的 IdP 清单。** 数目在运行期才确定的实体是表里的数据，IdP 在 `authn_idps` 表（[design-authn-sso](design-authn-sso.md)），不是配置，也不是设置。
-- **不提供设置写入面的访问控制。** 设置的写入面不判权限，访问控制归宿主（[ADR-settings-scope-2026-09-21](../../../adr/adr-settings-scope-2026-09-21.md)、[design-settings](../settings/design-settings.md)）；authn 只在放宽方向上提供事后可见。
+- **不提供设置写入面的访问控制。** 设置的写入面不判权限，访问控制归宿主（[ADR-settings-scope](../../../adr/adr-settings-scope.md)、[design-settings](../settings/design-settings.md)）；authn 只在放宽方向上提供事后可见。
 - **不配置数据库的根密钥。** `encryption-key` 与 `encryption-retired-keys` 归 `db` 模块（[design-db](../design-db.md)）；本文只写 authn 在启动时如何发现它缺失。
 - **不提供命令行来源的秘密。** 秘密类配置项的来源不含命令行。
 - **不提供配置式的豁免、可选认证与可冒充清单。** 这些登记只来自代码，理由见 [design-authn](design-authn.md) 的非职责。
@@ -60,7 +60,7 @@
 
 ### 配置项
 
-配置项是启动期的值：在数据库可用之前就被需要的值，与塑造启动结构、改变要重启才生效的值（[ADR-config-scope-2026-09-13](../../../adr/adr-config-scope-2026-09-13.md)）。键表的约定：
+配置项是启动期的值：在数据库可用之前就被需要的值，与塑造启动结构、改变要重启才生效的值（[ADR-config-scope](../../../adr/adr-config-scope.md)）。键表的约定：
 
 - **来源**列：「主」是仅取主配置源，环境变量与命令行都改不了；「默认」是 `Origins` 的零值，即主配置源加环境变量，不含命令行。
 - **标记**列：「敏」是 `Sensitive: true`，必带 `Description`；「必填」是 `Required: true`。必填项只对这次运行级纳入的模块判定，缺项时 `Decode` 失败，错误点名缺的那一项且不带秘密（[design-config](../design-config.md)）。
@@ -127,7 +127,7 @@
 | `authn.mfa.webauthn.rp-name` | 字符串 | `speed` | 默认 | | 依赖方的显示名 |
 | `authn.mfa.webauthn.origins` | 字符串列表 | `authn.gate.mount.public-url` 的来源 | 默认 | | 依赖方接受的来源 |
 
-登录方式的端点覆盖项与根证书文件由部署方给出：指向自定义端点即由部署方承担对该端点与其证书的信任，缺省仍是内置端点、拒回环与系统根（[ADR-authn-social-endpoints-2026-10-26](../../../adr/adr-authn-social-endpoints-2026-10-26.md)）。
+登录方式的端点覆盖项与根证书文件由部署方给出：指向自定义端点即由部署方承担对该端点与其证书的信任，缺省仍是内置端点、拒回环与系统根（[ADR-authn-social-endpoints](../../../adr/adr-authn-social-endpoints.md)）。
 
 `authn.mfa.webauthn` 的 `Timeouts.*.Enforce` 固定为真，不做成配置项。
 
@@ -298,7 +298,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 
 ### 设置缺席与读取出错
 
-- **设置对 authn 的各模块是可选依赖。** `settings.Store` 缺席时，各模块对每个设置项取声明的默认值，行为与默认值下的设置完全一致，只是不可调整。只使用口令表的宿主因此不必为几个退避参数运行数据库与事件总线（`settings` 模块自己要求 `db` 与 `event.Bus`）。这是 [ADR-config-scope-2026-09-13](../../../adr/adr-config-scope-2026-09-13.md) 接受的降级，不是配置。
+- **设置对 authn 的各模块是可选依赖。** `settings.Store` 缺席时，各模块对每个设置项取声明的默认值，行为与默认值下的设置完全一致，只是不可调整。只使用口令表的宿主因此不必为几个退避参数运行数据库与事件总线（`settings` 模块自己要求 `db` 与 `event.Bus`）。这是 [ADR-config-scope](../../../adr/adr-config-scope.md) 接受的降级，不是配置。
 - **在自己的 `Init` 里读设置的模块，对设置写 `Optional` 的依赖声明**；不写则读取报 `ErrNotLoaded`（快照在设置模块的 `Init` 装载）。请求路径上的读取不受此限。
 - **读设置出错的方向由设置项的类别定**：强制类开关读不出来时按拒绝，应答 503；其余取值读不出来时取声明默认值并记 `Error`；决定写出产物的写路径设置（`authn.account.password-algorithm`）读不出来或越域时令写失败，不替换为默认值；键没有任何声明覆盖时按声明默认值写出并记一行 `Error`。类别的定义与流程见[读取设置的方向](#读取设置的方向)。放宽开关属调参类：声明默认值就是严格一侧（`closed`、`never`、`true`），读不出来按它取值。
 - **安全参数的缺省取最严的取值，并声明取值域**：写入时判下限，使宿主无法经设置把口令哈希参数配到最低要求之下。
@@ -315,7 +315,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.account.auto-link` | `verified-email` | `never` | `never` 或 `verified-email` |
 | `authn.token.check-session` | `false` | `true` | 布尔 |
 
-四项都是设置项，审计与日志里的方向取 `relax`（判据与理由见 [design-authn-events](design-authn-events.md) 的放宽方向取值）。读它的模块在每次做出决定时读当前值：`authn.account.signup` 由登录发现端点、首登开户的解析与短信方法的投递决定读，`authn.account.password-signup` 由 `Signups.Register` 读（权威检查），注册路由与发现端点读它只作预检查，`authn.account.auto-link` 在每次账户解析时读，`authn.token.check-session` 在每次令牌校验、会话步骤之前读。声明模块（`pkg/authn/account` 与 `pkg/authn/token`）另在启动诊断各读一次，用来写启动时已是放宽值的 `Warn`。设置缺席或读取出错时取声明默认值，即严格一侧，读取出错另记 `Error`。它们不取环境变量与命令行；配置不再承载这四项，旧配置里仍写着它们的宿主在启动时按未知键失败（[ADR-authn-settings-and-secrets-2026-10-10](../../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。运行期改动到放宽方向时，声明该键的模块写一行 `Warn` 并记一条尽力档 `authn.settings.relaxed`；启动时取值已经是放宽值时写同一行 `Warn`（[放宽变更的监视](#放宽变更的监视)、[启动诊断](#启动诊断)）。
+四项都是设置项，审计与日志里的方向取 `relax`（判据与理由见 [design-authn-events](design-authn-events.md) 的放宽方向取值）。读它的模块在每次做出决定时读当前值：`authn.account.signup` 由登录发现端点、首登开户的解析与短信方法的投递决定读，`authn.account.password-signup` 由 `Signups.Register` 读（权威检查），注册路由与发现端点读它只作预检查，`authn.account.auto-link` 在每次账户解析时读，`authn.token.check-session` 在每次令牌校验、会话步骤之前读。声明模块（`pkg/authn/account` 与 `pkg/authn/token`）另在启动诊断各读一次，用来写启动时已是放宽值的 `Warn`。设置缺席或读取出错时取声明默认值，即严格一侧，读取出错另记 `Error`。它们不取环境变量与命令行；配置不再承载这四项，旧配置里仍写着它们的宿主在启动时按未知键失败（[ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)）。运行期改动到放宽方向时，声明该键的模块写一行 `Warn` 并记一条尽力档 `authn.settings.relaxed`；启动时取值已经是放宽值时写同一行 `Warn`（[放宽变更的监视](#放宽变更的监视)、[启动诊断](#启动诊断)）。
 
 `authn.invite.ttl` 与 `authn.account.password-algorithm` 也是设置项、也在放宽方向上受监视，但不在上表：上表的判据是「一个开关，声明默认值取严的一端」，而这两项的取值本身有强弱次序，没有「打开」这一动作。前者变长扩大邀请的可用窗口，方向取 `increase`；后者改为 `pbkdf2-sha256` 降低哈希成本，方向取 `downgrade`（[design-authn-events](design-authn-events.md) 的放宽方向取值）。
 
@@ -565,7 +565,7 @@ flowchart TD
 
 ### 非保证
 
-下列各项是本文所述机制不保证的性质，判据与总览一致（[ADR-authn-guarantees-2026-10-10](../../../adr/adr-authn-guarantees-2026-10-10.md)）：成立与否取决于宿主的装配或其他模块的写法，因此写成非保证并写清可观察到什么。下列条目按判据例举，不是封闭集。
+下列各项是本文所述机制不保证的性质，判据与总览一致（[ADR-authn-guarantees](../../../adr/adr-authn-guarantees.md)）：成立与否取决于宿主的装配或其他模块的写法，因此写成非保证并写清可观察到什么。下列条目按判据例举，不是封闭集。
 
 - **设置写入面不保证被访问控制。** 经 `settings.admin` 管理面写入时，全局层由平台域判定并留强制档审计；设置能力本身不做授权，宿主自建写入口（例如种子命令）的鉴权由宿主负责。持有写权限的主体因而可以把退避、预算、前缀名单、会话期限与放宽开关（`authn.account.signup`、`authn.account.password-signup`、`authn.account.auto-link`、`authn.token.check-session`）改到更宽松；authn 只提供 `Warn` 与 `authn.settings.relaxed` 的事后可见，不提供阻止。阻止依赖宿主的管理面与 `AGENTS.md` 的硬要求，authn 不检查宿主是否遵守。
 - **不保证一次放宽变更恰好留下一份痕迹。** 痕迹条数取决于事件实现的投递语义：广播到每个副本则每个副本各一份，消费者组式的则一份；事件丢失的副本没有痕迹。
