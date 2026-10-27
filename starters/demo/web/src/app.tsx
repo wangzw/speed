@@ -1124,13 +1124,19 @@ function ConsoleFeatureGate({
  * away. The roster read settles the same default the tenant frame would.
  *
  * The number is the request surface's only use here: the console renders no
- * tenant and has no switcher. When the roster read is refused or fails -- an
- * impersonated identity cannot make it -- the caller tenant list settles the
- * name instead: it is the membership fact and, while impersonating, the server
- * narrows it to the grant. A tenant the request surface cannot name would leave
- * the platform set unknown and keep the area waiting instead of deciding.
+ * tenant and has no switcher. When the roster read is refused or fails during
+ * an impersonation -- the gateway answers an impersonated identity there -- the
+ * caller tenant list settles the name instead: the server narrows it to the
+ * grant, and without it the target's platform set could never be read. A
+ * member's refused roster read settles nothing: the caller list names their
+ * tenant, but reading the empty platform set from it would turn a full-page
+ * console load into a redirect the invitation journey does not document, and a
+ * tenant the request surface cannot name keeps the area waiting.
  */
-function useConsoleTenantSettle(authenticated: boolean): void {
+function useConsoleTenantSettle(
+  authenticated: boolean,
+  impersonating: boolean,
+): void {
   const tenantId = useCurrentTenantId()
   const selfState = useSelfTenantState()
   useEffect(() => {
@@ -1155,10 +1161,13 @@ function useConsoleTenantSettle(authenticated: boolean): void {
         setCurrentTenantId(defaultRosterTenant(answer.tenants))
       })
       .catch(() => {
-        // The roster is refused or failed. Settle from the caller tenant list
-        // when it has an answer; an empty or not-yet-read list leaves the
-        // tenant undecided, and the effect runs again when it lands.
-        if (cancelled || getCurrentTenantId() !== null) {
+        // The roster is refused or failed. Only an impersonating identity
+        // settles from the caller tenant list, whose answer the server narrows
+        // to the grant; a member's list names their tenant but the area stays
+        // on the wait, as a member's full-page console load documents. An
+        // empty or not-yet-read list leaves the tenant undecided, and the
+        // effect runs again when it lands.
+        if (!impersonating || cancelled || getCurrentTenantId() !== null) {
           return
         }
         const row = selfState.tenants[0]
@@ -1171,7 +1180,7 @@ function useConsoleTenantSettle(authenticated: boolean): void {
     return () => {
       cancelled = true
     }
-  }, [authenticated, tenantId, selfState])
+  }, [authenticated, impersonating, tenantId, selfState])
 }
 
 /**
@@ -1207,7 +1216,10 @@ function ConsoleAreaGate({
   readonly children: ReactNode
 }): ReactElement | null {
   const snapshot = useAuthState()
-  useConsoleTenantSettle(snapshot.state === 'authenticated')
+  useConsoleTenantSettle(
+    snapshot.state === 'authenticated',
+    snapshot.impersonating,
+  )
   // An account whose address is still unproved never settles a tenant: the
   // personal tenant's ensure refuses a pending account and the roster is a
   // staff-only read, so the permission set below is never read and the area

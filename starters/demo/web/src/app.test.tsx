@@ -58,6 +58,7 @@ import {
   THEME_PRESET_STORAGE_KEY,
 } from './chrome.js'
 import { PlatformPermissions } from './platform-permissions.js'
+import { clearSelfTenants, loadSelfTenants } from './tenant-self.js'
 
 /** The tenant the suite acts in: an identifier and the alias the host has
  * recorded for it. The host now holds no default roster, so a case that
@@ -487,6 +488,78 @@ describe('the console area', () => {
         name: demoEnUS.home.heading,
       }),
     ).not.toBeInTheDocument()
+  })
+
+  it('keeps a member on the access wait when only the caller list names a tenant', async () => {
+    // A member's caller tenant list names the tenant they belong to, but the
+    // roster -- the console area's own default-tenant source -- is refused to
+    // them. Only an impersonating identity settles from the caller list (the
+    // server narrows it to the grant); a member's full-page console load must
+    // keep the access wait rather than read the empty platform set and
+    // redirect, which is the branch the invitation journey documents.
+    setCurrentTenantId(null)
+    setTenantAliases(new Map())
+    window.history.replaceState({}, '', '/console/tenants')
+    const requested: string[] = []
+    bindRequestFn(<T,>(path: string): Promise<T> => {
+      requested.push(path)
+      if (path === '/api/v1/system/tenants') {
+        return Promise.reject(
+          new Error('the roster is refused to a member'),
+        ) as Promise<T>
+      }
+      if (path === '/api/v1/auth/me/tenants') {
+        return Promise.resolve({
+          tenants: [{ id: TENANT_ID, alias: TENANT_ID }],
+        } as T)
+      }
+      if (path === '/api/v1/authz/me/permissions') {
+        return Promise.resolve({ platform: [], tenant: [] } as T)
+      }
+      return Promise.reject(new Error(`unexpected request: ${path}`))
+    })
+    // The caller list is on hand before the console mounts, so the roster's
+    // refusal has its fallback answer immediately: a run that settles from it
+    // sets the tenant in the same microtask chain.
+    await loadSelfTenants()
+    const base = createTestSession(authenticatedSnapshot({ system: null }))
+    const session: AuthSession = {
+      ...base,
+      setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
+        const current = base.getSnapshot()
+        base.set({
+          ...current,
+          permissionSets: { ...current.permissionSets, [domain]: perms },
+        })
+      },
+    }
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    await waitFor(() => expect(requested).toContain('/api/v1/system/tenants'))
+    await waitFor(() => expect(getCurrentTenantId()).toBeNull())
+
+    // The roster's refusal named no tenant, so the permission read is never
+    // made and the area keeps its shell-less wait.
+    expect(requested).not.toContain('/api/v1/authz/me/permissions')
+    expect(
+      screen.getByRole('progressbar', {
+        name: demoEnUS.console.accessPending,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', {
+        level: 1,
+        name: demoEnUS.home.heading,
+      }),
+    ).not.toBeInTheDocument()
+    expect(window.location.pathname).toBe('/console/tenants')
+
+    clearSelfTenants()
   })
 
   it('sends a viewer whose address is unproved to the verification page', async () => {
