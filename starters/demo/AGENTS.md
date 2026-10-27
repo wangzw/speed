@@ -97,13 +97,16 @@ different questions, and the baseline depends on both:
   run.
 
 So every platform module that declares an HTTP fragment is imported, including
-the ones the credential criterion keeps out of every run (`sms.admin`,
+the ones the credential criterion keeps out of the baseline's runs (`sms.admin`,
 `authn.sso.saml`): their fragments still describe the platform's API surface.
-Leaving one unimported would drop its operations from the merged document with
-no error — the document would simply be smaller than the platform contract.
-`server/main.go` carries these as blank imports beside a comment saying why; the
-declarations of a module reached this way are collected by the stack node's
-`IncludeAllDeclarations`, and no `Include` names it.
+The baseline runs neither in a command — no command runs `authn.sso.saml`, and
+the review build's `serve` is the only run that names `sms.admin` — but the
+contract document covers both. Leaving one unimported would drop its operations
+from the merged document with no error — the document would simply be smaller
+than the platform contract. `server/main.go` carries these as blank imports
+beside a comment saying why; the declarations of a module reached this way are
+collected by the stack node's `IncludeAllDeclarations`, and no baseline
+`Include` names it.
 
 ### The review build
 
@@ -717,8 +720,9 @@ table:
 The table is the product's fixed namespace map, not a description of the
 current run: a capability dropped from `baselineServe`, or removed from the
 imports altogether, keeps its namespace claimed. `sms.admin` is the example —
-the binary imports it for the contract and no command runs it, so `admin`
-claims `/api/v1/system/sms` even though no route answers there. A path under a claim reaches
+the binary imports it for the contract, the baseline runs it in no command (the
+review build's `serve` runs it), so `admin` claims `/api/v1/system/sms` even
+though the baseline answers no route there. A path under a claim reaches
 that endpoint's chain even when no route matches: with no credentials the
 gateway refuses it 401, and an admitted caller gets the endpoint's own 404. A
 frontend page path must stay outside every non-root claim, or a page navigation
@@ -846,8 +850,9 @@ names the fixed part of that wiring, and no configuration file repeats it:
   `/api/v1/features`. It publishes only to authenticated callers: a process with no
   authentication gateway fails to start rather than expose the document, and an
   anonymous request receives the gateway's own 401. The document names what this
-  process serves, so `sms.admin` — imported for the contract, run by no
-  command — is absent from it.
+  process serves, so `sms.admin` — imported for the contract and run by no
+  baseline command (the review build's `serve` runs it) — is absent from the
+  baseline's document.
 - The notification surface (`notification.inbox`, `notification.stream`,
   `notification.preferences`) mounts on `api`. The capability declares no
   permission point of its own, so its routes carry no gate and the authorization
