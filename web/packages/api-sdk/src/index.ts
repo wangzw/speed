@@ -2699,7 +2699,7 @@ export function useAuthnMfaFactors<TData = Awaited<ReturnType<typeof authnMfaFac
 
 
 /**
- * Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed, then its register row. After an active factor has been removed, the account's other sessions are ended first and the session that made the request is then rotated: the 204 carries that session's new cookie, and the token the request was made with no longer authenticates. A pending or disabled factor ends no session and rotates none, and a session store that fails after the factor is gone is reported as an outage. The call requires a fresh multi-factor authentication verified locally, so one merely declared by an identity provider does not satisfy it; an impersonating identity is refused. A factor that is not the caller's answers the same as one already gone, so the route never answers 404 and repeating a removal is idempotent: it finishes any session revocation and rotation an earlier attempt could not. When the account has mfa_required set, its last active factor cannot be removed.
+ * Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed, then its register row. After an active factor has been removed, the account's other sessions are ended first and the session that made the request is then rotated: the 204 carries that session's new cookie, and the token the request was made with no longer authenticates. A pending or disabled factor ends no session and rotates none, and a session store that fails after the factor is gone is reported as an outage. The call requires a fresh multi-factor authentication verified locally, so one merely declared by an identity provider does not satisfy it; the requirement is the effective account's and the proof is the caller's own, so an impersonating identity removes the impersonated account's factor. A factor that is not the caller's answers the same as one already gone, so the route never answers 404 and repeating a removal is idempotent: it finishes any session revocation and rotation an earlier attempt could not. When the account has mfa_required set, its last active factor cannot be removed.
  * @summary Remove one of the caller's own factors
  */
 export const authnMfaRemoveFactor = (
@@ -2892,7 +2892,7 @@ export const useAuthnLoginAnswer = <TError = Problem,
     }
 
 /**
- * Starts a `link`, `step-up` or `enroll` flow on the identity the gateway authenticated and advances it to its first step. The flow is bound to that account and session, and an impersonating identity is refused with 403 impersonation-restricted. A link and an enrollment require the fresh authentication the account's factors call for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and answer 401 insufficient_user_authentication with `WWW-Authenticate` when it does not hold. A step-up whose account holds at least one factor usable for this session starts at the second factor and answers the offered factors without calling the method; an account that holds factors but none usable for this session — because each was activated at or after the session authenticated — is refused with 401 insufficient_user_authentication, and an account with no factor starts at the first factor with the method named in the body. The delivery mode is not read from the body: it follows the kind of the request's session.
+ * Starts a `link`, `step-up` or `enroll` flow on the identity the gateway authenticated and advances it to its first step. The flow is bound to the effective account and the caller's session: an impersonating identity starts it for the impersonated account and proves its own factors. A link and an enrollment require the fresh authentication the effective account's factors call for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and answer 401 insufficient_user_authentication with `WWW-Authenticate` when it does not hold. A step-up whose account holds at least one factor usable for this session starts at the second factor and answers the offered factors without calling the method; an account that holds factors but none usable for this session — because each was activated at or after the session authenticated — is refused with 401 insufficient_user_authentication, and an account with no factor starts at the first factor with the method named in the body. The delivery mode is not read from the body: it follows the kind of the request's session.
  * @summary Start a flow on the identity already signed in
  */
 export const authnLoginStartAuthenticated = (
@@ -3153,7 +3153,7 @@ export const useAuthnHumanverifyChallenge = <TError = Problem,
     }
 
 /**
- * Adds one login identifier to the caller's account. `kind=username` writes a login name at once, recorded as the account's own assertion; `kind=email` sends a code to the address and answers `state: pending` with how long the code lives and how soon another may be sent, and the address is written only after `POST /auth/identifiers/verify` accepts the code. A second code to the same normalized address within the resend interval is a 429 throttled; the window is held against the address and shared across sessions and accounts. The call requires the fresh authentication every change of what proves the account asks for and refuses an impersonating identity; a write rotates the caller's session token and revokes the account's other sessions. A login name or address another account holds is a 409 conflict, and a deployment with no email channel answers the email branch with 503 unavailable.
+ * Adds one login identifier to the caller's account. `kind=username` writes a login name at once, recorded as the account's own assertion; `kind=email` sends a code to the address and answers `state: pending` with how long the code lives and how soon another may be sent, and the address is written only after `POST /auth/identifiers/verify` accepts the code. A second code to the same normalized address within the resend interval is a 429 throttled; the window is held against the address and shared across sessions and accounts. The call requires the fresh authentication every change of what proves the account asks for; a write rotates the caller's session token and revokes the account's other sessions. A login name or address another account holds is a 409 conflict, and a deployment with no email channel answers the email branch with 503 unavailable.
  * @summary Add one of the caller's own login identifiers
  */
 export const authnLoginAddIdentifier = (
@@ -3283,7 +3283,7 @@ export const useAuthnLoginVerifyIdentifier = <TError = Problem,
     }
 
 /**
- * Removes one login identifier the caller's account holds. The identifier must be the caller's own: one that does not exist and one that belongs to another account are answered identically as a 400 bad-request, so the route discloses nothing about what another account holds. The call requires the fresh authentication every change of what proves the account asks for and refuses an impersonating identity. An account that holds a password credential cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. An account without a password credential may lose its last login name, and removing a phone number is always allowed. Unlike the routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no event of its own: `authn.identifier.changed` is published by the account module on the removal.
+ * Removes one login identifier the caller's account holds. The identifier must be the caller's own: one that does not exist and one that belongs to another account are answered identically as a 400 bad-request, so the route discloses nothing about what another account holds. The call requires the fresh authentication every change of what proves the account asks for. An account that holds a password credential cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. An account without a password credential may lose its last login name, and removing a phone number is always allowed. Unlike the routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no event of its own: `authn.identifier.changed` is published by the account module on the removal.
  * @summary Remove one of the caller's own identifiers
  */
 export const authnLoginRemoveIdentifier = (
@@ -3750,7 +3750,7 @@ export function useAuthnTokenJwks<TData = Awaited<ReturnType<typeof authnTokenJw
 
 
 /**
- * Unbinds one external identity from the caller's account. The binding must be the caller's own; one that is not, whether it does not exist or belongs to another account, is a 400 bad-request. The call requires the fresh authentication every change of what proves the account asks for — a multi-factor assurance merely declared by an identity provider does not count — and refuses an impersonating identity. The account module refuses to remove the last way to sign in (409 conflict); a way only an identity provider declared does not count as a way to sign in, which is why this route asks for local freshness. On success the call publishes `authn.binding.changed` when the provider is in the event payload's closed set, rotates the caller's session token, revokes the account's other sessions, and answers 204.
+ * Unbinds one external identity from the caller's account. The binding must be the caller's own; one that is not, whether it does not exist or belongs to another account, is a 400 bad-request. The call requires the fresh authentication every change of what proves the account asks for — a multi-factor assurance merely declared by an identity provider does not count. The account module refuses to remove the last way to sign in (409 conflict); a way only an identity provider declared does not count as a way to sign in, which is why this route asks for local freshness. On success the call publishes `authn.binding.changed` when the provider is in the event payload's closed set, rotates the caller's session token, revokes the account's other sessions, and answers 204.
  * @summary Unbind one of the caller's own external identities
  */
 export const authnLoginUnlink = (
@@ -3946,7 +3946,7 @@ export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfil
 
 
 /**
- * Writes the caller's own display name, its whole attribute set, and the language and time zone named inside that set; every body field is optional and a field left out is left as it is. The display name is written before the attribute set, and the two writes are not one atomic change: when the second fails, the first is already in force and the answer is that failure's. An impersonating identity is refused 403 without the body being read, and a caller with no login session, or one that does not meet the freshness the account's own factors call for, is refused 401 before anything is written.
+ * Writes the caller's own display name, its whole attribute set, and the language and time zone named inside that set; every body field is optional and a field left out is left as it is. The display name is written before the attribute set, and the two writes are not one atomic change: when the second fails, the first is already in force and the answer is that failure's. An impersonating identity writes the impersonated account's profile like any other caller; a caller with no login session, or one that does not meet the freshness the account's own factors call for, is refused 401 before anything is written.
  * @summary Write the caller's own display name, attribute set, locale and time zone
  */
 export const authnProfilePatch = (
@@ -4151,7 +4151,7 @@ export function useAuthnLoginMethods<TData = Awaited<ReturnType<typeof authnLogi
 
 
 /**
- * Changes the caller's password. The call requires the fresh authentication every change of what proves the account asks for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and refuses an impersonating identity with 403 impersonation-restricted. The current password may be empty for an account that signed up through a provider and holds no password; a wrong one is a 401 login-failed, and a new password outside the password module's policy is a 400 bad-request. On success the current session is rotated to a new token, the account's other sessions are revoked, and the answer is 204 with the new session cookie set. An account that has neither a username nor an email address is refused with 409 login-identifier-required.
+ * Changes the caller's password. The call requires the fresh authentication every change of what proves the account asks for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise. The current password may be empty for an account that signed up through a provider and holds no password; a wrong one is a 401 login-failed, and a new password outside the password module's policy is a 400 bad-request. On success the current session is rotated to a new token, the account's other sessions are revoked, and the answer is 204 with the new session cookie set. An account that has neither a username nor an email address is refused with 409 login-identifier-required.
  * @summary Change the caller's password
  */
 export const authnLoginChangePassword = (
@@ -4481,7 +4481,7 @@ export function useAuthnSessionGet<TData = Awaited<ReturnType<typeof authnSessio
 
 
 /**
- * Revokes every unrevoked browser and token session of the caller's account except the one the request came with, in a single statement, and answers with the number of rows it changed. Expiry is not a condition: a session past its expiry that was never revoked is revoked and counted too. Service-account sessions are untouched. An impersonating identity is refused with 403.
+ * Revokes every unrevoked browser and token session of the caller's account except the one the request came with, in a single statement, and answers with the number of rows it changed. Expiry is not a condition: a session past its expiry that was never revoked is revoked and counted too. Service-account sessions are untouched. An impersonating identity revokes the impersonated account's sessions; the operator's own session is outside that set and stays.
  * @summary Revoke every session of the caller's but the current one
  */
 export const authnSessionRevokeOthers = (
@@ -4544,7 +4544,7 @@ export const useAuthnSessionRevokeOthers = <TError = Problem,
     }
 
 /**
- * Lists the caller's own live browser and token sessions, most recently created first (by creation instant, then by identifier), with the current one flagged. Service-account sessions are not listed, and the list is not paginated: every live session of the account is returned. An impersonating identity is refused with 403.
+ * Lists the caller's own live browser and token sessions, most recently created first (by creation instant, then by identifier), with the current one flagged. Service-account sessions are not listed, and the list is not paginated: every live session of the account is returned. An impersonating identity lists the impersonated account's sessions, never the operator's own.
  * @summary List the caller's own live sessions
  */
 export const authnSessionList = (
@@ -7869,7 +7869,7 @@ export function useTenantAdminTenantsList<TData = Awaited<ReturnType<typeof tena
 
 
 /**
- * Registers a tenant the roster does not hold yet. The body gives the identifier and the alias; the new tenant starts active. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the roster is called; if it cannot, the registration does not run and the request is answered 503.
+ * Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the identifier and the alias; the new tenant starts active. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.
  * @summary Register an active tenant
  */
 export const tenantAdminTenantsCreate = (
@@ -8214,7 +8214,7 @@ export function useAuthzAdminBindingsOf<TData = Awaited<ReturnType<typeof authzA
 
 
 /**
- * Removes the account's binding to the role within the tenant. An empty account is refused with a 400 before anything is written. Removing a binding that does not exist succeeds with 204 and changes nothing. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * Removes the account's binding to the role within the tenant. An empty account is refused with a 400 before anything is written. A caller may not remove its own tenant-admin binding: that is refused with a 403 before anything is written, and another tenant administrator removes it. Removing a binding that does not exist succeeds with 204 and changes nothing. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
  * @summary Remove an account's binding to a role within a tenant
  */
 export const authzAdminBindingsDelete = (
@@ -8749,7 +8749,7 @@ export const useAuthzAdminGrantsPut = <TError = Problem,
     }
 
 /**
- * Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. An identifier the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.
+ * Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, before the audit the route asks the host's write guard whether the tenant refuses the write: a protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. An identifier the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.
  * @summary Change one tenant's state
  */
 export const tenantAdminTenantsSetStatus = (

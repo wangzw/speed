@@ -314,7 +314,7 @@
     },
     "/api/v1/auth/factors/{id}": {
       "delete": {
-        "description": "Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed, then its register row. After an active factor has been removed, the account's other sessions are ended first and the session that made the request is then rotated: the 204 carries that session's new cookie, and the token the request was made with no longer authenticates. A pending or disabled factor ends no session and rotates none, and a session store that fails after the factor is gone is reported as an outage. The call requires a fresh multi-factor authentication verified locally, so one merely declared by an identity provider does not satisfy it; an impersonating identity is refused. A factor that is not the caller's answers the same as one already gone, so the route never answers 404 and repeating a removal is idempotent: it finishes any session revocation and rotation an earlier attempt could not. When the account has mfa_required set, its last active factor cannot be removed.",
+        "description": "Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed, then its register row. After an active factor has been removed, the account's other sessions are ended first and the session that made the request is then rotated: the 204 carries that session's new cookie, and the token the request was made with no longer authenticates. A pending or disabled factor ends no session and rotates none, and a session store that fails after the factor is gone is reported as an outage. The call requires a fresh multi-factor authentication verified locally, so one merely declared by an identity provider does not satisfy it; the requirement is the effective account's and the proof is the caller's own, so an impersonating identity removes the impersonated account's factor. A factor that is not the caller's answers the same as one already gone, so the route never answers 404 and repeating a removal is idempotent: it finishes any session revocation and rotation an earlier attempt could not. When the account has mfa_required set, its last active factor cannot be removed.",
         "operationId": "authn.mfa.removeFactor",
         "parameters": [
           {
@@ -358,16 +358,6 @@
                 }
               }
             }
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The identity is impersonating, which the route refuses"
           },
           "409": {
             "content": {
@@ -743,7 +733,7 @@
     },
     "/api/v1/auth/flows/authenticated": {
       "post": {
-        "description": "Starts a `link`, `step-up` or `enroll` flow on the identity the gateway authenticated and advances it to its first step. The flow is bound to that account and session, and an impersonating identity is refused with 403 impersonation-restricted. A link and an enrollment require the fresh authentication the account's factors call for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and answer 401 insufficient_user_authentication with `WWW-Authenticate` when it does not hold. A step-up whose account holds at least one factor usable for this session starts at the second factor and answers the offered factors without calling the method; an account that holds factors but none usable for this session — because each was activated at or after the session authenticated — is refused with 401 insufficient_user_authentication, and an account with no factor starts at the first factor with the method named in the body. The delivery mode is not read from the body: it follows the kind of the request's session.",
+        "description": "Starts a `link`, `step-up` or `enroll` flow on the identity the gateway authenticated and advances it to its first step. The flow is bound to the effective account and the caller's session: an impersonating identity starts it for the impersonated account and proves its own factors. A link and an enrollment require the fresh authentication the effective account's factors call for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and answer 401 insufficient_user_authentication with `WWW-Authenticate` when it does not hold. A step-up whose account holds at least one factor usable for this session starts at the second factor and answers the offered factors without calling the method; an account that holds factors but none usable for this session — because each was activated at or after the session authenticated — is refused with 401 insufficient_user_authentication, and an account with no factor starts at the first factor with the method named in the body. The delivery mode is not read from the body: it follows the kind of the request's session.",
         "operationId": "authn.login.startAuthenticated",
         "requestBody": {
           "content": {
@@ -1099,7 +1089,7 @@
     },
     "/api/v1/auth/identifiers": {
       "post": {
-        "description": "Adds one login identifier to the caller's account. `kind=username` writes a login name at once, recorded as the account's own assertion; `kind=email` sends a code to the address and answers `state: pending` with how long the code lives and how soon another may be sent, and the address is written only after `POST /auth/identifiers/verify` accepts the code. A second code to the same normalized address within the resend interval is a 429 throttled; the window is held against the address and shared across sessions and accounts. The call requires the fresh authentication every change of what proves the account asks for and refuses an impersonating identity; a write rotates the caller's session token and revokes the account's other sessions. A login name or address another account holds is a 409 conflict, and a deployment with no email channel answers the email branch with 503 unavailable.",
+        "description": "Adds one login identifier to the caller's account. `kind=username` writes a login name at once, recorded as the account's own assertion; `kind=email` sends a code to the address and answers `state: pending` with how long the code lives and how soon another may be sent, and the address is written only after `POST /auth/identifiers/verify` accepts the code. A second code to the same normalized address within the resend interval is a 429 throttled; the window is held against the address and shared across sessions and accounts. The call requires the fresh authentication every change of what proves the account asks for; a write rotates the caller's session token and revokes the account's other sessions. A login name or address another account holds is a 409 conflict, and a deployment with no email channel answers the email branch with 503 unavailable.",
         "operationId": "authn.login.addIdentifier",
         "requestBody": {
           "content": {
@@ -1179,7 +1169,7 @@
                 }
               }
             },
-            "description": "The identity is impersonating, which the route refuses, or a human-verification proof is missing or invalid (human-verification-required)"
+            "description": "A human-verification proof is missing or invalid (human-verification-required)"
           },
           "409": {
             "content": {
@@ -1320,16 +1310,6 @@
               }
             }
           },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The identity is impersonating, which the route refuses"
-          },
           "409": {
             "content": {
               "application/problem+json": {
@@ -1406,7 +1386,7 @@
     },
     "/api/v1/auth/identifiers/{id}": {
       "delete": {
-        "description": "Removes one login identifier the caller's account holds. The identifier must be the caller's own: one that does not exist and one that belongs to another account are answered identically as a 400 bad-request, so the route discloses nothing about what another account holds. The call requires the fresh authentication every change of what proves the account asks for and refuses an impersonating identity. An account that holds a password credential cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. An account without a password credential may lose its last login name, and removing a phone number is always allowed. Unlike the routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no event of its own: `authn.identifier.changed` is published by the account module on the removal.",
+        "description": "Removes one login identifier the caller's account holds. The identifier must be the caller's own: one that does not exist and one that belongs to another account are answered identically as a 400 bad-request, so the route discloses nothing about what another account holds. The call requires the fresh authentication every change of what proves the account asks for. An account that holds a password credential cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. An account without a password credential may lose its last login name, and removing a phone number is always allowed. Unlike the routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no event of its own: `authn.identifier.changed` is published by the account module on the removal.",
         "operationId": "authn.login.removeIdentifier",
         "parameters": [
           {
@@ -1450,16 +1430,6 @@
                 }
               }
             }
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The identity is impersonating, which the route refuses"
           },
           "409": {
             "content": {
@@ -1973,7 +1943,7 @@
     },
     "/api/v1/auth/links/{id}": {
       "delete": {
-        "description": "Unbinds one external identity from the caller's account. The binding must be the caller's own; one that is not, whether it does not exist or belongs to another account, is a 400 bad-request. The call requires the fresh authentication every change of what proves the account asks for — a multi-factor assurance merely declared by an identity provider does not count — and refuses an impersonating identity. The account module refuses to remove the last way to sign in (409 conflict); a way only an identity provider declared does not count as a way to sign in, which is why this route asks for local freshness. On success the call publishes `authn.binding.changed` when the provider is in the event payload's closed set, rotates the caller's session token, revokes the account's other sessions, and answers 204.",
+        "description": "Unbinds one external identity from the caller's account. The binding must be the caller's own; one that is not, whether it does not exist or belongs to another account, is a 400 bad-request. The call requires the fresh authentication every change of what proves the account asks for — a multi-factor assurance merely declared by an identity provider does not count. The account module refuses to remove the last way to sign in (409 conflict); a way only an identity provider declared does not count as a way to sign in, which is why this route asks for local freshness. On success the call publishes `authn.binding.changed` when the provider is in the event payload's closed set, rotates the caller's session token, revokes the account's other sessions, and answers 204.",
         "operationId": "authn.login.unlink",
         "parameters": [
           {
@@ -2017,16 +1987,6 @@
                 }
               }
             }
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The identity is impersonating, which the route refuses"
           },
           "409": {
             "content": {
@@ -2203,7 +2163,7 @@
         "x-endpoint": "account"
       },
       "patch": {
-        "description": "Writes the caller's own display name, its whole attribute set, and the language and time zone named inside that set; every body field is optional and a field left out is left as it is. The display name is written before the attribute set, and the two writes are not one atomic change: when the second fails, the first is already in force and the answer is that failure's. An impersonating identity is refused 403 without the body being read, and a caller with no login session, or one that does not meet the freshness the account's own factors call for, is refused 401 before anything is written.",
+        "description": "Writes the caller's own display name, its whole attribute set, and the language and time zone named inside that set; every body field is optional and a field left out is left as it is. The display name is written before the attribute set, and the two writes are not one atomic change: when the second fails, the first is already in force and the answer is that failure's. An impersonating identity writes the impersonated account's profile like any other caller; a caller with no login session, or one that does not meet the freshness the account's own factors call for, is refused 401 before anything is written.",
         "operationId": "authn.profile.patch",
         "requestBody": {
           "content": {
@@ -2277,16 +2237,6 @@
                 }
               }
             }
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The identity is impersonating, which the route refuses"
           },
           "413": {
             "content": {
@@ -2448,7 +2398,7 @@
     },
     "/api/v1/auth/password": {
       "put": {
-        "description": "Changes the caller's password. The call requires the fresh authentication every change of what proves the account asks for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and refuses an impersonating identity with 403 impersonation-restricted. The current password may be empty for an account that signed up through a provider and holds no password; a wrong one is a 401 login-failed, and a new password outside the password module's policy is a 400 bad-request. On success the current session is rotated to a new token, the account's other sessions are revoked, and the answer is 204 with the new session cookie set. An account that has neither a username nor an email address is refused with 409 login-identifier-required.",
+        "description": "Changes the caller's password. The call requires the fresh authentication every change of what proves the account asks for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise. The current password may be empty for an account that signed up through a provider and holds no password; a wrong one is a 401 login-failed, and a new password outside the password module's policy is a 400 bad-request. On success the current session is rotated to a new token, the account's other sessions are revoked, and the answer is 204 with the new session cookie set. An account that has neither a username nor an email address is refused with 409 login-identifier-required.",
         "operationId": "authn.login.changePassword",
         "requestBody": {
           "content": {
@@ -2504,16 +2454,6 @@
                 }
               }
             }
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The identity is impersonating, which the route refuses"
           },
           "409": {
             "content": {
@@ -2671,7 +2611,7 @@
                 }
               }
             },
-            "description": "The identity is impersonating, which the route refuses, or a human-verification proof is missing or invalid (human-verification-required)"
+            "description": "A human-verification proof is missing or invalid (human-verification-required)"
           },
           "413": {
             "content": {
@@ -2794,16 +2734,6 @@
                 }
               }
             }
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The identity is impersonating, which the route refuses"
           },
           "409": {
             "content": {
@@ -3080,7 +3010,7 @@
     },
     "/api/v1/auth/sessions": {
       "delete": {
-        "description": "Revokes every unrevoked browser and token session of the caller's account except the one the request came with, in a single statement, and answers with the number of rows it changed. Expiry is not a condition: a session past its expiry that was never revoked is revoked and counted too. Service-account sessions are untouched. An impersonating identity is refused with 403.",
+        "description": "Revokes every unrevoked browser and token session of the caller's account except the one the request came with, in a single statement, and answers with the number of rows it changed. Expiry is not a condition: a session past its expiry that was never revoked is revoked and counted too. Service-account sessions are untouched. An impersonating identity revokes the impersonated account's sessions; the operator's own session is outside that set and stays.",
         "operationId": "authn.session.revokeOthers",
         "responses": {
           "200": {
@@ -3111,16 +3041,6 @@
               }
             }
           },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The identity is impersonating, which the route refuses"
-          },
           "503": {
             "content": {
               "application/problem+json": {
@@ -3147,7 +3067,7 @@
         "x-endpoint": "account"
       },
       "get": {
-        "description": "Lists the caller's own live browser and token sessions, most recently created first (by creation instant, then by identifier), with the current one flagged. Service-account sessions are not listed, and the list is not paginated: every live session of the account is returned. An impersonating identity is refused with 403.",
+        "description": "Lists the caller's own live browser and token sessions, most recently created first (by creation instant, then by identifier), with the current one flagged. Service-account sessions are not listed, and the list is not paginated: every live session of the account is returned. An impersonating identity lists the impersonated account's sessions, never the operator's own.",
         "operationId": "authn.session.list",
         "responses": {
           "200": {
@@ -3177,16 +3097,6 @@
                 }
               }
             }
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The identity is impersonating, which the route refuses"
           },
           "503": {
             "content": {
@@ -3259,7 +3169,7 @@
                 }
               }
             },
-            "description": "The session is not the caller's, does not exist, or the identity is impersonating"
+            "description": "The session is not the caller's, does not exist, or is a service-account session"
           },
           "503": {
             "content": {
