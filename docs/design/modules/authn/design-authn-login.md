@@ -119,7 +119,7 @@ type Proof struct {
 	Identifier   *Identifier    // 方法证明了一个标识的所有权（短信验证的手机）
 	External     *External      // 外部身份
 	Methods      []Method
-	UserVerified bool           // 通行密钥断言带用户验证：该因素自己就相当于两个因素
+	UserVerified bool           // 通行密钥登录断言要求用户验证：该因素自己就相当于两个因素
 	IDPAsserted  bool           // 企业 IdP 声明已做多因素，且提供方行的 trust_idp_mfa 与 mfa_acr_values 命中
 	Provider     string         // 企业 SSO 提供方标识
 	Aliases      []ExternalLink // 同一外部身份此前可能绑定的旧键
@@ -655,7 +655,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 - `login` 撤销旧会话不是会话固定防护所依赖的环节：登录总是新建会话、不沿用任何旧令牌。SAML 的跨站 POST 不带 `SameSite=Lax` 的 cookie，旧会话无从撤销，这是已知的例外。
 - 口令方式的 `must_change` 路径完成后，引擎调 `Sessions.RevokeAccount(except = 新会话)`，因为口令变了。引擎判断这条路径有没有走由 `Proof.PasswordChanged` 承载：口令方法在自己重设了凭据（`Passwords.Set` 成功）时把它的证明上的该字段置真，引擎据此在完成时撤销其余会话。撤销其余会话只对 `login` 生效；`step-up` 的 `must_change`（账户无因素时以口令走第一因素）同样置真，但 `step-up` 完成时不撤销其余会话，本设计不为它加这一动作。
-- `login` 的审计行用新认定的身份派生上下文，使 `actor` 是登录的账户而不是空串；登录失败写同名审计行，`actor` 为空，`identifier_mac` 作关联。失败不发事件，只走审计、日志与计数器，否则 `login.failed` 会成为枚举旁路（[authn-events](design-authn-events.md)、[ADR-authn-events-and-audit](../../../adr/adr-authn-events-and-audit.md)）。
+- `login` 的审计行用新认定的身份派生上下文，使 `actor` 是登录的账户而不是空串；登录失败写同名审计行，`actor` 为空；本实现不写 `identifier_mac`，失败因此不经审计按标识关联。失败不发事件，只走审计、日志与计数器，否则 `login.failed` 会成为枚举旁路（[authn-events](design-authn-events.md)、[ADR-authn-events-and-audit](../../../adr/adr-authn-events-and-audit.md)）。
 - 会话与令牌的期限、cookie 的属性与 CSRF 归 [authn-session](design-authn-session.md) 与 [authn-token](design-authn-token.md)。
 
 ### 回跳类的收尾
@@ -783,7 +783,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 ### 短信与其他方式
 
 - **短信（`sms`）**：`phone`（E.164）步与 `code` 步。号码前缀必须在放行表里，缺省为空即一律拒绝（`unsupported-region`）。发码、预算、挑战行与抑制行归 [authn-sms](design-authn-sms.md)；方法在发码前后按「短信发送的每流程上限」核对并报告条数；验证码通过时交 `StepProven`，`Proof.Identifier` 是被证明的手机，`Methods = [sms]`。**单凭短信码只算一个因素。** 发码时方法把请求的来源地址填进 `SendCode.Source`：`Begin` 取 `Start.Client.IP`，`Answer` 取 `StepInput.Client.IP`；引擎把两者都从本次请求填入，所以短信发送计入来源预算（[authn-sms](design-authn-sms.md) 的「预算维度」）。
-- **通行密钥（`passkey`）**：WebAuthn 仪式数据放在 `FlowState.Private`，由 `StepData` 把选项交给客户端；断言带用户验证时 `Proof.UserVerified` 为真（[authn-mfa](design-authn-mfa.md)）。
+- **通行密钥（`passkey`）**：WebAuthn 仪式数据放在 `FlowState.Private`，由 `StepData` 把选项交给客户端；登录断言要求用户验证（`userVerification: required`），因此 `Proof.UserVerified` 为真（[authn-mfa](design-authn-mfa.md)）。
 - **企业 OIDC 与 SAML**：提供方是库里的行，不是配置；校验与补充校验归 [authn-sso](design-authn-sso.md)。
 
 ### 账户自助

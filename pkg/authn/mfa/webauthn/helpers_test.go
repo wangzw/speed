@@ -328,11 +328,12 @@ func (a *authenticator) assertion(t *testing.T, challenge string, count uint32, 
 }
 
 // tamperedAssertion builds an assertion whose signature is broken, by signing
-// with a different key.
+// with a different key. It carries user verification, so a passkey login refuses
+// it for the signature and not for a missing user-verification bit.
 func tamperedAssertion(t *testing.T, a *authenticator, challenge string, count uint32) []byte {
 	t.Helper()
 	other := newAuthenticator(t)
-	authData := a.authData(t, protocol.FlagUserPresent, count, false, false)
+	authData := a.authData(t, protocol.FlagUserPresent, count, true, false)
 	cdj := a.clientData(t, "webauthn.get", challenge)
 	sig := other.sign(t, authData, cdj)
 	return credentialBodyJSON(t, a.credID, map[string]any{

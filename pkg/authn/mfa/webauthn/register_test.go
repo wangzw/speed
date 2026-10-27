@@ -101,6 +101,54 @@ func TestFlagCloneSetsTheFlag(t *testing.T) {
 	})
 }
 
+// A write-back that carries no clone warning leaves one a concurrent flagClone
+// already set: the column is set, not assigned, so the flag is not cleared under
+// a writer that does not know about it.
+func TestWriteBackDoesNotClearACloneFlag(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
+		r := newRig(t, h)
+		ctx := context.Background()
+		seedCredential(t, r, "f1", 5, false)
+		if err := r.p.register.flagClone(ctx, "f1"); err != nil {
+			t.Fatalf("flagClone: %v", err)
+		}
+		won, err := r.p.register.writeBack(ctx, "f1", credentialRow{SignCount: 6})
+		if err != nil || !won {
+			t.Fatalf("writeBack = %v, %v, want won", won, err)
+		}
+		row, found, err := r.p.register.getCredential(ctx, "f1")
+		if err != nil || !found {
+			t.Fatalf("getCredential: found=%v err=%v", found, err)
+		}
+		if !row.CloneWarning {
+			t.Error("the write-back cleared a clone warning another writer set")
+		}
+		if row.SignCount != 6 {
+			t.Errorf("the counter is %d, want it advanced to 6", row.SignCount)
+		}
+	})
+}
+
+// A write-back that does carry the clone warning sets it, so the set semantics do
+// not lose the flag when the presented assertion is the one that reports it.
+func TestWriteBackSetsACloneFlag(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
+		r := newRig(t, h)
+		ctx := context.Background()
+		seedCredential(t, r, "f1", 1, false)
+		if _, err := r.p.register.writeBack(ctx, "f1", credentialRow{SignCount: 2, CloneWarning: true}); err != nil {
+			t.Fatalf("writeBack: %v", err)
+		}
+		row, found, err := r.p.register.getCredential(ctx, "f1")
+		if err != nil || !found {
+			t.Fatalf("getCredential: found=%v err=%v", found, err)
+		}
+		if !row.CloneWarning {
+			t.Error("a write-back carrying the clone warning did not set it")
+		}
+	})
+}
+
 // probe is an outage naming ErrNotMigrated for a table that is not there, and
 // nil once both tables are.
 func TestProbeReportsAMissingTable(t *testing.T) {

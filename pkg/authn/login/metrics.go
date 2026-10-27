@@ -85,13 +85,18 @@ func (m meters) auditFailed(ctx context.Context) {
 	m.auditFailures.Add(ctx, 1, metric.WithAttributes(attribute.Bool(mandatoryAttribute, false)))
 }
 
-// reportLogin counts a terminal outcome of a login flow. A flow of any other
-// purpose is not a login and is not counted.
+// reportLogin counts a terminal outcome of a login flow and writes the audit row
+// of one that did not succeed. A flow of any other purpose is not a login and
+// neither happens. The success row is auditLogin's, which carries the session,
+// the methods and the derived identity.
 func (r *routes) reportLogin(ctx context.Context, rec record, outcome string) {
 	if rec.Purpose != authn.PurposeLogin {
 		return
 	}
 	r.meters.login(ctx, rec.Method, outcome)
+	if auditOutcome, ok := loginAuditOutcome(outcome); ok {
+		r.auditLoginOutcome(ctx, rec, auditOutcome)
+	}
 }
 
 // loginOutcomeOf maps an error a login flow failed with to the counter's

@@ -1,7 +1,10 @@
 package webauthn
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -9,6 +12,18 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/step"
 )
+
+// A passkey login's assertion requires user verification, so the client is asked
+// for it and an assertion without the bit is refused by the library.
+func TestAPasskeyStartRequiresUserVerification(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
+		r := newRig(t, h)
+		opts, _ := r.passkeyStart(t)
+		if opts.UserVerification != "required" {
+			t.Errorf("the passkey assertion asks userVerification = %q, want required", opts.UserVerification)
+		}
+	})
+}
 
 // A passkey login proves the account the client picks: the discoverable assertion
 // yields a proof naming the account and the webauthn method, and user
@@ -35,9 +50,10 @@ func TestPasskeyLoginProvesAnAccount(t *testing.T) {
 	})
 }
 
-// A passkey whose assertion did not verify the user reports no user verification,
-// which is what leaves it a single factor.
-func TestAPasskeyWithoutUserVerificationReportsNoUserVerification(t *testing.T) {
+// A passkey assertion that did not verify the user is refused: the login
+// assertion requires user verification, so the library rejects it rather than
+// handing over a proof that would stand for one factor.
+func TestAPasskeyWithoutUserVerificationIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h)
 		a := newAuthenticator(t)
@@ -46,9 +62,9 @@ func TestAPasskeyWithoutUserVerificationReportsNoUserVerification(t *testing.T) 
 		handle := r.handle(t)
 
 		opts, private := r.passkeyStart(t)
-		proof := r.passkeyAnswer(t, private, a.assertion(t, opts.Challenge, 1, false, handle))
-		if proof.UserVerified {
-			t.Error("an assertion without user verification sets UserVerified")
+		got := r.answer(t, private, a.assertion(t, opts.Challenge, 1, false, handle))
+		if step.KindOf(got) != step.KindRefused {
+			t.Fatalf("an assertion without user verification gave %v, want refused", step.KindOf(got))
 		}
 	})
 }
@@ -195,4 +211,41 @@ func (r *rig) passkeyAnswer(t *testing.T, private, body []byte) authn.Proof {
 		t.Fatalf("the answer gave %v, want proven", step.KindOf(got))
 	}
 	return step.ProofOf(got)
+}
+
+// A cloned credential and a replayed assertion each write one security log line
+// on the passkey login path: a Warn for the clone and an Info for the replay,
+// carrying the account, the factor and the cause. The clone is driven through a
+// real ceremony whose counter went backwards; the replay is the loss of the
+// conditional write-back, which a concurrent writer causes, so the outcome is
+// handed to the answer directly.
+func TestAssertionOutcomesWriteSecurityLog(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
+		r := newRig(t, h)
+		a := newAuthenticator(t)
+		rec := r.enroll(t, a, profilePasskey, true)
+		r.mfa.set(acct, authn.FactorRecord{ID: rec.ID, Account: acct, Kind: authn.FactorWebAuthn, Status: authn.FactorActive})
+		handle := r.handle(t)
+		var logs bytes.Buffer
+		r.p.logger = slog.New(slog.NewTextHandler(&logs, nil))
+
+		opts, private := r.passkeyStart(t)
+		r.passkeyAnswer(t, private, a.assertion(t, opts.Challenge, 10, true, handle))
+		opts, private = r.passkeyStart(t)
+		if got := r.answer(t, private, a.assertion(t, opts.Challenge, 5, true, handle)); step.KindOf(got) != step.KindRefused {
+			t.Fatalf("an assertion whose counter went backwards gave %v, want refused", step.KindOf(got))
+		}
+		r.p.answerAssertion(acct, rec.ID, assertionResult{}, assertionReplay)
+
+		lines := logs.String()
+		if !strings.Contains(lines, "level=WARN") || !strings.Contains(lines, "possible clone") {
+			t.Errorf("the clone warning wrote no Warn line: %s", lines)
+		}
+		if !strings.Contains(lines, "level=INFO") || !strings.Contains(lines, "presented again") {
+			t.Errorf("the replay wrote no Info line: %s", lines)
+		}
+		if !strings.Contains(lines, "account=acct-1") {
+			t.Errorf("the security lines do not name the account: %s", lines)
+		}
+	})
 }

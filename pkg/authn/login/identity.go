@@ -83,6 +83,56 @@ func cutUTF8(s string, n int) string {
 // The audit action of a login, and the event payloads' field sources.
 const actionLogin = "authn.login"
 
+// The audit results of a login that did not succeed. The metric's set names
+// failed, while the audit table's names failure; the two are kept apart here.
+const (
+	auditOutcomeFailure   = "failure"
+	auditOutcomeThrottled = "throttled"
+	auditOutcomeRefused   = "refused"
+)
+
+// loginAuditOutcome maps a terminal metric outcome to the audit result of
+// authn.login. success is written by auditLogin, which carries the session, the
+// methods and the derived identity; unavailable is outside the audit result set.
+func loginAuditOutcome(outcome string) (string, bool) {
+	switch outcome {
+	case outcomeFailed:
+		return auditOutcomeFailure, true
+	case outcomeThrottled:
+		return auditOutcomeThrottled, true
+	case outcomeRefused:
+		return auditOutcomeRefused, true
+	}
+	return "", false
+}
+
+// auditLoginOutcome writes the audit row of a login that ended on a failed,
+// throttled or refused outcome. The object is the account identifier when the
+// flow already knew one, and empty otherwise; the actor stays empty, because a
+// login that failed proved nobody. The detail carries only the method and the
+// delivery, never the input or a free-text reason. A flow of another purpose is
+// not a login and writes nothing.
+//
+// The row is best-effort: a failure is an Error and a count on
+// authn.audit.write-failures with mandatory=false, and the login's own answer is
+// unchanged.
+func (r *routes) auditLoginOutcome(ctx context.Context, rec record, outcome string) {
+	if r.audit == nil || rec.Purpose != authn.PurposeLogin {
+		return
+	}
+	err := r.audit.Record(ctx, audit.Entry{
+		Action:  actionLogin,
+		Object:  rec.Account,
+		Outcome: outcome,
+		Detail:  map[string]string{"method": rec.Method, "delivery": rec.Delivery},
+	})
+	if err != nil {
+		r.meters.auditFailed(ctx)
+		r.logger.Error(ModuleName+": a login audit row could not be written",
+			slog.String("cause", err.Error()))
+	}
+}
+
 // auditLogin writes the login audit row. The row's actor is the account the
 // login just proved, which is carried by a context derived for this one call:
 // identity.With puts an identity into it, and the context reaches the audit
@@ -111,6 +161,7 @@ func (r *routes) auditLogin(c *call, rec record, account authn.AccountID, sessio
 		Detail:  map[string]string{"method": rec.Method, "delivery": rec.Delivery},
 	})
 	if err != nil {
+		r.meters.auditFailed(base)
 		log.FromContext(base).Error(ModuleName+": a login audit row could not be written",
 			slog.String("cause", err.Error()))
 	}

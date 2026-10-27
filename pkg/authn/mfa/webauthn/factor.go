@@ -293,12 +293,14 @@ func (p *product) factorIDsOf(ctx context.Context, account authn.AccountID, acti
 }
 
 // buildUser is the library's view of an account. Which credentials go in it is
-// the caller's: a registration excludes them all, a challenge may hand the
-// library just the one credential it is for.
+// the caller's: a registration excludes the account's active credentials, so a
+// disabled factor's credential is not offered and the authenticator that holds it
+// can be registered again; a challenge may hand the library just the one
+// credential it is for.
 func (p *product) buildUser(ctx context.Context, account authn.AccountID, handle string, only []credentialRow) (user, error) {
 	rows := only
 	if rows == nil {
-		ids, err := p.factorIDs(ctx, account)
+		ids, err := p.activeFactorIDs(ctx, account)
 		if err != nil {
 			return user{}, err
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"log/slog"
 
 	libwebauthn "github.com/go-webauthn/webauthn/webauthn"
 
@@ -50,8 +51,9 @@ func (p *product) Begin(_ context.Context, s authn.Start) (authn.Step, error) {
 
 // Answer verifies the assertion a client answered with. The handle it returns
 // finds the account; the library checks the assertion against that account's
-// credential, and the counter is written back. A passkey that verified the user
-// proves two factors at once, which Proof.UserVerified carries.
+// credential, and the counter is written back. The assertion requires user
+// verification, so a passkey proves two factors at once, which
+// Proof.UserVerified carries.
 func (p *product) Answer(ctx context.Context, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
 	if in.Action != authn.InputSubmit {
 		return authn.StepRefused(errNotSubmitted), nil
@@ -106,18 +108,42 @@ func (p *product) Answer(ctx context.Context, f authn.FlowState, in authn.StepIn
 	if err != nil {
 		return authn.Step{}, err
 	}
+	return p.answerAssertion(account, row.FactorID, res, outcome), nil
+}
+
+// answerAssertion turns a settled assertion into the method's answer and writes
+// the security log line the outcome earns. A clone warning is a Warn and a
+// replay an Info, with the account when the flow knew one, the factor and the
+// cause. Only this assertion is refused: the method does not disable the factor
+// or publish an event, which the multi-factor module does on its own path.
+func (p *product) answerAssertion(account authn.AccountID, factorID string, res assertionResult, outcome assertionOutcome) authn.Step {
 	switch outcome {
 	case assertionPassed:
 		return authn.StepProven(authn.Proof{
 			Account:      account,
 			Methods:      []authn.Method{authn.MethodWebAuthn},
 			UserVerified: res.userVerified,
-		}), nil
+		})
 	case assertionClone:
-		return authn.StepRefused(authn.ErrFactorFlagged), nil
+		p.logger.Warn(ModuleName+": a factor's credential was flagged as a possible clone",
+			assertionAttrs(account, factorID, authn.ErrFactorFlagged)...)
+		return authn.StepRefused(authn.ErrFactorFlagged)
 	default:
-		return authn.StepRefused(authn.ErrReplay), nil
+		p.logger.Info(ModuleName+": a one-time value was presented again",
+			assertionAttrs(account, factorID, authn.ErrReplay)...)
+		return authn.StepRefused(authn.ErrReplay)
 	}
+}
+
+// assertionAttrs is the attribute list of a refused assertion's log line: the
+// account when the flow knew one, the factor, and the cause. It carries no value
+// the client sent.
+func assertionAttrs(account authn.AccountID, factorID string, cause error) []any {
+	args := make([]any, 0, 3)
+	if account != "" {
+		args = append(args, slog.String("account", string(account)))
+	}
+	return append(args, slog.String("factor", factorID), slog.String("cause", cause.Error()))
 }
 
 // servesPurpose reports whether the method answers a flow of this purpose. A

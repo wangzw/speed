@@ -833,6 +833,8 @@ func TestACallbackAnsweringRefusedOrUnavailableLeavesATombstone(t *testing.T) {
 			m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) { return answer, nil }
 			r := newRigMethod(t, m)
 			r.allow("acct1")
+			sink := &auditing{}
+			r.p.audit = sink
 			cookie := startRedirect(t, r, "")
 
 			out := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
@@ -844,6 +846,16 @@ func TestACallbackAnsweringRefusedOrUnavailableLeavesATombstone(t *testing.T) {
 			}
 			if st := flowRecordOf(t, r, cookie).State; st != stateFailed {
 				t.Errorf("the flow state is %q, want the failed tombstone", st)
+			}
+			rows := sink.rows()
+			if tc.name == "unavailable" {
+				if len(rows) != 0 {
+					t.Errorf("an unavailable callback wrote %d audit rows, want none: %+v", len(rows), rows)
+				}
+				return
+			}
+			if len(rows) != 1 || rows[0].Outcome != "failure" {
+				t.Errorf("a refused callback wrote %+v, want one row with outcome failure", rows)
 			}
 		})
 	}

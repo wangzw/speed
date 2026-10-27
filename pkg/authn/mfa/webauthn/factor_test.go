@@ -66,6 +66,45 @@ func TestTheTwoProfilesDifferInTheOptions(t *testing.T) {
 	})
 }
 
+// A second-factor assertion keeps the relying party's preferred user
+// verification: only the passkey login's assertion is raised to required.
+func TestASecondFactorAssertionPrefersUserVerification(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
+		r := newRig(t, h)
+		a := newAuthenticator(t)
+		rec := r.enroll(t, a, profilePasskey, true)
+		opts, _ := r.challenge(t, rec)
+		if opts.UserVerification != "preferred" {
+			t.Errorf("the second-factor assertion asks userVerification = %q, want preferred", opts.UserVerification)
+		}
+	})
+}
+
+// A registration excludes the account's active credentials only: a disabled
+// factor's credential is not offered, so the authenticator that holds it can be
+// registered again. An active one is still excluded.
+func TestRegistrationExcludesOnlyActiveCredentials(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
+		r := newRig(t, h)
+		a := newAuthenticator(t)
+		first := r.enroll(t, a, profilePasskey, true)
+
+		r.mfa.set(acct, authn.FactorRecord{ID: first.ID, Account: acct, Kind: authn.FactorWebAuthn, Status: authn.FactorDisabled})
+		disabled := authn.FactorRecord{ID: "factor-2", Account: acct, Kind: authn.FactorWebAuthn, Status: authn.FactorPending}
+		opts := creationOptionsOf(t, r, disabled, profilePasskey)
+		if len(opts.ExcludeCredentials) != 0 {
+			t.Errorf("a disabled factor's credential is still excluded: %+v", opts.ExcludeCredentials)
+		}
+
+		r.mfa.set(acct, authn.FactorRecord{ID: first.ID, Account: acct, Kind: authn.FactorWebAuthn, Status: authn.FactorActive})
+		active := authn.FactorRecord{ID: "factor-3", Account: acct, Kind: authn.FactorWebAuthn, Status: authn.FactorPending}
+		opts = creationOptionsOf(t, r, active, profilePasskey)
+		if len(opts.ExcludeCredentials) != 1 {
+			t.Errorf("an active factor's credential is not excluded: %+v", opts.ExcludeCredentials)
+		}
+	})
+}
+
 // A second registration for an account that already holds a credential excludes
 // it, so the same authenticator is not registered twice.
 func TestRegistrationExcludesExistingCredentials(t *testing.T) {

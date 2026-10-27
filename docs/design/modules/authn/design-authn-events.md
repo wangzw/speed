@@ -127,13 +127,13 @@
 - `actor` 列恒取实际操作者的责任键 `Key()`。
 - 冒充时，生效账户进 `Detail` 的 `on_behalf_of`，冒充范围进 `impersonation_scope`，会话进 `session`。这些键只由 `audit/journal` 在冒充行上写入，覆盖、剥掉与不改动调用方映射的规则只在 [design-audit](../audit/design-audit.md) 的审计行的补全一节。认证自己的接缝级行因此不得写这些名字，记会话标识用 `sid`。审计表的结构不变。
 - 已认证路由上，`Record` 取上下文里的身份。登录引擎记登录审计行时用新认定的身份派生上下文（`internal/identity` 的 `With`，只在 authn 树内可见，登录引擎在 [design-authn](design-authn.md) 的写入方名单里，由依赖测试断言；派生的上下文只用于这一次 `Record`、不流回请求链），使 `actor` 是登录的账户而不是空串。
-- 登录失败时 `actor` 为空，用 `identifier_mac` 关联同一标识的多次失败。
+- 登录失败时 `actor` 为空；本实现不写 `identifier_mac`，同一标识的多次失败目前不经审计关联。
 - 匿名注册没有身份：成功时以新账户标识作 `actor`，与登录引擎同一做法，派生的上下文只交给这一次 `Record`；失败时 `actor` 为空。注册的审计行不带邮箱明文与验证码。
 - 匿名口令重置的 `attempted`、`success` 与 `denied` 行都以被重置的账户标识作 `actor`，派生的上下文只交给这一次 `Record`；每行的明细带 `channel` 与 `action_id`。不合格与抑制目标不写审计行。审计行不带邮箱、手机、验证码、新旧口令与重置令牌。
 
 **明细键名**是下列封闭集合：`method`、`delivery`、`reason_class`、`sid`、`peer`、`identifier_mac`、`factor_id`、`kind`、`scope`、`by`、`channel`、`tenant`、`change`、`provider`、`ttl_seconds`、`parent_sid`、`secret_id`、`source`、`on_behalf_of`、`impersonation_scope`、`session`、`grant_id`、`action_id`。明细键名不得取的名字有两部分：[design-audit](../audit/design-audit.md) 的审计敏感闭集，以及下列禁用名的封闭集合：`code`、`otp`、`refresh_token`、`id_token`、`assertion`、`state`。值只放标识、枚举、计数与密钥摘要的前缀：
 
-- `identifier_mac` 是带密钥的摘要的前 16 个十六进制字符，用来关联同一标识的多次失败而不存标识。
+- `identifier_mac` 是保留键，本实现不写它：带密钥的摘要的前 16 个十六进制字符原本用来关联同一标识的多次失败而不存标识，本实现不写任何标识值。
 - `grant_id` 是冒充开始的动作标识，在 `Decide` 通过之后、审计写入之前预先生成。
 - `action_id` 是其余强制档动作的动作标识。强制档动作的先写行与补写的失败行带同一个动作标识（冒充开始用 `grant_id`，其余用 `action_id`），补写规则见核心算法与流程的「强制档的写入顺序」。
 - 秘密、令牌、验证码、断言与 `state` 从不进明细；口令的管理员重置只记动作，明文从不进明细。
@@ -159,7 +159,7 @@
 | `authn.token.refresh-reuse` | 会话标识 | `detected` | 尽力 |
 | `authn.sso.reject` | IdP 标识 | `signature`、`audience`、`time`、`replay`、`in-response-to`、`issuer`、`destination`、`other` | 尽力 |
 
-**`authn.signup` 的明细只带 `method=password`。** 注册不把邮箱、用户名或验证码写进明细：邮箱是个人信息，验证码是凭据；需要关联同一地址的多次尝试时用 `identifier_mac`。
+**`authn.signup` 的明细只带 `method=password`。** 注册不把邮箱、用户名或验证码写进明细：邮箱是个人信息，验证码是凭据；本实现不写 `identifier_mac`，同一地址的多次尝试目前不经审计关联。
 
 **`authn.session.revoke` 的适用面是「撤销本身即那次动作」的路径**：管理员撤销他人的会话，以及自助面的登出与撤销会话。账户级动作（改口令、重置因素、停用账户、自助改凭据）与超限淘汰都会让会话结束，但那是它们的**副作用**而不是它们宣告的事实——它们各自写自己的动作行，不另写本动作。一次批量撤销命中多个对象时，准许行与失败行都逐对象各写一行。
 

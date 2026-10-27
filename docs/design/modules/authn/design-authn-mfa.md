@@ -399,7 +399,7 @@ CREATE TABLE authn_webauthn_credentials (
 
 | 条件 | 结果 |
 |---|---|
-| 第一因素带用户验证（`Proof.UserVerified`，通行密钥） | 不要求第二因素；`MFA.Assurance` 记多因素 |
+| 第一因素带用户验证（`Proof.UserVerified`；登录断言要求用户验证，所以通行密钥第一因素即多因素） | 不要求第二因素；`MFA.Assurance` 记多因素 |
 | 账户有任何有效因素 | `MFAFactor`：必须用一个与第一因素种类不同的因素；即使第一因素是声明了多因素的 IdP，IdP 的声明盖不过账户自己的因素 |
 | 账户 `mfa_required` 为真，或 `global-required` 为真，而账户尚无有效因素 | `MFAEnroll`：只能登记；本次登录会话记单因素，登记的因素不计入本次保障等级 |
 | `Proof.IDPAsserted` 为真，而账户没有因素、也没有账户级与全局级的强制 | 不要求第二因素；`MFA.Assurance` 记多因素并标 `IDPAssured` |
@@ -408,14 +408,14 @@ CREATE TABLE authn_webauthn_credentials (
 - **策略只加严，不放宽。** 任一级不得抵消另一级。
 - **第二因素的认证方式不得与第一因素已有的方式相交。** 可用清单已剔除相交者。短信登录之后不能用短信因素当第二因素：二者走同一条通道，对 SIM 劫持而言等于一个因素。账户只有同种类的因素时清单为空，该次登录无法完成，应答 `login-failed`，用户走管理员重置。
 - **因素实现缺席按「该因素不可用」处理。** 装配里没有某个因素种类的实现而账户有该种类的有效因素时，该因素不进可用清单，不得当作账户没有因素；账户没有任何可用因素时登录无法完成，运维从启动诊断（已登记的因素种类）与事件发现。
-- **没有「记住此设备」。** 每次登录都要答第二因素。客户端留下的任何标记都不是服务端能证明的设备身份。
+- **没有「记住此设备」。** 除第一因素本身已证明两类因素（带用户验证的通行密钥）外，每次登录都要答第二因素。客户端留下的任何标记都不是服务端能证明的设备身份。
 - **租户级强制只在请求期判。** 登录时账户是全局的，任何范围线索都能被绕开。
 
 ### 保障等级的合成
 
 `MFA.Assurance(first, second)` 是纯函数，输入是第一因素交出的事实（`Proof.UserVerified`、`Proof.IDPAsserted`、`Proof.Methods`）与可空的第二因素结论 `Pass`。判据是已证明的因素种类：
 
-- 第一因素带用户验证的通行密钥：多因素。
+- 第一因素是带用户验证的通行密钥：登录断言要求用户验证，该因素自己就证明了两类因素，多因素。
 - 第一因素加一个认证方式与之不相交的第二因素：多因素。
 - 其余：单因素。
 - 第一因素的方法不报等级；校验后端与请求期准入读登录会话行里已记录的等级与 `idp_assured`，不重新判断。
@@ -498,14 +498,14 @@ CREATE TABLE authn_webauthn_credentials (
 | 事项 | 做法 |
 |---|---|
 | `User` 适配 | `WebAuthnID` 取 `authn_webauthn_users.handle`（随机、不含个人信息）；`WebAuthnName` 取用户名标识，没有则取账户标识；`WebAuthnCredentials` 从表装出 |
-| 登记档案 | 通行密钥（`passkey=true`）：可发现凭据加用户验证 `required`，可作第一因素（登录方法名 `passkey`，带用户验证时为多因素）与第二因素。安全密钥（`passkey=false`）：用户验证 `preferred`，只作第二因素。证明格式取 `none`；登记时 `WithExclusions` 排除该账户已有凭据 |
+| 登记档案 | 通行密钥（`passkey=true`）：可发现凭据加用户验证 `required`，可作第一因素（登录方法名 `passkey`，断言要求用户验证，因而即多因素）与第二因素。安全密钥（`passkey=false`）：用户验证 `preferred`，只作第二因素。证明格式取 `none`；登记时 `WithExclusions` 排除该账户的启用凭据，停用因素的凭据不排除，使同一认证器可重新登记。登录（第一因素）断言要求 `required`，第二因素的断言保持 `preferred` |
 | 来源与 RP ID | RP ID、站点名与来源集合由配置给出（键、取值与缺省见 [authn-config](design-authn-config.md)）；启动校验 `rp-id` 等于基址主机或其父域。**全局账户对应一个 RP ID**：凭据绑定 RP ID，换 RP ID 就是另一批凭据，库提供的单次仪式覆盖 RP ID 的口子不启用。公共后缀表的核对不做，是残余风险 |
 | 仪式数据 | 放流程记录的私有字节；`Timeouts.Login.Enforce` 与 `Timeouts.Registration.Enforce` 固定为真，库只在它为真时才设过期；一次性消费靠引擎对流程记录的比较并交换，库不防同一份仪式数据被消费两次；只取本库序列化、由服务端保完整的字节，被篡改的字节能让库按长度前缀分配数 GB 内存 |
 | 每次断言成功 | 条件更新写回 `sign_count`（`WHERE sign_count <= ?`）、`clone_warning`、`user_verified`、`backup_state`，库不替调用方落库；更新失败按重放处理。同步通行密钥的计数常恒为 0，库只在新计数不大于旧计数且不全为零时才置告警，所以不误伤 |
-| 克隆告警 | `clone_warning` 为真则本次校验失败：因素以 `StepRefused(authn.ErrFactorFlagged)` 拒绝本次断言，`MFA.Verify` 据该成因把因素行置停用并发布 `authn.factor.changed`（`flagged`）；断言本身的计数回退也写 `clone_warning` 并同样以该成因拒绝。通行密钥作第一因素时由登录引擎直接驱动方法、不经 `MFA` 编排，那一路只拒绝本次断言（对外并入 `login-failed`），不置停用、不发事件；凭据自身的 `clone_warning` 使它在该路与 `Factor` 路上都不可用，清除该行经 `MFA.Remove` |
+| 克隆告警 | `clone_warning` 为真则本次校验失败：因素以 `StepRefused(authn.ErrFactorFlagged)` 拒绝本次断言，`MFA.Verify` 据该成因把因素行置停用并发布 `authn.factor.changed`（`flagged`）；断言本身的计数回退也写 `clone_warning` 并同样以该成因拒绝。通行密钥作第一因素时由登录引擎直接驱动方法、不经 `MFA` 编排，那一路只拒绝本次断言（对外并入 `login-failed`），写一行 Warn 安全日志，不置停用、不发事件；断言重放同样只拒绝并写一行 Info 安全日志。凭据自身的 `clone_warning` 使它在该路与 `Factor` 路上都不可用，清除该行经 `MFA.Remove` |
 | 版本 | go-webauthn 是 0.x，`pkg/go.mod` 精确钉在 v0.18.2（由 `pkg/authn/deps_test.go` 的守卫守住）；升级要读其迁移说明并排空在途仪式，`SessionData` 的序列化形状随版本变 |
 
-`Pass.UserVerified` 取自断言里的用户验证位。通行密钥作第一因素时，带用户验证的断言使策略判定里「第一因素带用户验证」那一条命中。
+`Pass.UserVerified` 取自断言里的用户验证位。通行密钥作第一因素时，登录断言要求用户验证，断言因此带该位，策略判定里「第一因素带用户验证」那一条命中。
 
 ### 删除与重置
 
@@ -537,7 +537,7 @@ CREATE TABLE authn_webauthn_credentials (
 
 找回途径限于下列各项（封闭集），排列顺序即使用顺序：依赖的外部判断由少到多，靠前的不可用时才退到靠后的（[ADR-authn-mfa-recovery](../../../adr/adr-authn-mfa-recovery.md)）。
 
-1. **冗余。** 账户登记了不止一个因素时，丢了一个，用另一种做加强认证，撤销丢失的并重新登记。账户只有一个因素时，登录与登记的应答带 `warnings: ["single-factor"]`，建议再登记一个。
+1. **冗余。** 账户登记了不止一个因素时，丢了一个，用另一种做加强认证，撤销丢失的并重新登记。账户只有一个因素时，本实现不发 `warnings` 提示：登录与登记的应答不带该字段，建议再登记一个的提示由客户端承担。
 2. **匿名口令重置。** 路由见 [design-authn-login](design-authn-login.md) 的「匿名口令重置」。账户本人凭一条已证明的邮箱（`email-code`）或手机（`sms-code`）收码并设定新口令，不建立会话；因素行不被触碰，重置后的下一次登录仍要先过第一因素，再按账户原来的要求过第二因素。
 3. **管理员重置因素。** 路由 `POST B/accounts/:id/mfa-reset`，效果见「删除与重置」。发起者必须有新鲜的本地多因素，其强认证里含非短信因素，名下有启用已满 `sensitive-min-age` 的非短信因素（`MFA.Seasoned`），不得是静态口令表主体，不得在冒充中。`Decider` 可以实现双人复核。
 4. **管理员重置口令。** 路由 `POST B/accounts/:id/password`，经 `Decider`（动作 `authn.account.update`，缺席即全拒）；发起者的要求同管理员重置因素；管理员提交的临时口令是请求体，从不回显、不进日志与审计，缺省置 `must_change`；强制审计；成功后撤销该账户的全部会话。这是只有口令登录名的管理员创建账户的唯一重置路径，也是组织内的口令找回途径。
@@ -551,7 +551,7 @@ CREATE TABLE authn_webauthn_credentials (
 - 匿名口令重置的强度取决于账户本人证明过的那条邮箱或手机：持有该渠道的人可以改口令。第二因素保护登录，不保护改凭据这一动作；没有第二因素的账户因此可被渠道的持有者接管。
 - 管理员重置是找回链上最弱的一环（社会工程）；本模块只提供判定接缝、审计与事件，身份核验在认证功能目录之外。
 - 首次登记因素是信任首次使用；真用户会在 `sensitive-min-age` 内被自己不拥有的因素挡在最高权限动作之外，要靠管理员重置。
-- 没有「记住设备」使使用多因素的用户每次登录都要答第二因素。
+- 没有「记住设备」使以第二因素达成多因素的用户每次登录都要答第二因素；第一因素本身已证明两类因素（带用户验证的通行密钥）时不再要求第二因素。
 
 ### 账户生命周期
 

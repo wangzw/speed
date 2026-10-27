@@ -2,6 +2,7 @@ package webauthn
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -353,6 +354,82 @@ func TestAssuranceComposesFromAPasskeyProof(t *testing.T) {
 		plain := m.Assurance(authn.Proof{Account: acct, Methods: []authn.Method{authn.MethodWebAuthn}}, nil)
 		if plain.Assurance != authn.AssuranceSingle {
 			return fmt.Errorf("a passkey that did not verify the user composed to %v, want single", plain.Assurance)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("the drive failed: %v", err)
+	}
+}
+
+// A passkey login drives the whole chain: a real registration and ceremony
+// produce a proof the multi-factor module reads, its policy asks for no second
+// factor because the assertion verified the user, and its assurance composes that
+// proof to multi-factor.
+func TestAPasskeyLoginComposesToMultiFactorWithoutASecondFactor(t *testing.T) {
+	err := assembly{migrate: true}.drive(t, func(ctx context.Context, reg *core.Registry) error {
+		m, err := core.Resolve[authn.MFA](reg)
+		if err != nil {
+			return err
+		}
+		method, err := core.Resolve[authn.LoginMethod](reg)
+		if err != nil {
+			return err
+		}
+		a := newAuthenticator(t)
+
+		s1, err := m.Enroll(ctx, authn.FlowState{Account: acct}, authn.FactorWebAuthn,
+			authn.StepInput{Action: authn.InputSubmit, Fields: map[string]string{fieldProfile: profilePasskey}})
+		if err != nil {
+			return fmt.Errorf("Enroll step 1: %w", err)
+		}
+		creation := decodeCreation(t, step.DataOf(s1))
+		handle, err := base64.RawURLEncoding.DecodeString(creation.User.ID)
+		if err != nil {
+			return fmt.Errorf("decoding the user handle: %w", err)
+		}
+		s2, err := m.Enroll(ctx, authn.FlowState{Account: acct, Private: step.PrivateOf(s1)}, authn.FactorWebAuthn,
+			authn.StepInput{Action: authn.InputSubmit, Fields: map[string]string{fieldCredential: string(a.registration(t, creation.Challenge, true))}})
+		if err != nil {
+			return fmt.Errorf("Enroll step 2: %w", err)
+		}
+		if step.KindOf(s2) != step.KindEnrolled {
+			return fmt.Errorf("Enroll step 2 gave %v, want enrolled", step.KindOf(s2))
+		}
+
+		start, err := method.Begin(ctx, authn.Start{Purpose: authn.PurposeLogin})
+		if err != nil {
+			return fmt.Errorf("Begin: %w", err)
+		}
+		if step.KindOf(start) != step.KindData {
+			return fmt.Errorf("Begin gave %v, want data", step.KindOf(start))
+		}
+		assertion := decodeAssertion(t, step.DataOf(start))
+		answered, err := method.Answer(ctx,
+			authn.FlowState{Purpose: authn.PurposeLogin, Step: stepPasskey, Private: step.PrivateOf(start)},
+			authn.StepInput{Action: authn.InputSubmit, Fields: map[string]string{
+				fieldCredential: string(a.assertion(t, assertion.Challenge, 1, true, handle)),
+			}})
+		if err != nil {
+			return fmt.Errorf("Answer: %w", err)
+		}
+		if step.KindOf(answered) != step.KindProven {
+			return fmt.Errorf("Answer gave %v, want proven", step.KindOf(answered))
+		}
+		proof := step.ProofOf(answered)
+		if proof.Account != acct || !proof.UserVerified {
+			return fmt.Errorf("the proof is %+v, want the account and user verification", proof)
+		}
+
+		outcome, offered, err := m.Require(ctx, acct, acct, proof)
+		if err != nil {
+			return fmt.Errorf("Require: %w", err)
+		}
+		if outcome != authn.MFANone || len(offered) != 0 {
+			return fmt.Errorf("Require = %v, %+v, want no second factor", outcome, offered)
+		}
+		if got := m.Assurance(proof, nil); got.Assurance != authn.AssuranceMulti {
+			return fmt.Errorf("Assurance = %v, want multi-factor", got.Assurance)
 		}
 		return nil
 	})

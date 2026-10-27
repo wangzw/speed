@@ -81,8 +81,8 @@ does.
 - **No token, cookie value, password, secret or identifier value reaches a log
   line, an error text, an event or a metric attribute.** The flow token is stored
   as its SHA-256 and compared in constant time; `method_state` is opaque to the
-  engine; the audit row's `identifier_mac` is the one identifier shape that is
-  written, and it is a MAC.
+  engine; this implementation writes no identifier value, including
+  `identifier_mac`.
 - **The one place an identity is written rather than read is the audit row of a
   completed login.** The engine derives a context carrying the account the login
   just proved and hands it to the audit record alone; the derived context reaches

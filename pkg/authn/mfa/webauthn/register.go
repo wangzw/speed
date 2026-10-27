@@ -194,9 +194,12 @@ func (g *register) insertCredential(ctx context.Context, r credentialRow) error 
 // concurrent assertion that advanced the counter first makes this one lose, and
 // the caller reads the zero affected rows as a replay. A false result is that
 // loss and not an error.
+//
+// clone_warning is set rather than assigned, so a concurrent flagClone is not
+// cleared by a write-back that carries no warning.
 func (g *register) writeBack(ctx context.Context, factorID string, presented credentialRow) (bool, error) {
 	res := g.session(ctx).Exec("UPDATE "+authenticatorTable+
-		" SET sign_count = ?, clone_warning = ?, user_verified = ?, backup_state = ? "+
+		" SET sign_count = ?, clone_warning = (clone_warning OR ?), user_verified = ?, backup_state = ? "+
 		"WHERE factor_id = ? AND sign_count <= ?",
 		presented.SignCount, presented.CloneWarning, presented.UserVerified, presented.BackupState,
 		factorID, presented.SignCount)

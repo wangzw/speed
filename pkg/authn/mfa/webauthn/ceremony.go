@@ -51,13 +51,19 @@ const (
 // newRelyingParty builds the library's relying party from this module's
 // configuration. The attestation preference is none, so no authenticator is
 // asked to attest; the two timeouts are enforced server-side, which is the only
-// setting under which the library records an expiry on a ceremony.
+// setting under which the library records an expiry on a ceremony. User
+// verification is preferred by default, which is what a security key used as a
+// second factor asks for; a passkey registration overrides it to required, and
+// so does the passkey login assertion.
 func newRelyingParty(cfg resolved) (*libwebauthn.WebAuthn, error) {
 	return libwebauthn.New(&libwebauthn.Config{
 		RPID:                  cfg.rpID,
 		RPDisplayName:         cfg.rpName,
 		RPOrigins:             cfg.origins,
 		AttestationPreference: protocol.PreferNoAttestation,
+		AuthenticatorSelection: protocol.AuthenticatorSelection{
+			UserVerification: protocol.VerificationPreferred,
+		},
 		Timeouts: libwebauthn.TimeoutsConfig{
 			Login:        libwebauthn.TimeoutConfig{Enforce: true},
 			Registration: libwebauthn.TimeoutConfig{Enforce: true},
@@ -260,7 +266,9 @@ func finishRegistration(wa *libwebauthn.WebAuthn, u user, state []byte, body []b
 
 // beginAssertion makes the assertion options and the session that asks a user to
 // authenticate with a credential they already hold. The allowed credentials are
-// the ones passed, so an assertion is accepted only from one of them.
+// the ones passed, so an assertion is accepted only from one of them. User
+// verification keeps the relying party's default of preferred: a second factor
+// may verify the user but is not required to.
 func beginAssertion(wa *libwebauthn.WebAuthn, u user, allowed []libwebauthn.Credential) (options json.RawMessage, state []byte, err error) {
 	descriptors := make([]protocol.CredentialDescriptor, 0, len(allowed))
 	for _, c := range allowed {
@@ -283,9 +291,12 @@ func beginAssertion(wa *libwebauthn.WebAuthn, u user, allowed []libwebauthn.Cred
 
 // beginDiscoverableAssertion makes the assertion options for a passkey login,
 // where the client chooses the credential and no relying party-side account is
-// named: the handle it returns is what finds the account at the finish.
+// named: the handle it returns is what finds the account at the finish. The
+// assertion requires user verification, so a passkey proves two factors at once
+// and an assertion without it is refused by the library.
 func beginDiscoverableAssertion(wa *libwebauthn.WebAuthn) (options json.RawMessage, state []byte, err error) {
-	assertion, session, err := wa.BeginDiscoverableLogin()
+	assertion, session, err := wa.BeginDiscoverableLogin(
+		libwebauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
 		return nil, nil, fmt.Errorf("starting a passkey login: %w", err)
 	}
