@@ -19,7 +19,8 @@
       "flow_invalid": "This verification attempt is no longer valid. Start again.",
       "throttled": "Too many attempts. Try again later.",
       "unavailable": "The service is temporarily unavailable. Try again later.",
-      "human_verification_required": "Please confirm you are human, then try again."
+      "human_verification_required": "Please confirm you are human, then try again.",
+      "sso_required": "This action requires re-authentication through enterprise single sign-on. Sign in again."
     },
     "authz": {
       "bad_request": "The server could not read this request. Check the form and try again.",
@@ -96,6 +97,8 @@
   },
   "stepUp": {
     "title": "Verify it's you",
+    "ssoTitle": "Enterprise single sign-on required",
+    "ssoRequired": "This action requires re-authentication through enterprise single sign-on. Sign in again.",
     "description": "This action asks for a stronger or more recent sign-in. Complete one verification to continue.",
     "starting": "Starting verification…",
     "submit": "Verify",

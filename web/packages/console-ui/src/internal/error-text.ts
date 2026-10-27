@@ -97,6 +97,9 @@ export const ERROR_TEXT_CODES = [
   'authn.contact_required',
   'authn.forbidden',
   'authn.impersonation_restricted',
+  // The tenant admission layer's SSO step-up refusal: a local factor cannot
+  // clear it, and the dialog shows the enterprise sign-in exit.
+  'authn.sso_required',
   // authn's highest-privilege refused writes: the 403 of an initiator with no
   // non-SMS factor enabled for the configured period. A stronger
   // authentication cannot clear it, so it renders a waiting note rather than

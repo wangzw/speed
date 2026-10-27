@@ -1424,6 +1424,7 @@ export function AccountsPage({
       {session !== null && (
         <StepUpChallenge
           open={gate.open}
+          reason={gate.reason}
           session={session}
           onSuccess={gate.succeed}
           onCancel={gate.cancel}
@@ -2656,6 +2657,7 @@ function AccountDetailWrites({
       {session !== null && (
         <StepUpChallenge
           open={gate.open}
+          reason={gate.reason}
           session={session}
           onSuccess={gate.succeed}
           onCancel={gate.cancel}

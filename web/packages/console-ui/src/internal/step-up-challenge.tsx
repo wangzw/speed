@@ -66,7 +66,7 @@ import {
   getAuthnMfaFactorsQueryKey,
   useAuthnMfaFactors,
 } from '@speed/api-sdk'
-import type { AuthSession } from '@speed/auth-core'
+import type { AuthSession, StepUpReason } from '@speed/auth-core'
 import type { AuthnFlowAnswer, AuthnStep } from '@speed/auth-core'
 import { humanGateNeedsProof, useStepUp } from '@speed/auth-core'
 import { HumanVerification } from '@speed/ui-kit'
@@ -79,6 +79,10 @@ import { useConsoleUiTranslation } from './translation.js'
 export interface StepUpChallengeProps {
   /** Whether the dialog is showing. Opening starts a fresh flow. */
   readonly open: boolean
+  /** What the refusal asked for: the local factor challenge (the default) or a
+   * fresh sign-in through the tenant's identity provider ("sso"), which no
+   * local factor can satisfy. */
+  readonly reason?: StepUpReason | null
   /** The session whose step-up flow the dialog drives. */
   readonly session: AuthSession
   /** Fired once when the flow settles the elevation. The host closes the dialog. */
@@ -89,12 +93,16 @@ export interface StepUpChallengeProps {
 
 export function StepUpChallenge({
   open,
+  reason = 'mfa',
   session,
   onSuccess,
   onCancel,
 }: StepUpChallengeProps) {
   const { t } = useConsoleUiTranslation()
   const titleId = useId()
+  // The SSO refusal cannot be satisfied by any local factor, so the dialog
+  // starts no flow and reads no factor: it offers the sign-in exit alone.
+  const sso = reason === 'sso'
   // The host's account settings destination, published by the shell. The
   // package holds no host path, so the no-factor state is text-only when
   // the host supplies none.
@@ -105,10 +113,11 @@ export function StepUpChallenge({
   // that cannot come. No factor read, or a failed one, falls back to the
   // flow's own refusal.
   const factors = useAuthnMfaFactors({
-    query: { queryKey: getAuthnMfaFactorsQueryKey(), enabled: open },
+    query: { queryKey: getAuthnMfaFactorsQueryKey(), enabled: open && !sso },
   })
-  const checking = open && factors.isPending
-  const noFactor = open && factors.isSuccess && activeFactorCount(factors.data) === 0
+  const checking = open && !sso && factors.isPending
+  const noFactor =
+    open && !sso && factors.isSuccess && activeFactorCount(factors.data) === 0
   // A restart remounts the flow driver: a fresh mount re-drives useStepUp,
   // which has no restart command of its own. The factor read stays put.
   const [run, setRun] = useState(0)
@@ -118,10 +127,34 @@ export function StepUpChallenge({
     return null
   }
 
+  // The SSO exit: end the session so the host's session gate converges on its
+  // sign-in surface, where the operator signs in through the tenant's identity
+  // provider. No local factor can clear this refusal.
+  const relogin = (): void => {
+    onCancel()
+    void session.logout().catch(() => undefined)
+  }
+
   return (
     <Dialog open onClose={onCancel} aria-labelledby={titleId} maxWidth="xs" fullWidth>
-      <DialogTitle id={titleId}>{t('stepUp.title')}</DialogTitle>
-      {noFactor ? (
+      <DialogTitle id={titleId}>
+        {t(sso ? 'stepUp.ssoTitle' : 'stepUp.title')}
+      </DialogTitle>
+      {sso ? (
+        <>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary">
+              {t('stepUp.ssoRequired')}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={onCancel}>{t('common.cancel')}</Button>
+            <Button variant="contained" onClick={relogin}>
+              {t('stepUp.relogin')}
+            </Button>
+          </DialogActions>
+        </>
+      ) : noFactor ? (
         <>
           <DialogContent>
             <Typography variant="body2" color="text.secondary">

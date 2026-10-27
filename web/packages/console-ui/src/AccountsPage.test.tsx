@@ -336,6 +336,15 @@ function stepUpRefusal(): {
   return { status: 401, code: 'client.http.401', message: 'refused', auth: true }
 }
 
+/** A 401 ApiError carrying the tenant admission layer's SSO step-up code. A
+ * local factor cannot satisfy it, so the dialog must offer the sign-in exit. */
+const SSO_REFUSAL = {
+  status: 401,
+  code: 'authn.sso_required',
+  message: 'refused',
+  auth: true,
+}
+
 /** A 403 ApiError carrying a code the console's error text lists, so the
  * failure banner has a stable line to assert on. */
 const FORBIDDEN = {
@@ -2908,6 +2917,34 @@ describe('AccountsPage', () => {
       ])
     })
     // The step-up elevated the session; it did not sign the operator out.
+    expect(session.getSnapshot().state).toBe('authenticated')
+  })
+
+  it('shows the enterprise sign-in exit for an SSO step-up refusal', async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    const startFlow = vi.spyOn(session, 'startAuthenticatedFlow')
+    const operations = withAccounts({
+      setAccountStatus: () => Promise.reject(SSO_REFUSAL),
+    })
+    renderWithProviders(<AccountsPage />, { operations, session })
+    await openDetail(user)
+    const save = await screen.findByRole('button', { name: zhCN.accounts.status.submit })
+    await user.click(screen.getByLabelText(zhCN.accounts.status.label))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
+    await user.click(save)
+
+    // The dialog names the enterprise sign-in and offers only the re-login
+    // exit; it starts no local step-up flow and lists no factor.
+    expect(await screen.findByText(zhCN.stepUp.ssoRequired)).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.stepUp.relogin }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.stepUp.description)).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.stepUp.submit }),
+    ).not.toBeInTheDocument()
+    expect(startFlow).not.toHaveBeenCalled()
     expect(session.getSnapshot().state).toBe('authenticated')
   })
 
