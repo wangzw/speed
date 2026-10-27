@@ -26,7 +26,7 @@ func (r *rig) impersonatedAuthenticated(actor, target authn.AccountID, session a
 	)
 	r.sessions.status = authn.SessionStatus{
 		Active: true, Account: actor, Kind: authn.SessionBrowser,
-		Methods: []authn.Method{authn.MethodPassword, authn.MethodTOTP},
+		Methods:   []authn.Method{authn.MethodPassword, authn.MethodTOTP},
 		Assurance: authn.AssuranceMulti, AuthTime: now,
 		ImpersonationID: "grant-1",
 	}
