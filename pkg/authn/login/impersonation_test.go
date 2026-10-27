@@ -530,6 +530,53 @@ func TestAnImpersonatedFlowIsRefusedWhenTheRecordCannotBeRead(t *testing.T) {
 	}
 }
 
+// TestAnImpersonatedFlowIsRefusedWhenTheRecordBindsAnotherPair holds the
+// record's own identity against the flow: the completion re-reads the record and
+// refuses when its actor or target is no longer the pair the flow was started
+// under, even though the record is still active. The flipped account is seeded
+// live, so the refusal comes from the comparison and not from the record
+// reading as lapsed.
+func TestAnImpersonatedFlowIsRefusedWhenTheRecordBindsAnotherPair(t *testing.T) {
+	cases := []struct {
+		name string
+		flip func(*authn.ImpersonationGrant)
+	}{
+		{"the record's actor is another account", func(g *authn.ImpersonationGrant) { g.Actor = "acct-other" }},
+		{"the record's target is another account", func(g *authn.ImpersonationGrant) { g.Target = "acct-other" }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t, &fakeMethod{name: "password"})
+			r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
+
+			start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+				`{"purpose":"enroll","input":{"kind":"totp"}}`)
+			if start.Code != http.StatusOK {
+				t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+			}
+			cookie := flowCookie(t, start)
+			seq := int(decode(t, start.Body.String())["seq"].(float64))
+
+			r.accounts.byID["acct-other"] = authn.Account{ID: "acct-other", Kind: authn.KindUser, Status: authn.StatusActive}
+			r.imp.member["acct-other"] = true
+			tc.flip(&r.imp.grant)
+
+			done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+				`{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+			if done.Code != http.StatusUnauthorized {
+				t.Fatalf("the completion under a record binding another pair answered %d: %s, want 401 flow-invalid",
+					done.Code, done.Body.String())
+			}
+			if got := decode(t, done.Body.String())["type"]; got != "urn:speed:authn:flow-invalid" {
+				t.Errorf("the completion answered type %v, want urn:speed:authn:flow-invalid", got)
+			}
+			if r.sessions.revokedAll != 0 {
+				t.Error("a completion under a record binding another pair revoked the target's sessions")
+			}
+		})
+	}
+}
+
 // TestAnImpersonatedFlowCannotCompleteUnderADifferentRecord holds the completion
 // re-check against the effective account: a session that no longer names the
 // record the flow was started under, whether because the impersonation ended or
