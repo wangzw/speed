@@ -256,6 +256,59 @@ func TestTheEnrollNextStepCarriesTheKinds(t *testing.T) {
 	}
 }
 
+// TestTheFirstRegistrationAnswerDropsTheFirstFactorsStepState holds that the
+// private state a first factor carried while it proved does not reach the
+// registration as that step's own in-progress state: the enrollment's first
+// answer is handed an empty Private, so the multi-factor module starts a
+// registration instead of looking for a pending factor it never made. A
+// redirect first factor (social or enterprise) leaves such a state behind, and
+// a deployment that requires a factor parks that login at enroll.
+func TestTheFirstRegistrationAnswerDropsTheFirstFactorsStepState(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("code", []byte(`{"state":"first-factor"}`),
+			authn.Field{Name: "code", Kind: authn.FieldCode, Required: true}), nil
+	}
+	m.ans = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{
+			Account: "acct1",
+			Methods: []authn.Method{authn.MethodPassword},
+		}), nil
+	}
+	r := newRig(t, m)
+	r.allow("acct1")
+	r.mfa.outcome = authn.MFAEnroll
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	startSeq := int(decode(t, start.Body.String())["seq"].(float64))
+	first := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(startSeq)+`,"step":"answer","input":{"code":"1"}}`, "Cookie", cookie)
+	if first.Code != http.StatusOK {
+		t.Fatalf("the first factor's answer answered %d: %s", first.Code, first.Body.String())
+	}
+	next, ok := decode(t, first.Body.String())["next"].(map[string]any)
+	if !ok || next["kind"] != "enroll" {
+		t.Fatalf("a login the policy requires a factor of answered next %v, want enroll", next)
+	}
+
+	seq := int(decode(t, first.Body.String())["seq"].(float64))
+	answer := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"enroll","input":{"kind":"totp"}}`, "Cookie", cookie)
+	if answer.Code != http.StatusOK {
+		t.Fatalf("the first registration answer answered %d: %s", answer.Code, answer.Body.String())
+	}
+	if len(r.mfa.enrollStates) != 1 {
+		t.Fatalf("MFA.Enroll ran %d times, want one", len(r.mfa.enrollStates))
+	}
+	if got := r.mfa.enrollStates[0].Private; len(got) != 0 {
+		t.Errorf("the registration was handed the first factor's private state %q, want none", got)
+	}
+}
+
 // TestLoginWithNoUsableFactorIsRefused holds that a login whose account has
 // factors but none the engine can offer is a credential failure, not an account
 // with no factor.

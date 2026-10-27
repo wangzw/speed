@@ -290,6 +290,12 @@ func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw [
 	}
 	p := proof
 	rec.Proof = &p
+	// The first factor's private step state is spent once it proves. Carrying
+	// it into the next state would hand it to a registration or a second
+	// factor as that step's own in-progress state, which is what a redirect
+	// first factor leaves behind.
+	rec.MethodStep = ""
+	rec.MethodState = nil
 	if res.Outcome == resolve.OutcomeMerged {
 		rec.Merged = true
 	}

@@ -227,6 +227,9 @@ type fakeMFA struct {
 	factors   []authn.FactorRecord
 	enroll    func(kind authn.FactorKind, in authn.StepInput) authn.Step
 	enrolls   []authn.StepInput
+	// enrollStates records the flow state each Enroll call ran with, so a case
+	// sees the private step state the engine hands the registration.
+	enrollStates []authn.FlowState
 	// enrollIDs and enrollFound record the identity each Enroll call ran under.
 	// The multi-factor module writes a registration's terminal audit row from
 	// this context, so a case reads here the identity that row is written under.
@@ -268,11 +271,12 @@ func (m *fakeMFA) Verify(_ context.Context, _ authn.FlowState, factorID string, 
 	return authn.StepPassed(authn.Pass{Methods: []authn.Method{authn.MethodTOTP}}), nil
 }
 
-func (m *fakeMFA) Enroll(ctx context.Context, _ authn.FlowState, kind authn.FactorKind, in authn.StepInput) (authn.Step, error) {
+func (m *fakeMFA) Enroll(ctx context.Context, f authn.FlowState, kind authn.FactorKind, in authn.StepInput) (authn.Step, error) {
 	id, ok := authn.FromContext(ctx)
 	m.enrollIDs = append(m.enrollIDs, id)
 	m.enrollFound = append(m.enrollFound, ok)
 	m.enrolls = append(m.enrolls, in)
+	m.enrollStates = append(m.enrollStates, f)
 	if m.enroll != nil {
 		return m.enroll(kind, in), nil
 	}
