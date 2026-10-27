@@ -454,6 +454,45 @@ describe('PasswordResetScreen', () => {
     ).toBeInTheDocument()
   })
 
+  it('attach an invalid identifier refusal to the identifier field', async () => {
+    renderWithProviders(
+      <PasswordResetScreen
+        session={session()}
+        channels={['email']}
+        operations={resetOperations({
+          requestReset: () =>
+            Promise.reject(apiError(400, 'authn.bad_request')),
+        })}
+      />,
+    )
+    const user = await fillIdentifier()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordReset.send }),
+    )
+    const identifier = screen.getByLabelText(zhCN.passwordReset.emailLabel)
+    await waitFor(() => expect(identifier).toHaveFocus())
+    expect(identifier).toHaveAttribute('aria-invalid', 'true')
+    expect(
+      screen.getByText(zhCN.passwordReset.invalidIdentifier),
+    ).toBeInTheDocument()
+  })
+
+  it('show the resume state while the bound record is read', () => {
+    renderWithProviders(
+      <PasswordResetScreen
+        session={session()}
+        channels={['email']}
+        operations={resetOperations({
+          currentReset: () =>
+            new Promise(() => {
+              // Never settles: the surface stays on its resume state.
+            }),
+        })}
+      />,
+    )
+    expect(screen.getByText(zhCN.passwordReset.loading)).toBeInTheDocument()
+  })
+
   it('resume a verified reset and write only the password', async () => {
     const completeReset = vi.fn(() => Promise.resolve())
     const verifyReset = vi.fn(() => Promise.resolve(VERIFIED))
@@ -566,6 +605,29 @@ describe('PasswordResetScreen', () => {
     await fillCodeAndPassword(user)
     expect(
       await screen.findByText(zhCN.passwordReset.flowInvalid),
+    ).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordReset.startOver }),
+    )
+    expect(
+      await screen.findByLabelText(zhCN.passwordReset.emailLabel),
+    ).toBeInTheDocument()
+    expect(abandonReset).toHaveBeenCalledTimes(1)
+  })
+
+  it('offer a start-over exit when the account is no longer eligible', async () => {
+    const abandonReset = vi.fn(() => Promise.resolve())
+    const user = await reachSent(
+      resetOperations({
+        verifyReset: () => Promise.resolve(VERIFIED),
+        completeReset: () =>
+          Promise.reject(apiError(403, 'authn.password_reset_unavailable')),
+        abandonReset,
+      }),
+    )
+    await fillCodeAndPassword(user)
+    expect(
+      await screen.findByText(zhCN.errors.authn.password_reset_unavailable),
     ).toBeInTheDocument()
     await user.click(
       screen.getByRole('button', { name: zhCN.passwordReset.startOver }),
