@@ -61,14 +61,17 @@ func (p *product) admit() error {
 	return nil
 }
 
-// gateSignup refuses a management write an account with an unproved email
+// gateSignup refuses a management write an operator with an unproved email
 // address makes. It runs after the caller is known and before the Decider and
 // the mandatory audit, so a refused request asks no seam, writes no row and
-// calls no Invites method. A service account and an account with no email
-// address are exempt, having nothing to verify; a state that cannot be read is a
-// 503 and never read as verified.
+// calls no Invites method. The subject is the operator, not the effective
+// account: an impersonated target's own verification says nothing about the
+// address the operator's hands proved. A service account and an account with no
+// email address are exempt, having nothing to verify; a state that cannot be
+// read is a 503 and never read as verified.
 func (p *product) gateSignup(ctx context.Context, id authn.Identity) error {
-	account, err := p.accounts.Get(ctx, id.Account())
+	actor := id.Actor()
+	account, err := p.accounts.Get(ctx, actor)
 	switch {
 	case errors.Is(err, authn.ErrAccountNotFound):
 		// A static password-table subject is no account row and holds no email
@@ -80,7 +83,7 @@ func (p *product) gateSignup(ctx context.Context, id authn.Identity) error {
 	if account.Kind != authn.KindUser {
 		return nil
 	}
-	status, err := p.verification.SignupStateOf(ctx, id.Account())
+	status, err := p.verification.SignupStateOf(ctx, actor)
 	if err != nil {
 		return p.cause("reading the signup state", fmt.Errorf("%w: %w", authn.ErrUnavailable, err))
 	}

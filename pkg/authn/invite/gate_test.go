@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
 // TestManagementWritesAreRefusedForAnUnverifiedAccount holds the signup gate of
@@ -131,6 +132,42 @@ func TestServiceAccountsAreExemptFromTheGate(t *testing.T) {
 	}
 	if got := h.verification.readCount(); got != 0 {
 		t.Errorf("a service account read the signup state %d times, want none", got)
+	}
+}
+
+// TestTheSignupGateReadsTheOperatorsOwnState holds the gate's subject when the
+// request is an impersonation: the operator's hands are on the request, so the
+// operator's unproved address is what the write is refused for, even when the
+// impersonated account has proved its own. Reading the effective account
+// instead would let the operator issue through the target's verification.
+func TestTheSignupGateReadsTheOperatorsOwnState(t *testing.T) {
+	const targetID = authn.AccountID("acct-target")
+	h := newHarness(t)
+	h.verification.states = map[authn.AccountID]authn.SignupStatus{
+		adminID:  {State: authn.SignupPending},
+		targetID: {State: authn.SignupVerified},
+	}
+	h.mounter.As(
+		authntest.WithAccount(targetID),
+		authntest.WithActor(adminID),
+		authntest.WithSession("sid-op"),
+		authntest.WithScope("tenant-a"),
+	)
+	w := h.request(http.MethodPost, pathAdmin, map[string]string{"email": "alice@example.com"})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 contact-required: %s", w.Code, w.Body.String())
+	}
+	if got := h.verification.asked; len(got) != 1 || got[0] != adminID {
+		t.Errorf("the gate read the signup state of %v, want the operator %q", got, adminID)
+	}
+	if h.decider.count() != 0 {
+		t.Errorf("the Decider was asked %d times, want none", h.decider.count())
+	}
+	if len(h.audit.entries()) != 0 {
+		t.Errorf("an audit row was written for a refused issue")
+	}
+	if h.rowCount() != 0 {
+		t.Errorf("an invitation row was written for a refused issue")
 	}
 }
 

@@ -233,6 +233,38 @@ func TestTheSignupGateIsAnsweredBeforeTheStrengthCheck(t *testing.T) {
 	})
 }
 
+// TestTheSignupGateReadsTheOperatorsOwnState holds the gate's subject when the
+// request is an impersonation: the operator's hands are on the request, so the
+// operator's unproved address is what the tenant-domain write is refused for,
+// even when the impersonated account has proved its own. Reading the effective
+// account instead would let the operator write through the target's
+// verification.
+func TestTheSignupGateReadsTheOperatorsOwnState(t *testing.T) {
+	r := newRig(t)
+	seedObjects(r)
+	r.verification.states = map[authn.AccountID]authn.SignupStatus{
+		adminID: {State: authn.SignupPending},
+		userID:  {State: authn.SignupVerified},
+	}
+	rec := r.do(http.MethodPut, "/api/v1/tenants/"+tenantA+"/members/"+string(userID),
+		map[string]any{"active": true}, impersonating()...)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "contact-required") {
+		t.Fatalf("status = %d, want 403 contact-required: %s", rec.Code, rec.Body.String())
+	}
+	if got := r.verification.asked; len(got) != 1 || got[0] != adminID {
+		t.Errorf("the gate read the signup state of %v, want the operator %q", got, adminID)
+	}
+	if r.decider.count() != 0 {
+		t.Errorf("the Decider was asked %d times, want none", r.decider.count())
+	}
+	if len(r.audit.entries()) != 0 {
+		t.Errorf("an audit row was written for a refused write: %+v", r.audit.entries())
+	}
+	if len(r.members.puts) != 0 {
+		t.Errorf("a refused write called the membership write: %+v", r.members.puts)
+	}
+}
+
 // TestAnUnreadableSignupStateIs503 holds the failure direction on the
 // management face: a write whose state cannot be read is unavailable, asks no
 // Decider and calls no writing capability.

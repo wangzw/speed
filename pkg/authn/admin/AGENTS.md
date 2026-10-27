@@ -35,8 +35,9 @@ The API is the package's godoc.
   nothing about which objects exist. The tenant-domain groups' routes are
   registered `Impersonable`; the platform-domain groups' are not.
 - **A management write by an unverified self-registration is refused.**
-  `gateSignup` reads `SignupVerification.SignupStateOf` for the acting account
-  and answers `403 contact-required` while the state is pending. It runs after
+  `gateSignup` reads `SignupVerification.SignupStateOf` for the acting
+  operator's account and answers `403 contact-required` while the state is
+  pending. It runs after
   the object is read and before the `Decider`, the strength check and the
   mandatory audit, so a refused request asks no `Decider`, asks for no strength,
   writes no audit row and calls no capability. Reads are not gated; a service

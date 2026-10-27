@@ -87,15 +87,18 @@ func (m *product) admit(id authn.Identity, where decisionDomain) error {
 	return nil
 }
 
-// gateSignup refuses a management write an account with an unproved email
+// gateSignup refuses a management write an operator with an unproved email
 // address makes. It sits after the caller and the object's ownership are known
 // and before the Decider, the strength requirement and the mandatory audit: a
 // refused request asks no Decider, asks for no strength, writes no audit row and
-// calls no capability. A service account and an account with no email address
-// are exempt, having nothing to verify; a state that cannot be read is a 503 and
-// is never read as verified.
+// calls no capability. The subject is the operator, not the effective account:
+// an impersonated target's own verification says nothing about the address the
+// operator's hands proved. A service account and an account with no email
+// address are exempt, having nothing to verify; a state that cannot be read is a
+// 503 and is never read as verified.
 func (m *product) gateSignup(ctx context.Context, id authn.Identity) error {
-	account, err := m.accounts.Get(ctx, id.Account())
+	actor := id.Actor()
+	account, err := m.accounts.Get(ctx, actor)
 	switch {
 	case errors.Is(err, authn.ErrAccountNotFound):
 		// A static password-table subject is no account row and holds no email
@@ -107,7 +110,7 @@ func (m *product) gateSignup(ctx context.Context, id authn.Identity) error {
 	if account.Kind != authn.KindUser {
 		return nil
 	}
-	status, err := m.verification.SignupStateOf(ctx, id.Account())
+	status, err := m.verification.SignupStateOf(ctx, actor)
 	if err != nil {
 		return m.unavailable("reading the signup state", fmt.Errorf("%w: %w", authn.ErrUnavailable, err))
 	}

@@ -1036,19 +1036,27 @@ func (r *rig) invoke(handler gin.HandlerFunc, method, target string, params gin.
 }
 
 // fakeSignupVerification reports the self-registration state a case scripts and
-// counts how often it was read.
+// counts how often it was read. states overrides state for the accounts it
+// names, so a case can tell an unproved operator from a proved target.
 type fakeSignupVerification struct {
-	mu    sync.Mutex
-	state authn.SignupStatus
-	err   error
-	reads int
+	mu     sync.Mutex
+	state  authn.SignupStatus
+	states map[authn.AccountID]authn.SignupStatus
+	asked  []authn.AccountID
+	err    error
+	reads  int
 }
 
-// SignupStateOf answers the scripted state, or the scripted failure.
-func (v *fakeSignupVerification) SignupStateOf(_ context.Context, _ authn.AccountID) (authn.SignupStatus, error) {
+// SignupStateOf answers the state scripted for the account, falling back to
+// state, or the scripted failure.
+func (v *fakeSignupVerification) SignupStateOf(_ context.Context, id authn.AccountID) (authn.SignupStatus, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.reads++
+	v.asked = append(v.asked, id)
+	if status, ok := v.states[id]; ok {
+		return status, v.err
+	}
 	return v.state, v.err
 }
 

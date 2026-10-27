@@ -63,9 +63,10 @@ action `authn.membership.manage`; the module grants itself no permission. The
 routes are registered guarded and impersonable: the action is decided in the
 path's tenant, so an impersonating identity is decided by the effective
 account's permissions there. Before the decision
-and before the mandatory audit, a management write asks the signup gate: a
-user account whose self-registration is still pending (`signup_state=1`) gets
-`403 contact-required`, asks no `Decider` and writes no row or audit row. The
+and before the mandatory audit, a management write asks the signup gate: the
+acting operator's user account whose self-registration is still pending
+(`signup_state=1`) gets `403 contact-required`, asks no `Decider` and writes no
+row or audit row. The
 list is a read and is not gated; a service account and an account that never
 self-registered are exempt. The acceptance routes are registered public: the
 token is the whole credential and there is no identity to read.
