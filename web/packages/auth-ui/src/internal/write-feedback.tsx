@@ -15,12 +15,14 @@
  * settles the slot with its code. Success is the flow's own completion
  * (the host callback), so no success message travels through the slot.
  *
- * The passkey ceremony's failure is the scope's one client-side source:
- * its text is a bundle key, never an API code, so it does not enter the
- * slot. The scope holds it beside the slot and renders it through the same
- * region. The two failure sources are mutually exclusive -- raising either
- * clears the other -- so a channel component never shows two
- * whole-attempt failure banners at once (ui-kit's write-feedback rule).
+ * A failure the channel words itself is the scope's other source: the
+ * passkey ceremony's own failures, and a server refusal the channel gives
+ * its own text instead of the shared code text. Its text is a bundle key,
+ * never an API code, so it does not enter the slot. The scope holds it
+ * beside the slot and renders it through the same region. The two failure
+ * sources are mutually exclusive -- raising either clears the other -- so a
+ * channel component never shows two whole-attempt failure banners at once
+ * (ui-kit's write-feedback rule).
  */
 
 import { useCallback, useState } from 'react'
@@ -37,15 +39,15 @@ import { useAuthUiTranslation } from './translation.js'
 export interface ChannelFeedback {
   /** The scope's slot; `null` is empty. */
   readonly outcome: WriteOutcome | null
-  /** The bundle key of the client-side (ceremony) failure, or `null`. */
+  /** The bundle key of the channel's own failure text, or `null`. */
   readonly localFailure: string | null
   /** A new attempt: clears every failure source of the scope. */
   readonly reset: () => void
   /** Settles the slot with a failure code; clears the client-side source. */
   readonly fail: (code: string) => void
-  /** Raises the client-side failure (a bundle key); clears the slot. */
+  /** Raises the channel's own failure text (a bundle key); clears the slot. */
   readonly failLocal: (key: string) => void
-  /** Clears the client-side failure only (a retry begins in the same scope). */
+  /** Clears the channel's own failure text only (a retry begins in the same scope). */
   readonly clearLocal: () => void
 }
 

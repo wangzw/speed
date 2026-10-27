@@ -1699,10 +1699,44 @@ describe('SignInScreen', () => {
     expect(beforeStart).toHaveBeenCalledTimes(1)
   })
 
+  it('word a refused passkey answer itself instead of the password text', async () => {
+    // The server answers every refused assertion with the uniform
+    // login_failed code; its sentence names credentials the passkey channel
+    // never asked for, so the channel gives the same code its own wording.
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: { kind: 'webauthn', options: { challenge: 'abc', rpId: 'x' } },
+        }),
+      [LOGIN_ANSWER]: () => {
+        throw apiError(401, 'authn.login_failed')
+      },
+    })
+    const get = vi.fn().mockResolvedValue(assertionCredential())
+    const restore = stubCredentials({ get, create: vi.fn() })
+    try {
+      renderWithProviders(
+        <SignInScreen session={harness.session} discovery={PASSKEY_ONLY} />,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Passkey' }))
+      // The arrival's ceremony returns a credential and the server refuses
+      // the answer.
+      const banner = await screen.findByRole('alert')
+      expect(banner).toHaveTextContent(zhCN.signInFlow.passkeyRefused)
+      expect(banner).not.toHaveTextContent(zhCN.errors.authn.login_failed)
+    } finally {
+      restore()
+    }
+  })
+
   it('keep the ceremony failure and the server failure banner mutually exclusive', async () => {
     // One channel component renders at most one whole-attempt failure: the
-    // passkey ceremony's client-side message and the flow's server refusal
-    // share the channel's feedback scope, so either one clears the other.
+    // passkey ceremony's client-side message and the channel's own wording
+    // of the flow's refusal share the channel's feedback scope, so either
+    // one clears the other.
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -1735,16 +1769,17 @@ describe('SignInScreen', () => {
       // The arrival's ceremony returns a credential and the server refuses
       // the answer: the channel's failure banner renders.
       expect(await screen.findByRole('alert')).toHaveTextContent(
-        zhCN.errors.authn.login_failed,
+        zhCN.signInFlow.passkeyRefused,
       )
       // The next ceremony fails on the client: the server banner gives way,
-      // so the scope shows exactly one failure.
+      // so the scope shows exactly one failure. The refused answer set the
+      // channel's own banner, so the step now labels its control as a retry.
       await user.click(
-        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+        screen.getByRole('button', { name: zhCN.signInFlow.passkeyRetry }),
       )
       const ceremony = await screen.findByRole('alert')
       expect(ceremony).toHaveTextContent(zhCN.signInFlow.passkeyCancelled)
-      expect(ceremony).not.toHaveTextContent(zhCN.errors.authn.login_failed)
+      expect(ceremony).not.toHaveTextContent(zhCN.signInFlow.passkeyRefused)
       expect(screen.getAllByRole('alert')).toHaveLength(1)
       // A retry whose answer the server refuses clears the ceremony message
       // the other way round: the server banner takes the scope alone.
@@ -1752,7 +1787,7 @@ describe('SignInScreen', () => {
         screen.getByRole('button', { name: zhCN.signInFlow.passkeyRetry }),
       )
       const server = await screen.findByRole('alert')
-      expect(server).toHaveTextContent(zhCN.errors.authn.login_failed)
+      expect(server).toHaveTextContent(zhCN.signInFlow.passkeyRefused)
       expect(server).not.toHaveTextContent(zhCN.signInFlow.passkeyCancelled)
       expect(screen.getAllByRole('alert')).toHaveLength(1)
     } finally {

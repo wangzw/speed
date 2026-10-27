@@ -406,7 +406,17 @@ export function PasskeySignIn({
 
   const driver = useFlowDriver(session, {
     beforeStart,
-    onFailure: (code) => feedback.fail(code),
+    onFailure: (code) => {
+      // The server answers every refused assertion with the uniform
+      // login_failed code. Its sentence names credentials this channel never
+      // asked for, so this channel words that code itself; the wire stays
+      // uniform.
+      if (code === 'authn.login_failed') {
+        feedback.failLocal('signInFlow.passkeyRefused')
+        return
+      }
+      feedback.fail(code)
+    },
     onSettled: () => {
       try {
         onSignedIn?.()

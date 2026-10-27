@@ -145,7 +145,13 @@ account-resolution outcome where the deployment enables that.
   `role="alert"` banner; a `client.http.<status>` answer resolves through
   the namespace's parameterized `errors.client.http` leaf, carrying the
   status in the text, and every other code outside the whitelist renders
-  `errors.unknown`, so the bundle can never show a raw key.
+  `errors.unknown`, so the bundle can never show a raw key. The passkey
+  channel is the one exception: the server answers every refused
+  assertion with the uniform `authn.login_failed`, whose sentence names
+  credentials that channel never asked for, so the channel words that one
+  code itself as `signInFlow.passkeyRefused`; every other code still goes
+  through the whitelist. This is a channel-authored string, not a new
+  error code.
 
 ## Rules that are load-bearing here
 

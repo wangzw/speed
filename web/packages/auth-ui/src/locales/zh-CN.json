@@ -38,6 +38,7 @@
     "passkeyUnsupported": "此浏览器无法进行通行密钥仪式。",
     "passkeyCancelled": "未找到可用的通行密钥，或通行密钥提示已被取消。请重试。",
     "passkeyFailed": "通行密钥仪式未能完成。",
+    "passkeyRefused": "这台设备上的通行密钥可能已注销或已失效，无法用于登录。请改用其他方式登录；若想继续使用通行密钥，请在登录后重新登记。",
     "factorKind": {
       "totp": "验证器应用",
       "sms": "短信验证码",

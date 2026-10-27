@@ -408,7 +408,7 @@ sequenceDiagram
 
 通行密钥入口是一个按钮（名字取自描述符的 `label`），点击以方法名起一条流程；流程的首步是 `webauthn` 仪式步，由步进渲染器渲染：`@speed/auth-core/webauthn` 把该步的请求选项解码后驱动 `navigator.credentials.get`，再把返回的凭据按后端解的 JSON 形状序列化成答复键 `credential`；登记步的 `otpauth_uri` 仍渲染为文本加一个 `code` 字段，等宽展示取主题的 mono 字体入口。答复后流程推进到完成。本包只渲染仪式步与等待、取消界面，凭据驱动的逻辑在 auth-core 的子路径里；本包不 import 同层的 account-ui——同层之间不互 import。
 
-**断言仪式步到达即开始，登记步仍需点击；仪式期间是显式的等待态，带取消。** 通行密钥入口本身已经是一次点击，所以断言仪式步一到就自动开始仪式、界面直接进入等待态，不再多要一次「继续」；登记仪式（选项带 `user`）仍由一次点击开始，因为创建仪式在部分浏览器要求用户激活。页面没有可用认证器时仪式会一直挂着，禁用的按钮不是可读的信号，所以等待态用一条 `role="status"` 的等待通知（`signInFlow.passkeyWaiting`）加一个取消按钮（`signInFlow.passkeyCancel`），不把禁用按钮留作唯一信号。取消是一个立即的状态转换：显示取消文案（`signInFlow.passkeyCancelled`）并给出重试，不等仪式落定；它只尽力经 `AbortController` 让浏览器放弃仪式，晚到的凭据按尝试序号丢弃。取消之后、仪式以不受支持或失败告终之后，按钮的文字都是 `signInFlow.passkeyRetry`，点击对同一仪式步重跑一次。三种仪式失败各有自己的文案（`signInFlow.passkeyUnsupported`、`signInFlow.passkeyCancelled`、`signInFlow.passkeyFailed`），渲染为 `role="alert"` 横幅，不经错误码白名单。
+**断言仪式步到达即开始，登记步仍需点击；仪式期间是显式的等待态，带取消。** 通行密钥入口本身已经是一次点击，所以断言仪式步一到就自动开始仪式、界面直接进入等待态，不再多要一次「继续」；登记仪式（选项带 `user`）仍由一次点击开始，因为创建仪式在部分浏览器要求用户激活。页面没有可用认证器时仪式会一直挂着，禁用的按钮不是可读的信号，所以等待态用一条 `role="status"` 的等待通知（`signInFlow.passkeyWaiting`）加一个取消按钮（`signInFlow.passkeyCancel`），不把禁用按钮留作唯一信号。取消是一个立即的状态转换：显示取消文案（`signInFlow.passkeyCancelled`）并给出重试，不等仪式落定；它只尽力经 `AbortController` 让浏览器放弃仪式，晚到的凭据按尝试序号丢弃。取消之后、仪式以不受支持或失败告终之后，以及答复被服务端拒绝之后，按钮的文字都是 `signInFlow.passkeyRetry`，点击对同一仪式步重跑一次。三种仪式失败各有自己的文案（`signInFlow.passkeyUnsupported`、`signInFlow.passkeyCancelled`、`signInFlow.passkeyFailed`），渲染为 `role="alert"` 横幅，不经错误码白名单。此外还有第四种：服务端拒绝通行密钥答复（`authn.login_failed`）时，本渠道不用该码的一般文本（口令表单用 `passwordSignIn.loginFailed`），改用渠道自拟的 `signInFlow.passkeyRefused`；它不是仪式失败，是渠道自拟的服务端拒绝文案，同样不经错误码白名单。
 
 **仪式驱动的归属由 [ADR-web-auth-seams](../../../adr/adr-web-auth-seams.md) 裁定为 `@speed/auth-core` 的 `./webauthn` 子路径**：本包渲染仪式步与等待、取消界面，凭据驱动的那段逻辑在 auth-core 的子路径里（`runWebauthn`、`webauthnStepOf`、`WebauthnError`）；本包也不 import 同层的 account-ui——同层之间不互 import。
 
@@ -444,7 +444,7 @@ sequenceDiagram
 
 ## 错误与失败语义
 
-**失败面是一个错误码白名单。** 每条服务端与传输失败解析成一个错误码，渲染该码在当前语言下的文本；通行密钥仪式的失败是唯一的客户端来源，文本取自本包 bundle 的键，不经白名单；除 `client.http.<status>` 族之外，白名单之外的码一律渲染 `errors.unknown`，故目录里永不出现裸键。键的构造与回退由 `@speed/i18n` 的共享解析器承担：本包把白名单与 `client.http.<status>` 这一族的参数化叶子（`errors.client.http`，状态随文本带出）交给它，不手工拼键。口令渠道的口令不符按渠道取文本：`authn.login_failed` 在口令表单上渲染 `passwordSignIn.loginFailed`，落在口令字段上而不是整次尝试横幅（见下表）。
+**失败面是一个错误码白名单。** 每条服务端与传输失败解析成一个错误码，渲染该码在当前语言下的文本；通行密钥渠道有两类自有文本不经白名单：仪式的失败（不受支持、取消、失败）取自本包 bundle 的键，服务端拒绝通行密钥答复（`authn.login_failed`）时该渠道自拟 `signInFlow.passkeyRefused` 取代该码的一般文本。除 `client.http.<status>` 族之外，其余码仍走白名单，白名单之外的码一律渲染 `errors.unknown`，故目录里永不出现裸键。键的构造与回退由 `@speed/i18n` 的共享解析器承担：本包把白名单与 `client.http.<status>` 这一族的参数化叶子（`errors.client.http`，状态随文本带出）交给它，不手工拼键。口令渠道的口令不符按渠道取文本：`authn.login_failed` 在口令表单上渲染 `passwordSignIn.loginFailed`，落在口令字段上而不是整次尝试横幅（见下表）。
 
 | 情形 | 表现 |
 |---|---|
@@ -476,6 +476,7 @@ sequenceDiagram
 | 一步答复被拒后，下一次答复成功而流程停在新步骤 | 旧的失败横幅被清掉，不留在新步骤旁 |
 | 通行密钥仪式失败与服务端失败横幅先后出现 | 互斥：出现一条时清掉另一条 |
 | 通行密钥仪式不受支持、被取消或失败 | 一条 `role="alert"` 横幅渲染本包 bundle 里对应情形的文本，不经错误码白名单 |
+| 通行密钥答复被服务端拒绝（`authn.login_failed`） | 该渠道自己的文案 `signInFlow.passkeyRefused`，不经错误码白名单；与仪式失败横幅互斥，二者只留一条 |
 | 社交回跳路由上第二因素等步骤的答复被拒，流程仍停在该步 | 失败横幅渲染在仍停着的步骤旁，状态原地不变，可重试 |
 | 社交回跳路由上答复被 `authn.flow_invalid` 拒绝，或就绪流程的 `complete` 答复被拒 | 失败横幅加重试按钮，重试重读一次流程 |
 | 渠道表单上流程给出本包不渲染的步骤 | 通知与一个回到该渠道首步字段的动作 |
