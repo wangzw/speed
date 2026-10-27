@@ -176,13 +176,13 @@ func TestHasLoginWayOtherThanPasskeyCountsTheThreeWays(t *testing.T) {
 		if err != nil {
 			t.Fatalf("creating an account without a password: %v", err)
 		}
-		if way, err := h.p.HasLoginWayOtherThanPasskey(ctx, none.ID); err != nil || way {
-			t.Errorf("an account with only a login name reports %v, %v, want false, nil", way, err)
+		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, none.ID); wayErr != nil || way {
+			t.Errorf("an account with only a login name reports %v, %v, want false, nil", way, wayErr)
 		}
 
 		withPassword := h.user("has-a-password", "correct horse battery")
-		if way, err := h.p.HasLoginWayOtherThanPasskey(ctx, withPassword); err != nil || !way {
-			t.Errorf("an account with a password reports %v, %v, want true, nil", way, err)
+		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, withPassword); wayErr != nil || !way {
+			t.Errorf("an account with a password reports %v, %v, want true, nil", way, wayErr)
 		}
 
 		withPhone, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-a-phone", Via: "admin"})
@@ -193,8 +193,8 @@ func TestHasLoginWayOtherThanPasskeyCountsTheThreeWays(t *testing.T) {
 			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
 			t.Fatalf("adding a phone number: %v", err)
 		}
-		if way, err := h.p.HasLoginWayOtherThanPasskey(ctx, withPhone.ID); err != nil || !way {
-			t.Errorf("an account with a phone number reports %v, %v, want true, nil", way, err)
+		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, withPhone.ID); wayErr != nil || !way {
+			t.Errorf("an account with a phone number reports %v, %v, want true, nil", way, wayErr)
 		}
 
 		withExternal, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-an-external", Via: "admin"})
