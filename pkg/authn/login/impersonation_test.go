@@ -209,6 +209,38 @@ func TestAnImpersonatedEnrollmentCannotCompleteAfterTheRecordLapses(t *testing.T
 	}
 }
 
+// TestAnOwnFlowCompletesOnASessionWithAStaleImpersonationMarker holds the
+// non-impersonating branch of the completion review: the flow belongs to the
+// account's own session, and a marker a lapsed record left behind is not a
+// reason to refuse it. The session's account is the whole test, so an operator
+// whose impersonation lapsed can still link, step up and enroll with their own
+// session.
+func TestAnOwnFlowCompletesOnASessionWithAStaleImpersonationMarker(t *testing.T) {
+	r := newRig(t, &fakeMethod{name: "password"})
+	r.loginAsAuthenticated("acct1", "sid")
+	// A record that lapsed without End leaves its marker on the session row.
+	r.sessions.status.ImpersonationID = "grant-stale"
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"enroll","input":{"kind":"totp"}}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	seq := int(decode(t, start.Body.String())["seq"].(float64))
+
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the completion on the account's own session answered %d: %s, want 200",
+			done.Code, done.Body.String())
+	}
+	if r.sessions.revokedAccount != "acct1" || r.sessions.except != "sid" {
+		t.Errorf("the completion revoked %q except %q, want the account's own sessions except its session",
+			r.sessions.revokedAccount, r.sessions.except)
+	}
+}
+
 // TestAnImpersonatedEnrollmentAuditNamesTheOperator holds the identity the
 // registration's terminal audit row is written under. The row is written by the
 // multi-factor module on the step that completes a registration, which a client

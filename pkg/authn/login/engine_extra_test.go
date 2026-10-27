@@ -211,35 +211,26 @@ func TestASingleFactorEnrollmentCompletesAfterItsOwnFactorTurnsActive(t *testing
 	}
 }
 
-// TestTheCompletionReviewRefusesAnotherAccountOrAnImpersonation holds the two
-// guards of the completion review that the session's own status feeds: a session
-// of another account and a session that is impersonating are both refused.
-func TestTheCompletionReviewRefusesAnotherAccountOrAnImpersonation(t *testing.T) {
-	cases := []struct {
-		name string
-		edit func(*rig)
-	}{
-		{"a session of another account", func(r *rig) { r.sessions.status.Account = "other" }},
-		{"an impersonating session", func(r *rig) { r.sessions.status.ImpersonationID = "imp1" }},
+// TestTheCompletionReviewRefusesAnotherAccountsSession holds the guard the
+// session's own status feeds: a session that now belongs to another account
+// cannot carry the flow onto the account that started it. A marker left by a
+// lapsed impersonation is not this guard's business, because the flow is not
+// impersonating and the session still belongs to the account that started it.
+func TestTheCompletionReviewRefusesAnotherAccountsSession(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"totp"}}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			m := &fakeMethod{name: "password"}
-			r := newRig(t, m)
-			r.loginAsAuthenticated("acct1", "sid")
-			start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"totp"}}`)
-			if start.Code != http.StatusOK {
-				t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
-			}
-			cookie := flowCookie(t, start)
-			seq := int(decode(t, start.Body.String())["seq"].(float64))
-			c.edit(r)
+	cookie := flowCookie(t, start)
+	seq := int(decode(t, start.Body.String())["seq"].(float64))
+	r.sessions.status.Account = "other"
 
-			done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
-			if done.Code != http.StatusUnauthorized {
-				t.Errorf("the completion answered %d, want 401: %s", done.Code, done.Body.String())
-			}
-		})
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusUnauthorized {
+		t.Errorf("the completion answered %d, want 401: %s", done.Code, done.Body.String())
 	}
 }
 

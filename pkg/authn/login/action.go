@@ -80,12 +80,15 @@ func (r *routes) review(c *call, rec record) bool {
 
 // flowOwnsSession reports whether a session is still the one the flow belongs
 // to: the account the flow is bound to, or, for a flow an impersonating identity
-// started, the operator's account and the same record.
+// started, the operator's account and the same record. A non-impersonating flow
+// compares the session's account alone: a marker a lapsed record left behind
+// describes an earlier impersonation, not a different session, so it does not
+// stop the account acting on its own session.
 func flowOwnsSession(rec record, st authn.SessionStatus) bool {
 	if rec.Impersonation != "" {
 		return st.Account == authn.AccountID(rec.Actor) && st.ImpersonationID == rec.Impersonation
 	}
-	return st.Account == authn.AccountID(rec.Account) && st.ImpersonationID == ""
+	return st.Account == authn.AccountID(rec.Account)
 }
 
 // recordHolds reports whether the impersonation record the flow was started
