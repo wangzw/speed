@@ -37,8 +37,8 @@
 | [api-client](design-web-api-client.md) | 已实现 |
 | [api-sdk](design-web-api-sdk.md) | 已实现 |
 | [route-kit](design-web-route-kit.md) | 已实现 |
-| [auth-core](design-web-auth-core.md) | 部分实现 |
-| [auth-ui](design-web-auth-ui.md) | 部分实现 |
+| [auth-core](design-web-auth-core.md) | 已实现 |
+| [auth-ui](design-web-auth-ui.md) | 已实现 |
 | [account-ui](design-web-account-ui.md) | 已实现 |
 | [tenancy-ui](design-web-tenancy-ui.md) | 已实现 |
 | [product-shell](design-web-product-shell.md) | 已实现 |

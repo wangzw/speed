@@ -463,4 +463,4 @@ stateDiagram-v2
 | 租户准入拒绝判定 | 已实现 | `web/packages/auth-core/src/tenant-refusal.ts` `isTenantAdmissionRefusal` |
 | 通行密钥仪式驱动（`./webauthn` 子路径） | 已实现 | `web/packages/auth-core/src/webauthn.ts` `runWebauthn`、`webauthnStepOf`、`WebauthnError` |
 | 匿名注册操作 `register` 与 `AuthnLoginRegistration` 的解析守卫 | 已实现 | `web/packages/auth-core/src/session.ts` `AuthSession.register`、`parseRegistration`；`web/packages/auth-core/src/index.ts` 的 `AuthnLoginRegisterBody`、`AuthnLoginRegistration` 导出 |
-| 发现面的 `password_reset` 段解析与 `PasswordResetChannel` | 未实现 | — |
+| 发现面的 `password_reset` 段解析与 `PasswordResetChannel` | 已实现 | `web/packages/auth-core/src/session.ts` `PasswordResetChannel`、`parsePasswordReset`、`parseMethodList`；`web/packages/auth-core/src/session.test.ts` |

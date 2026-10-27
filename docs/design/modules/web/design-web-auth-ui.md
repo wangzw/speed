@@ -531,6 +531,6 @@ sequenceDiagram
 | 不支持的步骤的出口 | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx` `FlowStepFields`、`HumanGatedFlowStep`；`web/packages/auth-ui/src/PasswordSignInForm.tsx` `PasswordSignInForm`；`web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm`；`web/packages/auth-ui/src/PasswordRegisterForm.tsx` `PasswordRegisterForm`；`web/packages/auth-ui/src/internal/sign-in-methods.tsx` `DescriptorSignInForm`、`PasskeySignIn`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler`；`web/packages/auth-ui/src/locales/en-US.json`、`zh-CN.json` `signInFlow.unsupportedStepAction` |
 | 命名空间资源 | 已实现 | `web/packages/auth-ui/src/resources.ts` |
 | 本部署不提供回调落点时渲染 `absent` | 已实现 | `web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler` |
-| 登录屏的「忘记口令」入口（发现面提供匿名口令重置且宿主给了 `onForgotPassword`） | 未实现 | — |
-| 匿名口令重置屏 `PasswordResetScreen`（宿主绑定的重置操作与渠道选择） | 未实现 | — |
-| `passwordReset` i18n 节与 `passwordSignIn.forgotPassword`（zh-CN 与 en-US 键集一致） | 未实现 | — |
+| 登录屏的「忘记口令」入口（发现面提供匿名口令重置且宿主给了 `onForgotPassword`） | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreenProps.onForgotPassword`、`forgotPasswordEntry`；`web/packages/auth-ui/src/SignInScreen.test.tsx` |
+| 匿名口令重置屏 `PasswordResetScreen`（宿主绑定的重置操作与渠道选择） | 已实现 | `web/packages/auth-ui/src/PasswordResetScreen.tsx` `PasswordResetScreen`、`PasswordResetOperations`、`PasswordResetScreenProps`；`web/packages/auth-ui/src/index.ts`；`web/packages/auth-ui/src/PasswordResetScreen.test.tsx` |
+| `passwordReset` i18n 节与 `passwordSignIn.forgotPassword`（zh-CN 与 en-US 键集一致） | 已实现 | `web/packages/auth-ui/src/locales/en-US.json`、`zh-CN.json`；`web/packages/auth-ui/src/resources.test.ts` |
