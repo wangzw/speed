@@ -781,7 +781,7 @@ const (
 
 `authz.guard` 的产品实现 `authn.Decider`：`var _ authn.Decider = (*product)(nil)`。`Decide` 按[动作到查询的翻译表](#动作到查询的翻译)把 `Decision` 翻成一次 `Enforcer.Allowed`，`Subject` 取 `Decision.Actor.Account()`。它的失败方向：动作不在表里 → `(false, nil)`（拒绝且不报错）；引擎出错 → 返回错误（取用方按 503 处置）；引擎为假 → `(false, nil)`。`Decide` 可被多协程并发调用，`ctx` 结束即返回。
 
-`authn.ActionImpersonateStart` 另有一条：目标账户在平台域持有任一权限时拒绝。权限集经 `SubjectPermissions` 读取；读失败是 503，不读作空集。这条与「谁能冒充谁」同属本实现方的判定，authn 只把目标账户交过来。
+`authn.ActionImpersonateStart` 另有一条：目标是平台管理员时拒绝——它在平台域持有任一权限。权限集经 `SubjectPermissions` 读取；读失败是 503，不读作空集。租户管理员不是排除项：目标在一租户持有 `tenant-admin` 只影响冒充期间该租户域的判定，而那里的判定本来就取生效账户。这条与「谁能冒充谁」同属本实现方的判定，authn 只把目标账户与租户交过来。
 
 ### 词表对齐守卫
 

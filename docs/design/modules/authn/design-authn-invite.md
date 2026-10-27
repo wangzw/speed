@@ -117,17 +117,17 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 
 ### 路由
 
-本模块经 `mount.Mounter` 挂管理面与 account 面的路由。管理面路由全部登记为 `Guarded` 且不登记 `Impersonable`（网关对冒充身份答 401，处理器再核一次）；接受面路由登记为 `Public`，无身份。
+本模块经 `mount.Mounter` 挂管理面与 account 面的路由。管理面路由登记为 `Guarded`，并登记为 `Impersonable`：它们按路径里的租户域判定，目标是该租户管理员时，冒充身份持有它在该租户的管理权限，邀请面照常可用（[design-authn-impersonation](design-authn-impersonation.md)）。接受面路由登记为 `Public`，无身份。
 
 | 面 | 方法 路径 | 登记 | 授权 |
 |---|---|---|---|
-`B` 是普通面的基路径，`Bt` 是 `tenants` 作用域的基路径（`authn.gate.mount.bases`，见 [authn-gate](design-authn-gate.md)）。
-
-| 管理面 | `POST Bt/:tenant/invitations` | `Guarded` | 判定接缝 + 强制档审计 |
-| 管理面 | `GET Bt/:tenant/invitations` | `Guarded` | 判定接缝；读不写审计 |
-| 管理面 | `DELETE Bt/:tenant/invitations/:id` | `Guarded` | 判定接缝 + 强制档审计 |
+| 管理面 | `POST Bt/:tenant/invitations` | `Guarded`，`Impersonable` | 判定接缝 + 强制档审计 |
+| 管理面 | `GET Bt/:tenant/invitations` | `Guarded`，`Impersonable` | 判定接缝；读不写审计 |
+| 管理面 | `DELETE Bt/:tenant/invitations/:id` | `Guarded`，`Impersonable` | 判定接缝 + 强制档审计 |
 | account 面 | `GET B/invitations/:token` | `Public` | 令牌 |
 | account 面 | `POST B/invitations/:token` | `Public` | 令牌 |
+
+`B` 是普通面的基路径，`Bt` 是 `tenants` 作用域的基路径（`authn.gate.mount.bases`，见 [authn-gate](design-authn-gate.md)）。
 
 基路径 `B` 由 [authn-gate](design-authn-gate.md) 声明。管理面路由按路径里的租户标识寻址，不按名称表，所以本模块不依赖租户名册；接受面路由按令牌寻址，路径里不出现租户。
 
@@ -391,7 +391,7 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 |---|---|---|
 | `Invites` 接缝、值类型与哨兵 | 已实现 | `pkg/authn/invite/seam.go` `Invites`、`IssueInvite`、`Issued`、`Invitation`、`AcceptInvite`、`InvitationStatus`、`ErrInvitationNotFound`、`ErrInvitationExpired`、`ErrInvitationRevoked`、`ErrInvitationAlreadyAccepted`、`ErrInvitationPending`、`ErrInvalidEmail`、`ErrInvite` |
 | `authn.invite` 模块、`authn_invitations` 表与迁移、状态机、签发／列表／撤销／接受 | 已实现 | `pkg/authn/invite/invite.go` `Module`；`pkg/authn/invite/store.go` `tableInvitations`；`pkg/authn/invite/migrations/postgres/0001_authn_invitations.sql`、`pkg/authn/invite/migrations/sqlite/0001_authn_invitations.sql`；`pkg/authn/invite/issue.go` `Issue`；`pkg/authn/invite/query.go` `List`、`Revoke`；`pkg/authn/invite/accept.go` `Accept` |
-| 管理面路由（判定顺序、强制审计、回绝映射） | 已实现 | `pkg/authn/invite/routes.go` `mountRoutes`；`pkg/authn/invite/admin.go` `handleIssue`、`handleList`、`handleRevoke`；`pkg/authn/invite/pipeline.go` `admit`、`asks`、`callDecider`、`auditRequired`、`auditBestEffort`、`answer` |
+| 管理面路由（判定顺序、强制审计、回绝映射） | 部分实现 | `pkg/authn/invite/routes.go` `mountRoutes`；`pkg/authn/invite/admin.go` `handleIssue`、`handleList`、`handleRevoke`；`pkg/authn/invite/pipeline.go` `admit`、`asks`、`callDecider`、`auditRequired`、`auditBestEffort`、`answer` |
 | 接受面路由（无身份、凭令牌） | 已实现 | `pkg/authn/invite/routes.go` `mountRoutes`；`pkg/authn/invite/accept_http.go` `handleAcceptView`、`handleAccept`、`viewToken` |
 | 接受的账户创建与来源为 `invite` 的成员行 | 已实现 | `pkg/authn/invite/accept.go` `createAccount`、`putMembership`；`pkg/authn/invite/token.go` `SourceInvite` |
 | 地址验证渠道 `invite`（`pkg/authn/internal/model` `Verification` 的扩展） | 已实现 | `pkg/authn/internal/model/directory.go` `VerifiedViaInvite`、`Verification.Valid` |

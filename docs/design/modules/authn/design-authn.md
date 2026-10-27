@@ -60,7 +60,7 @@
 
 下列各条例举本功能目录不承担的事，归属的判据见上文。
 
-- **不做授权判定；做认定的中间件层，即网关，从不写 403。** 本功能目录回答“调用方是谁”，“这个调用方能不能做这件事”归授权（[authz.guard](../design-authz.md)），它另立，以中间件或 handler 内的判定接入，取用写进上下文的身份。authn 自己的路由处理器作为它自己资源的所有者，只在转述认证之外的策略的拒绝时写 403，集合封闭：`forbidden`（判定接缝的拒绝）、`method-disabled`（被全局设置关闭的登录方式）、`account-unavailable`（外部登录路径上账户不可用）、`impersonation-restricted`（冒充期间被限制的操作）、`factor-not-seasoned`（冒充发起与管理员重置时，发起者名下没有启用已满规定时长的非短信因素）、`contact-required`（未验证账户的人类写与冒充发起）、`human-verification-required`（部署要求人机验证而发送缺少有效的一次性证明）。其余认证强度不足，即重新认证能解的，都是 401 加强认证挑战（[ADR-authn-scope](../../../adr/adr-authn-scope.md)、[design-authn-failure](design-authn-failure.md)）。
+- **不做授权判定；做认定的中间件层，即网关，从不写 403。** 本功能目录回答“调用方是谁”，“这个调用方能不能做这件事”归授权（[authz.guard](../design-authz.md)），它另立，以中间件或 handler 内的判定接入，取用写进上下文的身份。authn 自己的路由处理器作为它自己资源的所有者，只在转述认证之外的策略的拒绝时写 403，集合封闭：`forbidden`（判定接缝的拒绝）、`method-disabled`（被全局设置关闭的登录方式）、`account-unavailable`（外部登录路径上账户不可用）、`impersonation-restricted`（冒充发起的限制，以及管理面在冒充身份上的兜底）、`factor-not-seasoned`（冒充发起与管理员重置时，发起者名下没有启用已满规定时长的非短信因素）、`contact-required`（未验证账户的人类写与冒充发起）、`human-verification-required`（部署要求人机验证而发送缺少有效的一次性证明）。其余认证强度不足，即重新认证能解的，都是 401 加强认证挑战（[ADR-authn-scope](../../../adr/adr-authn-scope.md)、[design-authn-failure](design-authn-failure.md)）。
 - **不判定请求期的租户成员资格。** 成员关系的事实归本功能目录，请求期的判定在 tenant 目录的 `tenant.admission`（[ADR-tenant-admission](../../../adr/adr-tenant-admission.md)）。authn 的任何子包都不 import `pkg/tenant`。
 - **不为身份附加角色、权限与租户。** 身份只回答“谁”；角色按（账户，租户）绑定，归 `authz.policy`（冒充限定的租户范围是唯一例外，它限定的是一次冒充）。
 - **网关不实现、不解释任何凭据。** 口令表、登录会话、访问令牌与服务密钥各是一个校验后端，住在自己的子包里；网关取凭据的原文交给整条认领它的后端，连 `Basic` 也由认领它的后端自己解码；根包不认识其中任何一种。

@@ -34,7 +34,7 @@
 
 「访问」是 `Mounter` 登记时同时声明的级别；表中所列的路由都登记为 `Required`，网关认证该端，没有凭据的请求到不了处理器。
 
-`GET B/me` 是唯一允许冒充身份到达的路由（登记为 `Impersonable`），到达时读的是被冒充的账户；`PATCH B/me` 不登记为可冒充，冒充中的请求一律拒绝，处理器另核一次同样的条件作为误登记的兜底（[authn-impersonation](design-authn-impersonation.md)）。
+两条路由都登记为可冒充：冒充身份读的是被冒充的账户，写的也是被冒充的账户，判据只取该账户的权限，发起者自己的权限不生效（[authn-impersonation](design-authn-impersonation.md)）。
 
 ### 读的应答
 
@@ -88,7 +88,7 @@
 
 ### 对外接口面
 
-- 路由路径 `GET B/me`、`PATCH B/me` 与访问级别 `Required` 是宿主可见面；`GET B/me` 登记为可冒充，`PATCH B/me` 不登记为可冒充。
+- 路由路径 `GET B/me`、`PATCH B/me` 与访问级别 `Required` 是宿主可见面；两条路由都登记为可冒充。
 - 模块名 `authn.profile` 是宿主可见面。
 - 自写字段集的字段名（`display_name`、`attributes`、`locale`、`time_zone`）与应答字段名是宿主可见面；请求体的字段集是封闭集，新增可自写字段要有新的决定。
 - `GET B/me` 应答的 `verification.state`、`verification.email`、`verification.since` 与 `identifiers[].proven` 是宿主可见面；`state` 的取值是封闭集 `none`、`pending`、`verified`——`pending` 是「有邮箱而没有一条已证明的」，`none` 是「没有邮箱」，没有第四种取值。
@@ -164,14 +164,13 @@ classDiagram
 操作序：
 
 1. 读身份：没有身份或身份没有账户即 401。
-2. 冒充中的身份即 403，不读正文、不调任何接缝。
-3. 没有登录会话即 401。
-4. 不满足账户因素所要求的新鲜度即 401 加强认证（判据见 [authn-admin](design-authn-admin.md) 的自助范围）。
-5. 读正文：形状不符、`display_name` 超过 100 字符、属性越界、`locale` 或 `time_zone` 取值域不符，任一即 400。
-6. 读账户、按「整体替换或并入键」合成新的属性集。
-7. `SetDisplayName` 与 `SetAttributes` 各调一次；`display_name` 缺席则略过 `SetDisplayName`，`attributes`、`locale`、`time_zone` 全缺席则略过 `SetAttributes`。
-8. 若审计能力在场，写一行尽力档审计；写失败只记 Error，不改应答。
-9. 应答 200 与写后的可自写字段。
+2. 没有登录会话即 401。
+3. 不满足账户因素所要求的新鲜度即 401 加强认证（判据见 [authn-admin](design-authn-admin.md) 的自助范围）；冒充身份的认证事实取自发起者自己的会话。
+4. 读正文：形状不符、`display_name` 超过 100 字符、属性越界、`locale` 或 `time_zone` 取值域不符，任一即 400。
+5. 读账户、按「整体替换或并入键」合成新的属性集。
+6. `SetDisplayName` 与 `SetAttributes` 各调一次；`display_name` 缺席则略过 `SetDisplayName`，`attributes`、`locale`、`time_zone` 全缺席则略过 `SetAttributes`。
+7. 若审计能力在场，写一行尽力档审计；写失败只记 Error，不改应答。冒充身份的审计行把实际操作者记为发起者，并带被冒充账户、组织与会话。
+8. 应答 200 与写后的可自写字段。
 
 `SetDisplayName` 与 `SetAttributes` 各是一次账户模块的写，不构成一次原子变更：`SetDisplayName` 成功而 `SetAttributes` 失败时，显示名的改动已生效，应答是那次失败的应答（与管理面逐字段写、失败即收口同形）。
 
@@ -180,7 +179,6 @@ classDiagram
 | 情形 | 表现 |
 |---|---|
 | 请求没有身份，或身份没有账户 | 401 |
-| 冒充中的身份到达 `PATCH B/me` | 403 `impersonation-restricted` |
 | 没有登录会话 | 401 |
 | 不满足账户因素所要求的新鲜度 | 401 加强认证 |
 | 正文形状不符、有未知字段、`display_name` 超过 100 字符、属性越过账户边界、`locale` 或 `time_zone` 取值域不符 | 400 `bad-request` |

@@ -157,13 +157,13 @@ db 不可用时答 `temporarily_unavailable`，**不答 `invalid_grant`**：客�
 | `exp`、`iat`、`nbf` | `iat + TTL`、签发时刻、签发时刻；`TTL` 为零取 `authn.token.access-ttl`，冒充令牌取 `min(access-ttl, 冒充记录剩余时限)`，使 `exp` 不晚于记录到期；任何取值都不得使 `exp - iat` 超过 1 小时 | `exp` 与 `iat` 必须存在；容差 `leeway`；`exp - iat` 不得超过 1 小时 |
 | `jti` | UUIDv7 文本 | 必须存在；只用于日志与关联 |
 | `sid` | `SessionID`；冒充令牌指向发起者的会话；service 种令牌指向该密钥那一行 service 会话 | 必须存在；对应会话有效 |
-| `amr`、`acr`、`auth_time` | `Methods` 数组、`"1"` 或 `"2"`、认证时刻（秒）；冒充令牌的 `acr` 恒为 `"1"` | **不与会话行比较，也不因不一致而拒绝** |
+| `amr`、`acr`、`auth_time` | `Methods` 数组、`"1"` 或 `"2"`、认证时刻（秒）；冒充令牌取发起者会话的同名值 | **不与会话行比较，也不因不一致而拒绝** |
 | `act` | `{"sub": "<操作者>"}`，仅冒充（RFC 8693 §4.1） | 与会话账户一致 |
 | `imp` | 冒充记录标识，仅冒充 | `Impersonation.Active(imp)` 有效，其目标等于 `sub`、操作者等于 `act.sub` |
 | `imp_tenant` | 冒充记录的租户标识，仅冒充 | 只供外部校验方读到冒充的范围；本进程校验时范围取自冒充记录，不取这个声明 |
 | `client_id` | RFC 9068 必备：服务账户令牌取账户标识，会话换来的令牌取 `authn.token.client-id`，缺省 `speed` | 非空 |
 
-`amr`、`acr`、`auth_time` 只为让外部资源服务器不必再查会话。本进程校验时身份的这几项取自会话行（`check-session` 关闭时取自令牌，见[校验次序](#校验次序)），所以加强认证之前签发、仍在有效期内的访问令牌继续有效，它的 `acr` 偏低是保守的一侧。冒充令牌的 `acr` 恒为 `"1"`：保障等级封顶单因素，外部资源服务器读不到管理员会话的多因素。签发的 `amr` 与 `acr` 取自 `Method` 与 `Assurance` 的闭集（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）；校验不对这三个声明的取值设拒绝条件。
+`amr`、`acr`、`auth_time` 只为让外部资源服务器不必再查会话。本进程校验时身份的这几项取自会话行（`check-session` 关闭时取自令牌，见[校验次序](#校验次序)），所以加强认证之前签发、仍在有效期内的访问令牌继续有效，它的 `acr` 偏低是保守的一侧。冒充令牌的 `amr`、`acr` 与 `auth_time` 取自发起的会话，与发起者本人的令牌同源：冒充期间身份的认证事实取自发起者。签发的 `amr` 与 `acr` 取自 `Method` 与 `Assurance` 的闭集（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）；校验不对这三个声明的取值设拒绝条件。
 
 ### 外部资源服务器的义务
 
@@ -387,11 +387,11 @@ CREATE INDEX authn_refresh_tokens_expiry  ON authn_refresh_tokens (idle_expires_
 |---|---|---|---|---|---|---|
 | 普通令牌 | `sub` | 零值 | `sid` | 取自会话行 | 取自会话行 | 空 |
 | service 种令牌 | `sub` | 零值 | `sid` | `Methods` 为 `[client-secret]`，`Assurance` 为 `AssuranceSingle`，`AuthTime` 取令牌的 `iat`；会话行里的认证时刻只在创建时写，不随每次换令牌更新 | 假 | 空 |
-| 冒充令牌 | `sub` | `act.sub` | `sid` | 方式集与认证时刻取自会话行，等级取会话行等级与 `AssuranceSingle` 的较小者 | 假 | 取自冒充记录 `grant.Tenant`，不取令牌的 `imp_tenant` |
+| 冒充令牌 | `sub` | `act.sub` | `sid` | 方式集、等级与认证时刻取自会话行，不封顶（`check-session` 为假时取自令牌） | 取自会话行（`check-session` 为假时为假） | 取自冒充记录 `grant.Tenant`，不取令牌的 `imp_tenant` |
 
-普通令牌的 `Provider` 取自会话行，`Attributes` 取账户快照并上会话载荷里的 `idp.*`。冒充令牌与会话端的规则对称（[design-authn-impersonation](design-authn-impersonation.md)）：取 `grant := Impersonation.Active(imp)`，核对 `grant.Actor == act.sub`、`grant.Target == sub`、管理员会话的账户等于 `act.sub`，任一不符判 `Denied`。
+普通令牌的 `Provider` 取自会话行，`Attributes` 取账户快照并上会话载荷里的 `idp.*`；冒充令牌的 `Provider` 同普通令牌，`check-session` 为假时为空。冒充令牌与会话端的规则对称（[design-authn-impersonation](design-authn-impersonation.md)）：取 `grant := Impersonation.Active(imp)`，核对 `grant.Actor == act.sub`、`grant.Target == sub`、管理员会话的账户等于 `act.sub`，任一不符判 `Denied`。
 
-**`check-session` 放宽开关。** `authn.token.check-session` 是设置项，缺省为真，在每次令牌校验、会话步骤之前读取当前值。设为假时关闭整个会话步骤：不再读 `Sessions.Status`，也随之跳过 service 种令牌的 `sid` 须指向 `service` 种行这一核对。成为「对普通令牌无状态」的模式：撤销最晚到令牌 `exp` 才生效；此时普通令牌的方式集、等级与认证时刻取自令牌自己的 `amr`、`acr`、`auth_time`（这几个值是本模块自己签的），`Provider` 为空、`IDPAssured` 为假（令牌不携带这两项）；冒充令牌的方式集同样取令牌的 `amr`，等级仍封顶单因素。**不受开关影响、永远执行的**：账户快照步骤（账户状态与 `valid_after`）；`imp` 非空时的 `Impersonation.Active(imp)`，使冒充的结束、管理员或目标被停用、成员关系被移除、记录被管理面撤销照常即时生效，冒充令牌不因该开关而无法撤销（该性质是假设，守住它的测试见 [ADR-authn-token](../../../adr/adr-authn-token.md) 的失效条件）；「能力缺席而令牌带 `imp` 判 `Denied`」。这是显式的放宽开关：缺省不开；运行期设为假时写一行 `Warn` 并记 `authn.settings.relaxed`，启动时已是假时写同一行 `Warn`。开关是设置的理由见 [ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)，开关与别的设置项的取值域见 [design-authn-config](design-authn-config.md)。
+**`check-session` 放宽开关。** `authn.token.check-session` 是设置项，缺省为真，在每次令牌校验、会话步骤之前读取当前值。设为假时关闭整个会话步骤：不再读 `Sessions.Status`，也随之跳过 service 种令牌的 `sid` 须指向 `service` 种行这一核对。成为「对普通令牌无状态」的模式：撤销最晚到令牌 `exp` 才生效；此时普通令牌的方式集、等级与认证时刻取自令牌自己的 `amr`、`acr`、`auth_time`（这几个值是本模块自己签的），`Provider` 为空、`IDPAssured` 为假（令牌不携带这两项）；冒充令牌的方式集、等级与认证时刻同样取自令牌的 `amr`、`acr` 与 `auth_time`；`IDPAssured` 为假、提供方为空。**不受开关影响、永远执行的**：账户快照步骤（账户状态与 `valid_after`）；`imp` 非空时的 `Impersonation.Active(imp)`，使冒充的结束、管理员或目标被停用、成员关系被移除、记录被管理面撤销照常即时生效，冒充令牌不因该开关而无法撤销（该性质是假设，守住它的测试见 [ADR-authn-token](../../../adr/adr-authn-token.md) 的失效条件）；「能力缺席而令牌带 `imp` 判 `Denied`」。这是显式的放宽开关：缺省不开；运行期设为假时写一行 `Warn` 并记 `authn.settings.relaxed`，启动时已是假时写同一行 `Warn`。开关是设置的理由见 [ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)，开关与别的设置项的取值域见 [design-authn-config](design-authn-config.md)。
 
 ### 签发
 
@@ -588,8 +588,8 @@ service 种访问令牌的撤销是无操作：该会话行由同一密钥签出
 |---|---|---|
 | 令牌接缝与数据类型：`Tokens`、`IssueToken`、`AccessToken`、`RefreshToken`、`ClaimsContributor` 与令牌类哨兵 | 已实现 | `pkg/authn/token.go` `Tokens`；`pkg/authn/claims.go` `ClaimsContributor`；`pkg/authn/internal/model/token.go` `IssueToken`、`AccessToken`、`RefreshToken`；`pkg/authn/errors.go` `ErrNoSigningKey`、`ErrInvalidGrant`、`ErrRefreshReuse`、`ErrTokenInvalid`、`ErrReservedClaim`、`ErrInvalidKey` |
 | 模块 `authn.token` 的登记与交付 | 已实现 | `pkg/authn/token/module.go`、`pkg/authn/token/product.go`；`Tokens` 与 `Verifier` 均已交付，`Requires`、`Provides`、配置与设置 schema、迁移、JWKS 路由与令牌端点都已交付 |
-| 访问令牌签发与声明集 | 已实现 | `pkg/authn/token/issue.go`（`Issue`、`signAccess`、`contributorClaims`） |
-| 校验后端与校验次序（含冒充令牌与 `check-session`） | 已实现 | `pkg/authn/token/verify.go`（`Name`、`Accepts`、`Verify`、`checkRequiredClaims`、`authenticate`） |
+| 访问令牌签发与声明集 | 部分实现 | `pkg/authn/token/issue.go`（`Issue`、`signAccess`、`contributorClaims`） |
+| 校验后端与校验次序（含冒充令牌与 `check-session`） | 部分实现 | `pkg/authn/token/verify.go`（`Name`、`Accepts`、`Verify`、`checkRequiredClaims`、`authenticate`） |
 | `check-session` 放宽开关与启动诊断 | 已实现 | `pkg/authn/token/settings.go`（`settingsSchema`）、`pkg/authn/token/relax.go`、`pkg/authn/token/product.go`（`diagnose`） |
 | 签名与验证密钥集的装入、启动校验与 `token.GenerateKey` | 已实现 | `pkg/authn/token/keys.go`（`loadKeySet`、`GenerateKey`） |
 | JWKS 发布 | 已实现 | `pkg/authn/token/jwks.go`（`JWKS`、`mountJWKS`） |

@@ -40,7 +40,7 @@
 
 ## 决策
 
-采纳：自助面新增两条路由 `POST B/identifiers`（体 `{kind, value}`）与 `POST B/identifiers/verify`（体 `{code}`），与既有自助路由同族、同新鲜认证与冒充门控。
+采纳：自助面新增两条路由 `POST B/identifiers`（体 `{kind, value}`）与 `POST B/identifiers/verify`（体 `{code}`），与既有自助路由同族、同新鲜认证要求；冒充期间以被冒充账户的身份添加标识。
 
 **`kind` 是封闭集：`username` 与 `email`。** 手机不在本口，仍走既有 `POST B/phone` 与 `POST B/phone/verify`。
 

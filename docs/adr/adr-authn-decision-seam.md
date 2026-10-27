@@ -90,9 +90,9 @@
 - **`Decider` 的性质。** 它是 authn 根包的接口，由授权模块或宿主实现，排他。取用方（`authn.admin`、`authn.impersonation`、`tenant.admission`）在 `Init` 里以 `Optional` 取用，缺提供者是合法配置，行为是全部拒绝，不写进 `Requires`。`Decide` 返回 error 一律按 503 收口，不当作拒绝，也不当作放行。`pkg/authn` 不内置任何放行名单，口令表主体能否通过由接缝判定。
 - **经接缝的动作的判据。** 作用于他人账户或租户级资源的管理面动作、冒充的开始与读写、非成员进入租户，经接缝判定。动作集合随新增的管理面能力增长，归属以这条判据为准；动作常量的完整清单与各路由对应的动作只在设计文档 design-authn-admin 里给出。
 - **租户级动作的 `Tenant` 由 authn 填入。** 对象属于某个租户的动作，其 `Decision.Tenant` 由 `authn.admin` 在调用 `Decider` 之前解析对象的归属后填入，`Decider` 永远不会收到租户为空的租户级动作；账户级动作的 `Tenant` 为空，表示平台范围。字段的逐项填法、路径与请求体租户不一致时的处理、`Params` 的限制，只在设计文档 design-authn-admin 的「`Decision` 的填法」里给出。
-- **`authn.admin` 是独立模块。** 不纳入它就没有 `/api/v1/auth/admin/*` 路由，Go 接口照常可用，调用方的授权由宿主自己负责。纳入它而缺 `audit.Audit`，在构造之前启动失败。每组路由随对应能力在场才挂，能力缺席则该组路由不存在，启动诊断写出挂了哪几组。管理面处理器内各步的先后次序在 design-authn-admin 里给出。管理动作不在冒充中执行。
+- **`authn.admin` 是独立模块。** 不纳入它就没有 `/api/v1/auth/admin/*` 路由，Go 接口照常可用，调用方的授权由宿主自己负责。纳入它而缺 `audit.Audit`，在构造之前启动失败。每组路由随对应能力在场才挂，能力缺席则该组路由不存在，启动诊断写出挂了哪几组。管理面处理器内各步的先后次序在 design-authn-admin 里给出。平台域的管理动作不在冒充中执行；判定域为该租户的管理动作按生效账户的权限判定，冒充身份照常可用。
 - **拒绝的状态码。** `Decide` 返回 `false` 回 403 `forbidden`；返回 error 回 503。403 只来自 authn 自己的处理函数，集合与判据见 [ADR-authn-scope](adr-authn-scope.md)。网关与 `tenant.admission` 不写 403。
-- **自助范围不过接缝。** 账户对自己的会话、因素、口令、标识与外部关联的读写，只要求发起者是本人（`Actor`、`Account` 与路径上的账户一致）、未在冒充、满足多因素的新鲜度要求（[ADR-authn-mfa](adr-authn-mfa.md)）。
+- **自助范围不过接缝。** 账户对自己的会话、因素、口令、标识与外部关联的读写，只要求生效账户是身份本身、满足多因素的新鲜度要求（[ADR-authn-mfa](adr-authn-mfa.md)）。冒充期间生效账户是被冒充账户，能力取自它；冒充本身不构成拒绝理由。
 - **非成员进入租户。** `tenant.admission` 对非成员且 `Identity.Scope()` 为空的身份，询问 `Decide`，动作为 `authn.tenant.access`，`Decision` 带 `Actor` 与 `Tenant`。缺省拒绝：`Decider` 缺席或返回 `false` 即按准入层的 404 处理，返回 error 即 503。放行只表示「可以进入这个租户」，不赋予任何角色，租户内能做什么仍由授权判定（[ADR-tenant-admission](adr-tenant-admission.md)）。
 - **引导。** 第一个账户、第一份成员关系、第一个 IdP，由宿主在自己的命令里经 `AccountAdmin` 与 `Memberships` 的 Go 接口创建，或由宿主实现一个简短的 `Decider` 先放行某个口令表主体。默认部署不能被远程管理，这是有意的。
 

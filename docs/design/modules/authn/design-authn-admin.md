@@ -137,7 +137,7 @@ type ScopeGuard interface {
 
 ### 管理面模块 `authn.admin`
 
-`authn.admin` 是 `pkg/authn/admin` 里注册的独立模块，不交付任何功能接口，只经 `mount.Mounter` 挂 `B/*` 与 `Bt/:tenant/*`；`B` 是 `system` 作用域的基路径，`Bt` 是 `tenants` 作用域的基路径，二者都由 [authn-gate](design-authn-gate.md) 声明。路由的访问级别全部是 `Required`，且都不登记 `Impersonable`。
+`authn.admin` 是 `pkg/authn/admin` 里注册的独立模块，不交付任何功能接口，只经 `mount.Mounter` 挂 `B/*` 与 `Bt/:tenant/*`；`B` 是 `system` 作用域的基路径，`Bt` 是 `tenants` 作用域的基路径，二者都由 [authn-gate](design-authn-gate.md) 声明。路由的访问级别全部是 `Required`。判定域为该租户的管理路由登记为可冒充，判定域为平台域的不登记：冒充身份的能力取自被冒充账户，而它从不持有平台域权限（[design-authn-impersonation](design-authn-impersonation.md)）。
 
 - **不纳入就没有管理路由。** 宿主不点名 `authn.admin` 时没有 `B/*` 或 `Bt/:tenant/*` 下的任何路由；`AccountAdmin`、`Memberships`、`Sessions`、`SSOProviders` 的 Go 接口照常可用。
 - **缺审计则启动失败。** `audit.Audit` 是必需依赖，漏纳入在任何实例构造之前以 `core.ErrMissingProvider` 失败，不留到第一次写操作才发现。
@@ -190,11 +190,10 @@ type ScopeGuard interface {
 
 自助范围的判据：账户对自己的会话、因素、口令、标识与外部关联的读写，只要求下列各项，不经 `Decider`。
 
-- 发起者是本人：`Actor`、`Account` 与路径上的账户一致，路径不带账户的路由取上下文里的身份。
-- 发起者未在冒充。
+- 生效账户是身份本身：`Identity.Account()` 与路径上的账户一致，路径不带账户的路由取上下文里的身份。
 - 满足多因素的新鲜度要求（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)、[authn-mfa](design-authn-mfa.md)）。
 
-自助动作的授权依据是「发起者就是这个账户」，这是 authn 自己可以核对的事实，不需要策略。没有 `Decider` 的装配里，用户仍能改自己的口令。自助路由由 `authn.login`、`authn.session`、`authn.mfa`、`authn.profile` 挂，本模块不挂。
+自助动作的授权依据是「生效账户就是身份本身」，这是 authn 自己可以核对的事实，不需要策略。没有 `Decider` 的装配里，用户仍能改自己的口令。自助路由由 `authn.login`、`authn.session`、`authn.mfa`、`authn.profile` 挂，本模块不挂。
 
 ### 注册验证状态的门控
 
@@ -289,7 +288,7 @@ classDiagram
 | 字段 | 含义 | 填写者与约束 |
 |---|---|---|
 | `Action` | 询问的动作，取上文常量 | 取用方。 |
-| `Actor` | 发起者的身份 | 取用方取请求上下文里的身份。管理面动作与冒充发起要求发起者未在冒充，所以这些调用里 `Actor.Impersonating()` 为假。 |
+| `Actor` | 发起者的身份 | 取用方取请求上下文里的身份。平台域的管理动作与冒充发起要求发起者未在冒充，这两类调用里 `Actor.Impersonating()` 为假；判定域为该租户的管理动作允许冒充身份，`Actor` 的实际操作者是发起者，判定主体仍是生效账户。 |
 | `Tenant` | 动作的租户范围 | 租户级动作由 `authn.admin` 解析后填，必为非空；账户级动作为空，表示平台范围。 |
 | `Target` | 动作的对象：账户标识、会话标识、IdP 标识或冒充记录标识 | 取用方；没有单一对象的动作（列表、创建）为空。 |
 | `TargetAccount` | 对象所属的账户 | 会话、因素、服务密钥、冒充记录的路由由 `authn.admin` 解析后填；账户级对象即 `Target` 本身。 |
@@ -303,7 +302,7 @@ classDiagram
 
 ```mermaid
 flowchart TD
-    A["请求到达处理器<br/>网关已认定身份"] --> B{"发起者在冒充中?"}
+    A["请求到达处理器<br/>网关已认定身份"] --> B{"判定域为平台域<br/>且发起者在冒充中?"}
     B -- 是 --> R1["403 impersonation-restricted"]
     B -- 否 --> C{"Decider 在场?"}
     C -- 否 --> R2["403 forbidden"]
@@ -330,7 +329,7 @@ flowchart TD
 
 约束：
 
-- **冒充检查在最前。** 所有管理动作都不得在冒充中执行。网关因这些路由没有登记 `Impersonable` 而对冒充身份答 401；处理器自己仍检查 `Actor` 的冒充状态，答 403 `impersonation-restricted`，不询问 `Decider`。
+- **冒充检查在最前，只针对判定域为平台域的动作。** 网关因这些路由没有登记 `Impersonable` 而对冒充身份答 401；处理器自己仍检查 `Actor` 的冒充状态，答 403 `impersonation-restricted`，不询问 `Decider`。判定域为该租户的管理路由登记为可冒充，冒充身份按生效账户的权限判定。
 - **`Decider` 缺席先于任何查询。** 缺提供者时答 403 `forbidden`，不解析对象，使默认部署不泄露对象是否存在。
 - **归属解析先于 `Decide`。** `Decision` 要带归属，所以解析必须在询问之前（见「`Decision` 的填法」）。
 - **注册验证状态的门控在身份确定之后、`Decide` 与强度核验之前。** 发起者读作未验证（`SignupPending`：有邮箱而没有一条已证明的）时，管理面人类写答 403 `contact-required`，不询问 `Decider`、不询问强度、不写审计；门控只收紧不放行。读路由、服务账户与没有邮箱的账户不受影响。冒充发起的路由在 `authn.impersonation`，按同一判据拒绝（见「注册验证状态的门控」）。
@@ -377,7 +376,7 @@ flowchart TD
 
 默认部署开箱即不可被远程管理，这是有意的。
 
-**发起冒充的判定不属于这条引导。** `opsOnly` 这样的静态主体规则驱动不了冒充：本模块的结构性限制要求发起者是有会话、本地验证过新鲜多因素的非静态用户账户，而静态主体没有会话可绑（[design-authn-impersonation](design-authn-impersonation.md)）。要启用冒充，宿主须实现一个按（账户，租户）角色判定的 `Decider`——例如租户的所有者冒充该租户内角色更低的成员——角色绑定由 `authz.policy` 持有，authn 不认识它。「谁有权冒充谁」因此是宿主的配置；authn 保证的只是发起者满足不依赖 `Decider` 的结构与强认证限制，`Decider` 只能在其上收紧。
+**发起冒充的判定不属于这条引导。** `opsOnly` 这样的静态主体规则驱动不了冒充：本模块的结构性限制要求发起者是有会话、本地验证过新鲜多因素的非静态用户账户，而静态主体没有会话可绑（[design-authn-impersonation](design-authn-impersonation.md)）。要启用冒充，宿主须实现一个在平台域放行的 `Decider`——例如放行持有某个平台运营角色的账户——角色绑定由 `authz.policy` 持有，authn 不认识它。「谁有权冒充谁」因此是宿主的配置；authn 保证的只是发起者满足不依赖 `Decider` 的结构与强认证限制，`Decider` 只能在其上收紧。
 
 ## 错误与失败语义
 
@@ -385,7 +384,7 @@ flowchart TD
 
 - **网关从不写 403。** 做认定的中间件层只回答「是谁」；凭据缺失、强度不够、冒充身份进了不允许的路由都是 401。
 - **`tenant.admission` 写 404 与 401。** 非成员、租户不存在、已停用、冒充范围不符一律 404，不区分原因；强度不够是 401 加强认证挑战。
-- **authn 的路由处理器可以写 403，位置是封闭集。** 它们是自己资源的所有者，只在转述认证之外的策略的拒绝时写 403：`Decider` 的拒绝（`forbidden`）、被全局设置关闭的登录方式（`method-disabled`）、外部登录路径上的账户不可用（`account-unavailable`）、冒充期间的限制（`impersonation-restricted`）、发起者名下没有启用已满规定时长的非短信因素（`factor-not-seasoned`）、发起者是未验证账户的人类写与冒充发起（`contact-required`）。本模块的处理器只写其中的 `forbidden`、`impersonation-restricted`、`factor-not-seasoned` 与 `contact-required`。
+- **authn 的路由处理器可以写 403，位置是封闭集。** 它们是自己资源的所有者，只在转述认证之外的策略的拒绝时写 403：`Decider` 的拒绝（`forbidden`）、被全局设置关闭的登录方式（`method-disabled`）、外部登录路径上的账户不可用（`account-unavailable`）、冒充发起的限制与管理面在冒充身份上的兜底（`impersonation-restricted`）、发起者名下没有启用已满规定时长的非短信因素（`factor-not-seasoned`）、发起者是未验证账户的人类写与冒充发起（`contact-required`）。本模块的处理器只写其中的 `forbidden`、`impersonation-restricted`、`factor-not-seasoned` 与 `contact-required`。
 - **其余一切「不够强」是 401。** 加强认证挑战的应答见 [authn-mfa](design-authn-mfa.md)。
 
 判据、被否决的 401 与 404 两种写法及其理由在 [ADR-authn-scope](../../../adr/adr-authn-scope.md)。调用方读到的 403 可能来自 authn 的处理函数，也可能来自链上的授权层（`authz.guard`）或宿主的 handler，仅凭状态码区分不了来源。
@@ -396,7 +395,7 @@ flowchart TD
 
 | 情形 | 应答 | 方向 |
 |---|---|---|
-| 发起者在冒充中 | 403 `impersonation-restricted`（`ErrImpersonationRestricted`） | 拒 |
+| 发起者在冒充中，且这条路由的判定域为平台域 | 403 `impersonation-restricted`（`ErrImpersonationRestricted`） | 拒 |
 | `Decider` 缺席，或 `Decide` 返回 `false` | 403 `forbidden`（`ErrForbidden`） | 拒 |
 | `Decide` 返回 error 或 panic | 503 `urn:speed:authn:unavailable`（`ErrUnavailable`），成因只进日志，动作不执行 | 拒 |
 | 租户在路径、请求体与已存记录之间不一致 | 400，不询问 `Decider` | 拒 |
@@ -436,7 +435,7 @@ flowchart TD
 | 强制审计先于动作 | 审计接缝返回 `ErrWriteFailed` 时，每条强制档路由回 503，且能力接口的写调用计数为零。 |
 | 撤销冒充记录的审计档 | 审计接缝返回 `ErrWriteFailed` 时，`DELETE Bt/:tenant/impersonations/:id` 仍撤销成功，只记 Error；已结束的记录再撤销得到相同应答；记录不存在回 404；`GET Bt/:tenant/impersonations` 缺 `tenant` 回 400，`Decider` 的调用计数为零。 |
 | 强制审计不在调用方事务里 | 处理器全程不开事务，`audit.Record` 在能力接口的写之前调用；SQLite 文件库（单写者）上管理写操作成功且审计行存在——处理器若把审计与写包进一条事务，该库上会因写锁自等而失败。 |
-| 冒充中拒绝 | 冒充身份直达处理器时，每条管理路由回 403 `impersonation-restricted`，`Decider` 的调用计数为零。 |
+| 平台域管理面在冒充中拒绝 | 冒充身份直达平台域管理路由的处理器时回 403 `impersonation-restricted`，`Decider` 的调用计数为零；判定域为该租户的管理路由按其权限判定。 |
 | 注册验证状态的门控 | 表驱动：发起者读作 `SignupPending` 时，每条管理写路由与冒充发起回 403 `contact-required`，`Decider` 与强度询问的调用计数为零，能力接口的写调用计数为零，审计写入计数为零；同一发起者的读路由照常成功；服务账户与读作 `SignupNone`（没有任何邮箱）的发起者不受影响，读作 `SignupVerified` 的发起者也不受影响；管理员预置的账户（`signup_state=0`）带着未证明邮箱时同样被拦；状态读取返回错误时回 503 且动作不执行。 |
 | 路由组随能力挂 | 逐个去掉 `Sessions`、`MFA`、`Tokens`、`SSOProviders`、`SSOMetadataRefresher`、`Impersonation`，对应组的路由是路由引擎的未命中，其余组不受影响；启动诊断列出实际挂出的组。 |
 | 特性与路由组同源 | 用真实的 `feature.board` 驱动到 `Start`，表驱动逐组断言：功能在场，当且仅当报告该组的特性名，当且仅当该组路由已登记；`authn.admin` 在每一种组合下都在特性文档里。 |
@@ -464,12 +463,12 @@ flowchart TD
 | 根包的 `Decider`、`Decision`、`Action` 常量 | 已实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action` |
 | 根包的 `ScopeGuard` | 已实现 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/gate.go` `wire`；`pkg/tenant/admission/admission.go` `(*layer).Covers` |
 | `authn.admin` 模块：注册、必需与可选依赖、缺审计的启动失败、路由组的挂出与启动诊断 | 已实现 | `pkg/authn/admin/admin.go` `Module`、`newProduct`、`product.wire`、`diagnose`；`pkg/authn/admin/routes.go` `mountRoutes` |
-| 处理器的判定顺序：冒充检查、`Decider` 取用、强度核验、强制审计、失败补行 | 已实现 | `pkg/authn/admin/pipeline.go` `caller`、`admit`、`asks`、`callDecider`、`require`、`auditRequired`、`auditBestEffort`、`answer`、`notFound`、`bad` |
+| 处理器的判定顺序：冒充检查、`Decider` 取用、强度核验、强制审计、失败补行 | 部分实现 | `pkg/authn/admin/pipeline.go` `caller`、`admit`、`asks`、`callDecider`、`require`、`auditRequired`、`auditBestEffort`、`answer`、`replyFailure`、`bad` |
 | `Decision` 的归属解析 | 已实现 | `pkg/authn/admin/sso.go` `providerFor`（`SSOProviders.Tenant`）；`pkg/authn/admin/membership.go`（路径租户）；`pkg/authn/admin/session.go`（`Sessions.Get` 解析账户）；`pkg/authn/admin/impersonation.go`（记录租户） |
 | 账户组与成员关系组路由 | 已实现 | `pkg/authn/admin/account.go` `handleAccountList`、`handleAccountCreate`、`handleAccountGet`、`handleAccountPatch`、`handleAccountDelete`、`handleAccountStatus`、`handleIdentifierAdd`、`handleIdentifierRemove`；`pkg/authn/admin/membership.go` `handleMemberList`、`handleMemberPut`、`handleMemberRemove`、`handleMemberSSOExempt`；`pkg/authn/admin/routes.go` `mountAccountRoutes`、`mountMembershipRoutes` |
 | 会话组、因素与口令组、服务密钥组路由 | 已实现 | `pkg/authn/admin/session.go` `handleAccountSessions`、`handleRevokeAccountSessions`、`handleSessionRevoke`；`pkg/authn/admin/factor.go` `handleFactorList`、`handleMFARequired`、`handleMFAReset`、`handlePasswordReset`；`pkg/authn/admin/secret.go` `handleSecretList`、`handleSecretCreate`、`handleSecretRevoke`；`pkg/authn/admin/routes.go` `mountSessionRoutes`、`mountSecretRoutes` |
 | SSO 提供方组、元数据刷新与冒充记录组路由 | 已实现 | `pkg/authn/admin/sso.go` `handleProviderList`、`handleProviderCreate`、`handleProviderGet`、`handleProviderUpdate`、`handleProviderDelete`、`handleDomainClaim`、`handleDomainRemove`、`handleDomainVerify`、`handleReverifyDomains`、`handleMetadataRefresh`、`refresherFor`；`pkg/authn/admin/impersonation.go` `handleImpersonationList`、`handleImpersonationRevoke`；`pkg/authn/admin/routes.go` `mountSSORoutes`、`mountImpersonationRoutes` |
-| 守住性质的测试与装配测试 | 部分实现 | `pkg/authn/admin/admin_test.go` `TestDecisionFill`、`TestNoDeciderDeniesEveryRoute`、`TestTheMandatoryAuditLandsBeforeTheWrite`、`TestAnImpersonatingActorIsRefusedAtTheHandler`、`TestAStrengthShortfallIsAStepUp`、`TestTheImpersonationRecordGroup`；`pkg/authn/admin/assembly_test.go` `TestARealRegistryMountsTheManagementRoutes` |
+| 守住性质的测试与装配测试 | 部分实现 | `pkg/authn/admin/admin_test.go` `TestDecisionFill`、`TestNoDeciderDeniesEveryRoute`、`TestTheMandatoryAuditLandsBeforeTheWrite`、`TestAStrengthShortfallIsAStepUp`、`TestTheImpersonationRecordGroup`；`pkg/authn/admin/assembly_test.go` `TestARealRegistryMountsTheManagementRoutes` |
 | 注册验证状态的门控 | 已实现 | `pkg/authn/admin/pipeline.go` `(*product).gateSignup`；`pkg/authn/admin/account.go`、`factor.go`、`membership.go`、`session.go`、`secret.go`、`sso.go`、`impersonation.go` 的各写处理器；`pkg/authn/admin/admin.go` `Module`、`product.verification` |
 | 根包的 import 白名单与网关闭包的禁止表 | 已实现 | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |
 | `authn.admin` 子包的 import 方向：不 import `pkg/tenant`、授权功能目录、宿主与别的实现子包 | 已实现 | `pkg/authn/admin` 的 import 清单；`pkg/authn/deps_test.go` `tenantViolations` 规则（本目录每个包都不达 `pkg/tenant`） |

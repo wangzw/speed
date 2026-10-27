@@ -102,9 +102,9 @@ type Sessions interface {
 |---|---|---|
 | `GET B/session` | Optional，`Impersonable` | 返回当前会话摘要；无凭据时返回 `{"authenticated": false}`，使前端启动时不产生 401；带了过期的 cookie 仍是 401。冒充中仍可读。 |
 | `POST B/logout` | Required，`Impersonable` | CSRF；调用 `Sessions.Revoke`，应答清除 cookie。冒充中登出的是发起者自己的会话，冒充随之结束。 |
-| `GET B/sessions` | Required | 调用 `Sessions.List`，只含活的 `browser` 与 `token` 种：`id`、种类、创建时刻、最近使用时刻、到期时刻、来源地址、用户代理与 `current` 标记。 |
-| `DELETE B/sessions` | Required | CSRF；撤销除当前会话外的全部会话；冒充中拒绝，不登记 `Impersonable`。 |
-| `DELETE B/sessions/:id` | Required | CSRF；只能撤销自己的会话；冒充中拒绝，不登记 `Impersonable`。 |
+| `GET B/sessions` | Required，`Impersonable` | 调用 `Sessions.List`，只含活的 `browser` 与 `token` 种：`id`、种类、创建时刻、最近使用时刻、到期时刻、来源地址、用户代理与 `current` 标记。 |
+| `DELETE B/sessions` | Required，`Impersonable` | CSRF；撤销除当前会话外的全部会话；冒充期间撤销的是被冒充账户的会话，发起者自己的会话不在其中。 |
+| `DELETE B/sessions/:id` | Required，`Impersonable` | CSRF；只能撤销自己的会话；冒充期间「自己的会话」是被冒充账户的会话，点名发起者自己的会话找不到对应行。 |
 
 ### 配置面
 
@@ -480,9 +480,9 @@ stateDiagram-v2
 | 缓存 | 以 `h` 为键查进程内缓存（值是 `SessionStatus`，有效期 `check-ttl`，容量上限 1 万条，超出按最久未用淘汰，键里没有令牌明文）。命中则直接进入账户核对，不调 scs、不读库。缓存必须先于 `scs.Load`：`Load` 对非空令牌总会读一次存储，缓存放在它之后则每个 cookie 请求都读库。 | — |
 | 读取 | 未命中时 `scs.Load`，经 `FindCtx` 读一次库（条件见 S4）；载荷里没有 `sid` 即无此会话；用这一次读取的结果构造 `SessionStatus` 写入缓存，同时以 `sid` 为二级键建索引。`Sessions.Status(sid)` 复用这次读取，不读第二次库。已撤销、已过空闲期限或绝对期限的会话同样拒绝。 | `Load` 出错（db 不可用）是 `Unavailable`；无此会话、已撤销、已过期是 `Denied` |
 | 账户核对 | 经账户快照缓存（`internal/acctcache`，有效期同 `check-ttl`）核对：账户非启用，或会话的 `CreatedAt` 早于账户的 `valid_after`。这与 `Sessions.Status` 里的同一判据是双重校验：停用账户时的清理钩子漏了，也不放行。 | `Denied` |
-| 冒充 | 会话行的 `ImpersonationID` 非空时，经冒充记录缓存取 `Impersonation.Active(id)` 的结果（键是记录标识，有效期 `check-ttl`，容量与淘汰同会话校验缓存，`Active` 出错不写入），未命中才询问：记录仍有效则按冒充构造 `Principal`（`Account` 为被冒充账户，`Actor` 为会话账户，`Scope` 为记录的租户，等级封顶 `AssuranceSingle`，`IDPAssured` 为假）；记录已结束或过期则按未冒充处理，管理员回到自己的身份，不是 401。 | 能力缺席而 `ImpersonationID` 非空：`Denied`；`Active` 出错：`Unavailable` |
+| 冒充 | 会话行的 `ImpersonationID` 非空时，经冒充记录缓存取 `Impersonation.Active(id)` 的结果（键是记录标识，有效期 `check-ttl`，容量与淘汰同会话校验缓存，`Active` 出错不写入），未命中才询问：记录仍有效则按冒充构造 `Principal`（`Account` 为被冒充账户，`Actor` 为会话账户，`Scope` 为记录的租户；保障等级、认证时刻、方式集与 `IDPAssured` 取自会话行，不封顶）；记录已结束或过期则按未冒充处理，管理员回到自己的身份，不是 401。 | 能力缺席而 `ImpersonationID` 非空：`Denied`；`Active` 出错：`Unavailable` |
 | 续期 | 距上次续期已过 `touch-interval` 时，按 S2 条件更新 `last_seen_at` 与 `idle_expires_at`。 | 续期失败被忽略，请求照常通过，只影响空闲续期的精度 |
-| 构造身份 | 方式集、等级、`IDPAssured`、认证时刻、提供方取自会话行（冒充时等级与 `IDPAssured` 按冒充阶段）；属性为账户快照的 `attributes` 并上会话载荷里的 `idp.*`；`Session` 取 `sid`。 | — |
+| 构造身份 | 方式集、等级、`IDPAssured`、认证时刻、提供方取自会话行，冒充时同样不封顶；属性为账户快照的 `attributes` 并上会话载荷里的 `idp.*`；`Session` 取 `sid`。 | — |
 
 `Denied` 时网关调用 `ClearCookie` 清除失效的 cookie；`Unavailable` 与超预算由网关收口为 503，不清 cookie。
 
@@ -503,7 +503,7 @@ stateDiagram-v2
 | 登出 | `POST B/logout`：`Sessions.Revoke`，应答清除 cookie。 |
 | 凭据与绑定变更 | 改口令、删除已启用因素、改手机、添加登录标识、解绑外部身份成功之后，以及登记因素、关联外部身份完成之后，处理器调 `RevokeAccount(except = 当前会话)`（删除因素的处理器是它的 DELETE 路由）。 |
 | 列出自己的会话 | `GET B/sessions`：只含活的 `browser` 与 `token` 种，带 `current` 标记。 |
-| 踢下线（自己的） | `DELETE B/sessions/:id` 只能撤销自己的；`DELETE B/sessions` 撤销除当前外的全部；冒充中拒绝。 |
+| 踢下线（自己的） | `DELETE B/sessions/:id` 只能撤销自己的；`DELETE B/sessions` 撤销除当前外的全部；冒充期间两者作用于被冒充账户的会话。 |
 | 踢下线（他人的）、批量撤销 | 由 `authn.admin` 的管理面路由调用 `Revoke`、`RevokeAccount`；判定与强制审计在 `authn.admin`。 |
 | 超出 `max-per-account` | `Create` 撤销该账户最久未使用的会话，`reason` 为 `evicted`。 |
 | 账户停用、启用、删除与服务密钥撤销 | 经 `AccountLifecycle`，见下节。 |
@@ -639,7 +639,7 @@ stateDiagram-v2
 
 ## 实现状态
 
-下表逐项列出本模块的能力。本模块已实现，逐项状态与代码如下。
+下表逐项列出本模块的能力。逐项状态与代码如下。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
@@ -651,7 +651,7 @@ stateDiagram-v2
 | 冒充结束只清除标识、不换令牌 | 已实现 | `pkg/authn/session/sessions.go` `SetImpersonation`；`pkg/authn/session/sessions_test.go` `TestSetImpersonationAttachesAndEndsARecord` |
 | 令牌轮换、提权与冒充挂接 | 已实现 | `pkg/authn/session/sessions.go` `Rotate`、`Elevate`、`SetImpersonation` |
 | cookie 的写出、清除、读取与启动校验 | 已实现 | `pkg/authn/session/sessions.go` `SetCookie`、`ClearCookie`；`pkg/authn/session/config.go` |
-| `Verifier`：cookie 校验、会话校验缓存、账户核对与冒充记录缓存 | 已实现 | `pkg/authn/session/verify.go` `Verify`、`Accepts`、`Name`；`pkg/authn/session/cache.go` |
+| `Verifier`：cookie 校验、会话校验缓存、账户核对与冒充记录缓存 | 部分实现 | `pkg/authn/session/verify.go` `Verify`、`Accepts`、`Name`；`pkg/authn/session/cache.go` |
 | 账户快照的进程内缓存 `internal/acctcache`，供会话校验后端核对账户 | 已实现 | `pkg/authn/internal/acctcache/acctcache.go` `Cache`、`Epoch`、`PutIfEpoch`；`pkg/authn/session/cache.go` |
 | `CookieClearer` | 已实现 | `pkg/authn/session/sessions.go` `ClearCookie`；`pkg/authn/session.go` `CookieClearer` |
 | `service` 种：`ForCredential` 与 `RevokeCredential` | 已实现 | `pkg/authn/session/sessions.go` `ForCredential`、`RevokeCredential` |

@@ -206,7 +206,7 @@
 |---|
 | [登录会话：db 权威存放，scs 只作令牌与 cookie 的桥，cookie 缺省仅主机会话期，跨源由网关检查](adr-authn-session.md) |
 | [令牌：JWT 访问令牌与不透明刷新令牌，签名密钥放文件，服务账户走 client_credentials](adr-authn-token.md) |
-| [冒充：有期限的记录、结构性限制、租户范围的联合执行、审计先于动作](adr-authn-impersonation.md) |
+| [冒充：有期限的记录、能力取自被冒充者、结构性限制、租户范围的联合执行、审计先于动作](adr-authn-impersonation.md) |
 
 ## 企业 SSO
 

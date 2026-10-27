@@ -125,13 +125,13 @@ type MFA interface {
 
 ### 登记、删除与加强认证的路由与要求
 
-「新鲜的第一因素」指 `Requirement{Assurance: AssuranceSingle, MaxAge: 5 分钟}`，5 分钟是固定值，不是设置。「新鲜的本地多因素」指 `Requirement{Assurance: AssuranceMulti, MaxAge: recent-window, Local: true}`，`recent-window` 是设置 `authn.mfa.recent-window`。读这个键的是各使用方，不是本模块：因素路由的处理器、登录引擎的自助路由与准入层各自经设置存储从全局层读同一个键，构成 `MaxAge`；读取出错或取值越出取值域时取声明的缺省（10 分钟）。`MaxAge` 为零或负读作没有任何身份满足，不是「不要求新鲜」：取值域由读取方保证，构造 `Requirement` 时落进来的域外取值因此落在拒绝一侧。路由相对基路径 `B`，访问级别均为 `Required`。下表是这些动作的完整集合。
+「新鲜的第一因素」指 `Requirement{Assurance: AssuranceSingle, MaxAge: 5 分钟}`，5 分钟是固定值，不是设置。「新鲜的本地多因素」指 `Requirement{Assurance: AssuranceMulti, MaxAge: recent-window, Local: true}`，`recent-window` 是设置 `authn.mfa.recent-window`。读这个键的是各使用方，不是本模块：因素路由的处理器、登录引擎的自助路由与准入层各自经设置存储从全局层读同一个键，构成 `MaxAge`；读取出错或取值越出取值域时取声明的缺省（10 分钟）。`MaxAge` 为零或负读作没有任何身份满足，不是「不要求新鲜」：取值域由读取方保证，构造 `Requirement` 时落进来的域外取值因此落在拒绝一侧。路由相对基路径 `B`，访问级别均为 `Required`。除管理面的 `POST B/accounts/:id/mfa-reset` 外，下表路由登记为 `Impersonable`：冒充期间它们作用于被冒充账户（[design-authn-impersonation](design-authn-impersonation.md)）。下表是这些动作的完整集合。
 
 | 动作 | 路由 | 要求 |
 |---|---|---|
 | 列出自己的因素 | `GET B/factors` | 无附加要求 |
-| 登记因素 | `POST B/flows/authenticated {purpose:"enroll", input:{kind}}`，随后经 `POST B/flows/answer {step:"enroll"}` 推进；登记只经登录引擎这一个入口 | 账户已有有效因素：新鲜的本地多因素；账户没有因素：新鲜的第一因素；CSRF；冒充中拒绝 |
-| 删除因素 | `DELETE B/factors/:id` | 新鲜的本地多因素；`mfa_required` 的账户不得删最后一个；CSRF；冒充中拒绝 |
+| 登记因素 | `POST B/flows/authenticated {purpose:"enroll", input:{kind}}`，随后经 `POST B/flows/answer {step:"enroll"}` 推进；登记只经登录引擎这一个入口 | 账户已有有效因素：新鲜的本地多因素；账户没有因素：新鲜的第一因素；CSRF。冒充期间登记的是被冒充账户的因素，认证事实取自发起者自己的会话。 |
+| 删除因素 | `DELETE B/factors/:id` | 新鲜的本地多因素；`mfa_required` 的账户不得删最后一个；CSRF。冒充期间删除的是被冒充账户的因素。 |
 | 加强认证 | `POST B/flows/authenticated {purpose:"step-up"}` | 复用登录引擎；见「加强认证」 |
 | 管理员重置因素 | `POST B/accounts/:id/mfa-reset`（路由由 `authn.admin` 挂） | 见「删除与重置」 |
 
@@ -635,7 +635,7 @@ CREATE TABLE authn_webauthn_credentials (
 | 待确认行的清扫协程 | 已实现 | `pkg/authn/mfa/sweep.go` |
 | `Start` 里对 `tenant.admission` 参与性的判定与 `Warn` | 已实现 | `pkg/authn/mfa/mfa.go` `admissionModule` |
 | 账户生命周期钩子与 `authn.account.deleted` 的补偿订阅 | 已实现 | `pkg/authn/mfa/manage.go` `AccountDeleted`、`AccountDisabled`、`AccountEnabled`、`ServiceSecretRevoked`；`pkg/authn/mfa/lifecycle.go`；`pkg/authn/mfa/lifecycle_test.go` |
-| `GET B/factors`、`DELETE B/factors/:id` | 已实现 | `pkg/authn/mfa/routes.go` |
+| `GET B/factors`、`DELETE B/factors/:id` | 部分实现 | `pkg/authn/mfa/routes.go` |
 | TOTP 因素 | 已实现 | `pkg/authn/mfa/totp/factor.go`、`config.go`、`register.go`、`migrations/` |
 | 短信因素 | 已实现 | `pkg/authn/mfa/sms/sms.go` |
 | WebAuthn 因素与通行密钥登录方法 | 已实现 | `pkg/authn/mfa/webauthn/factor.go`、`method.go`、`ceremony.go`、`register.go`、`config.go` |

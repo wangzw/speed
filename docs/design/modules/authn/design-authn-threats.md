@@ -107,7 +107,7 @@
 |---|---|---|---|
 | 管理员账户被攻破后冒充他人；内部人滥用 | `Decider` 默认全拒；发起者要有新鲜的本地多因素、非短信，且名下有启用已满规定时长的非短信因素；限定一个租户，目标须是该租户的成员；有时限；理由必填；强制审计（事务之外先写）；不可链式；`protected` 账户不可冒充 | [design-authn-impersonation](design-authn-impersonation.md)、[design-authn-admin](design-authn-admin.md) | 有权限的发起者在授权范围内的滥用，靠审计事后发现；`Decider` 写得过宽时，管理员账户被攻破即等于可冒充；被冒充者不被通知。**接受** |
 | 冒充身份越过租户范围：访问不带租户解析的端，或带着 cookie 与令牌去别处 | 网关对冒充身份只放进准入层所守的端与 `Impersonable` 路由，其余答 401；`authn.impersonation` 把 `ScopeGuard` 当必需依赖；准入层对无租户上下文与范围不符的冒充身份答 404；冒充令牌带 `imp_tenant`，使外部校验方读到范围 | [design-authn-gate](design-authn-gate.md)、[design-tenant-admission](../tenant/design-tenant-admission.md)、[design-authn-impersonation](design-authn-impersonation.md) | 准入层所守的端上、租户解析豁免的业务路由没有租户上下文，非冒充请求照常放行；`ScopeGuard.Covers` 只说准入层守哪些端，不核对宿主有没有在那些端上开解析豁免；外部资源服务器若不读 `imp_tenant`，则不受范围约束。**接受** |
-| 冒充期间改变目标的认证事实、借冒充提权 | authn 的敏感端点在冒充中一律拒绝；冒充身份的等级封顶为单因素，要求多因素的路由对它不满足 | [design-authn-impersonation](design-authn-impersonation.md)、[design-authn-mfa](design-authn-mfa.md) | 业务路由上的敏感操作靠授权层读 `Impersonating()` 拦 |
+| 冒充期间改变目标的认证事实、借冒充接管目标账户 | 冒充限一个租户、有硬性期限、不可续期；发起者须有本地验证过的新鲜非短信多因素且因素成熟；被冒充的账户不持平台域权限；每个动作的审计记为发起者并带被冒充账户 | [design-authn-impersonation](design-authn-impersonation.md)、[design-authn-mfa](design-authn-mfa.md) | 期限之内可以改目标的凭据并接管其账户，只能靠审计事后发现。**接受** |
 | 无记录的冒充、冒充令牌被续期 | 审计落点是必需依赖，开始前先写审计，写失败即不开始；不发刷新令牌；`exp` 不晚于记录到期；撤销级联 | [design-authn-impersonation](design-authn-impersonation.md)、[design-authn-events](design-authn-events.md) | 动作失败时，审计里是一条 `granted` 加一条补写的 `failed`（以 `grant_id` 关联）；令牌在有效期内可重放 |
 | 冒充绕过租户的 MFA 与 SSO 要求 | 发起者的强认证在开始时核验；冒充限定租户 | [design-authn-impersonation](design-authn-impersonation.md) | 该租户的 SSO 与 MFA 要求，在冒充期间对被冒充者本人不起作用 |
 

@@ -153,11 +153,11 @@ type Proof struct {
 | `GET B/methods` | Open | 列出已纳入且未被 `disabled-methods` 关掉的登录方式描述符，并发布注册开关、可用的第二因素种类与人机验证门槛 |
 | `POST B/flows` | Open | 开始 `login` 流程，body `{method, delivery, return_to, binding, input, human_proof}`；不读 cookie；流程绑定在此建立 |
 | `POST B/register` | Open | 匿名自助注册，body `{username, email, password, display_name?, locale?, time_zone?}`；邮箱必填并作为未证明预留写入；一次事务建号，不建会话、不发邮件 |
-| `POST B/flows/authenticated` | Required | 在已登录的身份上开始 `link`、`step-up` 或 `enroll`（body 同上加 `purpose`）；流程记录绑定当前账户与会话；冒充中拒绝；`enroll` 是因素登记的唯一入口；起始状态与前置要求见「在已登录身份上开始流程」 |
+| `POST B/flows/authenticated` | Required，`Impersonable` | 在已登录的身份上开始 `link`、`step-up` 或 `enroll`（body 同上加 `purpose`）；流程记录绑定生效账户与会话；冒充期间绑定被冒充账户与发起者的会话；`enroll` 是因素登记的唯一入口；起始状态与前置要求见「在已登录身份上开始流程」 |
 | `POST B/flows/answer` | Open | 答复当前步，body `{seq, step, input, human_proof}`；`step` 取 `answer`、`factor`、`enroll`、`complete`；要求流程绑定 |
 | `GET B/flows/current`、`DELETE B/flows/current` | Open | 读当前流程状态，供界面刷新后续接；放弃流程，幂等；要求绑定 |
 | `GET\|POST B/callback/:provider` | Open | OAuth 与企业 OIDC 的回跳、SAML 的 ACS；`:provider` 对社交类方法是方法名，对企业 SSO 是 IdP 标识；`POST` 登记跨源检查旁路；SAML 回跳的体上限见 [authn-sso](design-authn-sso.md) |
-| `PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`POST B/identifiers`、`POST B/identifiers/verify`、`DELETE B/identifiers/:id`、`DELETE B/links/:id` | Required | 账户自助：改口令、添加或更换手机、添加登录标识、删标识、解绑外部身份；改动认证事实的都要新鲜认证并过 CSRF，冒充中一律拒绝；`POST B/phone` 与 `POST B/phone/verify` 只在 `SMSCodes` 在场时挂；`POST B/identifiers` 的邮箱分支只在 `EmailCodeSender` 在场时可用；发送验证码的分支（`POST B/phone` 与邮箱分支）先校验人机凭证 |
+| `PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`POST B/identifiers`、`POST B/identifiers/verify`、`DELETE B/identifiers/:id`、`DELETE B/links/:id` | Required，`Impersonable` | 账户自助：改口令、添加或更换手机、添加登录标识、删标识、解绑外部身份；改动认证事实的都要新鲜认证并过 CSRF，冒充身份与被冒充账户本人相同；`POST B/phone` 与 `POST B/phone/verify` 只在 `SMSCodes` 在场时挂；`POST B/identifiers` 的邮箱分支只在 `EmailCodeSender` 在场时可用；发送验证码的分支（`POST B/phone` 与邮箱分支）先校验人机凭证 |
 
 `B/me` 的两条路由——本人的资料视图与它的写——归 [authn-profile](design-authn-profile.md)，本模块不挂。
 
@@ -244,7 +244,7 @@ type Proof struct {
 
 401 一律带 `WWW-Authenticate`。挂在本模块路由上的 401 有三种来源。**网关自产的 401**（没有凭据、头不合规、出口检查不符、冒充范围不符，以及网关自己对浏览器会自行附带的凭据做的跨源检查不过）取网关为该端建成的挑战，含口令表后端在场时的 `Basic`。**本模块处理器答的 401**（`login-failed`、`flow-invalid`、`link-required`、`insufficient_user_authentication`）与 **`Mounter` 的 `Wrap` 为挂载路由写的跨源检查 401**，挑战去掉 `Basic`，只用 `Bearer` 与 `Cookie`：同源页面的 `fetch` 收到带 `Basic` 的 401 会让浏览器弹出原生口令框，而这些 401 不是在要求 Basic 凭据（[ADR-authn-credential-dispatch](../../../adr/adr-authn-credential-dispatch.md)）。三种 401 的 realm 都取该端点的端名，与网关写的 realm 同源：处理器与 `Wrap` 经 `mount.Mounter.Endpoint()` 得到端名，再交给路由部件的 401 写出函数（[authn-gate](design-authn-gate.md)）。
 
-自助路由没有 404 问题码：`ErrAccountNotFound` 在自助路由上读作身份已失效，答裸 401（不带问题码）。`impersonation-restricted` 在自助路由上实为兜底：主防线是网关对冒充身份的冒充范围核对与路由对冒充身份的整体拒绝，这条码只在处理器自己查到身份在冒充中时写出。
+自助路由没有 404 问题码：`ErrAccountNotFound` 在自助路由上读作身份已失效，答裸 401（不带问题码）。自助路由不因冒充拒绝：判据只取被冒充账户的权限，处理器不以 `Impersonating()` 写出 `impersonation-restricted`。
 
 ### 校验顺序与 return_to
 
@@ -502,7 +502,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 `POST B/flows/authenticated` 的访问级别是 `Required`，请求到达处理器时网关已认定身份。按下列次序处理，任一项不过即拒绝，不写流程记录：
 
-1. 按「校验顺序与 return_to」校验。身份在冒充中，403 `impersonation-restricted`。
+1. 按「校验顺序与 return_to」校验。冒充身份照常通过，生效账户是被冒充账户。
 2. 取 `purpose`：`link`、`step-up`、`enroll` 之外一律 `bad-request`。
 3. `purpose=link` 而发起者是未验证账户（`SignupStateOf` 为 `SignupPending`：有邮箱而没有一条已证明的）时，403 `contact-required`，不写记录。没有邮箱的账户读作 `SignupNone`，不受这条门控约束，`step-up` 与 `enroll` 也不受。外部身份绑定是平台强制门控的身份面，门控由本模块执行。判定读 `SignupVerification.SignupStateOf`，读失败答 503，不按放行处理。
 4. `Sessions.StatusFresh(身份的会话)` 须有效，账户与身份一致。
@@ -521,13 +521,15 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `step-up`，账户没有因素 | `method` | 请求的 `method` | `first` | 无附加要求 |
 | `enroll` | `input.kind` | 空；因素种类交给 `MFA.Enroll` | `enroll` | 账户安全类动作的要求 |
 
-「账户安全类动作的要求」是 `Requirement`：账户有有效因素（`MFA.Factors` 里状态为启用的行）时为新鲜的本地多因素，没有因素时为新鲜的第一因素，取值与单位归 [authn-mfa](design-authn-mfa.md)。引擎以 `StatusFresh` 交回的 `Assurance`、`AuthTime`、`IDPAssured` 按 `Identity.Satisfies` 的同一判据核对。
+「账户安全类动作的要求」是 `Requirement`：生效账户有有效因素（`MFA.Factors` 里状态为启用的行）时为新鲜的本地多因素，没有因素时为新鲜的第一因素，取值与单位归 [authn-mfa](design-authn-mfa.md)。引擎以 `StatusFresh` 交回的 `Assurance`、`AuthTime`、`IDPAssured` 按 `Identity.Satisfies` 的同一判据核对。
 
-`step-up` 的可用清单这样产生：引擎以会话的方式集构造只含 `Methods` 的 `Proof`，调 `MFA.Require(账户, Proof)` 取认证方式与会话方式不相交的启用因素，再剔除启用时刻不早于会话 `AuthTime` 的因素（`FactorRecord.ActivatedAt`）：登录期间登记的因素不得用来加强认证。`Require` 的结局不是 `MFAFactor` 即账户没有因素，起始状态取 `first`；结局是 `MFAFactor` 而剔除后清单为空，401 `insufficient_user_authentication`，不写记录。清单为空在只有一种因素种类的装配里是常态：会话在登录时已答过该种类，没有不相交的因素可提供，所以这样的装配取到满足要求的 200 靠登录时完成第二因素，加强认证的入口留给种类多于一种的装配。
+`step-up` 的可用清单这样产生：引擎以会话的方式集构造只含 `Methods` 的 `Proof`，调 `MFA.Require(证明账户, Proof)` 取认证方式与会话方式不相交的启用因素，再剔除启用时刻不早于会话 `AuthTime` 的因素（`FactorRecord.ActivatedAt`）：登录期间登记的因素不得用来加强认证。证明账户是发起者自己的账户，不冒充时就是生效账户；要求本身要多强，另按生效账户有没有因素取定（见下段）。`Require` 的结局不是 `MFAFactor` 即证明账户没有因素，起始状态取 `first`；结局是 `MFAFactor` 而剔除后清单为空，401 `insufficient_user_authentication`，不写记录。清单为空在只有一种因素种类的装配里是常态：会话在登录时已答过该种类，没有不相交的因素可提供，所以这样的装配取到满足要求的 200 靠登录时完成第二因素，加强认证的入口留给种类多于一种的装配。
 
-`step-up` 在 `first` 起始时，方法证明的账户必须等于记录的 `account`，否则落入 `failed`，401 `login-failed`；`link` 的外部身份不按绑定解析账户，账户取记录的 `account`。
+`step-up` 在 `first` 起始时，方法证明的账户必须是那条证明所属的人，否则落入 `failed`，401 `login-failed`：不是冒充身份时它就是记录的 `account`；冒充期间需要证明现有因素的是发起者，方法证明的因此是发起者自己的账户（见下段）。`link` 的外部身份不按绑定解析账户，账户取记录的 `account`。
 
-**完成时的复核**由 `complete` 在终态动作之前做，`link`、`step-up`、`enroll` 共用：`StatusFresh(记录的 session)` 有效、会话账户与记录的 `account` 一致、会话不在冒充中，任一项不过为 401 `flow-invalid`；`link` 与 `enroll` 另按上表的起始要求再核对一次，不满足为 401 `insufficient_user_authentication`；该要求取流程开始时账户有无有效因素取定的那一份（记录的 `require_multi`），使登记在其最后一步刚置启用的因素不抬高它自己完成所按的门槛（[ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)）。
+**冒充期间的因素核验对象是发起者。** 流程记录的 `account` 仍是生效账户，也就是被冒充账户，登记因素、关联外部身份这些终态动作落在它上面。要求本身按生效账户取定：它名下有启用因素时要求新鲜的本地多因素，没有时要求新鲜的第一因素。满足这个要求的那几步——`step-up`，以及 `enroll` 与 `link` 的起始证明——核验的是发起者名下的因素与发起者会话的方式集，因为能被证明的只有动手的人；被冒充账户名下的因素决定要求的高低，不参与证明。
+
+**完成时的复核**由 `complete` 在终态动作之前做，`link`、`step-up`、`enroll` 共用：`StatusFresh(记录的 session)` 有效、生效账户与记录的 `account` 一致，任一项不过为 401 `flow-invalid`；`link` 与 `enroll` 另按上表的起始要求再核对一次，不满足为 401 `insufficient_user_authentication`；该要求取流程开始时账户有无有效因素取定的那一份（记录的 `require_multi`），使登记在其最后一步刚置启用的因素不抬高它自己完成所按的门槛（[ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)）。
 
 ### 答复与迁移
 
@@ -748,7 +750,7 @@ Location: <落地页>#authn_error=<码>
 
 ### 账户自助
 
-下列路由在已认证的身份上执行。凡改动认证事实的，要求新鲜认证并过 CSRF，冒充中一律拒绝。新鲜认证的强度取「账户安全类动作的要求」：账户有因素时是新鲜的本地多因素，没有因素时退回新鲜的第一因素（[authn-mfa](design-authn-mfa.md)）。
+下列路由在已认证的身份上执行，并登记为可冒充。凡改动认证事实的，要求新鲜认证并过 CSRF；冒充身份与被冒充账户本人相同，判据只取被冒充账户的权限，认证事实取自发起的会话。新鲜认证的强度取「账户安全类动作的要求」：账户有因素时是新鲜的本地多因素，没有因素时退回新鲜的第一因素（[authn-mfa](design-authn-mfa.md)）。
 
 | 路由 | 行为 |
 |---|---|
@@ -864,7 +866,7 @@ Location: <落地页>#authn_error=<码>
 | 流程令牌的承载与绑定（cookie 与请求头载体） | 已实现 | `pkg/authn/login/flow.go`、`pkg/authn/login/callback.go` |
 | 账户解析与策略判定的引擎侧编排 | 已实现 | `pkg/authn/login/engine.go`、`pkg/authn/login/identity.go`；`pkg/authn/login/internal/resolve` `Resolver`、`Result`、`Outcome` |
 | 终态动作（`login`、`link`、`step-up`、`enroll`）与完成复核 | 已实现 | `pkg/authn/login/action.go` |
-| 在已登录身份上开始流程（`POST B/flows/authenticated`） | 已实现 | `pkg/authn/login/start.go` |
+| 在已登录身份上开始流程（`POST B/flows/authenticated`） | 部分实现 | `pkg/authn/login/start.go` |
 | 短信发送的每流程上限（`SendsLeft`、`Step.WithSends`） | 已实现 | `pkg/authn/login/engine.go`；`pkg/authn/internal/step/step.go` `(Step).WithSends`、`SendsOf`；`pkg/authn/internal/model/flow.go` `Start`、`FlowState` |
 | IdP 发起的 SAML 的流程创建 | 已实现 | `pkg/authn/login/callback.go` `callbackIDPInitiated`；`pkg/authn/login/flow.go` `flowProvider`（社交方法的记录取方法名、企业 SSO 的记录取 `input.provider`；`FlowState.Provider` 同源交给方法） |
 | 路由、请求与应答的形状、问题码 | 已实现 | `pkg/authn/login/routes.go`、`pkg/authn/login/respond.go`；`pkg/authn/login/answer.go`；`pkg/authn/internal/mount/problem.go` |
