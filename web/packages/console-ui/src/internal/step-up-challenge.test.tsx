@@ -95,6 +95,7 @@ function flowSession(): {
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
         human: { required: false, provider: 'off' },
+        password_reset: { enabled: false, methods: [] },
       }),
     discoverSso: () => Promise.resolve([]),
     register: () => Promise.reject(new Error('unused')),
@@ -171,6 +172,7 @@ describe('StepUpChallenge', () => {
             signup: { enabled: false, password: { enabled: false } },
             mfa: { factors: [] },
             human: { required: true, provider: 'turnstile', site_key: 'site-1' },
+            password_reset: { enabled: false, methods: [] },
           }),
         startAuthenticatedFlow: () =>
           Promise.resolve<AuthnFlowState>({
