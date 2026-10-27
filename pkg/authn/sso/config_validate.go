@@ -230,6 +230,11 @@ func validateSAMLConfig(fields map[string]json.RawMessage, spKeyConfigured bool)
 		}
 		subjectAttribute = value
 	}
+	if subjectAttribute != "" {
+		if err := validateSubjectAttribute(fields, subjectAttribute); err != nil {
+			return err
+		}
+	}
 	if raw, ok := fields["name_id_format"]; ok {
 		format, err := decodeString("name_id_format", raw)
 		if err != nil {
@@ -272,7 +277,10 @@ func validateNameIDFormat(format, subjectAttribute string) error {
 }
 
 // validateClaims holds a claims mapping to the closed set of targets and the
-// attribute-name bound.
+// attribute-name bound. The subject is the key of an external binding, so the
+// claim it is taken from has to be a stable identifier; an email address claim
+// is not one, because a provider-side address change would stop finding the
+// binding made before it.
 func validateClaims(raw json.RawMessage) error {
 	var claims map[string]string
 	if err := json.Unmarshal(raw, &claims); err != nil {
@@ -284,7 +292,12 @@ func validateClaims(raw json.RawMessage) error {
 			return fmt.Errorf("%w: a claims mapping holds an empty claim name", authn.ErrInvalidConfig)
 		}
 		switch {
-		case target == "email", target == "display_name", target == "subject":
+		case target == "email", target == "display_name":
+		case target == "subject":
+			if isEmailAddressClaim(name) {
+				return fmt.Errorf("%w: the claim %q is an address, which changes, so it may not be mapped to "+
+					"subject", authn.ErrInvalidConfig, name)
+			}
 		case strings.HasPrefix(target, "attr."):
 			attrName := strings.TrimPrefix(target, "attr.")
 			if attrName == "" || len(attrName) > maxAttrNameBytes {
@@ -300,6 +313,34 @@ func validateClaims(raw json.RawMessage) error {
 	if attrs > maxAttrTargets {
 		return fmt.Errorf("%w: the claims mapping names %d attributes, at most %d",
 			authn.ErrInvalidConfig, attrs, maxAttrTargets)
+	}
+	return nil
+}
+
+// isEmailAddressClaim reports whether a claim name is the standard one carrying
+// an email address. SAML attribute names vary, so a subject attribute is held to
+// the attribute the mapping actually sends the address from instead.
+func isEmailAddressClaim(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), "email")
+}
+
+// validateSubjectAttribute refuses a SAML subject attribute the claims mapping
+// uses for the address: the address is not a stable identifier, so a binding
+// keyed on it would be lost when the provider changes it.
+func validateSubjectAttribute(fields map[string]json.RawMessage, subjectAttribute string) error {
+	raw, ok := fields["claims"]
+	if !ok {
+		return nil
+	}
+	var claims map[string]string
+	if err := json.Unmarshal(raw, &claims); err != nil {
+		return fmt.Errorf("%w: claims is not an object of target names", authn.ErrInvalidConfig)
+	}
+	for name, target := range claims {
+		if target == "email" && name == subjectAttribute {
+			return fmt.Errorf("%w: subject_attribute %q is the attribute the address is mapped from, and an "+
+				"email address is not a stable subject", authn.ErrInvalidConfig, subjectAttribute)
+		}
 	}
 	return nil
 }
