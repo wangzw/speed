@@ -641,8 +641,9 @@ test('impersonation-for-support: the operator acts as a member and the record an
     ).toHaveCount(0)
 
     // A console path entered by a full document load is silently brought back
-    // to the tenant home: the impersonation gate runs before the console
-    // shell, and the banner remains the operator's explanation. The load also
+    // to the tenant home: the console area is decided by the effective
+    // account's platform permission set, and a target never holds one. The
+    // banner remains the operator's explanation. The load also
     // keeps the grant's tenant named -- the host reads the impersonated
     // account's own membership list, which the server narrows to the grant --
     // so the tenant-scoped surfaces the next steps read keep working across a
