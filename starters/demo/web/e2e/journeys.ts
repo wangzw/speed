@@ -254,7 +254,11 @@ export const journeys: readonly JourneyEntry[] = [
   {
     journey: 'journey-last-login-way.md',
     status: 'covered',
-    covers: ['REQ-security-040'],
+    covers: [
+      'REQ-security-013',
+      'REQ-security-017',
+      'REQ-security-040',
+    ],
   },
   {
     journey: 'journey-member-workspace.md',

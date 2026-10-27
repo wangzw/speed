@@ -113,6 +113,15 @@ export interface ReviewConfigInput {
    */
   readonly recentWindow?: string
   /**
+   * Require every account to register a second factor, so an account with none
+   * is asked for one at its next login. Off by default: the deployment's own
+   * switch stays as the template declares it, and only a journey that needs a
+   * factor registered before its session asks for the requirement. It is a
+   * deployment setting the binary's own seed writes -- assembly, not a
+   * manufactured product state.
+   */
+  readonly mfaRequired?: boolean
+  /**
    * Replace the scheduler's tick with this duration. Off by default: the
    * template's two-second tick feeds the member-workspace journey's worker. A
    * journey whose dispatch is a control click and whose only intended sends are
@@ -610,6 +619,19 @@ export async function writeReviewConfig(
       '\n  settings:\n',
       `\n  settings:\n    - key: "authn.mfa.recent-window"\n      value: ${quoted(input.recentWindow)}\n`,
       'recent-window setting',
+    )
+  }
+
+  // A journey whose session must post-date the factor it enrolled needs the
+  // deployment to require a factor, so the login flow registers it before the
+  // session exists. The binary's own seed writes the switch like any other
+  // setting; the journey still drives registration through the rendered flow.
+  if (input.mfaRequired === true) {
+    body = replaceOnce(
+      body,
+      '\n  settings:\n',
+      '\n  settings:\n    - key: "authn.mfa.global-required"\n      value: "true"\n',
+      'global-required setting',
     )
   }
 

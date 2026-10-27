@@ -424,6 +424,7 @@ export async function startReviewServer(
     readonly enterpriseSSO?: boolean
     readonly tenantSSO?: boolean
     readonly recentWindow?: string
+    readonly mfaRequired?: boolean
     readonly schedulerTick?: string
   } = {},
 ): Promise<ReviewServer> {
@@ -522,6 +523,7 @@ export async function startReviewServer(
       socialProvider,
       ssoProvider,
       recentWindow: options.recentWindow,
+      mfaRequired: options.mfaRequired,
       schedulerTick: options.schedulerTick,
     })
     await runCommand(
@@ -551,6 +553,7 @@ export async function startReviewServer(
         socialProvider,
         ssoProvider,
         recentWindow: options.recentWindow,
+        mfaRequired: options.mfaRequired,
         schedulerTick: options.schedulerTick,
       })
       const configLocator = `file:${config.path}`

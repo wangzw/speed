@@ -109,6 +109,13 @@ export const test = base.extend<{
    */
   recentWindow: string | undefined
   /**
+   * Require every account to register a second factor. A journey whose session
+   * must post-date the factor it enrolled sets this, so the login flow
+   * registers the factor before the session exists; every other spec keeps the
+   * template's declared switch.
+   */
+  mfaRequired: boolean
+  /**
    * Replace the scheduler tick for this spec's server. A journey whose only
    * sends are its own control clicks turns the periodic trigger off with `0s`;
    * every other spec keeps the template's two-second tick.
@@ -123,6 +130,7 @@ export const test = base.extend<{
   enterpriseSSO: [false, { option: true }],
   tenantSSO: [false, { option: true }],
   recentWindow: [undefined, { option: true }],
+  mfaRequired: [false, { option: true }],
   schedulerTick: [undefined, { option: true }],
   server: async (
     {
@@ -134,6 +142,7 @@ export const test = base.extend<{
       enterpriseSSO,
       tenantSSO,
       recentWindow,
+      mfaRequired,
       schedulerTick,
     },
     use,
@@ -148,6 +157,7 @@ export const test = base.extend<{
       enterpriseSSO,
       tenantSSO,
       recentWindow,
+      mfaRequired,
       schedulerTick,
     })
     try {
