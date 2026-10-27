@@ -362,7 +362,11 @@ func TestPatchRefusesBeforeTheBodyIsRead(t *testing.T) {
 // TestPatchIsReachableWhileImpersonating holds that an impersonating identity
 // writes the impersonated account's profile: the route is registered impersonable
 // and the handler no longer refuses the identity, so the write reaches the
-// effective account just as the target's own request would.
+// effective account just as the target's own request would. The write is audited
+// as the operator's: the row names the effective account, and the identity it is
+// written under carries the operator's key on the target's account in the grant's
+// tenant and session, which is what the journal turns into the actor column and
+// the on_behalf_of, impersonation_scope and session detail keys.
 func TestPatchIsReachableWhileImpersonating(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, impersonating()...)
@@ -371,6 +375,28 @@ func TestPatchIsReachableWhileImpersonating(t *testing.T) {
 	}
 	if got := r.admin.count("set-display-name"); got != 1 {
 		t.Errorf("SetDisplayName calls = %d, want 1", got)
+	}
+
+	rows := r.audit.entries()
+	if len(rows) != 1 {
+		t.Fatalf("audit rows = %+v, want one: a write that now reaches the account is audited", rows)
+	}
+	if row := rows[0]; row.Action != actionProfileUpdate || row.Object != string(meAccount) || row.Outcome != outcomeSuccess {
+		t.Errorf("the audit row = %+v, want %s on the effective account %s", row, actionProfileUpdate, meAccount)
+	}
+	ids, found := r.audit.writtenUnder()
+	if len(ids) != 1 || !found[0] {
+		t.Fatalf("the audit row was written under %d identities (found %v), want one carrying the request's", len(ids), found)
+	}
+	id := ids[0]
+	scope, scoped := id.Scope()
+	if !id.Impersonating() || id.Key() != string(otherActor) || id.Account() != meAccount ||
+		!scoped || scope != tenantA || id.Session() != meSession {
+		t.Errorf("the audit's identity is key %q, account %q, scope %q (scoped %t), session %q (impersonating %t); "+
+			"want the operator %q acting for %q in %q under %q, the facts the row's actor and its "+
+			"on_behalf_of/impersonation_scope/session detail are written from",
+			id.Key(), id.Account(), scope, scoped, id.Session(), id.Impersonating(),
+			otherActor, meAccount, tenantA, meSession)
 	}
 
 	// The handler alone, the fallback a registration that reached it without the

@@ -51,17 +51,25 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
-// recordingAudit keeps the rows it was asked to write and can be told to fail.
+// recordingAudit keeps the rows it was asked to write, the identity each was
+// written under, and can be told to fail. The identity is what the journal turns
+// into the row's actor column and its impersonation detail keys; keeping it lets
+// a case assert who the row names without standing in for the journal.
 type recordingAudit struct {
-	mu   sync.Mutex
-	rows []audit.Entry
-	err  error
+	mu    sync.Mutex
+	rows  []audit.Entry
+	ids   []authn.Identity
+	found []bool
+	err   error
 }
 
-func (a *recordingAudit) Record(_ context.Context, e audit.Entry) error {
+func (a *recordingAudit) Record(ctx context.Context, e audit.Entry) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	id, ok := authn.FromContext(ctx)
 	a.rows = append(a.rows, e)
+	a.ids = append(a.ids, id)
+	a.found = append(a.found, ok)
 	return a.err
 }
 
@@ -69,6 +77,14 @@ func (a *recordingAudit) entries() []audit.Entry {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return append([]audit.Entry(nil), a.rows...)
+}
+
+// writtenUnder returns the identity each recorded row was written under, and
+// whether the context carried one at all.
+func (a *recordingAudit) writtenUnder() ([]authn.Identity, []bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]authn.Identity(nil), a.ids...), append([]bool(nil), a.found...)
 }
 
 func (a *recordingAudit) fails(err error) { a.mu.Lock(); a.err = err; a.mu.Unlock() }
