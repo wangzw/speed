@@ -101,6 +101,13 @@ const authRegisterEn = authUiResources['en-US'] as unknown as {
   }
 }
 
+/** The copy a refused callback landing renders: the refusal sentence and the
+ * masked-address line, read from the auth-ui bundle the screen renders. */
+const authLandingEn = authUiResources['en-US'] as unknown as {
+  readonly errors: { readonly authn: { readonly link_required: string } }
+  readonly social: { readonly linkRequiredEmail: string }
+}
+
 const REGISTER_PATH = '/api/v1/auth/register'
 const REGISTER = `POST ${REGISTER_PATH}`
 
@@ -701,5 +708,49 @@ describe('the sign-in surface', () => {
     expect(
       screen.getByRole('link', { name: demoEnUS.home.setupNotice.action }),
     ).toHaveAttribute('href', ACCOUNT_SETUP_PATH)
+  })
+
+  it('lands a refused callback with the refusal and its masked address', async () => {
+    // The assembled app under its production provider stack reads the landing
+    // fragment and hands both the refusal and the masked address to the
+    // screen.
+    window.history.replaceState(
+      {},
+      '',
+      '/#authn_error=link-required&authn_email=a***@home.org',
+    )
+    renderDemoApp()
+
+    expect(
+      await screen.findByText(authLandingEn.errors.authn.link_required, {
+        exact: true,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        authLandingEn.social.linkRequiredEmail.replace(
+          '{{email}}',
+          'a***@home.org',
+        ),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('does not show an address a fragment pairs with another code', async () => {
+    // The fragment is forgeable; only link-required names an address. A
+    // fabricated pair must render the code's own refusal and no address line.
+    window.history.replaceState(
+      {},
+      '',
+      '/#authn_error=flow-invalid&authn_email=a***@home.org',
+    )
+    renderDemoApp()
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    const prefix = authLandingEn.social.linkRequiredEmail.slice(
+      0,
+      authLandingEn.social.linkRequiredEmail.indexOf('{{email}}'),
+    )
+    expect(screen.queryByText(prefix, { exact: false })).toBeNull()
   })
 })

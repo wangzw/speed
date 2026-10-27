@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -845,6 +846,74 @@ func TestACallbackAnsweringRefusedOrUnavailableLeavesATombstone(t *testing.T) {
 				t.Errorf("the flow state is %q, want the failed tombstone", st)
 			}
 		})
+	}
+}
+
+// TestMaskEmail holds the shape a surface names a colliding address with: the
+// first rune of the local part, three asterisks and the domain as written. What
+// is not one @ with a local part and a domain on both sides masks to nothing
+// rather than to a misleading shape.
+func TestMaskEmail(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"ann@home.org", "a***@home.org"},
+		{"bob@example.test", "b***@example.test"},
+		{"", ""},
+		{"home.org", ""},
+		{"@home.org", ""},
+		{"ann@", ""},
+		{"ann@home@org", ""},
+	}
+	for _, tc := range cases {
+		if got := maskEmail(tc.in); got != tc.want {
+			t.Errorf("maskEmail(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestAMaskedAddressTravelsOnlyWithLinkRequired holds that a link-required
+// refusal records the masked address on the call and puts it in the landing
+// fragment as authn_email, while a refusal that named no address — a plain
+// link-required and any other code — carries no such key.
+func TestAMaskedAddressTravelsOnlyWithLinkRequired(t *testing.T) {
+	cases := []struct {
+		name     string
+		err      error
+		email    string
+		fragment string
+	}{
+		{
+			name:     "a link-required naming an address",
+			err:      fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: "ann@home.org"}),
+			email:    "a***@home.org",
+			fragment: "/#authn_error=link-required&authn_email=a%2A%2A%2A%40home.org",
+		},
+		{
+			name:     "a plain link-required",
+			err:      fmt.Errorf("resolve: %w", authn.ErrLinkRequired),
+			email:    "",
+			fragment: "/#authn_error=link-required",
+		},
+		{
+			name:     "another refusal",
+			err:      fmt.Errorf("resolve: %w", authn.ErrInvalidCredentials),
+			email:    "",
+			fragment: "/#authn_error=login-failed",
+		},
+	}
+	for _, tc := range cases {
+		r := &routes{}
+		c := &call{endpoint: "login"}
+		r.fail(c, tc.err)
+		if c.failureEmail != tc.email {
+			t.Errorf("%s: failureEmail = %q, want %q", tc.name, c.failureEmail, tc.email)
+		}
+		target := landingTarget("/", c.failureEmail, c.err)
+		if target != tc.fragment {
+			t.Errorf("%s: landingTarget = %q, want %q", tc.name, target, tc.fragment)
+		}
+		if tc.email == "" && strings.Contains(target, landingEmailKey+"=") {
+			t.Errorf("%s: the fragment %q carries an %s key, want none", tc.name, target, landingEmailKey)
+		}
 	}
 }
 

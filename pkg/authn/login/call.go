@@ -74,6 +74,12 @@ type call struct {
 	// configured callback failure landing.
 	failureLanding string
 
+	// failureEmail is the masked address a link-required refusal names, read off
+	// the refusal before it is collapsed into a problem document, because that
+	// collapse keeps the code and drops the cause. The empty string means the
+	// failure names no address.
+	failureEmail string
+
 	// union is set on the answer route: its 200 body is the declared union of
 	// the four answers a step can produce.
 	union bool

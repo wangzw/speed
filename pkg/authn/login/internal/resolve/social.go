@@ -47,7 +47,7 @@ func (r *Resolver) socialKnownEmail(ctx context.Context, id authn.AccountID, l a
 		return Result{}, err
 	}
 	if !ok {
-		return Result{}, fmt.Errorf("resolve: %w", authn.ErrLinkRequired)
+		return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: ext.Email})
 	}
 	bound, err := r.bindExisting(ctx, id, l)
 	if err != nil {

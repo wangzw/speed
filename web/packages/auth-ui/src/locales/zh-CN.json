@@ -91,6 +91,7 @@
   "social": {
     "title": "或使用社交账号登录",
     "titleFirst": "使用社交账号登录",
+    "linkRequiredEmail": "冲突的邮箱：{{email}}",
     "provider": {
       "google": "Google",
       "github": "GitHub",
@@ -161,7 +162,7 @@
       "unsupported_region": "该手机号所在地区暂不支持登录。",
       "login_failed": "邮箱、手机号或密码不正确，或验证码有误。",
       "flow_invalid": "登录流程已失效，请重新开始。",
-      "link_required": "该社交账号的邮箱已属于本站的一个账户。请先用邮箱和口令登录该账户，再到「账户设置 → 社交绑定」里关联此账号。",
+      "link_required": "该社交账号的邮箱已属于本站的一个账户。请先用原先的登录方式登录该账户，再到「账户设置 → 社交绑定」里关联此账号。",
       "method_disabled": "该登录方式已停用，请选择其他登录方式。",
       "account_unavailable": "该账户当前不可用，请联系管理员。",
       "conflict": "该操作与账户当前状态冲突，请刷新后重试。",

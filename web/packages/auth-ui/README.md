@@ -329,6 +329,8 @@ The surface is assembleable without changing its defaults:
 | `onSignedIn` | `(context: SignInContext) => void` | fired once after a sign-in commits on a channel the screen drives (a form or the passkey ceremony), with the mode and the channel's method name; redirect and enterprise methods complete through the callback route and fire none |
 | `channels` | `readonly ('password' \| 'sms')[]` | **deprecated**: still narrows the form strip for one major |
 | `defaultChannel` | `'password' \| 'sms'` | **deprecated**: the channel selected in sign-in mode on first render (register mode starts on the first account-opening channel) |
+| `initialError` | `string` | an error code the host brought in from outside the screen, rendered as the inline whole-attempt error above the channels; the screen neither reads the URL nor decides where the code came from |
+| `initialErrorEmail` | `string` | the masked address a `link-required` refusal named, rendered as one plain line under that inline error; read only when `initialError` is `authn.link_required`, and absent for every other code. The server masks it; the screen places it unchanged |
 
 `SocialSignInOptions` carries the host callback route (sent as a redirect or
 enterprise flow's `return_to`) and the same `onAuthorizeUrl` seam
@@ -734,7 +736,7 @@ enforced by registration):
 | `mode.*` | the sign-in surface: the register mode's title and hint, the register / sign-in entries, and the sign-in mode's account-opening sentence |
 | `enterprise.*` | the enterprise entry: the email label, the continue action, the provider-picker title and the no-match notice |
 | `passkey.*` | the passkey entry: the divider title, with an "or"-less variant for when the class heads the surface |
-| `social.*` | the social section: the divider title (and its "or"-less variant for the first class) and one name per provider (`social.provider.<provider>`), including the per-mode names for a brand with several sign-in modes |
+| `social.*` | the social section: the divider title (and its "or"-less variant for the first class), the masked conflicting-address line under a `link-required` refusal (`social.linkRequiredEmail`, taking the address as `{{email}}`), and one name per provider (`social.provider.<provider>`), including the per-mode names for a brand with several sign-in modes |
 | `socialCallback.*` | the callback handler: the pending notice, the retry action |
 | `signOut.*` | the sign-out button: label and busy state |
 | `sessionEnded.*` | the session-ended screen: title, description, sign-in-again action |

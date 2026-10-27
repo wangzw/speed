@@ -269,7 +269,7 @@ type Proof struct {
 | 400 | `bad-request`、`unsupported-region` | 体不合法、字段缺失、未知字段、体超过 64 KiB 上限、方法不存在、`return_to` 不合规；短信号码前缀不在放行表里 |
 | 401 | `login-failed` | 未知标识、错口令、停用、无口令、验证码错、方法内校验失败；**同一个应答**，成因是号码前缀不在放行表或标识无法规范化时按 400 答 |
 | 401 | `flow-invalid` | 流程过期、已用、绑定不符、步序不符、被并发消费 |
-| 401 | `link-required` | 社交登录无绑定而已验证邮箱命中现有账户 |
+| 401 | `link-required` | 社交登录无绑定而已验证邮箱命中现有账户；企业 JIT 首登遇到已被占用的地址 |
 | 401 | `insufficient_user_authentication` | 加强认证，同时带 `WWW-Authenticate`（[authn-mfa](design-authn-mfa.md)） |
 | 403 | `method-disabled`、`account-unavailable`、`impersonation-restricted`、`forbidden`、`factor-not-seasoned`、`signup-closed`、`contact-required`、`human-verification-required`、`password-reset-closed`、`password-reset-unavailable` | 对认证之外的策略的转述，只在 authn 自己的处理器里写；`signup-closed` 是自助注册开关关闭，`contact-required` 是未验证账户（有邮箱而没有一条已证明的）调用了要求已验证邮箱的能力，`human-verification-required` 是部署要求人机验证而请求缺少或提交了无效的凭证且因此不发送，`password-reset-closed` 是匿名口令重置开关关闭或短信渠道被 `disabled-methods` 关闭，`password-reset-unavailable` 是重置的账户在验证之后不再满足资格（停用、删除、失去口令或标识不再由同一证明渠道证明） |
 | 409 | `conflict`、`login-identifier-required`、`username-taken`、`email-taken` | 外部身份冲突、解绑最后一种登录方式、删最后一个因素、某种因素已达上限；账户没有可作登录名的标识而设口令，或删除带口令凭据账户的最后一个登录名；自助注册的用户名已被占用；邮箱地址已被别的账户预留或持有 |
@@ -677,14 +677,15 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 回跳是顶层导航（`Sec-Fetch-Mode: navigate`）而这次登录被拒时，用户代理不停在问题文档上：回调答 `303`，把机器码放进 URL 片段，落到产品内的一个页面。
 
 ```
-Location: <落地页>#authn_error=<码>
+Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 ```
 
 - **落地页。** 目的为 `login` 的落到设置 `authn.login.callback-error-return-to`，缺省 `/`；目的为 `link`、`step-up`、`enroll` 的落到该流程记录里的 `return_to`，即发起它的那个页面。两个来源都按 `return_to` 的同一规则校验。
 - **码。** 取问题类型 `urn:speed:authn:<码>` 中 `<码>` 一段，是已有的封闭词汇（`login-failed`、`link-required`、`account-unavailable`、`conflict`、`throttled`、`unavailable` 等）；不带码的 500 落成 `unavailable`。
-- **片段而非查询串。** 片段不随请求发往服务器，码不进访问日志，也不进页面能发出的 `Referer`。
+- **地址（仅 `link-required`）。** `link-required` 的落地在片段里多带 `authn_email`，值是冲突地址的掩码：本地部分的首个字符、`***`，再按原样接 `@` 与域名（`ann@home.org` 落成 `a***@home.org`）。只有这一种拒绝带它；其他码的落地不带这个键，`link-required` 没有可命名的地址时也不带。地址在服务端掩码，片段会写进浏览器历史并显示在页面上，只保留足以让调用方认出自己哪个地址冲突的位数。错误文本不带地址，因为错误会进日志。
+- **片段而非查询串。** 片段不随请求发往服务器，码与掩码地址都不进访问日志，也不进页面能发出的 `Referer`。
 - **不改变 API 客户端的形状。** 没有 `Sec-Fetch-Mode: navigate` 的请求照旧得到 `application/problem+json`。落地页读不出、或落地页不合规时同样退回问题文档，不把用户代理送到一个未经校验的地址。
-- **客户端呈现。** 登录面把片段里的码按 api-client 的推导归一到 `authn.<码>`（连字符换下划线），交给已有的内联错误渲染；白名单之外的码落通用文案。
+- **客户端呈现。** 登录面把片段里的码按 api-client 的推导归一到 `authn.<码>`（连字符换下划线），交给已有的内联错误渲染；白名单之外的码落通用文案。`link-required` 携带的 `authn_email` 另在内联错误下方渲染为一行地址（[web-auth-ui](../web/design-web-auth-ui.md)）。
 
 取舍见 [ADR-authn-callback-failure-landing](../../../adr/adr-authn-callback-failure-landing.md)。
 
@@ -712,7 +713,7 @@ Location: <落地页>#authn_error=<码>
 - 口令、验证码、因素、断言不成立，以及账户不存在、无口令、已停用，统一 `login-failed`。
 - 短信号码未登记且注册关闭时，照样写一行 `suppressed = true` 的挑战行，不入队、不发送，使重发间隔与各项预算按与已登记号码完全相同的路径累计；应答与「已发送」同形；随后的答复一律按 `login-failed` 失败，并经一次诱饵校验耗费同样的时间。预算与挑战行归 [authn-sms](design-authn-sms.md)（[ADR-authn-sms](../../../adr/adr-authn-sms.md)）。
 - 发现接口只回答与域名有关的公开信息（[authn-sso](design-authn-sso.md)）。
-- 外部登录路径上，调用方已在 IdP 处证明过身份，才会看到 `account-unavailable` 与 `link-required`；`link-required` 只在 `External.EmailVerified` 为真时给，因此只对已被提供方证明拥有该邮箱的调用者暴露其账户存在。
+- 外部登录路径上，调用方已在 IdP 处证明过身份，才会看到 `account-unavailable` 与 `link-required`；`link-required` 在社交路径上只在 `External.EmailVerified` 为真时给，企业 JIT 路径则以邮箱域属于该提供方所属租户已验证的域为前提（IdP 的域证明替代 `EmailVerified`，见 [authn-account](design-authn-account.md) 的 A5），因此只对已被提供方证明拥有该邮箱或其域的调用者暴露其账户存在。
 - 因素清单只在第一因素通过之后给。
 
 ### 短信发送的每流程上限

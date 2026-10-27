@@ -237,6 +237,16 @@ export interface SignInScreenProps {
    * unknown code renders the generic message.
    */
   readonly initialError?: string
+  /**
+   * The masked address a link-required refusal named, rendered as a plain
+   * line under the initial inline error so the viewer can tell which of
+   * their addresses collided. The server has already masked it; the screen
+   * only places it. It is read only when `initialError` is
+   * `authn.link_required`; every other code renders no line even if the
+   * host supplies a value, because the server never names an address for
+   * them.
+   */
+  readonly initialErrorEmail?: string
 }
 
 export function SignInScreen({
@@ -254,6 +264,7 @@ export function SignInScreen({
   channels,
   defaultChannel = 'password',
   initialError,
+  initialErrorEmail,
 }: SignInScreenProps) {
   const { t } = useAuthUiTranslation()
   const [attempt, setAttempt] = useState(0)
@@ -634,7 +645,17 @@ export function SignInScreen({
           {t('mode.registerEntry')}
         </Button>
       ) : null}
-      {initialError === undefined ? null : <InlineError code={initialError} />}
+      {initialError === undefined ? null : (
+        <>
+          <InlineError code={initialError} />
+          {initialError === 'authn.link_required' &&
+          initialErrorEmail !== undefined ? (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {t('social.linkRequiredEmail', { email: initialErrorEmail })}
+            </Typography>
+          ) : null}
+        </>
+      )}
       {slots?.aboveChannels}
       {groupOrder.filter((group) => hasGroup[group]).map(renderGroup)}
     </Box>

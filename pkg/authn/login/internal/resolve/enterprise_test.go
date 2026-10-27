@@ -9,6 +9,21 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
+// wantNamedLinkRequired asserts a refusal is the link-required kind and names
+// the address whose existing account collided. Every enterprise JIT branch
+// that refuses this way must carry the address, because the landing fragment
+// names it to the caller the provider proved.
+func wantNamedLinkRequired(t *testing.T, err error, want string) {
+	t.Helper()
+	var conflicted *authn.LinkRequiredError
+	if !errors.As(err, &conflicted) {
+		t.Fatalf("err = %v, want a *authn.LinkRequiredError", err)
+	}
+	if conflicted.Email != want {
+		t.Errorf("the refusal names %q, want %q", conflicted.Email, want)
+	}
+}
+
 // A5: an enterprise identity with no binding.
 
 func TestEnterpriseDomainMustBeVerifiedForTheProvidersTenant(t *testing.T) {
@@ -173,6 +188,7 @@ func TestEnterpriseJITAddressTakenIsLinkRequiredByDefault(t *testing.T) {
 	if !errors.Is(err, authn.ErrLinkRequired) {
 		t.Fatalf("err = %v, want ErrLinkRequired", err)
 	}
+	wantNamedLinkRequired(t, err, "ann@acme.com")
 	if e.s.writes() != 0 {
 		t.Errorf("%d writes, want none", e.s.writes())
 	}
@@ -252,6 +268,7 @@ func TestEnterpriseMergeConditionsEachRefuseTheMerge(t *testing.T) {
 			if !errors.Is(err, authn.ErrLinkRequired) {
 				t.Fatalf("Resolve = %+v, %v, want ErrLinkRequired", res, err)
 			}
+			wantNamedLinkRequired(t, err, "ann@acme.com")
 			if len(res.Cleanup) != 0 {
 				t.Errorf("Cleanup = %v, want none for a refusal", res.Cleanup)
 			}
@@ -299,6 +316,7 @@ func TestEnterpriseRaceOnTheAddressIsLinkRequired(t *testing.T) {
 	if !errors.Is(err, authn.ErrLinkRequired) {
 		t.Errorf("err = %v, want ErrLinkRequired", err)
 	}
+	wantNamedLinkRequired(t, err, "ann@acme.com")
 	if _, ok := e.s.boundTo("oidc:"+idpAcme, "u1"); ok {
 		t.Error("the identity was bound")
 	}

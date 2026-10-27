@@ -211,6 +211,17 @@ test.describe('the provider address already belongs to an account', () => {
           exact: true,
         }),
       ).toBeVisible()
+      // The refusal names the colliding address, masked by the server to its
+      // first character and the domain as written, so the visitor can tell
+      // which address is already taken.
+      const [local = '', domain = ''] = identityProviderUser.email.split('@')
+      await expect(
+        page.getByText(
+          copy('authUi', 'social.linkRequiredEmail', {
+            email: `${local.charAt(0)}***@${domain}`,
+          }),
+        ),
+      ).toBeVisible()
       // The visitor is not signed in: the sign-in surface is still the
       // document, not the tenant area, so nothing was taken over.
       await expect(signInHeading(page)).toBeVisible()

@@ -18,6 +18,13 @@ func TestSocialLinkRequiredOnlyForAVerifiedAddressOnAnExistingAccount(t *testing
 	if !errors.Is(err, authn.ErrLinkRequired) {
 		t.Fatalf("err = %v, want ErrLinkRequired", err)
 	}
+	var conflicted *authn.LinkRequiredError
+	if !errors.As(err, &conflicted) {
+		t.Fatalf("err = %v, want a *authn.LinkRequiredError", err)
+	}
+	if conflicted.Email != "ann@home.org" {
+		t.Errorf("the refusal names %q, want the fixture address", conflicted.Email)
+	}
 	if e.s.writes() != 0 {
 		t.Errorf("link-required wrote %d times, want nothing written", e.s.writes())
 	}

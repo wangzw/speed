@@ -150,6 +150,22 @@ func TestASentinelSurvivesWrapping(t *testing.T) {
 	}
 }
 
+// TestLinkRequiredErrorKeepsTheAddressOutOfItsText holds the split the design
+// states: the value carries the address so a surface can name the collision,
+// while its text stays the sentinel's, so a log line names no address.
+func TestLinkRequiredErrorKeepsTheAddressOutOfItsText(t *testing.T) {
+	err := fmt.Errorf("resolve: %w", &LinkRequiredError{Email: "ann@home.org"})
+	if !errors.Is(err, ErrLinkRequired) {
+		t.Error("a LinkRequiredError is not found through errors.Is")
+	}
+	if err.Error() != "resolve: "+ErrLinkRequired.Error() {
+		t.Errorf("the text reads %q, want the sentinel's", err.Error())
+	}
+	if strings.Contains(err.Error(), "ann@home.org") {
+		t.Errorf("the text %q names the address", err.Error())
+	}
+}
+
 // TestContactRequiredProblemTypeIsTheWireValue holds the exported code to its
 // wire value. The three management faces and a host's own surfaces write this
 // constant, so its value is a contract those surfaces share; pinning the literal

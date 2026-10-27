@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
@@ -35,6 +36,10 @@ func (r *routes) callbackPost(ctx context.Context, in callbackInput, meta *speed
 // access logs and out of the Referer a page would otherwise send.
 const landingFragment = "authn_error"
 
+// landingEmailKey is the second key of that fragment, present only when a
+// link-required refusal named the masked address whose account collided.
+const landingEmailKey = "authn_email"
+
 // landCallbackFailure answers a failed callback that is a top-level navigation
 // by landing the user agent back in the product with the problem code in the URL
 // fragment, rather than answering a problem document a browser can only render
@@ -61,8 +66,34 @@ func (r *routes) landCallbackFailure(c *call, reply speedhttp.Reply, err error) 
 		landing = landing[:i]
 	}
 	c.err = nil
-	c.redirect(http.StatusSeeOther, landing+"#"+landingFragment+"="+url.QueryEscape(problemCode(err)))
+	c.redirect(http.StatusSeeOther, landingTarget(landing, c.failureEmail, err))
 	return c.result()
+}
+
+// maskEmail masks an address for a surface that names a collision: the first
+// rune of the local part, three asterisks, then the domain as written, so
+// ann@home.org becomes a***@home.org. An address that is not a single @ with a
+// local part and a domain on both sides masks to nothing rather than to a
+// misleading shape. The first rune is decoded, not sliced by byte, so a
+// multi-byte character is kept whole.
+func maskEmail(address string) string {
+	local, domain, ok := strings.Cut(address, "@")
+	if !ok || local == "" || domain == "" || strings.Contains(domain, "@") {
+		return ""
+	}
+	first, _ := utf8.DecodeRuneInString(local)
+	return string(first) + "***@" + domain
+}
+
+// landingTarget is the fragment a failed navigation callback redirects with: the
+// problem code as authn_error, and, only when the refusal named a masked
+// address, that address as authn_email in the same query string.
+func landingTarget(landing, email string, err error) string {
+	target := landing + "#" + landingFragment + "=" + url.QueryEscape(problemCode(err))
+	if email != "" {
+		target += "&" + landingEmailKey + "=" + url.QueryEscape(email)
+	}
+	return target
 }
 
 // problemCode is the machine-readable code a fault carries, or the unavailable

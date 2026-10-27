@@ -160,6 +160,56 @@ describe('SignInScreen', () => {
     )
   })
 
+  it('render the masked conflicting address beside a link-required error', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={BOTH_FORMS}
+        initialError="authn.link_required"
+        initialErrorEmail="a***@home.org"
+      />,
+    )
+    // The copy comes from the bundle, not the test; the server already
+    // masked the address, so the line shows it as it arrived.
+    expect(
+      screen.getByText(
+        zhCN.social.linkRequiredEmail.replace('{{email}}', 'a***@home.org'),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('render no address line when no address is set', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={BOTH_FORMS}
+        initialError="authn.link_required"
+      />,
+    )
+    const copy = zhCN.social.linkRequiredEmail
+    const prefix = copy.slice(0, copy.indexOf('{{email}}'))
+    expect(screen.queryByText(prefix, { exact: false })).toBeNull()
+  })
+
+  it('render no address line for a code that never names one', () => {
+    // The property is a host seam; a host that pairs an address with an
+    // unrelated code must not make the screen present it as server fact.
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={BOTH_FORMS}
+        initialError="authn.login_failed"
+        initialErrorEmail="a***@home.org"
+      />,
+    )
+    const copy = zhCN.social.linkRequiredEmail
+    const prefix = copy.slice(0, copy.indexOf('{{email}}'))
+    expect(screen.queryByText(prefix, { exact: false })).toBeNull()
+  })
+
   it('fall back to the generic message for a code it does not know', () => {
     const harness = makeHarness({})
     renderWithProviders(

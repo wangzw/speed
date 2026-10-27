@@ -421,3 +421,21 @@ var (
 	// already. The login fails, and a Warn and a metric record it.
 	ErrAssertionReplay = errors.New("authn: the assertion was already used")
 )
+
+// LinkRequiredError is ErrLinkRequired with the address whose existing account
+// refused the login. It changes no answer: errors.Is on ErrLinkRequired still
+// holds for it. The address is what lets a surface name the collision to the
+// caller the provider proved owns the address. Error returns the sentinel's
+// text and carries no address, because errors reach logs.
+type LinkRequiredError struct {
+	// Email is the external identity's verified address, the one an existing
+	// account already holds.
+	Email string
+}
+
+// Error returns the sentinel's text, so an error that reaches a log names no
+// address.
+func (e *LinkRequiredError) Error() string { return ErrLinkRequired.Error() }
+
+// Unwrap returns ErrLinkRequired, so errors.Is holds for the refusal.
+func (e *LinkRequiredError) Unwrap() error { return ErrLinkRequired }

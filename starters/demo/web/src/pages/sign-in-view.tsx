@@ -71,7 +71,7 @@ import type {
 } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
 import { useLocationPath, useNavigate } from '@speed/route-kit'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactElement } from 'react'
 import { useAppServices } from '../app-services.js'
 import {
@@ -84,8 +84,8 @@ import {
   AUTH_CALLBACK_PATH,
 } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
-import { takeCallbackError } from '../sign-in-landing.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
+import { useCallbackLanding } from '../use-callback-landing.js'
 import { TENANT_HOME_PATH } from './not-found-page.js'
 
 /** The social / enterprise block this host hands the screen: the provider's
@@ -127,14 +127,14 @@ export function SignInView({
   // controlled, so this state is the single source of what the surface asks
   // for; the page title above the screen follows it.
   const [mode, setMode] = useState<SignInMode>('sign-in')
-  // A refused social callback lands here with its code in the URL fragment.
-  // Reading it after mount (rather than in the initial state) keeps the URL
-  // rewrite out of render, and the read clears the fragment so a reload does
-  // not show the message again.
-  const [initialError, setInitialError] = useState<string | undefined>(undefined)
-  useEffect(() => {
-    setInitialError(takeCallbackError())
-  }, [])
+  // A refused social callback lands here with its code in the URL fragment,
+  // and, when the refusal was link-required, the masked address whose
+  // account collided. The hook reads it once after mount -- keeping the URL
+  // rewrite out of render -- and clears the fragment so a reload does not
+  // show the message again.
+  const landing = useCallbackLanding()
+  const initialError = landing?.code
+  const initialErrorEmail = landing?.email
   // A registration completed through SMS: the register mode decides where
   // the just-opened account lands. With the personal tenant in force it
   // lands in the tenant area; the home page decides on its own whether the
@@ -232,6 +232,7 @@ export function SignInView({
           onSignedIn={onSignedIn}
           social={social}
           initialError={initialError}
+          initialErrorEmail={initialErrorEmail}
         />
       </Card>
     </Box>

@@ -197,6 +197,10 @@ func (r *routes) fail(c *call, err error) {
 	case errors.Is(err, authn.ErrAccountUnavailable):
 		c.forbidden(mount.CodeAccountUnavailable)
 	case errors.Is(err, authn.ErrLinkRequired):
+		var conflicted *authn.LinkRequiredError
+		if errors.As(err, &conflicted) {
+			c.failureEmail = maskEmail(conflicted.Email)
+		}
 		c.unauthorized(mount.CodeLinkRequired)
 	case errors.Is(err, authn.ErrBindingConflict), errors.Is(err, authn.ErrAccountExists),
 		errors.Is(err, authn.ErrLastLoginMethod), errors.Is(err, authn.ErrLastFactor),

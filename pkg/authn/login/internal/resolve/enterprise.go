@@ -131,7 +131,7 @@ func (r *Resolver) jit(ctx context.Context, prov authn.SSOProvider, l authn.Exte
 	if errors.Is(err, authn.ErrAccountExists) {
 		// The address was taken after it was looked up, by an account that is not
 		// this identity's.
-		return Result{}, fmt.Errorf("resolve: %w", authn.ErrLinkRequired)
+		return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: ext.Email})
 	}
 	return res, err
 }
@@ -139,14 +139,14 @@ func (r *Resolver) jit(ctx context.Context, prov authn.SSOProvider, l authn.Exte
 // jitOccupied is the case of an address an account already holds.
 func (r *Resolver) jitOccupied(ctx context.Context, id authn.AccountID, prov authn.SSOProvider, l authn.ExternalLink, ext *authn.External) (Result, error) {
 	if !prov.MergeExisting {
-		return Result{}, fmt.Errorf("resolve: %w", authn.ErrLinkRequired)
+		return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: ext.Email})
 	}
 	ok, err := r.mergeable(ctx, id, prov.Tenant, ext.Email)
 	if err != nil {
 		return Result{}, err
 	}
 	if !ok {
-		return Result{}, fmt.Errorf("resolve: %w", authn.ErrLinkRequired)
+		return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: ext.Email})
 	}
 	bound, err := r.bindExisting(ctx, id, l)
 	if err != nil {
