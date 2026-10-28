@@ -2,7 +2,15 @@
  * J-enterprise-sso -- an operator connects an enterprise OIDC provider to a
  * tenant and an employee signs in with their work address.
  *
- * The journey's seven steps, all through the rendered product:
+ * The file drives the journey twice, once per provisioning mode the provider
+ * can declare. The first test is the pre-provisioned journey below. The second
+ * has the provider open accounts itself: the first login parks at the username
+ * step before any account exists, the answer opens the account with that
+ * username, and the account joins the provider's tenant. Everything after the
+ * sign-in surface -- the domain claim, the discovery by address, the switcher
+ * -- is common to both.
+ *
+ * The pre-provisioned journey's seven steps, all through the rendered product:
  *
  *   1. The operator opens the console's SSO page and selects the target tenant.
  *   2. The operator registers a provider: protocol OIDC, a name, pre-provisioned
@@ -58,18 +66,20 @@
  * fail on the requirement's whole claim: the spec drives each requirement's
  * positive branch only. It enables a provider that was never disabled (so it
  * cannot prove that a disabled provider leaves discovery), verifies a domain
- * that no other provider holds (so it cannot prove the conflict refusal), uses
- * pre-provisioned onboarding against an account the operator created (so it
- * cannot prove the just-in-time branch and never exercises "no prepared
- * account"), and signs in once with a domain that is verified (so it cannot
- * prove the refusal a foreign domain or an unverified domain produces). Those
- * alternative paths stay with their own requirements and are not claimed here.
+ * that no other provider holds (so it cannot prove the conflict refusal), and
+ * signs in once with a domain that is verified (so it cannot prove the refusal
+ * a foreign domain or an unverified domain produces). Those alternative paths
+ * stay with their own requirements and are not claimed here. The just-in-time
+ * test likewise never meets an address an existing account holds, so the
+ * link-required branch of REQ-signin-022 stays with its own case.
  */
 // @journey journey-enterprise-sso-onboarding.md
-// @covers REQ-platform-admin-013, REQ-platform-config-017, REQ-platform-config-018, REQ-platform-config-020, REQ-platform-config-038, REQ-presentation-027, REQ-signin-001, REQ-signin-003, REQ-signin-004, REQ-signin-020, REQ-signin-021, REQ-signin-027, REQ-signup-018, REQ-tenancy-009, REQ-tenancy-022, REQ-tenancy-023, REQ-tenancy-035, REQ-tenancy-036
+// @covers REQ-platform-admin-013, REQ-platform-config-017, REQ-platform-config-018, REQ-platform-config-020, REQ-platform-config-038, REQ-presentation-027, REQ-signin-001, REQ-signin-003, REQ-signin-004, REQ-signin-020, REQ-signin-021, REQ-signin-022, REQ-signin-027, REQ-signup-018, REQ-signup-047, REQ-signup-048, REQ-tenancy-009, REQ-tenancy-022, REQ-tenancy-023, REQ-tenancy-035, REQ-tenancy-036
 import type { Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
+import type { DemoTarget } from '../fixtures/demo'
+import type { DNSStub } from '../fixtures/dns-stub'
 import {
   enterpriseIdentityProviderClaims,
   enterpriseIdentityProviderClient,
@@ -77,6 +87,7 @@ import {
   enterpriseIdentityProviderRecordName,
   enterpriseIdentityProviderUser,
 } from '../fixtures/identity-provider'
+import type { EnterpriseIdentityProvider } from '../fixtures/identity-provider'
 import { waitForVerificationCode } from '../fixtures/log'
 import { copy } from '../helpers/i18n'
 import { approveEnterpriseSignIn } from '../helpers/social'
@@ -94,8 +105,15 @@ const EXISTING_TENANT = 'acme'
 /** The tenant the provider is registered in (the enterprise fixtures' seed). */
 const TARGET_TENANT = 'globex'
 
-/** The provider the operator registers. */
+/** The provider the operator registers for the pre-provisioned onboarding. */
 const PROVIDER_NAME = 'Globex Workforce'
+
+/** The provider the operator registers for the just-in-time onboarding. */
+const JIT_PROVIDER_NAME = 'Globex Workforce Self-Service'
+
+/** The username the employee chooses when a just-in-time login opens the
+ * account. Nothing seeds it: the step collects it before any account exists. */
+const JIT_USERNAME = 'globex-newcomer'
 
 /**
  * The account's display name. It deliberately differs from the provider's
@@ -193,12 +211,12 @@ function domainSection(page: Page): Locator {
   })
 }
 
-/** The SSO page's provider list row for the registered provider. */
-function providerRow(page: Page): Locator {
+/** The SSO page's provider list row for one registered provider. */
+function providerRow(page: Page, name: string): Locator {
   return page
     .getByRole('table')
     .locator('tbody tr')
-    .filter({ hasText: PROVIDER_NAME })
+    .filter({ hasText: name })
 }
 
 /** The invitations page's member section. */
@@ -271,6 +289,318 @@ function employeeOption(page: Page): Locator {
   })
 }
 
+/**
+ * The shared precondition of both onboarding journeys: sign the operator in
+ * and prove the account's own address, which the console's human writes are
+ * gated on.
+ */
+async function proveOperatorAddress({
+  page,
+  server,
+  accounts,
+}: DemoTarget): Promise<void> {
+  // The journey starts with an operator whose address is proved. The review
+  // seed writes the address as an administrator's assertion, so the spec
+  // reaches the precondition the way a person does -- the standing notice's
+  // verify entry, then the code the review mail carrier writes to the process
+  // log.
+  await accounts.signIn({
+    identifier: OPERATOR.username,
+    password: OPERATOR.password,
+  })
+  const banner = verificationBanner(page)
+  await expect(banner).toBeVisible()
+
+  // The cursor is taken before the entry is followed: the verification
+  // section sends its one code after the arrival, and only that code may be
+  // used.
+  const beforeCode = server.log.mark()
+  await banner
+    .getByRole('link', {
+      name: copy('demo', 'verificationBanner.verify'),
+      exact: true,
+    })
+    .click()
+
+  const section = verificationSection(page)
+  await expect(section).toBeVisible()
+  const { code } = await waitForVerificationCode(
+    server.log,
+    'mail',
+    OPERATOR.identifier,
+    { after: beforeCode },
+  )
+  await section
+    .getByLabel(copy('accountUi', 'verification.codeLabel'), { exact: true })
+    .fill(code)
+  await section
+    .getByRole('button', {
+      name: copy('accountUi', 'verification.verify'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByRole('region', {
+      name: copy('accountUi', 'verification.verifiedTitle'),
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(banner).toHaveCount(0)
+}
+
+/**
+ * Register one enabled OIDC provider through the console's provider form,
+ * naming the local fixture's issuer, client and claim mapping. The provider
+ * belongs to the tenant the page is switched to.
+ */
+async function registerOIDCProvider(
+  page: Page,
+  provider: EnterpriseIdentityProvider,
+  name: string,
+  provisioning: 'preprovisioned' | 'jit',
+): Promise<void> {
+  const form = providerSection(page)
+  const protocol = form.getByLabel(
+    copy('consoleUi', 'sso.provider.protocolLabel'),
+    { exact: true },
+  )
+  const nameField = form.getByLabel(
+    copy('consoleUi', 'sso.provider.nameLabel'),
+    { exact: true },
+  )
+  const provisioningField = form.getByLabel(
+    copy('consoleUi', 'sso.provider.provisioningLabel'),
+    { exact: true },
+  )
+  const create = form.getByRole('button', {
+    name: copy('consoleUi', 'sso.provider.createSubmit'),
+    exact: true,
+  })
+
+  await protocol.fill('oidc')
+  await nameField.fill(name)
+  await provisioningField.fill(provisioning)
+
+  // The enabled flag is a three-state field whose untouched value leaves the
+  // module's default; the journey's provider is enabled, so the operator
+  // states it.
+  await form
+    .getByRole('combobox', {
+      name: copy('consoleUi', 'sso.provider.enabledLabel'),
+      exact: true,
+    })
+    .click()
+  await page
+    .getByRole('option', {
+      name: copy('consoleUi', 'sso.provider.tri.true'),
+      exact: true,
+    })
+    .click()
+
+  // The provider configuration names the local issuer, its client identifier
+  // and the claim mapping that finds the user's address and display name.
+  await form
+    .getByLabel(copy('consoleUi', 'sso.provider.configLabel'), {
+      exact: true,
+    })
+    .fill(
+      JSON.stringify({
+        issuer: provider.issuer,
+        client_id: provider.clientID,
+        claims: enterpriseIdentityProviderClaims,
+      }),
+    )
+  await form
+    .getByLabel(copy('consoleUi', 'sso.provider.clientSecretLabel'), {
+      exact: true,
+    })
+    .fill(enterpriseIdentityProviderClient.secret)
+  await create.click()
+
+  // The write confirms the created provider by name, the form returns to its
+  // initial state, and the list carries the provider under this tenant.
+  await expect(
+    page.getByText(copy('consoleUi', 'sso.provider.created', { name }), {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(nameField).toHaveValue('')
+
+  const row = providerRow(page, name)
+  await expect(row).toHaveCount(1)
+  await expect(row.getByText(name, { exact: true })).toBeVisible()
+  await expect(row.getByText('oidc', { exact: true })).toBeVisible()
+  await expect(
+    row.getByText(copy('consoleUi', 'sso.enabledYes'), { exact: true }),
+  ).toBeVisible()
+
+  // REQ-platform-config-017: the provider belongs to the selected tenant.
+  // Another tenant's list does not carry it, and the target tenant's does
+  // again after switching back.
+  await selectTenant(page, EXISTING_TENANT)
+  await expect(
+    page.getByRole('heading', {
+      name: copy('consoleUi', 'sso.empty.title'),
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(providerRow(page, name)).toHaveCount(0)
+  await selectTenant(page, TARGET_TENANT)
+  await expect(providerRow(page, name)).toHaveCount(1)
+}
+
+/**
+ * Claim the fixture's email domain for one provider, publish the record the
+ * one-time panel hands out through the DNS stub, and verify it.
+ */
+async function claimAndVerifyDomain(
+  page: Page,
+  stub: DNSStub,
+  providerName: string,
+): Promise<void> {
+  const domains = domainSection(page)
+  await domains
+    .getByRole('combobox', {
+      name: copy('consoleUi', 'sso.domains.providerLabel'),
+      exact: true,
+    })
+    .click()
+  await page.getByRole('option', { name: providerName, exact: true }).click()
+  await domains
+    .getByLabel(copy('consoleUi', 'sso.domains.domainLabel'), { exact: true })
+    .fill(enterpriseIdentityProviderDomain)
+  await domains
+    .getByRole('button', {
+      name: copy('consoleUi', 'sso.domains.claim'),
+      exact: true,
+    })
+    .click()
+
+  await expect(
+    page.getByText(
+      copy('consoleUi', 'sso.domains.claimed', {
+        domain: enterpriseIdentityProviderDomain,
+        name: providerName,
+      }),
+      { exact: true },
+    ),
+  ).toBeVisible()
+
+  // The one-time panel carries the DNS token and, beside it, the record name
+  // and full record value the operator publishes -- each with its own copy
+  // control. The panel is the page's own state, rendered outside the write
+  // scope.
+  const panel = page.getByRole('status').filter({
+    hasText: copy('consoleUi', 'sso.domains.claimToken'),
+  })
+  await expect(panel).toBeVisible()
+  for (const detailLabel of [
+    'sso.domains.claimRecordName',
+    'sso.domains.claimRecordValue',
+  ]) {
+    await expect(
+      panel.getByText(copy('consoleUi', detailLabel), { exact: true }),
+    ).toBeVisible()
+  }
+  for (const copyLabel of [
+    'sso.domains.claimTokenCopy',
+    'sso.domains.claimRecordNameCopy',
+    'sso.domains.claimRecordValueCopy',
+  ]) {
+    await expect(
+      panel.getByRole('button', {
+        name: copy('consoleUi', copyLabel),
+        exact: true,
+      }),
+    ).toBeVisible()
+  }
+
+  // The token is the monospace value the panel hands out: one hex run of the
+  // module's own token length, on a line of its own.
+  const value = panel.getByText(/^[0-9a-f]{64}$/)
+  await expect(value).toBeVisible()
+  const token = ((await value.textContent()) ?? '').trim()
+  expect(token, 'the claim panel rendered no verification token').not.toBe('')
+
+  // The record name and value are handed over complete, so the operator
+  // publishes without deriving either.
+  await expect(
+    panel.getByText(enterpriseIdentityProviderRecordName, {
+      exact: true,
+    }),
+  ).toBeVisible()
+  const recordValue = panel.getByText(/^speed-authn=[0-9a-f]{64}$/)
+  await expect(recordValue).toBeVisible()
+  const publishedValue = ((await recordValue.textContent()) ?? '').trim()
+
+  // FIXTURE ACTION: the operator's own act at the domain's DNS is to publish
+  // the record value the panel shows. The stub stands in for that DNS zone and
+  // answers only this record name; the spec writes the record through the
+  // stub's handle.
+  stub.setTXT([publishedValue])
+
+  // The declared domain is listed for the provider, named in the row and
+  // marked unverified until its record is checked; that row is where the
+  // verification action lives.
+  const domainRow = domains
+    .getByRole('listitem')
+    .filter({ hasText: enterpriseIdentityProviderDomain })
+  await expect(domainRow).toHaveCount(1)
+  await expect(
+    domainRow.getByText(enterpriseIdentityProviderDomain, { exact: true }),
+  ).toBeVisible()
+  await expect(
+    domainRow.getByText(copy('consoleUi', 'sso.domains.state.unverified'), {
+      exact: true,
+    }),
+  ).toBeVisible()
+  const verifyButton = domainRow.getByRole('button', {
+    name: copy('consoleUi', 'sso.domains.verifyAria', {
+      domain: enterpriseIdentityProviderDomain,
+    }),
+    exact: true,
+  })
+  await expect(verifyButton).toBeVisible()
+  await verifyButton.click()
+
+  // The write names the domain and the row flips in place: verified, no
+  // longer unverified, and its verification action is gone.
+  await expect(
+    page.getByText(
+      copy('consoleUi', 'sso.domains.verified', {
+        domain: enterpriseIdentityProviderDomain,
+        name: providerName,
+      }),
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await expect(
+    domainRow.getByText(copy('consoleUi', 'sso.domains.state.verified'), {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    domainRow.getByText(copy('consoleUi', 'sso.domains.state.unverified'), {
+      exact: true,
+    }),
+  ).toHaveCount(0)
+  await expect(verifyButton).toHaveCount(0)
+
+  // Closing the one-time panel drops the only copy of the token and the record
+  // it handed over.
+  await panel
+    .getByRole('button', {
+      name: copy('consoleUi', 'sso.domains.claimTokenCloseAria', {
+        tenant: TARGET_TENANT,
+        name: providerName,
+        domain: enterpriseIdentityProviderDomain,
+      }),
+      exact: true,
+    })
+    .click()
+  await expect(panel).toHaveCount(0)
+}
+
 // This journey drives the provider's real round trip and the domain's TXT
 // lookup, so its server starts the enterprise provider, the DNS stub and the
 // enterprise SSO seams; no other spec pays for them.
@@ -293,55 +623,8 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     )
   }
 
-  await test.step("precondition: the operator signs in and proves the account's own address", async () => {
-    // The journey starts with an operator whose address is proved: the
-    // console's human writes are gated on it. The review seed writes the
-    // address as an administrator's assertion, so the spec reaches the
-    // precondition the way a person does -- the standing notice's verify
-    // entry, then the code the review mail carrier writes to the process log.
-    await accounts.signIn({
-      identifier: OPERATOR.username,
-      password: OPERATOR.password,
-    })
-    const banner = verificationBanner(page)
-    await expect(banner).toBeVisible()
-
-    // The cursor is taken before the entry is followed: the verification
-    // section sends its one code after the arrival, and only that code may be
-    // used.
-    const beforeCode = server.log.mark()
-    await banner
-      .getByRole('link', {
-        name: copy('demo', 'verificationBanner.verify'),
-        exact: true,
-      })
-      .click()
-
-    const section = verificationSection(page)
-    await expect(section).toBeVisible()
-    const { code } = await waitForVerificationCode(
-      server.log,
-      'mail',
-      OPERATOR.identifier,
-      { after: beforeCode },
-    )
-    await section
-      .getByLabel(copy('accountUi', 'verification.codeLabel'), { exact: true })
-      .fill(code)
-    await section
-      .getByRole('button', {
-        name: copy('accountUi', 'verification.verify'),
-        exact: true,
-      })
-      .click()
-    await expect(
-      page.getByRole('region', {
-        name: copy('accountUi', 'verification.verifiedTitle'),
-        exact: true,
-      }),
-    ).toBeVisible()
-    await expect(banner).toHaveCount(0)
-  })
+  await test.step("precondition: the operator signs in and proves the account's own address", () =>
+    proveOperatorAddress(demo))
 
   await test.step('step 1: the operator opens the console SSO page and selects the target tenant', async () => {
     // The account page the verification landed on is inside the tenant shell;
@@ -382,245 +665,11 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     ).toBeVisible()
   })
 
-  await test.step('step 2: the operator registers an enabled, pre-provisioned OIDC provider', async () => {
-    const form = providerSection(page)
-    const protocol = form.getByLabel(
-      copy('consoleUi', 'sso.provider.protocolLabel'),
-      { exact: true },
-    )
-    const name = form.getByLabel(copy('consoleUi', 'sso.provider.nameLabel'), {
-      exact: true,
-    })
-    const provisioning = form.getByLabel(
-      copy('consoleUi', 'sso.provider.provisioningLabel'),
-      { exact: true },
-    )
-    const create = form.getByRole('button', {
-      name: copy('consoleUi', 'sso.provider.createSubmit'),
-      exact: true,
-    })
+  await test.step('step 2: the operator registers an enabled, pre-provisioned OIDC provider', () =>
+    registerOIDCProvider(page, provider, PROVIDER_NAME, 'preprovisioned'))
 
-    await protocol.fill('oidc')
-    await name.fill(PROVIDER_NAME)
-    await provisioning.fill('preprovisioned')
-
-    // The enabled flag is a three-state field whose untouched value leaves the
-    // module's default; the journey's provider is enabled, so the operator
-    // states it.
-    await form
-      .getByRole('combobox', {
-        name: copy('consoleUi', 'sso.provider.enabledLabel'),
-        exact: true,
-      })
-      .click()
-    await page
-      .getByRole('option', {
-        name: copy('consoleUi', 'sso.provider.tri.true'),
-        exact: true,
-      })
-      .click()
-
-    // The provider configuration names the local issuer, its client
-    // identifier and the claim mapping that finds the user's address and
-    // display name.
-    await form
-      .getByLabel(copy('consoleUi', 'sso.provider.configLabel'), {
-        exact: true,
-      })
-      .fill(
-        JSON.stringify({
-          issuer: provider.issuer,
-          client_id: provider.clientID,
-          claims: enterpriseIdentityProviderClaims,
-        }),
-      )
-    await form
-      .getByLabel(copy('consoleUi', 'sso.provider.clientSecretLabel'), {
-        exact: true,
-      })
-      .fill(enterpriseIdentityProviderClient.secret)
-    await create.click()
-
-    // The write confirms the created provider by name, the form returns to its
-    // initial state, and the list carries the provider under this tenant.
-    await expect(
-      page.getByText(
-        copy('consoleUi', 'sso.provider.created', { name: PROVIDER_NAME }),
-        { exact: true },
-      ),
-    ).toBeVisible()
-    await expect(name).toHaveValue('')
-
-    const row = providerRow(page)
-    await expect(row).toHaveCount(1)
-    await expect(
-      row.getByText(PROVIDER_NAME, { exact: true }),
-    ).toBeVisible()
-    await expect(row.getByText('oidc', { exact: true })).toBeVisible()
-    await expect(
-      row.getByText(copy('consoleUi', 'sso.enabledYes'), { exact: true }),
-    ).toBeVisible()
-
-    // REQ-platform-config-017: the provider belongs to the selected tenant.
-    // Another tenant's list does not carry it, and the target tenant's does
-    // again after switching back.
-    await selectTenant(page, EXISTING_TENANT)
-    await expect(
-      page.getByRole('heading', {
-        name: copy('consoleUi', 'sso.empty.title'),
-        exact: true,
-      }),
-    ).toBeVisible()
-    await expect(providerRow(page)).toHaveCount(0)
-    await selectTenant(page, TARGET_TENANT)
-    await expect(providerRow(page)).toHaveCount(1)
-  })
-
-  await test.step('step 3: the operator claims the email domain, publishes its token, and verifies it', async () => {
-    const domains = domainSection(page)
-    await domains
-      .getByRole('combobox', {
-        name: copy('consoleUi', 'sso.domains.providerLabel'),
-        exact: true,
-      })
-      .click()
-    await page
-      .getByRole('option', { name: PROVIDER_NAME, exact: true })
-      .click()
-    await domains
-      .getByLabel(copy('consoleUi', 'sso.domains.domainLabel'), { exact: true })
-      .fill(enterpriseIdentityProviderDomain)
-    await domains
-      .getByRole('button', {
-        name: copy('consoleUi', 'sso.domains.claim'),
-        exact: true,
-      })
-      .click()
-
-    await expect(
-      page.getByText(
-        copy('consoleUi', 'sso.domains.claimed', {
-          domain: enterpriseIdentityProviderDomain,
-          name: PROVIDER_NAME,
-        }),
-        { exact: true },
-      ),
-    ).toBeVisible()
-
-    // The one-time panel carries the DNS token and, beside it, the record
-    // name and full record value the operator publishes -- each with its own
-    // copy control. The panel is the page's own state, rendered outside the
-    // write scope.
-    const panel = page.getByRole('status').filter({
-      hasText: copy('consoleUi', 'sso.domains.claimToken'),
-    })
-    await expect(panel).toBeVisible()
-    for (const detailLabel of [
-      'sso.domains.claimRecordName',
-      'sso.domains.claimRecordValue',
-    ]) {
-      await expect(
-        panel.getByText(copy('consoleUi', detailLabel), { exact: true }),
-      ).toBeVisible()
-    }
-    for (const copyLabel of [
-      'sso.domains.claimTokenCopy',
-      'sso.domains.claimRecordNameCopy',
-      'sso.domains.claimRecordValueCopy',
-    ]) {
-      await expect(
-        panel.getByRole('button', {
-          name: copy('consoleUi', copyLabel),
-          exact: true,
-        }),
-      ).toBeVisible()
-    }
-
-    // The token is the monospace value the panel hands out: one hex run of the
-    // module's own token length, on a line of its own.
-    const value = panel.getByText(/^[0-9a-f]{64}$/)
-    await expect(value).toBeVisible()
-    const token = ((await value.textContent()) ?? '').trim()
-    expect(token, 'the claim panel rendered no verification token').not.toBe('')
-
-    // The record name and value are handed over complete, so the operator
-    // publishes without deriving either.
-    await expect(
-      panel.getByText(enterpriseIdentityProviderRecordName, {
-        exact: true,
-      }),
-    ).toBeVisible()
-    const recordValue = panel.getByText(/^speed-authn=[0-9a-f]{64}$/)
-    await expect(recordValue).toBeVisible()
-    const publishedValue = ((await recordValue.textContent()) ?? '').trim()
-
-    // FIXTURE ACTION: the operator's own act at the domain's DNS is to publish
-    // the record value the panel shows. The stub stands in for that DNS zone
-    // and answers only this record name; the spec writes the record through
-    // the stub's handle.
-    stub.setTXT([publishedValue])
-
-    // The declared domain is listed for the provider, named in the row and
-    // marked unverified until its record is checked; that row is where the
-    // verification action lives.
-    const domainRow = domains
-      .getByRole('listitem')
-      .filter({ hasText: enterpriseIdentityProviderDomain })
-    await expect(domainRow).toHaveCount(1)
-    await expect(
-      domainRow.getByText(enterpriseIdentityProviderDomain, { exact: true }),
-    ).toBeVisible()
-    await expect(
-      domainRow.getByText(copy('consoleUi', 'sso.domains.state.unverified'), {
-        exact: true,
-      }),
-    ).toBeVisible()
-    const verifyButton = domainRow.getByRole('button', {
-      name: copy('consoleUi', 'sso.domains.verifyAria', {
-        domain: enterpriseIdentityProviderDomain,
-      }),
-      exact: true,
-    })
-    await expect(verifyButton).toBeVisible()
-    await verifyButton.click()
-
-    // The write names the domain and the row flips in place: verified, no
-    // longer unverified, and its verification action is gone.
-    await expect(
-      page.getByText(
-        copy('consoleUi', 'sso.domains.verified', {
-          domain: enterpriseIdentityProviderDomain,
-          name: PROVIDER_NAME,
-        }),
-        { exact: true },
-      ),
-    ).toBeVisible()
-    await expect(
-      domainRow.getByText(copy('consoleUi', 'sso.domains.state.verified'), {
-        exact: true,
-      }),
-    ).toBeVisible()
-    await expect(
-      domainRow.getByText(copy('consoleUi', 'sso.domains.state.unverified'), {
-        exact: true,
-      }),
-    ).toHaveCount(0)
-    await expect(verifyButton).toHaveCount(0)
-
-    // Closing the one-time panel drops the only copy of the token and the
-    // record it handed over.
-    await panel
-      .getByRole('button', {
-        name: copy('consoleUi', 'sso.domains.claimTokenCloseAria', {
-          tenant: TARGET_TENANT,
-          name: PROVIDER_NAME,
-          domain: enterpriseIdentityProviderDomain,
-        }),
-        exact: true,
-      })
-      .click()
-    await expect(panel).toHaveCount(0)
-  })
+  await test.step('step 3: the operator claims the email domain, publishes its token, and verifies it', () =>
+    claimAndVerifyDomain(page, stub, PROVIDER_NAME))
 
   await test.step('step 4: the operator creates the employee account and adds it to the tenant', async () => {
     await consoleLink(page, copy('consoleUi', 'accounts.title')).click()
@@ -880,5 +929,186 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
         { exact: true },
       ),
     ).toBeVisible()
+  })
+})
+
+/**
+ * The journey's second onboarding mode: the provider opens accounts itself.
+ *
+ * The employee has no prepared account, so the first login cannot match one.
+ * The flow parks at the username step before any account exists, the answer
+ * opens the account with that username, and the account joins the tenant the
+ * provider serves. Nothing seeds the account or its membership; the console
+ * writes only the provider and its domain, and the sign-in is the only thing
+ * that creates the account.
+ */
+test('enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account', async ({
+  demo,
+}) => {
+  const { page, server, accounts } = demo
+  const provider = server.enterpriseIdentityProvider
+  if (provider === undefined) {
+    throw new Error(
+      'the enterprise fixture did not start the identity provider this spec drives',
+    )
+  }
+  const stub = server.dnsStub
+  if (stub === undefined) {
+    throw new Error(
+      'the enterprise fixture did not start the DNS stub this spec publishes into',
+    )
+  }
+
+  await test.step("precondition: the operator signs in and proves the account's own address", () =>
+    proveOperatorAddress(demo))
+
+  await test.step('step 1: the operator opens the console SSO page and selects the target tenant', async () => {
+    await page
+      .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
+      .click()
+    await expect(homeHeading(page)).toBeVisible()
+
+    await expect(consoleEntry(page)).toBeVisible()
+    await consoleEntry(page).click()
+    await expect(consoleNav(page)).toBeVisible()
+    await consoleLink(page, copy('consoleUi', 'sso.title')).click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('consoleUi', 'sso.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await selectTenant(page, TARGET_TENANT)
+    await expect(
+      page.getByRole('heading', {
+        name: copy('consoleUi', 'sso.empty.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+  })
+
+  await test.step('step 2: the operator registers an enabled, just-in-time OIDC provider', () =>
+    registerOIDCProvider(page, provider, JIT_PROVIDER_NAME, 'jit'))
+
+  await test.step('step 3: the operator claims the email domain, publishes its token, and verifies it', () =>
+    claimAndVerifyDomain(page, stub, JIT_PROVIDER_NAME))
+
+  await test.step('step 4: the employee signs in with the work email and is asked for a username', async () => {
+    // The operator leaves the console for the tenant area first: signing out
+    // from the console lands on the plain sign-in surface.
+    await page
+      .getByRole('banner')
+      .getByRole('link', {
+        name: copy('demo', 'console.backToApp'),
+        exact: true,
+      })
+      .click()
+    await expect(homeHeading(page)).toBeVisible()
+    await accounts.signOut()
+    await accounts.openSignIn()
+    await expect(signInHeading(page)).toBeVisible()
+
+    // REQ-signin-003: the provider appears only after the address's domain is
+    // discovered.
+    const email = page.getByRole('textbox', {
+      name: copy('authUi', 'enterprise.emailLabel'),
+      exact: true,
+    })
+    await expect(email).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: JIT_PROVIDER_NAME, exact: true }),
+    ).toHaveCount(0)
+
+    await email.fill(enterpriseIdentityProviderUser.email)
+    await page
+      .getByRole('button', {
+        name: copy('authUi', 'enterprise.continue'),
+        exact: true,
+      })
+      .click()
+    await expect(
+      page.getByRole('button', { name: JIT_PROVIDER_NAME, exact: true }),
+    ).toBeVisible()
+
+    await page
+      .getByRole('button', { name: JIT_PROVIDER_NAME, exact: true })
+      .click()
+    await approveEnterpriseSignIn(page)
+
+    // The callback parks the first login at the username step: the account is
+    // opened by the answer, not before it. The input carries the product's
+    // own label and the rule the username must satisfy.
+    const username = page.getByRole('textbox', {
+      name: copy('authUi', 'signInFlow.usernameLabel'),
+      exact: true,
+    })
+    await expect(username).toBeVisible({ timeout: 15_000 })
+    await expect(
+      page.getByText(copy('authUi', 'signInFlow.usernameHelper'), {
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await username.fill(JIT_USERNAME)
+    await page
+      .getByRole('button', {
+        name: copy('authUi', 'signInFlow.submit'),
+        exact: true,
+      })
+      .click()
+  })
+
+  await test.step('step 5: the account opens with the chosen username and the provider display name', async () => {
+    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+
+    // The account carries the provider's display name, because no
+    // administrator prepared one. The operator typed nothing for this
+    // employee.
+    const userMenu = page.getByRole('banner').getByTestId('user-menu-trigger')
+    await expect(userMenu).toHaveAccessibleName(
+      enterpriseIdentityProviderUser.name,
+    )
+
+    await userMenu.click()
+    await page
+      .getByRole('menuitem', {
+        name: copy('demo', 'userMenu.accountSettings'),
+        exact: true,
+      })
+      .click()
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('demo', 'account.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    // The username answered at the step is the account's login name. The
+    // provider's address is not written onto a just-in-time account.
+    const identifiers = page.getByRole('region', {
+      name: copy('accountUi', 'identifiers.title'),
+      exact: true,
+    })
+    await expect(
+      identifiers.getByRole('listitem').filter({ hasText: JIT_USERNAME }),
+    ).toBeVisible()
+
+    await page
+      .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
+      .click()
+    await expect(homeHeading(page)).toBeVisible()
+  })
+
+  await test.step('step 6: the account belongs to the tenant the provider serves', async () => {
+    // The switcher lists only the organizations the account is an active
+    // member of, so reaching the target tenant there is the membership the
+    // just-in-time login wrote. The account owns a personal workspace as
+    // well, which the host may settle first, so the helper moves from
+    // whichever row is current.
+    await switchToTenant(page, TARGET_TENANT)
+    await expect(tenantSwitcher(page, TARGET_TENANT)).toBeVisible()
   })
 })
