@@ -93,10 +93,12 @@ type record struct {
 	MFA         mfaState         `json:"mfa"`
 	MethodStep  string           `json:"method_step,omitempty"`
 	MethodState []byte           `json:"method_state,omitempty"`
-	Merged      bool             `json:"merged,omitempty"`
-	Delivery    string           `json:"delivery,omitempty"`
-	ReturnTo    string           `json:"return_to,omitempty"`
-	Session     string           `json:"session,omitempty"`
+	// Merged is read only to refuse a record left by the retired automatic
+	// merge; this build never writes it true.
+	Merged   bool   `json:"merged,omitempty"`
+	Delivery string `json:"delivery,omitempty"`
+	ReturnTo string `json:"return_to,omitempty"`
+	Session  string `json:"session,omitempty"`
 	// RequireMulti records, for a link or an enrollment, that the account held
 	// an active factor when the flow started: the completion re-checks the
 	// freshness the start fixed, so a registration's own factor -- made active
@@ -213,8 +215,8 @@ func (p *product) loadFlow(ctx context.Context, token string) (record, []byte, e
 	return rec, raw, nil
 }
 
-// decodeRecord reads a flow record and refuses one of another format version or
-// with an unknown field.
+// decodeRecord reads a flow record and refuses one of another format version,
+// one with an unknown field, and one from the retired automatic merge.
 func decodeRecord(raw []byte) (record, error) {
 	var rec record
 	dec := json.NewDecoder(bytes.NewReader(raw))
@@ -224,6 +226,9 @@ func decodeRecord(raw []byte) (record, error) {
 	}
 	if rec.Version != recordVersion {
 		return record{}, fmt.Errorf("unknown record version %d", rec.Version)
+	}
+	if rec.Merged {
+		return record{}, fmt.Errorf("the record is from the retired automatic merge")
 	}
 	return rec, nil
 }

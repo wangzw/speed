@@ -157,12 +157,6 @@ func (r *routes) completeLogin(c *call, rec record, redirect bool) {
 	second := rec.MFA.Passed.toPass()
 	result := r.mfa.Assurance(first, second)
 
-	if rec.Merged {
-		if !r.mergeCleanup(c, account) {
-			return
-		}
-	}
-
 	methods := append(append([]authn.Method{}, first.Methods...), passMethods(second)...)
 	kind := authn.SessionBrowser
 	if rec.Delivery == deliveryToken {
@@ -249,22 +243,6 @@ func (r *routes) deliverToken(c *call, account authn.AccountID, issued authn.Iss
 		return false
 	}
 	writeToken(c, access, refresh, now)
-	return true
-}
-
-// mergeCleanup is the A10 ordering of an automatic merge: every session the
-// account had is revoked, then its password credential is deleted, and only
-// then is the session of this login created. The new session is not yet in the
-// store when the account's sessions are revoked, so a revoke cannot reach it.
-func (r *routes) mergeCleanup(c *call, account authn.AccountID) bool {
-	if _, err := r.sessions.RevokeAccount(c.ctx, account, "", authn.ReasonSelf); err != nil {
-		r.fail(c, err)
-		return false
-	}
-	if err := r.passwords.Clear(c.ctx, account); err != nil {
-		r.fail(c, err)
-		return false
-	}
 	return true
 }
 

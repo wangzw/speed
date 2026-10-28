@@ -35,10 +35,10 @@ func TestTokenDigestKeysAndBinds(t *testing.T) {
 	}
 }
 
-// TestRecordDecodeRefusesAnUnknownVersionAndField holds the record's forward
-// safety: a version this build does not know is refused, and so is an unknown
-// field.
-func TestRecordDecodeRefusesAnUnknownVersionAndField(t *testing.T) {
+// TestRecordDecodeRefusesAnUnknownVersionFieldAndRetiredMerge holds the
+// record's forward safety: a version this build does not know is refused, so is
+// an unknown field, and so is a record left by the retired automatic merge.
+func TestRecordDecodeRefusesAnUnknownVersionFieldAndRetiredMerge(t *testing.T) {
 	good := record{Version: recordVersion, Purpose: authn.PurposeLogin, State: stateFirst}
 	raw, err := json.Marshal(good)
 	if err != nil {
@@ -54,6 +54,10 @@ func TestRecordDecodeRefusesAnUnknownVersionAndField(t *testing.T) {
 	extra, _ := json.Marshal(map[string]any{"v": recordVersion, "state": stateFirst, "surprise": true})
 	if _, err := decodeRecord(extra); err == nil {
 		t.Error("a record with an unknown field is accepted")
+	}
+	merged, _ := json.Marshal(map[string]any{"v": recordVersion, "state": stateFirst, "merged": true})
+	if _, err := decodeRecord(merged); err == nil {
+		t.Error("a record from the retired automatic merge is accepted")
 	}
 }
 
