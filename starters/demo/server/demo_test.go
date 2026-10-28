@@ -2047,13 +2047,13 @@ type deploySeedCarrier struct {
 	} `config:"accounts"`
 }
 
-// TestTheDeployTemplateSeedsTheOperatorUsername holds the template to the seed
+// TestTheFlyTemplateSeedsTheOperatorUsername holds the template to the seed
 // entry the entrypoint renders. The address is the identifier the account is
 // looked up by, and the username is the login name it is created with: a
 // placeholder left in place would seed a username the login surface cannot
 // find. The case renders the template the way deploy/entrypoint.sh does and
 // reads the item back, so the placeholder and its input cannot drift apart.
-func TestTheDeployTemplateSeedsTheOperatorUsername(t *testing.T) {
+func TestTheFlyTemplateSeedsTheOperatorUsername(t *testing.T) {
 	rendered := renderDeployTemplate(t)
 	// The default binary carries no mail module and no social login method, so
 	// the deployment-only sections would be unknown keys to it.
