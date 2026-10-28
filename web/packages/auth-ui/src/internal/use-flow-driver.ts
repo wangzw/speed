@@ -150,11 +150,60 @@ export function useFlowDriver(
           return
         }
         if (current.next.kind === 'complete') {
-          current = await session.answerFlow({
-            seq: current.seq,
-            step: 'complete',
-            input: {},
-          })
+          // Park the ready step and its sequence before taking the result:
+          // a refused complete is retried with this sequence, never with
+          // the step answered before it, whose one-time credential that
+          // answer already spent. A complete step renders nothing, so the
+          // rendered surface stays as it is until the outcome lands.
+          stepRef.current = current
+          const seq = current.seq
+          try {
+            current = await session.answerFlow({
+              seq,
+              step: 'complete',
+              input: {},
+            })
+          } catch (error) {
+            if (isOperationSuperseded(error)) {
+              // A lost commit race: the winner owns the session, so this
+              // submit leaves nothing to answer.
+              carryRef.current = {}
+              park(null)
+              throw error
+            }
+            if (errorCodeOf(error) === FLOW_INVALID) {
+              // The flow is gone: `run` drops the parked step and reports it.
+              throw error
+            }
+            // Either the reply to the complete was lost (the flow may still
+            // be ready) or the completion landed and a read after it failed
+            // (the flow is terminal). Ask the flow itself; the answered step
+            // must not be offered again either way.
+            let reread: AuthnFlowState | null
+            try {
+              reread = await session.readFlow()
+            } catch {
+              // Neither answer settled it: keep the ready step as this
+              // submit's retry target.
+              setStep(null)
+              throw error
+            }
+            if (reread === null || !isOpenFlow(reread)) {
+              // The flow is terminal: the completion landed, and the
+              // failure is the read that followed it -- not a refused
+              // login. No step survives to resend.
+              carryRef.current = {}
+              park(null)
+              throw error
+            }
+            // The flow is still open: keep its own step and sequence as the
+            // retry target, and drop the answered step so it cannot be sent
+            // again. A complete step renders nothing, so the rendered
+            // surface clears and the failure's own retry takes over.
+            stepRef.current = reread
+            setStep(null)
+            throw error
+          }
           continue
         }
         park(current)

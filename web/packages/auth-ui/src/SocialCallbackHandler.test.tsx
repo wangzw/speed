@@ -714,9 +714,11 @@ describe('SocialCallbackHandler', () => {
   })
 
   it('fall back to the re-reading retry when a ready flow complete answer is refused', async () => {
-    // A ready flow is taken with step: complete and never parked; a
-    // refusal of that answer leaves no step to keep, so the banner renders
-    // with the retry that reads the flow back.
+    // A ready flow is taken with step: complete and never parked as a
+    // surface; a refusal of that answer leaves no rendered step to keep, so
+    // the banner renders with the retry that reads the flow back. The
+    // driver's own re-read classifies the refusal -- the flow is still
+    // ready -- before the banner offers the same read again.
     let answers = 0
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => completeFlow(1),
@@ -744,7 +746,7 @@ describe('SocialCallbackHandler', () => {
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(
       harness.calls.filter((call) => call.path === '/api/v1/auth/flows/current'),
-    ).toHaveLength(2)
+    ).toHaveLength(3)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(harness.store.get()).toBe('access-1')
   })

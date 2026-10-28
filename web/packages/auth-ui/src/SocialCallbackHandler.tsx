@@ -141,11 +141,12 @@ export function SocialCallbackHandler({
       }
       // A refusal that leaves the flow parked on its step keeps that step:
       // the banner rides beside it and the step's own controls are the
-      // retry. Only a refusal with no step left to keep -- the flow is
-      // gone (the driver drops it for authn.flow_invalid), or a ready
-      // flow's `complete` answer was refused -- falls back to the banner
-      // with the retry that reads the flow back.
-      if (driverRef.current.currentStep() !== null) {
+      // retry. A ready step's result renders nothing and has no control to
+      // retry with, and the flow may be gone (the driver drops it for
+      // authn.flow_invalid): both fall back to the banner with the retry
+      // that reads the flow back.
+      const parked = driverRef.current.currentStep()
+      if (parked !== null && parked.next.kind !== 'complete') {
         setStepFailure(code)
         return
       }
