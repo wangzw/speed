@@ -163,6 +163,27 @@ describe('PasswordSignInForm', () => {
     expect(harness.calls).toHaveLength(1)
   })
 
+  it('clear a whole-attempt banner when the viewer begins a new attempt', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () => {
+        throw apiError(429, 'client.http.429')
+      },
+    })
+    renderWithProviders(<PasswordSignInForm session={harness.session} />)
+    await fillAndSubmit('alice@example.com', 'wrong-password', ZH_LABELS)
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      'x',
+    )
+    await waitFor(() =>
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument(),
+    )
+  })
+
   it('advertise only the identifiers a password login accepts', () => {
     // The account contract defines a password login name as a username or
     // email; a phone is not one (it is the SMS channel's identifier), and a

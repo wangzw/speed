@@ -16,8 +16,8 @@
  *    error are gone with it -- a deliberate reset: channel errors must not
  *    leak across surfaces. Where the deployment publishes an anonymous
  *    password reset and the host binds `onForgotPassword`, the password
- *    channel carries a "forgot password" text button beneath its form; it
- *    reports the click and navigates nothing.
+ *    channel carries a "forgot password" text button at the leading edge
+ *    of its submit row; it reports the click and navigates nothing.
  *  - `redirect` methods render as buttons (the social block); picking one
  *    begins the method's flow and hands the host the authorization URL to
  *    navigate.
@@ -480,6 +480,23 @@ export function SignInScreen({
     onSignedIn?.({ mode: activeMode, channel: channelName })
   }
 
+  // The password channel's reset entry: it rides the channel's submit row,
+  // at its leading edge, so the link and the primary action read as one
+  // row rather than the link floating on a line of its own.
+  const forgotPasswordEntry =
+    activeMode === 'sign-in' &&
+    selected === 'password' &&
+    doc.password_reset?.enabled === true &&
+    onForgotPassword !== undefined ? (
+      <Button
+        variant="text"
+        onClick={onForgotPassword}
+        sx={{ alignSelf: 'flex-start' }}
+      >
+        {t('passwordSignIn.forgotPassword')}
+      </Button>
+    ) : null
+
   const renderForm = (method: AuthnMethodDescriptor): ReactNode => {
     switch (method.name) {
       case PASSWORD_REGISTER_CHANNEL:
@@ -506,6 +523,7 @@ export function SignInScreen({
             beforeStart={startGate}
             defaultUsername={prefillUsername}
             humanGate={doc.human}
+            actionsLeading={forgotPasswordEntry}
             onSignedIn={() => completed('password')}
           />
         )
@@ -535,19 +553,6 @@ export function SignInScreen({
   // The form class: the strip (when there is a choice), the selected
   // form, the sign-in-mode account sentence, and the host's below-forms
   // slot.
-  const forgotPasswordEntry =
-    activeMode === 'sign-in' &&
-    selected === 'password' &&
-    doc.password_reset?.enabled === true &&
-    onForgotPassword !== undefined ? (
-      <Button
-        variant="text"
-        onClick={onForgotPassword}
-        sx={{ alignSelf: 'flex-start' }}
-      >
-        {t('passwordSignIn.forgotPassword')}
-      </Button>
-    ) : null
   const formBlock = (
     <>
       {visibleForms.length > 1 ? (
@@ -575,13 +580,9 @@ export function SignInScreen({
           aria-labelledby={tabIdOf(selected)}
         >
           {activeDescriptor ? renderForm(activeDescriptor) : null}
-          {forgotPasswordEntry}
         </Box>
       ) : activeDescriptor ? (
-        <>
-          {renderForm(activeDescriptor)}
-          {forgotPasswordEntry}
-        </>
+        renderForm(activeDescriptor)
       ) : null}
       {activeMode === 'sign-in' && smsOpensAccount ? (
         <Typography variant="body2" color="text.secondary">

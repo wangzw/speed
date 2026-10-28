@@ -233,6 +233,17 @@ export function SMSSignInForm({
     feedback.reset()
   }
 
+  /** The first edit of a new attempt clears the previous answer's message
+   * -- the step's own notice, the scope's banner and the code field's
+   * refusal -- so none of them stands beside input it no longer
+   * describes. */
+  function clearAttempt(): void {
+    resetScope()
+    if (form.formState.errors.code !== undefined) {
+      form.clearErrors('code')
+    }
+  }
+
   /** Hold the resend control for the interval the server asked for: a
    * positive `resend_after` from the challenge, or a 429's `Retry-After`. */
   function holdResend(waitMs: number): void {
@@ -563,6 +574,10 @@ export function SMSSignInForm({
             render={({ field, invalid, errorText }) => (
               <TextField
                 {...field}
+                onChange={(event) => {
+                  field.onChange(event)
+                  clearAttempt()
+                }}
                 label={t('smsSignIn.codeLabel')}
                 inputMode="numeric"
                 autoComplete="one-time-code"
@@ -609,8 +624,14 @@ export function SMSSignInForm({
             <PhoneNumberField
               country={country}
               nationalNumber={nationalNumber}
-              onCountryChange={setCountry}
-              onNationalNumberChange={setNationalNumber}
+              onCountryChange={(next) => {
+                clearAttempt()
+                setCountry(next)
+              }}
+              onNationalNumberChange={(next) => {
+                clearAttempt()
+                setNationalNumber(next)
+              }}
               countryLabel={t('smsSignIn.countryLabel')}
               numberLabel={t('smsSignIn.phoneLabel')}
               numberHelperText={t('smsSignIn.phoneHint')}

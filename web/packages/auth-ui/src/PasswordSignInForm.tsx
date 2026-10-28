@@ -42,6 +42,7 @@
  */
 
 import { useRef } from 'react'
+import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import Button from '@mui/material/Button'
@@ -81,6 +82,13 @@ export interface PasswordSignInFormProps {
    * the form reads it when a parked step may send.
    */
   readonly humanGate?: AuthnHumanGate
+  /**
+   * Host content at the leading edge of the submit row, beside the submit
+   * key -- the sign-in screen puts its forgot-password entry here, so the
+   * entry and the primary action read as one row instead of the entry
+   * floating on a line of its own.
+   */
+  readonly actionsLeading?: ReactNode
 }
 
 interface PasswordFields {
@@ -98,6 +106,7 @@ export function PasswordSignInForm({
   beforeStart,
   defaultUsername,
   humanGate,
+  actionsLeading,
 }: PasswordSignInFormProps) {
   const { t } = useAuthUiTranslation()
   const form = useForm<PasswordFields>({
@@ -145,6 +154,16 @@ export function PasswordSignInForm({
   })
 
   credentialsMounted.current = driver.step === null
+
+  // A new attempt begins at the first edit: the previous answer's message
+  // -- the password field's server refusal or a whole-attempt banner --
+  // stops describing the input as soon as the viewer changes it.
+  const clearAttempt = (): void => {
+    if (form.formState.errors.password !== undefined) {
+      form.clearErrors('password')
+    }
+    feedback.reset()
+  }
 
   // The credentials form and the parked step are two surfaces of this
   // channel; a switch between them moves focus to the new one's first
@@ -206,13 +225,24 @@ export function PasswordSignInForm({
       form={form}
       onSubmit={onSubmit}
       actions={
-        <Button
-          type="submit"
-          variant="contained"
-          disabled={form.formState.isSubmitting}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent:
+              actionsLeading === undefined ? 'flex-end' : 'space-between',
+            width: '100%',
+          }}
         >
-          {t('passwordSignIn.submit')}
-        </Button>
+          {actionsLeading}
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={form.formState.isSubmitting}
+          >
+            {t('passwordSignIn.submit')}
+          </Button>
+        </Box>
       }
     >
       <FormField
@@ -221,6 +251,10 @@ export function PasswordSignInForm({
         render={({ field, invalid, errorText }) => (
           <TextField
             {...field}
+            onChange={(event) => {
+              field.onChange(event)
+              clearAttempt()
+            }}
             label={t('passwordSignIn.identifierLabel')}
             autoComplete="username"
             fullWidth
@@ -236,6 +270,10 @@ export function PasswordSignInForm({
           <TextField
             {...field}
             inputRef={passwordInput}
+            onChange={(event) => {
+              field.onChange(event)
+              clearAttempt()
+            }}
             label={t('passwordSignIn.passwordLabel')}
             type="password"
             autoComplete="current-password"

@@ -251,6 +251,30 @@ describe('SMSSignInForm', () => {
     expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toBeInTheDocument()
   })
 
+  it('clear the code step’s refusal when the viewer begins a new attempt', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+      [LOGIN_ANSWER]: () => {
+        throw apiError(401, 'authn.login_failed')
+      },
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    await sendCode()
+    const user = userEvent.setup()
+    const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+    await user.type(code, '000000')
+    await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.smsSignIn.loginFailed,
+      ),
+    )
+
+    await user.type(code, '1')
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect(code).toHaveValue('0000001')
+  })
+
   it('keep the generic refusal for a step after the code', async () => {
     // A second factor the flow parks after the code is not this form's code
     // step: its refusal keeps the family's sentence for that step.

@@ -107,9 +107,16 @@ export function ChannelFeedbackRegion({
   const { t } = useAuthUiTranslation()
   return (
     <>
+      {/* The channel surfaces stack in a flex flow whose own gap spaces
+          their rows. A region that always renders a box would add a second
+          gap and the shared margin around nothing, pushing the submit row
+          away from the fields; `display: contents` keeps the hidden
+          success live region out of the layout and lifts a failure banner
+          into the flow as a plain sibling. */}
       <SharedWriteFeedbackRegion
         outcome={feedback.outcome}
         resolve={resolve}
+        sx={{ display: 'contents' }}
       />
       {feedback.localFailure === null ? null : (
         <Alert severity="error" role="alert" sx={{ width: '100%', mt: 1 }}>
