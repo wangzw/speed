@@ -1045,10 +1045,13 @@ describe('IdentifiersSection', () => {
     expect(alert).not.toHaveTextContent(zhCN.errors.authn.conflict)
   })
 
-  it('states an unusable username in its field rather than the banner', async () => {
-    // A name the server cannot normalize, or one it keeps for itself, is the
+  it('states a refused username in its field rather than the banner', async () => {
+    // A reserved name and a name the server cannot normalize are both the
     // value this face can change, so the field carries the message.
-    for (const code of ['authn.bad_request', 'authn.username_reserved']) {
+    for (const [code, text] of [
+      ['authn.username_reserved', zhCN.identifiers.add.usernameReserved],
+      ['authn.bad_request', zhCN.identifiers.add.usernameInvalid],
+    ] as const) {
       const respond: RealResponder = (call: RealCall) => {
         if (call.method === 'GET' && call.path === PROFILE_PATH) {
           return jsonResponse(200, profileBody({ identifiers: [] }))
@@ -1076,15 +1079,11 @@ describe('IdentifiersSection', () => {
         screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
       )
 
-      expect(
-        await screen.findByText(zhCN.identifiers.add.usernameUnusable),
-      ).toBeInTheDocument()
+      expect(await screen.findByText(text)).toBeInTheDocument()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       // Editing the name clears the message for the next attempt.
       await user.type(field, '2')
-      expect(
-        screen.queryByText(zhCN.identifiers.add.usernameUnusable),
-      ).not.toBeInTheDocument()
+      expect(screen.queryByText(text)).not.toBeInTheDocument()
       unmount()
     }
   })

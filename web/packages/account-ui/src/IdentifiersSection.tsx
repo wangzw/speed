@@ -114,11 +114,11 @@
  * field instead of making a round trip that can only answer the generic
  * bad-request. The value submitted is the trimmed one. A 400 the server
  * still answers for the email kind renders the same field message rather
- * than the account-state banner; a username's 400 (a shape it cannot
- * normalize, or a name the system keeps for itself) renders the value
- * field's unusable-name message. Closing the add face clears the whole
- * attempt: the failure banner, the field error, the success notice and the
- * sent-code step.
+ * than the account-state banner; a username's 400 (a reserved name, or a
+ * shape it cannot normalize) renders the value field's own message. The
+ * three refusals are distinguishable: taken, reserved, and shape. Closing
+ * the add face clears the whole attempt: the failure banner, the field
+ * error, the success notice and the sent-code step.
  *
  * Every write asks for a fresh authentication: a 401
  * authn.insufficient_user_authentication opens the step-up dialog with the
@@ -774,12 +774,17 @@ export function IdentifiersSection({
         }
         if (
           kind === 'username' &&
-          (failure === 'authn.bad_request' || failure === 'authn.username_reserved')
+          (failure === 'authn.username_reserved' ||
+            failure === 'authn.bad_request')
         ) {
-          // A login name the server cannot normalize, or one it keeps for
-          // itself: the name is the value this face can change, so the field
-          // carries the message.
-          setFieldErrorKey('identifiers.add.usernameUnusable')
+          // A login name the system keeps for itself, or one the server
+          // cannot normalize: the name is the value this face can change,
+          // so the field carries the message.
+          setFieldErrorKey(
+            failure === 'authn.username_reserved'
+              ? 'identifiers.add.usernameReserved'
+              : 'identifiers.add.usernameInvalid',
+          )
           return null
         }
         throw error
