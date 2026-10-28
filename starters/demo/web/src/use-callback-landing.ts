@@ -1,20 +1,23 @@
 /**
- * The callback landing a sign-in surface consumes once on mount.
+ * The callback landing a host surface consumes once on mount.
  *
  * A refused callback lands the browser back in the product with its problem
  * code, and for a link-required refusal the masked address whose account
- * collided, in the URL fragment. The read clears the fragment so a reload
- * does not repeat the message; that makes it a one-shot read, and
- * StrictMode mounts an effect twice in development. The first run consumes
- * the fragment, so an unguarded second run would read nothing and reset the
- * landing to empty -- the message the viewer came to see would vanish. The
- * ref keeps the read to once per mount.
+ * collided, in the URL fragment. The landing is read on the first render, so
+ * a host can decide what to mount before anything reads a flow: a callback
+ * route that has a refusal to show never reaches the flow operation. The
+ * read itself changes nothing, so StrictMode's double render sees the same
+ * landing; the fragment is cleared afterwards, once the read has committed,
+ * so a reload does not repeat the message.
  */
 
-import { useEffect, useRef, useState } from 'react'
-import { takeCallbackError } from './sign-in-landing.js'
+import { useEffect, useState } from 'react'
+import {
+  clearCallbackFragment,
+  readCallbackError,
+} from './sign-in-landing.js'
 
-/** A callback landing in the vocabulary the sign-in surface renders. */
+/** A callback landing in the vocabulary the surface renders. */
 export interface CallbackLanding {
   /** The error code (`authn.link_required`). */
   readonly code: string
@@ -22,16 +25,13 @@ export interface CallbackLanding {
   readonly email?: string
 }
 
-/** Reads the callback landing once per mount and returns what it found. */
+/** Reads the callback landing on the first render and clears it after mount. */
 export function useCallbackLanding(): CallbackLanding | undefined {
-  const [landing, setLanding] = useState<CallbackLanding | undefined>(undefined)
-  const consumed = useRef(false)
+  const [landing] = useState<CallbackLanding | undefined>(() =>
+    readCallbackError(),
+  )
   useEffect(() => {
-    if (consumed.current) {
-      return
-    }
-    consumed.current = true
-    setLanding(takeCallbackError())
+    clearCallbackFragment()
   }, [])
   return landing
 }

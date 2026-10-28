@@ -1,7 +1,7 @@
 /**
- * The one-shot read of a refused callback's landing. The read clears the URL
- * fragment, so the effect that performs it is not idempotent; StrictMode's
- * development double mount must not reset the message the viewer came to see.
+ * The one-shot read of a refused callback's landing. The landing is read on
+ * the first render without changing the URL, so StrictMode's development
+ * double render sees the same message; the fragment is cleared after mount.
  */
 
 import { describe, expect, it } from 'vitest'

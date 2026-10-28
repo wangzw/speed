@@ -130,9 +130,10 @@ export function SignInView({
   const [mode, setMode] = useState<SignInMode>('sign-in')
   // A refused social callback lands here with its code in the URL fragment,
   // and, when the refusal was link-required, the masked address whose
-  // account collided. The hook reads it once after mount -- keeping the URL
-  // rewrite out of render -- and clears the fragment so a reload does not
-  // show the message again.
+  // account collided. The hook reads it on the first render -- the read
+  // itself changes nothing -- and clears the fragment after mount, so the
+  // URL rewrite stays out of render and a reload does not show the message
+  // again.
   const landing = useCallbackLanding()
   const initialError = landing?.code
   const initialErrorEmail = landing?.email

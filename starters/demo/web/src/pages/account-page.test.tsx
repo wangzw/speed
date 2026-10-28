@@ -1,5 +1,6 @@
 /**
- * The account page's own landing behaviour.
+ * The account page's own landing behaviour, and the social-binding
+ * callback's refusal landing.
  *
  * The account page hosts account-ui's ContactVerificationSection, so email
  * verification is completed inside the profile rather than on a page of its
@@ -7,16 +8,23 @@
  * verify action and the post-registration landing) sends one code on arrival;
  * `?change=email` starts in the change-address form and never sends on its own,
  * even after that form is closed.
+ *
+ * The binding callback route words a refused round trip from the code the
+ * server put in the URL fragment: it reads no flow for it (the server already
+ * consumed the flow), offers no repeat of the round trip, and its only action
+ * returns to the account page. Without a fragment it still reads the flow
+ * back, the way an accepted round trip lands.
  */
 
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { accountUiResources } from '@speed/account-ui'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { createBackend } from '../a11y/backends.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
-import { ACCOUNT_PATH } from '../paths.js'
+import { ACCOUNT_CALLBACK_PATH, ACCOUNT_PATH } from '../paths.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import {
   authenticatedSnapshot,
@@ -27,7 +35,9 @@ import {
 const ADD_PATH = '/api/v1/auth/identifiers'
 const accountEnUS = accountUiResources['en-US'] as {
   readonly verification: Readonly<Record<string, string>>
+  readonly bindingCallback: Readonly<Record<string, string>>
 }
+const bindingEnUS = accountEnUS.bindingCallback
 
 /** The calls the page issued in the current case, in order. */
 let calls: { readonly method: string; readonly path: string }[] = []
@@ -132,5 +142,55 @@ describe('AccountSettingsPage', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
     expect(sends()).toHaveLength(0)
+  })
+})
+
+/**
+ * The binding callback route's refusal: a round trip the server refused
+ * lands here with its problem code in the URL fragment, and the page hands
+ * it to the handler instead of reading a flow the server already consumed.
+ */
+describe('AccountBindingCallbackPage', () => {
+  /** Renders the callback route over the app's scripts, counting flow reads. */
+  function renderCallback() {
+    bindRequestFn(createBackend('data'))
+    const session = createTestSession(authenticatedSnapshot())
+    const readFlow = vi.fn(session.readFlow)
+    session.readFlow = readFlow
+    renderDemoApp({ session })
+    return { readFlow }
+  }
+
+  it('words a refused link from the fragment and returns to the account page', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      `${ACCOUNT_CALLBACK_PATH}#authn_error=conflict`,
+    )
+    const { readFlow } = renderCallback()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(bindingEnUS.conflict ?? '')
+    // The server consumed the flow: the refusal is not read as one.
+    expect(readFlow).not.toHaveBeenCalled()
+    // The fragment is one-shot: the reload that follows repeats nothing.
+    expect(window.location.hash).toBe('')
+    expect(
+      screen.queryByRole('button', { name: bindingEnUS.retry ?? '' }),
+    ).toBeNull()
+
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole('button', { name: bindingEnUS.backToAccount ?? '' }),
+      )
+    await waitFor(() => expect(window.location.pathname).toBe(ACCOUNT_PATH))
+  })
+
+  it('reads the flow back when the route carries no refusal', async () => {
+    window.history.replaceState({}, '', ACCOUNT_CALLBACK_PATH)
+    const { readFlow } = renderCallback()
+
+    await waitFor(() => expect(readFlow).toHaveBeenCalled())
   })
 })

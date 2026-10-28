@@ -80,6 +80,7 @@ import {
 } from '../invitation-return.js'
 import { ACCOUNT_CALLBACK_PATH, ACCOUNT_PATH } from '../paths.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
+import { useCallbackLanding } from '../use-callback-landing.js'
 import { NotFoundPage } from './not-found-page.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
@@ -182,11 +183,17 @@ export function AccountSettingsPage(): ReactElement {
  * page-level heading. A deployment with no redirect method has no binding
  * round trip: the handler renders the app's 404 instead of a
  * flow-not-found banner.
+ *
+ * A refused round trip lands here with its problem code in the URL
+ * fragment, the same shape a refused login lands with; there is no flow
+ * left to read, so the page hands the code to the handler and gives it the
+ * way back to the account page.
  */
 export function AccountBindingCallbackPage(): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
   const { t } = useTranslation(DEMO_NAMESPACE)
+  const landing = useCallbackLanding()
   return (
     <Box sx={{ maxWidth: 480 }}>
       <PageHeader title={t('account.bindingCallback.title')} sx={{ mb: 3 }} />
@@ -194,6 +201,8 @@ export function AccountBindingCallbackPage(): ReactElement {
         session={session}
         onBound={() => navigate(ACCOUNT_PATH)}
         absent={<NotFoundPage path={ACCOUNT_CALLBACK_PATH} />}
+        initialError={landing?.code}
+        onDismiss={() => navigate(ACCOUNT_PATH)}
       />
     </Box>
   )

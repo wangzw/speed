@@ -24,10 +24,9 @@ const LANDING_EMAIL_KEY = 'authn_email'
 const AUTHN_MODULE = 'authn'
 
 /**
- * takeCallbackError answers the error the current URL carries, in the
- * vocabulary the surfaces render, and clears the fragment from the URL so a
- * reload does not repeat the message. It answers undefined when the URL
- * carries none.
+ * readCallbackError answers the error the current URL carries, in the
+ * vocabulary the surfaces render, and leaves the URL untouched. It answers
+ * undefined when the URL carries none.
  *
  * The fragment is a query string: `authn_error=<code>` names the problem as
  * the server names it (`link-required`), optionally followed by
@@ -40,25 +39,17 @@ const AUTHN_MODULE = 'authn'
  * `URLSearchParams` reads the fragment as the query string the server wrote
  * with `url.QueryEscape`: it turns `+` into a space and leaves a malformed
  * percent sequence as a replacement character instead of throwing, so an
- * unrelated fragment such as `#discount=50%` cannot take the sign-in surface
- * down.
+ * unrelated fragment such as `#discount=50%` cannot take the surface down.
  */
-export function takeCallbackError():
+export function readCallbackError():
   | { code: string; email?: string }
   | undefined {
-  const { hash } = window.location
-  if (!hash.startsWith('#')) {
+  const params = fragmentParams()
+  if (params === null) {
     return undefined
   }
-  const params = new URLSearchParams(hash.slice(1))
   const code = params.get(LANDING_KEY)
-  if (code === null) {
-    return undefined
-  }
-  const url = new URL(window.location.href)
-  url.hash = ''
-  window.history.replaceState(window.history.state, '', url.toString())
-  if (code === '') {
+  if (code === null || code === '') {
     return undefined
   }
   const error: { code: string; email?: string } = {
@@ -71,4 +62,29 @@ export function takeCallbackError():
     }
   }
   return error
+}
+
+/**
+ * clearCallbackFragment removes the landing fragment from the URL so a
+ * reload does not repeat the message. It leaves a fragment that carries no
+ * landing key alone: a marketing or analytics fragment is not this
+ * surface's to remove.
+ */
+export function clearCallbackFragment(): void {
+  const params = fragmentParams()
+  if (params === null || !params.has(LANDING_KEY)) {
+    return
+  }
+  const url = new URL(window.location.href)
+  url.hash = ''
+  window.history.replaceState(window.history.state, '', url.toString())
+}
+
+/** The current fragment as query parameters, or null when there is none. */
+function fragmentParams(): URLSearchParams | null {
+  const { hash } = window.location
+  if (!hash.startsWith('#')) {
+    return null
+  }
+  return new URLSearchParams(hash.slice(1))
 }
