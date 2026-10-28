@@ -468,6 +468,43 @@ func TestSetAttributesTheChangeAndRefusesAnUnknownAttribution(t *testing.T) {
 	})
 }
 
+// TestSetRefusesAnAccountWithNoLoginName holds that a password needs a login name
+// to authenticate: an account created without a username whose only identifier is
+// a phone number, even one chosen as a sign-in way, is refused, and adding a
+// username is what makes the same call succeed.
+func TestSetRefusesAnAccountWithNoLoginName(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		created, err := h.p.Create(ctx, authn.CreateAccount{
+			Via: "import", Phone: "+8613812345678",
+			PhoneVerifiedVia: authn.Verification{Via: authn.VerifiedViaSMSCode},
+		})
+		if err != nil {
+			t.Fatalf("importing a phone-only account: %v", err)
+		}
+		phone := identifierOfKind(t, h, created.ID, authn.IdentifierPhone)
+		if !phone.SignIn {
+			t.Fatalf("the phone is %+v, want it chosen as a sign-in way", phone)
+		}
+
+		err = h.p.Set(ctx, created.ID, "correct horse battery", authn.SetPasswordOptions{})
+		if !errors.Is(err, authn.ErrIdentifierRequired) {
+			t.Errorf("setting a password on an account with no login name gave %v, want ErrIdentifierRequired", err)
+		}
+		if n := h.count(tableCredentials, "account_id = ?", created.ID.String()); n != 0 {
+			t.Errorf("%d credential row(s) were written, want none", n)
+		}
+
+		if err = h.p.AddIdentifier(ctx, created.ID, authn.IdentifierUsername, "phoneonly",
+			authn.Verification{Via: authn.VerifiedViaSelf}); err != nil {
+			t.Fatalf("adding a username: %v", err)
+		}
+		if err = h.p.Set(ctx, created.ID, "correct horse battery", authn.SetPasswordOptions{}); err != nil {
+			t.Errorf("setting a password once a username is held gave %v, want none", err)
+		}
+	})
+}
+
 // TestVerifyAcceptsAnEmailOnlyWhenItIsChosenAsASignInWay holds that a proved
 // email address is no login name until its holder chooses it: a password check
 // against it answers as an unknown name does, the username beside it still

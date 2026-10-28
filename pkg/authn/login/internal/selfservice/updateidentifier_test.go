@@ -93,6 +93,30 @@ func TestChoosingAnIdentifierAsASignInWayRotatesTheSession(t *testing.T) {
 	}
 }
 
+// TestChoosingAPhoneAsASignInWayRotatesTheSession holds the same rotation for a
+// proved phone number: the requirement names a verified email address or phone
+// number, and either choice is a new way in.
+func TestChoosingAPhoneAsASignInWayRotatesTheSession(t *testing.T) {
+	h := newHarness(t)
+	h.axesAccount()
+	w := h.put("/identifiers/ident-phone", `{"sign_in":true}`)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("PUT /identifiers/ident-phone = %d %s, want 204", w.Code, w.Body)
+	}
+	if len(h.admin.flags) != 1 || h.admin.flags[0].flags != (authn.IdentifierFlags{SignIn: true}) {
+		t.Errorf("the flags written are %+v, want sign_in true with the contact left false", h.admin.flags)
+	}
+	if len(h.sessions.rotated) != 1 || h.sessions.rotated[0] != session {
+		t.Errorf("Rotate was called with %v, want the current session", h.sessions.rotated)
+	}
+	if len(h.sessions.revoked) != 1 || h.sessions.revoked[0] != (revokeCall{account, session, authn.ReasonSelf}) {
+		t.Errorf("RevokeAccount was called with %+v, want the account's other sessions", h.sessions.revoked)
+	}
+	if v, ok := cookieValue(w, "sid"); !ok || v != "rotated-token" {
+		t.Errorf("cookie = %q (present %v), want the rotated token", v, ok)
+	}
+}
+
 // TestChoosingTheDefaultContactDoesNotRotate the session holds that the default
 // contact is not a rotation point: it asks for fresh authentication, writes the
 // choice, and leaves the session as it is.
