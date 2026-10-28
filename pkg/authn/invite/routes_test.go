@@ -235,6 +235,33 @@ func TestAnIncompleteCleanupOnAcceptanceAnswers503(t *testing.T) {
 	}
 }
 
+// TestATakenUsernameOnAcceptanceAnswers409 holds that the acceptance face
+// reports a username another account already holds as the conflict it is,
+// rather than as an unavailable dependency: the caller can choose another
+// name, and the invitation is still redeemable.
+func TestATakenUsernameOnAcceptanceAnswers409(t *testing.T) {
+	h := newHarness(t)
+	h.mounter.AsAnonymous()
+	h.admin.err = authn.ErrAccountExists
+	issued := h.issue("tenant-a", "zoe@example.com")
+
+	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token,
+		map[string]string{"username": "taken-one", "display_name": "Zoe"})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("accept status = %d, want 409: %s", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("the body %q is not JSON: %v", w.Body.String(), err)
+	}
+	if got, _ := body["type"].(string); got != "urn:speed:authn:username-taken" {
+		t.Errorf("problem type = %q, want urn:speed:authn:username-taken", got)
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
+		t.Errorf("status after the 409 = %d, want the invitation revoked", got)
+	}
+}
+
 // TestAnUnknownObjectIsAnsweredWithABare404 holds the answer the fragment
 // declares for both faces: a missing invitation is a 404 with no problem
 // document, not the problem shape the other refusals use.

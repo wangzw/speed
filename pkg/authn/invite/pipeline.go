@@ -204,6 +204,8 @@ func (p *product) acceptAnswerReply(op string, err error) (speedhttp.Reply, erro
 		return nil, p.badRequest()
 	case errors.Is(err, authn.ErrUsernameReserved):
 		return nil, p.reservedRequest()
+	case errors.Is(err, authn.ErrAccountExists):
+		return nil, inviteFailure(http.StatusConflict, mount.CodeUsernameTaken)
 	default:
 		return nil, p.cause(op, err)
 	}

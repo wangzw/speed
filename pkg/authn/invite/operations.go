@@ -305,6 +305,8 @@ var acceptOperation = speedhttp.NewReplyOperation[acceptInput](
 		},
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The invitation is expired, revoked or already accepted"),
+		speedhttp.ProblemResponseOf(http.StatusConflict,
+			"The username the acceptance would open the account with is already taken", typePrefix+"username-taken"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, descriptionUnavailable),
 	},
 	speedhttp.Public(),
