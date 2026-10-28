@@ -254,10 +254,13 @@ describe('the tenant switcher over the self list', () => {
   })
 
   it('adds a current tenant the list does not hold, named from the roster cache', async () => {
-    // A platform staff member enters a tenant they are not a member of: the
-    // roster settles it as the staff default, the caller tenant list does not
-    // hold the row, and only the roster's alias cache can name it. Without the
-    // added row the bar could neither show nor leave that tenant.
+    // A platform staff member works in a tenant they are not a member of (a
+    // route named it and the roster read cached its alias): the caller tenant
+    // list does not hold the row, so only the roster's alias cache can name
+    // it. Without the added row the bar could neither show nor leave that
+    // tenant.
+    setTenantAliases(new Map([['globex', 'globex-renamed']]))
+    setCurrentTenantId('globex')
     bindRequestFn((async (path: string) => {
       if (path === SELF_PATH) {
         return { tenants: [] }
@@ -273,7 +276,7 @@ describe('the tenant switcher over the self list', () => {
     }) as RequestFn)
 
     renderDemoApp({
-      session: createTestSession(authenticatedSnapshot()),
+      session: createTestSession(authenticatedSnapshot({ system: ['tenant.read'] })),
     })
 
     expect(

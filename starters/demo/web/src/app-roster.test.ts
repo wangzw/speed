@@ -1,10 +1,13 @@
 /**
- * The demo's roster read (src/app.tsx): once a viewer is signed in, the app
- * reads the tenant roster and announces each tenant's CURRENT alias as X-Tenant,
- * rather than the id the switcher keys on. The roster here carries a tenant
- * whose alias a rename has moved away from its id -- the case the demo's own
- * seeded tenant (whose id equals its alias) does not exhibit -- so the test
- * only passes when the announced value is the alias and not the id.
+ * The platform roster read (src/app.tsx): a caller whose platform permission
+ * set holds tenant.read reads the roster for the CURRENT aliases of tenants
+ * outside its own memberships, and the request surface announces that alias as
+ * X-Tenant rather than the id the switcher keys on. The roster decides no
+ * tenant: the current tenant is settled from the caller's own tenant list. The
+ * alias differ from the id, so a run that announced the id instead would fail.
+ *
+ * No caller without tenant.read spends the request at all: an ordinary member
+ * is covered by the app suites' zero-request assertions.
  */
 
 import { waitFor } from '@testing-library/react'
@@ -28,57 +31,124 @@ afterEach(() => {
   setCurrentTenantId(null)
 })
 
-describe('the announced tenant, once the roster is read', () => {
-  it('announces the roster alias, not the id the switcher keys on', async () => {
-    const request: RequestFn = async <T>(
-      path: string,
-    ): Promise<T> => {
+describe('who spends the platform roster read', () => {
+  /** Binds the self and roster reads, recording every path. */
+  function bindReads(requested: string[]): void {
+    const request: RequestFn = async <T>(path: string): Promise<T> => {
+      requested.push(path)
       if (path === '/api/v1/auth/me/tenants') {
-        return { tenants: [] } as T
+        return { tenants: [{ id: 'acme', alias: 'acme' }] } as T
       }
       if (path === '/api/v1/system/tenants') {
         return {
           tenants: [{ id: 'acme', alias: 'acme-inc', status: 'active' }],
         } as T
       }
-      throw new Error(`the suite binds only the roster read: ${path}`)
+      throw new Error(`the suite binds only the tenant reads: ${path}`)
     }
     bindRequestFn(request)
+  }
+
+  it('spends no roster read for a member', async () => {
+    const requested: string[] = []
+    bindReads(requested)
+
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot({ system: [] })),
+    })
+
+    await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
+    expect(requested).not.toContain('/api/v1/system/tenants')
+  })
+
+  it('spends no roster read while the platform set is unknown', async () => {
+    const requested: string[] = []
+    bindReads(requested)
 
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
-    // The roster settles the current tenant to the first active one; its id is
-    // the switcher's identity, its alias is what the request surface carries.
-    await waitFor(() => {
-      expect(getCurrentTenantId()).toBe('acme')
-    })
-    expect(getCurrentTenantAlias()).toBe('acme-inc')
+    await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
+    expect(requested).not.toContain('/api/v1/system/tenants')
   })
 
-  it('chooses the first active roster tenant, skipping personal tenants', async () => {
-    // The roster is ordered by identifier, so a personal tenant ('personal-')
-    // sorts before most deployment tenants. It belongs to one account and
-    // would refuse a staff viewer, so the default must skip it. The chosen row
-    // is nameable through the roster's alias cache even though the caller is
-    // not a member of it.
+  it('spends exactly one roster read for a platform staff caller', async () => {
+    const requested: string[] = []
+    bindReads(requested)
+
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ system: ['tenant.read'] }),
+      ),
+    })
+
+    await waitFor(() =>
+      expect(getCurrentTenantAlias()).toBe('acme-inc'),
+    )
+    expect(
+      requested.filter((path) => path === '/api/v1/system/tenants'),
+    ).toHaveLength(1)
+  })
+})
+
+describe('the announced tenant, once the roster is read', () => {
+  it('announces the roster alias, not the id the switcher keys on', async () => {
     const request: RequestFn = async <T>(path: string): Promise<T> => {
       if (path === '/api/v1/auth/me/tenants') {
-        return { tenants: [] } as T
+        return { tenants: [{ id: 'acme', alias: 'acme' }] } as T
       }
       if (path === '/api/v1/system/tenants') {
         return {
-          tenants: [
-            { id: 'personal-abc', alias: 'personal-abc', status: 'active' },
-            { id: 'accept-tenant', alias: 'accept-tenant', status: 'active' },
-            { id: 'acme', alias: 'acme', status: 'active' },
-          ],
+          tenants: [{ id: 'acme', alias: 'acme-inc', status: 'active' }],
         } as T
       }
-      throw new Error(`the suite binds only the roster read: ${path}`)
+      throw new Error(`the suite binds only the tenant reads: ${path}`)
     }
     bindRequestFn(request)
 
-    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ system: ['tenant.read'] }),
+      ),
+    })
+
+    // The caller list settles the tenant; the roster names it.
+    await waitFor(() => {
+      expect(getCurrentTenantId()).toBe('acme')
+    })
+    await waitFor(() => {
+      expect(getCurrentTenantAlias()).toBe('acme-inc')
+    })
+  })
+
+  it('settles the caller list first row that is not personal, whatever the roster holds', async () => {
+    // The roster is ordered by identifier, so its first row can be a tenant
+    // the caller has nothing to do with. The settle never consults it: a
+    // personal row is skipped, and the list's first business row wins even
+    // when the roster names another tenant first.
+    const request: RequestFn = async <T>(path: string): Promise<T> => {
+      if (path === '/api/v1/auth/me/tenants') {
+        return {
+          tenants: [
+            { id: 'personal-other', alias: 'personal-other' },
+            { id: 'accept-tenant', alias: 'accept-tenant' },
+            { id: 'zzz', alias: 'zzz' },
+          ],
+        } as T
+      }
+      if (path === '/api/v1/system/tenants') {
+        return {
+          tenants: [{ id: 'aaa', alias: 'aaa', status: 'active' }],
+        } as T
+      }
+      throw new Error(`the suite binds only the tenant reads: ${path}`)
+    }
+    bindRequestFn(request)
+
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ system: ['tenant.read'] }),
+      ),
+    })
 
     await waitFor(() => {
       expect(getCurrentTenantId()).toBe('accept-tenant')

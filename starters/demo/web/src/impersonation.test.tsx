@@ -44,6 +44,7 @@ import {
   setCurrentTenantId,
   setTenantAliases,
 } from './chrome.js'
+import { clearSelfTenants } from './tenant-self.js'
 import { renderDemoApp } from './test-utils/render.js'
 import {
   authenticatedSnapshot,
@@ -613,6 +614,9 @@ beforeEach(() => {
   window.history.replaceState({}, '', '/')
   setCurrentTenantId(TENANT_ID)
   setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
+  // The caller tenant list is module state: a case starts with no rows and
+  // loads its own through the scripted backend.
+  clearSelfTenants()
 })
 
 describe('the impersonation shell', () => {
@@ -737,6 +741,7 @@ describe('the impersonation shell', () => {
     window.history.replaceState({}, '', '/')
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+      selfTenants: [{ id: 'acme', alias: 'acme' }],
     })
     bindRequestFn(backend.fn)
     const session = scriptedSession(targetSnapshot(), () => operatorSnapshot())
@@ -755,8 +760,8 @@ describe('the impersonation shell', () => {
     )
 
     // The identity change settled and the roster read ran under the
-    // operator again: the switcher is back over the roster's row, naming
-    // the tenant it settles as before.
+    // operator again; the switcher is back over the tenant the operator's own
+    // list settles.
     await waitFor(() => expect(banner()).toBeNull())
     await waitFor(() =>
       expect(backend.rosterReads()).toBeGreaterThan(rosterBefore),
@@ -767,14 +772,15 @@ describe('the impersonation shell', () => {
     expect(getCurrentTenantId()).toBe('acme')
   })
 
-  it('keeps the switcher out of the bar while the roster settles after an impersonation ends', async () => {
+  it('keeps the switcher out of the bar while the caller tenant read settles after an impersonation ends', async () => {
     window.history.replaceState({}, '', '/')
-    // The roster read is held open: the suite decides when the settled
+    // The caller tenant read is held open: the suite decides when the settled
     // tenant (and the switcher over it) may appear.
-    const roster = deferred()
+    const self = deferred()
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
-      rosterGate: roster.promise,
+      selfTenants: [{ id: 'acme', alias: 'acme' }],
+      selfGateAfterEnd: self.promise,
     })
     bindRequestFn(backend.fn)
     const session = roundTripSession(targetSnapshot(), () => operatorSnapshot())
@@ -794,14 +800,14 @@ describe('the impersonation shell', () => {
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
-    // The identity change has settled and the roster read is in flight. The
-    // current tenant still holds the ended grant's value, so the roster list
-    // has no matching row to switch to: that is a transition, not the
+    // The identity change has settled and the caller tenant read is in
+    // flight. The current tenant still holds the ended grant's value, so the
+    // list has no matching row to switch to: that is a transition, not the
     // switcher's no-current-tenant state, and the switcher stays out of the
     // bar rather than stating the host has no tenant while it is only
     // reading.
     await waitFor(() => expect(banner()).toBeNull())
-    await waitFor(() => expect(backend.rosterReads()).toBe(1))
+    await waitFor(() => expect(backend.selfReads()).toBe(2))
     expect(tenantSwitcherTrigger()).toBeNull()
     expect(
       screen.queryByRole('button', {
@@ -809,9 +815,9 @@ describe('the impersonation shell', () => {
       }),
     ).toBeNull()
 
-    // The read lands, and the switcher returns over the roster's row.
+    // The read lands, and the switcher returns over the tenant it settles.
     await act(async () => {
-      roster.resolve()
+      self.resolve()
     })
     expect(
       await screen.findByRole('button', { name: 'acme' }),
@@ -831,6 +837,7 @@ describe('the impersonation shell', () => {
     const self = deferred()
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+      selfTenants: [{ id: 'acme', alias: 'acme' }],
       rosterGate: roster.promise,
       selfGateAfterEnd: self.promise,
     })
@@ -874,7 +881,7 @@ describe('the impersonation shell', () => {
     ).toBeNull()
 
     // The caller tenant read lands, and the switcher returns over the tenant
-    // it settles from the roster's staff default.
+    // it settles from that list.
     await act(async () => {
       self.resolve()
     })
@@ -884,20 +891,20 @@ describe('the impersonation shell', () => {
     expect(getCurrentTenantId()).toBe('acme')
   })
 
-  it('keeps the no-current-tenant state for a viewer whose roster read has not answered', async () => {
+  it('keeps the no-current-tenant state for a viewer whose caller tenant list settles empty', async () => {
     window.history.replaceState({}, '', '/')
-    // A viewer with no settled roster read (the member without roster-read
-    // access): the tenant is unknown for a reason that is not an identity
-    // change. The switcher mounts and states that state -- only the
-    // impersonation-end transition withholds it.
+    // A member with no memberships: the tenant is unknown for a reason that is
+    // not an identity change. The switcher mounts and states that state -- only
+    // the impersonation-end transition withholds it -- and no roster read is
+    // spent, because the member holds no tenant.read.
     setCurrentTenantId(null)
-    const roster = deferred()
-    const backend = makeBackend({ rosterGate: roster.promise })
+    const backend = makeBackend()
     bindRequestFn(backend.fn)
 
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
-    await waitFor(() => expect(backend.rosterReads()).toBe(1))
+    await waitFor(() => expect(backend.selfReads()).toBeGreaterThan(0))
+    expect(backend.rosterReads()).toBe(0)
     expect(
       screen.getByRole('button', {
         name: tTenancy('tenantSwitcher.noCurrentTenant'),
@@ -907,25 +914,30 @@ describe('the impersonation shell', () => {
 
   it('leaves the top bar unchanged for a member who is not impersonating', async () => {
     window.history.replaceState({}, '', '/')
-    const backend = makeBackend()
+    const backend = makeBackend({
+      selfTenants: [{ id: 'acme', alias: 'acme' }],
+    })
     bindRequestFn(backend.fn)
 
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
-    // The roster settles the current tenant and the switcher stays where
-    // the frame put it; no status read is issued and no banner appears.
-    await waitFor(() => expect(backend.rosterReads()).toBeGreaterThan(0))
+    // The caller list settles the current tenant and the switcher stays where
+    // the frame put it; no status read is issued, no banner appears, and the
+    // member spends no platform roster read.
+    await waitFor(() => expect(backend.selfReads()).toBeGreaterThan(0))
     expect(
       await screen.findByRole('button', { name: 'acme' }),
     ).toBeInTheDocument()
     expect(banner()).toBeNull()
     expect(backend.statusReads()).toBe(0)
+    expect(backend.rosterReads()).toBe(0)
   })
 
   it('ends from the banner, re-reads the identity and re-registers the stream', async () => {
     window.history.replaceState({}, '', '/')
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+      selfTenants: [{ id: 'acme', alias: 'acme' }],
     })
     bindRequestFn(backend.fn)
     const { client, opened } = streamClient()
@@ -1670,7 +1682,7 @@ describe('the impersonation shell', () => {
     const user = userEvent.setup()
 
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
-    await waitFor(() => expect(backend.rosterReads()).toBeGreaterThan(0))
+    await waitFor(() => expect(backend.selfReads()).toBeGreaterThan(0))
 
     await user.click(
       await screen.findByRole('link', { name: tNotifications('inbox.title') }),
@@ -2028,6 +2040,7 @@ describe('the impersonation shell', () => {
     setCurrentTenantId(null)
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+      selfTenants: [{ id: 'acme', alias: 'acme' }],
     })
     // The read fails while the session impersonates and answers for the
     // operator: the test needs the two outcomes, not a reason the
@@ -2106,9 +2119,9 @@ describe('the impersonation shell', () => {
 
     // The set went unknown immediately before the re-read that answered it;
     // without that reset a stale set could outlive the identity it was read
-    // under. The current tenant is unknown while the caller tenant list and the
-    // roster settle after the end, so the set is reset once more -- the read
-    // waits for a tenant it can name -- before the operator's read attaches.
+    // under. The current tenant is unknown while the caller tenant list
+    // settles after the end, so the set is reset once more -- the read waits
+    // for a tenant it can name -- before the operator's read attaches.
     expect(attached).toEqual([null, [], null, null, ['tenant.read']])
     expect(
       await screen.findByRole('link', { name: demoEnUS.nav.console }),

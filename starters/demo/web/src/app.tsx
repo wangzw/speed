@@ -47,6 +47,7 @@ import {
   useAuthState,
   useFeature,
   useFeatureState,
+  usePermission,
 } from '@speed/auth-core'
 import { featurePresence } from '@speed/auth-core'
 import type { AuthSnapshot } from '@speed/auth-core'
@@ -156,24 +157,22 @@ import {
 const CONSOLE_PERMISSION_DOMAIN = 'system'
 
 /**
- * The tenant the host settles when it has none: the first roster row that is
- * active and is not someone's personal tenant. The roster view carries no
- * kind, so the server's identifier prefix tells the personal tenants apart:
- * one belongs to a single account and answers a staff viewer 404, and it also
- * sorts before most deployment identifiers ('p' < 't', 'z'), so without that
- * check the first active row would often be a stranger's personal space. The
- * result is nameable through the roster's alias cache. Null when the roster
- * offers no such row.
+ * The tenant the host settles when it has none: the first listed membership
+ * that is not someone's personal tenant, else the first listed one. The
+ * caller tenant read carries no kind, so the server's identifier prefix tells
+ * the personal tenants apart: one belongs to a single account and is a poor
+ * default when the account also belongs to a business tenant. The chosen row
+ * is nameable from the list itself. Null when the list is empty.
  */
-function defaultRosterTenant(
-  tenants: readonly { readonly id: string; readonly status: string }[],
+function defaultSelfTenantId(
+  tenants: readonly { readonly id: string }[],
 ): string | null {
   return (
     tenants.find(
-      (tenant) =>
-        tenant.status === 'active' &&
-        !tenant.id.startsWith(PERSONAL_TENANT_ID_PREFIX),
-    )?.id ?? null
+      (tenant) => !tenant.id.startsWith(PERSONAL_TENANT_ID_PREFIX),
+    )?.id ??
+    tenants[0]?.id ??
+    null
   )
 }
 
@@ -503,10 +502,14 @@ function TenantFrame({
   // nor the personal-tenant backfill may treat it as "the personal tenant is
   // missing".
   const selfState = useSelfTenantState()
-  // The tenant the platform roster's staff default names, when the read
-  // answered one. The roster read is a platform management read (staff only),
-  // so an ordinary member leaves this null and settles from their own list.
-  const [rosterDefaultId, setRosterDefaultId] = useState<string | null>(null)
+  // The platform roster is a platform management read: only a caller whose
+  // platform permission set holds tenant.read may issue it. The set is
+  // unknown until the host has read it, and an unknown set is not a
+  // permission -- the read waits for the answer.
+  const canReadRoster = usePermission(
+    CONSOLE_PERMISSION_DOMAIN,
+    'tenant.read',
+  )
   // Whether this identity's profile still shows setup incomplete. The home
   // page offers the one-time 「完成账户设置」 notice from this fact alone
   // (src/personal-tenant-notice.tsx): an account opened by a registration or by
@@ -516,10 +519,6 @@ function TenantFrame({
     snapshot.state === 'authenticated' &&
     snapshot.principal !== null &&
     setupIncomplete(snapshot.principal)
-  // Whether the roster read has settled (with an answer or a failure). The
-  // current-tenant settlement waits for it when the read is part of the
-  // assembly.
-  const [rosterSettled, setRosterSettled] = useState(false)
   // Whether the current tenant is a SETTLED context rather than an unknown
   // one. A tenant-scoped surface that opens a connection (the notification
   // stream) waits for this: a new account would otherwise open the stream
@@ -560,22 +559,25 @@ function TenantFrame({
       setIdentitySettling(true)
     }
   }
-  // Read the platform roster when the assembly serves it. The read needs
-  // tenant.read in the platform domain, which the demo's operator holds but an
-  // ordinary member does not; a refused read leaves the alias cache empty and
-  // the staff default null, and the current tenant then settles from the
-  // caller's own list. The roster is also the name source for a staff member
-  // entering a tenant they are not a member of, so its aliases are kept in the
-  // module cache. It is a platform management read, refused to an impersonated
-  // identity, so the impersonation branch reads nothing.
+  // Read the platform roster for the aliases of tenants outside the caller's
+  // own memberships (a staff member entering a tenant they do not belong to).
+  // It is a platform management read: it is issued only when the platform
+  // permission set is known and holds tenant.read, so an ordinary member
+  // never spends a request that can only be refused. The read decides no
+  // tenant and infers no membership: the current tenant is settled from the
+  // caller's own list, and a failed read is a fault -- the alias cache
+  // stands as it was.
   useEffect(() => {
-    if (!authenticated || impersonating || !featuresReady || !rosterServed) {
-      setRosterSettled(false)
-      setRosterDefaultId(null)
+    if (
+      !authenticated ||
+      impersonating ||
+      !featuresReady ||
+      !rosterServed ||
+      !canReadRoster
+    ) {
       return undefined
     }
     let cancelled = false
-    setRosterSettled(false)
     // Deferred into a promise: the generated operation reaches the api-sdk
     // request seam, which throws synchronously when no request function is
     // bound (a suite that mounts the app without the assembly). Deferring
@@ -590,41 +592,35 @@ function TenantFrame({
         setTenantAliases(
           new Map(answer.tenants.map((tenant) => [tenant.id, tenant.alias])),
         )
-        // The staff default is the first active tenant that is not someone's
-        // personal tenant: the roster view carries no kind, so the server's
-        // identifier prefix tells them apart. A personal tenant belongs to one
-        // account and answers a staff viewer 404; it also sorts before most
-        // deployment identifiers ('p' < 't', 'z'), so without this the first
-        // active row would often be a stranger's personal space.
-        setRosterDefaultId(defaultRosterTenant(answer.tenants))
-        setRosterSettled(true)
       })
       .catch(() => {
-        if (cancelled) {
-          return
-        }
-        // A refusal or failure says nothing about membership: the read settles
-        // with no staff default and no aliases, and the current tenant falls
-        // back to the caller's own list.
-        setRosterDefaultId(null)
-        setRosterSettled(true)
+        // A refused or failed roster read is a fault, not a membership test:
+        // it decides no tenant and says nothing about the caller.
       })
     return () => {
       cancelled = true
     }
     // The identity is an input: after an impersonation ends the roster is
     // read again, and after a start the branch above keeps it out.
-  }, [authenticated, impersonating, featuresReady, rosterServed, principalId])
+  }, [
+    authenticated,
+    impersonating,
+    featuresReady,
+    rosterServed,
+    canReadRoster,
+    principalId,
+  ])
 
-  // Settle the current tenant from the caller's own tenant list and the
-  // roster's staff default. The list is the membership fact; the roster (staff
-  // only) names the first active non-personal tenant. The order: a current
-  // tenant the host can name is kept (a switch, a route that named one, or a
-  // previous settlement); then the roster's staff default; then the account's
-  // personal row; then the list's first row; otherwise the current tenant
-  // stays unknown and tenant-scoped reads stay disabled. A list that has not
-  // settled -- and left no rows on hand -- is not an empty answer, so nothing
-  // is settled from it.
+  // Settle the current tenant from the caller's own tenant list. The list is
+  // the membership fact and readable by any authenticated caller without a
+  // tenant name, so this settle never spends a request that can only be
+  // refused. The order: a current tenant the host can name is kept (a switch,
+  // a route that named one, or a previous settlement); then the first listed
+  // membership that is not someone's personal tenant; then the list's first
+  // row; otherwise the current tenant stays unknown and tenant-scoped reads
+  // stay disabled. The roster plays no part: it is a staff alias source, and
+  // a failed read decides nothing. A list that has not settled -- and left no
+  // rows on hand -- is not an empty answer, so nothing is settled from it.
   useEffect(() => {
     if (!authenticated) {
       // The root already cleared the module-level cells; this keeps the
@@ -675,14 +671,6 @@ function TenantFrame({
       setTenantSettled(true)
       return
     }
-    if (rosterServed && !rosterSettled) {
-      // The staff default is decided by a read still in flight. The
-      // identity-change gap stays open too: the switcher stays out of the bar
-      // rather than stating "no current tenant" while the host is only still
-      // reading.
-      setTenantId(null)
-      return
-    }
     // A failure keeps the rows already settled, so the list stays usable; a
     // failure with no rows on hand is not an empty answer.
     const listUsable = selfState.settled || selfState.tenants.length > 0
@@ -698,18 +686,7 @@ function TenantFrame({
       setIdentitySettling(false)
       return
     }
-    const personalId =
-      principalId === '' ? null : personalTenantId(principalId)
-    const personalRow =
-      personalId !== null &&
-      selfState.tenants.some((tenant) => tenant.id === personalId)
-        ? personalId
-        : null
-    const next =
-      (rosterServed ? rosterDefaultId : null) ??
-      personalRow ??
-      selfState.tenants[0]?.id ??
-      null
+    const next = defaultSelfTenantId(selfState.tenants)
     setTenantId(next)
     setTenantSettled(next !== null)
     setIdentitySettling(false)
@@ -717,11 +694,7 @@ function TenantFrame({
     authenticated,
     impersonating,
     featuresReady,
-    rosterServed,
-    rosterSettled,
-    rosterDefaultId,
     selfState,
-    principalId,
     grant?.tenant,
     identitySettling,
     setTenantId,
@@ -770,12 +743,6 @@ function TenantFrame({
     if (personalBackfilled === personalId) {
       return undefined
     }
-    // When the assembly reads the roster, let that read settle first: the staff
-    // default it names is the current tenant it settles, and the backfill must
-    // not claim that place before the read has had its say.
-    if (rosterServed && !rosterSettled) {
-      return undefined
-    }
     let cancelled = false
     setPersonalFailure(false)
     void Promise.resolve()
@@ -814,8 +781,6 @@ function TenantFrame({
     featuresReady,
     personalServed,
     selfState,
-    rosterServed,
-    rosterSettled,
     tenantId,
     principalId,
     generation,
@@ -1134,82 +1099,32 @@ function ConsoleFeatureGate({
  * directly -- a reload of a console page, a bookmark -- mounts no tenant
  * frame, and without a name the permission read is refused, the platform set
  * attaches as the fail-closed empty one, and the area gate turns the operator
- * away. The roster read settles the same default the tenant frame would.
+ * away.
  *
- * The number is the request surface's only use here: the console renders no
- * tenant and has no switcher. The roster is part of the assembly only when the
- * feature document serves tenant.admin. A deployment that does not serve it has
- * no staff default to read, so the caller tenant list's first row settles the
- * name -- the only source the request surface can announce -- and the area then
- * decides by the platform permission set. When the roster is served, a refused
- * or failed read during an impersonation falls back to the caller tenant list:
- * the server narrows it to the grant, and without it the target's platform set
- * could never be read. A member's refused roster read settles nothing: the
- * caller list names their tenant, but reading the empty platform set from it
- * would turn a full-page console load into a redirect the invitation journey
- * does not document, and a tenant the request surface cannot name keeps the area
- * waiting.
+ * The settle reads the caller's own tenant list -- readable by any
+ * authenticated caller and needing no tenant name -- and takes the same
+ * default the tenant frame would: the first membership that is not the
+ * caller's personal tenant, else the first row. No platform roster read is
+ * spent here: the roster needs a platform permission that this settle exists
+ * to let the permission read answer. An impersonated identity settles from the
+ * same list, whose answer the server narrows to the grant. Until the list
+ * answers the tenant stays unknown and the effect runs again when it lands; a
+ * list that settles empty leaves the area on its access wait, and a list read
+ * that fails is a fault, not a membership test.
  */
-function useConsoleTenantSettle(
-  authenticated: boolean,
-  impersonating: boolean,
-  rosterServed: boolean,
-): void {
+function useConsoleTenantSettle(authenticated: boolean): void {
   const tenantId = useCurrentTenantId()
   const selfState = useSelfTenantState()
   useEffect(() => {
     if (!authenticated || tenantId !== null) {
-      return undefined
+      return
     }
-    if (!rosterServed) {
-      // No roster is assembled, so no read is spent on it. The caller list's
-      // first row is the name the permission read can carry; until it lands the
-      // tenant stays unknown and the effect runs again.
-      const row = selfState.tenants[0]
-      if (row !== undefined) {
-        setTenantAlias(row.id, row.alias)
-        setCurrentTenantId(row.id)
-      }
-      return undefined
+    const next = defaultSelfTenantId(selfState.tenants)
+    if (next === null) {
+      return
     }
-    let cancelled = false
-    // Deferred into a promise: the generated operation throws synchronously
-    // when no request function is bound (a suite that mounts the area alone).
-    void Promise.resolve()
-      .then(() => tenantAdminTenantsList())
-      .then((answer) => {
-        if (cancelled || getCurrentTenantId() !== null) {
-          return
-        }
-        // The selected row's alias is the name the permission read announces:
-        // a roster tenant outside the switcher's default list has no other
-        // source for it.
-        setTenantAliases(
-          new Map(answer.tenants.map((tenant) => [tenant.id, tenant.alias])),
-        )
-        setCurrentTenantId(defaultRosterTenant(answer.tenants))
-      })
-      .catch(() => {
-        // The roster is refused or failed. Only an impersonating identity
-        // settles from the caller tenant list, whose answer the server narrows
-        // to the grant; a member's list names their tenant but the area stays
-        // on the wait, as a member's full-page console load documents. An
-        // empty or not-yet-read list leaves the tenant undecided, and the
-        // effect runs again when it lands.
-        if (!impersonating || cancelled || getCurrentTenantId() !== null) {
-          return
-        }
-        const row = selfState.tenants[0]
-        if (row === undefined) {
-          return
-        }
-        setTenantAlias(row.id, row.alias)
-        setCurrentTenantId(row.id)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [authenticated, impersonating, rosterServed, tenantId, selfState])
+    setCurrentTenantId(next)
+  }, [authenticated, tenantId, selfState])
 }
 
 /**
@@ -1245,15 +1160,7 @@ function ConsoleAreaGate({
   readonly children: ReactNode
 }): ReactElement | null {
   const snapshot = useAuthState()
-  // Whether the deployment assembles the roster at all. A deployment without
-  // tenant.admin settles the current tenant from the caller list instead; the
-  // area still decides by the platform permission set.
-  const rosterServed = useFeature('tenant.admin')
-  useConsoleTenantSettle(
-    snapshot.state === 'authenticated',
-    snapshot.impersonating,
-    rosterServed,
-  )
+  useConsoleTenantSettle(snapshot.state === 'authenticated')
   // An account whose address is still unproved never settles a tenant: the
   // personal tenant's ensure refuses a pending account and the roster is a
   // staff-only read, so the permission set below is never read and the area

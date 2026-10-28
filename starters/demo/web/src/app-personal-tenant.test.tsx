@@ -334,10 +334,9 @@ describe('the tenant frame and the personal tenant', () => {
     await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
   })
 
-  it('settles the account personal row before the first row of the list', async () => {
+  it('settles the first membership that is not the account’s personal tenant', async () => {
     const ensureCalls: string[] = []
     script({
-      roster: 'refused',
       ensureCalls,
       // Ordered by identifier: the personal row is deliberately not first.
       self: {
@@ -353,9 +352,9 @@ describe('the tenant frame and the personal tenant', () => {
       ),
     })
 
-    // The account's own space is the preferred entry even when another
-    // membership sorts before it, and the existing row means no ensure.
-    await waitFor(() => expect(getCurrentTenantId()).toBe(PERSONAL_ID))
+    // A business membership is the default when the account has one; the
+    // existing personal row means no ensure.
+    await waitFor(() => expect(getCurrentTenantId()).toBe('aaa'))
     expect(ensureCalls).toHaveLength(0)
   })
 
@@ -510,12 +509,10 @@ describe('the tenant frame and the personal tenant', () => {
     expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
   })
 
-  it('backfills even when a current tenant is settled from the roster', async () => {
+  it('backfills while a settled business tenant stays current', async () => {
     const calls: string[] = []
     script({
-      roster: {
-        tenants: [{ id: 'acme', alias: 'acme', status: 'active' }],
-      },
+      self: { tenants: [{ id: 'acme', alias: 'acme' }] },
       calls,
     })
     renderDemoApp({

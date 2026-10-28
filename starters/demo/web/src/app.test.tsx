@@ -357,18 +357,18 @@ describe('the console area', () => {
     // frame, and the caller's permission read sits on the guarded API
     // endpoint: without a tenant name the read is refused 404 before any
     // handler runs, and the area gate would turn a platform administrator
-    // away. The area settles the default tenant itself before the read.
+    // away. The area settles the caller list's default itself before the
+    // read; no platform roster read is spent, because that read needs the
+    // permission this settle exists to let the read answer.
     setCurrentTenantId(null)
     window.history.replaceState({}, '', '/console/tenants')
     const requested: string[] = []
     const tenantAtRead: (string | null)[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
       requested.push(path)
-      if (path === '/api/v1/system/tenants') {
+      if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [
-            { id: TENANT_ID, alias: 'acme', status: 'active' },
-          ],
+          tenants: [{ id: TENANT_ID, alias: 'acme' }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {
@@ -405,10 +405,11 @@ describe('the console area', () => {
         name: tConsole('shell.navLabel'),
       }),
     ).toBeInTheDocument()
-    // The read the area gate settled on carried the tenant the console
-    // boundary chose from the roster.
+    // The read the area gate settled on carried the default the caller list
+    // names. The tenants page itself reads the roster once it renders; the
+    // shell spends no roster read to settle the tenant.
     expect(tenantAtRead).toEqual([TENANT_ID])
-    expect(requested).toContain('/api/v1/system/tenants')
+    expect(requested).toContain('/api/v1/auth/me/tenants')
   })
 
   it('settles the caller list when the deployment serves no roster', async () => {
@@ -550,24 +551,17 @@ describe('the console area', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('keeps a member on the access wait when only the caller list names a tenant', async () => {
-    // A member's caller tenant list names the tenant they belong to, but the
-    // roster -- the console area's own default-tenant source -- is refused to
-    // them. Only an impersonating identity settles from the caller list (the
-    // server narrows it to the grant); a member's full-page console load must
-    // keep the access wait rather than read the empty platform set and
-    // redirect, which is the branch the invitation journey documents.
+  it('turns a member who loads a console URL directly out of the console, without a roster read', async () => {
+    // A member's caller tenant list names their tenant, so the console area
+    // settles it and reads the platform permission set. The set is empty, and
+    // the area gate redirects: no roster read is spent, because the roster
+    // needs tenant.read and the member holds nothing.
     setCurrentTenantId(null)
     setTenantAliases(new Map())
     window.history.replaceState({}, '', '/console/tenants')
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
       requested.push(path)
-      if (path === '/api/v1/system/tenants') {
-        return Promise.reject(
-          new Error('the roster is refused to a member'),
-        ) as Promise<T>
-      }
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
           tenants: [{ id: TENANT_ID, alias: TENANT_ID }],
@@ -578,10 +572,6 @@ describe('the console area', () => {
       }
       return Promise.reject(new Error(`unexpected request: ${path}`))
     })
-    // The caller list is on hand before the console mounts, so the roster's
-    // refusal has its fallback answer immediately: a run that settles from it
-    // sets the tenant in the same microtask chain.
-    await loadSelfTenants()
     const base = createTestSession(authenticatedSnapshot({ system: null }))
     const session: AuthSession = {
       ...base,
@@ -600,24 +590,120 @@ describe('the console area', () => {
       ),
     })
 
-    await waitFor(() => expect(requested).toContain('/api/v1/system/tenants'))
-    await waitFor(() => expect(getCurrentTenantId()).toBeNull())
-
-    // The roster's refusal named no tenant, so the permission read is never
-    // made and the area keeps its shell-less wait.
-    expect(requested).not.toContain('/api/v1/authz/me/permissions')
+    // The empty platform set redirects the member home; no console chrome is
+    // ever rendered.
     expect(
-      screen.getByRole('progressbar', {
-        name: demoEnUS.console.accessPending,
-      }),
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('heading', {
+      await screen.findByRole('heading', {
         level: 1,
         name: demoEnUS.home.heading,
       }),
-    ).not.toBeInTheDocument()
-    expect(window.location.pathname).toBe('/console/tenants')
+    ).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/')
+    expect(requested).toContain('/api/v1/authz/me/permissions')
+    expect(requested).not.toContain('/api/v1/system/tenants')
+
+    clearSelfTenants()
+  })
+
+  it('lands an invited member’s console load back in their own tenant', async () => {
+    // A member carrying a fresh invitation membership loads a console URL
+    // directly: the caller list settles the invited tenant, the platform set
+    // is empty, and the redirect lands in the tenant area with that tenant
+    // current. No roster read is spent on the way.
+    const INVITED = 'invited-tenant'
+    setCurrentTenantId(null)
+    setTenantAliases(new Map())
+    window.history.replaceState({}, '', '/console')
+    const requested: string[] = []
+    bindRequestFn(<T,>(path: string): Promise<T> => {
+      requested.push(path)
+      if (path === '/api/v1/auth/me/tenants') {
+        return Promise.resolve({
+          tenants: [{ id: INVITED, alias: INVITED }],
+        } as T)
+      }
+      if (path === '/api/v1/authz/me/permissions') {
+        return Promise.resolve({ platform: [], tenant: [] } as T)
+      }
+      return Promise.reject(new Error(`unexpected request: ${path}`))
+    })
+    const base = createTestSession(authenticatedSnapshot({ system: null }))
+    const session: AuthSession = {
+      ...base,
+      setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
+        const current = base.getSnapshot()
+        base.set({
+          ...current,
+          permissionSets: { ...current.permissionSets, [domain]: perms },
+        })
+      },
+    }
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    await waitFor(() => expect(getCurrentTenantId()).toBe(INVITED))
+    expect(requested).not.toContain('/api/v1/system/tenants')
+
+    clearSelfTenants()
+  })
+
+  it('keeps a staff member whose only membership is personal in the console', async () => {
+    // A platform staff member belongs to no business tenant: the caller list
+    // holds only their personal space. The console area settles that row, the
+    // guarded permission read carries it, and the non-empty platform set
+    // grants the console. The roster decides nothing here.
+    const PERSONAL = 'personal-account-1'
+    setCurrentTenantId(null)
+    setTenantAliases(new Map())
+    window.history.replaceState({}, '', '/console/settings')
+    const tenantAtRead: (string | null)[] = []
+    const requested: string[] = []
+    bindRequestFn(<T,>(path: string): Promise<T> => {
+      requested.push(path)
+      if (path === '/api/v1/auth/me/tenants') {
+        return Promise.resolve({
+          tenants: [{ id: PERSONAL, alias: PERSONAL }],
+        } as T)
+      }
+      if (path === '/api/v1/authz/me/permissions') {
+        tenantAtRead.push(getCurrentTenantId())
+        return Promise.resolve({
+          platform: ['tenant.read'],
+          tenant: [],
+        } as T)
+      }
+      return Promise.reject(new Error(`unexpected request: ${path}`))
+    })
+    const base = createTestSession(authenticatedSnapshot({ system: null }))
+    const session: AuthSession = {
+      ...base,
+      setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
+        const current = base.getSnapshot()
+        base.set({
+          ...current,
+          permissionSets: { ...current.permissionSets, [domain]: perms },
+        })
+      },
+    }
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    expect(
+      await screen.findByRole('navigation', {
+        name: tConsole('shell.navLabel'),
+      }),
+    ).toBeInTheDocument()
+    expect(tenantAtRead).toEqual([PERSONAL])
+    expect(requested).not.toContain('/api/v1/system/tenants')
 
     clearSelfTenants()
   })

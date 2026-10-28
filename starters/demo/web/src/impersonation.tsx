@@ -113,6 +113,7 @@ import {
 import type { AuthnImpersonationGrant } from './app-api/index.js'
 import { useAppServices } from './app-services.js'
 import { TENANT_HOME_PATH } from './pages/not-found-page.js'
+import { clearSelfTenants } from './tenant-self.js'
 
 /** The upper bound of authn.session.check-ttl: how long after the recorded
  * expiry the server may still treat the session as impersonating. */
@@ -282,6 +283,10 @@ export function IdentityChangeProvider({
         queryClientRef.current.removeQueries({
           predicate: (query) => !isStatusQueryKey(query.queryKey),
         })
+        // The caller tenant list belongs to the acting account too. Dropping
+        // it before the re-read keeps the previous identity's rows from
+        // settling the tenant the new identity's reads go out under.
+        clearSelfTenants()
         await sessionRef.current.restore()
         setGeneration((current) => current + 1)
         if (change === 'started') {
