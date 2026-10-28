@@ -380,7 +380,10 @@ func loginIdentifiers(tx *gorm.DB, id string) (all []string, login bool, err err
 	}
 	for _, r := range rows {
 		all = append(all, r.Value)
-		if r.Kind == string(authn.IdentifierUsername) || r.Kind == string(authn.IdentifierEmail) {
+		// A password login name is the username or an email the holder chose as
+		// a sign-in way. A phone never is one, and an email that is only a
+		// contact does not count.
+		if r.SignIn && (r.Kind == string(authn.IdentifierUsername) || r.Kind == string(authn.IdentifierEmail)) {
 			login = true
 		}
 	}

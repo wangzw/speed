@@ -505,6 +505,44 @@ func TestSetRefusesAnAccountWithNoLoginName(t *testing.T) {
 	})
 }
 
+// TestSetRefusesAnAccountWhoseOnlyEmailIsNoSignInWay holds that a proved email
+// kept as a contact alone is no login name either: an imported account whose
+// source record did not choose it is refused a password until its holder does,
+// and the choice is what makes the same call succeed.
+func TestSetRefusesAnAccountWhoseOnlyEmailIsNoSignInWay(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		created, err := h.p.Create(ctx, authn.CreateAccount{
+			Via: "import", Email: "contactonly@example.com",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
+			EmailFlags:       authn.IdentifierFlags{Contact: true},
+		})
+		if err != nil {
+			t.Fatalf("importing an account whose address is only a contact: %v", err)
+		}
+		email := identifierOfKind(t, h, created.ID, authn.IdentifierEmail)
+		if email.SignIn || !email.Contact {
+			t.Fatalf("the address is %+v, want a contact that is not a sign-in way", email)
+		}
+
+		err = h.p.Set(ctx, created.ID, "correct horse battery", authn.SetPasswordOptions{})
+		if !errors.Is(err, authn.ErrIdentifierRequired) {
+			t.Errorf("setting a password on an account with no login name gave %v, want ErrIdentifierRequired", err)
+		}
+		if n := h.count(tableCredentials, "account_id = ?", created.ID.String()); n != 0 {
+			t.Errorf("%d credential row(s) were written, want none", n)
+		}
+
+		if err = h.p.SetIdentifierFlags(ctx, created.ID, email.ID,
+			authn.IdentifierFlags{Contact: true, SignIn: true}); err != nil {
+			t.Fatalf("choosing the address as a sign-in way: %v", err)
+		}
+		if err = h.p.Set(ctx, created.ID, "correct horse battery", authn.SetPasswordOptions{}); err != nil {
+			t.Errorf("setting a password once the address is a sign-in way gave %v, want none", err)
+		}
+	})
+}
+
 // TestVerifyAcceptsAnEmailOnlyWhenItIsChosenAsASignInWay holds that a proved
 // email address is no login name until its holder chooses it: a password check
 // against it answers as an unknown name does, the username beside it still
