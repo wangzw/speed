@@ -995,17 +995,17 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
     )
 
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(zhCN.identifiers.add.usernameTaken)
-    // The generic account-state sentence sends the user to refresh, which
-    // can never free the name, and the unknown fallback names nothing.
-    expect(alert).not.toHaveTextContent(zhCN.errors.authn.conflict)
-    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
+    const field = screen.getByLabelText(zhCN.identifiers.add.value.labelUsername)
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'))
+    expect(screen.getByText(zhCN.identifiers.add.usernameTaken)).toBeInTheDocument()
+    // The name is the value to change: the field carries it, focused, and
+    // the generic account-state sentence (refresh) never appears.
+    expect(field).toHaveFocus()
+    expect(field).toHaveValue('alice')
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(enUS.identifiers.add.usernameTaken).toMatch(/already taken/i)
     // The form stays open so another name can be typed.
-    expect(
-      screen.getByLabelText(zhCN.identifiers.add.value.labelUsername),
-    ).toBeTruthy()
+    expect(field).toBeTruthy()
   })
 
   it('names a taken username the identifier route answers as a conflict', async () => {
@@ -1040,9 +1040,11 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
     )
 
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(zhCN.identifiers.add.usernameTaken)
-    expect(alert).not.toHaveTextContent(zhCN.errors.authn.conflict)
+    const field = screen.getByLabelText(zhCN.identifiers.add.value.labelUsername)
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'))
+    expect(screen.getByText(zhCN.identifiers.add.usernameTaken)).toBeInTheDocument()
+    expect(field).toHaveFocus()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('states a refused username in its field rather than the banner', async () => {

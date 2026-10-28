@@ -263,8 +263,10 @@ sequenceDiagram
 | 自助写被答 401 `authn.insufficient_user_authentication` | 打开提权对话框，成功后重跑那次被拒的写一次 |
 | 自助写被答 401 `authn.sso_required` | 打开企业单点登录对话框：点名该要求并给重新登录出口，不读因素、不起流程、不重跑那次写 |
 | 口令写被拒为 400 `authn.bad_request` | 一条横幅渲染口令策略句，覆盖长度不合适（过短或过长）、与账户的用户名、邮箱、手机号相同、与当前口令相同（修改时）；句子不写数字，长度下限是部署的设置 |
-| 加用户名被拒为 409 `authn.conflict` | 一条横幅渲染「用户名已被使用」；添加面在账户已有用户名时不提供用户名，该码在此只意味着被他人占用 |
-| 加用户名被拒为 400 `authn.bad_request` | 一条横幅渲染该码文本；服务端的用户名规则还拒绝本面不复述的形状（静态凭据前缀、UUID 形状、保留字），故不给单一字段文案 |
+| 加用户名被拒为 409 `authn.username_taken`（或该路由仍答的 `authn.conflict`） | 用户名字段渲染 `identifiers.add.usernameTaken`（`aria-invalid`），焦点移到该字段；添加面在账户已有用户名时不提供用户名，该码在此只意味着被他人占用 |
+| 加用户名被拒为 400 `authn.username_reserved` | 用户名字段渲染 `identifiers.add.usernameReserved`（`aria-invalid`），焦点移到该字段 |
+| 加用户名被拒为 400 `authn.username_invalid` | 用户名字段渲染 `identifiers.add.usernameInvalid`（`aria-invalid`），焦点移到该字段 |
+| 加用户名被拒为 400 `authn.bad_request` | 一条横幅渲染该码文本：该路由的 bad-request 不是用户名的形状码（形状不合答 `username-invalid`），它可能描述别的值 |
 | 添加邮箱时地址不符合服务端格式 | 邮箱字段渲染 `identifiers.add.invalidEmail`（`aria-invalid`），不发请求；服务端仍答 400 `authn.bad_request` 且 kind 为 email 时同样落在该字段，不出现通用横幅 |
 | 添加邮箱被拒为 409 `authn.email_taken` | 邮箱字段渲染 `identifiers.add.emailTaken`（`aria-invalid`），焦点移到该字段；验证码一步收到该码时退回值字段并显示同一条文案，不出现通用横幅 |
 | 改口令被拒为 401 `authn.login_failed`（当前口令不符，或账户级退避期内的静默拒绝） | 一条横幅渲染本节自己的句子（`password.currentRejected`），不点名失败成因：账户级退避期内服务端对正确的当前口令也答该码，且该次尝试仍计入失败、延后退避，句子的重试指引因此带上「连续失败后稍候」的条件；不渲染该码在登录面的文本——那句话点名邮箱、手机号与验证码，在这里都不适用。与提权 401 同状态码，靠问题码区分，不误开门控 |

@@ -93,8 +93,8 @@
  * in one step; a username already in use is answered 409 (authn.username_taken,
  * or the identifier route's own authn.conflict for the same collision), and
  * because that is the expected outcome of the one write this face exists
- * for, the section names the username rather than rendering the code's
- * account-state sentence. An
+ * for, the section names the username on its value field rather than
+ * rendering the code's account-state sentence. An
  * email sends a code to it (the answer is state "pending") and the code is
  * submitted through POST /api/v1/auth/identifiers/verify
  * (authn.login.verifyIdentifier); only the matching code writes the address,
@@ -430,6 +430,12 @@ export function IdentifiersSection({
   // it, and hand focus to the code field. The region is empty again when the
   // flow returns to the value field.
   const addCodeRef = useRef<HTMLInputElement>(null)
+  // The add face's value input, focused when the server refuses the value.
+  const valueInput = useRef<HTMLInputElement>(null)
+  // A refusal asks for focus once the attempt has settled: the value field
+  // is disabled while a write is in flight, so focusing it from the
+  // refusal itself would be dropped.
+  const focusValuePending = useRef(false)
   useEffect(() => {
     setSentCommitted(sentTo !== null)
     if (sentTo !== null) {
@@ -443,6 +449,13 @@ export function IdentifiersSection({
     addIdentifier.isPending || verifyIdentifier.isPending || feedback.pending
   const writeBusy =
     removeIdentifier.isPending || updateIdentifier.isPending || feedback.pending
+  useEffect(() => {
+    if (addBusy || !focusValuePending.current) {
+      return
+    }
+    focusValuePending.current = false
+    valueInput.current?.focus()
+  }, [addBusy])
 
   // Tick the row flow's countdown only while one is running, and stop the
   // timer at its own expiry rather than leaving it ticking for the rest of
@@ -767,11 +780,12 @@ export function IdentifiersSection({
           (failure === 'authn.username_taken' || failure === 'authn.conflict')
         ) {
           // An existing username is the expected 409 of the one write this
-          // face exists for, and the account-state sentence sends the viewer
-          // to refresh, which can never free the name. The identifier route
-          // keeps its own conflict answer for the same collision; both mean
-          // the name is not available.
-          setFailureText('identifiers.add.usernameTaken')
+          // face exists for. The identifier route keeps its own conflict
+          // answer for the same collision; both mean the name is not
+          // available, and the name is the value the viewer changes, so the
+          // field carries the message.
+          setFieldErrorKey('identifiers.add.usernameTaken')
+          focusValuePending.current = true
           return null
         }
         if (
@@ -787,6 +801,7 @@ export function IdentifiersSection({
               ? 'identifiers.add.usernameReserved'
               : 'identifiers.add.usernameInvalid',
           )
+          focusValuePending.current = true
           return null
         }
         throw error
@@ -1481,6 +1496,7 @@ export function IdentifiersSection({
                     fullWidth
                     type={formKind === 'email' ? 'email' : 'text'}
                     autoComplete={formKind === 'email' ? 'email' : 'username'}
+                    inputRef={valueInput}
                     label={valueLabel}
                     error={fieldErrorKey !== null}
                     helperText={
