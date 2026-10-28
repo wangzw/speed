@@ -45,6 +45,55 @@ func (h *harness) answerUsername(seq int, username string) reply {
 	})
 }
 
+// TestARefusedUsernameKeepsTheAnswerPosition holds the retry the step invites:
+// a refusal leaves the answer position where it was, so the same step number
+// answers again and the legal name opens the account. A refusal that moved the
+// number would strand the retry, because the failure reply carries no new one.
+func TestARefusedUsernameKeepsTheAnswerPosition(t *testing.T) {
+	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+		_, seq, _ := signupStep(t, h.startSocialSignup())
+
+		refused := h.answerUsername(seq, "admin")
+		if refused.status != http.StatusBadRequest || refused.json(t)["type"] != "urn:speed:authn:username-reserved" {
+			t.Fatalf("a reserved username answered %d %s, want 400 username-reserved", refused.status, refused.body)
+		}
+
+		accepted := h.answerUsername(seq, "newbie")
+		if accepted.status != http.StatusOK {
+			t.Fatalf("the retry with the same seq answered %d %s, want 200", accepted.status, accepted.body)
+		}
+		if _, err := h.accounts.Lookup(h.ctx, authn.IdentifierUsername, "newbie"); err != nil {
+			t.Errorf("the accepted retry left no account: %v", err)
+		}
+	})
+}
+
+// TestARefusedUsernameCountsAgainstTheAnswerLimit holds that keeping the
+// position unchanged does not make the step free: every refusal is an answer,
+// and the flow fails once the limit is spent.
+func TestARefusedUsernameCountsAgainstTheAnswerLimit(t *testing.T) {
+	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+		_, seq, _ := signupStep(t, h.startSocialSignup())
+
+		// The flow accepts eight answers; see design-authn-login's answer table
+		// and flow.go's maxAnswers. The case is external to the package, so the
+		// number is restated here as the contract's.
+		const answerLimit = 8
+		for i := 1; i <= answerLimit; i++ {
+			refused := h.answerUsername(seq, "admin")
+			if refused.status != http.StatusBadRequest {
+				t.Fatalf("refusal %d answered %d %s, want 400", i, refused.status, refused.body)
+			}
+		}
+		last := h.answerUsername(seq, "newbie")
+		if last.status != http.StatusUnauthorized || last.json(t)["type"] != "urn:speed:authn:flow-invalid" {
+			t.Fatalf("the answer past the limit answered %d %s, want 401 flow-invalid", last.status, last.body)
+		}
+	})
+}
+
 // TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount holds the
 // pending signup against the real account store: the login stops at the username
 // step with nothing written, an unusable name is 400 and a name another account

@@ -116,12 +116,13 @@ func TestTheUsernameOpensTheAccountAndThePolicyRuns(t *testing.T) {
 // TestARejectedUsernameKeepsTheFlowAtTheUsernameStep holds that a username which
 // does not normalize is 400 and one another account holds is 409, that neither
 // opens an account, and that the flow stays at signup so a legal name can follow
-// at the next step number.
+// at the same step number: a refusal counts the answer without moving the
+// position.
 func TestARejectedUsernameKeepsTheFlowAtTheUsernameStep(t *testing.T) {
 	r := newRigMethod(t, socialProofMethod())
 	r.withOpenSignup()
 	r.accounts.lookupErr = map[string]error{
-		string(authn.IdentifierUsername) + "\x00bad!": authn.ErrInvalidIdentifier,
+		string(authn.IdentifierUsername) + "\x00bad!": authn.UsernameShape(authn.ErrInvalidIdentifier),
 	}
 	r.accounts.lookup[string(authn.IdentifierUsername)+"\x00taken"] = "someone"
 	cookie := startRedirect(t, r, "")
@@ -133,12 +134,12 @@ func TestARejectedUsernameKeepsTheFlowAtTheUsernameStep(t *testing.T) {
 
 	refused := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
 		`{"seq":1,"step":"answer","input":{"username":"bad!"}}`, "Cookie", cookie)
-	if refused.Code != http.StatusBadRequest || decode(t, refused.Body.String())["type"] != "urn:speed:authn:bad-request" {
-		t.Fatalf("a username that does not normalize answered %d %s, want 400 bad-request", refused.Code, refused.Body.String())
+	if refused.Code != http.StatusBadRequest || decode(t, refused.Body.String())["type"] != "urn:speed:authn:username-invalid" {
+		t.Fatalf("a username that does not normalize answered %d %s, want 400 username-invalid", refused.Code, refused.Body.String())
 	}
 
 	taken := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
-		`{"seq":2,"step":"answer","input":{"username":"taken"}}`, "Cookie", cookie)
+		`{"seq":1,"step":"answer","input":{"username":"taken"}}`, "Cookie", cookie)
 	if taken.Code != http.StatusConflict || decode(t, taken.Body.String())["type"] != "urn:speed:authn:username-taken" {
 		t.Fatalf("a taken username answered %d %s, want 409 username-taken", taken.Code, taken.Body.String())
 	}
@@ -151,14 +152,14 @@ func TestARejectedUsernameKeepsTheFlowAtTheUsernameStep(t *testing.T) {
 		t.Fatalf("GET flows/current after the rejections answered %d: %s", current.Code, current.Body.String())
 	}
 	checkSignupReply(t, current.Body.String())
-	if seq, _ := decode(t, current.Body.String())["seq"].(float64); seq != 3 {
-		t.Errorf("seq after two rejections = %v, want 3", seq)
+	if seq, _ := decode(t, current.Body.String())["seq"].(float64); seq != 1 {
+		t.Errorf("seq after two rejections = %v, want the position held at 1", seq)
 	}
 
-	// The flow is still retryable: the legal name at the next step number opens
+	// The flow is still retryable: the legal name at the same step number opens
 	// the account.
 	ok := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
-		`{"seq":3,"step":"answer","input":{"username":"newperson"}}`, "Cookie", cookie)
+		`{"seq":1,"step":"answer","input":{"username":"newperson"}}`, "Cookie", cookie)
 	if ok.Code != http.StatusOK {
 		t.Fatalf("the retried username answered %d: %s", ok.Code, ok.Body.String())
 	}

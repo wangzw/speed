@@ -374,7 +374,6 @@ func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw 
 	res, err := r.resolver.Create(c.ctx, *rec.Pending, fields[fieldUsername])
 	switch {
 	case errors.Is(err, authn.ErrUsernameReserved):
-		rec.Seq++
 		rec.Answers++
 		if !r.swap(c, token, raw, rec) {
 			return
@@ -382,7 +381,6 @@ func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw 
 		c.fail(mount.CodeUsernameReserved)
 		return
 	case authn.IsUsernameShape(err):
-		rec.Seq++
 		rec.Answers++
 		if !r.swap(c, token, raw, rec) {
 			return
@@ -390,7 +388,6 @@ func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw 
 		c.fail(mount.CodeUsernameInvalid)
 		return
 	case errors.Is(err, authn.ErrInvalidIdentifier):
-		rec.Seq++
 		rec.Answers++
 		if !r.swap(c, token, raw, rec) {
 			return
@@ -398,7 +395,6 @@ func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw 
 		c.fail(mount.CodeBadRequest)
 		return
 	case errors.Is(err, authn.ErrAccountExists):
-		rec.Seq++
 		rec.Answers++
 		if !r.swap(c, token, raw, rec) {
 			return
