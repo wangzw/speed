@@ -5,11 +5,11 @@
     "passwordLabel": "密码",
     "newPasswordLabel": "新密码",
     "submit": "登录",
-    "forgotPassword": "忘记口令？",
+    "forgotPassword": "忘记密码？",
     "loginFailed": "邮箱或用户名与密码不正确。"
   },
   "passwordReset": {
-    "title": "重置口令",
+    "title": "重置密码",
     "description": "输入账户的邮箱或手机号，我们会发送验证码。",
     "channelLegend": "接收验证码的方式",
     "channel": {
@@ -22,21 +22,21 @@
     "send": "发送验证码",
     "sentNotice": "如果这些信息对应一个可重置的账户，验证码已发送。",
     "codeLabel": "验证码",
-    "newPasswordLabel": "新口令",
-    "confirmPasswordLabel": "确认口令",
-    "submit": "重置口令",
+    "newPasswordLabel": "新密码",
+    "confirmPasswordLabel": "确认密码",
+    "submit": "重置密码",
     "resend": "重新发送验证码",
     "resendIn": "{{seconds}} 秒后可重新发送",
     "retryAfter": "尝试次数过多，请在 {{seconds}} 秒后重试。",
     "codeRejected": "验证码不正确或已失效。",
     "invalidIdentifier": "请输入有效的邮箱地址或手机号。",
-    "policyFailure": "新口令不符合要求：长度需合适，且不能与账户的邮箱、手机号或用户名相同。",
-    "mismatch": "两次输入的口令不一致。",
+    "policyFailure": "新密码不符合要求：长度需合适，且不能与账户的邮箱、手机号或用户名相同。",
+    "mismatch": "两次输入的密码不一致。",
     "flowInvalid": "重置流程已失效，请重新开始。",
     "startOver": "重新开始",
     "backToSignIn": "返回登录",
-    "doneTitle": "口令已重置",
-    "doneDescription": "请用新口令登录。",
+    "doneTitle": "密码已重置",
+    "doneDescription": "请用新密码登录。",
     "loading": "正在读取重置进度…",
     "unavailable": "本部署未提供可用的重置渠道。"
   },
@@ -68,9 +68,9 @@
     "passkeyWaiting": "正在等待你的设备…",
     "passkeyCancel": "取消",
     "passkeyRetry": "重试",
-    "passkeyUnsupported": "此浏览器无法进行通行密钥仪式。",
+    "passkeyUnsupported": "此浏览器无法使用通行密钥登录，请改用其他方式。",
     "passkeyCancelled": "未找到可用的通行密钥，或通行密钥提示已被取消。请重试。",
-    "passkeyFailed": "通行密钥仪式未能完成。",
+    "passkeyFailed": "通行密钥登录未完成，请重试。",
     "passkeyRefused": "这台设备上的通行密钥可能已注销或已失效，无法用于登录。请改用其他方式登录；若想继续使用通行密钥，请在登录后重新登记。",
     "factorKind": {
       "totp": "验证器应用",
@@ -102,12 +102,12 @@
     "titleFirst": "使用通行密钥登录"
   },
   "register": {
-    "title": "口令注册",
-    "description": "用用户名、邮箱和口令创建账户。登录后再验证邮箱地址。",
+    "title": "密码注册",
+    "description": "用用户名、邮箱和密码创建账户。登录后再验证邮箱地址。",
     "usernameLabel": "用户名",
     "emailLabel": "邮箱",
-    "passwordLabel": "口令",
-    "confirmPasswordLabel": "确认口令",
+    "passwordLabel": "密码",
+    "confirmPasswordLabel": "确认密码",
     "submit": "创建账户",
     "created": "账户已创建。",
     "signInRequired": "账户已创建，请登录。",
@@ -120,7 +120,7 @@
     "retryAfter": "注册尝试次数过多，请在 {{seconds}} 秒后重试。",
     "unavailable": "注册服务暂时不可用，请稍后重试。",
     "invalidEmail": "请输入有效的邮箱地址。",
-    "passwordMismatch": "两次输入的口令不一致。"
+    "passwordMismatch": "两次输入的密码不一致。"
   },
   "social": {
     "title": "或使用社交账号登录",
@@ -173,7 +173,7 @@
       "title": "邀请读取失败"
     },
     "displayNameLabel": "显示名",
-    "passwordLabel": "口令",
+    "passwordLabel": "密码",
     "newAccountHint": "仅当被邀请的地址尚无账户时使用；该地址已有账户时留空即可。"
   },
   "impersonation": {
@@ -199,8 +199,8 @@
       "link_required": "该社交账号的邮箱已属于本站的一个账户。请先用原先的登录方式登录该账户，再到「账户设置 → 社交绑定」里关联此账号。",
       "method_disabled": "该登录方式已停用，请选择其他登录方式。",
       "account_unavailable": "该账户当前不可用，请联系管理员。",
-      "password_reset_closed": "本部署已关闭匿名口令重置。",
-      "password_reset_unavailable": "该账户当前无法重置口令，请联系管理员。",
+      "password_reset_closed": "本部署已关闭匿名密码重置。",
+      "password_reset_unavailable": "该账户当前无法重置密码，请联系管理员。",
       "conflict": "该操作与账户当前状态冲突，请刷新后重试。",
       "throttled": "尝试次数过多，请稍后再试。",
       "unavailable": "服务暂时不可用，请稍后重试。",

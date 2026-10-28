@@ -186,9 +186,9 @@
     "passkeyWaiting": "正在等待你的设备…",
     "passkeyCancel": "取消",
     "passkeyRetry": "重试",
-    "passkeyUnsupported": "此浏览器无法进行通行密钥仪式。",
+    "passkeyUnsupported": "此浏览器无法使用通行密钥登录，请改用其他方式。",
     "passkeyCancelled": "通行密钥提示已取消，请重试。",
-    "passkeyFailed": "通行密钥仪式未能完成。"
+    "passkeyFailed": "通行密钥登录未完成，请重试。"
   },
   "appearance": {
     "title": "外观",
@@ -241,7 +241,7 @@
     "new": {
       "label": "新密码",
       "helper": "请设置一个该账户未使用过的密码。",
-      "helperFirst": "设置一个用于登录的口令。长度需足够，且不能与用户名、邮箱或手机号相同。"
+      "helperFirst": "设置一个用于登录的密码。长度需足够，且不能与用户名、邮箱或手机号相同。"
     },
     "confirm": {
       "label": "确认新密码"
@@ -250,7 +250,7 @@
     "submitFirst": "设置密码",
     "changed": "密码已修改，其他设备已被退出登录。",
     "changedFirst": "密码已设置，其他设备已被退出登录。",
-    "policyFailure": "新密码不符合要求：长度需合适（不能过短，也不能过长），且不能与用户名、邮箱、手机号相同；修改口令时还不能与当前口令相同。",
+    "policyFailure": "新密码不符合要求：长度需合适（不能过短，也不能过长），且不能与用户名、邮箱、手机号相同；修改密码时还不能与当前密码相同。",
     "currentRejected": "当前密码未能通过验证，请检查后重试；连续失败后请稍候再试。",
     "missingNew": "请输入新密码。",
     "mismatch": "两次输入的密码不一致。",

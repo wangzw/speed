@@ -116,9 +116,9 @@
     "passkeyWaiting": "正在等待你的设备…",
     "passkeyCancel": "取消",
     "passkeyRetry": "重试",
-    "passkeyUnsupported": "此浏览器无法进行通行密钥仪式。",
+    "passkeyUnsupported": "此浏览器无法使用通行密钥登录，请改用其他方式。",
     "passkeyCancelled": "通行密钥提示已取消，请重试。",
-    "passkeyFailed": "通行密钥仪式未能完成。",
+    "passkeyFailed": "通行密钥登录未完成，请重试。",
     "redirectNotice": "该验证需要跳转到外部页面，本对话框不会自动跳转。",
     "noFactor": "此账户尚未配置两步验证，请先在账户设置中添加验证方式。",
     "goToAccount": "前往账户设置",
@@ -571,8 +571,8 @@
     "mfaSavedUnnamed": "该账户的 MFA 要求已保存",
     "patchSaved": "账户{{account}}的资料已保存",
     "patchSavedUnnamed": "该账户的资料已保存",
-    "passwordReset": "账户{{account}}的口令已重置",
-    "passwordResetUnnamed": "该账户的口令已重置",
+    "passwordReset": "账户{{account}}的密码已重置",
+    "passwordResetUnnamed": "该账户的密码已重置",
     "identifierAdded": "账户{{account}}已添加登录标识「{{loginIdentifier}}」",
     "identifierAddedUnnamed": "已为该账户添加登录标识「{{loginIdentifier}}」",
     "secretCreated": "账户{{account}}已创建服务密钥「{{label}}」",
@@ -601,7 +601,7 @@
       "emailViaLabel": "邮箱验证方式",
       "phoneLabel": "手机号",
       "phoneViaLabel": "手机号验证方式",
-      "passwordLabel": "口令",
+      "passwordLabel": "密码",
       "mfaLabel": "强制 MFA",
       "attributesLabel": "属性（JSON）",
       "attributesHelper": "一个字符串取值的 JSON 对象，或留空",
@@ -629,8 +629,8 @@
       "submit": "保存改动"
     },
     "password": {
-      "label": "临时口令",
-      "submit": "重置口令"
+      "label": "临时密码",
+      "submit": "重置密码"
     },
     "addIdentifier": {
       "kindLabel": "新增标识类型",

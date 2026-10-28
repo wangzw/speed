@@ -68,9 +68,9 @@
     "passkeyWaiting": "Waiting for your device…",
     "passkeyCancel": "Cancel",
     "passkeyRetry": "Try again",
-    "passkeyUnsupported": "This browser cannot carry out a passkey ceremony.",
+    "passkeyUnsupported": "This browser can't use a passkey. Try another way to sign in.",
     "passkeyCancelled": "No usable passkey was found, or the prompt was dismissed. Try again.",
-    "passkeyFailed": "The passkey ceremony did not complete.",
+    "passkeyFailed": "Passkey sign-in didn't complete. Try again.",
     "passkeyRefused": "The passkey on this device may have been removed or may no longer be valid, so it cannot be used to sign in. Use another sign-in method, or register a new passkey after signing in.",
     "factorKind": {
       "totp": "Authenticator app",
