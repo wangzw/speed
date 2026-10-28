@@ -31,6 +31,7 @@ import type { ConsoleImpersonationChange } from './internal/impersonation-change
 import type { ConsoleImpersonationStarting } from './internal/impersonation-starting.js'
 import type { ConsoleDescribeRole } from './internal/describe-role.js'
 import { ConsoleAccountHrefProvider } from './internal/account-href.js'
+import { ConsoleReturnPathProvider } from './internal/return-path.js'
 import { ConsoleDescribeRoleProvider } from './internal/describe-role.js'
 import { ConsoleFeatureProvider } from './internal/features.js'
 import { ConsoleImpersonationChangeProvider } from './internal/impersonation-change.js'
@@ -67,6 +68,13 @@ export interface ConsoleProviderProps {
    * two-step verification. Absent, the step-up dialog renders text only.
    */
   readonly accountHref?: string
+  /**
+   * The host's current callback-return path: the path a step-up flow's
+   * redirect round trip lands back on, sent as the flow's `return_to` so
+   * the page that started it reads a refusal's problem code. Absent, the
+   * deployment's default return target applies.
+   */
+  readonly returnPath?: string
   /**
    * The host's action after an impersonation start or end settles: it
    * evicts the cache taken under the old identity, re-reads the session
@@ -108,6 +116,7 @@ export function ConsoleProvider({
   session,
   invitationLink,
   accountHref,
+  returnPath,
   onImpersonationChange,
   onImpersonationStarting,
   describeRole,
@@ -119,21 +128,23 @@ export function ConsoleProvider({
       <ConsoleRouteTableProvider routes={routes}>
         <ConsoleSessionProvider session={session ?? null}>
           <ConsoleAccountHrefProvider accountHref={accountHref}>
-            <ConsoleInvitationLinkProvider invitationLink={invitationLink}>
-              <ConsoleImpersonationChangeProvider
-                onImpersonationChange={onImpersonationChange}
-              >
-                <ConsoleImpersonationStartingProvider
-                  onImpersonationStarting={onImpersonationStarting}
+            <ConsoleReturnPathProvider returnPath={returnPath}>
+              <ConsoleInvitationLinkProvider invitationLink={invitationLink}>
+                <ConsoleImpersonationChangeProvider
+                  onImpersonationChange={onImpersonationChange}
                 >
-                  <ConsoleDescribeRoleProvider describeRole={describeRole}>
-                    <ConsoleFeatureProvider hasFeature={hasFeature}>
-                      {children}
-                    </ConsoleFeatureProvider>
-                  </ConsoleDescribeRoleProvider>
-                </ConsoleImpersonationStartingProvider>
-              </ConsoleImpersonationChangeProvider>
-            </ConsoleInvitationLinkProvider>
+                  <ConsoleImpersonationStartingProvider
+                    onImpersonationStarting={onImpersonationStarting}
+                  >
+                    <ConsoleDescribeRoleProvider describeRole={describeRole}>
+                      <ConsoleFeatureProvider hasFeature={hasFeature}>
+                        {children}
+                      </ConsoleFeatureProvider>
+                    </ConsoleDescribeRoleProvider>
+                  </ConsoleImpersonationStartingProvider>
+                </ConsoleImpersonationChangeProvider>
+              </ConsoleInvitationLinkProvider>
+            </ConsoleReturnPathProvider>
           </ConsoleAccountHrefProvider>
         </ConsoleSessionProvider>
       </ConsoleRouteTableProvider>

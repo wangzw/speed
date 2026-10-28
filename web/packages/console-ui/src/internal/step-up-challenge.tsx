@@ -71,6 +71,7 @@ import type { AuthnFlowAnswer, AuthnStep } from '@speed/auth-core'
 import { humanGateNeedsProof, useStepUp } from '@speed/auth-core'
 import { HumanVerification } from '@speed/ui-kit'
 import { useConsoleAccountHref } from './account-href.js'
+import { useConsoleReturnPath } from './return-path.js'
 import { FlowStep } from './flow-step.js'
 import { InlineError } from './inline-error.js'
 import { ConsoleLink } from './navigation.js'
@@ -221,7 +222,14 @@ function StepUpFlow({
       onSuccess()
     }
   }, [onSuccess])
-  const { phase, step, seq, errorCode, human, answer } = useStepUp(session, true, elevated)
+  const returnPath = useConsoleReturnPath()
+  const { phase, step, seq, errorCode, human, answer } = useStepUp(
+    session,
+    true,
+    elevated,
+    undefined,
+    returnPath,
+  )
   // The second factor the operator chose. The verification step that
   // follows it (the code challenge) is answered under the `factor` step
   // and must re-name the same factor alongside the code -- a challenge

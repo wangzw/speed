@@ -34,6 +34,7 @@ import type {
 } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { ConsoleAccountHrefProvider } from './account-href.js'
+import { ConsoleReturnPathProvider } from './return-path.js'
 import { StepUpChallenge } from './step-up-challenge.js'
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
@@ -155,6 +156,41 @@ function refusingStartSession(
 }
 
 describe('StepUpChallenge', () => {
+  it('sends the host’s path as the flow’s return_to', async () => {
+    // A redirect method's round trip lands back on the console page that
+    // opened the dialog, so that page reads the refusal.
+    const starts: Array<Parameters<AuthSession['startAuthenticatedFlow']>[0]> =
+      []
+    const base = flowSession().session
+    const session: AuthSession = {
+      ...base,
+      startAuthenticatedFlow: (request) => {
+        starts.push(request)
+        return Promise.resolve<AuthnFlowState>({
+          seq: 1,
+          state: 'second',
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+        })
+      },
+    }
+    renderWithProviders(
+      <ConsoleReturnPathProvider returnPath="/console/accounts">
+        <StepUpChallenge
+          open
+          session={session}
+          onSuccess={vi.fn()}
+          onCancel={() => undefined}
+        />
+      </ConsoleReturnPathProvider>,
+    )
+
+    await waitFor(() => expect(starts).toHaveLength(1))
+    expect(starts[0]).toMatchObject({
+      purpose: 'step-up',
+      return_to: '/console/accounts',
+    })
+  })
+
   it('presents the human proof on an SMS second-factor answer', async () => {
     const fake = installFakeTurnstile()
     try {

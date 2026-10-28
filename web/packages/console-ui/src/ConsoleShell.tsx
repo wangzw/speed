@@ -182,6 +182,13 @@ export interface ConsoleShellProps extends AppShellPassthroughProps {
    */
   readonly accountHref?: string
   /**
+   * The host's current path, sent as the step-up flow's `return_to`: a
+   * redirect method's round trip lands back on the page that started it, so
+   * that page reads a refusal's problem code from the URL fragment. Absent,
+   * the deployment's default return target applies.
+   */
+  readonly returnPath?: string
+  /**
    * The assembled session, published to the routed pages so a
    * step-up-gated write can raise it. Absent, a page's step-up-gated
    * writes fire unguarded and a refused one renders its error code.
@@ -313,6 +320,7 @@ export function ConsoleShell({
   isSelected,
   invitationLink,
   accountHref,
+  returnPath,
   session,
   onImpersonationChange,
   onImpersonationStarting,
@@ -375,6 +383,7 @@ export function ConsoleShell({
         session={session}
         invitationLink={invitationLink}
         accountHref={accountHref}
+        returnPath={returnPath}
         onImpersonationChange={onImpersonationChange}
         onImpersonationStarting={onImpersonationStarting}
         describeRole={describeRole}
