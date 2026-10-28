@@ -116,6 +116,14 @@ const TARGET = { displayName: 'Demo Member' } as const
 /** The tenant the impersonation is confined to. */
 const TENANT = 'acme'
 
+/**
+ * The tenant the operator's own membership list settles: the platform
+ * administrator belongs to the system tenant and is deliberately not an acme
+ * member (the impersonation requirement is an operator outside the tenant).
+ * The current tenant settles from that list, not from the platform roster.
+ */
+const OPERATOR_TENANT = 'system'
+
 /** The phone the review fixture proves and binds the operator's SMS factor to. */
 const OPERATOR_PHONE = '+15551234567'
 
@@ -754,10 +762,13 @@ test('impersonation-for-support: the operator acts as a member and the record an
       page.getByRole('banner').getByTestId('user-menu-trigger'),
     ).toHaveAccessibleName(OPERATOR.displayName)
     await expect(consoleEntry(page)).toBeVisible({ timeout: 10_000 })
+    // The switcher returns over the tenant the operator's own membership
+    // list settles (the system tenant); the grant's tenant was never the
+    // operator's own.
     await expect(
       page
         .getByRole('banner')
-        .getByRole('button', { name: TENANT, exact: true }),
+        .getByRole('button', { name: OPERATOR_TENANT, exact: true }),
     ).toBeVisible({ timeout: 10_000 })
 
     // No re-login happened: the ended-session surface never appears.
