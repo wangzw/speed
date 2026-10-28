@@ -386,7 +386,7 @@
       },
       "verify": "Verify",
       "change": "Use a different value",
-      "added": "The sign-in identifier has been added."
+      "added": "The identifier has been added."
     }
   }
 }
