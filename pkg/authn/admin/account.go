@@ -35,9 +35,12 @@ func identifiersOf(identifiers []authn.Identifier) []AuthnAdminIdentifier {
 	out := make([]AuthnAdminIdentifier, 0, len(identifiers))
 	for _, i := range identifiers {
 		out = append(out, AuthnAdminIdentifier{
-			Kind:   string(i.Kind),
-			Value:  i.Value,
-			Proven: authn.Verification{Via: i.VerifiedVia}.Proves(),
+			Kind:           string(i.Kind),
+			Value:          i.Value,
+			Proven:         authn.Verification{Via: i.VerifiedVia}.Proves(),
+			SignIn:         i.SignIn,
+			Contact:        i.Contact,
+			DefaultContact: i.DefaultContact,
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {

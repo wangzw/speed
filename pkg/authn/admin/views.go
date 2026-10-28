@@ -34,9 +34,12 @@ type AuthnAdminAccount struct {
 type AuthnAdminIdentifier struct {
 	_ struct{} `description:"One login identifier bound to an account: its kind, its normalized value and whether its ownership was proved. It carries no identifier of its own, no verification instant and no named way of verification."`
 
-	Kind   string `json:"kind" required:"true" enum:"username,email,phone" description:"The identifier kind: username, email or phone."`
-	Value  string `json:"value" required:"true" description:"The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits."`
-	Proven bool   `json:"proven" required:"true" description:"True only when the identifier's ownership was proved: sms-code, email-code, invite or idp:<provider>. False for admin, import-unverified and self, which only record a fact an administrator, an import or the account's own holder asserted and are never grounds for automatic linking or an enterprise merge."`
+	Kind           string `json:"kind" required:"true" enum:"username,email,phone" description:"The identifier kind: username, email or phone."`
+	Value          string `json:"value" required:"true" description:"The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits."`
+	Proven         bool   `json:"proven" required:"true" description:"True only when the identifier's ownership was proved: sms-code, email-code, invite or idp:<provider>. False for admin, import-unverified and self, which only record a fact an administrator, an import or the account's own holder asserted and are never grounds for automatic linking or an enterprise merge."`
+	SignIn         bool   `json:"sign_in" required:"true" description:"True when the identifier is one the account signs in with. A username always is; an email or phone is only after it was proved and selected, and an identifier written under the old behaviour carries what that behaviour used."`
+	Contact        bool   `json:"contact" required:"true" description:"True when the identifier is a contact of the account. A username never is; an email or phone is one the account selected, and an email written under the old behaviour is one."`
+	DefaultContact bool   `json:"default_contact" required:"true" description:"True for the proved email address notifications to the account go to; at most one identifier of an account carries it."`
 }
 
 // AuthnAdminAccountEnvelope carries one account.

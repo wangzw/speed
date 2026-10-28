@@ -262,6 +262,14 @@
       "AuthnAdminIdentifier": {
         "description": "One login identifier bound to an account: its kind, its normalized value and whether its ownership was proved. It carries no identifier of its own, no verification instant and no named way of verification.",
         "properties": {
+          "contact": {
+            "description": "True when the identifier is a contact of the account. A username never is; an email or phone is one the account selected, and an email written under the old behaviour is one.",
+            "type": "boolean"
+          },
+          "default_contact": {
+            "description": "True for the proved email address notifications to the account go to; at most one identifier of an account carries it.",
+            "type": "boolean"
+          },
           "kind": {
             "description": "The identifier kind: username, email or phone.",
             "enum": [
@@ -275,6 +283,10 @@
             "description": "True only when the identifier's ownership was proved: sms-code, email-code, invite or idp:<provider>. False for admin, import-unverified and self, which only record a fact an administrator, an import or the account's own holder asserted and are never grounds for automatic linking or an enterprise merge.",
             "type": "boolean"
           },
+          "sign_in": {
+            "description": "True when the identifier is one the account signs in with. A username always is; an email or phone is only after it was proved and selected, and an identifier written under the old behaviour carries what that behaviour used.",
+            "type": "boolean"
+          },
           "value": {
             "description": "The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits.",
             "type": "string"
@@ -283,7 +295,10 @@
         "required": [
           "kind",
           "value",
-          "proven"
+          "proven",
+          "sign_in",
+          "contact",
+          "default_contact"
         ],
         "type": "object"
       },

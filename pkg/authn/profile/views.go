@@ -48,12 +48,15 @@ type AuthnProfileVerification struct {
 type AuthnProfileIdentifier struct {
 	_ struct{} `description:"One identifier bound to the account, with the way its ownership was established."`
 
-	ID          string `json:"id" required:"true" description:"The identifier's own identifier"`
-	Kind        string `json:"kind" required:"true" description:"The identifier kind: username, email or phone"`
-	Value       string `json:"value" required:"true" description:"The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits"`
-	VerifiedAt  string `json:"verified_at" required:"true" description:"RFC 3339 in UTC, the instant the identifier's ownership was established; always present, as no identifier is stored awaiting verification"`
-	VerifiedVia string `json:"verified_via" required:"true" description:"How the identifier's ownership was established: sms-code, email-code, invite, idp:<provider> (followed by the provider's identifier), admin, import-unverified or self. The first four prove ownership; admin, import-unverified and self only record a fact an administrator, an import or the account's own holder asserted"`
-	Proven      bool   `json:"proven" required:"true" description:"Whether the way of verification proves ownership: true for sms-code, email-code, invite and idp:<provider>, false for admin, import-unverified and self"`
+	ID             string `json:"id" required:"true" description:"The identifier's own identifier"`
+	Kind           string `json:"kind" required:"true" description:"The identifier kind: username, email or phone"`
+	Value          string `json:"value" required:"true" description:"The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits"`
+	VerifiedAt     string `json:"verified_at" required:"true" description:"RFC 3339 in UTC, the instant the identifier's ownership was established; always present, as no identifier is stored awaiting verification"`
+	VerifiedVia    string `json:"verified_via" required:"true" description:"How the identifier's ownership was established: sms-code, email-code, invite, idp:<provider> (followed by the provider's identifier), admin, import-unverified or self. The first four prove ownership; admin, import-unverified and self only record a fact an administrator, an import or the account's own holder asserted"`
+	Proven         bool   `json:"proven" required:"true" description:"Whether the way of verification proves ownership: true for sms-code, email-code, invite and idp:<provider>, false for admin, import-unverified and self"`
+	SignIn         bool   `json:"sign_in" required:"true" description:"Whether the identifier is one the account signs in with. A username always is; an email or phone is only after it was proved and selected, and an identifier written under the old behaviour carries what that behaviour used"`
+	Contact        bool   `json:"contact" required:"true" description:"Whether the identifier is a contact of the account. A username never is; an email or phone is one the account selected, and an email written under the old behaviour is one"`
+	DefaultContact bool   `json:"default_contact" required:"true" description:"Whether this proved email address is the one notifications to the account go to; at most one identifier of an account carries it"`
 }
 
 // AuthnProfileLink is one external binding of the caller's account. It has no
@@ -102,12 +105,15 @@ func profileViewOf(account authn.Account, identifiers []authn.Identifier, links 
 	}
 	for _, i := range identifiers {
 		view.Identifiers = append(view.Identifiers, AuthnProfileIdentifier{
-			ID:          i.ID,
-			Kind:        string(i.Kind),
-			Value:       i.Value,
-			VerifiedAt:  instant(i.VerifiedAt),
-			VerifiedVia: i.VerifiedVia,
-			Proven:      authn.Verification{Via: i.VerifiedVia}.Proves(),
+			ID:             i.ID,
+			Kind:           string(i.Kind),
+			Value:          i.Value,
+			VerifiedAt:     instant(i.VerifiedAt),
+			VerifiedVia:    i.VerifiedVia,
+			Proven:         authn.Verification{Via: i.VerifiedVia}.Proves(),
+			SignIn:         i.SignIn,
+			Contact:        i.Contact,
+			DefaultContact: i.DefaultContact,
 		})
 	}
 	for _, l := range links {

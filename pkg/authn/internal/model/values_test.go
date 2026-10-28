@@ -67,9 +67,12 @@ func fullExternal() External {
 func fullProof() Proof {
 	ext := fullExternal()
 	return Proof{
-		Account:    "acct",
-		Identifier: &Identifier{ID: "i", Kind: IdentifierPhone, Value: "+86", VerifiedAt: at, VerifiedVia: "sms-code"},
-		External:   &ext, Methods: []Method{MethodSMS}, UserVerified: true, IDPAsserted: true, Provider: "prov",
+		Account: "acct",
+		Identifier: &Identifier{
+			ID: "i", Kind: IdentifierPhone, Value: "+86", VerifiedAt: at, VerifiedVia: "sms-code",
+			SignIn: true, Contact: true, DefaultContact: true,
+		},
+		External: &ext, Methods: []Method{MethodSMS}, UserVerified: true, IDPAsserted: true, Provider: "prov",
 		Aliases: []ExternalLink{{Provider: "p", Subject: "s", Email: "e", EmailVerified: true}}, PasswordChanged: true,
 	}
 }

@@ -11,12 +11,15 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// wireIdentifier is one identifier as the account view publishes it: the three
+// wireIdentifier is one identifier as the account view publishes it: the six
 // fields the view declares and nothing else.
 type wireIdentifier struct {
-	Kind   string `json:"kind"`
-	Value  string `json:"value"`
-	Proven bool   `json:"proven"`
+	Kind           string `json:"kind"`
+	Value          string `json:"value"`
+	Proven         bool   `json:"proven"`
+	SignIn         bool   `json:"sign_in"`
+	Contact        bool   `json:"contact"`
+	DefaultContact bool   `json:"default_contact"`
 }
 
 // identifiersField reads the raw identifiers member of one account view, so a
@@ -108,12 +111,15 @@ var bothReads = []struct {
 func TestBothAccountReadsCarryTheLoginIdentifiers(t *testing.T) {
 	r := newRig(t)
 	r.accounts.putIdentifiers(userID,
-		authn.Identifier{Kind: authn.IdentifierEmail, Value: "alice@example.com", VerifiedVia: authn.VerifiedViaEmailCode},
-		authn.Identifier{Kind: authn.IdentifierUsername, Value: "alice", VerifiedVia: authn.VerifiedViaAdmin},
+		authn.Identifier{
+			Kind: authn.IdentifierEmail, Value: "alice@example.com", VerifiedVia: authn.VerifiedViaEmailCode,
+			SignIn: true, Contact: true, DefaultContact: true,
+		},
+		authn.Identifier{Kind: authn.IdentifierUsername, Value: "alice", VerifiedVia: authn.VerifiedViaAdmin, SignIn: true},
 	)
 	want := []wireIdentifier{
-		{Kind: "username", Value: "alice", Proven: false},
-		{Kind: "email", Value: "alice@example.com", Proven: true},
+		{Kind: "username", Value: "alice", Proven: false, SignIn: true},
+		{Kind: "email", Value: "alice@example.com", Proven: true, SignIn: true, Contact: true, DefaultContact: true},
 	}
 	for _, read := range bothReads {
 		t.Run(read.name, func(t *testing.T) {
@@ -125,10 +131,10 @@ func TestBothAccountReadsCarryTheLoginIdentifiers(t *testing.T) {
 	}
 }
 
-// TestTheIdentifierViewCarriesOnlyTheThreeFields holds the view's own shape: it
+// TestTheIdentifierViewCarriesOnlyTheSixFields holds the view's own shape: it
 // is built field by field, so no identifier of the row, verification instant or
 // named way reaches a client by being there.
-func TestTheIdentifierViewCarriesOnlyTheThreeFields(t *testing.T) {
+func TestTheIdentifierViewCarriesOnlyTheSixFields(t *testing.T) {
 	r := newRig(t)
 	r.accounts.putIdentifiers(userID,
 		authn.Identifier{ID: "id-1", Kind: authn.IdentifierEmail, Value: "alice@example.com", VerifiedVia: authn.VerifiedViaEmailCode},
@@ -144,14 +150,17 @@ func TestTheIdentifierViewCarriesOnlyTheThreeFields(t *testing.T) {
 	for k := range elements[0] {
 		got = append(got, k)
 	}
-	want := map[string]bool{"kind": true, "value": true, "proven": true}
+	want := map[string]bool{
+		"kind": true, "value": true, "proven": true,
+		"sign_in": true, "contact": true, "default_contact": true,
+	}
 	for _, k := range got {
 		if !want[k] {
-			t.Errorf("the identifier view carries %q, which is not one of its three fields", k)
+			t.Errorf("the identifier view carries %q, which is not one of its six fields", k)
 		}
 	}
 	if len(got) != len(want) {
-		t.Errorf("the identifier view carries %v, want the three fields kind, value and proven", got)
+		t.Errorf("the identifier view carries %v, want the six fields kind, value, proven, sign_in, contact and default_contact", got)
 	}
 }
 

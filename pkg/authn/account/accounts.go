@@ -156,11 +156,14 @@ func (p *product) ByExternal(ctx context.Context, provider, subject string) (aut
 // about what an identifier carries.
 func identifierOf(r identifierRow) authn.Identifier {
 	return authn.Identifier{
-		ID:          r.ID,
-		Kind:        authn.IdentifierKind(r.Kind),
-		Value:       r.Value,
-		VerifiedAt:  utc(r.VerifiedAt),
-		VerifiedVia: r.VerifiedVia,
+		ID:             r.ID,
+		Kind:           authn.IdentifierKind(r.Kind),
+		Value:          r.Value,
+		VerifiedAt:     utc(r.VerifiedAt),
+		VerifiedVia:    r.VerifiedVia,
+		SignIn:         r.SignIn,
+		Contact:        r.Contact,
+		DefaultContact: r.DefaultContact,
 	}
 }
 

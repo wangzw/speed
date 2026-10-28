@@ -309,6 +309,41 @@ func TestGetIdentifierProvenFollowsTheVerificationChannel(t *testing.T) {
 	}
 }
 
+// TestGetIdentifierCarriesTheTwoAxesAndTheDefaultContact holds that the profile
+// exposes the stored flags as they are, independently of how ownership was
+// established.
+func TestGetIdentifierCarriesTheTwoAxesAndTheDefaultContact(t *testing.T) {
+	r := newRig(t)
+	r.accounts.identifiers[meAccount] = []authn.Identifier{
+		{
+			ID: "id-email", Kind: authn.IdentifierEmail, Value: "me@example.com",
+			VerifiedAt: time.Now(), VerifiedVia: authn.VerifiedViaEmailCode,
+			SignIn: true, Contact: true, DefaultContact: true,
+		},
+		{
+			ID: "id-name", Kind: authn.IdentifierUsername, Value: "me",
+			VerifiedAt: time.Now(), VerifiedVia: authn.VerifiedViaAdmin,
+		},
+	}
+	rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, me()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	got := decodeProfile(t, rec)
+	if len(got.Identifiers) != 2 {
+		t.Fatalf("identifiers = %+v, want the two seeded", got.Identifiers)
+	}
+	email, name := got.Identifiers[0], got.Identifiers[1]
+	if !email.SignIn || !email.Contact || !email.DefaultContact {
+		t.Errorf("the email reads sign_in=%v contact=%v default_contact=%v, want all true",
+			email.SignIn, email.Contact, email.DefaultContact)
+	}
+	if name.SignIn || name.Contact || name.DefaultContact {
+		t.Errorf("the username reads sign_in=%v contact=%v default_contact=%v, want all false",
+			name.SignIn, name.Contact, name.DefaultContact)
+	}
+}
+
 // TestGetSignupStateReadFailureIs503 holds the read failure's direction: a
 // state that cannot be read is answered as unavailable and never as none.
 func TestGetSignupStateReadFailureIs503(t *testing.T) {

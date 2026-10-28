@@ -72,13 +72,16 @@ func (pendingContactRow) TableName() string { return tablePending }
 
 // identifierRow is one row of authn_identifiers.
 type identifierRow struct {
-	ID          string    `gorm:"column:id;primaryKey"`
-	AccountID   string    `gorm:"column:account_id"`
-	Kind        string    `gorm:"column:kind"`
-	Value       string    `gorm:"column:value"`
-	VerifiedAt  time.Time `gorm:"column:verified_at"`
-	VerifiedVia string    `gorm:"column:verified_via"`
-	CreatedAt   time.Time `gorm:"column:created_at;autoCreateTime:false"`
+	ID             string    `gorm:"column:id;primaryKey"`
+	AccountID      string    `gorm:"column:account_id"`
+	Kind           string    `gorm:"column:kind"`
+	Value          string    `gorm:"column:value"`
+	VerifiedAt     time.Time `gorm:"column:verified_at"`
+	VerifiedVia    string    `gorm:"column:verified_via"`
+	SignIn         bool      `gorm:"column:sign_in"`
+	Contact        bool      `gorm:"column:contact"`
+	DefaultContact bool      `gorm:"column:default_contact"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime:false"`
 }
 
 func (identifierRow) TableName() string { return tableIdentifiers }

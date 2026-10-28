@@ -4,6 +4,14 @@
       "AuthnProfileIdentifier": {
         "description": "One identifier bound to the account, with the way its ownership was established.",
         "properties": {
+          "contact": {
+            "description": "Whether the identifier is a contact of the account. A username never is; an email or phone is one the account selected, and an email written under the old behaviour is one",
+            "type": "boolean"
+          },
+          "default_contact": {
+            "description": "Whether this proved email address is the one notifications to the account go to; at most one identifier of an account carries it",
+            "type": "boolean"
+          },
           "id": {
             "description": "The identifier's own identifier",
             "type": "string"
@@ -14,6 +22,10 @@
           },
           "proven": {
             "description": "Whether the way of verification proves ownership: true for sms-code, email-code, invite and idp:<provider>, false for admin, import-unverified and self",
+            "type": "boolean"
+          },
+          "sign_in": {
+            "description": "Whether the identifier is one the account signs in with. A username always is; an email or phone is only after it was proved and selected, and an identifier written under the old behaviour carries what that behaviour used",
             "type": "boolean"
           },
           "value": {
@@ -35,7 +47,10 @@
           "value",
           "verified_at",
           "verified_via",
-          "proven"
+          "proven",
+          "sign_in",
+          "contact",
+          "default_contact"
         ],
         "type": "object"
       },
