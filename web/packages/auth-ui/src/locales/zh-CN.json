@@ -123,6 +123,8 @@
     "signedIn": "已登录。",
     "retrySignIn": "重新登录",
     "usernameTaken": "该用户名已被占用，请换一个。",
+    "usernameReserved": "该用户名是系统保留的名称，请换一个。",
+    "usernameInvalid": "该用户名不符合规则，请按提示修改。",
     "emailTaken": "该邮箱已被注册，请换一个。",
     "signupClosed": "本站未开放注册，请联系管理员获取账户。",
     "throttled": "注册尝试次数过多，请稍后再试。",

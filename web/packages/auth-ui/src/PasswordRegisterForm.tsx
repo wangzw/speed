@@ -18,12 +18,16 @@
  * printable ASCII, exactly one @ with a part on each side, at most 254
  * bytes -- so a malformed address is refused in the field rather than
  * answered with the generic bad-request. Everything else -- username
- * normalization, the password policy, a taken username or email address,
- * the pending contact -- is the server's; a refusal renders its own mapped
- * text and never restates the policy's numbers. A taken username is the
+ * normalization, the password policy, a taken email address, the pending
+ * contact -- is the server's; a refusal renders its own mapped text and
+ * never restates the policy's numbers. The username refusals are the
  * username field's error and a taken email address the email field's
  * (invalid, described by the message, focused), because the server refused
  * that one value; every other mapped refusal is one whole-attempt banner.
+ * The three username refusals -- taken, reserved, a shape the server
+ * cannot normalize -- each carry their own message under the field, and a
+ * bad request that is not one of them stays a banner: it may describe the
+ * password policy or the address.
  *
  * An account that was opened but whose auto-login was refused is not a
  * registration failure: the account exists, so the form must never
@@ -119,8 +123,12 @@ const REFUSAL_TEXT_KEYS: Readonly<Record<string, string>> = {
   'authn.unavailable': 'register.unavailable',
 }
 
-/** The taken-username refusal: the username field carries it. */
+/** The username refusals: the username field carries each with its own
+ * text -- a name another account holds, one the system keeps for itself,
+ * and one the server cannot normalize. */
 const USERNAME_TAKEN = 'authn.username_taken'
+const USERNAME_RESERVED = 'authn.username_reserved'
+const USERNAME_INVALID = 'authn.username_invalid'
 
 /** The taken-email refusal: the registration reserves the address, so an
  * address another account holds is the email field's error -- that one
@@ -254,10 +262,18 @@ export function PasswordRegisterForm({
       })
     } catch (error) {
       const code = errorCodeOf(error)
-      if (code === USERNAME_TAKEN) {
+      const usernameKey =
+        code === USERNAME_TAKEN
+          ? 'register.usernameTaken'
+          : code === USERNAME_RESERVED
+            ? 'register.usernameReserved'
+            : code === USERNAME_INVALID
+              ? 'register.usernameInvalid'
+              : null
+      if (usernameKey !== null) {
         form.setError('username', {
           type: 'server',
-          message: t('register.usernameTaken'),
+          message: t(usernameKey),
         })
         usernameInput.current?.focus()
         return

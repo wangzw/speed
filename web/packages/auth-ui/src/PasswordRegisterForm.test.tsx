@@ -2,7 +2,8 @@
  * PasswordRegisterForm behaviour: the form opens an account with one
  * `session.register` request and then signs in with the same credentials
  * through the ordinary password flow, the confirmation is compared in the
- * form and never travels, a taken username lands on the username field, a
+ * form and never travels, each username refusal (taken, reserved, malformed)
+ * lands on the username field with its own message, a
  * taken email address lands on the email field,
  * the mapped refusals render their register-section text while every other
  * code resolves through the shared error banner, an auto-login refusal
@@ -172,25 +173,36 @@ describe('PasswordRegisterForm', () => {
     expect(harness.calls).toHaveLength(0)
   })
 
-  it('attach a taken username to the username field and focus it', async () => {
-    const harness = makeHarness({
-      [REGISTER]: () => {
-        throw apiError(409, 'authn.username_taken')
-      },
-    })
-    renderWithProviders(<PasswordRegisterForm session={harness.session} />)
-    await fillAndSubmit()
+  it.each([
+    ['authn.username_taken', 409, zhCN.register.usernameTaken],
+    ['authn.username_reserved', 400, zhCN.register.usernameReserved],
+    ['authn.username_invalid', 400, zhCN.register.usernameInvalid],
+  ])(
+    'attach %s to the username field and focus it',
+    async (code, status, text) => {
+      const harness = makeHarness({
+        [REGISTER]: () => {
+          throw apiError(status, code)
+        },
+      })
+      renderWithProviders(<PasswordRegisterForm session={harness.session} />)
+      await fillAndSubmit()
 
-    const username = screen.getByLabelText(LABELS.username)
-    await waitFor(() => expect(username).toHaveAttribute('aria-invalid', 'true'))
-    const message = screen.getByText(zhCN.register.usernameTaken)
-    expect(message.id).not.toBe('')
-    expect(username.getAttribute('aria-describedby')).toContain(message.id)
-    expect(username).toHaveFocus()
-    // The refusal is the field's, not a whole-attempt banner.
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(harness.calls).toHaveLength(1)
-  })
+      const username = screen.getByLabelText(LABELS.username)
+      await waitFor(() =>
+        expect(username).toHaveAttribute('aria-invalid', 'true'),
+      )
+      const message = screen.getByText(text)
+      expect(message.id).not.toBe('')
+      expect(username.getAttribute('aria-describedby')).toContain(message.id)
+      expect(username).toHaveFocus()
+      // The filled value stays for correction.
+      expect(username).toHaveValue(USERNAME)
+      // The refusal is the field's, not a whole-attempt banner.
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(harness.calls).toHaveLength(1)
+    },
+  )
 
   it('attach a taken email to the email field and focus it', async () => {
     // The registration reserves the address, so another account's claim is
