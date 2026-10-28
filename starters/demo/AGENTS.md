@@ -312,7 +312,8 @@ reads none of it.
   does not read the sender's permissions in the target tenant, so the journey is
   still reachable.
 
-The walkthrough: `seed`, then `serve`, then sign in as `operator@demo.test` with
+The walkthrough: `seed`, then `serve`, then sign in as `operator` (the username
+the seed writes; the proved address is not selected as a login way) with
 `operator-dev-secret` and the current code of the fixture's TOTP seed
 (`JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP`, issuer `demo`, SHA-1, six digits, a
 thirty-second period; import it into an authenticator, or run the
@@ -367,7 +368,11 @@ in; replace them all before a deployment serves real traffic:
   because an email address the host writes is an administrator's assertion
   rather than the holder's proof, and the baseline ships no mail channel. A
   stack that can deliver a code (the review build, the Fly image) may name an
-  email address instead.
+  email address instead, and such an entry names a `username` beside it: every
+  account is created with a username, and the username is the name the password
+  login accepts. The address is written unproved, so it is neither a login way
+  nor a default contact until its holder proves it and selects it on the
+  account page.
 
   **The review build proves its operator's address during the seed; the Fly
   image's operator starts unverified.** The review build's configuration
@@ -385,7 +390,11 @@ in; replace them all before a deployment serves real traffic:
   is the expected state of an administrator-provisioned email, not a fault: the
   rule treats a provisioned address, an imported one and a self-registered one
   alike. A deployment therefore has to point `DEMO_OPERATOR_EMAIL` at an address
-  that can receive mail, since no other path proves it.
+  that can receive mail, since no other path proves it, and set
+  `DEMO_OPERATOR_USERNAME` to the name the operator signs in with. Proving the
+  address does not make it a login way: the operator signs in with its username
+  in both builds, and the review build's proved address is likewise not a login
+  way until its holder selects it.
 - **The database encryption key** (`db.<engine>.encryption-key`) seals the
   columns a module encrypts at rest. Replace the `dev-only-change-me-…` value.
 - **The lowered factor age** (`seed.settings`:
@@ -608,6 +617,7 @@ volume's `source` together.
 flyctl apps create vislake-speed-demo
 flyctl volumes create speed_demo_data --app vislake-speed-demo --region sin --size 1
 flyctl secrets set --app vislake-speed-demo \
+  DEMO_OPERATOR_USERNAME=operator \
   DEMO_OPERATOR_EMAIL=operator@example.com \
   DEMO_OPERATOR_PASSWORD='...' \
   DEMO_DB_ENCRYPTION_KEY='...' \
@@ -626,9 +636,12 @@ gh secret set FLY_API_TOKEN --body "$(flyctl tokens create deploy --app vislake-
 ```
 
 The deployment carries no development credential. The entrypoint refuses to
-start without the three secrets, so the DEV values the sample configurations
-ship cannot reach a Machine. `DEMO_OPERATOR_PASSWORD` is held to the account
-store's password policy: the declared minimum is the domain's floor of eight
+start without the operator's username, address and password and the database
+encryption key, so the DEV values the sample configurations ship cannot reach a
+Machine. `DEMO_OPERATOR_USERNAME` is the name the password login accepts, held
+to the account module's username rules: a reserved name or a value outside the
+allowed character set fails the seed. `DEMO_OPERATOR_PASSWORD` is held to the
+account store's password policy: the declared minimum is the domain's floor of eight
 characters, so the operator credential only has to meet that. A deployment
 that raises `authn.account.password-min-length` through `seed.settings` must
 also raise the credential; the seed writes the setting before it creates the
@@ -668,10 +681,11 @@ email alone; a deployment that adds the SMS modules and declares the optional
 **Google and GitHub sign-in are on the same deployment.** Each application's
 identifier and secret come from its own Fly secret; the entrypoint requires all
 four, so a deployment that leaves one out refuses to start rather than serving a
-method with no credential. A first social login opens an account, and an address
-the provider reports as verified is written as an email identifier. Both
-providers hold a redirect URI on the deployment, and it is derived from the
-origin rather than configured:
+method with no credential. A first social login opens an account that carries
+only the provider's display name: the address the provider reports is not
+written as an identifier, a login way or a contact. Both providers hold a
+redirect URI on the deployment, and it is derived from the origin rather than
+configured:
 
 ```
 https://<app>.fly.dev/api/v1/auth/callback/google
@@ -698,8 +712,9 @@ other deployments.
 
 **What a start does.** `deploy/entrypoint.sh` renders
 `deploy/fly.yaml.tmpl` into `/data/config.yaml`, replacing the public origin,
-its domain and the operator credential; it takes ownership of the volume and
-drops to an unprivileged user; it runs `sqlite seed` and then hands the process
+its domain and the operator's username, address and password; it takes
+ownership of the volume and drops to an unprivileged user; it runs `sqlite
+seed` and then hands the process
 to `sqlite serve`. Seeding on every start is safe by the command's own contract:
 it writes only what is absent, so a restart neither duplicates nor overwrites an
 operator's change. `serve` carries the platform baseline's background modules,

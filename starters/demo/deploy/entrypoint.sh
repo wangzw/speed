@@ -2,12 +2,12 @@
 # The container entrypoint: render the deployment configuration, seed the
 # database, hand the process to the server.
 #
-# Rendering happens here rather than at build time because two values are not
+# Rendering happens here rather than at build time because two things are not
 # known until the Machine exists: the origin the app is reached at (derived
 # from FLY_APP_NAME, or given by DEMO_PUBLIC_URL for a custom domain) and the
-# operator credential (a secret). The rendered file lands on the volume, so a
-# restart rewrites it from the current values instead of leaving a stale copy
-# in an image layer.
+# operator's username, address and password (secrets). The rendered file lands
+# on the volume, so a restart rewrites it from the current values instead of
+# leaving a stale copy in an image layer.
 #
 # Seeding runs on every start. It is idempotent by contract: an account,
 # tenant, role or setting already present is left as it stands, so a restart
@@ -85,10 +85,12 @@ esac
 public_domain=${public_host%%:*}
 [ -n "$public_domain" ] || die "DEMO_PUBLIC_URL carries no host"
 
+require DEMO_OPERATOR_USERNAME "${DEMO_OPERATOR_USERNAME:-}"
 require DEMO_OPERATOR_EMAIL "${DEMO_OPERATOR_EMAIL:-}"
 require DEMO_OPERATOR_PASSWORD "${DEMO_OPERATOR_PASSWORD:-}"
 require DEMO_DB_ENCRYPTION_KEY "${DEMO_DB_ENCRYPTION_KEY:-}"
 
+check_scalar DEMO_OPERATOR_USERNAME "$DEMO_OPERATOR_USERNAME"
 check_scalar DEMO_OPERATOR_EMAIL "$DEMO_OPERATOR_EMAIL"
 check_scalar DEMO_OPERATOR_PASSWORD "$DEMO_OPERATOR_PASSWORD"
 check_scalar DEMO_DB_ENCRYPTION_KEY "$DEMO_DB_ENCRYPTION_KEY"
@@ -161,6 +163,7 @@ mkdir -p /data/var /data/objects
 # replacement means the matched text, and an operator password may contain it.
 awk -v origin="$public_origin" \
     -v domain="$public_domain" \
+    -v username="$DEMO_OPERATOR_USERNAME" \
     -v email="$DEMO_OPERATOR_EMAIL" \
     -v password="$DEMO_OPERATOR_PASSWORD" \
     -v key="$DEMO_DB_ENCRYPTION_KEY" \
@@ -189,6 +192,7 @@ awk -v origin="$public_origin" \
         line = $0
         line = replace(line, "__PUBLIC_ORIGIN__", origin)
         line = replace(line, "__PUBLIC_DOMAIN__", domain)
+        line = replace(line, "__OPERATOR_USERNAME__", username)
         line = replace(line, "__OPERATOR_EMAIL__", email)
         line = replace(line, "__OPERATOR_PASSWORD__", password)
         line = replace(line, "__ENCRYPTION_KEY__", key)
@@ -218,7 +222,7 @@ chmod 0600 "$config"
 # These are template inputs, not configuration items: the program reports any
 # variable under its prefix that no item reads, and each of them would earn a
 # diagnostic on every start.
-unset DEMO_OPERATOR_EMAIL DEMO_OPERATOR_PASSWORD DEMO_DB_ENCRYPTION_KEY DEMO_PUBLIC_URL \
+unset DEMO_OPERATOR_USERNAME DEMO_OPERATOR_EMAIL DEMO_OPERATOR_PASSWORD DEMO_DB_ENCRYPTION_KEY DEMO_PUBLIC_URL \
     DEMO_SMTP_HOST DEMO_SMTP_PORT DEMO_SMTP_TLS DEMO_SMTP_USERNAME DEMO_SMTP_PASSWORD DEMO_SMTP_FROM \
     DEMO_GOOGLE_CLIENT_ID DEMO_GOOGLE_CLIENT_SECRET DEMO_GITHUB_CLIENT_ID DEMO_GITHUB_CLIENT_SECRET \
     DEMO_HUMANVERIFY_MODE DEMO_TURNSTILE_SITE_KEY DEMO_TURNSTILE_SECRET_KEY

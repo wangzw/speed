@@ -1455,7 +1455,7 @@ func TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot(t *testing.T) {
 			created.status, created.body)
 	}
 
-	gated := signIn(t, base, "unproved@demo.test", "unproved-password")
+	gated := signIn(t, base, "unproved", "unproved-password")
 	refused := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodPost,
 		base+"/api/v1/system/auth/accounts", map[string]any{
 			"kind": "user", "username": "another",
@@ -1815,6 +1815,7 @@ func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
 	// beside it.
 	created := send(t, client, http.MethodPost, base+"/api/v1/system/auth/accounts", map[string]any{
 		"kind":               "user",
+		"username":           "sample-admin-write",
 		"email":              "sample-admin-write@demo.test",
 		"email_verified_via": "admin",
 		"display_name":       "Sample Admin Write",
@@ -1978,6 +1979,7 @@ func renderDeployTemplate(t *testing.T) string {
 	for placeholder, value := range map[string]string{
 		"__PUBLIC_ORIGIN__":        "https://demo.example.test",
 		"__PUBLIC_DOMAIN__":        "demo.example.test",
+		"__OPERATOR_USERNAME__":    "deploy-operator",
 		"__OPERATOR_EMAIL__":       "operator@demo.example.test",
 		"__OPERATOR_PASSWORD__":    "operator-test-secret",
 		"__ENCRYPTION_KEY__":       "test-only-encryption-key-0123456789",
@@ -2032,6 +2034,43 @@ func TestTheFlyTemplateTrustsTheFlyProxy(t *testing.T) {
 	if want := []string{"Fly-Client-IP"}; !slices.Equal(carrier.RemoteIPHeaders, want) {
 		t.Errorf("the template's http.remote-ip-headers resolved to %v, want %v",
 			carrier.RemoteIPHeaders, want)
+	}
+}
+
+// deploySeedCarrier is the account entry the deployment template's seed item
+// carries: the login name the operator signs in with, and the address written
+// beside it.
+type deploySeedCarrier struct {
+	Accounts []struct {
+		Identifier string `config:"identifier"`
+		Username   string `config:"username"`
+	} `config:"accounts"`
+}
+
+// TestTheDeployTemplateSeedsTheOperatorUsername holds the template to the seed
+// entry the entrypoint renders. The address is the identifier the account is
+// looked up by, and the username is the login name it is created with: a
+// placeholder left in place would seed a username the login surface cannot
+// find. The case renders the template the way deploy/entrypoint.sh does and
+// reads the item back, so the placeholder and its input cannot drift apart.
+func TestTheDeployTemplateSeedsTheOperatorUsername(t *testing.T) {
+	rendered := renderDeployTemplate(t)
+	// The default binary carries no mail module and no social login method, so
+	// the deployment-only sections would be unknown keys to it.
+	if len(deployModules) == 0 {
+		rendered = strings.Replace(rendered, yamlBlock(rendered, "mail:"), "", 1)
+		rendered = strings.Replace(rendered, yamlBlock(rendered, "login:"), "", 1)
+	}
+	locator := writeConfigFile(t, rendered)
+	var got deploySeedCarrier
+	readEffective(t, "deploy/fly.yaml.tmpl", locator, seedNamespace, &got)
+	if len(got.Accounts) != 1 {
+		t.Fatalf("the template seeds %d accounts, want the operator alone", len(got.Accounts))
+	}
+	account := got.Accounts[0]
+	if account.Identifier != "operator@demo.example.test" || account.Username != "deploy-operator" {
+		t.Errorf("the seeded account reads identifier %q and username %q, want the operator's address "+
+			"and the rendered username", account.Identifier, account.Username)
 	}
 }
 

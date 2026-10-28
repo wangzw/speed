@@ -655,15 +655,18 @@ export async function writeReviewConfig(
 /**
  * The operator the deployment's seed writes.
  *
- * The deploy template seeds this account from the rendered operator secret.
- * The fixture renders the same credential so the browser can sign in as the
- * account the seed wrote; it is a review value, not a credential that reaches
- * a provider. Its identifier is an email address, so the account holds an
- * email login name whose address the seed does not prove -- which is what the
- * deploy journey's refusal step needs.
+ * The deploy template seeds this account from the rendered operator secrets.
+ * The fixture renders the same values so the browser can sign in as the
+ * account the seed wrote; they are review values, not credentials that reach
+ * a provider. The entry names an address and a username: the seed writes the
+ * address as an administrator's assertion it does not prove, and the username
+ * as the login name. The browser signs in with the username, because the
+ * unproved address is not a login way; the unproved address is what the deploy
+ * journey's refusal step needs.
  */
 export const deployOperator = {
   identifier: 'operator@demo.test',
+  username: 'operator',
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
 } as const
@@ -677,6 +680,7 @@ export const deployOperator = {
  */
 const deployValues = {
   publicDomain: 'localhost',
+  operatorUsername: deployOperator.username,
   operatorEmail: deployOperator.identifier,
   operatorPassword: deployOperator.password,
   encryptionKey: 'dev-only-change-me-0123456789abcdef',
@@ -775,9 +779,11 @@ export async function writeDeployConfig(
     // The public domain appears twice: the WebAuthn relying party id and the
     // hostname the human-verification widget must have run on.
     ['__PUBLIC_DOMAIN__', deployValues.publicDomain, 2],
-    // The operator's address is the administrator the template names for the
-    // seeded tenant and the entry's login name; the entry's username is fixed.
+    // The operator's address is the account's identifier and the administrator
+    // the template names for the seeded tenant.
     ['__OPERATOR_EMAIL__', deployValues.operatorEmail, 2],
+    // The username is the name the password login accepts.
+    ['__OPERATOR_USERNAME__', deployValues.operatorUsername, 1],
     ['__OPERATOR_PASSWORD__', deployValues.operatorPassword, 1],
     ['__ENCRYPTION_KEY__', deployValues.encryptionKey, 1],
     ['__SMTP_HOST__', deployValues.smtpHost, 1],

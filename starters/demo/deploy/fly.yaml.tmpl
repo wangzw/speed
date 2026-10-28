@@ -127,14 +127,16 @@ objectstore:
     root: "./objects"
 
 # The deployment's first account and the tenant it administers. Every account is
-# created with a username, so an entry whose login name is an address names one
-# too. The seed command is idempotent: a second run leaves an existing account,
-# tenant, role, grant or binding as it stands, so the entrypoint can run it on
-# every start.
+# created with a username, so an entry whose identifier is an address names one
+# too: the username is the name the password login accepts, while the address is
+# written unproved and is neither a login way nor a default contact until its
+# holder proves and selects it. The seed command is idempotent: a second run
+# leaves an existing account, tenant, role, grant or binding as it stands, so the
+# entrypoint can run it on every start.
 seed:
   accounts:
     - identifier: "__OPERATOR_EMAIL__"
-      username: operator
+      username: "__OPERATOR_USERNAME__"
       password: "__OPERATOR_PASSWORD__"
       display-name: Demo Operator
       platform-admin: true
@@ -147,10 +149,12 @@ seed:
     # is usable immediately and proves its email address afterwards.
     - key: "authn.account.password-signup"
       value: "open"
-    # A first social login opens an account too. The provider has proved the
-    # identity, and an address it reports as verified is written as an email
-    # identifier; with this switch closed, only an account that already holds
-    # the binding could sign in with Google or GitHub.
+    # A first social login opens an account too. The account carries only the
+    # provider's display name: the address the provider reports is not written,
+    # and an address that matches one an account already holds answers
+    # link-required instead of entering or opening an account. With this switch
+    # closed, only an account that already holds the binding could sign in with
+    # Google or GitHub.
     - key: "authn.account.signup"
       value: "open"
     # The anonymous password reset is open, through the email channel this

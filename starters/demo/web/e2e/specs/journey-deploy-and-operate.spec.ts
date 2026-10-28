@@ -19,7 +19,7 @@
  *    browser behaviour is replaced by it.
  *  - Browser side: one sign-in, driven with clicks and keys only. An anonymous
  *    viewer opens the protected account path and meets the sign-in surface; the
- *    seeded operator signs in with the email and password the seed wrote and
+ *    seeded operator signs in with the username and password the seed wrote and
  *    the same path resumes with its content. The header console entry and the
  *    home console card appear; the account page shows the profile, the sign-in
  *    identifier and the standing, non-dismissible email notice; the console
@@ -72,9 +72,10 @@
  *    started.
  *  - REQ-deployment-006 is claimed for the first-run generation and the
  *    owner-only permission; the token-survives-restart half is not driven.
- *  - REQ-deployment-007 is claimed for a plaintext-password account seeded by
- *    an email address: the seed writes it and the password login accepts it.
- *    The hash-only credential and the username (no `@`) form are not driven.
+ *  - REQ-deployment-007 is claimed for a plaintext-password account whose seed
+ *    entry names an email address and a username: the seed writes both, and the
+ *    password login accepts the username while the address remains an unproved
+ *    identifier. The hash-only credential form is not driven.
  *  - REQ-deployment-008 is claimed for the one active tenant the seed registers:
  *    the overview's roster-derived total and active counts report it.
  *  - REQ-platform-admin-001 is claimed for the operator's side: the console
@@ -377,7 +378,7 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
       name: copy('authUi', 'passwordSignIn.identifierLabel'),
       exact: true,
     })
-    await identifier.fill(OPERATOR.identifier)
+    await identifier.fill(OPERATOR.username)
     await page
       .getByRole('textbox', {
         name: copy('authUi', 'passwordSignIn.passwordLabel'),
