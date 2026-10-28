@@ -910,6 +910,26 @@ func (r *routes) passwordResetVerify(ctx context.Context, in passwordResetVerify
 		c.unauthorized(mount.CodeLoginFailed)
 		return c.result()
 	}
+	if rec.State == resetStateVerified {
+		// The code that proved the record still answers success: a reply lost on
+		// the way back must not turn a verified reset into an invalid flow. The
+		// comparison is against the digest the successful verification kept, so
+		// the code capability is not asked a second time.
+		if in.Code == "" || len(in.Code) > maxResetCodeLength {
+			c.fail(mount.CodeBadRequest)
+			return c.result()
+		}
+		if !resetDigestMatches(rec.CodeDigest, resetCodeDigest(token, in.Code)) {
+			r.meters.resetOperation(c.ctx, resetOpVerify, rec.Channel, outcomeFailed)
+			c.unauthorized(mount.CodeLoginFailed)
+			return c.result()
+		}
+		ticketTTL := r.settings.passwordResetTicketTTL()
+		r.setResetCookie(c, token, resetSeconds(ticketTTL))
+		r.meters.resetOperation(c.ctx, resetOpVerify, rec.Channel, resetVerified)
+		resetAnswer(c, http.StatusOK, resetStateVerified, resetSeconds(ticketTTL), 0)
+		return c.result()
+	}
 	if rec.State != resetStateSent {
 		c.unauthorized(mount.CodeFlowInvalid)
 		return c.result()
@@ -954,6 +974,10 @@ func (r *routes) passwordResetVerify(ctx context.Context, in passwordResetVerify
 	if matched {
 		rec.State = resetStateVerified
 		rec.Attempts = 0
+		// The digest is what lets the same code answer success again. The email
+		// record has had one since the send; the SMS record kept only the
+		// challenge, which the verification just spent.
+		rec.CodeDigest = resetCodeDigest(token, in.Code)
 		if _, swapped, err := r.swapResetRecord(c.ctx, token, raw, rec); err != nil || !swapped {
 			if err != nil {
 				r.meters.resetOperation(c.ctx, resetOpVerify, rec.Channel, outcomeUnavailable)

@@ -274,7 +274,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `POST B/password-reset` | 202 `{state:"sent"}` | 400 `bad-request`（体或标识形状不合法）；403 `human-verification-required`；403 `password-reset-closed`（开关关闭，或 `disabled-methods` 含 `sms` 且请求短信渠道）；429 `throttled`（同一 cookie 的重发间隔或登录的 `ip-limit`）；503 `unavailable`（审计缺席、渠道未装配或依赖不可用）。合格与不合格目标在这些失败之外给出同一个 202；发送预算超限抑制并仍答 202 |
 | `GET B/password-reset/current` | 200 `{state:"sent"}` 或 `{state:"verified"}` | 401 `flow-invalid`（无绑定、绑定不符、记录过期、`processing`、`failed`、并发败者）；403 `password-reset-closed`（开关关闭或该渠道被关闭）；503 `unavailable` |
 | `DELETE B/password-reset/current` | 204（没有绑定、没有记录或开关关闭同样 204） | 503 `unavailable` |
-| `POST B/password-reset/verify` | 200 `{state:"verified"}` | 401 `login-failed`（错码、码过期、已用、抑制、尝试用尽）；401 `flow-invalid`（无绑定、绑定不符、记录过期、状态不符、并发败者）；403 `password-reset-closed`（开关关闭或该渠道被关闭）；503 `unavailable` |
+| `POST B/password-reset/verify` | 200 `{state:"verified"}`；已 `verified` 的记录收到同一个码时按成功再答一次 | 401 `login-failed`（错码、码过期、已用、抑制、尝试用尽、已 `verified` 的记录收到别的码）；401 `flow-invalid`（无绑定、绑定不符、记录过期、`processing` 等不符状态、并发败者）；403 `password-reset-closed`（开关关闭或该渠道被关闭）；503 `unavailable` |
 | `POST B/password-reset/complete` | 204 | 400 `bad-request`（口令策略）；401 `flow-invalid`（不在 `verified`、记录过期、并发败者）；403 `password-reset-unavailable`（账户已停用、已删除、失去口令或标识不再由同一证明渠道证明）；403 `password-reset-closed`（开关关闭或该渠道被关闭）；503 `unavailable`（审计、db、kv 或口令派生不可用） |
 
 ### 依赖不可用时每条路径的方向

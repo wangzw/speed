@@ -455,6 +455,19 @@ func TestResetSMSVerifiesThroughTheCodeCapability(t *testing.T) {
 	if r.sms.verifyCount() != 1 {
 		t.Errorf("%d verifications, want one", r.sms.verifyCount())
 	}
+
+	// The challenge the code capability verified is spent; the code kept in the
+	// record is what answers the same submission again.
+	if got := r.verify(cookie, "123456"); got.Code != http.StatusOK {
+		t.Fatalf("a repeated SMS verify answered %d: %s, want the same success", got.Code, got.Body.String())
+	}
+	if r.sms.verifyCount() != 1 {
+		t.Errorf("%d verifications after a repeated submit, want no second call", r.sms.verifyCount())
+	}
+	if got := r.verify(cookie, "000000"); got.Code != http.StatusUnauthorized ||
+		resetProblemCode(t, got) != "login-failed" {
+		t.Errorf("a different code on a verified SMS record answered %d %q, want 401 login-failed", got.Code, resetProblemCode(t, got))
+	}
 }
 
 // TestResetSuppressedRecordRefusesEveryCode holds the decoy path: an ineligible
@@ -525,21 +538,36 @@ func TestResetRecordBelongsToItsCookie(t *testing.T) {
 	}
 }
 
-// TestResetRepeatedVerifyAndCompleteApplyOnce holds the state machine: a second
-// verify is flow-invalid, a second complete is flow-invalid, and the password is
-// written exactly once.
-func TestResetRepeatedVerifyAndCompleteApplyOnce(t *testing.T) {
+// TestResetRepeatedVerifyAnswersSuccessAndCompletesOnce holds the state machine:
+// a repeated verify with the code that proved the record answers the same
+// success, a different code is refused without demoting the record, a second
+// complete is flow-invalid, and the password is written exactly once.
+func TestResetRepeatedVerifyAnswersSuccessAndCompletesOnce(t *testing.T) {
 	r := newResetRig(t)
 	r.seedResetAccount("acct-a", authn.IdentifierEmail, "a@example.com", authn.VerifiedViaEmailCode)
 
 	cookie, code := r.emailStart(t, "a@example.com")
-	if got := r.verify(cookie, code); got.Code != http.StatusOK {
-		t.Fatalf("verify answered %d: %s", got.Code, got.Body.String())
+	first := r.verify(cookie, code)
+	if first.Code != http.StatusOK {
+		t.Fatalf("verify answered %d: %s", first.Code, first.Body.String())
 	}
-	if got := r.verify(cookie, code); got.Code != http.StatusUnauthorized ||
-		resetProblemCode(t, got) != "flow-invalid" {
-		t.Errorf("a repeated verify answered %d %q, want 401 flow-invalid", got.Code, resetProblemCode(t, got))
+	again := r.verify(cookie, code)
+	if again.Code != http.StatusOK {
+		t.Fatalf("a repeated verify answered %d: %s, want the same success", again.Code, again.Body.String())
 	}
+	if again.Body.String() != first.Body.String() {
+		t.Errorf("a repeated verify answered %q, want the same body %q", again.Body.String(), first.Body.String())
+	}
+
+	other := "000000"
+	if code == other {
+		other = "111111"
+	}
+	if got := r.verify(cookie, other); got.Code != http.StatusUnauthorized ||
+		resetProblemCode(t, got) != "login-failed" {
+		t.Errorf("a different code on a verified record answered %d %q, want 401 login-failed", got.Code, resetProblemCode(t, got))
+	}
+
 	if got := r.complete(cookie, "first password"); got.Code != http.StatusNoContent {
 		t.Fatalf("complete answered %d: %s", got.Code, got.Body.String())
 	}
