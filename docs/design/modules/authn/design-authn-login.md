@@ -210,7 +210,7 @@ type Proof struct {
 
 完成时，`delivery=session` 设 cookie，体为 `{"state":"authenticated","session":{"id","expires_at"}}`；`delivery=token` 体为 `{"state":"authenticated","token_type":"Bearer","access_token","expires_in","refresh_token"}`。
 
-待建号的应答是 `{"state":"signup","next":{"kind":"challenge","fields":[{"name":"username","kind":"text","required":true}]}}`；客户端以 `POST B/flows/answer {seq, step:"answer", input:{"username":"..."}}` 提交。用户名格式不合答 400 `bad-request`，保留字答 400 `username-reserved`，已被占用答 409 `username-taken`，这些拒绝都不建账户，流程停在待建号可重试；三种拒绝的问题码不同，界面分别说明。
+待建号的应答是 `{"state":"signup","next":{"kind":"challenge","fields":[{"name":"username","kind":"text","required":true}]}}`；客户端以 `POST B/flows/answer {seq, step:"answer", input:{"username":"..."}}` 提交。用户名形状不合答 400 `username-invalid`，保留字答 400 `username-reserved`，已被占用答 409 `username-taken`，这些拒绝都不建账户，流程停在待建号可重试；三种拒绝的问题码不同，界面分别说明。
 
 ### 匿名注册
 
