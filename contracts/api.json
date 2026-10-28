@@ -626,7 +626,7 @@
                 }
               }
             },
-            "description": "The body could not be read, or a value is outside its domain"
+            "description": "The username a pending first login would open the account with is one the system keeps for itself"
           },
           "401": {
             "content": {
@@ -664,7 +664,7 @@
                 }
               }
             },
-            "description": "The request conflicts with the account's state: a completed link names an external identity another account already holds. A step that does not match the flow's state is a 401 flow-invalid, not a 409."
+            "description": "The request conflicts with the account's state: a completed link names an external identity another account already holds, or the username a pending first login would open the account with is already taken (username-taken). A step that does not match the flow's state is a 401 flow-invalid, not a 409."
           },
           "413": {
             "content": {
@@ -1141,7 +1141,7 @@
                 }
               }
             },
-            "description": "The body could not be read, the kind or the value is outside its domain, or the proof is over its limit"
+            "description": "A username is one the system keeps for itself"
           },
           "401": {
             "content": {
@@ -1995,7 +1995,7 @@
                 }
               }
             },
-            "description": "The body or an argument is malformed"
+            "description": "The username is one the system keeps for itself"
           },
           "404": {
             "description": "No such invitation"
@@ -3426,7 +3426,7 @@
                     "type": "string"
                   },
                   "username": {
-                    "description": "The login name, required. A name already taken is a 409 username-taken; a name that cannot be normalized is a 400 bad-request.",
+                    "description": "The login name, required. A name already taken is a 409 username-taken; a reserved name is a 400 username-reserved; a name that cannot be normalized is a 400 bad-request.",
                     "type": "string"
                   }
                 },
@@ -5376,7 +5376,7 @@
                 }
               }
             },
-            "description": "The body could not be read, or an argument is invalid"
+            "description": "The username is one the system keeps for itself"
           },
           "401": {
             "content": {
@@ -5862,7 +5862,7 @@
                 }
               }
             },
-            "description": "The body could not be read, or the identifier is malformed"
+            "description": "The username is one the system keeps for itself"
           },
           "401": {
             "content": {

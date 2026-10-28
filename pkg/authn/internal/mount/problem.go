@@ -23,6 +23,7 @@ const typePrefix = "urn:speed:authn:"
 // so that a handler names the code and cannot pair it with another status.
 const (
 	CodeBadRequest                     = "bad-request"                      // 400
+	CodeUsernameReserved               = "username-reserved"                // 400
 	CodeUnsupportedRegion              = "unsupported-region"               // 400
 	CodeLoginFailed                    = "login-failed"                     // 401
 	CodeFlowInvalid                    = "flow-invalid"                     // 401
@@ -50,6 +51,7 @@ const (
 
 var statusOf = map[string]int{
 	CodeBadRequest:                     http.StatusBadRequest,
+	CodeUsernameReserved:               http.StatusBadRequest,
 	CodeUnsupportedRegion:              http.StatusBadRequest,
 	CodeLoginFailed:                    http.StatusUnauthorized,
 	CodeFlowInvalid:                    http.StatusUnauthorized,

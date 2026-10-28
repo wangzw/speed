@@ -2133,7 +2133,7 @@ export type AuthnLoginRegisterBody = {
   password?: string;
   /** The account's time-zone preference, optional, written to the i18n.tz attribute; a value outside the accepted time-zone domain is a 400 bad-request. */
   time_zone?: string;
-  /** The login name, required. A name already taken is a 409 username-taken; a name that cannot be normalized is a 400 bad-request. */
+  /** The login name, required. A name already taken is a 409 username-taken; a reserved name is a 400 username-reserved; a name that cannot be normalized is a 400 bad-request. */
   username?: string;
 };
 

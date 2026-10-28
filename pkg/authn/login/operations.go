@@ -288,7 +288,7 @@ type startAuthenticatedInput struct {
 type registerInput struct {
 	_ struct{} "description:\"The anonymous registration request: a username, an email address and a password are required; a display name, a language and a time zone are optional. The email address is only a contact awaiting verification, not a login name.\""
 
-	Username    string "json:\"username\" description:\"The login name, required. A name already taken is a 409 username-taken; a name that cannot be normalized is a 400 bad-request.\""
+	Username    string "json:\"username\" description:\"The login name, required. A name already taken is a 409 username-taken; a reserved name is a 400 username-reserved; a name that cannot be normalized is a 400 bad-request.\""
 	Email       string `json:"email" description:"The email address, required. It is only a contact awaiting verification, not a login name yet. The registration reserves it in the same transaction, so an address another account has reserved or proved is a 409 email-taken."`
 	Password    string `json:"password" description:"The password, required, held to the deployment's password policy; a password that violates it is a 400 bad-request."`
 	DisplayName string `json:"display_name" description:"The display name, optional: valid text of at most 100 characters."`
@@ -607,11 +607,13 @@ var answerOperation = speedhttp.NewReplyOperation[answerInput](
 	[]speedhttp.Response{
 		jsonAnswer(http.StatusOK, "The flow advanced, or completed with a session or a token pair", AuthnLoginAnswer{}),
 		badRequestAnswer,
+		capabilityProblem(http.StatusBadRequest, mount.CodeUsernameReserved,
+			"The username a pending first login would open the account with is one the system keeps for itself"),
 		bodyOverLimit,
 		unauthorized("The credential did not hold, or the flow binding is missing or wrong"),
 		sendForbiddenAnswer,
 		speedhttp.ProblemResponse(http.StatusConflict,
-			"The request conflicts with the account's state: a completed link names an external identity another account already holds. A step that does not match the flow's state is a 401 flow-invalid, not a 409."),
+			"The request conflicts with the account's state: a completed link names an external identity another account already holds, or the username a pending first login would open the account with is already taken (username-taken). A step that does not match the flow's state is a 401 flow-invalid, not a 409."),
 		mediaTypeAnswer,
 		tooManyAnswer,
 		dependencyAnswer,

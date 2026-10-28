@@ -181,8 +181,10 @@ func (r *routes) fail(c *call, err error) {
 	case errors.Is(err, authn.ErrThrottled):
 		c.throttled(0)
 	case errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidIdentifier),
-		errors.Is(err, authn.ErrUsernameReserved), errors.Is(err, authn.ErrInvalidArgument):
+		errors.Is(err, authn.ErrInvalidArgument):
 		c.fail(mount.CodeBadRequest)
+	case errors.Is(err, authn.ErrUsernameReserved):
+		c.fail(mount.CodeUsernameReserved)
 	case errors.Is(err, authn.ErrIdentifierRequired):
 		c.fail(mount.CodeLoginIdentifierRequired)
 	case errors.Is(err, authn.ErrContactTaken):

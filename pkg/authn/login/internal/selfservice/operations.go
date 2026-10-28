@@ -377,6 +377,8 @@ var addIdentifierOperation = speedhttp.NewReplyOperation[addIdentifierInput](
 		jsonAnswer(http.StatusOK, "A username was added; or a code was sent to an address and its answer is still to come",
 			AuthnLoginIdentifierState{}),
 		badRequest("The body could not be read, the kind or the value is outside its domain, or the proof is over its limit"),
+		speedhttp.ProblemResponseOf(http.StatusBadRequest,
+			"A username is one the system keeps for itself", typePrefix+mount.CodeUsernameReserved),
 		bodyOverLimit,
 		unauthorized("No usable credential, or the freshness a change of what proves the account asks for"),
 		humanRefused(),

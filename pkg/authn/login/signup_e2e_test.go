@@ -93,10 +93,10 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 			t.Fatalf("GET flows/current after the refusal = %s %v, want the signup challenge", state, next)
 		}
 
-		// A reserved name is the same 400, and still nothing is written.
+		// A reserved name is its own 400, and still nothing is written.
 		reserved := h.answerUsername(seq, "admin")
-		if reserved.status != http.StatusBadRequest || reserved.json(t)["type"] != "urn:speed:authn:bad-request" {
-			t.Fatalf("a reserved username answered %d %s, want 400 bad-request", reserved.status, reserved.body)
+		if reserved.status != http.StatusBadRequest || reserved.json(t)["type"] != "urn:speed:authn:username-reserved" {
+			t.Fatalf("a reserved username answered %d %s, want 400 username-reserved", reserved.status, reserved.body)
 		}
 
 		state, seq, _ = signupStep(t, h.get("/api/v1/auth/flows/current"))

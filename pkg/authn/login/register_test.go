@@ -200,7 +200,7 @@ func TestARegistrationMapsTheModulesRefusals(t *testing.T) {
 		{"a taken email address", authn.ErrContactTaken, http.StatusConflict, "urn:speed:authn:email-taken", ""},
 		{"a password policy", authn.ErrPasswordPolicy, http.StatusBadRequest, "urn:speed:authn:bad-request", ""},
 		{"an identifier that cannot be normalized", authn.ErrInvalidIdentifier, http.StatusBadRequest, "urn:speed:authn:bad-request", ""},
-		{"a reserved username", authn.ErrUsernameReserved, http.StatusBadRequest, "urn:speed:authn:bad-request", ""},
+		{"a reserved username", authn.ErrUsernameReserved, http.StatusBadRequest, "urn:speed:authn:username-reserved", ""},
 		{"an argument outside its domain", authn.ErrInvalidArgument, http.StatusBadRequest, "urn:speed:authn:bad-request", ""},
 		{"a full derivation capacity", authn.ErrBusy, http.StatusServiceUnavailable, "urn:speed:authn:unavailable", "1"},
 		{"the username back-off", &authn.ThrottledError{RetryAfter: 30 * time.Second}, http.StatusTooManyRequests, "urn:speed:authn:throttled", "30"},

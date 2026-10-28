@@ -834,7 +834,7 @@
                 }
               }
             },
-            "description": "The body could not be read, or an argument is invalid"
+            "description": "The username is one the system keeps for itself"
           },
           "401": {
             "content": {
@@ -1300,7 +1300,7 @@
                 }
               }
             },
-            "description": "The body could not be read, or the identifier is malformed"
+            "description": "The username is one the system keeps for itself"
           },
           "401": {
             "content": {

@@ -61,6 +61,7 @@ var codeTable = []struct {
 	status int
 }{
 	{"bad-request", 400},
+	{"username-reserved", 400},
 	{"unsupported-region", 400},
 	{"login-failed", 401},
 	{"flow-invalid", 401},
@@ -115,7 +116,8 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 	}
 	// The constants are the texts.
 	consts := []string{
-		CodeBadRequest, CodeUnsupportedRegion, CodeLoginFailed, CodeFlowInvalid, CodeLinkRequired,
+		CodeBadRequest, CodeUsernameReserved, CodeUnsupportedRegion, CodeLoginFailed, CodeFlowInvalid,
+		CodeLinkRequired,
 		CodeInsufficientUserAuthentication, CodeMethodDisabled, CodeAccountUnavailable,
 		CodeImpersonationRestricted, CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed,
 		CodeContactRequired, CodeHumanVerificationRequired, CodePasswordResetClosed,

@@ -297,6 +297,7 @@ var acceptOperation = speedhttp.NewReplyOperation[acceptInput](
 			Body:        &speedhttp.Body{MediaType: "application/json", Structure: reflect.TypeOf(AuthnInviteAccept{})},
 		},
 		speedhttp.ProblemResponseOf(http.StatusBadRequest, "The body or an argument is malformed", typePrefix+"bad-request"),
+		speedhttp.ProblemResponseOf(http.StatusBadRequest, "The username is one the system keeps for itself", typePrefix+"username-reserved"),
 		speedhttp.ProblemResponseOf(http.StatusUnsupportedMediaType, descriptionNotJSON, typePrefix+"unsupported-media-type"),
 		{
 			Status:      http.StatusNotFound,

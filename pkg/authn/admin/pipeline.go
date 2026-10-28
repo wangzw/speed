@@ -255,9 +255,11 @@ func (m *product) answer(op string, err error) error {
 		errors.Is(err, authn.ErrProviderNotFound), errors.Is(err, authn.ErrNotImpersonating):
 		return errNotFound
 	case errors.Is(err, authn.ErrInvalidArgument), errors.Is(err, authn.ErrInvalidIdentifier),
-		errors.Is(err, authn.ErrUsernameReserved), errors.Is(err, authn.ErrPasswordPolicy),
+		errors.Is(err, authn.ErrPasswordPolicy),
 		errors.Is(err, authn.ErrInvalidConfig):
 		return authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
+	case errors.Is(err, authn.ErrUsernameReserved):
+		return authnFailure(http.StatusBadRequest, mount.CodeUsernameReserved)
 	case errors.Is(err, authn.ErrIdentifierRequired):
 		return authnFailure(http.StatusConflict, mount.CodeLoginIdentifierRequired)
 	case errors.Is(err, authn.ErrContactTaken):

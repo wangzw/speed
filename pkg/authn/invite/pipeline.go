@@ -29,6 +29,12 @@ func (p *product) badRequest() error {
 	return inviteFailure(http.StatusBadRequest, mount.CodeBadRequest)
 }
 
+// reservedRequest is the refusal of a username the system keeps for itself: a
+// 400 of its own, so the caller can tell it from a malformed request.
+func (p *product) reservedRequest() error {
+	return inviteFailure(http.StatusBadRequest, mount.CodeUsernameReserved)
+}
+
 // caller reads the identity the gateway put on the request. The management
 // routes are guarded, so a request that reaches a handler carries one; an absent
 // identity is answered with the gateway's own 401 rather than read as a caller.
@@ -159,8 +165,10 @@ func (p *product) cause(op string, err error) error {
 func (p *product) answer(op string, err error) error {
 	switch {
 	case errors.Is(err, ErrInvalidEmail), errors.Is(err, authn.ErrInvalidArgument),
-		errors.Is(err, authn.ErrInvalidIdentifier), errors.Is(err, authn.ErrUsernameReserved):
+		errors.Is(err, authn.ErrInvalidIdentifier):
 		return p.badRequest()
+	case errors.Is(err, authn.ErrUsernameReserved):
+		return p.reservedRequest()
 	case errors.Is(err, ErrInvitationAlreadyAccepted):
 		return inviteFailure(http.StatusConflict, mount.CodeConflict)
 	default:
@@ -192,9 +200,10 @@ func (p *product) acceptAnswerReply(op string, err error) (speedhttp.Reply, erro
 	case errors.Is(err, ErrInvitationExpired), errors.Is(err, ErrInvitationRevoked),
 		errors.Is(err, ErrInvitationAlreadyAccepted):
 		return nil, inviteFailure(http.StatusConflict, mount.CodeConflict)
-	case errors.Is(err, authn.ErrInvalidArgument), errors.Is(err, authn.ErrInvalidIdentifier),
-		errors.Is(err, authn.ErrUsernameReserved):
+	case errors.Is(err, authn.ErrInvalidArgument), errors.Is(err, authn.ErrInvalidIdentifier):
 		return nil, p.badRequest()
+	case errors.Is(err, authn.ErrUsernameReserved):
+		return nil, p.reservedRequest()
 	default:
 		return nil, p.cause(op, err)
 	}

@@ -172,9 +172,11 @@ func (r *routes) failRegister(c *call, err error) {
 	case errors.Is(err, authn.ErrBusy):
 		c.busy()
 	case errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidIdentifier),
-		errors.Is(err, authn.ErrUsernameReserved), errors.Is(err, authn.ErrInvalidArgument),
+		errors.Is(err, authn.ErrInvalidArgument),
 		errors.Is(err, authn.ErrInvalidAccountID):
 		c.fail(mount.CodeBadRequest)
+	case errors.Is(err, authn.ErrUsernameReserved):
+		c.fail(mount.CodeUsernameReserved)
 	case errors.Is(err, authn.ErrUnavailable):
 		r.logger.Warn(ModuleName+": a dependency of the register route is unavailable",
 			slog.String("cause", err.Error()))
