@@ -6,14 +6,14 @@
       "token_expired": "Your sign-in expired. Sign in again.",
       "refresh_token_invalid": "Your sign-in is no longer valid. Sign in again.",
       "refresh_token_reused": "Unusual activity was detected. Sign in again.",
-      "bad_request": "The server could not read this request. Check the form and try again.",
+      "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
       "unsupported_region": "That region is not supported for this operation.",
       "conflict": "That change conflicts with the account's current state.",
       "email_taken": "That email address is already registered to another account. Use a different address.",
       "login_identifier_required": "This account needs at least one login name (a username or an email address).",
       "contact_required": "Verify your email address on the account verification page before continuing.",
       "forbidden": "You do not have permission to do that.",
-      "impersonation_restricted": "This operation requires the target to be an enabled, unprotected member account of the tenant, and the current session to have no impersonation in progress.",
+      "impersonation_restricted": "This can't be done: the target must be an enabled, unprotected member of the tenant, and you must not be impersonating another account right now.",
       "factor_not_seasoned": "This requires a non-SMS verification method (an authenticator app or a passkey) that has been active for the required period. A newly added method must wait first.",
       "login_failed": "The verification did not pass. The email, phone, password or code is incorrect.",
       "flow_invalid": "This verification attempt is no longer valid. Start again.",
@@ -23,32 +23,32 @@
       "sso_required": "This action requires re-authentication through enterprise single sign-on. Sign in again."
     },
     "authz": {
-      "bad_request": "The server could not read this request. Check the form and try again.",
+      "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
       "conflict": "That change conflicts with an existing role or binding.",
       "forbidden": "You do not have permission to do that.",
       "protected": "This domain is protected. Its roles, grants and bindings cannot be managed here."
     },
     "audit": {
-      "bad_request": "The server could not read this request. Check the form and try again."
+      "bad_request": "Something in what you submitted was not valid. Check the form and try again."
     },
     "client": {
       "network": "The network is unavailable. Check your connection and try again.",
-      "timeout": "The request timed out. Try again shortly.",
-      "protocol": "The server returned an unexpected response. Try again shortly.",
-      "http": "The server answered HTTP {{status}}. Try again shortly.",
+      "timeout": "That took too long to finish. Please try again later.",
+      "protocol": "The service ran into a problem. Try again in a moment.",
+      "http": "The server returned an error ({{status}}). Try again shortly.",
       "httpForbidden": "You do not have permission to do that.",
       "httpUnauthorized": "Your session has ended. Sign in again."
     },
     "tenant": {
-      "bad_request": "The server could not read this request. Check the form and try again.",
+      "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
       "conflict": "That identifier or alias is already taken by another tenant."
     },
     "settings": {
-      "bad_request": "The server could not read this request. Check the form and try again.",
-      "invalid_value": "That value is outside this setting's declared range."
+      "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
+      "invalid_value": "That value is outside the range this setting allows."
     },
     "sms": {
-      "bad_request": "The server could not read this request. Check the form and try again.",
+      "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
       "conflict": "A template with that name already exists.",
       "config_template": "This template is backed by a configuration and cannot be changed here."
     },
@@ -76,12 +76,12 @@
     "tenant": "Tenant",
     "tenantNone": "None selected",
     "tenantLoading": "Loading tenants…",
-    "tenantForbidden": "You do not have permission to list tenants.",
+    "tenantForbidden": "You do not have permission to view the tenant list.",
     "tenantLoadFailed": "The tenant list could not be loaded.",
     "tenantRetry": "Retry",
     "tenantEmpty": "No tenant is registered yet.",
     "emptyValue": "—",
-    "accountUnresolved": "Identity unresolved (needs account read)",
+    "accountUnresolved": "Identity unavailable (requires permission to view accounts)",
     "accountMissing": "Not an account or deleted",
     "accountReference": {
       "name": "\"{{name}}\"",
@@ -107,11 +107,11 @@
       "webauthn": "Passkey",
       "sms": "Text message"
     },
-    "cannotElevate": "This deployment cannot complete this step-up. Sign in again for a stronger verification.",
+    "cannotElevate": "This verification can't be completed here. Sign in again for a stronger check of who you are.",
     "relogin": "Sign in again",
     "codeLabel": "Verification code",
     "codeHelp": "Enter your one-time code.",
-    "passkeyPrompt": "Use your device to present a passkey.",
+    "passkeyPrompt": "Use your device to confirm with your passkey.",
     "passkeyRegisterPrompt": "Use your device to register a passkey.",
     "passkeyWaiting": "Waiting for your device…",
     "passkeyCancel": "Cancel",
@@ -133,7 +133,7 @@
     },
     "error": {
       "title": "Tenants could not be loaded",
-      "description": "The roster could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "column": {
@@ -172,21 +172,21 @@
     "renamed": "Alias of tenant \"{{id}}\" updated",
     "enabledToast": "Tenant \"{{id}}\" enabled",
     "disabledToast": "Tenant \"{{id}}\" disabled",
-    "identifierHelper": "No spaces or other whitespace"
+    "identifierHelper": "No spaces"
   },
   "forbidden": {
     "title": "Not permitted",
     "description": "You do not have permission to view this content."
   },
   "stale": {
-    "description": "The content shown may be out of date. Retry to refresh it."
+    "description": "What you see here may be out of date. Retry to refresh it."
   },
   "dashboard": {
     "title": "Overview",
     "loading": "Loading the overview",
     "error": {
       "title": "The overview could not be loaded",
-      "description": "The data surface could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "kpi": {
@@ -200,11 +200,11 @@
       "loading": "Loading platform health",
       "error": {
         "title": "Platform health could not be loaded",
-        "description": "The audit surface could not complete this request."
+        "description": "This content didn't load. Try again shortly."
       },
       "logins": "Successful sign-ins (24h)",
       "activity": "Audit records (24h)",
-      "note": "Counts cover the newest page of the trailing 24 hours; a trailing \"+\" means more records exist beyond it."
+      "note": "Counts cover only the newest batch of records from the last 24 hours; a \"+\" means more records are not included."
     },
     "recent": {
       "title": "Recent activity",
@@ -215,7 +215,7 @@
       },
       "error": {
         "title": "Recent activity could not be loaded",
-        "description": "The audit surface could not complete this request."
+        "description": "This content didn't load. Try again shortly."
       },
       "column": {
         "time": "Time",
@@ -232,7 +232,7 @@
     "loading": "Loading the tenant",
     "error": {
       "title": "The tenant could not be loaded",
-      "description": "The roster could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "summary": "Summary",
@@ -267,7 +267,7 @@
     "loading": "Loading the audit record",
     "error": {
       "title": "The audit record could not be loaded",
-      "description": "The audit surface could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "summary": "Record",
@@ -301,11 +301,11 @@
     "loading": "Loading settings",
     "empty": {
       "title": "No settings",
-      "description": "No setting is declared for this selection."
+      "description": "There are no settings to show for this selection."
     },
     "error": {
       "title": "Settings could not be loaded",
-      "description": "The settings surface could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "field": {
@@ -336,7 +336,7 @@
     },
     "error": {
       "title": "Audit records could not be loaded",
-      "description": "The audit surface could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "export": {
@@ -379,7 +379,7 @@
     "title": "Permissions",
     "needTenant": {
       "title": "Choose a tenant",
-      "description": "Roles, grants and bindings are stored per tenant. Choose a tenant first."
+      "description": "Roles, grants and bindings belong to a tenant. Choose a tenant first."
     },
     "roles": {
       "title": "Roles",
@@ -390,7 +390,7 @@
       },
       "error": {
         "title": "Roles could not be loaded",
-        "description": "The authorization surface could not complete this request."
+        "description": "This content didn't load. Try again shortly."
       },
       "retry": "Retry",
       "column": {
@@ -434,7 +434,7 @@
       },
       "error": {
         "title": "Grants could not be loaded",
-        "description": "The grants surface could not complete this request."
+        "description": "This content didn't load. Try again shortly."
       },
       "retry": "Retry",
       "column": {
@@ -455,7 +455,7 @@
       },
       "error": {
         "title": "The permission catalog could not be loaded",
-        "description": "The permission catalog could not complete this request."
+        "description": "This content didn't load. Try again shortly."
       },
       "retry": "Retry",
       "column": {
@@ -474,7 +474,7 @@
       },
       "error": {
         "title": "Bindings could not be loaded",
-        "description": "The bindings surface could not complete this request."
+        "description": "This content didn't load. Try again shortly."
       },
       "retry": "Retry",
       "column": {
@@ -496,7 +496,7 @@
       "loading": "Loading the account's bindings",
       "error": {
         "title": "The account's bindings could not be loaded",
-        "description": "The bindings surface could not complete this request."
+        "description": "This content didn't load. Try again shortly."
       },
       "retry": "Retry",
       "empty": {
@@ -529,7 +529,7 @@
     },
     "error": {
       "title": "Accounts could not be loaded",
-      "description": "The account surface could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "column": {
@@ -594,7 +594,10 @@
     "create": {
       "title": "Create an account",
       "kindLabel": "Account kind",
-      "kind": {"user": "User", "service": "Service"},
+      "kind": {
+        "user": "User",
+        "service": "Service"
+      },
       "displayNameLabel": "Display name",
       "usernameLabel": "Username",
       "emailLabel": "Email",
@@ -615,7 +618,9 @@
       "discardMessage": "Closing the panel discards what you have entered.",
       "discardConfirm": "Discard"
     },
-    "writes": {"title": "Account writes"},
+    "writes": {
+      "title": "Account actions"
+    },
     "patch": {
       "displayNameLabel": "New display name",
       "attributesLabel": "New attributes (JSON)",
@@ -640,7 +645,7 @@
     "createSecret": {
       "labelLabel": "Label",
       "expiresLabel": "Expires",
-      "expiresHelper": "RFC 3339 instant, or empty for no expiry",
+      "expiresHelper": "A time like 2027-01-31T09:00:00Z, or empty for no expiry",
       "submit": "Create secret",
       "handedOver": "Service secret \"{{label}}\" (shown once):",
       "copy": "Copy service secret",
@@ -659,7 +664,7 @@
       "retry": "Retry",
       "error": {
         "title": "The account detail could not be loaded",
-        "description": "The account surface could not complete this request."
+        "description": "This content didn't load. Try again shortly."
       }
     },
     "resetMFA": "Reset MFA",
@@ -675,7 +680,7 @@
       "retry": "Retry",
       "error": {
         "title": "Factors could not be loaded",
-        "description": "The account surface could not complete this request."
+        "description": "This content didn't load. Try again shortly."
       },
       "empty": {
         "title": "No factors",
@@ -703,7 +708,7 @@
       "retry": "Retry",
       "error": {
         "title": "Service secrets could not be loaded",
-        "description": "The account surface could not complete this request."
+        "description": "This content didn't load. Try again shortly."
       },
       "empty": {
         "title": "No service secrets",
@@ -728,7 +733,7 @@
       "retry": "Retry",
       "error": {
         "title": "Sessions could not be loaded",
-        "description": "The account surface could not complete this request."
+        "description": "This content didn't load. Try again shortly."
       },
       "empty": {
         "title": "No sessions",
@@ -770,7 +775,7 @@
     },
     "error": {
       "title": "Sessions could not be loaded",
-      "description": "The session surface could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "column": {
@@ -802,7 +807,7 @@
     "title": "Impersonations",
     "needTenant": {
       "title": "Choose a tenant",
-      "description": "Impersonation records are stored per tenant. Choose a tenant first."
+      "description": "Impersonation records belong to a tenant. Choose a tenant first."
     },
     "loading": "Loading impersonation records",
     "empty": {
@@ -811,7 +816,7 @@
     },
     "error": {
       "title": "Impersonation records could not be loaded",
-      "description": "The impersonation surface could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "column": {
@@ -838,7 +843,7 @@
     "terminate": "Terminate",
     "terminated": "Terminated the impersonation of account {{account}}.",
     "terminatedUnnamed": "Terminated the impersonation of the account.",
-    "recordsUnavailable": "Impersonation records cannot be read or terminated while impersonating. View them after ending it.",
+    "recordsUnavailable": "While impersonating, you cannot view impersonation records or terminate the impersonation. View them after ending it.",
     "current": {
       "title": "Current impersonation",
       "loading": "Loading the impersonation status",
@@ -853,16 +858,16 @@
       "endedUnnamed": "Ended impersonating the account.",
       "error": {
         "title": "The impersonation status could not be loaded",
-        "description": "The impersonation status could not complete this request."
+        "description": "This content didn't load. Try again shortly."
       }
     },
     "start": {
       "title": "Start an impersonation",
-      "precondition": "Starting an impersonation requires your own account to already hold a non-SMS second factor that has been enabled for longer than this deployment requires. A factor registered just now does not count, and signing in again does not shorten the wait.",
+      "precondition": "To start an impersonation, your own account must already have a second factor other than SMS, enabled for at least as long as this system requires. A second factor added just now does not count, and signing in again does not shorten the wait.",
       "accountLabel": "Target account",
       "tenantHint": "Select a tenant first; the target account must belong to that tenant.",
       "reasonLabel": "Reason",
-      "ttlLabel": "TTL (seconds)",
+      "ttlLabel": "Valid for (seconds)",
       "submit": "Start impersonation"
     }
   },
@@ -870,7 +875,7 @@
     "title": "Invitations and members",
     "needTenant": {
       "title": "Choose a tenant",
-      "description": "Invitations and members are stored per tenant. Choose a tenant first."
+      "description": "Invitations and members belong to a tenant. Choose a tenant first."
     },
     "section": {
       "title": "Invitations"
@@ -878,7 +883,7 @@
     "issue": {
       "emailLabel": "Email address",
       "expiresLabel": "Expires",
-      "expiresHelper": "Chosen in your local time zone; blank uses the default expiry.",
+      "expiresHelper": "Chosen in your local time zone; leave blank to use the default expiry.",
       "submit": "Send invitation"
     },
     "loading": "Loading invitations",
@@ -888,7 +893,7 @@
     },
     "error": {
       "title": "Invitations could not be loaded",
-      "description": "The invitation surface could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "column": {
@@ -911,13 +916,13 @@
     "issued": {
       "confirm": "Invitation sent to \"{{email}}\"",
       "link": "Hand this acceptance link to {{email}}:",
-      "token": "Hand this acceptance token to {{email}} (the host builds the link):",
+      "token": "Hand this acceptance token to {{email}} (the application using this platform builds the link):",
       "copy": "Copy",
       "copyLink": "Copy acceptance link",
       "copyToken": "Copy acceptance token",
       "copied": "Copied",
       "close": "Close",
-      "closeAria": "Close the acceptance link for \"{{email}}\" in tenant \"{{tenant}}\""
+      "closeAria": "Close the acceptance link panel for \"{{email}}\" in tenant \"{{tenant}}\""
     }
   },
   "members": {
@@ -929,7 +934,7 @@
     },
     "error": {
       "title": "Members could not be loaded",
-      "description": "The membership surface could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "column": {
@@ -942,7 +947,7 @@
     "source": {
       "admin": "Added by an administrator",
       "invite": "Invitation",
-      "jit": "JIT ({{provider}})"
+      "jit": "Created on first sign-in ({{provider}})"
     },
     "activeYes": "Yes",
     "activeNo": "No",
@@ -955,7 +960,7 @@
       "sourceLabel": "Source",
       "activeLabel": "Active",
       "ssoExemptLabel": "SSO exempt",
-      "submit": "Write membership",
+      "submit": "Save membership",
       "saved": "Membership of account {{account}} saved",
       "savedUnnamed": "Membership of the account saved"
     },
@@ -976,7 +981,7 @@
     "title": "SSO providers",
     "needTenant": {
       "title": "Choose a tenant",
-      "description": "SSO providers are stored per tenant. Choose a tenant first."
+      "description": "SSO providers belong to a tenant. Choose a tenant first."
     },
     "loading": "Loading providers",
     "empty": {
@@ -985,7 +990,7 @@
     },
     "error": {
       "title": "Providers could not be loaded",
-      "description": "The SSO surface could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "column": {
@@ -1034,14 +1039,14 @@
       "verified": "Domain \"{{domain}}\" verified for provider \"{{name}}\"",
       "removed": "Domain \"{{domain}}\" removed from provider \"{{name}}\"",
       "claimTokenClose": "Close",
-      "claimTokenCloseAria": "Close the claim token for domain \"{{domain}}\" of provider \"{{name}}\" in tenant \"{{tenant}}\"",
+      "claimTokenCloseAria": "Close the claim token panel for domain \"{{domain}}\" of provider \"{{name}}\" in tenant \"{{tenant}}\"",
       "remove": "Remove",
       "removeAria": "Remove domain {{domain}}",
       "removeTitle": "Remove domain",
       "removeMessage": "Remove the domain \"{{domain}}\" from this provider."
     },
     "provider": {
-      "title": "Provider write",
+      "title": "Provider settings",
       "editLabel": "Select a provider",
       "newOption": "New provider",
       "protocolLabel": "Protocol",
@@ -1059,20 +1064,24 @@
       "updateSubmit": "Save provider",
       "created": "Provider \"{{name}}\" created",
       "updated": "Provider \"{{name}}\" saved",
-      "tri": {"unchanged": "Unchanged", "true": "Yes", "false": "No"}
+      "tri": {
+        "unchanged": "Unchanged",
+        "true": "Yes",
+        "false": "No"
+      }
     }
   },
   "sms": {
     "title": "SMS templates",
-    "carrierNote": "The SMS administration surface is mounted only where a carrier is configured; without one, this page's reads fail.",
+    "carrierNote": "SMS administration is available only when a carrier is configured; without one, this page cannot load.",
     "loading": "Loading SMS templates",
     "empty": {
       "title": "No templates",
-      "description": "This process has no runtime SMS template yet."
+      "description": "No SMS template yet."
     },
     "error": {
       "title": "SMS templates could not be loaded",
-      "description": "The SMS surface could not complete this request."
+      "description": "This content didn't load. Try again shortly."
     },
     "retry": "Retry",
     "column": {
@@ -1102,7 +1111,7 @@
     "remove": "Remove",
     "removeAria": "Remove template {{name}}",
     "removeTitle": "Remove template",
-    "removeMessage": "Remove the runtime SMS template \"{{name}}\".",
+    "removeMessage": "Remove the SMS template \"{{name}}\".",
     "removed": "Template \"{{name}}\" removed",
     "enabledToast": "Sending of template \"{{name}}\" enabled",
     "disabledToast": "Sending of template \"{{name}}\" disabled",

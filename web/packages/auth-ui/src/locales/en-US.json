@@ -30,7 +30,7 @@
     "retryAfter": "Too many attempts. Try again in {{seconds}} seconds.",
     "codeRejected": "The verification code is incorrect or has expired.",
     "invalidIdentifier": "Enter a valid email address or phone number.",
-    "policyFailure": "The new password does not meet the requirements. Its length must be suitable, and it cannot be the same as the account's email address, phone number or username.",
+    "policyFailure": "The new password does not meet the requirements: its length is outside the allowed range, or it matches the account's email address, phone number or username.",
     "mismatch": "The two passwords do not match.",
     "flowInvalid": "Your reset is no longer valid. Please start again.",
     "startOver": "Start over",
@@ -38,7 +38,7 @@
     "doneTitle": "Password reset",
     "doneDescription": "Sign in with your new password.",
     "loading": "Checking your reset progress…",
-    "unavailable": "This deployment offers no reset channel."
+    "unavailable": "Password reset isn't available on this site."
   },
   "smsSignIn": {
     "title": "SMS code",
@@ -88,13 +88,13 @@
     "registerEntry": "Create an account",
     "signInEntry": "Already have an account? Sign in",
     "registerHint": "Signing in with one of these methods for the first time creates your account.",
-    "signInAccountHint": "An unregistered phone number creates an account."
+    "signInAccountHint": "If your phone number isn't registered yet, signing in creates an account for you."
   },
   "enterprise": {
     "emailLabel": "Work email",
     "continue": "Continue",
     "providersTitle": "Choose your organization",
-    "noProviders": "No sign-in is configured for that email. Check the address or continue another way.",
+    "noProviders": "No sign-in method is available for that email. Check the address or continue another way.",
     "editEmail": "Use a different email"
   },
   "passkey": {
@@ -115,7 +115,7 @@
     "retrySignIn": "Sign in again",
     "usernameTaken": "That username is already taken. Choose another one.",
     "emailTaken": "That email address is already registered. Choose another one.",
-    "signupClosed": "Registration is closed on this deployment. Ask an administrator for an account.",
+    "signupClosed": "Registration is closed on this site. Ask an administrator for an account.",
     "throttled": "Too many registration attempts. Please try again later.",
     "retryAfter": "Too many registration attempts. Try again in {{seconds}} seconds.",
     "unavailable": "Registration is temporarily unavailable. Please try again later.",
@@ -125,7 +125,7 @@
   "social": {
     "title": "or continue with a social account",
     "titleFirst": "Continue with a social account",
-    "linkRequiredEmail": "Conflicting email: {{email}}",
+    "linkRequiredEmail": "Email already used by another account: {{email}}",
     "provider": {
       "google": "Google",
       "github": "GitHub",
@@ -174,7 +174,7 @@
     },
     "displayNameLabel": "Display name",
     "passwordLabel": "Password",
-    "newAccountHint": "Only used when the invited address has no account yet; leave blank to accept on the account it already has."
+    "newAccountHint": "Fill this in only if the invited email address has no account yet. If it already has one, leave this blank."
   },
   "impersonation": {
     "regionLabel": "Impersonation notice",
@@ -192,25 +192,25 @@
   },
   "errors": {
     "authn": {
-      "bad_request": "The request could not be accepted. Please check it and try again.",
+      "bad_request": "Some of the information you entered isn't valid. Check it and try again.",
       "unsupported_region": "Sign-in is not available for this phone number's region.",
       "login_failed": "Email, phone number or password is incorrect, or the code is wrong.",
       "flow_invalid": "Your sign-in attempt is no longer valid. Please start again.",
       "link_required": "This social account's email belongs to an account here. Sign in to that account the way you signed in before, then link this account under Account settings → Social bindings.",
       "method_disabled": "This sign-in method is turned off. Choose another one.",
       "account_unavailable": "This account is unavailable. Contact an administrator for help.",
-      "password_reset_closed": "Password reset is closed on this deployment.",
+      "password_reset_closed": "Password reset without signing in is not available on this site.",
       "password_reset_unavailable": "This account cannot reset its password. Contact an administrator for help.",
-      "conflict": "The request conflicts with the account's current state. Refresh and try again.",
+      "conflict": "Your account may have changed. Refresh the page and try again.",
       "throttled": "Too many attempts. Please try again later.",
       "unavailable": "The service is temporarily unavailable. Please try again later.",
       "human_verification_required": "Please confirm you are human, then try again."
     },
     "client": {
       "network": "No network connection. Check your connection and try again.",
-      "timeout": "The request timed out. Please try again later.",
-      "protocol": "The service returned an unexpected response. Please try again later.",
-      "http": "The service answered HTTP {{status}}. Please try again later."
+      "timeout": "That took too long to finish. Please try again later.",
+      "protocol": "The service ran into a problem. Try again in a moment.",
+      "http": "The server returned an error ({{status}}). Try again shortly."
     },
     "unknown": "Something went wrong. Please try again later."
   }

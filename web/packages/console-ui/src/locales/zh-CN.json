@@ -6,14 +6,14 @@
       "token_expired": "登录已过期，请重新登录。",
       "refresh_token_invalid": "登录状态已失效，请重新登录。",
       "refresh_token_reused": "检测到异常活动，请重新登录。",
-      "bad_request": "服务端无法读取该请求，请检查表单后重试。",
+      "bad_request": "提交的内容有误，请检查表单后重试。",
       "unsupported_region": "此操作不支持该地区。",
       "conflict": "该改动与账户的当前状态冲突。",
       "email_taken": "该邮箱已注册到另一账户，请换一个邮箱地址。",
       "login_identifier_required": "账号需要至少一个登录名（用户名或邮箱地址）。",
       "contact_required": "请先在账户验证页验证邮箱地址，再继续此操作。",
       "forbidden": "你没有执行此操作的权限。",
-      "impersonation_restricted": "此操作要求目标账户是该租户中已启用、未受保护的成员，且当前会话没有进行中的冒充。",
+      "impersonation_restricted": "无法执行此操作：目标账户必须是该租户中已启用且未受保护的成员，并且你当前不能处于冒充其他账户的状态。",
       "factor_not_seasoned": "此操作需要一个已启用满规定时长的非短信验证方式（认证器应用或通行密钥）。刚添加的验证方式需要先等待一段时间。",
       "login_failed": "验证未通过，邮箱、手机号、密码或验证码不正确。",
       "flow_invalid": "验证流程已失效，请重新开始。",
@@ -23,32 +23,32 @@
       "sso_required": "本次操作要求通过企业单点登录重新认证，请重新登录。"
     },
     "authz": {
-      "bad_request": "服务端无法读取该请求，请检查表单后重试。",
+      "bad_request": "提交的内容有误，请检查表单后重试。",
       "conflict": "该改动与现有角色或绑定冲突。",
       "forbidden": "你没有执行此操作的权限。",
       "protected": "这个域受保护，不能在这里管理它的角色、授予和绑定。"
     },
     "audit": {
-      "bad_request": "服务端无法读取该请求，请检查表单后重试。"
+      "bad_request": "提交的内容有误，请检查表单后重试。"
     },
     "client": {
       "network": "网络连接不可用，请检查网络后重试。",
-      "timeout": "请求超时，请稍后重试。",
-      "protocol": "服务返回了异常响应，请稍后重试。",
-      "http": "服务返回了 HTTP {{status}} 错误，请稍后重试。",
+      "timeout": "这次操作耗时过长，请稍后重试。",
+      "protocol": "服务暂时出了问题，请稍后重试。",
+      "http": "服务返回错误（{{status}}），请稍后重试。",
       "httpForbidden": "你没有执行此操作的权限。",
       "httpUnauthorized": "会话已结束，请重新登录。"
     },
     "tenant": {
-      "bad_request": "服务端无法读取该请求，请检查表单后重试。",
+      "bad_request": "提交的内容有误，请检查表单后重试。",
       "conflict": "该标识或别名已被其他租户占用。"
     },
     "settings": {
-      "bad_request": "服务端无法读取该请求，请检查表单后重试。",
-      "invalid_value": "该值不在该设置项声明的取值范围内。"
+      "bad_request": "提交的内容有误，请检查表单后重试。",
+      "invalid_value": "该值超出了此设置允许的范围。"
     },
     "sms": {
-      "bad_request": "服务端无法读取该请求，请检查表单后重试。",
+      "bad_request": "提交的内容有误，请检查表单后重试。",
       "conflict": "同名模板已存在。",
       "config_template": "该模板由配置提供，无法在此修改。"
     },
@@ -76,12 +76,12 @@
     "tenant": "租户",
     "tenantNone": "未选择",
     "tenantLoading": "正在加载租户…",
-    "tenantForbidden": "你没有列出租户的权限。",
+    "tenantForbidden": "你没有查看租户列表的权限。",
     "tenantLoadFailed": "租户名册加载失败。",
     "tenantRetry": "重试",
     "tenantEmpty": "尚未登记任何租户。",
     "emptyValue": "—",
-    "accountUnresolved": "身份未解析（需账户读取权限）",
+    "accountUnresolved": "身份无法显示（需要查看账户的权限）",
     "accountMissing": "非账户或已删除",
     "accountReference": {
       "name": "「{{name}}」",
@@ -107,11 +107,11 @@
       "webauthn": "通行密钥",
       "sms": "短信"
     },
-    "cannotElevate": "本部署无法完成此次升级，请重新登录以获得更高的验证强度。",
+    "cannotElevate": "这里无法完成这次身份验证，请重新登录以获得更可靠的身份确认。",
     "relogin": "重新登录",
     "codeLabel": "验证码",
     "codeHelp": "输入你的动态验证码。",
-    "passkeyPrompt": "用你的设备出示通行密钥。",
+    "passkeyPrompt": "在你的设备上使用通行密钥确认身份。",
     "passkeyRegisterPrompt": "用你的设备登记通行密钥。",
     "passkeyWaiting": "正在等待你的设备…",
     "passkeyCancel": "取消",
@@ -133,7 +133,7 @@
     },
     "error": {
       "title": "租户加载失败",
-      "description": "名册未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "column": {
@@ -172,21 +172,21 @@
     "renamed": "租户「{{id}}」的别名已更新",
     "enabledToast": "租户「{{id}}」已启用",
     "disabledToast": "租户「{{id}}」已停用",
-    "identifierHelper": "不含空格等空白字符"
+    "identifierHelper": "不能包含空格"
   },
   "forbidden": {
     "title": "权限不足",
     "description": "你没有查看该内容的权限。"
   },
   "stale": {
-    "description": "所示内容可能已过期，请重试刷新。"
+    "description": "这里显示的信息可能已过期，重试即可更新。"
   },
   "dashboard": {
     "title": "概览",
     "loading": "正在加载概览",
     "error": {
       "title": "概览加载失败",
-      "description": "数据面未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "kpi": {
@@ -200,11 +200,11 @@
       "loading": "正在加载平台健康度",
       "error": {
         "title": "平台健康度加载失败",
-        "description": "审计面未能完成这次请求。"
+        "description": "内容没有加载出来，请稍后重试。"
       },
       "logins": "近 24 小时登录（成功）",
       "activity": "近 24 小时审计活动",
-      "note": "计数取近 24 小时窗口的最近一页；末尾带「+」表示该页之后仍有记录。"
+      "note": "计数只统计近 24 小时内最新的一批记录；数字后带「+」表示还有更多记录未计入。"
     },
     "recent": {
       "title": "最近活动",
@@ -215,7 +215,7 @@
       },
       "error": {
         "title": "最近活动加载失败",
-        "description": "审计面未能完成这次请求。"
+        "description": "内容没有加载出来，请稍后重试。"
       },
       "column": {
         "time": "时间",
@@ -232,7 +232,7 @@
     "loading": "正在加载租户",
     "error": {
       "title": "租户加载失败",
-      "description": "名册未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "summary": "概要",
@@ -267,7 +267,7 @@
     "loading": "正在加载审计记录",
     "error": {
       "title": "审计记录加载失败",
-      "description": "审计面未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "summary": "记录",
@@ -301,11 +301,11 @@
     "loading": "正在加载设置",
     "empty": {
       "title": "暂无设置",
-      "description": "当前选择没有已声明的设置项。"
+      "description": "当前选择下没有可查看的设置项。"
     },
     "error": {
       "title": "设置加载失败",
-      "description": "设置面未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "field": {
@@ -336,7 +336,7 @@
     },
     "error": {
       "title": "审计记录加载失败",
-      "description": "审计面未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "export": {
@@ -379,7 +379,7 @@
     "title": "权限",
     "needTenant": {
       "title": "请选择租户",
-      "description": "权限面的角色、授权与绑定都按租户存储，请先选择一个租户。"
+      "description": "角色、授权与绑定都属于某个租户，请先选择一个租户。"
     },
     "roles": {
       "title": "角色",
@@ -390,7 +390,7 @@
       },
       "error": {
         "title": "角色加载失败",
-        "description": "授权面未能完成这次请求。"
+        "description": "内容没有加载出来，请稍后重试。"
       },
       "retry": "重试",
       "column": {
@@ -434,7 +434,7 @@
       },
       "error": {
         "title": "授权加载失败",
-        "description": "授权面未能完成这次请求。"
+        "description": "内容没有加载出来，请稍后重试。"
       },
       "retry": "重试",
       "column": {
@@ -455,7 +455,7 @@
       },
       "error": {
         "title": "权限目录加载失败",
-        "description": "权限目录未能完成这次请求。"
+        "description": "内容没有加载出来，请稍后重试。"
       },
       "retry": "重试",
       "column": {
@@ -474,7 +474,7 @@
       },
       "error": {
         "title": "绑定加载失败",
-        "description": "绑定面未能完成这次请求。"
+        "description": "内容没有加载出来，请稍后重试。"
       },
       "retry": "重试",
       "column": {
@@ -496,7 +496,7 @@
       "loading": "正在加载该账户的绑定",
       "error": {
         "title": "该账户的绑定加载失败",
-        "description": "授权面未能完成这次请求。"
+        "description": "内容没有加载出来，请稍后重试。"
       },
       "retry": "重试",
       "empty": {
@@ -529,7 +529,7 @@
     },
     "error": {
       "title": "账户加载失败",
-      "description": "账户面未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "column": {
@@ -594,7 +594,10 @@
     "create": {
       "title": "新建账户",
       "kindLabel": "账户类型",
-      "kind": {"user": "用户", "service": "服务"},
+      "kind": {
+        "user": "用户",
+        "service": "服务"
+      },
       "displayNameLabel": "显示名",
       "usernameLabel": "用户名",
       "emailLabel": "邮箱",
@@ -615,7 +618,9 @@
       "discardMessage": "关闭面板会丢弃已填写的内容。",
       "discardConfirm": "放弃"
     },
-    "writes": {"title": "账户写入"},
+    "writes": {
+      "title": "账户操作"
+    },
     "patch": {
       "displayNameLabel": "新显示名",
       "attributesLabel": "新属性（JSON）",
@@ -640,7 +645,7 @@
     "createSecret": {
       "labelLabel": "标签",
       "expiresLabel": "过期时间",
-      "expiresHelper": "RFC 3339 时刻，或留空表示不过期",
+      "expiresHelper": "具体时间，如 2027-01-31T09:00:00Z；留空表示不过期",
       "submit": "新建密钥",
       "handedOver": "服务密钥「{{label}}」（仅显示这一次）：",
       "copy": "复制服务密钥",
@@ -659,7 +664,7 @@
       "retry": "重试",
       "error": {
         "title": "账户详情加载失败",
-        "description": "账户面未能完成这次请求。"
+        "description": "内容没有加载出来，请稍后重试。"
       }
     },
     "resetMFA": "重置 MFA",
@@ -675,7 +680,7 @@
       "retry": "重试",
       "error": {
         "title": "因子加载失败",
-        "description": "账户面未能完成这次请求。"
+        "description": "内容没有加载出来，请稍后重试。"
       },
       "empty": {
         "title": "暂无因子",
@@ -703,7 +708,7 @@
       "retry": "重试",
       "error": {
         "title": "服务密钥加载失败",
-        "description": "账户面未能完成这次请求。"
+        "description": "内容没有加载出来，请稍后重试。"
       },
       "empty": {
         "title": "暂无服务密钥",
@@ -728,7 +733,7 @@
       "retry": "重试",
       "error": {
         "title": "会话加载失败",
-        "description": "账户面未能完成这次请求。"
+        "description": "内容没有加载出来，请稍后重试。"
       },
       "empty": {
         "title": "暂无会话",
@@ -770,7 +775,7 @@
     },
     "error": {
       "title": "会话加载失败",
-      "description": "会话面未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "column": {
@@ -802,7 +807,7 @@
     "title": "冒充",
     "needTenant": {
       "title": "请选择租户",
-      "description": "冒充记录按租户存储，请先选择一个租户。"
+      "description": "冒充记录属于某个租户，请先选择一个租户。"
     },
     "loading": "正在加载冒充记录",
     "empty": {
@@ -811,7 +816,7 @@
     },
     "error": {
       "title": "冒充记录加载失败",
-      "description": "冒充面未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "column": {
@@ -836,9 +841,9 @@
       "startFailed": "发起失败"
     },
     "terminate": "终止",
-    "terminated": "已终止账户{{account}}的冒充记录。",
-    "terminatedUnnamed": "已终止对该账户的冒充记录。",
-    "recordsUnavailable": "冒充期间不能读取或终止冒充记录；结束冒充后可在此查看。",
+    "terminated": "已终止对账户{{account}}的冒充。",
+    "terminatedUnnamed": "已终止对该账户的冒充。",
+    "recordsUnavailable": "冒充期间无法查看冒充记录，也不能终止冒充；结束冒充后可在此查看。",
     "current": {
       "title": "当前冒充",
       "loading": "正在读取冒充状态",
@@ -853,12 +858,12 @@
       "endedUnnamed": "已结束冒充该账户。",
       "error": {
         "title": "冒充状态读取失败",
-        "description": "冒充状态未能完成这次请求。"
+        "description": "内容没有加载出来，请稍后重试。"
       }
     },
     "start": {
       "title": "发起冒充",
-      "precondition": "发起冒充要求你本人的账户已经持有一个非短信的第二因素，并且该因素启用至今的时间长于本部署的要求；刚登记的因素不算，重新登录也不能缩短这段等待。",
+      "precondition": "开始冒充前，你本人的账户必须已启用短信以外的第二因素，且启用至今已满本系统要求的时长。刚添加的第二因素不算，重新登录也不会缩短这段等待。",
       "accountLabel": "目标账户",
       "tenantHint": "请先选择一个租户；被冒充账户必须属于该租户。",
       "reasonLabel": "理由",
@@ -870,7 +875,7 @@
     "title": "邀请与成员",
     "needTenant": {
       "title": "请选择租户",
-      "description": "邀请与成员都按租户存储，请先选择一个租户。"
+      "description": "邀请与成员都属于某个租户，请先选择一个租户。"
     },
     "section": {
       "title": "邀请"
@@ -878,7 +883,7 @@
     "issue": {
       "emailLabel": "邮箱地址",
       "expiresLabel": "过期时间",
-      "expiresHelper": "按本机时区选择；留空用默认有效期。",
+      "expiresHelper": "按你的本地时区选择；留空则使用默认有效期。",
       "submit": "发出邀请"
     },
     "loading": "正在加载邀请",
@@ -888,7 +893,7 @@
     },
     "error": {
       "title": "邀请加载失败",
-      "description": "邀请面未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "column": {
@@ -911,13 +916,13 @@
     "issued": {
       "confirm": "已向「{{email}}」发出邀请",
       "link": "把这条接受链接交给「{{email}}」：",
-      "token": "「{{email}}」的接受令牌（链接由宿主构造）：",
+      "token": "「{{email}}」的接受令牌（链接由接入本平台的应用生成）：",
       "copy": "复制",
       "copyLink": "复制接受链接",
       "copyToken": "复制接受令牌",
       "copied": "已复制",
       "close": "关闭",
-      "closeAria": "关闭租户「{{tenant}}」发给「{{email}}」的接受链接"
+      "closeAria": "关闭租户「{{tenant}}」发给「{{email}}」的接受链接面板"
     }
   },
   "members": {
@@ -929,7 +934,7 @@
     },
     "error": {
       "title": "成员加载失败",
-      "description": "成员面未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "column": {
@@ -942,7 +947,7 @@
     "source": {
       "admin": "管理员添加",
       "invite": "邀请",
-      "jit": "即时开通（{{provider}}）"
+      "jit": "首次登录时开通（{{provider}}）"
     },
     "activeYes": "是",
     "activeNo": "否",
@@ -955,7 +960,7 @@
       "sourceLabel": "来源",
       "activeLabel": "在册",
       "ssoExemptLabel": "SSO 豁免",
-      "submit": "写入成员关系",
+      "submit": "保存成员关系",
       "saved": "账户{{account}}的成员关系已保存",
       "savedUnnamed": "该账户的成员关系已保存"
     },
@@ -976,7 +981,7 @@
     "title": "SSO 提供方",
     "needTenant": {
       "title": "请选择租户",
-      "description": "SSO 提供方按租户存储，请先选择一个租户。"
+      "description": "SSO 提供方属于某个租户，请先选择一个租户。"
     },
     "loading": "正在加载提供方",
     "empty": {
@@ -985,7 +990,7 @@
     },
     "error": {
       "title": "提供方加载失败",
-      "description": "SSO 面未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "column": {
@@ -1034,14 +1039,14 @@
       "verified": "已验证提供方「{{name}}」的域名「{{domain}}」",
       "removed": "已从提供方「{{name}}」移除域名「{{domain}}」",
       "claimTokenClose": "关闭",
-      "claimTokenCloseAria": "关闭租户「{{tenant}}」中提供方「{{name}}」域名「{{domain}}」的认领令牌",
+      "claimTokenCloseAria": "关闭租户「{{tenant}}」中提供方「{{name}}」域名「{{domain}}」的认领令牌面板",
       "remove": "移除",
       "removeAria": "移除域名 {{domain}}",
       "removeTitle": "移除域名",
       "removeMessage": "从该提供方移除域名「{{domain}}」。"
     },
     "provider": {
-      "title": "提供方写入",
+      "title": "提供方设置",
       "editLabel": "选择提供方",
       "newOption": "新建提供方",
       "protocolLabel": "协议",
@@ -1059,20 +1064,24 @@
       "updateSubmit": "保存提供方",
       "created": "已创建提供方「{{name}}」",
       "updated": "已保存提供方「{{name}}」",
-      "tri": {"unchanged": "保持不变", "true": "是", "false": "否"}
+      "tri": {
+        "unchanged": "保持不变",
+        "true": "是",
+        "false": "否"
+      }
     }
   },
   "sms": {
     "title": "短信模板",
-    "carrierNote": "短信管理面只在配置了短信服务商的部署上挂载；未配置时本页的读取会失败。",
+    "carrierNote": "仅在配置了短信服务商时才能使用短信管理；未配置时本页无法加载。",
     "loading": "正在加载短信模板",
     "empty": {
       "title": "暂无模板",
-      "description": "该进程尚无运行期短信模板。"
+      "description": "尚无短信模板。"
     },
     "error": {
       "title": "短信模板加载失败",
-      "description": "短信面未能完成这次请求。"
+      "description": "内容没有加载出来，请稍后重试。"
     },
     "retry": "重试",
     "column": {
@@ -1102,7 +1111,7 @@
     "remove": "移除",
     "removeAria": "移除模板 {{name}}",
     "removeTitle": "移除模板",
-    "removeMessage": "移除运行期短信模板「{{name}}」。",
+    "removeMessage": "移除短信模板「{{name}}」。",
     "removed": "模板「{{name}}」已移除",
     "enabledToast": "模板「{{name}}」已启用发送",
     "disabledToast": "模板「{{name}}」已停用发送",

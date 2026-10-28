@@ -1,7 +1,7 @@
 {
   "errors": {
     "notification": {
-      "bad_request": "请求无效，请检查后重试。",
+      "bad_request": "提交的信息有误，请检查后重试。",
       "message_not_found": "该通知已不存在。",
       "not_unsubscribable": "这是必要的通知，无法关闭。"
     },
@@ -14,8 +14,8 @@
     },
     "client": {
       "network": "网络连接不可用，请检查网络后重试。",
-      "timeout": "请求超时，请稍后重试。",
-      "protocol": "服务返回了异常响应，请稍后重试。"
+      "timeout": "这次操作耗时过长，请稍后重试。",
+      "protocol": "服务暂时出了问题，请稍后重试。"
     },
     "tenantUnavailable": "无法访问当前组织的内容：它可能不存在，或你还不是该组织的成员。如需加入，请联系管理员发送邀请。",
     "unknown": "出了点问题，请稍后重试。"
@@ -25,7 +25,7 @@
     "description": "它可能不存在，或你还不是该组织的成员。如需加入，请联系管理员发送邀请。"
   },
   "stale": {
-    "description": "所示内容可能已过期，请重试刷新。"
+    "description": "这里显示的信息可能已过期，重试即可更新。"
   },
   "bell": {
     "label": "通知",
@@ -69,7 +69,7 @@
     },
     "unsubscribableNote": "必要通知，无法退订",
     "channelToggleAria": "{{type}}：{{channel}}",
-    "saved": "已将「{{type}}」的{{channel}}通知设为{{state}}。",
+    "saved": "「{{type}}」的{{channel}}通知已{{state}}。",
     "state": {
       "enabled": "开启",
       "disabled": "关闭"

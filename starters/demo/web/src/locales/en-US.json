@@ -12,8 +12,8 @@
     "accessPending": "Checking console access"
   },
   "route": {
-    "pending": "Checking which features this deployment serves",
-    "failed": "Could not read the features this deployment serves",
+    "pending": "Loading available features",
+    "failed": "Could not load available features",
     "retry": "Try again"
   },
   "signIn": {
@@ -42,7 +42,7 @@
       },
       "console": {
         "title": "Console",
-        "description": "The platform's management surface: tenants, accounts, settings and the audit trail."
+        "description": "Platform administration: tenants, accounts, settings and the audit trail."
       },
       "notifications": {
         "title": "Notifications",
@@ -51,15 +51,15 @@
     },
     "reviewNotice": {
       "title": "Review-only notice control",
-      "description": "This control exists only in the review build. It dispatches one review notice to you through the channels this assembly can reach.",
+      "description": "This control is available only in the review build. It sends you one review notice through the channels this build supports.",
       "action": "Send a review notice to me",
-      "sent": "The review notice was dispatched.",
-      "failed": "The review notice could not be dispatched."
+      "sent": "The review notice has been sent.",
+      "failed": "The review notice could not be sent."
     }
   },
   "smsReview": {
     "title": "Review-only: set a vendor verdict",
-    "description": "This control exists only in the review build. It changes one vendor code's review verdict, which is one language of one SMS template.",
+    "description": "This control is available only in the review build. It sets the review verdict for one vendor code, which represents one language of one SMS template.",
     "codeLabel": "Vendor code",
     "stateLabel": "Verdict",
     "state": {

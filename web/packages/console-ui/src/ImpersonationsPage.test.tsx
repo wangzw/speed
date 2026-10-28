@@ -1659,10 +1659,10 @@ describe('ImpersonationsPage', () => {
 
     const alert = await screen.findByRole('alert')
     const rendered = alert.textContent ?? ''
-    expect(rendered).toContain('member account')
+    expect(rendered).toContain('member of the tenant')
     expect(rendered).toContain('enabled')
     expect(rendered).toContain('unprotected')
-    expect(rendered).toContain('no impersonation in progress')
+    expect(rendered).toContain('not be impersonating another account')
     expect(rendered).not.toContain('during an impersonation')
     expect(rendered).not.toContain('while impersonating')
   })

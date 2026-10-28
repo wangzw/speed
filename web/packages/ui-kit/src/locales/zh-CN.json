@@ -2,7 +2,7 @@
   "emptyState": {
     "empty": {
       "title": "暂无数据",
-      "description": "这里还没有任何内容，数据出现后会显示在这里。"
+      "description": "这里还没有任何内容，有内容后会显示在这里。"
     },
     "noPermission": {
       "title": "无查看权限",
@@ -46,7 +46,7 @@
     "retry": "重试"
   },
   "phoneNumber": {
-    "incomplete": "该号码在 +{{code}} 下位数不完整。",
+    "incomplete": "该号码不完整，请补全 +{{code}} 的号码。",
     "invalid": "该号码在 +{{code}} 下无效。",
     "incompleteInternational": "请输入完整的国际号码。"
   },

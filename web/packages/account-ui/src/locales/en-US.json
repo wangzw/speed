@@ -1,7 +1,7 @@
 {
   "errors": {
     "authn": {
-      "bad_request": "The request could not be accepted. Please check it and try again.",
+      "bad_request": "Some of the information you entered isn't valid. Check it and try again.",
       "unsupported_region": "Sign-in is not available for this phone number's region.",
       "login_failed": "Email, phone number or password is incorrect, or the code is wrong.",
       "flow_invalid": "Your sign-in attempt is no longer valid. Please start again.",
@@ -13,11 +13,11 @@
       "impersonation_restricted": "This action is not available while you are viewing as another account.",
       "forbidden": "You do not have permission to do that.",
       "contact_required": "Verify your email address first to continue.",
-      "conflict": "The request conflicts with the account's current state. Refresh and try again.",
+      "conflict": "Your account may have changed. Refresh the page and try again.",
       "email_taken": "That email address is already used by another account.",
       "login_identifier_required": "This account needs at least one login name (a username or an email address).",
       "last_login_method": "This is your only remaining way to sign in. Set a password or link another account before removing it.",
-      "unsupported_media_type": "The request could not be read.",
+      "unsupported_media_type": "We couldn't process what you sent. Try again.",
       "throttled": "Too many attempts. Please try again later.",
       "unavailable": "The service is temporarily unavailable. Please try again later.",
       "human_verification_required": "Please confirm you are human, then try again.",
@@ -29,13 +29,13 @@
     },
     "client": {
       "network": "No network connection. Check your connection and try again.",
-      "timeout": "The request timed out. Please try again later.",
-      "protocol": "The service returned an unexpected response. Please try again later."
+      "timeout": "That took too long to finish. Please try again later.",
+      "protocol": "The service ran into a problem. Try again in a moment."
     },
     "unknown": "Something went wrong. Please try again later."
   },
   "stale": {
-    "description": "The content shown may be out of date. Retry to refresh it."
+    "description": "What you see here may be out of date. Retry to refresh it."
   },
   "sessions": {
     "title": "Sessions",
@@ -156,10 +156,10 @@
       "starting": "Starting verification…",
       "confirmLabel": "Verify",
       "cancelLabel": "Cancel",
-      "cannotElevate": "This deployment cannot complete this step-up. Sign in again for a stronger verification.",
+      "cannotElevate": "This verification can't be completed here. Sign in again for a stronger check of who you are.",
       "relogin": "Sign in again",
       "restart": "Restart verification",
-      "firstFactorRelogin": "This action needs a recent sign-in, and this session cannot re-prove its first factor here. Sign in again, then try the action again.",
+      "firstFactorRelogin": "This action needs a recent sign-in, and your current sign-in can't confirm your identity here. Sign in again, then retry the action.",
       "noFactor": "This account has no two-step verification set up. Add a verification method in the account settings first.",
       "accountSettingsLink": "Go to account settings"
     },
@@ -173,7 +173,7 @@
     "redirectNotice": "Continue in the window that opens to finish this step.",
     "continueLabel": "Continue",
     "enrollTotpHelp": "Add the content below to your authenticator app, then enter the 6-digit code the app shows.",
-    "enrollTotpUriLabel": "Authenticator setup URI",
+    "enrollTotpUriLabel": "Authenticator setup details",
     "codeLabel": "6-digit code",
     "field": {
       "identifier": "Email or phone number",
@@ -181,7 +181,7 @@
       "newPassword": "New password",
       "phone": "Phone number"
     },
-    "passkeyPrompt": "Use your device to register or present a passkey.",
+    "passkeyPrompt": "Use your device to register or use a passkey.",
     "passkeyRegisterPrompt": "Use your device to register a passkey.",
     "passkeyWaiting": "Waiting for your device…",
     "passkeyCancel": "Cancel",
@@ -287,7 +287,7 @@
     "send": "Send code",
     "resend": "Send another code",
     "resendIn": "You can request another code in {{seconds}} seconds.",
-    "autoStepUp": "For your security, sending the code needs a fresh sign-in. Select Send code to continue.",
+    "autoStepUp": "For your security, we need to confirm it's you again before sending the code. Select Send code to continue.",
     "sent": "A verification code was sent to {{email}}.",
     "codeLabel": "Verification code",
     "codeHelper": "Enter the 6-digit code from the email.",

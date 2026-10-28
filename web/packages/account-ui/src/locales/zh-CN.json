@@ -1,7 +1,7 @@
 {
   "errors": {
     "authn": {
-      "bad_request": "请求无效，请检查后重试。",
+      "bad_request": "提交的信息有误，请检查后重试。",
       "unsupported_region": "该手机号所在地区暂不支持登录。",
       "login_failed": "邮箱、手机号或密码不正确，或验证码有误。",
       "flow_invalid": "登录流程已失效，请重新开始。",
@@ -13,11 +13,11 @@
       "impersonation_restricted": "正在以其他账户身份查看时无法执行此操作。",
       "forbidden": "你没有执行该操作的权限。",
       "contact_required": "请先验证邮箱地址再继续。",
-      "conflict": "该操作与账户当前状态冲突，请刷新后重试。",
+      "conflict": "账户信息可能已发生变化，请刷新页面后重试。",
       "email_taken": "该邮箱已被另一账户使用。",
       "login_identifier_required": "账号需要至少一个登录名（用户名或邮箱地址）。",
       "last_login_method": "这是你最后一种可用的登录方式，解绑后将无法登录。请先设置密码或绑定其他账号。",
-      "unsupported_media_type": "请求无法被读取。",
+      "unsupported_media_type": "无法处理你提交的内容，请重试。",
       "throttled": "尝试次数过多，请稍后再试。",
       "unavailable": "服务暂时不可用，请稍后重试。",
       "human_verification_required": "请先完成人机验证，然后重试。",
@@ -29,13 +29,13 @@
     },
     "client": {
       "network": "网络连接不可用，请检查网络后重试。",
-      "timeout": "请求超时，请稍后重试。",
-      "protocol": "服务返回了异常响应，请稍后重试。"
+      "timeout": "这次操作耗时过长，请稍后重试。",
+      "protocol": "服务暂时出了问题，请稍后重试。"
     },
     "unknown": "出了点问题，请稍后重试。"
   },
   "stale": {
-    "description": "所示内容可能已过期，请重试刷新。"
+    "description": "这里显示的信息可能已过期，重试即可更新。"
   },
   "sessions": {
     "title": "登录会话",
@@ -146,7 +146,7 @@
       "other": "添加其他验证方式",
       "confirmLabel": "确认",
       "cancelLabel": "取消",
-      "enrolled": "{{factor}} 已登记。"
+      "enrolled": "{{factor}} 已添加。"
     },
     "stepUp": {
       "title": "重新验证身份",
@@ -156,10 +156,10 @@
       "starting": "正在开始验证…",
       "confirmLabel": "验证",
       "cancelLabel": "取消",
-      "cannotElevate": "本部署无法完成此次升级，请重新登录以获得更高的验证强度。",
+      "cannotElevate": "这里无法完成这次身份验证，请重新登录以获得更可靠的身份确认。",
       "relogin": "重新登录",
       "restart": "重新开始验证",
-      "firstFactorRelogin": "此操作需要最近一次的登录，而本会话无法在此重新证明第一因素。请重新登录后重试该操作。",
+      "firstFactorRelogin": "这项操作要求你最近登录过，而目前的登录无法在这里再次确认你的身份。请重新登录后再试。",
       "noFactor": "此账户尚未配置两步验证，请先在账户设置中添加验证方式。",
       "accountSettingsLink": "前往账户设置"
     },
@@ -173,7 +173,7 @@
     "redirectNotice": "请在打开的窗口中继续以完成此步骤。",
     "continueLabel": "继续",
     "enrollTotpHelp": "将下方内容添加进你的身份验证器应用，然后输入应用显示的 6 位验证码完成设置。",
-    "enrollTotpUriLabel": "身份验证器设置 URI",
+    "enrollTotpUriLabel": "身份验证器设置信息",
     "codeLabel": "6 位验证码",
     "field": {
       "identifier": "邮箱或手机号",
@@ -181,7 +181,7 @@
       "newPassword": "新密码",
       "phone": "手机号"
     },
-    "passkeyPrompt": "用你的设备登记或出示通行密钥。",
+    "passkeyPrompt": "用你的设备登记或使用通行密钥。",
     "passkeyRegisterPrompt": "用你的设备登记通行密钥。",
     "passkeyWaiting": "正在等待你的设备…",
     "passkeyCancel": "取消",

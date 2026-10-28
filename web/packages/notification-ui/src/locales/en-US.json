@@ -1,7 +1,7 @@
 {
   "errors": {
     "notification": {
-      "bad_request": "The request was not valid. Check it and try again.",
+      "bad_request": "Some of the information you entered isn't valid. Check it and try again.",
       "message_not_found": "That notification no longer exists.",
       "not_unsubscribable": "This is a required notification and cannot be turned off."
     },
@@ -14,8 +14,8 @@
     },
     "client": {
       "network": "The network is unavailable. Check your connection and try again.",
-      "timeout": "The request timed out. Try again in a moment.",
-      "protocol": "The service returned an unexpected response. Try again in a moment."
+      "timeout": "That took too long to finish. Please try again later.",
+      "protocol": "The service ran into a problem. Try again in a moment."
     },
     "tenantUnavailable": "Cannot access the current organization's content: it may not exist, or you may not be a member of it yet. To join, ask an administrator to send you an invitation.",
     "unknown": "Something went wrong. Try again in a moment."
@@ -25,7 +25,7 @@
     "description": "It may not exist, or you may not be a member of it yet. To join, ask an administrator to send you an invitation."
   },
   "stale": {
-    "description": "The content shown may be out of date. Retry to refresh it."
+    "description": "What you see here may be out of date. Retry to refresh it."
   },
   "bell": {
     "label": "Notifications",
@@ -69,7 +69,7 @@
     },
     "unsubscribableNote": "Required notification, cannot be turned off",
     "channelToggleAria": "{{type}}: {{channel}}",
-    "saved": "Updated {{type}}: {{channel}} notifications are now {{state}}.",
+    "saved": "{{type}}: {{channel}} notifications are now {{state}}.",
     "state": {
       "enabled": "on",
       "disabled": "off"

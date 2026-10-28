@@ -71,7 +71,7 @@ describe('console-ui resources', () => {
     ).toContain('errors.unknown')
   })
 
-  it('states a read failure as a request that could not complete', () => {
+  it('states a read failure as content that did not load, offering a retry', () => {
     // A 429 or a 5xx is an answer: the retryable placeholder must not
     // claim the server was silent, in either language.
     const errorDescriptions = (
@@ -86,23 +86,17 @@ describe('console-ui resources', () => {
     )
     expect(en.length).toBeGreaterThan(0)
     expect(zh.length).toBe(en.length)
+    // One sentence for every surface: a surface that describes the failure
+    // its own way is how the wording drifts apart.
+    const enSentence = en[0]?.[1] ?? ''
     for (const [key, text] of en) {
-      expect(text, key).toMatch(/could not complete this request\.$/)
+      expect(text, key).toBe(enSentence)
     }
-    // The zh bundle is its own authority for zh wording, so the zh side
-    // pins the property the wording carries: every surface states the same
-    // closing sentence. One surface drifting to "the server did not answer"
-    // shortens the shared suffix to a bare full stop.
-    const sharedSuffix = zh.reduce((suffix, [, text]) => {
-      let next = suffix
-      while (!text.endsWith(next)) {
-        next = next.slice(1)
-      }
-      return next
-    }, zh[0]?.[1] ?? '')
+    expect(enSentence).toContain('Try again')
+    const zhSentence = zh[0]?.[1] ?? ''
     for (const [key, text] of zh) {
-      expect(text.endsWith(sharedSuffix), key).toBe(true)
+      expect(text, key).toBe(zhSentence)
     }
-    expect(sharedSuffix.length).toBeGreaterThan(1)
+    expect(zhSentence).toContain('重试')
   })
 })

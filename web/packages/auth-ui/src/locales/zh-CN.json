@@ -30,7 +30,7 @@
     "retryAfter": "尝试次数过多，请在 {{seconds}} 秒后重试。",
     "codeRejected": "验证码不正确或已失效。",
     "invalidIdentifier": "请输入有效的邮箱地址或手机号。",
-    "policyFailure": "新密码不符合要求：长度需合适，且不能与账户的邮箱、手机号或用户名相同。",
+    "policyFailure": "新密码不符合要求：长度不在允许范围内，或与账户的邮箱、手机号或用户名相同。",
     "mismatch": "两次输入的密码不一致。",
     "flowInvalid": "重置流程已失效，请重新开始。",
     "startOver": "重新开始",
@@ -38,7 +38,7 @@
     "doneTitle": "密码已重置",
     "doneDescription": "请用新密码登录。",
     "loading": "正在读取重置进度…",
-    "unavailable": "本部署未提供可用的重置渠道。"
+    "unavailable": "本站无法重置密码。"
   },
   "smsSignIn": {
     "title": "短信登录",
@@ -88,13 +88,13 @@
     "registerEntry": "创建账户",
     "signInEntry": "已有账户？登录",
     "registerHint": "使用下列方式首次登录时，会为你创建账户。",
-    "signInAccountHint": "未登记的手机号会创建账户。"
+    "signInAccountHint": "手机号尚未注册时，登录会自动为你创建账户。"
   },
   "enterprise": {
     "emailLabel": "工作邮箱",
     "continue": "继续",
     "providersTitle": "选择你的组织",
-    "noProviders": "该邮箱未配置登录途径，请检查地址或换一种方式。",
+    "noProviders": "该邮箱没有可用的登录方式，请检查地址或换一种方式。",
     "editEmail": "换一个邮箱"
   },
   "passkey": {
@@ -115,7 +115,7 @@
     "retrySignIn": "重新登录",
     "usernameTaken": "该用户名已被占用，请换一个。",
     "emailTaken": "该邮箱已被注册，请换一个。",
-    "signupClosed": "本部署已关闭注册，请联系管理员获取账户。",
+    "signupClosed": "本站未开放注册，请联系管理员获取账户。",
     "throttled": "注册尝试次数过多，请稍后再试。",
     "retryAfter": "注册尝试次数过多，请在 {{seconds}} 秒后重试。",
     "unavailable": "注册服务暂时不可用，请稍后重试。",
@@ -125,7 +125,7 @@
   "social": {
     "title": "或使用社交账号登录",
     "titleFirst": "使用社交账号登录",
-    "linkRequiredEmail": "冲突的邮箱：{{email}}",
+    "linkRequiredEmail": "已被其他账户使用的邮箱：{{email}}",
     "provider": {
       "google": "Google",
       "github": "GitHub",
@@ -174,7 +174,7 @@
     },
     "displayNameLabel": "显示名",
     "passwordLabel": "密码",
-    "newAccountHint": "仅当被邀请的地址尚无账户时使用；该地址已有账户时留空即可。"
+    "newAccountHint": "仅当被邀请的邮箱还没有账户时才需填写；如果已有账户，留空即可。"
   },
   "impersonation": {
     "regionLabel": "冒充提示",
@@ -192,25 +192,25 @@
   },
   "errors": {
     "authn": {
-      "bad_request": "请求无效，请检查后重试。",
+      "bad_request": "提交的信息有误，请检查后重试。",
       "unsupported_region": "该手机号所在地区暂不支持登录。",
       "login_failed": "邮箱、手机号或密码不正确，或验证码有误。",
       "flow_invalid": "登录流程已失效，请重新开始。",
       "link_required": "该社交账号的邮箱已属于本站的一个账户。请先用原先的登录方式登录该账户，再到「账户设置 → 社交绑定」里关联此账号。",
       "method_disabled": "该登录方式已停用，请选择其他登录方式。",
       "account_unavailable": "该账户当前不可用，请联系管理员。",
-      "password_reset_closed": "本部署已关闭匿名密码重置。",
+      "password_reset_closed": "本站未开放免登录的密码重置。",
       "password_reset_unavailable": "该账户当前无法重置密码，请联系管理员。",
-      "conflict": "该操作与账户当前状态冲突，请刷新后重试。",
+      "conflict": "账户信息可能已发生变化，请刷新页面后重试。",
       "throttled": "尝试次数过多，请稍后再试。",
       "unavailable": "服务暂时不可用，请稍后重试。",
       "human_verification_required": "请先完成人机验证，然后重试。"
     },
     "client": {
       "network": "网络连接不可用，请检查网络后重试。",
-      "timeout": "请求超时，请稍后重试。",
-      "protocol": "服务返回了异常响应，请稍后重试。",
-      "http": "服务返回了 HTTP {{status}} 错误，请稍后重试。"
+      "timeout": "这次操作耗时过长，请稍后重试。",
+      "protocol": "服务暂时出了问题，请稍后重试。",
+      "http": "服务返回错误（{{status}}），请稍后重试。"
     },
     "unknown": "出了点问题，请稍后重试。"
   }

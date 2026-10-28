@@ -2,7 +2,7 @@
   "emptyState": {
     "empty": {
       "title": "No data yet",
-      "description": "There is nothing to show here yet. Data will appear in this space once it exists."
+      "description": "There is nothing to show here yet. Content will show up here once it's available."
     },
     "noPermission": {
       "title": "No access",
@@ -46,7 +46,7 @@
     "retry": "Try again"
   },
   "phoneNumber": {
-    "incomplete": "The number is incomplete under +{{code}}.",
+    "incomplete": "This number is incomplete. Enter the full number for +{{code}}.",
     "invalid": "The number is not valid under +{{code}}.",
     "incompleteInternational": "Enter the complete international number."
   },
