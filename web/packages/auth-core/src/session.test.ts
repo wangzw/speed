@@ -1613,6 +1613,44 @@ describe('cookie session (store-less)', () => {
     ])
   })
 
+  it('surfaces a post-completion profile read failure as that read’s error, leaving the committed session to restore()', async () => {
+    // The 2xx completion committed the session (the cookie is set and the
+    // flow is terminal); reading the principal failed. The failure is the
+    // read's own -- no login verdict, no local rollback -- and a read retry
+    // settles the committed session.
+    const refused = apiError(503, 'authn.unavailable')
+    let profileReads = 0
+    const harness = makeCookieHarness({
+      [LOGIN_ANSWER]: () => sessionCompletion(),
+      [PROFILE_GET]: () => {
+        profileReads += 1
+        if (profileReads === 1) {
+          throw refused
+        }
+        return principal({ account_id: 'acct-restored' })
+      },
+      [SESSION_GET]: () => sessionView({ authenticated: true }),
+    })
+    const error = await captureRejection(
+      harness.session.answerFlow({ seq: 2, step: 'complete' }),
+    )
+    expect(error).toBe(refused)
+    expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
+    expect(
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows/answer'),
+    ).toHaveLength(1)
+
+    await expect(harness.session.restore()).resolves.toBe(true)
+    expect(harness.session.getSnapshot()).toMatchObject({
+      state: 'authenticated',
+      principal: principal({ account_id: 'acct-restored' }),
+    })
+    // Recovering the session is a read: the completed answer is not re-sent.
+    expect(
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows/answer'),
+    ).toHaveLength(1)
+  })
+
   it('forces delivery to session whatever the caller asked for', async () => {
     const harness = makeCookieHarness({
       [LOGIN_START]: (call) => {
