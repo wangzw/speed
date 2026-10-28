@@ -288,7 +288,11 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     expect(server.seedOutput).toContain(
       `seeded: account ${OPERATOR.identifier}`,
     )
-    expect(server.seedOutput).toContain('seeded: tenant acme')
+    expect(server.seedOutput).toContain('seeded: tenant system')
+    // The template seeds no business tenant: the operator administers the
+    // platform, and the only other tenant is the personal space the hook gives
+    // the seeded account.
+    expect(server.seedOutput).not.toContain('seeded: tenant acme')
     expect(server.seedOutput).toContain('seeded: role system/platform-admin')
 
     // The first run mints the token signing key on the volume with owner-only
@@ -575,15 +579,15 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     ).toBeVisible()
 
     // The overview's roster counts come from the deployment's tenant list. The
-    // seed registers the system tenant and the business tenant acme, and the
-    // personal-tenant hook gives the seeded operator its own space, so three
-    // active tenants stand in the roster and nothing is disabled or deleted.
+    // seed registers the system tenant, and the personal-tenant hook gives the
+    // seeded operator its own space, so two active tenants stand in the roster
+    // and nothing is disabled or deleted.
     await expect(
       kpiValue(page, copy('consoleUi', 'dashboard.kpi.tenants')),
-    ).toHaveText('3')
+    ).toHaveText('2')
     await expect(
       kpiValue(page, copy('consoleUi', 'dashboard.kpi.active')),
-    ).toHaveText('3')
+    ).toHaveText('2')
     await expect(
       kpiValue(page, copy('consoleUi', 'dashboard.kpi.disabled')),
     ).toHaveText('0')

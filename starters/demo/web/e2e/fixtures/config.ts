@@ -791,7 +791,7 @@ export async function writeDeployConfig(
     ['__PUBLIC_DOMAIN__', deployValues.publicDomain, 2],
     // The operator's address is the account's identifier and the administrator
     // the template names for the seeded tenant.
-    ['__OPERATOR_EMAIL__', deployValues.operatorEmail, 2],
+    ['__OPERATOR_EMAIL__', deployValues.operatorEmail, 1],
     // The username is the name the password login accepts.
     ['__OPERATOR_USERNAME__', deployValues.operatorUsername, 1],
     ['__OPERATOR_PASSWORD__', deployValues.operatorPassword, 1],

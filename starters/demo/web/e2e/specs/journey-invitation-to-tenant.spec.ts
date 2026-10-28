@@ -603,7 +603,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       ).toBeHidden()
     })
 
-    await test.step('step 9: a member has no console entry, and a full-page console load stays on the access wait', async () => {
+    await test.step('step 9: a member has no console entry, and a full-page console load turns back home', async () => {
       if (inviteePage === undefined) {
         throw new Error('the invitee page was never opened')
       }
@@ -626,15 +626,16 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         }),
       ).toHaveCount(0)
 
-      // The full-page-load branch: no tenant settles for a member, so the
-      // console area cannot decide the permission set and stays on its
-      // frameless wait. Nothing of the console renders, and the tenant home is
-      // not where the viewer lands.
+      // The full-page-load branch: the member's own tenant list settles the
+      // tenant, the platform permission set reads as a known empty set, and the
+      // console area turns the viewer back to the tenant home. Nothing of the
+      // console renders, and no request is spent being refused.
       for (const path of ['/console', '/console/settings']) {
         await invitee.goto(`${server.url}${path}`)
         await expect(
-          invitee.getByRole('progressbar', {
-            name: copy('demo', 'console.accessPending'),
+          invitee.getByRole('heading', {
+            level: 1,
+            name: copy('demo', 'home.heading'),
             exact: true,
           }),
         ).toBeVisible({ timeout: 15_000 })
@@ -644,15 +645,13 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
             exact: true,
           }),
         ).toHaveCount(0)
-        await expect(invitee.getByRole('heading', { level: 1 })).toHaveCount(0)
         await expect(
-          invitee.getByRole('heading', {
-            level: 1,
-            name: copy('demo', 'home.heading'),
+          invitee.getByRole('progressbar', {
+            name: copy('demo', 'console.accessPending'),
             exact: true,
           }),
         ).toHaveCount(0)
-        expect(new URL(invitee.url()).pathname).toBe(path)
+        expect(new URL(invitee.url()).pathname).toBe('/')
       }
     })
 
