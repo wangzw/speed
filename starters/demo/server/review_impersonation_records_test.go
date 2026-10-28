@@ -110,7 +110,7 @@ func reviewRecordsServer(t *testing.T) (base, token string) {
 	serve.waitReady(t)
 
 	base = fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	return base, signInWithTOTP(t, base, reviewOperatorIdentifier, reviewOperatorPassword, secret)
+	return base, signInWithTOTP(t, base, reviewOperatorUsername, reviewOperatorPassword, secret)
 }
 
 // reviewAccountID finds one account by its exact login identifier through the

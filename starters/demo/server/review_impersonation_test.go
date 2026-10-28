@@ -46,10 +46,13 @@ import (
 )
 
 // The review operator the fixture seeds. They come from review/sqlite.yaml; the
-// password is the development credential the file publishes.
+// password is the development credential the file publishes. The account signs
+// in with its username: the seeded email is an assertion the administrator made,
+// not a way the holder chose, so it is not a login name.
 const (
-	reviewOperatorIdentifier = "operator@demo.test"
-	reviewOperatorPassword   = "operator-dev-secret"
+	reviewOperatorUsername = "operator"
+	reviewOperatorEmail    = "operator@demo.test"
+	reviewOperatorPassword = "operator-dev-secret"
 )
 
 // reviewImpersonationSecretEpoch is the TOTP period the factor is generated
@@ -147,7 +150,7 @@ func reviewImpersonationSession(t *testing.T) (base, token string) {
 	serve.waitReady(t)
 
 	base = fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	token = signInWithTOTP(t, base, reviewOperatorIdentifier, reviewOperatorPassword, secret)
+	token = signInWithTOTP(t, base, reviewOperatorUsername, reviewOperatorPassword, secret)
 	return base, token
 }
 
@@ -160,7 +163,7 @@ func reviewSeededTOTPSecret(t *testing.T, configPath string) string {
 	t.Helper()
 	var secret string
 	withReviewDatabase(t, configPath, func(ctx context.Context, database db.Database, accounts authn.Accounts) {
-		id, err := accounts.Lookup(ctx, authn.IdentifierEmail, reviewOperatorIdentifier)
+		id, err := accounts.Lookup(ctx, authn.IdentifierEmail, reviewOperatorEmail)
 		if err != nil {
 			t.Fatalf("looking up the seeded operator: %v", err)
 		}

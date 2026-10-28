@@ -172,9 +172,9 @@ type seedSetting struct {
 
 // seedAccount is one account the seed writes.
 type seedAccount struct {
-	// Identifier is the account's login name: one holding an @ is an email
-	// address and any other a username, as a password login reads it. It is the
-	// name the operator signs in with.
+	// Identifier is the account's identifier: one holding an @ is an email
+	// address and any other a username. An email address written here is an
+	// administrator's assertion, not a login way, so it does not sign in.
 	Identifier string `config:"identifier"`
 	// Username is the account's login name when Identifier is an email address.
 	// Every account is created with a username, so an entry whose only
