@@ -2,6 +2,9 @@
   "app": {
     "title": "Speed demo"
   },
+  "callbackNotice": {
+    "dismiss": "Dismiss"
+  },
   "nav": {
     "home": "Home",
     "console": "Console",

@@ -115,6 +115,40 @@ describe('AccountSettingsPage', () => {
     expect(sends()).toHaveLength(1)
   })
 
+  it('words a refused step-up round trip that landed here', async () => {
+    // A step-up flow started from this page sends the page as its
+    // `return_to`: the provider's refusal lands back here with its code in
+    // the fragment, and this page is the surface that words it.
+    renderAccount('#authn_error=login-failed')
+
+    const errors = (accountUiResources['en-US'] as {
+      readonly errors: { readonly authn: Readonly<Record<string, string>> }
+    }).errors
+    const text = errors.authn.login_failed ?? ''
+    const notice = await screen.findByText(text)
+    // The page itself is the landing surface: its notice sits with the page
+    // content, under the page heading, not in the shell's banner above it.
+    const heading = screen.getByRole('heading', {
+      level: 1,
+      name: demoEnUS.account.title,
+    })
+    expect(
+      heading.compareDocumentPosition(notice) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    // The fragment is one-shot: a reload does not repeat the notice.
+    expect(window.location.hash).toBe('')
+
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole('button', {
+          name: demoEnUS.callbackNotice.dismiss,
+        }),
+      )
+    await waitFor(() => expect(screen.queryByText(text)).toBeNull())
+  })
+
   it('starts in the change-address form when the banner asked to change', async () => {
     renderAccount('?change=email')
 
@@ -175,6 +209,13 @@ describe('AccountBindingCallbackPage', () => {
     expect(readFlow).not.toHaveBeenCalled()
     // The fragment is one-shot: the reload that follows repeats nothing.
     expect(window.location.hash).toBe('')
+    // The page consumed the fragment, so the shell's fallback notice never
+    // appears beside it.
+    expect(
+      screen.queryByRole('button', {
+        name: demoEnUS.callbackNotice.dismiss,
+      }),
+    ).toBeNull()
     expect(
       screen.queryByRole('button', { name: bindingEnUS.retry ?? '' }),
     ).toBeNull()

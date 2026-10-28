@@ -36,20 +36,22 @@
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Link from '@mui/material/Link'
-import { IdentifiersSection, PasswordSection } from '@speed/account-ui'
+import { ACCOUNT_UI_NAMESPACE, IdentifiersSection, PasswordSection } from '@speed/account-ui'
 import { useTranslation } from '@speed/i18n'
-import { useRouteLinkProps } from '@speed/route-kit'
+import { useLocationPath, useRouteLinkProps } from '@speed/route-kit'
 import { PageHeader } from '@speed/ui-kit'
 import type { ReactElement } from 'react'
 import { isLoginName } from '../account-setup.js'
 import { useAuthnProfileGet } from '../app-api/index.js'
 import { useAppServices } from '../app-services.js'
+import { CallbackLandingNotice } from '../callback-error-notice.js'
 import { TENANT_HOME_PATH } from './not-found-page.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
 export function AccountSetupPage(): ReactElement {
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
+  const { path: pathname } = useLocationPath()
   const homeLink = useRouteLinkProps(TENANT_HOME_PATH)
   // The profile is the same read the two sections below make: one cache
   // entry, one request, and each write they perform invalidates it.
@@ -85,14 +87,25 @@ export function AccountSetupPage(): ReactElement {
             : t('accountSetup.completeWithEmail')}
         </Alert>
       ) : null}
+      {/* A step-up round trip started from this page lands back here with a
+          refusal's problem code in the fragment: this page reads it. */}
+      <CallbackLandingNotice namespace={ACCOUNT_UI_NAMESPACE} />
       {/* Usernames only: the setup page's job is the login name a password
           sign-in needs, and an email address as one is the account page's
           face, beside the other identifier writes. */}
-      <IdentifiersSection session={session} emailAvailable={false} />
+      <IdentifiersSection
+        session={session}
+        emailAvailable={false}
+        returnPath={pathname}
+      />
       {/* The section owns its heading and the withheld form: with no login
           name it renders the explanation itself, so the page states nothing
           about the password twice. */}
-      <PasswordSection session={session} withoutLoginName="explain" />
+      <PasswordSection
+        session={session}
+        withoutLoginName="explain"
+        returnPath={pathname}
+      />
       <Box>
         <Link
           href={homeLink.href}

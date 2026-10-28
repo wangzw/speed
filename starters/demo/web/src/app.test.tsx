@@ -42,6 +42,7 @@ import { UI_KIT_NAMESPACE } from '@speed/ui-kit'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import demoZhCN from './locales/zh-CN.json' with { type: 'json' }
 import { renderDemoApp } from './test-utils/render.js'
+import { createBackend } from './a11y/backends.js'
 import { hasCoarsePointerTouchTarget } from './test-utils/emitted-css.js'
 import { mockMatchMedia } from './test-utils/matchMedia.js'
 import { AUTH_CALLBACK_PATH } from './routes.js'
@@ -108,6 +109,9 @@ beforeEach(() => {
   // not survive the frame's settlement.
   setCurrentTenantId(TENANT_ID)
   setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
+  // The caller tenant list is module state too: a case starts with no rows
+  // and loads its own through the scripted backend.
+  clearSelfTenants()
 })
 
 describe('the render harness', () => {
@@ -1489,5 +1493,78 @@ describe('the sidebar shell layout', () => {
     expect(
       account.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_PRECEDING,
     ).toBeTruthy()
+  })
+})
+
+/**
+ * The shell's callback-fragment fallback: a refused redirect round trip
+ * lands with its problem code in the URL fragment, and the surface that
+ * started the flow reads it. When no surface does -- an authenticated viewer
+ * at the root after a login refusal, for one -- the tenant frame presents it
+ * once instead of dropping the reason.
+ */
+describe('an unread callback fragment', () => {
+  const LOGIN_FAILED = 'authn_error=login-failed'
+  const dismissLabel = demoEnUS.callbackNotice.dismiss
+
+  it('presents a landing no surface consumed as a one-time notice', async () => {
+    window.history.replaceState({}, '', `/#${LOGIN_FAILED}`)
+    bindRequestFn(createBackend('data'))
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures() }),
+      ),
+    })
+
+    // The sign-in surface (which consumes the fragment) is not mounted for
+    // an authenticated viewer, so the frame words the code once.
+    expect(
+      await screen.findByText(tAccount('errors.authn.login_failed')),
+    ).toBeInTheDocument()
+    // The fragment is one-shot: a reload does not repeat the notice.
+    expect(window.location.hash).toBe('')
+
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: dismissLabel }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByText(tAccount('errors.authn.login_failed')),
+      ).toBeNull(),
+    )
+  })
+
+  it('leaves the notice to the sign-in surface when it consumes the fragment', async () => {
+    window.history.replaceState({}, '', `/#${LOGIN_FAILED}`)
+    bindRequestFn(createBackend('data'))
+    renderDemoApp()
+
+    // The anonymous sign-in surface reads the code and words it in its own
+    // banner; the frame adds no second notice.
+    expect(
+      await screen.findByText(tAuth('errors.authn.login_failed')),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: dismissLabel }),
+    ).toBeNull()
+  })
+
+  it('leaves the notice to the console area when it consumes the fragment', async () => {
+    window.history.replaceState({}, '', `/console/tenants#${LOGIN_FAILED}`)
+    bindRequestFn(createBackend('data'))
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ system: ['tenant.read'] }),
+      ),
+    })
+
+    // The console area reads the fragment the page it hosts started, and
+    // words it above the page; no tenant-frame notice exists on this path.
+    expect(
+      await screen.findByText(tConsole('errors.authn.login_failed')),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: dismissLabel }),
+    ).toBeInTheDocument()
   })
 })

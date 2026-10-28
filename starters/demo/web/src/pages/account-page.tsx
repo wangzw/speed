@@ -54,6 +54,7 @@ import type { ReactElement } from 'react'
 import { useEffect } from 'react'
 import Box from '@mui/material/Box'
 import {
+  ACCOUNT_UI_NAMESPACE,
   AppearanceSection,
   BindingCallbackHandler,
   ContactVerificationSection,
@@ -73,6 +74,7 @@ import { themePresets } from '@speed/theme-presets'
 import { PageHeader, useAppThemePreset } from '@speed/ui-kit'
 import { useAuthnProfileGet } from '../app-api/index.js'
 import { useAppServices } from '../app-services.js'
+import { CallbackLandingNotice } from '../callback-error-notice.js'
 import { persistThemePreset } from '../chrome.js'
 import {
   forgetInvitationLanding,
@@ -88,7 +90,7 @@ import { DEMO_NAMESPACE } from '../resources.js'
 export function AccountSettingsPage(): ReactElement {
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const { search } = useLocationPath()
+  const { path: pathname, search } = useLocationPath()
   const landing = new URLSearchParams(search)
   // The banner and the post-registration landing reach this page with an
   // intent: `verify=1` asks for the one automatic code, `change=email` opens
@@ -137,7 +139,11 @@ export function AccountSettingsPage(): ReactElement {
         title={t('account.title')}
         description={t('account.description')}
       />
-      <ProfileSection session={session} />
+      {/* A step-up or enroll round trip started here lands back here with a
+          refusal's problem code in the fragment: this page is the surface
+          that reads it (the redirect's `return_to`) and words it. */}
+      <CallbackLandingNotice namespace={ACCOUNT_UI_NAMESPACE} />
+      <ProfileSection session={session} returnPath={pathname} />
       {/* The account's email verification, completed here rather than on a
           page of its own: `none` renders nothing, `pending` offers the
           send/verify path and the change-address form, and `verified` names
@@ -149,26 +155,33 @@ export function AccountSettingsPage(): ReactElement {
         session={session}
         initialChangeOpen={changeOpen}
         autoSend={verifyLanding}
+        returnPath={pathname}
       />
-      <PasswordSection session={session} />
-      {phoneServed ? <PhoneSection session={session} /> : null}
+      <PasswordSection session={session} returnPath={pathname} />
+      {phoneServed ? (
+        <PhoneSection session={session} returnPath={pathname} />
+      ) : null}
       <IdentifiersSection
         session={session}
         emailAvailable={emailIdentifierServed}
+        returnPath={pathname}
       />
       <AppearanceSection
         presets={presetChoices}
         value={preset}
         onChange={choosePreset}
       />
-      <PreferencesSection session={session} />
+      <PreferencesSection session={session} returnPath={pathname} />
       <SessionsSection />
       <SocialBindingsSection
         session={session}
         returnTo={ACCOUNT_CALLBACK_PATH}
         onAuthorizeUrl={navigateToAuthorizationUrl}
+        returnPath={pathname}
       />
-      {mfaServed ? <MfaSection session={session} /> : null}
+      {mfaServed ? (
+        <MfaSection session={session} returnPath={pathname} />
+      ) : null}
     </Box>
   )
 }

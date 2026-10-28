@@ -51,6 +51,7 @@ import {
 } from '@speed/auth-core'
 import { featurePresence } from '@speed/auth-core'
 import type { AuthSnapshot } from '@speed/auth-core'
+import { ACCOUNT_UI_NAMESPACE } from '@speed/account-ui'
 import { ImpersonationNoticeProvider } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
 import { RouteGuard } from '@speed/layout-kit'
@@ -118,6 +119,8 @@ import {
   useImpersonationStatus,
 } from './impersonation.js'
 import { ContactVerificationBanner } from './contact-verification-banner.js'
+import { CallbackErrorAlert } from './callback-error-notice.js'
+import { clearCallbackFragment, readCallbackError } from './sign-in-landing.js'
 import { DemoNavLabel } from './nav-label.js'
 import { ConsoleNavIcon } from './nav-icons.js'
 import { PersonalTenantNoticeProvider } from './personal-tenant-notice.js'
@@ -474,6 +477,21 @@ function TenantFrame({
   // the "impersonating" chip in the user-menu slot, and the account menu's
   // end item all read this one state and one shared end attempt.
   const notice = useImpersonationNoticeState(grant)
+  // A refused redirect round trip that no landing surface consumed. The
+  // surfaces that can consume the fragment (the sign-in surface, the binding
+  // callback, the account and console pages) read and clear it in their own
+  // mount effects, and those run before this frame's: whatever is still here
+  // was not consumed, and dropping it would swallow the reason. It is shown
+  // once and cleared, so a reload does not repeat it.
+  const [callbackError, setCallbackError] = useState<string | null>(null)
+  useEffect(() => {
+    const remaining = readCallbackError()
+    if (remaining === undefined) {
+      return
+    }
+    setCallbackError(remaining.code)
+    clearCallbackFragment()
+  }, [])
   // Whether the feature document is settled at all. `pending`/`failed` keep
   // the current tenant unknown (tenant-scoped queries stay disabled); `ready`
   // lets the roster read (when tenant.admin is served) and the caller tenant
@@ -869,6 +887,13 @@ function TenantFrame({
           banner={
             <>
               <ImpersonationBannerSlot />
+              {callbackError === null ? null : (
+                <CallbackErrorAlert
+                  code={callbackError}
+                  namespace={ACCOUNT_UI_NAMESPACE}
+                  onClose={() => setCallbackError(null)}
+                />
+              )}
               {/* The registration-verification notice, below the app bar for
                   the whole tenant frame. It renders only while the profile's
                   verification state is pending, and stays until the address

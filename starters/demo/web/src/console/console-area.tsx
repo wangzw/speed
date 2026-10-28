@@ -26,6 +26,7 @@
  */
 
 import { useCallback } from 'react'
+import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import Link from '@mui/material/Link'
 import type {
@@ -33,13 +34,14 @@ import type {
   ConsoleNavGroup,
   ConsoleRouteTable,
 } from '@speed/console-ui'
-import { ConsoleShell, consoleNavGroups } from '@speed/console-ui'
+import { ConsoleShell, CONSOLE_UI_NAMESPACE, consoleNavGroups } from '@speed/console-ui'
 import { useTranslation } from '@speed/i18n'
 import type { AppShellShellLayout } from '@speed/layout-kit'
-import { useNavigate, useNavItems, useRouteLinkProps } from '@speed/route-kit'
+import { useLocationPath, useNavigate, useNavItems, useRouteLinkProps } from '@speed/route-kit'
 import type { FeatureName } from '@speed/api-sdk/features'
 import type { ReactElement, ReactNode } from 'react'
 import { useAppServices } from '../app-services.js'
+import { CallbackLandingNotice } from '../callback-error-notice.js'
 import { AppBrand, HeaderActions, UserMenu } from '../chrome.js'
 import { TENANT_HOME_PATH } from '../pages/not-found-page.js'
 import { invitationPath, ACCOUNT_PATH } from '../paths.js'
@@ -105,6 +107,10 @@ export function ConsoleArea({
 }: ConsoleAreaProps): ReactElement {
   const navigate = useNavigate()
   const { session } = useAppServices()
+  // The page the operator is on: a step-up flow started here sends it as its
+  // `return_to`, so a redirect round trip lands back on this page and its
+  // refusal is read here.
+  const { path: pathname } = useLocationPath()
   // The console entries the router derived for the current URL: the frame
   // marks a row selected by asking whether that row's path is one of them
   // and is the selected one (the shell does no path matching of its own).
@@ -136,6 +142,9 @@ export function ConsoleArea({
       // operator's account has no active factor; the path is this app's own
       // (src/paths), reachable at /account.
       accountHref={ACCOUNT_PATH}
+      // The page this console URL names: a step-up flow's redirect round
+      // trip lands here, so this page reads the refusal.
+      returnPath={pathname}
       // Starting or ending an impersonation changes whose identity every
       // later read belongs to; the app root's action settles the cache,
       // the session and the identity-dependent host state, then moves the
@@ -147,6 +156,12 @@ export function ConsoleArea({
       sidebarCollapsed={sidebarCollapsed}
       onSidebarCollapsedChange={onSidebarCollapsedChange}
     >
+      {/* A step-up round trip started from this console page lands back here
+          with a refusal's problem code in the fragment: the console area
+          reads it and words it above the page. */}
+      <Box sx={{ mb: 2, maxWidth: 960 }}>
+        <CallbackLandingNotice namespace={CONSOLE_UI_NAMESPACE} />
+      </Box>
       {children}
     </ConsoleShell>
   )

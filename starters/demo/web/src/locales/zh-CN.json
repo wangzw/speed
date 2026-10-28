@@ -2,6 +2,9 @@
   "app": {
     "title": "Speed 示范"
   },
+  "callbackNotice": {
+    "dismiss": "关闭"
+  },
   "nav": {
     "home": "首页",
     "console": "控制台",
