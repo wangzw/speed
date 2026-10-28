@@ -171,6 +171,8 @@ func (r *routes) failRegister(c *call, err error) {
 		c.fail(mount.CodeUsernameTaken)
 	case errors.Is(err, authn.ErrBusy):
 		c.busy()
+	case authn.IsUsernameShape(err):
+		c.fail(mount.CodeUsernameInvalid)
 	case errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidIdentifier),
 		errors.Is(err, authn.ErrInvalidArgument),
 		errors.Is(err, authn.ErrInvalidAccountID):

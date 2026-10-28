@@ -834,7 +834,7 @@
                 }
               }
             },
-            "description": "The username is one the system keeps for itself"
+            "description": "The username does not normalize"
           },
           "401": {
             "content": {

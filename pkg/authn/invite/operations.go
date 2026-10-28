@@ -298,6 +298,7 @@ var acceptOperation = speedhttp.NewReplyOperation[acceptInput](
 		},
 		speedhttp.ProblemResponseOf(http.StatusBadRequest, "The body or an argument is malformed", typePrefix+"bad-request"),
 		speedhttp.ProblemResponseOf(http.StatusBadRequest, "The username is one the system keeps for itself", typePrefix+"username-reserved"),
+		speedhttp.ProblemResponseOf(http.StatusBadRequest, "The username does not normalize", typePrefix+"username-invalid"),
 		speedhttp.ProblemResponseOf(http.StatusUnsupportedMediaType, descriptionNotJSON, typePrefix+"unsupported-media-type"),
 		{
 			Status:      http.StatusNotFound,

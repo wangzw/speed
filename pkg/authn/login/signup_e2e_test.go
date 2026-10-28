@@ -81,8 +81,8 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 
 		// A name that cannot be used is 400, and the flow is still at the step.
 		bad := h.answerUsername(seq, "not a name!")
-		if bad.status != http.StatusBadRequest || bad.json(t)["type"] != "urn:speed:authn:bad-request" {
-			t.Fatalf("an unusable username answered %d %s, want 400 bad-request", bad.status, bad.body)
+		if bad.status != http.StatusBadRequest || bad.json(t)["type"] != "urn:speed:authn:username-invalid" {
+			t.Fatalf("an unusable username answered %d %s, want 400 username-invalid", bad.status, bad.body)
 		}
 		if accounts, _, err := h.accounts.List(h.ctx, authn.AccountQuery{}); err != nil || len(accounts) != 0 {
 			t.Errorf("accounts = %v after an unusable name, want none", accounts)

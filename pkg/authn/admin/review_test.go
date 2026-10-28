@@ -514,6 +514,7 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 	}{
 		{"invalid argument", authn.ErrInvalidArgument, http.StatusBadRequest, mount.CodeBadRequest},
 		{"invalid identifier", authn.ErrInvalidIdentifier, http.StatusBadRequest, mount.CodeBadRequest},
+		{"invalid username", authn.UsernameShape(authn.ErrInvalidIdentifier), http.StatusBadRequest, mount.CodeUsernameInvalid},
 		{"reserved username", authn.ErrUsernameReserved, http.StatusBadRequest, mount.CodeUsernameReserved},
 		{"password policy", authn.ErrPasswordPolicy, http.StatusBadRequest, mount.CodeBadRequest},
 		{"invalid config", authn.ErrInvalidConfig, http.StatusBadRequest, mount.CodeBadRequest},

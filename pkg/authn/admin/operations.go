@@ -357,6 +357,7 @@ var accountCreateOperation = speedhttp.NewOperation[accountCreateInput, AuthnAdm
 	speedhttp.Failures(commonFailures(),
 		problemResponse(http.StatusBadRequest, mount.CodeBadRequest, "The body could not be read, an argument is invalid, or the username cannot be normalized"),
 		problemResponse(http.StatusBadRequest, mount.CodeUsernameReserved, "The username is one the system keeps for itself"),
+		problemResponse(http.StatusBadRequest, mount.CodeUsernameInvalid, "The username does not normalize"),
 		speedhttp.ProblemResponse(http.StatusForbidden, "The caller is impersonating or may not create accounts"),
 		problemResponse(http.StatusUnsupportedMediaType, mount.CodeUnsupportedMediaType, "The request body is not application/json"),
 		speedhttp.ProblemResponse(http.StatusConflict, "An account with that identifier already exists (conflict), the email address is reserved by another account (email-taken), or a password account would have no username or email address to log in with (login-identifier-required)"),

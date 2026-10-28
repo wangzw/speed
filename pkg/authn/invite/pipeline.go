@@ -35,6 +35,12 @@ func (p *product) reservedRequest() error {
 	return inviteFailure(http.StatusBadRequest, mount.CodeUsernameReserved)
 }
 
+// invalidUsername is the refusal of a username that does not normalize: a 400
+// of its own, so the caller can point at the field.
+func (p *product) invalidUsername() error {
+	return inviteFailure(http.StatusBadRequest, mount.CodeUsernameInvalid)
+}
+
 // caller reads the identity the gateway put on the request. The management
 // routes are guarded, so a request that reaches a handler carries one; an absent
 // identity is answered with the gateway's own 401 rather than read as a caller.
@@ -164,6 +170,8 @@ func (p *product) cause(op string, err error) error {
 // declare one.
 func (p *product) answer(op string, err error) error {
 	switch {
+	case authn.IsUsernameShape(err):
+		return p.invalidUsername()
 	case errors.Is(err, ErrInvalidEmail), errors.Is(err, authn.ErrInvalidArgument),
 		errors.Is(err, authn.ErrInvalidIdentifier):
 		return p.badRequest()
@@ -200,6 +208,8 @@ func (p *product) acceptAnswerReply(op string, err error) (speedhttp.Reply, erro
 	case errors.Is(err, ErrInvitationExpired), errors.Is(err, ErrInvitationRevoked),
 		errors.Is(err, ErrInvitationAlreadyAccepted):
 		return nil, inviteFailure(http.StatusConflict, mount.CodeConflict)
+	case authn.IsUsernameShape(err):
+		return nil, p.invalidUsername()
 	case errors.Is(err, authn.ErrInvalidArgument), errors.Is(err, authn.ErrInvalidIdentifier):
 		return nil, p.badRequest()
 	case errors.Is(err, authn.ErrUsernameReserved):

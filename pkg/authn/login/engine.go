@@ -381,6 +381,14 @@ func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw 
 		}
 		c.fail(mount.CodeUsernameReserved)
 		return
+	case authn.IsUsernameShape(err):
+		rec.Seq++
+		rec.Answers++
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		c.fail(mount.CodeUsernameInvalid)
+		return
 	case errors.Is(err, authn.ErrInvalidIdentifier):
 		rec.Seq++
 		rec.Answers++

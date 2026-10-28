@@ -235,6 +235,32 @@ func TestAnIncompleteCleanupOnAcceptanceAnswers503(t *testing.T) {
 	}
 }
 
+// TestAMalformedUsernameOnAcceptanceAnswers400OfItsOwn holds that a username
+// that does not normalize is told apart from the rest of the body: the caller
+// learns which value to change, and the invitation is still redeemable.
+func TestAMalformedUsernameOnAcceptanceAnswers400OfItsOwn(t *testing.T) {
+	h := newHarness(t)
+	h.mounter.AsAnonymous()
+	h.admin.err = authn.UsernameShape(authn.ErrInvalidIdentifier)
+	issued := h.issue("tenant-a", "zoe@example.com")
+
+	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token,
+		map[string]string{"username": "ab", "display_name": "Zoe"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("accept status = %d, want 400: %s", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("the body %q is not JSON: %v", w.Body.String(), err)
+	}
+	if got, _ := body["type"].(string); got != "urn:speed:authn:username-invalid" {
+		t.Errorf("problem type = %q, want urn:speed:authn:username-invalid", got)
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+		t.Errorf("status after the 400 = %d, want back to pending", got)
+	}
+}
+
 // TestATakenUsernameOnAcceptanceAnswers409 holds that the acceptance face
 // reports a username another account already holds as the conflict it is,
 // rather than as an unavailable dependency: the caller can choose another

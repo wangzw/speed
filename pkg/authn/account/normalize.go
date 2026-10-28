@@ -37,7 +37,13 @@ var (
 // errNotWellFormed is what every normalization failure is. It names the class
 // of identifier and the rule it broke, and never the value, which is a person's.
 func errNotWellFormed(kind authn.IdentifierKind, rule string) error {
-	return fmt.Errorf("%w: a %s %s", authn.ErrInvalidIdentifier, kind, rule)
+	err := fmt.Errorf("%w: a %s %s", authn.ErrInvalidIdentifier, kind, rule)
+	if kind == authn.IdentifierUsername {
+		// The shape of a username is its own failure: a form carrying several
+		// fields can only say which one is wrong if the answer names it.
+		return authn.UsernameShape(err)
+	}
+	return err
 }
 
 // NormalizeIdentifier is the one form an identifier is stored and looked up in.

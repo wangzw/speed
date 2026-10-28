@@ -379,6 +379,8 @@ var addIdentifierOperation = speedhttp.NewReplyOperation[addIdentifierInput](
 		badRequest("The body could not be read, the kind or the value is outside its domain, or the proof is over its limit"),
 		speedhttp.ProblemResponseOf(http.StatusBadRequest,
 			"A username is one the system keeps for itself", typePrefix+mount.CodeUsernameReserved),
+		speedhttp.ProblemResponseOf(http.StatusBadRequest,
+			"A username does not normalize", typePrefix+mount.CodeUsernameInvalid),
 		bodyOverLimit,
 		unauthorized("No usable credential, or the freshness a change of what proves the account asks for"),
 		humanRefused(),

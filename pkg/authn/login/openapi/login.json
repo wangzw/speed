@@ -1028,7 +1028,7 @@
                 }
               }
             },
-            "description": "The username a pending first login would open the account with is one the system keeps for itself"
+            "description": "The username a pending first login would open the account with does not normalize"
           },
           "401": {
             "content": {
@@ -1483,7 +1483,7 @@
                 }
               }
             },
-            "description": "A username is one the system keeps for itself"
+            "description": "A username does not normalize"
           },
           "401": {
             "content": {
@@ -2962,7 +2962,7 @@
                 }
               }
             },
-            "description": "A required member is missing, the body carries an unknown member or a value outside its domain, or the password does not meet the policy"
+            "description": "The username does not normalize"
           },
           "403": {
             "content": {

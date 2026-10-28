@@ -180,6 +180,8 @@ func (r *routes) fail(c *call, err error) {
 		c.throttled(throttled.RetryAfter)
 	case errors.Is(err, authn.ErrThrottled):
 		c.throttled(0)
+	case authn.IsUsernameShape(err):
+		c.fail(mount.CodeUsernameInvalid)
 	case errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidIdentifier),
 		errors.Is(err, authn.ErrInvalidArgument):
 		c.fail(mount.CodeBadRequest)

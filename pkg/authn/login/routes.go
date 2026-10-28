@@ -220,6 +220,8 @@ func (r *routes) fail(c *call, err error) {
 		c.fail(mount.CodeLoginIdentifierRequired)
 	case errors.Is(err, authn.ErrUnsupportedRegion):
 		c.fail(mount.CodeUnsupportedRegion)
+	case authn.IsUsernameShape(err):
+		c.fail(mount.CodeUsernameInvalid)
 	case errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidArgument),
 		errors.Is(err, authn.ErrInvalidIdentifier):
 		c.fail(mount.CodeBadRequest)

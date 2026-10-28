@@ -254,6 +254,8 @@ func (m *product) answer(op string, err error) error {
 	case errors.Is(err, authn.ErrAccountNotFound), errors.Is(err, authn.ErrSessionNotFound),
 		errors.Is(err, authn.ErrProviderNotFound), errors.Is(err, authn.ErrNotImpersonating):
 		return errNotFound
+	case authn.IsUsernameShape(err):
+		return authnFailure(http.StatusBadRequest, mount.CodeUsernameInvalid)
 	case errors.Is(err, authn.ErrInvalidArgument), errors.Is(err, authn.ErrInvalidIdentifier),
 		errors.Is(err, authn.ErrPasswordPolicy),
 		errors.Is(err, authn.ErrInvalidConfig):

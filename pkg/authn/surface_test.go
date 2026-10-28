@@ -882,6 +882,8 @@ var exportedSurface = []string{
 	"var ErrUnknownEndpoint",
 	"var ErrUnsupportedRegion",
 	"var ErrUsernameReserved",
+	"func IsUsernameShape",
+	"func UsernameShape",
 }
 
 // authntestSurface is the exported surface of pkg/authn/authntest, pinned the
