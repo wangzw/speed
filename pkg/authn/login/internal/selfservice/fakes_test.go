@@ -142,15 +142,26 @@ type addCall struct {
 	via     authn.Verification
 }
 
+// flagsCall is one SetIdentifierFlags call the fake recorded.
+type flagsCall struct {
+	account authn.AccountID
+	id      string
+	flags   authn.IdentifierFlags
+}
+
 type fakeAdmin struct {
 	authn.AccountAdmin
-	log       *callLog
-	added     []addCall
-	removed   []string
-	unlinked  []string
-	addErr    error
-	removeErr error
-	unlinkErr error
+	log        *callLog
+	added      []addCall
+	removed    []string
+	unlinked   []string
+	flags      []flagsCall
+	defaults   []string
+	addErr     error
+	removeErr  error
+	unlinkErr  error
+	flagsErr   error
+	defaultErr error
 }
 
 func (f *fakeAdmin) AddIdentifier(_ context.Context, id authn.AccountID, kind authn.IdentifierKind, value string, via authn.Verification) error {
@@ -169,6 +180,20 @@ func (f *fakeAdmin) UnlinkExternal(_ context.Context, id authn.AccountID, extern
 	f.log.add("admin.UnlinkExternal %s %s", id, externalID)
 	f.unlinked = append(f.unlinked, externalID)
 	return f.unlinkErr
+}
+
+func (f *fakeAdmin) SetIdentifierFlags(_ context.Context, id authn.AccountID, identifierID string,
+	flags authn.IdentifierFlags,
+) error {
+	f.log.add("admin.SetIdentifierFlags %s %s", id, identifierID)
+	f.flags = append(f.flags, flagsCall{account: id, id: identifierID, flags: flags})
+	return f.flagsErr
+}
+
+func (f *fakeAdmin) SetDefaultContact(_ context.Context, id authn.AccountID, identifierID string) error {
+	f.log.add("admin.SetDefaultContact %s %s", id, identifierID)
+	f.defaults = append(f.defaults, identifierID)
+	return f.defaultErr
 }
 
 type setCall struct {

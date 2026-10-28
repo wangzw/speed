@@ -40,6 +40,99 @@ func (r *routes) removeIdentifier(ctx context.Context, in identifierPathInput, m
 	return c.result()
 }
 
+// updateIdentifier answers PUT /identifiers/:id: it sets the two axes of one of
+// the caller's identifiers and possibly its default contact. The identifier has
+// to be the caller's own, whether it does not exist or belongs to another
+// account, so the route discloses nothing about what another account holds.
+//
+// The body's members are optional and each is left as it is when absent. Contact
+// and sign-in are independent; contact may be set on an identifier whose
+// ownership is not proved, sign-in may be set true only on one that is, and the
+// default contact may only be a proved email address. Those three refusals are
+// bad-request before the account module is asked. Changing sign-in or the default
+// contact asks for the freshness every change of what proves the account asks
+// for; changing contact alone does not. A write that would leave the account
+// without a login name answers 409 login-identifier-required and one that would
+// leave it without any way to sign in answers 409 last-login-method, and neither
+// takes effect. Putting a proved email address or phone number into sign-in is a
+// rotation point: the current session gets a new token and the others are
+// revoked.
+func (r *routes) updateIdentifier(ctx context.Context, in updateIdentifierInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	c := r.call(ctx, meta)
+	who, ok := r.authorize(c, "")
+	if !ok {
+		return c.result()
+	}
+	if in.Contact == nil && in.SignIn == nil && in.DefaultContact == nil {
+		c.fail(mount.CodeBadRequest)
+		return c.result()
+	}
+	// The freshness a change of the way in asks for is decided from the body, so
+	// it is asked for here rather than in the precheck every other route uses.
+	if in.SignIn != nil || (in.DefaultContact != nil && *in.DefaultContact) {
+		id, found := authn.FromContext(c.ctx)
+		if !found {
+			c.unauthorized("")
+			return c.result()
+		}
+		if !r.fresh(c, id, "") {
+			return c.result()
+		}
+	}
+	held, err := r.deps.Accounts.Identifiers(c.ctx, who.account)
+	if err != nil {
+		r.fail(c, err)
+		return c.result()
+	}
+	index := slices.IndexFunc(held, func(i authn.Identifier) bool { return i.ID == in.ID })
+	if index < 0 {
+		c.fail(mount.CodeBadRequest)
+		return c.result()
+	}
+	row := held[index]
+	if row.Kind != authn.IdentifierEmail && row.Kind != authn.IdentifierPhone {
+		c.fail(mount.CodeBadRequest)
+		return c.result()
+	}
+	proved := authn.Verification{Via: row.VerifiedVia}.Proves()
+	if in.SignIn != nil && *in.SignIn && !proved {
+		c.fail(mount.CodeBadRequest)
+		return c.result()
+	}
+	if in.DefaultContact != nil && *in.DefaultContact && (row.Kind != authn.IdentifierEmail || !proved) {
+		c.fail(mount.CodeBadRequest)
+		return c.result()
+	}
+
+	// The flags go first: they carry the refusals that must leave both parts of
+	// the request without effect, and the default contact is no rotation point.
+	selected := in.SignIn != nil && *in.SignIn && !row.SignIn
+	if in.Contact != nil || in.SignIn != nil {
+		flags := authn.IdentifierFlags{Contact: row.Contact, SignIn: row.SignIn}
+		if in.Contact != nil {
+			flags.Contact = *in.Contact
+		}
+		if in.SignIn != nil {
+			flags.SignIn = *in.SignIn
+		}
+		if err := r.deps.Admin.SetIdentifierFlags(c.ctx, who.account, in.ID, flags); err != nil {
+			r.fail(c, err)
+			return c.result()
+		}
+	}
+	if in.DefaultContact != nil && *in.DefaultContact {
+		if err := r.deps.Admin.SetDefaultContact(c.ctx, who.account, in.ID); err != nil {
+			r.fail(c, err)
+			return c.result()
+		}
+	}
+	if selected && !r.settle(c, who, authn.ReasonSelf) {
+		return c.result()
+	}
+	c.empty(http.StatusNoContent)
+	return c.result()
+}
+
 // unlink answers DELETE /links/:id. As for an identifier, the binding has to be
 // one of the caller's own. The account module refuses to remove the last way to
 // log in (ErrLastLoginMethod, a 409), and counts a way that only an IdP declared

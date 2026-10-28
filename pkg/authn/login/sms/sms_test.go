@@ -87,8 +87,8 @@ func (f *fakeThrottle) Succeed(_ context.Context, scope authn.ThrottleScope, key
 	return nil
 }
 
-// fakeAccounts is an authn.Accounts that answers a lookup and a read from what a
-// case set.
+// fakeAccounts is an authn.Accounts that answers a lookup, a read and an
+// identifier list from what a case set.
 type fakeAccounts struct {
 	authn.Accounts
 
@@ -97,8 +97,16 @@ type fakeAccounts struct {
 	getErr    error
 	accounts  map[authn.AccountID]authn.Account
 
-	lookups []string
-	gets    []authn.AccountID
+	// identifiers is what the account's own identifiers are. A case that does
+	// not set it gets the ordinary fixture: the looked-up account holds the
+	// number it was found by as a sign-in way, which is the shape every earlier
+	// case models.
+	identifiers    map[authn.AccountID][]authn.Identifier
+	identifiersErr error
+
+	lookups      []string
+	gets         []authn.AccountID
+	identifierOf []authn.AccountID
 }
 
 func (f *fakeAccounts) Lookup(_ context.Context, kind authn.IdentifierKind, value string) (authn.AccountID, error) {
@@ -109,6 +117,20 @@ func (f *fakeAccounts) Lookup(_ context.Context, kind authn.IdentifierKind, valu
 func (f *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account, error) {
 	f.gets = append(f.gets, id)
 	return f.accounts[id], f.getErr
+}
+
+func (f *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]authn.Identifier, error) {
+	f.identifierOf = append(f.identifierOf, id)
+	if f.identifiersErr != nil {
+		return nil, f.identifiersErr
+	}
+	if f.identifiers != nil {
+		return f.identifiers[id], nil
+	}
+	if id == f.lookupID && id != "" {
+		return []authn.Identifier{{ID: "ident-phone", Kind: authn.IdentifierPhone, Value: phoneNumber, SignIn: true}}, nil
+	}
+	return nil, nil
 }
 
 // rig is one method with its three fakes and the settings store.
@@ -336,9 +358,9 @@ func TestAWrongCodeAndAnUnknownNumberReadTheSame(t *testing.T) {
 	if step.KindOf(wrong) != step.KindRefused || !errors.Is(step.CauseOf(wrong), authn.ErrInvalidCredentials) {
 		t.Fatalf("a wrong code = %s, want a refusal carrying ErrInvalidCredentials", describe(wrong))
 	}
-	// A suppressed challenge is checked and refused along the same path: the
-	// method never looked the number up while checking, so nothing here can tell
-	// the two apart.
+	// A suppressed challenge is checked and refused along the same path: a code
+	// that does not check is refused before the account is read, so nothing here
+	// can tell the two apart.
 	suppressed, _ := r.m.Answer(t.Context(), flowAt(stepCode, writeState(unknownPhone, challengeID)), submit(codeFields(badCodeForTest())))
 	if describe(wrong) != describe(suppressed) {
 		t.Fatalf("a wrong code and a suppressed challenge read %q and %q, want one answer",
@@ -346,6 +368,42 @@ func TestAWrongCodeAndAnUnknownNumberReadTheSame(t *testing.T) {
 	}
 	if len(r.th.fails) == 0 || r.th.fails[0] == "" {
 		t.Errorf("a refused code did not count against the phone back-off")
+	}
+}
+
+// TestAPhoneTheAccountDidNotChooseDoesNotCompleteALogin holds that a number an
+// account holds completes a login only when its holder chose it as a sign-in
+// way: the correct code is refused exactly as a wrong one and no proof reaches
+// the engine. The same number still proves a step-up, which asks an account that
+// already signed in to prove the number it holds.
+func TestAPhoneTheAccountDidNotChooseDoesNotCompleteALogin(t *testing.T) {
+	r := newRig()
+	r.registerActive()
+	r.ac.identifiers = map[authn.AccountID][]authn.Identifier{
+		testAccount: {
+			{ID: "ident-username", Kind: authn.IdentifierUsername, Value: "ada", SignIn: true},
+			{ID: "ident-phone", Kind: authn.IdentifierPhone, Value: phoneNumber, SignIn: false},
+		},
+	}
+	ctx := t.Context()
+	private := writeState(phoneNumber, challengeID)
+
+	refused, _ := r.m.Answer(ctx, flowAt(stepCode, private), submit(codeFields(goodCode)))
+	if step.KindOf(refused) != step.KindRefused || !errors.Is(step.CauseOf(refused), authn.ErrInvalidCredentials) {
+		t.Fatalf("an unchosen number = %s, want a refusal carrying ErrInvalidCredentials", describe(refused))
+	}
+	if p := step.ProofOf(refused); p.Identifier != nil {
+		t.Errorf("an unchosen number reached the engine as %+v, want no proof", p)
+	}
+	if len(r.th.succeeds) != 0 {
+		t.Errorf("an unchosen number cleared the back-off, want it left as it was")
+	}
+
+	stepUp := flowAt(stepCode, private)
+	stepUp.Purpose = authn.PurposeStepUp
+	proven, _ := r.m.Answer(ctx, stepUp, submit(codeFields(goodCode)))
+	if step.KindOf(proven) != step.KindProven {
+		t.Fatalf("a step-up with the same number = %s, want a proof", describe(proven))
 	}
 }
 

@@ -272,6 +272,7 @@ var mutating = []struct {
 	{"POST /phone/verify", request{method: http.MethodPost, path: "/phone/verify", body: `{"code":"123456"}`}},
 	{"POST /identifiers", request{method: http.MethodPost, path: "/identifiers", body: `{"kind":"username","value":"ada2"}`}},
 	{"POST /identifiers/verify", request{method: http.MethodPost, path: "/identifiers/verify", body: `{"code":"123456"}`}},
+	{"PUT /identifiers/:id", request{method: http.MethodPut, path: "/identifiers/ident-2", body: `{"sign_in":true}`}},
 	{"DELETE /identifiers/:id", request{method: http.MethodDelete, path: "/identifiers/ident-1"}},
 	{"DELETE /links/:id", request{method: http.MethodDelete, path: "/links/link-1"}},
 }

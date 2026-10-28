@@ -174,6 +174,8 @@ func (s *Service) Mount(m mount.Mounter, rel func(string) string, post func(name
 		withWriter(r.guardedBody("", addIdentifierOperation.Handle(r.addIdentifier))), mount.Impersonable())
 	mount.Declared(m, verifyIdentifierOperation, rel(pathIdentifiersVerify),
 		withWriter(r.guardedBody("", verifyIdentifierOperation.Handle(r.verifyIdentifier))), mount.Impersonable())
+	mount.Declared(m, updateIdentifierOperation, rel(pathIdentifier),
+		withWriter(r.guardedIdentity(updateIdentifierOperation.Handle(r.updateIdentifier))), mount.Impersonable())
 	mount.Declared(m, removeIdentifierOperation, rel(pathIdentifier),
 		withWriter(removeIdentifierOperation.Handle(r.removeIdentifier)), mount.Impersonable())
 	mount.Declared(m, unlinkOperation, rel(pathLink), withWriter(unlinkOperation.Handle(r.unlink)), mount.Impersonable())
@@ -193,6 +195,24 @@ func (r *routes) guardedBody(action string, next gin.HandlerFunc) gin.HandlerFun
 			return false
 		}
 		c.Request = c.Request.WithContext(withCaller(c.Request.Context(), who))
+		return true
+	}, next)
+}
+
+// guardedIdentity applies the body rules of a route whose freshness depends on
+// what the body changes: the media type, the identity and session checks, then
+// the 64 KiB cap. The caller it decides is carried to the handler, which asks
+// for freshness itself when the change is one the design holds to it.
+func (r *routes) guardedIdentity(next gin.HandlerFunc) gin.HandlerFunc {
+	return mount.GuardBody(func(c *gin.Context) bool {
+		call := r.call(c.Request.Context(), nil)
+		id, ok := r.identify(call)
+		if !ok {
+			call.refuse(c)
+			return false
+		}
+		c.Request = c.Request.WithContext(withCaller(c.Request.Context(),
+			caller{account: id.Account(), session: id.Session()}))
 		return true
 	}, next)
 }

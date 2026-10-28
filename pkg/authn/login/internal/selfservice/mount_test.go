@@ -35,6 +35,7 @@ func TestTheRoutesAreTheseAndNoOthers(t *testing.T) {
 		"POST /identifiers/verify",
 		"POST /phone",
 		"POST /phone/verify",
+		"PUT /identifiers/:id",
 		"PUT /password",
 	}
 	if got := registered(h.m); !slices.Equal(got, want) {
@@ -71,6 +72,7 @@ func TestThePhoneRoutesAreMountedOnlyWithSMSCodes(t *testing.T) {
 		"DELETE /links/:id",
 		"POST /identifiers",
 		"POST /identifiers/verify",
+		"PUT /identifiers/:id",
 		"PUT /password",
 	}
 	if got := registered(h.m); !slices.Equal(got, want) {

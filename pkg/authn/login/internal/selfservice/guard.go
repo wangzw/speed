@@ -65,32 +65,54 @@ func callerFrom(ctx context.Context) (caller, bool) {
 // action names the audit action of a refusal for a step-up, empty for a route
 // whose refusals leave no row.
 func (r *routes) authorize(c *call, action string) (caller, bool) {
-	ctx := c.ctx
-	if who, carried := callerFrom(ctx); carried {
+	if who, carried := callerFrom(c.ctx); carried {
 		return who, true
 	}
-	id, ok := authn.FromContext(ctx)
-	if !ok || id.Account() == "" {
-		c.unauthorized("")
+	id, ok := r.identify(c)
+	if !ok {
 		return caller{}, false
 	}
-	if id.Session() == "" {
-		c.unauthorized("")
-		return caller{}, false
-	}
-	req, err := r.requirement(ctx, id.Account())
-	if err != nil {
-		r.fail(c, err)
-		return caller{}, false
-	}
-	if !id.Satisfies(req, r.deps.Clock.Now()) {
-		if action != "" {
-			r.record(ctx, action, outcomeDenied, id.Account(), nil)
-		}
-		c.stepUp(id, req)
+	if !r.fresh(c, id, action) {
 		return caller{}, false
 	}
 	return caller{account: id.Account(), session: id.Session()}, true
+}
+
+// identify is the identity and session check of every route: a request without a
+// credential, without an account or without a login session is refused with the
+// plain 401 before anything else happens. A route whose freshness depends on what
+// its body changes runs this before it binds the body and asks for freshness
+// itself once it knows.
+func (r *routes) identify(c *call) (authn.Identity, bool) {
+	id, ok := authn.FromContext(c.ctx)
+	if !ok || id.Account() == "" {
+		c.unauthorized("")
+		return authn.Identity{}, false
+	}
+	if id.Session() == "" {
+		c.unauthorized("")
+		return authn.Identity{}, false
+	}
+	return id, true
+}
+
+// fresh checks the freshness the account's factors call for and answers the
+// step-up 401 when the identity does not meet it. A requirement that cannot be
+// decided because the factors cannot be read is a 503.
+func (r *routes) fresh(c *call, id authn.Identity, action string) bool {
+	req, err := r.requirement(c.ctx, id.Account())
+	if err != nil {
+		r.fail(c, err)
+		return false
+	}
+	if !id.Satisfies(req, r.deps.Clock.Now()) {
+		if action != "" {
+			r.record(c.ctx, action, outcomeDenied, id.Account(), nil)
+		}
+		c.stepUp(id, req)
+		return false
+	}
+	return true
 }
 
 // requirement is the freshness a change of the account's credentials asks for.

@@ -16,7 +16,9 @@
 // while registration is open; every other number gets a suppressed challenge,
 // which is counted against every budget but the deployment-wide one and answered
 // exactly as a real one, so that the answer tells nobody whether a number is
-// registered.
+// registered. A code that holds completes a login only for a number no account
+// holds or one its account chose as a sign-in way; an unchosen number is refused
+// as a code that did not hold.
 //
 // A host takes the method in by writing ModuleName into a command alongside the
 // login engine, an SMS module and an account module. It delivers the login
@@ -306,9 +308,16 @@ func (m *method) phone(ctx context.Context, fields map[string]string, sendsLeft 
 // code checks the code the client answered with. It reads the number's back-off
 // before it checks anything, so a number in back-off is answered without a
 // comparison; a wrong code is counted against the same key, and a code that
-// holds clears it. The number is not looked up: it is the one the challenge was
-// sent to, taken from the private bytes, so a suppressed challenge is checked
-// and counted exactly as a real one.
+// holds clears it. The number is not looked up for the challenge: it is the one
+// the challenge was sent to, taken from the private bytes, so a suppressed
+// challenge is checked exactly as a real one.
+//
+// A code that holds completes a login only when the number may sign in: a number
+// no account holds, which a first login may open an account for, or one its
+// account's holder chose as a sign-in way. A number the account holds but did not
+// choose answers as a code that did not hold, so the choice is not something an
+// answer tells. A step-up and an enrollment prove a number the account already
+// signed in with, so the choice is not read there.
 func (m *method) code(ctx context.Context, f authn.FlowState, fields map[string]string) authn.Step {
 	st, ok := readState(f.Private)
 	if !ok {
@@ -338,6 +347,15 @@ func (m *method) code(ctx context.Context, f authn.FlowState, fields map[string]
 
 	switch err := m.codes.Verify(ctx, st.Challenge, code); {
 	case err == nil:
+		if f.Purpose == authn.PurposeLogin {
+			signsIn, cerr := m.signsIn(ctx, st.Phone)
+			if cerr != nil {
+				return unavailable("reading whether the number signs in", cerr)
+			}
+			if !signsIn {
+				return authn.StepRefused(errRefused)
+			}
+		}
 		if serr := m.throttle.Succeed(ctx, authn.ScopePhone, key); serr != nil {
 			return unavailable("clearing the back-off", serr)
 		}
@@ -353,6 +371,34 @@ func (m *method) code(ctx context.Context, f authn.FlowState, fields map[string]
 	default:
 		return unavailable("checking the code", err)
 	}
+}
+
+// signsIn reports whether a number may complete a login: it belongs to no
+// account, which is a first login the resolution decides the outcome of, or the
+// account that holds it chose it as a sign-in way. The account lookup keeps
+// answering for every number an account holds, which is what the paths that only
+// need the owner rely on; the choice is read from the account's identifiers.
+func (m *method) signsIn(ctx context.Context, phone string) (bool, error) {
+	id, err := m.accounts.Lookup(ctx, authn.IdentifierPhone, phone)
+	switch {
+	case errors.Is(err, authn.ErrAccountNotFound), errors.Is(err, authn.ErrInvalidIdentifier):
+		return true, nil
+	case err != nil:
+		return false, err
+	}
+	if id == "" {
+		return true, nil
+	}
+	held, err := m.accounts.Identifiers(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	for _, identifier := range held {
+		if identifier.Kind == authn.IdentifierPhone && identifier.Value == phone && identifier.SignIn {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // deliver reports whether a code is to be sent to the number rather than written

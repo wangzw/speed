@@ -99,6 +99,17 @@ type identifierPathInput struct {
 	ID string "path:\"id\" description:\"The identifier's identifier, as returned in the `id` of one of the caller's own identifiers. A value the caller's account does not hold, including one another account holds, is a 400 bad-request.\""
 }
 
+// updateIdentifierInput is the path and body of PUT /identifiers/:id: the two
+// axes and the default contact, each left as it is when absent.
+type updateIdentifierInput struct {
+	_ struct{} `description:"A partial change to one identifier's two axes and default contact: a member left out is left as it is."`
+
+	ID             string "path:\"id\" description:\"The identifier's identifier, as returned in the `id` of one of the caller's own identifiers. A value the caller's account does not hold, including one another account holds, or a username, is a 400 bad-request.\""
+	Contact        *bool  `json:"contact" description:"Whether the identifier is a contact of the account. It is independent of sign_in and may be true on an identifier whose ownership is not proved; absent leaves it as it is."`
+	SignIn         *bool  `json:"sign_in" description:"Whether the identifier may be used to sign in. True requires the identifier's ownership to be proved; absent leaves it as it is."`
+	DefaultContact *bool  `json:"default_contact" description:"Whether the identifier is the account's default contact. Only a proved email address may take true, and a true clears the account's previous choice; false changes nothing."`
+}
+
 // linkPathInput is the path of DELETE /links/:id.
 type linkPathInput struct {
 	ID string "path:\"id\" description:\"The external binding's identifier, as returned in the `id` of one of the caller's own external identities. A value the caller's account does not hold is a 400 bad-request.\""
@@ -280,6 +291,41 @@ var verifyPhoneOperation = speedhttp.NewReplyOperation[verifyPhoneInput](
 	},
 )
 
+var updateIdentifierOperation = speedhttp.NewReplyOperation[updateIdentifierInput](
+	"authn.login.updateIdentifier",
+	http.MethodPut,
+	pathIdentifier,
+	"Set the two axes and the default contact of one of the caller's own identifiers",
+	"Sets what one of the caller's own email addresses or phone numbers is for. `contact` and `sign_in` are "+
+		"independent axes: `contact` may be set on an identifier whose ownership is not proved, while `sign_in` "+
+		"may be set true only on one that is, since only a proved value may be a way in. `default_contact` may be "+
+		"set only on a proved email address, and takes the default away from the address that held it in the same "+
+		"write. A member left out is left as it is. An identifier that is not the caller's own, a username, an "+
+		"unproved `sign_in` and a default contact that is not a proved email address are all a 400 bad-request. "+
+		"Changing `sign_in` or `default_contact` requires the fresh authentication every change of what proves "+
+		"the account asks for; changing `contact` alone does not. Turning `sign_in` off that would leave a "+
+		"password account with no login name is a 409 login-identifier-required and one that would leave the "+
+		"account with no way to sign in at all is a 409 last-login-method; neither takes effect. Putting a "+
+		"proved email address or phone number into sign-in rotates the current session's token and revokes the "+
+		"account's other sessions.",
+	&speedhttp.RequestBody{
+		MediaType:   "application/json",
+		Description: "The axes and the default contact to write; each member left out is left as it is. The body must be `application/json` and refuses unknown members.",
+		Required:    true,
+	},
+	[]speedhttp.Response{
+		{Status: http.StatusNoContent, Description: "The identifier's axes were written"},
+		badRequest("The body could not be read, the identifier is not the caller's own, or the change is outside what the axes allow"),
+		bodyOverLimit,
+		unauthorized("No usable credential, or the freshness a change of what proves the account asks for"),
+		speedhttp.ProblemResponseOf(http.StatusConflict,
+			"The change would leave a password account with no login name (login-identifier-required), or leave the account with no way to sign in at all (last-login-method)", typePrefix+mount.CodeLoginIdentifierRequired),
+		mediaType(),
+		tooMany(),
+		unavailable("A dependency could not answer"),
+	},
+)
+
 var removeIdentifierOperation = speedhttp.NewReplyOperation[identifierPathInput](
 	"authn.login.removeIdentifier",
 	http.MethodDelete,
@@ -404,6 +450,7 @@ var operations = speedhttp.Operations{
 	verifyPhoneOperation,
 	addIdentifierOperation,
 	verifyIdentifierOperation,
+	updateIdentifierOperation,
 	removeIdentifierOperation,
 	unlinkOperation,
 }
