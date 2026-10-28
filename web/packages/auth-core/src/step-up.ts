@@ -176,13 +176,17 @@ function startUnavailable(session: AuthSession, error: unknown): boolean {
  * `method` names the login method that established the session's first
  * factor, for an account that has no factor to raise the session with; it
  * is omitted when the account has a factor, and when it is omitted the
- * flow enters at the factor step.
+ * flow enters at the factor step. `returnPath` is where a redirect method's
+ * round trip lands the browser -- the surface that opened the challenge, so
+ * that one is the one that reads the refusal; omitted, the deployment's
+ * default return target applies.
  */
 export function useStepUp(
   session: AuthSession,
   active: boolean,
   onElevated: () => void,
   method?: string,
+  returnPath?: string,
 ): StepUpState {
   const [phase, setPhase] = useState<StepUpPhase>('idle')
   const [step, setStep] = useState<AuthnStep | null>(null)
@@ -247,11 +251,11 @@ export function useStepUp(
     void (async () => {
       try {
         openRef.current = true
-        const state = await session.startAuthenticatedFlow(
-          method === undefined
-            ? { purpose: 'step-up' }
-            : { purpose: 'step-up', method },
-        )
+        const state = await session.startAuthenticatedFlow({
+          purpose: 'step-up',
+          ...(method === undefined ? {} : { method }),
+          ...(returnPath === undefined ? {} : { return_to: returnPath }),
+        })
         if (run !== runRef.current) {
           return
         }
@@ -272,7 +276,7 @@ export function useStepUp(
         }
       }
     })()
-  }, [active, session, method])
+  }, [active, session, method, returnPath])
 
   // Unmounting is a departure like `active` turning false: a flow this
   // mount opened and has not seen settle is released, so no stale binding

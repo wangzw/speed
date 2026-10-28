@@ -108,6 +108,51 @@ describe('useStepUp', () => {
     })
   })
 
+  it('sends the surface’s path as the flow’s return_to', async () => {
+    // A redirect method's round trip must land back on the page that
+    // started the challenge, so that page is the one that reads a refusal.
+    const { session, calls } = makeCookieHarness({
+      [LOGIN_START_AUTHENTICATED]: () =>
+        openFlow({
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+        }),
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    renderHook(() =>
+      useStepUp(session, true, () => undefined, undefined, '/account'),
+    )
+    const start = await waitFor(() => {
+      const call = calls.find(
+        (entry) => entry.path === '/api/v1/auth/flows/authenticated',
+      )
+      expect(call).toBeDefined()
+      return call
+    })
+    expect(start?.options?.body).toMatchObject({
+      purpose: 'step-up',
+      return_to: '/account',
+    })
+  })
+
+  it('omits return_to when the surface gives no path', async () => {
+    const { session, calls } = makeCookieHarness({
+      [LOGIN_START_AUTHENTICATED]: () =>
+        openFlow({
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+        }),
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    renderHook(() => useStepUp(session, true, () => undefined))
+    const start = await waitFor(() => {
+      const call = calls.find(
+        (entry) => entry.path === '/api/v1/auth/flows/authenticated',
+      )
+      expect(call).toBeDefined()
+      return call
+    })
+    expect(start?.options?.body).not.toHaveProperty('return_to')
+  })
+
   it('sends no abandon when a settled flow unmounts', async () => {
     // The server consumed the settled flow; unmounting afterwards has no
     // binding to release.
