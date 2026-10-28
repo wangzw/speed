@@ -221,6 +221,13 @@ export interface IdentifiersSectionProps {
    * methods document itself.
    */
   readonly humanGate?: AuthnHumanGate
+  /**
+   * The host's current path, sent as the step-up flow's `return_to`: a
+   * redirect method's round trip lands back on the page that started it, so
+   * that page reads the refusal. Omitted, the deployment's default return
+   * target applies.
+   */
+  readonly returnPath?: string
 }
 
 /** The identifier kinds the authn account module records
@@ -358,6 +365,7 @@ export function IdentifiersSection({
   emailAvailable = true,
   offerUsername = true,
   humanGate,
+  returnPath,
 }: IdentifiersSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
@@ -1624,6 +1632,7 @@ export function IdentifiersSection({
         session={session}
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
+        returnPath={returnPath}
       />
     </>
   )

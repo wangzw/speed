@@ -91,6 +91,13 @@ export interface PhoneSectionProps {
    * methods document itself.
    */
   readonly humanGate?: AuthnHumanGate
+  /**
+   * The host's current path, sent as the step-up flow's `return_to`: a
+   * redirect method's round trip lands back on the page that started it, so
+   * that page reads the refusal. Omitted, the deployment's default return
+   * target applies.
+   */
+  readonly returnPath?: string
 }
 
 /** Which step the request came from, so a won step-up re-runs exactly it. */
@@ -98,7 +105,11 @@ type PhoneAction =
   | { readonly kind: 'start'; readonly phone: string }
   | { readonly kind: 'verify'; readonly code: string }
 
-export function PhoneSection({ session, humanGate }: PhoneSectionProps) {
+export function PhoneSection({
+  session,
+  humanGate,
+  returnPath,
+}: PhoneSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const startPhone = useAuthnLoginStartPhone()
@@ -365,6 +376,7 @@ export function PhoneSection({ session, humanGate }: PhoneSectionProps) {
         session={session}
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
+        returnPath={returnPath}
       />
     </>
   )

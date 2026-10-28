@@ -148,6 +148,12 @@ export interface SocialBindingsSectionProps {
    * Rendered beside the add-area button and the bound row's label.
    */
   readonly providerIcon?: (provider: string) => ReactNode
+  /**
+   * The host's current path, sent as the step-up flow's `return_to` (the
+   * link flow carries its own `returnTo` above). Omitted, the deployment's
+   * default return target applies.
+   */
+  readonly returnPath?: string
 }
 
 /** The unlink a won step-up re-runs: the row's identifier and the provider
@@ -293,6 +299,7 @@ export function SocialBindingsSection({
   returnTo,
   onAuthorizeUrl,
   providerIcon,
+  returnPath,
 }: SocialBindingsSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
@@ -686,6 +693,7 @@ export function SocialBindingsSection({
         session={session}
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
+        returnPath={returnPath}
       />
     </>
   )

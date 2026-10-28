@@ -87,6 +87,13 @@ export interface PasswordSectionProps {
    * cannot set a password yet.
    */
   readonly withoutLoginName?: 'form' | 'explain'
+  /**
+   * The host's current path, sent as the step-up flow's `return_to`: a
+   * redirect method's round trip lands back on the page that started it, so
+   * that page reads the refusal. Omitted, the deployment's default return
+   * target applies.
+   */
+  readonly returnPath?: string
 }
 
 /** The submit's typed values: what a won step-up re-runs. */
@@ -108,6 +115,7 @@ function PasswordSkeleton({ label }: { readonly label: string }) {
 export function PasswordSection({
   session,
   withoutLoginName = 'form',
+  returnPath,
 }: PasswordSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
@@ -371,6 +379,7 @@ export function PasswordSection({
         session={session}
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
+        returnPath={returnPath}
       />
     </>
   )

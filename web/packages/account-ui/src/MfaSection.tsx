@@ -96,6 +96,13 @@ import { WriteFeedbackRegion } from './internal/write-feedback.js'
 export interface MfaSectionProps {
   /** The session that drives the enroll flow and the step-up dialog. */
   readonly session: AuthSession
+  /**
+   * The host's current path, sent as the enroll and step-up flows'
+   * `return_to`: a redirect method's round trip lands back on the page that
+   * started it, so that page reads the refusal. Omitted, the deployment's
+   * default return target applies.
+   */
+  readonly returnPath?: string
 }
 
 /** The factor kinds the authn factor surface records (pkg/authn's
@@ -153,7 +160,7 @@ function FactorListSkeleton({ label }: { readonly label: string }) {
   )
 }
 
-export function MfaSection({ session }: MfaSectionProps) {
+export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useFactorsQuery()
@@ -244,6 +251,7 @@ export function MfaSection({ session }: MfaSectionProps) {
         const state = await session.startAuthenticatedFlow({
           purpose: 'enroll',
           input: { kind: factorKind },
+          ...(returnPath === undefined ? {} : { return_to: returnPath }),
         })
         if ('next' in state) {
           setWizard({ step: state.next, seq: state.seq })
@@ -606,6 +614,7 @@ export function MfaSection({ session }: MfaSectionProps) {
         session={session}
         onSuccess={handleStepUpSuccess}
         onCancel={() => setGate(null)}
+        returnPath={returnPath}
       />
     </>
   )

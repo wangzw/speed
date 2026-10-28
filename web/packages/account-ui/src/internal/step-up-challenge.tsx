@@ -135,6 +135,13 @@ export interface StepUpChallengeProps {
    * the explanation alone.
    */
   readonly accountHref?: string
+  /**
+   * The surface that opened the challenge (the host's current path). A
+   * redirect method's round trip lands back here, so the refusal's problem
+   * code reaches the page that started the flow. Omitted, the deployment's
+   * default return target applies.
+   */
+  readonly returnPath?: string
 }
 
 export function StepUpChallenge({
@@ -144,6 +151,7 @@ export function StepUpChallenge({
   onSuccess,
   onCancel,
   accountHref,
+  returnPath,
 }: StepUpChallengeProps) {
   const { t } = useAccountUiTranslation()
   const titleId = useId()
@@ -267,6 +275,7 @@ export function StepUpChallenge({
           onCancel={onCancel}
           onRestart={() => setRun((count) => count + 1)}
           accountHref={accountHref}
+          returnPath={returnPath}
           freshFirst={freshFirst}
           reloginOnly={reloginOnly}
           checking={checking}
@@ -290,6 +299,7 @@ function StepUpFlow({
   onCancel,
   onRestart,
   accountHref,
+  returnPath,
   freshFirst,
   reloginOnly,
   checking,
@@ -304,6 +314,7 @@ function StepUpFlow({
   readonly onCancel: () => void
   readonly onRestart: () => void
   readonly accountHref?: string
+  readonly returnPath?: string
   readonly freshFirst: boolean
   readonly reloginOnly: boolean
   readonly checking: boolean
@@ -317,6 +328,7 @@ function StepUpFlow({
     active,
     onSuccess,
     reproveFirst ? reproofMethod : undefined,
+    returnPath,
   )
   // The second factor the operator chose. The verification step that
   // follows it (the code challenge) is answered under the `factor` step

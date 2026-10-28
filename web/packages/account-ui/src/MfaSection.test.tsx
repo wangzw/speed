@@ -73,10 +73,15 @@ function factor(overrides: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
-function mount(respond: RealResponder) {
+function mount(
+  respond: RealResponder,
+  options: { readonly returnPath?: string } = {},
+) {
   const rig = makeRealClientRig(respond)
   rig.store.set('access-1')
-  const rendered = renderWithProviders(<MfaSection session={rig.session} />)
+  const rendered = renderWithProviders(
+    <MfaSection session={rig.session} returnPath={options.returnPath} />,
+  )
   return { rig, ...rendered }
 }
 
@@ -761,6 +766,43 @@ describe('MfaSection', () => {
     expect(rig.transitionBegins()).toBe(2)
     expect(rig.session.getSnapshot().state).toBe('authenticated')
     expect(rig.endedEdges()).toBe(0)
+  })
+
+  it('sends the host’s path as the enrollment flow’s return_to', async () => {
+    // An enrollment a redirect method finishes lands back on the page that
+    // started it, so that page reads the refusal.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'enroll',
+          next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond, { returnPath: '/account' })
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.mfa.enroll.totp }),
+    )
+
+    await waitFor(() => {
+      const start = rig.calls.find(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      )
+      expect(start?.body).toMatchObject({
+        purpose: 'enroll',
+        return_to: '/account',
+      })
+    })
   })
 
   it('walks the TOTP enrollment flow and refetches the factors', async () => {

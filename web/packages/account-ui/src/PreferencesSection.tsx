@@ -94,6 +94,13 @@ export interface PreferencesSectionProps {
    * succeeds. Without it the refusal renders the failure banner.
    */
   readonly session?: AuthSession
+  /**
+   * The host's current path, sent as the step-up flow's `return_to`: a
+   * redirect method's round trip lands back on the page that started it, so
+   * that page reads the refusal. Omitted, the deployment's default return
+   * target applies.
+   */
+  readonly returnPath?: string
 }
 
 /** A refused write, kept so a won step-up can replay exactly it. */
@@ -116,7 +123,10 @@ function supportedTimeZones(): readonly string[] {
   }
 }
 
-export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
+export function PreferencesSection({
+  session,
+  returnPath,
+}: PreferencesSectionProps = {}) {
   const { t, i18n } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useProfileQuery()
@@ -355,6 +365,7 @@ export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
           session={session}
           onSuccess={gate.succeed}
           onCancel={gate.cancel}
+          returnPath={returnPath}
         />
       )}
     </>

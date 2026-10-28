@@ -60,6 +60,13 @@ import { useAccountUiTranslation } from './internal/translation.js'
 export interface ProfileSectionProps {
   /** The session whose step-up flow the dialog drives. */
   readonly session: AuthSession
+  /**
+   * The host's current path, sent as the step-up flow's `return_to`: a
+   * redirect method's round trip lands back on the page that started it, so
+   * that page reads the refusal. Omitted, the deployment's default return
+   * target applies.
+   */
+  readonly returnPath?: string
 }
 
 /** The pending-state placeholder, read aloud as one loading announcement. */
@@ -72,7 +79,7 @@ function ProfileSkeleton({ label }: { readonly label: string }) {
   )
 }
 
-export function ProfileSection({ session }: ProfileSectionProps) {
+export function ProfileSection({ session, returnPath }: ProfileSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useProfileQuery()
@@ -190,6 +197,7 @@ export function ProfileSection({ session }: ProfileSectionProps) {
         session={session}
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
+        returnPath={returnPath}
       />
     </>
   )

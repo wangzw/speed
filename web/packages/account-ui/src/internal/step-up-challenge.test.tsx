@@ -139,6 +139,7 @@ function mount(
     readonly onSuccess?: () => void
     readonly onCancel?: () => void
     readonly accountHref?: string
+    readonly returnPath?: string
   } = {},
 ) {
   const rig = makeRealClientRig(respond)
@@ -152,6 +153,7 @@ function mount(
       onSuccess={onSuccess}
       onCancel={onCancel}
       accountHref={handlers.accountHref}
+      returnPath={handlers.returnPath}
     />,
   )
   return { rig, onSuccess, onCancel }
@@ -326,6 +328,21 @@ describe('StepUpChallenge', () => {
       seq: 2,
       step: 'factor',
       input: { code: '123456', factor: 'factor-1' },
+    })
+  })
+
+  it('sends the host’s path as the flow’s return_to', async () => {
+    // A redirect method's round trip lands back on the page that opened the
+    // dialog, so that page reads the refusal.
+    const { rig } = mount(makeStepUpResponder(), { returnPath: '/account' })
+    await waitFor(() => {
+      const start = rig.calls.find(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      )
+      expect(start?.body).toMatchObject({
+        purpose: 'step-up',
+        return_to: '/account',
+      })
     })
   })
 
