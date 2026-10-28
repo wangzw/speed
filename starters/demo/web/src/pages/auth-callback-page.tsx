@@ -50,6 +50,12 @@ export function AuthCallbackPage({
     forgetInvitationLanding()
     navigate(landing)
   }
+  // The username step's flow may be gone before the name is answered. The
+  // route cannot start a provider flow itself, so the sign-in surface (the
+  // anonymous root) is where the viewer starts again.
+  const onSignIn = (): void => {
+    navigate(TENANT_HOME_PATH)
+  }
   return (
     <Box
       // The host's absent view is the tenant frame's 404, and that frame
@@ -72,6 +78,7 @@ export function AuthCallbackPage({
         <SocialCallbackHandler
           session={session}
           onSignedIn={onSignedIn}
+          onSignIn={onSignIn}
           absent={absent}
         />
       </Box>
