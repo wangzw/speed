@@ -1746,7 +1746,7 @@ function createFailureKey(
       return 'accounts.create.usernameTaken'
     case 'authn.username_reserved':
       return 'accounts.create.usernameReserved'
-    case 'authn.bad_request':
+    case 'authn.username_invalid':
       return 'accounts.create.usernameInvalid'
     default:
       return null
@@ -1778,7 +1778,9 @@ function createFailureKey(
  * the system keeps for itself and a name it cannot normalize each get their
  * own sentence, rendered in
  * the same position as the scope's failure and only when the attempt also
- * left the scope empty. A landed create closes
+ * left the scope empty. A bad-request that is not the username's own shape
+ * answer stays the scope's: on this route it may describe the email address
+ * or the password. A landed create closes
  * the panel through the page: its success belongs to the list's scope and is
  * written there after the exit, when the page behind the modal is reachable.
  */

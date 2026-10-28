@@ -386,11 +386,20 @@ const USERNAME_RESERVED_TEXT = zhCN.accounts.create.usernameReserved
 /** A 400 refusal of a login name that does not fit the server's rule. */
 const USERNAME_INVALID = {
   status: 400,
-  code: 'authn.bad_request',
+  code: 'authn.username_invalid',
   message: 'username invalid',
 }
 
 const USERNAME_INVALID_TEXT = zhCN.accounts.create.usernameInvalid
+
+/** A 400 refusal of another value of the form (here the password policy). */
+const BAD_REQUEST = {
+  status: 400,
+  code: 'authn.bad_request',
+  message: 'bad request',
+}
+
+const BAD_REQUEST_TEXT = zhCN.errors.authn.bad_request
 
 const SECRET_ROW = {
   id: 'sec-1',
@@ -2434,6 +2443,27 @@ describe('AccountsPage', () => {
     const alert = await within(panel).findByRole('alert')
     expect(alert).not.toHaveTextContent(USERNAME_TAKEN_TEXT)
     expect(alert).toHaveTextContent(zhCN.errors.unknown)
+  })
+
+  it('leaves a password-policy refusal out of the username copy', async () => {
+    // authn.bad_request on this route may be the password policy or the
+    // email address, not the username's shape (that is username-invalid),
+    // so it keeps the scope's own sentence.
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      createAccount: () => Promise.reject(BAD_REQUEST),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    const panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.passwordLabel), 'short')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
+
+    const alert = await within(panel).findByRole('alert')
+    expect(alert).toHaveTextContent(BAD_REQUEST_TEXT)
+    expect(alert).not.toHaveTextContent(USERNAME_INVALID_TEXT)
+    expect(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel)).toHaveValue('grace')
   })
 
   it('writes the creation success below the list only after the panel exits', async () => {
