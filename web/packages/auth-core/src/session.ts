@@ -864,13 +864,17 @@ function parseStep(body: unknown): AuthnStep {
 /** The live-flow states the wire carries on an open reply (the
  * record's states, pkg/authn/login flow.go). A terminal record state
  * ('done'/'failed') never reaches a 2xx -- GET /api/v1/auth/flows/current
- * refuses it with a 401 -- so it is not in the set. */
+ * refuses it with a 401 -- so it is not in the set. 'signup' is the
+ * pending-signup state a first login parks at until the username that
+ * opens the account arrives; it answers with `step: 'answer'` like `first`
+ * (the engine's answer handler). */
 const OPEN_FLOW_STATES = [
   'first',
   'processing',
   'second',
   'enroll',
   'ready',
+  'signup',
 ] as const
 type OpenFlowState = (typeof OPEN_FLOW_STATES)[number]
 

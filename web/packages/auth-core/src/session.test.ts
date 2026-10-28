@@ -756,6 +756,25 @@ describe('read flow', () => {
     expect(state).toMatchObject({ seq: 3, state: 'first' })
   })
 
+  it('returns the pending-signup step a first login parks at before it opens an account', async () => {
+    // The flow's username step is an open state of its own: a client that
+    // did not know it would reject the reply as a protocol violation and
+    // render the login broken instead of the username challenge.
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () =>
+        openFlow({
+          seq: 4,
+          state: 'signup',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'username', kind: 'text', required: true }],
+          },
+        }),
+    })
+    const state = await harness.session.readFlow()
+    expect(state).toMatchObject({ seq: 4, state: 'signup' })
+  })
+
   it('resolves null when the flow binding is missing (a 401), never rejecting', async () => {
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => {
