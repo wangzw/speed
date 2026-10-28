@@ -77,9 +77,8 @@ const EMAIL_DOMAIN = 'e2e.test'
 
 /**
  * The first-login username step's field name. The server's challenge names
- * the `username` field and carries no label of its own; the sign-in family
- * renders a field name it has no bundle wording for verbatim (auth-ui's
- * internal/labels), so the input is addressed by that name.
+ * the `username` field; the input keeps that name while its label comes from
+ * the sign-in flow's bundle, so the answer addresses the element by name.
  */
 const SIGNUP_USERNAME_FIELD = 'username'
 
@@ -234,10 +233,9 @@ export function createAccounts({
     // page, or the SMS channel's own panel); addressing the submit inside that
     // form keeps the enterprise entry's "Continue" on the sign-in page out of
     // the answer.
-    const field = page.getByRole('textbox', {
-      name: SIGNUP_USERNAME_FIELD,
-      exact: true,
-    })
+    // The input carries the contract's field name; the label above it is copy
+    // and follows the language, so the answer addresses the element by name.
+    const field = page.locator(`input[name="${SIGNUP_USERNAME_FIELD}"]`)
     await field.waitFor()
     await field.fill(username)
     const form = field.locator('xpath=ancestor::form[1]')
