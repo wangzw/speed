@@ -18,7 +18,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { onlineManager } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AuthDomain, AuthSnapshot } from '@speed/auth-core'
+import type { AuthDomain, AuthSession, AuthSnapshot } from '@speed/auth-core'
 import type { RequestFn, RequestOptions, SpeedClient } from '@speed/api-client'
 import { getAuthnImpersonationStatusQueryKey } from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
@@ -1923,13 +1923,13 @@ describe('the impersonation shell', () => {
     }
   })
 
-  it('decides the console by the effective account\'s platform set, not by the impersonation flag', async () => {
+  it('keeps an impersonating identity out of the console even with a non-empty platform set', async () => {
     window.history.replaceState({}, '', '/console/tenants')
     const backend = makeBackend()
     bindRequestFn(backend.fn)
     // The effective account holds a platform permission. A real target never
-    // does -- the Decider refuses a platform administrator as a target -- but
-    // the flag alone must not keep the identity out: the criterion is the set.
+    // does, but the identity fact decides before the set is consulted: the
+    // impersonation alone closes the console.
     const impersonated = {
       ...authenticatedSnapshot({ system: ['tenant.read'] }),
       impersonating: true,
@@ -1938,14 +1938,13 @@ describe('the impersonation shell', () => {
       session: scriptedSession(impersonated, () => impersonated),
     })
 
-    // The area gate grants on the known non-empty set, so the console URL is
-    // kept; nothing redirects it for the impersonation itself.
-    await waitFor(() => expect(window.location.pathname).toBe('/console/tenants'))
+    // The impersonation redirects before the permission set is read, so the
+    // non-empty set neither keeps the console nor shows it in passing.
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
     expect(
-      screen.queryByRole('progressbar', {
-        name: demoEnUS.console.accessPending,
-      }),
+      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
     ).toBeNull()
+    expect(screen.queryByText(demoEnUS.console.accessFailed)).toBeNull()
   })
 
   it('sends an impersonating identity with an empty platform set to the tenant home', async () => {
@@ -2756,5 +2755,152 @@ describe('the impersonation shell', () => {
         name: tAuth('impersonation.hide'),
       }),
     ).toHaveFocus()
+  })
+})
+
+/**
+ * The console under an impersonation: the impersonation is the identity fact
+ * that closes it, decided before any permission set is consulted. Whatever
+ * the masked account's permission read answers -- refused, an empty document,
+ * or even a non-empty one -- the console entry is hidden and every console
+ * path lands on the tenant home, with no retryable failure view.
+ */
+describe('the console under an impersonation', () => {
+  /** A session whose permission attach lands in the snapshot the gates read. */
+  function attachable(base: ReturnType<typeof createTestSession>): AuthSession {
+    return {
+      ...base,
+      setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
+        const current = base.getSnapshot()
+        base.set({
+          ...current,
+          permissionSets: { ...current.permissionSets, [domain]: perms },
+        })
+      },
+    }
+  }
+
+  /** A backend that answers the impersonation surface and the permission
+   * read the way the case asks. */
+  function bindWithPermissions(
+    answer: () => Promise<unknown>,
+    grant: string = new Date(Date.now() + 3_600_000).toISOString(),
+  ): ReturnType<typeof makeBackend> {
+    const backend = makeBackend({ grant: grantFixture(grant) })
+    bindRequestFn(<T,>(path: string, options?: RequestOptions): Promise<T> => {
+      if (path === '/api/v1/authz/me/permissions') {
+        return answer() as Promise<T>
+      }
+      return backend.fn<T>(path, options)
+    })
+    return backend
+  }
+
+  it.each([
+    [
+      'a refused read',
+      (): Promise<unknown> =>
+        Promise.reject({ status: 403, code: 'rbac.permission_denied' }),
+    ],
+    [
+      'an answered empty document',
+      (): Promise<unknown> => Promise.resolve({ platform: [], tenant: [] }),
+    ],
+  ])(
+    'keeps a console URL unreachable under %s, with no failure view',
+    async (_label, answer) => {
+      window.history.replaceState({}, '', '/console/tenants')
+      bindWithPermissions(answer)
+      // The target's platform set is unknown at entry: the read under test is
+      // the only thing that could turn it into a decision, so the redirect can
+      // only come from the identity fact.
+      const session = attachable(
+        createTestSession({
+          ...targetSnapshot(),
+          permissionSets: { tenant: null, system: null },
+        }),
+      )
+      renderDemoApp({
+        session,
+        wrap: (app) => (
+          <PlatformPermissions session={session}>{app}</PlatformPermissions>
+        ),
+      })
+
+      // The identity fact redirects before the read is consulted: the viewer
+      // lands on the tenant home, without the console chrome and without the
+      // retryable failure its refused read would otherwise show.
+      await waitFor(() => expect(window.location.pathname).toBe('/'))
+      expect(screen.queryByText(demoEnUS.console.accessFailed)).toBeNull()
+      expect(
+        screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
+      ).toBeNull()
+      expect(
+        await screen.findByRole('region', {
+          name: tAuth('impersonation.regionLabel'),
+        }),
+      ).toBeInTheDocument()
+    },
+  )
+
+  it('hides the entry and keeps an in-app console move home even for a non-empty read', async () => {
+    // The entry's hiding is the identity fact too: a target read that
+    // answered a platform set must not offer the way in.
+    window.history.replaceState({}, '', '/')
+    bindWithPermissions(() =>
+      Promise.resolve({ platform: ['tenant.read'], tenant: [] }),
+    )
+    const session = attachable(createTestSession(targetSnapshot()))
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    await screen.findByRole('region', {
+      name: tAuth('impersonation.regionLabel'),
+    })
+    expect(
+      screen.queryByRole('link', { name: demoEnUS.nav.console }),
+    ).toBeNull()
+
+    act(() => {
+      window.history.pushState({}, '', '/console/tenants')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(screen.queryByText(demoEnUS.console.accessFailed)).toBeNull()
+    expect(
+      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
+    ).toBeNull()
+  })
+
+  it('lets the console back in once the impersonation ends', async () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+    })
+    bindRequestFn(backend.fn)
+    const session = scriptedSession(targetSnapshot(), () => operatorSnapshot())
+    const user = userEvent.setup()
+    renderDemoApp({ session })
+
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    const notice = await screen.findByRole('region', {
+      name: tAuth('impersonation.regionLabel'),
+    })
+    await user.click(
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
+    )
+    await waitFor(() => expect(banner()).toBeNull())
+
+    const entry = await screen.findByRole('link', { name: demoEnUS.nav.console })
+    await user.click(entry)
+    expect(
+      await screen.findByRole('navigation', {
+        name: tConsole('shell.navLabel'),
+      }),
+    ).toBeInTheDocument()
   })
 })

@@ -1190,8 +1190,14 @@ function useConsoleTenantSettle(authenticated: boolean): void {
  * guard below, which turns a staff viewer away from a page they lack). The
  * decision is drawn from the platform permission set (auth-core's 'system'
  * domain), read here before the shell renders so a denied viewer never sees
- * even its chrome. Three outcomes:
+ * even its chrome. The snapshot's `impersonating` fact is decided first,
+ * before any permission read is consulted: the impersonation alone closes
+ * the console, whatever the target's permission read answers. The outcomes:
  *
+ *  - impersonating: the signed-in identity is acting as someone else. The
+ *    area renders nothing and redirects to the tenant home, with no roster
+ *    read and no dependence on the permission set -- a refused target read
+ *    never turns into a retryable failure the impersonator cannot resolve.
  *  - granted: the set is known and holds at least one platform permission --
  *    the principal is platform staff, and the console renders.
  *  - denied: the set is known and empty -- an ordinary member. The area renders
@@ -1228,6 +1234,14 @@ function ConsoleAreaGate({
   const profile = useAuthnProfileGet({
     query: { enabled: snapshot.state === 'authenticated' },
   })
+  // The impersonation is the identity fact that closes the console: it is
+  // decided before the permission set is consulted, so a target's permission
+  // read -- refused, empty or even non-empty -- cannot turn this into the
+  // access wait, the member redirect reached by a read, or the retryable
+  // failure. This branch reads no roster.
+  if (snapshot.impersonating) {
+    return <TenantHomeRedirect />
+  }
   const status = consoleAreaStatus(snapshot)
   if (status === 'granted') {
     return <>{children}</>

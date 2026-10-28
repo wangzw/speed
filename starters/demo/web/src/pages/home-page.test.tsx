@@ -121,11 +121,11 @@ describe('the start page', () => {
     )
   })
 
-  it('offers the console card to an impersonating identity whose effective set holds a platform permission', () => {
-    // The criterion is the effective account's platform set alone. A target
-    // that held a platform permission would be refused as an impersonation
-    // target, but the flag itself must not hide the card: the panel follows the
-    // set, and the header entry follows the same derivation.
+  it('hides the console card from an impersonating identity even when its set holds a platform permission', () => {
+    // The impersonation is the identity fact that closes the console, decided
+    // before the permission set is consulted: a target that held a platform
+    // permission still gets no way in, and the header entry follows the same
+    // derivation.
     renderDemoApp({
       session: createTestSession({
         ...authenticatedSnapshot({ system: ['tenant.read'] }),
@@ -133,7 +133,7 @@ describe('the start page', () => {
       }),
     })
 
-    expect(hasCard(demoEnUS.home.cards.console.title)).toBe(true)
+    expect(hasCard(demoEnUS.home.cards.console.title)).toBe(false)
   })
 
   it('keeps the console card hidden while the platform permission set is unknown', () => {
