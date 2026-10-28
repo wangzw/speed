@@ -236,7 +236,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrContactTaken` | 邮箱地址已被别的账户预留或持有（`authn_pending_contacts` 的 `(kind, value)` 唯一索引冲突） | 409 `email-taken` |
 | `ErrInvalidCredentials` | 未知标识、错口令、验证码错、停用、无口令，一律此哨兵 | 401 `login-failed` |
 | `ErrPasswordPolicy`、`ErrInvalidIdentifier` | 口令不合策略（过短、超长、等于本人标识、低于 OWASP 下限、与当前口令相同）；标识规范化失败（用户名、邮箱、手机格式不合） | 400 `bad-request` |
-| `ErrUsernameReserved` | 用户名落在保留用户名集合里（内置清单与 `authn.account.reserved-usernames` 的并集） | 400 `bad-request` |
+| `ErrUsernameReserved` | 用户名落在保留用户名集合里（内置清单与 `authn.account.reserved-usernames` 的并集） | 400 `username-reserved` |
 | `ErrInvalidArgument` | 写入的值越过调用允许的域：属性集越界、显示名过长、`via` 不在 `Verification` 接受的形式内、`reason` 不在 `ReasonClass` 闭集 | 管理路由 400 `bad-request`；模块在自己写下的值（会话载荷的 `idp.*` 属性）上遇到它是自身的缺陷，503 |
 | `ErrFactorLimit`、`ErrIdentifierRequired` | 某种因素已达 `max-per-kind`；账户没有用户名也没有选作登录方式的已验证邮箱而要设口令，或带口令凭据的账户删除最后一个这样的登录名（`DELETE /auth/identifiers/:id`） | 409 `conflict`、409 `login-identifier-required` |
 | `ErrAccountUnavailable`、`ErrMethodDisabled` | 账户不可用：外部登录路径上账户停用，或要求状态、凭据行或标识行的写入发现它不满足；方法被 `disabled-methods` 关掉 | 外部登录 403 `account-unavailable`；匿名口令重置 403 `password-reset-unavailable`；403 `method-disabled` |
