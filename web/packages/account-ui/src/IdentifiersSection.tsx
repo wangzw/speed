@@ -116,7 +116,9 @@
  * still answers for the email kind renders the same field message rather
  * than the account-state banner; a username's 400 (a reserved name, or a
  * shape it cannot normalize) renders the value field's own message. The
- * three refusals are distinguishable: taken, reserved, and shape. Closing
+ * three refusals are distinguishable: taken, reserved, and shape. A
+ * bad-request that is not the username's own shape answer stays the
+ * banner's: on this route it may describe another value. Closing
  * the add face clears the whole attempt: the failure banner, the field
  * error, the success notice and the sent-code step.
  *
@@ -775,7 +777,7 @@ export function IdentifiersSection({
         if (
           kind === 'username' &&
           (failure === 'authn.username_reserved' ||
-            failure === 'authn.bad_request')
+            failure === 'authn.username_invalid')
         ) {
           // A login name the system keeps for itself, or one the server
           // cannot normalize: the name is the value this face can change,

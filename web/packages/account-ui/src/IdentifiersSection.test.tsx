@@ -1050,7 +1050,7 @@ describe('IdentifiersSection', () => {
     // value this face can change, so the field carries the message.
     for (const [code, text] of [
       ['authn.username_reserved', zhCN.identifiers.add.usernameReserved],
-      ['authn.bad_request', zhCN.identifiers.add.usernameInvalid],
+      ['authn.username_invalid', zhCN.identifiers.add.usernameInvalid],
     ] as const) {
       const respond: RealResponder = (call: RealCall) => {
         if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -1086,6 +1086,45 @@ describe('IdentifiersSection', () => {
       expect(screen.queryByText(text)).not.toBeInTheDocument()
       unmount()
     }
+  })
+
+  it('leaves a bad-request username add to the generic banner', async () => {
+    // authn.bad_request is not the username's shape answer (that is
+    // authn.username_invalid), so the field stays clean and the banner says
+    // what the route said.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return errorResponse(400, 'authn.bad_request')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    fireEvent.mouseDown(
+      screen.getByRole('combobox', { name: zhCN.identifiers.add.kind.label }),
+    )
+    await user.click(
+      screen.getByRole('option', { name: zhCN.identifiers.add.kind.username }),
+    )
+    const field = screen.getByLabelText(
+      zhCN.identifiers.add.value.labelUsername,
+    )
+    await user.type(field, 'ada')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
+    expect(alert).not.toHaveTextContent(zhCN.identifiers.add.usernameInvalid)
+    expect(field).not.toHaveAttribute('aria-invalid', 'true')
   })
 
   it('states the username first-character rule in the add helper', async () => {
