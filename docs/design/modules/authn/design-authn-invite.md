@@ -319,7 +319,7 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 4. **兑现。**
    - 已有账户：`Memberships.Put`，来源 `invite`。
    - 命中未证明预留：`AccountAdmin.AddIdentifier`（`via = invite`）把该邮箱写成已验证标识，账户模块在同一事务里把该地址的预留置为已持有、写首次证明时刻，自助注册账户的 `signup_state` 置 `2`；`Memberships.Put` 把成员行挂到该账户，不建账户。
-   - 两者都没有：先取得一个合法用户名（规范化与保留字校验，规则见 [design-authn-account](design-authn-account.md) 的「标识的规范化」），`AccountAdmin.Create` 建启用的用户账户（地址作标识，验证渠道为邀请；用户名标识 `via = self`），再 `Memberships.Put`，来源 `invite`。用户名不合法时不建账户，这次兑现按失败结算。
+   - 两者都没有：先取得一个合法用户名（规范化与保留字校验，规则见 [design-authn-account](design-authn-account.md) 的「标识的规范化」），`AccountAdmin.Create` 建启用的用户账户（地址作标识，验证渠道为邀请；用户名标识 `via = self`），再 `Memberships.Put`，来源 `invite`。用户名的三种拒绝（占用、保留、形状）是当事人可改的值：不建账户，邀请回到待接受，令牌不被这次拒绝用掉；其余使兑现无法完成的失败才按永久失败结算。
 5. **失败结算。** 第 3 步的反查与第 4 步的兑现跨模块，各自在自己的事务里，与第 2 步的翻转不在一条事务里。它们失败时按失败性质结算这次抢先：临时失败把它还给待接受（重试不被锁死），永久失败（地址与账户冲突一类）把它结算为已撤销（一条再也兑现不了的邀请不该把令牌留到 TTL 结束）。结算是「状态仍为已接受」的条件写，绝不无条件覆盖；结算本身的失败只记 Error，不改变返回给调用方的错误。账户已建而某个生命周期钩子失败时，账户模块返回 `ErrCleanupIncomplete`：它不是永久失败，邀请退回待接受，原样向上传递（503），重试时账户已存在、只补写成员关系与该做的清理。
 
 ### 列表与撤销

@@ -250,7 +250,7 @@ type Proof struct {
 | `POST B/password-reset` | 体 `{channel, identifier, human_proof?}`。规范化标识、判定资格、预留预算、发送或写抑制记录，应答 `202 {state:"sent", expires_in, resend_after}`；合格与不合格目标的应答体、响应头与 cookie 逐字相同。同一 cookie 的存活 `sent` 记录、渠道与标识摘要都相同时视为重发：未到重发间隔答 429；短信渠道的已发送条数达到 `authn.sms.per-flow-sends` 后抑制发送并仍答 202。不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时抑制发送并仍答 202。 |
 | `GET B/password-reset/current` | 读绑定记录：`sent` 答 `{state:"sent", expires_in, resend_after}`，`verified` 答 `{state:"verified", expires_in}`；不答账户、标识或码；`processing` 与其他不符状态答 `401 flow-invalid`。 |
 | `DELETE B/password-reset/current` | 删除记录并清 cookie；幂等，没有绑定、没有记录或开关已关闭都答 204，依赖不可用答 503；它不发送、不改账户。 |
-| `POST B/password-reset/verify` | 体 `{code}`。真实短信经 `SMSCodes.Verify` 核验，真实邮箱比对带盐摘要；抑制记录比对记录里的本地诱饵摘要，不调用 `SMSCodes.Verify`；每码尝试由本记录自己的原子计数约束。通过后 `sent` 换成 `verified`，应答 `{state:"verified", expires_in}`。错码、码过期、已用、抑制路径与记录自己的尝试用尽同答 `401 login-failed`；尝试用尽后记录转 `failed`，后续答复仍答 `401 login-failed`，与错码同形。 |
+| `POST B/password-reset/verify` | 体 `{code}`。真实短信经 `SMSCodes.Verify` 核验，真实邮箱比对带盐摘要；抑制记录比对记录里的本地诱饵摘要，不调用 `SMSCodes.Verify`；每码尝试由本记录自己的原子计数约束。通过后 `sent` 换成 `verified`，应答 `{state:"verified", expires_in}`。已 `verified` 的记录收到同一个码时按成功答同样的体（幂等：一次应答丢失不该把已证明的码变成失效流程）。错码、码过期、已用、抑制路径与记录自己的尝试用尽同答 `401 login-failed`；尝试用尽后记录转 `failed`，后续答复仍答 `401 login-failed`，与错码同形。 |
 | `POST B/password-reset/complete` | 体 `{new_password}`，只在 `verified` 上接受。先重读开关与该渠道的可用性，关闭时答 403 `password-reset-closed`；再重核资格（账户仍启用、仍有凭据、标识仍属该账户且仍由同一证明渠道证明），再写强制档审计 `authn.password.reset` 的 `attempted` 行，再 `Passwords.Set`（`By=reset`、`Channel` 取本次渠道、`MustChange=false`、`RequireActive`、`RequireExisting`、`RequireIdentifier` 取记录里的标识行、`AdvanceValidAfter`），成功后撤销该账户全部 browser 与 token 会话，删除记录并清 cookie，应答 204。不建立会话、不签发令牌。口令策略拒绝答 400 `bad-request`，记录留在 `verified`，可用另一个口令重试；账户不再合格答 403 `password-reset-unavailable`。 |
 
 **同形与抑制。** 不合格目标不发送消息，但走与合格目标相同的记录与验证路径：邮箱写一条码摘要为随机诱饵的记录，短信先尝试 `SMSCodes.Send`（`Deliver=false`）取得抑制挑战行；若 `Send` 因任何发送预算或重发窗口超限返回 `ErrThrottled`，同样写一条抑制记录并答 202。发送步一律答 202；验证步对抑制记录用本地随机摘要做比较与计数，不调用 `SMSCodes.Verify`，恒不通过并答同一个 401 `login-failed`；真实记录才调用 `SMSCodes.Verify`。发送预算的任何超限都抑制发送并仍答 202；只有同一 cookie 的重发间隔与登录的 `ip-limit` 答 429，二者都与账户无关。
@@ -592,25 +592,29 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | 当前状态 | 事件 | 下一状态 | 答复 | 副作用 |
 |---|---|---|---|---|
 | `first` | `submit`，方法交出 `StepPrompt`、`StepData`、`StepRedirect` | `first`，`seq` 加一，`answers` 加一，`sends` 累加 | 200 | 无 |
-| `first` | `submit`，`StepRefused` | `first`，`seq` 加一，`answers` 加一，受 8 次上限 | 401 `login-failed`；成因是 `ErrUnsupportedRegion` 或 `ErrInvalidIdentifier` 时按 400 答（`unsupported-region`、`bad-request`） | 方法自己记退避 |
+| `first` | `submit`，`StepRefused` | `first`，`seq` 不变，`answers` 加一，受 8 次上限；方法的步与私有状态保留 | 401 `login-failed`；成因是 `ErrUnsupportedRegion` 或 `ErrInvalidIdentifier` 时按 400 答（`unsupported-region`、`bad-request`） | 方法自己记退避 |
 | `first` | `submit`，`StepThrottled` | 不变 | 429 带 `Retry-After`；`retryAfter` 为零时不带 | 无 |
 | `first` | `submit`，`StepUnavailable` | 不变 | 503 | 无 |
 | `first` | `submit`，`StepProven` | 账户解析，随后按策略判定落入 `second`、`enroll` 或 `ready`；解析判定要开户时落入 `signup`；解析失败落入 `failed` | 200 或 401 | 见「账户解析与策略判定」；落入 `signup` 时写 `pending` |
 | `first` | `callback` | 先交换成 `processing`，再调 `Answer` | 无 | 无 |
 | `processing` | `StepProven` | 同上，账户解析与策略判定；判定要开户时落入 `signup` | 303；例外：`delivery=token` 且无后续步骤、回跳又不是顶层导航时答 200 | 落入 `signup` 时写 `pending` |
 | `signup` | `submit`，合法用户名 | 建号，随后按策略判定落入 `second`、`enroll` 或 `ready` | 200 | 账户与 `via = self` 的用户名标识在同一事务写入，绑定或手机标识随开户写入（短信首登写下的手机标识建号时即为登录方式，见 [authn-account](design-authn-account.md)）；`pending` 清空，`account` 写入 |
-| `signup` | `submit`，用户名格式不合或保留字 | `signup`，`seq` 加一，`answers` 加一，受 8 次上限 | 400 `bad-request` | 不建号 |
-| `signup` | `submit`，用户名已被占用 | `signup`，`seq` 加一，`answers` 加一，受 8 次上限 | 409 `username-taken` | 不建号 |
+| `signup` | `submit`，用户名格式不合或保留字 | `signup`，`seq` 不变，`answers` 加一，受 8 次上限 | 400 `username-invalid` 或 `username-reserved` | 不建号 |
+| `signup` | `submit`，用户名已被占用 | `signup`，`seq` 不变，`answers` 加一，受 8 次上限 | 409 `username-taken` | 不建号 |
 | `processing` | `StepRefused`、`StepUnavailable`、账户解析失败 | `failed` | 401 `login-failed`、503、401 | 授权码已用，用户重新开始 |
 | `processing` | 并发的第二次回跳，或崩溃遗留 | 不改 | 401 `flow-invalid` | 无 |
 | `second` | 因素通过 | `ready` | 200 | 无 |
-| `second` | 因素被拒 | `second`，`seq` 加一，`answers` 加一 | 401 `login-failed` | 因素退避（`ScopeFactor`，由 `MFA` 记） |
+| `second` | 因素被拒 | `second`，`seq` 不变，`answers` 加一；挑战与方法的步保留 | 401 `login-failed` | 因素退避（`ScopeFactor`，由 `MFA` 记） |
 | `second` | `StepThrottled`（`ScopeFactor` 退避中） | 不变 | 429 带 `Retry-After` | 无 |
 | `second` | `StepUnavailable` | 不变 | 503 | 无 |
 | `second` | 答复数用尽、超时 | `failed` | 401 `login-failed` | 无 |
 | `enroll` | 因素实现交出 `StepEnrolled` | `ready` | 200 | 因素标识存入记录的 `mfa.enrolled`；本次登记的因素不计入保障等级 |
+| `enroll` | 因素实现交出 `StepRefused`（确认码不符等） | `enroll`，`seq` 不变，`answers` 加一；待定因素与方法的步保留 | 401 `login-failed` | 可原地重试确认码 |
+| `challenge` | 选中因素的 `Challenge` 交出 `StepRefused` | `second`，`seq` 不变，`answers` 加一；因素清单保留 | 401 `login-failed` | 可改选另一因素或重试 |
 | `ready` | `complete` | `done` | 见「终态动作」 | 终态动作 |
 | 任意 | `answers` 达 8、过期、`DELETE flows/current`、方法被 `disabled-methods` 关 | `failed` | 401 `flow-invalid` | 无 |
+
+**拒绝不推进序号。** `submit` 类的一步被拒时，序号不动、答复计数加一，方法的步与私有状态保留：当事人改正后带同一个序号原地重试即可成功，不必先重读流程；序号只在流程真正前进（提示、数据、跳转、证明）时加一。回跳类的一步是例外：授权码与断言一次性，`processing` 的拒绝置 `failed`，客户端按导航重新开始。
 
 过期靠键的生存期兜底，不需要任何清扫。submit 类的一步落入 `ready` 时应答 `next.kind = complete`，客户端以 `step=complete` 取走结果；回跳类的收尾见「回跳类的收尾」。
 

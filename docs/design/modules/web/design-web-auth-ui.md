@@ -12,6 +12,7 @@
 - `SocialSignInSection` 渲染一组 redirect 方法，每个方法起一条登录流程；开始响应的 `redirect` 步交出授权地址，由宿主导航。
 - `SocialCallbackHandler` 在宿主的回调路由上读回那条流程（`session.readFlow`），据其状态续接。
 - `SignOutButton` 驱动 `session.logout()`；`SignOutMenuItem` 是同一动作在宿主账户菜单里的形态，先调宿主的 `onActivate`（通常关闭菜单）再驱动登出，吞掉拒绝（登出是终局的，本地会话无论如何翻成匿名，菜单项也随之消失）。
+- `useFlowDriver` 是族内共享的步进引擎，重试语义与服务的「拒绝不推进序号」配套：被拒的一步保留它停驻的步与序号，下一次提交带同一个序号；收到下一步（含 `next.kind = complete`）时先把新步与新序号落入驱动，再发 `complete`，`complete` 失败时用该序号重试 `complete` 或重读流程，绝不回落到上一个答复的旧步。一次答复已提交登录而随后读主体失败时，那是读取失败而不是登录失败：驱动不把已完成的流程当作失败，界面以会话状态为准（见 [auth-core](design-web-auth-core.md)）。
 - `SessionEndedScreen` 是宿主挂在一处已认证视图刚翻成匿名时的占位屏。它的文案不陈述成因：显式登出与会话死亡在快照上是同一个翻转，本包区分不了，所以屏上的话对两者都成立——已退出，或登录状态已失效，再次登录即可继续。
 - `AcceptInvitationScreen` 渲染邀请受理面：读取令牌指向的邀请（acceptView）并受理它（accept）。它驱动的不是会话操作，而是宿主交给它的两个邀请操作。
 - `PasswordResetScreen` 渲染匿名口令重置面：用户选择部署提供的邮箱或短信渠道，提交该渠道的标识，取得验证码后提交验证码与新口令。它驱动的不是会话操作，而是宿主交给它的重置操作；成功不建立会话，屏幕只报告完成，由宿主导航回登录面。
