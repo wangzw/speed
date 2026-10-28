@@ -1,24 +1,56 @@
 /**
- * IdentifiersSection: the sign-in-identifiers surface of the account page.
+ * IdentifiersSection: the identifier surface of the account page, grouped by
+ * the two independent axes an email address or phone number carries.
  *
  * The identifiers are the account's own, read off the profile
  * (GET /api/v1/auth/me, authn.profile.get): the spec ships no dedicated
  * identifier-list route, and the profile answer carries each identifier's
- * own id, kind, value and proven flag, so the section reads the same
- * profile query the other account surfaces read. Each row names the kind
- * (email, phone or username, mapped through a guarded vocabulary, a value
- * outside it rendering the generic identifier label) and the value, with
- * the server's `proven` answer (the ways of establishing ownership that
- * actually prove it -- email-code, sms-code, invite, idp:<provider> --
- * versus the ones that only record an assertion: admin, import-unverified,
- * self). `verified_at` cannot answer that question: every stored identifier
- * carries one, including a username written at registration as `self`.
- * A username is a login name with no ownership to prove, so its row carries
- * no ownership chip. An email or phone row carries a two-value ownership
- * chip: `proven` true reads `verified`, false reads `unverified`, whatever
- * channel established the identifier. An address an administrator asserted or
- * an import recorded is not a third state -- it is an address its holder has
- * not proved, and the account's pending verification blocks it like any other.
+ * own id, kind, value, proven flag and its place on both axes. Each row
+ * names the kind (email, phone or username, mapped through a guarded
+ * vocabulary, a value outside it rendering the generic identifier label) and
+ * the value, with the server's `proven` answer (the ways of establishing
+ * ownership that actually prove it -- email-code, sms-code, invite,
+ * idp:<provider> -- versus the ones that only record an assertion: admin,
+ * import-unverified, self). `verified_at` cannot answer that question: every
+ * stored identifier carries one, including a username written at
+ * registration as `self`. A username is a login name with no ownership to
+ * prove, so its row carries no ownership chip. An email or phone row carries
+ * a two-value ownership chip: `proven` true reads `verified`, false reads
+ * `unverified`, whatever channel established the identifier.
+ *
+ * The section splits the account's identifiers into three lists. The sign-in
+ * ways list holds every username and every email address or phone number the
+ * profile marks `sign_in`; the contacts list holds every email address or
+ * phone number marked `contact` and every email address that is the default
+ * contact; the "not used for sign-in or contact" list holds the remaining
+ * addresses and numbers, which are on neither axis. The same record appears
+ * in both the sign-in ways and the contacts lists while it is on both axes;
+ * the switch that changes one axis renders in every list the record appears
+ * in, so the two views stay in step. A username is always a sign-in way, has
+ * no contact axis, and is never in the other two lists.
+ *
+ * An email or phone row carries two independent switches, PUT
+ * /api/v1/auth/identifiers/{id} (authn.login.updateIdentifier) with `contact`
+ * and `sign_in`. Turning "contact" on moves the value into the contacts
+ * list; turning "sign-in way" on moves it into the sign-in ways list;
+ * turning one off only leaves that list, and turning both off returns the
+ * row to the "not used" list. Only a proved value offers the sign-in switch
+ * (REQ-account-065); the contact switch is offered on an unproved value too,
+ * because ownership is what the sign-in axis requires and the default
+ * contact is the only contact position an unproved address cannot take
+ * (REQ-account-066). The contact axis alone needs no fresh authentication;
+ * the sign-in axis and the default contact do, so a refusal opens the
+ * step-up dialog like the section's other gated writes. Putting a proved
+ * value into sign-in rotates this session's credential, so that write runs
+ * inside an identity-transition window; taking it out does not.
+ *
+ * A proved email address also offers the default-contact choice, a radio
+ * that sets `default_contact: true` on the chosen row: the server clears the
+ * previous default in the same write, and an email address that is the
+ * default stays in the contacts list even when its own contact switch is
+ * off. The choice renders once per email record, in the list that record's
+ * state makes canonical, so one address never offers two controls for one
+ * position.
  *
  * A row whose identifier carries an id has a row-end remove action that
  * sits behind the ui-kit danger ConfirmDialog -- removing an identifier is
@@ -30,15 +62,13 @@
  * stale list converges on the server's answer. The removal does not replace
  * the caller's credential, so it runs outside the identity-transition
  * window that the credential-rotating writes below use. An account with a
- * password
- * signs in with a username or an email
- * address, so while it holds exactly one such identifier the section
- * renders a note in place of that row's remove action: removing it would
- * leave the password without a login name. Another username/email, or an
- * account with no password at all, keeps the action. Phone numbers are not
- * counted -- they sign in through their own code route. The server remains
- * the authority on the last way in; the note states the one case the
- * profile can reveal.
+ * password signs in with a username or an email address chosen as a sign-in
+ * way, so while it holds exactly one such identifier the section renders a
+ * note in place of that row's remove action: removing it would leave the
+ * password without a login name. Another such identifier, or an account with
+ * no password at all, keeps the action. Phone numbers are not counted -- they
+ * sign in through their own code route. The server remains the authority on
+ * the last way in; the note states the one case the profile can reveal.
  *
  * An unverified email row carries a verify action beside its remove action
  * (the remove action is withheld while the row is the password account's only
@@ -54,7 +84,7 @@
  * requests would overwrite the one pending record. It is also withheld on a
  * deployment with no email channel, which could not send the code.
  *
- * Below the list is the add face: POST /api/v1/auth/identifiers
+ * Below the lists is the add face: POST /api/v1/auth/identifiers
  * (authn.login.addIdentifier) with a kind and a value. An account holds at
  * most one username, and the server answers a second one with the same 409
  * authn.conflict as a name someone else took -- copy cannot distinguish
@@ -64,10 +94,10 @@
  * answered 409 authn.conflict, and because that is the expected outcome of
  * the one write this face exists for, the section names the username
  * rather than rendering the code's account-state sentence. An
- * email is a contact address, so the add sends a code to it (the answer is
- * state "pending") and the code is submitted through POST
- * /api/v1/auth/identifiers/verify (authn.login.verifyIdentifier); only the
- * matching code writes the address, with the proof. The email branch is
+ * email sends a code to it (the answer is state "pending") and the code is
+ * submitted through POST /api/v1/auth/identifiers/verify
+ * (authn.login.verifyIdentifier); only the matching code writes the address,
+ * with the proof. A new address starts on neither axis. The email branch is
  * unavailable on a deployment with no email channel (a 503), and both
  * writes revoke the account's other sessions, so a success refetches the
  * profile and the session list. An address another account has reserved or
@@ -93,20 +123,20 @@
  * authn.insufficient_user_authentication opens the step-up dialog with the
  * write's inputs remembered, and a won challenge re-runs that one write
  * exactly once. A successful write refetches the profile so the rows
- * converge on the server's answer. The one-step username add and both
- * verification writes replace this session's credential as they commit, so
- * each runs inside an identity-transition window
- * (session.beginIdentityTransition) that closes once the refetch that
- * follows the write has settled; a read still carrying the outgoing
- * credential is discarded instead of ending the session. The email send
- * only issues a code -- it does not rotate the credential -- and runs
- * outside the window.
+ * converge on the server's answer. The one-step username add, both
+ * verification writes and putting a value into sign-in replace this
+ * session's credential as they commit, so each runs inside an
+ * identity-transition window (session.beginIdentityTransition) that closes
+ * once the refetch that follows the write has settled; a read still carrying
+ * the outgoing credential is discarded instead of ending the session. The
+ * email send only issues a code -- it does not rotate the credential -- and
+ * runs outside the window.
  *
- * The section has one failure slot: removal, add, row verification and the
- * code's verification share it, so a failure renders exactly one role="alert"
- * banner. The slot is one control group -- the row actions and the add face
- * are one section -- so its region sits below the add face, after the whole
- * group.
+ * The section has one failure slot: removal, add, row verification, both
+ * switches and the default-contact choice share it, so a failure renders
+ * exactly one role="alert" banner. The slot is one control group -- the row
+ * actions and the add face are one section -- so its region sits below the
+ * add face, after the whole group.
  *
  * The section takes the session (the step-up dialog drives it) and the two
  * optional add-face flags, while the profile read and the writes travel on
@@ -121,14 +151,17 @@
  * proof, because the single-use one was spent.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import MenuItem from '@mui/material/MenuItem'
+import Radio from '@mui/material/Radio'
 import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
+import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
@@ -137,8 +170,10 @@ import {
   getAuthnSessionListQueryKey,
   useAuthnLoginAddIdentifier,
   useAuthnLoginRemoveIdentifier,
+  useAuthnLoginUpdateIdentifier,
   useAuthnLoginVerifyIdentifier,
 } from '@speed/api-sdk'
+import type { AuthnProfileIdentifier } from '@speed/api-sdk'
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
 import { humanGateNeedsProof, stepUpReasonOf, useStepUpGate, useHumanVerification } from '@speed/auth-core'
 import {
@@ -199,15 +234,33 @@ const KNOWN_IDENTIFIER_KINDS = new Set<string>([
  * added through its own two-step surface (the SMS routes), not this one. */
 type AddKind = 'email' | 'username'
 
+/** The change one switch or the default-contact choice asks for. */
+type AxisChange = {
+  readonly contact?: boolean
+  readonly signIn?: boolean
+}
+
+/** The three lists the identifiers are grouped into. A username is always a
+ * sign-in way; an email or phone sits on either axis, both or neither. */
+type IdentifierGroup = 'signIn' | 'contact' | 'neither'
+
 /** The write a step-up dialog is armed for, so a won challenge re-runs
  * exactly it: a removal, the add that sends the code, the code's
- * verification, or the same pair on an existing row's address. */
+ * verification, the same pair on an existing row's address, one axis of a
+ * row, or the default-contact choice. */
 type SectionAction =
   | { readonly step: 'remove'; readonly id: string }
   | { readonly step: 'add'; readonly kind: AddKind; readonly value: string }
   | { readonly step: 'verify'; readonly code: string }
   | { readonly step: 'rowSend'; readonly value: string }
   | { readonly step: 'rowVerify'; readonly code: string }
+  | {
+      readonly step: 'flags'
+      readonly id: string
+      readonly value: string
+      readonly change: AxisChange
+    }
+  | { readonly step: 'defaultContact'; readonly id: string; readonly value: string }
 
 /** The resend note's id, referenced by the row flow's resend control while it
  * counts down. */
@@ -232,6 +285,71 @@ function IdentifierListSkeleton({ label }: { readonly label: string }) {
   )
 }
 
+/** The grouping facts one profile row carries. `sign_in` can be true on an
+ * unproved row written under the old behaviour, so the axis's presence and
+ * the row's proved state are read separately: the list membership follows
+ * the server's flag, the sign-in switch is offered only where the value is
+ * proved. */
+function axesOf(row: {
+  readonly kind?: string
+  readonly sign_in?: boolean
+  readonly contact?: boolean
+  readonly default_contact?: boolean
+}): {
+  readonly username: boolean
+  readonly signIn: boolean
+  readonly contact: boolean
+  readonly defaultContact: boolean
+} {
+  const username = row.kind === 'username'
+  return {
+    username,
+    signIn: username || row.sign_in === true,
+    contact: row.contact === true,
+    defaultContact: row.default_contact === true,
+  }
+}
+
+/** Whether a row belongs to the list named by `group`. The sign-in list holds
+ * every username, the contacts list an address on the contact axis or the
+ * default contact, and the third list only the values on neither axis. */
+function belongsTo(
+  row: {
+    readonly kind?: string
+    readonly sign_in?: boolean
+    readonly contact?: boolean
+    readonly default_contact?: boolean
+  },
+  group: IdentifierGroup,
+): boolean {
+  const axes = axesOf(row)
+  switch (group) {
+    case 'signIn':
+      return axes.signIn
+    case 'contact':
+      return !axes.username && (axes.contact || axes.defaultContact)
+    case 'neither':
+      return !axes.username && !axes.signIn && !axes.contact && !axes.defaultContact
+  }
+}
+
+/** The list a row's per-record controls render in, so one address never
+ * offers the same action twice while it appears on both axes: the contacts
+ * list when it takes a contact position, then the sign-in list, then the
+ * third list. */
+function canonicalGroup(row: {
+  readonly kind?: string
+  readonly sign_in?: boolean
+  readonly contact?: boolean
+  readonly default_contact?: boolean
+}): IdentifierGroup {
+  const axes = axesOf(row)
+  if (axes.username || axes.signIn) {
+    return axes.contact || axes.defaultContact ? 'contact' : 'signIn'
+  }
+  return axes.contact || axes.defaultContact ? 'contact' : 'neither'
+}
+
 export function IdentifiersSection({
   session,
   emailAvailable = true,
@@ -244,6 +362,7 @@ export function IdentifiersSection({
   const removeIdentifier = useAuthnLoginRemoveIdentifier()
   const addIdentifier = useAuthnLoginAddIdentifier()
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
+  const updateIdentifier = useAuthnLoginUpdateIdentifier()
   // The deployment's human-verification gate and this section's proof.
   // Only an email code send presents it: a username write and every
   // verification send no message.
@@ -287,11 +406,16 @@ export function IdentifiersSection({
   const [code, setCode] = useState('')
   const [fieldErrorKey, setFieldErrorKey] = useState<string | null>(null)
 
-  // The row flow's own state. rowVerify is the address whose row verification
-  // is open (null when none is); rowSentTo is that address once its code has
-  // been requested; rowCode is the answer; rowCodeInvalid marks a refused
-  // code in the field. rowResendUntil / rowNow drive the resend countdown.
-  const [rowVerify, setRowVerify] = useState<string | null>(null)
+  // The row flow's own state. rowVerify is the row whose verification is open
+  // (null when none is); rowSentTo is that address once its code has been
+  // requested; rowCode is the answer; rowCodeInvalid marks a refused code in
+  // the field. rowResendUntil / rowNow drive the resend countdown. The key
+  // names the list occurrence that opened the flow, so a record on both axes
+  // shows the form in the row the viewer acted on.
+  const [rowVerify, setRowVerify] = useState<{
+    readonly key: string
+    readonly value: string
+  } | null>(null)
   const [rowSentTo, setRowSentTo] = useState<string | null>(null)
   const [rowCode, setRowCode] = useState('')
   const [rowCodeInvalid, setRowCodeInvalid] = useState(false)
@@ -314,7 +438,8 @@ export function IdentifiersSection({
   // the mutation, so no control changes context under a pending scope.
   const addBusy =
     addIdentifier.isPending || verifyIdentifier.isPending || feedback.pending
-  const writeBusy = removeIdentifier.isPending || feedback.pending
+  const writeBusy =
+    removeIdentifier.isPending || updateIdentifier.isPending || feedback.pending
 
   // Tick the row flow's countdown only while one is running, and stop the
   // timer at its own expiry rather than leaving it ticking for the rest of
@@ -352,21 +477,28 @@ export function IdentifiersSection({
       case 'rowVerify':
         void rowVerifyCode(action.code)
         return
+      case 'flags':
+        void setFlags(action.id, action.value, action.change)
+        return
+      case 'defaultContact':
+        void setDefaultContact(action.id, action.value)
+        return
     }
   })
 
   const pending = isPending && data === undefined
   const rows = !pending && data !== undefined ? data.identifiers : undefined
-  // A password signs an account in through a username or an email address.
-  // With exactly one of those on the profile, that row's removal
-  // is withheld and explained; the server still judges the last way in on
-  // the write itself, so this is the visible half of the same rule.
+  // A password signs an account in through a username or an email address
+  // chosen as a sign-in way. With exactly one of those on the profile, that
+  // row's removal is withheld and explained; the server still judges the last
+  // way in on the write itself, so this is the visible half of the same rule.
   const passwordSet = data?.password_set === true
   const loginNameCount =
     rows === undefined
       ? 0
-      : rows.filter((row) => row.kind === 'username' || row.kind === 'email')
-          .length
+      : rows.filter(
+          (row) => row.kind === 'username' || (row.kind === 'email' && row.sign_in),
+        ).length
   // An account holds at most one username. The server answers a second
   // username with the same 409 authn.conflict as a name someone else took,
   // so once the profile lists one the add face does not offer that kind:
@@ -469,6 +601,77 @@ export function IdentifiersSection({
       // Translated when the attempt settles; it names the identifier removed.
       return t('identifiers.removed', {
         value: identifierValue,
+        interpolation: { escapeValue: false },
+      })
+    })
+  }
+
+  /** Write one axis of a row. A contact-only change does not rotate the
+   * caller's credential; putting a proved value into sign-in does, so that
+   * write runs inside the identity-transition window. A refusal re-reads the
+   * profile, so a selection the client offered but the server rejects
+   * converges on the server's answer. */
+  function setFlags(
+    id: string,
+    value: string,
+    change: AxisChange,
+  ): Promise<void> {
+    return feedback.run(async () => {
+      setFailureText(null)
+      const write = () =>
+        updateIdentifier.mutateAsync({
+          id,
+          data: {
+            ...(change.contact === undefined ? {} : { contact: change.contact }),
+            ...(change.signIn === undefined ? {} : { sign_in: change.signIn }),
+          },
+        })
+      try {
+        if (change.signIn === true) {
+          await runIdentityTransition(session, write, invalidateAfterWrite)
+        } else {
+          await write()
+          await invalidateAfterWrite()
+        }
+      } catch (error) {
+        const reason = stepUpReasonOf(errorCodeOf(error))
+        if (reason !== null) {
+          gate.arm({ step: 'flags', id, value, change }, reason)
+          return null
+        }
+        await invalidateAfterWrite()
+        throw error
+      }
+      return t(
+        change.contact !== undefined
+          ? 'identifiers.axes.contactChanged'
+          : 'identifiers.axes.signInChanged',
+        { value, interpolation: { escapeValue: false } },
+      )
+    })
+  }
+
+  /** Make one proved email address the account's default contact. The server
+   * clears the previous choice in the same write, which is not a credential
+   * rotation. The write needs a fresh authentication like every change of
+   * what proves the account. */
+  function setDefaultContact(id: string, value: string): Promise<void> {
+    return feedback.run(async () => {
+      setFailureText(null)
+      try {
+        await updateIdentifier.mutateAsync({ id, data: { default_contact: true } })
+      } catch (error) {
+        const reason = stepUpReasonOf(errorCodeOf(error))
+        if (reason !== null) {
+          gate.arm({ step: 'defaultContact', id, value }, reason)
+          return null
+        }
+        await invalidateAfterWrite()
+        throw error
+      }
+      await invalidateAfterWrite()
+      return t('identifiers.axes.defaultChanged', {
+        value,
         interpolation: { escapeValue: false },
       })
     })
@@ -608,14 +811,14 @@ export function IdentifiersSection({
 
   /** Open a row's verification flow on the address the row already shows.
    * The add face closes, because one code flow runs at a time on this
-   * section. */
-  function openRowVerify(value: string): void {
+   * section. `key` names the list occurrence that opened it. */
+  function openRowVerify(key: string, value: string): void {
     closeAdd()
     setRowCodeInvalid(false)
     setRowCode('')
     setRowSentTo(null)
     setRowResendUntil(0)
-    setRowVerify(value)
+    setRowVerify({ key, value })
   }
 
   /** Settle the row flow back to closed with no trace of the attempt. */
@@ -682,7 +885,7 @@ export function IdentifiersSection({
   /** Submit the row flow's code. The write proves the address the send just
    * named, so the refetched row loses its unverified chip. */
   function rowVerifyCode(nextCode: string): Promise<void> {
-    const address = rowSentTo ?? rowVerify ?? ''
+    const address = rowSentTo ?? rowVerify?.value ?? ''
     setRowCodeInvalid(false)
     return feedback.run(async () => {
       setFailureText(null)
@@ -755,6 +958,364 @@ export function IdentifiersSection({
     />
   )
 
+  // The three lists, in the order the section renders them, with the keys
+  // their headings and empty notes read.
+  const groups: readonly {
+    readonly key: IdentifierGroup
+    readonly title: string
+    readonly empty: string
+  }[] = [
+    {
+      key: 'signIn',
+      title: 'identifiers.groups.signIn',
+      empty: 'identifiers.groups.signInEmpty',
+    },
+    {
+      key: 'contact',
+      title: 'identifiers.groups.contact',
+      empty: 'identifiers.groups.contactEmpty',
+    },
+    {
+      key: 'neither',
+      title: 'identifiers.groups.neither',
+      empty: 'identifiers.groups.neitherEmpty',
+    },
+  ]
+  const groupIdBase = useId()
+
+  /**
+   * One row in one of the lists. The switches render in every occurrence of
+   * an email or phone record, so the two lists showing it stay in step; the
+   * per-record actions render only in the occurrence canonical for the
+   * record's state, so one address never offers the same action twice. The
+   * sign-in switch is offered only on a proved value; the contact switch is
+   * offered on an unproved one as well.
+   */
+  function renderRow(
+    identifier: AuthnProfileIdentifier,
+    index: number,
+    group: IdentifierGroup,
+  ) {
+    const id = identifier.id ?? null
+    const kind = identifier.kind ?? ''
+    const kindLabel = KNOWN_IDENTIFIER_KINDS.has(kind)
+      ? t(`identifiers.kind.${kind}`)
+      : t('identifiers.kind.other')
+    const value = identifier.value ?? ''
+    // `proven` is the server's derivation of whether the way the identifier
+    // was established proves ownership. `verified_at` is present on every
+    // stored identifier (including a username written at registration as
+    // `self`), so it cannot answer that question.
+    const verified = identifier.proven === true
+    // The chip answers one question: has ownership of this identifier been
+    // proved? Every unproven channel reads the same way -- an
+    // administrator-asserted or imported address is an address its holder
+    // has not proved, not a third state.
+    const stateLabel = verified
+      ? t('identifiers.verified')
+      : t('identifiers.unverified')
+    // A username proves no ownership, so it has no verification state to
+    // show.
+    const showChip = kind !== 'username'
+    const axes = axesOf(identifier)
+    const isAxisRow = !axes.username
+    const canonical = group === canonicalGroup(identifier)
+    const rowKey = `${group}:${id ?? index}`
+    // An unverified email is provable from its own row, unless the
+    // account-wide flow already owns that code (pending) or the deployment
+    // has no channel to send it.
+    const canVerifyRow = rowVerifyAvailable && kind === 'email' && !verified
+    const rowFlowOpen = canVerifyRow && rowVerify?.key === rowKey
+    const lastLoginName =
+      canonical &&
+      passwordSet &&
+      loginNameCount === 1 &&
+      (kind === 'username' || (kind === 'email' && axes.signIn))
+    const disabled = writeBusy || addBusy || id === null
+    return (
+      <Box
+        component="li"
+        key={rowKey}
+        sx={{
+          py: 1.5,
+          minWidth: 0,
+          ...(index > 0
+            ? { borderTop: '1px solid', borderColor: 'divider' }
+            : {}),
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="body1" noWrap sx={{ fontWeight: 500 }}>
+              {value}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {kindLabel}
+            </Typography>
+            {lastLoginName ? (
+              <Typography variant="body2" color="text.secondary">
+                {t('identifiers.lastLoginName')}
+              </Typography>
+            ) : null}
+          </Box>
+          <Box
+            sx={{
+              marginLeft: 'auto',
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+            }}
+          >
+            {showChip ? (
+              <Chip
+                size="small"
+                variant="outlined"
+                color={verified ? 'primary' : 'default'}
+                label={stateLabel}
+              />
+            ) : null}
+            {canVerifyRow && canonical ? (
+              <Button
+                variant="outlined"
+                size="small"
+                disabled={writeBusy || addBusy || rowFlowOpen}
+                aria-label={t('identifiers.verifyAria', {
+                  value,
+                  interpolation: { escapeValue: false },
+                })}
+                onClick={() => openRowVerify(rowKey, value)}
+              >
+                {t('identifiers.verify')}
+              </Button>
+            ) : null}
+            {canonical && id !== null && !lastLoginName && (
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                disabled={writeBusy}
+                aria-label={t('identifiers.removeAria', {
+                  value,
+                  // The label is an aria-label, not HTML: the identifier's
+                  // value (an email or a phone number with a '+') must reach
+                  // the accessibility tree verbatim (i18next's default value
+                  // escaping would embed an entity for it).
+                  interpolation: { escapeValue: false },
+                })}
+                onClick={() => setRemoveTarget(id)}
+              >
+                {t('identifiers.remove')}
+              </Button>
+            )}
+          </Box>
+        </Box>
+        {isAxisRow ? (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              columnGap: 2,
+            }}
+          >
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={axes.contact}
+                  disabled={disabled}
+                  slotProps={{
+                    input: {
+                      'aria-label': t('identifiers.axes.contactAria', {
+                        value,
+                        interpolation: { escapeValue: false },
+                      }),
+                    },
+                  }}
+                  onChange={() => {
+                    if (id !== null) {
+                      void setFlags(id, value, { contact: !axes.contact })
+                    }
+                  }}
+                />
+              }
+              label={t('identifiers.axes.contact')}
+            />
+            {verified ? (
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={axes.signIn}
+                    disabled={disabled}
+                    slotProps={{
+                      input: {
+                        'aria-label': t('identifiers.axes.signInAria', {
+                          value,
+                          interpolation: { escapeValue: false },
+                        }),
+                      },
+                    }}
+                    onChange={() => {
+                      if (id !== null) {
+                        void setFlags(id, value, { signIn: !axes.signIn })
+                      }
+                    }}
+                  />
+                }
+                label={t('identifiers.axes.signIn')}
+              />
+            ) : null}
+            {canonical && kind === 'email' && verified ? (
+              <FormControlLabel
+                control={
+                  <Radio
+                    size="small"
+                    checked={axes.defaultContact}
+                    disabled={disabled}
+                    slotProps={{
+                      input: {
+                        name: 'authn-default-contact',
+                        'aria-label': t('identifiers.axes.defaultAria', {
+                          value,
+                          interpolation: { escapeValue: false },
+                        }),
+                      },
+                    }}
+                    onChange={() => {
+                      if (id !== null && !axes.defaultContact) {
+                        void setDefaultContact(id, value)
+                      }
+                    }}
+                  />
+                }
+                label={t('identifiers.axes.defaultContact')}
+              />
+            ) : null}
+          </Box>
+        ) : null}
+        {rowFlowOpen ? (
+          <Box
+            component="form"
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (rowSentTo === null) {
+                void rowSend(value)
+                return
+              }
+              if (rowCode.trim() !== '') {
+                void rowVerifyCode(rowCode)
+              }
+            }}
+            sx={{ mt: 1.5, maxWidth: FORM_MAX_WIDTH }}
+          >
+            <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
+              <TextField
+                fullWidth
+                type="email"
+                label={t('identifiers.add.value.labelEmail')}
+                value={value}
+                helperText={t('identifiers.add.value.helperEmail')}
+                slotProps={{ htmlInput: { readOnly: true } }}
+                disabled={addBusy}
+              />
+              {humanBlock}
+              {rowSentTo === null ? null : (
+                <TextField
+                  fullWidth
+                  autoFocus
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  label={t('identifiers.add.code.label')}
+                  value={rowCode}
+                  error={rowCodeInvalid}
+                  helperText={
+                    rowCodeInvalid
+                      ? t('identifiers.verifyCodeInvalid')
+                      : undefined
+                  }
+                  slotProps={{
+                    htmlInput: {
+                      'aria-invalid': rowCodeInvalid,
+                    },
+                  }}
+                  disabled={addBusy}
+                  onChange={(event) => {
+                    setRowCode(event.target.value)
+                    if (rowCodeInvalid) {
+                      setRowCodeInvalid(false)
+                    }
+                  }}
+                />
+              )}
+              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+                {rowSentTo === null ? (
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    size="small"
+                    disabled={addBusy || proofBlocked}
+                    loading={addIdentifier.isPending}
+                  >
+                    {t('identifiers.add.submitEmail')}
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      size="small"
+                      disabled={addBusy || rowCode.trim() === ''}
+                      loading={verifyIdentifier.isPending}
+                    >
+                      {t('identifiers.add.verify')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outlined"
+                      size="small"
+                      disabled={
+                        addBusy || proofBlocked || rowRemainingSeconds > 0
+                      }
+                      loading={addIdentifier.isPending}
+                      aria-describedby={
+                        rowRemainingSeconds > 0 ? ROW_RESEND_NOTE_ID : undefined
+                      }
+                      onClick={() => void rowSend(value)}
+                    >
+                      {t('verification.resend')}
+                    </Button>
+                  </>
+                )}
+                <Button
+                  type="button"
+                  size="small"
+                  disabled={addBusy}
+                  onClick={closeRowVerify}
+                >
+                  {t('identifiers.add.cancel')}
+                </Button>
+              </Stack>
+              {rowSentTo !== null && rowRemainingSeconds > 0 ? (
+                <Typography
+                  id={ROW_RESEND_NOTE_ID}
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  {t('verification.resendIn', {
+                    seconds: rowRemainingSeconds,
+                  })}
+                </Typography>
+              ) : null}
+            </Stack>
+          </Box>
+        ) : null}
+      </Box>
+    )
+  }
+
   return (
     <>
       <SectionCard title={showHeader ? t('identifiers.title') : undefined}>
@@ -777,257 +1338,44 @@ export function IdentifiersSection({
         }}
       >
         {(settledRows) => (
-          <Box>
-            {/* The rows are one real list, as the sessions and bindings
-                rows are: a screen-reader user hears each identifier as one
-                item of a numbered set. role="list" keeps the list
-                semantics under WebKit, which strips them from a
-                list-style-none ul. */}
-            <Box component="ul" role="list" sx={{ m: 0, p: 0, listStyle: 'none' }}>
-              {settledRows.map((identifier, index) => {
-                const id = identifier.id ?? null
-                const kind = identifier.kind ?? ''
-                const kindLabel = KNOWN_IDENTIFIER_KINDS.has(kind)
-                  ? t(`identifiers.kind.${kind}`)
-                  : t('identifiers.kind.other')
-                const value = identifier.value ?? ''
-                // `proven` is the server's derivation of whether the way the
-                // identifier was established proves ownership. `verified_at`
-                // is present on every stored identifier (including a username
-                // written at registration as `self`), so it cannot answer that
-                // question.
-                const verified = identifier.proven === true
-                // The chip answers one question: has ownership of this
-                // identifier been proved? Every unproven channel reads the
-                // same way -- an administrator-asserted or imported address
-                // is an address its holder has not proved, not a third state.
-                const stateLabel = verified
-                  ? t('identifiers.verified')
-                  : t('identifiers.unverified')
-                // A username proves no ownership, so it has no verification
-                // state to show.
-                const showChip = kind !== 'username'
-                // An unverified email is provable from its own row, unless
-                // the account-wide flow already owns that code (pending) or
-                // the deployment has no channel to send it.
-                const canVerifyRow =
-                  rowVerifyAvailable && kind === 'email' && !verified
-                const rowFlowOpen = canVerifyRow && rowVerify === value
-                const lastLoginName =
-                  passwordSet &&
-                  loginNameCount === 1 &&
-                  (kind === 'username' || kind === 'email')
-                return (
-                  <Box
-                    component="li"
-                    key={id ?? String(index)}
-                    sx={{
-                      py: 1.5,
-                      minWidth: 0,
-                      ...(index > 0
-                        ? { borderTop: '1px solid', borderColor: 'divider' }
-                        : {}),
-                    }}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {groups.map((group) => {
+              const groupRows = settledRows.filter((row) =>
+                belongsTo(row, group.key),
+              )
+              const headingId = `${groupIdBase}-${group.key}`
+              return (
+                <Box
+                  component="section"
+                  key={group.key}
+                  aria-labelledby={headingId}
+                >
+                  <Typography
+                    id={headingId}
+                    component="h3"
+                    variant="subtitle1"
+                    sx={{ mb: 0.5 }}
                   >
+                    {t(group.title)}
+                  </Typography>
+                  {groupRows.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      {t(group.empty)}
+                    </Typography>
+                  ) : (
                     <Box
-                      sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}
+                      component="ul"
+                      role="list"
+                      sx={{ m: 0, p: 0, listStyle: 'none' }}
                     >
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="body1" noWrap sx={{ fontWeight: 500 }}>
-                          {value}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {kindLabel}
-                        </Typography>
-                        {lastLoginName ? (
-                          <Typography variant="body2" color="text.secondary">
-                            {t('identifiers.lastLoginName')}
-                          </Typography>
-                        ) : null}
-                      </Box>
-                      <Box
-                        sx={{
-                          marginLeft: 'auto',
-                          flexShrink: 0,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1,
-                        }}
-                      >
-                        {showChip ? (
-                          <Chip
-                            size="small"
-                            variant="outlined"
-                            color={verified ? 'primary' : 'default'}
-                            label={stateLabel}
-                          />
-                        ) : null}
-                        {canVerifyRow ? (
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            disabled={writeBusy || addBusy || rowFlowOpen}
-                            aria-label={t('identifiers.verifyAria', {
-                              value,
-                              interpolation: { escapeValue: false },
-                            })}
-                            onClick={() => openRowVerify(value)}
-                          >
-                            {t('identifiers.verify')}
-                          </Button>
-                        ) : null}
-                        {id !== null && !lastLoginName && (
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            size="small"
-                            disabled={writeBusy}
-                            aria-label={t('identifiers.removeAria', {
-                              value,
-                              // The label is an aria-label, not HTML: the
-                              // identifier's value (an email or a phone
-                              // number with a '+') must reach the
-                              // accessibility tree verbatim (i18next's
-                              // default value escaping would embed an
-                              // entity for it).
-                              interpolation: { escapeValue: false },
-                            })}
-                            onClick={() => setRemoveTarget(id)}
-                          >
-                            {t('identifiers.remove')}
-                          </Button>
-                        )}
-                      </Box>
+                      {groupRows.map((identifier, index) =>
+                        renderRow(identifier, index, group.key),
+                      )}
                     </Box>
-                    {rowFlowOpen ? (
-                      <Box
-                        component="form"
-                        noValidate
-                        onSubmit={(event) => {
-                          event.preventDefault()
-                          if (rowSentTo === null) {
-                            void rowSend(value)
-                            return
-                          }
-                          if (rowCode.trim() !== '') {
-                            void rowVerifyCode(rowCode)
-                          }
-                        }}
-                        sx={{ mt: 1.5, maxWidth: FORM_MAX_WIDTH }}
-                      >
-                        <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
-                          <TextField
-                            fullWidth
-                            type="email"
-                            label={t('identifiers.add.value.labelEmail')}
-                            value={value}
-                            helperText={t('identifiers.add.value.helperEmail')}
-                            slotProps={{ htmlInput: { readOnly: true } }}
-                            disabled={addBusy}
-                          />
-                          {humanBlock}
-                          {rowSentTo === null ? null : (
-                            <TextField
-                              fullWidth
-                              autoFocus
-                              inputMode="numeric"
-                              autoComplete="one-time-code"
-                              label={t('identifiers.add.code.label')}
-                              value={rowCode}
-                              error={rowCodeInvalid}
-                              helperText={
-                                rowCodeInvalid
-                                  ? t('identifiers.verifyCodeInvalid')
-                                  : undefined
-                              }
-                              slotProps={{
-                                htmlInput: {
-                                  'aria-invalid': rowCodeInvalid,
-                                },
-                              }}
-                              disabled={addBusy}
-                              onChange={(event) => {
-                                setRowCode(event.target.value)
-                                if (rowCodeInvalid) {
-                                  setRowCodeInvalid(false)
-                                }
-                              }}
-                            />
-                          )}
-                          <Stack
-                            direction="row"
-                            spacing={1}
-                            sx={{ flexWrap: 'wrap' }}
-                          >
-                            {rowSentTo === null ? (
-                              <Button
-                                type="submit"
-                                variant="contained"
-                                size="small"
-                                disabled={addBusy || proofBlocked}
-                                loading={addIdentifier.isPending}
-                              >
-                                {t('identifiers.add.submitEmail')}
-                              </Button>
-                            ) : (
-                              <>
-                                <Button
-                                  type="submit"
-                                  variant="contained"
-                                  size="small"
-                                  disabled={addBusy || rowCode.trim() === ''}
-                                  loading={verifyIdentifier.isPending}
-                                >
-                                  {t('identifiers.add.verify')}
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="outlined"
-                                  size="small"
-                                  disabled={
-                                    addBusy ||
-                                    proofBlocked ||
-                                    rowRemainingSeconds > 0
-                                  }
-                                  loading={addIdentifier.isPending}
-                                  aria-describedby={
-                                    rowRemainingSeconds > 0
-                                      ? ROW_RESEND_NOTE_ID
-                                      : undefined
-                                  }
-                                  onClick={() => void rowSend(value)}
-                                >
-                                  {t('verification.resend')}
-                                </Button>
-                              </>
-                            )}
-                            <Button
-                              type="button"
-                              size="small"
-                              disabled={addBusy}
-                              onClick={closeRowVerify}
-                            >
-                              {t('identifiers.add.cancel')}
-                            </Button>
-                          </Stack>
-                          {rowSentTo !== null && rowRemainingSeconds > 0 ? (
-                            <Typography
-                              id={ROW_RESEND_NOTE_ID}
-                              variant="body2"
-                              color="text.secondary"
-                            >
-                              {t('verification.resendIn', {
-                                seconds: rowRemainingSeconds,
-                              })}
-                            </Typography>
-                          ) : null}
-                        </Stack>
-                      </Box>
-                    ) : null}
-                  </Box>
-                )
-              })}
-            </Box>
+                  )}
+                </Box>
+              )
+            })}
           </Box>
         )}
       </AccountAsyncSection>

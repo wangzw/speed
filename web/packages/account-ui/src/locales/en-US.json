@@ -312,8 +312,8 @@
     "retry": "Retry"
   },
   "identifiers": {
-    "title": "Sign-in identifiers",
-    "loading": "Loading sign-in identifiers",
+    "title": "Identifiers",
+    "loading": "Loading identifiers",
     "kind": {
       "email": "Email",
       "phone": "Phone",
@@ -322,28 +322,47 @@
     },
     "verified": "Verified",
     "unverified": "Not verified",
+    "groups": {
+      "signIn": "Sign-in ways",
+      "signInEmpty": "No sign-in ways yet.",
+      "contact": "Contacts",
+      "contactEmpty": "No contact addresses yet.",
+      "neither": "Not used for sign-in or contact",
+      "neitherEmpty": "No address or number is unused."
+    },
+    "axes": {
+      "contact": "Contact",
+      "contactAria": "Contact: {{value}}",
+      "signIn": "Sign-in way",
+      "signInAria": "Sign-in way: {{value}}",
+      "defaultContact": "Default contact",
+      "defaultAria": "Default contact: {{value}}",
+      "contactChanged": "Updated whether {{value}} is a contact.",
+      "signInChanged": "Updated whether {{value}} can be used to sign in.",
+      "defaultChanged": "{{value}} is now the default contact address."
+    },
     "verify": "Verify",
     "verifyAria": "Verify this email address: {{value}}",
     "verifyCodeInvalid": "The verification code is invalid or has expired. Try again.",
     "lastLoginName": "This is your only sign-in name. Add another username or email address before removing it.",
     "remove": "Remove",
-    "removeAria": "Remove this sign-in identifier: {{value}}",
-    "removed": "Sign-in identifier {{value}} removed.",
-    "confirmTitle": "Remove this sign-in identifier?",
-    "confirmMessage": "The identifier will no longer be able to sign in. An account must keep at least one way to sign in.",
+    "removeAria": "Remove this identifier: {{value}}",
+    "removed": "Identifier {{value}} removed.",
+    "confirmTitle": "Remove this identifier?",
+    "confirmMessage": "The identifier will be removed from the account and from every list it appears in. An account must keep at least one way to sign in.",
     "confirmLabel": "Remove",
     "empty": {
-      "title": "No sign-in identifiers",
-      "description": "Identifiers used to sign in will appear here."
+      "title": "No identifiers",
+      "description": "Your username, email addresses and phone numbers will appear here."
     },
     "error": {
-      "title": "Could not load sign-in identifiers",
-      "description": "Something went wrong while loading your sign-in identifiers. Please try again."
+      "title": "Could not load identifiers",
+      "description": "Something went wrong while loading your identifiers. Please try again."
     },
     "retry": "Retry",
     "add": {
       "open": "Add identifier",
-      "title": "Add a sign-in identifier",
+      "title": "Add an identifier",
       "kind": {
         "label": "Type",
         "email": "Email",

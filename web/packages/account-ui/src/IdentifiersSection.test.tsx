@@ -2178,4 +2178,314 @@ describe('IdentifiersSection', () => {
     await user.click(screen.getByRole('button', { name: zhCN.identifiers.retry }))
     await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
   })
+
+  it('groups the identifiers by the two axes, with an empty list of its own, and passes axe', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-user',
+                kind: 'username',
+                value: 'ada',
+                proven: false,
+                verified_at: '',
+                verified_via: 'self',
+              }),
+              identifier({
+                id: 'id-signin',
+                kind: 'email',
+                value: 'signin@x.test',
+                sign_in: true,
+                contact: false,
+              }),
+              identifier({
+                id: 'id-contact',
+                kind: 'email',
+                value: 'contact@x.test',
+                sign_in: false,
+                contact: true,
+              }),
+              identifier({
+                id: 'id-phone',
+                kind: 'phone',
+                value: '+14155550123',
+                proven: false,
+                verified_at: '',
+                verified_via: '',
+                sign_in: false,
+                contact: false,
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    const signIn = await screen.findByRole('region', {
+      name: zhCN.identifiers.groups.signIn,
+    })
+    const contacts = screen.getByRole('region', {
+      name: zhCN.identifiers.groups.contact,
+    })
+    const neither = screen.getByRole('region', {
+      name: zhCN.identifiers.groups.neither,
+    })
+    // A username and the address the profile marks sign_in are sign-in ways.
+    expect(within(signIn).getByText('ada')).toBeTruthy()
+    expect(within(signIn).getByText('signin@x.test')).toBeTruthy()
+    // The address the profile marks contact, and only it, is a contact.
+    expect(within(contacts).getByText('contact@x.test')).toBeTruthy()
+    expect(within(contacts).queryByText('signin@x.test')).toBeNull()
+    // The phone is on neither axis.
+    expect(within(neither).getByText('+14155550123')).toBeTruthy()
+    expect(within(neither).queryByText('ada')).toBeNull()
+
+    await expectNoAxeViolations()
+  })
+
+  it('renders an empty note for each list that has no row', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-user',
+                kind: 'username',
+                value: 'ada',
+                proven: false,
+                verified_at: '',
+                verified_via: 'self',
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    await screen.findByText('ada')
+    expect(screen.getByText(zhCN.identifiers.groups.contactEmpty)).toBeTruthy()
+    expect(screen.getByText(zhCN.identifiers.groups.neitherEmpty)).toBeTruthy()
+  })
+
+  it('offers the contact switch on an unproved address but no sign-in switch, and writes the contact axis', async () => {
+    let contact = false
+    const writes: unknown[] = []
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-email',
+                kind: 'email',
+                value: 'new@x.test',
+                proven: false,
+                verified_at: '',
+                verified_via: 'admin',
+                sign_in: false,
+                contact,
+              }),
+            ],
+          }),
+        )
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-email'
+      ) {
+        writes.push(call.body)
+        contact = (call.body as { contact?: boolean }).contact === true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    // An unproved value cannot be a sign-in way, so that switch is absent;
+    // its contact axis is still selectable.
+    expect(
+      screen.queryByRole('switch', {
+        name: zhCN.identifiers.axes.signInAria.replace('{{value}}', 'new@x.test'),
+      }),
+    ).toBeNull()
+    await user.click(
+      await screen.findByRole('switch', {
+        name: zhCN.identifiers.axes.contactAria.replace(
+          '{{value}}',
+          'new@x.test',
+        ),
+      }),
+    )
+
+    await waitFor(() => expect(writes).toEqual([{ contact: true }]))
+    const contacts = await screen.findByRole('region', {
+      name: zhCN.identifiers.groups.contact,
+    })
+    await waitFor(() =>
+      expect(within(contacts).getByText('new@x.test')).toBeTruthy(),
+    )
+  })
+
+  it('puts a proved address into sign-in through its own switch', async () => {
+    let signIn = false
+    const writes: unknown[] = []
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-email',
+                kind: 'email',
+                value: 'ada@x.test',
+                sign_in: signIn,
+                contact: false,
+              }),
+            ],
+          }),
+        )
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-email'
+      ) {
+        writes.push(call.body)
+        signIn = (call.body as { sign_in?: boolean }).sign_in === true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('switch', {
+        name: zhCN.identifiers.axes.signInAria.replace(
+          '{{value}}',
+          'ada@x.test',
+        ),
+      }),
+    )
+
+    await waitFor(() => expect(writes).toEqual([{ sign_in: true }]))
+    const signInRegion = await screen.findByRole('region', {
+      name: zhCN.identifiers.groups.signIn,
+    })
+    await waitFor(() =>
+      expect(within(signInRegion).getByText('ada@x.test')).toBeTruthy(),
+    )
+  })
+
+  it('makes a proved email the default contact through the choice on its row', async () => {
+    let defaultContact = false
+    const writes: unknown[] = []
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-email',
+                kind: 'email',
+                value: 'ada@x.test',
+                sign_in: true,
+                contact: false,
+                default_contact: defaultContact,
+              }),
+            ],
+          }),
+        )
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-email'
+      ) {
+        writes.push(call.body)
+        defaultContact =
+          (call.body as { default_contact?: boolean }).default_contact === true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('radio', {
+        name: zhCN.identifiers.axes.defaultAria.replace(
+          '{{value}}',
+          'ada@x.test',
+        ),
+      }),
+    )
+
+    await waitFor(() => expect(writes).toEqual([{ default_contact: true }]))
+    // The default contact is always a contact, so the row joins that list
+    // while its sign-in axis stays as it was.
+    const contacts = await screen.findByRole('region', {
+      name: zhCN.identifiers.groups.contact,
+    })
+    await waitFor(() =>
+      expect(within(contacts).getByText('ada@x.test')).toBeTruthy(),
+    )
+  })
+
+  it('renders the last-login-way code when taking the only way out of sign-in is refused', async () => {
+    let writes = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: false,
+            identifiers: [
+              identifier({
+                id: 'id-phone',
+                kind: 'phone',
+                value: '+14155550123',
+                sign_in: true,
+                contact: false,
+              }),
+            ],
+          }),
+        )
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-phone'
+      ) {
+        writes += 1
+        return errorResponse(409, 'authn.last_login_method')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('switch', {
+        name: zhCN.identifiers.axes.signInAria.replace(
+          '{{value}}',
+          '+14155550123',
+        ),
+      }),
+    )
+
+    await waitFor(() => expect(writes).toBe(1))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.last_login_method)
+  })
 })

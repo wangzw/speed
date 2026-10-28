@@ -312,8 +312,8 @@
     "retry": "重试"
   },
   "identifiers": {
-    "title": "登录标识",
-    "loading": "正在加载登录标识",
+    "title": "标识",
+    "loading": "正在加载标识",
     "kind": {
       "email": "邮箱",
       "phone": "手机号",
@@ -322,28 +322,47 @@
     },
     "verified": "已验证",
     "unverified": "未验证",
+    "groups": {
+      "signIn": "登录方式",
+      "signInEmpty": "暂无登录方式。",
+      "contact": "联系方式",
+      "contactEmpty": "暂无联系方式。",
+      "neither": "未用于登录或联系",
+      "neitherEmpty": "没有未用于登录或联系的地址或号码。"
+    },
+    "axes": {
+      "contact": "作联系方式",
+      "contactAria": "作联系方式：{{value}}",
+      "signIn": "作登录方式",
+      "signInAria": "作登录方式：{{value}}",
+      "defaultContact": "默认联系地址",
+      "defaultAria": "默认联系地址：{{value}}",
+      "contactChanged": "已更新 {{value}} 是否作联系方式。",
+      "signInChanged": "已更新 {{value}} 是否可作登录方式。",
+      "defaultChanged": "{{value}} 现在是默认联系地址。"
+    },
     "verify": "验证",
     "verifyAria": "验证此邮箱地址：{{value}}",
     "verifyCodeInvalid": "验证码无效或已过期，请重试。",
     "lastLoginName": "这是你当前唯一的登录名。请先添加另一个用户名或邮箱，再删除它。",
     "remove": "移除",
-    "removeAria": "移除此登录标识：{{value}}",
-    "removed": "登录标识 {{value}} 已移除。",
-    "confirmTitle": "移除此登录标识？",
-    "confirmMessage": "移除后该标识将无法再用于登录。账户至少需要保留一种登录方式。",
+    "removeAria": "移除此标识：{{value}}",
+    "removed": "标识 {{value}} 已移除。",
+    "confirmTitle": "移除此标识？",
+    "confirmMessage": "移除后该标识会从账户及所有相关列表中消失。账户至少需要保留一种登录方式。",
     "confirmLabel": "移除",
     "empty": {
-      "title": "暂无登录标识",
-      "description": "用于登录的标识将显示在这里。"
+      "title": "暂无标识",
+      "description": "用户名、邮箱与手机号将显示在这里。"
     },
     "error": {
-      "title": "无法加载登录标识",
-      "description": "加载登录标识时出了问题，请稍后重试。"
+      "title": "无法加载标识",
+      "description": "加载标识时出了问题，请稍后重试。"
     },
     "retry": "重试",
     "add": {
       "open": "添加标识",
-      "title": "添加登录标识",
+      "title": "添加标识",
       "kind": {
         "label": "类型",
         "email": "邮箱",

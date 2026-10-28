@@ -31,17 +31,23 @@ export function profileBody(
 }
 
 /** One identifier row of the profile's `identifiers`, in the fragment's
- * own shape; the default row was proved by the provider, so `proven` is true. */
+ * own shape; the default row was proved by the provider, so `proven` is true.
+ * An email is a sign-in way under the old behaviour's write, which is the
+ * state most rows in these suites exercise; a phone starts on neither axis. */
 export function identifier(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
+  const kind = (overrides.kind as string | undefined) ?? 'email'
   return {
     id: 'ident-1',
-    kind: 'email',
+    kind,
     value: 'ada@example.test',
     proven: true,
     verified_at: '2026-01-01T00:00:00Z',
     verified_via: 'idp:google',
+    sign_in: kind === 'email' || kind === 'username',
+    contact: false,
+    default_contact: false,
     ...overrides,
   }
 }
