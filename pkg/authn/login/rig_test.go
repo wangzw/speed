@@ -223,6 +223,9 @@ type fakeMFA struct {
 	offered   []authn.FactorRecord
 	assurance authn.MFAResult
 	verify    func(factorID string) authn.Step
+	// challenge scripts a factor's challenge answer; without one the factor
+	// answers the code prompt a case expects.
+	challenge func(factorID string) authn.Step
 	reason    error
 	factors   []authn.FactorRecord
 	enroll    func(kind authn.FactorKind, in authn.StepInput) authn.Step
@@ -259,8 +262,11 @@ func (m *fakeMFA) Factors(context.Context, authn.AccountID) ([]authn.FactorRecor
 	return m.factors, m.reason
 }
 func (m *fakeMFA) Assurance(authn.Proof, *authn.Pass) authn.MFAResult { return m.assurance }
-func (m *fakeMFA) Challenge(context.Context, authn.FlowState, string) (authn.Step, error) {
+func (m *fakeMFA) Challenge(_ context.Context, _ authn.FlowState, factorID string) (authn.Step, error) {
 	m.challenges++
+	if m.challenge != nil {
+		return m.challenge(factorID), nil
+	}
 	return authn.StepPrompt("code", nil, authn.Field{Name: "code", Kind: authn.FieldCode, Required: true}), nil
 }
 

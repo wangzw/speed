@@ -39,8 +39,8 @@ var errBoom = errors.New("boom")
 
 // TestFirstFactorPromptRefuseAndProveWalksTheStateMachine holds the first
 // factor's moves: a prompt keeps the flow at the first factor and bumps the step
-// number, a refusal keeps it there and answers login-failed, and a proof moves
-// it to ready.
+// number, a refusal keeps it there at the same step number and answers
+// login-failed, and a proof moves it to ready.
 func TestFirstFactorPromptRefuseAndProveWalksTheStateMachine(t *testing.T) {
 	step := 0
 	m := &fakeMethod{name: "password"}
@@ -72,13 +72,168 @@ func TestFirstFactorPromptRefuseAndProveWalksTheStateMachine(t *testing.T) {
 		t.Errorf("the 401 challenge carries Basic or no Bearer: %q", refused.Header().Get("WWW-Authenticate"))
 	}
 
-	proven := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":2,"step":"answer","input":{}}`, "Cookie", cookie)
+	proven := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie)
 	if proven.Code != http.StatusOK {
 		t.Fatalf("a proven answer answered %d: %s", proven.Code, proven.Body.String())
 	}
 	next := decode(t, proven.Body.String())["next"].(map[string]any)
 	if next["kind"] != "complete" {
 		t.Errorf("a proof moved to next %v, want complete", next)
+	}
+}
+
+// TestARefusedFirstFactorKeepsItsStepForTheSameSequence holds the design's rule
+// for a submit-class refusal: the sequence number does not move and the method's
+// step and private state stay in the record, because that step is what the
+// retry answers. The refusal reply carries no sequence number, so the client has
+// nothing but the one it already holds.
+func TestARefusedFirstFactorKeepsItsStepForTheSameSequence(t *testing.T) {
+	private := []byte(`{"challenge":"abc"}`)
+	attempts := 0
+	var seen authn.FlowState
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("credentials", private,
+			authn.Field{Name: "password", Kind: authn.FieldPassword, Required: true}), nil
+	}
+	m.ans = func(f authn.FlowState, _ authn.StepInput) (authn.Step, error) {
+		attempts++
+		if attempts == 1 {
+			return authn.StepRefused(authn.ErrInvalidCredentials), nil
+		}
+		seen = f
+		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+	}
+	r := newRig(t, m)
+	r.allow("acct1")
+	cookie := startPassword(t, r)
+
+	refused := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie)
+	if refused.Code != http.StatusUnauthorized {
+		t.Fatalf("a refused answer answered %d: %s", refused.Code, refused.Body.String())
+	}
+	if _, carried := decode(t, refused.Body.String())["seq"]; carried {
+		t.Errorf("the refusal carried a sequence number: %s", refused.Body.String())
+	}
+
+	token, ok := strings.CutPrefix(cookie, "authn-flow=")
+	if !ok {
+		t.Fatalf("the flow cookie is not named authn-flow: %q", cookie)
+	}
+	held, _, err := r.p.loadFlow(t.Context(), token)
+	if err != nil {
+		t.Fatalf("reading the refused flow's record: %v", err)
+	}
+	if held.MethodStep != "credentials" || string(held.MethodState) != string(private) {
+		t.Fatalf("the refusal left step %q private %q, want the prompt's %q %q",
+			held.MethodStep, held.MethodState, "credentials", private)
+	}
+
+	proven := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie)
+	if proven.Code != http.StatusOK {
+		t.Fatalf("the retry with the same seq answered %d: %s", proven.Code, proven.Body.String())
+	}
+	if seen.Step != "credentials" || string(seen.Private) != string(private) {
+		t.Errorf("the retried answer reached step %q private %q, want the prompt's", seen.Step, seen.Private)
+	}
+}
+
+// TestARefusedSecondFactorKeepsItsChallengeForTheSameSequence holds that a code
+// the factor refuses leaves the flow at the second factor with its sequence
+// number and the started challenge in place, so the corrected code answers the
+// same number.
+func TestARefusedSecondFactorKeepsItsChallengeForTheSameSequence(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+	}
+	r := newRig(t, m)
+	r.allow("acct1")
+	r.mfa.outcome = authn.MFAFactor
+	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP}}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
+	cookie := flowCookie(t, start)
+	challenge := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":0,"step":"factor","input":{"factor":"f1"}}`, "Cookie", cookie)
+	if challenge.Code != http.StatusOK {
+		t.Fatalf("starting the challenge answered %d: %s", challenge.Code, challenge.Body.String())
+	}
+	seq := int(decode(t, challenge.Body.String())["seq"].(float64))
+
+	attempts := 0
+	r.mfa.verify = func(string) authn.Step {
+		attempts++
+		if attempts == 1 {
+			return authn.StepRefused(authn.ErrInvalidCredentials)
+		}
+		return authn.StepPassed(authn.Pass{Methods: []authn.Method{authn.MethodTOTP}})
+	}
+
+	refused := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"factor","input":{"factor":"f1","code":"000000"}}`, "Cookie", cookie)
+	if refused.Code != http.StatusUnauthorized {
+		t.Fatalf("a refused code answered %d: %s", refused.Code, refused.Body.String())
+	}
+	if _, carried := decode(t, refused.Body.String())["seq"]; carried {
+		t.Errorf("the refusal carried a sequence number: %s", refused.Body.String())
+	}
+
+	passed := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"factor","input":{"factor":"f1","code":"123456"}}`, "Cookie", cookie)
+	if passed.Code != http.StatusOK {
+		t.Fatalf("the corrected code with the same seq answered %d: %s", passed.Code, passed.Body.String())
+	}
+	if next := decode(t, passed.Body.String())["next"].(map[string]any); next["kind"] != "complete" {
+		t.Errorf("the corrected code moved to next %v, want complete", next)
+	}
+}
+
+// TestARefusedChallengeKeepsTheOfferedFactorsForTheSameSequence holds that a
+// factor whose challenge is refused leaves the flow at the second factor with
+// its sequence number and the whole offered list, so the same number may choose
+// another factor.
+func TestARefusedChallengeKeepsTheOfferedFactorsForTheSameSequence(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+	}
+	r := newRig(t, m)
+	r.allow("acct1")
+	r.mfa.outcome = authn.MFAFactor
+	r.mfa.offered = []authn.FactorRecord{
+		{ID: "f1", Kind: authn.FactorTOTP},
+		{ID: "f2", Kind: authn.FactorTOTP},
+	}
+	r.mfa.challenge = func(factorID string) authn.Step {
+		if factorID == "f1" {
+			return authn.StepRefused(authn.ErrInvalidCredentials)
+		}
+		return authn.StepPrompt("code", nil, authn.Field{Name: "code", Kind: authn.FieldCode, Required: true})
+	}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
+	cookie := flowCookie(t, start)
+
+	refused := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":0,"step":"factor","input":{"factor":"f1"}}`, "Cookie", cookie)
+	if refused.Code != http.StatusUnauthorized {
+		t.Fatalf("a refused challenge answered %d: %s", refused.Code, refused.Body.String())
+	}
+	if _, carried := decode(t, refused.Body.String())["seq"]; carried {
+		t.Errorf("the refusal carried a sequence number: %s", refused.Body.String())
+	}
+
+	chosen := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":0,"step":"factor","input":{"factor":"f2"}}`, "Cookie", cookie)
+	if chosen.Code != http.StatusOK {
+		t.Fatalf("choosing another factor with the same seq answered %d: %s", chosen.Code, chosen.Body.String())
+	}
+	if got := int(decode(t, chosen.Body.String())["seq"].(float64)); got != 1 {
+		t.Errorf("the chosen factor's prompt is at seq %d, want 1", got)
+	}
+	if r.mfa.challenges != 2 {
+		t.Errorf("the factor's challenge ran %d times, want two", r.mfa.challenges)
 	}
 }
 

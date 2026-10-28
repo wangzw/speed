@@ -146,7 +146,6 @@ func (r *routes) applyFactor(c *call, token, echo string, rec record, raw []byte
 		}
 		writeComplete(c, rec)
 	case step.KindRefused:
-		rec.Seq++
 		rec.Answers++
 		if !r.swap(c, token, raw, rec) {
 			return
@@ -212,7 +211,6 @@ func (r *routes) challengeFactor(c *call, token, echo string, rec record, raw []
 		}
 		r.replyStep(c, rec, stepView{Kind: nextWebAuthn, Options: step.DataOf(got)}, echo)
 	case step.KindRefused:
-		rec.Seq++
 		rec.Answers++
 		if !r.swap(c, token, raw, rec) {
 			return

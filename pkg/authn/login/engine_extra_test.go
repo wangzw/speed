@@ -92,6 +92,53 @@ func TestAnOverstatedSendReportLeavesATombstone(t *testing.T) {
 	}
 }
 
+// TestARefusedEnrollmentKeepsItsStepForTheSameSequence holds that a wrong
+// confirmation code leaves the registration at its step with its sequence number
+// unchanged, so the corrected code answers the same number and completes the
+// registration.
+func TestARefusedEnrollmentKeepsItsStepForTheSameSequence(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	n := 0
+	r.mfa.enroll = func(_ authn.FactorKind, _ authn.StepInput) authn.Step {
+		n++
+		switch n {
+		case 1:
+			return authn.StepPrompt("confirm", nil, authn.Field{Name: "code", Kind: authn.FieldCode, Required: true})
+		case 2:
+			return authn.StepRefused(authn.ErrInvalidCredentials)
+		default:
+			return authn.StepEnrolled(authn.FactorRecord{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive})
+		}
+	}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"enroll","input":{"kind":"totp"}}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	seq := int(decode(t, start.Body.String())["seq"].(float64))
+
+	refused := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"enroll","input":{"code":"000000"}}`, "Cookie", cookie)
+	if refused.Code != http.StatusUnauthorized {
+		t.Fatalf("a refused confirmation answered %d: %s", refused.Code, refused.Body.String())
+	}
+	if _, carried := decode(t, refused.Body.String())["seq"]; carried {
+		t.Errorf("the refusal carried a sequence number: %s", refused.Body.String())
+	}
+
+	enrolled := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"enroll","input":{"code":"123456"}}`, "Cookie", cookie)
+	if enrolled.Code != http.StatusOK {
+		t.Fatalf("the corrected confirmation with the same seq answered %d: %s", enrolled.Code, enrolled.Body.String())
+	}
+	if next := decode(t, enrolled.Body.String())["next"].(map[string]any); next["kind"] != "complete" {
+		t.Errorf("the completed registration moved to next %v, want complete", next)
+	}
+}
+
 // TestApplyEnrollForwardsTheClientInput holds that the enroll step hands the
 // client's own input to MFA.Enroll, so a factor's confirmation step sees its own
 // fields.

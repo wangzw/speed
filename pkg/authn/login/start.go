@@ -395,7 +395,6 @@ func (r *routes) applyEnroll(c *call, token, echo string, rec record, raw []byte
 		}
 		writeComplete(c, rec)
 	case step.KindRefused:
-		rec.Seq++
 		rec.Answers++
 		if !r.swap(c, token, raw, rec) {
 			return

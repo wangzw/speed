@@ -239,10 +239,9 @@ func (r *routes) migrateFirst(c *call, token, echo string, rec record, raw []byt
 		}
 		r.replyStep(c, rec, stepView{Kind: nextWebAuthn, Options: step.DataOf(got)}, echo)
 	case step.KindRefused:
-		rec.Seq++
+		// The step and its private state stay: they are the step the same
+		// sequence number answers again once the person corrects the value.
 		countAnswer(&rec, answered)
-		rec.MethodStep = ""
-		rec.MethodState = nil
 		if !r.swap(c, token, raw, rec) {
 			return
 		}
