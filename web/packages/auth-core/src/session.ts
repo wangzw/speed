@@ -663,6 +663,9 @@ function parseIdentifier(value: unknown): AuthnIdentifier {
     proven: rec.proven === true,
     verified_at: typeof rec.verified_at === 'string' ? rec.verified_at : '',
     verified_via: typeof rec.verified_via === 'string' ? rec.verified_via : '',
+    sign_in: rec.sign_in === true,
+    contact: rec.contact === true,
+    default_contact: rec.default_contact === true,
   }
 }
 
