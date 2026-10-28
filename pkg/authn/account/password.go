@@ -28,11 +28,13 @@ const maxPasswordBytes = 128
 const maxPasswordInput = 4 * maxPasswordBytes
 
 // credentialRow is the password credential of one account, as the verification
-// reads it together with the account's standing.
+// reads it together with the account's standing and the choice the identifier
+// carries.
 type credentialRow struct {
 	AccountID  string
 	Status     int16
 	Kind       string
+	SignIn     bool
 	PHC        *string
 	MustChange bool
 }
@@ -123,7 +125,9 @@ func derivationFailed(err error) error {
 // unknown name, a disabled account and an account with no password all cost one
 // derivation at the current parameters and are all authn.ErrInvalidCredentials,
 // as is a wrong password; what separates them is nothing a caller can observe
-// but the time the call takes, and the derivation is what keeps that equal.
+// but the time the call takes, and the derivation is what keeps that equal. An
+// email address its holder did not choose as a sign-in way is no login name and
+// is answered like an unknown one, at the same cost.
 //
 // Two back-offs count. The one on the submitted name, whether or not the name is
 // known, is visible: while it holds, nothing is derived and the call is a
@@ -216,11 +220,14 @@ func (p *product) candidate(plaintext string) (string, bool) {
 }
 
 // credentialFor finds the account an identifier is bound to, with its standing and
-// its credential, in one statement. known is false when no account holds it.
+// its credential, in one statement. known is false when no account holds it, and
+// also when the identifier is an email address its holder did not choose as a
+// sign-in way: such an address is no login name, so it is answered like one
+// nobody holds. A username is always a login name.
 func (p *product) credentialFor(ctx context.Context, kind authn.IdentifierKind, name string) (credentialRow, bool, error) {
 	var rows []credentialRow
 	err := p.conn(ctx).Raw("SELECT a.id AS account_id, a.status AS status, a.kind AS kind, "+
-		"c.phc AS phc, COALESCE(c.must_change, FALSE) AS must_change "+
+		"i.sign_in AS sign_in, c.phc AS phc, COALESCE(c.must_change, FALSE) AS must_change "+
 		"FROM "+tableIdentifiers+" i JOIN "+tableAccounts+" a ON a.id = i.account_id "+
 		"LEFT JOIN "+tableCredentials+" c ON c.account_id = a.id "+
 		"WHERE i.kind = ? AND i.value = ?", string(kind), name).Scan(&rows).Error
@@ -228,6 +235,9 @@ func (p *product) credentialFor(ctx context.Context, kind authn.IdentifierKind, 
 		return credentialRow{}, false, failed("looking a login name up", err)
 	}
 	if len(rows) == 0 {
+		return credentialRow{}, false, nil
+	}
+	if kind == authn.IdentifierEmail && !rows[0].SignIn {
 		return credentialRow{}, false, nil
 	}
 	return rows[0], true, nil

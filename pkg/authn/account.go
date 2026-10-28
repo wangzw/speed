@@ -86,11 +86,30 @@ type AccountAdmin interface {
 	// forms Verification.Valid accepts, and anything else is ErrInvalidArgument.
 	// An email address also writes its contact reservation, verified now: an
 	// existing reservation of this account is brought up to date, and one
-	// another account holds is ErrContactTaken.
+	// another account holds is ErrContactTaken. A new email address or phone
+	// number starts on neither axis, and a username is always a sign-in way. An
+	// email address proved while the account has no default contact becomes it.
 	AddIdentifier(ctx context.Context, id AccountID, kind IdentifierKind, value string, via Verification) error
 	// RemoveIdentifier unbinds one identifier by its identifier. Removing an
 	// email address also releases the account's reservation of that contact.
+	// Removing the default contact hands it to the earliest proved email address
+	// that remains, and clears it when none does.
 	RemoveIdentifier(ctx context.Context, id AccountID, identifierID string) error
+	// SetIdentifierFlags writes the two axes of one of the account's email
+	// addresses or phone numbers. Contact and SignIn are independent, contact
+	// may be set on an unproved row, and SignIn may be set true only on a proved
+	// one. Setting SignIn false that leaves the account with no password, no
+	// proved phone number chosen as a sign-in way and no external identity is
+	// ErrLastLoginMethod, and one holding a password credential that thereby
+	// loses its last login name is ErrIdentifierRequired; neither takes effect.
+	// An identifier the account does not hold, and a username, are
+	// ErrInvalidArgument.
+	SetIdentifierFlags(ctx context.Context, id AccountID, identifierID string, flags IdentifierFlags) error
+	// SetDefaultContact makes one proved email address of the account its default
+	// contact, clearing the account's previous choice in the same transaction.
+	// It changes neither axis. An email address of another account, or one that
+	// is not proved, is ErrInvalidArgument.
+	SetDefaultContact(ctx context.Context, id AccountID, identifierID string) error
 	// LinkExternal binds an external identity. One already bound to another
 	// account is ErrBindingConflict.
 	LinkExternal(ctx context.Context, id AccountID, l ExternalLink) error
@@ -98,8 +117,10 @@ type AccountAdmin interface {
 	// the call is refused with ErrLastLoginMethod.
 	UnlinkExternal(ctx context.Context, id AccountID, externalID string) error
 	// HasLoginWayOtherThanPasskey reports whether the account can log in by a
-	// way that is not a factor: a password credential, a phone number or an
-	// external identity. A passkey does not count.
+	// way that is not a factor: a password credential, a phone number whose
+	// ownership was proved and which is chosen as a sign-in way, or an external
+	// identity. A passkey does not count, and neither does a phone number that
+	// is unproved or not chosen.
 	HasLoginWayOtherThanPasskey(ctx context.Context, id AccountID) (bool, error)
 	// CreateServiceSecret makes a secret for a service account: 256 random bits
 	// under the prefix spd_cs_, of which the store keeps only a SHA-256. The
@@ -120,12 +141,14 @@ type AccountAdmin interface {
 type Passwords interface {
 	// Verify checks a password. identifier is normalized first: one containing
 	// an @ is an email address, any other a username, and a phone number is no
-	// login name. An unknown identifier, a disabled account and an account with
-	// no password cost one decoy derivation at the current parameters and are all
-	// ErrInvalidCredentials, as is a wrong password; the account-level back-off
-	// counts silently and past its threshold still derives and answers
-	// ErrInvalidCredentials, never a throttle. VerifyResult.MustChange says the
-	// credential carries must_change.
+	// login name. A username is always a login name; an email address is one only
+	// when its holder chose it as a sign-in way, so an address that is not chosen
+	// is answered exactly as an unknown one. An unknown identifier, a disabled
+	// account and an account with no password cost one decoy derivation at the
+	// current parameters and are all ErrInvalidCredentials, as is a wrong
+	// password; the account-level back-off counts silently and past its threshold
+	// still derives and answers ErrInvalidCredentials, never a throttle.
+	// VerifyResult.MustChange says the credential carries must_change.
 	Verify(ctx context.Context, identifier, password string) (AccountID, VerifyResult, error)
 	// Set writes a password after the policy: a violation is ErrPasswordPolicy,
 	// and so is a new password equal to the current one. The options attribute

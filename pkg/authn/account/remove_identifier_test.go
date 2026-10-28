@@ -74,21 +74,34 @@ func TestRemovingTheLastLoginNameOfAPasswordAccountIsRefused(t *testing.T) {
 
 // TestRemovingALoginNameIsAllowedWhileAnotherRemains holds that a password
 // account may lose one of its login names as long as another stays, and that the
-// last one is then refused.
+// last one is then refused. An email address the holder did not choose as a
+// sign-in way is not a login name, so it does not keep the username; choosing it
+// does.
 func TestRemovingALoginNameIsAllowedWhileAnotherRemains(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		id := h.user("both", "correct horse battery")
 
 		usernameID := identifierOfKind(t, h, id, authn.IdentifierUsername).ID
+		if err := h.p.RemoveIdentifier(ctx, id, usernameID); !errors.Is(err, authn.ErrIdentifierRequired) {
+			t.Fatalf("removing the username beside an unchosen address gave %v, want ErrIdentifierRequired", err)
+		}
+		emailID := identifierOfKind(t, h, id, authn.IdentifierEmail).ID
+		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierEmail, "both@example.com",
+			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
+			t.Fatalf("proving the email address: %v", err)
+		}
+		if err := h.p.SetIdentifierFlags(ctx, id, emailID,
+			authn.IdentifierFlags{SignIn: true}); err != nil {
+			t.Fatalf("choosing the email address as a sign-in way: %v", err)
+		}
 		if err := h.p.RemoveIdentifier(ctx, id, usernameID); err != nil {
-			t.Fatalf("removing the username while an email address remains gave %v, want nil", err)
+			t.Fatalf("removing the username while a chosen email address remains gave %v, want nil", err)
 		}
 		if _, err := h.p.Lookup(ctx, authn.IdentifierEmail, "both@example.com"); err != nil {
 			t.Fatalf("the email address is not found after removing the username: %v", err)
 		}
 
-		emailID := identifierOfKind(t, h, id, authn.IdentifierEmail).ID
 		if err := h.p.RemoveIdentifier(ctx, id, emailID); !errors.Is(err, authn.ErrIdentifierRequired) {
 			t.Fatalf("removing the last login name gave %v, want ErrIdentifierRequired", err)
 		}
@@ -125,9 +138,9 @@ func TestAnAccountWithoutAPasswordMayNotLoseItsLastWayIn(t *testing.T) {
 }
 
 // TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains holds rule 2C
-// from the allowed side: a proved phone number and an external identity each
-// keep the account reachable, so the last login name may go. Once the phone
-// number is the last way in, removing it is refused.
+// from the allowed side: a proved phone number chosen as a sign-in way and an
+// external identity each keep the account reachable, so the last login name may
+// go. Once the chosen phone number is the last way in, removing it is refused.
 func TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -140,9 +153,14 @@ func TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains(t *testing.
 			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
 			t.Fatalf("adding a phone number: %v", err)
 		}
+		phoneID := identifierOfKind(t, h, withPhone.ID, authn.IdentifierPhone).ID
+		if err = h.p.SetIdentifierFlags(ctx, withPhone.ID, phoneID,
+			authn.IdentifierFlags{SignIn: true}); err != nil {
+			t.Fatalf("choosing the phone number as a sign-in way: %v", err)
+		}
 		if err = h.p.RemoveIdentifier(ctx, withPhone.ID,
 			identifierOfKind(t, h, withPhone.ID, authn.IdentifierUsername).ID); err != nil {
-			t.Fatalf("removing the login name while a phone number remains gave %v, want nil", err)
+			t.Fatalf("removing the login name while a chosen phone number remains gave %v, want nil", err)
 		}
 		if err = h.p.RemoveIdentifier(ctx, withPhone.ID,
 			identifierOfKind(t, h, withPhone.ID, authn.IdentifierPhone).ID); !errors.Is(err, authn.ErrLastLoginMethod) {
@@ -165,10 +183,10 @@ func TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains(t *testing.
 }
 
 // TestAnUnverifiedPhoneDoesNotKeepTheAccountReachable holds that a phone number
-// counts as a way in only once its ownership was proved: a number written with
-// an unproved way leaves a passwordless account with no way to log in, and
-// proving the same number in place turns the removal from a refusal into a
-// success.
+// counts as a way in only once its ownership was proved and its holder chose it:
+// a number written with an unproved way leaves a passwordless account with no way
+// to log in, proving the same number in place still does not count until it is
+// chosen, and choosing it turns the removal from a refusal into a success.
 func TestAnUnverifiedPhoneDoesNotKeepTheAccountReachable(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -189,17 +207,26 @@ func TestAnUnverifiedPhoneDoesNotKeepTheAccountReachable(t *testing.T) {
 			t.Fatalf("proving the phone number: %v", err)
 		}
 		if err = h.p.RemoveIdentifier(ctx, id.ID,
+			identifierOfKind(t, h, id.ID, authn.IdentifierUsername).ID); !errors.Is(err, authn.ErrLastLoginMethod) {
+			t.Fatalf("removing the login name beside a proved but unchosen phone gave %v, want ErrLastLoginMethod", err)
+		}
+		phoneID := identifierOfKind(t, h, id.ID, authn.IdentifierPhone).ID
+		if err = h.p.SetIdentifierFlags(ctx, id.ID, phoneID, authn.IdentifierFlags{SignIn: true}); err != nil {
+			t.Fatalf("choosing the proved phone number: %v", err)
+		}
+		if err = h.p.RemoveIdentifier(ctx, id.ID,
 			identifierOfKind(t, h, id.ID, authn.IdentifierUsername).ID); err != nil {
-			t.Fatalf("removing the login name beside a proved phone gave %v, want nil", err)
+			t.Fatalf("removing the login name beside a chosen phone gave %v, want nil", err)
 		}
 	})
 }
 
 // TestHasLoginWayOtherThanPasskeyCountsTheThreeWays holds the account module's
 // answer the administrator's reset guard reads: a password credential, a proved
-// phone number and an external identity each count, while none of them does
-// not. A login name without a password is not a way in, and neither is a phone
-// number whose ownership was not proved.
+// phone number chosen as a sign-in way and an external identity each count, while
+// none of them does not. A login name without a password is not a way in, and
+// neither is a phone number whose ownership was not proved or which its holder
+// did not choose.
 func TestHasLoginWayOtherThanPasskeyCountsTheThreeWays(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -225,8 +252,16 @@ func TestHasLoginWayOtherThanPasskeyCountsTheThreeWays(t *testing.T) {
 			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
 			t.Fatalf("adding a phone number: %v", err)
 		}
+		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, withPhone.ID); wayErr != nil || way {
+			t.Errorf("an account with a proved but unchosen phone number reports %v, %v, want false, nil", way, wayErr)
+		}
+		phoneID := identifierOfKind(t, h, withPhone.ID, authn.IdentifierPhone).ID
+		if err = h.p.SetIdentifierFlags(ctx, withPhone.ID, phoneID,
+			authn.IdentifierFlags{SignIn: true}); err != nil {
+			t.Fatalf("choosing the phone number as a sign-in way: %v", err)
+		}
 		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, withPhone.ID); wayErr != nil || !way {
-			t.Errorf("an account with a phone number reports %v, %v, want true, nil", way, wayErr)
+			t.Errorf("an account with a chosen phone number reports %v, %v, want true, nil", way, wayErr)
 		}
 
 		unproven, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-an-unproven-phone", Via: "admin"})
@@ -243,6 +278,14 @@ func TestHasLoginWayOtherThanPasskeyCountsTheThreeWays(t *testing.T) {
 		if err = h.p.AddIdentifier(ctx, unproven.ID, authn.IdentifierPhone, "+8613800000013",
 			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
 			t.Fatalf("proving the phone number: %v", err)
+		}
+		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, unproven.ID); wayErr != nil || way {
+			t.Errorf("an account with a proved but unchosen phone number reports %v, %v, want false, nil", way, wayErr)
+		}
+		provedID := identifierOfKind(t, h, unproven.ID, authn.IdentifierPhone).ID
+		if err = h.p.SetIdentifierFlags(ctx, unproven.ID, provedID,
+			authn.IdentifierFlags{SignIn: true}); err != nil {
+			t.Fatalf("choosing the proved phone number: %v", err)
 		}
 		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, unproven.ID); wayErr != nil || !way {
 			t.Errorf("an account with a proved phone number reports %v, %v, want true, nil", way, wayErr)

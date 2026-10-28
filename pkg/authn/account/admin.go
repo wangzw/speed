@@ -450,6 +450,11 @@ func (p *product) updateAccount(ctx context.Context, id authn.AccountID, columns
 // number replaces the one the account has, since an account has one; the same
 // number again rewrites its way only when that does not take a proof away.
 //
+// A new email address or phone number starts on neither axis, and a username is
+// always a sign-in way. A proved email address becomes the account's default
+// contact when it has none, which is how the first proved address establishes the
+// choice.
+//
 // An email address the account already holds as an identifier is rewritten in
 // place instead of being added again: no identifier-changed event is published
 // and the call is nil. A way that does not prove ownership applies only to a row
@@ -511,6 +516,9 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 					return err
 				}
 				if via.Proves() {
+					if err = defaultContactIfNone(tx, id.String(), held[0].ID); err != nil {
+						return err
+					}
 					return noteEmailProved(tx, account, now)
 				}
 				return nil
@@ -557,6 +565,9 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 			return err
 		}
 		if kind == authn.IdentifierEmail && via.Proves() {
+			if err = defaultContactIfNone(tx, id.String(), row.ID); err != nil {
+				return err
+			}
 			if err = noteEmailProved(tx, account, now); err != nil {
 				return err
 			}
@@ -571,6 +582,50 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 	}
 	p.publish(ctx, b)
 	return nil
+}
+
+// defaultContactIfNone makes an email address the account's default contact when
+// it has none, and leaves an existing choice alone. The writer that proves the
+// first address establishes the default in the same transaction, so an account
+// with a proved email always has exactly one.
+func defaultContactIfNone(tx *gorm.DB, account, identifier string) error {
+	var held int64
+	if err := tx.Model(&identifierRow{}).
+		Where("account_id = ? AND default_contact = ?", account, true).Count(&held).Error; err != nil {
+		return err
+	}
+	if held > 0 {
+		return nil
+	}
+	return tx.Model(&identifierRow{}).Where("id = ?", identifier).Update("default_contact", true).Error
+}
+
+// transferDefaultContact hands the default contact to the earliest proved email
+// address that remains, the identifier breaking a tie, which is what removing the
+// default leaves. The row being removed is already gone, so an account with no
+// proved address left simply has no default.
+func transferDefaultContact(tx *gorm.DB, account string) error {
+	var left []identifierRow
+	if err := tx.Where("account_id = ? AND kind = ?", account, string(authn.IdentifierEmail)).
+		Find(&left).Error; err != nil {
+		return err
+	}
+	proved := make([]identifierRow, 0, len(left))
+	for _, row := range left {
+		if (authn.Verification{Via: row.VerifiedVia}).Proves() {
+			proved = append(proved, row)
+		}
+	}
+	if len(proved) == 0 {
+		return nil
+	}
+	slices.SortFunc(proved, func(a, b identifierRow) int {
+		if order := a.VerifiedAt.Compare(b.VerifiedAt); order != 0 {
+			return order
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+	return tx.Model(&identifierRow{}).Where("id = ?", proved[0].ID).Update("default_contact", true).Error
 }
 
 // noteEmailProved records that the account now holds a proved email address: a
@@ -628,21 +683,24 @@ func writeEmailClaim(tx *gorm.DB, account, value string, now time.Time) error {
 // RemoveIdentifier unbinds one identifier by its identifier. One the account does
 // not have is already unbound, and the call is nil. Removing an email address
 // also removes the account's reservation of that contact, releasing it to
-// another account. Removing the last proved email address returns a verified
-// self-registration to pending: the instant it first reached verified is kept,
-// and no pending contact is made up in place of the address that was removed.
+// another account, and hands the default contact to the earliest proved email
+// address that remains when the removed one was the default. Removing the last
+// proved email address returns a verified self-registration to pending: the
+// instant it first reached verified is kept, and no pending contact is made up in
+// place of the address that was removed.
 //
 // An account that holds a password credential keeps at least one login name:
-// removing its last username or email address is authn.ErrIdentifierRequired,
-// since the password would then authenticate nothing. That rule is about login
-// names and is checked first, before the rule below, so it is unchanged.
+// removing its last username or chosen email address is
+// authn.ErrIdentifierRequired, since the password would then authenticate
+// nothing. That rule is about login names and is checked first, before the rule
+// below.
 //
 // Removing any identifier that would leave the account with no way to log in
 // that is not a factor is authn.ErrLastLoginMethod, and the transaction rolls
-// back. The ways counted are a password credential, a phone number whose
-// ownership was proved and an external identity (see loginWayHeld); a username
-// or an email address without a password authenticates nothing and does not
-// count on its own, and neither does an unproved phone number.
+// back. The ways counted are a password credential, a proved phone number chosen
+// as a sign-in way and an external identity (see loginWayHeld); a username or an
+// email address without a password authenticates nothing and does not count on
+// its own, and neither does an unproved or unchosen phone number.
 func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, identifierID string) error {
 	b := &batch{}
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
@@ -663,11 +721,18 @@ func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, iden
 		}
 		kind := authn.IdentifierKind(row.Kind)
 		// An email address is released with the identifier: the contact is no
-		// longer owned by this account, so another account may reserve it.
+		// longer owned by this account, so another account may reserve it. When
+		// it was the default contact, the earliest proved address that remains
+		// takes over in the same transaction.
 		if kind == authn.IdentifierEmail {
 			if err = tx.Where("account_id = ? AND kind = ? AND value = ?", id.String(),
 				string(authn.IdentifierEmail), row.Value).Delete(&pendingContactRow{}).Error; err != nil {
 				return err
+			}
+			if row.DefaultContact {
+				if err = transferDefaultContact(tx, id.String()); err != nil {
+					return err
+				}
 			}
 		}
 		if kind == authn.IdentifierUsername || kind == authn.IdentifierEmail {
@@ -676,15 +741,13 @@ func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, iden
 				return err
 			}
 			if hasPassword {
-				var left []identifierRow
-				if err = tx.Where("account_id = ? AND kind IN ?", id.String(),
-					[]string{string(authn.IdentifierUsername), string(authn.IdentifierEmail)}).
-					Find(&left).Error; err != nil {
+				var left int
+				if left, err = loginNameCount(tx, id.String()); err != nil {
 					return err
 				}
-				if len(left) == 0 {
+				if left == 0 {
 					return fmt.Errorf("%w: removing the identifier would leave the account with no username or "+
-						"email address to log in with", authn.ErrIdentifierRequired)
+						"chosen email address to log in with", authn.ErrIdentifierRequired)
 				}
 			}
 		}
@@ -724,6 +787,126 @@ func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, iden
 	}
 	p.publish(ctx, b)
 	return nil
+}
+
+// SetIdentifierFlags writes the two axes of one of the account's email addresses
+// or phone numbers. Contact and SignIn are independent: contact may be set on a
+// row that is not proved, and SignIn may be set true only on one that is, so an
+// unproved row can be taken out of sign-in but not put into it. A username has no
+// two axes to set, and a row of another account is not this account's to write.
+//
+// Turning SignIn off is a change of how the account is proven, so it is checked
+// against what would remain, in the order RemoveIdentifier uses: an account with
+// a password credential that loses its last login name is
+// authn.ErrIdentifierRequired, and one that loses every way to log in that is not
+// a factor is authn.ErrLastLoginMethod. Either refusal rolls the write back.
+func (p *product) SetIdentifierFlags(ctx context.Context, id authn.AccountID, identifierID string,
+	flags authn.IdentifierFlags,
+) error {
+	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, lockErr := p.lock(tx, id); lockErr != nil {
+			return lockErr
+		}
+		var row identifierRow
+		readErr := tx.Where("id = ? AND account_id = ?", identifierID, id.String()).Take(&row).Error
+		switch {
+		case errors.Is(readErr, gorm.ErrRecordNotFound):
+			return invalid("the identifier is not one this account holds")
+		case readErr != nil:
+			return readErr
+		}
+		kind := authn.IdentifierKind(row.Kind)
+		if kind != authn.IdentifierEmail && kind != authn.IdentifierPhone {
+			return invalid("a username is always a sign-in way and has no two axes to set")
+		}
+		proved := authn.Verification{Via: row.VerifiedVia}.Proves()
+		// A row that is already a sign-in way keeps it, which is how a row the
+		// earlier behaviour wrote and the migration backfilled is read; only
+		// taking an unproved row into sign-in is refused.
+		if flags.SignIn && !row.SignIn && !proved {
+			return invalid("an identifier whose ownership is not proved cannot be a sign-in way")
+		}
+		if writeErr := tx.Model(&identifierRow{}).Where("id = ?", row.ID).
+			Updates(map[string]any{"sign_in": flags.SignIn, "contact": flags.Contact}).Error; writeErr != nil {
+			return writeErr
+		}
+		if !row.SignIn || flags.SignIn {
+			return nil
+		}
+		if kind == authn.IdentifierEmail {
+			hasPassword, credentialErr := hasCredential(tx, id.String())
+			if credentialErr != nil {
+				return credentialErr
+			}
+			if hasPassword {
+				left, countErr := loginNameCount(tx, id.String())
+				if countErr != nil {
+					return countErr
+				}
+				if left == 0 {
+					return fmt.Errorf("%w: no longer signing in with the identifier would leave the account with "+
+						"no login name", authn.ErrIdentifierRequired)
+				}
+			}
+		}
+		hasWay, wayErr := loginWayHeld(tx, id.String())
+		if wayErr != nil {
+			return wayErr
+		}
+		if !hasWay {
+			return fmt.Errorf("%w: no longer signing in with the identifier would leave the account with no way "+
+				"to log in that is not a factor", authn.ErrLastLoginMethod)
+		}
+		return nil
+	})
+	return failed("setting the axes of an identifier", err)
+}
+
+// SetDefaultContact makes one proved email address of the account its default
+// contact. The previous choice is cleared in the same transaction, so the partial
+// unique index never sees two. The two axes are left as they are.
+func (p *product) SetDefaultContact(ctx context.Context, id authn.AccountID, identifierID string) error {
+	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, lockErr := p.lock(tx, id); lockErr != nil {
+			return lockErr
+		}
+		var row identifierRow
+		readErr := tx.Where("id = ? AND account_id = ?", identifierID, id.String()).Take(&row).Error
+		switch {
+		case errors.Is(readErr, gorm.ErrRecordNotFound):
+			return invalid("the identifier is not one this account holds")
+		case readErr != nil:
+			return readErr
+		}
+		if authn.IdentifierKind(row.Kind) != authn.IdentifierEmail ||
+			!(authn.Verification{Via: row.VerifiedVia}).Proves() {
+			return invalid("only a proved email address of the account is a default contact")
+		}
+		if clearErr := tx.Model(&identifierRow{}).
+			Where("account_id = ? AND default_contact = ?", id.String(), true).
+			Update("default_contact", false).Error; clearErr != nil {
+			return clearErr
+		}
+		return tx.Model(&identifierRow{}).Where("id = ?", row.ID).Update("default_contact", true).Error
+	})
+	return failed("setting the default contact", err)
+}
+
+// loginNameCount is how many login names a password account holds: its usernames,
+// which always sign in, and the email addresses its holder chose as sign-in ways.
+func loginNameCount(tx *gorm.DB, accountID string) (int, error) {
+	var rows []identifierRow
+	if err := tx.Where("account_id = ?", accountID).Find(&rows).Error; err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, row := range rows {
+		if row.Kind == string(authn.IdentifierUsername) ||
+			(row.Kind == string(authn.IdentifierEmail) && row.SignIn) {
+			count++
+		}
+	}
+	return count, nil
 }
 
 // checkLink refuses an external identity whose key is not text that is bounded.
@@ -811,11 +994,11 @@ func (p *product) UnlinkExternal(ctx context.Context, id authn.AccountID, extern
 
 // HasLoginWayOtherThanPasskey reports whether the account can log in by a way
 // other than a factor: a password credential, a phone number whose ownership was
-// proved or an external identity. A passkey does not count, and neither does a
-// username or an email address on its own, since without a password it
-// authenticates nothing; an unproved phone number does not count either. The
-// factor modules hold what this module cannot read, so the answer is exactly
-// the three ways loginWayHeld counts.
+// proved and which its holder chose as a sign-in way, or an external identity. A
+// passkey does not count, and neither does a username or an email address on its
+// own, since without a password it authenticates nothing; an unproved or unchosen
+// phone number does not count either. The factor modules hold what this module
+// cannot read, so the answer is exactly the three ways loginWayHeld counts.
 func (p *product) HasLoginWayOtherThanPasskey(ctx context.Context, id authn.AccountID) (bool, error) {
 	hasWay, err := loginWayHeld(p.conn(ctx), id.String())
 	if err != nil {
@@ -825,10 +1008,12 @@ func (p *product) HasLoginWayOtherThanPasskey(ctx context.Context, id authn.Acco
 }
 
 // loginWayHeld reports whether the account holds a way to log in that is not a
-// factor: a password credential, a phone number whose ownership was proved, or
-// an external identity. An unproved phone number (admin, import-unverified or
-// self) does not count; only a verification that Proves does. A passkey or
-// another factor lives in another module's tables and does not count here.
+// factor: a password credential, a phone number whose ownership was proved and
+// which its holder chose as a sign-in way, or an external identity. A phone
+// number that is unproved (admin, import-unverified or self) or not chosen does
+// not count; only a verification that Proves and a sign-in choice together do. A
+// passkey or another factor lives in another module's tables and does not count
+// here.
 func loginWayHeld(tx *gorm.DB, accountID string) (bool, error) {
 	hasPassword, err := hasCredential(tx, accountID)
 	if err != nil || hasPassword {
@@ -840,7 +1025,7 @@ func loginWayHeld(tx *gorm.DB, accountID string) (bool, error) {
 		return false, err
 	}
 	if slices.ContainsFunc(phones, func(r identifierRow) bool {
-		return authn.Verification{Via: r.VerifiedVia}.Proves()
+		return r.SignIn && authn.Verification{Via: r.VerifiedVia}.Proves()
 	}) {
 		return true, nil
 	}

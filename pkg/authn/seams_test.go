@@ -49,6 +49,8 @@ var seamSignatures = map[string][]string{
 		"SetMFARequired(ctx context.Context, id AccountID, required bool) error",
 		"AddIdentifier(ctx context.Context, id AccountID, kind IdentifierKind, value string, via Verification) error",
 		"RemoveIdentifier(ctx context.Context, id AccountID, identifierID string) error",
+		"SetIdentifierFlags(ctx context.Context, id AccountID, identifierID string, flags IdentifierFlags) error",
+		"SetDefaultContact(ctx context.Context, id AccountID, identifierID string) error",
 		"LinkExternal(ctx context.Context, id AccountID, l ExternalLink) error",
 		"UnlinkExternal(ctx context.Context, id AccountID, externalID string) error",
 		"HasLoginWayOtherThanPasskey(ctx context.Context, id AccountID) (bool, error)",

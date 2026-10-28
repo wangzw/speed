@@ -524,6 +524,8 @@ var exportedSurface = []string{
 	"method AccountAdmin.RevokeServiceSecret",
 	"method AccountAdmin.SetAttributes",
 	"method AccountAdmin.SetDisplayName",
+	"method AccountAdmin.SetDefaultContact",
+	"method AccountAdmin.SetIdentifierFlags",
 	"method AccountAdmin.SetMFARequired",
 	"method AccountAdmin.SetProtected",
 	"method AccountAdmin.SetStatus",

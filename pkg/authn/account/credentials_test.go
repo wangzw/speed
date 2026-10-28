@@ -467,3 +467,36 @@ func TestSetAttributesTheChangeAndRefusesAnUnknownAttribution(t *testing.T) {
 		}
 	})
 }
+
+// TestVerifyAcceptsAnEmailOnlyWhenItIsChosenAsASignInWay holds that a proved
+// email address is no login name until its holder chooses it: a password check
+// against it answers as an unknown name does, the username beside it still
+// works, and choosing the address makes the same check succeed. The choice is the
+// only thing that changes; the address is proved either way.
+func TestVerifyAcceptsAnEmailOnlyWhenItIsChosenAsASignInWay(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		const password = "correct horse battery"
+		id := h.user("mailer", password)
+		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierEmail, "mailer@example.com",
+			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
+			t.Fatalf("proving the address: %v", err)
+		}
+
+		if _, _, err := h.p.Verify(ctx, "mailer@example.com", password); !errors.Is(err, authn.ErrInvalidCredentials) {
+			t.Errorf("a proved but unchosen address gave %v, want ErrInvalidCredentials", err)
+		}
+		if got, _, err := h.p.Verify(ctx, "mailer", password); err != nil || got != id {
+			t.Errorf("the username beside it gave %q, %v, want the account and nil", got, err)
+		}
+
+		emailID := identifierOfKind(t, h, id, authn.IdentifierEmail).ID
+		if err := h.p.SetIdentifierFlags(ctx, id, emailID,
+			authn.IdentifierFlags{SignIn: true}); err != nil {
+			t.Fatalf("choosing the address as a sign-in way: %v", err)
+		}
+		if got, _, err := h.p.Verify(ctx, "mailer@example.com", password); err != nil || got != id {
+			t.Errorf("a chosen address gave %q, %v, want the account and nil", got, err)
+		}
+	})
+}

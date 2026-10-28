@@ -817,6 +817,16 @@ func TestIdentifiersAreAddedAndRemovedAndAPhoneIsReplaced(t *testing.T) {
 		if n := h.count(tableIdentifiers, "account_id = ? AND kind = 'phone'", id.String()); n != 1 {
 			t.Errorf("the account has %d phone rows, want one", n)
 		}
+		// The proved number is a way in only once its holder chooses it, which is
+		// what the removal below needs the account to keep.
+		phones, _ := h.p.Identifiers(ctx, id)
+		for _, i := range phones {
+			if i.Kind == authn.IdentifierPhone {
+				if err := h.p.SetIdentifierFlags(ctx, id, i.ID, authn.IdentifierFlags{SignIn: true}); err != nil {
+					t.Fatalf("choosing the phone as a sign-in way: %v", err)
+				}
+			}
+		}
 		changes := h.bus.of(authn.EventIdentifierChanged)
 		var seen []string
 		for _, e := range changes {
