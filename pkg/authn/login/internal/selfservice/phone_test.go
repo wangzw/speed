@@ -614,6 +614,7 @@ func TestABindingThatFailsOtherwiseIsAnswered(t *testing.T) {
 		code int
 	}{
 		{authn.ErrInvalidIdentifier, http.StatusBadRequest},
+		{authn.ErrUsernameReserved, http.StatusBadRequest},
 		{authn.ErrUnavailable, http.StatusServiceUnavailable},
 		{authn.ErrAccountNotFound, http.StatusUnauthorized},
 	} {

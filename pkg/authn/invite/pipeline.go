@@ -159,7 +159,7 @@ func (p *product) cause(op string, err error) error {
 func (p *product) answer(op string, err error) error {
 	switch {
 	case errors.Is(err, ErrInvalidEmail), errors.Is(err, authn.ErrInvalidArgument),
-		errors.Is(err, authn.ErrInvalidIdentifier):
+		errors.Is(err, authn.ErrInvalidIdentifier), errors.Is(err, authn.ErrUsernameReserved):
 		return p.badRequest()
 	case errors.Is(err, ErrInvitationAlreadyAccepted):
 		return inviteFailure(http.StatusConflict, mount.CodeConflict)

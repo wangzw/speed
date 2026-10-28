@@ -197,6 +197,15 @@ var (
 	// is a 400 bad-request.
 	ErrInvalidIdentifier = errors.New("authn: identifier is not well formed")
 
+	// ErrUsernameReserved reports a username the system keeps for itself, in the
+	// built-in list or in the names a deployment appended through
+	// authn.account.reserved-usernames. It is a value that may not be used, not a
+	// value another account holds, so a caller tells it apart from
+	// ErrAccountExists; it is also told apart from ErrInvalidIdentifier, whose
+	// class is a value that does not normalize. Outwardly it is a 400 bad-request,
+	// the same answer a malformed identifier gets.
+	ErrUsernameReserved = errors.New("authn: username is reserved")
+
 	// ErrInvalidArgument reports a value a write refused because it is outside what
 	// the call admits: an attribute set that breaks its bounds, a reason that is
 	// not one of the ReasonClass constants, a Verification that is none of the

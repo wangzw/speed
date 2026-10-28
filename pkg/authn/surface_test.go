@@ -873,6 +873,7 @@ var exportedSurface = []string{
 	"var ErrUnavailable",
 	"var ErrUnknownEndpoint",
 	"var ErrUnsupportedRegion",
+	"var ErrUsernameReserved",
 }
 
 // authntestSurface is the exported surface of pkg/authn/authntest, pinned the

@@ -82,6 +82,15 @@ var downgradingSwitch = map[string]string{
 	algorithmPath: string(password.PBKDF2SHA256),
 }
 
+// relaxingList is, for each list setting of this module whose loss of a member
+// widens what a write accepts, the direction the record takes. The reserved
+// username set only grows when a deployment appends a name: removing an appended
+// name lets a username through that the previous value refused, and the design
+// names that direction relax.
+var relaxingList = map[string]string{
+	reservedPath: moveRelaxed,
+}
+
 // relaxedAction is the name of the audit record of a setting moved to a more
 // permissive value, and relaxedOutcome its outcome. The record names the key and
 // the direction and never the value.
@@ -119,6 +128,14 @@ func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error 
 	if target, watched := downgradingSwitch[change.Key]; watched {
 		if change.New == target && change.Old != target {
 			p.reportRelaxation(ctx, change.Key, moveDowngrade)
+		}
+		return nil
+	}
+	if direction, watched := relaxingList[change.Key]; watched {
+		before := reservedChangeList(change.Old, change.Old == "")
+		after := reservedChangeList(change.New, change.Deleted || change.New == "")
+		if removesReservedMember(before, after) {
+			p.reportRelaxation(ctx, change.Key, direction)
 		}
 		return nil
 	}

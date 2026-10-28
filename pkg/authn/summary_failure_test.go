@@ -599,7 +599,7 @@ var runtimeSentinels = []error{
 	authn.ErrImpersonationActive, authn.ErrNotImpersonating, authn.ErrImpersonationNeedsSession,
 	authn.ErrForbidden, authn.ErrAuditRequired, authn.ErrUnsupportedRegion,
 	authn.ErrDomainClaimed, authn.ErrAssertionReplay,
-	authn.ErrProviderNotFound, authn.ErrUnavailable, authn.ErrBusy,
+	authn.ErrProviderNotFound, authn.ErrUnavailable, authn.ErrBusy, authn.ErrUsernameReserved,
 }
 
 // startupSentinels are the startup failures, which a runtime call must never

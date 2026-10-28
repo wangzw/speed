@@ -68,8 +68,8 @@ func signupAuditOutcome(err error) (string, bool) {
 		return outcomeThrottled, true
 	case errors.Is(err, authn.ErrSignupClosed), errors.Is(err, authn.ErrContactTaken),
 		errors.Is(err, authn.ErrAccountExists), errors.Is(err, authn.ErrPasswordPolicy),
-		errors.Is(err, authn.ErrInvalidIdentifier), errors.Is(err, authn.ErrInvalidArgument),
-		errors.Is(err, authn.ErrInvalidAccountID):
+		errors.Is(err, authn.ErrInvalidIdentifier), errors.Is(err, authn.ErrUsernameReserved),
+		errors.Is(err, authn.ErrInvalidArgument), errors.Is(err, authn.ErrInvalidAccountID):
 		return outcomeRefused, true
 	}
 	return "", false

@@ -221,7 +221,7 @@ func (r *routes) fail(c *call, err error) {
 	case errors.Is(err, authn.ErrUnsupportedRegion):
 		c.fail(mount.CodeUnsupportedRegion)
 	case errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidArgument),
-		errors.Is(err, authn.ErrInvalidIdentifier):
+		errors.Is(err, authn.ErrInvalidIdentifier), errors.Is(err, authn.ErrUsernameReserved):
 		c.fail(mount.CodeBadRequest)
 	case errors.Is(err, authn.ErrBusy):
 		c.busy()

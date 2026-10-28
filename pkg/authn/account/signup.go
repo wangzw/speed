@@ -51,6 +51,9 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 	if err != nil {
 		return authn.Account{}, err
 	}
+	if err = p.checkReservedUsername(username); err != nil {
+		return authn.Account{}, err
+	}
 	email, err := NormalizeIdentifier(authn.IdentifierEmail, in.Email)
 	if err != nil {
 		return authn.Account{}, err

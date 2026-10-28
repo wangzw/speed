@@ -36,6 +36,7 @@ const (
 	maxDelayKey        = "throttle-max-delay"
 	decayKey           = "throttle-decay"
 	retentionKey       = "secret-retention"
+	reservedKey        = "reserved-usernames"
 
 	algorithmPath       = ConfigNamespace + "." + algorithmKey
 	signupPath          = ConfigNamespace + "." + signupKey
@@ -54,6 +55,7 @@ const (
 	maxDelayPath        = ConfigNamespace + "." + maxDelayKey
 	decayPath           = ConfigNamespace + "." + decayKey
 	retentionPath       = ConfigNamespace + "." + retentionKey
+	reservedPath        = ConfigNamespace + "." + reservedKey
 )
 
 // The values the switches that relax a check take. The strict one is the default
@@ -139,6 +141,7 @@ type options struct {
 	ThrottleMaxDelay         time.Duration `config:"throttle-max-delay"`
 	ThrottleDecay            time.Duration `config:"throttle-decay"`
 	SecretRetention          time.Duration `config:"secret-retention"`
+	ReservedUsernames        string        `config:"reserved-usernames"`
 }
 
 // defaults is the prototype the settings module reads the declared defaults off.
@@ -165,6 +168,7 @@ var defaults = options{
 	ThrottleMaxDelay:         15 * time.Minute,
 	ThrottleDecay:            time.Hour,
 	SecretRetention:          720 * time.Hour,
+	ReservedUsernames:        "[]",
 }
 
 // The domain of each setting is the one statement of its range: the settings
@@ -355,6 +359,11 @@ func settingsSchema() settings.Schema {
 				Description: "how long the row of a service secret is kept after it expired or was revoked",
 				Domain: settings.DomainOf("durations from "+minRetention.String()+" to "+
 					maxRetention.String(), retentionInDomain),
+			},
+			reservedKey: {
+				Description: "the usernames a deployment additionally keeps for the system, as a JSON " +
+					"array of usernames; the built-in list stays in effect and this one only adds names",
+				Domain: settings.DomainOf("a JSON array of usernames", reservedTextInDomain),
 			},
 		},
 	}

@@ -184,7 +184,7 @@ func TestTheSettingsAreDeclaredWithADomain(t *testing.T) {
 		algorithmKey, signupKey, passwordSignupKey, autoLinkKey,
 		signupIPLimitKey, signupHourlyKey, unverifiedTTLKey, unverifiedSweepKey,
 		minLengthKey, argonMemoryKey, argonIterationKey, argonLanesKey, pbkdf2IterKey,
-		freeAttemptsKey, maxDelayKey, decayKey, retentionKey,
+		freeAttemptsKey, maxDelayKey, decayKey, retentionKey, reservedKey,
 	}
 	for _, key := range want {
 		if _, ok := s.Items[key]; !ok {

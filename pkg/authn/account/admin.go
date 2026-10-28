@@ -227,6 +227,11 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		if normalized, err = NormalizeIdentifier(k, value); err != nil {
 			return err
 		}
+		if k == authn.IdentifierUsername {
+			if reservedErr := p.checkReservedUsername(normalized); reservedErr != nil {
+				return reservedErr
+			}
+		}
 		if rowID, err = newID(); err != nil {
 			return err
 		}
@@ -405,6 +410,11 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 	normalized, err := NormalizeIdentifier(kind, value)
 	if err != nil {
 		return err
+	}
+	if kind == authn.IdentifierUsername {
+		if err = p.checkReservedUsername(normalized); err != nil {
+			return err
+		}
 	}
 	rowID, err := newID()
 	if err != nil {
