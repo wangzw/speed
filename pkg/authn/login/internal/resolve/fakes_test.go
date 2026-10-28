@@ -128,7 +128,12 @@ func (s *store) seed(t *testing.T, sd seed) authn.AccountID {
 		if err != nil {
 			t.Fatalf("seed %s %q: %v", kind, value, err)
 		}
-		rec.identifiers = append(rec.identifiers, authn.Identifier{ID: fmt.Sprintf("i%d", len(rec.identifiers)), Kind: kind, Value: v, VerifiedVia: via})
+		// A seeded account stands for one that predates the two axes: its
+		// username and phone are sign-in ways, as the migration fills them.
+		rec.identifiers = append(rec.identifiers, authn.Identifier{
+			ID: fmt.Sprintf("i%d", len(rec.identifiers)), Kind: kind, Value: v, VerifiedVia: via,
+			SignIn: kind == authn.IdentifierUsername || kind == authn.IdentifierPhone,
+		})
 		s.identifier[ikey(kind, v)] = sd.id
 	}
 	add(authn.IdentifierEmail, sd.email, sd.emailVia)
@@ -300,7 +305,7 @@ func (v adminView) create(in authn.CreateAccount) (authn.Account, error) {
 	}
 	rec := &record{}
 	var keys []string
-	add := func(kind authn.IdentifierKind, value string, via authn.Verification) error {
+	add := func(kind authn.IdentifierKind, value string, via authn.Verification, signIn bool) error {
 		if value == "" {
 			return nil
 		}
@@ -316,13 +321,21 @@ func (v adminView) create(in authn.CreateAccount) (authn.Account, error) {
 			return authn.ErrAccountExists
 		}
 		keys = append(keys, k)
-		rec.identifiers = append(rec.identifiers, authn.Identifier{ID: fmt.Sprintf("i%d", len(rec.identifiers)), Kind: kind, Value: n, VerifiedVia: via.Via})
+		rec.identifiers = append(rec.identifiers, authn.Identifier{
+			ID: fmt.Sprintf("i%d", len(rec.identifiers)), Kind: kind, Value: n, VerifiedVia: via.Via, SignIn: signIn,
+		})
 		return nil
 	}
-	if err := add(authn.IdentifierEmail, in.Email, in.EmailVerifiedVia); err != nil {
+	if err := add(authn.IdentifierEmail, in.Email, in.EmailVerifiedVia, false); err != nil {
 		return authn.Account{}, err
 	}
-	if err := add(authn.IdentifierPhone, in.Phone, in.PhoneVerifiedVia); err != nil {
+	// The phone an SMS first login proved is a sign-in way from the start; any
+	// other phone row starts on neither axis. The username the create is given is
+	// recorded on the CreateAccount itself, not as an identifier: these cases
+	// read the creation, and the account module's own username handling is
+	// exercised against the real store.
+	if err := add(authn.IdentifierPhone, in.Phone, in.PhoneVerifiedVia,
+		in.PhoneVerifiedVia.Via == authn.VerifiedViaSMSCode); err != nil {
 		return authn.Account{}, err
 	}
 	s.next++
@@ -553,19 +566,33 @@ func newEnv(t *testing.T, opts ...option) *env {
 	return &env{t: t, s: s, r: r, cf: cfg}
 }
 
-// testUsername is the login name a first login opens an account with in these
-// cases: the pending-signup step that collects one from the person is not built
-// yet, so the case supplies it the way the engine will.
+// testUsername is the login name the first login of these cases opens an
+// account with, standing in for the username the pending-signup step collects.
 const testUsername = "ann"
 
+// resolve runs a first login the way the engine does: it resolves the proof and,
+// when the resolution parks at the pending signup, opens the account with the
+// test username.
 func (e *env) resolve(p authn.Proof) (Result, error) {
 	e.t.Helper()
 	return e.resolveAs(testUsername, p)
 }
 
+// resolveAs is resolve with a chosen username.
 func (e *env) resolveAs(username string, p authn.Proof) (Result, error) {
 	e.t.Helper()
-	return e.r.Resolve(context.Background(), Request{Proof: p, Purpose: authn.PurposeLogin, Username: username})
+	res, err := e.pending(p)
+	if err != nil || res.Pending == nil {
+		return res, err
+	}
+	return e.r.Create(context.Background(), *res.Pending, username)
+}
+
+// pending resolves a first login without opening the account, which is what the
+// engine does when it parks the flow at the pending signup.
+func (e *env) pending(p authn.Proof) (Result, error) {
+	e.t.Helper()
+	return e.r.Resolve(context.Background(), Request{Proof: p, Purpose: authn.PurposeLogin})
 }
 
 func social(provider, subject, email string, verified bool) authn.Proof {

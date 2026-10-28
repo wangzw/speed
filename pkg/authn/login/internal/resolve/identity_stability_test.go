@@ -199,6 +199,15 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			minted = append(minted, createdBy{path: path, id: id, notEqual: notEqual})
 			return id
 		}
+		// firstLogin is what the engine does for a first login: it resolves the
+		// proof and opens the pending account with the collected username.
+		firstLogin := func(req Request, username string) (Result, error) {
+			res, resolveErr := r.Resolve(ctx, req)
+			if resolveErr != nil || res.Pending == nil {
+				return res, resolveErr
+			}
+			return r.Create(ctx, *res.Pending, username)
+		}
 
 		// One: password self-registration.
 		registered, err := signups.Register(ctx, authn.RegisterAccount{
@@ -210,19 +219,21 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		passwordID := record("password self-registration", registered.ID, "self-made", "self-made@example.org")
 
 		// Two: the first sign-in of a phone.
-		phoneLogin, err := r.Resolve(ctx, Request{
-			Proof: phone("+8613800000001"), Purpose: authn.PurposeLogin, Username: "phone-made",
-		})
+		phoneLogin, err := firstLogin(Request{Proof: phone("+8613800000001"), Purpose: authn.PurposeLogin}, "phone-made")
 		if err != nil || phoneLogin.Outcome != OutcomeCreated {
 			t.Fatalf("the first phone login = %+v, %v, want a new account", phoneLogin, err)
 		}
 		phoneID := record("SMS first sign-in", phoneLogin.Account, "+8613800000001")
+		if held := identifiersOf(t, accounts, phoneID); !slices.ContainsFunc(held, func(i authn.Identifier) bool {
+			return i.Kind == authn.IdentifierPhone && i.Value == "+8613800000001" && i.SignIn
+		}) {
+			t.Errorf("the phone the login proved is not a sign-in way: %+v", held)
+		}
 
 		// Three: the first sign-in of a social identity with a verified address.
-		socialLogin, err := r.Resolve(ctx, Request{
+		socialLogin, err := firstLogin(Request{
 			Proof: social("google", "google-subject", "social@example.org", true), Purpose: authn.PurposeLogin,
-			Username: "social-made",
-		})
+		}, "social-made")
 		if err != nil || socialLogin.Outcome != OutcomeCreated {
 			t.Fatalf("the first social login = %+v, %v, want a new account", socialLogin, err)
 		}
@@ -230,10 +241,9 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 
 		// The same subject under another provider is another identity against
 		// the real store too: the binding key is the pair, not the subject.
-		otherProvider, err := r.Resolve(ctx, Request{
+		otherProvider, err := firstLogin(Request{
 			Proof: social("github", "google-subject", "", false), Purpose: authn.PurposeLogin,
-			Username: "other-made",
-		})
+		}, "other-made")
 		if err != nil || otherProvider.Outcome != OutcomeCreated {
 			t.Fatalf("the same subject under another provider = %+v, %v, want a new account", otherProvider, err)
 		}
@@ -245,10 +255,9 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		// Four: the first sign-in of a social identity whose address the
 		// provider does not stand behind. The account is complete without the
 		// address, and the address is not written as an identifier.
-		unverified, err := r.Resolve(ctx, Request{
+		unverified, err := firstLogin(Request{
 			Proof: social("github", "github-subject", "unverified@example.org", false), Purpose: authn.PurposeLogin,
-			Username: "unverified-made",
-		})
+		}, "unverified-made")
 		if err != nil || unverified.Outcome != OutcomeCreated {
 			t.Fatalf("the first unverified social login = %+v, %v, want a new account", unverified, err)
 		}
@@ -265,7 +274,7 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		}
 
 		// Five: an enterprise provider's just-in-time first login.
-		jitLogin, err := r.Resolve(ctx, Request{
+		jitLogin, err := firstLogin(Request{
 			Proof: authn.Proof{
 				Provider: idpAcme,
 				External: &authn.External{
@@ -273,9 +282,8 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 					Tenant: tenantAcme, DisplayName: "Jit Person",
 				},
 			},
-			Purpose:  authn.PurposeLogin,
-			Username: "jit-made",
-		})
+			Purpose: authn.PurposeLogin,
+		}, "jit-made")
 		if err != nil || jitLogin.Outcome != OutcomeCreated {
 			t.Fatalf("the first enterprise login = %+v, %v, want a new account", jitLogin, err)
 		}

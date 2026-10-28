@@ -60,9 +60,9 @@ func (r *Resolver) fromExternal(ctx context.Context, req Request) (Result, error
 	case aliasOwner != "":
 		return r.upgradeBinding(ctx, aliasOwner, link)
 	case req.Proof.Provider != "":
-		return r.enterpriseUnbound(ctx, req.Proof.Provider, link, ext, req.Username)
+		return r.enterpriseUnbound(ctx, req.Proof.Provider, link, ext, req.Proof.Aliases)
 	}
-	return r.socialUnbound(ctx, link, ext, req.Username)
+	return r.socialUnbound(ctx, link, ext, req.Proof.Aliases)
 }
 
 // checkNamespace holds the provider of an external identity to the source of the

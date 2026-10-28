@@ -1,0 +1,209 @@
+package resolve
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/vislake/speed/pkg/authn"
+)
+
+// Source names the first-login path that decided to open a pending account. The
+// set is closed.
+type Source string
+
+// The sources.
+const (
+	// SourceSocial is a social provider's first login.
+	SourceSocial Source = "social"
+	// SourcePhone is an SMS code's first login.
+	SourcePhone Source = "phone"
+	// SourceEnterprise is an enterprise provider's just-in-time first login.
+	SourceEnterprise Source = "enterprise"
+)
+
+// Pending is the account a first login opens once its person has chosen a
+// username. It is what a resolution decided before any row was written: which
+// path decided it, the external identity or the proved phone, the provider's
+// claim about the address, the tenant an enterprise account enters, the display
+// name and attributes the provider gave, the identity's earlier keys and the
+// creation the step will perform. It carries no username; the pending-signup
+// step collects one and hands it to Create.
+//
+// It is the flow record's pending member and nothing else. While a flow stands
+// at signup, no account, binding, identifier or membership row exists for it,
+// and the account module writes all of them when the username finally arrives.
+type Pending struct {
+	// Source is the path that decided to open the account.
+	Source Source `json:"source"`
+	// Via is the CreateAccount.Via of the account: signup for a social or SMS
+	// first login, jit for an enterprise one.
+	Via string `json:"via"`
+	// External is the identity a social or enterprise login proved. Its subject
+	// is the key the binding is made under; its tenant is empty for a social
+	// login, whose account enters no tenant.
+	External *authn.External `json:"external,omitempty"`
+	// Aliases are the identity's earlier keys, as the proof carried them. They
+	// took part in the resolution that decided the account, and are kept for the
+	// record's account of what the method handed over.
+	Aliases []authn.ExternalLink `json:"aliases,omitempty"`
+	// Email is the address the account is written with, empty for none, and
+	// EmailVia is how its ownership was proved. It is a provider's verified claim
+	// that no account held the address when the login was resolved.
+	Email    string `json:"email,omitempty"`
+	EmailVia string `json:"email_via,omitempty"`
+	// Phone is the number an SMS first login proved, empty for an external
+	// login. It is written under sms-code and is a sign-in way from the start.
+	Phone string `json:"phone,omitempty"`
+	// Provider is the enterprise provider's identifier and Tenant is its tenant,
+	// which the account joins through a membership. Both are empty for a social
+	// or phone login.
+	Provider string `json:"provider,omitempty"`
+	Tenant   string `json:"tenant,omitempty"`
+	// DisplayName is the provider's name for the person, made fit to store.
+	DisplayName string `json:"display_name,omitempty"`
+	// Attributes are the provider's attributes, as the proof carried them.
+	Attributes map[string]string `json:"attributes,omitempty"`
+}
+
+// Clone returns a copy that shares no slice or map with p.
+func (p Pending) Clone() Pending {
+	if p.External != nil {
+		external := p.External.Clone()
+		p.External = &external
+	}
+	p.Aliases = cloneLinks(p.Aliases)
+	p.Attributes = cloneAttributes(p.Attributes)
+	return p
+}
+
+// Create opens the account a pending signup carries, with the username its
+// person chose. It is the pending step's only write: the account and its
+// username identifier are written in one transaction, and the binding, the
+// proved phone or the membership is written beside it by the same rules the
+// immediate first-login paths follow.
+//
+// A username that is empty or does not normalize is authn.ErrInvalidIdentifier,
+// one the system keeps for itself is authn.ErrUsernameReserved, and one another
+// account holds is authn.ErrAccountExists. None of the three writes anything.
+func (r *Resolver) Create(ctx context.Context, p Pending, username string) (Result, error) {
+	switch p.Source {
+	case SourceSocial, SourcePhone, SourceEnterprise:
+	default:
+		return Result{}, fmt.Errorf("%w: resolve: the pending signup names no known source", authn.ErrInvalidArgument)
+	}
+	// An empty name has no normalization to fail on, and no account may hold one.
+	if username == "" {
+		return Result{}, fmt.Errorf("%w: resolve: the pending signup has no username", authn.ErrInvalidIdentifier)
+	}
+	// The unique constraint of the creation transaction arbitrates a race for
+	// the name; this read only tells a name another account holds apart from one
+	// that does not normalize, which the answer route renders as two refusals.
+	_, err := r.accounts.Lookup(ctx, authn.IdentifierUsername, username)
+	switch {
+	case err == nil:
+		return Result{}, fmt.Errorf("%w: resolve: the username is taken", authn.ErrAccountExists)
+	case !errors.Is(err, authn.ErrAccountNotFound):
+		return Result{}, err
+	}
+	switch p.Source {
+	case SourcePhone:
+		return r.createPhone(ctx, p, username)
+	case SourceEnterprise:
+		return r.createEnterprise(ctx, p, username)
+	}
+	return r.createSocial(ctx, p, username)
+}
+
+// pendingSocial is the pending signup of a social first login. email is the
+// address to write on the account, empty for none; it is there only when the
+// provider declared it verified and no account held it a moment ago.
+func pendingSocial(ext *authn.External, email string, aliases []authn.ExternalLink) Result {
+	pending := &Pending{
+		Source:      SourceSocial,
+		Via:         viaSignup,
+		External:    externalOf(ext),
+		Aliases:     cloneLinks(aliases),
+		Email:       email,
+		DisplayName: displayName(ext.DisplayName),
+		Attributes:  cloneAttributes(ext.Attributes),
+	}
+	if via := (authn.Verification{Via: authn.VerifiedViaIDPPrefix + ext.Provider}); email != "" && via.Valid() {
+		pending.EmailVia = via.Via
+	}
+	return Result{Pending: pending}
+}
+
+// pendingPhone is the pending signup of a phone an SMS code just proved.
+func pendingPhone(phone string) Result {
+	return Result{Pending: &Pending{
+		Source: SourcePhone,
+		Via:    viaSignup,
+		Phone:  phone,
+	}}
+}
+
+// pendingEnterprise is the pending signup of an enterprise provider's
+// just-in-time first login. It fails for a provider whose identifier cannot name
+// a verification, because the address it writes has to carry one.
+func pendingEnterprise(prov authn.SSOProvider, ext *authn.External, aliases []authn.ExternalLink) (Result, error) {
+	via := authn.Verification{Via: authn.VerifiedViaIDPPrefix + prov.ID}
+	if !via.Valid() {
+		return Result{}, fmt.Errorf("%w: resolve: the provider's identifier cannot name a verification", authn.ErrInvalidArgument)
+	}
+	return Result{Pending: &Pending{
+		Source:      SourceEnterprise,
+		Via:         viaJIT,
+		External:    externalOf(ext),
+		Aliases:     cloneLinks(aliases),
+		Email:       ext.Email,
+		EmailVia:    via.Via,
+		Provider:    prov.ID,
+		Tenant:      prov.Tenant,
+		DisplayName: displayName(ext.DisplayName),
+		Attributes:  cloneAttributes(ext.Attributes),
+	}}, nil
+}
+
+// externalOf copies an external identity for a pending signup; a nil one stays
+// nil, which only a phone login's pending state has.
+func externalOf(ext *authn.External) *authn.External {
+	if ext == nil {
+		return nil
+	}
+	copied := ext.Clone()
+	return &copied
+}
+
+// cloneLinks copies the earlier keys of an external identity.
+func cloneLinks(links []authn.ExternalLink) []authn.ExternalLink {
+	if len(links) == 0 {
+		return nil
+	}
+	return append([]authn.ExternalLink(nil), links...)
+}
+
+// cloneAttributes copies a provider's attributes.
+func cloneAttributes(attrs map[string]string) map[string]string {
+	if len(attrs) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(attrs))
+	for k, v := range attrs {
+		out[k] = v
+	}
+	return out
+}
+
+// linkOf is the key a pending signup's external identity is bound under.
+func linkOf(p Pending) authn.ExternalLink {
+	if p.External == nil {
+		return authn.ExternalLink{}
+	}
+	return authn.ExternalLink{
+		Provider:      p.External.Provider,
+		Subject:       p.External.Subject,
+		Email:         p.External.Email,
+		EmailVerified: p.External.EmailVerified,
+	}
+}

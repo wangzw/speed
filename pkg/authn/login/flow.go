@@ -14,15 +14,18 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/model"
+	"github.com/vislake/speed/pkg/authn/login/internal/resolve"
 )
 
 // The states of the flow machine. The set is closed: first is the first factor,
-// processing is the moment a callback's answer is being handled, second is the
+// processing is the moment a callback's answer is being handled, signup is the
+// username a first login collects before it opens an account, second is the
 // second factor, enroll is a registration, ready is a flow whose steps are done,
 // and done and failed are the two tombstones.
 const (
 	stateFirst      = "first"
 	stateProcessing = "processing"
+	stateSignup     = "signup"
 	stateSecond     = "second"
 	stateEnroll     = "enroll"
 	stateReady      = "ready"
@@ -60,7 +63,10 @@ const (
 
 // recordVersion is the format version this build writes and the only one it
 // reads. A record carrying another version is refused, so that a rollout that
-// changes the format does not read an old record as a new one.
+// changes the format does not read an old record as a new one. A member added to
+// the format is optional and does not raise it, as provider and require_multi
+// did not: an old binary refuses the record as one with an unknown field, which
+// ends that flow fail-closed and starts the user over.
 const recordVersion = 1
 
 // flowKeyPrefix begins every flow record's key. The key-value store is not
@@ -70,22 +76,27 @@ const flowKeyPrefix = "authn:flow:"
 // record is one login flow, the key-value store's value. Its JSON field names
 // are the design's, and it is read back with unknown fields refused.
 type record struct {
-	Version     int          `json:"v"`
-	Purpose     string       `json:"purpose"`
-	Method      string       `json:"method,omitempty"`
-	Provider    string       `json:"provider,omitempty"`
-	State       string       `json:"state"`
-	Seq         int          `json:"seq"`
-	Binding     string       `json:"binding"`
-	Account     string       `json:"account,omitempty"`
-	Proof       *model.Proof `json:"proof,omitempty"`
-	MFA         mfaState     `json:"mfa"`
-	MethodStep  string       `json:"method_step,omitempty"`
-	MethodState []byte       `json:"method_state,omitempty"`
-	Merged      bool         `json:"merged,omitempty"`
-	Delivery    string       `json:"delivery,omitempty"`
-	ReturnTo    string       `json:"return_to,omitempty"`
-	Session     string       `json:"session,omitempty"`
+	Version  int          `json:"v"`
+	Purpose  string       `json:"purpose"`
+	Method   string       `json:"method,omitempty"`
+	Provider string       `json:"provider,omitempty"`
+	State    string       `json:"state"`
+	Seq      int          `json:"seq"`
+	Binding  string       `json:"binding"`
+	Account  string       `json:"account,omitempty"`
+	Proof    *model.Proof `json:"proof,omitempty"`
+	// Pending is the account a first login would open, kept from the resolution
+	// that decided it until the username the person chose arrives. While it is
+	// set the flow stands at signup and no account, binding, identifier or
+	// membership row exists for it yet.
+	Pending     *resolve.Pending `json:"pending,omitempty"`
+	MFA         mfaState         `json:"mfa"`
+	MethodStep  string           `json:"method_step,omitempty"`
+	MethodState []byte           `json:"method_state,omitempty"`
+	Merged      bool             `json:"merged,omitempty"`
+	Delivery    string           `json:"delivery,omitempty"`
+	ReturnTo    string           `json:"return_to,omitempty"`
+	Session     string           `json:"session,omitempty"`
 	// RequireMulti records, for a link or an enrollment, that the account held
 	// an active factor when the flow started: the completion re-checks the
 	// freshness the start fixed, so a registration's own factor -- made active

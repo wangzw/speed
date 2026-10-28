@@ -100,14 +100,15 @@ func (noRules) AddPattern(string, log.Matcher) {}
 // harness is one running assembly: the bound address, a cookie-jarred client and
 // the capabilities a case reaches to set its scene up.
 type harness struct {
-	t        *testing.T
-	ctx      context.Context
-	address  string
-	client   *http.Client
-	admin    authn.AccountAdmin
-	mfa      authn.MFA
-	accounts authn.Accounts
-	store    settings.Store
+	t           *testing.T
+	ctx         context.Context
+	address     string
+	client      *http.Client
+	admin       authn.AccountAdmin
+	mfa         authn.MFA
+	accounts    authn.Accounts
+	memberships authn.Memberships
+	store       settings.Store
 }
 
 // reply is what a client got back.
@@ -209,6 +210,9 @@ func assembleWith(t *testing.T, extra []core.Module, use func(h *harness)) {
 				return err
 			}
 			if h.accounts, err = core.Resolve[authn.Accounts](reg); err != nil {
+				return err
+			}
+			if h.memberships, err = core.Resolve[authn.Memberships](reg); err != nil {
 				return err
 			}
 			settingsStore, resolveErr := core.Resolve[settings.Store](reg)

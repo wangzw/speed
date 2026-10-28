@@ -9,8 +9,10 @@ import (
 )
 
 // fromIdentifier resolves a proof of an identifier's ownership, which is a phone
-// a verification code reached. A login of an unknown phone creates the account
-// when sign-up is open and is authn.ErrSignupClosed otherwise.
+// a verification code reached. A login of an unknown phone parks at the pending
+// signup when sign-up is open and is authn.ErrSignupClosed otherwise. The login
+// method hands a proof only for a number that may sign in: one no account holds
+// or one its account chose as a sign-in way.
 func (r *Resolver) fromIdentifier(ctx context.Context, req Request) (Result, error) {
 	idf := req.Proof.Identifier
 	if idf.Kind != authn.IdentifierPhone || idf.Value == "" {
@@ -27,7 +29,7 @@ func (r *Resolver) fromIdentifier(ctx context.Context, req Request) (Result, err
 	case !r.signupOpen():
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrSignupClosed)
 	}
-	return r.createPhone(ctx, idf.Value, req.Username)
+	return pendingPhone(idf.Value), nil
 }
 
 // phoneAccount ends the resolution of a phone that belongs to an account.
@@ -44,28 +46,25 @@ func (r *Resolver) phoneAccount(ctx context.Context, req Request, id authn.Accou
 	return r.confirmed(req, a.ID)
 }
 
-// createPhone creates the account of a phone that was just proved and has none.
-// The phone's uniqueness is the arbiter of a race: the login that lost it reads
-// the account that won. username is the login name the pending-signup step
-// collected; without one no account is created.
-func (r *Resolver) createPhone(ctx context.Context, phone, username string) (Result, error) {
-	if username == "" {
-		return Result{}, errUsernameMissing
-	}
+// createPhone opens the account a pending phone signup describes. The phone's
+// uniqueness is the arbiter of a race: the login that lost it reads the account
+// that won, whose number is already chosen as a sign-in way because that is how
+// it was written.
+func (r *Resolver) createPhone(ctx context.Context, p Pending, username string) (Result, error) {
 	in, err := r.provision(ctx, authn.CreateAccount{
 		Kind:                authn.KindUser,
 		Username:            username,
 		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
-		Phone:               phone,
+		Phone:               p.Phone,
 		PhoneVerifiedVia:    authn.Verification{Via: authn.VerifiedViaSMSCode},
-		Via:                 viaSignup,
-	}, viaSignup)
+		Via:                 p.Via,
+	}, p.Via)
 	if err != nil {
 		return Result{}, err
 	}
 	acct, err := r.admin.Create(ctx, in)
 	if errors.Is(err, authn.ErrAccountExists) {
-		id, lerr := r.accounts.Lookup(ctx, authn.IdentifierPhone, phone)
+		id, lerr := r.accounts.Lookup(ctx, authn.IdentifierPhone, p.Phone)
 		if lerr != nil {
 			return Result{}, err
 		}

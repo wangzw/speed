@@ -50,6 +50,11 @@ const (
 type Result struct {
 	Account authn.AccountID
 	Outcome Outcome
+	// Pending, when it is set, is the account a first login would open: the
+	// resolution decided to open one and wrote nothing, and Create opens it
+	// once the person has chosen a username. Account and Outcome are then empty
+	// and zero: no account exists yet.
+	Pending *Pending
 	// Cleanup is what the caller does before the session of this login is
 	// created, in the order listed. It is empty unless the outcome is
 	// OutcomeMerged. A session created first would be revoked with the others, and
@@ -65,9 +70,13 @@ type Result struct {
 	RefreshErr error
 }
 
-// Clone returns a copy that shares no slice with r.
+// Clone returns a copy that shares no slice or map with r.
 func (r Result) Clone() Result {
 	r.Cleanup = slices.Clone(r.Cleanup)
+	if r.Pending != nil {
+		pending := r.Pending.Clone()
+		r.Pending = &pending
+	}
 	return r
 }
 

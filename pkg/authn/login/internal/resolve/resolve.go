@@ -164,22 +164,17 @@ type Request struct {
 	// Account is the account the flow was started on, which is the account of a
 	// link, a step-up or an enrollment and is ignored for a login.
 	Account authn.AccountID
-	// Username is the login name a first login opens an account with. The
-	// pending-signup step that collects it from the person is not built yet, so
-	// a first login of a social provider, an SMS code or an enterprise IdP that
-	// would open an account refuses with errUsernameMissing when this is empty
-	// and creates nothing.
-	Username string
 }
 
 // Resolve resolves the proof of a request.
 //
 // A login resolves any of the three sources of a proof: an account the method
-// already determined, a phone the method proved, or an external identity. Only
-// an external identity or a phone can create or link anything. The other
-// purposes never write: the proof must belong to the account the flow was
-// started on, and a link of an external identity answers whether the key is
-// free for that account.
+// already determined, a phone the method proved, or an external identity. A
+// first login of a phone or an external identity that would open an account
+// writes nothing and answers a Result whose Pending describes the account;
+// Create opens it once a username is chosen. The other purposes never write: the
+// proof must belong to the account the flow was started on, and a link of an
+// external identity answers whether the key is free for that account.
 //
 // A failure is one of the sentinels of the root package, wrapped, or an error of
 // a dependency passed on as it came; a caller maps what it does not know to an

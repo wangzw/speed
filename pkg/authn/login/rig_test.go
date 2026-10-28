@@ -298,6 +298,10 @@ type fakeAccounts struct {
 	byExt  map[string]authn.AccountID
 	ident  map[authn.AccountID][]authn.Identifier
 	lookup map[string]authn.AccountID
+	// lookupErr, when a key has an entry, is the failure Lookup answers for that
+	// identifier: a case arms one to make the username step see a name that does
+	// not normalize.
+	lookupErr map[string]error
 }
 
 func (a *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account, error) {
@@ -323,7 +327,11 @@ func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]aut
 
 // Lookup answers for the identifiers a case registers by kind and value.
 func (a *fakeAccounts) Lookup(_ context.Context, kind authn.IdentifierKind, value string) (authn.AccountID, error) {
-	if id, ok := a.lookup[string(kind)+"\x00"+value]; ok {
+	key := string(kind) + "\x00" + value
+	if err, armed := a.lookupErr[key]; armed {
+		return "", err
+	}
+	if id, ok := a.lookup[key]; ok {
 		return id, nil
 	}
 	return "", authn.ErrAccountNotFound
@@ -423,11 +431,23 @@ func (s *fakeSessions) Elevate(_ context.Context, id authn.SessionID, e authn.El
 	return authn.Issued{ID: id, Token: "tok-2", ExpiresAt: time.Now().Add(time.Hour)}, nil
 }
 
-// fakeAdmin records the external links made and answers for no other write.
+// fakeAdmin records the external links made, the accounts created, and answers
+// for no other write.
 type fakeAdmin struct {
 	authn.AccountAdmin
-	links []authn.ExternalLink
-	touch int
+	links   []authn.ExternalLink
+	created []authn.CreateAccount
+	touch   int
+	// createErr, when set, is what Create answers instead of an account.
+	createErr error
+}
+
+func (a *fakeAdmin) Create(_ context.Context, in authn.CreateAccount) (authn.Account, error) {
+	a.created = append(a.created, in.Clone())
+	if a.createErr != nil {
+		return authn.Account{}, a.createErr
+	}
+	return authn.Account{ID: "acct-created", Kind: authn.KindUser, Status: authn.StatusActive}, nil
 }
 
 func (a *fakeAdmin) LinkExternal(_ context.Context, _ authn.AccountID, l authn.ExternalLink) error {
@@ -814,6 +834,22 @@ func (r *rig) withAutoLink() {
 		Admin:       r.admin,
 		Memberships: stubMemberships{},
 		AutoLink:    resolve.AutoLinkVerifiedEmail,
+	})
+	if err != nil {
+		r.t.Fatalf("building the resolver: %v", err)
+	}
+	r.p.resolver = res
+}
+
+// withOpenSignup rebuilds the resolver with first-login signup open, so a login
+// that would open an account parks at the username step.
+func (r *rig) withOpenSignup() {
+	r.t.Helper()
+	res, err := resolve.New(resolve.Config{
+		Accounts:    r.accounts,
+		Admin:       r.admin,
+		Memberships: stubMemberships{},
+		Signup:      resolve.SignupOpen,
 	})
 	if err != nil {
 		r.t.Fatalf("building the resolver: %v", err)

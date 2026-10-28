@@ -89,11 +89,15 @@ func writeAction(c *call, state string) {
 // with GET flows/current reads this, so it is built from the record alone: a
 // first-factor step the method named cannot be re-prompted with its fields, which
 // the method decides on the next answer. The enroll step names the factor kinds
-// the assembly takes in, so the client can choose one.
+// the assembly takes in, so the client can choose one. The signup step names the
+// username a first login opens its account with; it is a challenge, so the
+// shared renderer draws its fields like any other prompt.
 func (r *routes) nextOf(rec record) stepView {
 	switch rec.State {
 	case stateReady:
 		return stepView{Kind: nextComplete}
+	case stateSignup:
+		return stepView{Kind: nextChallenge, Fields: signupFields()}
 	case stateSecond:
 		return stepView{Kind: nextFactor, Factors: rec.MFA.Offered}
 	case stateEnroll:
@@ -103,6 +107,12 @@ func (r *routes) nextOf(rec record) stepView {
 	default:
 		return stepView{Kind: nextChallenge}
 	}
+}
+
+// signupFields is the username the pending-signup step asks for: not secret, and
+// the one thing the step takes.
+func signupFields() []fieldView {
+	return []fieldView{{Name: fieldUsername, Kind: string(authn.FieldText), Required: true}}
 }
 
 // factorKinds renders the factor kinds the assembly takes in, for the enroll

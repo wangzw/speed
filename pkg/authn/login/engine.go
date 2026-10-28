@@ -3,6 +3,7 @@ package login
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -282,6 +283,13 @@ func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw [
 		r.fail(c, err)
 		return
 	}
+	// A login that would open an account stops the flow at the username step:
+	// the resolution decided what the account will be and wrote nothing, and the
+	// facts wait in the record for the answer.
+	if res.Pending != nil {
+		r.beginSignup(c, token, echo, rec, raw, proof, res.Pending, callback)
+		return
+	}
 	// Only a login resolves to the account it lands on. A link, a step-up and an
 	// enrollment are bound to the account the flow was started on, so their record
 	// keeps it even when the proof was the operator's own.
@@ -327,6 +335,93 @@ func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw [
 	default:
 		c.serverError()
 	}
+}
+
+// beginSignup parks a flow whose resolution would open an account: the facts it
+// decided go into the record's pending member and the person is asked for a
+// username. Nothing is written to the account store before the answer, so a flow
+// abandoned here leaves no account. A callback is a top-level navigation, so it
+// lands the user agent on the return target with the flow left in the cookie;
+// the front end resumes with GET flows/current and answers the username step.
+func (r *routes) beginSignup(c *call, token, echo string, rec record, raw []byte, proof authn.Proof,
+	pending *resolve.Pending, callback bool,
+) {
+	p := proof
+	rec.Proof = &p
+	rec.Pending = pending
+	rec.State = stateSignup
+	// The first factor's private step state is spent once it proves, as it is on
+	// a resolution that lands on an account.
+	rec.MethodStep = ""
+	rec.MethodState = nil
+	if !r.swap(c, token, raw, rec) {
+		return
+	}
+	if callback {
+		c.redirect(http.StatusSeeOther, r.returnTarget(rec))
+		return
+	}
+	r.replyStep(c, rec, r.nextOf(rec), echo)
+}
+
+// applySignupAnswer handles the username step of a flow parked at signup. A
+// legal, free username opens the account the pending facts describe and the flow
+// carries on to the policy; a username that cannot be used is 400 bad-request,
+// one another account holds is 409 username-taken, and both leave the flow at
+// signup to be retried. None of the three writes an account.
+func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw []byte, fields map[string]string) {
+	if rec.Pending == nil || rec.Proof == nil {
+		c.unauthorized(mount.CodeFlowInvalid)
+		return
+	}
+	res, err := r.resolver.Create(c.ctx, *rec.Pending, fields[fieldUsername])
+	switch {
+	case errors.Is(err, authn.ErrInvalidIdentifier), errors.Is(err, authn.ErrUsernameReserved):
+		rec.Seq++
+		rec.Answers++
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		c.fail(mount.CodeBadRequest)
+		return
+	case errors.Is(err, authn.ErrAccountExists):
+		rec.Seq++
+		rec.Answers++
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		c.fail(mount.CodeUsernameTaken)
+		return
+	case err != nil:
+		rec.State = stateFailed
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		r.reportLogin(c.ctx, rec, loginOutcomeOf(err))
+		r.fail(c, err)
+		return
+	}
+	rec.Account = string(res.Account)
+	rec.Pending = nil
+	rec.Seq++
+	rec.Answers++
+	if err := r.decidePolicy(c.ctx, &rec, *rec.Proof); err != nil {
+		rec.State = stateFailed
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		r.reportLogin(c.ctx, rec, loginOutcomeOf(err))
+		r.fail(c, err)
+		return
+	}
+	if !r.swap(c, token, raw, rec) {
+		return
+	}
+	if rec.State == stateReady {
+		writeComplete(c, rec)
+		return
+	}
+	r.replyStep(c, rec, r.nextOf(rec), echo)
 }
 
 // decidePolicy sets the flow's next state from the multi-factor policy. A login

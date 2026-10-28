@@ -84,10 +84,14 @@ func TestAFailureAfterTheAccountIsMadeUnwindsIt(t *testing.T) {
 
 func TestAnUnwindSurvivesTheLogInsCancelledContext(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
+	pending, err := e.pending(social("google", "g1", "", false))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
 	ctx, cancel := contextWithCancelOnLink(e)
 	defer cancel()
 	e.s.failLink = authn.ErrUnavailable
-	_, err := e.r.Resolve(ctx, Request{Proof: social("google", "g1", "", false), Purpose: authn.PurposeLogin, Username: testUsername})
+	_, err = e.r.Create(ctx, *pending.Pending, testUsername)
 	if err == nil {
 		t.Fatal("want a failure")
 	}

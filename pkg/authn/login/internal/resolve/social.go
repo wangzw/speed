@@ -12,13 +12,16 @@ import (
 // socialUnbound resolves a social identity with no binding, by the flow chart of
 // the account design: the automatic link of A4 when it is on and every condition
 // holds, otherwise A3, and without a clue to an existing account the first-login
-// provisioning.
+// provisioning. A first login that would open an account parks at the pending
+// signup, which asks its person for a username before anything is written.
 //
 // The address a provider declared is a clue only when the provider says it
 // verified it. An address it says it did not verify is treated as absent, so
 // that nothing about the accounts that exist is answered to a caller whose claim
 // the provider does not stand behind.
-func (r *Resolver) socialUnbound(ctx context.Context, l authn.ExternalLink, ext *authn.External, username string) (Result, error) {
+func (r *Resolver) socialUnbound(ctx context.Context, l authn.ExternalLink, ext *authn.External,
+	aliases []authn.ExternalLink,
+) (Result, error) {
 	var email string
 	if ext.EmailVerified && ext.Email != "" {
 		id, err := r.accounts.Lookup(ctx, authn.IdentifierEmail, ext.Email)
@@ -35,7 +38,7 @@ func (r *Resolver) socialUnbound(ctx context.Context, l authn.ExternalLink, ext 
 	if !r.signupOpen() {
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrSignupClosed)
 	}
-	return r.createSocial(ctx, l, ext, email, username)
+	return pendingSocial(ext, email, aliases), nil
 }
 
 // socialKnownEmail resolves a social identity whose verified address is on an
@@ -116,29 +119,26 @@ func providerProof(via string) bool {
 	return authn.Verification{Via: via}.Valid() && strings.HasPrefix(via, authn.VerifiedViaIDPPrefix)
 }
 
-// createSocial creates the account of a first social login. email is the address
-// to write on it, empty for none; it is there only when the provider declared it
-// verified and no account held it a moment ago. username is the login name the
-// pending-signup step collected; without one no account is created.
-func (r *Resolver) createSocial(ctx context.Context, l authn.ExternalLink, ext *authn.External, email, username string) (Result, error) {
-	if username == "" {
-		return Result{}, errUsernameMissing
-	}
+// createSocial opens the account a pending social signup describes. A username
+// another login took in the race for the same name leaves authn.ErrAccountExists
+// for the answer route's 409; a verified address another account took in the
+// meantime is dropped rather than become a reason to refuse the login.
+func (r *Resolver) createSocial(ctx context.Context, p Pending, username string) (Result, error) {
 	create := authn.CreateAccount{
 		Kind:                authn.KindUser,
-		DisplayName:         displayName(ext.DisplayName),
+		DisplayName:         p.DisplayName,
 		Username:            username,
 		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
-		Via:                 viaSignup,
+		Via:                 p.Via,
 	}
-	if via := (authn.Verification{Via: authn.VerifiedViaIDPPrefix + ext.Provider}); email != "" && via.Valid() {
-		create.Email, create.EmailVerifiedVia = email, via
+	if p.Email != "" && p.EmailVia != "" {
+		create.Email, create.EmailVerifiedVia = p.Email, authn.Verification{Via: p.EmailVia}
 	}
-	create, err := r.provision(ctx, create, viaSignup)
+	create, err := r.provision(ctx, create, p.Via)
 	if err != nil {
 		return Result{}, err
 	}
-	return r.finishCreated(ctx, newAccount{create: create, link: l, keepWithoutEmail: true})
+	return r.finishCreated(ctx, newAccount{create: create, link: linkOf(p), keepWithoutEmail: true})
 }
 
 // finishCreated creates and binds an account and reports the outcome. A login

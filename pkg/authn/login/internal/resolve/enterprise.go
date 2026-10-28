@@ -16,8 +16,11 @@ const membershipSource = "jit:"
 
 // enterpriseUnbound resolves an enterprise identity with no binding (A5). The
 // provider's row, not the method, says which tenant it belongs to and how its
-// users get accounts.
-func (r *Resolver) enterpriseUnbound(ctx context.Context, providerID string, l authn.ExternalLink, ext *authn.External, username string) (Result, error) {
+// users get accounts. A just-in-time first login parks at the pending signup,
+// which asks its person for a username before anything is written.
+func (r *Resolver) enterpriseUnbound(ctx context.Context, providerID string, l authn.ExternalLink, ext *authn.External,
+	aliases []authn.ExternalLink,
+) (Result, error) {
 	if r.sso == nil {
 		return Result{}, errNoSSO()
 	}
@@ -46,7 +49,17 @@ func (r *Resolver) enterpriseUnbound(ctx context.Context, providerID string, l a
 	case authn.ProvisioningPreprovisioned:
 		return r.preprovisioned(ctx, l, ext)
 	case authn.ProvisioningJIT:
-		return r.jit(ctx, prov, l, ext, username)
+		// An address an account already holds is decided here, before any
+		// username is asked for: the merge a provider allows into that account, or
+		// the explicit binding it requires.
+		id, found, err := r.occupant(ctx, ext.Email)
+		if err != nil {
+			return Result{}, err
+		}
+		if found {
+			return r.jitOccupied(ctx, id, prov, l, ext)
+		}
+		return pendingEnterprise(prov, ext, aliases)
 	}
 	return Result{}, fmt.Errorf("%w: resolve: the provider's provisioning is not one that is known", authn.ErrInvalidArgument)
 }
@@ -97,50 +110,45 @@ func (r *Resolver) preprovisioned(ctx context.Context, l authn.ExternalLink, ext
 	return Result{Account: id, Outcome: OutcomeMatched}, nil
 }
 
-// jit creates the account of a first enterprise login and its membership of the
-// provider's tenant, or merges into the account that holds the address when the
-// provider was set up to allow it and the account passes every condition. In any
-// other case the address being taken is authn.ErrLinkRequired. username is the
-// login name the pending-signup step collected; without one no account is
-// created.
-func (r *Resolver) jit(ctx context.Context, prov authn.SSOProvider, l authn.ExternalLink, ext *authn.External,
-	username string,
-) (Result, error) {
-	id, found, err := r.occupant(ctx, ext.Email)
-	if err != nil {
-		return Result{}, err
-	}
-	if found {
-		return r.jitOccupied(ctx, id, prov, l, ext)
-	}
-	if username == "" {
-		return Result{}, errUsernameMissing
-	}
+// createEnterprise opens the account a pending enterprise signup describes and
+// its membership of the provider's tenant. An address another account took in
+// the meantime, or one that was bound to an account before the write, is
+// authn.ErrLinkRequired: the login must bind explicitly rather than take the
+// account over. A username another login took in the race for the same name is
+// authn.ErrAccountExists for the answer route's 409.
+func (r *Resolver) createEnterprise(ctx context.Context, p Pending, username string) (Result, error) {
 	create := authn.CreateAccount{
 		Kind:                authn.KindUser,
-		DisplayName:         displayName(ext.DisplayName),
+		DisplayName:         p.DisplayName,
 		Username:            username,
 		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
-		Email:               ext.Email,
-		EmailVerifiedVia:    authn.Verification{Via: authn.VerifiedViaIDPPrefix + prov.ID},
-		Via:                 viaJIT,
+		Email:               p.Email,
+		EmailVerifiedVia:    authn.Verification{Via: p.EmailVia},
+		Via:                 p.Via,
 	}
 	if !create.EmailVerifiedVia.Valid() {
 		return Result{}, fmt.Errorf("%w: resolve: the provider's identifier cannot name a verification", authn.ErrInvalidArgument)
 	}
-	create, err = r.provision(ctx, create, viaJIT)
+	create, err := r.provision(ctx, create, p.Via)
 	if err != nil {
 		return Result{}, err
 	}
 	res, err := r.finishCreated(ctx, newAccount{
 		create:     create,
-		link:       l,
-		membership: &authn.Membership{Tenant: prov.Tenant, Active: true, Source: membershipSource + prov.ID},
+		link:       linkOf(p),
+		membership: &authn.Membership{Tenant: p.Tenant, Active: true, Source: membershipSource + p.Provider},
 	})
 	if errors.Is(err, authn.ErrAccountExists) {
 		// The address was taken after it was looked up, by an account that is not
-		// this identity's.
-		return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: ext.Email})
+		// this identity's. A name another login took is left to the answer
+		// route's 409; the address taken is a login that must bind explicitly.
+		_, found, occupantErr := r.occupant(ctx, p.Email)
+		if occupantErr != nil {
+			return Result{}, occupantErr
+		}
+		if found {
+			return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: p.Email})
+		}
 	}
 	return res, err
 }

@@ -117,7 +117,7 @@ type AuthnLoginFlow struct {
 	_ struct{} `description:"One open login flow, as returned by a start, by an answer that keeps the flow open, or by the current-flow read: the step number the next answer must echo, the flow's state, the flow token when the flow is bound by the header, and what the client does next."`
 
 	Seq       int            `json:"seq" required:"true" description:"The step number the next answer must echo"`
-	State     string         `json:"state" required:"true" description:"The flow's state: first, second, enroll, ready, processing, done or failed"`
+	State     string         `json:"state" required:"true" description:"The flow's state: first, signup, second, enroll, ready, processing, done or failed"`
 	FlowToken string         `json:"flow_token,omitempty" description:"The flow token, set only when the flow is bound by the Authn-Flow header"`
 	Next      AuthnLoginStep `json:"next" required:"true" description:"What the client does at the flow's current step."`
 }

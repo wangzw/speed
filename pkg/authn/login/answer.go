@@ -9,6 +9,11 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
+// fieldUsername is the input key the pending-signup step carries. The engine
+// handles it itself: no method is asked for the username a first login opens an
+// account with.
+const fieldUsername = "username"
+
 // fieldFactor and fieldCode are the input keys a second-factor step carries.
 const (
 	fieldFactor = "factor"
@@ -31,7 +36,10 @@ func (r *routes) answer(ctx context.Context, in answerInput, meta *speedhttp.Met
 	}
 	switch in.Step {
 	case stepAnswer:
-		if rec.State != stateFirst {
+		// An answer submitted at the first factor goes to the method; one
+		// submitted at the pending signup carries the username the engine opens
+		// the account with, and no method is asked.
+		if rec.State != stateFirst && rec.State != stateSignup {
 			c.unauthorized(mount.CodeFlowInvalid)
 			return c.result()
 		}
@@ -83,7 +91,11 @@ func (r *routes) answer(ctx context.Context, in answerInput, meta *speedhttp.Met
 
 	switch in.Step {
 	case stepAnswer:
-		r.applyFirstSubmit(c, token, echo, rec, raw, in.Input)
+		if rec.State == stateSignup {
+			r.applySignupAnswer(c, token, echo, rec, raw, in.Input)
+		} else {
+			r.applyFirstSubmit(c, token, echo, rec, raw, in.Input)
+		}
 	case stepFactor:
 		r.applyFactor(c, token, echo, rec, raw, in.Input, in.HumanProof)
 	case stepEnroll:

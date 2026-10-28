@@ -174,34 +174,42 @@ func TestProvisionerReturningOnlyANameLeavesTheRestOfTheAccountAlone(t *testing.
 	}
 }
 
-// TestAFirstLoginWithNoUsernameCreatesNothing holds the stopgap for the
-// pending-signup step: a social, SMS or enterprise login that would open an
-// account and has no username collected refuses and writes nothing.
-func TestAFirstLoginWithNoUsernameCreatesNothing(t *testing.T) {
+// TestAFirstLoginThatWouldOpenAnAccountParksAtThePendingSignup holds the pending
+// step: a social, SMS or enterprise login that would open an account resolves to
+// a pending signup, carries the facts the account will be opened with, and
+// writes nothing before a username is chosen.
+func TestAFirstLoginThatWouldOpenAnAccountParksAtThePendingSignup(t *testing.T) {
 	for name, tc := range map[string]struct {
-		proof authn.Proof
-		opts  []option
+		proof  authn.Proof
+		opts   []option
+		source Source
 	}{
-		"social":     {social("github", "gh1", "", false), nil},
-		"phone":      {phone("+8613800000001"), nil},
-		"enterprise": {enterprise("u1", "ann@acme.com"), []option{withProvider(authn.ProvisioningJIT, false)}},
+		"social":     {social("github", "gh1", "", false), nil, SourceSocial},
+		"phone":      {phone("+8613800000001"), nil, SourcePhone},
+		"enterprise": {enterprise("u1", "ann@acme.com"), []option{withProvider(authn.ProvisioningJIT, false)}, SourceEnterprise},
 	} {
 		t.Run(name, func(t *testing.T) {
 			e := newEnv(t, append([]option{withSignup(SignupOpen)}, tc.opts...)...)
-			_, err := e.resolveAs("", tc.proof)
-			if !errors.Is(err, errUsernameMissing) {
-				t.Fatalf("Resolve gave %v, want errUsernameMissing", err)
+			res, err := e.pending(tc.proof)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if res.Pending == nil || res.Pending.Source != tc.source {
+				t.Fatalf("Resolve = %+v, want a pending %s signup", res, tc.source)
+			}
+			if res.Account != "" || res.Outcome != 0 || len(res.Cleanup) != 0 {
+				t.Errorf("Resolve = %+v, want no account and no outcome yet", res)
 			}
 			if e.s.writes() != 0 {
-				t.Errorf("%d writes, want none: no account is opened without a username", e.s.writes())
+				t.Errorf("%d writes, want none: the account is opened only after the username", e.s.writes())
 			}
 		})
 	}
 }
 
 // TestAFirstLoginCreatesTheAccountWithTheCollectedUsername holds that the
-// username the request carries is the one the account is created with on all
-// three paths that open an account.
+// username collected after the pending step is the one the account is created
+// with on all three paths that open an account.
 func TestAFirstLoginCreatesTheAccountWithTheCollectedUsername(t *testing.T) {
 	for name, tc := range map[string]struct {
 		proof authn.Proof

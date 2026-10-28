@@ -2,6 +2,7 @@ package resolve
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -23,7 +24,14 @@ func resolveTogether(e *env, n int, p authn.Proof) []answer {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			res, err := e.r.Resolve(context.Background(), Request{Proof: p, Purpose: authn.PurposeLogin, Username: testUsername})
+			// Each flow picks its own username, as two flows of one person may:
+			// a username is unique across accounts, so two flows that typed the
+			// same one would race on the name rather than on the identity this
+			// case is about.
+			res, err := e.r.Resolve(context.Background(), Request{Proof: p, Purpose: authn.PurposeLogin})
+			if err == nil && res.Pending != nil {
+				res, err = e.r.Create(context.Background(), *res.Pending, fmt.Sprintf("racer-%d", i))
+			}
 			out[i] = answer{res, err}
 		}()
 	}
