@@ -40,6 +40,18 @@ import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
+/** The username step a first login parks at while it waits for a name. */
+function signupFlow() {
+  return openFlow({
+    seq: 1,
+    state: 'signup',
+    next: {
+      kind: 'challenge',
+      fields: [{ name: 'username', kind: 'text', required: true }],
+    },
+  })
+}
+
 describe('SocialCallbackHandler', () => {
   it('read the flow back once, take its result, then fire onSignedIn once', async () => {
     const harness = makeHarness({
@@ -539,54 +551,108 @@ describe('SocialCallbackHandler', () => {
     ).toHaveLength(1)
   })
 
-  it('words a taken username on the sign-up step instead of the generic line', async () => {
-    // A first login through a method that opens an account parks at signup
-    // until the name arrives. A name another account holds is refused with
-    // authn.username_taken and the step stays for another try, so the banner
-    // must name the username rather than fall back to the unknown line.
-    let answers = 0
-    const harness = makeHarness({
-      [LOGIN_CURRENT]: () =>
-        openFlow({
-          seq: 1,
-          state: 'signup',
-          next: {
-            kind: 'challenge',
-            fields: [{ name: 'username', kind: 'text', required: true }],
-          },
+  it.each([
+    ['authn.username_taken', 409, zhCN.signInFlow.usernameTaken],
+    ['authn.username_reserved', 400, zhCN.signInFlow.usernameReserved],
+    ['authn.bad_request', 400, zhCN.signInFlow.usernameInvalid],
+  ])(
+    'renders %s under the username field and keeps the step and its value',
+    async (code, status, text) => {
+      // A first login through a method that opens an account parks at
+      // signup until the name arrives. Each name refusal is the field's:
+      // the step stays, the typed name stays, and no whole-attempt banner
+      // renders.
+      const harness = makeHarness({
+        [LOGIN_CURRENT]: () => signupFlow(),
+        [LOGIN_ANSWER]: () => {
+          throw apiError(status, code)
+        },
+      })
+      renderWithProviders(<SocialCallbackHandler session={harness.session} />)
+      const user = userEvent.setup()
+      const username = await screen.findByLabelText(zhCN.signInFlow.usernameLabel)
+      await user.type(username, 'ada')
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      )
+
+      await waitFor(() =>
+        expect(username).toHaveAccessibleDescription(text),
+      )
+      expect(username).toHaveAttribute('aria-invalid', 'true')
+      // The focus moved off the submit key and onto the value to change.
+      expect(username).toHaveFocus()
+      expect(username).toHaveValue('ada')
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(
+        screen.getByRole('heading', {
+          level: 2,
+          name: zhCN.signInFlow.signupTitle,
         }),
-      [LOGIN_ANSWER]: (call) => {
-        const step = (call.options?.body as { step?: string }).step
-        if (step === 'complete') {
-          return authenticatedCompletion()
-        }
-        answers += 1
-        if (answers === 1) {
-          throw apiError(409, 'authn.username_taken')
-        }
-        return completeFlow(2)
+      ).toBeInTheDocument()
+    },
+  )
+
+  it('keeps the whole-attempt banner for a failure that is not a name refusal', async () => {
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => signupFlow(),
+      [LOGIN_ANSWER]: () => {
+        throw apiError(429, 'authn.throttled')
       },
-      [PROFILE_GET]: () => principal(),
     })
-    const onSignedIn = vi.fn()
+    renderWithProviders(<SocialCallbackHandler session={harness.session} />)
+    const user = userEvent.setup()
+    const username = await screen.findByLabelText(zhCN.signInFlow.usernameLabel)
+    await user.type(username, 'ada')
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.throttled,
+    )
+    expect(username).not.toHaveAttribute('aria-invalid', 'true')
+    expect(username).toHaveAccessibleDescription(
+      zhCN.signInFlow.usernameHelper,
+    )
+  })
+
+  it('replaces a username step whose flow is gone with the restart notice', async () => {
+    // The flow is gone, so the answer cannot be retried on it. The step
+    // becomes a terminal notice whose one action hands the viewer back to
+    // the host's sign-in surface; it never resends the refused answer.
+    const onSignIn = vi.fn()
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => signupFlow(),
+      [LOGIN_ANSWER]: () => {
+        throw apiError(401, 'authn.flow_invalid')
+      },
+    })
     renderWithProviders(
-      <SocialCallbackHandler session={harness.session} onSignedIn={onSignedIn} />,
+      <SocialCallbackHandler session={harness.session} onSignIn={onSignIn} />,
     )
     const user = userEvent.setup()
     const username = await screen.findByLabelText(zhCN.signInFlow.usernameLabel)
     await user.type(username, 'ada')
     await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
 
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(zhCN.signInFlow.usernameTaken)
-    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
-    // The step stays, so another name can be tried in place.
-    expect(screen.getByLabelText(zhCN.signInFlow.usernameLabel)).toHaveValue(
-      'ada',
-    )
+    expect(
+      await screen.findByText(zhCN.signInFlow.flowExpired),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(zhCN.signInFlow.usernameLabel),
+    ).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
-    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    const before = harness.calls.length
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.signInAgain }),
+    )
+    expect(onSignIn).toHaveBeenCalledTimes(1)
+    const after = harness.calls.slice(before)
+    expect(
+      after.filter((call) => call.path === '/api/v1/auth/flows/answer'),
+    ).toHaveLength(0)
+    expect(
+      after.filter((call) => call.path === '/api/v1/auth/flows/current'),
+    ).toHaveLength(0)
   })
 
   it('fall back to the re-reading retry when a step answer is refused as flow-invalid', async () => {

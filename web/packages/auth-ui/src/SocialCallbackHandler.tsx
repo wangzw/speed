@@ -18,12 +18,17 @@
  * A refused answer keeps its step when the flow stays parked on it: the
  * failure banner renders beside the still-parked step, its state is
  * unchanged, and the step's own controls are the retry -- answering again
- * clears the banner first, because an answer is a new attempt. Only a
- * refusal with no step left to keep -- the flow is gone
- * (`authn.flow_invalid`), or a ready flow's `complete` answer is refused
- * -- renders the banner with the retry that reads the flow back, the same
- * shape as a read that finds nothing. A step this route cannot render (a
- * redirect step, whose navigation belongs to the host) renders the
+ * clears the banner first, because an answer is a new attempt. The username
+ * step is the exception: its three name refusals render under its field,
+ * never as the banner. Only a refusal with no step left to keep -- the flow
+ * is gone (`authn.flow_invalid`), or a ready flow's `complete` answer is
+ * refused -- renders the banner with the retry that reads the flow back, the
+ * same shape as a read that finds nothing. When the gone flow was the
+ * username step's and the host supplied `onSignIn`, that step becomes the
+ * terminal notice whose one action returns the viewer to the host's sign-in
+ * surface: this route knows neither the method nor the provider that opened
+ * the flow, so it cannot start a new one itself. A step this route cannot
+ * render (a redirect step, whose navigation belongs to the host) renders the
  * unsupported notice with the same re-read as its exit, so the handler
  * never returns to the pending state without issuing a read.
  *
@@ -52,8 +57,9 @@ import Typography from '@mui/material/Typography'
 import type { AuthSession, AuthnMethodList } from '@speed/auth-core'
 import { errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
-import { InlineError, useFlowErrorText } from './internal/inline-error.js'
-import { HumanGatedFlowStep } from './internal/flow-step.js'
+import { InlineError } from './internal/inline-error.js'
+import { HumanGatedFlowStep, isUsernameRefusal } from './internal/flow-step.js'
+import { FlowExpired } from './internal/flow-expired.js'
 import { stepKey, useStepFocus } from './internal/step-focus.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
 
@@ -74,6 +80,16 @@ export interface SocialCallbackHandlerProps {
    * discovery document.
    */
   readonly absent?: ReactNode
+  /**
+   * The host's exit to its sign-in surface. When the username step's flow
+   * is gone (expired, completed elsewhere, bound to another browser), the
+   * step becomes a terminal notice whose one action calls this: the
+   * callback route knows neither the method nor the provider that opened
+   * the flow, so it cannot start a new one itself, and the host navigates
+   * back to the surface that can. Omitted, that state keeps the failure
+   * banner with its re-read.
+   */
+  readonly onSignIn?: () => void
 }
 
 /** Whether the deployment offers a method whose round trip can return to
@@ -92,6 +108,7 @@ export function SocialCallbackHandler({
   session,
   onSignedIn,
   absent,
+  onSignIn,
 }: SocialCallbackHandlerProps) {
   const { t } = useAuthUiTranslation()
   const [errorCode, setErrorCode] = useState<string | null>(null)
@@ -99,11 +116,29 @@ export function SocialCallbackHandler({
   // A refusal of a still-parked step's answer: the step stays, and this
   // code renders beside it. Cleared as the next answer begins.
   const [stepFailure, setStepFailure] = useState<string | null>(null)
+  // The username step's flow turned out to be gone, so the step has no
+  // answer to retry and the terminal notice takes its place.
+  const [signupExpired, setSignupExpired] = useState(false)
+  // Whether the answer in flight was the username step's, which is what a
+  // flow-invalid refusal ends.
+  const answeredSignupRef = useRef(false)
   const [absentShown, setAbsentShown] = useState(false)
   const [attempt, setAttempt] = useState(0)
 
   const driver = useFlowDriver(session, {
     onFailure: (code) => {
+      if (
+        code === NO_FLOW &&
+        answeredSignupRef.current &&
+        onSignIn !== undefined
+      ) {
+        // The username step's flow is gone: the step it was answering no
+        // longer exists, so render the terminal notice instead of a banner
+        // whose retry would read the same dead record again.
+        setSignupExpired(true)
+        setStepFailure(null)
+        return
+      }
       // A refusal that leaves the flow parked on its step keeps that step:
       // the banner rides beside it and the step's own controls are the
       // retry. Only a refusal with no step left to keep -- the flow is
@@ -224,6 +259,8 @@ export function SocialCallbackHandler({
     setErrorCode(null)
     setFailed(false)
     setStepFailure(null)
+    setSignupExpired(false)
+    answeredSignupRef.current = false
     setAttempt((value) => value + 1)
   }
 
@@ -234,13 +271,29 @@ export function SocialCallbackHandler({
   const surfaceRef = useStepFocus(stepKey(driver.step), {
     focusFirstStep: false,
   })
-  // A refusal that keeps the flow parked on the username step words the
-  // two username refusals for that step; every other step and code keeps
-  // the namespace's own text.
-  const flowErrorText = useFlowErrorText(driver.step)
+  // The username step's three refusals are the step's own: they render
+  // under its field and never as the whole-attempt banner. Every other
+  // code, and every other step, keeps the banner.
+  const usernameRefusal =
+    driver.step !== null &&
+    driver.step.state === 'signup' &&
+    stepFailure !== null &&
+    isUsernameRefusal(stepFailure)
+      ? stepFailure
+      : null
+  const bannerFailure =
+    stepFailure === null || usernameRefusal !== null ? null : stepFailure
 
   if (absentShown && absent !== undefined) {
     return <>{absent}</>
+  }
+
+  if (signupExpired && onSignIn !== undefined) {
+    return (
+      <Box ref={surfaceRef} sx={{ display: 'contents' }}>
+        <FlowExpired onRestart={onSignIn} />
+      </Box>
+    )
   }
 
   if (failed) {
@@ -275,15 +328,17 @@ export function SocialCallbackHandler({
           step={driver.step}
           busy={driver.busy}
           onAnswer={(input, proof) => {
+            answeredSignupRef.current = driver.step?.state === 'signup'
             setStepFailure(null)
             void driver.answer(input, proof)
           }}
           onUnsupported={retry}
           unsupportedLabel={t('socialCallback.retry')}
+          failure={usernameRefusal}
         />
-        {stepFailure === null ? null : (
+        {bannerFailure === null ? null : (
           <Box sx={{ mt: 1, width: '100%' }}>
-            <InlineError code={stepFailure} resolve={flowErrorText} />
+            <InlineError code={bannerFailure} />
           </Box>
         )}
       </Box>

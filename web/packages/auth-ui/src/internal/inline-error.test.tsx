@@ -12,8 +12,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { switchLanguage } from '@speed/i18n'
-import { InlineError, useFlowErrorText } from './inline-error.js'
-import type { OpenFlowState } from './flow.js'
+import { InlineError } from './inline-error.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import enUS from '../locales/en-US.json' with { type: 'json' }
@@ -74,94 +73,3 @@ describe('InlineError', () => {
     )
   })
 })
-
-/** The username step a first login parks at while it waits for a name. */
-const SIGNUP_STEP: OpenFlowState = {
-  seq: 3,
-  state: 'signup',
-  next: {
-    kind: 'challenge',
-    fields: [{ name: 'username', kind: 'text', required: true }],
-  },
-}
-
-/** The flow's first step: the same codes mean something else there. */
-const FIRST_STEP: OpenFlowState = {
-  seq: 1,
-  state: 'first',
-  next: {
-    kind: 'challenge',
-    fields: [{ name: 'phone', kind: 'phone', required: true }],
-  },
-}
-
-/** The banner with the step-aware resolver a channel binds. */
-function FlowBanner({
-  step,
-  code,
-}: {
-  readonly step: OpenFlowState | null
-  readonly code: string
-}) {
-  const resolve = useFlowErrorText(step)
-  return <InlineError code={code} resolve={resolve} />
-}
-
-describe('useFlowErrorText', () => {
-  it('names a taken username on the sign-up step', () => {
-    renderWithProviders(
-      <FlowBanner step={SIGNUP_STEP} code="authn.username_taken" />,
-    )
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      zhCN.signInFlow.usernameTaken,
-    )
-    expect(enUS.signInFlow.usernameTaken).toMatch(/already taken/i)
-  })
-
-  it('names an unusable username on the sign-up step', () => {
-    // A malformed name and a reserved one are the step's two 400s.
-    for (const code of ['authn.bad_request', 'authn.username_reserved']) {
-      const { unmount } = renderWithProviders(
-        <FlowBanner step={SIGNUP_STEP} code={code} />,
-      )
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        zhCN.signInFlow.usernameUnusable,
-      )
-      unmount()
-    }
-  })
-
-  it('keeps the namespace text off the username step', () => {
-    renderWithProviders(
-      <FlowBanner step={FIRST_STEP} code="authn.bad_request" />,
-    )
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      zhCN.errors.authn.bad_request,
-    )
-    expect(screen.getByRole('alert')).not.toHaveTextContent(
-      zhCN.signInFlow.usernameUnusable,
-    )
-  })
-
-  it('keeps the namespace text for other codes on the username step', () => {
-    renderWithProviders(
-      <FlowBanner step={SIGNUP_STEP} code="authn.flow_invalid" />,
-    )
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      zhCN.errors.authn.flow_invalid,
-    )
-  })
-
-  it('falls back to the namespace text with no step parked', () => {
-    renderWithProviders(
-      <FlowBanner step={null} code="authn.bad_request" />,
-    )
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      zhCN.errors.authn.bad_request,
-    )
-    expect(screen.getByRole('alert')).not.toHaveTextContent(
-      zhCN.signInFlow.usernameUnusable,
-    )
-  })
-})
-

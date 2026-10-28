@@ -39,6 +39,14 @@
  * deployment's own vocabulary), and a server-supplied label wins over
  * both.
  *
+ * The username step a first login parks at is the same challenge renderer
+ * with its own face: a title and a sentence saying what the login name is
+ * for sit above the one field, and the three name refusals the server
+ * answers (taken, reserved, a shape it cannot normalize) render under the
+ * field with `aria-invalid`, the message as the field's description, and
+ * focus moved to it, never as the whole-attempt banner. The step keeps the
+ * typed value and stays parked for another try.
+ *
  * HumanGatedFlowStep wraps this renderer for a step that may send a
  * verification message. It renders the deployment's proof block above the
  * step, presents the proof the answer needs, and consumes it once
@@ -74,6 +82,33 @@ import { answerSends, stepMaySend } from './flow.js'
 /** The factor/enroll kinds the family has wording for. */
 const FACTOR_KINDS = ['totp', 'sms', 'webauthn'] as const
 
+/** The field a username step asks for. */
+const USERNAME_FIELD = 'username'
+
+/** The bundle key the username step renders a refusal under, or null for a
+ * code that is not a username refusal. */
+function usernameRefusalKey(code: string | null): string | null {
+  switch (code) {
+    case 'authn.username_taken':
+      return 'signInFlow.usernameTaken'
+    case 'authn.username_reserved':
+      return 'signInFlow.usernameReserved'
+    case 'authn.bad_request':
+      return 'signInFlow.usernameInvalid'
+    default:
+      return null
+  }
+}
+
+/**
+ * Whether the code is one the username step refuses a name with. A surface
+ * that keeps the failed step parked routes the code to the step's field
+ * instead of its whole-attempt banner.
+ */
+export function isUsernameRefusal(code: string | null): boolean {
+  return usernameRefusalKey(code) !== null
+}
+
 export interface FlowStepFieldsProps {
   /** The open step to render. */
   readonly step: OpenFlowState
@@ -100,6 +135,12 @@ export interface FlowStepFieldsProps {
   readonly clientFailure?: string | null
   /** Report a ceremony failure upward, or `null` when a retry begins. */
   readonly onClientFailure?: (key: string | null) => void
+  /**
+   * The code of an answer that failed while this step stayed parked. The
+   * username step renders the three username refusals under its field; no
+   * other step has a field-level use for it.
+   */
+  readonly failure?: string | null
 }
 
 export interface HumanGatedFlowStepProps {
@@ -125,6 +166,8 @@ export interface HumanGatedFlowStepProps {
   readonly clientFailure?: string | null
   /** See FlowStepFieldsProps.onClientFailure. */
   readonly onClientFailure?: (key: string | null) => void
+  /** See FlowStepFieldsProps.failure. */
+  readonly failure?: string | null
 }
 
 /**
@@ -148,6 +191,7 @@ export function HumanGatedFlowStep({
   unsupportedLabel,
   clientFailure,
   onClientFailure,
+  failure,
 }: HumanGatedFlowStepProps) {
   const human = useHumanVerification(
     session,
@@ -182,6 +226,7 @@ export function HumanGatedFlowStep({
         unsupportedLabel={unsupportedLabel}
         clientFailure={clientFailure}
         onClientFailure={onClientFailure}
+        failure={failure}
       />
     </>
   )
@@ -195,6 +240,7 @@ export function FlowStepFields({
   unsupportedLabel,
   clientFailure,
   onClientFailure,
+  failure,
 }: FlowStepFieldsProps) {
   const { t } = useAuthUiTranslation()
   const labelId = useId()
@@ -207,9 +253,14 @@ export function FlowStepFields({
       ? t(`signInFlow.factorKind.${kind}`)
       : kind
 
+  const refusalKey =
+    step.state === 'signup' ? usernameRefusalKey(failure ?? null) : null
+  const usernameRefusal =
+    refusalKey === null ? null : { name: USERNAME_FIELD, text: t(refusalKey) }
+
   switch (step.next.kind) {
-    case 'challenge':
-      return (
+    case 'challenge': {
+      const fields = (
         <ChallengeFields
           fields={step.next.fields}
           fieldLabel={labelOf}
@@ -217,8 +268,38 @@ export function FlowStepFields({
           submit={t('signInFlow.submit')}
           busy={busy}
           onAnswer={onAnswer}
+          fieldError={
+            usernameRefusal !== null &&
+            step.next.fields.some((field) => field.name === USERNAME_FIELD)
+              ? usernameRefusal
+              : null
+          }
         />
       )
+      if (step.state !== 'signup') {
+        return fields
+      }
+      return (
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1.5,
+            width: '100%',
+          }}
+        >
+          <Box>
+            <Typography component="h2" variant="h6">
+              {t('signInFlow.signupTitle')}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {t('signInFlow.signupDescription')}
+            </Typography>
+          </Box>
+          {fields}
+        </Box>
+      )
+    }
     case 'factor':
       return (
         <Choices
@@ -615,6 +696,10 @@ interface ChallengeFieldsProps {
   readonly submit: string
   readonly busy: boolean
   readonly onAnswer: (input: Record<string, string>) => void
+  /** The refusal to render under one of the fields (the username step's
+   * three username refusals); the field carries `aria-invalid` and the
+   * message as its description, and takes focus when the message changes. */
+  readonly fieldError?: { readonly name: string; readonly text: string } | null
 }
 
 /** One text input per challenged field, submitted as the answer. */
@@ -625,12 +710,22 @@ function ChallengeFields({
   submit,
   busy,
   onAnswer,
+  fieldError = null,
 }: ChallengeFieldsProps) {
   const defaults: Record<string, string> = {}
   for (const field of fields) {
     defaults[field.name] = ''
   }
   const form = useForm<Record<string, string>>({ defaultValues: defaults })
+  const errorInputRef = useRef<HTMLInputElement | null>(null)
+  const errorText = fieldError?.text ?? null
+  // A refusal under the field is the attempt's outcome: move focus there so
+  // a viewer who submitted from the button lands on the value to change.
+  useEffect(() => {
+    if (errorText !== null) {
+      errorInputRef.current?.focus()
+    }
+  }, [errorText])
   const onSubmit: SubmitHandler<Record<string, string>> = (values) => {
     onAnswer(values)
   }
@@ -644,25 +739,30 @@ function ChallengeFields({
         </Button>
       }
     >
-      {fields.map((field) => (
-        <FormField
-          key={field.name}
-          name={field.name}
-          required={field.required === true}
-          render={({ field: bound, invalid, errorText }) => (
-            <TextField
-              {...bound}
-              label={fieldLabel(field)}
-              type={field.kind === 'password' || field.secret === true ? 'password' : 'text'}
-              inputMode={field.kind === 'code' ? 'numeric' : undefined}
-              autoComplete={field.kind === 'code' ? 'one-time-code' : 'off'}
-              fullWidth
-              error={invalid}
-              helperText={errorText ?? fieldHelp(field) ?? undefined}
-            />
-          )}
-        />
-      ))}
+      {fields.map((field) => {
+        const refused = fieldError !== null && fieldError.name === field.name
+        const refusal = refused && fieldError !== null ? fieldError.text : null
+        return (
+          <FormField
+            key={field.name}
+            name={field.name}
+            required={field.required === true}
+            render={({ field: bound, invalid, errorText: formError }) => (
+              <TextField
+                {...bound}
+                inputRef={refused ? errorInputRef : undefined}
+                label={fieldLabel(field)}
+                type={field.kind === 'password' || field.secret === true ? 'password' : 'text'}
+                inputMode={field.kind === 'code' ? 'numeric' : undefined}
+                autoComplete={field.kind === 'code' ? 'one-time-code' : 'off'}
+                fullWidth
+                error={invalid || refused}
+                helperText={formError ?? refusal ?? fieldHelp(field) ?? undefined}
+              />
+            )}
+          />
+        )
+      })}
     </FormLayout>
   )
 }

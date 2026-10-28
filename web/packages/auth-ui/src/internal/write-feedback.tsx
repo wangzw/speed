@@ -92,12 +92,6 @@ export function useChannelFeedback(): ChannelFeedback {
 
 export interface ChannelFeedbackRegionProps {
   readonly feedback: ChannelFeedback
-  /**
-   * A resolver to use instead of the namespace's own, for a channel whose
-   * current step words a code more specifically (the sign-in flow's
-   * username step).
-   */
-  readonly resolve?: (code: string) => string
 }
 
 /**
@@ -108,9 +102,8 @@ export interface ChannelFeedbackRegionProps {
  */
 export function ChannelFeedbackRegion({
   feedback,
-  resolve,
 }: ChannelFeedbackRegionProps) {
-  const fallback = useAuthUiErrorText()
+  const resolve = useAuthUiErrorText()
   const { t } = useAuthUiTranslation()
   return (
     <>
@@ -122,7 +115,7 @@ export function ChannelFeedbackRegion({
           into the flow as a plain sibling. */}
       <SharedWriteFeedbackRegion
         outcome={feedback.outcome}
-        resolve={resolve ?? fallback}
+        resolve={resolve}
         sx={{ display: 'contents' }}
       />
       {feedback.localFailure === null ? null : (

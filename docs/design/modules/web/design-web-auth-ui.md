@@ -142,6 +142,7 @@ interface SocialCallbackHandlerProps {
   readonly session: AuthSession
   readonly onSignedIn?: () => void
   readonly absent?: ReactNode // 本部署没有 redirect 与 enterprise 方法时渲染；省略即不读发现
+  readonly onSignIn?: () => void // 用户名一步的流程已失时终态说明的唯一动作；宿主导航回登录面
 }
 
 // AcceptInvitationScreen：读取一张邀请并受理它。两个邀请操作由宿主经
@@ -257,7 +258,7 @@ function ImpersonationNoticeIndicator(): ReactElement | null
 - `beforeStart` 是起手门：每次渠道起一条新流程或一次注册前询问宿主，上下文是 `{ method, mode }`，答案可以是布尔或它的 promise；`false` 不发起任何请求、不渲染错误（动作没有离开页面，没有服务端应答可展示），抛出的门按拒绝包住。门只管起手：流程停下的步骤由 `answerFlow` 答复，不再过门。
 - `onModeChange` 给出时 `mode` 成为受控属性：注册／登录开关只报告选择，由宿主带新值重渲染，屏幕不再持有自己的模式副本。
 
-`SocialSignInSection` 的回调是 `onAuthorizeUrl?`，把某个渠道开始流程后得到的授权地址报给宿主，由宿主决定它是一次跳转、一个弹窗还是一个新标签。`SocialCallbackHandler` 在回调路由上读回流程，登录落地（会话已由服务端建于回跳应答）后触发一次 `onSignedIn`。它的可选属性 `absent` 是本部署不提供回调落点时宿主要渲染的内容；只在宿主给了 `absent` 时，处理器才读发现文档，规则见[本部署不提供回调落点时](#本部署不提供回调落点时)。
+`SocialSignInSection` 的回调是 `onAuthorizeUrl?`，把某个渠道开始流程后得到的授权地址报给宿主，由宿主决定它是一次跳转、一个弹窗还是一个新标签。`SocialCallbackHandler` 在回调路由上读回流程，登录落地（会话已由服务端建于回跳应答）后触发一次 `onSignedIn`。它的可选属性 `absent` 是本部署不提供回调落点时宿主要渲染的内容；只在宿主给了 `absent` 时，处理器才读发现文档，规则见[本部署不提供回调落点时](#本部署不提供回调落点时)。它的可选属性 `onSignIn` 是用户名一步的流程已失时那个终态说明的动作：回调路由不知道开启这条流程的方法与提供方，无法自行起一条新流程，因此由宿主导航回能起手的那一面；该动作之前不发请求，省略时该状态保留原来读回流程的重试。
 
 ### 会话契约的每一片都由一个组件驱动
 

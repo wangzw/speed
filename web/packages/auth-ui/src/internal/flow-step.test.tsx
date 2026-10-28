@@ -95,6 +95,65 @@ describe('FlowStepFields challenge fields', () => {
   })
 })
 
+describe('FlowStepFields username step', () => {
+  const fields: AuthnField[] = [{ name: 'username', kind: 'text', required: true }]
+
+  function renderSignup(failure: string | null = null) {
+    return renderWithProviders(
+      <FlowStepFields
+        step={challengeStep(fields)}
+        busy={false}
+        onAnswer={vi.fn()}
+        onUnsupported={vi.fn()}
+        failure={failure}
+      />,
+    )
+  }
+
+  it('renders a titled step with its explanation, rule help and submit', () => {
+    renderSignup()
+
+    expect(
+      screen.getByRole('heading', {
+        level: 2,
+        name: zhCN.signInFlow.signupTitle,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.signInFlow.signupDescription),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByLabelText(zhCN.signInFlow.usernameLabel),
+    ).toHaveAccessibleDescription(zhCN.signInFlow.usernameHelper)
+    expect(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    ).toBeInTheDocument()
+  })
+
+  it.each([
+    ['authn.username_taken', zhCN.signInFlow.usernameTaken],
+    ['authn.username_reserved', zhCN.signInFlow.usernameReserved],
+    ['authn.bad_request', zhCN.signInFlow.usernameInvalid],
+  ])('renders %s under the username field', (code, text) => {
+    renderSignup(code)
+
+    const field = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    expect(field).toHaveAccessibleDescription(text)
+    expect(field).toHaveFocus()
+    // The refusal is the field's, never the whole-attempt banner.
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('leaves the field without an error for any other code', () => {
+    renderSignup('authn.throttled')
+
+    const field = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
+    expect(field).not.toHaveAttribute('aria-invalid', 'true')
+    expect(field).toHaveAccessibleDescription(zhCN.signInFlow.usernameHelper)
+  })
+})
+
 describe('FlowStepFields labels', () => {
   it('translates known factor kinds and shows an unknown kind as given', () => {
     render({

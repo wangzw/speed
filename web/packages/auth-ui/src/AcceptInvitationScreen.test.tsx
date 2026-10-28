@@ -300,39 +300,18 @@ describe('AcceptInvitationScreen', () => {
     ).toBeEnabled()
   })
 
-  it('names a taken username when the acceptance is refused with it', async () => {
-    const acceptInvitation = vi.fn(() =>
-      Promise.reject({ status: 409, code: 'authn.username_taken' }),
-    )
-    const user = userEvent.setup()
-    renderWithProviders(
-      <AcceptInvitationScreen
-        token="tok-1"
-        invitations={operations({ acceptInvitation })}
-      />,
-    )
-    await user.type(
-      await screen.findByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
-      'ada',
-    )
-    await user.click(
-      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
-    )
-    expect(
-      await screen.findByText(zhCN.errors.authn.username_taken),
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByText(zhCN.errors.unknown),
-    ).not.toBeInTheDocument()
-  })
-
-  it('states an unusable username in its field rather than the banner', async () => {
-    // The acceptance opens the account with the login name, so the server's
-    // 400 for one (a shape it cannot normalize, or a reserved name) is a
-    // refusal the field can carry.
-    for (const code of ['authn.bad_request', 'authn.username_reserved']) {
+  it.each([
+    ['authn.username_taken', 409, zhCN.acceptInvitation.usernameTaken],
+    ['authn.username_reserved', 400, zhCN.acceptInvitation.usernameReserved],
+    ['authn.bad_request', 400, zhCN.acceptInvitation.usernameInvalid],
+  ])(
+    'states %s on the username field rather than the banner',
+    async (code, status, text) => {
+      // The acceptance opens the account with the login name, so a refusal
+      // of that name is the field's: taken, reserved, or a shape it cannot
+      // normalize.
       const acceptInvitation = vi.fn(() =>
-        Promise.reject({ status: 400, code }),
+        Promise.reject({ status, code }),
       )
       const user = userEvent.setup()
       const { unmount } = renderWithProviders(
@@ -349,18 +328,15 @@ describe('AcceptInvitationScreen', () => {
       await user.click(
         screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
       )
-      expect(
-        await screen.findByText(zhCN.acceptInvitation.usernameUnusable),
-      ).toBeInTheDocument()
+      expect(await screen.findByText(text)).toBeInTheDocument()
+      expect(username).toHaveAttribute('aria-invalid', 'true')
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       // Editing the name clears the message for the next attempt.
       await user.type(username, '2')
-      expect(
-        screen.queryByText(zhCN.acceptInvitation.usernameUnusable),
-      ).not.toBeInTheDocument()
+      expect(screen.queryByText(text)).not.toBeInTheDocument()
       unmount()
-    }
-  })
+    },
+  )
 
   it('renders the not-found text for a bare 404 read answer', async () => {
     renderWithProviders(

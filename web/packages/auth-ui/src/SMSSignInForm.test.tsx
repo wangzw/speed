@@ -196,6 +196,109 @@ describe('SMSSignInForm', () => {
     expect(harness.store.get()).toBe('access-1')
   })
 
+  it('renders a username refusal under the field of the parked single-field step', async () => {
+    // An unregistered number parks the flow at signup: the shared renderer
+    // shows the username step, and its refusal is the field's, not the
+    // channel's banner.
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+      [LOGIN_ANSWER]: (call) => {
+        if ((call.options?.body as { seq?: number }).seq === 1) {
+          return openFlow({
+            seq: 2,
+            state: 'signup',
+            next: {
+              kind: 'challenge',
+              fields: [{ name: 'username', kind: 'text', required: true }],
+            },
+          })
+        }
+        throw apiError(409, 'authn.username_taken')
+      },
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    await sendCode()
+    const user = userEvent.setup()
+    const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+    await user.type(code, '123456')
+    await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
+    // The code answer parks the username step.
+    const username = await screen.findByLabelText(zhCN.signInFlow.usernameLabel)
+    await user.type(username, 'ada')
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+
+    await waitFor(() =>
+      expect(username).toHaveAccessibleDescription(
+        zhCN.signInFlow.usernameTaken,
+      ),
+    )
+    expect(username).toHaveAttribute('aria-invalid', 'true')
+    expect(username).toHaveFocus()
+    expect(username).toHaveValue('ada')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('replaces a username step whose flow is gone with a restart that starts a new flow', async () => {
+    // The flow is gone, so the answer cannot be retried on it: the notice's
+    // action returns to the channel's first step and issues a new start
+    // request for the number the dead flow was for.
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+      [LOGIN_ANSWER]: (call) => {
+        const step = (call.options?.body as { step?: string }).step
+        if (step === 'complete') {
+          return authenticatedCompletion()
+        }
+        if (
+          (call.options?.body as { seq?: number }).seq === 1
+        ) {
+          return openFlow({
+            seq: 2,
+            state: 'signup',
+            next: {
+              kind: 'challenge',
+              fields: [{ name: 'username', kind: 'text', required: true }],
+            },
+          })
+        }
+        throw apiError(401, 'authn.flow_invalid')
+      },
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    await sendCode()
+    const user = userEvent.setup()
+    const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+    await user.type(code, '123456')
+    await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
+    const username = await screen.findByLabelText(zhCN.signInFlow.usernameLabel)
+    await user.type(username, 'ada')
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+
+    expect(
+      await screen.findByText(zhCN.signInFlow.flowExpired),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(zhCN.signInFlow.usernameLabel),
+    ).toBeNull()
+
+    const answersBefore = harness.calls.filter(
+      (call) => call.path === '/api/v1/auth/flows/answer',
+    ).length
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.signInAgain }),
+    )
+    // The action is a new start request for the same number, and carries
+    // no answer to the dead flow.
+    await waitFor(() => expect(sends(harness)).toHaveLength(2))
+    expect(sends(harness)[1]?.options?.body).toMatchObject({
+      method: 'sms',
+      input: { phone: CN_E164 },
+    })
+    expect(
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows/answer'),
+    ).toHaveLength(answersBefore)
+  })
+
   it('disable the send button while the request is in flight', async () => {
     let resolveStart: (value: unknown) => void = () => {}
     const harness = makeHarness({

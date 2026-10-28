@@ -43,6 +43,12 @@
  * code is wrong or expired, enter it again or request a new one -- never
  * the family's generic sentence naming a password this surface has no
  * field for; a further step (a second factor) keeps the generic banner.
+ * The username step a first login parks at renders the shared renderer's
+ * titled surface, whose three name refusals are the field's rather than the
+ * channel's banner. When that step's flow turns out to be gone, the notice
+ * replaces the form and its one action returns to the channel's first step
+ * by requesting a fresh code for the same number -- a new start request,
+ * never the answer the dead flow refused.
  * Busy states: the send button
  * disables for the request's flight, the code step's submit while the
  * answer is in flight (RHF's isSubmitting). A further step the flow parks
@@ -104,8 +110,8 @@ import {
   ChannelFeedbackRegion,
   useChannelFeedback,
 } from './internal/write-feedback.js'
-import { FlowStepFields } from './internal/flow-step.js'
-import { useFlowErrorText } from './internal/inline-error.js'
+import { FlowStepFields, isUsernameRefusal } from './internal/flow-step.js'
+import { FlowExpired } from './internal/flow-expired.js'
 import { retryWaitMs } from './internal/retry-wait.js'
 import { stepKey, useStepFocus } from './internal/step-focus.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
@@ -143,6 +149,9 @@ export const SMS_NOTICE_ID = 'sms-sign-in-notice'
 
 /** The server's collapsed credential refusal (see the file header). */
 const LOGIN_FAILED = 'authn.login_failed'
+
+/** The flow is gone: expired, completed elsewhere or bound elsewhere. */
+const FLOW_INVALID = 'authn.flow_invalid'
 
 /** The SMS method's first code prompt: state `first` with a challenge. */
 function isCodePrompt(step: OpenFlowState): boolean {
@@ -218,6 +227,13 @@ export function SMSSignInForm({
   // none, and this memory survives it -- the old code is no less spent),
   // at which point a re-submission of this string is refused locally.
   const [spentCode, setSpentCode] = useState<string | null>(null)
+  // The username step's flow turned out to be gone: the step has no answer
+  // to retry, so the terminal notice takes its place until a new flow
+  // starts.
+  const [signupExpired, setSignupExpired] = useState(false)
+  // Whether the answer in flight was the username step's, which is what a
+  // flow-invalid refusal ends.
+  const answeredSignupRef = useRef(false)
   // The code of the submit in flight: a superseded answer names the code
   // it spent through this ref, which the driver's onSuperseded reads.
   const lastCodeRef = useRef<string | null>(null)
@@ -255,6 +271,14 @@ export function SMSSignInForm({
   const driver = useFlowDriver(session, {
     beforeStart,
     onFailure: (code, error) => {
+      if (code === FLOW_INVALID && answeredSignupRef.current) {
+        // The username step's flow is gone, so its notice replaces the
+        // form: a banner would offer only the same dead answer again.
+        setSignupExpired(true)
+        setLocalNotice(null)
+        feedback.reset()
+        return
+      }
       if (code === LOGIN_FAILED && answeringCodeRef.current) {
         // The code step's own refusal: this surface's copy names no
         // password it has no field for. It shares the scope's one failure
@@ -357,6 +381,7 @@ export function SMSSignInForm({
     }
     resetScope()
     answeringCodeRef.current = false
+    answeredSignupRef.current = false
     // A request does not yet open a new code session: whether one opens is
     // the server's answer -- the used-code notice clears for the attempt,
     // but the spent-code memory is released only once a fresh code was
@@ -435,6 +460,7 @@ export function SMSSignInForm({
     }
     lastCodeRef.current = values.code
     answeringCodeRef.current = true
+    answeredSignupRef.current = false
     // The code answer verifies rather than sends, so the proof rides along
     // only for a step that may ask for a phone next; the server ignores it
     // otherwise, and the proof stays unspent.
@@ -457,6 +483,7 @@ export function SMSSignInForm({
     // banner goes before the reply lands.
     resetScope()
     answeringCodeRef.current = false
+    answeredSignupRef.current = current !== null && current.state === 'signup'
     await driver.answer(input, presented ?? undefined)
     if (sends && presented !== null) {
       human.consume()
@@ -465,12 +492,25 @@ export function SMSSignInForm({
 
   const editPhone = (): void => {
     resetScope()
+    setSignupExpired(false)
     // Leaving the code step clears its attempt state: the code-entry
     // surface unmounts with it, and re-entering requires a code request
     // the server accepts.
     setSpentCode(null)
     sentToRef.current = ''
     driver.reset()
+  }
+
+  /** The flow-gone notice's action: return to the channel's first step and
+   * start a new flow. The number the dead flow was for is known, so a fresh
+   * code request to it is that new start; without one, the phone step is. */
+  const restartSignIn = (): void => {
+    const phone = sentToRef.current
+    editPhone()
+    if (phone === '') {
+      return
+    }
+    void requestCode(phone)
   }
 
   const onCodeStep =
@@ -486,9 +526,20 @@ export function SMSSignInForm({
       ? 'sms-phone'
       : stepKey(driver.step)
   const surfaceRef = useStepFocus(surfaceKey)
-  // A parked username step words its two refusals for that step; the
-  // form's own steps and every other code keep the namespace's text.
-  const flowErrorText = useFlowErrorText(driver.step)
+  // The username step's three refusals are the step's own: they render
+  // under its field and never as the channel's failure banner. Every other
+  // code, and every other step, keeps the banner.
+  const parkedFailure =
+    feedback.outcome !== null && feedback.outcome.kind === 'failure'
+      ? feedback.outcome.code
+      : null
+  const usernameRefusal =
+    driver.step !== null &&
+    driver.step.state === 'signup' &&
+    parkedFailure !== null &&
+    isUsernameRefusal(parkedFailure)
+      ? parkedFailure
+      : null
 
   // The deployment's human-verification block, above whichever send
   // control the current step shows. It renders nothing when no proof is
@@ -503,6 +554,17 @@ export function SMSSignInForm({
       disabled={driver.busy}
     />
   )
+
+  // The username step's flow is gone: the notice replaces the form until a
+  // new flow starts. The action issues that new start (a fresh code to the
+  // number the dead flow was for), never the answer the dead flow refused.
+  if (signupExpired) {
+    return (
+      <Box ref={surfaceRef} sx={{ display: 'contents' }}>
+        <FlowExpired onRestart={restartSignIn} />
+      </Box>
+    )
+  }
 
   // A further step the flow parked after the code (a required second
   // factor) is the shared step renderer's, not this form's two-step
@@ -520,8 +582,11 @@ export function SMSSignInForm({
           onClientFailure={(key) =>
             key === null ? feedback.clearLocal() : feedback.failLocal(key)
           }
+          failure={usernameRefusal}
         />
-        <ChannelFeedbackRegion feedback={feedback} resolve={flowErrorText} />
+        {usernameRefusal === null ? (
+          <ChannelFeedbackRegion feedback={feedback} />
+        ) : null}
       </Box>
     )
   }
