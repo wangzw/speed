@@ -702,7 +702,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 ```
 
-- **落地页。** 目的为 `login` 的落到设置 `authn.login.callback-error-return-to`，缺省 `/`；目的为 `link`、`step-up`、`enroll` 的落到该流程记录里的 `return_to`，即发起它的那个页面。两个来源都按 `return_to` 的同一规则校验。
+- **落地页。** 目的为 `login` 的落到设置 `authn.login.callback-error-return-to`，缺省 `/`；目的为 `link`、`step-up`、`enroll` 的落到该流程记录里的 `return_to`，即发起它的那个页面。两个来源都按 `return_to` 的同一规则校验。**发起面负责读片段**：本仓库的界面发起重定向类流程时一律带 `return_to` 指向发起的那一面（提权对话框、登记向导与绑定添加区都是如此），该面把问题码交给自己的错误呈现；落地面不读片段时，宿主的外壳在落地时读一次片段并以一次性提示呈现，不让拒绝静默消失（[starters](../design-starters.md)）。
 - **码。** 取问题类型 `urn:speed:authn:<码>` 中 `<码>` 一段，是已有的封闭词汇（`login-failed`、`link-required`、`account-unavailable`、`conflict`、`throttled`、`unavailable` 等）；不带码的 500 落成 `unavailable`。
 - **地址（仅 `link-required`）。** `link-required` 的落地在片段里多带 `authn_email`，值是冲突地址的掩码：本地部分的首个字符、`***`，再按原样接 `@` 与域名（`ann@home.org` 落成 `a***@home.org`）。只有这一种拒绝带它；其他码的落地不带这个键，`link-required` 没有可命名的地址时也不带。地址在服务端掩码，片段会写进浏览器历史并显示在页面上，只保留足以让调用方认出自己哪个地址冲突的位数。错误文本不带地址，因为错误会进日志。
 - **片段而非查询串。** 片段不随请求发往服务器，码与掩码地址都不进访问日志，也不进页面能发出的 `Referer`。

@@ -305,6 +305,7 @@ flowchart TD
 
 - **`/sign-in/callback`**：回调页给 auth-ui 的 `SocialCallbackHandler` 传 `absent`，取值是 `TenantFrame` 包住的 `NotFoundPage`。何时渲染它由回调处理器判定（[auth-ui](web/design-web-auth-ui.md)）：匿名者看到 `ProductShell` 的登录面或会话结束页，已认证者看到租户框架内的 404，都与一条不存在的路径相同。
 - **`/account/callback`**：只有已认证者能到达，渲染在租户框架里。账户绑定回调页先读 URL 片段里的 `authn_error`（与登录回跳同一格式，读后清掉片段），把问题码交给 account-ui `BindingCallbackHandler` 的 `initialError`，并给它的 `onDismiss` 传返回账户设置的导航；没有片段时才由处理器读回流程。`absent` 取值是 `NotFoundPage`（[account-ui](web/design-web-account-ui.md)）。账户页给 `SocialBindingsSection` 传 `returnTo`，取值是 `/account/callback`，绑定流程据此回到这条声明。
+- **回跳片段的兜底**：外壳在每次落地时读一次 URL 片段里的 `authn_error`，落地面（登录面、`/account/callback`、提权与登记对话框所在的页面）已经消费时它不再呈现；没有落地面消费时（例如 `authn.login.callback-error-return-to` 被配到 `/`，而落地者是已认证访客），外壳在租户框架里以一次性提示呈现该码的文案并清掉片段，拒绝因此不会静默消失。发起重定向类流程的界面同样把 `return_to` 指向自己（账户面与控制台的提权对话框、登记向导），使落点本来就是会读片段的那一面。
 
 ### 租户清单为空或读不到时
 
