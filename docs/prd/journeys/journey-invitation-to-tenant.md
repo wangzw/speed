@@ -40,7 +40,7 @@ flowchart TD
     valid -->|是| signed{已登录?}
     signed -->|否| login[先登录或注册] --> summary[看到租户名、被邀请地址与有效期]
     signed -->|是| summary
-    summary --> known{被邀请地址已是某账户的登录标识?}
+    summary --> known{被邀请地址已登记在某账户上?}
     known -->|是| joined([接受，成为该租户成员并回到租户区首页，当前租户不变])
     known -->|否| reserved{地址是某账户未证明的邮箱预留?}
     reserved -->|是| prove[证明该邮箱，把成员关系挂到原账户] --> joined

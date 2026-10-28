@@ -14,7 +14,7 @@
 
 不满足这条判据的事实按下面的判据归属；不发布的判据先于发现面的判据适用：
 
-- **不发布**：满足任一即是——只是参数（时长、上限、预算），违反时服务端逐次拒绝；结果经流程应答送达；发布会暴露租户、IdP 或账户维度。例：`authn.account.auto-link`、`authn.sms.allowed-prefixes`、IdP 清单。
+- **不发布**：满足任一即是——只是参数（时长、上限、预算），违反时服务端逐次拒绝；结果经流程应答送达；发布会暴露租户、IdP 或账户维度。例：`authn.mfa.global-required`、`authn.sms.allowed-prefixes`、IdP 清单。
 - **归拥有该事实的模块自己的发现面**：满足任一即是——不是布尔而是取值集合或渲染形状；登录前就要用；需要逐请求求值又不属于存在性。例：`GET /api/v1/auth/methods` 的 `methods`、`signup.enabled` 与 `mfa.factors`（[authn-login](authn/design-authn-login.md)）。
 
 **同一事实只有一个发布点。** 可登记的因素种类只在 `mfa.factors` 里；特性文档里只有 MFA 区块是否存在（`authn.mfa`），没有逐种类的特性名。

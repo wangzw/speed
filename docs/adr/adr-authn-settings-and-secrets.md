@@ -72,7 +72,7 @@ authn 的各模块在 `Requires` 里对设置写必需，所有退避、时长�
 
 **否决**：强制类开关的默认值是「不强制」，回落等于放行。读设置出错的方向因开关的性质而异，不能共用一条规则。放宽开关的声明默认值取严的一端，读不出来按该严格值取值，这是「出错方向由开关性质定」的一个用例，不是统一回落。
 
-### 放宽方向的默认值（`signup` 开放、`auto-link` 按已验证邮箱、`check-session` 关闭）
+### 放宽方向的默认值（`signup` 开放、`check-session` 关闭）
 
 缺省即宽松，要求严格的宿主自己收紧。
 
@@ -116,11 +116,11 @@ authn 的各模块在 `Requires` 里对设置写必需，所有退避、时长�
 **放宽开关是设置。**
 
 - 放宽开关是取值变化即放宽校验、且改动要在运行期生效的开关，新增的同类开关一并归入。当前的开关集合与各自的放宽值见 authn-config 的放宽开关一节。仅开发用的 `authn.gate.mount.allow-insecure` 与 `authn.sso.allow-private-egress` 在启动期决定基址校验、cookie 名称与出站客户端，改动要重启，按构造期的判据落在配置，不在这一条之内。
-- 每一项声明严格的缺省值：`authn.account.signup` 缺省 `closed`，`authn.account.auto-link` 缺省 `never`，`authn.token.check-session` 缺省 `true`。放宽值分别是 `open`、`verified-email`、`false`。
+- 每一项声明严格的缺省值：`authn.account.signup` 缺省 `closed`，`authn.token.check-session` 缺省 `true`。放宽值分别是 `open` 与 `false`。
 - 各模块在每次做出决定时读当前值，不把值冻结在构造期；设置缺席或读取出错时取声明默认值，即严格一侧，读取出错另记 Error。
 - 运行期改动到放宽方向时，声明该键的模块订阅 `settings.changed`，写一行 Warn 并记一条尽力档审计记录：Action `authn.settings.relaxed`，Object 是键名，Outcome `relaxed`，Detail `{"change": direction}`。记录与日志只含键名与方向，不含值。改动到严格方向不写。启动时取值已经是放宽值时，写同一行 Warn。
-- 配置不再承载这三项。旧配置里仍写着它们的宿主在启动时按未知键失败，错误点名该键，这是宿主可见的破坏性变更。
-- 声明只有一处：`authn.account.signup` 与 `authn.account.auto-link` 由 `pkg/authn/account` 声明，`authn.token.check-session` 由 `pkg/authn/token` 声明；登录引擎按路径读取 `authn.account.*`，不重复声明。
+- 配置不再承载这两项。旧配置里仍写着它们的宿主在启动时按未知键失败，错误点名该键，这是宿主可见的破坏性变更。
+- 声明只有一处：`authn.account.signup` 由 `pkg/authn/account` 声明，`authn.token.check-session` 由 `pkg/authn/token` 声明；登录引擎按路径读取 `authn.account.*`，不重复声明。
 - 决定守护面的清单（`authn.gate.endpoints`、`authn.gate.trusted-origins`、`tenant.admission.endpoints`）仍是配置：它们在装配期决定路由挂到哪个端、跨源检查信谁，数据库可用之前就要定下。
 
 **不单列的理由。** 旧划界把放宽开关单列为「只取主配置源」，理由是设置的写入面没有访问控制。这个理由对设置能力本身仍然成立：`pkg/settings` 不做授权判定，宿主自己的写入口（含 seed 这类命令）由宿主自己鉴权。改变结论的是框架可选的 `settings.admin` 管理面：宿主纳入它时，它把全局层写入定为平台域 `settings.write` 判定，并在每次写之前落一条强制档审计。缺的仍是按键的写控制，而这个缺口对已经放在设置里的退避、预算与前缀名单同样成立。把放宽开关留在配置补不上按键控制，只是把改动推到重启之后，使运行期改动没有 Warn 与审计。新的落位让放宽开关与其余安全项走同一条控制：经管理面写入时受平台域判定并留强制档审计，authn 在放宽方向另写 Warn 与 `authn.settings.relaxed`。残留风险是宿主自建的写入口不受这套控制：它绕开管理面时既不判定 `settings.write` 也不留强制档审计，authn 无法发现，只能事后从自己的 Warn 与 `authn.settings.relaxed` 看出放宽。

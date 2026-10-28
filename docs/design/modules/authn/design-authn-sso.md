@@ -17,7 +17,7 @@
 ### 非职责
 
 - **不运行登录流程。** 流程记录、状态机迁移、比较并交换、账户解析、会话与令牌的发放归登录引擎（[design-authn-login](design-authn-login.md)）；方法只回答「这次回跳证明了什么」，交出 `Proof`。
-- **不决定账户。** 外部身份的绑定键、自动关联、首登开户、预置账户匹配与 JIT 并入的判据归 `authn.account`（[design-authn-account](design-authn-account.md)）。本模块只提供其输入：提供方的 `provisioning`、`merge_existing`、所属租户与邮箱域的验证状态。用户名不由提供方断言提供、不经属性映射写入，它在建户前由登录引擎向用户取得（[design-authn-login](design-authn-login.md)、[ADR-authn-username-required](../../../adr/adr-authn-username-required.md)）。
+- **不决定账户。** 外部身份的绑定键、首登开户、预置账户匹配与需先绑定的判定归 `authn.account`（[design-authn-account](design-authn-account.md)）。本模块只提供其输入：提供方的 `provisioning`、`merge_existing`、所属租户、声明地址的验证状态与邮箱域的验证状态。用户名不由提供方断言提供、不经属性映射写入，它在建户前由登录引擎向用户取得（[design-authn-login](design-authn-login.md)、[ADR-authn-username-required](../../../adr/adr-authn-username-required.md)）。
 - **不合成保障等级。** 方法只报 `Proof.IDPAsserted` 这一事实，是否采信、等级是多少只在 `authn.mfa` 一处合成（[design-authn-mfa](design-authn-mfa.md)）。
 - **不执行租户级强制 SSO。** `tenant.admission.require-sso` 在请求期由租户准入层执行（[design-tenant-admission](../tenant/design-tenant-admission.md)）；本模块只回答「这个提供方属于哪个租户」。
 - **不写管理面路由，不做判定。** 提供方、域与元数据刷新的 HTTP 路由、`Decider` 的判定与强制审计归 `authn.admin`（[design-authn-admin](design-authn-admin.md)）。
@@ -58,7 +58,7 @@ type SSOProvider struct {
 	TrustIDPMFA       bool
 	AllowIDPInitiated bool
 	AllowSHA1         bool
-	MergeExisting     bool   // JIT 是否可并入现有账户；缺省假
+	MergeExisting     bool   // 字段存在；取值不打开并入，JIT 从不并入现有账户
 	Config            json.RawMessage // 读出时不含密钥
 	Version           int
 }
@@ -296,7 +296,7 @@ CREATE TABLE authn_idps (
     status              SMALLINT    NOT NULL DEFAULT 0 CHECK (status IN (0, 1)),   -- 0 停用（零值）
     provisioning        TEXT        NOT NULL CHECK (provisioning IN ('jit', 'preprovisioned')),   -- 无默认值
     trust_idp_mfa       BOOLEAN     NOT NULL DEFAULT FALSE,
-    merge_existing      BOOLEAN     NOT NULL DEFAULT FALSE, -- JIT 是否可并入现有账户；开启即接受跨租户并入的风险
+    merge_existing      BOOLEAN     NOT NULL DEFAULT FALSE, -- 列存在；取值不打开并入，JIT 从不并入现有账户
     allow_idp_initiated BOOLEAN     NOT NULL DEFAULT FALSE,
     allow_sha1          BOOLEAN     NOT NULL DEFAULT FALSE, -- 个别遗留 IdP 要求 SHA-1；开启即接受降级
     config              TEXT        NOT NULL CHECK (length(config) <= 65536),   -- JSON，写入时校验，未知键拒绝
@@ -342,7 +342,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 | 协议 | 键 | 含义与校验 |
 |---|---|---|
 | oidc | `issuer`、`client_id`、`scopes`、`algs` | `issuer` 必须是具体的 `https` issuer，与发现文档的 `issuer` 逐字相等（含末尾斜杠，go-oidc 的要求），拒绝 `common`、`organizations` 这类聚合地址，所以不用库注释自称不安全的 `InsecureIssuerURLContext`；`scopes` 缺省 `["openid","email","profile"]`，`openid` 是取回 ID 令牌所必需；`algs` 缺省 `["RS256","ES256"]`，不得含 `none` 与 `HS*` |
-| oidc、saml | `claims` | 声明名到目标的映射，目标只许 `email`、`display_name`、`subject`（缺省 OIDC 取 `sub`、SAML 取 `NameID`）与至多 8 个 `attr.<名>`（写入属性集时加 `idp.` 前缀）。只有 `subject` 有缺省；`email` 与 `display_name` 没有缺省，未映射即留空——`jit` 开户缺 `email` 映射按首登失败处理。取值只从字符串声明填充，非字符串（数组、数字）的声明值被丢弃。映射到 `subject` 的声明必须是该提供方给出的稳定标识；取值于标准邮箱声明名（`email`）的映射不得指向 `subject`，校验按 `ErrInvalidConfig` 拒绝——邮箱会变，作主体会让提供方侧换邮箱后的登录找不到原绑定。其他声明名是否承载会变的资料，校验看不到，由配置书写者保证 |
+| oidc、saml | `claims` | 声明名到目标的映射，目标只许 `email`、`display_name`、`subject`（缺省 OIDC 取 `sub`、SAML 取 `NameID`）与至多 8 个 `attr.<名>`（写入属性集时加 `idp.` 前缀）。只有 `subject` 有缺省；`email` 与 `display_name` 没有缺省，未映射即留空——`jit` 开户不要求 `email` 映射，缺它只是没有可匹配的现有账户。取值只从字符串声明填充，非字符串（数组、数字）的声明值被丢弃。映射到 `subject` 的声明必须是该提供方给出的稳定标识；取值于标准邮箱声明名（`email`）的映射不得指向 `subject`，校验按 `ErrInvalidConfig` 拒绝——邮箱会变，作主体会让提供方侧换邮箱后的登录找不到原绑定。其他声明名是否承载会变的资料，校验看不到，由配置书写者保证 |
 | oidc、saml | `mfa_acr_values` | `trust_idp_mfa` 为真时，哪些 `acr` 或 `AuthnContextClassRef` 取值算多因素；空表即不信任任何取值 |
 | saml | `idp_entity_id`、`idp_sso_url`、`idp_certs` | 以下键必填：`idp_entity_id` 为空时库跳过颁发者校验；`idp_sso_url` 为 https 且无用户信息；`idp_certs` 是 IdP 签名证书的 PEM 列表，1 到 4 个，任一可验签（证书轮换时当前与下一张并存），证书是公钥，不加密 |
 | saml | `metadata_url`、`name_id_format`、`subject_attribute`、`sign_requests` | `metadata_url` 可空，只在刷新时取一次；`name_id_format` 缺省 `persistent`，`transient` 一律拒绝（没有稳定标识），`emailAddress` 格式不稳定、须配置 `subject_attribute` 改取别的属性；`subject_attribute` 不得指向被映射为 `email` 的属性，校验拒绝；该属性本身是否承载会变的资料，校验看不到，由配置书写者保证；`sign_requests` 为真时必须配了 SP 密钥 |
@@ -352,10 +352,10 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 ### 属性映射的使用规则
 
 - `subject` 是绑定键的主体，绑定键永远是（提供方，主体）：`oidc:<提供方标识>` 或 `saml:<提供方标识>` 加主体，不用邮箱。
-- `email` 只在首登开户或匹配预置账户时使用，之后不更新账户；映射缺邮箱不是错误，只是没有关联线索。
+- `email` 只在匹配预置账户与判断社交登录、企业即时开通是否需先绑定时读取，不写入账户：新开立的账户不带提供方声明的地址（REQ-signup-048；[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)）。映射缺邮箱不是错误，只是没有可匹配的线索，开户照常进行。
 - `display_name` 只在首登开户时写入。
 - `attr.<名>` 经根包的界限校验后写进该次登录会话的载荷，键加 `idp.` 前缀，值在 UTF-8 字符边界截断到 128 字节（分项上限，见 [design-authn-gate](design-authn-gate.md#出口检查)）；随该会话终结，不写入账户。
-- `provisioning` 为 `jit` 时，开户所需的映射缺失（开户必需 `email`）按首登失败处理，返回 `ErrNotProvisioned`，不使用空值开户。用户名不是提供方断言的事实、不在属性映射里，`ErrNotProvisioned` 的判据仍只看邮箱映射；用户名在邮箱齐备之后、建户之前由登录引擎向用户取得，没有合法用户名同样不建户。
+- `provisioning` 为 `jit` 时，开户只取提供方的显示名与（提供方，主体）绑定，不要求 `email` 映射：没有声明地址只是没有可匹配的现有账户，开户照常进行。`ErrNotProvisioned` 只用于 `preprovisioned` 的提供方匹配不到预置账户。用户名不是提供方断言的事实、不在属性映射里，它在建户之前由登录引擎向用户取得，没有合法用户名不建户（REQ-signup-047）。
 
 ### 进程内缓存
 
@@ -376,7 +376,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 2. 写入，`version` 创建时为 1、更新时加一；`secret` 为 `nil` 时不动 `client_secret`。
 3. 提交之后发布 `authn.idp.changed`，使各副本的协议模块丢弃缓存；`change` 取：新建为 `created`，启用态 0→1 为 `enabled`、1→0 为 `disabled`，其余更新为 `updated`（值集是封闭集，见 [design-authn-events](design-authn-events.md)）；发布失败只记 `Warn`，从不令写入失败（事件是提示，不是权威）。
 
-`allow_idp_initiated`、`allow_sha1` 或 `merge_existing` 为真的行，`Put` 写 `Warn`，启动诊断也各写一行 `Warn`；管理面应答里的警告归 [design-authn-admin](design-authn-admin.md)。
+`allow_idp_initiated` 或 `allow_sha1` 为真的行，`Put` 写 `Warn`，启动诊断也各写一行 `Warn`；管理面应答里的警告归 [design-authn-admin](design-authn-admin.md)。
 
 ### 域所有权与发现
 
@@ -454,7 +454,7 @@ NameID 里夹带 XML 注释会被截断是一类已知的 SAML 攻击，gosaml2 
 - `Proof` 的 `External.Provider` 为 `oidc:<提供方标识>`，`Methods` 为 `MethodOIDC`。
 - 所有出站调用经 `oidc.ClientContext(ctx, client)` 注入受限客户端，`oidc.NewProvider` 的 `ctx` 也要带它：go-oidc 未注入时用无超时的 `http.DefaultClient`，未经注入的出站调用本身是缺陷。
 - 指标 `authn.sso.assertions` 的 `outcome` 按自做判定归类：`iss` 不符记 `issuer`；验签、`aud`、`exp` 的拒绝因库把这些错误压成同一个字符串，改按 ID 令牌自身未验证的声明归类（只决定指标标签，不决定放行）；`nonce`、`state`、`sub`、`code` 的问题记 `other`；多受众而 `azp` 不符记 `audience`。用户在提供方处取消（回跳带 `error`）既不是断言也不是不可用，不记 `outcome`。
-- 方法持有 `Accounts` 以满足装配契约，但不从它读任何东西：账户解析（开户、关联、并入）是登录引擎的活（[design-authn-account](design-authn-account.md)）。
+- 方法持有 `Accounts` 以满足装配契约，但不从它读任何东西：账户解析（开户与关联）是登录引擎的活（[design-authn-account](design-authn-account.md)）。
 
 Google 与企业 OIDC 走同一条代码路径，差别只在配置来源：Google 来自配置，是启动必须项；企业 IdP 来自表。
 
@@ -521,7 +521,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 | `ErrDomainClaimed` | `ClaimDomain`、`VerifyDomain` | 该域已被另一个提供方验证过 | 409 |
 | `ErrAssertionReplay` | SAML 断言消费 | 断言标识已见过 | 登录失败，统一 `login-failed`；记 `Warn` 与指标 |
 | `ErrProviderNotFound` | `Get`、`Secret`、`Tenant`、`Put`（更新路径）、`Delete`、`ClaimDomain` | 点名的提供方行不存在 | 管理面裸 404（不带问题码） |
-| `ErrNotProvisioned` | 引擎的账户解析，取自本模块交出的提供方与映射 | `preprovisioned` 的提供方没有预置账户；`jit` 开户所需的映射缺失 | 401 `login-failed`，成因进日志 |
+| `ErrNotProvisioned` | 引擎的账户解析，取自本模块交出的提供方 | `preprovisioned` 的提供方没有预置账户 | 401 `login-failed`，成因进日志 |
 | `ErrDomainMismatch` | 引擎的账户解析 | 断言邮箱的域不属于该提供方所属租户的已验证域 | 401 `login-failed`，成因进日志 |
 | `ErrUnavailable` | 构造提供方、发现与 JWKS 取回、元数据刷新、db | IdP 不可用，或 db 不可用 | 503；对外不区分是哪个依赖 |
 | `ErrNoEncryptionKey` | `Start` | `db` 没有根密钥 | 启动失败 |
@@ -535,7 +535,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 - **IdP 不可用时只拒这一个提供方。** OIDC 的发现、JWKS 或令牌端点不可达，其他提供方不受影响。回跳阶段不可达，该提供方的登录答 503，流程作废，用户重新开始（授权码已用，见 [design-authn-login](design-authn-login.md) 的迁移表）；开始阶段（`Begin` 的发现失败）答 503，流程仍处 `first`。
 - **元数据刷新失败时保留旧配置。** 解析或校验失败保留旧的 `idp_certs`、`idp_sso_url`、`idp_entity_id`，记 `Warn`，返回错误。这是有界的放宽：被 IdP 撤销的旧证书继续被接受，直到管理员更新；放宽的上界是「管理员触发刷新或手工更新」，不自动刷新。
 - **证书轮换没有跟上时拒绝。** IdP 换了证书而管理员没有更新，该提供方的登录全部失败。
-- **缺省拒绝。** IdP 发起登录缺省关；`provisioning` 无默认值；`merge_existing` 缺省假，JIT 缺省只新建；未验证的域不参与发现；邮箱域不匹配时不并入账户；SHA-1 签名缺省拒绝；`transient` 的 `NameID` 一律拒绝。
+- **缺省拒绝。** IdP 发起登录缺省关；`provisioning` 无默认值；JIT 从不并入现有账户；未验证的域不参与发现；声明地址的域不属于该提供方所属租户时拒绝；SHA-1 签名缺省拒绝；`transient` 的 `NameID` 一律拒绝。
 - **出站拒绝非公网地址。** 受限出站客户端拒绝的连接（目的地不是公网地址、方案不是 `https`、响应体超出上限，各有一个哨兵，见 [design-authn-failure](design-authn-failure.md)）按 IdP 不可用处理：该提供方的登录答 503，成因只进日志。
 
 ### 幂等
@@ -548,7 +548,6 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 
 - **IdP 一侧停用不立即生效。** 员工在 IdP 被停用后，其会话要到空闲或绝对期限才失效；`sso-absolute-timeout` 给出上限，只是缓解，不是消除。
 - **IdP 发起登录无法防登录 CSRF。** 开启后攻击者可把自己的断言投给受害者的浏览器；缓解只有断言新鲜度、标识唯一、受众与接收者精确、已签名。
-- **JIT 缺省不并入现有账户。** 已有账户的员工第一次企业 SSO 登录得到 `link-required`，要先用原方式登录再关联。`merge_existing` 开启即接受跨租户并入的风险：并入后该 IdP 对该账户有永久的登录能力，直到绑定被解除。
 - **租户的 IdP 管理员对自己租户新建的账户有登录控制权。** 这是企业 SSO 的信任边界；IdP 声明的多因素只在该提供方所属租户内算数。
 - **域所有权转手后有窗口。** 旧认领继续有效，直到管理者移除或重验失败；DNS TXT 验证不要求 DNSSEC，解析器被投毒时验证可被骗过。
 - **配置的解析器与额外信任根把校验交给部署。** `authn.sso.dns-resolver` 让域所有权证明采信该解析器的 TXT 答案，`authn.sso.oidc-ca-file` 让企业 OIDC 出站客户端采信文件里的根证书；恶意解析器或自签根证书等价于部署自己击败了它的校验，信任属于部署，不属于平台。两者的缺省都是系统解析器与系统根证书，所以两项都不配置的部署行为不变（[ADR-authn-sso-trust-root](../../../adr/adr-authn-sso-trust-root.md)）。

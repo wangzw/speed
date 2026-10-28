@@ -156,7 +156,7 @@ authn 树内取用 `Sessions` 的模块如下（宿主自写的取用者不在�
 
 | 取用方 | 用到的方法 |
 |---|---|
-| `authn.login` | `Create`（`browser` 种，`delivery=token` 时建 `token` 种）、`Current`、`Revoke`（登录完成时撤销旧会话）、`StatusFresh`、`Elevate`、`Rotate`、`SetCookie`、`RevokeAccount`（改口令、关联与解绑外部身份、启用因素、改手机之后） |
+| `authn.login` | `Create`（`browser` 种，`delivery=token` 时建 `token` 种）、`Current`、`Revoke`（登录完成时撤销旧会话）、`StatusFresh`、`Elevate`、`Rotate`、`SetCookie`、`RevokeAccount`（改口令、关联与解绑外部身份、启用因素、改手机、把标识选作登录方式之后） |
 | `authn.token` | `Status`、`StatusFresh`、`ForCredential`、`Revoke` |
 | `authn.mfa` | `RevokeAccount`（删除已启用因素之后，由用户面路由发起；重置因素之后）、`Rotate` 与 `SetCookie`（同一路由在撤销之后轮换发起会话并写回） |
 | `authn.impersonation` | `SetImpersonation`、`SetCookie`、`Status` |
@@ -492,7 +492,7 @@ stateDiagram-v2
 
 ### 轮换、撤销、列出与踢下线
 
-**轮换点**是下列动作（封闭集合）：登录完成；加强认证完成；改口令；删除因素；改手机或邮箱；解绑外部身份；添加登录标识；冒充的开始。登记因素与关联外部身份会撤销该账户的其余会话，但不轮换当前令牌 —— 它们收窄的是其他设备的会话，发起设备继续用原令牌。冒充的结束不是轮换点，只清除会话行上的标识（决策见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)）。轮换指旧令牌脱钩、新令牌写入，对会话行的条件更新，行已被撤销则整件事失败。调用方在动作成功之后调用 `Rotate`（改口令、删除因素、改手机、解绑外部身份、添加登录标识）、`Elevate`（加强认证）或 `SetImpersonation`（冒充开始；结束只清标识，不换令牌也不写 cookie），再调用 `SetCookie`。改口令、删除已启用因素、改手机、添加登录标识、解绑外部身份成功之后，各自的处理器（删除因素是它的用户面 DELETE 路由）另调 `RevokeAccount(except = 当前会话)`；登记因素与关联外部身份完成之后也调它，只是不轮换当前令牌。`MFA.Remove` 自己不撤销，也就不依赖会话模块。`Rotate` 换当前会话的令牌，`RevokeAccount` 撤销其余会话，二者是两个动作。`Passwords.Set` 不替调用方撤销，使 `Passwords` 不依赖会话模块。
+**轮换点**是下列动作（封闭集合）：登录完成；加强认证完成；改口令；删除因素；改手机或邮箱；解绑外部身份；添加标识；把一条已证明的邮箱或手机选作登录方式（REQ-account-013、REQ-security-029）；冒充的开始。登记因素与关联外部身份会撤销该账户的其余会话，但不轮换当前令牌 —— 它们收窄的是其他设备的会话，发起设备继续用原令牌。冒充的结束不是轮换点，只清除会话行上的标识（决策见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)）。轮换指旧令牌脱钩、新令牌写入，对会话行的条件更新，行已被撤销则整件事失败。调用方在动作成功之后调用 `Rotate`（改口令、删除因素、改手机、解绑外部身份、添加标识、`PUT B/identifiers/:id` 把一条已证明的邮箱或手机的 `sign_in` 置真）、`Elevate`（加强认证）或 `SetImpersonation`（冒充开始；结束只清标识，不换令牌也不写 cookie），再调用 `SetCookie`。改口令、删除已启用因素、改手机、添加标识、把一条已证明的邮箱或手机选作登录方式、解绑外部身份成功之后，各自的处理器（删除因素是它的用户面 DELETE 路由）另调 `RevokeAccount(except = 当前会话)`；登记因素与关联外部身份完成之后也调它，只是不轮换当前令牌。`MFA.Remove` 自己不撤销，也就不依赖会话模块。`Rotate` 换当前会话的令牌，`RevokeAccount` 撤销其余会话，二者是两个动作。`Passwords.Set` 不替调用方撤销，使 `Passwords` 不依赖会话模块。添加并证明一条邮箱或手机不使它成为登录方式：证明只回答所有权，是否选作登录方式由持有人另经 `PUT B/identifiers/:id` 选择；用户名标识恒为登录名（[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)）。
 
 登录完成时，请求若带着可解析的旧会话 cookie（经 `Sessions.Current`），旧会话被撤销，不让它继续并存。这不是会话固定的防线：防线是登录总是新建会话与新令牌，加上令牌只由服务端生成。SAML 的跨站 POST 不带 `SameSite=Lax` 的 cookie，旧会话无从撤销。
 
@@ -501,7 +501,7 @@ stateDiagram-v2
 | 入口 | 做法 |
 |---|---|
 | 登出 | `POST B/logout`：`Sessions.Revoke`，应答清除 cookie。 |
-| 凭据与绑定变更 | 改口令、删除已启用因素、改手机、添加登录标识、解绑外部身份成功之后，以及登记因素、关联外部身份完成之后，处理器调 `RevokeAccount(except = 当前会话)`（删除因素的处理器是它的 DELETE 路由）。 |
+| 凭据与绑定变更 | 改口令、删除已启用因素、改手机、添加标识、把一条已证明的邮箱或手机选作登录方式、解绑外部身份成功之后，以及登记因素、关联外部身份完成之后，处理器调 `RevokeAccount(except = 当前会话)`（删除因素的处理器是它的 DELETE 路由）。 |
 | 列出自己的会话 | `GET B/sessions`：只含活的 `browser` 与 `token` 种，带 `current` 标记。 |
 | 踢下线（自己的） | `DELETE B/sessions/:id` 只能撤销自己的；`DELETE B/sessions` 撤销除当前外的全部；冒充期间两者作用于被冒充账户的会话。 |
 | 踢下线（他人的）、批量撤销 | 由 `authn.admin` 的管理面路由调用 `Revoke`、`RevokeAccount`；判定与强制审计在 `authn.admin`。 |

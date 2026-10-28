@@ -30,7 +30,7 @@
 
 | 术语 | 英文 | 定义 |
 |---|---|---|
-| 放宽 | relaxation | 按权威状态（db 里的账户、会话、撤销、退避，以及已生效的配置与设置）本应拒绝的请求，因某个依赖答不出来，或某份缓存、设置、元数据尚未更新而被放行。满足这条判据的情形只出现在放宽清单里，清单之外的情形一律按拒绝。`authn.token.check-session` 设为假把会话有效性的核对推迟到令牌到期，与缓存滞后同形，所以并入清单；它本身是设置项，运行期改动由监视写 Warn 与审计。其余放宽开关是校验强度的显式选择：`authn.account.signup`、`authn.account.password-signup` 与 `authn.account.auto-link` 是设置项，运行期改动由监视写 Warn 与审计；仅开发用的配置项由启动诊断各占一行 Warn。它们都不进放宽清单（见 [design-authn-config](design-authn-config.md) 的放宽开关一节）。 |
+| 放宽 | relaxation | 按权威状态（db 里的账户、会话、撤销、退避，以及已生效的配置与设置）本应拒绝的请求，因某个依赖答不出来，或某份缓存、设置、元数据尚未更新而被放行。满足这条判据的情形只出现在放宽清单里，清单之外的情形一律按拒绝。`authn.token.check-session` 设为假把会话有效性的核对推迟到令牌到期，与缓存滞后同形，所以并入清单；它本身是设置项，运行期改动由监视写 Warn 与审计。其余放宽开关是校验强度的显式选择：`authn.account.signup` 与 `authn.account.password-signup` 是设置项，运行期改动由监视写 Warn 与审计；仅开发用的配置项由启动诊断各占一行 Warn。它们都不进放宽清单（见 [design-authn-config](design-authn-config.md) 的放宽开关一节）。 |
 | 没答 | unspoken | 校验后端交回零值判决：它既没有说通过，也没有说拒绝，也没有说答不了。零值是后端的缺陷，与「答了拒绝」是不同的事实。 |
 
 ## 外部接口契约
@@ -238,18 +238,18 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrPasswordPolicy`、`ErrInvalidIdentifier` | 口令不合策略（过短、超长、等于本人标识、低于 OWASP 下限、与当前口令相同）；标识规范化失败（用户名、邮箱、手机格式不合） | 400 `bad-request` |
 | `ErrUsernameReserved` | 用户名落在保留用户名集合里（内置清单与 `authn.account.reserved-usernames` 的并集） | 400 `bad-request` |
 | `ErrInvalidArgument` | 写入的值越过调用允许的域：属性集越界、显示名过长、`via` 不在 `Verification` 接受的形式内、`reason` 不在 `ReasonClass` 闭集 | 管理路由 400 `bad-request`；模块在自己写下的值（会话载荷的 `idp.*` 属性）上遇到它是自身的缺陷，503 |
-| `ErrFactorLimit`、`ErrIdentifierRequired` | 某种因素已达 `max-per-kind`；账户没有可作登录名的标识而要设口令，或带口令凭据的账户删除最后一个登录名（`DELETE /auth/identifiers/:id`） | 409 `conflict`、409 `login-identifier-required` |
+| `ErrFactorLimit`、`ErrIdentifierRequired` | 某种因素已达 `max-per-kind`；账户没有用户名也没有选作登录方式的已验证邮箱而要设口令，或带口令凭据的账户删除最后一个这样的登录名（`DELETE /auth/identifiers/:id`） | 409 `conflict`、409 `login-identifier-required` |
 | `ErrAccountUnavailable`、`ErrMethodDisabled` | 账户不可用：外部登录路径上账户停用，或要求状态、凭据行或标识行的写入发现它不满足；方法被 `disabled-methods` 关掉 | 外部登录 403 `account-unavailable`；匿名口令重置 403 `password-reset-unavailable`；403 `method-disabled` |
 | `ErrCleanupIncomplete` | 账户状态或服务密钥状态已生效而某个 `AccountLifecycle` 钩子失败（重试同一调用幂等地补完） | 503 |
 | `ErrSessionRevoked` | `Sessions.ForCredential` 遇到已撤销的 service 会话行 | 拒绝换令牌；令牌端点的 `error` 取值见 [design-authn-token](design-authn-token.md) |
 | `ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`） | 退避中；自助注册的按用户名退避（`ThrottleScope` 的 `signup-username`）、来源地址分钟预算或全局小时预算生效 | 429 `throttled`，带 `Retry-After`；令牌端点是 401 `invalid_client` 并带 `Retry-After`；Basic 路径是 `Denied` |
 | `ErrFlowInvalid`、`ErrStepOutOfOrder` | 流程过期、已用、绑定不符、被并发消费；步序不符 | 401 `flow-invalid` |
-| `ErrLinkRequired`、`ErrNotProvisioned`、`ErrDomainMismatch`、`ErrProvisionRefused` | 社交登录无绑定而邮箱命中现有账户；企业 SSO 未预开户或域不符；宿主拒绝开户 | `ErrLinkRequired` 是 401 `link-required`，其余对外一律 401 `login-failed`，成因进日志 |
+| `ErrLinkRequired`、`ErrNotProvisioned`、`ErrDomainMismatch`、`ErrProvisionRefused` | 社交登录或企业即时开通无绑定而提供方声明的地址命中现有账户；企业 SSO 的预置模式匹配不到预置账户，或声明地址的域不属于该提供方所属租户；宿主拒绝开户 | `ErrLinkRequired` 是 401 `link-required`，其余对外一律 401 `login-failed`，成因进日志 |
 | `ErrSignupClosed` | 首登开户关闭；自助注册开关 `authn.account.password-signup` 不是 `open` | 首登开户路径 401 `login-failed`；自助注册路由 403 `signup-closed` |
 | `ErrContactRequired` | 未验证账户（`SignupStateOf` 为 `SignupPending`：有邮箱而没有一条已证明的）调用了要求已验证邮箱的能力 | 403 `contact-required` |
 | `ErrHumanVerificationRequired` | 一次发送没有人机验证凭证，或凭证无效、过期、已用 | 403 `human-verification-required` |
 | `ErrBindingConflict`、`ErrLastFactor`、`ErrLastTenantAdmin` | 外部身份冲突；删最后一个因素；移除成员关系会让租户不再有任何租户管理员绑定 | 409 `conflict` |
-| `ErrLastLoginMethod` | 解绑最后一种登录方式，或删除标识会留下没有任何非因素登录方式的账户，或重置因素时目标账户只剩因素这一种登录方式 | 409 `last-login-method` |
+| `ErrLastLoginMethod` | 解绑最后一种登录方式，或删除标识、取消一条登录方式会留下没有任何非因素登录方式的账户，或重置因素时目标账户只剩因素这一种登录方式 | 409 `last-login-method` |
 | `ErrFactorNotEnrolled`、`ErrReplay`、`ErrFactorFlagged` | 因素未登记；TOTP 计数器或 WebAuthn 签名计数重放；WebAuthn 凭据疑似克隆 | 对外并入 `login-failed` |
 | `ErrStepUpRequired` | 保障等级或新鲜度不足 | 401 `insufficient_user_authentication` |
 | `ErrFactorNotSeasoned` | 冒充发起、管理员重置因素与重置口令时，发起者名下没有启用已满 `sensitive-min-age` 的非短信因素 | 403 `factor-not-seasoned` |

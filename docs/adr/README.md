@@ -150,7 +150,7 @@
 | [自助注册即建号，账户的邮箱只有已验证与未验证两种状态](adr-authn-signup.md) |
 | [自助注册与首登开户在建号之前取得用户名，用户名须 URL 安全并排除保留用户名](adr-authn-username-required.md) |
 | [口令账户必须保留一个登录名，最后一个登录名不可删除](adr-authn-login-identifier.md) |
-| [邮箱登录名由联系方式预留的唯一约束原子仲裁，未验证预占被接受](adr-authn-contact-claim.md) |
+| [邮箱地址的占用由联系方式预留的唯一约束原子仲裁，未验证预占被接受](adr-authn-contact-claim.md) |
 | [回跳失败时把用户代理落回产品，机器码经 URL 片段携带](adr-authn-callback-failure-landing.md) |
 | [人机验证是缺省关闭的发送前闸，机制由部署选定](adr-authn-human-verification.md) |
 | [成员关系删除的清理是同步接缝，事件只作崩溃窗口补偿](adr-authn-membership-cleanup.md) |
@@ -169,7 +169,8 @@
 | [账户模型：全局账户、已验证标识、成员关系表、墓碑删除、无外键、UTC](adr-authn-accounts.md) |
 | [账户停用、删除与密钥撤销的清理：本模块事务加钩子加事件补偿，`valid_after` 兜底](adr-authn-account-lifecycle.md) |
 | [账户恢复经 `AccountEnabled` 钩子观察，与停用同一条提交后同步调用](adr-authn-account-restoration.md) |
-| [外部身份绑定、自动关联、首登开户与 JIT 并入的规则](adr-authn-external-binding.md) |
+| [外部身份绑定、显式关联、首登开户与企业预置账户的规则](adr-authn-external-binding.md) |
+| [联系方式与登录方式是账户上两条独立的轴，提供方声明的地址不写入账户](adr-authn-contact-and-login-ways.md) |
 | [口令条目用 PHC 字符串：Argon2id 缺省，PBKDF2-SHA256 可用，旧写法只读](adr-authn-password-hash.md) |
 | [认证前的失败退避与枚举防护：db 的 Throttle，账户级静默，口令表进程内](adr-authn-throttling.md) |
 

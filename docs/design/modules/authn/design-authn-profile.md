@@ -8,14 +8,14 @@
 - **身份取自上下文。** 路由经 `authn.FromContext` 取发起者的身份，账户由身份给出，不由路径或正文里的标识给出。授权依据是「发起者就是这个账户」这条无须策略的事实，自助范围的判据见 [authn-admin](design-authn-admin.md)。
 - **自写字段集。** 可自写的字段是一个封闭集：显示名、属性、语言、时区；其余字段不可自写。
 - **复用既有写面。** 写经根包接缝 `authn.AccountAdmin` 的 `SetDisplayName` 与 `SetAttributes` 落到账户模块；语言与时区是账户属性集里的具名用法，键由 `i18n.LocaleAttributeKey`、`i18n.TimeZoneAttributeKey` 命名，由 [i18n](../design-i18n.md) 的账户桥接读回，其存储归账户属性集的通用界面（[ADR-i18n-preferences-storage](../../../adr/adr-i18n-preferences-storage.md)）。本模块不另造写面、不新持状态、不新增存储。
-- **注册验证状态的只读面。** `GET B/me` 的 `verification` 取自账户模块的 `SignupVerification.SignupStateOf`，`identifiers` 的每一项带 `proven`（由 `Verification.Proves` 派生）。本模块不写注册验证状态；它由账户持有的邮箱标识与未证明预留派生，判定不区分账户是自助注册、管理员预置还是导入写出的（[authn-account](design-authn-account.md)、[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。
+- **注册验证状态与两条轴的只读面。** `GET B/me` 的 `verification` 取自账户模块的 `SignupVerification.SignupStateOf`；`identifiers` 的每一条邮箱与手机带 `proven`（由 `Verification.Proves` 派生）、`contact`（是否作联系方式）、`sign_in`（是否作登录方式）与 `default_contact`（是否为默认联系地址）。联系方式与登录方式是两条相互独立的轴，邮箱与手机都各有这两条轴（REQ-account-061）；验证只证明所有权，不决定任何一条轴上的选择（REQ-account-062）。这两条轴与默认联系地址的取舍见 [ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)。本模块不写注册验证状态，也不写这两条轴上的选择；验证状态由账户持有的邮箱标识与未证明预留派生，判定不区分账户是自助注册、管理员预置还是导入写出的（[authn-account](design-authn-account.md)、[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。
 - **不交付功能接口。** 本模块只挂路由，仿 `authn.admin`。
 
 ### 非职责
 
 - **不持账户数据与写规则。** 账户的形状、属性集的边界、显示名的上限归 `authn.account`（[authn-account](design-authn-account.md)）；本模块只调用接缝并把回绝映射成应答。
 - **不做管理面判定。** 本模块不经 `Decider`、不问权限点；管理面归 `authn.admin`（[authn-admin](design-authn-admin.md)）。自助面与管理面分立的判据见 [ADR-authn-selfservice-profile](../../../adr/adr-authn-selfservice-profile.md)。
-- **不挂账户的其他自助路由。** 改口令、添加或更换手机、删除标识、解绑外部身份改动的是账户的认证事实，归登录引擎，在 [authn-login](design-authn-login.md)。
+- **不挂账户的其他自助路由。** 改口令、添加或更换手机、删除标识、选择默认联系地址、选择哪些邮箱与手机可作登录方式、解绑外部身份改动的是账户的认证事实，归登录引擎，在 [authn-login](design-authn-login.md)。
 - **不自写不可自写字段。** 账户状态、标识符（邮箱、手机、用户名）、外部身份绑定不在自写字段集里，各有其路由与更强的认证要求。
 - **不实现偏好存储。** 语言与时区在账户属性集里，键归 `pkg/i18n`；本模块不新增偏好表或偏好接缝。
 - **不声明配置键与设置键。** 键的名字、取值域与缺省值只在 [authn-config](design-authn-config.md) 给全。
@@ -41,7 +41,8 @@
 `GET B/me` 应答 200 与一份档案视图，逐字段从账户模块的读面构造，从不把值原样交出：`account_id`、`kind`、`display_name`、`mfa_required`、`password_set`、`created_at`、`attributes`、`locale`、`time_zone`、`identifiers`、`verification`、`links`。
 
 - `attributes` 是账户的属性集；`locale` 与 `time_zone` 从它的 `i18n.locale`、`i18n.tz` 键解出，各自没有时为空。
-- `identifiers` 与 `links` 是本人的标识与外部身份绑定，只读，取自 `Accounts.Identifiers` 与 `Accounts.Externals`；绑定项不含 `Subject` 原文。`identifiers` 的每一项带 `proven`，由该标识的 `Verification.Proves` 派生：`sms-code`、`email-code`、`invite` 与 `idp:<提供方标识>` 为真，`admin`、`import-unverified` 与 `self` 为假。`proven` 是二值的，不按渠道细分：经管理员或导入写下的邮箱标识在列表里就是一条未证明的邮箱标识，没有第三态。未证明的邮箱预留不在 `identifiers` 里——它不是标识——但经 `verification.email` 出现。账户可能有用户名标识，也可能没有：新开户的自助注册、首登开户、邀请受理、管理面预置与初始装配建出的账户带一个用户名，存量账户与导入写出的账户可能没有。读方不得把「有用户名」当作新建账户或某种创建路径的判据；`identifiers` 只说明此账户此刻持有哪些标识。
+- `identifiers` 与 `links` 是本人的标识与外部身份绑定，只读，取自 `Accounts.Identifiers` 与 `Accounts.Externals`；绑定项不含 `Subject` 原文。`identifiers` 列出账户已登记的每一项值：邮箱与手机各带 `proven`（由该标识的 `Verification.Proves` 派生：`sms-code`、`email-code`、`invite` 与 `idp:<提供方标识>` 为真，`admin`、`import-unverified` 与 `self` 为假），以及联系方式轴 `contact`、登录方式轴 `sign_in` 与默认联系地址轴 `default_contact`。联系方式与登录方式是两条相互独立的轴，邮箱与手机都各有这两条轴（REQ-account-061）；`proven` 是二值的，不按渠道细分：经管理员或导入写下的邮箱标识在列表里就是一条未证明的邮箱标识，没有第三态。用户名是口令登录名，`contact` 与 `default_contact` 恒为假、`sign_in` 恒为真，不标归属；`links` 里的每一个外部身份是一类独立的登录方式，不属联系方式（REQ-account-067）。未证明的邮箱预留不在 `identifiers` 里——它不是标识——但经 `verification.email` 出现。未证明的邮箱或手机的 `sign_in` 与 `default_contact` 都是假，`contact` 可以对未证明的行取真，由持有人选择；`sign_in` 与 `default_contact` 在该值被证明之后才可被持有人取真（REQ-account-065、REQ-account-066）。账户可能有用户名标识，也可能没有：新开户的自助注册、首登开户、邀请受理、管理面预置与初始装配建出的账户带一个用户名，存量账户与导入写出的账户可能没有。读方不得把「有用户名」当作新建账户或某种创建路径的判据；`identifiers` 只说明此账户此刻持有哪些标识。
+- `default_contact` 只在一条已证明的邮箱标识上为真：账户在已登记并已证明的邮箱地址中恰好有一个默认联系地址，没有这样的地址时全部为假（REQ-account-063）；持有人未选时，默认联系地址取最早证明的那一条，持有人可以改选另一个已登记并已证明的邮箱地址，改选后原地址不再是。它只作通知的收件地址，不是登录方式的一种。
 - `verification` 是 `{state, email, since}`：`state` 取 `none`、`pending`、`verified`，对应 `SignupState` 的 `0`、`1`、`2`。判据是二值的：账户持有至少一条 `proven` 为真的邮箱标识即 `verified`；否则持有任何邮箱——一条 `proven` 为假的邮箱标识，或一条未证明预留——即 `pending`；一条邮箱也没有即 `none`，本规则不拦截它。`email` 的取值是确定的：`verified` 取 `Proves` 为真、`verified_at` 最早的邮箱，同一时刻按标识 ID 排序取第一个；`pending` 取未证明邮箱标识与未证明预留中创建时刻最早的一条，同一时刻按行标识排序取第一个，账户因此可能有一个目标地址，也可能在删掉最后一条邮箱标识后什么也没有（那时读作 `none`）；`none` 为空。`since` 是 `signup_verified_at`，在任一账户第一次证明邮箱时写入，之后再验证其他邮箱不更新，`verified` 回到 `pending` 时保留；`verified` 而该列为空时取最早那条证明标识的 `VerifiedAt`；从未证明过邮箱时为空串。它由 `SignupVerification.SignupStateOf` 请求期活读，不进会话、身份或访问令牌。
 - 时间按 UTC 以 RFC 3339 写出，零时间写空串。
 
@@ -84,14 +85,14 @@
 
 ### 与账户其他自助路由的关系
 
-本模块接替登录引擎当前挂在同端上的 `GET B/me` 读面与 `PATCH B/me/preferences` 写面：档案的自读自写集中在本模块，登录引擎保留改动认证事实的自助路由（改口令、手机、删标识、解绑）。登录引擎与本模块挂在同一个 `self` 基路径 `Bs` 上，同一路径不得被两处登记，所以 `/me` 只由本模块挂。
+本模块接替登录引擎当前挂在同端上的 `GET B/me` 读面与 `PATCH B/me/preferences` 写面：档案的自读自写集中在本模块，登录引擎保留改动认证事实的自助路由（改口令、手机、删标识、选择默认联系地址与登录方式、解绑）。登录引擎与本模块挂在同一个 `self` 基路径 `Bs` 上，同一路径不得被两处登记，所以 `/me` 只由本模块挂。
 
 ### 对外接口面
 
 - 路由路径 `GET B/me`、`PATCH B/me` 与访问级别 `Required` 是宿主可见面；两条路由都登记为可冒充。
 - 模块名 `authn.profile` 是宿主可见面。
 - 自写字段集的字段名（`display_name`、`attributes`、`locale`、`time_zone`）与应答字段名是宿主可见面；请求体的字段集是封闭集，新增可自写字段要有新的决定。
-- `GET B/me` 应答的 `verification.state`、`verification.email`、`verification.since` 与 `identifiers[].proven` 是宿主可见面；`state` 的取值是封闭集 `none`、`pending`、`verified`——`pending` 是「有邮箱而没有一条已证明的」，`none` 是「没有邮箱」，没有第四种取值。
+- `GET B/me` 应答的 `verification.state`、`verification.email`、`verification.since` 与 `identifiers[].proven`、`identifiers[].contact`、`identifiers[].sign_in`、`identifiers[].default_contact` 是宿主可见面；`state` 的取值是封闭集 `none`、`pending`、`verified`——`pending` 是「有邮箱而没有一条已证明的」，`none` 是「没有邮箱」，没有第四种取值。
 - 不可自写字段集同属接口面：不在集合里的字段，本面永不写。
 
 ## 依赖
@@ -148,7 +149,7 @@ classDiagram
 
 | 概念 | 类型 | 说明 |
 |---|---|---|
-| 档案视图 | `profileView` | `GET B/me` 的应答：账户标识、种类、显示名、属性、语言、时区、创建时刻、标识（含 `proven`）、注册验证状态与外部绑定 |
+| 档案视图 | `profileView` | `GET B/me` 的应答：账户标识、种类、显示名、属性、语言、时区、创建时刻、标识（含 `proven`、`contact`、`sign_in` 与 `default_contact`）、注册验证状态与外部绑定 |
 | 写请求 | `patchBody` | `PATCH B/me` 的正文：`display_name`、`attributes`、`locale`、`time_zone`，字段均可选 |
 
 `profileView` 与 `patchBody` 都只在本模块内构造与消费；账户、标识与绑定的形状归账户模块的根包接缝，本模块不复制它们。
@@ -157,7 +158,7 @@ classDiagram
 
 ### 一次读
 
-读身份：`authn.FromContext` 没有身份或身份没有账户即 401。取账户（`Accounts.Get`）、标识（`Accounts.Identifiers`）、外部绑定（`Accounts.Externals`）与注册验证状态（`SignupVerification.SignupStateOf`），按档案视图逐字段构造应答；标识的 `proven` 由 `Verification.Proves` 派生，未证明预留只经 `verification.email` 出现。本面不解引用任何客户端给的账户标识。
+读身份：`authn.FromContext` 没有身份或身份没有账户即 401。取账户（`Accounts.Get`）、标识（`Accounts.Identifiers`）、外部绑定（`Accounts.Externals`）与注册验证状态（`SignupVerification.SignupStateOf`），按档案视图逐字段构造应答；标识的 `proven` 由 `Verification.Proves` 派生，`contact`、`sign_in` 与 `default_contact` 取自账户模块同名标记；未证明的邮箱或手机的 `sign_in` 与 `default_contact` 为假，`contact` 由持有人选择、可为真，未证明预留只经 `verification.email` 出现。本面不解引用任何客户端给的账户标识。
 
 ### 一次写
 
@@ -203,3 +204,4 @@ classDiagram
 | 用户档案自服务面（`GET B/me`、`PATCH B/me`） | 已实现 | `pkg/authn/profile/profile.go` `Module`；`pkg/authn/profile/routes.go` `mountRoutes`；`pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/profile/write.go` `handlePatchMe` |
 | operation 声明与 OpenAPI 片段生成 | 已实现 | `pkg/authn/profile/operations.go`；`pkg/authn/profile/openapi_generated_test.go`；片段 `pkg/authn/profile/openapi/profile.json` |
 | `GET B/me` 的注册验证状态 `verification` 与标识的 `proven` | 已实现 | `pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/profile/views.go` `AuthnProfileVerification`、`AuthnProfileIdentifier.Proven`、`profileViewOf`、`signupStateName`；`pkg/authn/profile/profile.go` `Module`、`product.signupVerification` |
+| 联系方式与登录方式两条轴的读出：`identifiers[].contact`、`identifiers[].sign_in`、`identifiers[].default_contact`、用户名不标归属，外部身份列在登录方式中 | 未实现 | — |

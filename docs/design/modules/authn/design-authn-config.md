@@ -34,7 +34,7 @@
 
 ### 命名空间
 
-`config.Schema` 的命名空间与模块名同值，设置键的路径是命名空间加键名。下表是 authn 与 `tenant.admission` 声明输入项的命名空间的全集（封闭集合）；不在表内的 authn 模块不声明输入项。`authn.mount` 需要的挂载键由 `authn.gate` 声明，`authn.mount` 与需要对外基址的模块在自己的 `Prepare` 里读取这几个键，这是已有的跨模块读法，不是重复声明。`authn.login` 按路径读取账户模块声明的 `authn.account.signup`、`authn.account.password-signup`、`authn.account.auto-link` 与两个注册预算 `authn.account.signup-ip-limit`、`authn.account.signup-global-hourly`，`authn.login.sms` 按路径读取其中的 `authn.account.signup`，都不重复声明。
+`config.Schema` 的命名空间与模块名同值，设置键的路径是命名空间加键名。下表是 authn 与 `tenant.admission` 声明输入项的命名空间的全集（封闭集合）；不在表内的 authn 模块不声明输入项。`authn.mount` 需要的挂载键由 `authn.gate` 声明，`authn.mount` 与需要对外基址的模块在自己的 `Prepare` 里读取这几个键，这是已有的跨模块读法，不是重复声明。`authn.login` 按路径读取账户模块声明的 `authn.account.signup`、`authn.account.password-signup` 与两个注册预算 `authn.account.signup-ip-limit`、`authn.account.signup-global-hourly`，`authn.login.sms` 按路径读取其中的 `authn.account.signup`，都不重复声明。
 
 | 命名空间 | 持有它的文档 | 声明的输入项 |
 |---|---|---|
@@ -211,7 +211,6 @@
 | `authn.account.signup-global-hourly` | 整数 | `100` | 1 到 1000000 | | 增大 |
 | `authn.account.unverified-ttl` | `time.Duration` | `720h` | 0 到 8760h；0 关闭 | | |
 | `authn.account.unverified-sweep-interval` | `time.Duration` | `1h` | 1m 到 24h | | |
-| `authn.account.auto-link` | 字符串 | `never` | `never` 或 `verified-email` | | 改为 `verified-email` |
 | `authn.account.reserved-usernames` | 字符串，JSON 数组 | `[]` | 用户名数组，每项在写入时规范化 | | 删去追加项 |
 
 `authn.account.password-signup` 与 `authn.account.signup` 相互独立：前者开的是匿名的用户名加口令注册路由，后者开的是社交与短信首次登录的开户。任一为 `open` 都使发现端点的 `signup.enabled` 为真，但两者互不蕴含：注册关闭时首登开户照旧，首登开户关闭时注册照旧。`authn.account.signup-ip-limit` 是注册路由按来源地址的分钟预算，缺省为每分钟 10 次，0 关闭；`authn.account.signup-global-hourly` 是注册的全局小时预算。`unverified-ttl` 是自助注册账户在 `signup_state=1`、`signup_verified_at IS NULL` 且没有已验证邮箱时可以保持不动的期限，0 关闭清理；清理删除账户时连带释放它的联系方式预留；`unverified-sweep-interval` 是清扫协程的间隔。后两项不放宽任何校验：期限变长只是让受限账户留得更久。
@@ -308,7 +307,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 
 - **设置对 authn 的各模块是可选依赖。** `settings.Store` 缺席时，各模块对每个设置项取声明的默认值，行为与默认值下的设置完全一致，只是不可调整。只使用口令表的宿主因此不必为几个退避参数运行数据库与事件总线（`settings` 模块自己要求 `db` 与 `event.Bus`）。这是 [ADR-config-scope](../../../adr/adr-config-scope.md) 接受的降级，不是配置。
 - **在自己的 `Init` 里读设置的模块，对设置写 `Optional` 的依赖声明**；不写则读取报 `ErrNotLoaded`（快照在设置模块的 `Init` 装载）。请求路径上的读取不受此限。
-- **读设置出错的方向由设置项的类别定**：强制类开关读不出来时按拒绝，应答 503；其余取值读不出来时取声明默认值并记 `Error`；决定写出产物的写路径设置（`authn.account.password-algorithm`）读不出来或越域时令写失败，不替换为默认值；键没有任何声明覆盖时按声明默认值写出并记一行 `Error`。类别的定义与流程见[读取设置的方向](#读取设置的方向)。放宽开关属调参类：声明默认值就是严格一侧（`closed`、`never`、`true`），读不出来按它取值。
+- **读设置出错的方向由设置项的类别定**：强制类开关读不出来时按拒绝，应答 503；其余取值读不出来时取声明默认值并记 `Error`；决定写出产物的写路径设置（`authn.account.password-algorithm`）读不出来或越域时令写失败，不替换为默认值；键没有任何声明覆盖时按声明默认值写出并记一行 `Error`。类别的定义与流程见[读取设置的方向](#读取设置的方向)。放宽开关属调参类：声明默认值就是严格一侧（`closed`、`true`），读不出来按它取值。
 - **安全参数的缺省取最严的取值，并声明取值域**：写入时判下限，使宿主无法经设置把口令哈希参数配到最低要求之下。
 - **保留用户名集合的内置清单常驻。** `authn.account.reserved-usernames` 读不出或没有声明覆盖时取声明缺省的空追加集合，内置清单在任一取值下都生效并向写入面追加拒绝。
 - **读取走内存快照**，不发起 IO、不收上下文；变更经 `settings.changed` 事件与周期刷新传播，最坏延迟是刷新间隔（缺省 5 分钟）。凡安全上需要立刻生效的变更（撤销）不走设置，走 db 的撤销面。
@@ -321,11 +320,10 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 |---|---|---|---|
 | `authn.account.signup` | `open` | `closed` | `closed` 或 `open` |
 | `authn.account.password-signup` | `open` | `closed` | `closed` 或 `open` |
-| `authn.account.auto-link` | `verified-email` | `never` | `never` 或 `verified-email` |
 | `authn.token.check-session` | `false` | `true` | 布尔 |
 | `authn.login.password-reset` | `open` | `closed` | `closed` 或 `open` |
 
-这些开关都是设置项，审计与日志里的方向取 `relax`（判据与理由见 [design-authn-events](design-authn-events.md) 的放宽方向取值）。读它的模块在每次做出决定时读当前值：`authn.account.signup` 由登录发现端点、首登开户的解析与短信方法的投递决定读，`authn.account.password-signup` 由 `Signups.Register` 读（权威检查），注册路由与发现端点读它只作预检查，`authn.account.auto-link` 在每次账户解析时读，`authn.token.check-session` 在每次令牌校验、会话步骤之前读，`authn.login.password-reset` 由发现端点与匿名口令重置的路由读。声明模块（`pkg/authn/account`、`pkg/authn/token` 与 `pkg/authn/login`）另在启动诊断各读一次，用来写启动时已是放宽值的 `Warn`。设置缺席或读取出错时取声明默认值，即严格一侧，读取出错另记 `Error`。它们不取环境变量与命令行；配置不再承载这些设置项，旧配置里仍写着它们的宿主在启动时按未知键失败（[ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)）。运行期改动到放宽方向时，声明该键的模块写一行 `Warn` 并记一条尽力档 `authn.settings.relaxed`；启动时取值已经是放宽值时写同一行 `Warn`（[放宽变更的监视](#放宽变更的监视)、[启动诊断](#启动诊断)）。
+这些开关都是设置项，审计与日志里的方向取 `relax`（判据与理由见 [design-authn-events](design-authn-events.md) 的放宽方向取值）。读它的模块在每次做出决定时读当前值：`authn.account.signup` 由登录发现端点、首登开户的解析与短信方法的投递决定读，`authn.account.password-signup` 由 `Signups.Register` 读（权威检查），注册路由与发现端点读它只作预检查，`authn.token.check-session` 在每次令牌校验、会话步骤之前读，`authn.login.password-reset` 由发现端点与匿名口令重置的路由读。声明模块（`pkg/authn/account`、`pkg/authn/token` 与 `pkg/authn/login`）另在启动诊断各读一次，用来写启动时已是放宽值的 `Warn`。设置缺席或读取出错时取声明默认值，即严格一侧，读取出错另记 `Error`。它们不取环境变量与命令行；配置不再承载这些设置项，旧配置里仍写着它们的宿主在启动时按未知键失败（[ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)）。运行期改动到放宽方向时，声明该键的模块写一行 `Warn` 并记一条尽力档 `authn.settings.relaxed`；启动时取值已经是放宽值时写同一行 `Warn`（[放宽变更的监视](#放宽变更的监视)、[启动诊断](#启动诊断)）。
 
 `authn.account.reserved-usernames` 不取「开关」的形态，因此不在上表的放宽开关之列，但它在放宽方向上受同样的监视：生效集合是内置清单与设置值的并集，设置只能追加、不能移除内置项，追加项只增加被拒绝的用户名；删去追加项使集合回落到内置清单，方向取 `relax`，按放宽开关同一条通道记录一行 `Warn` 与 `authn.settings.relaxed`。
 
@@ -464,7 +462,7 @@ flowchart TD
 ```
 
 - **数据库可用之前就被需要、或塑造启动结构且改变要重启**的值是配置：网关的参数、口令表的表本身与构造时分配的大小（缓存容量、并发信号量、口令内存预算）、凭据提供方的客户端标识与密钥、签名密钥与 SAML 私钥的文件、对外基址、依赖方标识、短信厂商密钥、cookie 的域与 `SameSite`。这份名单是判据的例举，不是封闭集。
-- **按租户或按运行时场景取不同值**的值落在设置一侧，这是判据的推论：这些值在数据库可用之后才被需要，也能在不重启时生效。会话时长、令牌时长、口令策略与退避（含口令表的缓存时长与退避参数）、短信的位数与有效期与节流、多因素的策略、冒充的时限、SSO 的出站超时、租户的强制策略。放宽开关（`authn.account.signup`、`authn.account.password-signup`、`authn.account.auto-link`、`authn.token.check-session`）同样落在设置，声明默认值取严的一端。这份名单同样是例举。
+- **按租户或按运行时场景取不同值**的值落在设置一侧，这是判据的推论：这些值在数据库可用之后才被需要，也能在不重启时生效。会话时长、令牌时长、口令策略与退避（含口令表的缓存时长与退避参数）、短信的位数与有效期与节流、多因素的策略、冒充的时限、SSO 的出站超时、租户的强制策略。放宽开关（`authn.account.signup`、`authn.account.password-signup`、`authn.token.check-session`）同样落在设置，声明默认值取严的一端。这份名单同样是例举。
 - **数目在运行期才确定的实体**既不是配置也不是设置，是表里的数据：每租户的 IdP、账户、会话、签名之外的密钥。
 - **分界在值本身，不在模块。** 同一个模块里，构造时分配的缓存容量是配置，缓存时长是设置。
 - 需要立刻生效的安全变更（撤销）不走设置，因为设置的最坏传播延迟是刷新间隔。
@@ -531,8 +529,7 @@ flowchart TD
 - `authn.gate.mount.allow-insecure` 为真。
 - `authn.token.check-session` 为假。
 - `authn.login.ip-limit` 为 0。
-- 任一 IdP 的 `allow_idp_initiated`、`allow_sha1` 或 `merge_existing`。
-- `authn.account.auto-link` 为 `verified-email`。
+- 任一 IdP 的 `allow_idp_initiated` 或 `allow_sha1`。
 - `authn.account.signup` 为 `open`。
 - `authn.account.password-signup` 为 `open`。
 - `authn.sso.allow-private-egress` 为真。
@@ -579,7 +576,7 @@ flowchart TD
 
 下列各项是本文所述机制不保证的性质，判据与总览一致（[ADR-authn-guarantees](../../../adr/adr-authn-guarantees.md)）：成立与否取决于宿主的装配或其他模块的写法，因此写成非保证并写清可观察到什么。下列条目按判据例举，不是封闭集。
 
-- **设置写入面不保证被访问控制。** 经 `settings.admin` 管理面写入时，全局层由平台域判定并留强制档审计；设置能力本身不做授权，宿主自建写入口（例如种子命令）的鉴权由宿主负责。持有写权限的主体因而可以把退避、预算、前缀名单、会话期限与放宽开关（`authn.account.signup`、`authn.account.password-signup`、`authn.account.auto-link`、`authn.token.check-session`）改到更宽松；authn 只提供 `Warn` 与 `authn.settings.relaxed` 的事后可见，不提供阻止。阻止依赖宿主的管理面与 `AGENTS.md` 的硬要求，authn 不检查宿主是否遵守。
+- **设置写入面不保证被访问控制。** 经 `settings.admin` 管理面写入时，全局层由平台域判定并留强制档审计；设置能力本身不做授权，宿主自建写入口（例如种子命令）的鉴权由宿主负责。持有写权限的主体因而可以把退避、预算、前缀名单、会话期限与放宽开关（`authn.account.signup`、`authn.account.password-signup`、`authn.token.check-session`）改到更宽松；authn 只提供 `Warn` 与 `authn.settings.relaxed` 的事后可见，不提供阻止。阻止依赖宿主的管理面与 `AGENTS.md` 的硬要求，authn 不检查宿主是否遵守。
 - **不保证一次放宽变更恰好留下一份痕迹。** 痕迹条数取决于事件实现的投递语义：广播到每个副本则每个副本各一份，消费者组式的则一份；事件丢失的副本没有痕迹。
 - **设置变更不保证在副本之间同时生效。** 租户刚开启强制多因素或强制 SSO 后，最长数分钟内个别副本仍放行。
 - **写非「租」键的租户层不起作用且不报错。** settings 没有「该键只许全局」的声明；authn 只在全局层读这些键。
@@ -612,7 +609,7 @@ flowchart TD
 | 其余设置项的声明与取值域 | 部分实现 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingsSchema`；`pkg/authn/mfa/settings.go`；`pkg/authn/login/config.go`；`pkg/authn/sms/settings.go` `settingsSchema`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `settingsSchema`；`pkg/authn/sso/config.go` `settingsSchema`；`pkg/authn/impersonation/settings.go` `settingsSchema`；`pkg/authn/humanverify/pow/settings.go` `Schema` |
 | `authn.account.reserved-usernames` 的设置项与内置清单 | 未实现 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/account/normalize.go` `normalizeUsername` |
 | 设置缺席的降级与读取出错的方向 | 已实现 | `pkg/authn/account/relax.go`、`pkg/authn/account/params.go`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingReader`、`readSetting`；`pkg/authn/mfa/settings.go`；`pkg/authn/sms/settings.go`；`pkg/tenant/admission/config.go`；`pkg/authn/sso/config.go`；`pkg/authn/impersonation/settings.go` `readTuned`、`report`；`pkg/authn/login/sms/sms.go` `signupOpen`、`reportFault`、`clearFault` |
-| 放宽开关的声明与运行期监视：`authn.account.signup`、`authn.account.auto-link`、`authn.token.check-session` | 已实现 | `pkg/authn/account/config.go` `settingsSchema`、`relax.go`；`pkg/authn/token/settings.go` `settingsSchema`、`relax.go`；`pkg/authn/login`（按路径读取 `authn.account.*`）、`pkg/authn/login/sms`（按路径读取 `authn.account.signup`） |
+| 放宽开关的声明与运行期监视：`authn.account.signup`、`authn.token.check-session` | 已实现 | `pkg/authn/account/config.go` `settingsSchema`、`relax.go`；`pkg/authn/token/settings.go` `settingsSchema`、`relax.go`；`pkg/authn/login`（按路径读取 `authn.account.*`）、`pkg/authn/login/sms`（按路径读取 `authn.account.signup`） |
 | 决定守护面的清单只取主配置源 | 已实现 | `pkg/authn/gate/config.go` `schema`；`pkg/tenant/admission/config.go` |
 | 放宽变更的监视与 `authn.settings.relaxed` | 已实现 | `pkg/authn/account/relax.go`；`pkg/authn/{sms,session,token,static,login,mfa,sso,impersonation}/relax.go`；`pkg/tenant/admission/relax.go` |
 | 日志字面量匹配器的登记 | 已实现 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`；`pkg/internal/literal/literal.go` `Register`；`pkg/authn/humanverify/module.go` `registerSecret` |

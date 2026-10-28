@@ -351,11 +351,11 @@
 
 ### REQ-platform-admin-013
 
-创建用户账户时必须填写显示名与至少一个登录标识，不满足时不可提交。
+创建用户账户时必须填写显示名与一个合法用户名；缺少用户名或用户名不合法时不可提交。
 
-- **验收**：用户账户只填显示名时新建动作被禁用；补齐一个登录标识后可提交并创建成功。
-- **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
+- **验收**：用户账户只填显示名时新建动作被禁用；填入不合法或保留的用户名时提交被拒绝；补齐一个合法用户名后可提交并创建成功，建立后的账户带有该用户名作登录标识。
+- **状态**：未实现
+- **端到端测试**：未实现
 
 ### REQ-platform-admin-064
 

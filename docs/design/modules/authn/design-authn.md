@@ -69,7 +69,7 @@
 - **不提供配置式的豁免、可选认证与可冒充清单。** 这些登记只来自代码：一条命令行参数不该能改变哪些路径不需要认证、哪些路径可以匿名、哪些路径放行冒充身份（[ADR-authn-exemption](../../../adr/adr-authn-exemption.md)）。
 - **不把认证 scheme 名与 cookie 名做成输入项。** 它们由各校验后端在代码里自报；输入项清单按完整集合判冲突，而载体的撞车落不进那份清单的任何一条判据，装配期以 `ErrClaimConflict` 点名双方。
 - **网关不读入口模块的路由表，读它的端名。** 端名经入口模块的 `Router.Endpoints()` 与保留端名 `*` 取得，用来展开 `endpoints` 并校验登记所在的端；登记面不提供路由的枚举，网关无从核对一条登记是否对应一条已登记的路由，请求期只拿 gin 为本次请求报出的 `c.FullPath()` 与登记的方法、路径逐字比对（见 [http](../http/design-http.md)）。
-- **不实现邮件的传输、冒充与异常登录的邮件通知与邮件链接登录。** 邮箱标识除经 IdP 或管理员的断言成为已验证标识外，还可由本人经登录自助面发码到地址、兑现码后写入；匿名口令重置经同一类投递接缝发送重置验证码，流程归 [design-authn-login](design-authn-login.md)。投递接缝是根包的 `EmailCodeSender` 与可选的 `EmailResetCodeSender`，传输由顶层能力的 `mail.Sender` 承担（[design-mail](../design-mail.md)）：仓库提供一个可选的适配模块 `authn.emailcode`，把验证码渲染成邮件并经 `mail.Sender` 发出；不装配它时，宿主可以自己实现 `EmailCodeSender` 与 `EmailResetCodeSender`，否则邮箱验证与邮箱重置不可用。
+- **不实现邮件的传输、冒充与异常登录的邮件通知与邮件链接登录。** 邮箱标识可以由本人经登录自助面发码到地址、兑现码后写入；`admin`、`import-unverified` 与 `self` 三类写入渠道只记事实、不构成归属证明（[design-authn-account](design-authn-account.md)）。提供方声明的地址不写进新开立的账户，自动关联已退役（[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)）。匿名口令重置经同一类投递接缝发送重置验证码，流程归 [design-authn-login](design-authn-login.md)。投递接缝是根包的 `EmailCodeSender` 与可选的 `EmailResetCodeSender`，传输由顶层能力的 `mail.Sender` 承担（[design-mail](../design-mail.md)）：仓库提供一个可选的适配模块 `authn.emailcode`，把验证码渲染成邮件并经 `mail.Sender` 发出；不装配它时，宿主可以自己实现 `EmailCodeSender` 与 `EmailResetCodeSender`，否则邮箱验证与邮箱重置不可用。
 - **不做 SAML 单点登出与 OIDC 背向通道登出，不在后台自动刷新 IdP 元数据，不提供每租户的 SP 密钥。** IdP 侧的登出不终止登录会话，会话受自己的空闲期限与绝对期限约束（见 [design-authn-sso](design-authn-sso.md)）。
 - **不提供个人访问令牌与“记住此设备”。** 用户名加口令的自助注册由独立的匿名路由一次建号；注册的必填项、注册后的登录与验证时机、验证前的能力限制见 REQ-signup-004、REQ-signup-024 与 REQ-signup-025（[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。注册时收集的邮箱先写成一条未证明预留，不是标识，也不是登录名；邮箱被证明之后才写入标识。注册开关 `authn.account.password-signup` 与首登开户开关 `authn.account.signup` 相互独立，缺省都关闭。
 - **不承载宿主的资料字段。** 账户表不留自由字段，宿主扩展用户字段的途径见[扩展点](#扩展点)。
@@ -97,7 +97,7 @@
 | 冒充 | impersonation | 管理员在限定的租户内、有期限、被审计地以另一个账户的身份行事；身份上 `Actor()` 不等于 `Account()`。 |
 | 访问级别 | access | 网关对一次请求命中的路由登记的归类：`Open`、`Optional`、`Required`，以及网关没有作过决定的 `Unknown`。 |
 | 注册验证状态 | signup state | 账户的邮箱验证状态，二值：持有至少一条已证明归属的邮箱标识即已验证，持有邮箱而没有一条已证明的即未验证，没有邮箱则不适用本规则。`SignupVerification.SignupStateOf` 从标识与联系方式预留现算，与账户的创建路径无关；`signup_state` 列只记账户怎么来（`0` 非自助注册、`1` 自助注册、`2` 曾证明过），不参与判定。它是账户上的独立事实，与账户状态是两件事，不进入会话、身份或访问令牌。 |
-| 联系方式预留 | contact claim | `authn_pending_contacts` 的一行：账户对一个邮箱地址的预留，`(kind, value)` 全局唯一。`verified_at` 为空是注册写下的未证明预留，非空是账户已持有的联系方式。注册以插入预留原子仲裁占用；它不是登录名，也不参与任何账户查找。 |
+| 联系方式预留 | contact claim | `authn_pending_contacts` 的一行：账户对一个邮箱地址的预留，`(kind, value)` 全局唯一。`verified_at` 为空是注册写下的未证明预留，非空是账户已持有该地址；这张表只仲裁地址的占用，不承载联系方式与登录方式两条轴。注册以插入预留原子仲裁占用；它不是登录名，也不参与任何账户查找。 |
 | 未验证账户 | unverified account | 持有邮箱而没有已证明邮箱的账户，即 `SignupStateOf` 读作 `SignupPending` 的账户；管理员预置、导入与自助注册写出的账户都按同一判据算。它可以登录，但依赖已验证邮箱的能力被拒；邮箱被证明之后不再是未验证账户。没有邮箱的账户不是未验证账户，不受这条限制。 |
 | 判定接缝 | decision seam | 根包接口 `Decider`：回答某个发起者能否做认证范围内的某件事；缺席即全拒，由宿主或 `authz.guard` 实现。 |
 

@@ -30,7 +30,7 @@
 
 经 `goth` 取微信登录，由它产出用户信息。
 
-**否决**：`goth` 的微信提供方为外部身份引入下列与已定规则相悖的行为。它合成形如 `<openid>@wechat.com` 的邮箱，下游会把合成值当作提供方断言的邮箱；邮箱既不作绑定键也不作自动关联键，微信也没有邮箱（[ADR-authn-external-binding](adr-authn-external-binding.md)）。它丢掉 `unionid`，`openid` 按应用区分，同一个人在网站应用与公众号下得到不同的主体，绑定键因而分裂。它把 `secret` 放在 URL 里，错误净化落在不受本项目控制的库内部。`goth` 作为整体的其余缺陷见 [ADR-authn-oauth-flow](adr-authn-oauth-flow.md)。
+**否决**：`goth` 的微信提供方为外部身份引入下列与已定规则相悖的行为。它合成形如 `<openid>@wechat.com` 的邮箱，下游会把合成值当作提供方断言的邮箱；邮箱既不作绑定键，也不写入账户或用于识别账户，微信也没有邮箱（[ADR-authn-external-binding](adr-authn-external-binding.md)、[ADR-authn-contact-and-login-ways](adr-authn-contact-and-login-ways.md)）。它丢掉 `unionid`，`openid` 按应用区分，同一个人在网站应用与公众号下得到不同的主体，绑定键因而分裂。它把 `secret` 放在 URL 里，错误净化落在不受本项目控制的库内部。`goth` 作为整体的其余缺陷见 [ADR-authn-oauth-flow](adr-authn-oauth-flow.md)。
 
 ### 桥接 silenceper/wechat/v2 的公众号网页授权包
 

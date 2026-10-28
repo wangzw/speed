@@ -55,7 +55,7 @@
 | `authn.account.status-changed` | `account_id`、`from`、`to`、`reason_class` | 空 | 是 |
 | `authn.account.deleted` | `account_id` | 空 | 是 |
 | `authn.identifier.changed` | `account_id`、`kind`、`change`（`added`、`removed`） | 空 | 否 |
-| `authn.binding.changed` | `account_id`、`provider_class`（`google`、`github`、`wechat`、`oidc`、`saml`）、`change`（`linked`、`unlinked`）、`source`（`explicit`、`auto`、`jit`） | 空 | 否 |
+| `authn.binding.changed` | `account_id`、`provider_class`（`google`、`github`、`wechat`、`oidc`、`saml`）、`change`（`linked`、`unlinked`）、`source`（`explicit`、`jit`） | 空 | 否 |
 | `authn.membership.changed` | `account_id`、`change`（`added`、`suspended`、`resumed`、`removed`、`sso-exempt-set`、`sso-exempt-cleared`）、`source` | 信封 | 是 |
 | `authn.password.changed` | `account_id`、`by`（`self`、`admin`、`import`、`reset`）、`channel`（`email`、`sms`，非重置路径为空）；再哈希不发 | 空 | 否 |
 | `authn.factor.changed` | `account_id`、`factor_id`、`kind`、`change`（`enrolled`、`removed`、`reset`、`flagged`）、`by` | 空 | 否 |
@@ -192,7 +192,7 @@
 
 **放宽方向的取值**是下列封闭集合，也是 `authn.settings.relaxed` 明细键 `change` 的取值集：`increase`、`decrease`、`add-member`、`remove-member`、`to-false`、`to-zero`、`downgrade`、`relax`。判据把键按移动的性质分成互斥的几类，一个键只取一个方向。
 
-- **放宽开关表里的键一律用 `relax`，与取值类型无关。** 表见 [design-authn-config](design-authn-config.md) 的放宽开关一节，键是 `authn.account.signup`、`authn.account.password-signup`、`authn.account.auto-link`、`authn.token.check-session` 与 `authn.login.password-reset`，`relax` 表示「一个声明为放宽开关的键被移到该键的放宽取值」。单列这一取值有两个理由。其一，`authn.account.signup`、`authn.account.password-signup` 与 `authn.account.auto-link` 的取值域是无序枚举（`closed`/`open`、`never`/`verified-email`），既不是数值也不是布尔，机械类的六个取值没有一个能表达它们的移动；为每个枚举各造一个取值（如 `to-open`）会让取值集随开关增加而增长，而按类型分派又要求运维先知道每个键的类型。其二，这些键要表达的是同一件事：一个显式放宽开关被打开。运维的告警规则据此按类别匹配一条规则即可，不必按每个键的取值类型各配一条。`authn.token.check-session` 虽是布尔、其移动本可写成 `to-false`，但把它拆出去会让同一类开关分散在两个取值上，正与上一条理由相反，所以它随类别取 `relax`。
+- **放宽开关表里的键一律用 `relax`，与取值类型无关。** 表见 [design-authn-config](design-authn-config.md) 的放宽开关一节，键是 `authn.account.signup`、`authn.account.password-signup`、`authn.token.check-session` 与 `authn.login.password-reset`，`relax` 表示「一个声明为放宽开关的键被移到该键的放宽取值」。单列这一取值有两个理由。其一，`authn.account.signup` 与 `authn.account.password-signup` 的取值域是无序枚举（`closed`/`open`），既不是数值也不是布尔，机械类的六个取值没有一个能表达它们的移动；为每个枚举各造一个取值（如 `to-open`）会让取值集随开关增加而增长，而按类型分派又要求运维先知道每个键的类型。其二，这些键要表达的是同一件事：一个显式放宽开关被打开。运维的告警规则据此按类别匹配一条规则即可，不必按每个键的取值类型各配一条。`authn.token.check-session` 虽是布尔、其移动本可写成 `to-false`，但把它拆出去会让同一类开关分散在两个取值上，正与上一条理由相反，所以它随类别取 `relax`。
 - **不属放宽开关表的设置按值的机械移动定。** 取值变大即放宽的用 `increase`，变小即放宽的用 `decrease`，列表加入成员即放宽的用 `add-member`，列表移除成员即放宽的用 `remove-member`，数值改为 0 即放宽（0 表示关闭）的用 `to-zero`；布尔设置中不属放宽开关表的（如 `authn.mfa` 与 `tenant.admission` 的 `require-*`）由 `true` 改 `false` 即放宽的用 `to-false`。
 - **取值有强弱次序而无数值次序、移动即降级的设置用 `downgrade`。** `authn.account.password-algorithm` 的取值域是 `argon2id` 与 `pbkdf2-sha256`，两者是无序枚举：移到 `pbkdf2-sha256` 降低哈希的计算成本，是一次降级，而它既不是更大的数也不是更小的数，机械类的六个取值没有一个能表达这次移动。为它单列 `downgrade`，方向说的是「换成了更弱的一档」，与数值移动无关；改回 `argon2id` 不放宽，不写记录。
 
