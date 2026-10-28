@@ -615,6 +615,8 @@
         "importUnverified": "Imported, unverified"
       },
       "submit": "Create",
+      "usernameTaken": "That username is already taken. Choose another one.",
+      "usernameUnusable": "That username cannot be used. Choose another one.",
       "discardTitle": "Discard unsaved changes",
       "discardMessage": "Closing the panel discards what you have entered.",
       "discardConfirm": "Discard"

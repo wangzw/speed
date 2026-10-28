@@ -96,6 +96,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -123,6 +124,7 @@ import {
   RefreshButton,
   SectionCard,
   SidePanel,
+  errorCodeOf,
   pageRefreshRead,
   primaryColumnMaxWidthSx,
   usePageRefresh,
@@ -1728,6 +1730,28 @@ type CreateAccountMutation = UseMutationResult<
 >
 
 /**
+ * The bundle key of a create refusal the form words itself, or null for one
+ * the scope's code text already covers. Only a user account carries a
+ * username, so only its two username refusals are named here.
+ */
+function createFailureKey(
+  kind: CreateAccountFields['kind'],
+  code: string,
+): string | null {
+  if (kind !== 'user') {
+    return null
+  }
+  switch (code) {
+    case 'authn.username_taken':
+      return 'accounts.create.usernameTaken'
+    case 'authn.username_reserved':
+      return 'accounts.create.usernameUnusable'
+    default:
+      return null
+  }
+}
+
+/**
  * AccountCreateForm: the account-creation control (POST /api/v1/system/auth/accounts),
  * rendered inside the create panel. It names the fields the handler decodes
  * into its create request; a field left blank is not sent. A user account
@@ -1747,7 +1771,11 @@ type CreateAccountMutation = UseMutationResult<
  * the same JSON value, so the create path and its payload keep one shape.
  *
  * A refused create settles the create panel's own scope, whose region stands
- * under the form with the fields kept for correction. A landed create closes
+ * under the form with the fields kept for correction. A username the server
+ * refuses is named by the form instead: a name another account holds and a
+ * name the system keeps for itself each get their own sentence, rendered in
+ * the same position as the scope's failure and only when the attempt also
+ * left the scope empty. A landed create closes
  * the panel through the page: its success belongs to the list's scope and is
  * written there after the exit, when the page behind the modal is reachable.
  */
@@ -1765,6 +1793,11 @@ function AccountCreateForm({
   readonly onCreated: (created: ConsoleAccount) => void
 }) {
   const { t } = useConsoleUiTranslation()
+  // The create refusal the form words itself: a username already taken, or
+  // one the system keeps for itself. The scope's slot answers every other
+  // refusal; the two are mutually exclusive, because this one is raised only
+  // for an attempt the slot settles empty.
+  const [failureKey, setFailureKey] = useState<string | null>(null)
 
   // An array, not a fragment: MUI's Select walks its children to build the
   // options and warns when one of them is a Fragment.
@@ -1805,23 +1838,39 @@ function AccountCreateForm({
       // A submit the client refused is still an attempt: the previous
       // result must not stand beside the reasons this one did not fire.
       feedback.reset()
+      setFailureKey(null)
       return
     }
     const parsed =
       values.attributes.trim() === '' ? null : parseStringMap(values.attributes)
     void feedback.run(async () => {
-      const created = await createAccount.mutateAsync({
-        kind: values.kind,
-        ...(values.displayName === '' ? {} : { display_name: values.displayName }),
-        ...(username === '' ? {} : { username }),
-        ...(values.email === '' ? {} : { email: values.email }),
-        ...(values.emailVia === '' ? {} : { email_verified_via: values.emailVia }),
-        ...(phone === '' ? {} : { phone }),
-        ...(values.phoneVia === '' ? {} : { phone_verified_via: values.phoneVia }),
-        ...(values.password === '' ? {} : { password: values.password }),
-        ...(parsed === null ? {} : { attributes: parsed }),
-        ...(values.mfaRequired ? { mfa_required: true } : {}),
-      })
+      setFailureKey(null)
+      let created: ConsoleAccount
+      try {
+        created = await createAccount.mutateAsync({
+          kind: values.kind,
+          ...(values.displayName === '' ? {} : { display_name: values.displayName }),
+          ...(username === '' ? {} : { username }),
+          ...(values.email === '' ? {} : { email: values.email }),
+          ...(values.emailVia === '' ? {} : { email_verified_via: values.emailVia }),
+          ...(phone === '' ? {} : { phone }),
+          ...(values.phoneVia === '' ? {} : { phone_verified_via: values.phoneVia }),
+          ...(values.password === '' ? {} : { password: values.password }),
+          ...(parsed === null ? {} : { attributes: parsed }),
+          ...(values.mfaRequired ? { mfa_required: true } : {}),
+        })
+      } catch (error) {
+        // Only a user account is opened with a username, so only its two
+        // username refusals get this form's own sentence; every other
+        // refusal (and every refusal of a service account) settles the
+        // scope's slot as before.
+        const key = createFailureKey(values.kind, errorCodeOf(error))
+        if (key === null) {
+          throw error
+        }
+        setFailureKey(key)
+        return null
+      }
       // The form starts from the initial values on the next opening; the
       // page closes the panel and confirms in the list's scope after exit.
       form.reset()
@@ -2018,6 +2067,11 @@ function AccountCreateForm({
         />
       </FormLayout>
       <WriteFeedbackRegion outcome={feedback.outcome} />
+      {failureKey === null ? null : (
+        <Alert severity="error" role="alert" sx={{ width: '100%', mt: 1 }}>
+          {t(failureKey)}
+        </Alert>
+      )}
     </>
   )
 }

@@ -615,6 +615,8 @@
         "importUnverified": "导入，未验证"
       },
       "submit": "新建",
+      "usernameTaken": "该用户名已被占用，请换一个。",
+      "usernameUnusable": "该用户名不可用，请换一个。",
       "discardTitle": "放弃未保存的更改",
       "discardMessage": "关闭面板会丢弃已填写的内容。",
       "discardConfirm": "放弃"

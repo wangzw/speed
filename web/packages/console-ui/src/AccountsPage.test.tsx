@@ -365,6 +365,24 @@ const EMAIL_TAKEN = {
 
 const EMAIL_TAKEN_TEXT = zhCN.errors.authn.email_taken
 
+/** A 409 refusal whose login name another account holds. */
+const USERNAME_TAKEN = {
+  status: 409,
+  code: 'authn.username_taken',
+  message: 'username taken',
+}
+
+const USERNAME_TAKEN_TEXT = zhCN.accounts.create.usernameTaken
+
+/** A 400 refusal of a login name the system keeps for itself. */
+const USERNAME_RESERVED = {
+  status: 400,
+  code: 'authn.username_reserved',
+  message: 'username reserved',
+}
+
+const USERNAME_RESERVED_TEXT = zhCN.accounts.create.usernameUnusable
+
 const SECRET_ROW = {
   id: 'sec-1',
   label: 'ci',
@@ -2334,6 +2352,63 @@ describe('AccountsPage', () => {
     expect(within(panel).getByLabelText(zhCN.accounts.create.emailLabel)).toHaveValue(
       'grace@x.test',
     )
+  })
+
+  it('names a taken username in a creation failure instead of the fallback', async () => {
+    // A user account is opened with a login name, so a 409 username-taken is
+    // a refusal the operator can act on: the form names the username rather
+    // than rendering the generic unknown line.
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      createAccount: () => Promise.reject(USERNAME_TAKEN),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    const panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
+
+    const alert = await within(panel).findByRole('alert')
+    expect(alert).toHaveTextContent(USERNAME_TAKEN_TEXT)
+    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
+    expect(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel)).toHaveValue('grace')
+  })
+
+  it('names a reserved username in a creation failure', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      createAccount: () => Promise.reject(USERNAME_RESERVED),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    const panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'admin')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
+
+    const alert = await within(panel).findByRole('alert')
+    expect(alert).toHaveTextContent(USERNAME_RESERVED_TEXT)
+    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
+    // The operator keeps the name field to correct the name.
+    expect(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel)).toHaveValue('admin')
+  })
+
+  it('keeps the username copy off a service account creation', async () => {
+    // A service account signs in with a service secret, so the username
+    // refusals are the user kind's own.
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      createAccount: () => Promise.reject(USERNAME_TAKEN),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    const panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Builder')
+    fireEvent.mouseDown(within(panel).getByLabelText(zhCN.accounts.create.kindLabel))
+    await user.click(await screen.findByRole('option', { name: zhCN.accounts.create.kind.service }))
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
+
+    const alert = await within(panel).findByRole('alert')
+    expect(alert).not.toHaveTextContent(USERNAME_TAKEN_TEXT)
+    expect(alert).toHaveTextContent(zhCN.errors.unknown)
   })
 
   it('writes the creation success below the list only after the panel exits', async () => {
