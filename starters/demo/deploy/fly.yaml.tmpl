@@ -126,13 +126,15 @@ objectstore:
   fs:
     root: "./objects"
 
-# The deployment's first account and the tenant it administers. Every account is
-# created with a username, so an entry whose identifier is an address names one
-# too: the username is the name the password login accepts, while the address is
-# written unproved and is neither a login way nor a default contact until its
-# holder proves and selects it. The seed command is idempotent: a second run
-# leaves an existing account, tenant, role, grant or binding as it stands, so the
-# entrypoint can run it on every start.
+# The deployment's first account. Every account is created with a username, so
+# an entry whose identifier is an address names one too: the username is the
+# name the password login accepts, while the address is written unproved and is
+# neither a login way nor a default contact until its holder proves and selects
+# it. The deployment starts with no business tenant: the seed registers the
+# system tenant itself, and the operator administers the platform rather than a
+# tenant of its own. The seed command is idempotent: a second run leaves an
+# existing account, role, grant or binding as it stands, so the entrypoint can
+# run it on every start.
 seed:
   accounts:
     - identifier: "__OPERATOR_EMAIL__"
@@ -140,10 +142,6 @@ seed:
       password: "__OPERATOR_PASSWORD__"
       display-name: Demo Operator
       platform-admin: true
-  tenants:
-    - name: acme
-      admins:
-        - "__OPERATOR_EMAIL__"
   settings:
     # The anonymous username-and-password registration is open; the account
     # is usable immediately and proves its email address afterwards.

@@ -607,7 +607,7 @@ The account module's `0003_contact_claim.sql` adds the global unique index on
 `authn_pending_contacts` and performs no data migration, so a database whose
 existing rows break that index cannot apply it. Recreate the deployment with an
 empty volume (`flyctl volumes destroy`, then create it again) and let `seed`
-write the accounts, tenants and settings once more; the token signing key and
+write the accounts and settings once more; the token signing key and
 the object store live on the same volume and are recreated with it.
 
 **One-time setup.** The names below are the file's; a fork changes `app` and the
