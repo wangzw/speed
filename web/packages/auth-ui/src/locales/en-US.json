@@ -172,9 +172,11 @@
     "error": {
       "title": "The invitation could not be loaded"
     },
+    "usernameLabel": "Username",
     "displayNameLabel": "Display name",
     "passwordLabel": "Password",
-    "newAccountHint": "Fill this in only if the invited email address has no account yet. If it already has one, leave this blank."
+    "usernameRequired": "Enter a username for the new account.",
+    "newAccountHint": "If the invited email address has no account yet, choose a username and optionally a display name and password. If it already has one, these are ignored."
   },
   "impersonation": {
     "regionLabel": "Impersonation notice",

@@ -172,9 +172,11 @@
     "error": {
       "title": "邀请读取失败"
     },
+    "usernameLabel": "用户名",
     "displayNameLabel": "显示名",
     "passwordLabel": "密码",
-    "newAccountHint": "仅当被邀请的邮箱还没有账户时才需填写；如果已有账户，留空即可。"
+    "usernameRequired": "请为新账户填写用户名。",
+    "newAccountHint": "如果被邀请的邮箱还没有账户，请选择用户名，并可填写显示名与密码；如果已有账户，这些内容会被忽略。"
   },
   "impersonation": {
     "regionLabel": "冒充提示",

@@ -155,16 +155,53 @@ describe('AcceptInvitationScreen', () => {
         onAccepted={onAccepted}
       />,
     )
+    await user.type(
+      await screen.findByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
+      'ada',
+    )
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.acceptInvitation.accept,
+      }),
+    )
+    expect(acceptInvitation).toHaveBeenCalledWith('tok-1', { username: 'ada' })
+    expect(
+      await screen.findByText(zhCN.acceptInvitation.accepted.title),
+    ).toBeInTheDocument()
+    expect(onAccepted).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a submit without the required username and sends nothing', async () => {
+    const acceptInvitation = vi.fn(() => Promise.resolve())
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({ acceptInvitation })}
+      />,
+    )
     await user.click(
       await screen.findByRole('button', {
         name: zhCN.acceptInvitation.accept,
       }),
     )
-    expect(acceptInvitation).toHaveBeenCalledWith('tok-1', {})
+    // A new account is opened with a login name: a request without one can
+    // only answer 400, so it never leaves the screen.
+    expect(acceptInvitation).not.toHaveBeenCalled()
     expect(
-      await screen.findByText(zhCN.acceptInvitation.accepted.title),
+      screen.getByText(zhCN.acceptInvitation.usernameRequired),
     ).toBeInTheDocument()
-    expect(onAccepted).toHaveBeenCalledTimes(1)
+    await user.type(
+      screen.getByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
+      'ada',
+    )
+    expect(
+      screen.queryByText(zhCN.acceptInvitation.usernameRequired),
+    ).not.toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
+    )
+    expect(acceptInvitation).toHaveBeenCalledWith('tok-1', { username: 'ada' })
   })
 
   it('fill a status region that stood empty with the acceptance confirmation', async () => {
@@ -182,6 +219,10 @@ describe('AcceptInvitationScreen', () => {
       />,
     )
     await screen.findByRole('button', { name: zhCN.acceptInvitation.accept })
+    await user.type(
+      screen.getByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
+      'ada',
+    )
     const region = screen.getByRole('status')
     expect(region).toBeEmptyDOMElement()
     await user.click(
@@ -198,7 +239,7 @@ describe('AcceptInvitationScreen', () => {
     expect(screen.getByRole('status')).toBe(region)
   })
 
-  it('passes a display name and password for an address with no account yet', async () => {
+  it('passes the username, display name and password for an address with no account yet', async () => {
     const acceptInvitation = vi.fn(() => Promise.resolve())
     const user = userEvent.setup()
     renderWithProviders(
@@ -208,7 +249,11 @@ describe('AcceptInvitationScreen', () => {
       />,
     )
     await user.type(
-      await screen.findByLabelText(zhCN.acceptInvitation.displayNameLabel),
+      await screen.findByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
+      'ada',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.acceptInvitation.displayNameLabel),
       'Ada Lovelace',
     )
     await user.type(
@@ -219,6 +264,7 @@ describe('AcceptInvitationScreen', () => {
       screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
     )
     expect(acceptInvitation).toHaveBeenCalledWith('tok-1', {
+      username: 'ada',
       displayName: 'Ada Lovelace',
       password: 's3cret-pass',
     })
@@ -235,8 +281,12 @@ describe('AcceptInvitationScreen', () => {
         invitations={operations({ acceptInvitation })}
       />,
     )
+    await user.type(
+      await screen.findByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
+      'ada',
+    )
     await user.click(
-      await screen.findByRole('button', {
+      screen.getByRole('button', {
         name: zhCN.acceptInvitation.accept,
       }),
     )
@@ -341,8 +391,11 @@ describe('AcceptInvitationScreen', () => {
         newAccountFields={{ displayName: false }}
       />,
     )
-    // The password input and the hint remain; the display name does not.
+    // The username, password and hint remain; the display name does not.
     await screen.findByRole('button', { name: zhCN.acceptInvitation.accept })
+    expect(
+      screen.getByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
+    ).toBeInTheDocument()
     expect(
       screen.queryByLabelText(zhCN.acceptInvitation.displayNameLabel),
     ).not.toBeInTheDocument()
@@ -352,15 +405,18 @@ describe('AcceptInvitationScreen', () => {
     expect(screen.getByText(zhCN.acceptInvitation.newAccountHint)).toBeInTheDocument()
   })
 
-  it('hide the hint when both new-account inputs are hidden', async () => {
+  it('hide the hint when every new-account input is hidden', async () => {
     renderWithProviders(
       <AcceptInvitationScreen
         token="tok-1"
         invitations={operations()}
-        newAccountFields={{ displayName: false, password: false }}
+        newAccountFields={{ username: false, displayName: false, password: false }}
       />,
     )
     await screen.findByRole('button', { name: zhCN.acceptInvitation.accept })
+    expect(
+      screen.queryByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
+    ).not.toBeInTheDocument()
     expect(
       screen.queryByLabelText(zhCN.acceptInvitation.displayNameLabel),
     ).not.toBeInTheDocument()
@@ -388,6 +444,10 @@ describe('AcceptInvitationScreen', () => {
         name: zhCN.acceptInvitation.title,
       }),
     ).toBeInTheDocument()
+    await user.type(
+      screen.getByLabelText(zhCN.acceptInvitation.usernameLabel, { exact: false }),
+      'ada',
+    )
     await user.click(
       screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
     )

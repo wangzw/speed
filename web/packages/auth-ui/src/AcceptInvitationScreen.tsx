@@ -18,12 +18,18 @@
  * nothing from storage and consumes no auth-core hook.
  *
  * When the invited address has no account yet the acceptance creates one, so
- * the screen offers an optional display name and password for that case (the
- * accept body's display_name and password); both are ignored when the address
- * already has an account, so leaving them blank accepts on the existing one.
- * A host that binds the account creation itself restricts the pair through
- * `newAccountFields`; hiding both also hides the hint that would describe
- * fields that are not there. The screen's titles render as `headingLevel`
+ * the screen requires a username and offers an optional display name and
+ * password for that case (the accept body's username, display_name and
+ * password); all three are ignored when the address already has an account.
+ * The acceptView answer carries no signal of whether the invited address
+ * already has an account, so the screen offers the inputs whenever the host
+ * keeps them and the server ignores them on the existing-account path.
+ * A new account is opened with a login name, so a submit with the field blank
+ * is refused here rather than sent, and the server answers the same refusal
+ * as a 400 when a request reaches it without one. A host that binds the
+ * account creation itself restricts the inputs through `newAccountFields`;
+ * hiding all of them also hides the hint that would describe fields that are
+ * not there. The screen's titles render as `headingLevel`
  * (default h1, the screen normally being the page) and the accepted
  * confirmation takes the level one below. The expiry renders in the host's
  * display time zone when one is provided (ui-kit's display-time-zone
@@ -64,9 +70,10 @@ export interface InvitationSummary {
   readonly expiresAt: string
 }
 
-/** The body an acceptance may carry (display name and initial password for
- * an address that has no account yet). */
+/** The body an acceptance may carry (the username, display name and initial
+ * password for an address that has no account yet). */
 export interface AcceptInvitationInput {
+  readonly username?: string
   readonly displayName?: string
   readonly password?: string
 }
@@ -94,13 +101,14 @@ export interface AcceptInvitationScreenProps {
   /** Fired once after the acceptance lands; the host navigates. */
   readonly onAccepted?: () => void
   /**
-   * Which of the new-account inputs to offer (both by default). The
+   * Which of the new-account inputs to offer (all by default). The username,
    * display name and password only matter when the invited address has no
-   * account yet; a host that binds that flow itself hides one or both.
-   * Hiding both also hides the explanatory hint, which would otherwise
-   * describe fields that are not there.
+   * account yet; a host that binds that flow itself hides one or more.
+   * Hiding all of them also hides the explanatory hint, which would
+   * otherwise describe fields that are not there.
    */
   readonly newAccountFields?: {
+    readonly username?: boolean
     readonly displayName?: boolean
     readonly password?: boolean
   }
@@ -163,16 +171,21 @@ export function AcceptInvitationScreen({
   // The host's display time zone when one is provided; absent, the device
   // zone (the same rendering as before the provider existed).
   const timeZone = useDisplayTimeZone()
+  const showUsername = newAccountFields?.username !== false
   const showDisplayName = newAccountFields?.displayName !== false
   const showPassword = newAccountFields?.password !== false
-  const showNewAccountFields = showDisplayName || showPassword
+  const showNewAccountFields = showUsername || showDisplayName || showPassword
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<ScreenState>({ status: 'loading' })
   const [accepting, setAccepting] = useState(false)
   const [acceptError, setAcceptError] = useState<string | null>(null)
-  // The display name and password for an address that has no account yet;
-  // both optional, and ignored by the backend when the address already has
-  // an account.
+  // The username, display name and password for an address that has no
+  // account yet; the username is required then and the other two are
+  // optional. All three are ignored by the backend when the address already
+  // has an account. usernameMissing marks a submit with the required field
+  // blank, which never reaches the server.
+  const [username, setUsername] = useState('')
+  const [usernameMissing, setUsernameMissing] = useState(false)
   const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
 
@@ -203,9 +216,19 @@ export function AcceptInvitationScreen({
   }, [token, attempt, invitations])
 
   const accept = (): void => {
+    const name = username.trim()
+    if (showUsername && name === '') {
+      // An account is opened with a login name: a submit without one can only
+      // make a round trip that answers 400, so it is refused here and the
+      // field carries the reason.
+      setUsernameMissing(true)
+      return
+    }
+    setUsernameMissing(false)
     setAccepting(true)
     setAcceptError(null)
     const input: AcceptInvitationInput = {
+      ...(name === '' ? {} : { username: name }),
       ...(displayName.trim() === '' ? {} : { displayName: displayName.trim() }),
       ...(password === '' ? {} : { password }),
     }
@@ -329,6 +352,30 @@ export function AcceptInvitationScreen({
       </Box>
       {accepted ? null : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {showUsername ? (
+            <TextField
+              size="small"
+              required
+              autoComplete="username"
+              value={username}
+              error={usernameMissing}
+              helperText={
+                usernameMissing
+                  ? t('acceptInvitation.usernameRequired')
+                  : undefined
+              }
+              slotProps={{
+                htmlInput: { 'aria-invalid': usernameMissing },
+              }}
+              onChange={(event) => {
+                setUsername(event.target.value)
+                if (usernameMissing) {
+                  setUsernameMissing(false)
+                }
+              }}
+              label={t('acceptInvitation.usernameLabel')}
+            />
+          ) : null}
           {showDisplayName ? (
             <TextField
               size="small"
