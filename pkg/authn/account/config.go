@@ -348,8 +348,11 @@ func settingsSchema() settings.Schema {
 			},
 			reservedKey: {
 				Description: "the usernames a deployment additionally keeps for the system, as a JSON " +
-					"array of usernames; the built-in list stays in effect and this one only adds names",
-				Domain: settings.DomainOf("a JSON array of usernames", reservedTextInDomain),
+					"array of usernames; the built-in list stays in effect and this one only adds names. " +
+					"Each element is normalized when the set is read, and one that is not a username is " +
+					"ignored and reported once",
+				Domain: settings.DomainOf("a JSON array of usernames, each normalized when the set is read",
+					reservedTextInDomain),
 			},
 		},
 	}

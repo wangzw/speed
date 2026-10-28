@@ -128,7 +128,8 @@ func TestTheBuiltInReservedListStandsWhenTheSettingCannotBeRead(t *testing.T) {
 }
 
 // TestTheReservedSettingAdmitsOnlyAJSONArrayOfUsernames holds the domain the
-// declaration states: an array of names that normalize, and nothing else.
+// declaration states: a JSON array of strings, and nothing else. Whether an
+// element is a username is judged when the set is read, not when it is written.
 func TestTheReservedSettingAdmitsOnlyAJSONArrayOfUsernames(t *testing.T) {
 	for _, c := range []struct {
 		text string
@@ -140,9 +141,10 @@ func TestTheReservedSettingAdmitsOnlyAJSONArrayOfUsernames(t *testing.T) {
 		{"", false},
 		{"null", false},
 		{"not json", false},
-		{`["ok","bad name"]`, false},
+		{`["ok","bad name"]`, true},
 		{`{"name":"acme"}`, false},
 		{`["acme"] trailing`, false},
+		{`["acme",1]`, false},
 	} {
 		if got := reservedTextInDomain(c.text); got != c.ok {
 			t.Errorf("reservedTextInDomain(%q) = %v, want %v", c.text, got, c.ok)
@@ -150,17 +152,64 @@ func TestTheReservedSettingAdmitsOnlyAJSONArrayOfUsernames(t *testing.T) {
 	}
 }
 
-// TestTheReservedSettingRefusesAnElementThatIsNotAUsername holds the write side
-// of the same domain: the store refuses the write rather than storing a name
-// that would be skipped when the set is read.
-func TestTheReservedSettingRefusesAnElementThatIsNotAUsername(t *testing.T) {
+// TestTheReservedSettingTakesAnElementThatIsNotAUsername holds the write side of
+// the same domain: the store takes the array as it stands, and the element that
+// is not a username is skipped when the set is read rather than refused at the
+// write.
+func TestTheReservedSettingTakesAnElementThatIsNotAUsername(t *testing.T) {
 	store, _ := deliveredSettings(t)
 	err := store.Set(context.Background(), settings.Write{
 		Layer: settings.Global(), Key: reservedPath, Value: `["bad name"]`, Actor: "test",
 	})
-	if !errors.Is(err, settings.ErrInvalidValue) {
-		t.Fatalf("writing a name that is not a username gave %v, want ErrInvalidValue", err)
+	if err != nil {
+		t.Fatalf("writing an array with a name that is not a username gave %v, want it stored", err)
 	}
+}
+
+// TestAnAppendedNameIsNormalizedWhenTheSetIsRead holds that the setting is read
+// through the same normalization a username write uses: an element written in
+// capitals refuses every spelling of it.
+func TestAnAppendedNameIsNormalizedWhenTheSetIsRead(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		h.withSettings().set(reservedPath, `["ACME"]`)
+
+		for _, name := range []string{"acme", "ACME", "Acme"} {
+			if _, err := h.p.Create(ctx, authn.CreateAccount{Username: name, Via: "admin"}); !errors.Is(err, authn.ErrUsernameReserved) {
+				t.Errorf("the spelling %q gave %v, want ErrUsernameReserved", name, err)
+			}
+		}
+		if _, err := h.p.Create(ctx, authn.CreateAccount{Username: "alice", Via: "admin"}); err != nil {
+			t.Errorf("a name outside the set gave %v, want none", err)
+		}
+	})
+}
+
+// TestAnElementThatIsNotAUsernameIsSkippedWhenTheSetIsRead holds the direction of
+// a bad element: it is ignored with one Warn while the rest of the array stands,
+// and a repeated read does not repeat the line.
+func TestAnElementThatIsNotAUsernameIsSkippedWhenTheSetIsRead(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		h.withSettings().set(reservedPath, `["acme","a b"]`)
+
+		if _, err := h.p.Create(ctx, authn.CreateAccount{Username: "acme", Via: "admin"}); !errors.Is(err, authn.ErrUsernameReserved) {
+			t.Errorf("the valid element gave %v, want ErrUsernameReserved", err)
+		}
+		if _, err := h.p.Create(ctx, authn.CreateAccount{Username: "alice", Via: "admin"}); err != nil {
+			t.Errorf("a name outside the set gave %v, want none", err)
+		}
+		lines := h.logs.lines("level=WARN")
+		if len(lines) != 1 || !strings.Contains(lines[0], "setting="+reservedPath) {
+			t.Fatalf("the Warn is %v, want one naming %s:\n%s", lines, reservedPath, h.logs.String())
+		}
+		if _, err := h.p.Create(ctx, authn.CreateAccount{Username: "bob", Via: "admin"}); err != nil {
+			t.Fatalf("creating beside the skipped element: %v", err)
+		}
+		if lines := h.logs.lines("level=WARN"); len(lines) != 1 {
+			t.Errorf("the Warn repeated on a second read: %v", lines)
+		}
+	})
 }
 
 // TestRemovingAnAppendedReservedUsernameIsARelaxation holds the direction of a

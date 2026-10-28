@@ -34,9 +34,17 @@ func readSetting[T any](p *product, path string, inDomain func(T) bool, fallback
 }
 
 // report writes the Error line for a fault of one setting or one combination of
-// them. The same fault is written once; an empty problem clears it so that it is
-// written again if it comes back.
+// them.
 func (p *product) report(key, problem, detail string) {
+	p.reportOnce(slog.LevelError, key, key, problem, detail)
+}
+
+// reportOnce writes the line for a fault of one setting at level. The same fault
+// is written once; an empty problem clears it so that it is written again if it
+// comes back. The dedupe key is separate from the setting the line names, so two
+// faults of one setting are two lines and a read that clears one does not clear
+// the other.
+func (p *product) reportOnce(level slog.Level, key, setting, problem, detail string) {
 	p.mu.Lock()
 	last, reported := p.reported[key]
 	switch {
@@ -48,9 +56,14 @@ func (p *product) report(key, problem, detail string) {
 		problem = ""
 	}
 	p.mu.Unlock()
-	if problem != "" {
-		p.logger.Error(ModuleName+": "+problem, slog.String("setting", key))
+	if problem == "" {
+		return
 	}
+	if level >= slog.LevelError {
+		p.logger.Error(ModuleName+": "+problem, slog.String("setting", setting))
+		return
+	}
+	p.logger.Warn(ModuleName+": "+problem, slog.String("setting", setting))
 }
 
 // signup is the registration switch: whether a first login through a social

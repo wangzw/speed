@@ -3,6 +3,8 @@ package account
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -31,7 +33,9 @@ var builtinReserved = func() map[string]bool {
 // reservedUsernames is the set a username write refuses: the built-in names and
 // the names the deployment appended. The built-in set is always in effect, so a
 // store that is absent, a read that fails and a value outside the domain all add
-// nothing and never take a built-in name away.
+// nothing and never take a built-in name away. An element the setting holds is
+// normalized as it is read; one that is not a username after that is skipped and
+// reported, and the rest of the array stands.
 func (p *product) reservedUsernames() map[string]bool {
 	reserved := make(map[string]bool, len(builtinReserved))
 	for name := range builtinReserved {
@@ -41,13 +45,16 @@ func (p *product) reservedUsernames() map[string]bool {
 	if err != nil {
 		return reserved
 	}
+	skipped := 0
 	for _, name := range names {
 		normalized, normErr := NormalizeIdentifier(authn.IdentifierUsername, name)
 		if normErr != nil {
+			skipped++
 			continue
 		}
 		reserved[normalized] = true
 	}
+	p.reportSkippedReserved(skipped)
 	return reserved
 }
 
@@ -78,24 +85,36 @@ func parseUsernameList(text string) ([]string, error) {
 	return names, nil
 }
 
-// reservedTextInDomain reports whether a value is a JSON array of usernames. An
-// element is normalized when the set is read; one that cannot be a username
-// makes the write be refused rather than stored and skipped.
+// reservedTextInDomain reports whether a value is a JSON array of strings. An
+// element that is not a username is not refused here: the set is normalized as
+// it is read, and one element that cannot be a username must not take the rest
+// of the array with it.
 func reservedTextInDomain(text string) bool {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return false
 	}
-	names, err := parseUsernameList(trimmed)
-	if err != nil {
-		return false
+	_, err := parseUsernameList(trimmed)
+	return err == nil
+}
+
+// reservedSkippedKey is the dedupe key of the Warn a read makes when it skips an
+// element of the reserved-usernames setting. It is kept apart from the setting's
+// own key so that a failed read and a skipped element do not clear each other's
+// line.
+const reservedSkippedKey = reservedPath + ":element"
+
+// reportSkippedReserved writes the one Warn a read of the reserved-usernames
+// setting makes when it skips elements that are not usernames, and clears it
+// when a read skips none. The line names neither the elements nor the value.
+func (p *product) reportSkippedReserved(skipped int) {
+	problem := ""
+	detail := ""
+	if skipped > 0 {
+		problem = "an element of the reserved-usernames setting is not a username, so it is ignored"
+		detail = strconv.Itoa(skipped)
 	}
-	for _, name := range names {
-		if _, normErr := NormalizeIdentifier(authn.IdentifierUsername, name); normErr != nil {
-			return false
-		}
-	}
-	return true
+	p.reportOnce(slog.LevelWarn, reservedSkippedKey, reservedPath, problem, detail)
 }
 
 // reservedChangeList is one side of a change to the reserved-usernames setting:
