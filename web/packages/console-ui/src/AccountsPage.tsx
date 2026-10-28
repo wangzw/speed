@@ -1732,7 +1732,7 @@ type CreateAccountMutation = UseMutationResult<
 /**
  * The bundle key of a create refusal the form words itself, or null for one
  * the scope's code text already covers. Only a user account carries a
- * username, so only its two username refusals are named here.
+ * username, so only its three username refusals are named here.
  */
 function createFailureKey(
   kind: CreateAccountFields['kind'],
@@ -1745,7 +1745,9 @@ function createFailureKey(
     case 'authn.username_taken':
       return 'accounts.create.usernameTaken'
     case 'authn.username_reserved':
-      return 'accounts.create.usernameUnusable'
+      return 'accounts.create.usernameReserved'
+    case 'authn.bad_request':
+      return 'accounts.create.usernameInvalid'
     default:
       return null
   }
@@ -1772,8 +1774,9 @@ function createFailureKey(
  *
  * A refused create settles the create panel's own scope, whose region stands
  * under the form with the fields kept for correction. A username the server
- * refuses is named by the form instead: a name another account holds and a
- * name the system keeps for itself each get their own sentence, rendered in
+ * refuses is named by the form instead: a name another account holds, a name
+ * the system keeps for itself and a name it cannot normalize each get their
+ * own sentence, rendered in
  * the same position as the scope's failure and only when the attempt also
  * left the scope empty. A landed create closes
  * the panel through the page: its success belongs to the list's scope and is

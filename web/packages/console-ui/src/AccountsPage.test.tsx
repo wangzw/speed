@@ -381,7 +381,16 @@ const USERNAME_RESERVED = {
   message: 'username reserved',
 }
 
-const USERNAME_RESERVED_TEXT = zhCN.accounts.create.usernameUnusable
+const USERNAME_RESERVED_TEXT = zhCN.accounts.create.usernameReserved
+
+/** A 400 refusal of a login name that does not fit the server's rule. */
+const USERNAME_INVALID = {
+  status: 400,
+  code: 'authn.bad_request',
+  message: 'username invalid',
+}
+
+const USERNAME_INVALID_TEXT = zhCN.accounts.create.usernameInvalid
 
 const SECRET_ROW = {
   id: 'sec-1',
@@ -2390,6 +2399,22 @@ describe('AccountsPage', () => {
     expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
     // The operator keeps the name field to correct the name.
     expect(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel)).toHaveValue('admin')
+  })
+
+  it('names an ill-formed username in a creation failure', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      createAccount: () => Promise.reject(USERNAME_INVALID),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    const panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), '-grace')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
+
+    const alert = await within(panel).findByRole('alert')
+    expect(alert).toHaveTextContent(USERNAME_INVALID_TEXT)
+    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
   })
 
   it('keeps the username copy off a service account creation', async () => {
