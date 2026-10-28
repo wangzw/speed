@@ -195,7 +195,7 @@
 
 - **验收**：分别经短信首登、社交首登与企业即时开通发起开户，流程在建立账户之前呈现用户名一步；提交合法用户名后账户持有该用户名，未提交或提交不合法用户名时没有账户产生。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`；`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`；`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`
 
 ### REQ-signup-015
 
@@ -243,7 +243,7 @@
 
 - **验收**：预置开通按 REQ-signin-021 的验收判定；即时开通按 REQ-signin-022 的验收判定；提供方声明的开通方式不是这两种之一时登录失败且不建户；即时开通未取得合法用户名时不建账户。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`；`enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`
 
 ### REQ-signup-019
 
@@ -403,5 +403,5 @@
 
 - **验收**：旧行为写下的邮箱标识、手机标识与外部身份绑定在新规则下仍可用于其原本可用的登录，并仍按旧行为读作联系方式、持有原有的默认联系地址；一次性回填只写新增的标记列，既有行的验证时刻、验证渠道与取值保持不变，行本身不被删除，可见行为不变；导入的账户按源记录取得登录方式、联系方式与默认联系地址；新开立的账户与新的写入遵守新规则。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：未实现（迁移回填与导入由 `pkg/authn/account/identifier_axes_test.go` `TestTheIdentifierAxesMigrationBackfillsExistingRows`、`TestAnImportWritesTheAxesItsSourceRecordHad` 覆盖）
 

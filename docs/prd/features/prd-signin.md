@@ -202,7 +202,7 @@
 
 - **验收**：提供方为即时开通模式且断言邮箱域属于其已验证域时，首次登录并提交合法用户名后得到一个持有该用户名的新建账户与一条该租户的成员关系；未取得合法用户名时不建账户；断言邮箱已被现有账户持有时不新建账户，按 REQ-signin-017 报告需先绑定，不并入该账户。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`
 
 ### REQ-signin-034
 

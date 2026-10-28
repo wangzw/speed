@@ -1102,9 +1102,9 @@ type Provisioner interface {
 | `AccountEnabled` 钩子与启用之后的恢复调用 | 已实现 | `pkg/authn/lifecycle.go` `AccountLifecycle.AccountEnabled`；`pkg/authn/account/lifecycle.go` `SetStatus`；`pkg/authn/session/lifecycle.go`、`pkg/authn/mfa/manage.go`、`pkg/authn/sms/lifecycle.go`、`pkg/authz/policy/lifecycle.go` 的 `AccountEnabled`；`pkg/authn/account/lifecycle_test.go` `TestEnablingCallsTheEnabledHook`、`TestSetStatusToActiveOnAnActiveAccountRunsTheEnabledHook` |
 | 显式成员关系删除的守卫与生命周期钩子 | 已实现 | `pkg/authn/membership.go` `MembershipLifecycle`、`MembershipGuard`、`SharedMembershipLock`；`pkg/authn/account/account.go` `(*product).membershipGuards`、`wire`；`pkg/authn/account/memberships.go` `(*product).Remove`、`lockMembershipRemoval`、`membershipExists`、`checkMembershipRemoval`；`pkg/authn/account/lifecycle.go` `callMembershipHooks`；`pkg/authz/policy/lifecycle.go` `MembershipRemoved`、`CheckMembershipRemoval`；`starters/demo/server/tenancy.go` `(*tenancyProduct).CheckMembershipRemoval`、`(*tenancyProduct).MembershipLock`；`pkg/authn/account/membership_lifecycle_test.go` `TestEveryMembershipGuardIsAsked`、`TestTwoGuardsSharingOneLockTakeItOnce` |
 | 外部身份绑定、首登开户与账户解析（执行在 `authn.login` 的账户解析步） | 部分实现 | `pkg/authn/account/admin.go` `LinkExternal`、`UnlinkExternal`、`AddIdentifier`、`RemoveIdentifier`；`pkg/authn/account/accounts.go` `ByExternal`；`pkg/authn/account/admin.go` `Create`；`pkg/authn/login/internal/resolve` |
-| 标识与联系方式的两条独立标记、默认联系地址与账户面的选择 | 未实现 | — |
-| 提供方声明的地址不写入新账户，自动关联退役，命中现有账户应答 `link-required` | 未实现 | — |
-| 口令登录只接受用户名或被选作登录方式的已验证邮箱 | 未实现 | — |
+| 标识与联系方式的两条独立标记、默认联系地址与账户面的选择 | 已实现 | `pkg/authn/account/admin.go` `AccountAdmin.SetIdentifierFlags`、`AccountAdmin.SetDefaultContact`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
+| 提供方声明的地址不写入新账户，自动关联退役，命中现有账户应答 `link-required` | 已实现 | `pkg/authn/login/internal/resolve`（首登开户不写提供方地址）；`pkg/authn/account/config.go` `settingsSchema`（`auto-link` 移除）；`pkg/authn/login/engine.go`（需先绑定） |
+| 口令登录只接受用户名或被选作登录方式的已验证邮箱 | 已实现 | `pkg/authn/account/password.go` `loginIdentifiers` |
 | 非因素登录方式的计数与查询（口令凭据、被选作登录方式的已验证手机号、外部身份任一即真，通行密钥不算，未证明或未被选中的手机号不算） | 部分实现 | `pkg/authn/account/admin.go` `loginWayHeld`、`HasLoginWayOtherThanPasskey` |
 | 口令凭据的 PHC 编解码、解析界限、强度下限、再哈希、内存预算 | 已实现 | `pkg/authn/account/password.go` `Verify`；`pkg/authn/account/credentials.go` `Set`、`Clear`、`ImportHash`；`pkg/authn/internal/password` `Parse`、`Params`、`Governor`、`Decoy` |
 | 口令凭据的删除 | 已实现 | `pkg/authn/account/credentials.go` `Clear`；`pkg/authn/account.go` `Passwords.Clear` |
