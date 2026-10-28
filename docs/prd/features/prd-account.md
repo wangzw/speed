@@ -130,7 +130,7 @@
 
 - **验收**：建号时未带用户名的账户添加合法用户名后，列表中立即出现该用户名且可用于口令登录；该账户在添加之前以它持有的邮箱、手机或外部身份完成登录，且账户上没有被系统自动写入的用户名。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
+- **端到端测试**：未实现
 
 ### REQ-account-037
 
@@ -258,7 +258,7 @@
 
 - **验收**：在设备 A 新增一条登录方式后，设备 B 的下一次请求被要求重新登录；设备 A 的当前会话仍然可用；删除登录方式不触发撤销。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
+- **端到端测试**：未实现
 
 ### REQ-account-014
 
@@ -386,7 +386,7 @@
 
 - **验收**：建号时未带用户名且仅有手机标识的账户，在页面先看到添加用户名，添加后出现口令表单。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
+- **端到端测试**：未实现
 
 ### REQ-account-050
 
@@ -442,7 +442,7 @@
 
 - **验收**：设备 A 改口令后仍可继续使用，设备 B 的下一次请求被要求重新登录；会话列表中不再出现设备 B 的会话。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-account-027
 

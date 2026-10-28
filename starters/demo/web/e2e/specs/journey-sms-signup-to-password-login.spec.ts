@@ -46,7 +46,7 @@
  * it rather than leaving a stale literal that still passes.
  */
 // @journey journey-sms-signup-to-password-login.md
-// @covers REQ-account-007, REQ-account-021, REQ-account-022, REQ-account-023, REQ-account-026, REQ-security-029, REQ-security-030, REQ-signin-006, REQ-signin-011, REQ-signup-012, REQ-signup-014, REQ-signup-015, REQ-tenancy-022, REQ-tenancy-026
+// @covers REQ-account-007, REQ-account-021, REQ-account-023, REQ-account-026, REQ-security-029, REQ-security-030, REQ-signin-006, REQ-signin-011, REQ-signup-012, REQ-signup-014, REQ-signup-015, REQ-tenancy-022, REQ-tenancy-026
 import type { BrowserContext, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
