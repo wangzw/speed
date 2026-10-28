@@ -118,6 +118,46 @@ func TestCreateTakesAnImportedIdentifierAndRefusesOnesThatCannotBe(t *testing.T)
 	})
 }
 
+// TestAnImportKeepsAReservedUsername holds the exemption the design states: an
+// import restores an account that already existed, so the reserved set does not
+// apply to the name it brings back, while a write that takes a new name still
+// meets it.
+func TestAnImportKeepsAReservedUsername(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		created, err := h.p.Create(ctx, authn.CreateAccount{Username: "admin", Via: "import"})
+		if err != nil {
+			t.Fatalf("importing a built-in reserved name gave %v, want none", err)
+		}
+		if id, lerr := h.p.Lookup(ctx, authn.IdentifierUsername, "admin"); lerr != nil || id != created.ID {
+			t.Errorf("the imported name reads back as %q, %v, want %q", id, lerr, created.ID)
+		}
+
+		h.withSettings().set(reservedPath, `["partner-support"]`)
+		if _, err = h.p.Create(ctx, authn.CreateAccount{Username: "partner-support", Via: "admin"}); !errors.Is(err, authn.ErrUsernameReserved) {
+			t.Errorf("a new account taking the appended name gave %v, want ErrUsernameReserved", err)
+		}
+		if _, err = h.p.Create(ctx, authn.CreateAccount{Username: "partner-support", Via: "import"}); err != nil {
+			t.Errorf("importing the appended name gave %v, want none", err)
+		}
+	})
+}
+
+// TestAnImportStillHoldsFormatAndUniqueness holds the other side of the
+// exemption: the reserved set is the only check an import skips.
+func TestAnImportStillHoldsFormatAndUniqueness(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		if _, err := h.p.Create(ctx, authn.CreateAccount{Username: "bad name", Via: "import"}); !errors.Is(err, authn.ErrInvalidIdentifier) {
+			t.Errorf("importing a name outside the format gave %v, want ErrInvalidIdentifier", err)
+		}
+		h.user("taken", "")
+		if _, err := h.p.Create(ctx, authn.CreateAccount{Username: "taken", Via: "import"}); !errors.Is(err, authn.ErrAccountExists) {
+			t.Errorf("importing a taken name gave %v, want ErrAccountExists", err)
+		}
+	})
+}
+
 func TestCreateRefusesWhatItAdmitsNot(t *testing.T) {
 	long := strings.Repeat("x", 300)
 	tooMany := map[string]string{}

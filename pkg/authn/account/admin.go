@@ -96,8 +96,9 @@ func eventVia(via string) (string, error) {
 // account rather than open one are exempt, an import that brings back an
 // existing account and a service account that signs in with a service secret.
 // A username is normalized and held to the reserved set like every other
-// username write, and a missing or unusable one creates nothing. A username is
-// always a login way.
+// username write, except on the import path, whose name was given before
+// this deployment's list existed. A missing or unusable one creates nothing.
+// A username is always a login way.
 //
 // An email address and a phone number are written verified, and the way each
 // was comes with it; no row awaits verification. Their two axes start false
@@ -243,12 +244,18 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		return plan, fmt.Errorf("%w: a user account is created with a username", authn.ErrInvalidIdentifier)
 	}
 
+	// importing is the account's own path, read before the closure below shadows
+	// the name with the way one identifier was verified.
+	importing := via == byImport
 	add := func(k authn.IdentifierKind, value string, via string, flags authn.IdentifierFlags, defaultContact bool) error {
 		var normalized, rowID string
 		if normalized, err = NormalizeIdentifier(k, value); err != nil {
 			return err
 		}
-		if k == authn.IdentifierUsername {
+		// An import restores an account that already existed, so the name it
+		// brings back is not one this deployment may refuse. The format above and
+		// the uniqueness of the write are still the checks every path meets.
+		if k == authn.IdentifierUsername && !importing {
 			if reservedErr := p.checkReservedUsername(normalized); reservedErr != nil {
 				return reservedErr
 			}
