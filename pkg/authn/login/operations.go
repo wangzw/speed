@@ -596,7 +596,9 @@ var answerOperation = speedhttp.NewReplyOperation[answerInput](
 	pathFlowsAnswer,
 	"Answer the current step of the flow the request is bound to",
 	"Advances the flow the request is bound to by one step. The body must echo the flow's current `seq`, or the "+
-		"call is a 401 flow-invalid. `step` must be one of `answer`, `factor`, `enroll` or `complete`: a name "+
+		"call is a 401 flow-invalid. A refused answer is not progress: it keeps the step and its `seq`, counting "+
+		"only against the eight-answer limit, so the same `seq` answers again once the value is corrected. "+
+		"`step` must be one of `answer`, `factor`, `enroll` or `complete`: a name "+
 		"outside that set is a 400 bad-request, and a step the flow's state does not accept is a 401 "+
 		"flow-invalid. A flow accepts at most eight client answers, after which it is moved to failed and every "+
 		"later answer is a 401 flow-invalid. The answer is the flow at its next step or, once the flow is ready, "+
