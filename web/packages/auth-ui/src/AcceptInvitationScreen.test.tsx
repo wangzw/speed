@@ -303,7 +303,7 @@ describe('AcceptInvitationScreen', () => {
   it.each([
     ['authn.username_taken', 409, zhCN.acceptInvitation.usernameTaken],
     ['authn.username_reserved', 400, zhCN.acceptInvitation.usernameReserved],
-    ['authn.bad_request', 400, zhCN.acceptInvitation.usernameInvalid],
+    ['authn.username_invalid', 400, zhCN.acceptInvitation.usernameInvalid],
   ])(
     'states %s on the username field rather than the banner',
     async (code, status, text) => {
@@ -337,6 +337,36 @@ describe('AcceptInvitationScreen', () => {
       unmount()
     },
   )
+
+  it('leaves a bad-request refusal to the banner', async () => {
+    // authn.bad_request is not the username's own shape answer (that is
+    // authn.username_invalid), so the field stays clean.
+    const acceptInvitation = vi.fn(() =>
+      Promise.reject({ status: 400, code: 'authn.bad_request' }),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({ acceptInvitation })}
+      />,
+    )
+    const username = await screen.findByLabelText(
+      zhCN.acceptInvitation.usernameLabel,
+      { exact: false },
+    )
+    await user.type(username, 'ada')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.bad_request,
+    )
+    expect(username).not.toHaveAttribute('aria-invalid', 'true')
+    expect(
+      screen.queryByText(zhCN.acceptInvitation.usernameInvalid),
+    ).not.toBeInTheDocument()
+  })
 
   it('renders the not-found text for a bare 404 read answer', async () => {
     renderWithProviders(

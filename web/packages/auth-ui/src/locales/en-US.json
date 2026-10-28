@@ -218,6 +218,7 @@
       "conflict": "Your account may have changed. Refresh the page and try again.",
       "username_taken": "That username is already taken. Choose another.",
       "username_reserved": "That username is reserved by the system. Choose another.",
+      "username_invalid": "That username doesn't meet the rules shown here.",
       "throttled": "Too many attempts. Please try again later.",
       "unavailable": "The service is temporarily unavailable. Please try again later.",
       "human_verification_required": "Please confirm you are human, then try again."

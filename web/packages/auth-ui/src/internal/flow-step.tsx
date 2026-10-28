@@ -93,7 +93,7 @@ function usernameRefusalKey(code: string | null): string | null {
       return 'signInFlow.usernameTaken'
     case 'authn.username_reserved':
       return 'signInFlow.usernameReserved'
-    case 'authn.bad_request':
+    case 'authn.username_invalid':
       return 'signInFlow.usernameInvalid'
     default:
       return null

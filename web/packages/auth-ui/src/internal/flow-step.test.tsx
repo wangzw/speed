@@ -133,7 +133,7 @@ describe('FlowStepFields username step', () => {
   it.each([
     ['authn.username_taken', zhCN.signInFlow.usernameTaken],
     ['authn.username_reserved', zhCN.signInFlow.usernameReserved],
-    ['authn.bad_request', zhCN.signInFlow.usernameInvalid],
+    ['authn.username_invalid', zhCN.signInFlow.usernameInvalid],
   ])('renders %s under the username field', (code, text) => {
     renderSignup(code)
 
@@ -146,11 +146,15 @@ describe('FlowStepFields username step', () => {
   })
 
   it('leaves the field without an error for any other code', () => {
-    renderSignup('authn.throttled')
-
-    const field = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
-    expect(field).not.toHaveAttribute('aria-invalid', 'true')
-    expect(field).toHaveAccessibleDescription(zhCN.signInFlow.usernameHelper)
+    // authn.bad_request is not a username refusal: on this step it belongs
+    // to the surface's whole-attempt banner.
+    for (const code of ['authn.bad_request', 'authn.throttled']) {
+      const { unmount } = renderSignup(code)
+      const field = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
+      expect(field).not.toHaveAttribute('aria-invalid', 'true')
+      expect(field).toHaveAccessibleDescription(zhCN.signInFlow.usernameHelper)
+      unmount()
+    }
   })
 })
 

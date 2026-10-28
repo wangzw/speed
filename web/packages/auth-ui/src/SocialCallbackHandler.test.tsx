@@ -554,7 +554,7 @@ describe('SocialCallbackHandler', () => {
   it.each([
     ['authn.username_taken', 409, zhCN.signInFlow.usernameTaken],
     ['authn.username_reserved', 400, zhCN.signInFlow.usernameReserved],
-    ['authn.bad_request', 400, zhCN.signInFlow.usernameInvalid],
+    ['authn.username_invalid', 400, zhCN.signInFlow.usernameInvalid],
   ])(
     'renders %s under the username field and keeps the step and its value',
     async (code, status, text) => {
@@ -594,10 +594,12 @@ describe('SocialCallbackHandler', () => {
   )
 
   it('keeps the whole-attempt banner for a failure that is not a name refusal', async () => {
+    // authn.bad_request is another field's refusal (or a malformed body),
+    // so it never lands on the username field.
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => signupFlow(),
       [LOGIN_ANSWER]: () => {
-        throw apiError(429, 'authn.throttled')
+        throw apiError(400, 'authn.bad_request')
       },
     })
     renderWithProviders(<SocialCallbackHandler session={harness.session} />)
@@ -607,7 +609,7 @@ describe('SocialCallbackHandler', () => {
     await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      zhCN.errors.authn.throttled,
+      zhCN.errors.authn.bad_request,
     )
     expect(username).not.toHaveAttribute('aria-invalid', 'true')
     expect(username).toHaveAccessibleDescription(

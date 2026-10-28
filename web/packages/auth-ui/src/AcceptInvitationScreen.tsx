@@ -152,7 +152,7 @@ function usernameRejectionKey(code: string): string | null {
       return 'acceptInvitation.usernameTaken'
     case 'authn.username_reserved':
       return 'acceptInvitation.usernameReserved'
-    case 'authn.bad_request':
+    case 'authn.username_invalid':
       return 'acceptInvitation.usernameInvalid'
     default:
       return null

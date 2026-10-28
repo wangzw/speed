@@ -41,6 +41,7 @@ describe('InlineError', () => {
     ['authn.conflict', zhCN.errors.authn.conflict],
     ['authn.username_taken', zhCN.errors.authn.username_taken],
     ['authn.username_reserved', zhCN.errors.authn.username_reserved],
+    ['authn.username_invalid', zhCN.errors.authn.username_invalid],
     ['authn.throttled', zhCN.errors.authn.throttled],
     ['authn.unavailable', zhCN.errors.authn.unavailable],
     ['authn.unsupported_region', zhCN.errors.authn.unsupported_region],

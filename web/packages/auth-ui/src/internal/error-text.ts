@@ -45,6 +45,7 @@ export const ERROR_TEXT_CODES = [
   'authn.conflict',
   'authn.username_taken',
   'authn.username_reserved',
+  'authn.username_invalid',
   'authn.throttled',
   'authn.unavailable',
   'authn.unsupported_region',
