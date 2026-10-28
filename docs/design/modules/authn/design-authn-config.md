@@ -211,11 +211,11 @@
 | `authn.account.signup-global-hourly` | 整数 | `100` | 1 到 1000000 | | 增大 |
 | `authn.account.unverified-ttl` | `time.Duration` | `720h` | 0 到 8760h；0 关闭 | | |
 | `authn.account.unverified-sweep-interval` | `time.Duration` | `1h` | 1m 到 24h | | |
-| `authn.account.reserved-usernames` | 字符串，JSON 数组 | `[]` | 用户名数组，每项在写入时规范化 | | 删去追加项 |
+| `authn.account.reserved-usernames` | 字符串，JSON 数组 | `[]` | 用户名数组，读取时规范化 | | 删去追加项 |
 
 `authn.account.password-signup` 与 `authn.account.signup` 相互独立：前者开的是匿名的用户名加口令注册路由，后者开的是社交与短信首次登录的开户。任一为 `open` 都使发现端点的 `signup.enabled` 为真，但两者互不蕴含：注册关闭时首登开户照旧，首登开户关闭时注册照旧。`authn.account.signup-ip-limit` 是注册路由按来源地址的分钟预算，缺省为每分钟 10 次，0 关闭；`authn.account.signup-global-hourly` 是注册的全局小时预算。`unverified-ttl` 是自助注册账户在 `signup_state=1`、`signup_verified_at IS NULL` 且没有已验证邮箱时可以保持不动的期限，0 关闭清理；清理删除账户时连带释放它的联系方式预留；`unverified-sweep-interval` 是清扫协程的间隔。后两项不放宽任何校验：期限变长只是让受限账户留得更久。
 
-`authn.account.reserved-usernames` 是部署追加的保留用户名集合，只读全局层。取值是规范化后的用户名组成的 JSON 数组，每个元素在写入时经 `NormalizeIdentifier` 规范化，不合规的元素使写入被拒绝。生效集合是内置清单与设置值的并集：内置清单一律生效，设置只能追加，不能移除内置项。设置缺席、读取出错或取值越出取值域时取声明缺省的空集合，内置清单照常生效。删去追加项让集合变松，按放宽方向记录一行 `Warn` 与 `authn.settings.relaxed`。
+`authn.account.reserved-usernames` 是部署追加的保留用户名集合，只读全局层。取值是用户名的 JSON 数组；读取时对每个元素做 `NormalizeIdentifier` 规范化，规范化后仍不合规的元素被忽略并记一行 `Warn`，其余元素照常生效。生效集合是内置清单与设置值的并集：内置清单一律生效，设置只能追加，不能移除内置项。设置缺席、读取出错或取值越出取值域时取声明缺省的空集合，内置清单照常生效。删去追加项让集合变松，按放宽方向记录一行 `Warn` 与 `authn.settings.relaxed`。
 
 `cache-ttl` 是绝对期限：自一次真实派生通过起算，命中不续期，0 关闭缓存。`fail-window` 与 `max-backoff` 的取值域各自独立，所以 `max-backoff` 大于 `fail-window` 的组合合法。失败计数在窗口已过、且这些失败赚得的等待也已走完之后才归零，窗口不会在锁定期结束之前把计数清掉；缺省值下两者相等，行为与按窗口归零相同。账户的 `throttle-decay` 与 `throttle-max-delay` 同判（[design-authn-account](design-authn-account.md)）。
 

@@ -47,7 +47,7 @@
 - **建号前取得。** 自助注册在请求体里要求用户名（REQ-signup-004）。首登开户在判定「要开户」之后、写入账户之前索取用户名，用户名不合法时不开户。管理面预置在建账户的请求里要求用户名；导入路径可以不带，它写的是既有账户（REQ-account-060）。
 - **取值规则。** 先 NFKC，再转小写；长度为 3 到 64 个字符，字符集为 `[a-z0-9._-]`；首字符为字母或数字；不得以静态凭据表的前缀（`static.`）起头；不得是 UUID 形状；全部账户内唯一。每一处写入用户名的路径都走同一个规范化与校验。
 - **URL 安全是保证，不是寻址规则。** 规范化后的字符集是 RFC 3986 非保留字符的子集，把用户名作为 URL 路径的一段使用时不需要转义。用户名今天不出现在任何 URL 里，本决定不引入这种用法。
-- **保留用户名清单。** 清单是内置缺省清单（`api`、`console`、`account`、`admin`、`system`、`login`、`logout`、`signin`、`signup`、`static`、`assets`、`health`、`ready`、`metrics`、`oauth`、`callback`、`well-known`、`www`、`root`）与部署经设置 `authn.account.reserved-usernames` 追加的集合的并集。写入用户名的每个入口都拒绝清单内的值；设置读取失败时内置清单仍然生效。
+- **保留用户名清单。** 清单是内置缺省清单（`api`、`console`、`account`、`admin`、`system`、`login`、`logout`、`signin`、`signup`、`static`、`assets`、`health`、`ready`、`metrics`、`oauth`、`callback`、`well-known`、`www`、`root`）与部署经设置 `authn.account.reserved-usernames` 追加的集合的并集。写入新用户名的每个入口都拒绝清单内的值；导入既有账户的路径不受此限；设置读取失败时内置清单仍然生效。
 - **写入面一致。** 匿名口令注册、首登开户的用户名一步与账户面添加用户名适用同一套取值规则与同一份保留用户名清单（REQ-signup-004、REQ-account-008、REQ-account-038）。
 - **拒绝的语义。** 保留用户名是取值不合法，与被其他账户占用是两种结果；两者不合并为同一种拒绝，界面与调用方分别呈现。
 - **存量账户不回溯。** 没有用户名的账户保持现状：可以用其已选作登录方式的邮箱、手机或外部身份登录，账户面仍可添加用户名（REQ-account-008、REQ-account-012、REQ-account-022、REQ-account-050）。系统不为其批量生成或补写用户名。
