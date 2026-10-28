@@ -539,6 +539,56 @@ describe('SocialCallbackHandler', () => {
     ).toHaveLength(1)
   })
 
+  it('words a taken username on the sign-up step instead of the generic line', async () => {
+    // A first login through a method that opens an account parks at signup
+    // until the name arrives. A name another account holds is refused with
+    // authn.username_taken and the step stays for another try, so the banner
+    // must name the username rather than fall back to the unknown line.
+    let answers = 0
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () =>
+        openFlow({
+          seq: 1,
+          state: 'signup',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'username', kind: 'text', required: true }],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) => {
+        const step = (call.options?.body as { step?: string }).step
+        if (step === 'complete') {
+          return authenticatedCompletion()
+        }
+        answers += 1
+        if (answers === 1) {
+          throw apiError(409, 'authn.username_taken')
+        }
+        return completeFlow(2)
+      },
+      [PROFILE_GET]: () => principal(),
+    })
+    const onSignedIn = vi.fn()
+    renderWithProviders(
+      <SocialCallbackHandler session={harness.session} onSignedIn={onSignedIn} />,
+    )
+    const user = userEvent.setup()
+    const username = await screen.findByLabelText(zhCN.signInFlow.usernameLabel)
+    await user.type(username, 'ada')
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.signInFlow.usernameTaken)
+    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
+    // The step stays, so another name can be tried in place.
+    expect(screen.getByLabelText(zhCN.signInFlow.usernameLabel)).toHaveValue(
+      'ada',
+    )
+
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+  })
+
   it('fall back to the re-reading retry when a step answer is refused as flow-invalid', async () => {
     // authn.flow_invalid means the flow is gone: no step is left to keep,
     // so the banner renders with the retry that reads the flow back -- the

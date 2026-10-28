@@ -105,6 +105,7 @@ import {
   useChannelFeedback,
 } from './internal/write-feedback.js'
 import { FlowStepFields } from './internal/flow-step.js'
+import { useFlowErrorText } from './internal/inline-error.js'
 import { retryWaitMs } from './internal/retry-wait.js'
 import { stepKey, useStepFocus } from './internal/step-focus.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
@@ -485,6 +486,9 @@ export function SMSSignInForm({
       ? 'sms-phone'
       : stepKey(driver.step)
   const surfaceRef = useStepFocus(surfaceKey)
+  // A parked username step words its two refusals for that step; the
+  // form's own steps and every other code keep the namespace's text.
+  const flowErrorText = useFlowErrorText(driver.step)
 
   // The deployment's human-verification block, above whichever send
   // control the current step shows. It renders nothing when no proof is
@@ -517,7 +521,7 @@ export function SMSSignInForm({
             key === null ? feedback.clearLocal() : feedback.failLocal(key)
           }
         />
-        <ChannelFeedbackRegion feedback={feedback} />
+        <ChannelFeedbackRegion feedback={feedback} resolve={flowErrorText} />
       </Box>
     )
   }

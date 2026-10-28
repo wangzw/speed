@@ -52,7 +52,7 @@ import Typography from '@mui/material/Typography'
 import type { AuthSession, AuthnMethodList } from '@speed/auth-core'
 import { errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
-import { InlineError } from './internal/inline-error.js'
+import { InlineError, useFlowErrorText } from './internal/inline-error.js'
 import { HumanGatedFlowStep } from './internal/flow-step.js'
 import { stepKey, useStepFocus } from './internal/step-focus.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
@@ -234,6 +234,10 @@ export function SocialCallbackHandler({
   const surfaceRef = useStepFocus(stepKey(driver.step), {
     focusFirstStep: false,
   })
+  // A refusal that keeps the flow parked on the username step words the
+  // two username refusals for that step; every other step and code keeps
+  // the namespace's own text.
+  const flowErrorText = useFlowErrorText(driver.step)
 
   if (absentShown && absent !== undefined) {
     return <>{absent}</>
@@ -279,7 +283,7 @@ export function SocialCallbackHandler({
         />
         {stepFailure === null ? null : (
           <Box sx={{ mt: 1, width: '100%' }}>
-            <InlineError code={stepFailure} />
+            <InlineError code={stepFailure} resolve={flowErrorText} />
           </Box>
         )}
       </Box>

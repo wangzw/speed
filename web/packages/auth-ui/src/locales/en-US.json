@@ -65,6 +65,8 @@
     "codeLabel": "Authenticator code",
     "usernameLabel": "Username",
     "usernameHelper": "3 to 64 characters: letters, digits, dot, dash or underscore. The first character must be a letter or a digit.",
+    "usernameTaken": "That username is already taken. Choose another one.",
+    "usernameUnusable": "That username cannot be used. Choose another one.",
     "passkeyPrompt": "Use your device to sign in with a passkey.",
     "passkeyRegisterPrompt": "Use your device to register a passkey.",
     "passkeyWaiting": "Waiting for your device…",
@@ -178,6 +180,7 @@
     "displayNameLabel": "Display name",
     "passwordLabel": "Password",
     "usernameRequired": "Enter a username for the new account.",
+    "usernameUnusable": "That username cannot be used. Choose another one.",
     "newAccountHint": "If the invited email address has no account yet, choose a username and optionally a display name and password. If it already has one, these are ignored."
   },
   "impersonation": {
@@ -206,6 +209,8 @@
       "password_reset_closed": "Password reset without signing in is not available on this site.",
       "password_reset_unavailable": "This account cannot reset its password. Contact an administrator for help.",
       "conflict": "Your account may have changed. Refresh the page and try again.",
+      "username_taken": "That username is already taken. Choose another one.",
+      "username_reserved": "That username cannot be used. Choose another one.",
       "throttled": "Too many attempts. Please try again later.",
       "unavailable": "The service is temporarily unavailable. Please try again later.",
       "human_verification_required": "Please confirm you are human, then try again."

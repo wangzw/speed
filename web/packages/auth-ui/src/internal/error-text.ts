@@ -43,6 +43,8 @@ export const ERROR_TEXT_CODES = [
   'authn.password_reset_closed',
   'authn.password_reset_unavailable',
   'authn.conflict',
+  'authn.username_taken',
+  'authn.username_reserved',
   'authn.throttled',
   'authn.unavailable',
   'authn.unsupported_region',

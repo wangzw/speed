@@ -43,7 +43,9 @@
  * 404 ("no such invitation") and a 409 ("expired, revoked or already
  * accepted"); any other failure renders the answer's code through the
  * family's error banner with a retry. A refused acceptance renders its code
- * the same way and leaves the accept action ready for another try. Host
+ * the same way and leaves the accept action ready for another try, except a
+ * 400: that is the server refusing the login name the acceptance would open
+ * the account with, so the username field states it. Host
  * callbacks (onAccepted) fire after the operation settles and are contained
  * -- a throwing callback is never a failure of the acceptance.
  */
@@ -183,9 +185,12 @@ export function AcceptInvitationScreen({
   // account yet; the username is required then and the other two are
   // optional. All three are ignored by the backend when the address already
   // has an account. usernameMissing marks a submit with the required field
-  // blank, which never reaches the server.
+  // blank, which never reaches the server; usernameUnusable marks the
+  // server's own refusal of the name (a shape it cannot normalize, or a
+  // reserved name), which the field states rather than the banner.
   const [username, setUsername] = useState('')
   const [usernameMissing, setUsernameMissing] = useState(false)
+  const [usernameUnusable, setUsernameUnusable] = useState(false)
   const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
 
@@ -217,6 +222,7 @@ export function AcceptInvitationScreen({
 
   const accept = (): void => {
     const name = username.trim()
+    setUsernameUnusable(false)
     if (showUsername && name === '') {
       // An account is opened with a login name: a submit without one can only
       // make a round trip that answers 400, so it is refused here and the
@@ -249,7 +255,20 @@ export function AcceptInvitationScreen({
       },
       (error: unknown) => {
         setAccepting(false)
-        setAcceptError(errorCodeOf(error))
+        const code = errorCodeOf(error)
+        if (
+          (code === 'authn.bad_request' ||
+            code === 'authn.username_reserved') &&
+          showUsername
+        ) {
+          // The server refused the login name the acceptance would open the
+          // account with -- malformed, or a name it keeps for itself: the
+          // name is the value this screen can change, so the field states it
+          // instead of the whole-attempt banner.
+          setUsernameUnusable(true)
+          return
+        }
+        setAcceptError(code)
       },
     )
   }
@@ -358,19 +377,24 @@ export function AcceptInvitationScreen({
               required
               autoComplete="username"
               value={username}
-              error={usernameMissing}
+              error={usernameMissing || usernameUnusable}
               helperText={
                 usernameMissing
                   ? t('acceptInvitation.usernameRequired')
-                  : undefined
+                  : usernameUnusable
+                    ? t('acceptInvitation.usernameUnusable')
+                    : undefined
               }
               slotProps={{
-                htmlInput: { 'aria-invalid': usernameMissing },
+                htmlInput: { 'aria-invalid': usernameMissing || usernameUnusable },
               }}
               onChange={(event) => {
                 setUsername(event.target.value)
                 if (usernameMissing) {
                   setUsernameMissing(false)
+                }
+                if (usernameUnusable) {
+                  setUsernameUnusable(false)
                 }
               }}
               label={t('acceptInvitation.usernameLabel')}
