@@ -126,12 +126,15 @@ objectstore:
   fs:
     root: "./objects"
 
-# The deployment's first account and the tenant it administers. The seed
-# command is idempotent: a second run leaves an existing account, tenant, role,
-# grant or binding as it stands, so the entrypoint can run it on every start.
+# The deployment's first account and the tenant it administers. Every account is
+# created with a username, so an entry whose login name is an address names one
+# too. The seed command is idempotent: a second run leaves an existing account,
+# tenant, role, grant or binding as it stands, so the entrypoint can run it on
+# every start.
 seed:
   accounts:
     - identifier: "__OPERATOR_EMAIL__"
+      username: operator
       password: "__OPERATOR_PASSWORD__"
       display-name: Demo Operator
       platform-admin: true

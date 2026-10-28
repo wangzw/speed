@@ -775,8 +775,8 @@ export async function writeDeployConfig(
     // The public domain appears twice: the WebAuthn relying party id and the
     // hostname the human-verification widget must have run on.
     ['__PUBLIC_DOMAIN__', deployValues.publicDomain, 2],
-    // The operator's address is both its login name and the administrator the
-    // template names for the seeded tenant.
+    // The operator's address is the administrator the template names for the
+    // seeded tenant and the entry's login name; the entry's username is fixed.
     ['__OPERATOR_EMAIL__', deployValues.operatorEmail, 2],
     ['__OPERATOR_PASSWORD__', deployValues.operatorPassword, 1],
     ['__ENCRYPTION_KEY__', deployValues.encryptionKey, 1],

@@ -176,6 +176,11 @@ type seedAccount struct {
 	// address and any other a username, as a password login reads it. It is the
 	// name the operator signs in with.
 	Identifier string `config:"identifier"`
+	// Username is the account's login name when Identifier is an email address.
+	// Every account is created with a username, so an entry whose only
+	// identifier is an address must name one; when Identifier is itself a
+	// username this is ignored.
+	Username string `config:"username"`
 	// Password is the plaintext the credential is derived from. It and
 	// PasswordHash are alternatives, and one of them has to be given.
 	Password string `config:"password"`
@@ -206,6 +211,10 @@ func (a seedAccount) check() error {
 	if strings.TrimSpace(a.Identifier) == "" {
 		return errors.New("seed: an account under " + seedNamespace + "." + accountsItem +
 			" names no identifier, and an account is found by the name it signs in with")
+	}
+	if strings.Contains(a.Identifier, "@") && strings.TrimSpace(a.Username) == "" {
+		return fmt.Errorf("seed: the account %q under %s.%s is an email address and names no username, "+
+			"and every account is created with a login name", a.Identifier, seedNamespace, accountsItem)
 	}
 	switch {
 	case a.Password == "" && a.PasswordHash == "":
@@ -390,9 +399,10 @@ func seedSchema() config.Schema {
 				Origins:   config.OriginPrimary,
 				Required:  true,
 				Sensitive: true,
-				Description: "the accounts a copy starts with, each with its login name, its " +
-					"credential as a plaintext password or as a hash, and whether it holds " +
-					"the platform-administrator role; at least one account must hold it",
+				Description: "the accounts a copy starts with, each with its login name, the username it " +
+					"is created with when that login name is an email address, its credential as a " +
+					"plaintext password or as a hash, and whether it holds the platform-administrator " +
+					"role; at least one account must hold it",
 			},
 			tenantsItem: {
 				Origins: config.OriginPrimary,
@@ -972,9 +982,11 @@ func seedOneAccount(ctx context.Context, accounts authn.Accounts, admin authn.Ac
 // seedCreateAccount is the library's creation request for one configured
 // account. A username is a login name and needs no proof. An email address
 // written here is an administrator's assertion, not a proof of ownership, so the
-// account reads pending until its holder proves the address; the baseline ships
-// no mail channel and therefore seeds usernames, while a stack that can deliver
-// a code may seed the address.
+// account reads pending until its holder proves the address; it is neither a
+// login way nor a default contact until the holder chooses. Every account is
+// created with a username, so an email entry's own username is written beside
+// the address; the baseline ships no mail channel and therefore seeds usernames,
+// while a stack that can deliver a code may seed the address too.
 func seedCreateAccount(kind authn.IdentifierKind, name string, a seedAccount) authn.CreateAccount {
 	in := authn.CreateAccount{
 		Kind:         authn.KindUser,
@@ -986,6 +998,7 @@ func seedCreateAccount(kind authn.IdentifierKind, name string, a seedAccount) au
 	if kind == authn.IdentifierEmail {
 		in.Email = name
 		in.EmailVerifiedVia = authn.Verification{Via: authn.VerifiedViaAdmin}
+		in.Username = a.Username
 		return in
 	}
 	in.Username = name

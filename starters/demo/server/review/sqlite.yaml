@@ -198,6 +198,7 @@ seed:
     # seeds the two second factors in review_seed.go; the walkthrough itself is
     # in AGENTS.md.
     - identifier: operator@demo.test
+      username: operator
       password: operator-dev-secret
       display-name: Demo Operator
       platform-admin: true

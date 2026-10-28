@@ -1292,3 +1292,32 @@ func (s *orderSeeder) SeedGrants(context.Context, string, authz.Role, []authz.Gr
 	s.manager.order = append(s.manager.order, "seed:"+string(authz.TenantAdminRole))
 	return 0, nil
 }
+
+// TestSeedRefusesAnAccountThatNamesOnlyAnEmailAddress holds that every account is
+// created with a username, so an entry whose login name is an address must name
+// one, and the command refuses before writing anything.
+func TestSeedRefusesAnAccountThatNamesOnlyAnEmailAddress(t *testing.T) {
+	emailOnly := seedAccount{Identifier: "operator@example.com", Password: "operator-dev-secret"}
+	parseErr := emailOnly.check()
+	if parseErr == nil || !strings.Contains(parseErr.Error(), "seed.accounts") {
+		t.Fatalf("an email-only account gave %v, want a refusal naming seed.accounts", parseErr)
+	}
+	err := validateSeedInput(seedInput{Accounts: []seedAccount{{
+		Identifier: "operator@example.com", Password: "operator-dev-secret", PlatformAdmin: true,
+	}}})
+	if err == nil || !strings.Contains(err.Error(), "seed.accounts") {
+		t.Fatalf("the seed input gave %v, want a refusal naming seed.accounts", err)
+	}
+
+	named := seedAccount{
+		Identifier: "operator@example.com", Username: "operator", Password: "operator-dev-secret",
+	}
+	if err = named.check(); err != nil {
+		t.Errorf("an email account with a username gave %v, want nil", err)
+	}
+	in := seedCreateAccount(authn.IdentifierEmail, named.Identifier, named)
+	if in.Username != "operator" || in.Email != "operator@example.com" ||
+		in.EmailVerifiedVia.Via != authn.VerifiedViaAdmin {
+		t.Errorf("the seeded account is %+v, want the address as an admin assertion and operator as its username", in)
+	}
+}
