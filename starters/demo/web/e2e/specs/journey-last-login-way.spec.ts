@@ -54,6 +54,9 @@ test.describe.configure({ timeout: 300_000 })
 /** The password the account sets after the refused unlink. */
 const NEW_PASSWORD = 'e2e-Password-789'
 
+/** The username the first social sign-in chooses for the account it opens. */
+const ACCOUNT_USERNAME = 'social-last-way'
+
 /** The product's sign-in surface heading. */
 function signInHeading(page: Page): Locator {
   return page.getByRole('heading', {
@@ -187,6 +190,11 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       await googleButton(page).click()
       await approveSocialSignIn(page)
 
+      // A first login that would open an account asks for its username before
+      // the account exists. The provider's address is not written to the
+      // account, so the username is its only identifier.
+      await demo.accounts.answerSignupUsername(ACCOUNT_USERNAME)
+
       // The deployment requires a factor, so the sign-in flow parks at the
       // registration step before any session exists. Registering the passkey
       // here makes its activation predate the session's authentication time,
@@ -217,14 +225,18 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
 
       await accountLink(page).click()
       await expect(accountHeading(page)).toBeVisible()
-      // The account's identifiers are the provider-declared address alone: no
-      // phone number is listed, so no proved phone is one of its ways in.
+      // The account's identifiers are the username it chose alone: the
+      // provider's address was not written to it, and no phone number is
+      // listed, so no proved phone is one of its ways in.
       const identifiers = section(page, copy('accountUi', 'identifiers.title'))
       await expect(
         identifiers
           .getByRole('listitem')
-          .filter({ hasText: identityProviderUser.email }),
+          .filter({ hasText: ACCOUNT_USERNAME }),
       ).toBeVisible()
+      await expect(
+        identifiers.getByText(identityProviderUser.email, { exact: true }),
+      ).toHaveCount(0)
       await expect(
         identifiers.getByText(copy('accountUi', 'identifiers.kind.phone'), {
           exact: true,

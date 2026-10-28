@@ -5,18 +5,20 @@
  * on a server of its own because the provider's fixed address is what decides
  * which branch the product takes.
  *
- *   - The address belongs to no account. The first social sign-in opens an
- *     account, writes the provider-declared verified address as the account's
- *     email identifier, and signs the visitor in. The account page's
- *     verification section reads as complete and names that address, and the
- *     sign-in identifiers list carries it as verified -- the visitor is never
- *     asked to prove the mail again.
- *   - The address already belongs to an account, and automatic linking is off
- *     (the review assembly's switch keeps its declared default). The product
- *     refuses the login with the link-required refusal and lands the browser
- *     back on the sign-in surface, which renders the refusal's own sentence.
- *     Nothing is signed in and no second account is created; the existing
- *     account's sign-in ways are untouched.
+ *   - The address belongs to no account. The first social sign-in asks for the
+ *     username every account is opened with, then opens the account with that
+ *     username and the provider's display name alone. The provider's verified
+ *     address is not written to the account: it is not a login way, a contact
+ *     or the default contact. The account page renders no email-verification
+ *     section (there is no address to verify), the identifiers list carries the
+ *     username and no address, and the profile names the provider's display
+ *     name.
+ *   - The address already belongs to an account. Automatic linking no longer
+ *     exists, so a social login never enters the account that holds the
+ *     address: the product refuses it with the link-required refusal and lands
+ *     the browser back on the sign-in surface, which renders the refusal's own
+ *     sentence. Nothing is signed in and no second account is created; the
+ *     existing account's sign-in ways are untouched.
  *
  * The provider is a real OpenID Connect server the fixtures start
  * (fixtures/identity-provider.ts): discovery, a key set, a token exchange and a
@@ -31,7 +33,7 @@
  * browser is pinned to en-US and UTC by the Playwright config.
  */
 // @journey journey-social-sign-in-and-linking.md
-// @covers REQ-account-015, REQ-account-016, REQ-signin-015, REQ-signin-017, REQ-signin-027, REQ-signin-028, REQ-signup-017, REQ-signup-019
+// @covers REQ-account-015, REQ-account-016, REQ-account-060, REQ-signin-015, REQ-signin-017, REQ-signin-027, REQ-signin-028, REQ-signin-038, REQ-signup-047, REQ-signup-048, REQ-signup-049
 import type { Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
@@ -39,6 +41,9 @@ import { reviewSocialAccount } from '../fixtures/config'
 import { identityProviderUser } from '../fixtures/identity-provider'
 import { copy } from '../helpers/i18n'
 import { approveSocialSignIn } from '../helpers/social'
+
+/** The username the first social sign-in chooses for the account it opens. */
+const FIRST_SIGN_IN_USERNAME = 'social-first-signin'
 
 /** The social block's Google channel. */
 function googleButton(page: Page) {
@@ -84,12 +89,28 @@ async function openAccountSettings(page: Page): Promise<void> {
   ).toBeVisible()
 }
 
+/** The account page's identifier section. */
+function identifiersSection(page: Page) {
+  return page.getByRole('region', {
+    name: copy('accountUi', 'identifiers.title'),
+    exact: true,
+  })
+}
+
+/** The account page's bound-and-bindable social accounts section. */
+function bindingsSection(page: Page) {
+  return page.getByRole('region', {
+    name: copy('accountUi', 'bindings.title'),
+    exact: true,
+  })
+}
+
 // This journey drives the provider's real round trip, so its server starts the
 // local identity provider; no other spec pays for openssl or its two ports.
 test.use({ socialIdentityProvider: true })
 
 test.describe('the provider address belongs to no account', () => {
-  test('social-sign-in: a first Google sign-in opens an account with the provider-verified email', async ({
+  test('social-sign-in: a first Google sign-in asks for a username and takes only the display name', async ({
     demo,
   }) => {
     const { page } = demo
@@ -105,44 +126,57 @@ test.describe('the provider address belongs to no account', () => {
       await approveSocialSignIn(page)
     })
 
+    await test.step('the product asks for the username before it opens the account', async () => {
+      // A first login that would open an account stops at the username step:
+      // the account cannot be created without the login name it will carry.
+      await demo.accounts.answerSignupUsername(FIRST_SIGN_IN_USERNAME)
+    })
+
     await test.step('the browser comes back signed in to the tenant area', async () => {
       await expect(homeHeading(page)).toBeVisible()
     })
 
-    await test.step('the account reads as verified for the provider address', async () => {
+    await test.step('the account holds the username and the display name, and no provider address', async () => {
       await openAccountSettings(page)
 
-      // The completion state names the address the provider proved; the
-      // visitor is not asked for a code anywhere.
+      // The provider's display name is the one fact the account took from it.
+      await expect(
+        page.getByLabel(copy('accountUi', 'profile.displayName.label'), {
+          exact: true,
+        }),
+      ).toHaveValue(identityProviderUser.name)
+
+      // The provider-declared address is not written to the account: with no
+      // email address at all there is nothing to verify, so the section is
+      // absent rather than reading as complete.
       await expect(
         page.getByRole('region', {
-          name: copy('accountUi', 'verification.verifiedTitle'),
+          name: copy('accountUi', 'verification.title'),
           exact: true,
         }),
-      ).toBeVisible()
-      await expect(
-        page.getByText(
-          copy('accountUi', 'verification.verifiedDescription', {
-            email: identityProviderUser.email,
-          }),
-          { exact: true },
-        ),
-      ).toBeVisible()
+      ).toHaveCount(0)
 
-      // The address is the account's email identifier and reads as verified.
-      const identifiers = page.getByRole('region', {
-        name: copy('accountUi', 'identifiers.title'),
-        exact: true,
-      })
-      const row = identifiers
+      // The username is the account's one sign-in way; the provider's address
+      // is not among its identifiers.
+      const identifiers = identifiersSection(page)
+      const usernameRow = identifiers
         .getByRole('listitem')
-        .filter({ hasText: identityProviderUser.email })
-      await expect(row).toBeVisible()
+        .filter({ hasText: FIRST_SIGN_IN_USERNAME })
+      await expect(usernameRow).toBeVisible()
       await expect(
-        row.getByText(copy('accountUi', 'identifiers.verified'), {
+        usernameRow.getByText(copy('accountUi', 'identifiers.kind.username'), {
           exact: true,
         }),
       ).toBeVisible()
+      // A username proves no ownership, so it carries no ownership chip.
+      await expect(
+        usernameRow.getByText(copy('accountUi', 'identifiers.verified'), {
+          exact: true,
+        }),
+      ).toHaveCount(0)
+      await expect(
+        identifiers.getByText(identityProviderUser.email, { exact: true }),
+      ).toHaveCount(0)
     })
 
     await test.step('the same Google account signs in again to the same account', async () => {
@@ -156,32 +190,29 @@ test.describe('the provider address belongs to no account', () => {
 
       await googleButton(page).click()
       await approveSocialSignIn(page)
+      // The binding the first sign-in wrote is what resolves this login, so the
+      // flow lands on the existing account instead of parking at the username
+      // step a second time.
       await expect(homeHeading(page)).toBeVisible()
 
-      // The provider's address is still this account's proved email
-      // identifier. An identifier belongs to one account, and the binding the
-      // first sign-in wrote is what resolved this sign-in, so the account read
-      // here is the one the first sign-in opened rather than a second one.
+      // The same account: the username it chose and the binding are still
+      // there, and the provider's address still is not an identifier.
       await openAccountSettings(page)
       await expect(
-        page.getByRole('region', {
-          name: copy('accountUi', 'verification.verifiedTitle'),
-          exact: true,
-        }),
+        identifiersSection(page)
+          .getByRole('listitem')
+          .filter({ hasText: FIRST_SIGN_IN_USERNAME }),
       ).toBeVisible()
-      const identifiers = page.getByRole('region', {
-        name: copy('accountUi', 'identifiers.title'),
-        exact: true,
-      })
-      const row = identifiers
-        .getByRole('listitem')
-        .filter({ hasText: identityProviderUser.email })
-      await expect(row).toBeVisible()
       await expect(
-        row.getByText(copy('accountUi', 'identifiers.verified'), {
+        bindingsSection(page)
+          .getByRole('listitem')
+          .filter({ hasText: copy('accountUi', 'bindings.provider.google') }),
+      ).toBeVisible()
+      await expect(
+        identifiersSection(page).getByText(identityProviderUser.email, {
           exact: true,
         }),
-      ).toBeVisible()
+      ).toHaveCount(0)
     })
   })
 })
@@ -206,11 +237,12 @@ test.describe('the provider address already belongs to an account', () => {
     })
 
     await test.step('the product lands back on sign-in with the binding refusal', async () => {
-      // The refusal and the colliding address are one alert: the sentence
-      // names what happened, the address names which of the visitor's
-      // addresses the account already holds, masked by the server to its
-      // first character and the domain as written. One region, one
-      // announcement.
+      // Automatic linking no longer exists, so an address an account already
+      // holds is refused rather than taking that account over. The refusal and
+      // the colliding address are one alert: the sentence names what happened,
+      // the address names which of the visitor's addresses the account already
+      // holds, masked by the server to its first character and the domain as
+      // written. One region, one announcement.
       const [local = '', domain = ''] = identityProviderUser.email.split('@')
       const refusal = page
         .getByRole('alert')
@@ -229,9 +261,9 @@ test.describe('the provider address already belongs to an account', () => {
 
     await test.step('the existing account keeps its password sign-in', async () => {
       // The refusal touched neither the account nor its credential: the
-      // address and the password the seed wrote still open the same account.
+      // username and the password the seed wrote still open the same account.
       await demo.accounts.signIn({
-        identifier: reviewSocialAccount.identifier,
+        identifier: reviewSocialAccount.username,
         password: reviewSocialAccount.password,
       })
       await expect(homeHeading(page)).toBeVisible()

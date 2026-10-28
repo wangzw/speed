@@ -67,7 +67,7 @@
  * the container's `lg` width, so the spec opens a desktop viewport wide enough
  * to observe the key, type and value the step documents.
  *
- * REQ-signin-006 (an email identifier and a password sign in), REQ-account-010
+ * REQ-signin-006 (a username and a password sign in), REQ-account-010
  * (a correct code proves the held address in place), 015/016/017/019/020,
  * REQ-platform-admin-001 (staff see the console entry and the home card),
  * 017 (a write from an unproved account is refused with the verification
@@ -91,6 +91,7 @@ test.use({ viewport: { width: 1920, height: 1080 } })
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
+  username: 'operator',
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
 } as const
@@ -201,10 +202,11 @@ test('operator-first-run: the operator proves the email and lands the first sett
   const { page, server, accounts } = demo
 
   await test.step('the operator signs in and the pending-email notice names the address', async () => {
-    // The operator holds an email identifier and a password; the journey's
-    // sign-in clause is that pair working on the password form.
+    // The operator holds a username and a password; the journey's sign-in
+    // clause is that pair working on the password form. Its email identifier is
+    // on record but not a login way.
     await accounts.signIn({
-      identifier: OPERATOR.identifier,
+      identifier: OPERATOR.username,
       password: OPERATOR.password,
     })
     await expect(

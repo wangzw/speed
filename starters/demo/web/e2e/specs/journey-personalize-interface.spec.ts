@@ -271,7 +271,7 @@ test('personalize-interface: the chosen language and time zone take effect and s
     // and device zone are the ones the journey moves away from.
     signInFrom = Date.now() - CLOCK_SKEW_MS
     await accounts.signIn({
-      identifier: reviewMember.identifier,
+      identifier: reviewMember.username,
       password: reviewMember.password,
     })
     signInTo = Date.now() + CLOCK_SKEW_MS

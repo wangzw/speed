@@ -56,6 +56,13 @@ export interface Accounts {
     readonly identifier: string
     readonly password: string
   }): Promise<void>
+  /**
+   * Answer the username step a first login parks at before it opens an
+   * account. The server asks for the `username` field, and the sign-in family
+   * renders a field name it has no wording for verbatim, so the input's
+   * accessible name is the field's own name rather than a bundle string.
+   */
+  answerSignupUsername(username: string): Promise<void>
   /** Sign out through the account menu. */
   signOut(): Promise<void>
   /** A fresh account whose identifiers do not collide with another run. */
@@ -67,6 +74,14 @@ const PASSWORD = 'e2e-Password-123'
 
 /** The email domain the review mail carrier accepts (it reaches no relay). */
 const EMAIL_DOMAIN = 'e2e.test'
+
+/**
+ * The first-login username step's field name. The server's challenge names
+ * the `username` field and carries no label of its own; the sign-in family
+ * renders a field name it has no bundle wording for verbatim (auth-ui's
+ * internal/labels), so the input is addressed by that name.
+ */
+const SIGNUP_USERNAME_FIELD = 'username'
 
 /** The registered account's identifiers carry a run-scoped suffix. */
 function freshIdentifier(prefix: string): string {
@@ -214,6 +229,27 @@ export function createAccounts({
     await identifier.waitFor({ state: 'detached' })
   }
 
+  const signUpUsername = async (username: string): Promise<void> => {
+    // The challenge renders inside the form the flow parked on (the callback
+    // page, or the SMS channel's own panel); addressing the submit inside that
+    // form keeps the enterprise entry's "Continue" on the sign-in page out of
+    // the answer.
+    const field = page.getByRole('textbox', {
+      name: SIGNUP_USERNAME_FIELD,
+      exact: true,
+    })
+    await field.waitFor()
+    await field.fill(username)
+    const form = field.locator('xpath=ancestor::form[1]')
+    await form
+      .getByRole('button', {
+        name: copy('authUi', 'signInFlow.submit'),
+        exact: true,
+      })
+      .click()
+    await field.waitFor({ state: 'detached' })
+  }
+
   const signOut = async (): Promise<void> => {
     // The account menu trigger carries a stable purpose identifier: its
     // accessible name is the principal's display name when the account has one
@@ -252,6 +288,7 @@ export function createAccounts({
       await verifyEmail(account.email, { after: verificationAfter })
     },
     signIn,
+    answerSignupUsername: signUpUsername,
     signOut,
     unique(prefix: string): PasswordAccount {
       const identifier = freshIdentifier(prefix)

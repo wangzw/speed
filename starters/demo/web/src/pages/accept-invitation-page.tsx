@@ -81,6 +81,9 @@ export function AcceptInvitationPage({
       readInvitation: (value) => authnInviteAcceptView(value).then(toSummary),
       acceptInvitation: (value, input) =>
         authnInviteAccept(value, {
+          ...(input.username === undefined
+            ? {}
+            : { username: input.username }),
           ...(input.displayName === undefined
             ? {}
             : { display_name: input.displayName }),
@@ -151,6 +154,16 @@ export function AcceptInvitationPage({
           token={token}
           invitations={invitations}
           onAccepted={landInInvitedTenant}
+          // This landing sits behind the host's session gate, so the viewer
+          // already has the account the invitation binds to. The screen's
+          // new-account inputs only matter for an address with no account,
+          // which cannot reach this surface; leaving them on would ask for a
+          // username the server ignores.
+          newAccountFields={{
+            username: false,
+            displayName: false,
+            password: false,
+          }}
         />
       </Card>
     </Box>

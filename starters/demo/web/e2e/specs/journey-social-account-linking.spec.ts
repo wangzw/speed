@@ -13,10 +13,11 @@
  * The journey's order is load-bearing:
  *
  *   - Before any link, the same Google identity is refused with the
- *     link-required sentence (automatic linking is off in the review assembly)
- *     and the browser lands back on the sign-in surface: the refusal takes over
- *     nothing and opens nothing.
- *   - The participant signs in with the email address and password, opens the
+ *     link-required sentence (automatic linking no longer exists, so a social
+ *     login never enters an account that holds the address) and the browser
+ *     lands back on the sign-in surface: the refusal takes over nothing and
+ *     opens nothing.
+ *   - The participant signs in with the username and password, opens the
  *     account page, and finds no Google row while the add area offers Google --
  *     a deployment method that is not bound yet.
  *   - Choosing Google leaves for the provider's authorization page, comes back
@@ -45,7 +46,7 @@
  * pinned to en-US and UTC by the Playwright config.
  */
 // @journey journey-social-account-linking.md
-// @covers REQ-account-027, REQ-account-028, REQ-account-053, REQ-signin-006, REQ-signin-015, REQ-signin-017, REQ-signin-027, REQ-signin-028, REQ-signup-019
+// @covers REQ-account-027, REQ-account-028, REQ-account-053, REQ-account-067, REQ-signin-006, REQ-signin-015, REQ-signin-017, REQ-signin-027, REQ-signin-028, REQ-signup-049
 import type { Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
@@ -54,9 +55,10 @@ import { copy } from '../helpers/i18n'
 import { approveSocialSignIn } from '../helpers/social'
 
 /**
- * The existing account: a password login name on the provider's own address.
- * Registration writes it, and the review mail carrier's code proves the
- * address, so the link purpose is not refused for a contact that is unproved.
+ * The existing account: a username and a password, with the provider's own
+ * address proved as a contact. Registration writes both, and the review mail
+ * carrier's code proves the address, so the link purpose is not refused for a
+ * contact that is unproved.
  */
 const linkerAccount = {
   username: 'social-linker',
@@ -152,8 +154,9 @@ test('social-account-linking: a password account links Google, then signs in wit
     await signInGoogleButton(page).click()
     await approveSocialSignIn(page)
 
-    // Automatic linking is off, so the provider's verified address is refused
-    // with the binding sentence and the browser stays on the sign-in surface.
+    // Automatic linking no longer exists, so the provider's verified address is
+    // refused with the binding sentence and the browser stays on the sign-in
+    // surface.
     await expect(
       page
         .getByRole('alert')
@@ -165,7 +168,7 @@ test('social-account-linking: a password account links Google, then signs in wit
 
   await test.step('the user signs in with the password and opens the account page', async () => {
     await demo.accounts.signIn({
-      identifier: linkerAccount.email,
+      identifier: linkerAccount.username,
       password: linkerAccount.password,
     })
     await expect(homeHeading(page)).toBeVisible()
@@ -256,7 +259,7 @@ test('social-account-linking: a password account links Google, then signs in wit
   await test.step('the password sign-in still enters that same account', async () => {
     await demo.accounts.signOut()
     await demo.accounts.signIn({
-      identifier: linkerAccount.email,
+      identifier: linkerAccount.username,
       password: linkerAccount.password,
     })
     await expect(homeHeading(page)).toBeVisible()

@@ -185,7 +185,7 @@ const PROFILE: AuthnProfileProfile = {
   locale: 'en-US',
   time_zone: 'UTC',
   identifiers: [
-    { id: 'id-1', kind: 'email', value: 'user@example.com', proven: true, verified_at: INSTANT, verified_via: 'email-code' },
+    { id: 'id-1', kind: 'email', value: 'user@example.com', proven: true, contact: true, default_contact: true, sign_in: true, verified_at: INSTANT, verified_via: 'email-code' },
   ],
   links: [],
   verification: { state: 'pending', email: 'user@example.com', since: '' },

@@ -14,9 +14,10 @@
  *      publish, each with a copy control. The claimed domain is listed as
  *      unverified, turns verified after its record is published, and then
  *      takes part in discovery.
- *   4. The operator creates the employee's account in the console (display name
- *      plus the work address as its login identifier, asserted by the
- *      administrator) and adds it to the target tenant as a member.
+ *   4. The operator creates the employee's account in the console (a display
+ *      name, the username the account is created with, and the work address as
+ *      its login identifier, asserted by the administrator) and adds it to the
+ *      target tenant as a member.
  *   5. The employee opens the sign-in surface and uses the enterprise entry: the
  *      method listing carries the entry but no enterprise provider, and only the
  *      work address's discovery lists the organization.
@@ -83,6 +84,7 @@ import { approveEnterpriseSignIn } from '../helpers/social'
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
+  username: 'operator',
   password: 'operator-dev-secret',
 } as const
 
@@ -104,6 +106,8 @@ const PROVIDER_NAME = 'Globex Workforce'
 const EMPLOYEE_DISPLAY_NAME = 'Globex Employee'
 
 const EMPLOYEE_EMAIL = enterpriseIdentityProviderUser.email
+/** The login name the operator gives the employee's pre-provisioned account. */
+const EMPLOYEE_USERNAME = 'globex-employee'
 
 /** The product's sign-in surface heading. */
 function signInHeading(page: Page): Locator {
@@ -296,7 +300,7 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     // precondition the way a person does -- the standing notice's verify
     // entry, then the code the review mail carrier writes to the process log.
     await accounts.signIn({
-      identifier: OPERATOR.identifier,
+      identifier: OPERATOR.username,
       password: OPERATOR.password,
     })
     const banner = verificationBanner(page)
@@ -644,14 +648,22 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
       name: copy('consoleUi', 'accounts.create.submit'),
       exact: true,
     })
-    // REQ-platform-admin-013: a user account needs a display name AND a login
-    // identifier before it can be created.
+    // REQ-platform-admin-013: a user account needs a display name and a
+    // username before it can be created; the work address is its passed
+    // identifier, not a substitute for either.
     await dialog
       .getByLabel(copy('consoleUi', 'accounts.create.displayNameLabel'), {
         exact: true,
       })
       .fill(EMPLOYEE_DISPLAY_NAME)
     await expect(submit).toBeDisabled()
+
+    await dialog
+      .getByLabel(copy('consoleUi', 'accounts.create.usernameLabel'), {
+        exact: true,
+      })
+      .fill(EMPLOYEE_USERNAME)
+    await expect(submit).toBeEnabled()
 
     await dialog
       .getByLabel(copy('consoleUi', 'accounts.create.emailLabel'), {
@@ -682,8 +694,10 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
       .locator('tbody tr')
       .filter({ hasText: EMPLOYEE_DISPLAY_NAME })
     await expect(accountRow).toHaveCount(1)
+    // The row's secondary line is the account's first identifier, which is the
+    // username the create named; the address remains on record beside it.
     await expect(
-      accountRow.getByText(EMPLOYEE_EMAIL, { exact: true }),
+      accountRow.getByText(EMPLOYEE_USERNAME, { exact: true }),
     ).toBeVisible()
 
     const writeMembership = async (tenant: string): Promise<void> => {

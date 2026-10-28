@@ -90,6 +90,7 @@ import { approveEnterpriseSignIn } from '../helpers/social'
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
+  username: 'operator',
   password: 'operator-dev-secret',
 } as const
 
@@ -576,7 +577,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     // writes answer; it is the review seed's administrator assertion until
     // then.
     await accounts.signIn({
-      identifier: OPERATOR.identifier,
+      identifier: OPERATOR.username,
       password: OPERATOR.password,
     })
     await proveEmail(page, server, OPERATOR.identifier)
@@ -616,7 +617,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     await accounts.signOut()
 
     await accounts.signIn({
-      identifier: tenantSSOAdmin.identifier,
+      identifier: tenantSSOAdmin.username,
       password: tenantSSOAdmin.password,
     })
     await proveEmail(page, server, tenantSSOAdmin.identifier)

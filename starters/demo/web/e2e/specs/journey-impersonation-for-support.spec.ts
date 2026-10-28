@@ -105,6 +105,7 @@ test.use({ seedImpersonation: true, viewport: { width: 1920, height: 1080 } })
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
+  username: 'operator',
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
 } as const
@@ -295,7 +296,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
     // two of them, and the seeded authenticator one is the strong, seasoned
     // factor the impersonation gate requires.
     await accounts.signIn({
-      identifier: OPERATOR.identifier,
+      identifier: OPERATOR.username,
       password: OPERATOR.password,
     })
     // The step belongs to the password channel, which renders in its own

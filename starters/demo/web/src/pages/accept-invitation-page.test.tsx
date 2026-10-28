@@ -51,7 +51,13 @@ import { INVITATION_PREFIX } from '../paths.js'
  * A renamed label fails here rather than silently in a selector.
  */
 const authEn = authUiResources['en-US'] as unknown as {
-  readonly acceptInvitation: { readonly title: string; readonly accept: string }
+  readonly acceptInvitation: {
+    readonly title: string
+    readonly accept: string
+    readonly usernameLabel: string
+    readonly displayNameLabel: string
+    readonly passwordLabel: string
+  }
   readonly mode: {
     readonly registerEntry: string
   }
@@ -205,6 +211,31 @@ describe('the invitation landing', () => {
         name: demoEnUS.home.heading,
       }),
     ).toBeInTheDocument()
+  })
+
+  it('does not offer the new-account fields to a signed-in viewer', async () => {
+    // The landing sits behind the session gate, so the viewer already has the
+    // account the invitation binds to; the fields that open a new account
+    // would ask for a username the acceptance ignores.
+    const backend = makeInvitationBackend()
+    bindRequestFn(backend.fn)
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: authEn.acceptInvitation.title,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(authEn.acceptInvitation.usernameLabel),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(authEn.acceptInvitation.displayNameLabel),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(authEn.acceptInvitation.passwordLabel),
+    ).not.toBeInTheDocument()
   })
 
   it('lands in the invited tenant and resolves its alias from the caller tenant read', async () => {

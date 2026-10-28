@@ -89,6 +89,7 @@ test.use({ seedInvitee: true, viewport: { width: 1920, height: 1080 } })
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
+  username: 'operator',
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
 } as const
@@ -235,7 +236,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       // precondition the way a person does: the standing notice's verify entry,
       // the code from the review process log, and the verify action.
       await accounts.signIn({
-        identifier: OPERATOR.identifier,
+        identifier: OPERATOR.username,
         password: OPERATOR.password,
       })
       const banner = verificationBanner(page, OPERATOR.identifier)
@@ -497,7 +498,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
           name: copy('authUi', 'passwordSignIn.identifierLabel'),
           exact: true,
         })
-        .fill(reviewInvitee.identifier)
+        .fill(reviewInvitee.username)
       await invitee
         .getByRole('textbox', {
           name: copy('authUi', 'passwordSignIn.passwordLabel'),

@@ -179,6 +179,7 @@ export interface ReviewConfig {
 export const reviewMember = {
   tenant: 'acme',
   identifier: 'member@demo.test',
+  username: 'member-review',
   password: 'member-review-secret',
   displayName: 'Demo Member',
 } as const
@@ -197,6 +198,7 @@ export const reviewMember = {
 export const smsRolloutOperator = {
   tenant: 'acme',
   identifier: 'operator@demo.test',
+  username: 'operator',
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
 } as const
@@ -213,6 +215,7 @@ export const smsRolloutOperator = {
  */
 export const reviewInvitee = {
   identifier: 'invitee@demo.test',
+  username: 'invitee-review',
   password: 'invitee-review-secret',
   displayName: 'Invitation Invitee',
 } as const
@@ -230,6 +233,7 @@ export const reviewInvitee = {
  */
 export const reviewSocialAccount = {
   identifier: identityProviderUser.email,
+  username: 'social-signin',
   password: 'social-review-secret',
   displayName: identityProviderUser.name,
 } as const
@@ -256,12 +260,14 @@ export const tenantSSOTenant = 'globex'
  */
 export const tenantSSOAdmin = {
   identifier: enterpriseIdentityProviderUser.email,
+  username: 'globex-admin',
   password: 'tenant-sso-review-secret',
   displayName: 'Globex Administrator',
 } as const
 
 /** The template's seeded operator entry; the member entry is appended to it. */
 const seedOperatorAccount = `    - identifier: operator@demo.test
+      username: operator
       password: operator-dev-secret
       display-name: Demo Operator
       platform-admin: true`
@@ -269,6 +275,7 @@ const seedOperatorAccount = `    - identifier: operator@demo.test
 /** The member's `seed.accounts` entry, indented for the list it joins. */
 function seedMemberAccount(): string {
   return `    - identifier: ${quoted(reviewMember.identifier)}
+      username: ${quoted(reviewMember.username)}
       password: ${quoted(reviewMember.password)}
       display-name: ${quoted(reviewMember.displayName)}`
 }
@@ -282,6 +289,7 @@ function seedMemberMembership(): string {
 /** The social account's `seed.accounts` entry, indented for the list it joins. */
 function seedSocialAccount(): string {
   return `    - identifier: ${quoted(reviewSocialAccount.identifier)}
+      username: ${quoted(reviewSocialAccount.username)}
       password: ${quoted(reviewSocialAccount.password)}
       display-name: ${quoted(reviewSocialAccount.displayName)}`
 }
@@ -289,6 +297,7 @@ function seedSocialAccount(): string {
 /** The invitee's `seed.accounts` entry, indented for the list it joins. */
 function seedInviteeAccount(): string {
   return `    - identifier: ${quoted(reviewInvitee.identifier)}
+      username: ${quoted(reviewInvitee.username)}
       password: ${quoted(reviewInvitee.password)}
       display-name: ${quoted(reviewInvitee.displayName)}`
 }
@@ -300,6 +309,7 @@ function seedInviteeAccount(): string {
  */
 function seedTenantSSOAdminAccount(): string {
   return `    - identifier: ${quoted(tenantSSOAdmin.identifier)}
+      username: ${quoted(tenantSSOAdmin.username)}
       password: ${quoted(tenantSSOAdmin.password)}
       display-name: ${quoted(tenantSSOAdmin.displayName)}
       platform-admin: true`

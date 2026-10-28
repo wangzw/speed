@@ -250,7 +250,7 @@ test('member-workspace: a member receives, reads and configures notifications', 
 
   await test.step('the member signs in and the tenant area confirms the current organization', async () => {
     await accounts.signIn({
-      identifier: reviewMember.identifier,
+      identifier: reviewMember.username,
       password: reviewMember.password,
     })
     await expect(

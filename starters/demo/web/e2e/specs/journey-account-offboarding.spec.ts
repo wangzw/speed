@@ -74,6 +74,7 @@ test.use({ seedImpersonation: true, viewport: { width: 1920, height: 1080 } })
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
+  username: 'operator',
   password: 'operator-dev-secret',
 } as const
 
@@ -338,7 +339,7 @@ test('account-offboarding: an operator disables a member and the member returns 
       // The operator has the seeded authenticator factor, so the password
       // step parks the login at its second factor.
       await accounts.signIn({
-        identifier: OPERATOR.identifier,
+        identifier: OPERATOR.username,
         password: OPERATOR.password,
       })
       // The step belongs to the password channel, which renders in its own

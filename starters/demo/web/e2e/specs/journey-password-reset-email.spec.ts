@@ -138,7 +138,7 @@ test('password-reset-email: an addressed code resets the password and ends the o
       await other.goto(`${server.url}/`)
       const otherAccounts: Accounts = createAccounts({ page: other, server })
       await otherAccounts.signIn({
-        identifier: account.email,
+        identifier: account.username,
         password: account.password,
       })
       await expect(homeHeading(other)).toBeVisible()
@@ -196,7 +196,7 @@ test('password-reset-email: an addressed code resets the password and ends the o
       await expect(signInHeading(page)).toBeVisible()
 
       await accounts.signIn({
-        identifier: account.email,
+        identifier: account.username,
         password: NEW_PASSWORD,
       })
       await expect(homeHeading(page)).toBeVisible()
@@ -204,7 +204,7 @@ test('password-reset-email: an addressed code resets the password and ends the o
       // A device with no session is refused the old password.
       await accounts.signOut()
       await accounts.openSignIn()
-      await signInIdentifierField(page).fill(account.email)
+      await signInIdentifierField(page).fill(account.username)
       await signInPasswordField(page).fill(account.password)
       await page
         .getByRole('button', {

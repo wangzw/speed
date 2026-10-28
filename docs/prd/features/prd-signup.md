@@ -58,15 +58,15 @@
 口令注册必须要求用户名、邮箱与口令同时提供；缺任一项的提交必须被拒绝且不建号。
 
 - **验收**：分别缺用户名、缺邮箱、缺口令的提交各被拒绝，且没有账户产生；三者齐备、且用户名满足 REQ-signup-045 与 REQ-signup-046 的提交建号。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signup-045
 
 用户名必须可安全用作 URL 路径段：经 NFKC 规范化并转为小写后，长度为 3 到 64 个字符、只含 `[a-z0-9._-]`，首字符为字母或数字，不以静态凭据表的前缀 `static.` 起头，不得为 UUID 形状，并在全部账户间唯一；满足这些规则的用户名放入 URL 路径时不需要转义。
 
 - **验收**：提交合形用户名建号后该用户名可用于登录；长度不在 3 到 64 之间、含 `[a-z0-9._-]` 以外的字符、首字符不是字母或数字、以 `static.` 起头或为 UUID 形状的用户名均被拒绝且不建号；合形用户名放入 URL 路径时无需转义。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-signup-046
@@ -74,7 +74,7 @@
 用户名不得与系统路径或系统名称冲突：内置保留字清单为 `api`、`console`、`account`、`admin`、`system`、`login`、`logout`、`signin`、`signup`、`static`、`assets`、`health`、`ready`、`metrics`、`oauth`、`callback`、`well-known`、`www`、`root`，部署可经设置 `authn.account.reserved-usernames` 追加保留字；写入用户名的每一条路径都必须拒绝保留字，保留字拒绝与用户名占用冲突（REQ-signup-008）是两种不同的结果。
 
 - **验收**：以任一内置保留字或部署追加的保留字提交用户名，在匿名口令注册、首登开户的用户名一步与账户面添加用户名三处均被拒绝：注册与首登开户不产生账户，账户面不写入该用户名；该拒绝不表现为用户名占用冲突。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-signup-033
@@ -114,7 +114,7 @@
 注册提交的邮箱在本人证明之前不得成为登录方式，也不得被另一个账户注册；证明之后，只有持有人把它选作登录方式时，它才可用于口令登录。
 
 - **验收**：注册刚完成时以该邮箱作口令登录名登录失败；另一账户以同一地址注册得到邮箱占用冲突；本人完成验证并把它选作登录方式后才可作为口令登录名。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signup-008
@@ -170,8 +170,8 @@
 短信首登开户开放时，未登记的手机号在通过短信验证后、建立账户之前必须先取得一个合法用户名，判据按 REQ-signup-047 的规定；账户建立时即持有该用户名，并完成登录。
 
 - **验收**：未登记的手机号走完短信登录并提交合法用户名后得到一个持有该用户名的账户，且会话处于已登录状态；未提交或提交不合法用户名时没有账户产生。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-signup-013
 
@@ -194,8 +194,8 @@
 首登开户必须在建立账户之前取得一个合法用户名：短信首登开户、社交登录首登开户与企业即时开通三条路径一律适用，用户名判据按 REQ-signup-045 与 REQ-signup-046 的规定；没有取得合法用户名时不得建立账户。
 
 - **验收**：分别经短信首登、社交首登与企业即时开通发起开户，流程在建立账户之前呈现用户名一步；提交合法用户名后账户持有该用户名，未提交或提交不合法用户名时没有账户产生。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`
 
 ### REQ-signup-015
 
@@ -234,16 +234,16 @@
 使用社交账户创建账户时，系统必须补齐账户建立所必需的内容，其中包括一个合法用户名，不得留下以外部身份标识充当账户标识、或缺少内容的记录；提供方声明的地址不写入账户，按 REQ-signup-048 的规定。
 
 - **验收**：首次社交登录建出的账户持有非空、且不同于该外部身份标识的账户标识，并持有建号前取得的合法用户名；账户上没有被写入提供方声明的地址；未取得合法用户名时不建账户。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`
 
 ### REQ-signup-018
 
 企业 SSO 首登开户必须按提供方声明的开通方式处理：预置开通按 REQ-signin-021 的规定，即时开通按 REQ-signin-022 的规定；即时开通在建立账户之前必须先取得一个合法用户名（判据按 REQ-signup-047 的规定）。
 
 - **验收**：预置开通按 REQ-signin-021 的验收判定；即时开通按 REQ-signin-022 的验收判定；提供方声明的开通方式不是这两种之一时登录失败且不建户；即时开通未取得合法用户名时不建账户。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
 
 ### REQ-signup-019
 
@@ -386,22 +386,22 @@
 社交与企业首登开户新开立的账户不得写入提供方声明的地址：该地址既不作为登录方式，也不作为联系方式或账户资料；账户取自提供方的资料只有显示名。
 
 - **验收**：分别经社交与企业即时开通新开立的账户都不持有提供方声明的地址；账户的显示名等于提供方给出的显示名；账户的联系方式、登录方式与资料中都没有该地址；提供方未给出显示名时账户仍建立。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`
 
 ### REQ-signup-049
 
 自动绑定不再作为系统行为存在：设置 `authn.account.auto-link` 不再存在，社交登录与企业即时开通不得按提供方声明的地址接管一个现有账户或把该外部身份并入该账户。提供方声明为已验证的地址（企业提供方以其已验证域内的地址替代该声明）命中现有账户已登记的邮箱地址时，社交登录与企业即时开通按 REQ-signin-017 报告需先绑定；不命中且开户开放时，按 REQ-signup-048 建立只带提供方显示名的新账户。提供方未声明该地址已验证、且其域也不属于已验证域时，按不命中处理。
 
 - **验收**：配置中不再有自动绑定项；命中现有账户时登录不进入该账户、不建立绑定、不另开账户，得到需先绑定的拒绝；不命中且开户开放时先取得合法用户名，再建立并登录一个不带提供方声明地址的新账户；当事人以自己的登录方式登录并在账户面显式绑定后，绑定才建立。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`、`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a Google email already on an account is refused with link-required`
 
 ### REQ-signup-050
 
 系统不得以迁移改变既有数据的行为：旧行为写下的账户、邮箱标识、手机标识与外部身份绑定继续按写入时的方式工作，任何既有行的可见行为不变。承载登录方式、联系方式与默认联系地址的新列由一次性回填按旧行为补齐——旧行为写下的标识置为可登录，邮箱标识另置为联系方式，每个已有已证明邮箱的账户把最早证明的一封置为默认联系地址；回填只写这些新列，不改写验证时刻、验证渠道与取值等既有事实列。导入按源记录设置这些标记。本文与相关能力的新规则只作用于新的登录与新的写入；两条轴与默认联系地址的规则见 REQ-account-062 至 REQ-account-066。
 
 - **验收**：旧行为写下的邮箱标识、手机标识与外部身份绑定在新规则下仍可用于其原本可用的登录，并仍按旧行为读作联系方式、持有原有的默认联系地址；一次性回填只写新增的标记列，既有行的验证时刻、验证渠道与取值保持不变，行本身不被删除，可见行为不变；导入的账户按源记录取得登录方式、联系方式与默认联系地址；新开立的账户与新的写入遵守新规则。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：未实现
 

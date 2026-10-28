@@ -75,6 +75,7 @@ test.describe.configure({ timeout: 300_000 })
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
+  username: 'operator',
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
 } as const
@@ -628,7 +629,7 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
     // precondition the way a person does: the standing notice's verify entry,
     // the code from the review process log, and the verify action.
     await demo.accounts.signIn({
-      identifier: OPERATOR.identifier,
+      identifier: OPERATOR.username,
       password: OPERATOR.password,
     })
     await expect(homeHeading(page)).toBeVisible()

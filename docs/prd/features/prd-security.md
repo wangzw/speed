@@ -339,7 +339,7 @@
 账户在任何时刻都必须保留至少一个非通行密钥的登录方式：可用的口令登录名、被选作登录方式的已验证手机号或外部身份之一。删除会让账户不再持有其中任何一种的操作必须被拒绝。
 
 - **验收**：删除最后一个用户名或选作登录方式的邮箱、被选作登录方式的手机号或外部身份，或管理员重置因素，会使账户不再持有可用的口令登录名、被选作登录方式的已验证手机号与外部身份中的任何一种时，操作被拒绝并说明需要先补一种登录方式；账户仍持有其中任何一种时操作成功。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-last-login-way.spec.ts` `last-login-way: removing the last way that is not a passkey is refused`
 
 ### REQ-security-041
@@ -347,5 +347,5 @@
 系统在口令重置中必须只以账户对邮箱或手机的所有权为依据；一个值是否为默认联系地址或是否被选作登录方式，既不放宽也不收紧它作为重置目标的资格。
 
 - **验收**：一条已验证但未被选作登录方式、也未被设为默认联系地址的邮箱仍能收到重置验证码并完成重置；一条未验证的邮箱或手机即使被列为联系方式也不能作为重置目标。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-password-reset-email.spec.ts` `password-reset-email: an addressed code resets the password and ends the old sessions`

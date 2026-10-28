@@ -279,7 +279,7 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
 
   await test.step('the operator signs in and proves the email and phone the dispatch needs', async () => {
     await accounts.signIn({
-      identifier: smsRolloutOperator.identifier,
+      identifier: smsRolloutOperator.username,
       password: smsRolloutOperator.password,
     })
     await expect(

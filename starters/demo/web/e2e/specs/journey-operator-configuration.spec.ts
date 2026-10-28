@@ -72,6 +72,7 @@ test.use({ viewport: { width: 1920, height: 1080 } })
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
+  username: 'operator',
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
 } as const
@@ -252,7 +253,7 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       // precondition the way a person does: the standing notice's verify entry,
       // the code from the review process log, and the verify action.
       await demo.accounts.signIn({
-        identifier: OPERATOR.identifier,
+        identifier: OPERATOR.username,
         password: OPERATOR.password,
       })
       await expect(

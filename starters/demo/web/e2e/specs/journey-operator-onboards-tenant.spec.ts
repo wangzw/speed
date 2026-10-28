@@ -87,6 +87,7 @@ test.use({ seedInvitee: true, viewport: { width: 1920, height: 1080 } })
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
+  username: 'operator',
   password: 'operator-dev-secret',
   displayName: 'Demo Operator',
 } as const
@@ -155,7 +156,7 @@ function boundNotice(): string {
     role: ROLE,
     account: copy('consoleUi', 'common.accountReference.nameWithIdentifier', {
       name: OPERATOR.displayName,
-      identifier: OPERATOR.identifier,
+      identifier: OPERATOR.username,
     }),
   })
 }
@@ -335,7 +336,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // precondition the way a person does: the standing notice's verify entry,
       // the code from the review process log, and the verify action.
       await accounts.signIn({
-        identifier: OPERATOR.identifier,
+        identifier: OPERATOR.username,
         password: OPERATOR.password,
       })
       const banner = verificationBanner(page, OPERATOR.identifier)
@@ -922,7 +923,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           name: copy('authUi', 'passwordSignIn.identifierLabel'),
           exact: true,
         })
-        .fill(reviewInvitee.identifier)
+        .fill(reviewInvitee.username)
       await invitee
         .getByRole('textbox', {
           name: copy('authUi', 'passwordSignIn.passwordLabel'),
