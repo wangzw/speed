@@ -10,7 +10,8 @@
  * is covered by the app suites' zero-request assertions.
  */
 
-import { waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { RequestFn } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
@@ -20,7 +21,9 @@ import {
   setCurrentTenantId,
   setTenantAliases,
 } from './chrome.js'
+import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from './test-utils/render.js'
+import { clearSelfTenants } from './tenant-self.js'
 import {
   authenticatedSnapshot,
   createTestSession,
@@ -29,6 +32,7 @@ import {
 afterEach(() => {
   setTenantAliases(new Map())
   setCurrentTenantId(null)
+  clearSelfTenants()
 })
 
 describe('who spends the platform roster read', () => {
@@ -154,5 +158,59 @@ describe('the announced tenant, once the roster is read', () => {
       expect(getCurrentTenantId()).toBe('accept-tenant')
     })
     expect(getCurrentTenantAlias()).toBe('accept-tenant')
+  })
+})
+
+describe('a failed roster read', () => {
+  it('explains the fault beside the switcher, leaves the tenant, and retries', async () => {
+    // The roster is a staff alias source: a failed read decides no tenant and
+    // infers no membership, so the switcher keeps the tenant the caller's own
+    // list settled and shows what could not be named with a retry.
+    setCurrentTenantId(null)
+    setTenantAliases(new Map())
+    clearSelfTenants()
+    let rosterReads = 0
+    const request: RequestFn = async <T>(path: string): Promise<T> => {
+      if (path === '/api/v1/auth/me/tenants') {
+        return { tenants: [{ id: 'acme', alias: 'acme' }] } as T
+      }
+      if (path === '/api/v1/system/tenants') {
+        rosterReads += 1
+        if (rosterReads === 1) {
+          throw new Error('the roster service is unavailable')
+        }
+        return {
+          tenants: [{ id: 'acme', alias: 'acme-inc', status: 'active' }],
+        } as T
+      }
+      throw new Error(`the suite binds only the tenant reads: ${path}`)
+    }
+    bindRequestFn(request)
+
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ system: ['tenant.read'] }),
+      ),
+    })
+
+    expect(
+      await screen.findByText(demoEnUS.tenantRoster.failed),
+    ).toBeInTheDocument()
+    // The current tenant settled from the caller's own list and does not
+    // change because the roster could not be read.
+    await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
+
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: demoEnUS.tenantRoster.retry }),
+    )
+
+    // The retry issues the read again; its answer clears the notice and names
+    // the tenant from the roster's alias.
+    await waitFor(() =>
+      expect(screen.queryByText(demoEnUS.tenantRoster.failed)).toBeNull(),
+    )
+    expect(rosterReads).toBe(2)
+    expect(getCurrentTenantId()).toBe('acme')
+    await waitFor(() => expect(getCurrentTenantAlias()).toBe('acme-inc'))
   })
 })

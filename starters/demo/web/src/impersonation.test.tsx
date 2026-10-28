@@ -2065,8 +2065,9 @@ describe('the impersonation shell', () => {
       return answer
     }
     bindRequestFn(request)
-    // The impersonated snapshot holds a known empty set (the refused read);
-    // the operator's own set is unknown until the permission read answers.
+    // The impersonated snapshot starts with a known empty platform set; the
+    // permission read issued for the grant's tenant is refused, and a failed
+    // read leaves the set unknown -- it is not attached as an empty one.
     const target: AuthSnapshot = {
       ...targetSnapshot(),
       permissionSets: { tenant: null, system: [] },
@@ -2101,8 +2102,9 @@ describe('the impersonation shell', () => {
     // One read before the end: the one issued once the impersonation status
     // read settles the grant's tenant. It resets the set before issuing its
     // read; the undecided-tenant window before that settles issues no request
-    // (the guarded route answers 404 to a request naming no tenant).
-    await waitFor(() => expect(attached).toEqual([null, []]))
+    // (the guarded route answers 404 to a request naming no tenant), and the
+    // refused read leaves the set unknown instead of attaching an empty one.
+    await waitFor(() => expect(attached).toEqual([null]))
     expect(
       screen.queryByRole('link', { name: demoEnUS.nav.console }),
     ).toBeNull()
@@ -2119,10 +2121,10 @@ describe('the impersonation shell', () => {
 
     // The set went unknown immediately before the re-read that answered it;
     // without that reset a stale set could outlive the identity it was read
-    // under. The current tenant is unknown while the caller tenant list
-    // settles after the end, so the set is reset once more -- the read waits
-    // for a tenant it can name -- before the operator's read attaches.
-    expect(attached).toEqual([null, [], null, null, ['tenant.read']])
+    // under. The refused impersonated read never attaches, the identity
+    // change resets again, and the operator's own read is the one that
+    // answers.
+    expect(attached).toEqual([null, null, null, ['tenant.read']])
     expect(
       await screen.findByRole('link', { name: demoEnUS.nav.console }),
     ).toBeInTheDocument()

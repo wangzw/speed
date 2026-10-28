@@ -12,7 +12,9 @@
   },
   "console": {
     "backToApp": "返回应用",
-    "accessPending": "正在检查控制台访问权限"
+    "accessPending": "正在检查控制台访问权限",
+    "accessFailed": "无法核实控制台访问权限",
+    "accessRetry": "重试"
   },
   "route": {
     "pending": "正在加载可用功能",
@@ -119,6 +121,10 @@
     "compact": "紧凑",
     "glass": "液态玻璃",
     "ascii": "ASCII 终端"
+  },
+  "tenantRoster": {
+    "failed": "无法读取租户列表",
+    "retry": "重试"
   },
   "workspace": {
     "personal": "个人空间",

@@ -6,18 +6,23 @@
  * seam (the app's bound client); the session records what setPermissionSet
  * receives, so the suite asserts the attached value without a live server. The
  * read under test is GET /api/v1/authz/me/permissions, whose answer carries the
- * platform and tenant sets; an answered read attaches both, and a refused one
- * attaches the empty set to both (fail-closed).
+ * platform and tenant sets; an answered read attaches both (an empty pair is a
+ * known empty set), and a failed read attaches nothing: the sets stay unknown
+ * and the read's state reports the failure so a surface can retry it.
  */
 
-import { act, render, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { attachSession } from '@speed/auth-core'
 import type { AuthDomain, AuthSnapshot } from '@speed/auth-core'
 import type { RequestFn } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { getCurrentTenantId, setCurrentTenantId } from './chrome.js'
-import { PlatformPermissions } from './platform-permissions.js'
+import {
+  PlatformPermissions,
+  usePermissionRead,
+} from './platform-permissions.js'
 import {
   authenticatedSnapshot,
   createTestSession,
@@ -71,6 +76,29 @@ function bindPermissionsAnswer(answer: {
   return requested
 }
 
+/** A consumer of the read's outcome, so a case can observe the failure the
+ * surfaces see and drive the retry. */
+function ReadProbe(): ReactElement {
+  const read = usePermissionRead()
+  return (
+    <div>
+      <span data-testid="read">{read.failed ? 'failed' : 'ok'}</span>
+      <button type="button" onClick={read.retry}>
+        retry
+      </button>
+    </div>
+  )
+}
+
+/** Mounts the attach with the probe beside its content. */
+function mountWithProbe(session: TestSession) {
+  return render(
+    <PlatformPermissions session={session}>
+      <ReadProbe />
+    </PlatformPermissions>,
+  )
+}
+
 describe('PlatformPermissions', () => {
   afterEach(() => {
     // The current tenant is a module-level cell; a case that moves it must not
@@ -108,21 +136,61 @@ describe('PlatformPermissions', () => {
     expect(requested).toEqual([PERMISSIONS_PATH])
   })
 
-  it('attaches the empty set to both domains when the read is refused', async () => {
+  it('keeps both sets unknown when the read fails, and a retry answers for them', async () => {
     setCurrentTenantId('acme')
+    let answer: { platform: string[]; tenant: string[] } | null = null
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
       requested.push(path)
-      return Promise.reject(new Error('refused'))
+      if (path !== PERMISSIONS_PATH) {
+        return Promise.reject(new Error(`unexpected request: ${path}`))
+      }
+      return answer === null
+        ? Promise.reject(new Error('the service is unavailable'))
+        : Promise.resolve(answer as T)
     })
 
     const { session, attached } = recordingSession()
     attachSession(session)
-    render(
-      <PlatformPermissions session={session}>
-        <div>content</div>
-      </PlatformPermissions>,
+    mountWithProbe(session)
+
+    // The read reset both sets to unknown and then failed: no empty set is
+    // attached, and the failure is what the surfaces see.
+    await waitFor(() => expect(screen.getByTestId('read')).toHaveTextContent('failed'))
+    expect(attached).toEqual([
+      { domain: 'system', perms: null },
+      { domain: 'tenant', perms: null },
+    ])
+
+    // The retry issues the read again; its answer attaches the sets and
+    // clears the failure.
+    answer = { platform: ['audit.read'], tenant: [] }
+    act(() => {
+      screen.getByRole('button', { name: 'retry' }).click()
+    })
+    await waitFor(() =>
+      expect(attached).toEqual([
+        { domain: 'system', perms: null },
+        { domain: 'tenant', perms: null },
+        { domain: 'system', perms: null },
+        { domain: 'tenant', perms: null },
+        { domain: 'system', perms: ['audit.read'] },
+        { domain: 'tenant', perms: [] },
+      ]),
     )
+    expect(screen.getByTestId('read')).toHaveTextContent('ok')
+    expect(requested).toEqual([PERMISSIONS_PATH, PERMISSIONS_PATH])
+  })
+
+  it('attaches an answered empty document as a known empty set', async () => {
+    // Both domains empty is a read answer, not a failure: a member's known
+    // empty set is what the console gate turns into the home redirect.
+    setCurrentTenantId('acme')
+    const requested = bindPermissionsAnswer({ platform: [], tenant: [] })
+
+    const { session, attached } = recordingSession()
+    attachSession(session)
+    mountWithProbe(session)
 
     await waitFor(() =>
       expect(attached).toEqual([
@@ -132,8 +200,7 @@ describe('PlatformPermissions', () => {
         { domain: 'tenant', perms: [] },
       ]),
     )
-    // Fail-closed is about the answer, not about skipping the read: the bridge
-    // still asks the caller-scoped route.
+    expect(screen.getByTestId('read')).toHaveTextContent('ok')
     expect(requested).toEqual([PERMISSIONS_PATH])
   })
 

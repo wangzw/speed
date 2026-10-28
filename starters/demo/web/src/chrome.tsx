@@ -27,6 +27,7 @@
 import { useCallback, useId, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
@@ -350,6 +351,72 @@ export function TenantMenu({
       compact={compact}
       announcement={compact ? 'visually-hidden' : 'inline'}
     />
+  )
+}
+
+/**
+ * The roster read's non-blocking failure notice, beside the tenant switcher
+ * trigger. The read names tenants outside the caller's own memberships (a
+ * platform staff member entering a tenant they do not belong to); a failed
+ * read leaves the current tenant and every membership fact untouched, so the
+ * notice explains what is missing and offers the retry instead of deciding
+ * anything. Only a caller whose platform permission set holds tenant.read
+ * issues that read, so only staff ever see this notice.
+ */
+export function TenantRosterFailure({
+  onRetry,
+  compact = false,
+}: {
+  /** Asks the host to read the roster again. */
+  readonly onRetry: () => void
+  /** The collapsed sidebar rail's form: an icon-only retry, named by its
+   * accessible label. */
+  readonly compact?: boolean
+}): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  const message = t('tenantRoster.failed')
+  const retryLabel = t('tenantRoster.retry')
+  if (compact) {
+    return (
+      <IconButton
+        color="inherit"
+        aria-label={`${message} ${retryLabel}`}
+        onClick={onRetry}
+      >
+        <RefreshIcon />
+      </IconButton>
+    )
+  }
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      <Typography variant="caption" color="error">
+        {message}
+      </Typography>
+      <Button size="small" color="inherit" onClick={onRetry}>
+        {retryLabel}
+      </Button>
+    </Box>
+  )
+}
+
+/** A refresh glyph for the compact retry, decorative only. */
+function RefreshIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M19 12a7 7 0 1 1-2.05-4.95" />
+      <path d="M19 4.5V9h-4.5" />
+    </svg>
   )
 }
 

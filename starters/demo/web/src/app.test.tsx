@@ -25,6 +25,7 @@ import { listItemIconClasses } from '@mui/material/ListItemIcon'
 import { listItemTextClasses } from '@mui/material/ListItemText'
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
 import type { AuthDomain, AuthSession } from '@speed/auth-core'
+import type { RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { AUTH_UI_NAMESPACE } from '@speed/auth-ui'
 import {
@@ -557,9 +558,10 @@ describe('the console area', () => {
 
   it('turns a member who loads a console URL directly out of the console, without a roster read', async () => {
     // A member's caller tenant list names their tenant, so the console area
-    // settles it and reads the platform permission set. The set is empty, and
-    // the area gate redirects: no roster read is spent, because the roster
-    // needs tenant.read and the member holds nothing.
+    // settles it and reads the platform permission set. The ANSWERED document
+    // is empty -- a known empty set, unlike a failed read -- and the area gate
+    // redirects: no roster read is spent, because the roster needs tenant.read
+    // and the member holds nothing.
     setCurrentTenantId(null)
     setTenantAliases(new Map())
     window.history.replaceState({}, '', '/console/tenants')
@@ -1566,5 +1568,137 @@ describe('an unread callback fragment', () => {
     expect(
       screen.getByRole('button', { name: dismissLabel }),
     ).toBeInTheDocument()
+  })
+})
+
+/**
+ * The console area's reads: an unknown value is never a conclusion. A failed
+ * permission read or profile read leaves the decision unknown and offers a
+ * retry; only an ANSWERED document (an empty permission pair included) or a
+ * READ pending verification state decides.
+ */
+describe('a failed console access read', () => {
+  /** The attach the production assembly uses, over a session whose sets the
+   * gate reads. */
+  function attachedSession(base: ReturnType<typeof createTestSession>) {
+    return {
+      ...base,
+      setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
+        const current = base.getSnapshot()
+        base.set({
+          ...current,
+          permissionSets: { ...current.permissionSets, [domain]: perms },
+        })
+      },
+    } satisfies AuthSession
+  }
+
+  it('keeps a failed permission read unknown and retries it before deciding', async () => {
+    setCurrentTenantId(null)
+    setTenantAliases(new Map())
+    clearSelfTenants()
+    window.history.replaceState({}, '', '/console/settings')
+    const backend = createBackend('data')
+    let failing = true
+    let permissionReads = 0
+    bindRequestFn(<T,>(path: string, options?: RequestOptions): Promise<T> => {
+      if (path === '/api/v1/authz/me/permissions') {
+        permissionReads += 1
+        return failing
+          ? Promise.reject(Object.assign(new Error('unavailable'), { status: 500 }))
+          : Promise.resolve({ platform: ['tenant.read'], tenant: [] } as T)
+      }
+      if (path === '/api/v1/auth/me') {
+        // A proved account: the gate's verification branch is not the case
+        // under test here.
+        return Promise.resolve({
+          account_id: 'account-1',
+          identifiers: [],
+          verification: { state: 'verified', email: 'a@x.test', since: '' },
+        } as T)
+      }
+      return backend(path, options) as Promise<T>
+    })
+    const session = attachedSession(
+      createTestSession(authenticatedSnapshot({ system: null })),
+    )
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    // The failure is not an empty set: the area shows the failure and a
+    // retry, and does not redirect the staff member out as a member.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      demoEnUS.console.accessFailed,
+    )
+    expect(window.location.pathname).toBe('/console/settings')
+    expect(
+      screen.queryByRole('heading', {
+        level: 1,
+        name: demoEnUS.home.heading,
+      }),
+    ).not.toBeInTheDocument()
+
+    // The read is retried against a recovered service; the area then decides
+    // by the set.
+    failing = false
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: demoEnUS.console.accessRetry }))
+
+    expect(
+      await screen.findByRole('navigation', {
+        name: tConsole('shell.navLabel'),
+      }),
+    ).toBeInTheDocument()
+    expect(permissionReads).toBeGreaterThanOrEqual(2)
+  })
+
+  it('does not read a failed profile as a verified account, and the retry decides', async () => {
+    // The permission set stays unknown (no attach in this suite), so the area
+    // reaches its verification branch. A failed profile read says nothing
+    // about the verification state; the pending answer is the one that
+    // redirects.
+    setCurrentTenantId(null)
+    setTenantAliases(new Map())
+    clearSelfTenants()
+    window.history.replaceState({}, '', '/console/settings')
+    const backend = createBackend('data')
+    const pendingProfile = {
+      identifiers: [],
+      password_set: false,
+      verification: { state: 'pending' },
+    }
+    let profileFailing = true
+    bindRequestFn(<T,>(path: string, options?: RequestOptions): Promise<T> => {
+      if (path === '/api/v1/auth/me') {
+        return profileFailing
+          ? Promise.reject(new Error('the profile is unavailable'))
+          : Promise.resolve(pendingProfile as T)
+      }
+      return backend(path, options) as Promise<T>
+    })
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot({ system: null })),
+    })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      demoEnUS.console.accessFailed,
+    )
+    expect(window.location.pathname).toBe('/console/settings')
+
+    profileFailing = false
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: demoEnUS.console.accessRetry }))
+
+    // The retried read answers a pending verification state: the unproved
+    // account is the case the verification page exists for.
+    await waitFor(() =>
+      expect(window.location.pathname).toBe('/account'),
+    )
   })
 })

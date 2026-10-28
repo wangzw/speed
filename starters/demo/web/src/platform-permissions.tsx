@@ -56,7 +56,14 @@
  * failed read rather than escaping the effect.
  */
 
-import { useEffect } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { useAuthState, useFeatureState } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
@@ -71,6 +78,34 @@ import { useCurrentTenantId } from './chrome.js'
 const PLATFORM_DOMAIN = 'system'
 const TENANT_DOMAIN = 'tenant'
 
+/** The read's outcome where a surface has to decide what to show: whether the
+ * last attempt failed (the sets stay unknown) and how to try again. */
+export interface PermissionReadState {
+  /** The last read failed: the sets are unknown, not empty. */
+  readonly failed: boolean
+  /** Issues the read again; the surface retries by asking for it. */
+  readonly retry: () => void
+}
+
+const NO_PERMISSION_READ: PermissionReadState = {
+  failed: false,
+  retry: () => undefined,
+}
+
+const PermissionReadContext = createContext<PermissionReadState>(
+  NO_PERMISSION_READ,
+)
+
+/**
+ * The last permission read's failure, for a surface that must not read an
+ * unknown set as an empty one: the console area renders its wait or a retry
+ * from it. A tree without the provider (a unit test mounting one surface)
+ * reads no failure and retries nothing.
+ */
+export function usePermissionRead(): PermissionReadState {
+  return useContext(PermissionReadContext)
+}
+
 /**
  * Mounts the attach for a session and renders its children unchanged: the
  * production assembly wraps the view in this so the caller's permission sets
@@ -84,8 +119,22 @@ export function PlatformPermissions({
   readonly session: AuthSession
   readonly children: ReactNode
 }): ReactElement {
-  usePlatformPermissions(session)
-  return <>{children}</>
+  // A retry re-runs the read: the attempt is an effect key, and the failure
+  // is published to the surfaces that must not read an unknown set as an
+  // empty one.
+  const [attempt, setAttempt] = useState(0)
+  const [failed, setFailed] = useState(false)
+  usePlatformPermissions(session, attempt, setFailed)
+  const retry = useCallback(() => setAttempt((current) => current + 1), [])
+  const value = useMemo<PermissionReadState>(
+    () => ({ failed, retry }),
+    [failed, retry],
+  )
+  return (
+    <PermissionReadContext.Provider value={value}>
+      {children}
+    </PermissionReadContext.Provider>
+  )
 }
 
 /**
@@ -105,13 +154,19 @@ export function PlatformPermissions({
  * previous principal's. The current tenant is a second key: the tenant set is
  * the set held in the tenant the request resolved to, and the tenant settles
  * and changes outside the session, so a re-read follows it too. A re-read
- * first resets both sets to unknown,
- * immediately before issuing its read. A read that is refused (or fails)
- * attaches the empty set to both domains -- fail-closed, so a viewer whose
- * permissions are unknown is offered no platform surface rather than the
- * benefit of the doubt.
+ * first resets both sets to unknown, immediately before issuing its read.
+ *
+ * A failed read is not an empty set. A transport or server failure leaves both
+ * sets unknown and reports the failure, and the console area shows its wait or
+ * its retry instead of reading "no permissions" into a fault. Only an answered
+ * document attaches a set -- an answer whose domains are both empty is a known
+ * empty set, distinct from a failure.
  */
-function usePlatformPermissions(session: AuthSession): void {
+function usePlatformPermissions(
+  session: AuthSession,
+  attempt: number,
+  onFailure: (failed: boolean) => void,
+): void {
   const snapshot = useAuthState()
   const authenticated = snapshot.state === 'authenticated'
   // The identity is an input: a login attaches a set for a different
@@ -132,25 +187,19 @@ function usePlatformPermissions(session: AuthSession): void {
   const features = useFeatureState()
   const ready = features.state === 'ready'
   useEffect(() => {
-    if (!authenticated) {
-      return
-    }
-    if (!ready) {
-      // A pending or failed document leaves the sets unknown.
-      return
-    }
-    if (tenantId === null) {
-      // No current tenant yet: the guarded route would answer 404, and a
-      // refusal it can only ever give says nothing about the caller's sets.
+    if (!authenticated || !ready || tenantId === null) {
+      // Nothing is read: the sets stay as they are, and a previous failure
+      // no longer describes this state.
+      onFailure(false)
       return
     }
     // Resetting to unknown belongs to this read, not to the identity-change
     // action that prompted it: the sets must go unknown immediately before a
     // new read is issued, so a restore() that hangs or is refused leaves the
-    // previous (known) sets in place rather than the console waiting forever
-    // on an unknown one.
+    // console waiting on an unknown set rather than a stale one.
     session.setPermissionSet(PLATFORM_DOMAIN, null)
     session.setPermissionSet(TENANT_DOMAIN, null)
+    onFailure(false)
     let cancelled = false
     void Promise.resolve()
       .then(() => authzSelfPermissions())
@@ -165,8 +214,9 @@ function usePlatformPermissions(session: AuthSession): void {
         if (cancelled) {
           return
         }
-        session.setPermissionSet(PLATFORM_DOMAIN, [])
-        session.setPermissionSet(TENANT_DOMAIN, [])
+        // The sets were reset to unknown above and stay there: a failed read
+        // says nothing about which permissions the caller holds.
+        onFailure(true)
       })
     return () => {
       cancelled = true
@@ -178,5 +228,7 @@ function usePlatformPermissions(session: AuthSession): void {
     principalId,
     impersonating,
     tenantId,
+    attempt,
+    onFailure,
   ])
 }

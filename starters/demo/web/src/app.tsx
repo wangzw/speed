@@ -99,6 +99,7 @@ import {
   setTenantAlias,
   setTenantAliases,
   TenantMenu,
+  TenantRosterFailure,
   UserMenu,
   useCurrentTenantId,
   useTenantSelection,
@@ -120,6 +121,7 @@ import {
 } from './impersonation.js'
 import { ContactVerificationBanner } from './contact-verification-banner.js'
 import { CallbackErrorAlert } from './callback-error-notice.js'
+import { usePermissionRead } from './platform-permissions.js'
 import { clearCallbackFragment, readCallbackError } from './sign-in-landing.js'
 import { DemoNavLabel } from './nav-label.js'
 import { ConsoleNavIcon } from './nav-icons.js'
@@ -484,6 +486,12 @@ function TenantFrame({
   // was not consumed, and dropping it would swallow the reason. It is shown
   // once and cleared, so a reload does not repeat it.
   const [callbackError, setCallbackError] = useState<string | null>(null)
+  // The roster read's outcome where it matters to the chrome: a failed read
+  // is a fault, not a membership fact, so the switcher shows a non-blocking
+  // notice and a retry instead of losing what it cannot name. The attempt
+  // re-issues the read.
+  const [rosterFailed, setRosterFailed] = useState(false)
+  const [rosterAttempt, setRosterAttempt] = useState(0)
   useEffect(() => {
     const remaining = readCallbackError()
     if (remaining === undefined) {
@@ -583,8 +591,8 @@ function TenantFrame({
   // permission set is known and holds tenant.read, so an ordinary member
   // never spends a request that can only be refused. The read decides no
   // tenant and infers no membership: the current tenant is settled from the
-  // caller's own list, and a failed read is a fault -- the alias cache
-  // stands as it was.
+  // caller's own list, and a failed read is a fault the switcher explains and
+  // retries -- the alias cache stands as it was.
   useEffect(() => {
     if (
       !authenticated ||
@@ -593,9 +601,11 @@ function TenantFrame({
       !rosterServed ||
       !canReadRoster
     ) {
+      setRosterFailed(false)
       return undefined
     }
     let cancelled = false
+    setRosterFailed(false)
     // Deferred into a promise: the generated operation reaches the api-sdk
     // request seam, which throws synchronously when no request function is
     // bound (a suite that mounts the app without the assembly). Deferring
@@ -610,10 +620,16 @@ function TenantFrame({
         setTenantAliases(
           new Map(answer.tenants.map((tenant) => [tenant.id, tenant.alias])),
         )
+        setRosterFailed(false)
       })
       .catch(() => {
         // A refused or failed roster read is a fault, not a membership test:
-        // it decides no tenant and says nothing about the caller.
+        // it decides no tenant and says nothing about the caller. The
+        // switcher shows it and offers the retry.
+        if (cancelled) {
+          return
+        }
+        setRosterFailed(true)
       })
     return () => {
       cancelled = true
@@ -627,6 +643,7 @@ function TenantFrame({
     rosterServed,
     canReadRoster,
     principalId,
+    rosterAttempt,
   ])
 
   // Settle the current tenant from the caller's own tenant list. The list is
@@ -939,6 +956,15 @@ function TenantFrame({
           // no-current-tenant text belongs to a host that settles none.
           userMenu={(rail) => (
             <>
+              {/* A failed roster read leaves the current tenant and the
+                  membership facts as they were; the notice beside the
+                  switcher says what could not be named and retries it. */}
+              {rosterFailed ? (
+                <TenantRosterFailure
+                  onRetry={() => setRosterAttempt((current) => current + 1)}
+                  compact={rail.narrow}
+                />
+              ) : null}
               {impersonating || identitySettling ? null : (
                 <TenantMenu
                   tenants={menuTenants}
@@ -1178,6 +1204,10 @@ function useConsoleTenantSettle(authenticated: boolean): void {
  *    the console on an unknown set would show the shell to a member for the
  *    window before their empty set is attached, which is the only moment the
  *    set is null for a signed-in viewer.
+ *  - failed: a read the decision depends on (the permission set, or the
+ *    profile whose verification state can send an unproved account away)
+ *    failed. The unknown value is not read as a conclusion: the area shows a
+ *    shell-less failure with a retry, never the member redirect.
  */
 function ConsoleAreaGate({
   children,
@@ -1186,11 +1216,15 @@ function ConsoleAreaGate({
 }): ReactElement | null {
   const snapshot = useAuthState()
   useConsoleTenantSettle(snapshot.state === 'authenticated')
+  const permissionRead = usePermissionRead()
   // An account whose address is still unproved never settles a tenant: the
   // personal tenant's ensure refuses a pending account and the roster is a
   // staff-only read, so the permission set below is never read and the area
   // would wait forever. The verification page is the one place that lifts the
   // state, so a pending viewer who reaches the console is sent there instead.
+  // Only a READ state counts: a failed profile read leaves the verification
+  // state unknown, and answering "not pending" to a failure is the same
+  // mistake as reading a failed permission read as an empty set.
   const profile = useAuthnProfileGet({
     query: { enabled: snapshot.state === 'authenticated' },
   })
@@ -1201,8 +1235,25 @@ function ConsoleAreaGate({
   if (status === 'denied') {
     return <TenantHomeRedirect />
   }
-  if (contactVerificationPending(profile.data ?? {})) {
+  if (
+    profile.data !== undefined &&
+    contactVerificationPending(profile.data)
+  ) {
     return <ContactVerificationRedirect />
+  }
+  if (permissionRead.failed || profile.isError) {
+    // The set (or the verification fact) is unknown because a read failed:
+    // neither a member's empty set nor an unproved account is a conclusion
+    // the failure supports. The failure view retries the reads instead of
+    // redirecting.
+    return (
+      <ConsoleAccessFailed
+        onRetry={() => {
+          permissionRead.retry()
+          void profile.refetch()
+        }}
+      />
+    )
   }
   return <ConsoleAccessPending />
 }
@@ -1277,6 +1328,37 @@ function ConsoleAccessPending(): ReactElement {
       }}
     >
       <CircularProgress aria-label={t('console.accessPending')} />
+    </Box>
+  )
+}
+
+/**
+ * The shell-less failure the area gate shows when one of its reads failed: the
+ * platform permission set or the profile's verification fact is unknown, so
+ * neither the console nor a redirect is supported. It is not the "no
+ * permission" face -- a failure says nothing about who the caller is -- and
+ * its retry re-issues the reads.
+ */
+function ConsoleAccessFailed({
+  onRetry,
+}: {
+  readonly onRetry: () => void
+}): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  return (
+    <Box
+      component="section"
+      role="alert"
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: 2,
+        p: 3,
+      }}
+    >
+      <Typography variant="body1">{t('console.accessFailed')}</Typography>
+      <Button onClick={onRetry}>{t('console.accessRetry')}</Button>
     </Box>
   )
 }

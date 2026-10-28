@@ -12,7 +12,9 @@
   },
   "console": {
     "backToApp": "Back to app",
-    "accessPending": "Checking console access"
+    "accessPending": "Checking console access",
+    "accessFailed": "Could not check console access",
+    "accessRetry": "Try again"
   },
   "route": {
     "pending": "Loading available features",
@@ -119,6 +121,10 @@
     "compact": "Compact",
     "glass": "Liquid glass",
     "ascii": "ASCII terminal"
+  },
+  "tenantRoster": {
+    "failed": "Could not load the tenant list",
+    "retry": "Try again"
   },
   "workspace": {
     "personal": "Personal workspace",
