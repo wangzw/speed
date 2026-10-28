@@ -4,15 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/vislake/speed/pkg/authn"
 )
 
 // fromIdentifier resolves a proof of an identifier's ownership, which is a phone
 // a verification code reached. A login of an unknown phone parks at the pending
-// signup when sign-up is open and is authn.ErrSignupClosed otherwise. The login
-// method hands a proof only for a number that may sign in: one no account holds
-// or one its account chose as a sign-in way.
+// signup when sign-up is open and is authn.ErrSignupClosed otherwise. A phone the
+// account holds but its holder did not choose as a sign-in way completes no
+// login: the number is treated as a credential that did not hold, and the login
+// does not open an account in its place.
 func (r *Resolver) fromIdentifier(ctx context.Context, req Request) (Result, error) {
 	idf := req.Proof.Identifier
 	if idf.Kind != authn.IdentifierPhone || idf.Value == "" {
@@ -21,7 +23,7 @@ func (r *Resolver) fromIdentifier(ctx context.Context, req Request) (Result, err
 	id, err := r.accounts.Lookup(ctx, authn.IdentifierPhone, idf.Value)
 	switch {
 	case err == nil:
-		return r.phoneAccount(ctx, req, id)
+		return r.phoneAccount(ctx, req, id, idf.Value)
 	case !errors.Is(err, authn.ErrAccountNotFound):
 		return Result{}, err
 	case req.Purpose != authn.PurposeLogin:
@@ -32,8 +34,11 @@ func (r *Resolver) fromIdentifier(ctx context.Context, req Request) (Result, err
 	return pendingPhone(idf.Value), nil
 }
 
-// phoneAccount ends the resolution of a phone that belongs to an account.
-func (r *Resolver) phoneAccount(ctx context.Context, req Request, id authn.AccountID) (Result, error) {
+// phoneAccount ends the resolution of a phone that belongs to an account. A login
+// lands only on a number the holder chose as a sign-in way; a step-up or an
+// enrollment asks an account that already signed in to prove the number it
+// holds, so the choice is not read there.
+func (r *Resolver) phoneAccount(ctx context.Context, req Request, id authn.AccountID, value string) (Result, error) {
 	a, found, err := r.getAccount(ctx, id)
 	switch {
 	case err != nil:
@@ -43,7 +48,30 @@ func (r *Resolver) phoneAccount(ctx context.Context, req Request, id authn.Accou
 	case !canLogIn(a):
 		return Result{}, credentialsFailure("the account cannot log in", nil)
 	}
+	if req.Purpose == authn.PurposeLogin {
+		chosen, err := r.phoneChosen(ctx, id, value)
+		switch {
+		case err != nil:
+			return Result{}, err
+		case !chosen:
+			return Result{}, credentialsFailure("the phone is not one of the account's sign-in ways", nil)
+		}
+	}
 	return r.confirmed(req, a.ID)
+}
+
+// phoneChosen reports whether the account holds the number as a sign-in way. The
+// account's read surface is the one that exposes the choice; Lookup, which other
+// paths use to find the owner of a number, answers for every number an account
+// holds.
+func (r *Resolver) phoneChosen(ctx context.Context, id authn.AccountID, value string) (bool, error) {
+	held, err := r.accounts.Identifiers(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(held, func(i authn.Identifier) bool {
+		return i.Kind == authn.IdentifierPhone && i.Value == value && i.SignIn
+	}), nil
 }
 
 // createPhone opens the account a pending phone signup describes. The phone's
@@ -68,7 +96,7 @@ func (r *Resolver) createPhone(ctx context.Context, p Pending, username string) 
 		if lerr != nil {
 			return Result{}, err
 		}
-		return r.phoneAccount(ctx, Request{Purpose: authn.PurposeLogin}, id)
+		return r.phoneAccount(ctx, Request{Purpose: authn.PurposeLogin}, id, p.Phone)
 	}
 	if err != nil {
 		return Result{}, err

@@ -105,11 +105,14 @@ type seed struct {
 	email       string
 	emailVia    string
 	phone       string
-	username    string
-	bindings    [][2]string
-	tenants     []string
-	suspended   []string
-	factors     int
+	// phoneNotSignIn seeds a phone the account holds but did not choose as a
+	// sign-in way.
+	phoneNotSignIn bool
+	username       string
+	bindings       [][2]string
+	tenants        []string
+	suspended      []string
+	factors        int
 }
 
 func (s *store) seed(t *testing.T, sd seed) authn.AccountID {
@@ -129,10 +132,12 @@ func (s *store) seed(t *testing.T, sd seed) authn.AccountID {
 			t.Fatalf("seed %s %q: %v", kind, value, err)
 		}
 		// A seeded account stands for one that predates the two axes: its
-		// username and phone are sign-in ways, as the migration fills them.
+		// username and phone are sign-in ways, as the migration fills them,
+		// unless the case seeds a phone the holder left out of sign-in.
+		signIn := kind == authn.IdentifierUsername ||
+			(kind == authn.IdentifierPhone && !sd.phoneNotSignIn)
 		rec.identifiers = append(rec.identifiers, authn.Identifier{
-			ID: fmt.Sprintf("i%d", len(rec.identifiers)), Kind: kind, Value: v, VerifiedVia: via,
-			SignIn: kind == authn.IdentifierUsername || kind == authn.IdentifierPhone,
+			ID: fmt.Sprintf("i%d", len(rec.identifiers)), Kind: kind, Value: v, VerifiedVia: via, SignIn: signIn,
 		})
 		s.identifier[ikey(kind, v)] = sd.id
 	}
