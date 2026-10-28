@@ -127,6 +127,76 @@ func TestAcceptRefusesANewAccountWithNoUsername(t *testing.T) {
 	})
 }
 
+// TestAUsernameRefusalLeavesTheInvitationRedeemable holds the three username
+// refusals against the account module's own checks — taken, reserved and
+// malformed — as values the person accepting the invitation controls: the
+// acceptance fails with that refusal, no account is opened, and the same token
+// redeems once a valid name is given.
+func TestAUsernameRefusalLeavesTheInvitationRedeemable(t *testing.T) {
+	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
+		verification authn.SignupVerification, memberships authn.Memberships,
+	) {
+		applyMigrations(t, handle)
+		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
+		ctx := context.Background()
+
+		if _, err := admin.Create(ctx, authn.CreateAccount{Username: "occupied"}); err != nil {
+			t.Fatalf("seeding an account that holds a username: %v", err)
+		}
+
+		cases := []struct {
+			name     string
+			username string
+			want     error
+			shape    bool
+		}{
+			{"taken", "occupied", authn.ErrAccountExists, false},
+			{"reserved", "admin", authn.ErrUsernameReserved, false},
+			{"malformed", "ab", authn.ErrInvalidIdentifier, true},
+		}
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				address := c.name + "@example.com"
+				issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
+				issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: address})
+				if err != nil {
+					t.Fatalf("issuing an invitation: %v", err)
+				}
+
+				_, err = p.Accept(ctx, AcceptInvite{Token: issued.Token, Username: c.username, DisplayName: c.name})
+				if !errors.Is(err, c.want) {
+					t.Fatalf("accepting with the %s name gave %v, want %v", c.name, err, c.want)
+				}
+				if c.shape && !authn.IsUsernameShape(err) {
+					t.Errorf("the malformed refusal %v does not read as a username shape", err)
+				}
+				if _, lookupErr := accounts.Lookup(ctx, authn.IdentifierEmail, address); !errors.Is(lookupErr, authn.ErrAccountNotFound) {
+					t.Errorf("the refused acceptance left %s held: %v", address, lookupErr)
+				}
+
+				mem, err := p.Accept(ctx, AcceptInvite{Token: issued.Token, Username: "accepted-" + c.name, DisplayName: c.name})
+				if err != nil {
+					t.Fatalf("retrying the same token with a valid name: %v", err)
+				}
+				id, err := accounts.Lookup(ctx, authn.IdentifierEmail, address)
+				if err != nil {
+					t.Fatalf("looking the accepted account up: %v", err)
+				}
+				if id != mem.Account {
+					t.Errorf("the retried membership names %q, but the address names %q", mem.Account, id)
+				}
+				got, ok, err := memberships.Membership(ctx, tenant, id)
+				if err != nil || !ok {
+					t.Fatalf("reading the membership back: ok=%t, err=%v", ok, err)
+				}
+				if !got.Active || got.Source != SourceInvite {
+					t.Errorf("membership = %+v, want active with source %q", got, SourceInvite)
+				}
+			})
+		}
+	})
+}
+
 // TestAcceptProvesAnAdministratorAssertedAddress holds that an invitation is a
 // proof for an address an administrator wrote without proof: accepting the
 // token brings the existing identifier up to invite, and the account stops

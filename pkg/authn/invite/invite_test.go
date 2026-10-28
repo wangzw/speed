@@ -3,6 +3,7 @@ package invite
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -207,20 +208,63 @@ func TestAcceptSettlesATransientFailureBackToPending(t *testing.T) {
 
 func TestAcceptSettlesAPermanentFailureAsRevoked(t *testing.T) {
 	h := newHarness(t)
-	h.admin.err = authn.ErrAccountExists
+	h.admin.err = authn.ErrBindingConflict
 	issued := h.issue(tenant, "heidi@example.com")
 
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "heidi"}); !errors.Is(err, authn.ErrAccountExists) {
-		t.Fatalf("accepting over a conflicting account gave %v, want ErrAccountExists", err)
+	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "heidi"}); !errors.Is(err, authn.ErrBindingConflict) {
+		t.Fatalf("accepting over a conflicting binding gave %v, want ErrBindingConflict", err)
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
 		t.Errorf("status after a permanent failure = %d, want revoked", got)
 	}
 }
 
+// TestAUsernameRefusalDoesNotSpendTheInvitation holds that the three ways a
+// username is refused — taken, reserved and malformed — are values the person
+// accepting the invitation holds and can change: the invitation returns to
+// pending and the same token redeems once a valid name is given.
+func TestAUsernameRefusalDoesNotSpendTheInvitation(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want error
+	}{
+		{"taken", authn.ErrAccountExists, authn.ErrAccountExists},
+		{"reserved", authn.ErrUsernameReserved, authn.ErrUsernameReserved},
+		{"malformed", authn.UsernameShape(fmt.Errorf("%w", authn.ErrInvalidIdentifier)), authn.ErrInvalidIdentifier},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.admin.err = c.err
+			issued := h.issue(tenant, "nora@example.com")
+
+			_, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "refused"})
+			if !errors.Is(err, c.want) {
+				t.Fatalf("accepting with the %s name gave %v, want %v", c.name, err, c.want)
+			}
+			if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+				t.Fatalf("status after the refusal = %d, want back to pending: the name is the invitee's to change", got)
+			}
+
+			h.admin.err = nil
+			mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "nora"})
+			if err != nil {
+				t.Fatalf("retrying the same token with a valid name: %v", err)
+			}
+			if mem.Tenant != tenant || mem.Source != SourceInvite {
+				t.Errorf("membership after the retry = %+v, want a %q membership in %q", mem, SourceInvite, tenant)
+			}
+			if got := h.row(issued.Invitation.ID).Status; got != statusAccepted {
+				t.Errorf("status after the retry = %d, want accepted", got)
+			}
+		})
+	}
+}
+
 // TestAcceptSettlesATakenContactAsRevoked holds that an address another account
-// reserved or proved is a permanent failure like an existing account: the
-// invitation is revoked rather than left pending for a retry that cannot work.
+// reserved or proved is a permanent failure: the invitation is revoked rather
+// than left pending for a retry that cannot work.
 func TestAcceptSettlesATakenContactAsRevoked(t *testing.T) {
 	h := newHarness(t)
 	h.admin.err = authn.ErrContactTaken

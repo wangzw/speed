@@ -47,8 +47,11 @@ acceptance itself refuses it, so no sweeper is needed.
   through `AccountAdmin.AddIdentifier` with `via = invite` and hangs the
   membership on that account, a miss creates an account, and a read failure
   fails the redemption so the row returns to pending. A failure after the win is
-  settled by a second conditional write: a transient failure returns the row to
-  pending, a permanent one revokes it.
+  settled by a second conditional write: a transient failure, and a username the
+  accepting party can correct (taken, reserved or malformed), returns the row to
+  pending, so the same token redeems once a valid name is given; only a failure
+  no retry can complete — an address reserved by another account, a binding
+  another account holds — revokes it.
 - **Revoke** flips a pending invitation to revoked. Revoking one that was
   already accepted is `ErrInvitationAlreadyAccepted`; revoking one that was
   already revoked is an idempotent success.

@@ -263,8 +263,8 @@ func TestAMalformedUsernameOnAcceptanceAnswers400OfItsOwn(t *testing.T) {
 
 // TestATakenUsernameOnAcceptanceAnswers409 holds that the acceptance face
 // reports a username another account already holds as the conflict it is,
-// rather than as an unavailable dependency: the caller can choose another
-// name, and the invitation is still redeemable.
+// rather than as an unavailable dependency, and that the refusal does not spend
+// the token: the same token redeems once a free name is given.
 func TestATakenUsernameOnAcceptanceAnswers409(t *testing.T) {
 	h := newHarness(t)
 	h.mounter.AsAnonymous()
@@ -283,8 +283,18 @@ func TestATakenUsernameOnAcceptanceAnswers409(t *testing.T) {
 	if got, _ := body["type"].(string); got != "urn:speed:authn:username-taken" {
 		t.Errorf("problem type = %q, want urn:speed:authn:username-taken", got)
 	}
-	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
-		t.Errorf("status after the 409 = %d, want the invitation revoked", got)
+	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+		t.Fatalf("status after the 409 = %d, want back to pending: the name is the invitee's to change", got)
+	}
+
+	h.admin.err = nil
+	w = h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token,
+		map[string]string{"username": "zoe-free", "display_name": "Zoe"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("accept with a free name answered %d, want 201: %s", w.Code, w.Body.String())
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusAccepted {
+		t.Errorf("status after the corrected acceptance = %d, want accepted", got)
 	}
 }
 

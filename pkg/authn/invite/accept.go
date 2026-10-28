@@ -32,8 +32,9 @@ const maxClaimAttempts = 3
 // the address up: an address that is already an account gets the membership
 // only, and one that is not gets an account created first. Both writes are the
 // account capability's, in its own transaction, so a failure after the row was
-// won is settled by a second conditional write: a transient failure returns the
-// row to pending, and a permanent one revokes it.
+// won is settled by a second conditional write: a failure the accepting party
+// can correct, or a transient one, returns the row to pending, and only a
+// failure that no retry can complete revokes it.
 func (p *product) Accept(ctx context.Context, in AcceptInvite) (authn.Membership, error) {
 	digest := tokenDigest(in.Token)
 	if in.Token == "" {
@@ -212,12 +213,13 @@ func (p *product) createAccount(ctx context.Context, email string, in AcceptInvi
 	return account.ID, nil
 }
 
-// settle closes a won invitation whose redemption failed. A transient failure
-// returns the row to pending, so a retry is not locked out; a permanent one
-// revokes it, so a token that can never be redeemed does not stay live until
-// its deadline. The write is conditional on the row still being accepted and
-// never overwrites it unconditionally; its own failure is an Error line and
-// changes nothing about the error handed back.
+// settle closes a won invitation whose redemption failed. A transient failure,
+// and one the accepting party can correct, returns the row to pending, so a
+// retry is not locked out; only a failure that no retry can complete revokes it,
+// so a token that can never be redeemed does not stay live until its deadline.
+// The write is conditional on the row still being accepted and never overwrites
+// it unconditionally; its own failure is an Error line and changes nothing about
+// the error handed back.
 func (p *product) settle(ctx context.Context, id string, cause error) {
 	now := p.at()
 	target := map[string]any{"status": statusRevoked, "updated_at": now}
@@ -233,10 +235,14 @@ func (p *product) settle(ctx context.Context, id string, cause error) {
 	}
 }
 
-// permanent reports whether a redemption failure cannot be fixed by retrying:
-// an address that conflicts with an existing account or a reservation, or a
-// binding another account holds.
+// permanent reports whether a redemption failure is one no retry can complete.
+// An address that conflicts with a reservation another account holds, and a
+// binding another account holds, are such failures. A username is not: the
+// account module refuses a taken, reserved or malformed one before it writes
+// anything, and the accepting party holds the token and can answer with another
+// name. An address conflict that surfaces as an existing account is not one
+// either: the next attempt's lookup finds that account and hangs the membership
+// on it.
 func permanent(cause error) bool {
-	return errors.Is(cause, authn.ErrAccountExists) || errors.Is(cause, authn.ErrContactTaken) ||
-		errors.Is(cause, authn.ErrBindingConflict)
+	return errors.Is(cause, authn.ErrContactTaken) || errors.Is(cause, authn.ErrBindingConflict)
 }
