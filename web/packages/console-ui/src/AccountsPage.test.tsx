@@ -2372,10 +2372,10 @@ describe('AccountsPage', () => {
     )
   })
 
-  it('names a taken username in a creation failure instead of the fallback', async () => {
+  it('names a taken username on its field in a creation failure', async () => {
     // A user account is opened with a login name, so a 409 username-taken is
-    // a refusal the operator can act on: the form names the username rather
-    // than rendering the generic unknown line.
+    // a refusal the field carries: the name is the value the operator
+    // changes, with focus moved there and no whole-form banner.
     const user = userEvent.setup()
     const operations = withAccounts({
       createAccount: () => Promise.reject(USERNAME_TAKEN),
@@ -2386,13 +2386,15 @@ describe('AccountsPage', () => {
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
 
-    const alert = await within(panel).findByRole('alert')
-    expect(alert).toHaveTextContent(USERNAME_TAKEN_TEXT)
-    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
-    expect(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel)).toHaveValue('grace')
+    const field = within(panel).getByLabelText(zhCN.accounts.create.usernameLabel)
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'))
+    expect(within(panel).getByText(USERNAME_TAKEN_TEXT)).toBeInTheDocument()
+    expect(field).toHaveFocus()
+    expect(field).toHaveValue('grace')
+    expect(within(panel).queryByRole('alert')).toBeNull()
   })
 
-  it('names a reserved username in a creation failure', async () => {
+  it('names a reserved username on its field in a creation failure', async () => {
     const user = userEvent.setup()
     const operations = withAccounts({
       createAccount: () => Promise.reject(USERNAME_RESERVED),
@@ -2403,14 +2405,15 @@ describe('AccountsPage', () => {
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'admin')
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
 
-    const alert = await within(panel).findByRole('alert')
-    expect(alert).toHaveTextContent(USERNAME_RESERVED_TEXT)
-    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
-    // The operator keeps the name field to correct the name.
-    expect(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel)).toHaveValue('admin')
+    const field = within(panel).getByLabelText(zhCN.accounts.create.usernameLabel)
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'))
+    expect(within(panel).getByText(USERNAME_RESERVED_TEXT)).toBeInTheDocument()
+    expect(field).toHaveFocus()
+    expect(field).toHaveValue('admin')
+    expect(within(panel).queryByRole('alert')).toBeNull()
   })
 
-  it('names an ill-formed username in a creation failure', async () => {
+  it('names an ill-formed username on its field in a creation failure', async () => {
     const user = userEvent.setup()
     const operations = withAccounts({
       createAccount: () => Promise.reject(USERNAME_INVALID),
@@ -2421,9 +2424,11 @@ describe('AccountsPage', () => {
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), '-grace')
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
 
-    const alert = await within(panel).findByRole('alert')
-    expect(alert).toHaveTextContent(USERNAME_INVALID_TEXT)
-    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
+    const field = within(panel).getByLabelText(zhCN.accounts.create.usernameLabel)
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'))
+    expect(within(panel).getByText(USERNAME_INVALID_TEXT)).toBeInTheDocument()
+    expect(field).toHaveFocus()
+    expect(within(panel).queryByRole('alert')).toBeNull()
   })
 
   it('keeps the username copy off a service account creation', async () => {
