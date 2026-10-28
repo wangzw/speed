@@ -169,7 +169,7 @@ func TestTheConfigurationItemsAreTheSizes(t *testing.T) {
 			t.Errorf("%s takes the origins %v, want every source", key, got)
 		}
 	}
-	for _, key := range []string{algorithmKey, signupKey, passwordSignupKey, autoLinkKey} {
+	for _, key := range []string{algorithmKey, signupKey, passwordSignupKey} {
 		if _, ok := s.Items[key]; ok {
 			t.Errorf("the configuration declares %s, want it declared as a setting alone", key)
 		}
@@ -181,7 +181,7 @@ func TestTheConfigurationItemsAreTheSizes(t *testing.T) {
 func TestTheSettingsAreDeclaredWithADomain(t *testing.T) {
 	s := settingsSchema()
 	want := []string{
-		algorithmKey, signupKey, passwordSignupKey, autoLinkKey,
+		algorithmKey, signupKey, passwordSignupKey,
 		signupIPLimitKey, signupHourlyKey, unverifiedTTLKey, unverifiedSweepKey,
 		minLengthKey, argonMemoryKey, argonIterationKey, argonLanesKey, pbkdf2IterKey,
 		freeAttemptsKey, maxDelayKey, decayKey, retentionKey, reservedKey,
@@ -194,11 +194,11 @@ func TestTheSettingsAreDeclaredWithADomain(t *testing.T) {
 	if len(s.Items) != len(want) {
 		t.Errorf("the section declares %d settings, want %d", len(s.Items), len(want))
 	}
-	if !signupInDomain(defaults.Signup) || !autoLinkInDomain(defaults.AutoLink) {
-		t.Errorf("a declared default lies outside its domain: %q, %q", defaults.Signup, defaults.AutoLink)
+	if !signupInDomain(defaults.Signup) {
+		t.Errorf("a declared default lies outside its domain: %q", defaults.Signup)
 	}
-	if defaults.Signup != signupClosed || defaults.AutoLink != autoLinkNever || defaults.PasswordSignup != signupClosed {
-		t.Errorf("the declared defaults are %q, %q and %q, want the strict values",
-			defaults.Signup, defaults.AutoLink, defaults.PasswordSignup)
+	if defaults.Signup != signupClosed || defaults.PasswordSignup != signupClosed {
+		t.Errorf("the declared defaults are %q and %q, want the strict values",
+			defaults.Signup, defaults.PasswordSignup)
 	}
 }

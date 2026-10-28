@@ -572,49 +572,6 @@ func TestTokenDeliveryIssuesATokenPair(t *testing.T) {
 	}
 }
 
-// TestAnAutomaticMergeCleansUpBeforeTheNewSession holds the A10 ordering of an
-// automatic merge: the account's sessions are revoked, then its password is
-// deleted, and only then is the login's new session created.
-func TestAnAutomaticMergeCleansUpBeforeTheNewSession(t *testing.T) {
-	m := &fakeMethod{name: "password"}
-	m.begin = func(authn.Start) (authn.Step, error) {
-		return authn.StepProven(authn.Proof{External: &authn.External{
-			Provider: "google", Subject: "g1", Email: "ann@x.org", EmailVerified: true,
-		}}), nil
-	}
-	r := newRig(t, m)
-	r.allow("acct1")
-	r.withAutoLink()
-	r.accounts.ident["acct1"] = []authn.Identifier{{
-		Kind: authn.IdentifierEmail, Value: "ann@x.org", VerifiedVia: authn.VerifiedViaIDPPrefix + "google",
-	}}
-	r.accounts.lookup[string(authn.IdentifierEmail)+"\x00ann@x.org"] = "acct1"
-
-	rec := &recorder{}
-	r.sessions.rec = rec
-	r.p.passwords = &recordingPasswords{rec: rec}
-
-	start := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
-	if start.Code != http.StatusOK {
-		t.Fatalf("POST flows answered %d: %s", start.Code, start.Body.String())
-	}
-	cookie := flowCookie(t, start)
-	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":0,"step":"complete"}`, "Cookie", cookie)
-	if done.Code != http.StatusOK {
-		t.Fatalf("the merged login answered %d: %s", done.Code, done.Body.String())
-	}
-	want := []string{"revoke:", "clear", "create"}
-	got := rec.all()
-	if len(got) != len(want) {
-		t.Fatalf("the merge cleanup ran %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("the merge cleanup ran %v, want %v (revoke with except=\"\", then clear, then create)", got, want)
-		}
-	}
-}
-
 // TestMethodsAndCurrentBehave holds the two listing routes: GET methods hides a
 // disabled method, and GET flows/current refuses a tombstone and echoes the flow
 // token of a header-bound flow.

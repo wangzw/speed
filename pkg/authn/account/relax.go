@@ -72,7 +72,6 @@ var relaxing = map[string]relaxWhen{
 var relaxingSwitch = map[string]string{
 	signupPath:         signupOpen,
 	passwordSignupPath: signupOpen,
-	autoLinkPath:       autoLinkVerified,
 }
 
 // downgradingSwitch is, for each setting of this module whose value set is

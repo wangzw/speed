@@ -80,11 +80,10 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   run is the command's decision. `Start` probes every table and refuses with
   `ErrNotMigrated` when one is missing, which is what tells a host to take the
   module in statically in the command that migrates.
-- **`signup`, `password-signup` and `auto-link` are settings, declared here and
-  read on every decision.** All three default to the strict value (`closed`,
-  `closed`, `never`); a move toward `open` or `verified-email` is a relaxation,
-  so the `settings.changed` subscriber writes a `Warn` and a best-effort
-  `authn.settings.relaxed` audit row naming the key and the direction
+- **`signup` and `password-signup` are settings, declared here and read on every
+  decision.** Both default to the strict value (`closed`); a move to `open` is a
+  relaxation, so the `settings.changed` subscriber writes a `Warn` and a
+  best-effort `authn.settings.relaxed` audit row naming the key and the direction
   (`relax.go`). A process that starts with a switch already relaxed writes the
   same `Warn`. `Signups.Register` reads `password-signup` itself and is its
   authority; a caller that reads the same key before validating its input is
@@ -97,7 +96,7 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   wait, a larger free-attempt count, and a budget raised are relaxations, and
   `signup-ip-limit` is not monotone — zero turns it off, so a positive value moved
   to zero is `to-zero` and a positive value raised is `increase`, while a positive
-  value lowered is a tightening. The config schema does not carry the three
+  value lowered is a tightening. The config schema does not carry the two
   switches: a config file naming one fails startup as an unknown key.
 - **Self-registration is one transaction and one state machine.**
   `Signups.Register` derives the password under `signup-concurrency`, a width of

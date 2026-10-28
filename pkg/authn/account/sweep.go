@@ -114,9 +114,6 @@ func (p *product) diagnose() {
 	if p.passwordSignup() == signupOpen {
 		p.warnRelaxation(passwordSignupPath, moveRelaxed)
 	}
-	if p.autoLink() == autoLinkVerified {
-		p.warnRelaxation(autoLinkPath, moveRelaxed)
-	}
 	switch {
 	case p.outbox == nil && p.bus == nil:
 		p.logger.Warn(diagnosticPrefix + "this assembly has no outbox and no event bus: no account event is published, " +

@@ -78,13 +78,6 @@ func (p *product) unverifiedSweepInterval() time.Duration {
 	return readSetting(p, unverifiedSweepPath, unverifiedSweepInDomain, defaults.UnverifiedSweepInterval)
 }
 
-// autoLink is the linking switch: whether a first social login whose provider
-// proved an email address is bound to the account that holds it. A read that
-// fails reads as never.
-func (p *product) autoLink() string {
-	return readSetting(p, autoLinkPath, autoLinkInDomain, defaults.AutoLink)
-}
-
 // minLength is the fewest characters a new password has.
 func (p *product) minLength() int {
 	return readSetting(p, minLengthPath, minLengthInDomain, defaults.PasswordMinLength)

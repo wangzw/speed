@@ -23,9 +23,6 @@ func TestAPendingSignupCarriesTheFactsTheAccountIsOpenedWith(t *testing.T) {
 		if p.Source != SourceSocial || p.Via != "signup" {
 			t.Errorf("source = %q via = %q, want a signup social path", p.Source, p.Via)
 		}
-		if p.Email != "ann@home.org" || p.EmailVia != "idp:google" {
-			t.Errorf("email = %q via = %q, want the provider's verified address", p.Email, p.EmailVia)
-		}
 		if p.External == nil || p.External.Subject != "g1" || p.DisplayName != "Ann" {
 			t.Errorf("external = %+v display name = %q, want the identity the binding is made under", p.External, p.DisplayName)
 		}
@@ -44,8 +41,8 @@ func TestAPendingSignupCarriesTheFactsTheAccountIsOpenedWith(t *testing.T) {
 		if p.Source != SourcePhone || p.Via != "signup" || p.Phone != "+8613800000001" {
 			t.Errorf("pending = %+v, want the proved phone under signup", p)
 		}
-		if p.External != nil || p.Email != "" {
-			t.Errorf("a phone pending names an external identity or an email: %+v", p)
+		if p.External != nil {
+			t.Errorf("a phone pending names an external identity: %+v", p)
 		}
 	})
 
@@ -58,9 +55,6 @@ func TestAPendingSignupCarriesTheFactsTheAccountIsOpenedWith(t *testing.T) {
 		p := pending.Pending
 		if p.Source != SourceEnterprise || p.Via != "jit" {
 			t.Errorf("source = %q via = %q, want the enterprise just-in-time path", p.Source, p.Via)
-		}
-		if p.Email != "ann@acme.com" || p.EmailVia != "idp:"+idpAcme {
-			t.Errorf("email = %q via = %q, want the address the provider proved", p.Email, p.EmailVia)
 		}
 		if p.Provider != idpAcme || p.Tenant != tenantAcme {
 			t.Errorf("provider = %q tenant = %q, want the provider's own", p.Provider, p.Tenant)

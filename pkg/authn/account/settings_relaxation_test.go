@@ -24,13 +24,12 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The three switches this module owns, as the settings paths a deployment
-// writes. They are written out here rather than read from a constant so that the
-// cases name the keys the design lists.
+// The switches this module owns, as the settings paths a deployment writes.
+// They are written out here rather than read from a constant so that the cases
+// name the keys the design lists.
 const (
 	testSignupKey         = "authn.account.signup"
 	testPasswordSignupKey = "authn.account.password-signup"
-	testAutoLinkKey       = "authn.account.auto-link"
 	testSignupIPLimitKey  = "authn.account.signup-ip-limit"
 	testSignupHourlyKey   = "authn.account.signup-global-hourly"
 )
@@ -46,7 +45,6 @@ func TestRelaxingAnAccountSwitchWritesAWarnAndAnAuditRecord(t *testing.T) {
 	}{
 		{testSignupKey, "open", "closed"},
 		{testPasswordSignupKey, "open", "closed"},
-		{testAutoLinkKey, "verified-email", "never"},
 	} {
 		t.Run(c.key, func(t *testing.T) {
 			store, bus := deliveredSettings(t)
@@ -205,7 +203,7 @@ func TestAConfigurationCarryingARemovedAccountSwitchFailsStartup(t *testing.T) {
 	}{
 		{testSignupKey, "open"},
 		{testPasswordSignupKey, "open"},
-		{testAutoLinkKey, "verified-email"},
+		{"authn.account.auto-link", "verified-email"},
 	} {
 		t.Run(c.key, func(t *testing.T) {
 			name := strings.TrimPrefix(c.key, ConfigNamespace+".")
@@ -218,6 +216,19 @@ func TestAConfigurationCarryingARemovedAccountSwitchFailsStartup(t *testing.T) {
 				t.Errorf("the refusal %q does not name the key %s", err, c.key)
 			}
 		})
+	}
+}
+
+// TestTheRemovedAutoLinkSettingHasNoDeclaration holds the other move out: the
+// settings store refuses a write to a key no module declares, so a deployment
+// cannot bring the retired switch back through a settings write.
+func TestTheRemovedAutoLinkSettingHasNoDeclaration(t *testing.T) {
+	store, _ := deliveredSettings(t)
+	write := settings.Write{
+		Layer: settings.Global(), Key: "authn.account.auto-link", Value: "verified-email", Actor: "test",
+	}
+	if err := store.Set(context.Background(), write); !errors.Is(err, settings.ErrUnknownKey) {
+		t.Fatalf("writing the removed switch returned %v, want settings.ErrUnknownKey", err)
 	}
 }
 

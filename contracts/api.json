@@ -1483,6 +1483,152 @@
           "authn.login"
         ],
         "x-endpoint": "account"
+      },
+      "put": {
+        "description": "Sets what one of the caller's own email addresses or phone numbers is for. `contact` and `sign_in` are independent axes: `contact` may be set on an identifier whose ownership is not proved, while `sign_in` may be set true only on one that is, since only a proved value may be a way in. `default_contact` may be set only on a proved email address, and takes the default away from the address that held it in the same write. A member left out is left as it is. An identifier that is not the caller's own, a username, an unproved `sign_in` and a default contact that is not a proved email address are all a 400 bad-request. Changing `sign_in` or `default_contact` requires the fresh authentication every change of what proves the account asks for; changing `contact` alone does not. Turning `sign_in` off that would leave a password account with no login name is a 409 login-identifier-required and one that would leave the account with no way to sign in at all is a 409 last-login-method; neither takes effect. Putting a proved email address or phone number into sign-in rotates the current session's token and revokes the account's other sessions.",
+        "operationId": "authn.login.updateIdentifier",
+        "parameters": [
+          {
+            "description": "The identifier's identifier, as returned in the `id` of one of the caller's own identifiers. A value the caller's account does not hold, including one another account holds, or a username, is a 400 bad-request.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "A partial change to one identifier's two axes and default contact: a member left out is left as it is.",
+                "properties": {
+                  "contact": {
+                    "description": "Whether the identifier is a contact of the account. It is independent of sign_in and may be true on an identifier whose ownership is not proved; absent leaves it as it is.",
+                    "type": "boolean"
+                  },
+                  "default_contact": {
+                    "description": "Whether the identifier is the account's default contact. Only a proved email address may take true, and a true clears the account's previous choice; false changes nothing.",
+                    "type": "boolean"
+                  },
+                  "sign_in": {
+                    "description": "Whether the identifier may be used to sign in. True requires the identifier's ownership to be proved; absent leaves it as it is.",
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "description": "The axes and the default contact to write; each member left out is left as it is. The body must be `application/json` and refuses unknown members.",
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The identifier's axes were written"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The body could not be read, the identifier is not the caller's own, or the change is outside what the axes allow"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No usable credential, or the freshness a change of what proves the account asks for",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The change would leave a password account with no login name (login-identifier-required), or leave the account with no way to sign in at all (last-login-method)"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is not application/json"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many attempts; retry after the stated delay",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying, when the back-off states a delay; absent otherwise.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Set the two axes and the default contact of one of the caller's own identifiers",
+        "tags": [
+          "authn.login"
+        ],
+        "x-endpoint": "account"
       }
     },
     "/api/v1/auth/impersonation": {
@@ -1790,7 +1936,7 @@
         "x-endpoint": "account"
       },
       "post": {
-        "description": "Redeems the invitation and writes a membership whose source is invite. When the invited address already belongs to an account, the membership is added to it and display_name and password are ignored; otherwise an enabled user account is created first, with the address verified through the invitation. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.",
+        "description": "Redeems the invitation and writes a membership whose source is invite. When the invited address already belongs to an account, the membership is added to it and username, display_name and password are ignored; otherwise an enabled user account is created first, with the address verified through the invitation and the username as its login name. A request that creates an account without a username is 400. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.",
         "operationId": "authn.invite.accept",
         "parameters": [
           {
@@ -1808,7 +1954,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
-                "description": "The acceptance request; both fields are read only when the invited address has no account.",
+                "description": "The acceptance request; the body fields are read only when the invited address has no account.",
                 "properties": {
                   "display_name": {
                     "description": "Display name of the account created when the invited address has no account; ignored when the address already belongs to one.",
@@ -1817,13 +1963,17 @@
                   "password": {
                     "description": "Initial password of the account created when the invited address has no account; ignored when the address already belongs to one.",
                     "type": "string"
+                  },
+                  "username": {
+                    "description": "Login name of the account created when the invited address has no account; required then, and ignored when the address already belongs to one.",
+                    "type": "string"
                   }
                 },
                 "type": "object"
               }
             }
           },
-          "description": "The display name and initial password used only when the invited address has no account yet.",
+          "description": "The username, display name and initial password used only when the invited address has no account yet.",
           "required": true
         },
         "responses": {
@@ -5194,7 +5344,7 @@
         "x-endpoint": "admin"
       },
       "post": {
-        "description": "Creates a user or a service account. A user account must name at least one login identifier in this request — username, email or phone — because an account without one could not sign in; a user account that states a password additionally needs a username or email address, since a phone number is not a password login name and one without either is a 409 login-identifier-required. A service account signs in with a service secret and is not held to either rule. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.",
+        "description": "Creates a user or a service account. A user account must name the username it is opened with, because an account is created with a login name; a missing or unusable username is 400. A service account signs in with a service secret, so it is not held to that rule. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.",
         "operationId": "authn.admin.accounts.create",
         "requestBody": {
           "content": {
@@ -5204,7 +5354,7 @@
               }
             }
           },
-          "description": "The account to create. kind is required; a user account also names at least one of username, email and phone, and email and phone each carry a verification channel in email_verified_via and phone_verified_via.",
+          "description": "The account to create. kind is required, and a user account also names the username it is opened with; email and phone are optional and each carries a verification channel in email_verified_via and phone_verified_via.",
           "required": true
         },
         "responses": {
@@ -11970,7 +12120,7 @@
             "type": "string"
           },
           "username": {
-            "description": "A login name to add. At least one of username, email and phone is required for a user account; a username is lower-cased before it is stored.",
+            "description": "The login name the account is opened with. Required for a user account; a service account may leave it out because it signs in with a service secret. It is lower-cased before it is stored.",
             "type": "string"
           }
         },
@@ -12114,6 +12264,14 @@
       "AuthnAdminIdentifier": {
         "description": "One login identifier bound to an account: its kind, its normalized value and whether its ownership was proved. It carries no identifier of its own, no verification instant and no named way of verification.",
         "properties": {
+          "contact": {
+            "description": "True when the identifier is a contact of the account. A username never is; an email or phone is one the account selected, and an email written under the old behaviour is one.",
+            "type": "boolean"
+          },
+          "default_contact": {
+            "description": "True for the proved email address notifications to the account go to; at most one identifier of an account carries it.",
+            "type": "boolean"
+          },
           "kind": {
             "description": "The identifier kind: username, email or phone.",
             "enum": [
@@ -12127,6 +12285,10 @@
             "description": "True only when the identifier's ownership was proved: sms-code, email-code, invite or idp:\u003cprovider\u003e. False for admin, import-unverified and self, which only record a fact an administrator, an import or the account's own holder asserted and are never grounds for automatic linking or an enterprise merge.",
             "type": "boolean"
           },
+          "sign_in": {
+            "description": "True when the identifier is one the account signs in with. A username always is; an email or phone is only after it was proved and selected, and an identifier written under the old behaviour carries what that behaviour used.",
+            "type": "boolean"
+          },
           "value": {
             "description": "The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits.",
             "type": "string"
@@ -12135,7 +12297,10 @@
         "required": [
           "kind",
           "value",
-          "proven"
+          "proven",
+          "sign_in",
+          "contact",
+          "default_contact"
         ],
         "type": "object"
       },
@@ -12386,7 +12551,7 @@
             "type": "string"
           },
           "merge_existing": {
-            "description": "True when just-in-time sign-up may merge into an existing account; the route then warns about it.",
+            "description": "The stored merge flag; it no longer opens merging, because a just-in-time login never merges into an existing account.",
             "type": "boolean"
           },
           "name": {
@@ -12510,7 +12675,7 @@
             "type": "boolean"
           },
           "merge_existing": {
-            "description": "Absent leaves the flag as it is (false on a create)",
+            "description": "The stored merge flag; absent leaves it as it is (false on a create). It no longer opens merging into an existing account.",
             "type": "boolean"
           },
           "name": {
@@ -13061,7 +13226,7 @@
             "type": "integer"
           },
           "state": {
-            "description": "The flow's state: first, second, enroll, ready, processing, done or failed",
+            "description": "The flow's state: first, signup, second, enroll, ready, processing, done or failed",
             "type": "string"
           }
         },
@@ -13558,6 +13723,14 @@
       "AuthnProfileIdentifier": {
         "description": "One identifier bound to the account, with the way its ownership was established.",
         "properties": {
+          "contact": {
+            "description": "Whether the identifier is a contact of the account. A username never is; an email or phone is one the account selected, and an email written under the old behaviour is one",
+            "type": "boolean"
+          },
+          "default_contact": {
+            "description": "Whether this proved email address is the one notifications to the account go to; at most one identifier of an account carries it",
+            "type": "boolean"
+          },
           "id": {
             "description": "The identifier's own identifier",
             "type": "string"
@@ -13568,6 +13741,10 @@
           },
           "proven": {
             "description": "Whether the way of verification proves ownership: true for sms-code, email-code, invite and idp:\u003cprovider\u003e, false for admin, import-unverified and self",
+            "type": "boolean"
+          },
+          "sign_in": {
+            "description": "Whether the identifier is one the account signs in with. A username always is; an email or phone is only after it was proved and selected, and an identifier written under the old behaviour carries what that behaviour used",
             "type": "boolean"
           },
           "value": {
@@ -13589,7 +13766,10 @@
           "value",
           "verified_at",
           "verified_via",
-          "proven"
+          "proven",
+          "sign_in",
+          "contact",
+          "default_contact"
         ],
         "type": "object"
       },

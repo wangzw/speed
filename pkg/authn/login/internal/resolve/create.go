@@ -76,9 +76,6 @@ type newAccount struct {
 	link   authn.ExternalLink
 	// membership, when set, is written once the binding stands.
 	membership *authn.Membership
-	// keepWithoutEmail says an account may be made without its email identifier
-	// when the identifier is taken in the meantime.
-	keepWithoutEmail bool
 }
 
 // createBound creates an account for an external identity, binds the identity to
@@ -93,8 +90,8 @@ type newAccount struct {
 func (r *Resolver) createBound(ctx context.Context, n newAccount) (id authn.AccountID, created bool, err error) {
 	acct, err := r.admin.Create(ctx, n.create)
 	if errors.Is(err, authn.ErrAccountExists) {
-		// Either a concurrent login of this identity made its account first, or the
-		// email it would carry is taken.
+		// A concurrent login of this identity made its account first; the login
+		// carries on from the binding it made.
 		winner, found, rerr := r.binding(ctx, n.link.Provider, n.link.Subject)
 		if rerr != nil {
 			return "", false, rerr
@@ -102,11 +99,7 @@ func (r *Resolver) createBound(ctx context.Context, n newAccount) (id authn.Acco
 		if found {
 			return winner, false, nil
 		}
-		if n.create.Email == "" || !n.keepWithoutEmail {
-			return "", false, err
-		}
-		n.create.Email, n.create.EmailVerifiedVia = "", authn.Verification{}
-		acct, err = r.admin.Create(ctx, n.create)
+		return "", false, err
 	}
 	if err != nil {
 		return "", false, err

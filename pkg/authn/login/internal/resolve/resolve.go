@@ -1,7 +1,7 @@
 // Package resolve is the account resolution step of the login engine. A login
 // method hands the engine a [authn.Proof]; this package says which account the
 // proof belongs to, and for a first login it decides whether an account is
-// created, an existing one is linked or merged into, or the login is refused.
+// created, an existing one is bound to, or the login is refused.
 // The rules are those of the account design (A1 to A10 and first-login
 // provisioning), and the package holds nothing else: it writes no HTTP answer,
 // builds no session and imports neither the login engine nor a login method
@@ -10,15 +10,12 @@
 // The key of an external identity is always the provider and the subject, never
 // an email address. The email a provider declares is a hint, and whether it is
 // believed depends on where the identity came from: a social provider's claim
-// is believed only when it says the address is verified, and then only for the
-// linking rules that name it; an enterprise provider's claim is replaced by the
-// proof that the address is in a domain its tenant verified.
-//
-// A resolution of an automatic merge (the automatic link of A4, the
-// merge_existing merge of A5) leaves two obligations to the caller, in
-// [Result.Cleanup] and in this order: revoke every session the account had, then
-// delete its password credential, and only then create the session of this
-// login. The resolver holds neither the session module nor the password store.
+// is believed only when it says the address is verified, and then only to refuse
+// a login whose address an account already holds; an enterprise provider's
+// claim is replaced by the proof that the address is in a domain its tenant
+// verified. No login resolves an account by a provider's address: the address
+// chooses neither the account of a login nor the account of a first-login
+// provisioning.
 package resolve
 
 import (
@@ -40,48 +37,26 @@ const (
 	SignupOpen   Signup = "open"
 )
 
-// AutoLink says whether a social login with no binding may be linked to an
-// existing account by a verified email. The zero value reads as never.
-type AutoLink string
-
-// The values of AutoLink.
-const (
-	AutoLinkNever         AutoLink = "never"
-	AutoLinkVerifiedEmail AutoLink = "verified-email"
-)
-
-// FactorReader lists the factors an account has registered. The multi-factor
-// module is one; the resolver asks only whether the list is empty, and only for
-// the merge_existing rule.
-type FactorReader interface {
-	Factors(ctx context.Context, id authn.AccountID) ([]authn.FactorRecord, error)
-}
-
 // Config is what a [Resolver] is built from.
 type Config struct {
 	// Accounts, Admin and Memberships are required.
 	Accounts    authn.Accounts
 	Admin       authn.AccountAdmin
 	Memberships authn.Memberships
-	// Factors is what merge_existing asks whether an account has factors. It is
-	// required for that rule and without it no account is merged into.
-	Factors FactorReader
 	// SSO is the register of enterprise providers. Without it an enterprise
-	// identity cannot be resolved without a binding, and a social identity has no
-	// SSO domain to be refused for.
+	// identity cannot be resolved without a binding.
 	SSO authn.SSOProviders
 	// Provisioner is the host's hook before an account is created; nil means no
 	// hook.
 	Provisioner authn.Provisioner
-	// Signup and AutoLink are the two relaxation switches, read when Switches is
-	// not set; their zero values are the closed ones.
-	Signup   Signup
-	AutoLink AutoLink
+	// Signup is the relaxation switch, read when Switches is not set; its zero
+	// value is the closed one.
+	Signup Signup
 	// Switches, when it is set, is read at each resolution and is what Signup
-	// and AutoLink then mean. It is how a caller whose switches change while the
-	// process runs reads the value current at the moment of the decision. A value
-	// it returns outside the switch's set reads as the closed one.
-	Switches func() (Signup, AutoLink)
+	// then means. It is how a caller whose switch changes while the process runs
+	// reads the value current at the moment of the decision. A value it returns
+	// outside the switch's set reads as the closed one.
+	Switches func() Signup
 }
 
 // Resolver resolves proofs to accounts. It is safe for concurrent use.
@@ -89,16 +64,14 @@ type Resolver struct {
 	accounts    authn.Accounts
 	admin       authn.AccountAdmin
 	memberships authn.Memberships
-	factors     FactorReader
 	sso         authn.SSOProviders
 	provisioner authn.Provisioner
 	signup      Signup
-	autoLink    AutoLink
-	switches    func() (Signup, AutoLink)
+	switches    func() Signup
 }
 
-// New builds a Resolver. A missing required dependency and a value of Signup or
-// AutoLink outside its set are authn.ErrInvalidConfig.
+// New builds a Resolver. A missing required dependency and a value of Signup
+// outside its set are authn.ErrInvalidConfig.
 func New(c Config) (*Resolver, error) {
 	switch {
 	case c.Accounts == nil:
@@ -113,46 +86,30 @@ func New(c Config) (*Resolver, error) {
 	default:
 		return nil, fmt.Errorf("%w: resolve: signup is not one of closed and open", authn.ErrInvalidConfig)
 	}
-	switch c.AutoLink {
-	case "", AutoLinkNever, AutoLinkVerifiedEmail:
-	default:
-		return nil, fmt.Errorf("%w: resolve: auto-link is not one of never and verified-email", authn.ErrInvalidConfig)
-	}
 	return &Resolver{
 		accounts:    c.Accounts,
 		admin:       c.Admin,
 		memberships: c.Memberships,
-		factors:     c.Factors,
 		sso:         c.SSO,
 		provisioner: c.Provisioner,
 		signup:      c.Signup,
-		autoLink:    c.AutoLink,
 		switches:    c.Switches,
 	}, nil
 }
 
-// currentSwitches is the two relaxation switches as they stand at this
-// resolution: read from the provider when one was given, and the configured
-// values otherwise.
-func (r *Resolver) currentSwitches() (Signup, AutoLink) {
+// currentSignup is the relaxation switch as it stands at this resolution: read
+// from the provider when one was given, and the configured value otherwise.
+func (r *Resolver) currentSignup() Signup {
 	if r.switches != nil {
 		return r.switches()
 	}
-	return r.signup, r.autoLink
+	return r.signup
 }
 
 // signupOpen reports whether a first login may open an account, as the switch
 // stands at this decision.
 func (r *Resolver) signupOpen() bool {
-	signup, _ := r.currentSwitches()
-	return signup == SignupOpen
-}
-
-// autoLinkVerifiedEmail reports whether a first social login may be linked by a
-// verified email, as the switch stands at this decision.
-func (r *Resolver) autoLinkVerifiedEmail() bool {
-	_, autoLink := r.currentSwitches()
-	return autoLink == AutoLinkVerifiedEmail
+	return r.currentSignup() == SignupOpen
 }
 
 // Request is one resolution.

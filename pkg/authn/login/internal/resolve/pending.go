@@ -24,11 +24,12 @@ const (
 
 // Pending is the account a first login opens once its person has chosen a
 // username. It is what a resolution decided before any row was written: which
-// path decided it, the external identity or the proved phone, the provider's
-// claim about the address, the tenant an enterprise account enters, the display
-// name and attributes the provider gave, the identity's earlier keys and the
-// creation the step will perform. It carries no username; the pending-signup
-// step collects one and hands it to Create.
+// path decided it, the external identity or the proved phone, the tenant an
+// enterprise account enters, the display name and attributes the provider gave,
+// the identity's earlier keys and the creation the step will perform. It carries
+// no username; the pending-signup step collects one and hands it to Create. It
+// carries no address: a provider's declared address is never written into a
+// new account.
 //
 // It is the flow record's pending member and nothing else. While a flow stands
 // at signup, no account, binding, identifier or membership row exists for it,
@@ -47,11 +48,6 @@ type Pending struct {
 	// took part in the resolution that decided the account, and are kept for the
 	// record's account of what the method handed over.
 	Aliases []authn.ExternalLink `json:"aliases,omitempty"`
-	// Email is the address the account is written with, empty for none, and
-	// EmailVia is how its ownership was proved. It is a provider's verified claim
-	// that no account held the address when the login was resolved.
-	Email    string `json:"email,omitempty"`
-	EmailVia string `json:"email_via,omitempty"`
 	// Phone is the number an SMS first login proved, empty for an external
 	// login. It is written under sms-code and is a sign-in way from the start.
 	Phone string `json:"phone,omitempty"`
@@ -115,23 +111,17 @@ func (r *Resolver) Create(ctx context.Context, p Pending, username string) (Resu
 	return r.createSocial(ctx, p, username)
 }
 
-// pendingSocial is the pending signup of a social first login. email is the
-// address to write on the account, empty for none; it is there only when the
-// provider declared it verified and no account held it a moment ago.
-func pendingSocial(ext *authn.External, email string, aliases []authn.ExternalLink) Result {
-	pending := &Pending{
+// pendingSocial is the pending signup of a social first login. It carries the
+// provider's profile and no address: a new account takes the display name alone.
+func pendingSocial(ext *authn.External, aliases []authn.ExternalLink) Result {
+	return Result{Pending: &Pending{
 		Source:      SourceSocial,
 		Via:         viaSignup,
 		External:    externalOf(ext),
 		Aliases:     cloneLinks(aliases),
-		Email:       email,
 		DisplayName: displayName(ext.DisplayName),
 		Attributes:  cloneAttributes(ext.Attributes),
-	}
-	if via := (authn.Verification{Via: authn.VerifiedViaIDPPrefix + ext.Provider}); email != "" && via.Valid() {
-		pending.EmailVia = via.Via
-	}
-	return Result{Pending: pending}
+	}}
 }
 
 // pendingPhone is the pending signup of a phone an SMS code just proved.
@@ -144,25 +134,19 @@ func pendingPhone(phone string) Result {
 }
 
 // pendingEnterprise is the pending signup of an enterprise provider's
-// just-in-time first login. It fails for a provider whose identifier cannot name
-// a verification, because the address it writes has to carry one.
-func pendingEnterprise(prov authn.SSOProvider, ext *authn.External, aliases []authn.ExternalLink) (Result, error) {
-	via := authn.Verification{Via: authn.VerifiedViaIDPPrefix + prov.ID}
-	if !via.Valid() {
-		return Result{}, fmt.Errorf("%w: resolve: the provider's identifier cannot name a verification", authn.ErrInvalidArgument)
-	}
+// just-in-time first login. The account carries the provider's display name and
+// the membership of its tenant, and no address.
+func pendingEnterprise(prov authn.SSOProvider, ext *authn.External, aliases []authn.ExternalLink) Result {
 	return Result{Pending: &Pending{
 		Source:      SourceEnterprise,
 		Via:         viaJIT,
 		External:    externalOf(ext),
 		Aliases:     cloneLinks(aliases),
-		Email:       ext.Email,
-		EmailVia:    via.Via,
 		Provider:    prov.ID,
 		Tenant:      prov.Tenant,
 		DisplayName: displayName(ext.DisplayName),
 		Attributes:  cloneAttributes(ext.Attributes),
-	}}, nil
+	}}
 }
 
 // externalOf copies an external identity for a pending signup; a nil one stays

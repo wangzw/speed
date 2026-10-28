@@ -263,8 +263,9 @@ func TestTheSSOExemptRoute(t *testing.T) {
 }
 
 // TestProviderWarnings holds that each setting that loosens a default surfaces
-// its warning on the get and list responses, and that a provider that sets none
-// carries no warning.
+// its warning on the get and list responses, that a provider that sets none
+// carries no warning, and that the retained merge flag adds none: merging no
+// longer happens.
 func TestProviderWarnings(t *testing.T) {
 	r := newRig(t)
 	r.providers.put(authn.SSOProvider{
@@ -272,7 +273,7 @@ func TestProviderWarnings(t *testing.T) {
 		AllowIDPInitiated: true, MergeExisting: true, AllowSHA1: true,
 	})
 
-	want := []string{"idp-initiated", "merge", "SHA-1"}
+	want := []string{"idp-initiated", "SHA-1"}
 
 	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/sso/providers/"+idpA, nil, fresh()...)
 	if rec.Code != http.StatusOK {

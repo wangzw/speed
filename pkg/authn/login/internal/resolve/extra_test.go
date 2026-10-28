@@ -37,25 +37,9 @@ func TestADependencyReadThatFailsIsNotANotFound(t *testing.T) {
 	})
 }
 
-// TestProviderProofNeedsAValidVerification holds that a provider proof is a
-// valid idp: verification, so a malformed channel is not one.
-func TestProviderProofNeedsAValidVerification(t *testing.T) {
-	for via, want := range map[string]bool{
-		"idp:google": true,
-		"idp:":       false,
-		"idp:!!":     false,
-		"admin":      false,
-		"":           false,
-	} {
-		if got := providerProof(via); got != want {
-			t.Errorf("providerProof(%q) = %v, want %v", via, got, want)
-		}
-	}
-}
-
 // TestProviderAddressMatchingIsCaseInsensitive holds that an address a provider
 // declares in a different case than the store holds still matches, for the
-// preprovisioned match, the merge and the automatic link.
+// preprovisioned match.
 func TestProviderAddressMatchingIsCaseInsensitive(t *testing.T) {
 	t.Run("preprovisioned", func(t *testing.T) {
 		e := newEnv(t, withProvider(authn.ProvisioningPreprovisioned, false))
@@ -63,22 +47,6 @@ func TestProviderAddressMatchingIsCaseInsensitive(t *testing.T) {
 		res, err := e.resolve(enterprise("u1", "ANN@acme.com"))
 		if err != nil || res.Account != id || res.Outcome != OutcomeMatched {
 			t.Fatalf("Resolve = %+v, %v, want a1 matched", res, err)
-		}
-	})
-	t.Run("merge", func(t *testing.T) {
-		e := newEnv(t, withProvider(authn.ProvisioningJIT, true))
-		e.s.seed(t, mergeBase())
-		res, err := e.resolve(enterprise("u1", "ANN@acme.com"))
-		if err != nil || res.Outcome != OutcomeMerged {
-			t.Fatalf("Resolve = %+v, %v, want a merge", res, err)
-		}
-	})
-	t.Run("auto-link", func(t *testing.T) {
-		e := newEnv(t, withSignup(SignupOpen), withAutoLink(AutoLinkVerifiedEmail))
-		id := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@home.org", emailVia: "idp:google"})
-		res, err := e.resolve(social("google", "g1", "ANN@home.org", true))
-		if err != nil || res.Account != id || res.Outcome != OutcomeMerged {
-			t.Fatalf("Resolve = %+v, %v, want a1 merged", res, err)
 		}
 	})
 }

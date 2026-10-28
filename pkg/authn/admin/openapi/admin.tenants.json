@@ -127,7 +127,7 @@
             "type": "string"
           },
           "merge_existing": {
-            "description": "True when just-in-time sign-up may merge into an existing account; the route then warns about it.",
+            "description": "The stored merge flag; it no longer opens merging, because a just-in-time login never merges into an existing account.",
             "type": "boolean"
           },
           "name": {
@@ -251,7 +251,7 @@
             "type": "boolean"
           },
           "merge_existing": {
-            "description": "Absent leaves the flag as it is (false on a create)",
+            "description": "The stored merge flag; absent leaves it as it is (false on a create). It no longer opens merging into an existing account.",
             "type": "boolean"
           },
           "name": {

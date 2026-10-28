@@ -24,8 +24,8 @@ const (
 	namespaceSAML = "saml:"
 )
 
-// fromExternal resolves an external identity, the one source that can create,
-// link or merge.
+// fromExternal resolves an external identity, the one source that can create or
+// bind.
 func (r *Resolver) fromExternal(ctx context.Context, req Request) (Result, error) {
 	ext := req.Proof.External
 	if ext.Provider == "" || ext.Subject == "" {
@@ -62,7 +62,7 @@ func (r *Resolver) fromExternal(ctx context.Context, req Request) (Result, error
 	case req.Proof.Provider != "":
 		return r.enterpriseUnbound(ctx, req.Proof.Provider, link, ext, req.Proof.Aliases)
 	}
-	return r.socialUnbound(ctx, link, ext, req.Proof.Aliases)
+	return r.socialUnbound(ctx, ext, req.Proof.Aliases)
 }
 
 // checkNamespace holds the provider of an external identity to the source of the
@@ -197,14 +197,3 @@ func (r *Resolver) externalWithoutWrite(ctx context.Context, req Request, l auth
 // errNoSSO is the failure of an enterprise identity that arrives where no
 // register of providers is wired.
 func errNoSSO() error { return &seamFault{seam: "the SSO provider register"} }
-
-// merged ends a resolution that bound an identity to an account that existed
-// before, under A4 or A5. The obligations of A10 are the caller's; a login that
-// lost the race for the binding to one that bound the same account carries none,
-// because the winner's does.
-func merged(id authn.AccountID, bound bool) Result {
-	if !bound {
-		return Result{Account: id, Outcome: OutcomeBound}
-	}
-	return Result{Account: id, Outcome: OutcomeMerged, Cleanup: mergeCleanup()}
-}

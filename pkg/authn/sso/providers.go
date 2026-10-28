@@ -294,10 +294,6 @@ func updatedChange(from, to int) string {
 
 // warnOnRelaxation writes one Warn for each protection a row gives up.
 func (p *product) warnOnRelaxation(in authn.SSOProvider) {
-	if in.MergeExisting {
-		p.logger.Warn(diagnosticPrefix + ModuleName + ": merge_existing is on for an identity provider, so a " +
-			"just-in-time login may merge into an existing account and that IdP gains a lasting login on it")
-	}
 	if in.AllowIDPInitiated {
 		p.logger.Warn(diagnosticPrefix + ModuleName + ": allow_idp_initiated is on for an identity provider, so a " +
 			"login it starts carries no login-CSRF binding")

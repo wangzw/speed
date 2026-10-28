@@ -50,16 +50,16 @@ func (r *Resolver) enterpriseUnbound(ctx context.Context, providerID string, l a
 		return r.preprovisioned(ctx, l, ext)
 	case authn.ProvisioningJIT:
 		// An address an account already holds is decided here, before any
-		// username is asked for: the merge a provider allows into that account, or
-		// the explicit binding it requires.
-		id, found, err := r.occupant(ctx, ext.Email)
+		// username is asked for: the login must bind explicitly rather than take
+		// the account over or open a second one.
+		_, found, err := r.occupant(ctx, ext.Email)
 		if err != nil {
 			return Result{}, err
 		}
 		if found {
-			return r.jitOccupied(ctx, id, prov, l, ext)
+			return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: ext.Email})
 		}
-		return pendingEnterprise(prov, ext, aliases)
+		return pendingEnterprise(prov, ext, aliases), nil
 	}
 	return Result{}, fmt.Errorf("%w: resolve: the provider's provisioning is not one that is known", authn.ErrInvalidArgument)
 }
@@ -111,10 +111,9 @@ func (r *Resolver) preprovisioned(ctx context.Context, l authn.ExternalLink, ext
 }
 
 // createEnterprise opens the account a pending enterprise signup describes and
-// its membership of the provider's tenant. An address another account took in
-// the meantime, or one that was bound to an account before the write, is
-// authn.ErrLinkRequired: the login must bind explicitly rather than take the
-// account over. A username another login took in the race for the same name is
+// its membership of the provider's tenant. The account takes the provider's
+// display name and nothing else: the address it declared is not written. A
+// username another login took in the race for the same name is
 // authn.ErrAccountExists for the answer route's 409.
 func (r *Resolver) createEnterprise(ctx context.Context, p Pending, username string) (Result, error) {
 	create := authn.CreateAccount{
@@ -122,99 +121,15 @@ func (r *Resolver) createEnterprise(ctx context.Context, p Pending, username str
 		DisplayName:         p.DisplayName,
 		Username:            username,
 		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
-		Email:               p.Email,
-		EmailVerifiedVia:    authn.Verification{Via: p.EmailVia},
 		Via:                 p.Via,
-	}
-	if !create.EmailVerifiedVia.Valid() {
-		return Result{}, fmt.Errorf("%w: resolve: the provider's identifier cannot name a verification", authn.ErrInvalidArgument)
 	}
 	create, err := r.provision(ctx, create, p.Via)
 	if err != nil {
 		return Result{}, err
 	}
-	res, err := r.finishCreated(ctx, newAccount{
+	return r.finishCreated(ctx, newAccount{
 		create:     create,
 		link:       linkOf(p),
 		membership: &authn.Membership{Tenant: p.Tenant, Active: true, Source: membershipSource + p.Provider},
 	})
-	if errors.Is(err, authn.ErrAccountExists) {
-		// The address was taken after it was looked up, by an account that is not
-		// this identity's. A name another login took is left to the answer
-		// route's 409; the address taken is a login that must bind explicitly.
-		_, found, occupantErr := r.occupant(ctx, p.Email)
-		if occupantErr != nil {
-			return Result{}, occupantErr
-		}
-		if found {
-			return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: p.Email})
-		}
-	}
-	return res, err
-}
-
-// jitOccupied is the case of an address an account already holds.
-func (r *Resolver) jitOccupied(ctx context.Context, id authn.AccountID, prov authn.SSOProvider, l authn.ExternalLink, ext *authn.External) (Result, error) {
-	if !prov.MergeExisting {
-		return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: ext.Email})
-	}
-	ok, err := r.mergeable(ctx, id, prov.Tenant, ext.Email)
-	if err != nil {
-		return Result{}, err
-	}
-	if !ok {
-		return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: ext.Email})
-	}
-	bound, err := r.bindExisting(ctx, id, l)
-	if err != nil {
-		return Result{}, err
-	}
-	return merged(id, bound), nil
-}
-
-// mergeable is the condition of A5 on an account a provider may merge into: it
-// can log in, the address is on it as an identifier a provider proved, every
-// membership it has is of this tenant, and it has no password, no phone, no other
-// binding and no factor. An account that is in more than one tenant or has
-// another way to log in is never merged into, because the account is global and
-// the merge would give this tenant's provider a way into everything else the
-// account is. Whatever cannot be read leaves the account unmerged, and a
-// dependency's failure is the login's.
-func (r *Resolver) mergeable(ctx context.Context, id authn.AccountID, tenant, email string) (bool, error) {
-	if r.factors == nil {
-		return false, nil
-	}
-	a, found, err := r.getAccount(ctx, id)
-	if err != nil || !found || !canLogIn(a) || a.PasswordSet {
-		return false, err
-	}
-	identifiers, err := r.accounts.Identifiers(ctx, id)
-	if err != nil {
-		return false, err
-	}
-	var proved bool
-	for _, i := range identifiers {
-		switch {
-		case i.Kind == authn.IdentifierPhone:
-			return false, nil
-		case i.Kind == authn.IdentifierEmail && strings.EqualFold(i.Value, email) && providerProof(i.VerifiedVia):
-			proved = true
-		}
-	}
-	if !proved {
-		return false, nil
-	}
-	bindings, err := r.accounts.Externals(ctx, id)
-	if err != nil || len(bindings) > 0 {
-		return false, err
-	}
-	memberships, err := r.memberships.Tenants(ctx, id)
-	if err != nil || slices.ContainsFunc(memberships, func(m authn.Membership) bool { return m.Tenant != tenant }) {
-		return false, err
-	}
-	factors, err := r.factors.Factors(ctx, id)
-	if err != nil {
-		return false, err
-	}
-	return len(factors) == 0, nil
 }

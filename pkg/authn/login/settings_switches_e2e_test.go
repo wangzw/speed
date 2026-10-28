@@ -12,13 +12,10 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The two account switches this package reads as settings. They are written out
-// here rather than read from the account module so that the cases name the keys
-// the design lists.
-const (
-	testSignupKey   = "authn.account.signup"
-	testAutoLinkKey = "authn.account.auto-link"
-)
+// The account switch this package reads as a setting. It is written out here
+// rather than read from the account module so that the cases name the key the
+// design lists.
+const testSignupKey = "authn.account.signup"
 
 // writeASetting writes one value into the settings store the assembly
 // delivered. A failure is fatal: the key being undeclared is the whole point of
@@ -137,12 +134,11 @@ func TestTheTwoSignupSwitchesAreReportedOnTheirOwn(t *testing.T) {
 	}
 }
 
-// TestAnAutoLinkSettingLinksAFirstSocialLogin holds that the auto-link switch is
-// read at each account resolution: with authn.account.auto-link written
-// verified-email, a first social login whose provider proved the address of an
-// existing account links that identity to the account instead of refusing the
-// login as link-required.
-func TestAnAutoLinkSettingLinksAFirstSocialLogin(t *testing.T) {
+// TestASocialFirstLoginWithAVerifiedAddressOnAnAccountIsLinkRequired holds the
+// retirement of the automatic link at the HTTP layer: a first social login whose
+// provider proved the address of an existing account answers 401 link-required
+// and binds nothing, whatever the settings hold.
+func TestASocialFirstLoginWithAVerifiedAddressOnAnAccountIsLinkRequired(t *testing.T) {
 	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
 		acct, err := h.admin.Create(h.ctx, authn.CreateAccount{
 			Kind:     authn.KindUser,
@@ -154,34 +150,40 @@ func TestAnAutoLinkSettingLinksAFirstSocialLogin(t *testing.T) {
 			Via: "admin",
 		})
 		if err != nil {
-			t.Fatalf("creating the account the login should link to: %v", err)
+			t.Fatalf("creating the account holding the address: %v", err)
 		}
 
-		// The negative control: under the declared default the same first login
-		// is refused as link-required and binds nothing. A method that linked
-		// regardless of the switch would already fail here.
 		refused := h.socialLogin()
 		if refused.status != http.StatusUnauthorized || !strings.Contains(refused.body, "link-required") {
-			t.Fatalf("a first social login with auto-link at its default answered %d: %s, want 401 link-required",
+			t.Fatalf("a first social login answered %d: %s, want 401 link-required",
 				refused.status, refused.body)
 		}
 		if bound, lookupErr := h.accounts.ByExternal(h.ctx, "google", "g1"); lookupErr == nil {
-			t.Fatalf("a first social login bound the identity to %q with auto-link at its default", bound)
+			t.Fatalf("a first social login bound the identity to %q", bound)
 		}
-
-		writeASetting(t, h.ctx, h.store, testAutoLinkKey, "verified-email")
-
-		done := h.socialLogin()
-		if done.status != http.StatusOK {
-			t.Fatalf("the first social login answered %d: %s", done.status, done.body)
+		if identifiers, listErr := h.accounts.Identifiers(h.ctx, acct.ID); listErr != nil {
+			t.Fatalf("reading the account's identifiers: %v", listErr)
+		} else {
+			var holdsEmail bool
+			for _, idf := range identifiers {
+				holdsEmail = holdsEmail || (idf.Kind == authn.IdentifierEmail && idf.Value == "ann@x.org")
+			}
+			if !holdsEmail {
+				t.Errorf("identifiers = %+v, want the administrator's email still there", identifiers)
+			}
 		}
+	})
+}
 
-		bound, err := h.accounts.ByExternal(h.ctx, "google", "g1")
-		if err != nil {
-			t.Fatalf("the first social login did not link the external identity: %v", err)
+// TestTheRemovedAutoLinkSettingIsNotDeclared holds that the settings store
+// refuses the retired key, so a deployment cannot bring the switch back.
+func TestTheRemovedAutoLinkSettingIsNotDeclared(t *testing.T) {
+	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
+		write := settings.Write{
+			Layer: settings.Global(), Key: "authn.account.auto-link", Value: "verified-email", Actor: "test",
 		}
-		if bound != acct.ID {
-			t.Errorf("the external identity is bound to %q, want the account holding the address %q", bound, acct.ID)
+		if err := h.store.Set(h.ctx, write); !errors.Is(err, settings.ErrUnknownKey) {
+			t.Fatalf("writing the retired switch returned %v, want settings.ErrUnknownKey", err)
 		}
 	})
 }
@@ -201,7 +203,7 @@ func (h *harness) socialLogin() reply {
 
 // socialMethod is a stand-in social provider's login method: its first step is
 // already a proof of a verified external identity, so a case reaches the
-// resolution the auto-link switch governs without an outside provider.
+// resolution such a proof governs without an outside provider.
 type socialMethod struct{}
 
 var errNoSocialAnswer = errors.New("the stand-in social method has no answer step")

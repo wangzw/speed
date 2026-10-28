@@ -46,7 +46,7 @@ func TestExternalIdentityStillResolvesToItsAccountAfterTheProviderChangesTheEmai
 	if err != nil {
 		t.Fatalf("the login after the provider changed the address: %v", err)
 	}
-	if again.Account != first.Account || again.Outcome != OutcomeBound || len(again.Cleanup) != 0 {
+	if again.Account != first.Account || again.Outcome != OutcomeBound {
 		t.Errorf("the second login = %+v, want the original account bound with no cleanup", again)
 	}
 	if got := e.s.live(); !slices.Equal(got, accountsBefore) {
@@ -104,7 +104,7 @@ func TestOneAddressUnderTwoProvidersIsTwoIdentities(t *testing.T) {
 // to another account, and the login still lands on the account the identity is
 // bound to.
 func TestABindingOutranksAnAddressHeldByAnotherAccount(t *testing.T) {
-	e := newEnv(t, withSignup(SignupOpen), withAutoLink(AutoLinkVerifiedEmail))
+	e := newEnv(t, withSignup(SignupOpen))
 	bound := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, bindings: [][2]string{{"google", "g1"}}})
 	holder := e.s.seed(t, seed{id: "a2", status: authn.StatusActive, email: "ann@elsewhere.example", emailVia: "idp:github"})
 	holderIdentifiers := e.s.identifiersOf(holder)
@@ -238,6 +238,10 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			t.Fatalf("the first social login = %+v, %v, want a new account", socialLogin, err)
 		}
 		socialID := record("social first sign-in", socialLogin.Account, "google-subject", "social@example.org")
+		if held := identifiersOf(t, accounts, socialID); len(held) != 1 ||
+			held[0].Kind != authn.IdentifierUsername || held[0].Value != "social-made" {
+			t.Errorf("the social account holds the identifiers %+v, want its username alone: the provider's address is written nowhere", held)
+		}
 
 		// The same subject under another provider is another identity against
 		// the real store too: the binding key is the pair, not the subject.
@@ -288,6 +292,10 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			t.Fatalf("the first enterprise login = %+v, %v, want a new account", jitLogin, err)
 		}
 		jitID := record("enterprise just-in-time first sign-in", jitLogin.Account, "jit-subject", "jit@acme.com")
+		if held := identifiersOf(t, accounts, jitID); len(held) != 1 ||
+			held[0].Kind != authn.IdentifierUsername || held[0].Value != "jit-made" {
+			t.Errorf("the enterprise account holds the identifiers %+v, want its username alone: the provider's address is written nowhere", held)
+		}
 		if member, ok, memberErr := memberships.Membership(ctx, tenantAcme, jitID); memberErr != nil || !ok || !member.Active {
 			t.Errorf("the enterprise account's membership = %+v, %v, %v, want an active one", member, ok, memberErr)
 		}

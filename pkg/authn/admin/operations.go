@@ -203,7 +203,7 @@ type providerCreateInput struct {
 	TrustIDPMFA       *bool                      `json:"trust_idp_mfa" description:"Absent leaves the flag as it is (false on a create)"`
 	AllowIDPInitiated *bool                      `json:"allow_idp_initiated" description:"Absent leaves the flag as it is (false on a create)"`
 	AllowSHA1         *bool                      `json:"allow_sha1" description:"Absent leaves the flag as it is (false on a create)"`
-	MergeExisting     *bool                      `json:"merge_existing" description:"Absent leaves the flag as it is (false on a create)"`
+	MergeExisting     *bool                      `json:"merge_existing" description:"The stored merge flag; absent leaves it as it is (false on a create). It no longer opens merging into an existing account."`
 	Config            map[string]json.RawMessage `json:"config" description:"The protocol's own configuration"`
 	ClientSecret      *string                    `json:"client_secret" description:"Absent writes no client secret on a create and keeps the stored one on an update"`
 }
@@ -221,7 +221,7 @@ type providerUpdateInput struct {
 	TrustIDPMFA       *bool                      `json:"trust_idp_mfa" description:"Absent leaves the flag as it is (false on a create)"`
 	AllowIDPInitiated *bool                      `json:"allow_idp_initiated" description:"Absent leaves the flag as it is (false on a create)"`
 	AllowSHA1         *bool                      `json:"allow_sha1" description:"Absent leaves the flag as it is (false on a create)"`
-	MergeExisting     *bool                      `json:"merge_existing" description:"Absent leaves the flag as it is (false on a create)"`
+	MergeExisting     *bool                      `json:"merge_existing" description:"The stored merge flag; absent leaves it as it is (false on a create). It no longer opens merging into an existing account."`
 	Config            map[string]json.RawMessage `json:"config" description:"The protocol's own configuration"`
 	ClientSecret      *string                    `json:"client_secret" description:"Absent writes no client secret on a create and keeps the stored one on an update"`
 }

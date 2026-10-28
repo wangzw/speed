@@ -179,7 +179,7 @@ type AuthnAdminProvider struct {
 	TrustIDPMFA       bool                       `json:"trust_idp_mfa" required:"true" description:"True when the provider's assertion may count as a multi-factor proof, and only when its acr (or SAML AuthnContextClassRef) is in the configured list."`
 	AllowIDPInitiated bool                       `json:"allow_idp_initiated" required:"true" description:"True when an unsolicited assertion from the provider is accepted; the route then warns that login CSRF cannot be defended against."`
 	AllowSHA1         bool                       `json:"allow_sha1" required:"true" description:"True when SHA-1 signed assertions are accepted; the route then warns about the downgrade."`
-	MergeExisting     bool                       `json:"merge_existing" required:"true" description:"True when just-in-time sign-up may merge into an existing account; the route then warns about it."`
+	MergeExisting     bool                       `json:"merge_existing" required:"true" description:"The stored merge flag; it no longer opens merging, because a just-in-time login never merges into an existing account."`
 	Config            json.RawMessage            `json:"config,omitempty" description:"The protocol's own configuration; absent when the provider carries none"`
 	Version           int                        `json:"version" required:"true" description:"The provider's version, raised by every write."`
 	Warnings          []string                   `json:"warnings,omitempty" description:"Absent when no setting loosens a default"`

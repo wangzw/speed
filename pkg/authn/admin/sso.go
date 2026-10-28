@@ -56,14 +56,11 @@ func (m *product) readDomains(ctx context.Context, idpID string) ([]authn.SSOPro
 }
 
 // providerWarnings names each setting of a provider that loosens a default:
-// IdP-initiated sign-in, merging an existing account, and accepting SHA-1.
+// IdP-initiated sign-in and accepting SHA-1.
 func providerWarnings(p authn.SSOProvider) []string {
 	var out []string
 	if p.AllowIDPInitiated {
 		out = append(out, "idp-initiated sign-in is enabled, which cannot defend against login CSRF")
-	}
-	if p.MergeExisting {
-		out = append(out, "just-in-time sign-up may merge into an existing account")
 	}
 	if p.AllowSHA1 {
 		out = append(out, "SHA-1 signed assertions are accepted")

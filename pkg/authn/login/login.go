@@ -213,7 +213,7 @@ type product struct {
 	// Configuration read once, in Init: the trusted origins a return_to may
 	// name, whether the flow cookie keeps its __host- prefix and Secure
 	// attribute, and the origin the deployment is reached at. The registration
-	// and linking switches are settings, read at each use.
+	// and the registration switch are settings, read at each use.
 	trustedOrigins []string
 	allowInsecure  bool
 
@@ -411,19 +411,18 @@ func (p *product) readConfig(reader config.Reader) error {
 	return nil
 }
 
-// buildResolver builds the account-resolution step from the membership, factor
-// and provider capabilities. The two relaxation switches are read through the
-// settings store at each resolution, so a change takes effect without a restart.
+// buildResolver builds the account-resolution step from the membership and
+// provider capabilities. The first-login switch is read through the settings
+// store at each resolution, so a change takes effect without a restart.
 func (p *product) buildResolver() error {
 	r, err := resolve.New(resolve.Config{
 		Accounts:    p.accounts,
 		Admin:       p.admin,
 		Memberships: p.memberships,
-		Factors:     p.mfa,
 		SSO:         p.sso,
 		Provisioner: p.provisioner,
-		Switches: func() (resolve.Signup, resolve.AutoLink) {
-			return resolve.Signup(p.settings.signup()), resolve.AutoLink(p.settings.autoLink())
+		Switches: func() resolve.Signup {
+			return resolve.Signup(p.settings.signup())
 		},
 	})
 	if err != nil {

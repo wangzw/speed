@@ -29,8 +29,8 @@ func TestWeChatUnionKeyIsAddedToTheAccountOfTheOpenKey(t *testing.T) {
 	if got, ok := e.s.boundTo("wechat-openid:app1", "o1"); !ok || got != id {
 		t.Errorf("open binding = %v, %v, want it kept", got, ok)
 	}
-	if len(e.s.created) != 0 || len(e.s.membershipPuts) != 0 || e.s.membershipRead != 0 || len(res.Cleanup) != 0 {
-		t.Errorf("an upgrade created %d accounts, touched memberships, or owes cleanup %v", len(e.s.created), res.Cleanup)
+	if len(e.s.created) != 0 || len(e.s.membershipPuts) != 0 || e.s.membershipRead != 0 {
+		t.Errorf("an upgrade created %d accounts or touched memberships", len(e.s.created))
 	}
 }
 

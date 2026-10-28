@@ -123,17 +123,13 @@ const (
 	maxReturnToBytes = 2048
 )
 
-// The two relaxation switches the account module declares and this module reads.
-// A value outside the set the account module declares reads as the strict one.
+// The relaxation switch the account module declares and this module reads. A
+// value outside the set the account module declares reads as the strict one.
 const (
-	signupPath   = "authn.account.signup"
-	autoLinkPath = "authn.account.auto-link"
+	signupPath = "authn.account.signup"
 
 	signupClosed = "closed"
 	signupOpen   = "open"
-
-	autoLinkNever         = "never"
-	autoLinkVerifiedEmail = "verified-email"
 )
 
 func signupInDomain(v string) bool { return v == signupClosed || v == signupOpen }
@@ -149,10 +145,6 @@ func passwordResetInDomain(v string) bool { return v == passwordResetClosed || v
 
 func passwordResetTicketTTLInDomain(d time.Duration) bool {
 	return d >= minPasswordResetTicketTTL && d <= maxPasswordResetTicketTTL
-}
-
-func autoLinkInDomain(v string) bool {
-	return v == autoLinkNever || v == autoLinkVerifiedEmail
 }
 
 // The domain and the declared default of the two registration budgets, repeated
@@ -569,12 +561,6 @@ func (r *reader) signupIPLimit() int {
 // declared domain reads as the declared default.
 func (r *reader) signupGlobalHourly() int {
 	return readTuned(r, signupGlobalHourlyPath, signupGlobalHourlyDefault, signupGlobalHourlyInDomain)
-}
-
-// autoLink reads the account module's linking switch. A read that fails or a
-// value outside the declared set reads as never.
-func (r *reader) autoLink() string {
-	return readTuned(r, autoLinkPath, autoLinkNever, autoLinkInDomain)
 }
 
 // emailCodeTTL reads the lifetime of an emailed verification code, which the

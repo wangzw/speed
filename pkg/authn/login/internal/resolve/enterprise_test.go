@@ -2,17 +2,15 @@ package resolve
 
 import (
 	"errors"
-	"fmt"
-	"slices"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
 )
 
 // wantNamedLinkRequired asserts a refusal is the link-required kind and names
-// the address whose existing account collided. Every enterprise JIT branch
-// that refuses this way must carry the address, because the landing fragment
-// names it to the caller the provider proved.
+// the address whose existing account collided. Every enterprise JIT branch that
+// refuses this way must carry the address, because the landing fragment names
+// it to the caller the provider proved.
 func wantNamedLinkRequired(t *testing.T, err error, want string) {
 	t.Helper()
 	var conflicted *authn.LinkRequiredError
@@ -104,9 +102,6 @@ func TestEnterprisePreprovisionedMatchesAnAdministratorsAccount(t *testing.T) {
 			if got, ok := e.s.boundTo("oidc:"+idpAcme, "u1"); !ok || got != id {
 				t.Errorf("binding = %v, %v, want it on a1", got, ok)
 			}
-			if len(res.Cleanup) != 0 {
-				t.Errorf("Cleanup = %v, want none: the account was made for this person", res.Cleanup)
-			}
 			if len(e.s.membershipPuts) != 0 || e.s.membershipRead != 0 || len(e.s.created) != 0 {
 				t.Errorf("memberships %d writes %d reads, %d accounts created, want none", len(e.s.membershipPuts), e.s.membershipRead, len(e.s.created))
 			}
@@ -153,9 +148,11 @@ func TestEnterpriseJITCreatesTheAccountAndItsMembership(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeCreated || !res.MembershipCreated {
 		t.Fatalf("Resolve = %+v, %v, want a created account with a membership", res, err)
 	}
-	ids := e.s.identifiersOf(res.Account)
-	if len(ids) != 1 || ids[0].Value != "ann@acme.com" || ids[0].VerifiedVia != "idp:"+idpAcme {
-		t.Errorf("identifiers = %+v, want the address verified through the provider", ids)
+	if ids := e.s.identifiersOf(res.Account); len(ids) != 0 {
+		t.Errorf("identifiers = %+v, want none: the provider's address is not written", ids)
+	}
+	if got := e.s.created[0]; got.Email != "" || got.EmailVerifiedVia.Valid() {
+		t.Errorf("Create carried the address %+v, want none", got)
 	}
 	m, ok := e.s.membershipOf(tenantAcme, res.Account)
 	if !ok || !m.Active || m.Source != "jit:"+idpAcme {
@@ -179,146 +176,38 @@ func TestEnterpriseJITIgnoresTheSignupSwitch(t *testing.T) {
 	}
 }
 
-func TestEnterpriseJITAddressTakenIsLinkRequiredByDefault(t *testing.T) {
-	// merge_existing is off: even an account that passes every condition of the
-	// merge is not merged into.
-	e := newEnv(t, withProvider(authn.ProvisioningJIT, false))
-	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@acme.com", emailVia: "idp:google"})
-	_, err := e.resolve(enterprise("u1", "ann@acme.com"))
-	if !errors.Is(err, authn.ErrLinkRequired) {
-		t.Fatalf("err = %v, want ErrLinkRequired", err)
-	}
-	wantNamedLinkRequired(t, err, "ann@acme.com")
-	if e.s.writes() != 0 {
-		t.Errorf("%d writes, want none", e.s.writes())
-	}
-}
-
-func mergeBase() seed {
-	return seed{id: "a1", status: authn.StatusActive, email: "ann@acme.com", emailVia: "idp:google", tenants: []string{tenantAcme}}
-}
-
-func TestEnterpriseMergeExistingMergesAndOwesTheCleanupInOrder(t *testing.T) {
-	for _, tenants := range [][]string{{tenantAcme}, nil} {
-		t.Run(fmt.Sprint(tenants), func(t *testing.T) {
-			e := newEnv(t, withProvider(authn.ProvisioningJIT, true))
-			sd := mergeBase()
-			sd.tenants = tenants
-			e.s.seed(t, sd)
-			res, err := e.resolve(enterprise("u1", "ann@acme.com"))
-			if err != nil || res.Account != "a1" || res.Outcome != OutcomeMerged {
-				t.Fatalf("Resolve = %+v, %v, want a merge into a1", res, err)
-			}
-			if !slices.Equal(res.Cleanup, []Cleanup{CleanupRevokeSessions, CleanupClearPassword}) {
-				t.Errorf("Cleanup = %v, want revoke first and clear second", res.Cleanup)
-			}
-			if got, ok := e.s.boundTo("oidc:"+idpAcme, "u1"); !ok || got != "a1" {
-				t.Errorf("binding = %v, %v, want it on a1", got, ok)
-			}
-			if len(e.s.membershipPuts) != 0 || len(e.s.created) != 0 {
-				t.Errorf("%d membership writes, %d accounts created, want none: the merge writes the binding alone", len(e.s.membershipPuts), len(e.s.created))
-			}
-			if res.MembershipCreated {
-				t.Error("a merge reported a membership created")
-			}
-		})
-	}
-}
-
-func TestEnterpriseMergeKeepsASuspendedMembershipSuspended(t *testing.T) {
-	e := newEnv(t, withProvider(authn.ProvisioningJIT, true))
-	sd := mergeBase()
-	sd.tenants, sd.suspended = nil, []string{tenantAcme}
-	e.s.seed(t, sd)
-	if _, err := e.resolve(enterprise("u1", "ann@acme.com")); err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if m, ok := e.s.membershipOf(tenantAcme, "a1"); !ok || m.Active {
-		t.Errorf("membership = %+v, %v, want it still suspended", m, ok)
-	}
-}
-
-// Each case of the table breaks one condition of the merge, and every one of
-// them leaves the account untouched and answers link-required.
-func TestEnterpriseMergeConditionsEachRefuseTheMerge(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		mutate func(*seed)
-		opts   []option
-	}{
-		{name: "address asserted by an administrator", mutate: func(s *seed) { s.emailVia = authn.VerifiedViaAdmin }},
-		{name: "address recorded by an import", mutate: func(s *seed) { s.emailVia = authn.VerifiedViaImportUnverified }},
-		{name: "password set", mutate: func(s *seed) { s.password = true }},
-		{name: "phone held", mutate: func(s *seed) { s.phone = "+8613800000001" }},
-		{name: "another binding", mutate: func(s *seed) { s.bindings = [][2]string{{"google", "g1"}} }},
-		{name: "member of another tenant", mutate: func(s *seed) { s.tenants = []string{tenantAcme, tenantElse} }},
-		{name: "member of only another tenant", mutate: func(s *seed) { s.tenants = []string{tenantElse} }},
-		{name: "suspended in another tenant", mutate: func(s *seed) { s.suspended = []string{tenantElse} }},
-		{name: "a factor", mutate: func(s *seed) { s.factors = 1 }},
-		{name: "account disabled", mutate: func(s *seed) { s.status = authn.StatusDisabled }},
-		{name: "no way to ask about factors", mutate: func(*seed) {}, opts: []option{withoutFactors()}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			e := newEnv(t, append([]option{withProvider(authn.ProvisioningJIT, true)}, tc.opts...)...)
-			sd := mergeBase()
-			tc.mutate(&sd)
-			e.s.seed(t, sd)
-			before := e.s.account("a1")
-			res, err := e.resolve(enterprise("u1", "ann@acme.com"))
+func TestEnterpriseJITAddressTakenIsLinkRequired(t *testing.T) {
+	// No login merges into the account an address belongs to, whatever the
+	// provider's merge_existing says: the login must bind explicitly.
+	for _, merge := range []bool{false, true} {
+		t.Run("merge_existing="+map[bool]string{false: "off", true: "on"}[merge], func(t *testing.T) {
+			e := newEnv(t, withProvider(authn.ProvisioningJIT, merge))
+			e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@acme.com", emailVia: "idp:google"})
+			_, err := e.resolve(enterprise("u1", "ann@acme.com"))
 			if !errors.Is(err, authn.ErrLinkRequired) {
-				t.Fatalf("Resolve = %+v, %v, want ErrLinkRequired", res, err)
+				t.Fatalf("err = %v, want ErrLinkRequired", err)
 			}
 			wantNamedLinkRequired(t, err, "ann@acme.com")
-			if len(res.Cleanup) != 0 {
-				t.Errorf("Cleanup = %v, want none for a refusal", res.Cleanup)
+			if e.s.writes() != 0 {
+				t.Errorf("%d writes, want none", e.s.writes())
 			}
-			if _, ok := e.s.boundTo("oidc:"+idpAcme, "u1"); ok || e.s.writes() != 0 {
-				t.Errorf("the identity was bound or something was written (%d writes)", e.s.writes())
-			}
-			if after := e.s.account("a1"); after.PasswordSet != before.PasswordSet || after.Status != before.Status {
-				t.Errorf("account changed from %+v to %+v", before, after)
+			if _, ok := e.s.boundTo("oidc:"+idpAcme, "u1"); ok {
+				t.Error("the identity was bound")
 			}
 		})
 	}
 }
 
-// A dependency failing while the conditions of the merge are read leaves the
-// account unmerged and the login failed, for every read the merge makes.
-func TestEnterpriseMergeFailsClosedWhenADependencyFails(t *testing.T) {
-	cases := map[string]func(*store, error){
-		"the factor store":     func(s *store, err error) { s.failFactors = err },
-		"the binding store":    func(s *store, err error) { s.failExtern = err },
-		"the membership store": func(s *store, err error) { s.failTenants = err },
-	}
-	for name, arm := range cases {
-		t.Run(name, func(t *testing.T) {
-			e := newEnv(t, withProvider(authn.ProvisioningJIT, true))
-			e.s.seed(t, mergeBase())
-			boom := errors.New("dependency down")
-			arm(e.s, boom)
-			_, err := e.resolve(enterprise("u1", "ann@acme.com"))
-			if !errors.Is(err, boom) {
-				t.Fatalf("err = %v, want the dependency's failure", err)
-			}
-			if _, ok := e.s.boundTo("oidc:"+idpAcme, "u1"); ok || e.s.writes() != 0 {
-				t.Errorf("the identity was bound or something was written although a dependency failed (%d writes)", e.s.writes())
-			}
-		})
-	}
-}
-
-func TestEnterpriseRaceOnTheAddressIsLinkRequired(t *testing.T) {
+func TestEnterpriseAddressTakenEvenByAnUnprovedRecordIsLinkRequired(t *testing.T) {
+	// The address is a clue to an account whenever an account holds it; the
+	// channel that proved it does not turn the collision away.
 	e := newEnv(t, withProvider(authn.ProvisioningJIT, false))
-	e.s.beforeCreate = func(in authn.CreateAccount) {
-		e.s.seed(t, seed{id: "late", status: authn.StatusActive, email: in.Email, emailVia: "idp:google"})
-	}
-	_, err := e.resolve(enterprise("u1", "ann@acme.com"))
-	if !errors.Is(err, authn.ErrLinkRequired) {
+	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@acme.com", emailVia: authn.VerifiedViaAdmin})
+	if _, err := e.resolve(enterprise("u1", "ann@acme.com")); !errors.Is(err, authn.ErrLinkRequired) {
 		t.Errorf("err = %v, want ErrLinkRequired", err)
 	}
-	wantNamedLinkRequired(t, err, "ann@acme.com")
-	if _, ok := e.s.boundTo("oidc:"+idpAcme, "u1"); ok {
-		t.Error("the identity was bound")
+	if e.s.writes() != 0 {
+		t.Errorf("%d writes, want none", e.s.writes())
 	}
 }
 

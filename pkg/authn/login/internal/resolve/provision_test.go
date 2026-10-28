@@ -30,7 +30,7 @@ func TestProvisionerChangesDisplayNameAndAttributesAndNothingElse(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if gotVia != "signup" || gotIn.Email != "ann@home.org" || gotIn.Kind != authn.KindUser {
+	if gotVia != "signup" || gotIn.Email != "" || gotIn.Kind != authn.KindUser {
 		t.Errorf("the hook was given via %q and %+v, want signup and the account about to be made", gotVia, gotIn)
 	}
 	c := e.s.created[0]
@@ -41,7 +41,7 @@ func TestProvisionerChangesDisplayNameAndAttributesAndNothingElse(t *testing.T) 
 		Kind: authn.KindUser, DisplayName: "Ann (host)", Username: testUsername,
 		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
 		Attributes:          map[string]string{"region": "eu"},
-		Email:               "ann@home.org", EmailVerifiedVia: authn.Verification{Via: "idp:google"}, Via: "signup",
+		Via:                 "signup",
 	}
 	if fmt.Sprint(c) != fmt.Sprint(want) {
 		t.Errorf("Create = %+v, want %+v: only the display name and attributes may change", c, want)
@@ -169,7 +169,7 @@ func TestProvisionerReturningOnlyANameLeavesTheRestOfTheAccountAlone(t *testing.
 		t.Fatalf("Resolve: %v", err)
 	}
 	c := e.s.created[0]
-	if c.Email != "ann@home.org" || c.Kind != authn.KindUser || c.DisplayName != "kept" || len(c.Attributes) != 0 {
+	if c.Email != "" || c.Kind != authn.KindUser || c.DisplayName != "kept" || len(c.Attributes) != 0 {
 		t.Errorf("Create = %+v, want the resolver's own account with the hook's name", c)
 	}
 }
@@ -197,7 +197,7 @@ func TestAFirstLoginThatWouldOpenAnAccountParksAtThePendingSignup(t *testing.T) 
 			if res.Pending == nil || res.Pending.Source != tc.source {
 				t.Fatalf("Resolve = %+v, want a pending %s signup", res, tc.source)
 			}
-			if res.Account != "" || res.Outcome != 0 || len(res.Cleanup) != 0 {
+			if res.Account != "" || res.Outcome != 0 {
 				t.Errorf("Resolve = %+v, want no account and no outcome yet", res)
 			}
 			if e.s.writes() != 0 {

@@ -190,9 +190,9 @@ field comments before writing a backend.
   relaxed value, never a block.
   What the surface lacks is per-key write control, so the requirement is on the
   host's own management surface, and `authn` does not check that a host honours
-  it. The relaxation switches are settings: `signup`, `password-signup` and
-  `auto-link` declared by the account module, `check-session` by the token
-  module. The developer switches `mount.allow-insecure` and
+  it. The relaxation switches are settings: `signup` and `password-signup`
+  declared by the account module, `check-session` by the token module. The
+  developer switches `mount.allow-insecure` and
   `sso.allow-private-egress`, and the guard-list keys `endpoints` and
   `trusted-origins`, are configuration read from the primary source alone,
   because they are decided at construction.

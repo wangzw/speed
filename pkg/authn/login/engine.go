@@ -304,9 +304,6 @@ func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw [
 	// first factor leaves behind.
 	rec.MethodStep = ""
 	rec.MethodState = nil
-	if res.Outcome == resolve.OutcomeMerged {
-		rec.Merged = true
-	}
 	if err := r.decidePolicy(c.ctx, &rec, proof); err != nil {
 		rec.State = stateFailed
 		if !r.swap(c, token, raw, rec) {

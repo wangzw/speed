@@ -387,11 +387,9 @@ type fakeSessions struct {
 	except      authn.SessionID
 	// revokedAccount is the account whose other sessions were revoked last.
 	revokedAccount authn.AccountID
-	rec            *recorder
 }
 
 func (s *fakeSessions) Create(_ context.Context, in authn.NewSession) (authn.Issued, error) {
-	s.rec.add("create")
 	s.created = append(s.created, in)
 	issued := authn.Issued{ID: "sid-1", Token: "tok-1", ExpiresAt: time.Now().Add(time.Hour)}
 	s.made = append(s.made, issued)
@@ -408,7 +406,6 @@ func (s *fakeSessions) Revoke(_ context.Context, id authn.SessionID, _ string) e
 }
 
 func (s *fakeSessions) RevokeAccount(_ context.Context, account authn.AccountID, except authn.SessionID, _ string) ([]authn.SessionID, error) {
-	s.rec.add("revoke:" + string(except))
 	s.revokedAll++
 	s.revokedAccount = account
 	s.except = except
@@ -774,42 +771,6 @@ func flowCookie(t *testing.T, rec *httptest.ResponseRecorder) string {
 	return ""
 }
 
-// recorder is a shared ordered log of the calls a case cares about the order of.
-// Its methods are nil-safe, so a fake that was not given one records nothing.
-type recorder struct {
-	mu    sync.Mutex
-	steps []string
-}
-
-func (r *recorder) add(s string) {
-	if r == nil {
-		return
-	}
-	r.mu.Lock()
-	r.steps = append(r.steps, s)
-	r.mu.Unlock()
-}
-
-func (r *recorder) all() []string {
-	if r == nil {
-		return nil
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]string(nil), r.steps...)
-}
-
-// recordingPasswords records the Clear call so a case can see where it falls.
-type recordingPasswords struct {
-	authn.Passwords
-	rec *recorder
-}
-
-func (p *recordingPasswords) Clear(context.Context, authn.AccountID) error {
-	p.rec.add("clear")
-	return nil
-}
-
 // fakeTokens issues token pairs a case reads back.
 type fakeTokens struct {
 	authn.Tokens
@@ -823,22 +784,6 @@ func (t *fakeTokens) Issue(_ context.Context, in authn.IssueToken) (authn.Access
 
 func (t *fakeTokens) NewRefresh(_ context.Context, _ authn.SessionID) (authn.RefreshToken, error) {
 	return authn.RefreshToken{Value: "refresh-1"}, nil
-}
-
-// withAutoLink rebuilds the resolver with the automatic link of A4 turned on, so
-// a social login whose verified address is on an existing account merges.
-func (r *rig) withAutoLink() {
-	r.t.Helper()
-	res, err := resolve.New(resolve.Config{
-		Accounts:    r.accounts,
-		Admin:       r.admin,
-		Memberships: stubMemberships{},
-		AutoLink:    resolve.AutoLinkVerifiedEmail,
-	})
-	if err != nil {
-		r.t.Fatalf("building the resolver: %v", err)
-	}
-	r.p.resolver = res
 }
 
 // withOpenSignup rebuilds the resolver with first-login signup open, so a login

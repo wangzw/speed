@@ -19,11 +19,10 @@ func TestNewHoldsItsDependenciesAndSwitchesToTheirSets(t *testing.T) {
 		t.Fatalf("New(good) = %v", err)
 	}
 	for name, mutate := range map[string]func(*Config){
-		"no accounts":       func(c *Config) { c.Accounts = nil },
-		"no admin":          func(c *Config) { c.Admin = nil },
-		"no memberships":    func(c *Config) { c.Memberships = nil },
-		"signup unknown":    func(c *Config) { c.Signup = "invite" },
-		"auto-link unknown": func(c *Config) { c.AutoLink = "always" },
+		"no accounts":    func(c *Config) { c.Accounts = nil },
+		"no admin":       func(c *Config) { c.Admin = nil },
+		"no memberships": func(c *Config) { c.Memberships = nil },
+		"signup unknown": func(c *Config) { c.Signup = "invite" },
 	} {
 		c := good
 		mutate(&c)
@@ -33,14 +32,14 @@ func TestNewHoldsItsDependenciesAndSwitchesToTheirSets(t *testing.T) {
 	}
 }
 
-func TestZeroSwitchesReadAsTheClosedOnes(t *testing.T) {
+func TestZeroSwitchReadsAsClosed(t *testing.T) {
 	e := newEnv(t)
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@home.org", emailVia: "idp:google"})
-	if e.r.signup == SignupOpen || e.r.autoLink == AutoLinkVerifiedEmail {
-		t.Fatalf("the zero Config opened a switch: %q %q", e.r.signup, e.r.autoLink)
+	if e.r.signup == SignupOpen {
+		t.Fatalf("the zero Config opened the switch: %q", e.r.signup)
 	}
 	if _, err := e.resolve(social("google", "g1", "ann@home.org", true)); !errors.Is(err, authn.ErrLinkRequired) {
-		t.Errorf("err = %v, want ErrLinkRequired: no auto-link without the switch", err)
+		t.Errorf("err = %v, want ErrLinkRequired: a verified address on an account always needs an explicit link", err)
 	}
 	if _, err := e.resolve(social("google", "g2", "", false)); !errors.Is(err, authn.ErrSignupClosed) {
 		t.Errorf("err = %v, want ErrSignupClosed", err)

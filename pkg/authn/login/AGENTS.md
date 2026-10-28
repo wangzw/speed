@@ -98,12 +98,12 @@ does.
   capability interfaces only. A tenant is never read here: the login request
   carries no tenant name, and the account is global.
 - **The account module's relaxation switches are read by path, never declared
-  here.** `authn.account.signup`, `authn.account.password-signup` and
-  `authn.account.auto-link` belong to `pkg/authn/account`; this package reads them
-  through its optional settings store at each use — both signup switches on every
-  methods request, the password one again on every registration, and `signup` and
-  `auto-link` at each account resolution — and a read error reads as the strict
-  value (`closed`, `never`). The two registration budgets
+  here.** `authn.account.signup` and `authn.account.password-signup` belong to
+  `pkg/authn/account`; this package reads them through its optional settings
+  store at each use — both signup switches on every methods request, the
+  password one again on every registration, and `signup` at each account
+  resolution — and a read error reads as the strict value (`closed`). The two
+  registration budgets
   (`authn.account.signup-ip-limit`, `authn.account.signup-global-hourly`) are read
   the same way, into their declared domains. Declaring the same key here is the
   shape to reject: two modules must not declare one path.

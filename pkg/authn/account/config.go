@@ -26,7 +26,6 @@ const (
 	signupHourlyKey    = "signup-global-hourly"
 	unverifiedTTLKey   = "unverified-ttl"
 	unverifiedSweepKey = "unverified-sweep-interval"
-	autoLinkKey        = "auto-link"
 	minLengthKey       = "password-min-length"
 	argonMemoryKey     = "password-argon2-memory-kib"
 	argonIterationKey  = "password-argon2-iterations"
@@ -45,7 +44,6 @@ const (
 	signupHourlyPath    = ConfigNamespace + "." + signupHourlyKey
 	unverifiedTTLPath   = ConfigNamespace + "." + unverifiedTTLKey
 	unverifiedSweepPath = ConfigNamespace + "." + unverifiedSweepKey
-	autoLinkPath        = ConfigNamespace + "." + autoLinkKey
 	minLengthPath       = ConfigNamespace + "." + minLengthKey
 	argonMemoryPath     = ConfigNamespace + "." + argonMemoryKey
 	argonIterationPath  = ConfigNamespace + "." + argonIterationKey
@@ -61,10 +59,8 @@ const (
 // The values the switches that relax a check take. The strict one is the default
 // of each.
 const (
-	signupClosed     = "closed"
-	signupOpen       = "open"
-	autoLinkNever    = "never"
-	autoLinkVerified = "verified-email"
+	signupClosed = "closed"
+	signupOpen   = "open"
 )
 
 // The sanity bounds on the sizes configuration states. A derivation width of
@@ -131,7 +127,6 @@ type options struct {
 	SignupGlobalHourly       int           `config:"signup-global-hourly"`
 	UnverifiedTTL            time.Duration `config:"unverified-ttl"`
 	UnverifiedSweepInterval  time.Duration `config:"unverified-sweep-interval"`
-	AutoLink                 string        `config:"auto-link"`
 	PasswordMinLength        int           `config:"password-min-length"`
 	PasswordArgon2Memory     int           `config:"password-argon2-memory-kib"`
 	PasswordArgon2Iterations int           `config:"password-argon2-iterations"`
@@ -158,7 +153,6 @@ var defaults = options{
 	SignupGlobalHourly:       100,
 	UnverifiedTTL:            720 * time.Hour,
 	UnverifiedSweepInterval:  time.Hour,
-	AutoLink:                 autoLinkNever,
 	PasswordMinLength:        8,
 	PasswordArgon2Memory:     int(password.DefaultParams().MemoryKiB),
 	PasswordArgon2Iterations: int(password.DefaultParams().Iterations),
@@ -192,8 +186,6 @@ func unverifiedTTLInDomain(d time.Duration) bool { return d >= 0 && d <= unverif
 func unverifiedSweepInDomain(d time.Duration) bool {
 	return d >= minUnverifiedSweep && d <= maxUnverifiedSweep
 }
-
-func autoLinkInDomain(v string) bool { return v == autoLinkNever || v == autoLinkVerified }
 
 func minLengthInDomain(n int) bool {
 	return n >= minPasswordLengthFloor && n <= minPasswordLengthCeil
@@ -311,12 +303,6 @@ func settingsSchema() settings.Schema {
 				Description: "how often the sweep of self-registered accounts without a proved address runs",
 				Domain: settings.DomainOf("durations from "+minUnverifiedSweep.String()+" to "+
 					maxUnverifiedSweep.String(), unverifiedSweepInDomain),
-			},
-			autoLinkKey: {
-				Description: "whether a first social login whose provider proved an email address is " +
-					"bound to the account that holds it, never or verified-email; verified-email " +
-					"relaxes a check",
-				Domain: settings.DomainOf("never or verified-email", autoLinkInDomain),
 			},
 			minLengthKey: {
 				Description: "the fewest characters a password of the account store has",

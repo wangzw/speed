@@ -681,9 +681,10 @@ https://<app>.fly.dev/api/v1/auth/callback/github
 A custom domain (`DEMO_PUBLIC_URL`) changes both, so register the pair on the
 domain the deployment is reached at. An account that already exists under a
 password signs in socially only after it binds the provider in its account
-settings: `authn.account.auto-link` keeps its default of `never`, so a social
-login whose provider-proved address matches an existing account answers
-`link-required` rather than taking the account over.
+settings: a social login whose provider-proved address matches an existing
+account answers `link-required` rather than taking the account over, and a
+first social sign-in opens an account that does not carry the provider's
+address.
 
 The origin is derived from `FLY_APP_NAME` (`https://<app>.fly.dev`). A custom
 domain sets `DEMO_PUBLIC_URL` to its https origin, which is what the WebAuthn

@@ -22,7 +22,6 @@ type store struct {
 	identifier map[string]authn.AccountID // kind + "\x00" + value
 	binding    map[string]authn.AccountID // provider + "\x00" + subject
 	members    map[string]authn.Membership
-	factors    map[authn.AccountID][]authn.FactorRecord
 	next       int
 
 	// What the resolver did.
@@ -43,13 +42,9 @@ type store struct {
 	afterCreate  func()
 	beforeLink   func(authn.AccountID, authn.ExternalLink)
 	failLink     error
-	// linkIsStrict makes a link of a key the account already holds a conflict, as
-	// a store that only inserts would answer.
-	linkIsStrict bool
 	failPut      error
 	failCreate   error
 	failDiscover error
-	failFactors  error
 	failGet      error
 	failByExt    error
 	failExtern   error
@@ -68,7 +63,6 @@ func newStore() *store {
 		identifier: map[string]authn.AccountID{},
 		binding:    map[string]authn.AccountID{},
 		members:    map[string]authn.Membership{},
-		factors:    map[authn.AccountID][]authn.FactorRecord{},
 		providers:  map[string]authn.SSOProvider{},
 		domains:    map[string][]authn.SSOProvider{},
 	}
@@ -112,7 +106,6 @@ type seed struct {
 	bindings       [][2]string
 	tenants        []string
 	suspended      []string
-	factors        int
 }
 
 func (s *store) seed(t *testing.T, sd seed) authn.AccountID {
@@ -154,9 +147,6 @@ func (s *store) seed(t *testing.T, sd seed) authn.AccountID {
 	}
 	for _, tn := range sd.suspended {
 		s.members[mkey(tn, sd.id)] = authn.Membership{Account: sd.id, Tenant: tn, Source: "admin"}
-	}
-	for i := 0; i < sd.factors; i++ {
-		s.factors[sd.id] = append(s.factors[sd.id], authn.FactorRecord{ID: fmt.Sprintf("f%d", i), Account: sd.id, Kind: authn.FactorTOTP, Status: authn.FactorActive})
 	}
 	return sd.id
 }
@@ -370,7 +360,7 @@ func (v adminView) LinkExternal(_ context.Context, id authn.AccountID, l authn.E
 	}
 	k := bkey(l.Provider, l.Subject)
 	if owner, taken := s.binding[k]; taken {
-		if owner != id || s.linkIsStrict {
+		if owner != id {
 			return authn.ErrBindingConflict
 		}
 		for i := range r.bindings {
@@ -476,17 +466,6 @@ func (v ssoView) Discover(_ context.Context, domain string) ([]authn.SSOProvider
 	return slices.Clone(v.s.domains[domain]), nil
 }
 
-type factorsView struct{ s *store }
-
-func (v factorsView) Factors(_ context.Context, id authn.AccountID) ([]authn.FactorRecord, error) {
-	v.s.mu.Lock()
-	defer v.s.mu.Unlock()
-	if v.s.failFactors != nil {
-		return nil, v.s.failFactors
-	}
-	return slices.Clone(v.s.factors[id]), nil
-}
-
 // provisionerFunc is a Provisioner.
 type provisionerFunc func(ctx context.Context, p authn.CreateAccount, via string) (authn.CreateAccount, error)
 
@@ -533,10 +512,8 @@ type env struct {
 
 type option func(*Config, *store)
 
-func withSignup(v Signup) option     { return func(c *Config, _ *store) { c.Signup = v } }
-func withAutoLink(v AutoLink) option { return func(c *Config, _ *store) { c.AutoLink = v } }
-func withoutSSO() option             { return func(c *Config, _ *store) { c.SSO = nil } }
-func withoutFactors() option         { return func(c *Config, _ *store) { c.Factors = nil } }
+func withSignup(v Signup) option { return func(c *Config, _ *store) { c.Signup = v } }
+func withoutSSO() option         { return func(c *Config, _ *store) { c.SSO = nil } }
 func withProvisioner(p provisionerFunc) option {
 	return func(c *Config, _ *store) { c.Provisioner = p }
 }
@@ -558,7 +535,6 @@ func newEnv(t *testing.T, opts ...option) *env {
 		Accounts:    accountsView{s: s},
 		Admin:       adminView{s: s},
 		Memberships: membershipsView{s: s},
-		Factors:     factorsView{s: s},
 		SSO:         ssoView{s: s},
 	}
 	for _, o := range opts {

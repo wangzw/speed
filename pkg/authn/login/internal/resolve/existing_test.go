@@ -2,7 +2,6 @@ package resolve
 
 import (
 	"errors"
-	"slices"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -17,7 +16,7 @@ func TestExistingBindingLogsInAndTouchesOnlyDisplayFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if res.Account != id || res.Outcome != OutcomeBound || len(res.Cleanup) != 0 || res.MembershipCreated {
+	if res.Account != id || res.Outcome != OutcomeBound || res.MembershipCreated {
 		t.Errorf("result = %+v, want the bound account with no cleanup", res)
 	}
 	if got := e.s.bindingsOf(id); len(got) != 1 || got[0].Email != "ann@new.example" {
@@ -152,29 +151,5 @@ func TestADanglingBindingIsAnAccountThatIsNotThere(t *testing.T) {
 	res, err := e.resolve(social("google", "g1", "", false))
 	if !errors.Is(err, authn.ErrAccountNotFound) || res.Account != "" {
 		t.Errorf("Resolve = %+v, %v, want ErrAccountNotFound and no account", res, err)
-	}
-}
-
-func TestOutcomesOtherThanAMergeCarryNoCleanup(t *testing.T) {
-	e := newEnv(t, withSignup(SignupOpen))
-	res, err := e.resolve(social("github", "gh1", "", false))
-	if err != nil || res.Outcome != OutcomeCreated {
-		t.Fatalf("Resolve = %+v, %v", res, err)
-	}
-	if res.Cleanup != nil {
-		t.Errorf("Cleanup = %v, want none for a new account", res.Cleanup)
-	}
-	again, err := e.resolve(social("github", "gh1", "", false))
-	if err != nil || again.Outcome != OutcomeBound || again.Account != res.Account || len(again.Cleanup) != 0 {
-		t.Errorf("second login = %+v, %v, want the same account bound with no cleanup", again, err)
-	}
-}
-
-func TestCleanupIsCopiedOut(t *testing.T) {
-	r := Result{Cleanup: mergeCleanup()}
-	c := r.Clone()
-	c.Cleanup[0] = 0
-	if !slices.Equal(r.Cleanup, []Cleanup{CleanupRevokeSessions, CleanupClearPassword}) {
-		t.Errorf("Cleanup = %v after the clone changed, want the original order intact", r.Cleanup)
 	}
 }

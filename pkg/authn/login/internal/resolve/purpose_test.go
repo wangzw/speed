@@ -14,20 +14,18 @@ func (e *env) resolveFor(purpose string, account authn.AccountID, p authn.Proof)
 }
 
 // A link, a step-up and an enrollment never create, link, merge or touch a
-// membership; the explicit link of A6 does not trigger A10.
+// membership; the explicit link of A6 writes nothing before the caller acts on
+// it.
 
 func TestLinkAnswersWhetherTheKeyIsFreeAndWritesNothing(t *testing.T) {
-	e := newEnv(t, withSignup(SignupOpen), withAutoLink(AutoLinkVerifiedEmail))
+	e := newEnv(t, withSignup(SignupOpen))
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, password: true, email: "ann@home.org", emailVia: "idp:google"})
 	e.s.seed(t, seed{id: "b1", status: authn.StatusActive, bindings: [][2]string{{"github", "gh-taken"}}})
 
-	// A key nobody holds, with an address that would auto-link on a login.
+	// A key nobody holds, with an address an account already carries.
 	res, err := e.resolveFor(authn.PurposeLink, "a1", social("google", "g1", "ann@home.org", true))
 	if err != nil || res.Account != "a1" || res.Outcome != OutcomeVerified {
 		t.Fatalf("Resolve = %+v, %v, want a1 verified", res, err)
-	}
-	if len(res.Cleanup) != 0 {
-		t.Errorf("Cleanup = %v, want none: an explicit link does not trigger A10", res.Cleanup)
 	}
 	// A key another account holds.
 	if _, err := e.resolveFor(authn.PurposeLink, "a1", social("github", "gh-taken", "", false)); !errors.Is(err, authn.ErrBindingConflict) {

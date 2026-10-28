@@ -79,7 +79,7 @@ export interface AuthnLoginFlow {
   next: AuthnLoginStep;
   /** The step number the next answer must echo */
   seq: number;
-  /** The flow's state: first, second, enroll, ready, processing, done or failed */
+  /** The flow's state: first, signup, second, enroll, ready, processing, done or failed */
   state: string;
 }
 
@@ -407,12 +407,18 @@ export type AuthnProfileProfileAttributes = {[key: string]: string};
  * One identifier bound to the account, with the way its ownership was established.
  */
 export interface AuthnProfileIdentifier {
+  /** Whether the identifier is a contact of the account. A username never is; an email or phone is one the account selected, and an email written under the old behaviour is one */
+  contact: boolean;
+  /** Whether this proved email address is the one notifications to the account go to; at most one identifier of an account carries it */
+  default_contact: boolean;
   /** The identifier's own identifier */
   id: string;
   /** The identifier kind: username, email or phone */
   kind: string;
   /** Whether the way of verification proves ownership: true for sms-code, email-code, invite and idp:<provider>, false for admin, import-unverified and self */
   proven: boolean;
+  /** Whether the identifier is one the account signs in with. A username always is; an email or phone is only after it was proved and selected, and an identifier written under the old behaviour carries what that behaviour used */
+  sign_in: boolean;
   /** The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits */
   value: string;
   /** RFC 3339 in UTC, the instant the identifier's ownership was established; always present, as no identifier is stored awaiting verification */
@@ -949,10 +955,16 @@ export const AuthnAdminIdentifierKind = {
  * One login identifier bound to an account: its kind, its normalized value and whether its ownership was proved. It carries no identifier of its own, no verification instant and no named way of verification.
  */
 export interface AuthnAdminIdentifier {
+  /** True when the identifier is a contact of the account. A username never is; an email or phone is one the account selected, and an email written under the old behaviour is one. */
+  contact: boolean;
+  /** True for the proved email address notifications to the account go to; at most one identifier of an account carries it. */
+  default_contact: boolean;
   /** The identifier kind: username, email or phone. */
   kind: AuthnAdminIdentifierKind;
   /** True only when the identifier's ownership was proved: sms-code, email-code, invite or idp:<provider>. False for admin, import-unverified and self, which only record a fact an administrator, an import or the account's own holder asserted and are never grounds for automatic linking or an enterprise merge. */
   proven: boolean;
+  /** True when the identifier is one the account signs in with. A username always is; an email or phone is only after it was proved and selected, and an identifier written under the old behaviour carries what that behaviour used. */
+  sign_in: boolean;
   /** The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits. */
   value: string;
 }
@@ -1083,7 +1095,7 @@ export interface AuthnAdminAccountCreate {
   phone?: string;
   /** How the administrator states the phone was established: admin or import-unverified. It is required whenever phone is present. The value records the administrator's assertion, not proof of ownership; empty or absent is refused with 400. */
   phone_verified_via?: AuthnAdminAccountCreatePhoneVerifiedVia;
-  /** A login name to add. At least one of username, email and phone is required for a user account; a username is lower-cased before it is stored. */
+  /** The login name the account is opened with. Required for a user account; a service account may leave it out because it signs in with a service secret. It is lower-cased before it is stored. */
   username?: string;
 }
 
@@ -1752,7 +1764,7 @@ export interface AuthnAdminProvider {
   enabled: boolean;
   /** The provider's identifier. */
   id: string;
-  /** True when just-in-time sign-up may merge into an existing account; the route then warns about it. */
+  /** The stored merge flag; it no longer opens merging, because a just-in-time login never merges into an existing account. */
   merge_existing: boolean;
   /** The provider's display name; 1 to 64 characters. */
   name: string;
@@ -1797,7 +1809,7 @@ export interface AuthnAdminProviderWrite {
   config?: AuthnAdminProviderWriteConfig;
   /** Absent leaves the enabled flag as it is (false on a create) */
   enabled?: boolean;
-  /** Absent leaves the flag as it is (false on a create) */
+  /** The stored merge flag; absent leaves it as it is (false on a create). It no longer opens merging into an existing account. */
   merge_existing?: boolean;
   /** The provider's display name; 1 to 64 characters. */
   name: string;
@@ -1969,6 +1981,18 @@ export type AuthnLoginVerifyIdentifierBody = {
 };
 
 /**
+ * A partial change to one identifier's two axes and default contact: a member left out is left as it is.
+ */
+export type AuthnLoginUpdateIdentifierBody = {
+  /** Whether the identifier is a contact of the account. It is independent of sign_in and may be true on an identifier whose ownership is not proved; absent leaves it as it is. */
+  contact?: boolean;
+  /** Whether the identifier is the account's default contact. Only a proved email address may take true, and a true clears the account's previous choice; false changes nothing. */
+  default_contact?: boolean;
+  /** Whether the identifier may be used to sign in. True requires the identifier's ownership to be proved; absent leaves it as it is. */
+  sign_in?: boolean;
+};
+
+/**
  * The parameters of a start. Only account is required by the schema; a missing or empty tenant or reason is refused with 403.
  */
 export type AuthnImpersonationStartBody = {
@@ -1983,13 +2007,15 @@ export type AuthnImpersonationStartBody = {
 };
 
 /**
- * The acceptance request; both fields are read only when the invited address has no account.
+ * The acceptance request; the body fields are read only when the invited address has no account.
  */
 export type AuthnInviteAcceptBody = {
   /** Display name of the account created when the invited address has no account; ignored when the address already belongs to one. */
   display_name?: string;
   /** Initial password of the account created when the invited address has no account; ignored when the address already belongs to one. */
   password?: string;
+  /** Login name of the account created when the invited address has no account; required then, and ignored when the address already belongs to one. */
+  username?: string;
 };
 
 /**
@@ -3420,6 +3446,72 @@ export const useAuthnLoginRemoveIdentifier = <TError = Problem,
     }
 
 /**
+ * Sets what one of the caller's own email addresses or phone numbers is for. `contact` and `sign_in` are independent axes: `contact` may be set on an identifier whose ownership is not proved, while `sign_in` may be set true only on one that is, since only a proved value may be a way in. `default_contact` may be set only on a proved email address, and takes the default away from the address that held it in the same write. A member left out is left as it is. An identifier that is not the caller's own, a username, an unproved `sign_in` and a default contact that is not a proved email address are all a 400 bad-request. Changing `sign_in` or `default_contact` requires the fresh authentication every change of what proves the account asks for; changing `contact` alone does not. Turning `sign_in` off that would leave a password account with no login name is a 409 login-identifier-required and one that would leave the account with no way to sign in at all is a 409 last-login-method; neither takes effect. Putting a proved email address or phone number into sign-in rotates the current session's token and revokes the account's other sessions.
+ * @summary Set the two axes and the default contact of one of the caller's own identifiers
+ */
+export const authnLoginUpdateIdentifier = (
+    id: string,
+    authnLoginUpdateIdentifierBody: AuthnLoginUpdateIdentifierBody,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/auth/identifiers/${id}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: authnLoginUpdateIdentifierBody, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnLoginUpdateIdentifierMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginUpdateIdentifier>>, TError,{id: string;data: AuthnLoginUpdateIdentifierBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnLoginUpdateIdentifier>>, TError,{id: string;data: AuthnLoginUpdateIdentifierBody}, TContext> => {
+
+const mutationKey = ['authnLoginUpdateIdentifier'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnLoginUpdateIdentifier>>, {id: string;data: AuthnLoginUpdateIdentifierBody}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  authnLoginUpdateIdentifier(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnLoginUpdateIdentifierMutationResult = NonNullable<Awaited<ReturnType<typeof authnLoginUpdateIdentifier>>>
+    export type AuthnLoginUpdateIdentifierMutationBody = AuthnLoginUpdateIdentifierBody
+    export type AuthnLoginUpdateIdentifierMutationError = Problem
+
+    /**
+ * @summary Set the two axes and the default contact of one of the caller's own identifiers
+ */
+export const useAuthnLoginUpdateIdentifier = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginUpdateIdentifier>>, TError,{id: string;data: AuthnLoginUpdateIdentifierBody}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authnLoginUpdateIdentifier>>,
+        TError,
+        {id: string;data: AuthnLoginUpdateIdentifierBody},
+        TContext
+      > => {
+      return useMutation(getAuthnLoginUpdateIdentifierMutationOptions(options));
+    }
+
+/**
  * Ends the unended record on the caller's session with the reason explicit, whether or not it is still valid, and answers 204. Repeating it is safe: once the record is ended a further call answers 404. Under a cookie credential the impersonation marker is cleared from the session without rotating its token, so the caller continues as its own identity; a failed audit write does not undo the end.
  * @summary End the impersonation on the caller's session
  */
@@ -3688,7 +3780,7 @@ export function useAuthnInviteAcceptView<TData = Awaited<ReturnType<typeof authn
 
 
 /**
- * Redeems the invitation and writes a membership whose source is invite. When the invited address already belongs to an account, the membership is added to it and display_name and password are ignored; otherwise an enabled user account is created first, with the address verified through the invitation. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.
+ * Redeems the invitation and writes a membership whose source is invite. When the invited address already belongs to an account, the membership is added to it and username, display_name and password are ignored; otherwise an enabled user account is created first, with the address verified through the invitation and the username as its login name. A request that creates an account without a username is 400. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.
  * @summary Redeem an invitation, creating the account when the address has none
  */
 export const authnInviteAccept = (
@@ -6329,7 +6421,7 @@ export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof auth
 
 
 /**
- * Creates a user or a service account. A user account must name at least one login identifier in this request — username, email or phone — because an account without one could not sign in; a user account that states a password additionally needs a username or email address, since a phone number is not a password login name and one without either is a 409 login-identifier-required. A service account signs in with a service secret and is not held to either rule. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.
+ * Creates a user or a service account. A user account must name the username it is opened with, because an account is created with a login name; a missing or unusable username is 400. A service account signs in with a service secret, so it is not held to that rule. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.
  * @summary Create an account
  */
 export const authnAdminAccountsCreate = (
