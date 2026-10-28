@@ -276,7 +276,10 @@ func fullCreateAccount() CreateAccount {
 	return CreateAccount{
 		ID: "a", Kind: KindUser, DisplayName: "n", Username: "u", UsernameVerifiedVia: Verification{Via: "admin"},
 		Email: "e@x", EmailVerifiedVia: Verification{Via: "admin"},
-		Phone: "+8613800000000", PhoneVerifiedVia: Verification{Via: "sms-code"}, Password: "p", PasswordHash: "h",
+		Phone: "+8613800000000", PhoneVerifiedVia: Verification{Via: "sms-code"},
+		EmailFlags: IdentifierFlags{Contact: true, SignIn: true},
+		PhoneFlags: IdentifierFlags{Contact: true, SignIn: true}, DefaultContact: true,
+		Password: "p", PasswordHash: "h",
 		MustChangePassword: true, MFARequired: true, Attributes: map[string]string{"k": "v"}, Via: "admin",
 	}
 }

@@ -38,8 +38,10 @@ func TestProvisionerChangesDisplayNameAndAttributesAndNothingElse(t *testing.T) 
 		t.Errorf("Create = %+v, want the host's name and attributes", c)
 	}
 	want := authn.CreateAccount{
-		Kind: authn.KindUser, DisplayName: "Ann (host)", Attributes: map[string]string{"region": "eu"},
-		Email: "ann@home.org", EmailVerifiedVia: authn.Verification{Via: "idp:google"}, Via: "signup",
+		Kind: authn.KindUser, DisplayName: "Ann (host)", Username: testUsername,
+		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
+		Attributes:          map[string]string{"region": "eu"},
+		Email:               "ann@home.org", EmailVerifiedVia: authn.Verification{Via: "idp:google"}, Via: "signup",
 	}
 	if fmt.Sprint(c) != fmt.Sprint(want) {
 		t.Errorf("Create = %+v, want %+v: only the display name and attributes may change", c, want)
@@ -169,5 +171,58 @@ func TestProvisionerReturningOnlyANameLeavesTheRestOfTheAccountAlone(t *testing.
 	c := e.s.created[0]
 	if c.Email != "ann@home.org" || c.Kind != authn.KindUser || c.DisplayName != "kept" || len(c.Attributes) != 0 {
 		t.Errorf("Create = %+v, want the resolver's own account with the hook's name", c)
+	}
+}
+
+// TestAFirstLoginWithNoUsernameCreatesNothing holds the stopgap for the
+// pending-signup step: a social, SMS or enterprise login that would open an
+// account and has no username collected refuses and writes nothing.
+func TestAFirstLoginWithNoUsernameCreatesNothing(t *testing.T) {
+	for name, tc := range map[string]struct {
+		proof authn.Proof
+		opts  []option
+	}{
+		"social":     {social("github", "gh1", "", false), nil},
+		"phone":      {phone("+8613800000001"), nil},
+		"enterprise": {enterprise("u1", "ann@acme.com"), []option{withProvider(authn.ProvisioningJIT, false)}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t, append([]option{withSignup(SignupOpen)}, tc.opts...)...)
+			_, err := e.resolveAs("", tc.proof)
+			if !errors.Is(err, errUsernameMissing) {
+				t.Fatalf("Resolve gave %v, want errUsernameMissing", err)
+			}
+			if e.s.writes() != 0 {
+				t.Errorf("%d writes, want none: no account is opened without a username", e.s.writes())
+			}
+		})
+	}
+}
+
+// TestAFirstLoginCreatesTheAccountWithTheCollectedUsername holds that the
+// username the request carries is the one the account is created with on all
+// three paths that open an account.
+func TestAFirstLoginCreatesTheAccountWithTheCollectedUsername(t *testing.T) {
+	for name, tc := range map[string]struct {
+		proof authn.Proof
+		opts  []option
+	}{
+		"social":     {social("github", "gh1", "", false), nil},
+		"phone":      {phone("+8613800000001"), nil},
+		"enterprise": {enterprise("u1", "ann@acme.com"), []option{withProvider(authn.ProvisioningJIT, false)}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t, append([]option{withSignup(SignupOpen)}, tc.opts...)...)
+			res, err := e.resolveAs("collected", tc.proof)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if res.Outcome != OutcomeCreated {
+				t.Fatalf("outcome = %v, want created", res.Outcome)
+			}
+			if got := e.s.created[len(e.s.created)-1].Username; got != "collected" {
+				t.Errorf("Create was given the username %q, want collected", got)
+			}
+		})
 	}
 }

@@ -125,7 +125,7 @@ func TestAcceptCreatesAnAccountWhenTheAddressHasNone(t *testing.T) {
 	h.admin.newID = "acct-new"
 	issued := h.issue(tenant, "Bob@Example.com")
 
-	mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, DisplayName: "Bob", Password: "correct horse"})
+	mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "bob", DisplayName: "Bob", Password: "correct horse"})
 	if err != nil {
 		t.Fatalf("accepting: %v", err)
 	}
@@ -158,10 +158,10 @@ func TestAcceptReportsTerminalStates(t *testing.T) {
 	}
 
 	issued := h.issue(tenant, "dave@example.com")
-	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); err != nil {
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token, Username: "dave"}); err != nil {
 		t.Fatalf("first accept: %v", err)
 	}
-	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, ErrInvitationAlreadyAccepted) {
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: issued.Token, Username: "dave"}); !errors.Is(err, ErrInvitationAlreadyAccepted) {
 		t.Errorf("second accept gave %v, want ErrInvitationAlreadyAccepted", err)
 	}
 
@@ -197,7 +197,7 @@ func TestAcceptSettlesATransientFailureBackToPending(t *testing.T) {
 	h.members.err = errors.New("the membership store is down")
 	issued := h.issue(tenant, "grace@example.com")
 
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrUnavailable) {
+	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "grace"}); !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("accepting over a failing membership store gave %v, want ErrUnavailable", err)
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
@@ -210,7 +210,7 @@ func TestAcceptSettlesAPermanentFailureAsRevoked(t *testing.T) {
 	h.admin.err = authn.ErrAccountExists
 	issued := h.issue(tenant, "heidi@example.com")
 
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrAccountExists) {
+	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "heidi"}); !errors.Is(err, authn.ErrAccountExists) {
 		t.Fatalf("accepting over a conflicting account gave %v, want ErrAccountExists", err)
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
@@ -226,7 +226,7 @@ func TestAcceptSettlesATakenContactAsRevoked(t *testing.T) {
 	h.admin.err = authn.ErrContactTaken
 	issued := h.issue(tenant, "judy@example.com")
 
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrContactTaken) {
+	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "judy"}); !errors.Is(err, authn.ErrContactTaken) {
 		t.Fatalf("accepting over a reserved contact gave %v, want ErrContactTaken", err)
 	}
 	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
@@ -244,7 +244,7 @@ func TestAcceptPropagatesACleanupIncomplete(t *testing.T) {
 	h.admin.err = authn.ErrCleanupIncomplete
 	issued := h.issue(tenant, "karl@example.com")
 
-	_, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token})
+	_, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "karl"})
 	if !errors.Is(err, authn.ErrCleanupIncomplete) {
 		t.Fatalf("accepting over a failing lifecycle hook gave %v, want ErrCleanupIncomplete", err)
 	}
@@ -263,7 +263,7 @@ func TestAcceptRetriesAfterACleanupIncomplete(t *testing.T) {
 	h := newHarness(t)
 	h.admin.err = authn.ErrCleanupIncomplete
 	issued := h.issue(tenant, "lena@example.com")
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrCleanupIncomplete) {
+	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "lena"}); !errors.Is(err, authn.ErrCleanupIncomplete) {
 		t.Fatalf("the first acceptance gave %v, want ErrCleanupIncomplete", err)
 	}
 
@@ -272,7 +272,7 @@ func TestAcceptRetriesAfterACleanupIncomplete(t *testing.T) {
 	h.accounts.put("lena@example.com", "acct-lena")
 	h.admin.err = nil
 
-	mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token})
+	mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "lena"})
 	if err != nil {
 		t.Fatalf("retrying the acceptance: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestRevokeIsIdempotentAndRefusesAnAcceptedInvitation(t *testing.T) {
 	}
 
 	accepted := h.issue(tenant, "jane@example.com")
-	if _, err := h.p.Accept(ctx, AcceptInvite{Token: accepted.Token}); err != nil {
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: accepted.Token, Username: "jane"}); err != nil {
 		t.Fatalf("accepting: %v", err)
 	}
 	if err := h.p.Revoke(ctx, tenant, accepted.Invitation.ID); !errors.Is(err, ErrInvitationAlreadyAccepted) {
@@ -324,7 +324,7 @@ func TestListOrdersPendingFirstAndPagesByCursor(t *testing.T) {
 	b := h.issue(tenant, "b@example.com")
 	h.clock.advance(time.Minute)
 	c := h.issue(tenant, "c@example.com")
-	if _, err := h.p.Accept(ctx, AcceptInvite{Token: b.Token}); err != nil {
+	if _, err := h.p.Accept(ctx, AcceptInvite{Token: b.Token, Username: "b"}); err != nil {
 		t.Fatalf("accepting: %v", err)
 	}
 

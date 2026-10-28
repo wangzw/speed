@@ -87,7 +87,7 @@ func TestAnUnwindSurvivesTheLogInsCancelledContext(t *testing.T) {
 	ctx, cancel := contextWithCancelOnLink(e)
 	defer cancel()
 	e.s.failLink = authn.ErrUnavailable
-	_, err := e.r.Resolve(ctx, Request{Proof: social("google", "g1", "", false), Purpose: authn.PurposeLogin})
+	_, err := e.r.Resolve(ctx, Request{Proof: social("google", "g1", "", false), Purpose: authn.PurposeLogin, Username: testUsername})
 	if err == nil {
 		t.Fatal("want a failure")
 	}

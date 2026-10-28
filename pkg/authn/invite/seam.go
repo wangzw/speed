@@ -73,11 +73,13 @@ type Invitation struct {
 }
 
 // AcceptInvite is what accepting an invitation takes: the token, and the
-// display name and password to create an account with when the address has
-// none. The password is read only when an account is created; it is ignored
-// when the address is already an account.
+// username, display name and password to create an account with when the
+// address has none. The username is required when an account is created and is
+// read only then; it is ignored when the address is already an account. The
+// password is read only when an account is created; it is ignored too.
 type AcceptInvite struct {
 	Token       string
+	Username    string
 	DisplayName string
 	Password    string
 }

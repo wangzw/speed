@@ -92,17 +92,28 @@ func eventVia(via string) (string, error) {
 
 // Create writes an enabled account.
 //
+// A user account is created with a username: the three paths that restore an
+// account rather than open one are exempt, an import that brings back an
+// existing account and a service account that signs in with a service secret.
+// A username is normalized and held to the reserved set like every other
+// username write, and a missing or unusable one creates nothing. A username is
+// always a login way.
+//
 // An email address and a phone number are written verified, and the way each
-// was comes with it; no row awaits verification. An email address also reserves
-// its contact in the same transaction: the reservation is written beside the
-// identifier, so the contact is owned by this account from the moment the
-// account exists. A password is judged by the policy, derived under the capacity
-// the module allows before the transaction opens, and written with the account;
-// a hash is read and bounded and written as it is, whatever its strength. An
-// identifier, a login name or a binding of the account that breaks a uniqueness
-// constraint is authn.ErrAccountExists; a contact reservation another account
-// holds is authn.ErrContactTaken. Two calls that create one email address at
-// once leave one account.
+// was comes with it; no row awaits verification. Their two axes start false
+// unless an import states its source record's, and the phone an SMS first login
+// signed in with starts as a login way. A proved email address is the account's
+// default contact in the same transaction, since a new account has none; an
+// unproved one cannot be. An email address also reserves its contact in the same
+// transaction: the reservation is written beside the identifier, so the contact
+// is owned by this account from the moment the account exists. A password is
+// judged by the policy, derived under the capacity the module allows before the
+// transaction opens, and written with the account; a hash is read and bounded and
+// written as it is, whatever its strength. An identifier, a login name or a
+// binding of the account that breaks a uniqueness constraint is
+// authn.ErrAccountExists; a contact reservation another account holds is
+// authn.ErrContactTaken. Two calls that create one email address at once leave
+// one account.
 func (p *product) Create(ctx context.Context, in authn.CreateAccount) (authn.Account, error) {
 	in = in.Clone()
 	plan, err := p.planCreate(in)
@@ -222,7 +233,17 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		ValidAfter: now, CreatedAt: now, UpdatedAt: now,
 	}
 
-	add := func(k authn.IdentifierKind, value string, via string) error {
+	// A user account is opened with a username. The two paths that restore an
+	// account instead of opening one are exempt: an import brings back an
+	// account that already existed, and a service account signs in with a
+	// service secret. Every other creation path — an administrator, the
+	// initial seed, a first login, an accepted invitation — refuses here
+	// rather than leave an account that has no login name.
+	if usernameRequired(kind, via) && in.Username == "" {
+		return plan, fmt.Errorf("%w: a user account is created with a username", authn.ErrInvalidIdentifier)
+	}
+
+	add := func(k authn.IdentifierKind, value string, via string, flags authn.IdentifierFlags, defaultContact bool) error {
 		var normalized, rowID string
 		if normalized, err = NormalizeIdentifier(k, value); err != nil {
 			return err
@@ -237,7 +258,8 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		}
 		plan.identifiers = append(plan.identifiers, identifierRow{
 			ID: rowID, AccountID: id.String(), Kind: string(k), Value: normalized,
-			VerifiedAt: now, VerifiedVia: via, CreatedAt: now,
+			VerifiedAt: now, VerifiedVia: via, SignIn: flags.SignIn, Contact: flags.Contact,
+			DefaultContact: defaultContact, CreatedAt: now,
 		})
 		return nil
 	}
@@ -245,7 +267,8 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		// The way the username came about is the caller's to state, since a host
 		// importing users and a first login land here too; the zero value means
 		// an administrator wrote it. Create never writes a self-registered
-		// account: Signups.Register is the only writer of signup_state.
+		// account: Signups.Register is the only writer of signup_state. A
+		// username is always a login way.
 		usernameVia := in.UsernameVerifiedVia
 		if usernameVia == (authn.Verification{}) {
 			usernameVia = authn.Verification{Via: authn.VerifiedViaAdmin}
@@ -254,7 +277,8 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		if err != nil {
 			return plan, err
 		}
-		if err = add(authn.IdentifierUsername, in.Username, verified); err != nil {
+		if err = add(authn.IdentifierUsername, in.Username, verified,
+			authn.IdentifierFlags{SignIn: true}, false); err != nil {
 			return plan, err
 		}
 	}
@@ -263,7 +287,21 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		if err != nil {
 			return plan, err
 		}
-		if err = add(authn.IdentifierEmail, in.Email, verified); err != nil {
+		// A new email address is neither a login way nor a contact until its
+		// holder chooses; an import writes the axes its source record had.
+		flags := authn.IdentifierFlags{}
+		if via == byImport {
+			flags = in.EmailFlags
+		}
+		proved := authn.Verification{Via: verified}.Proves()
+		// An unproved address is never the default contact. A proved one is the
+		// default whether or not an import's source named it: an imported
+		// account is new here and has no other.
+		defaultContact := proved
+		if via == byImport && in.DefaultContact && !proved {
+			defaultContact = false
+		}
+		if err = add(authn.IdentifierEmail, in.Email, verified, flags, defaultContact); err != nil {
 			return plan, err
 		}
 		email, err := NormalizeIdentifier(authn.IdentifierEmail, in.Email)
@@ -284,11 +322,29 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		if err != nil {
 			return plan, err
 		}
-		if err = add(authn.IdentifierPhone, in.Phone, verified); err != nil {
+		// A new phone number starts on neither axis; an import writes the axes
+		// its source record had. The exception is the phone an SMS first login
+		// signs in with: that login used the number as its way in, so it is a
+		// login way from the moment the account exists, and still no contact.
+		flags := authn.IdentifierFlags{}
+		if via == byImport {
+			flags = in.PhoneFlags
+		}
+		if verified == authn.VerifiedViaSMSCode {
+			flags = authn.IdentifierFlags{SignIn: true}
+		}
+		if err = add(authn.IdentifierPhone, in.Phone, verified, flags, false); err != nil {
 			return plan, err
 		}
 	}
 	return plan, nil
+}
+
+// usernameRequired reports whether an account creation must name a username: a
+// user account that is not an import. A service account is exempt because a
+// service secret, not a username, is how it signs in.
+func usernameRequired(kind authn.AccountKind, via string) bool {
+	return kind == authn.KindUser && via != byImport
 }
 
 // newCredential reads or derives the credential of an account being created. It
@@ -492,7 +548,10 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 		}
 		row := identifierRow{
 			ID: rowID, AccountID: id.String(), Kind: string(kind), Value: normalized,
-			VerifiedAt: now, VerifiedVia: verified, CreatedAt: now,
+			VerifiedAt: now, VerifiedVia: verified,
+			// A username is always a login way. A new email address or phone
+			// number starts on neither axis.
+			SignIn: kind == authn.IdentifierUsername, CreatedAt: now,
 		}
 		if err = tx.Create(&row).Error; err != nil {
 			return err

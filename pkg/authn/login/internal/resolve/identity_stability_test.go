@@ -210,7 +210,9 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		passwordID := record("password self-registration", registered.ID, "self-made", "self-made@example.org")
 
 		// Two: the first sign-in of a phone.
-		phoneLogin, err := r.Resolve(ctx, Request{Proof: phone("+8613800000001"), Purpose: authn.PurposeLogin})
+		phoneLogin, err := r.Resolve(ctx, Request{
+			Proof: phone("+8613800000001"), Purpose: authn.PurposeLogin, Username: "phone-made",
+		})
 		if err != nil || phoneLogin.Outcome != OutcomeCreated {
 			t.Fatalf("the first phone login = %+v, %v, want a new account", phoneLogin, err)
 		}
@@ -219,6 +221,7 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		// Three: the first sign-in of a social identity with a verified address.
 		socialLogin, err := r.Resolve(ctx, Request{
 			Proof: social("google", "google-subject", "social@example.org", true), Purpose: authn.PurposeLogin,
+			Username: "social-made",
 		})
 		if err != nil || socialLogin.Outcome != OutcomeCreated {
 			t.Fatalf("the first social login = %+v, %v, want a new account", socialLogin, err)
@@ -229,6 +232,7 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		// the real store too: the binding key is the pair, not the subject.
 		otherProvider, err := r.Resolve(ctx, Request{
 			Proof: social("github", "google-subject", "", false), Purpose: authn.PurposeLogin,
+			Username: "other-made",
 		})
 		if err != nil || otherProvider.Outcome != OutcomeCreated {
 			t.Fatalf("the same subject under another provider = %+v, %v, want a new account", otherProvider, err)
@@ -243,14 +247,16 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		// address, and the address is not written as an identifier.
 		unverified, err := r.Resolve(ctx, Request{
 			Proof: social("github", "github-subject", "unverified@example.org", false), Purpose: authn.PurposeLogin,
+			Username: "unverified-made",
 		})
 		if err != nil || unverified.Outcome != OutcomeCreated {
 			t.Fatalf("the first unverified social login = %+v, %v, want a new account", unverified, err)
 		}
 		unverifiedID := record("social first sign-in without a verified address", unverified.Account,
 			"github-subject", "unverified@example.org")
-		if identifiers := identifiersOf(t, accounts, unverifiedID); len(identifiers) != 0 {
-			t.Errorf("the account made without a verified address holds the identifiers %+v, want none", identifiers)
+		if identifiers := identifiersOf(t, accounts, unverifiedID); len(identifiers) != 1 ||
+			identifiers[0].Kind != authn.IdentifierUsername || identifiers[0].Value != "unverified-made" {
+			t.Errorf("the account made without a verified address holds the identifiers %+v, want only its username", identifiers)
 		}
 		if again, resolveErr := r.Resolve(ctx, Request{
 			Proof: social("github", "github-subject", "", false), Purpose: authn.PurposeLogin,
@@ -267,7 +273,8 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 					Tenant: tenantAcme, DisplayName: "Jit Person",
 				},
 			},
-			Purpose: authn.PurposeLogin,
+			Purpose:  authn.PurposeLogin,
+			Username: "jit-made",
 		})
 		if err != nil || jitLogin.Outcome != OutcomeCreated {
 			t.Fatalf("the first enterprise login = %+v, %v, want a new account", jitLogin, err)
@@ -284,7 +291,8 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			t.Fatalf("issuing an invitation: %v", err)
 		}
 		invited, err := invites.Accept(ctx, invite.AcceptInvite{
-			Token: issued.Token, DisplayName: "Invite Person", Password: "correct horse battery staple",
+			Token: issued.Token, Username: "invite-made", DisplayName: "Invite Person",
+			Password: "correct horse battery staple",
 		})
 		if err != nil {
 			t.Fatalf("accepting an invitation: %v", err)

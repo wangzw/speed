@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -147,4 +148,233 @@ func TestTheIdentifierAxesMigrationBackfillsExistingRows(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCreateRequiresAUsernameWhereItOpensAnAccount holds that every path that
+// opens a user account names a username, and that one which does not creates
+// neither the account nor any identifier. Only an import, which restores an
+// account that already existed, and a service account, which signs in with a
+// service secret, are exempt.
+func TestCreateRequiresAUsernameWhereItOpensAnAccount(t *testing.T) {
+	for name, in := range map[string]authn.CreateAccount{
+		"an administrator": {
+			Email: "a@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
+			Via: "admin",
+		},
+		"the initial assembly": {
+			Email: "b@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
+		},
+		"a first login": {
+			Phone: "+8613800000001", PhoneVerifiedVia: authn.Verification{Via: authn.VerifiedViaSMSCode},
+			Via: "signup",
+		},
+		"an accepted invitation": {
+			Email: "c@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaInvite},
+			Via: "admin",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			forEachDialect(t, func(t *testing.T, h *harness) {
+				_, err := h.p.Create(context.Background(), in)
+				if !errors.Is(err, authn.ErrInvalidIdentifier) {
+					t.Fatalf("%s with no username gave %v, want ErrInvalidIdentifier", name, err)
+				}
+				if n := h.count(tableAccounts, ""); n != 0 {
+					t.Errorf("%s with no username left %d account row(s)", name, n)
+				}
+				if n := h.count(tableIdentifiers, ""); n != 0 {
+					t.Errorf("%s with no username left %d identifier row(s)", name, n)
+				}
+			})
+		})
+	}
+}
+
+// TestCreateLetsAnImportAndAServiceAccountOpenWithoutAUsername holds the two
+// exemptions: an import restores an account that already existed, and a service
+// account signs in with a service secret. A service account that does name a
+// username is held to the same normalization and reserved set as any other.
+func TestCreateLetsAnImportAndAServiceAccountOpenWithoutAUsername(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		imported, err := h.p.Create(ctx, authn.CreateAccount{
+			ID: "legacy_import", Kind: authn.KindUser, Via: "import",
+			Email: "restored@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaImportUnverified},
+			EmailFlags: authn.IdentifierFlags{Contact: true},
+		})
+		if err != nil {
+			t.Fatalf("an import with no username gave %v, want an account", err)
+		}
+		if identifiers, listErr := h.p.Identifiers(ctx, imported.ID); listErr != nil {
+			t.Fatalf("listing the imported account's identifiers: %v", listErr)
+		} else if len(identifiers) != 1 || identifiers[0].Kind != authn.IdentifierEmail {
+			t.Errorf("the imported account's identifiers are %+v, want only the restored email", identifiers)
+		}
+
+		if _, err = h.p.Create(ctx, authn.CreateAccount{Kind: authn.KindService, Via: "admin"}); err != nil {
+			t.Fatalf("a service account with no username gave %v, want an account", err)
+		}
+		if _, err = h.p.Create(ctx, authn.CreateAccount{
+			Kind: authn.KindService, Username: "admin", Via: "admin",
+		}); !errors.Is(err, authn.ErrUsernameReserved) {
+			t.Errorf("a service account with a reserved username gave %v, want ErrUsernameReserved", err)
+		}
+		if _, err = h.p.Create(ctx, authn.CreateAccount{
+			Kind: authn.KindService, Username: "no", Via: "admin",
+		}); !errors.Is(err, authn.ErrInvalidIdentifier) {
+			t.Errorf("a service account with a malformed username gave %v, want ErrInvalidIdentifier", err)
+		}
+	})
+}
+
+// TestCreateWritesTheAxesOfTheIdentifiersItCreates holds the flags an account
+// opens with: a username is always a login way; a new email address or phone
+// number starts on neither axis; the phone an SMS first login signed in with is
+// a login way but not a contact; and a proved email address is the default
+// contact, since the account has none.
+func TestCreateWritesTheAxesOfTheIdentifiersItCreates(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		created, err := h.p.Create(ctx, authn.CreateAccount{
+			Username: "alice", Via: "admin",
+			Email: "alice@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
+			Phone: "+8613812345678", PhoneVerifiedVia: authn.Verification{Via: authn.VerifiedViaSMSCode},
+		})
+		if err != nil {
+			t.Fatalf("creating the account: %v", err)
+		}
+		identifiers, err := h.p.Identifiers(ctx, created.ID)
+		if err != nil {
+			t.Fatalf("listing the identifiers: %v", err)
+		}
+		byKind := map[authn.IdentifierKind]authn.Identifier{}
+		for _, identifier := range identifiers {
+			byKind[identifier.Kind] = identifier
+		}
+		for _, c := range []struct {
+			kind                            authn.IdentifierKind
+			signIn, contact, defaultContact bool
+		}{
+			{authn.IdentifierUsername, true, false, false},
+			{authn.IdentifierEmail, false, false, true},
+			{authn.IdentifierPhone, true, false, false},
+		} {
+			got := byKind[c.kind]
+			if got.SignIn != c.signIn || got.Contact != c.contact || got.DefaultContact != c.defaultContact {
+				t.Errorf("the %s row reads sign_in=%v contact=%v default_contact=%v, want %v %v %v",
+					c.kind, got.SignIn, got.Contact, got.DefaultContact, c.signIn, c.contact, c.defaultContact)
+			}
+		}
+	})
+}
+
+// TestCreateDoesNotMakeAnUnprovedEmailTheDefaultContact holds that an email
+// address only asserted, not proved, starts outside both axes and is not the
+// default contact.
+func TestCreateDoesNotMakeAnUnprovedEmailTheDefaultContact(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		created, err := h.p.Create(ctx, authn.CreateAccount{
+			Username: "bob", Via: "admin",
+			Email: "bob@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin},
+		})
+		if err != nil {
+			t.Fatalf("creating the account: %v", err)
+		}
+		identifiers, err := h.p.Identifiers(ctx, created.ID)
+		if err != nil {
+			t.Fatalf("listing the identifiers: %v", err)
+		}
+		for _, identifier := range identifiers {
+			if identifier.Kind != authn.IdentifierEmail {
+				continue
+			}
+			if identifier.SignIn || identifier.Contact || identifier.DefaultContact {
+				t.Errorf("the unproved email reads sign_in=%v contact=%v default_contact=%v, want all false",
+					identifier.SignIn, identifier.Contact, identifier.DefaultContact)
+			}
+		}
+	})
+}
+
+// TestAnImportWritesTheAxesItsSourceRecordHad holds that an import restores the
+// two axes and the default contact from its source record, and that a proved
+// email address the source did not name as the default becomes it anyway, while
+// an unproved one never does.
+func TestAnImportWritesTheAxesItsSourceRecordHad(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		read := func(in authn.CreateAccount) map[authn.IdentifierKind]authn.Identifier {
+			t.Helper()
+			created, err := h.p.Create(ctx, in)
+			if err != nil {
+				t.Fatalf("importing %+v: %v", in, err)
+			}
+			identifiers, listErr := h.p.Identifiers(ctx, created.ID)
+			if listErr != nil {
+				t.Fatalf("listing the imported account's identifiers: %v", listErr)
+			}
+			byKind := map[authn.IdentifierKind]authn.Identifier{}
+			for _, identifier := range identifiers {
+				byKind[identifier.Kind] = identifier
+			}
+			return byKind
+		}
+
+		proved := read(authn.CreateAccount{
+			ID: "legacy_proved", Via: "import",
+			Email: "proved@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
+			EmailFlags: authn.IdentifierFlags{SignIn: true, Contact: true},
+		})
+		if email := proved[authn.IdentifierEmail]; !email.SignIn || !email.Contact || !email.DefaultContact {
+			t.Errorf("the imported proved email reads sign_in=%v contact=%v default_contact=%v, want all true",
+				email.SignIn, email.Contact, email.DefaultContact)
+		}
+
+		unproved := read(authn.CreateAccount{
+			ID: "legacy_unproved", Via: "import",
+			Email: "unproved@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaImportUnverified},
+			EmailFlags: authn.IdentifierFlags{Contact: true}, DefaultContact: true,
+		})
+		if email := unproved[authn.IdentifierEmail]; email.SignIn || !email.Contact || email.DefaultContact {
+			t.Errorf("the imported unproved email reads sign_in=%v contact=%v default_contact=%v, want false true false",
+				email.SignIn, email.Contact, email.DefaultContact)
+		}
+
+		phone := read(authn.CreateAccount{
+			ID: "legacy_phone", Via: "import",
+			Phone: "+8613800000002", PhoneVerifiedVia: authn.Verification{Via: authn.VerifiedViaImportUnverified},
+			PhoneFlags: authn.IdentifierFlags{Contact: true},
+		})
+		if p := phone[authn.IdentifierPhone]; p.SignIn || !p.Contact {
+			t.Errorf("the imported phone reads sign_in=%v contact=%v, want false true", p.SignIn, p.Contact)
+		}
+	})
+}
+
+// TestRegisterWritesItsUsernameAsALoginWay holds that self-registration, which
+// does not go through Create, writes the username as a login way.
+func TestRegisterWritesItsUsernameAsALoginWay(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		h.openSelfRegistration()
+		account := h.mustRegister("carol", "carol@example.com", "correct horse battery")
+		identifiers, err := h.p.Identifiers(context.Background(), account.ID)
+		if err != nil {
+			t.Fatalf("listing the identifiers: %v", err)
+		}
+		var found bool
+		for _, identifier := range identifiers {
+			if identifier.Kind != authn.IdentifierUsername {
+				continue
+			}
+			found = true
+			if !identifier.SignIn || identifier.Contact || identifier.DefaultContact {
+				t.Errorf("the registered username reads sign_in=%v contact=%v default_contact=%v, want true false false",
+					identifier.SignIn, identifier.Contact, identifier.DefaultContact)
+			}
+		}
+		if !found {
+			t.Errorf("the registered account holds no username identifier: %+v", identifiers)
+		}
+	})
 }

@@ -119,7 +119,9 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 		}
 		identifier := identifierRow{
 			ID: identifierID, AccountID: id, Kind: string(authn.IdentifierUsername), Value: username,
-			VerifiedAt: now, VerifiedVia: authn.VerifiedViaSelf, CreatedAt: now,
+			VerifiedAt: now, VerifiedVia: authn.VerifiedViaSelf,
+			// A username is always a login way.
+			SignIn: true, CreatedAt: now,
 		}
 		if idErr = tx.Create(&identifier).Error; idErr != nil {
 			return idErr

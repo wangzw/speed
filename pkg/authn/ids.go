@@ -269,6 +269,11 @@ const (
 	VerifiedViaSelf             = model.VerifiedViaSelf
 )
 
+// IdentifierFlags is the two axes of an email address or a phone number: whether
+// it may sign in and whether it is a contact. They are independent, and neither
+// rewrites the other.
+type IdentifierFlags = model.IdentifierFlags
+
 // CreateAccount is what creating an account takes. Its Clone returns a copy that
 // shares no map with it.
 type CreateAccount = model.CreateAccount

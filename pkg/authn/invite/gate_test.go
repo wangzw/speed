@@ -234,7 +234,7 @@ func TestAcceptingAnInvitationWithNoPendingOwnerCreatesAnAccount(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")
 
-	mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token})
+	mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "alice"})
 	if err != nil {
 		t.Fatalf("accepting: %v", err)
 	}

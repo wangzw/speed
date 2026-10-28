@@ -438,17 +438,21 @@ func TestAccountCreateRefusesAProofVia(t *testing.T) {
 }
 
 // TestAccountCreateRefusesAUserAccountWithNoIdentifier holds that the route
-// refuses a user account it cannot give a way to log in with before anything
-// is written: the kind alone, a display name alone, or an attribute set alone
-// is not an account, and the API does not leave an unusable row behind. The
-// refusal is the route's own 400 and the module is never called. A service
-// account is not held to that -- it signs in with a service secret.
+// refuses a user account it cannot open with a login name before anything is
+// written: the kind alone, a display name alone, an attribute set alone, or an
+// address or phone number without a username is not an account, and the API does
+// not leave an unusable row behind. The refusal is the route's own 400 and the
+// module is never called. A service account is not held to that -- it signs in
+// with a service secret.
 func TestAccountCreateRefusesAUserAccountWithNoIdentifier(t *testing.T) {
 	r := newRig(t)
 	for _, body := range []map[string]any{
 		{"kind": "user"},
 		{"kind": "user", "display_name": "Nobody"},
 		{"kind": "user", "attributes": map[string]string{"team": "core"}},
+		{"kind": "user", "email": "nobody@example.com", "email_verified_via": "admin"},
+		{"kind": "user", "phone": "+8613800000000", "phone_verified_via": "admin"},
+		{"kind": "user", "username": "  "},
 	} {
 		rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts", body, fresh()...)
 		if rec.Code != http.StatusBadRequest {
@@ -463,14 +467,14 @@ func TestAccountCreateRefusesAUserAccountWithNoIdentifier(t *testing.T) {
 		t.Errorf("Create ran %d times for an account with no identifier", n)
 	}
 
-	// One identifier satisfies the route.
+	// A username is what opens a user account.
 	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts",
 		map[string]any{"kind": "user", "display_name": "Grace", "username": "grace"}, fresh()...)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("a user account with a username: status = %d, want 201; body %s", rec.Code, rec.Body.String())
 	}
 
-	// A service account signs in with a service secret, so it needs none.
+	// A service account signs in with a service secret, so it needs no username.
 	rec = r.do(http.MethodPost, "/api/v1/system/auth/accounts",
 		map[string]any{"kind": "service", "display_name": "Nightly"}, fresh()...)
 	if rec.Code != http.StatusCreated {
@@ -538,32 +542,28 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 	}
 }
 
-// TestCreatingAPasswordAccountWithOnlyAPhoneIsA409 holds the create route's
-// refusal of a user account whose only identifier is a phone number: a phone is
-// not a password login name, so the account would hold a credential that
-// authenticates nothing. The account module enforces the rule and this case
-// drives the route to its answer, with the fake applying that rule to the input
-// the route hands over. The rule itself is held by the account package over a
-// migrated database (TestCreateRefusesWhatItAdmitsNot); a case that assembled
-// the whole program here would repeat that fixture to observe the same two
-// facts.
-func TestCreatingAPasswordAccountWithOnlyAPhoneIsA409(t *testing.T) {
+// TestCreatingAPasswordAccountWithOnlyAPhoneIsRefused holds the create route's
+// refusal of a user account whose only identifier is a phone number: a user
+// account is opened with a username, and a phone number is not one. The route
+// refuses before the module is asked, so the account module's own rule about a
+// credential that authenticates nothing is never reached from here; that rule is
+// held by the account package over a migrated database (TestCreateRefusesWhatItAdmitsNot).
+func TestCreatingAPasswordAccountWithOnlyAPhoneIsRefused(t *testing.T) {
 	r := newRig(t)
-	r.accountAdm.createNeedsLoginName = true
 	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts", map[string]any{
 		"kind":               "user",
 		"phone":              "+8613800000001",
 		"phone_verified_via": "admin",
 		"password":           "correct horse battery",
 	}, fresh()...)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409; body %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body %s", rec.Code, rec.Body.String())
 	}
-	if got := problemCode(t, rec.Body.String()); got != mount.CodeLoginIdentifierRequired {
-		t.Errorf("problem code = %q, want %q", got, mount.CodeLoginIdentifierRequired)
+	if got := problemCode(t, rec.Body.String()); got != mount.CodeBadRequest {
+		t.Errorf("problem code = %q, want %q", got, mount.CodeBadRequest)
 	}
-	if n := r.accountAdm.count("create"); n != 1 {
-		t.Errorf("Create ran %d times, want once", n)
+	if n := r.accountAdm.count("create"); n != 0 {
+		t.Errorf("Create ran %d times, want none: the route refused before the module", n)
 	}
 }
 

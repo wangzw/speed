@@ -192,7 +192,8 @@ func (p *product) acceptAnswerReply(op string, err error) (speedhttp.Reply, erro
 	case errors.Is(err, ErrInvitationExpired), errors.Is(err, ErrInvitationRevoked),
 		errors.Is(err, ErrInvitationAlreadyAccepted):
 		return nil, inviteFailure(http.StatusConflict, mount.CodeConflict)
-	case errors.Is(err, authn.ErrInvalidArgument):
+	case errors.Is(err, authn.ErrInvalidArgument), errors.Is(err, authn.ErrInvalidIdentifier),
+		errors.Is(err, authn.ErrUsernameReserved):
 		return nil, p.badRequest()
 	default:
 		return nil, p.cause(op, err)

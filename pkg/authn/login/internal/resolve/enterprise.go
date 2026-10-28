@@ -17,7 +17,7 @@ const membershipSource = "jit:"
 // enterpriseUnbound resolves an enterprise identity with no binding (A5). The
 // provider's row, not the method, says which tenant it belongs to and how its
 // users get accounts.
-func (r *Resolver) enterpriseUnbound(ctx context.Context, providerID string, l authn.ExternalLink, ext *authn.External) (Result, error) {
+func (r *Resolver) enterpriseUnbound(ctx context.Context, providerID string, l authn.ExternalLink, ext *authn.External, username string) (Result, error) {
 	if r.sso == nil {
 		return Result{}, errNoSSO()
 	}
@@ -46,7 +46,7 @@ func (r *Resolver) enterpriseUnbound(ctx context.Context, providerID string, l a
 	case authn.ProvisioningPreprovisioned:
 		return r.preprovisioned(ctx, l, ext)
 	case authn.ProvisioningJIT:
-		return r.jit(ctx, prov, l, ext)
+		return r.jit(ctx, prov, l, ext, username)
 	}
 	return Result{}, fmt.Errorf("%w: resolve: the provider's provisioning is not one that is known", authn.ErrInvalidArgument)
 }
@@ -100,8 +100,12 @@ func (r *Resolver) preprovisioned(ctx context.Context, l authn.ExternalLink, ext
 // jit creates the account of a first enterprise login and its membership of the
 // provider's tenant, or merges into the account that holds the address when the
 // provider was set up to allow it and the account passes every condition. In any
-// other case the address being taken is authn.ErrLinkRequired.
-func (r *Resolver) jit(ctx context.Context, prov authn.SSOProvider, l authn.ExternalLink, ext *authn.External) (Result, error) {
+// other case the address being taken is authn.ErrLinkRequired. username is the
+// login name the pending-signup step collected; without one no account is
+// created.
+func (r *Resolver) jit(ctx context.Context, prov authn.SSOProvider, l authn.ExternalLink, ext *authn.External,
+	username string,
+) (Result, error) {
 	id, found, err := r.occupant(ctx, ext.Email)
 	if err != nil {
 		return Result{}, err
@@ -109,12 +113,17 @@ func (r *Resolver) jit(ctx context.Context, prov authn.SSOProvider, l authn.Exte
 	if found {
 		return r.jitOccupied(ctx, id, prov, l, ext)
 	}
+	if username == "" {
+		return Result{}, errUsernameMissing
+	}
 	create := authn.CreateAccount{
-		Kind:             authn.KindUser,
-		DisplayName:      displayName(ext.DisplayName),
-		Email:            ext.Email,
-		EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaIDPPrefix + prov.ID},
-		Via:              viaJIT,
+		Kind:                authn.KindUser,
+		DisplayName:         displayName(ext.DisplayName),
+		Username:            username,
+		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
+		Email:               ext.Email,
+		EmailVerifiedVia:    authn.Verification{Via: authn.VerifiedViaIDPPrefix + prov.ID},
+		Via:                 viaJIT,
 	}
 	if !create.EmailVerifiedVia.Valid() {
 		return Result{}, fmt.Errorf("%w: resolve: the provider's identifier cannot name a verification", authn.ErrInvalidArgument)

@@ -100,7 +100,7 @@ func TestCreateWritesAnEnabledAccountFoundByEverySpellingOfItsIdentifiers(t *tes
 func TestCreateTakesAnImportedIdentifierAndRefusesOnesThatCannotBe(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
-		created, err := h.p.Create(ctx, authn.CreateAccount{ID: "legacy_42", Username: "legacy42"})
+		created, err := h.p.Create(ctx, authn.CreateAccount{ID: "legacy_42", Username: "legacy42", Via: "import"})
 		if err != nil || created.ID != "legacy_42" {
 			t.Fatalf("an imported identifier gave %+v, %v", created, err)
 		}
@@ -130,10 +130,10 @@ func TestCreateRefusesWhatItAdmitsNot(t *testing.T) {
 		want error
 	}{
 		{"a kind that is neither", authn.CreateAccount{Kind: "robot"}, authn.ErrInvalidArgument},
-		{"an email address with no way it was verified", authn.CreateAccount{Email: "a@example.com"}, authn.ErrInvalidArgument},
-		{"an email address verified in a way that is none", authn.CreateAccount{Email: "a@example.com", EmailVerifiedVia: authn.Verification{Via: "trust-me"}}, authn.ErrInvalidArgument},
-		{"a phone number with no way it was verified", authn.CreateAccount{Phone: "+8613812345678"}, authn.ErrInvalidArgument},
-		{"an idp proof with no provider", authn.CreateAccount{Email: "a@example.com", EmailVerifiedVia: authn.Verification{Via: "idp:"}}, authn.ErrInvalidArgument},
+		{"an email address with no way it was verified", authn.CreateAccount{Username: "alice1", Email: "a@example.com"}, authn.ErrInvalidArgument},
+		{"an email address verified in a way that is none", authn.CreateAccount{Username: "alice1", Email: "a@example.com", EmailVerifiedVia: authn.Verification{Via: "trust-me"}}, authn.ErrInvalidArgument},
+		{"a phone number with no way it was verified", authn.CreateAccount{Username: "alice1", Phone: "+8613812345678"}, authn.ErrInvalidArgument},
+		{"an idp proof with no provider", authn.CreateAccount{Username: "alice1", Email: "a@example.com", EmailVerifiedVia: authn.Verification{Via: "idp:"}}, authn.ErrInvalidArgument},
 		{"a username that is not one", authn.CreateAccount{Username: "no"}, authn.ErrInvalidIdentifier},
 		{"an email address that is not one", authn.CreateAccount{Email: "nobody", EmailVerifiedVia: admin}, authn.ErrInvalidIdentifier},
 		{"a phone number that is not E.164", authn.CreateAccount{Phone: "0138", PhoneVerifiedVia: admin}, authn.ErrInvalidIdentifier},
@@ -146,11 +146,11 @@ func TestCreateRefusesWhatItAdmitsNot(t *testing.T) {
 		{"an attribute value of 257 bytes", authn.CreateAccount{Attributes: map[string]string{"k": long[:257]}}, authn.ErrInvalidArgument},
 		{"a password and a hash", authn.CreateAccount{Username: "alice1", Password: "correct horse battery", PasswordHash: "$argon2id$x"}, authn.ErrInvalidArgument},
 		{"a password on a service account", authn.CreateAccount{Kind: authn.KindService, Username: "svc1", Password: "correct horse battery"}, authn.ErrInvalidArgument},
-		{"a password with no login name", authn.CreateAccount{Phone: "+8613812345678", PhoneVerifiedVia: admin, Password: "correct horse battery"}, authn.ErrIdentifierRequired},
-		{"a hash with no login name", authn.CreateAccount{PasswordHash: "$argon2id$x"}, authn.ErrIdentifierRequired},
+		{"a password with no login name", authn.CreateAccount{Phone: "+8613812345678", PhoneVerifiedVia: admin, Password: "correct horse battery", Via: "import"}, authn.ErrIdentifierRequired},
+		{"a hash with no login name", authn.CreateAccount{PasswordHash: "$argon2id$x", Via: "import"}, authn.ErrIdentifierRequired},
 		{"a password shorter than eight", authn.CreateAccount{Username: "alice1", Password: "short"}, authn.ErrPasswordPolicy},
 		{"a password that is the username", authn.CreateAccount{Username: "alice-the-user", Password: "ALICE-the-user"}, authn.ErrPasswordPolicy},
-		{"a password that is the email address", authn.CreateAccount{Email: "alice@example.com", EmailVerifiedVia: admin, Password: "Alice@Example.com"}, authn.ErrPasswordPolicy},
+		{"a password that is the email address", authn.CreateAccount{Username: "alice1", Email: "alice@example.com", EmailVerifiedVia: admin, Password: "Alice@Example.com"}, authn.ErrPasswordPolicy},
 		{"a password past 128 bytes", authn.CreateAccount{Username: "alice1", Password: strings.Repeat("p", 129)}, authn.ErrPasswordPolicy},
 		{"a hash that is not readable", authn.CreateAccount{Username: "alice1", PasswordHash: "$argon2id$v=19$m=999999999,t=1,p=1$AAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAA"}, authn.ErrInvalidCredentials},
 	} {

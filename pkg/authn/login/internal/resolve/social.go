@@ -18,7 +18,7 @@ import (
 // verified it. An address it says it did not verify is treated as absent, so
 // that nothing about the accounts that exist is answered to a caller whose claim
 // the provider does not stand behind.
-func (r *Resolver) socialUnbound(ctx context.Context, l authn.ExternalLink, ext *authn.External) (Result, error) {
+func (r *Resolver) socialUnbound(ctx context.Context, l authn.ExternalLink, ext *authn.External, username string) (Result, error) {
 	var email string
 	if ext.EmailVerified && ext.Email != "" {
 		id, err := r.accounts.Lookup(ctx, authn.IdentifierEmail, ext.Email)
@@ -35,7 +35,7 @@ func (r *Resolver) socialUnbound(ctx context.Context, l authn.ExternalLink, ext 
 	if !r.signupOpen() {
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrSignupClosed)
 	}
-	return r.createSocial(ctx, l, ext, email)
+	return r.createSocial(ctx, l, ext, email, username)
 }
 
 // socialKnownEmail resolves a social identity whose verified address is on an
@@ -118,12 +118,18 @@ func providerProof(via string) bool {
 
 // createSocial creates the account of a first social login. email is the address
 // to write on it, empty for none; it is there only when the provider declared it
-// verified and no account held it a moment ago.
-func (r *Resolver) createSocial(ctx context.Context, l authn.ExternalLink, ext *authn.External, email string) (Result, error) {
+// verified and no account held it a moment ago. username is the login name the
+// pending-signup step collected; without one no account is created.
+func (r *Resolver) createSocial(ctx context.Context, l authn.ExternalLink, ext *authn.External, email, username string) (Result, error) {
+	if username == "" {
+		return Result{}, errUsernameMissing
+	}
 	create := authn.CreateAccount{
-		Kind:        authn.KindUser,
-		DisplayName: displayName(ext.DisplayName),
-		Via:         viaSignup,
+		Kind:                authn.KindUser,
+		DisplayName:         displayName(ext.DisplayName),
+		Username:            username,
+		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
+		Via:                 viaSignup,
 	}
 	if via := (authn.Verification{Via: authn.VerifiedViaIDPPrefix + ext.Provider}); email != "" && via.Valid() {
 		create.Email, create.EmailVerifiedVia = email, via

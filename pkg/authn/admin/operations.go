@@ -73,13 +73,13 @@ type accountListInput struct {
 	Limit             int    `query:"limit" description:"The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400."`
 }
 
-// accountCreateInput is the create's body: a user account names at least one
-// login identifier; a service account is not held to that.
+// accountCreateInput is the create's body: a user account names the username it
+// is opened with; a service account is not held to that.
 type accountCreateInput struct {
 	_                struct{}          `description:"The account to create: a user account or a service account, with the login identifiers an administrator states."`
 	Kind             string            `json:"kind" required:"true" enum:"user,service" description:"user for a human account, service for a non-interactive API client."`
 	DisplayName      string            `json:"display_name" description:"The account's display name; absent writes an empty one."`
-	Username         string            `json:"username" description:"A login name to add. At least one of username, email and phone is required for a user account; a username is lower-cased before it is stored."`
+	Username         string            `json:"username" description:"The login name the account is opened with. Required for a user account; a service account may leave it out because it signs in with a service secret. It is lower-cased before it is stored."`
 	Email            string            `json:"email" description:"An email address to add, asserted by the administrator. It is trimmed and lower-cased before it is stored, and it needs email_verified_via."`
 	EmailVerifiedVia string            `json:"email_verified_via" enum:",admin,import-unverified" description:"How the administrator states the email was established: admin or import-unverified. It is required whenever email is present. The value records the administrator's assertion, not proof of ownership: an account with no proved email address is gated until the address is proved; empty or absent is refused with 400."`
 	Phone            string            `json:"phone" description:"A phone number to add, in E.164 with a leading plus sign and 7 to 15 digits; it needs phone_verified_via."`
@@ -347,10 +347,10 @@ var accountCreateOperation = speedhttp.NewOperation[accountCreateInput, AuthnAdm
 	http.MethodPost,
 	pathAccounts,
 	"Create an account",
-	"Creates a user or a service account. A user account must name at least one login identifier in this request — username, email or phone — because an account without one could not sign in; a user account that states a password additionally needs a username or email address, since a phone number is not a password login name and one without either is a 409 login-identifier-required. A service account signs in with a service secret and is not held to either rule. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.",
+	"Creates a user or a service account. A user account must name the username it is opened with, because an account is created with a login name; a missing or unusable username is 400. A service account signs in with a service secret, so it is not held to that rule. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
-		Description: "The account to create. kind is required; a user account also names at least one of username, email and phone, and email and phone each carry a verification channel in email_verified_via and phone_verified_via.",
+		Description: "The account to create. kind is required, and a user account also names the username it is opened with; email and phone are optional and each carries a verification channel in email_verified_via and phone_verified_via.",
 		Required:    true,
 		Name:        "AuthnAdminAccountCreate",
 	},

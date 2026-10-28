@@ -158,6 +158,14 @@ type RegisterAccount struct {
 	TimeZone    string // written to the i18n.tz attribute
 }
 
+// IdentifierFlags is the two axes of an email address or a phone number: whether
+// it may sign in and whether it is a contact. They are independent, and neither
+// rewrites the other.
+type IdentifierFlags struct {
+	Contact bool
+	SignIn  bool
+}
+
 // CreateAccount is what creating an account takes. An email and a phone must
 // already be verified, so each carries the way it was; there is no row awaiting
 // verification. Password and PasswordHash are alternatives.
@@ -171,8 +179,11 @@ type CreateAccount struct {
 	EmailVerifiedVia    Verification
 	Phone               string // must have been verified
 	PhoneVerifiedVia    Verification
-	Password            string // an alternative to PasswordHash
-	PasswordHash        string // PHC or legacy form, for an import
+	EmailFlags          IdentifierFlags // an import only: the source record's axes of Email
+	PhoneFlags          IdentifierFlags // an import only: the source record's axes of Phone
+	DefaultContact      bool            // an import only: the source record names Email its default contact; true only for a proved email
+	Password            string          // an alternative to PasswordHash
+	PasswordHash        string          // PHC or legacy form, for an import
 	MustChangePassword  bool
 	MFARequired         bool
 	Attributes          map[string]string

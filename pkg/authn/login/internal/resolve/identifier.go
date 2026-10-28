@@ -27,7 +27,7 @@ func (r *Resolver) fromIdentifier(ctx context.Context, req Request) (Result, err
 	case !r.signupOpen():
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrSignupClosed)
 	}
-	return r.createPhone(ctx, idf.Value)
+	return r.createPhone(ctx, idf.Value, req.Username)
 }
 
 // phoneAccount ends the resolution of a phone that belongs to an account.
@@ -46,13 +46,19 @@ func (r *Resolver) phoneAccount(ctx context.Context, req Request, id authn.Accou
 
 // createPhone creates the account of a phone that was just proved and has none.
 // The phone's uniqueness is the arbiter of a race: the login that lost it reads
-// the account that won.
-func (r *Resolver) createPhone(ctx context.Context, phone string) (Result, error) {
+// the account that won. username is the login name the pending-signup step
+// collected; without one no account is created.
+func (r *Resolver) createPhone(ctx context.Context, phone, username string) (Result, error) {
+	if username == "" {
+		return Result{}, errUsernameMissing
+	}
 	in, err := r.provision(ctx, authn.CreateAccount{
-		Kind:             authn.KindUser,
-		Phone:            phone,
-		PhoneVerifiedVia: authn.Verification{Via: authn.VerifiedViaSMSCode},
-		Via:              viaSignup,
+		Kind:                authn.KindUser,
+		Username:            username,
+		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
+		Phone:               phone,
+		PhoneVerifiedVia:    authn.Verification{Via: authn.VerifiedViaSMSCode},
+		Via:                 viaSignup,
 	}, viaSignup)
 	if err != nil {
 		return Result{}, err

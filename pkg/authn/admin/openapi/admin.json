@@ -132,7 +132,7 @@
             "type": "string"
           },
           "username": {
-            "description": "A login name to add. At least one of username, email and phone is required for a user account; a username is lower-cased before it is stored.",
+            "description": "The login name the account is opened with. Required for a user account; a service account may leave it out because it signs in with a service secret. It is lower-cased before it is stored.",
             "type": "string"
           }
         },
@@ -802,7 +802,7 @@
         "summary": "List accounts, one page at a time"
       },
       "post": {
-        "description": "Creates a user or a service account. A user account must name at least one login identifier in this request — username, email or phone — because an account without one could not sign in; a user account that states a password additionally needs a username or email address, since a phone number is not a password login name and one without either is a 409 login-identifier-required. A service account signs in with a service secret and is not held to either rule. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.",
+        "description": "Creates a user or a service account. A user account must name the username it is opened with, because an account is created with a login name; a missing or unusable username is 400. A service account signs in with a service secret, so it is not held to that rule. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.",
         "operationId": "authn.admin.accounts.create",
         "requestBody": {
           "content": {
@@ -812,7 +812,7 @@
               }
             }
           },
-          "description": "The account to create. kind is required; a user account also names at least one of username, email and phone, and email and phone each carry a verification channel in email_verified_via and phone_verified_via.",
+          "description": "The account to create. kind is required, and a user account also names the username it is opened with; email and phone are optional and each carries a verification channel in email_verified_via and phone_verified_via.",
           "required": true
         },
         "responses": {

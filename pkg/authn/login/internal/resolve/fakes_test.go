@@ -553,9 +553,19 @@ func newEnv(t *testing.T, opts ...option) *env {
 	return &env{t: t, s: s, r: r, cf: cfg}
 }
 
+// testUsername is the login name a first login opens an account with in these
+// cases: the pending-signup step that collects one from the person is not built
+// yet, so the case supplies it the way the engine will.
+const testUsername = "ann"
+
 func (e *env) resolve(p authn.Proof) (Result, error) {
 	e.t.Helper()
-	return e.r.Resolve(context.Background(), Request{Proof: p, Purpose: authn.PurposeLogin})
+	return e.resolveAs(testUsername, p)
+}
+
+func (e *env) resolveAs(username string, p authn.Proof) (Result, error) {
+	e.t.Helper()
+	return e.r.Resolve(context.Background(), Request{Proof: p, Purpose: authn.PurposeLogin, Username: username})
 }
 
 func social(provider, subject, email string, verified bool) authn.Proof {

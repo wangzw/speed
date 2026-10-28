@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -181,7 +182,9 @@ func (p *product) putMembership(ctx context.Context, id authn.AccountID, tenant 
 }
 
 // createAccount creates the account an invitation for an address with none
-// stands for.
+// stands for. The username is required: an account is opened with a login name,
+// and a request that names none creates nothing. The username is written as the
+// holder's own, through self.
 //
 // The email's verification channel is the invitation, which the account
 // capability's set admits as a proof of ownership. Via is ReasonAdmin: the
@@ -189,13 +192,19 @@ func (p *product) putMembership(ctx context.Context, id authn.AccountID, tenant 
 // and an invitation is an administrator-initiated grant, so the way the account
 // came about is recorded as an administrative one.
 func (p *product) createAccount(ctx context.Context, email string, in AcceptInvite) (authn.AccountID, error) {
+	if strings.TrimSpace(in.Username) == "" {
+		return "", fmt.Errorf("%w: accepting an invitation for a new account needs a username",
+			authn.ErrInvalidArgument)
+	}
 	account, err := p.accountAdm.Create(ctx, authn.CreateAccount{
-		Kind:             authn.KindUser,
-		DisplayName:      in.DisplayName,
-		Email:            email,
-		EmailVerifiedVia: authn.Verification{Via: VerifiedViaInvite},
-		Password:         in.Password,
-		Via:              authn.ReasonAdmin,
+		Kind:                authn.KindUser,
+		DisplayName:         in.DisplayName,
+		Username:            in.Username,
+		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
+		Email:               email,
+		EmailVerifiedVia:    authn.Verification{Via: VerifiedViaInvite},
+		Password:            in.Password,
+		Via:                 authn.ReasonAdmin,
 	})
 	if err != nil {
 		return "", err

@@ -57,7 +57,7 @@ func TestRemovingTheLastLoginNameOfAPasswordAccountIsRefused(t *testing.T) {
 			Email:            "only@example.com",
 			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin},
 			PasswordHash:     cheapHash(t, "correct horse battery"),
-			Via:              "admin",
+			Via:              "import",
 		})
 		if err != nil {
 			t.Fatalf("creating an account with only an email address: %v", err)

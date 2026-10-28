@@ -34,6 +34,7 @@ func (p *product) handleAccept(ctx context.Context, in acceptInput, meta *speedh
 	}
 	mem, err := p.Accept(ctx, AcceptInvite{
 		Token:       in.Token,
+		Username:    in.Username,
 		DisplayName: in.DisplayName,
 		Password:    in.Password,
 	})

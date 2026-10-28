@@ -44,13 +44,9 @@ func TestTheResetsDeclareTheUnseasonedRefusal(t *testing.T) {
 	}
 }
 
-// TestTheAccountCreateDeclaresBothConflictCauses holds the fragment's 409 of
-// POST /auth/accounts. The operation conflicts for two reasons — the identifier
-// is already held, or a password account has no username or email address to
-// log in with — and a document carries one response per status, so the single
-// declaration names both. The second cause is the login-identifier-required
-// refusal a generated client would otherwise never learn from the contract.
-func TestTheAccountCreateDeclaresBothConflictCauses(t *testing.T) {
+// TestTheAccountCreateDeclaresItsIdentifierConflict holds the fragment's 409 of
+// POST /auth/accounts: the identifier is already held.
+func TestTheAccountCreateDeclaresItsIdentifierConflict(t *testing.T) {
 	var doc struct {
 		Paths map[string]map[string]struct {
 			Responses map[string]struct {
@@ -69,17 +65,8 @@ func TestTheAccountCreateDeclaresBothConflictCauses(t *testing.T) {
 	if !ok {
 		t.Fatal("POST /auth/accounts declares no 409")
 	}
-	for _, cause := range []struct {
-		name string
-		text string
-	}{
-		{"the identifier is already held", "already exists"},
-		{"the password account has no login name", "no username or email address"},
-		{"the login-identifier-required code", "login-identifier-required"},
-	} {
-		if !strings.Contains(conflict.Description, cause.text) {
-			t.Errorf("the 409 reads %q, want it to name %s (%q)", conflict.Description, cause.name, cause.text)
-		}
+	if !strings.Contains(conflict.Description, "already exists") {
+		t.Errorf("the 409 reads %q, want it to name the identifier that is already held", conflict.Description)
 	}
 }
 

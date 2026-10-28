@@ -164,6 +164,12 @@ type Request struct {
 	// Account is the account the flow was started on, which is the account of a
 	// link, a step-up or an enrollment and is ignored for a login.
 	Account authn.AccountID
+	// Username is the login name a first login opens an account with. The
+	// pending-signup step that collects it from the person is not built yet, so
+	// a first login of a social provider, an SMS code or an enterprise IdP that
+	// would open an account refuses with errUsernameMissing when this is empty
+	// and creates nothing.
+	Username string
 }
 
 // Resolve resolves the proof of a request.

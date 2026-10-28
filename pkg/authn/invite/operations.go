@@ -112,12 +112,14 @@ type acceptViewInput struct {
 }
 
 // acceptInput is the request of an acceptance: the token from the path and the
-// display name and password from the JSON body. Both body members are read only
-// when the invited address has no account.
+// username, display name and password from the JSON body. The body members are
+// read only when the invited address has no account; the username is required
+// then, because an account is opened with a login name.
 type acceptInput struct {
-	_ struct{} `description:"The acceptance request; both fields are read only when the invited address has no account."`
+	_ struct{} `description:"The acceptance request; the body fields are read only when the invited address has no account."`
 
 	Token       string `path:"token" description:"The acceptance token, prefixed spd_inv_, which identifies the invitation and is the whole credential on this public route."`
+	Username    string `json:"username" description:"Login name of the account created when the invited address has no account; required then, and ignored when the address already belongs to one."`
 	DisplayName string `json:"display_name" description:"Display name of the account created when the invited address has no account; ignored when the address already belongs to one."`
 	Password    string `json:"password" description:"Initial password of the account created when the invited address has no account; ignored when the address already belongs to one."`
 }
@@ -278,13 +280,14 @@ var acceptOperation = speedhttp.NewReplyOperation[acceptInput](
 	acceptPath,
 	"Redeem an invitation, creating the account when the address has none",
 	"Redeems the invitation and writes a membership whose source is invite. When the invited address "+
-		"already belongs to an account, the membership is added to it and display_name and password are "+
-		"ignored; otherwise an enabled user account is created first, with the address verified "+
-		"through the invitation. Two concurrent redemptions of one token leave at most one winner. A "+
-		"token that is expired, revoked or already accepted is 409.",
+		"already belongs to an account, the membership is added to it and username, display_name and "+
+		"password are ignored; otherwise an enabled user account is created first, with the address "+
+		"verified through the invitation and the username as its login name. A request that creates an "+
+		"account without a username is 400. Two concurrent redemptions of one token leave at most one "+
+		"winner. A token that is expired, revoked or already accepted is 409.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
-		Description: "The display name and initial password used only when the invited address has no account yet.",
+		Description: "The username, display name and initial password used only when the invited address has no account yet.",
 		Required:    true,
 	},
 	[]speedhttp.Response{

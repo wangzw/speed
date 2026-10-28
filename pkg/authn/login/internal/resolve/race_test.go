@@ -23,7 +23,7 @@ func resolveTogether(e *env, n int, p authn.Proof) []answer {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			res, err := e.r.Resolve(context.Background(), Request{Proof: p, Purpose: authn.PurposeLogin})
+			res, err := e.r.Resolve(context.Background(), Request{Proof: p, Purpose: authn.PurposeLogin, Username: testUsername})
 			out[i] = answer{res, err}
 		}()
 	}

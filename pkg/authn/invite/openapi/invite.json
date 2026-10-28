@@ -185,7 +185,7 @@
         "summary": "Read the invitation a token points to"
       },
       "post": {
-        "description": "Redeems the invitation and writes a membership whose source is invite. When the invited address already belongs to an account, the membership is added to it and display_name and password are ignored; otherwise an enabled user account is created first, with the address verified through the invitation. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.",
+        "description": "Redeems the invitation and writes a membership whose source is invite. When the invited address already belongs to an account, the membership is added to it and username, display_name and password are ignored; otherwise an enabled user account is created first, with the address verified through the invitation and the username as its login name. A request that creates an account without a username is 400. Two concurrent redemptions of one token leave at most one winner. A token that is expired, revoked or already accepted is 409.",
         "operationId": "authn.invite.accept",
         "parameters": [
           {
@@ -203,7 +203,7 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
-                "description": "The acceptance request; both fields are read only when the invited address has no account.",
+                "description": "The acceptance request; the body fields are read only when the invited address has no account.",
                 "properties": {
                   "display_name": {
                     "description": "Display name of the account created when the invited address has no account; ignored when the address already belongs to one.",
@@ -212,13 +212,17 @@
                   "password": {
                     "description": "Initial password of the account created when the invited address has no account; ignored when the address already belongs to one.",
                     "type": "string"
+                  },
+                  "username": {
+                    "description": "Login name of the account created when the invited address has no account; required then, and ignored when the address already belongs to one.",
+                    "type": "string"
                   }
                 },
                 "type": "object"
               }
             }
           },
-          "description": "The display name and initial password used only when the invited address has no account yet.",
+          "description": "The username, display name and initial password used only when the invited address has no account yet.",
           "required": true
         },
         "responses": {

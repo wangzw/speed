@@ -48,7 +48,8 @@ func TestAcceptCreatesAnAccountThroughTheRealAccountModule(t *testing.T) {
 		}
 
 		mem, err := p.Accept(ctx, AcceptInvite{
-			Token: issued.Token, DisplayName: "Newcomer", Password: "correct horse battery staple",
+			Token: issued.Token, Username: "newcomer", DisplayName: "Newcomer",
+			Password: "correct horse battery staple",
 		})
 		if err != nil {
 			t.Fatalf("accepting an invitation for an address with no account: %v", err)
@@ -64,6 +65,21 @@ func TestAcceptCreatesAnAccountThroughTheRealAccountModule(t *testing.T) {
 			t.Errorf("the accepted membership names account %q, but the address names %q", mem.Account, id)
 		}
 
+		// The username is the account's login way.
+		identifiers, err := accounts.Identifiers(ctx, id)
+		if err != nil {
+			t.Fatalf("listing the new account's identifiers: %v", err)
+		}
+		var username *authn.Identifier
+		for i := range identifiers {
+			if identifiers[i].Kind == authn.IdentifierUsername {
+				username = &identifiers[i]
+			}
+		}
+		if username == nil || username.Value != "newcomer" || !username.SignIn || username.Contact {
+			t.Errorf("the new account's username is %+v, want newcomer as a login way and not a contact", username)
+		}
+
 		// The membership was written, with source invite.
 		got, ok, err := memberships.Membership(ctx, tenant, id)
 		if err != nil {
@@ -74,6 +90,39 @@ func TestAcceptCreatesAnAccountThroughTheRealAccountModule(t *testing.T) {
 		}
 		if !got.Active || got.Source != SourceInvite {
 			t.Errorf("membership = %+v, want active with source %q", got, SourceInvite)
+		}
+	})
+}
+
+// TestAcceptRefusesANewAccountWithNoUsername holds that an acceptance that would
+// open an account refuses without a username and creates nothing, and that the
+// invitation stays redeemable with one. An address that already belongs to an
+// account is not held to it.
+func TestAcceptRefusesANewAccountWithNoUsername(t *testing.T) {
+	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
+		verification authn.SignupVerification, memberships authn.Memberships,
+	) {
+		applyMigrations(t, handle)
+
+		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
+
+		ctx := context.Background()
+		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
+		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "needname@example.com"})
+		if err != nil {
+			t.Fatalf("issuing an invitation: %v", err)
+		}
+
+		if _, err = p.Accept(ctx, AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrInvalidArgument) {
+			t.Fatalf("accepting with no username gave %v, want ErrInvalidArgument", err)
+		}
+		if _, lookupErr := accounts.Lookup(ctx, authn.IdentifierEmail, "needname@example.com"); !errors.Is(lookupErr, authn.ErrAccountNotFound) {
+			t.Errorf("the refused acceptance left the address held: %v", lookupErr)
+		}
+
+		// The refusal is transient: the token is redeemable with a username.
+		if _, err = p.Accept(ctx, AcceptInvite{Token: issued.Token, Username: "needname"}); err != nil {
+			t.Fatalf("accepting with a username after the refusal: %v", err)
 		}
 	})
 }
@@ -92,6 +141,7 @@ func TestAcceptProvesAnAdministratorAssertedAddress(t *testing.T) {
 		ctx := context.Background()
 		created, err := admin.Create(ctx, authn.CreateAccount{
 			Kind:             authn.KindUser,
+			Username:         "preprovisioned",
 			Email:            "Preprovisioned@Example.com",
 			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin},
 			Via:              authn.ReasonAdmin,

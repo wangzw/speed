@@ -11,6 +11,13 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
+// errUsernameMissing is the failure of a first login that would open an account
+// before a username has been collected. A username is required before an
+// account is opened; the pending-signup step that collects one from the person
+// is not built yet, so these paths refuse rather than write an account whose
+// username would have to be supplied afterwards.
+var errUsernameMissing = errors.New("resolve: a first login opens no account before a username is collected")
+
 // displayNameMax is the most characters of a display name, as
 // AccountAdmin.SetDisplayName states it.
 const displayNameMax = 100

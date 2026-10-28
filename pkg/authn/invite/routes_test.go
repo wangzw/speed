@@ -178,7 +178,7 @@ func TestListAndRevokeRoutes(t *testing.T) {
 func TestRevokingAnAcceptedRouteAnswers409(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")
-	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token}); err != nil {
+	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token, Username: "alice"}); err != nil {
 		t.Fatalf("accepting: %v", err)
 	}
 	h.asAdmin()
@@ -225,7 +225,8 @@ func TestAnIncompleteCleanupOnAcceptanceAnswers503(t *testing.T) {
 	h.admin.err = authn.ErrCleanupIncomplete
 	issued := h.issue("tenant-a", "zoe@example.com")
 
-	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{"display_name": "Zoe"})
+	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token,
+		map[string]string{"username": "zoe", "display_name": "Zoe"})
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("accept status = %d, want 503: %s", w.Code, w.Body.String())
 	}

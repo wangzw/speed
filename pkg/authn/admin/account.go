@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"sort"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -197,14 +198,15 @@ func (m *product) accountQuery(in accountListInput) (authn.AccountQuery, error) 
 }
 
 // handleAccountCreate answers POST /admin/accounts. The action is
-// account.create, and a service account additionally needs client.manage. An
-// email address and a phone number are written with a way an administrator may
-// state — the administrator's own assertion or an import record — and never a
-// proof of ownership, which is not the administrator's to make. A user account
-// requires at least one login identifier: with no username, email address or
-// phone number it has no way to sign in, so the route refuses it before the
-// module writes a row nothing can use. A service account is not held to that:
-// it signs in with a service secret, not an identifier.
+// account.create, and a service account additionally needs client.manage. A
+// user account requires a username: an account is opened with a login name, so
+// the route refuses one that names none before the module writes a row nothing
+// can use. The username's form and the reserved set are the module's to judge.
+// A service account is not held to that: it signs in with a service secret, not
+// a username. An email address and a phone number are written with a way an
+// administrator may state — the administrator's own assertion or an import
+// record — and never a proof of ownership, which is not the administrator's to
+// make.
 func (m *product) handleAccountCreate(ctx context.Context, in accountCreateInput) (AuthnAdminAccountEnvelope, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -225,7 +227,7 @@ func (m *product) handleAccountCreate(ctx context.Context, in accountCreateInput
 	if !ok {
 		return AuthnAdminAccountEnvelope{}, m.bad()
 	}
-	if kind == authn.KindUser && in.Username == "" && in.Email == "" && in.Phone == "" {
+	if kind == authn.KindUser && strings.TrimSpace(in.Username) == "" {
 		return AuthnAdminAccountEnvelope{}, m.bad()
 	}
 	if err = m.gateSignup(ctx, id); err != nil {
