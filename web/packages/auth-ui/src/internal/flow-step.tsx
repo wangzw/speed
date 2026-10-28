@@ -10,8 +10,9 @@
  *
  *  - `challenge`  -> one text input per field the server asks for, plus
  *    the continue action. The label of a field the family knows by name
- *    (identifier, password, new_password, phone, code) comes from the
- *    bundle (see ./labels); an unknown name renders verbatim, so a
+ *    (identifier, password, new_password, phone, code, username) comes
+ *    from the bundle (see ./labels), along with any explanatory text it
+ *    carries; an unknown name renders verbatim and carries no hint, so a
  *    server-side field the family has no wording for shows its own name
  *    rather than a translated guess.
  *  - `factor`     -> one button per offered second factor; choosing one
@@ -65,7 +66,7 @@ import {
   HumanVerification as HumanVerificationBlock,
 } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './translation.js'
-import { fieldLabel } from './labels.js'
+import { fieldHelp, fieldLabel } from './labels.js'
 import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
 import type { OpenFlowState } from './flow.js'
 import { answerSends, stepMaySend } from './flow.js'
@@ -199,6 +200,7 @@ export function FlowStepFields({
   const labelId = useId()
 
   const labelOf = (field: AuthnField): string => fieldLabel(field, t)
+  const helpOf = (field: AuthnField): string | null => fieldHelp(field, t)
 
   const kindLabel = (kind: string): string =>
     (FACTOR_KINDS as readonly string[]).includes(kind)
@@ -211,6 +213,7 @@ export function FlowStepFields({
         <ChallengeFields
           fields={step.next.fields}
           fieldLabel={labelOf}
+          fieldHelp={helpOf}
           submit={t('signInFlow.submit')}
           busy={busy}
           onAnswer={onAnswer}
@@ -608,6 +611,7 @@ function safeJson(value: unknown): string {
 interface ChallengeFieldsProps {
   readonly fields: readonly AuthnField[]
   readonly fieldLabel: (field: AuthnField) => string
+  readonly fieldHelp: (field: AuthnField) => string | null
   readonly submit: string
   readonly busy: boolean
   readonly onAnswer: (input: Record<string, string>) => void
@@ -617,6 +621,7 @@ interface ChallengeFieldsProps {
 function ChallengeFields({
   fields,
   fieldLabel,
+  fieldHelp,
   submit,
   busy,
   onAnswer,
@@ -653,7 +658,7 @@ function ChallengeFields({
               autoComplete={field.kind === 'code' ? 'one-time-code' : 'off'}
               fullWidth
               error={invalid}
-              helperText={errorText ?? undefined}
+              helperText={errorText ?? fieldHelp(field) ?? undefined}
             />
           )}
         />

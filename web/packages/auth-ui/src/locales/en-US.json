@@ -63,6 +63,8 @@
     "unsupportedStepAction": "Back to the first step",
     "enrollTotpHelp": "Scan or copy this setup URI into your authenticator app.",
     "codeLabel": "Authenticator code",
+    "usernameLabel": "Username",
+    "usernameHelper": "3 to 64 characters: letters, digits, dot, dash or underscore. The first character must be a letter or a digit.",
     "passkeyPrompt": "Use your device to sign in with a passkey.",
     "passkeyRegisterPrompt": "Use your device to register a passkey.",
     "passkeyWaiting": "Waiting for your device…",

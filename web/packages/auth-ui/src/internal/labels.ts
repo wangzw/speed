@@ -12,7 +12,9 @@
  * bundle's name-keyed wording then wins over the label, so the modes stay
  * distinguishable on screen and each mode's label is its accessible name.
  * A field's label follows the same rule: a name the family knows renders
- * its translated wording, an unknown one renders the name verbatim.
+ * its translated wording, an unknown one renders the name verbatim. A known
+ * field may also carry explanatory text under the input; one with no wording
+ * for it carries none, rather than a generic hint that says nothing.
  */
 
 import type { AuthnField } from '@speed/auth-core'
@@ -44,6 +46,12 @@ const FIELD_LABEL_KEYS: Readonly<Record<string, string>> = {
   new_password: 'passwordSignIn.newPasswordLabel',
   phone: 'smsSignIn.phoneLabel',
   code: 'smsSignIn.codeLabel',
+  username: 'signInFlow.usernameLabel',
+}
+
+/** The bundle keys of the explanatory text under a known field. */
+const FIELD_HELP_KEYS: Readonly<Record<string, string>> = {
+  username: 'signInFlow.usernameHelper',
 }
 
 /** A translator bound to the auth-ui namespace. */
@@ -69,4 +77,11 @@ export function methodLabel(
 export function fieldLabel(field: AuthnField, t: Translate): string {
   const key = FIELD_LABEL_KEYS[field.name]
   return key === undefined ? field.name : t(key)
+}
+
+/** The explanatory text under a field's input, or `null` when the family
+ * has no wording for that field (see the module header). */
+export function fieldHelp(field: AuthnField, t: Translate): string | null {
+  const key = FIELD_HELP_KEYS[field.name]
+  return key === undefined ? null : t(key)
 }

@@ -1,5 +1,5 @@
 /**
- * FlowStepFields behaviour: the factor and enroll label vocabulary.
+ * FlowStepFields behaviour: the factor, enroll and challenge vocabulary.
  *
  * What this suite pins: a known factor or enroll kind renders its
  * translated name, a server-supplied factor label wins over it, and a
@@ -8,13 +8,17 @@
  * is the one the three flow-step copies share: account-ui and console-ui
  * render an unknown kind verbatim, so this package does too, and this
  * suite is the auth-ui side of the registered sync obligation.
+ *
+ * The same rule holds for a challenge's fields: a name the family knows
+ * renders the bundle's label and the explanatory text under it, and an
+ * unknown name renders verbatim with no hint.
  */
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { AuthnStep } from '@speed/auth-core'
+import type { AuthnField, AuthnStep } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { renderWithProviders } from '../../test-utils/render.js'
 import { FlowStepFields } from './flow-step.js'
@@ -50,6 +54,46 @@ function installCredentials(credentials: unknown): () => void {
     }
   }
 }
+
+/** A challenge step the flow parks while it waits for the given fields. */
+function challengeStep(fields: AuthnField[]): OpenFlowState {
+  return { seq: 2, state: 'signup', next: { kind: 'challenge', fields } }
+}
+
+describe('FlowStepFields challenge fields', () => {
+  it('labels the username a first login asks for and explains its shape', () => {
+    renderWithProviders(
+      <FlowStepFields
+        step={challengeStep([
+          { name: 'username', kind: 'text', required: true },
+        ])}
+        busy={false}
+        onAnswer={vi.fn()}
+        onUnsupported={vi.fn()}
+      />,
+    )
+
+    const input = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
+    expect(input).toBeInTheDocument()
+    expect(input).toHaveAccessibleDescription(zhCN.signInFlow.usernameHelper)
+  })
+
+  it('shows an unknown field name verbatim and offers it no hint', () => {
+    renderWithProviders(
+      <FlowStepFields
+        step={challengeStep([
+          { name: 'employee_id', kind: 'text', required: true },
+        ])}
+        busy={false}
+        onAnswer={vi.fn()}
+        onUnsupported={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByLabelText('employee_id')).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.signInFlow.usernameHelper)).toBeNull()
+  })
+})
 
 describe('FlowStepFields labels', () => {
   it('translates known factor kinds and shows an unknown kind as given', () => {
