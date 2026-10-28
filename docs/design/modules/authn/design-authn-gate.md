@@ -200,6 +200,8 @@ var ErrMalformedHash error
 
 `Verify` 自己解 `Basic`（base64 的 `用户名:口令`，按第一个 `:` 切）：用户名按出示的原样在表里查找，区分大小写，不在表里即快速 `Denied`，不派生；在表里则校验口令，通过时交出 `Principal{Account: "static." + 名, Methods: [MethodStatic], Assurance: AssuranceSingle, AuthTime: 此刻}`，无会话。口令表主体不是库账户，没有成员关系。条目的 PHC 写法、遗留写法与解析界限见 [design-authn-account](design-authn-account.md)，选择依据见 [ADR-authn-password-hash](../../../adr/adr-authn-password-hash.md)。
 
+口令表后端的账户命名空间是 `static.`，用户名因此不得以 `static.` 起头。`static.` 前缀属于账户标识命名空间；用户名的保留用户名清单针对系统路径与名字，规则与清单见 [design-authn-account](design-authn-account.md) 的「标识的规范化」。内置清单里的 `static` 恰好覆盖同形体，两种校验不合并，网关的前缀校验表不变。
+
 账户口令不经 `Basic`：账户口令走登录流程换会话或令牌，非交互客户端用服务账户。宿主要保留「账户口令经 `Basic`」的形态时，自写一个认领 `basic` 的后端，并且不纳入 `authn.static`，因为一个 scheme 只有一个认领者。
 
 口令表的校验缓存、失败退避与并发上限见核心算法与流程。

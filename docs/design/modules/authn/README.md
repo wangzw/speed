@@ -29,8 +29,8 @@
 | 子模块 | 状态 |
 |---|---|
 | [authn-gate](design-authn-gate.md) | 已实现 |
-| [authn-account](design-authn-account.md) | 已实现 |
-| [authn-login](design-authn-login.md) | 已实现 |
+| [authn-account](design-authn-account.md) | 部分实现 |
+| [authn-login](design-authn-login.md) | 部分实现 |
 | [authn-sms](design-authn-sms.md) | 已实现 |
 | [authn-mfa](design-authn-mfa.md) | 已实现 |
 | [authn-session](design-authn-session.md) | 已实现 |
@@ -42,5 +42,5 @@
 | [authn-events](design-authn-events.md) | 已实现 |
 | [authn-failure](design-authn-failure.md) | 已实现 |
 | [authn-threats](design-authn-threats.md) | 已实现 |
-| [authn-invite](design-authn-invite.md) | 已实现 |
+| [authn-invite](design-authn-invite.md) | 部分实现 |
 | [authn-profile](design-authn-profile.md) | 已实现 |

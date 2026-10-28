@@ -10,7 +10,7 @@
 - **校验后端的接缝与身份的形状**：凭据的形状、判决的形状、后端声明自己认领的载体与可交出的账户命名空间的途径，以及身份的类型化字段。
 - **路由访问级别的登记面**：豁免、可选认证与可冒充的登记，与请求期的命中判定。
 - **账户存储**：账户、已验证标识、联系方式预留、外部身份绑定、成员关系、口令凭据、服务密钥与失败退避。
-- **自助注册**：匿名的用户名加口令注册路由一次写入账户、用户名标识、口令凭据与邮箱未证明预留；预留的插入以 `(kind, value)` 唯一索引仲裁地址占用；注册后的登录与邮箱验证时机、未验证账户的能力限制见 REQ-signup-024 与 REQ-signup-025。未验证的判定对管理员预置与导入写出的账户同样成立，判定与创建路径无关。
+- **自助注册**：匿名的用户名加口令注册路由一次写入账户、用户名标识、口令凭据与邮箱未证明预留；预留的插入以 `(kind, value)` 唯一索引仲裁地址占用；注册后的登录与邮箱验证时机、未验证账户的能力限制见 REQ-signup-024 与 REQ-signup-025。首登开户与邀请受理同样在建号前取得一个合法用户名，没有合法用户名不建账户；用户名的格式与保留字判据归 [design-authn-account](design-authn-account.md)。未验证的判定对管理员预置与导入写出的账户同样成立，判定与创建路径无关。
 - **登录**：多种登录方式共用的多步引擎，终态是登录会话或令牌。
 - **登录会话、访问令牌与刷新令牌**：签发、校验、轮换与撤销。
 - **多因素、企业 SSO 与短信验证码**。
@@ -737,6 +737,6 @@ type Provisioner interface {
 | 加强认证处理器 `authn/guard` | 已实现 | `pkg/authn/guard/guard.go` `Require` |
 | 租户准入层 `tenant.admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
 | 链上次序的装配测试 | 已实现 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go` |
-| 匿名注册 `Signups.Register`、注册验证状态 `SignupVerification` 与未验证账户的门控 | 已实现 | `pkg/authn/account/signup.go` `(*product).Register`、`SignupStateOf`、`PendingAccountByContact`；`pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/login/start.go` `startAuthenticated`；`pkg/authn/invite/pipeline.go` `gateSignup`；`pkg/authn/admin/pipeline.go` `gateSignup`；`pkg/authn/impersonation/start.go` `checkSignup` |
+| 匿名注册 `Signups.Register`、注册验证状态 `SignupVerification` 与未验证账户的门控 | 部分实现 | `pkg/authn/account/signup.go` `(*product).Register`、`SignupStateOf`、`PendingAccountByContact`；`pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/login/start.go` `startAuthenticated`；`pkg/authn/invite/pipeline.go` `gateSignup`；`pkg/authn/admin/pipeline.go` `gateSignup`；`pkg/authn/impersonation/start.go` `checkSignup` |
 | 可选的邮件适配模块 `authn.emailcode` | 部分实现 | `pkg/authn/emailcode/emailcode.go` `Module`、`(*product).SendCode`、`(*product).render`；`pkg/authn/emailcode/messages.go` `messageCatalog`、`catalogLocales`；消息 `pkg/authn/emailcode/locales/zh-CN.json`、`en-US.json`（`authn.email.verify.subject`、`body_text`、`body_html`）；`pkg/authn/emailcode/AGENTS.md` |
 | `EmailResetCodeSender` 与 `authn.email.reset.subject`、`body_text`、`body_html` 模板 | 已实现 | `pkg/authn/email.go` `EmailResetCodeSender`；`pkg/authn/emailcode/emailcode.go` `Module`、`provisions`、`(*product).SendResetCode`、`newProduct`、`catalogCarriesReset`；`pkg/authn/emailcode/messages.go` `messageCatalog`；消息 `pkg/authn/emailcode/locales/zh-CN.json`、`en-US.json`（`authn.email.reset.subject`、`body_text`、`body_html`）；`pkg/authn/emailcode/AGENTS.md`、`pkg/authn/emailcode/emailcode_test.go` |

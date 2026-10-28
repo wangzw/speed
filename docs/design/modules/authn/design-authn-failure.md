@@ -179,6 +179,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 - SAML：响应与断言都未签名时的拒绝、签名包装、SHA-1 签名的预扫描、断言的 `IssueInstant` 不早于当前减 `assertion-max-age`。
 - JWT：头里的算法与密钥所配算法的对应，由本功能目录自己核对，不信库的默认行为。
 - 口令条目：`DecodeHash` 成功而参数越界。
+- 用户名：规范化成功而取值是保留用户名。判定在规范化之后、唯一性检查与注册退避之前（首登开户只有唯一性检查），命中即拒绝、不建户；它与格式不合同答 400 `bad-request`，不占 409 `username-taken`。读不到保留用户名集合时按内置清单判定，记一行 Error。
 - TOTP 的重放判定与 WebAuthn 的签名计数写回。
 - 网关的出口检查：后端自报的通过判决经复核才盖章。
 
@@ -235,6 +236,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrContactTaken` | 邮箱地址已被别的账户预留或持有（`authn_pending_contacts` 的 `(kind, value)` 唯一索引冲突） | 409 `email-taken` |
 | `ErrInvalidCredentials` | 未知标识、错口令、验证码错、停用、无口令，一律此哨兵 | 401 `login-failed` |
 | `ErrPasswordPolicy`、`ErrInvalidIdentifier` | 口令不合策略（过短、超长、等于本人标识、低于 OWASP 下限、与当前口令相同）；标识规范化失败（用户名、邮箱、手机格式不合） | 400 `bad-request` |
+| `ErrUsernameReserved` | 用户名落在保留用户名集合里（内置清单与 `authn.account.reserved-usernames` 的并集） | 400 `bad-request` |
 | `ErrInvalidArgument` | 写入的值越过调用允许的域：属性集越界、显示名过长、`via` 不在 `Verification` 接受的形式内、`reason` 不在 `ReasonClass` 闭集 | 管理路由 400 `bad-request`；模块在自己写下的值（会话载荷的 `idp.*` 属性）上遇到它是自身的缺陷，503 |
 | `ErrFactorLimit`、`ErrIdentifierRequired` | 某种因素已达 `max-per-kind`；账户没有可作登录名的标识而要设口令，或带口令凭据的账户删除最后一个登录名（`DELETE /auth/identifiers/:id`） | 409 `conflict`、409 `login-identifier-required` |
 | `ErrAccountUnavailable`、`ErrMethodDisabled` | 账户不可用：外部登录路径上账户停用，或要求状态、凭据行或标识行的写入发现它不满足；方法被 `disabled-methods` 关掉 | 外部登录 403 `account-unavailable`；匿名口令重置 403 `password-reset-unavailable`；403 `method-disabled` |
@@ -293,6 +295,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | settings | 请求期读取 | 内存快照，不会失败；强制类开关读不出按拒绝，调参类取声明的默认值并记 Error，决定写出产物的写路径设置（`authn.account.password-algorithm`）出错或越域时令写失败，键没有任何声明覆盖时按声明默认值写出并记一行 Error，同一种故障只记一次，不逐请求记 | — |
 | settings | 变更的传播 | 最终一致 | 有界放：设置变更的传播 |
 | settings | 自助注册开关 `authn.account.password-signup` 的读取 | 读内存快照；没有声明覆盖时按缺省 `closed`，注册答 403 `signup-closed`，发现面的入口为假。权威检查在 `Signups.Register`，路由与发现面的读取是预检查 | 拒 |
+| settings | 保留用户名集合 `authn.account.reserved-usernames` 的读取 | 读内存快照；读不出或没有声明覆盖时取声明缺省的空追加集合，内置清单照常生效，记一行 Error | — |
 | event | 发布 | 记 Warn，不阻塞业务 | 放：事件是提示 |
 | outbox | 发件箱路径的 `Stage` | `Stage` 失败令该动作失败 | 拒 |
 | audit | 强制档动作 | 先写审计、写成功才动作；写失败 503，动作不执行 | 拒 |
@@ -376,7 +379,8 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 网关的其余启动期哨兵 | 已实现 | `pkg/authn/errors.go`；`pkg/authn/gate/dispatch.go` `buildDispatch`；`pkg/authn/gate/config.go`；`pkg/authn/gate/exempt.go` `seal`；`pkg/authn/gate/gate.go` `checkMount`；`pkg/authn/internal/mount/endpoint.go` `Endpoint`；`pkg/authn/mount/config.go` |
 | 带表模块、登录、因素与密钥的启动期哨兵 | 已实现 | `pkg/authn/errors.go` `ErrNoEncryptionKey`、`ErrInvalidKey`、`ErrNotMigrated`、`ErrMethodConflict`、`ErrFactorConflict`、`ErrNoLoginMethod`、`ErrNoFactor`；`pkg/authn/account/account.go`、`pkg/authn/session/session.go`、`pkg/authn/mfa/mfa.go`、`pkg/authn/token/module.go` `Start`、`pkg/authn/token/keys.go` `loadKeySet`；`pkg/authn/mfa/totp/totp.go` `(*factor).start`、`pkg/authn/mfa/totp/register.go` `roundTrip`；`pkg/authn/sms/start.go` `checkEncryptionKey` |
 | 口令条目的哨兵 `static.ErrMalformedHash` | 已实现 | `pkg/authn/internal/password/phc.go` `ErrMalformedHash`、`Parse`；`pkg/authn/static/hash.go`；`pkg/authn/static/config.go`；`pkg/authn/account/password.go` `Verify` |
-| 运行期哨兵表 | 已实现 | `pkg/authn/ids.go` `ErrInvalidAccountID`；`pkg/authn/throttle.go` `ErrThrottled`、`ThrottledError`；`pkg/authn/errors.go`；`pkg/authn/errors_test.go` `TestTheSentinelsAreExactlyTheDesignsTables` |
+| 运行期哨兵表 | 部分实现 | `pkg/authn/ids.go` `ErrInvalidAccountID`；`pkg/authn/throttle.go` `ErrThrottled`、`ThrottledError`；`pkg/authn/errors.go`；`pkg/authn/errors_test.go` `TestTheSentinelsAreExactlyTheDesignsTables` |
+| 保留用户名的哨兵 `ErrUsernameReserved` 与校验次序 | 未实现 | `pkg/authn/errors.go`；`pkg/authn/account/normalize.go` `normalizeUsername`；`pkg/authn/account/admin.go` `(*product).Create`、`(*product).AddIdentifier`；`pkg/authn/account/signup.go` `(*product).Register`；`pkg/authn/login/internal/resolve` |
 | 网关对后端答不了、超预算、panic、零值判决的收口 | 已实现 | `pkg/authn/gate/serve.go` `verify`、`enter`、`conclude`、`admit`；`pkg/authn/internal/verdict/verdict.go` `Unspoken` |
 | 可选认证路由上凭据存在而后端答不了的方向 | 已实现 | `pkg/authn/gate/serve.go` `admit`、`credentialOf` |
 | 出口检查的补充校验与库结论的优先级 | 已实现 | `pkg/authn/gate/exitcheck.go` `checkPrincipal` |

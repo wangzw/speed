@@ -6,9 +6,9 @@
 
 族内各组件驱动会话契约的自己那一部分，登录一律按 `@speed/auth-core` 的流程操作分步推进：
 
-- `SignInScreen` 读取部署的发现文档（`session.listMethods`），按每个方法描述符的 `kind` 分组渲染：`form` 收在标签页条之后，`redirect` 渲染按钮，`enterprise` 渲染邮箱优先入口，`webauthn` 渲染通行密钥按钮与仪式。四类的先后由宿主的 `order` 决定；屏幕可安插宿主内容（`slots`）、按提供方给出图标（`providerIcon`），并可在每次起手前询问宿主的门（`beforeStart`）。`signup.password.enabled` 为真时，注册模式另加入一个合成的「口令注册」渠道并默认选中，它渲染 `PasswordRegisterForm`；password 描述符仍不带 `opens_account`，登录模式的口令渠道不变。渠道选择属于做出选择的那一侧：登录模式选中的渠道切到注册模式时不沿用。发现文档的 `password_reset.enabled` 为真且宿主给了 `onForgotPassword` 时，提交行前端、与提交键同一行渲染一个「忘记口令」文本按钮；注册模式不渲染，入口点击只报告给宿主，由宿主导航。
+- `SignInScreen` 读取部署的发现文档（`session.listMethods`），按每个方法描述符的 `kind` 分组渲染：`form` 收在标签页条之后，`redirect` 渲染按钮，`enterprise` 渲染邮箱优先入口，`webauthn` 渲染通行密钥按钮与仪式。四类的先后由宿主的 `order` 决定；屏幕可安插宿主内容（`slots`）、按提供方给出图标（`providerIcon`），并可在每次起手前询问宿主的门（`beforeStart`）。`signup.password.enabled` 为真时，注册模式另加入一个合成的「口令注册」渠道并默认选中，它渲染 `PasswordRegisterForm`；password 描述符仍不带 `opens_account`，登录模式的口令渠道不变。渠道选择属于做出选择的那一侧：登录模式选中的渠道切到注册模式时不沿用。发现文档的 `password_reset.enabled` 为真且宿主给了 `onForgotPassword` 时，提交行前端、与提交键同一行渲染一个「忘记口令」文本按钮；注册模式不渲染，入口点击只报告给宿主，由宿主导航。首次登录会开户时，屏幕的渠道表单与回调路由上的 `SocialCallbackHandler` 都经共享步进渲染器渲染用户名一步，账户在建号前取得用户名。
 - `PasswordSignInForm` 起一条 `method: 'password'` 的登录流程，按字段提交与后续步答复；`SMSSignInForm` 起 `method: 'sms'` 的流程，两步（手机号步与验证码步）收在同一个表单里；描述符为其他 `form` 方法给出首步字段时，由通用描述符表单驱动。三个可单独挂载的入口都接受同一个 `beforeStart` 门。两个登录渠道的表单在任一字段开始编辑时清除上一次尝试的提示——整个尝试的失败横幅、该步自带的文案与该字段的错误文案，都不与被改动后的输入并排。渠道的错误位是 flex 流里的一行：空着的反馈区不占行，失败横幅才以一行出现。
-- `PasswordRegisterForm` 渲染注册表单：用户名、邮箱、口令与确认口令（确认口令只在客户端比较，不上线）。邮箱字段先按服务端规则本地校验（去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节），不合格在该字段渲染 `register.invalidEmail` 且不发请求；服务端答 409 `authn.email_taken` 时，邮箱字段渲染 `register.emailTaken` 并把焦点移到该字段——注册在事务里预留地址，被拒的是这一个值，不是整次尝试。它经 `session.register` 一次请求建号，注册不建立会话；成功后以同一凭据起一条 `method: 'password'` 的既有登录流程，走通则报 `mode: 'register'`、`channel: 'password'`，自动登录被拒则退回登录表单并预填用户名。自动登录落地（首次或重试）后表单进入「已登录」态，收起「账户已创建，请登录」与重试动作；宿主不导航时界面也不停留在「已登录却仍提示请登录」。注册被 429 拒绝且应答带 `Retry-After` 时，提交键按该等待禁用、横幅给出秒数，等待到点后自行恢复；应答没有该头时保持立即可重试，文案说明原因。400 不映射为口令策略，走通用 `errors.authn.*` 文案。登录表单不复用为注册表单：`PasswordSignInForm` 的标签与 `autoComplete="current-password"` 是登录语义，注册由这个独立表单承担。
+- `PasswordRegisterForm` 渲染注册表单：用户名、邮箱、口令与确认口令（确认口令只在客户端比较，不上线）。邮箱字段先按服务端规则本地校验（去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节），不合格在该字段渲染 `register.invalidEmail` 且不发请求；服务端答 409 `authn.email_taken` 时，邮箱字段渲染 `register.emailTaken` 并把焦点移到该字段——注册在事务里预留地址，被拒的是这一个值，不是整次尝试。它经 `session.register` 一次请求建号，注册不建立会话；成功后以同一凭据起一条 `method: 'password'` 的既有登录流程，走通则报 `mode: 'register'`、`channel: 'password'`，自动登录被拒则退回登录表单并预填用户名。自动登录落地（首次或重试）后表单进入「已登录」态，收起「账户已创建，请登录」与重试动作；宿主不导航时界面也不停留在「已登录却仍提示请登录」。注册被 429 拒绝且应答带 `Retry-After` 时，提交键按该等待禁用、横幅给出秒数，等待到点后自行恢复；应答没有该头时保持立即可重试，文案说明原因。400 不映射为口令策略（形状与保留字拒绝同样走通用 `errors.authn.*` 文案）。登录表单不复用为注册表单：`PasswordSignInForm` 的标签与 `autoComplete="current-password"` 是登录语义，注册由这个独立表单承担。
 - `SocialSignInSection` 渲染一组 redirect 方法，每个方法起一条登录流程；开始响应的 `redirect` 步交出授权地址，由宿主导航。
 - `SocialCallbackHandler` 在宿主的回调路由上读回那条流程（`session.readFlow`），据其状态续接。
 - `SignOutButton` 驱动 `session.logout()`；`SignOutMenuItem` 是同一动作在宿主账户菜单里的形态，先调宿主的 `onActivate`（通常关闭菜单）再驱动登出，吞掉拒绝（登出是终局的，本地会话无论如何翻成匿名，菜单项也随之消失）。
@@ -246,7 +246,7 @@ interface ImpersonationNoticeBannerProps {
 function ImpersonationNoticeIndicator(): ReactElement | null
 ```
 
-`SignInScreen` 的 `discovery` 缺省时经 `session.listMethods()` 读一次部署的发现文档（`useSignInDiscovery`）；给出时以注入的文档为准，不发起读取（SSR、测试）。注册入口的可见性由 `discovery.signup.enabled` 决定，并要求 `discovery.signup.password.enabled` 为真或至少一个可见方法带 `opens_account`。注册模式下屏上的登录渠道（表单渠道条、重定向类、企业类与通行密钥）都只列带 `opens_account` 的方法；`signup.password.enabled` 为真时另加入一个合成的「口令注册」渠道，它渲染 `PasswordRegisterForm` 并默认选中。合成渠道不来自方法描述符，password 描述符仍不带 `opens_account`；没有合成渠道时，表单渠道默认选中第一个。渠道选择属于做出选择的那一侧：登录模式选中的渠道切到注册模式时不沿用，注册模式落到它自己的默认渠道。说明文字因此不再对「所用的方式能否创建账户」设条件。标题、说明与切换按钮按模式命名（注册模式的标题是「选择登录方式」，切回去的按钮是「已有账户？登录」），两种模式下没有同名的按钮。登录模式下，`signup.enabled` 为真且屏上有带 `opens_account` 的短信渠道时，渠道下给一句同形的说明：未登记的手机号会创建账户——这句话对每个号码都一样，不泄露号码是否已登记；没有这样的短信渠道时不给这句话，因为它点名手机号。短信验证码步骤的拒绝用该步骤自己的文案（验证码有误或已失效，可重新输入或重新获取），不用口令渠道的通用句；手机号在本地校验不过时，焦点移到手机号字段，错误文字进入 live region，每次被拒的提交各播报一次，同一段文字重复被拒时也重新播报。`onSignedIn` 带一个 `context`：登录成功时屏幕所处的模式与走通的渠道，宿主据此区分一次注册与一次登录：注册模式下经口令注册之后宿主引导验证邮箱，经短信渠道登录之后宿主引导账户设置用户名与口令（[starters](../design-starters.md)，[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。屏幕自己驱动到完成的渠道（口令、短信、通行密钥与描述符表单）报出方法名，注册渠道报 `password`、模式为 `register`；重定向类与企业类渠道经回调路由完成，不经本屏，也就不带上下文；单个渠道表单与回调处理器的 `onSignedIn` 形状不变。`initialError` 是宿主从屏幕之外带回的错误码，渲染在渠道之上、走与各渠道相同的内联错误与白名单：一次被拒的社交回调由服务端以 `303` 落到应用内并在 URL 片段里带机器码（[authn-login](../authn/design-authn-login.md)），宿主读出、按 api-client 的推导归一成 `authn.<码>` 后交给它；屏幕不读 URL，也不管码从哪里来。`initialErrorEmail` 是 `link-required` 落地片段里 `authn_email` 带出的冲突地址，屏幕经 ui-kit `InlineError` 的 `detail` 在拒绝句下方渲染一行 `social.linkRequiredEmail`，文案取自 bundle 的 `social` 段、`{{email}}` 取该值；地址已由服务端掩码，屏幕按原样显示，不再次处理。只有 `link-required` 带这个 prop，其他码不渲染该行。地址行属于同一条 `role=alert` 横幅，读屏在横幅出现时把拒绝句与地址一并播报。未知 `kind` 不渲染也不崩；方法显示名先按方法名取 `auth-ui` 命名空间里区分模式的词条（同一品牌经多种方式到达部署时，`wechat.mp` 与 `wechat.web` 的专属文案彼此可辨，且就是各自按钮的可及名），没有专属词条时取描述符的 `label`，再缺失时按方法名取通用词条，最后退回方法名本身。
+`SignInScreen` 的 `discovery` 缺省时经 `session.listMethods()` 读一次部署的发现文档（`useSignInDiscovery`）；给出时以注入的文档为准，不发起读取（SSR、测试）。注册入口的可见性由 `discovery.signup.enabled` 决定，并要求 `discovery.signup.password.enabled` 为真或至少一个可见方法带 `opens_account`。注册模式下屏上的登录渠道（表单渠道条、重定向类、企业类与通行密钥）都只列带 `opens_account` 的方法；`signup.password.enabled` 为真时另加入一个合成的「口令注册」渠道，它渲染 `PasswordRegisterForm` 并默认选中。合成渠道不来自方法描述符，password 描述符仍不带 `opens_account`；没有合成渠道时，表单渠道默认选中第一个。渠道选择属于做出选择的那一侧：登录模式选中的渠道切到注册模式时不沿用，注册模式落到它自己的默认渠道。说明文字因此不再对「所用的方式能否创建账户」设条件。标题、说明与切换按钮按模式命名（注册模式的标题是「选择登录方式」，切回去的按钮是「已有账户？登录」），两种模式下没有同名的按钮。登录模式下，`signup.enabled` 为真且屏上有带 `opens_account` 的短信渠道时，渠道下给一句同形的说明：未登记的手机号会创建账户——这句话对每个号码都一样，不泄露号码是否已登记；没有这样的短信渠道时不给这句话，因为它点名手机号。短信验证码步骤的拒绝用该步骤自己的文案（验证码有误或已失效，可重新输入或重新获取），不用口令渠道的通用句；手机号在本地校验不过时，焦点移到手机号字段，错误文字进入 live region，每次被拒的提交各播报一次，同一段文字重复被拒时也重新播报。`onSignedIn` 带一个 `context`：登录成功时屏幕所处的模式与走通的渠道，宿主据此区分一次注册与一次登录：注册模式下经口令注册之后宿主引导验证邮箱，经短信渠道登录之后宿主按账户状态引导完成账户设置，新开户的账户在建号前已取得用户名、设置页只缺口令，已经存在而无用户名的账户仍在账户面补名（[starters](../design-starters.md)、[account-ui](design-web-account-ui.md)，[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。屏幕自己驱动到完成的渠道（口令、短信、通行密钥与描述符表单）报出方法名，注册渠道报 `password`、模式为 `register`；重定向类与企业类渠道经回调路由完成，不经本屏，也就不带上下文；单个渠道表单与回调处理器的 `onSignedIn` 形状不变。`initialError` 是宿主从屏幕之外带回的错误码，渲染在渠道之上、走与各渠道相同的内联错误与白名单：一次被拒的社交回调由服务端以 `303` 落到应用内并在 URL 片段里带机器码（[authn-login](../authn/design-authn-login.md)），宿主读出、按 api-client 的推导归一成 `authn.<码>` 后交给它；屏幕不读 URL，也不管码从哪里来。`initialErrorEmail` 是 `link-required` 落地片段里 `authn_email` 带出的冲突地址，屏幕经 ui-kit `InlineError` 的 `detail` 在拒绝句下方渲染一行 `social.linkRequiredEmail`，文案取自 bundle 的 `social` 段、`{{email}}` 取该值；地址已由服务端掩码，屏幕按原样显示，不再次处理。只有 `link-required` 带这个 prop，其他码不渲染该行。地址行属于同一条 `role=alert` 横幅，读屏在横幅出现时把拒绝句与地址一并播报。未知 `kind` 不渲染也不崩；方法显示名先按方法名取 `auth-ui` 命名空间里区分模式的词条（同一品牌经多种方式到达部署时，`wechat.mp` 与 `wechat.web` 的专属文案彼此可辨，且就是各自按钮的可及名），没有专属词条时取描述符的 `label`，再缺失时按方法名取通用词条，最后退回方法名本身。
 
 屏幕的装配面由宿主决定，缺省不放宽也不收窄：
 
@@ -342,6 +342,7 @@ sequenceDiagram
 | 社交渠道 | `SocialProvider` | 方法名字符串，定义在 `web/packages/auth-ui/src/SocialSignInSection.tsx` |
 | 社交渠道配置 | `SocialProviderConfig` | 一个方法加它的品牌标签、宿主回调地址与可选图标 |
 | 一步 | `AuthnStep` | auth-core 手写的流程步模型，步进渲染器按 `kind` 分派 |
+| 首登用户名步 | 流程的 `challenge` 步 | 单个 `username` 文本字段，必填；标签取本族字段词表，答复经 `session.answerFlow` 发出，服务端在建号前判定形状、保留字与唯一性 |
 | 邀请视图 | `InvitationSummary` | 受理面渲染的邀请字段：租户、地址、状态、期限 |
 | 邀请操作 | `InvitationOperations` | 宿主绑定的两个邀请操作：读取与受理 |
 | 受理入参 | `AcceptInvitationInput` | 受理可带的显示名与初始口令（地址尚无账户时用） |
@@ -367,6 +368,8 @@ sequenceDiagram
 3. 每一步的答复经 `session.answerFlow` 发出（本包不直接触网）；流程落定后分叉：完成触发一次回调；被拒按错误码渲染一条 `role="alert"` 横幅、状态原地不变、可重试。
 4. 切换渠道时旧表单一并卸载，它的半填状态与整次失败的横幅随之消失——渠道的错误不跨面泄漏。
 
+首登开户的用户名一步是这条管线的又一个 `challenge` 步。流程解析出这次登录会新开账户时，服务端在下一步索取 `username` 一个字段；答复经 `session.answerFlow` 发出，用户名合法才建账户并落到完成。字段标签取本族对 `username` 的词条（`internal/labels.ts` 的字段词表），本地只校验必填，形状、保留字与唯一性都由服务端判定，屏幕不复述这些规则。服务端答 409 `username-taken` 时文本落在用户名字段（`aria-invalid`、`aria-describedby`），焦点移到该字段，步骤原地保留，换一个用户名重试，不渲染整次尝试横幅；答 400 `bad-request`（形状或保留字）时渲染该码的横幅，步骤同样原地保留。
+
 ### 注册一次性建号
 
 注册与登录是两个操作：注册经 `session.register` 一次请求写入账户，不建立会话、不发送邮件；会话仍由随后的口令登录流程建立。表单的处理次序是：
@@ -379,15 +382,17 @@ sequenceDiagram
 
 注册结果的可及性：成功的注册由先挂空、下一 tick 再填文本的 `role="status"` 区域播报一次，失败横幅为 `role="alert"`。注册模式下经短信渠道开户时的验证码重发控件在服务端给出的重发间隔内禁用并说明原因；账户面的验证节遵循同一倒计时规则（[account-ui](design-web-account-ui.md)）。
 
+首登开户的用户名一步不是注册：它由登录流程在解析出这次登录会新开账户之后索取，答复经 `session.answerFlow` 发出，不调用 `session.register`（[auth-core](design-web-auth-core.md)）。
+
 ### 短信码的两步
 
-`SMSSignInForm` 先以手机号起一条 `method: 'sms'` 的流程，把两步收在同一个表单里：`challenge` 步发出通知用 `role="status"` 报出接收号码；重发以同一号码再起一条流程（发码是方法 `Begin` 的职责，同一条流程内没有重发这一步）；改号退回第一步。一次新的发送（首发送、重发或改号）把验证码字段清空，使对着上一码输入的旧值不能搭上新一码。手机号步用 ui-kit 的两段式控件（`PhoneNumberField`）：国家/地区选择器与本地号码，提交前组装成 E.164。选择器初始取宿主给出的手机号缺省国家/地区（ui-kit 的 `PhoneCountryDefaultProvider`），缺席时取浏览器语言所指的国家/地区（zh-CN → +86，en-US → +1），按国家名、ISO 码或国际区号搜索；粘贴的完整国际号码会自行切换选择器并填入本地部分。号码按所选国家/地区在本地校验，位数不足等失败带出区号（「该号码在 +86 下位数不完整」）、不发起请求；服务端自己的拒绝文案只留给它能判断的失败（地区不支持、发送策略拒绝）。
+`SMSSignInForm` 先以手机号起一条 `method: 'sms'` 的流程，把两步收在同一个表单里：`challenge` 步发出通知用 `role="status"` 报出接收号码；重发以同一号码再起一条流程（发码是方法 `Begin` 的职责，同一条流程内没有重发这一步）；改号退回第一步。一次新的发送（首发送、重发或改号）把验证码字段清空，使对着上一码输入的旧值不能搭上新一码。手机号步用 ui-kit 的两段式控件（`PhoneNumberField`）：国家/地区选择器与本地号码，提交前组装成 E.164。选择器初始取宿主给出的手机号缺省国家/地区（ui-kit 的 `PhoneCountryDefaultProvider`），缺席时取浏览器语言所指的国家/地区（zh-CN → +86，en-US → +1），按国家名、ISO 码或国际区号搜索；粘贴的完整国际号码会自行切换选择器并填入本地部分。号码按所选国家/地区在本地校验，位数不足等失败带出区号（「该号码在 +86 下位数不完整」）、不发起请求；服务端自己的拒绝文案只留给它能判断的失败（地区不支持、发送策略拒绝）。未登记的手机号且首登开户开放时，验证码通过后流程停在用户名一步，由同一个表单的步进渲染器渲染；提交合法用户名才建账户并完成登录，用户名被拒时步骤原地保留、换名重试。
 
 部署要求人机验证时，会发送验证码的步骤上方渲染 ui-kit 的 `HumanVerification` 块并交出 `human_proof`。短信渠道自己的手机号步与验证码步是其中一处：首次发送、重发与停在第二因素时选择短信都带证明，每次发送之后消耗当前证明并取一份新的，证明未就绪时发送控件禁用。短信渠道以外的渠道表单把流程停下的步骤交给共享的 `HumanGatedFlowStep`：步骤可能发送时（选中短信第二因素，或挑战声明了手机号且提交了它）渲染同一个块，由 `answerSends` 判定这一次答复是否发送，发送时把证明交给 `useFlowDriver` 的 `answer`；口令登录与注册、社交回跳、描述符表单与通行密钥因此都覆盖。`SignInScreen` 把已读到的发现文档的 `human` 经 `humanGate` 交给表单，单独挂载的表单自行读一次方法文档（[auth-core](design-web-auth-core.md) 的「人机验证证明」）。服务端对缺失、无效、过期或再次出示的证明答 403 `human-verification-required`，表单经错误白名单渲染本节文案；过长的证明答 400，提供方或存储不可用答 503。
 
 ### 社交登录与回调
 
-`SocialSignInSection` 对某个渠道调 `session.startFlow`；开始应答的 `redirect` 步给出授权地址，经 `onAuthorizeUrl` 交给宿主，宿主把提供方的重定向引到该渠道的回调路由，在那里渲染 `SocialCallbackHandler`。**提供方自己的 `redirect_uri` 由服务端按部署的公开地址拼出，客户端不传**；`SocialProviderConfig` 的回调地址是宿主自己的回调路由，作为流程的 `return_to` 发出，使提供方的一次往返最终落回它。回跳以 303 落回 `return_to` 时流程停在就绪步（令牌不能放进回跳 URL）；处理器在挂载时调 `session.readFlow` 读回流程，若应答为 `next.kind = complete` 则以 `step: 'complete'` 取走令牌、登录落地，触发一次 `onSignedIn`；若流程仍停在一步（如需第二因素或登记因素）则渲染该步续接。挂载时会话已是已认证的，是一次登录完成之后重入回调路由：处理器不读流程，再触发一次 `onSignedIn`，由宿主把访客引向别处。
+`SocialSignInSection` 对某个渠道调 `session.startFlow`；开始应答的 `redirect` 步给出授权地址，经 `onAuthorizeUrl` 交给宿主，宿主把提供方的重定向引到该渠道的回调路由，在那里渲染 `SocialCallbackHandler`。**提供方自己的 `redirect_uri` 由服务端按部署的公开地址拼出，客户端不传**；`SocialProviderConfig` 的回调地址是宿主自己的回调路由，作为流程的 `return_to` 发出，使提供方的一次往返最终落回它。回跳以 303 落回 `return_to` 时流程停在就绪步（令牌不能放进回跳 URL）；处理器在挂载时调 `session.readFlow` 读回流程，若应答为 `next.kind = complete` 则以 `step: 'complete'` 取走令牌、登录落地，触发一次 `onSignedIn`；若流程仍停在一步（如需第二因素或登记因素）则渲染该步续接；若这次回跳会为新外部身份开户，该步就是用户名一步，提交合法用户名才建账户并完成登录，被拒时步骤原地保留、换名重试。挂载时会话已是已认证的，是一次登录完成之后重入回调路由：处理器不读流程，再触发一次 `onSignedIn`，由宿主把访客引向别处。
 
 ### 本部署不提供回调落点时
 
@@ -402,7 +407,7 @@ sequenceDiagram
 
 ### 企业登录
 
-企业入口先收一个邮箱，调 `session.discoverSso(email)` 得到该邮箱域映射的提供方（`POST /api/v1/auth/sso/discover`，恒同形同长，无匹配时为空列表）。**提供方清单不进发现文档**：它按域发现，不泄露账户存在性（[authn-sso](../authn/design-authn-sso.md)），故企业入口单独读它。空列表渲染一条「无匹配」通知与一个「换一个邮箱」按钮；有提供方时按每个提供方的名字渲染一个按钮，点击以该提供方的协议为方法、其 id 为 `input.provider` 起一条流程，`redirect` 步经 `onAuthorizeUrl` 交给宿主导航。
+企业入口先收一个邮箱，调 `session.discoverSso(email)` 得到该邮箱域映射的提供方（`POST /api/v1/auth/sso/discover`，恒同形同长，无匹配时为空列表）。**提供方清单不进发现文档**：它按域发现，不泄露账户存在性（[authn-sso](../authn/design-authn-sso.md)），故企业入口单独读它。空列表渲染一条「无匹配」通知与一个「换一个邮箱」按钮；有提供方时按每个提供方的名字渲染一个按钮，点击以该提供方的协议为方法、其 id 为 `input.provider` 起一条流程，`redirect` 步经 `onAuthorizeUrl` 交给宿主导航。即时开通的提供方在回跳后于开户前停在用户名一步，由回调路由上的 `SocialCallbackHandler` 渲染；预置开通不建账户，不出现这一步。
 
 ### 通行密钥登录
 
@@ -456,6 +461,8 @@ sequenceDiagram
 | 注册被拒为 403 `signup-closed` 或 503 `unavailable` | 一条 `role="alert"` 横幅渲染应答的错误码文本，表单保持可重试 |
 | 注册被拒为 429 `throttled` | 一条横幅渲染该码文本；提交控件按 `Retry-After` 禁用至该时刻并说明原因 |
 | 注册被拒为 400 `bad-request`（格式或口令策略） | 一条 `role="alert"` 横幅渲染应答的错误码文本；不在客户端复述策略数值 |
+| 首登用户名一步被拒为 409 `username-taken` | 文本落在用户名字段（`aria-invalid`、`aria-describedby`），焦点移到该字段；步骤原地保留，换一个用户名重试；不渲染整次尝试横幅 |
+| 首登用户名一步被拒为 400 `bad-request`（形状或保留字） | 一条 `role="alert"` 横幅渲染应答的错误码文本；步骤原地保留，可重试 |
 | 注册成功而自动口令登录被拒 | 切回登录表单并以 `defaultUsername` 预填用户名，说明账户已创建；不重发注册请求 |
 | 注册成功 | 先挂空、再填文本的 `role="status"` 播报「账户已创建」，随后进入自动登录 |
 | 口令渠道的口令不符（`authn.login_failed`） | 文本取 `passwordSignIn.loginFailed`，不提验证码，也不说明是不存在还是不符；作为口令字段的说明渲染，字段 `aria-invalid` 且 `aria-describedby` 指向该文本，焦点移到口令字段；不渲染整次尝试横幅。后续步骤（如第二因素）被拒时仍按上一行渲染 |
@@ -534,3 +541,4 @@ sequenceDiagram
 | 登录屏的「忘记口令」入口（发现面提供匿名口令重置且宿主给了 `onForgotPassword`） | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreenProps.onForgotPassword`、`forgotPasswordEntry`；`web/packages/auth-ui/src/SignInScreen.test.tsx` |
 | 匿名口令重置屏 `PasswordResetScreen`（宿主绑定的重置操作与渠道选择） | 已实现 | `web/packages/auth-ui/src/PasswordResetScreen.tsx` `PasswordResetScreen`、`PasswordResetOperations`、`PasswordResetScreenProps`；`web/packages/auth-ui/src/index.ts`；`web/packages/auth-ui/src/PasswordResetScreen.test.tsx` |
 | `passwordReset` i18n 节与 `passwordSignIn.forgotPassword`（zh-CN 与 en-US 键集一致） | 已实现 | `web/packages/auth-ui/src/locales/en-US.json`、`zh-CN.json`；`web/packages/auth-ui/src/resources.test.ts` |
+| 首登开户的用户名一步（登录流程在开户前索取用户名） | 部分实现 | `web/packages/auth-ui/src/internal/flow-step.tsx` `FlowStepFields`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver`；`web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler`；`web/packages/auth-ui/src/internal/labels.ts` `fieldLabel` |

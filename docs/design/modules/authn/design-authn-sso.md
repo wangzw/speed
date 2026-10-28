@@ -17,7 +17,7 @@
 ### 非职责
 
 - **不运行登录流程。** 流程记录、状态机迁移、比较并交换、账户解析、会话与令牌的发放归登录引擎（[design-authn-login](design-authn-login.md)）；方法只回答「这次回跳证明了什么」，交出 `Proof`。
-- **不决定账户。** 外部身份的绑定键、自动关联、首登开户、预置账户匹配与 JIT 并入的判据归 `authn.account`（[design-authn-account](design-authn-account.md)）。本模块只提供其输入：提供方的 `provisioning`、`merge_existing`、所属租户与邮箱域的验证状态。
+- **不决定账户。** 外部身份的绑定键、自动关联、首登开户、预置账户匹配与 JIT 并入的判据归 `authn.account`（[design-authn-account](design-authn-account.md)）。本模块只提供其输入：提供方的 `provisioning`、`merge_existing`、所属租户与邮箱域的验证状态。用户名不由提供方断言提供、不经属性映射写入，它在建户前由登录引擎向用户取得（[design-authn-login](design-authn-login.md)、[ADR-authn-username-required](../../../adr/adr-authn-username-required.md)）。
 - **不合成保障等级。** 方法只报 `Proof.IDPAsserted` 这一事实，是否采信、等级是多少只在 `authn.mfa` 一处合成（[design-authn-mfa](design-authn-mfa.md)）。
 - **不执行租户级强制 SSO。** `tenant.admission.require-sso` 在请求期由租户准入层执行（[design-tenant-admission](../tenant/design-tenant-admission.md)）；本模块只回答「这个提供方属于哪个租户」。
 - **不写管理面路由，不做判定。** 提供方、域与元数据刷新的 HTTP 路由、`Decider` 的判定与强制审计归 `authn.admin`（[design-authn-admin](design-authn-admin.md)）。
@@ -355,7 +355,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 - `email` 只在首登开户或匹配预置账户时使用，之后不更新账户；映射缺邮箱不是错误，只是没有关联线索。
 - `display_name` 只在首登开户时写入。
 - `attr.<名>` 经根包的界限校验后写进该次登录会话的载荷，键加 `idp.` 前缀，值在 UTF-8 字符边界截断到 128 字节（分项上限，见 [design-authn-gate](design-authn-gate.md#出口检查)）；随该会话终结，不写入账户。
-- `provisioning` 为 `jit` 时，开户所需的映射缺失（开户必需 `email`）按首登失败处理，返回 `ErrNotProvisioned`，不使用空值开户。
+- `provisioning` 为 `jit` 时，开户所需的映射缺失（开户必需 `email`）按首登失败处理，返回 `ErrNotProvisioned`，不使用空值开户。用户名不是提供方断言的事实、不在属性映射里，`ErrNotProvisioned` 的判据仍只看邮箱映射；用户名在邮箱齐备之后、建户之前由登录引擎向用户取得，没有合法用户名同样不建户。
 
 ### 进程内缓存
 
