@@ -24,6 +24,12 @@
  * rather than being born with it. A read that failed, and a completion whose
  * state is not 'linked', render their code text in the InlineError banner
  * under a retry.
+ * A callback the server refused never reaches this handler as a flow: it
+ * lands back on the callback route with its problem code in the URL
+ * fragment (the same shape a refused login lands with), and the host hands
+ * that code in as `initialError`. The handler words the code for this
+ * surface, reads no flow and offers no retry -- the server already consumed
+ * the flow, so the only action is `onDismiss`, back to the account surface.
  * The `link` flow never signs anyone in
  * (a binding is not a login), so there is no signed-elsewhere outcome.
  * Nothing here navigates: the callbacks are the host's.
@@ -71,6 +77,19 @@ export interface BindingCallbackHandlerProps {
    * before and reads no discovery document.
    */
   readonly absent?: ReactNode
+  /**
+   * The problem code a refused callback landed with, read by the host from
+   * the URL fragment. Given, the handler words that code for this surface
+   * and offers no retry: the server already consumed the flow and said what
+   * went wrong, so the same round trip cannot succeed again. The flow is
+   * not read.
+   */
+  readonly initialError?: string
+  /**
+   * The refused callback's only action: the host returns to the account
+   * surface. Without one the message stands alone.
+   */
+  readonly onDismiss?: () => void
 }
 
 /**
@@ -98,6 +117,8 @@ export function BindingCallbackHandler({
   session,
   onBound,
   absent,
+  initialError,
+  onDismiss,
 }: BindingCallbackHandlerProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
@@ -243,6 +264,12 @@ export function BindingCallbackHandler({
   }, [reading])
 
   useEffect(() => {
+    // A refused landing carries its code in the fragment: the server already
+    // consumed the flow and said what went wrong, so there is no flow to
+    // read and nothing a retry could change.
+    if (initialError !== undefined) {
+      return
+    }
     const run = ++runRef.current
     setPhase('reading')
     setErrorCode(null)
@@ -263,7 +290,7 @@ export function BindingCallbackHandler({
         }
       }
     })()
-  }, [attempt, session, applyState])
+  }, [attempt, initialError, session, applyState])
 
   const handleAnswer = useCallback(
     async (answer: FlowStepAnswer): Promise<void> => {
@@ -297,6 +324,38 @@ export function BindingCallbackHandler({
 
   const retry = (): void => {
     setAttempt((value) => value + 1)
+  }
+
+  if (initialError !== undefined) {
+    // The server's own refusal: this surface says what it means here -- a
+    // conflicting social identity is already held by another account, not
+    // "the account changed" -- and the way out is back to the account
+    // surface, never a repeat of the round trip.
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: 1.5,
+          width: '100%',
+        }}
+      >
+        <InlineError
+          code={initialError}
+          message={
+            initialError === 'authn.conflict'
+              ? t('bindingCallback.conflict')
+              : undefined
+          }
+        />
+        {onDismiss === undefined ? null : (
+          <Button variant="outlined" onClick={onDismiss}>
+            {t('bindingCallback.backToAccount')}
+          </Button>
+        )}
+      </Box>
+    )
   }
 
   if (absentShown && absent !== undefined) {

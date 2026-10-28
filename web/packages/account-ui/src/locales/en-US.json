@@ -109,7 +109,9 @@
     "pending": "Completing the link…",
     "done": "Social account linked.",
     "continueLabel": "Continue",
-    "retry": "Retry"
+    "retry": "Retry",
+    "conflict": "This social account is already linked to another account.",
+    "backToAccount": "Back to account settings"
   },
   "mfa": {
     "title": "Two-step verification",

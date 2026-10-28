@@ -19,10 +19,21 @@ import { useAccountUiErrorText } from './error-text.js'
 export interface InlineErrorProps {
   /** The code to render, or null for no error (renders nothing). */
   readonly code: string | null
+  /**
+   * Text rendered instead of the code's resolved sentence, for a surface
+   * that words this particular code for itself. The banner shell, its role
+   * and its announcement stay the shared ones.
+   */
+  readonly message?: string
 }
 
 /** The surface's whole-attempt failure banner, one role="alert" per error. */
-export function InlineError({ code }: InlineErrorProps) {
+export function InlineError({ code, message }: InlineErrorProps) {
   const resolve = useAccountUiErrorText()
-  return <SharedInlineError code={code} resolve={resolve} />
+  return (
+    <SharedInlineError
+      code={code}
+      resolve={message === undefined ? resolve : () => message}
+    />
+  )
 }

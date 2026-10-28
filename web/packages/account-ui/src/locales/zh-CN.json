@@ -109,7 +109,9 @@
     "pending": "正在完成绑定…",
     "done": "社交账号已绑定。",
     "continueLabel": "继续",
-    "retry": "重试"
+    "retry": "重试",
+    "conflict": "这个社交账号已关联到另一个账户。",
+    "backToAccount": "返回账户设置"
   },
   "mfa": {
     "title": "两步验证",

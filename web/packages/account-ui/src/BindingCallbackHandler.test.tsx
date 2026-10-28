@@ -326,6 +326,95 @@ describe('BindingCallbackHandler', () => {
     await waitFor(() => expect(onBound).toHaveBeenCalledTimes(1))
   })
 
+  describe('a refused callback', () => {
+    /** A rig whose responder fails the case if anything is read: a refused
+     * landing has no flow left to ask about. */
+    function refusedRig() {
+      const respond: RealResponder = (call: RealCall) => {
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      return rig
+    }
+
+    it('words the conflict for this surface, reads no flow and offers only the way back', async () => {
+      const rig = refusedRig()
+      const onDismiss = vi.fn()
+      renderWithProviders(
+        <BindingCallbackHandler
+          session={rig.session}
+          initialError="authn.conflict"
+          onDismiss={onDismiss}
+        />,
+      )
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(zhCN.bindingCallback.conflict)
+      // Not the account-changed sentence the same code carries elsewhere.
+      expect(alert).not.toHaveTextContent(zhCN.errors.authn.conflict)
+      // The server already consumed the flow: nothing is read and nothing
+      // is re-tried.
+      expect(rig.calls).toHaveLength(0)
+      expect(
+        screen.queryByRole('button', { name: zhCN.bindingCallback.retry }),
+      ).toBeNull()
+
+      await userEvent
+        .setup()
+        .click(
+          screen.getByRole('button', {
+            name: zhCN.bindingCallback.backToAccount,
+          }),
+        )
+      expect(onDismiss).toHaveBeenCalledTimes(1)
+    })
+
+    it('renders another known code through the surface’s existing mapping', async () => {
+      const rig = refusedRig()
+      renderWithProviders(
+        <BindingCallbackHandler
+          session={rig.session}
+          initialError="authn.login_failed"
+        />,
+      )
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(zhCN.errors.authn.login_failed)
+      expect(rig.calls).toHaveLength(0)
+      expect(
+        screen.queryByRole('button', { name: zhCN.bindingCallback.retry }),
+      ).toBeNull()
+    })
+
+    it('keeps the generic text for a code outside the surface’s vocabulary', async () => {
+      const rig = refusedRig()
+      renderWithProviders(
+        <BindingCallbackHandler
+          session={rig.session}
+          initialError="authn.future_code"
+        />,
+      )
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(zhCN.errors.unknown)
+      expect(rig.calls).toHaveLength(0)
+    })
+
+    it('offers no action when the host gives no dismiss callback', async () => {
+      const rig = refusedRig()
+      renderWithProviders(
+        <BindingCallbackHandler
+          session={rig.session}
+          initialError="authn.conflict"
+        />,
+      )
+
+      await screen.findByRole('alert')
+      expect(screen.queryByRole('button')).toBeNull()
+    })
+  })
+
   describe('the absent slot', () => {
     const METHODS_PATH = '/api/v1/auth/methods'
 
