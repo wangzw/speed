@@ -86,14 +86,15 @@
  *
  * Below the lists is the add face: POST /api/v1/auth/identifiers
  * (authn.login.addIdentifier) with a kind and a value. An account holds at
- * most one username, and the server answers a second one with the same 409
- * authn.conflict as a name someone else took -- copy cannot distinguish
- * them -- so the add face does not offer the username kind once the
- * profile lists one. A username is a login name with no ownership to
- * prove, so it is written in one step; a username already in use is
- * answered 409 authn.conflict, and because that is the expected outcome of
- * the one write this face exists for, the section names the username
- * rather than rendering the code's account-state sentence. An
+ * most one username, and the server answers a second one with the same
+ * refusal as a name someone else took -- copy cannot distinguish them -- so
+ * the add face does not offer the username kind once the profile lists one.
+ * A username is a login name with no ownership to prove, so it is written
+ * in one step; a username already in use is answered 409 (authn.username_taken,
+ * or the identifier route's own authn.conflict for the same collision), and
+ * because that is the expected outcome of the one write this face exists
+ * for, the section names the username rather than rendering the code's
+ * account-state sentence. An
  * email sends a code to it (the answer is state "pending") and the code is
  * submitted through POST /api/v1/auth/identifiers/verify
  * (authn.login.verifyIdentifier); only the matching code writes the address,
@@ -113,11 +114,11 @@
  * field instead of making a round trip that can only answer the generic
  * bad-request. The value submitted is the trimmed one. A 400 the server
  * still answers for the email kind renders the same field message rather
- * than the account-state banner; a username's 400 keeps the banner,
- * because the server's username rule also refuses shapes this face does
- * not restate (the reserved static-credential prefix, a UUID-shaped
- * name). Closing the add face clears the whole attempt: the failure
- * banner, the field error, the success notice and the sent-code step.
+ * than the account-state banner; a username's 400 (a shape it cannot
+ * normalize, or a name the system keeps for itself) renders the value
+ * field's unusable-name message. Closing the add face clears the whole
+ * attempt: the failure banner, the field error, the success notice and the
+ * sent-code step.
  *
  * Every write asks for a fresh authentication: a 401
  * authn.insufficient_user_authentication opens the step-up dialog with the
@@ -759,11 +760,26 @@ export function IdentifiersSection({
           )
           return null
         }
-        if (kind === 'username' && failure === 'authn.conflict') {
+        if (
+          kind === 'username' &&
+          (failure === 'authn.username_taken' || failure === 'authn.conflict')
+        ) {
           // An existing username is the expected 409 of the one write this
           // face exists for, and the account-state sentence sends the viewer
-          // to refresh, which can never free the name.
+          // to refresh, which can never free the name. The identifier route
+          // keeps its own conflict answer for the same collision; both mean
+          // the name is not available.
           setFailureText('identifiers.add.usernameTaken')
+          return null
+        }
+        if (
+          kind === 'username' &&
+          (failure === 'authn.bad_request' || failure === 'authn.username_reserved')
+        ) {
+          // A login name the server cannot normalize, or one it keeps for
+          // itself: the name is the value this face can change, so the field
+          // carries the message.
+          setFieldErrorKey('identifiers.add.usernameUnusable')
           return null
         }
         throw error

@@ -971,7 +971,7 @@ describe('IdentifiersSection', () => {
       if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
         // An existing username is the expected 409 of the one write the
         // setup page's add face exists for.
-        return errorResponse(409, 'authn.conflict')
+        return errorResponse(409, 'authn.username_taken')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
@@ -998,13 +998,95 @@ describe('IdentifiersSection', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.identifiers.add.usernameTaken)
     // The generic account-state sentence sends the user to refresh, which
-    // can never free the name.
+    // can never free the name, and the unknown fallback names nothing.
     expect(alert).not.toHaveTextContent(zhCN.errors.authn.conflict)
+    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
     expect(enUS.identifiers.add.usernameTaken).toMatch(/already taken/i)
     // The form stays open so another name can be typed.
     expect(
       screen.getByLabelText(zhCN.identifiers.add.value.labelUsername),
     ).toBeTruthy()
+  })
+
+  it('names a taken username the identifier route answers as a conflict', async () => {
+    // The identifier route answers the same collision with its own conflict
+    // code; for this face both refusals mean the name is not available.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return errorResponse(409, 'authn.conflict')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    fireEvent.mouseDown(
+      screen.getByRole('combobox', { name: zhCN.identifiers.add.kind.label }),
+    )
+    await user.click(
+      screen.getByRole('option', { name: zhCN.identifiers.add.kind.username }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelUsername),
+      'alice',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.identifiers.add.usernameTaken)
+    expect(alert).not.toHaveTextContent(zhCN.errors.authn.conflict)
+  })
+
+  it('states an unusable username in its field rather than the banner', async () => {
+    // A name the server cannot normalize, or one it keeps for itself, is the
+    // value this face can change, so the field carries the message.
+    for (const code of ['authn.bad_request', 'authn.username_reserved']) {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(200, profileBody({ identifiers: [] }))
+        }
+        if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+          return errorResponse(400, code)
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { unmount } = mount(respond)
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+      )
+      fireEvent.mouseDown(
+        screen.getByRole('combobox', { name: zhCN.identifiers.add.kind.label }),
+      )
+      await user.click(
+        screen.getByRole('option', { name: zhCN.identifiers.add.kind.username }),
+      )
+      const field = screen.getByLabelText(zhCN.identifiers.add.value.labelUsername)
+      await user.type(field, 'ada')
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
+      )
+
+      expect(
+        await screen.findByText(zhCN.identifiers.add.usernameUnusable),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      // Editing the name clears the message for the next attempt.
+      await user.type(field, '2')
+      expect(
+        screen.queryByText(zhCN.identifiers.add.usernameUnusable),
+      ).not.toBeInTheDocument()
+      unmount()
+    }
   })
 
   it('states the username first-character rule in the add helper', async () => {
@@ -2032,7 +2114,7 @@ describe('IdentifiersSection', () => {
         return jsonResponse(200, EMPTY_FEATURES)
       }
       if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
-        return errorResponse(409, 'authn.conflict')
+        return errorResponse(409, 'authn.username_taken')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
