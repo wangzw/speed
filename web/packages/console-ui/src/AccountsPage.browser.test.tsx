@@ -41,7 +41,7 @@ const NARROW_ACCOUNT = accountFixture({
   id: 'account-identifier-with-a-long-value-0003',
   display_name: 'Ada Lovelace the first programmer of recorded history',
   identifiers: [
-    { kind: 'username', value: 'ada.lovelace@example.com', proven: true },
+    { kind: 'username', value: 'ada.lovelace@example.com', proven: true, sign_in: true, contact: false, default_contact: false },
   ],
 })
 

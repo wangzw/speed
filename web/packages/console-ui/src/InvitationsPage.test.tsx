@@ -888,8 +888,8 @@ describe('InvitationsPage', () => {
             id: MEMBER_UUID,
             display_name: 'Ada Lovelace',
             identifiers: [
-              { kind: 'username', value: 'ada', proven: true },
-              { kind: 'email', value: 'ada@example.com', proven: false },
+              { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+              { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
             ],
           }),
         ),
@@ -916,8 +916,8 @@ describe('InvitationsPage', () => {
             id: MEMBER_UUID,
             display_name: '',
             identifiers: [
-              { kind: 'username', value: 'ada', proven: true },
-              { kind: 'email', value: 'ada@example.com', proven: false },
+              { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+              { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
             ],
           }),
         ),
@@ -1049,7 +1049,7 @@ describe('InvitationsPage', () => {
   ] as const
 
   const NOTICE_IDENTIFIERS: ConsoleAccount['identifiers'] = [
-    { kind: 'username', value: 'ada', proven: true },
+    { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
   ]
 
   /** Runs one member write with the given identity and returns its notice. */

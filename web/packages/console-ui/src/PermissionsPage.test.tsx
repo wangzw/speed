@@ -1287,7 +1287,7 @@ describe('PermissionsPage', () => {
   // Both binding writes name the account in the shared four shapes and never
   // by its opaque id.
   const NOTICE_IDENTIFIERS: ConsoleAccount['identifiers'] = [
-    { kind: 'username', value: 'ada', proven: true },
+    { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
   ]
 
   /** Drives one binding write with the given identity and returns its notice. */

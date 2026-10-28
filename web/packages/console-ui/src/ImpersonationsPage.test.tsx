@@ -484,7 +484,7 @@ describe('ImpersonationsPage', () => {
   // Every impersonation success notice names the account in the shared four
   // shapes and never by its opaque id.
   const NOTICE_IDENTIFIERS: ConsoleAccount['identifiers'] = [
-    { kind: 'username', value: 'ada', proven: true },
+    { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
   ]
 
   /** The account read the page resolves an identity through, by account id. */

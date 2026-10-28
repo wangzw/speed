@@ -1731,20 +1731,20 @@ type CreateAccountMutation = UseMutationResult<
  * AccountCreateForm: the account-creation control (POST /api/v1/system/auth/accounts),
  * rendered inside the create panel. It names the fields the handler decodes
  * into its create request; a field left blank is not sent. A user account
- * requires a display name and at least one login identifier (a username, an
- * email address or a phone number): it has no way to sign in without one, and
- * the server refuses it. A service account signs in with a service secret and
- * so needs no identifier -- the server exempts it from that requirement --
- * and only the display name is required. The submit stays disabled until the
- * form could produce a usable account, and the submit handler itself
- * re-checks, so no path sends a request the server is known to refuse. The
- * fields flow through ui-kit's form family (FormLayout's responsive grid of
- * FormField adapters), kept two columns wide in the panel and collapsed to
- * one when the panel itself is narrow. The attribute set is typed as a JSON
- * object and marks the field when it does not parse; when the host declares
- * its attribute fields, one text field per declared key replaces the JSON
- * editor and writes back into the same JSON value, so the create path and
- * its payload keep one shape.
+ * requires a display name and a username: the username is the login name the
+ * account is opened with, and the email address and phone number are
+ * identifiers beside it, so neither of them can stand in for it. A service
+ * account signs in with a service secret and so needs no username -- the
+ * server exempts it from that requirement -- and only the display name is
+ * required. The submit stays disabled until the form could produce a usable
+ * account, and the submit handler itself re-checks, so no path sends a
+ * request the server is known to refuse. The fields flow through ui-kit's
+ * form family (FormLayout's responsive grid of FormField adapters), kept two
+ * columns wide in the panel and collapsed to one when the panel itself is
+ * narrow. The attribute set is typed as a JSON object and marks the field
+ * when it does not parse; when the host declares its attribute fields, one
+ * text field per declared key replaces the JSON editor and writes back into
+ * the same JSON value, so the create path and its payload keep one shape.
  *
  * A refused create settles the create panel's own scope, whose region stands
  * under the form with the fields kept for correction. A landed create closes
@@ -1781,16 +1781,15 @@ function AccountCreateForm({
   ]
 
   // The form names an account once it carries a display name and either a
-  // service kind or at least one login identifier; a service account signs
-  // in with a service secret, so it needs no identifier. Before that the
-  // submit is disabled, and the handler below refuses to send anyway.
+  // service kind or a username; a service account signs in with a service
+  // secret, so it needs no username, and a user account is opened with one
+  // (an email address or phone number beside it does not stand in for it).
+  // Before that the submit is disabled, and the handler below refuses to
+  // send anyway.
   const watched = form.watch()
   const namesAnAccount =
     watched.displayName.trim() !== '' &&
-    (watched.kind === 'service' ||
-      watched.username.trim() !== '' ||
-      watched.email.trim() !== '' ||
-      watched.phone.trim() !== '')
+    (watched.kind === 'service' || watched.username.trim() !== '')
 
   const onSubmit: SubmitHandler<CreateAccountFields> = (values) => {
     // The guard judges the trimmed values, so the request sends those same
@@ -1801,10 +1800,7 @@ function AccountCreateForm({
     const phone = values.phone.trim()
     if (
       values.displayName.trim() === '' ||
-      (values.kind !== 'service' &&
-        username === '' &&
-        values.email.trim() === '' &&
-        phone === '')
+      (values.kind !== 'service' && username === '')
     ) {
       // A submit the client refused is still an attempt: the previous
       // result must not stand beside the reasons this one did not fire.
@@ -1886,6 +1882,7 @@ function AccountCreateForm({
               size="small"
               fullWidth
               label={t('accounts.create.usernameLabel')}
+              slotProps={{ htmlInput: { 'aria-required': true } }}
             />
           )}
         />

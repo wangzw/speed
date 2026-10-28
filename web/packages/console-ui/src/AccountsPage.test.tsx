@@ -1653,8 +1653,8 @@ describe('AccountsPage', () => {
         id: DELETE_UUID,
         display_name: 'Ada Lovelace',
         identifiers: [
-          { kind: 'username', value: 'ada', proven: true },
-          { kind: 'email', value: 'ada@example.com', proven: false },
+          { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+          { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
         ],
       }),
     )
@@ -1687,8 +1687,8 @@ describe('AccountsPage', () => {
         id: DELETE_UUID,
         display_name: '',
         identifiers: [
-          { kind: 'username', value: 'ada', proven: true },
-          { kind: 'email', value: 'ada@example.com', proven: false },
+          { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+          { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
         ],
       }),
     )
@@ -2039,7 +2039,7 @@ describe('AccountsPage', () => {
   }
 
   const NOTICE_IDENTIFIERS: ConsoleAccount['identifiers'] = [
-    { kind: 'username', value: 'ada', proven: true },
+    { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
   ]
 
   /** Drives one detail write with the selected account's view as given. */
@@ -2323,6 +2323,7 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     const panel = await openCreate(user)
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.emailLabel), 'grace@x.test')
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
 
@@ -2749,7 +2750,7 @@ describe('AccountsPage', () => {
     })
   })
 
-  it('keeps the create submit disabled until a display name and an identifier are given', async () => {
+  it('keeps the create submit disabled until a display name and a username are given', async () => {
     const user = userEvent.setup()
     const created: ConsoleCreateAccountInput[] = []
     const operations = withAccounts({
@@ -2763,7 +2764,7 @@ describe('AccountsPage', () => {
     const submit = within(panel).getByRole('button', { name: zhCN.accounts.create.submit })
     const form = panel.querySelector('form') as HTMLFormElement
 
-    // An empty form names nothing an account can sign in with: the submit
+    // An empty form names nothing an account can be opened with: the submit
     // is disabled, and a submit of the form itself sends no request either
     // -- the disabled button is not the only guard.
     expect(submit).toBeDisabled()
@@ -2776,7 +2777,14 @@ describe('AccountsPage', () => {
     fireEvent.submit(form)
     expect(created).toEqual([])
 
-    // Nor is an identifier alone.
+    // A user account is opened with a username: an email address beside the
+    // display name does not stand in for it.
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.emailLabel), 'grace@x.test')
+    expect(submit).toBeDisabled()
+    fireEvent.submit(form)
+    expect(created).toEqual([])
+
+    // Nor is the username alone an account without a display name.
     await user.clear(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel))
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
     expect(submit).toBeDisabled()
@@ -3387,8 +3395,8 @@ describe('AccountsPage', () => {
               accountFixture({
                 display_name: 'Ada Lovelace',
                 identifiers: [
-                  { kind: 'username', value: 'ada', proven: true },
-                  { kind: 'email', value: 'ada@example.com', proven: false },
+                  { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+                  { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
                 ],
               }),
             ],
@@ -3427,8 +3435,8 @@ describe('AccountsPage', () => {
               accountFixture({
                 display_name: 'Ada Lovelace',
                 identifiers: [
-                  { kind: 'username', value: 'ada', proven: true },
-                  { kind: 'email', value: 'ada@example.com', proven: false },
+                  { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+                  { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
                 ],
               }),
             ],
