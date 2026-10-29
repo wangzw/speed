@@ -267,8 +267,11 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
           exact: true,
         }),
       ).toBeVisible()
-      // The sentence is offered in sign-in mode where an SMS channel opens an
-      // account; it names a phone number and the account that number creates.
+      // The sentence names a phone number, so it belongs under the SMS
+      // channel: it appears once that channel is the one on screen. It says
+      // the number's first sign-in creates an account.
+      await smsTab(page).click()
+      await expect(countryField(page)).toBeVisible()
       await expect(
         page.getByText(copy('authUi', 'mode.signInAccountHint'), {
           exact: true,
