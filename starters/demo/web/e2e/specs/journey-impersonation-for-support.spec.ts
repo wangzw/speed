@@ -93,6 +93,7 @@ import type { Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import { expectAccountMenuName } from '../helpers/account-menu'
 import { copy, copyPattern } from '../helpers/i18n'
 import { totpCode } from '../helpers/totp'
 
@@ -630,7 +631,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
       ),
     ).toBeVisible()
     const menuTrigger = page.getByRole('banner').getByTestId('user-menu-trigger')
-    await expect(menuTrigger).toHaveAccessibleName(TARGET.displayName)
+    await expectAccountMenuName(menuTrigger, TARGET.displayName)
     await menuTrigger.click()
     await expect(
       page.getByRole('menuitem', {
@@ -758,9 +759,10 @@ test('impersonation-for-support: the operator acts as a member and the record an
         { exact: true },
       ),
     ).toHaveCount(0)
-    await expect(
+    await expectAccountMenuName(
       page.getByRole('banner').getByTestId('user-menu-trigger'),
-    ).toHaveAccessibleName(OPERATOR.displayName)
+      OPERATOR.displayName,
+    )
     await expect(consoleEntry(page)).toBeVisible({ timeout: 10_000 })
     // The switcher returns over the tenant the operator's own membership
     // list settles (the system tenant); the grant's tenant was never the

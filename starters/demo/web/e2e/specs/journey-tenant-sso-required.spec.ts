@@ -84,6 +84,7 @@ import {
 } from '../fixtures/identity-provider'
 import { waitForVerificationCode } from '../fixtures/log'
 import type { ReviewServer } from '../fixtures/server'
+import { expectAccountMenuName } from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
 import { approveEnterpriseSignIn } from '../helpers/social'
 
@@ -752,7 +753,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     const userMenu = page
       .getByRole('banner')
       .getByTestId('user-menu-trigger')
-    await expect(userMenu).toHaveAccessibleName(tenantSSOAdmin.displayName)
+    await expectAccountMenuName(userMenu, tenantSSOAdmin.displayName)
   })
 
   await test.step('step 5: the same invitation is accepted with the direct-submit confirmation', async () => {

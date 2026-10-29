@@ -89,6 +89,7 @@ import {
 } from '../fixtures/identity-provider'
 import type { EnterpriseIdentityProvider } from '../fixtures/identity-provider'
 import { waitForVerificationCode } from '../fixtures/log'
+import { expectAccountMenuName } from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
 import { approveEnterpriseSignIn } from '../helpers/social'
 
@@ -859,7 +860,7 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     // display name the operator typed, which differs from the provider's name
     // claim. A just-in-time account would carry the provider's claim instead.
     const userMenu = page.getByRole('banner').getByTestId('user-menu-trigger')
-    await expect(userMenu).toHaveAccessibleName(EMPLOYEE_DISPLAY_NAME)
+    await expectAccountMenuName(userMenu, EMPLOYEE_DISPLAY_NAME)
 
     await userMenu.click()
     await page
@@ -1067,7 +1068,8 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
     // administrator prepared one. The operator typed nothing for this
     // employee.
     const userMenu = page.getByRole('banner').getByTestId('user-menu-trigger')
-    await expect(userMenu).toHaveAccessibleName(
+    await expectAccountMenuName(
+      userMenu,
       enterpriseIdentityProviderUser.name,
     )
 

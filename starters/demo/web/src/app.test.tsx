@@ -864,10 +864,10 @@ describe('the console area', () => {
     const banner = brand.closest('header')
     expect(banner).not.toBeNull()
 
-    // The avatar trigger is named for the signed-in principal; its menu
+    // The avatar trigger carries the signed-in principal's identity; its menu
     // carries the profile / account-settings / sign-out entries.
     await user.click(
-      within(banner as HTMLElement).getByRole('button', { name: 'Test User' }),
+      within(banner as HTMLElement).getByTestId('user-menu-trigger'),
     )
     for (const name of [
       demoEnUS.userMenu.profile,
@@ -1044,6 +1044,22 @@ describe('a staff viewer whose platform permission is not the dashboard code', (
 })
 
 describe('the tenant area header controls', () => {
+  it('keeps the visible avatar glyph inside the account trigger name', async () => {
+    // The trigger's glyph is visible text, so WCAG 2.5.3 requires it inside
+    // the control's accessible name, together with the identity it stands
+    // for.
+    const snapshot = authenticatedSnapshot()
+    renderDemoApp({ session: createTestSession(snapshot) })
+    const trigger = await screen.findByTestId('user-menu-trigger')
+    const glyph = trigger.textContent ?? ''
+    const displayName = snapshot.principal?.display_name ?? ''
+    expect(glyph).not.toBe('')
+    expect(displayName).not.toBe('')
+    const name = trigger.getAttribute('aria-label') ?? ''
+    expect(name).toContain(glyph)
+    expect(name).toContain(displayName)
+  })
+
   it('raises the header icon controls to the 44px floor under a coarse pointer', async () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
     // The language switch, the color-mode toggle and the account-menu
@@ -1054,7 +1070,7 @@ describe('the tenant area header controls', () => {
         name: demoEnUS.languageSwitcher.label,
       }),
       screen.getByRole('button', { name: demoEnUS.colorMode.toDark }),
-      screen.getByRole('button', { name: 'Test User' }),
+      screen.getByTestId('user-menu-trigger'),
     ]
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
@@ -1445,7 +1461,7 @@ describe('the sidebar shell layout', () => {
     const nav = screen.getByRole('navigation', {
       name: tLayout('appShell.navLabel'),
     })
-    const account = screen.getByRole('button', { name: 'Test User' })
+    const account = screen.getByTestId('user-menu-trigger')
 
     // The desktop sidebar form renders no app bar: the brand sits in the
     // drawer paper rather than inside a header landmark. (The routed page
@@ -1488,7 +1504,7 @@ describe('the sidebar shell layout', () => {
     // `<header>` (its PageHeader) inside main, so the absence is asserted
     // on the brand's containing element, not on every header in the page.
     expect(brand.closest('header')).toBeNull()
-    const account = screen.getByRole('button', { name: 'Test User' })
+    const account = screen.getByTestId('user-menu-trigger')
     expect(nav.contains(brand)).toBe(false)
     expect(nav.contains(account)).toBe(false)
     expect(

@@ -40,7 +40,7 @@ import {
   switchLanguage,
   useTranslation,
 } from '@speed/i18n'
-import { Avatar } from '@speed/layout-kit'
+import { Avatar, avatarInitials } from '@speed/layout-kit'
 import { useNavigate } from '@speed/route-kit'
 import { TenantSwitcher } from '@speed/tenancy-ui'
 import type { TenantOption } from '@speed/tenancy-ui'
@@ -605,11 +605,12 @@ export function ColorModeToggle(): ReactElement {
 /**
  * The account menu: an avatar trigger opening profile / account-settings /
  * sign-out. The trigger shows the signed-in user's initials (the avatar is
- * decorative -- the trigger's accessible name is the display name, or the
- * generic label while anonymous). The account page holds both the profile
- * and the settings surfaces (account-ui's sections span them), so the two
- * entries open the same page; sign-out drives the session's logout, whose
- * quiet terminal flip the shells observe.
+ * decorative) and its accessible name carries both the initials and the
+ * display name -- the initials are visible text, so WCAG 2.5.3 requires them
+ * inside the name; the generic label is used while anonymous. The account
+ * page holds both the profile and the settings surfaces (account-ui's
+ * sections span them), so the two entries open the same page; sign-out
+ * drives the session's logout, whose quiet terminal flip the shells observe.
  */
 export function UserMenu({
   narrow = false,
@@ -630,10 +631,17 @@ export function UserMenu({
     snapshot.state === 'authenticated'
       ? snapshot.principal?.display_name
       : undefined
+  // The glyph the avatar renders is visible text, so it belongs in the
+  // trigger's accessible name (WCAG 2.5.3): a name of the display name alone
+  // would omit the on-screen initials. Both come from the same derivation
+  // the avatar renders, so the two cannot drift.
+  const initials = avatarInitials(displayName)
   const triggerLabel =
-    displayName !== undefined && displayName !== ''
-      ? displayName
-      : t('userMenu.accountMenu')
+    displayName === undefined || displayName.trim() === ''
+      ? t('userMenu.accountMenu')
+      : initials === ''
+        ? displayName
+        : `${initials} ${displayName}`
 
   const closeMenu = (): void => setAnchorEl(null)
   const goToAccount = (): void => {
