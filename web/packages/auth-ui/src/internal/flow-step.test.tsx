@@ -164,20 +164,36 @@ describe('FlowStepFields social account-opening face', () => {
     { name: 'password', kind: 'password', secret: true, required: true },
   ]
 
-  function socialStep(email?: string): OpenFlowState {
+  interface FaceIdentity {
+    readonly provider?: string
+    readonly displayName?: string
+    readonly email?: string
+  }
+
+  function socialStep(identity: FaceIdentity = {}): OpenFlowState {
     return {
       seq: 2,
       state: 'signup',
       next: {
         kind: 'challenge',
         fields: socialFields,
-        ...(email === undefined ? {} : { provided_email: email }),
+        ...(identity.provider === undefined
+          ? {}
+          : { provided_provider: identity.provider }),
+        ...(identity.displayName === undefined
+          ? {}
+          : { provided_display_name: identity.displayName }),
+        ...(identity.email === undefined
+          ? {}
+          : { provided_email: identity.email }),
       },
     }
   }
 
   function renderFace(
     options: {
+      readonly provider?: string
+      readonly displayName?: string
       readonly email?: string
       readonly failure?: string | null
       readonly onAnswer?: (input: Record<string, string>) => void
@@ -185,7 +201,11 @@ describe('FlowStepFields social account-opening face', () => {
   ) {
     return renderWithProviders(
       <FlowStepFields
-        step={socialStep(options.email)}
+        step={socialStep({
+          provider: options.provider,
+          displayName: options.displayName,
+          email: options.email,
+        })}
         busy={false}
         onAnswer={options.onAnswer ?? vi.fn()}
         onUnsupported={vi.fn()}
@@ -194,8 +214,12 @@ describe('FlowStepFields social account-opening face', () => {
     )
   }
 
-  it('renders the title, the sentence, the read-only address and both password fields', () => {
-    renderFace({ email: 'ada@example.com' })
+  it('renders the title, the one-sentence description and the signed-in submit row', () => {
+    renderFace({
+      provider: 'google',
+      displayName: 'Ada Lovelace',
+      email: 'ada@example.com',
+    })
 
     expect(
       screen.getByRole('heading', {
@@ -206,30 +230,92 @@ describe('FlowStepFields social account-opening face', () => {
     expect(
       screen.getByText(zhCN.signInFlow.signupAccountDescription),
     ).toBeInTheDocument()
-
-    const email = screen.getByLabelText(zhCN.signInFlow.signupEmailLabel)
-    expect(email).toHaveValue('ada@example.com')
-    expect((email as HTMLInputElement).readOnly).toBe(true)
-
     expect(
-      screen.getByLabelText(zhCN.signInFlow.usernameLabel),
-    ).toHaveAccessibleDescription(zhCN.signInFlow.usernameHelper)
-    expect(
-      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByLabelText(zhCN.register.confirmPasswordLabel),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      screen.getByRole('button', { name: zhCN.signInFlow.signupAccountSubmit }),
     ).toBeInTheDocument()
   })
 
-  it('leaves the address out when the provider declared none', () => {
-    renderFace()
+  it('renders the three identity lines in order, all read-only', () => {
+    renderFace({
+      provider: 'google',
+      displayName: 'Ada Lovelace',
+      email: 'ada@example.com',
+    })
+
+    const provider = screen.getByText(
+      zhCN.signInFlow.signupProvider.replace(
+        '{{provider}}',
+        zhCN.social.provider.google,
+      ),
+    )
+    const name = screen.getByText('Ada Lovelace')
+    const email = screen.getByText('ada@example.com')
+    // The provider line comes first, then the provider's account name, then
+    // the address it shared; none is an editable control.
+    expect(
+      provider.compareDocumentPosition(name) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      name.compareDocumentPosition(email) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.queryByDisplayValue('ada@example.com')).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'ada@example.com' })).toBeNull()
+  })
+
+  it('renders only the provider line when the provider shared nothing else', () => {
+    renderFace({ provider: 'google' })
 
     expect(
-      screen.queryByLabelText(zhCN.signInFlow.signupEmailLabel),
+      screen.getByText(
+        zhCN.signInFlow.signupProvider.replace(
+          '{{provider}}',
+          zhCN.social.provider.google,
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('ada@example.com')).toBeNull()
+  })
+
+  it('leaves the account-name line out when the provider gave no name', () => {
+    renderFace({ provider: 'google', email: 'ada@example.com' })
+
+    expect(
+      screen.getByText(
+        zhCN.signInFlow.signupProvider.replace(
+          '{{provider}}',
+          zhCN.social.provider.google,
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByText('ada@example.com')).toBeInTheDocument()
+  })
+
+  it('leaves the address line out when the provider shared none', () => {
+    renderFace({ provider: 'google', displayName: 'Ada Lovelace' })
+
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
+    expect(screen.queryByText('ada@example.com')).toBeNull()
+  })
+
+  it('no longer renders the address as a read-only form field', () => {
+    renderFace({
+      provider: 'google',
+      displayName: 'Ada Lovelace',
+      email: 'ada@example.com',
+    })
+
+    // The address is an identity line, not a form field: no control carries
+    // it as its value, and the face's only text inputs are the username,
+    // the password and the confirmation.
+    expect(screen.queryByDisplayValue('ada@example.com')).toBeNull()
+    expect(screen.getByText('ada@example.com')).toBeInTheDocument()
+    expect(
+      screen.getByRole('textbox', { name: zhCN.signInFlow.usernameLabel }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('textbox', { name: zhCN.register.confirmPasswordLabel }),
     ).toBeNull()
   })
 
@@ -251,7 +337,11 @@ describe('FlowStepFields social account-opening face', () => {
     )
     await userEvent
       .setup()
-      .click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+      .click(
+        screen.getByRole('button', {
+          name: zhCN.signInFlow.signupAccountSubmit,
+        }),
+      )
 
     expect(onAnswer).not.toHaveBeenCalled()
     const confirm = screen.getByLabelText(zhCN.register.confirmPasswordLabel)
@@ -267,7 +357,11 @@ describe('FlowStepFields social account-opening face', () => {
       .type(confirm, 'correct-horse')
     await userEvent
       .setup()
-      .click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+      .click(
+        screen.getByRole('button', {
+          name: zhCN.signInFlow.signupAccountSubmit,
+        }),
+      )
     expect(onAnswer).toHaveBeenCalledWith({
       username: 'ada',
       password: 'correct-horse',
@@ -319,7 +413,9 @@ describe('FlowStepFields social account-opening face', () => {
         name: zhCN.signInFlow.signupTitle,
       }),
     ).toBeInTheDocument()
-    expect(screen.queryByLabelText(zhCN.signInFlow.signupEmailLabel)).toBeNull()
+    expect(
+      screen.queryByText(zhCN.signInFlow.signupAccountDescription),
+    ).toBeNull()
     expect(
       screen.queryByLabelText(zhCN.passwordSignIn.passwordLabel),
     ).toBeNull()

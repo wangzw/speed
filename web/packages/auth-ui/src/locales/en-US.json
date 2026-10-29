@@ -66,9 +66,10 @@
     "usernameHelper": "3 to 64 characters: letters, digits, dot, dash or underscore. The first character must be a letter or a digit.",
     "signupTitle": "Choose a username",
     "signupDescription": "This is your sign-in name on this site. You can change it or add other sign-in methods after the account is created.",
-    "signupAccountTitle": "Create your account",
-    "signupAccountDescription": "Choose a username and password to finish creating your account. The email address below comes from your sign-in provider and becomes your account's default contact address.",
-    "signupEmailLabel": "Email",
+    "signupAccountTitle": "Finish signing in",
+    "signupAccountDescription": "Pick a username and set a password to finish signing in.",
+    "signupProvider": "Continuing with {{provider}}",
+    "signupAccountSubmit": "Finish signing in",
     "signupPasswordMismatch": "The two passwords do not match.",
     "signupPasswordPolicy": "That password doesn't meet the requirements. Change it and try again.",
     "usernameTaken": "That username is already taken. Choose another.",
@@ -90,8 +91,7 @@
       "sms": "SMS code",
       "webauthn": "Passkey",
       "other": "Other"
-    },
-    "signupAccountDescriptionNoEmail": "Choose a username and password to finish creating your account."
+    }
   },
   "discovery": {
     "loading": "Loading sign-in methods…",

@@ -66,9 +66,10 @@
     "usernameHelper": "3 到 64 个字符：字母、数字、点、连字符或下划线。首字符必须是字母或数字。",
     "signupTitle": "选择一个用户名",
     "signupDescription": "这是你在本站的登录名；账户建立后可以修改或添加其他登录方式。",
-    "signupAccountTitle": "创建你的账户",
-    "signupAccountDescription": "设置用户名和密码即可完成注册。下面的邮箱由你的登录提供方提供，会成为账户的默认联系方式。",
-    "signupEmailLabel": "邮箱",
+    "signupAccountTitle": "完成登录",
+    "signupAccountDescription": "选择一个用户名并设置密码，即可完成登录。",
+    "signupProvider": "通过 {{provider}} 继续",
+    "signupAccountSubmit": "完成登录",
     "signupPasswordMismatch": "两次输入的密码不一致。",
     "signupPasswordPolicy": "该密码不符合要求，请修改后重试。",
     "usernameTaken": "该用户名已被占用，请换一个。",
@@ -90,8 +91,7 @@
       "sms": "短信验证码",
       "webauthn": "通行密钥",
       "other": "其他方式"
-    },
-    "signupAccountDescriptionNoEmail": "设置用户名和密码即可完成账户的创建。"
+    }
   },
   "discovery": {
     "loading": "正在加载登录方式…",

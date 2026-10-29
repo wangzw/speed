@@ -44,11 +44,13 @@
  * A step that asks for a username alone (SMS and enterprise just-in-time
  * signup) renders a title, a sentence saying what the login name is for,
  * the field and its rule help. A step that also asks for a password
- * (social first signup) is the whole account-opening face: its own title
- * and sentence, the provider's verified address read-only when the step
- * carries one (display-only, never submitted), the username with its rule
- * help, the password and its confirmation, and the submit row. The
- * confirmation is compared locally and never travels.
+ * (social first signup) is the whole account-opening face: a title and a
+ * one-sentence description, then a read-only identity block naming the
+ * provider, the provider's account name and the address it shared (each
+ * line omitted when the step carries none), then the username with its
+ * rule help, the password and its confirmation, and the submit row. The
+ * identity facts are display-only and never submitted; the confirmation
+ * is compared locally and never travels.
  *
  * A refusal of a still-parked signup step is the field's, never the
  * whole-attempt banner: the three name refusals (taken, reserved, a shape
@@ -85,7 +87,7 @@ import {
   HumanVerification as HumanVerificationBlock,
 } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './translation.js'
-import { fieldHelp, fieldLabel } from './labels.js'
+import { fieldHelp, fieldLabel, methodLabel } from './labels.js'
 import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
 import type { OpenFlowState } from './flow.js'
 import { answerSends, stepMaySend } from './flow.js'
@@ -307,11 +309,13 @@ export function FlowStepFields({
         return (
           <SignupAccountFields
             fields={step.next.fields}
+            provider={step.next.provided_provider}
+            displayName={step.next.provided_display_name}
             email={step.next.provided_email}
             refusal={fieldRefusal}
             fieldLabel={labelOf}
             fieldHelp={helpOf}
-            submit={t('signInFlow.submit')}
+            submit={t('signInFlow.signupAccountSubmit')}
             busy={busy}
             onAnswer={onAnswer}
           />
@@ -826,8 +830,14 @@ function ChallengeFields({
 
 interface SignupAccountFieldsProps {
   readonly fields: readonly AuthnField[]
-  /** The provider-declared verified address to show read-only, when the
-   * step carries one. */
+  /** The social provider's method identifier, resolved to its brand name
+   * for the identity block; absent when the step carries none. */
+  readonly provider?: string
+  /** The provider's name for the person, shown read-only on its own line;
+   * absent when the provider gave none. */
+  readonly displayName?: string
+  /** The provider-shared address, shown read-only on its own line; absent
+   * when the provider shared none. */
   readonly email?: string
   /** The server refusal to render under its field, if any. */
   readonly refusal: { readonly name: string; readonly text: string } | null
@@ -845,15 +855,19 @@ interface SignupAccountValues {
 }
 
 /**
- * The social first-signup face: the provider address read-only, the
- * username with its rule help, the password and its confirmation, and the
- * submit row. The confirmation is compared here and never travels; every
- * other rule -- the name's shape, uniqueness and reserved names, and the
- * password policy -- is the server's, and a refusal it answers lands under
- * the field it names.
+ * The social first-signup face: a title and a one-sentence description, the
+ * read-only identity block (provider, the provider's account name, the
+ * shared address, each omitted when the step carries none), the username
+ * with its rule help, the password and its confirmation, and the submit
+ * row. The confirmation is compared here and never travels; every other
+ * rule -- the name's shape, uniqueness and reserved names, and the password
+ * policy -- is the server's, and a refusal it answers lands under the field
+ * it names.
  */
 function SignupAccountFields({
   fields,
+  provider,
+  displayName,
   email,
   refusal,
   fieldLabel,
@@ -879,6 +893,17 @@ function SignupAccountFields({
   const confirmInput = useRef<HTMLInputElement>(null)
   const refusedName = refusal?.name ?? null
   const refusedText = refusal?.text ?? null
+  const providerName =
+    provider === undefined || provider === ''
+      ? null
+      : methodLabel({ name: provider }, t)
+  const identity: readonly string[] = [
+    providerName === null
+      ? null
+      : t('signInFlow.signupProvider', { provider: providerName }),
+    displayName === undefined || displayName === '' ? null : displayName,
+    email === undefined || email === '' ? null : email,
+  ].filter((line): line is string => line !== null)
   // A refusal under a field is the attempt's outcome: move focus there so a
   // viewer who submitted from the button lands on the value to change.
   useEffect(() => {
@@ -905,11 +930,32 @@ function SignupAccountFields({
           {t('signInFlow.signupAccountTitle')}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          {email === undefined
-            ? t('signInFlow.signupAccountDescriptionNoEmail')
-            : t('signInFlow.signupAccountDescription')}
+          {t('signInFlow.signupAccountDescription')}
         </Typography>
       </Box>
+      {identity.length === 0 ? null : (
+        // The identity block leads the content: what the provider shared,
+        // read-only, before the fields the visitor fills in. Each line is
+        // one fact; a fact the provider gave none of leaves no line and no
+        // placeholder.
+        <Box
+          component="ul"
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 0.5,
+            listStyle: 'none',
+            m: 0,
+            p: 0,
+          }}
+        >
+          {identity.map((line, index) => (
+            <Typography key={`${index}:${line}`} component="li" variant="body2">
+              {line}
+            </Typography>
+          ))}
+        </Box>
+      )}
       <FormLayout
         form={form}
         onSubmit={onSubmit}
@@ -919,14 +965,6 @@ function SignupAccountFields({
           </Button>
         }
       >
-        {email === undefined ? null : (
-          <TextField
-            label={t('signInFlow.signupEmailLabel')}
-            value={email}
-            fullWidth
-            slotProps={{ htmlInput: { readOnly: true } }}
-          />
-        )}
         <FormField
           name="username"
           required

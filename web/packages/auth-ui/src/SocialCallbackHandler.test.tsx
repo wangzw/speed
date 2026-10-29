@@ -806,7 +806,7 @@ describe('SocialCallbackHandler', () => {
 
 describe('SocialCallbackHandler social account-opening face', () => {
   /** The face a first social login parks at: username, password, and the
-   * provider's verified address read-only. */
+   * provider identity it shared, shown read-only. */
   function accountFaceFlow() {
     return openFlow({
       seq: 1,
@@ -817,6 +817,8 @@ describe('SocialCallbackHandler social account-opening face', () => {
           { name: 'username', kind: 'text', required: true },
           { name: 'password', kind: 'password', secret: true, required: true },
         ],
+        provided_provider: 'google',
+        provided_display_name: 'Ada Lovelace',
         provided_email: 'ada@example.com',
       },
     })
@@ -852,11 +854,16 @@ describe('SocialCallbackHandler social account-opening face', () => {
         name: zhCN.signInFlow.signupAccountTitle,
       }),
     ).toBeInTheDocument()
-    const email = within(face).getByLabelText(
-      zhCN.signInFlow.signupEmailLabel,
-    )
-    expect(email).toHaveValue('ada@example.com')
-    expect((email as HTMLInputElement).readOnly).toBe(true)
+    expect(
+      within(face).getByText(
+        zhCN.signInFlow.signupProvider.replace(
+          '{{provider}}',
+          zhCN.social.provider.google,
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(within(face).getByText('Ada Lovelace')).toBeInTheDocument()
+    expect(within(face).getByText('ada@example.com')).toBeInTheDocument()
     await expectNoAxeViolations()
 
     const user = userEvent.setup()
@@ -873,7 +880,9 @@ describe('SocialCallbackHandler social account-opening face', () => {
       'correct-horse',
     )
     await user.click(
-      within(face).getByRole('button', { name: zhCN.signInFlow.submit }),
+      within(face).getByRole('button', {
+        name: zhCN.signInFlow.signupAccountSubmit,
+      }),
     )
 
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
@@ -909,7 +918,9 @@ describe('SocialCallbackHandler social account-opening face', () => {
       'short',
     )
     await user.click(
-      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      screen.getByRole('button', {
+        name: zhCN.signInFlow.signupAccountSubmit,
+      }),
     )
 
     await waitFor(() =>
