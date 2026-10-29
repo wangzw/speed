@@ -579,9 +579,9 @@ describe('start flow', () => {
   })
 
   it('carries the provider identity a social signup step shows read-only', async () => {
-    // The provider's method identifier and the name it gave for the person
-    // reach the surface on the challenge step, beside the shared address;
-    // none of the three travels in an answer.
+    // The sign-in method's name and the name the provider gave for the
+    // person reach the surface on the challenge step, beside the shared
+    // address; none of the three travels in an answer.
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -589,7 +589,7 @@ describe('start flow', () => {
           next: {
             kind: 'challenge',
             fields: [{ name: 'username', kind: 'text', required: true }],
-            provided_provider: 'github',
+            provided_method: 'github',
             provided_display_name: 'Ada Lovelace',
             provided_email: 'ada@example.com',
           },
@@ -600,11 +600,33 @@ describe('start flow', () => {
       state: 'signup',
       next: {
         kind: 'challenge',
-        provided_provider: 'github',
+        provided_method: 'github',
         provided_display_name: 'Ada Lovelace',
         provided_email: 'ada@example.com',
       },
     })
+  })
+
+  it('carries a method name that differs from the provider identifier', async () => {
+    // The wire member is the method name (the discovery vocabulary), not the
+    // provider identifier: the two WeChat modes share one provider but stay
+    // distinct here.
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          state: 'signup',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'username', kind: 'text', required: true }],
+            provided_method: 'wechat.mp',
+          },
+        }),
+    })
+    const state = await harness.session.startFlow({ method: 'wechat.mp' })
+    if (!('seq' in state) || state.next.kind !== 'challenge') {
+      throw new Error('expected an open challenge step')
+    }
+    expect(state.next.provided_method).toBe('wechat.mp')
   })
 
   it('leaves a provider identity member out when the wire omits it', async () => {
@@ -617,7 +639,7 @@ describe('start flow', () => {
           next: {
             kind: 'challenge',
             fields: [{ name: 'username', kind: 'text', required: true }],
-            provided_provider: 'github',
+            provided_method: 'github',
             provided_display_name: '',
           },
         }),
@@ -625,7 +647,7 @@ describe('start flow', () => {
     const state = await harness.session.startFlow({ method: 'github' })
     expect(state).toMatchObject({
       state: 'signup',
-      next: { kind: 'challenge', provided_provider: 'github' },
+      next: { kind: 'challenge', provided_method: 'github' },
     })
     if (!('seq' in state)) {
       throw new Error('expected an open flow')

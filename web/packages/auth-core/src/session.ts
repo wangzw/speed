@@ -820,10 +820,10 @@ function parseStep(body: unknown): AuthnStep {
         ? rec.fields.map((entry) => parseField(entry))
         : []
       const step: AuthnStep = { kind: 'challenge', fields }
-      // The identity a social first signup shows read-only: the provider's
-      // method identifier, the provider's name for the person, and the
-      // address the provider shared. Each is absent when the provider gave
-      // none; an empty string carries nothing either.
+      // The identity a social first signup shows read-only: the sign-in
+      // method's name, the provider's name for the person, and the address
+      // the provider shared. Each is absent when the provider gave none; an
+      // empty string carries nothing either.
       if (
         typeof rec.provided_display_name === 'string' &&
         rec.provided_display_name !== ''
@@ -831,10 +831,10 @@ function parseStep(body: unknown): AuthnStep {
         step.provided_display_name = rec.provided_display_name
       }
       if (
-        typeof rec.provided_provider === 'string' &&
-        rec.provided_provider !== ''
+        typeof rec.provided_method === 'string' &&
+        rec.provided_method !== ''
       ) {
-        step.provided_provider = rec.provided_provider
+        step.provided_method = rec.provided_method
       }
       if (typeof rec.provided_email === 'string' && rec.provided_email !== '') {
         step.provided_email = rec.provided_email
