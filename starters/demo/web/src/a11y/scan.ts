@@ -68,10 +68,13 @@
  * throws and axe records "error occurred": every node comes back
  * INDETERMINATE, and neither a pass nor a violation is observable here. The
  * rule is left in the sweep's rule set and its incomplete results are
- * reported (never filtered or suppressed); it is deliberately NOT part of the
- * decidable-incomplete assertions in routes.test.tsx. The browser tier settles
- * it by running the rule alone in Chromium (the notification bell and the
- * settings row's Remove control).
+ * reported as a HINT -- each line carrying the node's selector, never
+ * asserted, never filtered and never disabled globally: a jsdom run cannot
+ * decide 2.5.3, so it must not pretend to. It is deliberately NOT part of the
+ * decidable-incomplete assertions in routes.test.tsx. The browser tier
+ * settles the rule for real (routes.browser.test.tsx walks every route/state
+ * in Chromium, and the package-level cases cover the notification bell and
+ * the settings row's Remove control).
  */
 
 import axe from 'axe-core'
@@ -89,6 +92,13 @@ export interface A11yFinding {
   readonly nodes: number
   /** The rule's one-line help text. */
   readonly help: string
+  /**
+   * The flagged nodes' selectors (axe's `target`, one entry per node), so a
+   * reported finding names where on the page it lives. An incomplete result
+   * is reported as a hint rather than a verdict (a rule jsdom cannot decide),
+   * and without the selectors that hint could not point at its node.
+   */
+  readonly targets: readonly string[]
 }
 
 /** One scan's outcome: the violations found, plus the indeterminate results. */
@@ -182,6 +192,7 @@ function toFinding(result: axe.Result): A11yFinding {
     impact: (result.impact ?? null) as AxeImpact,
     nodes: result.nodes.length,
     help: result.help,
+    targets: result.nodes.map((node) => node.target.join(' ')),
   }
 }
 
@@ -248,9 +259,11 @@ export function isFailing(finding: A11yFinding): boolean {
   return finding.impact === 'serious' || finding.impact === 'critical'
 }
 
-/** One finding as a report line: rule, impact, node count, help. */
+/** One finding as a report line: rule, impact, node count, help, selectors. */
 export function formatFinding(finding: A11yFinding): string {
-  return `  - ${finding.rule} [${finding.impact ?? 'no-impact'}, ${finding.nodes} node(s)] ${finding.help}`
+  const where =
+    finding.targets.length > 0 ? ` at ${finding.targets.join(', ')}` : ''
+  return `  - ${finding.rule} [${finding.impact ?? 'no-impact'}, ${finding.nodes} node(s)] ${finding.help}${where}`
 }
 
 /** A list of findings as a newline-joined report block. */

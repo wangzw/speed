@@ -1,0 +1,179 @@
+/**
+ * The route/state matrix both accessibility sweeps walk.
+ *
+ * The jsdom gate (routes.test.tsx) and the browser gate
+ * (routes.browser.test.tsx) must sweep the same routes in the same states:
+ * otherwise the browser leg could settle WCAG 2.5.3 on a route set that
+ * drifted from the one the jsdom gate covers. The route list is derived from
+ * the app's own route table (the copied product's `routes`) and the state
+ * list is fixed, so a page added there is scanned by both without either file
+ * changing.
+ */
+
+import { act } from '@testing-library/react'
+import { accountUiResources } from '@speed/account-ui'
+import { consoleUiResources } from '@speed/console-ui'
+import { routes } from '../routes.js'
+import {
+  authenticatedSnapshot,
+  createTestSession,
+} from '../test-utils/session.js'
+import type { BackendMode } from './backends.js'
+
+export type { BackendMode }
+
+/**
+ * Every platform permission code a console page's route guard checks, so the
+ * staff session passes every guard and each console page renders inside the
+ * frame rather than the no-permission surface. The set is drawn from the
+ * console-ui declarations' own permission codes.
+ */
+export const CONSOLE_PERMISSION_CODES = [
+  'tenant.read',
+  'authn.account.read',
+  'authn.session.read',
+  'authn.impersonation.read',
+  'authz.role.read',
+  'authn.membership.manage',
+  'authn.idp.manage',
+  'settings.read',
+  'sms.template.read',
+  'audit.read',
+] as const
+
+/** A platform-staff session holding every console permission code. */
+export function staffSession() {
+  return createTestSession(
+    authenticatedSnapshot({ system: [...CONSOLE_PERMISSION_CODES] }),
+  )
+}
+
+/** The three states each route is swept in. */
+export const MODES: readonly BackendMode[] = ['data', 'empty', 'error']
+
+/**
+ * Replaces a declaration's `:name` parameter with a concrete segment, so a
+ * path pattern becomes a URL the router matches and the backend answers.
+ */
+export function concretize(pattern: string): string {
+  return pattern.replace(/:[A-Za-z_][A-Za-z0-9_]*/g, 'sample')
+}
+
+/** The distinct URL paths the app's route table declares. */
+export const ROUTE_PATHS = [
+  ...new Set(routes.map((route) => concretize(route.path))),
+]
+
+/**
+ * The concrete paths the composition ships, pinned so a route that drops out
+ * of the table cannot leave the sweep silently -- the coverage guard in
+ * routes.test.tsx asserts each of these is still enumerated. Drawn from the
+ * app's route table: the business routes (the home page, the account page
+ * that also carries the email verification, the setup landing, the
+ * notification centre, the binding callback), the auth and invitation
+ * landings, and the console area under CONSOLE_PREFIX, every `:param`
+ * concretized to `sample` as `concretize` does.
+ */
+export const EXPECTED_ROUTE_PATHS = [
+  '/',
+  '/account',
+  '/account/setup',
+  '/account/callback',
+  '/notifications',
+  '/sign-in/callback',
+  '/invitations/sample',
+  '/password-reset',
+  '/console',
+  '/console/tenants',
+  '/console/tenants/sample',
+  '/console/accounts',
+  '/console/sessions',
+  '/console/impersonations',
+  '/console/permissions',
+  '/console/invitations',
+  '/console/sso',
+  '/console/settings',
+  '/console/sms',
+  '/console/audit',
+  '/console/audit/sample',
+] as const
+
+/**
+ * The error-placeholder title each route renders in error mode, read from the
+ * packages' own bundles.
+ *
+ * In error mode every read rejects, but a page reaches its error state only
+ * once react-query reports the failures; a scan taken before that flush
+ * records a half-rendered tree. Both sweeps assert this copy is on screen
+ * before scanning these routes, so a pending page is never scanned as if it
+ * were the error state.
+ */
+export const ERROR_PLACEHOLDER_BY_PATH: Readonly<Record<string, string>> = {
+  '/account': (
+    accountUiResources['en-US'] as unknown as {
+      readonly profile: { readonly error: { readonly title: string } }
+    }
+  ).profile.error.title,
+  '/console/audit': (
+    consoleUiResources['en-US'] as unknown as {
+      readonly audit: { readonly error: { readonly title: string } }
+    }
+  ).audit.error.title,
+}
+
+/**
+ * How many settle ticks a render may take before a sweep calls it hung.
+ * Each tick flushes pending microtasks and one timer/animation-frame callback
+ * inside act; a stable page returns after two consecutive identical ticks,
+ * so the cap only bounds a page that never stops changing.
+ */
+const SETTLE_TICK_CAP = 50
+
+/**
+ * Lets a page settle before it is scanned: the scripted backend resolves
+ * immediately, but react-query hands the page its data -- and, in error mode,
+ * flushes its failure notification -- on a batched macrotask that can land
+ * after a fixed one-flush wait. Scanning then would record a pending tree
+ * whose headings and placeholders have not been committed yet.
+ *
+ * The wait is therefore driven by the render itself: each tick flushes the
+ * pending work inside act and snapshots the document, and the loop returns
+ * only after two consecutive ticks render the same structure. A page that
+ * never stabilises within the cap fails the case with the cap named, rather
+ * than scanning whatever happened to be on screen.
+ */
+export async function settle(): Promise<void> {
+  let previous = ''
+  let stableTicks = 0
+  for (let tick = 0; tick < SETTLE_TICK_CAP; tick += 1) {
+    await act(async () => {
+      await Promise.resolve()
+      await new Promise<void>((resolve) => {
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(() => resolve())
+        } else {
+          setTimeout(resolve, 0)
+        }
+      })
+    })
+    const current = document.body.innerHTML
+    if (current === previous) {
+      stableTicks += 1
+      if (stableTicks >= 2) {
+        return
+      }
+    } else {
+      stableTicks = 0
+      previous = current
+    }
+  }
+  throw new Error(
+    `settle() reached its ${SETTLE_TICK_CAP}-tick cap without the DOM ` +
+      'stabilising; the scan would run against a page that is still changing',
+  )
+}
+
+/** The tenant every sweep scans under, with the alias the host has recorded
+ * for it; the host holds no default roster, so a current tenant must be
+ * nameable. */
+export const SCAN_TENANT_ID = 'acme'

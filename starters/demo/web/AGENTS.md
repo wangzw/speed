@@ -246,7 +246,28 @@ the route gate's impact threshold is the looser of the two — a page-level
 regression net, not a superset of a component scan's threshold. `test:a11y` is its own
 frontend-gate leg beside lint / typecheck / test -- the root Makefile's
 `web-a11y` -- and the ordinary `test` run excludes `src/a11y/**`, so it runs
-once. axe covers only the mechanically decidable part of WCAG (roughly 30-40%);
+once. axe's `label-content-name-mismatch` (WCAG 2.5.3) cannot be decided under
+jsdom (its visible-text probe needs a real canvas, which the jsdom setup stubs
+to null), so the sweep reports that rule's incomplete result as a hint with the
+node's selector and never asserts it. The rule's verdict lives in the browser
+leg below.
+
+The browser leg: `src/a11y/routes.browser.test.tsx` walks the same route/state
+matrix (`src/a11y/route-table.ts`) in real Chromium, rendering the assembled
+app exactly as the jsdom sweep does but scanning only
+`label-content-name-mismatch`. There the rule is determinate: an incomplete or
+a violating node fails the case with its selector named, and the sweep asserts
+the rule evaluated at least one node so an inapplicable run cannot read as a
+pass. It also drives the shell's own chrome — both layouts, the account menu,
+and the notification bell at zero, one and above the cap — because the shared
+`renderWithProviders` harness a package uses cannot see how the demo composes
+them. It is part of the workspace browser tier, not this app's `test` or
+`test:a11y`: the root `make web-browser` entry discovers it through
+`web/vitest.browser.config.ts` (which names this directory's glob) and runs it
+in the one Chromium instance beside the packages' browser cases. Chromium is
+not part of the `.mise.toml` toolchain, so this leg is not in `make check`.
+
+axe covers only the mechanically decidable part of WCAG (roughly 30-40%);
 the gate proves no regression, and does not replace manual review. See the
 frontend coding standards' Accessibility section.
 
@@ -268,14 +289,17 @@ Checks the jsdom gate cannot make, recorded so they are not read as
   against its accessible name and reads the visible text through the canvas
   text-measurement API; jsdom's `getContext('2d')` returns null (the test
   setup stubs it), so axe's probe throws and the rule is indeterminate for
-  every node. The browser tier settles it: `NotificationBell.browser.test.tsx`
-  (unread 1 and 0) and `SettingsPage.browser.test.tsx` (the row's Remove
-  control) run the rule alone in Chromium and assert neither violations nor
-  incomplete results. `aria-required-children` (axe rates it critical) probes
-  an element's required descendants through visibility, likewise layout-bound.
-  A genuine 2.5.3 defect therefore cannot fail the jsdom gate; these two rules
-  run and report as indeterminate rather than being swept out. The sweep's
-  guard in `routes.test.tsx` asserts that `color-contrast` and
+  every node. The browser tier settles it for real: `routes.browser.test.tsx`
+  walks every route/state of this app, and the package cases cover the
+  notification bell (zero, one and above the cap — at zero the bell renders no
+  badge, so no hidden "0" can sit outside the accessible name), the inbox's
+  row action, and the settings row's Remove control. Each runs the rule alone
+  in Chromium and asserts neither violations nor incomplete results.
+  `aria-required-children` (axe rates it critical) probes an element's
+  required descendants through visibility, likewise layout-bound. A genuine
+  2.5.3 defect therefore cannot fail the jsdom gate; these two rules run and
+  report as indeterminate rather than being swept out. The sweep's guard in
+  `routes.test.tsx` asserts that `color-contrast` and
   `aria-prohibited-attr` stay absent from the incomplete set, and neither of
   these two rules is asserted there.
 - **Touch-target size (≥44px, WCAG 2.5.5)** and **screen-reader behaviour

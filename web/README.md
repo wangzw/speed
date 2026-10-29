@@ -159,6 +159,13 @@ Playwright provider). They are excluded from each package's default
 `make check`: the root `make web-browser` entry runs only them, and the
 scheduled `.github/workflows/browser.yml` job calls that same entry.
 
+The tier's `include` also names the demo host's route-level sweep
+(`starters/demo/web/src/a11y/routes.browser.test.tsx`): it walks the
+assembled app's routes in real Chromium to settle axe's
+`label-content-name-mismatch` (WCAG 2.5.3), which jsdom cannot decide. The
+demo lives outside `web/` but is a workspace member, so the config names
+its directory for Vite's file access as well.
+
 Chromium is not part of the `.mise.toml` toolchain; install it once:
 
 ```

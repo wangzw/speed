@@ -29,7 +29,7 @@
  * regression, never that a page is accessible.
  */
 
-import { act, screen, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
@@ -40,99 +40,27 @@ import type {
   AuthnProfileProfile,
 } from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
-import { accountUiResources } from '@speed/account-ui'
 import { authUiResources } from '@speed/auth-ui'
-import { consoleUiResources } from '@speed/console-ui'
 import type { AppShellShellLayout } from '@speed/layout-kit'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
-import { routes } from '../routes.js'
 import { renderDemoApp } from '../test-utils/render.js'
-import {
-  authenticatedSnapshot,
-  createTestSession,
-} from '../test-utils/session.js'
 import {
   setCurrentTenantId,
   setTenantAliases,
 } from '../chrome.js'
 import { createBackend } from './backends.js'
 import type { BackendMode } from './backends.js'
+import {
+  ERROR_PLACEHOLDER_BY_PATH,
+  EXPECTED_ROUTE_PATHS,
+  MODES,
+  ROUTE_PATHS,
+  SCAN_TENANT_ID,
+  settle,
+  staffSession,
+} from './route-table.js'
 import { formatFinding, formatFindings, isFailing, runBestPracticePass, scanPage } from './scan.js'
 import type { A11yFinding, A11yScanResult } from './scan.js'
-
-/**
- * Every platform permission code a console page's route guard checks, so the
- * staff session passes every guard and each console page renders inside the
- * frame rather than the no-permission surface. The set is drawn from the
- * console-ui declarations' own permission codes.
- */
-const CONSOLE_PERMISSION_CODES = [
-  'tenant.read',
-  'authn.account.read',
-  'authn.session.read',
-  'authn.impersonation.read',
-  'authz.role.read',
-  'authn.membership.manage',
-  'authn.idp.manage',
-  'settings.read',
-  'sms.template.read',
-  'audit.read',
-] as const
-
-/** A platform-staff session holding every console permission code. */
-function staffSession() {
-  return createTestSession(
-    authenticatedSnapshot({ system: [...CONSOLE_PERMISSION_CODES] }),
-  )
-}
-
-/** The three states each route is swept in. */
-const MODES: readonly BackendMode[] = ['data', 'empty', 'error']
-
-/**
- * Replaces a declaration's `:name` parameter with a concrete segment, so a
- * path pattern becomes a URL the router matches and the backend answers.
- */
-function concretize(pattern: string): string {
-  return pattern.replace(/:[A-Za-z_][A-Za-z0-9_]*/g, 'sample')
-}
-
-/** The distinct URL paths the app's route table declares. */
-const ROUTE_PATHS = [...new Set(routes.map((route) => concretize(route.path)))]
-
-/**
- * The concrete paths the composition ships, pinned so a route that drops out
- * of the table cannot leave the sweep silently -- the coverage guard below
- * asserts each of these is still enumerated. Drawn from the app's route table:
- * the business routes (the home page, the account page that also carries the
- * email verification, the setup landing, the notification centre, the
- * binding callback), the auth and invitation landings, and the
- * console area under CONSOLE_PREFIX, every `:param` concretized to `sample` as
- * `concretize` does.
- */
-const EXPECTED_ROUTE_PATHS = [
-  '/',
-  '/account',
-  '/account/setup',
-  '/account/callback',
-  '/notifications',
-  '/sign-in/callback',
-  '/invitations/sample',
-  '/password-reset',
-  '/console',
-  '/console/tenants',
-  '/console/tenants/sample',
-  '/console/accounts',
-  '/console/sessions',
-  '/console/impersonations',
-  '/console/permissions',
-  '/console/invitations',
-  '/console/sso',
-  '/console/settings',
-  '/console/sms',
-  '/console/audit',
-  '/console/audit/sample',
-] as const
 
 /** One scanned route/state combination's violations, for the closing report. */
 interface ScanRecord {
@@ -142,84 +70,7 @@ interface ScanRecord {
   readonly findings: readonly A11yFinding[]
 }
 
-/**
- * The error-placeholder title each route renders in error mode, read from the
- * packages' own bundles.
- *
- * In error mode every read rejects, but a page reaches its error state only
- * once react-query reports the failures; a scan taken before that flush
- * records a half-rendered tree. The sweep asserts this copy is on screen
- * before scanning these routes, so a pending page is never scanned as if it
- * were the error state.
- */
-const ERROR_PLACEHOLDER_BY_PATH: Readonly<Record<string, string>> = {
-  '/account': (
-    accountUiResources['en-US'] as unknown as {
-      readonly profile: { readonly error: { readonly title: string } }
-    }
-  ).profile.error.title,
-  '/console/audit': (
-    consoleUiResources['en-US'] as unknown as {
-      readonly audit: { readonly error: { readonly title: string } }
-    }
-  ).audit.error.title,
-}
-
 const records: ScanRecord[] = []
-
-/**
- * How many settle ticks a render may take before the sweep calls it hung.
- * Each tick flushes pending microtasks and one timer/animation-frame callback
- * inside act; a stable page returns after two consecutive identical ticks,
- * so the cap only bounds a page that never stops changing.
- */
-const SETTLE_TICK_CAP = 50
-
-/**
- * Lets the page settle before the scan: the scripted backend resolves
- * immediately, but react-query hands the page its data -- and, in error
- * mode, flushes its failure notification -- on a batched macrotask that can
- * land after a fixed one-flush wait. Scanning then would record a pending
- * tree whose headings and placeholders have not been committed yet, and
- * axe's cached heading table can no longer be matched against the subtrees
- * it is about to be replaced with.
- *
- * The wait is therefore driven by the render itself: each tick flushes the
- * pending work inside act and snapshots the document, and the loop returns
- * only after two consecutive ticks render the same structure. A page that
- * never stabilises within SETTLE_TICK_CAP fails the case with the cap named,
- * rather than scanning whatever happened to be on screen.
- */
-async function settle(): Promise<void> {
-  let previous = ''
-  let stableTicks = 0
-  for (let tick = 0; tick < SETTLE_TICK_CAP; tick += 1) {
-    await act(async () => {
-      await Promise.resolve()
-      await new Promise<void>((resolve) => {
-        if (typeof requestAnimationFrame === 'function') {
-          requestAnimationFrame(() => resolve())
-        } else {
-          setTimeout(resolve, 0)
-        }
-      })
-    })
-    const current = document.body.innerHTML
-    if (current === previous) {
-      stableTicks += 1
-      if (stableTicks >= 2) {
-        return
-      }
-    } else {
-      stableTicks = 0
-      previous = current
-    }
-  }
-  throw new Error(
-    `settle() reached its ${SETTLE_TICK_CAP}-tick cap without the DOM ` +
-      'stabilising; the scan would run against a page that is still changing',
-  )
-}
 
 /**
  * The two rules that land in axe's indeterminate bucket for reasons this
@@ -229,9 +80,10 @@ async function settle(): Promise<void> {
  * label-content-name-mismatch is deliberately absent: jsdom answers the
  * rule's canvas getContext probe with null, so axe records "error occurred"
  * and the rule is indeterminate for every node -- neither a pass nor a
- * failure is observable here (see ./scan.ts's header). The browser tier
- * settles it in Chromium; this gate keeps reporting its incomplete result
- * rather than turning it into an assertion it cannot decide.
+ * failure is observable here (see ./scan.ts's header). The sweep keeps
+ * printing its incomplete result, selector included, as a hint; the browser
+ * tier (routes.browser.test.tsx) settles the rule in Chromium. Turning the
+ * hint into an assertion here would gate on a verdict jsdom cannot reach.
  */
 function expectNoDecidableIncomplete(
   result: A11yScanResult,
@@ -355,15 +207,10 @@ const MISSING_KEY_WARNING = '[speed-i18n] missing translation key'
 const missingKeys: string[] = []
 let warnSpy: MockInstance
 
-/** The tenant every route is scanned under, with the alias the host has
- * recorded for it; the host holds no default roster, so a current tenant must
- * be nameable. */
-const TENANT_ID = 'acme'
-
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
-  setCurrentTenantId(TENANT_ID)
-  setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
+  setCurrentTenantId(SCAN_TENANT_ID)
+  setTenantAliases(new Map([[SCAN_TENANT_ID, SCAN_TENANT_ID]]))
   missingKeys.length = 0
   const original = console.warn
   warnSpy = vi.spyOn(console, 'warn').mockImplementation((message, ...rest) => {

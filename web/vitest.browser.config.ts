@@ -16,10 +16,24 @@
  * `make web-browser` (see web/README.md for the one-line Chromium
  * install).
  */
+import { fileURLToPath } from 'node:url'
 import { configDefaults, defineConfig } from 'vitest/config'
 import { playwright } from '@vitest/browser-playwright'
 import { speedAliases } from './scripts/speed-aliases.mjs'
 import { sharedTestOptions } from './vitest.shared.ts'
+
+/** This package-library root; the tier's own setup and aliases live under it. */
+const webRoot = fileURLToPath(new URL('.', import.meta.url))
+/**
+ * The demo host's directory. It is a workspace member (web/pnpm-workspace.yaml)
+ * but lives outside web/, exactly where a delivered consumer project lives, so
+ * the tier's include and Vite's file access must name it. Its route-level
+ * Label in Name sweep (src/a11y/routes.browser.test.tsx) runs here, in the same
+ * Chromium instance, rather than in a second browser entry point.
+ */
+const demoWebRoot = fileURLToPath(
+  new URL('../starters/demo/web', import.meta.url),
+)
 
 export default defineConfig({
   resolve: {
@@ -34,11 +48,21 @@ export default defineConfig({
   // server has nothing to serve newer than the tree it started from.
   server: {
     watch: null,
+    // Naming fs.allow replaces Vite's workspace-root default, so the demo host
+    // (outside web/) is named beside it. Vite serves the demo test files and
+    // its src through this allowance.
+    fs: {
+      allow: [webRoot, demoWebRoot],
+    },
   },
   test: sharedTestOptions({
-    // The browser cases of every package, from the root config: one
-    // Chromium instance for the whole tier rather than one per package.
-    include: ['packages/*/src/**/*.browser.test.tsx'],
+    // The browser cases of every package plus the demo host's route-level
+    // sweep, from the root config: one Chromium instance for the whole tier
+    // rather than one per package.
+    include: [
+      'packages/*/src/**/*.browser.test.tsx',
+      '../starters/demo/web/src/**/*.browser.test.tsx',
+    ],
     // The shared preset excludes browser cases from the unit legs; the
     // tier that owns them keeps Vitest's ordinary excludes only.
     exclude: configDefaults.exclude,
