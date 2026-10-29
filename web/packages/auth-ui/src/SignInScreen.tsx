@@ -443,9 +443,10 @@ export function SignInScreen({
     (renderedMethods.some(opensAccount) ||
       doc.signup.password.enabled === true)
 
-  // The sign-in mode's account sentence names a phone number, so it is
-  // offered only where signup is on and an SMS channel that opens an
-  // account is on screen.
+  // The sign-in mode's account sentence names a phone number, so it belongs
+  // under the SMS channel alone: it renders only where signup is on, an SMS
+  // channel that opens an account is on screen, and that channel is the one
+  // the viewer is looking at.
   const smsOpensAccount =
     doc.signup?.enabled === true &&
     visibleForms.some((method) => method.name === 'sms' && opensAccount(method))
@@ -584,7 +585,7 @@ export function SignInScreen({
       ) : activeDescriptor ? (
         renderForm(activeDescriptor)
       ) : null}
-      {activeMode === 'sign-in' && smsOpensAccount ? (
+      {activeMode === 'sign-in' && smsOpensAccount && selected === 'sms' ? (
         <Typography variant="body2" color="text.secondary">
           {t('mode.signInAccountHint')}
         </Typography>

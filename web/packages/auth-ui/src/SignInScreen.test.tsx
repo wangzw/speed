@@ -1148,6 +1148,36 @@ describe('SignInScreen', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('keep the account sentence under the SMS channel alone', async () => {
+    const harness = makeHarness({})
+    const discovery = methodList(
+      [
+        { name: 'password', kind: 'form' },
+        { name: 'sms', kind: 'form', opens_account: true },
+      ],
+      { signup: true },
+    )
+    renderWithProviders(
+      <SignInScreen session={harness.session} discovery={discovery} />,
+    )
+    const hint = zhCN.mode.signInAccountHint
+    // The sentence names a phone number: with the password channel selected
+    // it would describe a channel the viewer is not looking at.
+    expect(screen.queryByText(hint)).not.toBeInTheDocument()
+
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('tab', { name: zhCN.smsSignIn.title, exact: true }),
+    )
+    expect(screen.getByText(hint)).toBeInTheDocument()
+
+    // Register mode asks for a name and a password, not a phone number.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    expect(screen.queryByText(hint)).not.toBeInTheDocument()
+  })
+
   it('list only account-opening methods on every channel in register mode', async () => {
     const harness = makeHarness({})
     renderWithProviders(
