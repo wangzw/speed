@@ -256,8 +256,12 @@ export const journeys: readonly JourneyEntry[] = [
     status: 'covered',
     covers: [
       'REQ-security-013',
-      'REQ-security-017',
       'REQ-security-040',
+      'REQ-account-061',
+      'REQ-account-064',
+      'REQ-account-067',
+      'REQ-signup-012',
+      'REQ-signup-047',
     ],
   },
   {
