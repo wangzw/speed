@@ -6,9 +6,11 @@
  * What this suite pins: a ready flow is taken with `step: 'complete'`,
  * the `link` completion (state 'linked') fires onBound exactly once and
  * never signs anyone in; a flow still parked on a step holds the pending
- * notice (the handler waits for the provider's callback to land); and a
- * read that failed renders its code text under a retry that re-reads the
- * flow.
+ * notice (the handler waits for the provider's callback to land); a read
+ * that failed renders its code text under a retry that re-reads the flow;
+ * and a flow that no longer exists (a read that finds none, or a `complete`
+ * exchange refused as authn.flow_invalid) is terminal when the host gives
+ * onDismiss, keeping the retry only without one.
  */
 
 import { useState } from 'react'
@@ -324,6 +326,123 @@ describe('BindingCallbackHandler', () => {
       screen.getByRole('button', { name: zhCN.bindingCallback.retry }),
     )
     await waitFor(() => expect(onBound).toHaveBeenCalledTimes(1))
+  })
+
+  it('renders the terminal notice when no flow is read and the host offers a way back', async () => {
+    // The 401 read means the binding is definitively gone: a re-read would
+    // answer the same nothing. With the host's onDismiss the terminal notice
+    // replaces the generic retry banner and its one action leaves the route.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === FLOW_CURRENT) {
+        return errorResponse(401, 'authn.flow_invalid')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const warn = captureRefreshWarning()
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onDismiss = vi.fn()
+    renderWithProviders(
+      <BindingCallbackHandler session={rig.session} onDismiss={onDismiss} />,
+    )
+
+    expect(
+      await screen.findByText(zhCN.bindingCallback.flowGone),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.bindingCallback.retry }),
+    ).toBeNull()
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole('button', {
+          name: zhCN.bindingCallback.backToAccount,
+        }),
+      )
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+    // The one action leaves the route: it reads no flow again.
+    expect(
+      rig.calls.filter((call) => call.path === FLOW_CURRENT),
+    ).toHaveLength(1)
+    expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders the terminal notice when the complete exchange is refused as flow-invalid', async () => {
+    // The server answered the completion with authn.flow_invalid: the flow
+    // no longer exists, so re-reading it is a deterministic empty turn. With
+    // onDismiss the notice is terminal and offers no retry.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === FLOW_CURRENT) {
+        return jsonResponse(200, {
+          seq: 2,
+          state: 'ready',
+          next: { kind: 'complete' },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        return errorResponse(401, 'authn.flow_invalid')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const warn = captureRefreshWarning()
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onDismiss = vi.fn()
+    renderWithProviders(
+      <BindingCallbackHandler session={rig.session} onDismiss={onDismiss} />,
+    )
+
+    expect(
+      await screen.findByText(zhCN.bindingCallback.flowGone),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.bindingCallback.retry }),
+    ).toBeNull()
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole('button', {
+          name: zhCN.bindingCallback.backToAccount,
+        }),
+      )
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the retry when the complete exchange is refused for another reason', async () => {
+    // Only authn.flow_invalid proves the flow is gone. A transport or
+    // server failure leaves the completion retryable, so the failure banner
+    // keeps its re-read even though the host did supply an exit.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === FLOW_CURRENT) {
+        return jsonResponse(200, {
+          seq: 2,
+          state: 'ready',
+          next: { kind: 'complete' },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        return errorResponse(503, 'authn.unavailable')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onDismiss = vi.fn()
+    renderWithProviders(
+      <BindingCallbackHandler session={rig.session} onDismiss={onDismiss} />,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.unavailable,
+    )
+    expect(
+      screen.getByRole('button', { name: zhCN.bindingCallback.retry }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(zhCN.bindingCallback.flowGone),
+    ).not.toBeInTheDocument()
+    expect(onDismiss).not.toHaveBeenCalled()
   })
 
   describe('a refused callback', () => {

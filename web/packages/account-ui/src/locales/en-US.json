@@ -111,6 +111,7 @@
     "continueLabel": "Continue",
     "retry": "Retry",
     "conflict": "This social account is already linked to another account.",
+    "flowGone": "This link has expired or was already completed.",
     "backToAccount": "Back to account settings"
   },
   "mfa": {

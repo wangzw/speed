@@ -21,9 +21,14 @@
  * object, so a host that stays (or gave no onBound) is not left on the
  * pending notice; the region stands in the tree across every phase, empty
  * until the link settles, so its live region announces the confirmation
- * rather than being born with it. A read that failed, and a completion whose
- * state is not 'linked', render their code text in the InlineError banner
- * under a retry.
+ * rather than being born with it. A read that finds no flow -- the binding
+ * is gone or the completion already landed -- and a `complete` exchange
+ * refused as `authn.flow_invalid` are definitive: re-reading would answer
+ * the same nothing. With the host's `onDismiss` each renders a terminal
+ * notice whose one action returns to the account surface; without one the
+ * generic failure banner keeps its retry. A read that failed, and a
+ * completion whose state is not 'linked', render their code text in the
+ * InlineError banner under a retry.
  * A callback the server refused never reaches this handler as a flow: it
  * lands back on the callback route with its problem code in the URL
  * fragment (the same shape a refused login lands with), and the host hands
@@ -44,6 +49,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
+import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
@@ -86,8 +92,12 @@ export interface BindingCallbackHandlerProps {
    */
   readonly initialError?: string
   /**
-   * The refused callback's only action: the host returns to the account
-   * surface. Without one the message stands alone.
+   * The host's exit, used in two terminal states: the refused callback's
+   * only action, and the flow-gone notice's only action -- both return to
+   * the account surface, because the server already consumed the flow and
+   * the callback route cannot start another. Without one the refused
+   * message stands alone and a gone flow falls back to the failure banner
+   * with its retry.
    */
   readonly onDismiss?: () => void
 }
@@ -95,10 +105,14 @@ export interface BindingCallbackHandlerProps {
 /**
  * The handler's local phases: reading (the flow is being read), step
  * (the flow is parked on a step the handler renders and answers), failed
- * (a read or an answer failed, under a retry) and done (a `link`
- * completion committed and the host was cued).
+ * (a read or an answer failed, under a retry), done (a `link` completion
+ * committed and the host was cued) and gone (the flow no longer exists, so
+ * the terminal notice offers only the way back).
  */
-type Phase = 'reading' | 'step' | 'failed' | 'done'
+type Phase = 'reading' | 'step' | 'failed' | 'done' | 'gone'
+
+/** The code the server answers a flow that no longer exists. */
+const FLOW_INVALID = 'authn.flow_invalid'
 
 /** The answer step a challenge step's input travels under, by the flow's
  * own state: `answer` in the first factor, `factor` in the second,
@@ -155,6 +169,10 @@ export function BindingCallbackHandler({
   onBoundRef.current = onBound
   const absentRef = useRef(absent)
   absentRef.current = absent
+  // Read inside the callbacks for the same reason: the flow's terminal
+  // decision must not re-arm the read effect when a host passes it inline.
+  const onDismissRef = useRef(onDismiss)
+  onDismissRef.current = onDismiss
 
   // A running read is not cancelled on cleanup: StrictMode's
   // mount/effect/cleanup/effect cycle would leave one start, so the first
@@ -221,6 +239,16 @@ export function BindingCallbackHandler({
             return
           }
         }
+        if (run !== runRef.current) {
+          return
+        }
+        if (onDismissRef.current !== undefined) {
+          // The flow is definitively gone (or already completed elsewhere):
+          // no re-read can change that, so the terminal notice replaces the
+          // banner whose retry would spin on the same nothing.
+          setPhase('gone')
+          return
+        }
         setErrorCode('client.unknown')
         setPhase('failed')
         return
@@ -240,10 +268,27 @@ export function BindingCallbackHandler({
         setPhase('step')
         return
       }
-      const settled = await session.answerFlow({
-        seq: state.seq,
-        step: 'complete',
-      })
+      let settled: AuthnFlowState
+      try {
+        settled = await session.answerFlow({
+          seq: state.seq,
+          step: 'complete',
+        })
+      } catch (error) {
+        if (run !== runRef.current) {
+          return
+        }
+        if (
+          errorCodeOf(error) === FLOW_INVALID &&
+          onDismissRef.current !== undefined
+        ) {
+          // The flow no longer exists: the completion can never land and a
+          // re-read is a certain empty turn, so the notice is terminal.
+          setPhase('gone')
+          return
+        }
+        throw error
+      }
       if (run !== runRef.current) {
         return
       }
@@ -370,7 +415,24 @@ export function BindingCallbackHandler({
   return (
     <Box sx={{ width: '100%' }}>
       <WriteFeedbackRegion outcome={doneFeedback.outcome} />
-      {phase === 'done' ? null : phase === 'failed' ? (
+      {phase === 'done' ? null : phase === 'gone' ? (
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 1.5,
+            width: '100%',
+          }}
+        >
+          <Alert severity="warning" role="alert" sx={{ width: '100%' }}>
+            {t('bindingCallback.flowGone')}
+          </Alert>
+          <Button variant="contained" onClick={onDismiss}>
+            {t('bindingCallback.backToAccount')}
+          </Button>
+        </Box>
+      ) : phase === 'failed' ? (
         <Box
           sx={{
             display: 'flex',
