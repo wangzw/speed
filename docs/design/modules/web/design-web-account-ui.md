@@ -104,7 +104,7 @@ interface BindingCallbackHandlerProps {
   readonly onBound?: () => void
   readonly absent?: ReactNode // 读不到流程、且部署没有 redirect 方法时渲染
   readonly initialError?: string // 回跳片段里的问题码；给出时直接渲染它，不读流程
-  readonly onDismiss?: () => void // 回跳失败时的唯一动作：返回账户面
+  readonly onDismiss?: () => void // 流程已确定不存在（回跳被拒、流程读不到）时的唯一动作：返回账户面
 }
 
 interface MfaSectionProps {
@@ -236,7 +236,7 @@ sequenceDiagram
 
 ### 绑定回调的续接
 
-`BindingCallbackHandler` 挂在宿主的回调路由上，以 `session.readFlow()` 读回那条 `purpose: 'link'` 流程：流程已就绪（`next.kind = complete`）时以 `step: 'complete'` 取走结果，`link` 落地（`state: 'linked'`）后失效身份读取并触发 `onBound`；流程仍停在一步时渲染该步续接；交换失败渲染错误码文本与一个重试按钮。绑定的 `link` 不把任何人签进去。**回跳的拒绝不经过流程读取**：服务端把拒绝以 303 落回这条回调路由，并把问题码放进 URL 片段（`authn_error`，与登录回跳同一格式）；宿主读出后交给 `initialError`，处理器据此渲染该码在本面的文案，不读流程、不给重试按钮——同一次往返再试也不会成功，唯一动作是 `onDismiss` 返回账户面。`authn.conflict` 在本面读作「这个社交账号已关联到另一个账户」，与账户信息变更无关；其余可重试的读取失败才保留重试。
+`BindingCallbackHandler` 挂在宿主的回调路由上，以 `session.readFlow()` 读回那条 `purpose: 'link'` 流程：流程已就绪（`next.kind = complete`）时以 `step: 'complete'` 取走结果，`link` 落地（`state: 'linked'`）后失效身份读取并触发 `onBound`；流程仍停在一步时渲染该步续接；交换失败而拒绝不是 `authn.flow_invalid` 时渲染错误码文本与一个重试按钮。**读不到流程是流程已确定不存在，不是可重试的失败。** `session.readFlow()` 答 `null`（流程已过期、已在此前完成或绑定到别的浏览器），或交换被 `authn.flow_invalid` 拒绝时，重读一次只会得到同一个答案：处理器渲染一条终态说明（「这次绑定已失效或已完成。」）与唯一动作 `onDismiss`（「返回账户设置」），由宿主回到能重新起手绑定的一面；宿主没给 `onDismiss` 时退回错误码文本与重读流程的重试。绑定的 `link` 不把任何人签进去。**回跳的拒绝不经过流程读取**：服务端把拒绝以 303 落回这条回调路由，并把问题码放进 URL 片段（`authn_error`，与登录回跳同一格式）；宿主读出后交给 `initialError`，处理器据此渲染该码在本面的文案，不读流程、不给重试按钮——同一次往返再试也不会成功，唯一动作是 `onDismiss` 返回账户面。`authn.conflict` 在本面读作「这个社交账号已关联到另一个账户」，与账户信息变更无关；其余可重试的读取失败才保留重试。
 
 **本部署不提供社交绑定时的落点。** 回调路由在租户框架内，只有已认证者到达。宿主给了 `absent` 时，`readFlow()` 返回 `null` 之后处理器读一次 `session.listMethods()`：发现文档里没有 `kind=redirect` 的方法，即本部署不提供社交绑定，渲染 `absent`，宿主借此给出与未登记路径相同的 404（[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）；有这类方法或发现读取失败时，照常渲染错误码文本与重试按钮。读到流程时不读发现文档。宿主没给 `absent` 时，处理器不读发现文档，`readFlow()` 返回 `null` 即渲染错误码文本与重试按钮。
 
@@ -298,7 +298,11 @@ sequenceDiagram
 | 偏好写入被拒（`authn.bad_request`） | 一条失败横幅，控件退回存下的值（天然回退，无撤销记账） |
 | 偏好写入被 401 `authn.insufficient_user_authentication` 拒绝 | 给了 `session` 时打开提权对话框，成功后重放那次写一次；未给时渲染失败横幅 |
 | 绑定回调读不到流程，宿主给了 `absent`，且发现文档里没有 `kind=redirect` 的方法 | 渲染 `absent` |
-| 绑定回调读不到流程的其余情形（有 `kind=redirect` 的方法、发现读取失败、宿主没给 `absent`） | 错误码文本与一个重试按钮 |
+| 绑定回调读不到流程的其余情形（有 `kind=redirect` 的方法、宿主没给 `absent`） | 终态说明「这次绑定已失效或已完成。」与唯一的「返回账户设置」动作（触发 `onDismiss`）；宿主没给 `onDismiss` 时退回错误码文本与一个重试按钮 |
+| 绑定回调的 `complete` 交换被 `authn.flow_invalid` 拒绝 | 与读不到流程同形 |
+| 绑定回调的 `complete` 交换被其它原因拒绝 | 错误码文本与一个重试按钮 |
+| 绑定回调读回流程的请求失败（传输失败、5xx） | 错误码文本与一个重试按钮（重跑一次 `session.readFlow`） |
+| 绑定回调读不到流程、宿主给了 `absent`、发现读取本身失败 | 错误码文本与一个重试按钮（重跑一次发现读取） |
 
 ## 并发与事务边界
 
