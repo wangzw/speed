@@ -18,7 +18,10 @@
 
 import { screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { authUiResources } from '@speed/auth-ui'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
+import { openFlow } from '../test-utils/session-harness.js'
+import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { createBackend } from '../a11y/backends.js'
 import {
   setCurrentTenantId,
@@ -40,6 +43,42 @@ import {
  * recorded for it; the host holds no default roster, so a current tenant must
  * be nameable. */
 const TENANT_ID = 'acme'
+
+/** The auth-ui copy the account-opening step renders, read from the bundle
+ * the screen renders. */
+const authEn = authUiResources['en-US'] as unknown as {
+  readonly signInFlow: {
+    readonly signupAccountTitle: string
+    readonly signupEmailLabel: string
+  }
+}
+
+/** An anonymous session whose flow read parks at the social
+ * account-opening step. */
+function signupSession() {
+  return Object.assign(createTestSession(), {
+    readFlow: () =>
+      Promise.resolve(
+        openFlow({
+          seq: 1,
+          state: 'signup',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'username', kind: 'text', required: true },
+              {
+                name: 'password',
+                kind: 'password',
+                secret: true,
+                required: true,
+              },
+            ],
+            provided_email: 'ada@example.com',
+          },
+        }),
+      ),
+  })
+}
 
 /**
  * An authenticated session whose deployment offers a redirect method. The
@@ -93,6 +132,30 @@ describe('the auth callback route', () => {
     // -- so counting here judges the route's structure, and a page root that
     // opened a second main would already be counted.
     expect(container.querySelectorAll('main')).toHaveLength(1)
+  })
+
+  it('renders the account-opening step in the sign-in card', async () => {
+    // The first social login's account-opening step is not a page of its
+    // own: it renders inside the sign-in surface's card, brand and page
+    // heading included, with the step supplying only the card's content.
+    bindRequestFn(createBackend('data'))
+    renderDemoApp({ session: signupSession() })
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.signIn.heading,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', {
+        level: 2,
+        name: authEn.signInFlow.signupAccountTitle,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByLabelText(authEn.signInFlow.signupEmailLabel),
+    ).toHaveValue('ada@example.com')
   })
 
   it('returns a viewer who left an invitation link to that landing', async () => {

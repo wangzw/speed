@@ -63,6 +63,15 @@ export interface Accounts {
    * accessible name is the field's own name rather than a bundle string.
    */
   answerSignupUsername(username: string): Promise<void>
+  /**
+   * Answer the social first login's account-opening face: the username and
+   * the password with its confirmation. The face renders the provider's
+   * verified address read-only beside them; the answer never carries it.
+   */
+  answerSocialSignup(input: {
+    readonly username: string
+    readonly password: string
+  }): Promise<void>
   /** Sign out through the account menu. */
   signOut(): Promise<void>
   /** A fresh account whose identifiers do not collide with another run. */
@@ -81,6 +90,11 @@ const EMAIL_DOMAIN = 'e2e.test'
  * the sign-in flow's bundle, so the answer addresses the element by name.
  */
 const SIGNUP_USERNAME_FIELD = 'username'
+
+/** The social account-opening step's password fields, by their contract
+ * field names (the username's form scopes the lookup). */
+const SIGNUP_PASSWORD_FIELD = 'password'
+const SIGNUP_CONFIRM_FIELD = 'confirmPassword'
 
 /** The registered account's identifiers carry a run-scoped suffix. */
 function freshIdentifier(prefix: string): string {
@@ -248,6 +262,34 @@ export function createAccounts({
     await field.waitFor({ state: 'detached' })
   }
 
+  const signUpSocial = async (input: {
+    readonly username: string
+    readonly password: string
+  }): Promise<void> => {
+    // The social first login's face asks for a username and a password with
+    // its confirmation; the provider's address is read-only and is not part
+    // of the answer. The username's own form scopes every lookup, so the
+    // sign-in page's password field (when it is in the document) is never
+    // touched.
+    const field = page.locator(`input[name="${SIGNUP_USERNAME_FIELD}"]`)
+    await field.waitFor()
+    const form = field.locator('xpath=ancestor::form[1]')
+    await field.fill(input.username)
+    await form.locator(`input[name="${SIGNUP_PASSWORD_FIELD}"]`).fill(
+      input.password,
+    )
+    await form.locator(`input[name="${SIGNUP_CONFIRM_FIELD}"]`).fill(
+      input.password,
+    )
+    await form
+      .getByRole('button', {
+        name: copy('authUi', 'signInFlow.submit'),
+        exact: true,
+      })
+      .click()
+    await field.waitFor({ state: 'detached' })
+  }
+
   const signOut = async (): Promise<void> => {
     // The account menu trigger carries a stable purpose identifier: its
     // accessible name is the principal's display name when the account has one
@@ -287,6 +329,7 @@ export function createAccounts({
     },
     signIn,
     answerSignupUsername: signUpUsername,
+    answerSocialSignup: signUpSocial,
     signOut,
     unique(prefix: string): PasswordAccount {
       const identifier = freshIdentifier(prefix)

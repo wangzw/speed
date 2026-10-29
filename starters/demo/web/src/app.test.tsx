@@ -199,14 +199,16 @@ describe('the app at the root path', () => {
 
     // The callback handler mounts -- the operation-less test session's flow
     // read fails, so it offers its retry -- and the shell's sign-in surface is
-    // nowhere: the callback route is not gated by the tenant shell.
+    // nowhere: the callback route is not gated by the tenant shell. The card
+    // carries the sign-in page's heading on purpose, so the heading no longer
+    // tells the two surfaces apart; the password channel's form does.
     expect(
       await screen.findByRole('button', {
         name: tAuth('socialCallback.retry'),
       }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('heading', { level: 1, name: demoEnUS.signIn.heading }),
+      screen.queryByLabelText(tAuth('passwordSignIn.identifierLabel')),
     ).not.toBeInTheDocument()
   })
 })

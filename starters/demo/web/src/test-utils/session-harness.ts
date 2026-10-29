@@ -113,7 +113,13 @@ export function methodList(
   }
 }
 
-type OpenState = 'first' | 'second' | 'enroll' | 'ready' | 'processing'
+type OpenState =
+  | 'first'
+  | 'second'
+  | 'enroll'
+  | 'ready'
+  | 'processing'
+  | 'signup'
 
 /** An open flow reply (the flow is awaiting the next answer). The
  * default is a first-factor challenge asking for identifier and

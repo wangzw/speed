@@ -5,14 +5,14 @@
  * on a server of its own because the provider's fixed address is what decides
  * which branch the product takes.
  *
- *   - The address belongs to no account. The first social sign-in asks for the
- *     username every account is opened with, then opens the account with that
- *     username and the provider's display name alone. The provider's verified
- *     address is not written to the account: it is not a login way, a contact
- *     or the default contact. The account page renders no email-verification
- *     section (there is no address to verify), the identifiers list carries the
- *     username and no address, and the profile names the provider's display
- *     name.
+ *   - The address belongs to no account. The first social sign-in opens the
+ *     account-opening face: the provider's verified address shown read-only,
+ *     and a username and password (with its confirmation) to submit. The
+ *     account opens with that username and password and the provider's display
+ *     name; the address is written as a contact and the default contact, never
+ *     as a sign-in way. The account page names the verified address, the
+ *     identifiers list carries the address under Contacts and the username
+ *     under Sign-in ways, and the password set here signs in afterwards.
  *   - The address already belongs to an account. Automatic linking no longer
  *     exists, so a social login never enters the account that holds the
  *     address: the product refuses it with the link-required refusal and lands
@@ -44,6 +44,9 @@ import { approveSocialSignIn } from '../helpers/social'
 
 /** The username the first social sign-in chooses for the account it opens. */
 const FIRST_SIGN_IN_USERNAME = 'social-first-signin'
+
+/** The password the account-opening face sets, which signs in afterwards. */
+const FIRST_SIGN_IN_PASSWORD = 'e2e-Social-Password-123'
 
 /** The social block's Google channel. */
 function googleButton(page: Page) {
@@ -110,7 +113,7 @@ function bindingsSection(page: Page) {
 test.use({ socialIdentityProvider: true })
 
 test.describe('the provider address belongs to no account', () => {
-  test('social-sign-in: a first Google sign-in asks for a username and takes only the display name', async ({
+  test('social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact', async ({
     demo,
   }) => {
     const { page } = demo
@@ -126,40 +129,76 @@ test.describe('the provider address belongs to no account', () => {
       await approveSocialSignIn(page)
     })
 
-    await test.step('the product asks for the username before it opens the account', async () => {
-      // A first login that would open an account stops at the username step:
-      // the account cannot be created without the login name it will carry.
-      await demo.accounts.answerSignupUsername(FIRST_SIGN_IN_USERNAME)
+    await test.step('the product opens the account face before it creates the account', async () => {
+      // A first login that would open an account stops at the account-opening
+      // face: the provider's verified address read-only, and the username and
+      // password the account will carry.
+      await expect(
+        page.getByRole('heading', {
+          level: 2,
+          name: copy('authUi', 'signInFlow.signupAccountTitle'),
+          exact: true,
+        }),
+      ).toBeVisible()
+      const address = page.getByLabel(
+        copy('authUi', 'signInFlow.signupEmailLabel'),
+        { exact: true },
+      )
+      await expect(address).toHaveValue(identityProviderUser.email)
+      await expect(address).toHaveAttribute('readonly', '')
+      await demo.accounts.answerSocialSignup({
+        username: FIRST_SIGN_IN_USERNAME,
+        password: FIRST_SIGN_IN_PASSWORD,
+      })
     })
 
     await test.step('the browser comes back signed in to the tenant area', async () => {
       await expect(homeHeading(page)).toBeVisible()
     })
 
-    await test.step('the account holds the username and the display name, and no provider address', async () => {
+    await test.step('the account holds the username and the display name, and the provider address as a contact', async () => {
       await openAccountSettings(page)
 
-      // The provider's display name is the one fact the account took from it.
+      // The provider's display name is the name the account took from it.
       await expect(
         page.getByLabel(copy('accountUi', 'profile.displayName.label'), {
           exact: true,
         }),
       ).toHaveValue(identityProviderUser.name)
 
-      // The provider-declared address is not written to the account: with no
-      // email address at all there is nothing to verify, so the section is
-      // absent rather than reading as complete.
-      await expect(
-        page.getByRole('region', {
-          name: copy('accountUi', 'verification.title'),
-          exact: true,
-        }),
-      ).toHaveCount(0)
+      // The verified provider address is written as a contact and is the
+      // default one, so the verification section names it as complete.
+      const verified = page.getByRole('region', {
+        name: copy('accountUi', 'verification.verifiedTitle'),
+        exact: true,
+      })
+      await expect(verified).toBeVisible()
+      await expect(verified).toContainText(identityProviderUser.email)
 
-      // The username is the account's one sign-in way; the provider's address
-      // is not among its identifiers.
+      // The identifiers list carries the address under Contacts -- default
+      // contact marked -- and the username under Sign-in ways. The address is
+      // not a sign-in way.
       const identifiers = identifiersSection(page)
-      const usernameRow = identifiers
+      const contacts = identifiers.getByRole('region', {
+        name: copy('accountUi', 'identifiers.groups.contact'),
+        exact: true,
+      })
+      await expect(
+        contacts.getByText(identityProviderUser.email, { exact: true }),
+      ).toBeVisible()
+      await expect(
+        contacts.getByRole('radio', {
+          name: copy('accountUi', 'identifiers.axes.defaultAria', {
+            value: identityProviderUser.email,
+          }),
+        }),
+      ).toBeChecked()
+
+      const signInWays = identifiers.getByRole('region', {
+        name: copy('accountUi', 'identifiers.groups.signIn'),
+        exact: true,
+      })
+      const usernameRow = signInWays
         .getByRole('listitem')
         .filter({ hasText: FIRST_SIGN_IN_USERNAME })
       await expect(usernameRow).toBeVisible()
@@ -175,8 +214,26 @@ test.describe('the provider address belongs to no account', () => {
         }),
       ).toHaveCount(0)
       await expect(
-        identifiers.getByText(identityProviderUser.email, { exact: true }),
+        signInWays.getByText(identityProviderUser.email, { exact: true }),
       ).toHaveCount(0)
+    })
+
+    await test.step('the password set at signup signs in to the account', async () => {
+      // The account-opening face took a password, so the account is usable
+      // with it from the moment it exists.
+      await demo.accounts.signOut()
+      await demo.accounts.signIn({
+        identifier: FIRST_SIGN_IN_USERNAME,
+        password: FIRST_SIGN_IN_PASSWORD,
+      })
+      await expect(homeHeading(page)).toBeVisible()
+
+      await openAccountSettings(page)
+      await expect(
+        identifiersSection(page)
+          .getByRole('listitem')
+          .filter({ hasText: FIRST_SIGN_IN_USERNAME }),
+      ).toBeVisible()
     })
 
     await test.step('the same Google account signs in again to the same account', async () => {
@@ -196,7 +253,8 @@ test.describe('the provider address belongs to no account', () => {
       await expect(homeHeading(page)).toBeVisible()
 
       // The same account: the username it chose and the binding are still
-      // there, and the provider's address still is not an identifier.
+      // there, and the provider's address is still a contact rather than a
+      // sign-in way.
       await openAccountSettings(page)
       await expect(
         identifiersSection(page)
@@ -208,10 +266,22 @@ test.describe('the provider address belongs to no account', () => {
           .getByRole('listitem')
           .filter({ hasText: copy('accountUi', 'bindings.provider.google') }),
       ).toBeVisible()
+      const identifiers = identifiersSection(page)
       await expect(
-        identifiersSection(page).getByText(identityProviderUser.email, {
-          exact: true,
-        }),
+        identifiers
+          .getByRole('region', {
+            name: copy('accountUi', 'identifiers.groups.contact'),
+            exact: true,
+          })
+          .getByText(identityProviderUser.email, { exact: true }),
+      ).toBeVisible()
+      await expect(
+        identifiers
+          .getByRole('region', {
+            name: copy('accountUi', 'identifiers.groups.signIn'),
+            exact: true,
+          })
+          .getByText(identityProviderUser.email, { exact: true }),
       ).toHaveCount(0)
     })
   })

@@ -61,8 +61,6 @@
  */
 
 import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
-import Typography from '@mui/material/Typography'
 import { SignInScreen } from '@speed/auth-ui'
 import type {
   SignInContext,
@@ -87,6 +85,7 @@ import {
 import { DEMO_NAMESPACE } from '../resources.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
 import { useCallbackLanding } from '../use-callback-landing.js'
+import { AuthCard } from './auth-card.js'
 import { TENANT_HOME_PATH } from './not-found-page.js'
 
 /** The social / enterprise block this host hands the screen: the provider's
@@ -207,26 +206,16 @@ export function SignInView({
         p: 2,
       }}
     >
-      <Card variant="outlined" sx={{ width: '100%', maxWidth: 400, p: 4 }}>
-        <Box sx={{ textAlign: 'center', mb: 3 }}>
-          <Typography
-            variant="subtitle1"
-            color="text.secondary"
-            sx={{ fontWeight: 600 }}
-          >
-            {t('app.title')}
-          </Typography>
-          <Typography component="h1" variant="h5" sx={{ mt: 0.5 }}>
-            {mode === 'register'
-              ? t('signIn.registerHeading')
-              : t('signIn.heading')}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            {mode === 'register'
-              ? t('signIn.registerSubtitle')
-              : t('signIn.subtitle')}
-          </Typography>
-        </Box>
+      <AuthCard
+        title={
+          mode === 'register' ? t('signIn.registerHeading') : t('signIn.heading')
+        }
+        subtitle={
+          mode === 'register'
+            ? t('signIn.registerSubtitle')
+            : t('signIn.subtitle')
+        }
+      >
         <SignInScreen
           session={session}
           mode={mode}
@@ -243,7 +232,7 @@ export function SignInView({
             keepLanding ? undefined : () => navigate(PASSWORD_RESET_PATH)
           }
         />
-      </Card>
+      </AuthCard>
     </Box>
   )
 }
