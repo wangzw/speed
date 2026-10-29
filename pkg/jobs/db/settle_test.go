@@ -15,7 +15,9 @@ import (
 // and no executor is claiming.
 func insertJob(t *testing.T, reg *core.Registry, id, status, claimedBy string, attempts int) {
 	t.Helper()
-	now := time.Now().UnixMilli()
+	// The instant is the database's own, so a row written as "due now" is due
+	// against the same clock the claim judges by.
+	now := dbNowMilli(t, reg)
 	var claimed any
 	if claimedBy != "" {
 		claimed = claimedBy

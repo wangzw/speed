@@ -578,6 +578,22 @@ func rowCount(t *testing.T, reg *core.Registry) int64 {
 	return n
 }
 
+// dbNowMilli reads the database's own clock, the one the claim judges due-ness
+// by, so a case can write a row that is due against it rather than against the
+// host clock the engine may trail by a millisecond.
+func dbNowMilli(t *testing.T, reg *core.Registry) int64 {
+	t.Helper()
+	database, err := core.Resolve[db.Database](reg)
+	if err != nil {
+		t.Fatalf("resolving the database: %v", err)
+	}
+	var now int64
+	if err := database.DB().WithContext(t.Context()).Raw("SELECT " + product(t, reg).sql.now).Row().Scan(&now); err != nil {
+		t.Fatalf("reading the database's clock: %v", err)
+	}
+	return now
+}
+
 // update runs one raw statement against the jobs table, for a case steering a
 // row directly.
 func update(t *testing.T, reg *core.Registry, statement string, args ...any) {

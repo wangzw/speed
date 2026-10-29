@@ -106,6 +106,21 @@ func keyPtr(key string) *string {
 	return &key
 }
 
+// nowMilli reads the database's own clock, in milliseconds since the Unix
+// epoch, the clock every due-ness judgement is made by. Every instant this
+// module writes is read from it: a row whose available_at came from the host's
+// clock instead would sit a millisecond or so in the future on an engine whose
+// clock trails the host's, and miss the claim that follows, waiting out a poll
+// for no reason. Reading it first and writing the value is enough, because the
+// claim's own read happens later and so is never behind it.
+func (q *queue) nowMilli(ctx context.Context) (int64, error) {
+	var now int64
+	if err := q.handle.WithContext(ctx).Raw("SELECT " + q.sql.now).Row().Scan(&now); err != nil {
+		return 0, fmt.Errorf("reading the database's clock: %w", err)
+	}
+	return now, nil
+}
+
 // Enqueue writes one job and returns its identifier; see jobs.Queue.
 func (q *queue) Enqueue(ctx context.Context, t jobs.Task, opts ...jobs.EnqueueOption) (jobs.JobID, error) {
 	if !q.running.Load() {
@@ -121,9 +136,12 @@ func (q *queue) Enqueue(ctx context.Context, t jobs.Task, opts ...jobs.EnqueueOp
 	for _, opt := range opts {
 		opt(options)
 	}
-	now := time.Now().UnixMilli()
+	now, err := q.nowMilli(ctx)
+	if err != nil {
+		return "", fmt.Errorf("%s: writing a %q job: %w", ModuleName, t.Type, err)
+	}
 	// A job scheduled for a later instant is due then; one with no scheduled
-	// time is due as soon as the row lands.
+	// time is due as soon as the row lands, on the database's clock.
 	due := now
 	if !options.ScheduledAt.IsZero() {
 		due = options.ScheduledAt.UnixMilli()
@@ -211,7 +229,10 @@ func (q *queue) Cancel(ctx context.Context, id jobs.JobID) error {
 		// nothing left for it to leave.
 		return nil
 	}
-	now := time.Now().UnixMilli()
+	now, err := q.nowMilli(ctx)
+	if err != nil {
+		return fmt.Errorf("%s: cancelling the job %s: %w", ModuleName, id, err)
+	}
 	if row.ClaimedBy == nil {
 		// An unclaimed job is moved straight to cancelled in one conditional
 		// statement. A claim that landed between the read above and this

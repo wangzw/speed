@@ -107,7 +107,10 @@ There is an index on `available_at` and a unique index on
 Every instant is stored as milliseconds since the Unix epoch rather than as a
 timestamp type. The claim reads, writes and compares them in native SQL, and an
 integer is what lets one statement judge "due now" and "claimed until" against
-the database's own clock on either engine.
+the database's own clock on either engine. The submission path reads that same
+clock for the instants it writes, so a job enqueued with no scheduled time is
+due against the clock the next claim judges by, not against the host's, which
+may lead the engine's by a millisecond.
 
 The table belongs to this module. An operator reads it to see a backlog, retries
 and dead letters; it is not a contract face, and a host does not write it.
