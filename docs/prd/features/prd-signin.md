@@ -146,7 +146,7 @@
 
 - **验收**：开户开关关闭且该外部身份没有任何绑定时，登录以统一的登录失败结束且不建立账户；开关开启时先取得合法用户名，再建立启用的账户并完成登录；未取得合法用户名时不建立账户。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`
 
 ### REQ-signin-017
 
@@ -321,4 +321,4 @@
 
 - **验收**：经社交或企业登录新建立的账户没有把提供方声明的地址写进口令登录名；该地址不用于口令登录；账户添加用户名或把一条已验证邮箱选作登录方式后，口令登录才可用。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`

@@ -646,6 +646,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | 账户是 `service` 类型（任何来源） | `failed` | 401 `login-failed`：服务账户是 API 客户端，不是交互登录目标 |
 | 无绑定且注册关闭（`ErrSignupClosed`）、域不符（`ErrDomainMismatch`）、未预开户（`ErrNotProvisioned`）、宿主拒绝开户（`ErrProvisionRefused`） | `failed` | 401 `login-failed`，成因进日志 |
 | 无绑定而提供方声明的地址已登记在现有账户的邮箱标识上，且不属于企业预置的匹配（`ErrLinkRequired`） | `failed` | 401 `link-required` |
+| 开户事务里提供方声明的地址被另一个账户取得（`ErrContactTaken`：判定「无人持有」到建户之间输了竞态） | `failed` | 401 `link-required`，与该地址早已登记时同一结果；落地的片段同样带掩码地址 |
 | 外部身份已被别的账户占用（`ErrBindingConflict`） | `failed` | 409 `conflict` |
 
 「对外」一列是问题文档的形状。回跳请求是顶层导航时，同一失败改按「回跳的失败落地」答 `303` 并携带同一个码；表里这些拒绝本身不变。

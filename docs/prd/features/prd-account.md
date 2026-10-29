@@ -282,7 +282,7 @@
 
 - **验收**：没有邮箱的账户读作不适用；持有未验证邮箱（含管理员写入）的账户读作未验证；持有至少一条已验证邮箱的账户读作已验证；任何来源的同状态账户得到相同结论。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`、`starters/demo/web/e2e/specs/journey-operator-first-run.spec.ts` `operator-first-run: the operator proves the email and lands the first settings write`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`、`starters/demo/web/e2e/specs/journey-operator-first-run.spec.ts` `operator-first-run: the operator proves the email and lands the first settings write`
 
 ### REQ-account-016
 

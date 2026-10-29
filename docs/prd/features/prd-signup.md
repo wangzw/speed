@@ -195,7 +195,7 @@
 
 - **验收**：分别经短信首登、社交首登与企业即时开通发起开户，流程在建立账户之前呈现用户名一步；提交合法用户名后账户持有该用户名，未提交或提交不合法用户名时没有账户产生。社交首登的这一步同时要求口令：只填用户名、或口令不符策略时没有账户产生；两者都合法时账户建立并立即可以口令登录。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`；`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`；`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`；`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`；`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`
 
 ### REQ-signup-015
 
@@ -235,7 +235,7 @@
 
 - **验收**：首次社交登录建出的账户持有非空、且不同于该外部身份标识的账户标识，并持有建号前取得的合法用户名与口令；账户以联系方式持有提供方声明为已验证的那个地址、默认通讯邮箱是它，且它不是登录方式；未取得合法用户名或口令不合策略时不建账户。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`
 
 ### REQ-signup-018
 
@@ -387,7 +387,7 @@
 
 - **验收**：经社交首登新开立的账户持有提供方声明为已验证的那个地址作为联系方式，默认通讯邮箱是它，且它不是登录方式、不是口令登录名；开户页面上该地址只读，无法编辑；企业即时开通新开立的账户不持有提供方声明的地址；两种路径的显示名都等于提供方给出的显示名，提供方未给出显示名时账户仍建立。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`
 
 ### REQ-signup-049
 
@@ -395,7 +395,7 @@
 
 - **验收**：配置中不再有自动绑定项；命中现有账户时登录不进入该账户、不建立绑定、不另开账户，得到需先绑定的拒绝；不命中且开户开放时先取得合法用户名（社交首登另取口令），再建立并登录新账户：社交首登的账户以联系方式持有该地址、它不是登录方式，企业即时开通的账户不持有该地址；当事人以自己的登录方式登录并在账户面显式绑定后，绑定才建立。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`、`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a Google email already on an account is refused with link-required`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`、`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a Google email already on an account is refused with link-required`
 
 ### REQ-signup-050
 
