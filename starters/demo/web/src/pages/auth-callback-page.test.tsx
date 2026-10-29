@@ -48,8 +48,7 @@ const TENANT_ID = 'acme'
  * the screen renders. */
 const authEn = authUiResources['en-US'] as unknown as {
   readonly signInFlow: {
-    readonly signupAccountTitle: string
-    readonly signupProvider: string
+    readonly signupAccountInstruction: string
   }
   readonly social: {
     readonly provider: {
@@ -154,19 +153,13 @@ describe('the auth callback route', () => {
         name: demoEnUS.signIn.heading,
       }),
     ).toBeInTheDocument()
+    // The face adds no step title of its own; the card's heading is the
+    // page's, and the step supplies the narrative and the fields.
     expect(
-      screen.getByRole('heading', {
-        level: 2,
-        name: authEn.signInFlow.signupAccountTitle,
-      }),
-    ).toBeInTheDocument()
+      screen.queryByRole('heading', { level: 2 }),
+    ).toBeNull()
     expect(
-      screen.getByText(
-        authEn.signInFlow.signupProvider.replace(
-          '{{provider}}',
-          authEn.social.provider.google,
-        ),
-      ),
+      screen.getByText(authEn.signInFlow.signupAccountInstruction),
     ).toBeInTheDocument()
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
     expect(screen.getByText('ada@example.com')).toBeInTheDocument()

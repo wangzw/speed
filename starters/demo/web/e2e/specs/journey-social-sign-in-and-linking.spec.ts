@@ -132,33 +132,31 @@ test.describe('the provider address belongs to no account', () => {
     await test.step('the product opens the account face before it creates the account', async () => {
       // A first login that would open an account stops at the account-opening
       // face: the provider's identity read-only, and the username and password
-      // the account will carry.
+      // the account will carry. The face adds no step title of its own; the
+      // card's heading already says this is a sign-in.
       await expect(
-        page.getByRole('heading', {
-          level: 2,
-          name: copy('authUi', 'signInFlow.signupAccountTitle'),
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(
-        page.getByText(copy('authUi', 'signInFlow.signupAccountDescription'), {
-          exact: true,
-        }),
+        page.getByText(
+          copy('authUi', 'signInFlow.signupAccountInstruction'),
+          { exact: true },
+        ),
       ).toBeVisible()
       await expect(
         page.getByText(
-          copy('authUi', 'signInFlow.signupProvider', {
+          copy('authUi', 'signInFlow.signupIdentityLead', {
             provider: copy('authUi', 'social.provider.google'),
           }),
-          { exact: true },
+          { exact: false },
         ),
       ).toBeVisible()
       await expect(
         page.getByText(identityProviderUser.name, { exact: true }),
       ).toBeVisible()
       await expect(
-        page.getByText(identityProviderUser.email, { exact: true }),
-      ).toBeVisible()
+        page.getByRole('textbox', {
+          name: copy('authUi', 'register.emailLabel'),
+          exact: true,
+        }),
+      ).toContainText(identityProviderUser.email)
       await demo.accounts.answerSocialSignup({
         username: FIRST_SIGN_IN_USERNAME,
         password: FIRST_SIGN_IN_PASSWORD,
