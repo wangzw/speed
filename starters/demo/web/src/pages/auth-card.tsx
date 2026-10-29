@@ -23,8 +23,9 @@ export function AuthCard({
 }: {
   /** The page heading: what the surface is asking for. */
   readonly title: string
-  /** The sentence under the heading. */
-  readonly subtitle: string
+  /** The sentence under the heading, when the card's content is not itself
+   * the subtitle. */
+  readonly subtitle?: string
   readonly children: ReactNode
 }): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
@@ -41,9 +42,11 @@ export function AuthCard({
         <Typography component="h1" variant="h5" sx={{ mt: 0.5 }}>
           {title}
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          {subtitle}
-        </Typography>
+        {subtitle === undefined ? null : (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            {subtitle}
+          </Typography>
+        )}
       </Box>
       {children}
     </Card>

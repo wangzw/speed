@@ -78,12 +78,10 @@ export function AuthCallbackPage({
       // account-opening step a first social login parks at renders inside
       // the same card, and the step supplies only the card's content.
       frame={(content) => (
-        <AuthPageFrame
-          title={t('signIn.heading')}
-          subtitle={t('signIn.subtitle')}
-        >
-          {content}
-        </AuthPageFrame>
+        // No subtitle: on this route the content opens with the account
+        // step's own two sentences, and the card's sentence would repeat
+        // what they say.
+        <AuthPageFrame title={t('signIn.heading')}>{content}</AuthPageFrame>
       )}
     />
   )
@@ -93,11 +91,9 @@ export function AuthCallbackPage({
  * handler's content. */
 function AuthPageFrame({
   title,
-  subtitle,
   children,
 }: {
   readonly title: string
-  readonly subtitle: string
   readonly children: ReactNode
 }): ReactElement {
   return (
@@ -112,7 +108,7 @@ function AuthPageFrame({
         p: 2,
       }}
     >
-      <AuthCard title={title} subtitle={subtitle}>
+      <AuthCard title={title}>
         {children}
       </AuthCard>
     </Box>

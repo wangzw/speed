@@ -1116,7 +1116,10 @@ function SignupProvidedEmail({
   const labelId = useId()
   const helperId = useId()
   return (
-    <Box sx={{ position: 'relative' }}>
+    // The floating label sits eight pixels above the block, so the block keeps
+    // a line's worth of space above itself: a wrapped helper under the field
+    // before it must not run into that label.
+    <Box sx={{ position: 'relative', mt: 1 }}>
       <Box
         role="textbox"
         aria-readonly="true"
