@@ -836,7 +836,12 @@ describe('SocialCallbackHandler social account-opening face', () => {
       <SocialCallbackHandler
         session={harness.session}
         onSignedIn={onSignedIn}
-        frame={(content) => <section aria-label="host card">{content}</section>}
+        frame={(content) => (
+          <section aria-label="host card">
+            <h1>Sign in</h1>
+            {content}
+          </section>
+        )}
       />,
     )
 
@@ -852,6 +857,7 @@ describe('SocialCallbackHandler social account-opening face', () => {
     )
     expect(email).toHaveValue('ada@example.com')
     expect((email as HTMLInputElement).readOnly).toBe(true)
+    await expectNoAxeViolations()
 
     const user = userEvent.setup()
     await user.type(
