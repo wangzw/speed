@@ -191,9 +191,9 @@
 
 ### REQ-signup-047
 
-首登开户必须在建立账户之前取得一个合法用户名：短信首登开户、社交登录首登开户与企业即时开通三条路径一律适用，用户名判据按 REQ-signup-045 与 REQ-signup-046 的规定；没有取得合法用户名时不得建立账户。
+首登开户必须在建立账户之前取得一个合法用户名：短信首登开户、社交登录首登开户与企业即时开通三条路径一律适用，用户名判据按 REQ-signup-045 与 REQ-signup-046 的规定；没有取得合法用户名时不得建立账户。**社交首登开户的同一步还必须取得一个合法口令**：口令与用户名在同一次提交里给出，判据按账户的口令策略，不合格时不建账户。短信与企业即时开通的首登一步只取用户名。
 
-- **验收**：分别经短信首登、社交首登与企业即时开通发起开户，流程在建立账户之前呈现用户名一步；提交合法用户名后账户持有该用户名，未提交或提交不合法用户名时没有账户产生。
+- **验收**：分别经短信首登、社交首登与企业即时开通发起开户，流程在建立账户之前呈现用户名一步；提交合法用户名后账户持有该用户名，未提交或提交不合法用户名时没有账户产生。社交首登的这一步同时要求口令：只填用户名、或口令不符策略时没有账户产生；两者都合法时账户建立并立即可以口令登录。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`；`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`；`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`
 
@@ -231,9 +231,9 @@
 
 ### REQ-signup-044
 
-使用社交账户创建账户时，系统必须补齐账户建立所必需的内容，其中包括一个合法用户名，不得留下以外部身份标识充当账户标识、或缺少内容的记录；提供方声明的地址不写入账户，按 REQ-signup-048 的规定。
+使用社交账户创建账户时，系统必须补齐账户建立所必需的内容，其中包括一个合法用户名与一个合法口令，不得留下以外部身份标识充当账户标识、或缺少内容的记录；提供方声明为已验证的地址写为联系方式（默认通讯邮箱），按 REQ-signup-048 的规定。
 
-- **验收**：首次社交登录建出的账户持有非空、且不同于该外部身份标识的账户标识，并持有建号前取得的合法用户名；账户上没有被写入提供方声明的地址；未取得合法用户名时不建账户。
+- **验收**：首次社交登录建出的账户持有非空、且不同于该外部身份标识的账户标识，并持有建号前取得的合法用户名与口令；账户以联系方式持有提供方声明为已验证的那个地址、默认通讯邮箱是它，且它不是登录方式；未取得合法用户名或口令不合策略时不建账户。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`
 
@@ -383,17 +383,17 @@
 
 ### REQ-signup-048
 
-社交与企业首登开户新开立的账户不得写入提供方声明的地址：该地址既不作为登录方式，也不作为联系方式或账户资料；账户取自提供方的资料只有显示名。
+社交首登开户把提供方声明为已验证的地址写成该账户的**联系方式**（默认通讯邮箱），**不写成登录方式**；该地址在开户页面上只读展示，持有人不编辑它。企业即时开通不写入提供方声明的地址：企业预置账户是运营者建好的，即时开通没有展示该地址的页面。两种路径下账户取自提供方的资料都只有显示名与该地址的上述处置。
 
-- **验收**：分别经社交与企业即时开通新开立的账户都不持有提供方声明的地址；账户的显示名等于提供方给出的显示名；账户的联系方式、登录方式与资料中都没有该地址；提供方未给出显示名时账户仍建立。
+- **验收**：经社交首登新开立的账户持有提供方声明为已验证的那个地址作为联系方式，默认通讯邮箱是它，且它不是登录方式、不是口令登录名；开户页面上该地址只读，无法编辑；企业即时开通新开立的账户不持有提供方声明的地址；两种路径的显示名都等于提供方给出的显示名，提供方未给出显示名时账户仍建立。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`
 
 ### REQ-signup-049
 
-自动绑定不再作为系统行为存在：设置 `authn.account.auto-link` 不再存在，社交登录与企业即时开通不得按提供方声明的地址接管一个现有账户或把该外部身份并入该账户。提供方声明为已验证的地址（企业提供方以其已验证域内的地址替代该声明）命中现有账户已登记的邮箱地址时，社交登录与企业即时开通按 REQ-signin-017 报告需先绑定；不命中且开户开放时，按 REQ-signup-048 建立只带提供方显示名的新账户。提供方未声明该地址已验证、且其域也不属于已验证域时，按不命中处理。
+自动绑定不再作为系统行为存在：设置 `authn.account.auto-link` 不再存在，社交登录与企业即时开通不得按提供方声明的地址接管一个现有账户或把该外部身份并入该账户。提供方声明为已验证的地址（企业提供方以其已验证域内的地址替代该声明）命中现有账户已登记的邮箱地址时，社交登录与企业即时开通按 REQ-signin-017 报告需先绑定；不命中且开户开放时，按 REQ-signup-048 建立账户：社交首登写入提供方显示名、把该地址写为联系方式并取得用户名与口令，企业即时开通写入提供方显示名。提供方未声明该地址已验证、且其域也不属于已验证域时，按不命中处理。
 
-- **验收**：配置中不再有自动绑定项；命中现有账户时登录不进入该账户、不建立绑定、不另开账户，得到需先绑定的拒绝；不命中且开户开放时先取得合法用户名，再建立并登录一个不带提供方声明地址的新账户；当事人以自己的登录方式登录并在账户面显式绑定后，绑定才建立。
+- **验收**：配置中不再有自动绑定项；命中现有账户时登录不进入该账户、不建立绑定、不另开账户，得到需先绑定的拒绝；不命中且开户开放时先取得合法用户名（社交首登另取口令），再建立并登录新账户：社交首登的账户以联系方式持有该地址、它不是登录方式，企业即时开通的账户不持有该地址；当事人以自己的登录方式登录并在账户面显式绑定后，绑定才建立。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in asks for a username and takes only the display name`、`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a Google email already on an account is refused with link-required`
 
