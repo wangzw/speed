@@ -1,7 +1,7 @@
 /**
- * The last-sign-in-way journey: an account opened through a social provider
- * holds exactly one way to sign in that is not a passkey -- its external
- * identity. A passkey is enrolled, which the journey proves is not one of the
+ * The last-sign-in-way journey: an account opened by a phone-code first login
+ * holds one way to sign in that is not a passkey -- a social identity it bound
+ * afterwards. A passkey is enrolled, which the journey proves is not one of the
  * three ways the rule counts (a password credential, a proved phone number, an
  * external identity). Unlinking the external identity while it is the only such
  * way asks for fresh proof; the owner answers the challenge in the page with
@@ -10,36 +10,60 @@
  * password from the same account page; the external identity is no longer the
  * only non-passkey way, and the same unlink now succeeds.
  *
- * THE DEPLOYMENT REQUIRES A FACTOR. A step-up accepts only a factor whose
- * activation predates the session's authentication time, so a factor enrolled
- * after the session cannot strengthen it. This journey's deployment requires
- * every account to register a factor, which makes the social sign-in that opens
- * the account stop at the registration step: the owner registers the passkey
- * there, before the login session exists, and the later unlink's step-up can
- * offer it. The owner still answers that step-up in the page; nothing signs the
- * session out and back in.
+ * WHY THE ACCOUNT IS OPENED BY A PHONE CODE. A social first login now opens an
+ * account with a password and the provider's address, so it can no longer
+ * produce the state this journey starts from: no password, no email, one
+ * external identity. A phone-code first login opens it instead: the verified
+ * number is a sign-in way and no contact, the account asks for a username
+ * before it exists, and it writes neither a password nor an email address.
  *
- * The social round trip is the harness's real OpenID Connect provider: the
- * browser leaves for its authorization page and clicks its control, so no route
- * is intercepted and no response is faked. The passkey is Chromium's virtual
- * authenticator (helpers/virtual-authenticator.ts): the page still calls
- * `navigator.credentials.create`/`.get`, and the fixture answers as a platform
- * authenticator would.
+ * THE PHONE IS THE LAST WAY IN UNTIL THE SOCIAL IDENTITY IS BOUND. At the
+ * account page the first removal attempt names the phone. The account module
+ * refuses it as the last way that is not a passkey, but it answers the freshness
+ * check first, so the page opens the step-up dialog; the owner proves with the
+ * passkey the sign-in enrolled. Binding the social identity then makes the same
+ * removal allowed, which is the conditional the journey starts from.
+ *
+ * THE DEPLOYMENT REQUIRES A FACTOR, AND THAT IS LOAD-BEARING. A step-up accepts
+ * only a factor whose activation predates the session's authentication time, and
+ * only one whose channel differs from the channels the session already proved.
+ * A login that proves an existing factor as its second factor cannot be
+ * strengthened by that same factor afterwards. The journey therefore needs a
+ * login whose session records one factor: the sign-in flow registers the
+ * passkey during the login (an enrolling login), and a factor registered during
+ * the authentication does not strengthen it. The sign-in that opens the account
+ * is such a login; so is the later social sign-in, which is why the passkey
+ * enrolled at the first login is removed before it -- the social sign-in must
+ * enroll the journey's passkey itself. Nothing signs the session out and back in
+ * after that; the unlink's step-up happens inside the page.
+ *
+ * EVERYTHING IS DRIVEN THROUGH THE UI. The single non-UI read is the SMS
+ * verification code from the review process log (fixtures/log.ts): the review
+ * carrier reaches no vendor, so the process log is where a person running the
+ * review reads it. The social round trip is the harness's real OpenID Connect
+ * provider: the browser leaves for its authorization page and clicks its
+ * control, so no route is intercepted and no response is faked. The passkey is
+ * Chromium's virtual authenticator (helpers/virtual-authenticator.ts): the page
+ * still calls `navigator.credentials.create`/`.get`, and the fixture answers as
+ * a platform authenticator would.
  *
  * WHAT IS ASSERTED. The refusal is the dedicated last-login-method answer, and
  * this spec asserts its shipped sentence: it says the account has no other way
  * to sign in and names setting a password or linking another account as the
- * remedy. It also asserts that the binding survives the refusal.
+ * remedy. It also asserts that the binding survives the refusal, that the
+ * account's contact list stays empty, and that the provider's address is not
+ * written into the account.
  *
  * Expected copy is read from the shipped en-US bundles through
  * helpers/i18n.ts.
  */
 // @journey journey-last-login-way.md
-// @covers REQ-security-040, REQ-security-013
+// @covers REQ-security-040, REQ-security-013, REQ-account-061, REQ-account-067
 import type { Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
 import { identityProviderUser } from '../fixtures/identity-provider'
+import { waitForVerificationCode } from '../fixtures/log'
 import { copy } from '../helpers/i18n'
 import { approveSocialSignIn } from '../helpers/social'
 import {
@@ -47,15 +71,16 @@ import {
   type VirtualAuthenticator,
 } from '../helpers/virtual-authenticator'
 
-// The provider round trip, the passkey ceremonies and the step-up run inside
-// this file's per-test bound; fixture assembly included.
+// The phone-code round trip, two social round trips, the passkey ceremonies and
+// the step-up run inside this file's per-test bound; fixture assembly included.
 test.describe.configure({ timeout: 300_000 })
+
+/** The number the first sign-in uses: a Chinese mobile number in E.164 form. */
+const PHONE_NATIONAL = '13800138000'
+const PHONE_E164 = '+8613800138000'
 
 /** The password the account sets after the refused unlink. */
 const NEW_PASSWORD = 'e2e-Password-789'
-
-/** The username the first social sign-in chooses for the account it opens. */
-const ACCOUNT_USERNAME = 'social-last-way'
 
 /** The product's sign-in surface heading. */
 function signInHeading(page: Page): Locator {
@@ -97,6 +122,16 @@ function section(page: Page, title: string): Locator {
   return page.getByRole('region', { name: title, exact: true })
 }
 
+/** The sign-in-identifiers section. */
+function identifiersSection(page: Page): Locator {
+  return section(page, copy('accountUi', 'identifiers.title'))
+}
+
+/** The two-step-verification section. */
+function mfaSection(page: Page): Locator {
+  return section(page, copy('accountUi', 'mfa.title'))
+}
+
 /** The linked-social-accounts section. */
 function bindingsSection(page: Page): Locator {
   return section(page, copy('accountUi', 'bindings.title'))
@@ -127,6 +162,123 @@ function googleButton(page: Page): Locator {
   })
 }
 
+/** The SMS channel's tab. */
+function smsTab(page: Page): Locator {
+  return page.getByRole('tab', {
+    name: copy('authUi', 'smsSignIn.title'),
+    exact: true,
+  })
+}
+
+/** The two-part phone control's country selector. */
+function countryField(page: Page): Locator {
+  return page.getByRole('combobox', {
+    name: copy('authUi', 'smsSignIn.countryLabel'),
+    exact: true,
+  })
+}
+
+/** The two-part phone control's local number field. */
+function phoneField(page: Page): Locator {
+  return page.getByRole('textbox', {
+    name: copy('authUi', 'smsSignIn.phoneLabel'),
+    exact: true,
+  })
+}
+
+/** The code step's verification-code field. */
+function codeField(page: Page): Locator {
+  return page.getByRole('textbox', {
+    name: copy('authUi', 'smsSignIn.codeLabel'),
+    exact: true,
+  })
+}
+
+/** The "code was sent" notice, naming the receiving number. */
+function sentNotice(page: Page): Locator {
+  return page.getByText(
+    copy('authUi', 'smsSignIn.sentNotice', { phone: PHONE_E164 }),
+    { exact: true },
+  )
+}
+
+/** The SMS channel's mounted panel. */
+function smsPanel(page: Page): Locator {
+  return page.getByRole('tabpanel', {
+    name: copy('authUi', 'smsSignIn.title'),
+    exact: true,
+  })
+}
+
+/** The sign-in flow's passkey kind, on the factor and the enroll steps alike. */
+function passkeyKind(scope: Page | Locator): Locator {
+  return scope.getByRole('button', {
+    name: copy('authUi', 'signInFlow.factorKind.webauthn'),
+    exact: true,
+  })
+}
+
+/**
+ * Switch the sign-in surface to the SMS channel and fill the phone control:
+ * the country is picked by its calling code, then the local number is typed.
+ */
+async function fillSmsPhone(page: Page): Promise<void> {
+  await smsTab(page).click()
+  await expect(countryField(page)).toBeVisible()
+  // The selector searches by country name, ISO code and calling code. "86"
+  // narrows the list to the one country whose calling code is +86, so the
+  // option is named by that code rather than by a country name another entry
+  // could also contain.
+  await countryField(page).fill('86')
+  await page.getByRole('option', { name: /\+86$/ }).click()
+  await phoneField(page).fill(PHONE_NATIONAL)
+}
+
+/** Request one code on the already-filled phone step. */
+async function requestCode(page: Page): Promise<void> {
+  await page
+    .getByRole('button', {
+      name: copy('authUi', 'smsSignIn.sendCode'),
+      exact: true,
+    })
+    .click()
+  await expect(sentNotice(page)).toBeVisible()
+}
+
+/** Answer the code step with the given code and submit the login. */
+async function submitCode(page: Page, code: string): Promise<void> {
+  await codeField(page).fill(code)
+  await page
+    .getByRole('button', {
+      name: copy('authUi', 'smsSignIn.submit'),
+      exact: true,
+    })
+    .click()
+}
+
+/**
+ * Register a passkey on the enroll step the sign-in flow parks on. An enrolling
+ * login's registration step stays parked until the viewer clicks, so the prompt
+ * and then the flow's own submit are the two interactions.
+ */
+async function registerPasskeyOnSignIn(scope: Page | Locator): Promise<void> {
+  const choice = passkeyKind(scope)
+  await expect(choice).toBeVisible({ timeout: 30_000 })
+  await choice.click()
+  const prompt = scope.getByText(
+    copy('authUi', 'signInFlow.passkeyRegisterPrompt'),
+    { exact: true },
+  )
+  await expect(prompt).toBeVisible({ timeout: 15_000 })
+  await scope
+    .getByRole('button', {
+      name: copy('authUi', 'signInFlow.submit'),
+      exact: true,
+    })
+    .click()
+  await expect(prompt).toHaveCount(0, { timeout: 20_000 })
+}
+
 /** Confirm one danger dialog by the label the caller's section supplies. */
 async function confirmDialog(
   page: Page,
@@ -140,7 +292,7 @@ async function confirmDialog(
     .click()
 }
 
-/** Clear the unlink's step-up challenge with the passkey this page enrolled. */
+/** Clear the shared step-up challenge with a passkey the account holds. */
 async function proveWithPasskey(page: Page): Promise<void> {
   const dialog = page.getByRole('dialog', {
     name: copy('accountUi', 'mfa.stepUp.title'),
@@ -171,77 +323,242 @@ async function proveWithPasskey(page: Page): Promise<void> {
   await expect(dialog).toHaveCount(0, { timeout: 30_000 })
 }
 
+/** The phone's row in the sign-in-identifiers section. */
+function phoneRow(page: Page): Locator {
+  return identifiersSection(page)
+    .getByRole('listitem')
+    .filter({ hasText: PHONE_E164 })
+}
+
+/** The phone row's remove action, named after the value it removes. */
+function phoneRemove(page: Page): Locator {
+  return identifiersSection(page).getByRole('button', {
+    name: copy('accountUi', 'identifiers.removeAria', { value: PHONE_E164 }),
+    exact: true,
+  })
+}
+
+/** One factor row in the two-step-verification list, by its kind. */
+function passkeyRow(page: Page): Locator {
+  return mfaSection(page)
+    .getByRole('listitem')
+    .filter({ hasText: copy('accountUi', 'mfa.factor.kind.webauthn') })
+}
+
+/** The passkey row's remove action, named after the kind it removes. */
+function passkeyRemove(page: Page): Locator {
+  return mfaSection(page).getByRole('button', {
+    name: copy('accountUi', 'mfa.removeAria', {
+      factor: copy('accountUi', 'mfa.factor.kind.webauthn'),
+    }),
+    exact: true,
+  })
+}
+
 // The journey drives the provider's real round trip, so its server starts the
-// local identity provider; the deployment requires a factor, so the social
-// sign-in registers the passkey before its session exists.
+// local identity provider; the deployment requires a factor, which is what makes
+// both sign-ins park at a registration step and keeps their sessions
+// single-factor.
 test.use({ socialIdentityProvider: true, mfaRequired: true })
 
 test('last-login-way: removing the last way that is not a passkey is refused', async ({
   demo,
 }) => {
-  const { page } = demo
+  const { page, server, accounts } = demo
+  const username = accounts.unique('lastway').username
   const googleLabel = copy('accountUi', 'bindings.provider.google')
   let authenticator: VirtualAuthenticator | undefined
 
   try {
-    await test.step('a social sign-in opens an account and registers the required passkey', async () => {
-      await demo.accounts.openSignIn()
+    await test.step('a phone-code first login opens the account and registers the required passkey', async () => {
+      await accounts.openSignIn()
       await expect(signInHeading(page)).toBeVisible()
-      await googleButton(page).click()
-      await approveSocialSignIn(page)
+      await fillSmsPhone(page)
 
-      // A first login that would open an account asks for its username before
-      // the account exists. The provider's address is not written to the
-      // account, so the username is its only identifier.
-      await demo.accounts.answerSignupUsername(ACCOUNT_USERNAME)
-
-      // The deployment requires a factor, so the sign-in flow parks at the
-      // registration step before any session exists. Registering the passkey
-      // here makes its activation predate the session's authentication time,
-      // which is what lets the later unlink's step-up offer it.
-      const passkeyChoice = page.getByRole('button', {
-        name: copy('authUi', 'signInFlow.factorKind.webauthn'),
-        exact: true,
-      })
-      await expect(passkeyChoice).toBeVisible({ timeout: 30_000 })
-      authenticator = await addVirtualAuthenticator(page.context(), page)
-      await passkeyChoice.click()
-
-      // Registration starts on the prompt's own control, not on arrival: the
-      // virtual authenticator answers the creation ceremony.
-      const registerPrompt = page.getByText(
-        copy('authUi', 'signInFlow.passkeyRegisterPrompt'),
-        { exact: true },
+      // The cursor is taken before the send: only a code written for this
+      // request answers this step.
+      const codeAfter = server.log.mark()
+      await requestCode(page)
+      await expect(codeField(page)).toBeVisible()
+      const { code } = await waitForVerificationCode(
+        server.log,
+        'sms',
+        PHONE_E164,
+        { after: codeAfter },
       )
-      await expect(registerPrompt).toBeVisible({ timeout: 15_000 })
-      await page
-        .getByRole('button', {
-          name: copy('authUi', 'signInFlow.submit'),
+      await submitCode(page, code)
+
+      // A first login that would open an account asks for the username the
+      // account is opened with before anything is written.
+      await accounts.answerSignupUsername(username)
+
+      // The deployment requires a factor, so the flow parks at the enroll step
+      // inside the SMS channel. The passkey registered here belongs to the
+      // login, so it does not raise the session's level: the session records
+      // the phone code alone, which is what lets this passkey answer the later
+      // step-up.
+      const panel = smsPanel(page)
+      await expect(
+        panel.getByText(copy('authUi', 'signInFlow.enrollTitle'), {
           exact: true,
-        })
-        .click()
-      await expect(registerPrompt).toHaveCount(0, { timeout: 20_000 })
+        }),
+      ).toBeVisible({ timeout: 30_000 })
+      authenticator = await addVirtualAuthenticator(page.context(), page)
+      await registerPasskeyOnSignIn(panel)
       await expect(homeHeading(page)).toBeVisible({ timeout: 30_000 })
 
       await accountLink(page).click()
       await expect(accountHeading(page)).toBeVisible()
-      // The account's identifiers are the username it chose alone: the
-      // provider's address was not written to it, and no phone number is
-      // listed, so no proved phone is one of its ways in.
-      const identifiers = section(page, copy('accountUi', 'identifiers.title'))
+      // The phone-code first login wrote the number as a sign-in way and no
+      // contact, and the account holds no password.
+      await expect(phoneRow(page)).toBeVisible()
+      const password = section(page, copy('accountUi', 'password.title'))
       await expect(
-        identifiers
-          .getByRole('listitem')
-          .filter({ hasText: ACCOUNT_USERNAME }),
+        password.getByRole('textbox', {
+          name: copy('accountUi', 'password.current.label'),
+          exact: true,
+        }),
+      ).toHaveCount(0)
+      await expect(
+        password.getByRole('textbox', {
+          name: copy('accountUi', 'password.new.label'),
+          exact: true,
+        }),
       ).toBeVisible()
+    })
+
+    await test.step('removing the phone is refused while it is the last way in, after the passkey answers the step-up', async () => {
+      await phoneRemove(page).click()
+      await confirmDialog(
+        page,
+        copy('accountUi', 'identifiers.confirmTitle'),
+        copy('accountUi', 'identifiers.confirmLabel'),
+      )
+
+      // The account holds an active factor, so the removal asks for fresh local
+      // multi-factor proof. The session's phone-code factor and the passkey's
+      // channel differ, and the passkey was active before the session, so the
+      // dialog offers it and the owner answers in the page.
+      await proveWithPasskey(page)
+
+      // The won challenge replays the removal, which the account module then
+      // refuses: the username is not a login name without a password and the
+      // passkey is not counted, so the phone is the last way that is not a
+      // passkey. The row stays.
+      await expect(
+        identifiersSection(page)
+          .getByRole('alert')
+          .filter({ hasText: copy('accountUi', 'errors.authn.last_login_method') }),
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(phoneRow(page)).toBeVisible()
+    })
+
+    await test.step('the social identity is bound, and the phone can then be removed', async () => {
+      await bindingsSection(page)
+        .getByRole('button', {
+          name: copy('accountUi', 'bindings.provider.google'),
+          exact: true,
+        })
+        .click()
+      await approveSocialSignIn(page)
+
+      // The callback completes the link and the host returns to the account
+      // page. A binding is not a login, so the session stays where it was.
+      await expect(accountHeading(page)).toBeVisible()
+      await expect(googleRow(page)).toBeVisible()
+      await expect(
+        googleRow(page).getByText(identityProviderUser.email, { exact: true }),
+      ).toBeVisible()
+
+      // The phone is no longer the last way that is not a passkey: the social
+      // identity is another. The removal is allowed and leaves no phone row.
+      await phoneRemove(page).click()
+      await confirmDialog(
+        page,
+        copy('accountUi', 'identifiers.confirmTitle'),
+        copy('accountUi', 'identifiers.confirmLabel'),
+      )
+      await expect(
+        identifiersSection(page).getByText(
+          copy('accountUi', 'identifiers.removed', { value: PHONE_E164 }),
+          { exact: true },
+        ),
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(phoneRow(page)).toHaveCount(0)
+    })
+
+    await test.step("the signup passkey is removed so the social sign-in can enrol the journey's passkey", async () => {
+      // The passkey enrolled at the first login must not be the factor the
+      // social sign-in proves: a step-up accepts only a channel the session has
+      // not already proved, so the journey's passkey has to be registered by
+      // the social login itself.
+      await passkeyRemove(page).click()
+      await confirmDialog(
+        page,
+        copy('accountUi', 'mfa.removeConfirm.title'),
+        copy('accountUi', 'mfa.removeConfirm.confirmLabel'),
+      )
+      await expect(
+        mfaSection(page).getByText(
+          copy('accountUi', 'mfa.removed', {
+            factor: copy('accountUi', 'mfa.factor.kind.webauthn'),
+          }),
+          { exact: true },
+        ),
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(mfaSection(page).getByText(copy('accountUi', 'mfa.empty'), {
+        exact: true,
+      })).toBeVisible()
+    })
+
+    await test.step("a social sign-in registers the journey's passkey before the session exists", async () => {
+      await accounts.signOut()
+      // The removed credential is gone server-side; a device of its own keeps
+      // it from answering the journey's ceremonies.
+      await authenticator?.close().catch(() => undefined)
+      authenticator = undefined
+
+      await accounts.openSignIn()
+      await expect(signInHeading(page)).toBeVisible()
+      await googleButton(page).click()
+      await approveSocialSignIn(page)
+
+      // The account holds no factor and the deployment requires one, so the
+      // callback parks at the enroll step before the session is made. The
+      // passkey registered here is the journey's, and the session records the
+      // social identity alone.
+      authenticator = await addVirtualAuthenticator(page.context(), page)
+      await registerPasskeyOnSignIn(page)
+      await expect(homeHeading(page)).toBeVisible({ timeout: 30_000 })
+
+      await accountLink(page).click()
+      await expect(accountHeading(page)).toBeVisible()
+    })
+
+    await test.step('the account page lists the username and the social identity, no contact, and one passkey', async () => {
+      // The account's identifiers are the username it chose alone: the phone
+      // was removed, the provider's address was not written to it, and no
+      // email address is listed, so the contact list is empty.
+      const identifiers = identifiersSection(page)
+      await expect(identifiers.getByRole('listitem')).toHaveCount(1)
+      await expect(
+        identifiers.getByRole('listitem').filter({ hasText: username }),
+      ).toBeVisible()
+      await expect(identifiers.getByText(PHONE_E164, { exact: true })).toHaveCount(
+        0,
+      )
       await expect(
         identifiers.getByText(identityProviderUser.email, { exact: true }),
       ).toHaveCount(0)
       await expect(
-        identifiers.getByText(copy('accountUi', 'identifiers.kind.phone'), {
+        identifiers.getByText(copy('accountUi', 'identifiers.groups.contactEmpty'), {
           exact: true,
         }),
-      ).toHaveCount(0)
+      ).toBeVisible()
+
+      // The social identity is listed as a login way of its own.
+      await expect(googleRow(page)).toBeVisible()
+
       // No password is set, so the password section offers the first-password
       // form and no current-password field.
       const password = section(page, copy('accountUi', 'password.title'))
@@ -257,14 +574,9 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
           exact: true,
         }),
       ).toBeVisible()
+
       // The passkey registered during the sign-in is the account's factor.
-      await expect(
-        section(page, copy('accountUi', 'mfa.title'))
-          .getByText(copy('accountUi', 'mfa.factor.kind.webauthn'), {
-            exact: true,
-          })
-          .first(),
-      ).toBeVisible()
+      await expect(passkeyRow(page)).toHaveCount(1)
     })
 
     await test.step('unlinking the external identity asks for fresh proof and is then refused', async () => {
@@ -275,9 +587,10 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         copy('accountUi', 'bindings.confirmLabel'),
       )
 
-      // The unlink asks for fresh local multi-factor proof. The bindings
-      // surface opens the shared step-up dialog, which offers the passkey the
-      // account holds, and the owner answers it in the page.
+      // The unlink asks for fresh local multi-factor proof. The session proved
+      // the social identity alone (the passkey registered during the login does
+      // not count), and the passkey's channel differs from it, so the shared
+      // step-up dialog offers the passkey and the owner answers it in the page.
       await proveWithPasskey(page)
 
       // The won challenge replays the unlink, which the account module then
