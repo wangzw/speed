@@ -215,29 +215,21 @@ describe('FlowStepFields social account-opening face', () => {
     )
   }
 
-  /** The identity sentence as the face composes it: the lead naming the
-   * method (or the method alone when the provider gave no name), the name
-   * element, and the tail the language puts after the name. */
+  /** The identity sentence as the face composes it: one bundle entry per
+   * case, with the name filled in where it goes. */
   function identitySentence(options: {
     readonly provider: string
     readonly name?: string
   }): string {
     if (options.name === undefined) {
-      return (
-        zhCN.signInFlow.signupIdentityLeadWithoutName.replace(
-          '{{provider}}',
-          options.provider,
-        ) + zhCN.signInFlow.signupIdentityTail
-      )
-    }
-    return (
-      zhCN.signInFlow.signupIdentityLead.replace(
+      return zhCN.signInFlow.signupIdentityWithoutName.replace(
         '{{provider}}',
         options.provider,
-      ) +
-      ` ${options.name}` +
-      zhCN.signInFlow.signupIdentityTail
-    )
+      )
+    }
+    return zhCN.signInFlow.signupIdentity
+      .replace('{{provider}}', options.provider)
+      .replace('{{name}}', options.name)
   }
 
   /** The identity sentence's paragraph, matched on its whole text: the
@@ -423,9 +415,9 @@ describe('FlowStepFields social account-opening face', () => {
 
     // The lead without the provider has nothing to say, so the whole
     // first sentence is left out; the second still says what is missing.
-    const leadPrefix = zhCN.signInFlow.signupIdentityLead.slice(
+    const leadPrefix = zhCN.signInFlow.signupIdentity.slice(
       0,
-      zhCN.signInFlow.signupIdentityLead.indexOf('{{provider}}'),
+      zhCN.signInFlow.signupIdentity.indexOf('{{provider}}'),
     )
     expect(screen.queryByText((text) => text.includes(leadPrefix))).toBeNull()
     expect(

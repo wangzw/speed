@@ -78,7 +78,6 @@ import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
 import CircularProgress from '@mui/material/CircularProgress'
-import Divider from '@mui/material/Divider'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
@@ -101,6 +100,9 @@ import { answerSends, stepMaySend } from './flow.js'
 const FACTOR_KINDS = ['totp', 'sms', 'webauthn'] as const
 
 /** The field a username step asks for. */
+/** Where the identity sentence splits around the provider's name. */
+const IDENTITY_MARKER = '\u0000'
+
 const USERNAME_FIELD = 'username'
 
 /** The field a social signup step asks for beside the username. */
@@ -927,6 +929,27 @@ function SignupAccountFields({
   const providedEmail =
     email === undefined || email === '' ? null : email
   const emailLabel = fieldLabel({ name: 'email', kind: 'text' })
+  // The sentence is one bundle entry per case, with a marker where the name
+  // goes: the entry then carries the language's own spacing around the name,
+  // and the name itself is an element rather than a substring.
+  const identity = (() => {
+    if (methodName === null) {
+      return null
+    }
+    if (accountName === null) {
+      return {
+        before: t('signInFlow.signupIdentityWithoutName', {
+          provider: methodName,
+        }),
+        after: '',
+      }
+    }
+    const [before, after = ''] = t('signInFlow.signupIdentity', {
+      provider: methodName,
+      name: IDENTITY_MARKER,
+    }).split(IDENTITY_MARKER)
+    return { before, after }
+  })()
   // A refusal under a field is the attempt's outcome: move focus there so a
   // viewer who submitted from the button lands on the value to change.
   useEffect(() => {
@@ -956,30 +979,28 @@ function SignupAccountFields({
           textAlign: 'center',
         }}
       >
-        {methodName === null ? null : (
+        {identity === null ? null : (
           <Typography variant="body2" color="text.secondary">
-            {accountName === null
-              ? t('signInFlow.signupIdentityLeadWithoutName', {
-                  provider: methodName,
-                })
-              : t('signInFlow.signupIdentityLead', { provider: methodName })}
+            {identity.before}
             {accountName === null ? null : (
               <Box
                 component="span"
                 sx={{ color: 'text.primary', fontWeight: 600 }}
               >
-                {' '}
                 {accountName}
               </Box>
             )}
-            {t('signInFlow.signupIdentityTail')}
+            {identity.after}
           </Typography>
         )}
         <Typography variant="body1" color="text.primary">
           {t('signInFlow.signupAccountInstruction')}
         </Typography>
       </Box>
-      <Divider />
+      <Box
+        component="hr"
+        sx={{ border: 0, borderTop: 1, borderColor: 'divider', m: 0 }}
+      />
       <FormLayout
         form={form}
         onSubmit={onSubmit}
