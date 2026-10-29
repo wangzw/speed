@@ -267,8 +267,8 @@ export function createAccounts({
     readonly password: string
   }): Promise<void> => {
     // The social first login's face asks for a username and a password with
-    // its confirmation; the provider's address is read-only and is not part
-    // of the answer. The username's own form scopes every lookup, so the
+    // its confirmation; the provider's identity block is read-only and is not
+    // part of the answer. The username's own form scopes every lookup, so the
     // sign-in page's password field (when it is in the document) is never
     // touched.
     const field = page.locator(`input[name="${SIGNUP_USERNAME_FIELD}"]`)
@@ -283,7 +283,7 @@ export function createAccounts({
     )
     await form
       .getByRole('button', {
-        name: copy('authUi', 'signInFlow.submit'),
+        name: copy('authUi', 'signInFlow.signupAccountSubmit'),
         exact: true,
       })
       .click()

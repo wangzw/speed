@@ -49,7 +49,12 @@ const TENANT_ID = 'acme'
 const authEn = authUiResources['en-US'] as unknown as {
   readonly signInFlow: {
     readonly signupAccountTitle: string
-    readonly signupEmailLabel: string
+    readonly signupProvider: string
+  }
+  readonly social: {
+    readonly provider: {
+      readonly google: string
+    }
   }
 }
 
@@ -73,6 +78,8 @@ function signupSession() {
                 required: true,
               },
             ],
+            provided_provider: 'google',
+            provided_display_name: 'Ada Lovelace',
             provided_email: 'ada@example.com',
           },
         }),
@@ -154,8 +161,15 @@ describe('the auth callback route', () => {
       }),
     ).toBeInTheDocument()
     expect(
-      screen.getByLabelText(authEn.signInFlow.signupEmailLabel),
-    ).toHaveValue('ada@example.com')
+      screen.getByText(
+        authEn.signInFlow.signupProvider.replace(
+          '{{provider}}',
+          authEn.social.provider.google,
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
+    expect(screen.getByText('ada@example.com')).toBeInTheDocument()
   })
 
   it('returns a viewer who left an invitation link to that landing', async () => {
