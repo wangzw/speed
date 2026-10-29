@@ -226,6 +226,7 @@ func (socialMethod) Begin(context.Context, authn.Start) (authn.Step, error) {
 		External: &authn.External{
 			Provider:      "google",
 			Subject:       "g1",
+			DisplayName:   "Ann",
 			Email:         "ann@x.org",
 			EmailVerified: true,
 		},

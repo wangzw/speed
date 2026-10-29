@@ -63,7 +63,9 @@ type Pending struct {
 	// or phone login.
 	Provider string `json:"provider,omitempty"`
 	Tenant   string `json:"tenant,omitempty"`
-	// DisplayName is the provider's name for the person, made fit to store.
+	// DisplayName is the provider's name for the person, made fit to store. A
+	// social first login carries it back to the client, read-only, on the
+	// pending-signup step.
 	DisplayName string `json:"display_name,omitempty"`
 	// Attributes are the provider's attributes, as the proof carried them.
 	Attributes map[string]string `json:"attributes,omitempty"`

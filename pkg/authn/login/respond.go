@@ -92,9 +92,10 @@ func writeAction(c *call, state string) {
 // the method decides on the next answer. The enroll step names the factor kinds
 // the assembly takes in, so the client can choose one. The signup step names the
 // username a first login opens its account with, the password a social one also
-// takes, and the address a social provider declared verified for the client to
-// show read-only; it is a challenge, so the shared renderer draws its fields like
-// any other prompt.
+// takes, and the provider's name for the person, the provider's method identifier
+// and the address a social provider declared verified for the client to show
+// read-only; it is a challenge, so the shared renderer draws its fields like any
+// other prompt.
 func (r *routes) nextOf(rec record) stepView {
 	switch rec.State {
 	case stateReady:
@@ -113,8 +114,9 @@ func (r *routes) nextOf(rec record) stepView {
 }
 
 // signupStep is the pending-signup challenge. A social first login carries the
-// address its provider declared verified as read-only information, absent for a
-// provider that declared none and for every other source.
+// provider's name for the person, the provider's method identifier and the
+// address its provider declared verified as read-only information; each is absent
+// when the provider gave none, and all three are absent for every other source.
 func signupStep(pending *resolve.Pending) stepView {
 	view := stepView{Kind: nextChallenge}
 	if pending == nil {
@@ -122,7 +124,13 @@ func signupStep(pending *resolve.Pending) stepView {
 		return view
 	}
 	view.Fields = signupFields(pending.Source)
-	view.ProvidedEmail = pending.Email
+	if pending.Source == resolve.SourceSocial {
+		view.ProvidedDisplayName = pending.DisplayName
+		if pending.External != nil {
+			view.ProvidedProvider = pending.External.Provider
+		}
+		view.ProvidedEmail = pending.Email
+	}
 	return view
 }
 

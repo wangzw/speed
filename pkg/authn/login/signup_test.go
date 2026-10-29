@@ -32,8 +32,9 @@ func socialProofMethod() *redirectMethod {
 
 // checkSignupReply checks the flow reply of a flow parked at the username step,
 // so that every case reads the same challenge shape: the username and the
-// password a social first login asks for, and no address for the client to show
-// when the provider declared none.
+// password a social first login asks for, the provider's name and method
+// identifier, and no address for the client to show when the provider declared
+// none.
 func checkSignupReply(t *testing.T, body string) {
 	t.Helper()
 	reply := decode(t, body)
@@ -43,6 +44,12 @@ func checkSignupReply(t *testing.T, body string) {
 	next, ok := reply["next"].(map[string]any)
 	if !ok || next["kind"] != "challenge" {
 		t.Fatalf("next = %v, want a challenge", reply["next"])
+	}
+	if got := next["provided_display_name"]; got != "Ann" {
+		t.Errorf("provided_display_name = %v, want the provider's name for the person", got)
+	}
+	if got := next["provided_provider"]; got != "google" {
+		t.Errorf("provided_provider = %v, want the provider's method identifier", got)
 	}
 	if _, present := next["provided_email"]; present {
 		t.Errorf("next carries provided_email = %v, want none for a provider that declared no address", next["provided_email"])

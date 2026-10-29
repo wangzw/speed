@@ -109,6 +109,12 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 			t.Fatalf("the first social login = %s %v, want the signup challenge", state, next)
 		}
 		checkSignupFields(t, next, "username", "password")
+		if got := next["provided_display_name"]; got != "Ann" {
+			t.Errorf("provided_display_name = %v, want the provider's name for the person", got)
+		}
+		if got := next["provided_provider"]; got != "google" {
+			t.Errorf("provided_provider = %v, want the provider's method identifier", got)
+		}
 		if got := next["provided_email"]; got != "ann@x.org" {
 			t.Errorf("provided_email = %v, want the provider's verified address", got)
 		}
@@ -495,6 +501,18 @@ func checkSignupFields(t *testing.T, next map[string]any, names ...string) {
 	}
 }
 
+// checkNoProvidedIdentity checks that a pending-signup challenge carries none of
+// the provider's read-only identity members, which only a social first login
+// adds.
+func checkNoProvidedIdentity(t *testing.T, next map[string]any) {
+	t.Helper()
+	for _, key := range []string{"provided_display_name", "provided_provider", "provided_email"} {
+		if got, present := next[key]; present {
+			t.Errorf("next carries %s = %v, want it absent", key, got)
+		}
+	}
+}
+
 // TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword holds
 // the social first login against the real account store: the step asks for a
 // password beside the username and shows the provider's verified address
@@ -510,6 +528,12 @@ func TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword(t 
 			t.Fatalf("the first social login = %s %v, want the signup challenge", state, next)
 		}
 		checkSignupFields(t, next, "username", "password")
+		if got := next["provided_display_name"]; got != "Ann" {
+			t.Errorf("provided_display_name = %v, want the provider's name for the person", got)
+		}
+		if got := next["provided_provider"]; got != "google" {
+			t.Errorf("provided_provider = %v, want the provider's method identifier", got)
+		}
 		if got := next["provided_email"]; got != "ann@x.org" {
 			t.Errorf("provided_email = %v, want the provider's verified address", got)
 		}
@@ -706,6 +730,7 @@ func TestTheSMSAndEnterpriseSignupStepsAskForTheUsernameAlone(t *testing.T) {
 				t.Fatalf("the first SMS login = %s %v, want the signup challenge", state, next)
 			}
 			checkSignupFields(t, next, "username")
+			checkNoProvidedIdentity(t, next)
 
 			if opened := h.answerUsername(seq, "phoneowner"); opened.status != http.StatusOK {
 				t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
@@ -737,6 +762,7 @@ func TestTheSMSAndEnterpriseSignupStepsAskForTheUsernameAlone(t *testing.T) {
 				t.Fatalf("the first enterprise login = %s %v, want the signup challenge", state, next)
 			}
 			checkSignupFields(t, next, "username")
+			checkNoProvidedIdentity(t, next)
 
 			if opened := h.answerUsername(seq, "jitperson"); opened.status != http.StatusOK {
 				t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
