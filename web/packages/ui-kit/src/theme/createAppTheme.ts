@@ -122,6 +122,7 @@ import { controlBorderComponents } from './control-borders.js'
 import { focusRingComponents } from './focus-ring.js'
 import { reducedMotionComponents } from './reduced-motion.js'
 import { touchFloorComponents } from './touch-floor.js'
+import { letterCaseComponents } from './letter-case.js'
 import {
   mergeThemeComponents,
   resolveSurfaceTheme,
@@ -443,6 +444,7 @@ function tokensToThemeOptions(
     shadows: shadowRamp(tokens.shadows),
     components: mergeThemeComponents(
       touchFloorComponents,
+      letterCaseComponents,
       surfaceComponents,
       focusRingComponents,
       controlBorderComponents,
