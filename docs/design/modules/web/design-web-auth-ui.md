@@ -252,7 +252,7 @@ function ImpersonationNoticeIndicator(): ReactElement | null
 
 屏幕的装配面由宿主决定，缺省不放宽也不收窄：
 
-- `order` 给出四组渠道的先后。未列出的组按缺省次序排在列出的组之后——局部次序是重排，不会静默丢掉一组渠道。实际渲染的第一组用无「or」的分隔文案（`social.titleFirst`、`passkey.titleFirst`），因为「或」在它上面没有所指。
+- `order` 给出四组渠道的先后。未列出的组按缺省次序排在列出的组之后——局部次序是重排，不会静默丢掉一组渠道。**每一组渲染出的渠道都以自己的分隔标题开头**：实际渲染的第一组用无「or」的文案（`social.titleFirst`、`enterprise.titleFirst`、`passkey.titleFirst`），因为「或」在它上面没有所指；其余组用带「或」的文案（`social.title`、`enterprise.title`、`passkey.title`）。企业类的入口（工作邮箱与继续）与它的分隔标题一起渲染，因此不会被读成社交按钮的一部分。
 - `slots.aboveChannels` 与 `slots.belowForms` 是宿主的两个内容位：前者在渠道组之上、模式标题之下，后者在表单组（含它的开户说明）之下。
 - `providerIcon` 为每个 redirect 方法给出图标，渲染在标签之前；已弃用的 `social.providers` 配置里每项自己的 `icon` 优先。
 - `headingLevel` 是注册模式标题的元素，缺省 `h2`（屏幕通常挂在宿主页面标题之下）。
