@@ -78,7 +78,7 @@ function signupSession() {
                 required: true,
               },
             ],
-            provided_provider: 'google',
+            provided_method: 'google',
             provided_display_name: 'Ada Lovelace',
             provided_email: 'ada@example.com',
           },
