@@ -1129,9 +1129,15 @@ function SignupProvidedEmail({
           minHeight: 56,
           px: 1.75,
           py: 1.5,
-          border: '1px solid #cbd5e1',
+          // The relationship, not the sample's literal colours: the block sits
+          // one shade off the card, and its rule is quieter than an editable
+          // field's -- lighter than it in the light theme, darker in the dark
+          // one. That is what keeps the two apart without the read-only block
+          // reading as an input.
+          border: 1,
+          borderColor: 'divider',
           borderRadius: '8px',
-          backgroundColor: '#f1f5f9',
+          backgroundColor: 'action.hover',
           overflowWrap: 'anywhere',
           userSelect: 'text',
         }}
