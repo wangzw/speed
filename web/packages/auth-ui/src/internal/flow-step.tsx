@@ -1109,7 +1109,7 @@ function SignupProvidedEmail({
           px: 1.75,
           py: 1.5,
           border: '1px solid #cbd5e1',
-          borderRadius: 1,
+          borderRadius: '8px',
           backgroundColor: '#f1f5f9',
           overflowWrap: 'anywhere',
           userSelect: 'text',
@@ -1117,7 +1117,7 @@ function SignupProvidedEmail({
       >
         <Typography
           variant="body1"
-          sx={{ color: 'text.primary', minWidth: 0 }}
+          sx={{ color: 'text.primary', lineHeight: '22px', minWidth: 0 }}
         >
           {value}
         </Typography>
