@@ -21,7 +21,7 @@ same discipline `ui-kit` established, and the workspace's
 | Module | Exports |
 |---|---|
 | `components/AppShell.tsx` | `AppShell`, `AppShellProps`, `AppShellShellLayout`, `AppShellNavItem`, `AppShellNavGroup`, `AppShellNavEntry`, `AppShellNavSlot`, `AppShellNavSlotState` |
-| `components/Avatar.tsx` | `Avatar`, `AvatarProps` |
+| `components/Avatar.tsx` | `Avatar`, `AvatarProps`, `avatarInitials` |
 | `components/RouteGuard.tsx` | `RouteGuard`, `RouteGuardProps`, `RouteGuardStatus` |
 | `isPlainPrimaryClick.ts` | `isPlainPrimaryClick` |
 | `resources.ts` | `LAYOUT_KIT_NAMESPACE`, `layoutKitResources` |
@@ -264,6 +264,11 @@ so a name-only avatar announces the name, not its bare initials; a
 `decorative` avatar leaves the accessibility tree entirely, for when a
 wrapping control (an `aria-label`led button next to the account name)
 already carries the identity.
+
+A decorative avatar's glyph is still *visible* text, so WCAG 2.5.3 requires
+it inside the wrapping control's accessible name. `avatarInitials(name)` is
+the derivation the glyph renders, exported so the host can include it in
+that name without reimplementing (and drifting from) it.
 
 | Prop | Type | Notes |
 |---|---|---|

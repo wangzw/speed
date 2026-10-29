@@ -13,6 +13,12 @@
  * next to the account name -- pass `decorative` so the glyph leaves the
  * accessibility tree and the control's own label is the single
  * announcement.
+ *
+ * A decorative glyph is still VISIBLE text. WCAG 2.5.3 (Label in Name)
+ * requires a control's visible text to be part of its accessible name, so
+ * a host wrapping a decorative avatar must include the initials in that
+ * label. `avatarInitials` is the same derivation the glyph renders, exported
+ * so the host's label and the glyph cannot drift apart.
  */
 
 import MuiAvatar from '@mui/material/Avatar'
@@ -34,8 +40,13 @@ export interface AvatarProps {
   readonly sx?: SxProps<Theme>
 }
 
-/** Up to two uppercase initials from a display name (first and last word). */
-function initialsOf(name: string | undefined): string {
+/**
+ * Up to two uppercase initials from a display name (first and last word).
+ * This is exactly the text the avatar renders when it has no image, exported
+ * so a host wrapping a decorative avatar can put the visible glyph inside
+ * the control's accessible name (WCAG 2.5.3).
+ */
+export function avatarInitials(name: string | undefined): string {
   if (name === undefined) {
     return ''
   }
@@ -82,7 +93,7 @@ export function Avatar({
         ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
       ]}
     >
-      {initialsOf(name)}
+      {avatarInitials(name)}
     </MuiAvatar>
   )
 }

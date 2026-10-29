@@ -10,7 +10,9 @@ and host slots immediately before and after the drawer's nav landmark),
 `RouteGuard` (a
 route/content gate driven entirely by a host-injected status), `Avatar`
 (a presentational identity chip -- image or initials, off the accessibility
-tree on request) and `isPlainPrimaryClick` (the shared judgement in-app
+tree on request, plus `avatarInitials`, the same initials derivation, so a
+wrapping control can put the visible glyph inside its own accessible name)
+and `isPlainPrimaryClick` (the shared judgement in-app
 navigation links use before intercepting a click). All are fully controlled
 and props-driven, carry no
 business or tenant semantics, and — the property that matters most for

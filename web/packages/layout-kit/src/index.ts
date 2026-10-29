@@ -23,7 +23,11 @@ export {
   type AppShellProps,
   type AppShellShellLayout,
 } from './components/AppShell.js'
-export { Avatar, type AvatarProps } from './components/Avatar.js'
+export {
+  Avatar,
+  avatarInitials,
+  type AvatarProps,
+} from './components/Avatar.js'
 export {
   RouteGuard,
   type RouteGuardProps,

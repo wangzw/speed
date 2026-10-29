@@ -5,7 +5,7 @@
 与认证无关的应用外壳，包 `web/packages/layout-kit`。交付 `AppShell`、`RouteGuard` 与 `Avatar`，以及它们渲染自身文字所用的双语命名空间。
 
 - `AppShell` 交付一块响应式应用外壳，含两种 chrome 形态：顶栏形态（缺省）把一个固定的顶部栏（`header`/banner 地标）、一个随视口变化的导航抽屉（`nav` 地标，`md` 断点及以上常驻、以下为临时覆盖式）与一个 `main` 内容区装配在一起；侧栏形态在 `md` 及以上不渲染顶栏，把品牌、收起开关、头部动作与用户菜单移进抽屉纸，`md` 以下渲染一条只含抽屉触发与品牌的极简顶栏。它把宿主交来的导航项、头部内容与子节点原样摆进这些地标，自身不做任何路由判定。桌面侧边栏可收起——一个由宿主显式选择的受控面（收为仅图标的窄栏，见下）。
-- `Avatar` 交付一个纯展示的身份块：有图渲染图、无图取名字首字母，可对无障碍树隐身（外层控件自带标签）。
+- `Avatar` 交付一个纯展示的身份块：有图渲染图、无图取名字首字母，可对无障碍树隐身（外层控件自带标签）；并交付首字母的派生函数，供包着隐身头像的控件把可见字形写进自己的可及名。
 - `RouteGuard` 按宿主算好的一个状态值（`RouteGuardStatus`）决定是否放行子节点。三态互斥——放行、等待、拒绝——等待态与拒绝态各有一个缺省占位，可由宿主整体替换。
 - 两者都不认识任何具体的认证或路由机制。`RouteGuard` 的判决是一个由宿主计算并传入的普通值，不是一个它去调用的回调；`AppShell` 的导航项（含哪一项选中）完全由宿主算好。这层「宿主注入一切」的形状，使租户侧装配壳与平台侧外壳能共用同一个包而各自接上不同的授权来源：授权来源一变，本包不变。
 
@@ -108,9 +108,11 @@ export interface AvatarProps {
   readonly sx?: SxProps<Theme>
 }
 export function Avatar(props: AvatarProps): ReactElement
+export function avatarInitials(name: string | undefined): string
 ```
 
 - **一个纯展示的身份块，不持状态、不发请求。** 有 `src` 时渲染图片（其 `alt` 即 `name`）；否则由 `name` 取最多两个大写首字母（首词与末词）。带名且非装饰时，它暴露 `name` 为其可及名（`role="img"` 加 `aria-label`），使有名无图的头像读作名字而非裸首字母；`decorative` 为真时整块移出无障碍树，由包着它的控件（一个 `aria-label` 的按钮）承担唯一播报。**移出可及树不等于移出可见文本**：无障碍检查按可见文本核对可及名，包着装饰头像的控件若把首字母显示在按钮里，可及名必须含那串首字母，否则判 `label-content-name-mismatch`。
+- **`avatarInitials` 是同一份派生，导出给这类控件用。** 包着装饰头像的控件按上一条把可见的首字母并进自己的可及名；用同一个派生拼，两侧不会各算各的。
 - **`AppShell` 的桌面侧边栏收起是宿主显式选择的受控面。** `sidebarCollapsed` 是收起态，`onSidebarCollapsedChange` 是收起开关的回报通道；给出后者即在顶栏渲染收起／展开按钮，两者都省略即维持一直展开的常驻抽屉。收起能力未选择时，宿主的抽屉形态与收起出现前相同；唯一对所有宿主都生效的加严是触摸设备上的可点击目标下限（**所有可点击目标**不小于 44×44，导航项随主题层一并满足，见[布局](design-web-layout.md)的指针能力查询一节），它随无障碍要求一并落下，与是否选择收起无关。收起只在 `md` 及以上生效，移动（临时）抽屉不受影响。收起态是宿主持有的普通值，本包不在内部推导。收起把常驻抽屉收为仅图标的窄栏：固定宽（由主题间距基数算出，且不小于其内容所需的下限——触摸目标下限、焦点环在控件两侧的外扩与纸面的分隔线之和）、图标保留、标签裁剪并以提示补足文案，条目无图标时保留其标签；收起态两行的水平内边距取焦点环的外扩值，不随主题间距基数收缩。抽屉本身不卸载，`nav` 地标与各条目的可及名都保留。标签的裁切与省略号落在标签的文本元素上（按钮的 `overflow` 只作兜底）：文本在按钮内的后代块里，`text-overflow` 只作用于元素自身的行内内容，挂在按钮上时省略号永不生效、按钮的裁切会把字从中间切断；落在文本元素上，无图标条目才以可读的省略收尾。
 
 - **槽位原样渲染。** `header`、`headerActions`、`userMenu`、`banner`、`navHeader`、`navFooter`、`children` 渲染宿主交来的内容本身；某个槽缺席就什么都不渲染，不代以占位。
@@ -149,7 +151,7 @@ export const layoutKitResources: Readonly<Record<string, ResourceBundle>>
 
 宿主在 `createI18n` 之后用 `registerNamespace` 恰好注册一次（重复注册抛错，故不得发生在组件或 provider 内）。本包渲染自身文字经 `useLayoutKitTranslation`，从 `src/locales/zh-CN.json` 与 `en-US.json` 这对叶子键集相同的双语文件读取。
 
-**对外接口面。** `AppShell`、`AppShellProps`、`AppShellShellLayout`、`AppShellNavItem`、`AppShellNavGroup`、`AppShellNavEntry`、`AppShellNavSlot`、`AppShellNavSlotState`、`RouteGuard`、`RouteGuardProps`、`RouteGuardStatus`、`Avatar`、`AvatarProps`、`isPlainPrimaryClick` 的字段与方法集，`LAYOUT_KIT_NAMESPACE`、`layoutKitResources`，以及 `sidebarWidth` 缺省值 `280`、缺省拒绝态与等待态的形状，是宿主可见面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。新增的可选字段在未被使用时宿主行为不变。收起能力是纯附加的可选 prop 对（`sidebarCollapsed` 的呈现由「隐藏侧栏」改为「收为仅图标的窄栏」——prop 名、必选性、受控与否均未变，属呈现变更而非签名变更），`navLabel` 是纯附加的可选 prop；两者都未传时宿主的抽屉形态与它们出现前相同（触摸设备上的可点击目标下限除外，那是对所有宿主一并生效的无障碍加严）。分组与二级嵌套同样是纯附加：`AppShellNavGroup` 与 `AppShellNavEntry` 是新增导出，`AppShellNavItem.children` 是新增的可选字段，`AppShellProps.navItems` 的元素类型由 `AppShellNavItem` 拓宽为 `AppShellNavItem | AppShellNavGroup`——`AppShellNavItem[]` 仍可赋值给它，故这是源码兼容的拓宽而非签名变更：未使用分组或嵌套的宿主行为逐字节不变。`AppShellProps.navHeader`、`AppShellProps.navFooter` 与 `isPlainPrimaryClick` 同样是纯附加：两个槽是新增的可选字段（连同新增导出 `AppShellNavSlot`、`AppShellNavSlotState`），判定是新增导出；未使用它们的宿主行为不变。`AppShellShellLayout` 与 `AppShellProps.shellLayout` 亦然：新增的联合类型与可选字段，缺省 `'topbar'` 使既有宿主逐字节不变。
+**对外接口面。** `AppShell`、`AppShellProps`、`AppShellShellLayout`、`AppShellNavItem`、`AppShellNavGroup`、`AppShellNavEntry`、`AppShellNavSlot`、`AppShellNavSlotState`、`RouteGuard`、`RouteGuardProps`、`RouteGuardStatus`、`Avatar`、`AvatarProps`、`avatarInitials`、`isPlainPrimaryClick` 的字段与方法集，`LAYOUT_KIT_NAMESPACE`、`layoutKitResources`，以及 `sidebarWidth` 缺省值 `280`、缺省拒绝态与等待态的形状，是宿主可见面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。新增的可选字段在未被使用时宿主行为不变。收起能力是纯附加的可选 prop 对（`sidebarCollapsed` 的呈现由「隐藏侧栏」改为「收为仅图标的窄栏」——prop 名、必选性、受控与否均未变，属呈现变更而非签名变更），`navLabel` 是纯附加的可选 prop；两者都未传时宿主的抽屉形态与它们出现前相同（触摸设备上的可点击目标下限除外，那是对所有宿主一并生效的无障碍加严）。分组与二级嵌套同样是纯附加：`AppShellNavGroup` 与 `AppShellNavEntry` 是新增导出，`AppShellNavItem.children` 是新增的可选字段，`AppShellProps.navItems` 的元素类型由 `AppShellNavItem` 拓宽为 `AppShellNavItem | AppShellNavGroup`——`AppShellNavItem[]` 仍可赋值给它，故这是源码兼容的拓宽而非签名变更：未使用分组或嵌套的宿主行为逐字节不变。`AppShellProps.navHeader`、`AppShellProps.navFooter` 与 `isPlainPrimaryClick` 同样是纯附加：两个槽是新增的可选字段（连同新增导出 `AppShellNavSlot`、`AppShellNavSlotState`），判定是新增导出；未使用它们的宿主行为不变。`AppShellShellLayout` 与 `AppShellProps.shellLayout` 亦然：新增的联合类型与可选字段，缺省 `'topbar'` 使既有宿主逐字节不变。
 
 ## 依赖
 
@@ -263,6 +265,6 @@ classDiagram
 | 内嵌导航的普通主键点击判定 | 已实现 | `web/packages/layout-kit/src/isPlainPrimaryClick.ts` `isPlainPrimaryClick` |
 | 桌面侧边栏收起（受控 prop 对，收为仅图标的窄栏） | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `sidebarCollapsed`、`onSidebarCollapsedChange`、`railIconItemSx`／`railTextItemSx`、`RailTooltip` |
 | 收起窄栏的宽度下限 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `COLLAPSED_SIDEBAR_MIN_WIDTH`、`RAIL_ROW_INSET_PX`、`collapsedSidebarWidth` |
-| 身份块 Avatar | 已实现 | `web/packages/layout-kit/src/components/Avatar.tsx` `Avatar`、`AvatarProps` |
+| 身份块 Avatar | 已实现 | `web/packages/layout-kit/src/components/Avatar.tsx` `Avatar`、`AvatarProps`、`avatarInitials` |
 | `RouteGuard`（按注入状态放行的三态门） | 已实现 | `web/packages/layout-kit/src/components/RouteGuard.tsx` `RouteGuard`、`RouteGuardProps`、`RouteGuardStatus` |
 | 双语命名空间资源 | 已实现 | `web/packages/layout-kit/src/resources.ts` `LAYOUT_KIT_NAMESPACE`、`layoutKitResources` |
