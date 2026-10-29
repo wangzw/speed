@@ -133,6 +133,20 @@ function RebindingHost({
   )
 }
 
+/** The actions line the viewer sees: the nearest ancestor of the back action
+ * that also holds the submit button. */
+function leadingBackRow(): Element {
+  const back = screen.getByRole('button', {
+    name: zhCN.passwordReset.backToSignIn,
+  })
+  let row: Element | null = back.parentElement
+  while (row !== null && row.querySelector('button[type="submit"]') === null) {
+    row = row.parentElement
+  }
+  expect(row).not.toBeNull()
+  return row as Element
+}
+
 describe('PasswordResetScreen', () => {
   it('request the reset with the channel and identifier, then show the sent surface', async () => {
     const requestReset = vi.fn(() => Promise.resolve(SENT))
@@ -178,6 +192,67 @@ describe('PasswordResetScreen', () => {
     expect(onDone).not.toHaveBeenCalled()
   })
 
+  it('keep the phone control on the SMS channel alone and refuse a short number locally', async () => {
+    const requestReset = vi.fn(() => Promise.resolve(SENT))
+    renderWithProviders(
+      <PasswordResetScreen
+        session={session()}
+        channels={['email', 'sms']}
+        operations={resetOperations({ requestReset })}
+      />,
+    )
+    const user = userEvent.setup()
+    // The email channel shows no phone control.
+    expect(
+      screen.queryByRole('combobox', { name: zhCN.smsSignIn.countryLabel }),
+    ).not.toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordReset.channel.sms }),
+    )
+    await user.type(screen.getByLabelText(zhCN.passwordReset.phoneLabel), '13')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordReset.send }),
+    )
+    // The number is too short for the country: nothing is sent.
+    expect(requestReset).not.toHaveBeenCalled()
+    expect(
+      screen.getByLabelText(zhCN.passwordReset.phoneLabel),
+    ).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('lead the form actions with the way back, and keep it alone once done', async () => {
+    const onBackToSignIn = vi.fn()
+    const operations = resetOperations({
+      requestReset: () => Promise.resolve(SENT),
+      verifyReset: () => Promise.resolve(VERIFIED),
+      completeReset: () => Promise.resolve(),
+    })
+    const user = await reachSent(operations, { onBackToSignIn })
+
+    // The sent stage holds both actions on one line, the way back first and
+    // clear of the fields.
+    const row = leadingBackRow()
+    expect(row.querySelector('input')).toBeNull()
+    const back = screen.getByRole('button', {
+      name: zhCN.passwordReset.backToSignIn,
+    })
+    const submit = row.querySelector('button[type="submit"]') as Element
+    expect(
+      back.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    await user.click(back)
+    expect(onBackToSignIn).toHaveBeenCalledTimes(1)
+
+    // The done stage is the action itself: nothing to submit beside it.
+    await fillCodeAndPassword(user)
+    await screen.findByText(zhCN.passwordReset.doneTitle)
+    expect(document.querySelector('button[type="submit"]')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: zhCN.passwordReset.backToSignIn }),
+    ).toBeInTheDocument()
+  })
+
   it('switch the identifier field with the chosen channel', async () => {
     const requestReset = vi.fn(() => Promise.resolve(SENT))
     renderWithProviders(
@@ -195,10 +270,15 @@ describe('PasswordResetScreen', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.passwordReset.channel.sms }),
     )
+    // The SMS channel takes the identifier the way the SMS sign-in does: a
+    // country/region selector beside the local number, under the shared hint.
+    expect(
+      screen.getByRole('combobox', { name: zhCN.smsSignIn.countryLabel }),
+    ).toBeInTheDocument()
     expect(
       screen.getByLabelText(zhCN.passwordReset.phoneLabel),
     ).toBeInTheDocument()
-    expect(screen.getByText(zhCN.passwordReset.phoneHint)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.smsSignIn.phoneHint)).toBeInTheDocument()
     await user.type(
       screen.getByLabelText(zhCN.passwordReset.phoneLabel),
       '+8613800138000',
@@ -282,7 +362,7 @@ describe('PasswordResetScreen', () => {
       .mockResolvedValueOnce(undefined)
     const operations = resetOperations({ verifyReset, completeReset })
     const onDone = vi.fn()
-    const user = await reachSent(operations, { onDone })
+    const user = await reachSent(operations, { onDone, onBackToSignIn: () => undefined })
     await fillCodeAndPassword(user)
 
     await waitFor(() =>
@@ -290,6 +370,8 @@ describe('PasswordResetScreen', () => {
         screen.getByText(zhCN.passwordReset.policyFailure),
       ).toBeInTheDocument(),
     )
+    // The verified stage keeps the same action line.
+    expect(leadingBackRow().querySelector('input')).toBeNull()
     expect(
       screen.queryByLabelText(zhCN.passwordReset.codeLabel),
     ).not.toBeInTheDocument()

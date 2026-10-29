@@ -18,7 +18,6 @@
     },
     "emailLabel": "Email",
     "phoneLabel": "Phone number",
-    "phoneHint": "Include the country code, for example +8613800138000.",
     "send": "Send code",
     "sentNotice": "If these details match an account that can be reset, a verification code has been sent.",
     "codeLabel": "Verification code",

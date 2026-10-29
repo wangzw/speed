@@ -52,7 +52,10 @@ import {
   FormField,
   FormLayout,
   HumanVerification as HumanVerificationBlock,
+  PhoneNumberField,
   errorCodeOf,
+  toE164,
+  usePhoneCountryDefault,
 } from '@speed/ui-kit'
 import {
   humanGateNeedsProof,
@@ -211,6 +214,14 @@ export function PasswordResetScreen({
       confirmPassword: '',
     },
   })
+  // The SMS channel takes the identifier the same way the SMS sign-in does:
+  // a country/region selector and the local number, assembled to E.164 only
+  // at submit. The country starts on the host's preferred one when it gives
+  // one, else the browser locale's own region.
+  const preferredCountry = usePhoneCountryDefault()
+  const [country, setCountry] = useState(() => preferredCountry)
+  const [nationalNumber, setNationalNumber] = useState('')
+  const [phoneAttempted, setPhoneAttempted] = useState(false)
   // The resume read is captured once at mount: a host that binds the
   // operations inline hands a new function identity on every render, and
   // re-running the resume on each one would read the bound record again
@@ -463,6 +474,17 @@ export function PasswordResetScreen({
       if (selectedChannel === null) {
         return
       }
+      if (selectedChannel === 'sms') {
+        setPhoneAttempted(true)
+        const phone = toE164(country, nationalNumber)
+        if (phone === null) {
+          // The control states the per-country reason under its own field;
+          // nothing is sent.
+          return
+        }
+        await send(selectedChannel, phone)
+        return
+      }
       const identifier = values.identifier.trim()
       if (identifier === '') {
         form.setError('identifier', {
@@ -623,7 +645,23 @@ export function PasswordResetScreen({
         form={form}
         onSubmit={onSubmit}
         actions={
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1,
+              width: '100%',
+            }}
+          >
+            {onBackToSignIn === undefined ? (
+              <span />
+            ) : (
+              <Button type="button" variant="text" onClick={back}>
+                {t('passwordReset.backToSignIn')}
+              </Button>
+            )}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {showingSent && stage.channel !== null && stage.identifier !== null ? (
               <Button
                 type="button"
@@ -646,6 +684,7 @@ export function PasswordResetScreen({
             >
               {showingRequest ? t('passwordReset.send') : submitLabel}
             </Button>
+            </Box>
           </Box>
         }
       >
@@ -669,25 +708,44 @@ export function PasswordResetScreen({
                 ))}
               </ToggleButtonGroup>
             ) : null}
-            <FormField
-              name="identifier"
-              required
-              render={({ field, invalid, errorText }) => (
-                <TextField
-                  {...field}
-                  inputRef={identifierInput}
-                  label={identifierLabel}
-                  type={sms ? 'tel' : 'email'}
-                  inputMode={sms ? 'tel' : 'email'}
-                  autoComplete={sms ? 'tel' : 'email'}
-                  fullWidth
-                  error={invalid}
-                  helperText={
-                    errorText ?? (sms ? t('passwordReset.phoneHint') : undefined)
-                  }
+            {sms ? (
+              <Box sx={{ width: '100%' }}>
+                <PhoneNumberField
+                  country={country}
+                  nationalNumber={nationalNumber}
+                  onCountryChange={(next) => {
+                    form.clearErrors('identifier')
+                    setCountry(next)
+                  }}
+                  onNationalNumberChange={(next) => {
+                    form.clearErrors('identifier')
+                    setNationalNumber(next)
+                  }}
+                  countryLabel={t('smsSignIn.countryLabel')}
+                  numberLabel={t('passwordReset.phoneLabel')}
+                  numberHelperText={t('smsSignIn.phoneHint')}
+                  showValidationError={phoneAttempted}
                 />
-              )}
-            />
+              </Box>
+            ) : (
+              <FormField
+                name="identifier"
+                required
+                render={({ field, invalid, errorText }) => (
+                  <TextField
+                    {...field}
+                    inputRef={identifierInput}
+                    label={identifierLabel}
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    fullWidth
+                    error={invalid}
+                    helperText={errorText ?? undefined}
+                  />
+                )}
+              />
+            )}
           </>
         ) : (
           <>
@@ -779,16 +837,6 @@ export function PasswordResetScreen({
         </Button>
       ) : null}
 
-      {onBackToSignIn === undefined ? null : (
-        <Button
-          type="button"
-          variant="text"
-          onClick={back}
-          sx={{ alignSelf: 'flex-start' }}
-        >
-          {t('passwordReset.backToSignIn')}
-        </Button>
-      )}
     </Box>
   )
 }
