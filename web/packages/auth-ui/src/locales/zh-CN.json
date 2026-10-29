@@ -104,7 +104,9 @@
     "continue": "继续",
     "providersTitle": "选择你的组织",
     "noProviders": "该邮箱没有可用的登录方式，请检查地址或换一种方式。",
-    "editEmail": "换一个邮箱"
+    "editEmail": "换一个邮箱",
+    "title": "或使用工作账号登录",
+    "titleFirst": "使用工作账号登录"
   },
   "passkey": {
     "title": "或使用通行密钥登录",

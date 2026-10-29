@@ -630,13 +630,14 @@ export function SignInScreen({
         )
       case 'enterprise':
         return (
-          <EnterpriseSignIn
-            key="enterprise"
-            session={session}
-            returnTo={social?.returnTo}
-            onAuthorizeUrl={social?.onAuthorizeUrl}
-            beforeStart={startGate}
-          />
+          <GroupHeadingProvider key="enterprise" value={headingVariant}>
+            <EnterpriseSignIn
+              session={session}
+              returnTo={social?.returnTo}
+              onAuthorizeUrl={social?.onAuthorizeUrl}
+              beforeStart={startGate}
+            />
+          </GroupHeadingProvider>
         )
       case 'webauthn':
         return (

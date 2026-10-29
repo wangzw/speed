@@ -219,6 +219,7 @@ export function EnterpriseSignIn({
   beforeStart,
 }: EnterpriseSignInProps) {
   const { t } = useAuthUiTranslation()
+  const headingVariant = useGroupHeadingVariant()
   const form = useForm<{ email: string }>({ defaultValues: { email: '' } })
   const [providers, setProviders] = useState<readonly AuthnSsoProvider[] | null>(
     null,
@@ -309,6 +310,9 @@ export function EnterpriseSignIn({
     <Box
       sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}
     >
+      <Divider textAlign="center" sx={{ color: 'text.secondary' }}>
+        {t(headingVariant === 'plain' ? 'enterprise.titleFirst' : 'enterprise.title')}
+      </Divider>
       <Alert
         severity="info"
         role="status"

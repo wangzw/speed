@@ -104,7 +104,9 @@
     "continue": "Continue",
     "providersTitle": "Choose your organization",
     "noProviders": "No sign-in method is available for that email. Check the address or continue another way.",
-    "editEmail": "Use a different email"
+    "editEmail": "Use a different email",
+    "title": "or sign in with your work account",
+    "titleFirst": "Sign in with your work account"
   },
   "passkey": {
     "title": "or sign in with a passkey",

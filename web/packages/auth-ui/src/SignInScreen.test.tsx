@@ -884,6 +884,33 @@ describe('SignInScreen', () => {
     expect(harness.calls).toHaveLength(0)
   })
 
+  it('render its link-shaped actions as text buttons carrying the copy as written', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([{ name: 'password', kind: 'form' }], {
+          signup: true,
+          signupPassword: true,
+          passwordReset: true,
+          passwordResetMethods: ['email'],
+        })}
+        onForgotPassword={() => undefined}
+      />,
+    )
+    // Both entries are actions styled as links, so the theme's text-button
+    // exception reaches them: their names are the bundle's sentences, and the
+    // variant class is what lets the theme render them in that case.
+    const registerEntry = screen.getByRole('button', {
+      name: zhCN.mode.registerEntry,
+    })
+    expect(registerEntry.className).toContain('MuiButton-text')
+    const forgot = screen.getByRole('button', {
+      name: zhCN.passwordSignIn.forgotPassword,
+    })
+    expect(forgot.className).toContain('MuiButton-text')
+  })
+
   it('hide the forgot-password entry when the deployment does not offer it', () => {
     const harness = makeHarness({})
     renderWithProviders(
@@ -1620,6 +1647,51 @@ describe('SignInScreen', () => {
       screen.getByRole('button', { name: 'Passkey' }),
     ).toBeInTheDocument()
     expect(screen.getByText(zhCN.passkey.title)).toBeInTheDocument()
+  })
+
+  it('head the enterprise class with its own divider', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'password', kind: 'form' },
+          { name: 'oidc', kind: 'enterprise', protocol: 'oidc' },
+        ])}
+      />,
+    )
+    // The email-first entry is a channel group of its own, so it opens with
+    // the same divider the social and passkey classes use.
+    expect(screen.getByText(zhCN.enterprise.title)).toBeInTheDocument()
+    expect(screen.getByLabelText(zhCN.enterprise.emailLabel)).toBeInTheDocument()
+  })
+
+  it('head the surface without “or” when the enterprise class comes first', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'password', kind: 'form' },
+          { name: 'oidc', kind: 'enterprise', protocol: 'oidc' },
+        ])}
+        order={['enterprise', 'form']}
+      />,
+    )
+    expect(screen.getByText(zhCN.enterprise.titleFirst)).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.enterprise.title)).not.toBeInTheDocument()
+  })
+
+  it('render no enterprise divider when the deployment offers no enterprise method', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([{ name: 'password', kind: 'form' }])}
+      />,
+    )
+    expect(screen.queryByText(zhCN.enterprise.title)).not.toBeInTheDocument()
+    expect(screen.queryByText(zhCN.enterprise.titleFirst)).not.toBeInTheDocument()
   })
 
   it('head the surface without “or” when the passkey class comes first', () => {
