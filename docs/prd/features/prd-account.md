@@ -522,7 +522,7 @@
 
 - **验收**：账户持有多个已验证邮箱时，同一时刻只有一个默认联系地址；账户中出现已验证邮箱且持有人尚未选择时，最早证明的那一条自动成为默认联系地址；改选后新地址成为默认联系地址，原地址不再是；没有已验证邮箱的账户读作没有默认联系地址；发往账户的通知落在当时的默认联系地址。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`（覆盖「账户出现已验证邮箱且持有人尚未选择时，最早证明的那一条自动成为默认」这一支；多地址与改选两支未覆盖）
 
 ### REQ-account-064
 
