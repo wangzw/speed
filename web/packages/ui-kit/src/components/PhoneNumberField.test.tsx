@@ -27,12 +27,14 @@ type HarnessProps = {
   readonly initialCountry?: string
   readonly initialNational?: string
   readonly showValidationError?: boolean
+  readonly numberHelperText?: string
 }
 
 function Harness({
   initialCountry = 'US',
   initialNational = '',
   showValidationError = false,
+  numberHelperText,
 }: HarnessProps) {
   const [country, setCountry] = useState(initialCountry)
   const [nationalNumber, setNationalNumber] = useState(initialNational)
@@ -44,12 +46,45 @@ function Harness({
       onNationalNumberChange={setNationalNumber}
       countryLabel={COUNTRY_LABEL}
       numberLabel={NUMBER_LABEL}
+      {...(numberHelperText === undefined ? {} : { numberHelperText })}
       showValidationError={showValidationError}
     />
   )
 }
 
 describe('PhoneNumberField', () => {
+  const HELPER = 'Choose the country, then the local number.'
+
+  it('sets the help line under the whole row, not under the number field', () => {
+    renderWithProviders(<Harness numberHelperText={HELPER} />)
+    const help = screen.getByText(HELPER)
+    const number = screen.getByLabelText(NUMBER_LABEL)
+    const selector = screen.getByRole('combobox', { name: COUNTRY_LABEL })
+    // The line sits in the field's own container beside the row, so it spans
+    // the selector and the number together rather than hanging off the number
+    // column.
+    const container = help.parentElement
+    expect(container).not.toBeNull()
+    expect(container?.contains(selector)).toBe(true)
+    expect(container?.contains(number)).toBe(true)
+    expect(container?.contains(help)).toBe(true)
+    const row = selector.closest('div')
+    expect(row).not.toBe(container)
+    expect(number).toHaveAttribute('aria-describedby', help.id)
+  })
+
+  it('keeps a validation error under the number field and drops the help line', () => {
+    renderWithProviders(
+      <Harness numberHelperText={HELPER} showValidationError />,
+    )
+    // An empty number at submit carries the required message; the help line
+    // does not repeat below it.
+    expect(screen.getByText(zhCN.form.required)).toBeInTheDocument()
+    expect(screen.queryByText(HELPER)).not.toBeInTheDocument()
+    const number = screen.getByLabelText(NUMBER_LABEL)
+    expect(number).toHaveAttribute('aria-invalid', 'true')
+  })
+
   it('renders a country selector and a tel field under their accessible names', () => {
     renderWithProviders(<Harness initialCountry="CN" />)
     const selector = screen.getByRole('combobox', { name: COUNTRY_LABEL })

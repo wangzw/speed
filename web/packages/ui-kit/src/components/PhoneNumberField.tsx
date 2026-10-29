@@ -39,6 +39,7 @@ import type { ChangeEvent, FocusEvent, Ref } from 'react'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
+import FormHelperText from '@mui/material/FormHelperText'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { useUiKitTranslation } from '../internal/translation.js'
 import { layerSx } from '../internal/root-style-props.js'
@@ -138,6 +139,7 @@ function PhoneNumberFieldInner(
   const { t, i18n } = useUiKitTranslation()
   const countryFieldId = useId()
   const numberFieldId = useId()
+  const numberHelpId = `${numberFieldId}-help`
   // A value that starts with `+` but is still too short to name a country
   // stays on screen verbatim; the parsed parts replace it once they can.
   const [internationalDraft, setInternationalDraft] = useState<string | null>(
@@ -238,14 +240,22 @@ function PhoneNumberFieldInner(
       sx={layerSx(
         {
           display: 'flex',
-          flexWrap: 'nowrap',
-          alignItems: 'flex-start',
-          gap: 1,
+          flexDirection: 'column',
+          gap: 0.5,
           width: '100%',
         },
         sx,
       )}
     >
+      <Box
+        sx={{
+          display: 'flex',
+          flexWrap: 'nowrap',
+          alignItems: 'flex-start',
+          gap: 1,
+          width: '100%',
+        }}
+      >
       <Autocomplete<CountryOption, false, true, false, 'div', string>
         id={countryFieldId}
         options={options}
@@ -340,28 +350,41 @@ function PhoneNumberFieldInner(
         }}
         sx={COUNTRY_WIDTH_SX}
       />
-      <TextField
-        id={numberFieldId}
-        label={numberLabel}
-        type="tel"
-        autoComplete={autoComplete}
-        fullWidth
-        value={displayValue}
-        onChange={handleNumberChange}
-        onBlur={() => setTouched(true)}
-        disabled={disabled}
-        error={errorText !== null}
-        helperText={errorText ?? numberHelperText}
-        slotProps={{ htmlInput: { inputMode: 'tel' } }}
-        sx={{ flex: 1, minWidth: 0 }}
-      />
+        <TextField
+          id={numberFieldId}
+          label={numberLabel}
+          type="tel"
+          autoComplete={autoComplete}
+          fullWidth
+          value={displayValue}
+          onChange={handleNumberChange}
+          onBlur={() => setTouched(true)}
+          disabled={disabled}
+          error={errorText !== null}
+          helperText={errorText ?? undefined}
+          slotProps={{
+            htmlInput: {
+              inputMode: 'tel',
+              ...(errorText === null && numberHelperText !== undefined
+                ? { 'aria-describedby': numberHelpId }
+                : {}),
+            },
+          }}
+          sx={{ flex: 1, minWidth: 0 }}
+        />
+      </Box>
+      {errorText === null && numberHelperText !== undefined ? (
+        <FormHelperText id={numberHelpId} sx={{ mx: 0 }}>
+          {numberHelperText}
+        </FormHelperText>
+      ) : null}
     </Box>
   )
 }
 
 /**
  * The two-part mobile-number control (see the file header). `sx`,
- * `className` and the ref reach the row box that holds the country
- * selector and the local number field.
+ * `className` and the ref reach the field as a whole: the row that holds the
+ * country selector and the local number, and the help line under it.
  */
 export const PhoneNumberField = forwardRef(PhoneNumberFieldInner)
