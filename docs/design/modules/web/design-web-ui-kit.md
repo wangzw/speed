@@ -235,7 +235,7 @@ sequenceDiagram
 | `color.text`/`background`/`divider` | 同名槽 | 直接 |
 | `typography.fontFamily.sans` | `typography.fontFamily` | 直接 |
 | `typography.fontFamily.mono` | `typography.fontFamilyMono` | MUI 主题没有等宽槽，经 `@mui/material/styles` 的模块扩充新增；工厂总会填入，主题选项里可选，取值方式与 `fontFamily` 相同（含 `sx` 回调） |
-| `typography` 字号/字重 | `typography` 排版角色 | 标题角色取大字号、紧行高、半粗；副标题与正文角色取相应字号、常规行高、中/常规字重；按钮、说明文字、上划线各自成角色；字号换算为以 16px 为基的 rem；**按钮文案不转换为全大写**——按语言包与提供方给出的原样大小写呈现，主题关掉组件库的缺省大写变换 |
+| `typography` 字号/字重 | `typography` 排版角色 | 标题角色取大字号、紧行高、半粗；副标题与正文角色取相应字号、常规行高、中/常规字重；按钮、说明文字、上划线各自成角色；字号换算为以 16px 为基的 rem；**大写变换按变体区分**——实心与描边按钮保留组件库的缺省大写变换（它们是按钮外观），文本按钮按语言包原样大小写呈现（它们是链接式动作，如「创建账户」「忘记口令」） |
 | `spacing.unit` | 主题间距基数 | token 单位即 MUI 单位：数值间距选项设置基数，`theme.spacing(n)` 即 `n × 单位` |
 | `shape.borderRadius` | `shape.borderRadius` | 直接 |
 | `breakpoints.values` | `breakpoints.values` | 直接（槽名是 MUI 自己的） |
