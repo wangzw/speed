@@ -1167,7 +1167,7 @@ describe('SignInScreen', () => {
 
     const user = userEvent.setup()
     await user.click(
-      screen.getByRole('tab', { name: zhCN.smsSignIn.title, exact: true }),
+      screen.getByRole('tab', { name: zhCN.smsSignIn.title }),
     )
     expect(screen.getByText(hint)).toBeInTheDocument()
 
