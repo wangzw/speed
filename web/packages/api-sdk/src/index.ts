@@ -46,7 +46,7 @@ export interface AuthnLoginField {
 }
 
 /**
- * What the client does at the flow's current step. Only the members that belong to `kind` are present: `challenge` carries `fields`; `redirect` carries `url` and `method`; `factor` carries `factors`; `enroll` carries `kinds`; `webauthn` carries `options`; `complete` carries nothing.
+ * What the client does at the flow's current step. Only the members that belong to `kind` are present: `challenge` carries `fields`; a pending signup of a social first login also carries `provided_email`; `redirect` carries `url` and `method`; `factor` carries `factors`; `enroll` carries `kinds`; `webauthn` carries `options`; `complete` carries nothing.
  */
 export interface AuthnLoginStep {
   /** How long a challenge lives, in seconds. No handler of this fragment sets it, so the member is absent from every answer. */
@@ -63,6 +63,8 @@ export interface AuthnLoginStep {
   method?: string;
   /** The data a webauthn step carries: the public-key creation or request options of a WebAuthn ceremony, or, for a TOTP enrollment, an object with an `otpauth_uri` the client renders as a QR code. */
   options?: unknown;
+  /** The address the provider declared verified, carried by the pending signup of a social first login for the client to show read-only; absent when the provider declared no verified address and for every other step */
+  provided_email?: string;
   /** How soon a challenge may be asked for again, in seconds. No handler of this fragment sets it, so the member is absent from every answer. */
   resend_after?: number;
   /** Where a redirect step sends the user agent */
