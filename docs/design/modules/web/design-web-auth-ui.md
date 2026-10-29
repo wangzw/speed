@@ -346,7 +346,7 @@ sequenceDiagram
 | 社交渠道 | `SocialProvider` | 方法名字符串，定义在 `web/packages/auth-ui/src/SocialSignInSection.tsx` |
 | 社交渠道配置 | `SocialProviderConfig` | 一个方法加它的品牌标签、宿主回调地址与可选图标 |
 | 一步 | `AuthnStep` | auth-core 手写的流程步模型，步进渲染器按 `kind` 分派 |
-| 首登开户步 | 流程的 `challenge` 步 | 两种形态，服务端在 `next` 里给出字段与可选的 `provided_email`：社交首登是完整的开户面（只读邮箱、用户名、口令与确认口令，均必填；`provided_email` 缺省时不渲染邮箱一项），短信与企业首登是单个 `username` 文本字段。标签取本族字段词表；确认口令只在本地比较；答复经 `session.answerFlow` 发出，服务端在建号前判定形状、保留字、唯一性与口令策略 |
+| 首登开户步 | 流程的 `challenge` 步 | 两种形态，服务端在 `next` 里给出字段与可选的 `provided_email`：社交首登是完整的开户面（居中的身份句与要求句、用户名、只读邮箱、口令与确认口令；用户名与两道口令必填，`provided_email` 缺省时不渲染邮箱字段），短信与企业首登是单个 `username` 文本字段。标签取本族字段词表；确认口令只在本地比较；答复经 `session.answerFlow` 发出，服务端在建号前判定形状、保留字、唯一性与口令策略 |
 | 邀请视图 | `InvitationSummary` | 受理面渲染的邀请字段：租户、地址、状态、期限 |
 | 邀请操作 | `InvitationOperations` | 宿主绑定的两个邀请操作：读取与受理 |
 | 受理入参 | `AcceptInvitationInput` | 受理可带的显示名与初始口令（地址尚无账户时用） |
@@ -372,7 +372,11 @@ sequenceDiagram
 3. 每一步的答复经 `session.answerFlow` 发出（本包不直接触网）；流程落定后分叉：完成触发一次回调；被拒按错误码渲染一条 `role="alert"` 横幅、状态原地不变、可重试。
 4. 切换渠道时旧表单一并卸载，它的半填状态与整次失败的横幅随之消失——渠道的错误不跨面泄漏。
 
-首登开户的用户名一步是这条管线的又一个 `challenge` 步。流程解析出这次登录会新开账户时，服务端在下一步索取开户所需的内容；答复经 `session.answerFlow` 发出，内容合法才建账户并落到完成。这一步复用登录面的版式：宿主把它渲染在与登录面同一张卡片里，品牌与页面标题同登录面一致，步骤本身只提供卡片内部的内容。**社交首登的这一步是一块完整的开户面，按用户所处的处境写文案**：持有人刚刚在提供方那里完成授权，所以标题说的是「完成登录」而不是「创建账户」，说明只有一句「选择一个用户名并设置密码，即可完成登录。」。**身份在内容最前面点名，账号与邮箱分开**：第一行是提供方（「通过 GitHub 继续」；`next.provided_method` 是发起这次登录的方法名，标签按登录面同一套方法词表解析，词表外原样显示方法名）；第二行是提供方给出的账号名（`next.provided_display_name`，缺省时整行不渲染、不留占位）；第三行是提供方分享的邮箱（`next.provided_email`，只读，缺省时不渲染）。邮箱是提供方分享的地址，不是社媒账号的 ID，界面不把它称作账号或 ID，也不解释它的用途；地址落在账户上是否作联系方式属于账户面的事，这一步不说。下面依次是用户名与它的规则帮助、口令与确认口令两个字段，以及提交行。确认口令只在本地比较、不上线，口令的形状由服务端判定。**短信与企业即时开通的这一步只有用户名一项**。字段标签取本族对 `username`、`password` 的词条（`internal/labels.ts` 的字段词表），本地只校验必填与两次口令一致，形状、保留字、唯一性与口令策略都由服务端判定，屏幕不复述这些规则。三种用户名拒绝都落在用户名字段上（`aria-invalid`、`aria-describedby`，焦点移到该字段），文案分别取自本族的三个词条：占用（409 `username-taken`）「该用户名已被占用，请换一个。」、系统保留（400 `username-reserved`）「该用户名是系统保留的名称，请换一个。」、形状不合（400 `username-invalid`）「该用户名不符合规则，请按提示修改。」；口令不合策略（400 `bad-request`）落在口令字段，文案取自本族的口令策略词条，不写具体数值。步骤原地保留、已填的值留在字段里，改后重试，不渲染整次尝试横幅。整次尝试横幅只留给字段之外的失败。流程已失（400 `flow_invalid`：过期、已在别处完成或绑定到别的浏览器）时，这一步被一个终态说明替换：「这次登录已过期或已在别处完成，请重新登录。」，其唯一动作的作用名是「重新登录」，动作回到该渠道的首步并开始一条新流程，不重发死流程上的同一次答复，因此不会出现同一错误反复出现而没有出口的界面。
+首登开户的用户名一步是这条管线的又一个 `challenge` 步。流程解析出这次登录会新开账户时，服务端在下一步索取开户所需的内容；答复经 `session.answerFlow` 发出，内容合法才建账户并落到完成。这一步复用登录面的版式：宿主把它渲染在与登录面同一张卡片里，品牌与页面标题同登录面一致，步骤本身只提供卡片内部的内容。**社交首登的这一步是一块完整的开户面，自身没有标题**：卡片标题已经说明这是登录，再加一个步骤标题是同一件事说两遍。**叙述区只有居中两句**：第一句点名这次登录用的是谁的账号，取「通过 {{provider}} 用户 {{name}} 登录」，14px 次要色，其中名字那一截取主色、字重 600——`next.provided_method` 是发起这次登录的方法名，标签按登录面同一套方法词表解析、词表外原样显示方法名，`next.provided_display_name` 是提供方给出的账号名；第二句说还差什么，取「设置用户名和密码。」，16px 主色。两句之后一条分隔线，把叙述区与表单区分开。
+
+**提供方分享的邮箱落在用户名下面，是一个只读字段**：字段顺序是用户名、邮箱、口令、确认口令。邮箱字段的标签取本族对 `email` 的词条，值取自 `next.provided_email`，浅底色、淡描边，与可编辑字段一眼可分；值是**可折行的文本**而不是单行输入框，长地址整条可见、不被截断，可选、可复制，以只读文本框的语义呈现（`role="textbox"`、`aria-readonly`）；字段下一行小字给出处与不可修改（「由 GitHub 提供，不可修改。」）。邮箱是提供方分享的地址，不是社媒账号的 ID，界面不把它称作账号或 ID，它在账户上作什么用属于账户面，这一步不说。
+
+每一项缺省时整项不渲染：没有账号名时名字那一截消失，第一句退为「通过 {{provider}} 登录」；没有方法名时第一句整句不渲染；没有地址时不渲染邮箱字段，其余字段的顺序不变。确认口令只在本地比较、不上线，口令的形状由服务端判定。**短信与企业即时开通的这一步只有用户名一项**，保留自己的标题与说明（「选择一个用户名」「这是你在本站的登录名；账户建立后可以修改或添加其他登录方式。」），它们与卡片标题不重复。字段标签取本族对 `username`、`password` 的词条（`internal/labels.ts` 的字段词表），本地只校验必填与两次口令一致，形状、保留字、唯一性与口令策略都由服务端判定，屏幕不复述这些规则。三种用户名拒绝都落在用户名字段上（`aria-invalid`、`aria-describedby`，焦点移到该字段），文案分别取自本族的三个词条：占用（409 `username-taken`）「该用户名已被占用，请换一个。」、系统保留（400 `username-reserved`）「该用户名是系统保留的名称，请换一个。」、形状不合（400 `username-invalid`）「该用户名不符合规则，请按提示修改。」；口令不合策略（400 `bad-request`）落在口令字段，文案取自本族的口令策略词条，不写具体数值。步骤原地保留、已填的值留在字段里，改后重试，不渲染整次尝试横幅。整次尝试横幅只留给字段之外的失败。流程已失（400 `flow_invalid`：过期、已在别处完成或绑定到别的浏览器）时，这一步被一个终态说明替换：「这次登录已过期或已在别处完成，请重新登录。」，其唯一动作的作用名是「重新登录」，动作回到该渠道的首步并开始一条新流程，不重发死流程上的同一次答复，因此不会出现同一错误反复出现而没有出口的界面。
 
 ### 注册一次性建号
 
@@ -551,4 +555,4 @@ sequenceDiagram
 | 登录屏的「忘记口令」入口（发现面提供匿名口令重置且宿主给了 `onForgotPassword`） | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreenProps.onForgotPassword`、`forgotPasswordEntry`；`web/packages/auth-ui/src/SignInScreen.test.tsx` |
 | 匿名口令重置屏 `PasswordResetScreen`（宿主绑定的重置操作与渠道选择） | 已实现 | `web/packages/auth-ui/src/PasswordResetScreen.tsx` `PasswordResetScreen`、`PasswordResetOperations`、`PasswordResetScreenProps`；`web/packages/auth-ui/src/index.ts`；`web/packages/auth-ui/src/PasswordResetScreen.test.tsx` |
 | `passwordReset` i18n 节与 `passwordSignIn.forgotPassword`（zh-CN 与 en-US 键集一致） | 已实现 | `web/packages/auth-ui/src/locales/en-US.json`、`zh-CN.json`；`web/packages/auth-ui/src/resources.test.ts` |
-| 首登开户步（社交的完整开户面、短信与企业的用户名一步；含只读提供方邮箱、口令策略与三条用户名拒绝） | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx` `FlowStepFields`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler`；`web/packages/auth-core/src/session.ts`（解析 `provided_email`）；`web/packages/auth-ui/src/internal/labels.ts` `fieldLabel` |
+| 首登开户步（社交的完整开户面、短信与企业的用户名一步；含只读提供方邮箱、口令策略与三条用户名拒绝） | 部分实现 | `web/packages/auth-ui/src/internal/flow-step.tsx` `FlowStepFields`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler`；`web/packages/auth-core/src/session.ts`（解析 `provided_email`）；`web/packages/auth-ui/src/internal/labels.ts` `fieldLabel` |
