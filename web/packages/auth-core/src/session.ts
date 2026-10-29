@@ -238,14 +238,7 @@ export type AuthnFactorOption = AuthnLoginFactor
  * discriminated union, so a view reads only the fields its own step
  * carries. */
 export type AuthnStep =
-  | (AuthnLoginStep & {
-      kind: 'challenge'
-      fields: AuthnLoginField[]
-      /** The provider-declared verified address a social first signup shows
-       * read-only. Present only on that step, and only when the provider
-       * declared one; it is display-only and never submitted. */
-      provided_email?: string
-    })
+  | (AuthnLoginStep & { kind: 'challenge'; fields: AuthnLoginField[] })
   | (AuthnLoginStep & { kind: 'redirect'; url: string; method: string })
   | (AuthnLoginStep & { kind: 'factor'; factors: AuthnLoginFactor[] })
   | (AuthnLoginStep & { kind: 'enroll'; kinds: string[] })
