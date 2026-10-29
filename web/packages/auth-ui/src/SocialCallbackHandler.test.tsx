@@ -4,8 +4,12 @@
  * is in flight, takes a ready flow's result and fires onSignedIn once on
  * success; StrictMode's double effect invocation starts exactly one read.
  * A read that finds no flow renders its code text in one alert under a
- * retry button that reads once more, and a read that fails transiently
- * renders its code text the same way. A mount that finds the session
+ * retry button that reads once more when the host gives no exit, and the
+ * terminal restart notice when it does give onSignIn; the same terminal
+ * notice covers an answer refused as authn.flow_invalid (a parked step's or
+ * a ready flow's complete), a no-flow read, and a step this route cannot
+ * render, each leaving the route without another read. A read that fails
+ * transiently keeps its code text and retry. A mount that finds the session
  * already authenticated starts no read and fires onSignedIn again -- the
  * re-entry to the callback route after a completed login. The optional
  * absent slot reads the discovery document only when the flow read finds
@@ -110,6 +114,35 @@ describe('SocialCallbackHandler', () => {
     expect(
       screen.getByRole('button', { name: zhCN.socialCallback.retry }),
     ).toBeInTheDocument()
+  })
+
+  it('render the restart notice when a no-flow read finds a host exit', async () => {
+    // The flow is definitively gone, so a re-read deterministically finds
+    // nothing again. With the host's exit the terminal notice replaces the
+    // banner whose retry would spin on the same dead record, and its one
+    // action leaves the callback route without reading again.
+    const onSignIn = vi.fn()
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => {
+        throw apiError(401, 'authn.flow_invalid')
+      },
+    })
+    renderWithProviders(
+      <SocialCallbackHandler session={harness.session} onSignIn={onSignIn} />,
+    )
+    expect(
+      await screen.findByText(zhCN.signInFlow.flowExpired),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.socialCallback.retry }),
+    ).not.toBeInTheDocument()
+
+    const before = harness.calls.length
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: zhCN.signInFlow.signInAgain }))
+    expect(onSignIn).toHaveBeenCalledTimes(1)
+    expect(harness.calls.slice(before)).toHaveLength(0)
   })
 
   it('retry the read and succeed on the second attempt', async () => {
@@ -263,6 +296,44 @@ describe('SocialCallbackHandler', () => {
     )
 
     await waitFor(() => expect(reads).toBe(2))
+  })
+
+  it('render the restart notice for a step this route cannot render when the host gives an exit', async () => {
+    // A redirect step belongs to the host's navigation and this route can
+    // never render it. With the host's exit the step becomes the terminal
+    // notice instead of a re-read that deterministically parks the same
+    // unrenderable step again.
+    let reads = 0
+    const onSignIn = vi.fn()
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => {
+        reads += 1
+        return openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'redirect',
+            url: 'https://idp.example/authorize',
+            method: 'oidc',
+          },
+        })
+      },
+    })
+    renderWithProviders(
+      <SocialCallbackHandler session={harness.session} onSignIn={onSignIn} />,
+    )
+
+    expect(
+      await screen.findByText(zhCN.signInFlow.flowExpired),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(zhCN.signInFlow.unsupportedStep),
+    ).not.toBeInTheDocument()
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: zhCN.signInFlow.signInAgain }))
+    expect(onSignIn).toHaveBeenCalledTimes(1)
+    expect(reads).toBe(1)
   })
 
   it('not re-read when a remount finds the session already signed in', async () => {
@@ -713,6 +784,51 @@ describe('SocialCallbackHandler', () => {
     expect(harness.store.get()).toBe('access-1')
   })
 
+  it('render the restart notice when a refused answer finds the flow gone', async () => {
+    // authn.flow_invalid means the flow no longer exists: no step survives
+    // and re-reading is a deterministic empty turn. With the host's exit the
+    // terminal notice replaces the banner whose retry re-reads the dead flow.
+    const onSignIn = vi.fn()
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'code', secret: true }],
+          },
+        }),
+      [LOGIN_ANSWER]: () => {
+        throw apiError(401, 'authn.flow_invalid')
+      },
+    })
+    renderWithProviders(
+      <SocialCallbackHandler session={harness.session} onSignIn={onSignIn} />,
+    )
+    const user = userEvent.setup()
+    const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+    await user.type(code, '123456')
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+
+    expect(
+      await screen.findByText(zhCN.signInFlow.flowExpired),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(zhCN.smsSignIn.codeLabel),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.socialCallback.retry }),
+    ).not.toBeInTheDocument()
+
+    const before = harness.calls.length
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.signInAgain }),
+    )
+    expect(onSignIn).toHaveBeenCalledTimes(1)
+    expect(harness.calls.slice(before)).toHaveLength(0)
+  })
+
   it('fall back to the re-reading retry when a ready flow complete answer is refused', async () => {
     // A ready flow is taken with step: complete and never parked as a
     // surface; a refusal of that answer leaves no rendered step to keep, so
@@ -732,14 +848,26 @@ describe('SocialCallbackHandler', () => {
       [PROFILE_GET]: () => principal(),
     })
     const onSignedIn = vi.fn()
+    const onSignIn = vi.fn()
     renderWithProviders(
-      <SocialCallbackHandler session={harness.session} onSignedIn={onSignedIn} />,
+      <SocialCallbackHandler
+        session={harness.session}
+        onSignedIn={onSignedIn}
+        onSignIn={onSignIn}
+      />,
     )
+    // A refusal that is not authn.flow_invalid says the flow may still be
+    // ready, so the banner with the re-read stays even though the host did
+    // supply an exit.
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
         zhCN.errors.authn.unavailable,
       ),
     )
+    expect(
+      screen.getByRole('button', { name: zhCN.socialCallback.retry }),
+    ).toBeInTheDocument()
+    expect(onSignIn).not.toHaveBeenCalled()
     await userEvent.setup().click(
       screen.getByRole('button', { name: zhCN.socialCallback.retry }),
     )
@@ -749,6 +877,35 @@ describe('SocialCallbackHandler', () => {
     ).toHaveLength(3)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(harness.store.get()).toBe('access-1')
+  })
+
+  it('render the restart notice when a ready flow complete answer is refused as flow-invalid', async () => {
+    // The ready flow's completion was refused because the flow is gone:
+    // nothing is left to read back, so the terminal notice is the only
+    // honest outcome when the host offers an exit.
+    const onSignIn = vi.fn()
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => {
+        throw apiError(401, 'authn.flow_invalid')
+      },
+    })
+    renderWithProviders(
+      <SocialCallbackHandler session={harness.session} onSignIn={onSignIn} />,
+    )
+    expect(
+      await screen.findByText(zhCN.signInFlow.flowExpired),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.socialCallback.retry }),
+    ).not.toBeInTheDocument()
+
+    const before = harness.calls.length
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: zhCN.signInFlow.signInAgain }))
+    expect(onSignIn).toHaveBeenCalledTimes(1)
+    expect(harness.calls.slice(before)).toHaveLength(0)
   })
 
   it('treat a superseded completion as the lost race it is: no failed state, no onSignedIn', async () => {
