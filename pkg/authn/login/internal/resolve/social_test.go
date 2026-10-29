@@ -77,7 +77,7 @@ func TestSocialClosedSignupCreatesNothing(t *testing.T) {
 	}
 }
 
-func TestSocialOpenSignupCreatesAnEnabledUserWithNoMembershipOrAddress(t *testing.T) {
+func TestSocialOpenSignupCreatesAnEnabledUserWithTheDeclaredAddressAsAContact(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	long := strings.Repeat("名", 150)
 	p := social("google", "g1", "new@home.org", true)
@@ -93,11 +93,15 @@ func TestSocialOpenSignupCreatesAnEnabledUserWithNoMembershipOrAddress(t *testin
 	if n := len([]rune(a.DisplayName)); n != 100 {
 		t.Errorf("display name is %d characters, want it cut to 100", n)
 	}
-	if ids := e.s.identifiersOf(res.Account); len(ids) != 0 {
-		t.Errorf("identifiers = %+v, want none: the provider's address is not written", ids)
+	if ids := e.s.identifiersOf(res.Account); len(ids) != 1 || ids[0].Kind != authn.IdentifierEmail || ids[0].Value != "new@home.org" {
+		t.Errorf("identifiers = %+v, want the provider's verified address alone", ids)
 	}
-	if e.s.created[0].Email != "" || e.s.created[0].EmailVerifiedVia.Valid() {
-		t.Errorf("Create carried the address %+v, want none", e.s.created[0])
+	c := e.s.created[0]
+	if c.Email != "new@home.org" || c.EmailVerifiedVia.Via != "idp:google" {
+		t.Errorf("Create carried the address %q under %q, want the verified one", c.Email, c.EmailVerifiedVia.Via)
+	}
+	if c.Password != testPassword {
+		t.Errorf("Create carried password %q, want the one the social step collected", c.Password)
 	}
 	if got, ok := e.s.boundTo("google", "g1"); !ok || got != res.Account {
 		t.Errorf("binding = %v, %v, want it on the new account", got, ok)
@@ -105,8 +109,8 @@ func TestSocialOpenSignupCreatesAnEnabledUserWithNoMembershipOrAddress(t *testin
 	if e.s.membershipRead != 0 || len(e.s.membershipPuts) != 0 {
 		t.Errorf("memberships touched: %d reads, %d writes, want none", e.s.membershipRead, len(e.s.membershipPuts))
 	}
-	if e.s.created[0].Via != "signup" {
-		t.Errorf("Via = %q, want signup", e.s.created[0].Via)
+	if c.Via != "signup" {
+		t.Errorf("Via = %q, want signup", c.Via)
 	}
 }
 
@@ -124,19 +128,20 @@ func TestSocialOpenSignupWritesNoAddressTheProviderDidNotVerify(t *testing.T) {
 	}
 }
 
-func TestSocialOpenSignupWritesNoAddressTheProviderVerified(t *testing.T) {
-	// A verified address no account holds is no more written than an unverified
-	// one: the account takes the provider's display name alone.
+func TestSocialOpenSignupWritesTheVerifiedAddressNoAccountHolds(t *testing.T) {
+	// A verified address no account holds is written into the account as a
+	// contact: it is the address the provider stands behind, and no other
+	// account's data is touched by writing it.
 	e := newEnv(t, withSignup(SignupOpen))
 	res, err := e.resolve(social("google", "g1", "new@home.org", true))
 	if err != nil || res.Outcome != OutcomeCreated {
 		t.Fatalf("Resolve = %+v, %v", res, err)
 	}
-	if ids := e.s.identifiersOf(res.Account); len(ids) != 0 {
-		t.Errorf("identifiers = %+v, want none", ids)
+	if ids := e.s.identifiersOf(res.Account); len(ids) != 1 || ids[0].Value != "new@home.org" {
+		t.Errorf("identifiers = %+v, want the declared address alone", ids)
 	}
-	if got := e.s.created[0]; got.Email != "" || got.EmailVerifiedVia.Valid() {
-		t.Errorf("Create carried the address %+v, want none", got)
+	if got := e.s.created[0]; got.Email != "new@home.org" || got.EmailVerifiedVia.Via != "idp:google" {
+		t.Errorf("Create carried the address %+v, want the verified one", got)
 	}
 }
 

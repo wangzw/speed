@@ -14,6 +14,11 @@ import (
 // account with.
 const fieldUsername = "username"
 
+// fieldPassword is the input key a social first login carries beside the
+// username. It is the password the account is opened with, and no other first
+// login reads it.
+const fieldPassword = "password"
+
 // fieldFactor and fieldCode are the input keys a second-factor step carries.
 const (
 	fieldFactor = "factor"

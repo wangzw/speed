@@ -26,10 +26,9 @@ const (
 // username. It is what a resolution decided before any row was written: which
 // path decided it, the external identity or the proved phone, the tenant an
 // enterprise account enters, the display name and attributes the provider gave,
-// the identity's earlier keys and the creation the step will perform. It carries
-// no username; the pending-signup step collects one and hands it to Create. It
-// carries no address: a provider's declared address is never written into a
-// new account.
+// the identity's earlier keys, the address a social provider declared verified
+// and the creation the step will perform. It carries no username; the
+// pending-signup step collects one and hands it to Create.
 //
 // It is the flow record's pending member and nothing else. While a flow stands
 // at signup, no account, binding, identifier or membership row exists for it,
@@ -51,6 +50,14 @@ type Pending struct {
 	// Phone is the number an SMS first login proved, empty for an external
 	// login. It is written under sms-code and is a sign-in way from the start.
 	Phone string `json:"phone,omitempty"`
+	// Email is the address a social provider declared verified and no account
+	// holds, written to the new account as a contact and never as a sign-in
+	// way. It is empty for a provider that declared no verified address, an SMS
+	// login and an enterprise one.
+	Email string `json:"email,omitempty"`
+	// EmailVerifiedVia is the way Email was proved, idp: followed by the social
+	// provider's identifier. It is empty exactly when Email is.
+	EmailVerifiedVia string `json:"email_verified_via,omitempty"`
 	// Provider is the enterprise provider's identifier and Tenant is its tenant,
 	// which the account joins through a membership. Both are empty for a social
 	// or phone login.
@@ -74,15 +81,18 @@ func (p Pending) Clone() Pending {
 }
 
 // Create opens the account a pending signup carries, with the username its
-// person chose. It is the pending step's only write: the account and its
-// username identifier are written in one transaction, and the binding, the
-// proved phone or the membership is written beside it by the same rules the
-// immediate first-login paths follow.
+// person chose and, for a social first login, the password it also asked for.
+// It is the pending step's only write: the account and its username identifier
+// are written in one transaction, and the binding, the proved phone or the
+// membership is written beside it by the same rules the immediate first-login
+// paths follow.
 //
 // A username that is empty or does not normalize is authn.ErrInvalidIdentifier,
 // one the system keeps for itself is authn.ErrUsernameReserved, and one another
-// account holds is authn.ErrAccountExists. None of the three writes anything.
-func (r *Resolver) Create(ctx context.Context, p Pending, username string) (Result, error) {
+// account holds is authn.ErrAccountExists. A password the account store's policy
+// refuses, including the absence of the one a social first login must carry, is
+// authn.ErrPasswordPolicy. None of them writes anything.
+func (r *Resolver) Create(ctx context.Context, p Pending, username, password string) (Result, error) {
 	switch p.Source {
 	case SourceSocial, SourcePhone, SourceEnterprise:
 	default:
@@ -108,20 +118,26 @@ func (r *Resolver) Create(ctx context.Context, p Pending, username string) (Resu
 	case SourceEnterprise:
 		return r.createEnterprise(ctx, p, username)
 	}
-	return r.createSocial(ctx, p, username)
+	return r.createSocial(ctx, p, username, password)
 }
 
 // pendingSocial is the pending signup of a social first login. It carries the
-// provider's profile and no address: a new account takes the display name alone.
-func pendingSocial(ext *authn.External, aliases []authn.ExternalLink) Result {
-	return Result{Pending: &Pending{
+// provider's profile and the address the provider declared verified, when there
+// is one no account holds: the new account takes it as a contact.
+func pendingSocial(ext *authn.External, aliases []authn.ExternalLink, email string) Result {
+	p := Pending{
 		Source:      SourceSocial,
 		Via:         viaSignup,
 		External:    externalOf(ext),
 		Aliases:     cloneLinks(aliases),
 		DisplayName: displayName(ext.DisplayName),
 		Attributes:  cloneAttributes(ext.Attributes),
-	}}
+	}
+	if email != "" {
+		p.Email = email
+		p.EmailVerifiedVia = authn.VerifiedViaIDPPrefix + ext.Provider
+	}
+	return Result{Pending: &p}
 }
 
 // pendingPhone is the pending signup of a phone an SMS code just proved.

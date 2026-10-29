@@ -551,6 +551,19 @@ func newEnv(t *testing.T, opts ...option) *env {
 // account with, standing in for the username the pending-signup step collects.
 const testUsername = "ann"
 
+// testPassword is the password the social first login of these cases opens its
+// account with, standing in for the one its step collects.
+const testPassword = "correct horse battery staple"
+
+// passwordOf is the password the engine hands Create for a pending signup: the
+// social step's own, and none for the paths that take none.
+func passwordOf(p Pending) string {
+	if p.Source == SourceSocial {
+		return testPassword
+	}
+	return ""
+}
+
 // resolve runs a first login the way the engine does: it resolves the proof and,
 // when the resolution parks at the pending signup, opens the account with the
 // test username.
@@ -566,7 +579,7 @@ func (e *env) resolveAs(username string, p authn.Proof) (Result, error) {
 	if err != nil || res.Pending == nil {
 		return res, err
 	}
-	return e.r.Create(context.Background(), *res.Pending, username)
+	return e.r.Create(context.Background(), *res.Pending, username, passwordOf(*res.Pending))
 }
 
 // pending resolves a first login without opening the account, which is what the

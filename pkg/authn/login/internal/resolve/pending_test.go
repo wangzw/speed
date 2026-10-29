@@ -26,6 +26,9 @@ func TestAPendingSignupCarriesTheFactsTheAccountIsOpenedWith(t *testing.T) {
 		if p.External == nil || p.External.Subject != "g1" || p.DisplayName != "Ann" {
 			t.Errorf("external = %+v display name = %q, want the identity the binding is made under", p.External, p.DisplayName)
 		}
+		if p.Email != "ann@home.org" || p.EmailVerifiedVia != "idp:google" {
+			t.Errorf("email = %q via = %q, want the verified address the account opens with", p.Email, p.EmailVerifiedVia)
+		}
 		if p.Phone != "" || p.Provider != "" || p.Tenant != "" {
 			t.Errorf("a social pending names a phone, a provider or a tenant: %+v", p)
 		}
@@ -69,7 +72,7 @@ func TestTheCollectedUsernameOpensThePendingAccount(t *testing.T) {
 		if err != nil || pending.Pending == nil {
 			t.Fatalf("Resolve = %+v, %v, want a pending signup", pending, err)
 		}
-		res, err := e.r.Create(context.Background(), *pending.Pending, "collected")
+		res, err := e.r.Create(context.Background(), *pending.Pending, "collected", passwordOf(*pending.Pending))
 		if err != nil || res.Outcome != OutcomeCreated || res.Account == "" {
 			t.Fatalf("Create = %+v, %v, want a new account", res, err)
 		}
@@ -87,7 +90,7 @@ func TestTheCollectedUsernameOpensThePendingAccount(t *testing.T) {
 		if err != nil || pending.Pending == nil {
 			t.Fatalf("Resolve = %+v, %v, want a pending signup", pending, err)
 		}
-		res, err := e.r.Create(context.Background(), *pending.Pending, "collected")
+		res, err := e.r.Create(context.Background(), *pending.Pending, "collected", passwordOf(*pending.Pending))
 		if err != nil || res.Outcome != OutcomeCreated {
 			t.Fatalf("Create = %+v, %v, want a new account", res, err)
 		}
@@ -102,7 +105,7 @@ func TestTheCollectedUsernameOpensThePendingAccount(t *testing.T) {
 		if err != nil || pending.Pending == nil {
 			t.Fatalf("Resolve = %+v, %v, want a pending signup", pending, err)
 		}
-		res, err := e.r.Create(context.Background(), *pending.Pending, "collected")
+		res, err := e.r.Create(context.Background(), *pending.Pending, "collected", passwordOf(*pending.Pending))
 		if err != nil || res.Outcome != OutcomeCreated || !res.MembershipCreated {
 			t.Fatalf("Create = %+v, %v, want a new account in the tenant", res, err)
 		}
@@ -119,7 +122,7 @@ func TestAUsernameAnotherAccountHoldsOpensNothing(t *testing.T) {
 	if err != nil || pending.Pending == nil {
 		t.Fatalf("Resolve = %+v, %v, want a pending signup", pending, err)
 	}
-	_, err = e.r.Create(context.Background(), *pending.Pending, "taken")
+	_, err = e.r.Create(context.Background(), *pending.Pending, "taken", passwordOf(*pending.Pending))
 	if !errors.Is(err, authn.ErrAccountExists) {
 		t.Fatalf("Create = %v, want ErrAccountExists", err)
 	}
@@ -137,7 +140,7 @@ func TestARefusedUsernameOpensNothing(t *testing.T) {
 	if err != nil || pending.Pending == nil {
 		t.Fatalf("Resolve = %+v, %v, want a pending signup", pending, err)
 	}
-	_, err = e.r.Create(context.Background(), *pending.Pending, "")
+	_, err = e.r.Create(context.Background(), *pending.Pending, "", passwordOf(*pending.Pending))
 	if !errors.Is(err, authn.ErrInvalidIdentifier) {
 		t.Fatalf("Create with no username = %v, want ErrInvalidIdentifier", err)
 	}

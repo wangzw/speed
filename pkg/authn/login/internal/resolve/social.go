@@ -12,22 +12,30 @@ import (
 // an address the provider declares verified and an existing account holds is
 // link-required, and without such an address the first login opens a new
 // account. A first login that would open an account parks at the pending signup,
-// which asks its person for a username before anything is written.
+// which asks its person for a username and a password before anything is
+// written.
 //
 // The address a provider declared is a clue only when the provider says it
 // verified it. An address it says it did not verify is treated as absent, so
 // that nothing about the accounts that exist is answered to a caller whose claim
-// the provider does not stand behind. A declared address is never written into
-// an account, whether or not one holds it.
+// the provider does not stand behind. A verified address no account holds is
+// written into the account the login opens, as its contact.
 func (r *Resolver) socialUnbound(ctx context.Context, ext *authn.External,
 	aliases []authn.ExternalLink,
 ) (Result, error) {
+	declared := ""
 	if ext.EmailVerified && ext.Email != "" {
 		_, err := r.accounts.Lookup(ctx, authn.IdentifierEmail, ext.Email)
 		switch {
 		case err == nil:
 			return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: ext.Email})
-		case errors.Is(err, authn.ErrAccountNotFound), errors.Is(err, authn.ErrInvalidIdentifier):
+		case errors.Is(err, authn.ErrAccountNotFound):
+			// Nobody holds the address, so the account this login opens is the
+			// one that takes it.
+			declared = ext.Email
+		case errors.Is(err, authn.ErrInvalidIdentifier):
+			// An address that cannot be stored is no more a contact than it is a
+			// clue.
 		default:
 			return Result{}, err
 		}
@@ -35,20 +43,24 @@ func (r *Resolver) socialUnbound(ctx context.Context, ext *authn.External,
 	if !r.signupOpen() {
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrSignupClosed)
 	}
-	return pendingSocial(ext, aliases), nil
+	return pendingSocial(ext, aliases, declared), nil
 }
 
-// createSocial opens the account a pending social signup describes. It writes
-// none of the address the provider declared: the account takes the provider's
-// display name and nothing else, and the username is the one its person chose.
-// A username another login took in the race for the same name leaves
+// createSocial opens the account a pending social signup describes. The account
+// takes the provider's display name, the username and password its person chose,
+// and the address the provider declared verified as a contact. It writes no
+// sign-in way of that address: it is not the account's password login name. A
+// username another login took in the race for the same name leaves
 // authn.ErrAccountExists for the answer route's 409.
-func (r *Resolver) createSocial(ctx context.Context, p Pending, username string) (Result, error) {
+func (r *Resolver) createSocial(ctx context.Context, p Pending, username, password string) (Result, error) {
 	create := authn.CreateAccount{
 		Kind:                authn.KindUser,
 		DisplayName:         p.DisplayName,
 		Username:            username,
 		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
+		Email:               p.Email,
+		EmailVerifiedVia:    authn.Verification{Via: p.EmailVerifiedVia},
+		Password:            password,
 		Via:                 p.Via,
 	}
 	create, err := r.provision(ctx, create, p.Via)

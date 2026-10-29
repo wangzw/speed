@@ -206,7 +206,7 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			if resolveErr != nil || res.Pending == nil {
 				return res, resolveErr
 			}
-			return r.Create(ctx, *res.Pending, username)
+			return r.Create(ctx, *res.Pending, username, passwordOf(*res.Pending))
 		}
 
 		// One: password self-registration.
@@ -238,9 +238,15 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			t.Fatalf("the first social login = %+v, %v, want a new account", socialLogin, err)
 		}
 		socialID := record("social first sign-in", socialLogin.Account, "google-subject", "social@example.org")
-		if held := identifiersOf(t, accounts, socialID); len(held) != 1 ||
-			held[0].Kind != authn.IdentifierUsername || held[0].Value != "social-made" {
-			t.Errorf("the social account holds the identifiers %+v, want its username alone: the provider's address is written nowhere", held)
+		if held := identifiersOf(t, accounts, socialID); len(held) != 2 ||
+			!slices.ContainsFunc(held, func(i authn.Identifier) bool {
+				return i.Kind == authn.IdentifierUsername && i.Value == "social-made"
+			}) ||
+			!slices.ContainsFunc(held, func(i authn.Identifier) bool {
+				return i.Kind == authn.IdentifierEmail && i.Value == "social@example.org" &&
+					i.VerifiedVia == "idp:google" && i.Contact && i.DefaultContact && !i.SignIn
+			}) {
+			t.Errorf("the social account holds the identifiers %+v, want its username and the declared address as a default contact", held)
 		}
 
 		// The same subject under another provider is another identity against

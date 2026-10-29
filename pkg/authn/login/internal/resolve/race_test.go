@@ -30,7 +30,7 @@ func resolveTogether(e *env, n int, p authn.Proof) []answer {
 			// case is about.
 			res, err := e.r.Resolve(context.Background(), Request{Proof: p, Purpose: authn.PurposeLogin})
 			if err == nil && res.Pending != nil {
-				res, err = e.r.Create(context.Background(), *res.Pending, fmt.Sprintf("racer-%d", i))
+				res, err = e.r.Create(context.Background(), *res.Pending, fmt.Sprintf("racer-%d", i), passwordOf(*res.Pending))
 			}
 			out[i] = answer{res, err}
 		}()

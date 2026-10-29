@@ -28,7 +28,9 @@ func socialProofMethod() *redirectMethod {
 }
 
 // checkSignupReply checks the flow reply of a flow parked at the username step,
-// so that every case reads the same challenge shape.
+// so that every case reads the same challenge shape: the username and the
+// password a social first login asks for, and no address for the client to show
+// when the provider declared none.
 func checkSignupReply(t *testing.T, body string) {
 	t.Helper()
 	reply := decode(t, body)
@@ -39,13 +41,20 @@ func checkSignupReply(t *testing.T, body string) {
 	if !ok || next["kind"] != "challenge" {
 		t.Fatalf("next = %v, want a challenge", reply["next"])
 	}
+	if _, present := next["provided_email"]; present {
+		t.Errorf("next carries provided_email = %v, want none for a provider that declared no address", next["provided_email"])
+	}
 	fields, ok := next["fields"].([]any)
-	if !ok || len(fields) != 1 {
-		t.Fatalf("fields = %v, want the one username field", next["fields"])
+	if !ok || len(fields) != 2 {
+		t.Fatalf("fields = %v, want the username and password fields", next["fields"])
 	}
 	field, ok := fields[0].(map[string]any)
 	if !ok || field["name"] != "username" || field["kind"] != "text" || field["required"] != true {
 		t.Errorf("field = %v, want a required text username", fields[0])
+	}
+	secret, ok := fields[1].(map[string]any)
+	if !ok || secret["name"] != "password" || secret["kind"] != "password" || secret["required"] != true || secret["secret"] != true {
+		t.Errorf("field = %v, want a required secret password", fields[1])
 	}
 }
 
@@ -93,7 +102,7 @@ func TestTheUsernameOpensTheAccountAndThePolicyRuns(t *testing.T) {
 	}
 
 	answer := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
-		`{"seq":1,"step":"answer","input":{"username":"newperson"}}`, "Cookie", cookie)
+		`{"seq":1,"step":"answer","input":{"username":"newperson","password":"collected-password"}}`, "Cookie", cookie)
 	if answer.Code != http.StatusOK {
 		t.Fatalf("the username answer answered %d: %s", answer.Code, answer.Body.String())
 	}
@@ -133,13 +142,13 @@ func TestARejectedUsernameKeepsTheFlowAtTheUsernameStep(t *testing.T) {
 	}
 
 	refused := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
-		`{"seq":1,"step":"answer","input":{"username":"bad!"}}`, "Cookie", cookie)
+		`{"seq":1,"step":"answer","input":{"username":"bad!","password":"collected-password"}}`, "Cookie", cookie)
 	if refused.Code != http.StatusBadRequest || decode(t, refused.Body.String())["type"] != "urn:speed:authn:username-invalid" {
 		t.Fatalf("a username that does not normalize answered %d %s, want 400 username-invalid", refused.Code, refused.Body.String())
 	}
 
 	taken := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
-		`{"seq":1,"step":"answer","input":{"username":"taken"}}`, "Cookie", cookie)
+		`{"seq":1,"step":"answer","input":{"username":"taken","password":"collected-password"}}`, "Cookie", cookie)
 	if taken.Code != http.StatusConflict || decode(t, taken.Body.String())["type"] != "urn:speed:authn:username-taken" {
 		t.Fatalf("a taken username answered %d %s, want 409 username-taken", taken.Code, taken.Body.String())
 	}
@@ -159,7 +168,7 @@ func TestARejectedUsernameKeepsTheFlowAtTheUsernameStep(t *testing.T) {
 	// The flow is still retryable: the legal name at the same step number opens
 	// the account.
 	ok := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
-		`{"seq":1,"step":"answer","input":{"username":"newperson"}}`, "Cookie", cookie)
+		`{"seq":1,"step":"answer","input":{"username":"newperson","password":"collected-password"}}`, "Cookie", cookie)
 	if ok.Code != http.StatusOK {
 		t.Fatalf("the retried username answered %d: %s", ok.Code, ok.Body.String())
 	}

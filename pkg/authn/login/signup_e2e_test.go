@@ -54,12 +54,12 @@ func TestARefusedUsernameKeepsTheAnswerPosition(t *testing.T) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
 		_, seq, _ := signupStep(t, h.startSocialSignup())
 
-		refused := h.answerUsername(seq, "admin")
+		refused := h.answerSignup(seq, "admin", socialPassword)
 		if refused.status != http.StatusBadRequest || refused.json(t)["type"] != "urn:speed:authn:username-reserved" {
 			t.Fatalf("a reserved username answered %d %s, want 400 username-reserved", refused.status, refused.body)
 		}
 
-		accepted := h.answerUsername(seq, "newbie")
+		accepted := h.answerSignup(seq, "newbie", socialPassword)
 		if accepted.status != http.StatusOK {
 			t.Fatalf("the retry with the same seq answered %d %s, want 200", accepted.status, accepted.body)
 		}
@@ -82,12 +82,12 @@ func TestARefusedUsernameCountsAgainstTheAnswerLimit(t *testing.T) {
 		// number is restated here as the contract's.
 		const answerLimit = 8
 		for i := 1; i <= answerLimit; i++ {
-			refused := h.answerUsername(seq, "admin")
+			refused := h.answerSignup(seq, "admin", socialPassword)
 			if refused.status != http.StatusBadRequest {
 				t.Fatalf("refusal %d answered %d %s, want 400", i, refused.status, refused.body)
 			}
 		}
-		last := h.answerUsername(seq, "newbie")
+		last := h.answerSignup(seq, "newbie", socialPassword)
 		if last.status != http.StatusUnauthorized || last.json(t)["type"] != "urn:speed:authn:flow-invalid" {
 			t.Fatalf("the answer past the limit answered %d %s, want 401 flow-invalid", last.status, last.body)
 		}
@@ -108,13 +108,9 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 		if state != "signup" || next["kind"] != "challenge" {
 			t.Fatalf("the first social login = %s %v, want the signup challenge", state, next)
 		}
-		fields, _ := next["fields"].([]any)
-		if len(fields) != 1 {
-			t.Fatalf("the signup step asks for %v, want the username alone", fields)
-		}
-		field, _ := fields[0].(map[string]any)
-		if field["name"] != "username" || field["kind"] != "text" || field["required"] != true {
-			t.Errorf("the signup field = %v, want a required text username", field)
+		checkSignupFields(t, next, "username", "password")
+		if got := next["provided_email"]; got != "ann@x.org" {
+			t.Errorf("provided_email = %v, want the provider's verified address", got)
 		}
 
 		// Nothing of the account exists while the step stands.
@@ -129,7 +125,7 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 		}
 
 		// A name that cannot be used is 400, and the flow is still at the step.
-		bad := h.answerUsername(seq, "not a name!")
+		bad := h.answerSignup(seq, "not a name!", socialPassword)
 		if bad.status != http.StatusBadRequest || bad.json(t)["type"] != "urn:speed:authn:username-invalid" {
 			t.Fatalf("an unusable username answered %d %s, want 400 username-invalid", bad.status, bad.body)
 		}
@@ -143,7 +139,7 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 		}
 
 		// A reserved name is its own 400, and still nothing is written.
-		reserved := h.answerUsername(seq, "admin")
+		reserved := h.answerSignup(seq, "admin", socialPassword)
 		if reserved.status != http.StatusBadRequest || reserved.json(t)["type"] != "urn:speed:authn:username-reserved" {
 			t.Fatalf("a reserved username answered %d %s, want 400 username-reserved", reserved.status, reserved.body)
 		}
@@ -156,7 +152,7 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 		// A name another account holds is 409 username-taken, and no account of
 		// this login exists.
 		h.createAccount("taken-one", "taken-one-password")
-		taken := h.answerUsername(seq, "taken-one")
+		taken := h.answerSignup(seq, "taken-one", socialPassword)
 		if taken.status != http.StatusConflict || taken.json(t)["type"] != "urn:speed:authn:username-taken" {
 			t.Fatalf("a taken username answered %d %s, want 409 username-taken", taken.status, taken.body)
 		}
@@ -170,7 +166,7 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 		}
 
 		// The legal name opens the account and the flow carries on to ready.
-		opened := h.answerUsername(seq, "newbie")
+		opened := h.answerSignup(seq, "newbie", socialPassword)
 		if opened.status != http.StatusOK {
 			t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
 		}
@@ -193,6 +189,12 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 			return i.Kind == authn.IdentifierUsername && i.Value == "newbie" && i.VerifiedVia == authn.VerifiedViaSelf
 		}) {
 			t.Errorf("identifiers = %+v, want the collected username written through self", held)
+		}
+		if !slices.ContainsFunc(held, func(i authn.Identifier) bool {
+			return i.Kind == authn.IdentifierEmail && i.Value == "ann@x.org" &&
+				i.VerifiedVia == "idp:google" && i.Contact && i.DefaultContact && !i.SignIn
+		}) {
+			t.Errorf("identifiers = %+v, want the declared address as a proved default contact, not a sign-in way", held)
 		}
 	})
 }
@@ -407,4 +409,274 @@ func jitRegisterModule() core.Module {
 		Provides: []core.Provision{{Token: (*authn.SSOProviders)(nil)}},
 		New:      func(context.Context, *core.Registry) (any, error) { return jitProviders{}, nil },
 	}
+}
+
+// socialPassword is the password the social first-login cases open an account
+// with: long enough for the policy's default length and unlike their usernames.
+const socialPassword = "ann-password-1"
+
+// unverifiedSocialMethod is a stand-in social provider whose declared address
+// the provider says it did not verify.
+type unverifiedSocialMethod struct{ socialMethod }
+
+func (unverifiedSocialMethod) Begin(context.Context, authn.Start) (authn.Step, error) {
+	return authn.StepProven(authn.Proof{
+		External: &authn.External{
+			Provider:      "google",
+			Subject:       "g2",
+			Email:         "ann@x.org",
+			EmailVerified: false,
+		},
+		Methods: []authn.Method{authn.MethodOIDC},
+	}), nil
+}
+
+func unverifiedSocialModule() core.Module {
+	return core.Module{
+		Name:     "stand-in.google-unverified",
+		Provides: []core.Provision{{Token: (*authn.LoginMethod)(nil)}},
+		New: func(context.Context, *core.Registry) (any, error) {
+			return unverifiedSocialMethod{}, nil
+		},
+	}
+}
+
+// answerSignup sends a pending-signup answer carrying the username and the
+// password a social first login asks for beside it.
+func (h *harness) answerSignup(seq int, username, password string) reply {
+	h.t.Helper()
+	return h.post("/api/v1/auth/flows/answer", map[string]any{
+		"seq": seq, "step": "answer", "input": map[string]string{"username": username, "password": password},
+	})
+}
+
+// checkSignupFields checks the fields of a pending-signup challenge in order:
+// the username is a required text input, and the password, when asked for, is a
+// required secret one.
+func checkSignupFields(t *testing.T, next map[string]any, names ...string) {
+	t.Helper()
+	raw, _ := next["fields"].([]any)
+	if len(raw) != len(names) {
+		t.Fatalf("the signup step asks for %v, want %v", next["fields"], names)
+	}
+	for i, name := range names {
+		field, _ := raw[i].(map[string]any)
+		if field["name"] != name || field["required"] != true {
+			t.Errorf("field %d = %v, want a required %q", i, raw[i], name)
+		}
+		switch name {
+		case "username":
+			if field["kind"] != "text" {
+				t.Errorf("the username field = %v, want text", field)
+			}
+		case "password":
+			if field["kind"] != "password" || field["secret"] != true {
+				t.Errorf("the password field = %v, want a secret password", field)
+			}
+		}
+	}
+}
+
+// TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword holds
+// the social first login against the real account store: the step asks for a
+// password beside the username and shows the provider's verified address
+// read-only, and the account it opens holds that address as its default contact
+// and not as a sign-in way. The password the step took opens a login of its own
+// afterwards.
+func TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword(t *testing.T) {
+	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+		state, seq, next := signupStep(t, h.startSocialSignup())
+		if state != "signup" || next["kind"] != "challenge" {
+			t.Fatalf("the first social login = %s %v, want the signup challenge", state, next)
+		}
+		checkSignupFields(t, next, "username", "password")
+		if got := next["provided_email"]; got != "ann@x.org" {
+			t.Errorf("provided_email = %v, want the provider's verified address", got)
+		}
+
+		opened := h.answerSignup(seq, "newbie", socialPassword)
+		if opened.status != http.StatusOK {
+			t.Fatalf("the signup answer answered %d: %s", opened.status, opened.body)
+		}
+		state, seq, next = signupStep(t, opened)
+		if state != "ready" || next["kind"] != "complete" {
+			t.Fatalf("after the answer the flow = %s %v, want ready complete", state, next)
+		}
+		if done := h.post("/api/v1/auth/flows/answer", map[string]any{"seq": seq, "step": "complete"}); done.status != http.StatusOK {
+			t.Fatalf("the completed login answered %d: %s", done.status, done.body)
+		}
+
+		id, err := h.accounts.ByExternal(h.ctx, "google", "g1")
+		if err != nil {
+			t.Fatalf("the identity of the opened account: %v", err)
+		}
+		held := identifiersOf(t, h.accounts, id)
+		if !slices.ContainsFunc(held, func(i authn.Identifier) bool {
+			return i.Kind == authn.IdentifierEmail && i.Value == "ann@x.org" &&
+				i.VerifiedVia == "idp:google" && i.Contact && i.DefaultContact && !i.SignIn
+		}) {
+			t.Errorf("identifiers = %+v, want the declared address as a proved default contact, not a sign-in way", held)
+		}
+
+		if done := h.loginFlow("newbie", socialPassword); done.status != http.StatusOK {
+			t.Fatalf("a password login with the collected password answered %d: %s", done.status, done.body)
+		}
+	})
+}
+
+// TestASocialFirstLoginWritesNoAddressTheProviderDidNotVerify holds that a
+// provider's unverified claim is no more written into the account than it is a
+// clue, and that the step carries no address for the client to show.
+func TestASocialFirstLoginWritesNoAddressTheProviderDidNotVerify(t *testing.T) {
+	assembleWith(t, []core.Module{unverifiedSocialModule()}, func(h *harness) {
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+		state, seq, next := signupStep(t, h.startSocialSignup())
+		if state != "signup" || next["kind"] != "challenge" {
+			t.Fatalf("the first social login = %s %v, want the signup challenge", state, next)
+		}
+		checkSignupFields(t, next, "username", "password")
+		if got, present := next["provided_email"]; present && got != "" {
+			t.Errorf("provided_email = %v, want it absent for an address the provider did not verify", got)
+		}
+
+		opened := h.answerSignup(seq, "newbie", socialPassword)
+		if opened.status != http.StatusOK {
+			t.Fatalf("the signup answer answered %d: %s", opened.status, opened.body)
+		}
+
+		id, err := h.accounts.ByExternal(h.ctx, "google", "g2")
+		if err != nil {
+			t.Fatalf("the identity of the opened account: %v", err)
+		}
+		if held := identifiersOf(t, h.accounts, id); slices.ContainsFunc(held, func(i authn.Identifier) bool {
+			return i.Kind == authn.IdentifierEmail
+		}) {
+			t.Errorf("identifiers = %+v, want no email address", held)
+		}
+	})
+}
+
+// TestASocialSignupWithoutAPasswordOpensNothing holds that the password is part
+// of the social step: a submission that carries only the username is 400
+// bad-request, opens no account and leaves the flow at the step, and the same
+// step number answers again with a password.
+func TestASocialSignupWithoutAPasswordOpensNothing(t *testing.T) {
+	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+		_, seq, _ := signupStep(t, h.startSocialSignup())
+		refused := h.answerUsername(seq, "newbie")
+		if refused.status != http.StatusBadRequest || refused.json(t)["type"] != "urn:speed:authn:bad-request" {
+			t.Fatalf("a username without a password answered %d %s, want 400 bad-request", refused.status, refused.body)
+		}
+		if _, err := h.accounts.Lookup(h.ctx, authn.IdentifierUsername, "newbie"); err == nil {
+			t.Error("a username without a password opened an account")
+		}
+
+		state, seq2, _ := signupStep(t, h.get("/api/v1/auth/flows/current"))
+		if state != "signup" || seq2 != seq {
+			t.Fatalf("the flow after the refusal = %s at %d, want signup at %d", state, seq2, seq)
+		}
+
+		if opened := h.answerSignup(seq, "newbie", socialPassword); opened.status != http.StatusOK {
+			t.Fatalf("the retry with a password answered %d: %s", opened.status, opened.body)
+		}
+	})
+}
+
+// TestASocialSignupWithAPasswordAgainstThePolicyOpensNothing holds that the
+// account store's policy governs the password the step takes: a short one is
+// 400 bad-request, opens no account and leaves the flow retryable.
+func TestASocialSignupWithAPasswordAgainstThePolicyOpensNothing(t *testing.T) {
+	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+		_, seq, _ := signupStep(t, h.startSocialSignup())
+		refused := h.answerSignup(seq, "newbie", "short")
+		if refused.status != http.StatusBadRequest || refused.json(t)["type"] != "urn:speed:authn:bad-request" {
+			t.Fatalf("a password against the policy answered %d %s, want 400 bad-request", refused.status, refused.body)
+		}
+		if _, err := h.accounts.Lookup(h.ctx, authn.IdentifierUsername, "newbie"); err == nil {
+			t.Error("a password against the policy opened an account")
+		}
+
+		state, seq2, _ := signupStep(t, h.get("/api/v1/auth/flows/current"))
+		if state != "signup" || seq2 != seq {
+			t.Fatalf("the flow after the refusal = %s at %d, want signup at %d", state, seq2, seq)
+		}
+
+		if opened := h.answerSignup(seq, "newbie", socialPassword); opened.status != http.StatusOK {
+			t.Fatalf("the retry with a legal password answered %d: %s", opened.status, opened.body)
+		}
+	})
+}
+
+// TestTheSMSAndEnterpriseSignupStepsAskForTheUsernameAlone holds that the
+// password belongs to the social step only: the SMS and enterprise steps ask
+// for the username by itself, and neither account takes the provider's declared
+// address.
+func TestTheSMSAndEnterpriseSignupStepsAskForTheUsernameAlone(t *testing.T) {
+	t.Run("sms", func(t *testing.T) {
+		const number = "+8613800000002"
+		assembleWith(t, []core.Module{smsSignupModule()}, func(h *harness) {
+			writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+			start := h.post("/api/v1/auth/flows", map[string]any{"method": "sms-signup"})
+			if start.status != http.StatusOK {
+				t.Fatalf("POST flows answered %d: %s", start.status, start.body)
+			}
+			state, seq, next := signupStep(t, start)
+			if state != "signup" || next["kind"] != "challenge" {
+				t.Fatalf("the first SMS login = %s %v, want the signup challenge", state, next)
+			}
+			checkSignupFields(t, next, "username")
+
+			if opened := h.answerUsername(seq, "phoneowner"); opened.status != http.StatusOK {
+				t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
+			}
+			id, err := h.accounts.Lookup(h.ctx, authn.IdentifierPhone, number)
+			if err != nil {
+				t.Fatalf("the phone's account: %v", err)
+			}
+			if held := identifiersOf(t, h.accounts, id); slices.ContainsFunc(held, func(i authn.Identifier) bool {
+				return i.Kind == authn.IdentifierEmail
+			}) {
+				t.Errorf("identifiers = %+v, want no email address", held)
+			}
+		})
+	})
+
+	t.Run("enterprise", func(t *testing.T) {
+		assembleWith(t, []core.Module{jitMethodModule(), jitRegisterModule()}, func(h *harness) {
+			writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+			start := h.post("/api/v1/auth/flows", map[string]any{
+				"method": "oidc-signup", "input": map[string]string{"provider": jitProviderID},
+			})
+			if start.status != http.StatusOK {
+				t.Fatalf("POST flows answered %d: %s", start.status, start.body)
+			}
+			state, seq, next := signupStep(t, start)
+			if state != "signup" || next["kind"] != "challenge" {
+				t.Fatalf("the first enterprise login = %s %v, want the signup challenge", state, next)
+			}
+			checkSignupFields(t, next, "username")
+
+			if opened := h.answerUsername(seq, "jitperson"); opened.status != http.StatusOK {
+				t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
+			}
+			id, err := h.accounts.ByExternal(h.ctx, "oidc:"+jitProviderID, "u1")
+			if err != nil {
+				t.Fatalf("the identity of the opened account: %v", err)
+			}
+			if held := identifiersOf(t, h.accounts, id); slices.ContainsFunc(held, func(i authn.Identifier) bool {
+				return i.Kind == authn.IdentifierEmail
+			}) {
+				t.Errorf("identifiers = %+v, want no email address: an enterprise just-in-time account does not write one", held)
+			}
+		})
+	})
 }

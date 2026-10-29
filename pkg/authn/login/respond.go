@@ -7,6 +7,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	"github.com/vislake/speed/pkg/authn/login/internal/resolve"
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
@@ -90,14 +91,16 @@ func writeAction(c *call, state string) {
 // first-factor step the method named cannot be re-prompted with its fields, which
 // the method decides on the next answer. The enroll step names the factor kinds
 // the assembly takes in, so the client can choose one. The signup step names the
-// username a first login opens its account with; it is a challenge, so the
-// shared renderer draws its fields like any other prompt.
+// username a first login opens its account with, the password a social one also
+// takes, and the address a social provider declared verified for the client to
+// show read-only; it is a challenge, so the shared renderer draws its fields like
+// any other prompt.
 func (r *routes) nextOf(rec record) stepView {
 	switch rec.State {
 	case stateReady:
 		return stepView{Kind: nextComplete}
 	case stateSignup:
-		return stepView{Kind: nextChallenge, Fields: signupFields()}
+		return signupStep(rec.Pending)
 	case stateSecond:
 		return stepView{Kind: nextFactor, Factors: rec.MFA.Offered}
 	case stateEnroll:
@@ -109,10 +112,29 @@ func (r *routes) nextOf(rec record) stepView {
 	}
 }
 
-// signupFields is the username the pending-signup step asks for: not secret, and
-// the one thing the step takes.
-func signupFields() []fieldView {
-	return []fieldView{{Name: fieldUsername, Kind: string(authn.FieldText), Required: true}}
+// signupStep is the pending-signup challenge. A social first login carries the
+// address its provider declared verified as read-only information, absent for a
+// provider that declared none and for every other source.
+func signupStep(pending *resolve.Pending) stepView {
+	view := stepView{Kind: nextChallenge}
+	if pending == nil {
+		view.Fields = signupFields("")
+		return view
+	}
+	view.Fields = signupFields(pending.Source)
+	view.ProvidedEmail = pending.Email
+	return view
+}
+
+// signupFields is what the pending-signup step asks for: the username, not
+// secret, and, at a social first login alone, the password the account is opened
+// with.
+func signupFields(source resolve.Source) []fieldView {
+	fields := []fieldView{{Name: fieldUsername, Kind: string(authn.FieldText), Required: true}}
+	if source == resolve.SourceSocial {
+		fields = append(fields, fieldView{Name: fieldPassword, Kind: string(authn.FieldPassword), Required: true, Secret: true})
+	}
+	return fields
 }
 
 // factorKinds renders the factor kinds the assembly takes in, for the enroll

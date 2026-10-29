@@ -295,10 +295,16 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 			return plan, err
 		}
 		// A new email address is neither a login way nor a contact until its
-		// holder chooses; an import writes the axes its source record had.
+		// holder chooses; an import writes the axes its source record had. The
+		// exception is the address a social first login brings in: the provider
+		// declared it verified, so the account it opens holds it as a contact
+		// and still not as a login way.
 		flags := authn.IdentifierFlags{}
-		if via == byImport {
+		switch {
+		case via == byImport:
 			flags = in.EmailFlags
+		case strings.HasPrefix(verified, authn.VerifiedViaIDPPrefix):
+			flags = authn.IdentifierFlags{Contact: true}
 		}
 		proved := authn.Verification{Via: verified}.Proves()
 		// An unproved address is never the default contact. A proved one is the
@@ -358,6 +364,13 @@ func usernameRequired(kind authn.AccountKind, via string) bool {
 // is the empty string when the account has none.
 func (p *product) newCredential(ctx context.Context, in authn.CreateAccount, plan creation) (string, error) {
 	if in.Password == "" && in.PasswordHash == "" {
+		// A social first login opens its account with a password its person
+		// chose; without one the account would be reachable through the provider
+		// alone. The SMS first login, the only other signup path, is not asked
+		// for one and is told apart by the phone it proved.
+		if plan.via == bySignup && in.Phone == "" {
+			return "", fmt.Errorf("%w: a social first login opens its account with a password", authn.ErrPasswordPolicy)
+		}
 		return "", nil
 	}
 	if plan.row.Kind != string(authn.KindUser) {

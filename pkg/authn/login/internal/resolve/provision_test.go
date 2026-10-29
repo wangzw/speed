@@ -30,7 +30,7 @@ func TestProvisionerChangesDisplayNameAndAttributesAndNothingElse(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if gotVia != "signup" || gotIn.Email != "" || gotIn.Kind != authn.KindUser {
+	if gotVia != "signup" || gotIn.Email != "ann@home.org" || gotIn.Kind != authn.KindUser {
 		t.Errorf("the hook was given via %q and %+v, want signup and the account about to be made", gotVia, gotIn)
 	}
 	c := e.s.created[0]
@@ -40,14 +40,16 @@ func TestProvisionerChangesDisplayNameAndAttributesAndNothingElse(t *testing.T) 
 	want := authn.CreateAccount{
 		Kind: authn.KindUser, DisplayName: "Ann (host)", Username: testUsername,
 		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
-		Attributes:          map[string]string{"region": "eu"},
-		Via:                 "signup",
+		Email:               "ann@home.org", EmailVerifiedVia: authn.Verification{Via: "idp:google"},
+		Password:   testPassword,
+		Attributes: map[string]string{"region": "eu"},
+		Via:        "signup",
 	}
 	if fmt.Sprint(c) != fmt.Sprint(want) {
 		t.Errorf("Create = %+v, want %+v: only the display name and attributes may change", c, want)
 	}
-	if a := e.s.account(res.Account); a.Kind != authn.KindUser || a.MFARequired || a.PasswordSet {
-		t.Errorf("account = %+v, want the forged fields ignored", a)
+	if a := e.s.account(res.Account); a.Kind != authn.KindUser || a.MFARequired || !a.PasswordSet {
+		t.Errorf("account = %+v, want the forged fields ignored and the collected password written", a)
 	}
 }
 
@@ -169,7 +171,7 @@ func TestProvisionerReturningOnlyANameLeavesTheRestOfTheAccountAlone(t *testing.
 		t.Fatalf("Resolve: %v", err)
 	}
 	c := e.s.created[0]
-	if c.Email != "" || c.Kind != authn.KindUser || c.DisplayName != "kept" || len(c.Attributes) != 0 {
+	if c.Email != "ann@home.org" || c.Kind != authn.KindUser || c.DisplayName != "kept" || len(c.Attributes) != 0 {
 		t.Errorf("Create = %+v, want the resolver's own account with the hook's name", c)
 	}
 }

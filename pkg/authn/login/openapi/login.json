@@ -393,7 +393,7 @@
         "type": "object"
       },
       "AuthnLoginStep": {
-        "description": "What the client does at the flow's current step. Only the members that belong to `kind` are present: `challenge` carries `fields`; `redirect` carries `url` and `method`; `factor` carries `factors`; `enroll` carries `kinds`; `webauthn` carries `options`; `complete` carries nothing.",
+        "description": "What the client does at the flow's current step. Only the members that belong to `kind` are present: `challenge` carries `fields`; a pending signup of a social first login also carries `provided_email`; `redirect` carries `url` and `method`; `factor` carries `factors`; `enroll` carries `kinds`; `webauthn` carries `options`; `complete` carries nothing.",
         "properties": {
           "expires_in": {
             "description": "How long a challenge lives, in seconds. No handler of this fragment sets it, so the member is absent from every answer.",
@@ -430,6 +430,10 @@
           },
           "options": {
             "description": "The data a webauthn step carries: the public-key creation or request options of a WebAuthn ceremony, or, for a TOTP enrollment, an object with an `otpauth_uri` the client renders as a QR code."
+          },
+          "provided_email": {
+            "description": "The address the provider declared verified, carried by the pending signup of a social first login for the client to show read-only; absent when the provider declared no verified address and for every other step",
+            "type": "string"
           },
           "resend_after": {
             "description": "How soon a challenge may be asked for again, in seconds. No handler of this fragment sets it, so the member is absent from every answer.",

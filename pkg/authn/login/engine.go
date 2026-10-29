@@ -363,14 +363,22 @@ func (r *routes) beginSignup(c *call, token, echo string, rec record, raw []byte
 // applySignupAnswer handles the username step of a flow parked at signup. A
 // legal, free username opens the account the pending facts describe and the flow
 // carries on to the policy; a username that cannot be used is 400 bad-request,
-// one another account holds is 409 username-taken, and both leave the flow at
-// signup to be retried. None of the three writes an account.
+// one another account holds is 409 username-taken, and a password the policy
+// refuses, or the absence of one at the social step, is 400 bad-request. Every
+// refusal leaves the flow at signup to be retried, and none of them writes an
+// account.
 func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw []byte, fields map[string]string) {
 	if rec.Pending == nil || rec.Proof == nil {
 		c.unauthorized(mount.CodeFlowInvalid)
 		return
 	}
-	res, err := r.resolver.Create(c.ctx, *rec.Pending, fields[fieldUsername])
+	// The password belongs to the social step alone: no other first login takes
+	// one, so whatever a caller sends there is not read.
+	password := ""
+	if rec.Pending.Source == resolve.SourceSocial {
+		password = fields[fieldPassword]
+	}
+	res, err := r.resolver.Create(c.ctx, *rec.Pending, fields[fieldUsername], password)
 	switch {
 	case errors.Is(err, authn.ErrUsernameReserved):
 		rec.Answers++
@@ -387,6 +395,13 @@ func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw 
 		c.fail(mount.CodeUsernameInvalid)
 		return
 	case errors.Is(err, authn.ErrInvalidIdentifier):
+		rec.Answers++
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		c.fail(mount.CodeBadRequest)
+		return
+	case errors.Is(err, authn.ErrPasswordPolicy):
 		rec.Answers++
 		if !r.swap(c, token, raw, rec) {
 			return
