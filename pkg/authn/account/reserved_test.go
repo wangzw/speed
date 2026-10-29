@@ -52,6 +52,32 @@ func TestABuiltInReservedUsernameIsRefusedAtEveryWriteSurface(t *testing.T) {
 	}
 }
 
+// TestAnEmptyUsernameIsAShapeFailureAtEveryWriteSurface holds that a missing or
+// blank username is the username field's own failure: the answer names the
+// field (400 username-invalid), the same as a badly formed one, rather than
+// leaving it to the body's generic refusal.
+func TestAnEmptyUsernameIsAShapeFailureAtEveryWriteSurface(t *testing.T) {
+	for _, name := range []string{"", "   "} {
+		t.Run("a blank name", func(t *testing.T) {
+			forEachDialect(t, func(t *testing.T, h *harness) {
+				ctx := context.Background()
+
+				if _, err := h.p.Create(ctx, authn.CreateAccount{Username: name, Via: "admin"}); !authn.IsUsernameShape(err) {
+					t.Errorf("Create with %q gave %v, want the username's shape failure", name, err)
+				}
+				if got := h.count(tableAccounts, ""); got != 0 {
+					t.Errorf("a refused Create wrote %d account row(s), want none", got)
+				}
+
+				id := h.user("holder", "")
+				if err := h.p.AddIdentifier(ctx, id, authn.IdentifierUsername, name, admin); !authn.IsUsernameShape(err) {
+					t.Errorf("AddIdentifier with %q gave %v, want the username's shape failure", name, err)
+				}
+			})
+		})
+	}
+}
+
 // TestADeploymentAppendedReservedUsernameIsRefusedAtEveryWriteSurface holds the
 // setting's contribution to the effective set: an appended name is refused like
 // a built-in one, and an element written in another case is matched by its

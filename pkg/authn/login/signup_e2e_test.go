@@ -441,6 +441,24 @@ func unverifiedSocialModule() core.Module {
 	}
 }
 
+// TestAnEmptyUsernameOnTheSignupStepIsItsOwnRefusal holds that a blank name is
+// the username field's failure rather than the body's: the client that posts an
+// empty name gets 400 username-invalid, and nothing is written.
+func TestAnEmptyUsernameOnTheSignupStepIsItsOwnRefusal(t *testing.T) {
+	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+		_, seq, _ := signupStep(t, h.startSocialSignup())
+
+		refused := h.answerSignup(seq, "", "correct horse battery")
+		if refused.status != http.StatusBadRequest || refused.json(t)["type"] != "urn:speed:authn:username-invalid" {
+			t.Fatalf("an empty username answered %d %s, want 400 username-invalid", refused.status, refused.body)
+		}
+		if accounts, _, err := h.accounts.List(h.ctx, authn.AccountQuery{}); err != nil || len(accounts) != 0 {
+			t.Errorf("accounts = %v after an empty name, want none", accounts)
+		}
+	})
+}
+
 // answerSignup sends a pending-signup answer carrying the username and the
 // password a social first login asks for beside it.
 func (h *harness) answerSignup(seq int, username, password string) reply {

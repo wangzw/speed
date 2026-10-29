@@ -241,7 +241,9 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 	// initial seed, a first login, an accepted invitation — refuses here
 	// rather than leave an account that has no login name.
 	if usernameRequired(kind, via) && in.Username == "" {
-		return plan, fmt.Errorf("%w: a user account is created with a username", authn.ErrInvalidIdentifier)
+		// An absent username is a shape failure of the field, not a malformed
+		// body: the answer names the username, the same as a badly formed one.
+		return plan, authn.UsernameShape(fmt.Errorf("%w: a user account is created with a username", authn.ErrInvalidIdentifier))
 	}
 
 	// importing is the account's own path, read before the closure below shadows

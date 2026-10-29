@@ -98,9 +98,10 @@ func (r *Resolver) Create(ctx context.Context, p Pending, username, password str
 	default:
 		return Result{}, fmt.Errorf("%w: resolve: the pending signup names no known source", authn.ErrInvalidArgument)
 	}
-	// An empty name has no normalization to fail on, and no account may hold one.
+	// An empty name has no normalization to fail on, and no account may hold
+	// one: it is the shape check's own failure, so the answer names the field.
 	if username == "" {
-		return Result{}, fmt.Errorf("%w: resolve: the pending signup has no username", authn.ErrInvalidIdentifier)
+		return Result{}, authn.UsernameShape(fmt.Errorf("%w: resolve: the pending signup has no username", authn.ErrInvalidIdentifier))
 	}
 	// The unique constraint of the creation transaction arbitrates a race for
 	// the name; this read only tells a name another account holds apart from one
