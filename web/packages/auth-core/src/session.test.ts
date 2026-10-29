@@ -578,6 +578,65 @@ describe('start flow', () => {
     })
   })
 
+  it('carries the provider identity a social signup step shows read-only', async () => {
+    // The provider's method identifier and the name it gave for the person
+    // reach the surface on the challenge step, beside the shared address;
+    // none of the three travels in an answer.
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          state: 'signup',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'username', kind: 'text', required: true }],
+            provided_provider: 'github',
+            provided_display_name: 'Ada Lovelace',
+            provided_email: 'ada@example.com',
+          },
+        }),
+    })
+    const state = await harness.session.startFlow({ method: 'github' })
+    expect(state).toMatchObject({
+      state: 'signup',
+      next: {
+        kind: 'challenge',
+        provided_provider: 'github',
+        provided_display_name: 'Ada Lovelace',
+        provided_email: 'ada@example.com',
+      },
+    })
+  })
+
+  it('leaves a provider identity member out when the wire omits it', async () => {
+    // Each identity member is independently optional: a provider that gave
+    // no name for the person leaves that member absent rather than empty.
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          state: 'signup',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'username', kind: 'text', required: true }],
+            provided_provider: 'github',
+            provided_display_name: '',
+          },
+        }),
+    })
+    const state = await harness.session.startFlow({ method: 'github' })
+    expect(state).toMatchObject({
+      state: 'signup',
+      next: { kind: 'challenge', provided_provider: 'github' },
+    })
+    if (!('seq' in state)) {
+      throw new Error('expected an open flow')
+    }
+    if (state.next.kind !== 'challenge') {
+      throw new Error('expected a challenge step')
+    }
+    expect(state.next.provided_display_name).toBeUndefined()
+    expect(state.next.provided_email).toBeUndefined()
+  })
+
   it('refuses an empty 2xx as client.protocol before any state change', async () => {
     const harness = makeHarness({ [LOGIN_START]: () => undefined })
     await expectProtocolViolation(
