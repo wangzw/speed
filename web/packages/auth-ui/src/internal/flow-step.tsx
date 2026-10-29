@@ -44,13 +44,17 @@
  * A step that asks for a username alone (SMS and enterprise just-in-time
  * signup) renders a title, a sentence saying what the login name is for,
  * the field and its rule help. A step that also asks for a password
- * (social first signup) is the whole account-opening face: a title and a
- * one-sentence description, then a read-only identity block naming the
- * sign-in method, the provider's account name and the address it shared (each
- * line omitted when the step carries none), then the username with its
- * rule help, the password and its confirmation, and the submit row. The
- * identity facts are display-only and never submitted; the confirmation
- * is compared locally and never travels.
+ * (social first signup) is the whole account-opening face and carries no
+ * title of its own -- the card's heading already says this is a sign-in --
+ * just a centred narrative in two sentences: who the account being opened
+ * belongs to (the method and the provider's name for the person, the name
+ * emphasised, each part omitted when the step carries none) and what is
+ * still missing, then a divider, then the form. The provider's shared
+ * address is a read-only block under the username: wrapped text, not a
+ * one-line input, so a long address stays whole; the username, the
+ * read-only address, the password and its confirmation follow in that
+ * order. The identity facts are display-only and never submitted; the
+ * confirmation is compared locally and never travels.
  *
  * A refusal of a still-parked signup step is the field's, never the
  * whole-attempt banner: the three name refusals (taken, reserved, a shape
@@ -74,6 +78,7 @@ import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
 import CircularProgress from '@mui/material/CircularProgress'
+import Divider from '@mui/material/Divider'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
@@ -832,14 +837,16 @@ interface SignupAccountFieldsProps {
   readonly fields: readonly AuthnField[]
   /** The sign-in method name that opened this login (the discovery
    * vocabulary, such as github or wechat.mp), resolved through the family's
-   * method vocabulary for the identity block; absent when the step carries
-   * none. */
+   * method vocabulary for the identity sentence; absent when the step
+   * carries none, and then the sentence is not rendered at all. */
   readonly method?: string
-  /** The provider's name for the person, shown read-only on its own line;
-   * absent when the provider gave none. */
+  /** The provider's name for the person, emphasised inside the identity
+   * sentence; absent when the provider gave none, and then the sentence
+   * falls back to naming the method alone. */
   readonly displayName?: string
-  /** The provider-shared address, shown read-only on its own line; absent
-   * when the provider shared none. */
+  /** The provider-shared address, shown as the read-only block under the
+   * username; absent when the provider shared none, and then the block is
+   * not rendered. */
   readonly email?: string
   /** The server refusal to render under its field, if any. */
   readonly refusal: { readonly name: string; readonly text: string } | null
@@ -857,14 +864,26 @@ interface SignupAccountValues {
 }
 
 /**
- * The social first-signup face: a title and a one-sentence description, the
- * read-only identity block (provider, the provider's account name, the
- * shared address, each omitted when the step carries none), the username
- * with its rule help, the password and its confirmation, and the submit
- * row. The confirmation is compared here and never travels; every other
- * rule -- the name's shape, uniqueness and reserved names, and the password
- * policy -- is the server's, and a refusal it answers lands under the field
- * it names.
+ * The social first-signup face: a centred narrative in two sentences (whose
+ * account this is, then what is still missing), a divider, then the form --
+ * the username with its rule help, the provider's shared address as a
+ * read-only block, the password and its confirmation, and the submit row.
+ *
+ * The face carries no title of its own: the host renders it inside the
+ * sign-in card, whose heading already says this is a sign-in.
+ *
+ * The identity sentence is composed from two bundle entries so the
+ * provider's name can be an element of its own instead of a substring of
+ * interpolated text: a lead naming the method (`signupIdentityLead`, or
+ * `signupIdentityLeadWithoutName` when the provider gave no name), the name
+ * element, and a tail with what the language puts after the name
+ * (`signupIdentityTail` -- the verb in zh-CN, the separating space in
+ * en-US, where the name ends the sentence). No method name leaves the
+ * whole sentence out; no shared address leaves the block out; every other
+ * part keeps its place. The confirmation is compared here and never
+ * travels; every other rule -- the name's shape, uniqueness and reserved
+ * names, and the password policy -- is the server's, and a refusal it
+ * answers lands under the field it names.
  */
 function SignupAccountFields({
   fields,
@@ -903,13 +922,11 @@ function SignupAccountFields({
     method === undefined || method === ''
       ? null
       : methodLabel({ name: method }, t)
-  const identity: readonly string[] = [
-    methodName === null
-      ? null
-      : t('signInFlow.signupProvider', { provider: methodName }),
-    displayName === undefined || displayName === '' ? null : displayName,
-    email === undefined || email === '' ? null : email,
-  ].filter((line): line is string => line !== null)
+  const accountName =
+    displayName === undefined || displayName === '' ? null : displayName
+  const providedEmail =
+    email === undefined || email === '' ? null : email
+  const emailLabel = fieldLabel({ name: 'email', kind: 'text' })
   // A refusal under a field is the attempt's outcome: move focus there so a
   // viewer who submitted from the button lands on the value to change.
   useEffect(() => {
@@ -931,37 +948,38 @@ function SignupAccountFields({
         width: '100%',
       }}
     >
-      <Box>
-        <Typography component="h2" variant="h6">
-          {t('signInFlow.signupAccountTitle')}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {t('signInFlow.signupAccountDescription')}
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 0.5,
+          textAlign: 'center',
+        }}
+      >
+        {methodName === null ? null : (
+          <Typography variant="body2" color="text.secondary">
+            {accountName === null
+              ? t('signInFlow.signupIdentityLeadWithoutName', {
+                  provider: methodName,
+                })
+              : t('signInFlow.signupIdentityLead', { provider: methodName })}
+            {accountName === null ? null : (
+              <Box
+                component="span"
+                sx={{ color: 'text.primary', fontWeight: 600 }}
+              >
+                {' '}
+                {accountName}
+              </Box>
+            )}
+            {t('signInFlow.signupIdentityTail')}
+          </Typography>
+        )}
+        <Typography variant="body1" color="text.primary">
+          {t('signInFlow.signupAccountInstruction')}
         </Typography>
       </Box>
-      {identity.length === 0 ? null : (
-        // The identity block leads the content: what the provider shared,
-        // read-only, before the fields the visitor fills in. Each line is
-        // one fact; a fact the provider gave none of leaves no line and no
-        // placeholder.
-        <Box
-          component="ul"
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 0.5,
-            listStyle: 'none',
-            m: 0,
-            p: 0,
-          }}
-        >
-          {identity.map((line, index) => (
-            <Typography key={`${index}:${line}`} component="li" variant="body2">
-              {line}
-            </Typography>
-          ))}
-        </Box>
-      )}
+      <Divider />
       <FormLayout
         form={form}
         onSubmit={onSubmit}
@@ -991,6 +1009,17 @@ function SignupAccountFields({
             />
           )}
         />
+        {providedEmail === null ? null : (
+          <SignupProvidedEmail
+            label={emailLabel}
+            value={providedEmail}
+            helper={
+              methodName === null
+                ? t('signInFlow.signupEmailImmutable')
+                : t('signInFlow.signupEmailSource', { provider: methodName })
+            }
+          />
+        )}
         <FormField
           name="password"
           required
@@ -1034,6 +1063,94 @@ function SignupAccountFields({
           )}
         />
       </FormLayout>
+    </Box>
+  )
+}
+
+interface SignupProvidedEmailProps {
+  /** The family's label for the address, used as the block's name. */
+  readonly label: string
+  /** The address the provider shared. */
+  readonly value: string
+  /** The line under the block: where the address came from and that it
+   * cannot be changed. */
+  readonly helper: string
+}
+
+/**
+ * The provider-shared address as a read-only block, not an input: a
+ * one-line input hard-truncates a long address with no ellipsis, so the
+ * value renders as wrapped text (`overflowWrap: 'anywhere'`) inside a
+ * surface that reads as distinct from the editable fields below it. It
+ * carries a read-only textbox's semantics -- focusable by keyboard,
+ * selectable and copyable, `role="textbox"` with `aria-readonly` -- and
+ * its floating label and source line, so the address is announced and
+ * explained like the fields around it.
+ */
+function SignupProvidedEmail({
+  label,
+  value,
+  helper,
+}: SignupProvidedEmailProps) {
+  const labelId = useId()
+  const helperId = useId()
+  return (
+    <Box sx={{ position: 'relative' }}>
+      <Box
+        role="textbox"
+        aria-readonly="true"
+        aria-labelledby={labelId}
+        aria-describedby={helperId}
+        tabIndex={0}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          minHeight: 56,
+          px: 1.75,
+          py: 1.5,
+          border: '1px solid #cbd5e1',
+          borderRadius: 1,
+          backgroundColor: '#f1f5f9',
+          overflowWrap: 'anywhere',
+          userSelect: 'text',
+        }}
+      >
+        <Typography
+          variant="body1"
+          sx={{ color: 'text.primary', minWidth: 0 }}
+        >
+          {value}
+        </Typography>
+      </Box>
+      <Box
+        component="span"
+        id={labelId}
+        sx={{
+          position: 'absolute',
+          top: '-8px',
+          left: '12px',
+          px: 0.5,
+          backgroundColor: 'background.paper',
+          color: 'text.secondary',
+          fontSize: 12,
+          lineHeight: '16px',
+        }}
+      >
+        {label}
+      </Box>
+      <Typography
+        id={helperId}
+        component="p"
+        sx={{
+          mx: 1.75,
+          mt: 0.5,
+          color: 'text.secondary',
+          fontSize: 12,
+          lineHeight: '16px',
+        }}
+      >
+        {helper}
+      </Typography>
     </Box>
   )
 }

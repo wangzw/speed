@@ -1005,22 +1005,16 @@ describe('SocialCallbackHandler social account-opening face', () => {
     )
 
     const face = await screen.findByRole('region', { name: 'host card' })
+    // The face adds no second heading: the card's own h1 says this is a
+    // sign-in.
+    expect(within(face).queryByRole('heading', { level: 2 })).toBeNull()
     expect(
-      within(face).getByRole('heading', {
-        level: 2,
-        name: zhCN.signInFlow.signupAccountTitle,
-      }),
-    ).toBeInTheDocument()
-    expect(
-      within(face).getByText(
-        zhCN.signInFlow.signupProvider.replace(
-          '{{provider}}',
-          zhCN.social.provider.google,
-        ),
-      ),
+      within(face).getByText(zhCN.signInFlow.signupAccountInstruction),
     ).toBeInTheDocument()
     expect(within(face).getByText('Ada Lovelace')).toBeInTheDocument()
-    expect(within(face).getByText('ada@example.com')).toBeInTheDocument()
+    expect(
+      within(face).getByRole('textbox', { name: zhCN.register.emailLabel }),
+    ).toHaveTextContent('ada@example.com')
     await expectNoAxeViolations()
 
     const user = userEvent.setup()

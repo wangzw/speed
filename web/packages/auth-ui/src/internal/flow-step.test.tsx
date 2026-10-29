@@ -19,6 +19,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthnField, AuthnStep } from '@speed/auth-core'
+import { createAppTheme } from '@speed/ui-kit'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { renderWithProviders } from '../../test-utils/render.js'
 import { FlowStepFields } from './flow-step.js'
@@ -214,68 +215,162 @@ describe('FlowStepFields social account-opening face', () => {
     )
   }
 
-  it('renders the title, the one-sentence description and the signed-in submit row', () => {
+  /** The identity sentence as the face composes it: the lead naming the
+   * method (or the method alone when the provider gave no name), the name
+   * element, and the tail the language puts after the name. */
+  function identitySentence(options: {
+    readonly provider: string
+    readonly name?: string
+  }): string {
+    if (options.name === undefined) {
+      return (
+        zhCN.signInFlow.signupIdentityLeadWithoutName.replace(
+          '{{provider}}',
+          options.provider,
+        ) + zhCN.signInFlow.signupIdentityTail
+      )
+    }
+    return (
+      zhCN.signInFlow.signupIdentityLead.replace(
+        '{{provider}}',
+        options.provider,
+      ) +
+      ` ${options.name}` +
+      zhCN.signInFlow.signupIdentityTail
+    )
+  }
+
+  /** The identity sentence's paragraph, matched on its whole text: the
+   * provider name is an element of its own, so the query cannot rely on the
+   * paragraph's direct text nodes alone. */
+  function findIdentityParagraph(options: {
+    readonly provider: string
+    readonly name?: string
+  }): HTMLElement | null {
+    const expected = identitySentence(options)
+    return screen.queryByText((_content, element) => {
+      if (element === null || element.tagName !== 'P') {
+        return false
+      }
+      return (
+        (element.textContent ?? '').replace(/\s+/g, ' ').trim() === expected
+      )
+    })
+  }
+
+  /** The address block's accessible name, from the family's field
+   * vocabulary. */
+  const emailLabel = zhCN.register.emailLabel
+
+  it('renders no step title, the instruction sentence and the submit row', () => {
     renderFace({
       method: 'google',
       displayName: 'Ada Lovelace',
       email: 'ada@example.com',
     })
 
+    // The host card's heading already says this is a sign-in; the step adds
+    // no second title of its own.
+    expect(screen.queryByRole('heading')).toBeNull()
     expect(
-      screen.getByRole('heading', {
-        level: 2,
-        name: zhCN.signInFlow.signupAccountTitle,
+      screen.getByText(zhCN.signInFlow.signupAccountInstruction, {
+        selector: 'p',
       }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(zhCN.signInFlow.signupAccountDescription),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: zhCN.signInFlow.signupAccountSubmit }),
     ).toBeInTheDocument()
   })
 
-  it('renders the three identity lines in order, all read-only', () => {
+  it('composes the identity sentence around the provider name', () => {
     renderFace({
       method: 'google',
       displayName: 'Ada Lovelace',
       email: 'ada@example.com',
     })
 
-    const provider = screen.getByText(
-      zhCN.signInFlow.signupProvider.replace(
-        '{{provider}}',
-        zhCN.social.provider.google,
-      ),
-    )
-    const name = screen.getByText('Ada Lovelace')
-    const email = screen.getByText('ada@example.com')
-    // The provider line comes first, then the provider's account name, then
-    // the address it shared; none is an editable control.
     expect(
-      provider.compareDocumentPosition(name) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy()
-    expect(
-      name.compareDocumentPosition(email) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy()
-    expect(screen.queryByDisplayValue('ada@example.com')).toBeNull()
-    expect(screen.queryByRole('textbox', { name: 'ada@example.com' })).toBeNull()
+      findIdentityParagraph({
+        provider: zhCN.social.provider.google,
+        name: 'Ada Lovelace',
+      }),
+    ).toBeInTheDocument()
   })
 
-  it('renders only the provider line when the provider shared nothing else', () => {
-    renderFace({ method: 'google' })
+  it('paints the provider account name in the primary color at weight 600', () => {
+    renderFace({
+      method: 'google',
+      displayName: 'Ada Lovelace',
+      email: 'ada@example.com',
+    })
 
+    const { palette } = createAppTheme().theme
+    expect(screen.getByText('Ada Lovelace', { selector: 'span' })).toHaveStyle({
+      color: palette.text.primary,
+      fontWeight: '600',
+    })
+  })
+
+  it('orders the fields username, address, password, confirmation', () => {
+    renderFace({
+      method: 'google',
+      displayName: 'Ada Lovelace',
+      email: 'ada@example.com',
+    })
+
+    const username = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
+    const address = screen.getByRole('textbox', { name: emailLabel })
+    const password = screen.getByLabelText(zhCN.passwordSignIn.passwordLabel)
+    const confirm = screen.getByLabelText(zhCN.register.confirmPasswordLabel)
+    for (const [before, after] of [
+      [username, address],
+      [address, password],
+      [password, confirm],
+    ] as const) {
+      expect(
+        before.compareDocumentPosition(after) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    }
+  })
+
+  it('renders the provider address as a read-only text box, not an editable input', () => {
+    renderFace({
+      method: 'google',
+      displayName: 'Ada Lovelace',
+      email: 'ada@example.com',
+    })
+
+    const address = screen.getByRole('textbox', { name: emailLabel })
+    expect(address).toHaveAttribute('aria-readonly', 'true')
+    expect(address).toHaveTextContent('ada@example.com')
+    // No input carries the address as its value: the fields the visitor
+    // fills in stay editable, and the address does not.
+    expect(screen.queryByDisplayValue('ada@example.com')).toBeNull()
     expect(
       screen.getByText(
-        zhCN.signInFlow.signupProvider.replace(
+        zhCN.signInFlow.signupEmailSource.replace(
           '{{provider}}',
           zhCN.social.provider.google,
         ),
       ),
     ).toBeInTheDocument()
-    expect(screen.queryByText('ada@example.com')).toBeNull()
+    // Selectable and focusable by keyboard, so the address can be copied.
+    address.focus()
+    expect(address).toHaveFocus()
+  })
+
+  it('keeps a long provider address whole, wrapping instead of truncating', () => {
+    const longAddress = `${'a'.repeat(80)}@example-domain.test`
+    renderFace({
+      method: 'google',
+      displayName: 'Ada Lovelace',
+      email: longAddress,
+    })
+
+    const address = screen.getByRole('textbox', { name: emailLabel })
+    expect(address.textContent?.trim()).toBe(longAddress)
+    expect(address).toHaveStyle({ overflowWrap: 'anywhere' })
   })
 
   it('names the method through the sign-in vocabulary', () => {
@@ -284,12 +379,7 @@ describe('FlowStepFields social account-opening face', () => {
     renderFace({ method: 'github' })
 
     expect(
-      screen.getByText(
-        zhCN.signInFlow.signupProvider.replace(
-          '{{provider}}',
-          zhCN.social.provider.github,
-        ),
-      ),
+      findIdentityParagraph({ provider: zhCN.social.provider.github }),
     ).toBeInTheDocument()
   })
 
@@ -302,17 +392,10 @@ describe('FlowStepFields social account-opening face', () => {
     ] as const) {
       const { unmount } = renderFace({ method })
       expect(
-        screen.getByText(
-          zhCN.signInFlow.signupProvider.replace('{{provider}}', label),
-        ),
+        findIdentityParagraph({ provider: label }),
       ).toBeInTheDocument()
       expect(
-        screen.queryByText(
-          zhCN.signInFlow.signupProvider.replace(
-            '{{provider}}',
-            zhCN.social.provider.wechat,
-          ),
-        ),
+        findIdentityParagraph({ provider: zhCN.social.provider.wechat }),
       ).toBeNull()
       unmount()
     }
@@ -322,51 +405,52 @@ describe('FlowStepFields social account-opening face', () => {
     renderFace({ method: 'acme.sso' })
 
     expect(
-      screen.getByText(
-        zhCN.signInFlow.signupProvider.replace('{{provider}}', 'acme.sso'),
-      ),
+      findIdentityParagraph({ provider: 'acme.sso' }),
     ).toBeInTheDocument()
   })
 
-  it('leaves the account-name line out when the provider gave no name', () => {
+  it('falls back to naming the method alone when the provider gave no name', () => {
     renderFace({ method: 'google', email: 'ada@example.com' })
 
     expect(
-      screen.getByText(
-        zhCN.signInFlow.signupProvider.replace(
-          '{{provider}}',
-          zhCN.social.provider.google,
-        ),
-      ),
+      findIdentityParagraph({ provider: zhCN.social.provider.google }),
     ).toBeInTheDocument()
-    expect(screen.getByText('ada@example.com')).toBeInTheDocument()
+    expect(screen.queryByText('Ada Lovelace')).toBeNull()
   })
 
-  it('leaves the address line out when the provider shared none', () => {
+  it('renders no identity sentence when the step carries no method', () => {
+    renderFace({ displayName: 'Ada Lovelace', email: 'ada@example.com' })
+
+    // The lead without the provider has nothing to say, so the whole
+    // first sentence is left out; the second still says what is missing.
+    const leadPrefix = zhCN.signInFlow.signupIdentityLead.slice(
+      0,
+      zhCN.signInFlow.signupIdentityLead.indexOf('{{provider}}'),
+    )
+    expect(screen.queryByText((text) => text.includes(leadPrefix))).toBeNull()
+    expect(
+      screen.getByText(zhCN.signInFlow.signupAccountInstruction, {
+        selector: 'p',
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('leaves the address block out when the provider shared none', () => {
     renderFace({ method: 'google', displayName: 'Ada Lovelace' })
 
-    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
-    expect(screen.queryByText('ada@example.com')).toBeNull()
-  })
-
-  it('no longer renders the address as a read-only form field', () => {
-    renderFace({
-      method: 'google',
-      displayName: 'Ada Lovelace',
-      email: 'ada@example.com',
-    })
-
-    // The address is an identity line, not a form field: no control carries
-    // it as its value, and the face's only text inputs are the username,
-    // the password and the confirmation.
-    expect(screen.queryByDisplayValue('ada@example.com')).toBeNull()
-    expect(screen.getByText('ada@example.com')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: emailLabel })).toBeNull()
+    // The remaining fields keep their order.
+    const username = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
+    const password = screen.getByLabelText(zhCN.passwordSignIn.passwordLabel)
+    const confirm = screen.getByLabelText(zhCN.register.confirmPasswordLabel)
     expect(
-      screen.getByRole('textbox', { name: zhCN.signInFlow.usernameLabel }),
-    ).toBeInTheDocument()
+      username.compareDocumentPosition(password) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
     expect(
-      screen.queryByRole('textbox', { name: zhCN.register.confirmPasswordLabel }),
-    ).toBeNull()
+      password.compareDocumentPosition(confirm) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 
   it('compares the confirmation locally and sends nothing when they differ', async () => {
@@ -464,8 +548,14 @@ describe('FlowStepFields social account-opening face', () => {
       }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByText(zhCN.signInFlow.signupAccountDescription),
+      screen.getByText(zhCN.signInFlow.signupDescription),
+    ).toBeInTheDocument()
+    // The social face's narrative, address block and password fields do not
+    // leak into the username-only face.
+    expect(
+      screen.queryByText(zhCN.signInFlow.signupAccountInstruction),
     ).toBeNull()
+    expect(screen.queryByRole('textbox', { name: emailLabel })).toBeNull()
     expect(
       screen.queryByLabelText(zhCN.passwordSignIn.passwordLabel),
     ).toBeNull()

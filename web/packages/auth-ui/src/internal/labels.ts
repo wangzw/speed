@@ -47,6 +47,7 @@ const FIELD_LABEL_KEYS: Readonly<Record<string, string>> = {
   phone: 'smsSignIn.phoneLabel',
   code: 'smsSignIn.codeLabel',
   username: 'signInFlow.usernameLabel',
+  email: 'register.emailLabel',
 }
 
 /** The bundle keys of the explanatory text under a known field. */
