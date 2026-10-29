@@ -210,7 +210,7 @@ type Proof struct {
 
 完成时，`delivery=session` 设 cookie，体为 `{"state":"authenticated","session":{"id","expires_at"}}`；`delivery=token` 体为 `{"state":"authenticated","token_type":"Bearer","access_token","expires_in","refresh_token"}`。
 
-待建号的应答是 `{"state":"signup","next":{"kind":"challenge","fields":[...]}}`，字段随开户路径而定：短信与企业即时开通的这一步只有 `username` 一个字段；社交首登的这一步是一个完整的开户面，含 `username` 与 `password` 两个字段。社交首登另把提供方声明为已验证的地址放在 `next.provided_email` 随应答带出，客户端只读展示、不提供编辑，提交时也不回传；提供方未声明该地址已验证时该成员缺席，其余开户路径的应答不带它。客户端以 `POST B/flows/answer {seq, step:"answer", input:{"username":"...", "password":"..."}}` 提交，`password` 只在社交首登的这一步接受。用户名形状不合答 400 `username-invalid`，保留字答 400 `username-reserved`，已被占用答 409 `username-taken`；口令不合策略或缺失答 400 `bad-request`。这些拒绝都不建账户，流程停在待建号可重试；问题码不同，界面分别说明。拒绝不推进流程的序号：序号只随流程前进而变，拒绝只把答复计数加一，因此客户端用同一个序号原地重试即可，不必先重读流程；重试仍计入答复次数上限。
+待建号的应答是 `{"state":"signup","next":{"kind":"challenge","fields":[...]}}`，字段随开户路径而定：短信与企业即时开通的这一步只有 `username` 一个字段；社交首登的这一步是一个完整的开户面，含 `username` 与 `password` 两个字段，并把三件事随应答带出（都在 `next` 上，各自缺省即不出现，提交时都不回传）：`provided_method` 是发起这次登录的方法名（与发现文档的 `methods[].name` 同一词汇，例如 `wechat.mp`）；`provided_display_name` 是提供方给出的账号名；`provided_email` 是提供方声明为已验证的地址，客户端只读展示、不提供编辑。提供方没有给出其中一项时该成员缺席；其余开户路径的应答不带这三者。客户端以 `POST B/flows/answer {seq, step:"answer", input:{"username":"...", "password":"..."}}` 提交，`password` 只在社交首登的这一步接受。用户名形状不合答 400 `username-invalid`，保留字答 400 `username-reserved`，已被占用答 409 `username-taken`；口令不合策略或缺失答 400 `bad-request`。这些拒绝都不建账户，流程停在待建号可重试；问题码不同，界面分别说明。拒绝不推进流程的序号：序号只随流程前进而变，拒绝只把答复计数加一，因此客户端用同一个序号原地重试即可，不必先重读流程；重试仍计入答复次数上限。
 
 ### 匿名注册
 
