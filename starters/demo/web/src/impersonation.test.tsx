@@ -27,7 +27,7 @@ import {
   CONSOLE_UI_NAMESPACE,
   consoleUiResources,
 } from '@speed/console-ui'
-import { LAYOUT_KIT_NAMESPACE } from '@speed/layout-kit'
+import { LAYOUT_KIT_NAMESPACE, avatarInitials } from '@speed/layout-kit'
 import {
   NOTIFICATION_UI_NAMESPACE,
   notificationUiResources,
@@ -50,6 +50,13 @@ import {
   authenticatedSnapshot,
   createTestSession,
 } from './test-utils/session.js'
+
+/** The account menu trigger's accessible name: the visible initials, then the
+ * display name, exactly as the shell composes it (WCAG 2.5.3). */
+function accountTriggerName(displayName: string): string {
+  return `${avatarInitials(displayName)} ${displayName}`
+}
+
 
 /**
  * The expected copy, resolved from the packages' shipped resources through a
@@ -733,7 +740,7 @@ describe('the impersonation shell', () => {
       screen.getByRole('button', { name: demoEnUS.languageSwitcher.label }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Target One' }),
+      screen.getByRole('button', { name: accountTriggerName('Target One') }),
     ).toBeInTheDocument()
   })
 
@@ -2523,7 +2530,7 @@ describe('the impersonation shell', () => {
 
     // The account menu still carries the way out while the banner is
     // hidden, and it is the same write attempt.
-    await user.click(screen.getByRole('button', { name: 'Target One' }))
+    await user.click(screen.getByRole('button', { name: accountTriggerName('Target One') }))
     await user.click(
       screen.getByRole('menuitem', { name: tAuth('impersonation.end') }),
     )
@@ -2569,7 +2576,7 @@ describe('the impersonation shell', () => {
     )
     expect(banner()).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: 'Target One' }))
+    await user.click(screen.getByRole('button', { name: accountTriggerName('Target One') }))
     await user.click(
       screen.getByRole('menuitem', { name: tAuth('impersonation.end') }),
     )
@@ -2743,7 +2750,7 @@ describe('the impersonation shell', () => {
     chip.focus()
     await user.tab()
     expect(
-      screen.getByRole('button', { name: 'Target One' }),
+      screen.getByRole('button', { name: accountTriggerName('Target One') }),
     ).toHaveFocus()
     await user.tab()
     expect(
