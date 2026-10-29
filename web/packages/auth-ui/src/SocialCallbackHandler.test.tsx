@@ -817,7 +817,7 @@ describe('SocialCallbackHandler social account-opening face', () => {
           { name: 'username', kind: 'text', required: true },
           { name: 'password', kind: 'password', secret: true, required: true },
         ],
-        provided_provider: 'google',
+        provided_method: 'google',
         provided_display_name: 'Ada Lovelace',
         provided_email: 'ada@example.com',
       },

@@ -165,7 +165,7 @@ describe('FlowStepFields social account-opening face', () => {
   ]
 
   interface FaceIdentity {
-    readonly provider?: string
+    readonly method?: string
     readonly displayName?: string
     readonly email?: string
   }
@@ -177,9 +177,9 @@ describe('FlowStepFields social account-opening face', () => {
       next: {
         kind: 'challenge',
         fields: socialFields,
-        ...(identity.provider === undefined
+        ...(identity.method === undefined
           ? {}
-          : { provided_provider: identity.provider }),
+          : { provided_method: identity.method }),
         ...(identity.displayName === undefined
           ? {}
           : { provided_display_name: identity.displayName }),
@@ -192,7 +192,7 @@ describe('FlowStepFields social account-opening face', () => {
 
   function renderFace(
     options: {
-      readonly provider?: string
+      readonly method?: string
       readonly displayName?: string
       readonly email?: string
       readonly failure?: string | null
@@ -202,7 +202,7 @@ describe('FlowStepFields social account-opening face', () => {
     return renderWithProviders(
       <FlowStepFields
         step={socialStep({
-          provider: options.provider,
+          method: options.method,
           displayName: options.displayName,
           email: options.email,
         })}
@@ -216,7 +216,7 @@ describe('FlowStepFields social account-opening face', () => {
 
   it('renders the title, the one-sentence description and the signed-in submit row', () => {
     renderFace({
-      provider: 'google',
+      method: 'google',
       displayName: 'Ada Lovelace',
       email: 'ada@example.com',
     })
@@ -237,7 +237,7 @@ describe('FlowStepFields social account-opening face', () => {
 
   it('renders the three identity lines in order, all read-only', () => {
     renderFace({
-      provider: 'google',
+      method: 'google',
       displayName: 'Ada Lovelace',
       email: 'ada@example.com',
     })
@@ -265,7 +265,7 @@ describe('FlowStepFields social account-opening face', () => {
   })
 
   it('renders only the provider line when the provider shared nothing else', () => {
-    renderFace({ provider: 'google' })
+    renderFace({ method: 'google' })
 
     expect(
       screen.getByText(
@@ -278,8 +278,58 @@ describe('FlowStepFields social account-opening face', () => {
     expect(screen.queryByText('ada@example.com')).toBeNull()
   })
 
+  it('names the method through the sign-in vocabulary', () => {
+    // The step carries the method name, not the provider identifier, so the
+    // face resolves it through the same words the sign-in surface uses.
+    renderFace({ method: 'github' })
+
+    expect(
+      screen.getByText(
+        zhCN.signInFlow.signupProvider.replace(
+          '{{provider}}',
+          zhCN.social.provider.github,
+        ),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the two WeChat modes apart on the face', () => {
+    // Both modes share one provider; the face shows the entry the person
+    // actually picked, not the brand's generic word.
+    for (const [method, label] of [
+      ['wechat.mp', zhCN.social.provider.wechatOfficialAccount],
+      ['wechat.web', zhCN.social.provider.wechatWeb],
+    ] as const) {
+      const { unmount } = renderFace({ method })
+      expect(
+        screen.getByText(
+          zhCN.signInFlow.signupProvider.replace('{{provider}}', label),
+        ),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText(
+          zhCN.signInFlow.signupProvider.replace(
+            '{{provider}}',
+            zhCN.social.provider.wechat,
+          ),
+        ),
+      ).toBeNull()
+      unmount()
+    }
+  })
+
+  it('shows a method outside the vocabulary verbatim', () => {
+    renderFace({ method: 'acme.sso' })
+
+    expect(
+      screen.getByText(
+        zhCN.signInFlow.signupProvider.replace('{{provider}}', 'acme.sso'),
+      ),
+    ).toBeInTheDocument()
+  })
+
   it('leaves the account-name line out when the provider gave no name', () => {
-    renderFace({ provider: 'google', email: 'ada@example.com' })
+    renderFace({ method: 'google', email: 'ada@example.com' })
 
     expect(
       screen.getByText(
@@ -293,7 +343,7 @@ describe('FlowStepFields social account-opening face', () => {
   })
 
   it('leaves the address line out when the provider shared none', () => {
-    renderFace({ provider: 'google', displayName: 'Ada Lovelace' })
+    renderFace({ method: 'google', displayName: 'Ada Lovelace' })
 
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
     expect(screen.queryByText('ada@example.com')).toBeNull()
@@ -301,7 +351,7 @@ describe('FlowStepFields social account-opening face', () => {
 
   it('no longer renders the address as a read-only form field', () => {
     renderFace({
-      provider: 'google',
+      method: 'google',
       displayName: 'Ada Lovelace',
       email: 'ada@example.com',
     })

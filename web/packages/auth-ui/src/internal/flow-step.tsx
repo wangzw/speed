@@ -46,7 +46,7 @@
  * the field and its rule help. A step that also asks for a password
  * (social first signup) is the whole account-opening face: a title and a
  * one-sentence description, then a read-only identity block naming the
- * provider, the provider's account name and the address it shared (each
+ * sign-in method, the provider's account name and the address it shared (each
  * line omitted when the step carries none), then the username with its
  * rule help, the password and its confirmation, and the submit row. The
  * identity facts are display-only and never submitted; the confirmation
@@ -309,7 +309,7 @@ export function FlowStepFields({
         return (
           <SignupAccountFields
             fields={step.next.fields}
-            provider={step.next.provided_provider}
+            method={step.next.provided_method}
             displayName={step.next.provided_display_name}
             email={step.next.provided_email}
             refusal={fieldRefusal}
@@ -830,9 +830,11 @@ function ChallengeFields({
 
 interface SignupAccountFieldsProps {
   readonly fields: readonly AuthnField[]
-  /** The social provider's method identifier, resolved to its brand name
-   * for the identity block; absent when the step carries none. */
-  readonly provider?: string
+  /** The sign-in method name that opened this login (the discovery
+   * vocabulary, such as github or wechat.mp), resolved through the family's
+   * method vocabulary for the identity block; absent when the step carries
+   * none. */
+  readonly method?: string
   /** The provider's name for the person, shown read-only on its own line;
    * absent when the provider gave none. */
   readonly displayName?: string
@@ -866,7 +868,7 @@ interface SignupAccountValues {
  */
 function SignupAccountFields({
   fields,
-  provider,
+  method,
   displayName,
   email,
   refusal,
@@ -893,14 +895,18 @@ function SignupAccountFields({
   const confirmInput = useRef<HTMLInputElement>(null)
   const refusedName = refusal?.name ?? null
   const refusedText = refusal?.text ?? null
-  const providerName =
-    provider === undefined || provider === ''
+  // The face has no discovery document, so the method's own name is resolved
+  // through the same vocabulary the sign-in surface uses minus the
+  // descriptor's label: a mode-specific word where the family has one, then
+  // its brand word, then the name as the server wrote it.
+  const methodName =
+    method === undefined || method === ''
       ? null
-      : methodLabel({ name: provider }, t)
+      : methodLabel({ name: method }, t)
   const identity: readonly string[] = [
-    providerName === null
+    methodName === null
       ? null
-      : t('signInFlow.signupProvider', { provider: providerName }),
+      : t('signInFlow.signupProvider', { provider: methodName }),
     displayName === undefined || displayName === '' ? null : displayName,
     email === undefined || email === '' ? null : email,
   ].filter((line): line is string => line !== null)
