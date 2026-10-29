@@ -238,7 +238,14 @@ export type AuthnFactorOption = AuthnLoginFactor
  * discriminated union, so a view reads only the fields its own step
  * carries. */
 export type AuthnStep =
-  | (AuthnLoginStep & { kind: 'challenge'; fields: AuthnLoginField[] })
+  | (AuthnLoginStep & {
+      kind: 'challenge'
+      fields: AuthnLoginField[]
+      /** The provider-declared verified address a social first signup shows
+       * read-only. Present only on that step, and only when the provider
+       * declared one; it is display-only and never submitted. */
+      provided_email?: string
+    })
   | (AuthnLoginStep & { kind: 'redirect'; url: string; method: string })
   | (AuthnLoginStep & { kind: 'factor'; factors: AuthnLoginFactor[] })
   | (AuthnLoginStep & { kind: 'enroll'; kinds: string[] })
@@ -820,6 +827,12 @@ function parseStep(body: unknown): AuthnStep {
         ? rec.fields.map((entry) => parseField(entry))
         : []
       const step: AuthnStep = { kind: 'challenge', fields }
+      // The read-only provider address a social first signup carries. Absent
+      // when the provider declared none; an empty string carries no address
+      // either.
+      if (typeof rec.provided_email === 'string' && rec.provided_email !== '') {
+        step.provided_email = rec.provided_email
+      }
       const expiresIn = optionalNumber(rec.expires_in)
       if (expiresIn !== undefined) {
         step.expires_in = expiresIn

@@ -557,6 +557,27 @@ describe('start flow', () => {
     })
   })
 
+  it('carries the read-only provider address a social signup step shows', async () => {
+    // The address is display-only: the session keeps it on the step's
+    // challenge so a surface can show it, and never puts it in an answer.
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          state: 'signup',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'username', kind: 'text', required: true }],
+            provided_email: 'ada@example.com',
+          },
+        }),
+    })
+    const state = await harness.session.startFlow({ method: 'google' })
+    expect(state).toMatchObject({
+      state: 'signup',
+      next: { kind: 'challenge', provided_email: 'ada@example.com' },
+    })
+  })
+
   it('refuses an empty 2xx as client.protocol before any state change', async () => {
     const harness = makeHarness({ [LOGIN_START]: () => undefined })
     await expectProtocolViolation(
