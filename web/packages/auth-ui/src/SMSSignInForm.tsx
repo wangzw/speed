@@ -110,7 +110,7 @@ import {
   ChannelFeedbackRegion,
   useChannelFeedback,
 } from './internal/write-feedback.js'
-import { FlowStepFields, isUsernameRefusal } from './internal/flow-step.js'
+import { FlowStepFields, signupFieldRefusal } from './internal/flow-step.js'
 import { FlowExpired } from './internal/flow-expired.js'
 import { retryWaitMs } from './internal/retry-wait.js'
 import { stepKey, useStepFocus } from './internal/step-focus.js'
@@ -526,19 +526,17 @@ export function SMSSignInForm({
       ? 'sms-phone'
       : stepKey(driver.step)
   const surfaceRef = useStepFocus(surfaceKey)
-  // The username step's three refusals are the step's own: they render
-  // under its field and never as the channel's failure banner. Every other
-  // code, and every other step, keeps the banner.
+  // A signup step's refusals are the step's own: they render under the
+  // field they name and never as the channel's failure banner. Every other
+  // code, and every other step, keeps the banner. This channel's step asks
+  // for a username alone, so only its three name refusals qualify.
   const parkedFailure =
     feedback.outcome !== null && feedback.outcome.kind === 'failure'
       ? feedback.outcome.code
       : null
-  const usernameRefusal =
-    driver.step !== null &&
-    driver.step.state === 'signup' &&
-    parkedFailure !== null &&
-    isUsernameRefusal(parkedFailure)
-      ? parkedFailure
+  const fieldRefusal =
+    driver.step !== null && parkedFailure !== null
+      ? signupFieldRefusal(driver.step, parkedFailure)
       : null
 
   // The deployment's human-verification block, above whichever send
@@ -582,9 +580,9 @@ export function SMSSignInForm({
           onClientFailure={(key) =>
             key === null ? feedback.clearLocal() : feedback.failLocal(key)
           }
-          failure={usernameRefusal}
+          failure={parkedFailure}
         />
-        {usernameRefusal === null ? (
+        {fieldRefusal === null ? (
           <ChannelFeedbackRegion feedback={feedback} />
         ) : null}
       </Box>

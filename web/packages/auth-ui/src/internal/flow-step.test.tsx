@@ -158,6 +158,177 @@ describe('FlowStepFields username step', () => {
   })
 })
 
+describe('FlowStepFields social account-opening face', () => {
+  const socialFields: AuthnField[] = [
+    { name: 'username', kind: 'text', required: true },
+    { name: 'password', kind: 'password', secret: true, required: true },
+  ]
+
+  function socialStep(email?: string): OpenFlowState {
+    return {
+      seq: 2,
+      state: 'signup',
+      next: {
+        kind: 'challenge',
+        fields: socialFields,
+        ...(email === undefined ? {} : { provided_email: email }),
+      },
+    }
+  }
+
+  function renderFace(
+    options: {
+      readonly email?: string
+      readonly failure?: string | null
+      readonly onAnswer?: (input: Record<string, string>) => void
+    } = {},
+  ) {
+    return renderWithProviders(
+      <FlowStepFields
+        step={socialStep(options.email)}
+        busy={false}
+        onAnswer={options.onAnswer ?? vi.fn()}
+        onUnsupported={vi.fn()}
+        failure={options.failure ?? null}
+      />,
+    )
+  }
+
+  it('renders the title, the sentence, the read-only address and both password fields', () => {
+    renderFace({ email: 'ada@example.com' })
+
+    expect(
+      screen.getByRole('heading', {
+        level: 2,
+        name: zhCN.signInFlow.signupAccountTitle,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.signInFlow.signupAccountDescription),
+    ).toBeInTheDocument()
+
+    const email = screen.getByLabelText(zhCN.signInFlow.signupEmailLabel)
+    expect(email).toHaveValue('ada@example.com')
+    expect((email as HTMLInputElement).readOnly).toBe(true)
+
+    expect(
+      screen.getByLabelText(zhCN.signInFlow.usernameLabel),
+    ).toHaveAccessibleDescription(zhCN.signInFlow.usernameHelper)
+    expect(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByLabelText(zhCN.register.confirmPasswordLabel),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    ).toBeInTheDocument()
+  })
+
+  it('leaves the address out when the provider declared none', () => {
+    renderFace()
+
+    expect(
+      screen.queryByLabelText(zhCN.signInFlow.signupEmailLabel),
+    ).toBeNull()
+  })
+
+  it('compares the confirmation locally and sends nothing when they differ', async () => {
+    const onAnswer = vi.fn()
+    renderFace({ email: 'ada@example.com', onAnswer })
+
+    await userEvent.setup().type(
+      screen.getByLabelText(zhCN.signInFlow.usernameLabel),
+      'ada',
+    )
+    await userEvent.setup().type(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+      'correct-horse',
+    )
+    await userEvent.setup().type(
+      screen.getByLabelText(zhCN.register.confirmPasswordLabel),
+      'different-horse',
+    )
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+
+    expect(onAnswer).not.toHaveBeenCalled()
+    const confirm = screen.getByLabelText(zhCN.register.confirmPasswordLabel)
+    expect(confirm).toHaveAttribute('aria-invalid', 'true')
+    expect(confirm).toHaveAccessibleDescription(
+      zhCN.signInFlow.signupPasswordMismatch,
+    )
+    // The confirmation never travels, so a matching pair sends only the two
+    // fields the server asked for.
+    await userEvent.setup().clear(confirm)
+    await userEvent
+      .setup()
+      .type(confirm, 'correct-horse')
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+    expect(onAnswer).toHaveBeenCalledWith({
+      username: 'ada',
+      password: 'correct-horse',
+    })
+  })
+
+  it('renders a password-policy refusal under the password field', () => {
+    renderFace({ email: 'ada@example.com', failure: 'authn.bad_request' })
+
+    const password = screen.getByLabelText(zhCN.passwordSignIn.passwordLabel)
+    expect(password).toHaveAttribute('aria-invalid', 'true')
+    expect(password).toHaveAccessibleDescription(
+      zhCN.signInFlow.signupPasswordPolicy,
+    )
+    expect(password).toHaveFocus()
+    // The refusal is the field's, never the whole-attempt banner.
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it.each([
+    ['authn.username_taken', zhCN.signInFlow.usernameTaken],
+    ['authn.username_reserved', zhCN.signInFlow.usernameReserved],
+    ['authn.username_invalid', zhCN.signInFlow.usernameInvalid],
+  ])('renders %s under the username field', (code, text) => {
+    renderFace({ email: 'ada@example.com', failure: code })
+
+    const username = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
+    expect(username).toHaveAttribute('aria-invalid', 'true')
+    expect(username).toHaveAccessibleDescription(text)
+    expect(username).toHaveFocus()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('keeps the username-only face for SMS and enterprise signup', () => {
+    renderWithProviders(
+      <FlowStepFields
+        step={challengeStep([
+          { name: 'username', kind: 'text', required: true },
+        ])}
+        busy={false}
+        onAnswer={vi.fn()}
+        onUnsupported={vi.fn()}
+      />,
+    )
+
+    expect(
+      screen.getByRole('heading', {
+        level: 2,
+        name: zhCN.signInFlow.signupTitle,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.queryByLabelText(zhCN.signInFlow.signupEmailLabel)).toBeNull()
+    expect(
+      screen.queryByLabelText(zhCN.passwordSignIn.passwordLabel),
+    ).toBeNull()
+    expect(
+      screen.queryByLabelText(zhCN.register.confirmPasswordLabel),
+    ).toBeNull()
+  })
+})
+
 describe('FlowStepFields labels', () => {
   it('translates known factor kinds and shows an unknown kind as given', () => {
     render({

@@ -39,13 +39,24 @@
  * deployment's own vocabulary), and a server-supplied label wins over
  * both.
  *
- * The username step a first login parks at is the same challenge renderer
- * with its own face: a title and a sentence saying what the login name is
- * for sit above the one field, and the three name refusals the server
- * answers (taken, reserved, a shape it cannot normalize) render under the
- * field with `aria-invalid`, the message as the field's description, and
- * focus moved to it, never as the whole-attempt banner. The step keeps the
- * typed value and stays parked for another try.
+ * The step a first login parks at before it opens an account is the same
+ * challenge renderer with its own faces, chosen by what the step asks for.
+ * A step that asks for a username alone (SMS and enterprise just-in-time
+ * signup) renders a title, a sentence saying what the login name is for,
+ * the field and its rule help. A step that also asks for a password
+ * (social first signup) is the whole account-opening face: its own title
+ * and sentence, the provider's verified address read-only when the step
+ * carries one (display-only, never submitted), the username with its rule
+ * help, the password and its confirmation, and the submit row. The
+ * confirmation is compared locally and never travels.
+ *
+ * A refusal of a still-parked signup step is the field's, never the
+ * whole-attempt banner: the three name refusals (taken, reserved, a shape
+ * the server cannot normalize) render under the username field, and a bad
+ * request on the face that asked for a password is the password policy's
+ * message under the password field. `aria-invalid`, the message as the
+ * field's description, and focus moved to it; the step keeps the typed
+ * values and stays parked for another try.
  *
  * HumanGatedFlowStep wraps this renderer for a step that may send a
  * verification message. It renders the deployment's proof block above the
@@ -85,6 +96,19 @@ const FACTOR_KINDS = ['totp', 'sms', 'webauthn'] as const
 /** The field a username step asks for. */
 const USERNAME_FIELD = 'username'
 
+/** The field a social signup step asks for beside the username. */
+const PASSWORD_FIELD = 'password'
+
+/** Whether the step asks for a password, which is what makes it the full
+ * account-opening face (social first signup) rather than the
+ * username-only one (SMS and enterprise just-in-time signup). */
+function asksForPassword(step: OpenFlowState): boolean {
+  return (
+    step.next.kind === 'challenge' &&
+    step.next.fields.some((field) => field.name === PASSWORD_FIELD)
+  )
+}
+
 /** The bundle key the username step renders a refusal under, or null for a
  * code that is not a username refusal. */
 function usernameRefusalKey(code: string | null): string | null {
@@ -101,12 +125,28 @@ function usernameRefusalKey(code: string | null): string | null {
 }
 
 /**
- * Whether the code is one the username step refuses a name with. A surface
- * that keeps the failed step parked routes the code to the step's field
- * instead of its whole-attempt banner.
+ * How a still-parked signup step carries a refusal: the field it belongs to
+ * and the bundle key of its text. The three username refusals are the
+ * username field's; a bad request on the face that asked for a password is
+ * the password policy's, on the password field. Every other code, and every
+ * other step, is the whole-attempt banner's -- a surface asks this to decide
+ * which of the two renders.
  */
-export function isUsernameRefusal(code: string | null): boolean {
-  return usernameRefusalKey(code) !== null
+export function signupFieldRefusal(
+  step: OpenFlowState,
+  code: string | null,
+): { readonly name: string; readonly key: string } | null {
+  if (step.state !== 'signup' || code === null) {
+    return null
+  }
+  const key = usernameRefusalKey(code)
+  if (key !== null) {
+    return { name: USERNAME_FIELD, key }
+  }
+  if (code === 'authn.bad_request' && asksForPassword(step)) {
+    return { name: PASSWORD_FIELD, key: 'signInFlow.signupPasswordPolicy' }
+  }
+  return null
 }
 
 export interface FlowStepFieldsProps {
@@ -136,9 +176,10 @@ export interface FlowStepFieldsProps {
   /** Report a ceremony failure upward, or `null` when a retry begins. */
   readonly onClientFailure?: (key: string | null) => void
   /**
-   * The code of an answer that failed while this step stayed parked. The
-   * username step renders the three username refusals under its field; no
-   * other step has a field-level use for it.
+   * The code of an answer that failed while this step stayed parked. A
+   * signup step renders its refusals under the field they name (the
+   * username's three, or a password policy on the face that asked for a
+   * password); no other step has a field-level use for it.
    */
   readonly failure?: string | null
 }
@@ -253,13 +294,29 @@ export function FlowStepFields({
       ? t(`signInFlow.factorKind.${kind}`)
       : kind
 
-  const refusalKey =
-    step.state === 'signup' ? usernameRefusalKey(failure ?? null) : null
-  const usernameRefusal =
-    refusalKey === null ? null : { name: USERNAME_FIELD, text: t(refusalKey) }
+  const refusal = signupFieldRefusal(step, failure ?? null)
+  const fieldRefusal =
+    refusal === null ? null : { name: refusal.name, text: t(refusal.key) }
 
   switch (step.next.kind) {
     case 'challenge': {
+      // The face that asks for a password is the whole account-opening
+      // surface: the read-only provider address, the username with its rule
+      // help, the password and its confirmation, and the submit row.
+      if (step.state === 'signup' && asksForPassword(step)) {
+        return (
+          <SignupAccountFields
+            fields={step.next.fields}
+            email={step.next.provided_email}
+            refusal={fieldRefusal}
+            fieldLabel={labelOf}
+            fieldHelp={helpOf}
+            submit={t('signInFlow.submit')}
+            busy={busy}
+            onAnswer={onAnswer}
+          />
+        )
+      }
       const fields = (
         <ChallengeFields
           fields={step.next.fields}
@@ -269,9 +326,9 @@ export function FlowStepFields({
           busy={busy}
           onAnswer={onAnswer}
           fieldError={
-            usernameRefusal !== null &&
-            step.next.fields.some((field) => field.name === USERNAME_FIELD)
-              ? usernameRefusal
+            fieldRefusal !== null &&
+            step.next.fields.some((field) => field.name === fieldRefusal.name)
+              ? fieldRefusal
               : null
           }
         />
@@ -764,6 +821,174 @@ function ChallengeFields({
         )
       })}
     </FormLayout>
+  )
+}
+
+interface SignupAccountFieldsProps {
+  readonly fields: readonly AuthnField[]
+  /** The provider-declared verified address to show read-only, when the
+   * step carries one. */
+  readonly email?: string
+  /** The server refusal to render under its field, if any. */
+  readonly refusal: { readonly name: string; readonly text: string } | null
+  readonly fieldLabel: (field: AuthnField) => string
+  readonly fieldHelp: (field: AuthnField) => string | null
+  readonly submit: string
+  readonly busy: boolean
+  readonly onAnswer: (input: Record<string, string>) => void
+}
+
+interface SignupAccountValues {
+  username: string
+  password: string
+  confirmPassword: string
+}
+
+/**
+ * The social first-signup face: the provider address read-only, the
+ * username with its rule help, the password and its confirmation, and the
+ * submit row. The confirmation is compared here and never travels; every
+ * other rule -- the name's shape, uniqueness and reserved names, and the
+ * password policy -- is the server's, and a refusal it answers lands under
+ * the field it names.
+ */
+function SignupAccountFields({
+  fields,
+  email,
+  refusal,
+  fieldLabel,
+  fieldHelp,
+  submit,
+  busy,
+  onAnswer,
+}: SignupAccountFieldsProps) {
+  const { t } = useAuthUiTranslation()
+  const form = useForm<SignupAccountValues>({
+    defaultValues: { username: '', password: '', confirmPassword: '' },
+  })
+  const usernameField = fields.find((field) => field.name === USERNAME_FIELD) ?? {
+    name: USERNAME_FIELD,
+    kind: 'text',
+  }
+  const passwordField = fields.find((field) => field.name === PASSWORD_FIELD) ?? {
+    name: PASSWORD_FIELD,
+    kind: 'password',
+  }
+  const usernameInput = useRef<HTMLInputElement>(null)
+  const passwordInput = useRef<HTMLInputElement>(null)
+  const confirmInput = useRef<HTMLInputElement>(null)
+  const refusedName = refusal?.name ?? null
+  const refusedText = refusal?.text ?? null
+  // A refusal under a field is the attempt's outcome: move focus there so a
+  // viewer who submitted from the button lands on the value to change.
+  useEffect(() => {
+    if (refusedName === USERNAME_FIELD) {
+      usernameInput.current?.focus()
+    } else if (refusedName === PASSWORD_FIELD) {
+      passwordInput.current?.focus()
+    }
+  }, [refusedName, refusedText])
+  const onSubmit: SubmitHandler<SignupAccountValues> = (values) => {
+    onAnswer({ username: values.username, password: values.password })
+  }
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1.5,
+        width: '100%',
+      }}
+    >
+      <Box>
+        <Typography component="h2" variant="h6">
+          {t('signInFlow.signupAccountTitle')}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {t('signInFlow.signupAccountDescription')}
+        </Typography>
+      </Box>
+      <FormLayout
+        form={form}
+        onSubmit={onSubmit}
+        actions={
+          <Button type="submit" variant="contained" disabled={busy}>
+            {submit}
+          </Button>
+        }
+      >
+        {email === undefined ? null : (
+          <TextField
+            label={t('signInFlow.signupEmailLabel')}
+            value={email}
+            fullWidth
+            slotProps={{ htmlInput: { readOnly: true } }}
+          />
+        )}
+        <FormField
+          name="username"
+          required
+          render={({ field, invalid, errorText }) => (
+            <TextField
+              {...field}
+              inputRef={refusedName === USERNAME_FIELD ? usernameInput : undefined}
+              label={fieldLabel(usernameField)}
+              autoComplete="username"
+              fullWidth
+              error={invalid || refusedName === USERNAME_FIELD}
+              helperText={
+                errorText ??
+                (refusedName === USERNAME_FIELD ? refusedText : null) ??
+                fieldHelp(usernameField) ??
+                undefined
+              }
+            />
+          )}
+        />
+        <FormField
+          name="password"
+          required
+          render={({ field, invalid, errorText }) => (
+            <TextField
+              {...field}
+              inputRef={refusedName === PASSWORD_FIELD ? passwordInput : undefined}
+              label={fieldLabel(passwordField)}
+              type="password"
+              autoComplete="new-password"
+              fullWidth
+              error={invalid || refusedName === PASSWORD_FIELD}
+              helperText={
+                errorText ??
+                (refusedName === PASSWORD_FIELD ? refusedText : null) ??
+                fieldHelp(passwordField) ??
+                undefined
+              }
+            />
+          )}
+        />
+        <FormField
+          name="confirmPassword"
+          required
+          rules={{
+            validate: (value) =>
+              value === form.getValues('password') ||
+              t('signInFlow.signupPasswordMismatch'),
+          }}
+          render={({ field, invalid, errorText }) => (
+            <TextField
+              {...field}
+              inputRef={confirmInput}
+              label={t('register.confirmPasswordLabel')}
+              type="password"
+              autoComplete="new-password"
+              fullWidth
+              error={invalid}
+              helperText={errorText ?? undefined}
+            />
+          )}
+        />
+      </FormLayout>
+    </Box>
   )
 }
 

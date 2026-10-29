@@ -563,10 +563,28 @@ While the read is in flight the handler shows the pending notice
 (`role="status"`). The callback route is the host's own; nothing here
 navigates.
 
+A first social login parks the flow at the account-opening step, and the
+shared step renderer gives it the whole face: a title and a sentence, the
+provider's verified address read-only when the step carries one (it is
+display-only and never submitted), the username with its rule help, the
+password and its confirmation, and the submit row. The confirmation is
+compared locally; the three username refusals and a password-policy
+refusal (`authn.bad_request`) render under the field they name, and every
+other code keeps the whole-attempt banner. SMS and enterprise first
+logins park at the username-only face instead.
+
+`frame` lets the host render this handler's own content inside the
+sign-in surface's card, brand and page heading included, so the
+account-opening step appears in the same card as the sign-in page. The
+`absent` view is returned unwrapped: it is the host's own page.
+
 | Prop | Type | Notes |
 |---|---|---|
 | `session` | `AuthSession` (required) | the session that resumes the flow |
 | `onSignedIn` | `() => void` | fired once after the login lands -- and again on a later mount that finds the session already authenticated |
+| `absent` | `ReactNode` | rendered when no flow is found and the deployment offers no redirect or enterprise method (the host's 404) |
+| `frame` | `(content: ReactNode) => ReactNode` | wraps the handler's own content in the host's card; the `absent` view is not wrapped |
+| `onSignIn` | `() => void` | the host's exit when the account-opening step's flow is gone; the step becomes a terminal notice whose one action calls it |
 
 ## SignOutButton
 

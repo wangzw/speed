@@ -18,9 +18,11 @@
  * A refused answer keeps its step when the flow stays parked on it: the
  * failure banner renders beside the still-parked step, its state is
  * unchanged, and the step's own controls are the retry -- answering again
- * clears the banner first, because an answer is a new attempt. The username
- * step is the exception: its three name refusals render under its field,
- * never as the banner. Only a refusal with no step left to keep -- the flow
+ * clears the banner first, because an answer is a new attempt. A signup
+ * step's refusals are the exception: its three name refusals render under
+ * the username field, and a bad request on the face that asked for a
+ * password is the password policy's message under the password field. Only
+ * a refusal with no step left to keep -- the flow
  * is gone (`authn.flow_invalid`), or a ready flow's `complete` answer is
  * refused -- renders the banner with the retry that reads the flow back, the
  * same shape as a read that finds nothing. When the gone flow was the
@@ -45,7 +47,15 @@
  * document offers neither a `redirect` nor an `enterprise` method, nothing
  * can return to this route, so the host's "no such page" renders instead
  * of a flow-not-found banner. The discovery document is read only when
- * `absent` is supplied.
+ * `absent` is supplied. The `absent` view is returned unwrapped: it is the
+ * host's own page, not this handler's surface.
+ *
+ * The optional `frame` slot is the host's card around this handler's own
+ * content -- the pending notice, a step, a refusal, the terminal notice.
+ * The host renders the sign-in surface's own card there, so the first
+ * social login's account-opening step appears in the same card as the
+ * sign-in page, brand and page heading included, while the step itself
+ * supplies only the card's content.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -58,7 +68,10 @@ import type { AuthSession, AuthnMethodList } from '@speed/auth-core'
 import { errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
-import { HumanGatedFlowStep, isUsernameRefusal } from './internal/flow-step.js'
+import {
+  HumanGatedFlowStep,
+  signupFieldRefusal,
+} from './internal/flow-step.js'
 import { FlowExpired } from './internal/flow-expired.js'
 import { stepKey, useStepFocus } from './internal/step-focus.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
@@ -80,6 +93,15 @@ export interface SocialCallbackHandlerProps {
    * discovery document.
    */
   readonly absent?: ReactNode
+  /**
+   * The host's card around this handler's own content (the pending notice,
+   * a step, a refusal, the terminal notice). The host passes the sign-in
+   * surface's card -- brand and page heading included -- so the
+   * account-opening step a first social login parks at renders in the same
+   * card as the sign-in page. The `absent` view is returned unwrapped: it
+   * is the host's own page. Omitted, the content renders bare.
+   */
+  readonly frame?: (content: ReactNode) => ReactNode
   /**
    * The host's exit to its sign-in surface. When the username step's flow
    * is gone (expired, completed elsewhere, bound to another browser), the
@@ -108,6 +130,7 @@ export function SocialCallbackHandler({
   session,
   onSignedIn,
   absent,
+  frame,
   onSignIn,
 }: SocialCallbackHandlerProps) {
   const { t } = useAuthUiTranslation()
@@ -272,18 +295,21 @@ export function SocialCallbackHandler({
   const surfaceRef = useStepFocus(stepKey(driver.step), {
     focusFirstStep: false,
   })
-  // The username step's three refusals are the step's own: they render
-  // under its field and never as the whole-attempt banner. Every other
-  // code, and every other step, keeps the banner.
-  const usernameRefusal =
-    driver.step !== null &&
-    driver.step.state === 'signup' &&
-    stepFailure !== null &&
-    isUsernameRefusal(stepFailure)
-      ? stepFailure
+  // A signup step's refusals are the step's own: they render under the
+  // field they name (the username's three, or a password policy on the
+  // face that asked for a password) and never as the whole-attempt banner.
+  // Every other code, and every other step, keeps the banner.
+  const fieldRefusal =
+    driver.step !== null && stepFailure !== null
+      ? signupFieldRefusal(driver.step, stepFailure)
       : null
   const bannerFailure =
-    stepFailure === null || usernameRefusal !== null ? null : stepFailure
+    stepFailure === null || fieldRefusal !== null ? null : stepFailure
+
+  // The host's card around this handler's own content; the absent view is
+  // the host's page and is returned unwrapped.
+  const framed = (content: ReactNode): ReactNode =>
+    frame === undefined ? content : frame(content)
 
   if (absentShown && absent !== undefined) {
     return <>{absent}</>
@@ -291,28 +317,36 @@ export function SocialCallbackHandler({
 
   if (signupExpired && onSignIn !== undefined) {
     return (
-      <Box ref={surfaceRef} sx={{ display: 'contents' }}>
-        <FlowExpired onRestart={onSignIn} />
-      </Box>
+      <>
+        {framed(
+          <Box ref={surfaceRef} sx={{ display: 'contents' }}>
+            <FlowExpired onRestart={onSignIn} />
+          </Box>,
+        )}
+      </>
     )
   }
 
   if (failed) {
     return (
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-start',
-          gap: 1.5,
-          width: '100%',
-        }}
-      >
-        <InlineError code={errorCode} />
-        <Button variant="outlined" onClick={retry}>
-          {t('socialCallback.retry')}
-        </Button>
-      </Box>
+      <>
+        {framed(
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              gap: 1.5,
+              width: '100%',
+            }}
+          >
+            <InlineError code={errorCode} />
+            <Button variant="outlined" onClick={retry}>
+              {t('socialCallback.retry')}
+            </Button>
+          </Box>,
+        )}
+      </>
     )
   }
 
@@ -323,43 +357,51 @@ export function SocialCallbackHandler({
   // not in place of it, and answering again clears it first.
   if (driver.step !== null) {
     return (
-      <Box ref={surfaceRef} sx={{ display: 'contents' }}>
-        <HumanGatedFlowStep
-          session={session}
-          step={driver.step}
-          busy={driver.busy}
-          onAnswer={(input, proof) => {
-            answeredSignupRef.current = driver.step?.state === 'signup'
-            setStepFailure(null)
-            void driver.answer(input, proof)
-          }}
-          onUnsupported={retry}
-          unsupportedLabel={t('socialCallback.retry')}
-          failure={usernameRefusal}
-        />
-        {bannerFailure === null ? null : (
-          <Box sx={{ mt: 1, width: '100%' }}>
-            <InlineError code={bannerFailure} />
-          </Box>
+      <>
+        {framed(
+          <Box ref={surfaceRef} sx={{ display: 'contents' }}>
+            <HumanGatedFlowStep
+              session={session}
+              step={driver.step}
+              busy={driver.busy}
+              onAnswer={(input, proof) => {
+                answeredSignupRef.current = driver.step?.state === 'signup'
+                setStepFailure(null)
+                void driver.answer(input, proof)
+              }}
+              onUnsupported={retry}
+              unsupportedLabel={t('socialCallback.retry')}
+              failure={stepFailure}
+            />
+            {bannerFailure === null ? null : (
+              <Box sx={{ mt: 1, width: '100%' }}>
+                <InlineError code={bannerFailure} />
+              </Box>
+            )}
+          </Box>,
         )}
-      </Box>
+      </>
     )
   }
 
   return (
-    <Box
-      role="status"
-      sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}
-    >
-      {/* Decorative: the notice on its own announces the pending state from
-          the role=status container; naming the spinner too would read the
-          notice twice. The text renders only once `pendingCommitted` arms
-          it, one commit after this region mounts (see the comment on the
-          state above). */}
-      <CircularProgress size={18} aria-hidden={true} />
-      <Typography>
-        {pendingCommitted ? t('socialCallback.pending') : ''}
-      </Typography>
-    </Box>
+    <>
+      {framed(
+        <Box
+          role="status"
+          sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}
+        >
+          {/* Decorative: the notice on its own announces the pending state
+              from the role=status container; naming the spinner too would
+              read the notice twice. The text renders only once
+              `pendingCommitted` arms it, one commit after this region mounts
+              (see the comment on the state above). */}
+          <CircularProgress size={18} aria-hidden={true} />
+          <Typography>
+            {pendingCommitted ? t('socialCallback.pending') : ''}
+          </Typography>
+        </Box>,
+      )}
+    </>
   )
 }

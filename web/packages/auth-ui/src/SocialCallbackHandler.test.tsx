@@ -19,7 +19,7 @@
 import { StrictMode } from 'react'
 import { flushSync } from 'react-dom'
 import { describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SocialCallbackHandler } from './SocialCallbackHandler.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -801,5 +801,142 @@ describe('SocialCallbackHandler', () => {
     ).not.toBeInTheDocument()
     expect(onSignedIn).not.toHaveBeenCalled()
     expect(harness.store.get()).toBe('access-race')
+  })
+})
+
+describe('SocialCallbackHandler social account-opening face', () => {
+  /** The face a first social login parks at: username, password, and the
+   * provider's verified address read-only. */
+  function accountFaceFlow() {
+    return openFlow({
+      seq: 1,
+      state: 'signup',
+      next: {
+        kind: 'challenge',
+        fields: [
+          { name: 'username', kind: 'text', required: true },
+          { name: 'password', kind: 'password', secret: true, required: true },
+        ],
+        provided_email: 'ada@example.com',
+      },
+    })
+  }
+
+  it('renders the face inside the host frame and sends both fields', async () => {
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => accountFaceFlow(),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () => principal(),
+    })
+    const onSignedIn = vi.fn()
+    renderWithProviders(
+      <SocialCallbackHandler
+        session={harness.session}
+        onSignedIn={onSignedIn}
+        frame={(content) => <section aria-label="host card">{content}</section>}
+      />,
+    )
+
+    const face = await screen.findByRole('region', { name: 'host card' })
+    expect(
+      within(face).getByRole('heading', {
+        level: 2,
+        name: zhCN.signInFlow.signupAccountTitle,
+      }),
+    ).toBeInTheDocument()
+    const email = within(face).getByLabelText(
+      zhCN.signInFlow.signupEmailLabel,
+    )
+    expect(email).toHaveValue('ada@example.com')
+    expect((email as HTMLInputElement).readOnly).toBe(true)
+
+    const user = userEvent.setup()
+    await user.type(
+      within(face).getByLabelText(zhCN.signInFlow.usernameLabel),
+      'ada',
+    )
+    await user.type(
+      within(face).getByLabelText(zhCN.passwordSignIn.passwordLabel),
+      'correct-horse',
+    )
+    await user.type(
+      within(face).getByLabelText(zhCN.register.confirmPasswordLabel),
+      'correct-horse',
+    )
+    await user.click(
+      within(face).getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    const answer = harness.calls.find(
+      (call) => call.path === '/api/v1/auth/flows/answer',
+    )
+    expect(answer?.options?.body).toMatchObject({
+      step: 'answer',
+      input: { username: 'ada', password: 'correct-horse' },
+    })
+  })
+
+  it('renders a password-policy refusal under the password field, not the banner', async () => {
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => accountFaceFlow(),
+      [LOGIN_ANSWER]: () => {
+        throw apiError(400, 'authn.bad_request')
+      },
+    })
+    renderWithProviders(<SocialCallbackHandler session={harness.session} />)
+
+    const user = userEvent.setup()
+    await user.type(
+      await screen.findByLabelText(zhCN.signInFlow.usernameLabel),
+      'ada',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+      'short',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.register.confirmPasswordLabel),
+      'short',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+      ).toHaveAccessibleDescription(zhCN.signInFlow.signupPasswordPolicy),
+    )
+    expect(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+    ).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('returns the absent view unwrapped by the frame', async () => {
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => {
+        throw apiError(401, 'authn.flow_invalid')
+      },
+      [LOGIN_METHODS]: () =>
+        methodList([], { signup: false }),
+    })
+    renderWithProviders(
+      <SocialCallbackHandler
+        session={harness.session}
+        absent={<p>no such page</p>}
+        frame={(content) => <section aria-label="host card">{content}</section>}
+      />,
+    )
+
+    // The pending read is the handler's own surface and may sit in the host
+    // card, but the absent view is the host's page: the card is gone once it
+    // renders.
+    const absent = await screen.findByText('no such page')
+    expect(absent.closest('section[aria-label="host card"]')).toBeNull()
   })
 })
