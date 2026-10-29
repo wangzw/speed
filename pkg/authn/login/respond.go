@@ -92,8 +92,8 @@ func writeAction(c *call, state string) {
 // the method decides on the next answer. The enroll step names the factor kinds
 // the assembly takes in, so the client can choose one. The signup step names the
 // username a first login opens its account with, the password a social one also
-// takes, and the provider's name for the person, the provider's method identifier
-// and the address a social provider declared verified for the client to show
+// takes, the method that started the flow, the provider's name for the person and
+// the address a social provider declared verified for the client to show
 // read-only; it is a challenge, so the shared renderer draws its fields like any
 // other prompt.
 func (r *routes) nextOf(rec record) stepView {
@@ -101,7 +101,7 @@ func (r *routes) nextOf(rec record) stepView {
 	case stateReady:
 		return stepView{Kind: nextComplete}
 	case stateSignup:
-		return signupStep(rec.Pending)
+		return signupStep(rec.Pending, rec.Method)
 	case stateSecond:
 		return stepView{Kind: nextFactor, Factors: rec.MFA.Offered}
 	case stateEnroll:
@@ -114,10 +114,13 @@ func (r *routes) nextOf(rec record) stepView {
 }
 
 // signupStep is the pending-signup challenge. A social first login carries the
-// provider's name for the person, the provider's method identifier and the
+// method that started the flow, the provider's name for the person and the
 // address its provider declared verified as read-only information; each is absent
-// when the provider gave none, and all three are absent for every other source.
-func signupStep(pending *resolve.Pending) stepView {
+// when it has no value, and all three are absent for every other source. The
+// method is the flow's own name, in the discovery document's vocabulary, because
+// two WeChat entries share one provider identifier and only the method name says
+// which entry the person picked.
+func signupStep(pending *resolve.Pending, method string) stepView {
 	view := stepView{Kind: nextChallenge}
 	if pending == nil {
 		view.Fields = signupFields("")
@@ -125,10 +128,8 @@ func signupStep(pending *resolve.Pending) stepView {
 	}
 	view.Fields = signupFields(pending.Source)
 	if pending.Source == resolve.SourceSocial {
+		view.ProvidedMethod = method
 		view.ProvidedDisplayName = pending.DisplayName
-		if pending.External != nil {
-			view.ProvidedProvider = pending.External.Provider
-		}
 		view.ProvidedEmail = pending.Email
 	}
 	return view

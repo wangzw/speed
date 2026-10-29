@@ -801,7 +801,7 @@ export interface AuthnLoginField {
 }
 
 /**
- * What the client does at the flow's current step. Only the members that belong to `kind` are present: `challenge` carries `fields`; a pending signup of a social first login also carries `provided_display_name`, `provided_provider` and `provided_email`; `redirect` carries `url` and `method`; `factor` carries `factors`; `enroll` carries `kinds`; `webauthn` carries `options`; `complete` carries nothing.
+ * What the client does at the flow's current step. Only the members that belong to `kind` are present: `challenge` carries `fields`; a pending signup of a social first login also carries `provided_method`, `provided_display_name` and `provided_email`; `redirect` carries `url` and `method`; `factor` carries `factors`; `enroll` carries `kinds`; `webauthn` carries `options`; `complete` carries nothing.
  */
 export interface AuthnLoginStep {
   /** How long a challenge lives, in seconds. No handler of this fragment sets it, so the member is absent from every answer. */
@@ -822,8 +822,8 @@ export interface AuthnLoginStep {
   provided_display_name?: string;
   /** The address the provider declared verified, carried by the pending signup of a social first login for the client to show read-only; absent when the provider declared no verified address and for every other step */
   provided_email?: string;
-  /** The social provider's method identifier, such as github or google, carried by the pending signup of a social first login so the client can name the provider; absent for every other step */
-  provided_provider?: string;
+  /** The stable name of the login method that started this flow, in the same vocabulary as methods[].name in the discovery document, such as github, google, wechat.mp or wechat.web; carried by the pending signup of a social first login so the client can name the provider; absent for every other step */
+  provided_method?: string;
   /** How soon a challenge may be asked for again, in seconds. No handler of this fragment sets it, so the member is absent from every answer. */
   resend_after?: number;
   /** Where a redirect step sends the user agent */

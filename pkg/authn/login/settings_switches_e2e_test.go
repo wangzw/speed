@@ -208,11 +208,16 @@ type socialMethod struct{}
 
 var errNoSocialAnswer = errors.New("the stand-in social method has no answer step")
 
-func (socialMethod) Name() string { return "google" }
+// socialMethodName is the stand-in social method's name, the value the discovery
+// document publishes as methods[].name and the pending signup carries as
+// provided_method.
+const socialMethodName = "google"
+
+func (socialMethod) Name() string { return socialMethodName }
 
 func (socialMethod) Describe() authn.MethodDescriptor {
 	return authn.MethodDescriptor{
-		Name:             "google",
+		Name:             socialMethodName,
 		Kind:             authn.MethodKindRedirect,
 		Protocol:         authn.MethodProtocolOIDC,
 		Label:            "Google",

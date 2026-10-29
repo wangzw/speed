@@ -32,10 +32,10 @@ func socialProofMethod() *redirectMethod {
 
 // checkSignupReply checks the flow reply of a flow parked at the username step,
 // so that every case reads the same challenge shape: the username and the
-// password a social first login asks for, the provider's name and method
-// identifier, and no address for the client to show when the provider declared
-// none.
-func checkSignupReply(t *testing.T, body string) {
+// password a social first login asks for, the method that started the flow, the
+// provider's name for the person, and no address for the client to show when the
+// provider declared none.
+func checkSignupReply(t *testing.T, body, method string) {
 	t.Helper()
 	reply := decode(t, body)
 	if reply["state"] != "signup" {
@@ -45,11 +45,11 @@ func checkSignupReply(t *testing.T, body string) {
 	if !ok || next["kind"] != "challenge" {
 		t.Fatalf("next = %v, want a challenge", reply["next"])
 	}
+	if got := next["provided_method"]; got != method {
+		t.Errorf("provided_method = %v, want the method that started the flow %q", got, method)
+	}
 	if got := next["provided_display_name"]; got != "Ann" {
 		t.Errorf("provided_display_name = %v, want the provider's name for the person", got)
-	}
-	if got := next["provided_provider"]; got != "google" {
-		t.Errorf("provided_provider = %v, want the provider's method identifier", got)
 	}
 	if _, present := next["provided_email"]; present {
 		t.Errorf("next carries provided_email = %v, want none for a provider that declared no address", next["provided_email"])
@@ -155,7 +155,48 @@ func TestACallbackThatWouldOpenAnAccountStopsAtTheUsernameStep(t *testing.T) {
 	if current.Code != http.StatusOK {
 		t.Fatalf("GET flows/current after the callback answered %d: %s", current.Code, current.Body.String())
 	}
-	checkSignupReply(t, current.Body.String())
+	checkSignupReply(t, current.Body.String(), r.p.methodNames[0])
+}
+
+// wechatFirstLoginMethod is one of the two WeChat entries. Both reach the
+// deployment under the provider identifier wechat while their method names tell
+// them apart, so the pending signup has to carry the method name rather than the
+// identifier.
+func wechatFirstLoginMethod() *redirectMethod {
+	m := &redirectMethod{name: "wechat.mp"}
+	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{
+			External: &authn.External{Provider: "wechat", Subject: "w1", DisplayName: "Ann"},
+			Methods:  []authn.Method{authn.MethodOAuth},
+		}), nil
+	}
+	return m
+}
+
+// TestTheSignupStepNamesTheMethodNotTheProvider holds that the pending signup of
+// a WeChat first login carries the method name the person picked, not the
+// provider identifier both entries share: the client names the entry, not the
+// provider.
+func TestTheSignupStepNamesTheMethodNotTheProvider(t *testing.T) {
+	m := wechatFirstLoginMethod()
+	r := newRigMethod(t, m)
+	r.withOpenSignup()
+	cookie := startRedirect(t, r, "")
+
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/"+m.Name(), "", "Cookie", cookie)
+	if cb.Code != http.StatusSeeOther {
+		t.Fatalf("the callback answered %d, want 303: %s", cb.Code, cb.Body.String())
+	}
+
+	current := r.send(http.MethodGet, "/api/v1/auth/flows/current", "", "Cookie", cookie)
+	if current.Code != http.StatusOK {
+		t.Fatalf("GET flows/current answered %d: %s", current.Code, current.Body.String())
+	}
+	checkSignupReply(t, current.Body.String(), m.Name())
+	next, _ := decode(t, current.Body.String())["next"].(map[string]any)
+	if got := next["provided_method"]; got == "wechat" {
+		t.Errorf("provided_method = %v, want the method name rather than the shared provider identifier", got)
+	}
 }
 
 // TestTheUsernameOpensTheAccountAndThePolicyRuns holds that a legal username
@@ -232,7 +273,7 @@ func TestARejectedUsernameKeepsTheFlowAtTheUsernameStep(t *testing.T) {
 	if current.Code != http.StatusOK {
 		t.Fatalf("GET flows/current after the rejections answered %d: %s", current.Code, current.Body.String())
 	}
-	checkSignupReply(t, current.Body.String())
+	checkSignupReply(t, current.Body.String(), r.p.methodNames[0])
 	if seq, _ := decode(t, current.Body.String())["seq"].(float64); seq != 1 {
 		t.Errorf("seq after two rejections = %v, want the position held at 1", seq)
 	}

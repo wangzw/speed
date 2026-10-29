@@ -124,12 +124,12 @@ type AuthnLoginFlow struct {
 
 // AuthnLoginStep is what the client does next.
 type AuthnLoginStep struct {
-	_ struct{} "description:\"What the client does at the flow's current step. Only the members that belong to `kind` are present: `challenge` carries `fields`; a pending signup of a social first login also carries `provided_display_name`, `provided_provider` and `provided_email`; `redirect` carries `url` and `method`; `factor` carries `factors`; `enroll` carries `kinds`; `webauthn` carries `options`; `complete` carries nothing.\""
+	_ struct{} "description:\"What the client does at the flow's current step. Only the members that belong to `kind` are present: `challenge` carries `fields`; a pending signup of a social first login also carries `provided_method`, `provided_display_name` and `provided_email`; `redirect` carries `url` and `method`; `factor` carries `factors`; `enroll` carries `kinds`; `webauthn` carries `options`; `complete` carries nothing.\""
 
 	Kind                string             `json:"kind" required:"true" description:"What the client does next: challenge, redirect, factor, enroll, complete or webauthn"`
 	Fields              []AuthnLoginField  `json:"fields,omitempty" description:"The inputs a challenge step asks for"`
+	ProvidedMethod      string             `json:"provided_method,omitempty" description:"The stable name of the login method that started this flow, in the same vocabulary as methods[].name in the discovery document, such as github, google, wechat.mp or wechat.web; carried by the pending signup of a social first login so the client can name the provider; absent for every other step"`
 	ProvidedDisplayName string             `json:"provided_display_name,omitempty" description:"The provider's name for the person, carried by the pending signup of a social first login for the client to show read-only; absent when the provider gave none and for every other step"`
-	ProvidedProvider    string             `json:"provided_provider,omitempty" description:"The social provider's method identifier, such as github or google, carried by the pending signup of a social first login so the client can name the provider; absent for every other step"`
 	ProvidedEmail       string             `json:"provided_email,omitempty" description:"The address the provider declared verified, carried by the pending signup of a social first login for the client to show read-only; absent when the provider declared no verified address and for every other step"`
 	ExpiresIn           int                `json:"expires_in,omitempty" description:"How long a challenge lives, in seconds. No handler of this fragment sets it, so the member is absent from every answer."`
 	ResendAfter         int                `json:"resend_after,omitempty" description:"How soon a challenge may be asked for again, in seconds. No handler of this fragment sets it, so the member is absent from every answer."`

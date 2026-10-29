@@ -112,8 +112,8 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 		if got := next["provided_display_name"]; got != "Ann" {
 			t.Errorf("provided_display_name = %v, want the provider's name for the person", got)
 		}
-		if got := next["provided_provider"]; got != "google" {
-			t.Errorf("provided_provider = %v, want the provider's method identifier", got)
+		if got := next["provided_method"]; got != socialMethodName {
+			t.Errorf("provided_method = %v, want the method that started the flow %q", got, socialMethodName)
 		}
 		if got := next["provided_email"]; got != "ann@x.org" {
 			t.Errorf("provided_email = %v, want the provider's verified address", got)
@@ -502,11 +502,10 @@ func checkSignupFields(t *testing.T, next map[string]any, names ...string) {
 }
 
 // checkNoProvidedIdentity checks that a pending-signup challenge carries none of
-// the provider's read-only identity members, which only a social first login
-// adds.
+// the read-only identity members, which only a social first login adds.
 func checkNoProvidedIdentity(t *testing.T, next map[string]any) {
 	t.Helper()
-	for _, key := range []string{"provided_display_name", "provided_provider", "provided_email"} {
+	for _, key := range []string{"provided_method", "provided_display_name", "provided_email"} {
 		if got, present := next[key]; present {
 			t.Errorf("next carries %s = %v, want it absent", key, got)
 		}
@@ -531,8 +530,8 @@ func TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword(t 
 		if got := next["provided_display_name"]; got != "Ann" {
 			t.Errorf("provided_display_name = %v, want the provider's name for the person", got)
 		}
-		if got := next["provided_provider"]; got != "google" {
-			t.Errorf("provided_provider = %v, want the provider's method identifier", got)
+		if got := next["provided_method"]; got != socialMethodName {
+			t.Errorf("provided_method = %v, want the method that started the flow %q", got, socialMethodName)
 		}
 		if got := next["provided_email"]; got != "ann@x.org" {
 			t.Errorf("provided_email = %v, want the provider's verified address", got)
