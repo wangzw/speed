@@ -905,7 +905,9 @@ function SignupAccountFields({
           {t('signInFlow.signupAccountTitle')}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          {t('signInFlow.signupAccountDescription')}
+          {email === undefined
+            ? t('signInFlow.signupAccountDescriptionNoEmail')
+            : t('signInFlow.signupAccountDescription')}
         </Typography>
       </Box>
       <FormLayout

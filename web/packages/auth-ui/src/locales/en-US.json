@@ -90,7 +90,8 @@
       "sms": "SMS code",
       "webauthn": "Passkey",
       "other": "Other"
-    }
+    },
+    "signupAccountDescriptionNoEmail": "Choose a username and password to finish creating your account."
   },
   "discovery": {
     "loading": "Loading sign-in methods…",

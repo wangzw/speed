@@ -90,7 +90,8 @@
       "sms": "短信验证码",
       "webauthn": "通行密钥",
       "other": "其他方式"
-    }
+    },
+    "signupAccountDescriptionNoEmail": "设置用户名和密码即可完成账户的创建。"
   },
   "discovery": {
     "loading": "正在加载登录方式…",
