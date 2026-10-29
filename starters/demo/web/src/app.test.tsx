@@ -1051,13 +1051,11 @@ describe('the tenant area header controls', () => {
     const snapshot = authenticatedSnapshot()
     renderDemoApp({ session: createTestSession(snapshot) })
     const trigger = await screen.findByTestId('user-menu-trigger')
-    const glyph = trigger.textContent ?? ''
-    const displayName = snapshot.principal?.display_name ?? ''
+    const glyph = (trigger.textContent ?? '').trim()
+    const displayName = (snapshot.principal?.display_name ?? '').trim()
     expect(glyph).not.toBe('')
     expect(displayName).not.toBe('')
-    const name = trigger.getAttribute('aria-label') ?? ''
-    expect(name).toContain(glyph)
-    expect(name).toContain(displayName)
+    expect(trigger.getAttribute('aria-label')).toBe(`${glyph} ${displayName}`)
   })
 
   it('raises the header icon controls to the 44px floor under a coarse pointer', async () => {
@@ -1449,6 +1447,23 @@ describe('the account page', () => {
 })
 
 describe('the sidebar shell layout', () => {
+  it('names the account trigger by its glyph and identity in the side column', async () => {
+    // The sidebar form mounts the same trigger in the drawer paper instead of
+    // the app bar; the visible glyph is still text inside the control, so
+    // WCAG 2.5.3 holds in both shell forms.
+    const snapshot = authenticatedSnapshot()
+    renderDemoApp({
+      session: createTestSession(snapshot),
+      shellLayout: 'sidebar',
+    })
+    const trigger = await screen.findByTestId('user-menu-trigger')
+    const glyph = (trigger.textContent ?? '').trim()
+    const displayName = (snapshot.principal?.display_name ?? '').trim()
+    expect(glyph).not.toBe('')
+    expect(displayName).not.toBe('')
+    expect(trigger.getAttribute('aria-label')).toBe(`${glyph} ${displayName}`)
+  })
+
   it('renders the brand and the account controls in the side column, with no banner landmark', async () => {
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot()),
