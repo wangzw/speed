@@ -210,6 +210,11 @@ func (r *routes) fail(c *call, err error) {
 			c.failureEmail = maskEmail(conflicted.Email)
 		}
 		c.unauthorized(mount.CodeLinkRequired)
+	case errors.Is(err, authn.ErrContactTaken):
+		// The address a signup declared was taken before its account write: the
+		// caller is in the link-required position the earlier read would have put
+		// them in.
+		c.unauthorized(mount.CodeLinkRequired)
 	case errors.Is(err, authn.ErrBindingConflict), errors.Is(err, authn.ErrAccountExists),
 		errors.Is(err, authn.ErrLastFactor),
 		errors.Is(err, authn.ErrFactorLimit):

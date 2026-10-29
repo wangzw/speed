@@ -364,9 +364,12 @@ func (r *routes) beginSignup(c *call, token, echo string, rec record, raw []byte
 // legal, free username opens the account the pending facts describe and the flow
 // carries on to the policy; a username that cannot be used is 400 bad-request,
 // one another account holds is 409 username-taken, and a password the policy
-// refuses, or the absence of one at the social step, is 400 bad-request. Every
-// refusal leaves the flow at signup to be retried, and none of them writes an
-// account.
+// refuses, or the absence of one at the social step, is 400 bad-request. Each of
+// those refusals leaves the flow at signup to be retried, and none of them writes
+// an account. An address the pending signup declared verified that another
+// account took between the resolution and the write is 401 link-required, naming
+// the masked address: it is the refusal an address that was registered all along
+// gives, and the flow is spent.
 func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw []byte, fields map[string]string) {
 	if rec.Pending == nil || rec.Proof == nil {
 		c.unauthorized(mount.CodeFlowInvalid)
@@ -414,6 +417,19 @@ func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw 
 			return
 		}
 		c.fail(mount.CodeUsernameTaken)
+		return
+	case errors.Is(err, authn.ErrContactTaken):
+		// The address the pending signup declared lost the race to another
+		// account between the resolution that found it free and the account
+		// write. The person is where an address registered all along puts them:
+		// link-required, naming the masked address, with the flow spent.
+		rec.State = stateFailed
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		r.reportLogin(c.ctx, rec, loginOutcomeOf(err))
+		c.failureEmail = maskEmail(rec.Pending.Email)
+		r.fail(c, err)
 		return
 	case err != nil:
 		rec.State = stateFailed

@@ -155,7 +155,7 @@ func loginOutcomeOf(err error) string {
 	case errors.Is(err, authn.ErrBusy), errors.Is(err, authn.ErrUnavailable):
 		return outcomeUnavailable
 	case errors.Is(err, authn.ErrAccountUnavailable), errors.Is(err, authn.ErrLinkRequired),
-		errors.Is(err, authn.ErrBindingConflict):
+		errors.Is(err, authn.ErrContactTaken), errors.Is(err, authn.ErrBindingConflict):
 		return outcomeRefused
 	default:
 		return outcomeFailed

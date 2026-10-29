@@ -526,6 +526,61 @@ func TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword(t 
 	})
 }
 
+// TestAnAddressTakenBeforeTheAccountWriteIsLinkRequiredAndLeavesNoAccount holds
+// the race the design settles: another account takes the address the provider
+// declared verified between the read that found it free and this login's
+// account write. The answer is the link-required refusal an address registered
+// all along gives, the flow is spent, and the failed write leaves no half-built
+// account or binding behind.
+func TestAnAddressTakenBeforeTheAccountWriteIsLinkRequiredAndLeavesNoAccount(t *testing.T) {
+	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+		state, seq, next := signupStep(t, h.startSocialSignup())
+		if state != "signup" || next["kind"] != "challenge" {
+			t.Fatalf("the first social login = %s %v, want the signup challenge", state, next)
+		}
+		if got := next["provided_email"]; got != "ann@x.org" {
+			t.Fatalf("provided_email = %v, want the provider's verified address", got)
+		}
+
+		// Another account takes the address after the step decided it was free
+		// and before this login writes its account.
+		if _, err := h.admin.Create(h.ctx, authn.CreateAccount{
+			Kind:             authn.KindUser,
+			Username:         "holder",
+			Email:            "ann@x.org",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaIDPPrefix + "google"},
+			Via:              "admin",
+		}); err != nil {
+			t.Fatalf("creating the account that takes the address: %v", err)
+		}
+
+		refused := h.answerSignup(seq, "newbie", socialPassword)
+		if refused.status != http.StatusUnauthorized || refused.json(t)["type"] != "urn:speed:authn:link-required" {
+			t.Fatalf("the answer after the address was taken answered %d %s, want 401 link-required", refused.status, refused.body)
+		}
+
+		// The failed write left no account of this login: no username, no
+		// binding, and the fixture's one account is the only one there is.
+		if _, err := h.accounts.Lookup(h.ctx, authn.IdentifierUsername, "newbie"); err == nil {
+			t.Error("the refused signup opened the account it could not finish")
+		}
+		if _, err := h.accounts.ByExternal(h.ctx, "google", "g1"); err == nil {
+			t.Error("the refused signup bound the identity")
+		}
+		if accounts, _, err := h.accounts.List(h.ctx, authn.AccountQuery{}); err != nil || len(accounts) != 1 {
+			t.Errorf("accounts = %v, %v after the refused signup, want only the holder", accounts, err)
+		}
+
+		// The flow is spent: the username step cannot be retried once the
+		// address is another account's.
+		if current := h.get("/api/v1/auth/flows/current"); current.status != http.StatusUnauthorized {
+			t.Errorf("GET flows/current after the refusal answered %d %s, want the failed tombstone", current.status, current.body)
+		}
+	})
+}
+
 // TestASocialFirstLoginWritesNoAddressTheProviderDidNotVerify holds that a
 // provider's unverified claim is no more written into the account than it is a
 // clue, and that the step carries no address for the client to show.

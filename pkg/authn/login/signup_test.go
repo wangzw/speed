@@ -1,7 +1,10 @@
 package login
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -55,6 +58,68 @@ func checkSignupReply(t *testing.T, body string) {
 	secret, ok := fields[1].(map[string]any)
 	if !ok || secret["name"] != "password" || secret["kind"] != "password" || secret["required"] != true || secret["secret"] != true {
 		t.Errorf("field = %v, want a required secret password", fields[1])
+	}
+}
+
+// socialVerifiedEmailMethod is socialProofMethod with the provider declaring a
+// verified address, so a first login parks at the signup step carrying it.
+func socialVerifiedEmailMethod() *redirectMethod {
+	m := &redirectMethod{}
+	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{
+			External: &authn.External{
+				Provider: "google", Subject: "g1", DisplayName: "Ann",
+				Email: "ann@x.org", EmailVerified: true,
+			},
+			Methods: []authn.Method{authn.MethodOIDC},
+		}), nil
+	}
+	return m
+}
+
+// TestAnAddressLostToTheAccountRaceAnswersLinkRequiredWithItsMask holds the
+// mapping of the address race: when the account write reports that the declared
+// address was taken after the resolution found it free, the flow is spent and
+// the answer is the link-required refusal an address registered all along
+// gives, with the masked address in the landing fragment.
+func TestAnAddressLostToTheAccountRaceAnswersLinkRequiredWithItsMask(t *testing.T) {
+	r := newRigMethod(t, socialVerifiedEmailMethod())
+	r.withOpenSignup()
+	cookie := startRedirect(t, r, "")
+
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
+	if cb.Code != http.StatusSeeOther {
+		t.Fatalf("the callback answered %d, want 303: %s", cb.Code, cb.Body.String())
+	}
+
+	_, token, _ := strings.Cut(cookie, "=")
+	rec := flowRecordOf(t, r, cookie)
+	raw, present, err := r.kv.Get(context.Background(), flowKey(token))
+	if err != nil || !present {
+		t.Fatalf("reading the flow record: present=%v err=%v", present, err)
+	}
+	// Another account takes the address after the resolution found it free and
+	// before this login's account write.
+	r.admin.createErr = fmt.Errorf("account: %w", authn.ErrContactTaken)
+
+	rt := &routes{product: r.p, endpoint: "login"}
+	c := &call{ctx: context.Background(), endpoint: "login"}
+	rt.applySignupAnswer(c, token, "", rec, raw, map[string]string{
+		"username": "newperson", "password": "collected-password",
+	})
+
+	if code := problemCode(c.err); code != "link-required" {
+		t.Fatalf("the answer after the address was taken is %q, want link-required", code)
+	}
+	if c.failureEmail != "a***@x.org" {
+		t.Errorf("failureEmail = %q, want the masked address", c.failureEmail)
+	}
+	want := "/#authn_error=link-required&authn_email=a%2A%2A%2A%40x.org"
+	if got := landingTarget("/", c.failureEmail, c.err); got != want {
+		t.Errorf("landingTarget = %q, want %q", got, want)
+	}
+	if len(r.admin.links) != 0 {
+		t.Errorf("the refused signup made %d binding(s), want none", len(r.admin.links))
 	}
 }
 
