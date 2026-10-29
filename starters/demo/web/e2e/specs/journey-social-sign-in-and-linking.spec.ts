@@ -142,9 +142,10 @@ test.describe('the provider address belongs to no account', () => {
       ).toBeVisible()
       await expect(
         page.getByText(
-          copy('authUi', 'signInFlow.signupIdentityLead', {
+          copy('authUi', 'signInFlow.signupIdentity', {
             provider: copy('authUi', 'social.provider.google'),
-          }),
+            name: identityProviderUser.name,
+          }).split(identityProviderUser.name)[0] ?? '',
           { exact: false },
         ),
       ).toBeVisible()
