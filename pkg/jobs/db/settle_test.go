@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/jobs"
@@ -61,6 +60,9 @@ func TestReleaseReturnsEachRowToTheStateItIsClaimedFromAgain(t *testing.T) {
 			insertJob(t, reg, "failed", string(jobs.StatusRunning), "this-executor", 2)
 
 			p.release("this-executor")
+			// Due-ness is judged against the database's clock, the one the
+			// release wrote, not the host's.
+			now := dbNowMilli(t, reg)
 
 			for id, want := range map[string]jobs.Status{"fresh": jobs.StatusPending, "failed": jobs.StatusRetrying} {
 				got := stateOf(t, reg, jobs.JobID(id))
@@ -70,7 +72,7 @@ func TestReleaseReturnsEachRowToTheStateItIsClaimedFromAgain(t *testing.T) {
 				if got.claimedBy != "" {
 					t.Errorf("the given-back job %s is still held by %q", id, got.claimedBy)
 				}
-				if got.available > time.Now().UnixMilli() {
+				if got.available > now {
 					t.Errorf("the given-back job %s is due at %d, want it due at once", id, got.available)
 				}
 			}

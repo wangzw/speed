@@ -285,7 +285,9 @@ func TestStopGivesBackTheRowsAnExecutorHolds(t *testing.T) {
 			return errCaseFailed
 		}
 		given := stateOf(t, reg, id)
-		if given.status != string(jobs.StatusPending) || given.available > time.Now().UnixMilli() {
+		// Due-ness is judged against the database's clock, the one the release
+		// wrote, not the host's.
+		if given.status != string(jobs.StatusPending) || given.available > dbNowMilli(t, reg) {
 			t.Errorf("the given-back row is %+v, want it pending and due at once", given)
 		}
 		return nil
