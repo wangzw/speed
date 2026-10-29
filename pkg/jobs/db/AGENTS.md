@@ -112,6 +112,15 @@ clock for the instants it writes, so a job enqueued with no scheduled time is
 due against the clock the next claim judges by, not against the host's, which
 may lead the engine's by a millisecond.
 
+Which clock a written instant comes from follows what the instant means. An
+instant the queue derives itself — "due now", a claim's expiry, a retry's next
+attempt, a settlement — is the database's, so that the write and the judgement
+of it cannot disagree. An instant the caller states — `WithScheduledAt` and
+`WithScheduledDelay`, which express a wall-clock intent such as an external
+calendar — is the caller's, and is converted on its own clock; reading that one
+from the database would move the caller's stated time by whatever the two clocks
+disagree about. Do not "unify" the second case onto the database's clock.
+
 The table belongs to this module. An operator reads it to see a backlog, retries
 and dead letters; it is not a contract face, and a host does not write it.
 
