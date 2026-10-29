@@ -953,6 +953,100 @@ describe('SocialBindingsSection', () => {
     ).toBe(false)
   })
 
+  it('opens the step-up challenge when starting a bind asks for a fresh authentication', async () => {
+    // Starting a link flow asks for the same fresh local multi-factor an
+    // unlink does. The shortfall opens the shared challenge with this method
+    // remembered, and a won challenge starts this one bind flow again.
+    captureRefreshWarning()
+    const URL = 'https://provider.example/authorize'
+    let elevated = false
+    const linkStarts: string[] = []
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profile([]))
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([{ name: 'wechat', label: 'WeChat' }]),
+        )
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [ACTIVE_FACTOR] })
+      }
+      if (call.method === 'POST' && call.path === LINK_FLOW_PATH) {
+        const body = call.body as { purpose?: string; seq?: number }
+        if (body.purpose === 'step-up') {
+          return jsonResponse(200, {
+            seq: 1,
+            state: 'second',
+            next: {
+              kind: 'factor',
+              factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+            },
+          })
+        }
+        linkStarts.push('link')
+        if (!elevated) {
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: { kind: 'redirect', url: URL, method: 'GET' },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number }
+        if (body.seq === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'second',
+            next: {
+              kind: 'challenge',
+              fields: [{ name: 'code', kind: 'text' }],
+            },
+          })
+        }
+        elevated = true
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const reports: string[] = []
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+        onAuthorizeUrl={(url) => reports.push(url)}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: 'WeChat' }))
+    // The refusal opens the shared challenge rather than settling as a banner.
+    await user.click(await screen.findByRole('button', { name: 'App' }))
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // The bind flow started once, was refused, and the won challenge started
+    // it again -- never a second, different call.
+    await waitFor(() => expect(reports).toEqual([URL]))
+    expect(linkStarts).toHaveLength(2)
+  })
+
   it('starts a link flow with the top-level return_to and reports the redirect URL upward', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {

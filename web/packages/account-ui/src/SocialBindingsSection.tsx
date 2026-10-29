@@ -163,6 +163,13 @@ interface UnbindAction {
   readonly label: string
 }
 
+/** What a won step-up replays in this section: the refusal it was answering
+ * came either from an unlink or from starting a bind flow, and the replay has
+ * to be the same call. */
+type BindingAction =
+  | ({ readonly kind: 'unbind' } & UnbindAction)
+  | { readonly kind: 'authorize'; readonly method: AuthnMethodDescriptor }
+
 /**
  * The provider values the authn identity surface answers with, one
  * bundle key each under bindings.provider. A bound row calls t() only
@@ -321,7 +328,11 @@ export function SocialBindingsSection({
   const authorizeFeedback = useWriteFeedback()
   // The unlink a won step-up re-runs, remembered through the shared gate so
   // the challenge replays exactly that row once and a cancel replays none.
-  const gate = useStepUpGate<UnbindAction>((action) => {
+  const gate = useStepUpGate<BindingAction>((action) => {
+    if (action.kind === 'authorize') {
+      void handleAuthorize(action.method)
+      return
+    }
     void handleUnbind(action.id, action.label)
   })
   // The deployment's methods, as read once per session. null is
@@ -455,7 +466,13 @@ export function SocialBindingsSection({
         // shortfall opens the shared challenge with this row remembered
         // instead of settling as a refusal. The failed write released its own
         // window above; a won challenge's replay opens a fresh one.
-        if (gate.intercept(error, { id: linkId, label: providerLabel })) {
+        if (
+          gate.intercept(error, {
+            kind: 'unbind',
+            id: linkId,
+            label: providerLabel,
+          })
+        ) {
           return null
         }
         throw error
@@ -482,6 +499,14 @@ export function SocialBindingsSection({
         if ('next' in state && state.next.kind === 'redirect') {
           onAuthorizeUrl?.(state.next.url)
         }
+      } catch (error) {
+        // The route asks for the same fresh local multi-factor an unlink does:
+        // a shortfall opens the shared challenge with this method remembered,
+        // and a won challenge starts this one bind flow again.
+        if (gate.intercept(error, { kind: 'authorize', method })) {
+          return null
+        }
+        throw error
       } finally {
         setBusyProvider(null)
       }
