@@ -21,6 +21,7 @@ import userEvent from '@testing-library/user-event'
 import { formatInstant } from '@speed/i18n'
 import { DisplayTimeZoneProvider } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
+import enUS from './locales/en-US.json' with { type: 'json' }
 import {
   jsonResponse,
   makeRealClientRigWithoutSession,
@@ -166,6 +167,32 @@ describe('NotificationInbox', () => {
     await waitFor(() => expect(screen.queryAllByText(zhCN.inbox.unread)).toHaveLength(0))
     await expectNoAxeViolations()
   })
+
+  it.each([
+    ['zh-CN', zhCN],
+    ['en-US', enUS],
+  ] as const)(
+    'keeps the visible mark-read text inside the row action name (%s)',
+    async (language, locale) => {
+      const rig = makeRealClientRigWithoutSession(
+        inboxResponder([
+          { id: 'm1', title: 'Build finished', body: '', read: false },
+        ]),
+      )
+      rig.store.set('access-1')
+      renderWithProviders(<NotificationInbox />, { language })
+      const markRead = await screen.findByRole('button', {
+        name: locale.inbox.markReadAria.replace('{{title}}', 'Build finished'),
+      })
+      // WCAG 2.5.3: the control's visible text is part of its accessible
+      // name, so the name may not put other words between the words of the
+      // visible phrase.
+      expect(markRead.textContent).toBe(locale.inbox.markRead)
+      expect(markRead.getAttribute('aria-label')).toContain(
+        locale.inbox.markRead,
+      )
+    },
+  )
 
   it('marks every unread message read and reports the count', async () => {
     const { rig } = mount([

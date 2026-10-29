@@ -37,7 +37,7 @@
     "unread": "Unread",
     "read": "Read",
     "markRead": "Mark as read",
-    "markReadAria": "Mark the notification \"{{title}}\" as read",
+    "markReadAria": "Mark as read: {{title}}",
     "markReadDone": "Marked the notification \"{{title}}\" as read.",
     "markAllRead": "Mark all as read",
     "markAllReadDone": "Marked {{n}} notifications as read.",
