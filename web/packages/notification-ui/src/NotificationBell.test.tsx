@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -63,10 +64,28 @@ describe('NotificationBell', () => {
     const respond: RealResponder = () => jsonResponse(200, { unread: 0 })
     const rig = makeRealClientRigWithoutSession(respond)
     rig.store.set('access-1')
-    renderWithProviders(<NotificationBell onClick={() => undefined} />)
-    expect(
-      await screen.findByRole('button', { name: zhCN.bell.label }),
-    ).toBeInTheDocument()
+    // A host-level re-render, standing in for any render after the read (a
+    // parent update, a refetch): the zero-count bell renders no badge content
+    // in any of them.
+    function Harness() {
+      const [, bump] = useState(0)
+      return (
+        <>
+          <button type="button" onClick={() => bump((value) => value + 1)}>
+            bump
+          </button>
+          <NotificationBell onClick={() => undefined} />
+        </>
+      )
+    }
+    const user = userEvent.setup()
+    renderWithProviders(<Harness />)
+    const button = await screen.findByRole('button', { name: zhCN.bell.label })
+    await user.click(screen.getByRole('button', { name: 'bump' }))
+    // No badge content at zero, not merely hidden: a hidden "0" would be
+    // visible text the accessible name does not carry (WCAG 2.5.3), and
+    // display:none would still leave a badge nobody asked for in the tree.
+    expect(button.textContent).toBe('')
   })
 
   it('stays at zero when the count read fails', async () => {

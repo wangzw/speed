@@ -9,7 +9,10 @@
  * badge glyph is hidden from the accessibility tree, so assistive
  * technology reads "Notifications: 3 unread" once rather than a stray
  * "3". Above BADGE_MAX the badge prints "99+" and the name carries that
- * same text, so the visible badge stays inside the accessible name.
+ * same text, so the visible badge stays inside the accessible name. At zero
+ * unread the bell renders no badge at all: a hidden "0" would still be
+ * visible text the accessible name does not carry (WCAG 2.5.3), and hiding
+ * it with display:none only trades that for a badge nobody asked for.
  *
  * The button is controlled: `onClick` is the host's navigation to the
  * notification surface -- the bell carries no routing itself, so it sits
@@ -53,9 +56,8 @@ export function NotificationBell({ onClick, icon }: NotificationBellProps) {
       <Badge
         color="error"
         max={BADGE_MAX}
-        invisible={count === 0}
         badgeContent={
-          <span aria-hidden="true">{shownCount}</span>
+          count > 0 ? <span aria-hidden="true">{shownCount}</span> : undefined
         }
       >
         {icon ?? <BellIcon />}
