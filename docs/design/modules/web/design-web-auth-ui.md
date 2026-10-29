@@ -144,6 +144,7 @@ interface SocialCallbackHandlerProps {
   readonly onSignedIn?: () => void
   readonly absent?: ReactNode // 本部署没有 redirect 与 enterprise 方法时渲染；省略即不读发现
   readonly onSignIn?: () => void // 用户名一步的流程已失时终态说明的唯一动作；宿主导航回登录面
+  readonly frame?: (content: ReactNode) => ReactNode // 宿主的卡片：把本处理器的内容包进登录面同一张卡片；absent 视图不套卡片
 }
 
 // AcceptInvitationScreen：读取一张邀请并受理它。两个邀请操作由宿主经
@@ -259,7 +260,7 @@ function ImpersonationNoticeIndicator(): ReactElement | null
 - `beforeStart` 是起手门：每次渠道起一条新流程或一次注册前询问宿主，上下文是 `{ method, mode }`，答案可以是布尔或它的 promise；`false` 不发起任何请求、不渲染错误（动作没有离开页面，没有服务端应答可展示），抛出的门按拒绝包住。门只管起手：流程停下的步骤由 `answerFlow` 答复，不再过门。
 - `onModeChange` 给出时 `mode` 成为受控属性：注册／登录开关只报告选择，由宿主带新值重渲染，屏幕不再持有自己的模式副本。
 
-`SocialSignInSection` 的回调是 `onAuthorizeUrl?`，把某个渠道开始流程后得到的授权地址报给宿主，由宿主决定它是一次跳转、一个弹窗还是一个新标签。`SocialCallbackHandler` 在回调路由上读回流程，登录落地（会话已由服务端建于回跳应答）后触发一次 `onSignedIn`。它的可选属性 `absent` 是本部署不提供回调落点时宿主要渲染的内容；只在宿主给了 `absent` 时，处理器才读发现文档，规则见[本部署不提供回调落点时](#本部署不提供回调落点时)。它的可选属性 `onSignIn` 是用户名一步的流程已失时那个终态说明的动作：回调路由不知道开启这条流程的方法与提供方，无法自行起一条新流程，因此由宿主导航回能起手的那一面；该动作之前不发请求，省略时该状态保留原来读回流程的重试。
+`SocialSignInSection` 的回调是 `onAuthorizeUrl?`，把某个渠道开始流程后得到的授权地址报给宿主，由宿主决定它是一次跳转、一个弹窗还是一个新标签。`SocialCallbackHandler` 在回调路由上读回流程，登录落地（会话已由服务端建于回跳应答）后触发一次 `onSignedIn`。它的可选属性 `absent` 是本部署不提供回调落点时宿主要渲染的内容；只在宿主给了 `absent` 时，处理器才读发现文档，规则见[本部署不提供回调落点时](#本部署不提供回调落点时)。它的可选属性 `onSignIn` 是用户名一步的流程已失时那个终态说明的动作：回调路由不知道开启这条流程的方法与提供方，无法自行起一条新流程，因此由宿主导航回能起手的那一面；该动作之前不发请求，省略时该状态保留原来读回流程的重试。它的可选属性 `frame` 是宿主交给它的卡片：处理器读到并渲染的内容（开户步、横幅、重试）都经它包一层，宿主因此把开户面放进与登录面同一张卡片；`absent` 视图不套卡片——那是「本部署没有这条路由」的 404 视图，不属于登录面。
 
 ### 会话契约的每一片都由一个组件驱动
 
@@ -345,7 +346,7 @@ sequenceDiagram
 | 社交渠道 | `SocialProvider` | 方法名字符串，定义在 `web/packages/auth-ui/src/SocialSignInSection.tsx` |
 | 社交渠道配置 | `SocialProviderConfig` | 一个方法加它的品牌标签、宿主回调地址与可选图标 |
 | 一步 | `AuthnStep` | auth-core 手写的流程步模型，步进渲染器按 `kind` 分派 |
-| 首登用户名步 | 流程的 `challenge` 步 | 单个 `username` 文本字段，必填；标签取本族字段词表，答复经 `session.answerFlow` 发出，服务端在建号前判定形状、保留字与唯一性 |
+| 首登开户步 | 流程的 `challenge` 步 | 两种形态，服务端在 `next` 里给出字段与可选的 `provided_email`：社交首登是完整的开户面（只读邮箱、用户名、口令与确认口令，均必填；`provided_email` 缺省时不渲染邮箱一项），短信与企业首登是单个 `username` 文本字段。标签取本族字段词表；确认口令只在本地比较；答复经 `session.answerFlow` 发出，服务端在建号前判定形状、保留字、唯一性与口令策略 |
 | 邀请视图 | `InvitationSummary` | 受理面渲染的邀请字段：租户、地址、状态、期限 |
 | 邀请操作 | `InvitationOperations` | 宿主绑定的两个邀请操作：读取与受理 |
 | 受理入参 | `AcceptInvitationInput` | 受理可带的显示名与初始口令（地址尚无账户时用） |
@@ -465,7 +466,8 @@ sequenceDiagram
 | 注册被拒为 429 `throttled` | 一条横幅渲染该码文本；提交控件按 `Retry-After` 禁用至该时刻并说明原因 |
 | 注册被拒为 400 `bad-request`（格式或口令策略） | 一条 `role="alert"` 横幅渲染应答的错误码文本；不在客户端复述策略数值 |
 | 首登用户名一步被拒为 409 `username-taken` | 文本落在用户名字段（`aria-invalid`、`aria-describedby`），焦点移到该字段；步骤原地保留，换一个用户名重试；不渲染整次尝试横幅 |
-| 首登用户名一步被拒为 400 `bad-request`（形状或保留字） | 一条 `role="alert"` 横幅渲染应答的错误码文本；步骤原地保留，可重试 |
+| 首登用户名一步被拒为 400 `username-reserved`、`username-invalid` | 同样落在用户名字段，文案取各自词条；步骤原地保留，可重试 |
+| 首登开户面被拒为 400 `bad-request`（口令策略） | 落在口令字段，文案取口令策略词条、不写具体数值；用户名与邮箱不受影响，步骤原地保留 |
 | 注册成功而自动口令登录被拒 | 切回登录表单并以 `defaultUsername` 预填用户名，说明账户已创建；不重发注册请求 |
 | 注册成功 | 先挂空、再填文本的 `role="status"` 播报「账户已创建」，随后进入自动登录 |
 | 口令渠道的口令不符（`authn.login_failed`） | 文本取 `passwordSignIn.loginFailed`，不提验证码，也不说明是不存在还是不符；作为口令字段的说明渲染，字段 `aria-invalid` 且 `aria-describedby` 指向该文本，焦点移到口令字段；不渲染整次尝试横幅。后续步骤（如第二因素）被拒时仍按上一行渲染 |
@@ -546,4 +548,4 @@ sequenceDiagram
 | 登录屏的「忘记口令」入口（发现面提供匿名口令重置且宿主给了 `onForgotPassword`） | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreenProps.onForgotPassword`、`forgotPasswordEntry`；`web/packages/auth-ui/src/SignInScreen.test.tsx` |
 | 匿名口令重置屏 `PasswordResetScreen`（宿主绑定的重置操作与渠道选择） | 已实现 | `web/packages/auth-ui/src/PasswordResetScreen.tsx` `PasswordResetScreen`、`PasswordResetOperations`、`PasswordResetScreenProps`；`web/packages/auth-ui/src/index.ts`；`web/packages/auth-ui/src/PasswordResetScreen.test.tsx` |
 | `passwordReset` i18n 节与 `passwordSignIn.forgotPassword`（zh-CN 与 en-US 键集一致） | 已实现 | `web/packages/auth-ui/src/locales/en-US.json`、`zh-CN.json`；`web/packages/auth-ui/src/resources.test.ts` |
-| 首登开户的用户名一步（登录流程在开户前索取用户名） | 部分实现 | `web/packages/auth-ui/src/internal/flow-step.tsx` `FlowStepFields`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver`；`web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler`；`web/packages/auth-ui/src/internal/labels.ts` `fieldLabel` |
+| 首登开户步（社交的完整开户面、短信与企业的用户名一步；含只读提供方邮箱、口令策略与三条用户名拒绝） | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx` `FlowStepFields`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler`；`web/packages/auth-core/src/session.ts`（解析 `provided_email`）；`web/packages/auth-ui/src/internal/labels.ts` `fieldLabel` |
