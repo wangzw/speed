@@ -70,4 +70,4 @@ flowchart TD
 
 ## 端到端测试
 
-`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact` 覆盖开户面与地址作联系方式；地址同时作登录方式、可用「该地址 + 口令」登录这一支尚无用例。`social-sign-in: a Google email already on an account is refused with link-required` 覆盖需先绑定的拒绝。
+`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact` 覆盖开户面、地址作联系方式与它出现在登录方式组；`social-sign-in: the account-opening password signs in under the provider address` 覆盖用「该地址 + 建号时的口令」登录同一账户；`social-sign-in: a Google email already on an account is refused with link-required` 覆盖需先绑定的拒绝。
