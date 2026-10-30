@@ -40,6 +40,11 @@ import type { Page } from '@playwright/test'
 import { expect, test } from '../fixtures/demo'
 import { reviewSocialAccount } from '../fixtures/config'
 import { identityProviderUser } from '../fixtures/identity-provider'
+import {
+  expandAccountRows,
+  openAccountSection,
+  selectAccountSection,
+} from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
 import { approveSocialSignIn } from '../helpers/social'
 
@@ -75,36 +80,26 @@ function homeHeading(page: Page) {
   })
 }
 
-/** Open the account page through the account menu. */
-async function openAccountSettings(page: Page): Promise<void> {
-  await page.getByRole('banner').getByTestId('user-menu-trigger').click()
-  await page
-    .getByRole('menuitem', {
-      name: copy('demo', 'userMenu.accountSettings'),
-      exact: true,
-    })
-    .click()
-  await expect(
-    page.getByRole('heading', {
-      level: 1,
-      name: copy('demo', 'account.title'),
-      exact: true,
-    }),
-  ).toBeVisible()
-}
-
-/** The account page's identifier section. */
+/** The security pane's sign-in-ways card. */
 function identifiersSection(page: Page) {
   return page.getByRole('region', {
-    name: copy('accountUi', 'identifiers.title'),
+    name: copy('demo', 'account.rows.label.loginWays'),
     exact: true,
   })
 }
 
-/** The account page's bound-and-bindable social accounts section. */
+/** The profile pane's email card, the contact axis of the identifiers. */
+function emailCard(page: Page) {
+  return page.getByRole('region', {
+    name: copy('demo', 'account.rows.label.email'),
+    exact: true,
+  })
+}
+
+/** The security pane's social accounts card. */
 function bindingsSection(page: Page) {
   return page.getByRole('region', {
-    name: copy('accountUi', 'bindings.title'),
+    name: copy('demo', 'account.rows.label.social'),
     exact: true,
   })
 }
@@ -170,7 +165,8 @@ test.describe('the provider address belongs to no account', () => {
     })
 
     await test.step('the account holds the username and the display name, and the provider address as a contact', async () => {
-      await openAccountSettings(page)
+      await openAccountSection(page, 'profile')
+      await expandAccountRows(page)
 
       // The provider's display name is the name the account took from it.
       await expect(
@@ -180,77 +176,38 @@ test.describe('the provider address belongs to no account', () => {
       ).toHaveValue(identityProviderUser.name)
 
       // The verified provider address is written as a contact and is the
-      // default one, so the verification section names it as complete.
-      const verified = page.getByRole('region', {
-        name: copy('accountUi', 'verification.verifiedTitle'),
-        exact: true,
-      })
-      await expect(verified).toBeVisible()
-      await expect(verified).toContainText(identityProviderUser.email)
+      // default one, so the email card's contact row carries the proof and the
+      // default contact position.
+      const email = emailCard(page)
+      await expect(
+        email.getByText(identityProviderUser.email, { exact: true }),
+      ).toBeVisible()
+      await expect(
+        email.getByText(copy('accountUi', 'identifiers.verified'), {
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(
+        email.getByText(copy('accountUi', 'identifiers.axes.defaultContact'), {
+          exact: true,
+        }),
+      ).toBeVisible()
 
-      // The identifiers list carries the address under Contacts -- default
-      // contact marked -- and, because it is the account's only address,
-      // under Sign-in ways as well, beside the username.
-      const identifiers = identifiersSection(page)
-      const contacts = identifiers.getByRole('region', {
-        name: copy('accountUi', 'identifiers.groups.contact'),
-        exact: true,
-      })
+      // The sign-in ways card names the username, and lists the provider
+      // address as the account's chosen email sign-in way, so the account is
+      // reachable by both.
+      await selectAccountSection(page, 'security')
+      await expandAccountRows(page)
+      const signInWays = identifiersSection(page)
       await expect(
-        contacts.getByText(identityProviderUser.email, { exact: true }),
+        signInWays.getByText(FIRST_SIGN_IN_USERNAME, { exact: true }),
       ).toBeVisible()
       await expect(
-        contacts.getByRole('radio', {
-          name: copy('accountUi', 'identifiers.axes.defaultAria', {
-            value: identityProviderUser.email,
-          }),
-        }),
-      ).toBeChecked()
-
-      const signInWays = identifiers.getByRole('region', {
-        name: copy('accountUi', 'identifiers.groups.signIn'),
-        exact: true,
-      })
-      const usernameRow = signInWays
-        .getByRole('listitem')
-        .filter({ hasText: FIRST_SIGN_IN_USERNAME })
-      await expect(usernameRow).toBeVisible()
-      await expect(
-        usernameRow.getByText(copy('accountUi', 'identifiers.kind.username'), {
+        signInWays.getByRole('combobox', {
+          name: copy('accountUi', 'identifiers.kind.email'),
           exact: true,
         }),
-      ).toBeVisible()
-      // A username proves no ownership, so it carries no ownership chip.
-      await expect(
-        usernameRow.getByText(copy('accountUi', 'identifiers.verified'), {
-          exact: true,
-        }),
-      ).toHaveCount(0)
-
-      // The address the account opened with is the same address the Contacts
-      // list shows: proved, and with the sign-in switch on, so the account is
-      // reachable by it as well as by the username.
-      const emailRow = signInWays
-        .getByRole('listitem')
-        .filter({ hasText: identityProviderUser.email })
-      await expect(emailRow).toBeVisible()
-      await expect(
-        emailRow.getByText(copy('accountUi', 'identifiers.kind.email'), {
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(
-        emailRow.getByText(copy('accountUi', 'identifiers.verified'), {
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(
-        emailRow.getByRole('switch', {
-          name: copy('accountUi', 'identifiers.axes.signInAria', {
-            value: identityProviderUser.email,
-          }),
-        }),
-      ).toBeChecked()
+      ).toContainText(identityProviderUser.email)
     })
 
     await test.step('the password set at signup signs in to the account', async () => {
@@ -263,11 +220,12 @@ test.describe('the provider address belongs to no account', () => {
       })
       await expect(homeHeading(page)).toBeVisible()
 
-      await openAccountSettings(page)
+      await openAccountSection(page, 'security')
+      await expandAccountRows(page)
       await expect(
-        identifiersSection(page)
-          .getByRole('listitem')
-          .filter({ hasText: FIRST_SIGN_IN_USERNAME }),
+        identifiersSection(page).getByText(FIRST_SIGN_IN_USERNAME, {
+          exact: true,
+        }),
       ).toBeVisible()
     })
 
@@ -290,33 +248,28 @@ test.describe('the provider address belongs to no account', () => {
       // The same account: the username it chose and the binding are still
       // there, and the provider's address is still both a contact and a
       // sign-in way.
-      await openAccountSettings(page)
+      await openAccountSection(page, 'security')
+      await expandAccountRows(page)
+      const signInWays = identifiersSection(page)
       await expect(
-        identifiersSection(page)
-          .getByRole('listitem')
-          .filter({ hasText: FIRST_SIGN_IN_USERNAME }),
+        signInWays.getByText(FIRST_SIGN_IN_USERNAME, { exact: true }),
       ).toBeVisible()
       await expect(
         bindingsSection(page)
           .getByRole('listitem')
           .filter({ hasText: copy('accountUi', 'bindings.provider.google') }),
       ).toBeVisible()
-      const identifiers = identifiersSection(page)
       await expect(
-        identifiers
-          .getByRole('region', {
-            name: copy('accountUi', 'identifiers.groups.contact'),
-            exact: true,
-          })
-          .getByText(identityProviderUser.email, { exact: true }),
-      ).toBeVisible()
+        signInWays.getByRole('combobox', {
+          name: copy('accountUi', 'identifiers.kind.email'),
+          exact: true,
+        }),
+      ).toContainText(identityProviderUser.email)
+      // The provider's address is still the account's contact too.
+      await openAccountSection(page, 'profile')
+      await expandAccountRows(page)
       await expect(
-        identifiers
-          .getByRole('region', {
-            name: copy('accountUi', 'identifiers.groups.signIn'),
-            exact: true,
-          })
-          .getByText(identityProviderUser.email, { exact: true }),
+        emailCard(page).getByText(identityProviderUser.email, { exact: true }),
       ).toBeVisible()
     })
   })
@@ -351,21 +304,18 @@ test.describe('the provider address belongs to no account', () => {
 
       // The same account rather than a second one: the address and the
       // username the first sign-in chose are both sign-in ways of it.
-      await openAccountSettings(page)
-      const signInWays = identifiersSection(page).getByRole('region', {
-        name: copy('accountUi', 'identifiers.groups.signIn'),
-        exact: true,
-      })
+      await openAccountSection(page, 'security')
+      await expandAccountRows(page)
+      const signInWays = identifiersSection(page)
       await expect(
-        signInWays
-          .getByRole('listitem')
-          .filter({ hasText: FIRST_SIGN_IN_USERNAME }),
+        signInWays.getByText(FIRST_SIGN_IN_USERNAME, { exact: true }),
       ).toBeVisible()
       await expect(
-        signInWays
-          .getByRole('listitem')
-          .filter({ hasText: identityProviderUser.email }),
-      ).toBeVisible()
+        signInWays.getByRole('combobox', {
+          name: copy('accountUi', 'identifiers.kind.email'),
+          exact: true,
+        }),
+      ).toContainText(identityProviderUser.email)
     })
   })
 })

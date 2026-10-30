@@ -50,8 +50,10 @@
  * REQ-account-004, REQ-account-034, REQ-account-058, REQ-presentation-005 and
  * REQ-presentation-006 are listed by the journey document but deliberately
  * absent from `@covers`: they describe a refused write, a cleared preference,
- * a step-up replay and the write-then-switch ordering, none of which the main
- * success path can observe. The registry keeps the document's full list.
+ * the write-then-switch ordering, and the absence of a step-up (which a
+ * freshly signed-in session cannot distinguish from a re-verified write),
+ * none of which the main success path can observe. The registry keeps the
+ * document's full list.
  * REQ-security-022 is claimed for the fields this journey drives: the session
  * list, its current-session marker, the sign-in time and the expiry. A
  * last-active line appears only once a coalesced touch moves it past the
@@ -65,7 +67,12 @@ import type { Locator, Page } from '@playwright/test'
 
 import { reviewMember } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
-import { copy, copyPattern, type CopyLocale } from '../helpers/i18n'
+import {
+  expandAccountRows,
+  openAccountSection,
+  selectAccountSection,
+} from '../helpers/account-sections'
+import { copy, type CopyLocale } from '../helpers/i18n'
 
 // The seeded member holds no platform permission and starts with no stored
 // language or time zone: the template's seed carries the operator alone, so
@@ -86,10 +93,10 @@ const CHOSEN_ZONE = 'Asia/Tokyo'
  */
 const CLOCK_SKEW_MS = 2_000
 
-/** The account page's preferences section, named in the given UI language. */
+/** The preferences pane's appearance card, named in the given UI language. */
 function preferencesSection(page: Page, locale: CopyLocale): Locator {
   return page.getByRole('region', {
-    name: copy('accountUi', 'preferences.title', {}, locale),
+    name: copy('demo', 'account.blocks.appearance', {}, locale),
     exact: true,
   })
 }
@@ -110,43 +117,32 @@ function timeZoneSelect(page: Page, locale: CopyLocale): Locator {
   })
 }
 
-/** The account page's sessions section, named in the given UI language. */
+/** The sessions pane's devices card, named in the given UI language. */
 function sessionsSection(page: Page, locale: CopyLocale): Locator {
   return page.getByRole('region', {
-    name: copy('accountUi', 'sessions.title', {}, locale),
+    name: copy('demo', 'account.blocks.devices', {}, locale),
     exact: true,
   })
 }
 
-/** Open the account page through the account menu. */
-async function openAccountSettings(page: Page): Promise<void> {
-  await page.getByRole('banner').getByTestId('user-menu-trigger').click()
-  await page
-    .getByRole('menuitem', {
-      name: copy('demo', 'userMenu.accountSettings'),
-      exact: true,
+/** The one table row carrying the current-session marker. */
+function currentSessionRow(page: Page, locale: CopyLocale): Locator {
+  return sessionsSection(page, locale)
+    .getByRole('row')
+    .filter({
+      has: page.getByText(copy('accountUi', 'sessions.current', {}, locale), {
+        exact: true,
+      }),
     })
-    .click()
-  await expect(
-    page.getByRole('heading', {
-      level: 1,
-      name: copy('demo', 'account.title'),
-      exact: true,
-    }),
-  ).toBeVisible()
 }
 
-/** The matcher for the current row's sign-in line in the given UI language. */
-function signedInLinePattern(locale: CopyLocale): RegExp {
-  // The pattern carries its own capture group: `copyPattern` splices the
-  // caller's pattern into the bundle's sentence verbatim, so the group that
-  // yields the time is the caller's to write.
-  return copyPattern('accountUi', 'sessions.signedIn', { time: '(.+)' }, locale)
-}
-
-/** The matcher for a row's expiry line in the given UI language. */
-function expiresLinePattern(locale: CopyLocale): RegExp {
-  return copyPattern('accountUi', 'sessions.expires', { time: '.+' }, locale)
+/**
+ * The current row's last-activity cell. The table's four columns are device,
+ * address, last active and action; the activity cell renders the absolute
+ * instant in the account's stored zone and the interface's language.
+ */
+function currentSessionActivity(page: Page, locale: CopyLocale): Locator {
+  return currentSessionRow(page, locale).getByRole('cell').nth(2)
 }
 
 /**
@@ -240,32 +236,24 @@ function renderedInstantIn(
 }
 
 /**
- * The rendered sign-in time of the current session row, read from the line the
- * section renders. The row is located by its current-session marker so a
- * change in row order cannot point this at another device.
+ * The rendered activity instant of the current session row. The row is
+ * located by its current-session marker so a change in row order cannot point
+ * this at another device; a fresh session has no coalesced touch yet, so its
+ * activity cell carries the creation instant.
  */
 async function currentSessionSignedInTime(
   page: Page,
   locale: CopyLocale,
 ): Promise<string> {
-  const section = sessionsSection(page, locale)
-  await section.scrollIntoViewIfNeeded()
-  const current = section
-    .getByRole('listitem')
-    .filter({
-      has: page.getByText(copy('accountUi', 'sessions.current', {}, locale), {
-        exact: true,
-      }),
-    })
+  await sessionsSection(page, locale).scrollIntoViewIfNeeded()
+  const current = currentSessionRow(page, locale)
   await expect(current).toHaveCount(1)
-  const line = current.getByText(signedInLinePattern(locale))
-  await expect(line).toHaveCount(1)
-  const text = ((await line.textContent()) ?? '').trim()
-  const match = signedInLinePattern(locale).exec(text)
-  if (match?.[1] === undefined) {
-    throw new Error(`the sign-in line read no time: ${JSON.stringify(text)}`)
+  const activity = currentSessionActivity(page, locale)
+  const text = ((await activity.textContent()) ?? '').trim()
+  if (text === '') {
+    throw new Error('the activity cell read no instant')
   }
-  return match[1]
+  return text
 }
 
 test('personalize-interface: the chosen language and time zone take effect and survive a reload', async ({
@@ -301,7 +289,8 @@ test('personalize-interface: the chosen language and time zone take effect and s
       }),
     ).toBeVisible()
 
-    await openAccountSettings(page)
+    await openAccountSection(page, 'preferences')
+    await expandAccountRows(page)
   })
 
   await test.step('step 1: both preference controls start on the explicit "not chosen" choice', async () => {
@@ -345,7 +334,7 @@ test('personalize-interface: the chosen language and time zone take effect and s
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('demo', 'account.title', {}, CHOSEN_LOCALE),
+        name: copy('demo', 'account.sections.preferences', {}, CHOSEN_LOCALE),
         exact: true,
       }),
     ).toBeVisible()
@@ -428,6 +417,7 @@ test('personalize-interface: the chosen language and time zone take effect and s
   })
 
   await test.step('step 4: the current session time renders in the chosen zone and interface language', async () => {
+    await selectAccountSection(page, 'sessions', CHOSEN_LOCALE)
     const section = sessionsSection(page, CHOSEN_LOCALE)
     await section.scrollIntoViewIfNeeded()
     await expect(section).toBeVisible()
@@ -436,10 +426,8 @@ test('personalize-interface: the chosen language and time zone take effect and s
         exact: true,
       }),
     ).toBeVisible()
-    // The one live row names its absolute expiry.
-    await expect(
-      section.getByText(expiresLinePattern(CHOSEN_LOCALE)),
-    ).toHaveCount(1)
+    // The one live row names its last activity as an absolute instant.
+    await expect(currentSessionActivity(page, CHOSEN_LOCALE)).toHaveText(/\d/)
 
     const rendered = await currentSessionSignedInTime(page, CHOSEN_LOCALE)
     // The interface is zh-CN, so the line's label and the instant's format are
@@ -465,10 +453,11 @@ test('personalize-interface: the chosen language and time zone take effect and s
 
     // The interface is still the manually chosen language, not the browser's
     // preferred en-US: the device slot outranks the navigator tier on reload.
+    // The reload keeps the pane that was on screen: the sessions page.
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('demo', 'account.title', {}, CHOSEN_LOCALE),
+        name: copy('demo', 'account.sections.sessions', {}, CHOSEN_LOCALE),
         exact: true,
       }),
     ).toBeVisible()
@@ -486,6 +475,8 @@ test('personalize-interface: the chosen language and time zone take effect and s
     // The controls read the account's stored values back from the server: the
     // language select shows the chosen language (not the "not chosen" choice a
     // failed write would leave), and the time zone select shows the zone.
+    await selectAccountSection(page, 'preferences', CHOSEN_LOCALE)
+    await expandAccountRows(page, undefined, CHOSEN_LOCALE)
     await expect(languageSelect(page, CHOSEN_LOCALE)).toHaveText(
       chosenLanguageLabel,
     )
@@ -493,12 +484,9 @@ test('personalize-interface: the chosen language and time zone take effect and s
       CHOSEN_ZONE,
     )
 
-    // The session row's expiry line survives the reload too.
-    await expect(
-      sessionsSection(page, CHOSEN_LOCALE).getByText(
-        expiresLinePattern(CHOSEN_LOCALE),
-      ),
-    ).toHaveCount(1)
+    // The session row's last-activity cell survives the reload too.
+    await selectAccountSection(page, 'sessions', CHOSEN_LOCALE)
+    await expect(currentSessionActivity(page, CHOSEN_LOCALE)).toHaveText(/\d/)
 
     // The session row's sign-in time still renders in the stored zone and the
     // interface language; the session outlived the page's reload.

@@ -143,13 +143,21 @@ program beside this directory embeds with `go:embed` and serves through
   same slots into its drawer paper in the sidebar form, so `src/chrome.tsx`
   never branches on the layout. `src/paths.ts`
   holds the route paths the chrome links into, shared with the route table.
-- **The account page mounts the account-ui family.** `src/pages/account-page.tsx`
-  composes `@speed/account-ui`'s sections -- the self-service writes
-  (profile, password, identifiers and the registration contact's
-  verification), then the appearance theme choice, then preferences,
-  sessions, social bindings and MFA -- under a
-  `@speed/ui-kit` `PageHeader`, at `/account` in the tenant
-  navigation. The appearance section is `account-ui`'s controlled
+- **The account settings is one pane per route.** `src/pages/account-page.tsx`
+  composes `@speed/account-ui`'s sections into four panes, one route each:
+  `/account/profile` (profile, identifiers and the registration contact's
+  verification), `/account/security` (password, sign-in ways, social bindings
+  and MFA), `/account/sessions`, and `/account/preferences` (the appearance
+  theme choice, language and time zone). `src/paths.ts` declares the pane list
+  and its paths. `src/routes.tsx` gives every pane a page of its own and makes
+  `/account` a group address with no page: it replaces the history entry with
+  the pane an older `?section=` named, else `/account/profile`, carrying the
+  rest of the query along so `/account?verify=1` and `/account?change=email`
+  still land where they meant to. Each pane composes a `@speed/ui-kit`
+  `PageLayout` naming it, and every block inside a pane is its own outlined
+  card. The account entry in the tenant navigation is expandable: its second
+  level is the four panes, each with its own icon (the collapsed rail shows
+  the icon). The appearance section is `account-ui`'s controlled
   `AppearanceSection`: the page maps the shipped preset shelf to this
   bundle's names and passes the provider's active preset and setter
   (`useAppThemePreset`), and a pick calls `setPreset` and
@@ -166,27 +174,28 @@ program beside this directory embeds with `go:embed` and serves through
   `src/main.tsx` registers the extra namespaces (console-ui, account-ui,
   tenancy-ui, notification-ui, demo) beside the four the assembly registers
   automatically.
-- **Registration verification has its own page and banner.**
-  `/account/verify` (`src/pages/account-verify-page.tsx`, an account-level
-  route) renders account-ui's `ContactVerificationSection` under the session
-  gate, and a password registration's automatic sign-in lands there
-  (`src/pages/sign-in-view.tsx`). The tenant frame does not read the profile's
+- **Registration verification lives on the profile pane, behind a banner.**
+  The verification surface is `@speed/account-ui`'s
+  `ContactVerificationSection`, rendered as the email card on `/account/profile`
+  rather than a route of its own. A password registration's automatic sign-in
+  lands on `${ACCOUNT_PATH}?verify=1` (`src/pages/sign-in-view.tsx`); the group
+  address redirects that to `/account/profile?verify=1`, where the pane reads
+  the flag and passes `autoSend`. The tenant frame does not read the profile's
   `verification.state` for the ensure: it calls the personal-tenant ensure
   whenever an authenticated, non-impersonating viewer has no current tenant,
   and an unverified account gets its workspace like any other. A persistent
   notice below the app bar
   (`src/contact-verification-banner.tsx`) shows the target address and the
-  verify/change links while pending; verify goes to `/account/verify`, change
-  to `/account/verify?change=email`, whose page starts the section in the
-  change-address form. The plain landing passes `autoSend`, so each mount
-  sends one code once the profile reads `pending` with a target address; the
-  change landing sends nothing, and closing the change-address form there does
-  not trigger a send either. It is a `region`, not a live region, and
-  it has no close control: it stays until the address is proved. It is
-  separate from the once-only "finish account setup" notice -- the two
-  predicates are `contactVerificationPending` and `setupIncomplete` in
-  `src/account-setup.ts`, and a password registration is setup-complete while
-  verification is still pending.
+  verify/change links while pending; verify goes to `/account?verify=1`, change
+  to `/account?change=email`, and the group address maps each onto the profile
+  pane. The plain landing sends one code per mount once the profile reads
+  `pending` with a target address; the change landing starts the section in the
+  change-address form and sends nothing, even after the form is closed. It is a
+  `region`, not a live region, and it has no close control: it stays until the
+  address is proved. It is separate from the once-only "finish account setup"
+  notice -- the two predicates are `contactVerificationPending` and
+  `setupIncomplete` in `src/account-setup.ts`, and a password registration is
+  setup-complete while verification is still pending.
 - **The anonymous password reset has its own page and entry.**
   `/password-reset` (`src/pages/password-reset-page.tsx`) renders
   auth-ui's `PasswordResetScreen` outside both shells: the viewer arrives

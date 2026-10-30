@@ -2660,7 +2660,11 @@ describe('the impersonation shell', () => {
         name: demoEnUS.userMenu.accountSettings,
       }),
     )
-    await waitFor(() => expect(window.location.pathname).toBe('/account'))
+    // The account menu opens the group address, which lands on the first
+    // pane.
+    await waitFor(() =>
+      expect(window.location.pathname).toBe('/account/profile'),
+    )
     expect(banner()).toBeNull()
     expect(
       screen.getByRole('button', {

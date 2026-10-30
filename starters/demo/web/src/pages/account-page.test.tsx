@@ -16,15 +16,25 @@
  * back, the way an accepted round trip lands.
  */
 
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { accountUiResources } from '@speed/account-ui'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { createBackend } from '../a11y/backends.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
-import { ACCOUNT_CALLBACK_PATH, ACCOUNT_PATH } from '../paths.js'
+import {
+  ACCOUNT_CALLBACK_PATH,
+  ACCOUNT_PATH,
+  ACCOUNT_SECTION_PATHS,
+} from '../paths.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import {
   authenticatedSnapshot,
@@ -36,6 +46,38 @@ const ADD_PATH = '/api/v1/auth/identifiers'
 const accountEnUS = accountUiResources['en-US'] as {
   readonly verification: Readonly<Record<string, string>>
   readonly bindingCallback: Readonly<Record<string, string>>
+  readonly profile: {
+    readonly title: string
+    readonly displayName: { readonly label: string }
+  }
+  readonly password: {
+    readonly title: string
+    readonly submit: string
+    readonly current: { readonly label: string }
+  }
+  readonly sessions: { readonly title: string; readonly current: string }
+  readonly appearance: { readonly theme: { readonly label: string } }
+  readonly preferences: {
+    readonly language: { readonly label: string }
+    readonly timezone: { readonly label: string }
+  }
+  readonly identifiers: {
+    readonly verified: string
+    readonly unverified: string
+    readonly groups: { readonly signIn: string }
+    readonly kind: {
+      readonly username: string
+      readonly email: string
+      readonly phone: string
+    }
+    readonly add: { readonly open: string }
+    readonly axes: {
+      readonly signIn: string
+      readonly contact: string
+      readonly defaultContact: string
+    }
+    readonly action: { readonly enable: string; readonly disable: string }
+  }
 }
 const bindingEnUS = accountEnUS.bindingCallback
 
@@ -52,21 +94,43 @@ function sends() {
   return calls.filter((call) => call.method === 'POST' && call.path === ADD_PATH)
 }
 
+interface RenderAccountOptions {
+  /** The feature names this deployment serves. Defaults to none. */
+  readonly features?: readonly string[]
+  /** The scripted reads, when a case needs an answer the canned data lacks. */
+  readonly backend?: RequestFn
+  /**
+   * The page to open, when a case targets a pane rather than the group
+   * address. Defaults to ACCOUNT_PATH, which lands on a pane through the
+   * group address's redirect.
+   */
+  readonly path?: string
+}
+
 /** Renders the account page at ACCOUNT_PATH plus the landing's query. */
-function renderAccount(search = ''): void {
-  const backend = createBackend('data')
+function renderAccount(
+  search = '',
+  options: RenderAccountOptions = {},
+): void {
+  const backend = options.backend ?? createBackend('data')
   const request = (async <T,>(
     path: string,
-    options?: RequestOptions,
+    requestOptions?: RequestOptions,
   ): Promise<T> => {
-    calls.push({ method: options?.method ?? 'GET', path })
-    return (await backend(path, options)) as T
+    calls.push({ method: requestOptions?.method ?? 'GET', path })
+    return (await backend(path, requestOptions)) as T
   }) as RequestFn
   bindRequestFn(request)
-  window.history.replaceState({}, '', `${ACCOUNT_PATH}${search}`)
+  window.history.replaceState(
+    {},
+    '',
+    `${options.path ?? ACCOUNT_PATH}${search}`,
+  )
   renderDemoApp({
     session: createTestSession(
-      authenticatedSnapshot({ features: readyFeatures() }),
+      authenticatedSnapshot({
+        features: readyFeatures(...(options.features ?? [])),
+      }),
     ),
   })
 }
@@ -74,16 +138,18 @@ function renderAccount(search = ''): void {
 describe('AccountSettingsPage', () => {
   it('does not send a verification code on an ordinary visit', async () => {
     // The data-mode profile is a pending registration with a target address,
-    // so the verification section is on the page; an ordinary visit carries
-    // no landing flag, which keeps it quiet.
+    // so the verification section is on the profile pane's email card; an
+    // ordinary visit carries no landing flag, which keeps it quiet.
     renderAccount()
 
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: demoEnUS.account.title,
+        name: demoEnUS.account.sections.profile,
       }),
     ).toBeInTheDocument()
+    // The verification surface is on the pane itself: an ordinary visit
+    // reaches it without opening anything.
     expect(
       await screen.findByText(
         (accountEnUS.verification.target ?? '').replace(
@@ -117,9 +183,11 @@ describe('AccountSettingsPage', () => {
 
   it('words a refused step-up round trip that landed here', async () => {
     // A step-up flow started from this page sends the page as its
-    // `return_to`: the provider's refusal lands back here with its code in
-    // the fragment, and this page is the surface that words it.
-    renderAccount('#authn_error=login-failed')
+    // `return_to`: the provider's refusal lands back on the pane with its
+    // code in the fragment, and this page is the surface that words it.
+    renderAccount('#authn_error=login-failed', {
+      path: ACCOUNT_SECTION_PATHS.profile,
+    })
 
     const errors = (accountUiResources['en-US'] as {
       readonly errors: { readonly authn: Readonly<Record<string, string>> }
@@ -130,7 +198,7 @@ describe('AccountSettingsPage', () => {
     // content, under the page heading, not in the shell's banner above it.
     const heading = screen.getByRole('heading', {
       level: 1,
-      name: demoEnUS.account.title,
+      name: demoEnUS.account.sections.profile,
     })
     expect(
       heading.compareDocumentPosition(notice) &
@@ -180,6 +248,181 @@ describe('AccountSettingsPage', () => {
 })
 
 /**
+ * The settings layout: one pane per route, each a page of its own. The
+ * group address lands on the profile pane by default, a navigation entry
+ * swaps the pane, and a verification landing opens on the profile pane.
+ */
+describe('AccountSettingsPage sections', () => {
+  it('opens the profile pane by default, with the display name editable in place', async () => {
+    renderAccount()
+
+    // The account's group address lands on the profile pane, whose h1 names
+    // the pane.
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.account.sections.profile,
+      }),
+    ).toBeInTheDocument()
+    const identity = screen.getByRole('region', {
+      name: demoEnUS.account.blocks.identity,
+    })
+    expect(
+      await within(identity).findByLabelText(
+        accountEnUS.profile.displayName.label,
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('account-row-display-name')).toBeNull()
+  })
+
+  it('swaps to the security pane and opens a row action in place', async () => {
+    const user = userEvent.setup()
+    renderAccount()
+
+    expect(
+      await screen.findByLabelText(accountEnUS.profile.displayName.label),
+    ).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('link', { name: demoEnUS.account.sections.security }),
+    )
+    await user.click(await screen.findByTestId('security-row-password'))
+
+    expect(
+      await screen.findByLabelText(accountEnUS.password.current.label),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(accountEnUS.profile.displayName.label),
+    ).toBeNull()
+  })
+
+  it('lists the sign-in methods as rows with one action each', async () => {
+    renderAccount('?section=security', { features: ['authn.mfa'] })
+
+    for (const title of [
+      demoEnUS.account.rows.label.password,
+      demoEnUS.account.rows.label.mfa,
+      demoEnUS.account.rows.label.social,
+      demoEnUS.account.rows.label.loginWays,
+    ]) {
+      expect(await screen.findByText(title)).toBeInTheDocument()
+    }
+    // The password and the identifiers are rows; the two-step block and the
+    // social bindings are stated sections that never collapse.
+    expect(screen.getByTestId('security-row-password')).toBeInTheDocument()
+    expect(screen.queryByTestId('security-row-mfa')).toBeNull()
+    expect(screen.queryByTestId('security-row-social')).toBeNull()
+    expect(screen.queryByTestId('security-row-identifiers')).toBeNull()
+  })
+
+  it('shows the sign-in ways on the pane, without the contact axis', async () => {
+    renderAccount('?section=security')
+
+    // Each way carries its own enable/disable action; the pane adds no new
+    // identifier here.
+    expect(
+      await screen.findByRole('button', {
+        name: accountEnUS.identifiers.action.disable,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: accountEnUS.identifiers.add.open }),
+    ).toBeNull()
+    // The email sign-in way picks the chosen address from its own select.
+    expect(
+      await screen.findByRole('combobox', {
+        name: accountEnUS.identifiers.kind.email,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(accountEnUS.identifiers.axes.contact)).toBeNull()
+    expect(
+      screen.queryByText(accountEnUS.identifiers.axes.defaultContact),
+    ).toBeNull()
+    // Three categories, one per kind of login name.
+    for (const kind of [
+      accountEnUS.identifiers.kind.username,
+      accountEnUS.identifiers.kind.email,
+      accountEnUS.identifiers.kind.phone,
+    ]) {
+      expect(await screen.findByText(kind)).toBeInTheDocument()
+    }
+  })
+
+  it('shows the contact axis in the profile pane, without the sign-in axis', async () => {
+    renderAccount('?section=profile')
+
+    // The contact axis lists the address in its own table, carrying the
+    // default-contact position only the contact side offers.
+    expect(
+      await screen.findByText(accountEnUS.identifiers.axes.defaultContact),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(accountEnUS.identifiers.axes.signIn),
+    ).toBeNull()
+  })
+
+  it('renders the preference controls directly', async () => {
+    renderAccount('?section=preferences')
+
+    // The appearance block is one card; its three controls render in place,
+    // with no section to open first.
+    const block = await screen.findByRole('region', {
+      name: demoEnUS.account.blocks.appearance,
+    })
+    expect(
+      within(block).getByText(demoEnUS.account.rows.label.theme),
+    ).toBeInTheDocument()
+    for (const name of [
+      accountEnUS.appearance.theme.label,
+      accountEnUS.preferences.language.label,
+      accountEnUS.preferences.timezone.label,
+    ]) {
+      expect(
+        await within(block).findByRole('combobox', { name }),
+      ).toBeInTheDocument()
+    }
+  })
+})
+
+describe('AccountSettingsPage profile pane', () => {
+  it('renders the display name as a field, with no action to open first', async () => {
+    renderAccount('')
+
+    expect(
+      await screen.findByRole('textbox', {
+        name: accountEnUS.profile.displayName.label,
+      }),
+    ).toHaveValue('Test User')
+    expect(screen.queryByTestId('account-row-display-name')).toBeNull()
+    expect(screen.queryByTestId('account-identity-summary')).toBeNull()
+  })
+
+  it('lists the four profile facts in order, with no save button', async () => {
+    renderAccount('?section=profile', { features: ['authn.phone'] })
+
+    // The username and display name share the identity block; the email and
+    // phone are blocks of their own, in that order.
+    const identity = await screen.findByRole('region', {
+      name: demoEnUS.account.blocks.identity,
+    })
+    expect(
+      within(identity).getByText(demoEnUS.account.rows.label.username),
+    ).toBeInTheDocument()
+    expect(
+      within(identity).getByText(demoEnUS.account.rows.label.displayName),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('region', { name: demoEnUS.account.rows.label.email }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('region', { name: demoEnUS.account.rows.label.phone }),
+    ).toBeInTheDocument()
+    // The display name saves itself; the identity block renders no submit
+    // control.
+    expect(within(identity).queryByRole('button')).toBeNull()
+  })
+})
+
+/**
  * The binding callback route's refusal: a round trip the server refused
  * lands here with its problem code in the URL fragment, and the page hands
  * it to the handler instead of reading a flow the server already consumed.
@@ -225,7 +468,10 @@ describe('AccountBindingCallbackPage', () => {
       .click(
         screen.getByRole('button', { name: bindingEnUS.backToAccount ?? '' }),
       )
-    await waitFor(() => expect(window.location.pathname).toBe(ACCOUNT_PATH))
+    // The account's group address lands on its first pane.
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(ACCOUNT_SECTION_PATHS.profile),
+    )
   })
 
   it('reads the flow back when the route carries no refusal', async () => {

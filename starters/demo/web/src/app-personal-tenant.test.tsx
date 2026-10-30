@@ -779,7 +779,7 @@ describe('the tenant frame and the personal tenant', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: demoEnUS.account.title,
+        name: demoEnUS.account.sections.profile,
       }),
     ).toBeInTheDocument()
     // The rejection, not the request's issue, is what makes the failure state
@@ -790,7 +790,7 @@ describe('the tenant frame and the personal tenant', () => {
     expect(
       screen.getByRole('heading', {
         level: 1,
-        name: demoEnUS.account.title,
+        name: demoEnUS.account.sections.profile,
       }),
     ).toBeInTheDocument()
   })

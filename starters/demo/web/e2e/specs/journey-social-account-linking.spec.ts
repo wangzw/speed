@@ -51,6 +51,11 @@ import type { Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
 import { identityProviderUser } from '../fixtures/identity-provider'
+import {
+  expandAccountRows,
+  openAccountSection,
+  selectAccountSection,
+} from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
 import { approveSocialSignIn } from '../helpers/social'
 
@@ -92,40 +97,36 @@ function homeHeading(page: Page) {
   })
 }
 
-/** The account page's heading. */
+/** The account settings' profile pane heading, the page's one h1. */
 function accountHeading(page: Page) {
   return page.getByRole('heading', {
     level: 1,
-    name: copy('demo', 'account.title'),
+    name: copy('demo', 'account.sections.profile'),
     exact: true,
   })
 }
 
-/** Open the account page through the account menu. */
-async function openAccountSettings(page: Page): Promise<void> {
-  await page.getByRole('banner').getByTestId('user-menu-trigger').click()
-  await page
-    .getByRole('menuitem', {
-      name: copy('demo', 'userMenu.accountSettings'),
-      exact: true,
-    })
-    .click()
-  await expect(accountHeading(page)).toBeVisible()
-}
-
-/** The account page's bound-and-bindable social accounts section. */
+/** The security pane's social accounts card. */
 function bindingsSection(page: Page) {
   return page.getByRole('region', {
-    name: copy('accountUi', 'bindings.title'),
+    name: copy('demo', 'account.rows.label.social'),
     exact: true,
   })
 }
 
-/** The bound Google row: the provider's label, which is also the add button's. */
+/** The bound Google row: the provider's label. */
 function googleRow(page: Page) {
   return bindingsSection(page)
     .getByRole('listitem')
     .filter({ hasText: copy('accountUi', 'bindings.provider.google') })
+}
+
+/** The action that starts linking one provider. */
+function bindButton(page: Page, provider: string) {
+  return bindingsSection(page).getByRole('button', {
+    name: copy('accountUi', 'bindings.bindAriaWithProvider', { provider }),
+    exact: true,
+  })
 }
 
 // This journey drives the provider's real round trip, so its server starts the
@@ -172,33 +173,35 @@ test('social-account-linking: a password account links Google, then signs in wit
       password: linkerAccount.password,
     })
     await expect(homeHeading(page)).toBeVisible()
-    await openAccountSettings(page)
+    await openAccountSection(page, 'security')
+    await expandAccountRows(page)
   })
 
   await test.step('the section lists no Google row and offers Google to add', async () => {
     const bindings = bindingsSection(page)
     await expect(bindings).toBeVisible()
 
-    // Nothing is bound yet; the add area is what keeps the section open.
-    await expect(bindings.getByRole('listitem')).toHaveCount(0)
+    // Nothing is bound yet; no row carries the bound state, and the add area
+    // is what keeps the section open.
     await expect(
-      bindings.getByRole('button', { name: google, exact: true }),
-    ).toBeVisible()
-    // A second enabled redirect method is offered too, so the Google button is
-    // the deployment's channel list rather than a single hard-wired one.
-    await expect(
-      bindings.getByRole('button', { name: github, exact: true }),
-    ).toBeVisible()
+      bindings.getByText(copy('accountUi', 'bindings.status.bound'), {
+        exact: true,
+      }),
+    ).toHaveCount(0)
+    await expect(bindButton(page, google)).toBeVisible()
+    // A second enabled redirect method is offered too, so the action is the
+    // deployment's channel list rather than a single hard-wired one.
+    await expect(bindButton(page, github)).toBeVisible()
   })
 
   await test.step('choosing Google binds it and returns to the account page', async () => {
-    await bindingsSection(page)
-      .getByRole('button', { name: google, exact: true })
-      .click()
+    await bindButton(page, google).click()
     await approveSocialSignIn(page)
 
     // The callback completes the link and the host returns to the account page.
     await expect(accountHeading(page)).toBeVisible()
+    await selectAccountSection(page, 'security')
+    await expandAccountRows(page)
     await expect(googleRow(page)).toBeVisible()
     // The row names the provider's address, so the binding is the identity the
     // provider proved, not a second account.
@@ -208,14 +211,9 @@ test('social-account-linking: a password account links Google, then signs in wit
   })
 
   await test.step('the bound channel leaves the add area and the session stays', async () => {
-    const bindings = bindingsSection(page)
     // An already bound channel is no longer offered; the other one still is.
-    await expect(
-      bindings.getByRole('button', { name: google, exact: true }),
-    ).toHaveCount(0)
-    await expect(
-      bindings.getByRole('button', { name: github, exact: true }),
-    ).toBeVisible()
+    await expect(bindButton(page, google)).toHaveCount(0)
+    await expect(bindButton(page, github)).toBeVisible()
     // A binding is not a login: the browser is still in the signed-in shell,
     // with the account menu in the banner, and never visited the sign-in
     // surface for this step.
@@ -243,19 +241,21 @@ test('social-account-linking: a password account links Google, then signs in wit
 
     // The same account: it still holds the proved email identifier and the
     // Google binding.
-    await openAccountSettings(page)
+    await openAccountSection(page, 'security')
+    await expandAccountRows(page)
     await expect(googleRow(page)).toBeVisible()
     const identifiers = page.getByRole('region', {
-      name: copy('accountUi', 'identifiers.title'),
+      name: copy('demo', 'account.rows.label.loginWays'),
       exact: true,
     })
-    // The account's only address is also its sign-in way, so it appears in the
-    // Contacts and Sign-in ways lists alike: two rows for the one address.
+    // The account's only address is also its sign-in way, so the email group
+    // lists it as the chosen choice.
     await expect(
-      identifiers
-        .getByRole('listitem')
-        .filter({ hasText: identityProviderUser.email }),
-    ).toHaveCount(2)
+      identifiers.getByRole('combobox', {
+        name: copy('accountUi', 'identifiers.kind.email'),
+        exact: true,
+      }),
+    ).toContainText(identityProviderUser.email)
   })
 
   await test.step('the password sign-in still enters that same account', async () => {
@@ -266,7 +266,8 @@ test('social-account-linking: a password account links Google, then signs in wit
     })
     await expect(homeHeading(page)).toBeVisible()
 
-    await openAccountSettings(page)
+    await openAccountSection(page, 'security')
+    await expandAccountRows(page)
     await expect(googleRow(page)).toBeVisible()
   })
 })

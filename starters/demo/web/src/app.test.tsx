@@ -1355,41 +1355,42 @@ describe('the account page', () => {
     window.history.replaceState({}, '', '/account')
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
-    // The account page's page header renders its title as the h1.
+    // The group address lands on the first pane, whose h1 names it.
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: demoEnUS.account.title,
+        name: demoEnUS.account.sections.profile,
       }),
     ).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/account/profile')
   })
 
   it('offers the appearance section ahead of the preferences section', async () => {
-    window.history.replaceState({}, '', '/account')
+    window.history.replaceState({}, '', '/account?section=preferences')
+    bindRequestFn(createBackend('data'))
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot()),
       theme: bootThemeOptions(),
     })
 
-    const appearance = await screen.findByRole('heading', {
-      level: 2,
-      name: tAccount('appearance.title'),
+    // Both controls are on the pane from the start: the theme picker comes
+    // before the language and time-zone writes, so a user meets the theme
+    // control first.
+    const theme = await screen.findByRole('combobox', {
+      name: tAccount('appearance.theme.label'),
     })
-    const preferences = await screen.findByRole('heading', {
-      level: 2,
-      name: tAccount('preferences.title'),
+    const language = await screen.findByRole('combobox', {
+      name: tAccount('preferences.language.label'),
     })
-    // The appearance choice is the first section of the settings page, so a
-    // user meets the theme control before the preference writes.
     expect(
-      appearance.compareDocumentPosition(preferences) &
+      theme.compareDocumentPosition(language) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
   })
 
   it('applies a chosen preset at once, remembers it, and restores it on a remount', async () => {
     const entries = installStorageDouble()
-    window.history.replaceState({}, '', '/account')
+    window.history.replaceState({}, '', '/account?section=preferences')
     const user = userEvent.setup()
     const first = renderDemoApp({
       session: createTestSession(authenticatedSnapshot()),
@@ -1434,6 +1435,8 @@ describe('the account page', () => {
     expect(await screen.findByTestId('theme-radius')).toHaveTextContent(
       String(glassThemePreset.tokens.shape?.borderRadius),
     )
+    // The remounted page offers the control again, already on the restored
+    // choice.
     expect(
       screen.getByRole('combobox', {
         name: tAccount('appearance.theme.label'),

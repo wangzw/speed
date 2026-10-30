@@ -33,8 +33,33 @@ export const AUTH_CALLBACK_PATH = '/sign-in/callback'
  */
 export const PASSWORD_RESET_PATH = '/password-reset'
 
-/** The tenant area's account page: the account-management surfaces. */
+/** The tenant area's account settings: the group's own address. It carries no
+ * page of its own -- it lands on the first pane -- and is what the chrome and
+ * the redirects link into. */
 export const ACCOUNT_PATH = '/account'
+
+/**
+ * The account settings' panes, in navigation order: one page each. The
+ * navigation's account entry links into these (src/app.tsx); the pane a URL
+ * names is the declaration that matched, not a query on a shared route.
+ */
+export const ACCOUNT_SECTIONS = [
+  'profile',
+  'security',
+  'sessions',
+  'preferences',
+] as const
+
+/** One pane of the account settings. */
+export type AccountSection = (typeof ACCOUNT_SECTIONS)[number]
+
+/** Each pane's page path. */
+export const ACCOUNT_SECTION_PATHS: Record<AccountSection, string> = {
+  profile: `${ACCOUNT_PATH}/profile`,
+  security: `${ACCOUNT_PATH}/security`,
+  sessions: `${ACCOUNT_PATH}/sessions`,
+  preferences: `${ACCOUNT_PATH}/preferences`,
+}
 
 /**
  * The account setup page: where a registration completed through the
@@ -67,6 +92,7 @@ export const ACCOUNT_CALLBACK_PATH = '/account/callback'
  */
 const ACCOUNT_LEVEL_PATHS: ReadonlySet<string> = new Set([
   ACCOUNT_PATH,
+  ...Object.values(ACCOUNT_SECTION_PATHS),
   ACCOUNT_SETUP_PATH,
   ACCOUNT_CALLBACK_PATH,
 ])

@@ -81,6 +81,10 @@ import type { Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import {
+  expandAccountRows,
+  selectAccountSection,
+} from '../helpers/account-sections'
 import { copy, copyPattern } from '../helpers/i18n'
 
 // The settings table's type column is the lowest-priority one: it renders only
@@ -124,18 +128,18 @@ function verificationBanner(page: Page, email: string): Locator {
   })
 }
 
-/** The account page's email-verification section. */
+/** The profile pane's email card, which carries the verification surface. */
 function verificationSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('accountUi', 'verification.title'),
+    name: copy('demo', 'account.rows.label.email'),
     exact: true,
   })
 }
 
-/** The account page's sign-in-identifiers section. */
+/** The security pane's sign-in-ways card. */
 function identifiersSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('accountUi', 'identifiers.title'),
+    name: copy('demo', 'account.rows.label.loginWays'),
     exact: true,
   })
 }
@@ -464,12 +468,7 @@ test('operator-first-run: the operator proves the email and lands the first sett
     // no second identifier is written for the address it already held. The
     // address is the account's only one, so the proof also chooses it as a
     // sign-in way: it is listed under Sign-in ways as well as Contacts.
-    await expect(
-      page.getByRole('region', {
-        name: copy('accountUi', 'verification.verifiedTitle'),
-        exact: true,
-      }),
-    ).toBeVisible()
+    await expect(verificationSection(page)).toBeVisible()
     await expect(
       page.getByText(
         copy('accountUi', 'verification.verifiedDescription', {
@@ -480,16 +479,20 @@ test('operator-first-run: the operator proves the email and lands the first sett
     ).toBeVisible()
     await expect(verificationBanner(page, OPERATOR.identifier)).toHaveCount(0)
 
+    // The address is the account's chosen sign-in way (the email group lists
+    // the proved addresses only), beside the login name the operator chose.
+    await selectAccountSection(page, 'security')
+    await expandAccountRows(page)
     const identifiers = identifiersSection(page)
-    const heldRows = identifiers
-      .getByRole('listitem')
-      .filter({ hasText: OPERATOR.identifier })
-    await expect(heldRows).toHaveCount(2)
     await expect(
-      heldRows.getByText(copy('accountUi', 'identifiers.verified'), {
+      identifiers.getByText(OPERATOR.username, { exact: true }),
+    ).toBeVisible()
+    await expect(
+      identifiers.getByRole('combobox', {
+        name: copy('accountUi', 'identifiers.kind.email'),
         exact: true,
       }),
-    ).toHaveCount(2)
+    ).toContainText(OPERATOR.identifier)
   })
 
   await test.step('the same write now lands and the item reads overridden', async () => {

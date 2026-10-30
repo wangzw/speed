@@ -111,6 +111,10 @@ import type { Locator, Page } from '@playwright/test'
 
 import { deployOperator } from '../fixtures/config'
 import { expect, test } from '../fixtures/deploy'
+import {
+  expandAccountRows,
+  selectAccountSection,
+} from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
 
 // The settings table's type column renders only from its container's `lg`
@@ -154,26 +158,19 @@ const DISCOVERY_METHODS = [
   { name: 'password', kind: 'form' },
 ] as const
 
-/** The account page's profile section heading. */
+/** The profile pane's heading, the page's one h1. */
 function profileHeading(page: Page): Locator {
   return page.getByRole('heading', {
-    name: copy('accountUi', 'profile.title'),
+    level: 1,
+    name: copy('demo', 'account.sections.profile'),
     exact: true,
   })
 }
 
-/** The account page's email-verification section. */
+/** The profile pane's email card, which carries the verification surface. */
 function verificationSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('accountUi', 'verification.title'),
-    exact: true,
-  })
-}
-
-/** The account page's sign-in-identifiers section. */
-function identifiersSection(page: Page): Locator {
-  return page.getByRole('region', {
-    name: copy('accountUi', 'identifiers.title'),
+    name: copy('demo', 'account.rows.label.email'),
     exact: true,
   })
 }
@@ -399,10 +396,12 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     // sign-in leaves it in place, and this wait then reports the failure.
     await identifier.waitFor({ state: 'detached' })
 
-    // The requested path is resumed and renders its content rather than the
-    // sign-in surface.
-    expect(new URL(page.url()).pathname).toBe('/account')
+    // The requested path is resumed; the account group address lands on its
+    // first pane, and that pane renders its content rather than the sign-in
+    // surface.
+    expect(new URL(page.url()).pathname).toBe('/account/profile')
     await expect(signInHeading(page)).toHaveCount(0)
+    await expandAccountRows(page)
     await expect(profileHeading(page)).toBeVisible()
 
     // The tenant home carries both console entries, and they name one target.
@@ -430,6 +429,7 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     // entry) is what the journey describes: the verification section waits for
     // a manual send, so no code has been sent on this arrival.
     await page.goto(`${server.url}/account`)
+    await expandAccountRows(page)
     await expect(profileHeading(page)).toBeVisible()
     await expect(
       page.getByLabel(copy('accountUi', 'profile.displayName.label'), {
@@ -437,14 +437,14 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
       }),
     ).toHaveValue(OPERATOR.displayName)
 
-    const identifiers = identifiersSection(page)
-    await expect(identifiers).toBeVisible()
-    const held = identifiers
-      .getByRole('listitem')
-      .filter({ hasText: OPERATOR.identifier })
-    await expect(held).toHaveCount(1)
+    // The unproved address is on the profile pane's email card as a contact,
+    // carrying its own unverified state.
+    const emailCard = verificationSection(page)
     await expect(
-      held.getByText(copy('accountUi', 'identifiers.unverified'), {
+      emailCard.getByText(OPERATOR.identifier, { exact: true }),
+    ).toBeVisible()
+    await expect(
+      emailCard.getByText(copy('accountUi', 'identifiers.unverified'), {
         exact: true,
       }),
     ).toBeVisible()
@@ -469,6 +469,8 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
 
     // The section waits for the operator: the send control is offered and no
     // send has happened on arrival.
+    await selectAccountSection(page, 'profile')
+    await expandAccountRows(page)
     const section = verificationSection(page)
     await expect(section).toBeVisible()
     await expect(

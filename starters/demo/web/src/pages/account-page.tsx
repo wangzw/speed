@@ -3,20 +3,34 @@
  *
  * @speed/account-ui ships the account family as sections, not a routed
  * screen: the page, its heading and the surrounding chrome are the host's.
- * This page is that host composition -- a ui-kit PageHeader naming the
- * page, then the sections the package exports (the display name, then the
- * read-only summary of the contacts the account is bound to; then the
- * self-service writes: the email verification, the password and the sign-in
- * identifiers; then preferences, active sessions, social bindings, and the
- * step-up-gated two-step-verification setup). Each section renders its own async state
- * (loading, empty, error) from the account-ui namespace, so nothing here
- * repeats a spinner or an error block; the catalog's states are the
- * sections' own.
+ * Each pane is a page of its own (src/routes.tsx, src/paths.ts) and composes
+ * a ui-kit PageLayout naming it; the pane's blocks follow as one card each,
+ * separated by the frame's stack, with no gate to open first.
+ *
+ * The contact-verification landings reach the profile page with a flag:
+ * `verify=1` and `change=email` open the verification surface there, which
+ * is why the banner's links and the post-registration redirect keep
+ * working unchanged.
+ *
+ * - profile: the account's username and display name (edited in place and
+ *   saved when the field loses focus), the email addresses and the phone
+ *   number, one card each.
+ * - security: the password, the sign-in ways, two-step verification when
+ *   `authn.mfa` is served, and the social bindings, one card each.
+ * - sessions: SessionsSection, already a device list with revoke actions.
+ * - preferences: the theme preset picker and the language and time zone
+ *   selects.
+ *
+ * The page reads the caller's profile once through the generated
+ * `useAuthnProfileGet` for the profile pane's facts and the verification
+ * landing. The sections keep their own reads and async states (loading,
+ * empty, error) from the account-ui namespace, so nothing here repeats a
+ * spinner or an error block.
  *
  * The account page is also where the user's theme preset is chosen: the
- * appearance section sits ahead of the preferences section, wired to the
- * theme provider's active preset and to the device's stored choice, so a pick
- * applies immediately and survives a reload (src/chrome.tsx holds the storage
+ * appearance section sits in the preferences pane, wired to the theme
+ * provider's active preset and to the device's stored choice, so a pick applies
+ * immediately and survives a reload (src/chrome.tsx holds the storage
  * helpers). The preset names are this bundle's copy; the package renders the
  * options the host hands it.
  *
@@ -27,10 +41,10 @@
  * family needs a carrier's credentials, so it is a product's to add (see
  * AGENTS.md and the server's baseline criterion). A section whose submit would
  * be answered 404 is a write the page cannot keep, so a deployment without the
- * feature offers none; a product that adds the SMS family gets the section
- * here beside the other writes.
+ * feature offers none; a product that adds the SMS family gets the block here
+ * beside the other writes.
  *
- * The multifactor section is mounted only when `authn.mfa` is served, and the
+ * The two-step block is offered only when `authn.mfa` is served, and the
  * identifier section learns from `authn.identifiers.email` whether its add
  * face may offer an email (a deployment without it records usernames only).
  *
@@ -51,14 +65,24 @@
  * round trip at all.
  */
 
-import type { ReactElement } from 'react'
-import { useEffect } from 'react'
+import type { MouseEventHandler, ReactElement, ReactNode } from 'react'
+import { useEffect, useId, useState } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Card from '@mui/material/Card'
+import Chip from '@mui/material/Chip'
+import Button from '@mui/material/Button'
+import Stack from '@mui/material/Stack'
+import Table from '@mui/material/Table'
+import TableBody from '@mui/material/TableBody'
+import TableCell from '@mui/material/TableCell'
+import TableRow from '@mui/material/TableRow'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import {
   ACCOUNT_UI_NAMESPACE,
   AppearanceSection,
   BindingCallbackHandler,
-  ContactSummarySection,
   ContactVerificationSection,
   IdentifiersSection,
   MfaSection,
@@ -67,14 +91,30 @@ import {
   PreferencesSection,
   ProfileSection,
   SessionsSection,
+  StepUpDialog,
   SocialBindingsSection,
 } from '@speed/account-ui'
-import { useFeature } from '@speed/auth-core'
+import { useFeature, useStepUpGate } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
-import { useLocationPath, useNavigate } from '@speed/route-kit'
+import {
+  useLocationPath,
+  useNavigate,
+} from '@speed/route-kit'
 import { themePresets } from '@speed/theme-presets'
-import { PageHeader, useAppThemePreset } from '@speed/ui-kit'
-import { useAuthnProfileGet } from '../app-api/index.js'
+import {
+  ConfirmDialog,
+  errorCodeOf,
+  PageHeader,
+  PageLayout,
+  SectionSurfaceProvider,
+  useAppThemePreset,
+} from '@speed/ui-kit'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  getAuthnProfileGetQueryKey,
+  useAuthnLoginRemoveIdentifier,
+  useAuthnProfileGet,
+} from '../app-api/index.js'
 import { useAppServices } from '../app-services.js'
 import { CallbackLandingNotice } from '../callback-error-notice.js'
 import { persistThemePreset } from '../chrome.js'
@@ -82,16 +122,354 @@ import {
   forgetInvitationLanding,
   pendingInvitationLanding,
 } from '../invitation-return.js'
+import type { AccountSection } from '../paths.js'
 import { ACCOUNT_CALLBACK_PATH, ACCOUNT_PATH } from '../paths.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
 import { useCallbackLanding } from '../use-callback-landing.js'
 import { NotFoundPage } from './not-found-page.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
-/** The account-management page: the account-ui sections under a page header. */
-export function AccountSettingsPage(): ReactElement {
+
+
+interface SecurityRowProps {
+  readonly icon: ReactNode
+  readonly title: string
+  /** The state, shown beside the title. */
+  readonly badge?: ReactNode
+  readonly description: string
+  readonly actionLabel: string
+  /** A link action: the row leads to the pane that manages it. */
+  readonly actionHref?: string
+  readonly actionOnClick?: MouseEventHandler<HTMLElement>
+  readonly expanded?: boolean
+  readonly onToggle?: () => void
+  readonly children?: ReactNode
+  /**
+   * Where the body's left edge sits: the row's title column, or its icon
+   * column when the body is itself a list of iconed rows.
+   */
+  readonly alignBody?: 'title' | 'icon'
+  readonly testId: string
+}
+
+/** One row of the security list: icon, title and state, one action. */
+function SecurityRow({
+  icon,
+  title,
+  badge,
+  description,
+  actionLabel,
+  actionHref,
+  actionOnClick,
+  expanded = false,
+  onToggle,
+  children,
+  alignBody = 'title',
+  testId,
+}: SecurityRowProps): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  const titleId = useId()
+  const bodyId = `${testId}-body`
+  const expandable = onToggle !== undefined
+  const open = expandable && expanded
+  return (
+    <Card
+      component="section"
+      variant="outlined"
+      aria-labelledby={titleId}
+      sx={{ p: 3 }}
+    >
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: '2rem minmax(0, 1fr) auto',
+          columnGap: 2,
+          alignItems: 'center',
+          px: 0,
+          py: 0,
+        }}
+      >
+        <Box sx={{ display: 'flex', color: 'text.secondary' }}>{icon}</Box>
+        <Box sx={{ minWidth: 0 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              flexWrap: 'wrap',
+            }}
+          >
+            <Typography
+              id={titleId}
+              variant="subtitle1"
+              component="h2"
+              sx={{ fontWeight: 600 }}
+            >
+              {title}
+            </Typography>
+            {badge}
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            {description}
+          </Typography>
+        </Box>
+        {actionHref !== undefined ? (
+          <Button
+            component="a"
+            href={actionHref}
+            onClick={actionOnClick}
+            size="small"
+            variant="outlined"
+            data-testid={testId}
+          >
+            {actionLabel}
+          </Button>
+        ) : expandable ? (
+          <Button
+            type="button"
+            size="small"
+            variant="outlined"
+            aria-expanded={expanded}
+            aria-controls={bodyId}
+            data-testid={testId}
+            onClick={onToggle}
+          >
+            {open ? t('account.rows.action.collapse') : actionLabel}
+          </Button>
+        ) : null}
+      </Box>
+      {open ? (
+        <Box
+          id={bodyId}
+          role="group"
+          aria-label={title}
+          data-testid={`${testId}-body`}
+          sx={{ mt: 2, pl: alignBody === 'icon' ? 0 : 6 }}
+        >
+          {children}
+        </Box>
+      ) : null}
+    </Card>
+  )
+}
+
+function MailIcon(): ReactElement {
+  return (
+    <Box component="svg" {...ICON_PROPS}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 7l9 6 9-6" />
+    </Box>
+  )
+}
+
+function PhoneIcon(): ReactElement {
+  return (
+    <Box component="svg" {...ICON_PROPS}>
+      <rect x="7" y="3" width="10" height="18" rx="2" />
+      <path d="M11 18h2" />
+    </Box>
+  )
+}
+
+function DeviceIcon(): ReactElement {
+  return (
+    <Box component="svg" {...ICON_PROPS}>
+      <rect x="3" y="5" width="18" height="11" rx="2" />
+      <path d="M8 20h8M12 16v4" />
+    </Box>
+  )
+}
+
+function PaletteIcon(): ReactElement {
+  return (
+    <Box component="svg" {...ICON_PROPS}>
+      <path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-1 2-2 0-.8-.6-1.2-.6-2 0-.8.7-1.5 1.6-1.5H17a4 4 0 0 0 4-4c0-4.7-4-8.5-9-8.5z" />
+      <circle cx="7.5" cy="12" r="1" fill="currentColor" />
+      <circle cx="9.5" cy="8" r="1" fill="currentColor" />
+      <circle cx="14" cy="7" r="1" fill="currentColor" />
+    </Box>
+  )
+}
+
+const ICON_PROPS = {
+  viewBox: '0 0 24 24',
+  width: 20,
+  height: 20,
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.7,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': true,
+  focusable: false,
+} as const
+
+
+function KeyIcon(): ReactElement {
+  return (
+    <Box component="svg" {...ICON_PROPS}>
+      <circle cx="8" cy="15" r="4" />
+      <path d="M11 12l9-9M17 6l3 3M14 9l2 2" />
+    </Box>
+  )
+}
+
+function ShieldIcon(): ReactElement {
+  return (
+    <Box component="svg" {...ICON_PROPS}>
+      <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" />
+      <path d="M9 12l2 2 4-4" />
+    </Box>
+  )
+}
+
+function UserIcon(): ReactElement {
+  return (
+    <Box component="svg" {...ICON_PROPS}>
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M4.5 20c1.5-3.3 4.2-5 7.5-5s6 1.7 7.5 5" />
+    </Box>
+  )
+}
+
+function LinkIcon(): ReactElement {
+  return (
+    <Box component="svg" {...ICON_PROPS}>
+      <path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
+      <path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
+    </Box>
+  )
+}
+
+interface AccountSectionProps {
+  /** The block's label, already translated. */
+  readonly title: string
+  /** The block's leading icon, like the security blocks'. */
+  readonly icon?: ReactNode
+  /** One sentence under the title, like the security blocks' descriptions. */
+  readonly description?: string
+  /** The action at the header's right, beside the title block. */
+  readonly action?: ReactNode
+  /** The section's own surface. */
+  readonly children: ReactNode
+}
+
+/**
+ * One block of a pane: a card carrying its own title (with the block's
+ * icon) and, beneath it, the block's fields. The card is the block's
+ * surface -- a pane is a stack of these, not one sheet subdivided by
+ * headings.
+ */
+function AccountSection({
+  title,
+  icon,
+  description,
+  action,
+  children,
+}: AccountSectionProps): ReactElement {
+  const titleId = useId()
+  return (
+    <Card
+      component="section"
+      variant="outlined"
+      aria-labelledby={titleId}
+      sx={{ p: 3 }}
+    >
+      {/* The icon column is fixed at 2rem with the same gap the security
+          blocks use, so the block title lands on the same rail as its
+          items. */}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns:
+            action === undefined ? '2rem minmax(0, 1fr)' : '2rem minmax(0, 1fr) auto',
+          columnGap: 2,
+          alignItems: 'center',
+        }}
+      >
+        {icon === undefined ? null : (
+          <Box
+            sx={{
+              display: 'flex',
+              color: 'text.primary',
+              opacity: 0.8,
+              flexShrink: 0,
+            }}
+          >
+            {icon}
+          </Box>
+        )}
+        <Box sx={{ minWidth: 0 }}>
+          <Typography
+            id={titleId}
+            variant="subtitle1"
+            component="h2"
+            sx={{ fontWeight: 600 }}
+          >
+            {title}
+          </Typography>
+          {description === undefined ? null : (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: 0.5 }}
+            >
+              {description}
+            </Typography>
+          )}
+        </Box>
+        {action === undefined ? null : <Box>{action}</Box>}
+      </Box>
+      {/* The block's content shares the title's rail: the icon column and the
+          gap before the title are skipped, so every item starts where the
+          block's own name starts. */}
+      <Box sx={{ mt: 2, pl: icon === undefined ? 0 : 6 }}>{children}</Box>
+    </Card>
+  )
+}
+
+interface AccountItemProps {
+  readonly title: string
+  /** The item's detail or control, under the title. */
+  readonly children?: ReactNode
+  /** The action at the title's right. */
+  readonly action?: ReactNode
+}
+
+/** One item of a block: a title, its action, and the detail beneath it. */
+function AccountItem({
+  title,
+  children,
+  action,
+}: AccountItemProps): ReactElement {
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Typography variant="body1" sx={{ fontWeight: 600 }}>
+          {title}
+        </Typography>
+        {action === undefined ? null : (
+          <Box sx={{ marginLeft: 'auto', flexShrink: 0 }}>{action}</Box>
+        )}
+      </Box>
+      {children === undefined ? null : (
+        <Box sx={{ mt: 0.5, minWidth: 0 }}>{children}</Box>
+      )}
+    </Box>
+  )
+}
+
+/** The account-management page: one pane per route. */
+export function AccountSettingsPage({
+  section,
+}: {
+  readonly section: AccountSection
+}): ReactElement {
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
+  const { t: tAccount } = useTranslation(ACCOUNT_UI_NAMESPACE)
+  // The account-ui bundle owns the identifiers' own vocabulary: the kind
+  // names the sign-in summary lists and the badge a proved address carries.
   const { path: pathname, search } = useLocationPath()
   const landing = new URLSearchParams(search)
   // The banner and the post-registration landing reach this page with an
@@ -106,9 +484,7 @@ export function AccountSettingsPage(): ReactElement {
   // Once the profile reads verified, the visitor goes back to the link to
   // accept the invitation. The remembered landing is cleared first, so a later
   // verification does not repeat the move.
-  const profile = useAuthnProfileGet({
-    query: { enabled: verifyLanding },
-  })
+  const profile = useAuthnProfileGet()
   const returnTo = verifyLanding ? pendingInvitationLanding() : null
   useEffect(() => {
     if (returnTo === null || profile.data?.verification?.state !== 'verified') {
@@ -135,61 +511,339 @@ export function AccountSettingsPage(): ReactElement {
     setPreset(id)
     persistThemePreset(id)
   }
+  // The security pane reports each row's state from the same answers the
+  // sections read: the profile for the password.
+  const [openSecurityRow, setOpenSecurityRow] = useState<string | null>(null)
+  const [addEmailSignal, setAddEmailSignal] = useState(0)
+  const [phoneFormOpen, setPhoneFormOpen] = useState(false)
+  const [phoneRemoveOpen, setPhoneRemoveOpen] = useState(false)
+  const [phoneRemoveError, setPhoneRemoveError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  const removeIdentifier = useAuthnLoginRemoveIdentifier()
+  const toggleSecurityRow = (key: string): void => {
+    setOpenSecurityRow((previous) => (previous === key ? null : key))
+  }
+  const passwordSet = profile.data?.password_set === true
+  const passwordSummary =
+    profile.data === undefined
+      ? '—'
+      : passwordSet
+        ? t('account.rows.value.passwordSet')
+        : t('account.rows.value.passwordUnset')
+  const passwordSummaryAction = passwordSet
+    ? t('account.rows.action.change')
+    : t('account.rows.action.set')
+  const identifiers = profile.data?.identifiers ?? []
+  const usernames = identifiers.filter(
+    (identifier) => identifier.kind === 'username',
+  )
+  const separator = t('account.rows.separator')
+  const boundPhone = identifiers.find(
+    (identifier) => identifier.kind === 'phone',
+  )
+  // Deleting the number is a protected write: a stale session is answered
+  // with the step-up, and the won challenge replays this one delete.
+  const phoneGate = useStepUpGate<{ readonly id: string }>(({ id }) => {
+    void removePhone(id)
+  })
+  async function removePhone(id: string): Promise<void> {
+    try {
+      await removeIdentifier.mutateAsync({ id })
+      setPhoneRemoveOpen(false)
+      setPhoneRemoveError(null)
+      await queryClient.invalidateQueries({
+        queryKey: getAuthnProfileGetQueryKey(),
+      })
+    } catch (error) {
+      if (phoneGate.intercept(error, { id })) {
+        return
+      }
+      setPhoneRemoveOpen(false)
+      setPhoneRemoveError(errorCodeOf(error) ?? 'client.unknown')
+    }
+  }
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <PageHeader
-        title={t('account.title')}
-        description={t('account.description')}
-      />
+    <PageLayout title={t(`account.sections.${section}`)}>
       {/* A step-up or enroll round trip started here lands back here with a
           refusal's problem code in the fragment: this page is the surface
           that reads it (the redirect's `return_to`) and words it. */}
       <CallbackLandingNotice namespace={ACCOUNT_UI_NAMESPACE} />
-      <ProfileSection session={session} returnPath={pathname} />
-      {/* The contacts the account is bound to, read-only: every email and,
-          where the deployment serves phones, every phone number with its
-          verification state. The write surfaces stay below (the email
-          verification card and the identifiers section). */}
-      <ContactSummarySection phoneServed={phoneServed} />
-      {/* The account's email verification, completed here rather than on a
-          page of its own: `none` renders nothing, `pending` offers the
-          send/verify path and the change-address form, and `verified` names
-          the proved address. A landing from the banner or from registration
-          carries `verify=1`, which sends one code on the way; an ordinary
-          visit carries no flag and waits for the visitor to ask. */}
-      <ContactVerificationSection
-        key={changeOpen ? 'change-email' : verifyLanding ? 'verify' : 'profile'}
+      {/* Each block is its own card; a plain surface keeps the account-ui
+          sections mounted inside them from stacking a second card and a
+          second heading under the block's own. */}
+      <SectionSurfaceProvider value="plain">
+        <Stack spacing={3} sx={{ '& .MuiOutlinedInput-root': { borderRadius: (theme) => theme.spacing(1) } }}>
+            {section === 'profile' ? (
+              <>
+                <AccountSection
+                  title={t('account.blocks.identity')}
+                  icon={<UserIcon />}
+                  description={t('account.blockDescriptions.identity')}
+                >
+                <Stack spacing={2}>
+                    <AccountItem title={t('account.rows.label.username')}>
+                      <TextField
+                        size="small"
+                        value={
+                          usernames.length === 0
+                            ? ''
+                            : usernames
+                                .map((identifier) => identifier.value)
+                                .join(separator)
+                        }
+                        placeholder={t('account.rows.value.notSet')}
+                        slotProps={{ input: { readOnly: true } }}
+                        sx={{ maxWidth: '18rem' }}
+                        fullWidth
+                      />
+                    </AccountItem>
+                    <AccountItem title={t('account.rows.label.displayName')}>
+                      <Box sx={{ maxWidth: '18rem' }}>
+                        <ProfileSection inline />
+                      </Box>
+                    </AccountItem>
+                </Stack>
+                </AccountSection>
+                <AccountSection
+                  title={t('account.rows.label.email')}
+                  icon={<MailIcon />}
+                  description={t('account.blockDescriptions.email')}
+                  action={
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => setAddEmailSignal((count) => count + 1)}
+                    >
+                      {t('account.action.add')}
+                    </Button>
+                  }
+                >
+                  <Stack spacing={2}>
+                    <IdentifiersSection
+                      session={session}
+                      emailAvailable={emailIdentifierServed}
+                      offerUsername={false}
+                      axis="contact"
+                      showAddButton={false}
+                      openAddSignal={addEmailSignal}
+                      returnPath={pathname}
+                    />
+                    {profile.data?.verification?.state === 'pending' ||
+                    verifyLanding ||
+                    changeOpen ? (
+                      <ContactVerificationSection
+                        key={
+                          changeOpen
+                            ? 'change-email'
+                            : verifyLanding
+                              ? 'verify'
+                              : 'profile'
+                        }
+                        session={session}
+                        initialChangeOpen={changeOpen}
+                        autoSend={verifyLanding}
+                      />
+                    ) : null}
+                  </Stack>
+                </AccountSection>
+                {phoneServed ? (
+                  <AccountSection
+                    title={t('account.rows.label.phone')}
+                    icon={<PhoneIcon />}
+                    description={t('account.blockDescriptions.phone')}
+                    action={
+                      boundPhone?.id == null ? (
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => setPhoneFormOpen(true)}
+                        >
+                          {t('account.action.add')}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outlined"
+                          color="error"
+                          size="small"
+                          onClick={() => setPhoneRemoveOpen(true)}
+                        >
+                          {t('account.action.delete')}
+                        </Button>
+                      )
+                    }
+                  >
+                    {boundPhone === undefined ? (
+                      phoneFormOpen ? (
+                        <PhoneSection
+                          session={session}
+                          onCancel={() => setPhoneFormOpen(false)}
+                        />
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          {t('account.rows.value.notBound')}
+                        </Typography>
+                      )
+                    ) : phoneFormOpen ? (
+                      <PhoneSection
+                        session={session}
+                        onCancel={() => setPhoneFormOpen(false)}
+                      />
+                    ) : (
+                      <Table
+                        size="small"
+                        sx={{
+                          '& td': { border: 0, padding: '8px 0' },
+                          '& td + td': { paddingLeft: 16 },
+                        }}
+                      >
+                        <TableBody>
+                          <TableRow>
+                            {/* The same address-column width the contact
+                                table in the email card uses, so the two
+                                tables' badge columns land on one rail. */}
+                            <TableCell sx={{ width: '11rem' }}>
+                              {boundPhone.value}
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                color={
+                                  boundPhone.proven ? 'primary' : 'default'
+                                }
+                                label={
+                                  boundPhone.proven
+                                    ? tAccount('identifiers.verified')
+                                    : tAccount('identifiers.unverified')
+                                }
+                              />
+                            </TableCell>
+                            <TableCell align="right" />
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    )}
+                    {phoneRemoveError === null ? null : (
+                      <Alert severity="error" sx={{ mt: 1 }}>
+                        {t('account.phoneRemove.removeFailed')}
+                      </Alert>
+                    )}
+                  </AccountSection>
+                ) : null}
+              </>
+            ) : null}
+            {section === 'security' ? (
+              <>
+                  <SecurityRow
+                    icon={<KeyIcon />}
+                    title={t('account.rows.label.password')}
+                    badge={
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={passwordSummary}
+                      />
+                    }
+                    description={t('account.security.password')}
+                    actionLabel={passwordSummaryAction}
+                    expanded={openSecurityRow === 'password'}
+                    onToggle={() => toggleSecurityRow('password')}
+                    testId="security-row-password"
+                  >
+                    <PasswordSection session={session} returnPath={pathname} />
+                  </SecurityRow>
+                  <AccountSection
+                    title={t('account.rows.label.loginWays')}
+                    icon={<UserIcon />}
+                    description={t('account.security.identifiers')}
+                  >
+                    <IdentifiersSection
+                      session={session}
+                      emailAvailable={emailIdentifierServed}
+                      axis="signIn"
+                      returnPath={pathname}
+                    />
+                  </AccountSection>
+                  {mfaServed ? (
+                    <AccountSection
+                      title={t('account.rows.label.mfa')}
+                      icon={<ShieldIcon />}
+                      description={t('account.security.mfaDescription')}
+                    >
+                      <MfaSection session={session} returnPath={pathname} />
+                    </AccountSection>
+                  ) : null}
+                  <AccountSection
+                    title={t('account.rows.label.social')}
+                    icon={<LinkIcon />}
+                    description={t('account.security.social')}
+                  >
+                    <SocialBindingsSection
+                      session={session}
+                      returnTo={ACCOUNT_CALLBACK_PATH}
+                      onAuthorizeUrl={navigateToAuthorizationUrl}
+                      returnPath={pathname}
+                    />
+                  </AccountSection>
+              </>
+            ) : null}
+            {section === 'sessions' ? (
+              <>
+                <AccountSection
+                  title={t('account.blocks.devices')}
+                  icon={<DeviceIcon />}
+                  description={t('account.blockDescriptions.devices')}
+                >
+                  <SessionsSection />
+                </AccountSection>
+              </>
+            ) : null}
+            {section === 'preferences' ? (
+              <>
+                <AccountSection
+                  title={t('account.blocks.appearance')}
+                  icon={<PaletteIcon />}
+                  description={t('account.blockDescriptions.appearance')}
+                >
+                <Stack spacing={2}>
+                    <AccountItem title={t('account.rows.label.theme')}>
+                      <AppearanceSection
+                        presets={presetChoices}
+                        value={preset}
+                        onChange={choosePreset}
+                        hideLabel
+                      />
+                    </AccountItem>
+                    <PreferencesSection />
+                </Stack>
+                </AccountSection>
+              </>
+            ) : null}
+        </Stack>
+      </SectionSurfaceProvider>
+      <ConfirmDialog
+        open={phoneRemoveOpen}
+        title={t('account.phoneRemove.removeTitle')}
+        message={t('account.phoneRemove.removeMessage')}
+        variant="danger"
+        confirmLabel={t('account.phoneRemove.removeConfirm')}
+        confirmLoading={removeIdentifier.isPending}
+        onCancel={() => setPhoneRemoveOpen(false)}
+        onConfirm={() => {
+          if (boundPhone?.id != null) {
+            void removePhone(boundPhone.id)
+          }
+        }}
+      />
+      <StepUpDialog
+        open={phoneGate.open}
+        reason={phoneGate.reason}
         session={session}
-        initialChangeOpen={changeOpen}
-        autoSend={verifyLanding}
+        onSuccess={phoneGate.succeed}
+        onCancel={phoneGate.cancel}
         returnPath={pathname}
       />
-      <PasswordSection session={session} returnPath={pathname} />
-      {phoneServed ? (
-        <PhoneSection session={session} returnPath={pathname} />
-      ) : null}
-      <IdentifiersSection
-        session={session}
-        emailAvailable={emailIdentifierServed}
-        returnPath={pathname}
-      />
-      <AppearanceSection
-        presets={presetChoices}
-        value={preset}
-        onChange={choosePreset}
-      />
-      <PreferencesSection session={session} returnPath={pathname} />
-      <SessionsSection />
-      <SocialBindingsSection
-        session={session}
-        returnTo={ACCOUNT_CALLBACK_PATH}
-        onAuthorizeUrl={navigateToAuthorizationUrl}
-        returnPath={pathname}
-      />
-      {mfaServed ? (
-        <MfaSection session={session} returnPath={pathname} />
-      ) : null}
-    </Box>
+    </PageLayout>
   )
 }
 

@@ -64,6 +64,11 @@ import type { Locator, Page } from '@playwright/test'
 import { expect, test } from '../fixtures/demo'
 import { identityProviderUser } from '../fixtures/identity-provider'
 import { waitForVerificationCode } from '../fixtures/log'
+import {
+  expandAccountRows,
+  openAccountSection,
+  selectAccountSection,
+} from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
 import { approveSocialSignIn } from '../helpers/social'
 import {
@@ -100,45 +105,38 @@ function homeHeading(page: Page): Locator {
   })
 }
 
-/** The account page's heading. */
+/** The account settings' profile pane heading, the page's one h1. */
 function accountHeading(page: Page): Locator {
   return page.getByRole('heading', {
     level: 1,
-    name: copy('demo', 'account.title'),
+    name: copy('demo', 'account.sections.profile'),
     exact: true,
   })
 }
 
-/** Open the account page through the account menu. */
-async function openAccountSettings(page: Page): Promise<void> {
-  await page.getByRole('banner').getByTestId('user-menu-trigger').click()
-  await page
-    .getByRole('menuitem', {
-      name: copy('demo', 'userMenu.accountSettings'),
-      exact: true,
-    })
-    .click()
-  await expect(accountHeading(page)).toBeVisible()
-}
-
-/** One account page section, named by its own title. */
+/** One account section card, named by its own h2 title. */
 function section(page: Page, title: string): Locator {
   return page.getByRole('region', { name: title, exact: true })
 }
 
-/** The sign-in-identifiers section. */
+/** The security pane's sign-in-ways card. */
 function identifiersSection(page: Page): Locator {
-  return section(page, copy('accountUi', 'identifiers.title'))
+  return section(page, copy('demo', 'account.rows.label.loginWays'))
 }
 
-/** The two-step-verification section. */
+/** The security pane's two-step-verification card. */
 function mfaSection(page: Page): Locator {
-  return section(page, copy('accountUi', 'mfa.title'))
+  return section(page, copy('demo', 'account.rows.label.mfa'))
 }
 
-/** The linked-social-accounts section. */
+/** The security pane's social accounts card. */
 function bindingsSection(page: Page): Locator {
-  return section(page, copy('accountUi', 'bindings.title'))
+  return section(page, copy('demo', 'account.rows.label.social'))
+}
+
+/** The profile pane's phone card, where a bound number is managed. */
+function phoneCard(page: Page): Locator {
+  return section(page, copy('demo', 'account.rows.label.phone'))
 }
 
 /** The bound Google row. */
@@ -327,26 +325,30 @@ async function proveWithPasskey(page: Page): Promise<void> {
   await expect(dialog).toHaveCount(0, { timeout: 30_000 })
 }
 
-/** The phone's row in the sign-in-identifiers section. */
+/** The phone, named in the sign-in-ways card's phone group. */
 function phoneRow(page: Page): Locator {
-  return identifiersSection(page)
-    .getByRole('listitem')
-    .filter({ hasText: PHONE_E164 })
+  return identifiersSection(page).getByText(PHONE_E164, { exact: true })
 }
 
-/** The phone row's remove action, named after the value it removes. */
-function phoneRemove(page: Page): Locator {
-  return identifiersSection(page).getByRole('button', {
-    name: copy('accountUi', 'identifiers.removeAria', { value: PHONE_E164 }),
-    exact: true,
-  })
-}
-
-/** One factor row in the two-step-verification list, by its kind. */
-function passkeyRow(page: Page): Locator {
-  return mfaSection(page)
-    .getByRole('listitem')
-    .filter({ hasText: copy('accountUi', 'mfa.factor.kind.webauthn') })
+/**
+ * Remove the bound phone number from the profile pane's phone card. The card
+ * owns the number's lifecycle: its Delete action opens the confirmation, and a
+ * refused removal renders the card's failure sentence beside it.
+ */
+async function deletePhone(page: Page): Promise<void> {
+  await openAccountSection(page, 'profile')
+  await expandAccountRows(page)
+  await phoneCard(page)
+    .getByRole('button', {
+      name: copy('demo', 'account.action.delete'),
+      exact: true,
+    })
+    .click()
+  await confirmDialog(
+    page,
+    copy('demo', 'account.phoneRemove.removeTitle'),
+    copy('demo', 'account.phoneRemove.removeConfirm'),
+  )
 }
 
 /** The passkey row's remove action, named after the kind it removes. */
@@ -411,7 +413,8 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       await registerPasskeyOnSignIn(panel)
       await expect(homeHeading(page)).toBeVisible({ timeout: 30_000 })
 
-      await openAccountSettings(page)
+      await openAccountSection(page, 'security')
+      await expandAccountRows(page)
       // The phone-code first login wrote the number as a sign-in way and no
       // contact, and the account holds no password.
       await expect(phoneRow(page)).toBeVisible()
@@ -431,12 +434,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
     })
 
     await test.step('removing the phone is refused while it is the last way in, after the passkey answers the step-up', async () => {
-      await phoneRemove(page).click()
-      await confirmDialog(
-        page,
-        copy('accountUi', 'identifiers.confirmTitle'),
-        copy('accountUi', 'identifiers.confirmLabel'),
-      )
+      await deletePhone(page)
 
       // The account holds an active factor, so the removal asks for fresh local
       // multi-factor proof. The session's phone-code factor and the passkey's
@@ -447,19 +445,29 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       // The won challenge replays the removal, which the account module then
       // refuses: the username is not a login name without a password and the
       // passkey is not counted, so the phone is the last way that is not a
-      // passkey. The row stays.
+      // passkey. The phone card reports the refusal and the number stays.
       await expect(
-        identifiersSection(page)
+        phoneCard(page)
           .getByRole('alert')
-          .filter({ hasText: copy('accountUi', 'errors.authn.last_login_method') }),
+          .filter({
+            hasText: copy('demo', 'account.phoneRemove.removeFailed'),
+          }),
       ).toBeVisible({ timeout: 15_000 })
-      await expect(phoneRow(page)).toBeVisible()
+      await expect(
+        phoneCard(page).getByText(PHONE_E164, { exact: true }),
+      ).toBeVisible()
     })
 
     await test.step('the social identity is bound, and the phone can then be removed', async () => {
+      // The refused removal left the browser on the profile pane; the bind
+      // action lives on the security pane.
+      await selectAccountSection(page, 'security')
+      await expandAccountRows(page)
       await bindingsSection(page)
         .getByRole('button', {
-          name: copy('accountUi', 'bindings.provider.google'),
+          name: copy('accountUi', 'bindings.bindAriaWithProvider', {
+            provider: googleLabel,
+          }),
           exact: true,
         })
         .click()
@@ -468,25 +476,25 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       // The callback completes the link and the host returns to the account
       // page. A binding is not a login, so the session stays where it was.
       await expect(accountHeading(page)).toBeVisible()
+      await selectAccountSection(page, 'security')
+      await expandAccountRows(page)
       await expect(googleRow(page)).toBeVisible()
       await expect(
         googleRow(page).getByText(identityProviderUser.email, { exact: true }),
       ).toBeVisible()
 
       // The phone is no longer the last way that is not a passkey: the social
-      // identity is another. The removal is allowed and leaves no phone row.
-      await phoneRemove(page).click()
-      await confirmDialog(
-        page,
-        copy('accountUi', 'identifiers.confirmTitle'),
-        copy('accountUi', 'identifiers.confirmLabel'),
-      )
+      // identity is another. The removal is allowed and leaves the card
+      // unbound and no phone in the sign-in ways.
+      await deletePhone(page)
       await expect(
-        identifiersSection(page).getByText(
-          copy('accountUi', 'identifiers.removed', { value: PHONE_E164 }),
+        phoneCard(page).getByText(
+          copy('demo', 'account.rows.value.notBound'),
           { exact: true },
         ),
       ).toBeVisible({ timeout: 15_000 })
+      await selectAccountSection(page, 'security')
+      await expandAccountRows(page)
       await expect(phoneRow(page)).toHaveCount(0)
     })
 
@@ -509,9 +517,14 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
           { exact: true },
         ),
       ).toBeVisible({ timeout: 15_000 })
-      await expect(mfaSection(page).getByText(copy('accountUi', 'mfa.empty'), {
-        exact: true,
-      })).toBeVisible()
+      // No factor is active now; the section still lists each method the
+      // deployment serves, all with their state off.
+      await expect(
+        mfaSection(page).getByText(
+          copy('accountUi', 'mfa.factor.status.active'),
+          { exact: true },
+        ),
+      ).toHaveCount(0)
     })
 
     await test.step("a social sign-in registers the journey's passkey before the session exists", async () => {
@@ -534,26 +547,26 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       await registerPasskeyOnSignIn(page)
       await expect(homeHeading(page)).toBeVisible({ timeout: 30_000 })
 
-      await openAccountSettings(page)
+      await openAccountSection(page, 'security')
+      await expandAccountRows(page)
     })
 
     await test.step('the account page lists the username and the social identity, no contact, and one passkey', async () => {
-      // The account's identifiers are the username it chose alone: the phone
+      // The account's sign-in names are the username it chose alone: the phone
       // was removed, the provider's address was not written to it, and no
-      // email address is listed, so the contact list is empty.
+      // email address is offered to sign in with.
       const identifiers = identifiersSection(page)
-      await expect(identifiers.getByRole('listitem')).toHaveCount(1)
       await expect(
-        identifiers.getByRole('listitem').filter({ hasText: username }),
+        identifiers.getByText(username, { exact: true }),
       ).toBeVisible()
-      await expect(identifiers.getByText(PHONE_E164, { exact: true })).toHaveCount(
-        0,
-      )
+      await expect(
+        identifiers.getByText(PHONE_E164, { exact: true }),
+      ).toHaveCount(0)
       await expect(
         identifiers.getByText(identityProviderUser.email, { exact: true }),
       ).toHaveCount(0)
       await expect(
-        identifiers.getByText(copy('accountUi', 'identifiers.groups.contactEmpty'), {
+        identifiers.getByText(copy('accountUi', 'identifiers.usage.emailNone'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -577,8 +590,31 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         }),
       ).toBeVisible()
 
-      // The passkey registered during the sign-in is the account's factor.
-      await expect(passkeyRow(page)).toHaveCount(1)
+      // The passkey registered during the sign-in is the account's one active
+      // factor.
+      await expect(
+        mfaSection(page).getByText(
+          copy('accountUi', 'mfa.factor.status.active'),
+          { exact: true },
+        ),
+      ).toHaveCount(1)
+
+      // The contact list is empty: the profile pane's email card lists no
+      // address row (the only remaining identifier is the username, which has
+      // no contact axis).
+      await selectAccountSection(page, 'profile')
+      await expandAccountRows(page)
+      await expect(
+        page
+          .getByRole('region', {
+            name: copy('demo', 'account.rows.label.email'),
+            exact: true,
+          })
+          .getByRole('row'),
+      ).toHaveCount(0)
+      // The unlink step drives the security pane's social card.
+      await selectAccountSection(page, 'security')
+      await expandAccountRows(page)
     })
 
     await test.step('unlinking the external identity asks for fresh proof and is then refused', async () => {
@@ -637,7 +673,14 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
           exact: true,
         }),
       ).toBeVisible({ timeout: 15_000 })
-      await expect(accountHeading(page)).toBeVisible()
+      // The write keeps the page on the security pane that started it.
+      await expect(
+        page.getByRole('heading', {
+          level: 1,
+          name: copy('demo', 'account.sections.security'),
+          exact: true,
+        }),
+      ).toBeVisible()
     })
 
     await test.step('the same unlink now succeeds', async () => {
@@ -653,7 +696,16 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
           { exact: true },
         ),
       ).toBeVisible({ timeout: 15_000 })
-      await expect(googleRow(page)).toHaveCount(0)
+      // The bound row is gone and the channel is offered to link again.
+      await expect(googleUnlink(page)).toHaveCount(0)
+      await expect(
+        bindingsSection(page).getByRole('button', {
+          name: copy('accountUi', 'bindings.bindAriaWithProvider', {
+            provider: googleLabel,
+          }),
+          exact: true,
+        }),
+      ).toBeVisible()
     })
   } finally {
     await authenticator?.close().catch(() => undefined)

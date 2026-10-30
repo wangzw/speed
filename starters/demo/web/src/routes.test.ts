@@ -29,6 +29,7 @@ import {
   routes,
 } from './routes.js'
 import {
+  ACCOUNT_SECTION_PATHS,
   ACCOUNT_SETUP_PATH,
   INVITATION_PREFIX,
   PASSWORD_RESET_PATH,
@@ -36,9 +37,15 @@ import {
 
 describe('the route table', () => {
   it('names the business slot, the account page and its setup page and the notification center, all labelled but for the completion points beside the unlabelled callback', () => {
+    // The account entry declares its four panes as pages of their own, each
+    // its own declaration, plus the group address that redirects to one.
     expect(businessRoutes.map((route) => route.path)).toEqual([
       '/',
       ACCOUNT_PATH,
+      ACCOUNT_SECTION_PATHS.profile,
+      ACCOUNT_SECTION_PATHS.security,
+      ACCOUNT_SECTION_PATHS.sessions,
+      ACCOUNT_SECTION_PATHS.preferences,
       ACCOUNT_SETUP_PATH,
       NOTIFICATIONS_PATH,
       ACCOUNT_CALLBACK_PATH,
@@ -51,6 +58,11 @@ describe('the route table', () => {
     expect(labelled.has('/')).toBe(true)
     expect(labelled.has(ACCOUNT_PATH)).toBe(true)
     expect(labelled.has(NOTIFICATIONS_PATH)).toBe(true)
+    // The panes nest under the account entry rather than listing at the top
+    // level, so they carry no label of their own.
+    for (const pane of Object.values(ACCOUNT_SECTION_PATHS)) {
+      expect(labelled.has(pane), pane).toBe(false)
+    }
     // The setup page and the callback are completion points, not navigation
     // destinations.
     expect(labelled.has(ACCOUNT_SETUP_PATH)).toBe(false)

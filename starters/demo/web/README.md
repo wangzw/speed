@@ -374,15 +374,17 @@ deployment's facts, not text the page asserts.
 
 A password registration opens the account without proving its email address,
 then signs in with the same credentials; the host lands that sign-in on
-`/account/verify` (`src/pages/account-verify-page.tsx`), which renders
-account-ui's `ContactVerificationSection`. While `GET /api/v1/auth/me`
+`/account?verify=1` (`src/pages/sign-in-view.tsx`), which the group address
+redirects to `/account/profile?verify=1`, where the profile pane of
+`src/pages/account-page.tsx` renders account-ui's `ContactVerificationSection`
+with the code step showing. While `GET /api/v1/auth/me`
 reports `verification.state` as `pending`, the tenant frame shows a persistent
 notice below the app bar (`src/contact-verification-banner.tsx`) naming the
-target address and linking to the verify page; its "verify" action goes to
-`/account/verify` and its "change address" action to
-`/account/verify?change=email`, where the page starts the section in the
-change form. The notice is a `region`, has no close control, and stays until
-the address is proved. It is separate from the
+target address and linking to the verify landing; its "verify" action goes to
+`/account?verify=1` and its "change address" action to
+`/account?change=email`, which the group address carries onto the profile pane,
+where the section starts in the change form. The notice is a `region`, has no
+close control, and stays until the address is proved. It is separate from the
 once-only "finish account setup" notice: the predicates are
 `contactVerificationPending` and `setupIncomplete` in `src/account-setup.ts`,
 and a password registration is setup-complete while verification is still

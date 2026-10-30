@@ -84,6 +84,10 @@ import type { Locator, Page } from '@playwright/test'
 import { smsRolloutOperator } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import {
+  expandAccountRows,
+  selectAccountSection,
+} from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
 
 // This journey's actor is the platform operator as an administrator of the
@@ -112,18 +116,18 @@ const PHONE_E164 = '+8613800138000'
 /** The configuration template whose read-only row the page shows. */
 const CONFIG_TEMPLATE = 'authn.code.login'
 
-/** The account page's email-verification section. */
+/** The profile pane's email card, which carries the verification surface. */
 function verificationSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('accountUi', 'verification.title'),
+    name: copy('demo', 'account.rows.label.email'),
     exact: true,
   })
 }
 
-/** The account page's phone section. */
+/** The profile pane's phone card. */
 function phoneSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('accountUi', 'phone.title'),
+    name: copy('demo', 'account.rows.label.phone'),
     exact: true,
   })
 }
@@ -305,13 +309,16 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('demo', 'account.title'),
+        name: copy('demo', 'account.sections.profile'),
         exact: true,
       }),
     ).toBeVisible()
 
-    // The email address: the account page offers the send action for the
-    // unproved address; the code arrives in the review mail carrier's line.
+    // The email address: the profile pane's email card offers the send action
+    // for the unproved address; the code arrives in the review mail carrier's
+    // line.
+    await selectAccountSection(page, 'profile')
+    await expandAccountRows(page)
     const verification = verificationSection(page)
     const emailAfter = server.log.mark()
     await verification
@@ -346,18 +353,28 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
         exact: true,
       })
       .click()
+    // The proved address is now the email card's contact row, carrying the
+    // verified state the write established.
     await expect(
-      page.getByText(
-        copy('accountUi', 'verification.verifiedDescription', {
-          email: smsRolloutOperator.identifier,
-        }),
-        { exact: true },
-      ),
+      verification.getByText(smsRolloutOperator.identifier, { exact: true }),
+    ).toBeVisible()
+    await expect(
+      verification.getByText(copy('accountUi', 'identifiers.verified'), {
+        exact: true,
+      }),
     ).toBeVisible()
 
     // The phone number: the two-part control, then the code from the review SMS
     // carrier's line. The number's region is one the review config admits.
     const phone = phoneSection(page)
+    // The phone card waits for the visitor to ask; its action opens the two
+    // part control below it.
+    await phone
+      .getByRole('button', {
+        name: copy('demo', 'account.action.add'),
+        exact: true,
+      })
+      .click()
     const country = phone.getByRole('combobox', {
       name: copy('accountUi', 'phone.country.label'),
       exact: true,

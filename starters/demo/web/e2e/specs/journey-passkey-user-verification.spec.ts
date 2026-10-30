@@ -41,6 +41,11 @@ import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { createAccounts, type Accounts } from '../helpers/accounts'
 import { expect, test } from '../fixtures/demo'
+import {
+  expandAccountRows,
+  openAccountSection,
+  selectAccountSection,
+} from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
 import { totpCode } from '../helpers/totp'
 import {
@@ -71,35 +76,23 @@ function signInHeading(page: Page): Locator {
   })
 }
 
-/** The account page's heading. */
+/** The account settings' profile pane heading, the page's one h1. */
 function accountHeading(page: Page): Locator {
   return page.getByRole('heading', {
     level: 1,
-    name: copy('demo', 'account.title'),
+    name: copy('demo', 'account.sections.profile'),
     exact: true,
   })
 }
 
-/** Open the account page through the account menu. */
-async function openAccountSettings(page: Page): Promise<void> {
-  await page.getByRole('banner').getByTestId('user-menu-trigger').click()
-  await page
-    .getByRole('menuitem', {
-      name: copy('demo', 'userMenu.accountSettings'),
-      exact: true,
-    })
-    .click()
-  await expect(accountHeading(page)).toBeVisible()
-}
-
-/** One account section, named by its own title. */
+/** One account section card, named by its own h2 title. */
 function section(page: Page, title: string): Locator {
   return page.getByRole('region', { name: title, exact: true })
 }
 
-/** The two-step-verification section. */
+/** The security pane's two-step-verification card. */
 function mfaSection(page: Page): Locator {
-  return section(page, copy('accountUi', 'mfa.title'))
+  return section(page, copy('demo', 'account.rows.label.mfa'))
 }
 
 /** The sign-in surface's passkey entry. */
@@ -221,7 +214,9 @@ async function enrolTotp(page: Page): Promise<string> {
   const mfa = mfaSection(page)
   await mfa
     .getByRole('button', {
-      name: copy('accountUi', 'mfa.enroll.totp'),
+      name: copy('accountUi', 'mfa.addAria', {
+        method: copy('accountUi', 'mfa.factor.kind.totp'),
+      }),
       exact: true,
     })
     .click()
@@ -272,7 +267,9 @@ async function enrolPasskey(page: Page): Promise<void> {
   const mfa = mfaSection(page)
   await mfa
     .getByRole('button', {
-      name: copy('accountUi', 'mfa.enroll.webauthn'),
+      name: copy('accountUi', 'mfa.addAria', {
+        method: copy('accountUi', 'mfa.factor.kind.webauthn'),
+      }),
       exact: true,
     })
     .click()
@@ -347,8 +344,15 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
     })
 
     await test.step('step 1: the account enrols the authenticator app as its second factor', async () => {
+      await selectAccountSection(page, 'security')
+      await expandAccountRows(page)
       secret = await enrolTotp(page)
-      await expect(mfaSection(page).getByRole('listitem')).toHaveCount(1)
+      await expect(
+        mfaSection(page).getByText(
+          copy('accountUi', 'mfa.factor.status.active'),
+          { exact: true },
+        ),
+      ).toHaveCount(1)
     })
 
     await test.step('step 2: a fresh password sign-in proves the second factor, which makes the session recent enough to write the passkey', async () => {
@@ -358,12 +362,18 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
         password: account.password,
       })
       await completeTotpFactor(page, secret)
-      await openAccountSettings(page)
+      await openAccountSection(page, 'security')
+      await expandAccountRows(page)
     })
 
     await test.step('step 3: the account enrols a discoverable passkey beside the second factor', async () => {
       await enrolPasskey(page)
-      await expect(mfaSection(page).getByRole('listitem')).toHaveCount(2)
+      await expect(
+        mfaSection(page).getByText(
+          copy('accountUi', 'mfa.factor.status.active'),
+          { exact: true },
+        ),
+      ).toHaveCount(2)
     })
 
     await test.step('step 4: choosing the passkey entry completes the login with user verification and no second factor', async () => {
@@ -411,9 +421,16 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
       await expect(accountHeading(otherPage)).toBeVisible()
       otherAuthenticator = await addVirtualAuthenticator(otherContext, otherPage)
 
+      await selectAccountSection(otherPage, 'security')
+      await expandAccountRows(otherPage)
       await enrolPasskey(otherPage)
       // The account holds exactly one factor, the passkey.
-      await expect(mfaSection(otherPage).getByRole('listitem')).toHaveCount(1)
+      await expect(
+        mfaSection(otherPage).getByText(
+          copy('accountUi', 'mfa.factor.status.active'),
+          { exact: true },
+        ),
+      ).toHaveCount(1)
 
       await otherAccounts.signOut()
       await otherAccounts.openSignIn()

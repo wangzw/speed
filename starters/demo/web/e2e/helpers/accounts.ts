@@ -132,10 +132,15 @@ export function createAccounts({
       .waitFor()
   }
 
-  /** The account page's email verification section, before it is proved. */
+  /**
+   * The profile pane's email card. The verification surface mounts inside it
+   * (the pane owns the heading; the nested account-ui section renders no card
+   * of its own), so this card is the region the code field and its result sit
+   * in.
+   */
   const emailSection = () =>
     page.getByRole('region', {
-      name: copy('accountUi', 'verification.title'),
+      name: copy('demo', 'account.rows.label.email'),
       exact: true,
     })
 
@@ -205,11 +210,16 @@ export function createAccounts({
         exact: true,
       })
       .click()
-    await page
-      .getByRole('region', {
-        name: copy('accountUi', 'verification.verifiedTitle'),
-        exact: true,
-      })
+    // The verified card reports completion instead of a title of its own (the
+    // pane's email card owns the heading), so the completion sentence is the
+    // proof the proof landed.
+    await section
+      .getByText(
+        copy('accountUi', 'verification.verifiedDescription', {
+          email: address,
+        }),
+        { exact: true },
+      )
       .waitFor()
   }
 

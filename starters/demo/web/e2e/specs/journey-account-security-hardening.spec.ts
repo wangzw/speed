@@ -27,11 +27,10 @@
  * the window it last used and waits for the next one before presenting another
  * code; it never re-submits a code.
  *
- * WHAT IS NOT ASSERTED. The sessions section renders the device summary, the
- * sign-in time, the last-active time (when it differs), the expiry and the
- * current-session marker. The last-active line appears only once a coalesced
- * touch moves it past the creation instant, which this run does not produce, so
- * it is not asserted. The other fields are, including the expiry, so
+ * WHAT IS NOT ASSERTED. The sessions section renders one table row per live
+ * session, with the device summary, the address, the last-active time and the
+ * row's action column, and marks the current session. The table's header names
+ * all four columns and exactly one row carries the current marker, so
  * REQ-security-022 is claimed. The step-up's alternate
  * branches -- cancelling the dialog, and an account with only one factor that
  * offers a re-login exit (REQ-security-017) -- are unreachable here because
@@ -54,6 +53,11 @@
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { createAccounts, type Accounts } from '../helpers/accounts'
+import {
+  expandAccountRows,
+  openAccountSection,
+  selectAccountSection,
+} from '../helpers/account-sections'
 import { expect, test } from '../fixtures/demo'
 import { copy, copyPattern } from '../helpers/i18n'
 import { totpCode } from '../helpers/totp'
@@ -89,50 +93,41 @@ function homeHeading(page: Page): Locator {
   })
 }
 
-/** The account page's heading. */
-function accountHeading(page: Page): Locator {
+/** One account pane's heading, the page's one h1. */
+function paneHeading(
+  page: Page,
+  section: 'profile' | 'security' | 'sessions' | 'preferences',
+): Locator {
   return page.getByRole('heading', {
     level: 1,
-    name: copy('demo', 'account.title'),
+    name: copy('demo', `account.sections.${section}`),
     exact: true,
   })
 }
 
-/** Open the account page through the account menu. */
-async function openAccountSettings(page: Page): Promise<void> {
-  await page.getByRole('banner').getByTestId('user-menu-trigger').click()
-  await page
-    .getByRole('menuitem', {
-      name: copy('demo', 'userMenu.accountSettings'),
-      exact: true,
-    })
-    .click()
-  await expect(accountHeading(page)).toBeVisible()
-}
-
-/** One account section, named by its own title. */
+/** One account section card, named by its own h2 title. */
 function section(page: Page, title: string): Locator {
   return page.getByRole('region', { name: title, exact: true })
 }
 
-/** The sign-in identifiers section. */
+/** The sign-in ways card (the identifiers on their sign-in axis). */
 function identifiersSection(page: Page): Locator {
-  return section(page, copy('accountUi', 'identifiers.title'))
+  return section(page, copy('demo', 'account.rows.label.loginWays'))
 }
 
-/** The two-step-verification section. */
+/** The two-step-verification card. */
 function mfaSection(page: Page): Locator {
-  return section(page, copy('accountUi', 'mfa.title'))
+  return section(page, copy('demo', 'account.rows.label.mfa'))
 }
 
-/** The password section. */
+/** The password card. */
 function passwordSection(page: Page): Locator {
-  return section(page, copy('accountUi', 'password.title'))
+  return section(page, copy('demo', 'account.rows.label.password'))
 }
 
-/** The sessions section. */
+/** The sessions card. */
 function sessionsSection(page: Page): Locator {
-  return section(page, copy('accountUi', 'sessions.title'))
+  return section(page, copy('demo', 'account.blocks.devices'))
 }
 
 /** The step-up dialog. */
@@ -312,68 +307,86 @@ test('account-security-hardening: an account enrols two factors, ends another de
   try {
     await test.step('precondition: an ordinary account is registered and its email address is proved', async () => {
       await accounts.registerAndVerify(account)
-      await expect(accountHeading(page)).toBeVisible()
-      // The verification section reports the proved address, and the
-      // identifiers section lists the same address as the account's mail.
+      await expect(paneHeading(page, 'profile')).toBeVisible()
+      // The email card reports the proof it completed, on the same profile
+      // pane that owns the address.
       await expect(
-        page.getByRole('region', {
-          name: copy('accountUi', 'verification.verifiedTitle'),
-          exact: true,
-        }),
+        page.getByText(
+          copy('accountUi', 'verification.verifiedDescription', {
+            email: account.email,
+          }),
+          { exact: true },
+        ),
       ).toBeVisible()
       // The passkey ceremony is answered by Chromium's virtual authenticator.
       authenticator = await addVirtualAuthenticator(page.context(), page)
     })
 
     await test.step('step 1: the account page lists the identifiers with the email proved, and the empty two-step surface offers the enrolment entries', async () => {
+      await selectAccountSection(page, 'security')
+      await expandAccountRows(page)
       const identifiers = identifiersSection(page)
-      // The account's only address is chosen as a sign-in way when it is
-      // proved, so the one address is listed under both Contacts and Sign-in
-      // ways beside the username: three rows for two identifiers.
-      await expect(identifiers.getByRole('listitem')).toHaveCount(3)
-
-      const emailRows = identifiers
-        .getByRole('listitem')
-        .filter({ has: page.getByText(account.email, { exact: true }) })
-      await expect(emailRows).toHaveCount(2)
+      // The sign-in axis shows one group per kind of login name. The account
+      // holds a username and one proved address, and the proved address is
+      // the one chosen to sign in with; no phone number signs in.
       await expect(
-        emailRows.getByText(copy('accountUi', 'identifiers.verified'), {
+        identifiers.getByRole('heading', {
+          name: copy('accountUi', 'identifiers.kind.username'),
           exact: true,
         }),
-      ).toHaveCount(2)
-
-      // A username carries no ownership marker. The address contains the
-      // username, so the row is found by the username's own exact text.
-      const usernameRow = identifiers
-        .getByRole('listitem')
-        .filter({ has: page.getByText(account.username, { exact: true }) })
-      await expect(usernameRow).toHaveCount(1)
+      ).toBeVisible()
+      // The username is the account's login name, named in its own group's
+      // sentence (the address contains the username, so the exact text is
+      // what tells it apart).
       await expect(
-        usernameRow.getByText(copy('accountUi', 'identifiers.verified'), {
+        identifiers.getByText(account.username, { exact: true }),
+      ).toBeVisible()
+      // The email group lists the proved addresses only, and the one on this
+      // account is the selected choice.
+      await expect(
+        identifiers.getByRole('combobox', {
+          name: copy('accountUi', 'identifiers.kind.email'),
           exact: true,
         }),
-      ).toHaveCount(0)
+      ).toContainText(account.email)
       await expect(
-        usernameRow.getByText(copy('accountUi', 'identifiers.unverified'), {
-          exact: true,
-        }),
-      ).toHaveCount(0)
+        identifiers.getByText(
+          copy('accountUi', 'identifiers.usage.phoneNone'),
+          { exact: true },
+        ),
+      ).toBeVisible()
 
       // No method is set up yet, and the deployment's own entries are offered.
+      // The section lists each method the deployment serves (the review
+      // assembly serves the authenticator app, the passkey and the text
+      // message), with its state off, beside the action that starts its
+      // enrollment.
       const mfa = mfaSection(page)
+      const servedMethods = ['totp', 'webauthn', 'sms'] as const
+      await expect(mfa.getByRole('listitem')).toHaveCount(servedMethods.length)
+      for (const kind of servedMethods) {
+        await expect(
+          mfa.getByText(copy('accountUi', `mfa.factor.kind.${kind}`), {
+            exact: true,
+          }),
+        ).toBeVisible()
+      }
       await expect(
-        mfa.getByText(copy('accountUi', 'mfa.empty'), { exact: true }),
-      ).toBeVisible()
-      await expect(mfa.getByRole('listitem')).toHaveCount(0)
+        mfa.getByText(copy('accountUi', 'mfa.state.off'), { exact: true }),
+      ).toHaveCount(servedMethods.length)
       await expect(
         mfa.getByRole('button', {
-          name: copy('accountUi', 'mfa.enroll.totp'),
+          name: copy('accountUi', 'mfa.addAria', {
+            method: copy('accountUi', 'mfa.factor.kind.totp'),
+          }),
           exact: true,
         }),
       ).toBeVisible()
       await expect(
         mfa.getByRole('button', {
-          name: copy('accountUi', 'mfa.enroll.webauthn'),
+          name: copy('accountUi', 'mfa.addAria', {
+            method: copy('accountUi', 'mfa.factor.kind.webauthn'),
+          }),
           exact: true,
         }),
       ).toBeVisible()
@@ -383,7 +396,9 @@ test('account-security-hardening: an account enrols two factors, ends another de
       const mfa = mfaSection(page)
       await mfa
         .getByRole('button', {
-          name: copy('accountUi', 'mfa.enroll.totp'),
+          name: copy('accountUi', 'mfa.addAria', {
+            method: copy('accountUi', 'mfa.factor.kind.totp'),
+          }),
           exact: true,
         })
         .click()
@@ -415,7 +430,8 @@ test('account-security-hardening: an account enrols two factors, ends another de
       await confirmSettledEnrolment(mfa)
 
       // The settled enrolment confirms itself and the list re-reads: one
-      // active authenticator app.
+      // active authenticator app. The section keeps one row per method the
+      // deployment serves, so the factor is the one active status in it.
       await expect(
         mfa.getByText(
           copy('accountUi', 'mfa.enroll.enrolled', {
@@ -424,18 +440,17 @@ test('account-security-hardening: an account enrols two factors, ends another de
           { exact: true },
         ),
       ).toBeVisible()
-      await expect(mfa.getByRole('listitem')).toHaveCount(1)
+      await expect(
+        mfa.getByText(copy('accountUi', 'mfa.factor.status.active'), {
+          exact: true,
+        }),
+      ).toHaveCount(1)
       await expect(
         mfa
           .getByText(copy('accountUi', 'mfa.factor.kind.totp'), {
             exact: true,
           })
           .first(),
-      ).toBeVisible()
-      await expect(
-        mfa.getByText(copy('accountUi', 'mfa.factor.status.active'), {
-          exact: true,
-        }),
       ).toBeVisible()
     })
 
@@ -461,7 +476,8 @@ test('account-security-hardening: an account enrols two factors, ends another de
     })
 
     await test.step('step 5: a passkey is added after the waiting state, its cancel and its retry', async () => {
-      await openAccountSettings(page)
+      await openAccountSection(page, 'security')
+      await expandAccountRows(page)
       const mfa = mfaSection(page)
 
       // Presence simulation is off for the first attempt: the ceremony stays
@@ -469,7 +485,9 @@ test('account-security-hardening: an account enrols two factors, ends another de
       await authenticator?.setPresent(false)
       await mfa
         .getByRole('button', {
-          name: copy('accountUi', 'mfa.enroll.webauthn'),
+          name: copy('accountUi', 'mfa.addAria', {
+            method: copy('accountUi', 'mfa.factor.kind.webauthn'),
+          }),
           exact: true,
         })
         .click()
@@ -536,17 +554,15 @@ test('account-security-hardening: an account enrols two factors, ends another de
           { exact: true },
         ),
       ).toBeVisible({ timeout: 20_000 })
-      await expect(mfa.getByRole('listitem')).toHaveCount(2)
+      // Two factors are active now, one under each method row.
+      await expect(
+        mfa.getByText(copy('accountUi', 'mfa.factor.status.active'), {
+          exact: true,
+        }),
+      ).toHaveCount(2)
       await expect(
         mfa
           .getByText(copy('accountUi', 'mfa.factor.kind.webauthn'), {
-            exact: true,
-          })
-          .first(),
-      ).toBeVisible()
-      await expect(
-        mfa
-          .getByText(copy('accountUi', 'mfa.factor.status.active'), {
             exact: true,
           })
           .first(),
@@ -582,24 +598,23 @@ test('account-security-hardening: an account enrols two factors, ends another de
     })
 
     await test.step('step 8: the session list marks the current device and device B is revoked', async () => {
-      await openAccountSettings(page)
+      await openAccountSection(page, 'sessions')
       const sessions = sessionsSection(page)
-      await expect(sessions.getByRole('listitem')).toHaveCount(2)
+      // The table carries one header row and one row per live session.
+      await expect(sessions.getByRole('row')).toHaveCount(3)
+      for (const column of ['device', 'address', 'activity', 'action'] as const) {
+        await expect(
+          sessions.getByRole('columnheader', {
+            name: copy('accountUi', `sessions.table.${column}`),
+            exact: true,
+          }),
+        ).toBeVisible()
+      }
 
-      // Each row names its device and the sign-in time, and exactly one row is
-      // the current session. The revoke control names the device it ends, so
-      // its presence on the other row is the device summary's rendered proof.
-      await expect(
-        sessions
-          .getByText(copyPattern('accountUi', 'sessions.signedIn', { time: '.+' }))
-          .first(),
-      ).toBeVisible()
-      // Both live rows name their session's absolute expiry.
-      await expect(
-        sessions.getByText(
-          copyPattern('accountUi', 'sessions.expires', { time: '.+' }),
-        ),
-      ).toHaveCount(2)
+      // Each row names its device, its address and its last activity, and
+      // exactly one row is the current session. The revoke control names the
+      // device it ends, so its presence on the other row is the device
+      // summary's rendered proof.
       const revoke = sessions.getByRole('button', {
         name: copyPattern('accountUi', 'sessions.revokeAriaWithDevice', {
           device: '.+',
@@ -611,11 +626,10 @@ test('account-security-hardening: an account enrols two factors, ends another de
           exact: true,
         }),
       ).toHaveCount(1)
-
       await revoke.click()
       // The list converges on the server's answer: the revoked row is gone and
-      // the current session remains.
-      await expect(sessions.getByRole('listitem')).toHaveCount(1)
+      // the current session remains, leaving the header and one row.
+      await expect(sessions.getByRole('row')).toHaveCount(2)
       await expect(
         sessions.getByText(
           copyPattern('accountUi', 'sessions.revokedOne', { device: '.+' }),
@@ -684,6 +698,8 @@ test('account-security-hardening: an account enrols two factors, ends another de
         step6AuthenticatedAt + RECENT_WINDOW_MS + WINDOW_MARGIN_MS,
       )
 
+      await selectAccountSection(page, 'security')
+      await expandAccountRows(page)
       const password = passwordSection(page)
       await password
         .getByRole('textbox', {
@@ -770,8 +786,10 @@ test('account-security-hardening: an account enrols two factors, ends another de
           exact: true,
         }),
       ).toBeVisible({ timeout: 15_000 })
-      await expect(accountHeading(page)).toBeVisible()
-      await expect(sessionsSection(page).getByRole('listitem')).toHaveCount(1)
+      await expect(paneHeading(page, 'security')).toBeVisible()
+      await selectAccountSection(page, 'sessions')
+      // The header row and the one remaining session.
+      await expect(sessionsSection(page).getByRole('row')).toHaveCount(2)
     })
 
     await test.step('result: the new password signs in and the old one is refused', async () => {

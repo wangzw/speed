@@ -6,6 +6,7 @@
     "dismiss": "Dismiss"
   },
   "nav": {
+    "account": "Account settings",
     "home": "Home",
     "console": "Console"
   },
@@ -78,9 +79,87 @@
   },
   "account": {
     "title": "Account settings",
-    "description": "Manage your account: your profile, password, sign-in identifiers, preferences, active sessions, linked sign-in methods and two-step verification.",
+    "description": "Manage your profile, contact details and security.",
+    "sections": {
+      "profile": "Profile",
+      "security": "Password and security",
+      "sessions": "Sessions",
+      "preferences": "Preferences"
+    },
+    "sectionNavLabel": "Account settings sections",
+    "rows": {
+      "separator": ", ",
+      "label": {
+        "displayName": "Display name",
+        "username": "Username",
+        "email": "Email",
+        "phone": "Phone",
+        "password": "Password",
+        "mfa": "Two-step verification",
+        "loginWays": "Sign-in ways",
+        "social": "Social accounts",
+        "theme": "Theme",
+        "languageTimeZone": "Language and time zone"
+      },
+      "badge": {
+        "mfaOff": "Recommended"
+      },
+      "hint": {
+        "identifiersUnderLoginWays": "Add or remove identifiers under sign-in ways."
+      },
+      "value": {
+        "notSet": "Not set",
+        "notBound": "Not linked",
+        "mfaOff": "Off",
+        "mfaOn": "{{count}} on",
+        "passwordSet": "Set",
+        "passwordUnset": "Not set",
+        "followDevice": "Follow this device",
+        "loginWays": "{{kinds}} · {{count}} in total",
+        "socialBound": "Linked: {{providers}}"
+      },
+      "action": {
+        "manage": "Manage",
+        "manageUnderLoginWays": "Manage under sign-in ways",
+        "bind": "Link",
+        "set": "Set",
+        "change": "Change",
+        "enable": "Turn on",
+        "collapse": "Collapse"
+      }
+    },
     "bindingCallback": {
       "title": "Linking your account"
+    },
+    "blocks": {
+      "contacts": "Contact details",
+      "identity": "Account details",
+      "appearance": "Appearance and language",
+      "devices": "Signed-in devices"
+    },
+    "security": {
+      "mfaDescription": "Two-factor authentication adds a second confirmation to the password: signing in also needs your authenticator app, a passkey or an SMS code, so a leaked password alone cannot sign in.",
+      "password": "Sign in with a password.",
+      "social": "Sign in with a GitHub, Google or WeChat account.",
+      "kindCount": "{{count}} kinds",
+      "identifiers": "Which usernames, email addresses and phone numbers can sign in."
+    },
+    "blockDescriptions": {
+      "identity": "Your login name, display name and contact details.",
+      "devices": "The devices signed in to your account.",
+      "appearance": "How the theme, language and time zone display.",
+      "email": "Which addresses receive notices and password resets.",
+      "phone": "A phone number for signing in and security checks."
+    },
+    "action": {
+      "add": "Add",
+      "delete": "Delete"
+    },
+    "phoneRemove": {
+      "removeTitle": "Delete this phone number?",
+      "removeMessage": "After it is deleted the number can no longer sign in or receive codes.",
+      "removeConfirm": "Delete",
+      "removeFailed": "The number could not be deleted. Try again."
     }
   },
   "accountSetup": {

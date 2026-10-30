@@ -78,7 +78,11 @@ import {
   useRedirect,
   useRouteLinkProps,
 } from '@speed/route-kit'
-import type { RouteContext, RoutePresence } from '@speed/route-kit'
+import type {
+  RouteContext,
+  RouteLinkTarget,
+  RoutePresence,
+} from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import {
   contactVerificationPending,
@@ -124,7 +128,14 @@ import { CallbackErrorAlert } from './callback-error-notice.js'
 import { usePermissionRead } from './platform-permissions.js'
 import { clearCallbackFragment, readCallbackError } from './sign-in-landing.js'
 import { DemoNavLabel } from './nav-label.js'
-import { ConsoleNavIcon } from './nav-icons.js'
+import type { AccountSection } from './paths.js'
+import {
+  ConsoleNavIcon,
+  PreferencesNavIcon,
+  ProfileNavIcon,
+  SecurityNavIcon,
+  SessionsNavIcon,
+} from './nav-icons.js'
 import { PersonalTenantNoticeProvider } from './personal-tenant-notice.js'
 import { TenantMembershipNoticeHost } from './tenant-membership-notice.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
@@ -136,6 +147,8 @@ import {
 import { SignInView } from './pages/sign-in-view.js'
 import {
   ACCOUNT_PATH,
+  ACCOUNT_SECTION_PATHS,
+  ACCOUNT_SECTIONS,
   isAccountLevelPath,
   PASSWORD_RESET_PATH,
 } from './paths.js'
@@ -160,6 +173,15 @@ import {
 /** The platform-staff permission domain the console routes' codes resolve in:
  * auth-core names 'system' the tenant-independent platform-staff set. */
 const CONSOLE_PERMISSION_DOMAIN = 'system'
+
+/** The mark each account pane's second-level entry carries in the
+ * navigation. */
+const ACCOUNT_SECTION_ICONS: Record<AccountSection, ReactNode> = {
+  profile: <ProfileNavIcon />,
+  security: <SecurityNavIcon />,
+  sessions: <SessionsNavIcon />,
+  preferences: <PreferencesNavIcon />,
+}
 
 /**
  * The tenant the host settles when it has none: the first listed membership
@@ -434,6 +456,7 @@ function TenantFrame({
   // read none and stay usable (src/paths.ts).
   const { path: pathname } = useLocationPath()
   const accountLevel = isAccountLevelPath(pathname)
+  const { t } = useTranslation(DEMO_NAMESPACE)
   // The notification surfaces and the roster are feature-gated; the hooks fail
   // closed, so a pending or failed document opens and reads nothing.
   const inboxServed = useFeature('notification.inbox')
@@ -855,16 +878,51 @@ function TenantFrame({
   // a modified or new-tab click stays with the browser -- and its icon is the
   // one its declaration carries (src/routes.tsx), looked up by the entry id
   // that declaration path supplies.
+  // The account settings' panes are pages of their own, nested under the
+  // group's entry: the frame builds that second level from the pane paths,
+  // marking the one whose page is on screen. Each link pair is route-kit's,
+  // like the entries above -- a plain click navigates in place, a modified
+  // click stays with the browser.
+  const accountSectionLinks: Record<
+    AccountSection,
+    RouteLinkTarget
+  > = {
+    profile: useRouteLinkProps(ACCOUNT_SECTION_PATHS.profile),
+    security: useRouteLinkProps(ACCOUNT_SECTION_PATHS.security),
+    sessions: useRouteLinkProps(ACCOUNT_SECTION_PATHS.sessions),
+    preferences: useRouteLinkProps(ACCOUNT_SECTION_PATHS.preferences),
+  }
   const navItems: readonly AppShellNavItem[] = items
     .filter((item) => !isConsolePath(item.id))
-    .map((item): AppShellNavItem => ({
-      id: item.id,
-      label: item.label,
-      icon: navIconFor(item.id),
-      href: item.href,
-      selected: item.selected,
-      onClick: item.onClick,
-    }))
+    .map((item): AppShellNavItem => {
+      if (item.id !== ACCOUNT_PATH) {
+        return {
+          id: item.id,
+          label: item.label,
+          icon: navIconFor(item.id),
+          href: item.href,
+          selected: item.selected,
+          onClick: item.onClick,
+        }
+      }
+      // A parent carrying children has no destination of its own: the shell
+      // renders it as the disclosure over the pane links.
+      return {
+        id: item.id,
+        label: item.label,
+        icon: navIconFor(item.id),
+        children: ACCOUNT_SECTIONS.map((section) => ({
+          id: ACCOUNT_SECTION_PATHS[section],
+          label: t(`account.sections.${section}`),
+          // The collapsed rail shows a child's icon instead of its clipped
+          // label, the same rule the top-level entries follow.
+          icon: ACCOUNT_SECTION_ICONS[section],
+          href: accountSectionLinks[section].href,
+          onClick: accountSectionLinks[section].onClick,
+          selected: pathname === ACCOUNT_SECTION_PATHS[section],
+        })),
+      }
+    })
 
   return (
     <TenantProvider tenantId={tenantId}>

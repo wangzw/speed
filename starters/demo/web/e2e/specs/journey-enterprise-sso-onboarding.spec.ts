@@ -90,6 +90,10 @@ import {
 import type { EnterpriseIdentityProvider } from '../fixtures/identity-provider'
 import { waitForVerificationCode } from '../fixtures/log'
 import { expectAccountMenuName } from '../helpers/account-menu'
+import {
+  expandAccountRows,
+  selectAccountSection,
+} from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
 import { approveEnterpriseSignIn } from '../helpers/social'
 
@@ -160,10 +164,10 @@ function verificationBanner(page: Page): Locator {
   })
 }
 
-/** The account page's email-verification section. */
+/** The profile pane's email card, which carries the verification surface. */
 function verificationSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('accountUi', 'verification.title'),
+    name: copy('demo', 'account.rows.label.email'),
     exact: true,
   })
 }
@@ -341,10 +345,12 @@ async function proveOperatorAddress({
     })
     .click()
   await expect(
-    page.getByRole('region', {
-      name: copy('accountUi', 'verification.verifiedTitle'),
-      exact: true,
-    }),
+    section.getByText(
+      copy('accountUi', 'verification.verifiedDescription', {
+        email: OPERATOR.identifier,
+      }),
+      { exact: true },
+    ),
   ).toBeVisible()
   await expect(banner).toHaveCount(0)
 }
@@ -872,21 +878,25 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('demo', 'account.title'),
+        name: copy('demo', 'account.sections.profile'),
         exact: true,
       }),
     ).toBeVisible()
 
-    // The work address is on that account as a sign-in identifier and the
-    // profile carries the operator's display name.
+    // The work address is on that account (the email card's contact row,
+    // still unproved) and the profile carries the operator's display name.
+    await expandAccountRows(page)
+    const emailCard = page.getByRole('region', {
+      name: copy('demo', 'account.rows.label.email'),
+      exact: true,
+    })
     await expect(
-      page
-        .getByRole('region', {
-          name: copy('accountUi', 'identifiers.title'),
-          exact: true,
-        })
-        .getByRole('listitem')
-        .filter({ hasText: EMPLOYEE_EMAIL }),
+      emailCard.getByText(EMPLOYEE_EMAIL, { exact: true }),
+    ).toBeVisible()
+    await expect(
+      emailCard.getByText(copy('accountUi', 'identifiers.unverified'), {
+        exact: true,
+      }),
     ).toBeVisible()
     await expect(
       page.getByLabel(copy('accountUi', 'profile.displayName.label'), {
@@ -1083,19 +1093,21 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('demo', 'account.title'),
+        name: copy('demo', 'account.sections.profile'),
         exact: true,
       }),
     ).toBeVisible()
 
     // The username answered at the step is the account's login name. The
     // provider's address is not written onto a just-in-time account.
+    await selectAccountSection(page, 'security')
+    await expandAccountRows(page)
     const identifiers = page.getByRole('region', {
-      name: copy('accountUi', 'identifiers.title'),
+      name: copy('demo', 'account.rows.label.loginWays'),
       exact: true,
     })
     await expect(
-      identifiers.getByRole('listitem').filter({ hasText: JIT_USERNAME }),
+      identifiers.getByText(JIT_USERNAME, { exact: true }),
     ).toBeVisible()
 
     await page

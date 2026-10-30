@@ -67,7 +67,6 @@ const textI18n = createSpeedI18n({
   ],
 })
 const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
-const tAccount = textI18n.getFixedT('en-US', ACCOUNT_UI_NAMESPACE)
 const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
 const tNotifications = textI18n.getFixedT(
   'en-US',
@@ -513,31 +512,63 @@ describe('the live notification stream', () => {
 
 describe('the account page mounts only the sections its document serves', () => {
   it('hides the phone and multifactor sections when their features are absent', async () => {
-    window.history.replaceState({}, '', '/account')
+    // Each section lives in its own pane, so the absence is asserted with
+    // that pane open: an unrendered pane would prove nothing.
+    window.history.replaceState({}, '', '/account?section=security')
+    const security = renderDemoApp({ session: sessionWith(readyFeatures()) })
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.account.sections.security,
+      }),
+    ).toBeInTheDocument()
+    // No two-step block exists when the document serves no such feature, so
+    // there is no title to find.
+    expect(
+      screen.queryByRole('heading', {
+        level: 2,
+        name: demoEnUS.account.rows.label.mfa,
+      }),
+    ).toBeNull()
+    security.unmount()
+
+    // The phone block lives on the profile pane.
+    window.history.replaceState({}, '', '/account/profile')
     renderDemoApp({ session: sessionWith(readyFeatures()) })
 
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: demoEnUS.account.title,
+        name: demoEnUS.account.sections.profile,
       }),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('heading', {
         level: 2,
-        name: tAccount('mfa.title'),
+        name: demoEnUS.account.rows.label.phone,
       }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('heading', {
-        level: 2,
-        name: tAccount('phone.title'),
-      }),
-    ).not.toBeInTheDocument()
+    ).toBeNull()
   })
 
   it('mounts them when the document serves their features', async () => {
-    window.history.replaceState({}, '', '/account')
+    // The blocks are on their panes from the start: no surface has to be
+    // opened before it is read.
+    window.history.replaceState({}, '', '/account?section=security')
+    const security = renderDemoApp({
+      session: sessionWith(readyFeatures('authn.mfa', 'authn.phone')),
+    })
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: demoEnUS.account.rows.label.mfa,
+      }),
+    ).toBeInTheDocument()
+    security.unmount()
+
+    // The phone block lives on the profile pane.
+    window.history.replaceState({}, '', '/account/profile')
     renderDemoApp({
       session: sessionWith(readyFeatures('authn.mfa', 'authn.phone')),
     })
@@ -545,13 +576,7 @@ describe('the account page mounts only the sections its document serves', () => 
     expect(
       await screen.findByRole('heading', {
         level: 2,
-        name: tAccount('mfa.title'),
-      }),
-    ).toBeInTheDocument()
-    expect(
-      await screen.findByRole('heading', {
-        level: 2,
-        name: tAccount('phone.title'),
+        name: demoEnUS.account.rows.label.phone,
       }),
     ).toBeInTheDocument()
   })

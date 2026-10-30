@@ -48,6 +48,7 @@ import {
   setCurrentTenantId,
   setTenantAliases,
 } from '../chrome.js'
+import { ACCOUNT_SECTION_PATHS, ACCOUNT_SECTIONS } from '../paths.js'
 import { createBackend } from './backends.js'
 import type { BackendMode } from './backends.js'
 import {
@@ -148,6 +149,8 @@ async function scanRoute(
   // A route that rendered no markup at all is a broken sweep, not an
   // accessible page: fail rather than scan an empty document.
   expect(container.innerHTML, `route ${path} [${mode}] rendered no markup`).not.toBe('')
+  const errorPlaceholder =
+    mode === 'error' ? ERROR_PLACEHOLDER_BY_PATH[path] : undefined
   await settle()
   // A read the scripted backend does not answer resolves `undefined`;
   // react-query only logs "Query data cannot be undefined" and the page
@@ -158,8 +161,6 @@ async function scanRoute(
     unscripted,
     `route ${path} [${mode}] issued read(s) the scripted backend does not answer`,
   ).toEqual([])
-  const errorPlaceholder =
-    mode === 'error' ? ERROR_PLACEHOLDER_BY_PATH[path] : undefined
   if (errorPlaceholder !== undefined) {
     // The route's own error copy must be on screen before the scan: settle()
     // returns once the tree stops changing, and a tree that never reached its
@@ -286,12 +287,16 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
     }
   }
 
-  it('scans a tenant route in the sidebar shell form', async () => {
-    // The account page carries the appearance section and sections of its
-    // own, so the tenant frame's sidebar chrome is scanned against real
-    // content rather than the empty frame.
-    await scanSidebarRoute('/account')
-  })
+  // The account settings is one page per pane, so each pane's route is
+  // scanned in the tenant frame's sidebar chrome. One case per pane keeps
+  // each scan on a fresh document -- two compositions in one case would put
+  // two main landmarks on the page -- and the panes are the only routes whose
+  // content the default topbar sweep never composes with that chrome.
+  for (const section of ACCOUNT_SECTIONS) {
+    it(`scans the account settings pane ${section} in the sidebar shell form`, async () => {
+      await scanSidebarRoute(ACCOUNT_SECTION_PATHS[section])
+    })
+  }
 
   it('scans a console route in the sidebar shell form', async () => {
     // The console is the second shell; it takes the same layout through a

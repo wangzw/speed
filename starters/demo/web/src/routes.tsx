@@ -23,13 +23,15 @@
  * between them -- so they drop straight into the table.
  */
 
+import { useEffect } from 'react'
 import type { ReactElement } from 'react'
 import type { FeatureName } from '@speed/api-sdk/features'
 import { notificationRoutes } from '@speed/notification-ui'
+import { useLocationPath, useRedirect } from '@speed/route-kit'
 import type { RouteDeclaration, RouteTable } from '@speed/route-kit'
 import { consoleShellRoutes } from './console-routes.js'
 import { DemoNavLabel } from './nav-label.js'
-import { HomeNavIcon, NotificationsNavIcon } from './nav-icons.js'
+import { AccountNavIcon, HomeNavIcon, NotificationsNavIcon } from './nav-icons.js'
 import {
   AccountBindingCallbackPage,
   AccountSettingsPage,
@@ -43,6 +45,8 @@ import { PasswordResetPage } from './pages/password-reset-page.js'
 import {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
+  ACCOUNT_SECTION_PATHS,
+  ACCOUNT_SECTIONS,
   ACCOUNT_SETUP_PATH,
   AUTH_CALLBACK_PATH,
   INVITATION_PREFIX,
@@ -94,6 +98,30 @@ type HostRouteDeclaration = RouteDeclaration & {
   readonly icon?: ReactElement
 }
 
+/**
+ * The account settings' group address: it holds no page of its own, so it
+ * replaces the history entry with a pane page. The visitor's other query
+ * rides along -- an older `/account?verify=1` or `?change=email` link still
+ * lands on the profile page that reads it -- and an older `?section=` pick
+ * names the page it meant. Renders nothing on the way, like the app's other
+ * redirects.
+ */
+function AccountLandingRedirect(): null {
+  const redirect = useRedirect()
+  const { search } = useLocationPath()
+  useEffect(() => {
+    const landing = new URLSearchParams(search)
+    const picked = landing.get('section')
+    const pane = ACCOUNT_SECTIONS.find((section) => section === picked)
+    landing.delete('section')
+    const rest = landing.toString()
+    const target =
+      pane === undefined ? ACCOUNT_SECTION_PATHS.profile : ACCOUNT_SECTION_PATHS[pane]
+    redirect(rest === '' ? target : `${target}?${rest}`)
+  }, [redirect, search])
+  return null
+}
+
 /** The business slot: the skeleton's placeholder page, its account page,
  * and the notification center (@speed/notification-ui's declaration, whose
  * view renders the header bell's destination). */
@@ -104,11 +132,34 @@ export const businessRoutes: readonly HostRouteDeclaration[] = [
     label: <DemoNavLabel labelKey="nav.home" />,
     icon: <HomeNavIcon />,
   },
-  // Unlabelled: the account settings page is reached from the header's
-  // avatar menu, the tenant navigation's single entry for it.
+  // The account settings: the navigation's expandable entry, whose second
+  // level is the pane pages below (the frame builds those links,
+  // src/app.tsx). The group's own path carries no page: it lands on the
+  // first pane with the visitor's query intact, so every older link into
+  // `/account?verify=1` and friends still arrives where it meant to.
   {
     path: ACCOUNT_PATH,
-    view: () => <AccountSettingsPage />,
+    view: () => <AccountLandingRedirect />,
+    label: <DemoNavLabel labelKey="nav.account" />,
+    icon: <AccountNavIcon />,
+  },
+  // The panes: one page each, unlabelled because the navigation nests them
+  // under the entry above rather than listing them at the top level.
+  {
+    path: ACCOUNT_SECTION_PATHS.profile,
+    view: () => <AccountSettingsPage section="profile" />,
+  },
+  {
+    path: ACCOUNT_SECTION_PATHS.security,
+    view: () => <AccountSettingsPage section="security" />,
+  },
+  {
+    path: ACCOUNT_SECTION_PATHS.sessions,
+    view: () => <AccountSettingsPage section="sessions" />,
+  },
+  {
+    path: ACCOUNT_SECTION_PATHS.preferences,
+    view: () => <AccountSettingsPage section="preferences" />,
   },
   // Unlabelled: a registration's completion point, not a destination in the
   // navigation (reached from the sign-in surface's completion, or by URL).

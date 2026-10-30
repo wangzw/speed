@@ -62,8 +62,12 @@
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { createAccounts } from '../helpers/accounts'
+import {
+  openAccountSection,
+  selectAccountSection,
+} from '../helpers/account-sections'
 import { expect, test } from '../fixtures/demo'
-import { copy, copyPattern } from '../helpers/i18n'
+import { copy } from '../helpers/i18n'
 import { totpCode } from '../helpers/totp'
 
 // The operator needs its two seeded factors and a proved address; the console
@@ -98,8 +102,8 @@ const TOTP_SEED = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'
 /** A password that matches no account, used for the comparison attempt. */
 const WRONG_PASSWORD = 'not-the-member-password'
 
-/** The account page's path, which is the protected page the member was on. */
-const ACCOUNT_PATH = '/account'
+/** The account settings' first pane, which is the protected page the member was on. */
+const ACCOUNT_PROFILE_PATH = '/account/profile'
 
 /** The header's console entry (a link, while the operator may reach it). */
 function consoleEntry(page: Page): Locator {
@@ -239,31 +243,19 @@ function sessionEndedHeading(page: Page): Locator {
   })
 }
 
-/** The account page's heading (the protected page the member was refused on). */
-function accountHeading(page: Page): Locator {
+/** The account settings' profile pane heading, the page's one h1. */
+function profileHeading(page: Page): Locator {
   return page.getByRole('heading', {
     level: 1,
-    name: copy('demo', 'account.title'),
+    name: copy('demo', 'account.sections.profile'),
     exact: true,
   })
 }
 
-/** Open the account page through the account menu. */
-async function openAccountSettings(page: Page): Promise<void> {
-  await page.getByRole('banner').getByTestId('user-menu-trigger').click()
-  await page
-    .getByRole('menuitem', {
-      name: copy('demo', 'userMenu.accountSettings'),
-      exact: true,
-    })
-    .click()
-  await expect(accountHeading(page)).toBeVisible()
-}
-
-/** The account page's sessions section. */
+/** The sessions pane's devices card. */
 function sessionsSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('accountUi', 'sessions.title'),
+    name: copy('demo', 'account.blocks.devices'),
     exact: true,
   })
 }
@@ -420,27 +412,24 @@ test('account-offboarding: an operator disables a member and the member returns 
 
       // The account page lists this device's own sessions: the two rows are
       // the two signed-in contexts, and exactly one of them is current.
-      await openAccountSettings(memberAPage)
+      await openAccountSection(memberAPage, 'sessions')
       const sessions = sessionsSection(memberAPage)
-      await expect(sessions.getByRole('listitem')).toHaveCount(2)
+      // The table carries one header row and one row per live session.
+      await expect(sessions.getByRole('row')).toHaveCount(3)
       await expect(
         sessions.getByText(copy('accountUi', 'sessions.current'), {
           exact: true,
         }),
       ).toHaveCount(1)
-      await expect(
-        sessions
-          .getByText(
-            copyPattern('accountUi', 'sessions.signedIn', { time: '.+' }),
-          )
-          .first(),
-      ).toBeVisible()
-      // Both live rows name their session's absolute expiry.
-      await expect(
-        sessions.getByText(
-          copyPattern('accountUi', 'sessions.expires', { time: '.+' }),
-        ),
-      ).toHaveCount(2)
+      // Each row names its device, its address and its last activity.
+      for (const column of ['device', 'address', 'activity', 'action'] as const) {
+        await expect(
+          sessions.getByRole('columnheader', {
+            name: copy('accountUi', `sessions.table.${column}`),
+            exact: true,
+          }),
+        ).toBeVisible()
+      }
     })
 
     await test.step('step 1: the operator enters the console and opens the accounts page', async () => {
@@ -602,9 +591,9 @@ test('account-offboarding: an operator disables a member and the member returns 
         }),
       ).toBeVisible()
 
-      // Nothing of the refused page renders: neither the account page nor the
+      // Nothing of the refused page renders: neither the account pane nor the
       // tenant home heading is the page's heading any more.
-      await expect(accountHeading(memberB)).toHaveCount(0)
+      await expect(profileHeading(memberB)).toHaveCount(0)
       await expect(
         memberB.getByRole('heading', {
           level: 1,
@@ -725,8 +714,8 @@ test('account-offboarding: an operator disables a member and the member returns 
       await identifierField(memberB).fill(MEMBER.identifier)
       await passwordField(memberB).fill(MEMBER.password)
       await signInButton(memberB).click()
-      await expect(accountHeading(memberB)).toBeVisible({ timeout: 15_000 })
-      expect(new URL(memberB.url()).pathname).toBe(ACCOUNT_PATH)
+      await expect(profileHeading(memberB)).toBeVisible({ timeout: 15_000 })
+      expect(new URL(memberB.url()).pathname).toBe(ACCOUNT_PROFILE_PATH)
     })
 
     await test.step('alternate path: the session list holds only the new device, and the switcher names the organization', async () => {
@@ -737,8 +726,10 @@ test('account-offboarding: an operator disables a member and the member returns 
 
       // The two pre-disable sessions are gone; the re-login created this one,
       // and it is the current one.
+      await selectAccountSection(memberB, 'sessions')
       const sessions = sessionsSection(memberB)
-      await expect(sessions.getByRole('listitem')).toHaveCount(1, {
+      // The header row and the one remaining session.
+      await expect(sessions.getByRole('row')).toHaveCount(2, {
         timeout: 15_000,
       })
       await expect(

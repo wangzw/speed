@@ -34,6 +34,7 @@ import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { pendingInvitationLanding } from '../invitation-return.js'
 import {
   ACCOUNT_PATH,
+  ACCOUNT_SECTION_PATHS,
   ACCOUNT_SETUP_PATH,
   INVITATION_PREFIX,
   PASSWORD_RESET_PATH,
@@ -134,7 +135,7 @@ const accountEn = accountUiResources['en-US'] as unknown as {
   readonly verification: {
     readonly codeLabel: string
     readonly verify: string
-    readonly verifiedTitle: string
+    readonly verifiedDescription: string
   }
 }
 
@@ -396,8 +397,11 @@ describe('the sign-in surface', () => {
       screen.getByRole('button', { name: authRegisterEn.register.submit }),
     )
 
+    // The account settings' group address redirects to the profile pane,
+    // where the registration's verification section sits, with the landing
+    // flag intact.
     await waitFor(() => {
-      expect(window.location.pathname).toBe(ACCOUNT_PATH)
+      expect(window.location.pathname).toBe(ACCOUNT_SECTION_PATHS.profile)
       expect(window.location.search).toBe('?verify=1')
     })
     expect(
@@ -471,7 +475,11 @@ describe('the sign-in surface', () => {
       screen.getByRole('button', { name: authRegisterEn.register.submit }),
     )
 
-    await waitFor(() => expect(window.location.pathname).toBe(ACCOUNT_PATH))
+    // Registration lands on the account settings, which redirects to the
+    // profile pane -- the pane the verification section sits on.
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(ACCOUNT_SECTION_PATHS.profile),
+    )
     await user.type(
       await screen.findByLabelText(accountEn.verification.codeLabel),
       '123456',
@@ -480,12 +488,20 @@ describe('the sign-in surface', () => {
       screen.getByRole('button', { name: accountEn.verification.verify }),
     )
 
+    // The pane's block carries the completion copy naming the proved address;
+    // the block's own heading is the pane's, so the verification section
+    // contributes its completion sentence rather than a second heading.
     expect(
-      await screen.findByText(accountEn.verification.verifiedTitle),
+      await screen.findByText(
+        accountEn.verification.verifiedDescription.replace(
+          '{{email}}',
+          'ada@example.com',
+        ),
+      ),
     ).toBeInTheDocument()
     // The verification did not invent a landing: the viewer stays where the
     // registration put them.
-    expect(window.location.pathname).toBe(ACCOUNT_PATH)
+    expect(window.location.pathname).toBe(ACCOUNT_SECTION_PATHS.profile)
   })
 
   it('lands a registration in the tenant area when the personal tenant is in force', async () => {

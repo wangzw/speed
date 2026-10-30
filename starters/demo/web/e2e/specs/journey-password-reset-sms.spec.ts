@@ -116,6 +116,15 @@ async function provePhone(
   page: Page,
   log: Parameters<typeof waitForVerificationCode>[0],
 ): Promise<void> {
+  // The phone block is a card of the profile page; an account with no number
+  // offers the add action there, and the form it opens is the section.
+  await page
+    .getByRole('region', {
+      name: copy('demo', 'account.rows.label.phone'),
+      exact: true,
+    })
+    .getByRole('button', { name: copy('demo', 'account.action.add'), exact: true })
+    .click()
   const phone = phoneSection(page)
   const country = phone.getByRole('combobox', {
     name: copy('accountUi', 'phone.country.label'),

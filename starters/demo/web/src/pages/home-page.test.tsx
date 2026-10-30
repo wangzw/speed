@@ -247,10 +247,12 @@ describe('the start page', () => {
     await user.click(cardFor(demoEnUS.home.cards.account.title))
 
     // The account page renders in place: the card routed the viewer to it.
+    // The account settings is one route per pane, and `/account` redirects to
+    // the profile pane, whose heading names that pane.
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: demoEnUS.account.title,
+        name: demoEnUS.account.sections.profile,
       }),
     ).toBeInTheDocument()
   })

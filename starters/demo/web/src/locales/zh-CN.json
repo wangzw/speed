@@ -6,6 +6,7 @@
     "dismiss": "关闭"
   },
   "nav": {
+    "account": "账户设置",
     "home": "首页",
     "console": "控制台"
   },
@@ -78,9 +79,87 @@
   },
   "account": {
     "title": "账户设置",
-    "description": "管理你的账户：个人资料、密码、登录标识、偏好、活跃会话、已绑定的登录方式与两步验证。",
+    "description": "管理你的资料、联系方式与安全设置。",
+    "sections": {
+      "profile": "个人资料",
+      "security": "密码与安全",
+      "sessions": "登录会话",
+      "preferences": "偏好"
+    },
+    "sectionNavLabel": "账户设置分区",
+    "rows": {
+      "separator": "、",
+      "label": {
+        "displayName": "显示名",
+        "username": "用户名",
+        "email": "邮箱",
+        "phone": "手机号",
+        "password": "密码",
+        "mfa": "两步验证",
+        "loginWays": "登录方式",
+        "social": "社交账号",
+        "theme": "主题",
+        "languageTimeZone": "语言与时区"
+      },
+      "badge": {
+        "mfaOff": "建议开启"
+      },
+      "hint": {
+        "identifiersUnderLoginWays": "添加或移除邮箱、用户名，请前往「登录方式」。"
+      },
+      "value": {
+        "notSet": "尚未设置",
+        "notBound": "尚未绑定",
+        "mfaOff": "未开启",
+        "mfaOn": "已开启 {{count}} 种",
+        "passwordSet": "已设置",
+        "passwordUnset": "未设置",
+        "followDevice": "跟随设备",
+        "loginWays": "{{kinds}} · 共 {{count}} 种",
+        "socialBound": "已绑定 {{providers}}"
+      },
+      "action": {
+        "manage": "管理",
+        "manageUnderLoginWays": "在登录方式中管理",
+        "bind": "绑定",
+        "set": "设置",
+        "change": "更改",
+        "enable": "开启",
+        "collapse": "收起"
+      }
+    },
     "bindingCallback": {
       "title": "正在关联账号"
+    },
+    "blocks": {
+      "contacts": "联系方式",
+      "identity": "账号信息",
+      "appearance": "外观与语言",
+      "devices": "登录设备"
+    },
+    "security": {
+      "mfaDescription": "两步验证在密码之外再加一道确认：登录时还需要你的验证器应用、通行密钥或短信验证码，密码泄露也无法单独登录。",
+      "password": "用密码登录你的账户。",
+      "social": "用 GitHub、Google 或微信之类的账号登录。",
+      "kindCount": "{{count}} 种",
+      "identifiers": "哪些用户名、邮箱和手机号可以用于登录。"
+    },
+    "blockDescriptions": {
+      "identity": "你的登录名、显示名与联系方式。",
+      "devices": "当前登录着你账户的设备。",
+      "appearance": "主题、语言与时区的显示偏好。",
+      "email": "哪些邮箱能接收通知、找回密码。",
+      "phone": "用于登录与安全验证的手机号。"
+    },
+    "action": {
+      "add": "添加",
+      "delete": "删除"
+    },
+    "phoneRemove": {
+      "removeTitle": "删除这个手机号？",
+      "removeMessage": "删除后该号码不能再用于登录或接收验证码。",
+      "removeConfirm": "删除",
+      "removeFailed": "删除失败，请稍后重试。"
     }
   },
   "accountSetup": {

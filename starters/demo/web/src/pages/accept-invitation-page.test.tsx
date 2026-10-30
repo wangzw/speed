@@ -360,7 +360,7 @@ describe('the invitation landing', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: demoEnUS.account.title,
+        name: demoEnUS.account.sections.profile,
       }),
     ).toBeInTheDocument()
     await user.click(screen.getByRole('link', { name: demoEnUS.nav.home }))

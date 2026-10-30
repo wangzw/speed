@@ -36,7 +36,7 @@ import {
   useHasRoute,
   useRouteLinkProps,
 } from '@speed/route-kit'
-import { PageHeader, SectionCard } from '@speed/ui-kit'
+import { PageLayout, SectionCard } from '@speed/ui-kit'
 import { setupIncomplete } from '../account-setup.js'
 import { useAuthnProfileGet } from '../app-api/index.js'
 import {
@@ -127,21 +127,7 @@ export function HomePage(): ReactElement {
   // is unsettled.
   const reviewNoticeServed = useFeature('review.notification.control')
   return (
-    <Box
-      component="section"
-      // The page's own root is the containment context (the layout design's
-      // component-level response: the component declares it on its root, the
-      // grid's tracks query it). The grid cannot declare it itself -- a
-      // container query resolves against an ancestor, never the element that
-      // owns the rule.
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 4,
-        containerType: 'inline-size',
-      }}
-    >
-      <PageHeader title={t('home.heading')} description={t('home.intro')} />
+    <PageLayout title={t('home.heading')} description={t('home.intro')}>
       {membershipNotice.visible ? (
         <Alert
           ref={confirmation}
@@ -184,7 +170,8 @@ export function HomePage(): ReactElement {
             display: 'grid',
             // Container-keyed tracks, the FormLayout/DataTable recipe: one
             // column at the container's narrow end (the `@` shorthand's 0px
-            // baseline), two equal tracks from its `sm` (600px) up. The page
+            // baseline), two equal tracks from its `sm` (600px) up. The
+            // container is the page frame's (PageLayout), so the grid
             // collapses to one column in a narrow panel even on a wide
             // viewport.
             gridTemplateColumns: { '@': '1fr', '@sm': 'repeat(2, 1fr)' },
@@ -197,7 +184,7 @@ export function HomePage(): ReactElement {
         </Box>
       </SectionCard>
       {reviewNoticeServed ? <ReviewNoticeControl /> : null}
-    </Box>
+    </PageLayout>
   )
 }
 
