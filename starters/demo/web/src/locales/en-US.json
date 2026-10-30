@@ -7,8 +7,7 @@
   },
   "nav": {
     "home": "Home",
-    "console": "Console",
-    "account": "Account settings"
+    "console": "Console"
   },
   "console": {
     "backToApp": "Back to app",
@@ -103,7 +102,6 @@
   },
   "userMenu": {
     "accountMenu": "Account menu",
-    "profile": "Profile",
     "accountSettings": "Account settings",
     "signOut": "Sign out"
   },

@@ -118,6 +118,24 @@ function sessionsSection(page: Page, locale: CopyLocale): Locator {
   })
 }
 
+/** Open the account page through the account menu. */
+async function openAccountSettings(page: Page): Promise<void> {
+  await page.getByRole('banner').getByTestId('user-menu-trigger').click()
+  await page
+    .getByRole('menuitem', {
+      name: copy('demo', 'userMenu.accountSettings'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByRole('heading', {
+      level: 1,
+      name: copy('demo', 'account.title'),
+      exact: true,
+    }),
+  ).toBeVisible()
+}
+
 /** The matcher for the current row's sign-in line in the given UI language. */
 function signedInLinePattern(locale: CopyLocale): RegExp {
   // The pattern carries its own capture group: `copyPattern` splices the
@@ -283,19 +301,7 @@ test('personalize-interface: the chosen language and time zone take effect and s
       }),
     ).toBeVisible()
 
-    await page
-      .getByRole('link', {
-        name: copy('demo', 'nav.account'),
-        exact: true,
-      })
-      .click()
-    await expect(
-      page.getByRole('heading', {
-        level: 1,
-        name: copy('demo', 'account.title'),
-        exact: true,
-      }),
-    ).toBeVisible()
+    await openAccountSettings(page)
   })
 
   await test.step('step 1: both preference controls start on the explicit "not chosen" choice', async () => {
@@ -368,7 +374,7 @@ test('personalize-interface: the chosen language and time zone take effect and s
 
     await expect(
       page.getByRole('link', {
-        name: copy('demo', 'nav.account', {}, CHOSEN_LOCALE),
+        name: copy('demo', 'nav.home', {}, CHOSEN_LOCALE),
         exact: true,
       }),
     ).toBeVisible()
@@ -472,7 +478,7 @@ test('personalize-interface: the chosen language and time zone take effect and s
     await expect(page.locator('html')).toHaveAttribute('lang', CHOSEN_LOCALE)
     await expect(
       page.getByRole('link', {
-        name: copy('demo', 'nav.account', {}, CHOSEN_LOCALE),
+        name: copy('demo', 'nav.home', {}, CHOSEN_LOCALE),
         exact: true,
       }),
     ).toBeVisible()

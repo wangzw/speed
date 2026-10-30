@@ -2654,7 +2654,12 @@ describe('the impersonation shell', () => {
 
     // A tenant-area route change keeps the same frame and the same
     // dismissal: the notice does not pop back open on navigation.
-    await user.click(screen.getByRole('link', { name: demoEnUS.nav.account }))
+    await user.click(screen.getByTestId('user-menu-trigger'))
+    await user.click(
+      screen.getByRole('menuitem', {
+        name: demoEnUS.userMenu.accountSettings,
+      }),
+    )
     await waitFor(() => expect(window.location.pathname).toBe('/account'))
     expect(banner()).toBeNull()
     expect(

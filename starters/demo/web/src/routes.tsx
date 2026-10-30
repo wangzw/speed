@@ -29,11 +29,7 @@ import { notificationRoutes } from '@speed/notification-ui'
 import type { RouteDeclaration, RouteTable } from '@speed/route-kit'
 import { consoleShellRoutes } from './console-routes.js'
 import { DemoNavLabel } from './nav-label.js'
-import {
-  AccountNavIcon,
-  HomeNavIcon,
-  NotificationsNavIcon,
-} from './nav-icons.js'
+import { HomeNavIcon, NotificationsNavIcon } from './nav-icons.js'
 import {
   AccountBindingCallbackPage,
   AccountSettingsPage,
@@ -108,11 +104,11 @@ export const businessRoutes: readonly HostRouteDeclaration[] = [
     label: <DemoNavLabel labelKey="nav.home" />,
     icon: <HomeNavIcon />,
   },
+  // Unlabelled: the account settings page is reached from the header's
+  // avatar menu, the tenant navigation's single entry for it.
   {
     path: ACCOUNT_PATH,
     view: () => <AccountSettingsPage />,
-    label: <DemoNavLabel labelKey="nav.account" />,
-    icon: <AccountNavIcon />,
   },
   // Unlabelled: a registration's completion point, not a destination in the
   // navigation (reached from the sign-in surface's completion, or by URL).

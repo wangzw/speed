@@ -7,8 +7,7 @@
   },
   "nav": {
     "home": "首页",
-    "console": "控制台",
-    "account": "账户设置"
+    "console": "控制台"
   },
   "console": {
     "backToApp": "返回应用",
@@ -103,7 +102,6 @@
   },
   "userMenu": {
     "accountMenu": "账户菜单",
-    "profile": "个人资料",
     "accountSettings": "账户设置",
     "signOut": "退出登录"
   },

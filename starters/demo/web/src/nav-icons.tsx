@@ -41,27 +41,6 @@ export function HomeNavIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** Account settings: a person. */
-export function AccountNavIcon({ size = 24 }: IconProps) {
-  return (
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      viewBox="0 0 24 24"
-      width={size}
-      height={size}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="8.5" r="3.2" />
-      <path d="M5.5 19.5c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5" />
-    </svg>
-  )
-}
-
 /** The notification centre: a bell. */
 export function NotificationsNavIcon({ size = 24 }: IconProps) {
   return (

@@ -98,12 +98,16 @@ function accountHeading(page: Page): Locator {
   })
 }
 
-/** The header's account-settings entry. */
-function accountLink(page: Page): Locator {
-  return page.getByRole('link', {
-    name: copy('demo', 'nav.account'),
-    exact: true,
-  })
+/** Open the account page through the account menu. */
+async function openAccountSettings(page: Page): Promise<void> {
+  await page.getByRole('banner').getByTestId('user-menu-trigger').click()
+  await page
+    .getByRole('menuitem', {
+      name: copy('demo', 'userMenu.accountSettings'),
+      exact: true,
+    })
+    .click()
+  await expect(accountHeading(page)).toBeVisible()
 }
 
 /** One account section, named by its own title. */
@@ -457,8 +461,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
     })
 
     await test.step('step 5: a passkey is added after the waiting state, its cancel and its retry', async () => {
-      await accountLink(page).click()
-      await expect(accountHeading(page)).toBeVisible()
+      await openAccountSettings(page)
       const mfa = mfaSection(page)
 
       // Presence simulation is off for the first attempt: the ceremony stays
@@ -579,8 +582,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
     })
 
     await test.step('step 8: the session list marks the current device and device B is revoked', async () => {
-      await accountLink(page).click()
-      await expect(accountHeading(page)).toBeVisible()
+      await openAccountSettings(page)
       const sessions = sessionsSection(page)
       await expect(sessions.getByRole('listitem')).toHaveCount(2)
 
@@ -642,9 +644,18 @@ test('account-security-hardening: an account enrols two factors, ends another de
         if (await ended.isVisible()) {
           return
         }
-        const link = accountLink(deviceB)
-        if ((await link.count()) > 0) {
-          await link.click({ timeout: 1_000 }).catch(() => undefined)
+        const trigger = deviceB
+          .getByRole('banner')
+          .getByTestId('user-menu-trigger')
+        if ((await trigger.count()) > 0) {
+          await trigger.click({ timeout: 1_000 }).catch(() => undefined)
+          await deviceB
+            .getByRole('menuitem', {
+              name: copy('demo', 'userMenu.accountSettings'),
+              exact: true,
+            })
+            .click({ timeout: 1_000 })
+            .catch(() => undefined)
         } else {
           // No header left to click: the next request is the reload.
           await deviceB.reload().catch(() => undefined)

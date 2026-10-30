@@ -865,12 +865,11 @@ describe('the console area', () => {
     expect(banner).not.toBeNull()
 
     // The avatar trigger carries the signed-in principal's identity; its menu
-    // carries the profile / account-settings / sign-out entries.
+    // carries the account-settings / sign-out entries.
     await user.click(
       within(banner as HTMLElement).getByTestId('user-menu-trigger'),
     )
     for (const name of [
-      demoEnUS.userMenu.profile,
       demoEnUS.userMenu.accountSettings,
       demoEnUS.userMenu.signOut,
     ]) {
@@ -1144,7 +1143,7 @@ describe('the tenant area header controls', () => {
 describe('the tenant navigation', () => {
   it('leaves a modified click on an entry to the browser', async () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
-    const entry = await screen.findByRole('link', { name: demoEnUS.nav.account })
+    const entry = await screen.findByRole('link', { name: demoEnUS.nav.home })
 
     // A Ctrl/⌘ click belongs to the browser (a new tab), so the app must
     // neither navigate in place nor suppress the default action. This
@@ -1170,7 +1169,6 @@ describe('the tenant navigation icons', () => {
       language: 'en-US',
       labels: [
         demoEnUS.nav.home,
-        demoEnUS.nav.account,
         tNotifications('inbox.title'),
       ],
       collapse: tLayout('appShell.collapseNav'),
@@ -1180,7 +1178,6 @@ describe('the tenant navigation icons', () => {
       language: 'zh-CN',
       labels: [
         demoZhCN.nav.home,
-        demoZhCN.nav.account,
         tNotificationsZh('inbox.title'),
       ],
       collapse: tLayoutZh('appShell.collapseNav'),
@@ -1239,7 +1236,6 @@ describe('the tenant navigation icons', () => {
 
     for (const label of [
       demoEnUS.nav.home,
-      demoEnUS.nav.account,
       tNotifications('inbox.title'),
     ]) {
       const link = screen.getByRole('link', { name: label })

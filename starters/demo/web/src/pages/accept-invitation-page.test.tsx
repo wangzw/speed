@@ -351,8 +351,11 @@ describe('the invitation landing', () => {
 
     // A later visit to the home page in the same session does not bring it
     // back.
+    await user.click(screen.getByTestId('user-menu-trigger'))
     await user.click(
-      screen.getByRole('link', { name: demoEnUS.nav.account }),
+      screen.getByRole('menuitem', {
+        name: demoEnUS.userMenu.accountSettings,
+      }),
     )
     expect(
       await screen.findByRole('heading', {

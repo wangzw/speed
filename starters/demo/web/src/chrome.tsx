@@ -603,13 +603,13 @@ export function ColorModeToggle(): ReactElement {
 }
 
 /**
- * The account menu: an avatar trigger opening profile / account-settings /
- * sign-out. The trigger shows the signed-in user's initials (the avatar is
+ * The account menu: an avatar trigger opening account-settings / sign-out.
+ * The trigger shows the signed-in user's initials (the avatar is
  * decorative) and its accessible name carries both the initials and the
  * display name -- the initials are visible text, so WCAG 2.5.3 requires them
  * inside the name; the generic label is used while anonymous. The account
- * page holds both the profile and the settings surfaces (account-ui's
- * sections span them), so the two entries open the same page; sign-out
+ * page holds the settings surface (account-ui's sections span it), and the
+ * avatar menu is the tenant navigation's single entry for it; sign-out
  * drives the session's logout, whose quiet terminal flip the shells observe.
  */
 export function UserMenu({
@@ -687,7 +687,6 @@ export function UserMenu({
             provider); it starts the same end attempt the banner carries, so
             the two are disabled and busy together. */}
         <ImpersonationEndMenuItem divider onActivate={closeMenu} />
-        <MenuItem onClick={goToAccount}>{t('userMenu.profile')}</MenuItem>
         <MenuItem onClick={goToAccount}>
           {t('userMenu.accountSettings')}
         </MenuItem>

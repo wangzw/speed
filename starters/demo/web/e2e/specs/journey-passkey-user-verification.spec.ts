@@ -80,12 +80,16 @@ function accountHeading(page: Page): Locator {
   })
 }
 
-/** The header's account-settings entry. */
-function accountLink(page: Page): Locator {
-  return page.getByRole('link', {
-    name: copy('demo', 'nav.account'),
-    exact: true,
-  })
+/** Open the account page through the account menu. */
+async function openAccountSettings(page: Page): Promise<void> {
+  await page.getByRole('banner').getByTestId('user-menu-trigger').click()
+  await page
+    .getByRole('menuitem', {
+      name: copy('demo', 'userMenu.accountSettings'),
+      exact: true,
+    })
+    .click()
+  await expect(accountHeading(page)).toBeVisible()
 }
 
 /** One account section, named by its own title. */
@@ -354,8 +358,7 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
         password: account.password,
       })
       await completeTotpFactor(page, secret)
-      await accountLink(page).click()
-      await expect(accountHeading(page)).toBeVisible()
+      await openAccountSettings(page)
     })
 
     await test.step('step 3: the account enrols a discoverable passkey beside the second factor', async () => {

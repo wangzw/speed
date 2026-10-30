@@ -109,12 +109,16 @@ function accountHeading(page: Page): Locator {
   })
 }
 
-/** The header's account-settings entry. */
-function accountLink(page: Page): Locator {
-  return page.getByRole('link', {
-    name: copy('demo', 'nav.account'),
-    exact: true,
-  })
+/** Open the account page through the account menu. */
+async function openAccountSettings(page: Page): Promise<void> {
+  await page.getByRole('banner').getByTestId('user-menu-trigger').click()
+  await page
+    .getByRole('menuitem', {
+      name: copy('demo', 'userMenu.accountSettings'),
+      exact: true,
+    })
+    .click()
+  await expect(accountHeading(page)).toBeVisible()
 }
 
 /** One account page section, named by its own title. */
@@ -407,8 +411,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       await registerPasskeyOnSignIn(panel)
       await expect(homeHeading(page)).toBeVisible({ timeout: 30_000 })
 
-      await accountLink(page).click()
-      await expect(accountHeading(page)).toBeVisible()
+      await openAccountSettings(page)
       // The phone-code first login wrote the number as a sign-in way and no
       // contact, and the account holds no password.
       await expect(phoneRow(page)).toBeVisible()
@@ -531,8 +534,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       await registerPasskeyOnSignIn(page)
       await expect(homeHeading(page)).toBeVisible({ timeout: 30_000 })
 
-      await accountLink(page).click()
-      await expect(accountHeading(page)).toBeVisible()
+      await openAccountSettings(page)
     })
 
     await test.step('the account page lists the username and the social identity, no contact, and one passkey', async () => {

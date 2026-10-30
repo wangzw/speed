@@ -248,6 +248,18 @@ function accountHeading(page: Page): Locator {
   })
 }
 
+/** Open the account page through the account menu. */
+async function openAccountSettings(page: Page): Promise<void> {
+  await page.getByRole('banner').getByTestId('user-menu-trigger').click()
+  await page
+    .getByRole('menuitem', {
+      name: copy('demo', 'userMenu.accountSettings'),
+      exact: true,
+    })
+    .click()
+  await expect(accountHeading(page)).toBeVisible()
+}
+
 /** The account page's sessions section. */
 function sessionsSection(page: Page): Locator {
   return page.getByRole('region', {
@@ -408,10 +420,7 @@ test('account-offboarding: an operator disables a member and the member returns 
 
       // The account page lists this device's own sessions: the two rows are
       // the two signed-in contexts, and exactly one of them is current.
-      await memberAPage
-        .getByRole('link', { name: copy('demo', 'nav.account'), exact: true })
-        .click()
-      await expect(accountHeading(memberAPage)).toBeVisible()
+      await openAccountSettings(memberAPage)
       const sessions = sessionsSection(memberAPage)
       await expect(sessions.getByRole('listitem')).toHaveCount(2)
       await expect(
@@ -565,12 +574,18 @@ test('account-offboarding: an operator disables a member and the member returns 
       // stream. When it has not, one in-app page open is the request the step
       // describes; the state-based wait below is the assertion either way.
       if (!(await ended.isVisible())) {
-        const accountLink = memberB.getByRole('link', {
-          name: copy('demo', 'nav.account'),
-          exact: true,
-        })
-        if ((await accountLink.count()) > 0) {
-          await accountLink.click().catch(() => undefined)
+        const trigger = memberB
+          .getByRole('banner')
+          .getByTestId('user-menu-trigger')
+        if ((await trigger.count()) > 0) {
+          await trigger.click().catch(() => undefined)
+          await memberB
+            .getByRole('menuitem', {
+              name: copy('demo', 'userMenu.accountSettings'),
+              exact: true,
+            })
+            .click()
+            .catch(() => undefined)
         }
       }
 
