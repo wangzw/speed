@@ -393,5 +393,15 @@
       "change": "Use a different value",
       "added": "The identifier has been added."
     }
+  },
+  "contacts": {
+    "title": "Contacts",
+    "loading": "Loading contacts",
+    "none": "Not added yet",
+    "error": {
+      "title": "Could not load contacts",
+      "description": "Something went wrong while loading your contacts. Please try again."
+    },
+    "retry": "Retry"
   }
 }

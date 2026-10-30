@@ -4,10 +4,11 @@
  * @speed/account-ui ships the account family as sections, not a routed
  * screen: the page, its heading and the surrounding chrome are the host's.
  * This page is that host composition -- a ui-kit PageHeader naming the
- * page, then the sections the package exports (the self-service writes: the
- * display name, the password and the sign-in identifiers; then
- * preferences, active sessions, social bindings, and the step-up-gated
- * two-step-verification setup). Each section renders its own async state
+ * page, then the sections the package exports (the display name, then the
+ * read-only summary of the contacts the account is bound to; then the
+ * self-service writes: the email verification, the password and the sign-in
+ * identifiers; then preferences, active sessions, social bindings, and the
+ * step-up-gated two-step-verification setup). Each section renders its own async state
  * (loading, empty, error) from the account-ui namespace, so nothing here
  * repeats a spinner or an error block; the catalog's states are the
  * sections' own.
@@ -57,6 +58,7 @@ import {
   ACCOUNT_UI_NAMESPACE,
   AppearanceSection,
   BindingCallbackHandler,
+  ContactSummarySection,
   ContactVerificationSection,
   IdentifiersSection,
   MfaSection,
@@ -144,6 +146,11 @@ export function AccountSettingsPage(): ReactElement {
           that reads it (the redirect's `return_to`) and words it. */}
       <CallbackLandingNotice namespace={ACCOUNT_UI_NAMESPACE} />
       <ProfileSection session={session} returnPath={pathname} />
+      {/* The contacts the account is bound to, read-only: every email and,
+          where the deployment serves phones, every phone number with its
+          verification state. The write surfaces stay below (the email
+          verification card and the identifiers section). */}
+      <ContactSummarySection phoneServed={phoneServed} />
       {/* The account's email verification, completed here rather than on a
           page of its own: `none` renders nothing, `pending` offers the
           send/verify path and the change-address form, and `verified` names

@@ -393,5 +393,15 @@
       "change": "换一个值",
       "added": "标识已添加。"
     }
+  },
+  "contacts": {
+    "title": "联系方式",
+    "loading": "正在加载联系方式",
+    "none": "尚未绑定",
+    "error": {
+      "title": "无法加载联系方式",
+      "description": "加载联系方式时出了问题，请稍后重试。"
+    },
+    "retry": "重试"
   }
 }

@@ -4,7 +4,9 @@
  * The signed-in account-management component family over an
  * @speed/auth-core session and the generated authn operations: the
  * profile surface (the display name over the profile's own PATCH
- * /api/v1/auth/me), the password surface (PUT /api/v1/auth/password), the phone
+ * /api/v1/auth/me), the read-only contact summary (the profile's own email
+ * and phone identifiers with their verification state), the password
+ * surface (PUT /api/v1/auth/password), the phone
  * surface (the two-step POST /api/v1/auth/phone and /api/v1/auth/phone/verify), the
  * sign-in-identifiers surface (the profile's own identifiers and
  * DELETE /api/v1/auth/identifiers/{id}), the preferences surface (language and
@@ -43,6 +45,10 @@ export {
   ProfileSection,
   type ProfileSectionProps,
 } from './ProfileSection.js'
+export {
+  ContactSummarySection,
+  type ContactSummarySectionProps,
+} from './ContactSummarySection.js'
 export {
   PasswordSection,
   type PasswordSectionProps,
