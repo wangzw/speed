@@ -752,7 +752,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 
 ### 口令（password）
 
-`Begin` 收 `identifier` 与 `password`。方法只服务 `login` 与 `step-up` 两个目的；`link`、`enroll` 或空目的一律交 `StepRefused`，既不读入参也不计数——口令证明的是账户，不是外部身份或因素。口令登录接受用户名，或账户持有并已选作登录方式的已验证邮箱；提供方声明的地址从不成为口令登录名（REQ-signin-006、REQ-signin-038）。手机号不作口令登录名。
+`Begin` 收 `identifier` 与 `password`。方法只服务 `login` 与 `step-up` 两个目的；`link`、`enroll` 或空目的一律交 `StepRefused`，既不读入参也不计数——口令证明的是账户，不是外部身份或因素。口令登录接受用户名，或账户持有并已选作登录方式的已验证邮箱；提供方声明的地址只有在该标记为真时才是口令登录名，账户唯一的邮箱地址在被证明后由系统置真（REQ-account-068、REQ-signin-006、REQ-signin-038）。手机号不作口令登录名。
 
 口令方法先以提交的标识为键 `Throttle.Check(ScopeIdentifier, 键)`，退避中（等待非零，含为负的保守情形）交 `StepThrottled`；然后调 `Passwords.Verify`。键只把提交的标识去首尾空白并折小写再取 SHA-256，不含账户模块 `NormalizeIdentifier` 的其余规则（NFKC、邮箱域名、手机 E.164）；某些拼写（NFKC 等价的全角与半角等）在这里落到不同键，靠账户模块的账户级静默退避把它们合在一起计数（[authn-account](design-authn-account.md)）。逐条：
 
