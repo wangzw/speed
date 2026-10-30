@@ -18,7 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
-	"github.com/vislake/speed/pkg/settings"
 )
 
 // The identifiers a case starts from.
@@ -198,47 +197,10 @@ func (a *fakeAccountAdmin) SetAttributes(_ context.Context, _ authn.AccountID, a
 	return nil
 }
 
-// fakeMFA is the multi-factor composition; only the factor listing is reached.
-type fakeMFA struct {
-	authn.MFA
-	mu      sync.Mutex
-	factors []authn.FactorRecord
-	err     error
-}
-
-func (m *fakeMFA) Factors(_ context.Context, _ authn.AccountID) ([]authn.FactorRecord, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]authn.FactorRecord(nil), m.factors...), m.err
-}
-
-// fakeStore reads the one setting this module consumes.
-type fakeStore struct {
-	settings.Store
-	window time.Duration
-	err    error
-}
-
-func (s *fakeStore) Get(_ settings.Layer, _ string, target any) error {
-	if s.err != nil {
-		return s.err
-	}
-	p, ok := target.(*time.Duration)
-	if !ok {
-		return settings.ErrTypeMismatch
-	}
-	*p = s.window
-	return nil
-}
-
 // leaveOut names a capability a rig builds without.
 type leaveOut string
 
-const (
-	noAudit leaveOut = "audit"
-	noStore leaveOut = "store"
-	noMFA   leaveOut = "mfa"
-)
+const noAudit leaveOut = "audit"
 
 // rig is the module over a mounttest Mounter with every capability present.
 type rig struct {
@@ -247,9 +209,7 @@ type rig struct {
 	accounts     *fakeAccounts
 	verification *fakeSignupVerification
 	admin        *fakeAccountAdmin
-	mfa          *fakeMFA
 	audit        *recordingAudit
-	store        *fakeStore
 	logs         *logBuffer
 	p            *product
 }
@@ -268,9 +228,7 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 		accounts:     newAccounts(),
 		verification: &fakeSignupVerification{},
 		admin:        newAccountAdmin(),
-		mfa:          &fakeMFA{},
 		audit:        &recordingAudit{},
-		store:        &fakeStore{window: defaultRecentWindow},
 		logs:         &logBuffer{},
 	}
 	r.accounts.put(meAccount, authn.Account{
@@ -286,15 +244,10 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 		accounts:           r.accounts,
 		signupVerification: r.verification,
 		accountAdm:         r.admin,
-		mfa:                r.mfa,
 		logger:             logger,
-		settings:           newReader(r.store, logger),
 	}
 	if !left[noAudit] {
 		p.audit = r.audit
-	}
-	if left[noStore] {
-		p.settings = newReader(nil, logger)
 	}
 	r.p = p
 	p.mountRoutes()
@@ -307,18 +260,6 @@ func me() []authntest.Option {
 	return []authntest.Option{
 		authntest.WithAccount(meAccount),
 		authntest.WithSession(meSession),
-		authntest.WithAuthTime(time.Now()),
-	}
-}
-
-// multiFactor is the account's holder with a fresh, local multi-factor
-// authentication.
-func multiFactor() []authntest.Option {
-	return []authntest.Option{
-		authntest.WithAccount(meAccount),
-		authntest.WithSession(meSession),
-		authntest.WithMethods(authn.MethodPassword, authn.MethodTOTP),
-		authntest.WithAssurance(authn.AssuranceMulti),
 		authntest.WithAuthTime(time.Now()),
 	}
 }

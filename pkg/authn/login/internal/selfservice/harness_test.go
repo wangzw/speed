@@ -261,20 +261,39 @@ func (w *lockedWriter) Write(p []byte) (int, error) {
 	return w.c.buf.Write(p)
 }
 
-// mutating is the routes that change how the account is proven, with a request
-// body each of them accepts.
-var mutating = []struct {
-	name string
-	req  request
-}{
-	{"PUT /password", request{method: http.MethodPut, path: "/password", body: `{"new_password":"correct horse"}`}},
-	{"POST /phone", request{method: http.MethodPost, path: "/phone", body: `{"phone":"+8613800000000"}`}},
-	{"POST /phone/verify", request{method: http.MethodPost, path: "/phone/verify", body: `{"code":"123456"}`}},
-	{"POST /identifiers", request{method: http.MethodPost, path: "/identifiers", body: `{"kind":"username","value":"ada2"}`}},
-	{"POST /identifiers/verify", request{method: http.MethodPost, path: "/identifiers/verify", body: `{"code":"123456"}`}},
-	{"PUT /identifiers/:id", request{method: http.MethodPut, path: "/identifiers/ident-2", body: `{"sign_in":true}`}},
-	{"DELETE /identifiers/:id", request{method: http.MethodDelete, path: "/identifiers/ident-1"}},
-	{"DELETE /links/:id", request{method: http.MethodDelete, path: "/links/link-1"}},
+// guardedRoute is one route that changes the account, with a request body it
+// accepts and whether the route asks for a fresh authentication.
+type guardedRoute struct {
+	name  string
+	req   request
+	fresh bool
+}
+
+// mutating is the routes that change the account, with a request body each of
+// them accepts. fresh marks the ones that add, choose or remove a way in: those
+// ask for a fresh authentication, while registering or proving a contact address
+// does not.
+var mutating = []guardedRoute{
+	{"PUT /password", request{method: http.MethodPut, path: "/password", body: `{"new_password":"correct horse"}`}, true},
+	{"POST /phone", request{method: http.MethodPost, path: "/phone", body: `{"phone":"+8613800000000"}`}, false},
+	{"POST /phone/verify", request{method: http.MethodPost, path: "/phone/verify", body: `{"code":"123456"}`}, false},
+	{"POST /identifiers", request{method: http.MethodPost, path: "/identifiers", body: `{"kind":"username","value":"ada2"}`}, true},
+	{"POST /identifiers/verify", request{method: http.MethodPost, path: "/identifiers/verify", body: `{"code":"123456"}`}, false},
+	{"PUT /identifiers/:id", request{method: http.MethodPut, path: "/identifiers/ident-2", body: `{"sign_in":true}`}, true},
+	{"DELETE /identifiers/:id", request{method: http.MethodDelete, path: "/identifiers/ident-1"}, true},
+	{"DELETE /links/:id", request{method: http.MethodDelete, path: "/links/link-1"}, true},
+}
+
+// gatedRoutes is the routes held to a fresh authentication: the ones that change
+// how the account signs in.
+func gatedRoutes() []guardedRoute {
+	var out []guardedRoute
+	for _, tc := range mutating {
+		if tc.fresh {
+			out = append(out, tc)
+		}
+	}
+	return out
 }
 
 // secretSubject is a binding's provider-side subject, which no answer may carry.

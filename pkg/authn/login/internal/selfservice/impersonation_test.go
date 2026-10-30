@@ -42,7 +42,9 @@ func TestAnImpersonatingIdentityChangesTheEffectiveAccountsPassword(t *testing.T
 // TestNoSelfServiceRouteRefusesAnImpersonatingIdentity holds that the guard of
 // every self-service route lets an impersonating identity through: the route
 // then acts for the effective account or refuses for its own reason, and the
-// freshness the effective account calls for is decided from that account.
+// freshness the effective account calls for is decided from that account. Only
+// the routes that change how the account signs in read the factors; the contact
+// registration routes ask for none.
 func TestNoSelfServiceRouteRefusesAnImpersonatingIdentity(t *testing.T) {
 	for _, tc := range mutating {
 		t.Run(tc.name, func(t *testing.T) {
@@ -53,8 +55,12 @@ func TestNoSelfServiceRouteRefusesAnImpersonatingIdentity(t *testing.T) {
 			if w.Code == http.StatusForbidden && problemType(t, w) == "impersonation-restricted" {
 				t.Fatalf("answer = %d %s, want the route to act for the effective account", w.Code, w.Body)
 			}
-			if h.log.count("mfa.Factors") != 1 {
-				t.Errorf("the guard's factor read did not run: calls = %v", h.log.names())
+			want := 0
+			if tc.fresh {
+				want = 1
+			}
+			if got := h.log.count("mfa.Factors"); got != want {
+				t.Errorf("the guard's factor read ran %d times, want %d: calls = %v", got, want, h.log.names())
 			}
 		})
 	}

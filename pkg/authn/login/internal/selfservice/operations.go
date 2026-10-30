@@ -271,8 +271,10 @@ var verifyPhoneOperation = speedhttp.NewReplyOperation[verifyPhoneInput](
 		"client cannot choose which number is verified. The number's back-off is checked before the code is "+
 		"compared, so a number in back-off answers 429 without offering the code to a guess; a wrong code is a "+
 		"401 login-failed and counts against the number, and a correct one clears the back-off. On success the "+
-		"pending record is consumed, the caller's session token is rotated, the account's other sessions are "+
-		"revoked, and the answer is 204. A missing pending record, or one that names another account, is a 401 "+
+		"pending record is consumed and the answer is 204. Proving a number asks for no fresh authentication "+
+		"and never rotates the session, but replacing the number an active SMS factor sends its codes to is a "+
+		"change of that factor's target and answers the step-up 401 `insufficient_user_authentication` until "+
+		"the session is fresh. A missing pending record, or one that names another account, is a 401 "+
 		"flow-invalid.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
@@ -360,13 +362,14 @@ var addIdentifierOperation = speedhttp.NewReplyOperation[addIdentifierInput](
 	pathIdentifiers,
 	"Add one of the caller's own login identifiers",
 	"Adds one login identifier to the caller's account. `kind=username` writes a login name at once, recorded "+
-		"as the account's own assertion; `kind=email` sends a code to the address and answers `state: pending` "+
-		"with how long the code lives and how soon another may be sent, and the address is written only after "+
-		"`POST /auth/identifiers/verify` accepts the code. A second code to the same normalized address within "+
-		"the resend interval is a 429 throttled; the window is held against the address and shared across "+
-		"sessions and accounts. The call requires the fresh authentication every change of what proves the "+
-		"account asks for; a write rotates the caller's session token and "+
-		"revokes the account's other sessions. A login name or address another account holds is a 409 conflict, "+
+		"as the account's own assertion; it is a new way into the account, so it requires the fresh authentication "+
+		"every change of what proves the account asks for, and the write rotates the caller's session token and "+
+		"revokes the account's other sessions. `kind=email` registers a contact address and asks for none of "+
+		"that: it sends a code to the address and answers `state: pending` with how long the code lives and how "+
+		"soon another may be sent, and the address is written only after `POST /auth/identifiers/verify` accepts "+
+		"the code, without rotating the session or revoking the others. A second code to the same normalized "+
+		"address within the resend interval is a 429 throttled; the window is held against the address and shared "+
+		"across sessions and accounts. A login name or address another account holds is a 409 conflict, "+
 		"and a deployment with no email channel answers the email branch with 503 unavailable.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
@@ -382,7 +385,7 @@ var addIdentifierOperation = speedhttp.NewReplyOperation[addIdentifierInput](
 		speedhttp.ProblemResponseOf(http.StatusBadRequest,
 			"A username does not normalize", typePrefix+mount.CodeUsernameInvalid),
 		bodyOverLimit,
-		unauthorized("No usable credential, or the freshness a change of what proves the account asks for"),
+		unauthorized("No usable credential, or the freshness a username add asks for"),
 		humanRefused(),
 		speedhttp.ProblemResponse(http.StatusConflict, "The login name or address belongs to another account"),
 		mediaType(),
@@ -402,8 +405,11 @@ var verifyIdentifierOperation = speedhttp.NewReplyOperation[verifyIdentifierInpu
 		"which address is verified. A missing record, one that names another account, or one that does not "+
 		"parse is a 401 flow-invalid. A wrong code is a 401 login-failed; five wrong codes for one issued code "+
 		"spend the pending verification, and the record also expires with the code's lifetime. On success the "+
-		"record is consumed, the caller's session token is rotated, the account's other sessions are revoked, "+
-		"and the answer is 200 with `state: added`.",
+		"record is consumed and the answer is 200 with `state: added`. Proving the address asks for no fresh "+
+		"authentication and never rotates the session, but a proof that would change what recovers or proves "+
+		"the account does: an address that becomes the account's default contact (it has none) or its only "+
+		"address, and so its automatic login way, answers the step-up 401 `insufficient_user_authentication` "+
+		"until the session is fresh.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
 		Description: "The code the email channel delivered to the address being added. The body must be `application/json` and refuses unknown members.",

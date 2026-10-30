@@ -377,12 +377,13 @@ func TestAStoreThatCannotBeWrittenIsA503(t *testing.T) {
 	}
 }
 
-// TestACompletedVerificationBindsTheNumberAndRevokesTheOthers is the success
-// path from the first request to the last, with the order of every call: the
-// record is read, the number's back-off is checked before the code is compared, a
-// pass clears it, the identifier is written as proven by a code, the record is
-// deleted, and the token is rotated and the other sessions revoked.
-func TestACompletedVerificationBindsTheNumberAndRevokesTheOthers(t *testing.T) {
+// TestACompletedVerificationBindsTheNumber is the success path from the first
+// request to the last, with the order of every call: the record is read, the
+// number's back-off is checked before the code is compared, a pass clears it, the
+// identifier is written as proven by a code, and the record is deleted. Proving
+// the number is not making it a way to sign in, so no factor is read and the
+// session is neither rotated nor the others revoked.
+func TestACompletedVerificationBindsTheNumber(t *testing.T) {
 	h := newHarness(t)
 	h.startPhone()
 	h.log.reset()
@@ -391,8 +392,12 @@ func TestACompletedVerificationBindsTheNumberAndRevokesTheOthers(t *testing.T) {
 		t.Fatalf("POST /phone/verify = %d %s, want 204", w.Code, w.Body)
 	}
 	want := []string{
-		"mfa.Factors", "kv.Get", "throttle.Check", "sms.Verify", "throttle.Succeed",
-		"admin.AddIdentifier", "kv.Delete", "sessions.Rotate", "sessions.RevokeAccount", "sessions.SetCookie",
+		"kv.Get", "throttle.Check", "sms.Verify", "throttle.Succeed",
+		// What the proof would change is decided before it is written: the
+		// account's identifiers and factors say whether the number is an
+		// active SMS factor's target, and that consequence asks for freshness.
+		"accounts.Identifiers", "mfa.Factors",
+		"admin.AddIdentifier", "kv.Delete",
 	}
 	if got := h.log.names(); !slices.Equal(got, want) {
 		t.Fatalf("calls = %v, want %v", got, want)
@@ -410,14 +415,14 @@ func TestACompletedVerificationBindsTheNumberAndRevokesTheOthers(t *testing.T) {
 	if got := h.admin.added; len(got) != 1 || got[0] != (addCall{account, authn.IdentifierPhone, phoneNumber, authn.Verification{Via: "sms-code"}}) {
 		t.Errorf("AddIdentifier was called with %+v", got)
 	}
-	if got := h.sessions.revoked; len(got) != 1 || got[0] != (revokeCall{account, session, authn.ReasonSelf}) {
-		t.Errorf("RevokeAccount was called with %+v, want the others revoked for the account's own change", got)
+	if h.log.count("sessions.Rotate") != 0 || h.log.count("sessions.RevokeAccount") != 0 || h.log.count("sessions.SetCookie") != 0 {
+		t.Errorf("proving a number settled the sessions: %v", h.log.names())
 	}
 	if len(h.kv.keys()) != 0 {
 		t.Errorf("the record is still there: %v", h.kv.keys())
 	}
-	if v, ok := cookieValue(w, "sid"); !ok || v != "rotated-token" {
-		t.Errorf("cookie = %q (present %v)", v, ok)
+	if _, ok := cookieValue(w, "sid"); ok {
+		t.Error("the answer set a session cookie for a change that rotates no session")
 	}
 }
 
@@ -465,7 +470,7 @@ func TestVerifyWithoutAMatchingRecordIsFlowInvalid(t *testing.T) {
 			if w.Code != http.StatusUnauthorized || problemType(t, w) != "flow-invalid" {
 				t.Fatalf("answer = %d %s, want 401 flow-invalid", w.Code, w.Body)
 			}
-			want := []string{"mfa.Factors", "kv.Get"}
+			want := []string{"kv.Get"}
 			if got := h.log.names(); !slices.Equal(got, want) {
 				t.Errorf("calls = %v, want %v", got, want)
 			}

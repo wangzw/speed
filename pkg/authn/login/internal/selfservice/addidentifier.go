@@ -240,19 +240,24 @@ func normalizeEmail(raw string) (string, bool) {
 // is sent to it and the answer comes back through POST /identifiers/verify,
 // where the identifier is written with the proof.
 //
-// The write is held to the same freshness as every other change of what proves
-// the account, acts for the effective account whether or not the identity is
-// impersonating, and ends like the phone routes: the current session gets a
-// fresh token and the account's other sessions are revoked, because a new login
-// name is a new way into the account.
+// A username is a new way into the account, so it is held to the same freshness
+// as every other change of what proves the account, acts for the effective
+// account whether or not the identity is impersonating, and ends with a fresh
+// token for the current session and the account's other sessions revoked. An
+// email address is a contact first: registering and proving it is not the act of
+// making it a way to sign in, so the email branch asks for no freshness and
+// settles nothing.
 func (r *routes) addIdentifier(ctx context.Context, in addIdentifierInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
-	who, ok := r.authorize(c, "")
+	who, ok := r.identity(c)
 	if !ok {
 		return c.result()
 	}
 	switch in.Kind {
 	case identifierKindUsername:
+		if !r.freshIdentity(c, "") {
+			return c.result()
+		}
 		if strings.TrimSpace(in.Value) == "" {
 			c.fail(mount.CodeBadRequest)
 			return c.result()
@@ -653,9 +658,15 @@ func (r *routes) releaseResend(ctx context.Context, resendKey string) {
 // address from a free one. A code that does not match counts an attempt, and
 // the record is spent once the attempts are used up, so a six-digit code cannot
 // be guessed over its lifetime.
+//
+// Proving the address is not making it a way to sign in: the write asks for no
+// freshness, and it neither rotates the session nor revokes the account's other
+// sessions. Whether a proved address becomes a sign-in way is decided elsewhere
+// — the sole-address rule, or PUT /identifiers/:id — and that is where the
+// protection lives.
 func (r *routes) verifyIdentifier(ctx context.Context, in verifyIdentifierInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
-	who, ok := r.authorize(c, "")
+	who, ok := r.identity(c)
 	if !ok {
 		return c.result()
 	}
@@ -683,6 +694,26 @@ func (r *routes) verifyIdentifier(ctx context.Context, in verifyIdentifierInput,
 		return c.result()
 	}
 
+	// Proving the address asks for no freshness by itself. The consequence can:
+	// an address that would become the account's default contact or its
+	// automatic login way (the only address) changes what recovers and proves
+	// the account, and that is held to the freshness every such change is.
+	needsFresh, err := r.contactProofNeedsFreshness(c.ctx, who.account, authn.IdentifierEmail, rec.Email)
+	if err != nil {
+		r.fail(c, err)
+		return c.result()
+	}
+	if needsFresh {
+		id, found := authn.FromContext(c.ctx)
+		if !found {
+			c.unauthorized("")
+			return c.result()
+		}
+		if !r.fresh(c, id, "") {
+			return c.result()
+		}
+	}
+
 	bindErr := r.deps.Admin.AddIdentifier(c.ctx, who.account, authn.IdentifierEmail, rec.Email,
 		authn.Verification{Via: authn.VerifiedViaEmailCode})
 	if err := r.deps.KV.Delete(c.ctx, key); err != nil {
@@ -706,9 +737,7 @@ func (r *routes) verifyIdentifier(ctx context.Context, in verifyIdentifierInput,
 		r.fail(c, bindErr)
 		return c.result()
 	}
-	if r.settle(c, who, authn.ReasonSelf) {
-		c.json(http.StatusOK, addIdentifierResponse{State: identifierStateAdded})
-	}
+	c.json(http.StatusOK, addIdentifierResponse{State: identifierStateAdded})
 	return c.result()
 }
 

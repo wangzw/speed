@@ -2,7 +2,6 @@ package profile
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"testing"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/log"
-	"github.com/vislake/speed/pkg/settings"
 )
 
 // standIn is a module that delivers instance for the tokens named, the way
@@ -43,7 +41,7 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 
 	wantRequired := []core.Token{
 		(*mount.Mounter)(nil), (*authn.Accounts)(nil), (*authn.SignupVerification)(nil),
-		(*authn.AccountAdmin)(nil), (*authn.MFA)(nil),
+		(*authn.AccountAdmin)(nil),
 	}
 	var required []core.Token
 	for _, r := range m.Requires {
@@ -60,7 +58,7 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 		}
 	}
 
-	wantOptional := []core.Token{(*settings.Store)(nil), (*audit.Audit)(nil), (*log.Logger)(nil)}
+	wantOptional := []core.Token{(*audit.Audit)(nil), (*log.Logger)(nil)}
 	var optional []core.Token
 	for _, r := range m.Requires {
 		if r.Optional {
@@ -117,14 +115,6 @@ func drive(t *testing.T, run func(m *mounttest.Mounter), omit ...leaveOut) error
 	for _, o := range omit {
 		left[o] = true
 	}
-	if !left[noMFA] {
-		reg.Register(standIn("stand-in.mfa", &fakeMFA{}, (*authn.MFA)(nil)))
-		names = append(names, "stand-in.mfa")
-	}
-	if !left[noStore] {
-		reg.Register(standIn("stand-in.settings", &fakeStore{window: defaultRecentWindow}, (*settings.Store)(nil)))
-		names = append(names, "stand-in.settings")
-	}
 	if !left[noAudit] {
 		reg.Register(standIn("stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)))
 		names = append(names, "stand-in.audit")
@@ -167,15 +157,5 @@ func TestARealRegistryMountsTheProfileRoutes(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("the drive failed: %v", err)
-	}
-}
-
-// TestTheDriveFailsWithoutTheMultiFactorComposition holds the required
-// dependency: a write holds the caller to the account's factor freshness, so a
-// drive with no multi-factor composition fails before any instance is built.
-func TestTheDriveFailsWithoutTheMultiFactorComposition(t *testing.T) {
-	err := drive(t, func(*mounttest.Mounter) {}, noMFA)
-	if !errors.Is(err, core.ErrMissingProvider) {
-		t.Fatalf("the drive = %v, want ErrMissingProvider", err)
 	}
 }

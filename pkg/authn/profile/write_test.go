@@ -26,9 +26,9 @@ func decodePatch(t *testing.T, rec *httptest.ResponseRecorder) AuthnProfilePatch
 	return v
 }
 
-// stale is an identity whose authentication is older than the first-factor
-// window.
-func stale() []authntest.Option {
+// anHourOld is an identity authenticated an hour ago and carrying a login
+// session.
+func anHourOld() []authntest.Option {
 	return []authntest.Option{
 		authntest.WithAccount(meAccount),
 		authntest.WithSession(meSession),
@@ -334,9 +334,9 @@ func TestPatchRefusalsCarryTheCapabilityProblemType(t *testing.T) {
 }
 
 // TestPatchRefusesBeforeTheBodyIsRead holds the order the route documents: the
-// identity, the session and the freshness are decided before the body is bound.
-// A body the declaration would refuse is therefore answered with the earlier
-// refusal, not the binding's 400.
+// identity and the session are decided before the body is bound. A body the
+// declaration would refuse is therefore answered with the earlier refusal, not
+// the binding's 400.
 func TestPatchRefusesBeforeTheBodyIsRead(t *testing.T) {
 	cases := []struct {
 		name string
@@ -344,7 +344,6 @@ func TestPatchRefusesBeforeTheBodyIsRead(t *testing.T) {
 		want int
 	}{
 		{"no session", noSession(), http.StatusUnauthorized},
-		{"stale", stale(), http.StatusUnauthorized},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -431,53 +430,20 @@ func TestPatchWithoutAnIdentityIs401(t *testing.T) {
 	}
 }
 
-// TestPatchStaleAuthenticationAsksForAStepUp holds the freshness of a write: an
-// authentication older than the first-factor window is answered with the step-up
-// 401, before the body is read.
-func TestPatchStaleAuthenticationAsksForAStepUp(t *testing.T) {
+// TestPatchWithAnOlderAuthenticationStillWrites holds the rule: the write asks
+// for no freshness beyond a login session, so an authentication an hour old
+// writes successfully.
+func TestPatchWithAnOlderAuthenticationStillWrites(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, stale()...)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", rec.Code)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, anHourOld()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Header().Get("WWW-Authenticate"), mount.CodeInsufficientUserAuthentication) {
-		t.Errorf("the challenge = %q, want it to ask for a stronger authentication", rec.Header().Get("WWW-Authenticate"))
+	if got := r.admin.count("set-display-name"); got != 1 {
+		t.Errorf("SetDisplayName calls = %d, want 1", got)
 	}
-	if r.admin.count("set-display-name") != 0 {
-		t.Error("a stale write reached a capability")
-	}
-}
-
-// TestPatchWithAnActiveFactorRequiresAMultiFactor holds the account's own
-// requirement: an account with an active factor is held to a fresh local
-// multi-factor authentication, and a single-factor session cannot change it.
-func TestPatchWithAnActiveFactorRequiresAMultiFactor(t *testing.T) {
-	r := newRig(t)
-	r.mfa.factors = []authn.FactorRecord{{Kind: authn.FactorTOTP, Status: authn.FactorActive}}
-
-	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, me()...)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("a single-factor write with an active factor: status = %d, want 401", rec.Code)
-	}
-	if !strings.Contains(rec.Header().Get("WWW-Authenticate"), mount.CodeInsufficientUserAuthentication) {
-		t.Errorf("the challenge = %q, want the step-up", rec.Header().Get("WWW-Authenticate"))
-	}
-
-	if rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, multiFactor()...); rec.Code != http.StatusOK {
-		t.Fatalf("a multi-factor write with an active factor: status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
-	}
-}
-
-// TestPatchWhenTheFactorsCannotBeReadIs503 holds the fail-closed direction: a
-// requirement that cannot be decided is not read as one that asks for nothing.
-func TestPatchWhenTheFactorsCannotBeReadIs503(t *testing.T) {
-	r := newRig(t)
-	r.mfa.err = errors.New("boom")
-	if rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, me()...); rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", rec.Code)
-	}
-	if r.admin.count("set-display-name") != 0 {
-		t.Error("a write reached a capability with the requirement undecided")
+	if r.admin.displayName != "X" {
+		t.Errorf("the written display name = %q, want X", r.admin.displayName)
 	}
 }
 

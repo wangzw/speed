@@ -145,6 +145,9 @@ func TestAnEmailIsAddedOnlyAfterItsCodeComesBack(t *testing.T) {
 	if _, _, ok := pendingEmailKey(h); ok {
 		t.Error("the pending record was not deleted after the code was accepted")
 	}
+	if len(h.sessions.rotated) != 0 || len(h.sessions.revoked) != 0 {
+		t.Errorf("proving an address settled the sessions: rotated %v, revoked %v", h.sessions.rotated, h.sessions.revoked)
+	}
 }
 
 // TestProvingTheAccountsOwnUnprovedEmailSucceeds holds that an address the

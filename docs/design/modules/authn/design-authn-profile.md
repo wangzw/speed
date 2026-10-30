@@ -100,7 +100,7 @@
 | 依赖 | 用途 |
 |---|---|
 | `pkg/core` | 模块描述符与登记 |
-| `pkg/authn`（根包） | `FromContext` 读身份；`Accounts` 读账户、标识与外部绑定；`SignupVerification` 读注册验证状态；`AccountAdmin` 写显示名与属性；`Identity` 的账户、冒充与新鲜度判定 |
+| `pkg/authn`（根包） | `FromContext` 读身份；`Accounts` 读账户、标识与外部绑定；`SignupVerification` 读注册验证状态；`AccountAdmin` 写显示名与属性；`Identity` 的账户与冒充判定 |
 | `pkg/authn/internal/mount` | 挂路由与访问级别；401、403 与回绝的应答部件 |
 | `pkg/i18n` | 语言与时区的属性键（`LocaleAttributeKey`、`TimeZoneAttributeKey`）与校验（`ValidLocaleTag`、`ValidTimeZone`） |
 | `pkg/audit`（可选） | 写档案时写尽力档审计行 |
@@ -166,12 +166,11 @@ classDiagram
 
 1. 读身份：没有身份或身份没有账户即 401。
 2. 没有登录会话即 401。
-3. 不满足账户因素所要求的新鲜度即 401 加强认证（判据见 [authn-admin](design-authn-admin.md) 的自助范围）；冒充身份的认证事实取自发起者自己的会话。
-4. 读正文：形状不符、`display_name` 超过 100 字符、属性越界、`locale` 或 `time_zone` 取值域不符，任一即 400。
-5. 读账户、按「整体替换或并入键」合成新的属性集。
-6. `SetDisplayName` 与 `SetAttributes` 各调一次；`display_name` 缺席则略过 `SetDisplayName`，`attributes`、`locale`、`time_zone` 全缺席则略过 `SetAttributes`。
-7. 若审计能力在场，写一行尽力档审计；写失败只记 Error，不改应答。冒充身份的审计行把实际操作者记为发起者，并带被冒充账户、组织与会话。
-8. 应答 200 与写后的可自写字段。
+3. 读正文：形状不符、`display_name` 超过 100 字符、属性越界、`locale` 或 `time_zone` 取值域不符，任一即 400。
+4. 读账户、按「整体替换或并入键」合成新的属性集。
+5. `SetDisplayName` 与 `SetAttributes` 各调一次；`display_name` 缺席则略过 `SetDisplayName`，`attributes`、`locale`、`time_zone` 全缺席则略过 `SetAttributes`。
+6. 若审计能力在场，写一行尽力档审计；写失败只记 Error，不改应答。冒充身份的审计行把实际操作者记为发起者，并带被冒充账户、组织与会话。
+7. 应答 200 与写后的可自写字段。
 
 `SetDisplayName` 与 `SetAttributes` 各是一次账户模块的写，不构成一次原子变更：`SetDisplayName` 成功而 `SetAttributes` 失败时，显示名的改动已生效，应答是那次失败的应答（与管理面逐字段写、失败即收口同形）。
 
@@ -181,7 +180,6 @@ classDiagram
 |---|---|
 | 请求没有身份，或身份没有账户 | 401 |
 | 没有登录会话 | 401 |
-| 不满足账户因素所要求的新鲜度 | 401 加强认证 |
 | 正文形状不符、有未知字段、`display_name` 超过 100 字符、属性越过账户边界、`locale` 或 `time_zone` 取值域不符 | 400 `bad-request` |
 | 账户模块答 `ErrAccountNotFound`（身份的账户是墓碑或读不到） | 401 |
 | 账户模块答 `ErrInvalidArgument` | 400 `bad-request` |

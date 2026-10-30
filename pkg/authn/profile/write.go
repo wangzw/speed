@@ -34,8 +34,8 @@ type patchInput struct {
 // capability's decode rule, then the declared handler that binds the body and
 // answers. The entry point binds the declared input before it calls a handler,
 // so the checks that the order of this route puts in front of the body — the
-// identity, that it has a login session, and the freshness the account's own
-// factors call for — run in front of the bound handler instead.
+// identity and that it has a login session — run in front of the bound handler
+// instead.
 func (p *product) patchEntry() gin.HandlerFunc {
 	return p.guardPatch(patchDecoded(patchOperation.Handle(p.handlePatchMe)))
 }
@@ -102,10 +102,10 @@ func isPatchJSONContentType(value string) bool {
 	return true
 }
 
-// guardPatch refuses a request the write route must not read a body for. An
-// answer of its own is written through the capability's own writers, so a 401
-// carries the endpoint's challenge and the step-up carries the requirement the
-// account's factors ask for.
+// guardPatch refuses a request the write route must not read a body for: one
+// that carries no identity, or an identity with no login session. An answer of
+// its own is written through the capability's own writers, so a 401 carries the
+// endpoint's challenge.
 func (p *product) guardPatch(next gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -116,9 +116,6 @@ func (p *product) guardPatch(next gin.HandlerFunc) gin.HandlerFunc {
 		}
 		if id.Session() == "" {
 			mount.Unauthorized(c, p.mounter.Endpoint(), "")
-			return
-		}
-		if !p.admitStrength(c, id) {
 			return
 		}
 		next(c)

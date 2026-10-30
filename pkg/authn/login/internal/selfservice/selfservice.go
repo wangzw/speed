@@ -5,12 +5,17 @@
 // routes, not these.
 //
 // Every route runs on the identity the gateway authenticated. A route that
-// changes how the account is proven asks for a fresh authentication first (a
-// local multi-factor one when the effective account has an active factor, a
-// first factor otherwise), goes through the Mounter's cross-origin check, and is
-// open to an impersonating identity: the change is the effective account's own,
-// so the requirement is taken from the impersonated account's factors while the
-// proof is the operator's own.
+// changes what proves the account — the password, the addition of a login name,
+// choosing an identifier as a way in, removing one, unbinding an external
+// identity — asks for a fresh authentication first (a local multi-factor one when
+// the effective account has an active factor, a first factor otherwise). Adding
+// a contact address does not: registering an email or phone number and proving it
+// is a separate act from making it a way to sign in, so the email branch, its
+// verify, and the two phone routes need only an identity and a session. Every
+// route goes through the Mounter's cross-origin check, and is open to an
+// impersonating identity: the change is the effective account's own, so the
+// requirement is taken from the impersonated account's factors while the proof is
+// the operator's own.
 //
 // The package depends on the root package's interfaces, on the route
 // components in internal/mount and on kv.KV. It knows nothing of the login
@@ -162,18 +167,18 @@ func (s *Service) Mount(m mount.Mounter, rel func(string) string, post func(name
 		withWriter(r.guardedBody(actionPasswordChange, passwordOperation.Handle(r.changePassword))), mount.Impersonable())
 	if s.deps.SMSCodes != nil {
 		mount.Declared(m, startPhoneOperation, rel(pathPhone),
-			withWriter(r.guardedBody("", startPhoneOperation.Handle(r.startPhone))), mount.Impersonable())
+			withWriter(r.guardedIdentity(startPhoneOperation.Handle(r.startPhone))), mount.Impersonable())
 		mount.Declared(m, verifyPhoneOperation, rel(pathPhoneVerify),
-			withWriter(r.guardedBody("", verifyPhoneOperation.Handle(r.verifyPhone))), mount.Impersonable())
+			withWriter(r.guardedIdentity(verifyPhoneOperation.Handle(r.verifyPhone))), mount.Impersonable())
 		postFeature(post, FeaturePhone)
 	}
 	if s.deps.EmailSender != nil {
 		postFeature(post, FeatureEmail)
 	}
 	mount.Declared(m, addIdentifierOperation, rel(pathIdentifiers),
-		withWriter(r.guardedBody("", addIdentifierOperation.Handle(r.addIdentifier))), mount.Impersonable())
+		withWriter(r.guardedIdentity(addIdentifierOperation.Handle(r.addIdentifier))), mount.Impersonable())
 	mount.Declared(m, verifyIdentifierOperation, rel(pathIdentifiersVerify),
-		withWriter(r.guardedBody("", verifyIdentifierOperation.Handle(r.verifyIdentifier))), mount.Impersonable())
+		withWriter(r.guardedIdentity(verifyIdentifierOperation.Handle(r.verifyIdentifier))), mount.Impersonable())
 	mount.Declared(m, updateIdentifierOperation, rel(pathIdentifier),
 		withWriter(r.guardedIdentity(updateIdentifierOperation.Handle(r.updateIdentifier))), mount.Impersonable())
 	mount.Declared(m, removeIdentifierOperation, rel(pathIdentifier),
@@ -199,10 +204,12 @@ func (r *routes) guardedBody(action string, next gin.HandlerFunc) gin.HandlerFun
 	}, next)
 }
 
-// guardedIdentity applies the body rules of a route whose freshness depends on
-// what the body changes: the media type, the identity and session checks, then
-// the 64 KiB cap. The caller it decides is carried to the handler, which asks
-// for freshness itself when the change is one the design holds to it.
+// guardedIdentity applies the body rules of a route that does not ask for
+// freshness before it binds the body: the media type, the identity and session
+// checks, then the 64 KiB cap. It is used for the routes that add or prove a
+// contact address, which ask for none at all, and for the routes whose freshness
+// depends on what the body changes, which ask for it themselves once they know.
+// The caller it decides is carried to the handler, so the checks run once.
 func (r *routes) guardedIdentity(next gin.HandlerFunc) gin.HandlerFunc {
 	return mount.GuardBody(func(c *gin.Context) bool {
 		call := r.call(c.Request.Context(), nil)

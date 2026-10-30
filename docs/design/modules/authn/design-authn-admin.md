@@ -191,7 +191,7 @@ type ScopeGuard interface {
 自助范围的判据：账户对自己的会话、因素、口令、标识与外部关联的读写，只要求下列各项，不经 `Decider`。
 
 - 生效账户是身份本身：`Identity.Account()` 与路径上的账户一致，路径不带账户的路由取上下文里的身份。
-- 满足多因素的新鲜度要求（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)、[authn-mfa](design-authn-mfa.md)）。
+- 满足多因素的新鲜度要求（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)、[authn-mfa](design-authn-mfa.md)）；本人资料与偏好（显示名、语言与时区）的写入不在此列，不要求新鲜度。
 
 自助动作的授权依据是「生效账户就是身份本身」，这是 authn 自己可以核对的事实，不需要策略。没有 `Decider` 的装配里，用户仍能改自己的口令。自助路由由 `authn.login`、`authn.session`、`authn.mfa`、`authn.profile` 挂，本模块不挂。
 

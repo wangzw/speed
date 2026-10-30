@@ -68,16 +68,18 @@ func smsLocale(ctx context.Context) string {
 // startPhone answers POST /phone: it sends a code to the number and keeps what is
 // needed to check it in the store, replacing the session's earlier record.
 //
-// The number is not looked up. A number another account holds is sent a code
-// exactly as one nobody holds is, and the conflict surfaces only when the
-// identifier is written after the code was verified, so the answer discloses
-// nothing about who holds which number.
+// Registering a number is a contact act, not a change of how the account signs
+// in, so the route asks only for an identity and a session: no fresh
+// authentication is asked for. The number is not looked up: a number another
+// account holds is sent a code exactly as one nobody holds is, and the conflict
+// surfaces only when the identifier is written after the code was verified, so
+// the answer discloses nothing about who holds which number.
 //
 // A store that cannot be read is a 503 before the code is sent, because a code
 // that cannot be verified is a message paid for and sent to no use.
 func (r *routes) startPhone(ctx context.Context, in startPhoneInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
-	who, ok := r.authorize(c, "")
+	who, ok := r.identity(c)
 	if !ok {
 		return c.result()
 	}
@@ -142,9 +144,13 @@ func (r *routes) startPhone(ctx context.Context, in startPhoneInput, meta *speed
 // a number another account holds. The record is deleted once the code has been
 // accepted, whether or not the binding succeeded, because the challenge is
 // consumed and the record cannot be used again.
+//
+// Proving the number is not making it a way to sign in: the write asks for no
+// freshness and settles nothing, neither rotating the session nor revoking the
+// account's other sessions.
 func (r *routes) verifyPhone(ctx context.Context, in verifyPhoneInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
-	who, ok := r.authorize(c, "")
+	who, ok := r.identity(c)
 	if !ok {
 		return c.result()
 	}
@@ -200,6 +206,25 @@ func (r *routes) verifyPhone(ctx context.Context, in verifyPhoneInput, meta *spe
 		logWarn(c.ctx, "the back-off of a phone number cannot be cleared", err)
 	}
 
+	// Proving a number asks for no freshness by itself; replacing the number an
+	// active SMS factor sends its codes to does, because that would move the
+	// factor's target.
+	needsFresh, proofErr := r.contactProofNeedsFreshness(c.ctx, who.account, authn.IdentifierPhone, rec.Phone)
+	if proofErr != nil {
+		r.fail(c, proofErr)
+		return c.result()
+	}
+	if needsFresh {
+		id, found := authn.FromContext(c.ctx)
+		if !found {
+			c.unauthorized("")
+			return c.result()
+		}
+		if !r.fresh(c, id, "") {
+			return c.result()
+		}
+	}
+
 	bindErr := r.deps.Admin.AddIdentifier(c.ctx, who.account, authn.IdentifierPhone, rec.Phone,
 		authn.Verification{Via: authn.VerifiedViaSMSCode})
 	if err := r.deps.KV.Delete(c.ctx, key); err != nil {
@@ -209,8 +234,6 @@ func (r *routes) verifyPhone(ctx context.Context, in verifyPhoneInput, meta *spe
 		r.fail(c, bindErr)
 		return c.result()
 	}
-	if r.settle(c, who, authn.ReasonSelf) {
-		c.empty(http.StatusNoContent)
-	}
+	c.empty(http.StatusNoContent)
 	return c.result()
 }

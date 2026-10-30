@@ -3,6 +3,7 @@ package selfservice_test
 import (
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -87,12 +88,13 @@ func freshnessCases() []freshnessCase {
 	}
 }
 
-// TestFreshnessIsAskedForOnEveryRouteThatChangesTheAccount runs each case on each
-// of the five routes. A refusal is the step-up 401 with the level and age the
-// account's factors call for and nothing is called but the read of the factors;
-// an identity that meets it is let through to the handler's own first call.
-func TestFreshnessIsAskedForOnEveryRouteThatChangesTheAccount(t *testing.T) {
-	for _, tc := range mutating {
+// TestFreshnessIsAskedForOnEveryRouteThatChangesTheWayIn runs each case on each
+// of the routes that add, choose or remove a way to sign in. A refusal is the
+// step-up 401 with the level and age the account's factors call for and nothing
+// is called but the read of the factors; an identity that meets it is let
+// through to the handler's own first call.
+func TestFreshnessIsAskedForOnEveryRouteThatChangesTheWayIn(t *testing.T) {
+	for _, tc := range gatedRoutes() {
 		for _, c := range freshnessCases() {
 			t.Run(tc.name+" / "+c.name, func(t *testing.T) {
 				h := newHarness(t)
@@ -139,7 +141,7 @@ func TestFreshnessIsAskedForOnEveryRouteThatChangesTheAccount(t *testing.T) {
 // with none, which would let a single-factor session through to change the
 // credentials of an account that has a second factor.
 func TestTheFactorsThatCannotBeReadAreNotReadAsNone(t *testing.T) {
-	for _, tc := range mutating {
+	for _, tc := range gatedRoutes() {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.mfa.err = authn.ErrUnavailable
@@ -169,6 +171,152 @@ func TestAnIdentityWithNoSessionIsRefusedBeforeAnyCall(t *testing.T) {
 			}
 			if calls := h.log.all(); len(calls) != 0 {
 				t.Errorf("calls = %v", calls)
+			}
+		})
+	}
+}
+
+// TestRegisteringAContactAddressNeedsNoFreshAuthentication holds the ruling that
+// registering and proving a contact address is a separate act from making it a
+// way to sign in: the request and the proof carry no fresh authentication of
+// their own. What the proof would change is held to it instead -- an address
+// that becomes the account's default contact or its only (and so automatic
+// sign-in) address, and a phone number an active SMS factor sends its codes to.
+// The acts that change how the account signs in are unchanged: adding a
+// username, choosing a sign-in way, choosing the default contact and removing an
+// identifier all answer the step-up 401.
+func TestRegisteringAContactAddressNeedsNoFreshAuthentication(t *testing.T) {
+	// stale is a single first factor proven a minute ago on an account whose
+	// active factor calls for a fresh local multi-factor proof.
+	stale := func(h *harness) {
+		h.t.Helper()
+		h.activeFactor()
+		h.as()
+	}
+	// settledAccount is an account that already has a default contact and a
+	// second address, so proving one more address changes neither.
+	settledAccount := func(h *harness) {
+		h.t.Helper()
+		h.accounts.identifiers = []authn.Identifier{
+			{
+				ID: "ident-user", Kind: authn.IdentifierUsername, Value: "ada",
+				VerifiedAt: now.Add(-time.Hour), VerifiedVia: authn.VerifiedViaAdmin, SignIn: true,
+			},
+			{
+				ID: "ident-default", Kind: authn.IdentifierEmail, Value: "home@example.com",
+				VerifiedAt: now.Add(-time.Hour), VerifiedVia: authn.VerifiedViaEmailCode,
+				SignIn: true, Contact: true, DefaultContact: true,
+			},
+			{
+				ID: "ident-other", Kind: authn.IdentifierEmail, Value: "work@example.com",
+				VerifiedAt: now.Add(-time.Hour), VerifiedVia: authn.VerifiedViaEmailCode,
+				Contact: true,
+			},
+		}
+	}
+
+	t.Run("an email is requested and proved", func(t *testing.T) {
+		h := emailHarness(t)
+		settledAccount(h)
+		stale(h)
+		if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusOK || problemState(t, w) != "pending" {
+			t.Fatalf("the add answered %d %s, want 200 pending", w.Code, w.Body)
+		}
+		w := h.post("/identifiers/verify", verifyBody(h.email.sent[0].code))
+		if w.Code != http.StatusOK || problemState(t, w) != "added" {
+			t.Fatalf("the verify answered %d %s, want 200 added", w.Code, w.Body)
+		}
+		if len(h.sessions.rotated) != 0 || len(h.sessions.revoked) != 0 {
+			t.Errorf("proving an address settled the sessions: rotated %v, revoked %v", h.sessions.rotated, h.sessions.revoked)
+		}
+	})
+
+	t.Run("a phone is requested and verified", func(t *testing.T) {
+		h := newHarness(t)
+		stale(h)
+		if w := h.post("/phone", `{"phone":"`+phoneNumber+`"}`); w.Code != http.StatusOK {
+			t.Fatalf("the start answered %d %s, want 200", w.Code, w.Body)
+		}
+		if w := h.post("/phone/verify", `{"code":"123456"}`); w.Code != http.StatusNoContent {
+			t.Fatalf("the verify answered %d %s, want 204", w.Code, w.Body)
+		}
+		if len(h.sessions.rotated) != 0 || len(h.sessions.revoked) != 0 {
+			t.Errorf("proving a number settled the sessions: rotated %v, revoked %v", h.sessions.rotated, h.sessions.revoked)
+		}
+	})
+
+	// The consequences a proof can carry are the protected writes: none of
+	// these may happen on a session that is not fresh.
+	for _, c := range []struct {
+		name  string
+		setup func(h *harness)
+		do    func(h *harness) *httptest.ResponseRecorder
+	}{
+		{
+			name: "an address that would become the default contact",
+			do: func(h *harness) *httptest.ResponseRecorder {
+				h.post("/identifiers", addBody("email", "ada@example.com"))
+				return h.post("/identifiers/verify", verifyBody(h.email.sent[0].code))
+			},
+		},
+		{
+			name: "a number the active SMS factor sends to",
+			setup: func(h *harness) {
+				// The SMS factor is what makes the number a factor's target;
+				// the TOTP factor is what makes the session one proof short.
+				h.mfa.factors = []authn.FactorRecord{
+					{ID: "factor-sms", Account: account, Kind: authn.FactorSMS, Status: authn.FactorActive},
+					{ID: "factor-totp", Account: account, Kind: authn.FactorTOTP, Status: authn.FactorActive},
+				}
+			},
+			do: func(h *harness) *httptest.ResponseRecorder {
+				h.post("/phone", `{"phone":"`+phoneNumber+`"}`)
+				return h.post("/phone/verify", `{"code":"123456"}`)
+			},
+		},
+	} {
+		t.Run(c.name+" still needs it", func(t *testing.T) {
+			h := emailHarness(t)
+			if c.setup == nil {
+				h.activeFactor()
+			} else {
+				c.setup(h)
+			}
+			h.as()
+			w := c.do(h)
+			if w.Code != http.StatusUnauthorized || problemType(t, w) != "insufficient_user_authentication" {
+				t.Fatalf("answer = %d %s, want 401 insufficient_user_authentication", w.Code, w.Body)
+			}
+		})
+	}
+
+	for _, c := range []struct {
+		name  string
+		do    func(h *harness) *httptest.ResponseRecorder
+		setup func(h *harness)
+	}{
+		{"adding a username", func(h *harness) *httptest.ResponseRecorder {
+			return h.post("/identifiers", addBody("username", "ada2"))
+		}, nil},
+		{"choosing a sign-in way", func(h *harness) *httptest.ResponseRecorder {
+			return h.put("/identifiers/ident-proved", `{"sign_in":true}`)
+		}, func(h *harness) { h.axesAccount() }},
+		{"choosing the default contact", func(h *harness) *httptest.ResponseRecorder {
+			return h.put("/identifiers/ident-proved", `{"default_contact":true}`)
+		}, func(h *harness) { h.axesAccount() }},
+		{"removing an identifier", func(h *harness) *httptest.ResponseRecorder {
+			return h.delete("/identifiers/ident-1")
+		}, func(h *harness) { h.axesAccount() }},
+	} {
+		t.Run(c.name+" still needs it", func(t *testing.T) {
+			h := newHarness(t)
+			if c.setup != nil {
+				c.setup(h)
+			}
+			stale(h)
+			w := c.do(h)
+			if w.Code != http.StatusUnauthorized || problemType(t, w) != "insufficient_user_authentication" {
+				t.Fatalf("answer = %d %s, want 401 insufficient_user_authentication", w.Code, w.Body)
 			}
 		})
 	}

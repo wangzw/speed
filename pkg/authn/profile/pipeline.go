@@ -4,9 +4,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"time"
-
-	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
@@ -34,37 +31,6 @@ func (p *product) unauthorized() error {
 			Value: mount.UnauthorizedChallenge(p.mounter.Endpoint()),
 		}},
 	}
-}
-
-// admitStrength holds the caller to the freshness a write of the profile asks
-// for, answering the step-up 401 and returning false when it falls short.
-//
-// The requirement is the account's own: an account with an active factor is held
-// to a fresh local multi-factor authentication, so that a stolen single-factor
-// session, or an assurance only an IdP declared, cannot change the profile; an
-// account with no active factor is held to a fresh first factor. A factor still
-// pending or disabled is not a factor the account has. The factors being
-// unreadable is a 503: a requirement that cannot be decided must not read as
-// one that asks for nothing.
-func (p *product) admitStrength(c *gin.Context, id authn.Identity) bool {
-	factors, err := p.mfa.Factors(c.Request.Context(), id.Account())
-	if err != nil {
-		p.logCause("reading the account's factors", err)
-		mount.Unavailable(c)
-		return false
-	}
-	requirement := authn.FreshFirstFactor()
-	for _, f := range factors {
-		if f.Status == authn.FactorActive {
-			requirement = authn.FreshLocalMulti(p.settings.recentWindow())
-			break
-		}
-	}
-	if id.Satisfies(requirement, time.Now()) {
-		return true
-	}
-	mount.StepUpRequired(c, id, requirement)
-	return false
 }
 
 // readFailure maps a failure a read of the profile met. The identity's own

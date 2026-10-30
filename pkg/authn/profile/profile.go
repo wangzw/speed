@@ -21,11 +21,9 @@
 //
 // Both routes are impersonable: an impersonating identity reads and writes the
 // impersonated account's profile exactly as the account's own request does, and
-// the write handler keeps no impersonation refusal of its own. A write asks for
-// a fresh authentication — a fresh local multi-factor one when the account has
-// an active factor, a fresh first factor otherwise — under the requirement the
-// effective account calls for, so that a profile is changed only by a caller
-// that has just proved itself.
+// the write handler keeps no impersonation refusal of its own. A write needs a
+// login session; it asks for no freshness beyond that, so a profile is changed
+// by the account's holder at any point in the session's life.
 //
 // The module is taken in only by a command that wants this surface. Without it
 // /me is not mounted, and the account is still read and written through its Go
@@ -47,7 +45,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
-	"github.com/vislake/speed/pkg/settings"
 )
 
 // ModuleName is this module's name in the registry. A host writes it into the
@@ -88,18 +85,14 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// The route mounter, the account read and write surfaces, the signup
-// verification reads and the multi-factor composition are required, and each is delivered exclusively by another module
-// of the directory, so the closure of a command that takes this one in does not
-// pull them in: the host writes them down. The multi-factor composition is
-// required because a write holds the caller to the freshness the account's own
-// factors call for, and a module that could not read them would have to guess.
+// The route mounter, the account read and write surfaces and the signup
+// verification reads are required, and each is delivered exclusively by another
+// module of the directory, so the closure of a command that takes this one in
+// does not pull them in: the host writes them down.
 //
-// The settings store, the audit capability and the logging capability are
-// optional and taken up in Init: the absence of the settings store makes the
-// freshness window read as its declared default; the absence of the audit
-// capability drops the write's best-effort audit row; the logging capability
-// orders this module after logging is assembled.
+// The audit capability and the logging capability are optional and taken up in
+// Init: the absence of the audit capability drops the write's best-effort audit
+// row; the logging capability orders this module after logging is assembled.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -108,8 +101,6 @@ func Module() core.Module {
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.SignupVerification)(nil)},
 			{Token: (*authn.AccountAdmin)(nil)},
-			{Token: (*authn.MFA)(nil)},
-			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*audit.Audit)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
@@ -164,13 +155,11 @@ type product struct {
 	accounts           authn.Accounts
 	signupVerification authn.SignupVerification
 	accountAdm         authn.AccountAdmin
-	mfa                authn.MFA
 
 	// The optional capabilities. audit is nil when the assembly delivers none,
 	// and the write's best-effort audit row is then not written.
-	audit    audit.Audit
-	settings *reader
-	logger   *slog.Logger
+	audit  audit.Audit
+	logger *slog.Logger
 }
 
 // newProduct takes up what the descriptor requires.
@@ -191,19 +180,13 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the account writes: %w", diagnosticPrefix, ModuleName, err)
 	}
-	mfa, err := core.Resolve[authn.MFA](reg)
-	if err != nil {
-		return nil, fmt.Errorf("%s%s: taking up the multi-factor composition: %w", diagnosticPrefix, ModuleName, err)
-	}
 	logger := log.Default()
 	return &product{
 		mounter:            mounter,
 		accounts:           accounts,
 		signupVerification: signupVerification,
 		accountAdm:         accountAdm,
-		mfa:                mfa,
 		logger:             logger,
-		settings:           newReader(nil, logger),
 	}, nil
 }
 
@@ -229,14 +212,11 @@ func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
 	}
-	store, err := optional[settings.Store](reg, "the settings store")
+	auditCap, err := optional[audit.Audit](reg, "the audit capability")
 	if err != nil {
 		return err
 	}
-	p.settings = newReader(store, p.logger)
-	if p.audit, err = optional[audit.Audit](reg, "the audit capability"); err != nil {
-		return err
-	}
+	p.audit = auditCap
 	p.mountRoutes()
 	return nil
 }

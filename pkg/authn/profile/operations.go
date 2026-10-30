@@ -91,8 +91,8 @@ var patchOperation = speedhttp.NewOperation[patchInput, AuthnProfilePatch](
 		"The display name is written before the attribute set, and the two writes are not one atomic "+
 		"change: when the second fails, the first is already in force and the answer is that failure's. "+
 		"An impersonating identity writes the impersonated account's profile like any other caller; a "+
-		"caller with no login session, or one that does not meet the freshness the account's own factors "+
-		"call for, is refused 401 before anything is written.",
+		"caller with no login session is refused 401 before anything is written. The write asks for no "+
+		"freshness beyond the login session itself.",
 	&speedhttp.RequestBody{
 		MediaType: "application/json",
 		Description: "Fields to write; all are optional and an absent field is left unchanged, while " +
@@ -110,7 +110,7 @@ var patchOperation = speedhttp.NewOperation[patchInput, AuthnProfilePatch](
 			"The body could not be read, or a value is outside its domain"),
 		speedhttp.ProblemResponse(http.StatusRequestEntityTooLarge,
 			"The request body is over the endpoint's limit"),
-		unauthorized("No usable credential, or a step-up is required"),
+		unauthorized("No usable credential, or the caller has no login session"),
 		capabilityProblem(http.StatusUnsupportedMediaType, mount.CodeUnsupportedMediaType,
 			"The request body is not application/json"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),

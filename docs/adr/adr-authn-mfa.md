@@ -138,7 +138,7 @@ TOTP、短信、WebAuthn 各自挂一组登记路由，自行处理新鲜度检�
   - 登录会话与令牌的承载见 [ADR-authn-session](adr-authn-session.md)、[ADR-authn-token](adr-authn-token.md)。
 - **IdP 声明默认不采信。** 采信须同时满足的前提是封闭集，由 design-authn-mfa 承载；前提中必有提供方行显式开启，且账户没有任何有效因素、没有强制登记。采信抬高的多因素是 IdP 的声明，不是本地验证过的因素：它只在该提供方所属的租户内算数，设了 `Requirement.Local` 的动作不采信它。
 - **登录期间登记的因素不计入本次强度。** 会话记单因素；要得到多因素，须下一次登录，或加强认证时通过一个早于该次认证登记的因素。
-- **账户安全类操作要求本地验证过的因素。** 判据是操作能改变账户的凭据或身份绑定、或授予更高权限；删除与重置因素、解绑与关联外部身份、改口令、改手机或邮箱、创建服务密钥、冒充发起是该判据的例举，不是封闭集，逐项名单见 design-authn-mfa。冒充发起与管理员重置因素另要求发起者名下有启用已满一段时间的非短信因素。短信因素允许登记与使用，在冒充与重置他人因素的强认证里不计。判定接缝见 [ADR-authn-decision-seam](adr-authn-decision-seam.md)，冒充的限制见 [ADR-authn-impersonation](adr-authn-impersonation.md)。
+- **账户安全类操作要求本地验证过的因素。** 判据是操作能改变账户的凭据或身份绑定、或授予更高权限；删除与重置因素、解绑与关联外部身份、改口令、添加用户名、把邮箱或手机选作或取消登录方式、设置默认联系地址、删除标识、创建服务密钥、冒充发起是该判据的例举，不是封闭集，逐项名单见 design-authn-mfa。冒充发起与管理员重置因素另要求发起者名下有启用已满一段时间的非短信因素。短信因素允许登记与使用，在冒充与重置他人因素的强认证里不计。判定接缝见 [ADR-authn-decision-seam](adr-authn-decision-seam.md)，冒充的限制见 [ADR-authn-impersonation](adr-authn-impersonation.md)。
 - **因素登记只有一个入口。** 登记是登录引擎的 `enroll` 目的，经 `flows` 路由推进，由 `MFA` 驱动各步。账户尚无因素时的首次登记按信任首次使用，不要求带外证明。WebAuthn 的仪式数据放在流程记录的私有字节里。步骤与前置新鲜度要求见 design-authn-mfa。
 
 ```mermaid

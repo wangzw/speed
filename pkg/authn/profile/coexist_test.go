@@ -27,6 +27,7 @@ type (
 	stubSignupState struct{ authn.SignupVerification }
 	stubThrottle    struct{ authn.Throttle }
 	stubSessions    struct{ authn.Sessions }
+	stubMFA         struct{ authn.MFA }
 	stubReader      struct{}
 )
 
@@ -77,7 +78,7 @@ func driveCoexist(t *testing.T, m *mounttest.Mounter) (err error) {
 		standIn("stand-in.passwords", stubPasswords{}, (*authn.Passwords)(nil)),
 		standIn("stand-in.throttle", stubThrottle{}, (*authn.Throttle)(nil)),
 		standIn("stand-in.sessions", stubSessions{}, (*authn.Sessions)(nil)),
-		standIn("stand-in.mfa", &fakeMFA{}, (*authn.MFA)(nil)),
+		standIn("stand-in.mfa", stubMFA{}, (*authn.MFA)(nil)),
 		standIn("stand-in.login-method", stubMethod{name: "password"}, (*authn.LoginMethod)(nil)),
 	}
 

@@ -47,9 +47,9 @@ func callerFrom(ctx context.Context) (caller, bool) {
 	return who, ok
 }
 
-// authorize is what every route that changes how the account is proven does
-// before it reads the request body or calls anything. It answers the request and
-// returns false when the identity may not go on:
+// authorize is what a route that changes how the account signs in does before it
+// reads the request body or calls anything. It answers the request and returns
+// false when the identity may not go on:
 //
 //   - an identity with no login session has nothing to revoke the others
 //     against and is refused with the plain 401;
@@ -76,6 +76,103 @@ func (r *routes) authorize(c *call, action string) (caller, bool) {
 		return caller{}, false
 	}
 	return caller{account: id.Account(), session: id.Session()}, true
+}
+
+// identity is the caller the guard already decided, or the one identify decides
+// now. It is the identity and session check without freshness, for a route that
+// does not change how the account signs in, or whose freshness depends on what
+// its body changes and so is asked for by the handler once it knows.
+func (r *routes) identity(c *call) (caller, bool) {
+	if who, carried := callerFrom(c.ctx); carried {
+		return who, true
+	}
+	id, ok := r.identify(c)
+	if !ok {
+		return caller{}, false
+	}
+	return caller{account: id.Account(), session: id.Session()}, true
+}
+
+// freshIdentity holds the identity of a request whose guard carried its caller
+// without asking for freshness to the requirement its change calls for. It is
+// the freshness half of authorize, for a handler that decided from its body that
+// the change is one the design protects.
+func (r *routes) freshIdentity(c *call, action string) bool {
+	id, ok := authn.FromContext(c.ctx)
+	if !ok {
+		c.unauthorized("")
+		return false
+	}
+	return r.fresh(c, id, action)
+}
+
+// contactProofNeedsFreshness reports whether proving one contact address would
+// change what proves or recovers the account, which is the half of a contact
+// write the design holds to a fresh authentication. Registering and proving an
+// address asks for none by itself; these consequences do:
+//
+//   - an email that would become the account's default contact -- where
+//     notifications and a password reset go -- because the account has none;
+//   - an email that would become the account's only address and so its
+//     automatic login way (REQ-account-068);
+//   - a phone number, while the account holds an active SMS factor, because
+//     the number is that factor's target.
+//
+// Proving an address the account already proved changes neither, and a phone
+// number the factor already targets changes nothing either, so both answer
+// false. A read that fails is answered as the route's own failure.
+func (r *routes) contactProofNeedsFreshness(ctx context.Context, account authn.AccountID,
+	kind authn.IdentifierKind, value string,
+) (bool, error) {
+	held, err := r.deps.Accounts.Identifiers(ctx, account)
+	if err != nil {
+		return false, err
+	}
+	proved := func(row authn.Identifier) bool {
+		return (authn.Verification{Via: row.VerifiedVia}).Proves()
+	}
+	switch kind {
+	case authn.IdentifierEmail:
+		hasDefault := false
+		hasOther := false
+		for _, row := range held {
+			if row.Kind == authn.IdentifierEmail && row.Value == value && proved(row) {
+				return false, nil
+			}
+			if row.Kind == authn.IdentifierEmail && row.Value != value {
+				hasOther = true
+			}
+			if row.DefaultContact {
+				hasDefault = true
+			}
+		}
+		// A missing default contact or a missing other address is what makes
+		// this proof select the address on the account's behalf.
+		return !hasDefault || !hasOther, nil
+	case authn.IdentifierPhone:
+		factors, err := r.deps.MFA.Factors(ctx, account)
+		if err != nil {
+			return false, err
+		}
+		active := false
+		for _, f := range factors {
+			if f.Kind == authn.FactorSMS && f.Status == authn.FactorActive {
+				active = true
+				break
+			}
+		}
+		if !active {
+			return false, nil
+		}
+		for _, row := range held {
+			if row.Kind == authn.IdentifierPhone && row.Value == value && proved(row) {
+				return false, nil
+			}
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 // identify is the identity and session check of every route: a request without a
