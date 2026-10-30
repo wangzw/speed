@@ -123,6 +123,8 @@
     "title": "密码注册",
     "description": "用用户名、邮箱和密码创建账户。登录后再验证邮箱地址。",
     "usernameLabel": "用户名",
+    "displayNameLabel": "显示名",
+    "displayNameHelp": "其他人看到的名字，可稍后修改。",
     "emailLabel": "邮箱",
     "passwordLabel": "密码",
     "confirmPasswordLabel": "确认密码",

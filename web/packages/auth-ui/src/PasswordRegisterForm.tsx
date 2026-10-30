@@ -3,8 +3,9 @@
  *
  * Registration and sign-in are two operations. A submit first opens an
  * account with `session.register` -- one request carrying the username,
- * the email address and the password, which establishes no session and
- * writes no credential -- and then, with the same credentials, starts
+ * the optional display name, the email address and the password, which
+ * establishes no session and writes no credential -- and then, with the
+ * same credentials, starts
  * the ordinary `method: 'password'` login flow through the shared
  * stepping driver. The registration itself fires no callback: only the
  * auto-login settling successfully reports `onSignedIn` once, with
@@ -108,6 +109,7 @@ export interface PasswordRegisterFormProps {
 
 interface RegisterFields {
   username: string
+  displayName: string
   email: string
   password: string
   confirmPassword: string
@@ -146,6 +148,7 @@ export function PasswordRegisterForm({
   const form = useForm<RegisterFields>({
     defaultValues: {
       username: '',
+      displayName: '',
       email: '',
       password: '',
       confirmPassword: '',
@@ -259,6 +262,11 @@ export function PasswordRegisterForm({
         username: values.username,
         email: values.email,
         password: values.password,
+        // The display name is optional; absent means the account holds
+        // none, so an empty field sends no key rather than an empty string.
+        ...(values.displayName.trim() === ''
+          ? {}
+          : { display_name: values.displayName.trim() }),
       })
     } catch (error) {
       const code = errorCodeOf(error)
@@ -363,6 +371,20 @@ export function PasswordRegisterForm({
             disabled={autoSignInFailed}
             error={invalid}
             helperText={errorText ?? undefined}
+          />
+        )}
+      />
+      <FormField
+        name="displayName"
+        render={({ field, invalid, errorText }) => (
+          <TextField
+            {...field}
+            label={t('register.displayNameLabel')}
+            autoComplete="name"
+            fullWidth
+            disabled={autoSignInFailed}
+            error={invalid}
+            helperText={errorText ?? t('register.displayNameHelp')}
           />
         )}
       />

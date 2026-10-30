@@ -123,6 +123,8 @@
     "title": "Password registration",
     "description": "Create an account with a username, an email address and a password. You will verify your email address after signing in.",
     "usernameLabel": "Username",
+    "displayNameLabel": "Display name",
+    "displayNameHelp": "The name others see. You can change it later.",
     "emailLabel": "Email",
     "passwordLabel": "Password",
     "confirmPasswordLabel": "Confirm password",

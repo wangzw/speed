@@ -2,7 +2,9 @@
  * PasswordRegisterForm behaviour: the form opens an account with one
  * `session.register` request and then signs in with the same credentials
  * through the ordinary password flow, the confirmation is compared in the
- * form and never travels, each username refusal (taken, reserved, malformed)
+ * form and never travels, an optional display name travels trimmed only
+ * when filled and is omitted when blank, each username refusal (taken,
+ * reserved, malformed)
  * lands on the username field with its own message, a
  * taken email address lands on the email field,
  * the mapped refusals render their register-section text while every other
@@ -42,6 +44,7 @@ const PASSWORD = 's3cret-pass'
 
 interface RegisterLabels {
   readonly username: string
+  readonly displayName: string
   readonly email: string
   readonly password: string
   readonly confirmPassword: string
@@ -49,6 +52,7 @@ interface RegisterLabels {
 
 const LABELS: RegisterLabels = {
   username: zhCN.register.usernameLabel,
+  displayName: zhCN.register.displayNameLabel,
   email: zhCN.register.emailLabel,
   password: zhCN.register.passwordLabel,
   confirmPassword: zhCN.register.confirmPasswordLabel,
@@ -65,6 +69,7 @@ function registration(): unknown {
 async function fillAndSubmit(
   values: {
     username?: string
+    displayName?: string
     email?: string
     password?: string
     confirmPassword?: string
@@ -75,6 +80,12 @@ async function fillAndSubmit(
     screen.getByLabelText(LABELS.username),
     values.username ?? USERNAME,
   )
+  if (values.displayName !== undefined) {
+    await user.type(
+      screen.getByLabelText(LABELS.displayName),
+      values.displayName,
+    )
+  }
   await user.type(screen.getByLabelText(LABELS.email), values.email ?? MAIL)
   await user.type(
     screen.getByLabelText(LABELS.password),
@@ -140,6 +151,67 @@ describe('PasswordRegisterForm', () => {
     // The confirmation is client-only: it never enters the request.
     expect(harness.calls[0]?.options?.body).not.toHaveProperty('confirmPassword')
     expect(harness.store.get()).toBe('access-1')
+  })
+
+  it('send the display name trimmed when one is given', async () => {
+    const harness = makeHarness({
+      [REGISTER]: (call) => {
+        expect(call.options?.body).toEqual({
+          username: USERNAME,
+          email: MAIL,
+          password: PASSWORD,
+          display_name: 'Ada Lovelace',
+        })
+        return registration()
+      },
+      [LOGIN_START]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+    })
+    const onSignedIn = vi.fn()
+    renderWithProviders(
+      <PasswordRegisterForm session={harness.session} onSignedIn={onSignedIn} />,
+    )
+    await fillAndSubmit({ displayName: '  Ada Lovelace  ' })
+
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    expect(
+      harness.calls.find((call) => call.path === '/api/v1/auth/register')
+        ?.options?.body,
+    ).toHaveProperty('display_name', 'Ada Lovelace')
+  })
+
+  it('omit the display name key when the field is left blank', async () => {
+    // Optional: a blank field must not travel as an empty string, which
+    // the server would read as a name of nothing rather than no name.
+    const harness = makeHarness({
+      [REGISTER]: (call) => {
+        expect(call.options?.body).not.toHaveProperty('display_name')
+        return registration()
+      },
+      [LOGIN_START]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+    })
+    const onSignedIn = vi.fn()
+    renderWithProviders(
+      <PasswordRegisterForm session={harness.session} onSignedIn={onSignedIn} />,
+    )
+    await fillAndSubmit({ displayName: '   ' })
+
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    expect(
+      harness.calls.find((call) => call.path === '/api/v1/auth/register')
+        ?.options?.body,
+    ).not.toHaveProperty('display_name')
+  })
+
+  it('render the display-name label and help from the bundle', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(<PasswordRegisterForm session={harness.session} />)
+
+    expect(screen.getByLabelText(zhCN.register.displayNameLabel)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.register.displayNameHelp)).toBeInTheDocument()
   })
 
   it('refuse a confirmation that differs without reaching the network', async () => {
