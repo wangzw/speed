@@ -48,9 +48,9 @@ func (r *Resolver) socialUnbound(ctx context.Context, ext *authn.External,
 
 // createSocial opens the account a pending social signup describes. The account
 // takes the provider's display name, the username and password its person chose,
-// and the address the provider declared verified as a contact. It writes no
-// sign-in way of that address: it is not the account's password login name. A
-// username another login took in the race for the same name leaves
+// and the address the provider declared verified as a contact. That address is
+// the account's only one, so it is also its sign-in way and a password login
+// name. A username another login took in the race for the same name leaves
 // authn.ErrAccountExists for the answer route's 409.
 func (r *Resolver) createSocial(ctx context.Context, p Pending, username, password string) (Result, error) {
 	create := authn.CreateAccount{

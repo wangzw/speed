@@ -198,9 +198,9 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 		}
 		if !slices.ContainsFunc(held, func(i authn.Identifier) bool {
 			return i.Kind == authn.IdentifierEmail && i.Value == "ann@x.org" &&
-				i.VerifiedVia == "idp:google" && i.Contact && i.DefaultContact && !i.SignIn
+				i.VerifiedVia == "idp:google" && i.Contact && i.DefaultContact && i.SignIn
 		}) {
-			t.Errorf("identifiers = %+v, want the declared address as a proved default contact, not a sign-in way", held)
+			t.Errorf("identifiers = %+v, want the declared address as a proved default contact and sign-in way", held)
 		}
 	})
 }
@@ -516,8 +516,8 @@ func checkNoProvidedIdentity(t *testing.T, next map[string]any) {
 // the social first login against the real account store: the step asks for a
 // password beside the username and shows the provider's verified address
 // read-only, and the account it opens holds that address as its default contact
-// and not as a sign-in way. The password the step took opens a login of its own
-// afterwards.
+// and, being its only address, as a sign-in way. The password the step took opens
+// a login under the username and under that address afterwards.
 func TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword(t *testing.T) {
 	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
@@ -556,13 +556,16 @@ func TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword(t 
 		held := identifiersOf(t, h.accounts, id)
 		if !slices.ContainsFunc(held, func(i authn.Identifier) bool {
 			return i.Kind == authn.IdentifierEmail && i.Value == "ann@x.org" &&
-				i.VerifiedVia == "idp:google" && i.Contact && i.DefaultContact && !i.SignIn
+				i.VerifiedVia == "idp:google" && i.Contact && i.DefaultContact && i.SignIn
 		}) {
-			t.Errorf("identifiers = %+v, want the declared address as a proved default contact, not a sign-in way", held)
+			t.Errorf("identifiers = %+v, want the declared address as a proved default contact and sign-in way", held)
 		}
 
 		if done := h.loginFlow("newbie", socialPassword); done.status != http.StatusOK {
 			t.Fatalf("a password login with the collected password answered %d: %s", done.status, done.body)
+		}
+		if done := h.loginFlow("ann@x.org", socialPassword); done.status != http.StatusOK {
+			t.Fatalf("a password login under the declared address answered %d: %s", done.status, done.body)
 		}
 	})
 }

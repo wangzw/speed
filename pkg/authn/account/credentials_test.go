@@ -543,16 +543,22 @@ func TestSetRefusesAnAccountWhoseOnlyEmailIsNoSignInWay(t *testing.T) {
 	})
 }
 
-// TestVerifyAcceptsAnEmailOnlyWhenItIsChosenAsASignInWay holds that a proved
-// email address is no login name until its holder chooses it: a password check
-// against it answers as an unknown name does, the username beside it still
-// works, and choosing the address makes the same check succeed. The choice is the
-// only thing that changes; the address is proved either way.
+// TestVerifyAcceptsAnEmailOnlyWhenItIsChosenAsASignInWay holds that among several
+// addresses a proved email is no login name until its holder chooses it: a
+// password check against it answers as an unknown name does, the username beside
+// it still works, and choosing the address makes the same check succeed. The
+// choice is the only thing that changes; the address is proved either way.
 func TestVerifyAcceptsAnEmailOnlyWhenItIsChosenAsASignInWay(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		const password = "correct horse battery"
 		id := h.user("mailer", password)
+		// A second, unproved address means the proved one is not the account's
+		// only address, so the holder's choice is what selects it.
+		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierEmail, "other@example.com",
+			authn.Verification{Via: authn.VerifiedViaAdmin}); err != nil {
+			t.Fatalf("adding a second address: %v", err)
+		}
 		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierEmail, "mailer@example.com",
 			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
 			t.Fatalf("proving the address: %v", err)
@@ -565,7 +571,7 @@ func TestVerifyAcceptsAnEmailOnlyWhenItIsChosenAsASignInWay(t *testing.T) {
 			t.Errorf("the username beside it gave %q, %v, want the account and nil", got, err)
 		}
 
-		emailID := identifierOfKind(t, h, id, authn.IdentifierEmail).ID
+		emailID := identifierByValue(t, h, id, authn.IdentifierEmail, "mailer@example.com").ID
 		if err := h.p.SetIdentifierFlags(ctx, id, emailID,
 			authn.IdentifierFlags{SignIn: true}); err != nil {
 			t.Fatalf("choosing the address as a sign-in way: %v", err)

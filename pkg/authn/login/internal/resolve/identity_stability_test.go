@@ -244,9 +244,9 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			}) ||
 			!slices.ContainsFunc(held, func(i authn.Identifier) bool {
 				return i.Kind == authn.IdentifierEmail && i.Value == "social@example.org" &&
-					i.VerifiedVia == "idp:google" && i.Contact && i.DefaultContact && !i.SignIn
+					i.VerifiedVia == "idp:google" && i.Contact && i.DefaultContact && i.SignIn
 			}) {
-			t.Errorf("the social account holds the identifiers %+v, want its username and the declared address as a default contact", held)
+			t.Errorf("the social account holds the identifiers %+v, want its username and the declared address as a default contact and sign-in way", held)
 		}
 
 		// The same subject under another provider is another identity against

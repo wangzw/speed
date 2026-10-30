@@ -228,10 +228,10 @@ func TestCreateLetsAnImportAndAServiceAccountOpenWithoutAUsername(t *testing.T) 
 }
 
 // TestCreateWritesTheAxesOfTheIdentifiersItCreates holds the flags an account
-// opens with: a username is always a login way; a new email address or phone
-// number starts on neither axis; the phone an SMS first login signed in with is
-// a login way but not a contact; and a proved email address is the default
-// contact, since the account has none.
+// opens with: a username is always a login way; the account's only email address,
+// proved here, is a login way too and its default contact; the phone an SMS first
+// login signed in with is a login way but not a contact; and a contact axis stays
+// false unless an import or the social address states it.
 func TestCreateWritesTheAxesOfTheIdentifiersItCreates(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -256,7 +256,7 @@ func TestCreateWritesTheAxesOfTheIdentifiersItCreates(t *testing.T) {
 			signIn, contact, defaultContact bool
 		}{
 			{authn.IdentifierUsername, true, false, false},
-			{authn.IdentifierEmail, false, false, true},
+			{authn.IdentifierEmail, true, false, true},
 			{authn.IdentifierPhone, true, false, false},
 		} {
 			got := byKind[c.kind]

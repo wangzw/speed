@@ -45,9 +45,9 @@ func defaultContactValue(t *testing.T, h *harness, id authn.AccountID) (string, 
 }
 
 // TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact holds how a
-// declared identifier enters the account: a new email address or phone number
-// starts on neither axis, and the first proved email address becomes the default
-// contact in the same transaction while a later one leaves the choice alone.
+// declared identifier enters the account: the account's only email address, proved
+// here, becomes a login way and the default contact in the same transaction while
+// a later one is no login way and leaves the default alone.
 func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -60,8 +60,8 @@ func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testi
 			t.Fatalf("adding the first email address: %v", err)
 		}
 		first := identifierByValue(t, h, created.ID, authn.IdentifierEmail, "first@example.com")
-		if first.SignIn || first.Contact || !first.DefaultContact {
-			t.Errorf("the first proved email reads sign_in=%v contact=%v default_contact=%v, want false false true",
+		if !first.SignIn || first.Contact || !first.DefaultContact {
+			t.Errorf("the first proved email reads sign_in=%v contact=%v default_contact=%v, want true false true",
 				first.SignIn, first.Contact, first.DefaultContact)
 		}
 

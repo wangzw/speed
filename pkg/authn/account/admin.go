@@ -102,10 +102,12 @@ func eventVia(via string) (string, error) {
 //
 // An email address and a phone number are written verified, and the way each
 // was comes with it; no row awaits verification. Their two axes start false
-// unless an import states its source record's, and the phone an SMS first login
-// signed in with starts as a login way. A proved email address is the account's
-// default contact in the same transaction, since a new account has none; an
-// unproved one cannot be. An email address also reserves its contact in the same
+// unless an import states its source record's. The exceptions are the phone an
+// SMS first login signed in with, and a proved email address, which is the
+// account's only one: both start as a login way, since the account has nothing
+// else to compare against. A proved email address is the account's default
+// contact in the same transaction, since a new account has none; an unproved
+// one cannot be. An email address also reserves its contact in the same
 // transaction: the reservation is written beside the identifier, so the contact
 // is owned by this account from the moment the account exists. A password is
 // judged by the policy, derived under the capacity the module allows before the
@@ -298,9 +300,12 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		}
 		// A new email address is neither a login way nor a contact until its
 		// holder chooses; an import writes the axes its source record had. The
-		// exception is the address a social first login brings in: the provider
-		// declared it verified, so the account it opens holds it as a contact
-		// and still not as a login way.
+		// exception is the proved address an account opens with: it is the
+		// account's only address, so the holder has nothing to compare it
+		// against, and it is chosen as a login way. The address a social first
+		// login brings in also starts as a contact, since the provider declared
+		// it verified.
+		proved := authn.Verification{Via: verified}.Proves()
 		flags := authn.IdentifierFlags{}
 		switch {
 		case via == byImport:
@@ -308,7 +313,9 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		case strings.HasPrefix(verified, authn.VerifiedViaIDPPrefix):
 			flags = authn.IdentifierFlags{Contact: true}
 		}
-		proved := authn.Verification{Via: verified}.Proves()
+		if via != byImport && proved {
+			flags.SignIn = true
+		}
 		// An unproved address is never the default contact. A proved one is the
 		// default whether or not an import's source named it: an imported
 		// account is new here and has no other.
@@ -475,7 +482,10 @@ func (p *product) updateAccount(ctx context.Context, id authn.AccountID, columns
 // A new email address or phone number starts on neither axis, and a username is
 // always a sign-in way. A proved email address becomes the account's default
 // contact when it has none, which is how the first proved address establishes the
-// choice.
+// choice. It is also chosen as a login way when it is the account's only address:
+// with one address there is nothing for the holder to compare it against. An
+// account with several leaves that choice to its holder, and an address proved
+// again stays as it is.
 //
 // An email address the account already holds as an identifier is rewritten in
 // place instead of being added again: no identifier-changed event is published
@@ -530,7 +540,8 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 				return err
 			}
 			if len(held) > 0 {
-				if (authn.Verification{Via: held[0].VerifiedVia}).Proves() && !via.Proves() {
+				alreadyProved := (authn.Verification{Via: held[0].VerifiedVia}).Proves()
+				if alreadyProved && !via.Proves() {
 					return nil
 				}
 				if err = tx.Model(&identifierRow{}).Where("id = ?", held[0].ID).
@@ -538,6 +549,14 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 					return err
 				}
 				if via.Proves() {
+					// The address becomes a login way at its first proof alone,
+					// and only while it is the account's only one; proving it
+					// again is idempotent and changes neither axis.
+					if !alreadyProved {
+						if err = selectSoleEmailAsSignIn(tx, id.String(), held[0].ID); err != nil {
+							return err
+						}
+					}
 					if err = defaultContactIfNone(tx, id.String(), held[0].ID); err != nil {
 						return err
 					}
@@ -587,6 +606,9 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 			return err
 		}
 		if kind == authn.IdentifierEmail && via.Proves() {
+			if err = selectSoleEmailAsSignIn(tx, id.String(), row.ID); err != nil {
+				return err
+			}
 			if err = defaultContactIfNone(tx, id.String(), row.ID); err != nil {
 				return err
 			}
@@ -620,6 +642,24 @@ func defaultContactIfNone(tx *gorm.DB, account, identifier string) error {
 		return nil
 	}
 	return tx.Model(&identifierRow{}).Where("id = ?", identifier).Update("default_contact", true).Error
+}
+
+// selectSoleEmailAsSignIn chooses the email address just proved as a sign-in way
+// when it is the account's only address. With one address the holder has nothing
+// to compare it against, and the address is the login name the recovery path for
+// an address already held by an account asks for. An account with several
+// addresses keeps the choice for its holder.
+func selectSoleEmailAsSignIn(tx *gorm.DB, account, identifier string) error {
+	var held int64
+	if err := tx.Model(&identifierRow{}).
+		Where("account_id = ? AND kind = ?", account, string(authn.IdentifierEmail)).
+		Count(&held).Error; err != nil {
+		return err
+	}
+	if held != 1 {
+		return nil
+	}
+	return tx.Model(&identifierRow{}).Where("id = ?", identifier).Update("sign_in", true).Error
 }
 
 // transferDefaultContact hands the default contact to the earliest proved email
