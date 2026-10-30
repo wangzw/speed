@@ -460,8 +460,10 @@ test('operator-first-run: the operator proves the email and lands the first sett
       .click()
 
     // The completion state names the proved address, the standing notice goes,
-    // and the account's own identifier list flips the same row to verified --
-    // no second row is added for the address it already held.
+    // and the account's own identifier list flips the address to verified --
+    // no second identifier is written for the address it already held. The
+    // address is the account's only one, so the proof also chooses it as a
+    // sign-in way: it is listed under Sign-in ways as well as Contacts.
     await expect(
       page.getByRole('region', {
         name: copy('accountUi', 'verification.verifiedTitle'),
@@ -479,15 +481,15 @@ test('operator-first-run: the operator proves the email and lands the first sett
     await expect(verificationBanner(page, OPERATOR.identifier)).toHaveCount(0)
 
     const identifiers = identifiersSection(page)
-    const heldRow = identifiers
+    const heldRows = identifiers
       .getByRole('listitem')
       .filter({ hasText: OPERATOR.identifier })
-    await expect(heldRow).toHaveCount(1)
+    await expect(heldRows).toHaveCount(2)
     await expect(
-      heldRow.getByText(copy('accountUi', 'identifiers.verified'), {
+      heldRows.getByText(copy('accountUi', 'identifiers.verified'), {
         exact: true,
       }),
-    ).toBeVisible()
+    ).toHaveCount(2)
   })
 
   await test.step('the same write now lands and the item reads overridden', async () => {

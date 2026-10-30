@@ -249,11 +249,13 @@ test('social-account-linking: a password account links Google, then signs in wit
       name: copy('accountUi', 'identifiers.title'),
       exact: true,
     })
+    // The account's only address is also its sign-in way, so it appears in the
+    // Contacts and Sign-in ways lists alike: two rows for the one address.
     await expect(
       identifiers
         .getByRole('listitem')
         .filter({ hasText: identityProviderUser.email }),
-    ).toBeVisible()
+    ).toHaveCount(2)
   })
 
   await test.step('the password sign-in still enters that same account', async () => {

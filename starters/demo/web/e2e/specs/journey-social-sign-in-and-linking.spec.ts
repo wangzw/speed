@@ -9,10 +9,11 @@
  *     account-opening face: the provider's verified address shown read-only,
  *     and a username and password (with its confirmation) to submit. The
  *     account opens with that username and password and the provider's display
- *     name; the address is written as a contact and the default contact, never
- *     as a sign-in way. The account page names the verified address, the
- *     identifiers list carries the address under Contacts and the username
- *     under Sign-in ways, and the password set here signs in afterwards.
+ *     name; the address is written as a contact and the default contact and,
+ *     being the account's only address, as a sign-in way too. The account page
+ *     names the verified address, the identifiers list carries it under both
+ *     Contacts and Sign-in ways beside the username, and the password set here
+ *     signs in under the username and under that address.
  *   - The address already belongs to an account. Automatic linking no longer
  *     exists, so a social login never enters the account that holds the
  *     address: the product refuses it with the link-required refusal and lands
@@ -33,7 +34,7 @@
  * browser is pinned to en-US and UTC by the Playwright config.
  */
 // @journey journey-social-sign-in-and-linking.md
-// @covers REQ-account-015, REQ-account-016, REQ-account-060, REQ-signin-015, REQ-signin-017, REQ-signin-027, REQ-signin-028, REQ-signin-038, REQ-signup-047, REQ-signup-048, REQ-signup-049
+// @covers REQ-account-015, REQ-account-016, REQ-account-060, REQ-account-068, REQ-signin-015, REQ-signin-017, REQ-signin-027, REQ-signin-028, REQ-signin-038, REQ-signup-047, REQ-signup-048, REQ-signup-049
 import type { Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
@@ -188,8 +189,8 @@ test.describe('the provider address belongs to no account', () => {
       await expect(verified).toContainText(identityProviderUser.email)
 
       // The identifiers list carries the address under Contacts -- default
-      // contact marked -- and the username under Sign-in ways. The address is
-      // not a sign-in way.
+      // contact marked -- and, because it is the account's only address,
+      // under Sign-in ways as well, beside the username.
       const identifiers = identifiersSection(page)
       const contacts = identifiers.getByRole('region', {
         name: copy('accountUi', 'identifiers.groups.contact'),
@@ -225,9 +226,31 @@ test.describe('the provider address belongs to no account', () => {
           exact: true,
         }),
       ).toHaveCount(0)
+
+      // The address the account opened with is the same address the Contacts
+      // list shows: proved, and with the sign-in switch on, so the account is
+      // reachable by it as well as by the username.
+      const emailRow = signInWays
+        .getByRole('listitem')
+        .filter({ hasText: identityProviderUser.email })
+      await expect(emailRow).toBeVisible()
       await expect(
-        signInWays.getByText(identityProviderUser.email, { exact: true }),
-      ).toHaveCount(0)
+        emailRow.getByText(copy('accountUi', 'identifiers.kind.email'), {
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(
+        emailRow.getByText(copy('accountUi', 'identifiers.verified'), {
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(
+        emailRow.getByRole('switch', {
+          name: copy('accountUi', 'identifiers.axes.signInAria', {
+            value: identityProviderUser.email,
+          }),
+        }),
+      ).toBeChecked()
     })
 
     await test.step('the password set at signup signs in to the account', async () => {
@@ -265,7 +288,7 @@ test.describe('the provider address belongs to no account', () => {
       await expect(homeHeading(page)).toBeVisible()
 
       // The same account: the username it chose and the binding are still
-      // there, and the provider's address is still a contact rather than a
+      // there, and the provider's address is still both a contact and a
       // sign-in way.
       await openAccountSettings(page)
       await expect(
@@ -294,7 +317,55 @@ test.describe('the provider address belongs to no account', () => {
             exact: true,
           })
           .getByText(identityProviderUser.email, { exact: true }),
-      ).toHaveCount(0)
+      ).toBeVisible()
+    })
+  })
+
+  test('social-sign-in: the account-opening password signs in under the provider address', async ({
+    demo,
+  }) => {
+    const { page } = demo
+
+    await test.step('the first Google sign-in opens the account with the chosen username and password', async () => {
+      await demo.accounts.openSignIn()
+      await expect(signInHeading(page)).toBeVisible()
+      await googleButton(page).click()
+      await approveSocialSignIn(page)
+      await demo.accounts.answerSocialSignup({
+        username: FIRST_SIGN_IN_USERNAME,
+        password: FIRST_SIGN_IN_PASSWORD,
+      })
+      await expect(homeHeading(page)).toBeVisible()
+    })
+
+    await test.step('the provider address and the account-opening password sign in to the account', async () => {
+      // The address is the account's only one, so it is a sign-in way and the
+      // password the account-opening face took is the credential a password
+      // login uses with it as the login name.
+      await demo.accounts.signOut()
+      await demo.accounts.signIn({
+        identifier: identityProviderUser.email,
+        password: FIRST_SIGN_IN_PASSWORD,
+      })
+      await expect(homeHeading(page)).toBeVisible()
+
+      // The same account rather than a second one: the address and the
+      // username the first sign-in chose are both sign-in ways of it.
+      await openAccountSettings(page)
+      const signInWays = identifiersSection(page).getByRole('region', {
+        name: copy('accountUi', 'identifiers.groups.signIn'),
+        exact: true,
+      })
+      await expect(
+        signInWays
+          .getByRole('listitem')
+          .filter({ hasText: FIRST_SIGN_IN_USERNAME }),
+      ).toBeVisible()
+      await expect(
+        signInWays
+          .getByRole('listitem')
+          .filter({ hasText: identityProviderUser.email }),
+      ).toBeVisible()
     })
   })
 })

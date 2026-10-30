@@ -323,17 +323,20 @@ test('account-security-hardening: an account enrols two factors, ends another de
 
     await test.step('step 1: the account page lists the identifiers with the email proved, and the empty two-step surface offers the enrolment entries', async () => {
       const identifiers = identifiersSection(page)
-      await expect(identifiers.getByRole('listitem')).toHaveCount(2)
+      // The account's only address is chosen as a sign-in way when it is
+      // proved, so the one address is listed under both Contacts and Sign-in
+      // ways beside the username: three rows for two identifiers.
+      await expect(identifiers.getByRole('listitem')).toHaveCount(3)
 
-      const emailRow = identifiers
+      const emailRows = identifiers
         .getByRole('listitem')
         .filter({ has: page.getByText(account.email, { exact: true }) })
-      await expect(emailRow).toHaveCount(1)
+      await expect(emailRows).toHaveCount(2)
       await expect(
-        emailRow.getByText(copy('accountUi', 'identifiers.verified'), {
+        emailRows.getByText(copy('accountUi', 'identifiers.verified'), {
           exact: true,
         }),
-      ).toBeVisible()
+      ).toHaveCount(2)
 
       // A username carries no ownership marker. The address contains the
       // username, so the row is found by the username's own exact text.
