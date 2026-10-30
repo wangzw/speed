@@ -6,14 +6,15 @@
  * POST /api/v1/auth/phone (authn.login.startPhone) sends a code to the number and
  * answers how long it lives and how soon another may be asked for without
  * saying whether the number belongs to another account; POST
- * /api/v1/auth/phone/verify (authn.login.verifyPhone) submits the code, binds the
- * number to the account as a verified identifier (replacing any phone it
- * already held) and revokes the account's other sessions. The verification
- * replaces this session's credential, so it runs inside an
- * identity-transition window (session.beginIdentityTransition): a read
- * that lands with the outgoing credential and answers anonymous is
- * discarded instead of ending the session, and the window closes once the
- * refetch that follows the write has settled. The number is
+ * /api/v1/auth/phone/verify (authn.login.verifyPhone) submits the code and
+ * binds the number to the account as a verified identifier (replacing any
+ * phone it already held). Registering a number sends a code without asking
+ * for a fresh authentication. Proving it does not make it a way to sign in,
+ * so the verification rotates nothing and refetches the profile alone,
+ * running outside the identity-transition window; but when the number
+ * replaces the one an active SMS factor sends codes to, the server may answer
+ * a step-up refusal, and the verify step then arms the dialog with the same
+ * code and replays it once a challenge is won. The number is
  * taken from the first step's record, keyed to the session, so the second
  * step carries the code alone -- the client never chooses which number is
  * verified.
@@ -25,11 +26,7 @@
  * different number. The selector starts on the browser locale's own
  * region and validates the number per country before anything is sent, so
  * a number too short for its country is refused locally with the calling
- * code named. Each step's request can
- * answer 401 authn.insufficient_user_authentication (the route asks for a
- * fresh authentication); the section opens the step-up dialog with that
- * step's inputs remembered and a won challenge re-runs exactly that step.
- * Every other refusal resolves through the code whitelist into the
+ * code named. A refusal resolves through the code whitelist into the
  * section's write-feedback region beneath the controls (a number another
  * account holds is the 409 conflict; a wrong code is the 401 login-failed).
  * A verified number refetches the profile so the identifiers surface shows
@@ -40,9 +37,9 @@
  * The slot holds at most one result, so a success and a failure never stand
  * beside each other.
  *
- * The section takes the session as its only prop -- the step-up dialog
- * drives it -- while the two writes travel on the shared access token
- * through the generated calls.
+ * The section takes the session for the human-verification block and the
+ * step-up dialog the verify step can open, while the two writes travel on the
+ * shared access token through the generated calls.
  *
  * The send also presents the deployment's human-verification proof when
  * its gate requires one. The gate comes from the methods document (or
@@ -62,13 +59,18 @@ import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   getAuthnProfileGetQueryKey,
-  getAuthnSessionListQueryKey,
   useAuthnLoginStartPhone,
   useAuthnLoginVerifyPhone,
 } from '@speed/api-sdk'
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
-import { humanGateNeedsProof, useStepUpGate, useHumanVerification } from '@speed/auth-core'
 import {
+  humanGateNeedsProof,
+  stepUpReasonOf,
+  useHumanVerification,
+  useStepUpGate,
+} from '@speed/auth-core'
+import {
+  errorCodeOf,
   HumanVerification,
   PhoneNumberField,
   FORM_MAX_WIDTH,
@@ -77,13 +79,12 @@ import {
   usePhoneCountryDefault,
   useWriteFeedback,
 } from '@speed/ui-kit'
-import { runIdentityTransition } from './internal/identity-transition.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 export interface PhoneSectionProps {
-  /** The session whose step-up flow the dialog drives. */
+  /** The session the human-verification proof is obtained for. */
   readonly session: AuthSession
   /**
    * The human-verification gate the deployment reported, when the host
@@ -92,23 +93,16 @@ export interface PhoneSectionProps {
    */
   readonly humanGate?: AuthnHumanGate
   /**
-   * The host's current path, sent as the step-up flow's `return_to`: a
-   * redirect method's round trip lands back on the page that started it, so
-   * that page reads the refusal. Omitted, the deployment's default return
-   * target applies.
+   * Closes the host's form. Given, every step's cancel leaves the section
+   * instead of only stepping back to the number field.
    */
-  readonly returnPath?: string
+  readonly onCancel?: () => void
 }
-
-/** Which step the request came from, so a won step-up re-runs exactly it. */
-type PhoneAction =
-  | { readonly kind: 'start'; readonly phone: string }
-  | { readonly kind: 'verify'; readonly code: string }
 
 export function PhoneSection({
   session,
   humanGate,
-  returnPath,
+  onCancel,
 }: PhoneSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
@@ -144,13 +138,11 @@ export function PhoneSection({
   // content change the screen reader already knows.
   const [sentCommitted, setSentCommitted] = useState(false)
   const feedback = useWriteFeedback()
-
-  const gate = useStepUpGate<PhoneAction>((action) => {
-    if (action.kind === 'start') {
-      void sendCode(action.phone)
-    } else {
-      void verifyCode(action.code)
-    }
+  // The verify step's step-up gate: a proof that replaces the number an
+  // active SMS factor sends codes to is refused until the session proves a
+  // fresh authentication, and a won challenge replays the same code.
+  const gate = useStepUpGate<string>((nextCode) => {
+    void verifyCode(nextCode)
   })
 
   // Disabled through the whole attempt, including the refetches that follow
@@ -183,13 +175,8 @@ export function PhoneSection({
               : { phone: nextPhone, human_proof: presented },
         })
       } catch (error) {
-        if (gate.intercept(error, { kind: 'start', phone: nextPhone })) {
-          // A step-up refusal is decided before the proof is checked, so
-          // the proof is still valid for the re-run.
-          return null
-        }
-        // Any other refusal reached the send's own checks, and the
-        // single-use proof was spent on the way: obtain a fresh one.
+        // The refusal reached the send's own checks, and the single-use
+        // proof was spent on the way: obtain a fresh one.
         if (presented !== null) {
           human.consume()
         }
@@ -212,37 +199,27 @@ export function PhoneSection({
     const number = sentTo
     return feedback.run(async () => {
       try {
-        // The verify replaces the account's phone and rotates this
-        // session's credential, so the window is open before the write and
-        // closes once the refetch that follows it has settled: a read still
-        // carrying the outgoing credential is discarded instead of ending
-        // the session.
-        await runIdentityTransition(
-          session,
-          () => verifyPhone.mutateAsync({ data: { code: nextCode } }),
-          async () => {
-            setSentTo(null)
-            setNationalNumber('')
-            setPhoneAttempted(false)
-            setCode('')
-            // The verified number joins the profile's identifiers, and the
-            // route revokes the account's other sessions.
-            await Promise.all([
-              queryClient.invalidateQueries({
-                queryKey: getAuthnProfileGetQueryKey(),
-              }),
-              queryClient.invalidateQueries({
-                queryKey: getAuthnSessionListQueryKey(),
-              }),
-            ])
-          },
-        )
+        // The verify binds the number without rotating this session's
+        // credential or revoking the others, so no window is opened. A number
+        // that would replace the one an active SMS factor uses is refused
+        // until the session proves a fresh authentication: arm the dialog with
+        // the same code so a won challenge replays it.
+        await verifyPhone.mutateAsync({ data: { code: nextCode } })
       } catch (error) {
-        if (gate.intercept(error, { kind: 'verify', code: nextCode })) {
+        const reason = stepUpReasonOf(errorCodeOf(error))
+        if (reason !== null) {
+          gate.arm(nextCode, reason)
           return null
         }
         throw error
       }
+      setSentTo(null)
+      setNationalNumber('')
+      setPhoneAttempted(false)
+      setCode('')
+      await queryClient.invalidateQueries({
+        queryKey: getAuthnProfileGetQueryKey(),
+      })
       return t('phone.added', {
         phone: number ?? '',
         interpolation: { escapeValue: false },
@@ -303,13 +280,20 @@ export function PhoneSection({
               onRetry={human.retry}
               disabled={busy}
             />
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={busy || proofBlocked || nationalNumber === ''}
-            >
-              {t('phone.send')}
-            </Button>
+            <Stack direction="row" spacing={1}>
+              <Button
+                type="submit"
+                variant="contained"
+                disabled={busy || proofBlocked || nationalNumber === ''}
+              >
+                {t('phone.send')}
+              </Button>
+              {onCancel === undefined ? null : (
+                <Button type="button" disabled={busy} onClick={onCancel}>
+                  {t('phone.close')}
+                </Button>
+              )}
+            </Stack>
           </>
         ) : (
           <>
@@ -351,12 +335,16 @@ export function PhoneSection({
                 type="button"
                 disabled={busy}
                 onClick={() => {
+                  if (onCancel !== undefined) {
+                    onCancel()
+                    return
+                  }
                   setSentTo(null)
                   setCode('')
                   feedback.reset()
                 }}
               >
-                {t('phone.cancel')}
+                {onCancel === undefined ? t('phone.cancel') : t('phone.close')}
               </Button>
             </Stack>
           </>
@@ -376,7 +364,6 @@ export function PhoneSection({
         session={session}
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
-        returnPath={returnPath}
       />
     </>
   )

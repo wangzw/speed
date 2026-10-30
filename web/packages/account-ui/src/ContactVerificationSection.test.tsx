@@ -10,12 +10,12 @@
  * code step, announces the destination once and focuses the code field, and
  * the resend control is disabled for the server's interval with the reason
  * stated and stops its timer when the interval expires; a landed verify clears
- * the entry state and refetches the profile and session list; a wrong code and
+ * the entry state and refetches the profile alone; a wrong code and
  * a taken address render the section's own verify-step wording; a failed
  * profile read renders the error state and its retry re-reads; 429 and 503
- * render their code text; a 401 authn.insufficient_user_authentication opens
- * the step-up dialog and a won challenge re-runs the refused write once, on
- * both the send and the verify step.
+ * render their code text; a 401 authn.insufficient_user_authentication of the
+ * send renders as an ordinary failure rather than opening a step-up dialog,
+ * while a refused verify opens the dialog and replays the same code.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -206,7 +206,7 @@ describe('ContactVerificationSection', () => {
     ).toBeTruthy()
   })
 
-  it('renders the completion state after a code verifies, clearing the entry state and refetching', async () => {
+  it('renders the completion state after a code verifies, clearing the entry state and refetching the profile alone', async () => {
     let verified = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -226,9 +226,9 @@ describe('ContactVerificationSection', () => {
     }
     const rig = makeRealClientRig(respond)
     rig.store.set('access-1')
-    // The session section observes the session list, so the verify's
-    // invalidation of that query is observable as a second read; without an
-    // observer invalidating it would fetch nothing.
+    // The session section observes the session list; proving the address
+    // revokes no other session, so that query is not invalidated and the
+    // observer's mount read stays the only one.
     renderWithProviders(
       <>
         <ContactVerificationSection session={rig.session} />
@@ -274,13 +274,11 @@ describe('ContactVerificationSection', () => {
         ),
       ).toHaveLength(2),
     )
-    await waitFor(() =>
-      expect(
-        rig.calls.filter(
-          (call) => call.method === 'GET' && call.path === SESSIONS_PATH,
-        ),
-      ).toHaveLength(2),
-    )
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'GET' && call.path === SESSIONS_PATH,
+      ),
+    ).toHaveLength(1)
   })
 
   it('renders nothing for an account that never self-registered', async () => {
@@ -714,61 +712,25 @@ describe('ContactVerificationSection', () => {
     ).toBeTruthy()
   })
 
-  it('states the automatic step-up refusal instead of opening the dialog, then gates the manual send', async () => {
-    const warn = captureRefreshWarning()
-    let elevated = false
+  it('states the automatic step-up refusal instead of opening the dialog, then retries the send on the visitor click', async () => {
+    // The automatic attempt cannot open a dialog the visitor did not ask
+    // for, so it states why it could not send and leaves the manual action.
+    // The send is not a gated write: the visitor's click retries it like any
+    // other send, and no challenge replays it.
+    let attempts = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
       }
       if (call.method === 'POST' && call.path === ADD_PATH) {
-        if (!elevated) {
+        attempts += 1
+        if (attempts === 1) {
           return errorResponse(401, 'authn.insufficient_user_authentication')
         }
         return jsonResponse(200, {
           state: 'pending',
           expires_in: 600,
           resend_after: 60,
-        })
-      }
-      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
-        return jsonResponse(200, {
-          factors: [
-            {
-              id: 'factor-1',
-              kind: 'totp',
-              label: 'App',
-              status: 'active',
-              created_at: '2026-01-01T00:00:00Z',
-            },
-          ],
-        })
-      }
-      if (call.method === 'POST' && call.path === FLOW_START) {
-        return jsonResponse(200, {
-          seq: 1,
-          state: 'second',
-          next: {
-            kind: 'factor',
-            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
-          },
-        })
-      }
-      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
-        const body = call.body as { seq: number }
-        if (body.seq === 1) {
-          return jsonResponse(200, {
-            seq: 2,
-            state: 'second',
-            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
-          })
-        }
-        elevated = true
-        return jsonResponse(200, {
-          state: 'elevated',
-          token_type: 'Bearer',
-          access_token: 'access-2',
-          expires_in: 3600,
         })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -790,38 +752,19 @@ describe('ContactVerificationSection', () => {
     // not introduce an accessibility violation of its own.
     await expectNoAxeViolations()
 
-    // The visitor's own click takes the ordinary gated path.
     await user.click(manual)
-    await user.click(await screen.findByRole('button', { name: 'App' }))
-    await user.type(
-      await screen.findByLabelText(zhCN.flowStep.codeLabel),
-      '123456',
-    )
-    await user.click(
-      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
-    )
 
     expect(
       await screen.findByText(
         zhCN.verification.sent.replace('{{email}}', 'ada@x.test'),
       ),
     ).toBeTruthy()
-    // The automatic attempt, the manual attempt and the replayed write.
+    // The automatic attempt and the visitor's retry: two sends, no replay.
     expect(
       rig.calls.filter(
         (call) => call.method === 'POST' && call.path === ADD_PATH,
       ),
-    ).toHaveLength(3)
-    expect(warn).toHaveBeenCalledWith(
-      'access token refresh failed',
-      expect.objectContaining({
-        status: 401,
-        code: 'authn.insufficient_user_authentication',
-        trace_id: 'trace-1',
-      }),
-    )
-    // The automatic and manual refusals each report one shortfall.
-    expect(warn).toHaveBeenCalledTimes(2)
+    ).toHaveLength(2)
   })
 
   it('changes the pending target by sending a code to the new address', async () => {
@@ -1108,65 +1051,16 @@ describe('ContactVerificationSection', () => {
     expect(alert).toHaveTextContent(zhCN.errors.authn.unavailable)
   })
 
-  it('gates a step_up_required send behind the dialog and re-runs it once', async () => {
-    const warn = captureRefreshWarning()
-    let elevated = false
+  it('renders a step-up refusal of the send as an ordinary failure, with no dialog', async () => {
+    // Registering the address is not a change of what proves the account; the
+    // route asks for no fresh authentication. A step-up refusal renders its
+    // code text instead of opening the dialog, and the send is not replayed.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
       }
       if (call.method === 'POST' && call.path === ADD_PATH) {
-        if (!elevated) {
-          return errorResponse(401, 'authn.insufficient_user_authentication')
-        }
-        return jsonResponse(200, {
-          state: 'pending',
-          expires_in: 600,
-          resend_after: 60,
-        })
-      }
-      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
-        return jsonResponse(200, {
-          factors: [
-            {
-              id: 'factor-1',
-              kind: 'totp',
-              label: 'App',
-              status: 'active',
-              created_at: '2026-01-01T00:00:00Z',
-            },
-          ],
-        })
-      }
-      if (call.method === 'POST' && call.path === FLOW_START) {
-        return jsonResponse(200, {
-          seq: 1,
-          state: 'second',
-          next: {
-            kind: 'factor',
-            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
-          },
-        })
-      }
-      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
-        const body = call.body as { seq: number }
-        if (body.seq === 1) {
-          return jsonResponse(200, {
-            seq: 2,
-            state: 'second',
-            next: {
-              kind: 'challenge',
-              fields: [{ name: 'code', kind: 'text' }],
-            },
-          })
-        }
-        elevated = true
-        return jsonResponse(200, {
-          state: 'elevated',
-          token_type: 'Bearer',
-          access_token: 'access-2',
-          expires_in: 3600,
-        })
+        return errorResponse(401, 'authn.insufficient_user_authentication')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
@@ -1177,49 +1071,38 @@ describe('ContactVerificationSection', () => {
       await screen.findByRole('button', { name: zhCN.verification.send }),
     )
 
-    // The 401 opens the step-up dialog; winning it re-runs the send.
-    await user.click(await screen.findByRole('button', { name: 'App' }))
-    await user.type(
-      await screen.findByLabelText(zhCN.flowStep.codeLabel),
-      '123456',
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      zhCN.errors.authn.insufficient_user_authentication,
     )
-    await user.click(
-      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
-    )
-
-    expect(
-      await screen.findByText(
-        zhCN.verification.sent.replace('{{email}}', 'ada@x.test'),
-      ),
-    ).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(
       rig.calls.filter(
         (call) => call.method === 'POST' && call.path === ADD_PATH,
       ),
-    ).toHaveLength(2)
-    // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
-    expect(warn).toHaveBeenCalledWith(
-      'access token refresh failed',
-      expect.objectContaining({
-        status: 401,
-        code: 'authn.insufficient_user_authentication',
-        trace_id: 'trace-1',
-      }),
-    )
-    expect(warn).toHaveBeenCalledTimes(1)
+    ).toHaveLength(1)
   })
 
-  it('gates a step_up_required verify behind the dialog and re-runs only that write', async () => {
-    const warn = captureRefreshWarning()
+  it('arms the step-up dialog on a refused verify and replays the same code', async () => {
+    // A proof that makes the address the account's only address changes how
+    // the account signs in, so the server may refuse it for a fresh
+    // authentication. The verify arms the dialog with the same code, and the
+    // won challenge replays it exactly once.
+    captureRefreshWarning()
     let elevated = false
+    let proven = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
-        return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+        return jsonResponse(
+          200,
+          profileVerification(proven ? 'verified' : 'pending', 'ada@x.test'),
+        )
       }
       if (call.method === 'POST' && call.path === VERIFY_PATH) {
         if (!elevated) {
           return errorResponse(401, 'authn.insufficient_user_authentication')
         }
+        proven = true
         return jsonResponse(200, { state: 'verified' })
       }
       if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
@@ -1251,10 +1134,7 @@ describe('ContactVerificationSection', () => {
           return jsonResponse(200, {
             seq: 2,
             state: 'second',
-            next: {
-              kind: 'challenge',
-              fields: [{ name: 'code', kind: 'text' }],
-            },
+            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
           })
         }
         elevated = true
@@ -1278,66 +1158,45 @@ describe('ContactVerificationSection', () => {
       screen.getByRole('button', { name: zhCN.verification.verify }),
     )
 
-    // The 401 opens the step-up dialog; winning it re-runs exactly the
-    // refused verify, not the send beside it.
-    await user.click(await screen.findByRole('button', { name: 'App' }))
-    await user.type(
-      await screen.findByLabelText(zhCN.flowStep.codeLabel),
-      '123456',
-    )
+    // The 401 opens the dialog; winning it replays the same code.
+    await screen.findByRole('button', { name: 'App' })
+    await user.click(screen.getByRole('button', { name: 'App' }))
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
 
-    await waitFor(() =>
-      expect(
-        rig.calls.filter(
-          (call) => call.method === 'POST' && call.path === VERIFY_PATH,
-        ),
-      ).toHaveLength(2),
+    await screen.findByText(zhCN.verification.verifiedTitle)
+    const verifies = rig.calls.filter(
+      (call) => call.method === 'POST' && call.path === VERIFY_PATH,
     )
-    expect(
-      rig.calls.filter(
-        (call) => call.method === 'POST' && call.path === ADD_PATH,
-      ),
-    ).toHaveLength(0)
-    expect(warn).toHaveBeenCalledWith(
-      'access token refresh failed',
-      expect.objectContaining({
-        status: 401,
-        code: 'authn.insufficient_user_authentication',
-        trace_id: 'trace-1',
-      }),
-    )
-    expect(warn).toHaveBeenCalledTimes(1)
+    expect(verifies).toHaveLength(2)
+    expect(verifies[0]?.body).toEqual({ code: '123456' })
+    expect(verifies[1]?.body).toEqual({ code: '123456' })
   })
 
-  it('holds the session through the credential rotation an email verification performs', async () => {
-    // The verification writes the address with its proof and rotates the
-    // requesting session's credential. The profile refetch that follows the
-    // write is answered 401, standing for a read that left under the
-    // outgoing credential. The surface opens an identity-transition window
-    // around the write, so the anonymous answer is discarded: the snapshot
-    // stays authenticated and no sign-out edge is observed. Without the
-    // window the same script ends the session.
-    const warn = captureRefreshWarning()
-    let rotated = false
+  it('proves the address without opening an identity-transition window', async () => {
+    // Proving a contact address rotates no credential and revokes no other
+    // session, so the surface opens no window; the profile refetch that
+    // follows the verify stays authenticated and flips to the verified state.
+    let proven = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
-        return rotated
-          ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, AUTHENTICATED_SESSION)
+        return jsonResponse(200, AUTHENTICATED_SESSION)
       }
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
-        return rotated
-          ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+        return jsonResponse(
+          200,
+          proven
+            ? profileVerification('verified', 'ada@x.test')
+            : profileVerification('pending', 'ada@x.test'),
+        )
       }
       if (call.method === 'GET' && call.path === FEATURES_PATH) {
         return jsonResponse(200, EMPTY_FEATURES)
       }
       if (call.method === 'POST' && call.path === VERIFY_PATH) {
-        rotated = true
+        proven = true
         return jsonResponse(200, { state: 'verified' })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -1356,23 +1215,17 @@ describe('ContactVerificationSection', () => {
       screen.getByRole('button', { name: zhCN.verification.verify }),
     )
 
-    await waitFor(() =>
-      expect(warn).toHaveBeenCalledWith(
-        'access token refresh failed',
-        expect.objectContaining({ status: 401 }),
-      ),
-    )
+    expect(
+      await screen.findByText(zhCN.verification.verifiedTitle),
+    ).toBeTruthy()
+    expect(rig.transitionBegins()).toBe(0)
     expect(rig.session.getSnapshot().state).toBe('authenticated')
     expect(rig.endedEdges()).toBe(0)
   })
 
-  it('releases the window a refused email verification opened', async () => {
-    // A refused verification must not leave its window open: the next
-    // genuine anonymous read has to end the session. The wrong-code 401
-    // makes the silent leg answer anonymous as well, and the open window
-    // discards that answer while the write is in flight. Once the failure is
-    // on screen the window is closed, so a fresh 401 read turns the snapshot
-    // anonymous with one sign-out edge.
+  it('opens no identity-transition window for a refused verification', async () => {
+    // The wrong-code refusal is an ordinary failure: no window is opened, so
+    // a later genuine anonymous read still ends the session with one edge.
     let refused = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
@@ -1409,7 +1262,7 @@ describe('ContactVerificationSection', () => {
     )
 
     await screen.findByText(zhCN.verification.codeInvalid)
-    expect(rig.transitionBegins()).toBe(1)
+    expect(rig.transitionBegins()).toBe(0)
 
     // A fresh 401 read now settles the true state.
     await rig.session.restore()

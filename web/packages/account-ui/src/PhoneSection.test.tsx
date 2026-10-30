@@ -13,10 +13,10 @@
  * number fills the scope's region beneath the controls with a message
  * naming the number, while the sent notice stays outside the slot; a
  * refused send and a wrong code each render their code text in that
- * region; the way back to a different number returns
- * to the number step; and each step refused with 401
- * authn.insufficient_user_authentication opens the step-up dialog, a won
- * step-up re-running that step once.
+ * region; the way back to a different number returns to the number step;
+ * the send carries no fresh authentication, so a step-up refusal of it
+ * renders its code text in that region rather than opening a dialog, while a
+ * refused verify opens the dialog and replays the same code.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -109,11 +109,9 @@ describe('PhoneSection', () => {
       phone: US_E164,
     })
     // The "code sent" notice is the step's own state, outside the outcome
-    // slot: the slot holds no result for the intermediate answer, while the
+    // slot: the slot renders no result for the intermediate answer, and the
     // notice is its own status region (the one that carries the text).
-    expect(
-      screen.getAllByRole('status').filter((el) => el.textContent === ''),
-    ).toHaveLength(1)
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(
       screen
         .getByText(zhCN.phone.sent.replace('{{phone}}', US_E164))
@@ -292,15 +290,52 @@ describe('PhoneSection', () => {
     ).toBeNull()
   })
 
-  it('gates a step_up_required send behind the dialog and re-runs it once', async () => {
-    const warn = captureRefreshWarning()
+  it('renders a step-up refusal of the send as an ordinary failure, with no dialog', async () => {
+    // Registering a phone number is not a change of what proves the account;
+    // the route asks for no fresh authentication. A step-up refusal renders
+    // its code text in the section's region instead of opening the dialog,
+    // and the refused send is not replayed.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return errorResponse(401, 'authn.insufficient_user_authentication')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      zhCN.errors.authn.insufficient_user_authentication,
+    )
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(
+      rig.calls.filter((call) => call.path === PHONE_PATH),
+    ).toHaveLength(1)
+  })
+
+  it('arms the step-up dialog on a refused verify and replays the same code', async () => {
+    // A number that replaces the one an active SMS factor sends codes to
+    // changes how the account signs in, so the server may refuse the proof
+    // for a fresh authentication. The verify arms the dialog with the same
+    // code, and the won challenge replays it exactly once.
+    captureRefreshWarning()
     let elevated = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
         if (!elevated) {
           return errorResponse(401, 'authn.insufficient_user_authentication')
         }
-        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+        return new Response(null, { status: 204 })
       }
       if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, {
@@ -352,7 +387,13 @@ describe('PhoneSection', () => {
       US_NATIONAL,
     )
     await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.code.label),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
 
+    // The 401 opens the dialog; winning it replays the same code.
     await screen.findByRole('button', { name: 'App' })
     await user.click(screen.getByRole('button', { name: 'App' }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
@@ -360,48 +401,31 @@ describe('PhoneSection', () => {
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
 
-    expect(
-      await screen.findByText(
-        zhCN.phone.sent.replace('{{phone}}', US_E164),
-      ),
-    ).toBeTruthy()
-    expect(
-      rig.calls.filter((call) => call.path === PHONE_PATH),
-    ).toHaveLength(2)
-    // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
-    expect(warn).toHaveBeenCalledWith(
-      'access token refresh failed',
-      expect.objectContaining({
-        status: 401,
-        code: 'authn.insufficient_user_authentication',
-        trace_id: 'trace-1',
-      }),
+    await waitFor(() =>
+      expect(
+        screen.getByText(zhCN.phone.added.replace('{{phone}}', US_E164)),
+      ).toBeTruthy(),
     )
-    // One shortfall, one refresh failure: a duplicated answer would warn
-    // again.
-    expect(warn).toHaveBeenCalledTimes(1)
+    const verifies = rig.calls.filter(
+      (call) => call.method === 'POST' && call.path === VERIFY_PATH,
+    )
+    expect(verifies).toHaveLength(2)
+    expect(verifies[0]?.body).toEqual({ code: '123456' })
+    expect(verifies[1]?.body).toEqual({ code: '123456' })
   })
 
-  it('holds the session through the credential rotation a phone verification performs', async () => {
-    // The verification replaces the account's phone and rotates the
-    // requesting session's credential. The profile refetch that follows the
-    // write is answered 401, standing for a read that left under the
-    // outgoing credential. The surface opens an identity-transition window
-    // around the write, so the anonymous answer is discarded: the snapshot
-    // stays authenticated and no sign-out edge is observed. Without the
-    // window the same script ends the session.
-    const warn = captureRefreshWarning()
-    let rotated = false
+  it('proves a number without opening an identity-transition window', async () => {
+    // Registering and proving a number rotates no credential and revokes no
+    // other session, so the surface opens no window and the profile refetch
+    // that follows the verify stays authenticated. The phone surface
+    // invalidates the profile query but does not read it; the observer
+    // stands in for the other surfaces on an account page.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
-        return rotated
-          ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, AUTHENTICATED_SESSION)
+        return jsonResponse(200, AUTHENTICATED_SESSION)
       }
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
-        return rotated
-          ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, profileBody())
+        return jsonResponse(200, profileBody())
       }
       if (call.method === 'GET' && call.path === FEATURES_PATH) {
         return jsonResponse(200, EMPTY_FEATURES)
@@ -410,15 +434,11 @@ describe('PhoneSection', () => {
         return jsonResponse(200, { expires_in: 300, resend_after: 60 })
       }
       if (call.method === 'POST' && call.path === VERIFY_PATH) {
-        rotated = true
         return new Response(null, { status: 204 })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     const rig = await makeRotationRig(respond)
-    // The phone surface invalidates the profile query but does not read it;
-    // the other surfaces on an account page do. The observer stands in for
-    // them so the invalidation issues the read a real page would.
     renderWithProviders(
       <>
         <PhoneSection session={rig.session} />
@@ -439,22 +459,18 @@ describe('PhoneSection', () => {
     await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
 
     await waitFor(() =>
-      expect(warn).toHaveBeenCalledWith(
-        'access token refresh failed',
-        expect.objectContaining({ status: 401 }),
-      ),
+      expect(
+        screen.getByText(zhCN.phone.added.replace('{{phone}}', US_E164)),
+      ).toBeTruthy(),
     )
+    expect(rig.transitionBegins()).toBe(0)
     expect(rig.session.getSnapshot().state).toBe('authenticated')
     expect(rig.endedEdges()).toBe(0)
   })
 
-  it('releases the window a refused phone verification opened', async () => {
-    // A refused verification must not leave its window open: the next
-    // genuine anonymous read has to end the session. The wrong-code 401
-    // makes the silent leg answer anonymous as well, and the open window
-    // discards that answer while the write is in flight. Once the failure is
-    // on screen the window is closed, so a fresh 401 read turns the snapshot
-    // anonymous with one sign-out edge.
+  it('opens no identity-transition window for a refused verification', async () => {
+    // The wrong-code refusal is an ordinary failure: no window is opened, so
+    // a later genuine anonymous read still ends the session with one edge.
     let refused = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
@@ -495,7 +511,7 @@ describe('PhoneSection', () => {
     await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
 
     await screen.findByText(zhCN.errors.authn.login_failed)
-    expect(rig.transitionBegins()).toBe(1)
+    expect(rig.transitionBegins()).toBe(0)
 
     // A fresh 401 read now settles the true state.
     await rig.session.restore()

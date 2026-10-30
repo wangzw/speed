@@ -114,17 +114,6 @@ const KNOWN_FACTOR_KINDS = new Set<string>(['totp', 'webauthn', 'sms'])
  * mfa.factor.status. A value outside the list renders no chip. */
 const KNOWN_FACTOR_STATUSES = new Set<string>(['active', 'pending', 'disabled'])
 
-/** The enrollable factor kinds this package has wording for, one bundle
- * key each. The entries themselves are the deployment's own answer (see
- * the section header): every kind GET /api/v1/auth/methods' `mfa.factors`
- * lists gets one entry, a known kind renders its translated name and an
- * unknown kind renders the generic other label while still starting that
- * kind's flow. */
-const ENROLL_LABEL_KEYS: Readonly<Record<string, string>> = {
-  totp: 'mfa.enroll.totp',
-  webauthn: 'mfa.enroll.webauthn',
-  sms: 'mfa.enroll.sms',
-}
 
 /** The action a won step-up re-runs, with what the refusal asked for. */
 type GatedAction =
@@ -158,6 +147,13 @@ function FactorListSkeleton({ label }: { readonly label: string }) {
       ))}
     />
   )
+}
+
+/** One sentence explaining a two-step method. */
+const METHOD_HELP_KEYS: Readonly<Record<string, string>> = {
+  totp: 'mfa.method.totp',
+  webauthn: 'mfa.method.webauthn',
+  sms: 'mfa.method.sms',
 }
 
 export function MfaSection({ session, returnPath }: MfaSectionProps) {
@@ -408,6 +404,28 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           const enabledFactorCount = settledFactors.filter(
             (factor) => factor.status === 'active',
           ).length
+          const factorKinds = Array.from(
+            new Set(settledFactors.map((factor) => factor.kind ?? '')),
+          )
+          const allKinds = Array.from(
+            new Set([...enrollEntries, ...factorKinds]),
+          ).filter((kind) => kind !== '')
+          const isActive = (kind: string): boolean =>
+            settledFactors.some(
+              (factor) =>
+                (factor.kind ?? '') === kind && factor.status === 'active',
+            )
+          const STRENGTH_ORDER = ['webauthn', 'totp', 'sms']
+          const rank = (kind: string): number => {
+            const position = STRENGTH_ORDER.indexOf(kind)
+            return position === -1 ? STRENGTH_ORDER.length : position
+          }
+          const orderedKinds = [...allKinds].sort((a, b) => {
+            const activeDifference = Number(isActive(b)) - Number(isActive(a))
+            return activeDifference !== 0
+              ? activeDifference
+              : rank(a) - rank(b)
+          })
           return wizard !== null ? (
             <Box sx={{ py: 1.5 }}>
               <Typography variant="h6" component="h3">
@@ -440,150 +458,200 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
             </Box>
           ) : (
             <Box>
-              {settledFactors.length > 0 && (
-                <Box
-                  component="ul"
-                  role="list"
-                  sx={{ m: 0, p: 0, listStyle: 'none' }}
+              {enabledFactorCount === 1 && enrollEntries.length > 0 && (
+                <Alert
+                  severity="info"
+                  role="note"
+                  sx={{ width: '100%', mb: 2 }}
                 >
-                  {settledFactors.map((factor, index) => {
-                    const id = factor.id ?? null
-                    const kind = factor.kind ?? ''
-                    const kindLabel = KNOWN_FACTOR_KINDS.has(kind)
-                      ? t(`mfa.factor.kind.${kind}`)
-                      : t('mfa.factor.kind.other')
-                    const status =
-                      factor.status != null &&
-                      KNOWN_FACTOR_STATUSES.has(factor.status)
-                        ? factor.status
-                        : null
-                    return (
-                      <Box
-                        component="li"
-                        key={id ?? String(index)}
-                        sx={{
-                          py: 1.5,
-                          minWidth: 0,
-                          ...(index > 0
-                            ? { borderTop: '1px solid', borderColor: 'divider' }
-                            : {}),
-                        }}
-                      >
+                  {t('mfa.singleFactor')}
+                </Alert>
+              )}
+              {/* Methods with an active factor first, then the ones still to
+                  set up; each row is one method, and its action starts that
+                  method's own enrollment flow. */}
+              {orderedKinds.length === 0 ? (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ py: 1 }}
+                >
+                  {t('mfa.empty')}
+                </Typography>
+              ) : (
+              <Box
+                component="ul"
+                role="list"
+                sx={{
+                  m: 0,
+                  p: 0,
+                  listStyle: 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                }}
+              >
+                {orderedKinds.map((kind) => {
+                  const kindFactors = settledFactors.filter(
+                    (factor) => (factor.kind ?? '') === kind,
+                  )
+                  const activeCount = kindFactors.filter(
+                    (factor) => factor.status === 'active',
+                  ).length
+                  const enrollable = enrollEntries.includes(kind)
+                  const kindLabel = KNOWN_FACTOR_KINDS.has(kind)
+                    ? t(`mfa.factor.kind.${kind}`)
+                    : t('mfa.factor.kind.other')
+                  const help = METHOD_HELP_KEYS[kind]
+                  return (
+                    <Box
+                      component="li"
+                      key={kind}
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0, 1fr) auto',
+                        columnGap: 2,
+                        alignItems: 'start',
+                      }}
+                    >
+                      <Box sx={{ minWidth: 0 }}>
                         <Box
                           sx={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 1.5,
+                            gap: 1,
+                            flexWrap: 'wrap',
                           }}
                         >
-                          <Box sx={{ minWidth: 0 }}>
-                            <Typography
-                              variant="body1"
-                              sx={{ fontWeight: 500 }}
-                            >
-                              {factor.label != null && factor.label !== ''
-                                ? factor.label
-                                : kindLabel}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              {kindLabel}
-                            </Typography>
-                          </Box>
+                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                            {kindLabel}
+                          </Typography>
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            color={activeCount > 0 ? 'success' : 'default'}
+                            label={
+                              activeCount > 0
+                                ? t('mfa.state.on')
+                                : t('mfa.state.off')
+                            }
+                          />
+                        </Box>
+                        {help === undefined ? null : (
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ mt: 0.5 }}
+                          >
+                            {t(help)}
+                          </Typography>
+                        )}
+                        {kindFactors.length > 0 && (
                           <Box
+                            component="ul"
                             sx={{
-                              marginLeft: 'auto',
-                              flexShrink: 0,
+                              m: 0,
+                              mt: 1.5,
+                              p: 0,
+                              listStyle: 'none',
                               display: 'flex',
-                              alignItems: 'center',
+                              flexDirection: 'column',
                               gap: 1,
                             }}
                           >
-                            {status !== null && (
-                              <Chip
-                                size="small"
-                                variant="outlined"
-                                label={t(`mfa.factor.status.${status}`)}
-                              />
-                            )}
-                            {id !== null && (
-                              <Button
-                                variant="outlined"
-                                color="error"
-                                size="small"
-                                disabled={busy}
-                                aria-label={t('mfa.removeAria', {
-                                  factor: kindLabel,
-                                  interpolation: { escapeValue: false },
-                                })}
-                                onClick={() => setRemoveTarget(id)}
-                              >
-                                {t('mfa.remove')}
-                              </Button>
-                            )}
+                            {kindFactors.map((factor, factorIndex) => {
+                              const id = factor.id ?? null
+                              const status =
+                                factor.status != null &&
+                                KNOWN_FACTOR_STATUSES.has(factor.status)
+                                  ? factor.status
+                                  : null
+                              return (
+                                <Box
+                                  component="li"
+                                  key={id ?? String(factorIndex)}
+                                  sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 1.5,
+                                    minWidth: 0,
+                                  }}
+                                >
+                                  <Typography variant="body2">
+                                    {factor.label != null &&
+                                    factor.label !== ''
+                                      ? factor.label
+                                      : kindLabel}
+                                  </Typography>
+                                  {status !== null && (
+                                    <Chip
+                                      size="small"
+                                      variant="outlined"
+                                      label={t(`mfa.factor.status.${status}`)}
+                                    />
+                                  )}
+                                  {id !== null && (
+                                    <Button
+                                      variant="outlined"
+                                      color="error"
+                                      size="small"
+                                      disabled={busy}
+                                      aria-label={t('mfa.removeAria', {
+                                        factor: kindLabel,
+                                        interpolation: { escapeValue: false },
+                                      })}
+                                      onClick={() => setRemoveTarget(id)}
+                                      sx={{ marginLeft: 'auto' }}
+                                    >
+                                      {t('mfa.remove')}
+                                    </Button>
+                                  )}
+                                </Box>
+                              )
+                            })}
                           </Box>
-                        </Box>
+                        )}
                       </Box>
-                    )
-                  })}
-                </Box>
-              )}
-
-              {settledFactors.length === 0 && (
-                <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
-                  {t('mfa.empty')}
-                </Typography>
+                      {enrollable ? (
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          disabled={busy}
+                          data-testid={`mfa-add-${kind}`}
+                          // The visible text is one action word for every
+                          // method, and the accessible name begins with that
+                          // same word followed by the method, so it contains
+                          // the visible label (WCAG 2.5.3) while still telling
+                          // several method buttons apart.
+                          aria-label={
+                            activeCount > 0
+                              ? t('mfa.manageAria', {
+                                  method: kindLabel,
+                                  interpolation: { escapeValue: false },
+                                })
+                              : t('mfa.addAria', {
+                                  method: kindLabel,
+                                  interpolation: { escapeValue: false },
+                                })
+                          }
+                          onClick={() => void startEnroll(kind)}
+                        >
+                          {activeCount > 0
+                            ? t('mfa.action.manage')
+                            : t('mfa.action.add')}
+                        </Button>
+                      ) : null}
+                    </Box>
+                  )
+                })}
+              </Box>
               )}
 
               {/* The removal group's result, below the list its row actions
                   belong to. */}
               <WriteFeedbackRegion outcome={removeFeedback.outcome} />
-
-              {enrollEntries.length > 0 && (
-                <Box
-                  sx={{
-                    mt: 2,
-                    borderTop: '1px solid',
-                    borderColor: 'divider',
-                    pt: 2,
-                  }}
-                >
-                  {enabledFactorCount === 1 && (
-                    <Alert
-                      severity="info"
-                      role="note"
-                      sx={{ width: '100%', mb: 1.5 }}
-                    >
-                      {t('mfa.singleFactor')}
-                    </Alert>
-                  )}
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mb: 1.5 }}
-                  >
-                    {t('mfa.enroll.sectionTitle')}
-                  </Typography>
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'flex-start',
-                      gap: 1,
-                    }}
-                  >
-                    {enrollEntries.map((kind) => (
-                      <Button
-                        key={kind}
-                        variant="outlined"
-                        disabled={busy}
-                        onClick={() => void startEnroll(kind)}
-                      >
-                        {t(ENROLL_LABEL_KEYS[kind] ?? 'mfa.enroll.other')}
-                      </Button>
-                    ))}
-                  </Box>
-                  {/* The enrollment group's result, below the entries that
-                      started it. */}
+              {enrollFeedback.outcome === null ? null : (
+                <Box sx={{ mt: 2 }}>
                   <WriteFeedbackRegion outcome={enrollFeedback.outcome} />
                 </Box>
               )}

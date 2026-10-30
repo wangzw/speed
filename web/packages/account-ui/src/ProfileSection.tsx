@@ -17,21 +17,18 @@
  * no-op PATCH) -- the same no-change-disabled convention the console's
  * account-detail save controls set.
  *
- * The route admits a caller only with the freshness the account's factors
- * call for (a fresh multi-factor authentication when the account has an
- * active factor, a fresh first factor otherwise). An unelevated caller is
- * answered 401 authn.insufficient_user_authentication; the section opens
- * the step-up dialog with the typed name remembered, and a won challenge
- * re-runs that one save exactly once. Every other refusal resolves through
- * the code whitelist and renders in the section's write-feedback region
- * below the control group; a successful save refetches the profile so the
- * field shows the account's own answer, and the region confirms it with a
- * message naming the display name. The region's slot holds at most one
- * outcome, so a success and a failure never stand beside each other.
+ * The write does not ask for a fresh authentication: the route admits the
+ * account's own display name, language and time zone directly
+ * (REQ-account-058), so the section drives no step-up gate and opens no
+ * dialog. A refusal resolves through the code whitelist and renders in the
+ * section's write-feedback region below the control group; a successful save
+ * refetches the profile so the field shows the account's own answer, and the
+ * region confirms it with a message naming the display name. The region's
+ * slot holds at most one outcome, so a success and a failure never stand
+ * beside each other.
  *
- * The section takes the session as its only prop -- the step-up dialog
- * drives it -- while the profile read and the PATCH travel on the shared
- * access token through the generated calls.
+ * The section takes no session: its profile read and its PATCH travel on the
+ * shared access token through the generated calls.
  */
 
 import { useState } from 'react'
@@ -44,8 +41,6 @@ import {
   getAuthnProfileGetQueryKey,
   useAuthnProfilePatch,
 } from '@speed/api-sdk'
-import type { AuthSession } from '@speed/auth-core'
-import { useStepUpGate } from '@speed/auth-core'
 import {
   FORM_MAX_WIDTH,
   SectionCard,
@@ -54,19 +49,16 @@ import {
 import { AccountAsyncSection } from './internal/async-section.js'
 import { useProfileQuery } from './internal/queries.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
-import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
-export interface ProfileSectionProps {
-  /** The session whose step-up flow the dialog drives. */
-  readonly session: AuthSession
+interface ProfileSectionProps {
   /**
-   * The host's current path, sent as the step-up flow's `return_to`: a
-   * redirect method's round trip lands back on the page that started it, so
-   * that page reads the refusal. Omitted, the deployment's default return
-   * target applies.
+   * Renders the name as a rule-less field that saves itself: the value is
+   * committed on blur and on Enter, no button is rendered, and the field
+   * carries its name as an accessible label instead of a visible one. The
+   * host places the label beside it.
    */
-  readonly returnPath?: string
+  readonly inline?: boolean
 }
 
 /** The pending-state placeholder, read aloud as one loading announcement. */
@@ -79,7 +71,7 @@ function ProfileSkeleton({ label }: { readonly label: string }) {
   )
 }
 
-export function ProfileSection({ session, returnPath }: ProfileSectionProps) {
+export function ProfileSection({ inline = false }: ProfileSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useProfileQuery()
@@ -92,10 +84,6 @@ export function ProfileSection({ session, returnPath }: ProfileSectionProps) {
   // name), which `??` preserves.
   const [editedName, setEditedName] = useState<string | null>(null)
   const feedback = useWriteFeedback()
-
-  const gate = useStepUpGate<{ readonly name: string }>((action) => {
-    void save(action.name)
-  })
 
   const pending = isPending && data === undefined
   // Disabled through the whole attempt, including the refetch that follows
@@ -111,16 +99,7 @@ export function ProfileSection({ session, returnPath }: ProfileSectionProps) {
 
   function save(nextName: string): Promise<void> {
     return feedback.run(async () => {
-      try {
-        await patchProfile.mutateAsync({ data: { display_name: nextName } })
-      } catch (error) {
-        // The write refused for insufficient step-up belongs to the dialog;
-        // settling with null leaves the slot untouched.
-        if (gate.intercept(error, { name: nextName })) {
-          return null
-        }
-        throw error
-      }
+      await patchProfile.mutateAsync({ data: { display_name: nextName } })
       setEditedName(null)
       await invalidateProfile()
       // Translated when the attempt settles; it names the changed object.
@@ -128,47 +107,80 @@ export function ProfileSection({ session, returnPath }: ProfileSectionProps) {
     })
   }
 
-  return (
-    <>
-      <SectionCard title={t('profile.title')}>
-        <AccountAsyncSection
-          pending={pending}
-          payload={data}
-          empty={false}
-          error={error}
-          refreshing={isFetching}
-          loading={<ProfileSkeleton label={t('profile.loading')} />}
-          errorState={{
-            title: t('profile.error.title'),
-            description: t('profile.error.description'),
-            retryLabel: t('profile.retry'),
-            onRetry: () => void refetch(),
-          }}
-        >
-          {() => (
-            <Box
-              component="form"
-              noValidate
-              onSubmit={(event) => {
-                event.preventDefault()
-                void save(name)
-              }}
-              sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                gap: 2,
-                maxWidth: FORM_MAX_WIDTH,
-              }}
-            >
-              <TextField
-                fullWidth
-                label={t('profile.displayName.label')}
-                value={name}
-                disabled={busy}
-                onChange={(event) => setEditedName(event.target.value)}
-              />
+  /** Commit a name only when it differs from the account's own: a save with
+   * nothing changed would fire a no-op PATCH. The inline field and the
+   * non-inline submit button share this rule. */
+  function commit(nextName: string): void {
+    if (busy || nextName === (data?.display_name ?? '')) {
+      return
+    }
+    void save(nextName)
+  }
 
+  return (
+    <SectionCard title={t('profile.title')}>
+      <AccountAsyncSection
+        pending={pending}
+        payload={data}
+        empty={false}
+        error={error}
+        refreshing={isFetching}
+        loading={<ProfileSkeleton label={t('profile.loading')} />}
+        errorState={{
+          title: t('profile.error.title'),
+          description: t('profile.error.description'),
+          retryLabel: t('profile.retry'),
+          onRetry: () => void refetch(),
+        }}
+      >
+        {() => (
+          <Box
+            component="form"
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault()
+              // Enter commits the inline field, but an unchanged value is no
+              // write -- the same rule the non-inline save button follows.
+              commit(name)
+            }}
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              gap: inline ? 0 : 2,
+              maxWidth: FORM_MAX_WIDTH,
+            }}
+          >
+            <TextField
+              fullWidth
+              size="small"
+              variant="outlined"
+              label={inline ? undefined : t('profile.displayName.label')}
+              slotProps={
+                inline
+                  ? {
+                      htmlInput: {
+                        'aria-label': t('profile.displayName.label'),
+                      },
+                    }
+                  : undefined
+              }
+              value={name}
+              disabled={busy}
+              onChange={(event) => setEditedName(event.target.value)}
+              onBlur={
+                inline
+                  ? () => {
+                      // The value commits itself: a changed name is saved
+                      // when the field loses focus, and Enter does the same
+                      // through the form's submit.
+                      commit(name)
+                    }
+                  : undefined
+              }
+            />
+
+            {inline ? null : (
               <Button
                 type="submit"
                 variant="contained"
@@ -180,25 +192,16 @@ export function ProfileSection({ session, returnPath }: ProfileSectionProps) {
               >
                 {t('profile.save')}
               </Button>
+            )}
 
-              {/* One scope's result, below the control group it confirms. */}
-              <WriteFeedbackRegion
-                outcome={feedback.outcome}
-                sx={{ alignSelf: 'stretch' }}
-              />
-            </Box>
-          )}
-        </AccountAsyncSection>
-      </SectionCard>
-
-      <StepUpChallenge
-        open={gate.open}
-        reason={gate.reason}
-        session={session}
-        onSuccess={gate.succeed}
-        onCancel={gate.cancel}
-        returnPath={returnPath}
-      />
-    </>
+            {/* One scope's result, below the control group it confirms. */}
+            <WriteFeedbackRegion
+              outcome={feedback.outcome}
+              sx={{ alignSelf: 'stretch' }}
+            />
+          </Box>
+        )}
+      </AccountAsyncSection>
+    </SectionCard>
   )
 }

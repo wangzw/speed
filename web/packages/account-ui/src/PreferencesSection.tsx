@@ -39,19 +39,14 @@
  * neither clears the other. Both selects are disabled while a write is in
  * flight, so a change can never race its own predecessor.
  *
- * The write asks for a fresh authentication like the other self-service
- * writes. The section accepts an OPTIONAL session: when the host passes
- * one, a 401 `authn.insufficient_user_authentication` arms the shared
- * @speed/auth-core step-up gate, the dialog opens, and a won challenge
- * replays exactly that refused write once. Without a session the same
- * refusal renders the failure banner (the host can gate another section
- * on the same page -- elevation applies to the whole session -- or have
- * the viewer sign in again); the section never opens a dialog it has no
- * session to drive.
+ * The write does not ask for a fresh authentication: the route admits the
+ * account's own display name, language and time zone directly
+ * (REQ-account-058), so the section drives no step-up gate, opens no dialog
+ * and takes no session. A refusal renders the resolved code text in that
+ * control's own region.
  *
  * Whose preferences these are comes from the caller's bound client and
- * its access token, not from the session prop, which exists only for the
- * step-up dialog. The section follows the account surfaces'
+ * its access token. The section follows the account surfaces'
  * settled-state paradigm: an unresolved load keeps a loading placeholder
  * (one announceable status row), a settled load with no data renders the
  * ui-kit EmptyState error variant with a retry, and the settled-with-data
@@ -64,13 +59,12 @@ import Box from '@mui/material/Box'
 import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   getAuthnProfileGetQueryKey,
   useAuthnProfilePatch,
 } from '@speed/api-sdk'
-import type { AuthSession } from '@speed/auth-core'
-import { useStepUpGate } from '@speed/auth-core'
 import {
   languageDisplayName,
   readSupportedLanguages,
@@ -82,31 +76,9 @@ import {
 } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
 import { useProfileQuery } from './internal/queries.js'
-import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { ACCOUNT_UI_NAMESPACE } from './resources.js'
-
-export interface PreferencesSectionProps {
-  /**
-   * Optional: when given, a write refused for a missing step-up is
-   * remembered and replayed after the shared step-up dialog's flow
-   * succeeds. Without it the refusal renders the failure banner.
-   */
-  readonly session?: AuthSession
-  /**
-   * The host's current path, sent as the step-up flow's `return_to`: a
-   * redirect method's round trip lands back on the page that started it, so
-   * that page reads the refusal. Omitted, the deployment's default return
-   * target applies.
-   */
-  readonly returnPath?: string
-}
-
-/** A refused write, kept so a won step-up can replay exactly it. */
-type PreferenceAction =
-  | { readonly kind: 'locale'; readonly locale: string }
-  | { readonly kind: 'timezone'; readonly timezone: string }
 
 /** The engine's IANA timezone list, sorted, or [] when the environment
  * cannot produce one (Intl.supportedValuesOf is newer than the rest of
@@ -123,10 +95,7 @@ function supportedTimeZones(): readonly string[] {
   }
 }
 
-export function PreferencesSection({
-  session,
-  returnPath,
-}: PreferencesSectionProps = {}) {
+export function PreferencesSection() {
   const { t, i18n } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useProfileQuery()
@@ -135,14 +104,6 @@ export function PreferencesSection({
   // the language outcome and the timezone outcome never clear each other.
   const languageFeedback = useWriteFeedback()
   const timezoneFeedback = useWriteFeedback()
-
-  const gate = useStepUpGate<PreferenceAction>((action) => {
-    if (action.kind === 'locale') {
-      void saveLocale(action.locale)
-    } else {
-      void saveTimezone(action.timezone)
-    }
-  })
 
   const languageOptions = useMemo(
     () => readSupportedLanguages(i18n),
@@ -176,17 +137,7 @@ export function PreferencesSection({
    * and only the language scope's region reports the refusal. */
   function saveLocale(locale: string): Promise<void> {
     return languageFeedback.run(async () => {
-      try {
-        await patchProfile.mutateAsync({ data: { locale } })
-      } catch (error) {
-        // Without a session the section cannot drive a dialog, so the refusal
-        // settles as a failure; with one it hands over and leaves the slot
-        // untouched.
-        if (session !== undefined && gate.intercept(error, { kind: 'locale', locale })) {
-          return null
-        }
-        throw error
-      }
+      await patchProfile.mutateAsync({ data: { locale } })
       // The empty string IS the clearing value, not a language: a
       // successful clear leaves the device on its current language, so
       // only a real choice is switched to (switchLanguage refuses the
@@ -222,17 +173,7 @@ export function PreferencesSection({
 
   function saveTimezone(timezone: string): Promise<void> {
     return timezoneFeedback.run(async () => {
-      try {
-        await patchProfile.mutateAsync({ data: { time_zone: timezone } })
-      } catch (error) {
-        if (
-          session !== undefined &&
-          gate.intercept(error, { kind: 'timezone', timezone })
-        ) {
-          return null
-        }
-        throw error
-      }
+      await patchProfile.mutateAsync({ data: { time_zone: timezone } })
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),
       })
@@ -244,9 +185,8 @@ export function PreferencesSection({
   }
 
   return (
-    <>
-      <SectionCard title={t('preferences.title')}>
-        <AccountAsyncSection
+    <SectionCard title={t('preferences.title')}>
+      <AccountAsyncSection
         pending={pending}
         payload={data}
         empty={false}
@@ -270,11 +210,16 @@ export function PreferencesSection({
         }}
       >
         {() => (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            {/* The language control and its own scope's region: a write
-                here is immediate, so both a success and a refusal report
-                directly beneath the control that made them. */}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {/* The language row and its own scope's region: a write here is
+                immediate, so both a success and a refusal report directly
+                beneath the control that made them. The row's own title names
+                the control, so the select carries no floating label; the
+                accessible name rides the input instead. */}
             <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                {t('preferences.language.label')}
+              </Typography>
               <TextField
                 select
                 fullWidth
@@ -282,20 +227,21 @@ export function PreferencesSection({
                 // IANA zone name does not need to span the whole content
                 // width, so each is capped to a comfortable select width and
                 // fills less than the row on a wide viewport.
-                sx={{ maxWidth: '24rem' }}
+                sx={{ mt: 0.5, maxWidth: '24rem' }}
                 slotProps={{
                   // displayEmpty rides the Select slot (MUI 9's slotProps
                   // architecture): the "not chosen" choice carries the empty
                   // string, and without this the control renders blank instead
-                  // of the option's own label. The empty value is why the
-                  // InputLabel is shrunk explicitly -- MUI floats the label on
-                  // its own only when the select is filled, so in the "not
-                  // chosen" state the label would otherwise sit on the
-                  // placeholder and overlap it.
-                  select: { displayEmpty: true },
-                  inputLabel: { shrink: true },
+                  // of the option's own label.
+                  select: {
+                    displayEmpty: true,
+                    slotProps: {
+                      input: {
+                        'aria-label': t('preferences.language.label'),
+                      },
+                    },
+                  },
                 }}
-                label={t('preferences.language.label')}
                 value={storedLocale}
                 disabled={saving}
                 onChange={(event) => {
@@ -319,22 +265,29 @@ export function PreferencesSection({
               <WriteFeedbackRegion outcome={languageFeedback.outcome} />
             </Box>
 
-            {/* The timezone control and its own scope's region. */}
+            {/* The timezone row and its own scope's region. */}
             <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                {t('preferences.timezone.label')}
+              </Typography>
               <TextField
                 select
                 fullWidth
                 // Capped like the language select above: a zone name is short
                 // and the control need not span the content width.
-                sx={{ maxWidth: '24rem' }}
-                // Same two slots as the language select above: displayEmpty
-                // for the "not chosen" placeholder and an explicit shrink so
-                // the label floats above it instead of overlapping.
+                sx={{ mt: 0.5, maxWidth: '24rem' }}
+                // Same slot as the language select above: displayEmpty for
+                // the "not chosen" placeholder.
                 slotProps={{
-                  select: { displayEmpty: true },
-                  inputLabel: { shrink: true },
+                  select: {
+                    displayEmpty: true,
+                    slotProps: {
+                      input: {
+                        'aria-label': t('preferences.timezone.label'),
+                      },
+                    },
+                  },
                 }}
-                label={t('preferences.timezone.label')}
                 value={storedTimezone}
                 disabled={saving}
                 onChange={(event) => {
@@ -356,18 +309,6 @@ export function PreferencesSection({
           </Box>
         )}
       </AccountAsyncSection>
-      </SectionCard>
-
-      {session !== undefined && (
-        <StepUpChallenge
-          open={gate.open}
-          reason={gate.reason}
-          session={session}
-          onSuccess={gate.succeed}
-          onCancel={gate.cancel}
-          returnPath={returnPath}
-        />
-      )}
-    </>
+    </SectionCard>
   )
 }

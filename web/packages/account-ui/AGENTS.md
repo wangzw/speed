@@ -25,8 +25,16 @@ into `@speed/api-sdk` over the host's QueryClient (the shared-QueryClient
 contract: one host-bound QueryClient, never package-constructed), and
 writes through the generated mutations over the same `bindRequestFn`
 binding. The surfaces that drive a flow take the `@speed/auth-core`
-session as a required prop; `PreferencesSection` takes it optionally
-(the step-up gate only), and the read-only ones take no props.
+session as a required prop: the step-up dialog for `PasswordSection` and
+`IdentifiersSection`, and the human-verification block for `PhoneSection`
+and `ContactVerificationSection`. The contact sends and the proof itself ask
+for no fresh authentication, so these two sections drive no step-up dialog; a
+proof that would change what recovers or proves the account -- an email that
+becomes the default contact or the only address, a phone that replaces the
+active SMS factor's target -- is answered 401
+`authn.insufficient_user_authentication` and rendered as a failure.
+`ProfileSection` and `PreferencesSection` write without a step-up and take no
+session, and the read-only ones take no props either.
 
 ## What this package is
 
@@ -92,8 +100,9 @@ session as a required prop; `PreferencesSection` takes it optionally
   `resend_after` (or a 429's Retry-After) and states why, and its countdown
   timer stops at expiry; the sent notice is announced once through a
   `role="status"` region that is mounted empty and filled on landing, and
-  focus moves to the code field. It takes the session (its writes are step-up
-  gated), the optional `initialChangeOpen`, which starts it in the
+  focus moves to the code field. It takes the session for its
+  human-verification block (its writes drive no step-up dialog), the optional
+  `initialChangeOpen`, which starts it in the
   change-address form so a host can land a "change address" action there, and
   the optional `autoSend`, which the demo account page sets only for a
   `?verify=1` landing (the banner's verify action and the post-registration
@@ -102,10 +111,10 @@ session as a required prop; `PreferencesSection` takes it optionally
   refetch keep to that one send. A mount that lands with the change form open
   (`initialChangeOpen`, the `?change=email` entry) never sends automatically,
   even after the form is closed: that visitor came to replace the address.
-  The automatic send never opens the step-up dialog -- that is the visitor's
-  to open -- so a 401 leaves the manual send action with an explanation; a
-  429 still starts the resend countdown, and other failures render the
-  failure banner.
+  The automatic send never opens a dialog; a refused automatic attempt leaves
+  the manual send action with an explanation, and the visitor's next click is
+  an ordinary send. A 429 still starts the resend countdown, and other failures
+  render the failure banner.
 - **The identifiers add face checks an email address before sending it.**
   For `kind=email` the value is checked against the server's rule through
   `parseEmailAddress` from `@speed/ui-kit` (trimmed, printable ASCII, exactly
@@ -298,12 +307,12 @@ session as a required prop; `PreferencesSection` takes it optionally
 
 ## Public surface
 
-Everything in `src/index.ts` is public: the surfaces (`ProfileSection`
-with `ProfileSectionProps`; `PasswordSection` with `PasswordSectionProps`;
+Everything in `src/index.ts` is public: the surfaces (`ProfileSection`;
+`PasswordSection` with `PasswordSectionProps`;
 `PhoneSection` with `PhoneSectionProps`; `IdentifiersSection` with
 `IdentifiersSectionProps`; `ContactVerificationSection` with
-`ContactVerificationSectionProps`; `PreferencesSection` with
-`PreferencesSectionProps`; `SessionsSection`; `SocialBindingsSection`
+`ContactVerificationSectionProps`; `PreferencesSection`;
+`SessionsSection`; `SocialBindingsSection`
 with `SocialBindingsSectionProps`; `MfaSection` with `MfaSectionProps`),
 `BindingCallbackHandler` with `BindingCallbackHandlerProps`,
 `StepUpDialog` with `StepUpDialogProps` (the host seam; see rule 7), and

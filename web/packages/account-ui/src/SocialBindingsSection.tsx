@@ -102,6 +102,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
@@ -118,7 +119,6 @@ import {
   SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
-import type { WriteOutcome } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
@@ -554,31 +554,32 @@ export function SocialBindingsSection({
       >
         {(settledRows) => (
           <Box>
-            {/* The binding rows are one real list, as the sessions rows
-                are: a screen-reader user hears each binding as one item
-                of a numbered set. The unlink region below and the add area
-                are page-level content and stay outside the list.
-                role="list" keeps the list semantics under WebKit, which
-                strips them from a list-style-none ul. */}
-            <Box component="ul" role="list" sx={{ m: 0, p: 0, listStyle: 'none' }}>
+            {/* One list states every provider in the same grammar: the one
+                already linked and the ones the deployment could link. A
+                linked row carries its state, its reference and the unlink
+                action; an unlinked row carries the action that starts the
+                link flow. */}
+            <Box
+              component="ul"
+              role="list"
+              sx={{
+                m: 0,
+                p: 0,
+                listStyle: 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+              }}
+            >
               {settledRows.map((link, index) => {
                 const id = link.id ?? null
                 const provider = link.provider ?? null
-                // Enterprise-SSO bindings arrive under the dynamic
-                // per-tenant provider name "oidc:<tenant>": the family
-                // label renders for the prefix, and the raw value stays
-                // in the row as its reference line, so two SSO bindings
-                // in two tenants never read as one identical row.
                 const oidcProvider =
                   provider !== null &&
                   provider.startsWith(OIDC_PROVIDER_PREFIX)
                     ? provider
                     : null
                 const label = providerLabel(provider)
-                // The row identity the unbind action is named after (the
-                // sessions twin names its revoke action after the row's
-                // device label): the raw provider value when the label
-                // is a shared family label, the label itself otherwise.
                 const unbindIdentity = oidcProvider ?? label
                 const email =
                   link.email != null && link.email !== '' ? link.email : null
@@ -586,105 +587,151 @@ export function SocialBindingsSection({
                   provider !== null && providerIcon !== undefined
                     ? providerIcon(provider)
                     : null
+                const reference = email ?? oidcProvider
                 return (
                   <Box
                     component="li"
                     key={id ?? String(index)}
                     sx={{
-                      py: 1.5,
-                      minWidth: 0,
-                      ...(index > 0
-                        ? { borderTop: '1px solid', borderColor: 'divider' }
-                        : {}),
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(0, 1fr) auto',
+                      columnGap: 2,
+                      alignItems: 'center',
                     }}
                   >
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1.5,
-                      }}
-                    >
-                      <Box sx={{ minWidth: 0 }}>
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                          }}
-                        >
-                          {icon !== null && (
-                            <Box
-                              component="span"
-                              sx={{ display: 'inline-flex', flexShrink: 0 }}
-                            >
-                              {icon}
-                            </Box>
-                          )}
-                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                            {label}
-                          </Typography>
-                        </Box>
-                        {oidcProvider !== null && (
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            noWrap
-                            title={oidcProvider}
-                            sx={{ minWidth: 0 }}
+                    <Box sx={{ minWidth: 0 }}>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        {icon !== null && (
+                          <Box
+                            component="span"
+                            sx={{ display: 'inline-flex', flexShrink: 0 }}
                           >
-                            {oidcProvider}
-                          </Typography>
+                            {icon}
+                          </Box>
                         )}
-                        {email !== null && (
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            noWrap
-                          >
-                            {email}
-                          </Typography>
-                        )}
+                        <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                          {label}
+                        </Typography>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          color="success"
+                          label={t('bindings.status.bound')}
+                        />
                       </Box>
-                      {id !== null && (
-                        <Box sx={{ marginLeft: 'auto', flexShrink: 0 }}>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            size="small"
-                            disabled={unbindBusy}
-                            aria-label={t('bindings.unbindAriaWithProvider', {
-                              provider: unbindIdentity,
-                              // The label is an aria-label, not HTML: the
-                              // row identity (an oidc:<tenant> raw value
-                              // included) must reach the accessibility
-                              // tree verbatim (i18next's default value
-                              // escaping would embed a literal `&#x2F;`).
-                              interpolation: { escapeValue: false },
-                            })}
-                            onClick={() =>
-                              setUnbindTarget({ id, label: unbindIdentity })
-                            }
-                          >
-                            {t('bindings.unbind')}
-                          </Button>
-                        </Box>
-                      )}
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        noWrap
+                        title={reference ?? undefined}
+                        sx={{ mt: 0.5, minWidth: 0 }}
+                      >
+                        {reference ?? t('bindings.description')}
+                      </Typography>
                     </Box>
+                    {id !== null && (
+                      <Button
+                        variant="outlined"
+                        color="error"
+                        size="small"
+                        disabled={unbindBusy}
+                        aria-label={t('bindings.unbindAriaWithProvider', {
+                          provider: unbindIdentity,
+                          interpolation: { escapeValue: false },
+                        })}
+                        onClick={() =>
+                          setUnbindTarget({ id, label: unbindIdentity })
+                        }
+                      >
+                        {t('bindings.unbind')}
+                      </Button>
+                    )}
+                  </Box>
+                )
+              })}
+              {available.map((method) => {
+                const label = methodLabel(method, t)
+                const icon =
+                  providerIcon !== undefined
+                    ? providerIcon(method.name)
+                    : null
+                return (
+                  <Box
+                    component="li"
+                    key={`method-${method.name}`}
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(0, 1fr) auto',
+                      columnGap: 2,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Box sx={{ minWidth: 0 }}>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        {icon !== null && (
+                          <Box
+                            component="span"
+                            sx={{ display: 'inline-flex', flexShrink: 0 }}
+                          >
+                            {icon}
+                          </Box>
+                        )}
+                        <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                          {label}
+                        </Typography>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={t('bindings.status.unbound')}
+                        />
+                      </Box>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mt: 0.5 }}
+                      >
+                        {t('bindings.description')}
+                      </Typography>
+                    </Box>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      disabled={busyProvider !== null}
+                      data-testid={`bind-${method.name}`}
+                      aria-label={t('bindings.bindAriaWithProvider', {
+                        provider: label,
+                        interpolation: { escapeValue: false },
+                      })}
+                      onClick={() => handleAuthorize(method)}
+                    >
+                      {t('bindings.bind')}
+                    </Button>
                   </Box>
                 )
               })}
             </Box>
 
-            {hasAddArea && (
-              <AddArea
-                available={available}
-                busy={busyProvider !== null}
-                authorizeOutcome={authorizeFeedback.outcome}
-                sectionLabel={t('bindings.addSectionTitle')}
-                providerIcon={providerIcon}
-                onAuthorize={handleAuthorize}
-              />
+            {/* The flow-start group's result sits below the rows that start
+                it; the unlink group's own region is outside this content so
+                it survives the list emptying. */}
+            {authorizeFeedback.outcome === null ? null : (
+              <Box sx={{ mt: 2 }}>
+                <WriteFeedbackRegion outcome={authorizeFeedback.outcome} />
+              </Box>
             )}
           </Box>
         )}
@@ -694,7 +741,9 @@ export function SocialBindingsSection({
           settled content, so it survives the list becoming empty when the
           last binding goes. Its success names the provider, and a failure is
           one banner in the same place. */}
-      <WriteFeedbackRegion outcome={unbindFeedback.outcome} sx={{ mt: 1.5 }} />
+      {unbindFeedback.outcome === null ? null : (
+        <WriteFeedbackRegion outcome={unbindFeedback.outcome} sx={{ mt: 1.5 }} />
+      )}
       </SectionCard>
 
       <ConfirmDialog
@@ -731,61 +780,3 @@ export function SocialBindingsSection({
  * descriptor's own label, defaulting to the method name. While a bind
  * flow is being started every button is disabled together -- the busy
  * flag is provider-wide, never one channel's alone. */
-function AddArea({
-  available,
-  busy,
-  authorizeOutcome,
-  sectionLabel,
-  providerIcon,
-  onAuthorize,
-}: {
-  readonly available: readonly AuthnMethodDescriptor[]
-  /** True while any channel's link flow is being started. */
-  readonly busy: boolean
-  /** The add area's own feedback slot: a refused start renders here. */
-  readonly authorizeOutcome: WriteOutcome | null
-  readonly sectionLabel: string
-  readonly providerIcon?: (provider: string) => ReactNode
-  readonly onAuthorize: (method: AuthnMethodDescriptor) => void
-}) {
-  const { t } = useAccountUiTranslation()
-  return (
-    <Box sx={{ mt: 2, borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
-      <Typography
-        variant="body2"
-        color="text.secondary"
-        sx={{ mb: 1.5 }}
-      >
-        {sectionLabel}
-      </Typography>
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-start',
-          gap: 1,
-        }}
-      >
-        {available.map((method) => {
-          const label = methodLabel(method, t)
-          const icon =
-            providerIcon !== undefined ? providerIcon(method.name) : null
-          return (
-            <Button
-              key={method.name}
-              variant="outlined"
-              disabled={busy}
-              startIcon={icon ?? undefined}
-              onClick={() => onAuthorize(method)}
-            >
-              {label}
-            </Button>
-          )
-        })}
-      </Box>
-      {/* The add area's own result position, below the channel buttons it
-          reports on: a refused start renders the code's text here. */}
-      <WriteFeedbackRegion outcome={authorizeOutcome} />
-    </Box>
-  )
-}

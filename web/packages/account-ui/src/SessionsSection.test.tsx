@@ -77,25 +77,22 @@ function revokeAria(device: string): string {
 /** The instant the default row helper carries. */
 const SESSION_INSTANT = '2026-08-01T02:05:00.000Z'
 
-/** The default row's expiry, distinct from its sign-in instant. */
-const SESSION_EXPIRY = '2026-09-01T02:05:00.000Z'
-
 /** A last-active instant later than the default row's sign-in instant. */
 const SESSION_LAST_SEEN = '2026-08-03T09:12:00.000Z'
 
-/** The row's "signed in" line for a pre-rendered time. */
-function signedInLine(time: string): string {
-  return zhCN.sessions.signedIn.replace('{{time}}', time)
+/** The sessions table's body rows, its header row excluded. */
+function bodyRows(): HTMLElement[] {
+  return within(screen.getByRole('table')).getAllByRole('row').slice(1)
 }
 
-/** The row's expiry line for a pre-rendered time. */
-function expiresLine(time: string): string {
-  return zhCN.sessions.expires.replace('{{time}}', time)
-}
-
-/** The row's last-active line for a pre-rendered time. */
-function lastSeenLine(time: string): string {
-  return zhCN.sessions.lastSeen.replace('{{time}}', time)
+/** A body row's cell under the column titled `title`. */
+function cellUnder(row: HTMLElement, title: string): HTMLElement {
+  const headers = within(screen.getByRole('table')).getAllByRole('columnheader')
+  const column = headers.findIndex((header) => header.textContent === title)
+  if (column < 0) {
+    throw new Error(`no column titled ${title}`)
+  }
+  return within(row).getAllByRole('cell')[column] as HTMLElement
 }
 
 /** The instant rendered in `zone` (the engine's own zone when absent). */
@@ -172,7 +169,7 @@ describe('SessionsSection', () => {
     await expectNoAxeViolations()
   })
 
-  it("renders each session's expiry instant", async () => {
+  it("renders the session's activity instant in the activity column", async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
         return PROFILE
@@ -186,19 +183,18 @@ describe('SessionsSection', () => {
     }
     mountSection(respond)
 
-    // The listed session is live and carries an absolute expiry; the row
-    // names that instant in the display zone, beside the sign-in line.
+    // The listed session's activity column names its last activity -- here
+    // its sign-in instant, since the default row has not been touched since
+    // -- in the display zone.
+    await waitFor(() => expect(bodyRows()).toHaveLength(1))
     expect(
-      await screen.findByText(expiresLine(renderedInstant(SESSION_EXPIRY))),
+      within(
+        cellUnder(
+          bodyRows()[0] as HTMLElement,
+          zhCN.sessions.table.activity,
+        ),
+      ).getByText(renderedInstant(SESSION_INSTANT)),
     ).toBeTruthy()
-    expect(
-      screen.getByText(signedInLine(renderedInstant(SESSION_INSTANT))),
-    ).toBeTruthy()
-    // The default row's last activity is its sign-in instant, so the row does
-    // not repeat it as a second line.
-    expect(
-      screen.queryByText(lastSeenLine(renderedInstant(SESSION_INSTANT))),
-    ).toBeNull()
   })
 
   it('renders the last-active time when it differs from the sign-in time', async () => {
@@ -221,15 +217,19 @@ describe('SessionsSection', () => {
     }
     mountSection(respond)
 
-    // A coalesced touch moves the row's last activity past its creation, so the
-    // row carries both instants. This is component behaviour independent of the
-    // expiry line.
+    // A coalesced touch moves the row's last activity past its creation, so
+    // the activity column names the later instant rather than the sign-in one.
+    await waitFor(() => expect(bodyRows()).toHaveLength(1))
+    const activity = cellUnder(
+      bodyRows()[0] as HTMLElement,
+      zhCN.sessions.table.activity,
+    )
     expect(
-      await screen.findByText(lastSeenLine(renderedInstant(SESSION_LAST_SEEN))),
+      within(activity).getByText(renderedInstant(SESSION_LAST_SEEN)),
     ).toBeTruthy()
     expect(
-      screen.getByText(signedInLine(renderedInstant(SESSION_INSTANT))),
-    ).toBeTruthy()
+      within(activity).queryByText(renderedInstant(SESSION_INSTANT)),
+    ).toBeNull()
   })
 
   it('prefers the profile timezone over the host display timezone', async () => {
@@ -257,11 +257,9 @@ describe('SessionsSection', () => {
       </DisplayTimeZoneProvider>,
     )
 
-    expect(
-      await screen.findByText(signedInLine(renderedIn(storedZone))),
-    ).toBeTruthy()
+    expect(await screen.findByText(renderedIn(storedZone))).toBeTruthy()
     // The host context did not replace the stored tier.
-    expect(screen.queryByText(signedInLine(renderedIn(hostZone)))).toBeNull()
+    expect(screen.queryByText(renderedIn(hostZone))).toBeNull()
   })
 
   it('falls back to the host display timezone when the profile stores none', async () => {
@@ -286,11 +284,9 @@ describe('SessionsSection', () => {
       </DisplayTimeZoneProvider>,
     )
 
-    expect(
-      await screen.findByText(signedInLine(renderedIn(hostZone))),
-    ).toBeTruthy()
+    expect(await screen.findByText(renderedIn(hostZone))).toBeTruthy()
     // The device tier was not consulted while the host supplied a zone.
-    expect(screen.queryByText(signedInLine(renderedIn()))).toBeNull()
+    expect(screen.queryByText(renderedIn())).toBeNull()
   })
 
   it('raises the row revoke control to the 44px touch-target floor under a coarse pointer', async () => {
@@ -366,7 +362,7 @@ describe('SessionsSection', () => {
     await screen.findByRole('heading', { name: zhCN.sessions.title })
     // Pages of eight: only the first page's rows render, so twelve sessions
     // do not all land in the tree.
-    expect(await screen.findAllByRole('listitem')).toHaveLength(8)
+    await waitFor(() => expect(bodyRows()).toHaveLength(8))
     expect(
       screen.getByText(
         zhCN.sessions.pageIndicator
@@ -380,9 +376,7 @@ describe('SessionsSection', () => {
 
     await user.click(screen.getByRole('button', { name: zhCN.sessions.nextPage }))
     // The second page holds the remaining four rows.
-    await waitFor(() =>
-      expect(screen.getAllByRole('listitem')).toHaveLength(4),
-    )
+    await waitFor(() => expect(bodyRows()).toHaveLength(4))
     expect(
       screen.getByRole('button', { name: zhCN.sessions.nextPage }),
     ).toBeDisabled()
@@ -440,7 +434,7 @@ describe('SessionsSection', () => {
         (call) => call.method === 'GET' && call.path === SESSIONS_PATH,
       ).length,
     ).toBeGreaterThanOrEqual(2)
-    // The confirmation sits below the list whose row action wrote it, not
+    // The confirmation sits below the table whose row action wrote it, not
     // above it.
     const confirmation = screen.getByText(
       zhCN.sessions.revokedOne.replace(
@@ -450,7 +444,7 @@ describe('SessionsSection', () => {
     )
     expect(
       screen
-        .getByRole('list')
+        .getByRole('table')
         .compareDocumentPosition(confirmation) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
@@ -479,9 +473,7 @@ describe('SessionsSection', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('heading', { name: zhCN.sessions.title })
-    await waitFor(() =>
-      expect(screen.getAllByRole('listitem')).toHaveLength(8),
-    )
+    await waitFor(() => expect(bodyRows()).toHaveLength(8))
     const revokeButtons = screen.getAllByRole('button', {
       name: revokeAria(zhCN.sessions.deviceUnknown),
     })
@@ -536,16 +528,12 @@ describe('SessionsSection', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('heading', { name: zhCN.sessions.title })
-    await waitFor(() =>
-      expect(screen.getAllByRole('listitem')).toHaveLength(8),
-    )
+    await waitFor(() => expect(bodyRows()).toHaveLength(8))
     // Move to the second page, where the previous-page control is enabled.
     await user.click(
       screen.getByRole('button', { name: zhCN.sessions.nextPage }),
     )
-    await waitFor(() =>
-      expect(screen.getAllByRole('listitem')).toHaveLength(4),
-    )
+    await waitFor(() => expect(bodyRows()).toHaveLength(4))
     expect(
       screen.getByRole('button', { name: zhCN.sessions.prevPage }),
     ).not.toBeDisabled()

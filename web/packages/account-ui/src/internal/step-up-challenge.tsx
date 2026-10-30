@@ -323,6 +323,7 @@ function StepUpFlow({
   readonly reproofMethod?: string
 }): ReactElement {
   const { t } = useAccountUiTranslation()
+  const stepFormId = useId()
   const { phase, step, seq, errorCode, human, answer } = useStepUp(
     session,
     active,
@@ -438,6 +439,7 @@ function StepUpFlow({
                       answerStep={answerStep}
                       submitLabel={t('mfa.stepUp.confirmLabel')}
                       onSubmit={handleAnswer}
+                      formId={step.kind === 'challenge' ? stepFormId : undefined}
                     />
                   </>
                 ) : null}
@@ -448,6 +450,11 @@ function StepUpFlow({
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel}>{t('mfa.stepUp.cancelLabel')}</Button>
+        {step !== null && step.kind === 'challenge' && !flowInvalid ? (
+          <Button type="submit" form={stepFormId} variant="contained">
+            {t('mfa.stepUp.confirmLabel')}
+          </Button>
+        ) : null}
         {flowInvalid ? (
           <Button variant="contained" onClick={onRestart}>
             {t('mfa.stepUp.restart')}

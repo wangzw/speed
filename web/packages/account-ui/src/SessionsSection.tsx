@@ -12,8 +12,7 @@
  * browser/OS summary the row's user agent parses to ("Chrome · macOS" --
  * never the raw UA string, which would make two sign-ins from one browser
  * read as two identical, truncated walls of text), else the unknown-device
- * label; the client IP, the session kind, and the created, last-seen and
- * expiry times.
+ * label; the client IP, and the last-seen time (else the created one).
  *
  * Actions: a row that is not the current one carries a row-end sign-out
  * button that revokes exactly that session (DELETE /api/v1/auth/sessions/{id}),
@@ -49,6 +48,11 @@ import { formatInstant, isSupportedTimeZone, resolveTimeZone } from '@speed/i18n
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import Table from '@mui/material/Table'
+import TableBody from '@mui/material/TableBody'
+import TableCell from '@mui/material/TableCell'
+import TableHead from '@mui/material/TableHead'
+import TableRow from '@mui/material/TableRow'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Skeleton from '@mui/material/Skeleton'
@@ -71,15 +75,6 @@ import { useProfileQuery, useSessionsQuery } from './internal/queries.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { summarizeUserAgent } from './internal/ua-summary.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
-
-/**
- * The session kinds the authn session module records (pkg/authn/session's
- * `kind` values), one bundle key each under sessions.kind. t() is only
- * ever called with a value on this list -- a value outside it (a future
- * kind, a kind a policy adds) renders the generic "other" label, never a
- * raw value.
- */
-const KNOWN_SESSION_KINDS = new Set<string>(['browser', 'token', 'service'])
 
 /**
  * How many session rows one page shows. An account can accumulate many
@@ -323,94 +318,97 @@ export function SessionsSection() {
                 below is page-level and stays outside the list. role="list"
                 keeps the list semantics under WebKit, which strips them
                 from a list-style-none ul. */}
-            <Box component="ul" role="list" sx={{ m: 0, p: 0, listStyle: 'none' }}>
-              {pageSessions.map((session, index) => {
-                const id = session.id ?? null
-                const current = session.current === true
-                const revocable = id !== null && !current
-                // Line 1 carries the readable summary the user agent
-                // parses to ("Chrome · macOS"), never the raw UA -- the
-                // raw string is the defect this surface exists to spare
-                // its reader -- else the unknown-device label.
-                const agent =
-                  session.user_agent != null && session.user_agent !== ''
-                    ? session.user_agent
-                    : null
-                const summary =
-                  agent !== null ? summarizeUserAgent(agent) : null
-                const deviceLabel = summary ?? t('sessions.deviceUnknown')
-                const kind =
-                  session.kind != null && session.kind !== ''
-                    ? session.kind
-                    : null
-                const kindLabel =
-                  kind !== null
-                    ? KNOWN_SESSION_KINDS.has(kind)
-                      ? t(`sessions.kind.${kind}`)
-                      : t('sessions.kind.other')
-                    : null
-                const created = parseDate(session.created_at)
-                const lastSeen = parseDate(session.last_seen_at)
-                const expires = parseDate(session.expires_at)
-                const showLastSeen =
-                  lastSeen !== null &&
-                  session.last_seen_at !== session.created_at
-                const hasMeta =
-                  session.client_ip != null ||
-                  created !== null ||
-                  showLastSeen ||
-                  expires !== null
-                return (
-                  <Box
-                    component="li"
-                    key={id ?? String(index)}
-                    sx={{
-                      py: 1.5,
-                      minWidth: 0,
-                      ...(index > 0
-                        ? { borderTop: '1px solid', borderColor: 'divider' }
-                        : {}),
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1.5,
-                      }}
-                    >
-                      <Typography
-                        variant="body1"
-                        noWrap
-                        sx={{ minWidth: 0, fontWeight: 500 }}
-                      >
-                        {deviceLabel}
-                      </Typography>
-                      <Box
-                        sx={{
-                          marginLeft: 'auto',
-                          flexShrink: 0,
-                          display: 'flex',
-                          alignItems: 'center',
-                        }}
-                      >
-                        {current && (
-                          <Chip
-                            size="small"
-                            color="primary"
-                            variant="outlined"
-                            label={t('sessions.current')}
-                          />
-                        )}
-                        {revocable && (
+            <Table
+              size="small"
+              sx={{
+                // Fixed columns keep the four rails steady: the first column
+                // shares the block's left edge, the last ends at its right
+                // edge, and no label wraps to a second line.
+                width: '100%',
+                tableLayout: 'fixed',
+                '& th, & td': {
+                  padding: '8px 0',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                },
+                '& th + th, & td + td': { paddingLeft: '16px' },
+              }}
+            >
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ width: '35%' }}>
+                    {t('sessions.table.device')}
+                  </TableCell>
+                  <TableCell sx={{ width: '20%' }}>
+                    {t('sessions.table.address')}
+                  </TableCell>
+                  <TableCell sx={{ width: '30%' }}>
+                    {t('sessions.table.activity')}
+                  </TableCell>
+                  <TableCell align="right" sx={{ width: '15%' }}>
+                    {t('sessions.table.action')}
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {pageSessions.map((session, index) => {
+                  const id = session.id ?? null
+                  const current = session.current === true
+                  const revocable = id !== null && !current
+                  const agent =
+                    session.user_agent != null && session.user_agent !== ''
+                      ? session.user_agent
+                      : null
+                  const summary =
+                    agent !== null ? summarizeUserAgent(agent) : null
+                  const deviceLabel = summary ?? t('sessions.deviceUnknown')
+                  const created = parseDate(session.created_at)
+                  const lastSeen = parseDate(session.last_seen_at)
+                  const activity = lastSeen ?? created
+                  return (
+                    <TableRow key={id ?? String(index)}>
+                      <TableCell>
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <Typography
+                            variant="body1"
+                            noWrap
+                            sx={{ fontWeight: 600 }}
+                          >
+                            {deviceLabel}
+                          </Typography>
+                          {current ? (
+                            <Chip
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                              label={t('sessions.current')}
+                            />
+                          ) : null}
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {session.client_ip ?? ''}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {activity === null ? '' : formatTime(activity)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        {revocable ? (
                           <IconButton
                             aria-label={t('sessions.revokeAriaWithDevice', {
                               device: deviceLabel,
-                              // The label is an aria-label, not HTML: the
-                              // device string must reach the accessibility
-                              // tree verbatim (i18next's default value
-                              // escaping would embed a literal `&#x2F;`
-                              // for a free-text device label's slashes).
                               interpolation: { escapeValue: false },
                             })}
                             size="small"
@@ -432,57 +430,13 @@ export function SessionsSection() {
                               <SignOutIcon />
                             )}
                           </IconButton>
-                        )}
-                      </Box>
-                    </Box>
-
-                    {hasMeta && (
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          columnGap: 2.5,
-                          rowGap: 0.5,
-                          mt: 0.5,
-                        }}
-                      >
-                        {kindLabel !== null && (
-                          <Typography variant="body2" color="text.secondary">
-                            {kindLabel}
-                          </Typography>
-                        )}
-                        {session.client_ip != null && (
-                          <Typography variant="body2" color="text.secondary">
-                            {session.client_ip}
-                          </Typography>
-                        )}
-                        {created !== null && (
-                          <Typography variant="body2" color="text.secondary">
-                            {t('sessions.signedIn', {
-                              time: formatTime(created),
-                            })}
-                          </Typography>
-                        )}
-                        {showLastSeen && lastSeen !== null && (
-                          <Typography variant="body2" color="text.secondary">
-                            {t('sessions.lastSeen', {
-                              time: formatTime(lastSeen),
-                            })}
-                          </Typography>
-                        )}
-                        {expires !== null && (
-                          <Typography variant="body2" color="text.secondary">
-                            {t('sessions.expires', {
-                              time: formatTime(expires),
-                            })}
-                          </Typography>
-                        )}
-                      </Box>
-                    )}
-                  </Box>
-                )
-              })}
-            </Box>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
             {pageCount > 1 && (
               <Box
                 sx={{

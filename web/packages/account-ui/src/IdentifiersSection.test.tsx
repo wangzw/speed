@@ -1523,62 +1523,17 @@ describe('IdentifiersSection', () => {
     expect(alert).toHaveTextContent(zhCN.errors.authn.unavailable)
   })
 
-  it('gates a step_up_required email add behind the dialog and re-runs it once', async () => {
-    const warn = captureRefreshWarning()
-    let elevated = false
+  it('renders a step-up refusal of an email add as an ordinary failure, with no dialog', async () => {
+    // Registering a contact address is not a change of what proves the
+    // account; the route asks for no fresh authentication. A step-up refusal
+    // that reached the add face renders its code text instead of opening the
+    // dialog, and the refused attempt is not replayed.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ identifiers: [] }))
       }
       if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
-        if (!elevated) {
-          return errorResponse(401, 'authn.insufficient_user_authentication')
-        }
-        return jsonResponse(200, {
-          state: 'pending',
-          expires_in: 600,
-          resend_after: 60,
-        })
-      }
-      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
-        return jsonResponse(200, {
-          factors: [
-            {
-              id: 'factor-1',
-              kind: 'totp',
-              label: 'App',
-              status: 'active',
-              created_at: '2026-01-01T00:00:00Z',
-            },
-          ],
-        })
-      }
-      if (call.method === 'POST' && call.path === FLOW_START) {
-        return jsonResponse(200, {
-          seq: 1,
-          state: 'second',
-          next: {
-            kind: 'factor',
-            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
-          },
-        })
-      }
-      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
-        const body = call.body as { seq: number }
-        if (body.seq === 1) {
-          return jsonResponse(200, {
-            seq: 2,
-            state: 'second',
-            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
-          })
-        }
-        elevated = true
-        return jsonResponse(200, {
-          state: 'elevated',
-          token_type: 'Bearer',
-          access_token: 'access-2',
-          expires_in: 3600,
-        })
+        return errorResponse(401, 'authn.insufficient_user_authentication')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
@@ -1596,31 +1551,16 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
     )
 
-    // The 401 opens the step-up dialog; winning it re-runs the add.
-    await screen.findByRole('button', { name: 'App' })
-    await user.click(screen.getByRole('button', { name: 'App' }))
-    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
-    await user.click(
-      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      zhCN.errors.authn.insufficient_user_authentication,
     )
-
-    await screen.findByLabelText(zhCN.identifiers.add.code.label)
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(
       rig.calls.filter(
         (call) => call.method === 'POST' && call.path === '/api/v1/auth/identifiers',
       ),
-    ).toHaveLength(2)
-    // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
-    expect(warn).toHaveBeenCalledWith(
-      'access token refresh failed',
-      expect.objectContaining({
-        status: 401,
-        code: 'authn.insufficient_user_authentication',
-        trace_id: 'trace-1',
-      }),
-    )
-    // One shortfall, one refresh failure: a duplicated add would warn again.
-    expect(warn).toHaveBeenCalledTimes(1)
+    ).toHaveLength(1)
   })
 
   it('re-proves an SMS first factor past the window and re-runs the username add', async () => {
@@ -1970,25 +1910,30 @@ describe('IdentifiersSection', () => {
     expect(rig.endedEdges()).toBe(0)
   })
 
-  it('holds the session through the credential rotation an added email verifies', async () => {
-    // Sending the code does not rotate the credential; the verification that
-    // writes the address does. The profile refetch that follows the verify
-    // is answered 401, standing for a read that left under the outgoing
-    // credential. The surface opens an identity-transition window around
-    // that write, so the anonymous answer is discarded: the snapshot stays
-    // authenticated and no sign-out edge is observed.
-    const warn = captureRefreshWarning()
-    let rotated = false
+  it('proves an added email without opening an identity-transition window', async () => {
+    // Registering and proving a contact address rotates no credential and
+    // revokes no other session, so the surface opens no window and the
+    // refetch that follows the verify stays authenticated.
+    let proven = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
-        return rotated
-          ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, AUTHENTICATED_SESSION)
+        return jsonResponse(200, AUTHENTICATED_SESSION)
       }
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
-        return rotated
-          ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, profileBody({ identifiers: [] }))
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: proven
+              ? [
+                  identifier({
+                    id: 'id-email',
+                    kind: 'email',
+                    value: 'ada@x.test',
+                  }),
+                ]
+              : [],
+          }),
+        )
       }
       if (call.method === 'GET' && call.path === FEATURES_PATH) {
         return jsonResponse(200, EMPTY_FEATURES)
@@ -2004,7 +1949,7 @@ describe('IdentifiersSection', () => {
         call.method === 'POST' &&
         call.path === '/api/v1/auth/identifiers/verify'
       ) {
-        rotated = true
+        proven = true
         return jsonResponse(200, { state: 'added' })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -2031,57 +1976,46 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
     )
 
-    await waitFor(() =>
-      expect(warn).toHaveBeenCalledWith(
-        'access token refresh failed',
-        expect.objectContaining({ status: 401 }),
-      ),
-    )
+    await waitFor(() => expect(screen.getByText('ada@x.test')).toBeTruthy())
+    expect(rig.transitionBegins()).toBe(0)
     expect(rig.session.getSnapshot().state).toBe('authenticated')
     expect(rig.endedEdges()).toBe(0)
   })
 
-  it('holds the session through the credential rotation a row verification performs', async () => {
-    // A row's verification proves the address and rotates the requesting
-    // session's credential, exactly as the add-face verification does. The
-    // profile refetch that follows the write is answered 401, standing for a
-    // read that left under the outgoing credential; the window around the
-    // write discards it, so the snapshot stays authenticated.
-    const warn = captureRefreshWarning()
-    let rotated = false
+  it('proves a row address without opening an identity-transition window', async () => {
+    // A row's verification proves the address exactly as the add-face
+    // verification does: no fresh authentication, no rotated credential and
+    // no revoked sibling session, so no window opens.
+    let proven = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
-        return rotated
-          ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, AUTHENTICATED_SESSION)
+        return jsonResponse(200, AUTHENTICATED_SESSION)
       }
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
-        return rotated
-          ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(
-              200,
-              profileBody({
-                verification: {
-                  state: 'verified',
-                  email: 'ada@x.test',
-                  since: '',
-                },
-                identifiers: [
-                  identifier({
-                    id: 'id-primary',
-                    kind: 'email',
-                    value: 'ada@x.test',
-                  }),
-                  identifier({
-                    id: 'id-secondary',
-                    kind: 'email',
-                    value: 'second@x.test',
-                    proven: false,
-                    verified_via: 'admin',
-                  }),
-                ],
+        return jsonResponse(
+          200,
+          profileBody({
+            verification: {
+              state: 'verified',
+              email: 'ada@x.test',
+              since: '',
+            },
+            identifiers: [
+              identifier({
+                id: 'id-primary',
+                kind: 'email',
+                value: 'ada@x.test',
               }),
-            )
+              identifier({
+                id: 'id-secondary',
+                kind: 'email',
+                value: 'second@x.test',
+                proven,
+                verified_via: proven ? 'email-code' : 'admin',
+              }),
+            ],
+          }),
+        )
       }
       if (call.method === 'GET' && call.path === FEATURES_PATH) {
         return jsonResponse(200, EMPTY_FEATURES)
@@ -2097,7 +2031,7 @@ describe('IdentifiersSection', () => {
         call.method === 'POST' &&
         call.path === '/api/v1/auth/identifiers/verify'
       ) {
-        rotated = true
+        proven = true
         return jsonResponse(200, { state: 'added' })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -2123,11 +2057,9 @@ describe('IdentifiersSection', () => {
     )
 
     await waitFor(() =>
-      expect(warn).toHaveBeenCalledWith(
-        'access token refresh failed',
-        expect.objectContaining({ status: 401 }),
-      ),
+      expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2),
     )
+    expect(rig.transitionBegins()).toBe(0)
     expect(rig.session.getSnapshot().state).toBe('authenticated')
     expect(rig.endedEdges()).toBe(0)
   })
@@ -2610,4 +2542,517 @@ describe('IdentifiersSection', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.last_login_method)
   })
+
+  it('arms the step-up dialog on a refused add-face verify and replays the same code', async () => {
+    // Proving an address carries no fresh authentication of its own, but a
+    // proof that makes the address the default contact or the account's only
+    // address changes how the account signs in and may answer a step-up
+    // refusal. The verify arms the dialog with the same code and replays it.
+    captureRefreshWarning()
+    let elevated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      if (
+        call.method === 'POST' &&
+        call.path === '/api/v1/auth/identifiers/verify'
+      ) {
+        if (!elevated) {
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        return jsonResponse(200, { state: 'added' })
+      }
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+        return jsonResponse(200, {
+          factors: [
+            {
+              id: 'factor-1',
+              kind: 'totp',
+              label: 'App',
+              status: 'active',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+          },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number }
+        if (body.seq === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'second',
+            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+          })
+        }
+        elevated = true
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'new@x.test',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+    await user.type(
+      await screen.findByLabelText(zhCN.identifiers.add.code.label),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
+    )
+
+    await screen.findByRole('button', { name: 'App' })
+    await user.click(screen.getByRole('button', { name: 'App' }))
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    await screen.findByText(zhCN.identifiers.add.added)
+    const verifies = rig.calls.filter(
+      (call) =>
+        call.method === 'POST' &&
+        call.path === '/api/v1/auth/identifiers/verify',
+    )
+    expect(verifies).toHaveLength(2)
+    expect(verifies[0]?.body).toEqual({ code: '123456' })
+    expect(verifies[1]?.body).toEqual({ code: '123456' })
+  })
+
+  it('arms the step-up dialog on a refused row verify and replays the same code', async () => {
+    // The row's verify proves the address the row shows; the consequence of
+    // the proof can answer a step-up refusal, which arms the dialog with the
+    // same code and replays it once a challenge is won.
+    captureRefreshWarning()
+    let elevated = false
+    let proven = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            verification: { state: 'verified', email: 'ada@x.test', since: '' },
+            identifiers: [
+              identifier({ id: 'id-primary', kind: 'email', value: 'ada@x.test' }),
+              identifier({
+                id: 'id-secondary',
+                kind: 'email',
+                value: 'second@x.test',
+                proven,
+                verified_via: proven ? 'email-code' : 'admin',
+              }),
+            ],
+          }),
+        )
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      if (
+        call.method === 'POST' &&
+        call.path === '/api/v1/auth/identifiers/verify'
+      ) {
+        if (!elevated) {
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        proven = true
+        return jsonResponse(200, { state: 'added' })
+      }
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+        return jsonResponse(200, {
+          factors: [
+            {
+              id: 'factor-1',
+              kind: 'totp',
+              label: 'App',
+              status: 'active',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+          },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number }
+        if (body.seq === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'second',
+            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+          })
+        }
+        elevated = true
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.identifiers.verifyAria.replace('{{value}}', 'second@x.test'),
+      }),
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+    await user.type(
+      await screen.findByLabelText(zhCN.identifiers.add.code.label),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
+    )
+
+    await screen.findByRole('button', { name: 'App' })
+    await user.click(screen.getByRole('button', { name: 'App' }))
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    // The refetched row flips to proved; both rows are proved now.
+    await waitFor(() =>
+      expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2),
+    )
+    const verifies = rig.calls.filter(
+      (call) =>
+        call.method === 'POST' &&
+        call.path === '/api/v1/auth/identifiers/verify',
+    )
+    expect(verifies).toHaveLength(2)
+    expect(verifies[0]?.body).toEqual({ code: '123456' })
+    expect(verifies[1]?.body).toEqual({ code: '123456' })
+  })
+
+  it('offers the contact switch in the contact axis table and writes the contact flag', async () => {
+    // A host that shows the contact axis alone gets the same contact switch
+    // the combined view offers: one write to the row's `contact` flag, gated
+    // like the sign-in write, then a profile refetch.
+    let contact = false
+    const writes: unknown[] = []
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-email',
+                kind: 'email',
+                value: 'ada@x.test',
+                proven: true,
+                sign_in: true,
+                contact,
+              }),
+            ],
+          }),
+        )
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-email'
+      ) {
+        writes.push(call.body)
+        contact = (call.body as { contact?: boolean }).contact === true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} axis="contact" />,
+    )
+    const user = userEvent.setup()
+
+    const toggle = await screen.findByRole('switch', {
+      name: zhCN.identifiers.axes.contactAria.replace('{{value}}', 'ada@x.test'),
+    })
+    expect(toggle).not.toBeChecked()
+    await user.click(toggle)
+
+    await waitFor(() => expect(writes).toEqual([{ contact: true }]))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('switch', {
+          name: zhCN.identifiers.axes.contactAria.replace(
+            '{{value}}',
+            'ada@x.test',
+          ),
+        }),
+      ).toBeChecked(),
+    )
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'GET' && call.path === PROFILE_PATH,
+      ).length,
+    ).toBeGreaterThanOrEqual(2)
+  })
+
+  it('shows the no-selection state in the sign-in email select when no address signs in', async () => {
+    // No address is a sign-in way, so the select must not show the first
+    // proved address as if the account had chosen it.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-email',
+                kind: 'email',
+                value: 'ada@x.test',
+                proven: true,
+                sign_in: false,
+                contact: false,
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} axis="signIn" />,
+    )
+
+    const combo = await screen.findByRole('combobox', {
+      name: zhCN.identifiers.kind.email,
+    })
+    expect(combo).toHaveTextContent(zhCN.identifiers.usage.emailNone)
+    expect(combo).not.toHaveTextContent('ada@x.test')
+  })
+
+  it('uses the username copy for an empty username group on the sign-in axis', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-email',
+                kind: 'email',
+                value: 'ada@x.test',
+                proven: true,
+                sign_in: true,
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} axis="signIn" />,
+    )
+
+    // The empty username group reads its own copy; the phone group keeps its
+    // own, so exactly one phone-none sentence remains.
+    expect(
+      await screen.findByText(zhCN.identifiers.usage.usernameNone),
+    ).toBeTruthy()
+    expect(screen.getAllByText(zhCN.identifiers.usage.phoneNone)).toHaveLength(1)
+  })
+
+  it('replays a whole sign-in email selection as one gate action', async () => {
+    // Choosing a different sign-in email turns the chosen address on and the
+    // previous one off. The first write meets the step-up refusal; the gate
+    // remembers the whole selection, so one challenge lands both rows rather
+    // than only the row that was refused.
+    captureRefreshWarning()
+    let elevated = false
+    let aSignIn = true
+    let bSignIn = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-a',
+                kind: 'email',
+                value: 'a@x.test',
+                proven: true,
+                sign_in: aSignIn,
+              }),
+              identifier({
+                id: 'id-b',
+                kind: 'email',
+                value: 'b@x.test',
+                proven: true,
+                sign_in: bSignIn,
+              }),
+            ],
+          }),
+        )
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-b'
+      ) {
+        if (!elevated) {
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        bSignIn = (call.body as { sign_in?: boolean }).sign_in === true
+        return new Response(null, { status: 204 })
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-a'
+      ) {
+        aSignIn = (call.body as { sign_in?: boolean }).sign_in === true
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+        return jsonResponse(200, {
+          factors: [
+            {
+              id: 'factor-1',
+              kind: 'totp',
+              label: 'App',
+              status: 'active',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+          },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number }
+        if (body.seq === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'second',
+            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+          })
+        }
+        elevated = true
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} axis="signIn" />,
+    )
+    const user = userEvent.setup()
+
+    const combo = await screen.findByRole('combobox', {
+      name: zhCN.identifiers.kind.email,
+    })
+    expect(combo).toHaveTextContent('a@x.test')
+    fireEvent.mouseDown(combo)
+    await user.click(screen.getByRole('option', { name: 'b@x.test' }))
+
+    // The first write meets the refusal and arms the dialog with the whole
+    // selection; one challenge lands both rows.
+    await screen.findByRole('button', { name: 'App' })
+    await user.click(screen.getByRole('button', { name: 'App' }))
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    await waitFor(() => expect(bSignIn).toBe(true))
+    await waitFor(() => expect(aSignIn).toBe(false))
+    const bPuts = rig.calls.filter(
+      (call) =>
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-b',
+    )
+    const aPuts = rig.calls.filter(
+      (call) =>
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-a',
+    )
+    // B was attempted before and after the challenge; A was turned off only
+    // once, as part of the same selection.
+    expect(bPuts).toHaveLength(2)
+    expect(
+      bPuts.every(
+        (call) => (call.body as { sign_in?: boolean }).sign_in === true,
+      ),
+    ).toBe(true)
+    expect(aPuts).toHaveLength(1)
+    expect(aPuts[0]?.body).toEqual({ sign_in: false })
+    await waitFor(() =>
+      expect(
+        screen.getByRole('combobox', { name: zhCN.identifiers.kind.email }),
+      ).toHaveTextContent('b@x.test'),
+    )
+  })
 })
+

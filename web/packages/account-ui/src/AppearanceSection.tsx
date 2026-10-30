@@ -42,12 +42,16 @@ export interface AppearanceSectionProps {
   readonly value: string
   /** Fired with the chosen preset's id. */
   readonly onChange: (id: string) => void
+  /** Drop the control's own visible label: the host names it, e.g. with
+   * an item title above the control. The accessible name stays. */
+  readonly hideLabel?: boolean
 }
 
 export function AppearanceSection({
   presets,
   value,
   onChange,
+  hideLabel = false,
 }: AppearanceSectionProps) {
   const { t } = useAccountUiTranslation()
 
@@ -67,10 +71,17 @@ export function AppearanceSection({
           // value matches no option (an empty preset list); the explicit
           // shrink keeps the label above the empty value instead of
           // overlapping it, the same pairing the preferences selects use.
-          select: { displayEmpty: true },
-          inputLabel: { shrink: true },
+          select: {
+            displayEmpty: true,
+            // A hidden label leaves the control unnamed unless the name is
+            // carried on the input itself.
+            slotProps: {
+              input: { 'aria-label': t('appearance.theme.label') },
+            },
+          },
+          inputLabel: hideLabel ? undefined : { shrink: true },
         }}
-        label={t('appearance.theme.label')}
+        label={hideLabel ? undefined : t('appearance.theme.label')}
         value={value}
         onChange={(event) => {
           onChange(event.target.value)

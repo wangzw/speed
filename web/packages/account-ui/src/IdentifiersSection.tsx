@@ -27,7 +27,13 @@
  * in both the sign-in ways and the contacts lists while it is on both axes;
  * the switch that changes one axis renders in every list the record appears
  * in, so the two views stay in step. A username is always a sign-in way, has
- * no contact axis, and is never in the other two lists.
+ * no contact axis, and is never in the other two lists. A host that splits
+ * the surface with `axis` gets the same controls in the view it shows: the
+ * contact axis's own table carries the contact switch on each address, and
+ * the sign-in axis's email picker is one choice out of the proved addresses,
+ * written as one step-up action so a won challenge lands the same end state
+ * (the pre-chosen address turned off and the new one turned on) rather than
+ * replaying only one of the row writes.
  *
  * An email or phone row carries two independent switches, PUT
  * /api/v1/auth/identifiers/{id} (authn.login.updateIdentifier) with `contact`
@@ -99,9 +105,11 @@
  * submitted through POST /api/v1/auth/identifiers/verify
  * (authn.login.verifyIdentifier); only the matching code writes the address,
  * with the proof. A new address starts on neither axis. The email branch is
- * unavailable on a deployment with no email channel (a 503), and both
- * writes revoke the account's other sessions, so a success refetches the
- * profile and the session list. An address another account has reserved or
+ * unavailable on a deployment with no email channel (a 503). The one-step
+ * username write replaces this session's credential and revokes the
+ * account's other sessions, so its success refetches the profile and the
+ * session list; the email send and the code's verification do neither, so
+ * they refetch only the profile. An address another account has reserved or
  * proved is answered 409 authn.email_taken -- the claim is atomic, so the
  * refusal is the address's, and the value field carries it. The code's
  * verification answers the same code when the address was taken after the
@@ -122,18 +130,31 @@
  * the add face clears the whole attempt: the failure banner, the field
  * error, the success notice and the sent-code step.
  *
- * Every write asks for a fresh authentication: a 401
+ * Only the writes that change how the account signs in ask for a fresh
+ * authentication: the one-step username add, putting a proved value into
+ * sign-in, setting the default contact, removing an identifier and a
+ * verification whose proof changes how the account signs in. A 401
  * authn.insufficient_user_authentication opens the step-up dialog with the
  * write's inputs remembered, and a won challenge re-runs that one write
- * exactly once. A successful write refetches the profile so the rows
- * converge on the server's answer. The one-step username add, both
- * verification writes and putting a value into sign-in replace this
- * session's credential as they commit, so each runs inside an
- * identity-transition window (session.beginIdentityTransition) that closes
- * once the refetch that follows the write has settled; a read still carrying
- * the outgoing credential is discarded instead of ending the session. The
- * email send only issues a code -- it does not rotate the credential -- and
- * runs outside the window.
+ * exactly once. The email send and the row resend carry no fresh
+ * authentication of their own, so a step-up refusal that reached them would
+ * render the code's own failure text instead of opening a dialog. Proving an
+ * address normally rotates nothing and asks for nothing, but the consequence
+ * the server attaches to the proof -- an address that would become the
+ * default contact or the account's only address -- can still answer the
+ * step-up refusal; the add face's verify and the row's verify then arm the
+ * dialog with the same code and replay it once a challenge is won, without
+ * opening an identity-transition window (the verification still rotates no
+ * credential). A successful write refetches the profile so the rows converge
+ * on the server's answer. The one-step username add and putting a value into
+ * sign-in replace this session's credential as they commit, so each runs
+ * inside an identity-transition window (session.beginIdentityTransition)
+ * that closes once the refetch that follows the write has settled; a read
+ * still carrying the outgoing credential is discarded instead of ending the
+ * session. The email send and the code's verification rotate nothing and run
+ * outside the window. Only the username add and putting a value into sign-in
+ * refetch the session list, because those are the writes that revoke the
+ * account's other sessions.
  *
  * The section has one failure slot: removal, add, row verification, both
  * switches and the default-contact choice share it, so a failure renders
@@ -154,14 +175,21 @@
  * proof, because the single-use one was spent.
  */
 
+import type { ReactElement } from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Radio from '@mui/material/Radio'
+import Table from '@mui/material/Table'
+import TableBody from '@mui/material/TableBody'
+import TableCell from '@mui/material/TableCell'
+import TableRow from '@mui/material/TableRow'
+import Select from '@mui/material/Select'
 import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
@@ -228,6 +256,113 @@ export interface IdentifiersSectionProps {
    * target applies.
    */
   readonly returnPath?: string
+  /**
+   * Which axis this occurrence manages. 'both' (the default) offers the
+   * sign-in switch, the contact switch and the default-contact choice;
+   * 'signIn' removes the contact controls and the contacts list, for a host
+   * that shows the contact surface elsewhere; 'contact' removes the sign-in
+   * switch and the sign-in list, for the same reason in the other direction.
+   */
+  readonly axis?: 'both' | 'signIn' | 'contact'
+  /**
+   * Whether the section renders its own add entry. False leaves the action to
+   * the host, which opens the form through `openAddSignal`.
+   */
+  readonly showAddButton?: boolean
+  /**
+   * A counter the host increments to open the add form; every change after
+   * the first opens it.
+   */
+  readonly openAddSignal?: number
+}
+
+interface ContactActionsMenuProps {
+  readonly value: string
+  readonly canVerify: boolean
+  readonly canDefault: boolean
+  readonly isDefault: boolean
+  readonly disabled: boolean
+  readonly onVerify: () => void
+  readonly onSetDefault: () => void
+  readonly onRemove: () => void
+}
+
+/** One contact row's overflow menu: make it the default, or remove it. */
+function ContactActionsMenu({
+  value,
+  canVerify,
+  canDefault,
+  isDefault,
+  disabled,
+  onVerify,
+  onSetDefault,
+  onRemove,
+}: ContactActionsMenuProps): ReactElement {
+  const { t } = useAccountUiTranslation()
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  return (
+    <>
+      <Button
+        variant="outlined"
+        size="small"
+        disabled={disabled}
+        aria-label={t('identifiers.actionsAria', {
+          value,
+          interpolation: { escapeValue: false },
+        })}
+        onClick={(event) => setAnchor(event.currentTarget)}
+      >
+        <Box
+          component="svg"
+          aria-hidden="true"
+          focusable="false"
+          viewBox="0 0 24 24"
+          width={18}
+          height={18}
+          fill="currentColor"
+        >
+          <circle cx="5" cy="12" r="1.8" />
+          <circle cx="12" cy="12" r="1.8" />
+          <circle cx="19" cy="12" r="1.8" />
+        </Box>
+      </Button>
+      <Menu
+        anchorEl={anchor}
+        open={anchor !== null}
+        onClose={() => setAnchor(null)}
+      >
+        {canVerify ? (
+          <MenuItem
+            onClick={() => {
+              setAnchor(null)
+              onVerify()
+            }}
+          >
+            {t('identifiers.verify')}
+          </MenuItem>
+        ) : null}
+        {canDefault ? (
+          <MenuItem
+            disabled={isDefault}
+            onClick={() => {
+              setAnchor(null)
+              onSetDefault()
+            }}
+          >
+            {t('identifiers.axes.defaultContact')}
+          </MenuItem>
+        ) : null}
+        <MenuItem
+          onClick={() => {
+            setAnchor(null)
+            onRemove()
+          }}
+        >
+          {t('identifiers.remove')}
+        </MenuItem>
+      </Menu>
+    </>
+  )
 }
 
 /** The identifier kinds the authn account module records
@@ -250,20 +385,25 @@ type AxisChange = {
   readonly signIn?: boolean
 }
 
+/** One row's end state in a sign-in-email selection. The whole selection is
+ * one step-up action, so a won challenge replays every row it needs. */
+type SignInSelectionChange = {
+  readonly id: string
+  readonly value: string
+  readonly signIn: boolean
+}
+
 /** The three lists the identifiers are grouped into. A username is always a
  * sign-in way; an email or phone sits on either axis, both or neither. */
 type IdentifierGroup = 'signIn' | 'contact' | 'neither'
 
 /** The write a step-up dialog is armed for, so a won challenge re-runs
- * exactly it: a removal, the add that sends the code, the code's
- * verification, the same pair on an existing row's address, one axis of a
- * row, or the default-contact choice. */
+ * exactly it: a removal, the username add, one axis of a row, the
+ * default-contact choice, either verification step or a whole sign-in-email
+ * selection. A contact write and the code-send steps never arm the gate. */
 type SectionAction =
   | { readonly step: 'remove'; readonly id: string }
   | { readonly step: 'add'; readonly kind: AddKind; readonly value: string }
-  | { readonly step: 'verify'; readonly code: string }
-  | { readonly step: 'rowSend'; readonly value: string }
-  | { readonly step: 'rowVerify'; readonly code: string }
   | {
       readonly step: 'flags'
       readonly id: string
@@ -271,6 +411,12 @@ type SectionAction =
       readonly change: AxisChange
     }
   | { readonly step: 'defaultContact'; readonly id: string; readonly value: string }
+  | { readonly step: 'verifyCode'; readonly code: string }
+  | { readonly step: 'rowVerifyCode'; readonly code: string }
+  | {
+      readonly step: 'selectSignInEmail'
+      readonly changes: readonly SignInSelectionChange[]
+    }
 
 /** The resend note's id, referenced by the row flow's resend control while it
  * counts down. */
@@ -366,11 +512,24 @@ export function IdentifiersSection({
   offerUsername = true,
   humanGate,
   returnPath,
+  axis = 'both',
+  showAddButton = true,
+  openAddSignal,
 }: IdentifiersSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useProfileQuery()
   const removeIdentifier = useAuthnLoginRemoveIdentifier()
+  const lastAddSignal = useRef(openAddSignal)
+  useEffect(() => {
+    if (
+      openAddSignal !== undefined &&
+      openAddSignal !== lastAddSignal.current
+    ) {
+      lastAddSignal.current = openAddSignal
+      setAddOpen(true)
+    }
+  }, [openAddSignal])
   const addIdentifier = useAuthnLoginAddIdentifier()
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
   const updateIdentifier = useAuthnLoginUpdateIdentifier()
@@ -492,20 +651,20 @@ export function IdentifiersSection({
       case 'add':
         void add(action.kind, action.value)
         return
-      case 'verify':
-        void verify(action.code)
-        return
-      case 'rowSend':
-        void rowSend(action.value)
-        return
-      case 'rowVerify':
-        void rowVerifyCode(action.code)
-        return
       case 'flags':
         void setFlags(action.id, action.value, action.change)
         return
       case 'defaultContact':
         void setDefaultContact(action.id, action.value)
+        return
+      case 'verifyCode':
+        void verify(action.code)
+        return
+      case 'rowVerifyCode':
+        void rowVerifyCode(action.code)
+        return
+      case 'selectSignInEmail':
+        void selectSignInEmail(action.changes)
         return
     }
   })
@@ -566,9 +725,17 @@ export function IdentifiersSection({
   // claimed for an answer that genuinely listed none.
   const showHeader = pending || (rows !== undefined && rows.length > 0)
 
-  /** Refetch what a write changes: the profile's identifiers, and the
-   * session list, because these routes revoke the account's other
-   * sessions. */
+  /** Refetch the profile alone. Registering or proving a contact address, a
+   * contact-only axis change, the default-contact choice and a removal
+   * change only what the profile reports: none of them replaces this
+   * session's credential or revokes the account's other sessions. */
+  async function invalidateProfile(): Promise<void> {
+    await queryClient.invalidateQueries({ queryKey: getAuthnProfileGetQueryKey() })
+  }
+
+  /** Refetch what a credential-changing write changes: the profile's
+   * identifiers, and the session list, because the one-step username add and
+   * putting a value into sign-in revoke the account's other sessions. */
   async function invalidateAfterWrite(): Promise<void> {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: getAuthnProfileGetQueryKey() }),
@@ -617,11 +784,11 @@ export function IdentifiersSection({
         // this mount's guard may have read stale (another session removed a
         // login name first): re-read so the list and the withheld-removal
         // note converge on what the server sees.
-        await invalidateAfterWrite()
+        await invalidateProfile()
         throw error
       }
       setRemoveTarget(null)
-      await invalidateAfterWrite()
+      await invalidateProfile()
       // Translated when the attempt settles; it names the identifier removed.
       return t('identifiers.removed', {
         value: identifierValue,
@@ -655,7 +822,7 @@ export function IdentifiersSection({
           await runIdentityTransition(session, write, invalidateAfterWrite)
         } else {
           await write()
-          await invalidateAfterWrite()
+          await invalidateProfile()
         }
       } catch (error) {
         const reason = stepUpReasonOf(errorCodeOf(error))
@@ -663,7 +830,7 @@ export function IdentifiersSection({
           gate.arm({ step: 'flags', id, value, change }, reason)
           return null
         }
-        await invalidateAfterWrite()
+        await invalidateProfile()
         throw error
       }
       return t(
@@ -672,6 +839,60 @@ export function IdentifiersSection({
           : 'identifiers.axes.signInChanged',
         { value, interpolation: { escapeValue: false } },
       )
+    })
+  }
+
+  /** Set which proved email address is a sign-in way. The whole selection is
+   * one attempt, so a step-up refusal arms the gate with every row it needs
+   * and a won challenge lands the same end state -- not only the one row that
+   * met the refusal. The chosen address is written first (it rotates this
+   * session's credential, so the writes run inside the identity-transition
+   * window whose release waits for the refetch); the addresses it replaces
+   * are then turned off. A selection that only turns addresses off rotates
+   * nothing and re-reads the profile alone. */
+  function selectSignInEmail(
+    changes: readonly SignInSelectionChange[],
+  ): Promise<void> {
+    const chosen = changes.find((change) => change.signIn)
+    return feedback.run(async () => {
+      setFailureText(null)
+      const write = async (): Promise<void> => {
+        if (chosen !== undefined) {
+          await updateIdentifier.mutateAsync({
+            id: chosen.id,
+            data: { sign_in: true },
+          })
+        }
+        for (const change of changes) {
+          if (change.signIn) {
+            continue
+          }
+          await updateIdentifier.mutateAsync({
+            id: change.id,
+            data: { sign_in: false },
+          })
+        }
+      }
+      try {
+        if (chosen !== undefined) {
+          await runIdentityTransition(session, write, invalidateAfterWrite)
+        } else {
+          await write()
+          await invalidateProfile()
+        }
+      } catch (error) {
+        const reason = stepUpReasonOf(errorCodeOf(error))
+        if (reason !== null) {
+          gate.arm({ step: 'selectSignInEmail', changes }, reason)
+          return null
+        }
+        await invalidateProfile()
+        throw error
+      }
+      return t('identifiers.axes.signInChanged', {
+        value: chosen?.value ?? changes[0]?.value ?? '',
+        interpolation: { escapeValue: false },
+      })
     })
   }
 
@@ -690,10 +911,10 @@ export function IdentifiersSection({
           gate.arm({ step: 'defaultContact', id, value }, reason)
           return null
         }
-        await invalidateAfterWrite()
+        await invalidateProfile()
         throw error
       }
-      await invalidateAfterWrite()
+      await invalidateProfile()
       return t('identifiers.axes.defaultChanged', {
         value,
         interpolation: { escapeValue: false },
@@ -723,7 +944,7 @@ export function IdentifiersSection({
           return null
         }
         closeAdd()
-        await invalidateAfterWrite()
+        await (kind === 'username' ? invalidateAfterWrite() : invalidateProfile())
         // The confirmation names the changed kind (the sign-in identifier).
         return t('identifiers.add.added')
       }
@@ -751,7 +972,9 @@ export function IdentifiersSection({
         return await settleAdded(result)
       } catch (error) {
         const failure = errorCodeOf(error)
-        const reason = stepUpReasonOf(failure)
+        // Only the username write is a change of what proves the account;
+        // the email add registers a contact and is never gated.
+        const reason = kind === 'username' ? stepUpReasonOf(failure) : null
         if (reason !== null) {
           // A step-up refusal precedes the proof check, so the proof is
           // still valid for the re-run.
@@ -821,24 +1044,16 @@ export function IdentifiersSection({
     return feedback.run(async () => {
       setFailureText(null)
       try {
-        // The verification writes the address with its proof and rotates
-        // this session's credential, so the window is open before the write
-        // and closes once the refetch that follows it has settled.
-        await runIdentityTransition(
-          session,
-          () => verifyIdentifier.mutateAsync({ data: { code: nextCode } }),
-          async () => {
-            closeAdd()
-            await invalidateAfterWrite()
-          },
-        )
+        // Proving an address carries no fresh authentication of its own and
+        // rotates nothing, so it opens no window. The consequence the server
+        // attaches to the proof -- an address that becomes the default
+        // contact or the account's only address -- can still answer a step-up
+        // refusal, which arms the gate with the same code.
+        await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+        closeAdd()
+        await invalidateProfile()
       } catch (error) {
         const failure = errorCodeOf(error)
-        const reason = stepUpReasonOf(failure)
-        if (reason !== null) {
-          gate.arm({ step: 'verify', code: nextCode }, reason)
-          return null
-        }
         if (failure === 'authn.email_taken') {
           // The address was taken between the code request and the write
           // (the write is the authoritative refusal): the value is what must
@@ -847,6 +1062,11 @@ export function IdentifiersSection({
           setSentTo(null)
           setCode('')
           setFieldErrorKey('identifiers.add.emailTaken')
+          return null
+        }
+        const reason = stepUpReasonOf(failure)
+        if (reason !== null) {
+          gate.arm({ step: 'verifyCode', code: nextCode }, reason)
           return null
         }
         throw error
@@ -908,13 +1128,6 @@ export function IdentifiersSection({
         // state, not a settled action.
         return null
       } catch (error) {
-        const failure = errorCodeOf(error)
-        const reason = stepUpReasonOf(failure)
-        if (reason !== null) {
-          // The proof is not spent by a step-up refusal.
-          gate.arm({ step: 'rowSend', value: address }, reason)
-          return null
-        }
         if (presented !== null) {
           human.consume()
         }
@@ -936,27 +1149,19 @@ export function IdentifiersSection({
     return feedback.run(async () => {
       setFailureText(null)
       try {
-        // The row's verification proves the address and rotates this
-        // session's credential, so the window is open before the write and
-        // closes once the refetch that follows it has settled.
-        await runIdentityTransition(
-          session,
-          () => verifyIdentifier.mutateAsync({ data: { code: nextCode } }),
-          async () => {
-            setRowVerify(null)
-            setRowSentTo(null)
-            setRowCode('')
-            setRowResendUntil(0)
-            await invalidateAfterWrite()
-          },
-        )
+        // The row's verification proves the address without rotating the
+        // session or revoking the others, so it runs outside the window. The
+        // consequence the proof carries -- an address that becomes the only
+        // address, hence the automatic login way -- can still answer a step-up
+        // refusal, which arms the gate with the same code.
+        await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+        setRowVerify(null)
+        setRowSentTo(null)
+        setRowCode('')
+        setRowResendUntil(0)
+        await invalidateProfile()
       } catch (error) {
         const failure = errorCodeOf(error)
-        const reason = stepUpReasonOf(failure)
-        if (reason !== null) {
-          gate.arm({ step: 'rowVerify', code: nextCode }, reason)
-          return null
-        }
         if (failure === 'authn.login_failed') {
           // The code is the one value this flow can change: state the refusal
           // in its field instead of the section's banner.
@@ -969,6 +1174,11 @@ export function IdentifiersSection({
           // answer means another account proved it in between, and naming
           // that is clearer than the code's account-state sentence.
           setFailureText('verification.addressTaken')
+          return null
+        }
+        const reason = stepUpReasonOf(failure)
+        if (reason !== null) {
+          gate.arm({ step: 'rowVerifyCode', code: nextCode }, reason)
           return null
         }
         throw error
@@ -1008,25 +1218,51 @@ export function IdentifiersSection({
   // their headings and empty notes read.
   const groups: readonly {
     readonly key: IdentifierGroup
+    /** Set when the list is one identifier kind rather than one axis. */
+    readonly kind?: string
     readonly title: string
     readonly empty: string
-  }[] = [
-    {
-      key: 'signIn',
-      title: 'identifiers.groups.signIn',
-      empty: 'identifiers.groups.signInEmpty',
-    },
-    {
-      key: 'contact',
-      title: 'identifiers.groups.contact',
-      empty: 'identifiers.groups.contactEmpty',
-    },
-    {
-      key: 'neither',
-      title: 'identifiers.groups.neither',
-      empty: 'identifiers.groups.neitherEmpty',
-    },
-  ]
+  }[] = axis === 'signIn'
+    ? [
+        { key: 'signIn', kind: 'username' },
+        { key: 'signIn', kind: 'email' },
+        { key: 'signIn', kind: 'phone' },
+      ].map((entry) => ({
+        key: entry.key as IdentifierGroup,
+        kind: entry.kind,
+        title: `identifiers.kind.${entry.kind}`,
+        empty: 'identifiers.groups.signInEmpty',
+      }))
+    : axis === 'contact'
+    ? [
+        {
+          key: 'contact',
+          title: 'identifiers.groups.contact',
+          empty: 'identifiers.groups.contactEmpty',
+        },
+        {
+          key: 'neither',
+          title: 'identifiers.groups.notContact',
+          empty: 'identifiers.groups.notContactEmpty',
+        },
+      ]
+    : [
+        {
+          key: 'signIn',
+          title: 'identifiers.groups.signIn',
+          empty: 'identifiers.groups.signInEmpty',
+        },
+        {
+          key: 'contact',
+          title: 'identifiers.groups.contact',
+          empty: 'identifiers.groups.contactEmpty',
+        },
+        {
+          key: 'neither',
+          title: 'identifiers.groups.neither',
+          empty: 'identifiers.groups.neitherEmpty',
+        },
+      ]
   const groupIdBase = useId()
 
   /**
@@ -1065,7 +1301,8 @@ export function IdentifiersSection({
     const showChip = kind !== 'username'
     const axes = axesOf(identifier)
     const isAxisRow = !axes.username
-    const canonical = group === canonicalGroup(identifier)
+    const canonical =
+      axis === 'signIn' ? true : group === canonicalGroup(identifier)
     const rowKey = `${group}:${id ?? index}`
     // An unverified email is provable from its own row, unless the
     // account-wide flow already owns that code (pending) or the deployment
@@ -1082,22 +1319,20 @@ export function IdentifiersSection({
       <Box
         component="li"
         key={rowKey}
-        sx={{
-          py: 1.5,
-          minWidth: 0,
-          ...(index > 0
-            ? { borderTop: '1px solid', borderColor: 'divider' }
-            : {}),
-        }}
+        sx={{ py: 1.5, minWidth: 0 }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Box sx={{ minWidth: 0 }}>
-            <Typography variant="body1" noWrap sx={{ fontWeight: 500 }}>
+            <Typography variant="body1" noWrap sx={{ fontWeight: 600 }}>
               {value}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {kindLabel}
-            </Typography>
+            {/* The category heading already names the kind when this
+                occurrence groups by kind. */}
+            {axis === 'signIn' ? null : (
+              <Typography variant="body2" color="text.secondary">
+                {kindLabel}
+              </Typography>
+            )}
             {lastLoginName ? (
               <Typography variant="body2" color="text.secondary">
                 {t('identifiers.lastLoginName')}
@@ -1156,7 +1391,7 @@ export function IdentifiersSection({
             )}
           </Box>
         </Box>
-        {isAxisRow ? (
+        {isAxisRow || (axis === 'signIn' && kind === 'username') ? (
           <Box
             sx={{
               display: 'flex',
@@ -1165,30 +1400,39 @@ export function IdentifiersSection({
               columnGap: 2,
             }}
           >
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={axes.contact}
-                  disabled={disabled}
-                  slotProps={{
-                    input: {
-                      'aria-label': t('identifiers.axes.contactAria', {
-                        value,
-                        interpolation: { escapeValue: false },
-                      }),
-                    },
-                  }}
-                  onChange={() => {
-                    if (id !== null) {
-                      void setFlags(id, value, { contact: !axes.contact })
-                    }
-                  }}
-                />
-              }
-              label={t('identifiers.axes.contact')}
-            />
-            {verified ? (
+            {axis === 'signIn' ? null : (
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={axes.contact}
+                    disabled={disabled}
+                    slotProps={{
+                      input: {
+                        'aria-label': t('identifiers.axes.contactAria', {
+                          value,
+                          interpolation: { escapeValue: false },
+                        }),
+                      },
+                    }}
+                    onChange={() => {
+                      if (id !== null) {
+                        void setFlags(id, value, { contact: !axes.contact })
+                      }
+                    }}
+                  />
+                }
+                label={t('identifiers.axes.contact')}
+              />
+            )}
+            {axis === 'signIn' && kind === 'username' ? (
+              // A username is a login name by definition; the switch states
+              // that fact rather than offering a change the server refuses.
+              <FormControlLabel
+                control={<Switch size="small" checked disabled />}
+                label={t('identifiers.axes.signIn')}
+              />
+            ) : axis !== 'contact' && verified ? (
               <FormControlLabel
                 control={
                   <Switch
@@ -1213,7 +1457,7 @@ export function IdentifiersSection({
                 label={t('identifiers.axes.signIn')}
               />
             ) : null}
-            {canonical && kind === 'email' && verified ? (
+            {axis !== 'signIn' && canonical && kind === 'email' && verified ? (
               <FormControlLabel
                 control={
                   <Radio
@@ -1385,26 +1629,389 @@ export function IdentifiersSection({
       >
         {(settledRows) => (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {groups.map((group) => {
-              const groupRows = settledRows.filter((row) =>
-                belongsTo(row, group.key),
-              )
-              const headingId = `${groupIdBase}-${group.key}`
+            {axis === 'contact' ? (
+              <>
+              <Table
+                size="small"
+                sx={{
+                  '& td': { border: 0, padding: '8px 0' },
+                  '& td + td': { paddingLeft: 16 },
+                }}
+              >
+                <TableBody>
+                  {settledRows
+                    .filter((row) => (row.kind ?? '') === 'email')
+                    .map((row, index) => {
+                      const id = row.id ?? null
+                      const kind = row.kind ?? ''
+                      const verified = row.proven === true
+                      const axes = axesOf(row)
+                      return (
+                        <TableRow key={id ?? index}>
+                          {/* The address column carries the host's contact
+                              tables' shared width (the phone table beside
+                              this one writes the same value), so the badge
+                              and action columns of both tables land on one
+                              set of rails. */}
+                          <TableCell sx={{ width: '11rem' }}>
+                            {row.value ?? ''}
+                          </TableCell>
+                          <TableCell>
+                            <Stack
+                              direction="row"
+                              spacing={1}
+                              sx={{ alignItems: 'center' }}
+                            >
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                color={verified ? 'primary' : 'default'}
+                                label={
+                                  verified
+                                    ? t('identifiers.verified')
+                                    : t('identifiers.unverified')
+                                }
+                              />
+                              {axes.defaultContact ? (
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  label={t('identifiers.axes.defaultContact')}
+                                />
+                              ) : null}
+                            </Stack>
+                          </TableCell>
+                          <TableCell align="right">
+                            {/* The contact axis's own switch, the same one the
+                                combined view offers: one write to the row's
+                                `contact` flag, gated like the sign-in write,
+                                then a profile refetch. */}
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={axes.contact}
+                                  disabled={writeBusy || addBusy || id === null}
+                                  slotProps={{
+                                    input: {
+                                      'aria-label': t('identifiers.axes.contactAria', {
+                                        value: row.value ?? '',
+                                        interpolation: { escapeValue: false },
+                                      }),
+                                    },
+                                  }}
+                                  onChange={() => {
+                                    if (id !== null) {
+                                      void setFlags(id, row.value ?? '', {
+                                        contact: !axes.contact,
+                                      })
+                                    }
+                                  }}
+                                />
+                              }
+                              label={t('identifiers.axes.contact')}
+                            />
+                          </TableCell>
+                          <TableCell align="right">
+                            {id !== null ? (
+                              <ContactActionsMenu
+                                value={row.value ?? ''}
+                                canVerify={
+                                  kind === 'email' &&
+                                  !verified &&
+                                  rowVerifyAvailable
+                                }
+                                canDefault={kind === 'email' && verified}
+                                isDefault={axes.defaultContact}
+                                disabled={writeBusy || addBusy}
+                                onVerify={() =>
+                                  openRowVerify(
+                                    `contact:${id}`,
+                                    row.value ?? '',
+                                  )
+                                }
+                                onSetDefault={() =>
+                                  void setDefaultContact(id, row.value ?? '')
+                                }
+                                onRemove={() => setRemoveTarget(id)}
+                              />
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                </TableBody>
+              </Table>
+              {rowVerify !== null && rowVerify.key.startsWith('contact:') ? (
+                <Box
+                  component="form"
+                  noValidate
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    if (rowSentTo === null) {
+                      void rowSend(rowVerify.value)
+                      return
+                    }
+                    if (rowCode.trim() !== '') {
+                      void rowVerifyCode(rowCode)
+                    }
+                  }}
+                  sx={{ mt: 2, maxWidth: FORM_MAX_WIDTH }}
+                >
+                  <Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+                    <TextField
+                      fullWidth
+                      type="email"
+                      label={t('identifiers.add.value.labelEmail')}
+                      value={rowVerify.value}
+                      helperText={t('identifiers.add.value.helperEmail')}
+                      slotProps={{ htmlInput: { readOnly: true } }}
+                      disabled={addBusy}
+                    />
+                    {humanBlock}
+                    {rowSentTo === null ? null : (
+                      <TextField
+                        fullWidth
+                        autoFocus
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        label={t('identifiers.add.code.label')}
+                        value={rowCode}
+                        error={rowCodeInvalid}
+                        helperText={
+                          rowCodeInvalid
+                            ? t('identifiers.verifyCodeInvalid')
+                            : undefined
+                        }
+                        disabled={addBusy}
+                        onChange={(event) => {
+                          setRowCode(event.target.value)
+                          if (rowCodeInvalid) {
+                            setRowCodeInvalid(false)
+                          }
+                        }}
+                      />
+                    )}
+                    <Stack direction="row" spacing={1}>
+                      {rowSentTo === null ? (
+                        <Button
+                          type="submit"
+                          variant="contained"
+                          disabled={addBusy || proofBlocked}
+                        >
+                          {t('identifiers.add.submitEmail')}
+                        </Button>
+                      ) : (
+                        <Button
+                          type="submit"
+                          variant="contained"
+                          disabled={addBusy || rowCode.trim() === ''}
+                        >
+                          {t('identifiers.verify')}
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        disabled={addBusy}
+                        onClick={closeRowVerify}
+                      >
+                        {t('identifiers.add.cancel')}
+                      </Button>
+                    </Stack>
+                  </Stack>
+                </Box>
+              ) : null}
+              </>
+            ) : (
+              groups.map((group) => {
+              const groupRows = settledRows.filter((row) => {
+                if (group.kind !== undefined) {
+                  return (row.kind ?? '') === group.kind
+                }
+                if (axis === 'both') {
+                  return belongsTo(row, group.key)
+                }
+                const axes = axesOf(row)
+                const onAxis =
+                  axis === 'signIn'
+                    ? axes.signIn
+                    : axes.contact || axes.defaultContact
+                return group.key === 'neither' ? !onAxis : onAxis
+              })
+              // A sign-in list is one per kind over one axis, so the axis key
+              // alone would repeat: the kind keeps the React key and the
+              // heading id unique.
+              const groupKey = group.kind ?? group.key
+              const headingId = `${groupIdBase}-${groupKey}`
+              // The sign-in email is one choice out of the proved addresses,
+              // not a switch per address: the row offers exactly that choice.
+              const signInRow =
+                axis === 'signIn'
+                  ? (groupRows.find((row) => row.sign_in === true) ??
+                    groupRows.find((row) => row.proven === true) ??
+                    groupRows[0] ??
+                    null)
+                  : null
+              // The address the account has actually chosen to sign in with.
+              // It is empty when no address is a sign-in way, so the select
+              // shows its no-selection state rather than claiming a choice the
+              // account has not made (the header's toggle may still target a
+              // candidate to turn on).
+              const selectedSignInEmail =
+                groupRows.find((row) => row.sign_in === true)?.value ?? ''
+              // The sign-in axis renders its lists without headings (the host's
+              // own block names them), so it must not point aria-labelledby at
+              // an id no element carries.
+              const showHeading =
+                axis !== 'signIn' && (axis === 'both' || groups.length > 1)
               return (
                 <Box
                   component="section"
-                  key={group.key}
-                  aria-labelledby={headingId}
+                  key={groupKey}
+                  aria-labelledby={showHeading ? headingId : undefined}
                 >
-                  <Typography
-                    id={headingId}
-                    component="h3"
-                    variant="subtitle1"
-                    sx={{ mb: 0.5 }}
-                  >
-                    {t(group.title)}
-                  </Typography>
-                  {groupRows.length === 0 ? (
+                  {axis === 'signIn' ? null : (
+                    <Typography
+                      id={headingId}
+                      component="h3"
+                      variant="subtitle1"
+                      sx={{ mb: 0.5 }}
+                    >
+                      {t(group.title)}
+                    </Typography>
+                  )}
+                  {axis === 'signIn' ? (
+                    <Box>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1.5,
+                        }}
+                      >
+                        <Typography
+                          id={headingId}
+                          component="h3"
+                          variant="body1"
+                          sx={{ fontWeight: 600 }}
+                        >
+                          {t(group.title)}
+                        </Typography>
+                        {signInRow?.id != null ? (
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            disabled={writeBusy || addBusy}
+                            sx={{ marginLeft: 'auto' }}
+                            onClick={() =>
+                              void setFlags(
+                                signInRow.id as string,
+                                signInRow.value ?? '',
+                                { signIn: signInRow.sign_in !== true },
+                              )
+                            }
+                          >
+                            {signInRow.sign_in === true
+                              ? t('identifiers.action.disable')
+                              : t('identifiers.action.enable')}
+                          </Button>
+                        ) : null}
+                      </Box>
+                      {group.kind === 'email' ? (
+                        <Select
+                          size="small"
+                          value={selectedSignInEmail}
+                          displayEmpty
+                          disabled={writeBusy || addBusy}
+                          slotProps={{
+                            input: {
+                              'aria-label': t('identifiers.kind.email'),
+                            },
+                          }}
+                          onChange={(event) => {
+                            const chosen = event.target.value
+                            // The whole selection is one action: every row
+                            // that reaches the chosen end state is written
+                            // together, so a step-up replay lands that same
+                            // state instead of only the first row.
+                            const changes = groupRows
+                              .filter((row) => row.id != null)
+                              .map((row) => ({
+                                id: row.id as string,
+                                value: row.value ?? '',
+                                signIn: (row.value ?? '') === chosen,
+                              }))
+                              .filter((change) => {
+                                const row = groupRows.find(
+                                  (candidate) => candidate.id === change.id,
+                                )
+                                return (row?.sign_in === true) !== change.signIn
+                              })
+                            if (changes.length > 0) {
+                              void selectSignInEmail(changes)
+                            }
+                          }}
+                          sx={{ mt: 1, minWidth: '18rem' }}
+                        >
+                          {selectedSignInEmail === '' ? (
+                            <MenuItem value="">
+                              {t('identifiers.usage.emailNone')}
+                            </MenuItem>
+                          ) : null}
+                          {groupRows
+                            .filter((row) => row.proven === true)
+                            .map((row) => (
+                              <MenuItem
+                                key={row.id ?? row.value}
+                                value={row.value ?? ''}
+                              >
+                                {row.value ?? ''}
+                              </MenuItem>
+                            ))}
+                        </Select>
+                      ) : (
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ mt: 0.5 }}
+                        >
+                          {signInRow === null ||
+                          signInRow.value === undefined ? (
+                            t(
+                              group.kind === 'username'
+                                ? 'identifiers.usage.usernameNone'
+                                : 'identifiers.usage.phoneNone',
+                            )
+                          ) : (
+                            (() => {
+                              const marker = '__VALUE__'
+                              const sentence = t('identifiers.usage.loginAs', {
+                                kind: t(group.title),
+                                value: marker,
+                              })
+                              const [before, after = ''] =
+                                sentence.split(marker)
+                              return (
+                                <>
+                                  {before}
+                                  <Box
+                                    component="span"
+                                    sx={{
+                                      color: 'text.primary',
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    {signInRow.value}
+                                  </Box>
+                                  {after}
+                                </>
+                              )
+                            })()
+                          )}
+                        </Typography>
+                      )}
+                    </Box>
+                  ) : groupRows.length === 0 ? (
                     <Typography variant="body2" color="text.secondary">
                       {t(group.empty)}
                     </Typography>
@@ -1421,13 +2028,15 @@ export function IdentifiersSection({
                   )}
                 </Box>
               )
-            })}
+              })
+            )}
           </Box>
         )}
       </AccountAsyncSection>
 
       <Box sx={{ mt: 2 }}>
-        {addKinds.length === 0 ? null : !addOpen ? (
+        {axis === 'signIn' || addKinds.length === 0 ? null : !addOpen ? (
+          showAddButton ? (
           <Button
             variant="outlined"
             size="small"
@@ -1440,10 +2049,13 @@ export function IdentifiersSection({
           >
             {t('identifiers.add.open')}
           </Button>
+          ) : null
         ) : (
           <>
             <Typography variant="subtitle1" component="h3" sx={{ mb: 1 }}>
-              {t('identifiers.add.title')}
+              {axis === 'contact'
+                ? t('identifiers.addEmail.title')
+                : t('identifiers.add.title')}
             </Typography>
             <Box
               component="form"
@@ -1454,7 +2066,7 @@ export function IdentifiersSection({
                   void verify(code)
                   return
                 }
-                if (formKind === 'email') {
+                if (axis === 'contact' || formKind === 'email') {
                   const address = parseEmailAddress(addValue)
                   if (address === null) {
                     // The client guard owns this attempt's result; a settled
@@ -1483,27 +2095,37 @@ export function IdentifiersSection({
             >
               {sentTo === null ? (
                 <>
+                  {axis === 'contact' ? null : (
+                    <TextField
+                      select
+                      fullWidth
+                      label={t('identifiers.add.kind.label')}
+                      value={formKind}
+                      disabled={addBusy}
+                      onChange={(event) => {
+                        setAddKind(event.target.value as AddKind)
+                        setFieldErrorKey(null)
+                      }}
+                    >
+                      {addKinds.map((option) => (
+                        <MenuItem key={option} value={option}>
+                          {t(`identifiers.add.kind.${option}`)}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  )}
                   <TextField
-                    select
                     fullWidth
-                    label={t('identifiers.add.kind.label')}
-                    value={formKind}
-                    disabled={addBusy}
-                    onChange={(event) => {
-                      setAddKind(event.target.value as AddKind)
-                      setFieldErrorKey(null)
-                    }}
-                  >
-                    {addKinds.map((option) => (
-                      <MenuItem key={option} value={option}>
-                        {t(`identifiers.add.kind.${option}`)}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                  <TextField
-                    fullWidth
-                    type={formKind === 'email' ? 'email' : 'text'}
-                    autoComplete={formKind === 'email' ? 'email' : 'username'}
+                    type={
+                      axis === 'contact' || formKind === 'email'
+                        ? 'email'
+                        : 'text'
+                    }
+                    autoComplete={
+                      axis === 'contact' || formKind === 'email'
+                        ? 'email'
+                        : 'username'
+                    }
                     inputRef={valueInput}
                     label={valueLabel}
                     error={fieldErrorKey !== null}
@@ -1521,18 +2143,21 @@ export function IdentifiersSection({
                       }
                     }}
                   />
-                  {formKind === 'email' ? humanBlock : null}
+                  {axis === 'contact' || formKind === 'email'
+                    ? humanBlock
+                    : null}
                   <Stack direction="row" spacing={1}>
                     <Button
                       type="submit"
                       variant="contained"
                       disabled={
                         addBusy ||
-                        (formKind === 'email' && proofBlocked) ||
+                        ((axis === 'contact' || formKind === 'email') &&
+                          proofBlocked) ||
                         addValue.trim() === ''
                       }
                     >
-                      {formKind === 'email'
+                      {axis === 'contact' || formKind === 'email'
                         ? t('identifiers.add.submitEmail')
                         : t('identifiers.add.submitUsername')}
                     </Button>

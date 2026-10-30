@@ -114,6 +114,20 @@ function profile(links: readonly Record<string, unknown>[]): Record<string, unkn
 
 const WECHAT_AUTHORIZE_URL = 'https://open.weixin.qq.com/connect/qrconnect?appid=x'
 
+/** The bind action of the provider row whose title is `label`. */
+function bindButton(label: string): HTMLElement {
+  return screen.getByRole('button', {
+    name: zhCN.bindings.bindAriaWithProvider.replace('{{provider}}', label),
+  })
+}
+
+/** Waits for the provider row, then returns its bind action. */
+async function findBindButton(label: string): Promise<HTMLElement> {
+  return screen.findByRole('button', {
+    name: zhCN.bindings.bindAriaWithProvider.replace('{{provider}}', label),
+  })
+}
+
 describe('SocialBindingsSection', () => {
   it('renders the bound links and offers only the unbound redirect methods', async () => {
     const respond: RealResponder = (call: RealCall) => {
@@ -167,7 +181,7 @@ describe('SocialBindingsSection', () => {
       screen.queryByRole('button', { name: 'GitHub Org' }),
     ).toBeNull()
     expect(
-      await screen.findByRole('button', { name: 'WeChat' }),
+      await findBindButton('WeChat'),
     ).toBeTruthy()
 
     await expectNoAxeViolations()
@@ -269,7 +283,7 @@ describe('SocialBindingsSection', () => {
     // descriptor label and its channel is withheld.
     expect(screen.getByText('GitLab')).toBeTruthy()
     expect(
-      screen.getByRole('button', { name: 'GitHub Enterprise' }),
+      bindButton('GitHub Enterprise'),
     ).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'GitLab' })).toBeNull()
     await expectNoAxeViolations()
@@ -312,15 +326,25 @@ describe('SocialBindingsSection', () => {
     )
 
     const web = await screen.findByRole('button', {
-      name: zhCN.bindings.provider.wechatWeb,
+      name: zhCN.bindings.bindAriaWithProvider.replace(
+        '{{provider}}',
+        zhCN.bindings.provider.wechatWeb,
+      ),
     })
     const officialAccount = screen.getByRole('button', {
-      name: zhCN.bindings.provider.wechatOfficialAccount,
+      name: zhCN.bindings.bindAriaWithProvider.replace(
+        '{{provider}}',
+        zhCN.bindings.provider.wechatOfficialAccount,
+      ),
     })
     // Two buttons, two distinct names: neither is reachable by the shared
     // descriptor label alone.
     expect(web).not.toBe(officialAccount)
-    expect(screen.queryAllByRole('button', { name: 'WeChat' })).toHaveLength(0)
+    expect(
+      screen.queryAllByRole('button', {
+        name: zhCN.bindings.bindAriaWithProvider.replace('{{provider}}', 'WeChat'),
+      }),
+    ).toHaveLength(0)
   })
 
   it('renders the empty placeholder headerless when the deployment offers no channel', async () => {
@@ -424,7 +448,7 @@ describe('SocialBindingsSection', () => {
       }),
     ).toBeNull()
     expect(
-      screen.getByRole('button', { name: 'GitHub' }),
+      bindButton('GitHub'),
     ).toBeTruthy()
     expect(
       rig.calls.filter(
@@ -566,7 +590,7 @@ describe('SocialBindingsSection', () => {
 
     // Now drive the add area's scope to a failure of its own.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    await user.click(screen.getByRole('button', { name: 'GitHub' }))
+    await user.click(bindButton('GitHub'))
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
     // The unlink success is still there, in its own status region.
@@ -1030,7 +1054,7 @@ describe('SocialBindingsSection', () => {
     )
     const user = userEvent.setup()
 
-    await user.click(await screen.findByRole('button', { name: 'WeChat' }))
+    await user.click(await findBindButton('WeChat'))
     // The refusal opens the shared challenge rather than settling as a banner.
     await user.click(await screen.findByRole('button', { name: 'App' }))
     await user.type(
@@ -1083,11 +1107,7 @@ describe('SocialBindingsSection', () => {
     )
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: 'WeChat',
-      }),
-    )
+    await user.click(await findBindButton('WeChat'))
 
     await waitFor(() => expect(reports).toEqual([WECHAT_AUTHORIZE_URL]))
     const start = rig.calls.find(
@@ -1144,8 +1164,8 @@ describe('SocialBindingsSection', () => {
       await screen.findByText(zhCN.bindings.provider.wechatWeb),
     ).toBeTruthy()
     expect(screen.getByText(zhCN.bindings.provider.other)).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Mystery IdP' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'unlabelled' })).toBeTruthy()
+    expect(bindButton('Mystery IdP')).toBeTruthy()
+    expect(bindButton('unlabelled')).toBeTruthy()
   })
 
   it('renders provider icons supplied by the host', async () => {
@@ -1173,7 +1193,7 @@ describe('SocialBindingsSection', () => {
       />,
     )
 
-    expect(await screen.findByRole('button', { name: 'GitHub' })).toBeTruthy()
+    expect(await findBindButton('GitHub')).toBeTruthy()
     expect(screen.getByTestId('icon-github')).toBeTruthy()
   })
 

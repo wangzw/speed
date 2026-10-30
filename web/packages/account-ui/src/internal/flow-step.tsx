@@ -106,6 +106,13 @@ export interface FlowStepProps {
   readonly onSubmit: (answer: FlowStepAnswer) => void
   /** Reports a `redirect` step's URL upward; the host navigates. */
   readonly onRedirect?: (url: string) => void
+  /**
+   * The id the challenge form carries when the host renders the submit
+   * control outside the step (in a dialog's actions row): the form then
+   * carries this id and renders no button of its own, and the host's
+   * `type="submit" form` button submits it.
+   */
+  readonly formId?: string
 }
 
 export function FlowStep({
@@ -116,6 +123,7 @@ export function FlowStep({
   submitLabel,
   onSubmit,
   onRedirect,
+  formId,
 }: FlowStepProps) {
   const { t } = useAccountUiTranslation()
   // The free-text answer of a TOTP code field, and the typed values of a
@@ -266,8 +274,9 @@ export function FlowStep({
     onSubmit({ step: answerStep, input: { ...values } })
   }
 
+  const external = formId !== undefined
   return (
-    <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
+    <Box component="form" id={formId} onSubmit={handleSubmit} sx={{ mt: 2 }}>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {step.fields.map((field) => (
           <TextField
@@ -285,11 +294,13 @@ export function FlowStep({
           />
         ))}
       </Box>
-      <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
-        <Button type="submit" variant="contained" disabled={busy}>
-          {submitLabel}
-        </Button>
-      </Box>
+      {external ? null : (
+        <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
+          <Button type="submit" variant="contained" disabled={busy}>
+            {submitLabel}
+          </Button>
+        </Box>
+      )}
     </Box>
   )
 }

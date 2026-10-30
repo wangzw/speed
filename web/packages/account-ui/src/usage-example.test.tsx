@@ -56,17 +56,17 @@ const ACCOUNT_CALLBACK = '/account/callback'
 
 /** The host's account page in the example: the sections the quick start
  * documents, under one signed-in session. The sections that drive a flow
- * (a bind, a step-up, an enroll) take the session; the preferences
- * section takes it optionally, for the shared step-up gate. */
+ * (a bind, a step-up, an enroll) take the session; the profile and
+ * preferences sections write without a step-up, so they take none. */
 function AccountPage({ session }: { readonly session: AuthSession }) {
   return (
     <div>
-      <ProfileSection session={session} />
+      <ProfileSection />
       <PasswordSection session={session} />
       <PhoneSection session={session} />
       <IdentifiersSection session={session} />
       <ContactVerificationSection session={session} />
-      <PreferencesSection session={session} />
+      <PreferencesSection />
       <SessionsSection />
       <SocialBindingsSection
         session={session}

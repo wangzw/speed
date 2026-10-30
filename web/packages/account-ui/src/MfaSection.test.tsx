@@ -85,6 +85,16 @@ function mount(
   return { rig, ...rendered }
 }
 
+/** The accessible name of a method's action while that method already has an
+ * active factor: the button says "Manage <method>" instead of "Add <method>". */
+const manageNameOf = (method: string): string =>
+  zhCN.mfa.manageAria.replace('{{method}}', method)
+
+/** The accessible name of a method's action while that method has no active
+ * factor: the visible action word leads, followed by the method. */
+const addNameOf = (method: string): string =>
+  zhCN.mfa.addAria.replace('{{method}}', method)
+
 describe('MfaSection', () => {
   it('renders the factors with their kind, label and status, and passes axe', async () => {
     const respond: RealResponder = (call: RealCall) => {
@@ -117,12 +127,15 @@ describe('MfaSection', () => {
     ).toBeGreaterThan(0)
     expect(screen.getByText(zhCN.mfa.factor.status.active)).toBeTruthy()
     expect(screen.getByText(zhCN.mfa.factor.status.pending)).toBeTruthy()
-    // Both enrollment entries are offered (the deployment reports both).
+    // Both enrollment entries are offered (the deployment reports both); the
+    // one whose method already has an active factor reads as its manager.
     expect(
-      await screen.findByRole('button', { name: zhCN.mfa.enroll.totp }),
+      await screen.findByRole('button', {
+        name: manageNameOf(zhCN.mfa.factor.kind.totp),
+      }),
     ).toBeTruthy()
     expect(
-      screen.getByRole('button', { name: zhCN.mfa.enroll.webauthn }),
+      screen.getByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.webauthn) }),
     ).toBeTruthy()
 
     await expectNoAxeViolations()
@@ -145,10 +158,10 @@ describe('MfaSection', () => {
 
     // The reported kind renders; the unreported one does not.
     expect(
-      await screen.findByRole('button', { name: zhCN.mfa.enroll.totp }),
+      await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
     ).toBeTruthy()
     expect(
-      screen.queryByRole('button', { name: zhCN.mfa.enroll.webauthn }),
+      screen.queryByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.webauthn) }),
     ).toBeNull()
   })
 
@@ -173,9 +186,12 @@ describe('MfaSection', () => {
     mount(respond)
 
     expect(await screen.findByText(zhCN.mfa.singleFactor)).toBeTruthy()
-    // The note points at entries that are actually on the page.
+    // The note points at entries that are actually on the page; the enabled
+    // method's own entry reads as its manager.
     expect(
-      screen.getByRole('button', { name: zhCN.mfa.enroll.totp }),
+      screen.getByRole('button', {
+        name: manageNameOf(zhCN.mfa.factor.kind.totp),
+      }),
     ).toBeTruthy()
   })
 
@@ -239,11 +255,7 @@ describe('MfaSection', () => {
     expect(screen.queryByText(zhCN.mfa.singleFactor)).toBeNull()
   })
 
-  it('renders the empty state without a list container when no factor is set up', async () => {
-    // A role="list" with no listitem child is an ARIA required-children
-    // violation (axe rates it critical): the empty state is plain text and
-    // renders outside any list, so the list container must not exist until
-    // there is a row to hold.
+  it('lists the reported methods before any factor is set up', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['totp']))
@@ -255,8 +267,11 @@ describe('MfaSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText(zhCN.mfa.empty)).toBeTruthy()
-    expect(screen.queryByRole('list')).toBeNull()
+    // The method is on the page ready to be set up; no "nothing set up"
+    // sentence competes with it.
+    expect(await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) })).toBeTruthy()
+    expect(screen.getByText(zhCN.mfa.state.off)).toBeTruthy()
+    expect(screen.queryByText(zhCN.mfa.empty)).toBeNull()
   })
 
   it('removes a factor behind the confirm and refetches', async () => {
@@ -292,8 +307,9 @@ describe('MfaSection', () => {
     )
 
     await waitFor(() =>
-      expect(screen.getByText(zhCN.mfa.empty)).toBeTruthy(),
+      expect(screen.getAllByText(zhCN.mfa.state.off)).toHaveLength(2),
     )
+    expect(screen.queryByText(zhCN.mfa.state.on)).toBeNull()
     // The removal confirms itself, naming the factor row removed -- its own
     // label, not just its kind.
     expect(zhCN.mfa.removed).toContain('{{factor}}')
@@ -628,7 +644,9 @@ describe('MfaSection', () => {
     )
 
     // The won step-up re-runs the removal exactly once, which now lands.
-    await waitFor(() => expect(screen.getByText(zhCN.mfa.empty)).toBeTruthy())
+    await waitFor(() =>
+      expect(screen.getAllByText(zhCN.mfa.state.off).length).toBeGreaterThan(0),
+    )
     expect(
       rig.calls.filter(
         (call) =>
@@ -791,7 +809,7 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
 
     await user.click(
-      await screen.findByRole('button', { name: zhCN.mfa.enroll.totp }),
+      await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
     )
 
     await waitFor(() => {
@@ -841,7 +859,7 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
 
     await user.click(
-      await screen.findByRole('button', { name: zhCN.mfa.enroll.totp }),
+      await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
     )
 
     // The enroll start names the factor kind.
@@ -1012,7 +1030,9 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
 
     await user.click(
-      await screen.findByRole('button', { name: zhCN.mfa.enroll.totp }),
+      await screen.findByRole('button', {
+        name: manageNameOf(zhCN.mfa.factor.kind.totp),
+      }),
     )
     await user.type(
       await screen.findByLabelText(zhCN.flowStep.codeLabel),
@@ -1079,7 +1099,7 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
 
     await user.click(
-      await screen.findByRole('button', { name: zhCN.mfa.enroll.totp }),
+      await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
     )
 
     expect(await screen.findByLabelText(zhCN.flowStep.codeLabel)).toBeVisible()
@@ -1148,7 +1168,7 @@ describe('MfaSection', () => {
     })
     try {
       await user.click(
-        await screen.findByRole('button', { name: zhCN.mfa.enroll.webauthn }),
+        await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.webauthn) }),
       )
       // The registration step drives navigator.credentials.create and
       // reports the credential under the enroll step, not a free-text field.
@@ -1204,11 +1224,9 @@ describe('MfaSection', () => {
     // The known kind renders its translated name; the unknown one gets the
     // generic label but is still offered.
     expect(
-      await screen.findByRole('button', { name: zhCN.mfa.enroll.sms }),
+      await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.sms) }),
     ).toBeTruthy()
-    const unknown = screen.getByRole('button', {
-      name: zhCN.mfa.enroll.other,
-    })
+    const unknown = screen.getByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.other) })
     expect(unknown).toBeTruthy()
 
     await user.click(unknown)

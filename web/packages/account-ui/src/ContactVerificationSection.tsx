@@ -23,14 +23,13 @@
  * with `{kind: 'email', value}`, which answers `pending` and the resend
  * interval; verification is POST /api/v1/auth/identifiers/verify with the code
  * alone (the address is the server's session-keyed record). A landed verify
- * refetches the profile (so `verification` flips to `verified`) and the
- * session list, because the route revokes the account's other sessions.
- * The verification also replaces this session's credential, so it runs
- * inside an identity-transition window (session.beginIdentityTransition):
- * a read that lands with the outgoing credential and answers anonymous is
- * discarded instead of ending the session, and the window closes once the
- * refetch that follows the write has settled. The send does not rotate the
- * credential and runs outside the window.
+ * refetches the profile so `verification` flips to `verified`. Registering a
+ * contact address sends a code without rotating this session's credential.
+ * Proving it neither rotates the credential nor revokes the account's other
+ * sessions and runs outside the identity-transition window; but when the
+ * proof makes the address the account's default contact or its only address,
+ * the server may answer a step-up refusal, and the verify step then arms the
+ * dialog with the same code and replays it once a challenge is won.
  *
  * The section never distinguishes a free address from one another account
  * holds while sending: the answer is the same shape, and no "already
@@ -47,20 +46,21 @@
  * lands with the form already open (`initialChangeOpen`, the
  * `?change=email` entry) never sends automatically, even after the form is
  * closed: that visitor arrived to replace the address, and a code for the
- * old one is not what they asked for. The automatic
- * send never arms the step-up gate -- a gate needs the visitor's own click --
- * so a 401 leaves the manual send action in place with an explanation, and
- * that click then takes the ordinary gated path. A 429 still starts the
- * resend countdown, and any other failure renders the failure banner.
+ * old one is not what they asked for. A 401 of the automatic send leaves the
+ * manual send action in place with an explanation; the visitor's click then
+ * retries the send like any other. A 429 still starts the resend countdown,
+ * and any other failure renders the failure banner.
  *
- * A 401 authn.insufficient_user_authentication arms the shared step-up gate
- * with the refused write remembered; a won challenge re-runs exactly that
- * write once. Other failures render through the family's one role="alert"
- * banner. A resend control is disabled for the interval the server asked for
- * (or the Retry-After a 429 carried) and states why, and the interval's timer
- * stops once it expires; the "code sent" notice is announced once through a
- * role="status" region that is mounted empty and filled on landing, and focus
- * moves to the code field.
+ * Registering a contact address asks for no fresh authentication, so a 401
+ * authn.insufficient_user_authentication of the send renders through the
+ * family's one role="alert" banner like any other failure instead of opening
+ * a step-up dialog. The verify may be refused when its proof changes how the
+ * account signs in, and then opens the dialog and replays the same code. A
+ * resend control is disabled
+ * for the interval the server asked for (or the Retry-After a 429 carried)
+ * and states why, and the interval's timer stops once it expires; the "code
+ * sent" notice is announced once through a role="status" region that is
+ * mounted empty and filled on landing, and focus moves to the code field.
  *
  * A resend addresses the same target the section displays (the address a send
  * in this mount landed on, else the profile's pending contact), so a resend
@@ -70,9 +70,9 @@
  * (`initialChangeOpen`), which is what the banner's change action asks for;
  * its verify action lands with the entry closed and the code step showing.
  *
- * The section takes the session and the two optional flags as its props -- the
- * step-up dialog drives the session -- while the reads and writes travel on the
- * shared access token through the generated calls.
+ * The section takes the session for the human-verification block and the
+ * step-up dialog the verify step can open, while the reads and writes travel
+ * on the shared access token through the generated calls.
  *
  * A send also presents the deployment's human-verification proof when its
  * gate requires one. The gate comes from the methods document (or from a
@@ -94,12 +94,11 @@ import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   getAuthnProfileGetQueryKey,
-  getAuthnSessionListQueryKey,
   useAuthnLoginAddIdentifier,
   useAuthnLoginVerifyIdentifier,
 } from '@speed/api-sdk'
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
-import { humanGateNeedsProof, stepUpReasonOf, useStepUpGate, useHumanVerification } from '@speed/auth-core'
+import { humanGateNeedsProof, stepUpReasonOf, useHumanVerification, useStepUpGate } from '@speed/auth-core'
 import {
   errorCodeOf,
   FORM_MAX_WIDTH,
@@ -109,7 +108,6 @@ import {
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
-import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
 import { retryAfterMsOf } from './internal/retry-after.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
@@ -120,7 +118,7 @@ import { WriteFeedbackRegion } from './internal/write-feedback.js'
 const RESEND_NOTE_ID = 'contact-verification-resend-note'
 
 export interface ContactVerificationSectionProps {
-  /** The session whose step-up flow the dialog drives. */
+  /** The session the human-verification proof is obtained for. */
   readonly session: AuthSession
   /** Whether the change-address entry starts open, so a host landing here
    * from a "change address" action reaches the form directly. Defaults to
@@ -131,9 +129,9 @@ export interface ContactVerificationSectionProps {
   /** Whether a pending account with a target address sends a code once when
    * the section mounts, so a verification landing opens with one already on
    * its way. Defaults to false; the account page turns it on only for a
-   * `?verify=1` landing and leaves an ordinary visit quiet. The automatic
-   * send never opens the step-up dialog: a refused send leaves the manual
-   * action and its explanation. */
+   * `?verify=1` landing and leaves an ordinary visit quiet. A refused
+   * automatic send leaves the manual action and its explanation, and opens
+   * no dialog. */
   readonly autoSend?: boolean
   /**
    * The human-verification gate the deployment reported, when the host
@@ -141,28 +139,13 @@ export interface ContactVerificationSectionProps {
    * methods document itself.
    */
   readonly humanGate?: AuthnHumanGate
-  /**
-   * The host's current path, sent as the step-up flow's `return_to`: a
-   * redirect method's round trip lands back on the page that started it, so
-   * that page reads the refusal. Omitted, the deployment's default return
-   * target applies.
-   */
-  readonly returnPath?: string
 }
-
-/** The write a step-up dialog is armed for, so a won challenge re-runs
- * exactly it: the send (which also carries a changed address) or the code's
- * verification. */
-type VerificationAction =
-  | { readonly step: 'send'; readonly email: string }
-  | { readonly step: 'verify'; readonly code: string }
 
 export function ContactVerificationSection({
   session,
   initialChangeOpen = false,
   autoSend = false,
   humanGate,
-  returnPath,
 }: ContactVerificationSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
@@ -212,9 +195,9 @@ export function ContactVerificationSection({
   // clock the note and the disabled state read.
   const [resendUntil, setResendUntil] = useState(0)
   const [now, setNow] = useState(() => Date.now())
-  // Whether the mount's automatic send was refused for step-up. The dialog
-  // is the visitor's to open, so the section states why it could not send
-  // and leaves the manual action in place.
+  // Whether the mount's automatic send was refused for step-up. The
+  // automatic send never opens the dialog the visitor did not ask for, so it
+  // states why it could not send and leaves the manual action in place.
   const [autoStepUp, setAutoStepUp] = useState(false)
   // The mount-local guards for the automatic send: one attempt per mount,
   // however many times a refetch re-renders the section, and no attempt at
@@ -225,6 +208,13 @@ export function ContactVerificationSection({
   const autoSent = useRef(false)
   const autoSendSuppressed = useRef(initialChangeOpen)
   const codeRef = useRef<HTMLInputElement>(null)
+  // The verify step's step-up gate: a proof that makes the address the
+  // account's default contact or its only address is refused until the
+  // session proves a fresh authentication, and a won challenge replays the
+  // same code.
+  const gate = useStepUpGate<string>((nextCode) => {
+    void verify(nextCode)
+  })
 
   // Disabled through the whole attempt, including the refetches that follow
   // the mutation, so no control changes context under a pending scope.
@@ -236,14 +226,6 @@ export function ContactVerificationSection({
   const verification = data?.verification
   const state = verification?.state ?? ''
   const targetEmail = verification?.email ?? ''
-
-  const gate = useStepUpGate<VerificationAction>((action) => {
-    if (action.step === 'send') {
-      void send(action.email)
-    } else {
-      void verify(action.code)
-    }
-  })
 
   // Tick the countdown only while one is running, and stop the timer at its
   // own expiry rather than leaving it ticking for the rest of the mount.
@@ -292,15 +274,10 @@ export function ContactVerificationSection({
   )
 
   /** Refetch what a landed write changes: the profile's verification state
-   * and identifiers, and the session list, because proving the address
-   * revokes the account's other sessions. */
+   * and identifiers. Proving the address neither rotates this session's
+   * credential nor revokes the account's other sessions. */
   async function invalidateAfterWrite(): Promise<void> {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: getAuthnProfileGetQueryKey() }),
-      queryClient.invalidateQueries({
-        queryKey: getAuthnSessionListQueryKey(),
-      }),
-    ])
+    await queryClient.invalidateQueries({ queryKey: getAuthnProfileGetQueryKey() })
   }
 
   function send(nextEmail: string, automatic = false): Promise<void> {
@@ -325,18 +302,12 @@ export function ContactVerificationSection({
         })
       } catch (error) {
         const failureCode = errorCodeOf(error)
-        const reason = stepUpReasonOf(failureCode)
-        if (reason !== null) {
-          // A step-up refusal precedes the proof check, so the proof is
-          // still valid for the re-run.
-          // A dialog the visitor did not ask for is not opened for them: the
-          // automatic attempt states what happened instead, and the next
-          // click on the send action takes the ordinary gated path.
-          if (automatic) {
-            setAutoStepUp(true)
-            return null
-          }
-          gate.arm({ step: 'send', email: address }, reason)
+        // The send registers a contact and is not a gated write: a step-up
+        // refusal renders its own code text rather than a dialog. The
+        // automatic attempt states what happened instead of opening one; the
+        // visitor's next click retries it like any other send.
+        if (automatic && stepUpReasonOf(failureCode) !== null) {
+          setAutoStepUp(true)
           return null
         }
         // Any other refusal reached the send's own checks, which spend the
@@ -377,28 +348,17 @@ export function ContactVerificationSection({
     return verifyFeedback.run(async () => {
       setVerifyFailureText(null)
       try {
-        // The verification writes the address with its proof and rotates
-        // this session's credential, so the window is open before the write
-        // and closes once the refetch that follows it has settled: a read
-        // still carrying the outgoing credential is discarded instead of
-        // ending the session.
-        await runIdentityTransition(
-          session,
-          () => verifyIdentifier.mutateAsync({ data: { code: nextCode } }),
-          async () => {
-            setCode('')
-            setSentTo(null)
-            setResendUntil(0)
-            await invalidateAfterWrite()
-          },
-        )
+        // Proving the address rotates nothing and revokes no other session,
+        // so it opens no window; the refetch alone flips `verification` to
+        // verified. A proof that changes how the account signs in may be
+        // refused for a step-up, which arms the gate with the same code.
+        await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+        setCode('')
+        setSentTo(null)
+        setResendUntil(0)
+        await invalidateAfterWrite()
       } catch (error) {
         const failureCode = errorCodeOf(error)
-        const reason = stepUpReasonOf(failureCode)
-        if (reason !== null) {
-          gate.arm({ step: 'verify', code: nextCode }, reason)
-          return null
-        }
         if (failureCode === 'authn.login_failed') {
           setCodeInvalid(true)
           setCode('')
@@ -410,6 +370,11 @@ export function ContactVerificationSection({
           failureCode === 'authn.email_taken'
         ) {
           setVerifyFailureText('verification.addressTaken')
+          return null
+        }
+        const reason = stepUpReasonOf(failureCode)
+        if (reason !== null) {
+          gate.arm(nextCode, reason)
           return null
         }
         throw error
@@ -764,7 +729,6 @@ export function ContactVerificationSection({
         session={session}
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
-        returnPath={returnPath}
       />
     </>
   )

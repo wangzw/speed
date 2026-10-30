@@ -5,12 +5,9 @@
  * What this suite pins: the stored display name renders into the field; a
  * save PATCHes a one-field body under `display_name`, fills the success
  * live region and refetches the profile; a refused save renders its code
- * text in the banner; a save refused with 401
- * authn.insufficient_user_authentication opens the step-up dialog, and a
- * won step-up re-runs that one save exactly once; a save refused with 401
- * authn.sso_required names the enterprise sign-in and offers only the
- * re-login exit; and a load that failed renders the error state with a retry
- * that refetches.
+ * text in the banner (the write needs no fresh authentication, so no
+ * step-up dialog opens); the inline mode writes on blur and on Enter; and a
+ * load that failed renders the error state with a retry that refetches.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -21,23 +18,23 @@ import { profileBody } from '../test-utils/fixtures.js'
 import {
   errorResponse,
   jsonResponse,
-  makeRealClientRig,
+  makeRealClientRigWithoutSession,
   type RealCall,
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
-import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { ProfileSection } from './ProfileSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
-const FLOW_START = '/api/v1/auth/flows/authenticated'
-const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
+/** Mounts the section over a session-free rig that plants the bearer the
+ * profile read and the PATCH ride: the section takes no session, so a raw
+ * refusal surfaces directly. */
 function mount(respond: RealResponder) {
-  const rig = makeRealClientRig(respond)
+  const rig = makeRealClientRigWithoutSession(respond)
   rig.store.set('access-1')
-  const rendered = renderWithProviders(<ProfileSection session={rig.session} />)
+  const rendered = renderWithProviders(<ProfileSection />)
   return { rig, ...rendered }
 }
 
@@ -203,123 +200,85 @@ describe('ProfileSection', () => {
     expect(save).toBeDisabled()
   })
 
-  it('gates a step_up_required save behind the dialog and re-runs it once', async () => {
-    const warn = captureRefreshWarning()
-    let elevated = false
+  it('writes the inline field on blur and on Enter, with no save button', async () => {
     let stored = 'Ada'
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ display_name: stored }))
       }
       if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
-        if (!elevated) {
-          return errorResponse(401, 'authn.insufficient_user_authentication')
-        }
         stored = (call.body as { display_name: string }).display_name
         return jsonResponse(200, {})
       }
-      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
-        return jsonResponse(200, {
-          factors: [
-            {
-              id: 'factor-1',
-              kind: 'totp',
-              label: 'App',
-              status: 'active',
-              created_at: '2026-01-01T00:00:00Z',
-            },
-          ],
-        })
-      }
-      if (call.method === 'POST' && call.path === FLOW_START) {
-        return jsonResponse(200, {
-          seq: 1,
-          state: 'second',
-          next: {
-            kind: 'factor',
-            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
-          },
-        })
-      }
-      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
-        const body = call.body as { seq: number }
-        if (body.seq === 1) {
-          return jsonResponse(200, {
-            seq: 2,
-            state: 'second',
-            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
-          })
-        }
-        elevated = true
-        return jsonResponse(200, {
-          state: 'elevated',
-          token_type: 'Bearer',
-          access_token: 'access-2',
-          expires_in: 3600,
-        })
-      }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    const { rig } = mount(respond)
+    const rig = makeRealClientRigWithoutSession(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<ProfileSection inline />)
     const user = userEvent.setup()
 
     const field = await screen.findByRole('textbox', {
       name: zhCN.profile.displayName.label,
     })
+    // The inline mode carries no submit button: the field commits itself.
+    expect(screen.queryByRole('button', { name: zhCN.profile.save })).toBeNull()
+
+    // A changed name lands when the field loses focus.
     await user.clear(field)
     await user.type(field, 'Grace')
-    await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
+    await user.tab()
+    await waitFor(() => expect(stored).toBe('Grace'))
+    const afterBlur = rig.calls.filter((call) => call.method === 'PATCH')
+    expect(afterBlur).toHaveLength(1)
+    expect(afterBlur[0]?.body).toEqual({ display_name: 'Grace' })
 
-    // The 401 opens the step-up dialog; winning it re-runs the save.
-    await screen.findByRole('button', { name: 'App' })
-    await user.click(screen.getByRole('button', { name: 'App' }))
-    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
-    await user.click(
-      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
-    )
+    // The refetch that follows the save settles before the next edit.
+    await waitFor(() => expect(field).toBeEnabled())
+    expect(field).toHaveValue('Grace')
 
-    await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(zhCN.profile.saved),
-    )
-    const patches = rig.calls.filter((call) => call.method === 'PATCH')
-    expect(patches).toHaveLength(2)
-    expect(patches[1]?.body).toEqual({ display_name: 'Grace' })
-    // The step-up shortfall's 401 is the expected refresh-failure diagnostic.
-    expect(warn).toHaveBeenCalledWith(
-      'access token refresh failed',
-      expect.objectContaining({
-        status: 401,
-        code: 'authn.insufficient_user_authentication',
-        trace_id: 'trace-1',
-      }),
-    )
-    // One shortfall, one refresh failure: a duplicated save would warn again.
-    expect(warn).toHaveBeenCalledTimes(1)
+    // Enter commits the next changed name through the form's submit.
+    await user.clear(field)
+    await user.type(field, 'Grace Hopper{Enter}')
+    await waitFor(() => expect(stored).toBe('Grace Hopper'))
+    const afterEnter = rig.calls.filter((call) => call.method === 'PATCH')
+    expect(afterEnter).toHaveLength(2)
+    expect(afterEnter[1]?.body).toEqual({ display_name: 'Grace Hopper' })
   })
 
-  it('shows the enterprise sign-in exit for a 401 authn.sso_required', async () => {
-    const warn = captureRefreshWarning()
-    let factorsRead = false
+  it('does not write the inline field on Enter when the value did not change', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ display_name: 'Ada' }))
+      }
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, {})
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRigWithoutSession(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<ProfileSection inline />)
+    const user = userEvent.setup()
+
+    const field = await screen.findByRole('textbox', {
+      name: zhCN.profile.displayName.label,
+    })
+    await user.click(field)
+    await user.keyboard('{Enter}')
+
+    // Enter on the account's own name is no write: no PATCH goes out and the
+    // region reports nothing, matching the non-inline button's disabled rule.
+    expect(rig.calls.filter((call) => call.method === 'PATCH')).toHaveLength(0)
+    expect(screen.getByRole('status').textContent).toBe('')
+  })
+
+  it('renders a 401 refusal in the feedback region without a step-up dialog', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileBody({ display_name: 'Ada' }))
       }
       if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
         return errorResponse(401, 'authn.sso_required')
-      }
-      if (call.path === '/api/v1/auth/factors') {
-        factorsRead = true
-        return jsonResponse(200, {
-          factors: [
-            {
-              id: 'factor-1',
-              kind: 'totp',
-              label: 'App',
-              status: 'active',
-              created_at: '2026-01-01T00:00:00Z',
-            },
-          ],
-        })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
@@ -333,22 +292,16 @@ describe('ProfileSection', () => {
     await user.type(field, 'Grace')
     await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
 
-    // A local factor cannot satisfy the SSO requirement: the dialog names the
-    // enterprise sign-in and offers the re-login exit, and it reads no factor.
-    expect(await screen.findByText(zhCN.mfa.stepUp.ssoRequired)).toBeInTheDocument()
+    // The write is not gated: the refusal's own text lands in the section's
+    // feedback region, and no dialog opens.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
+    const saveButton = screen.getByRole('button', { name: zhCN.profile.save })
     expect(
-      screen.getByRole('button', { name: zhCN.mfa.stepUp.relogin }),
-    ).toBeInTheDocument()
-    expect(screen.queryByText(zhCN.mfa.stepUp.description)).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
-    ).not.toBeInTheDocument()
-    expect(factorsRead).toBe(false)
-    // The SSO shortfall's 401 is the expected refresh-failure diagnostic.
-    expect(warn).toHaveBeenCalledWith(
-      'access token refresh failed',
-      expect.objectContaining({ status: 401, code: 'authn.sso_required' }),
-    )
+      saveButton.compareDocumentPosition(alert) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('renders the error state with a retry that refetches when the load fails', async () => {

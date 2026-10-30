@@ -19,12 +19,12 @@ generated read or write on the shared access token.
 
 | File | Export |
 |---|---|
-| `src/ProfileSection.tsx` | `ProfileSection`, `ProfileSectionProps` |
+| `src/ProfileSection.tsx` | `ProfileSection` |
 | `src/PasswordSection.tsx` | `PasswordSection`, `PasswordSectionProps` |
 | `src/PhoneSection.tsx` | `PhoneSection`, `PhoneSectionProps` |
 | `src/IdentifiersSection.tsx` | `IdentifiersSection`, `IdentifiersSectionProps` |
 | `src/ContactVerificationSection.tsx` | `ContactVerificationSection`, `ContactVerificationSectionProps` |
-| `src/PreferencesSection.tsx` | `PreferencesSection`, `PreferencesSectionProps` |
+| `src/PreferencesSection.tsx` | `PreferencesSection` |
 | `src/AppearanceSection.tsx` | `AppearanceSection`, `AppearanceSectionProps`, `ThemePresetChoice` |
 | `src/SessionsSection.tsx` | `SessionsSection` |
 | `src/SocialBindingsSection.tsx` | `SocialBindingsSection`, `SocialBindingsSectionProps` |
@@ -72,12 +72,12 @@ function AccountPage({ session, onAuthorizeUrl }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AppThemeProvider i18n={i18n}>
-        <ProfileSection session={session} />
+        <ProfileSection />
         <PasswordSection session={session} />
         <PhoneSection session={session} />
         <IdentifiersSection session={session} />
         <ContactVerificationSection session={session} />
-        <PreferencesSection session={session} />
+        <PreferencesSection />
         <SessionsSection />
         <SocialBindingsSection
           session={session}
@@ -103,18 +103,28 @@ this assembly end to end.
 
 ## The self-service write surfaces
 
-These sections cover the account's own self-service writes. Each drives a
-route that asks for a fresh authentication: an unelevated caller is
-answered 401 `authn.insufficient_user_authentication`, which arms the
-shared `useStepUpGate` from `@speed/auth-core` and opens `StepUpDialog`
-(driving a `purpose: 'step-up'` flow) with that request's inputs
-remembered; a won challenge re-runs exactly that request once. Each takes
-the session as its only required prop (the dialog drives it).
+These sections cover the account's own self-service writes. The writes that
+change how the account signs in or what it proves -- the password change, the
+username add, the two axis choices and the identifier removal -- drive a route
+that asks for a fresh authentication: an unelevated caller is answered 401
+`authn.insufficient_user_authentication`, which arms the shared
+`useStepUpGate` from `@speed/auth-core` and opens `StepUpDialog` (driving a
+`purpose: 'step-up'` flow) with that request's inputs remembered; a won
+challenge re-runs exactly that request once. `PasswordSection` and
+`IdentifiersSection` take the session for that dialog (`IdentifiersSection`
+also for the human-verification block its email send presents). Registering and proving
+a contact address (the phone send and verify, the email send and verify) asks
+for no fresh authentication of its own, so neither section drives the step-up
+dialog: `PhoneSection` and `ContactVerificationSection` take the session for
+the human-verification block their sends present, not for a step-up. A proof
+that would change what recovers or proves the account -- an email that becomes
+the default contact or the only address, a phone that replaces the active SMS
+factor's target -- is answered 401 `authn.insufficient_user_authentication` and
+rendered as a failure. The profile write does not ask for a
+fresh authentication either (REQ-account-058), so `ProfileSection` takes no
+session.
 
 ```tsx
-interface ProfileSectionProps {
-  readonly session: AuthSession
-}
 interface PasswordSectionProps {
   readonly session: AuthSession
   readonly withoutLoginName?: 'form' | 'explain'
@@ -128,6 +138,10 @@ interface IdentifiersSectionProps {
   readonly emailAvailable?: boolean
   readonly offerUsername?: boolean
   readonly humanGate?: AuthnHumanGate // a gate the host already read
+  readonly returnPath?: string // the step-up round trip's return target
+  readonly axis?: 'both' | 'signIn' | 'contact' // which axis this occurrence manages
+  readonly showAddButton?: boolean // false leaves the add entry to the host
+  readonly openAddSignal?: number // incremented by the host to open the add form
 }
 interface ContactVerificationSectionProps {
   readonly session: AuthSession
@@ -151,7 +165,15 @@ name, lets the field track that value until the user edits it, and
 PATCHes a one-field body from the save button, which is disabled while
 the field still holds the account's own name (a save with nothing changed
 would be a no-op PATCH). A successful save fills a `role="status"` notice
-and refetches the profile.
+and refetches the profile. The write needs no fresh authentication, so a
+refusal renders its code text in that notice's region and no step-up
+dialog opens.
+
+```tsx
+interface ProfileSectionProps {
+  readonly inline?: boolean // commit on blur and Enter, no save button
+}
+```
 
 ### PasswordSection
 
@@ -191,17 +213,24 @@ into E.164 for the send and validated per country before any request --
 the same control and rules the SMS sign-in form uses, so the two cannot
 drift. The sent notice names the assembled number; the verify carries the code
 alone, because the number is the server's own record keyed to the session.
-A verified number refetches the profile (and the session list, since the
-route revokes the account's other sessions) and reports the addition.
+A verified number refetches the profile and reports the addition; the write
+rotates no credential and revokes no other session.
 
 ### IdentifiersSection
 
-Lists the account's sign-in identifiers -- read off the profile's
-`identifiers` field (`GET /api/v1/auth/me`), because the spec ships no dedicated
-list route -- each with its kind (email, phone or username). A username is a
-login name with no ownership to prove, so its row shows no ownership state;
-email and phone rows carry a two-value chip read off `proven`: true shows
-Verified, false shows Not verified. The chip answers only whether ownership has
+Lists the account's identifiers -- read off the profile's `identifiers` field
+(`GET /api/v1/auth/me`), because the spec ships no dedicated list route --
+grouped the way the design gives them: the sign-in ways, the contact addresses,
+and the ones used as neither. Which of the two axes a row is on is its own
+fact, shown and changed on the row: an email or phone row carries a
+contact switch, a sign-in switch (offered once ownership is proved) and, on a
+proved email, the default-contact choice. A username is a login name with no
+ownership to prove, so its row shows no ownership state and no axis controls.
+The `axis` prop narrows an occurrence to one axis ('signIn' or 'contact') so a
+host can split the two across two panes, and `showAddButton`/`openAddSignal`
+let the host own the add entry. An email or phone row carries a two-value
+ownership chip read off `proven`: true shows Verified, false shows Not
+verified. The chip answers only whether ownership has
 been proved, so `verified_via` does not change the answer -- an address an
 administrator asserted or an import recorded is an unproved address, not a
 third state. `verified_at` cannot answer the ownership question -- every stored
@@ -247,13 +276,14 @@ code is submitted through `POST /api/v1/auth/identifiers/verify`; only the
 matching code writes the address. Closing the add face clears the failure
 banner, the field error, the success notice and the sent-code step.
 The email branch is unavailable on a deployment with no email channel (a
-503 `unavailable`). Every write -- add, verify and remove -- asks for fresh
-authentication: a 401 `authn.insufficient_user_authentication` opens the
+503 `unavailable`). A username add and a removal ask for fresh
+authentication -- a 401 `authn.insufficient_user_authentication` opens the
 step-up dialog with the write remembered, and a won challenge re-runs that
-one write. A write that lands -- a username add, an email's verification or a
-removal, not the code-send step, which writes nothing -- refetches the
-profile and the session list, because these routes revoke the account's
-other sessions.
+one write. Registering and proving an email address does not: the send and the
+code's verification neither replace the session's credential nor revoke the
+account's other sessions. A username add or a removal refetches the profile and
+the session list, because those routes revoke the account's other sessions; an
+email's verification refetches the profile alone.
 
 `emailAvailable` says whether the add surface offers the email kind (the
 host passes the deployment's `authn.identifiers.email` feature, optionally
@@ -280,8 +310,8 @@ The self-registration contact's verification state, read from
 Sending (and changing the target) is `POST /api/v1/auth/identifiers` with
 `{kind: 'email', value}`; verification is
 `POST /api/v1/auth/identifiers/verify` with the code alone. A landed verify
-refetches the profile (so `verification` flips to `verified`) and the session
-list, because the route revokes the account's other sessions.
+refetches the profile, so `verification` flips to `verified`; it leaves the
+session list alone, because the route revokes no session.
 
 The send answer is the same shape whether or not another account holds the
 address, and the section has no "already registered" copy. A conflict renders
@@ -293,8 +323,12 @@ profile's pending contact), is disabled for the server's `resend_after` (or a
 429's `Retry-After`) and states the remaining seconds, and its countdown timer
 stops at expiry. The sent notice is announced once through a `role="status"`
 region mounted empty and filled on landing, and focus moves to the code
-field. A 401 `authn.insufficient_user_authentication` arms the shared step-up
-gate, and a won challenge re-runs exactly that write once.
+field. These writes drive no step-up dialog: a refusal renders as the step's own
+failure text -- the automatic send with the `verification.autoStepUp`
+explanation -- rather than opening a dialog. A verify that would change what
+recovers or proves the account -- an email that becomes the default contact or
+the only address -- is answered 401 `authn.insufficient_user_authentication` and
+renders the same way, as a failure.
 
 `initialChangeOpen` starts the section in the change-address form instead of
 the code step; a host whose persistent notice offers "change address" beside
@@ -349,20 +383,9 @@ one-field body.
 
 Both writes are immediate and PATCH-first: a refusal leaves the controls
 on the stored values and renders a two-line failure alert (the save line
-plus the resolved code text).
-
-The optional `session` prop arms the shared step-up gate: when given, a
-401 `authn.insufficient_user_authentication` opens `StepUpDialog` and a
-won challenge replays exactly that refused write once. Without the prop
-the same refusal renders the failure banner; the host can elevate through
-another section on the page (elevation applies to the whole session) or
-sign in again.
-
-```tsx
-interface PreferencesSectionProps {
-  readonly session?: AuthSession
-}
-```
+plus the resolved code text). The write needs no fresh authentication
+(REQ-account-058), so the section takes no session and opens no step-up
+dialog.
 
 ## AppearanceSection
 
@@ -383,6 +406,7 @@ interface AppearanceSectionProps {
   readonly presets: readonly ThemePresetChoice[]
   readonly value: string
   readonly onChange: (id: string) => void
+  readonly hideLabel?: boolean // the host names the control, e.g. with a row title
 }
 ```
 

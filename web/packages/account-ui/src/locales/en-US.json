@@ -44,12 +44,6 @@
     "pageIndicator": "Page {{page}} of {{total}}",
     "loading": "Loading sessions",
     "current": "Current session",
-    "kind": {
-      "browser": "Browser",
-      "token": "App",
-      "service": "Service",
-      "other": "Other"
-    },
     "deviceUnknown": "Unknown device",
     "revokeAriaWithDevice": "Sign out this session: {{device}}",
     "revokedOne": "Signed out this session: {{device}}.",
@@ -72,7 +66,13 @@
       "title": "Could not load sessions",
       "description": "Something went wrong while loading your sessions. Please try again."
     },
-    "retry": "Retry"
+    "retry": "Retry",
+    "table": {
+      "device": "Device",
+      "address": "Address",
+      "activity": "Last active",
+      "action": "Action"
+    }
   },
   "bindings": {
     "title": "Linked social accounts",
@@ -103,7 +103,14 @@
       "title": "Could not load linked accounts",
       "description": "Something went wrong while loading your linked accounts. Please try again."
     },
-    "retry": "Retry"
+    "retry": "Retry",
+    "bind": "Bind",
+    "status": {
+      "bound": "Linked",
+      "unbound": "Not linked"
+    },
+    "description": "Sign in with this account.",
+    "bindAriaWithProvider": "Bind {{provider}}"
   },
   "bindingCallback": {
     "pending": "Completing the link…",
@@ -119,6 +126,8 @@
     "loading": "Loading two-step verification",
     "empty": "No two-step verification method is set up yet.",
     "singleFactor": "Only one two-step verification method is enabled. Add another one below so you can still sign in if you lose this one.",
+    "manageAria": "Manage {{method}}",
+    "addAria": "Add {{method}}",
     "remove": "Remove",
     "removeAria": "Remove this two-step verification method: {{factor}}",
     "removed": "{{factor}} removed.",
@@ -170,7 +179,21 @@
       "title": "Could not load two-step verification",
       "description": "Something went wrong while loading your two-step verification methods. Please try again."
     },
-    "retry": "Retry"
+    "retry": "Retry",
+    "state": {
+      "on": "On",
+      "off": "Off"
+    },
+    "action": {
+      "setup": "Set up",
+      "add": "Add",
+      "manage": "Manage"
+    },
+    "method": {
+      "totp": "Use an authenticator app to get a six-digit code when asked.",
+      "webauthn": "Confirm with a fingerprint, face or security key; the strongest second step.",
+      "sms": "Receive a one-time code by SMS. SMS can be intercepted; prefer a passkey or an authenticator app."
+    }
   },
   "flowStep": {
     "redirectNotice": "Continue in the window that opens to finish this step.",
@@ -281,7 +304,8 @@
     },
     "verify": "Verify",
     "added": "Phone number {{phone}} has been added.",
-    "cancel": "Use a different number"
+    "cancel": "Use a different number",
+    "close": "Cancel"
   },
   "verification": {
     "title": "Verify your email address",
@@ -331,7 +355,9 @@
       "contact": "Contacts",
       "contactEmpty": "No contact addresses yet.",
       "neither": "Not used for sign-in or contact",
-      "neitherEmpty": "No address or number is unused."
+      "neitherEmpty": "No address or number is unused.",
+      "notContact": "Not used as a contact",
+      "notContactEmpty": "No address or number is a contact."
     },
     "axes": {
       "contact": "Contact",
@@ -392,16 +418,27 @@
       "verify": "Verify",
       "change": "Use a different value",
       "added": "The identifier has been added."
-    }
-  },
-  "contacts": {
-    "title": "Contacts",
-    "loading": "Loading contacts",
-    "none": "Not added yet",
-    "error": {
-      "title": "Could not load contacts",
-      "description": "Something went wrong while loading your contacts. Please try again."
     },
-    "retry": "Retry"
+    "loginEmail": {
+      "label": "Sign-in email",
+      "none": "Not used to sign in"
+    },
+    "action": {
+      "enable": "Enable",
+      "disable": "Disable"
+    },
+    "usage": {
+      "username": "Sign in with this username.",
+      "email": "Sign in with this email address.",
+      "phone": "Sign in with this phone number.",
+      "phoneNone": "No phone number signs in.",
+      "emailNone": "No email address is chosen to sign in.",
+      "usernameNone": "No username is set.",
+      "loginAs": "Sign in with the {{kind}} {{value}}."
+    },
+    "actionsAria": "Actions for {{value}}",
+    "addEmail": {
+      "title": "Add an email address"
+    }
   }
 }

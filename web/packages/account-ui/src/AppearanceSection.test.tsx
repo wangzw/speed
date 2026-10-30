@@ -77,6 +77,27 @@ describe('AppearanceSection', () => {
     await expectNoAxeViolations()
   })
 
+  it('drops the visible label under hideLabel while the control keeps its accessible name', () => {
+    renderWithProviders(
+      <AppearanceSection
+        presets={presets}
+        value="glass"
+        onChange={() => {}}
+        hideLabel
+      />,
+    )
+
+    // The host names the control with its own row title, so the section
+    // renders no visible label of its own...
+    expect(screen.queryByText(zhCN.appearance.theme.label)).toBeNull()
+    // ...but the control is still named and still shows the current choice.
+    const select = presetSelect()
+    expect(select).toHaveTextContent('Glass')
+    expect(
+      screen.getByRole('heading', { name: zhCN.appearance.title }),
+    ).toBeTruthy()
+  })
+
   it('reports the chosen preset id through onChange and holds no selection of its own', () => {
     const onChange = vi.fn()
     renderWithProviders(
