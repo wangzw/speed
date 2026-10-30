@@ -53,7 +53,7 @@ import Typography from '@mui/material/Typography'
 import type { NotificationMessage } from '@speed/api-sdk'
 import {
   ListSkeleton,
-  PageHeader,
+  PageLayout,
   SectionCard,
   WriteFeedbackRegion,
   useDisplayTimeZone,
@@ -335,16 +335,11 @@ export function NotificationInbox({
       {surfaceContent}
     </SectionCard>
   ) : (
-    <>
-      <PageHeader
-        title={t('inbox.title')}
-        actions={markAllAction}
-        sx={{ mb: 2 }}
-      />
+    <PageLayout title={t('inbox.title')} actions={markAllAction}>
       {/* The page header owns the h1, so the list's card carries no second
           heading of its own; the list is named by its aria-label. */}
       <SectionCard>{surfaceContent}</SectionCard>
-    </>
+    </PageLayout>
   )
 }
 

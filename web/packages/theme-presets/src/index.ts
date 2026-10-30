@@ -246,8 +246,10 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
     // gradient. The translucency that makes the glass read lives on the
     // raised surfaces below, over each mode's own paper tone.
     container: {
-      opacity: 0.4,
-      borderColor: 'rgba(15, 23, 42, 0.22)',
+      // Opaque enough that the panel separates from the pastel canvas; at
+      // 0.4 the light mode's card and page nearly met.
+      opacity: 0.5,
+      borderColor: 'rgba(15, 23, 42, 0.30)',
       borderColorDark: 'rgba(255, 255, 255, 0.55)',
       borderWidth: 1,
       backdropFilter: 'blur(22px) saturate(180%)',

@@ -39,10 +39,8 @@ export function WriteFeedbackRegion({
   resolve,
   sx,
 }: WriteFeedbackRegionProps) {
-  const successMessage =
-    outcome !== null && outcome.kind === 'success' ? outcome.message : null
-  const failureCode =
-    outcome !== null && outcome.kind === 'failure' ? outcome.code : null
+  const successMessage = outcome?.kind === 'success' ? outcome.message : null
+  const failureCode = outcome?.kind === 'failure' ? outcome.code : null
   return (
     <Box
       sx={[

@@ -3,8 +3,8 @@
 The platform's first DOM-rendering package: the theme factory that turns
 `@speed/tokens` into an MUI v9 theme (`createAppTheme`,
 `AppThemeProvider`; the theme also carries the coarse-pointer 44x44
-floor for MUI's base controls), and the controlled components (`PageHeader`,
-`EmptyState`, `ConfirmDialog`, `SidePanel`, `FileUploader`, `FormField`,
+floor for MUI's base controls), and the controlled components (`PageLayout`,
+`PageHeader`, `EmptyState`, `ConfirmDialog`, `SidePanel`, `FileUploader`, `FormField`,
 `FormLayout`, `DataTable`, `InlineError`, `InlineSuccess`,
 `WriteFeedbackRegion`, `ListSkeleton`, `AsyncSection`,
 `HumanVerification`) that render only
@@ -36,6 +36,7 @@ string lives in the bilingual `ui-kit` namespace registered through
 |---|---|
 | `theme/createAppTheme.ts` | `createAppTheme`, `AppTheme`, `AppThemeMode` |
 | `theme/AppThemeProvider.tsx` | `AppThemeProvider`, `AppThemeProviderProps`, `useAppThemeMode`, `AppThemeModeControl` |
+| `components/PageLayout.tsx` | `PageLayout`, `PageLayoutProps` |
 | `components/PageHeader.tsx` | `PageHeader`, `PageHeaderProps`, `PageHeaderBreadcrumb` |
 | `components/EmptyState.tsx` | `EmptyState`, `EmptyStateProps`, `EmptyStateVariant`, `EmptyStateHeadingLevel`, `EmptyStateNoHeading` |
 | `components/ConfirmDialog.tsx` | `ConfirmDialog`, `ConfirmDialogProps`, `ConfirmDialogVariant`, `CONFIRM_ARM_LOCKOUT_MS` |
@@ -427,6 +428,23 @@ interaction-local detail anywhere in the family is ConfirmDialog's
 double-confirm arming (interaction state that resets whenever the
 dialog closes); nothing else is local, and no component fetches or
 keeps business state.
+
+### PageLayout
+
+The page frame a routed page renders its content in: a `PageHeader` (title,
+description, breadcrumbs, actions) followed by the page content at one theme
+spacing step, inside an inline-size containment context so the page's own
+responsive rules resolve against the width it actually gets -- the shell's
+navigation open or collapsed, a narrow panel -- rather than the viewport.
+
+The frame owns the page's vertical rhythm and its containment, and nothing
+else. It takes the width the host's shell gives it and never caps its own
+width: the shell owns the outer padding and any measure, so two pages of one
+product sit on the same rails and widen together when the navigation
+collapses. A page with nothing but a header passes no children. Props:
+`title` (ReactNode, required), `description?`, `breadcrumbs?`, `actions?`,
+`children?`, `sx?` (a page-specific exception, not the place to restate the
+frame's own rules).
 
 ### PageHeader
 

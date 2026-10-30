@@ -3,7 +3,7 @@
  *
  * Two kinds of things ship here: the theme factory (createAppTheme,
  * AppThemeProvider) that turns @speed/tokens into a MUI v9 theme, and the
- * fully controlled components (PageHeader, SectionCard, EmptyState,
+ * fully controlled components (PageLayout, PageHeader, SectionCard, EmptyState,
  * ConfirmDialog, SidePanel, FormField, FormLayout, PhoneNumberField,
  * DataTable, FileUploader, InlineError, InlineSuccess,
  * WriteFeedbackRegion, ListSkeleton, AsyncSection, HumanVerification) with
@@ -28,7 +28,10 @@
  * hand-off pair (CopyButton + OneTimeValuePanel) covers a value handed
  * out once; the two display contexts (DisplayTimeZoneProvider,
  * PhoneCountryDefaultProvider) carry a host preference read by surfaces
- * that fall back to their own defaults when it is absent.
+ * that fall back to their own defaults when it is absent; and
+ * SectionSurfaceProvider tells the sections below it whether the
+ * enclosing surface already supplies the card, so a nested section can
+ * contribute its content alone.
  * Everything else stays internal: helpers shared between components live
  * in src/internal/ and are deliberately not exported.
  */
@@ -53,9 +56,17 @@ export {
   type PageHeaderProps,
 } from './components/PageHeader.js'
 export {
+  PageLayout,
+  type PageLayoutProps,
+} from './components/PageLayout.js'
+export {
   SectionCard,
+  SectionSurfaceContext,
+  SectionSurfaceProvider,
   type SectionCardHeadingLevel,
   type SectionCardProps,
+  type SectionSurface,
+  type SectionSurfaceProviderProps,
 } from './components/SectionCard.js'
 export {
   EmptyState,

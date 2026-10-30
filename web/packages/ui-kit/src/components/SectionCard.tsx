@@ -30,14 +30,58 @@
  * The content area is padded at the theme's spacing scale so ordinary
  * section content breathes. `flushContent` removes that padding for a
  * table that must reach the card's edges; the surface itself stays.
+ *
+ * A section nested inside another surface (a row's expanded body inside
+ * the pane that already holds a card) would otherwise stack a second card
+ * and a second heading inside the first. A host marks that region with
+ * `SectionSurfaceProvider value="plain"`: under it `SectionCard`
+ * contributes no card, no heading element, no description and no content
+ * padding -- it keeps the section's trailing actions above its children.
+ * The wrapper stays a `<section>` element: a plain string title still names
+ * it (`aria-label`), so a page assembled from block cards keeps every
+ * section's landmark, and `sx` and `className` still reach it. Without a
+ * provider, or with `value="card"`, the component renders exactly the card
+ * surface described above.
  */
 
-import { forwardRef, useId } from 'react'
+import { createContext, forwardRef, useContext, useId } from 'react'
 import type { ReactNode, Ref } from 'react'
 import type { SxProps, Theme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
+
+/**
+ * What a `SectionCard` contributes to the surface it renders in: its own
+ * card and heading (`'card'`), or content alone (`'plain'`).
+ */
+export type SectionSurface = 'card' | 'plain'
+
+/** The surface a `SectionCard` renders in; `'card'` when no provider says otherwise. */
+export const SectionSurfaceContext = createContext<SectionSurface>('card')
+
+export type SectionSurfaceProviderProps = {
+  /** The surface the sections below it render in; defaults to `'card'`. */
+  readonly value?: SectionSurface
+  readonly children?: ReactNode
+}
+
+/** Marks the region its children render in as contributing its own surface. */
+export function SectionSurfaceProvider({
+  value = 'card',
+  children,
+}: SectionSurfaceProviderProps) {
+  return (
+    <SectionSurfaceContext.Provider value={value}>
+      {children}
+    </SectionSurfaceContext.Provider>
+  )
+}
+
+/** The surface the enclosing provider declares. */
+function useSectionSurface(): SectionSurface {
+  return useContext(SectionSurfaceContext)
+}
 
 /** The semantic heading element a section title can render as. */
 export type SectionCardHeadingLevel = 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
@@ -46,18 +90,29 @@ export type SectionCardProps = {
   /**
    * The section title. Given, it renders as a real heading element (the
    * level `headingLevel` names) and becomes the section's accessible name;
-   * omitted or `null`, no heading block renders at all.
+   * omitted or `null`, no heading block renders at all. A plain surface
+   * renders no heading element; a string title still names the section.
    */
   readonly title?: ReactNode
-  /** Optional supporting paragraph under the title. */
+  /**
+   * Optional supporting paragraph under the title; a plain surface renders
+   * nothing for it.
+   */
   readonly description?: ReactNode
-  /** Optional trailing actions (buttons, menus) aligned with the title. */
+  /**
+   * Optional trailing actions (buttons, menus) aligned with the title; a
+   * plain surface keeps them above the content.
+   */
   readonly actions?: ReactNode
-  /** The semantic level of the title; defaults to 'h2'. */
+  /**
+   * The semantic level of the title; defaults to 'h2'. It has no effect on
+   * a plain surface, which renders no heading.
+   */
   readonly headingLevel?: SectionCardHeadingLevel
   /**
    * Removes the content area's padding so a table can sit edge to edge
-   * inside the surface; defaults to false.
+   * inside the surface; defaults to false. A plain surface adds no content
+   * padding of its own, so the flag has no effect there.
    */
   readonly flushContent?: boolean
   /** The section's content. */
@@ -81,8 +136,35 @@ function SectionCardInner(
   }: SectionCardProps,
   ref: Ref<HTMLElement>,
 ) {
+  const surface = useSectionSurface()
   const titleId = useId()
   const hasTitle = title !== undefined && title !== null
+
+  if (surface === 'plain') {
+    // A plain surface drops the card and its heading, not the section's name:
+    // a string title still names the section for a screen reader, so a page
+    // built from block cards keeps each section's landmark.
+    const plainName =
+      typeof title === 'string' && title !== '' ? title : undefined
+    return (
+      <Box
+        ref={ref}
+        component="section"
+        className={className}
+        aria-label={plainName}
+        sx={sx}
+      >
+        {/* A section's trailing actions stay reachable on a plain surface:
+            the host drops the card, not the section's own controls. */}
+        {actions !== undefined && actions !== null && (
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+            {actions}
+          </Box>
+        )}
+        {children}
+      </Box>
+    )
+  }
 
   return (
     <Card
@@ -136,6 +218,7 @@ function SectionCardInner(
 /**
  * The titled section surface: an outlined card rendered as a `<section>`
  * whose heading, description and actions sit above an optionally padded
- * content area.
+ * content area, or -- under a plain surface -- its trailing actions and
+ * content, with no card, no heading and no description.
  */
 export const SectionCard = forwardRef(SectionCardInner)

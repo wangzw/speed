@@ -9,7 +9,8 @@ coarse-pointer 44px floor for the base controls, `AppThemeProvider`
 `AppThemeMode` -- `'light'`/`'dark'` -- is read and flipped through
 `useAppThemeMode`, the dark surface reading the neutral ramp from its dark
 end), and the controlled
-components (`PageHeader`, `EmptyState`, `ConfirmDialog`, `SidePanel`,
+components (`PageLayout`, `PageHeader`, `SectionCard`, `EmptyState`,
+`ConfirmDialog`, `SidePanel`,
 `FormField`, `FormLayout`, `PhoneNumberField`, `DataTable`,
 `FileUploader`, `InlineError`, `InlineSuccess`, `WriteFeedbackRegion`,
 `ListSkeleton`, `AsyncSection`, `HumanVerification`)

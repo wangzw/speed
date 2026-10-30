@@ -4,7 +4,10 @@
  * (h2 by default) and names the section through `aria-labelledby`, an
  * untitled card renders no heading block and no accessible name, the
  * content area is padded unless `flushContent` removes it, and `sx`
- * reaches the card root.
+ * reaches the card root. A plain surface renders the content without a
+ * card, a heading, a description or an accessible name, keeping the
+ * section's trailing actions above the children, and a plain provider
+ * nested inside a card leaves that outer card's own surface intact.
  */
 
 import { createRef } from 'react'
@@ -12,7 +15,7 @@ import { describe, expect, it } from 'vitest'
 import { cardClasses } from '@mui/material/Card'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
-import { SectionCard } from './SectionCard.js'
+import { SectionCard, SectionSurfaceProvider } from './SectionCard.js'
 
 describe('SectionCard', () => {
   it('renders the title as an h2 heading and names the section with it', () => {
@@ -108,6 +111,59 @@ describe('SectionCard', () => {
     expect(section).toBe(ref.current)
     expect(section).toHaveClass('host-card')
     expect(section).toHaveStyle({ marginTop: '32px' })
+  })
+
+  it('keeps the card surface, the heading and the region without a provider', () => {
+    const { container, getByRole } = renderWithProviders(
+      <SectionCard title="Billing">Content</SectionCard>,
+    )
+    const section = container.querySelector('section')
+    expect(section).toHaveClass(cardClasses.root)
+    const heading = getByRole('heading', { level: 2 })
+    expect(heading).toHaveTextContent('Billing')
+    expect(getByRole('region', { name: 'Billing' })).toBe(section)
+  })
+
+  it('renders the actions and the children but drops the description and the heading on a plain surface', () => {
+    const { container, getByText, getByRole, queryByRole, queryByText } = renderWithProviders(
+      <SectionSurfaceProvider value="plain">
+        <SectionCard
+          title="Billing"
+          description="How this workspace pays."
+          actions={<button type="button">Invite</button>}
+        >
+          Content
+        </SectionCard>
+      </SectionSurfaceProvider>,
+    )
+    const section = container.querySelector('section')
+    expect(section).not.toBeNull()
+    expect(section).not.toHaveClass(cardClasses.root)
+    expect(section).not.toHaveAttribute('aria-labelledby')
+    expect(queryByRole('heading')).not.toBeInTheDocument()
+    // The card and its heading element go; the section keeps its name, so a
+    // page built from block cards still announces each section.
+    expect(getByRole('region', { name: 'Billing' })).toBe(section)
+    expect(getByRole('button', { name: 'Invite' })).toBeInTheDocument()
+    expect(queryByText('How this workspace pays.')).not.toBeInTheDocument()
+    expect(getByText('Content')).toBeInTheDocument()
+    expect(section).toContainElement(getByText('Content'))
+  })
+
+  it('leaves a card outside a nested plain provider with its own surface', () => {
+    const { container, getByRole, getByText, queryByRole } = renderWithProviders(
+      <SectionSurfaceProvider value="card">
+        <SectionCard title="Outer">
+          <SectionSurfaceProvider value="plain">
+            <SectionCard title="Inner">Inner content</SectionCard>
+          </SectionSurfaceProvider>
+        </SectionCard>
+      </SectionSurfaceProvider>,
+    )
+    expect(container.querySelectorAll(`.${cardClasses.root}`)).toHaveLength(1)
+    expect(getByRole('region', { name: 'Outer' })).toBeInTheDocument()
+    expect(queryByRole('heading', { name: 'Inner' })).not.toBeInTheDocument()
+    expect(getByText('Inner content')).toBeInTheDocument()
   })
 
   it('passes axe over a titled card', async () => {
