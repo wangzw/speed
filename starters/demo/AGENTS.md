@@ -194,7 +194,7 @@ deployment carries neither the route nor the control.
 
 The walkthrough is: register a username, email and password; sign in with the
 password through the ordinary flow; add the email under the account's own
-identifiers; read the code from the `review mail:` line; submit it to
+identifiers; read the code from the `log mail:` line; submit it to
 `POST /api/v1/auth/identifiers/verify`; watch `/api/v1/auth/me` report
 `verification.state = verified`; then call the personal ensure. Registration
 itself sends no mail, and `sms.log` verifies a phone the same way without
@@ -351,7 +351,7 @@ fixture and not a credential, and it is written through the TOTP module's
 encrypted register. Wait out the one-minute freshness window, open the console's
 impersonation page, pick the `acme` tenant and the `member` target, and submit.
 The start is refused for freshness and opens the step-up; complete it with the
-SMS code from the `review sms:` log line, and the start is replayed. The step-up
+SMS code from the `log sms:` log line, and the start is replayed. The step-up
 offers SMS because the session already proved TOTP; that is the branch this
 fixture exists to make reachable.
 

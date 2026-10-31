@@ -121,7 +121,7 @@ func reviewVerdictHandler(carrier smslog.Reviewer) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		log.Default().Info("review sms: a template review verdict was set",
+		log.Default().Info("log sms: a template review verdict was set",
 			"code", in.Code, "state", in.State)
 		c.Status(http.StatusNoContent)
 	}
