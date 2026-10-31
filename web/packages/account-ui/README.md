@@ -223,10 +223,17 @@ Lists the account's identifiers -- read off the profile's `identifiers` field
 grouped the way the design gives them: the sign-in ways and the contact
 addresses. Every registered email address and phone number is a contact
 address, and being one is not a choice; the sign-in way is a separate choice.
-An email or phone row carries a sign-in switch (offered once ownership is
-proved) and, on a proved email, the default-contact choice -- there is no
-contact switch. A username is a login name with no ownership to prove, so its
-row shows no ownership state and no per-row choice. The `axis` prop narrows an
+Whether an email or phone signs in is a group decision: the sign-in ways list
+is grouped by kind and each group carries one control -- the username group's
+static statement, the email group's toggle plus a picker of the proved
+addresses (an off note takes the picker's place while it is off), and the
+phone group's toggle of its representative row. The contacts list carries no
+sign-in control; a proved email there still offers the default-contact
+choice. A username is a login name with no ownership to prove, so its
+row shows no ownership state and no per-row choice. A proved phone that does
+not sign in has its group say so ("This phone number is not used to sign
+in.") instead of naming it as a sign-in way, so the sentence and the enable
+action agree. The `axis` prop narrows an
 occurrence to one grouping ('signIn' or 'contact') so a host can split the two
 across two panes, and `showAddButton`/`openAddSignal` let the host own the add
 entry. An email or phone row carries a two-value

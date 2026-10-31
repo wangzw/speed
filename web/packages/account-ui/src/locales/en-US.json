@@ -429,6 +429,7 @@
       "email": "Sign in with this email address.",
       "phone": "Sign in with this phone number.",
       "phoneNone": "No phone number signs in.",
+      "phoneNotSignIn": "This phone number is not used to sign in.",
       "emailNone": "No email address is chosen to sign in.",
       "usernameNone": "No username is set.",
       "loginAs": "Sign in with the {{kind}} {{value}}."

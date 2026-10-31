@@ -429,6 +429,7 @@
       "email": "使用该邮箱登录。",
       "phone": "使用该手机号登录。",
       "phoneNone": "暂无用于登录的手机号。",
+      "phoneNotSignIn": "当前未使用该手机号登录。",
       "emailNone": "未选择用于登录的邮箱。",
       "usernameNone": "尚未设置用户名。",
       "loginAs": "使用{{kind}} {{value}} 登录。"

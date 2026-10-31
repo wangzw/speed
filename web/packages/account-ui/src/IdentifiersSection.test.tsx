@@ -94,9 +94,10 @@ describe('IdentifiersSection', () => {
     expect(
       await screen.findByRole('heading', { name: zhCN.identifiers.title }),
     ).toBeTruthy()
-    // The email is a sign-in way and so appears in both lists; the phone is a
-    // contact only.
-    expect(await screen.findAllByText('ada@x.test')).toHaveLength(2)
+    // The email is a sign-in way, so it appears as the email group's chosen
+    // value and as a row in each of the two lists; the phone is a contact
+    // only.
+    expect(await screen.findAllByText('ada@x.test')).toHaveLength(3)
     expect(screen.getAllByText(zhCN.identifiers.kind.email)).toHaveLength(2)
     expect(screen.getByText('+14155550123')).toBeTruthy()
     expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2)
@@ -137,9 +138,10 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    // Each unproved address appears once as a sign-in way (the profile's
-    // flag still says so) and once as a contact.
-    expect(await screen.findAllByText('operator@demo.test')).toHaveLength(2)
+    // Each unproved address appears once as the email group's chosen value,
+    // once as a sign-in way (the profile's flag still says so) and once as a
+    // contact.
+    expect(await screen.findAllByText('operator@demo.test')).toHaveLength(3)
     expect(screen.getAllByText(zhCN.identifiers.unverified)).toHaveLength(4)
     expect(screen.queryByText(zhCN.identifiers.verified)).toBeNull()
     // The binary vocabulary has no channel labels left.
@@ -214,7 +216,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findAllByText('only@x.test')).toHaveLength(2)
+    expect(await screen.findAllByText('only@x.test')).toHaveLength(3)
     expect(
       screen.queryByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'only@x.test'),
@@ -356,7 +358,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findAllByText('pending@x.test')).toHaveLength(2)
+    expect(await screen.findAllByText('pending@x.test')).toHaveLength(3)
     expect(screen.getAllByText(zhCN.identifiers.unverified)).toHaveLength(2)
     expect(
       screen.queryByRole('button', {
@@ -392,7 +394,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText('ada')).toBeTruthy()
+    expect(await screen.findAllByText('ada')).toHaveLength(2)
     expect(screen.queryByText(zhCN.identifiers.unverified)).toBeNull()
     expect(screen.queryByText(zhCN.identifiers.verified)).toBeNull()
   })
@@ -421,7 +423,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText('ada')).toBeTruthy()
+    expect(await screen.findAllByText('ada')).toHaveLength(2)
     // The password signs in through this row; removing it would leave the
     // password without a login name, so the action gives way to the rule.
     expect(
@@ -451,7 +453,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findAllByText('ada@x.test')).toHaveLength(2)
+    expect(await screen.findAllByText('ada@x.test')).toHaveLength(3)
     // An email address is a login name for a password account too.
     expect(
       screen.queryByRole('button', {
@@ -493,7 +495,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText('ada')).toBeTruthy()
+    expect(await screen.findAllByText('ada')).toHaveLength(2)
     expect(screen.getByText('+14155550123')).toBeTruthy()
     // The username is the password's only login name; the phone signs in
     // through its own code route, so it is not counted and stays removable.
@@ -541,7 +543,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText('ada')).toBeTruthy()
+    expect(await screen.findAllByText('ada')).toHaveLength(2)
     expect(
       screen.getByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
@@ -574,7 +576,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText('ada')).toBeTruthy()
+    expect(await screen.findAllByText('ada')).toHaveLength(2)
     expect(
       screen.getByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
@@ -969,7 +971,9 @@ describe('IdentifiersSection', () => {
     )
     expect(posts).toHaveLength(1)
     expect(posts[0]?.body).toEqual({ kind: 'username', value: 'ada2' })
-    await waitFor(() => expect(screen.getByText('ada2')).toBeTruthy())
+    await waitFor(() =>
+      expect(screen.getAllByText('ada2')).toHaveLength(2),
+    )
   })
 
   it('names a taken username instead of the generic conflict text', async () => {
@@ -1750,7 +1754,7 @@ describe('IdentifiersSection', () => {
     const user = userEvent.setup()
 
     // The listed username still renders as a row.
-    expect(await screen.findByText('ada')).toBeTruthy()
+    expect(await screen.findAllByText('ada')).toHaveLength(2)
     await user.click(
       screen.getByRole('button', { name: zhCN.identifiers.add.open }),
     )
@@ -1793,7 +1797,7 @@ describe('IdentifiersSection', () => {
       <IdentifiersSection session={rig.session} emailAvailable={false} />,
     )
 
-    expect(await screen.findByText('ada')).toBeTruthy()
+    expect(await screen.findAllByText('ada')).toHaveLength(2)
     expect(
       screen.queryByRole('button', { name: zhCN.identifiers.add.open }),
     ).toBeNull()
@@ -2224,7 +2228,7 @@ describe('IdentifiersSection', () => {
     }
     const { queryClient } = mount(respond)
 
-    expect(await screen.findAllByText('ada@x.test')).toHaveLength(2)
+    expect(await screen.findAllByText('ada@x.test')).toHaveLength(3)
 
     await act(async () => {
       await queryClient.invalidateQueries()
@@ -2232,7 +2236,7 @@ describe('IdentifiersSection', () => {
 
     // The failed refresh keeps the settled rows on screen under the stale
     // notice rather than replacing them with the error placeholder.
-    expect(screen.getAllByText('ada@x.test')).toHaveLength(2)
+    expect(screen.getAllByText('ada@x.test')).toHaveLength(3)
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.stale.description)
     expect(screen.queryByText(zhCN.identifiers.error.title)).toBeNull()
@@ -2296,8 +2300,10 @@ describe('IdentifiersSection', () => {
       name: zhCN.identifiers.groups.contact,
     })
     // A username and the address the profile marks sign_in are sign-in ways.
-    expect(within(signIn).getByText('ada')).toBeTruthy()
-    expect(within(signIn).getByText('signin@x.test')).toBeTruthy()
+    // The username appears in its group's sentence and as its row; the
+    // address appears as the email group's chosen value and as its row.
+    expect(within(signIn).getAllByText('ada')).toHaveLength(2)
+    expect(within(signIn).getAllByText('signin@x.test')).toHaveLength(2)
     // Every registered address is a contact, whether or not it signs in and
     // whatever the profile's own contact flag says.
     expect(within(contacts).getByText('signin@x.test')).toBeTruthy()
@@ -2335,7 +2341,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    await screen.findByText('ada')
+    await screen.findAllByText('ada')
     expect(screen.getByText(zhCN.identifiers.groups.contactEmpty)).toBeTruthy()
     expect(zhCN.identifiers.groups).not.toHaveProperty('neitherEmpty')
   })
@@ -2381,19 +2387,16 @@ describe('IdentifiersSection', () => {
     })
     expect(within(contacts).getByText('contact@x.test')).toBeTruthy()
     expect(within(contacts).getByText('+14155550123')).toBeTruthy()
-    // The group's only switch is the proved address's sign-in way; there is
-    // no control that would take an address out of the contact position.
-    const switches = within(contacts).getAllByRole('switch')
-    expect(switches).toHaveLength(1)
-    expect(switches[0]).toHaveAccessibleName(
-      zhCN.identifiers.axes.signInAria.replace('{{value}}', 'contact@x.test'),
-    )
+    // The contacts list carries no sign-in control: whether an address signs
+    // in is the email group's decision, made in the sign-in list. There is
+    // also no control that would take an address out of the contact position.
+    expect(within(contacts).queryAllByRole('switch')).toHaveLength(0)
     expect(zhCN.identifiers.axes).not.toHaveProperty('contact')
     expect(zhCN.identifiers.axes).not.toHaveProperty('contactAria')
     expect(zhCN.identifiers.axes).not.toHaveProperty('contactChanged')
   })
 
-  it('puts a proved address into sign-in through its own switch', async () => {
+  it('puts a proved address into sign-in through the email group enable action', async () => {
     let signIn = false
     const writes: unknown[] = []
     const respond: RealResponder = (call: RealCall) => {
@@ -2426,22 +2429,32 @@ describe('IdentifiersSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
+    const signInRegion = await screen.findByRole('region', {
+      name: zhCN.identifiers.groups.signIn,
+    })
+    // The email group's one action states that no address signs in yet.
+    expect(
+      within(signInRegion).getByText(zhCN.identifiers.usage.emailNone),
+    ).toBeTruthy()
     await user.click(
-      await screen.findByRole('switch', {
-        name: zhCN.identifiers.axes.signInAria.replace(
-          '{{value}}',
-          'ada@x.test',
-        ),
+      within(signInRegion).getByRole('button', {
+        name: zhCN.identifiers.action.enable,
       }),
     )
 
     await waitFor(() => expect(writes).toEqual([{ sign_in: true }]))
-    const signInRegion = await screen.findByRole('region', {
-      name: zhCN.identifiers.groups.signIn,
-    })
+    // The address joins the sign-in list as the group's chosen value and as a
+    // row.
     await waitFor(() =>
-      expect(within(signInRegion).getByText('ada@x.test')).toBeTruthy(),
+      expect(
+        within(signInRegion).getByRole('combobox', {
+          name: zhCN.identifiers.kind.email,
+        }),
+      ).toHaveTextContent('ada@x.test'),
     )
+    expect(
+      within(signInRegion).getAllByText('ada@x.test').length,
+    ).toBeGreaterThan(0)
   })
 
   it('makes a proved email the default contact through the choice on its row', async () => {
@@ -2532,15 +2545,16 @@ describe('IdentifiersSection', () => {
     const user = userEvent.setup()
 
     // The phone is a sign-in way and a contact, so it appears in both lists;
-    // its switch renders once, in the contacts list, so one record never
-    // offers two controls for the same flag.
-    const switchControl = await screen.findByRole('switch', {
-      name: zhCN.identifiers.axes.signInAria.replace(
-        '{{value}}',
-        '+14155550123',
-      ),
+    // its sign-in choice is the phone group's one action in the sign-in list,
+    // so the contacts row offers no control for it.
+    const signInRegion = await screen.findByRole('region', {
+      name: zhCN.identifiers.groups.signIn,
     })
-    await user.click(switchControl)
+    await user.click(
+      within(signInRegion).getByRole('button', {
+        name: zhCN.identifiers.action.disable,
+      }),
+    )
 
     await waitFor(() => expect(writes).toBe(1))
     const alert = await screen.findByRole('alert')
@@ -2946,6 +2960,47 @@ describe('IdentifiersSection', () => {
       await screen.findByText(zhCN.identifiers.usage.usernameNone),
     ).toBeTruthy()
     expect(screen.getAllByText(zhCN.identifiers.usage.phoneNone)).toHaveLength(1)
+  })
+
+  it('states that a proved phone is not a sign-in way when its group offers to enable it', async () => {
+    // The group's button offers to enable this number, so the sentence beside
+    // it must say the number does not sign in rather than claim it does.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-phone',
+                kind: 'phone',
+                value: '+14155550123',
+                proven: true,
+                sign_in: false,
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} axis="signIn" />,
+    )
+
+    const phoneGroup = await screen.findByRole('group', {
+      name: zhCN.identifiers.kind.phone,
+    })
+    expect(
+      within(phoneGroup).getByText(zhCN.identifiers.usage.phoneNotSignIn),
+    ).toBeTruthy()
+    expect(
+      within(phoneGroup).getByRole('button', {
+        name: zhCN.identifiers.action.enable,
+      }),
+    ).toBeTruthy()
   })
 
   it('replays a whole sign-in email selection as one gate action', async () => {

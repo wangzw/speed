@@ -23,37 +23,44 @@
  * ways list holds every username and every email address or phone number the
  * profile marks `sign_in`; the contacts list holds every registered email
  * address and phone number, because registering an address is what makes it
- * a contact -- the position is not a separate choice. The same record appears
- * in both lists while it is also a sign-in way, but its sign-in switch
- * renders only in the list canonical for the record (the contacts list), so
- * one address never offers two controls for the same flag; the other
- * occurrence still reads the same state. A username is always a sign-in way,
- * has no contact position, and is never in the contacts list. A host that
- * splits the surface with `axis` gets the same controls in the view it
- * shows: the contact axis's own table carries the default-contact choice and
- * the row actions on each address, and the sign-in axis groups the
- * identifiers by kind. A username is a login name by definition, so its group
- * offers no switch; the phone group keeps the one-row switch; the email
- * group's switch states whether the account uses email to sign in. While it
- * is on, a picker chooses one of the proved addresses, written as one
- * step-up action so a won challenge lands the same end state (the pre-chosen
- * address turned off and the new one turned on) rather than replaying only
- * one of the row writes. While it is off, the picker gives way to a note, and
- * turning it back on restores the address this visit switched off, then the
- * default contact (the address the account falls back to), then the earliest
- * proved address, through that same protected write.
+ * a contact -- the position is not a separate choice. The same record can
+ * appear in both lists while it is also a sign-in way; whether an email or
+ * phone signs in is a group decision, never a per-row switch, so the
+ * contacts list carries no sign-in control. A username is always a sign-in
+ * way, has no contact position, and is never in the contacts list.
  *
- * An email or phone switch is PUT
+ * The sign-in ways list is grouped by kind, and each group carries one
+ * control. A username is a login name by definition, so its group states
+ * that with a static switch. The email group's switch states whether the
+ * account uses email to sign in; while it is on, a picker chooses one of the
+ * proved addresses, written as one step-up action so a won challenge lands
+ * the same end state (the pre-chosen address turned off and the new one
+ * turned on) rather than replaying only one of the row writes. While it is
+ * off, the picker gives way to a note, and turning it back on restores the
+ * address this visit switched off, then the default contact (the address the
+ * account falls back to), then the earliest proved address, through that
+ * same protected write. The phone group toggles its representative row, and
+ * while that number does not sign in the group says so rather than naming it
+ * as a sign-in way, so the sentence and the enable action agree.
+ *
+ * A host that splits the surface with `axis` gets the same blocks in the view
+ * it shows: the contact axis's own table carries the default-contact choice
+ * and the row actions on each address, and the sign-in axis renders the kind
+ * groups alone, without the merged view's sign-in ways heading and with each
+ * kind's list holding every row of that kind (that view is where the choice
+ * is made, and it has no contacts list beside it).
+ *
+ * A group's sign-in write is PUT
  * /api/v1/auth/identifiers/{id} (authn.login.updateIdentifier) with
  * `sign_in`: turning it on moves the value into the sign-in ways list, and
  * turning it off only leaves that list (the value stays a contact). Only a
- * proved value offers the switch (REQ-account-065); an unproved address is
- * still a contact, because registering it establishes that position. The
- * sign-in axis's group switch and the default contact need a fresh
- * authentication, so a refusal opens the step-up dialog like the section's
- * other gated writes. Putting a proved value into sign-in rotates this
- * session's credential, so that write runs inside an identity-transition
- * window; taking it out does not.
+ * proved value can be put into sign-in (REQ-account-065); an unproved address
+ * is still a contact, because registering it establishes that position. The
+ * sign-in group write and the default contact need a fresh authentication, so
+ * a refusal opens the step-up dialog like the section's other gated writes.
+ * Putting a proved value into sign-in rotates this session's credential, so
+ * that write runs inside an identity-transition window; taking it out does
+ * not.
  *
  * A proved email address also offers the default-contact choice, a radio
  * that sets `default_contact: true` on the chosen row: the server clears the
@@ -1211,44 +1218,319 @@ export function IdentifiersSection({
 
   // The lists, in the order the section renders them, with the keys their
   // headings and empty notes read. The contact axis's own view renders its
-  // table instead, so it reads no group here.
-  const groups: readonly {
+  // table instead, so it reads no group here. The sign-in axis renders one
+  // list per kind; the merged view renders the same kind lists inside its
+  // sign-in ways list, so an email or phone choice reads the same in both
+  // views, and keeps the contacts list beside it.
+  interface GroupSpec {
     readonly key: IdentifierGroup
     /** Set when the list is one identifier kind rather than one axis. */
     readonly kind?: string
     readonly title: string
     readonly empty: string
-  }[] = axis === 'signIn'
-    ? [
-        { key: 'signIn', kind: 'username' },
-        { key: 'signIn', kind: 'email' },
-        { key: 'signIn', kind: 'phone' },
-      ].map((entry) => ({
-        key: entry.key as IdentifierGroup,
-        kind: entry.kind,
-        title: `identifiers.kind.${entry.kind}`,
-        empty: 'identifiers.groups.signInEmpty',
-      }))
-    : [
-        {
-          key: 'signIn',
-          title: 'identifiers.groups.signIn',
-          empty: 'identifiers.groups.signInEmpty',
-        },
-        {
-          key: 'contact',
-          title: 'identifiers.groups.contact',
-          empty: 'identifiers.groups.contactEmpty',
-        },
-      ]
+  }
+  const signInKindSpecs: readonly GroupSpec[] = [
+    {
+      key: 'signIn',
+      kind: 'username',
+      title: 'identifiers.kind.username',
+      empty: 'identifiers.groups.signInEmpty',
+    },
+    {
+      key: 'signIn',
+      kind: 'email',
+      title: 'identifiers.kind.email',
+      empty: 'identifiers.groups.signInEmpty',
+    },
+    {
+      key: 'signIn',
+      kind: 'phone',
+      title: 'identifiers.kind.phone',
+      empty: 'identifiers.groups.signInEmpty',
+    },
+  ]
+  const groups: readonly GroupSpec[] =
+    axis === 'signIn'
+      ? signInKindSpecs
+      : axis === 'contact'
+        ? [
+            {
+              key: 'contact',
+              title: 'identifiers.groups.contact',
+              empty: 'identifiers.groups.contactEmpty',
+            },
+          ]
+        : [
+            {
+              key: 'signIn',
+              title: 'identifiers.groups.signIn',
+              empty: 'identifiers.groups.signInEmpty',
+            },
+            {
+              key: 'contact',
+              title: 'identifiers.groups.contact',
+              empty: 'identifiers.groups.contactEmpty',
+            },
+          ]
   const groupIdBase = useId()
 
   /**
-   * One row in one of the lists. The sign-in switch renders in every
-   * occurrence of an email or phone record, so the two lists showing it stay
-   * in step; the per-record actions render only in the occurrence canonical
-   * for the record's state, so one address never offers the same action
-   * twice. The switch is offered only on a proved value.
+   * One sign-in kind list: the group-level choice for that kind and the rows
+   * that sign in with it. The sign-in axis names the list with its kind
+   * heading; the merged view renders the same block inside its sign-in ways
+   * list under the kind's accessible name, so an email or phone choice reads
+   * the same in both views. The control is one per list, never one per row:
+   * a username is always a login name (a static switch), an email is one
+   * choice out of the proved addresses (a toggle plus a picker), and a phone
+   * is the representative the profile marks `sign_in` (a toggle).
+   */
+  function renderSignInKind(
+    spec: GroupSpec,
+    allRows: readonly AuthnProfileIdentifier[],
+  ) {
+    const kind = spec.kind ?? ''
+    const headingId = `${groupIdBase}-${kind}`
+    // The control reads every row of the kind: the email picker offers all
+    // proved addresses, and the phone toggle targets the representative row.
+    const kindRows = allRows.filter((row) => (row.kind ?? '') === kind)
+    // The list itself holds only the rows that sign in. The sign-in axis
+    // lists every row of the kind because that view is where the choice is
+    // made; the merged view has the contacts list beside it, so a row that
+    // does not sign in belongs there alone.
+    const listRows =
+      axis === 'signIn'
+        ? kindRows
+        : kindRows.filter((row) => belongsTo(row, 'signIn'))
+    const signInRow =
+      kindRows.find((row) => row.sign_in === true) ??
+      kindRows.find((row) => row.proven === true) ??
+      kindRows[0] ??
+      null
+    const emailSignInRow =
+      kind === 'email'
+        ? (kindRows.find(
+            (row) => row.id != null && row.sign_in === true,
+          ) ?? null)
+        : null
+    const provenEmails =
+      kind === 'email'
+        ? kindRows.filter((row) => row.proven === true && row.id != null)
+        : []
+    const emailOptions =
+      kind === 'email'
+        ? kindRows.filter(
+            (row) => row.proven === true || row.sign_in === true,
+          )
+        : []
+    const named = axis === 'signIn'
+    return (
+      <Box
+        key={kind}
+        role="group"
+        aria-labelledby={named ? headingId : undefined}
+        aria-label={named ? undefined : t(spec.title)}
+        aria-describedby={
+          kind === 'email' && emailSignInRow === null
+            ? `${headingId}-off`
+            : undefined
+        }
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          {named ? (
+            <Typography
+              id={headingId}
+              component="h3"
+              variant="body1"
+              sx={{ fontWeight: 600 }}
+            >
+              {t(spec.title)}
+            </Typography>
+          ) : null}
+          {kind === 'username' ? null : kind === 'email' ? (
+            <Button
+              variant="outlined"
+              size="small"
+              disabled={
+                writeBusy ||
+                addBusy ||
+                (emailSignInRow === null && provenEmails.length === 0)
+              }
+              aria-describedby={
+                emailSignInRow === null ? `${headingId}-off` : undefined
+              }
+              sx={{ marginLeft: 'auto' }}
+              onClick={() => {
+                if (emailSignInRow !== null) {
+                  setLastDisabledSignInEmail({
+                    id: emailSignInRow.id,
+                    value: emailSignInRow.value ?? '',
+                  })
+                  void setFlags(
+                    emailSignInRow.id,
+                    emailSignInRow.value ?? '',
+                    { signIn: false },
+                  )
+                  return
+                }
+                const remembered =
+                  lastDisabledSignInEmail === null
+                    ? undefined
+                    : provenEmails.find(
+                        (row) =>
+                          row.id === lastDisabledSignInEmail.id ||
+                          (row.value ?? '') ===
+                            lastDisabledSignInEmail.value,
+                      )
+                const target =
+                  remembered ??
+                  provenEmails.find(
+                    (row) => row.default_contact === true,
+                  ) ??
+                  provenEmails[0]
+                if (target === undefined) {
+                  return
+                }
+                setLastDisabledSignInEmail(null)
+                void setFlags(target.id, target.value ?? '', {
+                  signIn: true,
+                })
+              }}
+            >
+              {emailSignInRow === null
+                ? t('identifiers.action.enable')
+                : t('identifiers.action.disable')}
+            </Button>
+          ) : signInRow?.id != null ? (
+            <Button
+              variant="outlined"
+              size="small"
+              disabled={writeBusy || addBusy}
+              sx={{ marginLeft: 'auto' }}
+              onClick={() =>
+                void setFlags(signInRow.id as string, signInRow.value ?? '', {
+                  signIn: signInRow.sign_in !== true,
+                })
+              }
+            >
+              {signInRow.sign_in === true
+                ? t('identifiers.action.disable')
+                : t('identifiers.action.enable')}
+            </Button>
+          ) : null}
+        </Box>
+        {kind === 'email' ? (
+          emailSignInRow !== null ? (
+            <Select
+              size="small"
+              value={emailSignInRow.value ?? ''}
+              disabled={writeBusy || addBusy}
+              slotProps={{
+                input: {
+                  'aria-label': t('identifiers.kind.email'),
+                },
+              }}
+              onChange={(event) => {
+                const chosen = event.target.value
+                // The whole selection is one action: every row that reaches
+                // the chosen end state is written together, so a step-up
+                // replay lands that same state instead of only the first row.
+                const changes = kindRows
+                  .filter((row) => row.id != null)
+                  .map((row) => ({
+                    id: row.id as string,
+                    value: row.value ?? '',
+                    signIn: (row.value ?? '') === chosen,
+                  }))
+                  .filter((change) => {
+                    const row = kindRows.find(
+                      (candidate) => candidate.id === change.id,
+                    )
+                    return (row?.sign_in === true) !== change.signIn
+                  })
+                if (changes.length > 0) {
+                  void selectSignInEmail(changes)
+                }
+              }}
+              sx={{ mt: 1, minWidth: '18rem' }}
+            >
+              {emailOptions.map((row) => (
+                <MenuItem key={row.id ?? row.value} value={row.value ?? ''}>
+                  {row.value ?? ''}
+                </MenuItem>
+              ))}
+            </Select>
+          ) : (
+            <Typography
+              id={`${headingId}-off`}
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: 0.5 }}
+            >
+              {t('identifiers.usage.emailNone')}
+            </Typography>
+          )
+        ) : (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ mt: 0.5 }}
+          >
+            {signInRow === null || signInRow.value === undefined ? (
+              t(
+                kind === 'username'
+                  ? 'identifiers.usage.usernameNone'
+                  : 'identifiers.usage.phoneNone',
+              )
+            ) : kind === 'username' || signInRow.sign_in === true ? (
+              (() => {
+                const marker = '__VALUE__'
+                const sentence = t('identifiers.usage.loginAs', {
+                  kind: t(spec.title),
+                  value: marker,
+                })
+                const [before, after = ''] = sentence.split(marker)
+                return (
+                  <>
+                    {before}
+                    <Box
+                      component="span"
+                      sx={{ color: 'text.primary', fontWeight: 600 }}
+                    >
+                      {signInRow.value}
+                    </Box>
+                    {after}
+                  </>
+                )
+              })()
+            ) : (
+              // The button offers to enable this phone, so the sentence must
+              // state the same thing: the number is not used to sign in.
+              t('identifiers.usage.phoneNotSignIn')
+            )}
+          </Typography>
+        )}
+        {listRows.length === 0 ? null : (
+          <Box
+            component="ul"
+            role="list"
+            sx={{ m: 0, p: 0, listStyle: 'none' }}
+          >
+            {listRows.map((identifier, index) =>
+              renderRow(identifier, index, 'signIn'),
+            )}
+          </Box>
+        )}
+      </Box>
+    )
+  }
+
+  /**
+   * One row in one of the lists. A username's static sign-in switch states
+   * what is always true of a login name; the per-record actions (the
+   * default-contact choice, verification and removal) render only in the
+   * occurrence canonical for the record's state, so one address never offers
+   * the same action twice. Whether an email or phone signs in is a group
+   * decision, so no row carries a switch for it.
    */
   function renderRow(
     identifier: AuthnProfileIdentifier,
@@ -1277,7 +1559,6 @@ export function IdentifiersSection({
     // show.
     const showChip = kind !== 'username'
     const axes = axesOf(identifier)
-    const isAxisRow = !axes.username
     const canonical =
       axis === 'signIn' ? true : group === canonicalGroup(identifier)
     const rowKey = `${group}:${id ?? index}`
@@ -1368,74 +1649,39 @@ export function IdentifiersSection({
             )}
           </Box>
         </Box>
-        {isAxisRow || (axis === 'signIn' && kind === 'username') ? (
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              columnGap: 2,
-            }}
-          >
-            {axis === 'signIn' && kind === 'username' ? (
-              // A username is a login name by definition; the switch states
-              // that fact rather than offering a change the server refuses.
-              <FormControlLabel
-                control={<Switch size="small" checked disabled />}
-                label={t('identifiers.axes.signIn')}
+        {group === 'signIn' && kind === 'username' ? (
+          // A username is a login name by definition; the switch states that
+          // fact rather than offering a change the server refuses.
+          <FormControlLabel
+            control={<Switch size="small" checked disabled />}
+            label={t('identifiers.axes.signIn')}
+          />
+        ) : null}
+        {axis !== 'signIn' && canonical && kind === 'email' && verified ? (
+          <FormControlLabel
+            control={
+              <Radio
+                size="small"
+                checked={axes.defaultContact}
+                disabled={disabled}
+                slotProps={{
+                  input: {
+                    name: 'authn-default-contact',
+                    'aria-label': t('identifiers.axes.defaultAria', {
+                      value,
+                      interpolation: { escapeValue: false },
+                    }),
+                  },
+                }}
+                onChange={() => {
+                  if (id !== null && !axes.defaultContact) {
+                    void setDefaultContact(id, value)
+                  }
+                }}
               />
-            ) : axis !== 'contact' && canonical && verified ? (
-              <FormControlLabel
-                control={
-                  <Switch
-                    size="small"
-                    checked={axes.signIn}
-                    disabled={disabled}
-                    slotProps={{
-                      input: {
-                        'aria-label': t('identifiers.axes.signInAria', {
-                          value,
-                          interpolation: { escapeValue: false },
-                        }),
-                      },
-                    }}
-                    onChange={() => {
-                      if (id !== null) {
-                        void setFlags(id, value, { signIn: !axes.signIn })
-                      }
-                    }}
-                  />
-                }
-                label={t('identifiers.axes.signIn')}
-              />
-            ) : null}
-            {axis !== 'signIn' && canonical && kind === 'email' && verified ? (
-              <FormControlLabel
-                control={
-                  <Radio
-                    size="small"
-                    checked={axes.defaultContact}
-                    disabled={disabled}
-                    slotProps={{
-                      input: {
-                        name: 'authn-default-contact',
-                        'aria-label': t('identifiers.axes.defaultAria', {
-                          value,
-                          interpolation: { escapeValue: false },
-                        }),
-                      },
-                    }}
-                    onChange={() => {
-                      if (id !== null && !axes.defaultContact) {
-                        void setDefaultContact(id, value)
-                      }
-                    }}
-                  />
-                }
-                label={t('identifiers.axes.defaultContact')}
-              />
-            ) : null}
-          </Box>
+            }
+            label={t('identifiers.axes.defaultContact')}
+          />
         ) : null}
         {rowFlowOpen ? (
           <Box
@@ -1745,275 +1991,76 @@ export function IdentifiersSection({
               </>
             ) : (
               groups.map((group) => {
-              const groupRows = settledRows.filter((row) => {
-                if (group.kind !== undefined) {
-                  return (row.kind ?? '') === group.kind
-                }
-                return belongsTo(row, group.key)
-              })
               // A sign-in list is one per kind over one axis, so the axis key
               // alone would repeat: the kind keeps the React key and the
               // heading id unique.
               const groupKey = group.kind ?? group.key
               const headingId = `${groupIdBase}-${groupKey}`
-              // The sign-in email is one choice out of the proved addresses,
-              // not a switch per address: the row offers exactly that choice.
-              const signInRow =
-                axis === 'signIn'
-                  ? (groupRows.find((row) => row.sign_in === true) ??
-                    groupRows.find((row) => row.proven === true) ??
-                    groupRows[0] ??
-                    null)
-                  : null
-              // The email group's switch states whether the account uses an
-              // address to sign in. The chosen address is the first row the
-              // profile marks `sign_in`; the picker offers the proved
-              // addresses, plus the chosen one itself while the profile still
-              // carries a sign-in choice the old behaviour made on an
-              // unproved row.
-              const emailSignInRow =
-                group.kind === 'email'
-                  ? (groupRows.find(
-                      (row) => row.id != null && row.sign_in === true,
-                    ) ?? null)
-                  : null
-              const provenEmails =
-                group.kind === 'email'
-                  ? groupRows.filter(
-                      (row) => row.proven === true && row.id != null,
-                    )
-                  : []
-              const emailOptions =
-                group.kind === 'email'
-                  ? groupRows.filter(
-                      (row) => row.proven === true || row.sign_in === true,
-                    )
-                  : []
-              // The sign-in axis renders its lists without headings (the host's
-              // own block names them), so it must not point aria-labelledby at
-              // an id no element carries.
+              // The sign-in axis renders its lists without headings (the
+              // host's own block names them), so it must not point
+              // aria-labelledby at an id no element carries.
               const showHeading =
                 axis !== 'signIn' && (axis === 'both' || groups.length > 1)
+              if (group.key === 'signIn') {
+                // The sign-in axis has one list per kind; the merged view
+                // renders the same blocks inside its sign-in ways list, one
+                // per kind the profile holds a row for.
+                const kindSpecs =
+                  axis === 'signIn'
+                    ? [group]
+                    : signInKindSpecs.filter((spec) =>
+                        settledRows.some(
+                          (row) => (row.kind ?? '') === (spec.kind ?? ''),
+                        ),
+                      )
+                return (
+                  <Box
+                    component="section"
+                    key={groupKey}
+                    aria-labelledby={showHeading ? headingId : undefined}
+                  >
+                    {axis === 'signIn' ? null : (
+                      <Typography
+                        id={headingId}
+                        component="h3"
+                        variant="subtitle1"
+                        sx={{ mb: 0.5 }}
+                      >
+                        {t(group.title)}
+                      </Typography>
+                    )}
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 2,
+                      }}
+                    >
+                      {kindSpecs.map((spec) =>
+                        renderSignInKind(spec, settledRows),
+                      )}
+                    </Box>
+                  </Box>
+                )
+              }
+              const contactRows = settledRows.filter((row) =>
+                belongsTo(row, 'contact'),
+              )
               return (
                 <Box
                   component="section"
                   key={groupKey}
                   aria-labelledby={showHeading ? headingId : undefined}
                 >
-                  {axis === 'signIn' ? null : (
-                    <Typography
-                      id={headingId}
-                      component="h3"
-                      variant="subtitle1"
-                      sx={{ mb: 0.5 }}
-                    >
-                      {t(group.title)}
-                    </Typography>
-                  )}
-                  {axis === 'signIn' ? (
-                    <Box
-                      role="group"
-                      aria-labelledby={headingId}
-                      aria-describedby={
-                        group.kind === 'email' && emailSignInRow === null
-                          ? `${headingId}-off`
-                          : undefined
-                      }
-                    >
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1.5,
-                        }}
-                      >
-                        <Typography
-                          id={headingId}
-                          component="h3"
-                          variant="body1"
-                          sx={{ fontWeight: 600 }}
-                        >
-                          {t(group.title)}
-                        </Typography>
-                        {group.kind === 'username' ? null : group.kind ===
-                          'email' ? (
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            disabled={
-                              writeBusy ||
-                              addBusy ||
-                              (emailSignInRow === null &&
-                                provenEmails.length === 0)
-                            }
-                            aria-describedby={
-                              emailSignInRow === null
-                                ? `${headingId}-off`
-                                : undefined
-                            }
-                            sx={{ marginLeft: 'auto' }}
-                            onClick={() => {
-                              if (emailSignInRow !== null) {
-                                setLastDisabledSignInEmail({
-                                  id: emailSignInRow.id,
-                                  value: emailSignInRow.value ?? '',
-                                })
-                                void setFlags(
-                                  emailSignInRow.id,
-                                  emailSignInRow.value ?? '',
-                                  { signIn: false },
-                                )
-                                return
-                              }
-                              const remembered =
-                                lastDisabledSignInEmail === null
-                                  ? undefined
-                                  : provenEmails.find(
-                                      (row) =>
-                                        row.id ===
-                                          lastDisabledSignInEmail.id ||
-                                        (row.value ?? '') ===
-                                          lastDisabledSignInEmail.value,
-                                    )
-                              const target =
-                                remembered ??
-                                provenEmails.find(
-                                  (row) => row.default_contact === true,
-                                ) ??
-                                provenEmails[0]
-                              if (target === undefined) {
-                                return
-                              }
-                              setLastDisabledSignInEmail(null)
-                              void setFlags(target.id, target.value ?? '', {
-                                signIn: true,
-                              })
-                            }}
-                          >
-                            {emailSignInRow === null
-                              ? t('identifiers.action.enable')
-                              : t('identifiers.action.disable')}
-                          </Button>
-                        ) : signInRow?.id != null ? (
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            disabled={writeBusy || addBusy}
-                            sx={{ marginLeft: 'auto' }}
-                            onClick={() =>
-                              void setFlags(
-                                signInRow.id as string,
-                                signInRow.value ?? '',
-                                { signIn: signInRow.sign_in !== true },
-                              )
-                            }
-                          >
-                            {signInRow.sign_in === true
-                              ? t('identifiers.action.disable')
-                              : t('identifiers.action.enable')}
-                          </Button>
-                        ) : null}
-                      </Box>
-                      {group.kind === 'email' ? (
-                        emailSignInRow !== null ? (
-                          <Select
-                            size="small"
-                            value={emailSignInRow.value ?? ''}
-                            disabled={writeBusy || addBusy}
-                            slotProps={{
-                              input: {
-                                'aria-label': t('identifiers.kind.email'),
-                              },
-                            }}
-                            onChange={(event) => {
-                              const chosen = event.target.value
-                              // The whole selection is one action: every row
-                              // that reaches the chosen end state is written
-                              // together, so a step-up replay lands that same
-                              // state instead of only the first row.
-                              const changes = groupRows
-                                .filter((row) => row.id != null)
-                                .map((row) => ({
-                                  id: row.id as string,
-                                  value: row.value ?? '',
-                                  signIn: (row.value ?? '') === chosen,
-                                }))
-                                .filter((change) => {
-                                  const row = groupRows.find(
-                                    (candidate) => candidate.id === change.id,
-                                  )
-                                  return (
-                                    (row?.sign_in === true) !== change.signIn
-                                  )
-                                })
-                              if (changes.length > 0) {
-                                void selectSignInEmail(changes)
-                              }
-                            }}
-                            sx={{ mt: 1, minWidth: '18rem' }}
-                          >
-                            {emailOptions.map((row) => (
-                              <MenuItem
-                                key={row.id ?? row.value}
-                                value={row.value ?? ''}
-                              >
-                                {row.value ?? ''}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        ) : (
-                          <Typography
-                            id={`${headingId}-off`}
-                            variant="body2"
-                            color="text.secondary"
-                            sx={{ mt: 0.5 }}
-                          >
-                            {t('identifiers.usage.emailNone')}
-                          </Typography>
-                        )
-                      ) : (
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          sx={{ mt: 0.5 }}
-                        >
-                          {signInRow === null ||
-                          signInRow.value === undefined ? (
-                            t(
-                              group.kind === 'username'
-                                ? 'identifiers.usage.usernameNone'
-                                : 'identifiers.usage.phoneNone',
-                            )
-                          ) : (
-                            (() => {
-                              const marker = '__VALUE__'
-                              const sentence = t('identifiers.usage.loginAs', {
-                                kind: t(group.title),
-                                value: marker,
-                              })
-                              const [before, after = ''] =
-                                sentence.split(marker)
-                              return (
-                                <>
-                                  {before}
-                                  <Box
-                                    component="span"
-                                    sx={{
-                                      color: 'text.primary',
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    {signInRow.value}
-                                  </Box>
-                                  {after}
-                                </>
-                              )
-                            })()
-                          )}
-                        </Typography>
-                      )}
-                    </Box>
-                  ) : groupRows.length === 0 ? (
+                  <Typography
+                    id={headingId}
+                    component="h3"
+                    variant="subtitle1"
+                    sx={{ mb: 0.5 }}
+                  >
+                    {t(group.title)}
+                  </Typography>
+                  {contactRows.length === 0 ? (
                     <Typography variant="body2" color="text.secondary">
                       {t(group.empty)}
                     </Typography>
@@ -2023,8 +2070,8 @@ export function IdentifiersSection({
                       role="list"
                       sx={{ m: 0, p: 0, listStyle: 'none' }}
                     >
-                      {groupRows.map((identifier, index) =>
-                        renderRow(identifier, index, group.key),
+                      {contactRows.map((identifier, index) =>
+                        renderRow(identifier, index, 'contact'),
                       )}
                     </Box>
                   )}
