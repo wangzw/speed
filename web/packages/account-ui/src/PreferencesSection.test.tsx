@@ -488,8 +488,13 @@ describe('PreferencesSection', () => {
       }),
     ).toBeNull()
 
+    // Retry is the error placeholder's only way forward, so it is the
+    // primary action, not a plain text button.
+    const retry = screen.getByRole('button', { name: zhCN.preferences.retry })
+    expect(retry).toHaveClass('MuiButton-contained')
+
     failLoad = false
-    await user.click(screen.getByRole('button', { name: zhCN.preferences.retry }))
+    await user.click(retry)
     expect(
       await screen.findByRole('combobox', {
         name: zhCN.preferences.timezone.label,
