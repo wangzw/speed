@@ -325,5 +325,53 @@ class LoopingLegTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
+class EntryPointTests(unittest.TestCase):
+    """The root Makefile's local and deployment entry points.
+
+    `make dev` is the local loop and `make fly` is the deployment; the old
+    `deploy` name is gone rather than aliased. `-n` prints the recipe without
+    running mise, air or flyctl, so the cases pin the entry points without
+    starting anything.
+    """
+
+    def make(self, target: str) -> subprocess.CompletedProcess[str]:
+        env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+        return subprocess.run(
+            ["make", "-C", str(ROOT), "--no-print-directory", "-n", target],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_dev_runs_vite_and_air_under_mise(self) -> None:
+        result = self.make("dev")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "mise exec -- pnpm -C starters/demo/web run dev",
+            result.stdout,
+            "the local loop no longer starts the frontend's dev server",
+        )
+        self.assertIn(
+            "air -c .air.toml",
+            result.stdout,
+            "the local loop no longer runs the Go program under air",
+        )
+
+    def test_fly_is_the_deployment_entry_point(self) -> None:
+        result = self.make("fly")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "flyctl deploy",
+            result.stdout,
+            "the deployment entry point no longer calls flyctl",
+        )
+
+    def test_deploy_is_gone_rather_than_aliased(self) -> None:
+        result = self.make("deploy")
+        self.assertNotEqual(result.returncode, 0, "make deploy still resolves")
+        self.assertIn("No rule to make target", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
