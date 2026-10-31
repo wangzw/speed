@@ -81,6 +81,7 @@ var codeTable = []struct {
 	{"conflict", 409},
 	{"login-identifier-required", 409},
 	{"last-login-method", 409},
+	{"username-immutable", 409},
 	{"username-taken", 409},
 	{"email-taken", 409},
 	{"unsupported-media-type", 415},
@@ -123,7 +124,7 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 		CodeImpersonationRestricted, CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed,
 		CodeContactRequired, CodeHumanVerificationRequired, CodePasswordResetClosed,
 		CodePasswordResetUnavailable, CodeConflict, CodeLoginIdentifierRequired,
-		CodeLastLoginMethod, CodeUsernameTaken, CodeEmailTaken,
+		CodeLastLoginMethod, CodeUsernameImmutable, CodeUsernameTaken, CodeEmailTaken,
 		CodeUnsupportedMediaType, CodeThrottled, CodeUnavailable,
 	}
 	for i, c := range codeTable {

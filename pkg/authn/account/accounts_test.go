@@ -118,33 +118,35 @@ func TestCreateTakesAnImportedIdentifierAndRefusesOnesThatCannotBe(t *testing.T)
 	})
 }
 
-// TestAnImportKeepsAReservedUsername holds the exemption the design states: an
-// import restores an account that already existed, so the reserved set does not
-// apply to the name it brings back, while a write that takes a new name still
-// meets it.
-func TestAnImportKeepsAReservedUsername(t *testing.T) {
+// TestAnImportRefusesAReservedUsername holds that the reserved set applies to
+// every write of a username, the import included: an imported account is a user
+// account with a login name like any other, so the name it brings back is held
+// to the same set a new one is.
+func TestAnImportRefusesAReservedUsername(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
-		created, err := h.p.Create(ctx, authn.CreateAccount{Username: "admin", Via: "import"})
-		if err != nil {
-			t.Fatalf("importing a built-in reserved name gave %v, want none", err)
+		if _, err := h.p.Create(ctx, authn.CreateAccount{Username: "admin", Via: "import"}); !errors.Is(err, authn.ErrUsernameReserved) {
+			t.Errorf("importing a built-in reserved name gave %v, want ErrUsernameReserved", err)
 		}
-		if id, lerr := h.p.Lookup(ctx, authn.IdentifierUsername, "admin"); lerr != nil || id != created.ID {
-			t.Errorf("the imported name reads back as %q, %v, want %q", id, lerr, created.ID)
+		if n := h.count(tableAccounts, ""); n != 0 {
+			t.Errorf("the refused import left %d account row(s)", n)
+		}
+		if n := h.count(tableIdentifiers, ""); n != 0 {
+			t.Errorf("the refused import left %d identifier row(s)", n)
 		}
 
 		h.withSettings().set(reservedPath, `["partner-support"]`)
-		if _, err = h.p.Create(ctx, authn.CreateAccount{Username: "partner-support", Via: "admin"}); !errors.Is(err, authn.ErrUsernameReserved) {
+		if _, err := h.p.Create(ctx, authn.CreateAccount{Username: "partner-support", Via: "admin"}); !errors.Is(err, authn.ErrUsernameReserved) {
 			t.Errorf("a new account taking the appended name gave %v, want ErrUsernameReserved", err)
 		}
-		if _, err = h.p.Create(ctx, authn.CreateAccount{Username: "partner-support", Via: "import"}); err != nil {
-			t.Errorf("importing the appended name gave %v, want none", err)
+		if _, err := h.p.Create(ctx, authn.CreateAccount{Username: "partner-support", Via: "import"}); !errors.Is(err, authn.ErrUsernameReserved) {
+			t.Errorf("importing the appended name gave %v, want ErrUsernameReserved", err)
 		}
 	})
 }
 
-// TestAnImportStillHoldsFormatAndUniqueness holds the other side of the
-// exemption: the reserved set is the only check an import skips.
+// TestAnImportStillHoldsFormatAndUniqueness holds that an import meets the
+// format and uniqueness checks like every other write of a username.
 func TestAnImportStillHoldsFormatAndUniqueness(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -186,8 +188,8 @@ func TestCreateRefusesWhatItAdmitsNot(t *testing.T) {
 		{"an attribute value of 257 bytes", authn.CreateAccount{Attributes: map[string]string{"k": long[:257]}}, authn.ErrInvalidArgument},
 		{"a password and a hash", authn.CreateAccount{Username: "alice1", Password: "correct horse battery", PasswordHash: "$argon2id$x"}, authn.ErrInvalidArgument},
 		{"a password on a service account", authn.CreateAccount{Kind: authn.KindService, Username: "svc1", Password: "correct horse battery"}, authn.ErrInvalidArgument},
-		{"a password with no login name", authn.CreateAccount{Phone: "+8613812345678", PhoneVerifiedVia: admin, Password: "correct horse battery", Via: "import"}, authn.ErrIdentifierRequired},
-		{"a hash with no login name", authn.CreateAccount{PasswordHash: "$argon2id$x", Via: "import"}, authn.ErrIdentifierRequired},
+		{"a password on an import naming no username", authn.CreateAccount{Phone: "+8613812345678", PhoneVerifiedVia: admin, Password: "correct horse battery", Via: "import"}, authn.ErrInvalidIdentifier},
+		{"a hash on an import naming no username", authn.CreateAccount{PasswordHash: "$argon2id$x", Via: "import"}, authn.ErrInvalidIdentifier},
 		{"a password shorter than eight", authn.CreateAccount{Username: "alice1", Password: "short"}, authn.ErrPasswordPolicy},
 		{"a password that is the username", authn.CreateAccount{Username: "alice-the-user", Password: "ALICE-the-user"}, authn.ErrPasswordPolicy},
 		{"a password that is the email address", authn.CreateAccount{Username: "alice1", Email: "alice@example.com", EmailVerifiedVia: admin, Password: "Alice@Example.com"}, authn.ErrPasswordPolicy},

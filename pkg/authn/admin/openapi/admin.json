@@ -1387,7 +1387,7 @@
     },
     "/auth/accounts/{id}/identifiers/{identifier}": {
       "delete": {
-        "description": "Removes the identifier named by its own identifier (the identifier row's id, not its value) from the account. Removing an identifier the account does not hold succeeds without changing anything. A password account cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. A removal that would leave the account with no usable way to sign in beside a passkey is a 409 last-login-method and changes nothing. Requires account.update.",
+        "description": "Removes the identifier named by its own identifier (the identifier row's id, not its value) from the account. Removing an identifier the account does not hold succeeds without changing anything. A username cannot be removed: that removal is a 409 username-immutable and changes nothing, and this refusal comes before the others. An account that holds no username cannot lose its last chosen email address: that removal is a 409 login-identifier-required and changes nothing. A removal that would leave the account with no usable way to sign in beside a passkey is a 409 last-login-method and changes nothing. Requires account.update.",
         "operationId": "authn.admin.accounts.removeIdentifier",
         "parameters": [
           {
@@ -1452,7 +1452,7 @@
                 }
               }
             },
-            "description": "The removal would leave a password account with no login name (login-identifier-required), or leave the account with no way to sign in other than a passkey (last-login-method)"
+            "description": "The removal would leave an account without a username with no login name (login-identifier-required), or leave the account with no way to sign in other than a passkey (last-login-method)"
           },
           "503": {
             "content": {

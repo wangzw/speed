@@ -90,12 +90,12 @@ func TestTheMethodsListingPublishesMethodDescriptors(t *testing.T) {
 // disabled-methods switch has no descriptor at all.
 func TestTheMethodsListingHidesADisabledMethod(t *testing.T) {
 	r := newRigMethods(t, &fakeMethod{name: "password"}, &fakeMethod{name: "google"})
-	r.p.settings = readerWithDisabled(t, "password")
+	r.p.settings = readerWithDisabled(t, "google")
 
 	body := decode(t, r.send(http.MethodGet, "/api/v1/auth/methods", "").Body.String())
 	methods := body["methods"].([]any)
-	if len(methods) != 1 || methods[0].(map[string]any)["name"] != "google" {
-		t.Errorf("methods with password disabled = %v, want only google", methods)
+	if len(methods) != 1 || methods[0].(map[string]any)["name"] != "password" {
+		t.Errorf("methods with google disabled = %v, want only password", methods)
 	}
 }
 

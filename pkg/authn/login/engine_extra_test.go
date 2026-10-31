@@ -633,11 +633,14 @@ func TestMethodsAndCurrentBehave(t *testing.T) {
 		t.Errorf("GET methods = %v, want one descriptor named password", listing.Body.String())
 	}
 
+	// The password method is never hidden by the disabled-methods switch, not
+	// even by a raw value that names it.
 	hidden := newRig(t, m)
 	hidden.p.settings = readerWithDisabled(t, "password")
 	got := hidden.send(http.MethodGet, "/api/v1/auth/methods", "")
-	if body := decode(t, got.Body.String())["methods"].([]any); len(body) != 0 {
-		t.Errorf("GET methods with password disabled = %v, want an empty list", got.Body.String())
+	if body := decode(t, got.Body.String())["methods"].([]any); len(body) != 1 ||
+		body[0].(map[string]any)["name"] != "password" {
+		t.Errorf("GET methods with password named by the switch = %v, want the password descriptor kept", got.Body.String())
 	}
 
 	// A header-bound flow echoes its token in the flow reply and in a resume.

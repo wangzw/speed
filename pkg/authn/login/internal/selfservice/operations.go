@@ -338,10 +338,10 @@ var removeIdentifierOperation = speedhttp.NewReplyOperation[identifierPathInput]
 	"Removes one login identifier the caller's account holds. The identifier must be the caller's own: one "+
 		"that does not exist and one that belongs to another account are answered identically as a 400 "+
 		"bad-request, so the route discloses nothing about what another account holds. The call requires the "+
-		"fresh authentication every change of what proves the account asks for. An account that holds a "+
-		"password credential cannot lose its last username or email address: "+
-		"that removal is a 409 login-identifier-required and changes nothing. An account without a password "+
-		"credential may lose its last login name, and removing a phone number is always allowed; a removal that "+
+		"fresh authentication every change of what proves the account asks for. A username cannot be removed: "+
+		"that removal is a 409 username-immutable and changes nothing, and this refusal comes before the others. "+
+		"An account that holds no username cannot lose its last chosen email address: that removal is a 409 "+
+		"login-identifier-required and changes nothing. Removing a phone number is always allowed; a removal that "+
 		"would leave the account with no password, no proved phone number and no external identity is a 409 "+
 		"last-login-method and changes nothing. Unlike the "+
 		"routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no "+
@@ -352,7 +352,9 @@ var removeIdentifierOperation = speedhttp.NewReplyOperation[identifierPathInput]
 		speedhttp.ProblemResponse(http.StatusBadRequest, "The identifier cannot be removed"),
 		unauthorized("No usable credential"),
 		speedhttp.ProblemResponseOf(http.StatusConflict,
-			"The removal would leave a password account with no login name (login-identifier-required), or leave the account with no way to sign in at all (last-login-method)", typePrefix+mount.CodeLoginIdentifierRequired),
+			"A username stays with its account for the account's whole life and cannot be removed", typePrefix+mount.CodeUsernameImmutable),
+		speedhttp.ProblemResponseOf(http.StatusConflict,
+			"The removal would leave an account without a username with no login name (login-identifier-required), or leave the account with no way to sign in at all (last-login-method)", typePrefix+mount.CodeLoginIdentifierRequired),
 		tooMany(),
 		unavailable("A dependency could not answer"),
 	},

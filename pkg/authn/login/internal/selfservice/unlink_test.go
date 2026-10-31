@@ -57,6 +57,7 @@ func TestRemovingAnIdentifierMapsTheAccountModulesAnswers(t *testing.T) {
 		kind string
 	}{
 		{authn.ErrIdentifierRequired, http.StatusConflict, "login-identifier-required"},
+		{authn.ErrUsernameImmutable, http.StatusConflict, "username-immutable"},
 		{authn.ErrLastLoginMethod, http.StatusConflict, "last-login-method"},
 		{authn.ErrLastFactor, http.StatusConflict, "conflict"},
 		{authn.ErrBindingConflict, http.StatusConflict, "conflict"},

@@ -671,6 +671,37 @@ func TestDisabledMethodIsRefusedWithAMethodDisabledCode(t *testing.T) {
 	}
 }
 
+// TestThePasswordMethodIsNeverTurnedOffByTheSwitch holds that a raw value naming
+// password neither hides it from the listing nor refuses its flow, while the
+// other names in the same value still turn their methods off.
+func TestThePasswordMethodIsNeverTurnedOffByTheSwitch(t *testing.T) {
+	password := &fakeMethod{name: "password"}
+	password.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
+	sms := &fakeMethod{name: "sms"}
+	sms.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("phone", nil), nil }
+
+	r := newRigMethods(t, password, sms)
+	r.p.settings = readerWithDisabled(t, "sms", "password")
+
+	listing := r.send(http.MethodGet, "/api/v1/auth/methods", "")
+	methods := decode(t, listing.Body.String())["methods"].([]any)
+	if len(methods) != 1 || methods[0].(map[string]any)["name"] != "password" {
+		t.Fatalf("methods = %v, want password alone: sms is off and password never is", methods)
+	}
+	if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"sms"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("start of sms answered %d, want the 403 method-disabled", rec.Code)
+	}
+	if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusOK {
+		t.Errorf("start of password answered %d, want 200: the switch cannot turn it off", rec.Code)
+	}
+
+	only := newRig(t, password)
+	only.p.settings = readerWithDisabled(t, "password")
+	if rec := only.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusOK {
+		t.Errorf("start of password with a raw value naming it answered %d, want 200", rec.Code)
+	}
+}
+
 // fakeStore is a settings store that answers string and int items and errors for
 // the rest.
 type fakeStore struct{ values map[string]string }

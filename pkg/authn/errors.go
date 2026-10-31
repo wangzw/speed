@@ -221,6 +221,11 @@ var (
 	// login-identifier-required.
 	ErrIdentifierRequired = errors.New("authn: the account has no identifier to log in with")
 
+	// ErrUsernameImmutable reports a removal of a username, which stays with its
+	// account for the account's whole life. Outwardly it is a 409
+	// username-immutable. Deleting the account itself is not this refusal.
+	ErrUsernameImmutable = errors.New("authn: a username cannot be removed or replaced")
+
 	// ErrCleanupIncomplete reports that an account's creation or state, or a
 	// service secret's state, is in force and an AccountLifecycle hook failed.
 	// Repeating the same call finishes the cleanup. Outwardly it is a 503.

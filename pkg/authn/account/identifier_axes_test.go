@@ -228,9 +228,8 @@ func TestTheRegisteredAddressContactMigrationBackfillsExistingRows(t *testing.T)
 
 // TestCreateRequiresAUsernameWhereItOpensAnAccount holds that every path that
 // opens a user account names a username, and that one which does not creates
-// neither the account nor any identifier. Only an import, which restores an
-// account that already existed, and a service account, which signs in with a
-// service secret, are exempt.
+// neither the account nor any identifier. A service account, which signs in with
+// a service secret, is the only exemption.
 func TestCreateRequiresAUsernameWhereItOpensAnAccount(t *testing.T) {
 	for name, in := range map[string]authn.CreateAccount{
 		"an administrator": {
@@ -266,36 +265,34 @@ func TestCreateRequiresAUsernameWhereItOpensAnAccount(t *testing.T) {
 	}
 }
 
-// TestCreateLetsAnImportAndAServiceAccountOpenWithoutAUsername holds the two
-// exemptions: an import restores an account that already existed, and a service
-// account signs in with a service secret. A service account that does name a
-// username is held to the same normalization and reserved set as any other.
-func TestCreateLetsAnImportAndAServiceAccountOpenWithoutAUsername(t *testing.T) {
+// TestCreateRequiresAUsernameOfAnImportAndExemptsAServiceAccount holds the two
+// remaining rules: an import is a user account and names a username like every
+// other creation path, while a service account signs in with a service secret
+// and is exempt. A service account that does name a username is held to the same
+// normalization and reserved set as any other.
+func TestCreateRequiresAUsernameOfAnImportAndExemptsAServiceAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
-		imported, err := h.p.Create(ctx, authn.CreateAccount{
+		if _, err := h.p.Create(ctx, authn.CreateAccount{
 			ID: "legacy_import", Kind: authn.KindUser, Via: "import",
 			Email: "restored@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaImportUnverified},
 			EmailFlags: authn.IdentifierFlags{Contact: true},
-		})
-		if err != nil {
-			t.Fatalf("an import with no username gave %v, want an account", err)
+		}); !errors.Is(err, authn.ErrInvalidIdentifier) {
+			t.Errorf("an import with no username gave %v, want ErrInvalidIdentifier", err)
 		}
-		if identifiers, listErr := h.p.Identifiers(ctx, imported.ID); listErr != nil {
-			t.Fatalf("listing the imported account's identifiers: %v", listErr)
-		} else if len(identifiers) != 1 || identifiers[0].Kind != authn.IdentifierEmail {
-			t.Errorf("the imported account's identifiers are %+v, want only the restored email", identifiers)
+		if n := h.count(tableAccounts, ""); n != 0 {
+			t.Errorf("the refused import left %d account row(s)", n)
 		}
 
-		if _, err = h.p.Create(ctx, authn.CreateAccount{Kind: authn.KindService, Via: "admin"}); err != nil {
+		if _, err := h.p.Create(ctx, authn.CreateAccount{Kind: authn.KindService, Via: "admin"}); err != nil {
 			t.Fatalf("a service account with no username gave %v, want an account", err)
 		}
-		if _, err = h.p.Create(ctx, authn.CreateAccount{
+		if _, err := h.p.Create(ctx, authn.CreateAccount{
 			Kind: authn.KindService, Username: "admin", Via: "admin",
 		}); !errors.Is(err, authn.ErrUsernameReserved) {
 			t.Errorf("a service account with a reserved username gave %v, want ErrUsernameReserved", err)
 		}
-		if _, err = h.p.Create(ctx, authn.CreateAccount{
+		if _, err := h.p.Create(ctx, authn.CreateAccount{
 			Kind: authn.KindService, Username: "no", Via: "admin",
 		}); !errors.Is(err, authn.ErrInvalidIdentifier) {
 			t.Errorf("a service account with a malformed username gave %v, want ErrInvalidIdentifier", err)
@@ -398,7 +395,7 @@ func TestAnImportWritesTheSignInAxisOfItsSourceRecord(t *testing.T) {
 		}
 
 		proved := read(authn.CreateAccount{
-			ID: "legacy_proved", Via: "import",
+			ID: "legacy_proved", Username: "legacy_proved", Via: "import",
 			Email: "proved@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
 			EmailFlags: authn.IdentifierFlags{SignIn: true, Contact: true},
 		})
@@ -410,7 +407,7 @@ func TestAnImportWritesTheSignInAxisOfItsSourceRecord(t *testing.T) {
 		// A source record that did not call its address a contact does not make
 		// it anything else here: a registered address is always a contact.
 		noContact := read(authn.CreateAccount{
-			ID: "legacy_no_contact", Via: "import",
+			ID: "legacy_no_contact", Username: "legacy_no_contact", Via: "import",
 			Email: "nocontact@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
 			EmailFlags: authn.IdentifierFlags{SignIn: true},
 		})
@@ -420,7 +417,7 @@ func TestAnImportWritesTheSignInAxisOfItsSourceRecord(t *testing.T) {
 		}
 
 		unproved := read(authn.CreateAccount{
-			ID: "legacy_unproved", Via: "import",
+			ID: "legacy_unproved", Username: "legacy_unproved", Via: "import",
 			Email: "unproved@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaImportUnverified},
 			EmailFlags: authn.IdentifierFlags{Contact: true}, DefaultContact: true,
 		})
@@ -430,7 +427,7 @@ func TestAnImportWritesTheSignInAxisOfItsSourceRecord(t *testing.T) {
 		}
 
 		phone := read(authn.CreateAccount{
-			ID: "legacy_phone", Via: "import",
+			ID: "legacy_phone", Username: "legacy_phone", Via: "import",
 			Phone: "+8613800000002", PhoneVerifiedVia: authn.Verification{Via: authn.VerifiedViaImportUnverified},
 			PhoneFlags: authn.IdentifierFlags{},
 		})

@@ -587,7 +587,7 @@ var runtimeSentinels = []error{
 	authn.ErrInvalidAccountID, authn.ErrAccountNotFound, authn.ErrAccountExists, authn.ErrContactTaken,
 	authn.ErrInvalidCredentials,
 	authn.ErrPasswordPolicy, authn.ErrInvalidIdentifier, authn.ErrInvalidArgument, authn.ErrFactorLimit,
-	authn.ErrIdentifierRequired, authn.ErrAccountUnavailable, authn.ErrMethodDisabled, authn.ErrCleanupIncomplete,
+	authn.ErrIdentifierRequired, authn.ErrUsernameImmutable, authn.ErrAccountUnavailable, authn.ErrMethodDisabled, authn.ErrCleanupIncomplete,
 	authn.ErrSessionRevoked, authn.ErrThrottled, authn.ErrFlowInvalid, authn.ErrStepOutOfOrder,
 	authn.ErrLinkRequired, authn.ErrNotProvisioned, authn.ErrSignupClosed, authn.ErrDomainMismatch,
 	authn.ErrProvisionRefused, authn.ErrBindingConflict, authn.ErrLastLoginMethod, authn.ErrLastFactor,

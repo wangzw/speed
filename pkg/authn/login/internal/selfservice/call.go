@@ -189,6 +189,8 @@ func (r *routes) fail(c *call, err error) {
 		c.fail(mount.CodeUsernameReserved)
 	case errors.Is(err, authn.ErrIdentifierRequired):
 		c.fail(mount.CodeLoginIdentifierRequired)
+	case errors.Is(err, authn.ErrUsernameImmutable):
+		c.fail(mount.CodeUsernameImmutable)
 	case errors.Is(err, authn.ErrContactTaken):
 		c.fail(mount.CodeEmailTaken)
 	case errors.Is(err, authn.ErrAccountExists), errors.Is(err, authn.ErrBindingConflict),

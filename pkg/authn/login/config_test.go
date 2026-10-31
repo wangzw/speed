@@ -183,6 +183,61 @@ func TestTheRegistrationReadsFallBackToTheirStrictSide(t *testing.T) {
 	}
 }
 
+// TestTheDisabledMethodsDomainNeverAdmitsPassword holds the value domain of the
+// disabled-methods setting: it parses a JSON array of strings, the empty text
+// and the empty array are legal, and a value naming the password method is
+// refused.
+func TestTheDisabledMethodsDomainNeverAdmitsPassword(t *testing.T) {
+	item, ok := settingsSchema().Items[disabledMethodsKey]
+	if !ok || item.Domain.Rule() == "" {
+		t.Fatal("the disabled-methods item declares no domain, so a write naming password would be stored")
+	}
+	for _, c := range []struct {
+		text string
+		ok   bool
+	}{
+		{"", true},
+		{"[]", true},
+		{`["sms"]`, true},
+		{`["sms","password"]`, false},
+		{`["password"]`, false},
+		{"not json", false},
+	} {
+		if got := disabledMethodsTextInDomain(c.text); got != c.ok {
+			t.Errorf("disabledMethodsTextInDomain(%q) = %v, want %v", c.text, got, c.ok)
+		}
+	}
+}
+
+// TestTheDisabledMethodsReadIgnoresPasswordAndReportsItOnce holds the read side:
+// a raw value naming password still turns off its other names and never the
+// password method, and the same value is reported once rather than on every
+// read.
+func TestTheDisabledMethodsReadIgnoresPasswordAndReportsItOnce(t *testing.T) {
+	var buf bytes.Buffer
+	r := newReader(&fakeStore{values: map[string]string{disabledMethodsPath: `["sms","password"]`}},
+		slog.New(slog.NewTextHandler(&buf, nil)))
+	for i := range 2 {
+		got, err := r.disabledMethods()
+		if err != nil {
+			t.Fatalf("read %d: %v", i, err)
+		}
+		if len(got) != 1 || got[0] != "sms" {
+			t.Fatalf("read %d = %v, want only sms", i, got)
+		}
+	}
+	if n := strings.Count(buf.String(), "level=ERROR"); n != 1 {
+		t.Errorf("one raw value wrote %d Error lines, want 1: %s", n, buf.String())
+	}
+
+	var quiet bytes.Buffer
+	only := newReader(&fakeStore{values: map[string]string{disabledMethodsPath: `["password"]`}},
+		slog.New(slog.NewTextHandler(&quiet, nil)))
+	if got, err := only.disabledMethods(); err != nil || len(got) != 0 {
+		t.Errorf("reading a value naming only password = %v, %v; want the empty list", got, err)
+	}
+}
+
 // TestThePerFlowSendLimitHoldsItsDomain holds the domain of the per-flow send
 // limit this module only reads: a value at a bound is used, and one outside reads
 // as the declared default.

@@ -469,18 +469,23 @@ func TestSetAttributesTheChangeAndRefusesAnUnknownAttribution(t *testing.T) {
 }
 
 // TestSetRefusesAnAccountWithNoLoginName holds that a password needs a login name
-// to authenticate: an account created without a username whose only identifier is
-// a phone number, even one chosen as a sign-in way, is refused, and adding a
-// username is what makes the same call succeed.
+// to authenticate: an account whose username was written away around this
+// surface, so that its only identifier is a phone number even one chosen as a
+// sign-in way, is refused, and adding a username is what makes the same call
+// succeed.
 func TestSetRefusesAnAccountWithNoLoginName(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		created, err := h.p.Create(ctx, authn.CreateAccount{
-			Via: "import", Phone: "+8613812345678",
+			Username: "phoneonly", Via: "import", Phone: "+8613812345678",
 			PhoneVerifiedVia: authn.Verification{Via: authn.VerifiedViaSMSCode},
 		})
 		if err != nil {
-			t.Fatalf("importing a phone-only account: %v", err)
+			t.Fatalf("importing an account with a username and a phone: %v", err)
+		}
+		if err = h.handle.Exec("DELETE FROM "+tableIdentifiers+" WHERE account_id = ? AND kind = ?",
+			created.ID.String(), string(authn.IdentifierUsername)).Error; err != nil {
+			t.Fatalf("clearing the username: %v", err)
 		}
 		phone := identifierOfKind(t, h, created.ID, authn.IdentifierPhone)
 		if !phone.SignIn {
@@ -506,19 +511,24 @@ func TestSetRefusesAnAccountWithNoLoginName(t *testing.T) {
 }
 
 // TestSetRefusesAnAccountWhoseOnlyEmailIsNoSignInWay holds that a proved email
-// kept as a contact alone is no login name either: an imported account whose
-// source record did not choose it is refused a password until its holder does,
-// and the choice is what makes the same call succeed.
+// kept as a contact alone is no login name either: an account whose username was
+// written away around this surface and whose source record did not choose its
+// address is refused a password until its holder does, and the choice is what
+// makes the same call succeed.
 func TestSetRefusesAnAccountWhoseOnlyEmailIsNoSignInWay(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		created, err := h.p.Create(ctx, authn.CreateAccount{
-			Via: "import", Email: "contactonly@example.com",
+			Username: "contactonly", Via: "import", Email: "contactonly@example.com",
 			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
 			EmailFlags:       authn.IdentifierFlags{Contact: true},
 		})
 		if err != nil {
-			t.Fatalf("importing an account whose address is only a contact: %v", err)
+			t.Fatalf("importing an account with a username and contact-only address: %v", err)
+		}
+		if err = h.handle.Exec("DELETE FROM "+tableIdentifiers+" WHERE account_id = ? AND kind = ?",
+			created.ID.String(), string(authn.IdentifierUsername)).Error; err != nil {
+			t.Fatalf("clearing the username: %v", err)
 		}
 		email := identifierOfKind(t, h, created.ID, authn.IdentifierEmail)
 		if email.SignIn || !email.Contact {

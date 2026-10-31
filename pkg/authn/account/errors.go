@@ -24,6 +24,7 @@ var domainErrors = []error{
 	authn.ErrInvalidCredentials,
 	authn.ErrPasswordPolicy,
 	authn.ErrIdentifierRequired,
+	authn.ErrUsernameImmutable,
 	authn.ErrBindingConflict,
 	authn.ErrLastLoginMethod,
 	authn.ErrLastTenantAdmin,

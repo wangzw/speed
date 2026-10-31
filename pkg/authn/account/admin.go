@@ -236,30 +236,24 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		ValidAfter: now, CreatedAt: now, UpdatedAt: now,
 	}
 
-	// A user account is opened with a username. The two paths that restore an
-	// account instead of opening one are exempt: an import brings back an
-	// account that already existed, and a service account signs in with a
-	// service secret. Every other creation path — an administrator, the
-	// initial seed, a first login, an accepted invitation — refuses here
-	// rather than leave an account that has no login name.
-	if usernameRequired(kind, via) && in.Username == "" {
+	// A user account is opened with a username, whichever path opens it. A
+	// service account signs in with a service secret instead. An account that
+	// names no username is refused here rather than left with no login name.
+	if usernameRequired(kind) && in.Username == "" {
 		// An absent username is a shape failure of the field, not a malformed
 		// body: the answer names the username, the same as a badly formed one.
 		return plan, authn.UsernameShape(fmt.Errorf("%w: a user account is created with a username", authn.ErrInvalidIdentifier))
 	}
 
-	// importing is the account's own path, read before the closure below shadows
-	// the name with the way one identifier was verified.
-	importing := via == byImport
 	add := func(k authn.IdentifierKind, value string, via string, flags authn.IdentifierFlags, defaultContact bool) error {
 		var normalized, rowID string
 		if normalized, err = NormalizeIdentifier(k, value); err != nil {
 			return err
 		}
-		// An import restores an account that already existed, so the name it
-		// brings back is not one this deployment may refuse. The format above and
-		// the uniqueness of the write are still the checks every path meets.
-		if k == authn.IdentifierUsername && !importing {
+		// A username is held to the reserved set whichever path writes it,
+		// import included: an imported account is a user account with a login
+		// name like any other.
+		if k == authn.IdentifierUsername {
 			if reservedErr := p.checkReservedUsername(normalized); reservedErr != nil {
 				return reservedErr
 			}
@@ -357,10 +351,10 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 }
 
 // usernameRequired reports whether an account creation must name a username: a
-// user account that is not an import. A service account is exempt because a
+// user account, whichever path opens it. A service account is exempt because a
 // service secret, not a username, is how it signs in.
-func usernameRequired(kind authn.AccountKind, via string) bool {
-	return kind == authn.KindUser && via != byImport
+func usernameRequired(kind authn.AccountKind) bool {
+	return kind == authn.KindUser
 }
 
 // newCredential reads or derives the credential of an account being created. It
@@ -743,7 +737,9 @@ func writeEmailClaim(tx *gorm.DB, account, value string, now time.Time) error {
 }
 
 // RemoveIdentifier unbinds one identifier by its identifier. One the account does
-// not have is already unbound, and the call is nil. Removing an email address
+// not have is already unbound, and the call is nil. A username is never unbound:
+// it stays with the account for the account's whole life and the call is
+// authn.ErrUsernameImmutable (REQ-account-070). Removing an email address
 // also removes the account's reservation of that contact, releasing it to
 // another account, and hands the default contact to the earliest proved email
 // address that remains when the removed one was the default. Removing the last
@@ -752,17 +748,18 @@ func writeEmailClaim(tx *gorm.DB, account, value string, now time.Time) error {
 // place of the address that was removed.
 //
 // An account that holds a password credential keeps at least one login name:
-// removing its last username or chosen email address is
+// removing its last chosen email address is
 // authn.ErrIdentifierRequired, since the password would then authenticate
-// nothing. That rule is about login names and is checked first, before the rule
-// below.
+// nothing. That rule is about login names and is checked before the rule below.
+// It only reaches a row that holds no username, which a write around this
+// surface can leave.
 //
 // Removing any identifier that would leave the account with no way to log in
 // that is not a factor is authn.ErrLastLoginMethod, and the transaction rolls
 // back. The ways counted are a password credential, a proved phone number chosen
-// as a sign-in way and an external identity (see loginWayHeld); a username or an
-// email address without a password authenticates nothing and does not count on
-// its own, and neither does an unproved or unchosen phone number.
+// as a sign-in way and an external identity (see loginWayHeld); an email address
+// without a password authenticates nothing and does not count on its own, and
+// neither does an unproved or unchosen phone number.
 func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, identifierID string) error {
 	b := &batch{}
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
@@ -778,10 +775,16 @@ func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, iden
 		if err != nil {
 			return err
 		}
+		kind := authn.IdentifierKind(row.Kind)
+		// A username is part of the account's identity, not a login way the
+		// holder may drop: it stays for the account's whole life. The refusal
+		// comes before every other rule about what a removal would leave.
+		if kind == authn.IdentifierUsername {
+			return fmt.Errorf("%w: a username stays with its account", authn.ErrUsernameImmutable)
+		}
 		if err = tx.Where("id = ? AND account_id = ?", identifierID, id.String()).Delete(&identifierRow{}).Error; err != nil {
 			return err
 		}
-		kind := authn.IdentifierKind(row.Kind)
 		// An email address is released with the identifier: the contact is no
 		// longer owned by this account, so another account may reserve it. When
 		// it was the default contact, the earliest proved address that remains
@@ -797,7 +800,7 @@ func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, iden
 				}
 			}
 		}
-		if kind == authn.IdentifierUsername || kind == authn.IdentifierEmail {
+		if kind == authn.IdentifierEmail {
 			var hasPassword bool
 			if hasPassword, err = hasCredential(tx, id.String()); err != nil {
 				return err

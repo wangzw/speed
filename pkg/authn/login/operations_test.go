@@ -65,6 +65,32 @@ func TestTheIdentifierRemovalDeclaresTheLoginNameConflict(t *testing.T) {
 	}
 }
 
+// TestTheIdentifierRemovalDeclaresTheImmutableUsername holds that the route
+// declares the 409 username-immutable its account-module call answers when the
+// identifier named is a username, which cannot be removed.
+func TestTheIdentifierRemovalDeclaresTheImmutableUsername(t *testing.T) {
+	found := false
+	for _, operation := range operations {
+		descriptor := operation.Descriptor()
+		if descriptor.ID != "authn.login.removeIdentifier" {
+			continue
+		}
+		found = true
+		declared := false
+		for _, response := range descriptor.Responses {
+			if response.Status == http.StatusConflict && response.ProblemType == typePrefix+mount.CodeUsernameImmutable {
+				declared = true
+			}
+		}
+		if !declared {
+			t.Error("authn.login.removeIdentifier does not declare the 409 username-immutable of a username removal")
+		}
+	}
+	if !found {
+		t.Fatal("authn.login.removeIdentifier is not declared")
+	}
+}
+
 // TestEveryBodyRouteDeclaresTheBodyLimit holds the 413 every route with a
 // declared body answers with when a request announces more than the endpoint
 // reads. The capability's own 64 KiB limit is answered 400 before this one.

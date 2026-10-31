@@ -264,6 +264,8 @@ func (m *product) answer(op string, err error) error {
 		return authnFailure(http.StatusBadRequest, mount.CodeUsernameReserved)
 	case errors.Is(err, authn.ErrIdentifierRequired):
 		return authnFailure(http.StatusConflict, mount.CodeLoginIdentifierRequired)
+	case errors.Is(err, authn.ErrUsernameImmutable):
+		return authnFailure(http.StatusConflict, mount.CodeUsernameImmutable)
 	case errors.Is(err, authn.ErrContactTaken):
 		return authnFailure(http.StatusConflict, mount.CodeEmailTaken)
 	case errors.Is(err, authn.ErrAccountExists), errors.Is(err, authn.ErrBindingConflict),

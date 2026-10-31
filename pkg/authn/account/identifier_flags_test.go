@@ -293,9 +293,11 @@ func TestReprovingAHeldAddressRestoresItsContactAxis(t *testing.T) {
 
 // TestSetIdentifierFlagsRefusesTheLastLoginNameAndTheLastWay holds the two
 // refusals of taking a row out of sign-in, in the order the removal uses, and
-// that neither takes effect: a password account that would lose its last login
-// name is ErrIdentifierRequired, and a passwordless account that would lose every
-// way in is ErrLastLoginMethod.
+// that neither takes effect: a password account whose username was removed
+// around this surface that would lose its last login name is
+// ErrIdentifierRequired, and a passwordless account that would lose every way in
+// is ErrLastLoginMethod. A username is never removable, which is why the first
+// case writes the row away rather than removing it.
 func TestSetIdentifierFlagsRefusesTheLastLoginNameAndTheLastWay(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -311,8 +313,12 @@ func TestSetIdentifierFlagsRefusesTheLastLoginNameAndTheLastWay(t *testing.T) {
 			t.Fatalf("choosing the address as a sign-in way: %v", err)
 		}
 		if err := h.p.RemoveIdentifier(ctx, id,
-			identifierOfKind(t, h, id, authn.IdentifierUsername).ID); err != nil {
-			t.Fatalf("removing the username beside the chosen address gave %v, want nil", err)
+			identifierOfKind(t, h, id, authn.IdentifierUsername).ID); !errors.Is(err, authn.ErrUsernameImmutable) {
+			t.Fatalf("removing the username gave %v, want ErrUsernameImmutable", err)
+		}
+		if err := h.handle.Exec("DELETE FROM "+tableIdentifiers+" WHERE account_id = ? AND kind = ?",
+			id.String(), string(authn.IdentifierUsername)).Error; err != nil {
+			t.Fatalf("clearing the username: %v", err)
 		}
 		if err := h.p.SetIdentifierFlags(ctx, id, emailID, authn.IdentifierFlags{Contact: true}); !errors.Is(err, authn.ErrIdentifierRequired) {
 			t.Errorf("taking away the last login name gave %v, want ErrIdentifierRequired", err)

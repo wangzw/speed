@@ -166,6 +166,7 @@ func TestATighteningOrEqualChangeWritesNothing(t *testing.T) {
 		{Key: flowTTLPath, Old: "8m0s", New: "5m0s"},                             // a shorter-lived flow
 		{Key: flowTTLPath, Old: "5m0s", New: "5m0s"},                             // no change
 		{Key: disabledMethodsPath, Old: `[]`, New: `["sms"]`},                    // a method turned off
+		{Key: disabledMethodsPath, Old: `["password"]`, New: `[]`},               // password was never off, so nothing is removed
 		{Key: deliveryModesPath, Old: `["session","token"]`, New: `["session"]`}, // a delivery mode removed
 		{Key: ipLimitPath, Old: "0", New: "5"},                                   // the pre-throttle turned on
 	}

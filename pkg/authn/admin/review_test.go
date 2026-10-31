@@ -519,6 +519,7 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 		{"password policy", authn.ErrPasswordPolicy, http.StatusBadRequest, mount.CodeBadRequest},
 		{"invalid config", authn.ErrInvalidConfig, http.StatusBadRequest, mount.CodeBadRequest},
 		{"identifier required", authn.ErrIdentifierRequired, http.StatusConflict, mount.CodeLoginIdentifierRequired},
+		{"immutable username", authn.ErrUsernameImmutable, http.StatusConflict, mount.CodeUsernameImmutable},
 		{"account exists", authn.ErrAccountExists, http.StatusConflict, mount.CodeConflict},
 		{"contact taken", authn.ErrContactTaken, http.StatusConflict, mount.CodeEmailTaken},
 		{"binding conflict", authn.ErrBindingConflict, http.StatusConflict, mount.CodeConflict},
@@ -581,6 +582,24 @@ func TestRemovingTheLastLoginNameIsA409(t *testing.T) {
 	}
 	if got := problemCode(t, rec.Body.String()); got != mount.CodeLoginIdentifierRequired {
 		t.Errorf("problem code = %q, want %q", got, mount.CodeLoginIdentifierRequired)
+	}
+	if n := r.accountAdm.count("remove-identifier"); n != 1 {
+		t.Errorf("RemoveIdentifier ran %d times, want once", n)
+	}
+}
+
+// TestRemovingAUsernameIsA409UsernameImmutable holds that the management route
+// answers a username removal with 409 username-immutable, the same code the
+// self-service route uses, and that nothing is removed.
+func TestRemovingAUsernameIsA409UsernameImmutable(t *testing.T) {
+	r := newRig(t)
+	r.accountAdm.err = authn.ErrUsernameImmutable
+	rec := r.do(http.MethodDelete, "/api/v1/system/auth/accounts/"+string(userID)+"/identifiers/"+identifier, nil, fresh()...)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body %s", rec.Code, rec.Body.String())
+	}
+	if got := problemCode(t, rec.Body.String()); got != mount.CodeUsernameImmutable {
+		t.Errorf("problem code = %q, want %q", got, mount.CodeUsernameImmutable)
 	}
 	if n := r.accountAdm.count("remove-identifier"); n != 1 {
 		t.Errorf("RemoveIdentifier ran %d times, want once", n)

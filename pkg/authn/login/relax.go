@@ -131,17 +131,29 @@ func relaxes(direction, key, oldText string, oldEmpty bool, newText string, newE
 }
 
 // listValue reads the text of a list setting as its members, or the declared
-// default when the layer held no row.
+// default when the layer held no row. The disabled-methods switch has the
+// password method filtered out of both sides, since it is not a member the
+// deployment can turn off and a raw value that named it is not a relaxation.
 func listValue(key, text string, empty bool) []string {
 	if empty {
 		list, _ := parseList(declaredList(key))
-		return list
+		return withoutPasswordMember(key, list)
 	}
 	list, err := parseList(text)
 	if err != nil {
 		return nil
 	}
-	return list
+	return withoutPasswordMember(key, list)
+}
+
+// withoutPasswordMember drops the password method from a disabled-methods list
+// and leaves every other setting's list alone.
+func withoutPasswordMember(key string, list []string) []string {
+	if key != disabledMethodsPath {
+		return list
+	}
+	kept, _ := withoutPassword(list)
+	return kept
 }
 
 // declaredList is the declared default of one of the watched list settings, as

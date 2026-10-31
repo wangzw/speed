@@ -881,6 +881,7 @@ var exportedSurface = []string{
 	"var ErrUnavailable",
 	"var ErrUnknownEndpoint",
 	"var ErrUnsupportedRegion",
+	"var ErrUsernameImmutable",
 	"var ErrUsernameReserved",
 	"func IsUsernameShape",
 	"func UsernameShape",

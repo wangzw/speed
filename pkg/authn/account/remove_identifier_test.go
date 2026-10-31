@@ -24,10 +24,13 @@ func identifierOfKind(t *testing.T, h *harness, id authn.AccountID, kind authn.I
 	return authn.Identifier{}
 }
 
-// TestRemovingTheLastLoginNameOfAPasswordAccountIsRefused holds that an account
-// holding a password credential cannot lose its last username or email address:
-// the removal answers authn.ErrIdentifierRequired, the transaction rolls back,
-// the identifier stays held and no removal event is published.
+// TestRemovingTheLastLoginNameOfAPasswordAccountIsRefused holds the two login
+// name rules. A username cannot be removed at all, whether or not the account
+// has another login name. An account holding a password credential and no
+// username, a row a write around this surface can leave, cannot lose its last
+// chosen email address either: that removal answers authn.ErrIdentifierRequired.
+// In both cases the transaction rolls back, the identifier stays held and no
+// removal event is published.
 func TestRemovingTheLastLoginNameOfAPasswordAccountIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -40,8 +43,11 @@ func TestRemovingTheLastLoginNameOfAPasswordAccountIsRefused(t *testing.T) {
 		}
 		before := len(h.bus.of(authn.EventIdentifierChanged))
 		usernameID := identifierOfKind(t, h, usernameOnly.ID, authn.IdentifierUsername).ID
-		if err = h.p.RemoveIdentifier(ctx, usernameOnly.ID, usernameID); !errors.Is(err, authn.ErrIdentifierRequired) {
-			t.Fatalf("removing the only login name gave %v, want ErrIdentifierRequired", err)
+		if err = h.p.RemoveIdentifier(ctx, usernameOnly.ID, usernameID); !errors.Is(err, authn.ErrUsernameImmutable) {
+			t.Fatalf("removing the only login name gave %v, want ErrUsernameImmutable", err)
+		}
+		if errors.Is(err, authn.ErrUnavailable) {
+			t.Errorf("the immutable-username refusal also reads as ErrUnavailable, so a caller cannot tell them apart")
 		}
 		if got, lookupErr := h.p.Lookup(ctx, authn.IdentifierUsername, "onlyname"); lookupErr != nil || got != usernameOnly.ID {
 			t.Errorf("the refused removal left the name found at %q, %v, want %q", got, lookupErr, usernameOnly.ID)
@@ -53,14 +59,21 @@ func TestRemovingTheLastLoginNameOfAPasswordAccountIsRefused(t *testing.T) {
 			t.Errorf("the refused removal published %d event(s)", got-before)
 		}
 
+		// The last-login-name rule only reaches a row with no username, which a
+		// write around this surface can leave.
 		emailOnly, err := h.p.Create(ctx, authn.CreateAccount{
+			Username:         "onemail",
 			Email:            "only@example.com",
 			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin},
 			PasswordHash:     cheapHash(t, "correct horse battery"),
-			Via:              "import",
+			Via:              "admin",
 		})
 		if err != nil {
-			t.Fatalf("creating an account with only an email address: %v", err)
+			t.Fatalf("creating an account with a username and an email address: %v", err)
+		}
+		if err = h.handle.Exec("DELETE FROM "+tableIdentifiers+" WHERE account_id = ? AND kind = ?",
+			emailOnly.ID.String(), string(authn.IdentifierUsername)).Error; err != nil {
+			t.Fatalf("clearing the username: %v", err)
 		}
 		emailID := identifierOfKind(t, h, emailOnly.ID, authn.IdentifierEmail).ID
 		if err = h.p.RemoveIdentifier(ctx, emailOnly.ID, emailID); !errors.Is(err, authn.ErrIdentifierRequired) {
@@ -72,51 +85,38 @@ func TestRemovingTheLastLoginNameOfAPasswordAccountIsRefused(t *testing.T) {
 	})
 }
 
-// TestRemovingALoginNameIsAllowedWhileAnotherRemains holds that a password
-// account may lose one of its login names as long as another stays, and that the
-// last one is then refused. An email address the holder did not choose as a
-// sign-in way is not a login name, so it does not keep the username; choosing it
-// does.
-func TestRemovingALoginNameIsAllowedWhileAnotherRemains(t *testing.T) {
+// TestRemovingTheUsernameIsAlwaysRefusedAndAnEmailGoesWhileItRemains holds that
+// a username is not a login way the holder may drop: removing it is refused even
+// when another login name remains, while the chosen email address may still be
+// removed because the username keeps the account with a login name.
+func TestRemovingTheUsernameIsAlwaysRefusedAndAnEmailGoesWhileItRemains(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		id := h.user("both", "correct horse battery")
 
 		usernameID := identifierOfKind(t, h, id, authn.IdentifierUsername).ID
-		if err := h.p.RemoveIdentifier(ctx, id, usernameID); !errors.Is(err, authn.ErrIdentifierRequired) {
-			t.Fatalf("removing the username beside an unchosen address gave %v, want ErrIdentifierRequired", err)
+		if err := h.p.RemoveIdentifier(ctx, id, usernameID); !errors.Is(err, authn.ErrUsernameImmutable) {
+			t.Fatalf("removing the username beside another login name gave %v, want ErrUsernameImmutable", err)
 		}
-		emailID := identifierOfKind(t, h, id, authn.IdentifierEmail).ID
-		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierEmail, "both@example.com",
-			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
-			t.Fatalf("proving the email address: %v", err)
-		}
-		if err := h.p.SetIdentifierFlags(ctx, id, emailID,
-			authn.IdentifierFlags{Contact: true, SignIn: true}); err != nil {
-			t.Fatalf("choosing the email address as a sign-in way: %v", err)
-		}
-		if err := h.p.RemoveIdentifier(ctx, id, usernameID); err != nil {
-			t.Fatalf("removing the username while a chosen email address remains gave %v, want nil", err)
-		}
-		if _, err := h.p.Lookup(ctx, authn.IdentifierEmail, "both@example.com"); err != nil {
-			t.Fatalf("the email address is not found after removing the username: %v", err)
+		if _, err := h.p.Lookup(ctx, authn.IdentifierUsername, "both"); err != nil {
+			t.Fatalf("the refused removal left the username unfound: %v", err)
 		}
 
-		if err := h.p.RemoveIdentifier(ctx, id, emailID); !errors.Is(err, authn.ErrIdentifierRequired) {
-			t.Fatalf("removing the last login name gave %v, want ErrIdentifierRequired", err)
+		emailID := identifierOfKind(t, h, id, authn.IdentifierEmail).ID
+		if err := h.p.RemoveIdentifier(ctx, id, emailID); err != nil {
+			t.Fatalf("removing the email address while the username remains gave %v, want nil", err)
 		}
-		if _, err := h.p.Lookup(ctx, authn.IdentifierEmail, "both@example.com"); err != nil {
-			t.Errorf("the refused removal left the email address unfound: %v", err)
+		if _, err := h.p.Lookup(ctx, authn.IdentifierEmail, "both@example.com"); !errors.Is(err, authn.ErrAccountNotFound) {
+			t.Errorf("the removed email address is still found: %v", err)
 		}
 	})
 }
 
-// TestAnAccountWithoutAPasswordMayNotLoseItsLastWayIn holds rule 2C: a
-// passwordless account with no phone number and no external identity cannot
-// lose its last identifier, because nothing would be left to log in with. The
-// refusal is ErrLastLoginMethod, the transaction rolls back and no removal event
-// is published.
-func TestAnAccountWithoutAPasswordMayNotLoseItsLastWayIn(t *testing.T) {
+// TestAnAccountWithoutAPasswordCannotLoseItsUsername holds that a passwordless
+// account's only identifier is its username, which is not removable: the refusal
+// is ErrUsernameImmutable, the transaction rolls back and no removal event is
+// published.
+func TestAnAccountWithoutAPasswordCannotLoseItsUsername(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		id, err := h.p.Create(ctx, authn.CreateAccount{Username: "nopass", Via: "admin"})
@@ -125,8 +125,8 @@ func TestAnAccountWithoutAPasswordMayNotLoseItsLastWayIn(t *testing.T) {
 		}
 		usernameID := identifierOfKind(t, h, id.ID, authn.IdentifierUsername).ID
 		before := len(h.bus.of(authn.EventIdentifierChanged))
-		if err = h.p.RemoveIdentifier(ctx, id.ID, usernameID); !errors.Is(err, authn.ErrLastLoginMethod) {
-			t.Fatalf("removing the last way in of an account without a password gave %v, want ErrLastLoginMethod", err)
+		if err = h.p.RemoveIdentifier(ctx, id.ID, usernameID); !errors.Is(err, authn.ErrUsernameImmutable) {
+			t.Fatalf("removing the username of an account without a password gave %v, want ErrUsernameImmutable", err)
 		}
 		if held, listErr := h.p.Identifiers(ctx, id.ID); listErr != nil || len(held) != 1 {
 			t.Errorf("the refused removal left %v, %v, want the identifier kept", held, listErr)
@@ -137,11 +137,10 @@ func TestAnAccountWithoutAPasswordMayNotLoseItsLastWayIn(t *testing.T) {
 	})
 }
 
-// TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains holds rule 2C
-// from the allowed side: a proved phone number chosen as a sign-in way and an
-// external identity each keep the account reachable, so the last login name may
-// go. Once the chosen phone number is the last way in, removing it is refused.
-func TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains(t *testing.T) {
+// TestAPasswordlessAccountKeepsItsUsernameAndItsLastWayIn holds rule 2C from
+// the refusal side: a username is never removed, and once a chosen phone number
+// is the account's last way in, removing it is refused too.
+func TestAPasswordlessAccountKeepsItsUsernameAndItsLastWayIn(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 
@@ -159,8 +158,8 @@ func TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains(t *testing.
 			t.Fatalf("choosing the phone number as a sign-in way: %v", err)
 		}
 		if err = h.p.RemoveIdentifier(ctx, withPhone.ID,
-			identifierOfKind(t, h, withPhone.ID, authn.IdentifierUsername).ID); err != nil {
-			t.Fatalf("removing the login name while a chosen phone number remains gave %v, want nil", err)
+			identifierOfKind(t, h, withPhone.ID, authn.IdentifierUsername).ID); !errors.Is(err, authn.ErrUsernameImmutable) {
+			t.Fatalf("removing the username gave %v, want ErrUsernameImmutable", err)
 		}
 		if err = h.p.RemoveIdentifier(ctx, withPhone.ID,
 			identifierOfKind(t, h, withPhone.ID, authn.IdentifierPhone).ID); !errors.Is(err, authn.ErrLastLoginMethod) {
@@ -176,17 +175,17 @@ func TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains(t *testing.
 			t.Fatalf("linking an external identity: %v", err)
 		}
 		if err = h.p.RemoveIdentifier(ctx, withExternal.ID,
-			identifierOfKind(t, h, withExternal.ID, authn.IdentifierUsername).ID); err != nil {
-			t.Fatalf("removing the login name while an external identity remains gave %v, want nil", err)
+			identifierOfKind(t, h, withExternal.ID, authn.IdentifierUsername).ID); !errors.Is(err, authn.ErrUsernameImmutable) {
+			t.Fatalf("removing the username beside an external identity gave %v, want ErrUsernameImmutable", err)
 		}
 	})
 }
 
 // TestAnUnverifiedPhoneDoesNotKeepTheAccountReachable holds that a phone number
 // counts as a way in only once its ownership was proved and its holder chose it:
-// a number written with an unproved way leaves a passwordless account with no way
-// to log in, proving the same number in place still does not count until it is
-// chosen, and choosing it turns the removal from a refusal into a success.
+// a number written with an unproved way, and the same number proved in place,
+// leave the account with no way to log in that is not a factor until it is
+// chosen. The username is not removable either way.
 func TestAnUnverifiedPhoneDoesNotKeepTheAccountReachable(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -199,24 +198,27 @@ func TestAnUnverifiedPhoneDoesNotKeepTheAccountReachable(t *testing.T) {
 			t.Fatalf("adding an unverified phone number: %v", err)
 		}
 		if err = h.p.RemoveIdentifier(ctx, id.ID,
-			identifierOfKind(t, h, id.ID, authn.IdentifierUsername).ID); !errors.Is(err, authn.ErrLastLoginMethod) {
-			t.Fatalf("removing the login name beside an unverified phone gave %v, want ErrLastLoginMethod", err)
+			identifierOfKind(t, h, id.ID, authn.IdentifierUsername).ID); !errors.Is(err, authn.ErrUsernameImmutable) {
+			t.Fatalf("removing the username beside an unverified phone gave %v, want ErrUsernameImmutable", err)
 		}
+		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, id.ID); wayErr != nil || way {
+			t.Errorf("an unverified phone reports a way in: %v, %v", way, wayErr)
+		}
+
 		if err = h.p.AddIdentifier(ctx, id.ID, authn.IdentifierPhone, "+8613800000021",
 			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
 			t.Fatalf("proving the phone number: %v", err)
 		}
-		if err = h.p.RemoveIdentifier(ctx, id.ID,
-			identifierOfKind(t, h, id.ID, authn.IdentifierUsername).ID); !errors.Is(err, authn.ErrLastLoginMethod) {
-			t.Fatalf("removing the login name beside a proved but unchosen phone gave %v, want ErrLastLoginMethod", err)
+		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, id.ID); wayErr != nil || way {
+			t.Errorf("a proved but unchosen phone reports a way in: %v, %v", way, wayErr)
 		}
+
 		phoneID := identifierOfKind(t, h, id.ID, authn.IdentifierPhone).ID
 		if err = h.p.SetIdentifierFlags(ctx, id.ID, phoneID, authn.IdentifierFlags{Contact: true, SignIn: true}); err != nil {
 			t.Fatalf("choosing the proved phone number: %v", err)
 		}
-		if err = h.p.RemoveIdentifier(ctx, id.ID,
-			identifierOfKind(t, h, id.ID, authn.IdentifierUsername).ID); err != nil {
-			t.Fatalf("removing the login name beside a chosen phone gave %v, want nil", err)
+		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, id.ID); wayErr != nil || !way {
+			t.Errorf("a chosen phone does not report a way in: %v, %v", way, wayErr)
 		}
 	})
 }

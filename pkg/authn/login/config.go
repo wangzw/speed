@@ -249,6 +249,11 @@ func emailGlobalHourlyInDomain(n int) bool {
 	return n >= minEmailGlobalHourly && n <= maxEmailGlobalHourly
 }
 
+// methodPassword is the login method the disabled-methods switch cannot turn
+// off. Whether it is in force depends only on the password module being
+// assembled, and the assembly is the host's call (REQ-signin-039).
+const methodPassword = "password"
+
 // deliveryModesTextInDomain reports whether a JSON array of strings is a legal
 // value of the delivery-modes setting.
 func deliveryModesTextInDomain(text string) bool {
@@ -257,6 +262,35 @@ func deliveryModesTextInDomain(text string) bool {
 		return false
 	}
 	return deliveryModesInDomain(modes)
+}
+
+// disabledMethodsTextInDomain reports whether a JSON array of strings is a legal
+// value of the disabled-methods setting: it must parse as a JSON array of
+// strings, and it may not name the password method, which no deployment turns
+// off. The empty text and the empty array are both legal: they turn nothing off.
+func disabledMethodsTextInDomain(text string) bool {
+	list, err := parseList(text)
+	if err != nil {
+		return false
+	}
+	_, dropped := withoutPassword(list)
+	return !dropped
+}
+
+// withoutPassword returns list with the password method removed, and whether it
+// named it. Every read of the disabled-methods switch passes through here, so a
+// value written around the settings surface cannot turn the password method off.
+func withoutPassword(list []string) ([]string, bool) {
+	if !slices.Contains(list, methodPassword) {
+		return list, false
+	}
+	kept := make([]string, 0, len(list))
+	for _, name := range list {
+		if name != methodPassword {
+			kept = append(kept, name)
+		}
+	}
+	return kept, true
 }
 
 // parseList reads a JSON array of strings from the text of a list setting. The
@@ -323,7 +357,10 @@ func settingsSchema() settings.Schema {
 					"instead, and a request that is not a navigation is answered the problem document",
 			},
 			disabledMethodsKey: {
-				Description: "the login methods turned off at run time, by name, as a JSON array of strings",
+				Description: "the login methods turned off at run time, by name, as a JSON array of strings; " +
+					"the password method is not among them and a write naming it is refused",
+				Domain: settings.DomainOf("a JSON array of login method names other than password",
+					disabledMethodsTextInDomain),
 			},
 			deliveryModesKey: {
 				Description: "the delivery modes a login may ask for, as a JSON array of a non-empty subset " +
@@ -434,6 +471,10 @@ var errSettingRead = errors.New("the setting cannot be read")
 // disabledMethods reads the mandatory switch of the methods turned off. A read
 // that fails is an error and not the empty default: the default turns nothing
 // off, so falling back to it would let a method the operator turned off answer.
+//
+// The password method is filtered out of what is read, since no deployment turns
+// it off, and a raw value that named it is reported once per value so an
+// operator can correct the row (REQ-signin-039).
 func (r *reader) disabledMethods() ([]string, error) {
 	if r.store == nil {
 		return nil, nil
@@ -448,8 +489,14 @@ func (r *reader) disabledMethods() ([]string, error) {
 		r.report(disabledMethodsPath, "the switch of the disabled methods is not a JSON array of strings, so the request is refused", err.Error())
 		return nil, fmt.Errorf("%w: %s is not a JSON array of strings", errSettingRead, disabledMethodsPath)
 	}
-	r.report(disabledMethodsPath, "", "")
-	return list, nil
+	kept, dropped := withoutPassword(list)
+	if dropped {
+		r.report(disabledMethodsPath,
+			"the switch of the disabled methods names password, which the deployment cannot turn off, so it is ignored", text)
+	} else {
+		r.report(disabledMethodsPath, "", "")
+	}
+	return kept, nil
 }
 
 func (r *reader) flowTTL() time.Duration {
