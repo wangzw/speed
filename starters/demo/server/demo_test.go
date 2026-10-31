@@ -1454,14 +1454,17 @@ const emailSeedSection = `seed:
 
 // takenAddressSeedSection creates the account the adoption entry's address names
 // under a username of its own, so that address is taken while the adoption
-// entry's username is free.
+// entry's username is free. The tenant list is written empty because it is a
+// container leaf: the compiled defaults name the walkthrough tenant, whose
+// administrator this section's account list does not hold.
 const takenAddressSeedSection = `seed:
   accounts:
     - identifier: "operator@demo.example.test"
       username: "someone-else"
       password: "someone-else-secret"
       display-name: "Someone Else"
-      platform-admin: true`
+      platform-admin: true
+  tenants: []`
 
 // The operator's two login names in emailSeedSection.
 const (
@@ -2126,12 +2129,14 @@ func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
 	}
 }
 
-// TestTheSeedRefusesAConfigurationItCannotWrite holds the two ways a seed whose
-// configuration is wrong used to pass for success: an account list that is not
-// there, and an account whose credential key is misspelled. Either one used to
-// leave the operator with no way to sign in while the command reported seeded —
-// and the second leaves the account in the database with no credential at all,
-// which is the state a later run cannot repair and cannot report.
+// TestTheSeedRefusesAConfigurationItCannotWrite holds the ways a seed whose
+// configuration is wrong used to pass for success: an account list that is
+// empty, an account that names no credential, and an account whose credential
+// key is misspelled. Each used to leave the operator with no way to sign in
+// while the command reported seeded — and the second leaves the account in the
+// database with no credential at all, which is the state a later run cannot
+// repair and cannot report. The third is refused by the strict decode of the
+// account entry before the command's own check sees it.
 func TestTheSeedRefusesAConfigurationItCannotWrite(t *testing.T) {
 	cases := []struct {
 		name string
@@ -2140,14 +2145,19 @@ func TestTheSeedRefusesAConfigurationItCannotWrite(t *testing.T) {
 		want string
 	}{
 		{
-			"a seed section that holds no account list",
-			demoSeedSection, "seed: {}",
+			"an empty account list",
+			demoSeedSection, "seed:\n  accounts: []",
 			"seed.accounts",
+		},
+		{
+			"an account that names no credential",
+			"      password: \"operator-dev-secret\"\n", "",
+			"neither a password nor a password-hash",
 		},
 		{
 			"a credential key that is misspelled",
 			"      password: ", "      passwrd: ",
-			"neither a password nor a password-hash",
+			"does not convert",
 		},
 	}
 	for _, tc := range cases {
@@ -2271,10 +2281,19 @@ func TestTheFlyTemplateTrustsTheFlyProxy(t *testing.T) {
 // deploySeedCarrier is the account entry the deployment template's seed item
 // carries: the login name the operator signs in with, and the address written
 // beside it.
+//
+// The account fields mirror the seed module's own entry type. The library
+// decodes a list element whole and refuses a member no field answers for, so
+// every member the template writes has to be named here even though this case
+// reads only the identifier and the username.
 type deploySeedCarrier struct {
 	Accounts []struct {
-		Identifier string `config:"identifier"`
-		Username   string `config:"username"`
+		Identifier    string `config:"identifier"`
+		Username      string `config:"username"`
+		Password      string `config:"password"`
+		PasswordHash  string `config:"password-hash"`
+		DisplayName   string `config:"display-name"`
+		PlatformAdmin bool   `config:"platform-admin"`
 	} `config:"accounts"`
 }
 

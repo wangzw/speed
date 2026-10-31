@@ -59,10 +59,23 @@ type endpointClaim struct {
 // through pkg/config so that the answer is the effective one: the host defaults
 // document folded under the configuration file the run is pointed at, the same
 // merge the binary performs.
+//
+// The endpoint fields below mirror pkg/http's endpointConfig, the type that
+// rules on a configured entry. The library decodes a container element whole
+// and refuses a member no field answers for, so a member of the element written
+// in the defaults document has to be named here even when this case reads only
+// the listener and the prefixes: max-body-bytes is one such member, and the
+// remaining two are named with it so the carrier does not fall behind the
+// element again. A remain map is deliberately not used — it would accept a
+// misspelled member, which is the failure the whole-element decode exists to
+// report.
 type claimsCarrier struct {
 	Endpoints map[string]struct {
-		Listener string   `config:"listener"`
-		Prefixes []string `config:"prefixes"`
+		Listener        string   `config:"listener"`
+		Prefixes        []string `config:"prefixes"`
+		MaxBodyBytes    *int64   `config:"max-body-bytes"`
+		TrustedProxies  []string `config:"trusted-proxies"`
+		RemoteIPHeaders []string `config:"remote-ip-headers"`
 	} `config:"endpoints"`
 }
 
