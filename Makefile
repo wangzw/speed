@@ -66,7 +66,7 @@ each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
 .PHONY: help modules deps-up deps-down build api-docs test test-race test-integration test-integration-race \
         vet-integration vet-review test-review fmt lint tidy tidy-check repo-check tools-test check python-version \
-        modules-present web-check web-a11y web-browser e2e e2e-install deploy
+        modules-present web-check web-a11y web-browser e2e e2e-install dev fly
 
 # A target name may carry a digit (web-a11y, e2e), so the name pattern admits
 # one; the old [a-z-] pattern silently dropped every such entry point from the
@@ -288,7 +288,26 @@ e2e: ## Run the end-to-end journey specs against the built demo binary
 	@pnpm -C starters/demo/web run typecheck:e2e
 	@pnpm -C starters/demo/web exec playwright test --config e2e/playwright.config.ts
 
-# The deploy leg releases the demo program to Fly.io. It is deliberately not
+# The local development loop: the frontend's vite dev server in the background
+# and the Go program under air in the foreground. Air builds the review binary
+# (starters/demo/server/.air.toml), which is what a local run wants: its
+# loopback guard matches a listener on this machine, and its test controls are
+# local-only. `mise exec` supplies the versions .mise.toml pins and loads .env,
+# the file .env.example documents, so a variable set there overrides the
+# compiled-in default for this run. Ctrl-C stops air with the rest of the
+# foreground group; the recipe then stops the vite job too, so one interrupt
+# ends both.
+dev: ## Run the demo locally: vite dev server plus the review build under air
+	@if ! command -v mise >/dev/null 2>&1; then \
+	  echo "dev: mise is not on PATH. It supplies .env and the pinned toolchain; install it and run 'mise install'." >&2; \
+	  exit 1; \
+	fi; \
+	mise exec -- pnpm -C starters/demo/web run dev & \
+	vite=$$!; \
+	trap 'kill $$vite 2>/dev/null || true; wait $$vite 2>/dev/null || true' EXIT INT TERM; \
+	mise exec -- env -C starters/demo/server air -c .air.toml
+
+# The fly leg releases the demo program to Fly.io. It is deliberately not
 # part of `check`: it needs a Fly account and the FLY_API_TOKEN secret, and the
 # workflow that calls it (.github/workflows/deploy.yml) runs only after `check`
 # passed on main. flyctl is deployment machinery rather than a build input, so
@@ -299,7 +318,7 @@ e2e: ## Run the end-to-end journey specs against the built demo binary
 # frontend workspace under web/ and the Go workspace go.work declares, both of
 # which sit outside starters/demo. The Dockerfile path lives in fly.toml and is
 # relative to that file.
-deploy: ## Build and release the demo program to Fly.io
+fly: ## Build and release the demo program to Fly.io
 	@flyctl deploy . --config starters/demo/fly.toml --remote-only
 
 check: ## Run everything a commit is gated on (no external service needed)

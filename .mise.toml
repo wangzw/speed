@@ -15,6 +15,14 @@
 # The remaining tools are pinned here and nowhere else, so they have no mirror
 # to drift from and the gate does not check them.
 
+[env]
+# Local development variables. The file is untracked (see .gitignore) and
+# .env.example documents the names it may carry; `mise exec` loads it for every
+# command, so `make dev` runs on the same overrides the toolchain does. A path
+# that matches no file is skipped, so a fresh checkout runs on the compiled-in
+# defaults.
+_.file = ".env"
+
 [tools]
 # Mirror of go.work's `go` directive.
 go = "1.26.8"

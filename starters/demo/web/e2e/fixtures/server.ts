@@ -67,7 +67,7 @@ const MAX_BIND_ATTEMPTS = 3
 
 interface HarnessManifest {
   readonly binary: string
-  /** The deploy-tagged binary the deploy fixture starts. */
+  /** The default binary the deploy fixture starts. */
   readonly deployBinary: string
   readonly repoRoot: string
   readonly serverDir: string

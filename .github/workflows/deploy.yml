@@ -6,7 +6,7 @@
 # own tree (workflow_run.head_sha), not whatever main holds when the runner
 # picks the job up.
 #
-# The work is one Makefile target (`make deploy`); this file installs the one
+# The work is one Makefile target (`make fly`); this file installs the one
 # tool that target calls. flyctl is deployment machinery rather than a build
 # input, so .mise.toml does not pin it and this file does. The image is built by
 # Fly's remote builder, so the runner needs no Docker daemon and no Go or Node
@@ -50,6 +50,6 @@ jobs:
       - uses: superfly/flyctl-actions/setup-flyctl@1.6
         with:
           version: "0.4.99"
-      - run: make deploy
+      - run: make fly
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

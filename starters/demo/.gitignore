@@ -5,6 +5,10 @@
 # the source tree.
 /server/var/
 
+# Air's working directory: the binary it rebuilds and the build log. A local
+# development artifact, never source. See server/.air.toml.
+/server/tmp/
+
 # The frontend's build outputs, which no checkout commits: the installed
 # dependency tree and the built bundle. Everything a build writes under
 # server/dist is ignored, so building the frontend leaves the working tree

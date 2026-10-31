@@ -1,0 +1,32 @@
+# Air's configuration for the demo program's local development loop.
+#
+# `make dev` starts vite in the background and air here in the foreground. Air
+# builds the review binary and runs `sqlite seed` before it hands the process to
+# `sqlite serve`, so every rebuild seeds the database the previous run used.
+# Seed is idempotent by contract, so a restart neither duplicates nor overwrites
+# a change made through the console.
+#
+# The build carries the review tag on purpose: the review assembly's loopback
+# guard matches a listener on this machine, and its test controls are local-only.
+# The configuration is server/review/sqlite.yaml, the same file the review suite
+# uses. A Go file or a YAML file under this root restarts the server; the
+# frontend is vite's job, so its tree is not watched here.
+#
+# web/ is the frontend package's own tree, and var/ is the running program's
+# state (the SQLite file, the token signing key and the object store root).
+# Neither is a build input. tmp/ holds the binary air builds.
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -tags review -o ./tmp/demo ."
+  entrypoint = ["./tmp/demo"]
+  full_bin = "./tmp/demo --config file:review/sqlite.yaml sqlite seed && exec ./tmp/demo --config file:review/sqlite.yaml sqlite serve"
+  delay = 1000
+  exclude_dir = ["web", "var", "tmp", "dist", "testdata"]
+  exclude_regex = ["_test.go"]
+  include_ext = ["go", "yaml", "yml", "toml"]
+  kill_delay = "2s"
+  send_interrupt = true
+  stop_on_error = true

@@ -8,8 +8,8 @@
  * that are deployment machinery are driven as commands and the parts that are
  * product behaviour are driven in the browser:
  *
- *  - Command side (fixtures/deploy-server.ts): the deploy-tagged binary is
- *    built by the global setup; the fixture renders the deployment template
+ *  - Command side (fixtures/deploy-server.ts): the default binary is built by
+ *    the global setup; the fixture renders the deployment template
  *    (deploy/fly.yaml.tmpl) onto a temporary volume, runs the binary's own
  *    `sqlite seed`, then starts `sqlite serve` from that volume. The operations
  *    probes and the merged API document are read by HTTP from the operations

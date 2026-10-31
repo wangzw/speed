@@ -1,8 +1,9 @@
 /**
  * The Playwright test the deploy journey is written against.
  *
- * The deployment is not the review assembly: this test gets the deploy-tagged
- * binary on a temporary volume, seeded and served by fixtures/deploy-server.ts.
+ * The deployment is not the review assembly: this test gets the default binary
+ * -- every capability compiled in, no review controls -- on a temporary volume,
+ * seeded and served by fixtures/deploy-server.ts.
  * The built-in page fixture is created after the server (the deploy fixture
  * names it second), so teardown closes the browser context before SIGTERM and
  * the process can drain.

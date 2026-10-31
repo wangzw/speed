@@ -100,7 +100,7 @@ So every platform module that declares an HTTP fragment is imported, including
 the ones the credential criterion keeps out of the baseline's runs (`sms.admin`,
 `authn.sso.saml`): their fragments still describe the platform's API surface.
 The baseline runs neither in a command — no command runs `authn.sso.saml`, and
-the review build's `serve` is the only run that names `sms.admin` — but the
+the review assembly's `serve` is the only run that enables `sms.admin` — but the
 contract document covers both. Leaving one unimported would drop its operations
 from the merged document with no error — the document would simply be smaller
 than the platform contract. `server/main.go` carries these as blank imports
@@ -110,15 +110,17 @@ collected by the stack node's `IncludeAllDeclarations`, and no baseline
 
 ### The review build
 
-`go build -tags review` compiles a second assembly beside the baseline one.
-`server/review.go` adds the login methods that need a provider or a carrier —
+`go build -tags review` compiles the default build plus the review-only test
+controls and the loopback guard (`server/review.go`, `review_sms_control.go`
+and `notification_control_review.go`). Every capability the program can run —
 the four social methods, the enterprise OIDC method (`authn.sso.oidc`), the SMS
 family with the `sms.review` log carrier and the `sms.admin` template page,
 name-and-password registration with `authn.emailcode` over the `mail.review` log
-carrier, and the SMS second factor (`authn.mfa.sms`) — through `reviewModules`,
-which `serve` includes after `baselineServe`.
-`server/review_off.go` compiles in a default build and names nothing, so a
-baseline binary carries none of those modules' code paths.
+carrier, and the SMS second factor (`authn.mfa.sms`) — is compiled into every
+build and considered by `serve` (`capabilities.go`); whether one starts is its
+own configuration decision. `server/review_off.go` is the untagged counterpart
+and names nothing, so a default binary carries neither the controls nor the
+guard.
 
 `mail.review` is a carrier built through `mail.NewModule`, the same factory
 `mail.smtp` uses: it reaches no relay and writes each rendered message to the
@@ -333,9 +335,9 @@ as seasoned, computes a code from the stored secret, and completes a
 password-and-TOTP login with it. A renamed column, a changed status or a broken
 serializer fails it. `TestReviewImpersonationStepUpOffersSMS` starts a step-up
 after that sign-in and requires the SMS factor (and not TOTP) on the list.
-`review_impersonation_isolation_test.go` holds the default build: no module named
-`authn.mfa.sms` and `authn.impersonation.max-auth-age` still declaring five
-minutes.
+`review_impersonation_isolation_test.go` holds the default build's half: the
+SMS second factor is in the capability ceiling every build compiles in, while
+`authn.impersonation.max-auth-age` still declares five minutes.
 
 ### The token signing key
 
@@ -599,7 +601,7 @@ across deploys and machine stops.
 The image is built from the repository root, because it compiles the frontend
 workspace under `web/` and the Go workspace `go.work` declares; neither is
 inside this directory. `fly.toml`'s `[build] dockerfile` is relative to that
-file. The root `Makefile`'s `deploy` target passes the root as the working
+file. The root `Makefile`'s `fly` target passes the root as the working
 directory.
 
 **A volume written before the contact-reservation migration is not upgraded.**
@@ -651,9 +653,9 @@ is at least 14 bytes and must stay the same for the life of the volume: it
 seals columns at rest, and a different key on an existing database makes them
 unreadable.
 
-**Registration is open on this deployment.** The image is built with
-`-tags deploy`, which adds `mail.smtp`, `authn.emailcode`, `authn.login.google`
-and `authn.login.github` to the baseline; `seed.settings` opens
+**Registration is open on this deployment.** The image is the default build,
+which compiles every capability in and lets the rendered configuration decide
+which ones start; `seed.settings` opens
 `authn.account.password-signup` and `authn.account.signup`; and
 `workspace.personal.enabled` is on, so an account that proves its email address
 gets a personal tenant. The email loop needs a real relay: the entrypoint
@@ -667,8 +669,9 @@ budgets keep the platform defaults rather than the demo seeding its own: a sourc
 address may open ten accounts a minute (`authn.account.signup-ip-limit`) and
 send sixty verification messages a minute (`authn.login.ip-limit`). The mail
 budgets are the declared defaults too: a walk-through may need to wait out the
-per-address window. A default build has no mail path and leaves registration
-closed, so the baseline testdata and the review build keep their own assemblies.
+per-address window. The baseline testdata and the review build name their own
+capabilities in their own configuration, so their runs keep their own feature
+sets.
 
 **The anonymous password reset is open on this deployment too.**
 `seed.settings` sets `authn.login.password-reset` to `open`, and the image's
@@ -733,7 +736,7 @@ operations endpoint's `GET /ready` on port 8083, declared as a top-level check
 because the operations listener is not a service; top-level checks report
 Machine health and gate no routing.
 
-**Deploying.** `.github/workflows/deploy.yml` runs `make deploy` when the
+**Deploying.** `.github/workflows/deploy.yml` runs `make fly` when the
 `check` workflow has completed successfully on `main`, and on request. It
 installs the pinned flyctl and builds the image on Fly's remote builder. The
 repository secret `FLY_API_TOKEN` is the account credential; the one-time setup

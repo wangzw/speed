@@ -40,11 +40,14 @@ remembering to run it.
 
 - **Global setup** (`global-setup.ts`) runs once per invocation. The Go program
   embeds `starters/demo/server/dist`, so it builds the front end first
-  (`pnpm -C starters/demo/web build`), then the review binary
-  (`go -C starters/demo/server build -tags review`). Both products go under
-  `<root>/harness`, and a manifest records the binary and the tree it came
-  from. Every later server starts that same binary; a failed build fails the
-  run with the command's whole output. A successful build still prints its
+  (`pnpm -C starters/demo/web build`), then two binaries: the review binary
+  (`go -C starters/demo/server build -tags review`) and the default binary
+  (`go -C starters/demo/server build`, with no tag). The default binary is the
+  deployment assembly -- every capability compiled in and no review controls;
+  run-time configuration decides which capabilities start. Both binaries and
+  the bundle go under `<root>/harness`, and a manifest records the binaries and
+  the tree they came from. Every per-test server starts its binary from that
+  build; a failed build fails the run with the command's whole output. A successful build still prints its
   standard error, and a warning in either stream fails the run: the harness
   does not swallow a bundler or compiler warning.
 - **One server per spec** (`fixtures/server.ts`). The server fixture creates a
