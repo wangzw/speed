@@ -116,6 +116,17 @@ func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testi
 			t.Errorf("the username reads sign_in=%v contact=%v default_contact=%v, want true false false",
 				username.SignIn, username.Contact, username.DefaultContact)
 		}
+
+		// A phone number written as an assertion is a contact too.
+		if err = h.p.AddIdentifier(ctx, created.ID, authn.IdentifierPhone, "+8613800000032",
+			authn.Verification{Via: authn.VerifiedViaAdmin}); err != nil {
+			t.Fatalf("adding an asserted phone number: %v", err)
+		}
+		assertedPhone := identifierOfKind(t, h, created.ID, authn.IdentifierPhone)
+		if assertedPhone.SignIn || !assertedPhone.Contact || assertedPhone.DefaultContact {
+			t.Errorf("the asserted phone reads sign_in=%v contact=%v default_contact=%v, want false true false",
+				assertedPhone.SignIn, assertedPhone.Contact, assertedPhone.DefaultContact)
+		}
 	})
 }
 
