@@ -97,6 +97,36 @@ describe('account-ui form geometry', () => {
     expect(submitBox.left).toBeLessThanOrEqual(fieldBox.right)
   })
 
+  it('ends the no-address add form\'s primary flush with its field', async () => {
+    await page.viewport(1100, 900)
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            verification: { state: 'pending', email: '', since: '' },
+          }),
+        )
+      }
+      return jsonResponse(404, { code: 'authn.bad_request' })
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<ContactVerificationSection session={rig.session} />)
+
+    const field = await screen.findByLabelText(zhCN.verification.addLabel)
+    const submit = screen.getByRole('button', {
+      name: zhCN.verification.addSubmit,
+    })
+    const fieldBox = field.getBoundingClientRect()
+    const submitBox = submit.getBoundingClientRect()
+    // The submit sits beneath the field and closes the row on the field's
+    // right edge, the way the password form's lone primary does.
+    expect(submitBox.top).toBeGreaterThanOrEqual(fieldBox.bottom - 1)
+    expect(Math.abs(submitBox.right - fieldBox.right)).toBeLessThanOrEqual(1)
+    expect(submit).toHaveClass('MuiButton-contained')
+  })
+
   it('replaces the contact list with the add face, closed by its primary on the right', async () => {
     await page.viewport(1100, 900)
     const respond: RealResponder = (call: RealCall) => {
@@ -131,6 +161,81 @@ describe('account-ui form geometry', () => {
     })
     expect(sameTop(submit, cancel)).toBe(true)
     expect(rightOf(submit, cancel)).toBe(true)
+  })
+
+  it('keeps the email add face\'s two steps on one right-closed action row', async () => {
+    await page.viewport(1100, 900)
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      if (
+        call.method === 'POST' &&
+        call.path === '/api/v1/auth/identifiers/verify'
+      ) {
+        return jsonResponse(200, { state: 'added' })
+      }
+      return jsonResponse(404, { code: 'authn.bad_request' })
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    // The merged view a host mounts: the add face offers both kinds here.
+    renderWithProviders(<IdentifiersSection session={rig.session} />)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+
+    // Value step: cancel leads as a text action, the send closes the row.
+    const send = screen.getByRole('button', {
+      name: zhCN.identifiers.add.submitEmail,
+    })
+    const cancel = screen.getByRole('button', {
+      name: zhCN.identifiers.add.cancel,
+    })
+    expect(sameTop(send, cancel)).toBe(true)
+    expect(rightOf(send, cancel)).toBe(true)
+    expect(send).toHaveClass('MuiButton-contained')
+    expect(cancel).not.toHaveClass('MuiButton-contained')
+    expectRightEdge(send, send.parentElement as HTMLElement)
+
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'ada@x.test',
+    )
+    await user.click(send)
+    await screen.findByLabelText(zhCN.identifiers.add.code.label)
+
+    // Code step: the same arrangement, with the verify primary disabled
+    // until a code is entered.
+    const verify = screen.getByRole('button', {
+      name: zhCN.identifiers.add.verify,
+    })
+    const change = screen.getByRole('button', {
+      name: zhCN.identifiers.add.change,
+    })
+    expect(verify).toBeDisabled()
+    expect(sameTop(verify, change)).toBe(true)
+    expect(rightOf(verify, change)).toBe(true)
+    expect(verify).toHaveClass('MuiButton-contained')
+    expect(change).not.toHaveClass('MuiButton-contained')
+    expectRightEdge(verify, verify.parentElement as HTMLElement)
+
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.code.label),
+      '123456',
+    )
+    expect(verify).toBeEnabled()
+    expect(sameTop(verify, change)).toBe(true)
+    expect(rightOf(verify, change)).toBe(true)
   })
 
   it('keeps the enrollment confirm and cancel on one row, with the fields capped', async () => {

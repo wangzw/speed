@@ -492,9 +492,13 @@ export function ContactVerificationSection({
           onChange={(event) => setEmailEntry(event.target.value)}
         />
         {humanBlock}
+        {/* The step's only action is its primary, so it closes the row on
+            the field's right edge, as every inline form in the package
+            does. */}
         <Button
           type="submit"
           variant="contained"
+          sx={{ marginLeft: 'auto' }}
           disabled={busy || proofBlocked || emailEntry.trim() === ''}
           loading={addIdentifier.isPending}
         >
