@@ -33,8 +33,9 @@
  * controls and one sentence, never the addresses or numbers as rows: the
  * address a group chooses reads in the control itself. A username is a login
  * name by definition, so its group states that with the sentence naming the
- * username and offers no sign-in switch; the one action beside that sentence
- * removes the name, under the removal rules below. The email group's switch
+ * username and offers no sign-in switch; the name is fixed, so the group also
+ * states it cannot be changed or removed and renders no removal action. The
+ * email group's switch
  * states whether the account uses email to sign in; while it is on, a picker
  * chooses one of the proved addresses, written as one step-up action so a won
  * challenge lands the same end state (the pre-chosen address turned off and
@@ -80,16 +81,17 @@
  * the list; a refused removal re-reads the profile, so a guard that read a
  * stale list converges on the server's answer. The removal does not replace
  * the caller's credential, so it runs outside the identity-transition
- * window that the credential-rotating writes below use. An account with a
- * password signs in with a username or an email address chosen as a sign-in
- * way, so while it holds exactly one such identifier that identifier's remove
- * action is withheld or disabled: the email row's action gives way to a note,
- * and the username group's action is disabled under a note of its own, because
- * removing either would leave the password without a login name. Another such
- * identifier, or an account with no password at all, keeps the action enabled.
- * Phone numbers are not counted -- they sign in through their own code route.
- * The server remains the authority on the last way in; the note states the one
- * case the profile can reveal.
+ * window that the credential-rotating writes below use. A username is
+ * permanent and carries no removal action: a removal requested outside this
+ * surface is refused with authn.username_immutable. An account with a password
+ * signs in with a username or an email address chosen as a sign-in way, so
+ * while exactly one such identifier is on the profile and it is an email, that
+ * row's remove action gives way to a note, because removing it would leave the
+ * password without a login name. Another such identifier, or an account with
+ * no password at all, keeps the action enabled. Phone numbers are not counted
+ * -- they sign in through their own code route. The server remains the
+ * authority on the last way in; the note states the one case the profile can
+ * reveal.
  *
  * An unverified email row carries a verify action beside its remove action
  * (the remove action is withheld while the row is the password account's only
@@ -1293,14 +1295,10 @@ export function IdentifiersSection({
       kindRows[0] ??
       null
     // A username is always a login name, so its group carries no sign-in
-    // switch; it carries one remove action for the name itself. That action is
-    // disabled, under the same note the contact rows give, while the name is
-    // the password account's only login name. The server still judges the last
-    // way in on the write.
+    // switch and no removal action: the name is permanent, and the group
+    // states that below the sentence naming it. The server refuses a removal
+    // requested outside this surface with authn.username_immutable.
     const usernameRow = kind === 'username' ? (kindRows[0] ?? null) : null
-    const usernameId = usernameRow?.id ?? null
-    const usernameLastLoginName =
-      usernameId !== null && passwordSet && loginNameCount === 1
     const emailSignInRow =
       kind === 'email'
         ? (kindRows.find(
@@ -1507,35 +1505,15 @@ export function IdentifiersSection({
                 t('identifiers.usage.phoneNotSignIn')
               )}
             </Typography>
-            {usernameId !== null ? (
-              <Button
-                variant="outlined"
-                color="error"
-                size="small"
-                disabled={writeBusy || addBusy || usernameLastLoginName}
-                aria-label={t('identifiers.removeAria', {
-                  value: usernameRow?.value ?? '',
-                  interpolation: { escapeValue: false },
-                })}
-                aria-describedby={
-                  usernameLastLoginName ? `${headingId}-last-login` : undefined
-                }
-                sx={{ marginLeft: 'auto' }}
-                onClick={() => setRemoveTarget(usernameId)}
-              >
-                {t('identifiers.remove')}
-              </Button>
-            ) : null}
           </Box>
         )}
-        {usernameLastLoginName ? (
+        {usernameRow !== null ? (
           <Typography
-            id={`${headingId}-last-login`}
             variant="body2"
             color="text.secondary"
             sx={{ mt: 0.5 }}
           >
-            {t('identifiers.usernameLastLoginName')}
+            {t('identifiers.usernamePermanent')}
           </Typography>
         ) : null}
       </Box>

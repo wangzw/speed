@@ -29,8 +29,8 @@
  * pinned here, against the auth-ui bundles imported below as test data.
  * The account-only codes (insufficient_user_authentication,
  * impersonation_restricted, forbidden, login_identifier_required,
- * unsupported_media_type) carry account-authored texts and carry no copy
- * claim to pin.
+ * username_immutable, unsupported_media_type) carry account-authored texts
+ * and carry no copy claim to pin.
  */
 
 import { describe, expect, it } from 'vitest'

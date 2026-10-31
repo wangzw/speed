@@ -143,13 +143,15 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   group renders its heading, its controls and one sentence, never the
   addresses or numbers as rows -- the picker displays the chosen address, and
   the sentence names the username or phone. A username has no sign-in switch
-  of its own; its group carries one remove action beside the sentence (see
-  the removal rules below). The email group's is a toggle with its picker (a proved
+  and no removal action of its own: its group states the name is a fixed
+  sign-in name that cannot be changed or removed
+  (`identifiers.usernamePermanent`). The email group's is a toggle with its picker (a proved
   address is chosen while the toggle is on, an off note takes the picker's
   place while it is off); the phone group's is a toggle of its representative
   row. The contacts list carries no sign-in control; a proved email there
   still offers the default-contact choice. The `axis` prop splits the
-  surface: the username block -- its sentence and its remove action -- renders
+  surface: the username block -- its sentence and its permanence note --
+  renders
   only on the sign-in axis (the `signIn` view and the merged view), and the
   contact axis renders the email table and the add face's email kind alone, so
   no username action appears there. A phone group whose number is
@@ -166,11 +168,12 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   account with a password signs in with a username or an email address:
   while the profile lists exactly one of those, that email's contact row
   gives up its remove action to a note (`identifiers.lastLoginName`) telling
-  the user to add another login name first, and the username group's remove
-  action is disabled under a note of its own
-  (`identifiers.usernameLastLoginName`) telling the user to add another
-  sign-in method, because an account holds at most one username. Another
-  username/email, or an account with no password at all, keeps the action; the
+  the user to add another login name first. The username is never removable:
+  the group states it is a fixed sign-in name and renders no action, and a
+  removal requested outside this surface is refused with 409
+  `authn.username_immutable`, which renders its own text. Another
+  username/email, or an account with no password at all, keeps the email
+  action; the
   server still judges the
   last way in on the write itself, and a refusal renders its 409
   `login-identifier-required` text and re-reads the profile, so a guard

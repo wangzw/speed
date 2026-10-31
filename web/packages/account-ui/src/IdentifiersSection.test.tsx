@@ -541,7 +541,7 @@ describe('IdentifiersSection', () => {
     expect(screen.queryByText(zhCN.identifiers.verified)).toBeNull()
   })
 
-  it('disables removal of the only username on a password account and explains why', async () => {
+  it('renders no removal action for the username and states it is permanent', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -566,15 +566,14 @@ describe('IdentifiersSection', () => {
     mount(respond)
 
     expect(await screen.findAllByText('ada')).toHaveLength(1)
-    // The password signs in through this name; removing it would leave the
-    // password without a login name, so the username group's remove action is
-    // disabled and carries the rule's note.
+    // A username is permanent: the group states the rule and offers no
+    // removal action, whether or not the name is the only login name.
     expect(
-      screen.getByRole('button', {
+      screen.queryByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
       }),
-    ).toBeDisabled()
-    expect(screen.getByText(zhCN.identifiers.usernameLastLoginName)).toBeTruthy()
+    ).toBeNull()
+    expect(screen.getByText(zhCN.identifiers.usernamePermanent)).toBeTruthy()
 
     await expectNoAxeViolations()
   })
@@ -640,24 +639,23 @@ describe('IdentifiersSection', () => {
 
     expect(await screen.findAllByText('ada')).toHaveLength(1)
     expect(screen.getByText('+14155550123')).toBeTruthy()
-    // The username is the password's only login name, so its group's remove
-    // action is disabled; the phone signs in through its own code route, so it
-    // is not counted and stays removable.
+    // The username is permanent, so its group renders no removal action; the
+    // phone signs in through its own code route and stays removable.
     expect(
-      screen.getByRole('button', {
+      screen.queryByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
       }),
-    ).toBeDisabled()
+    ).toBeNull()
     expect(
       screen.getByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', '+14155550123'),
       }),
     ).toBeEnabled()
-    // The note belongs to the username group, not to the phone row.
-    expect(screen.getByText(zhCN.identifiers.usernameLastLoginName)).toBeTruthy()
+    // The permanence note belongs to the username group, not to the phone row.
+    expect(screen.getByText(zhCN.identifiers.usernamePermanent)).toBeTruthy()
   })
 
-  it('keeps the username removal when an email also signs in', async () => {
+  it('never offers to remove the username, even when an email also signs in', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -688,15 +686,14 @@ describe('IdentifiersSection', () => {
     mount(respond)
 
     expect(await screen.findAllByText('ada')).toHaveLength(1)
-    // The username and this address are both login names, so removing the
-    // username leaves the password another way in and its group keeps the
-    // action enabled.
+    // Another login name does not make the username removable: the name is
+    // permanent, so its group keeps stating the rule and renders no action.
     expect(
-      screen.getByRole('button', {
+      screen.queryByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
       }),
-    ).toBeEnabled()
-    expect(screen.queryByText(zhCN.identifiers.usernameLastLoginName)).toBeNull()
+    ).toBeNull()
+    expect(screen.getByText(zhCN.identifiers.usernamePermanent)).toBeTruthy()
   })
 
   it('keeps the only login name removable on an account with no password', async () => {
@@ -845,6 +842,47 @@ describe('IdentifiersSection', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.last_login_method)
+  })
+
+  it('renders a username-immutable refusal as its code text', async () => {
+    // This surface renders no removal action for a username, so the normal
+    // path never asks to delete one. A request issued outside this surface is
+    // refused with authn.username_immutable, and any refused removal lands in
+    // this section's one failure slot: that slot must render the code's own
+    // sentence rather than the generic conflict text.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: false,
+            identifiers: [identifier({ id: 'id-email' })],
+          }),
+        )
+      }
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/identifiers/id-email') {
+        return errorResponse(409, 'authn.username_immutable')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@example.test'),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.identifiers.confirmLabel,
+      }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.username_immutable)
+    expect(alert).not.toHaveTextContent(zhCN.errors.authn.conflict)
   })
 
   it('renders the last-login-name refusal when the guard read a stale profile', async () => {
