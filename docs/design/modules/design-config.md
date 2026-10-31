@@ -217,6 +217,21 @@ err = cfg.Decode(ns+".redis", &ropts)
 
 模块通过按功能取用取得 `Reader` 的实例。接口上只有读操作，配置在启动后不再变化；注册表只把读取面当作 `config` 模块交付的一个实例，`core` 因此不需要认识任何配置接口。
 
+宿主还可以只读地询问某个已声明输入项的生效值来自哪一层：
+
+```go
+func EffectiveLayer(r Reader, path string) (Layer, error)
+
+const (
+    LayerDefault     // 默认值层：宿主默认文档给出，或原型中的字段取值
+    LayerPrimary     // 主配置源
+    LayerEnvironment // 环境变量
+    LayerCommandLine // 命令行
+)
+```
+
+它只读、只报层、不回传值：答案是层枚举本身，值不进入返回值，敏感项因此同样可以问，操作者知道一项凭据来自哪一层而不让它进入应答。层的判定与 `Decode` 的取值顺序同源——命令行高于环境变量、环境变量高于主配置源、主配置源高于默认值层——两处出自同一处逐层询问，不各写一套优先级。没有任何模块声明的路径返回错误，而不是落到默认值层。`r` 是 `Load` 返回或 `Execute` 预置的读取面；其它交付者提供的 `Reader` 无法回答这个问题。
+
 不组装命令树也可以发起加载：
 
 ```go
@@ -793,7 +808,7 @@ kv.redis.pool-size   ->   MYAPP_KV__REDIS__POOL_SIZE
 | 文件传输实现 | 已实现 | `pkg/config/source/file` |
 | JSON 格式实现 | 已实现 | `pkg/config/format/json` |
 | YAML 格式实现 | 已实现 | `pkg/config/format/yaml` |
-| 层叠与配置数据的产出 | 已实现 | `pkg/config/loader.go`；值来自哪一层、`Sensitive` 项的来源行由 `pkg/config/provenance.go` 自行维持，主配置源的未知键校验在 `pkg/config/data.go` |
+| 层叠与配置数据的产出 | 已实现 | `pkg/config/loader.go`；值来自哪一层（`pkg/config/provenance.go` `EffectiveLayer`、`(*loader).provenanceOf`）与 `Sensitive` 项的来源行（`pkg/config/provenance.go` `ReportSensitive`）由本包自行维持，主配置源的未知键校验在 `pkg/config/data.go` |
 | 宿主默认文档 | 已实现 | `pkg/config/defaults.go` `Defaults`、`collectDefaults`、`applyDefaults`；`pkg/config/data.go` `validateDocument`；`pkg/config/decode.go` `(*reader).leaf` |
 | 取值与类型转换 | 已实现 | `pkg/config/hooks.go` `decodeInto`、`decodeIntoStrict`、`durationHook`、`exactNumberHook`、`fitFloat`、`textScalarHook` |
 | 按路径取值 | 已实现 | `pkg/config/decode.go` |

@@ -110,6 +110,32 @@ taken as written. An empty variable is the empty list or map; a struct has no
 empty form and an empty variable for one is `ErrTypeMismatch`. A sensitive
 container's failure names the variable and the item without repeating the value.
 
+## Provenance query
+
+The package exports a read-only query about where a value came from:
+
+```go
+func EffectiveLayer(r Reader, path string) (Layer, error)
+```
+
+It reports the layer a declared input item takes its effective value from,
+for the reader `Load` returns or `Execute` supplies:
+
+| Constant | Layer |
+|---|---|
+| `LayerDefault` | the host defaults document, or the prototype field value |
+| `LayerPrimary` | the primary config source |
+| `LayerEnvironment` | the environment |
+| `LayerCommandLine` | the command line |
+
+The query reports the layer alone, never the value, so a sensitive item can be
+asked about without its value entering the answer. Its answer follows the order
+`Decode` reads -- the command line, the environment, the primary source, the
+default layer -- and comes from the same per-layer reads, so the two cannot
+disagree. A path no module declares is an error rather than the default layer.
+The reader must be one this package produced; a `Reader` delivered by another
+provider cannot answer the question.
+
 ## Running it
 
 From the repository root, over every module in the workspace:

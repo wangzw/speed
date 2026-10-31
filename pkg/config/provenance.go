@@ -29,36 +29,97 @@ func (l *loader) ReportSensitive() {
 	}
 }
 
-// source names the layer the item's value comes from, in the precedence order
-// Decode reads: the command line, the environment, the primary source, the host
-// defaults document, and finally the declared default. It describes the layer
-// and never the value.
+// Layer names one of the layers a configuration value can come from, in the
+// order the layers stack: the default layer at the bottom and the command line
+// at the top. It answers where a path's effective value came from, and it
+// carries no value of its own.
+type Layer int
+
+const (
+	// LayerDefault is the default layer: the host defaults document when the
+	// document names the item, otherwise the field value the declaring
+	// module's prototype carries.
+	LayerDefault Layer = iota + 1
+	// LayerPrimary is the primary config source.
+	LayerPrimary
+	// LayerEnvironment is the environment variable layer.
+	LayerEnvironment
+	// LayerCommandLine is the command line.
+	LayerCommandLine
+)
+
+// EffectiveLayer reports which layer the value at path takes effect from: the
+// default layer, the primary config source, the environment, or the command
+// line. The path is the complete one Decode takes, and the answer is read the
+// same way, through the same per-layer questions Decode's order rests on.
+//
+// The layer is all that comes back, never the value, so the question can be
+// asked about a sensitive item: the caller learns where a credential came from
+// without the credential entering the answer.
+//
+// r is a Reader this package produced, as Load returns and Execute supplies. A
+// path no module declares is an error rather than the default layer: an
+// undeclared path has no input item, so no layer gave it a value.
+func EffectiveLayer(r Reader, path string) (Layer, error) {
+	lr, ok := r.(*reader)
+	if !ok {
+		return 0, fmt.Errorf("config: EffectiveLayer was given %T, which this package did not "+
+			"produce. Ask with the Reader Load returned or Execute supplied", r)
+	}
+	item, declared := lr.l.m.byPath[path]
+	if !declared {
+		return 0, fmt.Errorf("config: EffectiveLayer was given %s, which is not an input item any "+
+			"module declares, so it has no effective value and no layer to report", pathLabel(path))
+	}
+	return lr.l.provenanceOf(item).layer, nil
+}
+
+// provenance is one answer about where an item's value comes from: the layer a
+// caller can ask for, and the name a diagnostic gives that layer. The two
+// differ only inside the default layer, whose two segments -- the host defaults
+// document and the prototype's field value -- the report tells apart.
+type provenance struct {
+	layer  Layer
+	origin string
+}
+
+// provenanceOf answers which layer gave the item its effective value, asking
+// the layers one by one in the order Decode reads them: the command line, the
+// environment, the primary source, and the default layer. This is the one place
+// that order is written down for this question, so the exported query and the
+// sensitive-item report cannot disagree.
 //
 // The primary source and the document are read through primaryValue, the way a
 // container's value is, so a path written flat and one written nested name the
 // same layer. A key either wrote as nothing is not a value, the same reading
 // every other leaf gives it.
-func (l *loader) source(item *manifestItem) string {
+func (l *loader) provenanceOf(item *manifestItem) provenance {
 	if flag := l.bound[item.path]; flag != nil && flag.Changed {
-		return "the command line"
+		return provenance{layer: LayerCommandLine, origin: "the command line"}
 	}
 	if item.envName != "" {
 		if _, set := l.env[item.envName]; set {
-			return fmt.Sprintf("the environment variable %s", item.envName)
+			return provenance{
+				layer:  LayerEnvironment,
+				origin: fmt.Sprintf("the environment variable %s", item.envName),
+			}
 		}
 	}
-	for _, layer := range [...]struct {
-		tree map[string]any
-		name string
-	}{
-		{l.primary, "the primary config source"},
-		{l.defaults, "the host defaults document"},
-	} {
-		if value, found := primaryValue(layer.tree, item.path); found && value != nil {
-			return layer.name
-		}
+	if value, found := primaryValue(l.primary, item.path); found && value != nil {
+		return provenance{layer: LayerPrimary, origin: "the primary config source"}
 	}
-	return "its declared default"
+	if value, found := primaryValue(l.defaults, item.path); found && value != nil {
+		return provenance{layer: LayerDefault, origin: "the host defaults document"}
+	}
+	return provenance{layer: LayerDefault, origin: "its declared default"}
+}
+
+// source names the layer the item's value comes from, in the precedence order
+// Decode reads: the command line, the environment, the primary source, the host
+// defaults document, and finally the declared default. It describes the layer
+// and never the value.
+func (l *loader) source(item *manifestItem) string {
+	return l.provenanceOf(item).origin
 }
 
 // given reports whether any source above the defaults layer gave the item a
