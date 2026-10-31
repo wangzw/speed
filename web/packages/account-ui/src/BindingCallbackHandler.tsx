@@ -395,7 +395,7 @@ export function BindingCallbackHandler({
           }
         />
         {onDismiss === undefined ? null : (
-          <Button variant="outlined" onClick={onDismiss}>
+          <Button variant="contained" onClick={onDismiss}>
             {t('bindingCallback.backToAccount')}
           </Button>
         )}

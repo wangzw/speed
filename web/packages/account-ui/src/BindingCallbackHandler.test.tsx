@@ -479,13 +479,13 @@ describe('BindingCallbackHandler', () => {
         screen.queryByRole('button', { name: zhCN.bindingCallback.retry }),
       ).toBeNull()
 
-      await userEvent
-        .setup()
-        .click(
-          screen.getByRole('button', {
-            name: zhCN.bindingCallback.backToAccount,
-          }),
-        )
+      // The only way out of this state is the primary action, styled as one
+      // (the same contained treatment the flow-gone state gives it).
+      const back = screen.getByRole('button', {
+        name: zhCN.bindingCallback.backToAccount,
+      })
+      expect(back).toHaveClass('MuiButton-contained')
+      await userEvent.setup().click(back)
       expect(onDismiss).toHaveBeenCalledTimes(1)
     })
 
