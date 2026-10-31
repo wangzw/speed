@@ -289,15 +289,15 @@ e2e: ## Run the end-to-end journey specs against the built demo binary
 	@pnpm -C starters/demo/web exec playwright test --config e2e/playwright.config.ts
 
 # The local development loop: the frontend's vite dev server in the background
-# and the Go program under air in the foreground. Air builds the review binary
-# (starters/demo/server/.air.toml), which is what a local run wants: its
-# loopback guard matches a listener on this machine, and its test controls are
-# local-only. `mise exec` supplies the versions .mise.toml pins and loads .env,
-# the file .env.example documents, so a variable set there overrides the
-# compiled-in default for this run. Ctrl-C stops air with the rest of the
-# foreground group; the recipe then stops the vite job too, so one interrupt
-# ends both.
-dev: ## Run the demo locally: vite dev server plus the review build under air
+# and the Go program under air in the foreground. Air builds the default binary
+# and starts it with no --config (starters/demo/server/.air.toml), so a local
+# run reads the defaults compiled into the binary plus whatever `mise exec`
+# loads from .env, the file .env.example documents; a variable set there
+# overrides the compiled-in default for this run. The review tag belongs to the
+# end-to-end tier, not this loop, so its test controls and loopback guard are
+# absent here. Ctrl-C stops air with the rest of the foreground group; the
+# recipe then stops the vite job too, so one interrupt ends both.
+dev: ## Run the demo locally: vite dev server plus the default build under air
 	@if ! command -v mise >/dev/null 2>&1; then \
 	  echo "dev: mise is not on PATH. It supplies .env and the pinned toolchain; install it and run 'mise install'." >&2; \
 	  exit 1; \
