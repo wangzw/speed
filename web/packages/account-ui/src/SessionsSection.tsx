@@ -27,9 +27,16 @@
  * query is invalidated, so the rows converge on the server's answer (a
  * revoked session drops off the listing).
  *
- * The section takes no props: whose sessions these are, and the right to
- * revoke them, come from the caller's bound client and its access token;
- * the section only renders the list and drives the generated mutations.
+ * The section's one optional prop is a render slot for its bulk action:
+ * `renderHeaderAction` receives the "sign out other devices" control and
+ * returns the node rendered in its place, so a host that owns the
+ * surrounding block can lift the action into the block title's action
+ * area -- typically by returning a portal into a header slot of its own.
+ * Without it the section renders the action itself above the list, on its
+ * own row under a plain surface. Whose sessions these are, and the right
+ * to revoke them, come from the caller's bound client and its access
+ * token; the section only renders the list and drives the generated
+ * mutations.
  * An unresolved load -- the first load in flight, or parked by
  * react-query's default networkMode 'online' while the device is offline
  * -- keeps the loading branch, header included. Only a settled query
@@ -44,6 +51,7 @@
  */
 
 import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { formatInstant, isSupportedTimeZone, resolveTimeZone } from '@speed/i18n'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -146,7 +154,22 @@ function SessionListSkeleton({ label }: { readonly label: string }) {
   )
 }
 
-export function SessionsSection() {
+export type SessionsSectionProps = {
+  /**
+   * Renders the section's bulk action -- "sign out other devices" -- in
+   * place of the section's own action row. The section calls it with the
+   * control and renders the returned node; a host that owns the
+   * surrounding block returns a portal into its block header, lifting the
+   * action out of the list. It is called only while the action would
+   * render at all (a settled list holding another live session). Without
+   * it, the action keeps the section's own placement above the list.
+   */
+  readonly renderHeaderAction?: (action: ReactNode) => ReactNode
+}
+
+export function SessionsSection({
+  renderHeaderAction,
+}: SessionsSectionProps) {
   const { t, i18n } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useSessionsQuery()
@@ -269,23 +292,32 @@ export function SessionsSection() {
 
   const showHeader = pending || hasSessions
 
+  // The bulk action, rendered in place when no host takes it over. Handed to
+  // the host's slot when one is supplied: the host places it (a portal into
+  // its block header) and the section's own row is left out.
+  const bulkAction =
+    hasSessions && hasRevocableOther ? (
+      <Button
+        variant="outlined"
+        color="error"
+        size="small"
+        disabled={busy}
+        onClick={() => setOthersConfirmOpen(true)}
+      >
+        {t('sessions.revokeOthers.label')}
+      </Button>
+    ) : undefined
+  const headerAction =
+    renderHeaderAction !== undefined && bulkAction !== undefined
+      ? renderHeaderAction(bulkAction)
+      : undefined
+
   return (
     <>
+      {headerAction}
       <SectionCard
         title={showHeader ? t('sessions.title') : undefined}
-        actions={
-          hasSessions && hasRevocableOther ? (
-            <Button
-              variant="outlined"
-              color="error"
-              size="small"
-              disabled={busy}
-              onClick={() => setOthersConfirmOpen(true)}
-            >
-              {t('sessions.revokeOthers.label')}
-            </Button>
-          ) : undefined
-        }
+        actions={renderHeaderAction === undefined ? bulkAction : undefined}
       >
         <AccountAsyncSection
         pending={pending}

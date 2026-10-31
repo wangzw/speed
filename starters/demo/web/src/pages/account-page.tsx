@@ -75,6 +75,7 @@ import Chip from '@mui/material/Chip'
 import Button from '@mui/material/Button'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
+import Portal from '@mui/material/Portal'
 import Stack from '@mui/material/Stack'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
@@ -526,6 +527,10 @@ export function AccountSettingsPage({
   )
   const [phoneRemoveOpen, setPhoneRemoveOpen] = useState(false)
   const [phoneRemoveError, setPhoneRemoveError] = useState<string | null>(null)
+  // The sessions block's title-row slot: the list's bulk action is rendered
+  // here instead of on a row of its own under the block heading.
+  const [sessionsHeaderAction, setSessionsHeaderAction] =
+    useState<HTMLElement | null>(null)
   const queryClient = useQueryClient()
   const removeIdentifier = useAuthnLoginRemoveIdentifier()
   const toggleSecurityRow = (key: string): void => {
@@ -853,8 +858,26 @@ export function AccountSettingsPage({
                   title={t('account.blocks.devices')}
                   icon={<DeviceIcon />}
                   description={t('account.blockDescriptions.devices')}
+                  action={
+                    // The empty box is the block title row's action slot.
+                    // The section portals its bulk action into it, so the
+                    // control sits beside the block title instead of on a
+                    // row of its own under the heading.
+                    <Box
+                      ref={setSessionsHeaderAction}
+                      data-testid="sessions-block-action"
+                    />
+                  }
                 >
-                  <SessionsSection />
+                  <SessionsSection
+                    renderHeaderAction={(action) =>
+                      sessionsHeaderAction === null ? null : (
+                        <Portal container={sessionsHeaderAction}>
+                          {action}
+                        </Portal>
+                      )
+                    }
+                  />
                 </AccountSection>
               </>
             ) : null}

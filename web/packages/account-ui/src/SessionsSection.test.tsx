@@ -19,6 +19,9 @@
  * replaces the device tier.
  */
 
+import { useState } from 'react'
+import type { ReactElement } from 'react'
+import Portal from '@mui/material/Portal'
 import { describe, expect, it } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -67,6 +70,29 @@ function mountSection(respond: RealResponder, ui = <SessionsSection />) {
   rig.store.set('access-1')
   const rendered = renderWithProviders(ui)
   return { rig, ...rendered }
+}
+
+/**
+ * A host that owns the surrounding block: it takes the section's bulk
+ * action through the render slot and portals it into a header slot of its
+ * own, the way a host lifts the action beside its block title.
+ */
+function HostedSessionsSection(): ReactElement {
+  const [target, setTarget] = useState<HTMLDivElement | null>(null)
+  return (
+    <div>
+      <div data-testid="host-block-header">
+        <div ref={setTarget} />
+      </div>
+      <SessionsSection
+        renderHeaderAction={(action) =>
+          target === null ? null : (
+            <Portal container={target}>{action}</Portal>
+          )
+        }
+      />
+    </div>
+  )
 }
 
 /** The revoke aria-label the component builds for a row's device label. */
@@ -559,6 +585,68 @@ describe('SessionsSection', () => {
         screen.getByRole('button', { name: zhCN.sessions.prevPage }),
       ).not.toBeDisabled(),
     )
+  })
+
+  it('renders its bulk action into the host header when the host supplies the slot', async () => {
+    // The slot is the additive contract: supplied, the section leaves the
+    // action's placement to the host, which portals it into a block header.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-current', current: true }),
+            session({ id: 'session-2', user_agent: '' }),
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond, <HostedSessionsSection />)
+
+    const bulk = await screen.findByRole('button', {
+      name: zhCN.sessions.revokeOthers.label,
+    })
+    // The host's header holds the action ...
+    expect(screen.getByTestId('host-block-header')).toContainElement(bulk)
+    // ... and the section's own content does not: no action row was
+    // rendered beside the list.
+    expect(
+      within(
+        screen.getByRole('region', { name: zhCN.sessions.title }),
+      ).queryByRole('button', { name: zhCN.sessions.revokeOthers.label }),
+    ).toBeNull()
+  })
+
+  it('renders its bulk action inside the section when no slot is supplied', async () => {
+    // Without the slot the default placement is unchanged: the action is
+    // the section's own, rendered with its block.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-current', current: true }),
+            session({ id: 'session-2', user_agent: '' }),
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+
+    const bulk = await screen.findByRole('button', {
+      name: zhCN.sessions.revokeOthers.label,
+    })
+    expect(
+      within(
+        screen.getByRole('region', { name: zhCN.sessions.title }),
+      ).getByRole('button', { name: zhCN.sessions.revokeOthers.label }),
+    ).toBe(bulk)
   })
 
   it('revokes the other sessions behind the double confirm and shows the count', async () => {

@@ -60,7 +60,10 @@ export {
   type ThemePresetChoice,
 } from './AppearanceSection.js'
 export { PreferencesSection } from './PreferencesSection.js'
-export { SessionsSection } from './SessionsSection.js'
+export {
+  SessionsSection,
+  type SessionsSectionProps,
+} from './SessionsSection.js'
 export {
   SocialBindingsSection,
   type SocialBindingsSectionProps,

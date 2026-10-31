@@ -55,7 +55,11 @@ const accountEnUS = accountUiResources['en-US'] as {
     readonly submit: string
     readonly current: { readonly label: string }
   }
-  readonly sessions: { readonly title: string; readonly current: string }
+  readonly sessions: {
+    readonly title: string
+    readonly current: string
+    readonly revokeOthers: { readonly label: string }
+  }
   readonly appearance: { readonly theme: { readonly label: string } }
   readonly preferences: {
     readonly language: { readonly label: string }
@@ -497,6 +501,58 @@ describe('AccountSettingsPage block consistency', () => {
       return answer
     }) as RequestFn
   }
+
+  it('puts the sessions bulk action on the block title row, not in the list', async () => {
+    // The data profile signs in on one device only; a second live session
+    // is the state that renders the bulk action at all.
+    const backend = createBackend('data')
+    const twoSessions = (async (
+      path: string,
+      requestOptions?: RequestOptions,
+    ) => {
+      if (
+        path === '/api/v1/auth/sessions' &&
+        (requestOptions?.method ?? 'GET') === 'GET'
+      ) {
+        const one = {
+          kind: 'browser',
+          created_at: '2026-01-01T00:00:00Z',
+          last_seen_at: '2026-01-01T00:00:00Z',
+          expires_at: '2026-02-01T00:00:00Z',
+          client_ip: '127.0.0.1',
+          user_agent: 'test',
+        }
+        return {
+          sessions: [
+            { ...one, id: 'session-1', current: true },
+            { ...one, id: 'session-2', current: false },
+          ],
+        }
+      }
+      return backend(path, requestOptions)
+    }) as RequestFn
+    renderAccount('?section=sessions', { backend: twoSessions })
+
+    const bulk = await screen.findByRole('button', {
+      name: accountEnUS.sessions.revokeOthers.label,
+    })
+    // The block's title-row slot holds the action ...
+    const block = screen.getByRole('region', {
+      name: demoEnUS.account.blocks.devices,
+    })
+    expect(
+      within(block).getByTestId('sessions-block-action'),
+    ).toContainElement(bulk)
+    // ... and the session list does not: no action row of its own.
+    const list = screen.getByRole('region', {
+      name: accountEnUS.sessions.title,
+    })
+    expect(
+      within(list).queryByRole('button', {
+        name: accountEnUS.sessions.revokeOthers.label,
+      }),
+    ).toBeNull()
+  })
 
   it('keeps the email add action out while the account is still pending proof', async () => {
     // The data profile is pending; the deployment does serve the email

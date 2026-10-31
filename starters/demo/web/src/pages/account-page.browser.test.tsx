@@ -1,7 +1,11 @@
 /**
- * The account page's block rail in a real browser: a block's title and the
- * first element of its content start on one vertical line under every shipped
- * theme preset.
+ * The account page's layout in a real browser. Two rules need the browser
+ * tier: a block's title and the first element of its content start on one
+ * vertical line under every shipped theme preset, and the sessions block's
+ * bulk action rides the block title's row -- inside the band the heading and
+ * its description occupy -- above the session list rather than a standalone
+ * action row. jsdom proves node ancestry; only the browser tier lays the page
+ * out, so only here can the placements be told apart by their boxes.
  *
  * A block header is one icon column fixed at 2rem followed by one spacing-unit
  * gap before the title; the block's content skips the same column and gap. The
@@ -14,10 +18,11 @@
  */
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { accountUiResources } from '@speed/account-ui'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
+import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { themePresets } from '@speed/theme-presets'
 import { createBackend } from '../a11y/backends.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
@@ -32,10 +37,18 @@ import {
 const accountEnUS = accountUiResources['en-US'] as {
   readonly identifiers: { readonly kind: { readonly username: string } }
   readonly password: { readonly current: { readonly label: string } }
+  readonly sessions: {
+    readonly title: string
+    readonly revokeOthers: { readonly label: string }
+  }
 }
 
 const LOGIN_WAYS_TITLE = demoEnUS.account.rows.label.loginWays
 const PASSWORD_TITLE = demoEnUS.account.rows.label.password
+
+beforeEach(() => {
+  window.history.replaceState({}, '', '/')
+})
 
 /** The two left edges a block's first line is judged on, in CSS pixels. */
 interface RailEdges {
@@ -113,4 +126,71 @@ describe('account page block rail in Chromium', () => {
       )
     })
   }
+})
+
+it('puts the sessions bulk action on the block title row, above the list', async () => {
+  // A wide viewport keeps the block header from wrapping, so the action and
+  // the title are measured on the one line the rule describes.
+  await page.viewport(1000, 900)
+  // The data profile signs in on one device only; a second live session is
+  // the state that renders the bulk action at all.
+  const backend = createBackend('data')
+  const twoSessions = (async (
+    path: string,
+    requestOptions?: RequestOptions,
+  ) => {
+    if (
+      path === '/api/v1/auth/sessions' &&
+      (requestOptions?.method ?? 'GET') === 'GET'
+    ) {
+      const one = {
+        kind: 'browser',
+        created_at: '2026-01-01T00:00:00Z',
+        last_seen_at: '2026-01-01T00:00:00Z',
+        expires_at: '2026-02-01T00:00:00Z',
+        client_ip: '127.0.0.1',
+        user_agent: 'test',
+      }
+      return {
+        sessions: [
+          { ...one, id: 'session-1', current: true },
+          { ...one, id: 'session-2', current: false },
+        ],
+      }
+    }
+    return backend(path, requestOptions)
+  }) as RequestFn
+  bindRequestFn(twoSessions)
+  window.history.replaceState({}, '', ACCOUNT_SECTION_PATHS.sessions)
+  renderDemoApp({
+    session: createTestSession(authenticatedSnapshot({ features: readyFeatures() })),
+  })
+
+  const bulk = await screen.findByRole('button', {
+    name: accountEnUS.sessions.revokeOthers.label,
+  })
+  const title = screen.getByRole('heading', {
+    level: 2,
+    name: demoEnUS.account.blocks.devices,
+  })
+  const description = screen.getByText(
+    demoEnUS.account.blockDescriptions.devices,
+  )
+  const list = screen.getByRole('region', {
+    name: accountEnUS.sessions.title,
+  })
+
+  const bulkBox = bulk.getBoundingClientRect()
+  const titleBox = title.getBoundingClientRect()
+  const descriptionBox = description.getBoundingClientRect()
+  const listBox = list.getBoundingClientRect()
+
+  // The action shares the title's row: it lies within the band the heading
+  // and its description occupy, never on a row of its own below them.
+  expect(bulkBox.top).toBeGreaterThanOrEqual(titleBox.top - 1)
+  expect(bulkBox.bottom).toBeLessThanOrEqual(descriptionBox.bottom + 1)
+
+  // It is lifted out of the list: the control ends above the list's own top
+  // edge, where the section's standalone action row used to sit.
+  expect(bulkBox.bottom).toBeLessThanOrEqual(listBox.top + 1)
 })
