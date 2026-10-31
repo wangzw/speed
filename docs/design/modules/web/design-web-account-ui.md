@@ -176,7 +176,7 @@ sequenceDiagram
 
 账户页把账户的联系方式与登录方式分列呈现（REQ-account-061）。决策见 [ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)。登录方式组列出用户名、被持有人选作登录方式的邮箱与手机、通行密钥，以及已绑定的社交与企业身份；联系方式组列出每一条已登记的邮箱与手机，其中默认联系地址另行标出。登记的邮箱与手机恒为联系方式，登录方式由持有人另行选择；同一个值可以同时出现在两组，未作登录方式时只出现在联系方式组，两条事实互不派生。
 
-**「作联系方式」不是一个开关。** 已登记的邮箱与手机恒在联系方式组，界面不为它提供关闭控件；`PUT /api/v1/auth/identifiers/{id}` 的 `contact` 字段不再是客户端的写入项，省略它或写为真都不改变任何事实，写成假被服务端拒绝（[authn 登录](../authn/design-authn-login.md)）。登录方式的选择是组级的，不是每行一个开关：合并视图把登录方式组按种类分段，每段只渲染组标题、该段的组级控件与一句说明（用户名段没有登录方式开关，只有说明句旁的一个「移除」动作），不渲染逐条地址或号码行，联系方式组不承载登录方式的选择。地址在选择框里呈现，用户名与手机由说明句呈现。用户名段陈述用户名恒为登录名，没有可切换的控件；组级的「移除」动作删除该名，最后一个登录名时禁用并附同一条说明。邮箱段的开关表示账户是否用邮箱登录，开启后由一个选择框在已证明的地址中选一条，关闭后选择框让位给一行说明；写走同一条路由的 `sign_in` 字段，打开把所选地址移入登录方式组，关闭把它退回联系方式组，地址恒在联系方式组。手机段切换该段的代表号码；号码已证明但未作登录方式时，该段的说明读「当前未使用该手机号登录」，与「启用」动作同义。未证明的邮箱不进入选择框，未证明的号码也不进入可选值（REQ-account-065）。默认联系地址是邮箱行上的独立控件，不是登录方式的选择：选作默认的邮箱在联系方式组里标为默认，不改变它的 `contact` 与 `sign_in`。登录方式的组级写与改选默认联系地址走提权门控；登记与证明一条邮箱或手机不要求新鲜认证。
+**「作联系方式」不是一个开关。** 已登记的邮箱与手机恒在联系方式组，界面不为它提供关闭控件；`PUT /api/v1/auth/identifiers/{id}` 的 `contact` 字段不再是客户端的写入项，省略它或写为真都不改变任何事实，写成假被服务端拒绝（[authn 登录](../authn/design-authn-login.md)）。登录方式的选择是组级的，不是每行一个开关：合并视图把登录方式组按种类分段，每段只渲染组标题、该段的组级控件与一句说明（用户名段没有登录方式开关，只有说明句旁的一个「移除」动作），不渲染逐条地址或号码行，联系方式组不承载登录方式的选择。地址在选择框里呈现，用户名与手机由说明句呈现。用户名段陈述用户名恒为登录名，没有可切换的控件；组级的「移除」动作删除该名，最后一个登录名时禁用并附说明（`identifiers.usernameLastLoginName`），说明指引先添加另一种登录方式，因为账户至多一个用户名。`axis` 属性把同一节拆成两轴：用户名段只在登录方式轴渲染（`signIn` 视图与合并且呈现），`contact` 轴不渲染用户名段，也不提供用户名相关动作。邮箱段的开关表示账户是否用邮箱登录，开启后由一个选择框在已证明的地址中选一条，关闭后选择框让位给一行说明；写走同一条路由的 `sign_in` 字段，打开把所选地址移入登录方式组，关闭把它退回联系方式组，地址恒在联系方式组。手机段切换该段的代表号码；号码已证明但未作登录方式时，该段的说明读「当前未使用该手机号登录」，与「启用」动作同义。未证明的邮箱不进入选择框，未证明的号码也不进入可选值（REQ-account-065）。默认联系地址是邮箱行上的独立控件，不是登录方式的选择：选作默认的邮箱在联系方式组里标为默认，不改变它的 `contact` 与 `sign_in`。登录方式的组级写与改选默认联系地址走提权门控；登记与证明一条邮箱或手机不要求新鲜认证。
 
 1. **登录方式与默认联系地址只从已证明的条目里取。** 验证一条邮箱或手机只证明账户对该值的归属，不把它选作登录方式，也不决定它是否为默认联系地址；默认联系地址按已证明邮箱中恰好一条的规则成立（REQ-account-062、REQ-account-063）。未证明的邮箱或手机不出现在登录方式的候选项里，也不能作默认联系地址；直接请求这样的选择由服务端拒绝（REQ-account-065、REQ-account-066）。
 2. **登录方式由持有人选择。** 持有人在本人的已登记并已证明的邮箱与手机中，分别选择哪些可以登录；未被选中的地址或号码即使已登记并已证明，也不能完成对应的登录（REQ-account-064）。取消选中只取消它作为登录方式的资格，不改变归属；该值仍为已验证，可再次被选中，并照常留在联系方式组（REQ-account-062）。
@@ -271,7 +271,7 @@ sequenceDiagram
 | 验证阶段目标地址已被其他账户预留或持有（409 `authn.email_taken`） | 一条横幅渲染该码文本，点明地址已被另一个账户使用并给出更换邮箱 |
 | 验证节的发送、验证或更换被 401 `authn.insufficient_user_authentication` 拒绝 | 这些写本身不要求新鲜认证，本包不开提权对话框；验证的后果改变账户据以证明或找回自己的事实时服务端会答该码，收到则按普通失败横幅渲染该码文本 |
 | 验证节的自动发送被 401 `authn.insufficient_user_authentication` 拒绝 | 不打开提权对话框；保留手动「发送验证码」按钮并渲染说明（`verification.autoStepUp`），用户点击后重试发送 |
-| 带口令账户的最后一个登录名 | 该邮箱在联系方式组的行不渲染删除按钮，改渲染说明（`identifiers.lastLoginName`）；用户名在登录方式组的「移除」动作被禁用并附同一条说明。「最后一个登录名」只计用户名与选作登录方式的邮箱（REQ-account-044、REQ-security-040）；选作登录方式的手机与已绑定的外部身份是别的登录方式，不计入这条豁免，也不因此保留删除按钮。服务端仍判定最后登录方式 |
+| 带口令账户的最后一个登录名 | 该邮箱在联系方式组的行不渲染删除按钮，改渲染说明（`identifiers.lastLoginName`）；用户名在登录方式组的「移除」动作被禁用并附说明（`identifiers.usernameLastLoginName`）。「最后一个登录名」只计用户名与选作登录方式的邮箱（REQ-account-044、REQ-security-040）；选作登录方式的手机与已绑定的外部身份是别的登录方式，不计入这条豁免，也不因此保留删除按钮。服务端仍判定最后登录方式 |
 | 把未证明的邮箱或手机选作登录方式（直接请求） | 登录方式组的选择不提供该条目；服务端拒绝时渲染该错误码文本，档案重读后选择不变（REQ-account-065） |
 | 把未证明的邮箱设为默认联系地址（直接请求） | 选择控件不提供该条目；服务端拒绝时渲染该错误码文本，默认联系地址不变（REQ-account-066） |
 | 删除最后一个登录名被服务端拒绝（409 `login-identifier-required`；客户端守卫因并发删除或陈旧档案未拦住） | 一条横幅渲染 `errors.authn.login_identifier_required` 的文本，说明账户需要至少一个登录名；删除不生效，列表重取以收敛 |
@@ -343,7 +343,7 @@ sequenceDiagram
 | `ContactVerificationSection`（未证明预留、发送与重发、验证码、更换邮箱、完成态） | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`、`ContactVerificationSectionProps` |
 | 标识 chip 二值：只看 `proven`，真读「已验证」、假读「未验证」；用户名行不渲染归属 chip | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `identifiers.verified`、`identifiers.unverified` |
 | 未验证邮箱行的行级「验证」动作（发码到该行地址、提交码、成功后行翻转），`pending` 与无邮件通道时不渲染 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`（`rowSend`、`rowVerify`）；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `identifiers.verify`、`identifiers.verifyAria`、`identifiers.verifyCodeInvalid` |
-| 带口令账户的唯一用户名/邮箱登录名不渲染或禁用删除并说明 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `identifiers.lastLoginName` |
+| 带口令账户的唯一用户名/邮箱登录名不渲染或禁用删除并说明 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `identifiers.lastLoginName`、`identifiers.usernameLastLoginName` |
 | 标识添加面的邮箱本地校验、提交去空白值与字段级 400 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/ui-kit/src/email-address.ts` `parseEmailAddress`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `identifiers.add.invalidEmail` |
 | 取消添加清空失败横幅、字段错误、成功提示与已发码状态 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`（`closeAdd`） |
 | 验证节的首次挂载自动发码 `autoSend`（自动 401 不弹对话框） | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`、`ContactVerificationSectionProps`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `verification.autoStepUp` |

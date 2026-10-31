@@ -147,7 +147,11 @@ session, and the read-only ones take no props either.
   address is chosen while the toggle is on, an off note takes the picker's
   place while it is off); the phone group's is a toggle of its representative
   row. The contacts list carries no sign-in control; a proved email there
-  still offers the default-contact choice. A phone group whose number is
+  still offers the default-contact choice. The `axis` prop splits the
+  surface: the username block -- its sentence and its remove action -- renders
+  only on the sign-in axis (the `signIn` view and the merged view), and the
+  contact axis renders the email table and the add face's email kind alone, so
+  no username action appears there. A phone group whose number is
   proved but does not sign in says so
   (`identifiers.usage.phoneNotSignIn`) instead of claiming the number signs
   in, so its sentence and its enable action agree. An email or phone row in
@@ -162,8 +166,11 @@ session, and the read-only ones take no props either.
   while the profile lists exactly one of those, that email's contact row
   gives up its remove action to a note (`identifiers.lastLoginName`) telling
   the user to add another login name first, and the username group's remove
-  action is disabled under the same note. Another username/email, or an account
-  with no password at all, keeps the action; the server still judges the
+  action is disabled under a note of its own
+  (`identifiers.usernameLastLoginName`) telling the user to add another
+  sign-in method, because an account holds at most one username. Another
+  username/email, or an account with no password at all, keeps the action; the
+  server still judges the
   last way in on the write itself, and a refusal renders its 409
   `login-identifier-required` text and re-reads the profile, so a guard
   that read a stale list converges on the server's answer. While the profile's
