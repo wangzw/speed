@@ -106,6 +106,9 @@ export interface StepUpState {
   readonly step: AuthnStep | null
   /** The open flow's sequence number, for the next answer. */
   readonly seq: number | null
+  /** Whether an answer is in flight. An answer sent while this is true is
+   * ignored, so a caller that must send reliably waits for it to clear. */
+  readonly submitting: boolean
   /** The last failure's resolved code, or null. */
   readonly errorCode: string | null
   /** The deployment's human-verification gate and the proof this challenge
@@ -378,5 +381,5 @@ export function useStepUp(
     })()
   }
 
-  return { phase, step, seq, errorCode, human, answer }
+  return { phase, step, seq, submitting, errorCode, human, answer }
 }
