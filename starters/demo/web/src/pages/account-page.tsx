@@ -67,6 +67,7 @@
 
 import type { MouseEventHandler, ReactElement, ReactNode } from 'react'
 import { useEffect, useId, useState } from 'react'
+import type { Theme } from '@mui/material/styles'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -130,6 +131,17 @@ import { NotFoundPage } from './not-found-page.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
 
+
+/**
+ * The left inset a block's content takes to start on its title's rail: the
+ * fixed icon column plus the grid gap the title sits after. The column stays
+ * 2rem; the gap and therefore the inset follow the theme's spacing base, so a
+ * preset with a different spacing unit keeps the heading and the items on one
+ * vertical line.
+ */
+function titleRailInset(theme: Theme): string {
+  return `calc(2rem + ${theme.spacing(2)})`
+}
 
 interface SecurityRowProps {
   readonly icon: ReactNode
@@ -244,7 +256,7 @@ function SecurityRow({
           role="group"
           aria-label={title}
           data-testid={`${testId}-body`}
-          sx={{ mt: 2, pl: alignBody === 'icon' ? 0 : 6 }}
+          sx={{ mt: 2, pl: alignBody === 'icon' ? 0 : titleRailInset }}
         >
           {children}
         </Box>
@@ -423,7 +435,9 @@ function AccountSection({
       {/* The block's content shares the title's rail: the icon column and the
           gap before the title are skipped, so every item starts where the
           block's own name starts. */}
-      <Box sx={{ mt: 2, pl: icon === undefined ? 0 : 6 }}>{children}</Box>
+      <Box sx={{ mt: 2, pl: icon === undefined ? 0 : titleRailInset }}>
+        {children}
+      </Box>
     </Card>
   )
 }
