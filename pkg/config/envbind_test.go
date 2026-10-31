@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/vislake/speed/pkg/core"
 )
 
 type envOptions struct {
@@ -126,6 +128,93 @@ func TestItemWithoutEnvOriginIsNotOverridden(t *testing.T) {
 	unclaimed := unclaimedEnvNames(l.m, map[string]string{"MYAPP_SERVER__FLAGS_ON": "given"})
 	if !slices.Contains(unclaimed, "MYAPP_SERVER__FLAGS_ON") {
 		t.Fatalf("the diagnostics list is %v, and a variable no item reads belongs in it", unclaimed)
+	}
+}
+
+// unclaimedEnvNames lists the names the report writes out, for the cases that
+// judge the scan rather than the wording.
+func unclaimedEnvNames(m *manifest, values map[string]string) []string {
+	variables := unclaimedEnvVariables(m, values)
+	names := make([]string, 0, len(variables))
+	for _, variable := range variables {
+		names = append(names, variable.name)
+	}
+	return names
+}
+
+// diagnosticLoader builds a loader whose diagnostics go to the returned
+// buffer. The server mount carries one item taking the primary config source
+// alone, which is the shape of the guarded lists the report has to name.
+func diagnosticLoader(t *testing.T, prefix string) (*loader, *strings.Builder) {
+	t.Helper()
+	defaults := envOptions{Addr: ":8080"}
+	reg := core.New()
+	reg.Register(identifying("host", HostIdentity{Prefix: prefix}))
+	reg.Register(declaring("server", Schema{
+		Namespace: "server",
+		Mounts:    []Mount{{Value: &defaults}},
+		Items: map[string]Item{
+			"addr": {Origins: OriginPrimary},
+		},
+	}))
+	var sink strings.Builder
+	l, err := newLoader(reg, &sink)
+	if err != nil {
+		t.Fatalf("collecting the declarations failed: %v", err)
+	}
+	return l, &sink
+}
+
+// TestEnvVariableNamingAPrimaryOnlyItemIsReportedByName pins that a variable
+// whose name spells a declared item the environment cannot give is reported as
+// such: the line names the item and the sources it accepts, rather than
+// reading as if no declaration existed. The variable still reaches no value.
+func TestEnvVariableNamingAPrimaryOnlyItemIsReportedByName(t *testing.T) {
+	t.Setenv("MYAPP_SERVER__ADDR", ":9090")
+	l, diag := diagnosticLoader(t, "MYAPP")
+	l.ReportUnclaimed()
+
+	line := diag.String()
+	for _, want := range []string{
+		"MYAPP_SERVER__ADDR",
+		`"server.addr"`,
+		"only accepts the primary config source",
+	} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("the diagnostic reads %q, want it to contain %q", line, want)
+		}
+	}
+	if strings.Contains(line, "no input item reads it") {
+		t.Fatalf("the diagnostic reads %q, and an item is declared at the path the variable spells", line)
+	}
+	if got := decodeServer(t, l).Addr; got != ":8080" {
+		t.Fatalf("server.addr decoded to %q, want the default: the item does not read the "+
+			"environment", got)
+	}
+}
+
+// TestEnvVariableWithNoDeclaredPathStaysGeneric pins the other half of the
+// split: a variable whose path no module declares keeps the generic line. Both
+// variables are set together, so the case shows the report telling them apart
+// in one pass.
+func TestEnvVariableWithNoDeclaredPathStaysGeneric(t *testing.T) {
+	t.Setenv("MYAPP_SERVER__ADDR", ":9090")
+	t.Setenv("MYAPP_SERVICE_HOST", "10.0.0.1")
+	l, diag := diagnosticLoader(t, "MYAPP")
+	l.ReportUnclaimed()
+
+	var generic []string
+	for _, line := range strings.Split(strings.TrimSpace(diag.String()), "\n") {
+		if strings.Contains(line, "no input item reads it") {
+			generic = append(generic, line)
+		}
+	}
+	if len(generic) != 1 {
+		t.Fatalf("the report reads %q, want exactly the variable with no declared path reported "+
+			"as unclaimed", diag.String())
+	}
+	if !strings.Contains(generic[0], "MYAPP_SERVICE_HOST") {
+		t.Fatalf("the unclaimed line reads %q, want it to name MYAPP_SERVICE_HOST", generic[0])
 	}
 }
 

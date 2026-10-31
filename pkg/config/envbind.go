@@ -35,15 +35,24 @@ func (l *loader) envValue(item *manifestItem) (string, bool) {
 // own -- it pulls the variables it was told about and never says which ones
 // nobody wanted -- so the enumeration is this module's to make.
 //
+// A variable whose name spells the path of a declared item that does not read
+// the environment is told apart from one that spells no path: the first names
+// the item and the sources it accepts, so a deployment that set
+// <PREFIX>_HTTP__CORS__ENDPOINTS learns that the item takes the primary config
+// source alone rather than that nothing wanted the variable.
+//
 // The environment it scans is the snapshot the values are read from. Scanning
 // any other would let the diagnostics and the values disagree.
 func (l *loader) ReportUnclaimed() {
-	for _, name := range unclaimedEnvNames(l.m, l.env) {
-		//nolint:errcheck // l.stderr is the diagnostic sink itself: a failed
-		// write has nowhere to be reported, and this line is explicitly not a
-		// failure condition -- see the doc comment above.
-		fmt.Fprintf(l.stderr, "%senvironment variable %s is set under the %q prefix and no input "+
-			"item reads it, so it is ignored\n", diagnosticPrefix, name, l.m.host.Prefix)
+	for _, ignored := range unclaimedEnvVariables(l.m, l.env) {
+		if item := ignored.declared; item != nil {
+			_, _ = fmt.Fprintf(l.stderr, "%senvironment variable %s is set under the %q prefix and "+
+				"names the input item %q, which only accepts %s, so it is ignored\n",
+				diagnosticPrefix, ignored.name, l.m.host.Prefix, item.path, originNames(item.origins))
+			continue
+		}
+		_, _ = fmt.Fprintf(l.stderr, "%senvironment variable %s is set under the %q prefix and no "+
+			"input item reads it, so it is ignored\n", diagnosticPrefix, ignored.name, l.m.host.Prefix)
 	}
 }
 
@@ -61,17 +70,28 @@ func environMap(environ []string) map[string]string {
 	return values
 }
 
-// unclaimedEnvNames lists the variables under the prefix that no input item
-// reads, in name order. The scan domain is the prefix, so a pinned name such
-// as NO_COLOR is outside it; the config locator is inside it but claimed by
-// this module, and is not reported.
-func unclaimedEnvNames(m *manifest, values map[string]string) []string {
+// unclaimedEnv is one variable under the prefix that no input item reads.
+type unclaimedEnv struct {
+	// name is the variable.
+	name string
+	// declared is the input item whose path derives this variable name, when
+	// one is declared. The item does not read the environment, so the variable
+	// reaches no value. Nil when no item sits at the spelled path.
+	declared *manifestItem
+}
+
+// unclaimedEnvVariables lists the variables under the prefix that no input item
+// reads, in name order, each with the declared item its name spells. The scan
+// domain is the prefix, so a pinned name such as NO_COLOR is outside it; the
+// config locator is inside it but claimed by this module, and is not reported.
+func unclaimedEnvVariables(m *manifest, values map[string]string) []unclaimedEnv {
 	if m.host.Prefix == "" {
 		return nil
 	}
 	head := strings.ToUpper(m.host.Prefix) + "_"
 	locator := locatorEnvName(m.host.Prefix)
-	var unclaimed []string
+	unreachable := m.envUnreachableByName()
+	var unclaimed []unclaimedEnv
 	for name := range values {
 		if !strings.HasPrefix(name, head) || name == locator {
 			continue
@@ -79,8 +99,27 @@ func unclaimedEnvNames(m *manifest, values map[string]string) []string {
 		if _, claimed := m.byEnv[name]; claimed {
 			continue
 		}
-		unclaimed = append(unclaimed, name)
+		unclaimed = append(unclaimed, unclaimedEnv{name: name, declared: unreachable[name]})
 	}
-	slices.Sort(unclaimed)
+	slices.SortFunc(unclaimed, func(a, b unclaimedEnv) int { return strings.Compare(a.name, b.name) })
 	return unclaimed
+}
+
+// envUnreachableByName indexes the declared input items by the variable name
+// their path derives, taking only the items that do not read the environment.
+// It is what tells a variable a declaration ignores from one no declaration
+// sits under. An item that reads the environment is in byEnv instead, and a
+// variable it reads is never reported at all.
+func (m *manifest) envUnreachableByName() map[string]*manifestItem {
+	if m.host.Prefix == "" {
+		return nil
+	}
+	unreachable := make(map[string]*manifestItem)
+	for _, item := range m.items {
+		if item.origins.has(OriginEnv) {
+			continue
+		}
+		unreachable[deriveEnvName(m.host.Prefix, item.path)] = item
+	}
+	return unreachable
 }
