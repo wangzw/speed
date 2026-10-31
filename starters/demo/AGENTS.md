@@ -720,6 +720,13 @@ it writes only what is absent, so a restart neither duplicates nor overwrites an
 operator's change. `serve` carries the platform baseline's background modules,
 so no second process runs.
 
+The seed keys an account on the login name its entry configures, and an entry
+that names both an email address and a username answers to either: the address
+is looked up first, then the username beside it. A holder who removes the
+seeded address from the account page leaves the account under its username, so a
+later start adopts that account as skipped instead of creating a second one, and
+the removed address is not written back — the holder's change stands.
+
 **Checks.** A rolling deploy gates on `GET /` on the backend listener, which
 answers with the embedded bundle's entry document. The readiness signal is the
 operations endpoint's `GET /ready` on port 8083, declared as a top-level check
