@@ -23,3 +23,10 @@ packages:
 # outside this repository, installs them from the registry unchanged
 # (starters/demo/web/README.md).
 linkWorkspacePackages: true
+
+# jsdom pulls undici in transitively; the advisory fixed in 8.12.2 is below the
+# version jsdom's own range resolves in this lockfile, so the workspace pins the
+# floor here rather than waiting for jsdom to move. Remove it once jsdom's range
+# starts above 8.12.2 by itself.
+overrides:
+  undici: ^8.12.2
