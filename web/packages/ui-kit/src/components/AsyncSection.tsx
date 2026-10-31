@@ -238,7 +238,9 @@ function AsyncSectionInner<Payload>(
         title={errorState.title}
         description={errorState.description}
         action={
-          <Button onClick={errorState.onRetry}>{errorState.retryLabel}</Button>
+          <Button variant="contained" onClick={errorState.onRetry}>
+            {errorState.retryLabel}
+          </Button>
         }
         headingLevel={headingLevel}
       />,
