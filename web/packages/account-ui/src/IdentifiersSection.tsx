@@ -1,11 +1,12 @@
 /**
  * IdentifiersSection: the identifier surface of the account page, grouped by
- * the two independent axes an email address or phone number carries.
+ * how the account uses an email address or phone number.
  *
  * The identifiers are the account's own, read off the profile
  * (GET /api/v1/auth/me, authn.profile.get): the spec ships no dedicated
  * identifier-list route, and the profile answer carries each identifier's
- * own id, kind, value, proven flag and its place on both axes. Each row
+ * own id, kind, value, proven flag, whether it is a sign-in way and whether
+ * it is the default contact. Each row
  * names the kind (email, phone or username, mapped through a guarded
  * vocabulary, a value outside it rendering the generic identifier label) and
  * the value, with the server's `proven` answer (the ways of establishing
@@ -18,45 +19,39 @@
  * a two-value ownership chip: `proven` true reads `verified`, false reads
  * `unverified`, whatever channel established the identifier.
  *
- * The section splits the account's identifiers into three lists. The sign-in
+ * The section splits the account's identifiers into two lists. The sign-in
  * ways list holds every username and every email address or phone number the
- * profile marks `sign_in`; the contacts list holds every email address or
- * phone number marked `contact` and every email address that is the default
- * contact; the "not used for sign-in or contact" list holds the remaining
- * addresses and numbers, which are on neither axis. The same record appears
- * in both the sign-in ways and the contacts lists while it is on both axes;
- * the switch that changes one axis renders in every list the record appears
- * in, so the two views stay in step. A username is always a sign-in way, has
- * no contact axis, and is never in the other two lists. A host that splits
- * the surface with `axis` gets the same controls in the view it shows: the
- * contact axis's own table carries the contact switch on each address, and
- * the sign-in axis's email picker is one choice out of the proved addresses,
+ * profile marks `sign_in`; the contacts list holds every registered email
+ * address and phone number, because registering an address is what makes it
+ * a contact -- the position is not a separate choice. The same record appears
+ * in both lists while it is also a sign-in way; the sign-in switch renders in
+ * every list the record appears in, so the two views stay in step. A username
+ * is always a sign-in way, has no contact position, and is never in the
+ * contacts list. A host that splits the surface with `axis` gets the same
+ * controls in the view it shows: the contact axis's own table carries the
+ * default-contact choice and the row actions on each address, and the
+ * sign-in axis's email picker is one choice out of the proved addresses,
  * written as one step-up action so a won challenge lands the same end state
  * (the pre-chosen address turned off and the new one turned on) rather than
  * replaying only one of the row writes.
  *
- * An email or phone row carries two independent switches, PUT
- * /api/v1/auth/identifiers/{id} (authn.login.updateIdentifier) with `contact`
- * and `sign_in`. Turning "contact" on moves the value into the contacts
- * list; turning "sign-in way" on moves it into the sign-in ways list;
- * turning one off only leaves that list, and turning both off returns the
- * row to the "not used" list. Only a proved value offers the sign-in switch
- * (REQ-account-065); the contact switch is offered on an unproved value too,
- * because ownership is what the sign-in axis requires and the default
- * contact is the only contact position an unproved address cannot take
- * (REQ-account-066). The contact axis alone needs no fresh authentication;
- * the sign-in axis and the default contact do, so a refusal opens the
- * step-up dialog like the section's other gated writes. Putting a proved
- * value into sign-in rotates this session's credential, so that write runs
- * inside an identity-transition window; taking it out does not.
+ * An email or phone row carries one switch, PUT
+ * /api/v1/auth/identifiers/{id} (authn.login.updateIdentifier) with
+ * `sign_in`: turning it on moves the value into the sign-in ways list, and
+ * turning it off only leaves that list (the value stays a contact). Only a
+ * proved value offers the switch (REQ-account-065); an unproved address is
+ * still a contact, because registering it establishes that position. The
+ * sign-in axis and the default contact need a fresh authentication, so a
+ * refusal opens the step-up dialog like the section's other gated writes.
+ * Putting a proved value into sign-in rotates this session's credential, so
+ * that write runs inside an identity-transition window; taking it out does
+ * not.
  *
  * A proved email address also offers the default-contact choice, a radio
  * that sets `default_contact: true` on the chosen row: the server clears the
- * previous default in the same write, and an email address that is the
- * default stays in the contacts list even when its own contact switch is
- * off. The choice renders once per email record, in the list that record's
- * state makes canonical, so one address never offers two controls for one
- * position.
+ * previous default in the same write. The choice renders once per email
+ * record, in the contacts list (the list that record's state makes
+ * canonical), so one address never offers two controls for one position.
  *
  * A row whose identifier carries an id has a row-end remove action that
  * sits behind the ui-kit danger ConfirmDialog -- removing an identifier is
@@ -104,7 +99,8 @@
  * email sends a code to it (the answer is state "pending") and the code is
  * submitted through POST /api/v1/auth/identifiers/verify
  * (authn.login.verifyIdentifier); only the matching code writes the address,
- * with the proof. A new address starts on neither axis. The email branch is
+ * with the proof. A new address joins the contacts list at once and is not a
+ * sign-in way. The email branch is
  * unavailable on a deployment with no email channel (a 503). The one-step
  * username write replaces this session's credential and revokes the
  * account's other sessions, so its success refetches the profile and the
@@ -156,8 +152,8 @@
  * refetch the session list, because those are the writes that revoke the
  * account's other sessions.
  *
- * The section has one failure slot: removal, add, row verification, both
- * switches and the default-contact choice share it, so a failure renders
+ * The section has one failure slot: removal, add, row verification, the
+ * sign-in switch and the default-contact choice share it, so a failure renders
  * exactly one role="alert" banner. The slot is one control group -- the row
  * actions and the add face are one section -- so its region sits below the
  * add face, after the whole group.
@@ -258,9 +254,9 @@ export interface IdentifiersSectionProps {
   readonly returnPath?: string
   /**
    * Which axis this occurrence manages. 'both' (the default) offers the
-   * sign-in switch, the contact switch and the default-contact choice;
-   * 'signIn' removes the contact controls and the contacts list, for a host
-   * that shows the contact surface elsewhere; 'contact' removes the sign-in
+   * sign-in switch, the default-contact choice and both lists; 'signIn'
+   * removes the contact controls and the contacts list, for a host that
+   * shows the contact surface elsewhere; 'contact' removes the sign-in
    * switch and the sign-in list, for the same reason in the other direction.
    */
   readonly axis?: 'both' | 'signIn' | 'contact'
@@ -379,10 +375,9 @@ const KNOWN_IDENTIFIER_KINDS = new Set<string>([
  * added through its own two-step surface (the SMS routes), not this one. */
 type AddKind = 'email' | 'username'
 
-/** The change one switch or the default-contact choice asks for. */
+/** The change the sign-in switch asks for. */
 type AxisChange = {
-  readonly contact?: boolean
-  readonly signIn?: boolean
+  readonly signIn: boolean
 }
 
 /** One row's end state in a sign-in-email selection. The whole selection is
@@ -393,14 +388,14 @@ type SignInSelectionChange = {
   readonly signIn: boolean
 }
 
-/** The three lists the identifiers are grouped into. A username is always a
- * sign-in way; an email or phone sits on either axis, both or neither. */
-type IdentifierGroup = 'signIn' | 'contact' | 'neither'
+/** The two lists the identifiers are grouped into. A username is always a
+ * sign-in way; every registered email address or phone number is a contact. */
+type IdentifierGroup = 'signIn' | 'contact'
 
 /** The write a step-up dialog is armed for, so a won challenge re-runs
- * exactly it: a removal, the username add, one axis of a row, the
+ * exactly it: a removal, the username add, the sign-in switch of a row, the
  * default-contact choice, either verification step or a whole sign-in-email
- * selection. A contact write and the code-send steps never arm the gate. */
+ * selection. The code-send steps never arm the gate. */
 type SectionAction =
   | { readonly step: 'remove'; readonly id: string }
   | { readonly step: 'add'; readonly kind: AddKind; readonly value: string }
@@ -449,31 +444,27 @@ function IdentifierListSkeleton({ label }: { readonly label: string }) {
 function axesOf(row: {
   readonly kind?: string
   readonly sign_in?: boolean
-  readonly contact?: boolean
   readonly default_contact?: boolean
 }): {
   readonly username: boolean
   readonly signIn: boolean
-  readonly contact: boolean
   readonly defaultContact: boolean
 } {
   const username = row.kind === 'username'
   return {
     username,
     signIn: username || row.sign_in === true,
-    contact: row.contact === true,
     defaultContact: row.default_contact === true,
   }
 }
 
 /** Whether a row belongs to the list named by `group`. The sign-in list holds
- * every username, the contacts list an address on the contact axis or the
- * default contact, and the third list only the values on neither axis. */
+ * every username and every address the profile marks `sign_in`; the contacts
+ * list holds every registered email address and phone number. */
 function belongsTo(
   row: {
     readonly kind?: string
     readonly sign_in?: boolean
-    readonly contact?: boolean
     readonly default_contact?: boolean
   },
   group: IdentifierGroup,
@@ -483,27 +474,20 @@ function belongsTo(
     case 'signIn':
       return axes.signIn
     case 'contact':
-      return !axes.username && (axes.contact || axes.defaultContact)
-    case 'neither':
-      return !axes.username && !axes.signIn && !axes.contact && !axes.defaultContact
+      return !axes.username
   }
 }
 
 /** The list a row's per-record controls render in, so one address never
- * offers the same action twice while it appears on both axes: the contacts
- * list when it takes a contact position, then the sign-in list, then the
- * third list. */
+ * offers the same action twice while it appears in both lists: the contacts
+ * list for an email address or phone number, the sign-in list for a
+ * username. */
 function canonicalGroup(row: {
   readonly kind?: string
   readonly sign_in?: boolean
-  readonly contact?: boolean
   readonly default_contact?: boolean
 }): IdentifierGroup {
-  const axes = axesOf(row)
-  if (axes.username || axes.signIn) {
-    return axes.contact || axes.defaultContact ? 'contact' : 'signIn'
-  }
-  return axes.contact || axes.defaultContact ? 'contact' : 'neither'
+  return axesOf(row).username ? 'signIn' : 'contact'
 }
 
 export function IdentifiersSection({
@@ -580,8 +564,8 @@ export function IdentifiersSection({
   // (null when none is); rowSentTo is that address once its code has been
   // requested; rowCode is the answer; rowCodeInvalid marks a refused code in
   // the field. rowResendUntil / rowNow drive the resend countdown. The key
-  // names the list occurrence that opened the flow, so a record on both axes
-  // shows the form in the row the viewer acted on.
+  // names the list occurrence that opened the flow, so a record in both
+  // lists shows the form in the row the viewer acted on.
   const [rowVerify, setRowVerify] = useState<{
     readonly key: string
     readonly value: string
@@ -725,10 +709,10 @@ export function IdentifiersSection({
   // claimed for an answer that genuinely listed none.
   const showHeader = pending || (rows !== undefined && rows.length > 0)
 
-  /** Refetch the profile alone. Registering or proving a contact address, a
-   * contact-only axis change, the default-contact choice and a removal
-   * change only what the profile reports: none of them replaces this
-   * session's credential or revokes the account's other sessions. */
+  /** Refetch the profile alone. Registering or proving a contact address, the
+   * default-contact choice and a removal change only what the profile
+   * reports: none of them replaces this session's credential or revokes the
+   * account's other sessions. */
   async function invalidateProfile(): Promise<void> {
     await queryClient.invalidateQueries({ queryKey: getAuthnProfileGetQueryKey() })
   }
@@ -797,11 +781,11 @@ export function IdentifiersSection({
     })
   }
 
-  /** Write one axis of a row. A contact-only change does not rotate the
-   * caller's credential; putting a proved value into sign-in does, so that
-   * write runs inside the identity-transition window. A refusal re-reads the
-   * profile, so a selection the client offered but the server rejects
-   * converges on the server's answer. */
+  /** Write a row's sign-in axis. Putting a proved value into sign-in rotates
+   * the caller's credential, so that write runs inside the identity-transition
+   * window; taking it out does not. A refusal re-reads the profile, so a
+   * selection the client offered but the server rejects converges on the
+   * server's answer. */
   function setFlags(
     id: string,
     value: string,
@@ -812,13 +796,10 @@ export function IdentifiersSection({
       const write = () =>
         updateIdentifier.mutateAsync({
           id,
-          data: {
-            ...(change.contact === undefined ? {} : { contact: change.contact }),
-            ...(change.signIn === undefined ? {} : { sign_in: change.signIn }),
-          },
+          data: { sign_in: change.signIn },
         })
       try {
-        if (change.signIn === true) {
+        if (change.signIn) {
           await runIdentityTransition(session, write, invalidateAfterWrite)
         } else {
           await write()
@@ -833,12 +814,10 @@ export function IdentifiersSection({
         await invalidateProfile()
         throw error
       }
-      return t(
-        change.contact !== undefined
-          ? 'identifiers.axes.contactChanged'
-          : 'identifiers.axes.signInChanged',
-        { value, interpolation: { escapeValue: false } },
-      )
+      return t('identifiers.axes.signInChanged', {
+        value,
+        interpolation: { escapeValue: false },
+      })
     })
   }
 
@@ -1214,8 +1193,9 @@ export function IdentifiersSection({
     />
   )
 
-  // The three lists, in the order the section renders them, with the keys
-  // their headings and empty notes read.
+  // The lists, in the order the section renders them, with the keys their
+  // headings and empty notes read. The contact axis's own view renders its
+  // table instead, so it reads no group here.
   const groups: readonly {
     readonly key: IdentifierGroup
     /** Set when the list is one identifier kind rather than one axis. */
@@ -1233,19 +1213,6 @@ export function IdentifiersSection({
         title: `identifiers.kind.${entry.kind}`,
         empty: 'identifiers.groups.signInEmpty',
       }))
-    : axis === 'contact'
-    ? [
-        {
-          key: 'contact',
-          title: 'identifiers.groups.contact',
-          empty: 'identifiers.groups.contactEmpty',
-        },
-        {
-          key: 'neither',
-          title: 'identifiers.groups.notContact',
-          empty: 'identifiers.groups.notContactEmpty',
-        },
-      ]
     : [
         {
           key: 'signIn',
@@ -1257,21 +1224,15 @@ export function IdentifiersSection({
           title: 'identifiers.groups.contact',
           empty: 'identifiers.groups.contactEmpty',
         },
-        {
-          key: 'neither',
-          title: 'identifiers.groups.neither',
-          empty: 'identifiers.groups.neitherEmpty',
-        },
       ]
   const groupIdBase = useId()
 
   /**
-   * One row in one of the lists. The switches render in every occurrence of
-   * an email or phone record, so the two lists showing it stay in step; the
-   * per-record actions render only in the occurrence canonical for the
-   * record's state, so one address never offers the same action twice. The
-   * sign-in switch is offered only on a proved value; the contact switch is
-   * offered on an unproved one as well.
+   * One row in one of the lists. The sign-in switch renders in every
+   * occurrence of an email or phone record, so the two lists showing it stay
+   * in step; the per-record actions render only in the occurrence canonical
+   * for the record's state, so one address never offers the same action
+   * twice. The switch is offered only on a proved value.
    */
   function renderRow(
     identifier: AuthnProfileIdentifier,
@@ -1400,31 +1361,6 @@ export function IdentifiersSection({
               columnGap: 2,
             }}
           >
-            {axis === 'signIn' ? null : (
-              <FormControlLabel
-                control={
-                  <Switch
-                    size="small"
-                    checked={axes.contact}
-                    disabled={disabled}
-                    slotProps={{
-                      input: {
-                        'aria-label': t('identifiers.axes.contactAria', {
-                          value,
-                          interpolation: { escapeValue: false },
-                        }),
-                      },
-                    }}
-                    onChange={() => {
-                      if (id !== null) {
-                        void setFlags(id, value, { contact: !axes.contact })
-                      }
-                    }}
-                  />
-                }
-                label={t('identifiers.axes.contact')}
-              />
-            )}
             {axis === 'signIn' && kind === 'username' ? (
               // A username is a login name by definition; the switch states
               // that fact rather than offering a change the server refuses.
@@ -1682,37 +1618,6 @@ export function IdentifiersSection({
                             </Stack>
                           </TableCell>
                           <TableCell align="right">
-                            {/* The contact axis's own switch, the same one the
-                                combined view offers: one write to the row's
-                                `contact` flag, gated like the sign-in write,
-                                then a profile refetch. */}
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={axes.contact}
-                                  disabled={writeBusy || addBusy || id === null}
-                                  slotProps={{
-                                    input: {
-                                      'aria-label': t('identifiers.axes.contactAria', {
-                                        value: row.value ?? '',
-                                        interpolation: { escapeValue: false },
-                                      }),
-                                    },
-                                  }}
-                                  onChange={() => {
-                                    if (id !== null) {
-                                      void setFlags(id, row.value ?? '', {
-                                        contact: !axes.contact,
-                                      })
-                                    }
-                                  }}
-                                />
-                              }
-                              label={t('identifiers.axes.contact')}
-                            />
-                          </TableCell>
-                          <TableCell align="right">
                             {id !== null ? (
                               <ContactActionsMenu
                                 value={row.value ?? ''}
@@ -1828,15 +1733,7 @@ export function IdentifiersSection({
                 if (group.kind !== undefined) {
                   return (row.kind ?? '') === group.kind
                 }
-                if (axis === 'both') {
-                  return belongsTo(row, group.key)
-                }
-                const axes = axesOf(row)
-                const onAxis =
-                  axis === 'signIn'
-                    ? axes.signIn
-                    : axes.contact || axes.defaultContact
-                return group.key === 'neither' ? !onAxis : onAxis
+                return belongsTo(row, group.key)
               })
               // A sign-in list is one per kind over one axis, so the axis key
               // alone would repeat: the kind keeps the React key and the

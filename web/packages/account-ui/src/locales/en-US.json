@@ -357,20 +357,13 @@
       "signIn": "Sign-in ways",
       "signInEmpty": "No sign-in ways yet.",
       "contact": "Contacts",
-      "contactEmpty": "No contact addresses yet.",
-      "neither": "Not used for sign-in or contact",
-      "neitherEmpty": "No address or number is unused.",
-      "notContact": "Not used as a contact",
-      "notContactEmpty": "No address or number is a contact."
+      "contactEmpty": "No contact addresses yet."
     },
     "axes": {
-      "contact": "Contact",
-      "contactAria": "Contact: {{value}}",
       "signIn": "Sign-in way",
       "signInAria": "Sign-in way: {{value}}",
       "defaultContact": "Default contact",
       "defaultAria": "Default contact: {{value}}",
-      "contactChanged": "Updated whether {{value}} is a contact.",
       "signInChanged": "Updated whether {{value}} can be used to sign in.",
       "defaultChanged": "{{value}} is now the default contact address."
     },

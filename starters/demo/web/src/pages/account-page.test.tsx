@@ -73,7 +73,6 @@ const accountEnUS = accountUiResources['en-US'] as {
     readonly add: { readonly open: string }
     readonly axes: {
       readonly signIn: string
-      readonly contact: string
       readonly defaultContact: string
     }
     readonly action: { readonly enable: string; readonly disable: string }
@@ -333,7 +332,6 @@ describe('AccountSettingsPage sections', () => {
         name: accountEnUS.identifiers.kind.email,
       }),
     ).toBeInTheDocument()
-    expect(screen.queryByText(accountEnUS.identifiers.axes.contact)).toBeNull()
     expect(
       screen.queryByText(accountEnUS.identifiers.axes.defaultContact),
     ).toBeNull()

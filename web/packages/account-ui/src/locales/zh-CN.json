@@ -357,20 +357,13 @@
       "signIn": "登录方式",
       "signInEmpty": "暂无登录方式。",
       "contact": "联系方式",
-      "contactEmpty": "暂无联系方式。",
-      "neither": "未用于登录或联系",
-      "neitherEmpty": "没有未用于登录或联系的地址或号码。",
-      "notContact": "未作联系方式",
-      "notContactEmpty": "没有可以作联系方式的地址或号码。"
+      "contactEmpty": "暂无联系方式。"
     },
     "axes": {
-      "contact": "作联系方式",
-      "contactAria": "作联系方式：{{value}}",
       "signIn": "作登录方式",
       "signInAria": "作登录方式：{{value}}",
       "defaultContact": "默认联系地址",
       "defaultAria": "默认联系地址：{{value}}",
-      "contactChanged": "已更新 {{value}} 是否作联系方式。",
       "signInChanged": "已更新 {{value}} 是否可作登录方式。",
       "defaultChanged": "{{value}} 现在是默认联系地址。"
     },

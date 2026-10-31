@@ -1,10 +1,12 @@
 /**
- * IdentifiersSection behaviour: the sign-in-identifiers list read off the
- * profile (GET /api/v1/auth/me) and the removal write
- * (DELETE /api/v1/auth/identifiers/{id}).
+ * IdentifiersSection behaviour: the identifiers and the removal write
+ * (DELETE /api/v1/auth/identifiers/{id}) of the profile read
+ * (GET /api/v1/auth/me).
  *
  * What this suite pins: each identifier renders with its kind and value and
- * its one-of-two verified/unverified state; an unverified email row proves its
+ * its one-of-two verified/unverified state; the sign-in ways and contacts
+ * lists follow the profile, with every registered address a contact and no
+ * control that would change that; an unverified email row proves its
  * own address through the code flow and flips its chip; a row's remove sends
  * DELETE /api/v1/auth/identifiers/{id} behind the danger confirm and refetches
  * the profile so the row drops off; a last-way-in refusal (409) renders
@@ -92,10 +94,12 @@ describe('IdentifiersSection', () => {
     expect(
       await screen.findByRole('heading', { name: zhCN.identifiers.title }),
     ).toBeTruthy()
-    expect(await screen.findByText('ada@x.test')).toBeTruthy()
-    expect(screen.getByText(zhCN.identifiers.kind.email)).toBeTruthy()
+    // The email is a sign-in way and so appears in both lists; the phone is a
+    // contact only.
+    expect(await screen.findAllByText('ada@x.test')).toHaveLength(2)
+    expect(screen.getAllByText(zhCN.identifiers.kind.email)).toHaveLength(2)
     expect(screen.getByText('+14155550123')).toBeTruthy()
-    expect(screen.getByText(zhCN.identifiers.verified)).toBeTruthy()
+    expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2)
     expect(screen.getByText(zhCN.identifiers.unverified)).toBeTruthy()
 
     await expectNoAxeViolations()
@@ -133,8 +137,10 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText('operator@demo.test')).toBeTruthy()
-    expect(screen.getAllByText(zhCN.identifiers.unverified)).toHaveLength(2)
+    // Each unproved address appears once as a sign-in way (the profile's
+    // flag still says so) and once as a contact.
+    expect(await screen.findAllByText('operator@demo.test')).toHaveLength(2)
+    expect(screen.getAllByText(zhCN.identifiers.unverified)).toHaveLength(4)
     expect(screen.queryByText(zhCN.identifiers.verified)).toBeNull()
     // The binary vocabulary has no channel labels left.
     expect(zhCN.identifiers).not.toHaveProperty('addedByAdmin')
@@ -165,7 +171,9 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText('second@x.test')).toBeTruthy()
+    // The unverified address is a sign-in way as well as a contact, so it
+    // appears in both lists.
+    expect(await screen.findAllByText('second@x.test')).toHaveLength(2)
     // The account as a whole is verified, so the banner offers no entry for
     // this row; the row itself must.
     expect(
@@ -206,7 +214,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText('only@x.test')).toBeTruthy()
+    expect(await screen.findAllByText('only@x.test')).toHaveLength(2)
     expect(
       screen.queryByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'only@x.test'),
@@ -299,9 +307,10 @@ describe('IdentifiersSection', () => {
     )
     expect(verifies).toHaveLength(1)
     expect(verifies[0]?.body).toEqual({ code: '123456' })
-    // The refetched profile flips the row's chip; both rows are proved now.
+    // The refetched profile flips the row's chip; both rows are proved now,
+    // and each appears in both lists.
     await waitFor(() =>
-      expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2),
+      expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(4),
     )
     expect(screen.queryByText(zhCN.identifiers.unverified)).toBeNull()
     // The row verification confirms itself, naming the address it proved.
@@ -347,8 +356,8 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText('pending@x.test')).toBeTruthy()
-    expect(screen.getByText(zhCN.identifiers.unverified)).toBeTruthy()
+    expect(await screen.findAllByText('pending@x.test')).toHaveLength(2)
+    expect(screen.getAllByText(zhCN.identifiers.unverified)).toHaveLength(2)
     expect(
       screen.queryByRole('button', {
         name: zhCN.identifiers.verifyAria.replace(
@@ -442,7 +451,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText('ada@x.test')).toBeTruthy()
+    expect(await screen.findAllByText('ada@x.test')).toHaveLength(2)
     // An email address is a login name for a password account too.
     expect(
       screen.queryByRole('button', {
@@ -1808,7 +1817,7 @@ describe('IdentifiersSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    await screen.findByText('ada@example.test')
+    await screen.findAllByText('ada@example.test')
     await user.click(
       screen.getByRole('button', { name: zhCN.identifiers.add.open }),
     )
@@ -1976,7 +1985,7 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
     )
 
-    await waitFor(() => expect(screen.getByText('ada@x.test')).toBeTruthy())
+    await waitFor(() => expect(screen.getAllByText('ada@x.test').length).toBeGreaterThan(0))
     expect(rig.transitionBegins()).toBe(0)
     expect(rig.session.getSnapshot().state).toBe('authenticated')
     expect(rig.endedEdges()).toBe(0)
@@ -2057,7 +2066,7 @@ describe('IdentifiersSection', () => {
     )
 
     await waitFor(() =>
-      expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2),
+      expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(4),
     )
     expect(rig.transitionBegins()).toBe(0)
     expect(rig.session.getSnapshot().state).toBe('authenticated')
@@ -2215,7 +2224,7 @@ describe('IdentifiersSection', () => {
     }
     const { queryClient } = mount(respond)
 
-    expect(await screen.findByText('ada@x.test')).toBeTruthy()
+    expect(await screen.findAllByText('ada@x.test')).toHaveLength(2)
 
     await act(async () => {
       await queryClient.invalidateQueries()
@@ -2223,7 +2232,7 @@ describe('IdentifiersSection', () => {
 
     // The failed refresh keeps the settled rows on screen under the stale
     // notice rather than replacing them with the error placeholder.
-    expect(screen.getByText('ada@x.test')).toBeTruthy()
+    expect(screen.getAllByText('ada@x.test')).toHaveLength(2)
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.stale.description)
     expect(screen.queryByText(zhCN.identifiers.error.title)).toBeNull()
@@ -2233,7 +2242,7 @@ describe('IdentifiersSection', () => {
     await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
   })
 
-  it('groups the identifiers by the two axes, with an empty list of its own, and passes axe', async () => {
+  it('groups the identifiers into sign-in ways and contacts, and passes axe', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -2286,23 +2295,24 @@ describe('IdentifiersSection', () => {
     const contacts = screen.getByRole('region', {
       name: zhCN.identifiers.groups.contact,
     })
-    const neither = screen.getByRole('region', {
-      name: zhCN.identifiers.groups.neither,
-    })
     // A username and the address the profile marks sign_in are sign-in ways.
     expect(within(signIn).getByText('ada')).toBeTruthy()
     expect(within(signIn).getByText('signin@x.test')).toBeTruthy()
-    // The address the profile marks contact, and only it, is a contact.
+    // Every registered address is a contact, whether or not it signs in and
+    // whatever the profile's own contact flag says.
+    expect(within(contacts).getByText('signin@x.test')).toBeTruthy()
     expect(within(contacts).getByText('contact@x.test')).toBeTruthy()
-    expect(within(contacts).queryByText('signin@x.test')).toBeNull()
-    // The phone is on neither axis.
-    expect(within(neither).getByText('+14155550123')).toBeTruthy()
-    expect(within(neither).queryByText('ada')).toBeNull()
+    expect(within(contacts).getByText('+14155550123')).toBeTruthy()
+    // A username is not an address and never joins the contacts list.
+    expect(within(contacts).queryByText('ada')).toBeNull()
+    // There is no third list to hold an address that is not a sign-in way.
+    expect(zhCN.identifiers.groups).not.toHaveProperty('neither')
+    expect(zhCN.identifiers.groups).not.toHaveProperty('neitherEmpty')
 
     await expectNoAxeViolations()
   })
 
-  it('renders an empty note for each list that has no row', async () => {
+  it('renders an empty note for a list that has no row', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -2327,12 +2337,13 @@ describe('IdentifiersSection', () => {
 
     await screen.findByText('ada')
     expect(screen.getByText(zhCN.identifiers.groups.contactEmpty)).toBeTruthy()
-    expect(screen.getByText(zhCN.identifiers.groups.neitherEmpty)).toBeTruthy()
+    expect(zhCN.identifiers.groups).not.toHaveProperty('neitherEmpty')
   })
 
-  it('offers the contact switch on an unproved address but no sign-in switch, and writes the contact axis', async () => {
-    let contact = false
-    const writes: unknown[] = []
+  it('lists every registered address as a contact, with no contact control', async () => {
+    // Registering an email address or phone number is what makes it a
+    // contact: the profile's own contact flag cannot keep it out of the list,
+    // and the section offers no control that would change the position.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -2342,53 +2353,44 @@ describe('IdentifiersSection', () => {
               identifier({
                 id: 'id-email',
                 kind: 'email',
-                value: 'new@x.test',
+                value: 'contact@x.test',
+                proven: true,
+                sign_in: false,
+                contact: false,
+              }),
+              identifier({
+                id: 'id-phone',
+                kind: 'phone',
+                value: '+14155550123',
                 proven: false,
                 verified_at: '',
-                verified_via: 'admin',
+                verified_via: '',
                 sign_in: false,
-                contact,
+                contact: false,
               }),
             ],
           }),
         )
       }
-      if (
-        call.method === 'PUT' &&
-        call.path === '/api/v1/auth/identifiers/id-email'
-      ) {
-        writes.push(call.body)
-        contact = (call.body as { contact?: boolean }).contact === true
-        return new Response(null, { status: 204 })
-      }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mount(respond)
-    const user = userEvent.setup()
 
-    // An unproved value cannot be a sign-in way, so that switch is absent;
-    // its contact axis is still selectable.
-    expect(
-      screen.queryByRole('switch', {
-        name: zhCN.identifiers.axes.signInAria.replace('{{value}}', 'new@x.test'),
-      }),
-    ).toBeNull()
-    await user.click(
-      await screen.findByRole('switch', {
-        name: zhCN.identifiers.axes.contactAria.replace(
-          '{{value}}',
-          'new@x.test',
-        ),
-      }),
-    )
-
-    await waitFor(() => expect(writes).toEqual([{ contact: true }]))
     const contacts = await screen.findByRole('region', {
       name: zhCN.identifiers.groups.contact,
     })
-    await waitFor(() =>
-      expect(within(contacts).getByText('new@x.test')).toBeTruthy(),
+    expect(within(contacts).getByText('contact@x.test')).toBeTruthy()
+    expect(within(contacts).getByText('+14155550123')).toBeTruthy()
+    // The group's only switch is the proved address's sign-in way; there is
+    // no control that would take an address out of the contact position.
+    const switches = within(contacts).getAllByRole('switch')
+    expect(switches).toHaveLength(1)
+    expect(switches[0]).toHaveAccessibleName(
+      zhCN.identifiers.axes.signInAria.replace('{{value}}', 'contact@x.test'),
     )
+    expect(zhCN.identifiers.axes).not.toHaveProperty('contact')
+    expect(zhCN.identifiers.axes).not.toHaveProperty('contactAria')
+    expect(zhCN.identifiers.axes).not.toHaveProperty('contactChanged')
   })
 
   it('puts a proved address into sign-in through its own switch', async () => {
@@ -2529,14 +2531,16 @@ describe('IdentifiersSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('switch', {
-        name: zhCN.identifiers.axes.signInAria.replace(
-          '{{value}}',
-          '+14155550123',
-        ),
-      }),
-    )
+    // The phone is a sign-in way and a contact, so its switch renders once in
+    // each list; either occurrence writes the same flag.
+    const switches = await screen.findAllByRole('switch', {
+      name: zhCN.identifiers.axes.signInAria.replace(
+        '{{value}}',
+        '+14155550123',
+      ),
+    })
+    expect(switches).toHaveLength(2)
+    await user.click(switches[0] as HTMLElement)
 
     await waitFor(() => expect(writes).toBe(1))
     const alert = await screen.findByRole('alert')
@@ -2762,9 +2766,10 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
 
-    // The refetched row flips to proved; both rows are proved now.
+    // The refetched row flips to proved; both rows are proved now, and each
+    // appears in both lists.
     await waitFor(() =>
-      expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2),
+      expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(4),
     )
     const verifies = rig.calls.filter(
       (call) =>
@@ -2776,12 +2781,10 @@ describe('IdentifiersSection', () => {
     expect(verifies[1]?.body).toEqual({ code: '123456' })
   })
 
-  it('offers the contact switch in the contact axis table and writes the contact flag', async () => {
-    // A host that shows the contact axis alone gets the same contact switch
-    // the combined view offers: one write to the row's `contact` flag, gated
-    // like the sign-in write, then a profile refetch.
-    let contact = false
-    const writes: unknown[] = []
+  it('shows the contact axis table without a contact switch', async () => {
+    // A host that shows the contact axis alone gets the address table with
+    // its row actions; the contact position itself is not a control, and the
+    // sign-in switch belongs to the sign-in axis.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -2794,19 +2797,10 @@ describe('IdentifiersSection', () => {
                 value: 'ada@x.test',
                 proven: true,
                 sign_in: true,
-                contact,
               }),
             ],
           }),
         )
-      }
-      if (
-        call.method === 'PUT' &&
-        call.path === '/api/v1/auth/identifiers/id-email'
-      ) {
-        writes.push(call.body)
-        contact = (call.body as { contact?: boolean }).contact === true
-        return new Response(null, { status: 204 })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
@@ -2815,30 +2809,14 @@ describe('IdentifiersSection', () => {
     renderWithProviders(
       <IdentifiersSection session={rig.session} axis="contact" />,
     )
-    const user = userEvent.setup()
 
-    const toggle = await screen.findByRole('switch', {
-      name: zhCN.identifiers.axes.contactAria.replace('{{value}}', 'ada@x.test'),
-    })
-    expect(toggle).not.toBeChecked()
-    await user.click(toggle)
-
-    await waitFor(() => expect(writes).toEqual([{ contact: true }]))
-    await waitFor(() =>
-      expect(
-        screen.getByRole('switch', {
-          name: zhCN.identifiers.axes.contactAria.replace(
-            '{{value}}',
-            'ada@x.test',
-          ),
-        }),
-      ).toBeChecked(),
-    )
+    expect(await screen.findByText('ada@x.test')).toBeTruthy()
+    expect(screen.queryAllByRole('switch')).toHaveLength(0)
     expect(
-      rig.calls.filter(
-        (call) => call.method === 'GET' && call.path === PROFILE_PATH,
-      ).length,
-    ).toBeGreaterThanOrEqual(2)
+      screen.getByRole('button', {
+        name: zhCN.identifiers.actionsAria.replace('{{value}}', 'ada@x.test'),
+      }),
+    ).toBeTruthy()
   })
 
   it('names the wait a throttled email send stated', async () => {
