@@ -237,11 +237,10 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 		t.Fatalf("decoding the compiled defaults: %v", err)
 	}
 
-	// The two listeners a bare run binds, and the namespace map the dispatch
+	// The one listener a bare run binds, and the namespace map the dispatch
 	// selects an endpoint by.
 	wantListeners := map[string]string{
-		"backend": "127.0.0.1:8080",
-		"ops":     "127.0.0.1:8083",
+		"backend": "127.0.0.1:8081",
 	}
 	if len(doc.HTTP.Listeners) != len(wantListeners) {
 		t.Fatalf("http.listeners holds %d entries, want %d: %v",
@@ -259,7 +258,7 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 			"/api/v1/system/audit", "/api/v1/system/auth", "/api/v1/system/permissions",
 			"/api/v1/system/settings", "/api/v1/system/sms", "/api/v1/system/tenants",
 		}},
-		"ops":     {Listener: "ops"},
+		"ops":     {Listener: "backend", Prefixes: []string{"/health", "/ready", "/openapi.json"}},
 		"content": {Listener: "backend", Prefixes: []string{"/content"}, MaxBodyBytes: 0},
 		"web":     {Listener: "backend", Prefixes: []string{"/"}},
 	}
@@ -295,7 +294,7 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantString(t, "ops.description", doc.Ops.Description,
 		"The demo assembly's API: every operation the modules named in this stack declare, "+
 			"merged from their OpenAPI fragments.")
-	wantStrings(t, "ops.servers", doc.Ops.Servers, []string{"http://localhost:8080"})
+	wantStrings(t, "ops.servers", doc.Ops.Servers, []string{"http://localhost:8081"})
 
 	wantString(t, "observability.otel.service-name", doc.Observability.OTel.ServiceName, "demo")
 	wantString(t, "webui.endpoint", doc.WebUI.Endpoint, "web")
@@ -303,7 +302,7 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	// The identity system: what the gateway guards, the origin a bare run is
 	// reached at, the signing key the program mints, and the relying party.
 	wantStrings(t, "authn.gate.endpoints", doc.Authn.Gate.Endpoints, []string{"api", "account", "admin"})
-	wantString(t, "authn.gate.mount.public-url", doc.Authn.Gate.Mount.PublicURL, "http://localhost:8080")
+	wantString(t, "authn.gate.mount.public-url", doc.Authn.Gate.Mount.PublicURL, "http://localhost:8081")
 	wantString(t, "authn.gate.mount.endpoints.default", doc.Authn.Gate.Mount.Endpoints.Default, "account")
 	wantString(t, "authn.gate.mount.endpoints.tenants", doc.Authn.Gate.Mount.Endpoints.Tenants, "api")
 	wantString(t, "authn.gate.mount.endpoints.system", doc.Authn.Gate.Mount.Endpoints.System, "admin")
@@ -311,7 +310,7 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantString(t, "authn.mfa.totp.issuer", doc.Authn.MFA.TOTP.Issuer, "demo")
 	wantString(t, "authn.mfa.webauthn.rp-id", doc.Authn.MFA.WebAuthn.RPID, "localhost")
 	wantString(t, "authn.mfa.webauthn.rp-name", doc.Authn.MFA.WebAuthn.RPName, "demo")
-	wantStrings(t, "authn.mfa.webauthn.origins", doc.Authn.MFA.WebAuthn.Origins, []string{"http://localhost:8080"})
+	wantStrings(t, "authn.mfa.webauthn.origins", doc.Authn.MFA.WebAuthn.Origins, []string{"http://localhost:8081"})
 
 	// Tenancy and authorization.
 	wantStrings(t, "tenant.resolve.endpoints", doc.Tenant.Resolve.Endpoints, []string{"api"})
@@ -378,21 +377,27 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 
 // TestABareRunStartsOnTheCompiledDefaults runs seed and then serve with no
 // --config and no DEMO_CONFIG: the program has to satisfy its own required
-// items, bind the listeners the environment names, reach the sqlite database,
+// items, bind the listener the environment names, reach the sqlite database,
 // mint the token signing key, seed the development operator and issue a token
 // signed with the origin the document names.
 //
-// The listener addresses are the one value the case moves off the document, as
-// JSON through DEMO_HTTP__LISTENERS: a suite that bound 127.0.0.1:8080 could not
+// The listener address is the one value the case moves off the document, as
+// JSON through DEMO_HTTP__LISTENERS: a suite that bound 127.0.0.1:8081 could not
 // run beside another process. The move also exercises the environment origin the
 // document's runtime-different values take, and the run log then names the
-// addresses the variable gave.
+// address the variable gave.
+//
+// The single listener is also what the operations probes share with the API:
+// GET /ready and GET /api/v1/auth/methods both answer 200 on the same address.
+// A build that kept the operations endpoint on a listener of its own would
+// answer the probe on one port and the API on another, so one of the two
+// requests below fails.
 func TestABareRunStartsOnTheCompiledDefaults(t *testing.T) {
 	dir := t.TempDir()
 	ports := freePorts(t, listenerCount)
+	backendPort := ports[backendListener]
 	listeners := fmt.Sprintf(
-		`{"backend":{"address":"127.0.0.1:%d"},"ops":{"address":"127.0.0.1:%d"}}`,
-		ports[backendListener], ports[opsListener])
+		`{"backend":{"address":"127.0.0.1:%d"}}`, backendPort)
 	env := []string{"DEMO_HTTP__LISTENERS=" + listeners}
 
 	seeded := runCommandArgs(t, hostBinary, dir, []string{"sqlite", seedCommand}, env)
@@ -416,24 +421,61 @@ func TestABareRunStartsOnTheCompiledDefaults(t *testing.T) {
 	serve := startArgs(t, dir, []string{"sqlite", serveCommand}, env)
 	serve.waitReady(t)
 
-	// The environment's two addresses are the ones bound, over the document's.
-	for _, port := range ports {
-		if want := fmt.Sprintf("address=127.0.0.1:%d", port); !strings.Contains(serve.output(), want) {
-			t.Errorf("the run log names no listener at %s; the environment's value did not "+
-				"reach the listener set:\n%s", want, serve.output())
-		}
+	// The environment's address is the one bound, over the document's.
+	if want := fmt.Sprintf("address=127.0.0.1:%d", backendPort); !strings.Contains(serve.output(), want) {
+		t.Errorf("the run log names no listener at %s; the environment's value did not "+
+			"reach the listener set:\n%s", want, serve.output())
 	}
-	if ready := get(t, fmt.Sprintf("http://127.0.0.1:%d/ready", ports[opsListener])); ready.status != 200 {
-		t.Errorf("GET /ready on the ops listener answered %d, want 200:\n%s", ready.status, ready.body)
+	base := fmt.Sprintf("http://127.0.0.1:%d", backendPort)
+	if ready := get(t, base+"/ready"); ready.status != 200 {
+		t.Errorf("GET /ready answered %d, want 200:\n%s", ready.status, ready.body)
+	}
+	if methods := get(t, base+"/api/v1/auth/methods"); methods.status != 200 {
+		t.Errorf("GET /api/v1/auth/methods answered %d, want 200 on the same address as /ready:\n%s",
+			methods.status, methods.body)
 	}
 
 	// The seeded account signs in, which is the database, the seed, the minted
 	// key and the token issuer all working together.
-	token := signIn(t, fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener]),
-		"operator", demoOperatorLogin)
-	if issuer := tokenIssuer(t, token); issuer != "http://localhost:8080" {
+	token := signIn(t, base, "operator", demoOperatorLogin)
+	if issuer := tokenIssuer(t, token); issuer != "http://localhost:8081" {
 		t.Errorf("the issued token's iss = %q, want the document's public URL", issuer)
 	}
+}
+
+// TestTheCompiledDefaultsNameOneListenerAndTheOpsPrefixes holds the two facts
+// the single-listener topology rests on: a bare run binds one socket, and the
+// operations endpoint claims its three probe paths explicitly on it instead of
+// relying on the root fallback. The web endpoint owns "/", so an operations
+// endpoint that omitted prefixes would either lose the claim conflict check or
+// take the whole path space with it.
+func TestTheCompiledDefaultsNameOneListenerAndTheOpsPrefixes(t *testing.T) {
+	clearHostEnvironment(t)
+	reader, err := config.Load(t.Context(), core.ProcessRegistry, nil)
+	if err != nil {
+		t.Fatalf("loading the configuration of a run with no primary source: %v", err)
+	}
+	var doc compiledDefaults
+	if err := reader.Decode("", &doc); err != nil {
+		t.Fatalf("decoding the compiled defaults: %v", err)
+	}
+
+	if len(doc.HTTP.Listeners) != 1 {
+		t.Fatalf("http.listeners holds %d entries, want one: %v", len(doc.HTTP.Listeners), doc.HTTP.Listeners)
+	}
+	backend, ok := doc.HTTP.Listeners["backend"]
+	if !ok {
+		t.Fatalf("http.listeners names no backend listener: %v", doc.HTTP.Listeners)
+	}
+	wantString(t, "http.listeners.backend.address", backend.Address, "127.0.0.1:8081")
+
+	ops, declared := doc.HTTP.Endpoints["ops"]
+	if !declared {
+		t.Fatalf("http.endpoints declares no ops endpoint: %v", doc.HTTP.Endpoints)
+	}
+	wantString(t, "http.endpoints.ops.listener", ops.Listener, "backend")
+	wantStrings(t, "http.endpoints.ops.prefixes", ops.Prefixes,
+		[]string{"/health", "/ready", "/openapi.json"})
 }
 
 // tokenIssuer reads the iss claim out of a JWT without verifying it. The case

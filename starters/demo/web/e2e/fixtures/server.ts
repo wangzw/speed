@@ -324,10 +324,11 @@ export interface ReviewServer {
   readonly dir: string
   /** The browser-facing origin, http://localhost:<backend-port>. */
   readonly url: string
-  /** The operations listener's origin. */
-  readonly opsUrl: string
+  /**
+   * The backend listener's port: the browser origin, the API and the
+   * operations probes all answer here.
+   */
   readonly backendPort: number
-  readonly opsPort: number
   readonly config: ReviewConfig
   /**
    * The local OpenID Connect provider the social methods are pointed at, when
@@ -378,13 +379,13 @@ export interface ReviewServer {
 
 /**
  * Start one review server: a fresh temporary directory, a fresh sqlite file
- * seeded by the binary itself, free ports, and the ops probes answered before
+ * seeded by the binary itself, a free port, and the ops probes answered before
  * the fixture returns.
  *
- * Ports are allocated after the seed command (which does not listen), so the
+ * The port is allocated after the seed command (which does not listen), so the
  * window between asking the kernel for a port and binding it is just the
  * config write. A bind failure is still possible -- another process can take
- * the port in that window -- so it is retried with a fresh pair, bounded by
+ * the port in that window -- so it is retried with a fresh port, bounded by
  * MAX_BIND_ATTEMPTS.
  *
  * `seedMember`, `seedImpersonation`, `seedInvitee`, `seedSocialAccount` and
@@ -505,16 +506,15 @@ export async function startReviewServer(
             dnsResolver: dnsStub.address,
             rootCAFile: enterpriseProvider.rootCAPath,
           }
-    // Seed with a provisional pair: the seed command does not listen, and the
-    // serve attempt below writes its own configuration with the final ports.
-    const [seedBackend, seedOps] = await freePorts(2)
-    if (seedBackend === undefined || seedOps === undefined) {
-      throw new Error('the harness could not allocate two free ports')
+    // Seed with a provisional port: the seed command does not listen, and the
+    // serve attempt below writes its own configuration with the final port.
+    const [seedBackend] = await freePorts(1)
+    if (seedBackend === undefined) {
+      throw new Error('the harness could not allocate a free port')
     }
     const seedConfig = await writeReviewConfig({
       dir,
       backendPort: seedBackend,
-      opsPort: seedOps,
       seedMember: options.seedMember,
       seedImpersonation: options.seedImpersonation,
       seedInvitee: options.seedInvitee,
@@ -537,14 +537,13 @@ export async function startReviewServer(
     let attempt = 0
     for (;;) {
       attempt += 1
-      const [backendPort, opsPort] = await freePorts(2)
-      if (backendPort === undefined || opsPort === undefined) {
-        throw new Error('the harness could not allocate two free ports')
+      const [backendPort] = await freePorts(1)
+      if (backendPort === undefined) {
+        throw new Error('the harness could not allocate a free port')
       }
       config = await writeReviewConfig({
         dir,
         backendPort,
-        opsPort,
         seedMember: options.seedMember,
         seedImpersonation: options.seedImpersonation,
         seedInvitee: options.seedInvitee,
@@ -583,8 +582,8 @@ export async function startReviewServer(
 
       try {
         await waitForReady(log, START_TIMEOUT_MS, from)
-        await waitForProbe(`${config.opsOrigin}/health`, log)
-        await waitForProbe(`${config.opsOrigin}/ready`, log)
+        await waitForProbe(`${config.origin}/health`, log)
+        await waitForProbe(`${config.origin}/ready`, log)
         break
       } catch (error) {
         const exited =
@@ -651,9 +650,7 @@ export async function startReviewServer(
       binary: manifest.binary,
       dir,
       url: reviewConfig.origin,
-      opsUrl: reviewConfig.opsOrigin,
       backendPort: reviewConfig.backendPort,
-      opsPort: reviewConfig.opsPort,
       config: reviewConfig,
       identityProvider,
       enterpriseIdentityProvider: enterpriseProvider,

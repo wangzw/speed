@@ -18,12 +18,15 @@
  * (starters/demo/server/main.go) and serves through pkg/webui. The build order
  * is therefore frontend first, Go second.
  *
- * Dev server: the demo's backend listener carries the api, account and admin
- * endpoints on one port (starters/demo/server/testdata/*.yaml). The app talks
- * to its own origin by default (the client base URL falls back to
- * window.location.origin), so this server proxies the namespaces those
- * endpoints claim onto that port -- overridable through
- * DEMO_WEB_BACKEND_PROXY when a run moves it. The claimed namespaces come from
+ * Dev server: the demo's backend listener carries every endpoint -- api,
+ * account, admin, content, web and the operations probes -- on one port
+ * (starters/demo/server/defaults.go). The app talks to its own origin by
+ * default (the client base URL falls back to window.location.origin), so this
+ * server proxies the namespaces those endpoints claim onto that port --
+ * overridable through DEMO_WEB_BACKEND_PROXY when a run moves it. The dev
+ * server itself listens on 8080, overridable through DEMO_WEB_PORT; an
+ * override that is not a port stops the load with an error rather than
+ * silently keeping the default. The claimed namespaces come from
  * backend-prefixes.json (src/backend-prefixes.ts) -- a hand-kept mirror of the
  * claims in the server configuration, held to them by the server's
  * TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims.
@@ -32,6 +35,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import { speedAliases } from '../../../web/scripts/speed-aliases.mjs'
 import { backendProxyRules } from './src/backend-prefixes.js'
+import { devServerPlan } from './src/dev-server.js'
 
 const sibling = (path: string): string =>
   fileURLToPath(new URL(path, import.meta.url))
@@ -39,8 +43,7 @@ const sibling = (path: string): string =>
 const appRoot = sibling('.')
 const workspaceRoot = sibling('../../../web')
 
-const backendProxy =
-  process.env.DEMO_WEB_BACKEND_PROXY ?? 'http://127.0.0.1:8080'
+const devServer = devServerPlan(process.env)
 
 export default defineConfig({
   resolve: {
@@ -122,6 +125,12 @@ export default defineConfig({
     },
   },
   server: {
+    // The port a local run yields to another checkout's run through
+    // DEMO_WEB_PORT. strictPort keeps two runs from fighting over 8080: a
+    // taken port fails the start instead of quietly moving to another one the
+    // backend proxy does not know about.
+    port: devServer.port,
+    strictPort: devServer.strictPort,
     // The dev server serves this directory and the workspace siblings the
     // aliases reach into (their own dependencies resolve out of the
     // workspace's node_modules store, also under the workspace root).
@@ -134,6 +143,6 @@ export default defineConfig({
     // rather than `/api/v1/auth`), because vite matches a key that begins with `^`
     // as a regular expression and anything else with `startsWith`: a plain
     // `/api/v1/auth` key would also forward `/api/v1/system`.
-    proxy: backendProxyRules(backendProxy),
+    proxy: backendProxyRules(devServer.proxyTarget),
   },
 })

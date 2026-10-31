@@ -773,6 +773,12 @@ it writes only what is absent, so a restart neither duplicates nor overwrites an
 operator's change. `serve` carries the platform baseline's background modules,
 so no second process runs.
 
+The template states the endpoint claim table because this deployment keeps the
+operations surface on a listener of its own: the compiled defaults put every
+endpoint, the ops probes included, on the backend listener, and `fly.toml`'s
+readiness check probes `GET /ready` on port 8083. The table is written whole
+because `http.endpoints` is a container leaf.
+
 The seed keys an account on the login name its entry configures, and an entry
 that names both an email address and a username answers to either: the address
 is looked up first, then the username beside it. A holder who removes the
@@ -820,7 +826,7 @@ table:
 | `api` | `/api` |
 | `account` | `/api/v1/auth`, `/api/v1/features`, `/api/v1/workspace` |
 | `admin` | `/api/v1/system/audit`, `/api/v1/system/auth`, `/api/v1/system/permissions`, `/api/v1/system/settings`, `/api/v1/system/sms`, `/api/v1/system/tenants` |
-| `ops` | `/` (omitted: it is alone on its listener) |
+| `ops` | `/health`, `/ready`, `/openapi.json` (declared explicitly: the endpoint shares the backend listener, whose root the `web` endpoint claims) |
 | `web` | `/` |
 
 The table is the product's fixed namespace map, not a description of the
@@ -898,13 +904,15 @@ is overridden by the same key in the file, and a container leaf such as
 differential case exercises writes the full table to move `web` onto a listener
 of its own.
 
-The five endpoints hang on two listeners, which each configuration file
-declares: `api`, `account`, `admin` and `web` share the `backend` listener, and
-`ops` has its own. A listener is one socket, so the frontend bundle and the API
-are same-origin and a browser reaches the API from
+Every endpoint hangs on one listener, which each configuration file
+declares: `api`, `account`, `admin`, `content`, `web` and the operations
+probes share the `backend` listener. A listener is one socket, so the frontend
+bundle and the API are same-origin and a browser reaches the API from
 the page without CORS. The `http.cors` policy the sample carries is therefore
 inert in this stack; it is kept as the starting point for a deployment that
-serves the frontend from an origin of its own.
+serves the frontend from an origin of its own. A deployment may split the
+listener again; the differential case's split topology does, moving `web` and
+`ops` onto listeners of their own.
 
 Sharing a listener with the `web` catch-all decides what a path under no
 endpoint's static prefix is answered with. On the `backend` listener the `web`

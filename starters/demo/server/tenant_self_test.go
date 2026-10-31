@@ -53,7 +53,7 @@ func TestTheCallerTenantReadIsOnTheAccountEndpoint(t *testing.T) {
 			len(answer.Tenants), read.body)
 	}
 
-	document := get(t, fmt.Sprintf("http://127.0.0.1:%d/openapi.json", ports[opsListener]))
+	document := get(t, fmt.Sprintf("http://127.0.0.1:%d/openapi.json", ports[backendListener]))
 	if document.status != http.StatusOK {
 		t.Fatalf("GET /openapi.json answered %d, want 200:\n%s", document.status, document.body)
 	}

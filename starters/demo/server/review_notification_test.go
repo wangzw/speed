@@ -151,8 +151,7 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	binary := reviewBinary(t)
 	ports := freePorts(t, listenerCount)
 	path := reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
-		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]))
+		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
 	config := "file://" + path
 	seedReview(t, binary, config)
 	serve := startReview(t, binary, config)
@@ -321,8 +320,7 @@ func TestReviewNotificationRendersInTheRecipientsLanguage(t *testing.T) {
 	binary := reviewBinary(t)
 	ports := freePorts(t, listenerCount)
 	path := reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
-		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]))
+		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
 	config := "file://" + path
 	seedReview(t, binary, config)
 	serve := startReview(t, binary, config)

@@ -18,19 +18,23 @@ pnpm install --filter demo-web      # or: pnpm -C web install, from the repo roo
 pnpm dev                            # vite dev server
 ```
 
-`pnpm dev` serves the app with hot module replacement on vite's own port. The
+`pnpm dev` serves the app with hot module replacement on port 8080. The
 app talks to its own origin by default (the client base URL falls back to
 `window.location.origin`), and the dev server proxies the namespaces the
-backend endpoints claim onto the demo's backend listener: the api, account,
-admin and content endpoints all answer on one port. The claimed prefixes live in
+backend endpoints claim onto the demo's single backend listener: the api,
+account, admin and content endpoints and the operations probes all answer on
+one port. The claimed prefixes live in
 `backend-prefixes.json` beside this package (`/api`, `/content`; `/api/v1/auth`,
 `/api/v1/features` and `/api/v1/workspace`;
 `/api/v1/system/audit`, `/api/v1/system/auth`, `/api/v1/system/permissions`,
-`/api/v1/system/settings`, `/api/v1/system/sms` and `/api/v1/system/tenants`), and
+`/api/v1/system/settings`, `/api/v1/system/sms` and `/api/v1/system/tenants`;
+`/health`, `/ready` and `/openapi.json`), and
 `vite.config.ts` generates one segment-anchored proxy key per prefix from that
-list. The target defaults to the `sqlite-memory` stack's backend listener
-(`127.0.0.1:8080`); override it with `DEMO_WEB_BACKEND_PROXY` when a run moves
-it.
+list. The target defaults to the compiled backend listener
+(`127.0.0.1:8081`); override it with `DEMO_WEB_BACKEND_PROXY` when a run moves
+it. The dev server's own port is 8080 and `DEMO_WEB_PORT` moves it; an override
+that is not a port fails the config load, and `strictPort` makes a taken port
+fail the start rather than silently moving to another one.
 
 Run the backend first (`go -C starters/demo/server run . --config
 file:testdata/sqlite-memory.yaml sqlite-memory serve`), then `pnpm dev`.

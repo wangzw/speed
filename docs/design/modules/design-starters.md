@@ -54,7 +54,7 @@ starters/demo/
 
 **产品自己的构建入口是示范自带的 `Makefile`。** 仓库的门禁入口是根 `Makefile`，它经 `go.work` 覆盖示范这个模块；拷出去的树上面什么都没有，它的构建、测试与静态检查命令因此写在示范自己的这一份里。`make help` 列出它跑什么，`make check` 全跑一遍，先前端后 Go——Go 构建内嵌产物，这个顺序是硬约束。**它是产品的入口，不是本仓库的入口**：仓库内跑的是根 `Makefile` 的 `make check`，前端腿在 `make web-check` 里。两条腿的输入由拷贝方提供、仓库不跑：`web-install` 把前端依赖装在包所在处（仓库内该包是 `web/` 工作区的成员，安装走工作区那份唯一的锁文件），`lint` 读模块目录向上最近的 `.golangci.yml`（仓库把它放在根）。
 
-**仓库根的 `make dev` 是本地开发回路。** 前台是 air，构建默认二进制并在每次重建后先 `sqlite seed` 再 `sqlite serve`（`server/.air.toml`），启动命令不带 `--config`；后台是 vite 的开发服务器，把 API 命名空间代理到后端监听。Ctrl-C 停掉 air，配方随即停掉 vite，一个中断结束两者。两者的环境变量由 `mise exec` 从根的 `.env` 载入；`.env` 不存在时跳过，程序跑在编进二进制的默认值上，因此本地回路的配置只有默认值与 `.env` 两个来源。`.env.example` 逐条列出这份文件可以承载的派生变量名、取值形态与含义，拷贝为 `.env` 即生效。审查构建的两条测试控制路由——短信模板审核控制 `review.sms.control` 与通知派发控制——只在端到端走查的 `-tags review` 构建里可用，本地回路不含它们；这是预期边界，不是功能缺席。
+**仓库根的 `make dev` 是本地开发回路。** 前台是 air，构建默认二进制并在每次重建后先 `sqlite seed` 再 `sqlite serve`（`server/.air.toml`），启动命令不带 `--config`；后台是 vite 的开发服务器，把 API 命名空间代理到后端监听。编译默认值把后端监听与 ops 探针一起放在 `127.0.0.1:8081`、把开发服务器放在 `8080`；`DEMO_HTTP__LISTENERS` 换后端地址，`DEMO_WEB_PORT` 换前端端口，`DEMO_WEB_BACKEND_PROXY` 换代理目标，并发跑多个检出时三者在各自的 `.env` 里成对改。`DEMO_WEB_PORT` 的取值必须是合法端口，否则 vite 在加载配置时报错退出；`strictPort` 打开，端口被占用时启动失败而不静默换端口。Ctrl-C 停掉 air，配方随即停掉 vite，一个中断结束两者。两者的环境变量由 `mise exec` 从根的 `.env` 载入；`.env` 不存在时跳过，程序跑在编进二进制的默认值上，因此本地回路的配置只有默认值与 `.env` 两个来源。`.env.example` 逐条列出这份文件可以承载的派生变量名、取值形态与含义，拷贝为 `.env` 即生效。审查构建的两条测试控制路由——短信模板审核控制 `review.sms.control` 与通知派发控制——只在端到端走查的 `-tags review` 构建里可用，本地回路不含它们；这是预期边界，不是功能缺席。
 
 **Fly.io 部署取 `sqlite` 栈的单机形态。** 该栈的数据库落成文件、键值与事件后端都在进程内；部署配置在基线的配置之上给出 `mail.smtp` 的中继凭据与两个社交登录方法 `authn.login.google`、`authn.login.github` 的应用凭据，并因此启用 `authn.emailcode`。这些能力本已在二进制里，配齐即启动；它的外部依赖是 SMTP relay 与这两家身份提供方。基线已有的人机验证闸随基线进入部署，模式缺省 `off`；部署在模板里把它打开时，`turnstile` 机制另加一个外部依赖 Cloudflare 的 siteverify，`pow` 只要进程内的键值后端。一套部署由镜像、一台 Machine 与一个挂在 `/data` 的卷组成；卷承载数据库、签名密钥与对象存储的本地根，跨部署与停机保留。镜像的构建上下文是仓库根：前端产物来自 `web/` 工作区，Go 程序来自 `go.work` 声明的两个模块，两者都不在本目录之内；`fly.toml` 的 `[build] dockerfile` 相对该文件解析，根 `Makefile` 的 `fly` 目标把仓库根作为工作目录交给 `flyctl`。
 
@@ -140,7 +140,7 @@ starters/demo/
 
 **通知面的授权是宿主侧的。** 通知能力（`notification.inbox`、`notification.stream`、`notification.preferences`）按设计不声明任何权限点（[notification](notification/design-notification.md)）：它的路由不带权限闸，谁可读由宿主决定。示范作为宿主把这个决定写下来——`server/notification.go` 的 `notification.access` 模块在 `Init` 里把 `/api/v1/notifications` 下的收件箱、偏好与推送路由在 `authz.guard` 的声明面上登记为开放：网关照常认证、授权层放行、handler 按调用方身份作答；不登记时它们落在缺省关闭的授权层下答 403。登记为开放而非挂权限点，是因为这些路由按调用方身份划界而不是按谁的权限划界——收件箱与推送读的是调用方自己的账户，偏好矩阵读的是宿主身份与授权侧给出的收件人（`preferences.WithRecipient`）。基线的示范不接线那个收件人，通知夹具的开关在基线配置里关闭，偏好矩阵因此在基线里恒为空集，收件人这一步在基线里不出现；启用了通知类型的宿主需另把调用方账户写进偏好路由的请求上下文。审查装配正是这样的宿主：`server/notification_fixture.go` 声明通知类型 `review.notice`（默认渠道为收件箱、邮件与短信），审查配置打开 `review.notification.enabled`，由定时任务按租户为可寻址的成员派发，`wireReviewRecipient` 在认证网关的记录阶段把调用方的有效账户写进 `preferences.WithRecipient`，偏好矩阵因此有内容可读。
 
-**这些端点由两条监听承载。** 端点挂在监听上，一条监听是一个监听套接字，`pkg/http` 据此把多个端点并在一个地址上（[http](http/design-http.md)）。示范的平台默认文档把这几个端挂在两条监听上：`api`、`account`、`admin` 与 `web` 挂在 `backend` 监听上，`ops` 自开一条 `ops` 监听；监听本身与它们的地址由每份配置声明。前端与 API 因而同源，浏览器直接访问 `web` 与 `api` 无需 CORS。
+**这些端点由一条监听承载。** 端点挂在监听上，一条监听是一个监听套接字，`pkg/http` 据此把多个端点并在一个地址上（[http](http/design-http.md)）。示范的平台默认文档把这几个端都挂在 `backend` 监听上，监听本身与它的地址由每份配置声明；部署可以把端点重新拆到多条监听上，差分用例的 split 拓扑就把 `web` 与 `ops` 拆到各自的监听。前端与 API 因而同源，浏览器直接访问 `web` 与 `api` 无需 CORS。
 
 **`backend` 监听上的各端由平台默认文档写出[认领前缀](../../glossary.md)，按能力命名空间认领。** 监听按认领为请求选端，不看本次装配挂了哪些路由（[http](http/design-http.md) 的分派 handler、[ADR-http-dispatch](../../adr/adr-http-dispatch.md)）。这张表由编译进二进制的 `server/defaults.go` 给出；`testdata/` 的每份配置与示范测试的配置都不再重复它，经加载器读到的是同一张表：
 
@@ -149,17 +149,18 @@ starters/demo/
 | `api` | `/api` |
 | `account` | `/api/v1/auth`、`/api/v1/features`、`/api/v1/workspace` |
 | `admin` | `/api/v1/system/audit`、`/api/v1/system/auth`、`/api/v1/system/permissions`、`/api/v1/system/settings`、`/api/v1/system/sms`、`/api/v1/system/tenants` |
+| `ops` | `/health`、`/ready`、`/openapi.json` |
 | `web` | `/`：`backend` 监听的[兜底端点](../../glossary.md)，`webui` 的通配路由挂在这里 |
 
-`ops` 独占 `ops` 监听，省略 `prefixes`，即认领 `/`。
+`ops` 与其余端同挂 `backend` 监听，因此显式写出三条探针前缀，而不是靠省略 `prefixes` 认领 `/`——`/` 已由 `web` 认领，同一监听上只能有一个端认领一个前缀。
 
-每条 API 路由以 `/api/v1` 为根：普通面直接在 `/api/v1/<能力>` 下，平台管理面在 `/api/v1/system/<能力>` 下，租户管理面在 `/api/v1/tenants/<租户>/<能力>` 下（[ADR-http-api-prefix](../../adr/adr-http-api-prefix.md)、[ADR-http-api-path-scopes](../../adr/adr-http-api-path-scopes.md)）；ops 探针留在 `ops` 监听的根上。
+每条 API 路由以 `/api/v1` 为根：普通面直接在 `/api/v1/<能力>` 下，平台管理面在 `/api/v1/system/<能力>` 下，租户管理面在 `/api/v1/tenants/<租户>/<能力>` 下（[ADR-http-api-prefix](../../adr/adr-http-api-prefix.md)、[ADR-http-api-path-scopes](../../adr/adr-http-api-path-scopes.md)）；ops 探针留在 `backend` 监听的 `/health`、`/ready` 与 `/openapi.json` 上。
 
 认证一族的作用域挂载端同样由平台默认文档写出：普通面挂在 `account`，平台管理作用域挂在 `admin`（它认领 `/api/v1/system/auth` 与 `/api/v1/system/tenants`，冒充记录的路由落在这一段之下），租户管理作用域挂在 `api`（`authn.gate.mount.endpoints`）。租户管理路由在该租户的策略域判定，落在 `api` 上才与 `tenant.resolve`、`tenant.admission` 所守的端一致；`/api/v1/tenants` 由 `api` 的 `/api` 认领覆盖，不再是 `account` 的一条认领。平台管理作用域的路由在平台域判定，落在 `admin` 上，该端不在租户两层之内。租户管理路由的判定在 handler 内经 `authn.Decider` 做出，`api` 端的授权守卫不为其再判一次；宿主因此在 `management.access` 模块里把这组路由登记为开放，列表与提交的契约双向核对。冒充记录的路由在 `admin` 端，该端不在授权守卫之列，无须这份声明。留在 `admin` 端的租户相关面按判定域划分：名册的单行路由、授权与冒充记录按租户寻址而判定在平台域，租户是数据；名册的集合路由不按租户寻址；审计在整张表上读，设置的租户层由查询串点名——都不落在 `api` 的租户两层里（[ADR-http-api-path-scopes](../../adr/adr-http-api-path-scopes.md)）。
 
 - **认领是产品固定的命名空间表，去掉一项能力不删它的认领。** 撤出运行集也好，删掉 import 也好，那项能力的命名空间都留在认领里：示范的二进制 import 了 `sms.admin` 而基线不运行它，`admin` 仍认领 `/api/v1/system/sms`；从示范拷出、删掉 `tenant.admin` import 的产品，仍认领 `/api/v1/system/tenants`。认领表覆盖可用集里每个 operation 的命名空间，以及平台前端包会寻址的命名空间。
 - **前端页面路径不落在 `/` 以外的任何认领之下。** 落在这类认领之下的页面路径，整页导航得到那个端的应答，拿不到入口文档。
-- **开发代理由共享清单生成。** `starters/demo/web/backend-prefixes.json` 列出 `backend` 监听上全部非 `/` 的认领；`vite.config.ts` 的 `server.proxy` 由它生成按段边界匹配的正则键（`/api/v1/workspace` 的键不匹配 `/api/v1/workspace-old`），前端测试据它核对页面路径。
+- **开发代理由共享清单生成。** `starters/demo/web/backend-prefixes.json` 列出 `backend` 监听上全部非 `/` 的认领，ops 探针的三条前缀随其一并列出；`vite.config.ts` 的 `server.proxy` 由它生成按段边界匹配的正则键（`/api/v1/workspace` 的键不匹配 `/api/v1/workspace-old`），前端测试据它核对页面路径。
 
 **认领由测试守住。**
 

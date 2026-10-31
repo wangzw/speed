@@ -296,7 +296,10 @@ e2e: ## Run the end-to-end journey specs against the built demo binary
 # overrides the compiled-in default for this run. The review tag belongs to the
 # end-to-end tier, not this loop, so its test controls and loopback guard are
 # absent here. Ctrl-C stops air with the rest of the foreground group; the
-# recipe then stops the vite job too, so one interrupt ends both.
+# recipe then stops the vite job too, so one interrupt ends both. The compiled
+# defaults put the backend and its ops probes on 127.0.0.1:8081 and the dev
+# server on 8080; a second checkout sets DEMO_HTTP__LISTENERS, DEMO_WEB_PORT and
+# DEMO_WEB_BACKEND_PROXY in its own .env (the pairs .env.example shows).
 dev: ## Run the demo locally: vite dev server plus the default build under air
 	@if ! command -v mise >/dev/null 2>&1; then \
 	  echo "dev: mise is not on PATH. It supplies .env and the pinned toolchain; install it and run 'mise install'." >&2; \

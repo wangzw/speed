@@ -88,7 +88,6 @@ func TestReviewRunStartsWithTheEnterpriseSSOSeams(t *testing.T) {
 	root := t.TempDir()
 	body := reviewConfigBody(t, root,
 		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
-		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]),
 		filepath.Join(root, "review.db"))
 	if !strings.Contains(body, reviewSSOSeamsBlock) {
 		t.Fatalf("the review configuration holds no enterprise SSO defaults block (%q)", reviewSSOSeamsBlock)
@@ -152,8 +151,7 @@ func TestReviewRunStartsWithTheEnterpriseSSOSeamsUnset(t *testing.T) {
 	binary := reviewBinary(t)
 	ports := freePorts(t, listenerCount)
 	config := "file://" + reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
-		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]))
+		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
 	seedReview(t, binary, config)
 
 	serve := startReview(t, binary, config)

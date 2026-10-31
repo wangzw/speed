@@ -484,7 +484,7 @@ func TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims(t *testing.
 	checkManifestAgainstOwnership(t, owners)
 	configurations := []namedClaims{{
 		name:   "the rendered template",
-		claims: claimsFromConfig(t, "the rendered template", []byte(configBody(t, []int{8080, 8083}, ":memory:"))),
+		claims: claimsFromConfig(t, "the rendered template", []byte(configBody(t, []int{8080}, ":memory:"))),
 	}}
 	for _, sample := range testdataFiles {
 		configurations = append(configurations, namedClaims{
@@ -517,7 +517,7 @@ func guardedEndpointSet(t *testing.T) map[string]bool {
 			Endpoints []string `config:"endpoints"`
 		} `config:"gate"`
 	}
-	locator := writeConfig(t, []int{8080, 8083})
+	locator := writeConfig(t, []int{8080})
 	readEffective(t, "the case's configuration", locator, "authn", &parsed)
 	guarded := map[string]bool{}
 	for _, endpoint := range parsed.Gate.Endpoints {
@@ -568,7 +568,7 @@ func checkAuditSamples(t *testing.T) {
 	t.Helper()
 	configurations := []namedConfig{{
 		name: "the rendered template",
-		body: configBody(t, []int{8080, 8083}, ":memory:"),
+		body: configBody(t, []int{8080}, ":memory:"),
 	}}
 	for _, sample := range testdataFiles {
 		path := filepath.Join("testdata", sample)

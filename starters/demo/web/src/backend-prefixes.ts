@@ -1,6 +1,6 @@
 /**
  * The backend listener's claimed path prefixes: the namespaces its api,
- * account, admin and content endpoints own.
+ * account, admin, content and ops endpoints own.
  *
  * `backend-prefixes.json` beside this package is the list this app's dev proxy
  * generates from; it is a hand-kept mirror of the claims in the server
@@ -8,7 +8,8 @@
  * TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims. The namespaces an endpoint
  * owns are a product fact -- they do not follow which modules a particular
  * build imports or runs -- so the list stands even when a deployment splits
- * the listener again.
+ * the listener again. The ops endpoint shares the backend listener, so its
+ * probes are claimed explicitly there and appear here with the API namespaces.
  *
  * The web endpoint claims the root: it is the backend listener's fallback
  * endpoint. The root is deliberately absent from the manifest because every

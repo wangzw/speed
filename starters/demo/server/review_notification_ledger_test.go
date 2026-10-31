@@ -61,8 +61,7 @@ func TestReviewRefusedSMSTemplateIsRecordedFailedInTheLedger(t *testing.T) {
 	binary := reviewBinary(t)
 	ports := freePorts(t, listenerCount)
 	configPath := reviewConfigWithoutScheduler(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
-		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]))
+		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
 	config := "file://" + configPath
 	seedReview(t, binary, config)
 	secret := reviewSeededTOTPSecret(t, configPath)
@@ -137,9 +136,9 @@ func TestReviewRefusedSMSTemplateIsRecordedFailedInTheLedger(t *testing.T) {
 // reviewConfigWithoutScheduler writes the review configuration and turns the
 // scheduler's periodic trigger off, so the only dispatch this case observes is
 // the review control's own.
-func reviewConfigWithoutScheduler(t *testing.T, backendAddress, opsAddress string) string {
+func reviewConfigWithoutScheduler(t *testing.T, backendAddress string) string {
 	t.Helper()
-	path := reviewConfig(t, backendAddress, opsAddress)
+	path := reviewConfig(t, backendAddress)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading the written review configuration: %v", err)

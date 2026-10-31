@@ -18,9 +18,11 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// seedGuardListeners renders the JSON value DEMO_HTTP__LISTENERS takes.
-func seedGuardListeners(backend, ops string) string {
-	return fmt.Sprintf(`{"backend":{"address":%q},"ops":{"address":%q}}`, backend, ops)
+// seedGuardListeners renders the JSON value DEMO_HTTP__LISTENERS takes. The
+// compiled defaults bind one listener; a run may still declare more, so the
+// guard reads whatever set the run names.
+func seedGuardListeners(backend string) string {
+	return fmt.Sprintf(`{"backend":{"address":%q}}`, backend)
 }
 
 // loadSeedGuardReader loads the configuration of a run declared by args and env
@@ -60,8 +62,8 @@ func seedGuardRegistry(t *testing.T, reader config.Reader) *core.Registry {
 // only the listener, only the seed, or only one of the two override layers
 // fails one of these rows.
 func TestSeedGuardDecidesTheDeploymentShapes(t *testing.T) {
-	loopback := seedGuardListeners("127.0.0.1:8080", "127.0.0.1:8083")
-	external := seedGuardListeners("0.0.0.0:8080", "127.0.0.1:8083")
+	loopback := seedGuardListeners("127.0.0.1:8080")
+	external := seedGuardListeners("0.0.0.0:8080")
 	const deploymentSeed = `[{"identifier":"deployment-operator","password":"deployment-secret","platform-admin":true}]`
 	const deploymentConfig = `seed:
   accounts:
@@ -228,7 +230,7 @@ func (r seedGuardStubReader) Decode(path string, target any) error {
 // binary cases.
 func TestSeedGuardPrepareHoldsTheCheck(t *testing.T) {
 	external := map[string]string{
-		"DEMO_HTTP__LISTENERS": seedGuardListeners("0.0.0.0:8080", "127.0.0.1:8083"),
+		"DEMO_HTTP__LISTENERS": seedGuardListeners("0.0.0.0:8080"),
 	}
 	exposed := loadSeedGuardReader(t, nil, external)
 	if _, prepareErr := seedGuardModule().Prepare(context.Background(), seedGuardRegistry(t, exposed)); prepareErr == nil {
@@ -236,7 +238,7 @@ func TestSeedGuardPrepareHoldsTheCheck(t *testing.T) {
 	}
 
 	loopback := map[string]string{
-		"DEMO_HTTP__LISTENERS": seedGuardListeners("127.0.0.1:8080", "127.0.0.1:8083"),
+		"DEMO_HTTP__LISTENERS": seedGuardListeners("127.0.0.1:8080"),
 	}
 	safe := loadSeedGuardReader(t, nil, loopback)
 	enablement, prepareErr := seedGuardModule().Prepare(context.Background(), seedGuardRegistry(t, safe))
@@ -255,8 +257,7 @@ func TestSeedGuardRefusesServeOnAnExternalListener(t *testing.T) {
 	dir := t.TempDir()
 	ports := freePorts(t, listenerCount)
 	listeners := seedGuardListeners(
-		fmt.Sprintf("0.0.0.0:%d", ports[backendListener]),
-		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]))
+		fmt.Sprintf("0.0.0.0:%d", ports[backendListener]))
 
 	serve := startArgs(t, dir, []string{"sqlite", serveCommand},
 		[]string{"DEMO_HTTP__LISTENERS=" + listeners})
@@ -286,8 +287,7 @@ func TestSeedGuardRefusesTheSeedCommandOnAnExternalListener(t *testing.T) {
 	dir := t.TempDir()
 	ports := freePorts(t, listenerCount)
 	listeners := seedGuardListeners(
-		fmt.Sprintf("0.0.0.0:%d", ports[backendListener]),
-		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]))
+		fmt.Sprintf("0.0.0.0:%d", ports[backendListener]))
 
 	seeded := runCommandArgs(t, hostBinary, dir, []string{"sqlite", seedCommand},
 		[]string{"DEMO_HTTP__LISTENERS=" + listeners})
@@ -313,8 +313,7 @@ func TestSeedGuardServesWithAnOverriddenSeedOnAnExternalListener(t *testing.T) {
 	dir := t.TempDir()
 	ports := freePorts(t, listenerCount)
 	listeners := seedGuardListeners(
-		fmt.Sprintf("0.0.0.0:%d", ports[backendListener]),
-		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]))
+		fmt.Sprintf("0.0.0.0:%d", ports[backendListener]))
 	env := []string{
 		"DEMO_HTTP__LISTENERS=" + listeners,
 		`DEMO_SEED__ACCOUNTS=[{"identifier":"deployment-operator","password":"deployment-secret","platform-admin":true}]`,

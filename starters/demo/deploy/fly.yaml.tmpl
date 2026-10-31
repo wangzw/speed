@@ -15,11 +15,16 @@
 # checker connect over the Machine's private network, and the working directory
 # is /data so the relative paths below all land on the volume.
 #
-# The mounting table — which endpoint each capability sits on, and the
+# The mounting table — which capability mounts on which endpoint, and the
 # endpoints the guards cover — is carried in full by the compiled-in document,
-# required items included, so this file states none of it. What remains below
-# is what differs between deployments: the topology this one reaches the
-# world at, the paths on its volume, and its credentials.
+# required items included, so this file states none of that. The endpoint claim
+# table is the exception: the compiled default puts every endpoint, the ops
+# probes included, on the backend listener, and this deployment keeps the
+# operations surface on a listener of its own so the readiness check in
+# fly.toml can probe it at 0.0.0.0:8083. The table is written whole because
+# http.endpoints is a container leaf. What remains below is what differs
+# between deployments: the topology this one reaches the world at, the paths on
+# its volume, and its credentials.
 
 http:
   listeners:
@@ -27,6 +32,25 @@ http:
       address: "0.0.0.0:8080"
     ops:
       address: "0.0.0.0:8083"
+  endpoints:
+    api:
+      listener: backend
+      prefixes: ["/api"]
+    account:
+      listener: backend
+      prefixes: ["/api/v1/auth", "/api/v1/features", "/api/v1/workspace"]
+    admin:
+      listener: backend
+      prefixes: ["/api/v1/system/audit", "/api/v1/system/auth", "/api/v1/system/permissions", "/api/v1/system/settings", "/api/v1/system/sms", "/api/v1/system/tenants"]
+    content:
+      listener: backend
+      prefixes: ["/content"]
+      max-body-bytes: 0
+    ops:
+      listener: ops
+    web:
+      listener: backend
+      prefixes: ["/"]
   # Fly's proxy is the only peer whose forwarded headers are believed. Fly
   # appends the app's own Anycast address as the rightmost X-Forwarded-For
   # entry, so the client address is read from Fly-Client-IP instead. The

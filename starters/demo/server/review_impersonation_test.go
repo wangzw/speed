@@ -140,8 +140,7 @@ func reviewImpersonationSession(t *testing.T) (base, token string) {
 	binary := reviewBinary(t)
 	ports := freePorts(t, listenerCount)
 	configPath := reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
-		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]))
+		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
 	config := "file://" + configPath
 	seedReview(t, binary, config)
 	secret := reviewSeededTOTPSecret(t, configPath)

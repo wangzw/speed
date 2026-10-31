@@ -19,6 +19,5 @@ func differentialConfigBody(t *testing.T, ports []int, dsn string) string {
 	t.Helper()
 	return reviewConfigBody(t, t.TempDir(),
 		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
-		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]),
 		dsn)
 }

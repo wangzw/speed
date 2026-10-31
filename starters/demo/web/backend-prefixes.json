@@ -2,5 +2,6 @@
   "account": ["/api/v1/auth", "/api/v1/features", "/api/v1/workspace"],
   "admin": ["/api/v1/system/audit", "/api/v1/system/auth", "/api/v1/system/permissions", "/api/v1/system/settings", "/api/v1/system/sms", "/api/v1/system/tenants"],
   "api": ["/api"],
-  "content": ["/content"]
+  "content": ["/content"],
+  "ops": ["/health", "/ready", "/openapi.json"]
 }

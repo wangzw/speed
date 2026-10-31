@@ -175,14 +175,14 @@ func reviewBinary(t *testing.T) string {
 	return binary
 }
 
-// reviewConfig writes the review configuration with the listener addresses a
+// reviewConfig writes the review configuration with the listener address a
 // case chooses and with its relative paths under a directory of the case's own:
-// the file's own values would bind fixed ports and write into the source tree.
+// the file's own values would bind a fixed port and write into the source tree.
 // The token signing key is minted at the path the written file names.
-func reviewConfig(t *testing.T, backendAddress, opsAddress string) string {
+func reviewConfig(t *testing.T, backendAddress string) string {
 	t.Helper()
 	root := t.TempDir()
-	body := reviewConfigBody(t, root, backendAddress, opsAddress,
+	body := reviewConfigBody(t, root, backendAddress,
 		filepath.Join(root, "review.db"))
 	path := filepath.Join(root, "review.yaml")
 	if writeErr := os.WriteFile(path, []byte(body), 0o600); writeErr != nil {
@@ -191,13 +191,13 @@ func reviewConfig(t *testing.T, backendAddress, opsAddress string) string {
 	return path
 }
 
-// reviewConfigBody returns the review configuration with the listener addresses
+// reviewConfigBody returns the review configuration with the listener address
 // a case chooses, its token signing key and object store under root, and the
 // database locator the caller gives. It is the review assembly's own file —
 // server/review/sqlite.yaml — because every module the review tag adds reads its
 // configuration from it: a case that runs that assembly over a baseline template
 // starts modules whose required items have no value.
-func reviewConfigBody(t *testing.T, root, backendAddress, opsAddress, dsn string) string {
+func reviewConfigBody(t *testing.T, root, backendAddress, dsn string) string {
 	t.Helper()
 	review, err := os.ReadFile(filepath.Join("review", "sqlite.yaml"))
 	if err != nil {
@@ -210,7 +210,6 @@ func reviewConfigBody(t *testing.T, root, backendAddress, opsAddress, dsn string
 	body := string(review)
 	for _, edit := range [][2]string{
 		{`address: "127.0.0.1:8080"`, fmt.Sprintf("address: %q", backendAddress)},
-		{`address: "127.0.0.1:8083"`, fmt.Sprintf("address: %q", opsAddress)},
 		// The needles carry the YAML key: the file's header comments name the
 		// same paths, and replacing the first occurrence would leave the
 		// configured locator pointing into the source tree.
@@ -277,8 +276,7 @@ func TestReviewRunRefusesANonLoopbackListener(t *testing.T) {
 	binary := reviewBinary(t)
 	ports := freePorts(t, listenerCount)
 	path := reviewConfig(t,
-		fmt.Sprintf("0.0.0.0:%d", ports[backendListener]),
-		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]))
+		fmt.Sprintf("0.0.0.0:%d", ports[backendListener]))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -294,23 +292,22 @@ func TestReviewRunRefusesANonLoopbackListener(t *testing.T) {
 }
 
 // TestReviewRunAcceptsALoopbackListener is the positive counterpart: the real
-// binary over the review configuration with both listeners on loopback reaches
-// its ready record, and the ops listener answers a probe. A guard that refused
-// every address would pass the refusal case and fail here.
+// binary over the review configuration with its listener on loopback reaches
+// its ready record, and the same listener answers the operations probe. A
+// guard that refused every address would pass the refusal case and fail here.
 func TestReviewRunAcceptsALoopbackListener(t *testing.T) {
 	binary := reviewBinary(t)
 	ports := freePorts(t, listenerCount)
 	path := reviewConfig(t,
-		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
-		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]))
+		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
 	config := "file://" + path
 	seedReview(t, binary, config)
 
 	serve := startReview(t, binary, config)
 	serve.waitReady(t)
 
-	probe := get(t, fmt.Sprintf("http://127.0.0.1:%d/health", ports[opsListener]))
+	probe := get(t, fmt.Sprintf("http://127.0.0.1:%d/health", ports[backendListener]))
 	if probe.status != http.StatusOK {
-		t.Fatalf("the ops listener answered %d, want 200:\n%s", probe.status, probe.body)
+		t.Fatalf("the backend listener answered %d, want 200:\n%s", probe.status, probe.body)
 	}
 }

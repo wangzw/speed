@@ -41,10 +41,10 @@
 
 http:
   listeners:
+    # One listener carries the API, the frontend and the operations probes;
+    # the endpoint claims that route them come from the compiled-in document.
     backend:
       address: "127.0.0.1:8080"
-    ops:
-      address: "127.0.0.1:8083"
   cors:
     endpoints:
       api:

@@ -75,14 +75,15 @@ func platformDefaultsDocument() map[string]any {
 		// non-root claim goes to the endpoint that claims "/". A capability
 		// dropped from a run, or from the imports, keeps its namespace claimed.
 		//
-		// The two listeners the endpoints hang on are named beside the table so
-		// a bare run binds a socket: the backend listener carries api, account,
-		// admin, content and web, and ops has a listener of its own. A
-		// deployment writes its own addresses under the same keys.
+		// One listener carries every endpoint, named beside the table so a bare
+		// run binds a socket: api, account, admin, content, web and the
+		// operations probes share the backend listener. Each endpoint declares
+		// its own prefixes, the operations one included, so no endpoint relies
+		// on the root fallback to be reached. A deployment writes its own
+		// addresses under the same keys.
 		"http": map[string]any{
 			"listeners": map[string]any{
-				"backend": map[string]any{"address": "127.0.0.1:8080"},
-				"ops":     map[string]any{"address": "127.0.0.1:8083"},
+				"backend": map[string]any{"address": "127.0.0.1:8081"},
 			},
 			"endpoints": map[string]any{
 				"api": map[string]any{
@@ -101,8 +102,13 @@ func platformDefaultsDocument() map[string]any {
 						"/api/v1/system/sms", "/api/v1/system/tenants",
 					},
 				},
-				// Alone on its listener, so it claims "/" by default.
-				"ops": map[string]any{"listener": "ops"},
+				// The operations surface shares the backend listener, so it
+				// names its probes explicitly: an endpoint that omits prefixes
+				// claims "/", and the web endpoint already owns the root.
+				"ops": map[string]any{
+					"listener": "backend",
+					"prefixes": []any{"/health", "/ready", "/openapi.json"},
+				},
 				// The object store's content route. A browser reaches it with no
 				// credential at all, because an <img src> carries neither an
 				// Authorization header nor a tenant header — the token in the
@@ -143,7 +149,7 @@ func platformDefaultsDocument() map[string]any {
 			"version":  "0.1.0",
 			"description": "The demo assembly's API: every operation the modules named in this " +
 				"stack declare, merged from their OpenAPI fragments.",
-			"servers": []any{"http://localhost:8080"},
+			"servers": []any{"http://localhost:8081"},
 		},
 
 		// The telemetry provider's service name. A deployment names its own.
@@ -169,7 +175,7 @@ func platformDefaultsDocument() map[string]any {
 					// The origin a bare run is reached at. The token issuer, the
 					// WebAuthn relying party and the TOTP issuer default off it,
 					// so naming it is what lets a bare run sign and verify.
-					"public-url": "http://localhost:8080",
+					"public-url": "http://localhost:8081",
 					"endpoints": map[string]any{
 						"default": "account",
 						"tenants": "api",
@@ -190,7 +196,7 @@ func platformDefaultsDocument() map[string]any {
 				"webauthn": map[string]any{
 					"rp-id":   "localhost",
 					"rp-name": "demo",
-					"origins": []any{"http://localhost:8080"},
+					"origins": []any{"http://localhost:8081"},
 				},
 			},
 		},

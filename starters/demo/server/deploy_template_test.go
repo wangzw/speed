@@ -18,6 +18,50 @@ type socialCredentials struct {
 	ClientSecret string `config:"client-secret"`
 }
 
+// deployHTTPSection is the part of the deployment template's http section
+// these cases read. The endpoint entry names every member the template writes,
+// because pkg/config decodes a container element whole and refuses a member no
+// field answers for.
+type deployHTTPSection struct {
+	Listeners map[string]struct {
+		Address string `config:"address"`
+	} `config:"listeners"`
+	Endpoints map[string]struct {
+		Listener     string   `config:"listener"`
+		Prefixes     []string `config:"prefixes"`
+		MaxBodyBytes *int64   `config:"max-body-bytes"`
+	} `config:"endpoints"`
+}
+
+// TestTheDeployTemplateKeepsTheReadinessOnTheOperationsListener holds the
+// deployment's own claim table: the compiled defaults put the operations
+// probes on the backend listener, and the deployment keeps them on the
+// operations listener so fly.toml's readiness check — GET /ready on port 8083
+// — reaches the endpoint it names. The template therefore writes the endpoint
+// table whole (http.endpoints is a container leaf), and this case reads the
+// effective configuration the rendered template produces.
+func TestTheDeployTemplateKeepsTheReadinessOnTheOperationsListener(t *testing.T) {
+	locator := writeConfigFile(t, renderDeployTemplate(t))
+	var got deployHTTPSection
+	readEffective(t, "deploy/fly.yaml.tmpl", locator, "http", &got)
+
+	for name, want := range map[string]string{
+		"backend": "0.0.0.0:8080",
+		"ops":     "0.0.0.0:8083",
+	} {
+		if address := got.Listeners[name].Address; address != want {
+			t.Errorf("http.listeners.%s.address = %q, want %q", name, address, want)
+		}
+	}
+	if listener := got.Endpoints["ops"].Listener; listener != "ops" {
+		t.Errorf("http.endpoints.ops.listener = %q, want the ops listener, so GET /ready on port 8083 reaches it",
+			listener)
+	}
+	if listener := got.Endpoints["web"].Listener; listener != "backend" {
+		t.Errorf("http.endpoints.web.listener = %q, want the backend listener", listener)
+	}
+}
+
 // TestTheDeployTemplateCarriesTheSocialCredentials holds the deployment
 // template, rendered the way deploy/entrypoint.sh renders it, to the sections
 // the two social login methods read. A method whose required items are empty

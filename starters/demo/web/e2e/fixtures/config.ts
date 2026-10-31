@@ -3,11 +3,13 @@
  *
  * The template under starters/demo/server/review is the assembly's own; this
  * module copies it into the server's temporary directory and replaces every
- * value that names a shared resource -- both listener addresses, the database,
+ * value that names a shared resource -- the listener address, the database,
  * the token signing key, the object store's root, and the origin the browser
- * and WebAuthn trust. A needle that is not in the template (or is there the
+ * and WebAuthn trust. One listener carries the API, the frontend and the
+ * operations probes, so the browser origin is also where the fixture answers
+ * its ops probes. A needle that is not in the template (or is there the
  * wrong number of times) fails the fixture: a run over a half-substituted
- * template would bind the published ports or write into the source tree, and
+ * template would bind the published port or write into the source tree, and
  * that must be a loud harness error, never a silent fallback.
  *
  * The remaining values are deliberately kept: the seeded operator, the open
@@ -49,10 +51,8 @@ import { DEPLOY_CONFIG_TEMPLATE, REVIEW_CONFIG_TEMPLATE } from './paths'
 export interface ReviewConfigInput {
   /** The server's own temporary directory; the config and state live there. */
   readonly dir: string
-  /** The backend listener's port (the browser's origin, and the API). */
+  /** The backend listener's port (the browser's origin, the API and the ops probes). */
   readonly backendPort: number
-  /** The operations listener's port. */
-  readonly opsPort: number
   /**
    * Seed the member-workspace journey's account and membership. Off by
    * default: only that journey's server reads them, so the shared template's
@@ -151,13 +151,9 @@ export interface ReviewConfig {
   /** The server's working directory. */
   readonly dir: string
   readonly backendPort: number
-  readonly opsPort: number
   readonly backendAddress: string
-  readonly opsAddress: string
   /** The browser-facing origin, e.g. http://localhost:41234. */
   readonly origin: string
-  /** The operations listener's origin. */
-  readonly opsOrigin: string
   readonly dsn: string
   readonly signingKey: string
   readonly objectsRoot: string
@@ -375,9 +371,7 @@ export async function writeReviewConfig(
   await mkdir(varDir, { recursive: true })
 
   const backendAddress = `127.0.0.1:${input.backendPort}`
-  const opsAddress = `127.0.0.1:${input.opsPort}`
   const origin = `http://localhost:${input.backendPort}`
-  const opsOrigin = `http://localhost:${input.opsPort}`
   const dsn = join(varDir, 'review.db')
   const signingKey = join(varDir, 'token-signing-key.pem')
   const objectsRoot = join(varDir, 'objects')
@@ -389,12 +383,6 @@ export async function writeReviewConfig(
     'address: "127.0.0.1:8080"',
     `address: ${quoted(backendAddress)}`,
     'backend listener',
-  )
-  body = replaceOnce(
-    body,
-    'address: "127.0.0.1:8083"',
-    `address: ${quoted(opsAddress)}`,
-    'operations listener',
   )
   body = replaceOnce(
     body,
@@ -416,7 +404,9 @@ export async function writeReviewConfig(
   )
   // The template names the published origin in three places: the public URL
   // the authn gate advertises, the WebAuthn origin, and the ops document's
-  // server list. All three must follow the port the browser actually opens.
+  // server list. All three follow the port the browser actually opens, which
+  // is also where the operations probes answer now that one listener carries
+  // both surfaces.
   body = replaceAll(
     body,
     '"http://localhost:8080"',
@@ -651,11 +641,8 @@ export async function writeReviewConfig(
     path,
     dir: input.dir,
     backendPort: input.backendPort,
-    opsPort: input.opsPort,
     backendAddress,
-    opsAddress,
     origin,
-    opsOrigin,
     dsn,
     signingKey,
     objectsRoot,

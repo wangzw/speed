@@ -30,7 +30,7 @@ afterEach(async () => {
   await Promise.all(kept.map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-type TemplateInput = Omit<ReviewConfigInput, 'dir' | 'backendPort' | 'opsPort'>
+type TemplateInput = Omit<ReviewConfigInput, 'dir' | 'backendPort'>
 
 async function rendered(input: TemplateInput): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'speed-e2e-config-'))
@@ -38,13 +38,21 @@ async function rendered(input: TemplateInput): Promise<string> {
   const config = await writeReviewConfig({
     dir,
     backendPort: 41080,
-    opsPort: 41083,
     ...input,
   })
   return readFile(config.path, 'utf8')
 }
 
 describe('the review configuration', () => {
+  it('renders one listener and moves every origin onto its port', async () => {
+    const body = await rendered({})
+    expect(body).toContain('    backend:\n      address: "127.0.0.1:41080"')
+    expect(body).not.toContain('    ops:\n')
+    expect(body).not.toContain('8080')
+    expect(body).not.toContain('8083')
+    expect(body.match(/"http:\/\/localhost:41080"/g)).toHaveLength(3)
+  })
+
   it('keeps the enterprise SSO seams at the deployment defaults', async () => {
     const body = await rendered({})
     expect(body).toContain(

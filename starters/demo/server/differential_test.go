@@ -99,6 +99,11 @@ var expectedOwners = map[string]string{
 	"/api/v1/system/sms":         "admin",
 	"/api/v1/system/tenants":     "admin",
 	"/content":                   "content",
+	// The operations surface shares the backend listener, so its probes are
+	// non-root claims of that listener like the API namespaces.
+	"/health":       "ops",
+	"/ready":        "ops",
+	"/openapi.json": "ops",
 }
 
 // expectedEndpoint answers which endpoint the table says answers a path on the
@@ -928,9 +933,13 @@ func (topo topology) render(t *testing.T, ports []int, dsn string) string {
 	if !topo.split {
 		return body
 	}
-	listener := fmt.Sprintf("    frontend:\n      address: \"127.0.0.1:%d\"\n", ports[2])
-	opsListener := fmt.Sprintf("    ops:\n      address: \"127.0.0.1:%d\"\n", ports[opsListener])
-	body = strings.Replace(body, opsListener, opsListener+listener, 1)
+	backendListenerLine := fmt.Sprintf(
+		"    backend:\n      address: \"127.0.0.1:%d\"\n", ports[backendListener])
+	additions := fmt.Sprintf(
+		"    ops:\n      address: \"127.0.0.1:%d\"\n"+
+			"    frontend:\n      address: \"127.0.0.1:%d\"\n",
+		ports[splitOpsListener], ports[splitFrontendListener])
+	body = strings.Replace(body, backendListenerLine, backendListenerLine+additions, 1)
 	body = strings.Replace(body, "  cors:\n", splitEndpoints+"  cors:\n", 1)
 	if !strings.Contains(body, "    frontend:\n") ||
 		!strings.Contains(body, "    web:\n      listener: frontend") {
@@ -968,9 +977,15 @@ func launch(t *testing.T, topo topology, without []string) (*variantProcess, map
 	env := []string{serveWithoutEnv + "=" + strings.Join(without, ",")}
 	child := startChild(t, binary, dir, env,
 		"--config", "file://"+configPath, "sqlite", serveCommand)
-	byName := map[string]int{"backend": ports[backendListener], "ops": ports[opsListener]}
+	byName := map[string]int{
+		"backend": ports[backendListener],
+		// The merged topology claims the operations probes on the backend
+		// listener; the split one moves them onto a listener of their own.
+		"ops": ports[backendListener],
+	}
 	if topo.split {
-		byName["frontend"] = ports[2]
+		byName["ops"] = ports[splitOpsListener]
+		byName["frontend"] = ports[splitFrontendListener]
 	}
 	return child, byName
 }
@@ -1051,11 +1066,14 @@ func runDifferential(t *testing.T, topo topology) {
 		t.Fatalf("the baseline %s run did not become ready: %v", topo.name, err)
 	}
 
-	document := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/openapi.json", ports["ops"]))
+	claims := claimsFromConfig(t, "the case's configuration", []byte(topo.render(t, []int{8080, 8081, 8082}, ":memory:")))
+	// The operations surface sits on the listener its endpoint claims: the
+	// backend listener in the merged topology, the ops listener in the split
+	// one.
+	document := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/openapi.json", ports[claims["ops"].listener]))
 	if document.status != http.StatusOK {
 		t.Fatalf("the baseline's /openapi.json answered %d: %s", document.status, document.body)
 	}
-	claims := claimsFromConfig(t, "the case's configuration", []byte(topo.render(t, []int{8080, 8083, 8084}, ":memory:")))
 	probes := buildProbes(t, document.body, claims, topo.split)
 	table := parseFrozenTable(baseline.linesCopy())
 	chains := parseChains(baseline.linesCopy())
@@ -1399,7 +1417,7 @@ func opsSurface(t *testing.T, document []byte) []anonRoute {
 func TestAnonymousAnswersDoNotDependOnTheAssembly(t *testing.T) {
 	for _, topo := range []topology{
 		{name: "merged", ports: listenerCount},
-		{name: "split", ports: listenerCount + 1, split: true},
+		{name: "split", ports: splitListenerCount, split: true},
 	} {
 		topo := topo
 		t.Run(topo.name, func(t *testing.T) { runDifferential(t, topo) })

@@ -162,8 +162,8 @@ const demoSeedSection = `seed:
     - key: "authn.mfa.sensitive-min-age"
       value: "1h"`
 
-// demoConfig is the sqlite-memory configuration a case writes: the two listener
-// addresses, the token signing key, the object store's root and the database
+// demoConfig is the sqlite-memory configuration a case writes: the listener
+// address, the token signing key, the object store's root and the database
 // locator, with those filled in. It is an override document, the shape
 // testdata/sqlite-memory.yaml holds — the public address among it, so the
 // WebAuthn relying party the sample binds is the one a case runs on — and the
@@ -178,8 +178,6 @@ const demoSeedSection = `seed:
 const demoConfig = `http:
   listeners:
     backend:
-      address: "127.0.0.1:%d"
-    ops:
       address: "127.0.0.1:%d"
   cors:
     endpoints:
@@ -221,13 +219,19 @@ db:
     encryption-key: "dev-only-change-me-0123456789abcdef"
 `
 
-// The two listeners the configuration declares. The backend listener carries
-// the api, account, admin and web endpoints; the ops listener carries the ops
-// endpoint. A case that names one of them indexes the free ports by these.
+// The listener a case's configuration declares. One listener carries every
+// endpoint, so a case that names it indexes the free ports by this; the
+// differential case's split topology adds indices of its own.
 const (
 	backendListener = iota
-	opsListener
 	listenerCount
+)
+
+// The split topology's extra listeners, indexed into its own port slice.
+const (
+	splitOpsListener      = 1
+	splitFrontendListener = 2
+	splitListenerCount    = 3
 )
 
 // freePorts hands back n ports that are free at the moment they are asked for.
@@ -305,7 +309,7 @@ func configBody(t *testing.T, ports []int, dsn string) string {
 		t.Fatalf("minting the case's token signing key: %v", err)
 	}
 	objects := filepath.Join(t.TempDir(), "objects")
-	return fmt.Sprintf(demoConfig, ports[0], ports[1], key, objects,
+	return fmt.Sprintf(demoConfig, ports[0], key, objects,
 		demoSeedSection, dsn)
 }
 
@@ -730,7 +734,7 @@ func TestServeAnswersTheProbes(t *testing.T) {
 			"so it would count requests after identity is settled", account.layers)
 	}
 
-	opsBase := fmt.Sprintf("http://127.0.0.1:%d", ports[opsListener])
+	opsBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 
 	health := get(t, opsBase+"/health")
 	if health.status != http.StatusOK {
@@ -2226,7 +2230,7 @@ func TestTheConfigTemplateMirrorsTheSampleFile(t *testing.T) {
 	if block == "" {
 		t.Fatalf("testdata/sqlite-memory.yaml carries no webauthn block to mirror")
 	}
-	rendered := configBody(t, []int{8080, 8083}, ":memory:")
+	rendered := configBody(t, []int{8080}, ":memory:")
 	if !strings.Contains(rendered, block) {
 		t.Errorf("the configuration template does not carry the sample file's webauthn block, so a copy's "+
 			"relying party is not what a case exercises; want the template to hold:\n%s\nrendered:\n%s",
