@@ -1485,7 +1485,7 @@
         "x-endpoint": "account"
       },
       "put": {
-        "description": "Sets what one of the caller's own email addresses or phone numbers is for. `contact` and `sign_in` are independent axes: `contact` may be set on an identifier whose ownership is not proved, while `sign_in` may be set true only on one that is, since only a proved value may be a way in. `default_contact` may be set only on a proved email address, and takes the default away from the address that held it in the same write. A member left out is left as it is. An identifier that is not the caller's own, a username, an unproved `sign_in` and a default contact that is not a proved email address are all a 400 bad-request. Changing `sign_in` or `default_contact` requires the fresh authentication every change of what proves the account asks for; changing `contact` alone does not. Turning `sign_in` off that would leave a password account with no login name is a 409 login-identifier-required and one that would leave the account with no way to sign in at all is a 409 last-login-method; neither takes effect. Putting a proved email address or phone number into sign-in rotates the current session's token and revokes the account's other sessions.",
+        "description": "Sets what one of the caller's own email addresses or phone numbers is for. A registered address is always a contact, so `contact` true is accepted and changes nothing while `contact` false is a 400 bad-request. `sign_in` is the axis the holder chooses and may be set true only on a proved identifier, since only a proved value may be a way in. `default_contact` may be set only on a proved email address, and takes the default away from the address that held it in the same write. A member left out is left as it is. An identifier that is not the caller's own, a username, an unproved `sign_in`, a `contact` of false and a default contact that is not a proved email address are all a 400 bad-request. Changing `sign_in` or `default_contact` requires the fresh authentication every change of what proves the account asks for; changing `contact` alone does not. Turning `sign_in` off that would leave a password account with no login name is a 409 login-identifier-required and one that would leave the account with no way to sign in at all is a 409 last-login-method; neither takes effect. Putting a proved email address or phone number into sign-in rotates the current session's token and revokes the account's other sessions.",
         "operationId": "authn.login.updateIdentifier",
         "parameters": [
           {
@@ -1506,7 +1506,7 @@
                 "description": "A partial change to one identifier's two axes and default contact: a member left out is left as it is.",
                 "properties": {
                   "contact": {
-                    "description": "Whether the identifier is a contact of the account. It is independent of sign_in and may be true on an identifier whose ownership is not proved; absent leaves it as it is.",
+                    "description": "Whether the identifier is a contact of the account. True is accepted and changes nothing, since a registered address is always a contact, and false is a 400 bad-request; absent leaves it as it is.",
                     "type": "boolean"
                   },
                   "default_contact": {

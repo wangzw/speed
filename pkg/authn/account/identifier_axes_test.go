@@ -150,6 +150,82 @@ func TestTheIdentifierAxesMigrationBackfillsExistingRows(t *testing.T) {
 	}
 }
 
+// TestTheRegisteredAddressContactMigrationBackfillsExistingRows holds that the
+// migration after the axes one makes every stored email address and phone number
+// a contact, including rows written between the two, and changes nothing else:
+// the sign-in axis and the default contact stay as they were.
+func TestTheRegisteredAddressContactMigrationBackfillsExistingRows(t *testing.T) {
+	for _, dialect := range dialectsUnderTest {
+		t.Run(string(dialect), func(t *testing.T) {
+			handle := quietly(databaseOpeners[dialect](t).DB())
+			applyMigrationFile(t, handle, dialect, "0001_authn_account.sql")
+			applyMigrationFile(t, handle, dialect, "0002_authn_signup.sql")
+			applyMigrationFile(t, handle, dialect, "0003_contact_claim.sql")
+			at := newTestClock().read()
+			for _, id := range []string{"account-1", "account-2"} {
+				if err := handle.Exec("INSERT INTO "+tableAccounts+" (id, kind, status, signup_state, display_name, attributes, "+
+					"mfa_required, protected, valid_after, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					id, string(authn.KindUser), statusActive, signupNone, "", "{}", false, false, at, at, at).Error; err != nil {
+					t.Fatalf("writing account %s: %v", id, err)
+				}
+			}
+			insert := func(account, id, kind, value, via string, provenAt time.Time) {
+				t.Helper()
+				if err := handle.Exec("INSERT INTO "+tableIdentifiers+" (id, account_id, kind, value, verified_at, verified_via, created_at) "+
+					"VALUES (?, ?, ?, ?, ?, ?, ?)", id, account, kind, value, provenAt, via, at).Error; err != nil {
+					t.Fatalf("writing identifier %s: %v", id, err)
+				}
+			}
+			insert("account-1", "u-old", string(authn.IdentifierUsername), "someone", authn.VerifiedViaInvite, at)
+			insert("account-1", "e-old", string(authn.IdentifierEmail), "old@example.com", authn.VerifiedViaEmailCode, at)
+			insert("account-1", "p-old", string(authn.IdentifierPhone), "+12025550123", authn.VerifiedViaSMSCode, at)
+
+			applyMigrationFile(t, handle, dialect, "0004_identifier_axes.sql")
+
+			// Rows written after the axes migration and before this invariant
+			// start outside both axes, so the contact of the address is false.
+			insert("account-1", "e-new", string(authn.IdentifierEmail), "new@example.com", authn.VerifiedViaEmailCode, at)
+			insert("account-2", "p-new", string(authn.IdentifierPhone), "+12025550124", authn.VerifiedViaSMSCode, at)
+
+			applyMigrationFile(t, handle, dialect, "0005_registered_address_contact.sql")
+
+			var rows []struct {
+				ID             string
+				SignIn         bool
+				Contact        bool
+				DefaultContact bool
+			}
+			if err := handle.Raw("SELECT id, sign_in, contact, default_contact FROM " + tableIdentifiers).Scan(&rows).Error; err != nil {
+				t.Fatalf("reading the backfilled rows: %v", err)
+			}
+			want := map[string]struct {
+				signIn, contact, defaultContact bool
+			}{
+				"u-old": {true, false, false},
+				"e-old": {true, true, true},
+				"p-old": {true, true, false},
+				"e-new": {false, true, false},
+				"p-new": {false, true, false},
+			}
+			if len(rows) != len(want) {
+				t.Fatalf("the backfill left %d row(s), want %d", len(rows), len(want))
+			}
+			for _, row := range rows {
+				expect, ok := want[row.ID]
+				if !ok {
+					t.Errorf("the backfill kept an unexpected row %q", row.ID)
+					continue
+				}
+				if row.SignIn != expect.signIn || row.Contact != expect.contact || row.DefaultContact != expect.defaultContact {
+					t.Errorf("row %q reads sign_in=%v contact=%v default_contact=%v, want %v %v %v",
+						row.ID, row.SignIn, row.Contact, row.DefaultContact,
+						expect.signIn, expect.contact, expect.defaultContact)
+				}
+			}
+		})
+	}
+}
+
 // TestCreateRequiresAUsernameWhereItOpensAnAccount holds that every path that
 // opens a user account names a username, and that one which does not creates
 // neither the account nor any identifier. Only an import, which restores an
@@ -228,10 +304,10 @@ func TestCreateLetsAnImportAndAServiceAccountOpenWithoutAUsername(t *testing.T) 
 }
 
 // TestCreateWritesTheAxesOfTheIdentifiersItCreates holds the flags an account
-// opens with: a username is always a login way; the account's only email address,
-// proved here, is a login way too and its default contact; the phone an SMS first
-// login signed in with is a login way but not a contact; and a contact axis stays
-// false unless an import or the social address states it.
+// opens with: a username is always a login way and never a contact; the account's
+// only email address, proved here, is a contact and a login way too and its
+// default contact; the phone an SMS first login signed in with is a contact and a
+// login way.
 func TestCreateWritesTheAxesOfTheIdentifiersItCreates(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -256,8 +332,8 @@ func TestCreateWritesTheAxesOfTheIdentifiersItCreates(t *testing.T) {
 			signIn, contact, defaultContact bool
 		}{
 			{authn.IdentifierUsername, true, false, false},
-			{authn.IdentifierEmail, true, false, true},
-			{authn.IdentifierPhone, true, false, false},
+			{authn.IdentifierEmail, true, true, true},
+			{authn.IdentifierPhone, true, true, false},
 		} {
 			got := byKind[c.kind]
 			if got.SignIn != c.signIn || got.Contact != c.contact || got.DefaultContact != c.defaultContact {
@@ -269,7 +345,7 @@ func TestCreateWritesTheAxesOfTheIdentifiersItCreates(t *testing.T) {
 }
 
 // TestCreateDoesNotMakeAnUnprovedEmailTheDefaultContact holds that an email
-// address only asserted, not proved, starts outside both axes and is not the
+// address only asserted, not proved, is a contact but neither a login way nor the
 // default contact.
 func TestCreateDoesNotMakeAnUnprovedEmailTheDefaultContact(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
@@ -289,19 +365,19 @@ func TestCreateDoesNotMakeAnUnprovedEmailTheDefaultContact(t *testing.T) {
 			if identifier.Kind != authn.IdentifierEmail {
 				continue
 			}
-			if identifier.SignIn || identifier.Contact || identifier.DefaultContact {
-				t.Errorf("the unproved email reads sign_in=%v contact=%v default_contact=%v, want all false",
+			if identifier.SignIn || !identifier.Contact || identifier.DefaultContact {
+				t.Errorf("the unproved email reads sign_in=%v contact=%v default_contact=%v, want false true false",
 					identifier.SignIn, identifier.Contact, identifier.DefaultContact)
 			}
 		}
 	})
 }
 
-// TestAnImportWritesTheAxesItsSourceRecordHad holds that an import restores the
-// two axes and the default contact from its source record, and that a proved
-// email address the source did not name as the default becomes it anyway, while
-// an unproved one never does.
-func TestAnImportWritesTheAxesItsSourceRecordHad(t *testing.T) {
+// TestAnImportWritesTheSignInAxisOfItsSourceRecord holds that an import restores
+// the sign-in axis from its source record while the address is a contact
+// regardless, and that a proved email address the source did not name as the
+// default becomes it anyway, while an unproved one never does.
+func TestAnImportWritesTheSignInAxisOfItsSourceRecord(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		read := func(in authn.CreateAccount) map[authn.IdentifierKind]authn.Identifier {
@@ -331,6 +407,18 @@ func TestAnImportWritesTheAxesItsSourceRecordHad(t *testing.T) {
 				email.SignIn, email.Contact, email.DefaultContact)
 		}
 
+		// A source record that did not call its address a contact does not make
+		// it anything else here: a registered address is always a contact.
+		noContact := read(authn.CreateAccount{
+			ID: "legacy_no_contact", Via: "import",
+			Email: "nocontact@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
+			EmailFlags: authn.IdentifierFlags{SignIn: true},
+		})
+		if email := noContact[authn.IdentifierEmail]; !email.SignIn || !email.Contact {
+			t.Errorf("the imported email whose source named no contact reads sign_in=%v contact=%v, want both true",
+				email.SignIn, email.Contact)
+		}
+
 		unproved := read(authn.CreateAccount{
 			ID: "legacy_unproved", Via: "import",
 			Email: "unproved@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaImportUnverified},
@@ -344,7 +432,7 @@ func TestAnImportWritesTheAxesItsSourceRecordHad(t *testing.T) {
 		phone := read(authn.CreateAccount{
 			ID: "legacy_phone", Via: "import",
 			Phone: "+8613800000002", PhoneVerifiedVia: authn.Verification{Via: authn.VerifiedViaImportUnverified},
-			PhoneFlags: authn.IdentifierFlags{Contact: true},
+			PhoneFlags: authn.IdentifierFlags{},
 		})
 		if p := phone[authn.IdentifierPhone]; p.SignIn || !p.Contact {
 			t.Errorf("the imported phone reads sign_in=%v contact=%v, want false true", p.SignIn, p.Contact)

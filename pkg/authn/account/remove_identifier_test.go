@@ -92,7 +92,7 @@ func TestRemovingALoginNameIsAllowedWhileAnotherRemains(t *testing.T) {
 			t.Fatalf("proving the email address: %v", err)
 		}
 		if err := h.p.SetIdentifierFlags(ctx, id, emailID,
-			authn.IdentifierFlags{SignIn: true}); err != nil {
+			authn.IdentifierFlags{Contact: true, SignIn: true}); err != nil {
 			t.Fatalf("choosing the email address as a sign-in way: %v", err)
 		}
 		if err := h.p.RemoveIdentifier(ctx, id, usernameID); err != nil {
@@ -155,7 +155,7 @@ func TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains(t *testing.
 		}
 		phoneID := identifierOfKind(t, h, withPhone.ID, authn.IdentifierPhone).ID
 		if err = h.p.SetIdentifierFlags(ctx, withPhone.ID, phoneID,
-			authn.IdentifierFlags{SignIn: true}); err != nil {
+			authn.IdentifierFlags{Contact: true, SignIn: true}); err != nil {
 			t.Fatalf("choosing the phone number as a sign-in way: %v", err)
 		}
 		if err = h.p.RemoveIdentifier(ctx, withPhone.ID,
@@ -211,7 +211,7 @@ func TestAnUnverifiedPhoneDoesNotKeepTheAccountReachable(t *testing.T) {
 			t.Fatalf("removing the login name beside a proved but unchosen phone gave %v, want ErrLastLoginMethod", err)
 		}
 		phoneID := identifierOfKind(t, h, id.ID, authn.IdentifierPhone).ID
-		if err = h.p.SetIdentifierFlags(ctx, id.ID, phoneID, authn.IdentifierFlags{SignIn: true}); err != nil {
+		if err = h.p.SetIdentifierFlags(ctx, id.ID, phoneID, authn.IdentifierFlags{Contact: true, SignIn: true}); err != nil {
 			t.Fatalf("choosing the proved phone number: %v", err)
 		}
 		if err = h.p.RemoveIdentifier(ctx, id.ID,
@@ -257,7 +257,7 @@ func TestHasLoginWayOtherThanPasskeyCountsTheThreeWays(t *testing.T) {
 		}
 		phoneID := identifierOfKind(t, h, withPhone.ID, authn.IdentifierPhone).ID
 		if err = h.p.SetIdentifierFlags(ctx, withPhone.ID, phoneID,
-			authn.IdentifierFlags{SignIn: true}); err != nil {
+			authn.IdentifierFlags{Contact: true, SignIn: true}); err != nil {
 			t.Fatalf("choosing the phone number as a sign-in way: %v", err)
 		}
 		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, withPhone.ID); wayErr != nil || !way {
@@ -284,7 +284,7 @@ func TestHasLoginWayOtherThanPasskeyCountsTheThreeWays(t *testing.T) {
 		}
 		provedID := identifierOfKind(t, h, unproven.ID, authn.IdentifierPhone).ID
 		if err = h.p.SetIdentifierFlags(ctx, unproven.ID, provedID,
-			authn.IdentifierFlags{SignIn: true}); err != nil {
+			authn.IdentifierFlags{Contact: true, SignIn: true}); err != nil {
 			t.Fatalf("choosing the proved phone number: %v", err)
 		}
 		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, unproven.ID); wayErr != nil || !way {

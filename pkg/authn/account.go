@@ -86,9 +86,10 @@ type AccountAdmin interface {
 	// forms Verification.Valid accepts, and anything else is ErrInvalidArgument.
 	// An email address also writes its contact reservation, verified now: an
 	// existing reservation of this account is brought up to date, and one
-	// another account holds is ErrContactTaken. A new email address or phone
-	// number starts on neither axis, and a username is always a sign-in way. An
-	// email address proved while the account has no default contact becomes it.
+	// another account holds is ErrContactTaken. A registered email address or
+	// phone number is always a contact, and a username is always a sign-in way.
+	// A proved email address becomes the default contact when the account has
+	// none.
 	AddIdentifier(ctx context.Context, id AccountID, kind IdentifierKind, value string, via Verification) error
 	// RemoveIdentifier unbinds one identifier by its identifier. Removing an
 	// email address also releases the account's reservation of that contact.
@@ -96,14 +97,14 @@ type AccountAdmin interface {
 	// that remains, and clears it when none does.
 	RemoveIdentifier(ctx context.Context, id AccountID, identifierID string) error
 	// SetIdentifierFlags writes the two axes of one of the account's email
-	// addresses or phone numbers. Contact and SignIn are independent, contact
-	// may be set on an unproved row, and SignIn may be set true only on a proved
-	// one. Setting SignIn false that leaves the account with no password, no
-	// proved phone number chosen as a sign-in way and no external identity is
-	// ErrLastLoginMethod, and one holding a password credential that thereby
-	// loses its last login name is ErrIdentifierRequired; neither takes effect.
-	// An identifier the account does not hold, and a username, are
-	// ErrInvalidArgument.
+	// addresses or phone numbers. SignIn may be set true only on a proved row.
+	// A registered address is always a contact: contact false is
+	// ErrInvalidArgument, and contact true changes nothing. Setting SignIn false
+	// that leaves the account with no password, no proved phone number chosen as
+	// a sign-in way and no external identity is ErrLastLoginMethod, and one
+	// holding a password credential that thereby loses its last login name is
+	// ErrIdentifierRequired; neither takes effect. An identifier the account does
+	// not hold, and a username, are ErrInvalidArgument.
 	SetIdentifierFlags(ctx context.Context, id AccountID, identifierID string, flags IdentifierFlags) error
 	// SetDefaultContact makes one proved email address of the account its default
 	// contact, clearing the account's previous choice in the same transaction.

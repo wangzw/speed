@@ -573,7 +573,7 @@ func TestVerifyAcceptsAnEmailOnlyWhenItIsChosenAsASignInWay(t *testing.T) {
 
 		emailID := identifierByValue(t, h, id, authn.IdentifierEmail, "mailer@example.com").ID
 		if err := h.p.SetIdentifierFlags(ctx, id, emailID,
-			authn.IdentifierFlags{SignIn: true}); err != nil {
+			authn.IdentifierFlags{Contact: true, SignIn: true}); err != nil {
 			t.Fatalf("choosing the address as a sign-in way: %v", err)
 		}
 		if got, _, err := h.p.Verify(ctx, "mailer@example.com", password); err != nil || got != id {

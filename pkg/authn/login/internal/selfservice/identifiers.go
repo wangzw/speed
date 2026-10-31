@@ -45,18 +45,18 @@ func (r *routes) removeIdentifier(ctx context.Context, in identifierPathInput, m
 // to be the caller's own, whether it does not exist or belongs to another
 // account, so the route discloses nothing about what another account holds.
 //
-// The body's members are optional and each is left as it is when absent. Contact
-// and sign-in are independent; contact may be set on an identifier whose
-// ownership is not proved, sign-in may be set true only on one that is, and the
-// default contact may only be a proved email address. Those three refusals are
-// bad-request before the account module is asked. Changing sign-in or the default
-// contact asks for the freshness every change of what proves the account asks
-// for; changing contact alone does not. A write that would leave the account
-// without a login name answers 409 login-identifier-required and one that would
-// leave it without any way to sign in answers 409 last-login-method, and neither
-// takes effect. Putting a proved email address or phone number into sign-in is a
-// rotation point: the current session gets a new token and the others are
-// revoked.
+// The body's members are optional and each is left as it is when absent. A
+// registered address is always a contact, so contact true is accepted and
+// changes nothing while contact false is refused. Sign-in may be set true only
+// on an identifier whose ownership is proved, and the default contact may only
+// be a proved email address. Those refusals are bad-request before the account
+// module is asked. Changing sign-in or the default contact asks for the
+// freshness every change of what proves the account asks for; changing contact
+// alone does not. A write that would leave the account without a login name
+// answers 409 login-identifier-required and one that would leave it without any
+// way to sign in answers 409 last-login-method, and neither takes effect.
+// Putting a proved email address or phone number into sign-in is a rotation
+// point: the current session gets a new token and the others are revoked.
 func (r *routes) updateIdentifier(ctx context.Context, in updateIdentifierInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, "")

@@ -159,8 +159,9 @@ type RegisterAccount struct {
 }
 
 // IdentifierFlags is the two axes of an email address or a phone number: whether
-// it may sign in and whether it is a contact. They are independent, and neither
-// rewrites the other.
+// it may sign in and whether it is a contact. A registered address is always a
+// contact, so Contact is true for one this module writes; SignIn is the axis a
+// holder chooses, and neither rewrites the other.
 type IdentifierFlags struct {
 	Contact bool
 	SignIn  bool
@@ -179,8 +180,8 @@ type CreateAccount struct {
 	EmailVerifiedVia    Verification
 	Phone               string // must have been verified
 	PhoneVerifiedVia    Verification
-	EmailFlags          IdentifierFlags // an import only: the source record's axes of Email
-	PhoneFlags          IdentifierFlags // an import only: the source record's axes of Phone
+	EmailFlags          IdentifierFlags // an import only: the source record's sign-in axis of Email; the address is a contact regardless
+	PhoneFlags          IdentifierFlags // an import only: the source record's sign-in axis of Phone; the number is a contact regardless
 	DefaultContact      bool            // an import only: the source record names Email its default contact; true only for a proved email
 	Password            string          // an alternative to PasswordHash
 	PasswordHash        string          // PHC or legacy form, for an import

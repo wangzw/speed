@@ -890,7 +890,7 @@ func TestIdentifiersAreAddedAndRemovedAndAPhoneIsReplaced(t *testing.T) {
 		phones, _ := h.p.Identifiers(ctx, id)
 		for _, i := range phones {
 			if i.Kind == authn.IdentifierPhone {
-				if err := h.p.SetIdentifierFlags(ctx, id, i.ID, authn.IdentifierFlags{SignIn: true}); err != nil {
+				if err := h.p.SetIdentifierFlags(ctx, id, i.ID, authn.IdentifierFlags{Contact: true, SignIn: true}); err != nil {
 					t.Fatalf("choosing the phone as a sign-in way: %v", err)
 				}
 			}

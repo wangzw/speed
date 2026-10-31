@@ -247,9 +247,9 @@ func TestASMSFirstLoginStopsAtTheUsernameStepAndItsPhoneSignsIn(t *testing.T) {
 		}
 		held := identifiersOf(t, h.accounts, id)
 		if !slices.ContainsFunc(held, func(i authn.Identifier) bool {
-			return i.Kind == authn.IdentifierPhone && i.Value == number && i.SignIn && !i.Contact
+			return i.Kind == authn.IdentifierPhone && i.Value == number && i.SignIn && i.Contact
 		}) {
-			t.Errorf("identifiers = %+v, want the proved phone as a sign-in way and no contact", held)
+			t.Errorf("identifiers = %+v, want the proved phone as a sign-in way and a contact", held)
 		}
 		if !slices.ContainsFunc(held, func(i authn.Identifier) bool {
 			return i.Kind == authn.IdentifierUsername && i.Value == "phoneowner" && i.VerifiedVia == authn.VerifiedViaSelf

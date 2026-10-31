@@ -22,7 +22,7 @@ func (h *harness) axesAccount() {
 		},
 		{
 			ID: "ident-phone", Kind: authn.IdentifierPhone, Value: "+8613800000000",
-			VerifiedAt: now.Add(-time.Minute), VerifiedVia: authn.VerifiedViaSMSCode,
+			VerifiedAt: now.Add(-time.Minute), VerifiedVia: authn.VerifiedViaSMSCode, Contact: true,
 		},
 		{
 			ID: "ident-proved", Kind: authn.IdentifierEmail, Value: "ada@example.com",
@@ -30,7 +30,7 @@ func (h *harness) axesAccount() {
 		},
 		{
 			ID: "ident-unproved", Kind: authn.IdentifierEmail, Value: "asserted@example.com",
-			VerifiedAt: now.Add(-time.Minute), VerifiedVia: authn.VerifiedViaAdmin,
+			VerifiedAt: now.Add(-time.Minute), VerifiedVia: authn.VerifiedViaAdmin, Contact: true,
 		},
 	}
 }
@@ -103,8 +103,8 @@ func TestChoosingAPhoneAsASignInWayRotatesTheSession(t *testing.T) {
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("PUT /identifiers/ident-phone = %d %s, want 204", w.Code, w.Body)
 	}
-	if len(h.admin.flags) != 1 || h.admin.flags[0].flags != (authn.IdentifierFlags{SignIn: true}) {
-		t.Errorf("the flags written are %+v, want sign_in true with the contact left false", h.admin.flags)
+	if len(h.admin.flags) != 1 || h.admin.flags[0].flags != (authn.IdentifierFlags{Contact: true, SignIn: true}) {
+		t.Errorf("the flags written are %+v, want sign_in true with the contact left true", h.admin.flags)
 	}
 	if len(h.sessions.rotated) != 1 || h.sessions.rotated[0] != session {
 		t.Errorf("Rotate was called with %v, want the current session", h.sessions.rotated)

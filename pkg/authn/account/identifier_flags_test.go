@@ -45,9 +45,11 @@ func defaultContactValue(t *testing.T, h *harness, id authn.AccountID) (string, 
 }
 
 // TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact holds how a
-// declared identifier enters the account: the account's only email address, proved
-// here, becomes a login way and the default contact in the same transaction while
-// a later one is no login way and leaves the default alone.
+// declared identifier enters the account: an address is a contact from the
+// moment it is registered, whether it is proved or only asserted, and a username
+// never is. The account's only email address, proved here, becomes a login way
+// and the default contact in the same transaction while a later one is no login
+// way and leaves the default alone.
 func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -60,8 +62,8 @@ func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testi
 			t.Fatalf("adding the first email address: %v", err)
 		}
 		first := identifierByValue(t, h, created.ID, authn.IdentifierEmail, "first@example.com")
-		if !first.SignIn || first.Contact || !first.DefaultContact {
-			t.Errorf("the first proved email reads sign_in=%v contact=%v default_contact=%v, want true false true",
+		if !first.SignIn || !first.Contact || !first.DefaultContact {
+			t.Errorf("the first proved email reads sign_in=%v contact=%v default_contact=%v, want all true",
 				first.SignIn, first.Contact, first.DefaultContact)
 		}
 
@@ -70,6 +72,9 @@ func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testi
 			t.Fatalf("adding the second email address: %v", err)
 		}
 		second := identifierByValue(t, h, created.ID, authn.IdentifierEmail, "second@example.com")
+		if !second.Contact {
+			t.Error("the second proved email is not a contact")
+		}
 		if second.DefaultContact {
 			t.Error("the second proved email became the default contact")
 		}
@@ -77,15 +82,15 @@ func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testi
 			t.Errorf("the default contact is %q (%d rows), want first@example.com on one row", value, count)
 		}
 
-		// An address only asserted is neither a sign-in way, a contact nor the
+		// An address only asserted is a contact but neither a sign-in way nor the
 		// default, and proving it later keeps the default where it was.
 		if err = h.p.AddIdentifier(ctx, created.ID, authn.IdentifierEmail, "asserted@example.com",
 			authn.Verification{Via: authn.VerifiedViaAdmin}); err != nil {
 			t.Fatalf("adding an asserted email address: %v", err)
 		}
 		asserted := identifierByValue(t, h, created.ID, authn.IdentifierEmail, "asserted@example.com")
-		if asserted.SignIn || asserted.Contact || asserted.DefaultContact {
-			t.Errorf("the asserted email reads sign_in=%v contact=%v default_contact=%v, want all false",
+		if asserted.SignIn || !asserted.Contact || asserted.DefaultContact {
+			t.Errorf("the asserted email reads sign_in=%v contact=%v default_contact=%v, want false true false",
 				asserted.SignIn, asserted.Contact, asserted.DefaultContact)
 		}
 		if err = h.p.AddIdentifier(ctx, created.ID, authn.IdentifierEmail, "asserted@example.com", emailCode); err != nil {
@@ -95,15 +100,15 @@ func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testi
 			t.Errorf("proving a later address moved the default contact to %q", value)
 		}
 
-		// A phone number starts on neither axis, and a username is always a
-		// sign-in way.
+		// A phone number is a contact and not a sign-in way, and a username is a
+		// sign-in way and never a contact.
 		if err = h.p.AddIdentifier(ctx, created.ID, authn.IdentifierPhone, "+8613800000031",
 			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
 			t.Fatalf("adding a phone number: %v", err)
 		}
 		phone := identifierOfKind(t, h, created.ID, authn.IdentifierPhone)
-		if phone.SignIn || phone.Contact || phone.DefaultContact {
-			t.Errorf("the proved phone reads sign_in=%v contact=%v default_contact=%v, want all false",
+		if phone.SignIn || !phone.Contact || phone.DefaultContact {
+			t.Errorf("the proved phone reads sign_in=%v contact=%v default_contact=%v, want false true false",
 				phone.SignIn, phone.Contact, phone.DefaultContact)
 		}
 		username := identifierOfKind(t, h, created.ID, authn.IdentifierUsername)
@@ -212,6 +217,69 @@ func TestSetIdentifierFlagsKeepsTheAxesIndependent(t *testing.T) {
 	})
 }
 
+// TestSetIdentifierFlagsRefusesTakingAwayTheContactAxis holds that the contact
+// axis is not a choice: a registered address is always a contact, so asking for
+// false is refused and changes nothing, whether the row is the default contact or
+// not. Asking for true is accepted and leaves the row as it is.
+func TestSetIdentifierFlagsRefusesTakingAwayTheContactAxis(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("contactfixed", "correct horse battery")
+		emailCode := authn.Verification{Via: authn.VerifiedViaEmailCode}
+		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierEmail, "default@example.com", emailCode); err != nil {
+			t.Fatalf("adding the default address: %v", err)
+		}
+		h.clock.advance(time.Hour)
+		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierEmail, "other@example.com", emailCode); err != nil {
+			t.Fatalf("adding another address: %v", err)
+		}
+
+		for _, value := range []string{"default@example.com", "other@example.com"} {
+			row := identifierByValue(t, h, id, authn.IdentifierEmail, value)
+			if err := h.p.SetIdentifierFlags(ctx, id, row.ID,
+				authn.IdentifierFlags{SignIn: row.SignIn}); !errors.Is(err, authn.ErrInvalidArgument) {
+				t.Errorf("taking the contact away from %q gave %v, want ErrInvalidArgument", value, err)
+			}
+			got := identifierByValue(t, h, id, authn.IdentifierEmail, value)
+			if !got.Contact || got.SignIn != row.SignIn || got.DefaultContact != row.DefaultContact {
+				t.Errorf("%q after the refused write reads sign_in=%v contact=%v default_contact=%v, want %v true %v",
+					value, got.SignIn, got.Contact, got.DefaultContact, row.SignIn, row.DefaultContact)
+			}
+
+			if err := h.p.SetIdentifierFlags(ctx, id, row.ID,
+				authn.IdentifierFlags{Contact: true, SignIn: row.SignIn}); err != nil {
+				t.Errorf("keeping the contact on %q gave %v, want nil", value, err)
+			}
+		}
+		if value, _ := defaultContactValue(t, h, id); value != "default@example.com" {
+			t.Errorf("the default contact is %q, want default@example.com", value)
+		}
+	})
+}
+
+// TestReprovingAHeldAddressRestoresItsContactAxis holds the write made when an
+// address the account already holds is proved again: the row is an address the
+// account owns, so it carries the contact axis even when it was written before
+// the invariant and reads false.
+func TestReprovingAHeldAddressRestoresItsContactAxis(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("reprove", "correct horse battery")
+		emailID := identifierOfKind(t, h, id, authn.IdentifierEmail).ID
+		// A row written before the invariant is a contact that reads false.
+		if err := h.handle.Exec("UPDATE "+tableIdentifiers+" SET contact = ? WHERE id = ?", false, emailID).Error; err != nil {
+			t.Fatalf("clearing the contact axis: %v", err)
+		}
+		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierEmail, "reprove@example.com",
+			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
+			t.Fatalf("proving the held address again: %v", err)
+		}
+		if row := identifierOfKind(t, h, id, authn.IdentifierEmail); !row.Contact {
+			t.Error("the re-proved address reads contact=false, want true")
+		}
+	})
+}
+
 // TestSetIdentifierFlagsRefusesTheLastLoginNameAndTheLastWay holds the two
 // refusals of taking a row out of sign-in, in the order the removal uses, and
 // that neither takes effect: a password account that would lose its last login
@@ -228,14 +296,14 @@ func TestSetIdentifierFlagsRefusesTheLastLoginNameAndTheLastWay(t *testing.T) {
 			t.Fatalf("proving the address: %v", err)
 		}
 		if err := h.p.SetIdentifierFlags(ctx, id, emailID,
-			authn.IdentifierFlags{SignIn: true}); err != nil {
+			authn.IdentifierFlags{Contact: true, SignIn: true}); err != nil {
 			t.Fatalf("choosing the address as a sign-in way: %v", err)
 		}
 		if err := h.p.RemoveIdentifier(ctx, id,
 			identifierOfKind(t, h, id, authn.IdentifierUsername).ID); err != nil {
 			t.Fatalf("removing the username beside the chosen address gave %v, want nil", err)
 		}
-		if err := h.p.SetIdentifierFlags(ctx, id, emailID, authn.IdentifierFlags{}); !errors.Is(err, authn.ErrIdentifierRequired) {
+		if err := h.p.SetIdentifierFlags(ctx, id, emailID, authn.IdentifierFlags{Contact: true}); !errors.Is(err, authn.ErrIdentifierRequired) {
 			t.Errorf("taking away the last login name gave %v, want ErrIdentifierRequired", err)
 		}
 		if row := identifierOfKind(t, h, id, authn.IdentifierEmail); !row.SignIn || !row.DefaultContact {
@@ -252,11 +320,11 @@ func TestSetIdentifierFlagsRefusesTheLastLoginNameAndTheLastWay(t *testing.T) {
 		}
 		phoneID := identifierOfKind(t, h, passwordless.ID, authn.IdentifierPhone).ID
 		if err = h.p.SetIdentifierFlags(ctx, passwordless.ID, phoneID,
-			authn.IdentifierFlags{SignIn: true}); err != nil {
+			authn.IdentifierFlags{Contact: true, SignIn: true}); err != nil {
 			t.Fatalf("choosing the phone number: %v", err)
 		}
 		if err = h.p.SetIdentifierFlags(ctx, passwordless.ID, phoneID,
-			authn.IdentifierFlags{}); !errors.Is(err, authn.ErrLastLoginMethod) {
+			authn.IdentifierFlags{Contact: true}); !errors.Is(err, authn.ErrLastLoginMethod) {
 			t.Errorf("taking away the last way in gave %v, want ErrLastLoginMethod", err)
 		}
 		if phone := identifierOfKind(t, h, passwordless.ID, authn.IdentifierPhone); !phone.SignIn {

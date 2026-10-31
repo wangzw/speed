@@ -298,22 +298,16 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		if err != nil {
 			return plan, err
 		}
-		// A new email address is neither a login way nor a contact until its
-		// holder chooses; an import writes the axes its source record had. The
-		// exception is the proved address an account opens with: it is the
-		// account's only address, so the holder has nothing to compare it
-		// against, and it is chosen as a login way. The address a social first
-		// login brings in also starts as a contact, since the provider declared
-		// it verified.
+		// An email address is a contact from the moment it is written. Being a
+		// sign-in way is a separate choice: an import keeps the source record's,
+		// and the proved address an account opens with is chosen as a login way
+		// since the holder has nothing to compare it against. The address a social
+		// first login brings in has the same choice.
 		proved := authn.Verification{Via: verified}.Proves()
-		flags := authn.IdentifierFlags{}
-		switch {
-		case via == byImport:
-			flags = in.EmailFlags
-		case strings.HasPrefix(verified, authn.VerifiedViaIDPPrefix):
-			flags = authn.IdentifierFlags{Contact: true}
-		}
-		if via != byImport && proved {
+		flags := authn.IdentifierFlags{Contact: true}
+		if via == byImport {
+			flags.SignIn = in.EmailFlags.SignIn
+		} else if proved {
 			flags.SignIn = true
 		}
 		// An unproved address is never the default contact. A proved one is the
@@ -344,16 +338,16 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		if err != nil {
 			return plan, err
 		}
-		// A new phone number starts on neither axis; an import writes the axes
-		// its source record had. The exception is the phone an SMS first login
-		// signs in with: that login used the number as its way in, so it is a
-		// login way from the moment the account exists, and still no contact.
-		flags := authn.IdentifierFlags{}
+		// A phone number is a contact from the moment it is written. Being a
+		// sign-in way is separate: an import keeps the source record's, and the
+		// phone an SMS first login signs in with is a login way from the moment
+		// the account exists.
+		flags := authn.IdentifierFlags{Contact: true}
 		if via == byImport {
-			flags = in.PhoneFlags
+			flags.SignIn = in.PhoneFlags.SignIn
 		}
 		if verified == authn.VerifiedViaSMSCode {
-			flags = authn.IdentifierFlags{SignIn: true}
+			flags.SignIn = true
 		}
 		if err = add(authn.IdentifierPhone, in.Phone, verified, flags, false); err != nil {
 			return plan, err
@@ -479,13 +473,15 @@ func (p *product) updateAccount(ctx context.Context, id authn.AccountID, columns
 // number replaces the one the account has, since an account has one; the same
 // number again rewrites its way only when that does not take a proof away.
 //
-// A new email address or phone number starts on neither axis, and a username is
-// always a sign-in way. A proved email address becomes the account's default
-// contact when it has none, which is how the first proved address establishes the
-// choice. It is also chosen as a login way when it is the account's only address:
-// with one address there is nothing for the holder to compare it against. An
-// account with several leaves that choice to its holder, and an address proved
-// again stays as it is.
+// A registered email address or phone number is always a contact: a value the
+// account owns is contact information from the moment it is written, whether or
+// not its ownership is proved. A username is always a sign-in way and never a
+// contact. A proved email address becomes the account's default contact when it
+// has none, which is how the first proved address establishes the choice. It is
+// also chosen as a login way when it is the account's only address: with one
+// address there is nothing for the holder to compare it against. An account with
+// several leaves that choice to its holder, and choosing it again changes
+// nothing.
 //
 // An email address the account already holds as an identifier is rewritten in
 // place instead of being added again: no identifier-changed event is published
@@ -544,8 +540,10 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 				if alreadyProved && !via.Proves() {
 					return nil
 				}
+				// The row is an address the account owns, so it is a contact from
+				// here on even if a write made before the invariant left it false.
 				if err = tx.Model(&identifierRow{}).Where("id = ?", held[0].ID).
-					Updates(map[string]any{"verified_at": now, "verified_via": verified}).Error; err != nil {
+					Updates(map[string]any{"verified_at": now, "verified_via": verified, "contact": true}).Error; err != nil {
 					return err
 				}
 				if via.Proves() {
@@ -583,7 +581,7 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 						return nil
 					}
 					return tx.Model(&identifierRow{}).Where("id = ?", old.ID).
-						Updates(map[string]any{"verified_at": now, "verified_via": verified}).Error
+						Updates(map[string]any{"verified_at": now, "verified_via": verified, "contact": true}).Error
 				}
 			}
 			if len(held) > 0 {
@@ -598,9 +596,11 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 		row := identifierRow{
 			ID: rowID, AccountID: id.String(), Kind: string(kind), Value: normalized,
 			VerifiedAt: now, VerifiedVia: verified,
-			// A username is always a login way. A new email address or phone
-			// number starts on neither axis.
-			SignIn: kind == authn.IdentifierUsername, CreatedAt: now,
+			// A username is always a login way. An email address or phone number
+			// is a contact from the moment it is registered.
+			SignIn:    kind == authn.IdentifierUsername,
+			Contact:   kind == authn.IdentifierEmail || kind == authn.IdentifierPhone,
+			CreatedAt: now,
 		}
 		if err = tx.Create(&row).Error; err != nil {
 			return err
@@ -852,10 +852,12 @@ func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, iden
 }
 
 // SetIdentifierFlags writes the two axes of one of the account's email addresses
-// or phone numbers. Contact and SignIn are independent: contact may be set on a
-// row that is not proved, and SignIn may be set true only on one that is, so an
-// unproved row can be taken out of sign-in but not put into it. A username has no
-// two axes to set, and a row of another account is not this account's to write.
+// or phone numbers. Contact and SignIn are independent: SignIn may be set true
+// only on a row whose ownership is proved, so an unproved row can be taken out of
+// sign-in but not put into it. Contact is not a choice: a registered address is
+// always a contact, so contact false is refused and contact true is accepted and
+// changes nothing. A username has no two axes to set, and a row of another
+// account is not this account's to write.
 //
 // Turning SignIn off is a change of how the account is proven, so it is checked
 // against what would remain, in the order RemoveIdentifier uses: an account with
@@ -880,6 +882,11 @@ func (p *product) SetIdentifierFlags(ctx context.Context, id authn.AccountID, id
 		kind := authn.IdentifierKind(row.Kind)
 		if kind != authn.IdentifierEmail && kind != authn.IdentifierPhone {
 			return invalid("a username is always a sign-in way and has no two axes to set")
+		}
+		// A registered address is a contact, the default contact included, and
+		// nothing takes that away.
+		if !flags.Contact {
+			return invalid("a registered address is always a contact")
 		}
 		proved := authn.Verification{Via: row.VerifiedVia}.Proves()
 		// A row that is already a sign-in way keeps it, which is how a row the
