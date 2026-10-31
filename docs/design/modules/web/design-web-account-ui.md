@@ -312,7 +312,7 @@ sequenceDiagram
 | 手机号节 | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection` |
 | 发送验证码的人机证明（手机节、验证节、标识节邮箱与提权对话框） | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`、`PhoneSectionProps`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`、`ContactVerificationSectionProps`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps`；`web/packages/account-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/ui-kit/src/components/HumanVerification.tsx` `HumanVerification` |
 | 登录标识节 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
-| 联系方式与登录方式的呈现与选择、默认联系地址的改选 | 部分实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`；`web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection` |
+| 联系方式与登录方式的呈现与选择、默认联系地址的改选 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`；`web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection` |
 | 安全类自助写的提权门控 | 已实现 | 各节使用 `@speed/auth-core` 的 `useStepUpGate` |
 | 轮换点上的身份切换窗口 | 已实现 | `web/packages/account-ui/src/internal/identity-transition.ts` `runIdentityTransition` |
 | 偏好节 | 已实现 | `web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection` |
