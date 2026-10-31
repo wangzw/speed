@@ -494,7 +494,7 @@ graph TD
 | 写入被拒，未被步进拦截的裸 401 | 渲染会话已结束文案，不渲染状态码叶子 |
 | 冒充发起或管理员重置因素、口令被 403 `authn.factor_not_seasoned` 拒绝 | 渲染需要已启用满规定时长的非短信因素的说明，不开步进对话框 |
 | 管理员重置口令或删除账户的最后一个被选作登录方式的邮箱登录名被 409 `authn.login_identifier_required` 拒绝 | 一条横幅渲染该码文本，说明账号需要至少一个登录名；账户状态不变 |
-| 按用户名移除登录标识被 409 `authn.username_immutable` 拒绝（界面不渲染用户名的移除动作，正常路径不发出该请求） | 白名单含该码；一条横幅渲染该码文本，说明用户名不可移除；账户状态不变 |
+| 按用户名移除登录标识被 409 `authn.username_immutable` 拒绝（移除面按手输的标识值发起，操作者手输用户名即得到该拒绝） | 白名单含该码；一条横幅渲染该码文本，说明用户名不可移除；账户状态不变 |
 | 账户创建或标识添加被 409 `authn.email_taken` 拒绝 | 一条横幅渲染该码文本，点明邮箱地址已被另一个账户注册；输入保留，操作者改地址后可重试 |
 | 创建用户账户被拒绝为用户名相关的问题码（409 `authn.username_taken`、400 `authn.username_reserved`、400 `authn.username_invalid`） | 用户名字段渲染 `accounts.create.usernameTaken` / `usernameReserved` / `usernameInvalid`（`aria-invalid`），焦点移到该字段，输入保留；服务账户没有用户名，不受这条约束 |
 | 详情面板内有写入在途时收到关闭请求 | 面板 `busy`，不上报 `onClose` |
