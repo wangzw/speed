@@ -26,7 +26,7 @@ generated read or write on the shared access token.
 | `src/ContactVerificationSection.tsx` | `ContactVerificationSection`, `ContactVerificationSectionProps` |
 | `src/PreferencesSection.tsx` | `PreferencesSection` |
 | `src/AppearanceSection.tsx` | `AppearanceSection`, `AppearanceSectionProps`, `ThemePresetChoice` |
-| `src/SessionsSection.tsx` | `SessionsSection` |
+| `src/SessionsSection.tsx` | `SessionsSection`, `SessionsSectionProps` |
 | `src/SocialBindingsSection.tsx` | `SocialBindingsSection`, `SocialBindingsSectionProps` |
 | `src/BindingCallbackHandler.tsx` | `BindingCallbackHandler`, `BindingCallbackHandlerProps` |
 | `src/MfaSection.tsx` | `MfaSection`, `MfaSectionProps` |
@@ -426,14 +426,31 @@ The sessions-and-devices list, read from `GET /api/v1/auth/sessions` -- the
 server lists only live sessions, so a row is never revoked or expired.
 The current session (the request's own) carries a badge and no revoke
 affordance; every other row has a row-end sign-out button
-(`DELETE /api/v1/auth/sessions/{id}`). The section-top "sign out other devices"
+(`DELETE /api/v1/auth/sessions/{id}`). The "sign out other devices" bulk
 action (`DELETE /api/v1/auth/sessions`) revokes every other session at once and
 sits behind the ui-kit danger confirm -- a single confirming click, not
 the heavier two-step arm, because the action is recoverable (a signed-out
 device signs in again); its answer's revoked count is surfaced in a
 success notice. Every successful revoke invalidates the
-list query, so the rows converge on the server's answer. The section
-takes no props.
+list query, so the rows converge on the server's answer.
+
+The section's one prop is optional. `renderHeaderAction` replaces the
+section's own action row with whatever the host returns: the section calls
+it with the "sign out other devices" control and renders the returned
+node, so a host that owns the surrounding block can lift the action into
+the block title's action area -- typically by returning a portal into a
+header slot of its own. The slot is called only while the action would
+render at all (a settled list holding another live session); without it
+the action keeps the section's own placement above the list, so the
+default behaviour is unchanged. Handing the control over does not change
+when it is busy: the host renders the very control the section would have
+rendered, disabled while a revoke is in flight.
+
+```tsx
+interface SessionsSectionProps {
+  readonly renderHeaderAction?: (action: ReactNode) => ReactNode
+}
+```
 
 Row times render through the account's time-zone chain: the stored
 profile `time_zone` wins, then the host's `DisplayTimeZoneProvider`

@@ -34,7 +34,8 @@ becomes the default contact or the only address, a phone that replaces the
 active SMS factor's target -- is answered 401
 `authn.insufficient_user_authentication` and rendered as a failure.
 `ProfileSection` and `PreferencesSection` write without a step-up and take no
-session, and the read-only ones take no props either.
+session, and `SessionsSection`, which drives no flow, takes only its optional
+`renderHeaderAction` slot.
 
 ## What this package is
 
@@ -336,7 +337,7 @@ Everything in `src/index.ts` is public: the surfaces (`ProfileSection`;
 `PhoneSection` with `PhoneSectionProps`; `IdentifiersSection` with
 `IdentifiersSectionProps`; `ContactVerificationSection` with
 `ContactVerificationSectionProps`; `PreferencesSection`;
-`SessionsSection`; `SocialBindingsSection`
+`SessionsSection` with `SessionsSectionProps`; `SocialBindingsSection`
 with `SocialBindingsSectionProps`; `MfaSection` with `MfaSectionProps`),
 `BindingCallbackHandler` with `BindingCallbackHandlerProps`,
 `StepUpDialog` with `StepUpDialogProps` (the host seam; see rule 7), and
