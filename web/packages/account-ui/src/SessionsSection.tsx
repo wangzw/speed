@@ -346,7 +346,21 @@ export function SessionsSection() {
                   <TableCell sx={{ width: '30%' }}>
                     {t('sessions.table.activity')}
                   </TableCell>
-                  <TableCell align="right" sx={{ width: '15%' }}>
+                  <TableCell
+                    align="right"
+                    sx={{
+                      width: '15%',
+                      // The row action is a compact IconButton, whose own
+                      // inner inset holds its glyph 5px off the cell's
+                      // right edge. Matching that inset here ends the
+                      // header text on the glyph's right edge rather than
+                      // on the button's box, so the label sits on the
+                      // same rail as the action it names. The selector
+                      // outranks the table's shared `th, td` padding rule,
+                      // which a bare property would lose against.
+                      '&.MuiTableCell-root': { paddingRight: '5px' },
+                    }}
+                  >
                     {t('sessions.table.action')}
                   </TableCell>
                 </TableRow>
