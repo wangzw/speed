@@ -507,7 +507,7 @@ flowchart TD
 | 加密列往返（`db` 根密钥在）；`BlindIndex` 自检（包 `recover`） | `ErrNoEncryptionKey` |
 | 签名与验证密钥文件可读、解析成功、算法一致、RSA 至少 2048 位、`kid` 不重复 | `ErrInvalidKey` |
 | 每个口令表条目可解析且主体名合法；表非空 | `ErrInvalidClaim`；条目读不了时同时包住 `static.ErrMalformedHash` |
-| `authn.login.wechat-web` 与 `authn.login.wechat-mp` 各自的必填项齐备；`authn.mfa.webauthn.rp-id` 等于基址主机或其父域；短信模板覆盖本模块所需的（模板，语言，参数）组合（在 `New` 核对载体声明）；SAML 的 `sign_requests` 有 SP 密钥；`authn.account.password-memory-budget-mib` 不低于 `m` 取值域上限的两倍 | `ErrInvalidConfig` |
+| `authn.login.wechat-web` 与 `authn.login.wechat-mp` 各自的凭据只给一半（两项都空时方法自行关闭，不算失败）；`authn.mfa.webauthn.rp-id` 等于基址主机或其父域；短信模板覆盖本模块所需的（模板，语言，参数）组合（在 `New` 核对载体声明）；SAML 的 `sign_requests` 有 SP 密钥；`authn.account.password-memory-budget-mib` 不低于 `m` 取值域上限的两倍 | `ErrInvalidConfig` |
 | `authn.humanverify.mode` 不在 `off`、`pow`、`turnstile` 内；`turnstile` 模式下 `site-key`、`secret-key`、`hostname` 为空，`verify-url` 不是带主机的绝对 https URL，或 `timeout` 不在 1s 到 30s；`pow` 模式下运行没有交付键值存储或路由挂载口 | `ErrInvalidConfig` |
 | 纳入 `authn.login` 而没有任何 `LoginMethod`；纳入 `authn.mfa` 而没有任何 `Factor`，却设了 `global-required` 或库里已有账户登记了某个种类而该种类没有实现 | `ErrNoLoginMethod`、`ErrNoFactor` |
 | 带表模块的迁移已施加（`Start` 里探测自己的表） | `ErrNotMigrated` |
