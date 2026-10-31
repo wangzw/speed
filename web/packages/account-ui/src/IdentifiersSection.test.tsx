@@ -3666,5 +3666,41 @@ describe('IdentifiersSection', () => {
     })
     expect(getComputedStyle(remove).color).not.toBe(getComputedStyle(verify).color)
   })
+
+  it('keeps a contact row\'s remove behind the trailing menu and its confirm', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [identifier({ id: 'id-email', value: 'ada@x.test' })],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} axis="contact" />,
+    )
+    const user = userEvent.setup()
+    const actions = await screen.findByRole('button', {
+      name: zhCN.identifiers.actionsAria.replace('{{value}}', 'ada@x.test'),
+    })
+    // The contact table's actions live behind the row's one overflow menu
+    // button, not an inline button per action.
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@x.test'),
+      }),
+    ).toBeNull()
+    await user.click(actions)
+    await user.click(
+      screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent(zhCN.identifiers.confirmTitle)
+  })
 })
 

@@ -73,6 +73,8 @@ import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Chip from '@mui/material/Chip'
 import Button from '@mui/material/Button'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
@@ -519,6 +521,9 @@ export function AccountSettingsPage({
   const [openSecurityRow, setOpenSecurityRow] = useState<string | null>(null)
   const [addEmailSignal, setAddEmailSignal] = useState(0)
   const [phoneFormOpen, setPhoneFormOpen] = useState(false)
+  const [phoneMenuAnchor, setPhoneMenuAnchor] = useState<HTMLElement | null>(
+    null,
+  )
   const [phoneRemoveOpen, setPhoneRemoveOpen] = useState(false)
   const [phoneRemoveError, setPhoneRemoveError] = useState<string | null>(null)
   const queryClient = useQueryClient()
@@ -726,14 +731,52 @@ export function AccountSettingsPage({
                             </TableCell>
                             <TableCell align="right">
                               {boundPhone.id == null ? null : (
-                                <Button
-                                  variant="outlined"
-                                  color="error"
-                                  size="small"
-                                  onClick={() => setPhoneRemoveOpen(true)}
-                                >
-                                  {t('account.action.delete')}
-                                </Button>
+                                <>
+                                  <Button
+                                    variant="outlined"
+                                    size="small"
+                                    disabled={removeIdentifier.isPending}
+                                    aria-label={tAccount(
+                                      'identifiers.actionsAria',
+                                      {
+                                        value: boundPhone.value,
+                                        interpolation: { escapeValue: false },
+                                      },
+                                    )}
+                                    onClick={(event) =>
+                                      setPhoneMenuAnchor(event.currentTarget)
+                                    }
+                                  >
+                                    <Box
+                                      component="svg"
+                                      aria-hidden="true"
+                                      focusable="false"
+                                      viewBox="0 0 24 24"
+                                      width={18}
+                                      height={18}
+                                      fill="currentColor"
+                                    >
+                                      <circle cx="5" cy="12" r="1.8" />
+                                      <circle cx="12" cy="12" r="1.8" />
+                                      <circle cx="19" cy="12" r="1.8" />
+                                    </Box>
+                                  </Button>
+                                  <Menu
+                                    anchorEl={phoneMenuAnchor}
+                                    open={phoneMenuAnchor !== null}
+                                    onClose={() => setPhoneMenuAnchor(null)}
+                                  >
+                                    <MenuItem
+                                      sx={{ color: 'error.main' }}
+                                      onClick={() => {
+                                        setPhoneMenuAnchor(null)
+                                        setPhoneRemoveOpen(true)
+                                      }}
+                                    >
+                                      {t('account.action.delete')}
+                                    </MenuItem>
+                                  </Menu>
+                                </>
                               )}
                             </TableCell>
                           </TableRow>

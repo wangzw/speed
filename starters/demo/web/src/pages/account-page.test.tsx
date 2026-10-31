@@ -71,6 +71,7 @@ const accountEnUS = accountUiResources['en-US'] as {
       readonly phone: string
     }
     readonly add: { readonly open: string }
+    readonly actionsAria: string
     readonly axes: {
       readonly signIn: string
       readonly defaultContact: string
@@ -514,7 +515,7 @@ describe('AccountSettingsPage block consistency', () => {
     )
   })
 
-  it('renders the phone removal on the number row, not in the block header', async () => {
+  it('keeps the phone removal behind the number row\'s trailing menu and its confirm', async () => {
     const backend = patchedBackend({
       identifiers: [
         {
@@ -538,12 +539,31 @@ describe('AccountSettingsPage block consistency', () => {
     const phone = await screen.findByRole('region', {
       name: demoEnUS.account.rows.label.phone,
     })
-    const remove = await within(phone).findByRole('button', {
-      name: demoEnUS.account.action.delete,
+    // The number's actions are one overflow menu button on the row, the
+    // same form the email card's contact rows carry -- not an inline
+    // delete button.
+    const actions = await within(phone).findByRole('button', {
+      name: accountEnUS.identifiers.actionsAria.replace(
+        '{{value}}',
+        '+14155550123',
+      ),
     })
-    // The remove control belongs to the number's own action cell.
-    expect(remove.closest('td')).not.toBeNull()
-    expect(within(phone).getByRole('table')).toContainElement(remove)
+    expect(within(phone).getByRole('table')).toContainElement(actions)
+    // The row carries no separate inline delete button beside the menu.
+    expect(
+      within(phone).queryByRole('button', {
+        name: demoEnUS.account.action.delete,
+      }),
+    ).toBeNull()
+    const user = userEvent.setup()
+    await user.click(actions)
+    await user.click(
+      screen.getByRole('menuitem', {
+        name: demoEnUS.account.action.delete,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent(demoEnUS.account.phoneRemove.removeTitle)
   })
 
   it('gives block titles the card heading role above their row labels', async () => {
