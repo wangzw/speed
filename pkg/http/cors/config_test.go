@@ -2,16 +2,85 @@ package cors
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/vislake/speed/pkg/config"
+	jsonformat "github.com/vislake/speed/pkg/config/format/json"
+	filesource "github.com/vislake/speed/pkg/config/source/file"
+	"github.com/vislake/speed/pkg/core"
 )
 
 // policy assembles a one-endpoint configuration around one policy.
 func policy(p Policy) Config {
 	return Config{Endpoints: map[string]Policy{"public": p}}
+}
+
+// loadConfig loads a JSON primary source through the real loader and hands back
+// this module's section decoded from it. CORSTEST is a prefix no machine carries
+// variables under, so nothing outside a case steers the values.
+func loadConfig(t *testing.T, document string) Config {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+		t.Fatalf("writing the config document: %v", err)
+	}
+
+	reg := core.New()
+	reg.Register(jsonformat.Module())
+	reg.Register(filesource.Module())
+	reg.Register(core.Module{
+		Name:      "host",
+		Resources: []any{config.HostIdentity{Prefix: "CORSTEST", DefaultLocator: "file:" + path}},
+	})
+	reg.Register(Module())
+
+	reader, err := config.Load(t.Context(), reg, nil)
+	if err != nil {
+		t.Fatalf("loading the configuration: %v", err)
+	}
+	cfg, err := readConfig(reader)
+	if err != nil {
+		t.Fatalf("reading the configuration: %v", err)
+	}
+	return cfg
+}
+
+// TestTheEndpointsItemTakesThePrimarySourceAlone pins the origin declaration:
+// the endpoint table carries allow-origins, which decides who may make
+// cross-origin calls, so only the primary config source and the host defaults
+// document beneath it may give it. A container item declares the environment
+// explicitly when it wants it, so dropping OriginEnv is what closes the door.
+func TestTheEndpointsItemTakesThePrimarySourceAlone(t *testing.T) {
+	item, ok := schema().Items[endpointsKey]
+	if !ok {
+		t.Fatalf("the schema declares no %q item, so its origins are the default set", endpointsKey)
+	}
+	if item.Origins != config.OriginPrimary {
+		t.Errorf("the %q item takes the origins %v, want the primary source alone (%v)",
+			endpointsKey, item.Origins, config.OriginPrimary)
+	}
+}
+
+// TestAnEnvironmentVariableCannotAddAGuardedEndpoint is the other half: a
+// variable naming http.cors.endpoints does not add an endpoint, so a run whose
+// primary source guards none still fails with the required-item error rather
+// than accepting a policy written in the process environment. The loader reports
+// the variable as unclaimed on stderr; it does not read it.
+func TestAnEnvironmentVariableCannotAddAGuardedEndpoint(t *testing.T) {
+	t.Setenv("CORSTEST_HTTP__CORS__ENDPOINTS", `{"from-env":{"allow-origins":["https://env.example"]}}`)
+
+	cfg := loadConfig(t, `{}`)
+	if len(cfg.Endpoints) != 0 {
+		t.Errorf("the endpoint table reads %v, which a variable put there", cfg.Endpoints)
+	}
+	if err := cfg.validate(); !errors.Is(err, config.ErrMissingRequired) {
+		t.Fatalf("validating the decoded configuration gave %v, want ErrMissingRequired", err)
+	}
 }
 
 func TestAnEmptyEndpointSetIsRefused(t *testing.T) {
