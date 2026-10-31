@@ -22,10 +22,25 @@ type stance struct {
 
 // resolveEnablement turns the stances into the final verdict per module.
 //
-// Resolution only looks at exclusive delivery; several providers of a
-// capability nobody claims exclusively is the normal case. It runs on the
-// snapshot the stances form, in two steps, so the outcome does not depend on
-// traversal order:
+// A module states StateAuto, StateEnabled or StateDisabled. StateDisabled is
+// the module's own decision, taken from its configuration: it expects to sit
+// this run out, and the reason it gives travels unchanged into the verdict.
+// core reads that reason nowhere. It does not decide whether standing down was
+// the right answer, nor which absences are ordinary and which are mistakes: it
+// propagates the fact that the module is not running, and why as the module
+// said it, to the diagnostics and to everything that reasons about the run.
+//
+// A module that stood itself down delivers nothing this run, so it is no
+// provider for exclusive resolution: its claim is neither propagated against
+// nor adjudicated, and it cannot enable or disable a module beside it. A
+// capability whose only provider stood down leaves the enabled set without a
+// provider; dependency resolution reports that to whoever requires it, carrying
+// the stance and its reason into the report.
+//
+// For the modules still running, resolution looks only at exclusive delivery;
+// several providers of a capability nobody claims exclusively is the normal
+// case. It runs on the snapshot the stances form, in two steps, so the outcome
+// does not depend on traversal order:
 //
 //  1. propagation: for a contested capability with an explicitly enabled
 //     provider, the providers that claim it exclusively while stating
@@ -38,31 +53,28 @@ type stance struct {
 // shows up". A provider that never claimed exclusivity has nothing to restrain,
 // so propagation leaves it alone; disabling it too would let a doomed
 // exclusive default drag down the non-exclusive defaults beside it.
-//
-// Every stance here belongs to a module in the participating set, and such a
-// module has to start. A stance of StateDisabled is therefore refused rather
-// than honoured: the module is misusing the API, and the startup stops with that
-// named, where any other premise it cannot meet would stop it.
 func resolveEnablement(stances []stance) (map[string]Enablement, error) {
 	stances = slices.SortedFunc(slices.Values(stances), func(a, b stance) int {
 		return strings.Compare(a.module.Name, b.module.Name)
 	})
 
 	for _, s := range stances {
-		if s.state.State != StateDisabled {
+		if s.state.State != StateDisabled || s.state.Reason != "" {
 			continue
 		}
-		return nil, fmt.Errorf("%w: %q. A module "+
-			"taken in at run level must start, so it cannot stand itself down: when it cannot "+
-			"start — a missing setting, an unmet premise — it returns an error saying what is "+
-			"absent, and the startup fails with that. StateDisabled is not a stance; it is only "+
-			"the verdict resolution gives when a provider stands down over an exclusive claim",
-			ErrDisabledStance, s.module.Name)
+		return nil, fmt.Errorf("%w: module %q. The reason reaches the startup diagnostics "+
+			"and every module that requires one of its capabilities, so a module that stands "+
+			"itself down has to say why", ErrDisabledWithoutReason, s.module.Name)
 	}
 
+	// A module that stood itself down takes no part in exclusive delivery: it
+	// delivers nothing this run, so its claim is neither contested nor counted.
 	providers := make(map[reflect.Type][]stance)
 	var contested []reflect.Type
 	for _, s := range stances {
+		if s.state.State == StateDisabled {
+			continue
+		}
 		for _, ct := range declaredCapabilities(s.module) {
 			providers[ct] = append(providers[ct], s)
 		}
@@ -135,6 +147,12 @@ func resolveEnablement(stances []stance) (map[string]Enablement, error) {
 
 	final := make(map[string]Enablement, len(stances))
 	for _, s := range stances {
+		// A module's own decision comes first: resolution did not touch it,
+		// and its own reason is the fact the rest of the run reads.
+		if s.state.State == StateDisabled {
+			final[s.module.Name] = Enablement{State: StateDisabled, Reason: s.state.Reason}
+			continue
+		}
 		// Membership is the verdict, not the reason's content: a provider
 		// propagation stood down is disabled whatever its reason text turned
 		// out to be.

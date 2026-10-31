@@ -378,7 +378,9 @@ func (r *Registry) modulesOutside(participants []Module) (declarationsOnly, outs
 //
 // The stage guarantees no order within itself: a module only reads its own
 // configuration and states a stance, and a module that cannot start returns an
-// error here, which ends the advance before anything is constructed. No
+// error here, which ends the advance before anything is constructed. A module
+// that can run without an optional piece of its configuration states
+// StateDisabled instead, and resolution carries that fact and its reason on. No
 // module's New has run yet — the only instances to take up are the ones the host
 // supplied before the drive, which is how a module reads its own configuration
 // before stating anything.

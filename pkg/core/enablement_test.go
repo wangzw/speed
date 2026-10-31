@@ -191,53 +191,60 @@ func TestNonExclusiveDefaultAgainstExclusiveExplicitFails(t *testing.T) {
 	}
 }
 
-// TestStatedDisabledFailsTheStartup pins the one stance a module may not take.
-// A module a drive takes in at run level has to start: when it cannot start, it
-// returns an error from Prepare naming what is absent, and the startup stops
-// there. Stating StateDisabled would leave the same functionality absent behind
-// a successful exit, with the command tree no longer saying what runs — and the
-// enabled set a consumption point reads would shrink with the configuration.
-func TestStatedDisabledFailsTheStartup(t *testing.T) {
-	_, err := resolveEnablement([]stance{
+// TestStatedDisabledIsHonoured pins the stance the mechanism accepts: a module
+// that can run without an optional piece of its configuration states
+// StateDisabled with its reason, and resolution leaves it out of the enabled set
+// carrying that reason unchanged. core does not read the reason.
+func TestStatedDisabledIsHonoured(t *testing.T) {
+	final := mustResolve(t,
 		stated("running", StateAuto, ""),
-		stated("switched-off", StateDisabled, "not configured"),
-	})
-	if err == nil {
-		t.Fatal("resolution accepted a module stating StateDisabled")
-	}
-	for _, want := range []string{"switched-off", "stated StateDisabled", "returns an error"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q does not mention %q", err, want)
-		}
-	}
+		stated("switched-off", StateDisabled, "GitHub app credentials not configured"),
+	)
+	assertDisabled(t, final, "switched-off", "GitHub app credentials not configured")
+	assertEnabled(t, final, "running")
 }
 
-// TestStatedDisabledWithoutAReasonAlsoFails pins that the missing reason is not
-// what fails: the stance itself is refused, so a module stating it with a
-// perfectly good reason is refused too.
-func TestStatedDisabledWithoutAReasonAlsoFails(t *testing.T) {
+// TestStatedDisabledWithoutAReasonFails pins the one thing a self-disabled
+// stance owes the mechanism: the reason. It is the whole of what the
+// diagnostics and a dependent's failure can say about the absence, so an empty
+// one leaves both reports without the fact that makes them useful.
+func TestStatedDisabledWithoutAReasonFails(t *testing.T) {
 	_, err := resolveEnablement([]stance{
 		stated("silent", StateDisabled, ""),
 	})
-	if err == nil {
-		t.Fatal("resolution accepted a module stating StateDisabled with an empty reason")
+	if !errors.Is(err, ErrDisabledWithoutReason) {
+		t.Fatalf("resolution returned %v, want ErrDisabledWithoutReason", err)
 	}
 	if !strings.Contains(err.Error(), "silent") {
 		t.Fatalf("error %q does not name the module", err)
 	}
 }
 
-// TestStatedDisabledIsMatchable pins that the refused stance has a name a
-// caller can ask for. The failure is a class of its own -- a module misusing
-// the API rather than a premise it cannot meet -- so a host that tells the two
-// apart has to reach it through errors.Is.
-func TestStatedDisabledIsMatchable(t *testing.T) {
-	_, err := resolveEnablement([]stance{
-		stated("switched-off", StateDisabled, "not configured"),
-	})
-	if !errors.Is(err, ErrDisabledStance) {
-		t.Fatalf("resolution returned %v, want ErrDisabledStance", err)
-	}
+// TestStatedDisabledDeliversNothingToResolution pins that a module that stood
+// itself down takes no part in exclusive delivery: its exclusive claim neither
+// contests the capability nor fails adjudication beside another exclusive
+// provider. Reading it as a provider would turn this pair into
+// ErrExclusiveViolated, which is the failure the disabled module must not
+// cause.
+func TestStatedDisabledDeliversNothingToResolution(t *testing.T) {
+	final := mustResolve(t,
+		stated("off", StateDisabled, "not configured", exclusive((*cacheCap)(nil))),
+		stated("on", StateAuto, "", exclusive((*cacheCap)(nil))),
+	)
+	assertDisabled(t, final, "off", "not configured")
+	assertEnabled(t, final, "on")
+}
+
+// TestStatedDisabledIsNotStoodDownForAnotherProvider pins that resolution leaves
+// a module that already stood itself down alone: it keeps its own reason rather
+// than being rewritten with a resolution reason it never took part in.
+func TestStatedDisabledIsNotStoodDownForAnotherProvider(t *testing.T) {
+	final := mustResolve(t,
+		stated("off", StateDisabled, "not configured", exclusive((*cacheCap)(nil))),
+		stated("remote", StateEnabled, "", exclusive((*cacheCap)(nil))),
+	)
+	assertDisabled(t, final, "off", "not configured")
+	assertEnabled(t, final, "remote")
 }
 
 // TestAbsentPrepareIsAuto pins the zero value: a module without a Prepare

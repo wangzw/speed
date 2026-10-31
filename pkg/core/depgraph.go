@@ -322,6 +322,13 @@ func cycleError(nodes, ordered []string, edges map[string]map[string]bool) error
 // exclusively and the command named none of them, or a provider has no New
 // callback and the host supplied no instance for it.
 //
+// A disabled provider is one that stood itself down with its own reason or was
+// stood down in resolution. The report repeats the reason the verdict carries
+// and does not interpret it: either the capability was meant to be absent on
+// this run, in which case the requiring module's own configuration is the thing
+// to revisit, or the provider could not run and said why. A capability nobody
+// delivers at all is the other cause and reads differently.
+//
 // declarers are the modules this command included, notIncluded the ones it
 // left out. Reporting the second group as any of the other three gives an
 // instruction that does nothing: the module is not disabled, and it is not
@@ -336,8 +343,8 @@ func cycleError(nodes, ordered []string, edges map[string]map[string]bool) error
 // module builds no instance in any stage, so whether the command constructs it
 // late, includes it or takes it in at run level changes nothing: it is reported
 // for what is true of it at every moment, that its instance can only come from
-// the host, and only with the fix that supplies one. A declarer disabled by
-// resolution keeps the report of why it is disabled.
+// the host, and only with the fix that supplies one. A declarer disabled by its
+// own stance or by resolution keeps the report of why it is disabled.
 //
 // requiredBy is the module whose Requires went unmet, and from where it came.
 // Both are empty when the registry does not know them, which is the Resolve path:

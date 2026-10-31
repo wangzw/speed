@@ -99,19 +99,21 @@ func (r *Registry) Resources(t Token) []Resource[any] {
 	return out
 }
 
-// Enablement gives the verdict the registry reached for a module, not the
-// stance the module took: a provider that stood down in resolution reports
-// StateDisabled with the reason resolution gave. It reports false for a name
-// that was never registered, and for any name before resolution has run.
+// Enablement gives the verdict the registry reached for a module, not a live
+// reading of its stance. A module that stated StateDisabled reports it with the
+// reason the module gave; a provider resolution stood down reports StateDisabled
+// with the reason resolution gave. core repeats either reason as it received it.
+// It reports false for a name that was never registered, and for any name before
+// resolution has run.
 //
 // A registered module this drive left out of its participating set reports
 // StateDisabled with that as the reason. It is not running, which is what a
 // caller asking "is it running" needs. Why it is not running is a different
-// question and this query does not answer it: a resolution that stood the
-// module down, a module the command never asked for, and one it reached for
-// its declarations alone all arrive here as the same state. A mechanism
-// collecting declarations filters by its own domain instead, and
-// Participating and Declaring are what it composes.
+// question and this query does not answer it: a module that stood itself down,
+// a resolution that stood the module down, a module the command never asked
+// for, and one it reached for its declarations alone all arrive here as the same
+// state. A mechanism collecting declarations filters by its own domain instead,
+// and Participating and Declaring are what it composes.
 //
 // Startup diagnostics are written to os.Stderr and the host cannot redirect
 // them, since handing in a sink would need either a Run parameter or a
@@ -235,8 +237,10 @@ func (r *Registry) nothingBuiltLocked() string {
 }
 
 // splitDeclarersLocked divides the modules declaring a capability by what this
-// drive made of them: the ones it runs, the ones it reached for their
-// declarations alone, and the ones it did not take in at all.
+// drive made of them: the ones it took in at run level, the ones it reached for
+// their declarations alone, and the ones it did not take in at all. The first
+// group still includes a module that stood itself down or was stood down in
+// resolution; the caller reads the enablement verdict to tell those apart.
 //
 // The middle group is the one a report has to name separately. Such a module
 // was taken in, so saying it was not is false and the fix that reading suggests

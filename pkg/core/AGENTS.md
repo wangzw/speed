@@ -28,6 +28,14 @@ adding a callback or a declaration seat.
   strictly ordered and callbacks within a stage run one at a time. How far
   a drive advances is a parameter of that drive; the order of the stages it
   does advance through is not.
+- **A module decides whether it runs; core decides nothing about why.** A
+  module that states `StateDisabled` with a reason is out of the enabled
+  set for that run. Core propagates that fact and the reason as given — to
+  the diagnostics, the `Enablement` query, and any dependent's failure —
+  and never interprets it: it does not tell an optional configuration's
+  absence from a mistake, and no decision may read the reason text. Whether
+  a missing item is optional is the module's own judgement, expressed by
+  returning `StateDisabled` or an error from `Prepare`.
 - **An instance the host supplies is a module's instance, not a second way
   into the registry.** `Supply` assigns it to one registered module and it
   goes into the same instance table as a constructed one, so lookups,

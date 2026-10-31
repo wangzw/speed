@@ -31,7 +31,7 @@
 | [命令树由宿主静态定义，模块按层纳入](adr-command-tree.md) |
 | [驱动深度由命令决定，释放责任不随之转移](adr-lifecycle-drive.md) |
 | [纳入分为运行级与静态级，人机界面跟运行级走](adr-command-tree-inclusion.md) |
-| [被纳入的模块必须启动，不能启动即故障](adr-module-enablement.md) |
+| [启用分两期，运行期的取舍归模块自己](adr-module-enablement.md) |
 | [注册表有两个驱动入口，`Run` 是 `Drive` 的一种取值](adr-drive-entry.md) |
 | [停机时入口先于其余模块停止](adr-lifecycle-shutdown-order.md) |
 

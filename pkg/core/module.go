@@ -44,15 +44,20 @@ type Module struct {
 	// one that reads it back.
 	Resources []any
 
-	// Prepare states the module's stance on its exclusive claims, judging by
-	// its own configuration. The stage runs for the modules this drive
-	// includes and guarantees no order within itself: no module's New has
-	// run at this point, and the only instances to take up are the ones the
-	// host supplied before the drive began. A module that cannot start — a
-	// setting is missing, a premise does not hold — returns an error saying
-	// what is absent; being taken in at run level, it has no way to stand
-	// itself down. The stance of a call that failed is not read, so a
-	// failing Prepare returns the zero Enablement with its error.
+	// Prepare states the module's stance, judging by its own configuration.
+	// The stage runs for the modules this drive includes and guarantees no
+	// order within itself: no module's New has run at this point, and the
+	// only instances to take up are the ones the host supplied before the
+	// drive began.
+	//
+	// A module that cannot start — a setting has no usable value, a premise
+	// does not hold — returns an error saying what is absent, and the startup
+	// fails with it. A module that can run without an optional piece of its
+	// configuration states StateDisabled with a reason, and sits this run out:
+	// the reason is a fact core propagates to the diagnostics and to any
+	// module that requires it. Which absences those are is the module's
+	// judgement, not core's. The stance of a call that failed is not read, so
+	// a failing Prepare returns the zero Enablement with its error.
 	//
 	// Prepare does not run for a module the host supplied an instance for.
 	// Its stance is fixed at StateEnabled, as though its Prepare returned
@@ -142,17 +147,18 @@ type Provision struct {
 	Exclusive bool
 }
 
-// Enablement is a module's stance on its exclusive claims in Prepare, and after
-// resolution the registry's verdict on it.
+// Enablement is a module's stance in Prepare, and after resolution the
+// registry's verdict on it.
 type Enablement struct {
 	// State is the stance in Prepare, or the final verdict when read back
-	// from the registry. A module states StateAuto or StateEnabled; only the
-	// registry gives StateDisabled.
+	// from the registry. A module states any of the three; the registry
+	// reaches the same three as verdicts.
 	State EnablementState
-	// Reason says why the module is not running, and the registry fills it
-	// in with the verdict. It reaches the startup diagnostics, which is the
-	// only defence against a process that starts up missing a piece of
-	// functionality unnoticed.
+	// Reason says why the module is not running. A module that states
+	// StateDisabled supplies it, and it travels unchanged into the verdict;
+	// the registry fills it in when resolution stands a module down. It
+	// reaches the startup diagnostics, which is the only defence against a
+	// process that starts up missing a piece of functionality unnoticed.
 	Reason string
 }
 
@@ -168,11 +174,13 @@ const (
 	// the host supplied an instance for, whose Prepare does not run to state
 	// another.
 	StateEnabled
-	// StateDisabled is not a stance a module may state: one taken in at run
-	// level must start, so stating this fails the startup. It is the verdict
-	// resolution gives when a provider stands down over an exclusive claim,
-	// and what Enablement reports for a module outside a drive's participating
-	// set.
+	// StateDisabled stands the module down for this run, with the reason the
+	// module gives. The module expects to run without the optional piece of
+	// configuration it names, so its absence is not a startup failure; a
+	// setting with no usable value is reported as a Prepare error instead.
+	// The registry also gives this verdict when resolution stands a provider
+	// down over an exclusive claim, and when a registered module is outside a
+	// drive's participating set.
 	StateDisabled
 )
 

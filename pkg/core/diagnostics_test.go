@@ -33,9 +33,9 @@ func TestDiagnosticsListsNotEnabledModuleWithItsReason(t *testing.T) {
 }
 
 // TestDiagnosticsListsResolutionDisabledModuleWithResolutionReason pins that
-// the reason shown is the one resolution gave. Resolution is the only source of
-// it: a module taken in at run level has to start, so standing down over an
-// exclusive claim is the one way a participant misses the enabled set.
+// the reason shown is the one the verdict carries. A participant misses the
+// enabled set either by standing itself down with its own reason or by losing
+// resolution with the reason resolution gave; this is the second.
 func TestDiagnosticsListsResolutionDisabledModuleWithResolutionReason(t *testing.T) {
 	final := mustResolve(t,
 		stated("memory", StateAuto, "", exclusive((*cacheCap)(nil))),
@@ -50,6 +50,25 @@ func TestDiagnosticsListsResolutionDisabledModuleWithResolutionReason(t *testing
 	}
 	if !strings.Contains(lines[0], "already has an explicitly enabled provider") {
 		t.Fatalf("line %q does not carry the reason resolution gave", lines[0])
+	}
+}
+
+// TestDiagnosticsCarriesTheReasonAModuleStated pins the self-disabled side: the
+// line shows the reason the module gave, unchanged, because that is the fact
+// core propagates.
+func TestDiagnosticsCarriesTheReasonAModuleStated(t *testing.T) {
+	final := mustResolve(t,
+		stated("off", StateDisabled, "GitHub app credentials not configured"),
+		stated("on", StateAuto, ""),
+	)
+	lines := diagnosticLines(t, final)
+	if len(lines) != 1 {
+		t.Fatalf("diagnostics wrote %d lines, want only the module that stood itself down: %v", len(lines), lines)
+	}
+	for _, want := range []string{"off", "GitHub app credentials not configured"} {
+		if !strings.Contains(lines[0], want) {
+			t.Fatalf("line %q does not carry %q", lines[0], want)
+		}
 	}
 }
 

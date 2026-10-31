@@ -573,34 +573,78 @@ func TestUnknownParticipantIsAnError(t *testing.T) {
 	}
 }
 
-// TestAParticipantStatingDisabledFailsTheDrive pins the rule through the
-// driver rather than through resolution alone: a module taken in at run level
-// has to start, so one that states StateDisabled stops the startup with that
-// named instead of quietly leaving the command one module short.
-func TestAParticipantStatingDisabledFailsTheDrive(t *testing.T) {
+// TestAParticipantStatingDisabledSitsOutTheDrive pins the runtime enablement
+// mechanism through the driver: a module that states StateDisabled with a
+// reason leaves the enabled set without failing the startup, the diagnostic
+// carries the reason the module gave, and a module beside it starts normally.
+func TestAParticipantStatingDisabledSitsOutTheDrive(t *testing.T) {
+	const reason = "GitHub app credentials not configured"
 	p := &probe{}
 	reg := core.New()
 	off := preparing(p, "switched-off")
 	off.Prepare = func(context.Context, *core.Registry) (core.Enablement, error) {
-		return core.Enablement{State: core.StateDisabled, Reason: "no connection address configured"}, nil
+		return core.Enablement{State: core.StateDisabled, Reason: reason}, nil
 	}
 	register(reg, preparing(p, "running"), off)
 
-	err := driveToEnd(t, reg, core.Drive{
-		Depth:        core.StageServe,
-		Participants: []string{"running", "switched-off"},
-		Action:       noAction,
+	var err error
+	text := captureStderr(t, func() {
+		err = driveToEnd(t, reg, core.Drive{
+			Depth:        core.StageServe,
+			Participants: []string{"running", "switched-off"},
+			Action:       noAction,
+		})
 	})
-	if err == nil {
-		t.Fatal("a drive accepted a participant that stated StateDisabled")
+	if err != nil {
+		t.Fatalf("Drive returned %v, want the module to sit out the run", err)
 	}
-	for _, want := range []string{"switched-off", "stated StateDisabled"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("Drive returned %q, which does not mention %q", err, want)
-		}
+	if !strings.Contains(text, "switched-off") || !strings.Contains(text, reason) {
+		t.Errorf("stderr %q does not report the disabled module and the reason it gave", text)
 	}
 	if p.has("new switched-off") {
-		t.Errorf("the module that could not start was constructed anyway: %v", p.snapshot())
+		t.Errorf("the module that stood itself down was constructed: %v", p.snapshot())
+	}
+	if !p.has("new running") {
+		t.Errorf("the module beside it did not start: %v", p.snapshot())
+	}
+	if got, ok := reg.Enablement("switched-off"); !ok || got.State != core.StateDisabled || got.Reason != reason {
+		t.Errorf("Enablement reported %+v/%v, want the module's own disabled verdict and reason", got, ok)
+	}
+}
+
+// TestRequiringADisabledModuleNamesItAndItsReason pins what a dependent sees
+// when a module it requires stood itself down: the startup fails over the unmet
+// requirement, and the failure names both the dependency and the reason it
+// gave. It is an error rather than a silent skip because the dependent cannot
+// run without the capability.
+func TestRequiringADisabledModuleNamesItAndItsReason(t *testing.T) {
+	const reason = "no connection address configured"
+	p := &probe{}
+	reg := core.New()
+	provider := preparing(p, "provider")
+	provider.Provides = []core.Provision{{Token: (*Cache)(nil)}}
+	provider.Prepare = func(context.Context, *core.Registry) (core.Enablement, error) {
+		return core.Enablement{State: core.StateDisabled, Reason: reason}, nil
+	}
+	consumer := preparing(p, "consumer")
+	consumer.Requires = []core.Requirement{{Token: (*Cache)(nil)}}
+	register(reg, provider, consumer)
+
+	err := driveToEnd(t, reg, core.Drive{
+		Depth:        core.StageServe,
+		Participants: []string{"provider", "consumer"},
+		Action:       noAction,
+	})
+	if !errors.Is(err, core.ErrMissingProvider) {
+		t.Fatalf("Drive returned %v, want ErrMissingProvider", err)
+	}
+	for _, want := range []string{`"provider"`, reason, `"consumer"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name %q", err, want)
+		}
+	}
+	if p.has("new consumer") || p.has("new provider") {
+		t.Errorf("a module was constructed before the unmet requirement was reported: %v", p.snapshot())
 	}
 }
 
@@ -609,10 +653,10 @@ func TestAParticipantStatingDisabledFailsTheDrive(t *testing.T) {
 // not running is the surprise worth reporting, while one the command never
 // listed is the host's own writing.
 //
-// Standing down is the only way a participant misses the enabled set, now that
-// a module taken in at run level has to start. The pair below is that case: an
-// exclusive default that states StateAuto, and an exclusive implementation
-// beside it that states StateEnabled, so propagation stands the default down.
+// A participant misses the enabled set either by standing itself down or by
+// losing resolution. This case is the second: an exclusive default that states
+// StateAuto, and an exclusive implementation beside it that states StateEnabled,
+// so propagation stands the default down.
 func TestDisabledParticipantIsDiagnosed(t *testing.T) {
 	p := &probe{}
 	reg := core.New()

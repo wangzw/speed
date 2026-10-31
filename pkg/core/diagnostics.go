@@ -13,12 +13,14 @@ import (
 const diagnosticPrefix = "core: "
 
 // writeDiagnostics lists every module resolution kept out of the enabled set,
-// one line each, in module-name order, with the reason resolution gave.
+// one line each, in module-name order, with the reason its verdict carries.
 //
-// Resolution is the only thing that can leave a module out of that set: a
-// module a drive takes in at run level must start, so a provider stands down
-// only when another provider of the same exclusive capability is explicitly
-// enabled.
+// A module can miss the enabled set in two ways, and both carry a reason: it
+// stood itself down with one of its own, or resolution stood a provider down
+// over an exclusive claim. core repeats the reason it was given and does not
+// interpret it; which absences are ordinary and which are mistakes is the
+// module's judgement, and a dependent that cannot run without the module gets
+// the same reason in its failure.
 //
 // A process that starts up missing a piece of functionality with nobody
 // noticing is the most dangerous failure of configuration-driven assembly, and
