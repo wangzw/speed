@@ -2531,16 +2531,16 @@ describe('IdentifiersSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    // The phone is a sign-in way and a contact, so its switch renders once in
-    // each list; either occurrence writes the same flag.
-    const switches = await screen.findAllByRole('switch', {
+    // The phone is a sign-in way and a contact, so it appears in both lists;
+    // its switch renders once, in the contacts list, so one record never
+    // offers two controls for the same flag.
+    const switchControl = await screen.findByRole('switch', {
       name: zhCN.identifiers.axes.signInAria.replace(
         '{{value}}',
         '+14155550123',
       ),
     })
-    expect(switches).toHaveLength(2)
-    await user.click(switches[0] as HTMLElement)
+    await user.click(switchControl)
 
     await waitFor(() => expect(writes).toBe(1))
     const alert = await screen.findByRole('alert')
@@ -2871,9 +2871,10 @@ describe('IdentifiersSection', () => {
     )
   })
 
-  it('shows the no-selection state in the sign-in email select when no address signs in', async () => {
-    // No address is a sign-in way, so the select must not show the first
-    // proved address as if the account had chosen it.
+  it('states that email sign-in is off when no address is chosen, with no select', async () => {
+    // No address is a sign-in way, so the group shows its off note instead of
+    // a picker that would display the first proved address as if the account
+    // had chosen it.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -2900,11 +2901,17 @@ describe('IdentifiersSection', () => {
       <IdentifiersSection session={rig.session} axis="signIn" />,
     )
 
-    const combo = await screen.findByRole('combobox', {
-      name: zhCN.identifiers.kind.email,
-    })
-    expect(combo).toHaveTextContent(zhCN.identifiers.usage.emailNone)
-    expect(combo).not.toHaveTextContent('ada@x.test')
+    expect(
+      await screen.findByText(zhCN.identifiers.usage.emailNone),
+    ).toBeTruthy()
+    expect(
+      screen.queryByRole('combobox', {
+        name: zhCN.identifiers.kind.email,
+      }),
+    ).toBeNull()
+    expect(
+      screen.getByRole('button', { name: zhCN.identifiers.action.enable }),
+    ).toBeTruthy()
   })
 
   it('uses the username copy for an empty username group on the sign-in axis', async () => {
@@ -3078,6 +3085,302 @@ describe('IdentifiersSection', () => {
     ).toBe(true)
     expect(aPuts).toHaveLength(1)
     expect(aPuts[0]?.body).toEqual({ sign_in: false })
+    await waitFor(() =>
+      expect(
+        screen.getByRole('combobox', { name: zhCN.identifiers.kind.email }),
+      ).toHaveTextContent('b@x.test'),
+    )
+  })
+
+  it('offers no enable/disable action on the username group', async () => {
+    // A username is always a login name and the server refuses a sign-in flag
+    // change on it, so its group states the name and offers no switch; the
+    // email group keeps the section's one group action.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-user',
+                kind: 'username',
+                value: 'ada',
+                proven: false,
+                verified_at: '',
+                verified_via: 'self',
+              }),
+              identifier({
+                id: 'id-email',
+                kind: 'email',
+                value: 'ada@x.test',
+                proven: true,
+                sign_in: true,
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} axis="signIn" />,
+    )
+
+    const usernameHeading = await screen.findByRole('heading', {
+      name: zhCN.identifiers.kind.username,
+    })
+    // The heading's own row is the whole username group: no action shares it.
+    const usernameRow = usernameHeading.parentElement
+    expect(usernameRow).not.toBeNull()
+    expect(within(usernameRow as HTMLElement).queryByRole('button')).toBeNull()
+
+    expect(
+      screen.getByRole('button', { name: zhCN.identifiers.action.disable }),
+    ).toBeTruthy()
+  })
+
+  it('turns email sign-in off from the group switch and states that it is off', async () => {
+    const writes: unknown[] = []
+    let signIn = true
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-email',
+                kind: 'email',
+                value: 'ada@x.test',
+                proven: true,
+                sign_in: signIn,
+              }),
+            ],
+          }),
+        )
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-email'
+      ) {
+        writes.push(call.body)
+        signIn = (call.body as { sign_in?: boolean }).sign_in === true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} axis="signIn" />,
+    )
+    const user = userEvent.setup()
+
+    const combo = await screen.findByRole('combobox', {
+      name: zhCN.identifiers.kind.email,
+    })
+    expect(combo).toHaveTextContent('ada@x.test')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.action.disable }),
+    )
+
+    await waitFor(() => expect(writes).toEqual([{ sign_in: false }]))
+    // The picker gives way to the off note; there is nothing left to choose.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('combobox', {
+          name: zhCN.identifiers.kind.email,
+        }),
+      ).toBeNull(),
+    )
+    expect(screen.getByText(zhCN.identifiers.usage.emailNone)).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: zhCN.identifiers.action.enable }),
+    ).toBeTruthy()
+  })
+
+  it('turns email sign-in back on with the address the same visit switched off', async () => {
+    // The default contact is b, but the viewer switched a off last, so the
+    // group restores the viewer's own last choice instead of the fallback.
+    let aSignIn = true
+    let bSignIn = false
+    const writes: { readonly id: string; readonly body: unknown }[] = []
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-b',
+                kind: 'email',
+                value: 'b@x.test',
+                proven: true,
+                sign_in: bSignIn,
+                default_contact: true,
+              }),
+              identifier({
+                id: 'id-a',
+                kind: 'email',
+                value: 'a@x.test',
+                proven: true,
+                sign_in: aSignIn,
+              }),
+            ],
+          }),
+        )
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-a'
+      ) {
+        writes.push({ id: 'id-a', body: call.body })
+        aSignIn = (call.body as { sign_in?: boolean }).sign_in === true
+        return new Response(null, { status: 204 })
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-b'
+      ) {
+        writes.push({ id: 'id-b', body: call.body })
+        bSignIn = (call.body as { sign_in?: boolean }).sign_in === true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} axis="signIn" />,
+    )
+    const user = userEvent.setup()
+
+    expect(
+      await screen.findByRole('combobox', {
+        name: zhCN.identifiers.kind.email,
+      }),
+    ).toHaveTextContent('a@x.test')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.action.disable }),
+    )
+    await waitFor(() =>
+      expect(screen.queryByRole('combobox')).toBeNull(),
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.action.enable }),
+    )
+
+    await waitFor(() => expect(aSignIn).toBe(true))
+    expect(bSignIn).toBe(false)
+    expect(writes).toEqual([
+      { id: 'id-a', body: { sign_in: false } },
+      { id: 'id-a', body: { sign_in: true } },
+    ])
+    await waitFor(() =>
+      expect(
+        screen.getByRole('combobox', { name: zhCN.identifiers.kind.email }),
+      ).toHaveTextContent('a@x.test'),
+    )
+  })
+
+  it('falls back to the default contact when the switched-off address is gone', async () => {
+    // The visit switched a off, and a is no longer on the account when the
+    // group is turned back on: the default contact b is restored, not the
+    // first proved address c.
+    let includeA = true
+    let aSignIn = true
+    let bSignIn = false
+    const cSignIn = false
+    const writes: { readonly id: string; readonly body: unknown }[] = []
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-c',
+                kind: 'email',
+                value: 'c@x.test',
+                proven: true,
+                sign_in: cSignIn,
+              }),
+              identifier({
+                id: 'id-b',
+                kind: 'email',
+                value: 'b@x.test',
+                proven: true,
+                sign_in: bSignIn,
+                default_contact: true,
+              }),
+              ...(includeA
+                ? [
+                    identifier({
+                      id: 'id-a',
+                      kind: 'email',
+                      value: 'a@x.test',
+                      proven: true,
+                      sign_in: aSignIn,
+                    }),
+                  ]
+                : []),
+            ],
+          }),
+        )
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-a'
+      ) {
+        writes.push({ id: 'id-a', body: call.body })
+        aSignIn = (call.body as { sign_in?: boolean }).sign_in === true
+        // The account lost the address between the write and the re-read.
+        includeA = false
+        return new Response(null, { status: 204 })
+      }
+      if (
+        call.method === 'PUT' &&
+        call.path === '/api/v1/auth/identifiers/id-b'
+      ) {
+        writes.push({ id: 'id-b', body: call.body })
+        bSignIn = (call.body as { sign_in?: boolean }).sign_in === true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} axis="signIn" />,
+    )
+    const user = userEvent.setup()
+
+    expect(
+      await screen.findByRole('combobox', {
+        name: zhCN.identifiers.kind.email,
+      }),
+    ).toHaveTextContent('a@x.test')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.action.disable }),
+    )
+    await waitFor(() =>
+      expect(screen.getByText(zhCN.identifiers.usage.emailNone)).toBeTruthy(),
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.action.enable }),
+    )
+
+    await waitFor(() => expect(bSignIn).toBe(true))
+    expect(cSignIn).toBe(false)
+    expect(writes).toEqual([
+      { id: 'id-a', body: { sign_in: false } },
+      { id: 'id-b', body: { sign_in: true } },
+    ])
     await waitFor(() =>
       expect(
         screen.getByRole('combobox', { name: zhCN.identifiers.kind.email }),

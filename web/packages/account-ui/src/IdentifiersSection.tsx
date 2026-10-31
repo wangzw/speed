@@ -24,28 +24,36 @@
  * profile marks `sign_in`; the contacts list holds every registered email
  * address and phone number, because registering an address is what makes it
  * a contact -- the position is not a separate choice. The same record appears
- * in both lists while it is also a sign-in way; the sign-in switch renders in
- * every list the record appears in, so the two views stay in step. A username
- * is always a sign-in way, has no contact position, and is never in the
- * contacts list. A host that splits the surface with `axis` gets the same
- * controls in the view it shows: the contact axis's own table carries the
- * default-contact choice and the row actions on each address, and the
- * sign-in axis's email picker is one choice out of the proved addresses,
- * written as one step-up action so a won challenge lands the same end state
- * (the pre-chosen address turned off and the new one turned on) rather than
- * replaying only one of the row writes.
+ * in both lists while it is also a sign-in way, but its sign-in switch
+ * renders only in the list canonical for the record (the contacts list), so
+ * one address never offers two controls for the same flag; the other
+ * occurrence still reads the same state. A username is always a sign-in way,
+ * has no contact position, and is never in the contacts list. A host that
+ * splits the surface with `axis` gets the same controls in the view it
+ * shows: the contact axis's own table carries the default-contact choice and
+ * the row actions on each address, and the sign-in axis groups the
+ * identifiers by kind. A username is a login name by definition, so its group
+ * offers no switch; the phone group keeps the one-row switch; the email
+ * group's switch states whether the account uses email to sign in. While it
+ * is on, a picker chooses one of the proved addresses, written as one
+ * step-up action so a won challenge lands the same end state (the pre-chosen
+ * address turned off and the new one turned on) rather than replaying only
+ * one of the row writes. While it is off, the picker gives way to a note, and
+ * turning it back on restores the address this visit switched off, then the
+ * default contact (the address the account falls back to), then the earliest
+ * proved address, through that same protected write.
  *
- * An email or phone row carries one switch, PUT
+ * An email or phone switch is PUT
  * /api/v1/auth/identifiers/{id} (authn.login.updateIdentifier) with
  * `sign_in`: turning it on moves the value into the sign-in ways list, and
  * turning it off only leaves that list (the value stays a contact). Only a
  * proved value offers the switch (REQ-account-065); an unproved address is
  * still a contact, because registering it establishes that position. The
- * sign-in axis and the default contact need a fresh authentication, so a
- * refusal opens the step-up dialog like the section's other gated writes.
- * Putting a proved value into sign-in rotates this session's credential, so
- * that write runs inside an identity-transition window; taking it out does
- * not.
+ * sign-in axis's group switch and the default contact need a fresh
+ * authentication, so a refusal opens the step-up dialog like the section's
+ * other gated writes. Putting a proved value into sign-in rotates this
+ * session's credential, so that write runs inside an identity-transition
+ * window; taking it out does not.
  *
  * A proved email address also offers the default-contact choice, a radio
  * that sets `default_contact: true` on the chosen row: the server clears the
@@ -531,6 +539,14 @@ export function IdentifiersSection({
   const proofBlocked = needsProof && human.proof === null
 
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
+  // The address whose email sign-in this visit switched off. Turning the
+  // group back on restores it before falling back to the default contact, so
+  // the viewer's own last choice wins. Component-local memory: it is not
+  // persisted, and it never outlives the mount.
+  const [lastDisabledSignInEmail, setLastDisabledSignInEmail] = useState<{
+    readonly id: string
+    readonly value: string
+  } | null>(null)
   // The section's one feedback scope: removal, add and both verification
   // flows share this slot, so the section shows at most one result at a time
   // and one failure never stands beside another.
@@ -1368,7 +1384,7 @@ export function IdentifiersSection({
                 control={<Switch size="small" checked disabled />}
                 label={t('identifiers.axes.signIn')}
               />
-            ) : axis !== 'contact' && verified ? (
+            ) : axis !== 'contact' && canonical && verified ? (
               <FormControlLabel
                 control={
                   <Switch
@@ -1749,13 +1765,30 @@ export function IdentifiersSection({
                     groupRows[0] ??
                     null)
                   : null
-              // The address the account has actually chosen to sign in with.
-              // It is empty when no address is a sign-in way, so the select
-              // shows its no-selection state rather than claiming a choice the
-              // account has not made (the header's toggle may still target a
-              // candidate to turn on).
-              const selectedSignInEmail =
-                groupRows.find((row) => row.sign_in === true)?.value ?? ''
+              // The email group's switch states whether the account uses an
+              // address to sign in. The chosen address is the first row the
+              // profile marks `sign_in`; the picker offers the proved
+              // addresses, plus the chosen one itself while the profile still
+              // carries a sign-in choice the old behaviour made on an
+              // unproved row.
+              const emailSignInRow =
+                group.kind === 'email'
+                  ? (groupRows.find(
+                      (row) => row.id != null && row.sign_in === true,
+                    ) ?? null)
+                  : null
+              const provenEmails =
+                group.kind === 'email'
+                  ? groupRows.filter(
+                      (row) => row.proven === true && row.id != null,
+                    )
+                  : []
+              const emailOptions =
+                group.kind === 'email'
+                  ? groupRows.filter(
+                      (row) => row.proven === true || row.sign_in === true,
+                    )
+                  : []
               // The sign-in axis renders its lists without headings (the host's
               // own block names them), so it must not point aria-labelledby at
               // an id no element carries.
@@ -1778,7 +1811,15 @@ export function IdentifiersSection({
                     </Typography>
                   )}
                   {axis === 'signIn' ? (
-                    <Box>
+                    <Box
+                      role="group"
+                      aria-labelledby={headingId}
+                      aria-describedby={
+                        group.kind === 'email' && emailSignInRow === null
+                          ? `${headingId}-off`
+                          : undefined
+                      }
+                    >
                       <Box
                         sx={{
                           display: 'flex',
@@ -1794,7 +1835,66 @@ export function IdentifiersSection({
                         >
                           {t(group.title)}
                         </Typography>
-                        {signInRow?.id != null ? (
+                        {group.kind === 'username' ? null : group.kind ===
+                          'email' ? (
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            disabled={
+                              writeBusy ||
+                              addBusy ||
+                              (emailSignInRow === null &&
+                                provenEmails.length === 0)
+                            }
+                            aria-describedby={
+                              emailSignInRow === null
+                                ? `${headingId}-off`
+                                : undefined
+                            }
+                            sx={{ marginLeft: 'auto' }}
+                            onClick={() => {
+                              if (emailSignInRow !== null) {
+                                setLastDisabledSignInEmail({
+                                  id: emailSignInRow.id,
+                                  value: emailSignInRow.value ?? '',
+                                })
+                                void setFlags(
+                                  emailSignInRow.id,
+                                  emailSignInRow.value ?? '',
+                                  { signIn: false },
+                                )
+                                return
+                              }
+                              const remembered =
+                                lastDisabledSignInEmail === null
+                                  ? undefined
+                                  : provenEmails.find(
+                                      (row) =>
+                                        row.id ===
+                                          lastDisabledSignInEmail.id ||
+                                        (row.value ?? '') ===
+                                          lastDisabledSignInEmail.value,
+                                    )
+                              const target =
+                                remembered ??
+                                provenEmails.find(
+                                  (row) => row.default_contact === true,
+                                ) ??
+                                provenEmails[0]
+                              if (target === undefined) {
+                                return
+                              }
+                              setLastDisabledSignInEmail(null)
+                              void setFlags(target.id, target.value ?? '', {
+                                signIn: true,
+                              })
+                            }}
+                          >
+                            {emailSignInRow === null
+                              ? t('identifiers.action.enable')
+                              : t('identifiers.action.disable')}
+                          </Button>
+                        ) : signInRow?.id != null ? (
                           <Button
                             variant="outlined"
                             size="small"
@@ -1815,49 +1915,44 @@ export function IdentifiersSection({
                         ) : null}
                       </Box>
                       {group.kind === 'email' ? (
-                        <Select
-                          size="small"
-                          value={selectedSignInEmail}
-                          displayEmpty
-                          disabled={writeBusy || addBusy}
-                          slotProps={{
-                            input: {
-                              'aria-label': t('identifiers.kind.email'),
-                            },
-                          }}
-                          onChange={(event) => {
-                            const chosen = event.target.value
-                            // The whole selection is one action: every row
-                            // that reaches the chosen end state is written
-                            // together, so a step-up replay lands that same
-                            // state instead of only the first row.
-                            const changes = groupRows
-                              .filter((row) => row.id != null)
-                              .map((row) => ({
-                                id: row.id as string,
-                                value: row.value ?? '',
-                                signIn: (row.value ?? '') === chosen,
-                              }))
-                              .filter((change) => {
-                                const row = groupRows.find(
-                                  (candidate) => candidate.id === change.id,
-                                )
-                                return (row?.sign_in === true) !== change.signIn
-                              })
-                            if (changes.length > 0) {
-                              void selectSignInEmail(changes)
-                            }
-                          }}
-                          sx={{ mt: 1, minWidth: '18rem' }}
-                        >
-                          {selectedSignInEmail === '' ? (
-                            <MenuItem value="">
-                              {t('identifiers.usage.emailNone')}
-                            </MenuItem>
-                          ) : null}
-                          {groupRows
-                            .filter((row) => row.proven === true)
-                            .map((row) => (
+                        emailSignInRow !== null ? (
+                          <Select
+                            size="small"
+                            value={emailSignInRow.value ?? ''}
+                            disabled={writeBusy || addBusy}
+                            slotProps={{
+                              input: {
+                                'aria-label': t('identifiers.kind.email'),
+                              },
+                            }}
+                            onChange={(event) => {
+                              const chosen = event.target.value
+                              // The whole selection is one action: every row
+                              // that reaches the chosen end state is written
+                              // together, so a step-up replay lands that same
+                              // state instead of only the first row.
+                              const changes = groupRows
+                                .filter((row) => row.id != null)
+                                .map((row) => ({
+                                  id: row.id as string,
+                                  value: row.value ?? '',
+                                  signIn: (row.value ?? '') === chosen,
+                                }))
+                                .filter((change) => {
+                                  const row = groupRows.find(
+                                    (candidate) => candidate.id === change.id,
+                                  )
+                                  return (
+                                    (row?.sign_in === true) !== change.signIn
+                                  )
+                                })
+                              if (changes.length > 0) {
+                                void selectSignInEmail(changes)
+                              }
+                            }}
+                            sx={{ mt: 1, minWidth: '18rem' }}
+                          >
+                            {emailOptions.map((row) => (
                               <MenuItem
                                 key={row.id ?? row.value}
                                 value={row.value ?? ''}
@@ -1865,7 +1960,17 @@ export function IdentifiersSection({
                                 {row.value ?? ''}
                               </MenuItem>
                             ))}
-                        </Select>
+                          </Select>
+                        ) : (
+                          <Typography
+                            id={`${headingId}-off`}
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ mt: 0.5 }}
+                          >
+                            {t('identifiers.usage.emailNone')}
+                          </Typography>
+                        )
                       ) : (
                         <Typography
                           variant="body2"
