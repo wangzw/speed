@@ -447,6 +447,7 @@ NameID 里夹带 XML 注释会被截断是一类已知的 SAML 攻击，gosaml2 
 通用事务（`state`、PKCE、`nonce`、授权码交换、ID 令牌校验）写在 [design-authn-login](design-authn-login.md) 的「社交登录与企业 OIDC 的共同事务」一节，本节只写企业 IdP 特有的部分：
 
 - 每个提供方一份缓存的 `*oidc.Provider` 与 `*oauth2.Config`，见「进程内缓存」；`client_secret` 由 `SSOProviders.Secret` 取。
+- 是否交付由 `authn.sso.oidc.enabled` 决定，缺省关闭。提供方是运行期的行，注册表为空不表示部署不要企业登录，所以判据只能来自显式开关；开启后网关公开地址与出口项照常校验，不合法即启动失败。增删提供方不改变这项开关。
 - 回调地址 `public-url + B/callback/<提供方标识>`；每个提供方的路径不同，把 A 的回跳投给 B 因路径不同而不可能。
 - `iss` 必须逐字等于 `config.issuer`；`aud` 含 `client_id`；多受众时 `azp` 等于 `client_id`；`nonce`、`state`、PKCE 都发都校验；`sub` 非空。
 - 不调 userinfo，只取 ID 令牌里的声明；邮箱的 `EmailVerified` 取 `email_verified` 为布尔真。
@@ -456,7 +457,7 @@ NameID 里夹带 XML 注释会被截断是一类已知的 SAML 攻击，gosaml2 
 - 指标 `authn.sso.assertions` 的 `outcome` 按自做判定归类：`iss` 不符记 `issuer`；验签、`aud`、`exp` 的拒绝因库把这些错误压成同一个字符串，改按 ID 令牌自身未验证的声明归类（只决定指标标签，不决定放行）；`nonce`、`state`、`sub`、`code` 的问题记 `other`；多受众而 `azp` 不符记 `audience`。用户在提供方处取消（回跳带 `error`）既不是断言也不是不可用，不记 `outcome`。
 - 方法持有 `Accounts` 以满足装配契约，但不从它读任何东西：账户解析（开户与关联）是登录引擎的活（[design-authn-account](design-authn-account.md)）。
 
-Google 与企业 OIDC 走同一条代码路径，差别只在配置来源：Google 来自配置，是启动必须项；企业 IdP 来自表。
+Google 与企业 OIDC 走同一条代码路径，差别在配置来源与启用判据：Google 的客户端标识与密钥来自配置项，两项都空时自行关闭；企业 IdP 的提供方来自表，方法由 `authn.sso.oidc.enabled` 显式开关决定是否交付（缺省关），因为运行期的注册表为空不表示部署不要企业登录。
 
 ### 受限出站客户端
 

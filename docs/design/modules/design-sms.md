@@ -203,7 +203,7 @@ type Resolved struct {
 
 模块名照顶层能力：裸名 `sms`，叶子 `sms.<名>`，配置命名空间取同一个取值（对照 `kv`/`kv.redis`、`event`/`event.nats`）。每个登记模块的包导出自己的 `ModuleName` 常量。载体是厂商适配的封闭集 `sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`，另加写进程日志的 `sms.log`；每个载体叶子包整个撤掉而不影响其他模块。注册表模块与发送方模块互不依赖对方的具体实现：注册表只经 `sms.Provider` 接缝触达厂商，一个进程里恰好一个注册表、恰好一个载体。
 
-**载体由 `sms.carrier` 在运行期选择，`sms.log` 是保底。** 选择项的值是一个载体的选择名、`none` 或空；每个载体把选择名作为 `CarrierName` 资源声明（[ADR-carrier-selection](../../adr/adr-carrier-selection.md)）。选择项点名一个已编入的载体时，该载体必须可运行，其余载体关闭；点名 `none` 时所有载体关闭，短信验证码状态机、模板注册表、管理面与短信登录方法随之关闭；点名一个没有编入的名字是 `ErrInvalidConfig`，错误点名该名字、能力与这次二进制携带的载体。选择项为空时，配置齐全的载体运行，身份项全空的载体关闭，半配置的载体是 `ErrInvalidConfig`，两个载体同时齐全即排他冲突并点名两个模块。`sms.log` 编入所有构建，声明 `sms.carrier`；没有其它载体启用时它以 `StateAuto` 被 core 留下，任一载体显式启用时被搁下，启动时写一条警告说明消息正文与验证码会进日志。
+**载体由 `sms.carrier` 在运行期选择，`sms.log` 是保底。** 选择项的值是一个载体的选择名、`none` 或空；每个载体把选择名作为 `CarrierName` 资源声明（[ADR-carrier-selection](../../adr/adr-carrier-selection.md)）。选择项点名一个已编入的载体时，该载体必须可运行，其余载体关闭；点名 `none` 时所有载体关闭，短信验证码状态机、模板注册表、管理面、短信登录方法与短信第二因素随之关闭；点名一个没有编入的名字是 `ErrInvalidConfig`，错误点名该名字、能力与这次二进制携带的载体。选择项为空时，配置齐全的载体运行，身份项全空的载体关闭，半配置的载体是 `ErrInvalidConfig`，两个载体同时齐全即排他冲突并点名两个模块。`sms.log` 编入所有构建，声明 `sms.carrier`；没有其它载体启用时它以 `StateAuto` 被 core 留下，任一载体显式启用时被搁下，启动时写一条警告说明消息正文与验证码会进日志。
 
 ### 注册表模块 sms.registry
 

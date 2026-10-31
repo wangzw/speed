@@ -70,7 +70,7 @@ type claimsCarrier struct {
 // it: the compiled-in defaults document below the file, the file above it, and
 // the module's own prototype last. It loads through the same pkg/config entry
 // point the binary uses, over the process registry, so a key that moved into
-// defaults.yaml and a key the file still states take one path.
+// defaults.go and a key the file still states take one path.
 func readEffective(t *testing.T, name, locator, path string, target any) {
 	t.Helper()
 	reader, err := config.Load(t.Context(), core.ProcessRegistry, []string{"--config", locator})

@@ -60,6 +60,10 @@ express a permission and every route would refuse its caller.
 
 ## Boundaries
 
+- **It follows the SMS carrier selection.** `Prepare` reads `sms.carrier`. A
+  `none` selection states `StateDisabled` with that reason rather than reporting
+  the missing provider as a startup fault, so a deployment with SMS off serves no
+  template-management routes either.
 - **One decision order, for every route, read and write alike.** The handler
   reads the caller first: a request with no identity is a 401 — the problem the
   admission and authorization layers write for a route that requires an identity

@@ -222,7 +222,7 @@ type compiledDefaults struct {
 
 // TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun loads the configuration
 // of a run with no primary source and holds the key values to what the deleted
-// defaults.yaml and the sqlite sample carried: the endpoint claim table, every
+// defaults.go and the sqlite sample carried: the endpoint claim table, every
 // capability's mounting, the development origin, the local seed and the sqlite
 // locator. A value that moves out of the document without a replacement shows
 // here as the zero it fell back to.

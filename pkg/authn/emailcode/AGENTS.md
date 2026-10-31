@@ -20,6 +20,10 @@ the seam does.
 
 ## Boundaries
 
+- **It follows the mail carrier selection.** `Prepare` reads `mail.carrier`. A
+  `none` selection states `StateDisabled` with that reason rather than reporting
+  the missing `mail.Sender` as a startup fault, so a deployment that deliberately
+  sends no mail loses this sender along with the rest of the capability.
 - **The reset channel is offered exactly when the catalog carries it.** `Module`
   reads the embedded catalog at registration time; the three
   `authn.email.reset.subject`, `body_text` and `body_html` leaves must be present

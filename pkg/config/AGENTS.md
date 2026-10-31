@@ -94,6 +94,22 @@ primary config source.
   the keys the manifest carries. It does not know any module's topology, does
   not interpret what a container holds, and names no module in the document.
 
+## Containers from the environment
+
+A map or a list of structs may declare `OriginEnv`. The variable carries one
+JSON value and replaces the whole container: it is not a patch over the
+prototype or over a file, the same all-or-nothing rule those layers follow.
+The command line still cannot give a container; declaring `OriginFlag` on one
+is an `ErrInvalidSchema` at collection, because there is no form it could take.
+
+Decoding is strict and exact. A member must name a field by the container
+decoder's rules (`config` tag, then `json` tag, then the lower-case kebab field
+name), and no other spelling is accepted; a member no field answers for fails
+the startup naming the variable and the item. A map's keys are its data and are
+taken as written. An empty variable is the empty list or map; a struct has no
+empty form and an empty variable for one is `ErrTypeMismatch`. A sensitive
+container's failure names the variable and the item without repeating the value.
+
 ## Running it
 
 From the repository root, over every module in the workspace:

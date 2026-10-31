@@ -39,11 +39,11 @@
 |---|---|---|---|---|---|---|
 | `pkg/authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | `SMSCodes` 排他 | `db.Database`、`sms.Registry`、`sms.Sender` | `settings.Store`、`event.Bus`、`audit.Audit`、`log.Logger` | `authn_challenges` |
 
-`SMSCodes` 的接口定义在 `pkg/authn` 根包，根包自身不登记模块。`sms.Registry` 与 `sms.Sender` 的接口定义在 `pkg/sms` 根包（形状见 [design-sms](../design-sms.md)）。每个登记模块的包导出 `ModuleName`，配置命名空间取同一个取值。模板注册表与发送方各由顶层发送能力的一个登记模块交付，本模块经 `sms.Registry` 与 `sms.Sender` 取用，宿主在命令树上各自选定一个；两个载体（`sms.aliyun`、`sms.tencent`）同时纳入在消解阶段以排他冲突失败。
+`SMSCodes` 的接口定义在 `pkg/authn` 根包，根包自身不登记模块。`sms.Registry` 与 `sms.Sender` 的接口定义在 `pkg/sms` 根包（形状见 [design-sms](../design-sms.md)）。每个登记模块的包导出 `ModuleName`，配置命名空间取同一个取值。模板注册表与发送方各由顶层发送能力的一个登记模块交付，本模块经 `sms.Registry` 与 `sms.Sender` 取用。发送能力可以同时编入多个载体，`sms.carrier` 在运行期选定一个；两个载体同时显式启用才在消解阶段以排他冲突失败。
 
 ### 发送方的接取：经 sms.Registry 与 sms.Sender
 
-模板注册表与发送接缝各是顶层发送能力 `pkg/sms` 的一个接缝（形状见 [design-sms](../design-sms.md)）。本模块把两者都当作排他的构造期依赖取用（`Requires` 记 `(*sms.Registry)(nil)` 与 `(*sms.Sender)(nil)`），宿主在命令树上各选定一个；同一接缝的两个实现同时纳入在消解阶段失败。本模块先取注册表，因为覆盖核对读的是注册表的声明、发送时解出的形状也来自注册表，再取载体。本模块不 import 任何厂商适配叶子包。
+模板注册表与发送接缝各是顶层发送能力 `pkg/sms` 的一个接缝（形状见 [design-sms](../design-sms.md)）。本模块把两者都当作排他的构造期依赖取用（`Requires` 记 `(*sms.Registry)(nil)` 与 `(*sms.Sender)(nil)`）；载体由 `sms.carrier` 选定，选择项为 `none` 时本模块在 `Prepare` 里读同一个选择项并自行关闭，短信登录方法与短信第二因素随之关闭。本模块先取注册表，因为覆盖核对读的是注册表的声明、发送时解出的形状也来自注册表，再取载体。本模块不 import 任何厂商适配叶子包。
 
 本模块把每条挑战构造成一条 `sms.Message`，交给注册表的 `Resolve` 解出 `sms.Resolved`，再把解出的形状交给载体：
 
@@ -130,8 +130,8 @@ type SMSCodes interface {
 | 依赖 | 方式 | 用途 | 缺席时 |
 |---|---|---|---|
 | `db.Database` | `Requires` | 挑战表的读写；`BlindIndex` 计算带密钥摘要；迁移集 | 构造失败 |
-| `sms.Registry` | `Requires`（排他功能） | 取得模板注册表；核对模板覆盖、解出可发送的形状；缺失或多个同时纳入在消解阶段失败 | 构造失败 |
-| `sms.Sender` | `Requires`（排他功能） | 取得发送方；缺失或多个同时纳入在消解阶段失败 | 构造失败 |
+| `sms.Registry` | `Requires`（排他功能） | 取得模板注册表；核对模板覆盖、解出可发送的形状；没有已启用的载体、或同一接缝的两个实现同时启用时启动失败 | 构造失败 |
+| `sms.Sender` | `Requires`（排他功能） | 取得发送方；没有已启用的载体、或同一接缝的两个实现同时启用时启动失败 | 构造失败 |
 | `settings.Store` | 取用，缺席合法 | 放行表、预算与验证码参数 | 各项取声明的缺省值；放行表缺省为空，所以没有设置模块的装配里短信一律不发 |
 | `event.Bus` | 取用，缺席合法 | 订阅 `authn.account.deleted` 与 `settings.changed` | 只剩同步钩子，没有事件补偿；不影响正确性底线 |
 | `audit.Audit` | 取用，缺席合法 | 放宽设置的尽力档审计 | 只写 `Warn` |

@@ -30,6 +30,11 @@ compatibility break for a dashboard written against it.
 
 ## Boundaries
 
+- **It follows the SMS carrier selection.** `Prepare` reads `sms.carrier`. A
+  `none` selection states `StateDisabled` with that reason instead of reporting
+  the missing `sms.Registry` or `sms.Sender` as a startup fault, so a deployment
+  can turn the whole SMS family off through configuration. The login method and
+  the second factor read the same selection and stand down with it.
 - **The plaintext code never leaves the module.** It is written to no table, no
   log, no event and no metric, and lives only in the queued message and the call
   to the carrier. The row holds `code_mac`, the keyed digest of the challenge

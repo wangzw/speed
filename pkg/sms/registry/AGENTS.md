@@ -45,6 +45,10 @@ their per-language review and bookkeeping.
 
 ## Boundaries
 
+- **It follows the SMS carrier selection.** `Prepare` reads `sms.carrier`. A
+  `none` selection states `StateDisabled` with that reason rather than reporting
+  the missing provider as a startup fault; the state machine and the admin
+  surface stand down with it.
 - **The runtime snapshot is replaced as a whole, never written in place, and the
   replacement is serialised.** `registryStore.snapshot` is an
   `atomic.Pointer[snapshot]` and `reloadMu` holds the read-then-swap of

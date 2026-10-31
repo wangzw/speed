@@ -21,6 +21,11 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
 
 ## Boundaries
 
+- **The method stands down with the SMS capability.** `Prepare` reads
+  `sms.carrier`. A `none` selection states `StateDisabled` with that reason
+  rather than reporting the absent `authn.SMSCodes` provider as a startup fault,
+  so a binary that compiles this method in can serve a deployment that offers no
+  SMS sign-in.
 - **The method holds no challenge state.** The number's allowed prefix, the
   budgets, the challenge row, the verification code and its check are the SMS
   module's. The method answers a `Step`; it does not read or write a challenge,

@@ -44,6 +44,13 @@
 | `authn/sso/oidc` | `authn.sso.oidc` | `oidc` | 企业 OIDC，见 [authn-sso](design-authn-sso.md) |
 | `authn/sso/saml` | `authn.sso.saml` | `saml` | 企业 SAML，见 [authn-sso](design-authn-sso.md) |
 
+**编入二进制不等于本次提供这个方式。** 每个方法在 `Prepare` 中依据自己那份配置表态：配置缺席时表态 `StateDisabled` 并给出原因，方法不交付，发现文档不列出它，登录页不出现对应入口；配置只给了一部分（例如客户端标识给了而密钥没有）是半配置，`ErrInvalidConfig` 终止启动并点名缺的那项；配置齐备时 `StateEnabled`，其余该项要求的值（网关的公开地址、出口接缝）照常校验，不合法同样终止启动。判据落在方法自己手里，`core` 不解释原因（[ADR-module-enablement](../../../adr/adr-module-enablement.md)）。
+
+- **Google、GitHub 与两个微信方法**以客户端标识与客户端密钥合在一起作为「配置了这家应用」的陈述：两项都没有即未配置，自行关闭；只给一项即半配置。
+- **企业 OIDC 没有可供推断的凭据**：提供方是运行期的行，注册表为空不代表部署不要这项能力，因此它由显式开关 `authn.sso.oidc.enabled`（缺省关）决定是否交付。
+- **短信方法**跟随短信发送能力的载体选择：选择项为 `none` 时，它随 `authn.sms` 一起关闭（见 [authn-sms](design-authn-sms.md)）。
+- **口令方法**不需要外部配置，装配纳入即提供。
+
 ### LoginMethod 接缝
 
 接缝与它的数据类型在根包导出，引擎之外没有任何调用方。以下是签名，裁剪到承载设计含义的部分。

@@ -101,26 +101,26 @@
 | `authn.token.signing-key-file` | 字符串，文件路径 | 无 | 默认 | 敏 | 当前签名私钥，PKCS#8 PEM；不填则本模块只验证、不签发 |
 | `authn.token.verify-key-files` | 字符串列表，文件路径 | 空 | 默认 | | 只用来验签与发布的密钥文件 |
 
-下表是登录方式与多因素的配置项（封闭集合）。提供方的客户端标识与密钥是启动必须项：纳入该模块即必填，缺项即启动失败。
+下表是登录方式与多因素的配置项（封闭集合）。提供方的客户端标识与密钥在声明里标 `Required`，用途是让方法分得出「一个来源都没给」；它们不再是「缺了就一定启动失败」的启动必须项：两项都没有时方法在 `Prepare` 里自行关闭，只给了一项时是半配置，启动失败并点名缺的那项（[design-config](../design-config.md)、[ADR-module-enablement](../../../adr/adr-module-enablement.md)）。
 
 | 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
 |---|---|---|---|---|---|
-| `authn.login.google.client-id` | 字符串 | 无 | 默认 | 必填 | 提供方的客户端标识 |
-| `authn.login.google.client-secret` | 字符串 | 无 | 默认 | 必填、敏 | 提供方的客户端密钥 |
+| `authn.login.google.client-id` | 字符串 | 无 | 默认 | 必填 | 提供方的客户端标识；与 `client-secret` 都空时方法自行关闭，只给一项即 `ErrInvalidConfig` |
+| `authn.login.google.client-secret` | 字符串 | 无 | 默认 | 必填、敏 | 提供方的客户端密钥；与 `client-id` 同上 |
 | `authn.login.google.hosted-domain` | 字符串 | 空 | 默认 | | 非空时要求 ID 令牌的 `hd` 声明相等 |
 | `authn.login.google.issuer` | 字符串 | `https://accounts.google.com` | 默认 | | 发现用的 OIDC issuer；非空时须是绝对 https 地址，回环主机的 http 地址仅在 `allow-loopback` 为真时接受 |
 | `authn.login.google.allow-loopback` | 布尔 | `false` | 默认 | | 仅开发用：放开受限出站客户端对回环地址的拒绝；不放开明文 http |
 | `authn.login.google.root-ca-file` | 字符串，文件路径 | 无 | 默认 | | 追加到系统根的 PEM 文件，不替换系统根；启动时须可读且含至少一张证书，空只用系统根 |
-| `authn.login.github.client-id` | 字符串 | 无 | 默认 | 必填 | 提供方的客户端标识 |
-| `authn.login.github.client-secret` | 字符串 | 无 | 默认 | 必填、敏 | 提供方的客户端密钥 |
+| `authn.login.github.client-id` | 字符串 | 无 | 默认 | 必填 | 提供方的客户端标识；与 `client-secret` 都空时方法自行关闭，只给一项即 `ErrInvalidConfig` |
+| `authn.login.github.client-secret` | 字符串 | 无 | 默认 | 必填、敏 | 提供方的客户端密钥；与 `client-id` 同上 |
 | `authn.login.github.authorize-url` | 字符串 | `https://github.com/login/oauth/authorize` | 默认 | | 授权端点；非空时须是绝对 https 地址 |
 | `authn.login.github.token-url` | 字符串 | `https://github.com/login/oauth/access_token` | 默认 | | 令牌端点；非空时须是绝对 https 地址 |
 | `authn.login.github.api-base` | 字符串 | `https://api.github.com` | 默认 | | `/user` 与 `/user/emails` 的基址；非空时须是绝对 https 地址 |
 | `authn.login.github.allow-loopback` | 布尔 | `false` | 默认 | | 仅开发用：放开受限出站客户端对回环地址的拒绝；不放开明文 http |
 | `authn.login.github.root-ca-file` | 字符串，文件路径 | 无 | 默认 | | 追加到系统根的 PEM 文件，不替换系统根；启动时须可读且含至少一张证书，空只用系统根 |
-| `authn.login.wechat-web.app-id` | 字符串 | 无 | 默认 | 必填 | 网站应用扫码登录的应用标识；纳入即必填，缺则 `ErrInvalidConfig` |
+| `authn.login.wechat-web.app-id` | 字符串 | 无 | 默认 | 必填 | 网站应用扫码登录的应用标识；与 `app-secret` 都空时方法自行关闭，只给一项即 `ErrInvalidConfig` |
 | `authn.login.wechat-web.app-secret` | 字符串 | 无 | 默认 | 必填、敏 | 同上的应用密钥 |
-| `authn.login.wechat-mp.app-id` | 字符串 | 无 | 默认 | 必填 | 公众号网页授权登录的应用标识；与网站应用各自一份配置，没有联合判定 |
+| `authn.login.wechat-mp.app-id` | 字符串 | 无 | 默认 | 必填 | 公众号网页授权登录的应用标识；与网站应用各自一份配置，没有联合判定；与 `app-secret` 都空时方法自行关闭 |
 | `authn.login.wechat-mp.app-secret` | 字符串 | 无 | 默认 | 必填、敏 | 同上的应用密钥 |
 | `authn.mfa.totp.issuer` | 字符串 | `authn.gate.mount.public-url` 的主机名 | 默认 | | 写进 `otpauth://` 地址的发行者名 |
 | `authn.mfa.webauthn.rp-id` | 字符串 | `authn.gate.mount.public-url` 的主机名 | 默认 | | 依赖方标识；须等于基址主机或其父域 |
@@ -150,6 +150,7 @@
 | `authn.sms.workers` | 整数 | `4` | 默认 | | 异步发送的有界工作池的协程数 |
 | `authn.sms.queue-size` | 整数 | `1024` | 默认 | | 异步发送队列的容量 |
 | `authn.sso.allow-private-egress` | 布尔 | `false` | 主 | | 仅开发用的放宽项，配置项：放开出站调用对回环地址的拒绝；改动要重启 |
+| `authn.sso.oidc.enabled` | 布尔 | `false` | 默认 | | 是否为本次运行提供企业 OIDC 登录方式；关闭时方法不交付，登录页不出现企业入口。提供方是运行期的行，注册表为空不表示部署没有这项意图，所以开关独立于提供方数据 |
 | `authn.sso.dns-resolver` | 字符串，`host:port` | 空 | 主 | | 域所有权证明查 TXT 记录所用的 DNS 解析器地址；空时用系统解析器，配置后该查询由这个解析器作答 |
 | `authn.sso.oidc-ca-file` | 字符串，文件路径 | 空 | 主 | | 企业 OIDC 出站客户端在系统根证书之外额外信任的 PEM 根证书文件；空时只用系统根证书，配置后文件里的证书追加到系统根证书 |
 | `authn.sso.saml.sp-key-file` | 字符串，文件路径 | 无 | 默认 | 敏 | 服务提供方私钥；只在 IdP 配了 `sign_requests` 或要加密断言时需要，缺则 `Validate` 拒绝 |
@@ -157,7 +158,7 @@
 | `authn.sso.saml.sp-next-cert-file` | 字符串，文件路径 | 无 | 默认 | | 先发布的下一张证书，轮换时用 |
 | `tenant.admission.endpoints` | 字符串列表 | 无 | 主 | 必填 | 准入层所守的端；与 `tenant.resolve.endpoints` 同形，一般相同；空是 `ErrInvalidConfig`，不接受 `*`，不得含 authn 的挂载端 |
 
-短信厂商适配的配置键（`sms.aliyun.*`、`sms.tencent.*`）不在本文：发送能力是顶层能力模块 `pkg/sms`，其配置随能力归 [design-sms](../design-sms.md)。邮件投递的配置键（`mail.smtp.*`）同样不在本文，归 [design-mail](../design-mail.md)：`authn.emailcode` 不声明输入项，它只把根包的 `EmailCodeSender` 适配到 `mail.Sender`。必填判定只对运行级纳入的模块做，没有被纳入的模块的必填项不参与判定。
+短信厂商适配的配置键（`sms.aliyun.*`、`sms.tencent.*`）不在本文：发送能力是顶层能力模块 `pkg/sms`，其配置随能力归 [design-sms](../design-sms.md)。邮件投递的配置键（`mail.smtp.*`）同样不在本文，归 [design-mail](../design-mail.md)：`authn.emailcode` 不声明输入项，它只把根包的 `EmailCodeSender` 适配到 `mail.Sender`，邮件载体选择为 `none` 时它随发送能力一起关闭。必填判定只对运行级纳入的模块做，没有被纳入的模块的必填项不参与判定。
 
 ### 设置项
 
@@ -363,7 +364,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 
 存放的规则：
 
-- **authn 自己持有的机密只以下列形态存放（封闭集合）：** 哈希（口令、令牌、验证码、服务密钥）、数据库加密列（因素种子、IdP 客户端密钥）、文件（JWT 签名私钥、SAML 私钥）。提供方发给宿主的客户端密钥是启动必须项，存在配置的敏感项里；配置里的敏感项只放这类启动必须项。
+- **authn 自己持有的机密只以下列形态存放（封闭集合）：** 哈希（口令、令牌、验证码、服务密钥）、数据库加密列（因素种子、IdP 客户端密钥）、文件（JWT 签名私钥、SAML 私钥）。提供方发给宿主的客户端密钥存在配置的敏感项里；它配齐时是这次运行的启动必须项，未配置时方法自行关闭（见上表）。配置里的敏感项只放这类机密。
 - **秘密不进命令行。** 秘密类配置项取 `Origins` 的零值，标 `Sensitive` 并带 `Description`，因为命令行参数会进入命令行历史与进程列表。
 - **秘密不进设置。** 设置的值明文存库，`Sensitive` 只遮蔽变更事件的载荷与 `Declared` 的默认值，`Get` 与 `List` 照常交出值。
 - **`Sensitive` 不向日志登记脱敏。** 它只约束错误文本不复述值、帮助输出不回显默认值、必须带说明。每个持有秘密配置值的模块在自己的 `New` 里把该值另登记为日志的字面量匹配器；日志模块不在这次运行的参与集里时登记不上。
@@ -426,7 +427,7 @@ sequenceDiagram
 
 - `Origins`：缺省取零值；决定守护面的清单与容器叶子取仅主配置源。
 - `Sensitive`：秘密类配置项为真，且必带 `Description`；为真的项不向命令行库交出默认值。
-- `Required`：运行级纳入的模块的启动必须项为真；判定发生在模块自己 `Decode` 的时刻。
+- `Required`：标出模块缺了它就无法运行的那一类项，让 `Decode` 在没有任何来源给值时答 `ErrMissingRequired`；模块据这条错误决定报故障还是自行关闭，判定发生在它自己 `Decode` 的时刻。
 - 命名空间取模块名，键名只含小写字母、数字与短横线。
 
 **设置项的声明**（`settings.Schema` 的 `Items`）：

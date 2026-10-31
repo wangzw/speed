@@ -26,6 +26,9 @@ starters/demo/
     go.mod          # 取 pkg 模块；pkg 尚无发布版本时带一条指向兄弟检出的 replace
     main.go         # 命令树与 run()，只剩业务决定
     host.go         # envPrefix、HostIdentity、端点常量
+    defaults.go      # 平台默认文档，以 Go 写成的 JSON，编进二进制
+    defaults_seed.go # 默认文档的种子片段
+    capabilities.go  # 能力名册：全部能力编入每次构建
     signingkey.go   # 签名密钥的路径与首次运行生成
     modules/        # 业务模块的空位
     testdata/       # 配置样例与夹具
@@ -47,11 +50,13 @@ starters/demo/
 
 **Go 程序与前端源码各占一棵树，构建产物落在 Go 那一棵里。** `go:embed` 只嵌得到内嵌包自己目录树下的文件，模式里不许出现 `..`，所以二进制要嵌的那份产物只能住在 Go 程序所在目录之内：前端源码在 `web/`，构建产物写进 `server/dist/`。
 
+**裸运行不需要配置文件。** 平台默认文档由 `server/defaults.go` 以 Go 写成、编码为 JSON 后随二进制分发，落在默认值层；`demo sqlite serve` 不带 `--config`、也不设 `DEMO_CONFIG` 时，监听地址、端点表、库定位符、种子与签名密钥路径都由它给出，必填项因此已经满足。`--config` 或 `DEMO_CONFIG` 指向的配置文件只写部署差异，叠加在默认文档之上；环境变量与命令行再覆盖个别叶子。
+
 **产品自己的构建入口是示范自带的 `Makefile`。** 仓库的门禁入口是根 `Makefile`，它经 `go.work` 覆盖示范这个模块；拷出去的树上面什么都没有，它的构建、测试与静态检查命令因此写在示范自己的这一份里。`make help` 列出它跑什么，`make check` 全跑一遍，先前端后 Go——Go 构建内嵌产物，这个顺序是硬约束。**它是产品的入口，不是本仓库的入口**：仓库内跑的是根 `Makefile` 的 `make check`，前端腿在 `make web-check` 里。两条腿的输入由拷贝方提供、仓库不跑：`web-install` 把前端依赖装在包所在处（仓库内该包是 `web/` 工作区的成员，安装走工作区那份唯一的锁文件），`lint` 读模块目录向上最近的 `.golangci.yml`（仓库把它放在根）。
 
-**仓库根的 `make dev` 是本地开发回路。** 前台是 air，按 `-tags review` 构建并在每次重建后先 `sqlite seed` 再 `sqlite serve`（`server/.air.toml`）；后台是 vite 的开发服务器，把 API 命名空间代理到后端监听。Ctrl-C 停掉 air，配方随即停掉 vite，一个中断结束两者。两者的环境变量由 `mise exec` 从根的 `.env` 载入，`.env.example` 是那份文件逐条列出的派生变量名与含义。
+**仓库根的 `make dev` 是本地开发回路。** 前台是 air，按 `-tags review` 构建并在每次重建后先 `sqlite seed` 再 `sqlite serve`（`server/.air.toml`）；后台是 vite 的开发服务器，把 API 命名空间代理到后端监听。Ctrl-C 停掉 air，配方随即停掉 vite，一个中断结束两者。两者的环境变量由 `mise exec` 从根的 `.env` 载入；`.env` 不存在时跳过，程序跑在编进二进制的默认值上。`.env.example` 逐条列出这份文件可以承载的派生变量名、取值形态与含义，拷贝为 `.env` 即生效。
 
-**Fly.io 部署取 `sqlite` 栈的单机形态。** 该栈的数据库落成文件、键值与事件后端都在进程内；部署装配在基线之上加入 `mail.smtp`、`authn.emailcode` 与两个社交登录方法 `authn.login.google`、`authn.login.github`，它的外部依赖是 SMTP relay 与这两家身份提供方。基线已有的人机验证闸随基线进入部署，模式缺省 `off`；部署在模板里把它打开时，`turnstile` 机制另加一个外部依赖 Cloudflare 的 siteverify，`pow` 只要进程内的键值后端。一套部署由镜像、一台 Machine 与一个挂在 `/data` 的卷组成；卷承载数据库、签名密钥与对象存储的本地根，跨部署与停机保留。镜像的构建上下文是仓库根：前端产物来自 `web/` 工作区，Go 程序来自 `go.work` 声明的两个模块，两者都不在本目录之内；`fly.toml` 的 `[build] dockerfile` 相对该文件解析，根 `Makefile` 的 `fly` 目标把仓库根作为工作目录交给 `flyctl`。
+**Fly.io 部署取 `sqlite` 栈的单机形态。** 该栈的数据库落成文件、键值与事件后端都在进程内；部署配置在基线的配置之上给出 `mail.smtp` 的中继凭据与两个社交登录方法 `authn.login.google`、`authn.login.github` 的应用凭据，并因此启用 `authn.emailcode`。这些能力本已在二进制里，配齐即启动；它的外部依赖是 SMTP relay 与这两家身份提供方。基线已有的人机验证闸随基线进入部署，模式缺省 `off`；部署在模板里把它打开时，`turnstile` 机制另加一个外部依赖 Cloudflare 的 siteverify，`pow` 只要进程内的键值后端。一套部署由镜像、一台 Machine 与一个挂在 `/data` 的卷组成；卷承载数据库、签名密钥与对象存储的本地根，跨部署与停机保留。镜像的构建上下文是仓库根：前端产物来自 `web/` 工作区，Go 程序来自 `go.work` 声明的两个模块，两者都不在本目录之内；`fly.toml` 的 `[build] dockerfile` 相对该文件解析，根 `Makefile` 的 `fly` 目标把仓库根作为工作目录交给 `flyctl`。
 
 容器入口 `deploy/entrypoint.sh` 把 `deploy/fly.yaml.tmpl` 渲染成 `/data/config.yaml`：公开来源由 `FLY_APP_NAME` 推出，自定域由 `DEMO_PUBLIC_URL` 给出；运营账户与库加密根键取自 Fly secret。模板不承载凭据，镜像不含开发值。SMTP 的主机、发件地址与凭据也取自 Fly secret：入口要求主机与发件地址，端口缺省 587、TLS 姿态缺省 `starttls`，用户名与口令为空表示不使用 AUTH。两家身份提供方的应用标识与密钥同取自 Fly secret，入口缺任一项即拒绝启动。两者登记给提供方的回调地址由公开来源推出，不另设配置项：`<公开来源>/api/v1/auth/callback/google` 与 `<公开来源>/api/v1/auth/callback/github`。人机验证的机制由 `DEMO_HUMANVERIFY_MODE` 选择，缺省 `off`；`pow` 自托管、不需要额外凭据；`turnstile` 模式要求 `DEMO_TURNSTILE_SITE_KEY` 与 `DEMO_TURNSTILE_SECRET_KEY` 两项 Fly secret，入口只在选择该模式时要求它们，控件必须运行的主机名取公开来源的域名。入口渲染的这些值在交给进程之前从环境里删除，避免被当作未登记的配置项报诊断。模板的 `http` 节承载模块级的代理信任设置：可信代理网段取 Fly Proxy 进入 Machine 的地址段，来源地址头名取 `Fly-Client-IP`。入口取得卷的所有权后降权运行，先执行 `sqlite seed`，再把进程交给 `sqlite serve`；`seed` 只写缺失项，重启不覆盖运营者经界面做的修改。`serve` 带上基线的后台模块，不再另起进程。
 
@@ -79,19 +84,21 @@ starters/demo/
 
 ### 平台基线
 
-`serve` 与 `worker` 各自点名纳入的那组平台能力是**平台基线**，写在 `main.go` 的 `baselineServe` 与 `baselineWorker` 两个列表里。基线的判据是一句话：**一条平台能力若能不要凭据、不要外部账号、不要部署栈之外的外部服务就启动，它就在基线里**；其余留给产品在拿到该依赖时自行加入。模块自己的契约是这个判据的落点——一项必需配置项给不出一个能启动的值，它就不属于基线。
+`serve` 与 `worker` 各有两个点名集：`main.go` 的 `baselineServe` 与 `baselineWorker` 写**平台基线**，`capabilities.go` 的 `capabilityModules` 写**能力上限**。基线的判据是一句话：**一条平台能力若能不要凭据、不要外部账号、不要部署栈之外的外部服务就启动，它就在基线里**；不符合判据的能力仍编入每一次构建，由 `capabilityModules` 点名，交给它自己的配置决定这次是否运行。模块自己的契约是这个判据的落点——一项必需配置项给不出一个能启动的值，它就不进基线，由 `Prepare` 在配置缺席时自行关闭。
 
-判据的两侧各有一组例证。落在基线里的，是只用进程内实现或栈内后端就起得来的平台能力——入站的身份系统（`authn.gate` 网关、`authn.login`、`authn.login.password`、`authn.mfa.totp`、`authn.session`、`authn.account`）、缺省 `off` 的人机验证闸 `authn.humanverify`、租户的 `tenant.resolve`、`tenant.admission` 与 `tenant.self`、`authz.guard` 授权层、`authz.self` 的调用方权限读取、`audit.journal` 审计、`ratelimit` 限流、`settings` 设置、`feature.board` 特性文档的发布，以及任务（`jobs.db`、`jobs.scheduler`）、通知的收件箱、推送、偏好矩阵与投递流水线（`notification.inbox`、`notification.stream`、`notification.preferences`、`notification.delivery`）与对象存储的文件系统后端（`objectstore.fs`）。被判据排除在外的，是一启动就要一份外部凭据或一份栈外服务的：社交与企业身份提供方（`authn.login.google`、`authn.login.github`、`authn.login.wechat-web`、`authn.login.wechat-mp`、`authn.sso.oidc`、`authn.sso.saml`）、短信家族（`sms.*`、`authn.login.sms`、`authn.mfa.sms`、`authn.sms`）、SMTP 邮件（`mail.smtp`）、S3 对象存储（`objectstore.s3`）；它们在产品拿到对应依赖后自行加入。
+判据的两侧各有一组例证。落在基线里的，是只用进程内实现或栈内后端就起得来的平台能力——入站的身份系统（`authn.gate` 网关、`authn.login`、`authn.login.password`、`authn.mfa.totp`、`authn.session`、`authn.account`）、缺省 `off` 的人机验证闸 `authn.humanverify`、租户的 `tenant.resolve`、`tenant.admission` 与 `tenant.self`、`authz.guard` 授权层、`authz.self` 的调用方权限读取、`audit.journal` 审计、`ratelimit` 限流、`settings` 设置、`feature.board` 特性文档的发布，以及任务（`jobs.db`、`jobs.scheduler`）、通知的收件箱、推送、偏好矩阵与投递流水线（`notification.inbox`、`notification.stream`、`notification.preferences`、`notification.delivery`）与对象存储的文件系统后端（`objectstore.fs`）。不进基线而由 `capabilityModules` 点名的，是一启动就要一份外部凭据或一份栈外服务的——社交与企业身份提供方（`authn.login.google`、`authn.login.github`、`authn.login.wechat-web`、`authn.login.wechat-mp`、`authn.sso.oidc`）、短信家族（`sms.*`、`authn.login.sms`、`authn.mfa.sms`、`authn.sms`）与 SMTP 邮件（`mail.smtp`）——连同与它们同属一个能力、为本地走查准备的日志载体 `mail.log`、`sms.log`，以及审查装配的通知夹具。它们每次 `serve` 都在参与集里：配置齐全的启动，配置缺席的自行关闭并写进启动诊断。`authn.sso.saml` 只为契约文档而 import，不进 `capabilityModules`，任何命令都不运行它；S3 对象存储（`objectstore.s3`）不在 import 里，想用它的拷贝自行加入。
 
-**口令注册在基线上关闭。** 注册路由 `POST /api/v1/auth/register` 归 `authn.login`，基线装配纳入该模块，但设置项 `authn.account.password-signup` 保持缺省的 `closed`，基线的装配里也没有 `authn.emailcode`、`mail.smtp` 与短信通道；开放注册会产生永远无法验证的账户。此时调用注册路由答 403 `signup-closed`，发现面不出现注册入口。开放它需要装配邮箱验证通道，见「注册与完成设置」；Fly 部署不是这条基线，它用上面的 `deploy` 装配开放注册。
+**一个二进制因此既能跑裸基线，也能跑完整配置的部署。** 同一份 `capabilityModules` 在默认构建、Fly 镜像与审查构建里相同；三者运行起来能力集不同，差别只来自配置与审查构建的测试控制，不来自二进制。
+
+**口令注册在基线上关闭。** 注册路由 `POST /api/v1/auth/register` 归 `authn.login`，基线装配纳入该模块，但设置项 `authn.account.password-signup` 保持缺省的 `closed`；`authn.emailcode`、`mail.smtp` 与短信通道虽已编入并点名，基线配置不给它们凭据，它们自行关闭，因此没有可用的验证通道。开放注册会产生永远无法验证的账户。此时调用注册路由答 403 `signup-closed`，发现面不出现注册入口。开放它需要装配邮箱验证通道，见「注册与完成设置」；Fly 部署不是这条基线，它用上面的 `fly` 装配开放注册。
 
 **WebAuthn（`authn.mfa.webauthn`）也在基线里，是判据放行、示范仍须点名的那一项。** 它的依赖方绑定在部署被访问的来源上——那是 `testdata/` 承载的一个配置项，不是外部凭据也不是栈外服务——所以它一启动不依赖任何外部物，过得了判据（`AGENTS.md` 因此把它从「被排除」一栏移到基线）。点名它是因为平台管理面要能演示自身：步进要求一个与本会话已证明过的认证方式不相交的因素种类，只有 TOTP 一种时，以 TOTP 登录的会话没有因素可用来升级，步进起点因此被拒；TOTP 并上 WebAuthn，让步进有第二种因素种类可点。示范自带的前端实现 WebAuthn 仪式：`@speed/auth-ui`、`@speed/account-ui` 与 `@speed/console-ui` 都经 `@speed/auth-core/webauthn` 子路径驱动同一仪式，把 passkey 的创建或请求选项解码后交给浏览器，再把返回的凭据按后端解的 JSON 形状序列化成答复。登记与升级因此都能在界面上走完，不需要界面之外的客户端（`AGENTS.md` 详述）。
 
 **静态运营口令表（`authn.static`）是判据放行、示范却排除的那一项。** 它不需要任何外部服务，只需配置里的一张表，按判据本可入选；但它是唯一取 Basic 方案的后端，而浏览器只对 Basic 与 Digest 挑战弹原生口令框。示范把前端产物交给浏览器，一个受保护端点的 401 一旦带 Basic——会话或令牌过期时——就会在已登录用户面前弹出原生口令框，而不是让前端结束会话、回到自己的登录页。这里的每个调用方都由会话 cookie 与 bearer 令牌承载，示范因此不接 Basic 后端，`testdata/` 也不带口令表；想给运营入口或探针留 Basic 认证的拷贝，自行把 `authn.static` 与它的 `authn.static.subjects` 表加回来——实现见 `main.go` 的 `baselineServe`，`authn.static` 不在其中。这样的主体没有成员关系行，但它们是部署自己配置的运营者、不是自助注册的账户，所以宿主的 `authz.MembershipChecker` 对 `static.*` 一律答真：否则部署把 `platform-admin` 绑给一个静态主体时，成员核对会因为它没有成员关系行而拒绝。
 
-**命令树点名决定某个进程跑什么，import 可达决定契约文档覆盖什么，两者不是同一件事。** 一条被判据排除在基线之外的能力（`sms.admin`、`authn.sso.saml`），其 HTTP 片段仍属于平台契约：`gen` 与 `/openapi.json` 合并的是二进制 import 可达的全部片段，与命令树点名哪些模块跑无关。`authn.sso.saml` 由任何命令都不运行，`sms.admin` 只在审查装配的 `serve` 里运行，但两者的片段都进合并文档。因此宿主 import 每一个声明了 HTTP 片段的平台模块，即便其中一些不在基线的纳入清单里，合并文档的 operation 集合才等于各片段之和（见 `AGENTS.md`）。
+**命令树点名决定某个进程跑什么，import 可达决定契约文档覆盖什么，两者不是同一件事。** 一条不在基线启用集里的能力（`sms.admin`、`authn.sso.saml`），其 HTTP 片段仍属于平台契约：`gen` 与 `/openapi.json` 合并的是二进制 import 可达的全部片段，与命令树点名哪些模块跑无关。`authn.sso.saml` 由任何命令都不运行，`sms.admin` 由 `capabilityModules` 点名而只在配置让它运行时启动（示范的配置里是审查装配的 `serve`），两者的片段都进合并文档。因此宿主 import 每一个声明了 HTTP 片段的平台模块，即便其中一些在任何一次运行里都不启用，合并文档的 operation 集合才等于各片段之和（见 `AGENTS.md`）。
 
-**特性按同一条线分在两处。** `gen` 写出的 `contracts/features.json` 列的是可用集里的全部特性声明，与命令树点名哪些模块跑无关；一个 `serve` 进程发布的[特性文档](../../glossary.md)只含本进程启用集里的模块服务的特性（[feature](design-feature.md)）。示范的命令树不使用 `AllResources` 覆盖，`serve` 的特性文档因而不含任何本进程不运行的模块的特性。被判据排除在基线之外的能力，其特性名在 `contracts/features.json` 里，在基线 `serve` 的特性文档里则特性缺席，例如 `sms.admin`、`authn.phone`、`authn.admin.sso.metadata`、`notification.channel.email` 与 `notification.channel.sms`。前端按特性缺席处理它们：依赖它们的页面不进导航，直达其路径得到与不存在的路径相同的 404，依赖它们的控件不渲染；产品加入对应模块、在 `serve` 上纳入后，这些特性随之在场，前端代码不变。
+**特性按同一条线分在两处。** `gen` 写出的 `contracts/features.json` 列的是可用集里的全部特性声明，与命令树点名哪些模块跑无关；一个 `serve` 进程发布的[特性文档](../../glossary.md)只含本进程启用集里的模块服务的特性（[feature](design-feature.md)）。示范的命令树不使用 `AllResources` 覆盖，`serve` 的特性文档因而不含任何本进程不运行的模块的特性。不在本次启用集里的能力，其特性名在 `contracts/features.json` 里，在基线 `serve` 的特性文档里则特性缺席，例如 `sms.admin`、`authn.phone`、`authn.admin.sso.metadata`、`notification.channel.email` 与 `notification.channel.sms`。前端按特性缺席处理它们：依赖它们的页面不进导航，直达其路径得到与不存在的路径相同的 404，依赖它们的控件不渲染；产品在配置里启用对应模块后，这些特性随之在场，前端代码不变。
 
 `serve` 起 HTTP 入口，纳入全部带路由或中间件的模块；`worker` 纳入既不路由也不经网关就能启动的后台模块。`worker` 的基线带着审计（`audit.journal`）：后台路径会写审计行——账户删除的收尾、个人租户在事件补偿里的建立与删除——不带上它就静默丢掉这些行。没有入口模块的运行不服务任何请求，请求级捕获随之跳过，语句级、事件级与记录接缝照常工作；入口模块在场时，配置点名的端名若不是入口声明的端，仍是启动失败（[audit](audit/design-audit.md)）。栈的数据库引擎、键值后端、事件后端与导出后端仍点在各命令上，不在栈节点。
 
@@ -99,13 +106,13 @@ starters/demo/
 
 **前端不经特性门控就调用其路由的后端模块，`serve` 必须运行级纳入。** 前端调用这些模块的路由之前不查特性文档；它们不在时，前端的登录、会话与特性门控本身都无从成立。这些模块的清单，以及前端用到的其余后端面怎样门控，见 [web](web/design-web.md#不经特性门控的后端模块)。
 
-`testdata/` 的每份配置只写部署差异——监听地址、来源、路径、库定位符、种子与后端选择。平台默认文档 `server/defaults.yaml` 已经给出的取值不在每份配置里重复，其中包括文档里标了 `Required` 的项：文档由宿主明确写下，满足必填。文档没有给出、而模块又标了必填的项仍由每份配置写出。每份配置随骨架带一组开发用值（`seed.accounts` 的明文口令、库加密根键、`seed.settings` 里降到域下限的 `authn.mfa.sensitive-min-age`），由 `AGENTS.md` 点名、要求拷走后替换。签名密钥不由 `testdata/` 交付：`authn.token.signing-key-file` 指向工作目录下的 `var/token-signing-key.pem`，`run()` 在驱动生命周期之前发现该路径无文件时用 `pkg/authn/token` 的 `GenerateKey` 生成一份写入，已有文件则沿用；该路径由 `.gitignore` 挡在树外，生产部署换成自己的密钥材料。平台默认文档 `server/defaults.yaml` 里审计的请求级捕获样例只点名由操作者发起的写入路由，不点名前端会自动轮询的读（会话与本人的读之类）：被轮询的读逐次落一行，审计表与概览的最近活动会被它刷屏，真正要留痕的冒充、账号变更反而被淹没。样例同时避开已经由接缝级审计记录的管理动作，不重复记同一件事。示范的 `AGENTS.md` 是这组值与该基线的契约面。
+`testdata/` 的每份配置只写部署差异——监听地址、来源、路径、库定位符、种子与后端选择。平台默认文档 `server/defaults.go` 已经给出的取值不在每份配置里重复，其中包括文档里标了 `Required` 的项：文档由宿主明确写下，满足必填。文档没有给出、而模块又标了必填的项仍由每份配置写出。每份配置随骨架带一组开发用值（`seed.accounts` 的明文口令、库加密根键、`seed.settings` 里降到域下限的 `authn.mfa.sensitive-min-age`），由 `AGENTS.md` 点名、要求拷走后替换。签名密钥不由 `testdata/` 交付：`authn.token.signing-key-file` 指向工作目录下的 `var/token-signing-key.pem`，`run()` 在驱动生命周期之前发现该路径无文件时用 `pkg/authn/token` 的 `GenerateKey` 生成一份写入，已有文件则沿用；该路径由 `.gitignore` 挡在树外，生产部署换成自己的密钥材料。平台默认文档 `server/defaults.go` 里审计的请求级捕获样例只点名由操作者发起的写入路由，不点名前端会自动轮询的读（会话与本人的读之类）：被轮询的读逐次落一行，审计表与概览的最近活动会被它刷屏，真正要留痕的冒充、账号变更反而被淹没。样例同时避开已经由接缝级审计记录的管理动作，不重复记同一件事。示范的 `AGENTS.md` 是这组值与该基线的契约面。
 
 ### 审查装配
 
 审查装配是示范程序的构建变体，只在以 `-tags review` 构建时存在。能力本身已经由 `capabilityModules` 编入每次构建并由 `serve` 点名，审查构建与部署构建的差别只在配置与测试控制：`server/review.go` 的 `reviewModules` 只加短信模板审核控制 `review.sms.control` 与回环守卫 `review.guard`。审查配置把两个发送能力都显式选到日志载体（`mail.carrier: log`、`sms.carrier: log`），所以走查从进程日志读验证码；社交方法、企业 OIDC、短信家族与通知夹具由这份配置的凭据与开关启动。默认构建编译 `server/review_off.go`，`reviewModules` 为空，二进制不含这两个测试控制；能力名册与点名集不因它改变。
 
-**配置是 `server/review/sqlite.yaml`，位于 `testdata/` 之外。** 它是一份覆盖文档，与 `testdata/` 的 sqlite 配置同形：只写部署差异，平台拓扑取自编译进二进制的 `server/defaults.yaml`；此外再加上这些模块需要的节：社交方法的一组假凭据（方法因此起得来并拼得出授权地址，对端不会被访问）、企业 OIDC 方法的出口接缝（`authn.sso`，缺省取系统解析器与系统根证书）、短信模板注册表（zh-CN 与 en-US 各一组模板码）、种子设置里的 `authn.account.signup` 与 `authn.account.password-signup` 为 `open`、`workspace.personal.enabled` 为真，以及放宽到可送达号码的 `authn.sms.allowed-prefixes`。`authn.humanverify.mode` 显式写为 `off`：缺省值就是它，写出来使审查与端到端走查里的每次发送都不经证明，并在缺省值将来改变时保持这条路径不变。库落在 `server/var/review.db`，与基线的 `var/demo.db` 分开；`testdata/` 里的基线配置保持原样。
+**配置是 `server/review/sqlite.yaml`，位于 `testdata/` 之外。** 它是一份覆盖文档，与 `testdata/` 的 sqlite 配置同形：只写部署差异，平台拓扑取自编译进二进制的 `server/defaults.go`；此外再加上这些模块需要的节：社交方法的一组假凭据（方法因此起得来并拼得出授权地址，对端不会被访问）、企业 OIDC 方法的出口接缝（`authn.sso`，缺省取系统解析器与系统根证书）、短信模板注册表（zh-CN 与 en-US 各一组模板码）、种子设置里的 `authn.account.signup` 与 `authn.account.password-signup` 为 `open`、`workspace.personal.enabled` 为真，以及放宽到可送达号码的 `authn.sms.allowed-prefixes`。`authn.humanverify.mode` 显式写为 `off`：缺省值就是它，写出来使审查与端到端走查里的每次发送都不经证明，并在缺省值将来改变时保持这条路径不变。库落在 `server/var/review.db`，与基线的 `var/demo.db` 分开；`testdata/` 里的基线配置保持原样。
 
 **企业登录入口在每个审查服务的登录页上都出现。** `authn.sso.oidc` 在 `reviewModules` 里，审查装配因此始终挂载企业方法；`review/sqlite.yaml` 的 `authn.sso` 三项只写出口接缝的缺省值，缺省没有企业提供方。发现文档总带一条企业方法，登录页始终渲染企业入口——工作邮箱与「继续」——即使没有任何提供方可选。端到端走查的定位器因此落在它所在的那个面上：第二因素的「继续」定位到密码渠道的面板，企业入口的「继续」定位到企业入口本身；在整张登录页上做不设边界的角色查询会同时选中第二因素的「继续」与企业入口的「继续」，这是走查规格的缺陷，产品与审查装配不因此改变。
 
@@ -129,13 +136,13 @@ starters/demo/
 
 ### 端点集合
 
-端点是产品自己划的流量边界：`api`、`account`、`admin`、`ops`、`web`。哪个端装哪些层是配置，示范在这里说的是哪类流量属于哪个端。基线在这些端上装好网关、租户解析与准入、鉴权、限流、审计、平台管理面与特性文档，逐端的固定装法写在编译进二进制的平台默认文档 `server/defaults.yaml` 里，配置文件只写部署差异。分离部署下拉起前端的那条通配路由独占 `web` 端（[webui](design-webui.md)）。
+端点是产品自己划的流量边界：`api`、`account`、`admin`、`ops`、`web`。哪个端装哪些层是配置，示范在这里说的是哪类流量属于哪个端。基线在这些端上装好网关、租户解析与准入、鉴权、限流、审计、平台管理面与特性文档，逐端的固定装法写在编译进二进制的平台默认文档 `server/defaults.go` 里，配置文件只写部署差异。分离部署下拉起前端的那条通配路由独占 `web` 端（[webui](design-webui.md)）。
 
 **通知面的授权是宿主侧的。** 通知能力（`notification.inbox`、`notification.stream`、`notification.preferences`）按设计不声明任何权限点（[notification](notification/design-notification.md)）：它的路由不带权限闸，谁可读由宿主决定。示范作为宿主把这个决定写下来——`server/notification.go` 的 `notification.access` 模块在 `Init` 里把 `/api/v1/notifications` 下的收件箱、偏好与推送路由在 `authz.guard` 的声明面上登记为开放：网关照常认证、授权层放行、handler 按调用方身份作答；不登记时它们落在缺省关闭的授权层下答 403。登记为开放而非挂权限点，是因为这些路由按调用方身份划界而不是按谁的权限划界——收件箱与推送读的是调用方自己的账户，偏好矩阵读的是宿主身份与授权侧给出的收件人（`preferences.WithRecipient`）。基线的示范不接线那个收件人，也不声明任何通知类型，偏好矩阵因此在基线里恒为空集，收件人这一步在基线里不出现；声明了类型的宿主需另把调用方账户写进偏好路由的请求上下文。审查装配正是这样的宿主：`server/review_notification.go` 声明通知类型 `review.notice`（默认渠道为收件箱、邮件与短信），由定时任务按租户为可寻址的成员派发，`wireReviewRecipient` 在认证网关的记录阶段把调用方的有效账户写进 `preferences.WithRecipient`，偏好矩阵因此有内容可读。
 
 **这些端点由两条监听承载。** 端点挂在监听上，一条监听是一个监听套接字，`pkg/http` 据此把多个端点并在一个地址上（[http](http/design-http.md)）。示范的平台默认文档把这几个端挂在两条监听上：`api`、`account`、`admin` 与 `web` 挂在 `backend` 监听上，`ops` 自开一条 `ops` 监听；监听本身与它们的地址由每份配置声明。前端与 API 因而同源，浏览器直接访问 `web` 与 `api` 无需 CORS。
 
-**`backend` 监听上的各端由平台默认文档写出[认领前缀](../../glossary.md)，按能力命名空间认领。** 监听按认领为请求选端，不看本次装配挂了哪些路由（[http](http/design-http.md) 的分派 handler、[ADR-http-dispatch](../../adr/adr-http-dispatch.md)）。这张表由编译进二进制的 `server/defaults.yaml` 给出；`testdata/` 的每份配置与示范测试的配置都不再重复它，经加载器读到的是同一张表：
+**`backend` 监听上的各端由平台默认文档写出[认领前缀](../../glossary.md)，按能力命名空间认领。** 监听按认领为请求选端，不看本次装配挂了哪些路由（[http](http/design-http.md) 的分派 handler、[ADR-http-dispatch](../../adr/adr-http-dispatch.md)）。这张表由编译进二进制的 `server/defaults.go` 给出；`testdata/` 的每份配置与示范测试的配置都不再重复它，经加载器读到的是同一张表：
 
 | 端 | `prefixes` |
 |---|---|
@@ -437,11 +444,14 @@ flowchart TD
 |---|---|---|
 | 目录骨架与 `go.mod` | 已实现 | `starters/demo/server/go.mod`、`starters/demo/AGENTS.md` |
 | 产品自带的构建入口 | 已实现 | `starters/demo/Makefile` |
-| Fly.io 部署（镜像、单机卷、容器入口与部署工作流） | 已实现 | `starters/demo/Dockerfile`；`starters/demo/fly.toml`；`starters/demo/deploy/entrypoint.sh`、`starters/demo/deploy/fly.yaml.tmpl`；`.github/workflows/deploy.yml`；`./Makefile` `deploy` |
+| 无配置文件启动与默认值住代码 | 已实现 | `starters/demo/server/defaults.go` `platformDefaults`、`platformDefaultsDocument`、`seedDefaultsDocument`；`starters/demo/server/defaults_seed.go`；`starters/demo/server/host.go` `hostModule` |
+| 编译期能力上限 | 已实现 | `starters/demo/server/capabilities.go` `capabilityModules`；`starters/demo/server/main.go` `serve` 的 `Include` |
+| 本地开发回路（`make dev`、air、vite 与 `.env.example`） | 已实现 | `./Makefile` `dev`；`starters/demo/server/.air.toml`；`.env.example`；`.mise.toml` |
+| Fly.io 部署（镜像、单机卷、容器入口与部署工作流） | 已实现 | `starters/demo/Dockerfile`；`starters/demo/fly.toml`；`starters/demo/deploy/entrypoint.sh`、`starters/demo/deploy/fly.yaml.tmpl`；`.github/workflows/deploy.yml`；`./Makefile` `fly` |
 | 部署的人机验证配置：机制、Turnstile 凭据与主机名 | 已实现 | `starters/demo/deploy/fly.yaml.tmpl` 的 `humanverify` 节；`starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_MODE`、`DEMO_TURNSTILE_SITE_KEY`、`DEMO_TURNSTILE_SECRET_KEY`；`starters/demo/server/deploy_test.go` `TestTheDeployTemplateCarriesTheHumanVerificationSection` |
 | 命令树与部署栈 | 已实现 | `starters/demo/server/main.go` `commandTree`、`addStack`；`starters/demo/server/host.go` `hostModule` |
 | 签名密钥的首次运行生成 | 已实现 | `starters/demo/server/signingkey.go` `ensureSigningKey`、`signingKeyPath`；`starters/demo/server/main.go` `run` |
-| 平台基线（`serve`/`worker` 的点名集与配置样例） | 已实现 | `starters/demo/server/main.go` `baselineServe`、`baselineWorker`；`starters/demo/server/testdata/` |
+| 平台基线（`serve`/`worker` 的点名集与配置样例） | 已实现 | `starters/demo/server/main.go` `baselineServe`、`baselineWorker`；`starters/demo/server/capabilities.go` `capabilityModules`；`starters/demo/server/testdata/` |
 | 审查装配（`-tags review` 的构建变体与 `server/review/sqlite.yaml`） | 已实现 | `starters/demo/server/review.go` `reviewModules`；`starters/demo/server/review_off.go` `reviewModules`；`starters/demo/server/review/sqlite.yaml` |
 | 审查装配的提交门禁腿 | 已实现 | `./Makefile` `vet-review`、`test-review` |
 | 审查装配的回环守卫 | 已实现 | `starters/demo/server/review.go` `reviewGuardModule`、`loopbackAddress` |
@@ -483,19 +493,19 @@ flowchart TD
 | Fly 部署的 `mail.smtp` 节、SMTP secret 与开放口令注册（`authn.emailcode`、`authn.account.password-signup`） | 已实现 | `starters/demo/server/capabilities.go` `capabilityModules`；`starters/demo/deploy/fly.yaml.tmpl` `mail` 节与 `seed.settings`；`starters/demo/deploy/entrypoint.sh` |
 | Fly 部署的 Google 与 GitHub 登录（两个方法的 Fly secret、`authn.login` 节与 `authn.account.signup`） | 已实现 | `starters/demo/server/capabilities.go` `capabilityModules`；`starters/demo/deploy/fly.yaml.tmpl` `authn.login` 节；`starters/demo/deploy/entrypoint.sh`；`starters/demo/server/deploy_template_test.go` `TestTheDeployTemplateCarriesTheSocialCredentials` |
 | 档案分页承载验证节的 `?verify=1` 与 `?change=email` 落地 | 已实现 | `starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`starters/demo/web/src/contact-verification-banner.tsx` `ContactVerificationBanner` |
-| 个人租户：账户创建钩子、`POST /api/v1/workspace/personal` 补齐路由、特性 `workspace.personal` 与 `/api/v1/workspace` 的认领 | 已实现 | `starters/demo/server/personal.go` `personalModule`、`personalOperations`、`wire`；`starters/demo/server/main.go` `baselineServe`；`starters/demo/server/defaults.yaml` 的 `/api/v1/workspace` 认领；`starters/demo/web/backend-prefixes.json` |
+| 个人租户：账户创建钩子、`POST /api/v1/workspace/personal` 补齐路由、特性 `workspace.personal` 与 `/api/v1/workspace` 的认领 | 已实现 | `starters/demo/server/personal.go` `personalModule`、`personalOperations`、`wire`；`starters/demo/server/main.go` `baselineServe`；`starters/demo/server/defaults.go` 的 `/api/v1/workspace` 认领；`starters/demo/web/backend-prefixes.json` |
 | 宿主提供名册的写保护、首任管理员建立、平台管理员成员核对、成员删除守卫、管理面写守卫与判底的按租户锁（`tenant.WriteGuard`、`tenant.Provisioner`、`authz.MembershipChecker`、`authn.MembershipGuard`、`authz.WriteGuard`、`authz.TenantLock`）；`static.*` 主体在成员核对中答真 | 已实现 | `starters/demo/server/tenancy.go` `tenancyModule`、`tenancyProduct.Denied`、`Provision`、`IsMember`、`CheckMembershipRemoval`、`policyWriteGuardModule`、`policyWriteGuard.Denied`；`starters/demo/server/tenant_lock.go` `(*tenancyProduct).Lock`、`(*tenancyProduct).MembershipLock`；`starters/demo/server/main.go` `baselineServe`、`addStack`（`seed` 的纳入）；`starters/demo/server/tenancy_test.go` |
 | `seed` 拒绝没有平台管理员的账户清单、拒绝 `seed.tenants` 列出 `system` 或 `personal-` 前缀的标识、每次运行对账管理员成员关系与绑定，并在写预置账户时运行个人租户创建钩子 | 已实现 | `starters/demo/server/seed.go` `validateSeedInput`、`checkPlatformAdministrator`、`checkTenants`、`seedAdminMembership`；`starters/demo/server/main.go` `addStack`（`seed` 纳入个人租户模块与审计）；`starters/demo/server/seed_test.go` `TestSeedRefusesAConfigurationWithNoPlatformAdministrator`、`TestSeedRefusesTheSystemTenantInTheTenantList`、`TestSeedRefusesAPersonalPrefixedTenantInTheTenantList`、`TestSeedRestoresARemovedTenantAdministratorsMembership`、`TestSeedWritesAMissingAdministratorsMembershipOnEveryRun` |
 | 个人租户端点的 operation 声明与 `personal-openapi.json` 生成 | 已实现 | `starters/demo/server/personal.go`；`starters/demo/server/openapi_generated_test.go`；片段 `starters/demo/server/personal-openapi.json` |
 | 个人租户 `tenant-admin` 的权限取宿主声明的允许集（不含成员管理），补齐把授予收敛到允许集；该角色不置 `builtin`，业务租户的则置 | 已实现 | `starters/demo/server/personal.go` `personalBusinessPermissions`、`personalExcludedPermissions`、`personalTenantAdminPermissions`、`convergeTenantAdminGrants`、`legacyPersonalOwnerRole`（不调 `MarkRoleBuiltin`）；`starters/demo/server/seed.go` `seedAdministration`；`starters/demo/server/personal_test.go` `TestThePersonalTenantAdminAllowlistExcludesManagement`、`TestEnsureMigratesTheLegacyOwnerRole`、`TestThePersonalTenantAdminRoleIsNotBuiltin`、`TestThePersonalTenantAdminRoleIsNotBuiltinThroughTheAPI` |
 | 补齐不覆盖运营者的决定，读回前追平名册快照，已有个人租户的账户读回它，拒绝服务账户与静态凭据主体，别名冲突答 409 | 已实现 | `starters/demo/server/personal.go` `ensure`、`registeredTenant`、`createTenant`、`handleEnsure`；`starters/demo/server/personal_test.go` `TestTheBackfillCreatesBesideAnotherMembership`、`TestEnsureReadsBackThePersonalTenantBesideAnotherMembership`、`TestTheEnsureAnswersADependencyFailure503WithoutTheCause` |
 | 补齐失败占位只替换取租户数据的页面，一次性提示按账户当前资料实时判定，注册落点只在应用登录页生效 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/personal-tenant-notice.tsx` `PersonalTenantNoticeProvider`；`starters/demo/web/src/pages/home-page.tsx` `HomePage`；`starters/demo/web/src/app-personal-tenant.test.tsx` |
-| 本人租户读取 `GET /api/v1/auth/me/tenants` 进入 `serve` 的模块与配置，驱动租户选择器的列表、当前租户落定与租户作用域请求的别名来源；冒充身份可读且应答收窄到授予租户，冒充期间整页重载后当前租户仍可命名 | 已实现 | `pkg/tenant/self` `self.go`、`routes.go`、`handler.go`；`starters/demo/server/main.go` `baselineServe`；`starters/demo/server/defaults.yaml` `tenant.self`；`starters/demo/web/src/tenant-self.ts`、`starters/demo/web/src/app.tsx` `TenantFrame`；`web/packages/api-sdk/src/index.ts`、`starters/demo/web/src/app-api/index.ts` |
+| 本人租户读取 `GET /api/v1/auth/me/tenants` 进入 `serve` 的模块与配置，驱动租户选择器的列表、当前租户落定与租户作用域请求的别名来源；冒充身份可读且应答收窄到授予租户，冒充期间整页重载后当前租户仍可命名 | 已实现 | `pkg/tenant/self` `self.go`、`routes.go`、`handler.go`；`starters/demo/server/main.go` `baselineServe`；`starters/demo/server/defaults.go` `tenant.self`；`starters/demo/web/src/tenant-self.ts`、`starters/demo/web/src/app.tsx` `TenantFrame`；`web/packages/api-sdk/src/index.ts`、`starters/demo/web/src/app-api/index.ts` |
 | 租户选择器的个人空间文案按派生的标识逐字相等判定 | 已实现 | `starters/demo/web/src/chrome.tsx` `TenantMenu`；`starters/demo/web/src/tenant-self.ts` `personalTenantId` |
 | 邀请受理成功后以应答的租户标识为当前租户，别名经本人租户读取解析，解析不到时仍落到租户区首页但不写当前租户 | 已实现 | `starters/demo/web/src/pages/accept-invitation-page.tsx` `AcceptInvitationPage`；`starters/demo/web/src/tenant-self.ts` `loadSelfTenants` |
 | 启用个人租户时注册完成后落在租户区首页，完成设置的提示按账户当前资料实时判定 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
 | 登录页文案不断言装配 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
-| `backend` 监听上各端的认领前缀（平台默认文档给出的固定命名空间表） | 已实现 | `starters/demo/server/defaults.yaml` `http.endpoints`；`starters/demo/server/claims_test.go` `claimsFromFile`、`readEffective`（经 `config.Load` 读文件与默认文档合并后的生效配置） |
+| `backend` 监听上各端的认领前缀（平台默认文档给出的固定命名空间表） | 已实现 | `starters/demo/server/defaults.go` `http.endpoints`；`starters/demo/server/claims_test.go` `claimsFromFile`、`readEffective`（经 `config.Load` 读文件与默认文档合并后的生效配置） |
 | 后端前缀清单 `backend-prefixes.json` 与由它生成的开发代理 | 已实现 | `starters/demo/web/backend-prefixes.json`；`starters/demo/web/src/backend-prefixes.ts` `backendProxyRules`；`starters/demo/web/vite.config.ts` |
 | 回调页的路径 `/sign-in/callback` | 已实现 | `starters/demo/web/src/paths.ts` `AUTH_CALLBACK_PATH` |
 | 认领覆盖平台命名空间的测试 | 已实现 | `starters/demo/server/claims_test.go` `checkPlatformClaims`、`checkClaimsCover`、`selectClaimedEndpoint` |

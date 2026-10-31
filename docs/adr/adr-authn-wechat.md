@@ -11,7 +11,7 @@
 - 微信不提供邮箱。外部身份的主体取 `unionid`，没有则取按应用区分的 `openid`（[ADR-authn-external-binding](adr-authn-external-binding.md)）。
 - Go 的 `*url.Error` 的文本带完整请求 URL。`secret` 在查询串里，任何把出站错误原样记入日志、写入响应或转交调用方的路径都会泄露它。
 - 认证模块取现成库与 speed 之间的桥，自写需要现成库承担不了的理由（[ADR-authn-scope](adr-authn-scope.md)）。社交与企业 OIDC 的校验已取 `go-oidc` 加 `x/oauth2`。
-- 一个模块只有一个实例，一个实例只报一个登录方式名，每个模块的配置与必填校验按「纳入即必填」判定（[ADR-authn-packaging](adr-authn-packaging.md)）。
+- 一个模块只有一个实例，一个实例只报一个登录方式名；每个模块依据自己那份应用凭据决定是否运行——两项凭据都空时自行关闭，只给一项时是半配置（[ADR-authn-packaging](adr-authn-packaging.md)、[ADR-module-enablement](adr-module-enablement.md)）。
 - 日志脱敏由规则登记提供，持有秘密的模块在 `New` 里先于日志器绑定登记（[ADR-log-redaction](adr-log-redaction.md)、[ADR-authn-wiring](adr-authn-wiring.md)）。
 
 ## 考虑过的选项
@@ -50,7 +50,7 @@
 
 网站应用与公众号放进同一个模块，由它报告两个登录方式名，共用一份配置。
 
-**否决**：一个实例只能报一个 `Name()`。让登录方式接缝改为返回方法列表，会使每个取用登录方式的消费方都多一层展开，换来的只有这一个提供方的便利（[ADR-authn-packaging](adr-authn-packaging.md)）。两个入口各有自己的应用凭据，宿主常常只用其一；一个模块的必填校验要么要求两组凭据齐备，使只用一个入口的宿主无法启动，要么写成「至少一组齐备」的联合判定，与按纳入即必填的判定方式不合。
+**否决**：一个实例只能报一个 `Name()`。让登录方式接缝改为返回方法列表，会使每个取用登录方式的消费方都多一层展开，换来的只有这一个提供方的便利（[ADR-authn-packaging](adr-authn-packaging.md)）。两个入口各有自己的应用凭据，宿主常常只用其一；合并成一个模块后，一个入口的凭据只给一半就使整个模块启动失败，连带另一个本可运行的入口，而拆开时两者各自判定。
 
 ### 两个模块各自带一份客户端
 

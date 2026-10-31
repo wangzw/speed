@@ -302,7 +302,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 **认证在依赖不可用时拒绝，放宽只有一份有界的封闭集。** db、kv、签名密钥、短信发送方与 IdP 不可用时，对应路径答 503，不答 200，也不答 401。放宽限于校验缓存的有效期、`check-session` 的显式放宽、设置变更的传播延迟与 IdP 元数据的证书陈旧窗口，各自带设置与上界，清单与取值见 [authn-failure](modules/authn/design-authn-failure.md)（[ADR-authn-failure](../adr/adr-authn-failure.md)）。放宽开关是设置项，缺省取严的一端。经 `settings.admin` 管理面写全局层时，写入由平台域判定并留强制档审计；设置被改到放宽的方向时，认证不阻止，另写警告并经审计接缝记一条 `authn.settings.relaxed`，记录只含键名与方向（[authn-config](modules/authn/design-authn-config.md)、[ADR-authn-settings-and-secrets](../adr/adr-authn-settings-and-secrets.md)）。
 
-**秘密只以封闭的几种形态存放。** 认证自己持有的机密只以哈希、数据库加密列与文件这几种形态存放，这是封闭集：口令、令牌、验证码与服务密钥存哈希，因素种子与 IdP 客户端密钥存加密列，JWT 签名私钥与 SAML 私钥存文件。提供方发给宿主的客户端密钥与厂商密钥是启动必须项，存在配置的敏感项里。秘密不进命令行、不进设置，也不进日志、事件、审计与指标；配置的 `Sensitive` 不向日志登记脱敏，持有秘密配置值的模块各自把该值登记为日志的字面量匹配器。签名私钥不放 db，使 db 根密钥这个单点不连带令牌的签名（[authn-config](modules/authn/design-authn-config.md)）。
+**秘密只以封闭的几种形态存放。** 认证自己持有的机密只以哈希、数据库加密列与文件这几种形态存放，这是封闭集：口令、令牌、验证码与服务密钥存哈希，因素种子与 IdP 客户端密钥存加密列，JWT 签名私钥与 SAML 私钥存文件。提供方发给宿主的客户端密钥与厂商密钥存在配置的敏感项里；配齐时它们是启动必须项，未配置时对应能力自行关闭。秘密不进命令行、不进设置，也不进日志、事件、审计与指标；配置的 `Sensitive` 不向日志登记脱敏，持有秘密配置值的模块各自把该值登记为日志的字面量匹配器。签名私钥不放 db，使 db 根密钥这个单点不连带令牌的签名（[authn-config](modules/authn/design-authn-config.md)）。
 
 **冒充与审计绑定在一起。** 冒充开始之前先写强制档审计，写不成功冒充不开始；`authn.impersonation` 与 `authn.admin` 把审计功能当必需依赖，装配里没有审计即启动失败。冒充期间的请求级与语句级审计行，`actor` 列取发起冒充的管理员，明细带被冒充者、冒充范围与会话。冒充限定在一个租户内，由下列执行点合起来保证：冒充模块在装配期必需租户准入层交付的 `ScopeGuard`，网关只放冒充身份进准入层所守的端与登记为可冒充的路由，准入层核对冒充身份的范围等于请求的租户。缺任何一个执行点，换一个不带租户解析的端就越过了（[ADR-authn-impersonation](../adr/adr-authn-impersonation.md)、[authn-impersonation](modules/authn/design-authn-impersonation.md)）。
 

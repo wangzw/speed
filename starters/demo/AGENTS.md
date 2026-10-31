@@ -75,38 +75,50 @@ no Basic backend and `testdata/` carries no password table; a copy that wants a
 Basic-authenticated operator or probe adds `authn.static` and its
 `authn.static.subjects` table back itself.
 
-The baseline is written twice in `main.go`, as `baselineServe` and
-`baselineWorker`. `serve` stands the HTTP entry point up and names every module
-with a route or a middleware; `worker` names the background modules that need
-neither a router nor a gateway — the roster, settings, the job queue and its
-scheduler, and the outbox relay. The stack's engine, key-value backend, event
-backend and export provider are named on the commands rather than on the stack
-node, so `migrate` still runs the engine and the declarations alone.
+The roster is written in two places in the server package. `main.go` carries
+`baselineServe` and `baselineWorker`, the platform core: the modules a run
+always names because they start without a credential, an external account or a
+service outside the deployment stack. `capabilities.go` carries
+`capabilityModules`, the compile-time ceiling: every other capability the
+program can run — the social and enterprise OIDC login methods, the SMS family,
+the mail carriers and the verification-code sender, and the notification
+fixture — compiled into every build and named by `serve`. A module in that list
+is considered, not started: each states in `Prepare` whether its configuration
+lets it run, so one binary serves both a bare run and a fully configured
+deployment. `worker` names the background modules that need neither a router nor
+a gateway — the roster, settings, the job queue and its scheduler, and the
+outbox relay. The stack's engine, key-value backend, event backend and export
+provider are named on the commands rather than on the stack node, so `migrate`
+still runs the engine and the declarations alone.
 
 ### What a run names and what the imports reach
 
-Naming a module in the command tree and importing its package answer two
-different questions, and the baseline depends on both:
+Naming a module in the command tree, importing its package, and its own
+configuration answer three different questions:
 
-- **The command tree decides what a process runs.** A module an `Include` list
-  names takes its place in that run; a module nothing names is never
-  assembled and never started.
+- **The command tree decides what a process considers.** A module an `Include`
+  list names takes its place in that run's participating set; a module nothing
+  names is never assembled and never started.
 - **The binary's imports decide what the contract document covers.** `gen` and
   `/openapi.json` merge the `http.Spec` fragments of every module the imports
   reach — the available set — whether or not a command names that module for a
   run.
+- **A named module's own configuration decides whether it starts.** Every
+  participating module states in `Prepare` whether it runs. An optional
+  capability whose configuration is absent stands itself down with a reason in
+  the startup diagnostics; a half-configured one fails the start naming the
+  item.
 
-So every platform module that declares an HTTP fragment is imported, including
-the ones the credential criterion keeps out of the baseline's runs (`sms.admin`,
-`authn.sso.saml`): their fragments still describe the platform's API surface.
-The baseline runs neither in a command — no command runs `authn.sso.saml`, and
-the review assembly's `serve` is the only run that enables `sms.admin` — but the
-contract document covers both. Leaving one unimported would drop its operations
-from the merged document with no error — the document would simply be smaller
-than the platform contract. `server/main.go` carries these as blank imports
-beside a comment saying why; the declarations of a module reached this way are
-collected by the stack node's `IncludeAllDeclarations`, and no baseline
-`Include` names it.
+So every platform module that declares an HTTP fragment is imported. `sms.admin`
+is in `capabilityModules` and named by `serve`; it runs only when its
+configuration enables the SMS family, which the review configuration does and
+the baseline does not. `authn.sso.saml` is imported for the contract alone and
+named by no command. Both fragments still describe the platform's API surface.
+Leaving one unimported would drop its operations from the merged document with
+no error — the document would simply be smaller than the platform contract.
+`server/main.go` carries the blank import for `authn.sso.saml` beside a comment
+saying why; the declarations of a module reached this way are collected by the
+stack node's `IncludeAllDeclarations`, and no baseline `Include` names it.
 
 ### The review build
 
@@ -363,9 +375,11 @@ to start from, and the token module itself neither generates nor rotates a key.
 
 ### Replace before serving real traffic
 
-`server/defaults.yaml` holds the platform topology and nothing else: it carries
+`server/defaults.go` holds the platform topology and nothing else: it carries
 no credential and no value that differs between deployments, so a copy deploys
-it unchanged. The configuration files under `server/testdata/` are override
+it unchanged. It is written in Go and encoded to JSON in its `Data` method, so
+the document has no separate file to drift from and costs the host no parsing
+dependency. The configuration files under `server/testdata/` are override
 documents over it, and they ship the development values a copy replaces so it
 starts as it stands. Every one of them is marked `DEV` in the file it appears
 in; replace them all before a deployment serves real traffic:
@@ -422,12 +436,14 @@ in; replace them all before a deployment serves real traffic:
 | Path | What it is |
 |---|---|
 | `Makefile` | The product's own build entry point: `make help` lists it, `make check` runs it. What a copy uses; inside the repository the root Makefile is the entry point |
-| `server/main.go` | The command tree, the deployment-stack table, the baseline inclusion lists, the `gen` command, the placeholder command group, the embedded defaults document, and `run()` |
+| `server/main.go` | The command tree, the deployment-stack table, the baseline inclusion lists, the `gen` command, the placeholder command group, and `run()` |
 | `server/host.go` | The environment prefix, the host's own module (the `config.HostIdentity` and defaults-document resources), and the endpoint constants |
-| `server/defaults.yaml` | The platform topology compiled into the binary, layered below every configuration file |
+| `server/capabilities.go` | The compile-time capability ceiling: every other capability compiled into every build and named by `serve` |
+| `server/defaults.go` | The platform defaults document, written in Go and encoded to JSON, layered below every configuration file |
+| `server/defaults_seed.go` | The seed section of that document |
 | `server/signingkey.go` | The token signing key's path, and the first-run generation that puts a key there |
 | `server/modules/` | The slot for this product's business modules |
-| `server/testdata/` | One override document per deployment stack: the deltas from `server/defaults.yaml` |
+| `server/testdata/` | One override document per deployment stack: the deltas from `server/defaults.go` |
 | `server/dist/` | The frontend build output, embedded by the Go program |
 | `web/` | The frontend application's source and build; it writes into `server/dist` |
 | `compose.yaml` | The four external backends the non-memory stacks run on |
@@ -771,7 +787,7 @@ which class of traffic belongs where:
 
 The dispatch selects an endpoint by the path prefixes the configuration gives
 it under `http.endpoints.<name>.prefixes`; the registered routes take no part in
-the choice. `server/defaults.yaml`, compiled into the binary, declares the
+the choice. `server/defaults.go`, compiled into the binary, declares the
 table:
 
 | Endpoint | Claims |
@@ -804,16 +820,19 @@ baseline's — byte for byte apart from `Date` — on both deployment topologies
 
 ### The defaults document and the override documents
 
-`server/defaults.yaml` is the platform topology: the endpoint table, the endpoint
-each capability mounts on, and the request list the journal records. It is
-embedded with `go:embed` and registered on the host module, so the loader layers
-it below the configuration file a run is pointed at and above each module's
-prototype defaults. What belongs in it is what every deployment of this binary
-shares; a credential, an address, an origin, a path on disk or a seed is a
-deployment value and lives in the configuration file.
+`server/defaults.go` is the platform topology: the endpoint table, the endpoint
+each capability mounts on, the listener addresses a bare run binds, the
+development seed, and the request list the journal records. It is written in Go
+and encoded to JSON in its `Data` method, and registered as a `config.Defaults`
+resource on the host module, so the loader layers it below the configuration
+file a run is pointed at and above each module's prototype defaults. A bare run
+needs no configuration file at all: `demo sqlite serve` with no `--config` and
+no `DEMO_CONFIG` starts on this document alone. What belongs in it is what every
+deployment of this binary shares; a credential, an address, an origin, a path on
+disk or a seed is a deployment value and lives in the configuration file.
 
 The configurations under `server/testdata/` (and `server/review/sqlite.yaml`)
-are therefore override documents: each carries the deltas from `defaults.yaml`,
+are therefore override documents: each carries the deltas from `defaults.go`,
 the values their deployment chooses, and the backend section at the bottom — not
 a second copy of the whole platform table. A copy of this skeleton changes the
 delta, not the table.
@@ -823,7 +842,7 @@ satisfied by the defaults document, and a prototype's field value is not. The
 document is the host naming a value on purpose, the same act as writing it in
 the configuration file; a prototype value always holds something, so it could
 not tell "nobody gave a value" from the zero one. The mounting table therefore
-lives in `defaults.yaml` alone, and no configuration file repeats it.
+lives in `defaults.go` alone, and no configuration file repeats it.
 
 What a file must still state is the values the document must not carry:
 
@@ -835,7 +854,7 @@ What a file must still state is the values the document must not carry:
 - `objectstore.fs.root`, which is required and is a path on disk: where a
   deployment keeps its bytes differs per deployment.
 - `observability.otlp.endpoint`, which is required and names the collector the
-  deployment exports to. `defaults.yaml` carries no `observability.otlp`
+  deployment exports to. `defaults.go` carries no `observability.otlp`
   section: only the `postgres-redis-nats` stack exports through OTLP, and the
   stacks that export to stdout must not start pointed at a collector that is
   not there.
@@ -872,7 +891,7 @@ reaches the api endpoint, not the bundle: with no credentials the gateway
 refuses it 401, and once admitted the api endpoint answers its own 404 (or its
 405 where the path exists but the method is not allowed).
 
-The baseline now ships the guards each endpoint carries; `server/defaults.yaml`
+The baseline now ships the guards each endpoint carries; `server/defaults.go`
 names the fixed part of that wiring, and no configuration file repeats it:
 
 - The gateway (`authn.gate`) guards `api`, `account` and `admin`. Its ordinary
@@ -927,7 +946,7 @@ names the fixed part of that wiring, and no configuration file repeats it:
   and in the request's tenant, and the frontend attaches both sets to the
   session from that answer.
 - The feature document (`feature.board`) mounts `GET /api/v1/features` on the endpoint
-  `feature.board.endpoint` names — `account` in `defaults.yaml`, which
+  `feature.board.endpoint` names — `account` in `defaults.go`, which
   the gateway guards, which resolves no tenant, and whose listener claims
   `/api/v1/features`. It publishes only to authenticated callers: a process with no
   authentication gateway fails to start rather than expose the document, and an
@@ -1269,12 +1288,13 @@ Under every stack:
   module in this repository is written — a descriptor registered from an `init` —
   and name it on the commands in `server/main.go` that run it. The import is the
   wiring.
-- **The platform baseline**: `baselineServe` and `baselineWorker` in
-  `server/main.go` are the two lists a product grows from. A module dropped from
-  them is a capability the deployment does not carry; a module added is one it
-  does, once its required configuration items have a value — in
-  `server/defaults.yaml` for shared topology, in `server/testdata/` for a
-  deployment value.
+- **The platform roster**: `baselineServe` and `baselineWorker` in
+  `server/main.go` are the core a product grows from, and `capabilityModules` in
+  `server/capabilities.go` is the compile-time ceiling named by `serve`. A
+  module dropped from the ceiling is a capability no run can carry; a module
+  added is one every build compiles in, which starts wherever its configuration
+  lets it. Shared topology goes in `server/defaults.go`, a deployment value in
+  `server/testdata/`.
 - **A new endpoint, guard or backend on an endpoint**: the endpoint is a
   constant in `server/host.go` and an entry under `http.endpoints` in the
   configuration; which modules guard it is the `Include` list of the command in

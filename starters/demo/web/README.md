@@ -222,7 +222,7 @@ shelf, so an unknown id falls back instead of reaching the provider.
 The app reaches every backend call at a single origin -- the client base URL,
 same-origin by default or the `runtime-config.json` origin -- but the demo's Go
 program mounts the API, account and admin surfaces on separate ports
-(`http.endpoints` in `server/defaults.yaml`). The one origin the app talks to is
+(`http.endpoints` in `server/defaults.go`). The one origin the app talks to is
 therefore a **gateway** that routes each claimed namespace to the endpoint it
 belongs to (`backend-prefixes.json` lists them):
 

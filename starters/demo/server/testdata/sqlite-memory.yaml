@@ -16,14 +16,14 @@
 #
 # This file is an override document. The platform topology — the endpoint table
 # and every capability's mounting — is compiled into the binary
-# (server/defaults.yaml) and layered below this file, so what is written here is
+# (server/defaults.go) and layered below this file, so what is written here is
 # what a deployment chooses: addresses, origins, the export destination, the
 # seed and the backend section at the bottom. Only the backend section differs
 # between the six stack files.
 #
 # No mounting key is repeated here: the loader accepts a required item from the
 # compiled-in document, whose mounting table is complete. A copy changes the
-# table in defaults.yaml, not in this file.
+# table in defaults.go, not in this file.
 #
 # The values marked DEV in a comment are a development default this skeleton
 # ships so a copy starts as it stands. Replace every one of them before a
@@ -48,7 +48,7 @@ http:
           - "https://app.demo.test"
 
 # The operations surface's document metadata. Its endpoint is part of the
-# platform topology and comes from defaults.yaml.
+# platform topology and comes from defaults.go.
 ops:
   title: demo
   version: 0.1.0
@@ -62,7 +62,7 @@ observability:
 # The identity system's deployment values: the origin this deployment is
 # reached at, the token signing key, and the relying party the step-up is bound
 # to. The gateway's endpoint list and the account mount are platform topology
-# and come from defaults.yaml.
+# and come from defaults.go.
 authn:
   gate:
     mount:
