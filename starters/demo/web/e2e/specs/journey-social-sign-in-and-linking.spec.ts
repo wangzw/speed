@@ -96,6 +96,17 @@ function emailCard(page: Page) {
   })
 }
 
+/** The sign-in-ways card's sentence naming the username it signs in with. */
+function usernameSignInSentence(page: Page) {
+  return identifiersSection(page).getByText(
+    copy('accountUi', 'identifiers.usage.loginAs', {
+      kind: copy('accountUi', 'identifiers.kind.username'),
+      value: FIRST_SIGN_IN_USERNAME,
+    }),
+    { exact: true },
+  )
+}
+
 /** The security pane's social accounts card. */
 function bindingsSection(page: Page) {
   return page.getByRole('region', {
@@ -199,9 +210,7 @@ test.describe('the provider address belongs to no account', () => {
       await selectAccountSection(page, 'security')
       await expandAccountRows(page)
       const signInWays = identifiersSection(page)
-      await expect(
-        signInWays.getByText(FIRST_SIGN_IN_USERNAME, { exact: true }),
-      ).toBeVisible()
+      await expect(usernameSignInSentence(page)).toBeVisible()
       await expect(
         signInWays.getByRole('combobox', {
           name: copy('accountUi', 'identifiers.kind.email'),
@@ -222,11 +231,7 @@ test.describe('the provider address belongs to no account', () => {
 
       await openAccountSection(page, 'security')
       await expandAccountRows(page)
-      await expect(
-        identifiersSection(page).getByText(FIRST_SIGN_IN_USERNAME, {
-          exact: true,
-        }),
-      ).toBeVisible()
+      await expect(usernameSignInSentence(page)).toBeVisible()
     })
 
     await test.step('the same Google account signs in again to the same account', async () => {
@@ -251,9 +256,7 @@ test.describe('the provider address belongs to no account', () => {
       await openAccountSection(page, 'security')
       await expandAccountRows(page)
       const signInWays = identifiersSection(page)
-      await expect(
-        signInWays.getByText(FIRST_SIGN_IN_USERNAME, { exact: true }),
-      ).toBeVisible()
+      await expect(usernameSignInSentence(page)).toBeVisible()
       await expect(
         bindingsSection(page)
           .getByRole('listitem')
@@ -307,9 +310,7 @@ test.describe('the provider address belongs to no account', () => {
       await openAccountSection(page, 'security')
       await expandAccountRows(page)
       const signInWays = identifiersSection(page)
-      await expect(
-        signInWays.getByText(FIRST_SIGN_IN_USERNAME, { exact: true }),
-      ).toBeVisible()
+      await expect(usernameSignInSentence(page)).toBeVisible()
       await expect(
         signInWays.getByRole('combobox', {
           name: copy('accountUi', 'identifiers.kind.email'),

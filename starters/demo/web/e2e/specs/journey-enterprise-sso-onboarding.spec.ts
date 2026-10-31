@@ -1107,7 +1107,13 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
       exact: true,
     })
     await expect(
-      identifiers.getByText(JIT_USERNAME, { exact: true }),
+      identifiers.getByText(
+        copy('accountUi', 'identifiers.usage.loginAs', {
+          kind: copy('accountUi', 'identifiers.kind.username'),
+          value: JIT_USERNAME,
+        }),
+        { exact: true },
+      ),
     ).toBeVisible()
 
     await page

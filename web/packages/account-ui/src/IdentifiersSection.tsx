@@ -29,9 +29,11 @@
  * contacts list carries no sign-in control. A username is always a sign-in
  * way, has no contact position, and is never in the contacts list.
  *
- * The sign-in ways list is grouped by kind, and each group carries one
- * control. A username is a login name by definition, so its group states
- * that with a static switch. The email group's switch states whether the
+ * The sign-in ways list is grouped by kind, and each group renders one
+ * control and one sentence, never the addresses or numbers as rows: the
+ * address a group chooses reads in the control itself. A username is a login
+ * name by definition, so its group states that with the sentence naming the
+ * username and has no control. The email group's switch states whether the
  * account uses email to sign in; while it is on, a picker chooses one of the
  * proved addresses, written as one step-up action so a won challenge lands
  * the same end state (the pre-chosen address turned off and the new one
@@ -46,9 +48,9 @@
  * A host that splits the surface with `axis` gets the same blocks in the view
  * it shows: the contact axis's own table carries the default-contact choice
  * and the row actions on each address, and the sign-in axis renders the kind
- * groups alone, without the merged view's sign-in ways heading and with each
- * kind's list holding every row of that kind (that view is where the choice
- * is made, and it has no contacts list beside it).
+ * groups alone, without the merged view's sign-in ways heading. The control
+ * reads every row of its kind in both views; the login-ways page keeps no
+ * per-address rows of its own.
  *
  * A group's sign-in write is PUT
  * /api/v1/auth/identifiers/{id} (authn.login.updateIdentifier) with
@@ -203,7 +205,6 @@ import TableRow from '@mui/material/TableRow'
 import Select from '@mui/material/Select'
 import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
-import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
@@ -473,36 +474,10 @@ function axesOf(row: {
   }
 }
 
-/** Whether a row belongs to the list named by `group`. The sign-in list holds
- * every username and every address the profile marks `sign_in`; the contacts
- * list holds every registered email address and phone number. */
-function belongsTo(
-  row: {
-    readonly kind?: string
-    readonly sign_in?: boolean
-    readonly default_contact?: boolean
-  },
-  group: IdentifierGroup,
-): boolean {
-  const axes = axesOf(row)
-  switch (group) {
-    case 'signIn':
-      return axes.signIn
-    case 'contact':
-      return !axes.username
-  }
-}
-
-/** The list a row's per-record controls render in, so one address never
- * offers the same action twice while it appears in both lists: the contacts
- * list for an email address or phone number, the sign-in list for a
- * username. */
-function canonicalGroup(row: {
-  readonly kind?: string
-  readonly sign_in?: boolean
-  readonly default_contact?: boolean
-}): IdentifierGroup {
-  return axesOf(row).username ? 'signIn' : 'contact'
+/** Whether a row belongs to the contacts list: every registered email
+ * address and phone number. A username is a login name only. */
+function isContact(row: { readonly kind?: string }): boolean {
+  return row.kind !== 'username'
 }
 
 export function IdentifiersSection({
@@ -1275,14 +1250,15 @@ export function IdentifiersSection({
   const groupIdBase = useId()
 
   /**
-   * One sign-in kind list: the group-level choice for that kind and the rows
-   * that sign in with it. The sign-in axis names the list with its kind
-   * heading; the merged view renders the same block inside its sign-in ways
-   * list under the kind's accessible name, so an email or phone choice reads
-   * the same in both views. The control is one per list, never one per row:
-   * a username is always a login name (a static switch), an email is one
-   * choice out of the proved addresses (a toggle plus a picker), and a phone
-   * is the representative the profile marks `sign_in` (a toggle).
+   * One sign-in kind group: the group-level choice for that kind and the
+   * sentence stating what it chose. Neither view renders addresses or
+   * numbers as rows here -- the picker displays the chosen address, and the
+   * sentence names the username or phone. The sign-in axis names the group
+   * with its kind heading; the merged view renders the same block inside its
+   * sign-in ways list under the kind's accessible name, so an email or phone
+   * choice reads the same in both views. A username has no control, the email
+   * group has a toggle plus a picker, and the phone group has a toggle of its
+   * representative row.
    */
   function renderSignInKind(
     spec: GroupSpec,
@@ -1292,15 +1268,9 @@ export function IdentifiersSection({
     const headingId = `${groupIdBase}-${kind}`
     // The control reads every row of the kind: the email picker offers all
     // proved addresses, and the phone toggle targets the representative row.
+    // The group renders no address rows of its own: the picker is where the
+    // chosen address reads, and the sentence states the username or phone.
     const kindRows = allRows.filter((row) => (row.kind ?? '') === kind)
-    // The list itself holds only the rows that sign in. The sign-in axis
-    // lists every row of the kind because that view is where the choice is
-    // made; the merged view has the contacts list beside it, so a row that
-    // does not sign in belongs there alone.
-    const listRows =
-      axis === 'signIn'
-        ? kindRows
-        : kindRows.filter((row) => belongsTo(row, 'signIn'))
     const signInRow =
       kindRows.find((row) => row.sign_in === true) ??
       kindRows.find((row) => row.proven === true) ??
@@ -1509,33 +1479,19 @@ export function IdentifiersSection({
             )}
           </Typography>
         )}
-        {listRows.length === 0 ? null : (
-          <Box
-            component="ul"
-            role="list"
-            sx={{ m: 0, p: 0, listStyle: 'none' }}
-          >
-            {listRows.map((identifier, index) =>
-              renderRow(identifier, index, 'signIn'),
-            )}
-          </Box>
-        )}
       </Box>
     )
   }
 
   /**
-   * One row in one of the lists. A username's static sign-in switch states
-   * what is always true of a login name; the per-record actions (the
-   * default-contact choice, verification and removal) render only in the
-   * occurrence canonical for the record's state, so one address never offers
-   * the same action twice. Whether an email or phone signs in is a group
-   * decision, so no row carries a switch for it.
+   * One row in the contacts list. The per-record actions (the
+   * default-contact choice, verification and removal) render on the row, so
+   * one address never offers the same action twice. Whether an email or
+   * phone signs in is a group decision, so no row carries a switch for it.
    */
-  function renderRow(
+  function renderContactRow(
     identifier: AuthnProfileIdentifier,
     index: number,
-    group: IdentifierGroup,
   ) {
     const id = identifier.id ?? null
     const kind = identifier.kind ?? ''
@@ -1559,19 +1515,17 @@ export function IdentifiersSection({
     // show.
     const showChip = kind !== 'username'
     const axes = axesOf(identifier)
-    const canonical =
-      axis === 'signIn' ? true : group === canonicalGroup(identifier)
-    const rowKey = `${group}:${id ?? index}`
+    const rowKey = `contact:${id ?? index}`
     // An unverified email is provable from its own row, unless the
     // account-wide flow already owns that code (pending) or the deployment
     // has no channel to send it.
     const canVerifyRow = rowVerifyAvailable && kind === 'email' && !verified
     const rowFlowOpen = canVerifyRow && rowVerify?.key === rowKey
     const lastLoginName =
-      canonical &&
       passwordSet &&
       loginNameCount === 1 &&
-      (kind === 'username' || (kind === 'email' && axes.signIn))
+      kind === 'email' &&
+      axes.signIn
     const disabled = writeBusy || addBusy || id === null
     return (
       <Box
@@ -1584,13 +1538,9 @@ export function IdentifiersSection({
             <Typography variant="body1" noWrap sx={{ fontWeight: 600 }}>
               {value}
             </Typography>
-            {/* The category heading already names the kind when this
-                occurrence groups by kind. */}
-            {axis === 'signIn' ? null : (
-              <Typography variant="body2" color="text.secondary">
-                {kindLabel}
-              </Typography>
-            )}
+            <Typography variant="body2" color="text.secondary">
+              {kindLabel}
+            </Typography>
             {lastLoginName ? (
               <Typography variant="body2" color="text.secondary">
                 {t('identifiers.lastLoginName')}
@@ -1614,7 +1564,7 @@ export function IdentifiersSection({
                 label={stateLabel}
               />
             ) : null}
-            {canVerifyRow && canonical ? (
+            {canVerifyRow ? (
               <Button
                 variant="outlined"
                 size="small"
@@ -1628,7 +1578,7 @@ export function IdentifiersSection({
                 {t('identifiers.verify')}
               </Button>
             ) : null}
-            {canonical && id !== null && !lastLoginName && (
+            {id !== null && !lastLoginName && (
               <Button
                 variant="outlined"
                 color="error"
@@ -1649,15 +1599,7 @@ export function IdentifiersSection({
             )}
           </Box>
         </Box>
-        {group === 'signIn' && kind === 'username' ? (
-          // A username is a login name by definition; the switch states that
-          // fact rather than offering a change the server refuses.
-          <FormControlLabel
-            control={<Switch size="small" checked disabled />}
-            label={t('identifiers.axes.signIn')}
-          />
-        ) : null}
-        {axis !== 'signIn' && canonical && kind === 'email' && verified ? (
+        {kind === 'email' && verified ? (
           <FormControlLabel
             control={
               <Radio
@@ -2043,9 +1985,7 @@ export function IdentifiersSection({
                   </Box>
                 )
               }
-              const contactRows = settledRows.filter((row) =>
-                belongsTo(row, 'contact'),
-              )
+              const contactRows = settledRows.filter(isContact)
               return (
                 <Box
                   component="section"
@@ -2071,7 +2011,7 @@ export function IdentifiersSection({
                       sx={{ m: 0, p: 0, listStyle: 'none' }}
                     >
                       {contactRows.map((identifier, index) =>
-                        renderRow(identifier, index, 'contact'),
+                        renderContactRow(identifier, index),
                       )}
                     </Box>
                   )}

@@ -484,8 +484,15 @@ test('operator-first-run: the operator proves the email and lands the first sett
     await selectAccountSection(page, 'security')
     await expandAccountRows(page)
     const identifiers = identifiersSection(page)
+    // The username is named by the sign-in group's sentence.
     await expect(
-      identifiers.getByText(OPERATOR.username, { exact: true }),
+      identifiers.getByText(
+        copy('accountUi', 'identifiers.usage.loginAs', {
+          kind: copy('accountUi', 'identifiers.kind.username'),
+          value: OPERATOR.username,
+        }),
+        { exact: true },
+      ),
     ).toBeVisible()
     await expect(
       identifiers.getByRole('combobox', {

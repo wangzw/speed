@@ -134,19 +134,23 @@ session, and the read-only ones take no props either.
   banner, the field error, the success notice and the sent-code step.
 - **A username carries no ownership chip; an email or phone chip is one of
   two values, reading `proven` and never `verified_at`.** A username is a
-  login name with no ownership to prove, so its row renders no ownership
-  chip. Every registered email address and phone number is a contact
-  address, so an email or phone row renders no contact switch. Whether an
-  email or phone signs in is a group decision, never a per-row switch: the
-  sign-in ways list is grouped by kind and each group carries one control --
-  the username group's static statement, the email group's toggle with its
-  picker (a proved address is chosen while the toggle is on, an off note
-  takes the picker's place while it is off), and the phone group's toggle of
-  its representative row. The contacts list carries no sign-in control; a
-  proved email there still offers the default-contact choice. A phone group
-  whose number is proved but does not sign in says so
+  login name with no ownership to prove, so the sign-in ways list states it
+  in a sentence and renders no ownership chip. Every registered email address
+  and phone number is a contact address, so an email or phone row renders no
+  contact switch. Whether an email or phone signs in is a group decision,
+  never a per-row switch: the sign-in ways list is grouped by kind and each
+  group renders its heading, one control and one sentence, never the
+  addresses or numbers as rows -- the picker displays the chosen address, and
+  the sentence names the username or phone. A username has no control of its
+  own; the email group's is a toggle with its picker (a proved
+  address is chosen while the toggle is on, an off note takes the picker's
+  place while it is off); the phone group's is a toggle of its representative
+  row. The contacts list carries no sign-in control; a proved email there
+  still offers the default-contact choice. A phone group whose number is
+  proved but does not sign in says so
   (`identifiers.usage.phoneNotSignIn`) instead of claiming the number signs
-  in, so its sentence and its enable action agree. An email or phone row reads `identifiers.verified` when `proven` is
+  in, so its sentence and its enable action agree. An email or phone row in
+  the contacts list reads `identifiers.verified` when `proven` is
   true and `identifiers.unverified` otherwise, whatever `verified_via` says:
   the chip answers only whether ownership has been proved, so an address an
   administrator asserted or an import recorded is an unproved address, not a
@@ -154,9 +158,11 @@ session, and the read-only ones take no props either.
   username written at registration as `self`, so `verified_at` cannot answer
   the ownership question for the rows that show one. An
   account with a password signs in with a username or an email address:
-  while the profile lists exactly one of those, that row's remove
-  action gives way to a note (`identifiers.lastLoginName`) telling the user
-  to add another login name first. Another username/email, or an account
+  while the profile lists exactly one of those, that email's contact row
+  gives up its remove action to a note (`identifiers.lastLoginName`) telling
+  the user to add another login name first, and a username renders no removal
+  entry at all because the sign-in group carries no per-identifier row.
+  Another username/email, or an account
   with no password at all, keeps the action; the server still judges the
   last way in on the write itself, and a refusal renders its 409
   `login-identifier-required` text and re-reads the profile, so a guard

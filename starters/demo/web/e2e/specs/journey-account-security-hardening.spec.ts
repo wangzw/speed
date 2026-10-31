@@ -335,11 +335,17 @@ test('account-security-hardening: an account enrols two factors, ends another de
           exact: true,
         }),
       ).toBeVisible()
-      // The username is the account's login name, named in its own group's
+      // The username is the account's login name, named in its group's
       // sentence (the address contains the username, so the exact text is
       // what tells it apart).
       await expect(
-        identifiers.getByText(account.username, { exact: true }),
+        identifiers.getByText(
+          copy('accountUi', 'identifiers.usage.loginAs', {
+            kind: copy('accountUi', 'identifiers.kind.username'),
+            value: account.username,
+          }),
+          { exact: true },
+        ),
       ).toBeVisible()
       // The email group lists the proved addresses only, and the one on this
       // account is the selected choice.

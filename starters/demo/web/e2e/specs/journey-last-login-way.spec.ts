@@ -325,9 +325,15 @@ async function proveWithPasskey(page: Page): Promise<void> {
   await expect(dialog).toHaveCount(0, { timeout: 30_000 })
 }
 
-/** The phone, named in the sign-in-ways card's phone group. */
-function phoneRow(page: Page): Locator {
-  return identifiersSection(page).getByText(PHONE_E164, { exact: true })
+/** The sign-in-ways card's sentence naming the phone it signs in with. */
+function phoneSignInSentence(page: Page): Locator {
+  return identifiersSection(page).getByText(
+    copy('accountUi', 'identifiers.usage.loginAs', {
+      kind: copy('accountUi', 'identifiers.kind.phone'),
+      value: PHONE_E164,
+    }),
+    { exact: true },
+  )
 }
 
 /**
@@ -417,7 +423,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       await expandAccountRows(page)
       // The phone-code first login wrote the number as a sign-in way and no
       // contact, and the account holds no password.
-      await expect(phoneRow(page)).toBeVisible()
+      await expect(phoneSignInSentence(page)).toBeVisible()
       const password = section(page, copy('accountUi', 'password.title'))
       await expect(
         password.getByRole('textbox', {
@@ -495,7 +501,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       ).toBeVisible({ timeout: 15_000 })
       await selectAccountSection(page, 'security')
       await expandAccountRows(page)
-      await expect(phoneRow(page)).toHaveCount(0)
+      await expect(phoneSignInSentence(page)).toHaveCount(0)
     })
 
     await test.step("the signup passkey is removed so the social sign-in can enrol the journey's passkey", async () => {
@@ -557,7 +563,13 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       // email address is offered to sign in with.
       const identifiers = identifiersSection(page)
       await expect(
-        identifiers.getByText(username, { exact: true }),
+        identifiers.getByText(
+          copy('accountUi', 'identifiers.usage.loginAs', {
+            kind: copy('accountUi', 'identifiers.kind.username'),
+            value: username,
+          }),
+          { exact: true },
+        ),
       ).toBeVisible()
       await expect(
         identifiers.getByText(PHONE_E164, { exact: true }),
