@@ -12,7 +12,7 @@
 - **不是第二个 `pkg/`。** 示范不交付任何可被依赖的接口，不被任何模块 import，也不登记自己的模块边界；方向是它 import `pkg/`，`pkg/` 不认识它。
 - **不承载模块机制。** 模块描述符、注册、查询、生命周期驱动与零依赖公共基础设施归 [core](design-core.md)；示范不改这些契约，只调用它们。
 - **不内建业务域。** 示范的业务目录是空位，装使用者自己的业务模块；示范自身不带一个具体的业务域。
-- **空的面是设计使然，不是未完成。** 示范的基线不种任何业务数据，所以它在浏览器里以空态呈现：控制台概览只有租户的统计（那几项读的是平台自己的名册）；通知的收件箱没有可展示的消息（基线不声明任何通知类型、也不投递；审查装配声明 `review.notice` 并派发它，见「审查装配」）；偏好矩阵在基线里恒为空集。看到一个面是空的，读到的不是「这条没做完」，而是「这份基线不带业务域，数据由产品与它的用户产生」。空态与特性缺席是两回事：一个面因装配而不存在时，它的[特性](../../glossary.md)缺席，前端不以空态呈现它，而按不存在的路径处理（见「平台基线」与「前端的组合次序」）。
+- **空的面是设计使然，不是未完成。** 示范的基线不种任何业务数据，所以它在浏览器里以空态呈现：控制台概览只有租户的统计（那几项读的是平台自己的名册）；通知的收件箱没有可展示的消息（基线不派发任何通知；审查装配打开通知夹具的开关，由它声明 `review.notice` 并派发，见「审查装配」）；偏好矩阵在基线里恒为空集。看到一个面是空的，读到的不是「这条没做完」，而是「这份基线不带业务域，数据由产品与它的用户产生」。空态与特性缺席是两回事：一个面因装配而不存在时，它的[特性](../../glossary.md)缺席，前端不以空态呈现它，而按不存在的路径处理（见「平台基线」与「前端的组合次序」）。
 
 ## 外部接口契约
 
@@ -110,11 +110,11 @@ starters/demo/
 
 ### 审查装配
 
-审查装配是示范程序的构建变体，只在以 `-tags review` 构建时存在。能力本身已经由 `capabilityModules` 编入每次构建并由 `serve` 点名，审查构建与部署构建的差别只在配置与测试控制：`server/review.go` 的 `reviewModules` 只加短信模板审核控制 `review.sms.control` 与回环守卫 `review.guard`。审查配置把两个发送能力都显式选到日志载体（`mail.carrier: log`、`sms.carrier: log`），所以走查从进程日志读验证码；社交方法、企业 OIDC、短信家族与通知夹具由这份配置的凭据与开关启动。默认构建编译 `server/review_off.go`，`reviewModules` 为空，二进制不含这两个测试控制；能力名册与点名集不因它改变。
+审查装配是示范程序的构建变体，只在以 `-tags review` 构建时存在。能力本身已经由 `capabilityModules` 编入每次构建并由 `serve` 点名，审查构建与部署构建的差别只在配置与审查专用件：`server/review.go` 的 `reviewModules` 只加短信模板审核控制 `review.sms.control` 与回环守卫 `review.guard`；通知派发控制由 `server/notification_control_review.go` 在审查构建里编入通知夹具。审查配置把两个发送能力都显式选到日志载体（`mail.carrier: log`、`sms.carrier: log`），所以走查从进程日志读验证码；社交方法、企业 OIDC、短信家族与通知夹具由这份配置的凭据与开关启动。默认构建编译 `server/review_off.go` 与 `server/notification_control_off.go`，前者名册为空，后者不挂控制路由；二进制不含这些审查专用件，能力名册与点名集不因它改变。
 
-**配置是 `server/review/sqlite.yaml`，位于 `testdata/` 之外。** 它是一份覆盖文档，与 `testdata/` 的 sqlite 配置同形：只写部署差异，平台拓扑取自编译进二进制的 `server/defaults.go`；此外再加上这些模块需要的节：社交方法的一组假凭据（方法因此起得来并拼得出授权地址，对端不会被访问）、企业 OIDC 方法的出口接缝（`authn.sso`，缺省取系统解析器与系统根证书）、短信模板注册表（zh-CN 与 en-US 各一组模板码）、种子设置里的 `authn.account.signup` 与 `authn.account.password-signup` 为 `open`、`workspace.personal.enabled` 为真，以及放宽到可送达号码的 `authn.sms.allowed-prefixes`。`authn.humanverify.mode` 显式写为 `off`：缺省值就是它，写出来使审查与端到端走查里的每次发送都不经证明，并在缺省值将来改变时保持这条路径不变。库落在 `server/var/review.db`，与基线的 `var/demo.db` 分开；`testdata/` 里的基线配置保持原样。
+**配置是 `server/review/sqlite.yaml`，位于 `testdata/` 之外。** 它是一份覆盖文档，与 `testdata/` 的 sqlite 配置同形：只写部署差异，平台拓扑取自编译进二进制的 `server/defaults.go`；此外再加上这些模块需要的节：社交方法的一组假凭据（方法因此起得来并拼得出授权地址，对端不会被访问）、企业 OIDC 的启用开关 `authn.sso.oidc.enabled` 与出口接缝（`authn.sso`，缺省取系统解析器与系统根证书）、短信模板注册表（zh-CN 与 en-US 各一组模板码）、种子设置里的 `authn.account.signup` 与 `authn.account.password-signup` 为 `open`、`workspace.personal.enabled` 为真，以及放宽到可送达号码的 `authn.sms.allowed-prefixes`。`authn.humanverify.mode` 显式写为 `off`：缺省值就是它，写出来使审查与端到端走查里的每次发送都不经证明，并在缺省值将来改变时保持这条路径不变。库落在 `server/var/review.db`，与基线的 `var/demo.db` 分开；`testdata/` 里的基线配置保持原样。
 
-**企业登录入口在每个审查服务的登录页上都出现。** `authn.sso.oidc` 在 `reviewModules` 里，审查装配因此始终挂载企业方法；`review/sqlite.yaml` 的 `authn.sso` 三项只写出口接缝的缺省值，缺省没有企业提供方。发现文档总带一条企业方法，登录页始终渲染企业入口——工作邮箱与「继续」——即使没有任何提供方可选。端到端走查的定位器因此落在它所在的那个面上：第二因素的「继续」定位到密码渠道的面板，企业入口的「继续」定位到企业入口本身；在整张登录页上做不设边界的角色查询会同时选中第二因素的「继续」与企业入口的「继续」，这是走查规格的缺陷，产品与审查装配不因此改变。
+**企业登录入口在每个审查服务的登录页上都出现。** `authn.sso.oidc` 由 `capabilityModules` 编入每次构建并由 `serve` 点名；`review/sqlite.yaml` 把 `authn.sso.oidc.enabled` 写为真，审查装配因此始终交付企业方法。同一份配置的 `authn.sso` 出口接缝三项只写缺省值，缺省没有企业提供方。发现文档总带一条企业方法，登录页始终渲染企业入口——工作邮箱与「继续」——即使没有任何提供方可选。端到端走查的定位器因此落在它所在的那个面上：第二因素的「继续」定位到密码渠道的面板，企业入口的「继续」定位到企业入口本身；在整张登录页上做不设边界的角色查询会同时选中第二因素的「继续」与企业入口的「继续」，这是走查规格的缺陷，产品与审查装配不因此改变。
 
 **验证码由短信模块生成，不写死。** `sms.log` 经 `sms.NewModule` 提供载体的发送与模板两条接缝，不读任何配置项；短信模块把消息的 `code` 参数交给它，它把这一行写进进程日志的 `verification_code` 字段。该字段不叫 `code`，因为 `code` 是进程已登记的敏感键名，日志层会把值打码。号码仍经过真实的预算、挑战行与校验，流程跑的是产品自己的状态机。
 
@@ -138,7 +138,7 @@ starters/demo/
 
 端点是产品自己划的流量边界：`api`、`account`、`admin`、`ops`、`web`。哪个端装哪些层是配置，示范在这里说的是哪类流量属于哪个端。基线在这些端上装好网关、租户解析与准入、鉴权、限流、审计、平台管理面与特性文档，逐端的固定装法写在编译进二进制的平台默认文档 `server/defaults.go` 里，配置文件只写部署差异。分离部署下拉起前端的那条通配路由独占 `web` 端（[webui](design-webui.md)）。
 
-**通知面的授权是宿主侧的。** 通知能力（`notification.inbox`、`notification.stream`、`notification.preferences`）按设计不声明任何权限点（[notification](notification/design-notification.md)）：它的路由不带权限闸，谁可读由宿主决定。示范作为宿主把这个决定写下来——`server/notification.go` 的 `notification.access` 模块在 `Init` 里把 `/api/v1/notifications` 下的收件箱、偏好与推送路由在 `authz.guard` 的声明面上登记为开放：网关照常认证、授权层放行、handler 按调用方身份作答；不登记时它们落在缺省关闭的授权层下答 403。登记为开放而非挂权限点，是因为这些路由按调用方身份划界而不是按谁的权限划界——收件箱与推送读的是调用方自己的账户，偏好矩阵读的是宿主身份与授权侧给出的收件人（`preferences.WithRecipient`）。基线的示范不接线那个收件人，也不声明任何通知类型，偏好矩阵因此在基线里恒为空集，收件人这一步在基线里不出现；声明了类型的宿主需另把调用方账户写进偏好路由的请求上下文。审查装配正是这样的宿主：`server/review_notification.go` 声明通知类型 `review.notice`（默认渠道为收件箱、邮件与短信），由定时任务按租户为可寻址的成员派发，`wireReviewRecipient` 在认证网关的记录阶段把调用方的有效账户写进 `preferences.WithRecipient`，偏好矩阵因此有内容可读。
+**通知面的授权是宿主侧的。** 通知能力（`notification.inbox`、`notification.stream`、`notification.preferences`）按设计不声明任何权限点（[notification](notification/design-notification.md)）：它的路由不带权限闸，谁可读由宿主决定。示范作为宿主把这个决定写下来——`server/notification.go` 的 `notification.access` 模块在 `Init` 里把 `/api/v1/notifications` 下的收件箱、偏好与推送路由在 `authz.guard` 的声明面上登记为开放：网关照常认证、授权层放行、handler 按调用方身份作答；不登记时它们落在缺省关闭的授权层下答 403。登记为开放而非挂权限点，是因为这些路由按调用方身份划界而不是按谁的权限划界——收件箱与推送读的是调用方自己的账户，偏好矩阵读的是宿主身份与授权侧给出的收件人（`preferences.WithRecipient`）。基线的示范不接线那个收件人，通知夹具的开关在基线配置里关闭，偏好矩阵因此在基线里恒为空集，收件人这一步在基线里不出现；启用了通知类型的宿主需另把调用方账户写进偏好路由的请求上下文。审查装配正是这样的宿主：`server/notification_fixture.go` 声明通知类型 `review.notice`（默认渠道为收件箱、邮件与短信），审查配置打开 `review.notification.enabled`，由定时任务按租户为可寻址的成员派发，`wireReviewRecipient` 在认证网关的记录阶段把调用方的有效账户写进 `preferences.WithRecipient`，偏好矩阵因此有内容可读。
 
 **这些端点由两条监听承载。** 端点挂在监听上，一条监听是一个监听套接字，`pkg/http` 据此把多个端点并在一个地址上（[http](http/design-http.md)）。示范的平台默认文档把这几个端挂在两条监听上：`api`、`account`、`admin` 与 `web` 挂在 `backend` 监听上，`ops` 自开一条 `ops` 监听；监听本身与它们的地址由每份配置声明。前端与 API 因而同源，浏览器直接访问 `web` 与 `api` 无需 CORS。
 
@@ -455,7 +455,7 @@ flowchart TD
 | 审查装配（`-tags review` 的构建变体与 `server/review/sqlite.yaml`） | 已实现 | `starters/demo/server/review.go` `reviewModules`；`starters/demo/server/review_off.go` `reviewModules`；`starters/demo/server/review/sqlite.yaml` |
 | 审查装配的提交门禁腿 | 已实现 | `./Makefile` `vet-review`、`test-review` |
 | 审查装配的回环守卫 | 已实现 | `starters/demo/server/review.go` `reviewGuardModule`、`loopbackAddress` |
-| 审查装配的两条控制路由（短信审核判定、通知派发）是测试控制 | 已实现 | `starters/demo/server/review_sms_control.go` `reviewSMSControlModule`；`starters/demo/server/review_notification.go` `wireReviewControl` |
+| 审查装配的两条控制路由（短信审核判定、通知派发）是测试控制 | 已实现 | `starters/demo/server/review_sms_control.go` `reviewSMSControlModule`；`starters/demo/server/notification_control_review.go` `wireReviewControl` |
 | 只在 `review` 标签下编译的用例在提交门禁里被执行 | 已实现 | `./Makefile` `test-review`；`tools/check_test_tiers.py` |
 | 通知面的宿主侧授权 | 已实现 | `starters/demo/server/notification.go` `notificationModule`、`notificationRoutes`；纳入见 `starters/demo/server/main.go` `baselineServe` |
 | `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`（`Init` 建立 system 租户）、`seedSchema`、`seedDatabase`、`seedTenant`、`seedMembers`、`seedAdministration`、`seedAdminMembership`、`seedBinding`、`seedSettings`；命令见 `starters/demo/server/main.go` `addStack` |

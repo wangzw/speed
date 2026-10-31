@@ -11,9 +11,10 @@ the seams; this program shows one way to put them together. It ships no business
 domain: `server/modules/` is the empty slot a product's own modules land in.
 Because it seeds no business data, several surfaces open empty in the browser:
 the object store, the console dashboard beyond the tenant counts it reads from
-the platform's own roster, the notification inbox (the baseline declares no
-notification type and dispatches nothing; the review build adds one, see
-"The review build's notification fixture" below), and the preference matrix. An empty
+the platform's own roster, the notification inbox (the baseline runs no
+notification type and dispatches nothing; the review build turns the fixture's
+switch on, see "The review build's notification fixture" below), and the
+preference matrix. An empty
 surface is the baseline doing what it says it does, not a capability left
 unfinished — the data is the product's and its users' to produce.
 
@@ -165,9 +166,10 @@ journeys read that control rather than sleeping.
 person can walk the flow, points the database, key and object root under
 `var/`, names the endpoints `sms.admin` mounts on, and lowers
 `sms.registry.poll-interval` so a verdict the review control moves is reflected
-on the next list read. Baseline `serve` names none of these modules and leaves
-registration closed, so the baseline login page advertises no registration
-entry.
+on the next list read. Baseline `serve` names the same capability roster but its
+configuration leaves the carriers unconfigured and registration closed, so those
+capabilities stand themselves down and the baseline login page advertises no
+registration entry.
 
 The same file carries the `authn.sso` block the enterprise OIDC method reads.
 It states the deployment defaults — `allow-private-egress: false` and both
@@ -324,8 +326,9 @@ reads none of it.
   (`mail.log`, `sms.log`), so the fixture starts the journey from the state
   the flows reach rather than from a verification detour.
 
-- **The assembly's additions.** `reviewModules` now carries `authn.mfa.sms`, so
-  a session signed in with TOTP has a disjoint kind to step up with, and
+- **The assembly's additions.** `authn.mfa.sms` is in `capabilityModules` and
+  named by `serve`; the review configuration gives it a live carrier, so a
+  session signed in with TOTP has a disjoint kind to step up with, and
   `server/review/sqlite.yaml` lowers `authn.impersonation.max-auth-age` to its
   one-minute floor (the declared default is five minutes; the domain is one
   minute to thirty) and seeds the target member of `acme` through
