@@ -3441,5 +3441,86 @@ describe('IdentifiersSection', () => {
       ).toHaveTextContent('b@x.test'),
     )
   })
+
+  it('marks the current default contact as selected instead of disabling the item', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-default',
+                kind: 'email',
+                value: 'ada@x.test',
+                proven: true,
+                default_contact: true,
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} axis="contact" />,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.identifiers.actionsAria.replace('{{value}}', 'ada@x.test'),
+      }),
+    )
+    const item = screen.getByRole('menuitem', {
+      name: zhCN.identifiers.axes.defaultContact,
+    })
+    // The current default reads as selected, not as a greyed-out control
+    // with no stated reason.
+    expect(item).toHaveClass('Mui-selected')
+    expect(item).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('paints the menu removal with the danger color the other removals use', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-unproved',
+                kind: 'email',
+                value: 'ada@x.test',
+                proven: false,
+                verified_at: '',
+                verified_via: '',
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection session={rig.session} axis="contact" />,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.identifiers.actionsAria.replace('{{value}}', 'ada@x.test'),
+      }),
+    )
+    const verify = screen.getByRole('menuitem', {
+      name: zhCN.identifiers.verify,
+    })
+    const remove = screen.getByRole('menuitem', {
+      name: zhCN.identifiers.remove,
+    })
+    expect(getComputedStyle(remove).color).not.toBe(getComputedStyle(verify).color)
+  })
 })
 

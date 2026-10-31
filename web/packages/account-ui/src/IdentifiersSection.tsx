@@ -357,17 +357,23 @@ function ContactActionsMenu({
           </MenuItem>
         ) : null}
         {canDefault ? (
+          // The current default is marked, not greyed: `selected` says
+          // "this is the one in force", where a disabled item left the
+          // reader guessing why it could not be chosen.
           <MenuItem
-            disabled={isDefault}
+            selected={isDefault}
             onClick={() => {
               setAnchor(null)
-              onSetDefault()
+              if (!isDefault) {
+                onSetDefault()
+              }
             }}
           >
             {t('identifiers.axes.defaultContact')}
           </MenuItem>
         ) : null}
         <MenuItem
+          sx={{ color: 'error.main' }}
           onClick={() => {
             setAnchor(null)
             onRemove()
@@ -703,6 +709,13 @@ export function IdentifiersSection({
   const formKind: AddKind = addKinds.includes(addKind)
     ? addKind
     : (addKinds[0] ?? 'username')
+  // On the contact axis the host opens the add face from the block header:
+  // while the face is open it stands where the list stood, so the form
+  // replaces the list the way the phone block's form replaces its row,
+  // rather than sitting below a whole table of addresses. The sign-in axis
+  // keeps its own in-section Add button and the list above it.
+  const addFaceReplacesList =
+    axis === 'contact' && addOpen && addKinds.length > 0
   // A settled read that lists none, or one whose body omitted the key,
   // hands the section to the EmptyState, whose title stands in for the
   // hidden h2 header at its own level (headingLevel="h2" below) -- the
@@ -1726,44 +1739,34 @@ export function IdentifiersSection({
                   }}
                 />
               )}
-              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
-                {rowSentTo === null ? (
+              {/* The step's action row: send/resend and cancel are the
+                  secondary controls and stand on the left, the primary
+                  verify (or the first send) closes the row on the right. */}
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  gap: 1,
+                  width: '100%',
+                }}
+              >
+                {rowSentTo === null ? null : (
                   <Button
-                    type="submit"
-                    variant="contained"
+                    type="button"
+                    variant="outlined"
                     size="small"
-                    disabled={addBusy || proofBlocked}
+                    disabled={
+                      addBusy || proofBlocked || rowRemainingSeconds > 0
+                    }
                     loading={addIdentifier.isPending}
+                    aria-describedby={
+                      rowRemainingSeconds > 0 ? ROW_RESEND_NOTE_ID : undefined
+                    }
+                    onClick={() => void rowSend(value)}
                   >
-                    {t('identifiers.add.submitEmail')}
+                    {t('verification.resend')}
                   </Button>
-                ) : (
-                  <>
-                    <Button
-                      type="submit"
-                      variant="contained"
-                      size="small"
-                      disabled={addBusy || rowCode.trim() === ''}
-                      loading={verifyIdentifier.isPending}
-                    >
-                      {t('identifiers.add.verify')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outlined"
-                      size="small"
-                      disabled={
-                        addBusy || proofBlocked || rowRemainingSeconds > 0
-                      }
-                      loading={addIdentifier.isPending}
-                      aria-describedby={
-                        rowRemainingSeconds > 0 ? ROW_RESEND_NOTE_ID : undefined
-                      }
-                      onClick={() => void rowSend(value)}
-                    >
-                      {t('verification.resend')}
-                    </Button>
-                  </>
                 )}
                 <Button
                   type="button"
@@ -1773,7 +1776,30 @@ export function IdentifiersSection({
                 >
                   {t('identifiers.add.cancel')}
                 </Button>
-              </Stack>
+                {rowSentTo === null ? (
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    size="small"
+                    sx={{ marginLeft: 'auto' }}
+                    disabled={addBusy || proofBlocked}
+                    loading={addIdentifier.isPending}
+                  >
+                    {t('identifiers.add.submitEmail')}
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    size="small"
+                    sx={{ marginLeft: 'auto' }}
+                    disabled={addBusy || rowCode.trim() === ''}
+                    loading={verifyIdentifier.isPending}
+                  >
+                    {t('identifiers.add.verify')}
+                  </Button>
+                )}
+              </Box>
               {rowSentTo !== null && rowRemainingSeconds > 0 ? (
                 <Typography
                   id={ROW_RESEND_NOTE_ID}
@@ -1795,6 +1821,7 @@ export function IdentifiersSection({
   return (
     <>
       <SectionCard title={showHeader ? t('identifiers.title') : undefined}>
+        {addFaceReplacesList ? null : (
         <AccountAsyncSection
         pending={pending}
         payload={rows}
@@ -1947,11 +1974,30 @@ export function IdentifiersSection({
                         }}
                       />
                     )}
-                    <Stack direction="row" spacing={1}>
+                    {/* One action row, the same shape the sign-in list's
+                        inline verify uses: cancel on the left, the primary
+                        verify closing the row on the right. */}
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        gap: 1,
+                        width: '100%',
+                      }}
+                    >
+                      <Button
+                        type="button"
+                        disabled={addBusy}
+                        onClick={closeRowVerify}
+                      >
+                        {t('identifiers.add.cancel')}
+                      </Button>
                       {rowSentTo === null ? (
                         <Button
                           type="submit"
                           variant="contained"
+                          sx={{ marginLeft: 'auto' }}
                           disabled={addBusy || proofBlocked}
                         >
                           {t('identifiers.add.submitEmail')}
@@ -1960,19 +2006,13 @@ export function IdentifiersSection({
                         <Button
                           type="submit"
                           variant="contained"
+                          sx={{ marginLeft: 'auto' }}
                           disabled={addBusy || rowCode.trim() === ''}
                         >
                           {t('identifiers.verify')}
                         </Button>
                       )}
-                      <Button
-                        type="button"
-                        disabled={addBusy}
-                        onClick={closeRowVerify}
-                      >
-                        {t('identifiers.add.cancel')}
-                      </Button>
-                    </Stack>
+                    </Box>
                   </Stack>
                 </Box>
               ) : null}
@@ -2068,6 +2108,7 @@ export function IdentifiersSection({
           </Box>
         )}
       </AccountAsyncSection>
+        )}
 
       <Box sx={{ mt: 2 }}>
         {axis === 'signIn' || addKinds.length === 0 ? null : !addOpen ? (
@@ -2181,10 +2222,25 @@ export function IdentifiersSection({
                   {axis === 'contact' || formKind === 'email'
                     ? humanBlock
                     : null}
-                  <Stack direction="row" spacing={1}>
+                  {/* Cancel on the left, the primary submit closing the
+                      row on the right, as every inline form in the package
+                      does. */}
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      gap: 1,
+                      width: '100%',
+                    }}
+                  >
+                    <Button type="button" disabled={addBusy} onClick={closeAdd}>
+                      {t('identifiers.add.cancel')}
+                    </Button>
                     <Button
                       type="submit"
                       variant="contained"
+                      sx={{ marginLeft: 'auto' }}
                       disabled={
                         addBusy ||
                         ((axis === 'contact' || formKind === 'email') &&
@@ -2196,10 +2252,7 @@ export function IdentifiersSection({
                         ? t('identifiers.add.submitEmail')
                         : t('identifiers.add.submitUsername')}
                     </Button>
-                    <Button type="button" disabled={addBusy} onClick={closeAdd}>
-                      {t('identifiers.add.cancel')}
-                    </Button>
-                  </Stack>
+                  </Box>
                 </>
               ) : (
                 <>
@@ -2229,14 +2282,15 @@ export function IdentifiersSection({
                     disabled={addBusy}
                     onChange={(event) => setCode(event.target.value)}
                   />
-                  <Stack direction="row" spacing={1}>
-                    <Button
-                      type="submit"
-                      variant="contained"
-                      disabled={addBusy || code.trim() === ''}
-                    >
-                      {t('identifiers.add.verify')}
-                    </Button>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      gap: 1,
+                      width: '100%',
+                    }}
+                  >
                     <Button
                       type="button"
                       disabled={addBusy}
@@ -2249,7 +2303,15 @@ export function IdentifiersSection({
                     >
                       {t('identifiers.add.change')}
                     </Button>
-                  </Stack>
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      sx={{ marginLeft: 'auto' }}
+                      disabled={addBusy || code.trim() === ''}
+                    >
+                      {t('identifiers.add.verify')}
+                    </Button>
+                  </Box>
                 </>
               )}
             </Box>
