@@ -390,12 +390,11 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
         }),
       ).toBeVisible()
 
-      // Three rows: the verified phone and the username the first sign-in
-      // chose are sign-in ways, and the phone is a contact as well --
-      // registering it is what makes it one, and the same record appears in
-      // both lists while it signs in.
+      // One row: the verified phone, a contact because registering it is what
+      // makes it one. The sign-in ways list no rows of its own: the phone is
+      // named by the group's sentence and the username by its own.
       const identifiers = identifiersSection(page)
-      await expect(identifiers.getByRole('listitem')).toHaveCount(3)
+      await expect(identifiers.getByRole('listitem')).toHaveCount(1)
       const signInWays = identifiers.getByRole('region', {
         name: copy('accountUi', 'identifiers.groups.signIn'),
         exact: true,
@@ -405,19 +404,14 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
         exact: true,
       })
 
-      const phoneRow = signInWays
-        .getByRole('listitem')
-        .filter({ hasText: PHONE_E164 })
-      await expect(phoneRow).toBeVisible()
       await expect(
-        phoneRow.getByText(copy('accountUi', 'identifiers.kind.phone'), {
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(
-        phoneRow.getByText(copy('accountUi', 'identifiers.verified'), {
-          exact: true,
-        }),
+        signInWays.getByText(
+          copy('accountUi', 'identifiers.usage.loginAs', {
+            kind: copy('accountUi', 'identifiers.kind.phone'),
+            value: PHONE_E164,
+          }),
+          { exact: true },
+        ),
       ).toBeVisible()
 
       // The same number is a contact too, one row in that list.
@@ -431,27 +425,17 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
         }),
       ).toBeVisible()
 
-      const usernameRow = signInWays
-        .getByRole('listitem')
-        .filter({ hasText: username })
-      await expect(usernameRow).toBeVisible()
+      // The username is a sign-in way, named by its own sentence; it proves no
+      // ownership, so it never appears among the contacts.
       await expect(
-        usernameRow.getByText(copy('accountUi', 'identifiers.kind.username'), {
-          exact: true,
-        }),
+        signInWays.getByText(
+          copy('accountUi', 'identifiers.usage.loginAs', {
+            kind: copy('accountUi', 'identifiers.kind.username'),
+            value: username,
+          }),
+          { exact: true },
+        ),
       ).toBeVisible()
-      // A username proves no ownership, so it carries no ownership chip, and
-      // it is never a contact.
-      await expect(
-        usernameRow.getByText(copy('accountUi', 'identifiers.verified'), {
-          exact: true,
-        }),
-      ).toHaveCount(0)
-      await expect(
-        usernameRow.getByText(copy('accountUi', 'identifiers.unverified'), {
-          exact: true,
-        }),
-      ).toHaveCount(0)
       await expect(contacts.getByText(username, { exact: true })).toHaveCount(0)
 
       // The username is a login name, so the password form is offered without
