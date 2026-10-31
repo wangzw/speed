@@ -345,9 +345,20 @@ export function PasswordSection({
               }}
             />
 
-            <Button type="submit" variant="contained" disabled={busy}>
-              {t(passwordSet ? 'password.submit' : 'password.submitFirst')}
-            </Button>
+            {/* The form's one action closes its row on the right, the same
+                shape the other account-ui forms use. */}
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                alignSelf: 'stretch',
+              }}
+            >
+              <Button type="submit" variant="contained" disabled={busy}>
+                {t(passwordSet ? 'password.submit' : 'password.submitFirst')}
+              </Button>
+            </Box>
 
             {/* One scope's result, below the form it confirms. */}
             <WriteFeedbackRegion
