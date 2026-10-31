@@ -202,7 +202,7 @@ func TestContainersFromPrimaryConverted(t *testing.T) {
 		Hidden   string `json:"-"`
 	}
 	list := decodeTo[[]endpoint](t, []any{
-		map[string]any{"addr": "a:1", "pool": float64(3), "-": "ignored", "stray": true},
+		map[string]any{"addr": "a:1", "pool": float64(3)},
 	})
 	want := []endpoint{{Addr: "a:1", PoolSize: 3}}
 	if !reflect.DeepEqual(list, want) {

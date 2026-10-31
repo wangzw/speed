@@ -16,13 +16,17 @@ type envSeedAccount struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
 	Age   int    `json:"age"`
+	// Big exists to show that a number is carried at the width it was written
+	// with: a float64 would have rounded this one before the field saw it.
+	Big int64 `json:"big"`
 }
 
 type envContainerOptions struct {
-	Addr   string
-	Listen []netip.Addr
-	Seeds  []envSeedAccount
-	Labels map[string]string
+	Addr     string
+	Listen   []netip.Addr
+	Seeds    []envSeedAccount
+	Labels   map[string]string
+	Numbered map[int]string
 }
 
 // envContainerLoader declares one module under the server namespace, with the
@@ -287,6 +291,156 @@ func TestEnvContainerReplacesTheWholeValue(t *testing.T) {
 		t.Fatalf("server.listen decoded to %v, want exactly the variable's %v: the environment "+
 			"replaces the whole container rather than merging with the default or the file",
 			got.Listen, want)
+	}
+}
+
+// TestContainerJSONRejectsARepeatedKey pins the first JSON rule the standard
+// decoder does not give. An object that names one key twice is read as if the
+// second were the only one, dropping everything the first carried; an
+// environment variable is written by hand, so a repeated key is a mistake to
+// report rather than a value to choose between.
+func TestContainerJSONRejectsARepeatedKey(t *testing.T) {
+	t.Setenv("MYAPP_SERVER__LABELS", `{"tier":"cold","tier":"hot"}`)
+	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
+		"labels": {Origins: OriginPrimary | OriginEnv},
+	})
+	var opts envContainerOptions
+	err := l.Reader().Decode("server", &opts)
+	if !errors.Is(err, ErrTypeMismatch) {
+		t.Fatalf("a repeated key returned %v, want ErrTypeMismatch", err)
+	}
+	for _, want := range []string{"MYAPP_SERVER__LABELS", "server.labels", "tier"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the rejection reads %q, which does not name %q", err, want)
+		}
+	}
+}
+
+// TestContainerJSONRejectsNull pins that a null is refused wherever it stands.
+// An environment variable that means nothing is left unset; a null written
+// into a container has no field to land in, and the alternative is a zero value
+// nobody asked for.
+func TestContainerJSONRejectsNull(t *testing.T) {
+	cases := map[string]struct {
+		variable string
+		item     string
+		value    string
+	}{
+		"a bare null":    {"MYAPP_SERVER__LISTEN", "listen", `null`},
+		"a list element": {"MYAPP_SERVER__LISTEN", "listen", `["127.0.0.1",null]`},
+		"a member value": {"MYAPP_SERVER__SEEDS", "seeds", `[{"email":null}]`},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(c.variable, c.value)
+			l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
+				c.item: {Origins: OriginPrimary | OriginEnv},
+			})
+			var opts envContainerOptions
+			err := l.Reader().Decode("server", &opts)
+			if !errors.Is(err, ErrTypeMismatch) {
+				t.Fatalf("a null returned %v, want ErrTypeMismatch", err)
+			}
+			for _, want := range []string{c.variable, "server." + c.item, "null"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("the rejection reads %q, which does not say %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// TestContainerJSONRejectsWhitespaceOnly pins that whitespace is not a second
+// spelling of the empty variable: an empty variable already means the empty
+// container, so a value holding nothing but spaces is a mistake to report.
+func TestContainerJSONRejectsWhitespaceOnly(t *testing.T) {
+	t.Setenv("MYAPP_SERVER__LISTEN", " \n\t ")
+	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
+		"listen": {Origins: OriginPrimary | OriginEnv},
+	})
+	var opts envContainerOptions
+	err := l.Reader().Decode("server", &opts)
+	if !errors.Is(err, ErrTypeMismatch) {
+		t.Fatalf("whitespace alone returned %v, want ErrTypeMismatch", err)
+	}
+	if !strings.Contains(err.Error(), "whitespace") {
+		t.Fatalf("the rejection reads %q, which does not say the value holds no JSON", err)
+	}
+}
+
+// TestContainerJSONRejectsContentAfterTheValue pins that the variable holds one
+// JSON value and nothing else. What follows the value would otherwise be
+// dropped, and a second list written after the first would silently do nothing.
+func TestContainerJSONRejectsContentAfterTheValue(t *testing.T) {
+	t.Setenv("MYAPP_SERVER__LISTEN", `["127.0.0.1"] ["192.0.2.1"]`)
+	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
+		"listen": {Origins: OriginPrimary | OriginEnv},
+	})
+	var opts envContainerOptions
+	err := l.Reader().Decode("server", &opts)
+	if !errors.Is(err, ErrTypeMismatch) {
+		t.Fatalf("trailing content returned %v, want ErrTypeMismatch", err)
+	}
+	if !strings.Contains(err.Error(), "goes on") {
+		t.Fatalf("the rejection reads %q, which does not say the data goes on", err)
+	}
+}
+
+// TestContainerJSONShapeMustFitTheItem pins that a value of the wrong top-level
+// shape is refused by the conversion rather than silently ignored: a list item
+// takes a JSON array, and an object is not one.
+func TestContainerJSONShapeMustFitTheItem(t *testing.T) {
+	t.Setenv("MYAPP_SERVER__LISTEN", `{"addr":"127.0.0.1"}`)
+	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
+		"listen": {Origins: OriginPrimary | OriginEnv},
+	})
+	var opts envContainerOptions
+	err := l.Reader().Decode("server", &opts)
+	if !errors.Is(err, ErrTypeMismatch) {
+		t.Fatalf("an object for a list returned %v, want ErrTypeMismatch", err)
+	}
+	if !strings.Contains(err.Error(), "server.listen") {
+		t.Fatalf("the rejection reads %q, which does not name the item", err)
+	}
+}
+
+// TestContainerJSONRejectsANonStringMapKey pins that a map whose key type is not
+// a string cannot take a JSON object. A JSON object names its members with
+// strings, so the decoder would otherwise turn those names into keys the
+// source never wrote.
+func TestContainerJSONRejectsANonStringMapKey(t *testing.T) {
+	t.Setenv("MYAPP_SERVER__NUMBERED", `{"1":"one"}`)
+	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
+		"numbered": {Origins: OriginPrimary | OriginEnv},
+	})
+	var opts envContainerOptions
+	err := l.Reader().Decode("server", &opts)
+	if !errors.Is(err, ErrTypeMismatch) {
+		t.Fatalf("a map with int keys returned %v, want ErrTypeMismatch", err)
+	}
+	for _, want := range []string{"MYAPP_SERVER__NUMBERED", "server.numbered", "int"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the rejection reads %q, which does not name %q", err, want)
+		}
+	}
+}
+
+// TestContainerJSONKeepsANumberAtItsWrittenWidth pins that a number reaches the
+// conversion layer holding every digit it was written with. Decoded straight
+// into a float64 it would be rounded to 53 bits before any field saw it, and
+// 9007199254740993 would run as 9007199254740992.
+func TestContainerJSONKeepsANumberAtItsWrittenWidth(t *testing.T) {
+	t.Setenv("MYAPP_SERVER__SEEDS", `[{"email":"ada@example.com","big":9007199254740993}]`)
+	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
+		"seeds": {Origins: OriginPrimary | OriginEnv},
+	})
+	got := decodeEnvContainerOptions(t, l)
+	if len(got.Seeds) != 1 {
+		t.Fatalf("server.seeds decoded to %+v, want one element", got.Seeds)
+	}
+	if want := int64(9007199254740993); got.Seeds[0].Big != want {
+		t.Fatalf("server.seeds[0].big decoded to %d, want %d: the number is carried at the "+
+			"width it was written with", got.Seeds[0].Big, want)
 	}
 }
 

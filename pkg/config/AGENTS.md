@@ -77,7 +77,9 @@ primary config source.
   declares, or one the owning module does not accept from the primary source,
   fails the startup. A container leaf it gives replaces the prototype's whole
   value, and a primary source giving the same leaf replaces the document's
-  whole value; no layer merges inside a container.
+  whole value; no layer merges inside a container. A member no field of a
+  struct inside a container answers for fails the startup too: those names are
+  not in the manifest, so the decoder is the only place that can see them.
 - **Required.** The document satisfies `Required`: naming a value here is
   the host declaring it, the same act as writing the key in the configuration
   file. A key written as null gives nothing and satisfies nothing. A value

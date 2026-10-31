@@ -35,22 +35,27 @@ func decodeHook() mapstructure.DecodeHookFunc {
 // and the target type on failure. The target is filled through a fresh value
 // rather than in place, so a container arrives as a copy and two holders of
 // the same configuration cannot write into each other.
+//
+// Both this and decodeIntoStrict refuse a member no field answers for. A
+// container's inner keys are not in the manifest, so no unknown-key pass over
+// the source can see them; dropping one would leave a field at its zero value
+// while the spelling of the setting it was meant to give stays unexplained in
+// the source. The two differ in how a member name is matched, not in whether a
+// misspelling is reported: see decodeIntoStrict.
 func decodeInto(path string, raw any, target reflect.Value) error {
 	return decodeValue(path, raw, target, false)
 }
 
 // decodeIntoStrict writes a JSON value the environment gave into one target
-// field. It differs from decodeInto in what it does with a member no field
-// answers for and in how it decides which field a member names: a member that
-// reaches none is refused rather than dropped, and a name is matched exactly
-// rather than case-insensitively. A container written by hand in a variable
-// has no unknown-key pass to catch a misspelling later, and the design keeps
-// the spelling the declaration publishes as the one the JSON has to use.
+// field. It is the decoder for a container written by hand in a variable, so a
+// member name is matched exactly rather than case-insensitively: the spelling
+// the declaration publishes is the one the JSON has to use, and a name in
+// another case is an unknown member rather than the same one.
 func decodeIntoStrict(path string, raw any, target reflect.Value) error {
 	return decodeValue(path, raw, target, true)
 }
 
-func decodeValue(path string, raw any, target reflect.Value, strict bool) error {
+func decodeValue(path string, raw any, target reflect.Value, exactNames bool) error {
 	out := reflect.New(target.Type())
 	config := &mapstructure.DecoderConfig{
 		DecodeHook: decodeHook(),
@@ -68,12 +73,13 @@ func decodeValue(path string, raw any, target reflect.Value, strict bool) error 
 		// target already holds, which is the rule its keys not being in the
 		// manifest follows from.
 		ZeroFields: true,
-		// The strict decoder is the environment's container decoder: a member
-		// no field answers for is an error, and a member is matched by the
-		// exact name the field publishes.
-		ErrorUnused: strict,
+		// A member no field answers for is an error from either source. The
+		// hook has already renamed a json-tagged field's key to the name the
+		// decoder looks the field up by, so this check is made after that
+		// rename and does not mistake such a member for an unknown one.
+		ErrorUnused: true,
 	}
-	if strict {
+	if exactNames {
 		config.MatchName = func(mapKey, fieldName string) bool { return mapKey == fieldName }
 	}
 	decoder, err := mapstructure.NewDecoder(config)

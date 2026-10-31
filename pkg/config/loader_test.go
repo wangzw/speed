@@ -73,6 +73,7 @@ func (s loaderSetup) load(t *testing.T, args []string) (Reader, error) {
 		return nil, err
 	}
 	l.ReportUnclaimed()
+	l.ReportSensitive()
 	return l.Reader(), nil
 }
 

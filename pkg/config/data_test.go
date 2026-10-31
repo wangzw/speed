@@ -100,10 +100,12 @@ func TestContainerReplacedWholesale(t *testing.T) {
 	}
 }
 
-// TestKeysInsideContainerLeafNotValidated pins that the keys inside a
-// container do not take part in the unknown-key check. The same fact decides
-// that the value is replaced as a whole; using it a second time to judge the
-// keys would make every map-typed item unusable at its first key.
+// TestKeysInsideContainerLeafNotValidated pins that a map's own keys do not
+// take part in the unknown-key check: they are the user's data, not names this
+// module owns. The same fact decides that the value is replaced as a whole;
+// using it a second time to judge the keys would make every map-typed item
+// unusable at its first key. A member of a struct inside a container is a name
+// the declaration owns, and the case below shows it is refused instead.
 func TestKeysInsideContainerLeafNotValidated(t *testing.T) {
 	l := cacheLoader(t, nil)
 	err := givePrimary(t, l, map[string]any{
@@ -113,6 +115,32 @@ func TestKeysInsideContainerLeafNotValidated(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("keys inside a map were checked against the manifest: %v", err)
+	}
+}
+
+// TestStructContainerUnknownMemberIsRefusedFromThePrimarySource pins that the
+// file side is as strict as the environment side about a member of a struct
+// inside a container. Those member names are not in the manifest, so no
+// unknown-key pass over the source can see one; the decoder refuses it while
+// writing the list, which is the only place left to report it.
+func TestStructContainerUnknownMemberIsRefusedFromThePrimarySource(t *testing.T) {
+	l := cacheLoader(t, nil)
+	if err := givePrimary(t, l, map[string]any{
+		"cache": map[string]any{
+			"nodes": []any{map[string]any{"addr": "n1:1", "pool": float64(3)}},
+		},
+	}); err != nil {
+		t.Fatalf("giving the primary source failed: %v", err)
+	}
+	var opts cacheOptions
+	err := l.Reader().Decode("cache", &opts)
+	if !errors.Is(err, ErrTypeMismatch) {
+		t.Fatalf("an unknown member returned %v, want ErrTypeMismatch", err)
+	}
+	for _, want := range []string{"cache.nodes", "pool"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the rejection reads %q, which does not name %q", err, want)
+		}
 	}
 }
 

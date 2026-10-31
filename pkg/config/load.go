@@ -55,5 +55,6 @@ func Load(ctx context.Context, reg *core.Registry, args []string) (Reader, error
 		return nil, err
 	}
 	l.ReportUnclaimed()
+	l.ReportSensitive()
 	return l.Reader(), nil
 }

@@ -183,6 +183,7 @@ func (a *App) run(ctx context.Context, l *loader, p *plan, node *planNode) error
 		return err
 	}
 	l.ReportUnclaimed()
+	l.ReportSensitive()
 
 	// The module is named, so the owner of the reader does not depend on what
 	// else the registry holds: a registry with another module delivering
