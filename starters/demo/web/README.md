@@ -36,8 +36,12 @@ it. The dev server's own port is 8080 and `DEMO_WEB_PORT` moves it; an override
 that is not a port fails the config load, and `strictPort` makes a taken port
 fail the start rather than silently moving to another one.
 
-Run the backend first (`go -C starters/demo/server run . --config
-file:testdata/sqlite-memory.yaml sqlite-memory serve`), then `pnpm dev`.
+Run the backend on the compiled defaults first — `go -C starters/demo/server run .
+sqlite seed` once, then the same command with `sqlite serve` — which bind
+`127.0.0.1:8081`, this server's proxy target. A stack whose configuration binds
+another address (the `sqlite-memory` sample binds `127.0.0.1:8080`) needs
+`DEMO_WEB_BACKEND_PROXY` pointed at it, and `DEMO_WEB_PORT` moved so the two
+servers do not share a port. Then run `pnpm dev`.
 
 ## Build
 
