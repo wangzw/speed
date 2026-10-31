@@ -397,7 +397,7 @@ describe('IdentifiersSection', () => {
     expect(screen.queryByText(zhCN.identifiers.verified)).toBeNull()
   })
 
-  it('renders a username as its group sentence with no removal entry', async () => {
+  it('disables removal of the only username on a password account and explains why', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -422,15 +422,15 @@ describe('IdentifiersSection', () => {
     mount(respond)
 
     expect(await screen.findAllByText('ada')).toHaveLength(1)
-    // The sign-in group renders no per-identifier row, so a username has no
-    // removal entry there. The last-login-name note accompanies a removal the
-    // section withheld, so it has no place either.
+    // The password signs in through this name; removing it would leave the
+    // password without a login name, so the username group's remove action is
+    // disabled and carries the rule's note.
     expect(
-      screen.queryByRole('button', {
+      screen.getByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
       }),
-    ).toBeNull()
-    expect(screen.queryByText(zhCN.identifiers.lastLoginName)).toBeNull()
+    ).toBeDisabled()
+    expect(screen.getByText(zhCN.identifiers.lastLoginName)).toBeTruthy()
 
     await expectNoAxeViolations()
   })
@@ -496,21 +496,24 @@ describe('IdentifiersSection', () => {
 
     expect(await screen.findAllByText('ada')).toHaveLength(1)
     expect(screen.getByText('+14155550123')).toBeTruthy()
-    // The username is the password's only login name; the phone signs in
-    // through its own code route, so it is not counted and stays removable.
+    // The username is the password's only login name, so its group's remove
+    // action is disabled; the phone signs in through its own code route, so it
+    // is not counted and stays removable.
     expect(
-      screen.queryByRole('button', {
+      screen.getByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
       }),
-    ).toBeNull()
+    ).toBeDisabled()
     expect(
       screen.getByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', '+14155550123'),
       }),
-    ).toBeTruthy()
+    ).toBeEnabled()
+    // The note belongs to the username group, not to the phone row.
+    expect(screen.getByText(zhCN.identifiers.lastLoginName)).toBeTruthy()
   })
 
-  it('keeps an email removable when the username is another login name', async () => {
+  it('keeps the username removal when an email also signs in', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -541,13 +544,14 @@ describe('IdentifiersSection', () => {
     mount(respond)
 
     expect(await screen.findAllByText('ada')).toHaveLength(1)
-    // The username and this address are both login names, so the address is
-    // not the account's only way in and its contact row keeps the removal.
+    // The username and this address are both login names, so removing the
+    // username leaves the password another way in and its group keeps the
+    // action enabled.
     expect(
       screen.getByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@x.test'),
+        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
       }),
-    ).toBeTruthy()
+    ).toBeEnabled()
     expect(screen.queryByText(zhCN.identifiers.lastLoginName)).toBeNull()
   })
 

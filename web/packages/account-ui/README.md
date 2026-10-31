@@ -224,13 +224,13 @@ grouped the way the design gives them: the sign-in ways and the contact
 addresses. Every registered email address and phone number is a contact
 address, and being one is not a choice; the sign-in way is a separate choice.
 Whether an email or phone signs in is a group decision: the sign-in ways list
-is grouped by kind and each group carries one control -- the username group's
-static statement, the email group's toggle plus a picker of the proved
-addresses (an off note takes the picker's place while it is off), and the
-phone group's toggle of its representative row. The contacts list carries no
-sign-in control; a proved email there still offers the default-contact
-choice. A username is a login name with no ownership to prove, so its
-row shows no ownership state and no per-row choice. A proved phone that does
+is grouped by kind and each group carries its controls -- the username group's
+static statement plus one remove action, the email group's toggle plus a
+picker of the proved addresses (an off note takes the picker's place while it
+is off), and the phone group's toggle of its representative row. The contacts
+list carries no sign-in control; a proved email there still offers the
+default-contact choice. A username is a login name with no ownership to prove,
+so its group shows no ownership state and no per-row choice. A proved phone that does
 not sign in has its group say so ("This phone number is not used to sign
 in.") instead of naming it as a sign-in way, so the sentence and the enable
 action agree. The `axis` prop narrows an
@@ -249,17 +249,19 @@ that same address through `POST /api/v1/auth/identifiers`, submits it through
 `POST /api/v1/auth/identifiers/verify`, and the refetched row's chip flips to
 Verified. The action is withheld while the account's `verification.state` is
 `pending`, because that section's flow owns the one pending code, and on a
-deployment that serves no email channel. A row's remove action sits behind the
-ui-kit danger confirm and
-sends `DELETE /api/v1/auth/identifiers/{id}`; a refusal (removing a password
+deployment that serves no email channel. A row's remove action, and the
+username group's own remove action, sit behind the ui-kit danger confirm and
+send `DELETE /api/v1/auth/identifiers/{id}`; a refusal (removing a password
 account's last username or email address is the 409
 `login-identifier-required`) renders its code text and re-reads the profile,
 so a client guard that read a stale list converges on the server's answer.
 An account with a password
 signs in with a username or an email address: while the profile lists exactly
-one of those, that row's remove action gives way to a note saying another login
-name must be added first. Another username/email, or an account with no
-password at all, keeps the action; the server still judges the last way in.
+one of those, that email row's remove action gives way to a note saying
+another login name must be added first, and the username group's remove
+action is disabled under the same note. Another username/email, or an account
+with no password at all, keeps the action enabled; the server still judges
+the last way in.
 
 Below the list an add face adds one identifier the caller chooses, its kind
 `username` or `email` (a phone is added through its own two-step surface).

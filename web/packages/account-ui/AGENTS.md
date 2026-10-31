@@ -139,10 +139,11 @@ session, and the read-only ones take no props either.
   and phone number is a contact address, so an email or phone row renders no
   contact switch. Whether an email or phone signs in is a group decision,
   never a per-row switch: the sign-in ways list is grouped by kind and each
-  group renders its heading, one control and one sentence, never the
+  group renders its heading, its controls and one sentence, never the
   addresses or numbers as rows -- the picker displays the chosen address, and
-  the sentence names the username or phone. A username has no control of its
-  own; the email group's is a toggle with its picker (a proved
+  the sentence names the username or phone. A username has no sign-in switch
+  of its own; its group carries one remove action beside the sentence (see
+  the removal rules below). The email group's is a toggle with its picker (a proved
   address is chosen while the toggle is on, an off note takes the picker's
   place while it is off); the phone group's is a toggle of its representative
   row. The contacts list carries no sign-in control; a proved email there
@@ -160,9 +161,8 @@ session, and the read-only ones take no props either.
   account with a password signs in with a username or an email address:
   while the profile lists exactly one of those, that email's contact row
   gives up its remove action to a note (`identifiers.lastLoginName`) telling
-  the user to add another login name first, and a username renders no removal
-  entry at all because the sign-in group carries no per-identifier row.
-  Another username/email, or an account
+  the user to add another login name first, and the username group's remove
+  action is disabled under the same note. Another username/email, or an account
   with no password at all, keeps the action; the server still judges the
   last way in on the write itself, and a refusal renders its 409
   `login-identifier-required` text and re-reads the profile, so a guard
