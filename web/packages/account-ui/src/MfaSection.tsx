@@ -80,6 +80,7 @@ import { stepUpReasonOf } from '@speed/auth-core'
 import {
   ConfirmDialog,
   errorCodeOf,
+  FORM_MAX_WIDTH,
   ListSkeleton,
   SectionCard,
   useWriteFeedback,
@@ -427,10 +428,14 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
               : rank(a) - rank(b)
           })
           return wizard !== null ? (
-            <Box sx={{ py: 1.5 }}>
-              <Typography variant="h6" component="h3">
+            <Box sx={{ py: 1.5, maxWidth: FORM_MAX_WIDTH }}>
+              <Typography variant="subtitle1" component="h3">
                 {t('mfa.enroll.title')}
               </Typography>
+              {/* The step's own confirm and the wizard's cancel share one
+                  action row: cancel on the left, confirm closing the row on
+                  the right. The step's fields are capped to the same width
+                  as the pane's other forms. */}
               <FlowStep
                 key={`${wizard.seq}-${wizard.step.kind}`}
                 step={wizard.step}
@@ -439,19 +444,19 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                 answerStep="enroll"
                 submitLabel={t('mfa.enroll.confirmLabel')}
                 onSubmit={(answer) => void answerEnroll(answer)}
+                secondaryAction={
+                  <Button
+                    type="button"
+                    disabled={enrolling}
+                    onClick={() => {
+                      setWizard(null)
+                      enrollFeedback.reset()
+                    }}
+                  >
+                    {t('mfa.enroll.cancelLabel')}
+                  </Button>
+                }
               />
-              <Box sx={{ mt: 1.5 }}>
-                <Button
-                  type="button"
-                  disabled={enrolling}
-                  onClick={() => {
-                    setWizard(null)
-                    enrollFeedback.reset()
-                  }}
-                >
-                  {t('mfa.enroll.cancelLabel')}
-                </Button>
-              </Box>
               {/* The enrollment group's result, below the step and its
                   actions. */}
               <WriteFeedbackRegion outcome={enrollFeedback.outcome} />
@@ -546,71 +551,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                             {t(help)}
                           </Typography>
                         )}
-                        {kindFactors.length > 0 && (
-                          <Box
-                            component="ul"
-                            sx={{
-                              m: 0,
-                              mt: 1.5,
-                              p: 0,
-                              listStyle: 'none',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 1,
-                            }}
-                          >
-                            {kindFactors.map((factor, factorIndex) => {
-                              const id = factor.id ?? null
-                              const status =
-                                factor.status != null &&
-                                KNOWN_FACTOR_STATUSES.has(factor.status)
-                                  ? factor.status
-                                  : null
-                              return (
-                                <Box
-                                  component="li"
-                                  key={id ?? String(factorIndex)}
-                                  sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 1.5,
-                                    minWidth: 0,
-                                  }}
-                                >
-                                  <Typography variant="body2">
-                                    {factor.label != null &&
-                                    factor.label !== ''
-                                      ? factor.label
-                                      : kindLabel}
-                                  </Typography>
-                                  {status !== null && (
-                                    <Chip
-                                      size="small"
-                                      variant="outlined"
-                                      label={t(`mfa.factor.status.${status}`)}
-                                    />
-                                  )}
-                                  {id !== null && (
-                                    <Button
-                                      variant="outlined"
-                                      color="error"
-                                      size="small"
-                                      disabled={busy}
-                                      aria-label={t('mfa.removeAria', {
-                                        factor: kindLabel,
-                                        interpolation: { escapeValue: false },
-                                      })}
-                                      onClick={() => setRemoveTarget(id)}
-                                      sx={{ marginLeft: 'auto' }}
-                                    >
-                                      {t('mfa.remove')}
-                                    </Button>
-                                  )}
-                                </Box>
-                              )
-                            })}
-                          </Box>
-                        )}
                       </Box>
                       {enrollable ? (
                         <Button
@@ -641,6 +581,77 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                             : t('mfa.action.add')}
                         </Button>
                       ) : null}
+                      {kindFactors.length > 0 && (
+                        <Box
+                          component="ul"
+                          // The factor rows span the whole method block,
+                          // so every Remove closes on the same right edge as
+                          // the method's Add/Manage action above it: one
+                          // rail, not one that shifts with the method's
+                          // enrollability.
+                          sx={{
+                            gridColumn: '1 / -1',
+                            m: 0,
+                            mt: 1.5,
+                            p: 0,
+                            listStyle: 'none',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 1,
+                          }}
+                        >
+                          {kindFactors.map((factor, factorIndex) => {
+                            const id = factor.id ?? null
+                            const status =
+                              factor.status != null &&
+                              KNOWN_FACTOR_STATUSES.has(factor.status)
+                                ? factor.status
+                                : null
+                            return (
+                              <Box
+                                component="li"
+                                key={id ?? String(factorIndex)}
+                                sx={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 1.5,
+                                  minWidth: 0,
+                                }}
+                              >
+                                <Typography variant="body2">
+                                  {factor.label != null &&
+                                  factor.label !== ''
+                                    ? factor.label
+                                    : kindLabel}
+                                </Typography>
+                                {status !== null && (
+                                  <Chip
+                                    size="small"
+                                    variant="outlined"
+                                    label={t(`mfa.factor.status.${status}`)}
+                                  />
+                                )}
+                                {id !== null && (
+                                  <Button
+                                    variant="outlined"
+                                    color="error"
+                                    size="small"
+                                    disabled={busy}
+                                    aria-label={t('mfa.removeAria', {
+                                      factor: kindLabel,
+                                      interpolation: { escapeValue: false },
+                                    })}
+                                    onClick={() => setRemoveTarget(id)}
+                                    sx={{ marginLeft: 'auto' }}
+                                  >
+                                    {t('mfa.remove')}
+                                  </Button>
+                                )}
+                              </Box>
+                            )
+                          })}
+                        </Box>
+                      )}
                     </Box>
                   )
                 })}
