@@ -16,6 +16,7 @@
       "email_taken": "That email address is already registered to another account. Use a different address.",
       "login_identifier_required": "This account needs at least one login name (a username or an email address).",
       "last_login_method": "This is the account's only remaining way to sign in. Give it a password or another sign-in way before removing this one.",
+      "username_immutable": "A username cannot be changed or removed.",
       "contact_required": "Verify your email address on the account verification page before continuing.",
       "forbidden": "You do not have permission to do that.",
       "impersonation_restricted": "This can't be done: the target must be an enabled, unprotected member of the tenant, and you must not be impersonating another account right now.",
@@ -766,7 +767,7 @@
       "label": "Remove login identifier",
       "submit": "Remove",
       "confirmTitle": "Remove login identifier",
-      "confirmMessage": "Remove the login identifier \"{{identifier}}\" from this account."
+      "confirmMessage": "Remove the login identifier \"{{identifier}}\" from this account. A username cannot be removed."
     }
   },
   "sessions": {

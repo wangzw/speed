@@ -16,6 +16,7 @@
       "email_taken": "该邮箱已注册到另一账户，请换一个邮箱地址。",
       "login_identifier_required": "账号需要至少一个登录名（用户名或邮箱地址）。",
       "last_login_method": "这是该账号最后一种可用的登录方式。请先为它设置密码或添加其他登录方式，再移除这一项。",
+      "username_immutable": "用户名不可更改或删除。",
       "contact_required": "请先在账户验证页验证邮箱地址，再继续此操作。",
       "forbidden": "你没有执行此操作的权限。",
       "impersonation_restricted": "无法执行此操作：目标账户必须是该租户中已启用且未受保护的成员，并且你当前不能处于冒充其他账户的状态。",
@@ -766,7 +767,7 @@
       "label": "移除登录标识",
       "submit": "移除",
       "confirmTitle": "移除登录标识",
-      "confirmMessage": "从该账户移除登录标识「{{identifier}}」。"
+      "confirmMessage": "从该账户移除登录标识「{{identifier}}」。用户名不可移除。"
     }
   },
   "sessions": {

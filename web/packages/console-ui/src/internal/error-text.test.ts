@@ -135,6 +135,7 @@ describe('console-ui error text', () => {
       'authn.conflict',
       'authn.email_taken',
       'authn.login_identifier_required',
+      'authn.username_immutable',
       'authn.forbidden',
       'authn.impersonation_restricted',
       'authn.factor_not_seasoned',

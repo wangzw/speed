@@ -401,6 +401,17 @@ const BAD_REQUEST = {
 
 const BAD_REQUEST_TEXT = zhCN.errors.authn.bad_request
 
+/** A 409 refusal of a username removal: the name is permanent. The console
+ * never renders a username's remove action, so this refusal can only answer a
+ * request issued outside the surface. */
+const USERNAME_IMMUTABLE = {
+  status: 409,
+  code: 'authn.username_immutable',
+  message: 'username immutable',
+}
+
+const USERNAME_IMMUTABLE_TEXT = zhCN.errors.authn.username_immutable
+
 const SECRET_ROW = {
   id: 'sec-1',
   label: 'ci',
@@ -1930,6 +1941,30 @@ describe('AccountsPage', () => {
     await vi.waitFor(() => {
       expect(session).toEqual(['sess-1'])
     })
+  })
+
+  it('renders a username-immutable refusal as its own text, not the generic conflict', async () => {
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      removeIdentifier: () => Promise.reject(USERNAME_IMMUTABLE),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    await user.type(
+      within(panel).getByLabelText(zhCN.accounts.removeIdentifier.label),
+      'ada',
+    )
+    await user.click(
+      within(panel).getByRole('button', {
+        name: zhCN.accounts.removeIdentifier.submit,
+      }),
+    )
+    await confirmDialog(user)
+
+    const alert = await within(panel).findByRole('alert')
+    expect(alert).toHaveTextContent(USERNAME_IMMUTABLE_TEXT)
+    expect(alert).not.toHaveTextContent(zhCN.errors.authn.conflict)
   })
 
   it('confirms before removing a named identifier', async () => {
