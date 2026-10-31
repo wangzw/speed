@@ -577,28 +577,22 @@ export function ContactVerificationSection({
               }
             }}
           />
-          {/* The verify control group: its result sits below the code field
-              and the verify action. */}
-          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={busy || code.trim() === ''}
-              loading={verifyIdentifier.isPending}
-            >
-              {t('verification.verify')}
-            </Button>
-          </Stack>
-          <WriteFeedbackRegion
-            outcome={verifyFeedback.outcome}
-            sx={{ alignSelf: 'stretch', width: '100%' }}
-          />
-          {verifyFailureBanner}
-          {/* The send control group: its own result sits below the resend and
-              change actions. The proof block stands above them, because a
-              resend sends another code. */}
+          {/* The action row: resend and change-address are secondary and
+              stand on the left, verify is the step's primary action and
+              closes the row on the right. All three share one line and one
+              baseline. The proof block stands above the row, because a
+              resend sends another code. The verify group's result sits
+              below the row. */}
           {humanBlock}
-          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              flexWrap: 'wrap',
+              width: '100%',
+            }}
+          >
             <Button
               type="button"
               variant="outlined"
@@ -625,7 +619,21 @@ export function ContactVerificationSection({
                 ? t('verification.changeCancel')
                 : t('verification.change')}
             </Button>
-          </Stack>
+            <Button
+              type="submit"
+              variant="contained"
+              sx={{ marginLeft: 'auto' }}
+              disabled={busy || code.trim() === ''}
+              loading={verifyIdentifier.isPending}
+            >
+              {t('verification.verify')}
+            </Button>
+          </Box>
+          <WriteFeedbackRegion
+            outcome={verifyFeedback.outcome}
+            sx={{ alignSelf: 'stretch', width: '100%' }}
+          />
+          {verifyFailureBanner}
           {remainingSeconds > 0 ? (
             <Typography
               id={RESEND_NOTE_ID}
