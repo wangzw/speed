@@ -355,12 +355,12 @@ func schema() config.Schema {
 					"path, which redirects, cookies and token issuers are built from",
 			},
 			mountInsecureItem: {
-				Origins: config.OriginPrimary | config.OriginEnv,
+				Origins: config.OriginPrimary,
 				Description: "for development only: admit an http public URL and drop the " +
 					"__Host- prefix and the Secure attribute from cookies",
 			},
 			trustedOriginsItem: {
-				Origins: config.OriginPrimary | config.OriginEnv,
+				Origins: config.OriginPrimary,
 				Description: "origins, each scheme://host[:port], that the cross-origin check " +
 					"trusts besides the origin of the public URL",
 			},

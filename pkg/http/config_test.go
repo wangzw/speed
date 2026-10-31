@@ -71,11 +71,16 @@ func readThrough(t *testing.T, document string, declared config.Schema) (moduleC
 // environment as JSON beside the primary source: where a process binds differs
 // between runs of one binary. The endpoint set stays on the primary source and
 // the host defaults document: moving a capability between endpoints is a change
-// to the assembly rather than a value that differs between runs.
+// to the assembly rather than a value that differs between runs. The two
+// module-level proxy items stay on the primary source too: they decide which
+// networks are believed to write a forwarded address, so the environment must
+// not be able to widen that trust boundary.
 func TestTheSetsDeclareTheirOrigins(t *testing.T) {
 	want := map[string]config.Origin{
-		listenersItem: config.OriginPrimary | config.OriginEnv,
-		endpointsItem: config.OriginPrimary,
+		listenersItem:       config.OriginPrimary | config.OriginEnv,
+		endpointsItem:       config.OriginPrimary,
+		trustedProxiesItem:  config.OriginPrimary,
+		remoteIPHeadersItem: config.OriginPrimary,
 	}
 	for item, origins := range want {
 		declared, ok := schema().Items[item]

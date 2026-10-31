@@ -40,14 +40,14 @@ func (c moduleConfig) resolve() resolved {
 // items declares this backend's input items. The module descriptor mounts them
 // under this backend's namespace.
 //
-// The root takes the environment as well as the configuration file: where a
-// run keeps its bytes differs between runs of one binary, and a run with no
-// configuration file still has to name one. The value is not accepted from the
-// command line, which would put a filesystem path in a process listing.
+// The root takes the primary configuration source alone: the directory an
+// object's bytes are kept under is the object store's own policy, and an
+// environment variable or a command-line argument that could rewrite it would be
+// a way to change where a process stores from outside the configuration file.
 func items() map[string]config.Item {
 	return map[string]config.Item{
 		rootItem: {
-			Origins:     config.OriginPrimary | config.OriginEnv,
+			Origins:     config.OriginPrimary,
 			Required:    true,
 			Description: "the local directory an object's bytes are kept under",
 		},

@@ -194,9 +194,13 @@ var configDefaults = moduleConfig{}
 // is a change to the assembly rather than a value that differs between runs, so
 // it belongs to the configuration file or the host defaults document.
 //
-// The listener set and the two module-level proxy lists do take the environment,
-// as JSON that replaces the whole value: where a process binds and which
-// network in front of it is believed differ between runs of one binary.
+// The listener set also takes the environment, as JSON that replaces the whole
+// value: where a process binds differs between runs of one binary.
+//
+// The two module-level proxy items take the primary config source alone. They
+// decide which networks are believed to write a forwarded address, so a
+// variable that could widen them would move the trust boundary outside the
+// configuration a deployment is reviewed by.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: configNamespace,
@@ -211,11 +215,11 @@ func schema() config.Schema {
 				Description: "the routing endpoints, each hanging on a listener and carrying its chain settings",
 			},
 			trustedProxiesItem: {
-				Origins:     config.OriginPrimary | config.OriginEnv,
+				Origins:     config.OriginPrimary,
 				Description: "the networks in front of this deployment, whose forwarded-address headers every endpoint inherits unless it writes its own",
 			},
 			remoteIPHeadersItem: {
-				Origins:     config.OriginPrimary | config.OriginEnv,
+				Origins:     config.OriginPrimary,
 				Description: "the forwarded-address headers a trusted proxy writes, inherited by every endpoint unless it writes its own",
 			},
 		},
