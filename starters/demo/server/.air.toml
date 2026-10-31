@@ -1,16 +1,17 @@
 # Air's configuration for the demo program's local development loop.
 #
 # `make dev` starts vite in the background and air here in the foreground. Air
-# builds the review binary and runs `sqlite seed` before it hands the process to
+# builds the default binary and runs `sqlite seed` before it hands the process to
 # `sqlite serve`, so every rebuild seeds the database the previous run used.
 # Seed is idempotent by contract, so a restart neither duplicates nor overwrites
 # a change made through the console.
 #
-# The build carries the review tag on purpose: the review assembly's loopback
-# guard matches a listener on this machine, and its test controls are local-only.
-# The configuration is server/review/sqlite.yaml, the same file the review suite
-# uses. A Go file or a YAML file under this root restarts the server; the
-# frontend is vite's job, so its tree is not watched here.
+# The run reads no configuration file: its values are the defaults compiled into
+# the binary (defaults.go) and whatever variables `mise exec` loaded from .env,
+# and the command line carries no --config. The review tag belongs to the
+# end-to-end tier alone; its test controls and loopback guard are no part of
+# local development. Only Go sources are build inputs, so only they restart the
+# server; the frontend is vite's job, so its tree is not watched here.
 #
 # web/ is the frontend package's own tree, and var/ is the running program's
 # state (the SQLite file, the token signing key and the object store root).
@@ -20,13 +21,13 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go build -tags review -o ./tmp/demo ."
+  cmd = "go build -o ./tmp/demo ."
   entrypoint = ["./tmp/demo"]
-  full_bin = "./tmp/demo --config file:review/sqlite.yaml sqlite seed && exec ./tmp/demo --config file:review/sqlite.yaml sqlite serve"
+  full_bin = "./tmp/demo sqlite seed && exec ./tmp/demo sqlite serve"
   delay = 1000
   exclude_dir = ["web", "var", "tmp", "dist", "testdata"]
   exclude_regex = ["_test.go"]
-  include_ext = ["go", "yaml", "yml", "toml"]
+  include_ext = ["go"]
   kill_delay = "2s"
   send_interrupt = true
   stop_on_error = true
