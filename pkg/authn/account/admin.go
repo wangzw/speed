@@ -380,6 +380,10 @@ func (p *product) newCredential(ctx context.Context, in authn.CreateAccount, pla
 		}
 	}
 	if !login {
+		// Every path that opens a user account writes a username, so this
+		// refuses only a row that reached the database around them: without
+		// the check such an account would gain a password that authenticates
+		// no login name.
 		return "", fmt.Errorf("%w: the account has no username or email address to log in with", authn.ErrIdentifierRequired)
 	}
 	if in.PasswordHash != "" {

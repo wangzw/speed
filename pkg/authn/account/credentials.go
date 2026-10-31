@@ -119,7 +119,10 @@ func (p *product) requireInTx(tx *gorm.DB, row accountRow, opt authn.SetPassword
 // the setting asks, at most 128 bytes, not an identifier of the account, and not
 // the one the account has, each of which is authn.ErrPasswordPolicy, and an
 // account with no username and no email address to log in with is
-// authn.ErrIdentifierRequired. A call that carries the current password checks it
+// authn.ErrIdentifierRequired. That refusal reaches only a row the write
+// surfaces did not create: every user account they open carries a username, so
+// the check stands against a row written around them rather than against an
+// account a person can reach. A call that carries the current password checks it
 // first, and a wrong one is authn.ErrInvalidCredentials and counts against the
 // account like a failed login does. No session is revoked here: the caller
 // does that once the change is made, which is why this module does not depend on
