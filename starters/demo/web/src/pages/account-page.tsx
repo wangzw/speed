@@ -214,7 +214,12 @@ function SecurityRow({
               flexWrap: 'wrap',
             }}
           >
-            <Typography id={titleId} variant="h5" component="h2">
+            <Typography
+              id={titleId}
+              variant="subtitle1"
+              component="h2"
+              sx={{ fontWeight: 600 }}
+            >
               {title}
             </Typography>
             {badge}
@@ -409,7 +414,12 @@ function AccountSection({
           </Box>
         )}
         <Box sx={{ minWidth: 0 }}>
-          <Typography id={titleId} variant="h5" component="h2">
+          <Typography
+            id={titleId}
+            variant="subtitle1"
+            component="h2"
+            sx={{ fontWeight: 600 }}
+          >
             {title}
           </Typography>
           {description === undefined ? null : (
