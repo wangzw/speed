@@ -137,6 +137,15 @@ func assemble(t *testing.T, use func(h *harness)) {
 // needs a login method or a capability the default stack does not carry.
 func assembleWith(t *testing.T, extra []core.Module, use func(h *harness)) {
 	t.Helper()
+	assembleWithSections(t, extra, nil, use)
+}
+
+// assembleWithSections is assembleWith with extra top-level configuration
+// sections, for a case whose extra module reads a section the default document
+// does not carry. A section named here replaces the document's own, so a case
+// writes the whole of what its module reads.
+func assembleWithSections(t *testing.T, extra []core.Module, sections map[string]any, use func(h *harness)) {
+	t.Helper()
 
 	dsn := filepath.Join(t.TempDir(), "authn.db")
 	capt := &capture{}
@@ -162,6 +171,9 @@ func assembleWith(t *testing.T, extra []core.Module, use func(h *harness)) {
 		},
 		"settings": map[string]any{},
 		"event":    map[string]any{},
+	}
+	for key, value := range sections {
+		document[key] = value
 	}
 	body, err := json.Marshal(document)
 	if err != nil {
