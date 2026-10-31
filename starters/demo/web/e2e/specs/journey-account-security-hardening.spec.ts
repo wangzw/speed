@@ -347,6 +347,21 @@ test('account-security-hardening: an account enrols two factors, ends another de
           { exact: true },
         ),
       ).toBeVisible()
+      // The username is fixed: its group states the rule and renders no
+      // removal action.
+      await expect(
+        identifiers.getByText(
+          copy('accountUi', 'identifiers.usernamePermanent'),
+          { exact: true },
+        ),
+      ).toBeVisible()
+      await expect(
+        identifiers.getByRole('button', {
+          name: copy('accountUi', 'identifiers.removeAria', {
+            value: account.username,
+          }),
+        }),
+      ).toHaveCount(0)
       // The email group lists the proved addresses only, and the one on this
       // account is the selected choice.
       await expect(
