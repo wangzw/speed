@@ -14,11 +14,12 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// The configuration keys this module reads: the gateway's public address and
-// base path, from which the redirect target is built, and the SSO module's
-// egress items, which the restricted egress client is built with. They are read
-// at construction, before any provider is reached.
+// The configuration keys this module reads: its own enable switch, the gateway's
+// public address and base path, from which the redirect target is built, and the
+// SSO module's egress items, which the restricted egress client is built with.
+// They are read at construction, before any provider is reached.
 const (
+	enabledItem       = "enabled"
 	gateNamespace     = "authn.gate"
 	gateMountPath     = "mount"
 	gatePublicURLItem = "mount.public-url"
@@ -27,8 +28,46 @@ const (
 	oidcCAFileItem = "oidc-ca-file"
 )
 
-// moduleConfig is the part of the SSO module's section this module reads.
+// moduleConfig is this module's own section: the switch that states whether the
+// run offers enterprise OIDC sign-in. The providers themselves are rows in the
+// enterprise register, so no credential of theirs lives here.
 type moduleConfig struct {
+	// Enabled states whether this run offers the method. The method has nothing
+	// of its own to infer that from: its providers are created at run time, so
+	// an empty register is not evidence of a deployment that never intended to
+	// offer enterprise sign-in.
+	Enabled bool `config:"enabled"`
+}
+
+// configDefaults is what this module is worth without a configuration file:
+// off. A deployment turns enterprise OIDC sign-in on by naming it.
+var configDefaults = moduleConfig{}
+
+// schema declares this module's one input item.
+func schema() config.Schema {
+	return config.Schema{
+		Namespace: ConfigNamespace,
+		Mounts:    []config.Mount{{Value: &configDefaults}},
+		Items: map[string]config.Item{
+			enabledItem: {
+				Description: "whether this run offers enterprise OIDC sign-in; off, the method is " +
+					"not delivered and the sign-in surface offers no enterprise entry",
+			},
+		},
+	}
+}
+
+// readEnabled decodes this module's enable switch.
+func readEnabled(reader config.Reader) (bool, error) {
+	var cfg moduleConfig
+	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
+		return false, err
+	}
+	return cfg.Enabled, nil
+}
+
+// ssoConfig is the part of the SSO module's section this module reads.
+type ssoConfig struct {
 	AllowPrivateEgress bool   `config:"allow-private-egress"`
 	OIDCCAFile         string `config:"oidc-ca-file"`
 }
@@ -73,7 +112,7 @@ func readConfig(reader config.Reader) (resolved, error) {
 	if err := reader.Decode(gateNamespace+"."+gateMountPath, &gm); err != nil {
 		return resolved{}, err
 	}
-	var sso moduleConfig
+	var sso ssoConfig
 	if err := reader.Decode(ssoNamespace, &sso); err != nil {
 		return resolved{}, err
 	}

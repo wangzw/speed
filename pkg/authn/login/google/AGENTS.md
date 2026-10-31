@@ -103,8 +103,16 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   gateway's `mount.public-url`, the `mount.base-path` (the declared default when
   the gateway set none) and this provider's callback path, which is the method's
   name. The method reads those two keys in `Prepare` and fails the start when the
-  public address is empty, so a deployment that configured no address is told at
-  startup rather than at the first login.
+  public address is empty or is not an origin, so a deployment that configured no
+  usable address is told at startup rather than at the first login.
+- **A deployment that configured no Google application runs without this
+  method.** The client identifier and the client secret are the module's own
+  statement that Google sign-in is configured. With neither, `Prepare` states
+  `StateDisabled` with the reason, so a binary that compiles the method in can
+  serve a deployment that does not offer it. One credential without the other is
+  a half-configured application, not an absence: it fails the startup and names
+  the item to write. With both, the gateway's public address and the remaining
+  items decide, and a missing or illegal one fails the startup there.
 
 ## How to run it
 

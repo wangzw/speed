@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -67,8 +68,19 @@ func (f *fakeReader) Decode(path string, target any) error {
 	}
 	switch path {
 	case ConfigNamespace:
-		if c, ok := target.(*moduleConfig); ok {
-			*c = f.cfg
+		switch t := target.(type) {
+		case *moduleConfig:
+			*t = f.cfg
+		case *clientIDOnly:
+			if f.cfg.ClientID == "" {
+				return config.ErrMissingRequired
+			}
+			t.ClientID = f.cfg.ClientID
+		case *clientSecretOnly:
+			if f.cfg.ClientSecret == "" {
+				return config.ErrMissingRequired
+			}
+			t.ClientSecret = f.cfg.ClientSecret
 		}
 	case gateNamespace + "." + gateMountPath:
 		if gm, ok := target.(*gateMount); ok {
@@ -140,6 +152,73 @@ func TestPrepareStatesEnabledAndRefusesAnIncompleteConfiguration(t *testing.T) {
 	})
 	if !errors.Is(err, authn.ErrInvalidConfig) {
 		t.Errorf("drive error = %v, want authn.ErrInvalidConfig", err)
+	}
+}
+
+// TestPrepareStandsDownWhenNoCredentialIsGiven holds the unconfigured case: a
+// deployment that gave neither credential did not configure Google sign-in, so
+// the module is absent from the run without failing the startup.
+func TestPrepareStandsDownWhenNoCredentialIsGiven(t *testing.T) {
+	err := driveWith(t, &fakeReader{}, func(_ context.Context, reg *core.Registry) error {
+		got, ok := reg.Enablement(ModuleName)
+		if !ok {
+			t.Fatalf("the registry has no verdict for %s", ModuleName)
+		}
+		if got.State != core.StateDisabled {
+			t.Errorf("the module state = %v, want StateDisabled", got.State)
+		}
+		if got.Reason == "" {
+			t.Error("the module stood down without a reason")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("drive with no credentials: %v", err)
+	}
+}
+
+// TestPrepareNamesTheMissingCredentialWhenHalfConfigured holds the half-
+// configured case: one credential without the other is a startup failure, and
+// the failure names the item to write.
+func TestPrepareNamesTheMissingCredentialWhenHalfConfigured(t *testing.T) {
+	cases := []struct {
+		name   string
+		reader *fakeReader
+		item   string
+	}{
+		{"no client-id", &fakeReader{cfg: moduleConfig{ClientSecret: testClientSecret}}, clientIDItem},
+		{"no client-secret", &fakeReader{cfg: moduleConfig{ClientID: testClientID}}, clientSecretItem},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := driveWith(t, tc.reader, func(context.Context, *core.Registry) error {
+				t.Error("the drive reached its action with half a configuration")
+				return nil
+			})
+			if !errors.Is(err, authn.ErrInvalidConfig) {
+				t.Fatalf("drive error = %v, want authn.ErrInvalidConfig", err)
+			}
+			if !strings.Contains(err.Error(), ConfigNamespace+"."+tc.item) {
+				t.Errorf("the failure %q does not name %s.%s", err, ConfigNamespace, tc.item)
+			}
+		})
+	}
+}
+
+// TestPrepareRefusesAnIllegalPublicAddress holds the other required item: with
+// both credentials and a public address that is not an origin, the startup
+// fails rather than building a redirect from it.
+func TestPrepareRefusesAnIllegalPublicAddress(t *testing.T) {
+	reader := &fakeReader{
+		cfg: moduleConfig{ClientID: testClientID, ClientSecret: testClientSecret},
+		gm:  gateMount{PublicURL: "not an origin"},
+	}
+	err := driveWith(t, reader, func(context.Context, *core.Registry) error {
+		t.Error("the drive reached its action with an illegal public address")
+		return nil
+	})
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("drive error = %v, want authn.ErrInvalidConfig", err)
 	}
 }
 

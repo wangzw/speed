@@ -61,9 +61,10 @@ func (fakeAccounts) ListServiceSecrets(context.Context, authn.AccountID) ([]auth
 
 // fakeReader is a configuration reader whose sections a case chooses.
 type fakeReader struct {
-	gm  gateMount
-	sso moduleConfig
-	err error
+	gm      gateMount
+	sso     ssoConfig
+	enabled moduleConfig
+	err     error
 }
 
 func (f *fakeReader) Decode(path string, target any) error {
@@ -76,16 +77,20 @@ func (f *fakeReader) Decode(path string, target any) error {
 			*gm = f.gm
 		}
 	case ssoNamespace:
-		if c, ok := target.(*moduleConfig); ok {
+		if c, ok := target.(*ssoConfig); ok {
 			*c = f.sso
+		}
+	case ConfigNamespace:
+		if c, ok := target.(*moduleConfig); ok {
+			*c = f.enabled
 		}
 	}
 	return nil
 }
 
-// validReader is a reader with a complete configuration.
+// validReader is a reader with a complete configuration and the switch on.
 func validReader() *fakeReader {
-	return &fakeReader{gm: gateMount{PublicURL: "https://app.example.com"}}
+	return &fakeReader{gm: gateMount{PublicURL: "https://app.example.com"}, enabled: moduleConfig{Enabled: true}}
 }
 
 // driveWith registers this module beside the stand-in modules and drives a real
@@ -135,19 +140,42 @@ func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	if !required[core.Token((*authn.SSOProviders)(nil))] || !required[core.Token((*authn.Accounts)(nil))] {
 		t.Errorf("required capabilities = %+v, want the provider register and the account module", m.Requires)
 	}
-	if len(m.Resources) != 0 {
-		t.Errorf("Resources = %v, want none: the method declares no input item of its own", m.Resources)
+	if len(m.Resources) != 1 {
+		t.Errorf("Resources = %v, want the one enable-switch schema", m.Resources)
+	}
+}
+
+// TestPrepareStandsDownWhenTheSwitchIsOff holds the unconfigured case: the
+// method has nothing of its own to infer the intent from, so an absent switch
+// means the deployment did not offer enterprise sign-in; the module is absent
+// from the run without failing the startup.
+func TestPrepareStandsDownWhenTheSwitchIsOff(t *testing.T) {
+	err := driveWith(t, &fakeReader{}, func(_ context.Context, reg *core.Registry) error {
+		got, ok := reg.Enablement(ModuleName)
+		if !ok {
+			t.Fatalf("the registry has no verdict for %s", ModuleName)
+		}
+		if got.State != core.StateDisabled {
+			t.Errorf("the module state = %v, want StateDisabled", got.State)
+		}
+		if got.Reason == "" {
+			t.Error("the module stood down without a reason")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("drive with the switch off: %v", err)
 	}
 }
 
 // TestPrepareStatesEnabledAndRefusesAnIncompleteConfiguration holds that a
 // complete configuration enables the module and a missing public address fails
-// the start.
+// the start once the switch is on.
 func TestPrepareStatesEnabledAndRefusesAnIncompleteConfiguration(t *testing.T) {
 	if err := driveWith(t, validReader(), func(context.Context, *core.Registry) error { return nil }); err != nil {
 		t.Fatalf("drive with a complete configuration: %v", err)
 	}
-	err := driveWith(t, &fakeReader{gm: gateMount{}}, func(context.Context, *core.Registry) error {
+	err := driveWith(t, &fakeReader{enabled: moduleConfig{Enabled: true}}, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with no public address")
 		return nil
 	})

@@ -211,6 +211,45 @@ func schema() config.Schema {
 	}
 }
 
+// The two required credential items, each read on its own. A single Decode of
+// the whole section cannot tell a deployment that configured neither from one
+// that configured only half: the loader refuses the first absent required item
+// it walks, so the second absence is never seen. Reading each item alone makes
+// the module's own judgement possible.
+type clientIDOnly struct {
+	ClientID string `config:"client-id"`
+}
+
+type clientSecretOnly struct {
+	ClientSecret string `config:"client-secret"`
+}
+
+// credentialGiven reports whether the loader was given a value for one required
+// credential item. ErrMissingRequired is the loader saying that no source gave
+// it, which is the module not being configured at all; any other failure is the
+// configuration being unreadable and is carried out as it stands.
+func credentialGiven(reader config.Reader, target any) (bool, error) {
+	err := reader.Decode(ConfigNamespace, target)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, config.ErrMissingRequired):
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+// halfConfigured is the failure of a deployment that supplied one credential and
+// not the other. It names the item to write: a Google application missing either
+// half cannot complete an authorization-code exchange, and starting with what is
+// there would fail at the first login instead of at startup.
+func halfConfigured(item string) error {
+	return fmt.Errorf("%w: %s.%s was not given while the other credential was; the Google "+
+		"application needs both the client identifier and the client secret, so give both or neither",
+		authn.ErrInvalidConfig, ConfigNamespace, item)
+}
+
 // readConfig decodes this module's section and the gateway's mount items, and
 // validates both. Prepare and New both go through it, so the two see one
 // configuration. A configured root CA file is read here, so a file that does not

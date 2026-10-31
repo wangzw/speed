@@ -51,8 +51,19 @@ func (f *fakeReader) Decode(path string, target any) error {
 	}
 	switch path {
 	case ConfigNamespace:
-		if c, ok := target.(*moduleConfig); ok {
-			c.AppID, c.AppSecret = f.appID, f.appSecret
+		switch t := target.(type) {
+		case *moduleConfig:
+			t.AppID, t.AppSecret = f.appID, f.appSecret
+		case *appIDOnly:
+			if f.appID == "" {
+				return config.ErrMissingRequired
+			}
+			t.AppID = f.appID
+		case *appSecretOnly:
+			if f.appSecret == "" {
+				return config.ErrMissingRequired
+			}
+			t.AppSecret = f.appSecret
 		}
 	case gateNamespace + ".mount":
 		if g, ok := target.(*gateMount); ok {
@@ -254,6 +265,35 @@ func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	}
 	if len(got.Provides) != 1 || got.Provides[0].Token != core.Token((*authn.LoginMethod)(nil)) {
 		t.Errorf("the registered module delivers %+v, want the login method capability", got.Provides)
+	}
+}
+
+// TestPrepareStandsDownWhenNoCredentialIsGiven holds the unconfigured case: a
+// deployment that gave neither credential did not configure the method, so it is
+// absent from the run without failing the startup.
+func TestPrepareStandsDownWhenNoCredentialIsGiven(t *testing.T) {
+	reg := buildRegistry(&fakeReader{}, &recordingLogger{r: &recordingRedaction{}})
+	got, err := Module().Prepare(context.Background(), reg)
+	if err != nil {
+		t.Fatalf("Prepare with no credentials: %v", err)
+	}
+	if got.State != core.StateDisabled {
+		t.Errorf("Prepare = %+v, want StateDisabled", got)
+	}
+	if got.Reason == "" {
+		t.Error("the module stood down without a reason")
+	}
+}
+
+// TestPrepareRefusesAnIllegalPublicAddress holds the required gateway item: a
+// public address that is not an origin stops the startup before a redirect is
+// built from it.
+func TestPrepareRefusesAnIllegalPublicAddress(t *testing.T) {
+	reader := &fakeReader{appID: testAppID, appSecret: testAppSecret, publicURL: "not an origin"}
+	reg := buildRegistry(reader, &recordingLogger{r: &recordingRedaction{}})
+	_, err := Module().Prepare(context.Background(), reg)
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("Prepare error = %v, want ErrInvalidConfig", err)
 	}
 }
 

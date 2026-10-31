@@ -123,6 +123,16 @@ Input items under the module's own namespace:
 - `mode` — `off`, `pow` or `turnstile`; `off` when absent. A section that omits
   it runs the gate off; a section that misspells it stops the startup.
 
+**Unconfigured and half-configured are different answers, and the mode decides
+which.** A section that names no mode, or names `off` or `pow`, is a configured
+deployment running that mechanism: Prepare states enabled and nothing is
+required of the Turnstile items. Naming `turnstile` is a deployment asking for
+that mechanism; if any of `site-key`, `secret-key` or `hostname` is absent, that
+is a half-configured gate, and Prepare fails the start naming the item rather
+than coming up with a gate that cannot check a proof and sending anyway. There
+is no stand-down state here: the module's absence from a run is the host leaving
+it out of the command, not a configuration its own section could express.
+
 The `turnstile` mode reads these, and judges them only in that mode:
 
 - `site-key` — the public widget key; required in this mode.

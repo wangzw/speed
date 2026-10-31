@@ -97,7 +97,16 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   gateway's `mount.public-url`, the `mount.base-path` (the declared default when
   the gateway set none) and the provider's callback path (`/callback/<id>`). The
   method reads those keys in `Prepare` and fails the start when the public
-  address is empty.
+  address is empty or is not an origin.
+- **An explicit switch states whether the run offers the method.** The method
+  has nothing of its own to infer that from: its providers are rows created at
+  run time, so an empty register does not mean the deployment never intended to
+  offer enterprise sign-in. `authn.sso.oidc.enabled` is off when absent; Prepare
+  then states `StateDisabled` with the reason, so a binary that compiles the
+  method in serves a deployment that does not offer it. On, the gateway's public
+  address and the egress items are validated, and a missing or illegal one fails
+  the startup. There is no half-configured state beyond that pair: the providers
+  are data and the register's contents are not a startup decision.
 
 ## How to run it
 

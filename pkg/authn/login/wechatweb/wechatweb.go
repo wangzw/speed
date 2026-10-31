@@ -90,15 +90,23 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// The two configuration items are required, so a command that names this module
-// without them fails at startup with ErrInvalidConfig and the item it needs; the
-// login-method capability is delivered without being claimed, which is what lets
-// several methods stand side by side. Prepare reads and validates the module's
-// section and the gateway's public address ahead of every construction, so a
-// deployment missing either is a startup failure rather than a surprise when a
-// login begins. The logging capability is taken up as an optional requirement,
-// because the application secret is registered as a literal redaction rule and
-// an assembly with no logging has nothing to register it with.
+// The login-method capability is delivered without being claimed, which is what
+// lets several methods stand side by side. Prepare reads and validates the
+// module's section and the gateway's public address ahead of every construction,
+// so a deployment missing either is a startup failure rather than a surprise
+// when a login begins.
+//
+// Prepare states the run-time decision from this module's own configuration. A
+// deployment that gave neither the application identifier nor the secret has not
+// configured the method, so it stands itself down with that reason. One
+// credential without the other is a half-configured application and fails the
+// startup, naming the item to write. With both, the gateway's public address and
+// the remaining items are validated, and a missing or illegal one fails the
+// startup there.
+//
+// The logging capability is taken up as an optional requirement, because the
+// application secret is registered as a literal redaction rule and an assembly
+// with no logging has nothing to register it with.
 func Module() core.Module {
 	return core.Module{
 		Name:      ModuleName,
@@ -111,10 +119,7 @@ func Module() core.Module {
 			if err != nil {
 				return core.Enablement{}, err
 			}
-			if _, err := readConfig(reader); err != nil {
-				return core.Enablement{}, err
-			}
-			return core.Enablement{State: core.StateEnabled}, nil
+			return prepare(reader)
 		},
 
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
@@ -305,6 +310,74 @@ type resolved struct {
 	redirectURI string
 }
 
+// The two required credential items, each read on its own so the module can
+// tell a deployment that configured neither from one that configured only half.
+type appIDOnly struct {
+	AppID string `config:"app-id"`
+}
+
+type appSecretOnly struct {
+	AppSecret string `config:"app-secret"`
+}
+
+// credentialGiven reports whether the loader was given a value for one required
+// credential item. ErrMissingRequired is the loader saying no source gave it;
+// any other failure is the configuration being unreadable and is carried out as
+// it stands.
+func credentialGiven(reader config.Reader, target any) (bool, error) {
+	err := reader.Decode(ConfigNamespace, target)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, config.ErrMissingRequired):
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+// halfConfigured is the failure of a deployment that supplied one credential
+// and not the other, naming the item to write. A website application missing
+// either half cannot exchange the code the provider hands back.
+func halfConfigured(item string) error {
+	return fmt.Errorf("%w: %s.%s was not given while the other credential was; the website "+
+		"application needs both the application identifier and the secret, so give both or neither",
+		authn.ErrInvalidConfig, ConfigNamespace, item)
+}
+
+// prepare decides whether this run includes the website-application method.
+// Neither credential means the deployment did not configure the method, which is
+// a normal absence: it stands down and says why. One credential alone is a
+// mistake, not an absence, so it stops the start and names the missing item.
+// Both credentials let the rest of the configuration decide, and its failures
+// are startup failures.
+func prepare(reader config.Reader) (core.Enablement, error) {
+	idGiven, err := credentialGiven(reader, &appIDOnly{})
+	if err != nil {
+		return core.Enablement{}, err
+	}
+	secretGiven, err := credentialGiven(reader, &appSecretOnly{})
+	if err != nil {
+		return core.Enablement{}, err
+	}
+	switch {
+	case !idGiven && !secretGiven:
+		return core.Enablement{
+			State: core.StateDisabled,
+			Reason: "no app-id and no app-secret were given, so no WeChat website application is " +
+				"registered and the website sign-in method is not offered",
+		}, nil
+	case !idGiven:
+		return core.Enablement{}, halfConfigured(appIDItem)
+	case !secretGiven:
+		return core.Enablement{}, halfConfigured(appSecretItem)
+	}
+	if _, err := readConfig(reader); err != nil {
+		return core.Enablement{}, err
+	}
+	return core.Enablement{State: core.StateEnabled}, nil
+}
+
 // resolve turns decoded configuration into what the module runs on. Both
 // credentials and the public address are required; the base path falls back to
 // the shared default. The failure names the item and never the secret.
@@ -323,6 +396,10 @@ func (c moduleConfig) resolve(g gateMount) (resolved, error) {
 	if publicURL == "" {
 		return resolved{}, fmt.Errorf("%w: %s.mount.public-url is empty, and the WeChat callback "+
 			"address the provider is told to return to is built from it", authn.ErrInvalidConfig, gateNamespace)
+	}
+	if _, err := mount.Origin(publicURL); err != nil {
+		return resolved{}, fmt.Errorf("%w: %s.mount.public-url is not an origin: %w",
+			authn.ErrInvalidConfig, gateNamespace, err)
 	}
 	basePath := strings.TrimSpace(g.Bases.Default)
 	if basePath == "" {

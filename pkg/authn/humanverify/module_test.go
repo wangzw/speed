@@ -183,6 +183,24 @@ func TestTurnstileWithoutItsCredentialsFailsTheStartup(t *testing.T) {
 	}
 }
 
+// A Turnstile mode that was given the widget key and the expected hostname but
+// no secret key is half configured: the siteverify call cannot authenticate, so
+// the startup stops and names the item. This is the same rule the whole-section
+// absence above exercises, asserted on the secret alone so a change that accepts
+// an unauthenticated siteverify call shows here.
+func TestTurnstileWithoutTheSecretKeyFailsNamingIt(t *testing.T) {
+	section := turnstileSection()
+	delete(section, secretKeyItem)
+	reg := registryWithReader(t, body(t, section))
+	_, err := Module().Prepare(t.Context(), reg)
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("a Turnstile mode without a secret key resolved with %v, want ErrInvalidConfig", err)
+	}
+	if !strings.Contains(err.Error(), ConfigNamespace+"."+secretKeyItem) {
+		t.Errorf("the failure %q does not name %s.%s", err, ConfigNamespace, secretKeyItem)
+	}
+}
+
 // The proof-of-work mode checks a presented proof now: an invalid one is the
 // 403 refusal, not the outage the unbuilt mechanism answers.
 func TestProofOfWorkRefusesAnInvalidProofAsAProofFailure(t *testing.T) {

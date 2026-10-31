@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -74,6 +75,70 @@ func TestPrepareRefusesAnUnrunnableConfiguration(t *testing.T) {
 	_, err := Module().Prepare(t.Context(), registryWithReader(t, body))
 	if !errors.Is(err, authn.ErrInvalidConfig) {
 		t.Fatalf("Prepare gave %v, want one wrapping ErrInvalidConfig", err)
+	}
+}
+
+// TestPrepareStandsDownWhenNoCredentialIsGiven holds the unconfigured case: a
+// deployment that gave neither credential did not configure GitHub sign-in, so
+// the module is absent from the run without failing the startup.
+func TestPrepareStandsDownWhenNoCredentialIsGiven(t *testing.T) {
+	body := `{"authn":{"gate":{"mount":{"public-url":"https://app.example"}}}}`
+	got, err := Module().Prepare(t.Context(), registryWithReader(t, body))
+	if err != nil {
+		t.Fatalf("Prepare with no credentials: %v", err)
+	}
+	if got.State != core.StateDisabled {
+		t.Errorf("Prepare = %+v, want StateDisabled", got)
+	}
+	if got.Reason == "" {
+		t.Error("the module stood down without a reason")
+	}
+}
+
+// TestPrepareNamesTheMissingCredentialWhenHalfConfigured holds the half-
+// configured case: one credential without the other is a startup failure, and
+// the failure names the item to write.
+func TestPrepareNamesTheMissingCredentialWhenHalfConfigured(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		item string
+	}{
+		{
+			name: "no client-id",
+			body: `{"authn":{"gate":{"mount":{"public-url":"https://app.example"}},` +
+				`"login":{"github":{"client-secret":"the-secret"}}}}`,
+			item: clientIDItem,
+		},
+		{
+			name: "no client-secret",
+			body: `{"authn":{"gate":{"mount":{"public-url":"https://app.example"}},` +
+				`"login":{"github":{"client-id":"the-id"}}}}`,
+			item: clientSecretItem,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Module().Prepare(t.Context(), registryWithReader(t, tc.body))
+			if !errors.Is(err, authn.ErrInvalidConfig) {
+				t.Fatalf("Prepare error = %v, want authn.ErrInvalidConfig", err)
+			}
+			if !strings.Contains(err.Error(), ConfigNamespace+"."+tc.item) {
+				t.Errorf("the failure %q does not name %s.%s", err, ConfigNamespace, tc.item)
+			}
+		})
+	}
+}
+
+// TestPrepareRefusesAnIllegalPublicAddress holds the required gateway item: a
+// public address that is not an origin stops the startup before a redirect is
+// built from it.
+func TestPrepareRefusesAnIllegalPublicAddress(t *testing.T) {
+	body := `{"authn":{"gate":{"mount":{"public-url":"not an origin"}},` +
+		`"login":{"github":{"client-id":"the-id","client-secret":"the-secret"}}}}`
+	_, err := Module().Prepare(t.Context(), registryWithReader(t, body))
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("Prepare error = %v, want authn.ErrInvalidConfig", err)
 	}
 }
 

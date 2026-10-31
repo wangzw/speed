@@ -133,6 +133,14 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // optional requirement, because the client secret is registered as a literal
 // redaction rule and an assembly with no logging has nothing to register it
 // with.
+//
+// Prepare states the run-time decision from this module's own configuration. A
+// deployment that gave neither the client identifier nor the secret has not
+// configured GitHub sign-in, so the module stands itself down with that reason.
+// One credential without the other is a half-configured application and fails
+// the startup, naming the item to write. With both, the gateway's public address
+// and the remaining items are validated, and a missing or illegal one fails the
+// startup there.
 func Module() core.Module {
 	return core.Module{
 		Name:      ModuleName,
@@ -145,10 +153,7 @@ func Module() core.Module {
 			if err != nil {
 				return core.Enablement{}, err
 			}
-			if _, err := readConfig(reader); err != nil {
-				return core.Enablement{}, err
-			}
-			return core.Enablement{State: core.StateEnabled}, nil
+			return prepare(reader)
 		},
 
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
@@ -175,6 +180,39 @@ func Module() core.Module {
 			return newMethod(cfg, client), nil
 		},
 	}
+}
+
+// prepare decides whether this run includes the GitHub method. Neither
+// credential means the deployment did not configure the method, which is a
+// normal absence: it stands down and says why. One credential alone is a
+// mistake, not an absence, so it stops the start and names the missing item.
+// Both credentials let the rest of the configuration decide, and its failures
+// are startup failures.
+func prepare(reader config.Reader) (core.Enablement, error) {
+	idGiven, err := credentialGiven(reader, &clientIDOnly{})
+	if err != nil {
+		return core.Enablement{}, err
+	}
+	secretGiven, err := credentialGiven(reader, &clientSecretOnly{})
+	if err != nil {
+		return core.Enablement{}, err
+	}
+	switch {
+	case !idGiven && !secretGiven:
+		return core.Enablement{
+			State: core.StateDisabled,
+			Reason: "no client-id and no client-secret were given, so no GitHub OAuth application " +
+				"is registered and the GitHub sign-in method is not offered",
+		}, nil
+	case !idGiven:
+		return core.Enablement{}, halfConfigured(clientIDItem)
+	case !secretGiven:
+		return core.Enablement{}, halfConfigured(clientSecretItem)
+	}
+	if _, err := readConfig(reader); err != nil {
+		return core.Enablement{}, err
+	}
+	return core.Enablement{State: core.StateEnabled}, nil
 }
 
 // readerOf takes up the configuration reader. Its absence means the host never

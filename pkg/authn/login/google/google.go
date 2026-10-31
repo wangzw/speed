@@ -89,9 +89,15 @@ var _ authn.LoginMethod = (*product)(nil)
 // up as an optional requirement, because the client secret is registered as a
 // literal redaction rule and an assembly with no logging has nothing to register
 // it with. The login method capability is delivered without being claimed, which
-// is what lets several methods stand side by side. The stance is StateEnabled and
-// never StateAuto: the module is taken in at run level and has no way to stand
-// itself down.
+// is what lets several methods stand side by side.
+//
+// Prepare states the run-time decision from this module's own configuration. A
+// deployment that gave neither the client identifier nor the secret has not
+// configured Google sign-in, so the module stands itself down with that reason.
+// One credential without the other is a half-configured application and fails
+// the startup, naming the item to write. With both, the gateway's public address
+// and the remaining items are validated, and a missing or illegal one fails the
+// startup there.
 func Module() core.Module {
 	return core.Module{
 		Name:      ModuleName,
@@ -104,16 +110,46 @@ func Module() core.Module {
 			if err != nil {
 				return core.Enablement{}, err
 			}
-			if _, err := readConfig(reader); err != nil {
-				return core.Enablement{}, err
-			}
-			return core.Enablement{State: core.StateEnabled}, nil
+			return prepare(reader)
 		},
 
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			return newProduct(reg)
 		},
 	}
+}
+
+// prepare decides whether this run includes the Google method. Neither
+// credential means the deployment did not configure the method, which is a
+// normal absence: it stands down and says why. One credential alone is a
+// mistake, not an absence, so it stops the start and names the missing item.
+// Both credentials let the rest of the configuration decide, and its failures
+// are startup failures.
+func prepare(reader config.Reader) (core.Enablement, error) {
+	idGiven, err := credentialGiven(reader, &clientIDOnly{})
+	if err != nil {
+		return core.Enablement{}, err
+	}
+	secretGiven, err := credentialGiven(reader, &clientSecretOnly{})
+	if err != nil {
+		return core.Enablement{}, err
+	}
+	switch {
+	case !idGiven && !secretGiven:
+		return core.Enablement{
+			State: core.StateDisabled,
+			Reason: "no client-id and no client-secret were given, so no Google OAuth application " +
+				"is registered and the Google sign-in method is not offered",
+		}, nil
+	case !idGiven:
+		return core.Enablement{}, halfConfigured(clientIDItem)
+	case !secretGiven:
+		return core.Enablement{}, halfConfigured(clientSecretItem)
+	}
+	if _, err := readConfig(reader); err != nil {
+		return core.Enablement{}, err
+	}
+	return core.Enablement{State: core.StateEnabled}, nil
 }
 
 // product is the module's instance. It delivers the login method.

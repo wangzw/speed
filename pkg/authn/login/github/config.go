@@ -2,6 +2,7 @@ package github
 
 import (
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/egress"
+	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/config"
 )
 
@@ -121,6 +123,41 @@ func schema() config.Schema {
 	}
 }
 
+// The two required credential items, each read on its own so the module can
+// tell a deployment that configured neither from one that configured only half.
+type clientIDOnly struct {
+	ClientID string `config:"client-id"`
+}
+
+type clientSecretOnly struct {
+	ClientSecret string `config:"client-secret"`
+}
+
+// credentialGiven reports whether the loader was given a value for one required
+// credential item. ErrMissingRequired is the loader saying no source gave it;
+// any other failure is the configuration being unreadable and is carried out as
+// it stands.
+func credentialGiven(reader config.Reader, target any) (bool, error) {
+	err := reader.Decode(ConfigNamespace, target)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, config.ErrMissingRequired):
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+// halfConfigured is the failure of a deployment that supplied one credential
+// and not the other, naming the item to write. A GitHub application missing
+// either half cannot exchange an authorization code.
+func halfConfigured(item string) error {
+	return fmt.Errorf("%w: %s.%s was not given while the other credential was; the GitHub "+
+		"application needs both the client identifier and the client secret, so give both or neither",
+		authn.ErrInvalidConfig, ConfigNamespace, item)
+}
+
 // readConfig decodes this module's section and the gateway keys the callback
 // address is built from. Prepare and New both go through it, so the two see one
 // mapping.
@@ -128,14 +165,24 @@ func schema() config.Schema {
 // The public base and the mount path are refused when empty: the provider is
 // told one callback address and the deployment must reach the route it names, so
 // a configuration that cannot build it is a startup failure, never an address
-// guessed from the request. The endpoint overrides are refused unless they are
-// absolute https addresses, and a configured root CA file is read here, so a file
-// that does not work stops the start rather than leaving verification on the
-// system roots without saying so.
+// guessed from the request. The public base is also held to an origin, so a
+// value no redirect can be built from fails here. The endpoint overrides are
+// refused unless they are absolute https addresses, and a configured root CA
+// file is read here, so a file that does not work stops the start rather than
+// leaving verification on the system roots without saying so.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
 		return resolved{}, err
+	}
+	clientID := strings.TrimSpace(cfg.ClientID)
+	if clientID == "" {
+		return resolved{}, fmt.Errorf("%w: %s.%s is empty, and the token exchange names the "+
+			"application by it", authn.ErrInvalidConfig, ConfigNamespace, clientIDItem)
+	}
+	if strings.TrimSpace(cfg.ClientSecret) == "" {
+		return resolved{}, fmt.Errorf("%w: %s.%s is empty, and the token exchange authenticates "+
+			"the application with it", authn.ErrInvalidConfig, ConfigNamespace, clientSecretItem)
 	}
 	var gate gateConfig
 	if err := reader.Decode(gateNamespace, &gate); err != nil {
@@ -144,6 +191,10 @@ func readConfig(reader config.Reader) (resolved, error) {
 	if gate.Mount.PublicURL == "" {
 		return resolved{}, fmt.Errorf("%w: %s.mount.public-url is empty, and the callback address the "+
 			"provider is told is built from it", authn.ErrInvalidConfig, gateNamespace)
+	}
+	if _, err := mount.Origin(gate.Mount.PublicURL); err != nil {
+		return resolved{}, fmt.Errorf("%w: %s.mount.public-url is not an origin: %w",
+			authn.ErrInvalidConfig, gateNamespace, err)
 	}
 	if gate.Mount.Bases.Default == "" {
 		return resolved{}, fmt.Errorf("%w: %s.mount.bases.default is empty, and the callback path is built "+
@@ -180,7 +231,7 @@ func readConfig(reader config.Reader) (resolved, error) {
 		return resolved{}, fmt.Errorf("%w: %s.%s: %w", authn.ErrInvalidConfig, ConfigNamespace, rootCAFileItem, err)
 	}
 	return resolved{
-		clientID:      cfg.ClientID,
+		clientID:      clientID,
 		clientSecret:  cfg.ClientSecret,
 		redirectURI:   gate.Mount.PublicURL + gate.Mount.Bases.Default + callbackPath,
 		endpoint:      endpoint,

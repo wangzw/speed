@@ -56,9 +56,9 @@ import (
 // command whose tenants sign in through an OpenID Connect identity provider.
 const ModuleName = "authn.sso.oidc"
 
-// ConfigNamespace is where this module's input items would be mounted, which is
-// the module name. The method declares no item of its own: the identity
-// providers are data in the register, and the two items it reads are the
+// ConfigNamespace is where this module's input item is mounted, which is the
+// module name. The method declares the enable switch there; the identity
+// providers are data in the register, and the two other items it reads are the
 // gateway's and the SSO module's.
 const ConfigNamespace = ModuleName
 
@@ -92,9 +92,13 @@ var _ authn.LoginMethod = (*product)(nil)
 // Init, each with a stated behaviour for its absence.
 //
 // The login method capability is delivered without being claimed, which is what
-// lets several methods stand side by side. The stance is StateEnabled and never
-// StateAuto: the module is taken in at run level and has no way to stand itself
-// down.
+// lets several methods stand side by side. Prepare states the run-time decision
+// from this module's own enable switch: the method has nothing of its own to
+// infer it from, because its providers are rows created at run time, so an
+// empty register would not mean a deployment never intended to offer enterprise
+// sign-in. Off, the method stands itself down with that reason; on, the
+// gateway's public address and the remaining items are validated and a missing
+// or illegal one fails the startup there.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -104,17 +108,15 @@ func Module() core.Module {
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
-		Provides: []core.Provision{{Token: (*authn.LoginMethod)(nil)}},
+		Provides:  []core.Provision{{Token: (*authn.LoginMethod)(nil)}},
+		Resources: []any{schema()},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)
 			if err != nil {
 				return core.Enablement{}, err
 			}
-			if _, err := readConfig(reader); err != nil {
-				return core.Enablement{}, err
-			}
-			return core.Enablement{State: core.StateEnabled}, nil
+			return prepare(reader)
 		},
 
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
@@ -129,6 +131,28 @@ func Module() core.Module {
 			return p.wire(reg)
 		},
 	}
+}
+
+// prepare decides whether this run includes the enterprise OIDC method. The
+// switch is off by default, so a deployment that never named the method stands
+// it down. On, the rest of the configuration decides, and its failures are
+// startup failures.
+func prepare(reader config.Reader) (core.Enablement, error) {
+	enabled, err := readEnabled(reader)
+	if err != nil {
+		return core.Enablement{}, err
+	}
+	if !enabled {
+		return core.Enablement{
+			State: core.StateDisabled,
+			Reason: "authn.sso.oidc.enabled is off, so this run offers no enterprise OIDC sign-in " +
+				"and the method is not delivered",
+		}, nil
+	}
+	if _, err := readConfig(reader); err != nil {
+		return core.Enablement{}, err
+	}
+	return core.Enablement{State: core.StateEnabled}, nil
 }
 
 // productOf narrows an instance to this module's product. The callbacks are also

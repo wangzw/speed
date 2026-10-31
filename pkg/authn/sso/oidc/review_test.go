@@ -581,7 +581,10 @@ func TestTheDefaultDurationsAreLiteral(t *testing.T) {
 // TestThePublicURLMustBeAnOrigin holds that a public address that is not an
 // origin fails the start.
 func TestThePublicURLMustBeAnOrigin(t *testing.T) {
-	err := driveWith(t, &fakeReader{gm: gateMount{PublicURL: "not a url"}}, func(context.Context, *core.Registry) error {
+	err := driveWith(t, &fakeReader{
+		gm:      gateMount{PublicURL: "not a url"},
+		enabled: moduleConfig{Enabled: true},
+	}, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with a public address that is not an origin")
 		return nil
 	})

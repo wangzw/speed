@@ -30,7 +30,7 @@ func configReader(t *testing.T, caFile string) config.Reader {
 	}
 	body := fmt.Sprintf(
 		`{"authn":{"gate":{"mount":{"public-url":"https://app.example.com"}},`+
-			`"sso":{"allow-private-egress":true%s}}}`, extra)
+			`"sso":{"allow-private-egress":true,"oidc":{"enabled":true}%s}}}`, extra)
 	return authntest.ConfigReaderAll(t, body, gate.Module(), sso.Module(), Module())
 }
 

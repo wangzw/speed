@@ -19,14 +19,18 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
 
 ## Boundaries
 
-- **The two configuration items are required and the module is not optional.**
-  `app-id` and `app-secret` are required in the schema, so a command that names
-  the module without them fails at startup with `ErrInvalidConfig`. Prepare and
-  New both read and validate the module's section and the gateway's public
-  address through one function, so the two see one configuration; an empty
-  public address is `ErrInvalidConfig` too. There is no joint check with the
-  official-account module: the two are independent, and a host that uses one does
-  not configure the other.
+- **A deployment that configured no website application runs without this
+  method.** `app-id` and `app-secret` are the module's own statement that the
+  method is configured. With neither, `Prepare` states `StateDisabled` with the
+  reason, so a binary that compiles the method in can serve a deployment that
+  does not offer it. One credential without the other is a half-configured
+  application, not an absence: it fails the startup and names the item to write.
+  With both, Prepare and New read and validate the module's section and the
+  gateway's public address through one function, so the two see one
+  configuration; an empty public address or one that is not an origin is
+  `ErrInvalidConfig` too. There is no joint check with the official-account
+  module: the two are independent, and a host that uses one does not configure
+  the other.
 - **The callback address is built from the gateway's public address and base
   path, never from the request.** `redirect_uri` is
   `public-url + base-path + /callback/wechat.web`, and the provider is told to

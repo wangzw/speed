@@ -72,8 +72,17 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   product assembles and holds both what the record names and what it must not.
 - **The callback address is built from the public base, never from the
   request.** `readConfig` reads `authn.gate`'s `mount.public-url` and
-  `mount.base-path` and refuses an empty one, so the `redirect_uri` the provider
-  is told is fixed at startup and never taken from a `Host` header.
+  `mount.base-path` and refuses an empty one or a public base that is not an
+  origin, so the `redirect_uri` the provider is told is fixed at startup and
+  never taken from a `Host` header.
+- **A deployment that configured no GitHub application runs without this
+  method.** The client identifier and the client secret are the module's own
+  statement that GitHub sign-in is configured. With neither, `Prepare` states
+  `StateDisabled` with the reason, so a binary that compiles the method in can
+  serve a deployment that does not offer it. One credential without the other is
+  a half-configured application, not an absence: it fails the startup and names
+  the item to write. With both, the gateway's public address and the remaining
+  items decide, and a missing or illegal one fails the startup there.
 - **The method serves `login`, `link` and `step-up`.** An `enroll` registers a
   factor and a provider's identity is not one, so a flow of that purpose is
   refused before the method reads or generates anything. An answer that is not a
