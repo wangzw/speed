@@ -18,3 +18,16 @@ func demoSeedTenants() []any {
 		},
 	}
 }
+
+// demoSeedAccounts is the account list the defaults document seeds: the
+// development operator the walkthrough signs in with. It is the one source of
+// that list, so the document and the seed guard's fallback comparison cannot
+// disagree about which accounts are the demonstration ones.
+func demoSeedAccounts() []seedAccount {
+	return []seedAccount{{
+		Identifier:    "operator",
+		Password:      demoOperatorLogin,
+		DisplayName:   "Demo Operator",
+		PlatformAdmin: true,
+	}}
+}

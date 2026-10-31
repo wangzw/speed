@@ -393,6 +393,11 @@ var (
 		// conditional feature workspace.personal. See personal.go.
 		personalModuleName,
 
+		// The host's own seed guard: a deployment listening off loopback must not
+		// run on the compiled demonstration seed, so it refuses at Prepare before
+		// any socket is bound. See seed_guard.go.
+		seedGuardModuleName,
+
 		// The host's tenancy policy seams: the membership check a
 		// platform-administrator binding asks, the write guard protecting system
 		// and personal tenants, the membership-removal guard, and the provisioner
@@ -602,8 +607,13 @@ func addStack(root *config.Command, s stack) {
 	// request-level layer and the personal module skips its backfill route when
 	// the run has no router, while the account lifecycle hooks keep working.
 	// Routes belong to the serve command.
+	//
+	// It names the seed guard because this is the command that writes the
+	// accounts: a deployment listening off loopback must not turn the compiled
+	// demonstration account into rows, whatever the serve command would later
+	// refuse. The guard's Prepare runs before the seed action. See seed_guard.go.
 	seed := node.Sub(seedCommand)
-	seed.Include(seedModuleName, authnaccount.ModuleName, authzpolicy.ModuleName,
+	seed.Include(seedGuardModuleName, seedModuleName, authnaccount.ModuleName, authzpolicy.ModuleName,
 		tenantcatalog.ModuleName, settings.ModuleName, outboxrelay.ModuleName, s.event, log.ModuleName,
 		tenancyModuleName, auditjournal.ModuleName, personalModuleName)
 	seed.Do(core.StageStart, seedDatabase)

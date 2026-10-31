@@ -308,15 +308,18 @@ func platformDefaultsDocument() map[string]any {
 // list is a container leaf, so deploy/fly.yaml.tmpl replaces it with an empty
 // list. See defaults_seed.go.
 func seedDefaultsDocument() map[string]any {
+	defaults := demoSeedAccounts()
+	accounts := make([]any, 0, len(defaults))
+	for _, account := range defaults {
+		accounts = append(accounts, map[string]any{
+			"identifier":     account.Identifier,
+			"password":       account.Password,
+			"display-name":   account.DisplayName,
+			"platform-admin": account.PlatformAdmin,
+		})
+	}
 	seed := map[string]any{
-		"accounts": []any{
-			map[string]any{
-				"identifier":     "operator",
-				"password":       demoOperatorLogin,
-				"display-name":   "Demo Operator",
-				"platform-admin": true,
-			},
-		},
+		"accounts": accounts,
 		"settings": []any{
 			map[string]any{
 				"key":   "authn.mfa.sensitive-min-age",

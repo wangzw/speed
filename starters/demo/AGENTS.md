@@ -376,6 +376,23 @@ keeps out of the tree, so a generated key is never committed. A deployment repla
 with its own key material — the token package's `GenerateKey("ES256")` mints one
 to start from, and the token module itself neither generates nor rotates a key.
 
+### The seed guard
+
+`server/seed_guard.go` carries a module both the `serve` and `seed` rosters
+name. Its `Prepare` refuses the run when the effective seed accounts come from
+the defaults document while any configured listener is not loopback: the
+compiled seed is the development operator the walkthrough publishes, and a
+deployment that listens off the machine must not write it or serve it. Where the
+account list came from is `config.EffectiveLayer` over `seed.accounts`, so the
+check reads the layer and never the credential; when that query cannot answer
+about the reader, it compares the effective account list with the compiled one.
+The listener question is the classification the review build's own guard uses
+(`server/listener_address.go`), shared outside either build tag. The refusal
+names the seed, the listener and the two ways out: override the seed, or listen
+on a loopback address. `server/testdata/` and the review configuration are
+override documents with loopback listeners, and the Fly template replaces
+`seed.accounts` and `seed.tenants`, so every shipped configuration carries on.
+
 ### Replace before serving real traffic
 
 `server/defaults.go` holds the platform topology and nothing else: it carries
@@ -444,6 +461,8 @@ in; replace them all before a deployment serves real traffic:
 | `server/capabilities.go` | The compile-time capability ceiling: every other capability compiled into every build and named by `serve` |
 | `server/defaults.go` | The platform defaults document, written in Go and encoded to JSON, layered below every configuration file |
 | `server/defaults_seed.go` | The seed section of that document |
+| `server/seed_guard.go` | The startup guard that refuses the compiled demonstration seed on a non-loopback listener |
+| `server/listener_address.go` | The loopback classification both startup guards use |
 | `server/signingkey.go` | The token signing key's path, and the first-run generation that puts a key there |
 | `server/modules/` | The slot for this product's business modules |
 | `server/testdata/` | One override document per deployment stack: the deltas from `server/defaults.go` |

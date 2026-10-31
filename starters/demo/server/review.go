@@ -27,9 +27,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 	"slices"
-	"strings"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -134,19 +132,4 @@ func checkReviewListeners(reader config.Reader) error {
 			reviewGuardModuleName, name, listener.Address)
 	}
 	return nil
-}
-
-// loopbackAddress reports whether address, in net.Listen's form, names a
-// loopback host. An empty host is every interface and is refused; "localhost"
-// is accepted as the conventional loopback name.
-func loopbackAddress(address string) bool {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return false
-	}
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
