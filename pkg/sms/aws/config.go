@@ -210,7 +210,6 @@ func (c moduleConfig) resolve() (resolved, error) {
 func items() map[string]config.Item {
 	return map[string]config.Item{
 		regionItem: {
-			Required:    true,
 			Description: "the AWS region the sender signs and sends against",
 		},
 		accessKeyIDItem: {
@@ -227,12 +226,10 @@ func items() map[string]config.Item {
 			Description: "the configuration set the vendor files sends under",
 		},
 		defaultIdentityItem: {
-			Required:    true,
 			Description: "the identity a message that names none is sent from",
 		},
 		identitiesItem: {
 			Origins:     config.OriginPrimary,
-			Required:    true,
 			Description: "the sending identities this deployment has, each with a name, a kind, a value, its countries and attributes",
 		},
 	}

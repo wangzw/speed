@@ -88,6 +88,7 @@ func secretModule(credential string) core.Module {
 	prototype := stubConfig{}
 	return NewModule(Spec[stubConfig]{
 		ModuleName:      "mail.secret",
+		CarrierName:     "secret",
 		ConfigNamespace: "mail.secret",
 		Config:          &prototype,
 		Stance: func(*stubConfig) (core.Enablement, error) {

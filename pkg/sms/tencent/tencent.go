@@ -24,6 +24,7 @@ package tencent
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	tcprofile "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
@@ -61,6 +62,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 func Module() core.Module {
 	return sms.NewModule(sms.Spec[moduleConfig]{
 		ModuleName:      ModuleName,
+		CarrierName:     backendName,
 		ConfigNamespace: ConfigNamespace,
 		Config:          &moduleConfig{},
 		Items:           items(),
@@ -70,10 +72,36 @@ func Module() core.Module {
 	})
 }
 
-// stance states that the module runs once its configuration is sound: a carrier
-// named on a command tree is taken as running. The required items are enforced
-// when the configuration is read, one stage ahead of construction.
-func stance(_ *moduleConfig) (core.Enablement, error) {
+// stance judges whether this carrier is configured to run, without consulting
+// sms.carrier. A section with none of the credential, the application and the
+// signature set is unconfigured and stands down; a section with some of them
+// set is half-configured and is an error naming the missing items.
+func stance(cfg *moduleConfig) (core.Enablement, error) {
+	if cfg.SecretID == "" && cfg.SecretKey == "" && cfg.SDKAppID == "" && cfg.Region == "" && cfg.SignName == "" {
+		return core.Enablement{
+			State:  core.StateDisabled,
+			Reason: ModuleName + " has no configuration: no credential, application, region or signature",
+		}, nil
+	}
+	missing := make([]string, 0, 5)
+	for _, item := range []struct {
+		name  string
+		empty bool
+	}{
+		{secretIDItem, cfg.SecretID == ""},
+		{secretKeyItem, cfg.SecretKey == ""},
+		{sdkAppIDItem, cfg.SDKAppID == ""},
+		{regionItem, cfg.Region == ""},
+		{signNameItem, cfg.SignName == ""},
+	} {
+		if item.empty {
+			missing = append(missing, item.name)
+		}
+	}
+	if len(missing) > 0 {
+		return core.Enablement{}, fmt.Errorf("%w: %s is partially configured; %s missing",
+			sms.ErrInvalidConfig, ConfigNamespace, strings.Join(missing, ", "))
+	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 

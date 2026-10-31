@@ -48,6 +48,27 @@ func TestDefaultBuildCompilesEveryCapability(t *testing.T) {
 	}
 }
 
+// TestTheLogCarriersAreInEveryBuild holds requirement 2 of the carrier
+// selection design: the two log carriers are ordinary capability modules,
+// compiled into the default build and named for a serve run, not review-only
+// test support. A deployment can therefore fall back to them, and a review run
+// reaches them through the same roster.
+func TestTheLogCarriersAreInEveryBuild(t *testing.T) {
+	named := make(map[string]bool, len(capabilityModules))
+	for _, name := range capabilityModules {
+		named[name] = true
+	}
+	for _, name := range []string{"mail.log", "sms.log"} {
+		if _, ok := core.ProcessRegistry.Lookup(name); !ok {
+			t.Errorf("the default build registers no %q log carrier", name)
+		}
+		if !named[name] {
+			t.Errorf("capabilityModules does not name the %q log carrier, so a serve run cannot "+
+				"consider it", name)
+		}
+	}
+}
+
 // TestDefaultBuildCarriesNoReviewControl holds the other side of the split: the
 // review-only controls are not in this binary at all, so no configuration can
 // enable them, and the features they declare are absent from the vocabulary.
@@ -92,9 +113,9 @@ func TestDefaultBuildNamesTheDeployAndReviewCapabilities(t *testing.T) {
 		"authn.mfa.sms",
 		"sms.admin",
 		"mail.smtp",
-		"mail.review",
+		"mail.log",
 		"authn.emailcode",
-		"sms.review",
+		"sms.log",
 		"review.notification",
 	} {
 		if !named[name] {

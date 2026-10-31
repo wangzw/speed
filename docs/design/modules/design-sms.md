@@ -199,8 +199,11 @@ type Resolved struct {
 | `pkg/sms/tencent` | `sms.tencent` | `Sender` + `Provider`（一个 `Product` 值） | 排他 |
 | `pkg/sms/aws` | `sms.aws` | `Sender` + `Provider`（一个 `Product` 值） | 排他 |
 | `pkg/sms/twilio` | `sms.twilio` | `Sender` + `Provider`（一个 `Product` 值） | 排他 |
+| `pkg/sms/log` | `sms.log` | `Sender` + `Provider`（一个 `Product` 值） | 排他 |
 
-模块名照顶层能力：裸名 `sms`，叶子 `sms.<名>`，配置命名空间取同一个取值（对照 `kv`/`kv.redis`、`event`/`event.nats`）。每个登记模块的包导出自己的 `ModuleName` 常量。载体是厂商适配的封闭集：`sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`；任意两个同时纳入即在消解阶段以排他冲突失败，宿主选其一。每个载体叶子包整个撤掉而不影响其他模块。注册表模块与发送方模块互不依赖对方的具体实现：注册表只经 `sms.Provider` 接缝触达厂商，一个进程里恰好一个注册表、恰好一个载体。
+模块名照顶层能力：裸名 `sms`，叶子 `sms.<名>`，配置命名空间取同一个取值（对照 `kv`/`kv.redis`、`event`/`event.nats`）。每个登记模块的包导出自己的 `ModuleName` 常量。载体是厂商适配的封闭集 `sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`，另加写进程日志的 `sms.log`；每个载体叶子包整个撤掉而不影响其他模块。注册表模块与发送方模块互不依赖对方的具体实现：注册表只经 `sms.Provider` 接缝触达厂商，一个进程里恰好一个注册表、恰好一个载体。
+
+**载体由 `sms.carrier` 在运行期选择，`sms.log` 是保底。** 选择项的值是一个载体的选择名、`none` 或空；每个载体把选择名作为 `CarrierName` 资源声明（[ADR-carrier-selection](../../adr/adr-carrier-selection.md)）。选择项点名一个已编入的载体时，该载体必须可运行，其余载体关闭；点名 `none` 时所有载体关闭，短信验证码状态机、模板注册表、管理面与短信登录方法随之关闭；点名一个没有编入的名字是 `ErrInvalidConfig`，错误点名该名字、能力与这次二进制携带的载体。选择项为空时，配置齐全的载体运行，身份项全空的载体关闭，半配置的载体是 `ErrInvalidConfig`，两个载体同时齐全即排他冲突并点名两个模块。`sms.log` 编入所有构建，声明 `sms.carrier`；没有其它载体启用时它以 `StateAuto` 被 core 留下，任一载体显式启用时被搁下，启动时写一条警告说明消息正文与验证码会进日志。
 
 ### 注册表模块 sms.registry
 
@@ -528,7 +531,9 @@ type Spec[C any] struct {
 
 ### 评审装配的短信载体（仅评审构建）
 
-演示程序的评审装配（`-tags review`）挂载 `sms.review` 这一载体：它仍由 `sms.NewModule` 工厂构造并排他交付 `Sender` 与 `Provider`，但声明 `Review.PerTemplate` 为真，运行期模板经 `Register` 或 `Offer` 进入时由注册表把每个语言记为 `Pending`，注册表再按语言轮询载体的 `Approval`。载体的判定保存在进程内一张按厂商编号的表里，未被告知的编号答 `Pending`，`Review(code, state, reason)` 只改一个编号——编号是厂商的逐语言标识，因此改一个语言的判定不影响其余语言；`Offer` 把新编号记为 `Pending`，`Retire` 忘掉它。评审装配另挂一个同受构建标签约束的 `review.sms.control` 模块，其 `Init` 在 `admin` 端的 `/api/v1/system/sms/review/verdicts` 上挂一条写路由，正文 `{code, state, reason}` 经 `Review` 落一个判定，让评审者能为某个语言给出结果。**这条路由是测试控制，不是产品 API。** 它只在 `review` 构建标签下编译、只由评审装配登记，任何部署或基线二进制都不含它。它由认证网关识别调用方，认证之后不做权限判定；这条放行的依据是评审装配为只监听回环地址的测试进程，而不是它对产品调用方安全。前端对应的判定控件仍由特性门控：特性 `review.sms.control` 不在场时不渲染控件、不发请求。这一载体与控制只在评审构建里编译和挂载，默认装配不挂任何短信载体，部署中的载体行为不因此改变。
+日志载体 `sms.log` 由 `sms.NewModule` 工厂构造并排他交付 `Sender` 与 `Provider`，编入所有构建。它声明 `Review.PerTemplate` 为真，运行期模板经 `Register` 或 `Offer` 进入时由注册表把每个语言记为 `Pending`，注册表再按语言轮询载体的 `Approval`。载体的判定保存在进程内一张按厂商编号的表里，未被告知的编号答 `Pending`，`Review(code, state, reason)` 只改一个编号——编号是厂商的逐语言标识，因此改一个语言的判定不影响其余语言；`Offer` 把新编号记为 `Pending`，`Retire` 忘掉它。
+
+评审装配另挂一个同受构建标签约束的 `review.sms.control` 模块，其 `Init` 在 `admin` 端的 `/api/v1/system/sms/review/verdicts` 上挂一条写路由，正文 `{code, state, reason}` 经日志载体的 `Review` 落一个判定，让评审者能为某个语言给出结果。**这条路由是测试控制，不是产品 API。** 它只在 `review` 构建标签下编译、只由评审装配登记，任何部署或基线二进制都不含它。它由认证网关识别调用方，认证之后不做权限判定；这条放行的依据是评审装配为只监听回环地址的测试进程，而不是它对产品调用方安全。前端对应的判定控件仍由特性门控：特性 `review.sms.control` 不在场时不渲染控件、不发请求。日志载体本身编入所有构建；评审配置用 `sms.carrier: log` 把这次运行选到它上面。
 
 ## 错误与失败语义
 
@@ -609,4 +614,6 @@ type Spec[C any] struct {
 | 腾讯云载体 `sms.tencent`（`Sender` + `Provider`） | 已实现 | `pkg/sms/tencent/tencent.go` `sender`、`Send`、`Model`；`pkg/sms/tencent/provider.go` `Offer`、`Approval`、`Retire`；`pkg/sms/tencent/classify.go` `classify`、`sentinelForCode`；`pkg/sms/tencent/config.go` `items` |
 | AWS 载体 `sms.aws`（`Sender` + `Provider`） | 已实现 | `pkg/sms/aws/aws.go` `sender`、`Send`、`Model`、`Offer`、`Approval`、`Retire`；`pkg/sms/aws/classify.go` `classify`；`pkg/sms/aws/config.go` `items` |
 | Twilio 载体 `sms.twilio`（`Sender` + `Provider`） | 已实现 | `pkg/sms/twilio/twilio.go` `sender`、`Send`、`Model`；`pkg/sms/twilio/provider.go` `Offer`、`Approval`、`Retire`；`pkg/sms/twilio/classify.go` `classify`；`pkg/sms/twilio/config.go` `items` |
+| 日志载体 `sms.log`（`Sender` + `Provider`） | 已实现 | `pkg/sms/log/log.go` `Module`、`Product`、`Reviewer`、`Record` |
+| 载体选择 `sms.carrier` 与保底 | 已实现 | `pkg/sms/selection.go` `SelectionSchema`、`ReadSelection`、`CarrierNames`、`OffBySelection` |
 | 根包依赖守卫与 SDK 封边、钉版 | 已实现 | `pkg/sms/deps_test.go` |

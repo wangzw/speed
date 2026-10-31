@@ -59,6 +59,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 func Module() core.Module {
 	return mail.NewModule(mail.Spec[moduleConfig]{
 		ModuleName:      ModuleName,
+		CarrierName:     carrierName,
 		ConfigNamespace: ConfigNamespace,
 		Config:          &configDefaults,
 		Items:           items(),
@@ -68,10 +69,29 @@ func Module() core.Module {
 	})
 }
 
-// stance states that the module runs once its configuration is sound: a carrier
-// named on a command tree is taken as running. Reading the configuration here
-// makes an unsound section a startup failure, one stage ahead of construction.
+// stance judges whether this carrier is configured to run, without consulting
+// mail.carrier. A section with none of the relay, the sender and the credential
+// set is unconfigured and stands down; a section with some of them set is
+// half-configured and is an error naming the missing items, so a deployment
+// does not half-apply SMTP and discover it at the first send.
 func stance(cfg *moduleConfig) (core.Enablement, error) {
+	if cfg.Host == "" && cfg.From == "" && cfg.Username == "" && cfg.Password == "" {
+		return core.Enablement{
+			State:  core.StateDisabled,
+			Reason: ModuleName + " has no configuration: no relay host, no sender and no credential",
+		}, nil
+	}
+	var missing []string
+	if cfg.Host == "" {
+		missing = append(missing, hostItem)
+	}
+	if cfg.From == "" {
+		missing = append(missing, fromItem)
+	}
+	if len(missing) > 0 {
+		return core.Enablement{}, fmt.Errorf("%w: %s is partially configured; %s missing",
+			mail.ErrInvalidConfig, ConfigNamespace, strings.Join(missing, ", "))
+	}
 	if _, err := cfg.resolve(); err != nil {
 		return core.Enablement{}, err
 	}

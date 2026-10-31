@@ -40,13 +40,16 @@ func body(t *testing.T, s map[string]any) string {
 }
 
 // readBody loads a document with the real configuration loader and decodes this
-// module's section, then resolves it: the error the module would refuse the
-// startup with.
+// module's section, then judges it the way Prepare does: the error the module
+// would refuse the startup with.
 func readBody(t *testing.T, document string) (resolved, error) {
 	t.Helper()
 	reader := configtest.Reader(t, document, Module())
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
+		return resolved{}, err
+	}
+	if _, err := stance(&cfg); err != nil {
 		return resolved{}, err
 	}
 	return cfg.resolve()
@@ -70,14 +73,18 @@ func TestACompleteSectionResolves(t *testing.T) {
 	}
 }
 
-// TestEachRequiredItemIsRequired holds that a section leaving out host or from
-// fails the load.
-func TestEachRequiredItemIsRequired(t *testing.T) {
+// TestEachIncompleteSectionIsRefused holds that a section with the other item
+// set but host or from missing is half-configured: a startup failure naming the
+// missing item, not a carrier that silently cannot send.
+func TestEachIncompleteSectionIsRefused(t *testing.T) {
 	for _, item := range []string{"host", "from"} {
 		t.Run(item, func(t *testing.T) {
 			_, err := readBody(t, body(t, section(map[string]any{item: nil})))
-			if !errors.Is(err, config.ErrMissingRequired) {
+			if !errors.Is(err, mail.ErrInvalidConfig) {
 				t.Fatalf("a section with no %s was accepted: %v", item, err)
+			}
+			if !strings.Contains(err.Error(), item) {
+				t.Errorf("the failure %q does not name %s", err.Error(), item)
 			}
 		})
 	}
@@ -155,8 +162,8 @@ func TestAnAllowedSenderThatDoesNotParseIsRefused(t *testing.T) {
 // flags, and the default port and posture come from the prototype.
 func TestTheSchemaDeclaresTheSensitiveAndContainerItems(t *testing.T) {
 	resources := Module().Resources
-	if len(resources) != 1 {
-		t.Fatalf("the module carries %d resources, want one schema", len(resources))
+	if len(resources) != 2 {
+		t.Fatalf("the module carries %d resources, want the schema and the carrier name", len(resources))
 	}
 	s, ok := resources[0].(config.Schema)
 	if !ok {
@@ -168,8 +175,8 @@ func TestTheSchemaDeclaresTheSensitiveAndContainerItems(t *testing.T) {
 	if password := s.Items[passwordItem]; !password.Sensitive || password.Description == "" {
 		t.Errorf("password = %+v, want sensitive and described", password)
 	}
-	if !s.Items[hostItem].Required || !s.Items[fromItem].Required {
-		t.Error("host or from is not declared required")
+	if s.Items[hostItem].Required || s.Items[fromItem].Required {
+		t.Error("host or from is declared required; the stance judges an unconfigured carrier instead")
 	}
 	if got := s.Items[fromAllowedItem].Origins; got != config.OriginPrimary {
 		t.Errorf("from-allowed takes the origins %v, want the primary source alone", got)

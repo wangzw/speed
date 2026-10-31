@@ -6,6 +6,7 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/internal/configtest"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // completeConfig is a moduleConfig every required item is present in.
@@ -41,14 +42,13 @@ func TestTheDeclaredItemsCarryTheDesignsFlags(t *testing.T) {
 		t.Errorf("Namespace = %q, want %q", s.Namespace, ModuleName)
 	}
 	secret := s.Items[accessKeyValueItem]
-	if !secret.Required || !secret.Sensitive || secret.Description == "" {
-		t.Errorf("access-key-secret = %+v, want required, sensitive and described", secret)
+	if !secret.Sensitive || secret.Description == "" {
+		t.Errorf("access-key-secret = %+v, want sensitive and described", secret)
 	}
-	if !s.Items[accessKeyIDItem].Required {
-		t.Error("access-key-id is not required")
-	}
-	if !s.Items[signNameItem].Required {
-		t.Error("sign-name is not required")
+	for _, item := range []string{accessKeyIDItem, accessKeyValueItem, signNameItem} {
+		if s.Items[item].Required {
+			t.Errorf("%s is declared required; the stance judges an unconfigured carrier instead", item)
+		}
 	}
 	if _, ok := s.Items["templates"]; ok {
 		t.Error("the schema declares a templates item, which belongs to the registry now")
@@ -58,16 +58,19 @@ func TestTheDeclaredItemsCarryTheDesignsFlags(t *testing.T) {
 	}
 }
 
-// TestTheReaderRefusesAMissingRequiredItem drives the real configuration loader:
-// a required item no source gave stops the startup, which is what has to happen
-// before the module builds a client with an empty credential.
-func TestTheReaderRefusesAMissingRequiredItem(t *testing.T) {
+// TestAnIncompleteSectionIsRefused holds that a section with some of the
+// credential and signature set is half-configured: the stance refuses it,
+// naming the missing item, rather than starting a carrier that cannot send.
+func TestAnIncompleteSectionIsRefused(t *testing.T) {
 	body := `{"sms":{"aliyun":{` +
 		`"access-key-secret":"the-secret","sign-name":"Speed"}}}`
 	reader := configtest.Reader(t, body, Module())
 	var cfg moduleConfig
-	if err := reader.Decode(ConfigNamespace, &cfg); !errors.Is(err, config.ErrMissingRequired) {
-		t.Fatalf("reading a section with no access-key-id gave %v, want one wrapping ErrMissingRequired", err)
+	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
+		t.Fatalf("reading the section: %v", err)
+	}
+	if _, err := stance(&cfg); !errors.Is(err, sms.ErrInvalidConfig) {
+		t.Fatalf("the half-configured section gave %v, want one wrapping ErrInvalidConfig", err)
 	}
 }
 

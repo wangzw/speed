@@ -16,11 +16,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	maillog "github.com/vislake/speed/pkg/mail/log"
 )
 
 // reviewMailLogMarker is what the review mail carrier writes for each message;
 // the case searches the child's output for it.
-const reviewMailLogMarker = "review mail: a verification message was sent"
+const reviewMailLogMarker = "log mail: a message was sent"
 
 // The account the walkthrough registers. None of these is an existing seed row.
 const (
@@ -318,8 +320,8 @@ func TestReviewSixDigitRunReadsOnlyAnExactRun(t *testing.T) {
 		{"empty", "", ""},
 		{"six at the end", "code: 987654", "987654"},
 	} {
-		if got := sixDigitRun(tc.text); got != tc.want {
-			t.Errorf("%s: sixDigitRun(%q) = %q, want %q", tc.name, tc.text, got, tc.want)
+		if got := maillog.SixDigitRun(tc.text); got != tc.want {
+			t.Errorf("%s: maillog.SixDigitRun(%q) = %q, want %q", tc.name, tc.text, got, tc.want)
 		}
 	}
 }
@@ -328,13 +330,13 @@ func TestReviewSixDigitRunReadsOnlyAnExactRun(t *testing.T) {
 // plain text is read first, and a body with no exact six-digit run contributes
 // nothing, so a message with no code reports none.
 func TestReviewVerificationCodeReadsTheFirstBodyCarryingOne(t *testing.T) {
-	if got := verificationCode("no digits", "the code is 246810"); got != "246810" {
+	if got := maillog.VerificationCode("no digits", "the code is 246810"); got != "246810" {
 		t.Errorf("verificationCode fell through to the HTML body as %q, want 246810", got)
 	}
-	if got := verificationCode("no digits", "still none"); got != "" {
+	if got := maillog.VerificationCode("no digits", "still none"); got != "" {
 		t.Errorf("verificationCode over two bodies with no code = %q, want none", got)
 	}
-	if got := verificationCode("1234567"); got != "" {
+	if got := maillog.VerificationCode("1234567"); got != "" {
 		t.Errorf("verificationCode took a seven-digit run as %q, want none", got)
 	}
 }

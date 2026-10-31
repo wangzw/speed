@@ -65,13 +65,13 @@ func TestTheDeclaredItemsCarryTheDesignsFlags(t *testing.T) {
 		t.Errorf("Namespace = %q, want %q", s.Namespace, ModuleName)
 	}
 	for _, item := range []string{regionItem, defaultIdentityItem, identitiesItem} {
-		if !s.Items[item].Required {
-			t.Errorf("%s is not required", item)
+		if s.Items[item].Required {
+			t.Errorf("%s is declared required; the stance judges an unconfigured carrier instead", item)
 		}
 	}
 	secret := s.Items[accessKeyValueItem]
-	if !secret.Sensitive || secret.Required || secret.Description == "" {
-		t.Errorf("access-key-secret = %+v, want optional, sensitive and described", secret)
+	if !secret.Sensitive || secret.Description == "" {
+		t.Errorf("access-key-secret = %+v, want sensitive and described", secret)
 	}
 	if s.Items[accessKeyIDItem].Required {
 		t.Error("access-key-id is required, yet the SDK's own credential chain may be used instead")
@@ -84,27 +84,33 @@ func TestTheDeclaredItemsCarryTheDesignsFlags(t *testing.T) {
 	}
 }
 
-// TestTheReaderRefusesAMissingRequiredItem drives the real configuration loader:
-// a required item no source gave stops the startup, which is what has to happen
-// before the module builds a client with an empty identity.
-func TestTheReaderRefusesAMissingRequiredItem(t *testing.T) {
+// TestAnIncompleteSectionIsRefused holds that a section without a region is
+// half-configured: the stance refuses it, naming the missing item, rather than
+// starting a carrier that cannot send.
+func TestAnIncompleteSectionIsRefused(t *testing.T) {
 	body := `{"sms":{"aws":{` +
 		`"default-identity":"primary","identities":[{"name":"primary","kind":"pool","value":"pool-1"}]}}}`
 	reader := configtest.Reader(t, body, Module())
 	var cfg moduleConfig
-	if err := reader.Decode(ConfigNamespace, &cfg); !errors.Is(err, config.ErrMissingRequired) {
-		t.Fatalf("reading a section with no region gave %v, want one wrapping ErrMissingRequired", err)
+	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
+		t.Fatalf("reading the section: %v", err)
+	}
+	if _, err := stance(&cfg); !errors.Is(err, sms.ErrInvalidConfig) {
+		t.Fatalf("the half-configured section gave %v, want one wrapping ErrInvalidConfig", err)
 	}
 }
 
-// TestTheReaderRefusesAMissingIdentityList holds the same rule for the list: a
-// section that declares no identity at all is refused by the loader.
-func TestTheReaderRefusesAMissingIdentityList(t *testing.T) {
+// TestTheIdentityListIsRequiredByTheStance holds the same rule for the list: a
+// section that names no identity is refused once the section is judged.
+func TestTheIdentityListIsRequiredByTheStance(t *testing.T) {
 	body := `{"sms":{"aws":{"region":"us-east-1","default-identity":"primary"}}}`
 	reader := configtest.Reader(t, body, Module())
 	var cfg moduleConfig
-	if err := reader.Decode(ConfigNamespace, &cfg); !errors.Is(err, config.ErrMissingRequired) {
-		t.Fatalf("reading a section with no identities gave %v, want one wrapping ErrMissingRequired", err)
+	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
+		t.Fatalf("reading the section: %v", err)
+	}
+	if _, err := stance(&cfg); !errors.Is(err, sms.ErrInvalidConfig) {
+		t.Fatalf("the section with no identity gave %v, want one wrapping ErrInvalidConfig", err)
 	}
 }
 

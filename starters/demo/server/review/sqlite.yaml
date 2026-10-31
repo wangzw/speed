@@ -30,7 +30,7 @@
 # sensitive key of the process, and the logging layer would mask the value.)
 #
 # The email verification code works the same way. authn.emailcode renders it into
-# the authn.email.verify messages and mail.review writes each rendered message to
+# the authn.email.verify messages and mail.log writes each rendered message to
 # the process log; search for "review mail: a verification message was sent" and
 # read its verification_code field. The carrier declares no configuration item,
 # so this file carries no section for it either.
@@ -140,9 +140,12 @@ authn:
 # writes to the log. Each template declares both interface languages: a flow
 # carries the language the browser announced, and the module resolves it against
 # what the template declares, so a zh-CN interface sends under the zh-CN code.
-# The review sender declares no configuration item, so this file carries no
-# section for it.
+# The walkthrough reads its codes out of the process log, so both channels
+# select the log carrier explicitly.
+mail:
+  carrier: log
 sms:
+  carrier: log
   registry:
     # REVIEW: the vendor's review state is read back per template on this
     # interval, so a verdict the review control moves is visible on the next
@@ -181,7 +184,7 @@ sms:
   # fragment and names it on no command, so a normal deployment serves no page;
   # the review build mounts the management routes on the admin endpoint so the
   # console's navigation offers the page. The template set it manages is the
-  # registry above, and sms.review answers the vendor's per-template review.
+  # registry above, and sms.log answers the vendor's per-template review.
   admin:
     endpoints: [admin]
 
@@ -248,14 +251,14 @@ seed:
     - key: "authn.account.signup"
       value: "open"
     # REVIEW: name-and-password registration is open, and the email channel that
-    # makes its email verifiable is assembled (authn.emailcode over mail.review).
+    # makes its email verifiable is assembled (authn.emailcode over mail.log).
     # The registration itself sends no mail; the code goes out when the signed-in
     # account adds its address.
     - key: "authn.account.password-signup"
       value: "open"
     # REVIEW: the anonymous password reset is open. The review assembly carries
-    # both channels -- authn.emailcode over mail.review, and authn.sms over
-    # sms.review with the optional authn.code.reset template declared above --
+    # both channels -- authn.emailcode over mail.log, and authn.sms over
+    # sms.log with the optional authn.code.reset template declared above --
     # so the sign-in surface offers the forgot-password entry and the reset
     # page offers the channel choice. The declared default is closed.
     - key: "authn.login.password-reset"

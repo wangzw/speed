@@ -11,6 +11,19 @@ A host writes this module's name into a command; it declares both seams
 exclusively, so a command names exactly one carrier and two at once fail in
 resolution.
 
+## Selection
+
+`sms.carrier: aws` selects this carrier; another name, or `none`, stands it down
+with a reason, and a name no compiled carrier answers to is an error. With no
+selection, `region`, `identities` and `default-identity` all empty or absent is
+unconfigured and it stands down; some present and some missing is half-configured
+and `Prepare` fails naming the missing items; all present is configured and it
+runs. The two static credentials are optional — the SDK's own chain may provide
+them — but a credential set without a region is half-configured. Two configured
+carriers with no selection is an exclusive violation naming both modules. The
+log carrier is the fallback and runs only when this carrier, or any other
+configured carrier, did not.
+
 The carrier holds no template set of its own: which template a message goes out
 under is decided by the template registry, and `Send` is handed a `sms.Resolved`
 whose `Body` the registry already rendered from the declaration. `Code` is not
@@ -122,5 +135,5 @@ The cases need no real credentials: a case builds the vendor client against a
 loopback `httptest` endpoint with static credentials, and drives `Send` through it
 so the request shape, the message types, the lifetime, the Indian parameters and
 the exception table are held against the real SDK. `config_test.go` drives the
-real configuration loader for the required items and the identity list, and
+real configuration loader for the identity items and the identity list, and
 `assembly_test.go` drives a real registry through the descriptor to `Init`.

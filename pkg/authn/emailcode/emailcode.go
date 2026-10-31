@@ -89,7 +89,14 @@ func Module() core.Module {
 		Provides:  provisions(providesReset),
 		Resources: []any{messageCatalog()},
 
-		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
+		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
+			off, reason, err := mail.OffBySelection(reg)
+			if err != nil {
+				return core.Enablement{}, fmt.Errorf("%s: reading the mail carrier selection: %w", ModuleName, err)
+			}
+			if off {
+				return core.Enablement{State: core.StateDisabled, Reason: reason}, nil
+			}
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
 

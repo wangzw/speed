@@ -145,7 +145,6 @@ func (c moduleConfig) resolve() (resolved, error) {
 func items() map[string]config.Item {
 	return map[string]config.Item{
 		hostItem: {
-			Required:    true,
 			Description: "the SMTP relay the messages are handed to",
 		},
 		portItem: {
@@ -168,7 +167,6 @@ func items() map[string]config.Item {
 			Description: "the AUTH secret",
 		},
 		fromItem: {
-			Required:    true,
 			Description: "the default sender, in RFC 5322 form",
 		},
 		fromAllowedItem: {

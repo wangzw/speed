@@ -1,4 +1,4 @@
-# 邮件发送能力为顶层能力模块，载体为 SMTP，内容不模板化
+# 邮件发送能力为顶层能力模块，投递载体为 SMTP，内容不模板化
 
 ## 背景
 
@@ -59,11 +59,11 @@
 
 ## 决策
 
-采纳：**邮件发送能力为顶层能力模块 `pkg/mail`，形态仿 `pkg/sms`，载体集合为 SMTP，内容不模板化。**
+采纳：**邮件发送能力为顶层能力模块 `pkg/mail`，形态仿 `pkg/sms`，投递载体集合为 SMTP，内容不模板化。**
 
 - **形态仿 pkg/sms。** `pkg/mail` 根包是接口包与工厂，不登记模块；它交付 `Sender`、`Message`、`Attachment`、`Receipt`，哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`，以及工厂 `Spec`、`NewModule`。载体叶子包排他交付 `Sender`。不引入队列、工作池与重试。
 - **内容不模板化。** 正文是调用方渲染好的自由文本（`Text` 与 `HTML` 两份可选），本模块不持模板、不渲染、不翻译。
-- **载体集合为 SMTP，不含厂商 OpenAPI 适配。** 唯一的载体叶子包 `pkg/mail/smtp` 经 `github.com/wneessen/go-mail` 发信，覆盖两家厂商的 SMTP 端点与任意 SMTP 中继。
+- **投递载体集合为 SMTP，不含厂商 OpenAPI 适配。** 投递载体叶子包 `pkg/mail/smtp` 经 `github.com/wneessen/go-mail` 发信，覆盖两家厂商的 SMTP 端点与任意 SMTP 中继。另有一个不触中继的日志载体 `pkg/mail/log` 作为没有配置其它载体时的通道，由 `mail.carrier` 选择（[ADR-carrier-selection](adr-carrier-selection.md)）。
 - **附件是 `io.Reader`。** 读取在发送时完成，一个 `Message` 值只发送一次；重试要重建读取器。
 - **发件人是载体配置项加允许集，可被消息覆盖。** 载体配置给出一个缺省发件人与一组额外允许的发件人，`Message.From` 为空取缺省，非空须落在允许集里。核对需要载体的配置状态，因此落在载体、不落在无状态的 `Validate`。
 - **`dedupe` 与 `configtest` 上移为 `pkg/internal/` 的共享单元。** 两个功能目录的载体都需要它们，判据与当初把 `literal` 上移时相同。
@@ -72,7 +72,7 @@
 
 ## 后果
 
-发信能力可被任何模块单独引入，不必背上整套认证，也与短信的发送能力形态一致。载体集合只用一个通用协议，一次覆盖多家厂商的中继。
+发信能力可被任何模块单独引入，不必背上整套认证，也与短信的发送能力形态一致。投递载体只用一个通用协议，一次覆盖多家厂商的中继；日志载体保证没有配置中继的部署仍有一条可用的邮件通道。
 
 **接受的代价：**
 

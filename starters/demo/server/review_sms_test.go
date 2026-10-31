@@ -26,6 +26,7 @@ import (
 	"github.com/vislake/speed/pkg/db/sqlite"
 	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/sms"
+	smslog "github.com/vislake/speed/pkg/sms/log"
 	smsregistry "github.com/vislake/speed/pkg/sms/registry"
 )
 
@@ -34,7 +35,7 @@ import (
 // code the carrier has not been told about answers pending — the state the
 // registry records for a language a runtime template was registered in.
 func TestReviewSMSDeclaresPerTemplateReviewAndStartsPending(t *testing.T) {
-	carrier := &reviewSender{}
+	carrier := &smslog.Product{}
 	if !carrier.Model().Review.PerTemplate {
 		t.Fatalf("the review carrier declares PerTemplate %t, want true: the template registry "+
 			"would otherwise register every language as not-required",
@@ -56,7 +57,7 @@ func TestReviewSMSDeclaresPerTemplateReviewAndStartsPending(t *testing.T) {
 // carrier does not review is refused.
 func TestReviewSMSControlMovesOneVerdict(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	carrier := newReviewCarrier()
+	carrier := smslog.New(nil)
 	engine := gin.New()
 	engine.POST(reviewSMSControlPath, reviewVerdictHandler(carrier))
 
@@ -122,14 +123,13 @@ func TestReviewSMSControlDeclaresItsFeature(t *testing.T) {
 // leaves both languages' review states reported.
 func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "review-sms.db")
-	carrier := newReviewCarrier()
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"sms":{"registry":{"poll-interval":"10ms"}}}`, dsn)
-	reader := authntest.ConfigReaderAll(t, body, sqlite.Module(), reviewSMSModule(carrier), smsregistry.Module())
+	reader := authntest.ConfigReaderAll(t, body, sqlite.Module(), smslog.Module(), smsregistry.Module())
 
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Register(sqlite.Module())
-	reg.Register(reviewSMSModule(carrier))
+	reg.Register(smslog.Module())
 	reg.Register(smsregistry.Module())
 	reg.Supply(reader, config.ModuleName)
 
@@ -137,13 +137,21 @@ func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 		Depth: core.StageInit,
 		Participants: []string{
 			sqlite.ModuleName,
-			reviewCarrierModuleName,
+			smslog.ModuleName,
 			smsregistry.ModuleName,
 		},
 		Action: func(ctx context.Context, reg *core.Registry) error {
 			templates, err := core.Resolve[sms.Registry](reg)
 			if err != nil {
 				return fmt.Errorf("taking up the template registry: %w", err)
+			}
+			provider, err := core.Resolve[sms.Provider](reg)
+			if err != nil {
+				return fmt.Errorf("taking up the carrier: %w", err)
+			}
+			reviewer, isReviewer := provider.(smslog.Reviewer)
+			if !isReviewer {
+				return fmt.Errorf("the mounted carrier is %T, not the log carrier", provider)
 			}
 			record, err := templates.Register(ctx, "rollout", sms.TemplateSpec{
 				Kind:   sms.KindNotification,
@@ -162,7 +170,7 @@ func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 				}
 			}
 
-			if reviewErr := carrier.Review("rollout-zh-CN", sms.ApprovalRejected, "content not allowed"); reviewErr != nil {
+			if reviewErr := reviewer.Review("rollout-zh-CN", sms.ApprovalRejected, "content not allowed"); reviewErr != nil {
 				return fmt.Errorf("moving the Chinese verdict: %w", reviewErr)
 			}
 			deadline := time.Now().Add(5 * time.Second)
@@ -240,7 +248,7 @@ func TestReviewCarrierNamesTheMessageKindItSent(t *testing.T) {
 		Kind:     sms.KindNotification,
 		Params:   map[string]string{"to": reviewSMSTestPhone},
 	}
-	msg, attrs := reviewSMSRecord(notice)
+	msg, attrs := smslog.Record(notice)
 	if strings.Contains(msg, "verification") {
 		t.Errorf("the notice line is %q; a notification must not claim to be a verification code", msg)
 	}
@@ -260,8 +268,8 @@ func TestReviewCarrierNamesTheMessageKindItSent(t *testing.T) {
 		Kind:     sms.KindVerification,
 		Params:   map[string]string{"code": "123456", "ttl_minutes": "5"},
 	}
-	msg, attrs = reviewSMSRecord(verification)
-	if want := "review sms: a verification code was sent"; msg != want {
+	msg, attrs = smslog.Record(verification)
+	if want := "log sms: a verification code was sent"; msg != want {
 		t.Errorf("the verification line is %q, want %q", msg, want)
 	}
 	if value, ok := reviewSMSAttr(attrs, "verification_code"); !ok || value != "123456" {

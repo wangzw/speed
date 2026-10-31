@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	openapiutil "github.com/alibabacloud-go/darabonba-openapi/v2/utils"
 	dysmsapi "github.com/alibabacloud-go/dysmsapi-20170525/v5/client"
@@ -96,6 +97,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 func Module() core.Module {
 	return sms.NewModule(sms.Spec[moduleConfig]{
 		ModuleName:      ModuleName,
+		CarrierName:     carrierName,
 		ConfigNamespace: ConfigNamespace,
 		Config:          &configDefaults,
 		Items:           items(),
@@ -105,11 +107,31 @@ func Module() core.Module {
 	})
 }
 
-// stance states that the module runs once its configuration is sound: a carrier
-// named on a command tree is taken as running. The items it cannot run without
-// are declared required, so the loader has already refused a section that omits
-// one before this is reached, and there is nothing left here to refuse.
-func stance(_ *moduleConfig) (core.Enablement, error) {
+// stance judges whether this carrier is configured to run, without consulting
+// sms.carrier. A section with none of the credential and the signature set is
+// unconfigured and stands down; a section with some of them set is
+// half-configured and is an error naming the missing items.
+func stance(cfg *moduleConfig) (core.Enablement, error) {
+	if cfg.AccessKeyID == "" && cfg.AccessKeySecret == "" && cfg.SignName == "" {
+		return core.Enablement{
+			State:  core.StateDisabled,
+			Reason: ModuleName + " has no configuration: no access key and no approved signature",
+		}, nil
+	}
+	var missing []string
+	if cfg.AccessKeyID == "" {
+		missing = append(missing, accessKeyIDItem)
+	}
+	if cfg.AccessKeySecret == "" {
+		missing = append(missing, accessKeyValueItem)
+	}
+	if cfg.SignName == "" {
+		missing = append(missing, signNameItem)
+	}
+	if len(missing) > 0 {
+		return core.Enablement{}, fmt.Errorf("%w: %s is partially configured; %s missing",
+			sms.ErrInvalidConfig, ConfigNamespace, strings.Join(missing, ", "))
+	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 

@@ -25,8 +25,8 @@ package main
 //
 // The fixture also proves the operator's email address and phone number through
 // the account module's AddIdentifier, which is the same write a completed code
-// flow performs. The review assembly can deliver both codes (mail.review and
-// sms.review), so the states are states the product reaches; the seed writes
+// flow performs. The review assembly can deliver both codes (mail.log and
+// sms.log), so the states are states the product reaches; the seed writes
 // them directly so the journey starts from a ready account rather than from a
 // verification detour.
 

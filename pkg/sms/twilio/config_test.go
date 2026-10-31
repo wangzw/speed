@@ -45,13 +45,13 @@ func TestTheDeclaredItemsCarryTheDesignsFlags(t *testing.T) {
 		t.Errorf("Namespace = %q, want %q", s.Namespace, ModuleName)
 	}
 	for _, key := range []string{accountSIDItem, defaultIdentityItem, identitiesItem} {
-		if !s.Items[key].Required {
-			t.Errorf("%s is not required", key)
+		if s.Items[key].Required {
+			t.Errorf("%s is declared required; the stance judges an unconfigured carrier instead", key)
 		}
 	}
 	token := s.Items[authTokenItem]
-	if !token.Required || !token.Sensitive || token.Description == "" {
-		t.Errorf("auth-token = %+v, want required, sensitive and described", token)
+	if !token.Sensitive || token.Description == "" {
+		t.Errorf("auth-token = %+v, want sensitive and described", token)
 	}
 	if _, ok := s.Items["templates"]; ok {
 		t.Error("the schema declares a templates item, which belongs to the registry")
@@ -61,9 +61,9 @@ func TestTheDeclaredItemsCarryTheDesignsFlags(t *testing.T) {
 	}
 }
 
-// TestTheReaderRefusesAMissingRequiredItem drives the real configuration loader:
-// a required item no source gave stops the startup.
-func TestTheReaderRefusesAMissingRequiredItem(t *testing.T) {
+// TestAnIncompleteSectionIsRefused holds that a section missing one of the
+// items that make a usable carrier is half-configured: the stance refuses it.
+func TestAnIncompleteSectionIsRefused(t *testing.T) {
 	for name, body := range map[string]string{
 		"no account SID": `{"sms":{"twilio":{` +
 			`"auth-token":"the-token","default-identity":"service",` +
@@ -74,8 +74,11 @@ func TestTheReaderRefusesAMissingRequiredItem(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			reader := configtest.Reader(t, body, Module())
 			var cfg moduleConfig
-			if err := reader.Decode(ConfigNamespace, &cfg); !errors.Is(err, config.ErrMissingRequired) {
-				t.Fatalf("reading the section gave %v, want one wrapping ErrMissingRequired", err)
+			if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
+				t.Fatalf("reading the section: %v", err)
+			}
+			if _, err := stance(&cfg); !errors.Is(err, sms.ErrInvalidConfig) {
+				t.Fatalf("the half-configured section gave %v, want one wrapping ErrInvalidConfig", err)
 			}
 		})
 	}

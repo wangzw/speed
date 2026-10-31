@@ -44,8 +44,8 @@ func TestTheDescriptorDeliversTheSenderExclusively(t *testing.T) {
 	if r := m.Requires[0]; r.Token != core.Token((*log.Logger)(nil)) || !r.Optional {
 		t.Errorf("Requires[0] = %+v, want an optional logging capability", r)
 	}
-	if len(m.Resources) != 1 {
-		t.Errorf("Resources = %v, want the one input-item schema", m.Resources)
+	if len(m.Resources) != 2 {
+		t.Errorf("Resources = %v, want the input-item schema and the carrier name", m.Resources)
 	}
 }
 

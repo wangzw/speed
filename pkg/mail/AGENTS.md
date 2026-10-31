@@ -60,6 +60,43 @@ The API is the package's godoc, the root package's and each subpackage's. Read
   pins that library to the one version the table states, so what a host compiles
   by importing this package carries no carrier but the one it deploys on.
 
+## Carrier selection and the fallback
+
+The capability compiles several carriers and runs exactly one. `mail.carrier`
+chooses it at run time (ADR-carrier-selection):
+
+- **A carrier name** — the `CarrierName` the carrier declares, which is also
+  what its `Sender.Name` answers. The named carrier runs; every other compiled
+  carrier stands itself down with a reason. The named carrier has to be
+  runnable: a configuration gap there is an error.
+- **`none`** — the capability is off. No carrier runs, the log fallback
+  included, so the sending seam has no provider and every module that requires
+  it stands itself down (the email verification sender among them).
+- **An empty value (the key absent)** — automatic selection. A carrier whose
+  configuration is complete runs. The log carrier states `StateAuto`: core's
+  exclusive resolution leaves it running when no other carrier was explicitly
+  enabled and stands it down when one was. That is the fallback.
+- **A name no compiled carrier answers to** — an `ErrInvalidConfig` naming the
+  value, the capability and the compiled carrier names. A typo must not look
+  like `none`.
+
+What a carrier's own configuration means:
+
+- **Unconfigured**: every item that identifies the carrier is empty. The
+  carrier states `StateDisabled` with a reason.
+- **Half-configured**: some identity items are present and others are missing.
+  `Prepare` returns `ErrInvalidConfig` naming the missing items.
+- **Selected but not compiled in**: the selection check above; it is an error,
+  not a stand-down.
+- **Selected and complete**: the carrier runs. Two carriers complete with no
+  selection is an exclusive violation naming both modules.
+
+The log carrier (`pkg/mail/log`) is compiled into every build, including a
+production one, and declares the `mail.carrier` item because it is the carrier
+that is always present. It writes each message to the process log and warns at
+startup that the body and any verification code reach the log. When it runs as
+the fallback the warning is the only sign that no real channel was configured.
+
 ## How a carrier contributes
 
 A subpackage binds its carrier library, fixes its namespace, and registers the
@@ -74,10 +111,11 @@ func Module() core.Module {
 	prototype := Config{}
 	return mail.NewModule(mail.Spec[Config]{
 		ModuleName:      ModuleName,   // "mail.smtp"
+		CarrierName:     "smtp",       // the value mail.carrier names this carrier by
 		ConfigNamespace: ModuleName,   // where this carrier's items are mounted
 		Config:          &prototype,   // the prototype, carrying the defaults
 		Items:           items,        // the declared input items
-		Stance:          stance,       // what this carrier cannot start without
+		Stance:          stance,       // unconfigured, half-configured or ready
 		Secrets:         secrets,      // the credential strings to redact
 		Open:            open,         // the carrier, and the only place it appears
 	})
@@ -87,8 +125,11 @@ func Module() core.Module {
 The carrier then implements `Name` and `Send`, holds a `Table` from
 `pkg/internal/dedupe`, and delivers the sending seam. `Open` returns the
 `Sender`; `Secrets` returns the credentials the factory registers as literal
-redaction rules before a logger is bound; `Stance` states what the carrier cannot
-start without, so an unsound section fails the startup ahead of any message.
+redaction rules before a logger is bound; `Stance` judges the carrier's own
+configuration in the three states above, so an unconfigured carrier stands down
+and a half-configured one fails the startup ahead of any message. `Fallback`
+and `DeclaresSelection` belong to the log carrier alone; every other carrier
+leaves them false.
 
 ## Running it
 

@@ -41,6 +41,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
+	smssend "github.com/vislake/speed/pkg/sms"
 )
 
 // ModuleName is this module's name in the registry.
@@ -125,7 +126,14 @@ func Module() core.Module {
 		},
 		Provides: []core.Provision{{Token: (*authn.LoginMethod)(nil)}},
 
-		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
+		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
+			off, reason, err := smssend.OffBySelection(reg)
+			if err != nil {
+				return core.Enablement{}, fmt.Errorf("%s: reading the SMS carrier selection: %w", ModuleName, err)
+			}
+			if off {
+				return core.Enablement{State: core.StateDisabled, Reason: reason}, nil
+			}
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
 

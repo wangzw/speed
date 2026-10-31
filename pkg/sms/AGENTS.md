@@ -113,6 +113,45 @@ every template route being a call on `Registry` and the carrier route a read of
   import an `internal` package of `pkg/authn` and the login leaves there use the
   same register.
 
+## Carrier selection and the fallback
+
+The capability compiles several carriers and runs exactly one. `sms.carrier`
+chooses it at run time (ADR-carrier-selection):
+
+- **A carrier name** — the `CarrierName` the carrier declares, which is also
+  what `Sender.Name` and `Provider.Name` answer. The named carrier runs; every
+  other compiled carrier stands itself down with a reason. The named carrier has
+  to be runnable: a configuration gap there is an error.
+- **`none`** — the capability is off. No carrier runs, the log fallback
+  included; the template registry, the management surface and the SMS code
+  module stand themselves down, and so do the login method and the second
+  factor over them.
+- **An empty value (the key absent)** — automatic selection. A carrier whose
+  configuration is complete runs. The log carrier states `StateAuto`: core's
+  exclusive resolution leaves it running when no other carrier was explicitly
+  enabled and stands it down when one was. That is the fallback.
+- **A name no compiled carrier answers to** — an `ErrInvalidConfig` naming the
+  value, the capability and the compiled carrier names. A typo must not look
+  like `none`.
+
+What a carrier's own configuration means:
+
+- **Unconfigured**: every item that identifies the carrier is empty. The
+  carrier states `StateDisabled` with a reason. The config layer marks none of
+  these items `Required`, because an unselected carrier must be able to take
+  part in `Prepare` without failing the run.
+- **Half-configured**: some identity items are present and others are missing.
+  `Prepare` returns `ErrInvalidConfig` naming the missing items.
+- **Selected but not compiled in**: the selection check above; it is an error,
+  not a stand-down.
+- **Selected and complete**: the carrier runs. Two carriers complete with no
+  selection is an exclusive violation naming both modules.
+
+The log carrier (`pkg/sms/log`) is compiled into every build, including a
+production one, and declares the `sms.carrier` item because it is the carrier
+that is always present. It writes each message to the process log and warns at
+startup that the body and any verification code reach the log.
+
 ## How a carrier contributes
 
 A subpackage binds its vendor client, fixes its namespace, and registers the
@@ -127,10 +166,11 @@ func Module() core.Module {
 	prototype := Config{}
 	return sms.NewModule(sms.Spec[Config]{
 		ModuleName:      ModuleName,   // "sms.aliyun"
+		CarrierName:     "aliyun",     // the value sms.carrier names this carrier by
 		ConfigNamespace: ModuleName,   // where this carrier's items are mounted
 		Config:          &prototype,   // the prototype, carrying the defaults
 		Items:           items,        // the declared input items
-		Stance:          stance,       // how the exclusive claim yields, or what is missing
+		Stance:          stance,       // unconfigured, half-configured or ready
 		Secrets:         secrets,      // the credential strings to redact
 		Open:            open,         // builds the Product, and the one place a vendor type appears
 	})

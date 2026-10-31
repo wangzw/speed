@@ -173,13 +173,16 @@ classDiagram
 
 ```go
 type Spec[C any] struct {
-    ModuleName      string
-    ConfigNamespace string
-    Config          *C
-    Items           map[string]config.Item
-    Stance          func(cfg *C) (core.Enablement, error)
-    Secrets         func(cfg *C) []string      // 凭据：登记为日志的字面量脱敏匹配器
-    Open            func(ctx context.Context, cfg *C) (Sender, error)
+    ModuleName        string
+    CarrierName       string        // mail.carrier 里的选择名，也是 Sender.Name 的答案
+    Fallback          bool          // 没有其它显式启用的载体时由 core 留下它
+    DeclaresSelection bool          // 由日志载体声明 mail.carrier
+    ConfigNamespace   string
+    Config            *C
+    Items             map[string]config.Item
+    Stance            func(cfg *C) (core.Enablement, error)
+    Secrets           func(cfg *C) []string      // 凭据：登记为日志的字面量脱敏匹配器
+    Open              func(ctx context.Context, cfg *C) (Sender, error)
 }
 ```
 
@@ -187,8 +190,25 @@ type Spec[C any] struct {
 
 | 阶段 | 行为 |
 |---|---|
-| `Prepare` | `Decode` 自己那份配置；读出配置后调 `Stance`，与自身性质不符即启动失败，错误点名缺的是哪一项 |
-| `New` | `Decode` 配置 → 调 `Secrets` 并经 `literal.Register` 登记字面量脱敏匹配器 → 调 `Open` 建立载体 |
+| `Prepare` | 读 `mail.carrier` 并核对其中的名字在已编入的载体里；按选择项决定关闭、启用或保底，再 `Decode` 自己那份配置并调 `Stance` |
+| `New` | `Decode` 配置 → 调 `Secrets` 并经 `literal.Register` 登记字面量脱敏匹配器 → 把已构造的 logger 注入上下文 → 调 `Open` 建立载体 |
+
+### 载体的选择与保底
+
+**一次运行恰好一个载体。** 选择项 `mail.carrier` 的取值是一个载体的选择名、`none` 或空；每个载体把自己的选择名作为 `CarrierName` 资源声明，`Prepare` 因此知道这次二进制里编入了哪些载体（[ADR-carrier-selection](../../adr/adr-carrier-selection.md)）。
+
+| 情形 | 表现 |
+|---|---|
+| 选择项点名本载体的名字且配置齐全 | `StateEnabled` |
+| 选择项点名另一个已编入的载体 | `StateDisabled`，原因点名被选中的载体 |
+| 选择项是 `none` | 所有载体 `StateDisabled`；能力没有提供者，依赖它的模块自行关闭 |
+| 选择项点名一个没有编入的名字 | `ErrInvalidConfig`，点名该名字、能力与这次二进制携带的载体 |
+| 选择项为空、本载体的身份项全空 | `StateDisabled`，原因是未配置 |
+| 选择项为空、身份项只给了一部分 | `ErrInvalidConfig`，点名缺的项 |
+| 选择项为空、身份项齐全 | `StateEnabled`；两个载体同时如此即排他冲突，错误点名两个模块 |
+| 选择项为空、本载体是保底载体 | `StateAuto`；core 在任一载体显式启用时把它搁下，否则它运行 |
+
+**日志载体 `mail.log` 是保底。** 它把一条消息的正文写进进程日志并答成功，不触任何中继；它编入所有构建，声明 `mail.carrier`，并在 `Open` 时写一条警告，说明这条通道会把正文与验证码写进日志。选择项点名它时照常运行；选择项为空且没有其它载体启用时它运行；选择项是 `none` 时它也不运行。
 
 **次序固定：先登记脱敏字面量，再绑定任何带属性的 logger，最后 `Open`。** 日志脱敏规则只对它注册之后写出的记录起作用，所以凭据的登记必须发生在载体把任何属性绑到 logger 之前（[ADR-log-secret-redaction](../../adr/adr-log-secret-redaction.md)）。`Secrets` 钩子把「凭据先登记」这一步收进工厂，载体因此不 import `literal`，只交出凭据字符串。
 
@@ -200,7 +220,7 @@ type Spec[C any] struct {
 
 适配只做下列事：构造一次 SMTP 会话（一条连接、`MAIL FROM`、`RCPT TO`、`DATA`）、调用、把响应与错误归入哨兵。没有真实中继也能验证：适配层测试用手写的假 SMTP 服务器（`pkg/mail/smtp/fake_test.go`）驱动真实客户端，以标准库的解析器（`net/mail`、`mime`）判定落地的报文。
 
-**载体集合是 SMTP 一家**（[ADR-mail-capability](../../adr/adr-mail-capability.md)）。唯一的载体叶子包是 `pkg/mail/smtp`，它只认识提交协议、不认识任何厂商，所以一家厂商只要开放 SMTP 端点就经它接入，不另写厂商专属适配。
+**投递中继的载体集合是 SMTP 一家**（[ADR-mail-capability](../../adr/adr-mail-capability.md)）。`pkg/mail/smtp` 只认识提交协议、不认识任何厂商，所以一家厂商只要开放 SMTP 端点就经它接入，不另写厂商专属适配。另有一个不触中继的载体 `pkg/mail/log`，把消息写进进程日志，作为没有配置其它载体时的通道（[ADR-carrier-selection](../../adr/adr-carrier-selection.md)）。
 
 | 项 | SMTP 载体 `mail.smtp` |
 |---|---|
@@ -256,8 +276,11 @@ SMTP 事务同样不幂等：重复一次会投递并计费第二封，所以适
 **新增一种载体即新增一个载体子包。** 以下各条是准入条件的全部：
 
 - 必须排他交付：`Provides` 里声明 `(*Sender)(nil)`，并实现 `Name`、`Send`。
+- 必须给出自己的 `CarrierName`，它与 `Name` 的答案一致，且不与其它载体重复；`log` 是日志载体的选择名。
 - 必须挂在 `mail.<载体名>` 专属的配置命名空间下；两个载体在同一个命名空间下声明输入项，只要都被 import 就是冲突。
-- 必须在 `Stance` 里判自己那份配置，不满足即 `ErrInvalidConfig`。
+- 必须在 `Stance` 里判自己那份配置：全空即 `StateDisabled` 并给出原因，半空即 `ErrInvalidConfig` 并点名缺的项，齐全且值自洽即 `StateEnabled`。
+- 不在 `Stance` 里判选择项；选择项由工厂处理，未被选中的载体不判自己的配置。
+- 保底标记只给日志载体；第二个保底提供者没有判据让 core 选择，不应出现。
 - 必须把厂商的回应与错误归入 `ErrThrottled`、`ErrRejected`、`ErrUncertain` 之一，未归入限流或拒绝的一律归 `ErrUncertain`。
 - 必须经 `Secrets` 钩子交出凭据，使其先于 logger 绑定被登记为日志的字面量匹配器。
 
@@ -269,5 +292,7 @@ SMTP 事务同样不幂等：重复一次会投递并计费第二封，所以适
 | 消息校验 | 已实现 | `pkg/mail/validate.go` `Message.Validate` |
 | 归类助手（精确码表加缺省 `ErrUncertain`） | 已实现 | `pkg/mail/classify.go` `Classify`、`Unsettled`、`NoStatus` |
 | SMTP 载体 `mail.smtp` | 已实现 | `pkg/mail/smtp/smtp.go` `Module`；`pkg/mail/smtp/config.go`、`pkg/mail/smtp/assemble.go`、`pkg/mail/smtp/classify.go` |
+| 日志载体 `mail.log` | 已实现 | `pkg/mail/log/log.go` `Module`、`Sender` |
+| 载体选择 `mail.carrier` 与保底 | 已实现 | `pkg/mail/selection.go` `SelectionSchema`、`ReadSelection`、`CarrierNames`、`OffBySelection` |
 | 去重表 | 已实现 | `pkg/internal/dedupe` |
 | 根包依赖守卫与库封边、钉版 | 已实现 | `pkg/mail/deps_test.go` |

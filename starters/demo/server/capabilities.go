@@ -35,8 +35,10 @@ import (
 	mfasmssms "github.com/vislake/speed/pkg/authn/mfa/sms"
 	authnsms "github.com/vislake/speed/pkg/authn/sms"
 	ssooidc "github.com/vislake/speed/pkg/authn/sso/oidc"
+	maillog "github.com/vislake/speed/pkg/mail/log"
 	"github.com/vislake/speed/pkg/mail/smtp"
 	smsadmin "github.com/vislake/speed/pkg/sms/admin"
+	smslog "github.com/vislake/speed/pkg/sms/log"
 	smsregistry "github.com/vislake/speed/pkg/sms/registry"
 )
 
@@ -82,16 +84,17 @@ var capabilityModules = []string{
 	smsadmin.ModuleName,
 
 	// The mail capability's carriers and the verification code sender over
-	// them. mail.smtp reaches a relay; the log carrier writes each message to
-	// the process log. Both are compiled in, and a run selects one.
+	// them. mail.smtp reaches a relay; mail.log writes each message to the
+	// process log and is the fallback when no other carrier is configured.
+	// Both are compiled in, and the run selects one through mail.carrier.
 	smtp.ModuleName,
-	reviewMailModuleName,
+	maillog.ModuleName,
 	emailcode.ModuleName,
 
 	// The SMS log carrier. It is built through the same sms.NewModule a vendor
-	// carrier uses and writes each resolved message to the process log; a run
-	// selects it like any other carrier.
-	reviewCarrierModuleName,
+	// carrier uses, writes each resolved message to the process log, and is the
+	// fallback when no vendor carrier is configured.
+	smslog.ModuleName,
 
 	// The notification fixture: one notification type, the worker that
 	// dispatches it to a tenant's members, and the preference-recipient wiring.

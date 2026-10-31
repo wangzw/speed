@@ -52,6 +52,7 @@
 - **模板注册表持有模板集。** 模板集由 `sms.registry` 持有，分两个来源，拥有者不同。配置来源是注册表自己的 `templates` 配置项（`map[string]sms.TemplateSpec`），启动期读入一次、冻结为一个 `sms.Declaration`、此后只读——写它的运维已经让厂商过了审，注册表既不管它也不记它的审核状态，管理面调它即 `ErrImmutable`。运行期来源是注册表自己的 `sms_templates` 表，模板在运行期登记、送审、启停、删除，各自带**按语言**的审核状态，后台轮询读回。`Resolve` 先查配置来源、再查运行期来源；发送时只校验**该消息所用语言**那一条的审核状态，未过审或已停用即 `ErrNotSendable`。
 - **覆盖由消费方对配置来源核对。** 注册表只报告自己持有什么（`Registry.Declared()`），不声明谁需要哪些模板。需要一组固定模板的消费方在启动期用自己的需求集核对注册表的配置来源——模板名齐备、每个模板覆盖配置的默认语言、参数名表相等。运行期来源的模板不属于这个契约：它在启动期还不存在，消费方对它的期望只能落在发送路径上。
 - **发送方接缝不感知用途与语言闭集。** `Message` 的模板名由调用方定义，语言是不透明非空串，空值一律拒绝。用途词表与语言闭集留在认证。`Sender` 收一条由注册表解出的 `Resolved`，载体不持模板集。
+- **载体由运行期选择项 `sms.carrier` 选择，日志载体是保底。** 厂商载体与 `pkg/sms/log` 都编入二进制，一次运行恰好一个生效；没有配置任何厂商载体时，日志载体把消息写进进程日志（[ADR-carrier-selection](adr-carrier-selection.md)）。
 - **依赖方向。** `pkg/sms` 不 import `pkg/authn`；调用方（`pkg/authn/sms`）import `pkg/sms` 的根包。根包不 import 厂商 SDK，SDK 只落在绑定它的载体叶子包里。注册表经 `Provider` 触达厂商，不 import 任何载体叶子包。
 - **`pkg/authn/internal/literal` 上移为 `pkg/internal/literal`。** 它被两个 SMS 载体与四个登录叶子共用，是共享单元，落在 `pkg/internal/` 下，不登记模块。上移是这次改动的必要前提，不只是整理。
 

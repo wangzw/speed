@@ -9,6 +9,17 @@ template. A host writes this module's name into a command; it declares both seam
 exclusively, so a command names exactly one carrier and two at once fail in
 resolution.
 
+## Selection
+
+`sms.carrier: tencent` selects this carrier; another name, or `none`, stands it
+down with a reason, and a name no compiled carrier answers to is an error. With
+no selection, `secret-id`, `secret-key`, `sdk-app-id`, `region` and `sign-name`
+all empty is unconfigured and it stands down; some present and some missing is
+half-configured and `Prepare` fails naming the missing items; all present is
+configured and it runs. Two configured carriers with no selection is an
+exclusive violation naming both modules. The log carrier is the fallback and
+runs only when this carrier, or any other configured carrier, did not.
+
 The whole leaf package binds
 `github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111` and can
 be dropped without touching any other module.
@@ -106,7 +117,7 @@ on a send; `TemplateName`, `TemplateContent`, `SmsType` on an offer;
 `TemplateIdSet` on a status read; `TemplateId` on a delete) and the classification
 are held against the real SDK. `provider_test.go` holds the review-status mapping
 per code and the placeholder rewrite, `config_test.go` drives the real
-configuration loader for the required items, `module_test.go` drives a real
+configuration loader for the identity items and their unconfigured or half-configured stance, `module_test.go` drives a real
 registry through the descriptor to `Init` and holds the redaction registration
 and the two seams resolving to one product, and `surface_test.go` holds that no
 vendor type reaches the exported surface.

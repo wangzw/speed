@@ -10,6 +10,18 @@ template's review state (`GetSmsTemplate`) and retires a template
 declares both seams exclusively, so a command names exactly one carrier and two
 at once fail in resolution.
 
+## Selection
+
+`sms.carrier: aliyun` selects this carrier; another name, or `none`, stands it
+down with a reason, and a name no compiled carrier answers to is an error. With
+no selection, `access-key-id`, `access-key-secret` and `sign-name` all empty is
+unconfigured and it stands down; some present and some missing is
+half-configured and `Prepare` fails naming the missing items; all present is
+configured and it runs. `endpoint` has a default and is not an identity item.
+Two configured carriers with no selection is an exclusive violation naming both
+modules. The log carrier is the fallback and runs only when this carrier, or
+any other configured carrier, did not.
+
 The carrier holds no template set of its own: which template a message goes out
 under is decided by the template registry, and `Send` is handed a `sms.Resolved`
 that already carries the vendor code and the parameters. The management seam is
@@ -106,5 +118,5 @@ path: run from outside the module it loads no package and still exits 0.
 The cases need no real credentials: a case builds the vendor client against a
 loopback `httptest` endpoint and drives `Send`, `Offer`, `Approval` and `Retire`
 through it, so the request shapes and the classification are held against the real
-SDK. `config_test.go` drives the real configuration loader for the required items,
+SDK. `config_test.go` drives the real configuration loader for the identity items and their unconfigured or half-configured stance,
 and `assembly_test.go` drives a real registry through the descriptor to `Init`.

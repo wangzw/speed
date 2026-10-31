@@ -37,7 +37,7 @@ product adds it once it holds the dependency:
 | `authn.sso.oidc`, `authn.sso.saml` | an enterprise provider's client credentials and metadata |
 | `sms.*`, `authn.login.sms`, `authn.mfa.sms`, `authn.sms` | an SMS vendor's account |
 | `mail.smtp` | an SMTP account |
-| `authn.emailcode` | a mail carrier to send through; the review build pairs it with `mail.review` |
+| `authn.emailcode` | a mail carrier to send through; the review build pairs it with `mail.log` |
 | `objectstore.s3` | an S3 account and bucket |
 
 The test of a doubtful module is the module's own contract: if its required
@@ -114,15 +114,15 @@ collected by the stack node's `IncludeAllDeclarations`, and no baseline
 controls and the loopback guard (`server/review.go`, `review_sms_control.go`
 and `notification_control_review.go`). Every capability the program can run —
 the four social methods, the enterprise OIDC method (`authn.sso.oidc`), the SMS
-family with the `sms.review` log carrier and the `sms.admin` template page,
-name-and-password registration with `authn.emailcode` over the `mail.review` log
+family with the `sms.log` log carrier and the `sms.admin` template page,
+name-and-password registration with `authn.emailcode` over the `mail.log` log
 carrier, and the SMS second factor (`authn.mfa.sms`) — is compiled into every
 build and considered by `serve` (`capabilities.go`); whether one starts is its
 own configuration decision. `server/review_off.go` is the untagged counterpart
 and names nothing, so a default binary carries neither the controls nor the
 guard.
 
-`mail.review` is a carrier built through `mail.NewModule`, the same factory
+`mail.log` is a carrier built through `mail.NewModule`, the same factory
 `mail.smtp` uses: it reaches no relay and writes each rendered message to the
 process log. `authn.emailcode` renders `authn.email.verify` in the language the
 request announced (falling back to English) and hands the message over. Register
@@ -139,7 +139,7 @@ provides `authn.EmailResetCodeSender` from its compiled-in catalog, so the mail
 carrier serves the email channel. The sign-in surface therefore carries the
 forgot-password entry, `/password-reset` is the host's own page over
 `@speed/auth-ui`'s `PasswordResetScreen`, and the reset code arrives through
-`mail.review` or `sms.review` like any other verification code.
+`mail.log` or `sms.log` like any other verification code.
 
 The inbox and number resend windows are held by the destination across purposes,
 so a reset sent shortly after the account proved that same address or number is
@@ -183,7 +183,7 @@ password through the ordinary flow; add the email under the account's own
 identifiers; read the code from the `review mail:` line; submit it to
 `POST /api/v1/auth/identifiers/verify`; watch `/api/v1/auth/me` report
 `verification.state = verified`; then call the personal ensure. Registration
-itself sends no mail, and `sms.review` verifies a phone the same way without
+itself sends no mail, and `sms.log` verifies a phone the same way without
 lifting the registration limit.
 
 The build also carries a guard (`reviewGuardModule`) that refuses to start when
@@ -240,7 +240,7 @@ configuration.
   Chinese and a member with no preference in the default. The dispatch is the
   real one — `notification.Dispatcher` validates it against the collected
   taxonomy, the job queue carries it, and the delivery pipeline writes the
-  in-app row and renders the external channel through `mail.review` or the
+  in-app row and renders the external channel through `mail.log` or the
   review SMS carrier. `server/review/sqlite.yaml` lowers
   `jobs.scheduler.tick` to two seconds, so a tenant created during a walkthrough
   starts receiving notices promptly; the dispatch window itself is the fixture's
@@ -309,7 +309,7 @@ reads none of it.
   fixture proves it (`email-code`) and adds and proves a phone number
   (`sms-code`) through the account module's `AddIdentifier`, the same write a
   completed code flow performs. Both codes have a live path in this build
-  (`mail.review`, `sms.review`), so the fixture starts the journey from the state
+  (`mail.log`, `sms.log`), so the fixture starts the journey from the state
   the flows reach rather than from a verification detour.
 
 - **The assembly's additions.** `reviewModules` now carries `authn.mfa.sms`, so

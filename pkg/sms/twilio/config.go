@@ -204,11 +204,9 @@ func copyAttributes(attributes map[string]string) map[string]string {
 func items() map[string]config.Item {
 	return map[string]config.Item{
 		accountSIDItem: {
-			Required:    true,
 			Description: "the Twilio account SID the messages are sent as and the content resources are created under",
 		},
 		authTokenItem: {
-			Required:    true,
 			Sensitive:   true,
 			Description: "the Twilio auth token that authenticates every call",
 		},
@@ -219,11 +217,9 @@ func items() map[string]config.Item {
 			Description: "the Content API access point to create and remove content resources through",
 		},
 		defaultIdentityItem: {
-			Required:    true,
 			Description: "the name of the sending identity a message goes out from when it names none",
 		},
 		identitiesItem: {
-			Required: true,
 			Description: "the sending identities this deployment has, each with a unique name, a kind, the vendor " +
 				"value, the countries it serves and any vendor-specific attributes; a From value may live in an " +
 				"identity's attributes under \"from\"",

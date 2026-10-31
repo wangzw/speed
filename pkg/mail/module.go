@@ -27,6 +27,20 @@ type Spec[C any] struct {
 	// ModuleName is this carrier's name in the registry: its identity in the
 	// startup diagnostics and in an enablement lookup.
 	ModuleName string
+	// CarrierName is this carrier's name in the mail.carrier selection item and
+	// the name its Sender answers Name with. It is the name a deployment writes
+	// to choose this carrier, so it is stable across module renames.
+	CarrierName string
+	// Fallback marks the carrier that runs when no other carrier was explicitly
+	// enabled and no configured carrier claimed the capability. The log carrier
+	// sets it: it writes every message to the process log, so it is the channel
+	// of last resort, never a silent replacement for a configured carrier.
+	Fallback bool
+	// DeclaresSelection makes this carrier declare the mail.carrier item. One
+	// carrier declares it and the rest read it; the factory refuses a second
+	// declaration rather than letting two modules claim one path. The log
+	// carrier sets it, because it is compiled into every build.
+	DeclaresSelection bool
 	// ConfigNamespace is where this carrier's input items are mounted in the
 	// config data. It has to be one of its own: the configuration manifest is
 	// collected from every registered module, a run's disabled ones included, so
@@ -39,12 +53,13 @@ type Spec[C any] struct {
 	Config *C
 	// Items describes each declared item, keyed by its path within the namespace.
 	Items map[string]config.Item
-	// Stance reads the decoded configuration and states what this carrier cannot
-	// start without. A carrier taken in at run level has to start, so the state
-	// it returns is StateEnabled: two carriers enabled at once fail the startup
-	// instead of one silently winning. Everything it cannot start without — a
-	// required item, an allowed set it cannot read — is an error naming what is
-	// wrong, and the startup fails with it ahead of any message.
+	// Stance judges this carrier's own configuration, before the selection item
+	// is applied. It states StateEnabled when the carrier is configured enough
+	// to run, StateDisabled with a reason when the section is wholly unset, and
+	// returns an error when the section is half-configured or holds a value the
+	// carrier cannot run on. Half-configured means some of the items that make
+	// up a usable carrier are present and others are missing; an error names
+	// what is wrong, and the startup fails with it.
 	Stance func(cfg *C) (core.Enablement, error)
 	// Secrets returns the values this carrier holds that have to be registered as
 	// literal redaction rules, so a credential that turns up in any log line of
@@ -77,13 +92,9 @@ func NewModule[C any](spec Spec[C]) core.Module {
 		// messages to whichever one resolution happened to leave standing, and two
 		// at once therefore fail the startup instead.
 		Provides:  []core.Provision{{Token: (*Sender)(nil), Exclusive: true}},
-		Resources: []any{spec.schema()},
+		Resources: spec.resources(),
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
-			cfg, err := spec.read(reg)
-			if err != nil {
-				return core.Enablement{}, err
-			}
-			return spec.Stance(cfg)
+			return spec.stanceFor(reg)
 		},
 		New: func(ctx context.Context, reg *core.Registry) (any, error) {
 			cfg, err := spec.read(reg)
@@ -92,6 +103,13 @@ func NewModule[C any](spec Spec[C]) core.Module {
 			}
 			if err := spec.registerSecrets(reg, cfg); err != nil {
 				return nil, err
+			}
+			// The logging capability is optional and already ordered ahead when it
+			// exists; injecting its logger lets a carrier that writes to the log by
+			// design — the fallback carrier — reach the configured destination
+			// instead of the process default.
+			if delivered, err := core.Resolve[log.Logger](reg); err == nil {
+				ctx = log.WithLogger(ctx, delivered.Named(spec.ModuleName))
 			}
 			return spec.Open(ctx, cfg)
 		},
@@ -105,6 +123,9 @@ func (s Spec[C]) check() {
 	switch {
 	case s.ModuleName == "":
 		panic("mail: a Spec carries the module name this carrier registers under")
+	case s.CarrierName == "":
+		panic(fmt.Sprintf("mail: module %q gives no carrier name, and mail.carrier selects a carrier by "+
+			"that name", s.ModuleName))
 	case s.ConfigNamespace == "":
 		panic(fmt.Sprintf("mail: module %q gives no configuration namespace, and its input items have "+
 			"to hang under one of its own: carriers sharing a namespace conflict as soon as a host "+
@@ -119,6 +140,16 @@ func (s Spec[C]) check() {
 	case s.Open == nil:
 		panic(fmt.Sprintf("mail: module %q gives no constructor, so nothing reaches its carrier", s.ModuleName))
 	}
+}
+
+// resources is what this carrier declares: its own input items, its selection
+// name, and — on the one carrier that does — the selection item itself.
+func (s Spec[C]) resources() []any {
+	declared := []any{s.schema(), CarrierName{Name: s.CarrierName}}
+	if s.DeclaresSelection {
+		declared = append(declared, SelectionSchema())
+	}
+	return declared
 }
 
 // schema is this carrier's input-item declaration, mounted under its own

@@ -24,6 +24,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
+	smssend "github.com/vislake/speed/pkg/sms"
 )
 
 // ModuleName is this module's name in the registry. A host writes it into the
@@ -71,7 +72,14 @@ func Module() core.Module {
 		},
 		Provides: []core.Provision{{Token: (*authn.Factor)(nil)}},
 
-		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
+		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
+			off, reason, err := smssend.OffBySelection(reg)
+			if err != nil {
+				return core.Enablement{}, fmt.Errorf("%s: reading the SMS carrier selection: %w", ModuleName, err)
+			}
+			if off {
+				return core.Enablement{State: core.StateDisabled, Reason: reason}, nil
+			}
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
 

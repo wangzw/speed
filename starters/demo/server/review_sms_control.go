@@ -32,6 +32,7 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/sms"
+	smslog "github.com/vislake/speed/pkg/sms/log"
 )
 
 // reviewSMSControlModuleName is the module name of the review-only control. The
@@ -86,9 +87,9 @@ func reviewSMSControlModule() core.Module {
 			if err != nil {
 				return fmt.Errorf("%s: taking up the review carrier: %w", reviewSMSControlModuleName, err)
 			}
-			carrier, ok := provider.(*reviewSender)
+			carrier, ok := provider.(smslog.Reviewer)
 			if !ok {
-				return fmt.Errorf("%s: the mounted SMS provider is %T, not the review carrier",
+				return fmt.Errorf("%s: the mounted SMS provider is %T, not the log carrier",
 					reviewSMSControlModuleName, provider)
 			}
 			router, err := core.Resolve[speedhttp.Router](reg)
@@ -109,7 +110,7 @@ func reviewSMSControlModule() core.Module {
 // reviewVerdictHandler moves one code's verdict through the carrier's Review
 // control. A body it cannot read, or a state the carrier does not accept, is a
 // 400; a verdict that landed is a 204 with no body.
-func reviewVerdictHandler(carrier *reviewSender) gin.HandlerFunc {
+func reviewVerdictHandler(carrier smslog.Reviewer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var in reviewVerdictRequest
 		if err := c.ShouldBindJSON(&in); err != nil {

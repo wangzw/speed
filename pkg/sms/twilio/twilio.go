@@ -79,6 +79,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 func Module() core.Module {
 	return sms.NewModule(sms.Spec[moduleConfig]{
 		ModuleName:      ModuleName,
+		CarrierName:     carrierName,
 		ConfigNamespace: ConfigNamespace,
 		Config:          &configDefaults,
 		Items:           items(),
@@ -88,11 +89,38 @@ func Module() core.Module {
 	})
 }
 
-// stance states that the module runs once its configuration is sound: a carrier
-// named on a command tree is taken as running. The items it cannot run without
-// are declared required, so the loader has already refused a section that omits
-// one before this is reached.
-func stance(_ *moduleConfig) (core.Enablement, error) {
+// stance judges whether this carrier is configured to run, without consulting
+// sms.carrier. A section with none of the account, the sending identity and the
+// credential set is unconfigured and stands down; a section with some of them
+// set is half-configured and is an error naming the missing items. The identity
+// list's own consistency is checked in resolve once the section is complete.
+func stance(cfg *moduleConfig) (core.Enablement, error) {
+	if cfg.AccountSID == "" && cfg.AuthToken == "" && cfg.DefaultIdentity == "" && len(cfg.Identities) == 0 {
+		return core.Enablement{
+			State:  core.StateDisabled,
+			Reason: ModuleName + " has no configuration: no account, sending identity or credential",
+		}, nil
+	}
+	var missing []string
+	if cfg.AccountSID == "" {
+		missing = append(missing, accountSIDItem)
+	}
+	if cfg.AuthToken == "" {
+		missing = append(missing, authTokenItem)
+	}
+	if len(cfg.Identities) == 0 {
+		missing = append(missing, identitiesItem)
+	}
+	if cfg.DefaultIdentity == "" {
+		missing = append(missing, defaultIdentityItem)
+	}
+	if len(missing) > 0 {
+		return core.Enablement{}, fmt.Errorf("%w: %s is partially configured; %s missing",
+			sms.ErrInvalidConfig, ConfigNamespace, strings.Join(missing, ", "))
+	}
+	if _, err := cfg.resolve(); err != nil {
+		return core.Enablement{}, err
+	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 

@@ -27,6 +27,7 @@ func validSpec() Spec[stubConfig] {
 	prototype := stubConfig{}
 	return Spec[stubConfig]{
 		ModuleName:      stubName,
+		CarrierName:     "stub",
 		ConfigNamespace: stubName,
 		Config:          &prototype,
 		Stance: func(*stubConfig) (core.Enablement, error) {
@@ -46,11 +47,12 @@ func TestNewModulePanicsOnADefectiveSpec(t *testing.T) {
 		blank    func(*Spec[stubConfig])
 		mentions string
 	}{
-		"no module name": {func(s *Spec[stubConfig]) { s.ModuleName = "" }, "carries the module name"},
-		"no namespace":   {func(s *Spec[stubConfig]) { s.ConfigNamespace = "" }, "no configuration namespace"},
-		"no config":      {func(s *Spec[stubConfig]) { s.Config = nil }, "no configuration prototype"},
-		"no stance":      {func(s *Spec[stubConfig]) { s.Stance = nil }, "no stance"},
-		"no open":        {func(s *Spec[stubConfig]) { s.Open = nil }, "no constructor"},
+		"no module name":  {func(s *Spec[stubConfig]) { s.ModuleName = "" }, "carries the module name"},
+		"no carrier name": {func(s *Spec[stubConfig]) { s.CarrierName = "" }, "no carrier name"},
+		"no namespace":    {func(s *Spec[stubConfig]) { s.ConfigNamespace = "" }, "no configuration namespace"},
+		"no config":       {func(s *Spec[stubConfig]) { s.Config = nil }, "no configuration prototype"},
+		"no stance":       {func(s *Spec[stubConfig]) { s.Stance = nil }, "no stance"},
+		"no open":         {func(s *Spec[stubConfig]) { s.Open = nil }, "no constructor"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -81,8 +83,8 @@ func TestTheDescriptorClaimsTheSenderExclusively(t *testing.T) {
 	if r := m.Requires[0]; r.Token != core.Token((*log.Logger)(nil)) || !r.Optional {
 		t.Errorf("Requires[0] = %+v, want an optional logging capability", r)
 	}
-	if len(m.Resources) != 1 {
-		t.Errorf("Resources = %v, want the one input-item schema", m.Resources)
+	if len(m.Resources) != 2 {
+		t.Errorf("Resources = %v, want the input-item schema and the carrier name", m.Resources)
 	}
 }
 

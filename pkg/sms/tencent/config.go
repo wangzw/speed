@@ -59,24 +59,19 @@ func (c moduleConfig) resolve() resolved {
 func items() map[string]config.Item {
 	return map[string]config.Item{
 		secretIDItem: {
-			Required:    true,
 			Description: "the identifier of the credential the requests are signed with",
 		},
 		secretKeyItem: {
-			Required:    true,
 			Sensitive:   true,
 			Description: "the secret of the credential the requests are signed with",
 		},
 		sdkAppIDItem: {
-			Required:    true,
 			Description: "the carrier application the messages are sent as",
 		},
 		regionItem: {
-			Required:    true,
 			Description: "the carrier region the requests are signed for, such as ap-guangzhou",
 		},
 		signNameItem: {
-			Required:    true,
 			Description: "the approved signature the messages are sent under",
 		},
 	}

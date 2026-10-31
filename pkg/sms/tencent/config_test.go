@@ -7,6 +7,7 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/internal/configtest"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // section renders this module's section out of the given override of the items.
@@ -49,6 +50,9 @@ func readBody(t *testing.T, document string) (resolved, error) {
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
 		return resolved{}, err
 	}
+	if _, err := stance(&cfg); err != nil {
+		return resolved{}, err
+	}
 	return cfg.resolve(), nil
 }
 
@@ -65,12 +69,13 @@ func TestACompleteSectionResolves(t *testing.T) {
 	}
 }
 
-// Each item is required: a section that leaves one out fails the load.
+// Each item is required by the stance: a section that leaves one out while the
+// rest are set is half-configured and fails the startup.
 func TestEachItemIsRequired(t *testing.T) {
 	for _, item := range []string{"secret-id", "secret-key", "sdk-app-id", "region", "sign-name"} {
 		t.Run(item, func(t *testing.T) {
 			_, err := readBody(t, body(t, section(map[string]any{item: nil})))
-			if !errors.Is(err, config.ErrMissingRequired) {
+			if !errors.Is(err, sms.ErrInvalidConfig) {
 				t.Fatalf("a section with no %s was accepted: %v", item, err)
 			}
 		})
@@ -91,8 +96,8 @@ func TestTheSchemaDeclaresTheSensitiveItems(t *testing.T) {
 		t.Error("the sign name, which is public, is declared sensitive")
 	}
 	for _, item := range []string{secretIDItem, secretKeyItem, sdkAppIDItem, regionItem, signNameItem} {
-		if !s.Items[item].Required {
-			t.Errorf("the item %q is not declared required", item)
+		if s.Items[item].Required {
+			t.Errorf("the item %q is declared required; the stance judges an unconfigured carrier instead", item)
 		}
 	}
 }

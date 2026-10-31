@@ -131,6 +131,13 @@ func Module() core.Module {
 		Resources: []any{schema(), settingsSchema(), db.Migrations{FS: migrationsFS}},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
+			off, reason, err := sms.OffBySelection(reg)
+			if err != nil {
+				return core.Enablement{}, fmt.Errorf("%s: reading the SMS carrier selection: %w", ModuleName, err)
+			}
+			if off {
+				return core.Enablement{State: core.StateDisabled, Reason: reason}, nil
+			}
 			reader, err := readerOf(reg)
 			if err != nil {
 				return core.Enablement{}, err

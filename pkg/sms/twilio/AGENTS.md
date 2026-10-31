@@ -11,6 +11,18 @@ carrier has no per-template review, and removes content. A host writes this
 module's name into a command; it declares both seams exclusively, so a command
 names exactly one carrier and two at once fail in resolution.
 
+## Selection
+
+`sms.carrier: twilio` selects this carrier; another name, or `none`, stands it
+down with a reason, and a name no compiled carrier answers to is an error. With
+no selection, `account-sid`, `auth-token`, `identities` and `default-identity`
+all empty or absent is unconfigured and it stands down; some present and some
+missing is half-configured and `Prepare` fails naming the missing items; all
+present is configured and it runs. The two base URLs have defaults and are not
+identity items. Two configured carriers with no selection is an exclusive
+violation naming both modules. The log carrier is the fallback and runs only
+when this carrier, or any other configured carrier, did not.
+
 The carrier holds no template set of its own: which template a message goes out
 under is decided by the template registry, and `Send` is handed a `sms.Resolved`
 that already carries the content SID and the ordered values. The management seam
@@ -128,5 +140,5 @@ The cases need no real credentials: a case builds the sender with both access
 points on loopback `httptest` servers and drives `Send`, `Offer`, `Approval` and
 `Retire` through them, so the request shapes, the rewriting, the language
 derivation and the classification are held against the real SDK.
-`config_test.go` drives the real configuration loader for the required items,
+`config_test.go` drives the real configuration loader for the identity items and their unconfigured or half-configured stance,
 and `assembly_test.go` drives a real registry through the descriptor to `Init`.

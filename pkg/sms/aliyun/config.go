@@ -71,11 +71,9 @@ func (c moduleConfig) resolve() resolved {
 func items() map[string]config.Item {
 	return map[string]config.Item{
 		accessKeyIDItem: {
-			Required:    true,
 			Description: "the Aliyun access key identifier the sender signs its calls with",
 		},
 		accessKeyValueItem: {
-			Required:    true,
 			Sensitive:   true,
 			Description: "the Aliyun access key secret the sender signs its calls with",
 		},
@@ -83,7 +81,6 @@ func items() map[string]config.Item {
 			Description: "the Aliyun Dysmsapi access point to send through",
 		},
 		signNameItem: {
-			Required:    true,
 			Description: "the approved SMS signature every message is sent under",
 		},
 	}

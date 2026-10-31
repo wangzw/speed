@@ -16,6 +16,18 @@ build.
 The API is the package's godoc, and the `mail.Message`, `mail.Receipt` and
 sending sentinels in `pkg/mail`.
 
+## Selection
+
+`mail.carrier: smtp` selects this carrier; any other name, or `none`, stands it
+down with a reason, and a name no compiled carrier answers to is an error. With
+no selection its own section decides: `host`, `from` and the credential all
+empty is unconfigured and the carrier stands down; some present and some missing
+is half-configured and `Prepare` fails naming the missing items; both `host` and
+`from` present is configured and it runs. Two configured carriers with no
+selection is an exclusive violation naming both modules. The log carrier is the
+fallback and runs only when this carrier, or any other configured carrier, did
+not.
+
 ## Boundaries
 
 - **The three connection postures are `starttls` (default), `implicit` and
