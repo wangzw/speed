@@ -586,11 +586,37 @@ describe('SessionsSection', () => {
     mountSection(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.sessions.revokeOthers.label,
-      }),
-    )
+    const bulk = await screen.findByRole('button', {
+      name: zhCN.sessions.revokeOthers.label,
+    })
+    // The bulk control is a block-level action like the other sections'
+    // header actions: small, and painted with the same danger color the
+    // row-level sign-out glyph carries.
+    expect(bulk).toHaveClass('MuiButton-sizeSmall')
+    const rowRevoke = screen
+      .getAllByRole('button')
+      .find((button) => button.className.includes('MuiIconButton-root'))
+    expect(rowRevoke).toBeDefined()
+    // MUI paints the outlined bulk control through a CSS variable chain;
+    // resolve it to compare the literal color the glyph carries.
+    let bulkColor = getComputedStyle(bulk).color
+    for (let depth = 0; depth < 5 && bulkColor.startsWith('var('); depth += 1) {
+      const name = bulkColor.slice(4, -1).trim()
+      bulkColor = getComputedStyle(bulk).getPropertyValue(name).trim()
+    }
+    // The variable chain ends in a hex token while the glyph's computed
+    // color is rgb(...); compare the same color in one notation.
+    const toRgb = (value: string): string => {
+      const hex = /^#([0-9a-f]{6})$/i.exec(value.trim())
+      if (hex === null) {
+        return value
+      }
+      const n = Number.parseInt(hex[1] ?? '', 16)
+      return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
+    }
+    expect(getComputedStyle(rowRevoke as Element).color).toBe(toRgb(bulkColor))
+
+    await user.click(bulk)
     const dialog = await screen.findByRole('dialog')
     // Signing out other devices is recoverable, so it carries the single
     // confirming click -- not the heavier two-step arm an irreversible

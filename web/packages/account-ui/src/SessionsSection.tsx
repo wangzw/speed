@@ -278,6 +278,7 @@ export function SessionsSection() {
             <Button
               variant="outlined"
               color="error"
+              size="small"
               disabled={busy}
               onClick={() => setOthersConfirmOpen(true)}
             >
@@ -432,7 +433,7 @@ export function SessionsSection() {
                                 void handleRevokeSession(id, deviceLabel)
                               }
                             }}
-                            sx={{ color: 'text.secondary' }}
+                            sx={{ color: 'error.main' }}
                           >
                             {revokingId === id ? (
                               <CircularProgress
