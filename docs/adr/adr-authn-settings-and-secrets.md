@@ -128,6 +128,7 @@ authn 的各模块在 `Requires` 里对设置写必需，所有退避、时长�
 **其余可运行期改动的安全项。**
 
 - 退避、短信预算、`allowed-prefixes`、`disabled-methods` 与放宽开关这类可运行期改动的安全项放设置。authn 订阅 `settings.changed`，改到更宽松的取值时写一行 Warn，并经审计接缝记一条尽力档记录 `authn.settings.relaxed`；记录只含键名与方向，不含值。
+- `authn.login.disabled-methods` 可关闭的方法集合排除 `password`。写入时由设置的取值域拒绝含 `password` 的取值；库中原生值含 `password` 时，读取侧把它过滤掉（口令方式照常可用）并记 Error。理由见 [ADR-authn-password-method-required](adr-authn-password-method-required.md)。
 - 需要立刻生效的安全变更（撤销）不走设置，走 db 的撤销面（[ADR-authn-state-placement](adr-authn-state-placement.md)）。
 - `AGENTS.md` 写入硬要求：`authn.*` 与 `tenant.admission.*` 的设置不得对租户或普通管理员开放写权限。
 

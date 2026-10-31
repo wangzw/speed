@@ -369,7 +369,7 @@ graph TD
 
 ### 破坏性动作的确认
 
-会移除或作废既有数据的写入在发出前经 ui-kit 的确认对话框确认：控件的点击只打开对话框，写入在确认点击时发出，未确认即不发出请求。对话框一律用 `ConfirmDialog` 的 `variant="danger"`；确认的**轻重**随动作是否可逆而分：一个连同其从属记录一并销毁、界面上无从恢复的删除（删除账户、删除角色）额外带 `doubleConfirm` 两步守卫，第一次点击只把按钮改题为「再次点击确认」，第二次才发出；其余的可恢复的移除与撤销（移除成员、移除短信模板、撤销会话、撤销账户全部会话、撤销服务密钥、移除登录标识、重置 MFA、撤销邀请、移除 SSO 域名、移除设置项、删除 SSO 提供方）用单次确认点击——可恢复的动作不该比不可逆的更重。撤销会话与撤销账户全部会话的目标含调用方自己的当前会话时（会话行带 `current` 标记，或所选账户的列表里有 `current` 为真的行），该行显示「当前会话」标记，确认文案说明撤销之后调用方自己也退出登录；标记取自会话读返回的 `current`，不取自前端对会话标识的比对，因为会话快照不携带会话标识。撤销落定之后调用方的下一次读被拒，由会话结束的既有处理接管，页面不另做处理。不改变既有数据的写入直接发出，不经确认；这些是名册登记与改名、设置写值、授权的授予与撤销、绑定与解绑、模板登记与提交审核、开关与冒充终止。
+会移除或作废既有数据的写入在发出前经 ui-kit 的确认对话框确认：控件的点击只打开对话框，写入在确认点击时发出，未确认即不发出请求。对话框一律用 `ConfirmDialog` 的 `variant="danger"`；确认的**轻重**随动作是否可逆而分：一个连同其从属记录一并销毁、界面上无从恢复的删除（删除账户、删除角色）额外带 `doubleConfirm` 两步守卫，第一次点击只把按钮改题为「再次点击确认」，第二次才发出；其余的可恢复的移除与撤销（移除成员、移除短信模板、撤销会话、撤销账户全部会话、撤销服务密钥、移除登录标识、重置 MFA、撤销邀请、移除 SSO 域名、移除设置项、删除 SSO 提供方）用单次确认点击——可恢复的动作不该比不可逆的更重。移除登录标识的确认与执行针对邮箱与手机；用户名行不渲染移除动作，按用户名发起的移除只可能来自直接请求，由服务端以 409 `authn.username_immutable` 拒绝，页面渲染该码文本。撤销会话与撤销账户全部会话的目标含调用方自己的当前会话时（会话行带 `current` 标记，或所选账户的列表里有 `current` 为真的行），该行显示「当前会话」标记，确认文案说明撤销之后调用方自己也退出登录；标记取自会话读返回的 `current`，不取自前端对会话标识的比对，因为会话快照不携带会话标识。撤销落定之后调用方的下一次读被拒，由会话结束的既有处理接管，页面不另做处理。不改变既有数据的写入直接发出，不经确认；这些是名册登记与改名、设置写值、授权的授予与撤销、绑定与解绑、模板登记与提交审核、开关与冒充终止。
 
 ### 内建角色只读
 
@@ -493,7 +493,8 @@ graph TD
 | 写入被拒，裸 HTTP 403 | 渲染权限不足文案，不渲染状态码叶子 |
 | 写入被拒，未被步进拦截的裸 401 | 渲染会话已结束文案，不渲染状态码叶子 |
 | 冒充发起或管理员重置因素、口令被 403 `authn.factor_not_seasoned` 拒绝 | 渲染需要已启用满规定时长的非短信因素的说明，不开步进对话框 |
-| 管理员重置口令或删除账户的最后一个用户名/邮箱登录名被 409 `authn.login_identifier_required` 拒绝 | 一条横幅渲染该码文本，说明账号需要至少一个登录名；账户状态不变 |
+| 管理员重置口令或删除账户的最后一个被选作登录方式的邮箱登录名被 409 `authn.login_identifier_required` 拒绝 | 一条横幅渲染该码文本，说明账号需要至少一个登录名；账户状态不变 |
+| 按用户名移除登录标识被 409 `authn.username_immutable` 拒绝（界面不渲染用户名的移除动作，正常路径不发出该请求） | 白名单含该码；一条横幅渲染该码文本，说明用户名不可移除；账户状态不变 |
 | 账户创建或标识添加被 409 `authn.email_taken` 拒绝 | 一条横幅渲染该码文本，点明邮箱地址已被另一个账户注册；输入保留，操作者改地址后可重试 |
 | 创建用户账户被拒绝为用户名相关的问题码（409 `authn.username_taken`、400 `authn.username_reserved`、400 `authn.username_invalid`） | 用户名字段渲染 `accounts.create.usernameTaken` / `usernameReserved` / `usernameInvalid`（`aria-invalid`），焦点移到该字段，输入保留；服务账户没有用户名，不受这条约束 |
 | 详情面板内有写入在途时收到关闭请求 | 面板 `busy`，不上报 `onClose` |
@@ -545,6 +546,7 @@ graph TD
 | 写入失败的裸 403 与裸 401 文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `useConsoleUiErrorText`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | `authn.factor_not_seasoned` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | `authn.login_identifier_required` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
+| `authn.username_immutable` 的失败文案（用户名行不渲染移除动作，错误文案说明用户名不可移除） | 未实现 | |
 | `authn.email_taken` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | `authn.contact_required` 的失败文案（未验证账户的管理写，指向账户页的验证节） | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/{zh-CN,en-US}.json` `errors.authn.contact_required` |
 | 写入在途时改变上下文的控件禁用 | 已实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`anyPending`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage` |

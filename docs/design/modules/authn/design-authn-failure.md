@@ -239,8 +239,9 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrInvalidIdentifier`（用户名） | 用户名的规范化失败：形状不合、以 `static.` 起头或为 UUID 形状 | 400 `username-invalid` |
 | `ErrUsernameReserved` | 用户名落在保留用户名集合里（内置清单与 `authn.account.reserved-usernames` 的并集） | 400 `username-reserved` |
 | `ErrInvalidArgument` | 写入的值越过调用允许的域：属性集越界、显示名过长、`via` 不在 `Verification` 接受的形式内、`reason` 不在 `ReasonClass` 闭集 | 管理路由 400 `bad-request`；模块在自己写下的值（会话载荷的 `idp.*` 属性）上遇到它是自身的缺陷，503 |
-| `ErrFactorLimit`、`ErrIdentifierRequired` | 某种因素已达 `max-per-kind`；账户没有用户名也没有选作登录方式的已验证邮箱而要设口令，或带口令凭据的账户删除最后一个这样的登录名（`DELETE /auth/identifiers/:id`） | 409 `conflict`、409 `login-identifier-required` |
-| `ErrAccountUnavailable`、`ErrMethodDisabled` | 账户不可用：外部登录路径上账户停用，或要求状态、凭据行或标识行的写入发现它不满足；方法被 `disabled-methods` 关掉 | 外部登录 403 `account-unavailable`；匿名口令重置 403 `password-reset-unavailable`；403 `method-disabled` |
+| `ErrFactorLimit`、`ErrIdentifierRequired` | 某种因素已达 `max-per-kind`；账户没有用户名也没有选作登录方式的已验证邮箱而要设口令，或带口令凭据的账户删除最后一个被选作登录方式的已验证邮箱（`DELETE /auth/identifiers/:id`） | 409 `conflict`、409 `login-identifier-required` |
+| `ErrUsernameImmutable` | 用户名一经写入不可删除、不可更换，删除用户名标识被拒；账户整体删除不受此限（[ADR-authn-username-permanent](../../../adr/adr-authn-username-permanent.md)） | 409 `username-immutable` |
+| `ErrAccountUnavailable`、`ErrMethodDisabled` | 账户不可用：外部登录路径上账户停用，或要求状态、凭据行或标识行的写入发现它不满足；方法被 `disabled-methods` 关掉（口令方式不在可关闭集合内） | 外部登录 403 `account-unavailable`；匿名口令重置 403 `password-reset-unavailable`；403 `method-disabled` |
 | `ErrCleanupIncomplete` | 账户状态或服务密钥状态已生效而某个 `AccountLifecycle` 钩子失败（重试同一调用幂等地补完） | 503 |
 | `ErrSessionRevoked` | `Sessions.ForCredential` 遇到已撤销的 service 会话行 | 拒绝换令牌；令牌端点的 `error` 取值见 [design-authn-token](design-authn-token.md) |
 | `ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`） | 退避中；自助注册的按用户名退避（`ThrottleScope` 的 `signup-username`）、来源地址分钟预算或全局小时预算生效 | 429 `throttled`，带 `Retry-After`；令牌端点是 401 `invalid_client` 并带 `Retry-After`；Basic 路径是 `Denied` |
@@ -398,3 +399,4 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 未验证账户的 `contact-required` 运行时映射（要求已验证邮箱的门控） | 已实现 | `pkg/authn/login/start.go` `startAuthenticated`；`pkg/authn/invite/pipeline.go` `gateSignup`；`pkg/authn/admin/pipeline.go` `gateSignup`；`pkg/authn/impersonation/start.go` `checkSignup` |
 | 人机验证的问题码 `human-verification-required` 与运行时映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodeHumanVerificationRequired`、`statusOf`、`Forbidden`；`pkg/authn/login/routes.go` `(*routes).fail`；`pkg/authn/login/internal/selfservice/call.go` `(*routes).fail` |
 | 匿名口令重置的问题码 `password-reset-closed`、`password-reset-unavailable` 与运行时映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodePasswordResetClosed`、`CodePasswordResetUnavailable`；`pkg/authn/login/reset.go` `(*routes).resetOpen`、`passwordResetStart`、`passwordResetCurrent`、`passwordResetVerify`、`passwordResetComplete`；`pkg/authn/internal/mount/problem_test.go`；`pkg/authn/login/reset_test.go` |
+| 删除用户名标识的 `ErrUsernameImmutable` 与 409 `username-immutable` 映射 | 未实现 | — |

@@ -240,7 +240,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.login.call-budget` | `time.Duration` | `10s` | 1s 到 60s | | |
 | `authn.login.default-return-to` | 字符串 | `/` | 按 `return_to` 的规则校验 | | |
 | `authn.login.callback-error-return-to` | 字符串 | `/` | 按 `return_to` 的规则校验 | | |
-| `authn.login.disabled-methods` | 字符串，JSON 数组 | `[]` | 登录方式名的数组 | | 移除成员 |
+| `authn.login.disabled-methods` | 字符串，JSON 数组 | `[]` | 登录方式名的数组，且不含 `password`；空串与 `[]` 在域内 | | 移除成员 |
 | `authn.login.delivery-modes` | 字符串，JSON 数组 | `["session","token"]` | 缺省集合的子集 | | 加入成员 |
 | `authn.login.ip-limit` | 整数 | `60` | 0 到 10000，每分钟；0 关闭 | | 改小或改为 0 |
 | `authn.login.password-reset` | 字符串 | `closed` | `closed` 或 `open` | | 改为 `open` |
@@ -279,7 +279,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 
 补充：
 
-- `authn.login.disabled-methods` 在运行期关闭一个登录方式，例如遭遇短信轰炸时关 `sms`；`authn.login.ip-limit` 的缺省值与取值理由见 [design-authn-login](design-authn-login.md)。
+- `authn.login.disabled-methods` 在运行期关闭一个登录方式，例如遭遇短信轰炸时关 `sms`；口令方式不可关闭，写入含 `password` 的取值被取值域拒绝，库里原生含 `password` 的取值在读取侧被过滤掉，见[读取设置的方向](#读取设置的方向)（[ADR-authn-password-method-required](../../../adr/adr-authn-password-method-required.md)）。`tenant.admission.require-sso`、`authn.account.password-signup` 与 `authn.login.password-reset` 都不关闭口令登录方式：前者是租户准入要求，后两者分别是注册开关与匿名重置开关，装配了口令模块的部署在它们的任一取值下仍可以口令登录。`authn.login.ip-limit` 的缺省值与取值理由见 [design-authn-login](design-authn-login.md)。
 - `authn.sms.global-hourly-*` 按用途分设：登录的预算耗尽不挤占已通过口令的第二因素与因素登记。全局维度只计未抑制的行，抑制行不消耗它，理由与其余维度的口径见 [design-authn-sms](design-authn-sms.md)。
 - `authn.sms.per-account-hourly` 只对 `mfa` 与 `enroll` 用途计数。
 - `authn.sms.per-source-hourly` 与 `per-source-daily` 按发送请求的来源地址计数，跨用途累计，窗口分别是滚动一小时与滚动一日；地址先经 `netip.ParseAddr` 规范化再取摘要。`SendCode.Source` 为空（调用方没有可信来源）时不施加这两个维度，见 [design-authn-sms](design-authn-sms.md)。
@@ -483,7 +483,7 @@ flowchart TD
     K -- 否 --> F["取声明默认值并记 Error"]
 ```
 
-强制类开关读不出来按拒绝：它们的声明默认值是「不强制」「不关闭」，回落到默认值就等于放行。强制类开关是封闭集合：`tenant.admission.require-mfa`、`tenant.admission.require-sso`、`authn.login.disabled-methods`、`authn.mfa.global-required`。其余设置项属调参类，读不出来取声明默认值并记 `Error`：超时、预算与次数类回落到默认值只是用了起点。**第三类是决定写出产物的写路径设置**（当前为 `authn.account.password-algorithm`）：它读不出来，或取值越出取值域时，不替换为默认值，而令这次写失败——登记账户与改口令答不可用，登录后的再哈希跳过并记 `Error`。键没有任何声明覆盖时按声明默认值写出并记一行 `Error`，这是本模块自身 schema 的缺陷，不令写失败。回落到另一个值会让宿主以为选定的值在生效，而实际写下的产物用了别的值。请求期的读取走内存快照；读取本身只在未知键、类型不符这类编程错误时出错，域外的行由各读取分支按上表处置并记 `Error`。因此 `Error` 日志多半指向代码缺陷，域外的行则指向一次绕过写入面的写入。
+强制类开关读不出来按拒绝：它们的声明默认值是「不强制」「不关闭」，回落到默认值就等于放行。强制类开关是封闭集合：`tenant.admission.require-mfa`、`tenant.admission.require-sso`、`authn.login.disabled-methods`、`authn.mfa.global-required`。`authn.login.disabled-methods` 另有两条读取规则：空串与 `[]` 都在取值域内，读作没有关闭任何方式；库里的原生值含 `password` 时，读取侧把 `password` 过滤掉、口令方式照常可用，并记一行 `Error`。其余设置项属调参类，读不出来取声明默认值并记 `Error`：超时、预算与次数类回落到默认值只是用了起点。**第三类是决定写出产物的写路径设置**（当前为 `authn.account.password-algorithm`）：它读不出来，或取值越出取值域时，不替换为默认值，而令这次写失败——登记账户与改口令答不可用，登录后的再哈希跳过并记 `Error`。键没有任何声明覆盖时按声明默认值写出并记一行 `Error`，这是本模块自身 schema 的缺陷，不令写失败。回落到另一个值会让宿主以为选定的值在生效，而实际写下的产物用了别的值。请求期的读取走内存快照；读取本身只在未知键、类型不符这类编程错误时出错，域外的行由各读取分支按上表处置并记 `Error`。因此 `Error` 日志多半指向代码缺陷，域外的行则指向一次绕过写入面的写入。
 
 设置缺席是合法的装配，不是读取出错：缺席时全部取声明默认值，不记 `Error`，也不按拒绝。
 
@@ -624,3 +624,4 @@ flowchart TD
 | 邮箱验证码的按地址、按账户、按来源与全局预算的设置项 | 已实现 | `pkg/authn/login/config.go` `emailPerAddressHourlyKey`、`emailPerAddressDailyKey`、`emailPerAccountHourlyKey`、`emailPerAccountDailyKey`、`emailPerSourceHourlyKey`、`emailPerSourceDailyKey`、`emailGlobalHourlyKey`、`settingsSchema`、`emailPerAddressHourlyInDomain`、`emailPerAddressDailyInDomain`、`emailPerAccountHourlyInDomain`、`emailPerAccountDailyInDomain`、`emailPerSourceHourlyInDomain`、`emailPerSourceDailyInDomain`、`emailGlobalHourlyInDomain`、`defaults`；读取与计数落点 `pkg/authn/login/internal/selfservice/settings.go` `(*counts).get`、`pkg/authn/login/internal/selfservice/addidentifier.go` `(*routes).reserveEmailBudgets`、`refundEmailBudgets`、`untilNextEmailBucket` |
 | `authn.account.signup-concurrency` 配置项 | 已实现 | `pkg/authn/account/config.go` `signupConcurrencyItem`、`configDefaults`、`(moduleConfig).resolve`；`pkg/authn/account/account.go` `newProduct`（`signupGov`） |
 | `authn.login.password-reset`、`authn.login.password-reset-ticket-ttl` 与 `authn.sms.global-hourly-reset` 的设置项与放宽监视 | 已实现 | 声明与读取 `pkg/authn/login/config.go` `passwordResetKey`、`passwordResetTicketTTLKey`、`(*reader).passwordReset`、`(*reader).passwordResetTicketTTL`；`pkg/authn/sms/settings.go` `globalResetKey`、`GlobalReset`、`(*reader).globalHourly`；放宽方向 `pkg/authn/login/relax.go` `passwordResetPath`、`passwordResetTicketTTLPath`、`pkg/authn/sms/relax.go` `globalResetPath`；`pkg/authn/login/relax_test.go`、`pkg/authn/sms/settings_test.go` |
+| `authn.login.disabled-methods` 的取值域排除 `password`；空串与 `[]` 在域内；读取侧过滤含 `password` 的原生值 | 未实现 | — |

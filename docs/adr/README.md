@@ -148,8 +148,10 @@
 | [用户档案的自服务面与管理面分立](adr-authn-selfservice-profile.md) |
 | [登录标识的自助添加：用户名直接写，邮箱经验证码证明所有权](adr-authn-selfservice-identifier.md) |
 | [自助注册即建号，账户的邮箱只有已验证与未验证两种状态](adr-authn-signup.md) |
-| [自助注册与首登开户在建号之前取得用户名，用户名须 URL 安全并排除保留用户名](adr-authn-username-required.md) |
-| [口令账户必须保留一个登录名，最后一个登录名不可删除](adr-authn-login-identifier.md) |
+| [每个用户账户在建号之前取得用户名，用户名须 URL 安全并排除保留用户名](adr-authn-username-required.md) |
+| [用户名一经写入不可删除、不可更换](adr-authn-username-permanent.md) |
+| [口令账户必须保留一个登录名，最后一个登录名保护只约束邮箱](adr-authn-login-identifier.md) |
+| [口令登录方式不可被关闭](adr-authn-password-method-required.md) |
 | [邮箱地址的占用由联系方式预留的唯一约束原子仲裁，未验证预占被接受](adr-authn-contact-claim.md) |
 | [回跳失败时把用户代理落回产品，机器码经 URL 片段携带](adr-authn-callback-failure-landing.md) |
 | [人机验证是缺省关闭的发送前闸，机制由部署选定](adr-authn-human-verification.md) |
