@@ -628,9 +628,9 @@ describe('AccountSettingsPage block consistency', () => {
       level: 2,
       name: demoEnUS.account.rows.label.loginWays,
     })
-    // The block title stays on the subtitle1 role, above the row labels
-    // inside it.
-    expect(title).toHaveClass('MuiTypography-subtitle1')
+    // The card title takes the h5 role (20px), not the same subtitle1 size
+    // as the row labels inside it.
+    expect(title).toHaveClass('MuiTypography-h5')
   })
 
   it('paints every security block icon with the same color', async () => {
