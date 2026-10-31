@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -1411,6 +1413,221 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 		t.Errorf("the account holding no role reached the roster with %d, want %d: %s",
 			refused.status, http.StatusForbidden, refused.body)
 	}
+}
+
+// emailSeedSection is the seed section the adoption cases run: the operator is
+// named by an email address and created with a username, the shape the
+// deployment template renders. The address is the entry's configured login name
+// and the username is the second one; the tenant administrator is named by the
+// same address, so the configuration is valid.
+const emailSeedSection = `seed:
+  accounts:
+    - identifier: "operator@demo.example.test"
+      username: "operator"
+      password: "operator-dev-secret"
+      display-name: "Demo Operator"
+      platform-admin: true
+  tenants:
+    - name: demo
+      admins:
+        - operator@demo.example.test`
+
+// takenAddressSeedSection creates the account the adoption entry's address names
+// under a username of its own, so that address is taken while the adoption
+// entry's username is free.
+const takenAddressSeedSection = `seed:
+  accounts:
+    - identifier: "operator@demo.example.test"
+      username: "someone-else"
+      password: "someone-else-secret"
+      display-name: "Someone Else"
+      platform-admin: true`
+
+// The operator's two login names in emailSeedSection.
+const (
+	emailSeedIdentifier = "operator@demo.example.test"
+	emailSeedUsername   = "operator"
+)
+
+// accountCount is how many live accounts the database holds.
+func accountCount(t *testing.T, ctx context.Context, accounts authn.Accounts) int {
+	t.Helper()
+	listed, _, err := accounts.List(ctx, authn.AccountQuery{})
+	if err != nil {
+		t.Fatalf("listing the accounts: %v", err)
+	}
+	return len(listed)
+}
+
+// TestSeedAdoptsAnAccountWhoseEmailIdentifierWasRemoved holds the seed to an
+// account entry that names both an email address and a username, after the
+// holder removes the address from the account page. The address is released and
+// the username remains, so the second run finds the account under its username:
+// it adopts that account, writes the address back to nothing and starts no
+// second account. A run that looked only the address up would try to create the
+// account again, collide with the username's unique constraint and fail the
+// deployment's seed step.
+//
+// The administrator's membership is removed before the second run too, because
+// the line that reconciles it is not the one that adopts the account: an adopted
+// account still gets a missing administrator membership written, which is what
+// keeps the operator administering the deployment after the address is gone.
+func TestSeedAdoptsAnAccountWhoseEmailIdentifierWasRemoved(t *testing.T) {
+	ports := freePorts(t, listenerCount)
+	dsn := filepath.Join(t.TempDir(), "adopt.db")
+	config := writeConfigReplacing(t, ports, dsn, demoSeedSection, emailSeedSection)
+
+	first := runCommand(t, config, "sqlite", seedCommand)
+	if first.err != nil {
+		t.Fatalf("seed failed: %v\n%s", first.err, first.combined())
+	}
+	if want := "seeded: account " + emailSeedIdentifier; !strings.Contains(first.stdout, want) {
+		t.Fatalf("the seed did not create the operator (%q):\n%s", want, first.combined())
+	}
+
+	// The holder removes the address from the account page: the account keeps its
+	// username, and the address no longer names it. The administrator's tenant
+	// membership goes with it, to be restored by the second run.
+	withSeededAccounts(t, dsn, func(ctx context.Context, accounts authn.Accounts,
+		admin authn.AccountAdmin, memberships authn.Memberships,
+	) {
+		id, err := accounts.Lookup(ctx, authn.IdentifierUsername, emailSeedUsername)
+		if err != nil {
+			t.Fatalf("looking up the seeded username: %v", err)
+		}
+		identifiers, err := accounts.Identifiers(ctx, id)
+		if err != nil {
+			t.Fatalf("reading the seeded account's identifiers: %v", err)
+		}
+		removed := false
+		for _, identifier := range identifiers {
+			if identifier.Kind != authn.IdentifierEmail || identifier.Value != emailSeedIdentifier {
+				continue
+			}
+			if removeErr := admin.RemoveIdentifier(ctx, id, identifier.ID); removeErr != nil {
+				t.Fatalf("removing the email identifier: %v", removeErr)
+			}
+			removed = true
+		}
+		if !removed {
+			t.Fatalf("the seeded account holds no %s identifier to remove: %+v", emailSeedIdentifier, identifiers)
+		}
+		if _, lookupErr := accounts.Lookup(ctx, authn.IdentifierEmail, emailSeedIdentifier); !errors.Is(lookupErr, authn.ErrAccountNotFound) {
+			t.Fatalf("the removed address still names an account: %v", lookupErr)
+		}
+		if got := accountCount(t, ctx, accounts); got != 1 {
+			t.Fatalf("the database holds %d account(s) before the second seed, want one", got)
+		}
+		if removeErr := memberships.Remove(ctx, id, demoTenant); removeErr != nil {
+			t.Fatalf("removing the administrator's membership: %v", removeErr)
+		}
+	})
+
+	second := runCommand(t, config, "sqlite", seedCommand)
+	if second.err != nil {
+		t.Fatalf("the seed over the account whose address the holder removed failed: %v\n%s",
+			second.err, second.combined())
+	}
+	if want := "skipped: account " + emailSeedIdentifier + " (exists as " + emailSeedUsername + ")"; !strings.Contains(second.stdout, want) {
+		t.Errorf("the second seed did not report the account it adopted (%q):\n%s", want, second.combined())
+	}
+	if strings.Contains(second.stdout, "seeded: account ") {
+		t.Errorf("the second seed created an account instead of adopting the one under its username:\n%s",
+			second.combined())
+	}
+
+	withSeededAccounts(t, dsn, func(ctx context.Context, accounts authn.Accounts,
+		_ authn.AccountAdmin, memberships authn.Memberships,
+	) {
+		if got := accountCount(t, ctx, accounts); got != 1 {
+			t.Errorf("the second seed left %d account(s), want the one it adopted", got)
+		}
+		id, err := accounts.Lookup(ctx, authn.IdentifierUsername, emailSeedUsername)
+		if err != nil {
+			t.Fatalf("looking up the adopted account: %v", err)
+		}
+		if found, lookupErr := accounts.Lookup(ctx, authn.IdentifierEmail, emailSeedIdentifier); !errors.Is(lookupErr, authn.ErrAccountNotFound) {
+			t.Errorf("the second seed wrote the removed address back (lookup answered %q, %v)", found, lookupErr)
+		}
+		member, err := memberships.IsMember(ctx, id, demoTenant)
+		if err != nil {
+			t.Fatalf("reading the adopted administrator's membership: %v", err)
+		}
+		if !member {
+			t.Errorf("the second seed did not restore the adopted administrator's membership")
+		}
+	})
+}
+
+// TestSeedCreatesAnAccountWhenNeitherLoginNameExists is the regression beside
+// the adoption: an entry whose address and username are both free is created as
+// before, and both names resolve to the one account the run wrote.
+func TestSeedCreatesAnAccountWhenNeitherLoginNameExists(t *testing.T) {
+	ports := freePorts(t, listenerCount)
+	dsn := filepath.Join(t.TempDir(), "create.db")
+	config := writeConfigReplacing(t, ports, dsn, demoSeedSection, emailSeedSection)
+
+	res := runCommand(t, config, "sqlite", seedCommand)
+	if res.err != nil {
+		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+	}
+	if want := "seeded: account " + emailSeedIdentifier; !strings.Contains(res.stdout, want) {
+		t.Errorf("the seed did not create an account whose login names are both free (%q):\n%s",
+			want, res.combined())
+	}
+	withSeededAccounts(t, dsn, func(ctx context.Context, accounts authn.Accounts,
+		_ authn.AccountAdmin, _ authn.Memberships,
+	) {
+		byEmail, emailErr := accounts.Lookup(ctx, authn.IdentifierEmail, emailSeedIdentifier)
+		byUsername, usernameErr := accounts.Lookup(ctx, authn.IdentifierUsername, emailSeedUsername)
+		if emailErr != nil || usernameErr != nil {
+			t.Fatalf("one of the created account's login names does not resolve: address %v, username %v",
+				emailErr, usernameErr)
+		}
+		if byEmail != byUsername {
+			t.Errorf("the address and the username resolve to different accounts: %q and %q", byEmail, byUsername)
+		}
+		if got := accountCount(t, ctx, accounts); got != 1 {
+			t.Errorf("the seed wrote %d account(s), want one", got)
+		}
+	})
+}
+
+// TestSeedSkipsAnEntryWhoseAddressAnotherAccountHolds holds the skip semantics
+// the adoption path sits beside: the configured address already names an
+// account, so the run leaves that account as it stands and does not create a
+// second one under the free username.
+func TestSeedSkipsAnEntryWhoseAddressAnotherAccountHolds(t *testing.T) {
+	ports := freePorts(t, listenerCount)
+	dsn := filepath.Join(t.TempDir(), "address-taken.db")
+	// The first run writes the account holding the operator's address under a
+	// different username.
+	takenConfig := writeConfigReplacing(t, ports, dsn, demoSeedSection, takenAddressSeedSection)
+	if res := runCommand(t, takenConfig, "sqlite", seedCommand); res.err != nil {
+		t.Fatalf("seeding the account that holds the address failed: %v\n%s", res.err, res.combined())
+	}
+	config := writeConfigReplacing(t, ports, dsn, demoSeedSection, emailSeedSection)
+
+	res := runCommand(t, config, "sqlite", seedCommand)
+	if res.err != nil {
+		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+	}
+	if want := "skipped: account " + emailSeedIdentifier + " (exists)"; !strings.Contains(res.stdout, want) {
+		t.Errorf("the seed did not report the account the address names (%q):\n%s", want, res.combined())
+	}
+	if strings.Contains(res.stdout, "seeded: account ") {
+		t.Errorf("the seed created an account for the entry whose address is taken:\n%s", res.combined())
+	}
+	withSeededAccounts(t, dsn, func(ctx context.Context, accounts authn.Accounts,
+		_ authn.AccountAdmin, _ authn.Memberships,
+	) {
+		if got := accountCount(t, ctx, accounts); got != 1 {
+			t.Errorf("the seed left %d accounts, want the one the address names", got)
+		}
+		if id, err := accounts.Lookup(ctx, authn.IdentifierUsername, emailSeedUsername); !errors.Is(err, authn.ErrAccountNotFound) {
+			t.Errorf("the seed created an account under the free username (lookup answered %q, %v)", id, err)
+		}
+	})
 }
 
 // TestSeedBindsTheAdministratorInEveryServedTenant holds the seed's bindings

@@ -250,6 +250,21 @@ func withMemberships(t *testing.T, dsn string,
 	check func(context.Context, authn.Accounts, authn.Memberships),
 ) {
 	t.Helper()
+	withSeededAccounts(t, dsn,
+		func(ctx context.Context, accounts authn.Accounts, _ authn.AccountAdmin, memberships authn.Memberships) {
+			check(ctx, accounts, memberships)
+		})
+}
+
+// withSeededAccounts is withMemberships with the administrative write surface
+// added, for a case that changes the database the way an operator does — the
+// adoption cases remove an identifier from the account page. It opens through
+// the real account module and the real engine, and runs check while the
+// assembly is up.
+func withSeededAccounts(t *testing.T, dsn string,
+	check func(context.Context, authn.Accounts, authn.AccountAdmin, authn.Memberships),
+) {
+	t.Helper()
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"authn":{"account":{}}}`, dsn)
 	reader := authntest.ConfigReaderAll(t, body, sqlite.Module(), authnaccount.Module())
 	reg := core.New()
@@ -265,11 +280,15 @@ func withMemberships(t *testing.T, dsn string,
 			if err != nil {
 				return err
 			}
+			accountAdmin, err := core.Resolve[authn.AccountAdmin](reg)
+			if err != nil {
+				return err
+			}
 			memberships, err := core.Resolve[authn.Memberships](reg)
 			if err != nil {
 				return err
 			}
-			check(ctx, accounts, memberships)
+			check(ctx, accounts, accountAdmin, memberships)
 			return nil
 		},
 	})

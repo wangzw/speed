@@ -477,7 +477,11 @@ func seedModule() core.Module {
 //
 // It is idempotent: an account, a tenant, a membership, a role, a grant or a
 // binding already there is left as it stands and reported as skipped, so the
-// command is safe to run at every deployment. On an existing database it
+// command is safe to run at every deployment. An account entry naming both an
+// email address and a username is found by either: an address the holder removed
+// from the account page leaves the account under its username, and the run
+// adopts that account instead of writing the address back. On an existing
+// database it
 // corrects two things per administration role: it marks the role builtin when an
 // earlier seed wrote the row without the mark, and it adds the declared grants
 // the role does not hold. A membership under seed.members is written only while
@@ -941,14 +945,28 @@ func seedTenantSettings(ctx context.Context, store settings.Store, tenantName st
 	return nil
 }
 
-// seedOneAccount writes one configured account unless its login name is already
-// taken, and answers with the account's identifier. The second result says
-// whether this run created the account: a membership is provisioned with the
-// account and never for one that was already there.
+// seedOneAccount writes one configured account unless it is already there, and
+// answers with the account's identifier. The second result says whether this run
+// created the account: a membership is provisioned with the account and never for
+// one that was already there.
+//
+// An entry that names both an email address and a username names one account by
+// either. The address is the first login name the run looks up, and the username
+// beside it is the second: a holder may remove the address from the account page,
+// which releases it, and the username is what the account keeps. That is a
+// decision a later run preserves — it adopts the account the username names and
+// does not write the address back — rather than a collision that has to fail the
+// deployment. When neither login name is there the account is created, and the
+// same two names are re-read if the create loses the race, so a concurrent run's
+// account is adopted instead of reported as a conflict.
 func seedOneAccount(ctx context.Context, accounts authn.Accounts, admin authn.AccountAdmin,
 	a seedAccount,
 ) (authn.AccountID, bool, error) {
 	kind, name, err := seedLoginName(a.Identifier)
+	if err != nil {
+		return "", false, err
+	}
+	otherKind, other, err := seedUsernameLogin(kind, a.Username)
 	if err != nil {
 		return "", false, err
 	}
@@ -960,23 +978,75 @@ func seedOneAccount(ctx context.Context, accounts authn.Accounts, admin authn.Ac
 	case !errors.Is(err, authn.ErrAccountNotFound):
 		return "", false, fmt.Errorf("seed: looking up the account %s: %w", name, err)
 	}
+	if otherKind != "" {
+		id, err = accounts.Lookup(ctx, otherKind, other)
+		switch {
+		case err == nil:
+			fmt.Printf("skipped: account %s (exists as %s)\n", name, other)
+			return id, false, nil
+		case !errors.Is(err, authn.ErrAccountNotFound):
+			return "", false, fmt.Errorf("seed: looking up the account %s: %w", other, err)
+		}
+	}
 	account, err := admin.Create(ctx, seedCreateAccount(kind, name, a))
 	if errors.Is(err, authn.ErrAccountExists) {
-		// Another run took the login name between the lookup and the write. The
+		// Another run took a login name between the lookups and the write. The
 		// account is there, which is what this command is for, so the race is
-		// the answer and not a failure.
-		id, err = accounts.Lookup(ctx, kind, name)
-		if err != nil {
-			return "", false, fmt.Errorf("seed: looking up the account %s: %w", name, err)
+		// the answer and not a failure. Both login names the entry configures are
+		// re-read: the configured one first, then the username beside an address.
+		existsErr := err
+		id, lookupErr := accounts.Lookup(ctx, kind, name)
+		switch {
+		case lookupErr == nil:
+			fmt.Printf("skipped: account %s (exists)\n", name)
+			return id, false, nil
+		case !errors.Is(lookupErr, authn.ErrAccountNotFound):
+			return "", false, fmt.Errorf("seed: looking up the account %s: %w", name, lookupErr)
 		}
-		fmt.Printf("skipped: account %s (exists)\n", name)
-		return id, false, nil
+		if otherKind != "" {
+			id, lookupErr = accounts.Lookup(ctx, otherKind, other)
+			switch {
+			case lookupErr == nil:
+				fmt.Printf("skipped: account %s (exists as %s)\n", name, other)
+				return id, false, nil
+			case !errors.Is(lookupErr, authn.ErrAccountNotFound):
+				return "", false, fmt.Errorf("seed: looking up the account %s: %w", other, lookupErr)
+			}
+		}
+		// Neither configured login name belongs to the account the create
+		// collided with, so the conflict is one this run cannot resolve by
+		// adopting. The username is the name named: the address was read as free
+		// just above, and a create that also writes a username loses to the
+		// username's unique constraint.
+		conflict := name
+		if otherKind != "" {
+			conflict = other
+		}
+		return "", false, fmt.Errorf("seed: creating the account %s: the login name %s is already "+
+			"taken by another account: %w", name, conflict, existsErr)
 	}
 	if err != nil {
 		return "", false, fmt.Errorf("seed: creating the account %s: %w", name, err)
 	}
 	fmt.Printf("seeded: account %s (%s)\n", name, account.ID)
 	return account.ID, true, nil
+}
+
+// seedUsernameLogin is the second login name an account entry carries besides
+// the one it is found by: the username written with an email-identifier entry.
+// The kind is empty when the entry is itself a username, where the field is
+// ignored, and when no username is configured. The answer is normalized the way
+// the account store looks it up, so a lookup cannot miss a row the create wrote
+// under the same name.
+func seedUsernameLogin(kind authn.IdentifierKind, username string) (authn.IdentifierKind, string, error) {
+	if kind == authn.IdentifierUsername || strings.TrimSpace(username) == "" {
+		return "", "", nil
+	}
+	normalized, err := authnaccount.NormalizeIdentifier(authn.IdentifierUsername, username)
+	if err != nil {
+		return "", "", fmt.Errorf("seed: the configured username: %w", err)
+	}
+	return authn.IdentifierUsername, normalized, nil
 }
 
 // seedCreateAccount is the library's creation request for one configured
