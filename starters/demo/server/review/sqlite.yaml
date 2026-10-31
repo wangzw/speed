@@ -103,6 +103,12 @@ authn:
     allow-private-egress: false
     dns-resolver: ""
     oidc-ca-file: ""
+    # REVIEW: the enterprise OIDC method is compiled into every build and stands
+    # itself down unless a run names it. The review assembly offers the
+    # enterprise entry on every sign-in surface, so it is on here; a baseline or
+    # deployment leaves it off.
+    oidc:
+      enabled: true
   token:
     signing-key-file: var/token-signing-key.pem
   mfa:
@@ -332,6 +338,13 @@ seed:
       value: "1000"
     - key: "ratelimit.address-penalty"
       value: "0"
+
+# REVIEW: the notification fixture is compiled into every build and stands
+# itself down unless a run names it. The review assembly dispatches the notice,
+# so the switch is on; the baseline and a deployment leave it off.
+review:
+  notification:
+    enabled: true
 
 # REVIEW: the scheduler's tick. The review notification fixture declares a
 # periodic dispatch and every window it runs is expanded per tenant; a two-second

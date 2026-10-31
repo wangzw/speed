@@ -66,6 +66,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/i18n"
@@ -90,6 +91,53 @@ const (
 	reviewNotificationGroup       = "review"
 	reviewNotificationSMSTemplate = "review-notice"
 )
+
+// reviewNotificationEnabledItem is the switch that states whether this run
+// dispatches the fixture's notice. There is nothing in the fixture's own state
+// to infer it from — the type is part of the compile-time ceiling in every
+// build, and the tenancy roster is data — so the run states it explicitly.
+const reviewNotificationEnabledItem = "enabled"
+
+// reviewNotificationConfig is the fixture's configuration.
+type reviewNotificationConfig struct {
+	// Enabled states whether the fixture publishes and dispatches its notice in
+	// this run. Off, the module stands itself down before it is constructed.
+	Enabled bool `config:"enabled"`
+}
+
+// reviewNotificationSchema declares the fixture's one input item. It is a host
+// module, so the namespace is its own name.
+func reviewNotificationSchema() config.Schema {
+	return config.Schema{
+		Namespace: reviewNotificationModuleName,
+		Mounts:    []config.Mount{{Value: &reviewNotificationConfig{}}},
+		Items: map[string]config.Item{
+			reviewNotificationEnabledItem: {
+				Description: "whether this run dispatches the review notification fixture's notice " +
+					"to each tenant's members; off, the worker, its schedule and its recipient wiring " +
+					"are absent",
+			},
+		},
+	}
+}
+
+// reviewNotificationEnabled reads the switch. The configuration reader's absence
+// is the host's omission and is carried out as it stands: reading it as "the
+// fixture is off" would let a host that forgot the reader lose the fixture in
+// silence.
+func reviewNotificationEnabled(reg *core.Registry) (bool, error) {
+	reader, err := core.Resolve[config.Reader](reg)
+	if err != nil {
+		return false, fmt.Errorf("%s: the enable switch is read from configuration, and no reader was "+
+			"handed to the registry before the assembly began: %w", reviewNotificationModuleName, err)
+	}
+	var cfg reviewNotificationConfig
+	if err := reader.Decode(reviewNotificationModuleName, &cfg); err != nil {
+		return false, fmt.Errorf("%s: reading %s.%s: %w", reviewNotificationModuleName,
+			reviewNotificationModuleName, reviewNotificationEnabledItem, err)
+	}
+	return cfg.Enabled, nil
+}
 
 // reviewNotificationEndpoint is the endpoint carrying the notification surface.
 // The name is the platform defaults document's; the preference routes mount
@@ -169,9 +217,16 @@ var _ jobs.Handler = (*reviewNotifier)(nil)
 //
 // The review-only dispatch control's feature is contributed by
 // reviewControlResources, which answers nothing in a default build. The module
-// itself is compiled into every build; whether it runs is stated in Prepare.
+// itself is compiled into every build; whether it runs is stated in Prepare by
+// the explicit review.notification.enabled switch, off when absent. An absent
+// switch means the run does not dispatch the fixture, so it stands down with
+// that reason; there is no half-configured state, because the switch is the
+// whole of the fixture's own configuration. A run with no configuration reader
+// at all fails the start instead, because that is a host omission and not a
+// deployment that left the fixture off.
 func reviewNotificationModule() core.Module {
 	resources := []any{
+		reviewNotificationSchema(),
 		reviewNotificationType,
 		reviewNotificationCatalog,
 		reviewNotificationSchedule,
@@ -190,6 +245,20 @@ func reviewNotificationModule() core.Module {
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: resources,
+		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
+			enabled, err := reviewNotificationEnabled(reg)
+			if err != nil {
+				return core.Enablement{}, err
+			}
+			if !enabled {
+				return core.Enablement{
+					State: core.StateDisabled,
+					Reason: "review.notification.enabled is off, so this run dispatches no review " +
+						"notice and the fixture takes no part",
+				}, nil
+			}
+			return core.Enablement{State: core.StateEnabled}, nil
+		},
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			return newReviewNotifier(reg)
 		},

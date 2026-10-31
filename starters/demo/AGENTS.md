@@ -165,7 +165,11 @@ drives the enterprise journey points the three at local fixtures the end-to-end
 harness starts: the resolver address of a UDP stub that answers the test
 domain's TXT name, the CA file that signed the local provider's certificate, and
 the loopback relaxation its egress client needs. Those are fixtures, not
-deployment values; a deployment leaves the block as it stands.
+deployment values; a deployment leaves the block as it stands. The one item
+that is not a seam is `authn.sso.oidc.enabled: true`, which turns the method on:
+the method is compiled into every build and stands itself down when the switch
+is absent, so a baseline or a deployment offers no enterprise entry and the
+review assembly does.
 
 `server/review_sms_control.go` is the review-only control over the review
 carrier's per-template review. It mounts
@@ -190,9 +194,16 @@ through log collection or export.
 
 #### The review build's notification fixture
 
-`server/review_notification.go`, compiled only under the `review` tag and named
-in `reviewModules`, gives the member-notification and SMS-template journeys a
-running counterpart. It adds four things the baseline deliberately lacks.
+`server/notification_fixture.go` is compiled into every build and named in
+`capabilityModules`, and gives the member-notification and SMS-template journeys
+a running counterpart. It adds four things the baseline deliberately lacks.
+Whether a run dispatches it is the fixture's own `Prepare` decision, stated by
+the explicit switch `review.notification.enabled`: there is no state to infer it
+from, because the type is present in every build and the tenancy roster is data.
+With the switch absent or false the fixture states `StateDisabled` and takes no
+part; with it true the worker, its schedule and the recipient wiring run. There
+is no half-configured state: the switch is the whole of the fixture's own
+configuration.
 
 - **A type.** It declares `review.notice` — group `review`, default channels
   `in_app`, `email` and `sms`, unsubscribable — with its text in
@@ -200,12 +211,13 @@ running counterpart. It adds four things the baseline deliberately lacks.
   catalog's `review.notice.sms.template` entry names the runtime SMS template
   the template-rollout journey registers (`review-notice`), and the type's
   parameter whitelist admits `to`, which is both the dispatch's destination and
-  the template's only declared parameter. The declaration lives in the
-  review-tagged file on purpose: `notification.preferences` and
+  the template's only declared parameter. The declaration lives on the module
+  rather than on the enabled run on purpose: `notification.preferences` and
   `notification.delivery` collect the type taxonomy with `core.Resources` over
-  the *available* set, not the running set, so a type declared in an untagged
-  file would appear in the baseline's preference matrix and its dispatch
-  validation even though no baseline command runs its module.
+  the *available* set, not the running set, so the type is part of the
+  compile-time ceiling even in a run that stands the fixture down. Disabling the
+  fixture leaves the type in the taxonomy and removes the worker, the schedule
+  and the recipient wiring from the feature set.
   `server/review_notification_isolation_test.go` holds that boundary in the
   default build, and the review-tagged cases hold the other direction.
 
