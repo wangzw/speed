@@ -32,7 +32,7 @@ core.Module{
         {Token: (*db.Database)(nil), Optional: true},
     },
     Resources: []any{
-        // Prefix 与 Version 留空：三条探针路由在 ops 监听的根上。
+        // Prefix 与 Version 留空：三条探针路由是端上的根相对路径，实际路径由宿主的认领决定。
         speedhttp.Spec{Endpoint: /* 配置点名的端，缺省 ops */, Document: opsOpenAPI},
     },
     New:   ...,
