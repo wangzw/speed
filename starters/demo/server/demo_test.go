@@ -385,12 +385,14 @@ func runCommandArgs(t *testing.T, binary, dir string, args, extraEnv []string) c
 type process struct {
 	cmd *exec.Cmd
 
-	mu    sync.Mutex
-	lines []string
+	mu          sync.Mutex
+	lines       []string
+	diagnostics []string
 
 	ready    chan struct{}
 	readyOne sync.Once
 	done     chan struct{}
+	readers  sync.WaitGroup
 
 	waitErr  error
 	stopOnce sync.Once
@@ -416,47 +418,71 @@ func startArgs(t *testing.T, dir string, args, extraEnv []string) *process {
 	if err != nil {
 		t.Fatalf("opening the child's standard output: %v", err)
 	}
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatalf("opening the child's standard error: %v", err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("starting %s: %v", strings.Join(args, " "), err)
 	}
 	p := &process{cmd: cmd, ready: make(chan struct{}), done: make(chan struct{})}
-	go p.consume(stdout)
+	p.readers.Add(2)
+	go func() {
+		defer p.readers.Done()
+		p.consume(stdout, false)
+	}()
+	go func() {
+		defer p.readers.Done()
+		p.consume(stderr, true)
+	}()
 	go func() {
 		p.waitErr = cmd.Wait()
 		close(p.done)
 	}()
 	t.Cleanup(func() {
 		p.stop(t)
-		if strings.Contains(stderr.String(), raceWarning) {
-			t.Errorf("%s reported a data race:\n%s", strings.Join(args, " "), stderr.String())
+		if diagnostics := p.stderr(); strings.Contains(diagnostics, raceWarning) {
+			t.Errorf("%s reported a data race:\n%s", strings.Join(args, " "), diagnostics)
 		}
 	})
 	return p
 }
 
-// consume reads the child's standard output line by line, keeps what it read,
-// and closes the ready channel once the ready record is seen.
-func (p *process) consume(r io.Reader) {
+// consume reads one of the child's streams line by line and keeps what it read.
+// On standard output it also closes the ready channel once the ready record is
+// seen; standard error carries the startup diagnostics, which a case reads to
+// learn which modules the run did not enable.
+func (p *process) consume(r io.Reader, diagnostic bool) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		p.mu.Lock()
-		p.lines = append(p.lines, line)
+		if diagnostic {
+			p.diagnostics = append(p.diagnostics, line)
+		} else {
+			p.lines = append(p.lines, line)
+		}
 		p.mu.Unlock()
-		if strings.Contains(line, "msg="+readyMsg) {
+		if !diagnostic && strings.Contains(line, "msg="+readyMsg) {
 			p.readyOne.Do(func() { close(p.ready) })
 		}
 	}
 }
 
-// output is what the child has written so far.
+// output is what the child has written to standard output so far.
 func (p *process) output() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return strings.Join(p.lines, "\n")
+}
+
+// stderr is what the child has written to standard error so far: the startup
+// diagnostics, and any failure the process reported before leaving.
+func (p *process) stderr() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return strings.Join(p.diagnostics, "\n")
 }
 
 // waitReady waits for the ready record and fails the case when it never comes.
@@ -488,6 +514,9 @@ func (p *process) stop(t *testing.T) {
 			<-p.done
 			t.Errorf("serve did not leave within %s of SIGTERM\n%s", stopLimit, p.output())
 		}
+		// Wait closes the pipes; the readers finish once they reach EOF, so the
+		// captured diagnostics are complete by the time this returns.
+		p.readers.Wait()
 	})
 }
 

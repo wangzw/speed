@@ -25,6 +25,70 @@ const (
 	SelectionNone = "none"
 )
 
+// The template registry keeps the templates a deployment writes in its own
+// configuration section. Every consumer of the SMS capability judges from the
+// same section whether the capability has anything to send, so the names are
+// constants here beside the selection item.
+const (
+	// registryNamespace is the configuration section the template registry
+	// module owns.
+	registryNamespace = "sms.registry"
+	// registryTemplatesItem is the item holding the configured template set.
+	registryTemplatesItem = "templates"
+)
+
+// templatesConfig is the shape the registry's configured template set decodes
+// into. The registry module reads the same section; this package names only the
+// part that says whether any template was configured at all.
+type templatesConfig struct {
+	Templates map[string]TemplateSpec `config:"templates"`
+}
+
+// OffByMissingTemplates reports whether this run leaves the SMS capability with
+// nothing to send: sms.carrier is unset, so the log fallback would carry the
+// capability, and no template is configured, so the consumers that build
+// messages have none.
+//
+// A module that depends on the SMS code state machine reads this in Prepare.
+// The judgement is all-empty versus half-configured, the same split the carrier
+// selection uses: with neither a selection nor a template the deployment did
+// not configure SMS, so the module stands itself down with the reason instead
+// of failing construction on a template it cannot find. An explicit selection
+// is not judged here — a deployment that names a carrier is asking for SMS, and
+// a required template it did not write stays that consumer's contract failure
+// rather than a silent absence.
+//
+// An assembly with no configuration reader has no selection to read and no
+// template section, so it reports not-off and lets the consumer's
+// construction-time check name what is missing. That mirrors OffBySelection: a
+// hand-built assembly supplies its capabilities directly and is not judged by a
+// configuration it does not have.
+func OffByMissingTemplates(reg *core.Registry) (bool, string, error) {
+	reader, err := core.Resolve[config.Reader](reg)
+	if errors.Is(err, core.ErrMissingProvider) {
+		return false, "", nil
+	}
+	if err != nil {
+		return false, "", err
+	}
+	selected, err := ReadSelection(reader)
+	if err != nil {
+		return false, "", err
+	}
+	if selected != "" {
+		return false, "", nil
+	}
+	var cfg templatesConfig
+	if err := reader.Decode(registryNamespace, &cfg); err != nil {
+		return false, "", err
+	}
+	if len(cfg.Templates) > 0 {
+		return false, "", nil
+	}
+	return true, "sms.carrier is unset and sms.registry.templates declares no template, so the SMS " +
+		"capability has no message to send", nil
+}
+
 // CarrierName is the resource a carrier module declares to state the name the
 // selection item uses for it, and the name it answers Name with.
 //

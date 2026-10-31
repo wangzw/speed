@@ -25,7 +25,9 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   `sms.carrier`. A `none` selection states `StateDisabled` with that reason
   rather than reporting the absent `authn.SMSCodes` provider as a startup fault,
   so a binary that compiles this method in can serve a deployment that offers no
-  SMS sign-in.
+  SMS sign-in. With no selection and no template configured, `Prepare` stands the
+  method down through `sms.OffByMissingTemplates`, because the SMS code module it
+  depends on makes the same judgement and does not run.
 - **The method holds no challenge state.** The number's allowed prefix, the
   budgets, the challenge row, the verification code and its check are the SMS
   module's. The method answers a `Step`; it does not read or write a challenge,

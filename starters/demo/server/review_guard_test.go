@@ -255,7 +255,7 @@ func startReview(t *testing.T, binary, config string) *process {
 		t.Fatalf("starting the review build: %v", err)
 	}
 	p := &process{cmd: cmd, ready: make(chan struct{}), done: make(chan struct{})}
-	go p.consume(stdout)
+	go p.consume(stdout, false)
 	go func() {
 		p.waitErr = cmd.Wait()
 		close(p.done)

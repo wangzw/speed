@@ -80,6 +80,13 @@ func Module() core.Module {
 			if off {
 				return core.Enablement{State: core.StateDisabled, Reason: reason}, nil
 			}
+			missing, reason, err := smssend.OffByMissingTemplates(reg)
+			if err != nil {
+				return core.Enablement{}, fmt.Errorf("%s: reading the SMS template set: %w", ModuleName, err)
+			}
+			if missing {
+				return core.Enablement{State: core.StateDisabled, Reason: reason}, nil
+			}
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
 

@@ -33,8 +33,16 @@ compatibility break for a dashboard written against it.
 - **It follows the SMS carrier selection.** `Prepare` reads `sms.carrier`. A
   `none` selection states `StateDisabled` with that reason instead of reporting
   the missing `sms.Registry` or `sms.Sender` as a startup fault, so a deployment
-  can turn the whole SMS family off through configuration. The login method and
-  the second factor read the same selection and stand down with it.
+  can turn the whole SMS family off through configuration. With no selection and
+  no template configured, the all-empty deployment did not configure SMS at all:
+  `sms.OffByMissingTemplates` gives the reason and this module stands down with
+  it. The login method and the second factor make the same judgement and stand
+  down with the same reason.
+- **A required template a deployment did not write is still a startup failure.**
+  Once a carrier is selected or any template is configured, the module runs and
+  `New` holds the registry's declaration to the three required templates,
+  naming the missing one. The all-empty stand-down does not cover a
+  half-configured deployment.
 - **The plaintext code never leaves the module.** It is written to no table, no
   log, no event and no metric, and lives only in the queued message and the call
   to the carrier. The row holds `code_mac`, the keyed digest of the challenge

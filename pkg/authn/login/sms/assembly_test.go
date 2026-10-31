@@ -3,11 +3,14 @@ package sms
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/step"
+	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/configtest"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 )
@@ -129,6 +132,24 @@ func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	}
 	if got != (core.Enablement{State: core.StateEnabled}) {
 		t.Errorf("Prepare = %+v, want the enabled stance alone", got)
+	}
+}
+
+// TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured holds the
+// all-empty case: with no carrier selected and no template configured, SMS was
+// not configured for this run and the method is not offered.
+func TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured(t *testing.T) {
+	reader := configtest.Reader(t, "{}", Module())
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Supply(reader, config.ModuleName)
+
+	got, err := Module().Prepare(t.Context(), reg)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if got.State != core.StateDisabled || !strings.Contains(got.Reason, "sms.registry.templates") {
+		t.Errorf("Prepare = %+v, want disabled and naming the template set", got)
 	}
 }
 

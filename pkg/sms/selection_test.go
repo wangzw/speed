@@ -111,6 +111,67 @@ func TestTwoEnabledCarriersFailNamingBothModules(t *testing.T) {
 	}
 }
 
+// registrySchema declares the template set the registry module owns. The case
+// reads only whether any template is configured, so it declares the item
+// without importing the registry module's own dependency closure.
+func registrySchema() core.Module {
+	return core.Module{
+		Name: "test.registry",
+		Resources: []any{config.Schema{
+			Namespace: registryNamespace,
+			Mounts:    []config.Mount{{Value: &templatesConfig{}}},
+			Items:     map[string]config.Item{registryTemplatesItem: {}},
+		}},
+	}
+}
+
+// TestOffByMissingTemplatesJudgesTheAllEmptyCase holds the boundary between an
+// absent SMS configuration and a half-configured one: with neither a carrier
+// selection nor a template the capability has nothing to send and stands down,
+// while either one present leaves the module to run (and its own contract check
+// to name a missing required template).
+func TestOffByMissingTemplatesJudgesTheAllEmptyCase(t *testing.T) {
+	cases := map[string]struct {
+		body string
+		want bool
+	}{
+		"neither":          {"{}", true},
+		"carrier selected": {`{"sms":{"carrier":"log"}}`, false},
+		"template set":     {`{"sms":{"registry":{"templates":{"marketing":{"params":[]}}}}}`, false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			reader := configtest.Reader(t, tc.body, registrySchema(), core.Module{
+				Name: "test.selection", Resources: []any{SelectionSchema()},
+			})
+			reg := core.New()
+			reg.Register(config.Module())
+			reg.Supply(reader, config.ModuleName)
+
+			got, reason, err := OffByMissingTemplates(reg)
+			if err != nil {
+				t.Fatalf("OffByMissingTemplates: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("OffByMissingTemplates = %v (%q), want %v", got, reason, tc.want)
+			}
+			if got && !strings.Contains(reason, "sms.registry.templates") {
+				t.Errorf("the reason %q does not name the template set", reason)
+			}
+		})
+	}
+
+	// An assembly with no configuration reader is not judged by a configuration
+	// it does not have.
+	got, _, err := OffByMissingTemplates(core.New())
+	if err != nil {
+		t.Fatalf("OffByMissingTemplates without a reader: %v", err)
+	}
+	if got {
+		t.Error("OffByMissingTemplates without a reader = true, want false")
+	}
+}
+
 // TestSelectionNoneStandsEveryCarrierDown holds the explicit off value: none
 // switches the capability off, so the carriers stand down rather than fall back
 // to the log channel.

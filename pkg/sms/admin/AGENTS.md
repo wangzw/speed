@@ -64,6 +64,13 @@ express a permission and every route would refuse its caller.
   `none` selection states `StateDisabled` with that reason rather than reporting
   the missing provider as a startup fault, so a deployment with SMS off serves no
   template-management routes either.
+- **An absent endpoint list stands it down; an empty one is an error.** The
+  module is named in the capability ceiling every serve run considers, so
+  `sms.admin.endpoints` absent is a deployment that did not ask for the
+  management surface: `Prepare` states `StateDisabled` with that reason. A list
+  written as empty, or holding `*`, an empty name or a duplicate, is a broken
+  configuration for a surface the deployment asked for, and fails the startup
+  naming the key.
 - **One decision order, for every route, read and write alike.** The handler
   reads the caller first: a request with no identity is a 401 — the problem the
   admission and authorization layers write for a route that requires an identity

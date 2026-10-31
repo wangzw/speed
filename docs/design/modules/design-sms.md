@@ -203,7 +203,7 @@ type Resolved struct {
 
 模块名照顶层能力：裸名 `sms`，叶子 `sms.<名>`，配置命名空间取同一个取值（对照 `kv`/`kv.redis`、`event`/`event.nats`）。每个登记模块的包导出自己的 `ModuleName` 常量。载体是厂商适配的封闭集 `sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`，另加写进程日志的 `sms.log`；每个载体叶子包整个撤掉而不影响其他模块。注册表模块与发送方模块互不依赖对方的具体实现：注册表只经 `sms.Provider` 接缝触达厂商，一个进程里恰好一个注册表、恰好一个载体。
 
-**载体由 `sms.carrier` 在运行期选择，`sms.log` 是保底。** 选择项的值是一个载体的选择名、`none` 或空；每个载体把选择名作为 `CarrierName` 资源声明（[ADR-carrier-selection](../../adr/adr-carrier-selection.md)）。选择项点名一个已编入的载体时，该载体必须可运行，其余载体关闭；点名 `none` 时所有载体关闭，短信验证码状态机、模板注册表、管理面、短信登录方法与短信第二因素随之关闭；点名一个没有编入的名字是 `ErrInvalidConfig`，错误点名该名字、能力与这次二进制携带的载体。选择项为空时，配置齐全的载体运行，身份项全空的载体关闭，半配置的载体是 `ErrInvalidConfig`，两个载体同时齐全即排他冲突并点名两个模块。`sms.log` 编入所有构建，声明 `sms.carrier`；没有其它载体启用时它以 `StateAuto` 被 core 留下，任一载体显式启用时被搁下，启动时写一条警告说明消息正文与验证码会进日志。
+**载体由 `sms.carrier` 在运行期选择，`sms.log` 是保底。** 选择项的值是一个载体的选择名、`none` 或空；每个载体把选择名作为 `CarrierName` 资源声明（[ADR-carrier-selection](../../adr/adr-carrier-selection.md)）。选择项点名一个已编入的载体时，该载体必须可运行，其余载体关闭；点名 `none` 时所有载体关闭，短信验证码状态机、模板注册表、管理面、短信登录方法与短信第二因素随之关闭；点名一个没有编入的名字是 `ErrInvalidConfig`，错误点名该名字、能力与这次二进制携带的载体。选择项为空时，配置齐全的载体运行，身份项全空的载体关闭，半配置的载体是 `ErrInvalidConfig`，两个载体同时齐全即排他冲突并点名两个模块。`sms.log` 编入所有构建，声明 `sms.carrier`；没有其它载体启用时它以 `StateAuto` 被 core 留下，任一载体显式启用时被搁下，启动时写一条警告说明消息正文与验证码会进日志。**选择项为空且 `sms.registry.templates` 未声明任何模板时，部署没有配置短信**：验证码状态机、短信登录方法与短信第二因素经 `sms.OffByMissingTemplates` 自行关闭并给出这个原因；点名了载体或声明了任一模板则消费方照常运行，缺的必需模板仍是该消费方 `New` 的启动故障。
 
 ### 注册表模块 sms.registry
 
@@ -256,14 +256,14 @@ type Resolved struct {
 
 **回绝映射是封闭的、fail-closed 的。** 400（`Problem.Type` 为 `urn:speed:sms:bad-request`）：请求在形状上不可读（路径参数或正文）、注册表以一个跑不起来的配置或一条不符的消息拒绝（`ErrInvalidConfig`／`ErrRejected`）。409：点名一条来自配置的模板（`Problem.Type` 为 `urn:speed:sms:config-template`，与名字冲突的 `urn:speed:sms:conflict` 分开），或名字已被持有（`urn:speed:sms:conflict`）。404：注册表不持有该名。503：其余失败，以及没落地的强制档审计；503 不带 `Problem.Type`，成因只进日志。`ErrNotSendable` 与 `ErrUnroutable` 不在映射里：它们是发送路径的哨兵，没有一条管理面路由会触到它们，注册表若在这里答它们就是答错了问题，落到与未知失败同一个 503。
 
-**`sms.admin` 声明静态[特性](../../glossary.md) `sms.admin`。** 描述符的 `Resources` 带 `feature.Spec{Name: "sms.admin"}`；这个特性在场，表示本进程挂出上表的模板管理面路由与载体路由（[feature](design-feature.md)）。`sms.admin.endpoints` 必填、不接受空清单，挂路由而没有入口点是接线期故障，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../architecture.md#架构不变量)）。
+**`sms.admin` 声明静态[特性](../../glossary.md) `sms.admin`。** 描述符的 `Resources` 带 `feature.Spec{Name: "sms.admin"}`；这个特性在场，表示本进程挂出上表的模板管理面路由与载体路由（[feature](design-feature.md)）。`sms.admin.endpoints` 没有缺省：清单缺席表示本次运行不要管理面，`Prepare` 以这个原因自行关闭；写成空清单、含 `*`、空名或重名是配置故障，启动失败并点名该键。模块因此在配置点名了端点、进程有路由器时挂出这组路由，声明为静态特性符合架构不变量 18（[architecture](../architecture.md#架构不变量)）。
 
 ### 宿主可见面
 
 以下是宿主写进配置文件、或在命令树与网关上点名的面。
 
 - **模块名**：`sms.registry`、`sms.admin`、`sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
-- **配置命名空间与输入项**：`sms.registry` 下的 `templates`（容器叶子，`map[string]sms.TemplateSpec`，取主配置源）与 `poll-interval`（时长，缺省 `1m`，取主配置源与环境变量）；`sms.admin` 下的 `endpoints`（字符串列表，必填，无缺省，只收具体端名、不收 `*`，取主配置源）；每个载体自己的命名空间下的凭据、`region`、`endpoint`、`configuration-set-name`、`identities` 与 `default-identity`（见「配置与设置的划分」）。
+- **配置命名空间与输入项**：`sms.registry` 下的 `templates`（容器叶子，`map[string]sms.TemplateSpec`，取主配置源）与 `poll-interval`（时长，缺省 `1m`，取主配置源与环境变量）；`sms.admin` 下的 `endpoints`（字符串列表，无缺省；缺席时管理面自行关闭，点名后必须非空、只收具体端名、不收 `*`，取主配置源）；每个载体自己的命名空间下的凭据、`region`、`endpoint`、`configuration-set-name`、`identities` 与 `default-identity`（见「配置与设置的划分」）。
 - **管理端点**：`sms.admin.endpoints` 列出的端，`/api/v1/system/sms/*` 下的模板读写路由与载体路由（路由见「管理面模块」一节）。
 
 **配置与设置的划分。** 启动期需要、改动要重启的取值是配置；运行期可改、不需要重启的取值是设置（[ADR-config-scope](../../adr/adr-config-scope.md)）。凭据、`region`、`endpoint`、`configuration-set-name`、`identities`、`default-identity`、模板集、`poll-interval` 与 `sms.admin.endpoints` 都是配置。唯一的设置项是 `sms.registry.sending-enabled`（布尔，缺省 `true`），每次 `Resolve` 都读一次：置为 `false` 时 `Resolve` 答 `ErrNotSendable`，运维不必重启即可停止发送。重试次数不是配置项：载体从不重试，一次 `Send` 对应一次厂商调用。
@@ -615,5 +615,5 @@ type Spec[C any] struct {
 | AWS 载体 `sms.aws`（`Sender` + `Provider`） | 已实现 | `pkg/sms/aws/aws.go` `sender`、`Send`、`Model`、`Offer`、`Approval`、`Retire`；`pkg/sms/aws/classify.go` `classify`；`pkg/sms/aws/config.go` `items` |
 | Twilio 载体 `sms.twilio`（`Sender` + `Provider`） | 已实现 | `pkg/sms/twilio/twilio.go` `sender`、`Send`、`Model`；`pkg/sms/twilio/provider.go` `Offer`、`Approval`、`Retire`；`pkg/sms/twilio/classify.go` `classify`；`pkg/sms/twilio/config.go` `items` |
 | 日志载体 `sms.log`（`Sender` + `Provider`） | 已实现 | `pkg/sms/log/log.go` `Module`、`Product`、`Reviewer`、`Record` |
-| 载体选择 `sms.carrier` 与保底 | 已实现 | `pkg/sms/selection.go` `SelectionSchema`、`ReadSelection`、`CarrierNames`、`OffBySelection` |
+| 载体选择 `sms.carrier` 与保底 | 已实现 | `pkg/sms/selection.go` `SelectionSchema`、`ReadSelection`、`CarrierNames`、`OffBySelection`、`OffByMissingTemplates` |
 | 根包依赖守卫与 SDK 封边、钉版 | 已实现 | `pkg/sms/deps_test.go` |

@@ -123,9 +123,13 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // which describes the management routes, for a reader that merges the fragments
 // into one document (the run's ops module, or a build's gen command).
 //
-// The stance is StateEnabled and never StateAuto: whether to mount the
-// management routes is a decision on the command tree, not a conclusion a
-// configuration can infer.
+// The stance is StateEnabled and never StateAuto: the module claims no exclusive
+// capability, and it decides for itself in Prepare. A run that names it in the
+// participating set is not thereby asking for the management routes: with
+// sms.admin.endpoints absent the module stands itself down and states that
+// reason, and a configured list makes it run. StateAuto would instead let core
+// stand it down whenever another provider resolved, which is not this module's
+// decision to give away.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -157,6 +161,17 @@ func Module() core.Module {
 			reader, err := core.Resolve[config.Reader](reg)
 			if err != nil {
 				return core.Enablement{}, fmt.Errorf("%s: taking up the configuration reader: %w", ModuleName, err)
+			}
+			given, err := endpointsGiven(reader)
+			if err != nil {
+				return core.Enablement{}, err
+			}
+			if !given {
+				return core.Enablement{
+					State: core.StateDisabled,
+					Reason: "sms.admin.endpoints is not configured, so the management routes are mounted " +
+						"on no endpoint and this run offers no SMS management surface",
+				}, nil
 			}
 			if _, err := readConfig(reader); err != nil {
 				return core.Enablement{}, err
@@ -334,8 +349,10 @@ func schema() config.Schema {
 //
 // There is no default for the endpoints: a list that mounted the management
 // routes nowhere would silently drop them, and guessing which endpoints should
-// carry them is a guess about what is exposed. A module that cannot answer fails
-// the startup, naming the key.
+// carry them is a guess about what is exposed. An absent list is the deployment
+// not asking for the management surface, so Prepare stands the module down with
+// that reason; an explicit empty list is a broken configuration and fails the
+// startup, naming the key.
 var configDefaults = moduleConfig{}
 
 // moduleConfig is the set of input items this module accepts.
@@ -384,6 +401,31 @@ func (c moduleConfig) resolve() (resolved, error) {
 		seen[name] = struct{}{}
 	}
 	return resolved{endpoints: c.Endpoints}, nil
+}
+
+// endpointsOnly carries the one item that decides whether this module has
+// anywhere to mount. Reading it alone is what lets Prepare tell a deployment
+// that configured no endpoint — an absence, so the management surface stands
+// down — from one that configured an empty list, which resolve refuses because
+// it would mount the routes nowhere.
+type endpointsOnly struct {
+	Endpoints []string `config:"endpoints"`
+}
+
+// endpointsGiven reports whether the loader was given a value for the endpoint
+// list. ErrMissingRequired is the loader saying no source gave it, which is the
+// module not being configured at all; any other failure is the configuration
+// being unreadable and is carried out as it stands.
+func endpointsGiven(reader config.Reader) (bool, error) {
+	err := reader.Decode(ConfigNamespace, &endpointsOnly{})
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, config.ErrMissingRequired):
+		return false, nil
+	default:
+		return false, err
+	}
 }
 
 // readConfig decodes this module's section and validates it. Prepare and New

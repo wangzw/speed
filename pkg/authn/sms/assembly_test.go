@@ -89,9 +89,12 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 
 	body := a.body
 	if body == "" {
-		body = "{}"
+		// A named carrier is a deployment that asks for SMS; without one an empty
+		// document is the all-empty configuration the module stands down on.
+		body = `{"sms":{"carrier":"log"}}`
 	}
-	reader := authntest.ConfigReaderAll(t, body, append([]core.Module{Module()}, a.readerModules...)...)
+	modules := append([]core.Module{Module(), selectionModule()}, a.readerModules...)
+	reader := authntest.ConfigReaderAll(t, body, modules...)
 
 	reg := core.New()
 	reg.Register(Module())
@@ -168,10 +171,17 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	}
 }
 
+// selectionModule declares the carrier selection item, which in a real binary
+// the log carrier declares. A case that configures a carrier needs it in the
+// manifest or the written value would have no declared path.
+func selectionModule() core.Module {
+	return core.Module{Name: "test.selection", Resources: []any{sms.SelectionSchema()}}
+}
+
 // TestPrepareStatesEnabledAndNothingElse holds the stance, given the reader that
-// sizes the pool.
+// sizes the pool and a selection that asks for a carrier.
 func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
-	reader := authntest.ConfigReaderAll(t, "{}", Module())
+	reader := authntest.ConfigReaderAll(t, `{"sms":{"carrier":"log"}}`, Module(), selectionModule())
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Supply(reader, config.ModuleName)
@@ -182,6 +192,25 @@ func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 	}
 	if got != (core.Enablement{State: core.StateEnabled}) {
 		t.Errorf("Prepare = %+v, want the enabled stance alone", got)
+	}
+}
+
+// TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured holds the
+// all-empty case: no carrier selection and no template is a deployment that did
+// not configure SMS, so the module stands itself down with the reason instead of
+// failing construction on a template it cannot find.
+func TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured(t *testing.T) {
+	reader := authntest.ConfigReaderAll(t, "{}", Module())
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Supply(reader, config.ModuleName)
+
+	got, err := Module().Prepare(t.Context(), reg)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if got.State != core.StateDisabled || !strings.Contains(got.Reason, "sms.registry.templates") {
+		t.Errorf("Prepare = %+v, want disabled and naming the template set", got)
 	}
 }
 
@@ -428,7 +457,7 @@ func TestStartupRefusesARegistryMissingTheConfiguredDefaultLanguage(t *testing.T
 		registry:      registry,
 		store:         newStore(),
 		migrate:       true,
-		body:          `{"i18n":{"default-locale":"ja-JP"}}`,
+		body:          `{"sms":{"carrier":"log"},"i18n":{"default-locale":"ja-JP"}}`,
 		readerModules: []core.Module{i18nStubModule()},
 	}.drive(t, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with a registry that misses the configured default language")
@@ -487,7 +516,7 @@ func TestASendWithNoNamedLocaleGoesOutInTheConfiguredDefault(t *testing.T) {
 		registry:      registry,
 		store:         store,
 		migrate:       true,
-		body:          `{"i18n":{"default-locale":"ja-JP"}}`,
+		body:          `{"sms":{"carrier":"log"},"i18n":{"default-locale":"ja-JP"}}`,
 		readerModules: []core.Module{i18nStubModule()},
 	}.drive(t, func(ctx context.Context, reg *core.Registry) error {
 		codes, err := core.Resolve[authn.SMSCodes](reg)

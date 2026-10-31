@@ -152,6 +152,16 @@ production one, and declares the `sms.carrier` item because it is the carrier
 that is always present. It writes each message to the process log and warns at
 startup that the body and any verification code reach the log.
 
+**A consumer judges the all-empty case with `OffByMissingTemplates`.** It reports
+true when `sms.carrier` is unset and `sms.registry.templates` declares no
+template: the deployment did not configure SMS, so `authn.sms`, the login
+method over it and the second factor stand themselves down with that reason
+rather than failing construction on a template none is configured to carry. A
+selection or any configured template leaves the consumer to run, and a required
+template it did not write remains that consumer's own startup failure. An
+explicit selection is never judged by the helper: naming a carrier is asking for
+SMS, and a configuration gap there is the named carrier's error.
+
 ## How a carrier contributes
 
 A subpackage binds its vendor client, fixes its namespace, and registers the

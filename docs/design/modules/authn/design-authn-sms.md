@@ -43,7 +43,7 @@
 
 ### 发送方的接取：经 sms.Registry 与 sms.Sender
 
-模板注册表与发送接缝各是顶层发送能力 `pkg/sms` 的一个接缝（形状见 [design-sms](../design-sms.md)）。本模块把两者都当作排他的构造期依赖取用（`Requires` 记 `(*sms.Registry)(nil)` 与 `(*sms.Sender)(nil)`）；载体由 `sms.carrier` 选定，选择项为 `none` 时本模块在 `Prepare` 里读同一个选择项并自行关闭，短信登录方法与短信第二因素随之关闭。本模块先取注册表，因为覆盖核对读的是注册表的声明、发送时解出的形状也来自注册表，再取载体。本模块不 import 任何厂商适配叶子包。
+模板注册表与发送接缝各是顶层发送能力 `pkg/sms` 的一个接缝（形状见 [design-sms](../design-sms.md)）。本模块把两者都当作排他的构造期依赖取用（`Requires` 记 `(*sms.Registry)(nil)` 与 `(*sms.Sender)(nil)`）；载体由 `sms.carrier` 选定，选择项为 `none` 时本模块在 `Prepare` 里读同一个选择项并自行关闭，短信登录方法与短信第二因素随之关闭；选择项为空且 `sms.registry.templates` 未声明任何模板时，部署没有配置短信，本模块经 `sms.OffByMissingTemplates` 以同一原因自行关闭，登录方法与第二因素作同样的判断。本模块先取注册表，因为覆盖核对读的是注册表的声明、发送时解出的形状也来自注册表，再取载体。本模块不 import 任何厂商适配叶子包。
 
 本模块把每条挑战构造成一条 `sms.Message`，交给注册表的 `Resolve` 解出 `sms.Resolved`，再把解出的形状交给载体：
 
@@ -59,7 +59,7 @@ func message(in SendCode, challengeID, code, ttlMinutes string) sms.Message {
 }
 ```
 
-模板键是 `authn.code.login`、`authn.code.mfa`、`authn.code.enroll` 与 `authn.code.reset`，按用途映射；参数名固定为 `code` 与 `ttl_minutes`。`authn.code.login`、`authn.code.mfa` 与 `authn.code.enroll` 是启动的必需项：注册表持有的 `templates` 里必须写这几个模板名、恰好这两个参数，每个模板至少一种语言，且每个模板覆盖配置的默认语言——多声明一个本模块不发送的参数，该模板就没有任何消息能满足。`authn.code.reset` 是可选模板：声明了它，短信重置渠道可用，本模块按同一套参数、语言与默认语言规则核对它；没有声明，短信重置渠道不发布，其余用途照常启动。**一条消息的语言集是它所属模板声明的语言集**：本模块不声明任何语言表，一条消息能发出去的语言是它用途映射到的那个模板声明的语言；不同用途的模板可以声明不同的语言集，每个模板各自覆盖配置的默认语言。**模板的语言集是有效语言集（厂商编号与本地正文的并集），所以这些模板在按编号发送的载体与按正文发送的载体上都能用**：按正文发送的载体由配置里的 `bodies` 提供正文，本模块不写任何载体特有的文案。
+模板键是 `authn.code.login`、`authn.code.mfa`、`authn.code.enroll` 与 `authn.code.reset`，按用途映射；参数名固定为 `code` 与 `ttl_minutes`。`authn.code.login`、`authn.code.mfa` 与 `authn.code.enroll` 是启动的必需项：点名了载体或声明了任一模板后，注册表持有的 `templates` 里必须写这几个模板名、恰好这两个参数，每个模板至少一种语言，且每个模板覆盖配置的默认语言——多声明一个本模块不发送的参数，该模板就没有任何消息能满足。选择项为空且一个模板也没有时是「没有配置短信」，本模块在 `Prepare` 里关闭，不走这条启动必需项核对。`authn.code.reset` 是可选模板：声明了它，短信重置渠道可用，本模块按同一套参数、语言与默认语言规则核对它；没有声明，短信重置渠道不发布，其余用途照常启动。**一条消息的语言集是它所属模板声明的语言集**：本模块不声明任何语言表，一条消息能发出去的语言是它用途映射到的那个模板声明的语言；不同用途的模板可以声明不同的语言集，每个模板各自覆盖配置的默认语言。**模板的语言集是有效语言集（厂商编号与本地正文的并集），所以这些模板在按编号发送的载体与按正文发送的载体上都能用**：按正文发送的载体由配置里的 `bodies` 提供正文，本模块不写任何载体特有的文案。
 
 **覆盖由本模块在 `New` 核对。** `pkg/sms` 只让注册表报告自己持有什么，覆盖哪些组合由消费方核对，所以本模块在 `newProduct` 取到 `sms.Registry` 后立即调 `registry.Declared()`，逐项核对自己所需的（模板，参数）契约——每个必需模板的名字都要在、每个模板至少声明一种语言、每个模板都要覆盖配置的默认语言、参数名表须恰为本模块所发的两个（少一个或多一个都即 `ErrInvalidConfig` 并点名那个参数）；`New` 返回错误同样终止启动，早于服务。`Prepare` 早于 `New`、拿不到实例，核对因此落在 `New`。配置的默认语言用 `reader.Decode(i18n.ConfigNamespace, &cfg)` 读，`cfg` 的字段带 `config:"default-locale"` 且预置为 `en-US`，因而一个没有纳入 i18n 引擎、也就没有该命名空间的装配，读到的仍是英文，与那个引擎自己会读的默认一致。
 

@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,10 +73,19 @@ func TestServePublishesTheFeatureDocument(t *testing.T) {
 		t.Fatalf("the feature document is not JSON: %v\n%s", err, authenticated.body)
 	}
 
-	// The expected sets, derived from this process's own assembly.
+	// The expected sets, derived from this process's own assembly. A module in
+	// the roster is not necessarily enabled: each states its own stance in
+	// Prepare, and the startup diagnostics name every one that stood down. The
+	// document is read before the run is stopped so that every HTTP answer is
+	// collected first; stopping it drains the diagnostics the enabled set is
+	// read from.
+	serve.stop(t)
+	disabled := modulesTheRunDidNotEnable(t, serve.stderr())
 	servedModules := make(map[string]bool)
 	for _, module := range serveRoster() {
-		servedModules[module] = true
+		if !disabled[module] {
+			servedModules[module] = true
+		}
 	}
 	declared, err := declaredVocabulary()
 	if err != nil {
@@ -172,6 +182,32 @@ type vocabularyEntry struct {
 	Module      string `json:"module"`
 	Owner       string `json:"owner"`
 	Conditional bool   `json:"conditional"`
+}
+
+// modulesTheRunDidNotEnable reads the startup diagnostics and answers the
+// modules the run reported as not enabled. The line is core's own:
+// `module "<name>" is not enabled: <reason>`; the reason is free text and is
+// never parsed.
+func modulesTheRunDidNotEnable(t *testing.T, diagnostics string) map[string]bool {
+	t.Helper()
+	const (
+		marker = `module "`
+		suffix = `" is not enabled`
+	)
+	disabled := make(map[string]bool)
+	for _, line := range strings.Split(diagnostics, "\n") {
+		at := strings.Index(line, marker)
+		if at < 0 {
+			continue
+		}
+		rest := line[at+len(marker):]
+		end := strings.Index(rest, suffix)
+		if end < 0 {
+			continue
+		}
+		disabled[rest[:end]] = true
+	}
+	return disabled
 }
 
 // declaredVocabulary is the vocabulary this binary's declarations imply: every

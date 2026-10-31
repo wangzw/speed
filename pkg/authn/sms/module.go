@@ -145,6 +145,13 @@ func Module() core.Module {
 			if _, err = readConfig(reader); err != nil {
 				return core.Enablement{}, err
 			}
+			missing, reason, err := sms.OffByMissingTemplates(reg)
+			if err != nil {
+				return core.Enablement{}, fmt.Errorf("%s: reading the SMS template set: %w", ModuleName, err)
+			}
+			if missing {
+				return core.Enablement{State: core.StateDisabled, Reason: reason}, nil
+			}
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
 

@@ -24,7 +24,9 @@ The API is the package's godoc, and the `Factor`, `FactorRecord`, `FlowState`,
   `sms.carrier`. A `none` selection states `StateDisabled` with that reason
   rather than reporting the absent `authn.SMSCodes` provider as a startup fault,
   so a deployment that offers no SMS loses the SMS second factor rather than
-  failing to start.
+  failing to start. With no selection and no template configured, `Prepare`
+  stands the factor down through `sms.OffByMissingTemplates`, because the SMS
+  code module it depends on makes the same judgement and does not run.
 - **The factor binds a phone whose ownership the account proved, and refuses an
   account that has none.** `provenPhone` reads the account's identifiers and
   takes the first phone whose verification channel proves ownership (`sms-code`

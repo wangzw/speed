@@ -286,6 +286,26 @@ func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 	}
 }
 
+// An absent endpoint list is a run that names the module but did not ask for the
+// management surface: Prepare stands it down with the reason instead of failing
+// the whole startup, which is what lets the binary carry the module in its
+// capability ceiling without every deployment configuring it.
+func TestAnAbsentEndpointListStandsTheModuleDown(t *testing.T) {
+	reader := authntest.ConfigReader(t, Module(), "{}")
+
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Supply(reader, config.ModuleName)
+
+	got, err := Module().Prepare(t.Context(), reg)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if got.State != core.StateDisabled || !strings.Contains(got.Reason, endpointsKey) {
+		t.Errorf("Prepare = %+v, want disabled and naming %q", got, endpointsKey)
+	}
+}
+
 // The endpoint list refuses a shape the module cannot run on, naming the key:
 // an empty list mounts the routes nowhere, and the name that stands for every
 // endpoint is refused because it would put them on the public endpoints.
