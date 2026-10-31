@@ -351,11 +351,18 @@ func seedHostBinary() string {
 // runCommandOn is runCommand over a named program.
 func runCommandOn(t *testing.T, binary, config string, args ...string) commandResult {
 	t.Helper()
+	return runCommandArgs(t, binary, append([]string{"--config", config}, args...), nil)
+}
+
+// runCommandArgs is runCommandOn with the argument list and the extra
+// environment entries the caller names, so a case can run a command with no
+// configuration source at all.
+func runCommandArgs(t *testing.T, binary string, args, extraEnv []string) commandResult {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), commandLimit)
 	defer cancel()
-	full := append([]string{"--config", config}, args...)
-	cmd := exec.CommandContext(ctx, binary, full...)
-	cmd.Env = childEnv()
+	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Env = append(childEnv(), extraEnv...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -389,9 +396,16 @@ type process struct {
 // waits for ready afterwards. Its stop is registered as a cleanup.
 func start(t *testing.T, config string, args ...string) *process {
 	t.Helper()
-	full := append([]string{"--config", config}, args...)
-	cmd := exec.Command(hostBinary, full...)
-	cmd.Env = childEnv()
+	return startArgs(t, append([]string{"--config", config}, args...), nil)
+}
+
+// startArgs is start with the argument list and the extra environment entries
+// the caller names; a case that runs on the compiled-in defaults passes no
+// --config at all.
+func startArgs(t *testing.T, args, extraEnv []string) *process {
+	t.Helper()
+	cmd := exec.Command(hostBinary, args...)
+	cmd.Env = append(childEnv(), extraEnv...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("opening the child's standard output: %v", err)

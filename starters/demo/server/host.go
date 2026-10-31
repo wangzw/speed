@@ -16,11 +16,10 @@ const hostModuleName = "host"
 // The product's own traffic boundaries are the five endpoints api, account,
 // admin, ops and web, and the two listeners that carry them — the backend
 // listener carries api, account, admin and web, and the ops listener carries
-// ops. Both are configuration, and the program names none of them in code: the
-// endpoint table is the platform defaults document compiled into the binary
-// (server/defaults.yaml), and the listeners are declared by the configuration
-// file a run is pointed at, whose samples live under server/testdata. AGENTS.md
-// explains both.
+// ops. Both are the platform defaults document compiled into the binary
+// (defaults.go): the endpoint table and the bare run's listener addresses are
+// values the host names on purpose, and a configuration file a run is pointed
+// at replaces any leaf it writes. AGENTS.md explains the layering.
 
 // init registers the host's own module. What a host hands the assembly travels
 // through the module mechanism like everything else: the identity is a resource
@@ -29,15 +28,17 @@ func init() { core.ProcessRegistry.Register(hostModule()) }
 
 // hostModule carries the two host inputs that precede all configuration.
 //
-// HostIdentity is the environment prefix; platformDefaults is the topology
-// document compiled into the binary. Both belong to the host rather than to any
-// capability: the prefix names this program's variables, and the document
-// describes this assembly.
+// HostIdentity is the environment prefix; platformDefaults is the defaults
+// document compiled into the binary — this assembly's topology, the development
+// values a bare run needs and its local seed. Both belong to the host rather
+// than to any capability: the prefix names this program's variables, and the
+// document describes this assembly.
 //
-// DefaultLocator is left empty: this program has no installed config file to
-// fall back on, and every command — version included — reads the source it is
-// pointed at through --config or DEMO_CONFIG, so a default naming a file that is
-// not there would fail commands that need no configuration at all.
+// DefaultLocator is left empty: a bare run has no configuration file at all,
+// and naming a file here would make every command — version included — depend
+// on one being installed. A run pointed at a source through --config or
+// DEMO_CONFIG layers that file above the document; one pointed at nothing runs
+// on the document alone.
 func hostModule() core.Module {
 	return core.Module{
 		Name:      hostModuleName,

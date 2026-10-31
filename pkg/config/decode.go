@@ -182,11 +182,23 @@ func (r *reader) leaf(path string, fv reflect.Value) error {
 	// the value the same way, and the prototype's own container is the last
 	// resort, reached through the default layer below.
 	//
+	// The environment is above both. Its value is JSON and replaces the whole
+	// container, so an item declaring the environment takes it before the
+	// documents are looked at: keeping the documents in the running would be
+	// the merge the design rules out, and the default and the file would
+	// survive a value meant to stand for them.
+	//
 	// A value the source wrote as nothing is not a value it gave: every other
 	// leaf reaches the same conclusion by the nil below, and a container
 	// answering differently would make the meaning of an empty key depend on
 	// the type behind it.
 	if declared && item.kind == kindContainer {
+		if text, set := r.l.envValue(item); set {
+			if !fv.CanSet() {
+				return nil
+			}
+			return envContainer(item, text, fv)
+		}
 		for _, tree := range [...]map[string]any{r.l.primary, r.l.defaults} {
 			given, found := primaryValue(tree, path)
 			if !found || given == nil {

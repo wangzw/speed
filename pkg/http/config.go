@@ -73,10 +73,10 @@ type moduleConfig struct {
 
 // listenerConfig is one listening socket as configuration gives it.
 //
-// The durations are pointers because the listener set is a container leaf: the
-// primary source replaces the whole map rather than merging into it, so a value
-// type could not tell "the key is absent" from "the key is 0", and 0 is the
-// legal way to switch most of the timeouts off. A duration is written as a
+// The durations are pointers because the listener set is a container leaf: a
+// source that gives it replaces the whole map rather than merging into it, so a
+// value type could not tell "the key is absent" from "the key is 0", and 0 is
+// the legal way to switch most of the timeouts off. A duration is written as a
 // string time.ParseDuration accepts; config refuses a bare number, because 300
 // would read as five minutes and mean three hundred nanoseconds. Two of the
 // durations refuse an explicit 0 instead of switching off, and resolve says
@@ -188,18 +188,22 @@ var configDefaults = moduleConfig{}
 
 // schema is this module's input item declaration.
 //
-// The listener set and the endpoint set take the primary config source alone.
-// Each is a map, and such a leaf has no flat form the environment or the
-// command line could give; declaring either of them on such a source is
-// ErrInvalidSchema. The two sets are therefore changed in the config file or the
-// remote config centre, never by an environment variable.
+// The endpoint set takes the primary config source alone. It is the product's
+// routing map, and a map has no flat form the command line could give; the
+// environment could give it as JSON, but moving a capability between endpoints
+// is a change to the assembly rather than a value that differs between runs, so
+// it belongs to the configuration file or the host defaults document.
+//
+// The listener set and the two module-level proxy lists do take the environment,
+// as JSON that replaces the whole value: where a process binds and which
+// network in front of it is believed differ between runs of one binary.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: configNamespace,
 		Mounts:    []config.Mount{{Value: &configDefaults}},
 		Items: map[string]config.Item{
 			listenersItem: {
-				Origins:     config.OriginPrimary,
+				Origins:     config.OriginPrimary | config.OriginEnv,
 				Description: "the listening sockets, each with its own address, timeouts and TLS",
 			},
 			endpointsItem: {
@@ -207,11 +211,11 @@ func schema() config.Schema {
 				Description: "the routing endpoints, each hanging on a listener and carrying its chain settings",
 			},
 			trustedProxiesItem: {
-				Origins:     config.OriginPrimary,
+				Origins:     config.OriginPrimary | config.OriginEnv,
 				Description: "the networks in front of this deployment, whose forwarded-address headers every endpoint inherits unless it writes its own",
 			},
 			remoteIPHeadersItem: {
-				Origins:     config.OriginPrimary,
+				Origins:     config.OriginPrimary | config.OriginEnv,
 				Description: "the forwarded-address headers a trusted proxy writes, inherited by every endpoint unless it writes its own",
 			},
 		},

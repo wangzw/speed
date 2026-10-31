@@ -87,6 +87,9 @@ func TestKeySegmentCharsetRejects(t *testing.T) {
 	type plain struct {
 		Field string
 	}
+	type doubleUnderscore struct {
+		Field string `config:"a__b"`
+	}
 	cases := map[string]struct {
 		schema   Schema
 		fragment string
@@ -94,6 +97,7 @@ func TestKeySegmentCharsetRejects(t *testing.T) {
 		"underscore in a key":     {Schema{Mounts: mount(&underscore{})}, "pool_size"},
 		"upper case in a key":     {Schema{Mounts: mount(&capital{})}, "PoolSize"},
 		"dot inside a segment":    {Schema{Mounts: mount(&dotted{})}, "redis.addr"},
+		"double underscore":       {Schema{Mounts: mount(&doubleUnderscore{})}, "a__b"},
 		"empty namespace segment": {Schema{Namespace: "cache..redis", Mounts: mount(&plain{})}, "empty segment"},
 	}
 	for name, tc := range cases {
@@ -464,24 +468,27 @@ func TestUndeclaredContainerTakesThePrimarySourceAlone(t *testing.T) {
 	}
 }
 
-// TestContainerDeclaringEnvOriginRejected pins the defect at collection: the
-// declaration itself is wrong, and waiting for the value would only surface it
-// on the runs where that one variable happens to be set.
-func TestContainerDeclaringEnvOriginRejected(t *testing.T) {
+// TestContainerDeclaringEnvOriginIsAccepted pins that the environment is an
+// origin a container may name. The value is JSON and replaces the whole
+// container, so the declaration has a form to honour; the collection pass must
+// let it through and derive the variable name like any other item.
+func TestContainerDeclaringEnvOriginIsAccepted(t *testing.T) {
 	type carrier struct {
 		Labels map[string]string
 	}
-	err := expandFails(t, Schema{
+	byPath := expandOne(t, Schema{
 		Mounts: mount(&carrier{}),
 		Items:  map[string]Item{"labels": {Origins: OriginPrimary | OriginEnv}},
 	}, "MYAPP")
-	if !strings.Contains(err.Error(), "primary config source") {
-		t.Fatalf("the rejection reads %q, which does not say where such an item takes its value", err)
+	if got := byPath["labels"].envName; got != "MYAPP_LABELS" {
+		t.Fatalf("the container reads the environment variable %q, want MYAPP_LABELS", got)
 	}
 }
 
 // TestContainerDeclaringFlagOriginRejected is the command-line half of the
-// same defect, on the other container shape.
+// same defect, on the other container shape. The command line has no form for
+// a container in this release, so naming it there is still a misspelling of
+// the origins.
 func TestContainerDeclaringFlagOriginRejected(t *testing.T) {
 	type endpoint struct {
 		Addr string

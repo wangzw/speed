@@ -390,13 +390,21 @@ func checkMembers(in seedInput) error {
 // The account list is one item and not a tree of them, because a list carries
 // no per-field metadata: the whole list is marked sensitive instead, since
 // every entry under it holds a password.
+//
+// Every list takes the environment as well as the configuration file, and its
+// value there is JSON that replaces the whole list. The seed is a value that
+// differs between runs of one binary — a deployment seeds its own operators and
+// tenants — so a run pointed at no configuration file can give it, and the
+// precedence stays the command line above the environment above the
+// configuration file above the defaults document. The document itself names
+// the local seed a bare run starts from; see defaults.go.
 func seedSchema() config.Schema {
 	return config.Schema{
 		Namespace: seedNamespace,
 		Mounts:    []config.Mount{{Value: &seedInput{}}},
 		Items: map[string]config.Item{
 			accountsItem: {
-				Origins:   config.OriginPrimary,
+				Origins:   config.OriginPrimary | config.OriginEnv,
 				Required:  true,
 				Sensitive: true,
 				Description: "the accounts a copy starts with, each with its login name, the username it " +
@@ -405,7 +413,7 @@ func seedSchema() config.Schema {
 					"role; at least one account must hold it",
 			},
 			tenantsItem: {
-				Origins: config.OriginPrimary,
+				Origins: config.OriginPrimary | config.OriginEnv,
 				Description: "the business tenants this deployment serves, each with its name, " +
 					"the accounts that administer it, and optionally the runtime settings written " +
 					"into that tenant's layer; the system tenant must not be listed, each is " +
@@ -413,13 +421,13 @@ func seedSchema() config.Schema {
 					"tenant-admin binding are written whenever either is missing",
 			},
 			settingsItem: {
-				Origins: config.OriginPrimary,
+				Origins: config.OriginPrimary | config.OriginEnv,
 				Description: "runtime settings the deployment starts with, each written into " +
 					"the global layer while that layer holds no explicit row for the key; the " +
 					"settings module holds every value to its declaration and domain",
 			},
 			membersItem: {
-				Origins: config.OriginPrimary,
+				Origins: config.OriginPrimary | config.OriginEnv,
 				Description: "the memberships the deployment starts with, each naming one of the " +
 					"tenants under seed.tenants and one of the accounts under seed.accounts; a " +
 					"member is active unless it is marked suspended",

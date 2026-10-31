@@ -124,6 +124,7 @@ import (
 	_ "github.com/vislake/speed/pkg/authn/sso/saml"
 	_ "github.com/vislake/speed/pkg/sms/admin"
 
+	_ "github.com/vislake/speed/pkg/config/format/json"
 	_ "github.com/vislake/speed/pkg/config/format/yaml"
 	_ "github.com/vislake/speed/pkg/config/source/file"
 
@@ -344,7 +345,7 @@ var (
 		// The feature document. The frontend reads it to find out which of the
 		// surfaces it carries code for this process serves, so a run that serves
 		// the frontend names this module. It mounts GET /api/v1/features on the endpoint
-		// feature.board.endpoint names — defaults.yaml names the account endpoint,
+		// feature.board.endpoint names — the platform defaults document names the account endpoint,
 		// which the gateway guards and the listener claims for /api/v1/features. The
 		// module also needs the authentication gateway: it fails the start rather
 		// than publish the document to anonymous callers.
@@ -422,22 +423,6 @@ var (
 		auditjournal.ModuleName,
 	}
 )
-
-//go:embed defaults.yaml
-var platformDefaultsYAML []byte
-
-// platformDefaults delivers the platform defaults document compiled into this
-// binary. The document is the host's own artifact — it describes this
-// assembly's topology — so it lives here rather than in pkg/config, which only
-// knows the layer it feeds. It is layered below the configuration file a run is
-// pointed at and above each module's prototype defaults; see defaults.yaml and
-// AGENTS.md for what belongs in it.
-type platformDefaults struct{}
-
-var _ config.Defaults = platformDefaults{}
-
-func (platformDefaults) Format() string { return "yaml" }
-func (platformDefaults) Data() []byte   { return platformDefaultsYAML }
 
 //go:embed dist
 var webBundle embed.FS

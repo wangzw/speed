@@ -132,6 +132,10 @@ type moduleConfig struct {
 
 // schema declares this module's input items, mounted under its own namespace.
 // The endpoint defaults to defaultEndpoint through the prototype.
+//
+// The servers list takes the environment as well as the configuration file: it
+// names the origins the deployment is reached at, which differ between runs of
+// one binary. The rest is document metadata a deployment writes once.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -141,7 +145,7 @@ func schema() config.Schema {
 			titleItem:       {Origins: config.OriginPrimary},
 			versionItem:     {Origins: config.OriginPrimary},
 			descriptionItem: {Origins: config.OriginPrimary},
-			serversItem:     {Origins: config.OriginPrimary},
+			serversItem:     {Origins: config.OriginPrimary | config.OriginEnv},
 		},
 	}
 }

@@ -14,7 +14,9 @@ const rootItem = "root"
 
 // configDefaults is what this backend is worth without a configuration file.
 // There is none: a backend with no directory to keep bytes under has nowhere to
-// put them, so root carries no default and is declared required.
+// put them, so root carries no default and is declared required. A host that
+// wants a bare run to start names one in its defaults document; this module
+// does not invent a path on the operator's disk.
 var configDefaults = moduleConfig{}
 
 // moduleConfig is the set of input items this backend accepts.
@@ -38,14 +40,14 @@ func (c moduleConfig) resolve() resolved {
 // items declares this backend's input items. The module descriptor mounts them
 // under this backend's namespace.
 //
-// The root takes the primary configuration source alone: the directory an
-// object's bytes are kept under is the object store's own policy, and an
-// environment variable or a command-line argument that could rewrite it would be
-// a way to change where a process stores from outside the configuration file.
+// The root takes the environment as well as the configuration file: where a
+// run keeps its bytes differs between runs of one binary, and a run with no
+// configuration file still has to name one. The value is not accepted from the
+// command line, which would put a filesystem path in a process listing.
 func items() map[string]config.Item {
 	return map[string]config.Item{
 		rootItem: {
-			Origins:     config.OriginPrimary,
+			Origins:     config.OriginPrimary | config.OriginEnv,
 			Required:    true,
 			Description: "the local directory an object's bytes are kept under",
 		},

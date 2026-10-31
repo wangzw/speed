@@ -131,17 +131,18 @@ type Policy struct {
 
 // schema declares this module's input items.
 //
-// endpoints takes the primary config source alone. It is a map, and such a leaf
-// has no flat form the environment or the command line could give, so it is
-// changed in the config file or the remote config centre and never by an
-// environment variable.
+// endpoints takes the environment as well as the configuration file, as JSON
+// that replaces the whole table. The origins a deployment is served from differ
+// between runs of one binary, and a run with no configuration file still has to
+// name the endpoints the layer guards. The value is a map of policies, so the
+// command line has no form for it.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
 		Mounts:    []config.Mount{{Value: &Config{}}},
 		Items: map[string]config.Item{
 			endpointsKey: {
-				Origins: config.OriginPrimary,
+				Origins: config.OriginPrimary | config.OriginEnv,
 				Description: "the listening endpoints the CORS layer guards, each keyed by the " +
 					"name the entry point's configuration gives it and carrying that endpoint's " +
 					"CORS policy; at least one is required",

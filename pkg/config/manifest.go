@@ -203,11 +203,17 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 	// The declared set, not the resolved one, decides this: an item that
 	// declared nothing resolves to a set it never asked for, and killing it
 	// here would take down every undeclared map field.
-	if kind == kindContainer && item.Origins&(OriginEnv|OriginFlag) != 0 {
-		return fmt.Errorf("%w: module %q gives %q the environment or the command line as an "+
-			"origin, and it is %s. A map or a list of structs has no flat form for those layers "+
-			"to give, so the declaration could never produce a value; such an item takes the "+
-			"primary config source alone",
+	//
+	// The environment is not in this check. A container takes it as JSON and
+	// replaces the whole value, which is a form it can honour (see
+	// envContainer); the command line has no such form, so declaring it there
+	// is still a defect that shows at collection rather than on the runs where
+	// somebody happens to write the argument.
+	if kind == kindContainer && item.Origins&OriginFlag != 0 {
+		return fmt.Errorf("%w: module %q gives %q the command line as an origin, and it is %s. "+
+			"A map or a list of structs has no form for the command line to give, so the "+
+			"declaration could never produce a value; such an item takes the primary config "+
+			"source, the environment as JSON, or the host defaults document",
 			ErrInvalidSchema, e.module, key, typeName(ft))
 	}
 	if utf8.RuneCountInString(item.FlagShort) > 1 {
@@ -382,9 +388,10 @@ func pathLabel(key string) string {
 
 // resolveOrigins settles the origins of one leaf. The zero value stands for
 // the ordinary combination, except on a container leaf: a map or a list of
-// structs takes the primary config source alone, so resolving its zero value
-// to include the environment would have it read a variable whose flat text it
-// could never convert.
+// structs takes the primary config source alone unless its module names another
+// origin. Reading the environment is a choice the container's encoding makes
+// visible -- JSON text, replaced whole -- so an undeclared map does not start
+// reading a variable nobody wrote.
 func resolveOrigins(declared Origin, kind leafKind) Origin {
 	if declared == 0 && kind == kindContainer {
 		return OriginPrimary

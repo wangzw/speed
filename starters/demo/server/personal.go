@@ -350,13 +350,17 @@ type personalConfig struct {
 // personalSchema declares the module's one input item. The list is collected
 // over every registered module whether or not it runs, so the namespace is the
 // module's own name.
+//
+// The switch takes the environment as well as the configuration file: whether a
+// run creates personal tenants differs between runs of one binary, so the
+// development loop can turn it on without a configuration file.
 func personalSchema() config.Schema {
 	return config.Schema{
 		Namespace: personalModuleName,
 		Mounts:    []config.Mount{{Value: &personalConfig{}}},
 		Items: map[string]config.Item{
 			personalConfigItem: {
-				Origins: config.OriginPrimary,
+				Origins: config.OriginPrimary | config.OriginEnv,
 				Description: "whether the host creates a personal tenant for an account with no " +
 					"membership; off, POST /api/v1/workspace/personal is not mounted and /api/v1/workspace answers 404",
 			},

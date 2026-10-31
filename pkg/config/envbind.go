@@ -14,8 +14,10 @@ import (
 // reads no variable is given nothing here, whatever the environment holds, or
 // it would take a value from a source it never declared.
 //
-// An empty variable counts as a value. The design reads an empty list out of
-// an empty variable, and somebody who wrote the variable did give a value.
+// An empty variable counts as a value. Somebody who wrote the variable did give
+// a value, and what it is follows the item's kind: the empty list or map for a
+// container, and a diagnostic for a struct, whose members cannot be read out of
+// nothing (see envContainer).
 func (l *loader) envValue(item *manifestItem) (string, bool) {
 	if item.envName == "" {
 		return "", false

@@ -36,8 +36,23 @@ func decodeHook() mapstructure.DecodeHookFunc {
 // rather than in place, so a container arrives as a copy and two holders of
 // the same configuration cannot write into each other.
 func decodeInto(path string, raw any, target reflect.Value) error {
+	return decodeValue(path, raw, target, false)
+}
+
+// decodeIntoStrict writes a JSON value the environment gave into one target
+// field. It differs from decodeInto in what it does with a member no field
+// answers for and in how it decides which field a member names: a member that
+// reaches none is refused rather than dropped, and a name is matched exactly
+// rather than case-insensitively. A container written by hand in a variable
+// has no unknown-key pass to catch a misspelling later, and the design keeps
+// the spelling the declaration publishes as the one the JSON has to use.
+func decodeIntoStrict(path string, raw any, target reflect.Value) error {
+	return decodeValue(path, raw, target, true)
+}
+
+func decodeValue(path string, raw any, target reflect.Value, strict bool) error {
 	out := reflect.New(target.Type())
-	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+	config := &mapstructure.DecoderConfig{
 		DecodeHook: decodeHook(),
 		Result:     out.Interface(),
 		// The three settings below are the field-name rule of this module,
@@ -53,7 +68,15 @@ func decodeInto(path string, raw any, target reflect.Value) error {
 		// target already holds, which is the rule its keys not being in the
 		// manifest follows from.
 		ZeroFields: true,
-	})
+		// The strict decoder is the environment's container decoder: a member
+		// no field answers for is an error, and a member is matched by the
+		// exact name the field publishes.
+		ErrorUnused: strict,
+	}
+	if strict {
+		config.MatchName = func(mapKey, fieldName string) bool { return mapKey == fieldName }
+	}
+	decoder, err := mapstructure.NewDecoder(config)
 	if err != nil {
 		return fmt.Errorf("%w: %q takes %s, and the decoder for it could not be built: %w",
 			ErrTypeMismatch, path, typeName(target.Type()), err)
