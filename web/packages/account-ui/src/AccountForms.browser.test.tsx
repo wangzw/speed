@@ -6,9 +6,10 @@
  * or change form puts its submit beneath its field, the primary action
  * closes an inline form's row on the right, a wizard's confirm and cancel
  * share one row with the fields capped to the form width, the factor
- * list's removals close on one right rail, and the password form's submit
- * ends flush with its fields. jsdom lays nothing out, so only this tier can
- * tell one arrangement from another.
+ * list's removals close on one right rail, both phone steps close on their
+ * primary, and the password form's submit ends flush with its fields.
+ * jsdom lays nothing out, so only this tier can tell one arrangement from
+ * another.
  */
 
 import Button from '@mui/material/Button'
@@ -16,6 +17,7 @@ import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
+import { PhoneCountryDefaultProvider } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { identifier, profileBody } from '../test-utils/fixtures.js'
 import {
@@ -29,6 +31,7 @@ import { ContactVerificationSection } from './ContactVerificationSection.js'
 import { IdentifiersSection } from './IdentifiersSection.js'
 import { MfaSection } from './MfaSection.js'
 import { PasswordSection } from './PasswordSection.js'
+import { PhoneSection } from './PhoneSection.js'
 import { FlowStep } from './internal/flow-step.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
@@ -36,6 +39,7 @@ const FACTORS_PATH = '/api/v1/auth/factors'
 const METHODS_PATH = '/api/v1/auth/methods'
 const FLOW_START = '/api/v1/auth/flows/authenticated'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
+const PHONE_PATH = '/api/v1/auth/phone'
 const OTPAUTH_URI = 'otpauth://totp/speed:ada?issuer=speed'
 
 /** Two boxes are on the same line when their top edges agree. */
@@ -291,6 +295,45 @@ describe('account-ui form geometry', () => {
     // The submit's right edge lands on the field's right edge, not its left.
     expect(Math.abs(submitBox.right - fieldBox.right)).toBeLessThanOrEqual(1)
     expect(submitBox.left).toBeGreaterThan(fieldBox.left)
+  })
+
+  it('closes the phone form\'s action rows on their right primary', async () => {
+    await page.viewport(1100, 900)
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      return jsonResponse(404, { code: 'authn.bad_request' })
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <PhoneCountryDefaultProvider country="US">
+        <PhoneSection session={rig.session} onCancel={() => undefined} />
+      </PhoneCountryDefaultProvider>,
+    )
+    const user = userEvent.setup()
+
+    // Number step: the close control leads, the send primary closes the row.
+    const send = await screen.findByRole('button', { name: zhCN.phone.send })
+    const close = screen.getByRole('button', { name: zhCN.phone.close })
+    expect(sameTop(send, close)).toBe(true)
+    expect(rightOf(send, close)).toBe(true)
+
+    await user.type(
+      screen.getByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      '4155552671',
+    )
+    await user.click(send)
+    await screen.findByLabelText(zhCN.phone.code.label)
+
+    // Code step: the same arrangement, with the verify primary disabled
+    // while the code field is empty.
+    const verify = screen.getByRole('button', { name: zhCN.phone.verify })
+    const back = screen.getByRole('button', { name: zhCN.phone.close })
+    expect(verify).toBeDisabled()
+    expect(sameTop(verify, back)).toBe(true)
+    expect(rightOf(verify, back)).toBe(true)
   })
 
   it('renders a host secondary control beside a step primary on one row', async () => {
