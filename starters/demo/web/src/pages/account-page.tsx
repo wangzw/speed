@@ -211,12 +211,7 @@ function SecurityRow({
               flexWrap: 'wrap',
             }}
           >
-            <Typography
-              id={titleId}
-              variant="subtitle1"
-              component="h2"
-              sx={{ fontWeight: 600 }}
-            >
+            <Typography id={titleId} variant="h5" component="h2">
               {title}
             </Typography>
             {badge}
@@ -403,8 +398,7 @@ function AccountSection({
           <Box
             sx={{
               display: 'flex',
-              color: 'text.primary',
-              opacity: 0.8,
+              color: 'text.secondary',
               flexShrink: 0,
             }}
           >
@@ -412,12 +406,7 @@ function AccountSection({
           </Box>
         )}
         <Box sx={{ minWidth: 0 }}>
-          <Typography
-            id={titleId}
-            variant="subtitle1"
-            component="h2"
-            sx={{ fontWeight: 600 }}
-          >
+          <Typography id={titleId} variant="h5" component="h2">
             {title}
           </Typography>
           {description === undefined ? null : (
@@ -623,13 +612,21 @@ export function AccountSettingsPage({
                   icon={<MailIcon />}
                   description={t('account.blockDescriptions.email')}
                   action={
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      onClick={() => setAddEmailSignal((count) => count + 1)}
-                    >
-                      {t('account.action.add')}
-                    </Button>
+                    // The add face only exists when the deployment serves
+                    // the email identifier and the account is not waiting on
+                    // a proof; the same two facts the section uses to decide
+                    // its add kinds, read here so the button is absent when
+                    // pressing it could never open anything.
+                    emailIdentifierServed &&
+                    profile.data?.verification?.state !== 'pending' ? (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => setAddEmailSignal((count) => count + 1)}
+                      >
+                        {t('account.action.add')}
+                      </Button>
+                    ) : undefined
                   }
                 >
                   <Stack spacing={2}>
@@ -666,6 +663,10 @@ export function AccountSettingsPage({
                     icon={<PhoneIcon />}
                     description={t('account.blockDescriptions.phone')}
                     action={
+                      // Add lives in the block header only while there is no
+                      // number to act on; once a number is bound, its remove
+                      // action rides the number's own row below, like the
+                      // email card's per-row actions.
                       boundPhone?.id == null ? (
                         <Button
                           variant="outlined"
@@ -674,16 +675,7 @@ export function AccountSettingsPage({
                         >
                           {t('account.action.add')}
                         </Button>
-                      ) : (
-                        <Button
-                          variant="outlined"
-                          color="error"
-                          size="small"
-                          onClick={() => setPhoneRemoveOpen(true)}
-                        >
-                          {t('account.action.delete')}
-                        </Button>
-                      )
+                      ) : undefined
                     }
                   >
                     {boundPhone === undefined ? (
@@ -732,7 +724,18 @@ export function AccountSettingsPage({
                                 }
                               />
                             </TableCell>
-                            <TableCell align="right" />
+                            <TableCell align="right">
+                              {boundPhone.id == null ? null : (
+                                <Button
+                                  variant="outlined"
+                                  color="error"
+                                  size="small"
+                                  onClick={() => setPhoneRemoveOpen(true)}
+                                >
+                                  {t('account.action.delete')}
+                                </Button>
+                              )}
+                            </TableCell>
                           </TableRow>
                         </TableBody>
                       </Table>

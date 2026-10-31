@@ -480,3 +480,97 @@ describe('AccountBindingCallbackPage', () => {
     await waitFor(() => expect(readFlow).toHaveBeenCalled())
   })
 })
+
+describe('AccountSettingsPage block consistency', () => {
+  /** The data-mode backend with one profile field replaced. */
+  function patchedBackend(patch: Record<string, unknown>): RequestFn {
+    const backend = createBackend('data')
+    return (async (path: string, requestOptions?: RequestOptions) => {
+      const answer = await backend(path, requestOptions)
+      if (
+        path === '/api/v1/auth/me' &&
+        (requestOptions?.method ?? 'GET') === 'GET'
+      ) {
+        return { ...(answer as Record<string, unknown>), ...patch }
+      }
+      return answer
+    }) as RequestFn
+  }
+
+  it('keeps the email add action out while the account is still pending proof', async () => {
+    // The data profile is pending; the deployment does serve the email
+    // channel. The button would open nothing, so it is not rendered.
+    renderAccount('?section=profile', {
+      features: ['authn.identifiers.email'],
+    })
+    await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.email,
+    })
+    // The profile read settles to "pending"; the button goes with it.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: demoEnUS.account.action.add }),
+      ).toBeNull(),
+    )
+  })
+
+  it('renders the phone removal on the number row, not in the block header', async () => {
+    const backend = patchedBackend({
+      identifiers: [
+        {
+          id: 'id-phone',
+          kind: 'phone',
+          value: '+14155550123',
+          proven: true,
+          contact: true,
+          default_contact: false,
+          sign_in: false,
+          verified_at: '2026-01-01T00:00:00Z',
+          verified_via: 'sms',
+        },
+      ],
+      verification: { state: 'none', email: '', since: '' },
+    })
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend,
+    })
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+    const remove = await within(phone).findByRole('button', {
+      name: demoEnUS.account.action.delete,
+    })
+    // The remove control belongs to the number's own action cell.
+    expect(remove.closest('td')).not.toBeNull()
+    expect(within(phone).getByRole('table')).toContainElement(remove)
+  })
+
+  it('gives block titles the card heading role above their row labels', async () => {
+    renderAccount('?section=security', { features: ['authn.mfa'] })
+    const title = await screen.findByRole('heading', {
+      level: 2,
+      name: demoEnUS.account.rows.label.loginWays,
+    })
+    // The card title takes the h5 role (20px), not the same subtitle1 size
+    // as the row labels inside it.
+    expect(title).toHaveClass('MuiTypography-h5')
+  })
+
+  it('paints every security block icon with the same color', async () => {
+    renderAccount('?section=security', { features: ['authn.mfa'] })
+    const password = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.password,
+    })
+    const loginWays = screen.getByRole('region', {
+      name: demoEnUS.account.rows.label.loginWays,
+    })
+    const passwordIcon = password.querySelector('svg')?.parentElement
+    const loginWaysIcon = loginWays.querySelector('svg')?.parentElement
+    expect(passwordIcon).not.toBeNull()
+    expect(loginWaysIcon).not.toBeNull()
+    expect(getComputedStyle(loginWaysIcon as Element).color).toBe(
+      getComputedStyle(passwordIcon as Element).color,
+    )
+  })
+})
