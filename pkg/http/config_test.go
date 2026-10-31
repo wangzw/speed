@@ -66,21 +66,28 @@ func readThrough(t *testing.T, document string, declared config.Schema) (moduleC
 	return got, decodeErr, nil
 }
 
-// TestTheSetsArePrimaryOnlyContainerLeaves pins the origin declaration. Each set
-// is a map, which config classifies as a container leaf: the primary source
-// replaces it as a whole, its keys never reach the manifest, and declaring an
-// environment or command-line origin on one is ErrInvalidSchema.
-func TestTheSetsArePrimaryOnlyContainerLeaves(t *testing.T) {
-	for item, field := range map[string]string{listenersItem: "Listeners", endpointsItem: "Endpoints"} {
+// TestTheSetsDeclareTheirOrigins pins the origin declaration. Each set is a map,
+// which config classifies as a container leaf. The listener set takes the
+// environment as JSON beside the primary source: where a process binds differs
+// between runs of one binary. The endpoint set stays on the primary source and
+// the host defaults document: moving a capability between endpoints is a change
+// to the assembly rather than a value that differs between runs.
+func TestTheSetsDeclareTheirOrigins(t *testing.T) {
+	want := map[string]config.Origin{
+		listenersItem: config.OriginPrimary | config.OriginEnv,
+		endpointsItem: config.OriginPrimary,
+	}
+	for item, origins := range want {
 		declared, ok := schema().Items[item]
 		if !ok {
 			t.Fatalf("the schema declares no %q item, so its origins are the default set", item)
 		}
-		if declared.Origins != config.OriginPrimary {
-			t.Errorf("the %s set declares the origins %v; only the primary source can give a "+
-				"container leaf", item, declared.Origins)
+		if declared.Origins != origins {
+			t.Errorf("the %s set declares the origins %v, want %v", item, declared.Origins, origins)
 		}
+	}
 
+	for item, field := range map[string]string{listenersItem: "Listeners", endpointsItem: "Endpoints"} {
 		got, ok := reflect.TypeFor[moduleConfig]().FieldByName(field)
 		if !ok {
 			t.Fatalf("moduleConfig has no %s field", field)
@@ -92,18 +99,28 @@ func TestTheSetsArePrimaryOnlyContainerLeaves(t *testing.T) {
 	}
 }
 
-// TestEnvOriginOnAContainerLeafIsRefused is the other half of the same fact,
-// and the half a declaration could get wrong: config refuses the declaration
-// outright rather than quietly deriving an environment variable nobody can use.
-func TestEnvOriginOnAContainerLeafIsRefused(t *testing.T) {
-	defective := schema()
-	defective.Items = map[string]config.Item{
-		endpointsItem: {Origins: config.OriginPrimary | config.OriginEnv, Description: "x"},
-	}
+// TestAListenerSetFromTheEnvironmentIsAccepted is the half a declaration could
+// get wrong in the other direction: the environment gives a container leaf as
+// JSON, and the value replaces the primary source's set whole rather than
+// merging into it.
+func TestAListenerSetFromTheEnvironmentIsAccepted(t *testing.T) {
+	t.Setenv("HTTPTEST_HTTP__LISTENERS", `{"from-env":{"address":"127.0.0.1:0"}}`)
 
-	_, _, runErr := readThrough(t, `{"http":{"listeners":{"l":{"address":":1"}},"endpoints":{}}}`, defective)
-	if !errors.Is(runErr, config.ErrInvalidSchema) {
-		t.Fatalf("an environment origin on a container leaf was not refused: %v", runErr)
+	got, decodeErr, runErr := readThrough(t,
+		`{"http":{"listeners":{"from-file":{"address":"127.0.0.1:1"}}}}`, schema())
+	if runErr != nil {
+		t.Fatalf("the run failed: %v", runErr)
+	}
+	if decodeErr != nil {
+		t.Fatalf("decoding this module's section: %v", decodeErr)
+	}
+	if _, ok := got.Listeners["from-env"]; !ok {
+		t.Errorf("the listener set decoded as %+v, and the variable's listener is missing",
+			got.Listeners)
+	}
+	if _, ok := got.Listeners["from-file"]; ok {
+		t.Errorf("the listener set decoded as %+v; the environment replaces it whole rather "+
+			"than merging with the document", got.Listeners)
 	}
 }
 
