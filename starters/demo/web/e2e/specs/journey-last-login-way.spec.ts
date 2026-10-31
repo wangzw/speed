@@ -309,19 +309,15 @@ async function proveWithPasskey(page: Page): Promise<void> {
   await passkey.click()
 
   // Choosing the passkey starts the assertion ceremony on arrival, so there
-  // is no start control. The prompt leaving is what distinguishes the parked
-  // `complete` step from the ceremony still running.
+  // is no start control. When the ceremony settles, the ready state's
+  // `complete` step is the dialog's own confirmation and the dialog closes
+  // without a click; the prompt leaving is what distinguishes that settled
+  // step from the ceremony still running.
   await expect(
     dialog.getByText(copy('accountUi', 'flowStep.passkeyPrompt'), {
       exact: true,
     }),
   ).toHaveCount(0, { timeout: 30_000 })
-  const parked = dialog.getByRole('button', {
-    name: copy('accountUi', 'mfa.stepUp.confirmLabel'),
-    exact: true,
-  })
-  await expect(parked).toHaveCount(1)
-  await parked.click()
   await expect(dialog).toHaveCount(0, { timeout: 30_000 })
 }
 

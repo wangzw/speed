@@ -7,8 +7,11 @@
  * its first step; choosing a factor answers with `step: 'factor'` and
  * the factor identifier; the flow's challenge step then asks for a code
  * answered under the same `factor` step, the chosen factor re-named
- * beside it; a completion in state 'elevated' fires onSuccess; a refused
- * answer renders its code text and stays retryable; an account with no
+ * beside it; a completion in state 'elevated' fires onSuccess; a ready
+ * state's `complete` step is answered automatically once per sequence,
+ * and the step's own confirmation button takes over when that automatic
+ * answer is refused; a refused answer renders its code text and stays
+ * retryable; an account with no
  * active factor is recognised from the caller's own factor read and the
  * dialog names the missing second factor, renders no link unless the host
  * supplies accountHref, and starts no flow at all; a 401 start refusal on an established
@@ -128,6 +131,65 @@ function makeStepUpResponder(overrides: {
         access_token: 'access-2',
         expires_in: 3600,
       })
+    }
+    throw new Error(`unexpected ${call.method} ${call.path}`)
+  }
+}
+
+/** A step-up that re-proves the session's password first factor and answers
+ * its next step in the ready state, `next.kind: 'complete'`: the shape the
+ * dialog meets when a gated write asks for a fresh first factor and the
+ * server settles right after the first-factor answer. `completeAnswer`
+ * scripts that automatic answer; the default elevates. */
+function makeReadyAfterFirstFactorResponder(overrides: {
+  readonly completeAnswer?: () => Response | Promise<Response>
+} = {}): RealResponder {
+  return (call: RealCall) => {
+    if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+      return jsonResponse(200, { factors: [] })
+    }
+    if (call.method === 'GET' && call.path === '/api/v1/auth/session') {
+      return jsonResponse(
+        200,
+        sessionBody({ methods: ['pwd'], ageMs: 6 * 60 * 1000 }),
+      )
+    }
+    if (call.method === 'POST' && call.path === FLOW_START) {
+      return jsonResponse(200, {
+        seq: 1,
+        state: 'first',
+        next: {
+          kind: 'challenge',
+          fields: [
+            { name: 'identifier', kind: 'text' },
+            { name: 'password', kind: 'password', secret: true },
+          ],
+        },
+      })
+    }
+    if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+      const body = call.body as { seq: number; step: string }
+      if (body.step === 'complete') {
+        return overrides.completeAnswer !== undefined
+          ? overrides.completeAnswer()
+          : jsonResponse(200, {
+              state: 'elevated',
+              token_type: 'Bearer',
+              access_token: 'access-2',
+              expires_in: 3600,
+            })
+      }
+      return jsonResponse(200, {
+        seq: 2,
+        state: 'ready',
+        next: { kind: 'complete' },
+      })
+    }
+    if (
+      call.method === 'DELETE' &&
+      call.path === '/api/v1/auth/flows/current'
+    ) {
+      return new Response(null, { status: 204 })
     }
     throw new Error(`unexpected ${call.method} ${call.path}`)
   }
@@ -329,6 +391,161 @@ describe('StepUpChallenge', () => {
       step: 'factor',
       input: { code: '123456', factor: 'factor-1' },
     })
+  })
+
+  it('answers the ready step on its own and elevates once', async () => {
+    // The first-factor answer parks the flow on a ready state whose step is
+    // a bare confirmation. It collects nothing, so the dialog answers it
+    // without a second click.
+    const { rig, onSuccess } = mount(makeReadyAfterFirstFactorResponder())
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.field.identifier),
+      'ada',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.flowStep.field.password),
+      'secret',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    const answers = rig.calls.filter(
+      (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
+    )
+    expect(answers[0]?.body).toEqual({
+      seq: 1,
+      step: 'answer',
+      input: { identifier: 'ada', password: 'secret' },
+    })
+    // The automatic answer carries the ready step's own sequence number and
+    // the complete step, and it is the only completion sent.
+    expect(answers[1]?.body).toEqual({ seq: 2, step: 'complete' })
+    expect(answers).toHaveLength(2)
+  })
+
+  it('falls back to the confirmation button when the automatic answer is refused', async () => {
+    // A refused automatic answer must not leave the dialog on its
+    // placeholder: the failure code renders and the step's own confirmation
+    // button retries the same answer by hand.
+    const warn = captureRefreshWarning()
+    let completeAnswers = 0
+    const { rig, onSuccess } = mount(
+      makeReadyAfterFirstFactorResponder({
+        completeAnswer: () => {
+          completeAnswers += 1
+          return completeAnswers === 1
+            ? errorResponse(401, 'authn.login_failed')
+            : jsonResponse(200, {
+                state: 'elevated',
+                token_type: 'Bearer',
+                access_token: 'access-2',
+                expires_in: 3600,
+              })
+        },
+      }),
+    )
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.field.identifier),
+      'ada',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.flowStep.field.password),
+      'secret',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.login_failed)
+    expect(onSuccess).not.toHaveBeenCalled()
+    // The visible manual path: one confirmation button carrying the
+    // step's own submit label.
+    const confirm = screen.getByRole('button', {
+      name: zhCN.mfa.stepUp.confirmLabel,
+    })
+    await user.click(confirm)
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    const completes = rig.calls
+      .filter((call) => call.method === 'POST' && call.path === FLOW_ANSWER)
+      .filter((call) => (call.body as { step: string }).step === 'complete')
+    expect(completes.map((call) => call.body)).toEqual([
+      { seq: 2, step: 'complete' },
+      { seq: 2, step: 'complete' },
+    ])
+    // The refused automatic answer is the expected refresh-failure
+    // diagnostic.
+    expect(warn).toHaveBeenCalledWith(
+      'access token refresh failed',
+      expect.objectContaining({
+        status: 401,
+        code: 'authn.login_failed',
+        trace_id: 'trace-1',
+      }),
+    )
+  })
+
+  it('answers the ready step once per sequence across re-renders', async () => {
+    // The automatic answer is held open while the dialog re-renders: a
+    // second answer for the same sequence number would be a double submit,
+    // which the effect's per-sequence record must prevent.
+    let release: (() => void) | null = null
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let completeAnswers = 0
+    const rig = makeRealClientRig(
+      makeReadyAfterFirstFactorResponder({
+        completeAnswer: async () => {
+          completeAnswers += 1
+          await held
+          return jsonResponse(200, {
+            state: 'elevated',
+            token_type: 'Bearer',
+            access_token: 'access-2',
+            expires_in: 3600,
+          })
+        },
+      }),
+    )
+    rig.store.set('access-1')
+    const onSuccess = vi.fn()
+    const onCancel = vi.fn()
+    const control = renderControlled(rig.session, { onSuccess, onCancel })
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.field.identifier),
+      'ada',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.flowStep.field.password),
+      'secret',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    // The one automatic answer is in flight; ordinary re-renders leave it
+    // alone.
+    await waitFor(() => expect(completeAnswers).toBe(1))
+    act(() => control.rerender())
+    act(() => control.rerender())
+    expect(completeAnswers).toBe(1)
+
+    act(() => release?.())
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    const completes = rig.calls
+      .filter((call) => call.method === 'POST' && call.path === FLOW_ANSWER)
+      .filter((call) => (call.body as { step: string }).step === 'complete')
+    expect(completes).toHaveLength(1)
   })
 
   it('sends the host’s path as the flow’s return_to', async () => {

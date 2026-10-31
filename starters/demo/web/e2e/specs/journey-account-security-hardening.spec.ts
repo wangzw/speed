@@ -764,34 +764,36 @@ test('account-security-hardening: an account enrols two factors, ends another de
 
       // Choosing the passkey factor is the whole interaction: the assertion
       // step starts the browser ceremony as soon as it arrives, so there is
-      // no start control to click. When the ceremony settles, the step is
-      // replaced by the parked `complete` step, whose confirmation carries
-      // the same label; the prompt leaving is what distinguishes that
-      // settled step from the start control it replaces.
+      // no start control to click. When the ceremony settles, the ready
+      // state's `complete` step is the dialog's own confirmation -- it
+      // answers that step without a click -- so the dialog closes on its
+      // own. The prompt leaving is what tells that settled step apart from
+      // the start control it replaces.
       await expect(
         dialog.getByText(copy('accountUi', 'flowStep.passkeyPrompt'), {
           exact: true,
         }),
       ).toHaveCount(0, { timeout: 30_000 })
-      const parked = dialog.getByRole('button', {
-        name: copy('accountUi', 'mfa.stepUp.confirmLabel'),
-        exact: true,
-      })
-      await expect(parked).toHaveCount(1)
-      await parked.click()
       await expect(dialog).toHaveCount(0, { timeout: 30_000 })
 
-      // The won challenge replays the refused change exactly once; the write
-      // rotates the session token and the page stays signed in. Staying on the
-      // account surface depends on the product's identity-transition guard
-      // discarding an anonymous read that lands under the rotated credential:
-      // a hole there flashes the shell to the session-ended surface, and these
-      // assertions are where it shows.
+      // The won challenge replays the refused change exactly once: the
+      // landed write renders its success notice, while a second replay would
+      // carry the now-stale current password and surface that refusal, which
+      // no alert here may show. The write rotates the session token and the
+      // page stays signed in. Staying on the account surface depends on the
+      // product's identity-transition guard discarding an anonymous read that
+      // lands under the rotated credential: a hole there flashes the shell to
+      // the session-ended surface, and these assertions are where it shows.
       await expect(
         page.getByText(copy('accountUi', 'password.changed'), {
           exact: true,
         }),
       ).toBeVisible({ timeout: 15_000 })
+      await expect(
+        page.getByText(copy('accountUi', 'password.currentRejected'), {
+          exact: true,
+        }),
+      ).toHaveCount(0)
       await expect(paneHeading(page, 'security')).toBeVisible()
       await selectAccountSection(page, 'sessions')
       // The header row and the one remaining session.

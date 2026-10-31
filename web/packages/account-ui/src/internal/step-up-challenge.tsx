@@ -24,6 +24,14 @@
  * whitelist and renders as one banner; the flow stays open and a fresh
  * answer is retryable.
  *
+ * A flow that reaches its ready state answers `next.kind: 'complete'` -- a
+ * step that collects nothing and only confirms. The dialog answers that
+ * step on its own, once per sequence number, while showing its starting
+ * placeholder: a proof that already settled the flow does not leave the
+ * operator a contextless second confirmation to click. A refused automatic
+ * answer parks the flow on its failure, where the step's own confirmation
+ * button renders for a manual retry.
+ *
  * An account with no active factor is read from the caller's own factor
  * list (GET /api/v1/auth/factors), and what the refusal asked for is decided
  * from the caller's own session (GET /api/v1/auth/session). The session read is
@@ -324,7 +332,7 @@ function StepUpFlow({
 }): ReactElement {
   const { t } = useAccountUiTranslation()
   const stepFormId = useId()
-  const { phase, step, seq, errorCode, human, answer } = useStepUp(
+  const { phase, step, seq, submitting, errorCode, human, answer } = useStepUp(
     session,
     active,
     onSuccess,
@@ -338,6 +346,26 @@ function StepUpFlow({
   // factor from the answer. A first-factor re-proof starts with no chosen
   // factor, whose steps travel under `answer` instead.
   const chosenFactor = useRef<string | null>(null)
+  // The sequence number of the ready step the dialog answered on its own.
+  // A `complete` step collects nothing -- it only confirms -- so the dialog
+  // answers it on arrival rather than parking a second, contextless
+  // confirmation. The hook ignores an answer sent while one is in flight,
+  // so this waits for `submitting` to clear before sending, and records the
+  // sequence it answered: one automatic answer per step, whatever the
+  // re-render or StrictMode double run. A refused answer moves the flow to
+  // 'failed', where this effect no longer matches and the step's own
+  // confirmation button renders instead.
+  const autoAnsweredSeq = useRef<number | null>(null)
+  useEffect(() => {
+    if (step === null || step.kind !== 'complete' || phase !== 'step') {
+      return
+    }
+    if (submitting || seq === null || autoAnsweredSeq.current === seq) {
+      return
+    }
+    autoAnsweredSeq.current = seq
+    answer({ step: 'complete' })
+  }, [step, phase, submitting, seq, answer])
 
   function handleAnswer(value: AuthnFlowAnswer): void {
     const input = value.input ?? {}
@@ -357,6 +385,12 @@ function StepUpFlow({
   }
 
   const starting = phase === 'starting' || checking || readingSession
+  // The flow reached its ready state and the dialog is answering its
+  // `complete` step on its own: the starting placeholder covers that answer
+  // exactly as it covers the start itself. A refusal leaves this false and
+  // lets the step's own confirmation button render for a manual retry.
+  const autoCompleting =
+    step !== null && step.kind === 'complete' && phase === 'step'
   // This deployment cannot raise the session at all (factors exist, none
   // that may strengthen it): no step will come, so the dialog says so and
   // offers a re-login rather than a verification that cannot succeed.
@@ -412,7 +446,7 @@ function StepUpFlow({
               {t('mfa.stepUp.description')}
             </Typography>
             <InlineError code={errorCode} />
-            {starting ? (
+            {starting || autoCompleting ? (
               <Typography variant="body2" sx={{ mt: 2 }}>
                 {t('mfa.stepUp.starting')}
               </Typography>
