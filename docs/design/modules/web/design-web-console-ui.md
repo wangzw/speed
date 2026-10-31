@@ -546,7 +546,7 @@ graph TD
 | 写入失败的裸 403 与裸 401 文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `useConsoleUiErrorText`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | `authn.factor_not_seasoned` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | `authn.login_identifier_required` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
-| `authn.username_immutable` 的失败文案（用户名行不渲染移除动作，错误文案说明用户名不可移除） | 未实现 | |
+| `authn.username_immutable` 的失败文案（用户名行不渲染移除动作，错误文案说明用户名不可移除） | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` `errors.authn.username_immutable`；`web/packages/console-ui/src/AccountsPage.test.tsx`（用户名不可删除的拒绝渲染为自身文案） |
 | `authn.email_taken` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | `authn.contact_required` 的失败文案（未验证账户的管理写，指向账户页的验证节） | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/{zh-CN,en-US}.json` `errors.authn.contact_required` |
 | 写入在途时改变上下文的控件禁用 | 已实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`anyPending`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage` |

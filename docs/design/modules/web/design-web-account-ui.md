@@ -351,8 +351,8 @@ sequenceDiagram
 | 标识 chip 二值：只看 `proven`，真读「已验证」、假读「未验证」；用户名行不渲染归属 chip | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `identifiers.verified`、`identifiers.unverified` |
 | 未验证邮箱行的行级「验证」动作（发码到该行地址、提交码、成功后行翻转），`pending` 与无邮件通道时不渲染 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`（`rowSend`、`rowVerify`）；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `identifiers.verify`、`identifiers.verifyAria`、`identifiers.verifyCodeInvalid` |
 | 带口令账户的唯一邮箱登录名不渲染删除并说明 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `identifiers.lastLoginName` |
-| 用户名段以说明句陈述用户名是固定登录名、不能更改或删除（`identifiers.usernamePermanent`），不渲染移除动作 | 未实现 | |
-| `authn.username_immutable` 的失败文案 | 未实现 | |
+| 用户名段以说明句陈述用户名是固定登录名、不能更改或删除（`identifiers.usernamePermanent`），不渲染移除动作 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `identifiers.usernamePermanent` |
+| `authn.username_immutable` 的失败文案 | 已实现 | `web/packages/account-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `errors.authn.username_immutable` |
 | 标识添加面的邮箱本地校验、提交去空白值与字段级 400 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/ui-kit/src/email-address.ts` `parseEmailAddress`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `identifiers.add.invalidEmail` |
 | 取消添加清空失败横幅、字段错误、成功提示与已发码状态 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`（`closeAdd`） |
 | 验证节的首次挂载自动发码 `autoSend`（自动 401 不弹对话框） | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`、`ContactVerificationSectionProps`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `verification.autoStepUp` |
