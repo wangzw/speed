@@ -13,6 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/internal/configtest"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
+	smssend "github.com/vislake/speed/pkg/sms"
 )
 
 // The stand-ins a driven registry is built from: one module that delivers the
@@ -150,6 +151,32 @@ func TestPrepareStandsDownWhenNeitherCarrierNorTemplateIsConfigured(t *testing.T
 	}
 	if got.State != core.StateDisabled || !strings.Contains(got.Reason, "sms.registry.templates") {
 		t.Errorf("Prepare = %+v, want disabled and naming the template set", got)
+	}
+}
+
+// selectionModule declares the carrier selection item, which in a real binary
+// the log carrier declares. A case that writes sms.carrier needs it in the
+// manifest or the written value would have no declared path.
+func selectionModule() core.Module {
+	return core.Module{Name: "test.selection", Resources: []any{smssend.SelectionSchema()}}
+}
+
+// TestPrepareStandsDownWhenTheCarrierSelectionIsNone holds the dependent's side
+// of sms.carrier=none: the log fallback is not enabled either, so a method that
+// can send only through the SMS capability stands itself down with the
+// selection's reason instead of waiting for a provider that will never come.
+func TestPrepareStandsDownWhenTheCarrierSelectionIsNone(t *testing.T) {
+	reader := configtest.Reader(t, `{"sms":{"carrier":"none"}}`, Module(), selectionModule())
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Supply(reader, config.ModuleName)
+
+	got, err := Module().Prepare(t.Context(), reg)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if got.State != core.StateDisabled || !strings.Contains(got.Reason, "none") {
+		t.Errorf("Prepare = %+v, want disabled naming the selection", got)
 	}
 }
 

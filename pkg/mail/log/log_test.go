@@ -106,6 +106,39 @@ func TestTheLogCarrierIsTheFallbackAndWarns(t *testing.T) {
 	}
 }
 
+// TestTheFallbackCarrierWritesTheMessageToTheProcessLog holds the channel
+// itself: a message handed to the sender the fallback resolves to lands in the
+// process log, recipient, subject, body and verification code included. Without
+// it the fallback would be a warning about a channel nothing proves carries
+// anything.
+func TestTheFallbackCarrierWritesTheMessageToTheProcessLog(t *testing.T) {
+	var buf bytes.Buffer
+	reg := drive(t, `{}`, &buf,
+		maillog.ModuleName, "test.absent", "test.logger", config.ModuleName)
+
+	sender, err := core.Resolve[mail.Sender](reg)
+	if err != nil {
+		t.Fatalf("resolving the fallback sender: %v", err)
+	}
+	receipt, err := sender.Send(t.Context(), mail.Message{
+		To:      []string{"ada@example.com"},
+		Subject: "Your sign-in code",
+		Text:    "Use 123456 to sign in to the staff portal.",
+	})
+	if err != nil {
+		t.Fatalf("Send through the fallback: %v", err)
+	}
+	if receipt.ProviderID != maillog.CarrierName {
+		t.Errorf("the receipt names %q, want %q", receipt.ProviderID, maillog.CarrierName)
+	}
+	out := buf.String()
+	for _, want := range []string{"ada@example.com", "Your sign-in code", "staff portal", "123456", "verification_code"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the process log %q does not carry %q", out, want)
+		}
+	}
+}
+
 // TestSelectionNoneLeavesNoCarrierAndNoWarning holds requirement 4: none switches
 // the capability off without falling back, and no carrier is constructed, so no
 // warning claims a log channel is running.

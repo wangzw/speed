@@ -102,6 +102,42 @@ func TestTheLogCarrierIsTheFallbackAndWarns(t *testing.T) {
 	}
 }
 
+// TestTheFallbackCarrierWritesTheMessageToTheProcessLog holds the channel
+// itself: a resolved message handed to the sender the fallback resolves to
+// lands in the process log, number, template and verification code included.
+// Without it the fallback would be a warning about a channel nothing proves
+// carries anything.
+func TestTheFallbackCarrierWritesTheMessageToTheProcessLog(t *testing.T) {
+	var buf bytes.Buffer
+	reg := drive(t, `{}`, &buf,
+		smslog.ModuleName, "test.absent", "test.logger", config.ModuleName)
+
+	sender, err := core.Resolve[sms.Sender](reg)
+	if err != nil {
+		t.Fatalf("resolving the fallback sender: %v", err)
+	}
+	receipt, err := sender.Send(t.Context(), sms.Resolved{
+		To:       "+15551234567",
+		Template: "signin",
+		Locale:   "en-US",
+		Kind:     sms.KindVerification,
+		Params:   map[string]string{"code": "654321"},
+		DedupeID: "d1",
+	})
+	if err != nil {
+		t.Fatalf("Send through the fallback: %v", err)
+	}
+	if got, want := receipt.ProviderID, "log:signin:d1"; got != want {
+		t.Errorf("the receipt names %q, want %q", got, want)
+	}
+	out := buf.String()
+	for _, want := range []string{"+15551234567", "signin", "654321", "verification_code"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the process log %q does not carry %q", out, want)
+		}
+	}
+}
+
 // TestSelectionNoneLeavesNoCarrierAndNoWarning holds the explicit off value:
 // none switches the capability off without falling back, and no carrier is
 // constructed, so no warning claims a log channel is running.
