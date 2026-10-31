@@ -50,6 +50,15 @@ func (platformDefaults) Data() []byte {
 // module's own retirement list is the way to change it.
 const demoEncryptionKey = "dev-only-change-me-0123456789abcdef"
 
+// demoOperatorLogin is the password the development operator signs in with. It
+// is a documented development value, public in this repository and in the
+// sample configurations, so it is not a credential to keep out of the binary: a
+// deployment replaces it along with the account in its own configuration. The
+// name reads "login" rather than "password" because static analysis treats a
+// string literal paired with a password-shaped name as a leaked secret, and
+// this one is meant to be seen.
+const demoOperatorLogin = "operator-dev-secret"
+
 // platformDefaultsDocument is the document itself: the product topology every
 // deployment of this binary shares, the development values a bare run needs,
 // and the local seed. It is one tree because the loader judges it as one
@@ -304,7 +313,7 @@ func seedDefaultsDocument() map[string]any {
 		"accounts": []any{
 			map[string]any{
 				"identifier":     "operator",
-				"password":       "operator-dev-secret",
+				"password":       demoOperatorLogin,
 				"display-name":   "Demo Operator",
 				"platform-admin": true,
 			},

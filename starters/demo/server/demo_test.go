@@ -351,17 +351,21 @@ func seedHostBinary() string {
 // runCommandOn is runCommand over a named program.
 func runCommandOn(t *testing.T, binary, config string, args ...string) commandResult {
 	t.Helper()
-	return runCommandArgs(t, binary, append([]string{"--config", config}, args...), nil)
+	return runCommandArgs(t, binary, "", append([]string{"--config", config}, args...), nil)
 }
 
 // runCommandArgs is runCommandOn with the argument list and the extra
 // environment entries the caller names, so a case can run a command with no
-// configuration source at all.
-func runCommandArgs(t *testing.T, binary string, args, extraEnv []string) commandResult {
+// configuration source at all. An empty dir leaves the child in the test's own
+// working directory; a case that runs on the compiled-in defaults names one of
+// its own, so the relative paths the document holds resolve outside the source
+// tree.
+func runCommandArgs(t *testing.T, binary, dir string, args, extraEnv []string) commandResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), commandLimit)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Dir = dir
 	cmd.Env = append(childEnv(), extraEnv...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -396,15 +400,17 @@ type process struct {
 // waits for ready afterwards. Its stop is registered as a cleanup.
 func start(t *testing.T, config string, args ...string) *process {
 	t.Helper()
-	return startArgs(t, append([]string{"--config", config}, args...), nil)
+	return startArgs(t, "", append([]string{"--config", config}, args...), nil)
 }
 
 // startArgs is start with the argument list and the extra environment entries
 // the caller names; a case that runs on the compiled-in defaults passes no
-// --config at all.
-func startArgs(t *testing.T, args, extraEnv []string) *process {
+// --config at all. An empty dir leaves the child in the test's own working
+// directory.
+func startArgs(t *testing.T, dir string, args, extraEnv []string) *process {
 	t.Helper()
 	cmd := exec.Command(hostBinary, args...)
+	cmd.Dir = dir
 	cmd.Env = append(childEnv(), extraEnv...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -2246,14 +2252,8 @@ func renderDeployTemplate(t *testing.T) string {
 // template carries the trust settings this case asserts.
 func TestTheFlyTemplateTrustsTheFlyProxy(t *testing.T) {
 	rendered := renderDeployTemplate(t)
-	// The default binary carries no mail module and no social login method, so
-	// the deployment-only sections would be unknown keys to it. The deploy build
-	// keeps the sections and validates them; the proxy settings are the same
-	// either way.
-	if len(deployModules) == 0 {
-		rendered = strings.Replace(rendered, yamlBlock(rendered, "mail:"), "", 1)
-		rendered = strings.Replace(rendered, yamlBlock(rendered, "login:"), "", 1)
-	}
+	// The default build carries the mail and social methods, so every section
+	// the template names is a declared input item.
 
 	var carrier flyProxyCarrier
 	readEffective(t, "deploy/fly.yaml.tmpl", writeConfigFile(t, rendered), "http", &carrier)
@@ -2286,12 +2286,8 @@ type deploySeedCarrier struct {
 // reads the item back, so the placeholder and its input cannot drift apart.
 func TestTheFlyTemplateSeedsTheOperatorUsername(t *testing.T) {
 	rendered := renderDeployTemplate(t)
-	// The default binary carries no mail module and no social login method, so
-	// the deployment-only sections would be unknown keys to it.
-	if len(deployModules) == 0 {
-		rendered = strings.Replace(rendered, yamlBlock(rendered, "mail:"), "", 1)
-		rendered = strings.Replace(rendered, yamlBlock(rendered, "login:"), "", 1)
-	}
+	// The default build carries the mail and social methods, so the template's
+	// sections are all declared input items.
 	locator := writeConfigFile(t, rendered)
 	var got deploySeedCarrier
 	readEffective(t, "deploy/fly.yaml.tmpl", locator, seedNamespace, &got)
