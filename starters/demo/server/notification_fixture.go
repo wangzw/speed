@@ -1,21 +1,21 @@
-//go:build review
-
 package main
 
-// This file is the review assembly's notification fixture: one notification
-// type the baseline does not declare, a worker that dispatches it to the
-// members of every tenant, the preference-recipient wiring the baseline
-// deliberately leaves out, and the review-only tenant control the SMS rollout
-// journey clicks.
+// The notification fixture: one notification type the platform baseline does
+// not declare, a worker that dispatches it to the members of every tenant, and
+// the preference-recipient wiring the baseline deliberately leaves out.
 //
-// The type lives here, behind the review tag, for a reason the notification
-// capability makes explicit: notification.preferences and notification.delivery
-// collect their type taxonomy with core.Resources over the available set, not
-// the running set, so a TypeSpec declared in an untagged file would be part of
-// the baseline's taxonomy even though no baseline command runs the declaring
-// module. A review type in an untagged file would therefore leak into the
-// baseline's preference matrix and its dispatch validation. Behind the build
-// tag it is absent from a default binary entirely.
+// The type is compiled into every build, beside the capabilities. The
+// notification capability collects its type taxonomy with core.Resources over
+// the available set, not the running set, so this declaration is part of the
+// binary's taxonomy even on a run that stands the fixture down. That is the
+// compile-time ceiling, and it is deliberate: whether the type is dispatched is
+// a run-time decision the module states in Prepare. A run that enables the
+// fixture gets the type, the worker and the recipient wiring; another run
+// leaves both absent from its feature set even though the code is present.
+//
+// The fixture's review-only dispatch control — the route the SMS rollout
+// journey clicks — is not product API and is compiled only under the review tag;
+// see notification_control_review.go.
 //
 // The type's default channels are the in-app inbox, email and sms. The sms
 // channel is what the rollout journey drives: the catalog names the runtime
@@ -30,31 +30,29 @@ package main
 // its destination. A proved phone is not enough on its own: the sms channel is
 // chosen only when the SMS template registry holds the type's template for the
 // recipient's language — the template the rollout journey registers. Another
-// review server that never registers it therefore falls back to email (or
-// in-app alone) instead of attempting sms with a template the registry does not
-// hold; the channel choice lives here, not in the type's default set, so the
-// type's sms membership does not leak an attempt into every server. The
-// platform's sending gate stays with the delivery pipeline: a held template that
-// is disabled or still awaiting review is still chosen, so its refusal is
-// recorded rather than hidden. The fixture writes the pruned set through the
-// preference seam because the delivery pipeline reads the effective channels
-// when it consumes the job.
+// server that never registers it therefore falls back to email (or in-app alone)
+// instead of attempting sms with a template the registry does not hold; the
+// channel choice lives here, not in the type's default set, so the type's sms
+// membership does not leak an attempt into every server. The platform's sending
+// gate stays with the delivery pipeline: a held template that is disabled or
+// still awaiting review is still chosen, so its refusal is recorded rather than
+// hidden. The fixture writes the pruned set through the preference seam because
+// the delivery pipeline reads the effective channels when it consumes the job.
 //
 // The periodic schedule is the member-workspace journey's dispatch: the
 // platform's scheduler enqueues one job per tenant per window and the handler
 // turns each job into one notification per addressable active member. The
 // rollout journey's proof is not that window: it is the review-only control
-// route below, which a tenant member drives from the console by clicking. The
-// route and the feature that offers its control are compiled only under the
-// review build tag, so neither exists in a default binary.
+// route, which a tenant member drives from the console by clicking.
 //
 // The preference routes read the recipient from the request context, under the
 // key preferences.WithRecipient. The notification capability holds no identity,
-// so the host's identity side is what names the recipient; the demo baseline
+// so the host's identity side is what names the recipient; the baseline
 // deliberately does not, which leaves the matrix empty and its write refused.
-// This build wires it: a middleware after the authentication gateway copies the
-// caller's effective account onto the request context. The layer is registered
-// here and nowhere else, so a default build keeps the baseline's semantics.
+// This fixture wires it: a middleware after the authentication gateway copies
+// the caller's effective account onto the request context. The layer is
+// registered by this module's Init, so a run that stands the fixture down keeps
+// the baseline's semantics.
 
 import (
 	"context"
@@ -62,16 +60,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
-	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
@@ -82,129 +77,19 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The names this fixture owns. The module name is what reviewModules names in
-// the serve roster; the job type is what the schedule enqueues and the handler
-// registers; the type key is the vocabulary both taxonomy consumers collect.
-// The SMS template name is the catalog entry's value: the rollout journey
-// registers a runtime template under exactly this name, with "to" as its
-// declared parameter (the dispatch carries no other). The control feature is
-// the review-only gate the tenant control reads; it exists only while this
-// module is in force, and this module is compiled only under the review build
-// tag.
+// The names this fixture owns. The module name is what capabilityModules names
+// in the serve roster; the job type is what the schedule enqueues and the
+// handler registers; the type key is the vocabulary both taxonomy consumers
+// collect. The SMS template name is the catalog entry's value: the rollout
+// journey registers a runtime template under exactly this name, with "to" as
+// its declared parameter (the dispatch carries no other).
 const (
-	reviewNotificationModuleName     = "review.notification"
-	reviewNotificationJobType        = "review.notification.dispatch"
-	reviewNotificationTypeKey        = "review.notice"
-	reviewNotificationGroup          = "review"
-	reviewNotificationSMSTemplate    = "review-notice"
-	reviewNotificationControlFeature = "review.notification.control"
+	reviewNotificationModuleName  = "review.notification"
+	reviewNotificationJobType     = "review.notification.dispatch"
+	reviewNotificationTypeKey     = "review.notice"
+	reviewNotificationGroup       = "review"
+	reviewNotificationSMSTemplate = "review-notice"
 )
-
-// reviewNotificationControlPath is the review-only control's route on the api
-// endpoint. The tenant control posts to it to dispatch one notice for the
-// calling member; no other assembly mounts anything under it, because the
-// module that mounts it is compiled only under the review build tag.
-const reviewNotificationControlPath = "/api/v1/notifications/review/notice"
-
-// reviewNoticePlan is how one recipient is addressed by one dispatch: the
-// single external destination the dispatch carries and the channels the
-// recipient can receive on. The capability carries one destination parameter
-// for every external channel, so a recipient is addressed on at most one of
-// them per dispatch.
-type reviewNoticePlan struct {
-	// To is the destination the dispatch carries under "to". For sms it is the
-	// recipient's proved phone number and for email the address the account
-	// holds.
-	To string
-	// Channels is the subset of the type's channels the recipient can be
-	// reached on: in_app always, plus the one external channel To addresses.
-	Channels []notification.Channel
-}
-
-// reviewNoticeDestinations resolves an account's identifiers into the two
-// destinations a dispatch can address: the proved phone number, which is the
-// sms destination, and the email address, which is the email destination. An
-// unproved phone is not a destination the product would send a notice to, so it
-// is ignored.
-func reviewNoticeDestinations(identifiers []authn.Identifier) (phone, email string) {
-	for _, identifier := range identifiers {
-		if identifier.Value == "" {
-			continue
-		}
-		switch identifier.Kind {
-		case authn.IdentifierPhone:
-			if phone == "" && (authn.Verification{Via: identifier.VerifiedVia}).Proves() {
-				phone = identifier.Value
-			}
-		case authn.IdentifierEmail:
-			if email == "" {
-				email = identifier.Value
-			}
-		}
-	}
-	return phone, email
-}
-
-// planReviewNotice resolves one account's identifiers into a delivery plan.
-//
-// A proved phone number is the sms destination when the registry holds the
-// type's template for the recipient's language; otherwise the account falls
-// back to its email address, which keeps the in-app and email channels
-// reachable. The platform's own sending gate — a disabled template, a language
-// still under review, the deployment's sending switch — is not part of this
-// choice: the delivery pipeline refuses such a send, and the fixture must let it
-// be observed rather than quietly choosing another channel. An account holding
-// neither destination is not addressable and is skipped rather than failed. A
-// proved phone with neither a held template nor an email address is still
-// addressable in-app; the dispatch carries the phone as its "to" parameter,
-// which the in-app channel does not read.
-func planReviewNotice(identifiers []authn.Identifier, smsAddressable bool) (reviewNoticePlan, bool) {
-	phone, email := reviewNoticeDestinations(identifiers)
-	switch {
-	case phone != "" && smsAddressable:
-		return reviewNoticePlan{
-			To:       phone,
-			Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelSMS},
-		}, true
-	case email != "":
-		return reviewNoticePlan{
-			To:       email,
-			Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
-		}, true
-	case phone != "":
-		return reviewNoticePlan{
-			To:       phone,
-			Channels: []notification.Channel{notification.ChannelInApp},
-		}, true
-	default:
-		return reviewNoticePlan{}, false
-	}
-}
-
-// pruneReviewChannels removes the channels a plan cannot address from the
-// recipient's effective set. It is deliberately monotonic: it only drops a
-// channel, never adds one back, so a channel the recipient turned off stays off
-// across every dispatch window.
-//
-// The write it feeds is needed because the delivery pipeline reads the
-// recipient's effective channels from the preference seam when it consumes the
-// job. A plan that addresses sms carries a phone number as the single
-// destination, so leaving email in the set would send the email to a phone
-// number; a plan that falls back to email must drop sms, or the sms channel
-// would be attempted with the email address as its destination.
-func pruneReviewChannels(effective []notification.Channel, plan reviewNoticePlan) []notification.Channel {
-	addressable := make(map[notification.Channel]struct{}, len(plan.Channels))
-	for _, channel := range plan.Channels {
-		addressable[channel] = struct{}{}
-	}
-	out := make([]notification.Channel, 0, len(effective))
-	for _, channel := range effective {
-		if _, ok := addressable[channel]; ok {
-			out = append(out, channel)
-		}
-	}
-	return out
-}
 
 // reviewNotificationEndpoint is the endpoint carrying the notification surface.
 // The name is the platform defaults document's; the preference routes mount
@@ -263,8 +148,8 @@ var reviewNotificationSchedule = jobs.Schedule{
 	Interval: reviewNotificationInterval,
 }
 
-// init registers the module. The import is the wiring; reviewModules is what
-// names it for a run.
+// init registers the module. The import is the wiring; capabilityModules is
+// what names it for a run.
 func init() { core.ProcessRegistry.Register(reviewNotificationModule()) }
 
 // The product must deliver the job handler and report its type.
@@ -282,10 +167,16 @@ var _ jobs.Handler = (*reviewNotifier)(nil)
 // host's default logger carries the fixture's diagnostics when none is
 // delivered.
 //
-// The control feature is a static declaration: it is present exactly while this
-// module is in force, which is only in a review run, because the module itself
-// is compiled only under the review build tag.
+// The review-only dispatch control's feature is contributed by
+// reviewControlResources, which answers nothing in a default build. The module
+// itself is compiled into every build; whether it runs is stated in Prepare.
 func reviewNotificationModule() core.Module {
+	resources := []any{
+		reviewNotificationType,
+		reviewNotificationCatalog,
+		reviewNotificationSchedule,
+	}
+	resources = append(resources, reviewControlResources()...)
 	return core.Module{
 		Name: reviewNotificationModuleName,
 		Requires: []core.Requirement{
@@ -298,12 +189,7 @@ func reviewNotificationModule() core.Module {
 			{Token: (*jobs.Handlers)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
-		Resources: []any{
-			reviewNotificationType,
-			reviewNotificationCatalog,
-			reviewNotificationSchedule,
-			feature.Spec{Name: reviewNotificationControlFeature},
-		},
+		Resources: resources,
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			return newReviewNotifier(reg)
 		},
@@ -324,7 +210,7 @@ func reviewNotificationModule() core.Module {
 			if err := wireReviewRecipient(reg); err != nil {
 				return err
 			}
-			return wireReviewControl(reg, notifier)
+			return mountReviewControl(reg, notifier)
 		},
 	}
 }
@@ -601,88 +487,102 @@ func reviewRecipientHandler(c *gin.Context) {
 	c.Next()
 }
 
-// wireReviewControl mounts the review-only control route and opens it on the
-// authorization guard's declaration surface.
-//
-// The route is a review-assembly artefact and nothing more: the module that
-// mounts it is compiled only under the review build tag, so a baseline binary
-// carries neither the route nor this function. It is registered open because
-// the tenant control is an ordinary member's action, not a permission; the
-// handler answers for the signed-in caller. Both surfaces are optional in the
-// same way wireReviewRecipient's are: a run without the HTTP entry point has no
-// route to mount, and one without the guard has no declaration table to write.
-func wireReviewControl(reg *core.Registry, notifier *reviewNotifier) error {
-	router, err := core.Resolve[speedhttp.Router](reg)
-	if errors.Is(err, core.ErrMissingProvider) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("%s: taking up the HTTP entry point for the control: %w",
-			reviewNotificationModuleName, err)
-	}
-	endpoint, err := router.Endpoint(reviewNotificationEndpoint)
-	if err != nil {
-		return fmt.Errorf("%s: looking up the %q endpoint for the control: %w",
-			reviewNotificationModuleName, reviewNotificationEndpoint, err)
-	}
-	gate, err := core.Resolve[authz.Gate](reg)
-	switch {
-	case err == nil:
-		gate.Open(http.MethodPost, reviewNotificationControlPath)
-	case !errors.Is(err, core.ErrMissingProvider):
-		return fmt.Errorf("%s: taking up the route-declaration surface: %w",
-			reviewNotificationModuleName, err)
-	}
-	endpoint.Route(http.MethodPost, reviewNotificationControlPath, notifier.handleControl)
-	return nil
+// reviewNoticePlan is how one recipient is addressed by one dispatch: the
+// single external destination the dispatch carries and the channels the
+// recipient can receive on. The capability carries one destination parameter
+// for every external channel, so a recipient is addressed on at most one of
+// them per dispatch.
+type reviewNoticePlan struct {
+	// To is the destination the dispatch carries under "to". For sms it is the
+	// recipient's proved phone number and for email the address the account
+	// holds.
+	To string
+	// Channels is the subset of the type's channels the recipient can be
+	// reached on: in_app always, plus the one external channel To addresses.
+	Channels []notification.Channel
 }
 
-// handleControl answers the tenant control: one signed-in member asks the
-// review assembly to dispatch one notice to themselves.
+// reviewNoticeDestinations resolves an account's identifiers into the two
+// destinations a dispatch can address: the proved phone number, which is the
+// sms destination, and the email address, which is the email destination. An
+// unproved phone is not a destination the product would send a notice to, so it
+// is ignored.
+func reviewNoticeDestinations(identifiers []authn.Identifier) (phone, email string) {
+	for _, identifier := range identifiers {
+		if identifier.Value == "" {
+			continue
+		}
+		switch identifier.Kind {
+		case authn.IdentifierPhone:
+			if phone == "" && (authn.Verification{Via: identifier.VerifiedVia}).Proves() {
+				phone = identifier.Value
+			}
+		case authn.IdentifierEmail:
+			if email == "" {
+				email = identifier.Value
+			}
+		}
+	}
+	return phone, email
+}
+
+// planReviewNotice resolves one account's identifiers into a delivery plan.
 //
-// The caller is the recipient, so the target is their own account and their own
-// identifiers; the tenant comes from the request context the resolution layer
-// set. Membership is checked here rather than assumed: the route is open on the
-// permission guard, so nothing else would stop an account that does not belong
-// to the tenant from asking for a tenant-scoped dispatch. The response is 204:
-// the dispatch is enqueued, and the delivery is the pipeline's to settle.
-func (n *reviewNotifier) handleControl(c *gin.Context) {
-	ctx := c.Request.Context()
-	identity, ok := authn.FromContext(ctx)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "the review notice control requires a signed-in account"})
-		return
+// A proved phone number is the sms destination when the registry holds the
+// type's template for the recipient's language; otherwise the account falls
+// back to its email address, which keeps the in-app and email channels
+// reachable. The platform's own sending gate — a disabled template, a language
+// still under review, the deployment's sending switch — is not part of this
+// choice: the delivery pipeline refuses such a send, and the fixture must let it
+// be observed rather than quietly choosing another channel. An account holding
+// neither destination is not addressable and is skipped rather than failed. A
+// proved phone with neither a held template nor an email address is still
+// addressable in-app; the dispatch carries the phone as its "to" parameter,
+// which the in-app channel does not read.
+func planReviewNotice(identifiers []authn.Identifier, smsAddressable bool) (reviewNoticePlan, bool) {
+	phone, email := reviewNoticeDestinations(identifiers)
+	switch {
+	case phone != "" && smsAddressable:
+		return reviewNoticePlan{
+			To:       phone,
+			Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelSMS},
+		}, true
+	case email != "":
+		return reviewNoticePlan{
+			To:       email,
+			Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+		}, true
+	case phone != "":
+		return reviewNoticePlan{
+			To:       phone,
+			Channels: []notification.Channel{notification.ChannelInApp},
+		}, true
+	default:
+		return reviewNoticePlan{}, false
 	}
-	tenantID, ok := tenant.FromContext(ctx)
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "the review notice control requires a tenant"})
-		return
+}
+
+// pruneReviewChannels removes the channels a plan cannot address from the
+// recipient's effective set. It is deliberately monotonic: it only drops a
+// channel, never adds one back, so a channel the recipient turned off stays off
+// across every dispatch window.
+//
+// The write it feeds is needed because the delivery pipeline reads the
+// recipient's effective channels from the preference seam when it consumes the
+// job. A plan that addresses sms carries a phone number as the single
+// destination, so leaving email in the set would send the email to a phone
+// number; a plan that falls back to email must drop sms, or the sms channel
+// would be attempted with the email address as its destination.
+func pruneReviewChannels(effective []notification.Channel, plan reviewNoticePlan) []notification.Channel {
+	addressable := make(map[notification.Channel]struct{}, len(plan.Channels))
+	for _, channel := range plan.Channels {
+		addressable[channel] = struct{}{}
 	}
-	member, err := n.members.IsMember(ctx, identity.Account(), string(tenantID))
-	if err != nil {
-		n.logger.Error(reviewNotificationModuleName+": the control could not read the membership",
-			"tenant", string(tenantID), "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "the membership could not be read"})
-		return
+	out := make([]notification.Channel, 0, len(effective))
+	for _, channel := range effective {
+		if _, ok := addressable[channel]; ok {
+			out = append(out, channel)
+		}
 	}
-	if !member {
-		c.JSON(http.StatusForbidden, gin.H{"error": "the review notice control is for the tenant's members"})
-		return
-	}
-	plan, ok, err := n.notify(ctx, identity.Account(), uuid.NewString())
-	if err != nil {
-		n.logger.Error(reviewNotificationModuleName+": the control could not dispatch the notice",
-			"tenant", string(tenantID), "account", string(identity.Account()), "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "the review notice could not be dispatched"})
-		return
-	}
-	if !ok {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"error": "the account has neither a proved phone number nor an email address to dispatch to",
-		})
-		return
-	}
-	n.logger.Info(reviewNotificationModuleName+": the review notice control dispatched a notice",
-		"tenant", string(tenantID), "account", string(identity.Account()), "channels", plan.Channels)
-	c.Status(http.StatusNoContent)
+	return out
 }

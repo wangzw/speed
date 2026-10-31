@@ -12,25 +12,23 @@
 // business modules are an empty slot under modules/, and it ships no business
 // domain of its own.
 //
-// What the program names is the platform baseline: every platform capability
-// that starts without a credential, an external account or a service outside the
-// deployment stack. A capability that needs one of those — a social or
-// enterprise identity provider, the SMS family, mail over SMTP, object storage
-// on S3 — is left for a product to add once it holds the dependency. The
-// baseline carries WebAuthn as well: it is the one capability the criterion
-// admits that a copy of this skeleton once left out, because a deploying product
-// binds the relying party to the origin it is reached at rather than to a
-// credential or a service, and the platform's management surface cannot
-// demonstrate a step-up without a second factor kind beside TOTP. The criterion,
-// and that exception, are written down in AGENTS.md beside the lists below.
+// The program compiles every platform capability it can ever run into the
+// default build (see capabilities.go), and a serve run names them all. Which of
+// them actually starts is a run-time decision each module states in Prepare
+// from its own configuration; the same binary therefore assembles different
+// feature sets on different deployments. A capability that needs a credential,
+// an external account or a service outside the deployment stack — a social or
+// enterprise identity provider, the SMS family, mail over SMTP — is present at
+// compile time and simply stands itself down when its configuration is absent.
+// The review build adds only test controls and the loopback guard, never a
+// product capability.
 //
 // Importing a module's package is what puts it in the available set: each
-// registers itself in init, so the import is the whole of the wiring. What each
-// run is made of is the command tree below, and a module the tree names takes
-// its place in it. The available set is also what the merged contract document
-// covers, so a platform module with an HTTP fragment is imported even when no
-// command names it; naming a module for a run and importing it for its contract
-// are two different questions. See AGENTS.md.
+// registers itself in init, so the import is the whole of the wiring. The
+// available set is also what the merged contract document covers, so a platform
+// module with an HTTP fragment is imported even when no run enables it. Naming a
+// module for a run and importing it for its contract are two different
+// questions; see AGENTS.md.
 //
 // The program runs on six deployment stacks. A stack is one level of the
 // command tree: inclusion is inherited down the command path, so the stack node
@@ -240,39 +238,43 @@ var stacks = []stack{
 // is webui.ModuleName, spelled once here so nothing else writes the literal.
 const webuiModuleName = webui.ModuleName
 
-// baselineServe and baselineWorker are the platform baseline: the capability set
-// a copy of this skeleton carries before it holds any dependency of its own.
+// baselineServe and baselineWorker are the platform core: the modules a serve
+// or worker run always names because they start without a credential, an
+// external account or a service outside the deployment stack. The capability
+// ceiling is separate and larger — every social and enterprise login method, the
+// SMS family, the mail carriers, the verification code sender and the
+// notification fixture are compiled into every build and considered by serve
+// through capabilityModules (see capabilities.go). A capability outside this
+// core stands itself down in Prepare when its configuration is absent, which is
+// what lets one binary serve a bare run and a fully configured deployment.
 //
-// The criterion is one sentence: the baseline names every platform capability
-// that starts without a credential, an external account or a service outside the
-// deployment stack. A capability that needs one of those is left for a product to
-// add once it holds the dependency — a social or enterprise identity provider
-// (authn.login.google/github/wechat-web/wechat-mp, authn.sso.oidc/saml), the SMS
-// family (sms.*, authn.login.sms, authn.mfa.sms, authn.sms), mail over SMTP
-// (mail.smtp) and object storage on S3 (objectstore.s3). The test of a doubtful
-// one is the module's own: if its required configuration items cannot be given a
-// value that starts, it does not belong here.
+// This list is still a compile-time statement of what the program cannot run
+// without: the entry point, the identity system, tenancy, the authorization
+// layer, the journal, the limiter, settings, jobs, notifications and the object
+// store. A capability whose required configuration cannot be given a starting
+// value is not here, but it is in capabilityModules; the difference is that its
+// absence is a run-time fact reported by the diagnostics rather than a build
+// variant.
 //
-// WebAuthn (authn.mfa.webauthn) is the one capability the criterion admits that
-// this list once left out. Its relying party is bound to the origin the
-// deployment is reached at — a value this file's configuration carries, not a
-// credential or a service — so it starts with nothing external. It is named here
-// because the platform's management surface cannot demonstrate a step-up on a
-// single factor kind: a step-up asks for a kind the session has not proved, TOTP
-// alone leaves none, and the second kind is what lets a copy show the step-up,
-// the elevation it grants and the write it unblocks.
+// WebAuthn (authn.mfa.webauthn) is named here because its relying party is bound
+// to the origin the deployment is reached at — a value this file's configuration
+// carries, not a credential or a service — so it starts with nothing external.
+// It is named because the platform's management surface cannot demonstrate a
+// step-up on a single factor kind: a step-up asks for a kind the session has not
+// proved, TOTP alone leaves none, and the second kind is what lets a copy show
+// the step-up, the elevation it grants and the write it unblocks.
 //
 // The static operator password table (authn.static) is the one capability the
-// criterion admits that this list leaves out. It needs no external service — a
-// configuration table alone — but it is the only backend that takes the Basic
+// core criterion admits and this list leaves out. It needs no external service —
+// a configuration table alone — but it is the only backend that takes the Basic
 // scheme, and a browser opens its native credential prompt for a Basic or
 // Digest challenge on any 401. This skeleton's browser-facing traffic is the
 // frontend bundle, so a 401 carrying Basic would put a native password box in
 // front of a signed-in user the moment a session lapsed, in place of the
 // frontend's own end-of-session flow. The session cookie and the bearer token
 // carry every caller that reaches the guards here, so a copy that wants a
-// Basic-authenticated operator or probe adds this backend and its subject table
-// back deliberately.
+// Basic-authenticated operator or probe imports this backend and its subject
+// table back deliberately.
 //
 // What differs between the two lists is the entry point. serve stands up the
 // HTTP entry point and names every module with a route or a middleware; worker
@@ -521,17 +523,17 @@ func addStack(root *config.Command, s stack) {
 	// telemetry and export providers.
 	serve := node.Sub(serveCommand)
 	serve.Include(baselineServe...)
-	// The review assembly's additions: the social login methods and the SMS
-	// family with a sender that writes the code to the log. The list is empty in
+	// The capability ceiling: every capability the program can run is compiled
+	// into every build and considered by serve. Whether a capability actually
+	// runs is its own judgement in Prepare, read from its configuration; a
+	// capability that is absent from this run is reported by the startup
+	// diagnostics, not by a different binary. See capabilities.go.
+	serve.Include(capabilityModules...)
+	// The review build's test controls and loopback guard. The list is empty in
 	// a default build, so this line names nothing there; see review.go and
 	// review_off.go. The configuration the review build reads is the copy under
 	// server/review, never one of testdata/.
 	serve.Include(reviewModules...)
-	// The deployment assembly's additions: the SMTP carrier and the email
-	// verification code sender over it. The list is empty in a default build;
-	// the Fly image is built with the deploy tag. See deploy.go and
-	// deploy_off.go.
-	serve.Include(deployModules...)
 	serve.Include(s.kv, s.event, log.ModuleName, otel.ModuleName, s.exporter)
 	serve.Do(core.StageServe, untilCancelled(serveCommand))
 

@@ -8,10 +8,11 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// reviewModules is empty in a default build. The review assembly's identity
-// providers and its SMS sender are compiled only under the review build tag,
-// so a production binary names none of them and carries no code path of
-// theirs. See review.go.
+// reviewModules is empty in a default build: the test controls and the
+// loopback guard are compiled only under the review tag. The capabilities
+// themselves are named by capabilityModules, which this build also carries;
+// what a run starts is decided by configuration, not by this list. See
+// review.go.
 var reviewModules []string
 
 // reviewFeatureNames is empty in a default build: the review controls and the

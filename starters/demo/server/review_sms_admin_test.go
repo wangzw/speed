@@ -29,11 +29,11 @@ const (
 )
 
 // TestReviewServesTheSMSAdminPage holds the roster entry and the published
-// feature: the module is in the serve roster the review build adds, and a
+// feature: the module is in the capability ceiling every build carries, and a
 // running review binary answers GET /api/v1/features with sms.admin.
 func TestReviewServesTheSMSAdminPage(t *testing.T) {
-	if !slices.Contains(reviewModules, smsadmin.ModuleName) {
-		t.Fatalf("serve names no %q module, so the review binary would publish no "+
+	if !slices.Contains(capabilityModules, smsadmin.ModuleName) {
+		t.Fatalf("the capability ceiling names no %q module, so the review binary would publish no "+
 			"SMS management feature and the console would offer no page", smsadmin.ModuleName)
 	}
 

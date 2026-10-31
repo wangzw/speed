@@ -130,17 +130,18 @@ export default async function globalSetup(): Promise<void> {
     'building the review binary',
   )
 
-  // The deployment assembly is a second build of the same program: the deploy
-  // tag adds the SMTP carrier, the email verification code sender and the two
-  // social login methods, which is what the deploy journey drives. It embeds
-  // the same front-end bundle, so it is built after the front end like the
-  // review binary.
+  // The deployment build is the default build: every capability is compiled in,
+  // and what the deployment starts is decided at run time from the rendered
+  // configuration. It embeds the same front-end bundle, so it is built after the
+  // front end like the review binary. The review-only test controls and loopback
+  // guard are absent from it, which is what keeps the deployment journey's
+  // feature set the deployment's own.
   const deployBinary = join(HARNESS_DIR, DEPLOY_BINARY_NAME)
   await build(
     'go',
-    ['-C', SERVER_DIR, 'build', '-tags', 'deploy', '-o', deployBinary, '.'],
+    ['-C', SERVER_DIR, 'build', '-o', deployBinary, '.'],
     REPO_ROOT,
-    'building the deploy binary',
+    'building the default binary',
   )
 
   const manifest = {

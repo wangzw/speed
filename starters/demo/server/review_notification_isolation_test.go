@@ -2,38 +2,53 @@
 
 package main
 
-// The isolation test the default build carries: the review assembly's
-// notification type must not exist in a baseline binary's available set. It is
-// the half of the pair that fails if the type is moved into an untagged file —
+// The default build's side of the notification fixture's split: the fixture —
+// its type, worker and recipient wiring — is compiled into the capability
+// ceiling, while the review-only dispatch control is not.
+//
+// The type is part of the available set even in a run that never dispatches it:
 // notification.preferences and notification.delivery collect their taxonomy
-// over the available set, so an untagged declaration would be part of the
-// baseline's preference matrix even though no baseline command runs it. The
-// review-tagged half (review_notification_test.go) holds the other direction.
+// over the available set, and the compile-time ceiling is that set. Whether a
+// run actually publishes and dispatches the type is the module's own Prepare
+// decision, reported by the startup diagnostics; it is not a different binary.
 
 import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// TestDefaultBuildDeclaresNoNotificationType holds the baseline side of the
-// isolation: a binary built without the review tag registers no module that
-// declares a notification type, and names no review module for a run.
-func TestDefaultBuildDeclaresNoNotificationType(t *testing.T) {
-	if len(reviewModules) != 0 {
-		t.Fatalf("the default build names review modules %v, want none; a module "+
-			"named here would run in the baseline", reviewModules)
+// TestDefaultBuildDeclaresTheNotificationType holds the ceiling: a binary built
+// without the review tag registers the fixture module and therefore declares
+// its notification type. Before the capability roster became unconditional this
+// declaration existed only under the review tag.
+func TestDefaultBuildDeclaresTheNotificationType(t *testing.T) {
+	declared := make(map[string]string)
+	for _, resource := range core.Resources[notification.TypeSpec](core.ProcessRegistry) {
+		declared[resource.Value.Key] = resource.Module
 	}
-	declared := core.Resources[notification.TypeSpec](core.ProcessRegistry)
-	if len(declared) == 0 {
-		return
+	module, ok := declared[reviewNotificationTypeKey]
+	if !ok {
+		t.Fatalf("the default build declares no %q notification type; the fixture is part of the "+
+			"capability ceiling every build carries", reviewNotificationTypeKey)
 	}
-	keys := make([]string, 0, len(declared))
-	for _, resource := range declared {
-		keys = append(keys, resource.Module+": "+resource.Value.Key)
+	if module != reviewNotificationModuleName {
+		t.Errorf("the type %q is declared by %q, want %q", reviewNotificationTypeKey, module,
+			reviewNotificationModuleName)
 	}
-	t.Fatalf("the default build's available set declares notification type(s) %v; the "+
-		"review type belongs in a //go:build review file, because both taxonomy "+
-		"consumers collect over the available set and would show it in the baseline", keys)
+}
+
+// TestDefaultBuildDeclaresNoNotificationControl holds the other direction: the
+// review-only dispatch control's feature is absent from the default build's
+// vocabulary, so the console never offers a control that would post to a route
+// this binary does not mount.
+func TestDefaultBuildDeclaresNoNotificationControl(t *testing.T) {
+	for _, resource := range core.Resources[feature.Spec](core.ProcessRegistry) {
+		if resource.Value.Name == "review.notification.control" {
+			t.Fatalf("the default build declares %q; the dispatch control is test-only and must "+
+				"stay behind the review tag", resource.Value.Name)
+		}
+	}
 }

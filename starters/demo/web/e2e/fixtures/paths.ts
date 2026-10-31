@@ -58,7 +58,7 @@ export const MANIFEST_PATH = `${HARNESS_DIR}/manifest.json`
 /** The review binary the global setup builds. */
 export const BINARY_NAME = 'demo-review'
 
-/** The deploy assembly's binary, built with the deploy build tag. */
+/** The deploy assembly's binary: the default build, with no review controls. */
 export const DEPLOY_BINARY_NAME = 'demo-deploy'
 
 /** The repository root. */

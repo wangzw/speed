@@ -303,11 +303,10 @@ func platformDefaultsDocument() map[string]any {
 // idempotent, so running it on every start neither duplicates nor overwrites an
 // operator's change.
 //
-// The tenant list differs by build: the default build ships the walkthrough
-// tenant, while the deploy build leaves it out because the Fly configuration
-// names its own accounts and no business tenant, and a leaf that file does not
-// name would otherwise inherit the demo tenant. See defaults_seed.go and
-// defaults_seed_deploy.go.
+// The tenant list is the walkthrough tenant this document names. The Fly
+// configuration names its own accounts and no business tenant, and the tenant
+// list is a container leaf, so deploy/fly.yaml.tmpl replaces it with an empty
+// list. See defaults_seed.go.
 func seedDefaultsDocument() map[string]any {
 	seed := map[string]any{
 		"accounts": []any{

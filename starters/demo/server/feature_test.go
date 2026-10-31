@@ -23,16 +23,16 @@ import (
 //
 // The expected set is derived from the assembly, not copied: the declarations
 // come from the process registry (declaredVocabulary), and a name is expected
-// when its declaring module is named by baselineServe. A static feature is
-// therefore always expected; a conditional one is expected only if the assembly
-// posts it, which the test cannot observe directly -- so it asserts the two
-// properties that make a wrong answer impossible instead: every conditional
-// name in the answer belongs to a served module, and at least one conditional
-// name of a served module is absent (which fails an implementation that posts
-// every conditional unconditionally). The two named anchors below are not a
-// census but properties: sms.admin is declared by a module the contract imports
-// and no command runs, and authn.admin.sso.metadata is declared by a served
-// module whose conditional no assembly member posts (no SAML provider here).
+// when its declaring module is named by the serve roster — the platform core,
+// the capability ceiling and the review controls. A static feature is therefore
+// always expected; a conditional one is expected only if the assembly posts it,
+// which the test cannot observe directly -- so it asserts the two properties
+// that make a wrong answer impossible instead: every conditional name in the
+// answer belongs to a served module, and at least one conditional name of a
+// served module is absent (which fails an implementation that posts every
+// conditional unconditionally). The named anchor below is not a census but a
+// property: authn.admin.sso.metadata is declared by a served module whose
+// conditional no assembly member posts (no SAML provider here).
 //
 // The stack is named sqlite-memory and the configuration gives it a database in
 // a file: seed and serve are two processes, and only a file survives the first
@@ -73,8 +73,8 @@ func TestServePublishesTheFeatureDocument(t *testing.T) {
 	}
 
 	// The expected sets, derived from this process's own assembly.
-	servedModules := make(map[string]bool, len(baselineServe))
-	for _, module := range baselineServe {
+	servedModules := make(map[string]bool)
+	for _, module := range serveRoster() {
 		servedModules[module] = true
 	}
 	declared, err := declaredVocabulary()
@@ -109,7 +109,7 @@ func TestServePublishesTheFeatureDocument(t *testing.T) {
 	}
 	for name := range staticServed {
 		if !answered[name] {
-			t.Errorf("the feature document omits %q, which its declaring module (named by baselineServe) declares statically",
+			t.Errorf("the feature document omits %q, which its declaring module (named by the serve roster) declares statically",
 				name)
 		}
 	}
@@ -125,11 +125,10 @@ func TestServePublishesTheFeatureDocument(t *testing.T) {
 			"the board appears to post conditionals without checking the assembly")
 	}
 
-	// Anchors, not a census: each name stands for a property the derivation
-	// above cannot express on its own. sms.admin is declared by an imported
-	// module no command runs; authn.admin.sso.metadata has no assembly member
-	// that posts it.
-	for _, absent := range []string{"sms.admin", "authn.admin.sso.metadata"} {
+	// An anchor, not a census: authn.admin.sso.metadata has no assembly member
+	// that posts its conditional (no SAML provider here). A name taken from the
+	// available set would report it.
+	for _, absent := range []string{"authn.admin.sso.metadata"} {
 		if answered[absent] {
 			t.Errorf("the feature document carries %q, which this process does not serve: "+
 				"an answer taken from the available set, or a conditional feature posted "+

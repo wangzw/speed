@@ -68,9 +68,17 @@ func serveWithout(list string) {
 		return kept
 	}
 	baselineServe = without(baselineServe)
+	capabilityModules = without(capabilityModules)
 	reviewModules = without(reviewModules)
-	kept := append(slices.Clone(baselineServe), reviewModules...)
+	kept := slices.Concat(baselineServe, capabilityModules, reviewModules)
 	fmt.Fprintln(os.Stderr, "serve-without: "+strings.Join(kept, ","))
+}
+
+// serveRoster is every module a serve run names in this build: the platform
+// core, the capability ceiling, and the review-only controls (empty in a
+// default build).
+func serveRoster() []string {
+	return slices.Concat(baselineServe, capabilityModules, reviewModules)
 }
 
 // expectedOwners is the prefix-to-endpoint table the case judges against. It is
@@ -413,19 +421,16 @@ type assembledModule struct {
 }
 
 // assembledDescriptors reads the modules the reference run assembles — the
-// baseline list and, under the review tag, the review build's additions — with
-// their dependency declarations and the endpoints their fragments describe. Both
-// lists are seeds of the variants, and both are in the dependency graph so that
-// a variant dropping a module also leaves out every module that requires it. A
-// listed name that no module registers is a failure: the lists and the registry
-// would otherwise drift apart silently.
+// platform core, the capability ceiling and, under the review tag, the review
+// controls — with their dependency declarations and the endpoints their
+// fragments describe. Every list is a seed of the variants, and all of them are
+// in the dependency graph so that a variant dropping a module also leaves out
+// every module that requires it. A listed name that no module registers is a
+// failure: the lists and the registry would otherwise drift apart silently.
 func assembledDescriptors(t *testing.T) map[string]*assembledModule {
 	t.Helper()
 	named := map[string]bool{}
-	for _, name := range baselineServe {
-		named[name] = true
-	}
-	for _, name := range reviewModules {
+	for _, name := range serveRoster() {
 		named[name] = true
 	}
 	modules := map[string]*assembledModule{}
@@ -444,14 +449,9 @@ func assembledDescriptors(t *testing.T) map[string]*assembledModule {
 			module.specEndpoints = append(module.specEndpoints, resource.Value.Endpoint)
 		}
 	}
-	for _, name := range baselineServe {
+	for _, name := range serveRoster() {
 		if modules[name] == nil {
-			t.Errorf("baselineServe names %q, which no module registers", name)
-		}
-	}
-	for _, name := range reviewModules {
-		if modules[name] == nil {
-			t.Errorf("reviewModules names %q, which no module registers", name)
+			t.Errorf("the serve roster names %q, which no module registers", name)
 		}
 	}
 	for layer, module := range preGateLayers {
@@ -652,15 +652,15 @@ func TestEveryRoutingVariantMustStart(t *testing.T) {
 			t.Errorf("mayLeaveRouteCountUnchanged names %q, which this case does not classify as routing", name)
 		}
 	}
-	// Every module a build assembles is a seed of a variant of its own, so the
-	// start property is held for the review build's additions too. The default
-	// build names no review module, so this loop checks nothing there.
-	for _, name := range reviewModules {
+	// Every capability and review-control module a build assembles is a seed of
+	// a variant of its own, so the start property is held for it too. A default
+	// build's review list is empty, but its capability ceiling is not.
+	for _, name := range slices.Concat(capabilityModules, reviewModules) {
 		if classes[name] == classShaping {
 			continue
 		}
 		if !built[name] {
-			t.Errorf("the review module %q is assembled but is not a variant seed: "+
+			t.Errorf("the capability module %q is assembled but is not a variant seed: "+
 				"the start property is not held for it", name)
 		}
 	}
@@ -670,10 +670,11 @@ func TestEveryRoutingVariantMustStart(t *testing.T) {
 // per module the review build adds, and the groups that leave one endpoint with
 // no routes at all. Each variant is seeded by exactly one module; the modules
 // that non-optionally require what it provides go with it, and nothing else
-// does. The review modules are seeds of their own so the start property is held
-// for every module the build assembles, not only for the baseline's routing
-// ones. reviewModules is empty in a default build, so the default build's
-// variants are unchanged.
+// does. The capability modules and the review controls are seeds of their own
+// so the start property is held for every module the build assembles, not only
+// for the platform core's routing ones. A default build's review list is empty,
+// but its capability ceiling is not: those seeds hold the capability modules to
+// the same property.
 func buildGroups(modules map[string]*assembledModule, classes map[string]moduleClass) []variantGroup {
 	names := make([]string, 0, len(baselineServe))
 	for _, name := range baselineServe {
@@ -705,25 +706,25 @@ func buildGroups(modules map[string]*assembledModule, classes map[string]moduleC
 		}
 	}
 
-	// The review build's additions are seeds of their own. A shaping module is
-	// left in place for the same reason the baseline's shaping modules are: its
-	// absence changes every answer for a reason unrelated to the assembly.
-	var review []string
-	for _, name := range reviewModules {
+	// The capability modules and review controls are seeds of their own. A
+	// shaping module is left in place for the same reason the core's shaping
+	// modules are: its absence changes every answer for a reason unrelated to
+	// the assembly.
+	var extras []string
+	for _, name := range slices.Concat(capabilityModules, reviewModules) {
 		if modules[name] != nil && !slices.Contains(names, name) && classes[name] != classShaping {
-			review = append(review, name)
+			extras = append(extras, name)
 		}
 	}
-	sort.Strings(review)
-	for _, name := range review {
+	sort.Strings(extras)
+	for _, name := range extras {
 		group(name, map[string]bool{name: true})
 	}
 
 	// The endpoint-wide variants name every routing module assembled for that
-	// endpoint, the review build's additions included, so the group still
-	// removes the endpoint's whole routing surface.
-	endpointSeeds := slices.Clone(names)
-	endpointSeeds = append(endpointSeeds, review...)
+	// endpoint, the capability modules and review controls included, so the
+	// group still removes the endpoint's whole routing surface.
+	endpointSeeds := slices.Concat(names, extras)
 	for _, endpoint := range []string{"admin", "api"} {
 		seed := map[string]bool{}
 		for _, name := range endpointSeeds {
@@ -1039,7 +1040,7 @@ func runDifferential(t *testing.T, topo topology) {
 	classes := classifyModules(t, modules, guarded)
 
 	// Completeness: every module the build assembles has a class.
-	for _, name := range slices.Concat(baselineServe, reviewModules) {
+	for _, name := range serveRoster() {
 		if _, classified := classes[name]; !classified {
 			t.Errorf("the module %q was not classified", name)
 		}

@@ -18,7 +18,13 @@ MODULES := $(shell go work edit -json go.work | sed -n 's/^[[:space:]]*"DiskPath
 # that passes the tag and names its cases with -run: the tagged cases are what
 # the leg is for, and a leg without the pattern would re-run the unit cases as
 # well. tools/check_test_tiers.py holds this roster to the tree.
-GATED_TEST_TAGS := review deploy
+#
+# `review` is the only tag left with a build variant: it adds the demo
+# program's test controls and loopback guard to the default build. The
+# capability roster no longer has a tag — every capability is compiled into the
+# default build and enabled at run time from configuration — so there is no
+# deploy leg to run.
+GATED_TEST_TAGS := review
 
 # The modules whose tree carries a file compiled under a gated tag. A module
 # with none has no case for the tagged leg to select, and running the leg there
@@ -27,11 +33,6 @@ GATED_TEST_TAGS := review deploy
 # leg runs from there, so a tagged case in a subpackage still runs with its
 # own package.
 REVIEW_MODULES := $(shell paths='$(strip $(MODULES))'; if [ -n "$$paths" ]; then grep -rlE --include='*.go' '^//go:build .*review' $$paths 2>/dev/null | sed -E 's|/[^/]+$$||' | sort -u; fi)
-
-# The modules whose tree carries a file compiled under the deploy tag. The Fly
-# image is the only build that passes it; the leg below compiles the variant
-# and runs the cases that exist only under it.
-DEPLOY_MODULES := $(shell paths='$(strip $(MODULES))'; if [ -n "$$paths" ]; then grep -rlE --include='*.go' '^//go:build .*deploy' $$paths 2>/dev/null | sed -E 's|/[^/]+$$||' | sort -u; fi)
 
 # The packages that carry an OpenAPI generation test. A package without one
 # declares no API document, and running the generator's pattern there would
@@ -64,7 +65,7 @@ each = for it in $(1); do echo "==> $(2) $$it"; $(3) || failed="$${failed:+$$fai
 each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
 .PHONY: help modules deps-up deps-down build api-docs test test-race test-integration test-integration-race \
-        vet-integration vet-review test-review vet-deploy test-deploy fmt lint tidy tidy-check repo-check tools-test check python-version \
+        vet-integration vet-review test-review fmt lint tidy tidy-check repo-check tools-test check python-version \
         modules-present web-check web-a11y web-browser e2e e2e-install deploy
 
 # A target name may carry a digit (web-a11y, e2e), so the name pattern admits
@@ -156,11 +157,12 @@ test-integration-race: modules-present deps-up ## Test every module's integratio
 vet-integration: modules-present ## Compile every module's integration cases, running nothing
 	@failed=; $(call each,$(MODULES),vet integration,go -C $$it vet -tags=integration ./...); $(each-end)
 
-# The review assembly is a build variant of the demo program: its files carry
-# the `review` tag and no leg above compiles them. Compiling it here keeps the
-# variant from rotting into not building, and gives the tag the leg the
-# test-tier gate requires of every tag written in the tree.
-vet-review: modules-present ## Compile the review build variant, running nothing
+# The review build is the default build plus the demo program's test controls and
+# loopback guard: its files carry the `review` tag and no leg above compiles
+# them. Compiling it here keeps the controls from rotting into not building, and
+# gives the tag the leg the test-tier gate requires of every tag written in the
+# tree.
+vet-review: modules-present ## Compile the review build, running nothing
 	@failed=; $(call each,$(MODULES),vet review,go -C $$it vet -tags=review ./...); $(each-end)
 
 # The cases compiled only under the review tag are executed here: vet-review
@@ -174,20 +176,6 @@ test-review: modules-present ## Test the cases compiled only under the review ta
 	  exit 1; \
 	fi
 	@failed=; $(call each,$(REVIEW_MODULES),test review,go -C $$it test -tags=review -run '^TestReview' -timeout 10m ./...); $(each-end)
-
-# The deployment assembly is the Fly image's build variant: it adds the SMTP
-# carrier and the email verification code sender to the baseline. Compiling it
-# here keeps the variant from rotting, and the selected case executes the
-# deploy-tagged test the gate requires.
-vet-deploy: modules-present ## Compile the deployment build variant, running nothing
-	@failed=; $(call each,$(MODULES),vet deploy,go -C $$it vet -tags=deploy ./...); $(each-end)
-
-test-deploy: modules-present ## Test the cases compiled only under the deploy tag
-	@if [ -z "$(strip $(DEPLOY_MODULES))" ]; then \
-	  echo "no module carries a deploy-tagged Go file: the deploy cases are gone, which is not a pass." >&2; \
-	  exit 1; \
-	fi
-	@failed=; $(call each,$(DEPLOY_MODULES),test deploy,go -C $$it test -tags=deploy -run '^TestTheDeploy' -timeout 10m ./...); $(each-end)
 
 # `golangci-lint run` takes a process-wide lock by default, so two checkouts
 # running the gate at once make one of them die with "parallel golangci-lint
@@ -322,8 +310,6 @@ check: ## Run everything a commit is gated on (no external service needed)
 	@$(MAKE) vet-integration
 	@$(MAKE) vet-review
 	@$(MAKE) test-review
-	@$(MAKE) vet-deploy
-	@$(MAKE) test-deploy
 	@$(MAKE) lint
 	@$(MAKE) tidy-check
 	@$(MAKE) repo-check

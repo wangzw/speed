@@ -86,9 +86,9 @@ type messagePage struct {
 // available set notification.preferences and notification.delivery collect with
 // core.Resources, and its schedule names the handler this module registers.
 func TestReviewNotificationTypeReachesBothTaxonomyConsumers(t *testing.T) {
-	if !slices.Contains(reviewModules, reviewNotificationModuleName) {
-		t.Fatalf("serve names no %q module, so the review binary would run neither the "+
-			"type nor the worker", reviewNotificationModuleName)
+	if !slices.Contains(capabilityModules, reviewNotificationModuleName) {
+		t.Fatalf("the capability ceiling names no %q module, so the review binary would run neither "+
+			"the type nor the worker", reviewNotificationModuleName)
 	}
 
 	var declared *notification.TypeSpec

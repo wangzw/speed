@@ -1,6 +1,6 @@
 /**
- * The deployment-assembly server: the deploy-tagged binary on a temporary
- * volume, seeded and served the way the container entrypoint does it.
+ * The deployment-assembly server: the default binary on a temporary volume,
+ * seeded and served the way the container entrypoint does it.
  *
  * This is a fixture-type journey. The container entrypoint itself is not run:
  * the fixture renders the same deployment template onto the volume, runs
@@ -56,7 +56,7 @@ export interface HttpAnswer {
 
 /** A started deployment server. */
 export interface DeployServer {
-  /** The deploy-tagged binary that was built. */
+  /** The default-build binary that was built. */
   readonly binary: string
   /** The server's temporary directory; the volume is a child of it. */
   readonly dir: string
@@ -280,7 +280,7 @@ export async function startDeployServer(): Promise<DeployServer> {
   if (typeof binary !== 'string' || binary === '') {
     throw new Error(
       'the harness manifest names no deploy binary; the Playwright global ' +
-        'setup builds it with the deploy tag and records it there',
+        'setup builds the default binary and records it there',
     )
   }
   await ensureBinary(binary)

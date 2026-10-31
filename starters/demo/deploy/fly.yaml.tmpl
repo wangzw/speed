@@ -136,6 +136,11 @@ objectstore:
 # existing account, role, grant or binding as it stands, so the entrypoint can
 # run it on every start.
 seed:
+  # The platform defaults document names the walkthrough tenant a bare run
+  # starts from. A deployment names no business tenant, and the tenant list is a
+  # container leaf the configuration file replaces whole, so the empty list here
+  # is what keeps that tenant out of every deployment.
+  tenants: []
   accounts:
     - identifier: "__OPERATOR_EMAIL__"
       username: "__OPERATOR_USERNAME__"
