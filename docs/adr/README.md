@@ -170,7 +170,7 @@
 | [账户停用、删除与密钥撤销的清理：本模块事务加钩子加事件补偿，`valid_after` 兜底](adr-authn-account-lifecycle.md) |
 | [账户恢复经 `AccountEnabled` 钩子观察，与停用同一条提交后同步调用](adr-authn-account-restoration.md) |
 | [外部身份绑定、显式关联、首登开户与企业预置账户的规则](adr-authn-external-binding.md) |
-| [联系方式与登录方式是账户上两条独立的轴，账号只有一条邮箱时它一经验证即成为登录方式](adr-authn-contact-and-login-ways.md) |
+| [账户登记的邮箱与手机恒为联系方式，登录方式与默认联系地址由持有人选择，账户只有一条邮箱时它一经验证即成为登录方式](adr-authn-contact-and-login-ways.md) |
 | [口令条目用 PHC 字符串：Argon2id 缺省，PBKDF2-SHA256 可用，旧写法只读](adr-authn-password-hash.md) |
 | [认证前的失败退避与枚举防护：db 的 Throttle，账户级静默，口令表进程内](adr-authn-throttling.md) |
 

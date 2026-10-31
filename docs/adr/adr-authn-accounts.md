@@ -6,7 +6,7 @@
 
 **账户与租户的关系。** 一个人可以属于零到多个租户。登录时要跨租户列出账户的成员关系，请求期的成员判定读同一份数据。会话、令牌、审计行、角色绑定与事件都以账户标识指向账户（[ADR-authn-identity](adr-authn-identity.md)）；标识若可变或可复用，这些引用悬空，或者转移到另一个人名下。
 
-**标识的证明。** 邮箱与手机号是账户的联系方式与登录方式两条轴上的取值，由持有人选择，验证只证明所有权（[ADR-authn-contact-and-login-ways](adr-authn-contact-and-login-ways.md)）；它们不作识别账户或建立外部身份绑定的键，企业预置账户按管理员断言渠道邮箱匹配的情形除外（[ADR-authn-external-binding](adr-authn-external-binding.md)）。邮箱与手机的唯一约束全局生效。库里若允许未经证明的标识行，攻击者可以先用受害者的邮箱建号并占住其唯一值，使受害者无法再用该地址登记或把它选作登录方式。外部提供方对「已验证」的口径不一致：GitHub 的 `/user` 返回的邮箱不带验证状态，微信没有邮箱，提供方的邮箱会被回收复用。迁移导入的账户来自旧系统，旧系统从未验证过它们的邮箱；管理员代建的账户则是管理员为某个人建的。
+**标识的证明。** 邮箱与手机号登记即作为账户的联系方式，是否作登录方式由持有人选择，验证只证明所有权（[ADR-authn-contact-and-login-ways](adr-authn-contact-and-login-ways.md)）；它们不作识别账户或建立外部身份绑定的键，企业预置账户按管理员断言渠道邮箱匹配的情形除外（[ADR-authn-external-binding](adr-authn-external-binding.md)）。邮箱与手机的唯一约束全局生效。库里若允许未经证明的标识行，攻击者可以先用受害者的邮箱建号并占住其唯一值，使受害者无法再用该地址登记或把它选作登录方式。外部提供方对「已验证」的口径不一致：GitHub 的 `/user` 返回的邮箱不带验证状态，微信没有邮箱，提供方的邮箱会被回收复用。迁移导入的账户来自旧系统，旧系统从未验证过它们的邮箱；管理员代建的账户则是管理员为某个人建的。
 
 **成员关系与租户模块的约定。** 受租户约束的模型内嵌 `tenant.Model`：租户列进主键，其余索引以租户列打头，上下文里没有租户时语句被拒，跨租户的唯一途径是 `tenant.CrossTenant`，该途径不判权、只靠调用点自律（[ADR-tenant-scoping](adr-tenant-scoping.md)）。没有装载租户名册模块的命令里，受约束模型的插入因租户标识为空而失败。按账户反查「属于哪些租户」与约定要求的索引形状不合。`pkg/tenant` 位于 `pkg/authn` 之上，`tenant/resolve` 已经 import `pkg/authn` 根包，authn 的子包反向 import `pkg/tenant` 使两个目录互相依赖（[ADR-tenant-admission](adr-tenant-admission.md)）。已有的表不内嵌约定的先例是审计表（[ADR-audit-sink](adr-audit-sink.md)）。
 

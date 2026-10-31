@@ -28,7 +28,7 @@ authn 后端的自助写路由已经存在：档案面（`authn.profile`）挂 `
 
 ## 决策
 
-采纳：账户的自助写面归 `@speed/account-ui`，新增四节——`ProfileSection`（显示名，`PATCH B/me`）、`PasswordSection`（`PUT B/password`）、`PhoneSection`（`POST B/phone` 与 `POST B/phone/verify` 两步）、`IdentifiersSection`（读 `GET B/me` 的 `identifiers` 字段、删 `DELETE B/identifiers/:id`）。四节中，`PasswordSection`、`PhoneSection` 与 `IdentifiersSection` 取 `AuthSession` 为属性；提权门控只由 `PasswordSection`（改口令）与 `IdentifiersSection`（添加用户名、两条轴的选择、删除标识）驱动一条 `purpose: 'step-up'` 流程，`PhoneSection` 的两步写本身不要求新鲜认证，门控不为它打开；`ProfileSection` 的显示名写同样不要求新鲜认证，不经门控。
+采纳：账户的自助写面归 `@speed/account-ui`，新增四节——`ProfileSection`（显示名，`PATCH B/me`）、`PasswordSection`（`PUT B/password`）、`PhoneSection`（`POST B/phone` 与 `POST B/phone/verify` 两步）、`IdentifiersSection`（读 `GET B/me` 的 `identifiers` 字段、删 `DELETE B/identifiers/:id`）。四节中，`PasswordSection`、`PhoneSection` 与 `IdentifiersSection` 取 `AuthSession` 为属性；提权门控只由 `PasswordSection`（改口令）与 `IdentifiersSection`（添加用户名、登录方式的选择、默认联系地址的改选、删除标识）驱动一条 `purpose: 'step-up'` 流程，`PhoneSection` 的两步写本身不要求新鲜认证，门控不为它打开；`ProfileSection` 的显示名写同样不要求新鲜认证，不经门控。
 
 判据是「自助面同处一页、同一访问令牌、要求新鲜认证的写同一提权门控」——这是这些写归包内的依据，不是每个写都满足它：登记与验证联系方式同在这一页、同用一条令牌，本身不要求新鲜认证、不经门控（其后果要求新鲜认证时按普通失败呈现）。这些写与包内既有的偏好、会话、绑定节共享同一个账户页与同一条访问令牌，都是一次性写而非可分页列表，与包内各节处在同一组件层。通用属性集（自由键值对）的编辑留在宿主：它是任意键值，不属于账户页的固定字段。
 

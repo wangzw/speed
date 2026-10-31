@@ -105,7 +105,7 @@ this assembly end to end.
 
 These sections cover the account's own self-service writes. The writes that
 change how the account signs in or what it proves -- the password change, the
-username add, the two axis choices and the identifier removal -- drive a route
+username add, the sign-in way choice, the default contact and the identifier removal -- drive a route
 that asks for a fresh authentication: an unelevated caller is answered 401
 `authn.insufficient_user_authentication`, which arms the shared
 `useStepUpGate` from `@speed/auth-core` and opens `StepUpDialog` (driving a
@@ -139,7 +139,7 @@ interface IdentifiersSectionProps {
   readonly offerUsername?: boolean
   readonly humanGate?: AuthnHumanGate // a gate the host already read
   readonly returnPath?: string // the step-up round trip's return target
-  readonly axis?: 'both' | 'signIn' | 'contact' // which axis this occurrence manages
+  readonly axis?: 'both' | 'signIn' | 'contact' // which grouping this occurrence renders
   readonly showAddButton?: boolean // false leaves the add entry to the host
   readonly openAddSignal?: number // incremented by the host to open the add form
 }
@@ -220,15 +220,16 @@ rotates no credential and revokes no other session.
 
 Lists the account's identifiers -- read off the profile's `identifiers` field
 (`GET /api/v1/auth/me`), because the spec ships no dedicated list route --
-grouped the way the design gives them: the sign-in ways, the contact addresses,
-and the ones used as neither. Which of the two axes a row is on is its own
-fact, shown and changed on the row: an email or phone row carries a
-contact switch, a sign-in switch (offered once ownership is proved) and, on a
-proved email, the default-contact choice. A username is a login name with no
-ownership to prove, so its row shows no ownership state and no axis controls.
-The `axis` prop narrows an occurrence to one axis ('signIn' or 'contact') so a
-host can split the two across two panes, and `showAddButton`/`openAddSignal`
-let the host own the add entry. An email or phone row carries a two-value
+grouped the way the design gives them: the sign-in ways and the contact
+addresses. Every registered email address and phone number is a contact
+address, and being one is not a choice; the sign-in way is a separate choice.
+An email or phone row carries a sign-in switch (offered once ownership is
+proved) and, on a proved email, the default-contact choice -- there is no
+contact switch. A username is a login name with no ownership to prove, so its
+row shows no ownership state and no per-row choice. The `axis` prop narrows an
+occurrence to one grouping ('signIn' or 'contact') so a host can split the two
+across two panes, and `showAddButton`/`openAddSignal` let the host own the add
+entry. An email or phone row carries a two-value
 ownership chip read off `proven`: true shows Verified, false shows Not
 verified. The chip answers only whether ownership has
 been proved, so `verified_via` does not change the answer -- an address an

@@ -135,7 +135,10 @@ session, and the read-only ones take no props either.
 - **A username carries no ownership chip; an email or phone chip is one of
   two values, reading `proven` and never `verified_at`.** A username is a
   login name with no ownership to prove, so its row renders no ownership
-  chip. An email or phone row reads `identifiers.verified` when `proven` is
+  chip. Every registered email address and phone number is a contact
+  address, so an email or phone row renders no contact switch: the sign-in
+  switch is the row's only choice, and a proved email also offers the
+  default-contact choice. An email or phone row reads `identifiers.verified` when `proven` is
   true and `identifiers.unverified` otherwise, whatever `verified_via` says:
   the chip answers only whether ownership has been proved, so an address an
   administrator asserted or an import recorded is an unproved address, not a

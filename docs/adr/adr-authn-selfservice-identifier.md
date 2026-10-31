@@ -4,7 +4,7 @@
 
 账户的登录标识此前只能由管理员写：管理面经 `AccountAdmin.AddIdentifier` 添加，登录自助面只删不加，账户设计的规则 A7 明说「邮箱只经 IdP 声明或管理员登记成为标识，没有自助添加邮箱的路由；用户名只由管理员添加」。已认证用户因此改不了自己的登录标识，只能找管理员。
 
-标识的写入带一条 `verified_via`，取值是封闭集，分证明渠道（`sms-code`、`invite`、`idp:<提供方标识>`）与断言渠道（`admin`、`import-unverified`）。渠道只决定该值是否被证明，不决定它能否登录、是否作联系方式或默认联系地址；自动关联与企业 JIT 并入不再存在，企业预置账户的匹配是唯一按渠道区分的判定。自助添加一条标识，必须回答两个问题：这条标识能不能不经证明就写；若能，`verified_via` 由谁定、取什么值。
+标识的写入带一条 `verified_via`，取值是封闭集，分证明渠道（`sms-code`、`invite`、`idp:<提供方标识>`）与断言渠道（`admin`、`import-unverified`）。渠道只决定该值是否被证明，不决定它能否登录或是否作默认联系地址。自动关联与企业 JIT 并入不再存在，企业预置账户的匹配是唯一按渠道区分的判定。自助添加一条标识，必须回答两个问题：这条标识能不能不经证明就写；若能，`verified_via` 由谁定、取什么值。
 
 账户模块自身不带邮件发送通道；仓库提供可选的 `pkg/mail` 发送能力与把它接到 `EmailCodeSender` 上的 `authn.emailcode` 适配模块，装配仍是宿主的选择。短信承载由 `authn.sms` 的状态机（挑战表、号码前缀表、预算、盲索引）提供，它绑定的是手机号。匿名口令重置的验证码投递是另一条决定：邮箱渠道用以重置令牌为键的 KV 记录，短信渠道用 `authn_challenges` 行；两者都不复用本条的自助邮箱回路（[ADR-authn-mfa-recovery](adr-authn-mfa-recovery.md)）。
 
@@ -18,7 +18,7 @@
 
 把邮箱也当作一条可自陈的登录名，直接写 `verified_via = self` 一类断言渠道，省掉验证回路。
 
-**否决**：邮箱是联系方式，未证明即写入，会让依赖「真实证明」的判据——把邮箱选作登录方式、企业预置账户的匹配——对一条从未被兑现的地址作出判断。所有权必须有一条可走的证明路径。
+**否决**：邮箱登记后即成为联系方式；若只经断言写入、没有所有权证明，依赖「真实证明」的判据——把邮箱选作登录方式、企业预置账户的匹配——会对一条从未被兑现的地址作出判断。所有权必须有一条可走的证明路径。
 
 ### 复用邀请令牌做邮箱证明
 
@@ -46,7 +46,7 @@
 
 **用户名是登录名，无所有权可证，一步写入。** 它写入时 `verified_via = self`，是断言渠道，与 `admin`、`import-unverified` 同类；用户名恒是登录方式，不参与按地址建立绑定的判定。
 
-**邮箱是联系方式，须证明所有权，两步写入。** 第一步把码投递给该地址（应答 `state = pending`），第二步提交码（`POST B/identifiers/verify`），匹配才写标识，写入时 `verified_via = email-code`，是证明渠道。
+**邮箱登记后即成为联系方式；它须证明所有权才可被选作登录方式或默认联系地址，因此两步写入。** 第一步把码投递给该地址（应答 `state = pending`），第二步提交码（`POST B/identifiers/verify`），匹配才写标识，写入时 `verified_via = email-code`，是证明渠道。
 
 **`verified_via` 由写标识的那一步定，而非账户管理员自陈。** 管理面的写入以 `admin` 记管理员自陈；自助面由自助写的处理器按它走的路径定：经码证明的邮箱记 `email-code`，未证明的用户名记 `self`。两个值都新增进封闭集，`email-code` 归证明渠道，`self` 归断言渠道。
 
@@ -56,7 +56,7 @@
 
 ## 后果
 
-- `via` 封闭集扩大两个值：`email-code`（证明）、`self`（断言）。账户的 `Verification.Valid` 与 `Proves` 随之更新：`email-code` 计证明，`self` 计断言。证明只回答所有权，不决定该值是否作登录方式、联系方式或默认联系地址（[ADR-authn-contact-and-login-ways](adr-authn-contact-and-login-ways.md)）。
+- `via` 封闭集扩大两个值：`email-code`（证明）、`self`（断言）。账户的 `Verification.Valid` 与 `Proves` 随之更新：`email-code` 计证明，`self` 计断言。证明只回答所有权，不决定该值是否作登录方式或默认联系地址；登记即联系方式（[ADR-authn-contact-and-login-ways](adr-authn-contact-and-login-ways.md)）。
 - 宿主可见面新增接缝 `authn.EmailCodeSender`；不装配它的宿主不能用自助邮箱添加，用户名添加不受影响。这是宿主可见面的变更。
 - 登录模块新增两项设置：`authn.login.email-code-ttl`（默认 10 分钟）与 `authn.login.email-resend-interval`（默认 60 秒）。
 - 自助邮箱添加引入一条由宿主提供的邮件发送通道；账户模块自身仍不带通道，通道由宿主按需装配。
