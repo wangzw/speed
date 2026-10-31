@@ -778,7 +778,10 @@ that names both an email address and a username answers to either: the address
 is looked up first, then the username beside it. A holder who removes the
 seeded address from the account page leaves the account under its username, so a
 later start adopts that account as skipped instead of creating a second one, and
-the removed address is not written back — the holder's change stands.
+the removed address is not written back — the holder's change stands. Only the
+account entry has that second name: a `tenants` administrator entry and a
+`members` entry name their account by the login name their own entry writes, so
+an entry that writes the address names the account by the address.
 
 **Checks.** A rolling deploy gates on `GET /` on the backend listener, which
 answers with the embedded bundle's entry document. The readiness signal is the
