@@ -316,8 +316,9 @@ describe('AccountSettingsPage sections', () => {
   it('shows the sign-in ways on the pane, without the contact axis', async () => {
     renderAccount('?section=security')
 
-    // Each way carries its own enable/disable action; the pane adds no new
-    // identifier here.
+    // The email group carries the pane's enable/disable action; a username
+    // is always a login name and offers none. The pane adds no new identifier
+    // here.
     expect(
       await screen.findByRole('button', {
         name: accountEnUS.identifiers.action.disable,

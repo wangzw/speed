@@ -390,11 +390,22 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
         }),
       ).toBeVisible()
 
-      // Two identifiers: the verified phone the first sign-in proved and the
-      // username it asked for before the account existed.
+      // Three rows: the verified phone and the username the first sign-in
+      // chose are sign-in ways, and the phone is a contact as well --
+      // registering it is what makes it one, and the same record appears in
+      // both lists while it signs in.
       const identifiers = identifiersSection(page)
-      await expect(identifiers.getByRole('listitem')).toHaveCount(2)
-      const phoneRow = identifiers
+      await expect(identifiers.getByRole('listitem')).toHaveCount(3)
+      const signInWays = identifiers.getByRole('region', {
+        name: copy('accountUi', 'identifiers.groups.signIn'),
+        exact: true,
+      })
+      const contacts = identifiers.getByRole('region', {
+        name: copy('accountUi', 'identifiers.groups.contact'),
+        exact: true,
+      })
+
+      const phoneRow = signInWays
         .getByRole('listitem')
         .filter({ hasText: PHONE_E164 })
       await expect(phoneRow).toBeVisible()
@@ -408,7 +419,19 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
           exact: true,
         }),
       ).toBeVisible()
-      const usernameRow = identifiers
+
+      // The same number is a contact too, one row in that list.
+      const contactPhoneRow = contacts
+        .getByRole('listitem')
+        .filter({ hasText: PHONE_E164 })
+      await expect(contactPhoneRow).toBeVisible()
+      await expect(
+        contactPhoneRow.getByText(copy('accountUi', 'identifiers.verified'), {
+          exact: true,
+        }),
+      ).toBeVisible()
+
+      const usernameRow = signInWays
         .getByRole('listitem')
         .filter({ hasText: username })
       await expect(usernameRow).toBeVisible()
@@ -417,7 +440,8 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
           exact: true,
         }),
       ).toBeVisible()
-      // A username proves no ownership, so it carries no ownership chip.
+      // A username proves no ownership, so it carries no ownership chip, and
+      // it is never a contact.
       await expect(
         usernameRow.getByText(copy('accountUi', 'identifiers.verified'), {
           exact: true,
@@ -428,6 +452,7 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
           exact: true,
         }),
       ).toHaveCount(0)
+      await expect(contacts.getByText(username, { exact: true })).toHaveCount(0)
 
       // The username is a login name, so the password form is offered without
       // a page reload or a further identifier write.
