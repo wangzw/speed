@@ -36,20 +36,20 @@ export interface VerificationCode {
 
 /** The `msg` each carrier writes when it has sent a code. */
 const CODE_MESSAGE: Record<VerificationKind, string> = {
-  sms: 'review sms: a verification code was sent',
-  mail: 'review mail: a verification message was sent',
+  sms: 'log sms: a verification code was sent',
+  mail: 'log mail: a message was sent',
 }
 
 /**
- * The `msg` the review SMS carrier writes for a resolved message. The carrier
- * sends two kinds: a verification code, which keeps the line above, and a
+ * The `msg` the SMS carrier writes for a resolved message. The carrier sends
+ * two kinds: a verification code, which keeps the line above, and a
  * notification, whose line does not claim to carry a code. A caller tells the
  * kinds apart by the template and the language the line names, never by the
  * message text alone.
  */
 const SMS_CARRIER_MESSAGES: ReadonlySet<string> = new Set([
   CODE_MESSAGE.sms,
-  'review sms: a message was sent',
+  'log sms: a message was sent',
 ])
 
 /** The `msg` notification.delivery writes for an external send it accepted. */

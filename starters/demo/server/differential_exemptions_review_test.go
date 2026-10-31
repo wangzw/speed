@@ -17,25 +17,34 @@ var mayLeaveRouteCountUnchanged = map[string]string{
 		"the review configuration states the mode as off, so this removal is vacuous",
 }
 
-// TestReviewRouteCountExemptionsAreTrueForItsConfiguration holds the review
+// TestReviewRouteCountExemptionsAreTrueForItsConfiguration holds each review
 // build's exemption to its stated reason and holds the baseline template's
-// workspace exemption out: the review configuration enables workspace.personal,
-// so removing that module lowers the account endpoint's route count and an
-// exemption claiming otherwise would be false. A configuration that leaves the
-// gate to mount its challenge route reddens the human-verification half, and one
-// that disables the personal workspace reddens the workspace half.
+// workspace and SMS-management exemptions out: the review configuration enables
+// workspace.personal and names the admin endpoint for sms.admin, so removing
+// either lowers a route count and an exemption claiming otherwise would be
+// false. A configuration that leaves the gate to mount its challenge route
+// reddens the human-verification half, one that disables the personal
+// workspace reddens the workspace half, and one that mounts no SMS management
+// surface reddens the sms.admin half.
 func TestReviewRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T) {
 	if reason, exempt := mayLeaveRouteCountUnchanged["workspace.personal"]; exempt {
 		t.Errorf("the review build exempts workspace.personal (%q), but the review configuration "+
 			"enables its route: the exemption is false for this build and the baseline table's "+
 			"entry must not be shared into it", reason)
 	}
+	if reason, exempt := mayLeaveRouteCountUnchanged["sms.admin"]; exempt {
+		t.Errorf("the review build exempts sms.admin (%q), but the review configuration names the "+
+			"admin endpoint in sms.admin.endpoints, so that module mounts its routes: the exemption "+
+			"is false for this build and the baseline table's entry must not be shared into it", reason)
+	}
 
 	humanVerify := variantGroupNamed(t, "authn.humanverify")
 	personal := variantGroupNamed(t, "workspace.personal")
+	smsAdmin := variantGroupNamed(t, "sms.admin")
 
 	topo := topology{name: "exemptions", ports: listenerCount}
-	before, after := removalRouteCounts(t, topo, []variantGroup{humanVerify, personal})
+	before, after := removalRouteCounts(t, topo, []variantGroup{humanVerify, personal, smsAdmin})
 	assertRouteCountsUnchanged(t, humanVerify, before, after[humanVerify.id])
 	assertRouteCountsLowered(t, personal, before, after[personal.id])
+	assertRouteCountsLowered(t, smsAdmin, before, after[smsAdmin.id])
 }

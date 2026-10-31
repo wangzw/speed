@@ -2,7 +2,8 @@
 # on the sqlite stack. It is an override document like the six under testdata/ —
 # the platform topology comes from the compiled-in defaults.go — plus the
 # sections the review build's modules read: the social login methods, the SMS
-# family with its template management page, and the review SMS sender. It lives
+# family with its template management page, and the carrier selections that
+# point both channels at their log carriers. It lives
 # outside testdata so the six baselines stay untouched. It carries fake
 # credentials on purpose: nothing here reaches a provider or a carrier.
 #
@@ -24,16 +25,16 @@
 # neither reads nor writes the state a baseline run keeps in var/demo.db.
 #
 # The SMS verification code is never fixed here. The SMS module generates it and
-# the review sender writes it to the process log; search the server output for
-# "review sms: a verification code was sent" and read its verification_code
-# field. (The attribute is not named "code" because that name is a registered
-# sensitive key of the process, and the logging layer would mask the value.)
+# the log SMS carrier writes it to the process log; search the server output for
+# "log sms: a verification code was sent" and read its verification_code field.
+# (The attribute is not named "code" because that name is a registered sensitive
+# key of the process, and the logging layer would mask the value.)
 #
 # The email verification code works the same way. authn.emailcode renders it into
-# the authn.email.verify messages and mail.log writes each rendered message to
-# the process log; search for "review mail: a verification message was sent" and
-# read its verification_code field. The carrier declares no configuration item,
-# so this file carries no section for it either.
+# the authn.email.verify messages and the log mail carrier writes each rendered
+# message to the process log; search for "log mail: a message was sent" and read
+# its verification_code field, which the carrier leaves out of a message that
+# carried no code.
 #
 # No mounting key is repeated here: the loader accepts a required item from the
 # compiled-in document, whose mounting table is complete.

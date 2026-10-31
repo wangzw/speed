@@ -22,6 +22,9 @@ var mayLeaveRouteCountUnchanged = map[string]string{
 		"removal is vacuous",
 	"authn.humanverify": "its challenge route is mounted only when authn.humanverify.mode is pow; " +
 		"the baseline template leaves the gate off (the baseline default), so this removal is vacuous",
+	"sms.admin": "its management routes are mounted only on the endpoints sms.admin.endpoints names, " +
+		"and the item has no default: the baseline template mounts no SMS management surface because " +
+		"an SMS vendor account is not part of the baseline, so this removal is vacuous",
 }
 
 // TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration holds each
