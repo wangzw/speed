@@ -126,13 +126,18 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   address; removing the last proved email of a self-registration moves
   `signup_state` back to 1, keeps the instant and rebuilds no reservation. The
   verification read then reports pending only while another unproved address
-  remains, and none once the account holds no email at all. An account holding a
-  password credential cannot lose its last username or email address: that
-  removal answers `authn.ErrIdentifierRequired` and the transaction rolls back,
-  since the password would then authenticate nothing. An account with no password
-  credential may lose its last login name only while another way to log in
-  remains; a phone number counts only when its ownership was proved. Removing a
-  phone number never triggers the login-name rule.
+  remains, and none once the account holds no email at all. A username is never
+  removable: `RemoveIdentifier` refuses it with `authn.ErrUsernameImmutable`,
+  answered 409 `username-immutable`, before every other rule, and deleting the
+  account itself is not limited by it. The login-name rule therefore covers only
+  an email address: an account holding a password credential, left without a
+  username by a write around this surface, answers `authn.ErrIdentifierRequired`
+  when its last chosen proved email address is removed, and the transaction rolls
+  back, since the password would then authenticate nothing. Removing any
+  identifier that would leave the account with no password credential, no proved
+  phone number chosen as a sign-in way and no external identity answers
+  `authn.ErrLastLoginMethod`; an unproved or unchosen phone number does not
+  count, and removing a phone number never triggers the login-name rule.
   `Create` always writes `signup_state` 0 and writes only identifiers; an email
   address also writes a proved reservation, and a reservation another account
   holds answers `authn.ErrContactTaken`. The way a username came about is

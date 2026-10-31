@@ -92,13 +92,11 @@ func eventVia(via string) (string, error) {
 
 // Create writes an enabled account.
 //
-// A user account is created with a username: the three paths that restore an
-// account rather than open one are exempt, an import that brings back an
-// existing account and a service account that signs in with a service secret.
-// A username is normalized and held to the reserved set like every other
-// username write, except on the import path, whose name was given before
-// this deployment's list existed. A missing or unusable one creates nothing.
-// A username is always a login way.
+// A user account is created with a username, whichever path creates it and
+// import included. A service account is exempt because a service secret, not a
+// username, is how it signs in. A username is normalized and held to the reserved
+// set whichever path writes it, import included. A missing or unusable one
+// creates nothing. A username is always a login way.
 //
 // An email address and a phone number are written verified, and the way each
 // was comes with it; no row awaits verification. Their two axes start false
@@ -865,8 +863,9 @@ func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, iden
 // Turning SignIn off is a change of how the account is proven, so it is checked
 // against what would remain, in the order RemoveIdentifier uses: an account with
 // a password credential that loses its last login name is
-// authn.ErrIdentifierRequired, and one that loses every way to log in that is not
-// a factor is authn.ErrLastLoginMethod. Either refusal rolls the write back.
+// authn.ErrIdentifierRequired, which only reaches an account a write around the
+// surface left without a username, and one that loses every way to log in that is
+// not a factor is authn.ErrLastLoginMethod. Either refusal rolls the write back.
 func (p *product) SetIdentifierFlags(ctx context.Context, id authn.AccountID, identifierID string,
 	flags authn.IdentifierFlags,
 ) error {

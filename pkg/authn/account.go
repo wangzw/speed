@@ -91,10 +91,11 @@ type AccountAdmin interface {
 	// A proved email address becomes the default contact when the account has
 	// none.
 	AddIdentifier(ctx context.Context, id AccountID, kind IdentifierKind, value string, via Verification) error
-	// RemoveIdentifier unbinds one identifier by its identifier. Removing an
-	// email address also releases the account's reservation of that contact.
-	// Removing the default contact hands it to the earliest proved email address
-	// that remains, and clears it when none does.
+	// RemoveIdentifier unbinds one identifier by its identifier. A username is
+	// never unbound: that removal is ErrUsernameImmutable, before every other
+	// rule. Removing an email address also releases the account's reservation of
+	// that contact. Removing the default contact hands it to the earliest proved
+	// email address that remains, and clears it when none does.
 	RemoveIdentifier(ctx context.Context, id AccountID, identifierID string) error
 	// SetIdentifierFlags writes the two axes of one of the account's email
 	// addresses or phone numbers. SignIn may be set true only on a proved row.
@@ -103,8 +104,9 @@ type AccountAdmin interface {
 	// that leaves the account with no password, no proved phone number chosen as
 	// a sign-in way and no external identity is ErrLastLoginMethod, and one
 	// holding a password credential that thereby loses its last login name is
-	// ErrIdentifierRequired; neither takes effect. An identifier the account does
-	// not hold, and a username, are ErrInvalidArgument.
+	// ErrIdentifierRequired, which only reaches an account a write around the
+	// surface left without a username; neither takes effect. An identifier the
+	// account does not hold, and a username, are ErrInvalidArgument.
 	SetIdentifierFlags(ctx context.Context, id AccountID, identifierID string, flags IdentifierFlags) error
 	// SetDefaultContact makes one proved email address of the account its default
 	// contact, clearing the account's previous choice in the same transaction.

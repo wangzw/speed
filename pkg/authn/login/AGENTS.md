@@ -174,14 +174,18 @@ does.
   `provider: "off"`.
 - **Removing a login identifier is refused when it would strand a password
   account.** `DELETE /auth/identifiers/:id` maps the account module's
+  `ErrUsernameImmutable` to 409 `username-immutable`: a username is never
+  removable, and that refusal comes before every other rule. It maps
   `ErrIdentifierRequired` to 409 `login-identifier-required`: an account holding a
-  password credential keeps its last username or email address. An account with no
-  password credential may lose its last login name, and removing a phone number is
-  always allowed; a removal that would leave it with no password, no proved phone
-  number and no external identity is `ErrLastLoginMethod`, answered 409
-  `last-login-method`. `DELETE /links/:id` answers the same code for the same
-  last-way rule. The identifier is checked against the caller's own before the
-  write, and the route revokes no session and publishes no event of its own.
+  password credential keeps its last chosen proved email address, a rule that
+  under the normal write surface only reaches a row a write around the surface
+  left without a username. Removing a phone number never triggers that rule, and
+  a removal that would leave the account with no password, no proved phone number
+  chosen as a sign-in way and no external identity is `ErrLastLoginMethod`,
+  answered 409 `last-login-method`. `DELETE /links/:id` answers the same code for
+  the same last-way rule. The identifier is checked against the caller's own
+  before the write, and the route revokes no session and publishes no event of
+  its own.
 - **The account module's signup verification read is required beside `Signups`.**
   `authn.SignupVerification` is declared in `Requires` and resolved in `New`, so an
   assembly that names this module supplies the account module that delivers it,
@@ -213,8 +217,9 @@ does.
   blocked.** The subscription to `settings.changed` writes a `Warn` and a
   best-effort `authn.settings.relaxed` audit row naming the key and the
   direction and no value; the settings it watches are `flow-ttl` in the
-  `increase` direction, `disabled-methods` in `remove-member`, `delivery-modes`
-  in `add-member` and `ip-limit` in `to-zero` (`relax.go`,
+  `increase` direction, `disabled-methods` in `remove-member` (with the password
+  method filtered out of both sides, since no deployment turns it off),
+  `delivery-modes` in `add-member` and `ip-limit` in `to-zero` (`relax.go`,
   `TestARelaxingChangeWritesAWarnAndAnAuditRow`).
 
 ## How to run it
