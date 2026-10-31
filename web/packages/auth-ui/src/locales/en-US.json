@@ -217,6 +217,10 @@
     "hideHint": "Hide the impersonation notice",
     "showHint": "Show the impersonation notice"
   },
+  "throttle": {
+    "retryAfter": "Too many attempts. Try again in {{seconds}} seconds.",
+    "retryAfterLong": "Too many attempts. Try again in about {{minutes}} minutes."
+  },
   "errors": {
     "authn": {
       "bad_request": "Some of the information you entered isn't valid. Check it and try again.",

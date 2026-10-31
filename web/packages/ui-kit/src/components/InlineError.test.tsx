@@ -15,7 +15,12 @@
 import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
-import { InlineError, errorCodeOf, httpStatusOf } from './InlineError.js'
+import {
+  InlineError,
+  errorCodeOf,
+  httpStatusOf,
+  retryAfterSecondsOf,
+} from './InlineError.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 
 /** A resolver in the surface families' convention: the listed code's
@@ -65,13 +70,28 @@ describe('InlineError', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('unknown text')
   })
 
+  it('hands the wait a throttled answer stated to the resolver', () => {
+    const resolver = vi.fn(resolverOf())
+    renderWithProviders(
+      <InlineError
+        code="authn.throttled"
+        resolve={resolver}
+        retryAfterSeconds={45}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('unknown text')
+    expect(resolver).toHaveBeenCalledWith('authn.throttled', 45)
+  })
+
   it('takes its text from the passed resolver alone, never another source', () => {
     const first = vi.fn(resolverOf({ 'authn.session_revoked': 'first source' }))
     const firstView = renderWithProviders(
       <InlineError code="authn.session_revoked" resolve={first} />,
     )
     expect(screen.getByRole('alert')).toHaveTextContent('first source')
-    expect(first).toHaveBeenCalledWith('authn.session_revoked')
+    // The wait the error states rides as the resolver's second argument, so
+    // a surface that names it can; one that ignores it keeps its text.
+    expect(first).toHaveBeenCalledWith('authn.session_revoked', undefined)
     firstView.unmount()
 
     renderWithProviders(
@@ -81,6 +101,32 @@ describe('InlineError', () => {
       />,
     )
     expect(screen.getByRole('alert')).toHaveTextContent('second source')
+  })
+})
+
+describe('retryAfterSecondsOf', () => {
+  it('reads the wait an ApiError states, in whole seconds rounded up', () => {
+    expect(retryAfterSecondsOf({ retryAfterMs: 60_000 })).toBe(60)
+    expect(retryAfterSecondsOf({ retryAfterMs: 1_500 })).toBe(2)
+    expect(retryAfterSecondsOf({ retryAfterMs: 200 })).toBe(1)
+  })
+
+  it('answers undefined when there is no usable wait', () => {
+    expect(retryAfterSecondsOf({})).toBeUndefined()
+    expect(retryAfterSecondsOf({ retryAfterMs: 0 })).toBeUndefined()
+    expect(retryAfterSecondsOf({ retryAfterMs: -5 })).toBeUndefined()
+    expect(retryAfterSecondsOf({ retryAfterMs: 'soon' })).toBeUndefined()
+    expect(retryAfterSecondsOf(null)).toBeUndefined()
+    expect(retryAfterSecondsOf(new Error('boom'))).toBeUndefined()
+  })
+
+  it('answers undefined rather than throwing on a hostile getter', () => {
+    const hostile = Object.defineProperty({}, 'retryAfterMs', {
+      get() {
+        throw new Error('no')
+      },
+    })
+    expect(retryAfterSecondsOf(hostile)).toBeUndefined()
   })
 })
 

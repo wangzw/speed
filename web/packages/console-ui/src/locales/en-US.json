@@ -1,4 +1,8 @@
 {
+  "throttle": {
+    "retryAfter": "Too many attempts. Try again in {{seconds}} seconds.",
+    "retryAfterLong": "Too many attempts. Try again in about {{minutes}} minutes."
+  },
   "errors": {
     "authn": {
       "session_not_found": "Your session no longer exists. Sign in again.",

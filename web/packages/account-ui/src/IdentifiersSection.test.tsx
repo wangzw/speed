@@ -2841,6 +2841,58 @@ describe('IdentifiersSection', () => {
     ).toBeGreaterThanOrEqual(2)
   })
 
+  it('names the wait a throttled email send stated', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({ id: 'id-user', kind: 'username', value: 'ada' }),
+            ],
+          }),
+        )
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return new Response(
+          JSON.stringify({
+            type: 'urn:speed:authn:throttled',
+            title: 'Too Many Requests',
+            status: 429,
+          }),
+          {
+            status: 429,
+            headers: {
+              'content-type': 'application/json',
+              'retry-after': '90',
+            },
+          },
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'new@x.test',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+
+    // The refusal names how long to wait instead of the bare "try again
+    // later": the 429 carried Retry-After and the surface says so.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      zhCN.throttle.retryAfter.replace('{{seconds}}', '90'),
+    )
+  })
+
   it('shows the no-selection state in the sign-in email select when no address signs in', async () => {
     // No address is a sign-in way, so the select must not show the first
     // proved address as if the account had chosen it.

@@ -4,7 +4,7 @@
 
 本包是 web 包树的国际化层，包裹 react-i18next 与 i18next 并加上一套纪律：每宿主一个实例，一个协商出的起始语言，按包注册的命名空间（注册时校验覆盖与键集），以及**缺键绝不静默回落到另一种语言**。
 
-它把一个宿主需要的整条 i18n 面收在一处：实例创建（`createI18n`）、语言切换（`switchLanguage`）、命名空间注册（`registerNamespace`）、注册前的资源覆盖（`overlayResources`）、实例自身受支持语言的读取（`readSupportedLanguages`）、缺键处置（`defaultMissingKeyHandler` 与 `MissingKeyDetails`）、错误码到文本的约定（`createErrorTextResolver` 及其 `httpFamily`/`fallthrough` 选项、共享错误码家族）、显示时区与时间格式化的纯函数（`resolveTimeZone`、`isSupportedTimeZone`、`formatInstant`）、语言名（`languageDisplayName`），以及 react-i18next 的绑定再导出（`I18nextProvider`、`useTranslation`）。MUI 本地化助手在独立子路径 `@speed/i18n/mui-locale`，平台错误文案包在 `@speed/i18n/platform-errors`。
+它把一个宿主需要的整条 i18n 面收在一处：实例创建（`createI18n`）、语言切换（`switchLanguage`）、命名空间注册（`registerNamespace`）、注册前的资源覆盖（`overlayResources`）、实例自身受支持语言的读取（`readSupportedLanguages`）、缺键处置（`defaultMissingKeyHandler` 与 `MissingKeyDetails`）、错误码到文本的约定（`createErrorTextResolver` 及其 `httpFamily`/`fallthrough`/`wait` 选项、共享错误码家族）、显示时区与时间格式化的纯函数（`resolveTimeZone`、`isSupportedTimeZone`、`formatInstant`）、语言名（`languageDisplayName`），以及 react-i18next 的绑定再导出（`I18nextProvider`、`useTranslation`）。MUI 本地化助手在独立子路径 `@speed/i18n/mui-locale`，平台错误文案包在 `@speed/i18n/platform-errors`。
 
 react 绑定只从这里再导出，组件包与宿主不直接 import `react-i18next`：版本锁步使一个树里只有一个 react-i18next 副本，`useTranslation` 在交付出去的组件里因此安全。
 
@@ -155,7 +155,7 @@ sequenceDiagram
 
 ### 错误码到文本
 
-失败以码到达（API 信封的码、api-client 的传输码、分类器的坍缩目标），文本从码解析，而不是取自 API 的英文兜底消息（那仅供日志分诊）。约定：白名单内的码解析到 bundle 的 `errors` 段下它自己的叶子（`errors.<code>`，平台错误包与各包自带的 `errors` 段同用这一段）；`httpFamily` 配置时，`client.http.<status>` 族解析到该命名空间的参数化叶子、状态作为插值传入，`byStatus` 列出的状态改用自己的叶子；其余未列出的码，`fallthrough` 返回真时解析到 `errors.<code>`（由注册为回退命名空间的平台错误包供给文案），否则解析到 `errors.unknown`。两个选项都不给时行为与既有约定完全一致。`createErrorTextResolver` 因此永不渲染裸键，缺译也不泄漏另一种语言的文本。共享错误码家族随本包交付，因为每个受保护表面都可能被它们答复；**共享码的文本住在各消费包自己的 bundle 里**，同层包不互相 import 文案。
+失败以码到达（API 信封的码、api-client 的传输码、分类器的坍缩目标），文本从码解析，而不是取自 API 的英文兜底消息（那仅供日志分诊）。约定：白名单内的码解析到 bundle 的 `errors` 段下它自己的叶子（`errors.<code>`，平台错误包与各包自带的 `errors` 段同用这一段）；`httpFamily` 配置时，`client.http.<status>` 族解析到该命名空间的参数化叶子、状态作为插值传入，`byStatus` 列出的状态改用自己的叶子；其余未列出的码，`fallthrough` 返回真时解析到 `errors.<code>`（由注册为回退命名空间的平台错误包供给文案），否则解析到 `errors.unknown`。第三个选项 `wait` 说明界面上要说出等待时长的那些拒绝：它给出两条参数化叶子的键（短等待用秒、长等待用整分钟，缺省自 120 秒起换成长式）与会带等待时长的码，解析器因此接第二个入参——`(code, retryAfterSeconds?)`。给了等待秒数且码在 `wait.codes` 里时，解析到该命名空间自己的等待叶子，不再用码叶子；没有等待秒数、码不在名单里或未配置 `wait` 时，行为与既有约定完全一致。等待文案住在各消费包自己的非 `errors` 节（如 `throttle.retryAfter`），`errors` 节仍只住码叶子，白名单与叶子的等式不受影响。三个选项都不给时行为与既有约定完全一致。`createErrorTextResolver` 因此永不渲染裸键，缺译也不泄漏另一种语言的文本。共享错误码家族随本包交付，因为每个受保护表面都可能被它们答复；**共享码的文本住在各消费包自己的 bundle 里**，同层包不互相 import 文案。
 
 ### 语言切换与持久化
 

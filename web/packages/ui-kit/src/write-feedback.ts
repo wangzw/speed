@@ -33,12 +33,21 @@
  */
 
 import { useCallback, useState } from 'react'
-import { errorCodeOf } from './components/InlineError.js'
+import {
+  errorCodeOf,
+  retryAfterSecondsOf,
+} from './components/InlineError.js'
 
-/** One slot's worth of feedback: a success message or a failure code. */
+/** One slot's worth of feedback: a success message or a failure code. A
+ * failure carries the wait a throttled answer stated, when it stated one,
+ * so the sentence the slot renders can name how long to wait. */
 export type WriteOutcome =
   | { readonly kind: 'success'; readonly message: string }
-  | { readonly kind: 'failure'; readonly code: string }
+  | {
+      readonly kind: 'failure'
+      readonly code: string
+      readonly retryAfterSeconds?: number
+    }
 
 /** The write-feedback scope: the slot, its in-flight count and its setters. */
 export interface WriteFeedback {
@@ -75,7 +84,11 @@ export function useWriteFeedback(): WriteFeedback {
   }, [])
 
   const fail = useCallback((error: unknown) => {
-    setOutcome({ kind: 'failure', code: errorCodeOf(error) })
+    setOutcome({
+      kind: 'failure',
+      code: errorCodeOf(error),
+      retryAfterSeconds: retryAfterSecondsOf(error),
+    })
   }, [])
 
   const run = useCallback(
@@ -88,7 +101,11 @@ export function useWriteFeedback(): WriteFeedback {
           setOutcome({ kind: 'success', message })
         }
       } catch (error) {
-        setOutcome({ kind: 'failure', code: errorCodeOf(error) })
+        setOutcome({
+          kind: 'failure',
+          code: errorCodeOf(error),
+          retryAfterSeconds: retryAfterSecondsOf(error),
+        })
       } finally {
         setInFlight((count) => count - 1)
       }

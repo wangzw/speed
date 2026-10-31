@@ -700,7 +700,11 @@ describe('ContactVerificationSection', () => {
     mount(respond, { autoSend: true })
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(zhCN.errors.authn.throttled)
+    // The 429 stated how long to wait, so the sentence names it instead of
+    // the bare "try again later".
+    expect(alert).toHaveTextContent(
+      zhCN.throttle.retryAfter.replace('{{seconds}}', '30'),
+    )
     // The Retry-After a 429 carried starts the same countdown a send answer
     // does.
     expect(
@@ -1023,7 +1027,11 @@ describe('ContactVerificationSection', () => {
     )
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(zhCN.errors.authn.throttled)
+    // The 429 stated how long to wait, so the sentence names it instead of
+    // the bare "try again later".
+    expect(alert).toHaveTextContent(
+      zhCN.throttle.retryAfter.replace('{{seconds}}', '1'),
+    )
     // The Retry-After starts the same countdown the send answer does.
     expect(
       screen.getByRole('button', { name: zhCN.verification.send }),

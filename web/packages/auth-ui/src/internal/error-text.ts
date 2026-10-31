@@ -76,9 +76,18 @@ const HTTP_FAMILY_KEY = 'errors.client.http'
  * it to the auth-ui namespace's whitelist and its parameterized bare-HTTP
  * leaf.
  */
-export function useAuthUiErrorText(): (code: string) => string {
+/** The leaves that name a throttled answer's wait, and the code carrying it. */
+const WAIT_KEY = 'throttle.retryAfter'
+const WAIT_LONG_KEY = 'throttle.retryAfterLong'
+const WAIT_CODES = ['authn.throttled'] as const
+
+export function useAuthUiErrorText(): (
+  code: string,
+  retryAfterSeconds?: number,
+) => string {
   const { t } = useAuthUiTranslation()
   return createErrorTextResolver(t, KNOWN_CODES, {
     httpFamily: { key: HTTP_FAMILY_KEY },
+    wait: { key: WAIT_KEY, longKey: WAIT_LONG_KEY, codes: WAIT_CODES },
   })
 }

@@ -27,8 +27,9 @@ import { InlineSuccess } from './InlineSuccess.js'
 export type WriteFeedbackRegionProps = {
   /** The scope's slot; `null` renders no visible feedback. */
   readonly outcome: WriteOutcome | null
-  /** Resolves a failure code to its current-language text. */
-  readonly resolve: (code: string) => string
+  /** Resolves a failure code to its current-language text. The wait a
+   * throttled answer stated rides along, for a resolver that names it. */
+  readonly resolve: (code: string, retryAfterSeconds?: number) => string
   /** Styles for the region's root container; spacing adjustments. */
   readonly sx?: SxProps<Theme>
 }
@@ -41,6 +42,8 @@ export function WriteFeedbackRegion({
 }: WriteFeedbackRegionProps) {
   const successMessage = outcome?.kind === 'success' ? outcome.message : null
   const failureCode = outcome?.kind === 'failure' ? outcome.code : null
+  const retryAfterSeconds =
+    outcome?.kind === 'failure' ? outcome.retryAfterSeconds : undefined
   return (
     <Box
       sx={[
@@ -49,7 +52,11 @@ export function WriteFeedbackRegion({
       ]}
     >
       <InlineSuccess message={successMessage} />
-      <InlineError code={failureCode} resolve={resolve} />
+      <InlineError
+        code={failureCode}
+        resolve={resolve}
+        retryAfterSeconds={retryAfterSeconds}
+      />
     </Box>
   )
 }

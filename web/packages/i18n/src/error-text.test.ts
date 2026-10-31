@@ -139,6 +139,48 @@ describe('createErrorTextResolver fallthrough', () => {
   })
 })
 
+describe('createErrorTextResolver wait', () => {
+  const wait = {
+    key: 'throttle.retryAfter',
+    longKey: 'throttle.retryAfterLong',
+    codes: ['authn.throttled'],
+  }
+
+  it('names a short wait in seconds through the surface leaf', () => {
+    const t = vi.fn((key: string) => key)
+    const resolve = createErrorTextResolver(
+      t,
+      new Set(['authn.throttled']),
+      { wait },
+    )
+    expect(resolve('authn.throttled', 45)).toBe('throttle.retryAfter')
+    expect(t).toHaveBeenCalledWith('throttle.retryAfter', { seconds: 45 })
+  })
+
+  it('names a long wait in whole minutes, rounded up', () => {
+    const t = vi.fn((key: string) => key)
+    const resolve = createErrorTextResolver(
+      t,
+      new Set(['authn.throttled']),
+      { wait },
+    )
+    expect(resolve('authn.throttled', 3540)).toBe('throttle.retryAfterLong')
+    expect(t).toHaveBeenCalledWith('throttle.retryAfterLong', { minutes: 59 })
+    expect(resolve('authn.throttled', 120)).toBe('throttle.retryAfterLong')
+  })
+
+  it('keeps the code leaf when no wait is known or the code states none', () => {
+    const t = vi.fn((key: string) => key)
+    const resolve = createErrorTextResolver(
+      t,
+      new Set(['authn.throttled', 'authn.conflict']),
+      { wait },
+    )
+    expect(resolve('authn.throttled')).toBe('errors.authn.throttled')
+    expect(resolve('authn.conflict', 45)).toBe('errors.authn.conflict')
+  })
+})
+
 describe('the shared code vocabulary', () => {
   it('names the session-lifecycle family every surface shares', () => {
     expect([...SESSION_LIFECYCLE_ERROR_CODES]).toEqual([

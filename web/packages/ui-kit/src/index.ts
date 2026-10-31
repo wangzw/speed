@@ -155,6 +155,7 @@ export {
   InlineError,
   errorCodeOf,
   httpStatusOf,
+  retryAfterSecondsOf,
   type InlineErrorProps,
 } from './components/InlineError.js'
 export {

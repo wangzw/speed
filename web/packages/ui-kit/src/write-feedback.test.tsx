@@ -42,6 +42,24 @@ function deferred<Value>(): Deferred<Value> {
 }
 
 describe('useWriteFeedback', () => {
+  it('carries the wait a throttled refusal stated into the slot', async () => {
+    const { result } = renderHook(() => useWriteFeedback())
+    await act(async () => {
+      await result.current.run(async () => {
+        throw Object.assign(new Error('throttled'), {
+          code: 'authn.throttled',
+          retryAfterMs: 45_500,
+        })
+      })
+    })
+    expect(result.current.outcome).toEqual({
+      kind: 'failure',
+      code: 'authn.throttled',
+      retryAfterSeconds: 46,
+    })
+  })
+
+
   it('shows the outcome of the attempt that settles last, not the first one', async () => {
     const { result } = renderHook(() => useWriteFeedback())
     const first = deferred<string | null>()

@@ -104,7 +104,18 @@ const KNOWN_CODES = new Set<string>(ERROR_TEXT_CODES)
  * The code-to-text resolver hook: call with an ApiError code and get the
  * current-language text ('errors.unknown' for anything unlisted).
  */
-export function useAccountUiErrorText(): (code: string) => string {
+/** The leaves that name a throttled answer's wait, and the code that
+ * carries one. */
+const WAIT_KEY = 'throttle.retryAfter'
+const WAIT_LONG_KEY = 'throttle.retryAfterLong'
+const WAIT_CODES = ['authn.throttled'] as const
+
+export function useAccountUiErrorText(): (
+  code: string,
+  retryAfterSeconds?: number,
+) => string {
   const { t } = useAccountUiTranslation()
-  return createErrorTextResolver(t, KNOWN_CODES)
+  return createErrorTextResolver(t, KNOWN_CODES, {
+    wait: { key: WAIT_KEY, longKey: WAIT_LONG_KEY, codes: WAIT_CODES },
+  })
 }

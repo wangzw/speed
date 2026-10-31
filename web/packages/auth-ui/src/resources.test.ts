@@ -70,6 +70,7 @@ describe('auth-ui resources', () => {
       'smsSignIn',
       'social',
       'socialCallback',
+      'throttle',
     ])
   })
 

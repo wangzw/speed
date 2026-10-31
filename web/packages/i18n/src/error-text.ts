@@ -72,10 +72,28 @@ export interface HttpFamilyOptions {
   readonly byStatus?: Readonly<Record<string, string>>
 }
 
+/** How a surface names the wait a throttled answer states: `key` is the
+ * parameterized leaf the short form resolves to (its text carries
+ * `{{seconds}}`), and `longKey` the leaf a longer wait resolves to (its text
+ * carries `{{minutes}}`). `codes` names the answers that state a wait, so a
+ * surface lists only the codes its own operations can be answered with. */
+export interface ErrorTextWaitOptions {
+  readonly key: string
+  readonly longKey?: string
+  readonly codes: readonly string[]
+  /** The wait from which the long form is used; defaults to 120 seconds. */
+  readonly longFromSeconds?: number
+}
+
 /** Options extending the resolver; omitting them keeps the default. */
 export interface ErrorTextResolverOptions {
   /** Resolve client.http.<status> through a parameterized leaf, not unknown. */
   readonly httpFamily?: HttpFamilyOptions
+  /**
+   * Name the wait a throttled answer stated, when the caller passes one --
+   * through the surface's own leaves, so the sentence stays in its catalog.
+   */
+  readonly wait?: ErrorTextWaitOptions
   /**
    * Resolve an unlisted code through errors.<code> when this answers true
    * (a surface whose fallback namespace carries the code), else unknown.
@@ -90,7 +108,11 @@ export interface ErrorTextResolverOptions {
  */
 export type ErrorTextTranslate = (
   key: string,
-  options?: { readonly status?: string },
+  options?: {
+    readonly status?: string
+    readonly seconds?: number
+    readonly minutes?: number
+  },
 ) => string
 
 /**
@@ -105,10 +127,26 @@ export function createErrorTextResolver(
   t: ErrorTextTranslate,
   knownCodes: ReadonlySet<string>,
   options: ErrorTextResolverOptions = {},
-): (code: string) => string {
-  const { httpFamily, fallthrough } = options
-  return (code) => {
+): (code: string, retryAfterSeconds?: number) => string {
+  const { httpFamily, fallthrough, wait } = options
+  const longFrom = wait?.longFromSeconds ?? 120
+  return (code, retryAfterSeconds) => {
     if (knownCodes.has(code)) {
+      // A refusal that stated how long to wait says so, in the surface's
+      // own sentence: seconds for a short wait, whole minutes for a long
+      // one, since "3540 seconds" is no answer a reader can use.
+      if (
+        wait !== undefined &&
+        retryAfterSeconds !== undefined &&
+        wait.codes.includes(code)
+      ) {
+        if (retryAfterSeconds >= longFrom && wait.longKey !== undefined) {
+          return t(wait.longKey, {
+            minutes: Math.ceil(retryAfterSeconds / 60),
+          })
+        }
+        return t(wait.key, { seconds: retryAfterSeconds })
+      }
       return t(`${ERROR_TEXT_SECTION}.${code}`)
     }
     if (httpFamily !== undefined) {

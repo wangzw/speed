@@ -216,6 +216,7 @@ const PUBLIC_EXPORTS = [
   'errorCodeOf',
   'formatNationalPhoneNumber',
   'httpStatusOf',
+  'retryAfterSecondsOf',
   'isPhoneCountry',
   'nationalNumberDigits',
   'pageRefreshRead',

@@ -1,4 +1,8 @@
 {
+  "throttle": {
+    "retryAfter": "尝试次数过多，请在 {{seconds}} 秒后重试。",
+    "retryAfterLong": "尝试次数过多，请在约 {{minutes}} 分钟后重试。"
+  },
   "errors": {
     "authn": {
       "session_not_found": "会话不存在，请重新登录。",

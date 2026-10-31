@@ -139,14 +139,24 @@ export const ERROR_TEXT_CODES = [
  * unknown fallback. Reads the current language reactively (the returned
  * function is recreated when the language changes).
  */
-export function useConsoleUiErrorText(): (code: string) => string {
+/** The leaves that name a throttled answer's wait, and the code carrying it. */
+const WAIT_KEY = 'throttle.retryAfter'
+const WAIT_LONG_KEY = 'throttle.retryAfterLong'
+const WAIT_CODES = ['authn.throttled'] as const
+
+export function useConsoleUiErrorText(): (
+  code: string,
+  retryAfterSeconds?: number,
+) => string {
   const { t } = useConsoleUiTranslation()
   const known = new Set<string>(ERROR_TEXT_CODES)
-  const resolve = createErrorTextResolver(t, known)
-  return (code) => {
+  const resolve = createErrorTextResolver(t, known, {
+    wait: { key: WAIT_KEY, longKey: WAIT_LONG_KEY, codes: WAIT_CODES },
+  })
+  return (code, retryAfterSeconds) => {
     const http = HTTP_ERROR_CODE.exec(code)
     if (http === null) {
-      return resolve(code)
+      return resolve(code, retryAfterSeconds)
     }
     // A write refused with a bare 403 or 401 (no readable problem envelope)
     // gets copy that says what to do: a permission refusal and an ended

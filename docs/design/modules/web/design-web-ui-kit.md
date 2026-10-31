@@ -92,9 +92,9 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `PhoneNumberField` | `country`、`nationalNumber`、国家/电话两个标签、帮助文本、`disabled`、`showValidationError`、自动填充标记、`preferredCountries`（置顶列出的国家码，按给定次序；缺省即原次序） | `onCountryChange`、`onNationalNumberChange`；帮助文本**平铺在整行之下**（国家/地区选择器与号码字段之下），不挂在号码字段的 helper 上；逐国家的校验错误仍出现在号码字段下方并替换帮助文本；两者都以 `aria-describedby` 关联到号码输入 |
 | `DataTable` | `rows`、`columns`、`rowKey`、`loading`、`sort`、`filter`（可选 `label`／`placeholder`）、选择、分页、空态文案、`rowVerticalAlign`（整行纵向对齐，缺省 MUI 的居中）、`pinLastColumn`（可选：钉住最后一列，仅在表格实际溢出容器时生效）、`ariaLabel`／`ariaLabelledBy`（替换命名空间默认的可及名） | `onSortChange`、`filter.onValueChange`、`onSelectionChange`、分页回调 |
 | `FileUploader` | `rows`、选取/取消/重试/移除回调、`multiple`、`accept`、`allowDrop`、`disabled`、标签 | `onSelectFiles`、`onCancel`、`onRetry`、`onRemove` |
-| `InlineError` | `code`、`resolve`、`detail`（渲染在同一横幅内的补充内容） | — |
+| `InlineError` | `code`、`resolve`（第二个入参是等待秒数）、`retryAfterSeconds`（拒绝声明的等待，整秒）、`detail`（渲染在同一横幅内的补充内容） | — |
 | `InlineSuccess` | `message`（`null` 时静默，仍挂载一个裁剪的 `role="status"` 区域；`severity` 恒为 success） | — |
-| `WriteFeedbackRegion` | `outcome`（`WriteOutcome` 或 `null`）、`resolve`（码到当前语言文本）、`sx`（作用于区域根容器，在根容器的默认上边距之后应用） | — |
+| `WriteFeedbackRegion` | `outcome`（`WriteOutcome` 或 `null`）、`resolve`（码到当前语言文本，第二个入参是拒绝声明的等待秒数）、`sx`（作用于区域根容器，在根容器的默认上边距之后应用） | — |
 | `ListSkeleton` | `label`、`rows` | — |
 | `AsyncSection` | `pending`、`payload`、`empty`、`loading`、`errorState`、`emptyState`、`headingLevel`、`emptyHeadingLevel`（空占位自己的标题级，含 `none`）、`staleState`（`{description, retryLabel, onRetry}`，由调用方在最近一次刷新失败、数据在屏且读不在进行中时给出，缺省不渲染）、`refusedState`（`{title, description}`，调用方判定为拒绝后给出；非 pending 时替换内容且不提供重试）、`children` | `errorState.onRetry`、`staleState.onRetry` |
 | `HumanVerification` | `gate`（`{required, provider, site_key?}`，缺省、不需证明或 `off` 时不渲染）、`proof`、`status`（`idle`／`working`／`ready`／`failed`）、`onToken`、`onRetry`、`disabled` | `onToken`（Turnstile token 或 null）、`onRetry`（PoW 失败后重试） |
@@ -132,13 +132,13 @@ export function useWriteFeedback(): WriteFeedback
 
 export interface WriteFeedbackRegionProps {
   readonly outcome: WriteOutcome | null
-  readonly resolve: (code: string) => string     // 当前语言的码文本，各包绑定自己的解析器
+  readonly resolve: (code: string, retryAfterSeconds?: number) => string     // 当前语言的码文本与等待秒数，各包绑定自己的解析器
   readonly sx?: SxProps<Theme>
 }
 export function WriteFeedbackRegion(props: WriteFeedbackRegionProps): JSX.Element
 ```
 
-`run` 是一次尝试的标准形态：先 `reset`，把在途计数加一（`pending` 为真），再等待 `attempt`；`attempt` 以字符串落定即以该串调用 `succeed`，以 `null` 落定则不碰槽位（提权门控接管的写，见「写入的反馈」；槽位在本次尝试自己的 `reset` 之后为空，之后由重叠的尝试或 `succeed`、`fail` 填入的结果照旧保留），抛出则调用 `fail`；最后把在途计数减一。`run` 自身从不抛出。`succeed`、`fail` 与 `reset` 供不能表达为单个 promise 的流程使用，例如登录的逐步答复。`useWriteFeedback` 不取数、不认识 react-query，状态属于调用它的宿主组件，各回调在组件存续期内引用稳定。`WriteFeedbackRegion` 把槽渲染为 `InlineSuccess`（成功文案，始终挂载）与 `InlineError`（失败码，失败时才挂载），自己没有文案：成功文案由宿主翻译，失败文本经 `resolve` 取自各包自己的命名空间。各包把 `resolve` 绑定进自己的 `internal/` 包装，与 `InlineError` 的包装同形，调用点只传槽。区域的根容器默认带一个间距单位的上边距，成功与失败两部分共用它，调用方的 `sx` 在其后应用；调用点不单独渲染 `InlineSuccess`。使用条款见「写入的反馈」。
+`run` 是一次尝试的标准形态：先 `reset`，把在途计数加一（`pending` 为真），再等待 `attempt`；`attempt` 以字符串落定即以该串调用 `succeed`，以 `null` 落定则不碰槽位（提权门控接管的写，见「写入的反馈」；槽位在本次尝试自己的 `reset` 之后为空，之后由重叠的尝试或 `succeed`、`fail` 填入的结果照旧保留），抛出则调用 `fail`；最后把在途计数减一。`run` 自身从不抛出。`succeed`、`fail` 与 `reset` 供不能表达为单个 promise 的流程使用，例如登录的逐步答复。`useWriteFeedback` 不取数、不认识 react-query，状态属于调用它的宿主组件，各回调在组件存续期内引用稳定。一次失败的槽还带上该次拒绝声明的等待（`retryAfterSecondsOf` 从错误的 `retryAfterMs` 读整秒），随 `resolve` 的第二个入参交给包的解析器，由它在自己的文案里说出「多久之后再试」。`WriteFeedbackRegion` 把槽渲染为 `InlineSuccess`（成功文案，始终挂载）与 `InlineError`（失败码，失败时才挂载），自己没有文案：成功文案由宿主翻译，失败文本经 `resolve` 取自各包自己的命名空间。各包把 `resolve` 绑定进自己的 `internal/` 包装，与 `InlineError` 的包装同形，调用点只传槽。区域的根容器默认带一个间距单位的上边距，成功与失败两部分共用它，调用方的 `sx` 在其后应用；调用点不单独渲染 `InlineSuccess`。使用条款见「写入的反馈」。
 
 ### 表单校验桥
 

@@ -57,6 +57,31 @@ export function errorCodeOf(error: unknown): string {
 const UNKNOWN_FAILURE_CODE = 'client.unknown'
 
 /**
+ * The wait an error states the caller must observe before retrying, in
+ * whole seconds: the api-client's `retryAfterMs` (set from a 429 or 503
+ * answer's Retry-After header) rounded up, or undefined when the error
+ * carries none. Read the same defensive way as `errorCodeOf`, so a
+ * throwing getter or a revoked proxy reads as "no wait" instead of
+ * throwing. A surface that renders a refusal passes this to its
+ * resolver, which turns it into the wait the sentence names.
+ */
+export function retryAfterSecondsOf(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined
+  }
+  let value: unknown
+  try {
+    value = (error as { retryAfterMs?: unknown }).retryAfterMs
+  } catch {
+    return undefined
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return undefined
+  }
+  return Math.max(1, Math.ceil(value / 1000))
+}
+
+/**
  * The HTTP status an error carries, read structurally: a numeric
  * `status` property holding a valid HTTP status (an integer in 100-599),
  * or else a `code` of the bare-HTTP shape `client.http.<n>`. Returns
@@ -111,7 +136,13 @@ export interface InlineErrorProps extends RootStyleProps {
    * binds its own namespace's resolver; the banner never guesses a
    * namespace or falls back across languages.
    */
-  readonly resolve: (code: string) => string
+  readonly resolve: (code: string, retryAfterSeconds?: number) => string
+  /**
+   * The wait a throttled answer stated, in whole seconds. Given, the
+   * resolver renders the sentence that names it; a resolver that ignores
+   * the argument keeps its own text.
+   */
+  readonly retryAfterSeconds?: number
   /**
    * Content rendered inside the alert, below the resolved sentence. A
    * failure that names something -- the address a refusal collided on --
@@ -126,7 +157,10 @@ export interface InlineErrorProps extends RootStyleProps {
  * error nothing renders, so a host ref stays unattached.
  */
 export const InlineError = forwardRef<HTMLDivElement, InlineErrorProps>(
-  function InlineError({ code, resolve, detail, sx, className }, ref) {
+  function InlineError(
+    { code, resolve, retryAfterSeconds, detail, sx, className },
+    ref,
+  ) {
     if (code === null) {
       return null
     }
@@ -138,7 +172,7 @@ export const InlineError = forwardRef<HTMLDivElement, InlineErrorProps>(
         role="alert"
         sx={layerSx({ width: '100%' }, sx)}
       >
-        {resolve(code)}
+        {resolve(code, retryAfterSeconds)}
         {detail === undefined ? null : (
           <Box component="div" sx={{ mt: 0.5 }}>
             {detail}
