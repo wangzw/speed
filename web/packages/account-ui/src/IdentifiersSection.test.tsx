@@ -19,7 +19,7 @@
  * error state (never a "no identifiers" claim).
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import enUS from './locales/en-US.json' with { type: 'json' }
@@ -325,6 +325,150 @@ describe('IdentifiersSection', () => {
 
     await expectNoAxeViolations()
   })
+
+  it.each(['contact', 'both'] as const)(
+    'gives the %s view the resend path and countdown after a send',
+    async (axis) => {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              verification: {
+                state: 'verified',
+                email: 'ada@x.test',
+                since: '',
+              },
+              identifiers: [
+                identifier({
+                  id: 'id-unproved',
+                  kind: 'email',
+                  value: 'ada@x.test',
+                  proven: false,
+                  verified_at: '',
+                  verified_via: '',
+                }),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers'
+        ) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 5,
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <IdentifiersSection session={rig.session} axis={axis} />,
+      )
+      const user = userEvent.setup()
+
+      // The table view opens the flow from the row's actions menu; the
+      // merged view carries the verify button on the row itself.
+      if (axis === 'contact') {
+        await user.click(
+          await screen.findByRole('button', {
+            name: zhCN.identifiers.actionsAria.replace(
+              '{{value}}',
+              'ada@x.test',
+            ),
+          }),
+        )
+        await user.click(
+          screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
+        )
+      } else {
+        await user.click(
+          await screen.findByRole('button', {
+            name: zhCN.identifiers.verifyAria.replace(
+              '{{value}}',
+              'ada@x.test',
+            ),
+          }),
+        )
+      }
+
+      const send = await screen.findByRole('button', {
+        name: zhCN.identifiers.add.submitEmail,
+      })
+
+      // The mount's reads settled on the real clock; the send and its
+      // countdown run on the fake one so the five seconds pass instantly.
+      vi.useFakeTimers()
+      try {
+        await act(async () => {
+          fireEvent.click(send)
+          for (let turn = 0; turn < 10; turn += 1) {
+            await Promise.resolve()
+          }
+        })
+
+        const address = screen.getByLabelText(
+          zhCN.identifiers.add.value.labelEmail,
+        )
+        const form = address.closest('form')
+        expect(form).not.toBeNull()
+        const scoped = within(form as HTMLElement)
+
+        // Both views show the same controls in the same order: cancel on
+        // the left, the resend in the middle, the primary verify closing
+        // the row on the right.
+        expect(
+          scoped
+            .getAllByRole('button')
+            .map((button) => button.textContent?.trim()),
+        ).toEqual([
+          zhCN.identifiers.add.cancel,
+          zhCN.verification.resend,
+          zhCN.identifiers.add.verify,
+        ])
+
+        const resend = scoped.getByRole('button', {
+          name: zhCN.verification.resend,
+        })
+        expect(resend).toBeDisabled()
+        const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
+        const note = `${before}5${after}`
+        expect(scoped.getByText(note)).toBeTruthy()
+
+        // Once the wait expires the resend becomes usable and its note
+        // clears.
+        act(() => {
+          vi.advanceTimersByTime(5000)
+        })
+        expect(resend).toBeEnabled()
+        expect(scoped.queryByText(note)).toBeNull()
+
+        await act(async () => {
+          fireEvent.click(resend)
+          for (let turn = 0; turn < 10; turn += 1) {
+            await Promise.resolve()
+          }
+        })
+
+        const sends = rig.calls.filter(
+          (call) =>
+            call.method === 'POST' &&
+            call.path === '/api/v1/auth/identifiers',
+        )
+        expect(sends).toHaveLength(2)
+        expect(sends[1]?.body).toEqual({
+          kind: 'email',
+          value: 'ada@x.test',
+        })
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
 
   it('does not offer the row verify action while the account is pending', async () => {
     // The pending state's one code record belongs to the verification

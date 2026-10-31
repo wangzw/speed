@@ -1543,6 +1543,136 @@ export function IdentifiersSection({
   }
 
   /**
+   * The row verification form both views render: the row's own address,
+   * fixed; the human-verification block; the code field once a code is out;
+   * and one action row whose controls keep one order -- cancel on the left,
+   * the resend in the middle once a code is out, and the primary send or
+   * verify closing the row on the right. After a send the resend counts down
+   * and a note states the wait.
+   */
+  function renderRowVerifyForm(address: string) {
+    return (
+      <Box
+        component="form"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (rowSentTo === null) {
+            void rowSend(address)
+            return
+          }
+          if (rowCode.trim() !== '') {
+            void rowVerifyCode(rowCode)
+          }
+        }}
+        sx={{ mt: 1.5, maxWidth: FORM_MAX_WIDTH }}
+      >
+        <Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+          <TextField
+            fullWidth
+            type="email"
+            label={t('identifiers.add.value.labelEmail')}
+            value={address}
+            helperText={t('identifiers.add.value.helperEmail')}
+            slotProps={{ htmlInput: { readOnly: true } }}
+            disabled={addBusy}
+          />
+          {humanBlock}
+          {rowSentTo === null ? null : (
+            <TextField
+              fullWidth
+              autoFocus
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              label={t('identifiers.add.code.label')}
+              value={rowCode}
+              error={rowCodeInvalid}
+              helperText={
+                rowCodeInvalid ? t('identifiers.verifyCodeInvalid') : undefined
+              }
+              slotProps={{ htmlInput: { 'aria-invalid': rowCodeInvalid } }}
+              disabled={addBusy}
+              onChange={(event) => {
+                setRowCode(event.target.value)
+                if (rowCodeInvalid) {
+                  setRowCodeInvalid(false)
+                }
+              }}
+            />
+          )}
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 1,
+              width: '100%',
+            }}
+          >
+            <Button
+              type="button"
+              size="small"
+              disabled={addBusy}
+              onClick={closeRowVerify}
+            >
+              {t('identifiers.add.cancel')}
+            </Button>
+            {rowSentTo === null ? null : (
+              <Button
+                type="button"
+                variant="outlined"
+                size="small"
+                disabled={addBusy || proofBlocked || rowRemainingSeconds > 0}
+                loading={addIdentifier.isPending}
+                aria-describedby={
+                  rowRemainingSeconds > 0 ? ROW_RESEND_NOTE_ID : undefined
+                }
+                onClick={() => void rowSend(address)}
+              >
+                {t('verification.resend')}
+              </Button>
+            )}
+            {rowSentTo === null ? (
+              <Button
+                type="submit"
+                variant="contained"
+                size="small"
+                sx={{ marginLeft: 'auto' }}
+                disabled={addBusy || proofBlocked}
+                loading={addIdentifier.isPending}
+              >
+                {t('identifiers.add.submitEmail')}
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                variant="contained"
+                size="small"
+                sx={{ marginLeft: 'auto' }}
+                disabled={addBusy || rowCode.trim() === ''}
+                loading={verifyIdentifier.isPending}
+              >
+                {t('identifiers.add.verify')}
+              </Button>
+            )}
+          </Box>
+          {rowSentTo !== null && rowRemainingSeconds > 0 ? (
+            <Typography
+              id={ROW_RESEND_NOTE_ID}
+              variant="body2"
+              color="text.secondary"
+            >
+              {t('verification.resendIn', {
+                seconds: rowRemainingSeconds,
+              })}
+            </Typography>
+          ) : null}
+        </Stack>
+      </Box>
+    )
+  }
+
+  /**
    * One row in the contacts list. The per-record actions (the
    * default-contact choice, verification and removal) render on the row, so
    * one address never offers the same action twice. Whether an email or
@@ -1684,136 +1814,7 @@ export function IdentifiersSection({
             label={t('identifiers.axes.defaultContact')}
           />
         ) : null}
-        {rowFlowOpen ? (
-          <Box
-            component="form"
-            noValidate
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (rowSentTo === null) {
-                void rowSend(value)
-                return
-              }
-              if (rowCode.trim() !== '') {
-                void rowVerifyCode(rowCode)
-              }
-            }}
-            sx={{ mt: 1.5, maxWidth: FORM_MAX_WIDTH }}
-          >
-            <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
-              <TextField
-                fullWidth
-                type="email"
-                label={t('identifiers.add.value.labelEmail')}
-                value={value}
-                helperText={t('identifiers.add.value.helperEmail')}
-                slotProps={{ htmlInput: { readOnly: true } }}
-                disabled={addBusy}
-              />
-              {humanBlock}
-              {rowSentTo === null ? null : (
-                <TextField
-                  fullWidth
-                  autoFocus
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  label={t('identifiers.add.code.label')}
-                  value={rowCode}
-                  error={rowCodeInvalid}
-                  helperText={
-                    rowCodeInvalid
-                      ? t('identifiers.verifyCodeInvalid')
-                      : undefined
-                  }
-                  slotProps={{
-                    htmlInput: {
-                      'aria-invalid': rowCodeInvalid,
-                    },
-                  }}
-                  disabled={addBusy}
-                  onChange={(event) => {
-                    setRowCode(event.target.value)
-                    if (rowCodeInvalid) {
-                      setRowCodeInvalid(false)
-                    }
-                  }}
-                />
-              )}
-              {/* The step's action row: send/resend and cancel are the
-                  secondary controls and stand on the left, the primary
-                  verify (or the first send) closes the row on the right. */}
-              <Box
-                sx={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  alignItems: 'center',
-                  gap: 1,
-                  width: '100%',
-                }}
-              >
-                {rowSentTo === null ? null : (
-                  <Button
-                    type="button"
-                    variant="outlined"
-                    size="small"
-                    disabled={
-                      addBusy || proofBlocked || rowRemainingSeconds > 0
-                    }
-                    loading={addIdentifier.isPending}
-                    aria-describedby={
-                      rowRemainingSeconds > 0 ? ROW_RESEND_NOTE_ID : undefined
-                    }
-                    onClick={() => void rowSend(value)}
-                  >
-                    {t('verification.resend')}
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  size="small"
-                  disabled={addBusy}
-                  onClick={closeRowVerify}
-                >
-                  {t('identifiers.add.cancel')}
-                </Button>
-                {rowSentTo === null ? (
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    size="small"
-                    sx={{ marginLeft: 'auto' }}
-                    disabled={addBusy || proofBlocked}
-                    loading={addIdentifier.isPending}
-                  >
-                    {t('identifiers.add.submitEmail')}
-                  </Button>
-                ) : (
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    size="small"
-                    sx={{ marginLeft: 'auto' }}
-                    disabled={addBusy || rowCode.trim() === ''}
-                    loading={verifyIdentifier.isPending}
-                  >
-                    {t('identifiers.add.verify')}
-                  </Button>
-                )}
-              </Box>
-              {rowSentTo !== null && rowRemainingSeconds > 0 ? (
-                <Typography
-                  id={ROW_RESEND_NOTE_ID}
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  {t('verification.resendIn', {
-                    seconds: rowRemainingSeconds,
-                  })}
-                </Typography>
-              ) : null}
-            </Stack>
-          </Box>
-        ) : null}
+        {rowFlowOpen ? renderRowVerifyForm(value) : null}
       </Box>
     )
   }
@@ -1924,98 +1925,9 @@ export function IdentifiersSection({
                     })}
                 </TableBody>
               </Table>
-              {rowVerify !== null && rowVerify.key.startsWith('contact:') ? (
-                <Box
-                  component="form"
-                  noValidate
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    if (rowSentTo === null) {
-                      void rowSend(rowVerify.value)
-                      return
-                    }
-                    if (rowCode.trim() !== '') {
-                      void rowVerifyCode(rowCode)
-                    }
-                  }}
-                  sx={{ mt: 2, maxWidth: FORM_MAX_WIDTH }}
-                >
-                  <Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-                    <TextField
-                      fullWidth
-                      type="email"
-                      label={t('identifiers.add.value.labelEmail')}
-                      value={rowVerify.value}
-                      helperText={t('identifiers.add.value.helperEmail')}
-                      slotProps={{ htmlInput: { readOnly: true } }}
-                      disabled={addBusy}
-                    />
-                    {humanBlock}
-                    {rowSentTo === null ? null : (
-                      <TextField
-                        fullWidth
-                        autoFocus
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        label={t('identifiers.add.code.label')}
-                        value={rowCode}
-                        error={rowCodeInvalid}
-                        helperText={
-                          rowCodeInvalid
-                            ? t('identifiers.verifyCodeInvalid')
-                            : undefined
-                        }
-                        disabled={addBusy}
-                        onChange={(event) => {
-                          setRowCode(event.target.value)
-                          if (rowCodeInvalid) {
-                            setRowCodeInvalid(false)
-                          }
-                        }}
-                      />
-                    )}
-                    {/* One action row, the same shape the sign-in list's
-                        inline verify uses: cancel on the left, the primary
-                        verify closing the row on the right. */}
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        alignItems: 'center',
-                        gap: 1,
-                        width: '100%',
-                      }}
-                    >
-                      <Button
-                        type="button"
-                        disabled={addBusy}
-                        onClick={closeRowVerify}
-                      >
-                        {t('identifiers.add.cancel')}
-                      </Button>
-                      {rowSentTo === null ? (
-                        <Button
-                          type="submit"
-                          variant="contained"
-                          sx={{ marginLeft: 'auto' }}
-                          disabled={addBusy || proofBlocked}
-                        >
-                          {t('identifiers.add.submitEmail')}
-                        </Button>
-                      ) : (
-                        <Button
-                          type="submit"
-                          variant="contained"
-                          sx={{ marginLeft: 'auto' }}
-                          disabled={addBusy || rowCode.trim() === ''}
-                        >
-                          {t('identifiers.verify')}
-                        </Button>
-                      )}
-                    </Box>
-                  </Stack>
-                </Box>
-              ) : null}
+              {rowVerify !== null && rowVerify.key.startsWith('contact:')
+                ? renderRowVerifyForm(rowVerify.value)
+                : null}
               </>
             ) : (
               groups.map((group) => {
