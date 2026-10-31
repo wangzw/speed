@@ -371,6 +371,7 @@
     "verifyAria": "Verify this email address: {{value}}",
     "verifyCodeInvalid": "The verification code is invalid or has expired. Try again.",
     "lastLoginName": "This is your only sign-in name. Add another username or email address before removing it.",
+    "usernameLastLoginName": "This is your only sign-in name. Add another sign-in method before removing it.",
     "remove": "Remove",
     "removeAria": "Remove this identifier: {{value}}",
     "removed": "Identifier {{value}} removed.",

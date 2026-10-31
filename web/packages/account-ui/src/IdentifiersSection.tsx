@@ -84,7 +84,7 @@
  * password signs in with a username or an email address chosen as a sign-in
  * way, so while it holds exactly one such identifier that identifier's remove
  * action is withheld or disabled: the email row's action gives way to a note,
- * and the username group's action is disabled under the same note, because
+ * and the username group's action is disabled under a note of its own, because
  * removing either would leave the password without a login name. Another such
  * identifier, or an account with no password at all, keeps the action enabled.
  * Phone numbers are not counted -- they sign in through their own code route.
@@ -1522,7 +1522,7 @@ export function IdentifiersSection({
             color="text.secondary"
             sx={{ mt: 0.5 }}
           >
-            {t('identifiers.lastLoginName')}
+            {t('identifiers.usernameLastLoginName')}
           </Typography>
         ) : null}
       </Box>

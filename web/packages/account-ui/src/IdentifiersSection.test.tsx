@@ -430,7 +430,7 @@ describe('IdentifiersSection', () => {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
       }),
     ).toBeDisabled()
-    expect(screen.getByText(zhCN.identifiers.lastLoginName)).toBeTruthy()
+    expect(screen.getByText(zhCN.identifiers.usernameLastLoginName)).toBeTruthy()
 
     await expectNoAxeViolations()
   })
@@ -510,7 +510,7 @@ describe('IdentifiersSection', () => {
       }),
     ).toBeEnabled()
     // The note belongs to the username group, not to the phone row.
-    expect(screen.getByText(zhCN.identifiers.lastLoginName)).toBeTruthy()
+    expect(screen.getByText(zhCN.identifiers.usernameLastLoginName)).toBeTruthy()
   })
 
   it('keeps the username removal when an email also signs in', async () => {
@@ -552,7 +552,7 @@ describe('IdentifiersSection', () => {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
       }),
     ).toBeEnabled()
-    expect(screen.queryByText(zhCN.identifiers.lastLoginName)).toBeNull()
+    expect(screen.queryByText(zhCN.identifiers.usernameLastLoginName)).toBeNull()
   })
 
   it('keeps the only login name removable on an account with no password', async () => {
