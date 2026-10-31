@@ -88,7 +88,6 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
-import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
@@ -658,10 +657,17 @@ export function ContactVerificationSection({
             }}
             sx={{ mt: 2, maxWidth: FORM_MAX_WIDTH }}
           >
-            <Stack
-              direction={{ xs: 'column', sm: 'row' }}
-              spacing={1}
-              sx={{ alignItems: { sm: 'flex-start' }, width: '100%' }}
+            {/* The change-address face is the add face's shape: the field
+                owns the row and its submit sits beneath it, never beside
+                it at the field's top edge. */}
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                gap: 2,
+                width: '100%',
+              }}
             >
               <TextField
                 fullWidth
@@ -679,7 +685,7 @@ export function ContactVerificationSection({
               >
                 {t('verification.changeSubmit')}
               </Button>
-            </Stack>
+            </Box>
           </Box>
         ) : null}
         {/* The send control group's result, below every control that writes
