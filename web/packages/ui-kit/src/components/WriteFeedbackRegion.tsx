@@ -13,9 +13,11 @@
  * The region carries no copy of its own. The success message is host
  * text -- the string the host translated when it settled the attempt --
  * and a failure code resolves through `resolve`, the calling package's
- * own error-text resolver. The root container carries one spacing unit
- * of top margin, shared by the success and failure parts; the caller's
- * `sx` applies after it and may override it.
+ * own error-text resolver. The one spacing unit of top margin belongs to
+ * a rendered banner, not to the always-mounted root: an empty region
+ * keeps its live region mounted and takes no height, so a control
+ * group's own rhythm is never widened by a slot with nothing to say.
+ * The caller's `sx` applies after the margin and may override it.
  */
 
 import type { SxProps, Theme } from '@mui/material/styles'
@@ -47,7 +49,7 @@ export function WriteFeedbackRegion({
   return (
     <Box
       sx={[
-        { marginTop: 1 },
+        ...(outcome === null ? [] : [{ marginTop: 1 }]),
         ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
       ]}
     >

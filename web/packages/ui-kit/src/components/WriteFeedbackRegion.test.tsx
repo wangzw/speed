@@ -1,10 +1,10 @@
 /**
  * WriteFeedbackRegion contract: one slot rendered as the scope's result
  * area -- a failure code through the caller's resolver and the success
- * message through the always-mounted status region, with one default top
- * margin on the region's root that both parts share and the caller's `sx`
- * applied after it. An empty slot renders no visible feedback while the
- * status region stays in the tree for the next message, clipped to 1x1.
+ * message through the always-mounted status region. A rendered banner
+ * carries one default top margin on the region's root; an empty slot's
+ * root takes no height, so the resident live region never widens its
+ * control group's rhythm. The caller's `sx` applies after the margin.
  */
 
 import { useState } from 'react'
@@ -84,17 +84,27 @@ function EmptyMessageHost() {
   )
 }
 
+/** jsdom reports an unset margin as '' or '0'; both mean no gap. */
+function normalizeMargin(element: Element): string {
+  const value = getComputedStyle(element).marginTop
+  return value === '' || value === '0' ? '0px' : value
+}
+
 /**
  * Renders one outcome twice -- without caller `sx` and with `marginTop: 2`
  * -- and checks that only the root's spacing moved. A caller's `sx` copied
  * into a banner would add its margin to the root's own and double the gap.
+ * The default margin belongs to a rendered outcome; an empty slot starts
+ * at zero.
  */
 function expectCallerSxToStayOnRoot(outcome: WriteOutcome | null): void {
   const plain = renderWithProviders(
     <WriteFeedbackRegion outcome={outcome} resolve={resolve} />,
   )
   const plainRoot = plain.container.firstElementChild
-  expect(plainRoot).toHaveStyle({ marginTop: '8px' })
+  expect(normalizeMargin(plainRoot as Element)).toBe(
+    outcome === null ? '0px' : '8px',
+  )
   const plainStatusMargin = getComputedStyle(
     plain.getByRole('status'),
   ).marginTop
@@ -238,14 +248,16 @@ describe('WriteFeedbackRegion', () => {
     )
   })
 
-  it('carries the default top margin on the root for an empty slot too', () => {
+  it('takes no top margin for an empty slot, while a settled outcome does', () => {
     const empty = renderWithProviders(
       <WriteFeedbackRegion outcome={null} resolve={resolve} />,
     )
     const emptyRoot = empty.container.firstElementChild
     expect(emptyRoot).not.toBeNull()
-    expect(emptyRoot).toHaveStyle({ marginTop: '8px' })
-    const emptyMargin = getComputedStyle(emptyRoot!).marginTop
+    // The live region stays mounted, but the empty slot adds no gap: the
+    // margin belongs to a banner that actually renders.
+    expect(normalizeMargin(emptyRoot as Element)).toBe('0px')
+    expect(empty.getByRole('status')).toBeInTheDocument()
     empty.unmount()
 
     const success = renderWithProviders(
@@ -254,11 +266,9 @@ describe('WriteFeedbackRegion', () => {
         resolve={resolve}
       />,
     )
-    // The gap is the region's, not a banner's: an empty slot gets the same
-    // one spacing unit a settled outcome gets.
     expect(
       getComputedStyle(success.container.firstElementChild!).marginTop,
-    ).toBe(emptyMargin)
+    ).toBe('8px')
   })
 
   it('applies an array sx to the root container', () => {
