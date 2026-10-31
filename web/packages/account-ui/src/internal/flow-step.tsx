@@ -35,7 +35,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -113,6 +113,13 @@ export interface FlowStepProps {
    * `type="submit" form` button submits it.
    */
   readonly formId?: string
+  /**
+   * A secondary control rendered in the step's own action row, before the
+   * primary submit -- a cancel control the host keeps beside the step's
+   * confirm instead of on a line of its own. Steps whose answer is a
+   * choice list render it below the list.
+   */
+  readonly secondaryAction?: ReactNode
 }
 
 export function FlowStep({
@@ -124,7 +131,12 @@ export function FlowStep({
   onSubmit,
   onRedirect,
   formId,
+  secondaryAction,
 }: FlowStepProps) {
+  // With a secondary control beside it, the primary closes the row; alone
+  // it keeps the step's own left alignment.
+  const primaryEndSx =
+    secondaryAction === undefined ? undefined : { marginLeft: 'auto' }
   const { t } = useAccountUiTranslation()
   // The free-text answer of a TOTP code field, and the typed values of a
   // `challenge` step's fields.
@@ -132,10 +144,12 @@ export function FlowStep({
 
   if (step.kind === 'complete') {
     return (
-      <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
+        {secondaryAction}
         <Button
           type="button"
           variant="contained"
+          sx={primaryEndSx}
           disabled={busy}
           onClick={() => onSubmit({ step: 'complete' })}
         >
@@ -151,10 +165,12 @@ export function FlowStep({
         <Alert severity="info">
           {t('flowStep.redirectNotice')}
         </Alert>
-        <Box sx={{ mt: 1.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 1.5 }}>
+          {secondaryAction}
           <Button
             type="button"
             variant="contained"
+            sx={primaryEndSx}
             disabled={busy || onRedirect === undefined}
             onClick={() => onRedirect?.(step.url)}
           >
@@ -179,6 +195,9 @@ export function FlowStep({
             {factor.label ?? factorKindLabel(factor.kind, t)}
           </Button>
         ))}
+        {secondaryAction === undefined ? null : (
+          <Box sx={{ alignSelf: 'flex-start', mt: 0.5 }}>{secondaryAction}</Box>
+        )}
       </Box>
     )
   }
@@ -197,6 +216,9 @@ export function FlowStep({
             {factorKindLabel(kind, t)}
           </Button>
         ))}
+        {secondaryAction === undefined ? null : (
+          <Box sx={{ alignSelf: 'flex-start', mt: 0.5 }}>{secondaryAction}</Box>
+        )}
       </Box>
     )
   }
@@ -241,10 +263,12 @@ export function FlowStep({
             fullWidth
             autoComplete="one-time-code"
           />
-          <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
+            {secondaryAction}
             <Button
               type="button"
               variant="contained"
+              sx={primaryEndSx}
               disabled={busy || (values.code ?? '').trim() === ''}
               onClick={() =>
                 onSubmit({ step: answerStep, input: { code: (values.code ?? '').trim() } })
@@ -264,6 +288,7 @@ export function FlowStep({
         answerStep={answerStep}
         submitLabel={submitLabel}
         onSubmit={onSubmit}
+        secondaryAction={secondaryAction}
       />
     )
   }
@@ -295,8 +320,14 @@ export function FlowStep({
         ))}
       </Box>
       {external ? null : (
-        <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
-          <Button type="submit" variant="contained" disabled={busy}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
+          {secondaryAction}
+          <Button
+            type="submit"
+            variant="contained"
+            sx={primaryEndSx}
+            disabled={busy}
+          >
             {submitLabel}
           </Button>
         </Box>
@@ -315,6 +346,8 @@ interface PasskeyPromptProps {
   readonly answerStep: string
   readonly submitLabel: string
   readonly onSubmit: (answer: FlowStepAnswer) => void
+  /** The host's secondary control, rendered beside the start/retry action. */
+  readonly secondaryAction?: ReactNode
 }
 
 /** The passkey ceremony step: drives the browser's WebAuthn ceremony and
@@ -347,6 +380,7 @@ function PasskeyPrompt({
   answerStep,
   submitLabel,
   onSubmit,
+  secondaryAction,
 }: PasskeyPromptProps) {
   const { t } = useAccountUiTranslation()
   // An assertion step starts on arrival, so its first render is already the
@@ -494,10 +528,12 @@ function PasskeyPrompt({
           </Box>
         </>
       ) : (
-        <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
+          {secondaryAction}
           <Button
             type="button"
             variant="contained"
+            sx={secondaryAction === undefined ? undefined : { marginLeft: 'auto' }}
             disabled={busy}
             onClick={() => void run()}
           >

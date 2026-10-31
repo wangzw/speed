@@ -267,7 +267,9 @@ export function StepUpChallenge({
             </Typography>
           </DialogContent>
           <DialogActions>
-            <Button onClick={onCancel}>{t('mfa.stepUp.cancelLabel')}</Button>
+            <Button color="inherit" onClick={onCancel}>
+              {t('mfa.stepUp.cancelLabel')}
+            </Button>
             <Button variant="contained" onClick={handleRelogin}>
               {t('mfa.stepUp.relogin')}
             </Button>
@@ -331,7 +333,6 @@ function StepUpFlow({
   readonly reproofMethod?: string
 }): ReactElement {
   const { t } = useAccountUiTranslation()
-  const stepFormId = useId()
   const { phase, step, seq, submitting, errorCode, human, answer } = useStepUp(
     session,
     active,
@@ -403,6 +404,23 @@ function StepUpFlow({
     phase === 'failed' && step !== null && errorCode === 'authn.flow_invalid'
   const answerStep =
     chosenFactor.current !== null || !reproveFirst ? 'factor' : 'answer'
+  // True exactly when a FlowStep is on screen. While it is, the step's own
+  // action row carries the dialog's cancel control beside its primary
+  // action, so one row holds both and the primary always closes it. Every
+  // other state (starting, a flow-gone refusal, the no-factor hints) has no
+  // step row and keeps its cancel in the dialog's actions row.
+  const stepShown =
+    step !== null &&
+    !flowInvalid &&
+    !freshFirst &&
+    !reloginOnly &&
+    !unavailable &&
+    !starting
+  const cancelButton = (
+    <Button color="inherit" onClick={onCancel}>
+      {t('mfa.stepUp.cancelLabel')}
+    </Button>
+  )
 
   // The unavailable phase's and the unknown-method state's one action:
   // end the session -- forgetting the refused action, as a cancel does --
@@ -473,7 +491,7 @@ function StepUpFlow({
                       answerStep={answerStep}
                       submitLabel={t('mfa.stepUp.confirmLabel')}
                       onSubmit={handleAnswer}
-                      formId={step.kind === 'challenge' ? stepFormId : undefined}
+                      secondaryAction={cancelButton}
                     />
                   </>
                 ) : null}
@@ -482,23 +500,20 @@ function StepUpFlow({
           </>
         )}
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onCancel}>{t('mfa.stepUp.cancelLabel')}</Button>
-        {step !== null && step.kind === 'challenge' && !flowInvalid ? (
-          <Button type="submit" form={stepFormId} variant="contained">
-            {t('mfa.stepUp.confirmLabel')}
-          </Button>
-        ) : null}
-        {flowInvalid ? (
-          <Button variant="contained" onClick={onRestart}>
-            {t('mfa.stepUp.restart')}
-          </Button>
-        ) : unavailable || reloginOnly ? (
-          <Button variant="contained" onClick={handleRelogin}>
-            {t('mfa.stepUp.relogin')}
-          </Button>
-        ) : null}
-      </DialogActions>
+      {stepShown ? null : (
+        <DialogActions>
+          {cancelButton}
+          {flowInvalid ? (
+            <Button variant="contained" onClick={onRestart}>
+              {t('mfa.stepUp.restart')}
+            </Button>
+          ) : unavailable || reloginOnly ? (
+            <Button variant="contained" onClick={handleRelogin}>
+              {t('mfa.stepUp.relogin')}
+            </Button>
+          ) : null}
+        </DialogActions>
+      )}
     </>
   )
 }
