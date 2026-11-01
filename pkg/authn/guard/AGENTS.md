@@ -36,6 +36,10 @@ The API is the package's godoc.
   no step-up code — so a layer that charges a source by outcome charges it like
   a refused credential rather than exempting it as a handshake
   (`TestAnAnonymousRefusalIsDistinguishedFromAStepUp`, `refuseAnonymous`).
+  The anonymous answer's realm is the empty string, a known difference from the
+  gateway's 401, which names its endpoint: the middleware knows no endpoint name
+  and takes no realm parameter, so a caller that needs one named sets the header
+  itself before the middleware answers.
 - **The step-up challenge names the identity's own carrier, and no scheme it
   cannot trust reaches the field.** This is the refusal of an identity that is
   present and short of the requirement; an anonymous request is answered by

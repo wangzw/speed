@@ -95,7 +95,11 @@ func Require(req authn.Requirement) gin.HandlerFunc {
 // It is the entry point's untyped answer — the same shape the authorization
 // stage writes for the same condition — with both carriers named in the
 // challenge and no problem type. The middleware knows no endpoint name, so the
-// realm is empty; what it owes a caller is a challenge it can act on. The absent
+// realm is empty; what it owes a caller is a challenge it can act on. This is a
+// known difference from the gateway's 401, which knows its endpoint and names it
+// as the realm: a caller that needs the endpoint named here sets the header
+// itself before the middleware answers, and the middleware takes no realm
+// parameter for it. The absent
 // type is what keeps this answer out of the step-up mark: a layer charging a
 // source by outcome charges this 401 like the refused credential it is rather
 // than exempting it as a handshake.
