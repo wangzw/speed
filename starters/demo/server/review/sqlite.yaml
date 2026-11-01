@@ -331,7 +331,7 @@ seed:
     # request in this build comes from one loopback address, and this build is
     # driven by the journey tier's several browser contexts and by a
     # walkthrough that deliberately makes refused requests. The declared
-    # defaults (four tokens a second, a burst of forty, twenty extra tokens for
+    # defaults (four tokens a second, a burst of eighty, twenty extra tokens for
     # a refusal) therefore shut the whole source out with a 429 before it
     # reaches the backend, which is traffic the review assemblies are meant to
     # admit. The layer stays assembled -- it is not removed from the endpoint --
