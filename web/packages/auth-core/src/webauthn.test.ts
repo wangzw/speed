@@ -188,6 +188,26 @@ describe('runWebauthn', () => {
     ).rejects.toMatchObject({ reason: 'unsupported' })
   })
 
+  it('reports a credential the authenticator already holds as already-registered', async () => {
+    // A creation whose excludeCredentials hits an existing credential is
+    // rejected with InvalidStateError. That is not a generic ceremony
+    // failure: the same device cannot register a second passkey, and the
+    // caller has its own remedy to show.
+    const create = vi
+      .fn()
+      .mockRejectedValue(
+        new DOMException('the authenticator already holds this credential', 'InvalidStateError'),
+      )
+    stubCredentials({ create, get: vi.fn() })
+    await expect(
+      runWebauthn({
+        challenge: 'Y2hhbGxlbmdl',
+        user: { id: 'AQID' },
+        excludeCredentials: [{ id: 'AQID' }],
+      }),
+    ).rejects.toMatchObject({ reason: 'already-registered' })
+  })
+
   it('reports a failing ceremony as failed', async () => {
     const create = vi.fn().mockRejectedValue(new Error('boom'))
     stubCredentials({ create, get: vi.fn() })

@@ -26,6 +26,7 @@ export type WebauthnStep = 'totp' | 'register' | 'assert'
 export type WebauthnFailure =
   | 'unsupported' // no WebAuthn here, or the page is not a secure context
   | 'cancelled' // the user dismissed the prompt, or the ceremony timed out
+  | 'already-registered' // the authenticator already holds an excluded credential
   | 'failed' // the ceremony itself failed
 
 /** A ceremony that did not produce a credential. */
@@ -56,7 +57,8 @@ export function webauthnStepOf(options: unknown): WebauthnStep {
 /** Drive the passkey ceremony a step's options describe and return the
  * credential as the JSON the answer field carries. Throws a
  * WebauthnError for a step that is not a passkey step, a browser without
- * WebAuthn, a user who dismissed the prompt, or a ceremony that failed.
+ * WebAuthn, a user who dismissed the prompt, an authenticator that already
+ * holds an excluded credential, or a ceremony that failed.
  * `signal` lets the caller give up on the ceremony (a cancel control); a
  * browser that honours it dismisses its own prompt and rejects with
  * AbortError. It is best effort: the credential API does not require the
@@ -228,6 +230,12 @@ function toWebauthnError(error: unknown): WebauthnError {
   }
   if (name === 'NotSupportedError' || name === 'SecurityError') {
     return new WebauthnError('unsupported', message)
+  }
+  // A creation whose excludeCredentials matches a credential the authenticator
+  // already holds is rejected this way. Retrying on the same device fails
+  // again, so the caller can name the remedy instead of the generic failure.
+  if (name === 'InvalidStateError') {
+    return new WebauthnError('already-registered', message)
   }
   return new WebauthnError('failed', message)
 }

@@ -233,7 +233,7 @@ export type AuthnHumanGate = AuthnLoginHuman
 
 ```ts
 export type WebauthnStep = 'totp' | 'register' | 'assert'
-export type WebauthnFailure = 'unsupported' | 'cancelled' | 'failed'
+export type WebauthnFailure = 'unsupported' | 'cancelled' | 'already-registered' | 'failed'
 export class WebauthnError extends Error {
   readonly reason: WebauthnFailure
 }
@@ -241,7 +241,7 @@ export function webauthnStepOf(options: unknown): WebauthnStep
 export function runWebauthn(options: unknown, signal?: AbortSignal): Promise<string>
 ```
 
-子路径只交付仪式驱动，不渲染界面，也不被主入口引用：只读会话的宿主因此不会加载触及 DOM 的代码。`webauthnStepOf` 由一步的 options 形状判定步骤——带 `otpauth_uri` 是 TOTP（[REF-rfc6238](../../../references.md)），带 `user` 是登记，其余是断言。`runWebauthn` 把服务端 marshal 的 options 里的 base64url 二进制字段解码为 `BufferSource` 交给 `navigator.credentials.create`（登记）或 `.get`（断言），再把返回的凭据重新编码成 go-webauthn（[REF-go-webauthn](../../../references.md)）解码器读取的 JSON（`id`、`rawId`、`type`、`response.*`，每个二进制字段 base64url）。`signal` 是调用方放弃仪式的尽力而为手柄：浏览器若兑现它便自行收起提示并以 `AbortError` 拒绝；延迟到达的结果仍由调用方自行忽略。失败归为三类：浏览器没有 WebAuthn 或页面不是安全上下文（`unsupported`）、用户关闭提示或仪式被中止（`cancelled`）、其余仪式失败（`failed`）。TOTP 步骤不归它执行，请求它即 `failed`。
+子路径只交付仪式驱动，不渲染界面，也不被主入口引用：只读会话的宿主因此不会加载触及 DOM 的代码。`webauthnStepOf` 由一步的 options 形状判定步骤——带 `otpauth_uri` 是 TOTP（[REF-rfc6238](../../../references.md)），带 `user` 是登记，其余是断言。`runWebauthn` 把服务端 marshal 的 options 里的 base64url 二进制字段解码为 `BufferSource` 交给 `navigator.credentials.create`（登记）或 `.get`（断言），再把返回的凭据重新编码成 go-webauthn（[REF-go-webauthn](../../../references.md)）解码器读取的 JSON（`id`、`rawId`、`type`、`response.*`，每个二进制字段 base64url）。`signal` 是调用方放弃仪式的尽力而为手柄：浏览器若兑现它便自行收起提示并以 `AbortError` 拒绝；延迟到达的结果仍由调用方自行忽略。失败归为四类：浏览器没有 WebAuthn 或页面不是安全上下文（`unsupported`）、用户关闭提示或仪式被中止（`cancelled`）、认证器已持有该账户的凭据而登记被拒（`already-registered`，浏览器以 `InvalidStateError` 拒绝）、其余仪式失败（`failed`）。TOTP 步骤不归它执行，请求它即 `failed`。
 
 ### 租户上下文与租户作用域的 query key
 
