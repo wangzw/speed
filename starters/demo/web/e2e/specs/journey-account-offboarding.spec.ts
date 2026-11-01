@@ -68,6 +68,7 @@ import {
 } from '../helpers/account-sections'
 import { expect, test } from '../fixtures/demo'
 import { copy } from '../helpers/i18n'
+import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 import { totpCode } from '../helpers/totp'
 
 // The operator needs its two seeded factors and a proved address; the console
@@ -289,12 +290,10 @@ async function switchToTenant(page: Page): Promise<void> {
   await expect(row).toBeVisible()
   if (await row.isEnabled()) {
     await row.click()
-    await expect(
-      page.getByText(
-        copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: TENANT }),
-        { exact: true },
-      ),
-    ).toBeVisible()
+    await expectClippedAnnouncement(
+      page,
+      copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: TENANT }),
+    )
   } else {
     await page.keyboard.press('Escape')
   }

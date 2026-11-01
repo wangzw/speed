@@ -96,6 +96,7 @@ import {
 } from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
 import { approveEnterpriseSignIn } from '../helpers/social'
+import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
@@ -269,12 +270,10 @@ async function switchToTenant(page: Page, tenant: string): Promise<void> {
   await expect(row).toBeVisible()
   if (await row.isEnabled()) {
     await row.click()
-    await expect(
-      page.getByText(
-        copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
-        { exact: true },
-      ),
-    ).toBeVisible()
+    await expectClippedAnnouncement(
+      page,
+      copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
+    )
   } else {
     await page.keyboard.press('Escape')
   }
@@ -932,14 +931,12 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     // REQ-tenancy-023: choosing another organization moves the interface to it.
     await tenantMenuItem(page, TARGET_TENANT).click()
     await expect(tenantSwitcher(page, TARGET_TENANT)).toBeVisible()
-    await expect(
-      page.getByText(
-        copy('tenancyUi', 'tenantSwitcher.switchedTo', {
-          tenant: TARGET_TENANT,
-        }),
-        { exact: true },
-      ),
-    ).toBeVisible()
+    await expectClippedAnnouncement(
+      page,
+      copy('tenancyUi', 'tenantSwitcher.switchedTo', {
+        tenant: TARGET_TENANT,
+      }),
+    )
   })
 })
 

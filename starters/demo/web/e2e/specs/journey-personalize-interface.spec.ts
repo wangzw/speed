@@ -117,6 +117,31 @@ function timeZoneSelect(page: Page, locale: CopyLocale): Locator {
   })
 }
 
+/** The color-mode select of the appearance card. */
+function colorModeSelect(page: Page, locale: CopyLocale): Locator {
+  return preferencesSection(page, locale).getByRole('combobox', {
+    name: copy('accountUi', 'appearance.colorMode.label', {}, locale),
+    exact: true,
+  })
+}
+
+/** The visible label of one color-mode option, in the interface language. */
+function colorModeOptionLabel(
+  mode: 'dark' | 'light' | 'system',
+  locale: CopyLocale,
+): string {
+  return copy('accountUi', `appearance.colorMode.options.${mode}`, {}, locale)
+}
+
+/**
+ * The page background the theme paints in each mode, from the shipped token
+ * tree: light is `color.background.default` (#F8FAFC), dark is the neutral
+ * ramp's 900 tone (#0F172A). The demo overrides neither, so the resolved
+ * `body` background is these two values.
+ */
+const LIGHT_PAGE_BACKGROUND = 'rgb(248, 250, 252)'
+const DARK_PAGE_BACKGROUND = 'rgb(15, 23, 42)'
+
 /** The sessions pane's devices card, named in the given UI language. */
 function sessionsSection(page: Page, locale: CopyLocale): Locator {
   return page.getByRole('region', {
@@ -502,5 +527,90 @@ test('personalize-interface: the chosen language and time zone take effect and s
       `after reload the session time ${JSON.stringify(rendered)} left ` +
         `${CHOSEN_ZONE} in ${CHOSEN_LOCALE}`,
     ).toBe(true)
+  })
+})
+
+test('personalize-interface: the color mode applies at once, follows the device and survives a reload', async ({
+  demo,
+}) => {
+  const { page, accounts } = demo
+
+  await test.step('the member signs in and opens the account preferences pane', async () => {
+    await accounts.signIn({
+      identifier: reviewMember.username,
+      password: reviewMember.password,
+    })
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('demo', 'home.heading'),
+        exact: true,
+      }),
+    ).toBeVisible()
+    await openAccountSection(page, 'preferences')
+    await expandAccountRows(page)
+  })
+
+  // The browser is pinned to the light scheme and the account has no stored
+  // preference, so the first render resolves the default `system` preference
+  // to light and paints the light page background.
+  const body = page.locator('body')
+  await expect(body).toHaveCSS('background-color', LIGHT_PAGE_BACKGROUND)
+
+  // Counts full page loads, so a mode change that secretly reloads the page
+  // fails the "without a reload" assertion below; an in-place theme swap
+  // fires no load event.
+  let loads = 0
+  const countLoad = (): void => {
+    loads += 1
+  }
+  page.on('load', countLoad)
+
+  await test.step('choosing dark repaints the page at once, without a reload', async () => {
+    const select = colorModeSelect(page, 'en-US')
+    await expect(select).toHaveText(colorModeOptionLabel('system', 'en-US'))
+    // Count only loads caused by the mode change itself.
+    loads = 0
+    await select.click()
+    await page
+      .getByRole('option', {
+        name: colorModeOptionLabel('dark', 'en-US'),
+        exact: true,
+      })
+      .click()
+    // The write lands first; the provider then repaints in the dark palette.
+    await expect(body).toHaveCSS('background-color', DARK_PAGE_BACKGROUND)
+    expect(loads, 'the dark mode applies without a reload').toBe(0)
+  })
+
+  await test.step('follow-device repaints with the system scheme both ways', async () => {
+    const select = colorModeSelect(page, 'en-US')
+    await expect(select).toBeEnabled()
+    await select.click()
+    await page
+      .getByRole('option', {
+        name: colorModeOptionLabel('system', 'en-US'),
+        exact: true,
+      })
+      .click()
+    // The device is light right now, so following it returns the page to the
+    // light background through the same write-then-apply path.
+    await expect(body).toHaveCSS('background-color', LIGHT_PAGE_BACKGROUND)
+
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await expect(body).toHaveCSS('background-color', DARK_PAGE_BACKGROUND)
+
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect(body).toHaveCSS('background-color', LIGHT_PAGE_BACKGROUND)
+  })
+
+  page.off('load', countLoad)
+
+  await test.step('a reload keeps the stored follow-device choice', async () => {
+    await page.reload()
+    await expandAccountRows(page)
+    await expect(colorModeSelect(page, 'en-US')).toHaveText(
+      colorModeOptionLabel('system', 'en-US'),
+    )
   })
 })

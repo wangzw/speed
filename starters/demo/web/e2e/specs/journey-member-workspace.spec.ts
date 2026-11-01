@@ -77,6 +77,7 @@ import type { Locator, Page } from '@playwright/test'
 import { reviewMember } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import { copy, copyKey, copyPattern, type CopyLocale } from '../helpers/i18n'
+import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 
 // This journey signs in as the seeded member, so its server must carry the
 // account and the membership the template does not seed.
@@ -118,12 +119,10 @@ async function switchToTenant(page: Page): Promise<void> {
   await expect(row).toBeVisible()
   if (await row.isEnabled()) {
     await row.click()
-    await expect(
-      page.getByText(
-        copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: TENANT_NAME }),
-        { exact: true },
-      ),
-    ).toBeVisible()
+    await expectClippedAnnouncement(
+      page,
+      copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: TENANT_NAME }),
+    )
   } else {
     await page.keyboard.press('Escape')
   }

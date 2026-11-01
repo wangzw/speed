@@ -87,6 +87,7 @@ import type { ReviewServer } from '../fixtures/server'
 import { expectAccountMenuName } from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
 import { approveEnterpriseSignIn } from '../helpers/social'
+import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
@@ -220,12 +221,10 @@ async function switchToTenant(page: Page, tenant: string): Promise<void> {
   await expect(row).toBeVisible()
   if (await row.isEnabled()) {
     await row.click()
-    await expect(
-      page.getByText(
-        copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
-        { exact: true },
-      ),
-    ).toBeVisible()
+    await expectClippedAnnouncement(
+      page,
+      copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
+    )
   } else {
     await page.keyboard.press('Escape')
   }

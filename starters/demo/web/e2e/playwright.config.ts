@@ -60,6 +60,11 @@ export default defineConfig({
     // whatever the machine running the tier happens to use.
     locale: 'en-US',
     timezoneId: 'UTC',
+    // The account's first render follows the device's colour scheme (no
+    // stored preference resolves to `system`), so pin it to light: the
+    // first-paint background is then the same on every machine, and a
+    // journey that flips the scheme opts in with page.emulateMedia.
+    colorScheme: 'light',
   },
   // Chromium is the only browser the tier needs: the journeys exercise the
   // rendered product, and the bundled Chromium (installed by `make e2e-install`)

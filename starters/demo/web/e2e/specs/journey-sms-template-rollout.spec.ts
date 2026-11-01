@@ -89,6 +89,7 @@ import {
   selectAccountSection,
 } from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
+import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 
 // This journey's actor is the platform operator as an administrator of the
 // seeded tenant, and its only intended sends are its own control clicks.
@@ -218,12 +219,10 @@ async function switchToTenant(page: Page): Promise<void> {
   await expect(row).toBeVisible()
   if (await row.isEnabled()) {
     await row.click()
-    await expect(
-      page.getByText(
-        copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: TENANT }),
-        { exact: true },
-      ),
-    ).toBeVisible()
+    await expectClippedAnnouncement(
+      page,
+      copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: TENANT }),
+    )
   } else {
     await page.keyboard.press('Escape')
   }
