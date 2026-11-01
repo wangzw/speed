@@ -28,6 +28,13 @@ actually produce a problem type:
   * a mount-style closed table: a package declaring its prefix and a set of
     `Code…` constants answers every one of them through its checked writers.
 
+The read is a text heuristic, not a type analysis: a code built by a shape
+none of those rules recognizes (a value read from configuration, a spelling
+the patterns do not cover) is invisible here. The gate is a backstop for the
+ways this tree writes problem types, not a proof that no other way exists;
+a new construction is a reason to extend the reader, not to weaken the
+comparison.
+
 The backend roots are the two modules `go.work` lists: `pkg/` and
 `starters/`. The bundle's two languages are `zh-CN` and `en-US`, and their
 leaf sets must be identical; a duplicate key in either file is a finding,

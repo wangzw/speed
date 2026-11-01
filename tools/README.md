@@ -198,8 +198,12 @@ session-lifecycle vocabulary, tests that pin a fallback lookup) would
 break their own callers if deleted. A `KEPT` entry whose reference is
 gone is itself a finding, so the list cannot rot silently, and a
 duplicate key in either language file is a finding unless `DUPLICATES`
-names it. Both language files must carry the same leaf set. Exit codes:
-0 clean, 1 a finding (each with the key and what is wrong with it), 2
-infrastructure error (the root is not a directory, a backend root or the
-locale directory is missing, a Go file cannot be read, a helper's call
-sites named no code, or the derivation found nothing at all).
+names it. Both language files must carry the same leaf set. The read is a
+text heuristic, not a type analysis: a code built by a shape the rules do
+not recognize is invisible to it, so a clean run is a backstop for the
+ways this tree writes problem types rather than a proof that no other
+shape exists. Exit codes: 0 clean, 1 a finding (each with the key and
+what is wrong with it), 2 infrastructure error (the root is not a
+directory, a backend root or the locale directory is missing, a Go file
+cannot be read, a helper's call sites named no code, or the derivation
+found nothing at all).
