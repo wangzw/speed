@@ -226,6 +226,17 @@
     "description": "Choose the visual theme for the interface.",
     "theme": {
       "label": "Theme"
+    },
+    "colorMode": {
+      "title": "Color mode",
+      "description": "Choose a dark or light appearance, or follow the device.",
+      "label": "Color mode",
+      "options": {
+        "dark": "Dark",
+        "light": "Light",
+        "system": "Follow device"
+      },
+      "saved": "Color mode set to {{value}}."
     }
   },
   "preferences": {

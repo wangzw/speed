@@ -26,6 +26,7 @@ generated read or write on the shared access token.
 | `src/ContactVerificationSection.tsx` | `ContactVerificationSection`, `ContactVerificationSectionProps` |
 | `src/PreferencesSection.tsx` | `PreferencesSection` |
 | `src/AppearanceSection.tsx` | `AppearanceSection`, `AppearanceSectionProps`, `ThemePresetChoice` |
+| `src/ColorModeSection.tsx` | `ColorModeSection`, `ColorModeSectionProps` |
 | `src/SessionsSection.tsx` | `SessionsSection`, `SessionsSectionProps` |
 | `src/SocialBindingsSection.tsx` | `SocialBindingsSection`, `SocialBindingsSectionProps` |
 | `src/BindingCallbackHandler.tsx` | `BindingCallbackHandler`, `BindingCallbackHandlerProps` |
@@ -60,6 +61,7 @@ import {
   ContactVerificationSection,
   PreferencesSection,
   AppearanceSection,
+  ColorModeSection,
   SessionsSection,
   SocialBindingsSection,
   BindingCallbackHandler,
@@ -420,6 +422,34 @@ interface AppearanceSectionProps {
   readonly hideLabel?: boolean // the host names the control, e.g. with a row title
 }
 ```
+
+## ColorModeSection
+
+The color-mode picker: one select over the fixed three-valued set --
+dark, light, and follow-device. Unlike `AppearanceSection`, the section
+owns its read and write. It reads the account's `color_mode` from
+`GET /api/v1/auth/me` and writes it back with `PATCH /api/v1/auth/me`,
+PATCH-first like `PreferencesSection`: a refusal leaves the control on the
+stored value and reports through the section's own feedback region.
+
+The host supplies the preference currently in effect as `effective`,
+shown when the account has never saved one, and receives every successful
+write through `onApplied` -- which is where the host hands the value to
+its theme provider and updates whatever device mirror it keeps for the
+first paint.
+
+```tsx
+import type { AppThemeModePreference } from '@speed/ui-kit'
+
+interface ColorModeSectionProps {
+  readonly effective: AppThemeModePreference
+  readonly onApplied: (value: AppThemeModePreference) => void
+  readonly hideLabel?: boolean // the host names the control, e.g. with a row title
+}
+```
+
+The section never reads the theme provider and never touches storage:
+applying the preference is the host's half.
 
 ## SessionsSection
 

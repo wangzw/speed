@@ -163,7 +163,7 @@ export function PreferencesSection() {
       const value =
         locale === ''
           ? translate('preferences.language.notChosen')
-          : languageDisplayName(locale, target)
+          : languageDisplayName(locale, target, languageOptions)
       return translate('preferences.language.saved', {
         value,
         interpolation: { escapeValue: false },
@@ -258,7 +258,7 @@ export function PreferencesSection() {
                 </MenuItem>
                 {languageOptions.map((option) => (
                   <MenuItem key={option} value={option}>
-                    {languageDisplayName(option, i18n.language)}
+                    {languageDisplayName(option, i18n.language, languageOptions)}
                   </MenuItem>
                 ))}
               </TextField>

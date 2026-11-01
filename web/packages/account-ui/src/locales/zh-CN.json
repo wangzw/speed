@@ -226,6 +226,17 @@
     "description": "选择界面的视觉主题。",
     "theme": {
       "label": "主题"
+    },
+    "colorMode": {
+      "title": "颜色模式",
+      "description": "选择深色或浅色外观，或跟随设备。",
+      "label": "颜色模式",
+      "options": {
+        "dark": "深色",
+        "light": "浅色",
+        "system": "跟随设备"
+      },
+      "saved": "颜色模式已设为{{value}}。"
     }
   },
   "preferences": {

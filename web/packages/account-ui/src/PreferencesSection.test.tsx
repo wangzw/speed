@@ -25,6 +25,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { formControlClasses } from '@mui/material/FormControl'
 import { inputLabelClasses } from '@mui/material/InputLabel'
+import { languageDisplayName } from '@speed/i18n'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 import {
@@ -41,15 +42,11 @@ import { PreferencesSection } from './PreferencesSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** The language label the component computes for `tag` under `ui`, using
- * the same Intl.DisplayNames call (with the same raw-tag fallback), so
- * the assertion tracks the engine's own naming. */
+/** The language label the component computes for `tag` under `ui`, through
+ * the same helper and the same supported set (`@speed/test-utils`'s
+ * bilingual pair), so the assertion tracks the engine's own naming. */
 function languageLabel(tag: string, ui: string): string {
-  try {
-    return new Intl.DisplayNames([ui], { type: 'language' }).of(tag) ?? tag
-  } catch {
-    return tag
-  }
+  return languageDisplayName(tag, ui, ['zh-CN', 'en-US'])
 }
 
 /** A stateful profile responder: GET answers the stored pair, PATCH merges

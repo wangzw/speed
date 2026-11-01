@@ -14,7 +14,12 @@ read from the profile's `verification`, over the same identifier write pair),
 (the language-and-timezone selects over the profile's own `PATCH
 /api/v1/auth/me`), `AppearanceSection` (the controlled theme-preset
 picker: the host supplies the shelf and the labels, the section reports
-the pick and reads no theme provider), `SessionsSection` (the live-sessions list with per-session
+the pick and reads no theme provider), `ColorModeSection` (the
+dark/light/follow-device select over the profile's own `color_mode`: it
+reads and writes that field itself, shows the host's `effective`
+preference when the account has none, and reports every successful write
+through `onApplied` -- applying it is the host's half),
+`SessionsSection` (the live-sessions list with per-session
 and bulk revocation), `SocialBindingsSection` plus
 `BindingCallbackHandler` (the social bindings surface and the callback
 route that completes a link flow), and `MfaSection` (the two-step
@@ -340,6 +345,7 @@ Everything in `src/index.ts` is public: the surfaces (`ProfileSection`;
 `PhoneSection` with `PhoneSectionProps`; `IdentifiersSection` with
 `IdentifiersSectionProps`; `ContactVerificationSection` with
 `ContactVerificationSectionProps`; `PreferencesSection`;
+`ColorModeSection` (with `ColorModeSectionProps`);
 `SessionsSection` with `SessionsSectionProps`; `SocialBindingsSection`
 with `SocialBindingsSectionProps`; `MfaSection` with `MfaSectionProps`),
 `BindingCallbackHandler` with `BindingCallbackHandlerProps`,

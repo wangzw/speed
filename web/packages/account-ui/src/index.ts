@@ -61,6 +61,10 @@ export {
 } from './AppearanceSection.js'
 export { PreferencesSection } from './PreferencesSection.js'
 export {
+  ColorModeSection,
+  type ColorModeSectionProps,
+} from './ColorModeSection.js'
+export {
   SessionsSection,
   type SessionsSectionProps,
 } from './SessionsSection.js'
