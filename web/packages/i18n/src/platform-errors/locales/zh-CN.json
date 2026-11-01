@@ -7,6 +7,7 @@
     "authn.conflict": "账户信息可能已发生变化，请刷新页面后重试。",
     "authn.contact_required": "请先验证邮箱地址再继续。",
     "authn.email_taken": "该邮箱已被另一账户使用。",
+    "authn.factor_not_found": "这个两步验证方式已不存在，可能已在其他设备上删除。列表已刷新。",
     "authn.factor_not_seasoned": "此操作需要一个已启用满规定时长的非短信验证方式（认证器应用或通行密钥）。刚添加的验证方式需要先等待一段时间。",
     "authn.flow_invalid": "登录流程已失效，请重新开始。",
     "authn.forbidden": "你没有执行该操作的权限。",

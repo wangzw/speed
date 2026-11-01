@@ -7,6 +7,7 @@
     "authn.conflict": "Your account may have changed. Refresh the page and try again.",
     "authn.contact_required": "Verify your email address before continuing.",
     "authn.email_taken": "That email address is already used by another account.",
+    "authn.factor_not_found": "This two-step verification method no longer exists. It may have been removed on another device; the list has been refreshed.",
     "authn.factor_not_seasoned": "This requires a non-SMS verification method (an authenticator app or a passkey) that has been active for the required period. A newly added method must wait first.",
     "authn.flow_invalid": "Your sign-in attempt is no longer valid. Please start again.",
     "authn.forbidden": "You do not have permission to do that.",
