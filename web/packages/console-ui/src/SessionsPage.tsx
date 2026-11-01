@@ -17,7 +17,10 @@
  * The revoke reports through the list's one feedback scope, whose region
  * renders directly under the table; choosing another account and the page's
  * refresh action both reset it, so a result never describes a context the
- * page has left. The page opens with ui-kit's PageHeader.
+ * page has left. The account picker is held for the whole attempt -- the
+ * revoke names the account it was issued for, and a change while it settled
+ * would leave its result under another account's list. The page opens with
+ * ui-kit's PageHeader.
  */
 
 import { useState } from 'react'
@@ -94,7 +97,8 @@ export function SessionsPage() {
 
   // The account is an argument of the revoke: choosing another one clears
   // the slot, because a result from the previous account would read as
-  // this list's.
+  // this list's. The picker is disabled while a revoke is in flight, so a
+  // change lands only once the attempt has settled.
   const changeAccount = (next: ConsoleAccount | null) => {
     setSelectedAccount(next)
     feedback.reset()
@@ -273,6 +277,7 @@ export function SessionsPage() {
             label={t('sessions.accountLabel')}
             value={selectedAccount}
             onChange={changeAccount}
+            disabled={feedback.pending}
             fullWidth
           />
         </SelectorRow>

@@ -257,6 +257,63 @@ describe('SessionsPage', () => {
     })
   })
 
+  it('holds the account picker while a revoke is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const operations = withSessions({
+      listAccounts: () =>
+        Promise.resolve({
+          accounts: [
+            account(),
+            account({ id: 'acc-10', display_name: 'Bob' }),
+          ],
+          next_cursor: '',
+        }),
+      listAccountSessions: () => Promise.resolve([session()]),
+      revokeSession: () => pending.promise,
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+    await screen.findByText('sess-1')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-1'),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+    // Wait out the dialog's exit transition: while it runs the page behind
+    // it is hidden from the accessibility tree.
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    // The revoke names the account it was issued for. A change while it
+    // settles would reset the scope and let the late result land under the
+    // other account's list, so the picker is held for the whole attempt.
+    const picker = screen.getByRole('combobox', {
+      name: zhCN.sessions.accountLabel,
+    })
+    await vi.waitFor(() => {
+      expect(picker).toBeDisabled()
+    })
+
+    await act(async () => {
+      pending.resolve()
+    })
+    await vi.waitFor(() => {
+      expect(picker).not.toBeDisabled()
+    })
+    // The result belongs to the account it was issued for, which is still
+    // the chosen one.
+    expect(
+      await screen.findByText(zhCN.sessions.revokedNotice),
+    ).toBeInTheDocument()
+  })
+
   it('reads an account\'s sessions as soon as it is chosen', async () => {
     const user = userEvent.setup()
     const queried: string[] = []
