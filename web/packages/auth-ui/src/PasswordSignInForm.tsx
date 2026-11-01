@@ -45,10 +45,9 @@ import { useRef } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
-import Button from '@mui/material/Button'
 import { useForm } from 'react-hook-form'
 import type { SubmitHandler } from 'react-hook-form'
-import { FormField, FormLayout } from '@speed/ui-kit'
+import { ActionButton, FormField, FormLayout } from '@speed/ui-kit'
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
 import { useAuthUiTranslation } from './internal/translation.js'
 import {
@@ -83,10 +82,10 @@ export interface PasswordSignInFormProps {
    */
   readonly humanGate?: AuthnHumanGate
   /**
-   * Host content at the leading edge of the submit row, beside the submit
-   * key -- the sign-in screen puts its forgot-password entry here, so the
-   * entry and the primary action read as one row instead of the entry
-   * floating on a line of its own.
+   * Host content ahead of the submit key in the form's action row -- the
+   * sign-in screen puts its forgot-password entry here, so the entry and
+   * the primary action read as one group instead of the entry floating on
+   * a line of its own.
    */
   readonly actionsLeading?: ReactNode
 }
@@ -225,24 +224,16 @@ export function PasswordSignInForm({
       form={form}
       onSubmit={onSubmit}
       actions={
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent:
-              actionsLeading === undefined ? 'flex-end' : 'space-between',
-            width: '100%',
-          }}
-        >
+        <>
           {actionsLeading}
-          <Button
+          <ActionButton
             type="submit"
-            variant="contained"
+            emphasis="primary"
             disabled={form.formState.isSubmitting}
           >
             {t('passwordSignIn.submit')}
-          </Button>
-        </Box>
+          </ActionButton>
+        </>
       }
     >
       <FormField

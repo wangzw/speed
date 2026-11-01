@@ -63,6 +63,7 @@ import { formatInstant } from '@speed/i18n'
 import { errorCodeOf, useDisplayTimeZone, visuallyHiddenSx } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
+import { RetryAction } from './internal/retry-action.js'
 import { nextHeadingLevel } from './internal/heading.js'
 import type { HeadingLevel } from './internal/heading.js'
 
@@ -315,9 +316,10 @@ export function AcceptInvitationScreen({
               {t('acceptInvitation.error.title')}
             </Typography>
             <InlineError code={state.failure.code} />
-            <Button variant="outlined" onClick={() => setAttempt((v) => v + 1)}>
-              {t('acceptInvitation.retry')}
-            </Button>
+            <RetryAction
+              label={t('acceptInvitation.retry')}
+              onClick={() => setAttempt((v) => v + 1)}
+            />
           </>
         ) : (
           <>

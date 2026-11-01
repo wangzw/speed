@@ -89,6 +89,8 @@ import type { AuthnField } from '@speed/auth-core'
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
 import { humanGateNeedsProof, useHumanVerification } from '@speed/auth-core'
 import {
+  ActionButton,
+  ActionRow,
   FormField,
   FormLayout,
   HumanVerification as HumanVerificationBlock,
@@ -442,9 +444,11 @@ export function FlowStepFields({
           <Alert severity="info" role="status" sx={{ width: '100%' }}>
             {t('signInFlow.unsupportedStep')}
           </Alert>
-          <Button type="button" variant="outlined" onClick={onUnsupported}>
-            {unsupportedLabel ?? t('signInFlow.unsupportedStepAction')}
-          </Button>
+          <ActionRow>
+            <ActionButton type="button" onClick={onUnsupported}>
+              {unsupportedLabel ?? t('signInFlow.unsupportedStepAction')}
+            </ActionButton>
+          </ActionRow>
         </Box>
       )
   }
@@ -518,14 +522,14 @@ function TotpFields({
       onCodeChange={setValue}
       busy={busy}
       primaryAction={
-        <Button
+        <ActionButton
           type="button"
-          variant="contained"
+          emphasis="primary"
           disabled={busy || value.trim() === ''}
           onClick={() => onAnswer({ code: value.trim() })}
         >
           {submit}
-        </Button>
+        </ActionButton>
       }
     />
   )
@@ -729,25 +733,28 @@ function PasskeyFields({
               {waitingCommitted ? t('signInFlow.passkeyWaiting') : ''}
             </Typography>
           </Box>
-          <Button
-            ref={cancelRef}
-            type="button"
-            variant="outlined"
-            disabled={busy}
-            onClick={cancel}
-          >
-            {t('signInFlow.passkeyCancel')}
-          </Button>
+          <ActionRow>
+            <ActionButton
+              ref={cancelRef}
+              type="button"
+              disabled={busy}
+              onClick={cancel}
+            >
+              {t('signInFlow.passkeyCancel')}
+            </ActionButton>
+          </ActionRow>
         </>
       ) : (
-        <Button
-          type="button"
-          variant="contained"
-          disabled={busy}
-          onClick={() => void run()}
-        >
-          {errorKey === null ? submit : t('signInFlow.passkeyRetry')}
-        </Button>
+        <ActionRow>
+          <ActionButton
+            type="button"
+            emphasis="primary"
+            disabled={busy}
+            onClick={() => void run()}
+          >
+            {errorKey === null ? submit : t('signInFlow.passkeyRetry')}
+          </ActionButton>
+        </ActionRow>
       )}
     </Box>
   )
@@ -856,9 +863,9 @@ function ChallengeFields({
       form={form}
       onSubmit={onSubmit}
       actions={
-        <Button type="submit" variant="contained" disabled={busy}>
+        <ActionButton type="submit" emphasis="primary" disabled={busy}>
           {submit}
-        </Button>
+        </ActionButton>
       }
     >
       {fields.map((field) => {
@@ -1059,9 +1066,9 @@ function SignupAccountFields({
         form={form}
         onSubmit={onSubmit}
         actions={
-          <Button type="submit" variant="contained" disabled={busy}>
+          <ActionButton type="submit" emphasis="primary" disabled={busy}>
             {submit}
-          </Button>
+          </ActionButton>
         }
       >
         <FormField

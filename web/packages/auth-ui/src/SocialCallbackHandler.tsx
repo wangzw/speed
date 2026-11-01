@@ -66,13 +66,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import type { AuthSession, AuthnMethodList } from '@speed/auth-core'
 import { errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
+import { RetryAction } from './internal/retry-action.js'
 import {
   HumanGatedFlowStep,
   signupFieldRefusal,
@@ -358,9 +358,7 @@ export function SocialCallbackHandler({
             }}
           >
             <InlineError code={errorCode} />
-            <Button variant="outlined" onClick={retry}>
-              {t('socialCallback.retry')}
-            </Button>
+            <RetryAction label={t('socialCallback.retry')} onClick={retry} />
           </Box>,
         )}
       </>

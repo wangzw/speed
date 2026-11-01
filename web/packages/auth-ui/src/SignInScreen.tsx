@@ -111,6 +111,7 @@ import { useSignInDiscovery } from './internal/use-signin-discovery.js'
 import type { SignInDiscovery } from './internal/use-signin-discovery.js'
 import { methodLabel } from './internal/labels.js'
 import { InlineError } from './internal/inline-error.js'
+import { RetryAction } from './internal/retry-action.js'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { GroupHeadingProvider } from './internal/group-heading.js'
 import type { HeadingLevel } from './internal/heading.js'
@@ -400,9 +401,10 @@ export function SignInScreen({
         }}
       >
         <InlineError code={state.code} />
-        <Button variant="outlined" onClick={() => setAttempt((value) => value + 1)}>
-          {t('discovery.retry')}
-        </Button>
+        <RetryAction
+          label={t('discovery.retry')}
+          onClick={() => setAttempt((value) => value + 1)}
+        />
       </Box>
     )
   }

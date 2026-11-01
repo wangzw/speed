@@ -51,6 +51,7 @@ import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
 import type { SubmitHandler } from 'react-hook-form'
 import {
+  ActionButton,
   FormField,
   FormLayout,
   HumanVerification as HumanVerificationBlock,
@@ -647,27 +648,15 @@ export function PasswordResetScreen({
         form={form}
         onSubmit={onSubmit}
         actions={
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 1,
-              width: '100%',
-            }}
-          >
-            {onBackToSignIn === undefined ? (
-              <span />
-            ) : (
-              <Button type="button" variant="text" onClick={back}>
+          <>
+            {onBackToSignIn === undefined ? null : (
+              <ActionButton type="button" onClick={back}>
                 {t('passwordReset.backToSignIn')}
-              </Button>
+              </ActionButton>
             )}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {showingSent && stage.channel !== null && stage.identifier !== null ? (
-              <Button
+              <ActionButton
                 type="button"
-                variant="text"
                 disabled={busy || waiting || !canResend}
                 onClick={() => {
                   if (stage.channel === null || stage.identifier === null) {
@@ -677,17 +666,16 @@ export function PasswordResetScreen({
                 }}
               >
                 {resendLabel}
-              </Button>
+              </ActionButton>
             ) : null}
-            <Button
+            <ActionButton
               type="submit"
-              variant="contained"
+              emphasis="primary"
               disabled={sendDisabled}
             >
               {showingRequest ? t('passwordReset.send') : submitLabel}
-            </Button>
-            </Box>
-          </Box>
+            </ActionButton>
+          </>
         }
       >
         {showingRequest ? (

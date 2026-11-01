@@ -105,5 +105,13 @@ describe('SignInScreen password channel layout in Chromium', () => {
     // The row sits below the password field, and the entry leads it.
     expect(forgotBox.top).toBeGreaterThan(field.getBoundingClientRect().bottom)
     expect(forgotBox.right).toBeLessThan(submitBox.left)
+    // One adjacent group, one spacing token apart -- not the two ends the
+    // old space-between row left -- with the submit closing the row.
+    expect(submitBox.left - forgotBox.right).toBeCloseTo(8, 0)
+    const row = submit.parentElement as HTMLElement
+    const rowBox = row.getBoundingClientRect()
+    const contentRight =
+      rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
+    expect(Math.abs(submitBox.right - contentRight)).toBeLessThanOrEqual(1)
   })
 })

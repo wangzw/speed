@@ -717,6 +717,9 @@ describe('ImpersonationBanner', () => {
     // size: a non-zero base pushes the controls onto their own row at
     // widths where the wrapped text would still fit beside them.
     expect(getComputedStyle(facts as HTMLElement).flexBasis).toBe('0px')
+    // The facts take the room the controls leave, so the controls close
+    // the row on the right without an automatic margin.
+    expect(getComputedStyle(facts as HTMLElement).flexGrow).toBe('1')
     const statements = within(facts as HTMLElement)
     const statementTexts = [
       TENANT_ZH,
@@ -745,7 +748,6 @@ describe('ImpersonationBanner', () => {
     const close = screen.getByRole('button', { name: zhCN.impersonation.hide })
     expect(end.parentElement).toBe(close.parentElement)
     const controls = end.parentElement as HTMLElement
-    expect(getComputedStyle(controls).marginLeft).toBe('auto')
 
     // Below xs they take their own line, flush right: emotion emitted the
     // breakpoint rule jsdom itself cannot evaluate.
@@ -761,7 +763,6 @@ describe('ImpersonationBanner', () => {
       `@media \\(max-width:599\\.95px\\)\\{\\.${escaped}\\{([^}]*)\\}\\}`,
     ).exec(emittedStyleText())
     expect(belowXs?.[1]).toContain('flex-basis:100%')
-    expect(belowXs?.[1]).toContain('margin-left:0')
   })
 
   /** Mounts the banner with a working host clear control, the real host

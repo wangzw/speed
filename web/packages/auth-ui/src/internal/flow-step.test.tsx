@@ -968,6 +968,28 @@ describe('FlowStepFields passkey failure wording', () => {
     }
   })
 
+  it('renders the retry through the shared primary action mapping', async () => {
+    renderWithProviders(
+      <FlowStepFields
+        step={step({
+          kind: 'webauthn',
+          options: { challenge: 'Y2hhbGxlbmdl' },
+        })}
+        busy={false}
+        onAnswer={vi.fn()}
+        onUnsupported={vi.fn()}
+        clientFailure="signInFlow.passkeyFailedSignIn"
+        onClientFailure={vi.fn()}
+      />,
+    )
+
+    const retry = await screen.findByRole('button', {
+      name: zhCN.signInFlow.passkeyRetry,
+    })
+    // One mapping for all three retry surfaces: the primary action face.
+    expect(retry).toHaveClass('MuiButton-contained')
+  })
+
   it('names the ceremony in the generic failure sentence', async () => {
     // A registration and a sign-in that fail the same way read differently:
     // the sentence names the ceremony that did not complete.

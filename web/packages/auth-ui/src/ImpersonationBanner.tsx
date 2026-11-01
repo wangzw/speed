@@ -170,18 +170,17 @@ const tenantSx = {
   whiteSpace: 'nowrap',
 } as const
 
-/** The controls sit at the end of the row and never shrink. Below `xs`
- * they take a line of their own, flush right, so the facts keep the full
- * width on a phone. */
+/** The controls sit at the end of the row and never shrink. The facts
+ * block grows, so they close the row on the right without an automatic
+ * margin; below `sm` they take a line of their own, flush right, so the
+ * facts keep the full width on a phone. */
 const controlsSx = (theme: Theme) => ({
   display: 'flex',
   alignItems: 'center',
   gap: 0.25,
-  marginLeft: 'auto',
   flexShrink: 0,
   [theme.breakpoints.down('sm')]: {
     flexBasis: '100%',
-    marginLeft: 0,
     justifyContent: 'flex-end',
   },
 })
