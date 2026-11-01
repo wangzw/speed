@@ -19,8 +19,8 @@
  *    identifier travels under `factor` as the field `factor`.
  *  - `enroll`: the factor kinds the assembly takes in; the chosen kind
  *    travels under `enroll` as the field `kind`.
- *  - `webauthn`: the factor's own JSON. TOTP's `otpauth_uri` is extracted
- *    from it and rendered as a scannable QR symbol with a manual-entry
+ *  - `webauthn`: the factor's own JSON. TOTP's `otpauth_uri`, when it
+ *    parses, is rendered as a scannable QR symbol with a manual-entry
  *    disclosure for its base32 secret, beside a six-digit code field --
  *    the step's JSON is never shown as a blob; a passkey's creation or
  *    request options are driven by the WebAuthn ceremony
@@ -332,9 +332,11 @@ interface TotpEnrollStepProps {
  * hand entry with a copy control, and the six-digit code field the app
  * generates.
  *
- * The URI is never rendered as text, so the manual path shows the secret
- * alone; a URI that does not parse still keeps the symbol (an authenticator
- * can scan it) but offers no manual secret. The QR and the manual block are
+ * The URI is never rendered as text: the panel shows the parsed parts alone.
+ * A URI that does not parse renders neither the symbol nor the manual block,
+ * and withholds the guidance that names a code to scan, so the panel never
+ * advertises a code it did not draw. The code field stays. The QR and the
+ * manual block are
  * content, not a labelled form field: each is laid out as a block of its own
  * rather than under a field's floating label. The code is submitted only by
  * the confirm control, never on typing, and the field keeps its value while
@@ -361,10 +363,12 @@ function TotpEnrollStep({
 
   return (
     <Box sx={{ mt: 2 }}>
-      <Typography variant="body2" color="text.secondary">
-        {t('flowStep.enrollTotpHelp')}
-      </Typography>
-      {uri !== null && (
+      {otpauth !== null && (
+        <Typography variant="body2" color="text.secondary">
+          {t('flowStep.enrollTotpHelp')}
+        </Typography>
+      )}
+      {otpauth !== null && uri !== null && (
         <Box sx={{ mt: 1.5 }}>
           <TotpQrCode uri={uri} label={t('flowStep.totpQrLabel')} />
         </Box>

@@ -20,7 +20,9 @@
  * generic failure sentence naming the ceremony it ran. The TOTP cases pin
  * the QR symbol as the primary entry, the manual disclosure showing the
  * base32 secret alone with its copy control and parameters, the code
- * field's six-digit contract, and the confirm-only submission.
+ * field's six-digit contract, the confirm-only submission, and the symbol
+ * and guidance being withheld when the step carries no URI or one the
+ * parser refuses.
  */
 
 import { useState } from 'react'
@@ -569,14 +571,21 @@ describe('FlowStep TOTP enrolment', () => {
     expect(input).toHaveAttribute('size', '6')
   })
 
-  it('submits the typed code only when the confirm control is clicked', async () => {
+  it('keeps the code field to six digits', async () => {
+    const user = userEvent.setup()
+    render(TOTP_STEP)
+
+    const input = screen.getByLabelText(zhCN.flowStep.codeLabel)
+    await user.type(input, '1234567')
+    expect(input).toHaveValue('123456')
+  })
+
+  it('answers only when the confirm control is clicked, not while typing', async () => {
     const user = userEvent.setup()
     const { onSubmit } = render(TOTP_STEP)
 
     const input = screen.getByLabelText(zhCN.flowStep.codeLabel)
-    await user.type(input, '1234567')
-    // The field holds at six digits, and typing alone answers nothing.
-    expect(input).toHaveValue('123456')
+    await user.type(input, '123456')
     expect(onSubmit).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: 'Continue' }))
@@ -585,6 +594,28 @@ describe('FlowStep TOTP enrolment', () => {
       step: 'answer',
       input: { code: '123456' },
     })
+  })
+
+  it('withholds the scan guidance when the step carries no URI', () => {
+    render({ kind: 'webauthn', options: { otpauth_uri: '' } })
+
+    expect(screen.queryByText(zhCN.flowStep.enrollTotpHelp)).toBeNull()
+    expect(screen.queryByRole('img')).toBeNull()
+    expect(screen.getByLabelText(zhCN.flowStep.codeLabel)).toBeTruthy()
+  })
+
+  it('renders no symbol or manual entry for a URI that does not parse', () => {
+    render({
+      kind: 'webauthn',
+      options: { otpauth_uri: 'https://example.com/not-an-otpauth-uri' },
+    })
+
+    expect(screen.queryByRole('img')).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: zhCN.flowStep.totpManualToggle }),
+    ).toBeNull()
+    expect(screen.queryByText(zhCN.flowStep.enrollTotpHelp)).toBeNull()
+    expect(screen.getByLabelText(zhCN.flowStep.codeLabel)).toBeTruthy()
   })
 
   it('passes axe with the manual disclosure open', async () => {
