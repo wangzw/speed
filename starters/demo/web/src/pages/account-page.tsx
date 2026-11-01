@@ -974,7 +974,7 @@ export function AccountBindingCallbackPage(): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const landing = useCallbackLanding()
+  const { landing } = useCallbackLanding()
   return (
     <Box sx={{ maxWidth: 480 }}>
       <PageHeader title={t('account.bindingCallback.title')} sx={{ mb: 3 }} />

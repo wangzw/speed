@@ -9,9 +9,14 @@
  * read itself changes nothing, so StrictMode's double render sees the same
  * landing; the fragment is cleared afterwards, once the read has committed,
  * so a reload does not repeat the message.
+ *
+ * The handle also drops the landing: a surface that stops presenting the
+ * refusal (the sign-in screen clears it when the viewer starts something
+ * else) dismisses it here, so the host no longer hands the same message to
+ * the surface it renders again.
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   clearCallbackFragment,
   readCallbackError,
@@ -25,13 +30,24 @@ export interface CallbackLanding {
   readonly email?: string
 }
 
+/** The landing read on the first render, and the handle that drops it. */
+export interface CallbackLandingHandle {
+  /** The landing; `undefined` after dismissal or when none arrived. */
+  readonly landing: CallbackLanding | undefined
+  /** Drops the landing so the consuming surface stops presenting it. */
+  readonly dismiss: () => void
+}
+
 /** Reads the callback landing on the first render and clears it after mount. */
-export function useCallbackLanding(): CallbackLanding | undefined {
-  const [landing] = useState<CallbackLanding | undefined>(() =>
+export function useCallbackLanding(): CallbackLandingHandle {
+  const [landing, setLanding] = useState<CallbackLanding | undefined>(() =>
     readCallbackError(),
   )
   useEffect(() => {
     clearCallbackFragment()
   }, [])
-  return landing
+  const dismiss = useCallback(() => {
+    setLanding(undefined)
+  }, [])
+  return { landing, dismiss }
 }

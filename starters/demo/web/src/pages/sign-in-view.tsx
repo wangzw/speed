@@ -133,7 +133,7 @@ export function SignInView({
   // itself changes nothing -- and clears the fragment after mount, so the
   // URL rewrite stays out of render and a reload does not show the message
   // again.
-  const landing = useCallbackLanding()
+  const { landing, dismiss } = useCallbackLanding()
   const initialError = landing?.code
   const initialErrorEmail = landing?.email
   // A registration completed through SMS: the register mode decides where
@@ -224,6 +224,10 @@ export function SignInView({
           social={social}
           initialError={initialError}
           initialErrorEmail={initialErrorEmail}
+          // The screen clears the landing refusal when the viewer starts
+          // something else; dropping it here keeps a re-render from handing
+          // the same message back.
+          onInitialErrorDismiss={dismiss}
           // The password channel's "forgot password" entry navigates to the
           // anonymous reset page. A surface that owns its own landing (an
           // invitation link, the console gate) leaves it out: navigating away

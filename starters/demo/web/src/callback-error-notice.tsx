@@ -71,7 +71,7 @@ export interface CallbackLandingNoticeProps {
 export function CallbackLandingNotice({
   namespace,
 }: CallbackLandingNoticeProps): ReactElement | null {
-  const landing = useCallbackLanding()
+  const { landing } = useCallbackLanding()
   const [dismissed, setDismissed] = useState(false)
   if (landing === undefined || dismissed) {
     return null
