@@ -7,6 +7,10 @@ missing from the index is an orphan, and an orphan is an error.
 
 Requirement status does NOT belong here. It lives on each requirement, in the
 document that owns it.
+
+The glossary and references links assume the default paths; adjust each to
+the configured `glossary` and `references` path. Delete the References line
+if the project cites no public external source.
 -->
 
 # <System name> — Requirements
@@ -17,7 +21,8 @@ framing: no market, no positioning, no business goals.>
 ## Index
 
 - [Overview](overview.md) — what the system is, the capabilities it offers, the overall scope boundary
-- [Glossary](../glossary.md) — project-agreed terms, shared by every document type. Adjust the link to the configured `glossary` path.
+- [Glossary](../glossary.md) — project-agreed terms, shared by every document type
+- [References](../references.md) — public external sources cited by the documentation
 
 ### Journeys
 

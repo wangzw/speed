@@ -15,9 +15,11 @@ does not mean they are correct; review owns the rest.
 
 Trees, paths and language come from CLAUDE.md's "## Documentation" block
 (the keys the skill defines: design, requirements, adr, glossary,
-language). A tree the block declares but that does not exist on disk is
-skipped, not failed -- a project using only design documents and ADRs is
-a normal configuration.
+references, language). Fenced code in CLAUDE.md is not configuration. A
+tree the block declares but that does not exist on disk is skipped, not
+failed -- a project using only design documents and ADRs is a normal
+configuration -- but a configuration under which no tree exists at all,
+or a value that is not a single path, is a usage error.
 
 Usage:
     python3 .claude/skills/document-standards/scripts/check_documents.py [--root PATH]
@@ -29,6 +31,7 @@ passes, 1 on any finding, 2 on a usage or configuration error.
 WHAT IS CHECKED
 
   Common to every document (SKILL.md section 2):
+    * the file decodes as UTF-8 (a byte-order mark is tolerated)
     * exactly one H1, and it opens the document
     * no process metadata: change history, version, author, date, review
       record headings or field lines
@@ -39,11 +42,24 @@ WHAT IS CHECKED
     * headings are written in the document's configured language
     * the configured glossary file exists
 
+  Project references (SKILL.md section 2):
+    * the configured references file exists, and is shaped like every
+      other document (one H1, no process metadata, no task markers)
+    * every entry is a table row keyed REF-<slug>, lowercase kebab-case
+      ASCII, registered once, and carries a URL -- the file registers
+      public sources only
+    * every REF-<slug> citation in a checked tree or in the glossary
+      resolves to an entry, and every entry is cited at least once
+
   Design tree (references/design-documents.md):
     * README.md and architecture.md are present
     * modules/ file names match design-<slug>[-<aspect>], kebab-case
       ASCII, with no sequence number anywhere; a module subdirectory is
       named for its slug and every file inside carries the slug prefix
+    * a flat design-<slug>-<aspect>.md beside design-<slug>.md is an
+      aspect split: indexed like any entry point and held to the common
+      rules and the status vocabulary, but to neither the module section
+      set nor a status row of its own
     * a module whose sub-modules have their own documents lives in
       modules/<slug>/, holding its own design-<slug>.md, the sub-module
       documents and a README.md index
@@ -56,8 +72,10 @@ WHAT IS CHECKED
     * a module document carries its mandatory sections in the fixed
       order, including the Non-Responsibilities subsection, and carries
       no section outside the standard's set
-    * every implementation-status entry uses one of the three canonical
-      values and carries a code anchor when it claims any implementation
+    * every implementation-status entry -- a row of any table in the
+      section, with or without leading pipes, or a list item -- holds
+      exactly one of the three canonical values in a cell of its own, and
+      carries a code anchor when it claims any implementation
     * architecture.md's status roll-up is one row per top-level module
       and carries no sub-module row; a module subdirectory's README.md
       roll-up is one row per sub-module document
@@ -67,8 +85,9 @@ WHAT IS CHECKED
     * the fixed section order, with Invalidation Conditions optional and
       no status field or heading
     * Options Considered lists at least two options
-    * README index covers every record exactly once, carries neither a
-      date column nor a status column, and names each record by its title
+    * README index, in table or list form, covers every record exactly
+      once, carries neither a date column nor a status column, and names
+      each record by its title
 
   Requirements tree (references/requirements-documents.md):
     * README.md and overview.md are present; journeys/journey-<slug> and
@@ -85,16 +104,14 @@ WHAT IS CHECKED
 
 WHAT IS DELIBERATELY NOT CHECKED
 
-  Judgement, not structure: subjective modifiers, first and second
-  person, restating transitions, valueless counts, fabricated
-  non-functional numbers, whether a rejected option's stated reason is
-  real, whether a requirement is testable, whether a journey is a
-  process the business runs. A regex over these produces false
-  accusations, which is worse than no check -- code review owns them.
-
-  Rendering: whether a mermaid block actually parses. This script checks
-  that a block has a type and a body; running a renderer needs a browser
-  and belongs to the editing workflow the skill mandates.
+  Judgement, not structure. SKILL.md section 5, "What it does not check",
+  is the authoritative list; keeping a second itemised copy here only
+  drifts from it. In short: whether a sentence is true, sourced, testable
+  or well written; whether a list states a criterion or enumerates an
+  exhaustive set; whether a cited source is one the reader would have
+  attributed correctly unaided. Rendering is not checked either -- this
+  script checks that a mermaid block has a type and a body, while running
+  a renderer belongs to the editing workflow the skill mandates.
 
   Timeliness: whether a document still matches the code it asserts
   things about. No mechanical check can know.
@@ -107,12 +124,14 @@ import os
 import re
 import sys
 
-CONFIG_KEYS = ("design", "requirements", "adr", "glossary", "language")
+SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_KEYS = ("design", "requirements", "adr", "glossary", "references", "language")
 CONFIG_DEFAULTS = {
     "design": "docs/design",
     "requirements": "docs/prd",
     "adr": "docs/adr",
     "glossary": "docs/glossary.md",
+    "references": "docs/references.md",
 }
 LANGUAGES = ("en", "zh-CN")
 
@@ -215,10 +234,20 @@ ADR_STATUS_HEADINGS = ("status", "状态", "state", "acceptance", "接受状态"
                        "acceptance status")
 ADR_STATUS_FIELD_RE = re.compile(
     r"^\s*(?:[-*+]\s+)?\**\s*"
-    r"(Status|State|Acceptance|Accepted|Deprecated|状态|接受|验收)"
+    r"(Status|State|Acceptance|Accepted|Deprecated|接受状态|状态|接受|验收)"
     r"\**\s*[:：]", re.IGNORECASE)
 ADR_SUPERSEDED_RE = re.compile(
-    r"^\s*(?:[-*+]\s+)?\**\s*(?:Superseded by|已被.{0,40}?取代)", re.IGNORECASE)
+    r"^\s*(?:[-*+]\s+)?\**\s*(?:Superseded by\s+ADR-[^\s，。]{1,40}"
+    r"|已被\s*ADR-[^\s，。]{1,40}?\s*取代)", re.IGNORECASE)
+# A status field names a verdict only when its value is one. "- **State**:
+# kept in Redis" describes a data field; "- **Status**: Accepted" records the
+# record's status, which an ADR never carries.
+VERDICT_RE = re.compile(
+    r"accepted|rejected|supersed|deprecat|approved|proposed|"
+    r"已接受|已拒绝|已废弃|已采纳|已批准|已取代|待定", re.IGNORECASE)
+# An index link to a record, in a table row or a list item, with or without
+# a leading "./".
+ADR_INDEX_LINK_RE = re.compile(r"\[([^\]]*)\]\((?:\./)?(adr-[^)/]+\.md)\)")
 
 
 def forbidden_column(cell: str) -> bool:
@@ -238,17 +267,42 @@ METADATA_FIELD_RE = re.compile(
     r"(Version|Author|Authors|Date|Last updated|Last modified|Revision|Reviewed by|Reviewers|Owner|Priority"
     r"|版本|作者|日期|更新日期|最后更新|修订|审阅人|评审人|负责人|优先级)"
     r"\**\s*[:：]", re.IGNORECASE)
-TASK_MARKER_RE = re.compile(r"(?<![\w-])(TODO|FIXME|TBD)(?![\w-])|待办|待定")
+# A Chinese marker is a word of its own only when it ends where the sentence
+# does: 待定。 is a marker, 待定义 and 期待定稿 are ordinary words. The ASCII
+# markers need no such rule -- CJK is a word boundary for them, so 此处TODO is
+# a marker and so is TODO：.
+TASK_MARKER_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])(TODO|FIXME|TBD)(?![A-Za-z0-9_-])"
+    r"|(?:待办(?:事项)?|待定)(?=$|[^\u4e00-\u9fff])")
+# A path with a source extension followed by a line number: pkg/registry.go:42
+# or registry.go#L42. The lookbehind refuses a start inside a word or a path
+# segment, which also keeps every URL out: after "://" each segment begins
+# behind a "/". The "#" form requires "L", and the digits end the token, so a
+# heading anchor such as design-core.md#3-dependencies is not a line.
 LINE_NUMBER_REF_RE = re.compile(
-    r"(?<![\w/])[\w.-]*[\w-]\.(?:go|ts|tsx|js|jsx|py|sql|yaml|yml|toml|json|md|sh)[:#]L?\d+")
+    r"(?<![\w/.-])(?:[\w.-]+/)*[\w.-]*[\w-]\.(?:go|ts|tsx|js|jsx|py|sql|yaml|yml|toml|json|md|sh)"
+    r"(?::L?\d+|#L\d+)(?!\w)")
+# A mermaid body that is one line holding only a diagram type and, at most, a
+# direction: "graph TD", "sequenceDiagram", "stateDiagram-v2". Such a block
+# renders blank. "graph LR; a-->b" is a one-line diagram with content.
+DIAGRAM_TYPE_ONLY_RE = re.compile(r"^\s*[\w-]+(?:\s+[\w-]+)?\s*;?\s*$")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})\s*(\S*)")
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+# GFM's delimiter row takes one or more hyphens per cell, not three.
 TABLE_SEPARATOR_RE = re.compile(
-    r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$")
+    r"^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 REQ_ID_RE = re.compile(r"^req-([a-z0-9]+(?:-[a-z0-9]+)*)-(\d+)$")
 CODE_ANCHOR_RE = re.compile(r"`[^`]*[./][^`]*`")
+# A citation of the project references file: REF- plus whatever slug the
+# author wrote, so a wrongly cased slug is reported rather than missed. CJK
+# is a boundary: Chinese prose does not space 依据REF-rfc7519.
+REF_CITATION_RE = re.compile(r"(?<![A-Za-z0-9_-])REF-([A-Za-z0-9_-]+)")
+# An inline code span: a run of backticks closed by a run of the same length,
+# so `` ` `` holds a literal backtick rather than opening two empty spans.
+CODE_SPAN_RE = re.compile(r"(?<!`)(`+)(?!`).+?(?<!`)\1(?!`)")
+URL_RE = re.compile(r"https?://\S+")
 
 
 class Finding:
@@ -288,11 +342,15 @@ class Section:
         current: list[str] | None = None
         start = 0
         lang = ""
+        delimiter = ""
         for n, text, in_fence, fence_lang in self.lines:
-            opening = FENCE_RE.match(text) and not in_fence
-            closing = FENCE_RE.match(text) and in_fence and current is not None
+            match = FENCE_RE.match(text)
+            opening = match and not in_fence
+            closing = (match and in_fence and current is not None
+                       and match.group(1)[0] == delimiter)
             if opening:
                 current, start, lang = [], n, fence_lang
+                delimiter = match.group(1)[0]
             elif closing:
                 out.append((start, lang, current or []))
                 current = None
@@ -373,33 +431,121 @@ def table_blocks(lines: list[tuple[int, str, bool, str]]) -> list[tuple[tuple[in
 
 
 def parse_sections(text: str) -> list[Section]:
+    """Every heading and the lines it owns. A section owns the lines up to
+    the next heading of the same or a shallower level, its subsections
+    included -- a table under `### Services` belongs to the
+    `## Implementation Status` section that encloses it. The level-0
+    section owns only what precedes the first heading."""
     sections = [Section(0, "", 0)]
+    stack = [sections[0]]
+    started = False
     for n, raw, in_fence, lang in scan_lines(text):
         heading = None if in_fence else HEADING_RE.match(raw)
         if heading:
-            section = Section(len(heading.group(1)), heading.group(2).strip(), n)
+            level = len(heading.group(1))
+            while len(stack) > 1 and stack[-1].level >= level:
+                stack.pop()
+            section = Section(level, heading.group(2).strip(), n)
             sections.append(section)
-        sections[-1].lines.append((n, raw, in_fence, lang))
+            stack.append(section)
+            started = True
+        if not started:
+            sections[0].lines.append((n, raw, in_fence, lang))
+            continue
+        for section in stack[1:]:
+            section.lines.append((n, raw, in_fence, lang))
     return sections
+
+
+def _strip_line_comments(raw: str, in_comment: bool) -> tuple[str, bool]:
+    """One line, with comments removed. A `<!--` inside a code span is text
+    the reader sees, not the start of a comment."""
+    out: list[str] = []
+    i = 0
+    while i < len(raw):
+        if in_comment:
+            end = raw.find("-->", i)
+            if end < 0:
+                return "".join(out), True
+            in_comment = False
+            i = end + 3
+            continue
+        opening = raw.find("<!--", i)
+        span = CODE_SPAN_RE.search(raw, i)
+        if opening < 0 and span is None:
+            out.append(raw[i:])
+            break
+        if span is not None and (opening < 0 or span.start() < opening):
+            out.append(raw[i:span.end()])
+            i = span.end()
+            continue
+        out.append(raw[i:opening])
+        in_comment = True
+        i = opening + 4
+    return "".join(out), in_comment
 
 
 def strip_comments(text: str) -> str:
     """Blank out HTML comment bodies, keeping every line number intact.
 
     Template comment blocks are instructions to the author, not document
-    content, so no content rule applies inside one."""
-    def blank(match: re.Match) -> str:
-        return re.sub(r"[^\n]", " ", match.group(0))
-    return re.sub(r"<!--.*?-->", blank, text, flags=re.DOTALL)
+    content, so no content rule applies inside one. A marker inside a
+    fenced block or a code span is content, and is left alone."""
+    out: list[str] = []
+    fence: str | None = None
+    in_comment = False
+    for raw in text.split("\n"):
+        match = FENCE_RE.match(raw)
+        if fence is None and not in_comment and match:
+            fence = match.group(1)[0]
+            out.append(raw)
+            continue
+        if fence is not None:
+            if match and match.group(1)[0] == fence:
+                fence = None
+            out.append(raw)
+            continue
+        stripped, in_comment = _strip_line_comments(raw, in_comment)
+        out.append(stripped)
+    return "\n".join(out)
+
+
+HEADING_NUMBERING_RE = re.compile(
+    r"^\s*(?:\d+(?:[.、]\d+)*[.、)）]?\s*)+")
+HEADING_CJK_NUMBERING_RE = re.compile(r"^\s*[一二三四五六七八九十百千]+[、.．)）]\s*")
 
 
 def normalize_heading(title: str) -> str:
-    """Heading text without inline markup, link syntax or trailing
-    punctuation, so `## **Status**` and `## Status` compare equal."""
+    """Heading text without inline markup, link syntax, numbering or
+    spacing, so `## **Status**`, `## 1. Status` and `## Status` compare
+    equal, and `## UML图` names the same section as `## UML 图`."""
     title = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", title)
     title = title.replace("*", "").replace("`", "").replace("_", " ")
-    title = re.sub(r"^\s*\d+[.、)]\s*", "", title)
-    return title.strip().strip(":：。.").strip().casefold()
+    title = HEADING_NUMBERING_RE.sub("", title)
+    title = HEADING_CJK_NUMBERING_RE.sub("", title)
+    title = title.strip().strip(":：。.").casefold()
+    return re.sub(r"\s+", "", title)
+
+# Sections that describe data rather than the document. "- **Version**: the
+# optimistic-lock counter" there names a field of the data; the same line in
+# a header block names the document's version, which never appears.
+# Sections a README carries beside its index and that are never part of it.
+# A heading with one of these names ends the index; any other heading is a
+# group inside it, at any level. "Capabilities" is deliberately absent: it
+# names an overview section and a PRD README group alike.
+INDEX_STOP_TITLES = frozenset(
+    normalize_heading(name[language])
+    for name in (names("Implementation Status", "实现状态"),
+                 names("Glossary", "术语表"),
+                 INDEX_SECTION)
+    for language in LANGUAGES)
+
+
+DATA_SECTION_TITLES = frozenset(
+    normalize_heading(name) for name in (
+        "Core Data Structures", "核心数据结构",
+        "Core Algorithms and Flows", "核心算法与流程",
+        "Data Requirements", "数据需求"))
 
 
 def match_section(title: str, table: list, language: str) -> tuple[str | None, str | None]:
@@ -415,9 +561,22 @@ def match_section(title: str, table: list, language: str) -> tuple[str | None, s
     return None, None
 
 
+# Files that did not decode as UTF-8, keyed by absolute path. read() is
+# called from every checker, so the defect is collected here and reported
+# once by main() rather than threaded through every signature.
+UNDECODABLE: dict[str, str] = {}
+
+
 def read(path: str) -> str:
-    with open(path, encoding="utf-8") as handle:
-        return handle.read()
+    with open(path, "rb") as handle:
+        data = handle.read()
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError as error:
+        UNDECODABLE.setdefault(
+            os.path.abspath(path),
+            f"not valid UTF-8 (byte {error.start}); every document is UTF-8 text")
+        return data.decode("utf-8-sig", errors="replace")
 
 
 def markdown_files(tree: str) -> list[str]:
@@ -425,7 +584,9 @@ def markdown_files(tree: str) -> list[str]:
     for dirpath, dirnames, filenames in os.walk(tree):
         dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
         for name in sorted(filenames):
-            if name.endswith(".md"):
+            # A dotfile is editor or filesystem residue (._x.md from a
+            # non-HFS volume, .#x.md from an Emacs lock), not a document.
+            if name.endswith(".md") and not name.startswith("."):
                 out.append(os.path.join(dirpath, name))
     return sorted(out)
 
@@ -438,8 +599,18 @@ def parse_documentation_config(root: str) -> tuple[dict[str, str], list[str]]:
     if not os.path.isfile(path):
         return {}, [f"CLAUDE.md not found at {path}"]
     config: dict[str, str] = {}
+    errors: list[str] = []
     in_block = False
+    fence: str | None = None
     for raw in read(path).splitlines():
+        match = FENCE_RE.match(raw)
+        if fence is None and match:
+            fence = match.group(1)[0]
+            continue
+        if fence is not None:
+            if match and match.group(1)[0] == fence:
+                fence = None
+            continue
         heading = HEADING_RE.match(raw)
         if heading:
             if in_block:
@@ -448,15 +619,17 @@ def parse_documentation_config(root: str) -> tuple[dict[str, str], list[str]]:
             continue
         if not in_block:
             continue
-        entry = re.match(r"^\s*[-*+]\s*([A-Za-z-]+)\s*[:：]\s*(\S+)\s*$", raw)
+        entry = re.match(r"^\s*[-*+]\s*([A-Za-z-]+)\s*[:：]\s*(.*?)\s*$", raw)
         if entry and entry.group(1).lower() in CONFIG_KEYS:
-            config[entry.group(1).lower()] = entry.group(2).strip("`")
-    errors = []
+            key, value = entry.group(1).lower(), entry.group(2).strip("`")
+            if not value or re.search(r"\s", value):
+                errors.append(f"config value for {key!r} is not a single path: {value!r}")
+                continue
+            config[key] = value
     if not config:
         errors.append("CLAUDE.md has no \"## Documentation\" block; the skill "
                       "requires one declaring design, requirements, adr, "
-                      "glossary and language")
-    declared = dict(config)
+                      "glossary, references and language")
     for key, default in CONFIG_DEFAULTS.items():
         config.setdefault(key, default)
     language = config.get("language")
@@ -467,13 +640,12 @@ def parse_documentation_config(root: str) -> tuple[dict[str, str], list[str]]:
         errors.append("CLAUDE.md's \"## Documentation\" block declares no "
                       "language; the checker cannot resolve the section "
                       "vocabulary without it")
-    config["_declared"] = ",".join(sorted(declared))
     return config, errors
 
 
 # --- checks common to every document -------------------------------------
 
-def check_common(rel_path: str, text: str, language: str) -> list[Finding]:
+def check_common(rel_path: str, text: str) -> list[Finding]:
     found: list[Finding] = []
     sections = parse_sections(text)
     lines = scan_lines(text)
@@ -499,10 +671,14 @@ def check_common(rel_path: str, text: str, language: str) -> list[Finding]:
                                  f"process metadata section {section.title!r}; git is the "
                                  f"authority for history, versions, authors and review records"))
 
+    data_lines: set[int] = set()
+    for section in sections:
+        if normalize_heading(section.title) in DATA_SECTION_TITLES:
+            data_lines.update(n for n, _, _, _ in section.lines)
     for n, raw, in_fence, _ in lines:
         if in_fence or FENCE_RE.match(raw):
             continue
-        field = METADATA_FIELD_RE.match(raw)
+        field = None if n in data_lines else METADATA_FIELD_RE.match(raw)
         if field:
             found.append(Finding(rel_path, n,
                                  f"process metadata field {field.group(1)!r}; a document "
@@ -518,18 +694,26 @@ def check_common(rel_path: str, text: str, language: str) -> list[Finding]:
                                  f"code reference with a line number ({reference.group(0)}); "
                                  f"reference a path plus a symbol name"))
 
+    # A section owns its subsections' lines, so each diagram is seen by the
+    # section that holds it and by every section enclosing it. Report it
+    # once, against the innermost section.
+    owners: dict[int, tuple[Section, list[str]]] = {}
     for section in sections:
-        diagrams = [f for f in section.fences() if f[1].lower() == "mermaid"]
-        for start, _, body in diagrams:
-            content = [line for line in body if line.strip()]
-            if not content:
-                found.append(Finding(rel_path, start, "empty mermaid block"))
+        for start, language, body in section.fences():
+            if language.lower() != "mermaid":
                 continue
-            if len(content) == 1:
-                found.append(Finding(rel_path, start,
-                                     f"mermaid block declares {content[0].strip()!r} and "
-                                     f"nothing else; an empty diagram body renders blank"))
-        if diagrams and not section.prose_lines():
+            if start not in owners or section.level > owners[start][0].level:
+                owners[start] = (section, body)
+    for start, (section, body) in sorted(owners.items()):
+        content = [line for line in body if line.strip()]
+        if not content:
+            found.append(Finding(rel_path, start, "empty mermaid block"))
+            continue
+        if len(content) == 1 and DIAGRAM_TYPE_ONLY_RE.match(content[0]):
+            found.append(Finding(rel_path, start,
+                                 f"mermaid block declares {content[0].strip()!r} and "
+                                 f"nothing else; an empty diagram body renders blank"))
+        if not section.prose_lines():
             found.append(Finding(rel_path, section.line,
                                  f"section {section.title!r} holds a diagram and no prose; "
                                  f"the text carries the constraints the diagram cannot"))
@@ -587,10 +771,28 @@ def check_section_order(rel_path: str, text: str, language: str, table: list,
     return found
 
 
-def check_filename_sequence(rel_path: str) -> list[Finding]:
-    stem = os.path.basename(rel_path)[:-3]
-    for token in stem.split("-"):
-        if token.isdigit():
+def check_filename_sequence(rel_path: str, siblings=()) -> list[Finding]:
+    """A number in a file name is a sequence number when it orders the file
+    among its siblings: zero-padded, or the only difference from a sibling
+    (adr-core-scope.md beside adr-core-scope-2.md), or what a sibling's
+    name lacks. A number that is part of the name -- prd-iso-27001,
+    adr-tls-1-3 -- orders nothing and is not a sequence number."""
+    name = os.path.basename(rel_path)
+    stem = name[:-3]
+    tokens = stem.split("-")
+    sibling_stems = {other[:-3] for other in siblings
+                     if other.endswith(".md") and other != name}
+    for index, token in enumerate(tokens):
+        if not token.isdigit():
+            continue
+        without = "-".join(tokens[:index] + tokens[index + 1:])
+        peer = any(
+            len(other) == len(tokens)
+            and other[index].isdigit()
+            and all(a == b for j, (a, b) in enumerate(zip(tokens, other)) if j != index)
+            for other in (s.split("-") for s in sibling_stems))
+        zero_padded = len(token) > 1 and token.startswith("0")
+        if zero_padded or peer or without in sibling_stems:
             return [Finding(rel_path, 0,
                             f"file name carries a sequence number ({token}); ordering "
                             f"lives in the README index, not in file names")]
@@ -616,12 +818,20 @@ def check_index(readme_path: str, rel_readme: str, tree: str, root: str,
         (s for s in sections if s.level == 2
          and match_section(s.title, [("index", INDEX_SECTION, True)], language)[0]),
         None)
+    # The index runs from its heading to the next section the standard
+    # recognises -- Implementation Status, a glossary, another index.
+    # Grouping the entries is the README's business, at any heading level: a
+    # tree's index groups under H3, an ADR index under H2 topics, and either
+    # is an index. Truncating at the next H2 would turn every entry in an
+    # H2-grouped index into an orphan; running to the end of the file would
+    # count the status roll-up's links as duplicate index entries.
     if index_section is None:
         region = lines
     else:
         start = index_section.line
         end = next((s.line for s in sections
-                    if s.level <= 2 and s.line > start), len(lines) + 1)
+                    if s.line > start and s.level <= 2
+                    and normalize_heading(s.title) in INDEX_STOP_TITLES), len(lines) + 1)
         region = [line for line in lines if start <= line[0] < end]
     linked: dict[str, list[int]] = {}
     for n, raw, in_fence, _ in region:
@@ -665,33 +875,39 @@ def check_index(readme_path: str, rel_readme: str, tree: str, root: str,
 # --- design tree ---------------------------------------------------------
 
 def status_of_row(row: str, vocabulary: dict, language: str) -> list[str]:
+    """The status values a row carries. A table row carries a value only
+    in a cell that is exactly that value, so "Unimplemented" is not
+    "Implemented" and a capability named "Not implemented warning" is not
+    a status. A list item or a field value carries it as a whole phrase."""
+    stripped = row.strip()
+    if "|" in stripped:
+        cells = [cell.strip().strip("*`_ ").casefold()
+                 for cell in stripped.strip("|").split("|")]
+        return [key for key, name in vocabulary.items()
+                if name[language].casefold() in cells]
     keys = []
     for key, name in vocabulary.items():
-        if name[language].casefold() in row.casefold():
+        if re.search(r"(?<!\w)" + re.escape(name[language]) + r"(?!\w)",
+                     stripped, re.IGNORECASE):
             keys.append(key)
     if "implemented" in keys and "partial" in keys:
-        keys.remove("implemented")  # "Partially implemented" contains "implemented"
+        keys.remove("implemented")  # "Partially implemented" holds "implemented"
     if "not-implemented" in keys and "implemented" in keys:
         keys.remove("implemented")
     return keys
 
 
 def status_entries(section: Section) -> list[tuple[int, str]]:
-    """The status section's data rows: table rows and list items alike."""
+    """The status section's data rows: the body rows of every table in
+    the section, with or without leading pipes, and list items."""
     entries = []
-    header_seen = False
+    for _, body in table_blocks(section.lines):
+        entries.extend((n, raw.strip()) for n, raw, _, _ in body)
     for n, raw in section.prose_lines():
         stripped = raw.strip()
-        if stripped.startswith("|"):
-            if TABLE_SEPARATOR_RE.match(stripped):
-                header_seen = True
-                continue
-            if not header_seen:
-                continue  # the header row
+        if re.match(r"^[-*+]\s+", stripped):
             entries.append((n, stripped))
-        elif re.match(r"^[-*+]\s+", stripped):
-            entries.append((n, stripped))
-    return entries
+    return sorted(entries)
 
 
 def check_design_status(rel_path: str, sections: list[Section], language: str,
@@ -734,6 +950,20 @@ def check_design_status(rel_path: str, sections: list[Section], language: str,
     return found
 
 
+def aspect_parent(slug: str, slugs: set[str]) -> str | None:
+    """The module a flat design-<slug>-<aspect>.md belongs to: the longest
+    module slug beside it that this slug extends by "-<aspect>", or None
+    when there is none and the file is a module document of its own."""
+    parts = slug.split("-")
+    for cut in range(len(parts) - 1, 0, -1):
+        candidate = "-".join(parts[:cut])
+        suffix = "-".join(parts[cut:])
+        # An aspect names an aspect; a bare number is a sequence number.
+        if candidate in slugs and re.search(r"[A-Za-z]", suffix):
+            return candidate
+    return None
+
+
 def check_module_document(rel: str, text: str, language: str) -> list[Finding]:
     """The fixed section set a module document obeys, wherever it lives --
     flat under modules/ or inside a module subdirectory."""
@@ -761,9 +991,16 @@ def check_design_tree(tree: str, root: str, language: str) -> list[Finding]:
             found.append(Finding(os.path.relpath(required, root), 0,
                                  "required design document is missing"))
     modules_dir = os.path.join(tree, "modules")
+    flat_slugs: set[str] = set()       # slugs of the files directly under modules/
+    if os.path.isdir(modules_dir):
+        for entry in os.listdir(modules_dir):
+            if (entry.startswith("design-") and entry.endswith(".md")
+                    and os.path.isfile(os.path.join(modules_dir, entry))):
+                flat_slugs.add(entry[len("design-"):-len(".md")])
 
     top_entries: list[str] = []        # what the tree's README index must cover
     roll_up_docs: list[str] = []       # module documents architecture.md must roll up
+    aspect_docs: list[str] = []        # aspect splits, covered by their module's row
     subdir_files: dict[str, list[str]] = {}   # module subdirectory -> its design-*.md files
     subdir_readmes: dict[str, str] = {}       # module subdirectory -> its README.md
     submodule_docs: dict[str, list[str]] = {}  # module subdirectory -> its sub-module documents
@@ -772,7 +1009,7 @@ def check_design_tree(tree: str, root: str, language: str) -> list[Finding]:
         rel = os.path.relpath(path, root)
         name = os.path.basename(path)
         text = strip_comments(read(path))
-        found += check_common(rel, text, language)
+        found += check_common(rel, text)
         parent = os.path.dirname(path)
         if parent == tree:
             if name == "architecture.md":
@@ -795,7 +1032,7 @@ def check_design_tree(tree: str, root: str, language: str) -> list[Finding]:
                                      f"document lives in {rel_tree}/modules/"))
             continue
         if parent == modules_dir:
-            found += check_filename_sequence(rel)
+            found += check_filename_sequence(rel, os.listdir(modules_dir))
             if not name.startswith("design-"):
                 found.append(Finding(rel, 0,
                                      "module document name does not match design-<slug>"))
@@ -804,6 +1041,15 @@ def check_design_tree(tree: str, root: str, language: str) -> list[Finding]:
                 if not SLUG_RE.match(slug):
                     found.append(Finding(rel, 0,
                                          f"slug {slug!r} is not lowercase kebab-case ASCII"))
+                if aspect_parent(slug, flat_slugs):
+                    # design-<slug>-<aspect>.md beside design-<slug>.md is an
+                    # aspect split of that module, not a module of its own.
+                    found += check_heading_language(rel, text, language, MODULE_SECTIONS)
+                    found += check_design_status(rel, parse_sections(text), language,
+                                                 roll_up=False)
+                    top_entries.append(path)
+                    aspect_docs.append(path)
+                    continue
             found += check_module_document(rel, text, language)
             top_entries.append(path)
             roll_up_docs.append(path)
@@ -823,7 +1069,7 @@ def check_design_tree(tree: str, root: str, language: str) -> list[Finding]:
                                      f"document in module subdirectory {slug!r} does not match "
                                      f"design-{slug}[-<sub>]"))
                 continue
-            found += check_filename_sequence(rel)
+            found += check_filename_sequence(rel, os.listdir(parent))
             found += check_module_document(rel, text, language)
             subdir_files.setdefault(parent, []).append(path)
             if stem.group(1) is None:
@@ -894,6 +1140,12 @@ def check_design_tree(tree: str, root: str, language: str) -> list[Finding]:
                                      f"implementation status carries a sub-module row for "
                                      f"{os.path.relpath(doc, root)}; only the top-level module "
                                      f"appears here, the sub-module in the module subdirectory"))
+        for doc in aspect_docs:
+            if os.path.normpath(doc) in rolled:
+                found.append(Finding(os.path.relpath(architecture, root), 0,
+                                     f"implementation status carries a row for aspect document "
+                                     f"{os.path.relpath(doc, root)}; the module's own row covers "
+                                     f"its aspects"))
     return found
 
 
@@ -919,10 +1171,9 @@ def check_adr_record(path: str, rel: str, text: str, language: str) -> tuple[lis
                              "file name does not match adr-<slug>; an ADR's name carries "
                              "no date and no sequence number"))
         if not ADR_DATE_TOKEN_RE.search(name[:-3] if name.endswith(".md") else name):
-            found += check_filename_sequence(rel)
-        return found, None
-
-    found += check_filename_sequence(rel)
+            found += check_filename_sequence(rel, os.listdir(os.path.dirname(path)))
+    else:
+        found += check_filename_sequence(rel, os.listdir(os.path.dirname(path)))
     found += check_heading_language(rel, text, language, ADR_SECTIONS)
     found += check_section_order(rel, text, language, ADR_SECTIONS)
 
@@ -942,7 +1193,12 @@ def check_adr_record(path: str, rel: str, text: str, language: str) -> tuple[lis
         if in_fence or FENCE_RE.match(raw):
             continue
         field = ADR_STATUS_FIELD_RE.match(raw)
-        if field:
+        # Status, Acceptance, Accepted, Deprecated, 状态, 接受, 验收, 接受状态
+        # name a record's status wherever they appear. Only "State" is also
+        # an ordinary data field name ("- **State**: kept in Redis"), and
+        # there the value tells the two apart.
+        if field and (field.group(1).casefold() != "state"
+                      or VERDICT_RE.search(raw[field.end():])):
             found.append(Finding(rel, n,
                                  f"status field {field.group(1)!r}; an ADR carries no status, "
                                  f"state or acceptance field"))
@@ -975,12 +1231,13 @@ def check_adr_tree(tree: str, root: str, language: str) -> list[Finding]:
     for path in markdown_files(tree):
         rel = os.path.relpath(path, root)
         if os.path.basename(path) == "README.md":
+            found += check_common(rel, strip_comments(read(path)))
             continue
         if os.path.dirname(path) != tree:
             found.append(Finding(rel, 0, "the ADR tree is flat; records live beside README.md"))
             continue
         text = strip_comments(read(path))
-        found += check_common(rel, text, language)
+        found += check_common(rel, text)
         record_findings, record_id = check_adr_record(path, rel, text, language)
         found += record_findings
         if record_id:
@@ -1003,20 +1260,20 @@ def check_adr_tree(tree: str, root: str, language: str) -> list[Finding]:
         for (header_line, header_cells), body in table_blocks(lines):
             if header_line < first_topic:
                 continue
-            if not any(re.search(r"\]\(adr-[^)]+\.md\)", raw) for _, raw, _, _ in body):
+            if not any(ADR_INDEX_LINK_RE.search(raw) for _, raw, _, _ in body):
                 continue
             if any(forbidden_column(cell) for cell in header_cells):
                 found.append(Finding(rel_readme, header_line,
                                      "the index carries a date or status column; an ADR's "
                                      "identity is its decision, nothing else"))
-            for n, raw, _, _ in body:
-                match = re.search(r"\[([^\]]*)\]\((adr-[^)]+\.md)\)", raw)
-                if not match:
-                    continue
-                record_id = adr_id(os.path.basename(match.group(2)))
+        for n, raw, in_fence, _ in lines:
+            if in_fence or n < first_topic:
+                continue
+            for title, target in ADR_INDEX_LINK_RE.findall(raw):
+                record_id = adr_id(os.path.basename(target))
                 if record_id is None or record_id not in titles:
                     continue
-                if normalize_heading(match.group(1)) != normalize_heading(titles[record_id]):
+                if normalize_heading(title) != normalize_heading(titles[record_id]):
                     found.append(Finding(rel_readme, n,
                                          f"index row for {record_id} does not use the record's "
                                          f"own title ({titles[record_id]!r})"))
@@ -1058,7 +1315,7 @@ def check_requirement_entries(rel: str, text: str, language: str, slug: str) -> 
 
         body = [t for _, t in section.prose_lines()]
         joined = "\n".join(body)
-        if VAGUE_STATUS and any(v.casefold() in joined.casefold() for v in VAGUE_STATUS):
+        if any(v.casefold() in joined.casefold() for v in VAGUE_STATUS):
             found.append(Finding(rel, section.line, "vague status wording"))
         if canonical(DESIGN_STATUS["partial"], language).casefold() in joined.casefold():
             found.append(Finding(rel, section.line,
@@ -1102,10 +1359,10 @@ def check_requirements_tree(tree: str, root: str, language: str) -> list[Finding
         rel = os.path.relpath(path, root)
         name = os.path.basename(path)
         text = strip_comments(read(path))
-        found += check_common(rel, text, language)
-        if name not in ("README.md", "overview.md"):
-            found += check_filename_sequence(rel)
+        found += check_common(rel, text)
         parent = os.path.dirname(path)
+        if name not in ("README.md", "overview.md"):
+            found += check_filename_sequence(rel, os.listdir(parent))
         if parent == features:
             if not name.startswith("prd-"):
                 found.append(Finding(rel, 0, "capability document name does not match prd-<slug>"))
@@ -1126,6 +1383,7 @@ def check_requirements_tree(tree: str, root: str, language: str) -> list[Finding
             found += check_heading_language(rel, text, language, JOURNEY_SECTIONS)
             found += check_section_order(rel, text, language, JOURNEY_SECTIONS)
         elif parent == tree and name == "overview.md":
+            found += check_heading_language(rel, text, language, OVERVIEW_SECTIONS)
             found += check_section_order(rel, text, language, OVERVIEW_SECTIONS,
                                          allow_unknown=True)
         elif parent == tree and name != "README.md":
@@ -1142,6 +1400,99 @@ def check_requirements_tree(tree: str, root: str, language: str) -> list[Finding
     return found
 
 
+# --- project references --------------------------------------------------
+
+def reference_entries(rel_refs: str, text: str) -> tuple[list[Finding], dict[str, int]]:
+    """Findings on the references file's own rows, and slug -> line for
+    every well-formed entry. An entry is a table row whose first cell is
+    REF-<slug>; any other row is prose or a header and is not an entry."""
+    found: list[Finding] = []
+    entries: dict[str, int] = {}
+    for _, body in table_blocks(scan_lines(text)):
+        for n, raw, _, _ in body:
+            cells = [cell.strip() for cell in raw.strip().strip("|").split("|")]
+            first = cells[0].strip("*` ") if cells else ""
+            if not first.upper().startswith("REF-"):
+                continue
+            slug = first[len("REF-"):]
+            if not first.startswith("REF-") or not SLUG_RE.match(slug):
+                found.append(Finding(rel_refs, n,
+                                     f"entry {first!r} is not REF-<slug> with a lowercase "
+                                     f"kebab-case ASCII slug"))
+                continue
+            if slug in entries:
+                found.append(Finding(rel_refs, n,
+                                     f"REF-{slug} is registered more than once; one source, "
+                                     f"one entry"))
+                continue
+            entries[slug] = n
+            if not URL_RE.search(raw):
+                found.append(Finding(rel_refs, n,
+                                     f"entry REF-{slug} carries no URL; the references file "
+                                     f"registers public sources, and the source column is a "
+                                     f"URL any reader can open"))
+    return found, entries
+
+
+def check_references(root: str, config: dict[str, str], trees: list[str],
+                     language: str) -> list[Finding]:
+    """The project references file and every citation of it.
+
+    One file at the configured path, shared by every document type: one
+    row per public external source, keyed REF-<slug>. Every citation in
+    a checked tree or in the glossary resolves to a row, and every row
+    is cited at least once -- an uncited entry is an orphan, like a
+    document absent from its index."""
+    found: list[Finding] = []
+    rel_refs = config["references"]
+    refs_path = os.path.join(root, rel_refs)
+
+    citations: list[tuple[str, int, str]] = []
+    scanned = [path for tree in trees for path in markdown_files(tree)]
+    glossary = os.path.join(root, config["glossary"])
+    if os.path.isfile(glossary):
+        scanned.append(glossary)
+    for path in scanned:
+        if os.path.abspath(path) == os.path.abspath(refs_path):
+            continue
+        rel = os.path.relpath(path, root)
+        for n, raw, in_fence, _ in scan_lines(strip_comments(read(path))):
+            if in_fence or FENCE_RE.match(raw):
+                continue
+            for slug in REF_CITATION_RE.findall(raw):
+                citations.append((rel, n, slug))
+
+    if not os.path.isfile(refs_path):
+        found.append(Finding(rel_refs, 0,
+                             "the configured references file does not exist; the project "
+                             "has exactly one, shared by every document type"))
+        return found
+
+    text = strip_comments(read(refs_path))
+    found += check_common(rel_refs, text)
+    entry_findings, entries = reference_entries(rel_refs, text)
+    found += entry_findings
+
+    cited: set[str] = set()
+    for rel, n, slug in citations:
+        if not SLUG_RE.match(slug):
+            found.append(Finding(rel, n,
+                                 f"citation REF-{slug} is not REF-<slug> with a lowercase "
+                                 f"kebab-case ASCII slug"))
+            continue
+        cited.add(slug)
+        if slug not in entries:
+            found.append(Finding(rel, n,
+                                 f"cites REF-{slug}, which the project references file "
+                                 f"({rel_refs}) does not register"))
+    for slug, n in sorted(entries.items(), key=lambda item: item[1]):
+        if slug not in cited:
+            found.append(Finding(rel_refs, n,
+                                 f"REF-{slug} is cited by no document; an uncited entry is "
+                                 f"an orphan, and an orphan is an error"))
+    return found
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Structural checker for the document-standards skill.")
@@ -1153,7 +1504,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: --root is not a directory: {args.root}", file=sys.stderr)
         return 2
 
+    UNDECODABLE.clear()
     config, errors = parse_documentation_config(root)
+    for key in ("design", "requirements", "adr", "glossary", "references"):
+        if key in config:
+            # "docs/adr/" and "docs/adr" name the same tree; trailing
+            # separators would defeat the string comparison against walk.
+            config[key] = os.path.normpath(config[key])
     if errors:
         for error in errors:
             print(f"error: {error}", file=sys.stderr)
@@ -1162,6 +1519,7 @@ def main(argv: list[str] | None = None) -> int:
 
     found: list[Finding] = []
     checked = []
+    trees: list[str] = []
     for key, checker, label in (("design", check_design_tree, "design"),
                                 ("adr", check_adr_tree, "ADR"),
                                 ("requirements", check_requirements_tree, "requirements")):
@@ -1169,25 +1527,34 @@ def main(argv: list[str] | None = None) -> int:
         if not os.path.isdir(tree):
             continue
         checked.append(f"{label} ({os.path.relpath(tree, root)})")
+        trees.append(tree)
         found += checker(tree, root, language)
 
     if not checked:
-        print("no documentation tree found at the configured paths "
+        print("error: no documentation tree found at the configured paths "
               f"(design: {config['design']}, adr: {config['adr']}, "
-              f"requirements: {config['requirements']})")
-        return 0
+              f"requirements: {config['requirements']}); nothing to check is a "
+              "configuration error, not a pass", file=sys.stderr)
+        return 2
 
     glossary = os.path.join(root, config["glossary"])
     if not os.path.isfile(glossary):
         found.append(Finding(config["glossary"], 0,
                              "the configured glossary does not exist; the project has "
                              "exactly one, shared by every document type"))
+    found += check_references(root, config, trees, language)
+    for path, message in sorted(UNDECODABLE.items()):
+        found.append(Finding(os.path.relpath(path, root), 0, message))
 
-    for finding in sorted(found, key=Finding.sort_key):
+    # A diagram or a table is seen by its own section and by every section
+    # enclosing it; report it once.
+    unique = {(f.path, f.line, f.message): f for f in found}
+    for finding in sorted(unique.values(), key=Finding.sort_key):
         print(finding.render())
+    found = list(unique.values())
     if found:
         print(f"FAILED: {len(found)} structural problem(s) in {', '.join(checked)}; "
-              f"the standard is .claude/skills/document-standards/")
+              f"the standard is {SKILL_DIR}/")
         return 1
     print(f"OK: {', '.join(checked)} structurally conform to document-standards "
           f"(language: {language})")

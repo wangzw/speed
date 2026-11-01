@@ -85,7 +85,10 @@ The system MUST <single testable assertion>.
 Optional.
 
 Every number here comes from the user or from a citable external authority --
-a regulation, a contract, an interface agreement with a counterpart system.
+a regulation, a standard, a contract, an interface agreement with a counterpart
+system. A public authority is cited by REF-<slug> and registered in the
+project references file; a contract or an interface agreement is named in
+words.
 Never pick a plausible-looking value. A dimension the user has not raised is
 omitted entirely, not filled with a default. When a number is needed and has
 not been supplied, ask the user.
@@ -106,7 +109,7 @@ not been supplied, ask the user.
 <!-- Optional: which external systems and actors are involved. Not an interface design. -->
 ## External Interface Requirements
 
-<!-- Optional: regulatory, business and external technical constraints imposed from outside. -->
+<!-- Optional: regulatory, business and external technical constraints imposed from outside. Cite a public authority by REF-<slug>. -->
 ## Constraints
 
 <!-- Optional. -->

@@ -25,13 +25,15 @@ The two forms mix freely in one tree; a tree does not pick one. A module that fi
 
 The glossary is **not** part of this tree. The project has one glossary, shared by every document type, at the configured `glossary` path, and it holds only terms that hold project-wide. A term bounded by one module is registered in that module's own document, not there.
 
+Nor is the project references file: a public external source is registered once, at the configured `references` path, and cited from any document type.
+
 **Required:**
 - `README.md` and `architecture.md` are fixed names — the explicit exceptions to the `design-<slug>` pattern, which applies inside `modules/`.
 - **File names carry no sequence number**, anywhere. Ordering lives in the README index, not in file names.
 - A slug is lowercase kebab-case, ASCII only, and **matches the module's directory or package name in the code**, so the document-to-code mapping is mechanical.
 - **A slug is permanent.** Renaming breaks every link that points at it.
 - One document per real module boundary in the code. A unit with no external interface contract of its own is folded into its parent module's document, not given a file.
-- An oversized module document may split by aspect into `design-<slug>-<aspect>.md`, still with no sequence number. The parent slug stays the prefix. **An aspect split is not a sub-module**: it stays flat beside `design-<slug>.md`, and a module subdirectory holds sub-modules. The two use the same `design-<slug>-<x>.md` shape, so the position is what tells them apart.
+- An oversized module document may split by aspect into `design-<slug>-<aspect>.md`, still with no sequence number. The parent slug stays the prefix. **An aspect split is not a sub-module**: it stays flat beside `design-<slug>.md`, and a module subdirectory holds sub-modules. The two use the same `design-<slug>-<x>.md` shape, so the position is what tells them apart: a flat `design-<a>-<b>.md` beside `design-<a>.md` is an aspect of `<a>`, never a module of its own, and it carries neither the module section order nor a row of its own in the status roll-up.
 - **A module subdirectory is named for the module's slug, is permanent like the slug, and holds the module's own document `design-<slug>.md` plus one `design-<slug>-<sub>.md` per sub-module that has its own document.** The parent slug is the prefix of every file inside. **A module subdirectory carries a `README.md`** — the module's index and its sub-module status roll-up (section 2).
 
 ## 2. `README.md`
@@ -75,7 +77,7 @@ Fixed section order, so modules can be read against each other and checked mecha
 1. **Responsibilities** — and, explicitly, **non-responsibilities**. Writing down what the module does not own is the cheapest available defence against scope creep.
 2. **Glossary** — optional, and rare. The terms this document gives a meaning of its own, each stated with the scope it applies to. A term that holds project-wide belongs to the project glossary instead, never to both.
 3. **External interface contract** — what other modules may call, and what stability is promised. This is the most valuable part of a module document.
-4. **Dependencies** — what it depends on, and whether the direction satisfies the architecture invariants.
+4. **Dependencies** — what it depends on, and whether the direction satisfies the architecture invariants. A public external component the citation rule in `SKILL.md` catches is cited here, at its first mention, so that nothing the module embeds reads as something it built.
 5. **UML diagrams** — structure and call relationships, selected per section 5.
 6. **Core data structures**.
 7. **Core algorithms and flows** — with complexity analysis for performance-sensitive algorithms. Procedural flows need no complexity analysis.
@@ -116,6 +118,7 @@ The fastest-rotting content in any design document, and therefore the most tight
 - Alternatives considered, the choice made, and the reasoning behind it (reference the ADR instead)
 - Large pasted code (signatures or pseudocode only, and only where they carry design meaning)
 - API reference material (that is generated from the code)
+- A reference list or bibliography section (a source is cited in the sentence that relies on it)
 - Narrative about how the design evolved
 
 ## 8. Checklist
@@ -125,6 +128,7 @@ The common checklist in `SKILL.md` applies as well.
 - [ ] File name matches `design-<slug>`, with no sequence number; the slug matches the module's name in the code
 - [ ] A module whose sub-modules have their own documents lives in a `modules/<slug>/` subdirectory, with its own `design-<slug>.md` and a `README.md`
 - [ ] No alternatives or rationale — ADR referenced by id instead
+- [ ] Every public external component or algorithm the design incorporates is cited at its first mention; nothing external reads as internal
 - [ ] Every diagram is Mermaid and carries prose
 - [ ] No diagram drawn to fill a template slot
 - [ ] Conditional sections that do not apply are deleted, not left empty

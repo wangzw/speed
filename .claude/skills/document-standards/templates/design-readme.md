@@ -12,6 +12,10 @@ subdirectory. A missing entry is an orphan, and an orphan is an error. A
 glossary link is conventional. A module subdirectory's own README.md
 indexes that module's files and carries the sub-module status roll-up.
 
+The glossary and references links assume the default paths; adjust each to
+the configured `glossary` and `references` path. Delete the References line
+if the project cites no public external source.
+
 Implementation status does NOT belong here. The roll-up lives in
 architecture.md, the detail in each module document.
 -->
@@ -23,7 +27,8 @@ architecture.md, the detail in each module document.
 ## Index
 
 - [Architecture](architecture.md) — system-wide structure, cross-cutting design and architecture invariants
-- [Glossary](../glossary.md) — project-agreed terms, shared by every document type. Adjust the link to the configured `glossary` path.
+- [Glossary](../glossary.md) — project-agreed terms, shared by every document type
+- [References](../references.md) — public external sources cited by the documentation
 
 ### Modules
 

@@ -31,6 +31,10 @@ carrying nothing a future reader can use.
 
 This is the only place a displaced decision may appear: as an alternative that
 lost, with its rejection reason. No revision narrative.
+
+An option that adopts a public external component or follows a published
+design cites it (REF-<slug>) at its first mention, so a reader can tell a
+candidate taken from outside from one designed in-house.
 -->
 
 ### <Option A>

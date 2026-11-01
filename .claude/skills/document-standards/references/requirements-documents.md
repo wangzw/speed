@@ -43,6 +43,15 @@ docs/prd/                       # relocatable via CLAUDE.md
 
 `overview.md` describes what the system is, which capabilities it offers to the outside, and the overall scope boundary. It does not describe product positioning or a target market.
 
+**Required sections, in this order:**
+- **What the System Is** — the system seen from outside: what it does, for whom.
+- **Capabilities** — what the system offers to the outside, and what the capabilities add up to. It does not repeat the README index: a second list of the same files drifts away from the first.
+- **Scope Boundary** — what the system as a whole is responsible for, with the out-of-scope part stated. Stating it is the cheapest defence against scope creep.
+
+**Optional:** **Actors** — who interacts with the system, and with what authority. Delete it when the capability documents cover their actors on their own.
+
+The overview is the one requirements document whose section set stays open: further sections may follow these, in no fixed order.
+
 Templates: `templates/prd-readme.md`, `templates/prd-overview.md`.
 
 ## 3. User Journeys
@@ -119,7 +128,7 @@ This differs deliberately from a design document, which does have `Partially imp
 
 ## 7. Nothing Is Fabricated
 
-**A requirement traces to something the user stated, or to a citable external authority** — a regulation, a contract, an interface agreement with a counterpart system. Requirements are not invented by whoever writes the document.
+**A requirement traces to something the user stated, or to a citable external authority** — a regulation, a standard, a contract, an interface agreement with a counterpart system. Requirements are not invented by whoever writes the document. A public authority — a regulation, a standard, a published specification — is cited by `REF-<slug>` and registered in the project references file. An authority that is not public — a contract, a counterpart's interface agreement — is named in words in the requirement that traces to it, and is not registered.
 
 **Non-functional numbers are where this rule bites.** Availability, latency, throughput, capacity, retention period:
 
@@ -150,6 +159,7 @@ The consequence of getting this wrong is expensive and delayed: downstream treat
 **Process residue:**
 - Open questions and undecided items
 - Alternatives considered and the reasoning behind the choice (reference the ADR instead)
+- A reference list or bibliography section (a source is cited in the requirement that relies on it)
 
 ## 9. Checklist
 
@@ -167,7 +177,7 @@ The common checklist in `SKILL.md` applies as well.
 - [ ] Every journey is a process the business actually runs, spanning several requirements
 - [ ] Every journey records its end-to-end test
 - [ ] Journey steps are observable by the actor; no internal steps
-- [ ] Every non-functional number traces to the user or a citable external authority
+- [ ] Every non-functional number traces to the user or an external authority; a public authority is cited by `REF-<slug>`
 - [ ] No dimension filled with a default the user never raised
 - [ ] Sections with no content are deleted, not left empty; the sections present follow the fixed order
 - [ ] Every file appears in the README index exactly once

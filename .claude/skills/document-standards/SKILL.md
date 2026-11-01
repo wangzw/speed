@@ -1,16 +1,7 @@
 ---
 name: document-standards
-description: Documentation standards for design documents, requirements documents and architecture decision records — path and language configuration, the rules common to every document type, and the entry point to each type's own standard. Load before creating or editing any document under the configured documentation paths.
-triggers:
-  - writing a design document
-  - editing a design document
-  - creating an architecture overview
-  - documenting a module design
-  - adding a module to the design docs
-  - reviewing documentation
-  - writing a requirements document
-  - writing an architecture decision record
-globs:
+description: Documentation standards for design documents, requirements documents and architecture decision records — path and language configuration, the rules common to every document type, and the entry point to each type's own standard. Load before creating or editing any document under the configured documentation paths. Use when writing or editing a design document, creating an architecture overview, documenting a module or adding one to the design docs, writing a requirements document, writing an architecture decision record, or reviewing documentation.
+paths:
   - "docs/design/**/*.md"
   - "docs/prd/**/*.md"
   - "docs/adr/**/*.md"
@@ -37,11 +28,12 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 - requirements: docs/prd
 - adr: docs/adr
 - glossary: docs/glossary.md
+- references: docs/references.md
 - language: zh-CN
 ```
 
 **Required:**
-- Read this block before creating or editing any document. A missing key takes its default: `design` → `docs/design`, `requirements` → `docs/prd`, `adr` → `docs/adr`, `glossary` → `docs/glossary.md`.
+- Read this block before creating or editing any document. A missing key takes its default: `design` → `docs/design`, `requirements` → `docs/prd`, `adr` → `docs/adr`, `glossary` → `docs/glossary.md`, `references` → `docs/references.md`.
 - Resolve the document language in this order: the `language` key; the language of the documents already in the target directory; otherwise **ask the user**. All three inconclusive means ask — never pick a language silently.
 - **Project-wide language rules outrank the `language` key.** Where the project already fixes the language of a directory, that rule wins and a `language` declaration never licenses a violation of it.
 
@@ -75,7 +67,7 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 - **Say which kind it is.** An exhaustive list a reader may rely on and an open list of examples look identical on the page, so the difference belongs in the sentence that introduces the list. Leaving it unsaid is how a list written as examples comes to be cited elsewhere as the complete definition.
 
 **One language per document.**
-- Mixed-language text is allowed only for universally recognized terms, and for agreed terms **registered in the glossary that covers them** — the project glossary, or the local one of the context the document sits in. Nothing else.
+- Mixed-language text is allowed only for universally recognized terms, for agreed terms **registered in the glossary that covers them** — the project glossary, or the local one of the context the document sits in — and for the name of a source registered in the project references file, which is a proper name. Nothing else.
 
 **Glossary.**
 - **Registering a term is the exception, not the habit.** A word earns an entry only when the project has given it a meaning the reader would not arrive at unaided, and reading it the ordinary way changes what the document says. Universally recognized vocabulary stays out, and so does a word this project uses in its ordinary sense: an entry that tells the reader what they already knew adds maintenance and dilutes the entries that carry real meaning.
@@ -86,6 +78,17 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 - An entry carries the term, its definition, and its counterpart in the source language when the document language differs from it.
 - **Once a term is registered, its wording is uniform throughout the scope that registered it** — the whole documentation for a project term, the owning context for a local one. Synonym drift is a defect.
 - **Uniformity binds every document.** An ADR is revised in place like every other document, so a term rename reaches it too; no record keeps an outdated wording.
+
+**External sources.**
+- **A document cites what the project did not originate and what the document cannot vouch for by itself.** Two tests, and either one makes the citation mandatory. *Attribution*: the sentence states something the project did not create — a component, an algorithm, a protocol, a format, a constraint — and a reader could take it for the project's own work. *Traceability*: the authority behind the sentence is the source itself — a format a specification defines, a clause a regulation imposes, a number a standard fixes — so the reader has to be able to open it. The combined test: **delete the citation; can the sentence now be read as the project's own work, or as an assertion with nothing behind it? Either way, the citation stays.**
+- **A source every reader attributes correctly unaided is not cited** — TCP, JSON, SQL. This is the glossary's universally-recognized test applied to sources, and it is what keeps citing from degrading into decoration. A recent open-source project the system embeds is the paradigm case on the other side: nothing in the text tells the reader it was not built here.
+- **The project references file, at the configured `references` path, holds one entry per public external source the documentation cites.** It is the one bibliography every document type shares, it is not part of any documentation tree, and it is mandatory, like the glossary. An entry identifies the source and nothing more: the identifier `REF-<slug>`, the source's own name, one line saying what kind of thing it is and what it covers, the URL, and the version, commit, edition or date the cited content depends on — `—` when it depends on none. That column records the cited source's version, which is content; the ban on version numbers above is about the document's own.
+- **An entry carries no reason and no usage.** Why the source was chosen belongs to an ADR; how the system uses it belongs to the design document; an evaluation belongs nowhere.
+- **The file registers public sources only.** The source column is a URL any reader can open. Material the project does not own but that is not public — another internal project's documents, a contract, a counterpart's interface agreement — is not registered here; a requirement that traces to such an authority names it in words, as the requirements standard describes.
+- **`REF-<slug>` names the source, is unique in the file, and is permanent.** The slug is lowercase kebab-case ASCII, like an ADR slug, and renaming it breaks every citation. One source, one entry: a version is a column, not a second row.
+- **A document cites a source once, at the first sentence that relies on it**, by identifier plus link; later mentions in the same document use the name alone.
+- **There is no per-document reference section, in any document type.** The citations are in the sentences that need them. A list of them at the end of the document restates the body, and it is the restatement that drifts when a sentence is rewritten; every document type with a fixed section set rejects such a section.
+- **A citation of an unregistered identifier and an entry no document cites are both defects.** An uncited entry is an orphan, like a document absent from its index.
 
 **Examples convey intent, not runnability.**
 - Example code **is not required to compile**, to be complete, or to match the code verbatim. Omit imports, error-handling boilerplate and initialization; `...` for elided parts is fine.
@@ -106,6 +109,7 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 - Internal links are relative and point at files. Write the path from the documentation root consistently; mismatched directory depth is the most frequent link defect.
 - Reference code by **path plus symbol name, never a line number**. Line numbers rot on the next edit.
 - Reference a decision by its **ADR identifier (`ADR-<slug>`) plus link**.
+- Reference a public external source by its **reference identifier (`REF-<slug>`) plus link to the project references file**: `embeds etcd's raft library ([REF-etcd-raft](../references.md))`.
 - **References flow one way across document types**: a design document references requirements and ADRs; requirements and ADRs do not link back. Bidirectional links between the two layers rot, because the upper document changes on a different rhythm from the lower one.
 - **Within one type, documents reference each other freely.** Two design documents describing modules that call each other say so in both; one ADR cites another it depends on. The rule above is about layers, not about neighbours.
 
@@ -125,14 +129,19 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 
 `scripts/check_documents.py` checks the structural half of this standard: section
 presence and order, file naming, index coverage, status vocabulary, diagram
-bodies and the process metadata a document never carries. It reads the paths and the language from the `## Documentation` block of
-section 1, and skips a declared tree that does not exist.
+bodies, the process metadata a document never carries, and whether every
+`REF-<slug>` citation resolves to an entry of the project references file that
+is itself cited. It reads the paths and the language from the `## Documentation` block of
+section 1, skips a declared tree that does not exist, and treats a configuration under
+which no tree exists, or a value that is not a single path, as a usage error (exit 2).
 
 **Running it is mandatory, not advisory.** After creating or editing any document
-under the configured paths, run it from the repository root and leave it at exit 0:
+under the configured paths, run it from the repository root and leave it at exit 0.
+The script lives in this skill's `scripts/` directory, wherever the skill is installed:
 
 ```bash
-python3 .claude/skills/document-standards/scripts/check_documents.py
+python3 ~/.claude/skills/document-standards/scripts/check_documents.py   # user-level install
+python3 .claude/skills/document-standards/scripts/check_documents.py    # repository-level install
 ```
 
 Every finding is printed as `path:line: what is wrong`. Fix the documents; do not
@@ -144,22 +153,25 @@ whether a non-functional number is sourced, whether a rejected option's reason i
 real, whether a requirement is testable, whether a word deserves a glossary entry
 at all and whether it belongs to the project glossary or to a local one, whether a
 normative sentence's literal scope is the one intended, whether a list is meant as
-a criterion or as an exhaustive set, whether a status entry carries an explanation
-it should not, and
+a criterion or as an exhaustive set, whether a sentence that relies on an external
+source cites it, whether a cited source is one the reader would have attributed
+correctly unaided, whether a journey is a process the business actually runs, whether
+a status entry carries an explanation it should not, and
 whether a document still matches the code it asserts things about. It also does not render diagrams: it checks that a
 mermaid block has a type and a body, while the rendering rule in section 2 stays a
 step performed during the edit.
 
-`scripts/test_check_documents.py` is the checker's own planted-violation suite
-(`python3 .claude/skills/document-standards/scripts/test_check_documents.py`). A
-new rule in this standard earns a check there, or it is not enforced.
+`scripts/test_check_documents.py`, beside the checker, is its planted-violation
+suite, run the same way. A new rule in this standard earns a check there, or it is
+not enforced.
 
 ## 6. Common Checklist
 
 Each document type's standard adds its own checklist on top of this one.
 
 - [ ] Path and language resolved from `CLAUDE.md`, not assumed
-- [ ] One language throughout; every mixed-in term is universally recognized or registered in the glossary covering its scope
+- [ ] One language throughout; every mixed-in term is universally recognized, registered in the glossary covering its scope, or the name of a registered source
+- [ ] Every sentence the attribution or traceability test catches cites its source by `REF-<slug>` at first use, and every cited source is registered in the project references file
 - [ ] No first person, no second person, no subjective modifiers, no restating transitions
 - [ ] No counts of structures, no positional references to enumerated items
 - [ ] Every normative sentence names what it binds, and its literal reading was applied to an ordinary member of that subject

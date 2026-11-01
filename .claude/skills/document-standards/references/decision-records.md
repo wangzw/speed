@@ -63,6 +63,7 @@ Each option, and what adopting it would have meant.
 - **Every rejected option states why it was rejected.** An option listed with no rejection reason is decoration — it makes the record look thorough while carrying no information, and it is the most common way this section degrades.
 - **Options are the only place a displaced decision may appear.** It is an alternative that lost, stated as such; it is not a "previous decision" subsection and carries no revision narrative.
 - Options are described as they stand, not as a sequence of drafts. A better option found later is folded into this section with its rejection or adoption, not appended as an update.
+- **An option that adopts a public external component or follows a published design cites it** (`REF-<slug>`) at its first mention. A reader of the record has to be able to tell a candidate taken from outside from one designed in-house, and the option's name alone does not say which.
 
 ### Decision
 
@@ -108,6 +109,7 @@ Template: `templates/adr-readme.md`.
 - The design detail that follows from the decision (that is the design document's)
 - A displaced decision recorded as history rather than as a rejected option
 - Proposals that have not been decided
+- A reference list or bibliography section (a source is cited in the sentence that relies on it)
 - TODO lists, schedules, owners
 
 ## 8. Checklist
@@ -119,6 +121,7 @@ The common checklist in `SKILL.md` applies as well.
 - [ ] File name is `adr-<slug>`, lowercase kebab-case, with no date and no sequence number; the slug names the decision and is unique
 - [ ] No status, state or acceptance field
 - [ ] Every rejected option states why it was rejected
+- [ ] Every option or context fact taken from a public external source is cited at its first mention
 - [ ] A displaced decision, if it appears at all, appears as a rejected option with no revision narrative
 - [ ] The decision is stated impersonally: `Adopt X`
 - [ ] Consequences include the costs accepted, not only the benefits
