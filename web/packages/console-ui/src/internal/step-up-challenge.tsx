@@ -35,11 +35,12 @@
  * dialog renders it as a link when present and text only when absent, so
  * the package never holds a host path. An account with
  * factors whose start is refused 401 insufficient_user_authentication has
- * factors none of which may strengthen this session (the hook's
- * 'unavailable' phase): the dialog says the deployment cannot complete the
- * step-up and offers a re-login -- it ends the session through the
- * session's own logout, and the host's session gate converges on its
- * sign-in surface -- because a new sign-in lets those factors count.
+ * factors none of which may strengthen this session, or no password to
+ * prove again (the hook's 'unavailable' phase): the dialog says the
+ * deployment cannot complete the step-up and offers a re-login -- it ends
+ * the session through the session's own logout, and the host's session gate
+ * converges on its sign-in surface -- because a new sign-in lets those
+ * factors count.
  *
  * The failure surface. Every code an answer can be refused with resolves
  * through the console's whitelist and renders as one banner, so a wrong
@@ -289,8 +290,9 @@ function StepUpFlow({
   const autoCompleting =
     step !== null && step.kind === 'complete' && phase === 'step'
   // This deployment cannot raise the session at all (factors exist, none
-  // that may strengthen it): no step will come, so the dialog says so and
-  // offers a re-login rather than a verification that cannot succeed.
+  // that may strengthen it, or no password to prove again): no step will
+  // come, so the dialog says so and offers a re-login rather than a
+  // verification that cannot succeed.
   const unavailable = phase === 'unavailable'
   const failed = phase === 'failed'
   // A start refusal leaves no step behind; an answer refusal keeps the

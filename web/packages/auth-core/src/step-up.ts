@@ -38,7 +38,8 @@
  * itself is the deployment declining to raise this session at all, which
  * no step can satisfy: it answers 401 insufficient_user_authentication --
  * the account has factors, but none whose methods may strengthen this
- * session -- and parks the challenge on 'unavailable' so the caller tells
+ * session or none it can prove again without a password -- and parks the
+ * challenge on 'unavailable' so the caller tells
  * the operator to re-establish the session rather than retry a
  * verification that cannot come. Every other refusal of the start,
  * a 400 included, is an ordinary failure and stays on 'failed' with its
@@ -209,7 +210,8 @@ function waitSecondsOf(error: unknown): number | undefined {
  * Whether a refusal of the step-up start is this deployment declining to
  * raise the session at all. One answer carries that meaning, and no step
  * can satisfy it: a 401 `insufficient_user_authentication` -- the account
- * has factors, but none whose methods may strengthen this session, so the
+ * has factors, but none whose methods may strengthen this session or none
+ * it can prove again without a password, so the
  * start names none (the session's own isStepUpShortfall). It is read only
  * while the session stays established: a refusal that ended the session is
  * a dead session, not an unraisable one, and its code text renders

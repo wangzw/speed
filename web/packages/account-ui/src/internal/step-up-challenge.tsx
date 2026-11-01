@@ -75,7 +75,8 @@
  * deployment declining to raise this session at all, which no step can
  * satisfy: the hook's 'unavailable' phase -- a 401
  * insufficient_user_authentication (the account has factors, but none
- * whose methods may strengthen this session). The dialog then says so and
+ * whose methods may strengthen this session, or none it can prove again
+ * without a password). The dialog then says so and
  * offers a re-login -- it ends the session through the session's own
  * logout, and the host's session gate converges on its sign-in surface --
  * rather than a verification that cannot come, because a new sign-in lets
@@ -378,8 +379,9 @@ function StepUpFlow({
   const autoCompleting =
     step !== null && step.kind === 'complete' && phase === 'step'
   // This deployment cannot raise the session at all (factors exist, none
-  // that may strengthen it): no step will come, so the dialog says so and
-  // offers a re-login rather than a verification that cannot succeed.
+  // that may strengthen it, or no password to prove again): no step will
+  // come, so the dialog says so and offers a re-login rather than a
+  // verification that cannot succeed.
   const unavailable = phase === 'unavailable'
   // The server no longer holds the flow the answer named -- it expired, or
   // the deployment's flow store went with the process that held it. No step
