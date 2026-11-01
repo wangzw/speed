@@ -344,8 +344,9 @@ The surface is assembleable without changing its defaults:
 | `onForgotPassword` | `() => void` | reports the password channel's forgot-password click; rendered only where the discovery document publishes `password_reset.enabled` and only in sign-in mode, beneath the password form; the host navigates |
 | `channels` | `readonly ('password' \| 'sms')[]` | **deprecated**: still narrows the form strip for one major |
 | `defaultChannel` | `'password' \| 'sms'` | **deprecated**: the channel selected in sign-in mode on first render (register mode starts on the first account-opening channel) |
-| `initialError` | `string` | an error code the host brought in from outside the screen, rendered as the inline whole-attempt error above the channels; the screen neither reads the URL nor decides where the code came from |
+| `initialError` | `string` | an error code the host brought in from outside the screen, rendered as the inline whole-attempt error above the channels; the screen neither reads the URL nor decides where the code came from. A mode or channel switch, and any attempt, drop it from the surface |
 | `initialErrorEmail` | `string` | the masked address a `link-required` refusal named, rendered as one plain line under that inline error; read only when `initialError` is `authn.link_required`, and absent for every other code. The server masks it; the screen places it unchanged |
+| `onInitialErrorDismiss` | `() => void` | reports that the screen dropped `initialError`; the host discards the landing it supplied, so a re-render does not hand the same message back |
 
 `SocialSignInOptions` carries the host callback route (sent as a redirect or
 enterprise flow's `return_to`) and the same `onAuthorizeUrl` seam
