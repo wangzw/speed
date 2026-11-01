@@ -102,6 +102,40 @@ function mfaSection(page: Page): Locator {
   return section(page, copy('demo', 'account.rows.label.mfa'))
 }
 
+/** The factor kinds the review assembly serves, each its own group. */
+type MfaKind = 'totp' | 'webauthn' | 'sms'
+
+/**
+ * One method group inside the two-step-verification card, named by its own
+ * heading. While an enrollment is open the heading names the enrollment, so a
+ * group is addressed by its kind only while it lists that kind's entries.
+ */
+function mfaGroup(page: Page, kind: MfaKind): Locator {
+  return mfaSection(page).getByRole('region', {
+    name: copy('accountUi', `mfa.factor.kind.${kind}`),
+    exact: true,
+  })
+}
+
+/**
+ * The add action on a method group's heading. A passkey group that already has
+ * an enabled row words it "add another device"; every other group, and a
+ * passkey with no enabled row, words it "add".
+ */
+function addFactorAction(
+  page: Page,
+  kind: MfaKind,
+  another: boolean,
+): Locator {
+  const method = copy('accountUi', `mfa.factor.kind.${kind}`)
+  return mfaGroup(page, kind).getByRole('button', {
+    name: copy('accountUi', another ? 'mfa.manageAria' : 'mfa.addAria', {
+      method,
+    }),
+    exact: true,
+  })
+}
+
 /** The sign-in surface's passkey entry. */
 function passkeyEntry(page: Page): Locator {
   return page.getByRole('button', {
@@ -226,14 +260,7 @@ async function revealedTotpSecret(mfa: Locator): Promise<string> {
  */
 async function enrolTotp(page: Page): Promise<string> {
   const mfa = mfaSection(page)
-  await mfa
-    .getByRole('button', {
-      name: copy('accountUi', 'mfa.addAria', {
-        method: copy('accountUi', 'mfa.factor.kind.totp'),
-      }),
-      exact: true,
-    })
-    .click()
+  await addFactorAction(page, 'totp', false).click()
   await submitFactorNameForm(mfa, TOTP_FACTOR_NAME)
 
   // The wizard shows the setup URI as a scannable symbol; the manual
@@ -271,6 +298,10 @@ async function enrolTotp(page: Page): Promise<string> {
       { exact: true },
     ),
   ).toBeVisible()
+  // The settled enrolment lists one enabled row in the authenticator group.
+  const group = mfaGroup(page, 'totp')
+  await expect(group.getByRole('listitem')).toHaveCount(1)
+  await expect(group.getByText(TOTP_FACTOR_NAME, { exact: true })).toBeVisible()
   return secret
 }
 
@@ -281,14 +312,7 @@ async function enrolTotp(page: Page): Promise<string> {
  */
 async function enrolPasskey(page: Page): Promise<void> {
   const mfa = mfaSection(page)
-  await mfa
-    .getByRole('button', {
-      name: copy('accountUi', 'mfa.addAria', {
-        method: copy('accountUi', 'mfa.factor.kind.webauthn'),
-      }),
-      exact: true,
-    })
-    .click()
+  await addFactorAction(page, 'webauthn', false).click()
   await submitFactorNameForm(mfa, PASSKEY_FACTOR_NAME)
   await expect(
     mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
@@ -317,13 +341,16 @@ async function enrolPasskey(page: Page): Promise<void> {
       { exact: true },
     ),
   ).toBeVisible({ timeout: 20_000 })
+  // The settled enrolment lists one enabled passkey in the passkey group,
+  // whose heading now offers another device.
+  const group = mfaGroup(page, 'webauthn')
+  await expect(group.getByRole('listitem')).toHaveCount(1)
   await expect(
-    mfa
-      .getByText(copy('accountUi', 'mfa.factor.kind.webauthn'), {
-        exact: true,
-      })
-      .first(),
+    group.getByText(PASSKEY_FACTOR_NAME, { exact: true }),
   ).toBeVisible()
+  await expect(addFactorAction(page, 'webauthn', true)).toHaveText(
+    copy('accountUi', 'mfa.action.manage'),
+  )
 }
 
 /**
@@ -364,14 +391,10 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
       await selectAccountSection(page, 'security')
       await expandAccountRows(page)
       secret = await enrolTotp(page)
-      // The one active factor puts the word on the method row and on the
-      // factor row.
+      // The authenticator group lists the one enabled row it enrolled.
       await expect(
-        mfaSection(page).getByText(
-          copy('accountUi', 'mfa.factor.status.active'),
-          { exact: true },
-        ),
-      ).toHaveCount(2)
+        mfaGroup(page, 'totp').getByRole('listitem'),
+      ).toHaveCount(1)
     })
 
     await test.step('step 2: a fresh password sign-in proves the second factor, which makes the session recent enough to write the passkey', async () => {
@@ -387,13 +410,12 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
 
     await test.step('step 3: the account enrols a discoverable passkey beside the second factor', async () => {
       await enrolPasskey(page)
-      // Two active factors, each read on its method row and its factor row.
+      // The passkey group lists the enabled passkey it enrolled.
       await expect(
-        mfaSection(page).getByText(
-          copy('accountUi', 'mfa.factor.status.active'),
-          { exact: true },
-        ),
-      ).toHaveCount(4)
+        mfaGroup(page, 'webauthn').getByText(PASSKEY_FACTOR_NAME, {
+          exact: true,
+        }),
+      ).toBeVisible()
     })
 
     await test.step('step 4: choosing the passkey entry completes the login with user verification and no second factor', async () => {
@@ -444,14 +466,13 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
       await selectAccountSection(otherPage, 'security')
       await expandAccountRows(otherPage)
       await enrolPasskey(otherPage)
-      // The account holds exactly one factor, the passkey; its state reads on
-      // the method row and on the factor row.
+      // The account holds exactly one factor, the passkey, and its group
+      // lists it.
       await expect(
-        mfaSection(otherPage).getByText(
-          copy('accountUi', 'mfa.factor.status.active'),
-          { exact: true },
-        ),
-      ).toHaveCount(2)
+        mfaGroup(otherPage, 'webauthn').getByText(PASSKEY_FACTOR_NAME, {
+          exact: true,
+        }),
+      ).toBeVisible()
 
       await otherAccounts.signOut()
       await otherAccounts.openSignIn()
