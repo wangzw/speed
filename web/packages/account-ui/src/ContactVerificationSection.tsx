@@ -663,7 +663,8 @@ export function ContactVerificationSection({
           >
             {/* The change-address face is the add face's shape: the field
                 owns the row and its submit sits beneath it, never beside
-                it at the field's top edge. */}
+                it at the field's top edge, closing that row on the field's
+                right edge as the add form's does. */}
             <Box
               sx={{
                 display: 'flex',
@@ -685,6 +686,7 @@ export function ContactVerificationSection({
               <Button
                 type="submit"
                 variant="contained"
+                sx={{ marginLeft: 'auto' }}
                 disabled={busy || proofBlocked || emailEntry.trim() === ''}
               >
                 {t('verification.changeSubmit')}

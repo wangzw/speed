@@ -58,7 +58,7 @@ function expectRightEdge(a: Element, b: Element): void {
 }
 
 describe('account-ui form geometry', () => {
-  it('stacks the change-address submit beneath its field', async () => {
+  it('stacks the change-address submit beneath its field, closed on the right edge', async () => {
     await page.viewport(1100, 900)
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -95,6 +95,9 @@ describe('account-ui form geometry', () => {
     expect(submitBox.top).toBeGreaterThanOrEqual(fieldBox.bottom - 1)
     expect(submitBox.left).toBeGreaterThanOrEqual(fieldBox.left - 1)
     expect(submitBox.left).toBeLessThanOrEqual(fieldBox.right)
+    // It also closes its row on the field's right edge, the rule the add
+    // form's primary follows.
+    expectRightEdge(submit, field)
   })
 
   it('ends the no-address add form\'s primary flush with its field', async () => {
