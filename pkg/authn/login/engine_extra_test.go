@@ -3,6 +3,7 @@ package login
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -995,5 +996,32 @@ func TestALinkOnAnUnreadableSignupStateIs503(t *testing.T) {
 	r.kv.mu.Unlock()
 	if records != 0 {
 		t.Errorf("the failed start wrote %d flow record(s), want none", records)
+	}
+}
+
+// A registration step that refuses the input as malformed answers 400, not the
+// 401 a credential that did not hold gets: a label outside its domain never
+// reached a factor to check.
+func TestARegistrationRefusedForAMalformedInputIsABadRequest(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.mfa.enroll = func(authn.FactorKind, authn.StepInput) authn.Step {
+		return authn.StepRefused(authn.ErrInvalidArgument)
+	}
+
+	w := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"enroll","input":{"kind":"totp","label":"work\nphone"}}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("POST flows/authenticated = %d (%s), want 400", w.Code, w.Body.String())
+	}
+	var problem struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("the body %q is no problem document: %v", w.Body.String(), err)
+	}
+	if problem.Type != "urn:speed:authn:bad-request" {
+		t.Errorf("the problem type is %q, want the bad-request code", problem.Type)
 	}
 }

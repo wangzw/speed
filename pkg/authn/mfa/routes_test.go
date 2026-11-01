@@ -1,6 +1,7 @@
 package mfa
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -58,6 +59,18 @@ func (r *rig) do(method, path string, headers map[string]string) *httptest.Respo
 	return r.mounter.Do(req)
 }
 
+// doJSON sends a request carrying body as its JSON document.
+func (r *rig) doJSON(method, path string, body any) *httptest.ResponseRecorder {
+	r.t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		r.t.Fatalf("encoding the request body: %v", err)
+	}
+	req := httptest.NewRequest(method, path, bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	return r.mounter.Do(req)
+}
+
 func problemOf(t *testing.T, w *httptest.ResponseRecorder) problemBody {
 	t.Helper()
 	var p problemBody
@@ -78,15 +91,16 @@ func cookieValue(w *httptest.ResponseRecorder, name string) (string, bool) {
 	return "", false
 }
 
-func TestTheRoutesAreTheTwoTheDesignNamesAndBothAreGuarded(t *testing.T) {
+func TestTheRoutesAreTheThreeTheDesignNamesAndAllAreGuarded(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	got := r.mounter.Registrations()
-	if len(got) != 2 {
-		t.Fatalf("%d routes registered, want 2: %+v", len(got), got)
+	if len(got) != 3 {
+		t.Fatalf("%d routes registered, want 3: %+v", len(got), got)
 	}
 	want := []mounttest.Registration{
 		{Kind: mounttest.Guarded, Methods: []string{http.MethodGet}, Path: "/api/v1/auth/factors", Impersonable: true},
 		{Kind: mounttest.Guarded, Methods: []string{http.MethodDelete}, Path: "/api/v1/auth/factors/:id", Impersonable: true},
+		{Kind: mounttest.Guarded, Methods: []string{http.MethodPatch}, Path: "/api/v1/auth/factors/:id", Impersonable: true},
 	}
 	for i := range want {
 		if got[i].Kind != want[i].Kind || !slices.Equal(got[i].Methods, want[i].Methods) ||
@@ -768,5 +782,138 @@ func TestAnOutOfDomainRecentWindowUsesTheDeclaredDefault(t *testing.T) {
 	}
 	if _, there := r.status(id); there {
 		t.Error("the factor stayed although the declared default window allows the deletion")
+	}
+}
+
+// recordOfID reads one factor row by identifier from the register, failing the
+// case when it is not there.
+func (r *rig) recordOfID(id string) authn.FactorRecord {
+	r.t.Helper()
+	for _, rec := range r.rows(acct) {
+		if rec.ID == id {
+			return rec
+		}
+	}
+	r.t.Fatalf("the factor %s is not in the account's rows", id)
+	return authn.FactorRecord{}
+}
+
+// The rename writes the label and nothing else, trims around it, and answers
+// the updated row. It asks for no step-up: a label is metadata, like a display
+// name.
+func TestTheRenameWritesOnlyTheLabelAndAnswersTheRow(t *testing.T) {
+	r := routed(t, authn.FactorTOTP)
+	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+	if err := r.h.Exec("UPDATE authn_factors SET label = 'old', last_used_at = ? WHERE id = ?",
+		base.Add(-time.Hour).UTC(), id).Error; err != nil {
+		t.Fatal(err)
+	}
+	before := r.recordOfID(id)
+	r.mounter.As(authntest.WithAccount(acct))
+
+	w := r.doJSON(http.MethodPatch, listPath+"/"+id, map[string]string{"label": "  New phone  "})
+	if w.Code != http.StatusOK {
+		t.Fatalf("PATCH = %d (%s), want 200", w.Code, w.Body.String())
+	}
+	var answer AuthnMfaFactor
+	if err := json.Unmarshal(w.Body.Bytes(), &answer); err != nil {
+		t.Fatalf("the answer %q is not a factor: %v", w.Body.String(), err)
+	}
+	if answer.ID != id || answer.Label != "New phone" || answer.Kind != "totp" || answer.Status != "active" {
+		t.Errorf("the answer is %+v, want the updated row with the trimmed label", answer)
+	}
+	after := r.recordOfID(id)
+	if after.Label != "New phone" {
+		t.Errorf("the stored label is %q, want %q", after.Label, "New phone")
+	}
+	if after.Kind != before.Kind || after.Status != before.Status || !after.CreatedAt.Equal(before.CreatedAt) ||
+		!after.ActivatedAt.Equal(before.ActivatedAt) || !after.LastUsedAt.Equal(before.LastUsedAt) {
+		t.Errorf("the rename changed more than the label: before %+v, after %+v", before, after)
+	}
+
+	// An empty label clears the name; nothing is generated in its place.
+	if w := r.doJSON(http.MethodPatch, listPath+"/"+id, map[string]string{"label": ""}); w.Code != http.StatusOK {
+		t.Fatalf("clearing PATCH = %d (%s), want 200", w.Code, w.Body.String())
+	}
+	if got := r.recordOfID(id).Label; got != "" {
+		t.Errorf("the label is %q after clearing, want empty", got)
+	}
+
+	r.mounter.AsAnonymous()
+	if w := r.doJSON(http.MethodPatch, listPath+"/"+id, map[string]string{"label": "x"}); w.Code != http.StatusUnauthorized {
+		t.Errorf("an anonymous rename = %d, want 401", w.Code)
+	}
+}
+
+// A factor that is not the caller's is answered as one that is not there, so
+// another account's identifier says nothing about whether it exists.
+func TestRenamingAnotherAccountsFactorReadsAsNotFound(t *testing.T) {
+	r := routed(t, authn.FactorTOTP)
+	theirs := r.activeFactor("someone-else", authn.FactorTOTP, time.Hour)
+	if err := r.h.Exec("UPDATE authn_factors SET label = 'theirs' WHERE id = ?", theirs).Error; err != nil {
+		t.Fatal(err)
+	}
+	r.mounter.As(authntest.WithAccount(acct))
+	for _, id := range []string{theirs, "no-such-factor"} {
+		w := r.doJSON(http.MethodPatch, listPath+"/"+id, map[string]string{"label": "mine"})
+		if w.Code != http.StatusNotFound {
+			t.Errorf("PATCH %s = %d (%s), want 404", id, w.Code, w.Body.String())
+		}
+	}
+	var label string
+	if err := r.h.Raw("SELECT label FROM authn_factors WHERE id = ?", theirs).Scan(&label).Error; err != nil {
+		t.Fatal(err)
+	}
+	if label != "theirs" {
+		t.Errorf("another account's factor label is %q, want it untouched", label)
+	}
+
+	long := strings.Repeat("x", maxFactorIDLen+1)
+	if w := r.doJSON(http.MethodPatch, listPath+"/"+long, map[string]string{"label": "mine"}); w.Code != http.StatusBadRequest {
+		t.Errorf("an identifier longer than any there is = %d, want 400", w.Code)
+	}
+}
+
+// A label outside its domain is refused as a bad request and leaves the stored
+// one as it is.
+func TestTheRenameRefusesALabelOutsideItsDomain(t *testing.T) {
+	cases := []struct {
+		name  string
+		label string
+	}{
+		{"longer than the column admits", strings.Repeat("x", maxFactorLabelRunes+1)},
+		{"a NUL character", "work\x00phone"},
+		{"an embedded newline", "work\nphone"},
+		{"a tab", "work\tphone"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := routed(t, authn.FactorTOTP)
+			id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+			if err := r.h.Exec("UPDATE authn_factors SET label = 'old' WHERE id = ?", id).Error; err != nil {
+				t.Fatal(err)
+			}
+			r.mounter.As(authntest.WithAccount(acct))
+
+			w := r.doJSON(http.MethodPatch, listPath+"/"+id, map[string]string{"label": c.label})
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("PATCH = %d (%s), want 400", w.Code, w.Body.String())
+			}
+			if got := r.recordOfID(id).Label; got != "old" {
+				t.Errorf("the stored label is %q after a refused rename, want it unchanged", got)
+			}
+		})
+	}
+
+	// The longest label the domain admits is stored: the boundary is not over.
+	r := routed(t, authn.FactorTOTP)
+	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+	r.mounter.As(authntest.WithAccount(acct))
+	boundary := strings.Repeat("x", maxFactorLabelRunes)
+	if w := r.doJSON(http.MethodPatch, listPath+"/"+id, map[string]string{"label": boundary}); w.Code != http.StatusOK {
+		t.Errorf("a label of exactly the longest admitted length = %d, want 200", w.Code)
+	}
+	if got := r.recordOfID(id).Label; got != boundary {
+		t.Errorf("the stored boundary label is %q, want the one submitted", got)
 	}
 }

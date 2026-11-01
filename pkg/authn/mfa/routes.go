@@ -44,6 +44,8 @@ func (m *product) mountRoutes() {
 		factorsOperation.Handle(m.listFactors), mount.Impersonable())
 	mount.Declared(m.mounter, removeFactorOperation, mountRel(mfaSpec, removeFactorOperation.Path),
 		removeFactorOperation.Handle(m.deleteFactor), mount.Impersonable())
+	mount.Declared(m.mounter, updateFactorOperation, mountRel(mfaSpec, updateFactorOperation.Path),
+		updateFactorOperation.Handle(m.updateFactor), mount.Impersonable())
 }
 
 // mountRel turns a declared route into the relative path the mounter joins to
@@ -150,6 +152,33 @@ func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *spe
 	default:
 		return nil, m.answerError(id.Account(), err)
 	}
+}
+
+// updateFactor answers PATCH /factors/:id. The label is metadata and is written
+// without a step-up: it changes how the factor is shown and nothing it can
+// verify with. A factor that is not the caller's answers 404, the same as one
+// that is not there, so another account's identifier says nothing about whether
+// it exists.
+func (m *product) updateFactor(ctx context.Context, in updateFactorInput) (AuthnMfaFactor, error) {
+	id, ok := authn.FromContext(ctx)
+	if !ok {
+		return AuthnMfaFactor{}, m.unauthorized()
+	}
+	if in.ID == "" || len(in.ID) > maxFactorIDLen {
+		return AuthnMfaFactor{}, authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
+	}
+	label, err := normalizeFactorLabel(in.Label)
+	if err != nil {
+		return AuthnMfaFactor{}, authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
+	}
+	rec, found, err := m.renameFactor(ctx, id.Account(), in.ID, label)
+	if err != nil {
+		return AuthnMfaFactor{}, m.answerError(id.Account(), err)
+	}
+	if !found {
+		return AuthnMfaFactor{}, speedhttp.Fault{Status: http.StatusNotFound}
+	}
+	return viewOf(rec), nil
 }
 
 // unauthorized is the 401 of a route reached without an identity. The gateway

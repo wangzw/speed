@@ -308,7 +308,11 @@ func (m *product) beginEnroll(ctx context.Context, f authn.FlowState, kind authn
 	if !present {
 		return authn.Step{}, fmt.Errorf("%w: no factor of the kind %q is taken in", authn.ErrInvalidArgument, kind)
 	}
-	rec, err := m.register.insertPending(ctx, f.Account, kind, m.settings.maxPerKind(), m.clock.Now())
+	label, err := normalizeFactorLabel(in.Fields[labelField])
+	if err != nil {
+		return authn.StepRefused(err), nil
+	}
+	rec, err := m.register.insertPending(ctx, f.Account, kind, label, m.settings.maxPerKind(), m.clock.Now())
 	switch {
 	case errors.Is(err, authn.ErrFactorLimit):
 		m.record(ctx, actionEnroll, outcomeDenied, authn.FactorRecord{Account: f.Account, Kind: kind}, byClassSelf)

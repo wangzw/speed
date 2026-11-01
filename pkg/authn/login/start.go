@@ -395,6 +395,13 @@ func (r *routes) applyEnroll(c *call, token, echo string, rec record, raw []byte
 		}
 		writeComplete(c, rec)
 	case step.KindRefused:
+		// A registration step refused for a malformed input is a bad request,
+		// not a credential that did not hold: a label outside its domain never
+		// reached a factor to check.
+		if errors.Is(step.CauseOf(got), authn.ErrInvalidArgument) {
+			c.fail(mount.CodeBadRequest)
+			return
+		}
 		rec.Answers++
 		if !r.swap(c, token, raw, rec) {
 			return

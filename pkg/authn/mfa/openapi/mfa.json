@@ -15,7 +15,7 @@
             "type": "string"
           },
           "id": {
-            "description": "The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}`.",
+            "description": "The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}` or `PATCH /auth/factors/{id}`.",
             "type": "string"
           },
           "kind": {
@@ -23,7 +23,7 @@
             "type": "string"
           },
           "label": {
-            "description": "The display label stored with the factor; this module writes an empty label when it registers one.",
+            "description": "The display label stored with the factor: what the caller submitted at registration or at a later rename, with surrounding whitespace trimmed. Empty means the factor has no name; the module generates none.",
             "type": "string"
           },
           "last_used_at": {
@@ -236,6 +236,132 @@
           }
         ],
         "summary": "Remove one of the caller's own factors"
+      },
+      "patch": {
+        "description": "Writes the display label of one factor of the caller's account and answers the updated row, as `GET /auth/factors` shows it. The label is metadata, so the call asks for no freshness beyond the login session itself, and an impersonating identity renames the impersonated account's factor. The value is trimmed of surrounding whitespace and must be at most 64 characters with no control character; an empty value clears the name, and the module generates none. A factor that is not the caller's answers 404, the same as one that is not there, so another account's identifier says nothing about whether it exists.",
+        "operationId": "authn.mfa.updateFactor",
+        "parameters": [
+          {
+            "description": "The factor identifier, as returned in `id` by `GET /auth/factors`. Empty or longer than 64 bytes is refused as a bad request without reading the register.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "The new display label of one factor the caller's account registered.",
+                "properties": {
+                  "label": {
+                    "description": "The factor's new display label: at most 64 characters with no control character. Surrounding whitespace is trimmed before it is stored, and an empty value clears the name; the module generates none.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "label"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "description": "The factor's new label. The member is required and an empty value clears the name; surrounding whitespace is trimmed, and at most 64 characters with no control character is stored. An unknown member is refused.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthnMfaFactor"
+                }
+              }
+            },
+            "description": "The factor row as it reads after the rename"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The factor identifier is malformed, or the label is outside its domain"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No usable credential",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such factor of the caller's account"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is not application/json"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The factor could not be renamed: the factor store was unavailable. The cause is logged and not sent"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Rename one of the caller's own factors"
       }
     }
   }

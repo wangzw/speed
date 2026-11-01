@@ -77,11 +77,16 @@ dashboard or an audit query written against it.
   It counts the account's factors of the kind against `max-per-kind` and writes a
   pending row, then calls the factor; the row becomes active only on the factor's
   last step, and a row a sweep, a reset or a removal got to first is not brought
-  back. It carries the pending row to the factor in the context and in the private
-  bytes it wraps, which is how a kind learns the identifier it keys its own data
-  by (`Enroll`, `PendingFactor`, `finishEnroll`,
+  back. The first step stores the optional label carried in the input map under
+  `label`: trimmed, at most 64 characters with no control character, stored as
+  given, and empty when none is submitted because no name is generated. A label
+  outside that domain is refused before any row is written, and a label on a later
+  step changes nothing (`Enroll`, `PendingFactor`, `finishEnroll`,
+  `normalizeFactorLabel`,
   `TestEnrollRefusesPastTheLimitPerKindAndCountsOnlyWhatIsNotDisabled`,
   `TestARegistrationActivatesTheRowOnTheLastStepOnly`,
+  `TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing`,
+  `TestARegistrationRefusesALabelOutsideItsDomain`,
   `TestAnActivationThatLostTheRaceIsRefused`).
 - **`Verify` and `Challenge` throttle first and call the factor only if the
   back-off lets them.** The scope is `ScopeFactor` and the key is the factor's
@@ -156,16 +161,24 @@ dashboard or an audit query written against it.
   `TestACleanupThatFailsIsReturnedAndTheRepeatFinishesIt`,
   `TestADisabledAccountKeepsItsFactors`,
   `TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID`).
-- **The two routes are the two below, both guarded and both impersonable, and a
-  deletion asks for a fresh local multi-factor verified here.** `GET B/factors`
-  lists the caller's own factors and nothing of a kind's own; `DELETE
-  B/factors/:id` acts on the effective account's factors, requires
-  `FreshLocalMulti(recent-window)` from the caller's own proof — an IdP's
-  declared multi-factor does not satisfy it — and reads a factor that is not the
-  effective account's as one already gone
-  (`TestTheRoutesAreTheTwoTheDesignNamesAndBothAreGuarded`,
+- **The routes are the ones below, all guarded and all impersonable; a deletion
+  asks for a fresh local multi-factor verified here and a rename asks for
+  nothing beyond the login session.** `GET B/factors` lists the caller's own
+  factors and nothing of a kind's own; `DELETE B/factors/:id` acts on the
+  effective account's factors, requires `FreshLocalMulti(recent-window)` from
+  the caller's own proof — an IdP's declared multi-factor does not satisfy it —
+  and reads a factor that is not the effective account's as one already gone;
+  `PATCH B/factors/:id` writes the label of one of the effective account's
+  factors, answers the updated row, and answers 404 for another account's
+  identifier, the same as one that is not there. A label outside its domain is
+  400 and leaves the stored one as it is; the rename writes no audit row and
+  publishes no event
+  (`TestTheRoutesAreTheThreeTheDesignNamesAndAllAreGuarded`,
   `TestDeletingAFactorNeedsAFreshMultiFactorAuthenticationVerifiedHere`,
   `TestAnImpersonatingIdentityRemovesTheEffectiveAccountsFactor`,
+  `TestTheRenameWritesOnlyTheLabelAndAnswersTheRow`,
+  `TestRenamingAnotherAccountsFactorReadsAsNotFound`,
+  `TestTheRenameRefusesALabelOutsideItsDomain`,
   `TestTheListIsTheCallersOwnAndCarriesNothingSecret`).
 - **The failure direction is closed: a dependency that cannot be read is an
   outage, never a refusal.** The database and the back-off store being unreadable

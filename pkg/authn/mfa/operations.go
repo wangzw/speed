@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/vislake/speed/pkg/authn/internal/mount"
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
@@ -28,9 +29,9 @@ const (
 type AuthnMfaFactor struct {
 	_ struct{} `description:"One factor row of the caller's account: what the register holds about the factor, with nothing a kind keeps for itself."`
 
-	ID          string     "json:\"id\" required:\"true\" description:\"The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}`.\""
+	ID          string     "json:\"id\" required:\"true\" description:\"The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}` or `PATCH /auth/factors/{id}`.\""
 	Kind        string     "json:\"kind\" required:\"true\" description:\"The factor kind: `totp`, `sms` or `webauthn`.\""
-	Label       string     `json:"label" required:"true" description:"The display label stored with the factor; this module writes an empty label when it registers one."`
+	Label       string     `json:"label" required:"true" description:"The display label stored with the factor: what the caller submitted at registration or at a later rename, with surrounding whitespace trimmed. Empty means the factor has no name; the module generates none."`
 	Status      string     "json:\"status\" required:\"true\" enum:\"pending,active,disabled\" description:\"Lifecycle status: `pending` is registered but not yet confirmed and is never used to verify, `active` may verify, and `disabled` (left by an administrator reset or a clone warning) stays as a row that no longer counts.\""
 	CreatedAt   time.Time  `json:"created_at" required:"true" description:"When the factor row was created, as an RFC 3339 instant"`
 	ActivatedAt *time.Time `json:"activated_at,omitempty" description:"When the factor became active, as an RFC 3339 instant; absent until it is"`
@@ -52,10 +53,21 @@ type removeFactorInput struct {
 	ID string "path:\"id\" description:\"The factor identifier, as returned in `id` by `GET /auth/factors`. Empty or longer than 64 bytes is refused as a bad request without reading the register.\""
 }
 
-// factorsChallengeHeader declares the header every 401 on the listing carries:
-// the gateway writes the endpoint's challenge when it refuses the request first,
-// and a handler that answers 401 itself returns it in the fault's headers.
-var factorsChallengeHeader = speedhttp.Header{
+// updateFactorInput is the declaration's input for the route that renames one
+// factor by identifier: the identifier is a path parameter and the body carries
+// the new label.
+type updateFactorInput struct {
+	_ struct{} `description:"The new display label of one factor the caller's account registered."`
+
+	ID    string "path:\"id\" description:\"The factor identifier, as returned in `id` by `GET /auth/factors`. Empty or longer than 64 bytes is refused as a bad request without reading the register.\""
+	Label string "json:\"label\" required:\"true\" description:\"The factor's new display label: at most 64 characters with no control character. Surrounding whitespace is trimmed before it is stored, and an empty value clears the name; the module generates none.\""
+}
+
+// plainChallengeHeader declares the header every 401 on a route that asks for
+// no freshness beyond the login session carries: the gateway writes the
+// endpoint's challenge when it refuses the request first, and a handler that
+// answers 401 itself returns it in the fault's headers.
+var plainChallengeHeader = speedhttp.Header{
 	Name:        "WWW-Authenticate",
 	Description: "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
 }
@@ -94,7 +106,7 @@ var factorsOperation = speedhttp.NewOperation[struct{}, AuthnMfaFactorList](
 		"other data a kind keeps for itself. The list is empty when the account has registered none.",
 	nil,
 	speedhttp.Failures(nil,
-		unauthorized(factorsChallengeHeader, "No usable credential"),
+		unauthorized(plainChallengeHeader, "No usable credential"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable,
 			"The factors could not be listed: the factor store was unavailable. The cause is logged and not sent"),
 		speedhttp.Response{
@@ -148,9 +160,50 @@ var removeFactorOperation = speedhttp.NewReplyOperation[removeFactorInput](
 	),
 )
 
+// updateFactorOperation declares the route that renames one of the caller's own
+// factors. The handler binds the declared body and returns the updated row, so
+// the entry point writes the declared 200.
+var updateFactorOperation = speedhttp.NewOperation[updateFactorInput, AuthnMfaFactor](
+	"authn.mfa.updateFactor",
+	http.MethodPatch,
+	factorPath,
+	"Rename one of the caller's own factors",
+	"Writes the display label of one factor of the caller's account and answers the updated row, "+
+		"as `GET /auth/factors` shows it. The label is metadata, so the call asks for no freshness "+
+		"beyond the login session itself, and an impersonating identity renames the impersonated "+
+		"account's factor. The value is trimmed of surrounding whitespace and must be at most 64 "+
+		"characters with no control character; an empty value clears the name, and the module "+
+		"generates none. A factor that is not the caller's answers 404, the same as one that is "+
+		"not there, so another account's identifier says nothing about whether it exists.",
+	&speedhttp.RequestBody{
+		MediaType: "application/json",
+		Description: "The factor's new label. The member is required and an empty value clears the " +
+			"name; surrounding whitespace is trimmed, and at most 64 characters with no control " +
+			"character is stored. An unknown member is refused.",
+		Required: true,
+	},
+	[]speedhttp.Response{
+		{
+			Status:      http.StatusOK,
+			Description: "The factor row as it reads after the rename",
+			Body:        &speedhttp.Body{MediaType: "application/json"},
+		},
+		speedhttp.ProblemResponseOf(http.StatusBadRequest,
+			"The factor identifier is malformed, or the label is outside its domain",
+			typePrefix+mount.CodeBadRequest),
+		unauthorized(plainChallengeHeader, "No usable credential"),
+		speedhttp.ProblemResponse(http.StatusNotFound, "No such factor of the caller's account"),
+		speedhttp.ProblemResponseOf(http.StatusUnsupportedMediaType, "The request body is not application/json",
+			typePrefix+mount.CodeUnsupportedMediaType),
+		speedhttp.ProblemResponse(http.StatusServiceUnavailable,
+			"The factor could not be renamed: the factor store was unavailable. The cause is logged and not sent"),
+	},
+)
+
 // operations is this module's declaration of the API it serves. The fragment is
 // generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{
 	factorsOperation,
 	removeFactorOperation,
+	updateFactorOperation,
 }

@@ -939,3 +939,85 @@ func TestAnEmptyIdentifierIsRefusedWithoutReadingTheRegister(t *testing.T) {
 		}
 	})
 }
+
+// A registration stores the label its first step carries, trimmed, and stores
+// an empty one when the step carries none: the server generates no name. A
+// label submitted on a later step does not overwrite it.
+func TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing(t *testing.T) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
+		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
+		totp.enrollFn = func(_ context.Context, f authn.FlowState, _ authn.StepInput) (authn.Step, error) {
+			if len(f.Private) == 0 {
+				return confirming("seed-state"), nil
+			}
+			return authn.StepEnrolled(authn.FactorRecord{}), nil
+		}
+		ctx := context.Background()
+
+		first, err := r.p.Enroll(ctx, flow(acct), authn.FactorTOTP,
+			authn.StepInput{Fields: map[string]string{"label": "  My phone  "}})
+		if err != nil {
+			t.Fatalf("Enroll, first step: %v", err)
+		}
+		answerIs(t, first, step.KindPrompt)
+		rows := r.rows(acct)
+		if len(rows) != 1 || rows[0].Label != "My phone" {
+			t.Fatalf("the pending row is %+v, want the submitted label trimmed", rows)
+		}
+
+		// A label on the confirmation step changes nothing: the name is the one
+		// the registration was started with.
+		next := flow(acct)
+		next.Private = step.PrivateOf(first)
+		last, err := r.p.Enroll(ctx, next, authn.FactorTOTP,
+			authn.StepInput{Fields: map[string]string{"label": "Another name"}})
+		if err != nil {
+			t.Fatalf("Enroll, last step: %v", err)
+		}
+		answerIs(t, last, step.KindEnrolled)
+		if got := r.rows(acct)[0]; got.Label != "My phone" {
+			t.Errorf("the active row's label is %q, want the one the registration started with", got.Label)
+		}
+
+		// A registration with no label gets no generated name.
+		first, err = r.p.Enroll(ctx, flow("another-account"), authn.FactorTOTP, authn.StepInput{})
+		if err != nil {
+			t.Fatalf("Enroll without a label: %v", err)
+		}
+		answerIs(t, first, step.KindPrompt)
+		unlabelled := r.rows("another-account")
+		if len(unlabelled) != 1 || unlabelled[0].Label != "" {
+			t.Errorf("the row of a registration without a label is %+v, want an empty label", unlabelled)
+		}
+	})
+}
+
+// A label outside its domain is refused before any row is written: a value the
+// register would not admit never becomes a pending factor.
+func TestARegistrationRefusesALabelOutsideItsDomain(t *testing.T) {
+	cases := []struct {
+		name  string
+		label string
+	}{
+		{"longer than the column admits", strings.Repeat("x", maxFactorLabelRunes+1)},
+		{"a NUL character", "work\x00phone"},
+		{"an embedded newline", "work\nphone"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRig(t, openDialect(t, sqliteDialect), newFactor(authn.FactorTOTP))
+			got, err := r.p.Enroll(context.Background(), flow(acct), authn.FactorTOTP,
+				authn.StepInput{Fields: map[string]string{"label": c.label}})
+			if err != nil {
+				t.Fatalf("Enroll: %v", err)
+			}
+			if k := step.KindOf(got); k != step.KindRefused || !errors.Is(step.CauseOf(got), authn.ErrInvalidArgument) {
+				t.Fatalf("Enroll with a label outside its domain = %v (cause %v), want a refusal of ErrInvalidArgument",
+					k, step.CauseOf(got))
+			}
+			if rows := r.rows(acct); len(rows) != 0 {
+				t.Errorf("the register holds %+v after a refused label, want no row", rows)
+			}
+		})
+	}
+}

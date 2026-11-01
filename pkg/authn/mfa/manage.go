@@ -24,6 +24,29 @@ func (m *product) Factors(ctx context.Context, id authn.AccountID) ([]authn.Fact
 	return recs, nil
 }
 
+// renameFactor writes one of the account's factors' label and answers the row as
+// it now reads. The label is metadata and is written without any step-up: it is
+// the caller's own factor, and a row that is not the account's is answered as
+// not found rather than as a refusal, so another account's identifier says
+// nothing about whether it exists.
+func (m *product) renameFactor(ctx context.Context, id authn.AccountID, factorID, label string) (authn.FactorRecord, bool, error) {
+	if id == "" {
+		return authn.FactorRecord{}, false, authn.ErrInvalidAccountID
+	}
+	renamed, err := m.register.updateLabel(ctx, id, factorID, label)
+	if err != nil {
+		return authn.FactorRecord{}, false, m.unavailable(err)
+	}
+	if !renamed {
+		return authn.FactorRecord{}, false, nil
+	}
+	rec, found, err := m.register.find(ctx, id, factorID)
+	if err != nil {
+		return authn.FactorRecord{}, false, m.unavailable(err)
+	}
+	return rec, found, nil
+}
+
 // Kinds lists the kinds of factor taken in, in a stable order.
 func (m *product) Kinds() []authn.FactorKind { return slices.Clone(m.kinds) }
 

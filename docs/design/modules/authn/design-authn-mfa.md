@@ -9,7 +9,7 @@
 - **最高权限动作的因素门槛。** 回答 `MFA.Seasoned`；约定账户安全类动作对 `Requirement.Local` 与因素年龄的要求。
 - **因素的删除与重置，以及随账户删除的清理。** `MFA.Remove`、`MFA.Reset`，以及对账户生命周期钩子的实现。
 - **因素种类的实现。** TOTP、短信、WebAuthn 各是一个子包与一个模块，只做密码学与自己的状态。
-- **因素自助面的路由。** `GET B/factors`、`DELETE B/factors/:id`；基路径 `B` 由 [authn-gate](design-authn-gate.md) 声明。这个面以静态[特性](../../../glossary.md) `authn.mfa` 声明（见「声明的特性」）。
+- **因素自助面的路由。** `GET B/factors`、`DELETE B/factors/:id`、`PATCH B/factors/:id`；基路径 `B` 由 [authn-gate](design-authn-gate.md) 声明。这个面以静态[特性](../../../glossary.md) `authn.mfa` 声明（见「声明的特性」）。
 
 认证功能目录的术语（因素、保障等级、认证方式、登录会话等）登记在 [authn](design-authn.md) 的模块局部术语表，本文沿用。
 
@@ -130,8 +130,9 @@ type MFA interface {
 | 动作 | 路由 | 要求 |
 |---|---|---|
 | 列出自己的因素 | `GET B/factors` | 无附加要求 |
-| 登记因素 | `POST B/flows/authenticated {purpose:"enroll", input:{kind}}`，随后经 `POST B/flows/answer {step:"enroll"}` 推进；登记只经登录引擎这一个入口 | 账户已有有效因素：新鲜的本地多因素；账户没有因素：新鲜的第一因素；CSRF。冒充期间登记的是被冒充账户的因素，认证事实取自发起者自己的会话。 |
+| 登记因素 | `POST B/flows/authenticated {purpose:"enroll", input:{kind, label?}}`，随后经 `POST B/flows/answer {step:"enroll"}` 推进；登记只经登录引擎这一个入口 | 账户已有有效因素：新鲜的本地多因素；账户没有因素：新鲜的第一因素；CSRF。冒充期间登记的是被冒充账户的因素，认证事实取自发起者自己的会话。 |
 | 删除因素 | `DELETE B/factors/:id` | 新鲜的本地多因素；`mfa_required` 的账户不得删最后一个；CSRF。冒充期间删除的是被冒充账户的因素。 |
+| 改名因素 | `PATCH B/factors/:id` | 无附加要求，标签是元数据；冒充期间改名的是被冒充账户的因素。别人的因素标识按不存在应答 404。 |
 | 加强认证 | `POST B/flows/authenticated {purpose:"step-up"}` | 复用登录引擎；见「加强认证」 |
 | 管理员重置因素 | `POST B/accounts/:id/mfa-reset`（路由由 `authn.admin` 挂） | 见「删除与重置」 |
 
@@ -172,7 +173,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 
 ### 声明的特性
 
-**`authn.mfa` 以[静态特性](../../../glossary.md) `authn.mfa` 声明多因素的自助面。** 描述符的 `Resources` 带 `feature.Spec{Name: "authn.mfa"}`（[feature](../design-feature.md)）。这个特性在场，表示本进程运行 `authn.mfa`、已挂出 `GET B/factors` 与 `DELETE B/factors/:id`。`mount.Mounter` 是必需依赖，模块进入启用集即挂出这组路由，挂与不挂不另取决于配置或装配，所以声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
+**`authn.mfa` 以[静态特性](../../../glossary.md) `authn.mfa` 声明多因素的自助面。** 描述符的 `Resources` 带 `feature.Spec{Name: "authn.mfa"}`（[feature](../design-feature.md)）。这个特性在场，表示本进程运行 `authn.mfa`、已挂出 `GET B/factors`、`DELETE B/factors/:id` 与 `PATCH B/factors/:id`。`mount.Mounter` 是必需依赖，模块进入启用集即挂出这组路由，挂与不挂不另取决于配置或装配，所以声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
 
 - **同一事实只有一个发布点。** 特性文档只说多因素的自助面是否存在，不按因素种类分出特性名；可登记的种类只经 `GET B/methods` 的 `mfa.factors` 发布（[authn-login](design-authn-login.md)、[ADR-feature-ownership](../../../adr/adr-feature-ownership.md)）。
 - **本模块的设置不发布。** 全局强制 MFA（`authn.mfa.global-required`）经登录流程的登记步送达；其余设置是时长、上限一类参数。
@@ -192,7 +193,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 | 依赖 | 方式 | 说明 |
 |---|---|---|
 | `db.Database` | 必需 | 因素登记簿与 TOTP、WebAuthn 子表；条件更新判胜负。 |
-| `mount.Mounter` | 必需 | 登记 `GET B/factors`、`DELETE B/factors/:id`。 |
+| `mount.Mounter` | 必需 | 登记 `GET B/factors`、`DELETE B/factors/:id`、`PATCH B/factors/:id`。 |
 | `Accounts`、`AccountAdmin` | 必需 | 读账户的 `mfa_required` 与手机标识；`Reset` 经 `AccountAdmin.SetMFARequired` 置位。`Accounts` 与 `AccountAdmin` 都由 `authn.account` 交付。 |
 | `Throttle` | 必需 | 范围 `ScopeFactor`，键为因素标识。 |
 | 全部 `Factor` | `ResolveAll` | 因素实现；`authn.mfa` 对因素子包只经根包的 `Factor` 接口，不 import 它们。 |
@@ -341,7 +342,7 @@ CREATE TABLE authn_factors (
     id           TEXT        NOT NULL PRIMARY KEY,
     account_id   TEXT        NOT NULL,
     kind         TEXT        NOT NULL CHECK (kind IN ('totp', 'sms', 'webauthn')),
-    label        TEXT        NOT NULL DEFAULT '' CHECK (length(label) <= 64),
+    label        TEXT        NOT NULL DEFAULT '' CHECK (length(label) <= 64),   -- 登记方提交的显示名称；空值表示没有名称（取值域见「因素登记」）
     status       SMALLINT    NOT NULL DEFAULT 0 CHECK (status IN (0, 1, 2)),   -- 0 待确认（零值）
     created_at   TIMESTAMPTZ NOT NULL,
     activated_at TIMESTAMPTZ NULL,
@@ -457,9 +458,11 @@ CREATE TABLE authn_webauthn_credentials (
 
 1. 前置要求见「登记、删除与加强认证的路由与要求」一节，由引擎在开始与完成时复核发起会话。
 2. 核对该种类的数量上限，超出返回 `ErrFactorLimit`。
-3. 写一行 `status=0` 的待确认行，转调 `Factor.Enroll`。
+3. 写一行 `status=0` 的待确认行，转调 `Factor.Enroll`。可选名称取自第一步的 `input.label`，见下。
 4. 因素实现的最后一步交出 `StepEnrolled`，`MFA` 把行置为启用（`FactorActive`），写入 `activated_at`，写审计并发 `authn.factor.changed`（`enrolled`）。
 5. 引擎在完成时撤销该账户除发起会话之外的其余会话；会话的保障等级不变（[authn-login](design-authn-login.md)）。
+
+**名称。** 因素行有一个显示名称，取值域是：先去除首尾空白，最多 64 个字符，不得含控制字符（含换行与制表符）。登记在第一步接收可选的 `input.label`，按该取值域规整后原样存入因素行；空值表示这个因素没有名称，服务端不生成任何名称。后续步骤不再读取名称。改名走 `PATCH B/factors/:id`，请求体 `{label}` 用同一取值域，空值清除名称，应答是更新后的因素行。改名只写因素行的 `label`：它是元数据，不要求新鲜认证，不写审计行，也不发事件。因素标识属于别的账户时按不存在应答 404，与标识不存在无从区分。
 
 首次登记因素按信任首次使用：账户尚无因素时，持口令者与真用户不可区分，本模块不以邮箱验证码作为因素登记的带外证明。这一条把抢先登记的危害限制在普通业务路由上：抢先登记的因素计不进本次强度，换不到 `Seasoned` 所守的最高权限动作。待确认超过 `pending-ttl` 的行由 `authn.mfa` 在 `Start` 起的有界清扫协程每小时删一次，`Stop` 与 `Close` 的 context 去掉了取消，协程的退出自带时限。
 

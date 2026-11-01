@@ -110,15 +110,17 @@ func (g *register) find(ctx context.Context, account authn.AccountID, id string)
 }
 
 // insertPending writes a pending row of the kind, after counting the account's
-// rows of that kind that are not disabled. The count and the insert are one
-// transaction; a disabled row, which only a reset leaves behind, does not count,
-// or an account whose factors were all reset could not register another once it
-// held the limit. A count at the limit is ErrFactorLimit.
-func (g *register) insertPending(ctx context.Context, account authn.AccountID, kind authn.FactorKind, limit int, at time.Time) (authn.FactorRecord, error) {
+// rows of that kind that are not disabled. label is stored as given, so an empty
+// one is a factor with no name. The count and the insert are one transaction; a
+// disabled row, which only a reset leaves behind, does not count, or an account
+// whose factors were all reset could not register another once it held the
+// limit. A count at the limit is ErrFactorLimit.
+func (g *register) insertPending(ctx context.Context, account authn.AccountID, kind authn.FactorKind, label string, limit int, at time.Time) (authn.FactorRecord, error) {
 	rec := authn.FactorRecord{
 		ID:        event.NewID(),
 		Account:   account,
 		Kind:      kind,
+		Label:     label,
 		Status:    authn.FactorPending,
 		CreatedAt: clock.UTC(at),
 	}
@@ -132,8 +134,8 @@ func (g *register) insertPending(ctx context.Context, account authn.AccountID, k
 		if count >= int64(limit) {
 			return authn.ErrFactorLimit
 		}
-		return tx.Exec("INSERT INTO "+factorTable+" (id, account_id, kind, label, status, created_at) VALUES (?, ?, ?, '', ?, ?)",
-			rec.ID, string(account), string(kind), int(authn.FactorPending), rec.CreatedAt).Error
+		return tx.Exec("INSERT INTO "+factorTable+" (id, account_id, kind, label, status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+			rec.ID, string(account), string(kind), rec.Label, int(authn.FactorPending), rec.CreatedAt).Error
 	})
 	if err != nil {
 		return authn.FactorRecord{}, err
@@ -149,6 +151,18 @@ func (g *register) activate(ctx context.Context, account authn.AccountID, id str
 		int(authn.FactorActive), clock.UTC(at), id, string(account), int(authn.FactorPending))
 	if res.Error != nil {
 		return false, fmt.Errorf("activating a factor: %w", res.Error)
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// updateLabel writes the label of one row of the account and says whether there
+// was one. A row of another account changes nothing and reports false, so the
+// caller cannot tell it apart from a row that is not there.
+func (g *register) updateLabel(ctx context.Context, account authn.AccountID, id, label string) (bool, error) {
+	res := g.session(ctx).Exec("UPDATE "+factorTable+" SET label = ? WHERE id = ? AND account_id = ?",
+		label, id, string(account))
+	if res.Error != nil {
+		return false, fmt.Errorf("renaming a factor: %w", res.Error)
 	}
 	return res.RowsAffected == 1, nil
 }

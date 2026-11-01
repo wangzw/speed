@@ -38,7 +38,7 @@ func ReviewSeedActiveFactor(ctx context.Context, database db.Database, account a
 	kind authn.FactorKind, at time.Time,
 ) (string, error) {
 	register := &register{handle: database.DB()}
-	rec, err := register.insertPending(ctx, account, kind, defaults.MaxPerKind, clock.UTC(at))
+	rec, err := register.insertPending(ctx, account, kind, "", defaults.MaxPerKind, clock.UTC(at))
 	if err != nil {
 		return "", fmt.Errorf("review fixture: writing a pending %s factor: %w", kind, err)
 	}
