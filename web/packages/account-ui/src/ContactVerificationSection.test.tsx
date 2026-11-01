@@ -427,9 +427,10 @@ describe('ContactVerificationSection', () => {
     expect(screen.getByText(sentText)).toBeTruthy()
   })
 
-  it('keeps each control group failure when the other settles later', async () => {
-    // Send and verify own separate scopes: a refused resend must not clear
-    // the code's own failure, and vice versa.
+  it('holds one result slot for the send and verify writes', async () => {
+    // One code step, one scope: a refused resend and a refused verification
+    // report through the same slot, so they never stand side by side -- the
+    // attempt that settles last replaces the one before it.
     let firstSend = true
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -467,19 +468,20 @@ describe('ContactVerificationSection', () => {
     )
     expect(await screen.findByText(zhCN.errors.authn.bad_request)).toBeTruthy()
 
-    // The resend settles its own scope to a failure.
+    // The resend settles the same scope to a failure.
     await user.click(
       screen.getByRole('button', { name: zhCN.verification.resend }),
     )
     expect(await screen.findByText(zhCN.errors.authn.unavailable)).toBeTruthy()
-    // Both failures stand; the later one did not clear the earlier.
-    expect(screen.getByText(zhCN.errors.authn.bad_request)).toBeTruthy()
-    expect(screen.getByText(zhCN.errors.authn.unavailable)).toBeTruthy()
+    // The later result is the slot's one result: the earlier failure does
+    // not stand beside it.
+    expect(screen.queryByText(zhCN.errors.authn.bad_request)).toBeNull()
   })
 
-  it('renders a refused change below the form that submitted it', async () => {
-    // The change-address form writes into the send group; its failure must
-    // land under that form, not above it.
+  it('renders a refused change in the action row’s one result region', async () => {
+    // The change form writes into the code step's shared scope; the group's
+    // one result sits directly under the action row, ahead of the change
+    // entry it fired from rather than at the card's bottom.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
@@ -509,13 +511,77 @@ describe('ContactVerificationSection', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
-    // The form stays open on failure, and the banner sits below its submit
-    // control.
+    // The form stays open on failure, and the result sits before it in the
+    // document: under the action row, not at the card's bottom.
     expect(screen.getByLabelText(zhCN.verification.changeLabel)).toBeTruthy()
     expect(
-      changeSubmit.compareDocumentPosition(alert) &
+      alert.compareDocumentPosition(changeForm) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
+  })
+
+  it('drops the code step’s result when the target address changes', async () => {
+    // Replacing the target is a change of context: the wrong-code answer
+    // describes the address being replaced and must not stand beside the
+    // new one.
+    let target = 'ada@x.test'
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileVerification('pending', target))
+      }
+      if (call.method === 'POST' && call.path === ADD_PATH) {
+        const body = call.body as { readonly value?: string } | undefined
+        target = body?.value ?? target
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 0,
+        })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return errorResponse(401, 'authn.login_failed')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.verification.send }),
+    )
+    await screen.findByLabelText(zhCN.verification.codeLabel)
+    await user.type(
+      screen.getByLabelText(zhCN.verification.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.verification.verify }),
+    )
+    expect(
+      await screen.findByText(zhCN.verification.codeInvalid),
+    ).toBeTruthy()
+
+    // Move the target to another address.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.verification.change }),
+    )
+    await user.type(
+      await screen.findByLabelText(zhCN.verification.changeLabel),
+      'new@x.test',
+    )
+    const changeForm = screen
+      .getByLabelText(zhCN.verification.changeLabel)
+      .closest('form') as HTMLFormElement
+    await user.click(
+      within(changeForm).getByRole('button', {
+        name: zhCN.verification.changeSubmit,
+      }),
+    )
+
+    // The replaced address's wrong-code answer is gone.
+    await waitFor(() =>
+      expect(screen.queryByText(zhCN.verification.codeInvalid)).toBeNull(),
+    )
   })
 
   it('auto-sends one code on mount and never again on the refetch it triggers', async () => {

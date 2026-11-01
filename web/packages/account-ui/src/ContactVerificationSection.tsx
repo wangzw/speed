@@ -176,14 +176,15 @@ export function ContactVerificationSection({
   const [sentCommitted, setSentCommitted] = useState(false)
   const [code, setCode] = useState('')
   const [codeInvalid, setCodeInvalid] = useState(false)
-  // Send and verify are two control groups: each owns its own feedback scope
-  // and region, so one group's outcome never clears the other's.
-  const sendFeedback = useWriteFeedback()
-  const verifyFeedback = useWriteFeedback()
-  // The verify group's non-code failure source: the wrong-code and
+  // The code step is one control group: the resend and change-address sends
+  // and the code's verification all report through one slot, so their
+  // results never stand side by side and the attempt that settles last is
+  // the one shown.
+  const feedback = useWriteFeedback()
+  // The verify step's non-code failure source: the wrong-code and
   // taken-address answers render the section's own wording on the verify
-  // step. It occupies the verify region's result position and is mutually
-  // exclusive with that region's code failure.
+  // step. It occupies the group's result position and is cleared at the
+  // start of every attempt, so it never stands beside another result.
   const [verifyFailureText, setVerifyFailureText] = useState<string | null>(
     null,
   )
@@ -220,8 +221,7 @@ export function ContactVerificationSection({
   const busy =
     addIdentifier.isPending ||
     verifyIdentifier.isPending ||
-    sendFeedback.pending ||
-    verifyFeedback.pending
+    feedback.pending
   const verification = data?.verification
   const state = verification?.state ?? ''
   const targetEmail = verification?.email ?? ''
@@ -287,9 +287,16 @@ export function ContactVerificationSection({
       return Promise.resolve()
     }
     const address = nextEmail.trim()
+    // The target the code step shows before this send: a send to a different
+    // address replaces it, which is a change of context for the shared slot.
+    const previousTarget = sentTo ?? targetEmail
+    // Every send is a new attempt in the shared slot, so the code step's
+    // previous answer -- the wrong-code or taken-address text included --
+    // does not stand beside it.
+    setVerifyFailureText(null)
     setCodeInvalid(false)
     setAutoStepUp(false)
-    return sendFeedback.run(async () => {
+    return feedback.run(async () => {
       const presented = needsProof ? human.proof : null
       let result
       try {
@@ -328,6 +335,11 @@ export function ContactVerificationSection({
         typeof result.resend_after === 'number' ? result.resend_after : 0
       setResendUntil(interval > 0 ? Date.now() + interval * 1000 : 0)
       setNow(Date.now())
+      // A send to another address is a change of context: the code step now
+      // addresses a different target, so the old one's result is dropped.
+      if (address !== previousTarget) {
+        feedback.reset()
+      }
       setSentTo(address)
       setCode('')
       setEmailEntry('')
@@ -344,7 +356,7 @@ export function ContactVerificationSection({
 
   function verify(nextCode: string): Promise<void> {
     setCodeInvalid(false)
-    return verifyFeedback.run(async () => {
+    return feedback.run(async () => {
       setVerifyFailureText(null)
       try {
         // Proving the address rotates nothing and revokes no other session,
@@ -504,10 +516,10 @@ export function ContactVerificationSection({
         >
           {t('verification.addSubmit')}
         </Button>
-        {/* The add form is the send group's control here: its result
-            sits below the action that made it. */}
+        {/* The add form is the section's send group here: its result sits
+            below the action that made it. */}
         <WriteFeedbackRegion
-          outcome={sendFeedback.outcome}
+          outcome={feedback.outcome}
           sx={{ alignSelf: 'stretch', width: '100%' }}
         />
       </Box>
@@ -584,8 +596,8 @@ export function ContactVerificationSection({
               stand on the left, verify is the step's primary action and
               closes the row on the right. All three share one line and one
               baseline. The proof block stands above the row, because a
-              resend sends another code. The verify group's result sits
-              below the row. */}
+              resend sends another code. The group's one result sits
+              directly below the row. */}
           {humanBlock}
           <Box
             sx={{
@@ -632,8 +644,12 @@ export function ContactVerificationSection({
               {t('verification.verify')}
             </Button>
           </Box>
+          {/* The group's one result: the resend, change-address send and the
+              code verification all write into it, and it sits directly under
+              the action row so the result stands next to the action that
+              produced it. */}
           <WriteFeedbackRegion
-            outcome={verifyFeedback.outcome}
+            outcome={feedback.outcome}
             sx={{ alignSelf: 'stretch', width: '100%' }}
           />
           {verifyFailureBanner}
@@ -694,14 +710,6 @@ export function ContactVerificationSection({
             </Box>
           </Box>
         ) : null}
-        {/* The send control group's result, below every control that writes
-            into it -- the resend action above and the change-address form
-            just above -- so a refused send or change renders under the form
-            that made it. */}
-        <WriteFeedbackRegion
-          outcome={sendFeedback.outcome}
-          sx={{ alignSelf: 'stretch', width: '100%' }}
-        />
       </SectionCard>
     </>
   )
