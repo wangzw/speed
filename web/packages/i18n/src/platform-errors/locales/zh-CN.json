@@ -243,6 +243,7 @@
     "rbac.subject_required": "请先登录。",
     "rbac.subtree_unresolved": "该授权指向的组织单元已不存在，因此不授予任何权限。",
     "rbac.unknown_permission": "该权限不存在。",
+    "ratelimit.throttled": "尝试次数过多，请在 {{seconds}} 秒后重试。",
     "sharing.expiry_out_of_range": "请求的过期时间必须晚于当前时间,且不超过平台允许的最大分享有效期。",
     "sharing.expiry_required": "分享链接必须设置过期时间;不允许创建永不过期的链接。",
     "sharing.internal_error": "出现问题,请稍后重试。",
