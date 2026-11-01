@@ -351,10 +351,12 @@ describe('FlowStep labels', () => {
     }
   })
 
-  it('starts one registration ceremony per click under StrictMode', async () => {
-    // StrictMode double-invokes mount effects, but a registration ceremony is
-    // click-driven: the double mount starts none, and one click asks the
-    // browser once.
+  it('starts no registration ceremony on mount and one per click', async () => {
+    // A registration ceremony is click-driven, not effect-driven: the mount
+    // starts none, and one click asks the browser once. The run is under RTL's
+    // reactStrictMode, so the mount effects are double-invoked -- as the
+    // assertion-ceremony case beside this one also relies on -- and the
+    // ceremony still has no effect firing behind it.
     const create = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get: vi.fn(), create })
     configure({ reactStrictMode: true })
