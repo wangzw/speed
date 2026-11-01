@@ -1992,7 +1992,7 @@ export type AuthnLoginAnswerBody = {
 };
 
 /**
- * The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind, and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes.
+ * The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes.
  */
 export type AuthnLoginStartAuthenticatedBodyInput = {[key: string]: string};
 
@@ -2006,7 +2006,7 @@ export type AuthnLoginStartAuthenticatedBody = {
   delivery?: string;
   /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
   human_proof?: string;
-  /** The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind, and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes. */
+  /** The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes. */
   input?: AuthnLoginStartAuthenticatedBodyInput;
   /** The method to run for `link`, and for a `step-up` of an account that holds no factor. For an enrollment it is not read, and for a step-up the policy answers with usable factors it is not read either; a step-up whose account holds factors but none usable for this session is refused with 401 insufficient_user_authentication before the method is consulted. A name the deployment does not take in is a 400 bad-request. */
   method?: string;

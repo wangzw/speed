@@ -1168,7 +1168,7 @@
                     "additionalProperties": {
                       "type": "string"
                     },
-                    "description": "The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind, and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes.",
+                    "description": "The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes.",
                     "type": "object"
                   },
                   "method": {
