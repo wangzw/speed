@@ -93,6 +93,7 @@ import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
 import type { SubmitHandler } from 'react-hook-form'
 import {
+  ActionButton,
   FormField,
   FormLayout,
   HumanVerification,
@@ -596,21 +597,21 @@ export function SMSSignInForm({
       onSubmit={onSubmit}
       actions={
         onCodeStep ? (
-          <Button
+          <ActionButton
             type="submit"
-            variant="contained"
+            emphasis="primary"
             disabled={form.formState.isSubmitting}
           >
             {t('smsSignIn.submit')}
-          </Button>
+          </ActionButton>
         ) : (
-          <Button
+          <ActionButton
             type="submit"
-            variant="contained"
+            emphasis="primary"
             disabled={driver.busy || proofBlocked}
           >
             {t('smsSignIn.sendCode')}
-          </Button>
+          </ActionButton>
         )
       }
     >

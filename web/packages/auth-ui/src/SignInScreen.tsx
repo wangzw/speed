@@ -16,8 +16,9 @@
  *    error are gone with it -- a deliberate reset: channel errors must not
  *    leak across surfaces. Where the deployment publishes an anonymous
  *    password reset and the host binds `onForgotPassword`, the password
- *    channel carries a "forgot password" text button at the leading edge
- *    of its submit row; it reports the click and navigates nothing.
+ *    channel carries a "forgot password" text button immediately left of
+ *    the submit key in its one right-aligned action row; it reports the
+ *    click and navigates nothing.
  *  - `redirect` methods render as buttons (the social block); picking one
  *    begins the method's flow and hands the host the authorization URL to
  *    navigate.
@@ -94,6 +95,7 @@ import type {
   AuthnMethodDescriptor,
   AuthnMethodList,
 } from '@speed/auth-core'
+import { ActionButton } from '@speed/ui-kit'
 import { PasswordSignInForm } from './PasswordSignInForm.js'
 import { PasswordRegisterForm } from './PasswordRegisterForm.js'
 import { SMSSignInForm } from './SMSSignInForm.js'
@@ -531,21 +533,18 @@ export function SignInScreen({
     onSignedIn?.({ mode: activeMode, channel: channelName })
   }
 
-  // The password channel's reset entry: it rides the channel's submit row,
-  // at its leading edge, so the link and the primary action read as one
-  // row rather than the link floating on a line of its own.
+  // The password channel's reset entry: it rides the channel's one
+  // right-aligned action row, immediately left of the submit key, so the
+  // link and the primary action read as one group rather than the link
+  // floating on a line of its own.
   const forgotPasswordEntry =
     activeMode === 'sign-in' &&
     selected === 'password' &&
     doc.password_reset?.enabled === true &&
     onForgotPassword !== undefined ? (
-      <Button
-        variant="text"
-        onClick={onForgotPassword}
-        sx={{ alignSelf: 'flex-start' }}
-      >
+      <ActionButton type="button" onClick={onForgotPassword}>
         {t('passwordSignIn.forgotPassword')}
-      </Button>
+      </ActionButton>
     ) : null
 
   const renderForm = (method: AuthnMethodDescriptor): ReactNode => {

@@ -38,7 +38,13 @@ import type {
   AuthnMethodDescriptor,
   AuthnSsoProvider,
 } from '@speed/auth-core'
-import { FormField, FormLayout, errorCodeOf, visuallyHiddenSx } from '@speed/ui-kit'
+import {
+  ActionButton,
+  FormField,
+  FormLayout,
+  errorCodeOf,
+  visuallyHiddenSx,
+} from '@speed/ui-kit'
 import { useAuthUiTranslation } from './translation.js'
 import { fieldLabel, methodLabel } from './labels.js'
 import {
@@ -156,13 +162,13 @@ export function DescriptorSignInForm({
       form={form}
       onSubmit={onSubmit}
       actions={
-        <Button
+        <ActionButton
           type="submit"
-          variant="contained"
+          emphasis="primary"
           disabled={form.formState.isSubmitting}
         >
           {t('signInFlow.submit')}
-        </Button>
+        </ActionButton>
       }
     >
       {fields.map((field) => (
@@ -325,9 +331,9 @@ export function EnterpriseSignIn({
           form={form}
           onSubmit={discover}
           actions={
-            <Button type="submit" variant="contained" disabled={busy}>
+            <ActionButton type="submit" emphasis="primary" disabled={busy}>
               {t('enterprise.continue')}
-            </Button>
+            </ActionButton>
           }
         >
           <FormField

@@ -58,12 +58,12 @@
 import { useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
 import type { SubmitHandler } from 'react-hook-form'
 import {
+  ActionButton,
   FormField,
   FormLayout,
   errorCodeOf,
@@ -460,22 +460,22 @@ export function PasswordRegisterForm({
       onSubmit={onSubmit}
       actions={
         signedIn ? undefined : autoSignInFailed ? (
-          <Button
+          <ActionButton
             type="button"
-            variant="contained"
+            emphasis="primary"
             disabled={driver.busy}
             onClick={() => void startSignIn()}
           >
             {t('register.retrySignIn')}
-          </Button>
+          </ActionButton>
         ) : (
-          <Button
+          <ActionButton
             type="submit"
-            variant="contained"
+            emphasis="primary"
             disabled={busy || retryUntil !== null}
           >
             {t('register.submit')}
-          </Button>
+          </ActionButton>
         )
       }
     >
