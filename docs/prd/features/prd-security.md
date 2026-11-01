@@ -99,8 +99,8 @@
 系统必须让本次会话内登记的两步验证方式，只在账户再次证明口令之后才能提升该会话；在再次证明之前，它不计入本次会话的强度。
 
 - **验收**：在一次会话内刚完成登记后立即发起需要新鲜认证的操作，系统先要求口令、再要求该方式；两步都通过后该操作继续；只完成口令一步时操作仍被拒、会话强度不变；没有口令的账户必须以重新登录完成提升。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-account-linking.spec.ts` `social-account-linking: a passkey enrolled in this session carries the binding step-up`
 
 ### REQ-security-011
 
@@ -136,11 +136,11 @@
 
 ### REQ-security-015
 
-重新验证必须接受一种在本会话认证之前已启用、且通道不同于本会话已证明通道的两步验证方式。
+重新验证必须接受一种通道不同于本会话已证明通道的两步验证方式；在本会话期间登记的方式，只在账户再次证明口令之后才作为可选方式。
 
-- **验收**：在本会话期间刚登记的方式不出现在重新验证的可选清单中；在本会话认证之前启用的另一通道方式可以被选中并完成升级。
+- **验收**：在本会话认证之前启用的另一通道方式可以直接被选中并完成升级；在本会话期间刚登记的方式不出现在首次挑战中，账户证明口令后才作为第二步出现。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`；`starters/demo/web/e2e/specs/journey-social-account-linking.spec.ts` `social-account-linking: a passkey enrolled in this session carries the binding step-up`
 
 ### REQ-security-016
 
