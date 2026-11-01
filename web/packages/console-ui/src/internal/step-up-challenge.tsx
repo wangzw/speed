@@ -17,6 +17,15 @@
  * elevation on the session -- the cookie rotated, or an elevated token --
  * and the hook fires `onSuccess`.
  *
+ * A flow that reaches its ready state answers `next.kind: 'complete'` -- a
+ * step that collects nothing and only confirms. The shared hook
+ * (useStepUp) answers that step on its own, once per sequence number; the
+ * driver shows its starting placeholder while it does, so a proof that
+ * already settled the flow does not leave the operator a contextless
+ * second confirmation to click. A refused automatic answer parks the flow
+ * on its failure, where the step's own confirmation button renders for a
+ * manual retry.
+ *
  * Why a step-up cannot come is read before the flow starts, from the
  * caller's own factor list (GET /api/v1/auth/factors). An account with no active
  * factor can never raise a single-factor session, so the dialog names the
@@ -271,6 +280,12 @@ function StepUpFlow({
   }
 
   const starting = phase === 'starting'
+  // The flow reached its ready state and the hook is answering its
+  // `complete` step on its own: the starting placeholder covers that answer
+  // exactly as it covers the start itself. A refusal leaves this false and
+  // lets the step's own confirmation button render for a manual retry.
+  const autoCompleting =
+    step !== null && step.kind === 'complete' && phase === 'step'
   // This deployment cannot raise the session at all (factors exist, none
   // that may strengthen it): no step will come, so the dialog says so and
   // offers a re-login rather than a verification that cannot succeed.
@@ -315,7 +330,7 @@ function StepUpFlow({
               {t('stepUp.description')}
             </Typography>
             {serverFailure ? <InlineError code={errorCode} /> : null}
-            {starting ? (
+            {starting || autoCompleting ? (
               <Typography variant="body2" sx={{ mt: 2 }}>
                 {t('stepUp.starting')}
               </Typography>

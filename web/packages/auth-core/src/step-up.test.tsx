@@ -19,6 +19,7 @@ import {
   PROFILE_GET,
   SESSION_GET,
   apiError,
+  completeFlow,
   makeCookieHarness,
   openFlow,
   principal,
@@ -462,5 +463,101 @@ describe('useStepUp', () => {
     })
     expect(session.getSnapshot().state).toBe('authenticated')
     expect(onElevated).not.toHaveBeenCalled()
+  })
+
+  it('answers a ready complete step on its own and elevates once', async () => {
+    // The factor proof parks the flow on its ready state, whose next step is
+    // a bare confirmation: it collects nothing, so the hook answers it
+    // without a second caller action and the elevation fires once.
+    const { session, calls } = makeCookieHarness({
+      [LOGIN_START_AUTHENTICATED]: () =>
+        openFlow({
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+        }),
+      [LOGIN_ANSWER]: (call) => {
+        const body = call.options?.body as { step?: string } | undefined
+        return body?.step === 'complete' ? sessionCompletion() : completeFlow(2)
+      },
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    const onElevated = vi.fn()
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) => useStepUp(session, active, onElevated),
+      { initialProps: { active: false } },
+    )
+    rerender({ active: true })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('step')
+    })
+
+    act(() => {
+      result.current.answer({ step: 'factor', input: { factor: 'f1' } })
+    })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('elevated')
+    })
+    expect(onElevated).toHaveBeenCalledTimes(1)
+
+    // The automatic answer carries the ready step's own sequence number and
+    // the complete step, and it is the only completion sent.
+    const answers = calls.filter(
+      (call) => call.path === '/api/v1/auth/flows/answer',
+    )
+    expect(answers.map((call) => call.options?.body)).toEqual([
+      { seq: 1, step: 'factor', input: { factor: 'f1' } },
+      { seq: 2, step: 'complete' },
+    ])
+  })
+
+  it('leaves a refused automatic completion on the step for a manual retry', async () => {
+    // A refused automatic answer must not strand the flow on its pending
+    // state: it parks on 'failed' with the code and keeps the step, so the
+    // caller renders that step's own confirmation button, which retries it.
+    let completions = 0
+    const { session } = makeCookieHarness({
+      [LOGIN_START_AUTHENTICATED]: () =>
+        openFlow({
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+        }),
+      [LOGIN_ANSWER]: (call) => {
+        const body = call.options?.body as { step?: string } | undefined
+        if (body?.step !== 'complete') {
+          return completeFlow(2)
+        }
+        completions += 1
+        if (completions === 1) {
+          throw apiError(401, 'authn.login_failed')
+        }
+        return sessionCompletion()
+      },
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    const onElevated = vi.fn()
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) => useStepUp(session, active, onElevated),
+      { initialProps: { active: false } },
+    )
+    rerender({ active: true })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('step')
+    })
+
+    act(() => {
+      result.current.answer({ step: 'factor', input: { factor: 'f1' } })
+    })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('failed')
+    })
+    expect(result.current.errorCode).toBe('authn.login_failed')
+    expect(result.current.step?.kind).toBe('complete')
+    expect(onElevated).not.toHaveBeenCalled()
+
+    act(() => {
+      result.current.answer({ step: 'complete' })
+    })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('elevated')
+    })
+    expect(onElevated).toHaveBeenCalledTimes(1)
   })
 })

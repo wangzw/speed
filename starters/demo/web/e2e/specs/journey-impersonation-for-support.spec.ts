@@ -577,16 +577,14 @@ test('impersonation-for-support: the operator acts as a member and the record an
       exact: true,
     })
     await verify.click()
-    // The code answer settles the challenge step and the console's step-up
-    // driver parks the flow's ready step as one confirmation: the same Verify
-    // control, with the challenge form gone. Waiting for the form's own field
-    // to detach is what tells the two controls apart.
+    // The code answer settles the challenge step; the console's step-up
+    // driver answers the flow's ready confirmation on its own, so the dialog
+    // closes without a second click on the same control.
     await expect(codeField).toHaveCount(0)
-    await verify.click()
+    await expect(dialog).toHaveCount(0)
 
     // The won challenge replays the refused start once; it lands, and the host
     // takes the operator to the tenant area as the target member.
-    await expect(dialog).toHaveCount(0)
     await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
     expect(new URL(page.url()).pathname).toBe('/')
   })

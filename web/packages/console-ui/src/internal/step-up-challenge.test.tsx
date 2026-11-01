@@ -7,7 +7,9 @@
  * backend requires and a naive renderer misses: the second factor's code
  * challenge is answered under the `factor` step with the chosen factor's
  * identifier resent alongside the code (pkg/authn/login's applyFactor
- * re-reads the factor from the answer).
+ * re-reads the factor from the answer). A ready state's `complete` step is
+ * answered on its own once per sequence, and the step's own confirmation
+ * button takes over when that automatic answer is refused.
  *
  * The failure cases pin the two different reasons a challenge cannot be
  * completed. An account with no active factor is recognised from its own
@@ -107,6 +109,55 @@ function flowSession(): {
     refresh: () => Promise.resolve(false),
     retryFeatures: () => Promise.resolve(),
     setPermissionSet: () => undefined,
+  }
+  return { session, answers }
+}
+
+/** A session whose step-up flow offers one factor, asks for its code, parks
+ * on the ready state's `complete` step, and settles the elevation when that
+ * step is answered. It records every answer's step and input, so a suite can
+ * tell the automatic completion from a second click. `completeAnswer`
+ * scripts that answer; the default elevates. */
+function readySession(
+  completeAnswer: () => Promise<AuthnFlowState> = () =>
+    Promise.resolve<AuthnFlowState>({
+      state: 'authenticated',
+      session: { id: 'sess-1', expires_at: '2026-10-17T00:00:00Z' },
+    }),
+): {
+  readonly session: AuthSession
+  readonly answers: Array<{
+    readonly step?: string
+    readonly input?: Readonly<Record<string, string>>
+  }>
+} {
+  const answers: Array<{
+    readonly step?: string
+    readonly input?: Readonly<Record<string, string>>
+  }> = []
+  const session: AuthSession = {
+    ...flowSession().session,
+    answerFlow: (request) => {
+      answers.push({ step: request.step, input: request.input })
+      if (answers.length === 1) {
+        return Promise.resolve<AuthnFlowState>({
+          seq: 2,
+          state: 'second',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'code', required: true }],
+          },
+        })
+      }
+      if (answers.length === 2) {
+        return Promise.resolve<AuthnFlowState>({
+          seq: 3,
+          state: 'ready',
+          next: { kind: 'complete' },
+        })
+      }
+      return completeAnswer()
+    },
   }
   return { session, answers }
 }
@@ -288,6 +339,84 @@ describe('StepUpChallenge', () => {
     // The factor-choice answer carries the id; the code answer carries the
     // same id again beside the code.
     expect(answers).toEqual([{ factor: 'f1' }, { code: '123456', factor: 'f1' }])
+  })
+
+  it('answers the ready step on its own without a second click', async () => {
+    const user = userEvent.setup()
+    bindFactors([ACTIVE_FACTOR])
+    const { session, answers } = readySession()
+    const onSuccess = vi.fn()
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={session}
+        onSuccess={onSuccess}
+        onCancel={() => undefined}
+      />,
+    )
+
+    // The factor proof parks the flow on its ready `complete` step, a bare
+    // confirmation that collects nothing. The dialog submits it on its own:
+    // the elevation lands without a second click on the same control.
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.stepUp.factorKind.totp }),
+    )
+    await user.type(await screen.findByLabelText(/code/), '123456')
+    await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
+    await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+
+    expect(answers.map((answer) => answer.step)).toEqual([
+      'factor',
+      'factor',
+      'complete',
+    ])
+  })
+
+  it('falls back to the confirmation button when the automatic answer is refused', async () => {
+    const user = userEvent.setup()
+    bindFactors([ACTIVE_FACTOR])
+    let completions = 0
+    const { session, answers } = readySession(() => {
+      completions += 1
+      if (completions === 1) {
+        return Promise.reject({
+          status: 401,
+          code: 'authn.login_failed',
+          message: 'refused',
+          auth: true,
+        })
+      }
+      return Promise.resolve<AuthnFlowState>({
+        state: 'authenticated',
+        session: { id: 'sess-1', expires_at: '2026-10-17T00:00:00Z' },
+      })
+    })
+    const onSuccess = vi.fn()
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={session}
+        onSuccess={onSuccess}
+        onCancel={() => undefined}
+      />,
+    )
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.stepUp.factorKind.totp }),
+    )
+    await user.type(await screen.findByLabelText(/code/), '123456')
+    await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
+
+    // The automatic completion is refused: its code renders and the step's
+    // own confirmation button comes back for a manual retry.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.login_failed)
+    expect(onSuccess).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
+    await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    expect(
+      answers.filter((answer) => answer.step === 'complete'),
+    ).toHaveLength(2)
   })
 
   it('answers a passkey step-up under the factor step, driven by its options', async () => {

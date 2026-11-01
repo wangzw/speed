@@ -60,6 +60,17 @@
  * presented proof is consumed, and an answer that sends nothing leaves it
  * unspent.
  *
+ * A flow that reaches its ready state parks on a `complete` step -- one
+ * that collects nothing and only confirms, taking the result with
+ * `step: 'complete'`. The hook answers that step on its own, once per
+ * sequence number, so an elevation already settled on the server never
+ * leaves the caller a contextless second confirmation to render. The
+ * automatic answer waits for an in-flight answer to clear, because the
+ * hook drops an answer sent while one is out, and it shows through the
+ * same `submitting` flag. A refused automatic answer parks the flow on
+ * 'failed' and leaves the step in place, so the caller renders that step's
+ * own confirmation button for a manual retry.
+ *
  * A running start is not cancelled on a re-render: the flow is keyed to
  * the `active` transition (one run per opening), and a resolving start or
  * answer only acts while its opening is still current, so a stale reply
@@ -212,6 +223,10 @@ export function useStepUp(
   // would send a request for a binding that never existed -- a mount that
   // stays closed opened no flow.
   const openRef = useRef(false)
+  // The sequence number of the ready step this hook answered on its own
+  // (see the automatic completion effect below). Cleared on every opening so
+  // a sequence number from a previous flow never suppresses the next one's.
+  const autoAnsweredSeq = useRef<number | null>(null)
   // The unmount release is deferred by one microtask, so a remount in the
   // same commit cancels it (see the release effect below). The flag is the
   // pending release.
@@ -229,6 +244,8 @@ export function useStepUp(
   const human = useHumanVerification(session, { enabled: active })
 
   useEffect(() => {
+    // A new opening answers its own ready step afresh.
+    autoAnsweredSeq.current = null
     if (!active) {
       // Close: bump the token so a start still in flight is dropped, and
       // abandon the binding this mount opened, so no stale flow lingers
@@ -380,6 +397,25 @@ export function useStepUp(
       }
     })()
   }
+
+  // A `complete` step collects nothing and only confirms, so the hook
+  // answers it on its own rather than leaving the caller a contextless
+  // second confirmation. `submitting` is read because the hook drops an
+  // answer sent while another is out, and `autoAnsweredSeq` records the
+  // sequence this hook answered: one automatic answer per step, whatever
+  // the re-render or StrictMode's double effect invocation. A refusal moves
+  // the flow to 'failed' and leaves the step parked, where the caller's own
+  // confirmation button retries it by hand.
+  useEffect(() => {
+    if (step === null || step.kind !== 'complete' || phase !== 'step') {
+      return
+    }
+    if (submitting || seq === null || autoAnsweredSeq.current === seq) {
+      return
+    }
+    autoAnsweredSeq.current = seq
+    answer({ step: 'complete' })
+  }, [step, phase, submitting, seq, answer])
 
   return { phase, step, seq, submitting, errorCode, human, answer }
 }
