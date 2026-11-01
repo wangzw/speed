@@ -341,9 +341,16 @@ export function SignInScreen({
   // the mode the screen currently presents added to the context. Every
   // attempt passes through it, so it also clears the host's landing
   // refusal: that message does not stand beside the answer this attempt
-  // is about to produce.
+  // is about to produce. The dismissal is not part of the gate's answer:
+  // `allowedToStart` contains a throwing gate as a refusal, and a host
+  // dismissal callback that throws is a host bug, not a decision to block
+  // the attempt. It is contained here so the answer stays `beforeStart`'s.
   const startGate: SignInBeforeStart = (context) => {
-    dismissHostError()
+    try {
+      dismissHostError()
+    } catch {
+      // The host's dismissal callback failed; the attempt still starts.
+    }
     return beforeStart === undefined
       ? true
       : beforeStart({ ...context, mode: activeMode })

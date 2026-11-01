@@ -307,6 +307,56 @@ describe('SignInScreen', () => {
     ).toBeNull()
   })
 
+  it('start the attempt even when the host dismissal callback throws', async () => {
+    // Clearing the landing refusal is a side effect of the attempt, not
+    // part of the gate's answer: a throwing dismissal callback is a host
+    // bug and must not be contained as a refusal to start.
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'code', required: true }],
+          },
+        }),
+    })
+    const onInitialErrorDismiss = vi.fn(() => {
+      throw new Error('host dismissal failed')
+    })
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={BOTH_FORMS}
+        initialError="authn.link_required"
+        onInitialErrorDismiss={onInitialErrorDismiss}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      MAIL,
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+      PASS,
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordSignIn.submit }),
+    )
+    expect(onInitialErrorDismiss).toHaveBeenCalledTimes(1)
+    // The flow started and parked its first step even though the host's
+    // dismissal callback failed, and the host's own message is gone.
+    expect(
+      await screen.findByLabelText(zhCN.smsSignIn.codeLabel),
+    ).toBeInTheDocument()
+    expect(
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows'),
+    ).toHaveLength(1)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('fire onSignedIn once from the password channel login', async () => {
     const harness = makeSignInHarness()
     const onSignedIn = vi.fn()
