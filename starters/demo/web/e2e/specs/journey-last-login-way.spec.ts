@@ -359,14 +359,23 @@ async function deletePhone(page: Page): Promise<void> {
   )
 }
 
-/** The passkey row's remove action, named after the kind it removes. */
-function passkeyRemove(page: Page): Locator {
-  return mfaSection(page).getByRole('button', {
-    name: copy('accountUi', 'mfa.removeAria', {
-      factor: copy('accountUi', 'mfa.factor.kind.webauthn'),
-    }),
-    exact: true,
-  })
+/**
+ * Open the passkey row's trailing menu and pick its remove item. The row's
+ * action trigger carries the row's name, which is the factor kind while the
+ * credential is unnamed; the menu itself is portalled outside the card.
+ */
+async function passkeyRemove(page: Page): Promise<void> {
+  await mfaSection(page)
+    .getByRole('button', {
+      name: copy('accountUi', 'mfa.actionsAria', {
+        factor: copy('accountUi', 'mfa.factor.kind.webauthn'),
+      }),
+      exact: true,
+    })
+    .click()
+  await page
+    .getByRole('menuitem', { name: copy('accountUi', 'mfa.remove') })
+    .click()
 }
 
 // The journey drives the provider's real round trip, so its server starts the
@@ -511,7 +520,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       // social sign-in proves: a step-up accepts only a channel the session has
       // not already proved, so the journey's passkey has to be registered by
       // the social login itself.
-      await passkeyRemove(page).click()
+      await passkeyRemove(page)
       await confirmDialog(
         page,
         copy('accountUi', 'mfa.removeConfirm.title'),
@@ -525,14 +534,23 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
           { exact: true },
         ),
       ).toBeVisible({ timeout: 15_000 })
-      // No factor is active now; the section still lists each method the
-      // deployment serves, all with their state off.
+      // No factor row is left. The group keeps its place because the
+      // deployment serves the method, and its action asks to add the method
+      // again rather than another device.
+      const passkeyGroup = mfaSection(page).getByRole('region', {
+        name: copy('accountUi', 'mfa.factor.kind.webauthn'),
+        exact: true,
+      })
+      await expect(passkeyGroup).toBeVisible()
+      await expect(passkeyGroup.getByRole('listitem')).toHaveCount(0)
       await expect(
-        mfaSection(page).getByText(
-          copy('accountUi', 'mfa.factor.status.active'),
-          { exact: true },
-        ),
-      ).toHaveCount(0)
+        passkeyGroup.getByRole('button', {
+          name: copy('accountUi', 'mfa.addAria', {
+            method: copy('accountUi', 'mfa.factor.kind.webauthn'),
+          }),
+          exact: true,
+        }),
+      ).toBeVisible()
     })
 
     await test.step("a social sign-in registers the journey's passkey before the session exists", async () => {
@@ -605,13 +623,36 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       ).toBeVisible()
 
       // The passkey registered during the sign-in is the account's one active
-      // factor; its state reads on the method row and on the factor row.
+      // factor: its group holds that one row, the row's menu names it, and the
+      // group's action offers another device rather than a setup, which is
+      // the word an active factor earns.
+      const passkeyGroup = mfaSection(page).getByRole('region', {
+        name: copy('accountUi', 'mfa.factor.kind.webauthn'),
+        exact: true,
+      })
+      await expect(passkeyGroup.getByRole('listitem')).toHaveCount(1)
       await expect(
-        mfaSection(page).getByText(
-          copy('accountUi', 'mfa.factor.status.active'),
+        passkeyGroup.getByRole('button', {
+          name: copy('accountUi', 'mfa.actionsAria', {
+            factor: copy('accountUi', 'mfa.factor.kind.webauthn'),
+          }),
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(
+        passkeyGroup.getByRole('button', {
+          name: copy('accountUi', 'mfa.manageAria', {
+            method: copy('accountUi', 'mfa.factor.kind.webauthn'),
+          }),
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(
+        passkeyGroup.getByText(
+          copy('accountUi', 'mfa.factor.status.disabled'),
           { exact: true },
         ),
-      ).toHaveCount(2)
+      ).toHaveCount(0)
 
       // The contact list is empty: the profile pane's email card lists no
       // address row (the only remaining identifier is the username, which has
