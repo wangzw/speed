@@ -260,6 +260,7 @@ function mount(
     readonly onCancel?: () => void
     readonly accountHref?: string
     readonly returnPath?: string
+    readonly onRelogin?: () => void
   } = {},
 ) {
   const rig = makeRealClientRig(respond)
@@ -274,6 +275,7 @@ function mount(
       onCancel={onCancel}
       accountHref={handlers.accountHref}
       returnPath={handlers.returnPath}
+      onRelogin={handlers.onRelogin}
     />,
   )
   return { rig, onSuccess, onCancel }
@@ -283,7 +285,11 @@ function mount(
  * phase cases that never touch the wire. */
 function mountSession(
   session: AuthSession,
-  handlers: { readonly onSuccess?: () => void; readonly onCancel?: () => void } = {},
+  handlers: {
+    readonly onSuccess?: () => void
+    readonly onCancel?: () => void
+    readonly onRelogin?: () => void
+  } = {},
 ) {
   const onSuccess = vi.fn(handlers.onSuccess)
   const onCancel = vi.fn(handlers.onCancel)
@@ -293,6 +299,7 @@ function mountSession(
       session={session}
       onSuccess={onSuccess}
       onCancel={onCancel}
+      onRelogin={handlers.onRelogin}
     />,
   )
   return { onSuccess, onCancel }
@@ -1282,6 +1289,43 @@ describe('StepUpChallenge', () => {
     expect(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.relogin }),
     ).toBeTruthy()
+  })
+
+  it('records the operation before ending the session on the re-login exit', async () => {
+    // The unavailable branch offers "sign in to continue": the caller must
+    // record the operation before the cancel clears the gate and the logout
+    // ends the session, so the new sign-in can re-issue it.
+    bindFactors([ACTIVE_FACTOR])
+    const order: string[] = []
+    const logout = vi.fn(() => {
+      order.push('logout')
+      return Promise.resolve()
+    })
+    mountSession(
+      refusingStartSession(
+        {
+          status: 401,
+          code: 'authn.insufficient_user_authentication',
+          message: 'refused',
+          auth: true,
+        },
+        logout,
+      ),
+      {
+        onRelogin: () => order.push('relogin'),
+        onCancel: () => order.push('cancel'),
+      },
+    )
+    const user = userEvent.setup()
+
+    expect(await screen.findByText(zhCN.mfa.stepUp.cannotElevate)).toBeTruthy()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.relogin }),
+    )
+    // The resume record is written first, then the gate clears, then the
+    // session ends.
+    expect(order).toEqual(['relogin', 'cancel', 'logout'])
+    expect(logout).toHaveBeenCalledTimes(1)
   })
 
   it('renders a start failure that is not a refusal as an ordinary banner', async () => {

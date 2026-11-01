@@ -20,7 +20,7 @@
  * whose redirect step's URL is reported upward (the section never navigates).
  */
 
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -42,6 +42,10 @@ import {
 } from '../test-utils/rotation.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import {
+  pendingStepUpResume,
+  rememberStepUpResume,
+} from './internal/step-up-resume.js'
 import { SocialBindingsSection } from './SocialBindingsSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
@@ -129,6 +133,10 @@ async function findBindButton(label: string): Promise<HTMLElement> {
 }
 
 describe('SocialBindingsSection', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear()
+  })
+
   it('renders the bound links and offers only the unbound redirect methods', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -1068,6 +1076,157 @@ describe('SocialBindingsSection', () => {
     // it again -- never a second, different call.
     await waitFor(() => expect(reports).toEqual([URL]))
     expect(linkStarts).toHaveLength(2)
+  })
+
+  it('records the bind it must resume when the re-login exit is chosen', async () => {
+    // The deployment cannot raise this session with the account's factors, so
+    // the challenge offers "sign in to continue". Choosing it records the
+    // page and the bind operation before the session ends, so the surface can
+    // re-issue that bind after the new sign-in.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profile([]))
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([{ name: 'wechat', label: 'WeChat' }]),
+        )
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [ACTIVE_FACTOR] })
+      }
+      if (call.method === 'POST' && call.path === LINK_FLOW_PATH) {
+        // Both the bind start and the step-up start are refused: no factor
+        // may strengthen this session, so no step can satisfy the challenge.
+        return errorResponse(401, 'authn.insufficient_user_authentication')
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/logout') {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    const logout = vi.spyOn(rig.session, 'logout')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+        returnPath="/account/security"
+        onAuthorizeUrl={() => undefined}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(await findBindButton('WeChat'))
+    expect(
+      await screen.findByText(zhCN.mfa.stepUp.cannotElevate),
+    ).toBeTruthy()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.relogin }),
+    )
+
+    expect(logout).toHaveBeenCalledTimes(1)
+    expect(pendingStepUpResume()).toEqual({
+      path: '/account/security',
+      operation: { kind: 'authorize', method: 'wechat' },
+    })
+  })
+
+  it('re-issues the recorded bind when the page mounts after the new sign-in', async () => {
+    // The surface mounted again on the page the record names: it starts the
+    // recorded bind once, without a click, and consumes the record.
+    rememberStepUpResume('/account/security', {
+      kind: 'authorize',
+      method: 'wechat',
+    })
+    const reports: string[] = []
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profile([]))
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([{ name: 'wechat', label: 'WeChat' }]),
+        )
+      }
+      if (call.method === 'POST' && call.path === LINK_FLOW_PATH) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'redirect',
+            url: WECHAT_AUTHORIZE_URL,
+            method: 'GET',
+          },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+        returnPath="/account/security"
+        onAuthorizeUrl={(url) => reports.push(url)}
+      />,
+    )
+
+    await waitFor(() => expect(reports).toEqual([WECHAT_AUTHORIZE_URL]))
+    expect(pendingStepUpResume()).toBeNull()
+  })
+
+  it('leaves a record that names another page for that page to resume', async () => {
+    rememberStepUpResume('/account/sessions', {
+      kind: 'authorize',
+      method: 'wechat',
+    })
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profile([]))
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([{ name: 'wechat', label: 'WeChat' }]),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+        returnPath="/account/security"
+        onAuthorizeUrl={() => undefined}
+      />,
+    )
+
+    // The section never starts a flow it does not own, and the record stays
+    // for the page it names.
+    await waitFor(() =>
+      expect(
+        rig.calls.some(
+          (call) =>
+            call.method === 'POST' && call.path === LINK_FLOW_PATH,
+        ),
+      ).toBe(false),
+    )
+    expect(pendingStepUpResume()).toEqual({
+      path: '/account/sessions',
+      operation: { kind: 'authorize', method: 'wechat' },
+    })
   })
 
   it('starts a link flow with the top-level return_to and reports the redirect URL upward', async () => {

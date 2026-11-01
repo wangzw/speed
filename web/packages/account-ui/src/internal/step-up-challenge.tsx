@@ -76,10 +76,12 @@
  * satisfy: the hook's 'unavailable' phase -- a 401
  * insufficient_user_authentication (the account has factors, but none
  * whose methods may strengthen this session, or none it can prove again
- * without a password). The dialog then says so and
- * offers a re-login -- it ends the session through the session's own
- * logout, and the host's session gate converges on its sign-in surface --
- * rather than a verification that cannot come, because a new sign-in lets
+ * without a password). The dialog says the sign-in predates those methods
+ * and offers a re-login that continues afterwards -- it fires `onRelogin`
+ * first, so the caller can record the page and the operation a new sign-in
+ * must re-issue, then ends the session through the session's own logout, and
+ * the host's session gate converges on its sign-in surface at the same page
+ * -- rather than a verification that cannot come, because a new sign-in lets
  * those factors count. Any other start failure, a 400 included, renders as
  * its code.
  *
@@ -150,6 +152,14 @@ export interface StepUpChallengeProps {
    * default return target applies.
    */
   readonly returnPath?: string
+  /**
+   * Fired once when the operator chooses the re-login exit, before the
+   * session ends and before `onCancel` clears the gate. The caller writes
+   * its resume record here -- the page and the operation a new sign-in must
+   * re-issue -- so the refused write continues where it left off. Omitted,
+   * the re-login ends the session and the operation is not resumed.
+   */
+  readonly onRelogin?: () => void
 }
 
 export function StepUpChallenge({
@@ -160,6 +170,7 @@ export function StepUpChallenge({
   onCancel,
   accountHref,
   returnPath,
+  onRelogin,
 }: StepUpChallengeProps) {
   const { t } = useAccountUiTranslation()
   const titleId = useId()
@@ -244,8 +255,10 @@ export function StepUpChallenge({
 
   // The SSO exit: end the session so the host's session gate converges on its
   // sign-in surface, where the operator signs in through the tenant's identity
-  // provider. No local factor can clear this refusal.
+  // provider. No local factor can clear this refusal. The caller records the
+  // operation first, so the new sign-in resumes it.
   function handleRelogin(): void {
+    onRelogin?.()
     onCancel()
     void session.logout().catch(() => undefined)
   }
@@ -286,6 +299,7 @@ export function StepUpChallenge({
           onRestart={() => setRun((count) => count + 1)}
           accountHref={accountHref}
           returnPath={returnPath}
+          onRelogin={onRelogin}
           freshFirst={freshFirst}
           reloginOnly={reloginOnly}
           checking={checking}
@@ -310,6 +324,7 @@ function StepUpFlow({
   onRestart,
   accountHref,
   returnPath,
+  onRelogin,
   freshFirst,
   reloginOnly,
   checking,
@@ -325,6 +340,7 @@ function StepUpFlow({
   readonly onRestart: () => void
   readonly accountHref?: string
   readonly returnPath?: string
+  readonly onRelogin?: () => void
   readonly freshFirst: boolean
   readonly reloginOnly: boolean
   readonly checking: boolean
@@ -417,12 +433,13 @@ function StepUpFlow({
   )
 
   // The unavailable phase's and the unknown-method state's one action:
-  // end the session -- forgetting the refused action, as a cancel does --
-  // so the host's session gate converges on its sign-in surface, where the
-  // operator signs in again for a stronger verification. The session
-  // clears its local state even if the revoke is refused, so a failure
-  // here needs no retry.
+  // record the operation for the new sign-in to resume, then end the
+  // session -- as a cancel does for the dialog -- so the host's session gate
+  // converges on its sign-in surface, where the operator signs in again for
+  // a stronger verification. The session clears its local state even if the
+  // revoke is refused, so a failure here needs no retry.
   function handleRelogin(): void {
+    onRelogin?.()
     onCancel()
     void session.logout().catch(() => undefined)
   }

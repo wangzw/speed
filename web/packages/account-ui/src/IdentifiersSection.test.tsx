@@ -19,7 +19,7 @@
  * error state (never a "no identifiers" claim).
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import enUS from './locales/en-US.json' with { type: 'json' }
@@ -44,6 +44,10 @@ import {
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import {
+  pendingStepUpResume,
+  rememberStepUpResume,
+} from './internal/step-up-resume.js'
 import { IdentifiersSection } from './IdentifiersSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
@@ -108,6 +112,10 @@ function expectOnlyRowMenu(value: string): HTMLElement {
 }
 
 describe('IdentifiersSection', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear()
+  })
+
   it('renders each identifier with its kind, value and verification, and passes axe', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -144,6 +152,59 @@ describe('IdentifiersSection', () => {
     expect(screen.getByText(zhCN.identifiers.unverified)).toBeTruthy()
 
     await expectNoAxeViolations()
+  })
+
+  it('re-issues the recorded removal when the page mounts after the new sign-in', async () => {
+    // A no-password account's phone removal was refused for a fresh
+    // authentication the session could not supply, so the re-login exit
+    // recorded it. The surface mounts again on the recorded page and replays
+    // the removal once, then consumes the record.
+    rememberStepUpResume('/account/profile', {
+      step: 'remove',
+      id: 'id-phone',
+    })
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-phone',
+                kind: 'phone',
+                value: '+14155550123',
+              }),
+            ],
+          }),
+        )
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/identifiers/id-phone'
+      ) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection
+        session={rig.session}
+        returnPath="/account/profile"
+      />,
+    )
+
+    await waitFor(() =>
+      expect(
+        rig.calls.some(
+          (call) =>
+            call.method === 'DELETE' &&
+            call.path === '/api/v1/auth/identifiers/id-phone',
+        ),
+      ).toBe(true),
+    )
+    expect(pendingStepUpResume()).toBeNull()
   })
 
   it('renders every unproved address as Not verified, whatever established it', async () => {

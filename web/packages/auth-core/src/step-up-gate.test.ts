@@ -62,6 +62,21 @@ describe('useStepUpGate', () => {
     expect(onRetry).toHaveBeenCalledTimes(1)
   })
 
+  it('reads the remembered action without consuming it', () => {
+    // A surface offering the re-login exit describes the operation from the
+    // remembered action before the cancel clears it.
+    const onRetry = vi.fn()
+    const { result } = renderHook(() => useStepUpGate<string>(onRetry))
+
+    expect(result.current.peek()).toBeNull()
+    act(() => result.current.arm('row-1'))
+    expect(result.current.peek()).toBe('row-1')
+    // Reading does not clear the slot: the challenge can still replay it.
+    expect(result.current.open).toBe(true)
+    act(() => result.current.cancel())
+    expect(result.current.peek()).toBeNull()
+  })
+
   it('replays nothing after a cancel', () => {
     const onRetry = vi.fn()
     const { result } = renderHook(() => useStepUpGate<string>(onRetry))

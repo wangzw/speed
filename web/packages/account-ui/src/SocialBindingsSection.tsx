@@ -45,7 +45,11 @@
  * holding no factor gets the shared dialog's own answer for that state --
  * the missing-two-step-verification hint, the session's first-factor
  * re-proof, or the re-login exit -- exactly as the other gated surfaces
- * do.
+ * do. The re-login exit records the pending operation before the session
+ * ends -- a bind's method or an unbind's row, both pure requests with no
+ * credential to replay -- and the surface re-issues it once when it mounts
+ * again on the same page after the new sign-in. A record naming another
+ * page is left for the surface that owns it.
  *
  * The add area's channels come from the same discovery document: every
  * method whose kind is `redirect` and that is not already bound -- none
@@ -100,7 +104,7 @@
  * the header stays and the add area is the whole of the content.
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -125,6 +129,10 @@ import { AccountAsyncSection } from './internal/async-section.js'
 import { withBindingReturn } from './internal/binding-return.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
+import {
+  rememberStepUpResume,
+  takeStepUpResume,
+} from './internal/step-up-resume.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
@@ -174,6 +182,36 @@ interface UnbindAction {
 type BindingAction =
   | ({ readonly kind: 'unbind' } & UnbindAction)
   | { readonly kind: 'authorize'; readonly method: AuthnMethodDescriptor }
+
+/** The binding operations a re-login can resume. Both are pure requests with
+ * no credential to replay, so a JSON-safe descriptor carries them across the
+ * sign-in; an operation that would need a password or a one-time code could
+ * not be recorded this way and is left for the person to redo. */
+type ResumeOperation =
+  | { readonly kind: 'authorize'; readonly method: string }
+  | { readonly kind: 'unbind'; readonly id: string; readonly label: string }
+
+/** Whether a stored value is a binding operation this section can re-issue. */
+function isResumeOperation(value: unknown): value is ResumeOperation {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const operation = value as {
+    readonly kind?: unknown
+    readonly method?: unknown
+    readonly id?: unknown
+    readonly label?: unknown
+  }
+  if (operation.kind === 'authorize') {
+    return typeof operation.method === 'string'
+  }
+  if (operation.kind === 'unbind') {
+    return (
+      typeof operation.id === 'string' && typeof operation.label === 'string'
+    )
+  }
+  return false
+}
 
 /**
  * The provider values the authn identity surface answers with, one
@@ -372,6 +410,59 @@ export function SocialBindingsSection({
       active = false
     }
   }, [session])
+
+  // The re-login exit records the operation a new sign-in must re-issue. Both
+  // binding operations are pure requests, so a JSON-safe descriptor carries
+  // them; the gate hands the remembered action back before the dialog's
+  // cancel clears it.
+  const rememberRelogin = useCallback(() => {
+    if (returnPath === undefined) {
+      return
+    }
+    const action = gate.peek()
+    if (action === null) {
+      return
+    }
+    const operation: ResumeOperation =
+      action.kind === 'authorize'
+        ? { kind: 'authorize', method: action.method.name }
+        : { kind: 'unbind', id: action.id, label: action.label }
+    rememberStepUpResume(returnPath, operation)
+  }, [returnPath, gate.peek])
+
+  // The page a re-login returns to re-issues the recorded operation once, as
+  // soon as the deployment's methods have loaded so an authorize can resolve
+  // the recorded method again. A record belonging to another page is put
+  // back untouched for that page's surface.
+  const resumed = useRef(false)
+  useEffect(() => {
+    if (resumed.current || methods === null || returnPath === undefined) {
+      return
+    }
+    resumed.current = true
+    const record = takeStepUpResume()
+    if (record === null) {
+      return
+    }
+    if (record.path !== returnPath) {
+      rememberStepUpResume(record.path, record.operation)
+      return
+    }
+    const operation = record.operation
+    if (!isResumeOperation(operation)) {
+      return
+    }
+    if (operation.kind === 'authorize') {
+      const method = methods.find(
+        (candidate) => candidate.name === operation.method,
+      )
+      if (method !== undefined) {
+        void handleAuthorize(method)
+      }
+      return
+    }
+    void handleUnbind(operation.id, operation.label)
+  }, [methods, returnPath])
 
   const links = data?.links
   // The answer is unresolved whenever there is no data yet: the first
@@ -762,6 +853,7 @@ export function SocialBindingsSection({
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
         returnPath={returnPath}
+        onRelogin={rememberRelogin}
       />
     </>
   )

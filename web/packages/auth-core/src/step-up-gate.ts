@@ -37,7 +37,10 @@
  * read through refs, so a caller may pass fresh closures every render
  * without changing `succeed`'s identity -- a dialog keyed on its
  * `onSuccess` prop then never restarts its flow because the parent
- * re-rendered.
+ * re-rendered. `peek` returns the remembered action itself: a surface whose
+ * dialog offers the re-login exit uses it to describe the operation the new
+ * sign-in must resume, before the cancel that closes the dialog clears the
+ * slot.
  */
 
 import { useCallback, useRef, useState } from 'react'
@@ -76,6 +79,10 @@ export interface StepUpGate<A> {
   readonly cancel: () => void
   /** Re-run the remembered action once and clear it (the dialog's onSuccess). */
   readonly succeed: () => void
+  /** The action currently remembered, or null. A surface that offers the
+   * re-login exit reads it to describe the operation a new sign-in must
+   * resume; nothing else should. */
+  readonly peek: () => A | null
   /** Arm the gate with `action` and answer true when `error` is a step-up
    * shortfall; answer false and change nothing for any other failure. */
   readonly intercept: (error: unknown, action: A) => boolean
@@ -142,6 +149,8 @@ export function useStepUpGate<A>(
     }
   }, [])
 
+  const peek = useCallback(() => actionRef.current, [])
+
   const intercept = useCallback(
     (error: unknown, action: A): boolean => {
       if (!shortfallRef.current(error)) {
@@ -156,5 +165,5 @@ export function useStepUpGate<A>(
     [arm],
   )
 
-  return { open, reason, arm, cancel, succeed, intercept }
+  return { open, reason, arm, cancel, succeed, peek, intercept }
 }

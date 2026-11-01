@@ -158,7 +158,13 @@
  * verification whose proof changes how the account signs in. A 401
  * authn.insufficient_user_authentication opens the step-up dialog with the
  * write's inputs remembered, and a won challenge re-runs that one write
- * exactly once. The email send and the row resend carry no fresh
+ * exactly once. When the deployment cannot raise the session at all, the
+ * dialog's re-login exit records the write in the shared step-up resume
+ * store -- the page and the operation, for the removals and the sign-in
+ * switches that carry no one-time code -- and the surface replays it once
+ * when it mounts again after the new sign-in; a code step and the add
+ * face's typed address are left for the person to redo. The email send and
+ * the row resend carry no fresh
  * authentication of their own, so a step-up refusal that reached them would
  * render the code's own failure text instead of opening a dialog. Proving an
  * address normally rotates nothing and asks for nothing, but the consequence
@@ -198,7 +204,7 @@
  */
 
 import type { ReactElement } from 'react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -244,6 +250,10 @@ import { AccountAsyncSection } from './internal/async-section.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
 import { retryAfterMsOf } from './internal/retry-after.js'
+import {
+  rememberStepUpResume,
+  takeStepUpResume,
+} from './internal/step-up-resume.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
@@ -275,8 +285,9 @@ export interface IdentifiersSectionProps {
   /**
    * The host's current path, sent as the step-up flow's `return_to`: a
    * redirect method's round trip lands back on the page that started it, so
-   * that page reads the refusal. Omitted, the deployment's default return
-   * target applies.
+   * that page reads the refusal. It is also the page a re-login returns to
+   * and replays the recorded write on. Omitted, the deployment's default
+   * return target applies.
    */
   readonly returnPath?: string
   /**
@@ -460,6 +471,83 @@ type SectionAction =
 /** The resend note's id, referenced by the row flow's resend control while it
  * counts down. */
 const ROW_RESEND_NOTE_ID = 'identifiers-row-resend-note'
+
+/**
+ * The recorded operation as this section's own action, or null when the step
+ * carries a value that must not be persisted. The two verification steps
+ * carry a one-time code and the add face carries the address the person
+ * typed; neither is recorded, so after a new sign-in the person redoes them.
+ * The remaining writes (a removal, the sign-in switches, the default contact
+ * and a whole sign-in-email selection) are pure requests over identifiers the
+ * list already names.
+ */
+function resumableAction(value: unknown): SectionAction | null {
+  if (typeof value !== 'object' || value === null) {
+    return null
+  }
+  const action = value as {
+    readonly step?: unknown
+    readonly id?: unknown
+    readonly value?: unknown
+    readonly change?: unknown
+    readonly changes?: unknown
+  }
+  switch (action.step) {
+    case 'remove':
+      return typeof action.id === 'string'
+        ? { step: 'remove', id: action.id }
+        : null
+    case 'defaultContact':
+      return typeof action.id === 'string' && typeof action.value === 'string'
+        ? { step: 'defaultContact', id: action.id, value: action.value }
+        : null
+    case 'flags': {
+      const change = action.change
+      if (
+        typeof action.id !== 'string' ||
+        typeof action.value !== 'string' ||
+        typeof change !== 'object' ||
+        change === null ||
+        typeof (change as { readonly signIn?: unknown }).signIn !== 'boolean'
+      ) {
+        return null
+      }
+      return {
+        step: 'flags',
+        id: action.id,
+        value: action.value,
+        change: { signIn: (change as { readonly signIn: boolean }).signIn },
+      }
+    }
+    case 'selectSignInEmail': {
+      if (!Array.isArray(action.changes)) {
+        return null
+      }
+      const changes: SignInSelectionChange[] = []
+      for (const entry of action.changes) {
+        if (typeof entry !== 'object' || entry === null) {
+          return null
+        }
+        const row = entry as {
+          readonly id?: unknown
+          readonly value?: unknown
+          readonly signIn?: unknown
+        }
+        if (
+          typeof row.id !== 'string' ||
+          typeof row.value !== 'string' ||
+          typeof row.signIn !== 'boolean'
+        ) {
+          return null
+        }
+        changes.push({ id: row.id, value: row.value, signIn: row.signIn })
+      }
+      return { step: 'selectSignInEmail', changes }
+    }
+    default:
+      return null
+  }
+}
 
 /** The pending-state placeholder, read aloud as one loading announcement. */
 function IdentifierListSkeleton({ label }: { readonly label: string }) {
@@ -678,6 +766,45 @@ export function IdentifiersSection({
         return
     }
   })
+
+  // The re-login exit records the write a new sign-in must re-issue. Only the
+  // operations with no one-time code are recorded; the add face's typed
+  // address and the two code steps are left for the person to redo.
+  const rememberRelogin = useCallback(() => {
+    if (returnPath === undefined) {
+      return
+    }
+    const action = gate.peek()
+    if (action !== null && resumableAction(action) !== null) {
+      rememberStepUpResume(returnPath, action)
+    }
+  }, [returnPath, gate.peek])
+
+  // The page a re-login returns to replays the recorded write once, through
+  // the gate's own replay, so a second shortfall opens the challenge again.
+  // The profile must have loaded: a removal's confirmation names the row from
+  // the list it acted on.
+  const resumed = useRef(false)
+  useEffect(() => {
+    if (resumed.current || returnPath === undefined || data === undefined) {
+      return
+    }
+    resumed.current = true
+    const record = takeStepUpResume()
+    if (record === null) {
+      return
+    }
+    if (record.path !== returnPath) {
+      rememberStepUpResume(record.path, record.operation)
+      return
+    }
+    const action = resumableAction(record.operation)
+    if (action === null) {
+      return
+    }
+    gate.arm(action)
+    gate.succeed()
+  }, [returnPath, data, gate])
 
   const pending = isPending && data === undefined
   const rows = !pending && data !== undefined ? data.identifiers : undefined
@@ -2227,6 +2354,7 @@ export function IdentifiersSection({
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
         returnPath={returnPath}
+        onRelogin={rememberRelogin}
       />
     </>
   )
