@@ -28,6 +28,7 @@
       "@speed/api-sdk/features": ["../../../web/packages/api-sdk/src/features.ts"],
       "@speed/api-sdk": ["../../../web/packages/api-sdk/src/index.ts"],
       "@speed/api-client": ["../../../web/packages/api-client/src/index.ts"],
+      "@speed/auth-core/otpauth": ["../../../web/packages/auth-core/src/otpauth.ts"],
       "@speed/auth-core/webauthn": ["../../../web/packages/auth-core/src/webauthn.ts"],
       "@speed/auth-core": ["../../../web/packages/auth-core/src/index.ts"],
       "@speed/auth-ui": ["../../../web/packages/auth-ui/src/index.ts"],

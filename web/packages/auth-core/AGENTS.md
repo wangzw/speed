@@ -39,11 +39,16 @@ orval emits the response models. This package's `AuthnFlowState`,
 `AuthnMethodList` are those generated types (or a client-side narrowing
 of them), and it guards each body at runtime (see the rules below).
 
-It is headless: no UI, and the main entry touches no DOM. The one
-exception is the `./webauthn` subpath (`src/webauthn.ts`), which drives a
-passkey ceremony through `navigator.credentials` and is deliberately not
-exported from the main entry, so a host that only reads the session never
-loads it. The React hooks in `src/hooks.ts`
+It is headless: no UI, and the main entry touches no DOM. Two subpaths
+sit beside it, neither exported from the main entry so a host that only
+reads the session never loads them. The `./webauthn` subpath
+(`src/webauthn.ts`) drives a passkey ceremony through
+`navigator.credentials`. The `./otpauth` subpath (`src/otpauth.ts`) is
+pure parsing: it reads an `otpauth://` enrolment URI into the issuer,
+account, secret, algorithm, digits and period an enrolment surface
+displays, and formats the base32 secret for hand entry. It renders
+nothing, imports no React, and reaches no browser global beyond the
+standard `URL` parser. The React hooks in `src/hooks.ts`
 (`useAuthState`, `usePermission`, `useFeature`, `useFeatureState`,
 `featurePresence`, plus the `attachSession` call that
 binds them to one session, last bind wins) live on the same layer --
@@ -290,7 +295,10 @@ its `HumanVerification` / `HumanVerificationStatus` /
 the solver's `solvePowChallenge` / `POW_HASH`). The
 `./webauthn` subpath exports its own surface (`runWebauthn(options,
 signal?)`, `webauthnStepOf(options)`, `WebauthnError`, `WebauthnStep`,
-`WebauthnFailure`); those names are not on the main entry.
+`WebauthnFailure`), and the `./otpauth` subpath exports `parseOtpauth(uri)`
+and `formatSecretForDisplay(secret)` with their result and error types
+(`Otpauth`, `OtpauthAlgorithm`, `OtpauthDigits`, `OtpauthParseError`,
+`OtpauthParseResult`); those names are not on the main entry.
 `AuthSession` also carries `beginIdentityTransition()`, the
 credential-rotation guard documented above. Anything
 else that grows here stays unexported until a consumer proves it needs
@@ -317,7 +325,9 @@ to be public.
   Turnstile token and fresh-proof-after-consume states;
   `src/webauthn.test.ts` (jsdom, with
   `navigator.credentials` stubbed) pins the ceremony driver's decoding,
-  serialization and failure classification. `src/usage-example.test.tsx` compiles and runs the
+  serialization and failure classification; `src/otpauth.test.ts` pins
+  the Key Uri Format's parse defaults, every refusal it names, and the
+  four-character display grouping of the secret. `src/usage-example.test.tsx` compiles and runs the
   README's session-and-hooks flow and its tenant-scoped query-key flow
   through the same scripted harness (the real `createClient` composition
   is proven in session.test.ts), so the documented usage cannot drift

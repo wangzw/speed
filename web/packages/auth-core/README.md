@@ -64,11 +64,15 @@ guards".
 | `pow.ts` | `solvePowChallenge(challenge, difficulty)`, `POW_HASH` |
 | `tenant-refusal.ts` | `isTenantAdmissionRefusal(error)` |
 | `webauthn.ts` (the `@speed/auth-core/webauthn` subpath, not the main entry) | `runWebauthn(options, signal?)`, `webauthnStepOf(options)`, `WebauthnError`, `WebauthnStep`, `WebauthnFailure` |
+| `otpauth.ts` (the `@speed/auth-core/otpauth` subpath, not the main entry) | `parseOtpauth(uri)`, `formatSecretForDisplay(secret)`, `Otpauth`, `OtpauthAlgorithm`, `OtpauthDigits`, `OtpauthParseError`, `OtpauthParseResult` |
 
-`src/index.ts` re-exports everything above except `webauthn.ts`; that file
-is the one DOM-touching module in the package (it calls
-`navigator.credentials`) and ships as its own subpath so a host that only
-reads the session never loads it.
+`src/index.ts` re-exports everything above except `webauthn.ts` and
+`otpauth.ts`. `webauthn.ts` is the package's one DOM-touching module (it
+calls `navigator.credentials`); `otpauth.ts` renders nothing and is pure
+logic -- it parses an `otpauth://` enrolment URI into the parts an
+enrolment surface displays and formats its base32 secret for hand entry.
+Each ships as its own subpath so a host that only reads the session never
+loads it.
 
 ## Quick start
 

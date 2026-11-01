@@ -418,7 +418,7 @@ Recorded, with the current disposition, in the README's Known
 limitations and deferrals. The load-bearing ones for a contributor: the
 authenticator-app step renders the `otpauth_uri` as a QR symbol
 (`src/internal/totp-qr.tsx`) and offers a manual-entry disclosure for its
-parsed base32 secret with a copy control (`src/internal/otpauth.ts` and
+parsed base32 secret with a copy control (`@speed/auth-core/otpauth` and
 ui-kit's `CopyButton`); the passkey ceremony itself runs through the
 browser's WebAuthn API, driven by `@speed/auth-core/webauthn`; the
 enrollment entries are the deployment's
