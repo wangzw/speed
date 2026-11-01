@@ -551,8 +551,9 @@ so a call site cannot introduce a third button face:
 dialogs pass `'medium'` (the default), table rows and menus pass
 `'small'`. `ActionRow` hands its size to every `ActionButton` below it;
 an `ActionButton` used outside a row takes the same prop directly.
-`EmptyState.action` (a centred retry) and existing per-row inline action
-clusters are not action rows and keep their own layout.
+`EmptyState.action` is a centred retry, not a right-aligned action group,
+and keeps its own layout; every page form, dialog and row actions block
+uses `ActionRow`.
 
 ```tsx
 import { ActionButton, ActionRow } from '@speed/ui-kit'
@@ -587,6 +588,9 @@ live throughout it. Hosts should pass the real business content as
 `title`/`message` (any ReactNode, so their own translations flow
 naturally); buttons fall back to namespace defaults.
 
+The two exits render as one action row: Cancel is the secondary action on
+the left and the confirm closes the group on the right.
+
 `children` renders host content inside the dialog below the message (a
 required acknowledgement, a detail list); it is deliberately **not**
 part of `aria-describedby`, so the message stays the dialog's
@@ -615,7 +619,10 @@ content until the end clears it in `onExited`.
 
 The panel is anchored to the right edge and fills the viewport height.
 Its header (title, optional description, close control) is fixed and the
-content area is the only scroll layer. `size` picks the width tier from
+content area is the only scroll layer. An optional `actions` footer sits
+below that layer, fixed in turn, and renders as one right-aligned action
+row -- the task's submit and cancel stay reachable while the body
+scrolls. `size` picks the width tier from
 the viewport's `sm` up -- `'medium'` (the default) is 36rem, `'wide'` is
 52rem -- and below `sm` the panel fills the viewport width. The panel
 stacks at `theme.zIndex.modal`, above the AppShell AppBar (which sits at
@@ -648,8 +655,8 @@ document, focus falls back to `body` and the host places it in
 ```
 
 Props: `open`, `title` (required), `description?`, `size?`, `busy?`,
-`closeLabel?`, `children`; callbacks `onClose` (required), `onExited`
-(required).
+`closeLabel?`, `actions?`, `children`; callbacks `onClose` (required),
+`onExited` (required).
 
 ### The form family (FormField + FormLayout)
 

@@ -108,10 +108,11 @@ plumbing and deliberately not exported.
   every knob is a prop the host owns and a callback the component
   fires. Interaction-only state (a confirm's arming, a tooltip's open)
   is the allowed exception and must be provably interaction-local.
-  `SidePanel` follows the same contract: `open` and `busy` are host
-  props, the close button, Escape and backdrop clicks only report
-  `onClose`, and the exit lifecycle reports `onExited` after the
-  transition — the panel never closes itself and holds no state.
+  `SidePanel` follows the same contract: `open`, `busy`, `children` and
+  the optional `actions` footer are host props, the close button, Escape
+  and backdrop clicks only report `onClose`, and the exit lifecycle
+  reports `onExited` after the transition — the panel never closes itself
+  and holds no state.
   `FileUploader` keeps that contract too: the queue is the host's
   `rows` state, interactions report up through its callbacks, and the
   upload transport is host code — never package code.

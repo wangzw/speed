@@ -45,7 +45,9 @@
  * should pass the real business content (specific object, what the
  * action does) as title/message -- those props accept any ReactNode, so
  * host translations flow naturally. Buttons fall back to the namespace
- * defaults when no labels are passed.
+ * defaults when no labels are passed. The two exits render as one action
+ * row: Cancel is the secondary action on the left, the confirm closes
+ * the row on the right.
  *
  * Escape and backdrop clicks call onCancel (never onConfirm); while
  * confirmLoading is set both exits are inert.
@@ -62,15 +64,14 @@
 import { forwardRef, useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode, Ref } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogTitle from '@mui/material/DialogTitle'
 import { useUiKitTranslation } from '../internal/translation.js'
 import type { RootStyleProps } from '../internal/root-style-props.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
+import { ActionButton, ActionRow } from './ActionRow.js'
 
 export type ConfirmDialogVariant = 'default' | 'danger'
 
@@ -240,7 +241,6 @@ function ConfirmDialogInner(
     onConfirm()
   }
 
-  const confirmColor = variant === 'danger' ? 'error' : 'primary'
   return (
     <Dialog
       ref={ref}
@@ -274,11 +274,14 @@ function ConfirmDialogInner(
           </Box>
         ) : null}
       </DialogContent>
-      <DialogActions>
-        <Button onClick={handleRequestClose} disabled={busy} color="inherit">
+      {/* One action row: cancel on the left, the confirm closing it on the
+          right. The padding is DialogActions' own, so the row sits exactly
+          where the dialog's action band used to. */}
+      <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
+        <ActionButton onClick={handleRequestClose} disabled={busy}>
           {cancelLabel ?? t('confirmDialog.cancelLabel')}
-        </Button>
-        <Button
+        </ActionButton>
+        <ActionButton
           onClick={handleConfirmClick}
           // armLockout is the double-click window the arming click
           // entered: disabled here means the second event of a double
@@ -288,14 +291,14 @@ function ConfirmDialogInner(
           // button alone.
           disabled={busy || armLockout || confirmDisabled}
           loading={busy}
-          color={confirmColor}
-          variant="contained"
+          emphasis="primary"
+          tone={variant === 'danger' ? 'danger' : 'default'}
         >
           {variant === 'danger' && doubleConfirm && armed
             ? t('confirmDialog.confirmAgainLabel')
             : (confirmLabel ?? t('confirmDialog.confirmLabel'))}
-        </Button>
-      </DialogActions>
+        </ActionButton>
+      </ActionRow>
     </Dialog>
   )
 }

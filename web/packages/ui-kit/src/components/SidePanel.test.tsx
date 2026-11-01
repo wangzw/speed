@@ -232,6 +232,30 @@ describe('SidePanel', () => {
     })
   })
 
+  it('renders the actions footer below the scroll layer, not inside it', () => {
+    const { getByRole, getByText } = setup({
+      actions: <button type="button">Save details</button>,
+    })
+    const content = getByText(BODY).parentElement
+    const action = getByRole('button', { name: 'Save details' })
+    expect(content).not.toBeNull()
+    // The content box is the only scroll layer; the action row follows it
+    // as a sibling so it stays reachable while the body scrolls.
+    expect(content).not.toContainElement(action)
+    expect(content!.nextElementSibling).toContainElement(action)
+    expect(content!.nextElementSibling).toHaveStyle({
+      display: 'flex',
+      justifyContent: 'flex-end',
+    })
+  })
+
+  it('renders no footer when no actions are given', () => {
+    const { getByText } = setup()
+    const content = getByText(BODY).parentElement
+    expect(content).not.toBeNull()
+    expect(content!.nextElementSibling).toBeNull()
+  })
+
   it('calls onClose on Escape when not busy', () => {
     const { onClose, getByRole } = setup()
     fireEvent.keyDown(getByRole('dialog'), { key: 'Escape' })

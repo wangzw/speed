@@ -24,6 +24,7 @@ import Breadcrumbs from '@mui/material/Breadcrumbs'
 import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import { useUiKitTranslation } from '../internal/translation.js'
+import { ActionRow } from './ActionRow.js'
 
 /**
  * One breadcrumb step: a label plus optional link behaviour.
@@ -130,9 +131,7 @@ export function PageHeader({ title, description, actions, breadcrumbs, sx }: Pag
           )}
         </Box>
         {actions !== undefined && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
-            {actions}
-          </Box>
+          <ActionRow sx={{ flexShrink: 0 }}>{actions}</ActionRow>
         )}
       </Box>
     </Box>

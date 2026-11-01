@@ -21,6 +21,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { ActionRow } from './ActionRow.js'
 import { CopyButton } from './CopyButton.js'
 import { TotpQrCode } from './TotpQrCode.js'
 
@@ -69,9 +70,9 @@ export type TotpEnrollmentPanelProps = {
   readonly onCodeChange: (code: string) => void
   /** True while an answer is in flight; the code field is disabled. */
   readonly busy?: boolean
-  /** A secondary control rendered left of the primary action. */
+  /** A secondary control rendered ahead of the primary action in the panel's action row. */
   readonly secondaryAction?: ReactNode
-  /** The primary action, rendered last and right-aligned when a secondary action is present. */
+  /** The primary action; it closes the action row at the right edge, alone or not. */
   readonly primaryAction: ReactNode
 }
 
@@ -79,7 +80,8 @@ export type TotpEnrollmentPanelProps = {
  * Renders the enrolment block. The symbol is a content block of its own,
  * the manual entry opens on request, and the code field stays a block whose
  * label sits above the input. The caller's primary action closes the action
- * row; a secondary action sits at its start.
+ * row at the right edge; a secondary action sits ahead of it in the same
+ * group.
  */
 export function TotpEnrollmentPanel({
   otpauthUri,
@@ -232,10 +234,10 @@ export function TotpEnrollmentPanel({
           }}
         />
       </Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
+      <ActionRow sx={{ mt: 2 }}>
         {secondaryAction}
-        <Box>{primaryAction}</Box>
-      </Box>
+        {primaryAction}
+      </ActionRow>
     </Box>
   )
 }

@@ -27,10 +27,11 @@
  * above an open panel.
  *
  * Layout: the paper fills the viewport height, its header stays fixed
- * and the content area is the panel's only scrolling layer. The width is
- * the size tier's fixed width from the viewport's `sm` up and the full
- * viewport width below it -- the panel is a viewport-anchored overlay,
- * not a box in the content flow.
+ * and the content area is the panel's only scrolling layer. An optional
+ * `actions` footer sits below that layer, fixed in turn, and renders as
+ * one right-aligned action row. The width is the size tier's fixed width
+ * from the viewport's `sm` up and the full viewport width below it -- the
+ * panel is a viewport-anchored overlay, not a box in the content flow.
  */
 
 import { forwardRef, useId } from 'react'
@@ -44,6 +45,7 @@ import { CloseIcon } from '../internal/icons.js'
 import { useUiKitTranslation } from '../internal/translation.js'
 import { layerSx } from '../internal/root-style-props.js'
 import type { RootStyleProps } from '../internal/root-style-props.js'
+import { ActionRow } from './ActionRow.js'
 
 /** The panel's width tier: 36rem (medium) or 52rem (wide) from `sm` up. */
 export type SidePanelSize = 'medium' | 'wide'
@@ -67,6 +69,13 @@ export type SidePanelProps = RootStyleProps & {
   readonly busy?: boolean
   /** Accessible name of the close control; defaults to the namespace label. */
   readonly closeLabel?: string
+  /**
+   * Optional actions for the panel's fixed footer -- the task's own submit
+   * and cancel. They render as one right-aligned action row below the
+   * content, outside the scroll layer, so they stay reachable while the
+   * body scrolls.
+   */
+  readonly actions?: ReactNode
   /** The panel body. */
   readonly children?: ReactNode
   /**
@@ -95,6 +104,7 @@ function SidePanelInner(
     size = 'medium',
     busy = false,
     closeLabel,
+    actions,
     children,
     onClose,
     onExited,
@@ -186,6 +196,19 @@ function SidePanelInner(
         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 3, py: 2 }}>
           {children}
         </Box>
+        {actions !== undefined && actions !== null && (
+          <ActionRow
+            sx={{
+              flexShrink: 0,
+              px: 3,
+              py: 2,
+              borderTop: 1,
+              borderColor: 'divider',
+            }}
+          >
+            {actions}
+          </ActionRow>
+        )}
       </Box>
     </Drawer>
   )

@@ -17,6 +17,7 @@ import { screen } from '@testing-library/react'
 import { page } from 'vitest/browser'
 import { themePresets } from '@speed/theme-presets'
 import { defaultTokens } from '@speed/tokens'
+import { ActionButton } from './ActionRow.js'
 import { DataTable } from './DataTable.js'
 import type { DataTableColumn } from './DataTable.js'
 import { SectionCard } from './SectionCard.js'
@@ -47,6 +48,39 @@ function presetsUnderTest() {
     unit: preset.tokens.spacing?.unit ?? defaultTokens.spacing.unit,
   }))
 }
+
+describe('SectionCard action row in Chromium', () => {
+  it('groups the trailing actions one spacing unit apart, primary rightmost', async () => {
+    await page.viewport(1280, 900)
+    renderWithProviders(
+      <SectionCard
+        title="Members"
+        actions={
+          <>
+            <ActionButton>Cancel</ActionButton>
+            <ActionButton emphasis="primary">Invite</ActionButton>
+          </>
+        }
+      >
+        Content
+      </SectionCard>,
+      { language: 'en-US' },
+    )
+
+    const cancel = await screen.findByRole('button', { name: 'Cancel' })
+    const invite = screen.getByRole('button', { name: 'Invite' })
+    const cancelBox = cancel.getBoundingClientRect()
+    const inviteBox = invite.getBoundingClientRect()
+    const rowBox = (invite.parentElement as HTMLElement).getBoundingClientRect()
+    expect(Math.abs(inviteBox.top - cancelBox.top)).toBeLessThanOrEqual(0.5)
+    expect(inviteBox.left).toBeGreaterThanOrEqual(cancelBox.right)
+    expect(inviteBox.left - cancelBox.right).toBeCloseTo(
+      defaultTokens.spacing.unit,
+      0,
+    )
+    expect(Math.abs(inviteBox.right - rowBox.right)).toBeLessThanOrEqual(0.5)
+  })
+})
 
 describe('SectionCard flush separation in Chromium', () => {
   for (const { id, unit } of presetsUnderTest()) {

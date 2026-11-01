@@ -49,6 +49,7 @@ import { FormProvider } from 'react-hook-form'
 import type { FieldValues, SubmitHandler, UseFormReturn } from 'react-hook-form'
 import { layerSx } from '../internal/root-style-props.js'
 import type { RootStyleProps } from '../internal/root-style-props.js'
+import { ActionRow } from './ActionRow.js'
 
 /** The field-flow column count. 2 is a responsive CSS Grid (1 column
  * below the container's `sm`, 2 from it up); 1 is the single-column
@@ -116,20 +117,14 @@ function FormLayoutInner<TFieldValues extends FieldValues>(
     <>
       {children}
       {actions !== undefined && (
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            alignItems: 'center',
-            gap: 1,
-            // Span every grid track so the actions row always reads as
-            // one full-width row in the two-column layout, matching its
-            // single-column appearance; a no-op in the default flex flow.
-            ...(isGrid ? { gridColumn: '1 / -1' } : {}),
-          }}
+        <ActionRow
+          // Span every grid track so the actions row always reads as one
+          // full-width row in the two-column layout, matching its
+          // single-column appearance; a no-op in the default flex flow.
+          sx={isGrid ? { gridColumn: '1 / -1' } : undefined}
         >
           {actions}
-        </Box>
+        </ActionRow>
       )}
     </>
   )

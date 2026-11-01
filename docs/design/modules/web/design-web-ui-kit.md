@@ -90,7 +90,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `ActionRow`／`ActionButton` | `ActionRow`：`children`（按显示顺序，主操作在后）、`size`（`medium`/`small`，缺省 `medium`）、`sx`；`ActionButton`：`emphasis`（`primary`/`secondary`，缺省 `secondary`）、`tone`（`default`/`danger`，缺省 `default`）、`size`（缺省继承所在行）、其余 MUI 按钮 props | 按钮自身的 `onClick` 等宿主回调 |
 | `EmptyState` | `variant`（`empty`/`noPermission`/`error`）、可覆写的标题与描述、动作、图标、`headingLevel`（`h1`–`h6` 或 `none`：`none` 把标题渲染为非标题元素、整块成为 `role="status"` 区域，用于不该进入目录层级的空/状态占位） | 动作节点内的宿主回调 |
 | `ConfirmDialog` | `open`、标题、消息、`variant`、`doubleConfirm`、标签、`confirmLoading`、`children`（渲染在消息之后、不进 `aria-describedby`）、`confirmDisabled`（只禁用确认按钮，不改动双次确认的待命与锁定逻辑） | `onConfirm`、`onCancel` |
-| `SidePanel` | `open`、`title`（必填）、`description`、`size`（`medium` 或 `wide`，缺省 `medium`）、`busy`、`closeLabel`、子节点 | `onClose`、`onExited` |
+| `SidePanel` | `open`、`title`（必填）、`description`、`size`（`medium` 或 `wide`，缺省 `medium`）、`busy`、`closeLabel`、`actions`（固定的底部操作行，位于滚动内容之外）、子节点 | `onClose`、`onExited` |
 | `FormField` | `name`、`control`、`rules`、`defaultValue`、`required`、`render` | 经 `render` 暴露的绑定字段状态 |
 | `FormLayout` | `form`、子节点、`onSubmit`、动作行、间距、宽度、`columns` | `onSubmit`（经 RHF 校验后，[REF-react-hook-form](../../../references.md)） |
 | `PhoneNumberField` | `country`、`nationalNumber`、国家/电话两个标签、帮助文本、`disabled`、`showValidationError`、自动填充标记、`preferredCountries`（置顶列出的国家码，按给定次序；缺省即原次序） | `onCountryChange`、`onNationalNumberChange`；帮助文本**平铺在整行之下**（国家/地区选择器与号码字段之下），不挂在号码字段的 helper 上；逐国家的校验错误仍出现在号码字段下方并替换帮助文本；两者都以 `aria-describedby` 关联到号码输入 |
@@ -307,7 +307,7 @@ sequenceDiagram
 
 **尺寸由调用方按场合传入，行内按钮继承。** `ActionRow` 的 `size` 只有两个取值：页面表单与对话框用 `medium`（缺省），表格行内与菜单用 `small`。尺寸经 provider 传给行内的 `ActionButton`，按钮不必逐个声明；脱离操作行单独使用的 `ActionButton` 可按同一取值自行给出 `size`。尺寸不随容器宽度自动切换：同一场合的按钮大小是版式决定，不是容器查询。
 
-**两类既有形态不强行改造。** `EmptyState.action` 是居中的重试动作，不是靠右成组的操作行，保持原样；表格行内、菜单项内等既有的行内动作簇已经靠右且组内共用同一间距 token，可以继续使用自己的容器，不因本原语的存在而重写。除这两类之外，页面的表单与对话框动作行以本原语为唯一承载。
+**唯一例外是空态的居中重试。** `EmptyState.action` 是居中的重试动作，不是靠右成组的操作行，保持原样。除此之外，页面的表单、内联表单、流程步、对话框、侧边面板底部与表格行内的动作行都以本原语为唯一承载；行内动作簇使用 `size="small"`，不再以自动外边距把主操作推到行的另一端。
 
 ### 焦点环与降级动效
 
@@ -353,7 +353,7 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 **地标与可及名。** MUI 在纸张上给出 `role="dialog"` 与 `aria-modal`；本组件以 `aria-labelledby` 指向标题，仅在给出 `description` 时以 `aria-describedby` 指向描述。标题渲染为 `h2`：页面的 `h1` 是 `PageHeader`，面板标题是其下一级，面板内各节的标题从 `h3` 起。关闭按钮的可及名取 `closeLabel`，缺省取命名空间的 `sidePanel.closeLabel`。
 
-**版式。** 纸张占满视口高度，头部（标题、描述、关闭按钮）固定，内容区是面板内唯一的滚动层，内边距取主题间距。`size` 的 `medium` 取固定宽度 36rem，`wide` 取 52rem；视口在 `sm` 及以上取该宽度，`sm` 以下占满视口宽度。层级取 `theme.zIndex.modal`。内容区宽度是面板宽度减去内边距：两列版式的 `FormLayout` 在 `medium` 内容区内低于它两列起算的容器宽度（`sm`），收为一列；在 `wide` 内容区内高于它，保持两列。
+**版式。** 纸张占满视口高度，头部（标题、描述、关闭按钮）固定，内容区是面板内唯一的滚动层，内边距取主题间距。可选的 `actions` 页脚位于滚动层之下、同样固定，渲染为一条靠右的操作行（`medium` 档），使任务自身的提交与取消在正文滚动时始终可达。`size` 的 `medium` 取固定宽度 36rem，`wide` 取 52rem；视口在 `sm` 及以上取该宽度，`sm` 以下占满视口宽度。层级取 `theme.zIndex.modal`。内容区宽度是面板宽度减去内边距：两列版式的 `FormLayout` 在 `medium` 内容区内低于它两列起算的容器宽度（`sm`），收为一列；在 `wide` 内容区内高于它，保持两列。
 
 **关闭。** 关闭按钮、Escape 与遮罩点击三条路径都只调用 `onClose`，组件从不自行把 `open` 置假；宿主可以在 `onClose` 里拒绝关闭，例如有未保存内容时先请求确认。`busy` 为真时关闭按钮禁用，Escape 与遮罩点击不上报，与 `ConfirmDialog` 的 `confirmLoading` 同形。`onExited` 在退出过渡结束时调用一次：此时背后的页面已恢复对辅助技术可见，面板仍在文档中，内容在紧随其后的渲染提交里卸载。
 

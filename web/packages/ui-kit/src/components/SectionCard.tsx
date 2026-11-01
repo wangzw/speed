@@ -50,6 +50,7 @@ import type { SxProps, Theme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
+import { ActionRow } from './ActionRow.js'
 
 /**
  * What a `SectionCard` contributes to the surface it renders in: its own
@@ -157,9 +158,7 @@ function SectionCardInner(
         {/* A section's trailing actions stay reachable on a plain surface:
             the host drops the card, not the section's own controls. */}
         {actions !== undefined && actions !== null && (
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-            {actions}
-          </Box>
+          <ActionRow sx={{ mb: 2 }}>{actions}</ActionRow>
         )}
         {children}
       </Box>
@@ -204,9 +203,7 @@ function SectionCardInner(
             )}
           </Box>
           {actions !== undefined && actions !== null && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
-              {actions}
-            </Box>
+            <ActionRow sx={{ flexShrink: 0 }}>{actions}</ActionRow>
           )}
         </Box>
       )}
