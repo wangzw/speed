@@ -347,8 +347,8 @@ test('account-security-hardening: an account enrols two factors, ends another de
           { exact: true },
         ),
       ).toBeVisible()
-      // The username is fixed: its group states the rule and renders no
-      // removal action.
+      // The username is fixed: its group states the rule and carries no row
+      // action menu (a removable row would carry its trailing overflow menu).
       await expect(
         identifiers.getByText(
           copy('accountUi', 'identifiers.usernamePermanent'),
@@ -357,7 +357,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
       ).toBeVisible()
       await expect(
         identifiers.getByRole('button', {
-          name: copy('accountUi', 'identifiers.removeAria', {
+          name: copy('accountUi', 'identifiers.actionsAria', {
             value: account.username,
           }),
         }),

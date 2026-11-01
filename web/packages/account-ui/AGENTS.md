@@ -183,8 +183,8 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   the verification section's, and a second pending address must not exist on
   one account.
 - **An unverified email row carries its own verify action.** The action
-  (`identifiers.verify`, named per address by `identifiers.verifyAria`) opens
-  an inline flow on the address the row already shows: the value field is
+  (`identifiers.verify`) opens an inline flow on the address the row already
+  shows: the value field is
   read-only, the send is `POST /api/v1/auth/identifiers` with that same
   address (the route accepts the account's own address as a re-add of its
   proof), and the code is submitted through

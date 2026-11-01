@@ -369,12 +369,10 @@
       "defaultChanged": "{{value}} 现在是默认联系地址。"
     },
     "verify": "验证",
-    "verifyAria": "验证此邮箱地址：{{value}}",
     "verifyCodeInvalid": "验证码无效或已过期，请重试。",
     "lastLoginName": "这是你当前唯一的登录名。请先添加另一个用户名或邮箱，再删除它。",
     "usernamePermanent": "用户名是固定的登录名，不能更改或删除。",
     "remove": "移除",
-    "removeAria": "移除此标识：{{value}}",
     "removed": "标识 {{value}} 已移除。",
     "confirmTitle": "移除此标识？",
     "confirmMessage": "移除后该标识会从账户及所有相关列表中消失。账户至少需要保留一种登录方式。",

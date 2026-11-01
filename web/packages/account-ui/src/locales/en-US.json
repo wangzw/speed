@@ -369,12 +369,10 @@
       "defaultChanged": "{{value}} is now the default contact address."
     },
     "verify": "Verify",
-    "verifyAria": "Verify this email address: {{value}}",
     "verifyCodeInvalid": "The verification code is invalid or has expired. Try again.",
     "lastLoginName": "This is your only sign-in name. Add another username or email address before removing it.",
     "usernamePermanent": "Your username is your fixed sign-in name. It cannot be changed or removed.",
     "remove": "Remove",
-    "removeAria": "Remove this identifier: {{value}}",
     "removed": "Identifier {{value}} removed.",
     "confirmTitle": "Remove this identifier?",
     "confirmMessage": "The identifier will be removed from the account and from every list it appears in. An account must keep at least one way to sign in.",

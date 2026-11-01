@@ -78,6 +78,35 @@ async function openContactMenu(
   )
 }
 
+/** The trailing actions menu button of the row that shows `value`, or null
+ * when that row carries no action cell. */
+function rowMenu(value: string): HTMLElement | null {
+  return screen.queryByRole('button', {
+    name: zhCN.identifiers.actionsAria.replace('{{value}}', value),
+  })
+}
+
+/** Assert the button stands alone in its row's action cell, with no inline
+ * action button beside it. */
+function expectOnlyActionButton(menu: HTMLElement): HTMLElement {
+  const cell = menu.parentElement
+  if (cell === null) {
+    throw new Error('the row action button has no enclosing cell')
+  }
+  expect(within(cell).getAllByRole('button')).toHaveLength(1)
+  return menu
+}
+
+/** Assert the row that shows `value` carries its trailing actions menu button
+ * and no inline action button beside it. */
+function expectOnlyRowMenu(value: string): HTMLElement {
+  return expectOnlyActionButton(
+    screen.getByRole('button', {
+      name: zhCN.identifiers.actionsAria.replace('{{value}}', value),
+    }),
+  )
+}
+
 describe('IdentifiersSection', () => {
   it('renders each identifier with its kind, value and verification, and passes axe', async () => {
     const respond: RealResponder = (call: RealCall) => {
@@ -229,18 +258,9 @@ describe('IdentifiersSection', () => {
     const user = userEvent.setup()
 
     expect(await screen.findAllByText('only@x.test')).toHaveLength(2)
-    // Both actions live in the row's trailing menu; the row carries no inline
-    // button.
-    expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'only@x.test'),
-      }),
-    ).toBeNull()
-    expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.verifyAria.replace('{{value}}', 'only@x.test'),
-      }),
-    ).toBeNull()
+    // Both actions live in the row's trailing menu; the action cell carries
+    // that one button and no inline action button.
+    expectOnlyRowMenu('only@x.test')
     await openContactMenu(user, 'only@x.test')
     expect(
       screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
@@ -577,13 +597,9 @@ describe('IdentifiersSection', () => {
     mount(respond)
 
     expect(await screen.findAllByText('ada')).toHaveLength(1)
-    // A username is permanent: the group states the rule and offers no
-    // removal action, whether or not the name is the only login name.
-    expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
-      }),
-    ).toBeNull()
+    // A username is permanent: the group states the rule and carries no row
+    // action menu, whether or not the name is the only login name.
+    expect(rowMenu('ada')).toBeNull()
     expect(screen.getByText(zhCN.identifiers.usernamePermanent)).toBeTruthy()
 
     await expectNoAxeViolations()
@@ -607,12 +623,10 @@ describe('IdentifiersSection', () => {
     mount(respond)
 
     expect(await screen.findAllByText('ada@x.test')).toHaveLength(2)
-    // An email address is a login name for a password account too.
-    expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@x.test'),
-      }),
-    ).toBeNull()
+    // An email address is a login name for a password account too. Removal is
+    // withheld and the row has nothing to verify, so it carries no action
+    // menu at all.
+    expect(rowMenu('ada@x.test')).toBeNull()
     expect(screen.getByText(zhCN.identifiers.lastLoginName)).toBeTruthy()
   })
 
@@ -651,14 +665,10 @@ describe('IdentifiersSection', () => {
 
     expect(await screen.findAllByText('ada')).toHaveLength(1)
     expect(screen.getByText('+14155550123')).toBeTruthy()
-    // The username is permanent, so its group renders no removal action; the
+    // The username is permanent, so its group carries no row action menu; the
     // phone signs in through its own code route and stays removable from its
     // trailing menu.
-    expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
-      }),
-    ).toBeNull()
+    expect(rowMenu('ada')).toBeNull()
     await openContactMenu(user, '+14155550123')
     expect(
       screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
@@ -699,12 +709,9 @@ describe('IdentifiersSection', () => {
 
     expect(await screen.findAllByText('ada')).toHaveLength(1)
     // Another login name does not make the username removable: the name is
-    // permanent, so its group keeps stating the rule and renders no action.
-    expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
-      }),
-    ).toBeNull()
+    // permanent, so its group keeps stating the rule and carries no row
+    // action menu.
+    expect(rowMenu('ada')).toBeNull()
     expect(screen.getByText(zhCN.identifiers.usernamePermanent)).toBeTruthy()
   })
 
@@ -968,11 +975,9 @@ describe('IdentifiersSection', () => {
     // note.
     await waitFor(() => expect(profileReads).toBe(2))
     expect(screen.getByText(zhCN.identifiers.lastLoginName)).toBeTruthy()
-    expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@x.test'),
-      }),
-    ).toBeNull()
+    // The row loses its action menu: removal gives way to the note and the
+    // proved address has nothing to verify.
+    expect(rowMenu('ada@x.test')).toBeNull()
   })
 
   it('gates a step_up_required removal behind the dialog and re-runs it once', async () => {
@@ -3737,12 +3742,9 @@ describe('IdentifiersSection', () => {
       name: zhCN.identifiers.actionsAria.replace('{{value}}', 'ada@x.test'),
     })
     // The contact table's actions live behind the row's one overflow menu
-    // button, not an inline button per action.
-    expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@x.test'),
-      }),
-    ).toBeNull()
+    // button, not an inline button per action: the action cell carries that
+    // one button.
+    expectOnlyActionButton(actions)
     await user.click(actions)
     await user.click(
       screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
@@ -3788,31 +3790,9 @@ describe('IdentifiersSection', () => {
 
     await screen.findAllByText('ada@example.test')
     // The merged view's contact row carries one trailing menu button; the
-    // verify and remove buttons no longer stand inline on the row.
-    expect(
-      screen.getAllByRole('button', {
-        name: zhCN.identifiers.actionsAria.replace(
-          '{{value}}',
-          'ada@example.test',
-        ),
-      }),
-    ).toHaveLength(1)
-    expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.verifyAria.replace(
-          '{{value}}',
-          'ada@example.test',
-        ),
-      }),
-    ).toBeNull()
-    expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.removeAria.replace(
-          '{{value}}',
-          'ada@example.test',
-        ),
-      }),
-    ).toBeNull()
+    // verify and remove items live behind it, not inline on the row, so the
+    // action cell carries that one button.
+    expectOnlyRowMenu('ada@example.test')
 
     // Both items are usable from the menu: the verify item opens the row's
     // fixed-address flow, and the remove item still asks for confirmation
