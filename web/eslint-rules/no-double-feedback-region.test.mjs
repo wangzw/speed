@@ -5,7 +5,8 @@
  *   pnpm exec vitest run eslint-rules/no-double-feedback-region.test.mjs
  *
  * The RuleTester cases pin the rule's judgement; the final suite scans
- * every runtime TSX file under web/packages and holds the exemption list
+ * every runtime TSX file under web/packages/<name>/src -- the scope the
+ * workspace lint config gives the rule -- and holds the exemption list
  * exactly equal to the multi-region components in the tree, so a new one
  * cannot slip in unregistered and a stale entry cannot linger.
  *
@@ -13,7 +14,7 @@
  * files are the packages' own source.
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { RuleTester } from 'eslint'
@@ -223,10 +224,16 @@ describe('no-double-feedback-region rule', () => {
   })
 })
 
-/** Every runtime TSX file the workspace lint config covers. */
+/** Every TSX file under one package's src; the workspace lint config
+ * applies the rule to each package's src and excludes test files and
+ * `test-utils/`, so the scan skips the same entries. */
 function runtimeTsxFiles(directory, found = []) {
   for (const entry of readdirSync(directory)) {
-    if (entry === 'node_modules' || entry === 'dist') {
+    if (
+      entry === 'node_modules' ||
+      entry === 'dist' ||
+      entry === 'test-utils'
+    ) {
       continue
     }
     const full = join(directory, entry)
@@ -260,9 +267,17 @@ describe('no-double-feedback-region exemptions', () => {
   const webRoot = fileURLToPath(new URL('..', import.meta.url))
   const packagesRoot = join(webRoot, 'packages')
 
+  /** The `src` directory of every workspace package that has one. */
+  function packageSrcDirs() {
+    return readdirSync(packagesRoot)
+      .map((name) => join(packagesRoot, name, 'src'))
+      .filter((dir) => existsSync(dir) && statSync(dir).isDirectory())
+  }
+
   function multiRegionComponents() {
     const components = []
-    for (const file of runtimeTsxFiles(packagesRoot)) {
+    const files = packageSrcDirs().flatMap((dir) => runtimeTsxFiles(dir))
+    for (const file of files) {
       for (const entry of collectRegionComponents(parseProgram(file))) {
         if (entry.nodes.length >= 2) {
           components.push({

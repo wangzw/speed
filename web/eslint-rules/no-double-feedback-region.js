@@ -18,8 +18,9 @@
  * `WRITE_FEEDBACK_REGION_EXEMPTIONS`; each reason states which separate
  * groups (or which mutually exclusive branches of one scope) the regions
  * serve. The workspace scan in the rule's test keeps the list exactly
- * equal to the set of multi-region components under `web/packages`, so a
- * new one must be registered deliberately and a stale entry is removed.
+ * equal to the set of multi-region components under each package's `src`
+ * (the scope the lint config applies the rule to), so a new one must be
+ * registered deliberately and a stale entry is removed.
  *
  * A queue of independent per-row transfers is the design's allowed
  * exception (an upload row is its own slot), and it does not trip this

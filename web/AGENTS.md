@@ -160,14 +160,15 @@ of one scope):
 
 Adding a multi-region component means adding an entry with a reason; the
 rule's scan test (`no-double-feedback-region.test.mjs`) reads every
-runtime TSX file under `packages/*/src` and fails when the list and the
-tree disagree in either direction, so a new component cannot slip through
-unregistered and a stale entry is removed. A queue of independent per-row
-transfers is the design's allowed exception (each upload row is its own
-slot): `FileUploader` renders each row's status as text from its `rows`
-props and never renders `WriteFeedbackRegion`, and a region rendered once
-inside a `rows.map(...)` is one JSX element rather than one per row, so
-the rule does not reach it.
+runtime TSX file under `packages/*/src` -- the same scope the lint config
+gives the rule, with tests and `test-utils/` left out -- and fails when
+the list and the tree disagree in either direction, so a new component
+cannot slip through unregistered and a stale entry is removed. A queue
+of independent per-row transfers is the design's allowed exception (each
+upload row is its own slot): `FileUploader` renders each row's status as
+text from its `rows` props and never renders `WriteFeedbackRegion`, and a
+region rendered once inside a `rows.map(...)` is one JSX element rather
+than one per row, so the rule does not reach it.
 
 The rules' unit tests run from the workspace root, not from a package
 directory (the rules live outside every package, so no per-package
