@@ -12,6 +12,7 @@ import { StrictMode } from 'react'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
+import { ApiError } from '@speed/api-client'
 import {
   LOGIN_ABANDON,
   LOGIN_ANSWER,
@@ -395,6 +396,67 @@ describe('useStepUp', () => {
 
     const start = calls.find((c) => c.path === '/api/v1/auth/flows/authenticated')
     expect(start?.options?.body).toEqual({ purpose: 'step-up', method: 'sms' })
+  })
+
+  it('arms the wait a throttled answer stated and clears it at its deadline', async () => {
+    // A 429 carrying Retry-After is a refusal that names how long the caller
+    // must hold off. The hook exposes that wait in whole seconds, counts it
+    // down, and once it elapses clears both the wait and the refusal that
+    // stated it, leaving the parked step answerable.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const { session } = makeCookieHarness({
+        [LOGIN_START_AUTHENTICATED]: () =>
+          openFlow({ next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] } }),
+        [LOGIN_ANSWER]: () => {
+          throw new ApiError({
+            status: 429,
+            code: 'ratelimit.throttled',
+            attempts: 1,
+            retryAfterMs: 30_000,
+          })
+        },
+        [LOGIN_ABANDON]: () => ({}),
+      })
+      const onElevated = vi.fn()
+      const { result, rerender } = renderHook(
+        ({ active }: { active: boolean }) => useStepUp(session, active, onElevated),
+        { initialProps: { active: false } },
+      )
+      rerender({ active: true })
+      await waitFor(() => {
+        expect(result.current.phase).toBe('step')
+      })
+      expect(result.current.retryAfterSeconds).toBeNull()
+
+      act(() => {
+        result.current.answer({ step: 'factor', input: { factor: 'f1' } })
+      })
+      await waitFor(() => {
+        expect(result.current.phase).toBe('failed')
+      })
+      expect(result.current.errorCode).toBe('ratelimit.throttled')
+      expect(result.current.retryAfterSeconds).toBe(30)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+      expect(result.current.retryAfterSeconds).toBe(29)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(29_000)
+      })
+      await waitFor(() => {
+        expect(result.current.retryAfterSeconds).toBeNull()
+      })
+      // The wait is spent, so the retry control is free again; the failure
+      // code stays and names what the attempt hit.
+      expect(result.current.errorCode).toBe('ratelimit.throttled')
+      expect(result.current.step?.kind).toBe('factor')
+      expect(onElevated).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('surfaces a failed start as a resolved code', async () => {

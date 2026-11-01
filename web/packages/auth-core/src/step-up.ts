@@ -28,7 +28,13 @@
  * rotated) for the cookie-delivered one -- is the completion the caller
  * re-runs its refused action on, and `onElevated` fires once. A refusal
  * of an answer resolves to its code and renders as one banner; a fresh
- * answer is retryable, and the flow stays open. A refusal of the start
+ * answer is retryable, and the flow stays open. A refusal that states a
+ * wait -- a 429 or 503 answer carrying Retry-After, read from the
+ * api-client's `retryAfterMs` -- also arms `retryAfterSeconds`: the caller
+ * holds its retry control for that many whole seconds, the value ticks
+ * down once a second, and when it reaches zero the wait clears and the
+ * step is answerable again; the failure code stays, rendered as its own
+ * wait-free text. A refusal of the start
  * itself is the deployment declining to raise this session at all, which
  * no step can satisfy: it answers 401 insufficient_user_authentication --
  * the account has factors, but none whose methods may strengthen this
@@ -122,6 +128,15 @@ export interface StepUpState {
   readonly submitting: boolean
   /** The last failure's resolved code, or null. */
   readonly errorCode: string | null
+  /**
+   * The remaining wait the last failure stated, in whole seconds, or null
+   * when it stated none. A 429 (or 503) answer carries the api-client's
+   * `retryAfterMs`, and the caller holds its retry control until this
+   * counts down to zero. The value ticks once a second while it is set and
+   * clears at zero; the failure code stays, so the caller renders that
+   * code's wait-free text and its form becomes submittable again.
+   */
+  readonly retryAfterSeconds: number | null
   /** The deployment's human-verification gate and the proof this challenge
    * holds. A step that may send a verification message renders its block;
    * an answer that sends presents the proof. */
@@ -168,6 +183,28 @@ function codeOf(error: unknown): string {
 }
 
 /**
+ * The wait a failure stated, in whole seconds: the api-client's
+ * `retryAfterMs` (set from a 429 or 503 answer's Retry-After) rounded up,
+ * or undefined when the failure carried none. Read structurally, so a
+ * non-ApiError or a malformed value starts no countdown.
+ */
+function waitSecondsOf(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined
+  }
+  let value: unknown
+  try {
+    value = (error as { retryAfterMs?: unknown }).retryAfterMs
+  } catch {
+    return undefined
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return undefined
+  }
+  return Math.max(1, Math.ceil(value / 1000))
+}
+
+/**
  * Whether a refusal of the step-up start is this deployment declining to
  * raise the session at all. One answer carries that meaning, and no step
  * can satisfy it: a 401 `insufficient_user_authentication` -- the account
@@ -209,6 +246,17 @@ export function useStepUp(
   // A stream of answers is in flight; a further answer is ignored, so a
   // step cannot be double-submitted.
   const [submitting, setSubmitting] = useState(false)
+  // The deadline of the wait the last refusal stated, and the clock the
+  // remaining seconds are read against. Both are null/now-free when no wait
+  // is armed. The deadline (not a decremented counter) is the state, so a
+  // timer that fires late -- a throttled tab, a slow machine -- still reads
+  // the true remaining time instead of drifting.
+  const [waitUntil, setWaitUntil] = useState<number | null>(null)
+  const [now, setNow] = useState(() => Date.now())
+  const retryAfterSeconds =
+    waitUntil === null
+      ? null
+      : Math.max(0, Math.ceil((waitUntil - now) / 1000))
   // The elevated callback is read through a ref, so a caller may pass a
   // fresh closure every render without restarting the flow.
   const elevatedRef = useRef(onElevated)
@@ -256,6 +304,7 @@ export function useStepUp(
       setSeq(null)
       setErrorCode(null)
       setSubmitting(false)
+      setWaitUntil(null)
       if (openRef.current) {
         openRef.current = false
         void session.abandonFlow().catch(() => undefined)
@@ -268,6 +317,7 @@ export function useStepUp(
     setSeq(null)
     setErrorCode(null)
     setSubmitting(false)
+    setWaitUntil(null)
     void (async () => {
       try {
         openRef.current = true
@@ -290,6 +340,7 @@ export function useStepUp(
             // -- the session must be re-established instead.
             setPhase('unavailable')
           } else {
+            armWait(error)
             setErrorCode(codeOf(error))
             setPhase('failed')
           }
@@ -323,6 +374,58 @@ export function useStepUp(
       })
     }
   }, [])
+
+  // The countdown a refusal stated: tick once a second while a wait is
+  // armed, and stop the timer at its own deadline instead of leaving it
+  // running for the rest of the mount.
+  useEffect(() => {
+    if (waitUntil === null) {
+      return undefined
+    }
+    const armed = Date.now()
+    if (armed >= waitUntil) {
+      // The deadline passed before the timer could be set: read the clock
+      // once so the derived remaining value settles at zero.
+      setNow(armed)
+      return undefined
+    }
+    const timer = setInterval(() => {
+      const current = Date.now()
+      setNow(current)
+      if (current >= waitUntil) {
+        clearInterval(timer)
+      }
+    }, 1000)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [waitUntil])
+
+  // The wait elapsed: the caller's retry control is free again. The failure
+  // code stays -- it still names what the last attempt hit -- and renders
+  // its own wait-free text; a retry or a reopen clears it.
+  useEffect(() => {
+    if (waitUntil === null || retryAfterSeconds !== 0) {
+      return
+    }
+    setWaitUntil(null)
+  }, [waitUntil, retryAfterSeconds])
+
+  /** Arm the wait a refusal stated, or disarm any wait when it stated
+   * none. */
+  function armWait(error: unknown): void {
+    const seconds = waitSecondsOf(error)
+    if (seconds === undefined) {
+      setWaitUntil(null)
+      return
+    }
+    // The clock is reset with the deadline, so a wait armed long after the
+    // mount starts its countdown from the full interval instead of the
+    // stale value read at mount.
+    const armed = Date.now()
+    setNow(armed)
+    setWaitUntil(armed + seconds * 1000)
+  }
 
   function settle(state: AuthnFlowState): void {
     if ('next' in state) {
@@ -360,6 +463,8 @@ export function useStepUp(
         : null
     setSubmitting(true)
     setErrorCode(null)
+    // A retry disarms the previous refusal's wait.
+    setWaitUntil(null)
     const run = runRef.current
     void (async () => {
       try {
@@ -385,6 +490,7 @@ export function useStepUp(
             openRef.current = false
           }
           setErrorCode(code)
+          armWait(error)
           setPhase('failed')
         }
       } finally {
@@ -417,5 +523,14 @@ export function useStepUp(
     answer({ step: 'complete' })
   }, [step, phase, submitting, seq, answer])
 
-  return { phase, step, seq, submitting, errorCode, human, answer }
+  return {
+    phase,
+    step,
+    seq,
+    submitting,
+    errorCode,
+    retryAfterSeconds,
+    human,
+    answer,
+  }
 }
