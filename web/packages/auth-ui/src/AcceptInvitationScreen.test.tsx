@@ -368,6 +368,73 @@ describe('AcceptInvitationScreen', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('drops the previous refusal when a submit is refused before sending', async () => {
+    // A submit the client refuses before sending is still an attempt: the
+    // earlier server refusal does not stand beside the empty name's field
+    // error.
+    const acceptInvitation = vi.fn(() =>
+      Promise.reject({ status: 400, code: 'authn.bad_request' }),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({ acceptInvitation })}
+      />,
+    )
+    const username = await screen.findByLabelText(
+      zhCN.acceptInvitation.usernameLabel,
+      { exact: false },
+    )
+    await user.type(username, 'ada')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.bad_request,
+    )
+
+    // Empty the required field and submit again: the attempt stops at the
+    // client check and the old refusal goes with it.
+    await user.clear(username)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
+    )
+    expect(
+      await screen.findByText(zhCN.acceptInvitation.usernameRequired),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('drops the server refusal when the name is edited', async () => {
+    // Editing an input starts a new attempt, so the previous attempt's
+    // whole-attempt refusal does not stand beside the changed input.
+    const acceptInvitation = vi.fn(() =>
+      Promise.reject({ status: 400, code: 'authn.bad_request' }),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({ acceptInvitation })}
+      />,
+    )
+    const username = await screen.findByLabelText(
+      zhCN.acceptInvitation.usernameLabel,
+      { exact: false },
+    )
+    await user.type(username, 'ada')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.bad_request,
+    )
+
+    await user.type(username, '2')
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
   it('renders the not-found text for a bare 404 read answer', async () => {
     renderWithProviders(
       <AcceptInvitationScreen

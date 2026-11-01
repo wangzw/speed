@@ -46,7 +46,9 @@
  * the same way and leaves the accept action ready for another try, except a
  * refusal of the login name it would open the account with -- taken,
  * reserved, or a shape the server cannot normalize -- which the username
- * field states. Host
+ * field states. Every attempt begins from a clean result: editing the name
+ * and a submit the client refuses before sending both drop the previous
+ * attempt's server refusal. Host
  * callbacks (onAccepted) fire after the operation settles and are contained
  * -- a throwing callback is never a failure of the acceptance.
  */
@@ -242,6 +244,10 @@ export function AcceptInvitationScreen({
 
   const accept = (): void => {
     const name = username.trim()
+    // Every attempt starts from a clean result, including one the client
+    // refuses before sending: the previous attempt's server refusal does
+    // not stand beside this attempt's field error.
+    setAcceptError(null)
     setUsernameRejection(null)
     if (showUsername && name === '') {
       // An account is opened with a login name: a submit without one can only
@@ -252,7 +258,6 @@ export function AcceptInvitationScreen({
     }
     setUsernameMissing(false)
     setAccepting(true)
-    setAcceptError(null)
     const input: AcceptInvitationInput = {
       ...(name === '' ? {} : { username: name }),
       ...(displayName.trim() === '' ? {} : { displayName: displayName.trim() }),
@@ -414,6 +419,10 @@ export function AcceptInvitationScreen({
                 if (usernameRejection !== null) {
                   setUsernameRejection(null)
                 }
+                // Editing the name starts a new attempt: the previous
+                // attempt's server refusal does not stand beside the edited
+                // input.
+                setAcceptError(null)
               }}
               label={t('acceptInvitation.usernameLabel')}
             />
