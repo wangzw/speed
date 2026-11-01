@@ -776,8 +776,10 @@ so no second process runs.
 The template states the endpoint claim table because this deployment keeps the
 operations surface on a listener of its own: the compiled defaults put every
 endpoint, the ops probes included, on the backend listener, and `fly.toml`'s
-readiness check probes `GET /ready` on port 8083. The table is written whole
-because `http.endpoints` is a container leaf.
+readiness check probes `GET /ready` on port 8083. A template that named the
+listeners alone would leave that listener with no endpoint claiming it, so the
+check would have nothing to reach. The table is written whole because
+`http.endpoints` is a container leaf.
 
 The seed keys an account on the login name its entry configures, and an entry
 that names both an email address and a username answers to either: the address
