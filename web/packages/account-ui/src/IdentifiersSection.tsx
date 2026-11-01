@@ -472,6 +472,9 @@ type SectionAction =
  * counts down. */
 const ROW_RESEND_NOTE_ID = 'identifiers-row-resend-note'
 
+/** The scope this surface's re-login resume record carries. */
+const RESUME_SCOPE = 'identifiers'
+
 /**
  * The recorded operation as this section's own action, or null when the step
  * carries a value that must not be persisted. The two verification steps
@@ -776,7 +779,7 @@ export function IdentifiersSection({
     }
     const action = gate.peek()
     if (action !== null && resumableAction(action) !== null) {
-      rememberStepUpResume(returnPath, action)
+      rememberStepUpResume(RESUME_SCOPE, returnPath, action)
     }
   }, [returnPath, gate.peek])
 
@@ -790,12 +793,12 @@ export function IdentifiersSection({
       return
     }
     resumed.current = true
-    const record = takeStepUpResume()
+    const record = takeStepUpResume(RESUME_SCOPE)
     if (record === null) {
       return
     }
     if (record.path !== returnPath) {
-      rememberStepUpResume(record.path, record.operation)
+      rememberStepUpResume(record.scope, record.path, record.operation)
       return
     }
     const action = resumableAction(record.operation)

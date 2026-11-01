@@ -159,7 +159,7 @@ describe('IdentifiersSection', () => {
     // authentication the session could not supply, so the re-login exit
     // recorded it. The surface mounts again on the recorded page and replays
     // the removal once, then consumes the record.
-    rememberStepUpResume('/account/profile', {
+    rememberStepUpResume('identifiers', '/account/profile', {
       step: 'remove',
       id: 'id-phone',
     })

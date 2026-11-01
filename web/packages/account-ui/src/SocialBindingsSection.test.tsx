@@ -1134,6 +1134,7 @@ describe('SocialBindingsSection', () => {
 
     expect(logout).toHaveBeenCalledTimes(1)
     expect(pendingStepUpResume()).toEqual({
+      scope: 'social-bindings',
       path: '/account/security',
       operation: { kind: 'authorize', method: 'wechat' },
     })
@@ -1142,7 +1143,7 @@ describe('SocialBindingsSection', () => {
   it('re-issues the recorded bind when the page mounts after the new sign-in', async () => {
     // The surface mounted again on the page the record names: it starts the
     // recorded bind once, without a click, and consumes the record.
-    rememberStepUpResume('/account/security', {
+    rememberStepUpResume('social-bindings', '/account/security', {
       kind: 'authorize',
       method: 'wechat',
     })
@@ -1186,7 +1187,7 @@ describe('SocialBindingsSection', () => {
   })
 
   it('leaves a record that names another page for that page to resume', async () => {
-    rememberStepUpResume('/account/sessions', {
+    rememberStepUpResume('social-bindings', '/account/sessions', {
       kind: 'authorize',
       method: 'wechat',
     })
@@ -1224,6 +1225,7 @@ describe('SocialBindingsSection', () => {
       ).toBe(false),
     )
     expect(pendingStepUpResume()).toEqual({
+      scope: 'social-bindings',
       path: '/account/sessions',
       operation: { kind: 'authorize', method: 'wechat' },
     })

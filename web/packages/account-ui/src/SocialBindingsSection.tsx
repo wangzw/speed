@@ -191,6 +191,9 @@ type ResumeOperation =
   | { readonly kind: 'authorize'; readonly method: string }
   | { readonly kind: 'unbind'; readonly id: string; readonly label: string }
 
+/** The scope this surface's re-login resume record carries. */
+const RESUME_SCOPE = 'social-bindings'
+
 /** Whether a stored value is a binding operation this section can re-issue. */
 function isResumeOperation(value: unknown): value is ResumeOperation {
   if (typeof value !== 'object' || value === null) {
@@ -427,7 +430,7 @@ export function SocialBindingsSection({
       action.kind === 'authorize'
         ? { kind: 'authorize', method: action.method.name }
         : { kind: 'unbind', id: action.id, label: action.label }
-    rememberStepUpResume(returnPath, operation)
+    rememberStepUpResume(RESUME_SCOPE, returnPath, operation)
   }, [returnPath, gate.peek])
 
   // The page a re-login returns to re-issues the recorded operation once, as
@@ -440,12 +443,12 @@ export function SocialBindingsSection({
       return
     }
     resumed.current = true
-    const record = takeStepUpResume()
+    const record = takeStepUpResume(RESUME_SCOPE)
     if (record === null) {
       return
     }
     if (record.path !== returnPath) {
-      rememberStepUpResume(record.path, record.operation)
+      rememberStepUpResume(record.scope, record.path, record.operation)
       return
     }
     const operation = record.operation
