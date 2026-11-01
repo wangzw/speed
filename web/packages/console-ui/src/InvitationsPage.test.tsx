@@ -1485,6 +1485,46 @@ describe('InvitationsPage', () => {
     await expectNoAxeViolations()
   })
 
+  it('drops the refused row marker when the next issue starts', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+      revokeInvitation: () => Promise.reject({ code: 'authn.forbidden' }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    const revoke = await screen.findByRole('button', {
+      name: zhCN.invitations.revoke,
+    })
+    await user.click(revoke)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.forbidden,
+    )
+    expect(revoke).toHaveAttribute('aria-invalid', 'true')
+
+    // The issue and the revoke share the invitation scope: a new attempt
+    // starts from a clean result, so the refused row's marker and its inline
+    // reason do not outlive the result it described.
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+    expect(
+      await screen.findByText(
+        fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' }),
+      ),
+    ).toBeInTheDocument()
+    expect(revoke).toHaveAttribute('aria-invalid', 'false')
+  })
+
   it('names the changed object on each landed write', async () => {
     const user = userEvent.setup()
     const operations = withTenant({

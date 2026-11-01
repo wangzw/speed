@@ -262,6 +262,10 @@ export function InvitationsPage({
 
   const issue = () => {
     const address = email
+    // The issue and the revoke share the invitation scope: this attempt
+    // starts from a clean result, so the refused row's marker and its inline
+    // reason do not stand beside the new answer.
+    setFailedInvitation(null)
     void invitationFeedback.run(async () => {
       const answer = await issueInvitation.mutateAsync({
         tenant,
