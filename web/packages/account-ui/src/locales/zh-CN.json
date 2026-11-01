@@ -142,7 +142,6 @@
     "addAria": "添加{{method}}",
     "actionsAria": "{{factor}} 的操作",
     "remove": "移除",
-    "removeAria": "移除此两步验证方式：{{factor}}",
     "removed": "{{factor}} 已移除。",
     "rename": "重命名",
     "renamed": "{{factor}} 的名称已更新。",

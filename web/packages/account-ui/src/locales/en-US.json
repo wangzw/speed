@@ -142,7 +142,6 @@
     "addAria": "Add {{method}}",
     "actionsAria": "Actions for {{factor}}",
     "remove": "Remove",
-    "removeAria": "Remove this two-step verification method: {{factor}}",
     "removed": "{{factor}} removed.",
     "rename": "Rename",
     "renamed": "{{factor}} renamed.",
