@@ -67,6 +67,11 @@ type LoginMethod interface {
 	Answer(ctx context.Context, f FlowState, in StepInput) (Step, error)
 }
 
+// MethodAbandoner 是方法为自己在流程里保存了状态时可选实现的接口：引擎在删除流程记录前调用它。
+type MethodAbandoner interface {
+	Abandon(ctx context.Context, f FlowState) error
+}
+
 type Start struct {
 	Purpose   string            // login、link、step-up、enroll
 	Account   AccountID         // link 与 step-up 时已知
@@ -98,6 +103,8 @@ type StepInput struct {
 	Client ClientInfo
 }
 ```
+
+**放弃流程时的释放。** 流程被放弃时，引擎在删除流程记录前把流程的私有状态交给为它保存状态的一方：登记流程交给多因素模块，处在第一因素的流程交给它点名的方法；该方实现了 `MethodAbandoner` 才调用。第二因素的私有状态属于某个因素，已落定的流程已经花掉了自己的状态，两者都不在此列——把一方的字节交给另一方只会让它误读。回调在单次调用预算内运行；它失败或 panic 只记一行日志，流程记录照常删除，因为放弃是幂等的，记录留在原处反而会保住客户端已经放弃的绑定。
 
 `Step` 是方法对引擎的回答，字段不导出，只能由构造器与 `WithSends` 产生；零值读作「没答」。回答的种类是下列构造器给出的封闭集：
 
@@ -163,7 +170,7 @@ type Proof struct {
 | `POST B/register` | Open | 匿名自助注册，body `{username, email, password, display_name?, locale?, time_zone?}`；邮箱必填并作为未证明预留写入，不是登录方式、联系方式或默认联系地址；一次事务建号，不建会话、不发邮件 |
 | `POST B/flows/authenticated` | Required，`Impersonable` | 在已登录的身份上开始 `link`、`step-up` 或 `enroll`（body 同上加 `purpose`）；流程记录绑定生效账户与会话；冒充期间绑定被冒充账户与发起者的会话；`enroll` 是因素登记的唯一入口；起始状态与前置要求见「在已登录身份上开始流程」 |
 | `POST B/flows/answer` | Open | 答复当前步，body `{seq, step, input, human_proof}`；`step` 取 `answer`、`factor`、`enroll`、`complete`；要求流程绑定。待建号状态下的 `step=answer` 由引擎处理用户名，不交给方法 |
-| `GET B/flows/current`、`DELETE B/flows/current` | Open | 读当前流程状态，供界面刷新后续接；放弃流程，幂等；要求绑定 |
+| `GET B/flows/current`、`DELETE B/flows/current` | Open | 读当前流程状态，供界面刷新后续接；放弃流程，幂等，删除记录前先让为流程保存状态的一方释放它（见「LoginMethod 接缝」）；要求绑定 |
 | `GET\|POST B/callback/:provider` | Open | OAuth（[REF-rfc6749](../../../references.md)）与企业 OIDC 的回跳、SAML 的 ACS；`:provider` 对社交类方法是方法名，对企业 SSO 是 IdP 标识；`POST` 登记跨源检查旁路；SAML 回跳的体上限见 [authn-sso](design-authn-sso.md) |
 | `PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`POST B/identifiers`、`POST B/identifiers/verify`、`PUT B/identifiers/:id`、`DELETE B/identifiers/:id`、`DELETE B/links/:id` | Required，`Impersonable` | 账户自助：改口令、添加或更换邮箱与手机、添加用户名、设置标识的登录方式与默认联系地址、删标识、解绑外部身份；改口令、添加用户名、选作或取消登录方式、设置默认联系地址、删除标识与解绑外部身份要求新鲜认证并过 CSRF，登记并验证一条邮箱或手机本身不要求新鲜认证、不轮换会话、不结束其他会话，但其证明改变账户据以证明或找回自己的事实时例外——一条将取代默认联系地址或成为唯一邮箱地址的邮箱、一个将取代已启用短信因素发码目标的新手机号，其证明要求新鲜认证；冒充身份与被冒充账户本人相同；`POST B/phone` 与 `POST B/phone/verify` 只在 `SMSCodes` 在场时挂；`POST B/identifiers` 的邮箱分支只在 `EmailCodeSender` 在场时可用；发送验证码的分支（`POST B/phone` 与邮箱分支）先校验人机凭证 |
 | `POST B/password-reset` | Open | 匿名口令重置的第一步：body `{channel, identifier, human_proof?}`；按渠道发送验证码或走抑制路径，合格与不合格目标同形；建立独立的 `__Host-authn-reset` 绑定，不读登录流程 cookie |
@@ -895,7 +902,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 ### 幂等与重试
 
 - 引擎不重试：交换落空即按流程失效拒绝，方法超时与不可用不自动重发。
-- `DELETE flows/current` 幂等；登录完成靠对流程记录的比较并交换保证只成功一次；回跳至多被处理一次。
+- `DELETE flows/current` 幂等；删除记录前先调用流程所有者的放弃回调，回调失败只记日志、记录照常删除；登录完成靠对流程记录的比较并交换保证只成功一次；回跳至多被处理一次。
 - 短信发送结果不确定（超时，不知是否已发）时不盲目重发，用户走重发按钮，计入预算（[authn-sms](design-authn-sms.md)）。
 - 邮箱验证码的发送失败按通道的分类处理：能证明消息未离开的失败退还本次占用的预算，结果不确定的失败（`ErrEmailUncertain`，或自建通道给出的任何未分类错误）保留预算，因为消息可能已经发出。无论哪一种，重发窗口都释放：没有待验证记录，用户本来就需要重发才能拿到可用的码。退还逐键用读加比较并交换，不用负增量，已过期的窗口因此不会被重新创建而凭空多出一个名额。
 - 停在 `processing` 的记录不重试、不复用，用户重新开始流程。

@@ -163,6 +163,9 @@ var seamSignatures = map[string][]string{
 		"Begin(ctx context.Context, s Start) (Step, error)",
 		"Answer(ctx context.Context, f FlowState, in StepInput) (Step, error)",
 	},
+	"MethodAbandoner": {
+		"Abandon(ctx context.Context, f FlowState) error",
+	},
 	"Decider": {
 		"Decide(ctx context.Context, d Decision) (allow bool, err error)",
 	},

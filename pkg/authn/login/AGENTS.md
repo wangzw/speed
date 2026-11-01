@@ -50,6 +50,19 @@ does.
   `done` tombstone first and acts only as the winner, so a login completes at
   most once. A tombstone lives as long as the record; the swap never moves the
   expiry.
+- **Abandoning a flow releases the state its owner kept, and removes the record
+  whatever happens.** `DELETE flows/current` hands the flow's private state to
+  the collaborator that owns it, when that collaborator implements the optional
+  `authn.MethodAbandoner`: the multi-factor module for an enrollment, the named
+  method for a flow at its first factor. A second-factor flow's private state
+  belongs to a factor and a settled flow has spent its own, so neither has an
+  owner here. The call runs under the call budget; a failure or a panic is
+  logged and does not keep the record, because abandoning is idempotent and a
+  record left behind would hold a binding the client has given up
+  (`releaseFlow`, `abandonOwner`,
+  `TestAbandonHandsTheFlowsPrivateStateToItsModule`,
+  `TestAbandonHandsALoginMethodsFlowToTheMethod`,
+  `TestAFailedAbandonCallbackStillRemovesTheFlowAndIsLogged`).
 - **The engine is method-agnostic and drives factors through `MFA`.** It never
   names a method's own step, reads only the `Step` kind and its payload, and
   reaches a factor through `authn.MFA` and never through `Factor`. `MFA` is

@@ -156,3 +156,19 @@ type LoginMethod interface {
 	// party's redirect back: an OAuth code, a SAML assertion.
 	Answer(ctx context.Context, f FlowState, in StepInput) (Step, error)
 }
+
+// MethodAbandoner is the optional part of a method -- a first-factor method or
+// the multi-factor module -- that keeps state of its own for a flow and
+// releases it when the flow is abandoned. The engine finds it with a type
+// assertion on the collaborator the flow's current step belongs to and runs it
+// before the flow record is removed. A method that keeps no state of its own
+// does not implement it.
+//
+// Abandon is idempotent: the same flow may be released more than once, and a
+// flow that never reached a step of the method's carries no private state. The
+// engine logs a failure and removes the flow record all the same, so an
+// implementation reports what it could not release and does not decide whether
+// the flow ends.
+type MethodAbandoner interface {
+	Abandon(ctx context.Context, f FlowState) error
+}

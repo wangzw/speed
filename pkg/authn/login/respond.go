@@ -275,7 +275,10 @@ func (r *routes) current(ctx context.Context, _ struct{}, meta *speedhttp.Meta) 
 // abandon answers DELETE flows/current by removing the flow the request is
 // bound to. It is idempotent: a request with no binding or with a binding to a
 // flow that is gone is the same 401 flow-invalid, and a request that removes a
-// live flow answers 204.
+// live flow answers 204. Before the record goes, the collaborator that owns the
+// flow's private state -- the multi-factor module for an enrollment, the
+// named method otherwise -- is asked to release what it kept for the flow; a
+// failure there is logged and the record is removed all the same.
 func (r *routes) abandon(ctx context.Context, _ struct{}, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	token, _, ok := r.readBindingToken(c, true)
@@ -283,10 +286,12 @@ func (r *routes) abandon(ctx context.Context, _ struct{}, meta *speedhttp.Meta) 
 		c.unauthorized(mount.CodeFlowInvalid)
 		return c.result()
 	}
-	if _, _, err := r.loadFlow(c.ctx, token); err != nil {
+	rec, _, err := r.loadFlow(c.ctx, token)
+	if err != nil {
 		c.unauthorized(mount.CodeFlowInvalid)
 		return c.result()
 	}
+	r.releaseFlow(c.ctx, rec, token)
 	if err := r.deleteFlow(c.ctx, token); err != nil {
 		r.fail(c, err)
 		return c.result()
