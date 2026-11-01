@@ -20,8 +20,9 @@
  *  - `enroll`: the factor kinds the assembly takes in; the chosen kind
  *    travels under `enroll` as the field `kind`.
  *  - `webauthn`: the factor's own JSON. TOTP's `otpauth_uri` is extracted
- *    from it and rendered as its own read-only field -- the step's JSON is
- *    never shown as a blob -- beside a code field; a passkey's creation or
+ *    from it and rendered as a scannable QR symbol with a manual-entry
+ *    disclosure for its base32 secret, beside a six-digit code field --
+ *    the step's JSON is never shown as a blob; a passkey's creation or
  *    request options are driven by the WebAuthn ceremony
  *    (@speed/auth-core/webauthn), whose credential is reported under the
  *    answer step the CALLER names.
@@ -34,7 +35,7 @@
  *    navigates.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -44,6 +45,9 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type { AuthnStep } from '@speed/auth-core'
 import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
+import { CopyButton } from '@speed/ui-kit'
+import { formatSecretForDisplay, parseOtpauth } from './otpauth.js'
+import { TotpQrCode } from './totp-qr.js'
 import { useAccountUiTranslation } from './translation.js'
 
 /** The bundle keys of the field names the family has wording for. A name
@@ -234,60 +238,16 @@ export function FlowStep({
   if (step.kind === 'webauthn') {
     const options = step.options
     if (webauthnStepOf(options) === 'totp') {
-      // TOTP's enrollment shows the otpauth_uri to add to an authenticator
-      // app, then takes the six-digit code the app shows. Only the URI is
-      // rendered, in a read-only field the reader can select and copy; the
-      // step's remaining options are the server's answer to the flow and
-      // are not a document to show.
-      const uri = otpauthUriOf(options)
       return (
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="body2" color="text.secondary">
-            {t('flowStep.enrollTotpHelp')}
-          </Typography>
-          {uri !== null && (
-            <TextField
-              label={t('flowStep.enrollTotpUriLabel')}
-              value={uri}
-              multiline
-              minRows={2}
-              fullWidth
-              slotProps={{ input: { readOnly: true } }}
-              sx={{
-                mt: 1,
-                mb: 1.5,
-                '& textarea': {
-                  fontFamily: (theme) => theme.typography.fontFamilyMono,
-                  wordBreak: 'break-all',
-                },
-              }}
-            />
-          )}
-          <TextField
-            label={t('flowStep.codeLabel')}
-            value={values.code ?? ''}
-            onChange={(event) => setValues({ ...values, code: event.target.value })}
-            disabled={busy}
-            fullWidth
-            autoComplete="one-time-code"
-          />
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
-            {secondaryAction}
-            <Button
-              type="button"
-              variant="contained"
-              sx={primaryEndSx}
-              disabled={
-                busy || submitDisabled || (values.code ?? '').trim() === ''
-              }
-              onClick={() =>
-                onSubmit({ step: answerStep, input: { code: (values.code ?? '').trim() } })
-              }
-            >
-              {submitLabel}
-            </Button>
-          </Box>
-        </Box>
+        <TotpEnrollStep
+          uri={otpauthUriOf(options)}
+          code={values.code ?? ''}
+          onCodeChange={(code) => setValues({ ...values, code })}
+          busy={busy}
+          submitLabel={submitLabel}
+          onSubmit={(code) => onSubmit({ step: answerStep, input: { code } })}
+          secondaryAction={secondaryAction}
+        />
       )
     }
     return (
@@ -343,6 +303,175 @@ export function FlowStep({
           </Button>
         </Box>
       )}
+    </Box>
+  )
+}
+
+/** The ids linking the manual-entry toggle to its disclosure and the code
+ * label to its input. One TOTP step is on screen at a time, so the constants
+ * are unique within the document. */
+const TOTP_MANUAL_ID = 'totp-manual-entry'
+const TOTP_CODE_ID = 'totp-code'
+
+interface TotpEnrollStepProps {
+  /** The step's `otpauth_uri`, or null when it carries none. */
+  readonly uri: string | null
+  /** The six-digit code typed so far. */
+  readonly code: string
+  readonly onCodeChange: (code: string) => void
+  readonly busy: boolean
+  readonly submitLabel: string
+  /** Reports the trimmed code; the caller answers the flow with it. */
+  readonly onSubmit: (code: string) => void
+  readonly secondaryAction?: ReactNode
+}
+
+/**
+ * The authenticator-app enrolment block: the step's `otpauth_uri` as a
+ * scannable QR symbol, a disclosure that shows the parsed base32 secret for
+ * hand entry with a copy control, and the six-digit code field the app
+ * generates.
+ *
+ * The URI is never rendered as text, so the manual path shows the secret
+ * alone; a URI that does not parse still keeps the symbol (an authenticator
+ * can scan it) but offers no manual secret. The QR and the manual block are
+ * content, not a labelled form field: each is laid out as a block of its own
+ * rather than under a field's floating label. The code is submitted only by
+ * the confirm control, never on typing, and the field keeps its value while
+ * the caller reports a failure.
+ */
+function TotpEnrollStep({
+  uri,
+  code,
+  onCodeChange,
+  busy,
+  submitLabel,
+  onSubmit,
+  secondaryAction,
+}: TotpEnrollStepProps) {
+  const { t } = useAccountUiTranslation()
+  const [manualOpen, setManualOpen] = useState(false)
+  const otpauth = useMemo(() => {
+    if (uri === null) {
+      return null
+    }
+    const parsed = parseOtpauth(uri)
+    return parsed.ok ? parsed.otpauth : null
+  }, [uri])
+
+  return (
+    <Box sx={{ mt: 2 }}>
+      <Typography variant="body2" color="text.secondary">
+        {t('flowStep.enrollTotpHelp')}
+      </Typography>
+      {uri !== null && (
+        <Box sx={{ mt: 1.5 }}>
+          <TotpQrCode uri={uri} label={t('flowStep.totpQrLabel')} />
+        </Box>
+      )}
+      {otpauth !== null && (
+        <Box sx={{ mt: 1 }}>
+          <Button
+            type="button"
+            size="small"
+            aria-expanded={manualOpen}
+            aria-controls={manualOpen ? TOTP_MANUAL_ID : undefined}
+            onClick={() => setManualOpen((open) => !open)}
+          >
+            {t('flowStep.totpManualToggle')}
+          </Button>
+          {manualOpen && (
+            <Box
+              id={TOTP_MANUAL_ID}
+              sx={{
+                mt: 1,
+                p: 1.5,
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 1,
+              }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                {t('flowStep.totpSecretLabel')}
+              </Typography>
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  flexWrap: 'wrap',
+                  mt: 0.5,
+                }}
+              >
+                <Typography
+                  component="code"
+                  sx={{
+                    fontFamily: (theme) => theme.typography.fontFamilyMono,
+                    wordBreak: 'break-all',
+                    userSelect: 'all',
+                  }}
+                >
+                  {formatSecretForDisplay(otpauth.secret)}
+                </Typography>
+                <CopyButton
+                  value={otpauth.secret}
+                  label={t('flowStep.totpCopyLabel')}
+                  copiedLabel={t('flowStep.totpCopiedLabel')}
+                  visibleLabel={t('flowStep.totpCopyVisibleLabel')}
+                />
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                {t('flowStep.totpParams', {
+                  digits: otpauth.digits,
+                  algorithm: otpauth.algorithm,
+                  period: otpauth.period,
+                  interpolation: { escapeValue: false },
+                })}
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      )}
+      {/* The code field is a block of this panel, not a labelled form field:
+          its label sits above the input instead of floating over the border,
+          and the input is sized for the six digits it accepts. */}
+      <Box sx={{ mt: 2.5 }}>
+        <Typography
+          component="label"
+          htmlFor={TOTP_CODE_ID}
+          variant="body2"
+          color="text.secondary"
+          sx={{ display: 'block', mb: 0.5 }}
+        >
+          {t('flowStep.codeLabel')}
+        </Typography>
+        <TextField
+          id={TOTP_CODE_ID}
+          value={code}
+          onChange={(event) => onCodeChange(event.target.value)}
+          disabled={busy}
+          slotProps={{
+            htmlInput: {
+              inputMode: 'numeric',
+              autoComplete: 'one-time-code',
+              maxLength: 6,
+              size: 6,
+            },
+          }}
+        />
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
+        {secondaryAction}
+        <Button
+          type="button"
+          variant="contained"
+          sx={secondaryAction === undefined ? undefined : { marginLeft: 'auto' }}
+          disabled={busy || code.trim() === ''}
+          onClick={() => onSubmit(code.trim())}
+        >
+          {submitLabel}
+        </Button>
+      </Box>
     </Box>
   )
 }

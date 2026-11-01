@@ -209,8 +209,14 @@
   "flowStep": {
     "redirectNotice": "Continue in the window that opens to finish this step.",
     "continueLabel": "Continue",
-    "enrollTotpHelp": "Add the content below to your authenticator app, then enter the 6-digit code the app shows.",
-    "enrollTotpUriLabel": "Authenticator setup details",
+    "enrollTotpHelp": "Scan the QR code with your authenticator app, then enter the 6-digit code the app shows.",
+    "totpQrLabel": "Scan this QR code with your authenticator app",
+    "totpManualToggle": "Can't scan? Enter the key manually",
+    "totpSecretLabel": "Setup key",
+    "totpCopyLabel": "Copy setup key",
+    "totpCopiedLabel": "Setup key copied",
+    "totpCopyVisibleLabel": "Copy",
+    "totpParams": "Time-based (TOTP), {{digits}} digits, {{algorithm}}, {{period}} seconds",
     "codeLabel": "6-digit code",
     "field": {
       "identifier": "Email or phone number",

@@ -395,10 +395,12 @@ pinned in both languages by `src/internal/error-text.test.ts`.
 
 Recorded, with the current disposition, in the README's Known
 limitations and deferrals. The load-bearing ones for a contributor: the
-package ships no QR or clipboard integration, so the authenticator's
-`otpauth_uri` is manual-entry only (the passkey ceremony itself runs
-through the browser's WebAuthn API, driven by
-`@speed/auth-core/webauthn`); the enrollment entries are the deployment's
+authenticator-app step renders the `otpauth_uri` as a QR symbol
+(`src/internal/totp-qr.tsx`) and offers a manual-entry disclosure for its
+parsed base32 secret with a copy control (`src/internal/otpauth.ts` and
+ui-kit's `CopyButton`); the passkey ceremony itself runs through the
+browser's WebAuthn API, driven by `@speed/auth-core/webauthn`; the
+enrollment entries are the deployment's
 discovered factor kinds (`GET /api/v1/auth/methods`' `mfa.factors`), one
 entry per kind with an unknown kind under the generic label, so an
 assembly without a passkey relying party shows no passkey entry; the session list renders the

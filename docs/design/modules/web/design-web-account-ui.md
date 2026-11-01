@@ -131,6 +131,7 @@ interface MfaSectionProps {
 | `@speed/api-sdk` | 每次读的生成 react-query 钩子、每次写的生成 mutation、查询键构造器，以及档案读取（`authnProfileGet`）与社交回跳读取（`authnLoginCurrent`）的调用 |
 | `@speed/ui-kit` | `AsyncSection`、`ConfirmDialog`、`ListSkeleton` 与跨面状态原语（`errorCodeOf`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`useWriteFeedback`、`visuallyHiddenSx`）；手机号的起始国家上下文（`usePhoneCountryDefault`）与显示时区上下文（`useDisplayTimeZone`） |
 | `@speed/i18n` | 命名空间注册与文案的翻译钩子；语言名（`languageDisplayName`）、显示时区纯函数（`resolveTimeZone`、`isSupportedTimeZone`）与时间格式化（`formatInstant`） |
+| `qrcode-generator` | 二维码编码：把 `otpauth_uri` 编成登记步骤绘制的 SVG 模块矩阵 |
 | `@tanstack/react-query` | peer（必需）：宿主供给的 QueryClient 与它上面的钩子 |
 | `react`、`react-dom`、`@mui/material`（[REF-mui](../../../references.md)）、`@emotion/*`（[REF-emotion](../../../references.md)） | peer（必需）：宿主拥有的 React／MUI 树 |
 
@@ -229,7 +230,7 @@ sequenceDiagram
 
 `MfaSection` 不声明因子状态，状态经读发现（`GET /api/v1/auth/factors`）；它提供的登记入口也只取本部署装配的因素（`GET /api/v1/auth/methods` 的 `mfa.factors`，经 `session.listMethods` 读回）——装配没有通行密钥的部署不显示通行密钥入口，宿主不得提供本部署无法完成的能力。两次入口动作走同一条「先生成流程、再按步答复」的机器：
 
-1. 登记一个因素。一次 `startAuthenticatedFlow({purpose: 'enroll', input: {kind}})` 打开向导，按应答的 `next.kind` 分派：`webauthn` 步把该因素自己的 JSON 对象交给步进渲染器——TOTP 的 `otpauth_uri` 渲染为文本加一个 `code` 字段，通行密钥的创建选项（[REF-webauthn](../../../references.md)）由 `@speed/auth-core` 的 `./webauthn` 子路径驱动 `navigator.credentials.create` 并把返回的凭据序列化成答复键 `credential`；`enroll` 步给出可登记的种类。答完即因素登记完成，它不改变本次会话的等级。
+1. 登记一个因素。一次 `startAuthenticatedFlow({purpose: 'enroll', input: {kind}})` 打开向导，按应答的 `next.kind` 分派：`webauthn` 步把该因素自己的 JSON 对象交给步进渲染器——TOTP 的 `otpauth_uri` 渲染为可扫描的二维码，二维码下方一个展开项给出手动入口（`parseOtpauth` 解析出的 base32 密钥，按四位分组显示，配复制控件与算法、位数、周期说明），随后是一个只收六位数字的 `code` 字段；二维码与手动密钥按内容块排版，不套普通字段的浮动标签；验证码不自动提交，由确认控件触发，登记被拒时保留已输入内容并在登记一组的反馈区域渲染该错误码。通行密钥的创建选项（[REF-webauthn](../../../references.md)）由 `@speed/auth-core` 的 `./webauthn` 子路径驱动 `navigator.credentials.create` 并把返回的凭据序列化成答复键 `credential`；`enroll` 步给出可登记的种类。答完即因素登记完成，它不改变本次会话的等级。
 2. 提权以做安全类动作。一次 `startAuthenticatedFlow({purpose: 'step-up'})` 起一条加强认证流程；账户有可用因素时从 `factor` 步进入（清单在应答里）。挑战对话框驱动这条流程，成功后重跑被门控的动作。流程落到就绪（`ready`）状态、下一步是 `complete` 时，这一步没有输入，`useStepUp` 自动以 `{step: 'complete'}` 提交它（同一 `seq` 只自动提交一次），提交期间对话框显示起手文案；自动提交被拒时退回该步自带的确认按钮并渲染拒绝码，由用户手动重试。起手之前，对话框读一次本人已登记的因素（`GET /api/v1/auth/factors`）：没有任何启用因素时，对话框再读一次本人会话（`GET /api/v1/auth/session`），按会话是否已满足新鲜第一因素区分被拒的要求。请求层不暴露 401 的 `WWW-Authenticate` 挑战参数，由会话自身的状态回答同一个问题：会话的保证级别不低于单因素，且最近一次交互认证距今不超过五分钟（服务端 `authn.FreshFirstFactor` 固定的窗口，`account-ui` 内以一个常量镜像这个数值，两处同值）时，新鲜第一因素的要求本已满足，被拒的是多因素的要求；其余情形被拒的是新鲜第一因素。被拒的是新鲜第一因素时（注册后立即改口令撞上五分钟窗口就是这种），对话框以会话的 `methods` 里的 `pwd`（取 `password`）或 `sms`（取 `sms`）为方法起一条带 `method` 的步进流程，当场重新证明后重跑被拒的动作；会话没有这两种方法（社交与企业登录建立的会话），或会话读失败而方法无从得知时，给出重新登录的出口，不起流程。被拒的是多因素的要求而账户没有因素时，对话框提示先在账户设置里登记两步验证，不发起流程；宿主给了 `accountHref` 时在该说明旁渲染一条普通链接（本包自己不导航），不给则不渲染链接。区分在每次打开对话框时判定一次，依据打开之后读到的会话，不取缓存里更早的视图，对话框开着期间不变；会话读未落定时对话框显示起手中的占位。因素读失败不判定为没有因素，照常起手，由服务端的拒绝决定；有因素而服务端以 401 `authn.insufficient_user_authentication` 拒绝起手（有因素但没有能强化本会话的）时，对话框判定本部署无法完成升级，给出重新登录的出口，不渲染任何步骤。答复被拒为 401 `authn.flow_invalid` 时（那条流程记录已不在：过期，或部署的流程存储随进程丢失），任何后续答复都落不上去，对话框因此不保留提交了也只会重复同一拒绝的表单：它只渲染该码的横幅，并以「重新开始验证」作为与取消并列的动作，点它重挂流程驱动、按同一判定起一条新流程。被拒的码是 401 `authn.sso_required` 时，本地因素满足不了它：对话框不读因素、不起流程，渲染点名企业单点登录的说明与重新登录出口。
 
 步进渲染器的通行密钥步把仪式做成可等待、可取消、可重试的一步。断言仪式步到达即进入等待态，没有第二次点击：打开该步的那次点击就是全部交互，界面直接显示等待文案与一个取消控件，不先渲染一个「继续」按钮。登记仪式步（选项带 `user`）仍需一次点击开始，因为创建仪式在部分浏览器要求用户激活。到达按步号与挑战共同辨认：服务端在下一步重发同一挑战时仪式重新开始，普通重渲染不重开。仪式可能在浏览器上停留很久（没有可用认证器时一直等到用户放弃），因此等待通知挂成空的 `role="status"` 区域、下一提交再填文本，焦点移到取消控件（等待态取代了继续/入口控件）。取消不等仪式落定，立即渲染取消文案并给出重试；重试以同一步重跑仪式，取消时只尽力请浏览器放弃原仪式（凭据 API 不保证响应中止）。被放弃仪式的迟到应答按尝试序号丢弃；步在仪式途中卸载时同样放弃仪式。浏览器不支持 WebAuthn、用户放弃提示、认证器已持有该账户的凭据与仪式失败各渲染自己的文案；通用失败句按仪式类型区分登记与登录。
@@ -297,6 +298,7 @@ sequenceDiagram
 | 解绑会抽掉最后一个登录方式 | 一条横幅渲染该错误码文本，服务端按自己的登录方式计数判定 |
 | 未验证账户发起外部身份绑定被 403 `authn.contact_required` 拒绝 | 一条横幅渲染该码文本，说明先验证邮箱；绑定动作保持可重试 |
 | 两步验证登记被拒（他人的登记抢先、因素消失） | 关掉向导并渲染错误码文本；一次错码是字段级错误、可重试 |
+| TOTP 登记填写的验证码被拒 | 登记一组的 `WriteFeedbackRegion` 渲染该错误码文本；二维码与手动密钥保留，已输入的验证码不清空，可修改后重试 |
 | 加强认证流程的码已被用过 | 清空字段、渲染用过的码文本，绝不用同一码重试 |
 | 本人账户没有启用的因素（`GET /api/v1/auth/factors` 读回的行里没有处于启用状态的），会话已满足新鲜第一因素 | 对话框提示先在账户设置里登记两步验证，不发起流程；宿主给了 `accountHref` 时在该说明旁渲染通往账户设置的普通链接，不给则不渲染链接 |
 | 本人账户没有启用的因素，会话未满足新鲜第一因素，会话方法为 `pwd` 或 `sms` | 对话框以该方法起带 `method` 的步进流程，重新证明后重跑被拒的写 |
@@ -348,6 +350,7 @@ sequenceDiagram
 | 会话列表与撤销 | 已实现 | `web/packages/account-ui/src/SessionsSection.tsx` `SessionsSection` |
 | 社交绑定与回调 | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |
 | 两步验证设置 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection` |
+| TOTP 登记以二维码为主入口，手动密钥可展开复制 | 已实现 | `web/packages/account-ui/src/internal/flow-step.tsx` `FlowStep`；`web/packages/account-ui/src/internal/totp-qr.tsx` `TotpQrCode`；`web/packages/account-ui/src/internal/otpauth.ts` `parseOtpauth` |
 | 命名空间资源 | 已实现 | `web/packages/account-ui/src/resources.ts` `ACCOUNT_UI_NAMESPACE`、`accountUiResources` |
 | 登录标识节的邮箱可用性属性 `emailAvailable` | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps` |
 | 档案已列出用户名时，添加面不提供用户名 kind | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |

@@ -12,9 +12,10 @@
  * step_up_required opens the step-up dialog, and a won step-up re-runs
  * exactly that removal once; a 409 (last factor) renders its code text;
  * and the TOTP enrollment walks the flow -- the `webauthn` step's
- * otpauth_uri is rendered, the code is answered under `step: 'enroll'`,
- * the ready step is taken with `step: 'complete'` and the settled
- * `enrolled` refetches the factors.
+ * otpauth_uri is rendered as a QR symbol, the code is answered under
+ * `step: 'enroll'`, the ready step is taken with `step: 'complete'` and
+ * the settled `enrolled` refetches the factors; a refused answer keeps the
+ * typed code and reports the refusal.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -48,7 +49,8 @@ const METHODS_PATH = '/api/v1/auth/methods'
 const FLOW_START = '/api/v1/auth/flows/authenticated'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
-const OTPAUTH_URI = 'otpauth://totp/speed:ada?issuer=speed'
+const OTPAUTH_URI =
+  'otpauth://totp/speed:ada?secret=JBSWY3DPEHPK3PXP&issuer=speed'
 
 /** The GET /api/v1/auth/methods discovery document, carrying the deployment's
  * enrollable factor kinds. */
@@ -929,16 +931,13 @@ describe('MfaSection', () => {
     )
     expect(start?.body).toEqual({ purpose: 'enroll', input: { kind: 'totp' } })
 
-    // The step's otpauth URI is its own read-only field: the step's JSON is
-    // never rendered as a blob. The label is the field's accessible name,
-    // and its value is the URI alone.
-    const uriField = await screen.findByRole('textbox', {
-      name: zhCN.flowStep.enrollTotpUriLabel,
-    })
-    expect(uriField).toBeVisible()
-    expect(uriField).toHaveValue(OTPAUTH_URI)
-    expect(uriField).toHaveAttribute('readonly')
+    // The step's otpauth URI is its own scannable symbol: the step's JSON is
+    // never rendered as a blob, and the URI never appears as text.
+    expect(
+      await screen.findByRole('img', { name: zhCN.flowStep.totpQrLabel }),
+    ).toBeVisible()
     expect(screen.queryByText(/"otpauth_uri"/)).toBeNull()
+    expect(screen.queryByText(/otpauth:\/\//)).toBeNull()
     await user.type(
       screen.getByLabelText(zhCN.flowStep.codeLabel),
       '123456',
@@ -972,6 +971,55 @@ describe('MfaSection', () => {
       input: { code: '123456' },
     })
     expect(answers[1]?.body).toEqual({ seq: 2, step: 'complete' })
+  })
+
+  it('keeps the typed code and reports the refusal when an enrollment answer is rejected', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'enroll',
+          next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        return errorResponse(400, 'authn.bad_request')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
+    )
+    const code = await screen.findByLabelText(zhCN.flowStep.codeLabel)
+    await user.type(code, '123456')
+    // Typing alone issues nothing: only the confirm control answers.
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
+      ),
+    ).toHaveLength(0)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.bad_request,
+    )
+    expect(code).toHaveValue('123456')
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
+      ),
+    ).toHaveLength(1)
   })
 
   it('names the removed row when two factors share a kind', async () => {
@@ -1165,7 +1213,10 @@ describe('MfaSection', () => {
 
     expect(await screen.findByLabelText(zhCN.flowStep.codeLabel)).toBeVisible()
     expect(
-      screen.queryByRole('textbox', { name: zhCN.flowStep.enrollTotpUriLabel }),
+      screen.queryByRole('img', { name: zhCN.flowStep.totpQrLabel }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: zhCN.flowStep.totpManualToggle }),
     ).toBeNull()
     expect(screen.queryByText(/"otpauth_uri"/)).toBeNull()
   })

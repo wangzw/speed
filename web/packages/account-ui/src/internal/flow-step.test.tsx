@@ -1,6 +1,6 @@
 /**
- * FlowStep behaviour: the controlled label vocabulary of a flow step and
- * the passkey ceremony's own states.
+ * FlowStep behaviour: the controlled label vocabulary of a flow step, the
+ * TOTP enrolment block and the passkey ceremony's own states.
  *
  * What this suite pins: a challenge field name the family knows renders
  * its translated label, an unknown name renders verbatim; a factor
@@ -17,15 +17,19 @@
  * the ceremony again, a registration step waiting for a click, the
  * registration prompt's own wording, the ceremony being abandoned when the
  * step unmounts, the already-registered refusal's own sentence, and the
- * generic failure sentence naming the ceremony it ran.
+ * generic failure sentence naming the ceremony it ran. The TOTP cases pin
+ * the QR symbol as the primary entry, the manual disclosure showing the
+ * base32 secret alone with its copy control and parameters, the code
+ * field's six-digit contract, and the confirm-only submission.
  */
 
 import { useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { configure, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthnStep } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
+import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { FlowStep } from './flow-step.js'
 
@@ -435,5 +439,161 @@ describe('FlowStep labels', () => {
     } finally {
       restore()
     }
+  })
+})
+
+const OTPAUTH_URI =
+  'otpauth://totp/Example%20Co:alice%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example%20Co'
+const OTPAUTH_SECRET = 'JBSWY3DPEHPK3PXP'
+const OTPAUTH_SECRET_GROUPED = 'JBSW Y3DP EHPK 3PXP'
+
+const TOTP_STEP: AuthnStep = {
+  kind: 'webauthn',
+  options: { otpauth_uri: OTPAUTH_URI },
+}
+
+/** Fills an i18next string's placeholders for an exact-match query. */
+function renderTemplate(
+  template: string,
+  vars: Record<string, string | number>,
+): string {
+  return Object.entries(vars).reduce(
+    (out, [key, value]) => out.replaceAll(`{{${key}}}`, String(value)),
+    template,
+  )
+}
+
+describe('FlowStep TOTP enrolment', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'clipboard')
+  })
+
+  it('renders the otpauth URI as a QR symbol, never as text', () => {
+    const { getByRole } = render(TOTP_STEP)
+    const image = getByRole('img', { name: zhCN.flowStep.totpQrLabel })
+    const path = image.querySelector('path')?.getAttribute('d')
+    expect(path).toBeTruthy()
+
+    // A different URI draws a different matrix: the symbol's payload is the
+    // step's otpauth_uri, not a fixed decoration.
+    const other = render({
+      kind: 'webauthn',
+      options: {
+        otpauth_uri: 'otpauth://totp/speed:ada?secret=KRSXG5CTMVRXEZLU',
+      },
+    })
+    const otherPath = other.container
+      .querySelector('svg[role="img"] path')
+      ?.getAttribute('d')
+    expect(otherPath).toBeTruthy()
+    expect(otherPath).not.toBe(path)
+
+    expect(screen.queryByText(/otpauth:\/\//)).toBeNull()
+  })
+
+  it('reveals only the grouped base32 secret and its parameters', async () => {
+    const user = userEvent.setup()
+    render(TOTP_STEP)
+
+    const toggle = screen.getByRole('button', {
+      name: zhCN.flowStep.totpManualToggle,
+    })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText(OTPAUTH_SECRET_GROUPED)).toBeNull()
+
+    await user.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText(OTPAUTH_SECRET_GROUPED)).toBeTruthy()
+    expect(screen.queryByText(/otpauth:\/\//)).toBeNull()
+    expect(
+      screen.getByText(
+        renderTemplate(zhCN.flowStep.totpParams, {
+          digits: 6,
+          algorithm: 'SHA1',
+          period: 30,
+        }),
+      ),
+    ).toBeTruthy()
+  })
+
+  it('copies the raw secret and announces it when the clipboard is available', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    render(TOTP_STEP)
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.flowStep.totpManualToggle }),
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.flowStep.totpCopyLabel }),
+    )
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(OTPAUTH_SECRET))
+    expect(
+      await screen.findByText(zhCN.flowStep.totpCopiedLabel),
+    ).toHaveAttribute('role', 'status')
+  })
+
+  it('keeps the secret selectable and raises no error when the clipboard is missing', async () => {
+    const user = userEvent.setup()
+    Reflect.deleteProperty(navigator, 'clipboard')
+    render(TOTP_STEP)
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.flowStep.totpManualToggle }),
+    )
+    const secret = screen.getByText(OTPAUTH_SECRET_GROUPED)
+    expect(secret.tagName.toLowerCase()).toBe('code')
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.flowStep.totpCopyLabel }),
+    )
+
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByText(zhCN.flowStep.totpCopiedLabel)).toBeNull()
+    expect(secret).toBeVisible()
+  })
+
+  it('sizes the code field for six digits and asks for a numeric one-time code', () => {
+    render(TOTP_STEP)
+
+    const input = screen.getByLabelText(zhCN.flowStep.codeLabel)
+    expect(input).toHaveAttribute('inputmode', 'numeric')
+    expect(input).toHaveAttribute('autocomplete', 'one-time-code')
+    expect(input).toHaveAttribute('maxlength', '6')
+    expect(input).toHaveAttribute('size', '6')
+  })
+
+  it('submits the typed code only when the confirm control is clicked', async () => {
+    const user = userEvent.setup()
+    const { onSubmit } = render(TOTP_STEP)
+
+    const input = screen.getByLabelText(zhCN.flowStep.codeLabel)
+    await user.type(input, '1234567')
+    // The field holds at six digits, and typing alone answers nothing.
+    expect(input).toHaveValue('123456')
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledWith({
+      step: 'answer',
+      input: { code: '123456' },
+    })
+  })
+
+  it('passes axe with the manual disclosure open', async () => {
+    const user = userEvent.setup()
+    render(TOTP_STEP)
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.flowStep.totpManualToggle }),
+    )
+    await expectNoAxeViolations()
   })
 })

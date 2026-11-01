@@ -21,10 +21,10 @@
  *    opens the wizard; each reply's next step is rendered (FlowStep) and
  *    answered. A `webauthn` step hands the factor its own JSON -- TOTP's
  *    otpauth_uri, or a passkey's creation options -- of which the wizard
- *    renders the URI alone, as its own read-only field (it ships no QR or
- *    WebAuthn dependency) beside one free-text field. The flow settles
- *    `enrolled` without changing this session's level; the factors list is
- *    then refetched.
+ *    renders TOTP's URI as a QR symbol with a manual-entry disclosure for
+ *    its base32 secret, and drives a passkey's options through the
+ *    browser's WebAuthn API. The flow settles `enrolled` without changing
+ *    this session's level; the factors list is then refetched.
  *  - Remove. A row's row-end action sends DELETE /api/v1/auth/factors/{id}
  *    behind the ui-kit danger ConfirmDialog (removing a factor is
  *    irreversible). The route asks for a fresh multi-factor
