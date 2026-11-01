@@ -113,13 +113,13 @@ The API is the package's godoc.
   `OrderOutermost` — stays outside it, which is what lets a 429 carry that
   layer's headers.
 - **A refusal sets `Retry-After` first and then goes through `speedhttp.Fail`,
-  with the status as the only member of the `Problem`.** The shape of the body
-  is the entry point's — `application/problem+json` unless a module delivers an
-  `ErrorResponder` — and the layer writes no status of its own. The order is
-  load-bearing: `Fail` writes the response, and a header set after it never
-  reaches the client. A member beyond the status in the `Problem` would be this
-  layer choosing the body of one kind of refusal, and that choice belongs to the
-  entry point.
+  with the status and this module's `throttled` type in the `Problem`.** The
+  shape of the body is the entry point's — `application/problem+json` unless a
+  module delivers an `ErrorResponder` — and the layer writes no status of its
+  own. Both layers write `urn:speed:ratelimit:throttled`, so a client branches
+  on the problem type rather than on the status; the rest of the body stays the
+  entry point's choice. The order is load-bearing: `Fail` writes the response,
+  and a header set after it never reaches the client.
 - **The layer does not read the route.** It runs for every request on the
   endpoint, including one that matches no route and one whose method the path
   does not allow, and counts them like any other; a branch on `c.FullPath()`
@@ -171,14 +171,18 @@ The API is the package's godoc.
   a distributed flood.
 - **A request is charged by outcome, and the charge is what empties the
   bucket.** The gate at the front spends one token and refuses with a 429 when
-  there is none; after `c.Next` a 401 or a 404 spends the penalty on top, and a
-  success spends nothing more. Only those two statuses are charged: they are what
-  credential stuffing and tenant enumeration produce, and charging the others
-  would spend a client's budget on the server's own faults. The penalty is
-  applied with `spend`, which reads `TokensAt` first and charges only what the
-  bucket holds, because `rate.Limiter` cannot overdraw a bucket — a penalty
-  charged as one `AllowN` on a nearly empty bucket would consume nothing and let
-  the source straight back in. Both halves of that are held by a test
+  there is none; after `c.Next` a 404, or a 401 that refused a credential, spends
+  the penalty on top, and a success spends nothing more. A 401 that asks an
+  authenticated caller to step up is not a credential refusal: the writer marks
+  it with `http.MarkStepUp`, the shield reads the mark with `http.IsStepUp`, and
+  that answer pays the one token only, because it is an exchange the client must
+  complete rather than the signature of an attack. Only those statuses are
+  charged: they are what credential stuffing and tenant enumeration produce, and
+  charging the others would spend a client's budget on the server's own faults.
+  The penalty is applied with `spend`, which reads `TokensAt` first and charges
+  only what the bucket holds, because `rate.Limiter` cannot overdraw a bucket — a
+  penalty charged as one `AllowN` on a nearly empty bucket would consume nothing
+  and let the source straight back in. Both halves of that are held by a test
   (`TestSpendTakesWhatTheBucketHoldsAndNoMore`,
   `TestTheShieldStopsARefusedSourceAndKeepsAddressesApart`).
 - **The shield's endpoints are their own item, and the layer is off unless one

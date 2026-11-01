@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
 
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -108,6 +109,90 @@ func TestRefusalOutcomeChargesOnlyTheAttackerStatuses(t *testing.T) {
 	}
 }
 
+// --- the step-up exception -------------------------------------------------
+
+// smallShieldValues is the shield at a burst and penalty a case can spend in a
+// few requests: four tokens and a penalty of twenty drain the bucket on the
+// first refusal, so a penalty that must not be charged is visible as a request
+// that still reaches the route.
+func smallShieldValues() map[string]any {
+	return map[string]any{
+		addressRatePath:    defaults.AddressRate,
+		addressBurstPath:   4,
+		addressPenaltyPath: defaults.AddressPenalty,
+	}
+}
+
+// A 401 that asks for a step-up is not a stuffed credential: it pays the one
+// token every request costs and no penalty, so a client walking through the
+// handshake never exhausts its bucket by doing the thing it was asked to do.
+// With a burst of four, four marked 401s reach the route and only the fifth is
+// refused; charging the penalty would shut the source out after the first.
+func TestAStepUpRefusalDoesNotSpendThePenalty(t *testing.T) {
+	l := pinned()
+	l.addressEndpoints = []string{guardedEndpoint}
+	l.counters = newFakeKV()
+	l.store = &fakeStore{values: smallShieldValues()}
+	var reached counter
+	h := startHost(t, hostOptions{
+		limiter:   l,
+		viaModule: true,
+		register: func(ep speedhttp.Endpoint) {
+			ep.Route(nethttp.MethodGet, "/step-up", func(c *gin.Context) {
+				reached.inc()
+				speedhttp.MarkStepUp(c)
+				c.Status(nethttp.StatusUnauthorized)
+			})
+		},
+	})
+
+	for i := 0; i < 4; i++ {
+		if got := h.get(t, "/step-up"); got.status != nethttp.StatusUnauthorized {
+			t.Fatalf("request %d was answered %d, want the route's marked 401", i+1, got.status)
+		}
+	}
+	if got := reached.count(); got != 4 {
+		t.Fatalf("the route served %d marked 401s, want 4: a step-up must not spend the penalty", got)
+	}
+	requireThrottledProblem(t, h.get(t, "/step-up"))
+	if got := reached.count(); got != 4 {
+		t.Fatalf("the route served %d marked 401s, want the fifth request refused by the spent bucket", got)
+	}
+}
+
+// The same budget, answered by a 401 that refused a credential and carries no
+// step-up mark, is charged the penalty: the first refusal drains the bucket and
+// the second request never reaches the route.
+func TestACredentialRefusalStillSpendsThePenalty(t *testing.T) {
+	l := pinned()
+	l.addressEndpoints = []string{guardedEndpoint}
+	l.counters = newFakeKV()
+	l.store = &fakeStore{values: smallShieldValues()}
+	h := startHost(t, hostOptions{limiter: l, viaModule: true, routeStatus: nethttp.StatusUnauthorized})
+
+	if got := h.get(t, "/things"); got.status != nethttp.StatusUnauthorized {
+		t.Fatalf("the first request was answered %d, want the route's 401", got.status)
+	}
+	requireThrottledProblem(t, h.get(t, "/things"))
+	if got := h.reached.count(); got != 1 {
+		t.Fatalf("the route served %d requests, want 1: an unmarked 401 must spend the penalty", got)
+	}
+}
+
+// A 404 is an enumeration signal whether or not anything marked the response,
+// so it still spends the penalty: the first request reaches the entry point's
+// 404, which drains the bucket, and the second is refused by the shield.
+func TestANotFoundStillSpendsThePenalty(t *testing.T) {
+	l := pinned()
+	l.addressEndpoints = []string{guardedEndpoint}
+	l.counters = newFakeKV()
+	l.store = &fakeStore{values: smallShieldValues()}
+	h := startHost(t, hostOptions{limiter: l, viaModule: true})
+
+	requireProblem(t, h.get(t, "/nowhere"), nethttp.StatusNotFound)
+	requireThrottledProblem(t, h.get(t, "/nowhere"))
+}
+
 // --- the layer's metadata --------------------------------------------------
 
 // The shield is a guard layer: it runs before identity is settled. It leaves
@@ -144,10 +229,10 @@ func TestAddressMiddlewareCarriesItsStageAndNoToken(t *testing.T) {
 // The discriminating case. With the shield on, a source repeating a failing
 // credential stops producing calls to the layer behind it once its budget is
 // spent: the gate spends one token and the 401 spends the penalty, so a bucket
-// of forty is empty after two refusals and the third request is refused before
-// it reaches the route. With the shield off the same requests all reach the
-// route; a request the endpoint reports as coming from another address keys its
-// own, unspent bucket, so it still reaches the route while the first is shut
+// of eighty is empty after four refusals and the fifth request is refused
+// before it reaches the route. With the shield off the same requests all reach
+// the route; a request the endpoint reports as coming from another address keys
+// its own, unspent bucket, so it still reaches the route while the first is shut
 // out.
 func TestTheShieldStopsARefusedSourceAndKeepsAddressesApart(t *testing.T) {
 	on := pinned()
@@ -161,21 +246,22 @@ func TestTheShieldStopsARefusedSourceAndKeepsAddressesApart(t *testing.T) {
 		trustedProxies: []string{"127.0.0.1/32"},
 	})
 
-	// Six requests from one address, each answered 401. Two of them empty the
+	// Six requests from one address, each answered 401. Four of them empty the
 	// bucket; the rest are refused before reaching the route.
 	for i := 0; i < 6; i++ {
 		serving.get(t, "/things")
 	}
-	if got := serving.reached.count(); got != 2 {
-		t.Fatalf("the route behind the shield served %d requests, want 2 before the source was shut out", got)
+	if got := serving.reached.count(); got != 4 {
+		t.Fatalf("the route behind the shield served %d requests, want 4 before the source was shut out", got)
 	}
 
-	// The refusal is the entry point's error shape, with Retry-After on it.
+	// The refusal is the entry point's error shape, carrying this module's
+	// throttled type, with Retry-After on it.
 	refused := serving.get(t, "/things")
-	requireProblem(t, refused, nethttp.StatusTooManyRequests)
+	requireThrottledProblem(t, refused)
 	requireRetryAfter(t, refused)
-	if got := serving.reached.count(); got != 2 {
-		t.Fatalf("the route served %d requests, want the count to stop at 2 while the source is refused", got)
+	if got := serving.reached.count(); got != 4 {
+		t.Fatalf("the route served %d requests, want the count to stop at 4 while the source is refused", got)
 	}
 
 	// A request the endpoint reports as coming from another address keys its
@@ -207,7 +293,7 @@ func TestTheShieldStopsARefusedSourceAndKeepsAddressesApart(t *testing.T) {
 // A success pays the one token the gate takes and nothing more. The bucket
 // holds the burst, so exactly that many successful requests pass and the next
 // is refused: a layer that charged the refusal penalty on every request as well
-// would stop after two.
+// would stop after four.
 func TestTheShieldChargesOneTokenForASuccess(t *testing.T) {
 	l := pinned()
 	l.addressEndpoints = []string{guardedEndpoint}
@@ -220,7 +306,7 @@ func TestTheShieldChargesOneTokenForASuccess(t *testing.T) {
 			t.Fatalf("request %d was answered %d, want the route's 204 within the burst", i+1, got.status)
 		}
 	}
-	requireProblem(t, h.get(t, "/things"), nethttp.StatusTooManyRequests)
+	requireThrottledProblem(t, h.get(t, "/things"))
 	if got := h.reached.count(); got != defaults.AddressBurst {
 		t.Fatalf("the route served %d requests, want %d: a success costs one token, not the penalty",
 			got, defaults.AddressBurst)
@@ -304,6 +390,20 @@ func TestTheShieldStandsAsideOnAThresholdOutsideItsDomain(t *testing.T) {
 		if d.tripped != reasonShieldDomain {
 			t.Errorf("%s: tripped %q, want %q", name, d.tripped, reasonShieldDomain)
 		}
+	}
+}
+
+// --- the defaults ----------------------------------------------------------
+
+// The declared defaults are the numbers the shield is decided on: four tokens a
+// second, a burst of eighty, and a refusal penalty of twenty. A smaller burst is
+// emptied by one ordinary client's renewal and replay, and a client locked out
+// of an authentication endpoint by its own routine traffic is what the larger
+// burst prevents.
+func TestTheShieldDefaultsAreTheDecidedNumbers(t *testing.T) {
+	if defaults.AddressRate != 4 || defaults.AddressBurst != 80 || defaults.AddressPenalty != 20 {
+		t.Fatalf("the shield defaults are rate %d, burst %d, penalty %d; want 4, 80, 20",
+			defaults.AddressRate, defaults.AddressBurst, defaults.AddressPenalty)
 	}
 }
 

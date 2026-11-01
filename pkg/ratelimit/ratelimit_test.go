@@ -441,7 +441,7 @@ func TestARequestPastTheLimitIsAnsweredTooManyRequestsWithRetryAfter(t *testing.
 	}
 
 	refused := h.get(t, "/things")
-	requireProblem(t, refused, nethttp.StatusTooManyRequests)
+	requireThrottledProblem(t, refused)
 	if got := requireRetryAfter(t, refused); got != 60 {
 		t.Fatalf("Retry-After is %d, want the 60 seconds left of the window", got)
 	}
@@ -456,8 +456,9 @@ func TestARequestPastTheLimitIsAnsweredTooManyRequestsWithRetryAfter(t *testing.
 }
 
 // When a module delivers the ErrorResponder capability the shape of the refusal
-// is its own, and what the layer hands it is the status and nothing else. The
-// Retry-After the layer set before asking for the response is still on it.
+// is its own, and what the layer hands it is the status and this module's
+// throttled type. The Retry-After the layer set before asking for the response
+// is still on it.
 func TestADeliveredErrorResponderDecidesTheShapeOfTheRefusal(t *testing.T) {
 	responder := &capturingResponder{}
 	l := pinned("public")
@@ -481,8 +482,8 @@ func TestADeliveredErrorResponderDecidesTheShapeOfTheRefusal(t *testing.T) {
 		t.Fatalf("Retry-After is %d, want the 60 seconds left of the window", got)
 	}
 	handed := responder.handed()
-	if len(handed) != 1 || handed[0].Status != nethttp.StatusTooManyRequests {
-		t.Fatalf("the responder was handed %+v, want one Problem carrying the status 429 alone", handed)
+	if len(handed) != 1 || handed[0].Status != nethttp.StatusTooManyRequests || handed[0].Type != typePrefix+"throttled" {
+		t.Fatalf("the responder was handed %+v, want one Problem carrying the status 429 and the throttled type", handed)
 	}
 }
 
@@ -502,7 +503,7 @@ func TestARequestMatchingNoRouteIsCountedAndRefusedLikeAnyOther(t *testing.T) {
 	requireProblem(t, h.get(t, "/nowhere"), nethttp.StatusNotFound)
 	refused := h.get(t, "/nowhere")
 
-	requireProblem(t, refused, nethttp.StatusTooManyRequests)
+	requireThrottledProblem(t, refused)
 	requireRetryAfter(t, refused)
 	index := pinnedAt.UnixNano() / int64(time.Minute)
 	if got := counters.value(countKey("", accountKey(t), index)); got != 2 {
@@ -539,7 +540,7 @@ func TestARequestWhoseMethodIsNotAllowedIsCountedAndRefusedLikeAnyOther(t *testi
 	}
 	refused := h.send(t, nethttp.MethodPost, "/things", nil)
 
-	requireProblem(t, refused, nethttp.StatusTooManyRequests)
+	requireThrottledProblem(t, refused)
 	requireRetryAfter(t, refused)
 	if allow := refused.header.Get("Allow"); allow != "" {
 		t.Fatalf("the refusal carries Allow %q, which lists what the path accepts", allow)

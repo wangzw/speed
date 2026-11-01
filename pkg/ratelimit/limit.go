@@ -163,8 +163,9 @@ type decision struct {
 //
 // The refusal carries Retry-After, which is set before the response is
 // written: a header set after Fail would reach a response already on its way
-// out. The shape of the body is the entry point's, so the Problem carries the
-// status and nothing else.
+// out. The shape of the body is the entry point's; the Problem carries the
+// status and this module's throttled code, so a client branches on the problem
+// type rather than on the status alone.
 //
 // The returned decision names the class of failure that made this layer stand
 // aside, if any, and the classes it evaluated; the caller accounts for it.
@@ -196,7 +197,10 @@ func (l *limiter) decide(c *gin.Context, identity authn.Identity, identified boo
 	}
 	if !allowed {
 		c.Header("Retry-After", strconv.Itoa(retryAfter))
-		speedhttp.Fail(c, speedhttp.Problem{Status: nethttp.StatusTooManyRequests})
+		speedhttp.Fail(c, speedhttp.Problem{
+			Status: nethttp.StatusTooManyRequests,
+			Type:   typePrefix + "throttled",
+		})
 		return d
 	}
 	c.Next()

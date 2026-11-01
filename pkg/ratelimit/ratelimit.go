@@ -39,6 +39,11 @@ const ModuleName = "ratelimit"
 // registering module's namespace always is.
 const ConfigNamespace = ModuleName
 
+// typePrefix starts the Problem.Type of every refusal this module writes. The
+// machine-readable code follows it, as it does in every capability's own
+// answers; the only code this module writes today is throttled.
+const typePrefix = "urn:speed:ratelimit:"
+
 // The quota's two setting items, and the full paths they are declared and read
 // under. The shield's three are declared the same way in address.go.
 //
@@ -121,19 +126,26 @@ type options struct {
 // authentication endpoint, where a human client makes a request every few
 // seconds at most and an attacker makes hundreds. Four tokens a second is more
 // than a page load's worth of parallel requests and far above a human's click
-// rate. A burst of forty absorbs the parallel requests a single page issues
-// without touching the shield. A refusal costs one plus a penalty of twenty —
-// half the bucket — so an ordinary success pays one token while a 401 or a 404
-// pays twenty-one: two refusals empty a full bucket, and the address is then
+// rate. A burst of eighty covers what one ordinary client produces back to
+// back: a token renewal and the replay it triggers, and a person clicking
+// through several steps in a row. A smaller burst lets that routine traffic
+// empty the bucket and lock the client out until it refills. A refusal costs
+// one plus a penalty of twenty — a quarter of the bucket — so an ordinary
+// success pays one token while a 404, or a 401 that refused a credential, pays
+// twenty-one: four refusals empty a full bucket, and the address is then
 // admitted about once every five seconds until it stops being refused, which is
 // where credential stuffing and tenant enumeration stop being economical. A
+// step-up handshake — a 401 that asks an already authenticated caller to prove
+// itself again — is the same status but not the same event: a client repeats it
+// as its session ages, so it pays the one token every request costs and no
+// penalty, and cannot lock itself out of the handshake it has to complete. A
 // normal client never gets near the penalty, so its throughput is unchanged.
 var defaults = options{
 	Window: time.Minute,
 	Limit:  100,
 
 	AddressRate:    4,
-	AddressBurst:   40,
+	AddressBurst:   80,
 	AddressPenalty: 20,
 }
 
@@ -199,9 +211,10 @@ func settingsSchema() settings.Schema {
 				Domain: settings.DomainOf("the positive integers", addressBurstInDomain),
 			},
 			addressPenaltyKey: {
-				Description: "the extra tokens a refusal (a 401 or a 404) costs a client " +
-					"address against the shield's bucket, which must not be negative; zero " +
-					"leaves the shield a plain per-address rate cap",
+				Description: "the extra tokens a refusal (a 404, or a 401 that refused a " +
+					"credential rather than asking for a step-up) costs a client address " +
+					"against the shield's bucket, which must not be negative; zero leaves " +
+					"the shield a plain per-address rate cap",
 				Domain: settings.DomainOf("the non-negative integers", addressPenaltyInDomain),
 			},
 		},

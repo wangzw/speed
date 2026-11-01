@@ -225,7 +225,10 @@ func (l *limiter) shield(c *gin.Context) decision {
 	lim := l.guard.bucket(key, limits, now)
 	if !lim.AllowN(now, 1) {
 		c.Header("Retry-After", strconv.Itoa(retryAfterFor(lim, now)))
-		speedhttp.Fail(c, speedhttp.Problem{Status: nethttp.StatusTooManyRequests})
+		speedhttp.Fail(c, speedhttp.Problem{
+			Status: nethttp.StatusTooManyRequests,
+			Type:   typePrefix + "throttled",
+		})
 		return d
 	}
 
@@ -235,8 +238,12 @@ func (l *limiter) shield(c *gin.Context) decision {
 	// and a refusal it produced spends more of the source's budget than a
 	// success did: ordinary traffic pays the one token the gate took, and a
 	// source that gets refusals is drained fast enough that it stops reaching
-	// the backend behind this layer.
-	if refusalOutcome(c.Writer.Status()) {
+	// the backend behind this layer. A 401 that asks an authenticated caller to
+	// step up is that status but not that event, and the mark it carries keeps
+	// it from being charged.
+	status := c.Writer.Status()
+	stepUp := status == nethttp.StatusUnauthorized && speedhttp.IsStepUp(c)
+	if refusalOutcome(status) && !stepUp {
 		spend(lim, now, limits.penalty)
 	}
 	return d
@@ -282,15 +289,22 @@ func (l *limiter) shieldThresholds(d *decision) shieldLimits {
 // refusalOutcome reports whether a status is one the shield charges the extra
 // penalty for.
 //
-// 401 and 404 above all, and only those: a source repeating a 401 is stuffing
-// credentials and one repeating a 404 is enumerating tenants, and both are
-// exactly the traffic the shield is aimed at stopping before it reaches the
-// authentication backend. A 2xx is ordinary traffic and pays only the one token
-// every request costs — little, so a normal client barely notices the shield.
-// Other refusals — a 403, a 413, a 429 from another layer, a 500 — are left at
-// that same one token: they are not the signature of the attacks named here,
-// and charging for them would spend a client's budget on the server's own
-// faults.
+// A 404 and a 401 that refused a credential, above all, and only those: a
+// source repeating either is enumerating tenants or stuffing credentials, and
+// both are exactly the traffic the shield is aimed at stopping before it
+// reaches the authentication backend. The two 401s are not one event. A 401
+// that asks an already authenticated caller for a stronger or more recent
+// authentication — a step-up handshake — is also a 401, but a client repeats it
+// as its session ages, and charging for it would spend a legitimate client's
+// budget on the exchange it must complete. That answer is marked
+// (speedhttp.MarkStepUp) and shield reads the mark, so this function answers for
+// the status and the caller decides whether the mark excludes it.
+//
+// A 2xx is ordinary traffic and pays only the one token every request costs —
+// little, so a normal client barely notices the shield. Other refusals — a 403,
+// a 413, a 429 from another layer, a 500 — are left at that same one token:
+// they are not the signature of the attacks named here, and charging for them
+// would spend a client's budget on the server's own faults.
 func refusalOutcome(status int) bool {
 	return status == nethttp.StatusUnauthorized || status == nethttp.StatusNotFound
 }

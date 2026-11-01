@@ -392,6 +392,37 @@ func requireRetryAfter(t *testing.T, got response) int {
 	return seconds
 }
 
+// requireThrottledProblem asserts the refusal a 429 from either of this
+// module's layers carries: the default problem details media type, the
+// throttled problem type, the standard title, and the status. The Retry-After
+// header is the caller's to assert.
+func requireThrottledProblem(t *testing.T, got response) {
+	t.Helper()
+	if got.status != nethttp.StatusTooManyRequests {
+		t.Fatalf("the response is %d, want 429 (body %q)", got.status, got.body)
+	}
+	if ct := got.header.Get("Content-Type"); ct != "application/problem+json" {
+		t.Fatalf("the response's media type is %q, want application/problem+json", ct)
+	}
+	var members map[string]any
+	if err := json.Unmarshal([]byte(got.body), &members); err != nil {
+		t.Fatalf("the response body %q is not a JSON object: %v", got.body, err)
+	}
+	want := map[string]any{
+		"type":   typePrefix + "throttled",
+		"title":  nethttp.StatusText(nethttp.StatusTooManyRequests),
+		"status": float64(nethttp.StatusTooManyRequests),
+	}
+	if len(members) != len(want) {
+		t.Fatalf("the response body is %v, want exactly %v", members, want)
+	}
+	for k, v := range want {
+		if members[k] != v {
+			t.Fatalf("the response body is %v, want %s = %v", members, k, v)
+		}
+	}
+}
+
 // capturingResponder is an ErrorResponder that keeps the Problems it is asked to
 // write, and writes a shape of its own: a media type and a body the default
 // shape never produces.

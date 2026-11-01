@@ -154,7 +154,7 @@ func TestTheLayerCountsARequestUnderTheKeyOfTheIdentityItCarries(t *testing.T) {
 	if got := h.send(t, nethttp.MethodGet, "/things", as(otherCaller)); got.status != nethttp.StatusNoContent {
 		t.Fatalf("the first request of another caller was answered %d, want the route's 204: the count is not per identity", got.status)
 	}
-	requireProblem(t, h.send(t, nethttp.MethodGet, "/things", as(ordinaryCaller)), nethttp.StatusTooManyRequests)
+	requireThrottledProblem(t, h.send(t, nethttp.MethodGet, "/things", as(ordinaryCaller)))
 
 	if got := counters.value(countKey("", callerKey(t, ordinaryCaller), windowIndex())); got != 2 {
 		t.Errorf("the first caller's window holds %v, want both of its requests, the refused one included", got)
@@ -195,7 +195,7 @@ func TestAnImpersonationIsCountedUnderTheActorAndNotTheImpersonatedAccount(t *te
 	if got := h.send(t, nethttp.MethodGet, "/things", as(victimCaller)); got.status != nethttp.StatusNoContent {
 		t.Fatalf("the victim's own request was answered %d, want 204: the impersonation was counted against the victim", got.status)
 	}
-	requireProblem(t, h.send(t, nethttp.MethodGet, "/things", as(operatorCaller)), nethttp.StatusTooManyRequests)
+	requireThrottledProblem(t, h.send(t, nethttp.MethodGet, "/things", as(operatorCaller)))
 
 	if got := counters.value(countKey("", string(operatorAccount), windowIndex())); got != 2 {
 		t.Errorf("the operator's window holds %v, want the impersonation and its own refused request", got)
