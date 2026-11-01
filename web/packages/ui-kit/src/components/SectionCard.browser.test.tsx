@@ -49,6 +49,13 @@ function presetsUnderTest() {
   }))
 }
 
+/** The row an action belongs to, found by the row's own marker. */
+function actionRowOf(action: Element): HTMLElement {
+  const row = action.closest<HTMLElement>('[data-action-row]')
+  expect(row).not.toBeNull()
+  return row as HTMLElement
+}
+
 describe('SectionCard action row in Chromium', () => {
   it('groups the trailing actions one spacing unit apart, primary rightmost', async () => {
     await page.viewport(1280, 900)
@@ -69,16 +76,20 @@ describe('SectionCard action row in Chromium', () => {
 
     const cancel = await screen.findByRole('button', { name: 'Cancel' })
     const invite = screen.getByRole('button', { name: 'Invite' })
+    const row = actionRowOf(invite)
+    expect(actionRowOf(cancel)).toBe(row)
     const cancelBox = cancel.getBoundingClientRect()
     const inviteBox = invite.getBoundingClientRect()
-    const rowBox = (invite.parentElement as HTMLElement).getBoundingClientRect()
+    const rowBox = row.getBoundingClientRect()
+    const contentRight =
+      rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
     expect(Math.abs(inviteBox.top - cancelBox.top)).toBeLessThanOrEqual(0.5)
     expect(inviteBox.left).toBeGreaterThanOrEqual(cancelBox.right)
     expect(inviteBox.left - cancelBox.right).toBeCloseTo(
       defaultTokens.spacing.unit,
       0,
     )
-    expect(Math.abs(inviteBox.right - rowBox.right)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(inviteBox.right - contentRight)).toBeLessThanOrEqual(0.5)
   })
 })
 

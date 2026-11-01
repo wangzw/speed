@@ -22,6 +22,16 @@ const SPACING_UNIT = defaultTokens.spacing.unit
 /** One pixel of tolerance for subpixel layout rounding. */
 const TOLERANCE = 0.5
 
+/**
+ * The row an action belongs to, found by the row's own marker rather than
+ * by guessing that a child's parent is the row.
+ */
+function actionRowOf(action: Element): HTMLElement {
+  const row = action.closest<HTMLElement>('[data-action-row]')
+  expect(row).not.toBeNull()
+  return row as HTMLElement
+}
+
 describe('ActionRow in Chromium', () => {
   it('keeps the actions adjacent, one spacing unit apart, with the primary rightmost', async () => {
     await page.viewport(900, 700)
@@ -43,12 +53,12 @@ describe('ActionRow in Chromium', () => {
     })
     await document.fonts.ready
 
-    const row = cancel.parentElement
-    expect(row).not.toBeNull()
+    const row = actionRowOf(save)
+    expect(actionRowOf(cancel)).toBe(row)
 
     const cancelBox = cancel.getBoundingClientRect()
     const saveBox = save.getBoundingClientRect()
-    const rowBox = (row as HTMLElement).getBoundingClientRect()
+    const rowBox = row.getBoundingClientRect()
 
     // One group: both controls share a line.
     expect(Math.abs(cancelBox.top - saveBox.top)).toBeLessThanOrEqual(TOLERANCE)

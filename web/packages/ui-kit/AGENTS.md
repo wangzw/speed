@@ -172,8 +172,14 @@ plumbing and deliberately not exported.
   `variant`/`color`. `size` is the surface's decision: `medium` for page
   forms and dialogs, `small` for table rows and menus; the row passes it
   to every button below it, and a standalone `ActionButton` takes it
-  directly. `EmptyState.action` (a centred retry) and existing per-row
-  inline action clusters are not action rows and keep their own layout.
+  directly. Some control groups are not action rows and keep their own
+  layout: `EmptyState.action` (a centred retry) and inline control
+  clusters that sit beside text in a data or title row and carry one
+  class of secondary action (console-ui's SSO domain row's
+  verify/remove pair, the demo account page's single add control on a
+  settings title row, and the SMS sign-in code step's resend/edit pair).
+  Neither kind uses an automatic margin: the text before the cluster
+  takes the free width, so the cluster lands at the row end.
 - **The monospace stack is exposed by module augmentation.** The token
   tree's `typography.fontFamily.mono` maps to
   `theme.typography.fontFamilyMono` through a `declare module
@@ -335,7 +341,11 @@ spacing unit) and the button's two slots -- text/contained by
 the row and a standalone button's medium default; its browser case
 measures the rendered boxes in Chromium: both controls on one line,
 exactly one spacing unit between them, and the primary closing the group
-at the row's right edge. The usage example's upload panel drives the documented host
+at the row's right edge. The row's root carries `data-action-row`; the
+browser cases locate a row by that marker (`closest('[data-action-row]')`)
+rather than by inferring it from an action's `parentElement`, which would
+be true of any wrapper and could pass against an implementation that did
+not render the row primitive. The usage example's upload panel drives the documented host
 composition — host-owned queue, host AbortControllers, host transport
 — over a scripted fetch answering genuine `Response` objects; scripted
 transports and their fixture URLs live in test files only, and the

@@ -34,6 +34,11 @@
  *
  * `EmptyState.action` (a centred retry) and per-row inline action clusters
  * are not action rows and keep their own layout.
+ *
+ * The row's root carries `data-action-row`, an empty-valued marker a test
+ * uses to locate the row itself instead of inferring it from a child's
+ * parent element. It is a test contract only: it has no styling and no
+ * runtime consumers.
  */
 
 import { createContext, forwardRef, useContext } from 'react'
@@ -81,7 +86,12 @@ function ActionRowInner(
 ) {
   return (
     <ActionRowSizeContext.Provider value={size}>
-      <Box ref={ref} className={className} sx={layerSx(ROW_SX, sx)}>
+      <Box
+        ref={ref}
+        className={className}
+        data-action-row=""
+        sx={layerSx(ROW_SX, sx)}
+      >
         {children}
       </Box>
     </ActionRowSizeContext.Provider>

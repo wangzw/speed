@@ -31,6 +31,13 @@ const SPACING_UNIT = defaultTokens.spacing.unit
 /** One pixel of tolerance for subpixel layout rounding. */
 const TOLERANCE = 0.5
 
+/** The row an action belongs to, found by the row's own marker. */
+function actionRowOf(action: Element): HTMLElement {
+  const row = action.closest<HTMLElement>('[data-action-row]')
+  expect(row).not.toBeNull()
+  return row as HTMLElement
+}
+
 /**
  * Both controls share one line, sit one spacing token apart, and close
  * the row at its right edge with the primary rightmost.
@@ -42,9 +49,11 @@ async function expectOneActionGroup(
   await waitFor(() => {
     expect(secondary.getBoundingClientRect().width).toBeGreaterThan(0)
   })
+  const row = actionRowOf(primary)
+  // Both controls belong to the same row: the surface renders one group.
+  expect(actionRowOf(secondary)).toBe(row)
   const primaryBox = primary.getBoundingClientRect()
   const secondaryBox = secondary.getBoundingClientRect()
-  const row = primary.parentElement as HTMLElement
   const rowBox = row.getBoundingClientRect()
   const contentRight =
     rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)

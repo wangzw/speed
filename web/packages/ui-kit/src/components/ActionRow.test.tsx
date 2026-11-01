@@ -25,8 +25,13 @@ describe('ActionRow', () => {
       </ActionRow>,
     )
 
-    const row = screen.getByRole('button', { name: 'Save' }).parentElement
+    const row = screen
+      .getByRole('button', { name: 'Save' })
+      .closest('[data-action-row]')
     expect(row).not.toBeNull()
+    // The row is marked so tests and call sites can find it as a row
+    // rather than treating one action's parent as the row.
+    expect(row).toHaveAttribute('data-action-row', '')
     expect(row).toHaveStyle({
       display: 'flex',
       flexWrap: 'wrap',
@@ -43,7 +48,9 @@ describe('ActionRow', () => {
       </ActionRow>,
     )
 
-    const row = screen.getByRole('button', { name: 'Cancel' }).parentElement
+    const row = screen
+      .getByRole('button', { name: 'Cancel' })
+      .closest('[data-action-row]')
     expect(row).toHaveStyle({ justifyContent: 'space-between' })
   })
 
