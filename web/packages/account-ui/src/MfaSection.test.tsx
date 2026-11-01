@@ -410,7 +410,7 @@ describe('MfaSection', () => {
 
     await user.click(
       await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
       }),
     )
     const dialog = await screen.findByRole('dialog')
@@ -494,7 +494,7 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
     await user.click(
       await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
       }),
     )
     const dialog = await screen.findByRole('dialog')
@@ -569,7 +569,7 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
     await user.click(
       await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
       }),
     )
     const dialog = await screen.findByRole('dialog')
@@ -630,7 +630,7 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
     await user.click(
       await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
       }),
     )
     const dialog = await screen.findByRole('dialog')
@@ -671,7 +671,7 @@ describe('MfaSection', () => {
 
     await user.click(
       await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
       }),
     )
     const dialog = await screen.findByRole('dialog')
@@ -739,7 +739,7 @@ describe('MfaSection', () => {
 
     await user.click(
       await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
       }),
     )
     const confirm = await screen.findByRole('dialog')
@@ -862,7 +862,7 @@ describe('MfaSection', () => {
 
     await user.click(
       await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
       }),
     )
     const confirm = await screen.findByRole('dialog')
@@ -1359,14 +1359,16 @@ describe('MfaSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    const removeButtons = await screen.findAllByRole('button', {
-      name: zhCN.mfa.removeAria.replace(
-        '{{factor}}',
-        zhCN.mfa.factor.kind.totp,
-      ),
+    // Two factors of the same kind are told apart by their own names, not
+    // by the kind they share.
+    await screen.findByRole('button', {
+      name: zhCN.mfa.removeAria.replace('{{factor}}', 'Phone app'),
     })
-    expect(removeButtons).toHaveLength(2)
-    await user.click(removeButtons[1] as HTMLElement)
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.mfa.removeAria.replace('{{factor}}', 'Tablet app'),
+      }),
+    )
     const dialog = await screen.findByRole('dialog')
     await user.click(
       within(dialog).getByRole('button', {
@@ -1472,13 +1474,11 @@ describe('MfaSection', () => {
     expect(await screen.findByText(enrollText)).toBeTruthy()
 
     // Remove the pre-existing row through its own scope.
-    const removeButtons = await screen.findAllByRole('button', {
-      name: zhCN.mfa.removeAria.replace(
-        '{{factor}}',
-        zhCN.mfa.factor.kind.totp,
-      ),
-    })
-    await user.click(removeButtons[0] as HTMLElement)
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.mfa.removeAria.replace('{{factor}}', 'Old app'),
+      }),
+    )
     const dialog = await screen.findByRole('dialog')
     await user.click(
       within(dialog).getByRole('button', {
@@ -1679,7 +1679,7 @@ describe('MfaSection', () => {
     }
     mount(respond)
     const remove = await screen.findByRole('button', {
-      name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+      name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
     })
     expect(hasCoarsePointerTouchTarget(remove)).toBe(true)
   })

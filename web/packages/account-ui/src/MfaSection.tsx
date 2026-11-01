@@ -940,7 +940,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                       size="small"
                                       disabled={busy}
                                       aria-label={t('mfa.removeAria', {
-                                        factor: kindLabel,
+                                        factor: displayName,
                                         interpolation: { escapeValue: false },
                                       })}
                                       onClick={() => setRemoveTarget(id)}

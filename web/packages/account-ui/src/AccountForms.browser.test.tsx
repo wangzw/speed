@@ -379,12 +379,12 @@ describe('account-ui form geometry', () => {
     renderWithProviders(<MfaSection session={rig.session} />)
     const user = userEvent.setup()
 
-    const removeName = (kind: 'totp' | 'sms'): string =>
-      zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind[kind])
+    const removeName = (factorLabel: string): string =>
+      zhCN.mfa.removeAria.replace('{{factor}}', factorLabel)
     const totpRemove = await screen.findByRole('button', {
-      name: removeName('totp'),
+      name: removeName('App'),
     })
-    const smsRemove = screen.getByRole('button', { name: removeName('sms') })
+    const smsRemove = screen.getByRole('button', { name: removeName('Phone') })
     // One method offers Add/Manage and the other does not, but both
     // removals sit on the same right edge.
     expect(screen.getByTestId('mfa-add-totp')).toBeTruthy()
