@@ -459,11 +459,11 @@ function AccountItem({
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-        <Typography variant="body1" sx={{ fontWeight: 600 }}>
+        <Typography variant="body1" sx={{ fontWeight: 600, flexGrow: 1, minWidth: 0 }}>
           {title}
         </Typography>
         {action === undefined ? null : (
-          <Box sx={{ marginLeft: 'auto', flexShrink: 0 }}>{action}</Box>
+          <Box sx={{ flexShrink: 0 }}>{action}</Box>
         )}
       </Box>
       {children === undefined ? null : (
