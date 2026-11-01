@@ -48,7 +48,11 @@ import type { AuthnStep } from '@speed/auth-core'
 import type { AuthnFlowAnswer } from '@speed/auth-core'
 import { formatSecretForDisplay, parseOtpauth } from '@speed/auth-core/otpauth'
 import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
-import { TotpEnrollmentPanel } from '@speed/ui-kit'
+import {
+  ActionButton,
+  ActionRow,
+  TotpEnrollmentPanel,
+} from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './translation.js'
 
 /** The factor/enroll kinds the family has wording for. A known kind
@@ -119,16 +123,16 @@ export function FlowStep({
 
   if (step.kind === 'complete') {
     return (
-      <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
-        <Button
+      <ActionRow sx={{ mt: 2 }}>
+        <ActionButton
           type="button"
-          variant="contained"
+          emphasis="primary"
           disabled={submitDisabled}
           onClick={() => onSubmit({ step: 'complete' })}
         >
           {submitLabel}
-        </Button>
-      </Box>
+        </ActionButton>
+      </ActionRow>
     )
   }
 
@@ -228,11 +232,15 @@ export function FlowStep({
           />
         ))}
       </Box>
-      <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
-        <Button type="submit" variant="contained" disabled={submitDisabled}>
+      <ActionRow sx={{ mt: 2 }}>
+        <ActionButton
+          type="submit"
+          emphasis="primary"
+          disabled={submitDisabled}
+        >
           {submitLabel}
-        </Button>
-      </Box>
+        </ActionButton>
+      </ActionRow>
     </Box>
   )
 }
@@ -314,14 +322,14 @@ function TotpEnrollStep({
       code={code}
       onCodeChange={onCodeChange}
       primaryAction={
-        <Button
+        <ActionButton
           type="button"
-          variant="contained"
+          emphasis="primary"
           disabled={submitDisabled || code.trim() === ''}
           onClick={() => onSubmit(code.trim())}
         >
           {submitLabel}
-        </Button>
+        </ActionButton>
       }
     />
   )
@@ -519,28 +527,23 @@ function PasskeyPrompt({
               {waitingCommitted ? t('stepUp.passkeyWaiting') : ''}
             </Typography>
           </Box>
-          <Box sx={{ mt: 1.5 }}>
-            <Button
-              ref={cancelRef}
-              type="button"
-              variant="outlined"
-              onClick={cancel}
-            >
+          <ActionRow sx={{ mt: 1.5 }}>
+            <ActionButton ref={cancelRef} type="button" onClick={cancel}>
               {t('stepUp.passkeyCancel')}
-            </Button>
-          </Box>
+            </ActionButton>
+          </ActionRow>
         </>
       ) : (
-        <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
-          <Button
+        <ActionRow sx={{ mt: 2 }}>
+          <ActionButton
             type="button"
-            variant="contained"
+            emphasis="primary"
             disabled={submitDisabled}
             onClick={() => void run()}
           >
             {errorKey === null ? submitLabel : t('stepUp.passkeyRetry')}
-          </Button>
-        </Box>
+          </ActionButton>
+        </ActionRow>
       )}
     </Box>
   )

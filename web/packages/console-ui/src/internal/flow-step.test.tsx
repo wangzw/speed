@@ -219,9 +219,11 @@ describe('FlowStep passkey ceremony', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent(
         zhCN.stepUp.passkeyCancelled,
       )
-      await user.click(
-        screen.getByRole('button', { name: zhCN.stepUp.passkeyRetry }),
-      )
+      // The retry uses the one primary action mapping every action row
+      // shares, so the three retry surfaces cannot drift apart.
+      const retry = screen.getByRole('button', { name: zhCN.stepUp.passkeyRetry })
+      expect(retry).toHaveClass('MuiButton-contained')
+      await user.click(retry)
       expect(await screen.findByText(zhCN.stepUp.passkeyWaiting)).toBeTruthy()
       expect(get).toHaveBeenCalledTimes(2)
     } finally {

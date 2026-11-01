@@ -65,9 +65,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Typography from '@mui/material/Typography'
@@ -78,7 +76,7 @@ import {
 import type { AuthSession, StepUpReason } from '@speed/auth-core'
 import type { AuthnFlowAnswer, AuthnStep } from '@speed/auth-core'
 import { humanGateNeedsProof, useStepUp } from '@speed/auth-core'
-import { HumanVerification } from '@speed/ui-kit'
+import { ActionButton, ActionRow, HumanVerification } from '@speed/ui-kit'
 import { useConsoleAccountHref } from './account-href.js'
 import { useConsoleReturnPath } from './return-path.js'
 import { FlowStep } from './flow-step.js'
@@ -157,12 +155,12 @@ export function StepUpChallenge({
               {t('stepUp.ssoRequired')}
             </Typography>
           </DialogContent>
-          <DialogActions>
-            <Button onClick={onCancel}>{t('common.cancel')}</Button>
-            <Button variant="contained" onClick={relogin}>
+          <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
+            <ActionButton onClick={onCancel}>{t('common.cancel')}</ActionButton>
+            <ActionButton emphasis="primary" onClick={relogin}>
               {t('stepUp.relogin')}
-            </Button>
-          </DialogActions>
+            </ActionButton>
+          </ActionRow>
         </>
       ) : noFactor ? (
         <>
@@ -176,9 +174,9 @@ export function StepUpChallenge({
               </Typography>
             )}
           </DialogContent>
-          <DialogActions>
-            <Button onClick={onCancel}>{t('common.cancel')}</Button>
-          </DialogActions>
+          <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
+            <ActionButton onClick={onCancel}>{t('common.cancel')}</ActionButton>
+          </ActionRow>
         </>
       ) : checking ? (
         <>
@@ -187,9 +185,9 @@ export function StepUpChallenge({
               {t('stepUp.starting')}
             </Typography>
           </DialogContent>
-          <DialogActions>
-            <Button onClick={onCancel}>{t('common.cancel')}</Button>
-          </DialogActions>
+          <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
+            <ActionButton onClick={onCancel}>{t('common.cancel')}</ActionButton>
+          </ActionRow>
         </>
       ) : (
         <StepUpFlow
@@ -375,18 +373,22 @@ function StepUpFlow({
           </>
         )}
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onCancel}>{t('common.cancel')}</Button>
+      <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
+        <ActionButton onClick={onCancel}>{t('common.cancel')}</ActionButton>
         {terminalFailure ? (
-          <Button variant="contained" disabled={waiting} onClick={onRestart}>
+          <ActionButton
+            emphasis="primary"
+            disabled={waiting}
+            onClick={onRestart}
+          >
             {t('stepUp.restart')}
-          </Button>
+          </ActionButton>
         ) : unavailable ? (
-          <Button variant="contained" onClick={handleRelogin}>
+          <ActionButton emphasis="primary" onClick={handleRelogin}>
             {t('stepUp.relogin')}
-          </Button>
+          </ActionButton>
         ) : null}
-      </DialogActions>
+      </ActionRow>
     </>
   )
 }
