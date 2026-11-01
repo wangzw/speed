@@ -110,6 +110,29 @@ describe('console-ui error text', () => {
     expect(notAllowed).not.toBe(bundle.errors.unknown)
   })
 
+  it('renders a throttled answer with no stated wait as a complete sentence', () => {
+    // A refusal that stated no Retry-After reaches the resolver without a
+    // wait, so it resolves through the code's own errors leaf. That leaf
+    // must read as a sentence: the seconds form lives in throttle.retryAfter
+    // and is used only when a wait is known, so a placeholder left in the
+    // leaf would render literally (the bundle escapes nothing by default)
+    // instead of naming a time.
+    for (const language of ['zh-CN', 'en-US']) {
+      const i18n = createConsoleUiI18n(language)
+      const { result } = renderHook(() => useConsoleUiErrorText(), {
+        wrapper: ({ children }: { readonly children: ReactNode }) =>
+          createElement(I18nextProvider, { i18n }, children),
+      })
+      const text = result.current('ratelimit.throttled')
+      const bundle = consoleUiResources[language] as {
+        errors: { unknown: string; ratelimit: { throttled: string } }
+      }
+      expect(text, language).toBe(bundle.errors.ratelimit.throttled)
+      expect(text, language).not.toMatch(/\{\{.*\}\}/)
+      expect(text, language).not.toBe(bundle.errors.unknown)
+    }
+  })
+
   it('names the wait a throttled ratelimit answer stated', () => {
     // The step-up flow's start and answers can be refused by the ratelimit
     // layer with a Retry-After; the sentence names how long the operator

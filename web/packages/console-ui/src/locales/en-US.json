@@ -46,7 +46,7 @@
       "httpUnauthorized": "Your session has ended. Sign in again."
     },
     "ratelimit": {
-      "throttled": "Too many attempts. Try again in {{seconds}} seconds."
+      "throttled": "Too many attempts. Please try again later."
     },
     "tenant": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
