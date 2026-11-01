@@ -229,7 +229,9 @@
     "totpCopyLabel": "复制设置密钥",
     "totpCopiedLabel": "设置密钥已复制",
     "totpCopyVisibleLabel": "复制",
-    "totpParams": "基于时间（TOTP），{{digits}} 位数字，{{algorithm}}，{{period}} 秒",
+    "totpAlgorithm": "算法",
+    "totpDigits": "位数",
+    "totpPeriod": "周期（秒）",
     "codeLabel": "6 位验证码",
     "field": {
       "identifier": "邮箱或手机号",

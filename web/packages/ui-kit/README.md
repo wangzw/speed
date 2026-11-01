@@ -23,12 +23,16 @@ shared style recipes (`visuallyHiddenSx` for hidden elements,
 `touchTargetSx` for the coarse-pointer floor of elements the theme does
 not reach). Beside them ship the refresh pair (`RefreshButton` +
 `usePageRefresh`), the clipboard and one-time-value pair (`CopyButton`,
-`OneTimeValuePanel`), and the display-preference contexts
+`OneTimeValuePanel`), the TOTP enrolment pair (`TotpQrCode`,
+`TotpEnrollmentPanel`) and the display-preference contexts
 (`DisplayTimeZoneProvider`, `PhoneCountryDefaultProvider`). Every
 built-in user-facing
 string lives in the bilingual `ui-kit` namespace registered through
 `@speed/i18n` -- components never ship text in code, and the workspace's
-`no-literal-text` ESLint rule refuses it there.
+`no-literal-text` ESLint rule refuses it there. The TOTP enrolment pair
+takes every sentence and accessible name from props instead: the
+enrolling surface owns the otpauth parse and the wording, so the pair
+reads no bundle of its own.
 
 ## What ships
 
@@ -56,6 +60,8 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `use-page-refresh.ts` | `usePageRefresh`, `pageRefreshRead`, `PageRefresh`, `PageRefreshRead`, `PageRefreshReadHandle`, `PageRefreshSettled` |
 | `components/CopyButton.tsx` | `CopyButton`, `CopyButtonProps` |
 | `components/OneTimeValuePanel.tsx` | `OneTimeValuePanel`, `OneTimeValuePanelProps`, `OneTimeValuePanelDetail` |
+| `components/TotpQrCode.tsx` | `TotpQrCode`, `TotpQrCodeProps` |
+| `components/TotpEnrollmentPanel.tsx` | `TotpEnrollmentPanel`, `TotpEnrollmentPanelProps`, `TotpEnrollmentParameter`, `TotpEnrollmentSecret` |
 | `display-time-zone.tsx` | `DisplayTimeZoneProvider`, `DisplayTimeZoneProviderProps`, `useDisplayTimeZone` |
 | `phone-country-default.tsx` | `PhoneCountryDefaultProvider`, `PhoneCountryDefaultProviderProps`, `usePhoneCountryDefault` |
 | `components/WriteFeedbackRegion.tsx` | `WriteFeedbackRegion`, `WriteFeedbackRegionProps` |
@@ -1322,6 +1328,39 @@ further labelled values the same hand-off needs -- a DNS record's name
 and the value to publish, say -- each with its own label, monospace value
 and copy control named by that detail's `copyLabel`.
 
+### TotpQrCode and TotpEnrollmentPanel (authenticator enrolment)
+
+`TotpQrCode` draws a scannable QR symbol for an `otpauth://` URI and
+nothing else: it takes the URI, the image's accessible name and an
+optional rendered `size` (default 192 CSS pixels), and renders one
+`role="img"` SVG with a four-module quiet zone and crisp module edges.
+An empty URI, or one the encoder cannot represent, renders nothing -- the
+caller keeps its manual-entry path -- and no failure reaches the render
+tree. It reads no language bundle and performs no network or storage
+work.
+
+`TotpEnrollmentPanel` is the whole enrolment block over values the
+caller already parsed: `otpauthUri` and `qrLabel` draw the symbol,
+`guidance` adds the copy above it, `secret` (`{value, display?}`) opens a
+manual-entry disclosure with `manualToggleLabel`, `secretLabel` and a
+`CopyButton` named by `copyLabel` / `copiedLabel` / `copyVisibleLabel`.
+`parameters` is the labelled list the caller wants beside the secret
+(algorithm, digit count and period in the account surface's own
+wording). The code field is controlled by `code` / `onCodeChange`, asks
+for a numeric one-time code and holds six characters; `busy` disables
+it. `secondaryAction` and `primaryAction` are the caller's controls --
+the panel renders the secondary first and the primary last, pushed to
+the far right when both are present. Omit `secret` and `parameters` and
+the panel keeps the code field and actions without a manual block; omit
+`otpauthUri` and it draws no symbol. The open state of the manual
+disclosure is interaction-local and resets when the panel unmounts; no
+other state is held.
+
+Both components take every user-facing string through props. The
+enrolling surface owns the parse (`@speed/auth-core/otpauth` in the
+account package) and its own translations, so ui-kit carries neither the
+authenticator vocabulary nor a default wording for it.
+
 ### Display preferences (contexts)
 
 Two optional provider/reader pairs carry a host preference without
@@ -1370,7 +1409,10 @@ today.
 Every string a component renders by itself comes from the `ui-kit`
 namespace (components take their text through a hook bound to
 `UI_KIT_NAMESPACE`, so wording follows the active language and switches
-live). The full key set:
+live). `TotpQrCode` and `TotpEnrollmentPanel` are the deliberate
+exception: they have no built-in copy and take every sentence and
+accessible name through props, because the enrolling surface owns the
+authenticator vocabulary. The full key set:
 
 | Key | Purpose | Notes |
 |---|---|---|
@@ -1565,6 +1607,7 @@ same rationale documented here.
 | `react-hook-form` | peer (required, ^7) | the form family's `FormProvider`/`Controller` identity needs one RHF in the tree, and `FormLayout`'s `UseFormReturn` must be the host's own type. devDependency 7.87.0 is the tested point (the peer range is the ^7 API family) |
 | `zod` | peer (required, ^4) | the host builds the schema `zodFormResolver` consumes, so the schema instance and this package's `ZodType` must be one class -- one zod in the tree, exactly like `react-hook-form`. devDependency 4.6.7 is the tested point |
 | `@speed/tokens`, `@speed/i18n` | dependencies | the token tree this package maps, and the i18n instance/bindings every component renders through |
+| `qrcode-generator` | dependency | encodes an enrolment URI into the module matrix `TotpQrCode` draws; the package has no runtime side effects and tree-shakes with the component |
 | `libphonenumber-js` | dependency | the per-country phone data behind `PhoneNumberField` and its helpers: calling codes, as-you-type grouping and number-plan validation. Imported from its `mobile` metadata build, about 100 KB raw / 25 KB gzipped of metadata plus the parser/formatter code. That build carries the mobile number-plan patterns, so a number of a legal length but an impossible plan is refused instead of being sent. The package sets `sideEffects: false`, so a bundle that does not use the phone control tree-shakes it away |
 
 ## Deferrals and recorded decisions

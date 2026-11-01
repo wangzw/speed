@@ -1,7 +1,7 @@
 {
   "name": "@speed/ui-kit",
   "version": "0.0.1",
-  "description": "Speed UI kit: the MUI v9 theme factory (createAppTheme + AppThemeProvider), the controlled core components (PageHeader, EmptyState, ConfirmDialog, SidePanel, FormField, FormLayout, PhoneNumberField, DataTable, FileUploader), the refresh pair (RefreshButton + usePageRefresh), the clipboard and one-time-value pair (CopyButton + OneTimeValuePanel) and the write-feedback scope (useWriteFeedback + WriteFeedbackRegion), bilingual out of the box through @speed/i18n",
+  "description": "Speed UI kit: the MUI v9 theme factory (createAppTheme + AppThemeProvider), the controlled core components (PageHeader, EmptyState, ConfirmDialog, SidePanel, FormField, FormLayout, PhoneNumberField, DataTable, FileUploader), the refresh pair (RefreshButton + usePageRefresh), the clipboard and one-time-value pair (CopyButton + OneTimeValuePanel), the TOTP enrolment pair (TotpQrCode + TotpEnrollmentPanel) and the write-feedback scope (useWriteFeedback + WriteFeedbackRegion), bilingual out of the box through @speed/i18n",
   "type": "module",
   "sideEffects": false,
   "files": ["dist", "README.md", "AGENTS.md"],
@@ -22,7 +22,8 @@
     "@speed/i18n": "workspace:*",
     "@speed/theme-presets": "workspace:*",
     "@speed/tokens": "workspace:*",
-    "libphonenumber-js": "^1.13.15"
+    "libphonenumber-js": "^1.13.15",
+    "qrcode-generator": "^2.0.4"
   },
   "peerDependencies": {
     "@emotion/react": "^11.5.0",

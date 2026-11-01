@@ -27,7 +27,9 @@ surfaces that accept one (`parseEmailAddress` and
 `usePageRefresh` / `pageRefreshRead`, which re-reads the query handles the
 host hands it, reading them structurally and importing no query client or
 transport), the clipboard and hand-off pair (`CopyButton`,
-`OneTimeValuePanel`), the display-preference contexts
+`OneTimeValuePanel`), the TOTP enrolment pair (`TotpQrCode`,
+`TotpEnrollmentPanel`, both fed by values the host parsed and translated),
+the display-preference contexts
 (`DisplayTimeZoneProvider` / `useDisplayTimeZone` and
 `PhoneCountryDefaultProvider` / `usePhoneCountryDefault`) and the shared
 state primitives (`errorCodeOf`, `httpStatusOf`, the
@@ -44,7 +46,10 @@ that are not in the current `rows` prop. Built-in user-facing strings
 live in the bilingual `ui-kit` namespace;
 the repo's text discipline (both languages, identical key sets, nothing
 inline) is enforced over this package's `src` by the workspace's own
-`speed/no-literal-text` ESLint rule.
+`speed/no-literal-text` ESLint rule. The TOTP pair is the deliberate
+exception with no built-in copy: its sentences, labels and accessible
+names all arrive as props, because the enrolling surface owns the
+authenticator vocabulary and the `otpauth://` parse.
 
 `PhoneNumberField` is the package's one dependency on country data:
 `libphonenumber-js` (its `mobile` metadata build, about 100 KB raw / 25 KB
@@ -57,6 +62,13 @@ shared -- and the package sets `sideEffects: false`, so a bundle that
 does not use the phone control tree-shakes it away. Country names are
 not a translation-key table: they come from `Intl.DisplayNames` at
 render time.
+
+`TotpQrCode` is the package's one dependency on QR encoding:
+`qrcode-generator` turns the caller's `otpauth://` URI into the module
+matrix the component draws as an SVG path. It is a regular dependency
+rather than a peer -- no host module or instance is shared -- and the
+package sets `sideEffects: false`, so a bundle that does not use the
+enrolment pair tree-shakes it away.
 
 The public surface is `src/index.ts`
 plus `resources.ts`'s exports; everything else under `src/internal/` is
@@ -293,7 +305,11 @@ rows appended already settled announce without an uploading phase, a
 retry clears so an identical later failure re-announces, and a second
 same-name row reaching the same outcome as a standing announcement
 clears and re-announces on the next tick) — and its a11y assertions run
-through the same `expectNoAxeViolations` used everywhere here. The usage example's upload panel drives the documented host
+through the same `expectNoAxeViolations` used everywhere here. The TOTP
+pair's suites drive the symbol, the manual disclosure and the copy
+control entirely from caller props -- they assert those props, never a
+bundle -- and pin the code field's numeric six-character contract and
+the secondary-before-primary action order. The usage example's upload panel drives the documented host
 composition — host-owned queue, host AbortControllers, host transport
 — over a scripted fetch answering genuine `Response` objects; scripted
 transports and their fixture URLs live in test files only, and the

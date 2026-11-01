@@ -1,5 +1,5 @@
 /**
- * TotpQrCode: the SVG symbol the enrolment panel shows for its URI.
+ * TotpQrCode: the SVG symbol an enrolment panel shows for its URI.
  *
  * The cases pin the contract the panel relies on: the image is exposed
  * as one accessible image under the caller's own label, the same URI
@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { renderWithProviders } from '../../test-utils/render.js'
-import { TotpQrCode } from './totp-qr.js'
+import { TotpQrCode } from './TotpQrCode.js'
 
 const URI =
   'otpauth://totp/Example%20Co:alice%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example%20Co'

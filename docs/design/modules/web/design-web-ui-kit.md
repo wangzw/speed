@@ -5,9 +5,9 @@
 本包是平台第一个渲染 DOM 的包。它交付：
 
 - **主题工厂**：`createAppTheme` 把合并后的 `@speed/tokens` token 树映射成一个 MUI v9（[REF-mui](../../../references.md)）主题，并承载触摸设备上所有可点击目标的 44×44 下限、表面映射与页面基线（组件级 `styleOverrides`，见下文主题工厂一节）；`AppThemeProvider` 把主题、MUI 本地化联动、颜色模式、可选的主题预设层与全局重置组成一个运行期。
-- **受控组件**：`PageLayout`、`PageHeader`、`SectionCard`、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`PhoneNumberField`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`，外加跨表面的状态原语（`errorCodeOf`、`httpStatusOf`、`useWriteFeedback`、`visuallyHiddenSx`、`touchTargetSx`）、电话号码的两部分组装助手（`toE164`、`validatePhoneNumber`、`defaultPhoneCountry` 等）、邮箱地址规则（`parseEmailAddress`、`EMAIL_ADDRESS_MAX_BYTES`）、刷新动作的一对（`RefreshButton` 与 `usePageRefresh`／`pageRefreshRead`）、一次值交接的一对（`CopyButton`、`OneTimeValuePanel`）与两个显示偏好上下文（`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`）。每个组件自带的文案来自 `ui-kit` 命名空间。
+- **受控组件**：`PageLayout`、`PageHeader`、`SectionCard`、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`PhoneNumberField`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`、`TotpQrCode`、`TotpEnrollmentPanel`，外加跨表面的状态原语（`errorCodeOf`、`httpStatusOf`、`useWriteFeedback`、`visuallyHiddenSx`、`touchTargetSx`）、电话号码的两部分组装助手（`toE164`、`validatePhoneNumber`、`defaultPhoneCountry` 等）、邮箱地址规则（`parseEmailAddress`、`EMAIL_ADDRESS_MAX_BYTES`）、刷新动作的一对（`RefreshButton` 与 `usePageRefresh`／`pageRefreshRead`）、一次值交接的一对（`CopyButton`、`OneTimeValuePanel`）与两个显示偏好上下文（`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`）。除 TOTP 登记的一对外，每个组件自带的文案来自 `ui-kit` 命名空间；`TotpQrCode` 与 `TotpEnrollmentPanel` 的全部文案与可及名由调用方经 props 传入。
 
-**受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不自带传输取数、从不改数据、从不持业务状态——同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。交互局部状态只出现在必须能证明它只在交互内存在的组件里，例如 `ConfirmDialog` 的双次确认待命（弹窗一关即复位）与 `PhoneNumberField` 的国际号码草稿和触碰标记；`SidePanel` 不持有任何状态，打开、忙碌与内容都由宿主经 props 给出；`useWriteFeedback` 的状态属于调用它的宿主组件，ui-kit 的组件仍不持有业务状态与写入结果。唯一的读接缝是刷新动作的一对：`usePageRefresh` 调用宿主交来的查询句柄的 `refetch`，只按结构读取句柄，本包不 import 查询客户端、api-client 或任何传输；`CopyButton` 读剪贴板 API 在浏览器本地，不经网络。两个显示偏好 provider 只转交宿主的取值，自身不持状态、不做校验。
+**受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不自带传输取数、从不改数据、从不持业务状态——同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。交互局部状态只出现在必须能证明它只在交互内存在的组件里，例如 `ConfirmDialog` 的双次确认待命（弹窗一关即复位）与 `PhoneNumberField` 的国际号码草稿和触碰标记；`SidePanel` 不持有任何状态，打开、忙碌与内容都由宿主经 props 给出；`useWriteFeedback` 的状态属于调用它的宿主组件，ui-kit 的组件仍不持有业务状态与写入结果。唯一的读接缝是刷新动作的一对：`usePageRefresh` 调用宿主交来的查询句柄的 `refetch`，只按结构读取句柄，本包不 import 查询客户端、api-client 或任何传输；`CopyButton` 读剪贴板 API 在浏览器本地，不经网络。两个显示偏好 provider 只转交宿主的取值，自身不持状态、不做校验。TOTP 登记的一对同样只收宿主解析好的值与文案：它不解析 `otpauth://`、不读命名空间、不做网络或存储副作用；手动入口的展开是唯一交互局部状态，随组件卸载复位。
 
 `FileUploader` 不是这条契约的例外：队列由宿主持有的 `rows` 渲染，每次选取、取消、重试、移除都经回调上报；一次上传进行中是宿主状态、跑在宿主自己的传输代码里，组件从不持有一个 File 超过收到它的事件处理器。
 
@@ -104,6 +104,8 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `RefreshButton` | `busy`、`disabled`、`writePending`、`describedBy`、`disabledReason`、`ariaLabel`、`label`（可见文字，缺省取命名空间键） | `onClick` |
 | `CopyButton` | `value`、`label`（可及名）、`copiedLabel`（播报文本）、`visibleLabel`（给出即渲染文字按钮）、`pinned` | 写入本机剪贴板并播报（不经网络） |
 | `OneTimeValuePanel` | `message`、`value`、`copyLabel`、`details`（在主值旁附带的带标签详情，每条各有自己的值、复制控件与文案）、`closeLabel`、`closeAriaLabel` | `onClose`（状态归调用方） |
+| `TotpQrCode` | `uri`（`otpauth://` 地址）、`label`（图片可及名）、`size`（渲染边长，缺省 192 CSS 像素） | —（空地址或编码器无法表示的地址不渲染） |
+| `TotpEnrollmentPanel` | `otpauthUri`、`qrLabel`、`guidance`、`manualToggleLabel`、`secret`（`{value, display?}`）、`secretLabel`、`copyLabel`、`copiedLabel`、`copyVisibleLabel`、`parameters`（带标签的算法、位数、周期行）、`codeLabel`、`code`、`onCodeChange`、`busy`、`secondaryAction`、`primaryAction` | `onCodeChange`；复制经内部 `CopyButton` 写入本机剪贴板并播报；两个动作由调用方持有 |
 | `DisplayTimeZoneProvider`／`PhoneCountryDefaultProvider` | 时区名或 `undefined`／国家码或 `undefined` | —（经 `useDisplayTimeZone`／`usePhoneCountryDefault` 读取） |
 
 ### 页框
@@ -161,7 +163,7 @@ export const UI_KIT_NAMESPACE = 'ui-kit'
 export const uiKitResources: Readonly<Record<string, ResourceBundle>>
 ```
 
-`UI_KIT_NAMESPACE` 是裸名 `ui-kit` 命名空间，宿主在启动处在 i18n 实例上注册一次：`registerNamespace(i18n, UI_KIT_NAMESPACE, uiKitResources)`。**每个组件自己渲染的每一条面向用户的字符串都在这里**，zh-CN 与 en-US 键集一致，由注册期校验与工作区的 `no-literal-text` 规则共同守住。组件按各自前缀取键（`pageHeader.*`、`emptyState.*`、`confirmDialog.*`、`sidePanel.*`、`form.*`、`phoneNumber.*`、`dataTable.*`、`fileUploader.*`），经一个绑定到该命名空间的 hook 取文本，因而措辞随活动语言切换、无组件重挂。
+`UI_KIT_NAMESPACE` 是裸名 `ui-kit` 命名空间，宿主在启动处在 i18n 实例上注册一次：`registerNamespace(i18n, UI_KIT_NAMESPACE, uiKitResources)`。**除 TOTP 登记的一对外，每个组件自己渲染的每一条面向用户的字符串都在这里**，zh-CN 与 en-US 键集一致，由注册期校验与工作区的 `no-literal-text` 规则共同守住。组件按各自前缀取键（`pageHeader.*`、`emptyState.*`、`confirmDialog.*`、`sidePanel.*`、`form.*`、`phoneNumber.*`、`dataTable.*`、`fileUploader.*`），经一个绑定到该命名空间的 hook 取文本，因而措辞随活动语言切换、无组件重挂。`TotpQrCode` 与 `TotpEnrollmentPanel` 不取任何键：它们的句子、标签与可及名全部由调用方经 props 传入，命名空间里没有登记件的条目，因为认证器词汇与 `otpauth://` 解析归登记它的表面。
 
 **宿主内容与命名空间默认是两回事**：`EmptyState` 与 `ConfirmDialog` 出命名空间默认的标题与文本，可被 props 覆写；列头与单元格渲染器完全是宿主的翻译面；`PageHeader` 的可见内容（标题、描述、面包屑标签、动作）也是宿主内容，它唯一的自建字符串是面包屑导航地的可及名与折叠展开按钮的标签。**没有组件对宿主给的字符串调用 `t()`。** 宿主改写整套措辞的办法是在启动处注册自己的一对同键 bundle 到 `UI_KIT_NAMESPACE`，而不是改组件里的文本。
 
@@ -169,7 +171,7 @@ export const uiKitResources: Readonly<Record<string, ResourceBundle>>
 
 `parseEmailAddress` 把 authn 账户模块的邮箱规范化规则（`NormalizeIdentifier` 的 email 分支）表述在客户端：去空白、可打印 ASCII（0x21 到 0x7e）、恰好一个 `@` 且两侧非空、不超过 254 字节；返回去空白后的地址，不合格返回 `null`。它不改大小写——服务端折叠大小写，而折叠用户正在编辑的值会改掉他们的输入。
 
-`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口面。基线导出之外的接缝：`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`OneTimeValuePanelDetail`（`details` 的元素：标签、值与其复制控件的文案）、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`parseEmailAddress`／`EMAIL_ADDRESS_MAX_BYTES`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`ConfirmDialog.children`／`confirmDisabled`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。公开面的一次改动要与代码、测试、README 与 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有消费方逐字节不受影响。
+`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口面。基线导出之外的接缝：`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`OneTimeValuePanelDetail`（`details` 的元素：标签、值与其复制控件的文案）、`TotpQrCode`、`TotpEnrollmentPanel`、`TotpEnrollmentParameter`、`TotpEnrollmentSecret`、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`parseEmailAddress`／`EMAIL_ADDRESS_MAX_BYTES`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`ConfirmDialog.children`／`confirmDisabled`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。公开面的一次改动要与代码、测试、README 与 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有消费方逐字节不受影响。
 
 ## 依赖
 
@@ -183,6 +185,7 @@ export const uiKitResources: Readonly<Record<string, ResourceBundle>>
 | `@speed/tokens`、`@speed/i18n` | 依赖 | 本包映射的 token 树，与全部组件据以渲染的 i18n 实例与绑定 |
 | `@speed/theme-presets` | 依赖（仅类型） | `ThemePreset` 类型；运行时只 `import type`，预设数据不进本包产物。依赖仍写进 `package.json`，构建的 filter 链与 `@speed/tokens` 同处理 |
 | `libphonenumber-js`（[REF-libphonenumber-js](../../../references.md)） | 依赖 | `PhoneNumberField` 与号码助手的逐国家/地区数据：国际区号、随输入分组、号段校验。取它的 `mobile` 元数据集（约 100 KB 原文 / 25 KB gzip 的元数据，另加解析与格式化代码）。选 `mobile` 是因为它带有手机号段模式，长度合法但号段不可能的号码会被拒绝而不是发往短信通道。本包 `sideEffects: false`，不使用该控件的构建会把依赖摇掉 |
+| `qrcode-generator`（[REF-qrcode-generator](../../../references.md)） | 依赖 | `TotpQrCode` 把调用方的 `otpauth://` 地址编成模块矩阵。本包 `sideEffects: false`，不使用登记一对的构建会把它摇掉 |
 
 框架相邻的 peer 一律是 peer：新加一个框架相邻依赖要在同一提交里给出「单份拷贝」的论证。
 
@@ -425,7 +428,7 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 
 ## 扩展点
 
-- **新增一个组件。** 它自带的所有面向用户的字符串进 `ui-kit` 命名空间的双语文案，且在同一提交内给两门语言各加一键、结构一致；组件经绑定到该命名空间的 hook 取文本，不硬编码。
+- **新增一个组件。** 它自带的所有面向用户的字符串进 `ui-kit` 命名空间的双语文案，且在同一提交内给两门语言各加一键、结构一致；组件经绑定到该命名空间的 hook 取文本，不硬编码。组件若像 TOTP 登记的一对那样完全由调用方给文案，则命名空间不增键，契约在类型与 README 里说明。
 - **宿主改写措辞。** 在启动处向 `UI_KIT_NAMESPACE` 注册自己的一对同键 bundle（结构一致、措辞自定），`uiKitResources` 只是发布的默认。
 - **表单错误解析的可插层。** `zodFormResolver` 提供的 zod → `react-hook-form` 解析桥就是这一档；校验错误契约是它接入的接缝：解析层可以产出任意消息，表单家族照契约渲染。宿主也可以自行实现该接缝（例如从生成类型派生自己的 schema）。
 - **改表面风格。** 覆写 token 的 `surface` 角色（`fill`、`opacity`、`backdropFilter`、`borderColor` 等），不改页面与组件；一种新风格是 token 取值，不是组件的新 prop 或主题工厂的新参数。成品风格以 `@speed/theme-presets` 的 `ThemePreset` 数据交给 provider，本包只负责把它合进项目层之前并映射成主题。
@@ -472,6 +475,7 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 | `AsyncSection` 的 `refusedState` | 已实现 | `web/packages/ui-kit/src/components/AsyncSection.tsx` `AsyncSection`、`AsyncSectionRefusedState` |
 | 刷新动作的控件与机制 | 已实现 | `web/packages/ui-kit/src/components/RefreshButton.tsx` `RefreshButton`；`web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh`、`pageRefreshRead` |
 | 剪贴板控件与一次值面板 | 已实现 | `web/packages/ui-kit/src/components/CopyButton.tsx` `CopyButton`；`web/packages/ui-kit/src/components/OneTimeValuePanel.tsx` `OneTimeValuePanel` |
+| TOTP 登记件（二维码与面板） | 已实现 | `web/packages/ui-kit/src/components/TotpQrCode.tsx` `TotpQrCode`；`web/packages/ui-kit/src/components/TotpEnrollmentPanel.tsx` `TotpEnrollmentPanel`、`TotpEnrollmentParameter`、`TotpEnrollmentSecret` |
 | 显示时区与国家缺省上下文 | 已实现 | `web/packages/ui-kit/src/display-time-zone.tsx` `DisplayTimeZoneProvider`、`useDisplayTimeZone`；`web/packages/ui-kit/src/phone-country-default.tsx` `PhoneCountryDefaultProvider`、`usePhoneCountryDefault` |
 | `PhoneNumberField.preferredCountries` | 已实现 | `web/packages/ui-kit/src/components/PhoneNumberField.tsx` `PhoneNumberField` |
 | `DataTable` 的可及名覆盖与过滤器标签 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`、`DataTableFilter` |

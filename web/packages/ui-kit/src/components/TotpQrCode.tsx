@@ -1,5 +1,5 @@
 /**
- * TotpQrCode: the scannable enrolment code for an `otpauth://` URI.
+ * TotpQrCode: a scannable symbol for an `otpauth://` enrolment URI.
  *
  * The enrolment panel must show the same code a person can type by hand
  * as a QR symbol an authenticator can scan. This component takes the URI
@@ -9,11 +9,11 @@
  * a data URL or a network round trip.
  *
  * The accessible name is a prop, never a string this package decides:
- * the component is built for a surface whose copy is translated by its
- * caller, so it reads no language bundle of its own. An empty URI, or a
- * URI the encoder cannot represent (a module count beyond its limit),
- * renders nothing -- the caller keeps the manual-entry path -- and no
- * failure reaches the render tree.
+ * the component reads no language bundle of its own, so the enrolling
+ * surface keeps the wording. An empty URI, or one the encoder cannot
+ * represent (a module count beyond its limit), renders nothing -- the
+ * caller keeps the manual-entry path -- and no failure reaches the
+ * render tree.
  */
 
 import { useMemo } from 'react'

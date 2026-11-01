@@ -165,6 +165,7 @@
 | REF-pgx | pgx | PostgreSQL 的 Go 驱动与工具集，含底层连接包 `pgconn` | <https://github.com/jackc/pgx> | v5 |
 | REF-powerwechat | PowerWeChat | 微信开放接口的 Go SDK，覆盖公众号、小程序、支付与企业微信 | <https://github.com/ArtisanCloud/PowerWeChat> | — |
 | REF-pquerna-otp | pquerna/otp | Go 语言的 TOTP 与 HOTP 一次性口令库 | <https://github.com/pquerna/otp> | v1 |
+| REF-qrcode-generator | qrcode-generator | 以 JavaScript 生成 QR 码模块矩阵的库 | <https://github.com/kazuhikoarase/qrcode-generator> | v2 |
 | REF-protobuf | Protocol Buffers | Google 的语言中立结构化数据序列化格式及其编译工具 | <https://protobuf.dev/> | — |
 | REF-react-hook-form | React Hook Form | React 的表单状态与校验库 | <https://react-hook-form.com/> | v7 |
 | REF-react-i18next | react-i18next | i18next 的 React 绑定 | <https://react.i18next.com/> | v17 |

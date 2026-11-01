@@ -585,9 +585,10 @@ formatted with the account's display-timezone chain.
   (`session.startAuthenticatedFlow({purpose: 'enroll', input: {kind, label}})`,
   because later steps do not read it), and each reply's next step is
   rendered and answered (`session.answerFlow`). A `webauthn` step hands the
-  factor its own JSON: TOTP's `otpauth_uri` renders as a scannable QR symbol
-  with a manual-entry disclosure that shows the parsed base32 secret and a
-  copy control, and a passkey's creation options are driven through the
+  factor its own JSON: TOTP's `otpauth_uri` renders through ui-kit's
+  `TotpEnrollmentPanel` as a scannable QR symbol with a manual-entry
+  disclosure that shows the parsed base32 secret and a copy control, and a
+  passkey's creation options are driven through the
   browser's WebAuthn API by `@speed/auth-core/webauthn`. The settled
   `enrolled` refetches the factors.
 - Rename. A row's inline editor sends `PATCH /api/v1/auth/factors/{id}`
@@ -694,9 +695,8 @@ is `test-utils/real-client.ts`, the render harness
 |---|---|---|
 | `@speed/auth-core` | dependency | the `AuthSession` type, the flow operations (`startAuthenticatedFlow`, `answerFlow`, `readFlow`), the shared `useStepUpGate`, and the `./webauthn` passkey driver |
 | `@speed/api-sdk` | dependency | the generated react-query hooks, mutations and query-key constructors |
-| `@speed/ui-kit` | dependency | `ConfirmDialog`, `EmptyState`, `AsyncSection`, `InlineError`/`errorCodeOf`, `InlineSuccess`, `ListSkeleton`, `useDisplayTimeZone`, `usePhoneCountryDefault` |
+| `@speed/ui-kit` | dependency | `ConfirmDialog`, `EmptyState`, `AsyncSection`, `InlineError`/`errorCodeOf`, `InlineSuccess`, `ListSkeleton`, `TotpEnrollmentPanel`, `useDisplayTimeZone`, `usePhoneCountryDefault` |
 | `@speed/i18n` | dependency | namespace registration, the translation hooks, `languageDisplayName`, `formatInstant`, `resolveTimeZone`/`isSupportedTimeZone` |
-| `qrcode-generator` | dependency | encodes the otpauth URI into the QR module matrix the enrolment step draws |
 | `@tanstack/react-query` | peer | the host's QueryClient and its hooks |
 | `react`, `react-dom`, `@mui/material`, `@emotion/*` | peer | the host's React/MUI tree |
 | `@speed/api-client` | devDependency | public types do not reference it; only the test fixtures bind a real client |

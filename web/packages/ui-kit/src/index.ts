@@ -26,7 +26,10 @@
  * The refresh pair (RefreshButton + usePageRefresh) re-reads a surface's
  * own reads through the handles the host passes; the clipboard and
  * hand-off pair (CopyButton + OneTimeValuePanel) covers a value handed
- * out once; the two display contexts (DisplayTimeZoneProvider,
+ * out once; the TOTP enrolment pair (TotpQrCode + TotpEnrollmentPanel)
+ * draws the symbol, the manual secret and the code field from values the
+ * caller parsed and translated, reading no bundle of its own; the two
+ * display contexts (DisplayTimeZoneProvider,
  * PhoneCountryDefaultProvider) carry a host preference read by surfaces
  * that fall back to their own defaults when it is absent; and
  * SectionSurfaceProvider tells the sections below it whether the
@@ -163,6 +166,16 @@ export {
   CopyButton,
   type CopyButtonProps,
 } from './components/CopyButton.js'
+export {
+  TotpQrCode,
+  type TotpQrCodeProps,
+} from './components/TotpQrCode.js'
+export {
+  TotpEnrollmentPanel,
+  type TotpEnrollmentPanelProps,
+  type TotpEnrollmentParameter,
+  type TotpEnrollmentSecret,
+} from './components/TotpEnrollmentPanel.js'
 export {
   OneTimeValuePanel,
   type OneTimeValuePanelDetail,

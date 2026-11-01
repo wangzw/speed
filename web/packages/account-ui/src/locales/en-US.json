@@ -229,7 +229,9 @@
     "totpCopyLabel": "Copy setup key",
     "totpCopiedLabel": "Setup key copied",
     "totpCopyVisibleLabel": "Copy",
-    "totpParams": "Time-based (TOTP), {{digits}} digits, {{algorithm}}, {{period}} seconds",
+    "totpAlgorithm": "Algorithm",
+    "totpDigits": "Digits",
+    "totpPeriod": "Period (seconds)",
     "codeLabel": "6-digit code",
     "field": {
       "identifier": "Email or phone number",
