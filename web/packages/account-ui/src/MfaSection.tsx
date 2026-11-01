@@ -32,6 +32,12 @@
  *    disclosure for its base32 secret, and drives a passkey's options through
  *    the browser's WebAuthn API. The flow settles `enrolled` without changing
  *    this session's level; the factors list is then refetched.
+ *  - Abandon. A wizard the reader cancels, or the section unmounting while a
+ *    wizard is open, releases the flow (DELETE /flows/current) so the server
+ *    drops the pending row the registration wrote instead of leaving it to the
+ *    pending sweep. Each wizard instance releases at most once, a settled flow
+ *    releases nothing, and a failed release is ignored rather than shown: the
+ *    reader has already given the flow up.
  *  - Rename. A row's inline editor sends PATCH /api/v1/auth/factors/{id}
  *    with the new label. The label is metadata, so the route asks for no
  *    step-up and the section opens no gate for it; an empty value clears the
@@ -88,7 +94,7 @@
  * kind, because then there is no entry to point at.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -258,6 +264,52 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     readonly string[] | null
   >(null)
 
+  // Whether this wizard holds an open flow of its own to release: set when a
+  // reply parks a step, cleared when the flow settles or is abandoned. Each
+  // wizard instance releases at most once.
+  const flowOpenRef = useRef(false)
+  // The unmount release is deferred by one microtask, so a remount in the same
+  // commit (StrictMode's double effect invocation) cancels it: the remounted
+  // section goes on holding the same flow.
+  const releasePendingRef = useRef(false)
+  // The session the release targets, read through a ref so the unmount cleanup
+  // needs no dependency and never re-registers.
+  const sessionRef = useRef(session)
+  sessionRef.current = session
+
+  /** Release the open enrollment flow, at most once per wizard instance. A
+   * failure is ignored: giving up a flow must not put an error in front of
+   * the reader. */
+  function releaseEnrollFlow(): void {
+    if (!flowOpenRef.current) {
+      return
+    }
+    flowOpenRef.current = false
+    void session.abandonFlow().catch(() => undefined)
+  }
+
+  // Unmounting is a departure like the wizard's cancel: a flow this section
+  // opened and has not seen settle is released, so no pending factor row and
+  // no stale binding linger on the server. The release waits one microtask so
+  // StrictMode's double mount cancels it in the remount's setup.
+  useEffect(() => {
+    releasePendingRef.current = false
+    return () => {
+      if (!flowOpenRef.current) {
+        return
+      }
+      releasePendingRef.current = true
+      void Promise.resolve().then(() => {
+        if (!releasePendingRef.current) {
+          return
+        }
+        releasePendingRef.current = false
+        flowOpenRef.current = false
+        void sessionRef.current.abandonFlow().catch(() => undefined)
+      })
+    }
+  }, [])
+
   const timeZone = useAccountTimeZone()
   const formatTime = (value: string | number | Date): string =>
     formatInstant(value, i18n.language, { timeZone })
@@ -347,9 +399,12 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         })
         setEnrollDraft(null)
         if ('next' in state) {
+          flowOpenRef.current = true
           setWizard({ step: state.next, seq: state.seq, kind: factorKind })
           return null
         }
+        // A settled flow has spent its state, so there is nothing to release.
+        flowOpenRef.current = false
         if (state.state === 'enrolled') {
           setWizard(null)
           await invalidateFactors()
@@ -391,9 +446,12 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           input: answer.input,
         })
         if ('next' in state) {
+          flowOpenRef.current = true
           setWizard({ step: state.next, seq: state.seq, kind })
           return null
         }
+        // A settled flow has spent its state, so there is nothing to release.
+        flowOpenRef.current = false
         if (state.state === 'enrolled') {
           setWizard(null)
           await invalidateFactors()
@@ -585,6 +643,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                     type="button"
                     disabled={enrolling}
                     onClick={() => {
+                      releaseEnrollFlow()
                       setWizard(null)
                       enrollFeedback.reset()
                     }}

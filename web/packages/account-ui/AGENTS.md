@@ -218,7 +218,13 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   enrollment wizard's heading names the kind being enrolled through the
   parameterized `mfa.enroll.title`, whose method slot carries that kind's
   `mfa.factor.kind.*` name (the generic other label for an unknown kind);
-  the name form and the flow's own steps share the heading.
+  the name form and the flow's own steps share the heading. A wizard the reader
+  cancels, or the section unmounting while a wizard is open, releases the flow
+  through `session.abandonFlow()` so the server drops the pending row the
+  registration wrote (`releaseEnrollFlow`); each wizard instance releases at
+  most once, a settled flow releases nothing, the unmount release is deferred
+  one microtask so StrictMode's remount keeps the flow, and a failed release is
+  ignored rather than shown.
 - **The error surface is a code whitelist with guarded vocabulary.**
   Every failure path resolves to one error code rendered in one
   `role="alert"` banner; codes outside the whitelist render

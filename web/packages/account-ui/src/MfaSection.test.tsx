@@ -49,6 +49,7 @@ const FACTORS_PATH = '/api/v1/auth/factors'
 const METHODS_PATH = '/api/v1/auth/methods'
 const FLOW_START = '/api/v1/auth/flows/authenticated'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
+const FLOW_CURRENT = '/api/v1/auth/flows/current'
 
 const OTPAUTH_URI =
   'otpauth://totp/speed:ada?secret=JBSWY3DPEHPK3PXP&issuer=speed'
@@ -152,6 +153,12 @@ const addNameOf = (method: string): string =>
  * title with the kind's own name in its method slot. */
 const enrollTitleOf = (method: string): string =>
   zhCN.mfa.enroll.title.replace('{{method}}', method)
+
+/** The DELETE requests a case sent to abandon the open flow. */
+const abandonCalls = (calls: readonly RealCall[]): RealCall[] =>
+  calls.filter(
+    (call) => call.method === 'DELETE' && call.path === FLOW_CURRENT,
+  )
 
 describe('MfaSection', () => {
   it('renders the factors with their kind, label and status, and passes axe', async () => {
@@ -1847,5 +1854,137 @@ describe('MfaSection', () => {
     const readsBeforeRetry = reads
     await user.click(screen.getByRole('button', { name: zhCN.mfa.retry }))
     await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
+  })
+
+  it('abandons the enrollment flow once when the wizard is cancelled', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'enroll',
+          next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
+        })
+      }
+      if (call.method === 'DELETE' && call.path === FLOW_CURRENT) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: addNameOf(zhCN.mfa.factor.kind.totp),
+      }),
+    )
+    await startEnrollWithEmptyName(user)
+    await screen.findByRole('img', { name: zhCN.flowStep.totpQrLabel })
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.enroll.cancelLabel }),
+    )
+
+    await waitFor(() => expect(abandonCalls(rig.calls)).toHaveLength(1))
+    // The wizard closed onto the entries, and no second release follows.
+    expect(
+      await screen.findByRole('button', {
+        name: addNameOf(zhCN.mfa.factor.kind.totp),
+      }),
+    ).toBeTruthy()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(abandonCalls(rig.calls)).toHaveLength(1)
+  })
+
+  it('abandons the enrollment flow once when the section unmounts', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'enroll',
+          next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
+        })
+      }
+      if (call.method === 'DELETE' && call.path === FLOW_CURRENT) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig, unmount } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: addNameOf(zhCN.mfa.factor.kind.totp),
+      }),
+    )
+    await startEnrollWithEmptyName(user)
+    await screen.findByRole('img', { name: zhCN.flowStep.totpQrLabel })
+
+    unmount()
+    await waitFor(() => expect(abandonCalls(rig.calls)).toHaveLength(1))
+  })
+
+  it('abandons the enrollment flow once when the reader gives up after a failed answer', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'enroll',
+          next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        return errorResponse(400, 'authn.bad_request')
+      }
+      if (call.method === 'DELETE' && call.path === FLOW_CURRENT) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: addNameOf(zhCN.mfa.factor.kind.totp),
+      }),
+    )
+    await startEnrollWithEmptyName(user)
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.bad_request,
+    )
+    // The step stays for a retry; giving up releases the flow exactly once.
+    expect(abandonCalls(rig.calls)).toHaveLength(0)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.enroll.cancelLabel }),
+    )
+    await waitFor(() => expect(abandonCalls(rig.calls)).toHaveLength(1))
   })
 })
