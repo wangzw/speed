@@ -53,7 +53,7 @@
     "notification.bad_request": "提交的信息有误，请检查后重试。",
     "notification.message_not_found": "该消息不存在。",
     "notification.not_unsubscribable": "这是必要的通知，无法关闭。",
-    "ratelimit.throttled": "尝试次数过多，请在 {{seconds}} 秒后重试。",
+    "ratelimit.throttled": "尝试次数过多，请稍后再试。",
     "rbac.permission_denied": "你没有执行该操作的权限。",
     "settings.bad_request": "提交的内容有误，请检查表单后重试。",
     "settings.invalid_value": "该值超出了此设置允许的范围。",

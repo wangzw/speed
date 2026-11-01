@@ -219,6 +219,16 @@ describe('the bundle contents', () => {
     }
   })
 
+  it('names the ratelimit refusal without a wait only a Retry-After can supply', () => {
+    // A surface that did not read a Retry-After resolves this leaf without
+    // options, and i18next escapes nothing by default, so a placeholder in
+    // it would reach the reader literally. The seconds sentence belongs to
+    // each surface's own throttle.retryAfter leaf, used only when a wait is
+    // known.
+    expect(codeText(enBundle, 'ratelimit.throttled')).not.toMatch(/\{\{.*\}\}/)
+    expect(codeText(zhBundle, 'ratelimit.throttled')).not.toMatch(/\{\{.*\}\}/)
+  })
+
   it('accepts the packaged bundle and refuses one missing a code', () => {
     const en = platformErrorResources['en-US']!
     expect(() => assertPlatformErrorBundleKeySet('en-US', en)).not.toThrow()

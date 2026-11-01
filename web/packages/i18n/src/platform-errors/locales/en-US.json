@@ -53,7 +53,7 @@
     "notification.bad_request": "Some of the information you entered isn't valid. Check it and try again.",
     "notification.message_not_found": "That message does not exist.",
     "notification.not_unsubscribable": "This is a required notification and cannot be turned off.",
-    "ratelimit.throttled": "Too many attempts. Try again in {{seconds}} seconds.",
+    "ratelimit.throttled": "Too many attempts. Please try again later.",
     "rbac.permission_denied": "You do not have permission to do that.",
     "settings.bad_request": "Something in what you submitted was not valid. Check the form and try again.",
     "settings.invalid_value": "That value is outside the range this setting allows.",
