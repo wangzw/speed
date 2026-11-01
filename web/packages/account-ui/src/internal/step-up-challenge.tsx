@@ -334,13 +334,14 @@ function StepUpFlow({
   readonly reproofMethod?: string
 }): ReactElement {
   const { t } = useAccountUiTranslation()
-  const { phase, step, seq, errorCode, human, answer } = useStepUp(
-    session,
-    active,
-    onSuccess,
-    reproveFirst ? reproofMethod : undefined,
-    returnPath,
-  )
+  const { phase, step, seq, errorCode, retryAfterSeconds, human, answer } =
+    useStepUp(
+      session,
+      active,
+      onSuccess,
+      reproveFirst ? reproofMethod : undefined,
+      returnPath,
+    )
   // The second factor the operator chose. The verification step that
   // follows it (the code challenge) is answered under the `factor` step
   // and must re-name the same factor alongside the field it asks for --
@@ -367,6 +368,11 @@ function StepUpFlow({
   }
 
   const starting = phase === 'starting' || checking || readingSession
+  // A throttled answer names how long the caller must hold off: the
+  // banner counts that wait down and the step's submit stays disabled
+  // until it elapses, then the submit returns and the banner renders the
+  // code's own wait-free sentence.
+  const waiting = retryAfterSeconds !== null
   // The flow reached its ready state and the hook is answering its
   // `complete` step on its own: the starting placeholder covers that answer
   // exactly as it covers the start itself. A refusal leaves this false and
@@ -419,7 +425,10 @@ function StepUpFlow({
       <DialogTitle id={titleId}>{t('mfa.stepUp.title')}</DialogTitle>
       <DialogContent>
         {flowInvalid ? (
-          <InlineError code={errorCode} />
+          <InlineError
+            code={errorCode}
+            retryAfterSeconds={retryAfterSeconds ?? undefined}
+          />
         ) : freshFirst ? (
           <Box>
             <Typography variant="body2" color="text.secondary">
@@ -444,7 +453,10 @@ function StepUpFlow({
             <Typography variant="body2" color="text.secondary">
               {t('mfa.stepUp.description')}
             </Typography>
-            <InlineError code={errorCode} />
+            <InlineError
+              code={errorCode}
+              retryAfterSeconds={retryAfterSeconds ?? undefined}
+            />
             {starting || autoCompleting ? (
               <Typography variant="body2" sx={{ mt: 2 }}>
                 {t('mfa.stepUp.starting')}
@@ -469,6 +481,7 @@ function StepUpFlow({
                       step={step}
                       sequence={seq ?? 0}
                       busy={false}
+                      submitDisabled={waiting}
                       answerStep={answerStep}
                       submitLabel={t('mfa.stepUp.confirmLabel')}
                       onSubmit={handleAnswer}

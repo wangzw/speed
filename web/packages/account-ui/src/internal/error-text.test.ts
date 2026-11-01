@@ -34,9 +34,12 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { createElement, type ReactNode } from 'react'
+import { renderHook } from '@testing-library/react'
 import {
   SESSION_LIFECYCLE_ERROR_CODES,
   createI18n,
+  I18nextProvider,
   registerNamespace,
 } from '@speed/i18n'
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '../resources.js'
@@ -53,7 +56,14 @@ import authUiEnUS from '../../../auth-ui/src/locales/en-US.json' with { type: 'j
 // text as test data, the same way the auth-ui copies above are.
 import platformErrorsZhCN from '../../../i18n/src/platform-errors/locales/zh-CN.json' with { type: 'json' }
 import platformErrorsEnUS from '../../../i18n/src/platform-errors/locales/en-US.json' with { type: 'json' }
-import { ERROR_TEXT_CODES } from './error-text.js'
+import { ERROR_TEXT_CODES, useAccountUiErrorText } from './error-text.js'
+
+/**
+ * The one errors-section leaf with no single whitelisted code: the
+ * bare-HTTP family (client.http.<status>) resolves onto it, the whole
+ * status family sharing one parameterized key.
+ */
+const HTTP_FAMILY_LEAF = 'client.http'
 
 /** A language bundle's errors section, structural so both packages'
  * bundles (account-ui's own and the auth-ui bundles imported as test
@@ -127,7 +137,7 @@ const VERBATIM_CODES: readonly string[] = [
 
 describe('error-text whitelist', () => {
   it('keep the whitelist and the bundle errors leaves identical, in both languages', () => {
-    const expected = [...ERROR_TEXT_CODES].sort()
+    const expected = [...ERROR_TEXT_CODES, HTTP_FAMILY_LEAF].sort()
     expect(errorLeafKeys(zhCN)).toEqual(expected)
     expect(errorLeafKeys(enUS)).toEqual(expected)
   })
@@ -150,6 +160,45 @@ describe('error-text whitelist', () => {
       expect(en, code).not.toBe(`errors.${code}`)
       expect(en, code).toBe(bundleText(enUS, code))
     }
+  })
+
+  it('renders each bare-HTTP status distinctly, carrying its status code', () => {
+    // A non-2xx with no readable envelope arrives as client.http.<status>.
+    // It is outside the fixed whitelist, so without the parameterized
+    // family it would collapse onto errors.unknown; the family leaf keeps
+    // the status visible and keeps different statuses apart.
+    const i18n = newInstance()
+    const { result } = renderHook(() => useAccountUiErrorText(), {
+      wrapper: ({ children }: { readonly children: ReactNode }) =>
+        createElement(I18nextProvider, { i18n }, children),
+    })
+    const notAllowed = result.current('client.http.405')
+    const unauthorized = result.current('client.http.401')
+    const serverError = result.current('client.http.500')
+    expect(notAllowed).toContain('405')
+    expect(unauthorized).toContain('401')
+    expect(serverError).toContain('500')
+    expect(new Set([notAllowed, unauthorized, serverError]).size).toBe(3)
+    expect(notAllowed).not.toBe(zhCN.errors.unknown)
+    expect(notAllowed).not.toContain('client.http')
+  })
+
+  it('names the wait a throttled ratelimit answer stated', () => {
+    // The address and quota layers refuse a throttled request with
+    // ratelimit.throttled and a Retry-After; the sentence names how long
+    // the caller must wait rather than only restating the refusal.
+    const i18n = newInstance()
+    const { result } = renderHook(() => useAccountUiErrorText(), {
+      wrapper: ({ children }: { readonly children: ReactNode }) =>
+        createElement(I18nextProvider, { i18n }, children),
+    })
+    expect(result.current('ratelimit.throttled', 45)).toBe(
+      zhCN.throttle.retryAfter.replace('{{seconds}}', '45'),
+    )
+    expect(result.current('ratelimit.throttled', 45)).toContain('45')
+    expect(result.current('ratelimit.throttled', 45)).not.toBe(
+      zhCN.errors.unknown,
+    )
   })
 
   it('compose the shared session-lifecycle family and resolve each code to its own text', async () => {

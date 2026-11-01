@@ -195,6 +195,25 @@ function makeReadyAfterFirstFactorResponder(overrides: {
   }
 }
 
+/** The 429 the ratelimit layer answers a throttled request with: the
+ * platform problem type and the wait its Retry-After names. */
+function throttledResponse(retryAfterSeconds: number): Response {
+  return new Response(
+    JSON.stringify({
+      type: 'urn:speed:ratelimit:throttled',
+      title: 'Too Many Requests',
+      status: 429,
+    }),
+    {
+      status: 429,
+      headers: {
+        'content-type': 'application/problem+json',
+        'retry-after': String(retryAfterSeconds),
+      },
+    },
+  )
+}
+
 function mount(
   respond: RealResponder,
   handlers: {
@@ -672,6 +691,65 @@ describe('StepUpChallenge', () => {
     )
     // Exactly one answer was refused; a duplicated answer would warn again.
     expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds the submit for the wait a throttled answer stated', async () => {
+    // The ratelimit layer refuses a throttled answer with 429 and a
+    // Retry-After. The dialog names the wait in its banner, keeps the step
+    // form but disables its submit until the interval elapses, then clears
+    // the failure and makes the step answerable again.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({
+        advanceTimers: vi.advanceTimersByTimeAsync,
+      })
+      mount(
+        makeStepUpResponder({ codeAnswer: () => throttledResponse(30) }),
+      )
+
+      await user.click(
+        await screen.findByRole('button', { name: 'Authenticator app' }),
+      )
+      await user.type(
+        await screen.findByLabelText(zhCN.flowStep.codeLabel),
+        '000000',
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+      )
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(
+        zhCN.throttle.retryAfter.replace('{{seconds}}', '30'),
+      )
+      // The step stays on screen, but its submit is held until the wait
+      // elapses.
+      expect(screen.getByLabelText(zhCN.flowStep.codeLabel)).toBeTruthy()
+      const submit = screen.getByRole('button', {
+        name: zhCN.mfa.stepUp.confirmLabel,
+      }) as HTMLButtonElement
+      expect(submit.disabled).toBe(true)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000)
+      })
+      await waitFor(() => {
+        expect(
+          (
+            screen.getByRole('button', {
+              name: zhCN.mfa.stepUp.confirmLabel,
+            }) as HTMLButtonElement
+          ).disabled,
+        ).toBe(false)
+      })
+      // The wait is spent, so the banner falls back to the code's own
+      // wait-free sentence instead of a stale countdown.
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.errors.ratelimit.throttled,
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('offers a restart when the answer finds its flow gone', async () => {

@@ -96,6 +96,13 @@ export interface FlowStepProps {
   /** True while the answer is in flight; every control is disabled. */
   readonly busy: boolean
   /**
+   * True while the driver holds the step's primary action back without
+   * taking the form away -- a throttled answer's wait. The fields stay
+   * editable and a secondary control (cancel) stays usable; only the
+   * actions that would send another answer are disabled.
+   */
+  readonly submitDisabled?: boolean
+  /**
    * The answer step a step travels under: `answer` in the flow's first
    * factor, `factor` in its second, `enroll` in its registration. A
    * `challenge` step's input and a `webauthn` step's credential both use
@@ -126,6 +133,7 @@ export function FlowStep({
   step,
   sequence,
   busy,
+  submitDisabled = false,
   answerStep,
   submitLabel,
   onSubmit,
@@ -150,7 +158,7 @@ export function FlowStep({
           type="button"
           variant="contained"
           sx={primaryEndSx}
-          disabled={busy}
+          disabled={busy || submitDisabled}
           onClick={() => onSubmit({ step: 'complete' })}
         >
           {submitLabel}
@@ -171,7 +179,7 @@ export function FlowStep({
             type="button"
             variant="contained"
             sx={primaryEndSx}
-            disabled={busy || onRedirect === undefined}
+            disabled={busy || submitDisabled || onRedirect === undefined}
             onClick={() => onRedirect?.(step.url)}
           >
             {t('flowStep.continueLabel')}
@@ -189,7 +197,7 @@ export function FlowStep({
             key={factor.id}
             type="button"
             variant="outlined"
-            disabled={busy}
+            disabled={busy || submitDisabled}
             onClick={() => onSubmit({ step: 'factor', input: { factor: factor.id } })}
           >
             {factor.label ?? factorKindLabel(factor.kind, t)}
@@ -210,7 +218,7 @@ export function FlowStep({
             key={kind}
             type="button"
             variant="outlined"
-            disabled={busy}
+            disabled={busy || submitDisabled}
             onClick={() => onSubmit({ step: 'enroll', input: { kind } })}
           >
             {factorKindLabel(kind, t)}
@@ -269,7 +277,9 @@ export function FlowStep({
               type="button"
               variant="contained"
               sx={primaryEndSx}
-              disabled={busy || (values.code ?? '').trim() === ''}
+              disabled={
+                busy || submitDisabled || (values.code ?? '').trim() === ''
+              }
               onClick={() =>
                 onSubmit({ step: answerStep, input: { code: (values.code ?? '').trim() } })
               }
@@ -285,6 +295,7 @@ export function FlowStep({
         options={options}
         sequence={sequence}
         busy={busy}
+        submitDisabled={submitDisabled}
         answerStep={answerStep}
         submitLabel={submitLabel}
         onSubmit={onSubmit}
@@ -326,7 +337,7 @@ export function FlowStep({
             type="submit"
             variant="contained"
             sx={primaryEndSx}
-            disabled={busy}
+            disabled={busy || submitDisabled}
           >
             {submitLabel}
           </Button>
@@ -343,6 +354,8 @@ interface PasskeyPromptProps {
    * challenge is a new ceremony while an ordinary re-render is not. */
   readonly sequence: number
   readonly busy: boolean
+  /** True while a throttled answer's wait holds the start/retry action back. */
+  readonly submitDisabled?: boolean
   readonly answerStep: string
   readonly submitLabel: string
   readonly onSubmit: (answer: FlowStepAnswer) => void
@@ -377,6 +390,7 @@ function PasskeyPrompt({
   options,
   sequence,
   busy,
+  submitDisabled = false,
   answerStep,
   submitLabel,
   onSubmit,
@@ -534,7 +548,7 @@ function PasskeyPrompt({
             type="button"
             variant="contained"
             sx={secondaryAction === undefined ? undefined : { marginLeft: 'auto' }}
-            disabled={busy}
+            disabled={busy || submitDisabled}
             onClick={() => void run()}
           >
             {errorKey === null ? submitLabel : t('flowStep.passkeyRetry')}

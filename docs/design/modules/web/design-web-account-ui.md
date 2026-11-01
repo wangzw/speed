@@ -264,11 +264,11 @@ sequenceDiagram
 
 ## 错误与失败语义
 
-**失败面是一个错误码白名单加受守卫的词表。** 每条服务端与传输失败解析成一个错误码，渲染在一条 `role="alert"` 横幅里；通行密钥仪式的失败是唯一的客户端来源，文本取自本包 bundle 的键，不经白名单；白名单外的码渲染 `errors.unknown`，永不渲染裸键。白名单含 `authn.contact_required`：未验证账户发起外部身份绑定被拒时渲染该码文案，提示先验证邮箱。因素种类与渠道同样受守卫：列表行只在组件已知的取值表上才经 `t()` 渲染，否则渲染通用的其它标签；流程步渲染器里已知的字段名与因素种类经 `t()` 渲染、未知的按服务端原值呈现，因素选项自带的 `label` 优先。
+**失败面是一个错误码白名单加受守卫的词表。** 每条服务端与传输失败解析成一个错误码，渲染在一条 `role="alert"` 横幅里；通行密钥仪式的失败是唯一的客户端来源，文本取自本包 bundle 的键，不经白名单；白名单外的码渲染 `errors.unknown`，永不渲染裸键，唯一例外是 `client.http.<status>`：它走参数化的 `errors.client.http` 叶子并带上状态码，不落到 `errors.unknown`。白名单含 `authn.contact_required`：未验证账户发起外部身份绑定被拒时渲染该码文案，提示先验证邮箱。因素种类与渠道同样受守卫：列表行只在组件已知的取值表上才经 `t()` 渲染，否则渲染通用的其它标签；流程步渲染器里已知的字段名与因素种类经 `t()` 渲染、未知的按服务端原值呈现，因素选项自带的 `label` 优先。
 
 | 情形 | 表现 |
 |---|---|
-| 一次写被拒（`authn.bad_request`、`authn.throttled`、`authn.unavailable`、`client.*`） | 一条横幅渲染错误码文本，相关查询在选择处失效 |
+| 一次写被拒（`authn.bad_request`、`authn.throttled`、`ratelimit.throttled`、`authn.unavailable`、`client.http.<status>`） | 一条横幅渲染错误码文本（`client.http.<status>` 渲染带状态码的参数化句子），相关查询在选择处失效 |
 | 一次发送缺少、无效、过期或已用的人机证明（403 `human-verification-required`） | 一条横幅渲染 `authn.human_verification_required` 的文本；块取得新证明后发送可重试 |
 | 需要新鲜认证的自助写被答 401 `authn.insufficient_user_authentication` | 打开提权对话框，成功后重跑那次被拒的写一次 |
 | 经提权门控的自助写（`PasswordSection`、`IdentifiersSection`）被答 401 `authn.sso_required` | 打开企业单点登录对话框：点名该要求并给重新登录出口，不读因素、不起流程、不重跑那次写。这条只属于驱动提权门控的节；`ProfileSection` 与 `PreferencesSection` 不接会话、无门控 |
@@ -303,6 +303,7 @@ sequenceDiagram
 | 读本人因素失败 | 不判定为没有因素，照常发起流程，由服务端的拒绝决定 |
 | 加强认证流程的起手被 401 `authn.insufficient_user_authentication` 拒绝（有因素，但没有能强化本会话的） | 对话框判定本部署无法完成升级，给出重新登录的出口，不渲染步骤表单 |
 | 加强认证流程的起手因其它的原因失败（400 等） | 一条横幅渲染错误码文本 |
+| 加强认证流程的起手或答复被 429 `ratelimit.throttled` 拒绝 | 一条横幅渲染等待句并点名 `Retry-After` 给出的剩余秒数；对话框在该时长内禁用这一步的提交（字段与取消仍可用），倒计时到点后恢复可提交，横幅改渲染该码自己的无秒数句子 |
 | 删除因素时它是账户最后一个 | 一条横幅渲染该错误码文本，服务端判定 |
 | 偏好写入被拒（`authn.bad_request`） | 一条失败横幅，控件退回存下的值（天然回退，无撤销记账） |
 | 绑定回调读不到流程，宿主给了 `absent`，且发现文档里没有 `kind=redirect` 的方法 | 渲染 `absent` |
@@ -338,6 +339,8 @@ sequenceDiagram
 | 各节的反馈作用域与成功确认 | 已实现 | `web/packages/account-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion`；`web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection`；`web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection`；`web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`；`web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`；`web/packages/account-ui/src/SessionsSection.tsx` `SessionsSection`；`web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |
 | 读的刷新失败的陈旧提示 | 已实现 | `web/packages/account-ui/src/internal/async-section.tsx` `AccountAsyncSection`；`web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection`；`web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`；`web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection`；`web/packages/account-ui/src/SessionsSection.tsx` `SessionsSection`；`web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/MfaSection.tsx` `MfaSection` |
 | 错误白名单组合会话生命周期码族及其双语文案 | 已实现 | `web/packages/account-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`、`useAccountUiErrorText`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `errors.authn.session_not_found`、`errors.authn.session_revoked`、`errors.authn.token_expired`、`errors.authn.refresh_token_invalid`、`errors.authn.refresh_token_reused` |
+| 裸 HTTP 状态经 `errors.client.http` 参数化叶子渲染 | 已实现 | `web/packages/account-ui/src/internal/error-text.ts` `useAccountUiErrorText`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `errors.client.http` |
+| 429 限流拒绝的等待倒计时与提权对话框的提交禁用 | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp`；`web/packages/account-ui/src/internal/step-up-challenge.tsx` `StepUpFlow`；`web/packages/account-ui/src/internal/error-text.ts` `WAIT_CODES` |
 | 提权对话框 `StepUpDialog` 外导（只给宿主用） | 已实现 | `web/packages/account-ui/src/internal/step-up-challenge.tsx`；`web/packages/account-ui/src/index.ts` |
 | 「验证码已发送」的 live region 与焦点 | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`；`web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 绑定回调完成阶段的成功文案 | 已实现 | `web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |

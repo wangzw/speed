@@ -35,7 +35,11 @@
     "client": {
       "network": "No network connection. Check your connection and try again.",
       "timeout": "That took too long to finish. Please try again later.",
-      "protocol": "The service ran into a problem. Try again in a moment."
+      "protocol": "The service ran into a problem. Try again in a moment.",
+      "http": "The service answered with an error ({{status}}). Please try again later."
+    },
+    "ratelimit": {
+      "throttled": "Too many attempts. Please try again later."
     },
     "unknown": "Something went wrong. Please try again later."
   },

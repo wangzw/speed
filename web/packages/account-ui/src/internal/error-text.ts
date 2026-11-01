@@ -16,12 +16,15 @@
  * throttled for the shared rate limiter, unavailable for a dependency
  * that could not answer) -- plus the transport-level client.network /
  * client.timeout / client.protocol codes of the @speed/api-client
- * contract, maps, one bundle key per code, under the errors section
- * ('errors.authn.bad_request' and so on). Codes outside the whitelist --
- * a future authn code, a client.http.<status> answer, a non-ApiError
- * throw -- resolve to 'errors.unknown', so the bundle can never render a
- * raw key and a missing translation never leaks another language's text
- * or an English fallback.
+ * contract and the platform-level `ratelimit.throttled` the address and
+ * quota layers answer a throttled request with, maps, one bundle key per
+ * code, under the errors section ('errors.authn.bad_request' and so on).
+ * A `client.http.<status>` answer -- the bare non-2xx the client
+ * synthesizes -- resolves through its own parameterized leaf, carrying the
+ * status so a 405, 401 and 500 stay distinguishable. Codes outside the
+ * whitelist -- a future authn code, a non-ApiError throw -- resolve to
+ * 'errors.unknown', so the bundle can never render a raw key and a missing
+ * translation never leaks another language's text or an English fallback.
  *
  * The whitelist composes the shared session-lifecycle and client-transport
  * families (both exported by @speed/i18n) with this surface's own authn
@@ -94,6 +97,9 @@ export const ERROR_TEXT_CODES = [
   'authn.throttled',
   'authn.unavailable',
   'authn.human_verification_required',
+  // The shared platform-level refusal the ratelimit layer answers a
+  // throttled request with, whichever surface the request came from.
+  'ratelimit.throttled',
   // The shared signed-in-surface families: a session that dies mid-flight
   // and the transport-level failures of the api-client contract (see
   // @speed/i18n's error-text module).
@@ -104,14 +110,24 @@ export const ERROR_TEXT_CODES = [
 const KNOWN_CODES = new Set<string>(ERROR_TEXT_CODES)
 
 /**
+ * The bundle leaf the bare non-2xx family resolves through: the
+ * api-client synthesizes `client.http.<status>` for a response with no
+ * readable envelope, and the shared resolver carries the status into the
+ * namespace's parameterized leaf -- keeping a 405, 401 and 500
+ * distinguishable instead of collapsing, with every other unlisted code,
+ * onto the single unknown line.
+ */
+const HTTP_FAMILY_KEY = 'errors.client.http'
+
+/**
  * The code-to-text resolver hook: call with an ApiError code and get the
  * current-language text ('errors.unknown' for anything unlisted).
  */
-/** The leaves that name a throttled answer's wait, and the code that
- * carries one. */
+/** The leaves that name a throttled answer's wait, and the codes that
+ * carry one. */
 const WAIT_KEY = 'throttle.retryAfter'
 const WAIT_LONG_KEY = 'throttle.retryAfterLong'
-const WAIT_CODES = ['authn.throttled'] as const
+const WAIT_CODES = ['authn.throttled', 'ratelimit.throttled'] as const
 
 export function useAccountUiErrorText(): (
   code: string,
@@ -119,6 +135,7 @@ export function useAccountUiErrorText(): (
 ) => string {
   const { t } = useAccountUiTranslation()
   return createErrorTextResolver(t, KNOWN_CODES, {
+    httpFamily: { key: HTTP_FAMILY_KEY },
     wait: { key: WAIT_KEY, longKey: WAIT_LONG_KEY, codes: WAIT_CODES },
   })
 }

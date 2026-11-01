@@ -20,6 +20,12 @@ export interface InlineErrorProps {
   /** The code to render, or null for no error (renders nothing). */
   readonly code: string | null
   /**
+   * The wait a throttled answer stated, in whole seconds. Given, the
+   * resolver renders the sentence that names it instead of the code's
+   * plain text.
+   */
+  readonly retryAfterSeconds?: number
+  /**
    * Text rendered instead of the code's resolved sentence, for a surface
    * that words this particular code for itself. The banner shell, its role
    * and its announcement stay the shared ones.
@@ -28,12 +34,13 @@ export interface InlineErrorProps {
 }
 
 /** The surface's whole-attempt failure banner, one role="alert" per error. */
-export function InlineError({ code, message }: InlineErrorProps) {
+export function InlineError({ code, retryAfterSeconds, message }: InlineErrorProps) {
   const resolve = useAccountUiErrorText()
   return (
     <SharedInlineError
       code={code}
       resolve={message === undefined ? resolve : () => message}
+      retryAfterSeconds={retryAfterSeconds}
     />
   )
 }
