@@ -369,9 +369,9 @@ function StepUpFlow({
 
   const starting = phase === 'starting' || checking || readingSession
   // A throttled answer names how long the caller must hold off: the
-  // banner counts that wait down and the step's submit stays disabled
-  // until it elapses, then the submit returns and the banner renders the
-  // code's own wait-free sentence.
+  // banner renders the code's own wait-free sentence once, the remaining
+  // seconds tick outside its live region, and the step's submit stays
+  // disabled until the wait elapses.
   const waiting = retryAfterSeconds !== null
   // The flow reached its ready state and the hook is answering its
   // `complete` step on its own: the starting placeholder covers that answer

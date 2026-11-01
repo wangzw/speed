@@ -298,9 +298,9 @@ function StepUpFlow({
   // a server failure is the only source left.
   const serverFailure = errorCode !== null && ceremonyError === null
   // A throttled answer names how long the caller must hold off: the banner
-  // counts that wait down and the primary action stays disabled until it
-  // elapses, then the action returns and the banner renders the code's own
-  // wait-free sentence.
+  // renders the code's own wait-free sentence once, the remaining seconds
+  // tick outside its live region, and the primary action stays disabled
+  // until the wait elapses.
   const waiting = retryAfterSeconds !== null
 
   // The unavailable phase's one action: end the session -- forgetting the
