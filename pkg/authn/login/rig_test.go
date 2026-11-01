@@ -732,6 +732,15 @@ func (r *rig) allow(id authn.AccountID) {
 	r.accounts.byID[id] = authn.Account{ID: id, Kind: authn.KindUser, Status: authn.StatusActive}
 }
 
+// allowWithPassword puts an active account holding a password credential in the
+// fake store, which is the account a step-up can ask to prove its password
+// again.
+func (r *rig) allowWithPassword(id authn.AccountID) {
+	r.accounts.byID[id] = authn.Account{
+		ID: id, Kind: authn.KindUser, Status: authn.StatusActive, PasswordSet: true,
+	}
+}
+
 // send issues one request through the mounted routes.
 func (r *rig) send(method, path, body string, hdr ...string) *httptest.ResponseRecorder {
 	r.t.Helper()

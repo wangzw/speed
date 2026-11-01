@@ -466,9 +466,16 @@ func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw 
 // decidePolicy sets the flow's next state from the multi-factor policy. A login
 // with a second factor becomes second, a login the policy requires a factor of
 // becomes enroll, and every other purpose and a login with no factor requirement
-// becomes ready.
+// becomes ready. A step-up that started at the password because every factor was
+// registered during the session offers those factors as its second step once the
+// password has been proved again.
 func (r *routes) decidePolicy(ctx context.Context, rec *record, proof authn.Proof) error {
 	if rec.Purpose != authn.PurposeLogin {
+		if rec.Purpose == authn.PurposeStepUp && len(rec.MFA.Offered) > 0 {
+			rec.State = stateSecond
+			rec.MFA.Required = true
+			return nil
+		}
 		rec.State = stateReady
 		return nil
 	}

@@ -489,20 +489,104 @@ func TestStepUpWithASecondFactorCompletes(t *testing.T) {
 	}
 }
 
-// TestAStepUpWithNoUsableFactorIsRefused holds that an account whose factors were
-// all registered during the current session cannot step up with them.
-func TestAStepUpWithNoUsableFactorIsRefused(t *testing.T) {
+// TestAStepUpWithOnlyFactorsRegisteredThisSessionReprovesThePassword holds that
+// an account whose factors were all activated after the session authenticated
+// does not have its step-up refused: the flow starts at the password and offers
+// those factors as the second step once the password is proved again.
+func TestAStepUpWithOnlyFactorsRegisteredThisSessionReprovesThePassword(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("password", nil, authn.Field{Name: "password", Kind: authn.FieldPassword, Required: true}), nil
+	}
+	m.ans = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+	}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allowWithPassword("acct1")
+	r.mfa.outcome = authn.MFAFactor
+	// A factor activated after the session's own authentication time may
+	// strengthen it only once the password is proved again.
+	r.mfa.offered = []authn.FactorRecord{{
+		ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive, ActivatedAt: time.Now().Add(time.Minute),
+	}}
+	r.mfa.assurance = authn.MFAResult{Assurance: authn.AssuranceMulti}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"step-up"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("a step-up with only factors registered this session answered %d, want 200: %s", start.Code, start.Body.String())
+	}
+	body := decode(t, start.Body.String())
+	if body["state"] != "first" {
+		t.Fatalf("the step-up state is %v, want first: the password is proved again", body["state"])
+	}
+	if k := body["next"].(map[string]any)["kind"]; k != "challenge" {
+		t.Fatalf("the start answered next kind %v, want the password challenge", k)
+	}
+	cookie := flowCookie(t, start)
+	seq := int(body["seq"].(float64))
+
+	answered := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"answer","input":{"password":"secret"}}`, "Cookie", cookie)
+	if answered.Code != http.StatusOK {
+		t.Fatalf("the password answer answered %d: %s", answered.Code, answered.Body.String())
+	}
+	answeredBody := decode(t, answered.Body.String())
+	if answeredBody["state"] != "second" {
+		t.Fatalf("the flow state after the password is %v, want second: the new factor is offered", answeredBody["state"])
+	}
+	next := answeredBody["next"].(map[string]any)
+	if k := next["kind"]; k != "factor" {
+		t.Fatalf("the password answer offered next kind %v, want factor", k)
+	}
+	factors := next["factors"].([]any)
+	if len(factors) != 1 || factors[0].(map[string]any)["id"] != "f1" {
+		t.Fatalf("the offered factors are %v, want f1", factors)
+	}
+	seq = int(answeredBody["seq"].(float64))
+
+	challenge := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"factor","input":{"factor":"f1"}}`, "Cookie", cookie)
+	if challenge.Code != http.StatusOK {
+		t.Fatalf("the factor challenge answered %d: %s", challenge.Code, challenge.Body.String())
+	}
+	seq = int(decode(t, challenge.Body.String())["seq"].(float64))
+	passed := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"factor","input":{"factor":"f1","code":"123456"}}`, "Cookie", cookie)
+	if passed.Code != http.StatusOK {
+		t.Fatalf("the factor pass answered %d: %s", passed.Code, passed.Body.String())
+	}
+	seq = int(decode(t, passed.Body.String())["seq"].(float64))
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the step-up completion answered %d: %s", done.Code, done.Body.String())
+	}
+	if len(r.sessions.elevated) != 1 {
+		t.Fatalf("the step-up elevated %d sessions, want one", len(r.sessions.elevated))
+	}
+	if r.sessions.elevated[0].Assurance != authn.AssuranceMulti {
+		t.Errorf("the elevation is %v, want multi-factor", r.sessions.elevated[0].Assurance)
+	}
+}
+
+// TestAStepUpWithNoPasswordIsRefused holds the boundary: an account with no
+// password to prove again has no first factor that lets factors registered
+// during the session strengthen it, so the step-up is refused and the person
+// re-establishes the session instead.
+func TestAStepUpWithNoPasswordIsRefused(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
 	r.loginAsAuthenticated("acct1", "sid")
+	r.allow("acct1") // an account row without a password credential
 	r.mfa.outcome = authn.MFAFactor
-	// A factor activated after the session's own authentication time cannot
-	// strengthen it.
-	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP, ActivatedAt: time.Now().Add(time.Minute)}}
+	r.mfa.offered = []authn.FactorRecord{{
+		ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive, ActivatedAt: time.Now().Add(time.Minute),
+	}}
 
 	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"step-up"}`)
 	if start.Code != http.StatusUnauthorized {
-		t.Errorf("a step-up with no usable factor answered %d, want 401: %s", start.Code, start.Body.String())
+		t.Errorf("a step-up with no password answered %d, want 401: %s", start.Code, start.Body.String())
 	}
 }
 

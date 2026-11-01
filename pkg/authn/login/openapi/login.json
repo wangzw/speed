@@ -1168,11 +1168,11 @@
                     "additionalProperties": {
                       "type": "string"
                     },
-                    "description": "The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes.",
+                    "description": "The fields the started step takes, as name-to-value strings: the method's first step for `link` and for a step-up that starts at the first factor, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes.",
                     "type": "object"
                   },
                   "method": {
-                    "description": "The method to run for `link`, and for a `step-up` of an account that holds no factor. For an enrollment it is not read, and for a step-up the policy answers with usable factors it is not read either; a step-up whose account holds factors but none usable for this session is refused with 401 insufficient_user_authentication before the method is consulted. A name the deployment does not take in is a 400 bad-request.",
+                    "description": "The method to run for `link`, and for a `step-up` of an account that holds no factor. For an enrollment it is not read, and for a step-up the engine starts at the second factor when the session may use a factor the account registered before it authenticated. A step-up whose account holds factors registered during this session re-proves the account's password and then offers those factors; the member is not read for that step, and an account with no password is refused with 401 insufficient_user_authentication. A name the deployment does not take in is a 400 bad-request.",
                     "type": "string"
                   },
                   "purpose": {

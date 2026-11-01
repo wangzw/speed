@@ -234,7 +234,7 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 	case authn.PurposeEnroll:
 		rec.State = stateEnroll
 	case authn.PurposeStepUp:
-		start, stepUpOffered, insufficient, serr := r.stepUpStart(c.ctx, status, id.Account(), in.Method)
+		start, method, stepUpOffered, insufficient, serr := r.stepUpStart(c.ctx, status, id.Account(), in.Method)
 		if serr != nil {
 			r.fail(c, serr)
 			return c.result()
@@ -244,7 +244,7 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 			return c.result()
 		}
 		rec.State = start
-		rec.Method = in.Method
+		rec.Method = method
 		rec.MFA.Required = start == stateSecond
 		rec.MFA.Offered = stepUpOffered
 		offered = stepUpOffered
@@ -273,39 +273,71 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 	return c.result()
 }
 
-// stepUpStart decides where a step-up flow starts. It asks the policy with the
-// session's methods as the proof and the effective account as the requirement:
-// the effective account's factors decide whether a second factor is needed,
-// while the factors that may be offered are the ones the session's own account
-// (the operator, under an impersonation) holds. A usable factor keeps the flow
-// at the second factor, every other outcome starts it at the first factor with
-// the method the request named. insufficient reports that the account has
-// factors but none that may strengthen this session, which is the flow's
-// refusal.
-func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, requirement authn.AccountID, method string) (start string, offered []factorView, insufficient bool, err error) {
-	first := authn.Proof{Methods: status.Methods}
-	outcome, factors, err := r.mfa.Require(ctx, status.Account, requirement, first)
+// stepUpStart decides where a step-up flow starts and which method a first
+// step runs. It asks the policy with the session's methods as the proof and the
+// effective account as the requirement: the effective account's factors decide
+// whether a second factor is needed, while the factors that may be offered are
+// the ones the session's own account (the operator, under an impersonation)
+// holds. A factor registered before the session authenticated keeps the flow at
+// the second factor. When every factor was registered during the session, the
+// flow starts at the password instead and offers those factors as the second
+// step: proving the password again is what lets them strengthen the session. An
+// account with no password to prove again is refused as insufficient, the same
+// answer as an account with factors none of which may strengthen this session.
+func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, requirement authn.AccountID, requested string) (start, method string, offered []factorView, insufficient bool, err error) {
+	firstProof := authn.Proof{Methods: status.Methods}
+	outcome, factors, err := r.mfa.Require(ctx, status.Account, requirement, firstProof)
 	if err != nil {
-		return "", nil, false, err
+		return "", "", nil, false, err
 	}
 	if outcome == authn.MFAFactor {
 		usable := make([]authn.FactorRecord, 0, len(factors))
 		for _, f := range factors {
 			// A factor activated at or after the session's authentication time
-			// was registered during that login and may not strengthen it.
+			// was registered during that login and may not strengthen it until
+			// the account proves its password again.
 			if f.ActivatedAt.Before(status.AuthTime) {
 				usable = append(usable, f)
 			}
 		}
-		if len(usable) == 0 {
-			return "", nil, true, nil
+		if len(usable) > 0 {
+			return stateSecond, "", factorViews(usable), false, nil
 		}
-		return stateSecond, factorViews(usable), false, nil
+		// No factor may strengthen the session yet. A non-empty list with no
+		// factor activated before the session authenticated is the case a
+		// password proved again unlocks.
+		if len(factors) == 0 {
+			return "", "", nil, true, nil
+		}
+		hasPassword, perr := r.accountHasPassword(ctx, status.Account)
+		if perr != nil {
+			return "", "", nil, false, perr
+		}
+		if !hasPassword {
+			return "", "", nil, true, nil
+		}
+		if _, ok := r.method(methodPassword); !ok {
+			return "", "", nil, true, nil
+		}
+		return stateFirst, methodPassword, factorViews(factors), false, nil
 	}
-	if _, ok := r.method(method); !ok {
-		return "", nil, false, fmt.Errorf("%w: the step-up names a method not taken in", authn.ErrInvalidArgument)
+	if _, ok := r.method(requested); !ok {
+		return "", "", nil, false, fmt.Errorf("%w: the step-up names a method not taken in", authn.ErrInvalidArgument)
 	}
-	return stateFirst, nil, false, nil
+	return stateFirst, requested, nil, false, nil
+}
+
+// accountHasPassword reports whether the account can prove a password again:
+// it is an enabled user account holding a password credential.
+func (r *routes) accountHasPassword(ctx context.Context, account authn.AccountID) (bool, error) {
+	acct, err := r.accounts.Get(ctx, account)
+	switch {
+	case errors.Is(err, authn.ErrAccountNotFound):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("%w: %w", authn.ErrUnavailable, err)
+	}
+	return acct.Kind == authn.KindUser && acct.Status == authn.StatusActive && acct.PasswordSet, nil
 }
 
 // startRequirement checks the start requirement a purpose asks for. A link and
