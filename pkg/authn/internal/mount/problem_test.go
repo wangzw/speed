@@ -15,6 +15,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 func init() { gin.SetMode(gin.TestMode) }
@@ -408,6 +409,33 @@ func TestStepUpRequiredNamesTheSchemeTheLevelAndTheAge(t *testing.T) {
 				t.Errorf("type = %v", got)
 			}
 		})
+	}
+}
+
+// TestStepUpRequiredMarksItsAnswer holds the mark a layer charging by outcome
+// reads: the step-up 401 is marked, and the plain 401 writers leave the request
+// unmarked so it stays a refusal of a credential.
+func TestStepUpRequiredMarksItsAnswer(t *testing.T) {
+	var marked bool
+	serve(func(c *gin.Context) {
+		StepUpRequired(c, identityOf(t), authn.FreshFirstFactor())
+		marked = speedhttp.IsStepUp(c)
+	}, http.MethodGet, nil, nil)
+	if !marked {
+		t.Fatal("StepUpRequired left its answer unmarked, so a refuse-by-outcome layer would charge it as a stuffed credential")
+	}
+}
+
+func TestUnauthorizedDoesNotMarkItsAnswer(t *testing.T) {
+	for _, code := range []string{"", CodeLoginFailed, CodeFlowInvalid, CodeLinkRequired} {
+		var marked bool
+		serve(func(c *gin.Context) {
+			Unauthorized(c, "main", code)
+			marked = speedhttp.IsStepUp(c)
+		}, http.MethodGet, nil, nil)
+		if marked {
+			t.Errorf("Unauthorized with code %q marked its answer as a step-up", code)
+		}
 	}
 }
 
