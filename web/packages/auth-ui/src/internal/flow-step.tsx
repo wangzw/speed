@@ -18,12 +18,15 @@
  *  - `factor`     -> one button per offered second factor; choosing one
  *    sends its id and opens the factor's own challenge.
  *  - `enroll`     -> one button per registerable factor kind.
- *  - `webauthn`   -> the factor's own JSON. TOTP's otpauth_uri is
- *    rendered as text beside a code field. A passkey's public-key options
- *    are driven by the WebAuthn ceremony (@speed/auth-core/webauthn) --
- *    the browser's own API, no dependency -- whose credential is reported
- *    under the answer step the record's state names. The same surface
- *    renders a passkey login's first step and a passkey enrollment.
+ *  - `webauthn`   -> the factor's own JSON. TOTP's otpauth_uri is parsed
+ *    by @speed/auth-core/otpauth and rendered as a scannable QR symbol
+ *    with a manual-entry disclosure for its base32 secret, beside a
+ *    six-digit code field -- the step's JSON is never shown as a blob. A
+ *    passkey's public-key options are driven by the WebAuthn ceremony
+ *    (@speed/auth-core/webauthn) -- the browser's own API, no dependency
+ *    -- whose credential is reported under the answer step the record's
+ *    state names. The same surface renders a passkey login's first step
+ *    and a passkey enrollment.
  *  - `complete`   -> nothing: the driver takes a ready step's result.
  *  - `redirect`   -> the host owns navigation; a redirect step that
  *    reaches this renderer (a callback route opened before the provider
@@ -73,7 +76,7 @@
  * leaves the current one unspent.
  */
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
@@ -89,9 +92,14 @@ import {
   FormField,
   FormLayout,
   HumanVerification as HumanVerificationBlock,
+  TotpEnrollmentPanel,
 } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './translation.js'
 import { fieldHelp, fieldLabel, methodLabel } from './labels.js'
+import {
+  formatSecretForDisplay,
+  parseOtpauth,
+} from '@speed/auth-core/otpauth'
 import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
 import type { OpenFlowState } from './flow.js'
 import { answerSends, stepMaySend } from './flow.js'
@@ -442,8 +450,19 @@ export function FlowStepFields({
   }
 }
 
-/** The TOTP enrollment step: the otpauth_uri to add to an authenticator
- * app, rendered as text, plus a code field for the six-digit answer. */
+/**
+ * The TOTP enrollment step: the step's `otpauth_uri` as a scannable QR
+ * symbol, a disclosure that shows the parsed base32 secret for hand entry
+ * with a copy control, and the six-digit code field the app generates.
+ *
+ * This wrapper owns the parse and the wording; the shared panel in
+ * @speed/ui-kit owns the layout. The URI is never rendered as text: the
+ * panel shows the parsed parts alone. A URI that does not parse renders
+ * neither the symbol nor the manual block, and withholds the guidance that
+ * names a code to scan, so the panel never advertises a code it did not
+ * draw. The code field stays. The code is submitted only by the confirm
+ * control, never on typing.
+ */
 function TotpFields({
   options,
   busy,
@@ -457,40 +476,58 @@ function TotpFields({
 }) {
   const { t } = useAuthUiTranslation()
   const [value, setValue] = useState('')
+  const uri = otpauthUriOf(options)
+  const otpauth = useMemo(() => {
+    if (uri === null) {
+      return null
+    }
+    const parsed = parseOtpauth(uri)
+    return parsed.ok ? parsed.otpauth : null
+  }, [uri])
+
+  const parameters =
+    otpauth === null
+      ? undefined
+      : [
+          { label: t('signInFlow.totpAlgorithm'), value: otpauth.algorithm },
+          { label: t('signInFlow.totpDigits'), value: String(otpauth.digits) },
+          { label: t('signInFlow.totpPeriod'), value: String(otpauth.period) },
+        ]
+
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}>
-      <Typography variant="body2" color="text.secondary">
-        {t('signInFlow.enrollTotpHelp')}
-      </Typography>
-      <Typography
-        variant="body2"
-        component="pre"
-        sx={(theme) => ({
-          fontFamily: theme.typography.fontFamilyMono,
-          wordBreak: 'break-all',
-          whiteSpace: 'pre-wrap',
-          m: 0,
-        })}
-      >
-        {safeJson(options)}
-      </Typography>
-      <TextField
-        label={t('signInFlow.codeLabel')}
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        disabled={busy}
-        fullWidth
-        autoComplete="off"
-      />
-      <Button
-        type="button"
-        variant="contained"
-        disabled={busy || value.trim() === ''}
-        onClick={() => onAnswer({ code: value.trim() })}
-      >
-        {submit}
-      </Button>
-    </Box>
+    <TotpEnrollmentPanel
+      otpauthUri={otpauth === null ? undefined : (uri ?? undefined)}
+      qrLabel={t('signInFlow.totpQrLabel')}
+      guidance={otpauth === null ? undefined : t('signInFlow.enrollTotpHelp')}
+      manualToggleLabel={t('signInFlow.totpManualToggle')}
+      secret={
+        otpauth === null
+          ? undefined
+          : {
+              value: otpauth.secret,
+              display: formatSecretForDisplay(otpauth.secret),
+            }
+      }
+      secretLabel={t('signInFlow.totpSecretLabel')}
+      copyLabel={t('signInFlow.totpCopyLabel')}
+      copiedLabel={t('signInFlow.totpCopiedLabel')}
+      copyVisibleLabel={t('signInFlow.totpCopyVisibleLabel')}
+      parameters={parameters}
+      codeLabel={t('signInFlow.codeLabel')}
+      code={value}
+      onCodeChange={setValue}
+      busy={busy}
+      primaryAction={
+        <Button
+          type="button"
+          variant="contained"
+          disabled={busy || value.trim() === ''}
+          onClick={() => onAnswer({ code: value.trim() })}
+        >
+          {submit}
+        </Button>
+      }
+    />
   )
 }
 
@@ -518,14 +555,16 @@ function TotpFields({
  * Unmount abandons the ceremony the same way: the attempt is invalidated
  * and the browser is asked to give it up, so a ceremony that settles after
  * the surface is gone answers nothing and completes nothing.
- * A browser without WebAuthn, a cancelled or dismissed ceremony and a
- * failed ceremony each report their own bundle key to the channel's
- * feedback scope, which renders it as the step's failure banner; the retry
- * action runs the ceremony again against the same step and clears it. The
- * scope keeps this client-side message mutually exclusive with the
- * channel's server failure banner (see ./write-feedback). The prompt names
- * the ceremony the step asks for: a login assertion or a passkey to
- * register. */
+ * A browser without WebAuthn, a cancelled or dismissed ceremony, a device
+ * that already holds an excluded credential and a failed ceremony each
+ * report their own bundle key to the channel's feedback scope, which
+ * renders it as the step's failure banner; the retry action runs the
+ * ceremony again against the same step and clears it. The generic failure
+ * sentence names the ceremony, so a failed registration does not read as a
+ * failed sign-in. The scope keeps this client-side message mutually
+ * exclusive with the channel's server failure banner (see ./write-feedback).
+ * The prompt names the ceremony the step asks for too: a login assertion or
+ * a passkey to register. */
 function PasskeyFields({
   options,
   sequence,
@@ -549,6 +588,10 @@ function PasskeyFields({
   readonly onClientFailure?: (key: string | null) => void
 }) {
   const { t } = useAuthUiTranslation()
+  // The ceremony the step asks for: a passkey login's assertion, or a
+  // passkey to register. The prompt and the generic failure sentence both
+  // name it.
+  const registering = webauthnStepOf(options) === 'register'
   // Assertion steps start on arrival, so the first render is already the
   // waiting state: the start control never flashes before the effect below
   // begins the ceremony.
@@ -619,7 +662,7 @@ function PasskeyFields({
       }
     } catch (failure) {
       if (pendingRef.current?.attempt === attempt) {
-        onClientFailure?.(webauthnErrorKey(failure))
+        onClientFailure?.(webauthnErrorKey(failure, registering))
       }
     } finally {
       if (pendingRef.current?.attempt === attempt) {
@@ -671,7 +714,7 @@ function PasskeyFields({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}>
       <Typography variant="body2" color="text.secondary">
-        {webauthnStepOf(options) === 'register'
+        {registering
           ? t('signInFlow.passkeyRegisterPrompt')
           : t('signInFlow.passkeyPrompt')}
       </Typography>
@@ -732,29 +775,40 @@ function assertionKey(options: unknown, sequence: number): string | null {
   return `assert:${sequence}:${challenge}`
 }
 
-/** The bundle key of the message a failed ceremony renders. */
-function webauthnErrorKey(failure: unknown): string {
+/** The bundle key of the message a failed ceremony renders, by the reason it
+ * carries and the ceremony it ran: a failed registration and a failed
+ * sign-in read differently, and a device that already holds the credential
+ * names its own remedy. */
+function webauthnErrorKey(failure: unknown, registering: boolean): string {
   if (failure instanceof WebauthnError) {
     switch (failure.reason) {
       case 'unsupported':
         return 'signInFlow.passkeyUnsupported'
       case 'cancelled':
         return 'signInFlow.passkeyCancelled'
+      case 'already-registered':
+        return 'signInFlow.passkeyAlreadyRegistered'
       default:
-        return 'signInFlow.passkeyFailed'
+        return registering
+          ? 'signInFlow.passkeyFailedRegister'
+          : 'signInFlow.passkeyFailedSignIn'
     }
   }
-  return 'signInFlow.passkeyFailed'
+  return registering
+    ? 'signInFlow.passkeyFailedRegister'
+    : 'signInFlow.passkeyFailedSignIn'
 }
 
-/** JSON for display; a value JSON cannot carry renders as its string form
- * rather than throwing out of the render. */
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2) ?? String(value)
-  } catch {
-    return String(value)
+/** The TOTP setup URI a step's options carry, or null when they carry none.
+ * Only this one field of the step's JSON is rendered: the options are the
+ * flow engine's answer, not a document to show, so a step without a usable
+ * URI renders no payload at all. */
+function otpauthUriOf(options: unknown): string | null {
+  if (typeof options !== 'object' || options === null) {
+    return null
   }
+  const uri = (options as Record<string, unknown>).otpauth_uri
+  return typeof uri === 'string' && uri !== '' ? uri : null
 }
 
 interface ChallengeFieldsProps {

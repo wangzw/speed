@@ -21,6 +21,7 @@ import userEvent from '@testing-library/user-event'
 import type { AuthnField, AuthnStep } from '@speed/auth-core'
 import { createAppTheme } from '@speed/ui-kit'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
+import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { FlowStepFields } from './flow-step.js'
 import type { OpenFlowState } from './flow.js'
@@ -773,6 +774,232 @@ describe('FlowStepFields passkey arrival', () => {
         .setup()
         .click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
       await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    } finally {
+      restore()
+    }
+  })
+})
+
+const TOTP_URI =
+  'otpauth://totp/Example%20Co:alice%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example%20Co'
+const TOTP_SECRET_DISPLAY = 'JBSW Y3DP EHPK 3PXP'
+
+describe('FlowStepFields TOTP enrolment', () => {
+  function renderTotp(onAnswer: (input: Record<string, string>) => void = vi.fn()) {
+    return renderWithProviders(
+      <FlowStepFields
+        step={step({ kind: 'webauthn', options: { otpauth_uri: TOTP_URI } })}
+        busy={false}
+        onAnswer={onAnswer}
+        onUnsupported={vi.fn()}
+      />,
+    )
+  }
+
+  it('renders the otpauth URI as a QR symbol, never as text', () => {
+    renderTotp()
+
+    expect(
+      screen.getByRole('img', { name: zhCN.signInFlow.totpQrLabel }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(zhCN.signInFlow.enrollTotpHelp)).toBeInTheDocument()
+    expect(
+      screen.getByLabelText(zhCN.signInFlow.codeLabel),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/otpauth:\/\//)).toBeNull()
+  })
+
+  it('draws the symbol from the step’s own URI, not a fixed decoration', () => {
+    const first = renderTotp()
+    const firstPath = first.container
+      .querySelector('svg[role="img"] path')
+      ?.getAttribute('d')
+    expect(firstPath).toBeTruthy()
+    first.unmount()
+
+    const other = renderWithProviders(
+      <FlowStepFields
+        step={step({
+          kind: 'webauthn',
+          options: {
+            otpauth_uri: 'otpauth://totp/speed:ada?secret=KRSXG5CTMVRXEZLU',
+          },
+        })}
+        busy={false}
+        onAnswer={vi.fn()}
+        onUnsupported={vi.fn()}
+      />,
+    )
+    const otherPath = other.container
+      .querySelector('svg[role="img"] path')
+      ?.getAttribute('d')
+    expect(otherPath).toBeTruthy()
+    expect(otherPath).not.toBe(firstPath)
+  })
+
+  it('shows the parsed secret and parameters behind the manual-entry disclosure', async () => {
+    const user = userEvent.setup()
+    renderTotp()
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.totpManualToggle }),
+    )
+    expect(screen.getByText(zhCN.signInFlow.totpSecretLabel)).toBeInTheDocument()
+    expect(screen.getByText(TOTP_SECRET_DISPLAY)).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.signInFlow.totpCopyLabel }),
+    ).toBeInTheDocument()
+    for (const [label, value] of [
+      [zhCN.signInFlow.totpAlgorithm, 'SHA1'],
+      [zhCN.signInFlow.totpDigits, '6'],
+      [zhCN.signInFlow.totpPeriod, '30'],
+    ] as const) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+      expect(screen.getByText(value)).toBeInTheDocument()
+    }
+    expect(screen.queryByText(/otpauth:\/\//)).toBeNull()
+  })
+
+  it('keeps the code field when the URI cannot be parsed', () => {
+    renderWithProviders(
+      <FlowStepFields
+        step={step({
+          kind: 'webauthn',
+          options: { otpauth_uri: 'otpauth://hotp/acme?secret=abc' },
+        })}
+        busy={false}
+        onAnswer={vi.fn()}
+        onUnsupported={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('img')).toBeNull()
+    expect(screen.queryByText(zhCN.signInFlow.enrollTotpHelp)).toBeNull()
+    expect(
+      screen.getByLabelText(zhCN.signInFlow.codeLabel),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/otpauth:\/\//)).toBeNull()
+  })
+
+  it('answers the flow with the typed code', async () => {
+    const onAnswer = vi.fn()
+    const user = userEvent.setup()
+    renderTotp(onAnswer)
+
+    await user.type(
+      screen.getByLabelText(zhCN.signInFlow.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+
+    expect(onAnswer).toHaveBeenCalledWith({ code: '123456' })
+  })
+
+  it('passes axe with the manual-entry disclosure open', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(
+      <>
+        <h1>Two-factor setup</h1>
+        <FlowStepFields
+          step={step({ kind: 'webauthn', options: { otpauth_uri: TOTP_URI } })}
+          busy={false}
+          onAnswer={vi.fn()}
+          onUnsupported={vi.fn()}
+        />
+      </>,
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.totpManualToggle }),
+    )
+    await expectNoAxeViolations()
+  })
+})
+
+describe('FlowStepFields passkey failure wording', () => {
+  function renderPasskey(
+    options: unknown,
+    onClientFailure: (key: string | null) => void,
+  ) {
+    return renderWithProviders(
+      <FlowStepFields
+        step={step({ kind: 'webauthn', options })}
+        busy={false}
+        onAnswer={vi.fn()}
+        onUnsupported={vi.fn()}
+        clientFailure={null}
+        onClientFailure={onClientFailure}
+      />,
+    )
+  }
+
+  it('names an authenticator that already holds the credential', async () => {
+    // The server's excludeCredentials makes the creation ceremony reject with
+    // InvalidStateError; the reason carries a remedy of its own instead of the
+    // generic failure a viewer would retry forever.
+    const create = vi
+      .fn()
+      .mockRejectedValue(
+        new DOMException(
+          'the authenticator already holds this credential',
+          'InvalidStateError',
+        ),
+      )
+    const restore = installCredentials({ create, get: vi.fn() })
+    try {
+      const onClientFailure = vi.fn()
+      renderPasskey(
+        { challenge: 'Y2hhbGxlbmdl', user: { id: 'AQID', name: 'ada' } },
+        onClientFailure,
+      )
+
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+
+      await waitFor(() =>
+        expect(onClientFailure).toHaveBeenCalledWith(
+          'signInFlow.passkeyAlreadyRegistered',
+        ),
+      )
+    } finally {
+      restore()
+    }
+  })
+
+  it('names the ceremony in the generic failure sentence', async () => {
+    // A registration and a sign-in that fail the same way read differently:
+    // the sentence names the ceremony that did not complete.
+    const boom = (): Promise<never> => Promise.reject(new Error('boom'))
+    const restore = installCredentials({
+      create: vi.fn().mockImplementation(boom),
+      get: vi.fn().mockImplementation(boom),
+    })
+    try {
+      const registerFailure = vi.fn()
+      const register = renderPasskey(
+        { challenge: 'Y2hhbGxlbmdl', user: { id: 'AQID', name: 'ada' } },
+        registerFailure,
+      )
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+      await waitFor(() =>
+        expect(registerFailure).toHaveBeenCalledWith(
+          'signInFlow.passkeyFailedRegister',
+        ),
+      )
+      register.unmount()
+
+      // An assertion step starts on arrival and fails without a click.
+      const signInFailure = vi.fn()
+      renderPasskey({ challenge: 'Y2hhbGxlbmdl' }, signInFailure)
+      await waitFor(() =>
+        expect(signInFailure).toHaveBeenCalledWith(
+          'signInFlow.passkeyFailedSignIn',
+        ),
+      )
     } finally {
       restore()
     }

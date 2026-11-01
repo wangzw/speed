@@ -81,17 +81,29 @@ account-resolution outcome where the deployment enables that.
   enroll kind the same way: a known kind renders its translated name, an
   unknown one renders the server's own kind value (the deployment's
   vocabulary, never a generic "other" label), and a factor option's
-  server-supplied label wins over both. The `webauthn` step drives the
-  browser's WebAuthn ceremony (`@speed/auth-core/webauthn`) from its
-  public-key options and reports the credential it returns, while a
-  `redirect` step reaching the renderer renders an unavailable notice. An
+  server-supplied label wins over both. A `webauthn` step renders the
+  factor its options name: TOTP's `otpauth_uri` is parsed by
+  `@speed/auth-core/otpauth` and rendered through ui-kit's
+  `TotpEnrollmentPanel` as a scannable QR symbol with a manual-entry
+  disclosure for the base32 secret and its parameters, beside a six-digit
+  code field (the URI itself is never shown as text); a passkey's
+  public-key options drive the browser's WebAuthn ceremony
+  (`@speed/auth-core/webauthn`) and the credential it returns is reported
+  upward. A `redirect` step reaching the renderer renders an unavailable
+  notice. An
   assertion passkey step starts its ceremony on arrival -- the passkey
   entry was the click -- and a registration step waits for a click,
   because a creation ceremony needs the user activation some browsers
   require. An assertion step re-sent in the flow's next step starts its
   ceremony again even when the server repeats the challenge: the arrival
   effect keys on the step number and the challenge, not the challenge
-  alone, so an ordinary re-render leaves a running ceremony alone. A step
+  alone, so an ordinary re-render leaves a running ceremony alone. Each
+  ceremony failure keeps its own wording: `unsupported`, `cancelled` and
+  `already-registered` (the browser's `InvalidStateError`, meaning the
+  authenticator already holds a credential the server's
+  `excludeCredentials` excludes) have their own sentences, and the generic
+  failure sentence names the ceremony, so a failed registration does not
+  read as a failed sign-in. A step
   the server answers `authn.flow_invalid` returns the form to its
   channel's first step.
 - **A parked step that may send carries the proof block.**
@@ -113,9 +125,12 @@ account-resolution outcome where the deployment enables that.
   flow response and discovery models (`AuthnFlowState`, `AuthnStep`,
   `AuthnField`, `AuthnMethodList`, `AuthnMethodDescriptor`,
   `AuthnSsoProvider`, `AuthnLoginRegistration`, ...) it re-exports from
-  the generated surface. If an operation does not exist on the session,
-  the right home for it is auth-core's contract, not a fetch in this
-  package.
+  the generated surface. The browser-side parsers and ceremonies are
+  auth-core's subpaths too: `./otpauth` parses an enrolment URI and formats
+  its base32 secret for hand entry, and `./webauthn` drives the passkey
+  ceremony; this package supplies only the wording and layout around them.
+  If an operation does not exist on the session, the right home for it is
+  auth-core's contract, not a fetch in this package.
 - **Registration is a one-request account opening followed by a login.**
   `PasswordRegisterForm` calls `session.register` (which establishes no
   session and writes no credential), then drives the ordinary

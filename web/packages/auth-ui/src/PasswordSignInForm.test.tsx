@@ -31,7 +31,6 @@ import {
 } from '@speed/test-utils/session-harness'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { installFakeTurnstile } from '@speed/test-utils/turnstile'
-import { createAppTheme } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
@@ -59,6 +58,28 @@ const ZH_LABELS: SignInLabels = {
   identifierLabel: zhCN.passwordSignIn.identifierLabel,
   passwordLabel: zhCN.passwordSignIn.passwordLabel,
 }
+
+/** Installs a `navigator.credentials` stub, answering the restorer. */
+function installCredentials(credentials: unknown): () => void {
+  const original = Object.getOwnPropertyDescriptor(
+    window.navigator,
+    'credentials',
+  )
+  Object.defineProperty(window.navigator, 'credentials', {
+    value: credentials,
+    configurable: true,
+  })
+  return () => {
+    if (original === undefined) {
+      delete (window.navigator as { credentials?: unknown }).credentials
+    } else {
+      Object.defineProperty(window.navigator, 'credentials', original)
+    }
+  }
+}
+
+const OTPAUTH_URI =
+  'otpauth://totp/Example%20Co:alice%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example%20Co'
 
 describe('PasswordSignInForm', () => {
   it('begin a password flow with the entered credentials and fire onSignedIn on completion', async () => {
@@ -550,9 +571,10 @@ describe('PasswordSignInForm', () => {
     expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toBeInTheDocument()
   })
 
-  it('render the TOTP setup URI in the theme’s mono stack', async () => {
-    // The enrollment step's otpauth_uri is rendered as a code block; the
-    // font family is the theme's mono entry, not a hardcoded literal.
+  it('render the TOTP enrollment as a QR symbol, never as text', async () => {
+    // The enrollment step's otpauth_uri feeds the shared enrolment panel:
+    // the viewer scans the symbol or enters the code by hand, and the URI
+    // itself is never spilled into the page.
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -560,20 +582,121 @@ describe('PasswordSignInForm', () => {
           state: 'enroll',
           next: {
             kind: 'webauthn',
-            options: { otpauth_uri: 'otpauth://totp/acme?secret=abc' },
+            options: { otpauth_uri: OTPAUTH_URI },
           },
         }),
     })
     renderWithProviders(<PasswordSignInForm session={harness.session} />)
     await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
-    const uri = await screen.findByText(/otpauth:\/\/totp/)
-    const { theme } = createAppTheme()
-    // jsdom's computed value normalizes the quote style around family
-    // names; compare the stacks without quoting.
-    const unquote = (value: string): string => value.replace(/["']/g, '')
-    expect(unquote(getComputedStyle(uri).fontFamily)).toBe(
-      unquote(theme.typography.fontFamilyMono),
-    )
-    expect(getComputedStyle(uri).fontFamily).not.toBe('monospace')
+
+    expect(
+      await screen.findByRole('img', { name: zhCN.signInFlow.totpQrLabel }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByLabelText(zhCN.signInFlow.codeLabel),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/otpauth:\/\//)).toBeNull()
+  })
+
+  it('word an already-registered passkey as its own remedy', async () => {
+    // The creation ceremony rejects with InvalidStateError when the
+    // authenticator already holds one of the account's excluded credentials;
+    // the banner names the remedy instead of the generic failure.
+    const create = vi
+      .fn()
+      .mockRejectedValue(
+        new DOMException(
+          'the authenticator already holds this credential',
+          'InvalidStateError',
+        ),
+      )
+    const restore = installCredentials({ create, get: vi.fn() })
+    try {
+      const harness = makeHarness({
+        [LOGIN_START]: () =>
+          openFlow({
+            seq: 1,
+            state: 'enroll',
+            next: {
+              kind: 'webauthn',
+              options: {
+                challenge: 'Y2hhbGxlbmdl',
+                user: { id: 'AQID', name: 'ada' },
+              },
+            },
+          }),
+      })
+      renderWithProviders(<PasswordSignInForm session={harness.session} />)
+      await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        zhCN.signInFlow.passkeyAlreadyRegistered,
+      )
+    } finally {
+      restore()
+    }
+  })
+
+  it('name the ceremony a generic passkey failure interrupted', async () => {
+    // A registration and a sign-in that fail the same way read differently:
+    // the sentence names the ceremony that did not complete.
+    const boom = (): Promise<never> => Promise.reject(new Error('boom'))
+    const restore = installCredentials({
+      create: vi.fn().mockImplementation(boom),
+      get: vi.fn().mockImplementation(boom),
+    })
+    try {
+      const registerHarness = makeHarness({
+        [LOGIN_START]: () =>
+          openFlow({
+            seq: 1,
+            state: 'enroll',
+            next: {
+              kind: 'webauthn',
+              options: {
+                challenge: 'Y2hhbGxlbmdl',
+                user: { id: 'AQID', name: 'ada' },
+              },
+            },
+          }),
+      })
+      const register = renderWithProviders(
+        <PasswordSignInForm session={registerHarness.session} />,
+      )
+      await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        zhCN.signInFlow.passkeyFailedRegister,
+      )
+      register.unmount()
+
+      // An assertion step starts its ceremony on arrival; a passkey second
+      // factor the password flow parks on is that sign-in.
+      const signInHarness = makeHarness({
+        [LOGIN_START]: () =>
+          openFlow({
+            seq: 1,
+            state: 'second',
+            next: {
+              kind: 'webauthn',
+              options: { challenge: 'Y2hhbGxlbmdl' },
+            },
+          }),
+      })
+      renderWithProviders(
+        <PasswordSignInForm session={signInHarness.session} />,
+      )
+      await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        zhCN.signInFlow.passkeyFailedSignIn,
+      )
+    } finally {
+      restore()
+    }
   })
 })

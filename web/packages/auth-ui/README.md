@@ -204,12 +204,21 @@ required second factor, a factor to register, a passkey ceremony -- is
 rendered by the shared step renderer (`src/internal/flow-step.tsx`): a
 `challenge` step renders one input per field the server asks for, a
 `factor` step renders one button per offered second factor, an `enroll`
-step one button per registerable kind, a `webauthn` step drives the
-browser's WebAuthn ceremony (`@speed/auth-core/webauthn`) from its
-public-key options and reports the credential it returns (an assertion
-step starts its ceremony as it arrives -- the passkey entry was the
-click -- and starts it again when the flow re-sends the same challenge
-in its next step, while a registration step waits for a click), and a
+step one button per registerable kind, and a `webauthn` step renders
+whichever factor its options name. TOTP's `otpauth_uri` is parsed by
+`@speed/auth-core/otpauth` and rendered through ui-kit's
+`TotpEnrollmentPanel` as a scannable QR symbol with a manual-entry
+disclosure for the base32 secret and its parameters, beside a six-digit
+code field; the URI itself is never shown as text. A passkey's
+public-key options are driven by the browser's WebAuthn ceremony
+(`@speed/auth-core/webauthn`) and the credential it returns is reported
+upward (an assertion step starts its ceremony as it arrives -- the
+passkey entry was the click -- and starts it again when the flow re-sends
+the same challenge in its next step, while a registration step waits for
+a click). A ceremony that fails reports its own reason as the channel's
+failure banner: a device that already holds the excluded credential names
+that remedy, and the generic sentence names the ceremony, so a failed
+registration does not read as a failed sign-in. A
 `ready` step (whose `next.kind` is `complete`) is
 taken automatically with `step: 'complete'`. A `redirect` step reaching the
 renderer (a callback route opened before the provider answered) renders an
@@ -788,7 +797,7 @@ enforced by registration):
 | `passwordSignIn.*` | the password channel: title, field labels (identifier, password, new password), submit, the credential refusal |
 | `register.*` | the password registration form: title (also the synthetic channel's label), description, username/email/password/confirmation labels, submit, the email format message, the account-created and account-created-sign-in notices, the signed-in line, the sign-in retry, the taken username and taken email address, the closed/throttled/unavailable refusals, and the throttle wait |
 | `smsSignIn.*` | the SMS channel: title, country/phone labels, the phone hint, send/resubmit/change-phone actions, the sent notice (the assembled E.164 number), the code step's own refusal, the used-code notice. The per-country validation messages live in the `ui-kit` namespace (`phoneNumber.*`) |
-| `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey prompt for a login and for a registration, the waiting/cancel/retry controls, its unsupported/cancelled/failed ceremony messages, the channel's own wording for a refused passkey answer, the unavailable-step notice |
+| `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the authenticator-app enrolment copy (the symbol's accessible name, the manual-entry toggle, the secret and its copy controls, the algorithm/digits/period labels and the code label), the passkey prompt for a login and for a registration, the waiting/cancel/retry controls, its unsupported/cancelled/already-registered/failed ceremony messages with the generic sentence naming the ceremony, the channel's own wording for a refused passkey answer, the unavailable-step notice |
 | `discovery.*` | the sign-in surface: the loading notice and the retry action |
 | `mode.*` | the sign-in surface: the register mode's title and hint, the register / sign-in entries, and the sign-in mode's account-opening sentence |
 | `enterprise.*` | the enterprise entry: the email label, the continue action, the provider-picker title and the no-match notice |
@@ -853,6 +862,9 @@ sent notices and the social-callback and passkey-waiting states announce
 through `role="status"` containers mounted empty and filled a commit later
 (the pending spinners are `aria-hidden`, so the notice is not read twice;
 entering the passkey waiting state moves focus to its cancel control),
+the authenticator-app symbol is a `role="img"` carrying the bundle's
+accessible name and its manual-entry disclosure is a button with
+`aria-expanded`/`aria-controls`,
 every failure renders in one `role="alert"`,
 buttons disable while their request is in flight, the channel strip is MUI
 `Tabs` (arrow-key navigation, labelled by the channel titles) whose tabs
@@ -913,9 +925,9 @@ bilingual text of its states.
 | `@mui/material` | peer (required, ^9.5) | the `TextField`/`Button`/`Tabs`/`Alert` primitives and the ambient theme |
 | `@emotion/react`, `@emotion/styled` | peer (required, ^11) | MUI's own runtime requirements |
 | `react-hook-form` | peer (required, ^7) | every form is a controlled react-hook-form flow; RHF is the host's single instance |
-| `@speed/auth-core` | dependency | the session every component drives, its flow operations, and the flow response models it re-exports from the generated surface |
+| `@speed/auth-core` | dependency | the session every component drives, its flow operations, the flow response models it re-exports from the generated surface, the `./otpauth` parser and secret formatting, and the `./webauthn` passkey driver |
 | `@speed/i18n` | dependency | the namespace registration and translation hook every component renders through |
-| `@speed/ui-kit` | dependency | the `FormLayout`/`FormField` form skeleton and `EmptyState` (the session-ended screen) |
+| `@speed/ui-kit` | dependency | the `FormLayout`/`FormField` form skeleton, `EmptyState` (the session-ended screen) and `TotpEnrollmentPanel` (the authenticator-app enrolment step) |
 
 `@speed/api-sdk` and `@speed/api-client` are devDependencies: no public
 type of this package references them, and only the README's quick start
@@ -945,9 +957,11 @@ namespace discipline over `src/` the same way it does in every package.
   package's.** This family drives the login purpose; the authenticated
   purposes (`link`, `step-up`, `enroll`) and their screens live in
   `@speed/account-ui` (`SocialBindingsSection` + `BindingCallbackHandler`,
-  `MfaSection`). A passkey (`webauthn`) step a login flow parks on drives
-  its ceremony here through `@speed/auth-core/webauthn`;
-  the authenticated passes render it in `@speed/account-ui`.
+  `MfaSection`). A `webauthn` step a login flow parks on renders here --
+  TOTP enrolment through `@speed/auth-core/otpauth` and
+  `TotpEnrollmentPanel`, a passkey ceremony through
+  `@speed/auth-core/webauthn` -- while the authenticated passes render them
+  in `@speed/account-ui`.
 - **The channels are the deployment's, not the host's.** `SignInScreen`
   reads the discovery document (`session.listMethods`) and renders the
   methods it names, so a host no longer declares a channel set; the
