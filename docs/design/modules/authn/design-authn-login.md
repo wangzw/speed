@@ -575,7 +575,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `link` | `method`、`input` | 请求的 `method` | `first` | 账户安全类动作的要求；发起者须不是未验证账户，`SignupStateOf` 为 `SignupPending` 时在写记录之前即 403 `contact-required` |
 | `step-up`，账户有可用因素 | 不带 `method` | 空 | `second` | 无附加要求 |
 | `step-up`，账户没有因素 | `method` | 请求的 `method` | `first` | 无附加要求 |
-| `enroll` | `input.kind` | 空；因素种类交给 `MFA.Enroll` | `enroll` | 账户安全类动作的要求 |
+| `enroll` | `input.kind`；可选 `input.label` | 空；因素种类交给 `MFA.Enroll` | `enroll` | 账户安全类动作的要求 |
 
 「账户安全类动作的要求」是 `Requirement`：生效账户有有效因素（`MFA.Factors` 里状态为启用的行）时为新鲜的本地多因素，没有因素时为新鲜的第一因素，取值与单位归 [authn-mfa](design-authn-mfa.md)。引擎以 `StatusFresh` 交回的 `Assurance`、`AuthTime`、`IDPAssured` 按 `Identity.Satisfies` 的同一判据核对。
 
