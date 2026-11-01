@@ -423,6 +423,25 @@ pinned in both languages by `src/internal/error-text.test.ts`.
 
 ## Known limitations
 
+- **The enrollment wizard releases the current flow, not necessarily its
+  own -- a known constraint, not an oversight.** The flow binding is one
+  server-set cookie, so starting a flow replaces the bound one
+  (`@speed/auth-core` carries the same limit). `releaseEnrollFlow` calls
+  `session.abandonFlow()`, which deletes whatever flow is current: when a
+  new flow starts elsewhere while the wizard is open, the newer flow is
+  the one abandoned on cancel or unmount, and the wizard's own flow is
+  left to expire.
+- **A departure during the enrollment start releases nothing -- a known
+  constraint, not an oversight.** `startEnroll` records the flow as open
+  only after `session.startAuthenticatedFlow` returns a step, so leaving
+  the page between the name submission and that return sends no
+  `DELETE flows/current`. The pending factor row the flow's first step
+  wrote is removed by the `authn.mfa` sweep once it is past
+  `pending-ttl`; until then it never appears among the factors a sign-in
+  offers. The account's own two-step verification list is the one place
+  it stays visible: it renders the row with a `pending` status until the
+  sweep removes it (`MfaSection`'s factor list).
+
 Recorded, with the current disposition, in the README's Known
 limitations and deferrals. The load-bearing ones for a contributor: the
 authenticator-app step renders the `otpauth_uri` as a QR symbol and
