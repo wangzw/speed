@@ -719,9 +719,28 @@ describe('StepUpChallenge', () => {
       )
 
       const alert = await screen.findByRole('alert')
-      expect(alert).toHaveTextContent(
-        zhCN.throttle.retryAfter.replace('{{seconds}}', '30'),
+      // The live region carries only the code's static sentence, so a wait
+      // that ticks does not re-announce the whole banner.
+      expect(alert).toHaveTextContent(zhCN.errors.ratelimit.throttled)
+      // The countdown is a separate line, outside the alert and aria-live off.
+      const countdown = screen.getByText(
+        zhCN.throttle.countdown.replace('{{seconds}}', '30'),
       )
+      expect(countdown.closest('[role="alert"]')).toBeNull()
+      expect(countdown.getAttribute('aria-live')).toBe('off')
+
+      // One tick later the announced text is unchanged; only the countdown
+      // line has moved.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.errors.ratelimit.throttled,
+      )
+      expect(
+        screen.getByText(zhCN.throttle.countdown.replace('{{seconds}}', '29')),
+      ).toBeTruthy()
+
       // The step stays on screen, but its submit is held until the wait
       // elapses.
       expect(screen.getByLabelText(zhCN.flowStep.codeLabel)).toBeTruthy()
@@ -742,8 +761,11 @@ describe('StepUpChallenge', () => {
           ).disabled,
         ).toBe(false)
       })
-      // The wait is spent, so the banner falls back to the code's own
-      // wait-free sentence instead of a stale countdown.
+      // The wait is spent, so the non-live countdown is gone and the banner
+      // stays the code's static sentence.
+      expect(
+        screen.queryByText(zhCN.throttle.countdown.replace('{{seconds}}', '1')),
+      ).toBeNull()
       expect(screen.getByRole('alert')).toHaveTextContent(
         zhCN.errors.ratelimit.throttled,
       )

@@ -1,7 +1,9 @@
 {
   "throttle": {
     "retryAfter": "Too many attempts. Try again in {{seconds}} seconds.",
-    "retryAfterLong": "Too many attempts. Try again in about {{minutes}} minutes."
+    "retryAfterLong": "Too many attempts. Try again in about {{minutes}} minutes.",
+    "countdown": "Try again in {{seconds}} seconds.",
+    "countdownLong": "Try again in about {{minutes}} minutes."
   },
   "errors": {
     "authn": {
