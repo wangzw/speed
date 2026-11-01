@@ -28,7 +28,13 @@
  * honesty: it reports network, route-interception, evaluate and non-WebAuthn
  * CDP calls, allowing only the WebAuthn.* virtual-authenticator setup the
  * requirements author ruled a browser-device fixture may use. The demo host
- * turns it on over its e2e/** directory. The react-hooks plugin
+ * turns it on over its e2e/** directory. The no-double-feedback-region rule
+ * (web/eslint-rules/no-double-feedback-region.js, tested in
+ * web/eslint-rules/no-double-feedback-region.test.mjs) holds a component to
+ * one WriteFeedbackRegion per control group: two regions in one component
+ * can show two results at once. Its exemption list states which components
+ * legitimately own several control groups, and the rule's scan test keeps
+ * that list exactly equal to the tree. The react-hooks plugin
  * stays out: no stateful component exists outside ui-kit's controlled
  * set -- state belongs to the host and every interaction reports up
  * through callbacks, the FileUploader queue rendering from host-owned
@@ -38,6 +44,7 @@
 import tseslint from 'typescript-eslint'
 import { noDangerousHtmlRule } from './eslint-rules/no-dangerous-html.js'
 import { noDirectHttpRule } from './eslint-rules/no-direct-http.js'
+import { noDoubleFeedbackRegionRule } from './eslint-rules/no-double-feedback-region.js'
 import { noE2eBypassRule } from './eslint-rules/no-e2e-bypass.js'
 import { noLiteralTextRule } from './eslint-rules/no-literal-text.js'
 
@@ -52,6 +59,7 @@ const localPlugin = {
       rules: {
         'no-dangerous-html': noDangerousHtmlRule,
         'no-direct-http': noDirectHttpRule,
+        'no-double-feedback-region': noDoubleFeedbackRegionRule,
         'no-e2e-bypass': noE2eBypassRule,
         'no-literal-text': noLiteralTextRule,
       },
@@ -88,6 +96,7 @@ export default tseslint.config(
     ...PACKAGE_RUNTIME_SRC,
     rules: {
       'speed/no-dangerous-html': 'error',
+      'speed/no-double-feedback-region': 'error',
       'speed/no-literal-text': 'error',
     },
   },

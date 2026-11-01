@@ -115,9 +115,60 @@ through the api-client request function (see CLAUDE.md's API contract
 section) -- and `speed/no-dangerous-html` errors on markup sinks
 (`innerHTML`, `dangerouslySetInnerHTML`, `insertAdjacentHTML`,
 `document.write` and the like), holding the premise the i18n instance's
-verbatim interpolation rests on. Package tests and `test-utils/` are
-exempt by config for these rules, because fixture strings and scripted
+verbatim interpolation rests on. `speed/no-double-feedback-region` holds a
+component to one `WriteFeedbackRegion`: a feedback scope is one
+`useWriteFeedback` instance plus one region for its control group, and two
+regions in one component can show two results at once. Its message names
+the file, the component and the region count. Package tests and `test-utils/`
+are exempt by config for these rules, because fixture strings and scripted
 stand-ins are data.
+
+### One feedback region per component
+
+The rule counts `WriteFeedbackRegion` per declaring component, not per
+file: a page component may own several control groups, each with its own
+scope and region under its own controls. Those components are registered
+in the rule's `WRITE_FEEDBACK_REGION_EXEMPTIONS`
+(`web/eslint-rules/no-double-feedback-region.js`), each entry carrying the
+reason the regions are separate groups (or two mutually exclusive branches
+of one scope):
+
+- `packages/console-ui/src/AccountsPage.tsx` — `AccountsPage`: the list
+  result and the detail panel's action row, sessions and identifiers
+  sections.
+- `packages/console-ui/src/AccountsPage.tsx` — `AccountDetailWrites`: six
+  rows (status, MFA requirement, profile patch, temporary password,
+  identifier add, secret create), each with its own group.
+- `packages/account-ui/src/MfaSection.tsx` — `MfaSection`: the enrollment
+  wizard's exclusive steps plus the list's rename and remove row actions.
+- `packages/console-ui/src/PermissionsPage.tsx` — `PermissionsPage`: roles,
+  grants, bindings and lookup sections.
+- `packages/console-ui/src/SmsPage.tsx` — `SmsPage`: register form, offer
+  form and templates table.
+- `packages/console-ui/src/SsoPage.tsx` — `SsoPage`: providers list,
+  provider write form and domains section.
+- `packages/account-ui/src/ContactVerificationSection.tsx` —
+  `ContactVerificationSection`: one scope in two mutually exclusive
+  branches (add form before a code is sent, code step after).
+- `packages/account-ui/src/PreferencesSection.tsx` — `PreferencesSection`:
+  language row and time-zone row.
+- `packages/console-ui/src/ImpersonationsPage.tsx` —
+  `ImpersonationsPage`: start form and the records table with its row
+  actions.
+- `packages/console-ui/src/InvitationsPage.tsx` — `InvitationsPage`:
+  invitations table and members table.
+
+Adding a multi-region component means adding an entry with a reason; the
+rule's scan test (`no-double-feedback-region.test.mjs`) reads every
+runtime TSX file under `packages/*/src` and fails when the list and the
+tree disagree in either direction, so a new component cannot slip through
+unregistered and a stale entry is removed. A queue of independent per-row
+transfers is the design's allowed exception (each upload row is its own
+slot): `FileUploader` renders each row's status as text from its `rows`
+props and never renders `WriteFeedbackRegion`, and a region rendered once
+inside a `rows.map(...)` is one JSX element rather than one per row, so
+the rule does not reach it.
+
 The rules' unit tests run from the workspace root, not from a package
 directory (the rules live outside every package, so no per-package
 suite picks them up), together with the workspace configuration guard
