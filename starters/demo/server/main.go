@@ -688,7 +688,7 @@ const (
 		"merged from the OpenAPI fragment each module generates from its own operation declarations. " +
 		"Each operation is tagged with the module that declared it, and each names the security " +
 		"requirement its route admits."
-	defaultContractServer = "http://localhost:8080"
+	defaultContractServer = "http://localhost:8081"
 )
 
 // genInput carries the gen command's inputs.
