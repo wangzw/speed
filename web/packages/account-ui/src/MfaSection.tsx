@@ -38,8 +38,11 @@
  *    name and the row falls back to its kind. A landed rename confirms itself
  *    below the list, naming the row by the name the server stored, and the
  *    factors list is refetched. A refused rename renders its error code in
- *    the same region (a 400 for a value outside the label's domain, a 404
- *    when the row is gone).
+ *    the same region (a 400 for a value outside the label's domain). A 404
+ *    `authn.factor_not_found` -- the row was removed on another device, or
+ *    never was the account's -- closes the editor, rereads the factors once
+ *    and renders the code's sentence, which says the method is gone; the
+ *    reread is not repeated by the answer it produces.
  *  - Remove. A row's row-end action sends DELETE /api/v1/auth/factors/{id}
  *    behind the ui-kit danger ConfirmDialog (removing a factor is
  *    irreversible). The route asks for a fresh multi-factor
@@ -402,6 +405,12 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     })
   }
 
+  /** Whether the answer says the factor is not there, or is not the
+   * caller's: the two read as one code so neither says the row exists. */
+  function factorIsGone(error: unknown): boolean {
+    return errorCodeOf(error) === 'authn.factor_not_found'
+  }
+
   /** Remove one factor. */
   function removeFactor(factorId: string): Promise<void> {
     // Captured before the write: the refetched list drops the row, so the
@@ -447,6 +456,12 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         return await settle()
       } catch (error) {
         setRemoveTarget(null)
+        // A row another device removed while this list showed it reads as
+        // gone: reread once so the list converges, then render the code's
+        // sentence in the row-actions region.
+        if (factorIsGone(error)) {
+          await invalidateFactors()
+        }
         const code = errorCodeOf(error)
         const reason = stepUpReasonOf(code)
         if (reason !== null) {
@@ -459,23 +474,35 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   }
 
   /** Rename one factor. The label is metadata, so no step-up can gate this
-   * write; a refusal lands in the row actions' feedback region. */
+   * write; a refusal lands in the row actions' feedback region. A factor
+   * that is gone closes the editor and rereads the list once, so the
+   * sentence and the list agree. */
   function renameFactor(factorId: string, label: string): Promise<void> {
     return renameFeedback.run(async () => {
-      const updated = await updateMutation.mutateAsync({
-        id: factorId,
-        data: { label },
-      })
-      setRenameDraft(null)
-      await invalidateFactors()
-      // The confirmation names the row by the name the server stored; an
-      // empty name means the row reads as its kind.
-      const name =
-        updated.label !== '' ? updated.label : factorKindLabel(updated.kind ?? '')
-      return t('mfa.renamed', {
-        factor: name,
-        interpolation: { escapeValue: false },
-      })
+      try {
+        const updated = await updateMutation.mutateAsync({
+          id: factorId,
+          data: { label },
+        })
+        setRenameDraft(null)
+        await invalidateFactors()
+        // The confirmation names the row by the name the server stored; an
+        // empty name means the row reads as its kind.
+        const name =
+          updated.label !== ''
+            ? updated.label
+            : factorKindLabel(updated.kind ?? '')
+        return t('mfa.renamed', {
+          factor: name,
+          interpolation: { escapeValue: false },
+        })
+      } catch (error) {
+        if (factorIsGone(error)) {
+          setRenameDraft(null)
+          await invalidateFactors()
+        }
+        throw error
+      }
     })
   }
 

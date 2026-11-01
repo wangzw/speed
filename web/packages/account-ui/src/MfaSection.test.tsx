@@ -439,6 +439,51 @@ describe('MfaSection', () => {
     ).toHaveLength(1)
   })
 
+  it('shows a factor removed elsewhere and rereads the list once', async () => {
+    let factorsRead = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        factorsRead += 1
+        return jsonResponse(200, {
+          factors: factorsRead === 1 ? [factor({})] : [],
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-1'
+      ) {
+        return errorResponse(404, 'authn.factor_not_found')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+
+    expect(
+      await screen.findByText(zhCN.errors.authn.factor_not_found),
+    ).toBeTruthy()
+    // The removal did not confirm itself as a landed write.
+    expect(screen.queryByText(zhCN.mfa.removed.replace('{{factor}}', 'My authenticator'))).toBeNull()
+    // One reread after the initial read, and no loop from the answer.
+    await waitFor(() => expect(factorsRead).toBe(2))
+    expect(factorsRead).toBe(2)
+  })
+
   it('holds the session through the credential rotation an active factor removal performs', async () => {
     // Removing an active factor rotates the requesting session's cookie:
     // the server answers the DELETE with Set-Cookie. A read issued under the
@@ -1330,6 +1375,53 @@ describe('MfaSection', () => {
     ).toBeTruthy()
     // The editor stays open so the value can be corrected.
     expect(screen.getByLabelText(zhCN.mfa.renameLabel)).toBeVisible()
+  })
+
+  it('closes a rename whose factor is gone and rereads the list once', async () => {
+    // The reread keeps the row so that the editor's closing is observable:
+    // a missing `setRenameDraft(null)` would leave the field mounted even
+    // after the list settles.
+    let factorsRead = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        factorsRead += 1
+        return jsonResponse(200, {
+          factors: [factor({ id: 'factor-1', label: 'Old name' })],
+        })
+      }
+      if (
+        call.method === 'PATCH' &&
+        call.path === '/api/v1/auth/factors/factor-1'
+      ) {
+        return errorResponse(404, 'authn.factor_not_found')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.mfa.renameAria.replace('{{factor}}', 'Old name'),
+      }),
+    )
+    const field = await screen.findByLabelText(zhCN.mfa.renameLabel)
+    await user.clear(field)
+    await user.type(field, 'New name')
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.renameSave }))
+
+    expect(
+      await screen.findByText(zhCN.errors.authn.factor_not_found),
+    ).toBeTruthy()
+    // The editor closed even though the reread still carries the row.
+    expect(screen.queryByLabelText(zhCN.mfa.renameLabel)).toBeNull()
+    // Exactly one reread after the initial read: the first read, the
+    // answer's reread, and no loop from the answer's own rendering.
+    await waitFor(() => expect(factorsRead).toBe(2))
+    expect(factorsRead).toBe(2)
   })
 
   it('names the removed row when two factors share a kind', async () => {

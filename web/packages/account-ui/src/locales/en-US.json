@@ -19,6 +19,7 @@
       "impersonation_restricted": "This action is not available while you are viewing as another account.",
       "forbidden": "You do not have permission to do that.",
       "contact_required": "Verify your email address first to continue.",
+      "factor_not_found": "This two-step verification method no longer exists. It may have been removed on another device; the list has been refreshed.",
       "conflict": "Your account may have changed. Refresh the page and try again.",
       "email_taken": "That email address is already used by another account.",
       "login_identifier_required": "This account needs at least one login name (a username or an email address).",

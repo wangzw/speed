@@ -42,7 +42,8 @@
  * suite pins to its source, importing the auth-ui bundles as test data,
  * so the copies cannot drift. The account-only codes
  * (insufficient_user_authentication, impersonation_restricted, forbidden,
- * login_identifier_required, username_immutable, unsupported_media_type)
+ * login_identifier_required, username_immutable, unsupported_media_type,
+ * factor_not_found)
  * and the shared
  * session-lifecycle family carry account-authored texts: the sign-in
  * surface does not render them, so there is no sign-in wording to copy.
@@ -71,7 +72,8 @@ export const ERROR_TEXT_CODES = [
   // answer bad_request/forbidden/unavailable, the profile PATCH answers
   // bad_request/insufficient_user_authentication/impersonation_restricted,
   // the factor routes answer
-  // bad_request/insufficient_user_authentication/impersonation_restricted/conflict/unavailable,
+  // bad_request/insufficient_user_authentication/impersonation_restricted/
+  // factor_not_found/conflict/unavailable,
   // the identifier and unlink routes answer
   // conflict/last_login_method/username_immutable,
   // and the login-flow routes behind the link, enroll and step-up flows
@@ -88,6 +90,7 @@ export const ERROR_TEXT_CODES = [
   'authn.impersonation_restricted',
   'authn.forbidden',
   'authn.contact_required',
+  'authn.factor_not_found',
   'authn.conflict',
   'authn.email_taken',
   'authn.login_identifier_required',
