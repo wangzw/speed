@@ -105,11 +105,11 @@ function homeHeading(page: Page): Locator {
   })
 }
 
-/** The account settings' profile pane heading, the page's one h1. */
-function accountHeading(page: Page): Locator {
+/** The account settings' security pane heading, the page's one h1. */
+function securityHeading(page: Page): Locator {
   return page.getByRole('heading', {
     level: 1,
-    name: copy('demo', 'account.sections.profile'),
+    name: copy('demo', 'account.sections.security'),
     exact: true,
   })
 }
@@ -490,10 +490,10 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         .click()
       await approveSocialSignIn(page)
 
-      // The callback completes the link and the host returns to the account
-      // page. A binding is not a login, so the session stays where it was.
-      await expect(accountHeading(page)).toBeVisible()
-      await selectAccountSection(page, 'security')
+      // The callback completes the link and the host returns to the page the
+      // binding started from -- the security pane, with no navigation needed.
+      // A binding is not a login, so the session stays where it was.
+      await expect(securityHeading(page)).toBeVisible()
       await expandAccountRows(page)
       await expect(googleRow(page)).toBeVisible()
       await expect(
