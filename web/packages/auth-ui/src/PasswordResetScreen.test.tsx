@@ -294,6 +294,59 @@ describe('PasswordResetScreen', () => {
     )
   })
 
+  it('drops the channel failure and its stated wait when the channel switches', async () => {
+    // A channel's errors do not cross to the next face: the email channel's
+    // whole-attempt failure and its Retry-After wait both go when the
+    // viewer chooses SMS.
+    vi.useFakeTimers()
+    try {
+      const requestReset = vi.fn(() =>
+        Promise.reject(
+          new ApiError({
+            status: 429,
+            code: 'authn.throttled',
+            attempts: 1,
+            retryAfterMs: 30000,
+          }),
+        ),
+      )
+      renderWithProviders(
+        <PasswordResetScreen
+          session={session()}
+          channels={['email', 'sms']}
+          operations={resetOperations({ requestReset })}
+        />,
+      )
+      fireEvent.change(
+        screen.getByLabelText(zhCN.passwordReset.emailLabel),
+        { target: { value: MAIL } },
+      )
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole('button', { name: zhCN.passwordReset.send }),
+        )
+        await Promise.resolve()
+      })
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.passwordReset.retryAfter.replace('{{seconds}}', '30'),
+      )
+      expect(
+        screen.getByRole('button', { name: zhCN.passwordReset.send }),
+      ).toBeDisabled()
+
+      fireEvent.click(
+        screen.getByRole('button', { name: zhCN.passwordReset.channel.sms }),
+      )
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: zhCN.passwordReset.send }),
+      ).toBeEnabled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('present the human proof the gate holds and consume it after the send', async () => {
     const fake = installFakeTurnstile()
     try {

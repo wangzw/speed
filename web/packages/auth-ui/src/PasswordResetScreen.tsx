@@ -29,7 +29,9 @@
  * deployment, an unavailable dependency or an invalidated flow render
  * through the family's error banner. A stated Retry-After wait disables
  * the send control until it elapses; the resend control states its own
- * remaining interval.
+ * remaining interval. Switching channels in the request state drops the
+ * previous channel's whole-attempt failure, its stated wait and its field
+ * errors, so no channel's error crosses to the next face.
  *
  * Leaving through `onBackToSignIn` abandons an in-flight record through
  * `abandonReset` (best-effort: a failed abandon does not keep the viewer
@@ -695,9 +697,16 @@ export function PasswordResetScreen({
                 exclusive
                 value={selectedChannel}
                 onChange={(_event, value: PasswordResetChannel | null) => {
-                  if (value !== null) {
-                    setChosenChannel(value)
+                  if (value === null || value === selectedChannel) {
+                    return
                   }
+                  // Leaving a channel drops its whole-attempt failure, its
+                  // stated wait and its field errors: a channel's errors do
+                  // not cross to the next face.
+                  setFailure(null)
+                  setRetryUntil(null)
+                  form.clearErrors()
+                  setChosenChannel(value)
                 }}
                 aria-label={t('passwordReset.channelLegend')}
               >
