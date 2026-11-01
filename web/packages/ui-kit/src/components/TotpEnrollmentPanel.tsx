@@ -234,11 +234,7 @@ export function TotpEnrollmentPanel({
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
         {secondaryAction}
-        <Box
-          sx={{ marginLeft: secondaryAction === undefined ? undefined : 'auto' }}
-        >
-          {primaryAction}
-        </Box>
+        <Box>{primaryAction}</Box>
       </Box>
     </Box>
   )
