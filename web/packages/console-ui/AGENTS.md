@@ -279,6 +279,13 @@ request body.
   suite (`src/internal/flow-step-parity.test.ts`): it reads the three
   files, compares the rendered step kinds, the answer properties, the
   render primitives and the WebAuthn seam, and names the copy that drifts.
+  It also holds every copy to the shared TOTP pieces -- `TotpEnrollmentPanel`
+  from `@speed/ui-kit` and `parseOtpauth` from `@speed/auth-core/otpauth` --
+  naming the copy and the missing piece, and scans `packages/` so the
+  otpauth parser and the QR renderer keep one home: a local
+  `parseOtpauth`/`formatSecretForDisplay` implementation, a second direct
+  import of `qrcode-generator`, or `qrcode-generator` declared outside
+  `ui-kit`'s manifest fails with the file and the reason named.
   A `webauthn` step renders the factor its options name: TOTP's
   `otpauth_uri` is parsed by `@speed/auth-core/otpauth` and rendered
   through ui-kit's `TotpEnrollmentPanel` as a scannable QR symbol with a

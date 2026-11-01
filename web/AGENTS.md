@@ -82,7 +82,15 @@ copies in the same change. A source-level parity suite in
 `packages/console-ui` (`src/internal/flow-step-parity.test.ts`) reads the
 three files and fails when they disagree on the rendered step kinds, the
 answer properties they report, the render primitives they use, or the
-WebAuthn seam they drive, naming the copy that drifted.
+WebAuthn seam they drive, naming the copy that drifted. The same suite
+holds every copy to the shared TOTP pieces: each one must import
+`TotpEnrollmentPanel` from `@speed/ui-kit` and `parseOtpauth` from
+`@speed/auth-core/otpauth`, and the failure names the copy and the
+missing piece. It also scans `packages/` (skipping `node_modules` and
+`dist`) so the otpauth parser and the QR renderer keep one home: a local
+`parseOtpauth`/`formatSecretForDisplay` implementation, a second direct
+import of `qrcode-generator`, or `qrcode-generator` declared outside
+`ui-kit`'s manifest fails with the file and the reason named.
 
 ## The strict typecheck
 

@@ -251,7 +251,10 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
    source-level parity suite (`console-ui`'s
    `src/internal/flow-step-parity.test.ts`) reads the three files, compares
    the rendered step kinds, the answer properties, the render primitives
-   and the WebAuthn seam, and names the copy that drifts. All three label a factor or enroll kind
+   and the WebAuthn seam, and names the copy that drifts. It also requires
+   every copy to import the TOTP panel from `@speed/ui-kit` and the parser
+   from `@speed/auth-core/otpauth`, and scans the package tree so neither
+   is reimplemented locally. All three label a factor or enroll kind
    the same way: a known kind renders its translated name, an unknown one
    renders the server's own kind value (the deployment's vocabulary, never
    a generic "other" label), and a factor option's server-supplied label
