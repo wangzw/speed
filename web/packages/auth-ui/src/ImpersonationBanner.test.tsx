@@ -743,11 +743,17 @@ describe('ImpersonationBanner', () => {
       'inline-block',
     )
 
-    // The controls share the row, at its end, from sm up.
+    // The controls share the row, at its end, from sm up: the region is
+    // the row they sit in.
     const end = screen.getByRole('button', { name: zhCN.impersonation.end })
     const close = screen.getByRole('button', { name: zhCN.impersonation.hide })
     expect(end.parentElement).toBe(close.parentElement)
     const controls = end.parentElement as HTMLElement
+    expect(controls.parentElement).toBe(notice)
+    // The facts block grows into the free width, so the controls close the
+    // row on the right without an automatic margin. An auto margin here is
+    // the two-ends layout the action row rule forbids.
+    expect(getComputedStyle(controls).marginLeft).not.toBe('auto')
 
     // Below xs they take their own line, flush right: emotion emitted the
     // breakpoint rule jsdom itself cannot evaluate.
