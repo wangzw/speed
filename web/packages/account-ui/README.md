@@ -693,7 +693,7 @@ is `test-utils/real-client.ts`, the render harness
 
 | Dependency | Kind | Use |
 |---|---|---|
-| `@speed/auth-core` | dependency | the `AuthSession` type, the flow operations (`startAuthenticatedFlow`, `answerFlow`, `readFlow`), the shared `useStepUpGate`, and the `./webauthn` passkey driver |
+| `@speed/auth-core` | dependency | the `AuthSession` type, the flow operations (`startAuthenticatedFlow`, `answerFlow`, `readFlow`), the shared `useStepUpGate`, the `./otpauth` parser and secret formatting, and the `./webauthn` passkey driver |
 | `@speed/api-sdk` | dependency | the generated react-query hooks, mutations and query-key constructors |
 | `@speed/ui-kit` | dependency | `ConfirmDialog`, `EmptyState`, `AsyncSection`, `InlineError`/`errorCodeOf`, `InlineSuccess`, `ListSkeleton`, `TotpEnrollmentPanel`, `useDisplayTimeZone`, `usePhoneCountryDefault` |
 | `@speed/i18n` | dependency | namespace registration, the translation hooks, `languageDisplayName`, `formatInstant`, `resolveTimeZone`/`isSupportedTimeZone` |
