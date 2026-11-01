@@ -34,7 +34,9 @@ list. The target defaults to the compiled backend listener
 (`127.0.0.1:8081`); override it with `DEMO_WEB_BACKEND_PROXY` when a run moves
 it. The dev server's own port is 8080 and `DEMO_WEB_PORT` moves it; an override
 that is not a port fails the config load, and `strictPort` makes a taken port
-fail the start rather than silently moving to another one.
+fail the start rather than silently moving to another one. The server binds the
+IPv4 loopback `127.0.0.1` rather than `::1`; the address is fixed and does not
+follow the port override.
 
 Run the backend on the compiled defaults first — `go -C starters/demo/server run .
 sqlite seed` once, then the same command with `sqlite serve` — which bind
