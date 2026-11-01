@@ -251,6 +251,14 @@ export interface SignInScreenProps {
    */
   readonly initialErrorEmail?: string
   /**
+   * Reports that the screen stopped presenting `initialError`: choosing
+   * another mode or channel, or starting any new attempt, clears the host's
+   * message. The host drops the landing it supplied, so a remount does not
+   * present the same refusal again. A host that binds nothing keeps only
+   * the screen's local hiding.
+   */
+  readonly onInitialErrorDismiss?: () => void
+  /**
    * Reports the password channel's "forgot password" click; the host
    * navigates to its reset surface. The entry renders only where the
    * discovery document publishes an anonymous password reset
@@ -276,6 +284,7 @@ export function SignInScreen({
   defaultChannel = 'password',
   initialError,
   initialErrorEmail,
+  onInitialErrorDismiss,
   onForgotPassword,
 }: SignInScreenProps) {
   const { t } = useAuthUiTranslation()
@@ -295,7 +304,33 @@ export function SignInScreen({
   }, [mode])
   const controlledMode = onModeChange !== undefined
   const activeMode = controlledMode ? mode : internalMode
+  // The host's error stands until the viewer starts something else: choosing
+  // another mode or channel, or any attempt. The key identifies the message
+  // last presented, so a different value from the host -- a fresh landing --
+  // is presented again, and the host is told once to drop the dismissed one.
+  const hostErrorKey =
+    initialError === undefined
+      ? undefined
+      : `${initialError}\u0000${initialErrorEmail ?? ''}`
+  const [dismissedHostErrorKey, setDismissedHostErrorKey] = useState<
+    string | undefined
+  >(undefined)
+  const dismissHostError = (): void => {
+    if (hostErrorKey === undefined || dismissedHostErrorKey === hostErrorKey) {
+      return
+    }
+    setDismissedHostErrorKey(hostErrorKey)
+    onInitialErrorDismiss?.()
+  }
+  // A host that drops its landing leaves nothing to dismiss; a later landing
+  // supplies a new value, which is presented again.
+  useEffect(() => {
+    if (initialError === undefined) {
+      setDismissedHostErrorKey(undefined)
+    }
+  }, [initialError])
   const requestMode = (next: SignInMode): void => {
+    dismissHostError()
     if (controlledMode) {
       onModeChange?.(next)
     } else {
@@ -303,11 +338,16 @@ export function SignInScreen({
     }
   }
   // The screen's start gate: the same decision for every channel, with
-  // the mode the screen currently presents added to the context.
-  const startGate: SignInBeforeStart | undefined =
-    beforeStart === undefined
-      ? undefined
-      : (context) => beforeStart({ ...context, mode: activeMode })
+  // the mode the screen currently presents added to the context. Every
+  // attempt passes through it, so it also clears the host's landing
+  // refusal: that message does not stand beside the answer this attempt
+  // is about to produce.
+  const startGate: SignInBeforeStart = (context) => {
+    dismissHostError()
+    return beforeStart === undefined
+      ? true
+      : beforeStart({ ...context, mode: activeMode })
+  }
   // The id base of the tab/tabpanel pair per form channel: each channel's
   // tab names its panel through aria-controls, and the panel -- the
   // mounted form, unmounted on switch -- answers through aria-labelledby.
@@ -319,6 +359,7 @@ export function SignInScreen({
   // own default when the viewer comes back).
   const [channelMode, setChannelMode] = useState<SignInMode | null>(null)
   const pickChannel = (name: string, forMode: SignInMode = activeMode): void => {
+    dismissHostError()
     setChannel(name)
     setChannelMode(forMode)
   }
@@ -612,6 +653,12 @@ export function SignInScreen({
   }
   const firstGroup = groupOrder.find((group) => hasGroup[group]) ?? null
 
+  // The host's message is presented until the viewer starts something else.
+  const shownInitialError =
+    initialError !== undefined && dismissedHostErrorKey !== hostErrorKey
+      ? initialError
+      : undefined
+
   const renderGroup = (group: SignInGroup): ReactNode => {
     const headingVariant = group === firstGroup ? 'plain' : 'or'
     switch (group) {
@@ -677,11 +724,11 @@ export function SignInScreen({
           {t('mode.registerEntry')}
         </Button>
       ) : null}
-      {initialError === undefined ? null : (
+      {shownInitialError === undefined ? null : (
         <InlineError
-          code={initialError}
+          code={shownInitialError}
           detail={
-            initialError === 'authn.link_required' &&
+            shownInitialError === 'authn.link_required' &&
             initialErrorEmail !== undefined
               ? t('social.linkRequiredEmail', { email: initialErrorEmail })
               : undefined

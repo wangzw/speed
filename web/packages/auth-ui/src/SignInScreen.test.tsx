@@ -222,6 +222,91 @@ describe('SignInScreen', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(zhCN.errors.unknown)
   })
 
+  it('drop the host landing refusal when another channel is chosen', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={BOTH_FORMS}
+        initialError="authn.link_required"
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.link_required,
+    )
+
+    // Choosing another channel starts a new surface: the refusal that landed
+    // the viewer here does not follow the choice.
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('tab', { name: zhCN.smsSignIn.title }))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('drop the host landing refusal when another mode is chosen', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        )}
+        initialError="authn.link_required"
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.link_required,
+    )
+
+    // Register mode is a different surface; the sign-in refusal belongs to
+    // the surface it landed on.
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    expect(
+      screen.getByText(zhCN.mode.registerTitle),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('drop the host landing refusal when a new attempt starts', async () => {
+    // The host's refusal and a channel's own failure are two results about
+    // two different surfaces: the attempt starts from a clean result, so the
+    // channel's banner does not stand beside the landing refusal.
+    const harness = makeHarness({
+      [LOGIN_START]: () => {
+        throw apiError(503, 'authn.unavailable')
+      },
+    })
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={BOTH_FORMS}
+        initialError="authn.link_required"
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      MAIL,
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+      PASS,
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordSignIn.submit }),
+    )
+
+    const alerts = await screen.findAllByRole('alert')
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]).toHaveTextContent(zhCN.errors.authn.unavailable)
+    expect(
+      screen.queryByText(zhCN.errors.authn.link_required),
+    ).toBeNull()
+  })
+
   it('fire onSignedIn once from the password channel login', async () => {
     const harness = makeSignInHarness()
     const onSignedIn = vi.fn()
