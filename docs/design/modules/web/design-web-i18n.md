@@ -39,7 +39,7 @@ export const CLIENT_TRANSPORT_ERROR_CODES: readonly string[]
 export function resolveTimeZone(stored?: string | null): string
 export function isSupportedTimeZone(zone: string): boolean
 export function formatInstant(value: string | number | Date, language: string, options?: { timeZone?: string; style?: 'short' | 'medium' | 'long' }): string
-export function languageDisplayName(tag: string, uiLanguage: string): string
+export function languageDisplayName(tag: string, uiLanguage: string, supportedLanguages?: readonly string[]): string
 
 export { I18nextProvider, useTranslation } from 'react-i18next'
 ```
@@ -57,7 +57,7 @@ export { I18nextProvider, useTranslation } from 'react-i18next'
 
 **`overlayResources` 的契约**：按语言接收部分 bundle 的覆盖层。已有语言逐叶子深合并，改写一个在 base 中不存在的叶子即抛错；base 没有的语言整份收下，其完整性（全部键与该语言所需的复数形）由 `registerNamespace` 照常校验。base 与 overlay 都不被修改。抛错是升级信号：宿主的覆盖按旧键集书写，平台包删掉或改名一个叶子后，注册要在启动时失败而不是多出一个无人使用的键。
 
-**显示辅助函数的契约**：`resolveTimeZone` 走三级链（宿主给的已存值、设备时区、`UTC`），每一级 Intl 构造受守卫，拒绝的值按空值跳过；`formatInstant` 只经 Intl 渲染，`short`/`medium`/`long` 三档各自映射到固定的 dateStyle/timeStyle 组合，按语言、档位与时区缓存格式化器，空串、无法解析的值与 Intl 拒绝的语言答空串；`languageDisplayName` 经 `Intl.DisplayNames` 取界面语言里的名字，取不到即回到原标签。三个函数都从不抛错。
+**显示辅助函数的契约**：`resolveTimeZone` 走三级链（宿主给的已存值、设备时区、`UTC`），每一级 Intl 构造受守卫，拒绝的值按空值跳过；`formatInstant` 只经 Intl 渲染，`short`/`medium`/`long` 三档各自映射到固定的 dateStyle/timeStyle 组合，按语言、档位与时区缓存格式化器，空串、无法解析的值与 Intl 拒绝的语言答空串；`languageDisplayName` 经 `Intl.DisplayNames` 取界面语言里的名字，取不到即回到原标签；名字按基础语言子标签取，只有当 `supportedLanguages` 里同一基础语言出现多个标签时才改用完整标签，使同一语言的地区变体在选项里可区分（[ADR-web-language-display-name](../../../adr/adr-web-language-display-name.md)）。三个函数都从不抛错。
 
 ### 对外接口面
 
@@ -151,7 +151,7 @@ sequenceDiagram
 
 显示时区链由 `resolveTimeZone` 给出：宿主解析出的已存值（空或全空白视为未选）、设备时区、`UTC`，第一个被 Intl 接受的值胜出。链不落在本包的状态里——哪个界面用哪个时区是宿主与组件包的决定：控制台与对象存储的表格固定显式 `UTC`；通知与登录面、账户面的目标口径是读 ui-kit 的显示时区上下文（通知与登录面在上下文缺席时用设备时区；账户面以存下的偏好优先，上下文只替换链中的设备一级）。这一划分随各组件包的改动落地，当前组件包都还没有读取该上下文：通知与登录面用设备时区，账户面只用存下的偏好。ui-kit 的显示时区上下文是宿主把已解析值交给组件的接缝（见 [ui-kit](design-web-ui-kit.md)）。
 
-`formatInstant` 只经 Intl 渲染：`short`、`medium`、`long` 三档各自映射到固定的 dateStyle/timeStyle 组合（`short` 为短日期短时间、`medium` 为中等日期短时间、`long` 为中等日期带时区名的长时间），按语言、档位与时区缓存格式化器，一屏多行共用一个。空串、无法解析的文本、无效日期与 `NaN` 答空串；Intl 拒绝的语言同样答空串——一个坏值或一种坏语言从不抛进渲染。`languageDisplayName` 经 `Intl.DisplayNames` 给出标签在界面语言里的名字，取不到即回到原标签。
+`formatInstant` 只经 Intl 渲染：`short`、`medium`、`long` 三档各自映射到固定的 dateStyle/timeStyle 组合（`short` 为短日期短时间、`medium` 为中等日期短时间、`long` 为中等日期带时区名的长时间），按语言、档位与时区缓存格式化器，一屏多行共用一个。空串、无法解析的文本、无效日期与 `NaN` 答空串；Intl 拒绝的语言同样答空串——一个坏值或一种坏语言从不抛进渲染。`languageDisplayName` 经 `Intl.DisplayNames` 给出标签在界面语言里的名字，取不到即回到原标签。取名对象默认是标签的基础语言子标签；`supportedLanguages` 中同基础语言的标签多于一个时，改用完整标签，地区变体因此仍然可区分。
 
 ### 错误码到文本
 
@@ -220,6 +220,7 @@ sequenceDiagram
 | 错误码文本约定 | 已实现 | `web/packages/i18n/src/error-text.ts` `createErrorTextResolver`、`SESSION_LIFECYCLE_ERROR_CODES`、`CLIENT_TRANSPORT_ERROR_CODES` |
 | 显示时区与时间格式化 | 已实现 | `web/packages/i18n/src/time.ts` `resolveTimeZone`、`isSupportedTimeZone`、`formatInstant` |
 | 语言名 | 已实现 | `web/packages/i18n/src/language-name.ts` `languageDisplayName` |
+| 语言名按基础语言命名，同基础语言多变体时保留地区名 | 已实现 | `web/packages/i18n/src/language-name.ts` `languageDisplayName` |
 | MUI 本地化映射 | 已实现 | `web/packages/i18n/src/mui-locale.ts` `muiLocaleFor`、`MuiLocale` |
 | 平台错误文案包与注册 | 已实现 | `web/packages/i18n/src/platform-errors.ts` `PLATFORM_ERRORS_NAMESPACE`、`platformErrorResources`、`registerPlatformErrors` |
 | react 绑定再导出 | 已实现 | `web/packages/i18n/src/index.ts` `I18nextProvider`、`useTranslation` |

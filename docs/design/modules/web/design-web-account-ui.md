@@ -10,6 +10,7 @@
 - `IdentifiersSection`：账户的登录方式与联系方式分组呈现、联系方式逐条删除、选择与自助添加。邮箱与手机各带归属状态与联系方式标记，登录方式与默认联系地址的选择规则见「联系方式与登录方式的呈现与选择」；每条已登记的邮箱与手机都在联系方式组，未作登录方式的值只出现在联系方式组，不由任一开关决定它是否为联系方式。标识读自 `GET /api/v1/auth/me` 的 `identifiers` 字段（规格无独立的清单路由），删除走 `DELETE /api/v1/auth/identifiers/{id}`。添加面走登录自助的 `POST /api/v1/auth/identifiers`（体 `{kind, value}`，`kind` 取 `username` 或 `email`）：用户名一步写入；邮箱先发验证码、再经 `POST /api/v1/auth/identifiers/verify` 提交码，通过才写标识（[authn 登录](../authn/design-authn-login.md)）。每条标识的 `proven` 表示它是否已证明归属：`email-code`、`sms-code`、`invite` 与 `idp:<provider>` 为真，`admin`、`import-unverified` 与 `self` 为假；`verified_at` 不参与这个判断。用户名是登录名、没有归属可验证，故登录方式组里的用户名以说明句呈现、不渲染归属 chip；联系方式组里邮箱与手机行的 chip 是二值的，只看 `proven`：为真读「已验证」，为假读「未验证」，不按 `verified_via` 细分来源，也没有第三态。经管理员或导入写下的地址就是一条其持有人尚未证明的地址，它与自助注册写下的地址受同一条限制、拦下同一批能力；界面不为「账户可用」另造一个标签。未验证的邮箱在联系方式组的行在行尾的省略号菜单里另给「验证」项：它把验证码发到该行已经显示的地址，兑现后由账户模块就地证明这一行，重取的列表把 chip 翻成「已验证」；地址在这条流程里不可编辑，换地址走添加面或验证节。该动作在档案的 `verification.state` 为 `pending` 时不渲染——验证节与宿主的横幅已经在同一条待验证记录上发码，两个并发请求会互相覆盖——没有邮件通道的部署也不渲染它。删除动作与验证动作互不牵连：联系方式行的删除可以被「最后登录名」的规则扣下，验证不受这条规则影响。手机在联系方式行上的 chip 同样二值，手机的行级验证走手机回路，不在标识节里。带口令（`password_set`）的账户经用户名或已选作登录方式的邮箱登录：档案里的用户名与选作登录方式的邮箱合计恰好一条时，该邮箱在联系方式组里的行在行尾的省略号菜单里不提供移除项，改为说明「先添加另一个登录名再删除」；用户名在登录方式组以说明句陈述它是固定登录名、不能更改或删除（`identifiers.usernamePermanent`），不渲染移除动作；选作登录方式的手机与已绑定的外部身份是别的登录方式，不计入这个豁免，也不因此保留删除按钮（REQ-account-044、REQ-security-040）。服务端仍是最后登录方式的判定者。`verification.state` 为 `pending` 时，添加面不提供邮箱一项——未验证的地址由 `ContactVerificationSection` 管理（`pending` 必有目标地址，由该节显示与发码），避免同一账户出现两个待验证目标；用户名与手机选项照常。`emailAvailable` 表示添加面是否提供邮箱一项（缺省提供）；`offerUsername` 表示添加面是否提供用户名一项（缺省提供），与「档案已列出用户名」求交。添加面在 `kind=email` 时先按服务端规则本地校验（去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节），不合格在该字段显示 `identifiers.add.invalidEmail` 且不发请求，提交的是去空白后的值；服务端仍答 400 `authn.bad_request` 且 kind 为 email 时同样落在该字段，而不是通用横幅；服务端答 409 `authn.email_taken` 时也落在该字段（`identifiers.add.emailTaken`），预留的插入是原子的，被拒的是地址这一个值。验证码一步在地址于发码之后被别的账户取得时同样答 `authn.email_taken`，添加面退回值字段并显示同一条文案，不停在无法完成的验证码一步。用户名的 400 走通用文案：服务端的用户名规则还拒绝本面不复述的形状（静态凭据前缀、UUID 形状、保留字）。首登开户在建号前取得用户名不改变本面：没有用户名的账户（只可能来自绕过写入面的写入）仍在此补写。取消添加清空失败横幅、字段错误、成功提示与已发码状态。
 - `ContactVerificationSection`：账户的邮箱验证节。它读 `GET /api/v1/auth/me` 的 `verification` 字段：`pending` 且 `email` 非空时显示目标邮箱、发送与重发验证码、验证码输入与更换邮箱；`pending` 且 `email` 为空时显示添加邮箱表单（`POST /api/v1/auth/identifiers`）；`verified` 显示完成态；`none` 不渲染。`pending` 的目标地址可能是自助注册写下的未证明预留，也可能是一条经管理员或导入写下的未证明邮箱标识；本节不区分两者，验证路径相同。发送、验证与更换邮箱走标识回路（`POST /api/v1/auth/identifiers` 与 `/identifiers/verify`），手机走手机回路（`POST /api/v1/auth/phone` 与 `/phone/verify`）；登记与证明本身不要求新鲜认证，本包不为这些写开提权门控；验证的后果改变账户据以证明或找回自己的事实时（一条将成为默认联系地址或唯一邮箱地址的邮箱、一个将取代已启用短信因素目标的新手机号），服务端答提权 401，本节按普通失败渲染。宿主可传 `autoSend`：`pending` 且有目标邮箱、更换表单未展开时，本次挂载自动发送一次验证码，重渲染与写后重读都不重复；自动发送不打开提权对话框，被拒绝时保留手动发送按钮并渲染该拒绝码的文本（`verification.autoStepUp`），用户点击后是一次普通发送。落地即展开更换表单（`initialChangeOpen`）的挂载整次都不自动发送，关闭表单后也不补发——来访者是来更换地址的，旧地址不该在本挂载收到验证码。宿主只在账户页的 `?verify=1` 落地传。验证节与宿主挂在应用栏之下的验证提示都以邮箱为主路径；手机入口标注为额外安全因素，不承诺解除限制——只有邮箱被证明才把验证状态转为已验证。验证只证明归属，不把目标地址选作登录方式；默认联系地址按已证明邮箱中恰好一条的规则成立，验证动作本身不指定它（REQ-account-062、REQ-account-063）。
 - `PreferencesSection`：语言与时区两个下拉，各占一行、各带自己的行标题（下拉本身不带浮动标签），编辑账户存下的偏好，走账户档案的自写面（`PATCH /api/v1/auth/me`，[authn-profile](../authn/design-authn-profile.md)）。语言的取值集是 i18n 实例自己的受支持集；语言的选取先写账户、确认写入后再落设备（手选槽位），清空偏好只动账户；时区取值集是引擎的 IANA 列表加一个显式的「未选」。
+- `ColorModeSection`：颜色模式的一个下拉，选项是固定闭集：深色、浅色、跟随设备。它读账户存下的 `color_mode`、写同一字段（`PATCH /api/v1/auth/me`），与 `PreferencesSection` 走同一条自写面、同一个「先写账户、确认写入后再生效」的次序。账户没有保存过时，控件显示宿主给出的当前生效值；选择成功后经 `onApplied` 通知宿主把偏好交给主题 provider 并更新设备镜像。选项集合与文案归本包，宿主不提供取值。
 - `AppearanceSection`：外观主题的选择。它是受控节：预设列表、每个预设的显示名、当前值与选择回调都由宿主给出，本包不 import `@speed/theme-presets`、不读主题 provider，也不持有选择状态。宿主把选择接到主题 provider 后，切换立即生效。
 - `SessionsSection`：账户的会话与设备列表，当前会话所属的那条打上当前徽标，逐条撤销与批量撤销「其它会话」。撤销自己的会话是低损失动作（行上不再确认），撤销其余走 ui-kit 危险 `ConfirmDialog` 的单次确认——它是可恢复的动作（被登出的设备再登录即可），不设 `doubleConfirm` 两步守卫，免得比不可逆的删除还重。
 - `SocialBindingsSection` 加 `BindingCallbackHandler`：社交绑定面与在宿主回调路由上完成一次绑定的处理器。已绑定的社交与企业身份是登录方式组的一类，不列在联系方式组（REQ-account-067）。外部身份只经本节的显式添加建立；登录不按提供方声明的地址接管账户或并入绑定（REQ-signup-049）。添加区的渠道取自部署的发现文档（`GET /api/v1/auth/methods` 中 `kind=redirect` 的方法）。
@@ -23,7 +24,7 @@
 
 ### 非职责
 
-- **不做通用属性集的编辑。** 自助档案面（`PATCH /api/v1/auth/me`）的自写字段集是显示名、通用属性集、语言与时区（[ADR-authn-selfservice-profile](../../../adr/adr-authn-selfservice-profile.md)）；本包交付显示名（`ProfileSection`）与语言、时区（`PreferencesSection`），不交付自由键值对的通用属性集编辑——那需要一个不属于账户页固定字段的通用编辑器，属宿主内容。
+- **不做通用属性集的编辑。** 自助档案面（`PATCH /api/v1/auth/me`）的自写字段集是显示名、通用属性集、语言、时区与颜色模式（[ADR-authn-selfservice-profile](../../../adr/adr-authn-selfservice-profile.md)）；本包交付显示名（`ProfileSection`）、语言与时区（`PreferencesSection`）与颜色模式（`ColorModeSection`），不交付自由键值对的通用属性集编辑——那需要一个不属于账户页固定字段的通用编辑器，属宿主内容。
 - **自助添加标识的 `kind` 是封闭集，限于用户名与邮箱。** 手机走它自己的两步面（`PhoneSection`，`POST /api/v1/auth/phone`）；`IdentifiersSection` 的添加面只给用户名与邮箱两种（[authn 登录](../authn/design-authn-login.md)）；档案已列出用户名时，添加面不再提供用户名（REQ-account-008）：服务端对第二个用户名与对已被他人占用的用户名答同一个 409 `authn.conflict`，文案无法区分二者，客户端因此不发出第二个用户名。
 - **不交付登录历史节。** 登录历史没有自助端点，只有管理员面（[authn-admin](../authn/design-authn-admin.md) 的审计读）；普通账户看不到自己的登录历史，故本包不交付这一节。
 - **不交付恢复码。** 认证的因素面不提供恢复码（[authn-mfa](../authn/design-authn-mfa.md)），故本包不交付恢复码的显示或重生成。
@@ -34,11 +35,11 @@
 - **不做服务端判定的替代。** 权限、租户隔离与账户归属都由服务端判定；本包只渲染应答。
 - **不判定注册验证状态，也不自行解除限制。** `verification` 由 `GET /api/v1/auth/me` 读出，哪些能力在未验证期间受限由服务端判定；本包只按读到的状态渲染验证节与完成态。判据与账户来源无关，界面因此不对管理员预置或导入的账户另走一条路径。本包也不判定一条已证明地址是否被选作登录方式或默认联系地址：选择由持有人做出，账户唯一一条邮箱地址的自动选择由服务端写下，本包只读标记并按它渲染。
 - **地址占用在发码前即被明确拒绝。** 发送与验证两步对已被其他账户预留或持有的地址答 409 `email-taken`，文案点明该地址已被另一个账户使用并让用户换一个；预留的插入是原子的，界面不再用同形应答隐藏占用。
-- **不定义主题预设，也不让预设生效。** 预设的集合、显示名与切换后的效果归宿主与主题 provider；`AppearanceSection` 只排布宿主给出的选项并上报选择。
+- **不定义主题预设，也不让预设生效。** 预设的集合、显示名与切换后的效果归宿主与主题 provider；`AppearanceSection` 只排布宿主给出的选项并上报选择。颜色模式不受此条：它的三个取值是本包的固定闭集，落在账户偏好上，但把偏好变成配色仍是主题 provider 的事。
 
 ## 外部接口契约
 
-`web/packages/account-ui/src/index.ts` 是公开面：`ProfileSection`；`PasswordSection`（连同 `PasswordSectionProps`）；`PhoneSection`（连同 `PhoneSectionProps`）；`IdentifiersSection`（连同 `IdentifiersSectionProps`）；`ContactVerificationSection`（连同 `ContactVerificationSectionProps`）；`PreferencesSection`；`AppearanceSection`（连同 `AppearanceSectionProps`、`ThemePresetChoice`）；`SessionsSection`（连同 `SessionsSectionProps`）；`SocialBindingsSection`（连同 `SocialBindingsSectionProps`）；`BindingCallbackHandler`（连同 `BindingCallbackHandlerProps`）；`MfaSection`（连同 `MfaSectionProps`）；`StepUpDialog`（连同 `StepUpDialogProps`）；以及命名为 `ACCOUNT_UI_NAMESPACE`、`accountUiResources` 的资源对。`web/packages/account-ui/src/internal/` 下的错误文案解析器、失败横幅、流程步渲染器与翻译钩子是族内管线，不外导（`StepUpDialog` 是对内部对话框的有意外导）。提权对话框与门控的归属由 [ADR-web-auth-seams](../../../adr/adr-web-auth-seams.md) 裁定：对话框以 `StepUpDialog` 外导、**只给宿主用**（同层的 `console-ui` 与 `auth-ui` 不得 import 它，那是一条同层边），安全类自助写的提权门控用 `@speed/auth-core` 的 `useStepUpGate`。
+`web/packages/account-ui/src/index.ts` 是公开面：`ProfileSection`；`PasswordSection`（连同 `PasswordSectionProps`）；`PhoneSection`（连同 `PhoneSectionProps`）；`IdentifiersSection`（连同 `IdentifiersSectionProps`）；`ContactVerificationSection`（连同 `ContactVerificationSectionProps`）；`PreferencesSection`；`AppearanceSection`（连同 `AppearanceSectionProps`、`ThemePresetChoice`）；`ColorModeSection`（连同 `ColorModeSectionProps`）；`SessionsSection`（连同 `SessionsSectionProps`）；`SocialBindingsSection`（连同 `SocialBindingsSectionProps`）；`BindingCallbackHandler`（连同 `BindingCallbackHandlerProps`）；`MfaSection`（连同 `MfaSectionProps`）；`StepUpDialog`（连同 `StepUpDialogProps`）；以及命名为 `ACCOUNT_UI_NAMESPACE`、`accountUiResources` 的资源对。`web/packages/account-ui/src/internal/` 下的错误文案解析器、失败横幅、流程步渲染器与翻译钩子是族内管线，不外导（`StepUpDialog` 是对内部对话框的有意外导）。提权对话框与门控的归属由 [ADR-web-auth-seams](../../../adr/adr-web-auth-seams.md) 裁定：对话框以 `StepUpDialog` 外导、**只给宿主用**（同层的 `console-ui` 与 `auth-ui` 不得 import 它，那是一条同层边），安全类自助写的提权门控用 `@speed/auth-core` 的 `useStepUpGate`。
 
 ```tsx
 interface PasswordSectionProps {
@@ -76,6 +77,12 @@ interface AppearanceSectionProps {
   readonly onChange: (id: string) => void         // 选择回调，收到预设 id
 }
 
+interface ColorModeSectionProps {
+  readonly effective: AppThemeModePreference      // 账户未保存过时显示的当前生效值
+  readonly onApplied: (value: AppThemeModePreference) => void // 写入成功后的通知
+  readonly hideLabel?: boolean                    // 由宿主用行标题命名
+}
+
 interface SocialBindingsSectionProps {
   readonly session: AuthSession
   readonly returnTo: string // 宿主的绑定回调路由；作为 link 流程的顶层 return_to 发出。分离源部署传受信源下的绝对 URL；服务端接受路径或该 URL
@@ -109,6 +116,8 @@ interface MfaSectionProps {
 `SocialBindingsSection` 的 `session` 属性经 `session.listMethods`（`GET /api/v1/auth/methods`）读部署的发现文档：添加区只渲染 `kind=redirect` 且未绑定的方法，名称取描述符的 `label`（缺省用方法名），并为点击起一条 `purpose: 'link'` 的流程（`session.startAuthenticatedFlow`），`returnTo` 作为该流程请求的顶层 `return_to` 发出；分离源部署传受信源下的绝对 URL，服务端接受路径或该 URL。方法是否已绑定、以及已绑定行的提供方取值归到哪个方法，都经同一份描述符的 `binding_providers` 解析：取值等于其中一项或以一项为前缀即归到该方法，描述符缺少该项时按方法名匹配；该方法就此与任一已绑定取值匹配上时，添加区不再提供该渠道。`MfaSection` 的 `session` 属性为登记起一条 `purpose: 'enroll'` 的流程、为挑战起一条 `purpose: 'step-up'` 的流程，并经 `session.listMethods`（`GET /api/v1/auth/methods`）读本部署装配的因素以决定提供哪些登记入口——读因子清单、删因子与解绑的读写本身是走共享访问令牌的生成调用；删已启用因素与解绑另用同一属性开身份切换窗口（见「轮换点上的身份切换窗口」）。`SessionsSection` 不接会话属性，只接一个可选的 `renderHeaderAction` 渲染槽：它显示谁的会话、谁有权撤销，来自调用方绑定的客户端与它的访问令牌。该槽收到「退出其他设备」控件并返回代其渲染的节点，宿主借此把动作放进自己的块标题动作区（演示宿主以 portal 渲染进标题槽）；不传时本节在列表上方自行渲染该动作，纯表面上即独立一行。槽只在动作确实会渲染时——列表已结算且另有一条可撤销会话——被调用。
 
 **`AppearanceSection` 是受控的外观选择。** 它经 `SectionCard` 渲染一节，标题与说明取自本包命名空间；下拉列出宿主传入的全部预设，当前值标记为选中，选择时把该预设的 id 交给 `onChange`。`hideLabel` 去掉控件自己的可见标签，由宿主用行标题命名它，可及名仍由控件携带。预设列表为空或只有一项时，标题与带标签的控件照常渲染，不塌陷。它不 import `@speed/theme-presets`、不读主题 provider：预设存在与否、叫什么、选中后如何生效都是宿主的事实。
+
+**`ColorModeSection` 自己读写账户，但按偏好生效仍归宿主。** 它经 `SectionCard` 渲染一节，下拉固定三项：深色、浅色、跟随设备，名称取自本包命名空间。账户的 `color_mode` 非空时它就是选中项；为空时选中项是宿主给的 `effective`，即当前实际生效的偏好。选择后先 `PATCH /api/v1/auth/me` 的 `color_mode`，成功才失效档案读并调用 `onApplied`，失败保留原值、由本节自己的反馈作用域报错。它不读主题 provider、不碰设备存储：把值交给 provider、更新设备镜像都是宿主在 `onApplied` 里做的事。
 
 **查询键构造器是公开面。** 失效用本包导出的查询键构造器（如 `getAuthnSessionListQueryKey`），不经手写键。账户自己的标识与绑定读自 `GET /api/v1/auth/me`（其 `identifiers` 与 `links` 字段），无独立的清单端点，故无对应查询键。
 
@@ -160,6 +169,7 @@ sequenceDiagram
 | 联系方式与登录方式 | 档案读出的标识条目上的选择事实 | 每条已登记的邮箱与手机都是联系方式；是否作登录方式由持有人选择，邮箱另有它与默认联系地址的关系。未作登录方式的地址与号码仍列在联系方式中。未证明的邮箱或手机不能作登录方式，未证明的邮箱不能作默认联系地址（REQ-account-061、REQ-account-065、REQ-account-066）。验证只写归属，不改登录方式的位置（REQ-account-062）；默认联系地址在已登记并已证明的邮箱中恰好一条（REQ-account-063） |
 | 加强认证流程 | `StepUpFlow` | 一条 `purpose: 'step-up'` 流程的驱动；成功后重跑被门控的动作 |
 | 外观选择 | `ThemePresetChoice` | 宿主提供的一个预设：id 与已翻译的显示名；`AppearanceSection` 只渲染与上报 |
+| 颜色模式偏好 | `AppThemeModePreference` | ui-kit 的三态偏好 `light`、`dark`、`system`；本包只取类型，账户上的字段名是 `color_mode` |
 | 命名空间 | `accountUiResources` | `zh-CN` 与 `en-US` 两份目录，叶子键集相同 |
 
 ## 核心算法与流程
@@ -324,6 +334,7 @@ sequenceDiagram
 | 轮换点上的身份切换窗口 | 已实现 | `web/packages/account-ui/src/internal/identity-transition.ts` `runIdentityTransition` |
 | 偏好节 | 已实现 | `web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection` |
 | 外观节 `AppearanceSection`（受控的主题预设选择） | 已实现 | `web/packages/account-ui/src/AppearanceSection.tsx` `AppearanceSection`、`AppearanceSectionProps`、`ThemePresetChoice` |
+| 颜色模式节 `ColorModeSection`（读写账户的颜色模式偏好） | 已实现 | `web/packages/account-ui/src/ColorModeSection.tsx` `ColorModeSection`、`ColorModeSectionProps` |
 | 各节的反馈作用域与成功确认 | 已实现 | `web/packages/account-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion`；`web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection`；`web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection`；`web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`；`web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`；`web/packages/account-ui/src/SessionsSection.tsx` `SessionsSection`；`web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |
 | 读的刷新失败的陈旧提示 | 已实现 | `web/packages/account-ui/src/internal/async-section.tsx` `AccountAsyncSection`；`web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection`；`web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`；`web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection`；`web/packages/account-ui/src/SessionsSection.tsx` `SessionsSection`；`web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/MfaSection.tsx` `MfaSection` |
 | 错误白名单组合会话生命周期码族及其双语文案 | 已实现 | `web/packages/account-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`、`useAccountUiErrorText`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `errors.authn.session_not_found`、`errors.authn.session_revoked`、`errors.authn.token_expired`、`errors.authn.refresh_token_invalid`、`errors.authn.refresh_token_reused` |

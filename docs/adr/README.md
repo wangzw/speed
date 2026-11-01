@@ -126,6 +126,8 @@
 | [浅色模式的 warning、info 与 success 取 700 调，使 main 同时满足文字与填充两种读法](adr-web-light-contrast.md) |
 | [应用外壳的形态在装配期选定并由一组内置变体表达，不交给宿主自由拼装](adr-web-shell-layout-variant.md) |
 | [主题预设是纯数据的 token 覆写，效果由 ui-kit 映射，预设不承载组件覆盖](adr-web-theme-presets.md) |
+| [颜色模式偏好跟随账户，系统偏好由主题 provider 解析](adr-web-color-mode-preference.md) |
+| [语言选项按基础语言命名，同基础语言多变体时保留地区名](adr-web-language-display-name.md) |
 
 ## 认证
 

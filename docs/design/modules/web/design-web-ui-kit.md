@@ -25,6 +25,7 @@
 
 ```ts
 export type AppThemeMode = 'light' | 'dark'
+export type AppThemeModePreference = AppThemeMode | 'system'
 
 export interface AppTheme {
   readonly tokens: SpeedTokens   // 合并后的 token 树
@@ -33,9 +34,9 @@ export interface AppTheme {
 export function createAppTheme(projectTokens?: TokensOverride, tenantOverrides?: TokensOverride, mode?: AppThemeMode): AppTheme
 
 export interface AppThemeModeControl {
-  readonly mode: AppThemeMode
-  readonly setMode: (mode: AppThemeMode) => void
-  readonly toggleMode: () => void
+  readonly mode: AppThemeMode                       // 已解析，可直接用于 createAppTheme
+  readonly preference: AppThemeModePreference       // 用户选择，可能是 'system'
+  readonly setPreference: (preference: AppThemeModePreference) => void
 }
 export function useAppThemeMode(): AppThemeModeControl
 
@@ -49,7 +50,7 @@ export interface AppThemeProviderProps {
   readonly i18n: I18nInstance
   readonly projectTokens?: TokensOverride
   readonly tenantOverrides?: TokensOverride
-  readonly defaultMode?: AppThemeMode
+  readonly defaultMode?: AppThemeModePreference
   readonly presets?: readonly ThemePreset[]     // 可切换的预设货架；缺席或为空即不叠预设层
   readonly defaultPreset?: string               // 起始预设 id；不在货架里时回落第一项
   readonly children?: ReactNode
@@ -65,9 +66,11 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 **颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景、文本与分隔线改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板。六个语义角色同守这条纪律：`main` 是浅色表面上的色调，`light` 是给深色表面的色调，故 `'dark'` 时每个角色的 `main` 取它的 `light` 色调、`contrastText` 取中性色阶的深端（900），使填充控件的标签在该底色上仍可读（对比度判据由测试钉住）。浅色模式下六个角色统一用 token 的 `contrastText`（白色）；warning、info、success 的 `main` 因此取各自的 700 调，使同一个值既作填充底色、又作提示与状态文案的文字色时都满足 4.5:1（[ADR-web-light-contrast](../../../adr/adr-web-light-contrast.md)）。MUI 的悬停填充读角色的 `dark` 槽，token 的最深一档在该标签下不足 4.5:1，故 `'dark'` 时的 `dark` 取 `light` 向白色混入 20% 的色调，既保留悬停步进又守住标签对比度。只覆写 `main` 不会作用于深色模式：给品牌换色需同时给出 `light`。缺省即原行为，未传该入参的宿主逐字节不受影响。
 
+**偏好与已解析模式是两层。** `createAppTheme` 只接受已解析的 `AppThemeMode`；`'system'` 归 provider 解析——它在偏好为 `'system'` 期间读 `prefers-color-scheme: dark` 并订阅其变化，把结果作为 `mode` 交给工厂。引擎没有 `matchMedia`、构造或读取抛错、以及服务端渲染的快照，都解析为 `'light'`。偏好与模式是两份状态，主题预设与它们正交：改偏好只换 `mode`，改预设只换 token 层。
+
 **返回的主题无本地化，是有意的**：MUI 的内建文本随语言变化，故本地化合并发生在渲染期——`AppThemeProvider` 把活动语言的 MUI 本地化并到基础主题上，或宿主自行 `createTheme(appTheme.theme, muiLocaleFor(i18n.language))`。
 
-**`AppThemeProvider` 的契约**：它持有主题装配（记忆化，使一组覆写加一个模式只建一次合并树与主题）、MUI 本地化联动（订阅 `languageChanged`，使 MUI 内建文本随每次切换更新；本地化合并落在 token 映射之后，使 MUI 组件默认不覆盖 token）、颜色模式状态（活动模式是 provider 自己的状态，起始为 `defaultMode`，经 `useAppThemeMode` 暴露 `mode`／`setMode`／`toggleMode`；切换即重建主题，子树随之重渲染），以及全局重置（渲染一次主题感知的 `CssBaseline`）。它刻意不渲染 `I18nextProvider`、不注册命名空间：两者属于宿主启动。
+**`AppThemeProvider` 的契约**：它持有主题装配（记忆化，使一组覆写加一个模式只建一次合并树与主题）、MUI 本地化联动（订阅 `languageChanged`，使 MUI 内建文本随每次切换更新；本地化合并落在 token 映射之后，使 MUI 组件默认不覆盖 token）、颜色模式状态（provider 持有偏好，起始为 `defaultMode`；`useAppThemeMode` 暴露已解析的 `mode`、偏好 `preference` 与 `setPreference`；偏好为 `'system'` 时按系统偏好解析并订阅其变化，改偏好即重建主题，子树随之重渲染），以及全局重置（渲染一次主题感知的 `CssBaseline`）。它刻意不渲染 `I18nextProvider`、不注册命名空间：两者属于宿主启动。
 
 **主题层承载触摸目标下限。** 粗指针（`pointer: coarse`）下，基础控件的最小宽高为 44×44：`Button`、`IconButton`、`Checkbox`、`Radio`、`Switch`、`ListItemButton` 各有一项，`ButtonBase` 一项覆盖其余以它为根的控件（`Tab`、`MenuItem`、`ToggleButton`、`CardActionArea`、`TableSortLabel` 等）；`InputBase` 的根与输入槽同时取下限，使字段的视觉框与真正接收点击的输入元素都达标；可点击的 `Chip` 按 `MuiChip-clickable` 类取下限，非交互的状态标签保持紧凑。各包由此继承下限，不依赖逐处指定。所有下限声明都嵌在 `@media (pointer: coarse)` 内，细指针下不产生任何声明，桌面观感不变。`Link` 在粗指针下同时改为居中的 `inline-flex` 盒，因为 `min-height` 对非替换行内盒不生效。主题管不到的裸元素——裸 `<a>`、宿主自有的可点元素——由 `touchTargetSx` 兜底（见核心数据结构）。
 
@@ -205,7 +208,7 @@ sequenceDiagram
     Inst-->>Provider: languageChanged
     Provider->>Provider: 重取语言、重并本地化
     Provider->>MUI: 新主题
-    Note over Host,MUI: useAppThemeMode 的 setMode/toggleMode 与 useAppThemePreset 的 setPreset 改 provider 状态，重跑 createAppTheme 并换主题
+    Note over Host,MUI: useAppThemeMode 的 setPreference 与 useAppThemePreset 的 setPreset 改 provider 状态，重跑 createAppTheme 并换主题
 ```
 
 ## 核心数据结构
@@ -441,6 +444,7 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 | 输入框静止描边取 `text.secondary`（非文本 3:1） | 已实现 | `web/packages/ui-kit/src/theme/control-borders.ts` `controlBorderComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 降级动效 | 已实现 | `web/packages/ui-kit/src/theme/reduced-motion.ts` `reducedMotionComponents`、`REDUCED_MOTION_QUERY`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 主题provider、本地化联动与颜色模式 | 已实现 | `web/packages/ui-kit/src/theme/AppThemeProvider.tsx` `AppThemeProvider`、`useAppThemeMode`、`AppThemeModeControl` |
+| 三态颜色模式偏好与系统偏好解析 | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `AppThemeModePreference`；`web/packages/ui-kit/src/theme/AppThemeProvider.tsx` `AppThemeProvider`、`AppThemeModeControl`；`web/packages/ui-kit/src/theme/system-color-mode.ts` `useSystemColorMode` |
 | 主题预设层与切换（`presets`/`defaultPreset`、`useAppThemePreset`） | 已实现 | `web/packages/ui-kit/src/theme/AppThemeProvider.tsx` `AppThemeProvider`、`AppThemePresetControl`、`useAppThemePreset` |
 | 表面填充 `opacity` 的解析 | 已实现 | `web/packages/ui-kit/src/theme/surface.ts` `resolveSurfaceTheme`、`withOpacity` |
 | 页面基线（页填充、文字辉光、画布渐变） | 已实现 | `web/packages/ui-kit/src/theme/baseline.ts` `baselineComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |

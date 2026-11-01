@@ -116,7 +116,9 @@ The client table is merged into `createClient` with `credentials`
 defaulting to `'same-origin'` and the base URL, refresh leg, language
 source and tenant source the assembly's own. `theme` forwards
 `projectTokens`, `defaultMode` and the preset pair `presets` /
-`defaultPreset` to the `AppThemeProvider` inside the stack: tenant
+`defaultPreset` to the `AppThemeProvider` inside the stack
+(`defaultMode` is the initial color-mode preference and accepts
+`'system'`, which follows the device): tenant
 white-labelling is runtime host composition (a nested
 `AppThemeProvider tenantOverrides`), never a definition field.
 `documentLanguage: false` disables the `<html lang>` binding the

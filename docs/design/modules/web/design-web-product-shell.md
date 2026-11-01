@@ -169,7 +169,7 @@ export function watchSessionEnd(
 export function createQueryClient(): QueryClient
 ```
 
-**`SpeedAppDefinition` 的各项即本包定义的可变面。** `namespaces` 是应用自己的命名空间；`resourceOverrides` 是按命名空间再按语言的宿主覆盖资源，在每个命名空间唯一一次注册前经 `overlayResources` 合并，随后把该命名空间的注册语言集裁到实例的受支持集；`providers` 是标准 provider 栈与视图之间的应用级 provider，最外层在前；`view` 是视图根（通常是宿主槽齐备的 `ProductShell` 组合），与 `providers` 一起只在启动恢复落定后挂载；`sessionEnded` 覆盖出厂的会话结束动作；`baseUrl` 是客户端基地址；`client` 合并进 `createClient`（凭据模式缺省 `same-origin`，另有 reporter、重试策略、超时、fetch 与租户头名）；`theme` 转发 `projectTokens`、`defaultMode`、可切换的预设货架 `presets` 与起始预设 `defaultPreset`；`i18n` 合并进实例创建；`tenantProvider` 是当前租户别名，经客户端作租户头播报；`documentLanguage: false` 关闭 `<html lang>` 跟随。
+**`SpeedAppDefinition` 的各项即本包定义的可变面。** `namespaces` 是应用自己的命名空间；`resourceOverrides` 是按命名空间再按语言的宿主覆盖资源，在每个命名空间唯一一次注册前经 `overlayResources` 合并，随后把该命名空间的注册语言集裁到实例的受支持集；`providers` 是标准 provider 栈与视图之间的应用级 provider，最外层在前；`view` 是视图根（通常是宿主槽齐备的 `ProductShell` 组合），与 `providers` 一起只在启动恢复落定后挂载；`sessionEnded` 覆盖出厂的会话结束动作；`baseUrl` 是客户端基地址；`client` 合并进 `createClient`（凭据模式缺省 `same-origin`，另有 reporter、重试策略、超时、fetch 与租户头名）；`theme` 转发 `projectTokens`、`defaultMode`（可取值 `light`、`dark`、`system`，见 [ui-kit](design-web-ui-kit.md)）、可切换的预设货架 `presets` 与起始预设 `defaultPreset`；`i18n` 合并进实例创建；`tenantProvider` 是当前租户别名，经客户端作租户头播报；`documentLanguage: false` 关闭 `<html lang>` 跟随。
 
 **列出四个族命名空间之一即替换其出厂资源。** 装配自身组合的四个族命名空间（ui-kit、layout-kit、auth-ui、product-shell 自己的）自动注册；在 `namespaces` 里列出其中之一时，它替换该命名空间的出厂语言包而不是被注册两次——这是整体替换平台文案的途径。平台错误包不经此途径替换，只经 `resourceOverrides` 覆盖。
 

@@ -68,6 +68,14 @@
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-personalize-interface.spec.ts` `personalize-interface: the chosen language and time zone take effect and survive a reload`
 
+### REQ-account-071
+
+系统必须允许账户持有人把颜色模式保存为本人偏好；保存后界面按该颜色模式呈现。
+
+- **验收**：选择深色、浅色或跟随设备并保存后，重新读取账户资料得到该颜色模式，界面按它呈现；换用另一设备进入后仍按保存的颜色模式呈现。
+- **状态**：未实现
+- **端到端测试**：未实现
+
 ### REQ-account-034
 
 系统必须允许账户持有人清空语言或时区偏好；清空某项偏好只清除账户偏好，不改变设备语言或设备时区。
