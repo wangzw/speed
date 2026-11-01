@@ -10,7 +10,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import { createClient } from '@speed/api-client'
@@ -637,6 +637,54 @@ describe('SmsPage', () => {
     expect(
       await screen.findByText(text(zhCN.sms.removed, { name: 'login-code' })),
     ).toBeInTheDocument()
+  })
+
+  it('drops the section results and the row marker when the operator refreshes', async () => {
+    const user = userEvent.setup()
+    const operations = withTemplates({
+      setSmsTemplateEnabled: () => Promise.reject({ code: 'sms.conflict' }),
+    })
+    renderWithProviders(<SmsPage />, { operations })
+    await screen.findByText('login-code')
+
+    // One result in each of the three scopes: a register success, an offer
+    // success and a refused row action with its inline marker.
+    await user.type(screen.getAllByLabelText(zhCN.sms.register.nameLabel)[0]!, 'welcome')
+    await user.click(screen.getAllByRole('button', { name: zhCN.sms.register.submit })[0]!)
+    const registered = text(zhCN.sms.registered, { name: 'welcome' })
+    expect(await screen.findByText(registered)).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText(zhCN.sms.offer.contentLabel), 'your code is {code}')
+    await user.type(screen.getAllByLabelText(zhCN.sms.offer.nameLabel)[1]!, 'welcome')
+    await user.type(screen.getByLabelText(zhCN.sms.offer.kindLabel), 'verification')
+    await user.type(screen.getByLabelText(zhCN.sms.offer.localeLabel), 'zh-CN')
+    await user.click(screen.getByRole('button', { name: zhCN.sms.offer.submit }))
+    const offered = text(zhCN.sms.offered, { name: 'welcome' })
+    expect(await screen.findByText(offered)).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.sms.disableAria, { name: 'login-code' }),
+      }),
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.sms.conflict,
+    )
+    const toggleName = text(zhCN.sms.disableAria, { name: 'login-code' })
+    expect(screen.getByRole('button', { name: toggleName })).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
+
+    // A refresh changes the context those results describe; all of them go
+    // before the page re-reads.
+    await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
+    await waitFor(() => expect(screen.queryByText(registered)).toBeNull())
+    expect(screen.queryByText(offered)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: toggleName }),
+    ).toHaveAttribute('aria-invalid', 'false')
   })
 
   it('translates the sources and approval states it knows and leaves an unknown one as recorded', async () => {

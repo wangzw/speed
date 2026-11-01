@@ -26,7 +26,10 @@
  * template table's enable/remove actions under the table. A refused row
  * action marks that row inline with the same resolved text the region
  * shows and brings the region into view; a success names the template it
- * changed. The page opens with ui-kit's PageHeader.
+ * changed. The header's refresh re-reads the template list and drops the
+ * three scopes and the table's row marker first, because a refresh changes
+ * the context those results were written under. The page opens with
+ * ui-kit's PageHeader.
  */
 
 import { useState } from 'react'
@@ -41,6 +44,8 @@ import {
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
+  pageRefreshRead,
+  usePageRefresh,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -117,6 +122,18 @@ export function SmsPage() {
     readonly name: string
     readonly action: 'enabled' | 'remove'
   } | null>(null)
+  // The refresh action re-reads the page's one body read. A refresh changes
+  // the context every result on the page was written under, so it drops the
+  // three section scopes and the table's row marker before re-reading.
+  const pageRefresh = usePageRefresh(
+    [pageRefreshRead('sms-templates', templates)],
+    () => {
+      registerFeedback.reset()
+      offerFeedback.reset()
+      tableFeedback.reset()
+      setFailedTemplate(null)
+    },
+  )
   const resolveErrorText = useConsoleUiErrorText()
   const tableFailureText = failureTextOf(
     tableFeedback.outcome,
@@ -349,14 +366,15 @@ export function SmsPage() {
             label={t('common.refresh')}
             // A refresh changes the context the page's writes settle
             // against, so the control stays inert while any of the page's
-            // scopes has a write in flight; only the read marks it busy.
-            busy={templates.isFetching}
+            // scopes has a write in flight; the mechanism marks it busy
+            // while the re-read is in flight.
+            busy={pageRefresh.busy}
             writePending={
               registerFeedback.pending ||
               offerFeedback.pending ||
               tableFeedback.pending
             }
-            onClick={() => void templates.refetch()}
+            onClick={pageRefresh.refresh}
           />
         }
         sx={{ mb: 2 }}
