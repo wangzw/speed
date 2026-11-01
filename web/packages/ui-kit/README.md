@@ -551,9 +551,15 @@ so a call site cannot introduce a third button face:
 dialogs pass `'medium'` (the default), table rows and menus pass
 `'small'`. `ActionRow` hands its size to every `ActionButton` below it;
 an `ActionButton` used outside a row takes the same prop directly.
-`EmptyState.action` is a centred retry, not a right-aligned action group,
-and keeps its own layout; every page form, dialog and row actions block
-uses `ActionRow`.
+Some control groups are not action rows and keep their own layout:
+`EmptyState.action` (a centred retry), and inline control clusters beside
+text in a data or title row that carry one class of secondary action
+(the console's SSO domain verify/remove pair, the demo account page's
+single add control on a settings title row, the SMS sign-in code step's
+resend/edit pair). Neither kind uses an automatic
+margin -- the text before the cluster takes the free width, so the
+cluster lands at the row end. Every page form, dialog, step and row
+actions block uses `ActionRow`.
 
 ```tsx
 import { ActionButton, ActionRow } from '@speed/ui-kit'
