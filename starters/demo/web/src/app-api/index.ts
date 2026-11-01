@@ -1118,11 +1118,11 @@ export interface AuthnMfaFactor {
   activated_at?: string;
   /** When the factor row was created, as an RFC 3339 instant */
   created_at: string;
-  /** The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}`. */
+  /** The factor's identifier; use it as the `id` path parameter of `DELETE /auth/factors/{id}` or `PATCH /auth/factors/{id}`. */
   id: string;
   /** The factor kind: `totp`, `sms` or `webauthn`. */
   kind: string;
-  /** The display label stored with the factor; this module writes an empty label when it registers one. */
+  /** The display label stored with the factor: what the caller submitted at registration or at a later rename, with surrounding whitespace trimmed. Empty means the factor has no name; the module generates none. */
   label: string;
   /** When the factor last passed a verification, as an RFC 3339 instant; absent until it first does */
   last_used_at?: string;
@@ -1938,6 +1938,14 @@ export interface WorkspacePersonalReply {
   created: boolean;
   tenant: WorkspacePersonalTenant;
 }
+
+/**
+ * The new display label of one factor the caller's account registered.
+ */
+export type AuthnMfaUpdateFactorBody = {
+  /** The factor's new display label: at most 64 characters with no control character. Surrounding whitespace is trimmed before it is stored, and an empty value clears the name; the module generates none. */
+  label: string;
+};
 
 /**
  * The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request.
@@ -2957,6 +2965,72 @@ export const useAuthnMfaRemoveFactor = <TError = Problem,
         TContext
       > => {
       return useMutation(getAuthnMfaRemoveFactorMutationOptions(options), queryClient);
+    }
+
+/**
+ * Writes the display label of one factor of the caller's account and answers the updated row, as `GET /auth/factors` shows it. The label is metadata, so the call asks for no freshness beyond the login session itself, and an impersonating identity renames the impersonated account's factor. The value is trimmed of surrounding whitespace and must be at most 64 characters with no control character; an empty value clears the name, and the module generates none. A factor that is not the caller's answers 404, the same as one that is not there, so another account's identifier says nothing about whether it exists.
+ * @summary Rename one of the caller's own factors
+ */
+export const authnMfaUpdateFactor = (
+    id: string,
+    authnMfaUpdateFactorBody: AuthnMfaUpdateFactorBody,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnMfaFactor>(
+      {url: `/api/v1/auth/factors/${id}`, method: 'PATCH',
+      headers: {'Content-Type': 'application/json', },
+      data: authnMfaUpdateFactorBody, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnMfaUpdateFactorMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnMfaUpdateFactor>>, TError,{id: string;data: AuthnMfaUpdateFactorBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnMfaUpdateFactor>>, TError,{id: string;data: AuthnMfaUpdateFactorBody}, TContext> => {
+
+const mutationKey = ['authnMfaUpdateFactor'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnMfaUpdateFactor>>, {id: string;data: AuthnMfaUpdateFactorBody}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  authnMfaUpdateFactor(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnMfaUpdateFactorMutationResult = NonNullable<Awaited<ReturnType<typeof authnMfaUpdateFactor>>>
+    export type AuthnMfaUpdateFactorMutationBody = AuthnMfaUpdateFactorBody
+    export type AuthnMfaUpdateFactorMutationError = Problem
+
+    /**
+ * @summary Rename one of the caller's own factors
+ */
+export const useAuthnMfaUpdateFactor = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnMfaUpdateFactor>>, TError,{id: string;data: AuthnMfaUpdateFactorBody}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnMfaUpdateFactor>>,
+        TError,
+        {id: string;data: AuthnMfaUpdateFactorBody},
+        TContext
+      > => {
+      return useMutation(getAuthnMfaUpdateFactorMutationOptions(options), queryClient);
     }
 
 /**
