@@ -88,6 +88,7 @@ interface SocialBindingsSectionProps {
   readonly returnTo: string // 宿主的绑定回调路由；作为 link 流程的顶层 return_to 发出。分离源部署传受信源下的绝对 URL；服务端接受路径或该 URL
   readonly onAuthorizeUrl?: (url: string) => void
   readonly providerIcon?: (provider: string) => ReactNode // 渠道品牌图标，按方法名
+  readonly returnPath?: string // 宿主当前页；link 流程把它作为 return_to 的 return 查询带上，也是 step-up 流程的 return_to
 }
 
 interface StepUpDialogProps {
@@ -96,6 +97,7 @@ interface StepUpDialogProps {
   readonly onSuccess: () => void
   readonly onCancel: () => void
   readonly accountHref?: string // 宿主的账户设置路由；给出时在「先登记两步验证」旁渲染链接
+  readonly onRelogin?: () => void // 重新登录出口先触发它，供宿主记录待恢复的操作；随后才取消门控并结束会话
 }
 
 interface BindingCallbackHandlerProps {
@@ -113,7 +115,7 @@ interface MfaSectionProps {
 
 自助写节的 `session` 属性按用途分两类。`PasswordSection` 与 `IdentifiersSection` 取它驱动提权门控的对话框：一次写被答 401 `authn.insufficient_user_authentication` 时开一条 `purpose: 'step-up'` 流程（`session.startAuthenticatedFlow`），成功后重跑那次被拒的写恰好一次。提权只服务于改口令、添加用户名、选作或取消登录方式、设置默认联系地址与删除标识。`PhoneSection` 与 `ContactVerificationSection` 的写本身不要求新鲜认证，本包不为它们开提权门控——它们取 `session` 是为了发送验证码前的人机验证块（`useHumanVerification`），`IdentifiersSection` 的邮箱发送也从同一属性取得证明；验证的后果改变账户据以证明或找回自己的事实时（一条将成为默认联系地址或唯一邮箱地址的邮箱、一个将取代已启用短信因素目标的新手机号），服务端答提权 401，本节按普通失败渲染。替换调用方凭据的写另用同一个会话操作开身份切换窗口、在写后的失效与重读结算之后释放（见「轮换点上的身份切换窗口」）。`ProfileSection` 与 `PreferencesSection` 的写不要求新鲜认证，不接会话属性，也不改凭据、不打开这一窗口；它们的读与写本身是走共享访问令牌的生成调用，不经会话操作。
 
-`SocialBindingsSection` 的 `session` 属性经 `session.listMethods`（`GET /api/v1/auth/methods`）读部署的发现文档：添加区只渲染 `kind=redirect` 且未绑定的方法，名称取描述符的 `label`（缺省用方法名），并为点击起一条 `purpose: 'link'` 的流程（`session.startAuthenticatedFlow`），`returnTo` 作为该流程请求的顶层 `return_to` 发出；分离源部署传受信源下的绝对 URL，服务端接受路径或该 URL。方法是否已绑定、以及已绑定行的提供方取值归到哪个方法，都经同一份描述符的 `binding_providers` 解析：取值等于其中一项或以一项为前缀即归到该方法，描述符缺少该项时按方法名匹配；该方法就此与任一已绑定取值匹配上时，添加区不再提供该渠道。`MfaSection` 的 `session` 属性为登记起一条 `purpose: 'enroll'` 的流程、为挑战起一条 `purpose: 'step-up'` 的流程，并经 `session.listMethods`（`GET /api/v1/auth/methods`）读本部署装配的因素以决定提供哪些登记入口——读因子清单、删因子与解绑的读写本身是走共享访问令牌的生成调用；删已启用因素与解绑另用同一属性开身份切换窗口（见「轮换点上的身份切换窗口」）。`SessionsSection` 不接会话属性，只接一个可选的 `renderHeaderAction` 渲染槽：它显示谁的会话、谁有权撤销，来自调用方绑定的客户端与它的访问令牌。该槽收到「退出其他设备」控件并返回代其渲染的节点，宿主借此把动作放进自己的块标题动作区（演示宿主以 portal 渲染进标题槽）；不传时本节在列表上方自行渲染该动作，纯表面上即独立一行。槽只在动作确实会渲染时——列表已结算且另有一条可撤销会话——被调用。
+`SocialBindingsSection` 的 `session` 属性经 `session.listMethods`（`GET /api/v1/auth/methods`）读部署的发现文档：添加区只渲染 `kind=redirect` 且未绑定的方法，名称取描述符的 `label`（缺省用方法名），并为点击起一条 `purpose: 'link'` 的流程（`session.startAuthenticatedFlow`），`returnTo` 作为该流程请求的顶层 `return_to` 发出，`returnPath` 是站内相对路径时另以 `return` 查询参数附在其后，指明绑定从哪个账户页起手；分离源部署传受信源下的绝对 URL，服务端接受路径或该 URL。方法是否已绑定、以及已绑定行的提供方取值归到哪个方法，都经同一份描述符的 `binding_providers` 解析：取值等于其中一项或以一项为前缀即归到该方法，描述符缺少该项时按方法名匹配；该方法就此与任一已绑定取值匹配上时，添加区不再提供该渠道。`MfaSection` 的 `session` 属性为登记起一条 `purpose: 'enroll'` 的流程、为挑战起一条 `purpose: 'step-up'` 的流程，并经 `session.listMethods`（`GET /api/v1/auth/methods`）读本部署装配的因素以决定提供哪些登记入口——读因子清单、删因子与解绑的读写本身是走共享访问令牌的生成调用；删已启用因素与解绑另用同一属性开身份切换窗口（见「轮换点上的身份切换窗口」）。`SessionsSection` 不接会话属性，只接一个可选的 `renderHeaderAction` 渲染槽：它显示谁的会话、谁有权撤销，来自调用方绑定的客户端与它的访问令牌。该槽收到「退出其他设备」控件并返回代其渲染的节点，宿主借此把动作放进自己的块标题动作区（演示宿主以 portal 渲染进标题槽）；不传时本节在列表上方自行渲染该动作，纯表面上即独立一行。槽只在动作确实会渲染时——列表已结算且另有一条可撤销会话——被调用。
 
 **`AppearanceSection` 是受控的外观选择。** 它经 `SectionCard` 渲染一节，标题与说明取自本包命名空间；下拉列出宿主传入的全部预设，当前值标记为选中，选择时把该预设的 id 交给 `onChange`。`hideLabel` 去掉控件自己的可见标签，由宿主用行标题命名它，可及名仍由控件携带。预设列表为空或只有一项时，标题与带标签的控件照常渲染，不塌陷。它不 import `@speed/theme-presets`、不读主题 provider：预设存在与否、叫什么、选中后如何生效都是宿主的事实。
 
@@ -242,15 +244,17 @@ sequenceDiagram
 
 一次门控动作在被拒时打开加强认证流程，记住被门控的动作；一次成功的流程落定提权，成功路径重试那次被门控的操作恰好一次，取消则不重试。提权只活在那次会话的存续期内，对话框从不承诺不再询问。
 
+**重登之后回到原页并续做。** 对话框判定本部署无法升级（起手被 401 `authn.insufficient_user_authentication` 拒绝且会话仍在），或会话方法无法在本会话复证（`reloginOnly`）时，重新登录出口先触发 `onRelogin`，再取消门控并以 `session.logout` 结束会话。宿主在自己的会话门之后以同一 URL 呈现登录面，登录成功即回到原页。`unavailable` 分支的说明点名本次登录早于已登记的验证方式、需要重新登录一次才能用它们提升本次会话，并说明登录后回到原处继续。节在 `onRelogin` 里把「所在页 + 待办操作」写进本包的步进恢复记录（`internal/step-up-resume.ts`，标签页会话存储），回到该页挂载时经门控重跑一次并消费记录。记录只承载站内相对路径与节自己可重建的操作：`SocialBindingsSection` 记绑定方法或解绑行；`IdentifiersSection` 记删除、登录方式开关、默认联系地址与整组登录邮箱选择。改口令的字段与一次性验证码不落盘，那两类写留给人重新发起。记录命名的是另一页时，节原样放回，由该页的节恢复。
+
 **只有一个启用因素时就地说明。** 因素读回的行里恰好一行处于启用状态（`status` 为 `active`；待确认与已停用的行不计）时，`MfaSection` 在分组上方就地说明本账户只启用了一种两步验证方式，并指向各分组标题上的添加动作再登记一种。计数取自同一份因素读（`GET /api/v1/auth/factors`），不另发请求；登录与登记的应答不带 `warnings`，这条补救提示由本节承担。零个或两个以上启用因素时不渲染该说明；部署没有可登记种类（`mfa.factors` 为空或读失败）时同样不渲染，因为说明要指向的添加动作不存在。
 
 ### 绑定添加区的渠道与回跳
 
-添加区的渠道取自 `session.listMethods()` 读回的发现文档：其中 `kind=redirect` 的每个方法、且账户尚未绑定的，渲染一个按钮，名称取描述符的 `label`，缺省用方法名。被部署关闭的方法不在发现文档里，因而不出现在添加区。点击起一条 `purpose: 'link'` 的流程，请求以顶层 `return_to` 携带 `returnTo`：起流程只读顶层 `return_to`，回跳只用流程记录里的值（[authn 登录](../authn/design-authn-login.md)），提供方的往返因而落回宿主的绑定回调路由，由 `BindingCallbackHandler` 续接。`returnTo` 是宿主的回调路由：同源部署给路径即可，分离源部署给受信源下的绝对 URL（`return_to` 的取值规则见 [authn 登录](../authn/design-authn-login.md)）；服务端接受路径或该 URL。
+添加区的渠道取自 `session.listMethods()` 读回的发现文档：其中 `kind=redirect` 的每个方法、且账户尚未绑定的，渲染一个按钮，名称取描述符的 `label`，缺省用方法名。被部署关闭的方法不在发现文档里，因而不出现在添加区。点击起一条 `purpose: 'link'` 的流程，请求以顶层 `return_to` 携带 `returnTo`，`returnPath` 是站内相对路径时另以 `return` 查询参数附在其后，指明绑定从哪个账户页起手：起流程只读顶层 `return_to`，回跳只用流程记录里的值（[authn 登录](../authn/design-authn-login.md)），提供方的往返因而落回宿主的绑定回调路由，由 `BindingCallbackHandler` 续接。`returnTo` 是宿主的回调路由：同源部署给路径即可，分离源部署给受信源下的绝对 URL（`return_to` 的取值规则见 [authn 登录](../authn/design-authn-login.md)）；服务端接受路径或该 URL。`return` 参数只接受站内相对路径——单个前导 `/`、非 `//`、无反斜杠与控制字符、无 `@`、不超过 2048 字节，与 `authn.login` 的相对回跳规则同形；来源缺失或非法时不着上，回调按自己的安全落点处理。
 
 ### 绑定回调的续接
 
-`BindingCallbackHandler` 挂在宿主的回调路由上，以 `session.readFlow()` 读回那条 `purpose: 'link'` 流程：流程已就绪（`next.kind = complete`）时以 `step: 'complete'` 取走结果，`link` 落地（`state: 'linked'`）后失效身份读取并触发 `onBound`；流程仍停在一步时渲染该步续接；交换失败而拒绝不是 `authn.flow_invalid` 时渲染错误码文本与一个重试按钮。**读不到流程是流程已确定不存在，不是可重试的失败。** `session.readFlow()` 答 `null`（流程已过期、已在此前完成或绑定到别的浏览器），或交换被 `authn.flow_invalid` 拒绝时，重读一次只会得到同一个答案：处理器渲染一条终态说明（「这次绑定已失效或已完成。」）与唯一动作 `onDismiss`（「返回账户设置」），由宿主回到能重新起手绑定的一面；宿主没给 `onDismiss` 时退回错误码文本与重读流程的重试。绑定的 `link` 不把任何人签进去。**回跳的拒绝不经过流程读取**：服务端把拒绝以 303 落回这条回调路由，并把问题码放进 URL 片段（`authn_error`，与登录回跳同一格式）；宿主读出后交给 `initialError`，处理器据此渲染该码在本面的文案，不读流程、不给重试按钮——同一次往返再试也不会成功，唯一动作是 `onDismiss` 返回账户面。`authn.conflict` 在本面读作「这个社交账号已关联到另一个账户」，与账户信息变更无关；其余可重试的读取失败才保留重试。
+`BindingCallbackHandler` 挂在宿主的回调路由上，以 `session.readFlow()` 读回那条 `purpose: 'link'` 流程：流程已就绪（`next.kind = complete`）时以 `step: 'complete'` 取走结果，`link` 落地（`state: 'linked'`）后失效身份读取并触发 `onBound`；流程仍停在一步时渲染该步续接；交换失败而拒绝不是 `authn.flow_invalid` 时渲染错误码文本与一个重试按钮。**读不到流程是流程已确定不存在，不是可重试的失败。** `session.readFlow()` 答 `null`（流程已过期、已在此前完成或绑定到别的浏览器），或交换被 `authn.flow_invalid` 拒绝时，重读一次只会得到同一个答案：处理器渲染一条终态说明（「这次绑定已失效或已完成。」）与唯一动作 `onDismiss`（「返回账户设置」），由宿主回到能重新起手绑定的一面；宿主没给 `onDismiss` 时退回错误码文本与重读流程的重试。绑定的 `link` 不把任何人签进去。**回跳的拒绝不经过流程读取**：服务端把拒绝以 303 落回这条回调路由，并把问题码放进 URL 片段（`authn_error`，与登录回跳同一格式）；宿主读出后交给 `initialError`，处理器据此渲染该码在本面的文案，不读流程、不给重试按钮——同一次往返再试也不会成功，唯一动作是 `onDismiss` 回到起手页。`authn.conflict` 在本面读作「这个社交账号已关联到另一个账户」，与账户信息变更无关；其余可重试的读取失败才保留重试。**回调把当事人送回起手页。** `onBound` 与 `onDismiss` 都以起手页为目标：宿主从 URL 的 `return` 参数读回（`bindingReturnTarget`，只接受站内相对路径），来源缺失或非法时落到账户安全页——绑定面所在页，不是账户组地址落到的资料页。这次读取只决定导航目标，不读也不改流程。
 
 **本部署不提供社交绑定时的落点。** 回调路由在租户框架内，只有已认证者到达。宿主给了 `absent` 时，`readFlow()` 返回 `null` 之后处理器读一次 `session.listMethods()`：发现文档里没有 `kind=redirect` 的方法，即本部署不提供社交绑定，渲染 `absent`，宿主借此给出与未登记路径相同的 404（[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）；有这类方法或发现读取失败时，照常渲染错误码文本与重试按钮。读到流程时不读发现文档。宿主没给 `absent` 时，处理器不读发现文档，`readFlow()` 返回 `null` 即渲染错误码文本与重试按钮。
 
@@ -308,9 +312,9 @@ sequenceDiagram
 | 加强认证流程的码已被用过 | 清空字段、渲染用过的码文本，绝不用同一码重试 |
 | 本人账户没有启用的因素（`GET /api/v1/auth/factors` 读回的行里没有处于启用状态的），会话已满足新鲜第一因素 | 对话框提示先在账户设置里登记两步验证，不发起流程；宿主给了 `accountHref` 时在该说明旁渲染通往账户设置的普通链接，不给则不渲染链接 |
 | 本人账户没有启用的因素，会话未满足新鲜第一因素，会话方法为 `pwd` 或 `sms` | 对话框以该方法起带 `method` 的步进流程，重新证明后重跑被拒的写 |
-| 本人账户没有启用的因素，会话未满足新鲜第一因素，会话方法不是这两种或会话读失败 | 对话框给出重新登录的出口，不起流程 |
+| 本人账户没有启用的因素，会话未满足新鲜第一因素，会话方法不是这两种或会话读失败 | 对话框给出重新登录的出口，不起流程，并记录待恢复的操作 |
 | 读本人因素失败 | 不判定为没有因素，照常发起流程，由服务端的拒绝决定 |
-| 加强认证流程的起手被 401 `authn.insufficient_user_authentication` 拒绝（有因素，但没有能强化本会话的，或没有口令可再次证明） | 对话框判定本部署无法完成升级，给出重新登录的出口，不渲染步骤表单 |
+| 加强认证流程的起手被 401 `authn.insufficient_user_authentication` 拒绝（有因素，但没有能强化本会话的，或没有口令可再次证明） | 对话框判定本部署无法完成升级，给出重新登录的出口，不渲染步骤表单；说明点名本次登录早于已登记的验证方式，并记录待恢复的操作，登录后回到原处续做 |
 | 加强认证流程的起手因其它的原因失败（400 等） | 一条横幅渲染错误码文本 |
 | 加强认证流程的起手或答复被 429 `ratelimit.throttled` 拒绝 | 失败横幅（`role="alert"`）只渲染该码无秒数的静态句，播报一次；剩余秒数在横幅之外的一条非 live 行（`aria-live="off"`）随每秒更新，读屏不整句重念；对话框在该时长内禁用这一步的提交（字段与取消仍可用），倒计时到点后恢复可提交，非 live 行消失 |
 | 删除因素时它是账户最后一个 | 一条横幅渲染该错误码文本，服务端判定 |
@@ -367,7 +371,9 @@ sequenceDiagram
 | 改口令被 401 `authn.login_failed` 拒绝时渲染本节自己的句子，不点名失败成因 | 已实现 | `web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `password.currentRejected` |
 | 标识节的一个失败横幅（添加、验证与移除共用一个槽） | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 步进对话框对没有因素的账户以带 `method` 的步进重新证明第一因素 | 已实现 | `web/packages/account-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/account-ui/src/internal/queries.ts` `useSessionViewQuery` |
-| 社交绑定的 link 流程以顶层 `return_to` 发出回跳地址 | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection` |
+| 社交绑定的 link 流程以顶层 `return_to` 发出回跳地址，并把起手页作为 `return` 查询带上 | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/internal/binding-return.ts` |
+| 绑定回调从 `return` 读回起手页，仅接受站内相对路径 | 已实现 | `web/packages/account-ui/src/internal/binding-return.ts` `bindingReturnTarget` |
+| 提权重登后记录并重跑待办操作，回到原页续做 | 已实现 | `web/packages/account-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/account-ui/src/internal/step-up-resume.ts`；`web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/auth-core/src/step-up-gate.ts` `useStepUpGate` |
 | 绑定添加区的渠道取自发现文档，`SocialBindingsSectionProps` 不含 `providers` | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection` |
 | 已绑定行按描述符的 `binding_providers` 归到方法 | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection` |
 | 两步验证按种类分组的添加动作按 `mfa.factors` 逐个生成（含 `sms` 与未知种类的通用入口） | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection` |
