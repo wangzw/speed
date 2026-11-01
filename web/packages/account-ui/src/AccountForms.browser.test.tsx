@@ -294,11 +294,14 @@ describe('account-ui form geometry', () => {
     expect(rightOf(confirm, cancel)).toBe(true)
 
     // The wizard title is a sub-form heading, one step below the card title
-    // (subtitle1, not the larger h6).
+    // (subtitle1, not the larger h6), and names the factor kind enrolled.
     expect(
       screen.getByRole('heading', {
         level: 3,
-        name: zhCN.mfa.enroll.title,
+        name: zhCN.mfa.enroll.title.replace(
+          '{{method}}',
+          zhCN.mfa.factor.kind.totp,
+        ),
       }),
     ).toHaveClass('MuiTypography-subtitle1')
 

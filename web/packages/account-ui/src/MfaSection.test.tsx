@@ -148,6 +148,11 @@ const manageNameOf = (method: string): string =>
 const addNameOf = (method: string): string =>
   zhCN.mfa.addAria.replace('{{method}}', method)
 
+/** The enrollment wizard's heading for one factor kind: the parameterized
+ * title with the kind's own name in its method slot. */
+const enrollTitleOf = (method: string): string =>
+  zhCN.mfa.enroll.title.replace('{{method}}', method)
+
 describe('MfaSection', () => {
   it('renders the factors with their kind, label and status, and passes axe', async () => {
     const respond: RealResponder = (call: RealCall) => {
@@ -1021,6 +1026,12 @@ describe('MfaSection', () => {
     await user.click(
       await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
     )
+    // The wizard's heading names the factor kind the entry is enrolling.
+    expect(
+      screen.getByRole('heading', {
+        name: enrollTitleOf(zhCN.mfa.factor.kind.totp),
+      }),
+    ).toBeTruthy()
     await startEnrollWithEmptyName(user)
 
     // The enroll start names the factor kind and the (cleared) label.
@@ -1039,6 +1050,12 @@ describe('MfaSection', () => {
     ).toBeVisible()
     expect(screen.queryByText(/"otpauth_uri"/)).toBeNull()
     expect(screen.queryByText(/otpauth:\/\//)).toBeNull()
+    // The heading keeps naming the kind once the flow's own step renders.
+    expect(
+      screen.getByRole('heading', {
+        name: enrollTitleOf(zhCN.mfa.factor.kind.totp),
+      }),
+    ).toBeTruthy()
     await user.type(
       screen.getByLabelText(zhCN.flowStep.codeLabel),
       '123456',
@@ -1686,6 +1703,12 @@ describe('MfaSection', () => {
       await user.click(
         await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.webauthn) }),
       )
+      // A different kind gets its own name in the heading, from the same key.
+      expect(
+        screen.getByRole('heading', {
+          name: enrollTitleOf(zhCN.mfa.factor.kind.webauthn),
+        }),
+      ).toBeTruthy()
       await startEnrollWithEmptyName(user)
       // The registration step drives navigator.credentials.create and
       // reports the credential under the enroll step, not a free-text field.
@@ -1747,6 +1770,13 @@ describe('MfaSection', () => {
     expect(unknown).toBeTruthy()
 
     await user.click(unknown)
+    // A kind this package has no wording for renders the wizard's generic
+    // other name, still from the one parameterized title key.
+    expect(
+      screen.getByRole('heading', {
+        name: enrollTitleOf(zhCN.mfa.factor.kind.other),
+      }),
+    ).toBeTruthy()
     await startEnrollWithEmptyName(user)
     // The unknown kind's own flow starts; the generic label never hides
     // the deployment's vocabulary from the request.

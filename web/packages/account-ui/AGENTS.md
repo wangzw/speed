@@ -214,7 +214,11 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   through the generated mutation; an empty value clears it and the row falls
   back to the kind, and a landed rename refetches the list. The enrollment
   name form is prefilled with the browser/OS summary the session rows show
-  (`summarizeUserAgent`), editable, and may be submitted empty.
+  (`summarizeUserAgent`), editable, and may be submitted empty. The
+  enrollment wizard's heading names the kind being enrolled through the
+  parameterized `mfa.enroll.title`, whose method slot carries that kind's
+  `mfa.factor.kind.*` name (the generic other label for an unknown kind);
+  the name form and the flow's own steps share the heading.
 - **The error surface is a code whitelist with guarded vocabulary.**
   Every failure path resolves to one error code rendered in one
   `role="alert"` banner; codes outside the whitelist render
@@ -278,9 +282,10 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
    The enrollment entries are the deployment's own answer too: the section
    reads `GET /api/v1/auth/methods`' `mfa.factors` (through `session.listMethods`)
    and offers one entry per listed kind, so it never offers a factor the
-   assembly cannot complete. A known kind renders `mfa.enroll.<kind>`; an
-   unknown kind renders `mfa.enroll.other` and still starts that kind's
-   flow. The spec ships no disable operation: the server answers
+   assembly cannot complete. A known kind renders its
+   `mfa.factor.kind.<kind>` name; an unknown kind renders
+   `mfa.factor.kind.other` and still starts that kind's flow. The spec
+   ships no disable operation: the server answers
    it by listing only live sessions. Do not invent operations the spec
    does not ship, and do not let a section render a state the server never
    answers with.

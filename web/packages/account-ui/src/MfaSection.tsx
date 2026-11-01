@@ -164,10 +164,13 @@ type GatedAction =
       readonly reason: StepUpReason
     }
 
-/** The open enrollment wizard: the step it is parked on and its sequence. */
+/** The open enrollment wizard: the step it is parked on, its sequence, and
+ * the factor kind it is enrolling -- its heading names that kind on every
+ * step. */
 interface EnrollWizard {
   readonly step: AuthnStep
   readonly seq: number
+  readonly kind: string
 }
 
 /** The enrollment's name form: the kind the entry was clicked for and the
@@ -245,9 +248,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
   // The row whose name is being edited, if any.
   const [renameDraft, setRenameDraft] = useState<RenameDraft | null>(null)
-  // The kind of the enrollment in progress, so its confirmation names the
-  // factor kind once the flow settles.
-  const [enrollKind, setEnrollKind] = useState<string | null>(null)
   // Enrollment, rename and removal are separate control groups with their
   // own scopes: the enrollment result sits below its entries or form, and
   // the row-action results sit below the list, so one group's outcome never
@@ -310,6 +310,14 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       ? t(`mfa.factor.kind.${kind}`)
       : t('mfa.factor.kind.other')
   }
+  /** The enrollment wizard's heading for one factor kind: the one
+   * parameterized title key, with the kind's own name in its method slot. */
+  function enrollTitle(kind: string): string {
+    return t('mfa.enroll.title', {
+      method: factorKindLabel(kind),
+      interpolation: { escapeValue: false },
+    })
+  }
   // Every kind the deployment reported gets an entry, in the document's
   // order. An unknown kind still starts that kind's flow -- the generic
   // label never turns a deployable factor into a missing entry.
@@ -333,7 +341,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
    * label travels with the flow's first input, so a retry after a won
    * step-up sends the same one. */
   function startEnroll(factorKind: string, label: string): Promise<void> {
-    setEnrollKind(factorKind)
     return enrollFeedback.run(async () => {
       setEnrolling(true)
       try {
@@ -344,7 +351,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         })
         setEnrollDraft(null)
         if ('next' in state) {
-          setWizard({ step: state.next, seq: state.seq })
+          setWizard({ step: state.next, seq: state.seq, kind: factorKind })
           return null
         }
         if (state.state === 'enrolled') {
@@ -378,7 +385,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     if (wizard === null) {
       return Promise.resolve()
     }
-    const kind = enrollKind ?? ''
+    const kind = wizard.kind
     return enrollFeedback.run(async () => {
       setEnrolling(true)
       try {
@@ -388,7 +395,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           input: answer.input,
         })
         if ('next' in state) {
-          setWizard({ step: state.next, seq: state.seq })
+          setWizard({ step: state.next, seq: state.seq, kind })
           return null
         }
         if (state.state === 'enrolled') {
@@ -578,7 +585,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           return wizard !== null ? (
             <Box sx={{ py: 1.5, maxWidth: FORM_MAX_WIDTH }}>
               <Typography variant="subtitle1" component="h3">
-                {t('mfa.enroll.title')}
+                {enrollTitle(wizard.kind)}
               </Typography>
               {/* The step's own confirm and the wizard's cancel share one
                   action row: cancel on the left, confirm closing the row on
@@ -612,7 +619,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           ) : enrollDraft !== null ? (
             <Box sx={{ py: 1.5, maxWidth: FORM_MAX_WIDTH }}>
               <Typography variant="subtitle1" component="h3">
-                {t('mfa.enroll.title')}
+                {enrollTitle(enrollDraft.kind)}
               </Typography>
               {/* The name travels with the flow's first input, so it is
                   collected before the flow starts. The field is prefilled,

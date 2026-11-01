@@ -172,7 +172,7 @@
       "neverUsed": "最近使用：从未"
     },
     "enroll": {
-      "title": "设置验证方式",
+      "title": "添加{{method}}",
       "sectionTitle": "添加验证方式",
       "totp": "设置身份验证器应用",
       "webauthn": "添加通行密钥",

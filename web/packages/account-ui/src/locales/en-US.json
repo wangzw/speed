@@ -172,7 +172,7 @@
       "neverUsed": "Last used: never"
     },
     "enroll": {
-      "title": "Set up a verification method",
+      "title": "Add {{method}}",
       "sectionTitle": "Add a verification method",
       "totp": "Set up an authenticator app",
       "webauthn": "Add a passkey",
