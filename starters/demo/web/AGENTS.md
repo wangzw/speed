@@ -132,23 +132,24 @@ program beside this directory embeds with `go:embed` and serves through
   of reloading the page, so neither the console pages nor the exit are a
   navigation dead end.
 - **The app composes its own chrome.** `src/chrome.tsx` holds the shared top-bar
-  pieces the tenant frame and the console frame render: the brand, the
-  app-wide header actions (the language switch and the color-mode toggle), the
-  tenant switcher over the caller tenant list (`TenantMenu`), and
-  the avatar account menu (profile / account settings / sign out). The tenant
-  frame puts the actions in `headerActions` and the switcher plus the account
-  menu in `userMenu`; the console frame renders the actions and the account
-  menu but not the switcher (the console resolves no tenant). The slot
-  composition is identical in both `shellLayout` forms: AppShell moves the
-  same slots into its drawer paper in the sidebar form, so `src/chrome.tsx`
-  never branches on the layout. `src/paths.ts`
-  holds the route paths the chrome links into, shared with the route table.
+  pieces the tenant frame and the console frame render: the brand, the app-wide
+  color-mode toggle, the tenant switcher over the caller tenant list
+  (`TenantMenu`), and the avatar account menu (profile / account settings /
+  sign out). The tenant frame puts the actions in `headerActions` and the
+  switcher plus the account menu in `userMenu`; the console frame renders the
+  actions and the account menu but not the switcher (the console resolves no
+  tenant). The slot composition is identical in both `shellLayout` forms:
+  AppShell moves the same slots into its drawer paper in the sidebar form, so
+  `src/chrome.tsx` never branches on the layout. `src/paths.ts` holds the
+  route paths the chrome links into, shared with the route table.
 - **The account settings is one pane per route.** `src/pages/account-page.tsx`
   composes `@speed/account-ui`'s sections into four panes, one route each:
   `/account/profile` (profile, identifiers and the registration contact's
   verification), `/account/security` (password, sign-in ways, social bindings
   and MFA), `/account/sessions`, and `/account/preferences` (the appearance
-  theme choice, language and time zone). `src/paths.ts` declares the pane list
+  theme choice, language and time zone). The preferences pane is the only
+  place the interface language is set; the header carries no language switch.
+  `src/paths.ts` declares the pane list
   and its paths. `src/routes.tsx` gives every pane a page of its own and makes
   `/account` a group address with no page: it replaces the history entry with
   the pane an older `?section=` named, else `/account/profile`, carrying the

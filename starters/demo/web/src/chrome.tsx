@@ -12,8 +12,8 @@
  * The pieces:
  *
  *  - AppBrand: the demo namespace's product title.
- *  - HeaderActions: the app-wide language switch and color-mode toggle,
- *    grouped for the frame's headerActions slot. Both shells render them.
+ *  - HeaderActions: the app-wide color-mode toggle, for the frame's
+ *    headerActions slot. Both shells render it.
  *  - TenantMenu: tenancy-ui's TenantSwitcher over the caller's own tenant
  *    list (the caller tenant read). product-shell places the switcher in the
  *    userMenu slot; the console banner, which resolves no tenant, does not
@@ -34,12 +34,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import { evictTenantQueries, useAuthState } from '@speed/auth-core'
 import { ImpersonationEndMenuItem } from '@speed/auth-ui'
-import {
-  languageDisplayName,
-  readSupportedLanguages,
-  switchLanguage,
-  useTranslation,
-} from '@speed/i18n'
+import { useTranslation } from '@speed/i18n'
 import { Avatar, avatarInitials } from '@speed/layout-kit'
 import { useNavigate } from '@speed/route-kit'
 import { TenantSwitcher } from '@speed/tenancy-ui'
@@ -281,23 +276,13 @@ export function AppBrand(): ReactElement {
 }
 
 /**
- * The app-wide header action controls: the language switch and the
- * color-mode toggle. Both shells -- the tenant frame and the console
- * banner -- render these; they are the same chrome in either area, so a
- * switch is available wherever the viewer is.
- *
- * The two controls are siblings, not a group: every slot container lays
- * its children out in a row, and the collapsed sidebar rail lays them out
- * in a column, so a wrapper around the pair keeps them side by side in a
- * rail too narrow to hold the row.
+ * The app-wide header action controls: the color-mode toggle. Both shells --
+ * the tenant frame and the console banner -- render it; it is the same chrome
+ * in either area. The language is not among them: it is set on the account
+ * preferences page alone, so the header carries no per-view language entry.
  */
 export function HeaderActions(): ReactElement {
-  return (
-    <>
-      <LanguageSwitcher />
-      <ColorModeToggle />
-    </>
-  )
+  return <ColorModeToggle />
 }
 
 /**
@@ -417,58 +402,6 @@ function RefreshIcon() {
       <path d="M19 12a7 7 0 1 1-2.05-4.95" />
       <path d="M19 4.5V9h-4.5" />
     </svg>
-  )
-}
-
-/**
- * The language switch: a globe trigger opening one item per language the
- * instance supports (readSupportedLanguages). Choosing one runs the
- * persisting switchLanguage -- a manual choice, so it lands on the device
- * too -- which fires the instance's languageChanged event, so the interface
- * and the document metadata follow. Option labels are the language names in
- * the current UI language.
- */
-export function LanguageSwitcher(): ReactElement {
-  const { t, i18n } = useTranslation(DEMO_NAMESPACE)
-  const menuId = useId()
-  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
-  const menuOpen = anchorEl !== null
-  const languages = readSupportedLanguages(i18n)
-  const current = i18n.language
-  return (
-    <Box>
-      <IconButton
-        color="inherit"
-        aria-label={t('languageSwitcher.label')}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        aria-controls={menuOpen ? menuId : undefined}
-        onClick={(event) => setAnchorEl(event.currentTarget)}
-      >
-        <GlobeIcon />
-      </IconButton>
-      <Menu
-        id={menuId}
-        anchorEl={anchorEl}
-        open={menuOpen}
-        onClose={() => setAnchorEl(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        {languages.map((tag) => (
-          <MenuItem
-            key={tag}
-            selected={tag === current}
-            onClick={() => {
-              setAnchorEl(null)
-              void switchLanguage(i18n, tag)
-            }}
-          >
-            {languageDisplayName(tag, current)}
-          </MenuItem>
-        ))}
-      </Menu>
-    </Box>
   )
 }
 
@@ -699,28 +632,6 @@ export function UserMenu({
 interface IconProps {
   /** Box length in px; stroke geometry is sized for the 24 grid. */
   readonly size?: number
-}
-
-/** A hand-drawn globe glyph, for the language switch (decorative). */
-function GlobeIcon({ size = 22 }: IconProps): ReactElement {
-  return (
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      viewBox="0 0 24 24"
-      width={size}
-      height={size}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18" />
-      <path d="M12 3c2.5 2.5 3.8 5.6 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.6-3.8-9S9.5 5.5 12 3z" />
-    </svg>
-  )
 }
 
 /** A hand-drawn moon glyph, for the switch to dark mode (decorative). */

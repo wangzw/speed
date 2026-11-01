@@ -1059,14 +1059,11 @@ describe('the tenant area header controls', () => {
 
   it('raises the header icon controls to the 44px floor under a coarse pointer', async () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
-    // The language switch, the color-mode toggle and the account-menu
-    // trigger share the header row with the notification bell; on a
-    // finger-driven device each one gates up to the 44x44 floor.
+    // The color-mode toggle and the account-menu trigger share the header
+    // row with the notification bell; on a finger-driven device each one
+    // gates up to the 44x44 floor.
     const gated = [
-      await screen.findByRole('button', {
-        name: demoEnUS.languageSwitcher.label,
-      }),
-      screen.getByRole('button', { name: demoEnUS.colorMode.toDark }),
+      await screen.findByRole('button', { name: demoEnUS.colorMode.toDark }),
       screen.getByTestId('user-menu-trigger'),
     ]
     for (const control of gated) {
@@ -1074,23 +1071,21 @@ describe('the tenant area header controls', () => {
     }
   })
 
-  it('switches the language from the header control', async () => {
-    const user = userEvent.setup()
+  it('offers no language switch in the tenant header', async () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
-    await user.click(
-      screen.getByRole('button', { name: demoEnUS.languageSwitcher.label }),
-    )
-    const zhName = new Intl.DisplayNames(['en-US'], { type: 'language' }).of(
-      'zh-CN',
-    )
-    await user.click(screen.getByRole('menuitem', { name: zhName ?? 'zh-CN' }))
-
-    // The interface relabels into the chosen language: the brand, resolved
-    // from the demo namespace, now reads in Chinese.
-    expect(
-      await screen.findByText(demoZhCN.app.title),
-    ).toBeInTheDocument()
+    // The language entry lives on the account preferences page alone. The
+    // header's menus are the tenant switcher and the account menu; a third
+    // menu trigger would be the removed language switch.
+    const trigger = await screen.findByTestId('user-menu-trigger')
+    const banner = trigger.closest('header')
+    expect(banner).not.toBeNull()
+    const menus = within(banner as HTMLElement)
+      .getAllByRole('button')
+      .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
+    expect(menus).toHaveLength(2)
+    expect(menus[0]).toHaveAccessibleName('acme')
+    expect(menus[1]).toBe(trigger)
   })
 
   it('offers only the tenants the seeded deployment registers', async () => {
@@ -1386,6 +1381,28 @@ describe('the account page', () => {
       theme.compareDocumentPosition(language) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
+  })
+
+  it('keeps the language dropdown on the preferences pane, not the header', async () => {
+    window.history.replaceState({}, '', '/account?section=preferences')
+    bindRequestFn(createBackend('data'))
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    // The preferences pane is the one place the language is set...
+    expect(
+      await screen.findByRole('combobox', {
+        name: tAccount('preferences.language.label'),
+      }),
+    ).toBeInTheDocument()
+    // ...and the tenant header carries no language switch: its menus are the
+    // tenant switcher and the account menu only.
+    const trigger = screen.getByTestId('user-menu-trigger')
+    const banner = trigger.closest('header')
+    expect(banner).not.toBeNull()
+    const menus = within(banner as HTMLElement)
+      .getAllByRole('button')
+      .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
+    expect(menus).toHaveLength(2)
   })
 
   it('applies a chosen preset at once, remembers it, and restores it on a remount', async () => {

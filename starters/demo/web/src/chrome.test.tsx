@@ -5,23 +5,17 @@
  * them apart, above all for the diverged case the demo's own seeded tenant does
  * not exhibit.
  *
- * The language-switch suite drives the real LanguageSwitcher under the real
- * provider tree, because what it holds is a property of the composition
- * rather than of the switcher: the choice must reach the device's storage
- * when the user picks a language.
+ * The header-actions suite renders the shared chrome under the real provider
+ * tree, because what it holds is a property of the composition: the header
+ * carries the color-mode toggle and no language switch, since the language is
+ * set on the account preferences page alone.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { tenantQueryKey } from '@speed/auth-core'
-import {
-  createI18n,
-  I18nextProvider,
-  registerNamespace,
-  SPEED_LOCALE_STORAGE_KEY,
-} from '@speed/i18n'
 import {
   createQueryClient,
   createSpeedI18n,
@@ -37,7 +31,6 @@ import {
   getCurrentTenantId,
   HeaderActions,
   initialColorMode,
-  LanguageSwitcher,
   readStoredColorMode,
   setCurrentTenantId,
   setTenantAliases,
@@ -113,36 +106,28 @@ function installStorageDouble(): Map<string, string> {
   return entries
 }
 
-describe('the language switch', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('persists the chosen language to the device storage', async () => {
-    const entries = installStorageDouble()
-    const i18n = createI18n({
+describe('the header actions', () => {
+  it('carries the color-mode toggle and no language switch', () => {
+    const i18n = createSpeedI18n({
       supportedLanguages: ['zh-CN', 'en-US'],
-      navigatorLanguages: ['zh-CN'],
+      defaultLanguage: 'en-US',
+      storage: null,
       urlParameterName: null,
+      navigatorLanguages: [],
+      namespaces: [{ namespace: DEMO_NAMESPACE, resources: demoResources }],
     })
-    registerNamespace(i18n, DEMO_NAMESPACE, demoResources)
     render(
-      <I18nextProvider i18n={i18n}>
-        <LanguageSwitcher />
-      </I18nextProvider>,
+      <SpeedAppProviders i18n={i18n} queryClient={createQueryClient()}>
+        <HeaderActions />
+      </SpeedAppProviders>,
     )
 
-    fireEvent.click(screen.getByRole('button', { expanded: false }))
-    const items = await screen.findAllByRole('menuitem')
-    // The switcher lists the supported set in order: zh-CN, then en-US. The
-    // name is resolved through Intl.DisplayNames in the current UI language.
-    fireEvent.click(items[1] as HTMLElement)
-
-    await waitFor(() => expect(i18n.language).toBe('en-US'))
-    // The choice is a manual one, so it must land on the device too: a
-    // reload negotiates the stored tier before the browser languages, and
-    // without the write the interface falls back to the browser's language.
-    expect(entries.get(SPEED_LOCALE_STORAGE_KEY)).toBe('en-US')
+    // The language entry lives on the account preferences page alone, so the
+    // header's only control is the colour-mode toggle.
+    const t = i18n.getFixedT('en-US', DEMO_NAMESPACE)
+    const controls = screen.getAllByRole('button')
+    expect(controls).toHaveLength(1)
+    expect(controls[0]).toHaveAccessibleName(t('colorMode.toDark'))
   })
 })
 
@@ -269,35 +254,6 @@ describe('the colour mode choice', () => {
     } finally {
       window.matchMedia = original
     }
-  })
-
-  it('keeps the header action controls as siblings, so a collapsed rail can stack them', () => {
-    const i18n = createSpeedI18n({
-      supportedLanguages: ['zh-CN', 'en-US'],
-      defaultLanguage: 'en-US',
-      storage: null,
-      urlParameterName: null,
-      navigatorLanguages: [],
-      namespaces: [{ namespace: DEMO_NAMESPACE, resources: demoResources }],
-    })
-    render(
-      <SpeedAppProviders i18n={i18n} queryClient={createQueryClient()}>
-        <div data-testid="slot">
-          <HeaderActions />
-        </div>
-      </SpeedAppProviders>,
-    )
-
-    // The sidebar rail lays a slot's children out in a column; a wrapper
-    // around the pair would keep them in one row wider than the rail, which
-    // pushes the second control out of the paper. Two top-level nodes, no
-    // wrapper between them, is what lets the rail stack them.
-    const t = i18n.getFixedT('en-US', DEMO_NAMESPACE)
-    expect(screen.getByRole('button', { name: t('languageSwitcher.label') }))
-      .toBeInTheDocument()
-    expect(screen.getByRole('button', { name: t('colorMode.toDark') }))
-      .toBeInTheDocument()
-    expect(screen.getByTestId('slot').children).toHaveLength(2)
   })
 
   it('writes the flipped mode to the device from the header control', async () => {

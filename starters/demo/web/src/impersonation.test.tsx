@@ -734,11 +734,14 @@ describe('the impersonation shell', () => {
 
     // The switcher is not in the tree at all -- neither as a live affordance
     // nor as a disabled no-current-tenant button -- and the rest of the top
-    // bar renders without it.
+    // bar renders without it. The language switch is not there either: the
+    // account menu is the bar's only menu.
     expect(tenantSwitcherTrigger()).toBeNull()
     expect(
-      screen.getByRole('button', { name: demoEnUS.languageSwitcher.label }),
-    ).toBeInTheDocument()
+      screen
+        .getAllByRole('button')
+        .filter((button) => button.getAttribute('aria-haspopup') === 'menu'),
+    ).toEqual([screen.getByTestId('user-menu-trigger')])
     expect(
       screen.getByRole('button', { name: accountTriggerName('Target One') }),
     ).toBeInTheDocument()

@@ -184,9 +184,6 @@
     "accountSettings": "账户设置",
     "signOut": "退出登录"
   },
-  "languageSwitcher": {
-    "label": "切换语言"
-  },
   "colorMode": {
     "toDark": "切换到深色主题",
     "toLight": "切换到浅色主题"

@@ -13,8 +13,8 @@
  * Scope. The sweep scans the whole rendered document -- chrome and page
  * together -- so the shell's own controls are settled where they compose with
  * real content: both shell layouts (the default top-bar form and the sidebar
- * form), the two frames' shared header controls (language switch, colour-mode
- * toggle, account menu), and the notification bell. The bell's three states
+ * form), the two frames' shared header controls (colour-mode toggle, account
+ * menu), and the notification bell. The bell's three states
  * (one unread, none, above the badge cap) are driven explicitly, because a
  * single data profile reaches only the first two.
  *

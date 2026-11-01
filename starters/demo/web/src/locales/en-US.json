@@ -184,9 +184,6 @@
     "accountSettings": "Account settings",
     "signOut": "Sign out"
   },
-  "languageSwitcher": {
-    "label": "Change language"
-  },
   "colorMode": {
     "toDark": "Switch to dark theme",
     "toLight": "Switch to light theme"
