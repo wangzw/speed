@@ -444,7 +444,11 @@ describe('MfaSection', () => {
     ).toHaveLength(1)
   })
 
-  it('shows a factor removed elsewhere and rereads the list once', async () => {
+  it('treats a 204 removal of a row already gone as a landed write', async () => {
+    // A row another device removed while this list still showed it answers
+    // the same 204 a landed removal does: the route is idempotent and has no
+    // not-found answer on this path. The surface rereads the list once and
+    // confirms; it renders no error.
     let factorsRead = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
@@ -460,7 +464,7 @@ describe('MfaSection', () => {
         call.method === 'DELETE' &&
         call.path === '/api/v1/auth/factors/factor-1'
       ) {
-        return errorResponse(404, 'authn.factor_not_found')
+        return new Response(null, { status: 204 })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
@@ -479,11 +483,14 @@ describe('MfaSection', () => {
       }),
     )
 
+    // The removal confirms itself as a landed write, and the list converges
+    // on the reread.
     expect(
-      await screen.findByText(zhCN.errors.authn.factor_not_found),
+      await screen.findByText(
+        zhCN.mfa.removed.replace('{{factor}}', 'My authenticator'),
+      ),
     ).toBeTruthy()
-    // The removal did not confirm itself as a landed write.
-    expect(screen.queryByText(zhCN.mfa.removed.replace('{{factor}}', 'My authenticator'))).toBeNull()
+    expect(screen.queryByText(zhCN.errors.authn.factor_not_found)).toBeNull()
     // One reread after the initial read, and no loop from the answer.
     await waitFor(() => expect(factorsRead).toBe(2))
     expect(factorsRead).toBe(2)
