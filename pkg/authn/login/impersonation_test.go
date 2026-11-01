@@ -87,7 +87,7 @@ func TestAnImpersonatedStepUpFromTheFirstFactorProvesTheOperatorsAccount(t *test
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
 	r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
-	r.allow("acct-admin")
+	r.allowWithPassword("acct-admin")
 	var proved authn.AccountID
 	m.begin = func(s authn.Start) (authn.Step, error) {
 		proved = s.Account

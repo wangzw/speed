@@ -276,7 +276,7 @@ type startInput struct {
 type startAuthenticatedInput struct {
 	_ struct{} "description:\"The start request for a purpose other than login; `purpose` must be `link`, `step-up` or `enroll`.\""
 
-	Method   string            "json:\"method\" description:\"The method to run for `link`, and for a `step-up` of an account that holds no factor. For an enrollment it is not read, and for a step-up the engine starts at the second factor when the session may use a factor the account registered before it authenticated. A step-up whose account holds factors registered during this session re-proves the account's password and then offers those factors; the member is not read for that step, and an account with no password is refused with 401 insufficient_user_authentication. A name the deployment does not take in is a 400 bad-request.\""
+	Method   string            "json:\"method\" description:\"The method to run for `link` and for a `step-up` of an account that holds no factor. For an enrollment it is not read. A step-up starts at the second factor when the session may use a factor the account registered before it authenticated. When every factor was registered during this session, the flow starts at the first factor this names, or at the password when it names none or names one the deployment does not take in, and offers those factors as the second step. Naming `password` there for an account that cannot prove one is a 400 bad-request, as is any name the deployment does not take in for a step-up of an account that holds no factor; an account with no password and no named method is refused with 401 insufficient_user_authentication.\""
 	Purpose  string            "json:\"purpose\" description:\"Required, and one of `link`, `step-up` or `enroll`: bind an external identity, strengthen the current session, or register a factor. Any other value, including an empty one, is a 400 bad-request.\""
 	Delivery string            "json:\"delivery\" description:\"Accepted but not read: the delivery mode follows the kind of the request's session. It is accepted so that a client may send this route the same start body it sends to `POST /auth/flows`.\""
 	ReturnTo string            "json:\"return_to\" description:\"Where the callback lands the user agent: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts; anything else is a 400 bad-request. The callback lands the user agent there for every purpose that reaches ready: a login, a link and a no-factor step-up. An absent or empty value uses the configured `authn.login.default-return-to`, which is held to the same rule and falls back to `/`. The value is stored in the flow record, and no parameter of the callback request can change it.\""
@@ -568,10 +568,12 @@ var startAuthenticatedOperation = speedhttp.NewReplyOperation[startAuthenticated
 		"when the account holds an active factor, a fresh first factor otherwise — and answer 401 "+
 		"insufficient_user_authentication with `WWW-Authenticate` when it does not hold. A step-up whose account "+
 		"holds at least one factor usable for this session starts at the second factor and answers the offered "+
-		"factors without calling the method; an account that holds factors but none usable for this session — "+
-		"because each was activated at or after the session authenticated — is refused with 401 "+
-		"insufficient_user_authentication, and an account with no factor starts at the first factor with the "+
-		"method named in the body. The delivery mode is not read from the body: it follows the kind of the "+
+		"factors without calling the method. An account whose factors were all activated at or after the session "+
+		"authenticated starts at a first factor the body names, or at its password when the body names none or "+
+		"names one this deployment does not take in, and offers those factors as the second step; naming a "+
+		"password the account cannot prove is a 400 bad-request, and an account with no first factor to prove "+
+		"again is refused with 401 insufficient_user_authentication. An account with no factor starts at the "+
+		"first factor the body names. The delivery mode is not read from the body: it follows the kind of the "+
 		"request's session.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",

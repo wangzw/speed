@@ -967,6 +967,7 @@ func TestStepUpAndEnrollAreNotGatedByTheSignupState(t *testing.T) {
 		m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
 		r := newRig(t, m)
 		r.loginAsAuthenticated("acct1", "sid")
+		r.allowWithPassword("acct1")
 		r.verification.state = authn.SignupStatus{State: authn.SignupPending}
 
 		rec := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", body)

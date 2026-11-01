@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/settings"
 )
 
@@ -652,6 +653,69 @@ func TestAStepUpWithAFactorRegisteredThisSessionFallsBackToThePasswordForAnUnass
 	fields := body["next"].(map[string]any)["fields"].([]any)
 	if name := fields[0].(map[string]any)["name"]; name != "password" {
 		t.Fatalf("the first step asks for %v, want the password challenge", name)
+	}
+}
+
+// TestAStepUpNamingAPasswordTheAccountCannotProveIsRefused holds that a step-up
+// whose only factors were registered during this session does not start on a
+// password the account cannot prove: naming it explicitly is the same bad
+// request as naming a method this deployment does not take in, refused at the
+// start rather than left to fail when the password is asked for.
+func TestAStepUpNamingAPasswordTheAccountCannotProveIsRefused(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("password", nil,
+			authn.Field{Name: "password", Kind: authn.FieldPassword, Required: true}), nil
+	}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allow("acct1") // an account row without a password credential
+	r.mfa.outcome = authn.MFAFactor
+	r.mfa.offered = []authn.FactorRecord{{
+		ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive,
+		ActivatedAt: time.Now().Add(time.Minute),
+	}}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"step-up","method":"password"}`)
+	if start.Code != http.StatusBadRequest {
+		t.Fatalf("a step-up naming a password the account cannot prove answered %d, want 400: %s",
+			start.Code, start.Body.String())
+	}
+	if got := humanType(t, start.Body.String()); got != mount.CodeBadRequest {
+		t.Errorf("the refusal code = %q, want %q", got, mount.CodeBadRequest)
+	}
+	if m.calls != 0 {
+		t.Errorf("the password method began %d times, want none", m.calls)
+	}
+}
+
+// TestAStepUpWithNoFactorNamingAPasswordTheAccountCannotProveIsRefused holds the
+// same refusal where the account holds no factor at all: the named password is
+// the account's only first factor there, and an account that cannot prove one
+// gets a bad request before any flow record is written.
+func TestAStepUpWithNoFactorNamingAPasswordTheAccountCannotProveIsRefused(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("password", nil,
+			authn.Field{Name: "password", Kind: authn.FieldPassword, Required: true}), nil
+	}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allow("acct1") // an account row without a password credential
+	r.mfa.outcome = authn.MFANone
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"step-up","method":"password"}`)
+	if start.Code != http.StatusBadRequest {
+		t.Fatalf("a no-factor step-up naming a password the account cannot prove answered %d, want 400: %s",
+			start.Code, start.Body.String())
+	}
+	if got := humanType(t, start.Body.String()); got != mount.CodeBadRequest {
+		t.Errorf("the refusal code = %q, want %q", got, mount.CodeBadRequest)
+	}
+	if m.calls != 0 {
+		t.Errorf("the password method began %d times, want none", m.calls)
 	}
 }
 

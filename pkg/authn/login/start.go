@@ -287,6 +287,8 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 // starts at the password instead. An account with no password to prove again,
 // and no usable method to start with, is refused as insufficient, the same
 // answer as an account with factors none of which may strengthen this session.
+// A request that names the password an account cannot prove is the bad request
+// a method this deployment does not take in gets.
 func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, requirement authn.AccountID, requested string) (start, method string, offered []factorView, insufficient bool, err error) {
 	firstProof := authn.Proof{Methods: status.Methods}
 	outcome, factors, err := r.mfa.Require(ctx, status.Account, requirement, firstProof)
@@ -319,6 +321,9 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 		// deployment does not take in, falls back to the password.
 		if requested != "" {
 			if _, ok := r.method(requested); ok {
+				if cerr := r.checkStartMethod(ctx, status.Account, requested); cerr != nil {
+					return "", "", nil, false, cerr
+				}
 				return stateFirst, requested, factorViews(factors), false, nil
 			}
 		}
@@ -337,7 +342,31 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 	if _, ok := r.method(requested); !ok {
 		return "", "", nil, false, fmt.Errorf("%w: the step-up names a method not taken in", authn.ErrInvalidArgument)
 	}
+	if cerr := r.checkStartMethod(ctx, status.Account, requested); cerr != nil {
+		return "", "", nil, false, cerr
+	}
 	return stateFirst, requested, nil, false, nil
+}
+
+// checkStartMethod holds a first factor a step-up names to what the account can
+// prove. The password is only serviceable when the account holds one to prove
+// again; a request that names it otherwise is the same bad request as one that
+// names a method the deployment does not take in, refused before any record is
+// written rather than as a failed proof later. The account checked is the one
+// the step proves: the session's own account, which the operator is even under
+// an impersonation.
+func (r *routes) checkStartMethod(ctx context.Context, account authn.AccountID, requested string) error {
+	if requested != methodPassword {
+		return nil
+	}
+	hasPassword, err := r.accountHasPassword(ctx, account)
+	if err != nil {
+		return err
+	}
+	if !hasPassword {
+		return fmt.Errorf("%w: the step-up names a password the account cannot prove", authn.ErrInvalidArgument)
+	}
+	return nil
 }
 
 // accountHasPassword reports whether the account can prove a password again:

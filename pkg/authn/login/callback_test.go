@@ -219,7 +219,7 @@ func TestANoFactorStepUpThroughARedirectMethodLandsOnTheReturnTarget(t *testing.
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
 	r.loginAsAuthenticated("acct1", "sid")
-	r.allow("acct1")
+	r.allowWithPassword("acct1")
 
 	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
 		`{"purpose":"step-up","method":"password","return_to":"/account/security"}`)
