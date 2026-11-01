@@ -469,4 +469,8 @@ assembly without a passkey relying party shows no passkey entry; the session lis
 server's list (only live sessions, the current one never revocable here);
 session state does not survive a page load, the refresh token is
 JavaScript-visible in memory, and step-up elevation outlives exactly the
-session that earned it (auth-core's limits, inherited).
+session that earned it (auth-core's limits, inherited). A write that must
+resume after a new sign-in leaves only its page, its owning surface and a
+credential-free operation descriptor in the tab's session storage; the
+elevation itself and any password or one-time code never cross the session's
+end.

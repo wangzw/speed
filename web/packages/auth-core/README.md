@@ -239,6 +239,11 @@ onError: (error, action) => {
 }
 ```
 
+`gate.peek()` returns the remembered action without consuming it. A surface
+whose dialog offers the re-login exit reads it to describe the operation a
+new sign-in must resume, before the cancel that closes the dialog clears the
+slot.
+
 The default classifier recognises the platform's step-up code, not every
 401: a 401 that ended the session leaves nothing to elevate. A caller
 whose session already tells the two apart passes
