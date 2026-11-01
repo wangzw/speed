@@ -42,7 +42,7 @@
 
 ## 决策
 
-采纳：**审计记录的导出是 `audit.admin` 的一条检索路由，判定复用 `audit.read`，正文按 NDJSON 逐页流式写出。**
+采纳：**审计记录的导出是 `audit.admin` 的一条检索路由，判定复用 `audit.read`，正文按 NDJSON（[REF-ndjson](../references.md)）逐页流式写出。**
 
 路由是 `GET /api/v1/system/audit/export`，接受列表路由的筛选参数，不接受游标与页大小——两者描述的是页，不是筛选。判定与列表路由同一顺序、同一平台域、同一权限；本模块不询问 `audit.export`。正文是 NDJSON：一条记录视图一行，`detail` 因而按它自己的结构保留。处理器按读面的游标逐页读，读一页写一页，写出的行数不受一页的大小限制。
 

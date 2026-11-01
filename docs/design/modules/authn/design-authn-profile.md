@@ -44,7 +44,7 @@
 - `identifiers` 与 `links` 是本人的标识与外部身份绑定，只读，取自 `Accounts.Identifiers` 与 `Accounts.Externals`；绑定项不含 `Subject` 原文。`identifiers` 列出账户已登记的每一项值：邮箱与手机各带 `proven`（由该标识的 `Verification.Proves` 派生：`sms-code`、`email-code`、`invite` 与 `idp:<提供方标识>` 为真，`admin`、`import-unverified` 与 `self` 为假），以及联系方式 `contact`、登录方式 `sign_in` 与默认联系地址 `default_contact`。邮箱与手机标识恒为联系方式，登录方式由持有人选择（REQ-account-061）；`proven` 是二值的，不按渠道细分：经管理员或导入写下的邮箱标识在列表里就是一条未证明的邮箱标识，没有第三态。用户名是口令登录名，`contact` 与 `default_contact` 恒为假、`sign_in` 恒为真，不标归属；`links` 里的每一个外部身份是一类独立的登录方式，不属联系方式（REQ-account-067）。未证明的邮箱预留不在 `identifiers` 里——它不是标识——但经 `verification.email` 出现。未证明的邮箱或手机的 `sign_in` 与 `default_contact` 都是假，`contact` 对登记的行恒为真；`sign_in` 与 `default_contact` 在该值被证明之后才可被持有人取真（REQ-account-065、REQ-account-066）。正常写入下用户账户总有用户名标识：自助注册、首登开户、邀请受理、管理面预置、初始装配与导入建出的用户账户都带一个用户名。可能没有用户名的只有服务账户与绕过写入面的行。读方不得把「有用户名」当作新建账户或某种创建路径的判据；`identifiers` 只说明此账户此刻持有哪些标识。
 - `default_contact` 只在一条已证明的邮箱标识上为真：账户在已登记并已证明的邮箱地址中恰好有一个默认联系地址，没有这样的地址时全部为假（REQ-account-063）；持有人未选时，默认联系地址取最早证明的那一条，持有人可以改选另一个已登记并已证明的邮箱地址，改选后原地址不再是。它只作通知的收件地址，不是登录方式的一种。
 - `verification` 是 `{state, email, since}`：`state` 取 `none`、`pending`、`verified`，对应 `SignupState` 的 `0`、`1`、`2`。判据是二值的：账户持有至少一条 `proven` 为真的邮箱标识即 `verified`；否则持有任何邮箱——一条 `proven` 为假的邮箱标识，或一条未证明预留——即 `pending`；一条邮箱也没有即 `none`，本规则不拦截它。`email` 的取值是确定的：`verified` 取 `Proves` 为真、`verified_at` 最早的邮箱，同一时刻按标识 ID 排序取第一个；`pending` 取未证明邮箱标识与未证明预留中创建时刻最早的一条，同一时刻按行标识排序取第一个，账户因此可能有一个目标地址，也可能在删掉最后一条邮箱标识后什么也没有（那时读作 `none`）；`none` 为空。`since` 是 `signup_verified_at`，在任一账户第一次证明邮箱时写入，之后再验证其他邮箱不更新，`verified` 回到 `pending` 时保留；`verified` 而该列为空时取最早那条证明标识的 `VerifiedAt`；从未证明过邮箱时为空串。它由 `SignupVerification.SignupStateOf` 请求期活读，不进会话、身份或访问令牌。
-- 时间按 UTC 以 RFC 3339 写出，零时间写空串。
+- 时间按 UTC 以 RFC 3339（[REF-rfc3339](../../../references.md)）写出，零时间写空串。
 
 ### 写的请求与应答
 
@@ -62,8 +62,8 @@
 
 - `display_name`：字符串，至多 100 字符；经 `AccountAdmin.SetDisplayName` 写入。
 - `attributes`：一个属性映射；给定时**整体替换**账户当前的属性集；经 `AccountAdmin.SetAttributes` 写入。
-- `locale`：BCP 47 标签，经 `i18n.ValidLocaleTag` 校验，写到属性集的 `i18n.locale` 键。
-- `time_zone`：IANA 名称，经 `i18n.ValidTimeZone` 校验，写到属性集的 `i18n.tz` 键。
+- `locale`：BCP 47（[REF-bcp47](../../../references.md)）标签，经 `i18n.ValidLocaleTag` 校验，写到属性集的 `i18n.locale` 键。
+- `time_zone`：IANA 名称（[REF-iana-tz](../../../references.md)），经 `i18n.ValidTimeZone` 校验，写到属性集的 `i18n.tz` 键。
 - `color_mode`：`light`、`dark`、`system` 之一，经 `ValidColorMode` 校验，写到属性集的 `presentation.color-mode` 键。
 
 应答是 200 与一份视图，给出写后存下的可自写字段：`display_name`、`attributes`、`locale`、`time_zone`、`color_mode`。
@@ -204,6 +204,6 @@ classDiagram
 |---|---|---|
 | 用户档案自服务面（`GET B/me`、`PATCH B/me`） | 已实现 | `pkg/authn/profile/profile.go` `Module`；`pkg/authn/profile/routes.go` `mountRoutes`；`pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/profile/write.go` `handlePatchMe` |
 | 颜色模式偏好的自写与读出（`color_mode`、属性键 `presentation.color-mode`） | 已实现 | `pkg/authn/profile/color_mode.go` `ColorModeAttributeKey`、`ValidColorMode`；`pkg/authn/profile/write.go` `patchInput`、`handlePatchMe`、`mergeAttributes`；`pkg/authn/profile/views.go` `AuthnProfileProfile`、`AuthnProfilePatch` |
-| operation 声明与 OpenAPI 片段生成 | 已实现 | `pkg/authn/profile/operations.go`；`pkg/authn/profile/openapi_generated_test.go`；片段 `pkg/authn/profile/openapi/profile.json` |
+| operation 声明与 OpenAPI（[REF-openapi](../../../references.md)）片段生成 | 已实现 | `pkg/authn/profile/operations.go`；`pkg/authn/profile/openapi_generated_test.go`；片段 `pkg/authn/profile/openapi/profile.json` |
 | `GET B/me` 的注册验证状态 `verification` 与标识的 `proven` | 已实现 | `pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/profile/views.go` `AuthnProfileVerification`、`AuthnProfileIdentifier.Proven`、`profileViewOf`、`signupStateName`；`pkg/authn/profile/profile.go` `Module`、`product.signupVerification` |
 | 联系方式、登录方式与默认联系地址的读出：`identifiers[].contact`、`identifiers[].sign_in`、`identifiers[].default_contact`、用户名不标归属，外部身份列在登录方式中 | 已实现 | `pkg/authn/account/accounts.go` `product.Identifiers` |

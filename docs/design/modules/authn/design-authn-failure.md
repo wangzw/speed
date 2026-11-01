@@ -63,7 +63,7 @@
 
 ### 对外的失败应答
 
-- **503 的形状。** authn 自己的处理器答 503 时，`Problem.Type` 为 `urn:speed:authn:unavailable`；令牌端点按 OAuth 的约定答 `temporarily_unavailable`。网关的 503 只带状态码（入口模块的 `Fail` 只带状态码），同样不区分成因。503 的应答里只有 `ErrBusy` 带 `Retry-After: 1`。
+- **503 的形状。** authn 自己的处理器答 503 时，`Problem.Type` 为 `urn:speed:authn:unavailable`；令牌端点按 OAuth（[REF-rfc6749](../../../references.md)）的约定答 `temporarily_unavailable`。网关的 503 只带状态码（入口模块的 `Fail` 只带状态码），同样不区分成因。503 的应答里只有 `ErrBusy` 带 `Retry-After: 1`。
 - **其余形状。** 机器可读的码取 `urn:speed:authn:<码>`，码的集合与新增规则在 [design-authn-login](design-authn-login.md)；运行期哨兵表的 HTTP 列是码与状态的对应。
 - **注册与验证的冲突形状。** `POST B/register` 把用户名冲突答 409 `username-taken`，把邮箱地址冲突答 409 `email-taken`：注册在开户事务里插入邮箱预留，`(kind, value)` 的唯一索引是地址的唯一仲裁点，冲突返回 `ErrContactTaken`，账户、用户名与口令随事务回滚。自助添加邮箱也在发码之前读标识表与未证明预留，地址已被别的账户持有或预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算；写标识是权威拒绝，地址在发码之后被占用时 `ErrContactTaken` 与 `ErrAccountExists` 都答 409 `email-taken`。读预留或标识失败答 503，不按空闲处理。
 - **未验证账户的能力限制。** 要求已验证邮箱的能力对读作 `SignupPending` 的账户答 403 `contact-required`——持有邮箱而没有一条已证明的邮箱，不论账户是自助注册、管理员预置还是导入写出的；没有邮箱的账户读作 `SignupNone`，不受这条门控约束。状态读取失败答 503，不按放行处理（[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。
@@ -85,8 +85,8 @@
 |---|---|---|
 | `core` | `ErrMissingProvider` 原样外传；`Stop` 与 `Close` 收到的上下文去掉了取消；未被推进到的阶段其回调不执行 | [design-core](../design-core.md) |
 | `http`（入口模块） | `Problem` 与 `Fail` 的形状；兜底层的 500 与已设 `Set-Cookie` 的带出 | [design-http](../http/design-http.md) |
-| `db` | `gorm.ErrDuplicatedKey` 在两个引擎上同判；加密列的根密钥；迁移集的静态级纳入 | [design-db](../design-db.md) |
-| `kv` | 流程记录的存放；Memcached 与 NATS 实现把写入副本的时钟写在值前面；`kv.memory` 只用于单副本 | [design-kv](../design-kv.md) |
+| `db` | `gorm.ErrDuplicatedKey`（[REF-gorm](../../../references.md)）在两个引擎上同判；加密列的根密钥；迁移集的静态级纳入 | [design-db](../design-db.md) |
+| `kv` | 流程记录的存放；Memcached 与 NATS（[REF-nats](../../../references.md)）实现把写入副本的时钟写在值前面；`kv.memory` 只用于单副本 | [design-kv](../design-kv.md) |
 | `settings` | 请求期读内存快照，不会失败；变更经事件与周期刷新传播 | [design-settings](../settings/design-settings.md) |
 | `event`、`outbox` | 事件发布失败不阻塞业务；发件箱的 `Stage` 失败令该动作失败 | [design-event](../event/design-event.md)、[design-outbox](../event/design-event-outbox.md) |
 | `audit` | 强制档与尽力档两档的写失败方向 | [design-audit](../audit/design-audit.md) |
@@ -176,11 +176,11 @@ type ThrottledError struct{ RetryAfter time.Duration }
 
 凡本功能目录在库的校验之外另加的检查，任何一项不通过，结果都是失败，并记一条 Error，说明库的某条默认放行被补上了；补充检查的结论不由库的结论覆盖。下列各项按这条判据例举，不是封闭集：
 
-- SAML：响应与断言都未签名时的拒绝、签名包装、SHA-1 签名的预扫描、断言的 `IssueInstant` 不早于当前减 `assertion-max-age`。
-- JWT：头里的算法与密钥所配算法的对应，由本功能目录自己核对，不信库的默认行为。
+- SAML（[REF-saml2](../../../references.md)）：响应与断言都未签名时的拒绝、签名包装、SHA-1 签名的预扫描、断言的 `IssueInstant` 不早于当前减 `assertion-max-age`。
+- JWT（[REF-rfc7519](../../../references.md)）：头里的算法与密钥所配算法的对应，由本功能目录自己核对，不信库的默认行为。
 - 口令条目：`DecodeHash` 成功而参数越界。
 - 用户名：规范化成功而取值是保留用户名。判定在规范化之后、唯一性检查与注册退避之前（首登开户只有唯一性检查），命中即拒绝、不建户；它与格式不合同答 400 `bad-request`，不占 409 `username-taken`。读不到保留用户名集合时按内置清单判定，记一行 Error。
-- TOTP 的重放判定与 WebAuthn 的签名计数写回。
+- TOTP（[REF-rfc6238](../../../references.md)）的重放判定与 WebAuthn（[REF-webauthn](../../../references.md)）的签名计数写回。
 - 网关的出口检查：后端自报的通过判决经复核才盖章。
 
 ### 时间的使用与容差
@@ -190,7 +190,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 用到时间的地方 | 容差与要求 |
 |---|---|
 | 访问令牌 `exp`、`nbf`、`iat` | `ValidateWithLeeway`，容差由 `authn.token.leeway` 设定（缺省与取值域见 [design-authn-config](design-authn-config.md)）：一个副本签发、另一个副本校验时，偏差超过容差则出现零星的 401 |
-| OIDC 的 ID 令牌 | go-oidc 的 `exp` 与 5 分钟的 `nbf` 宽限；`auth_time` 只在步进里比较 |
+| OIDC（[REF-openid-connect-core](../../../references.md)）的 ID 令牌 | go-oidc（[REF-go-oidc](../../../references.md)）的 `exp` 与 5 分钟的 `nbf` 宽限；`auth_time` 只在步进里比较 |
 | SAML 的 `Conditions` 与 `SubjectConfirmationData` | 全部由库按严格的当前时间判，没有容差设置；authn 另校验 `IssueInstant` 不早于当前减 `assertion-max-age`；SP 时钟与 IdP 的偏差超出库的严格时间判定与 `IssueInstant` 校验所容许的范围时，会零星拒掉合法断言，要求部署时间同步 |
 | TOTP | 固定前后各一步（30 秒），不做漂移校正 |
 | 会话与刷新令牌的期限、短信验证码、WebAuthn 仪式、流程记录 | 以写入副本的时钟记 `expires_at`，读取副本比较；期限在副本之间偏移同样的偏差。流程记录的 TTL 有取值域下限，偏差要远小于该下限；kv 的 Memcached 与 NATS 实现把写入副本的时钟写在值前面 |
@@ -208,8 +208,8 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrNoRouter` | 网关的 `Init` 里取不到路由功能 | 把入口模块的 `ModuleName` 写进这条命令 |
 | `ErrNoVerifier` | `ResolveAll[Verifier]` 为零个 | 把校验后端子包的模块名写进这条命令 |
 | `ErrClaimConflict` | 两个校验后端同名，或认领同一个 scheme、同一个 cookie 名，或两个都不是 `static` 的后端声明的非空账户前缀互为前缀（含相同）；涉及 `static.` 的前缀归 `ErrInvalidClaim` | 点名双方与撞上的那一项 |
-| `ErrInvalidClaim` | 载体认领形状不合法：scheme 不是 RFC 9110 token、cookie 名不合法、一个载体都不认领、名字为空；账户前缀的形状不合法（非空前缀超过 63 字节，或不能作账户标识的前缀）；`Name()` 为 `static` 的后端声明的前缀不是 `static.`，其他后端声明的非空前缀是 `static.` 的前缀或以 `static.` 起头；口令表一个主体都没写、主体名不合法或条目读不了（后者同时包住 `static.ErrMalformedHash`，`errors.Is` 对 `ErrInvalidClaim` 与 `static.ErrMalformedHash` 都成立）。后端是否交付库账户、该不该声明非空前缀网关判不出来，不在此列，见 [design-authn-gate](design-authn-gate.md) | 点名该后端与不合法之处 |
-| `ErrInvalidConfig` | 配置取值跑不起来：`authn.gate.endpoints` 写成空、含空名、重名、`*` 与具体名混用；`tenant.admission.endpoints` 写成空、含空名或含 `*`，或列出 `tenant.resolve.endpoints` 不覆盖的端；`mount.endpoints.default` 或 `.system` 被 `ScopeGuard` 所守，或出现在 `tenant.resolve.endpoints` 里；`mount.endpoints.tenants` 未被 `ScopeGuard` 所守、不在 `tenant.resolve.endpoints` 里，或该清单读不出；`*` 展开后入口模块没有任何端；`call-budget` 或 `in-flight` 非正；`trusted-origins` 的某项不是能规范成浏览器发送形式的来源 `scheme://host[:port]`（带通配、用户信息、空端口、越界端口、非 ASCII 主机、路径、查询或片段）；口令表的 `cache-size` 或 `concurrency` 不在取值域内（取值域见 [design-authn-config](design-authn-config.md)）；令牌的 `issuer` 解析后为空（`issuer` 与 `authn.gate.mount.public-url` 都没给出，此时空的 `audience` 也无从取默认值）、`algorithm` 不是 `ES256` 或 `RS256`、`client-id` 为空；微信的某个模块缺必填项；`rp-id` 与基址主机无关；`public-url` 或 `bases` 不合法，或需要 `public-url` 的模块遇到它为空；短信 `templates` 缺用途；`sign_requests` 无 SP 密钥；`password-memory-budget-mib` 低于 `m` 取值域上限的两倍 | 点名该项与不合法之处 |
+| `ErrInvalidClaim` | 载体认领形状不合法：scheme 不是 RFC 9110（[REF-rfc9110](../../../references.md)） token、cookie 名不合法、一个载体都不认领、名字为空；账户前缀的形状不合法（非空前缀超过 63 字节，或不能作账户标识的前缀）；`Name()` 为 `static` 的后端声明的前缀不是 `static.`，其他后端声明的非空前缀是 `static.` 的前缀或以 `static.` 起头；口令表一个主体都没写、主体名不合法或条目读不了（后者同时包住 `static.ErrMalformedHash`，`errors.Is` 对 `ErrInvalidClaim` 与 `static.ErrMalformedHash` 都成立）。后端是否交付库账户、该不该声明非空前缀网关判不出来，不在此列，见 [design-authn-gate](design-authn-gate.md) | 点名该后端与不合法之处 |
+| `ErrInvalidConfig` | 配置取值跑不起来：`authn.gate.endpoints` 写成空、含空名、重名、`*` 与具体名混用；`tenant.admission.endpoints` 写成空、含空名或含 `*`，或列出 `tenant.resolve.endpoints` 不覆盖的端；`mount.endpoints.default` 或 `.system` 被 `ScopeGuard` 所守，或出现在 `tenant.resolve.endpoints` 里；`mount.endpoints.tenants` 未被 `ScopeGuard` 所守、不在 `tenant.resolve.endpoints` 里，或该清单读不出；`*` 展开后入口模块没有任何端；`call-budget` 或 `in-flight` 非正；`trusted-origins` 的某项不是能规范成浏览器发送形式的来源 `scheme://host[:port]`（带通配、用户信息、空端口、越界端口、非 ASCII 主机、路径、查询或片段）；口令表的 `cache-size` 或 `concurrency` 不在取值域内（取值域见 [design-authn-config](design-authn-config.md)）；令牌的 `issuer` 解析后为空（`issuer` 与 `authn.gate.mount.public-url` 都没给出，此时空的 `audience` 也无从取默认值）、`algorithm` 不是 `ES256` 或 `RS256`（[REF-rfc7518](../../../references.md)）、`client-id` 为空；微信的某个模块缺必填项；`rp-id` 与基址主机无关；`public-url` 或 `bases` 不合法，或需要 `public-url` 的模块遇到它为空；短信 `templates` 缺用途；`sign_requests` 无 SP 密钥；`password-memory-budget-mib` 低于 `m` 取值域上限的两倍 | 点名该项与不合法之处 |
 | `ErrUnknownEndpoint` | `authn.gate.endpoints`、`mount.endpoints` 的任一项、`Exempt`、`Optional`、`Impersonable` 登记里的端名在入口模块里不存在 | 点名该端名；出自登记时另点名方法与路径 |
 | `ErrExemptionUnguarded` | `Exempt`、`Optional` 或 `Impersonable` 登记在网关不守的端上 | 把该端写进 `endpoints`，或把登记挪走 |
 | `ErrAccessConflict` | 同一（端，方法，路径）既登记 `Exempt` 又登记 `Optional`，或既登记 `Exempt` 又登记 `Impersonable` | 去掉其中一个 |
@@ -235,7 +235,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrInvalidAccountID`、`ErrAccountNotFound`、`ErrAccountExists` | 标识格式不合法；账户不存在（含墓碑）；标识、登录名或绑定违反唯一约束（`gorm.ErrDuplicatedKey`，两个引擎同判）；自助注册的用户名冲突 | 400；对外并入 `login-failed` 或 404；409（自助注册用户名冲突是 409 `username-taken`） |
 | `ErrContactTaken` | 邮箱地址已被别的账户预留或持有（`authn_pending_contacts` 的 `(kind, value)` 唯一索引冲突） | 409 `email-taken` |
 | `ErrInvalidCredentials` | 未知标识、错口令、验证码错、停用、无口令，一律此哨兵 | 401 `login-failed` |
-| `ErrPasswordPolicy`、`ErrInvalidIdentifier`（邮箱或手机） | 口令不合策略（过短、超长、等于本人标识、低于 OWASP 下限、与当前口令相同）；邮箱或手机的规范化失败 | 400 `bad-request` |
+| `ErrPasswordPolicy`、`ErrInvalidIdentifier`（邮箱或手机） | 口令不合策略（过短、超长、等于本人标识、低于 OWASP 下限、与当前口令相同，[REF-owasp-password-storage](../../../references.md)）；邮箱或手机的规范化失败 | 400 `bad-request` |
 | `ErrInvalidIdentifier`（用户名） | 用户名的规范化失败：形状不合、以 `static.` 起头或为 UUID 形状 | 400 `username-invalid` |
 | `ErrUsernameReserved` | 用户名落在保留用户名集合里（内置清单与 `authn.account.reserved-usernames` 的并集） | 400 `username-reserved` |
 | `ErrInvalidArgument` | 写入的值越过调用允许的域：属性集越界、显示名过长、`via` 不在 `Verification` 接受的形式内、`reason` 不在 `ReasonClass` 闭集 | 管理路由 400 `bad-request`；模块在自己写下的值（会话载荷的 `idp.*` 属性）上遇到它是自身的缺陷，503 |
@@ -253,7 +253,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrBindingConflict`、`ErrLastFactor`、`ErrLastTenantAdmin` | 外部身份冲突；删最后一个因素；移除成员关系会让租户不再有任何租户管理员绑定 | 409 `conflict` |
 | `ErrLastLoginMethod` | 解绑最后一种登录方式，或删除标识、取消一条登录方式会留下没有任何非因素登录方式的账户，或重置因素时目标账户只剩因素这一种登录方式 | 409 `last-login-method` |
 | `ErrFactorNotEnrolled`、`ErrReplay`、`ErrFactorFlagged` | 因素未登记；TOTP 计数器或 WebAuthn 签名计数重放；WebAuthn 凭据疑似克隆 | 对外并入 `login-failed` |
-| `ErrStepUpRequired` | 保障等级或新鲜度不足 | 401 `insufficient_user_authentication` |
+| `ErrStepUpRequired` | 保障等级或新鲜度不足 | 401 `insufficient_user_authentication`（[REF-rfc9470](../../../references.md)） |
 | `ErrFactorNotSeasoned` | 冒充发起、管理员重置因素与重置口令时，发起者名下没有启用已满 `sensitive-min-age` 的非短信因素 | 403 `factor-not-seasoned` |
 | `ErrSessionNotFound`、`ErrCSRF` | 会话不存在、已撤销或已过期；跨源检查不符 | 网关：401（`Denied`，成因进日志） |
 | `ErrTokenInvalid`、`ErrInvalidGrant`、`ErrRefreshReuse`、`ErrNoSigningKey`、`ErrReservedClaim` | 访问令牌不合法；刷新令牌不合法或已用；重用命中（整族已撤销）；要签发而没有签名钥；`ClaimsContributor` 返回了保留名 | 401；令牌端点 `invalid_grant`；签发路径 503；`ErrReservedClaim` 是宿主实现的配置缺陷 |
@@ -305,7 +305,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 账户生命周期钩子 | 停用、删除、撤销服务密钥之后的清理 | 账户状态已在本模块事务里生效；钩子失败返回 `ErrCleanupIncomplete`（503），重试幂等；发件箱在场时事件补偿；`valid_after` 与账户状态检查兜底 | 拒：状态已生效，清理待补 |
 | 短信发送方 | 登录、因素与匿名口令重置的短信 | 异步工作池记 Warn 与指标，用户收不到；`sms.ErrUncertain` 不盲目重发；入队时队列满 503 | 拒：不发 |
 | 邮箱重置的发送 | 匿名口令重置的邮箱渠道 | 有界工作池记 Warn 与指标，用户收不到；应答在入队时已返回 202，用户按重发间隔重试；队列满时在写记录之前 503 | 拒：不发 |
-| IdP（OIDC 发现、JWKS、令牌端点） | 企业 OIDC 与社交登录 | 该 IdP 的登录 503，流程保留至到期，其他 IdP 不受影响 | 拒 |
+| IdP（OIDC 发现、JWKS、令牌端点，[REF-openid-connect-discovery](../../../references.md)、[REF-rfc7517](../../../references.md)） | 企业 OIDC 与社交登录 | 该 IdP 的登录 503，流程保留至到期，其他 IdP 不受影响 | 拒 |
 | 受限出站客户端拒绝的连接（目的地不是公网地址、方案不是 https、响应体超上限） | IdP 的发现文档、JWKS、元数据与 userinfo 的出站请求 | 与该 IdP 不可用同形：该 IdP 的登录 503，流程保留至到期，其他 IdP 不受影响；成因进日志，不进应答 | 拒 |
 | IdP 元数据（SAML） | 证书更新 | 不自动刷新；管理员触发的刷新失败保留上一份有效配置并记 Warn | 有界放：IdP 元数据的证书陈旧 |
 | 签名密钥文件 | 签发 | 没有签名钥则 503；验证用启动时已装入内存的密钥集，不依赖运行期读文件 | 拒 |
@@ -341,7 +341,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 各副本使用 NTP 或等价同步，偏差远小于使用的最短期限 | 令牌零星 401；SAML 零星拒掉合法断言；会话、刷新令牌与验证码的期限在副本之间偏移；Memcached 与 NATS 的 kv 下，流程记录在不同副本上提前或延后过期 |
 | 施加迁移的命令静态级纳入全部带表的 authn 模块（`IncludeAllDeclarations`），`db` 配了根密钥 | 带表模块 `Start` 探测不到表，以 `ErrNotMigrated` 终止；根密钥缺失时以 `ErrNoEncryptionKey` 终止 |
 | kv 只存流程记录；`kv.memory` 只用于单副本 | 丢键使进行中的登录流程失败；`kv.memory` 在 `replicas>1` 时启动失败（见 [design-kv](../design-kv.md)） |
-| `public-url` 与实际对外地址一致，用 https | `__Host-` cookie、WebAuthn 的 RP、SAML 的 ACS 与 OIDC 的回调这些依赖它的流程失败 |
+| `public-url` 与实际对外地址一致，用 https | `__Host-`（[REF-rfc6265bis](../../../references.md)） cookie、WebAuthn 的 RP、SAML 的 ACS 与 OIDC 的回调这些依赖它的流程失败 |
 | 需要运行期调参或租户层策略的宿主纳入 `settings`（带 `db` 与 `event`） | 全部设置键取声明的默认值，调参与租户层策略不生效 |
 | 入口模块默认不信任任何代理，端及其继承的模块级默认未列出可信代理时 `c.ClientIP()` 在代理之后是代理地址，所以按来源地址的限流需宿主显式开启、会话列表里的地址仅供展示 | 未配置可信代理时，开启按来源地址的限流会使代理之后的全站共用一个桶 |
 | 开放自助注册的部署装配 `EmailCodeSender` 并接受邮件投递 | 注册可以开放但邮箱无法证明，账户停在未验证状态，要求已验证邮箱的能力一直受限；没有邮件通道的部署保持 `authn.account.password-signup` 为 `closed`，管理员预置与导入的账户同样停在未验证 |

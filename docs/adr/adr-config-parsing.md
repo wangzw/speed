@@ -26,7 +26,7 @@
 
 另一套主流的命令行框架，自带命令树。
 
-**否决**：它不使用 pflag，与所选配置库之间没有现成的绑定，两侧的参数定义要各写一遍并保持同步。
+**否决**：它不使用 pflag（[REF-pflag](../references.md)），与所选配置库之间没有现成的绑定，两侧的参数定义要各写一遍并保持同步。
 
 ### kong 与 go-flags
 
@@ -36,13 +36,13 @@
 
 ### koanf
 
-模块化的配置库，解析器与来源按需引入，依赖面比 viper 小。
+模块化的配置库，解析器与来源按需引入，依赖面比 viper（[REF-viper](../references.md)）小。
 
 **否决**：依赖面的差别不足以抵消使用面的差别。选择解析工具的判据是它是否为使用者与维护者所熟悉，而不是它引入多少个包。
 
 ### viper 与 pflag
 
-命令行解析用 pflag，命令树用 cobra，配置源与层叠用 viper，类型转换用 viper 自带的 mapstructure；环境变量层除外，见决策。
+命令行解析用 pflag，命令树用 cobra（[REF-cobra](../references.md)），配置源与层叠用 viper，类型转换用 viper 自带的 mapstructure（[REF-mapstructure](../references.md)）；环境变量层除外，见决策。
 
 **采纳**，见决策。
 

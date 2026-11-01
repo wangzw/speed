@@ -60,7 +60,7 @@ type Receipt struct{ ProviderID string }
 | 规则 | 落空即 `ErrRejected` |
 |---|---|
 | `To`、`Cc`、`Bcc` 至少一项非空 | 三项皆空 |
-| `From`（非空时）、`To`、`Cc`、`Bcc`、`ReplyTo` 的每个条目都是单个 RFC 5322 地址（`net/mail` 判形） | 某条目不是一个地址，点名该字段 |
+| `From`（非空时）、`To`、`Cc`、`Bcc`、`ReplyTo` 的每个条目都是单个 RFC 5322（[REF-rfc5322](../../references.md)）地址（`net/mail` 判形） | 某条目不是一个地址，点名该字段 |
 | `Subject` 不含控制字符（制表符除外） | 含控制字符 |
 | `Text` 与 `HTML` 至少一项非空 | 两项皆空 |
 | 每个附件的 `Name` 非空、不含控制字符（制表符除外） | `Name` 为空或含控制字符 |
@@ -111,7 +111,7 @@ type Receipt struct{ ProviderID string }
 | `pkg/log` | 可选：工厂在 `New` 里登记凭据的日志字面量脱敏匹配器 |
 | `pkg/internal/literal` | 与短信的载体共用的脱敏字面量登记构造 |
 | `pkg/internal/dedupe` | 与短信的载体共用的有界去重表 |
-| SMTP 库 `github.com/wneessen/go-mail` | 只被 SMTP 载体叶子包 `pkg/mail/smtp` import |
+| SMTP 库 `github.com/wneessen/go-mail`（[REF-go-mail](../../references.md)） | 只被 SMTP 载体叶子包 `pkg/mail/smtp` import |
 
 **本模块不 import 任何上层功能目录，也不 import `pkg/authn`。** 判据是发送无关用途：`pkg/mail` 位于依赖图的底层之一，与 `pkg/kv`、`pkg/event`、`pkg/sms` 同级，任何要发通知的模块都能单独引入它（[ADR-mail-capability](../../adr/adr-mail-capability.md)）。
 

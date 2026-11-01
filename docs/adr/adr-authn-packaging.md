@@ -2,7 +2,7 @@
 
 ## 背景
 
-`pkg/authn` 交付的功能彼此独立，各自绑定不同的第三方库：SAML、通行密钥、OIDC、JWT、会话库。宿主的 `go.mod` 由它 import 的包决定，未被 import 的包所绑的库不进它的 `go.mod`，宿主的 `go.sum` 与实际下载则会经被 import 包的测试闭包带上同一 Go module 内其余实现所绑的库（[ADR-module-layout](adr-module-layout.md)）。短信发送方的厂商 SDK 不在此列：发送能力抽为顶层能力模块 `pkg/sms`，厂商 SDK 随它住在 `pkg/sms` 的载体叶子包下（[ADR-sms-capability](adr-sms-capability.md)）。
+`pkg/authn` 交付的功能彼此独立，各自绑定不同的第三方库：SAML（[REF-saml2](../references.md)）、通行密钥（[REF-webauthn](../references.md)）、OIDC（[REF-openid-connect-core](../references.md)）、JWT（[REF-rfc7519](../references.md)）、会话库。宿主的 `go.mod` 由它 import 的包决定，未被 import 的包所绑的库不进它的 `go.mod`，宿主的 `go.sum` 与实际下载则会经被 import 包的测试闭包带上同一 Go module 内其余实现所绑的库（[ADR-module-layout](adr-module-layout.md)）。短信发送方的厂商 SDK 不在此列：发送能力抽为顶层能力模块 `pkg/sms`，厂商 SDK 随它住在 `pkg/sms` 的载体叶子包下（[ADR-sms-capability](adr-sms-capability.md)）。
 
 登记随 import 发生，import 一个包即执行它的 `init`，该包登记的模块随之进入可用集（[ADR-module-registration](adr-module-registration.md)）。根包是每个子包与每一处读取身份的代码都要 import 的包：`pkg/tenant/resolve`、`pkg/audit/journal`、`pkg/ratelimit` 都 import 它，根包新增的任何 import 随之进入这些包的依赖闭包。
 
@@ -52,7 +52,7 @@
 
 ### 一个模块交付多个登录方式名
 
-微信的网站应用与公众号共用一个模块，由它报告多个入口名。
+微信的网站应用（[REF-wechat-website-login](../references.md)）与公众号（[REF-wechat-oa-web-auth](../references.md)）共用一个模块，由它报告多个入口名。
 
 **否决**：一个实例只能报一个 `Name()`。让接缝改为返回方法列表，则每个取用登录方式的消费方都多一层展开，唯一性检查也要对列表逐项做；按入口名拆成各自的模块，各自一份配置与必填校验，改动面更小。
 
@@ -84,7 +84,7 @@
 
 **根包的依赖与类型落点。**
 
-- 根包不登记模块，也不导出模块名常量。根包的非测试 import 限于标准库与 `pkg/authn/internal/model`、`pkg/authn/internal/identity`、`pkg/authn/internal/verdict`、`pkg/authn/internal/step`（封闭集）。标准库之内含 `net/http` 的类型，不含 gin。这些内部包只依赖标准库与 `pkg/authn/internal/model`；`pkg/authn/deps_test.go` 守的是根包的传递闭包不含第三方库、不含 gin。
+- 根包不登记模块，也不导出模块名常量。根包的非测试 import 限于标准库与 `pkg/authn/internal/model`、`pkg/authn/internal/identity`、`pkg/authn/internal/verdict`、`pkg/authn/internal/step`（封闭集）。标准库之内含 `net/http` 的类型，不含 gin（[REF-gin](../references.md)）。这些内部包只依赖标准库与 `pkg/authn/internal/model`；`pkg/authn/deps_test.go` 守的是根包的传递闭包不含第三方库、不含 gin。
 - 值类型连同它们的方法与构造函数，真身在 `internal/model`，`internal/model` 不 import 任何 authn 包。`Identity`、`Verdict`、`Step` 的真身分别在 `internal/identity`、`internal/verdict`、`internal/step`，它们 import `internal/model`，所以签名里能引用值类型。依赖方向单向：`model` 被各真身包与根包 import，各真身包被根包 import。
 - 根包用类型别名转出类型，用 `const`、`var` 与薄包装函数转出常量、哨兵与构造函数。别名类型的方法只在真身包里定义，根包不声明它们；设计文档里列在根包的身份与判决方法签名，是别名类型的方法集，不是根包的函数声明。
 
@@ -121,7 +121,7 @@ flowchart LR
 
 **表的归属。**
 
-- 表归声明它的模块，各表的归属见 design-authn 的模块清单。账户存储住 `authn/account`，经 `pkg/db` 读写；其他 authn 子包与授权模块只经根包的能力接口读写账户，拿不到 `*gorm.DB`。
+- 表归声明它的模块，各表的归属见 design-authn 的模块清单。账户存储住 `authn/account`，经 `pkg/db` 读写；其他 authn 子包与授权模块只经根包的能力接口读写账户，拿不到 `*gorm.DB`（[REF-gorm](../references.md)）。
 - 每个模块只在自己的事务里写自己的表。账户停用与删除之后别的模块的清理不写进账户的事务（[ADR-authn-account-lifecycle](adr-authn-account-lifecycle.md)）。
 - 带表的模块各带自己的迁移集；施加迁移的命令要把它们静态级纳入。
 
@@ -152,4 +152,4 @@ flowchart LR
 - 若消解规则演进出「兜底提供者」这一档——声明排他的默认实现在别人显式启用之后仍然留在提供者集合里，而不是整个退出——则「并立功能一律非排他」不再必要，本记录对并立功能排他性的约束不再适用。
 - 若 `core` 取消「一个模块一个实例」，则能力接口方法名两两不相交、一个模块一个登录方式名与一个 `Factor.Kind()` 这些约束失去依据。
 - 若某个叶子功能的消费者要求脱离其余功能单独引入，或它的发布节奏必须独立，则把它拆为独立 Go module，目录边界已经就位（[ADR-module-layout](adr-module-layout.md)）。
-- 假设：同一个 Go module 内并存的第三方库编译兼容。已验证兼容的组合是：TOTP、WebAuthn、SAML 库与 go-oidc 同在；各家短信发送方 SDK 同在（随发送能力住在顶层 `pkg/sms` 的载体叶子包下，仍在同一个 `pkg` 模块里）。其余组合的兼容性未验证。守住它的是对整个 `pkg` 模块的构建与依赖整理检查（`make check` 的 build 与 tidy-check）：引入任一库的变更须使它们通过，不通过即该库不能与其余库并存于同一 Go module。
+- 假设：同一个 Go module 内并存的第三方库编译兼容。已验证兼容的组合是：TOTP（[REF-rfc6238](../references.md)）、WebAuthn、SAML 库与 go-oidc（[REF-go-oidc](../references.md)）同在；各家短信发送方 SDK 同在（随发送能力住在顶层 `pkg/sms` 的载体叶子包下，仍在同一个 `pkg` 模块里）。其余组合的兼容性未验证。守住它的是对整个 `pkg` 模块的构建与依赖整理检查（`make check` 的 build 与 tidy-check）：引入任一库的变更须使它们通过，不通过即该库不能与其余库并存于同一 Go module。

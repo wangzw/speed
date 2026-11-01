@@ -4,7 +4,7 @@
 
 - 依据配置建立到数据库的连接，交付给需要访问库的模块。
 - 承担不需要上层概念的语句级横切能力：软删除与字段级加密（[ADR-db-plugin-scope](../../adr/adr-db-plugin-scope.md)）。
-- 安装各模块声明的 GORM 插件，装完才交付连接。
+- 安装各模块声明的 GORM（[REF-gorm](../../references.md)）插件，装完才交付连接。
 - 收齐各模块声明的迁移集，在 `Migrate` 阶段按依赖序应用，并记录已施加的部分使重复启动幂等。
 - 提供自建额外连接的途径，供访问交付的那个库之外的库。
 - 提供在有界等待内取一条连接的途径，供模块在交给它的句柄上发出自己的语句（[ADR-db-waits](../../adr/adr-db-waits.md)）。
@@ -93,7 +93,7 @@ func Connection(ctx context.Context, handle *gorm.DB, wait time.Duration, fn fun
 
 **约束拒绝**。一条语句被唯一约束（主键在内）拒绝时，本模块打开的每个句柄——交付的与 `Open` 自建的——交回的错误上 `errors.Is(err, gorm.ErrDuplicatedKey)` 成立；被外键拒绝时 `errors.Is(err, gorm.ErrForeignKeyViolated)` 成立。每个引擎上是同一条判断，宿主据此把业务唯一键的冲突答成冲突应答，不必 import 驱动（[ADR-db-errors](../../adr/adr-db-errors.md)）。
 
-驱动自己的错误留在同一条错误链上，错误文本也是驱动的原文：`errors.As` 仍取得到 PostgreSQL 的 `*pgconn.PgError`，被违反的约束名就在它上面。这条保证覆盖经 GORM 报回错误的每一条路：模型路径的插入、更新与删除、`Exec`、以 `Raw` 写的 `INSERT … RETURNING` 经 `Scan` 读取、事务里的语句，以及延迟检查的外键在 `COMMIT` 时的拒绝。
+驱动自己的错误留在同一条错误链上，错误文本也是驱动的原文：`errors.As` 仍取得到 PostgreSQL 的 `*pgconn.PgError`（[REF-pgx](../../references.md)），被违反的约束名就在它上面。这条保证覆盖经 GORM 报回错误的每一条路：模型路径的插入、更新与删除、`Exec`、以 `Raw` 写的 `INSERT … RETURNING` 经 `Scan` 读取、事务里的语句，以及延迟检查的外键在 `COMMIT` 时的拒绝。
 
 只分类唯一约束与外键约束的拒绝。检查约束、非空约束、写了表里没有的列，这些拒绝在各引擎上都保持驱动错误原样，不带任何一个 GORM 哨兵。经 `Row` 的 `Scan`、以及宿主自己迭代 `Rows` 时由 `rows.Err()` 报出的错误来自 database/sql，不经 GORM，也不带分类；要分类就用 `Scan`、`Find` 这类由 GORM 收尾的方法读结果。
 
@@ -203,7 +203,7 @@ type Plugin struct {
 
 根密钥提供了却用不了时，装配失败并点名该输入项。退役列表里短于 112 位的一项在 FIPS 140-only 模式下被 `hkdf.Key` 拒绝派生，属于这一类；补救是换一个更长的密钥，或退出那个模式。
 
-`encryption-key` 短于 112 位（14 字节）时装配失败并点名该输入项，不论是否处于 FIPS 140-only 模式。这个下限是 NIST SP 800-131A 定的最低安全强度，也是 `hkdf.Key` 在 FIPS 140-only 模式下对输入的要求，FIPS 140-only 模式与其余模式因此接受同一批根密钥。更短的根密钥照样派生得出子密钥，可逐个试遍它那个长度的取值就能找到它，封装在它下面的列等于明文，而每一次写入都报告成功。下限只约束当前根密钥：退役的根密钥只解密、不写入，拒绝一个短的退役密钥，等于让正在换掉它的部署读不出它封装过的行。
+`encryption-key` 短于 112 位（14 字节）时装配失败并点名该输入项，不论是否处于 FIPS 140-only 模式。这个下限是 NIST SP 800-131A（[REF-nist-sp-800-131a](../../references.md)）定的最低安全强度，也是 `hkdf.Key` 在 FIPS 140-only 模式下对输入的要求，FIPS 140-only 模式与其余模式因此接受同一批根密钥。更短的根密钥照样派生得出子密钥，可逐个试遍它那个长度的取值就能找到它，封装在它下面的列等于明文，而每一次写入都报告成功。下限只约束当前根密钥：退役的根密钥只解密、不写入，拒绝一个短的退役密钥，等于让正在换掉它的部署读不出它封装过的行。
 
 只含空白字符的 `encryption-key`，以及退役列表里为空或只含空白的一项，同样判装配失败并点名该输入项。它们派生得出子密钥，可谁都猜得到，封装在它下面的列等于明文，而每一次写入都报告成功；模板替换成空白留下的正是这样的值。除此之外根密钥逐字节使用，两端的空白也算在内：裁掉它会改变每一个密钥带尾随换行的部署的子密钥，已封装的列随之全部打不开。各副本的密钥只要差一个字节，失败出现在第一行打不开的数据上，不是静默的。
 
@@ -256,7 +256,7 @@ GORM 的终结方法 `DB.Scan` 执行的语句——`db.Raw(…).Scan(&dest)`、
 
 实现子包 import 根包与自己那个方言的驱动，`pkg/db/postgres` 与 `pkg/db/sqlite` 互不 import。驱动不出现在接口面上，换一个实现子包不改变任何依赖方的代码。
 
-SQLite 实现子包绑定纯 Go 的驱动 `github.com/glebarez/sqlite`：构建不要求 C 工具链，`CGO_ENABLED=0` 的宿主同样用得了这个方言。
+SQLite 实现子包绑定纯 Go 的驱动 `github.com/glebarez/sqlite`（[REF-glebarez-sqlite](../../references.md)）：构建不要求 C 工具链，`CGO_ENABLED=0` 的宿主同样用得了这个方言。
 
 迁移的应用与插件的安装是各实现子包共用的逻辑，位于根包；实现子包自身不写任何阶段回调，它交出的是一份 `Spec`，阶段回调一律由 `NewModule` 写出并对所有实现同形。方言特定的部分是驱动的打开、连接池的设置、约束拒绝的识别、迁移的跨进程互斥，以及 SQLite 事务的开启与被拒提交的回滚。
 

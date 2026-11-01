@@ -14,7 +14,7 @@
 - **不持预算，不限流，不计尝试次数。** 本能力不认识「这条短信该不该发」。发送预算、重发间隔、每号码与每账户的上限、放行前缀都在调用方，本能力对每个 `Send` 都尝试发出去。
 - **不持挑战状态，不生成也不校验验证码。** 验证码的生成、存放、比对与一次性消费归调用方；本能力不认识「验证码」这个概念，参数对它是不透明值。
 - **不重试。** 厂商的发送接口不幂等，超时之后调用方无从知道短信是否已发出，重试会重复投递并重复计费。载体在超时、网络错误与上下文结束时把结果归入 `ErrUncertain`，从不自行重发。是否重发归调用方；重试次数不是本能力的配置项。
-- **不管理登记。** 载体声明这个部署可用的发送身份（签名、发送方 ID、长号码、短号码、免费号码、号码池、消息服务）与这些身份覆盖的国家，但不登记、不跟踪、不声称任何身份在某个国家的登记或审核状态。美国 10DLC 的品牌与活动、印度 DLT、免费号码验证、短号码租用、逐国家发送方 ID 的申请都在厂商门户与合同里完成，本能力不读取也不缓存它们的状态（[ADR-sms-registration-out-of-scope](../../adr/adr-sms-registration-out-of-scope.md)）。
+- **不管理登记。** 载体声明这个部署可用的发送身份（签名、发送方 ID、长号码、短号码、免费号码、号码池、消息服务）与这些身份覆盖的国家，但不登记、不跟踪、不声称任何身份在某个国家的登记或审核状态。美国 10DLC（[REF-us-a2p-10dlc](../../references.md)）的品牌与活动、印度 DLT（[REF-trai-tcccpr](../../references.md)）、免费号码验证、短号码租用、逐国家发送方 ID 的申请都在厂商门户与合同里完成，本能力不读取也不缓存它们的状态（[ADR-sms-registration-out-of-scope](../../adr/adr-sms-registration-out-of-scope.md)）。
 - **不做跨载体路由，不做故障转移。** 一条消息只交给一个载体；按目的地选路、多个厂商之间切换、失败后换一个厂商重发都不在本能力内。
 - **不声明语言闭集。** `Locale` 是不透明的非空字符串，用来索引模板的语言到编号与语言到正文两个映射。本能力不认识 `zh-CN`、`en-US` 这类取值，也不解释 `Accept-Language`；语言取值的取得与归一归调用方。
 - **不认识业务用途。** `Kind` 是模板的一个属性（`verification`／`notification`／`marketing`），载体把它映射到厂商自己的用途拼法；本能力不解释某个模板名属于哪种业务用途。
@@ -85,7 +85,7 @@ type Identity struct {
 }
 ```
 
-`Content` 说明这个载体认不认厂商模板编号、认不认渲染正文；`Review` 说明厂商是否逐模板审核、发送时能否选择身份；`Identities` 是这个部署可用的发送身份，`Countries` 是载体可送达的国家，`AttributeKeys` 是模板 `Attributes` 允许出现的键（厂商登记标识，例如 AWS 印度 DLT 的 `IN_TEMPLATE_ID`），`MaxBodyRunes` 是正文的长度上界（零表示本能力不设自己的上界），`AsyncReceipt` 表示最终投递状态异步返回——同步答案只有厂商的消息标识，被受理不等于已送达。
+`Content` 说明这个载体认不认厂商模板编号、认不认渲染正文；`Review` 说明厂商是否逐模板审核、发送时能否选择身份；`Identities` 是这个部署可用的发送身份，`Countries` 是载体可送达的国家，`AttributeKeys` 是模板 `Attributes` 允许出现的键（厂商登记标识，例如 AWS 印度 DLT 的 `IN_TEMPLATE_ID`，[REF-aws-end-user-messaging-sms](../../references.md)），`MaxBodyRunes` 是正文的长度上界（零表示本能力不设自己的上界），`AsyncReceipt` 表示最终投递状态异步返回——同步答案只有厂商的消息标识，被受理不等于已送达。
 
 ```go
 // 注册表接缝：持有在力的模板集，决定一条消息走哪个模板，管理本进程拥有的那些。
@@ -177,7 +177,7 @@ type Resolved struct {
 
 **`RenderBody` 单趟替换。** 占位符写作 `${name}`：函数按一次扫描替换每个占位符，插入的值不再被扫描，因此一个参数值里的 `${...}` 保持字面。占位符点名一个未声明的参数，或出现没有闭合的 `${`，都是声明缺陷，在声明被构造时以 `ErrInvalidConfig` 报出，而不是留到发送时。
 
-**两族形态源自同一份声明。** `Codes` 供按编号发送的载体使用；`Bodies` 供按正文发送的载体使用，也供在厂商侧创建内容资源的载体（Twilio Content API）在 `Offer` 时使用。`Resolved` 同时给出参数的键值表与有序值表：键参数厂商（阿里云）把 `Params` 序列化成 JSON 对象，次序无关；位置参数厂商（腾讯云）把 `Ordered` 按声明次序铺进请求，Twilio 把 `Ordered` 编号成 `ContentVariables` 的 `"1"`、`"2"`…。次序因此只有一处定义。
+**两族形态源自同一份声明。** `Codes` 供按编号发送的载体使用；`Bodies` 供按正文发送的载体使用，也供在厂商侧创建内容资源的载体（Twilio Content API，[REF-twilio-content-api](../../references.md)）在 `Offer` 时使用。`Resolved` 同时给出参数的键值表与有序值表：键参数厂商（阿里云，[REF-aliyun-sms](../../references.md)）把 `Params` 序列化成 JSON 对象，次序无关；位置参数厂商（腾讯云，[REF-tencent-cloud-sms](../../references.md)）把 `Ordered` 按声明次序铺进请求，Twilio（[REF-twilio-messaging](../../references.md)）把 `Ordered` 编号成 `ContentVariables` 的 `"1"`、`"2"`…。次序因此只有一处定义。
 
 **声明自洽由 `NewDeclaration` 保证**，约束的主体是每个声明模板的来源：参数可以为零个，但不得重名；至少一种语言；每个语言至少带一个编号或一个正文；每个正文里的每个占位符都点名一个已声明的参数。不满足即 `ErrInvalidConfig`，在声明被构造时报出（注册表的 `Prepare`）；管理面 `Register` 也经同一条单模板校验路径，缺陷即 `ErrInvalidConfig` 点名该模板。一份声明只保证自己这份集合自洽，**不保证它覆盖某个消费方所需的组合**——覆盖由消费方在启动期核对自己所需（见「消费方的覆盖核对」）。
 
@@ -293,7 +293,7 @@ sms:
 ### 对外接口面
 
 - `Sender`、`Provider`、`Registry`、`Product`、`Message`、`Receipt`、`Resolved`、`Template`、`TemplateSpec`、`Declaration`、`Submission`、`Approval`、`ApprovalState`、`CarrierModel`、`Identity`、`IdentityKind`、`ContentSupport`、`ReviewSupport`、`Source`、`Kind`、`Record` 的字段与方法集，以及本能力的全部哨兵，是本能力对调用方的接口面。加方法、改签名或改字段名对实现了接缝的载体、注册表与取用它们的调用方都是不兼容变更。
-- `Message` 的字段语义：`To` 是 E.164、`Template` 是调用方定义的逻辑名、`Params` 的键是模板声明的参数名、`Locale` 非空且对 `pkg/sms` 不透明、`Originator` 为空表示缺省身份、`ValidFor` 为零表示厂商缺省、`DedupeID` 使载体至多对同一标识调厂商一次。`Resolved` 的字段语义：`Kind` 是模板用途、`Code` 是厂商编号、`Body` 是本地渲染后的正文、`Ordered` 按模板声明的次序铺开、`Params` 是键值表、`Attributes` 是厂商登记标识。
+- `Message` 的字段语义：`To` 是 E.164（[REF-itu-t-e164](../../references.md)）、`Template` 是调用方定义的逻辑名、`Params` 的键是模板声明的参数名、`Locale` 非空且对 `pkg/sms` 不透明、`Originator` 为空表示缺省身份、`ValidFor` 为零表示厂商缺省、`DedupeID` 使载体至多对同一标识调厂商一次。`Resolved` 的字段语义：`Kind` 是模板用途、`Code` 是厂商编号、`Body` 是本地渲染后的正文、`Ordered` 按模板声明的次序铺开、`Params` 是键值表、`Attributes` 是厂商登记标识。
 - **模板声明的形状属于接口面**：`TemplateSpec` 的字段名与容器成形态（`params` 是列表，`codes`、`bodies`、`attributes` 是映射）是宿主写在配置文件里、也写在管理面 `Register` 正文里的东西，改它们使旧写法成为未知键或坏正文。
 - **宿主可见面**：模块名 `sms.registry`、`sms.admin`、`sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`，配置键 `sms.registry.templates`、`sms.registry.poll-interval`、`sms.admin.endpoints` 与各载体自己的输入项，设置项 `sms.registry.sending-enabled`，管理面路由的路径与每条路由询问的权限（读 `sms.template.read`、写 `sms.template.manage`），以及权限常量 `sms.template.read`、`sms.template.manage` 与 `Problem.Type` 前缀 `urn:speed:sms:` 及其下的码（`bad-request`、`conflict`、`config-template`）。改动它们是宿主可见的破坏性变更。
 - 特性名 `sms.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
@@ -332,9 +332,9 @@ sms:
 
 **本能力不 import 任何上层功能目录，也不 import `pkg/authn`。** 判据是发送无关用途：本能力位于依赖图的底层之一，与 `pkg/kv`、`pkg/event` 同级，任何要发通知的模块都能单独引入它，不必背上整套认证。方向是调用方（`pkg/authn/sms`）import `pkg/sms`，`pkg/sms` 不 import 它。`sms.admin` 是唯一例外的一层：它 import `pkg/authz`、`pkg/audit`、`pkg/authn`、`pkg/http` 来挂一条受保护的管理面，而它是可撤掉的一个叶子，发送能力本身不因它而背上这些依赖。
 
-**根包与注册表不 import 任何厂商 SDK。** 每个 SDK 落在绑定它的载体叶子包里，只有 import 该子包的宿主的 `go.mod` 才背负它。这一条没有编译期强制（同一 `pkg` 模块内每个客户端都在一份依赖清单里），顶上它的是 `pkg/sms/deps_test.go` 的守卫：根包的传递闭包不含任何厂商 SDK，也不含 `pkg/authn`。注册表只经 `sms.Provider` 接缝触达厂商，不 import 任何载体叶子包（否则会经根包闭出环、破掉载体封边）。各 SDK 在 `pkg/go.mod` 里精确钉版，同样由该守卫守住：阿里云用 `github.com/alibabacloud-go/dysmsapi-20170525/v5` v5.6.0，腾讯云用 `github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111` v1.3.172，AWS 用 `github.com/aws/aws-sdk-go-v2/service/pinpointsmsvoicev2`，Twilio 用 `github.com/twilio/twilio-go`（[ADR-sms-twilio-sdk](../../adr/adr-sms-twilio-sdk.md)）。
+**根包与注册表不 import 任何厂商 SDK。** 每个 SDK 落在绑定它的载体叶子包里，只有 import 该子包的宿主的 `go.mod` 才背负它。这一条没有编译期强制（同一 `pkg` 模块内每个客户端都在一份依赖清单里），顶上它的是 `pkg/sms/deps_test.go` 的守卫：根包的传递闭包不含任何厂商 SDK，也不含 `pkg/authn`。注册表只经 `sms.Provider` 接缝触达厂商，不 import 任何载体叶子包（否则会经根包闭出环、破掉载体封边）。各 SDK 在 `pkg/go.mod` 里精确钉版，同样由该守卫守住：阿里云用 `github.com/alibabacloud-go/dysmsapi-20170525/v5`（[REF-alibabacloud-dysmsapi-go](../../references.md)） v5.6.0，腾讯云用 `github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111`（[REF-tencentcloud-sdk-go](../../references.md)） v1.3.172，AWS 用 `github.com/aws/aws-sdk-go-v2/service/pinpointsmsvoicev2`（[REF-aws-sdk-go-v2](../../references.md)），Twilio 用 `github.com/twilio/twilio-go`（[REF-twilio-go](../../references.md)）（[ADR-sms-twilio-sdk](../../adr/adr-sms-twilio-sdk.md)）。
 
-**阿里云 SDK 经 `github.com/tjfoc/gmsm` 拖回未经模块图修剪的 `google.golang.org/genproto` 单体**：那个版本的 `googleapis` 包与拆分后的 `google.golang.org/genproto/googleapis/*` 模块重名，工作区构建因此报歧义导入。`go.work` 用一行 `replace` 把单体钉到拆分之后的版本（[ADR-sms-capability](../../adr/adr-sms-capability.md)）。gmsm 已是最新发布版，而这个钉版放进任一模块的 `go.mod` 都会被 `tidy` 当作无人引用的依赖删掉，所以它落在工作区层。
+**阿里云 SDK 经 `github.com/tjfoc/gmsm`（[REF-gmsm](../../references.md)）拖回未经模块图修剪的 `google.golang.org/genproto`（[REF-genproto](../../references.md)）单体**：那个版本的 `googleapis` 包与拆分后的 `google.golang.org/genproto/googleapis/*` 模块重名，工作区构建因此报歧义导入。`go.work` 用一行 `replace` 把单体钉到拆分之后的版本（[ADR-sms-capability](../../adr/adr-sms-capability.md)）。gmsm 已是最新发布版，而这个钉版放进任一模块的 `go.mod` 都会被 `tidy` 当作无人引用的依赖删掉，所以它落在工作区层。
 
 **`pkg/internal/literal` 是共享单元。** SMS 载体各自 import 它来登记凭据的字面量脱敏匹配器，认证的登录叶子（`authn/login/{google,github,wechatweb,wechatmp}`）也用它，所以它是多个实现子包共用的单元，落在 `pkg/internal/` 下。它不登记模块，不交付功能，不参与生命周期，只导出登记字面量匹配器的构造（[ADR-shared-backend-unit](../../adr/adr-shared-backend-unit.md)）。载体只经工厂取用它，见「工厂的构造次序」。
 
@@ -573,7 +573,7 @@ type Spec[C any] struct {
 - **AWS 的正文上界与印度 DLT 参数。** 假设 `MaxBodyRunes` 1600 是 Pinpoint 短信正文的上界，`IN_TEMPLATE_ID` 与 `IN_ENTITY_ID` 是印度 DLT 的目标国家参数的键名。声明侧测试断言超长正文与越界的 `Attributes` 键被拒；发送侧测试断言两个参数按声明出现。
 - **Twilio 的错误归类与内容资源。** 假设 HTTP 429 是限流、同步 4xx 是缺陷、5xx 与超时是结果不确定，Content API 创建成功返回内容 SID，删除成功即 `Retire` 完成。适配层测试用假端点逐类断言。
 - **Twilio 的语言标签。** 假设 Content API 的语言取语言标签的主标签并小写，且必须是两个小写 ASCII 字母。适配层测试断言 `zh-CN` 与 `en-US` 被接受、`fil` 一类主标签不是两个字母的语言在 `Offer` 时被拒。
-- **编译兼容。** 假设厂商 SDK 与同一个 `pkg` 模块内其余实现所绑的库编译兼容（已验证与认证的 TOTP、WebAuthn、SAML、go-oidc 库同在）。构建检查把全部模块一起编译。
+- **编译兼容。** 假设厂商 SDK 与同一个 `pkg` 模块内其余实现所绑的库编译兼容（已验证与认证的 TOTP、WebAuthn、SAML、go-oidc 库同在，[REF-rfc6238](../../references.md)、[REF-webauthn](../../references.md)、[REF-saml2](../../references.md)、[REF-go-oidc](../../references.md)）。构建检查把全部模块一起编译。
 
 ## 并发与事务边界
 

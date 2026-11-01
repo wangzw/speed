@@ -12,12 +12,12 @@
 
 令牌的校验是一个校验后端（[ADR-authn-credential-dispatch](adr-authn-credential-dispatch.md)），在网关的 `recover` 之内运行，输入是未经认证的任意字节。失败的方向由 [ADR-authn-failure](adr-authn-failure.md) 约束：依赖不可用时拒绝，有界放宽逐项列出。
 
-**JOSE 库的事实。**
+**JOSE（[REF-rfc7515](../references.md)）库的事实。**
 
-- 现有 JWT 库都把验签与声明校验分成两步，`exp` 缺失时默认放行；`typ` 没有内建的校验选项。`exp` 必填、`iss` 与 `aud` 必校、`typ` 显式，都是使用库的策略，要由桥包自己补。
-- `go-jose/v4` 在解析时强制传算法白名单，自带 `JSONWebKey` 与 `JSONWebKeySet`，没有远程抓取与缓存。
-- `golang-jwt/jwt/v5` 的算法白名单是可选项：校验函数返回 PEM 字节形式的公钥、又没传 `WithValidMethods` 时，RS256 到 HS256 的混淆实测通过。它没有 JWK 类型。它因 `go-webauthn` 已在模块图里。
-- `go-oidc/v3`（企业 SSO 与社交登录的校验桥，[ADR-authn-oauth-flow](adr-authn-oauth-flow.md)）依赖 `go-jose/v4`，其要求的 v4.1.4 受 GHSA-6mp9-8xrw-74r4（畸形输入触发 panic，修于 v4.1.5）影响。`go-jose` 另有 CVE-2026-34986（JWE 解密触发 panic）。
+- 现有 JWT（[REF-rfc7519](../references.md)）库都把验签与声明校验分成两步，`exp` 缺失时默认放行；`typ` 没有内建的校验选项。`exp` 必填、`iss` 与 `aud` 必校、`typ` 显式，都是使用库的策略，要由桥包自己补。
+- `go-jose/v4`（[REF-go-jose](../references.md)）在解析时强制传算法白名单，自带 `JSONWebKey` 与 `JSONWebKeySet`，没有远程抓取与缓存。
+- `golang-jwt/jwt/v5`（[REF-golang-jwt](../references.md)）的算法白名单是可选项：校验函数返回 PEM（[REF-rfc7468](../references.md)）字节形式的公钥、又没传 `WithValidMethods` 时，RS256（[REF-rfc7518](../references.md)）到 HS256 的混淆实测通过。它没有 JWK（[REF-rfc7517](../references.md)）类型。它因 `go-webauthn`（[REF-go-webauthn](../references.md)）已在模块图里。
+- `go-oidc/v3`（[REF-go-oidc](../references.md)）（企业 SSO 与社交登录的校验桥，[ADR-authn-oauth-flow](adr-authn-oauth-flow.md)）依赖 `go-jose/v4`，其要求的 v4.1.4 受 GHSA-6mp9-8xrw-74r4（[REF-ghsa-6mp9-8xrw-74r4](../references.md)）（畸形输入触发 panic，修于 v4.1.5）影响。`go-jose` 另有 CVE-2026-34986（[REF-cve-2026-34986](../references.md)）（JWE 解密触发 panic，[REF-rfc7516](../references.md)）。
 
 **状态的事实。**
 
@@ -44,11 +44,11 @@
 
 ### 签名私钥放 db（加密列），由模块自动生成与轮换
 
-**否决**：多副本同时抢着生成要新增一套协调机制。加密列依赖 db 根密钥，缺根密钥时直到第一次使用才失败。私钥与根密钥同在 db 一侧，库转储加根密钥失守即全部签名钥泄露。配置里放文件路径符合「配置承载启动必须项」（[ADR-authn-settings-and-secrets](adr-authn-settings-and-secrets.md)），并且直接适配 Kubernetes 一类的密钥挂载。
+**否决**：多副本同时抢着生成要新增一套协调机制。加密列依赖 db 根密钥，缺根密钥时直到第一次使用才失败。私钥与根密钥同在 db 一侧，库转储加根密钥失守即全部签名钥泄露。配置里放文件路径符合「配置承载启动必须项」（[ADR-authn-settings-and-secrets](adr-authn-settings-and-secrets.md)），并且直接适配 Kubernetes（[REF-kubernetes](../references.md)）一类的密钥挂载。
 
 ### HS256 共享密钥
 
-**否决**：每个验证方都要持有签名密钥，第三方资源服务器因此能铸造令牌；RFC 9068 建议非对称；共享密钥也是算法混淆攻击的前提。
+**否决**：每个验证方都要持有签名密钥，第三方资源服务器因此能铸造令牌；RFC 9068（[REF-rfc9068](../references.md)）建议非对称；共享密钥也是算法混淆攻击的前提。
 
 ### 按 `jti` 的撤销清单（kv 的 `SetIfAbsent`）
 
@@ -60,7 +60,7 @@
 
 ### OAuth 范围与按资源的 `aud`；发送方约束（DPoP、mTLS）；整套 OAuth 服务端框架
 
-**否决**：当前的需求只有 JWT 认证，令牌的权能等于主体的权能，限制权能是授权模块与 `ClaimsContributor` 的事。authn 不是 OP，只需要 `client_credentials` 与 `refresh_token` 这些 grant（封闭集，见决策），整套框架（`fosite`、`go-oauth2`）带入授权码、范围、同意等当前不使用的面；这些 grant 只需要令牌端点与刷新令牌表，不需要框架的客户端注册、同意与授权码存储。发送方约束没有需求。
+**否决**：当前的需求只有 JWT 认证，令牌的权能等于主体的权能，限制权能是授权模块与 `ClaimsContributor` 的事。authn 不是 OP，只需要 `client_credentials`（[REF-rfc6749](../references.md)）与 `refresh_token` 这些 grant（封闭集，见决策），整套框架（`fosite`，[REF-fosite](../references.md)、`go-oauth2`，[REF-go-oauth2](../references.md)）带入授权码、范围、同意等当前不使用的面；这些 grant 只需要令牌端点与刷新令牌表，不需要框架的客户端注册、同意与授权码存储。发送方约束没有需求。
 
 ### 个人访问令牌
 
@@ -84,21 +84,21 @@
 
 - 访问令牌与刷新令牌的撤销粒度是登录会话（`sid`），撤销与会话共用一个面。令牌侧不设按 `jti` 的清单；账户级 `valid_after` 使该时刻之前签发的令牌一律失效。
 - 令牌的声明集不含授权相关的声明，角色、租户、权限与范围是其中的例子。宿主经 `ClaimsContributor` 追加声明时，追加的名字不得与本模块使用的保留名冲突，冲突以 `ErrReservedClaim` 拒绝；把角色放进令牌是宿主的选择，角色在令牌有效期内无法撤销是该选择的后果。
-- authn 不是 OIDC 的 OP：不实现授权端点与授权码授权；支持的 grant 是封闭集：`client_credentials` 与 `refresh_token`。不提供个人访问令牌。交互式脚本与应用经登录流程的 `delivery=token` 取令牌对。
-- `authn.token` 作为校验后端登记，只认领 `Authorization` 的 `bearer` 方案；登记的账户命名空间与能力声明见设计文档。
+- authn 不是 OIDC（[REF-openid-connect-core](../references.md)）的 OP：不实现授权端点与授权码授权；支持的 grant 是封闭集：`client_credentials` 与 `refresh_token`。不提供个人访问令牌。交互式脚本与应用经登录流程的 `delivery=token` 取令牌对。
+- `authn.token` 作为校验后端登记，只认领 `Authorization` 的 `bearer`（[REF-rfc6750](../references.md)）方案；登记的账户命名空间与能力声明见设计文档。
 
 **JOSE 桥与使用策略**
 
 - 桥是 `go-jose/v4` 的 `jose` 与 `jwt` 子包。`pkg/go.mod` 对它的下限是 v4.1.5。这是一条必须守住的约束，`go-oidc` 要求的 v4.1.4 受 GHSA-6mp9-8xrw-74r4 影响。
 - 签名算法是非对称算法的封闭集，缺省 ES256，可配 RS256；不支持对称算法与 `none`。每把密钥只配一种算法，且启动校验要求每把密钥的算法都等于配置的 `authn.token.algorithm`，所以验证用的白名单是该算法本身、恒为单元素集合；运算前由桥自己核对头里的算法等于该密钥登记的算法。
-- 访问令牌的头 `typ` 取 `at+jwt`，使访问令牌与 OIDC ID 令牌等其他令牌互斥。头里指向外部密钥材料的字段一律不采用、不抓取，不认识的关键扩展一律拒绝；公钥只从本地密钥集按 `kid` 取，取不到即拒绝。`kid` 取公钥的 RFC 7638 指纹，不取配置里的名字。
+- 访问令牌的头 `typ` 取 `at+jwt`，使访问令牌与 OIDC ID 令牌等其他令牌互斥。头里指向外部密钥材料的字段一律不采用、不抓取，不认识的关键扩展一律拒绝；公钥只从本地密钥集按 `kid` 取，取不到即拒绝。`kid` 取公钥的 RFC 7638（[REF-rfc7638](../references.md)）指纹，不取配置里的名字。
 - 声明的必需项、`iss` 与 `aud` 的必校、有效期长度的上界，是桥自己补的策略，不依赖库的缺省，因为库的缺省对缺失声明放行。解析之前先限制令牌总长；非测试代码里禁止出现 `UnsafeClaimsWithoutVerification`，由依赖测试或静态检查守住。
 
 **声明的取值**
 
 - `sub` 是生效账户：冒充令牌里是被冒充者。服务账户令牌的 `sub` 是该账户标识而不是 `client_id`，避免客户端自选 `sub` 造成混淆（RFC 9068 §5）。
 - `amr`、`acr`、`auth_time` 的取值与 [ADR-authn-mfa](adr-authn-mfa.md) 的闭集一致，只为让外部资源服务器不必再查会话。`check-session` 为真时，本进程校验不比较它们，也不因不一致而拒绝：认证后端建立身份时取自会话行。加强认证之前签发、仍在有效期内的令牌因此继续有效，它的 `acr` 偏低是保守的一侧。`check-session` 为假时不读会话行，普通令牌的方式集、等级与认证时刻取自令牌自己的这三个声明，冒充令牌同样取自令牌的 `amr`、`acr` 与 `auth_time`；这几个值由本模块自己签发，但等级随令牌而非会话行，属于该放宽开关的一部分。
-- 冒充令牌带 `act`（RFC 8693 §4.1）、`imp` 与 `imp_tenant`。冒充令牌的 `amr`、`acr` 与 `auth_time` 取自发起的会话：身份的认证事实取自发起者，与生效账户无关。`imp_tenant` 只供外部校验方读到冒充的范围；本进程校验时范围取自冒充记录，不取这个声明。
+- 冒充令牌带 `act`（RFC 8693 §4.1，[REF-rfc8693](../references.md)）、`imp` 与 `imp_tenant`。冒充令牌的 `amr`、`acr` 与 `auth_time` 取自发起的会话：身份的认证事实取自发起者，与生效账户无关。`imp_tenant` 只供外部校验方读到冒充的范围；本进程校验时范围取自冒充记录，不取这个声明。
 
 **校验的判据**
 
@@ -118,7 +118,7 @@
 **刷新令牌**
 
 - 刷新令牌是不透明的随机串，带可识别的前缀，库里只存摘要：库转储得不到可用的令牌，前缀使密钥扫描工具与日志脱敏的匹配器能识别它。「族」就是会话，刷新令牌的权威存放在 db。
-- 每次使用即轮换。出示一个真实存在、已被用过的旧令牌，判定重用：撤销该会话（整族失效），发 `authn.token.reuse-detected` 事件，写审计，应答 `invalid_grant`。合法客户端与窃取者必有一方出示已作废的令牌，服务端分不清是谁，所以撤销当前有效的整族，代价是合法客户端要重新登录（RFC 9700 §4.14.2）。出示库里不存在的字符串只应答 `invalid_grant`，不触发撤销：任意字符串若能触发撤销，任何人都能把别人踢下线。
+- 每次使用即轮换。出示一个真实存在、已被用过的旧令牌，判定重用：撤销该会话（整族失效），发 `authn.token.reuse-detected` 事件，写审计，应答 `invalid_grant`。合法客户端与窃取者必有一方出示已作废的令牌，服务端分不清是谁，所以撤销当前有效的整族，代价是合法客户端要重新登录（RFC 9700 §4.14.2，[REF-rfc9700](../references.md)）。出示库里不存在的字符串只应答 `invalid_grant`，不触发撤销：任意字符串若能触发撤销，任何人都能把别人踢下线。
 - 重用宽限缺省关闭，即严格；宽限若开，上限由设置的取值范围约束，窗口内重复出示视为客户端重试。
 - 刷新时会话强制新读，不走缓存。消费是对「尚未被用过」这一条件的原子更新，以影响行数判胜负，不依赖 `RETURNING`。刷新不抬高保障等级：新访问令牌的 `acr` 与 `auth_time` 取自会话行。
 - 绝对期限是会话的 `expires_at`，取值规则见 design-authn-session；空闲期限在刷新令牌行上，每次轮换重置。`token` 种会话不受浏览器会话的空闲期限约束。改口令、停用账户、会话被撤销，都使整族失效，因为每次刷新都核对会话行。
@@ -129,8 +129,8 @@
 - 服务账户（`kind=service`）由管理面创建，动作是 `authn.client.manage`。密钥只在创建应答里出现一次，库里只存摘要。账户可同时持有多个有效密钥，使客户端无停机切换。账户与密钥的存放见 [ADR-authn-accounts](adr-authn-accounts.md)。
 - `client_credentials` 的客户端标识是账户标识。校验失败的退避键是出示的 `client_id` 字符串，与该账户是否存在无关，应答统一为 `invalid_client`（[ADR-authn-throttling](adr-authn-throttling.md)）。服务账户不经 `Basic` 校验后端。
 - 成功时取得或创建该密钥对应的 `service` 种会话，会话的有效性随密钥，只经撤销密钥终结（[ADR-authn-account-lifecycle](adr-authn-account-lifecycle.md)）；只签发访问令牌，没有刷新令牌。这类令牌的身份是方式 `client-secret`、单因素。
-- `Tokens.Revoke` 遵循 RFC 7009，出示的令牌有效、无效或不存在都答 200，使出示者无从探测令牌的状态；依赖答不出来时答 503，不报一个没有发生的撤销。撤销只作用于出示的令牌对应的最小对象：刷新令牌撤其会话；冒充令牌结束它的冒充记录而不撤管理员的会话；`service` 种访问令牌上无操作，因为该行由同一密钥签出的全部令牌共享，按令牌撤销会连带终结其余令牌，要立即失效只能撤销密钥或前移账户的 `valid_after`。
-- 令牌端点自带客户端认证。失败应答用 RFC 6749 §5.2 的 JSON 形状，不走入口模块 `Fail` 的缺省形状：OAuth 客户端库按 `error` 字段解析，读不懂 `problem+json`。这是对「拒绝经 `Fail` 写出」的有意例外。db 不可用答 503 `temporarily_unavailable`，不是 `invalid_grant`，客户端据此保留刷新令牌重试。
+- `Tokens.Revoke` 遵循 RFC 7009（[REF-rfc7009](../references.md)），出示的令牌有效、无效或不存在都答 200，使出示者无从探测令牌的状态；依赖答不出来时答 503，不报一个没有发生的撤销。撤销只作用于出示的令牌对应的最小对象：刷新令牌撤其会话；冒充令牌结束它的冒充记录而不撤管理员的会话；`service` 种访问令牌上无操作，因为该行由同一密钥签出的全部令牌共享，按令牌撤销会连带终结其余令牌，要立即失效只能撤销密钥或前移账户的 `valid_after`。
+- 令牌端点自带客户端认证。失败应答用 RFC 6749 §5.2 的 JSON 形状，不走入口模块 `Fail` 的缺省形状：OAuth 客户端库按 `error` 字段解析，读不懂 `problem+json`（[REF-rfc9457](../references.md)）。这是对「拒绝经 `Fail` 写出」的有意例外。db 不可用答 503 `temporarily_unavailable`，不是 `invalid_grant`，客户端据此保留刷新令牌重试。
 
 ## 后果
 

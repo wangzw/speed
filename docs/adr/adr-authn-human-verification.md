@@ -22,7 +22,7 @@
 
 ### 缺省关闭，接缝加上自托管与第三方两个机制
 
-交付 `authn.HumanVerifier` 接缝，缺省模式 `off`；内置自托管的工作量证明与 Cloudflare Turnstile，部署按配置选一个，也可以自带实现。
+交付 `authn.HumanVerifier` 接缝，缺省模式 `off`；内置自托管的工作量证明与 Cloudflare Turnstile（[REF-cloudflare-turnstile](../references.md)），部署按配置选一个，也可以自带实现。
 
 **采纳**，见决策。
 

@@ -2,7 +2,7 @@
 
 ## 职责
 
-- **因素登记簿。** 账户的每个因素在 `authn_factors` 里占一行，登记簿统一放在 `authn.mfa`；只有种类专属的数据（TOTP 种子、通行密钥的凭据）才放各因素子包自己的表。
+- **因素登记簿。** 账户的每个因素在 `authn_factors` 里占一行，登记簿统一放在 `authn.mfa`；只有种类专属的数据（TOTP 种子、通行密钥的凭据，[REF-rfc6238](../../../references.md)、[REF-webauthn](../../../references.md)）才放各因素子包自己的表。
 - **第二因素的策略判定。** 第一因素通过之后，按账户级与全局级策略回答账户是否还要第二因素，并给出可用的因素清单。租户级策略在请求期执行，不在这里（[tenant.admission](../tenant/design-tenant-admission.md)）。
 - **因素的登记、发码与校验的编排。** `MFA` 驱动各因素实现；失败退避、审计记录与事件发布在 `MFA` 里统一做一遍，因素实现不做（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）。
 - **保障等级的唯一合成处。** `MFA.Assurance` 是整个认证功能目录里计算保障等级的唯一位置；网关的校验后端、请求期的租户准入、`guard.Require` 与冒充发起读到的都是登录会话行里已记录的值。
@@ -150,11 +150,11 @@ type MFA interface {
 | 管理员重置因素、管理员重置口令 | 新鲜的本地多因素，且其强认证的方式集含 `otp` 或 `webauthn`；发起者 `MFA.Seasoned` 为真；发起者不是静态口令表主体、不在冒充中 |
 | 冒充发起 | 新鲜的本地多因素，方式集含 `otp` 或 `webauthn`；`MFA.Seasoned(actor)` 为真；其余限制见 [authn-impersonation](design-authn-impersonation.md) |
 
-短信因素允许登记与使用，但在管理员重置与冒充发起的强认证里不计：短信是受限认证器。没有登记任何因素的账户永远不能发起冒充，也不能重置他人的因素或口令，这是 `MFA.Seasoned` 的直接结果。`Seasoned` 为假时这些动作答 403 `factor-not-seasoned`（`ErrFactorNotSeasoned`），加强认证解不了这一条，要等因素启用满 `sensitive-min-age`，或先登记一个非短信因素再等；保障等级、新鲜度、`Local` 与认证方式集不满足答 401 `insufficient_user_authentication`，加强认证可解。应答不带年龄，年龄是部署配置，界面据码给出等待说明。`Seasoned` 的年龄门槛使登录期间抢先登记的因素换不到这些动作。
+短信因素允许登记与使用，但在管理员重置与冒充发起的强认证里不计：短信是受限认证器（[REF-nist-sp-800-63b](../../../references.md)）。没有登记任何因素的账户永远不能发起冒充，也不能重置他人的因素或口令，这是 `MFA.Seasoned` 的直接结果。`Seasoned` 为假时这些动作答 403 `factor-not-seasoned`（`ErrFactorNotSeasoned`），加强认证解不了这一条，要等因素启用满 `sensitive-min-age`，或先登记一个非短信因素再等；保障等级、新鲜度、`Local` 与认证方式集不满足答 401 `insufficient_user_authentication`（[REF-rfc9470](../../../references.md)），加强认证可解。应答不带年龄，年龄是部署配置，界面据码给出等待说明。`Seasoned` 的年龄门槛使登录期间抢先登记的因素换不到这些动作。
 
 ### 加强认证的应答与 `guard.Require`
 
-宿主与授权模块的路由用 `guard.Require(authn.Requirement{...})` 挂在自己的处理链里。`guard` 子包不登记模块，只 import 根包、`pkg/http` 与 gin。身份不满足要求时应答：
+宿主与授权模块的路由用 `guard.Require(authn.Requirement{...})` 挂在自己的处理链里。`guard` 子包不登记模块，只 import 根包、`pkg/http` 与 gin（[REF-gin](../../../references.md)）。身份不满足要求时应答：
 
 ```
 401  Problem.Type = urn:speed:authn:insufficient_user_authentication
@@ -162,7 +162,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
     error_description="…", acr_values="2", max_age="600"
 ```
 
-`insufficient_user_authentication`、`acr_values`、`max_age` 取自 RFC 9470。RFC 把它们定义在 Bearer 方案的挑战里，对 Cookie 与 Basic 载体沿用同名参数是认证功能目录的约定，不是 RFC 的规定。`acr_values` 取要求等级的十进制文本，零等级（路由不要求特定等级，`Requirement.Assurance` 的零值 `AssuranceNone`）写作 `"0"`；`guard.Require` 与路由部件的挑战一致，都按 `Requirement.Assurance` 写它，零等级因此都写 `"0"`。`max_age` 取要求的 `MaxAge` 的秒数。访问令牌的 `acr` 用同一记法写等级，但把零等级读作单因素，使自己的取值不越出非零等级这一闭集；`acr_values` 不这样归一，写的是要求本身的取值。
+`insufficient_user_authentication`、`acr_values`、`max_age` 取自 RFC 9470。RFC 把它们定义在 Bearer（[REF-rfc6750](../../../references.md)）方案的挑战里，对 Cookie 与 Basic 载体沿用同名参数是认证功能目录的约定，不是 RFC 的规定。`acr_values` 取要求等级的十进制文本，零等级（路由不要求特定等级，`Requirement.Assurance` 的零值 `AssuranceNone`）写作 `"0"`；`guard.Require` 与路由部件的挑战一致，都按 `Requirement.Assurance` 写它，零等级因此都写 `"0"`。`max_age` 取要求的 `MaxAge` 的秒数。访问令牌的 `acr` 用同一记法写等级，但把零等级读作单因素，使自己的取值不越出非零等级这一闭集；`acr_values` 不这样归一，写的是要求本身的取值。
 
 `guard.Require` 已由 `pkg/authn/guard/guard.go` 交付：需要这一应答的路由把它挂进处理链。登录引擎与因素路由的处理器按路由部件各自写出同形的 401，准入层按它的判定次序应答：多因素要求写同一个问题码，SSO 要求写 `sso_required`（见下），挑战的构成与 `guard.Require` 一致，因为参数取自同一个 `Identity.Challenge()` 与同一套 `MaxAge` 读法。
 
@@ -201,7 +201,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 | `audit.Audit` | 可选 | 尽力档审计；强制档动作的审计由管理面处理器承担，那里把它当必需。 |
 | `event.Bus` | 可选 | 发布 `authn.factor.changed`，提交之后 `Bus.Publish`，不经发件箱；订阅 `authn.account.deleted` 作补偿。 |
 
-因素子包的依赖：`authn.mfa.totp` 依赖 `db.Database` 与 `MFA`；`authn.mfa.sms` 依赖 `SMSCodes` 与 `Accounts`；`authn.mfa.webauthn` 依赖 `db.Database`、`MFA` 与 `Accounts`，另交付通行密钥登录方法。各因素子包都不依赖 kv。因素子包用到的第三方库在 `pkg/go.mod` 里精确钉版：`authn.mfa.totp` 用 `github.com/pquerna/otp` v1.5.0，`authn.mfa.webauthn` 用 `github.com/go-webauthn/webauthn` v0.18.2；各库只被对应的因素叶子包 import，两条都由 `pkg/authn/deps_test.go` 的守卫守住。
+因素子包的依赖：`authn.mfa.totp` 依赖 `db.Database` 与 `MFA`；`authn.mfa.sms` 依赖 `SMSCodes` 与 `Accounts`；`authn.mfa.webauthn` 依赖 `db.Database`、`MFA` 与 `Accounts`，另交付通行密钥登录方法。各因素子包都不依赖 kv。因素子包用到的第三方库在 `pkg/go.mod` 里精确钉版：`authn.mfa.totp` 用 `github.com/pquerna/otp`（[REF-pquerna-otp](../../../references.md)） v1.5.0，`authn.mfa.webauthn` 用 `github.com/go-webauthn/webauthn`（[REF-go-webauthn](../../../references.md)） v0.18.2；各库只被对应的因素叶子包 import，两条都由 `pkg/authn/deps_test.go` 的守卫守住。
 
 **被依赖方向。** `authn.login` 把 `MFA` 当必需：库里已有账户登记了因素而装配里没有因素编排时，登录不能无声跳过第二因素。`authn.impersonation` 也把 `MFA` 当必需：没有因素编排的装配里没有任何账户满足发起者的强认证要求。`authn.admin` 把 `MFA` 当可选，缺席时没有 `mfa-*` 与 `password` 路由，因为这些路由要核对 `MFA.Seasoned`。
 
@@ -470,11 +470,11 @@ CREATE TABLE authn_webauthn_credentials (
 - 入口是 `POST B/flows/authenticated {purpose:"step-up"}`，复用登录引擎：账户有因素时直接进入第二因素待答，无因素时要求重新证明第一因素。
 - 完成时不建新会话，由 `Sessions.Elevate` 更新当前会话的 `assurance`、`auth_time`、方式集并轮换会话令牌，防会话固定。令牌发放的客户端在 `complete` 的应答里拿到新访问令牌，`acr` 与 `auth_time` 已更新。
 - 加强认证只接受启用时刻早于当前会话 `AuthTime` 的因素。
-- 联邦登录的会话步进重走同一个 IdP：OIDC 加 `prompt=login`，回来后核对 `auth_time` 不早于流程开始；SAML 请求带 `ForceAuthn`。SAML 库不支持 `ForceAuthn` 时，联邦会话的步进改为要求账户已登记因素并走因素流程。
+- 联邦登录的会话步进重走同一个 IdP：OIDC（[REF-openid-connect-core](../../../references.md)）加 `prompt=login`，回来后核对 `auth_time` 不早于流程开始；SAML（[REF-saml2](../../../references.md)）请求带 `ForceAuthn`。SAML 库不支持 `ForceAuthn` 时，联邦会话的步进改为要求账户已登记因素并走因素流程。
 
 ### TOTP
 
-- **登记。** 用 `pquerna/otp` 的 `totp.Generate`：20 字节随机密钥、SHA-1、6 位、30 秒，与各认证器应用的公约一致。发行者名由配置给出（见 [authn-config](design-authn-config.md)）。写一行待确认因素与加密的种子，返回 `otpauth://` 地址；二维码由客户端画，服务端不调库里的图像函数。**种子只在这次应答里出现一次。** 登记的确认步要求提交一个有效码才转启用。
+- **登记。** 用 `pquerna/otp` 的 `totp.Generate`：20 字节随机密钥、SHA-1、6 位、30 秒，与各认证器应用的公约一致。发行者名由配置给出（见 [authn-config](design-authn-config.md)）。写一行待确认因素与加密的种子，返回 `otpauth://`（[REF-otpauth-key-uri-format](../../../references.md)）地址；二维码由客户端画，服务端不调库里的图像函数。**种子只在这次应答里出现一次。** 登记的确认步要求提交一个有效码才转启用。
 - **校验。** 自写（取舍见 [ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）：用 `GenerateCodeCustom` 对前一步、当前步、后一步各生成一次，逐个做常量时间比较，取命中的计数器 `c`，要求 `c > last_counter`，然后条件更新：
 
   ```sql
@@ -501,7 +501,7 @@ CREATE TABLE authn_webauthn_credentials (
 |---|---|
 | `User` 适配 | `WebAuthnID` 取 `authn_webauthn_users.handle`（随机、不含个人信息）；`WebAuthnName` 取用户名标识，没有则取账户标识；`WebAuthnCredentials` 从表装出 |
 | 登记档案 | 通行密钥（`passkey=true`）：可发现凭据加用户验证 `required`，可作第一因素（登录方法名 `passkey`，断言要求用户验证，因而即多因素）与第二因素。安全密钥（`passkey=false`）：用户验证 `preferred`，只作第二因素。证明格式取 `none`；登记时 `WithExclusions` 排除该账户的启用凭据，停用因素的凭据不排除，使同一认证器可重新登记。登录（第一因素）断言要求 `required`，第二因素的断言保持 `preferred` |
-| 来源与 RP ID | RP ID、站点名与来源集合由配置给出（键、取值与缺省见 [authn-config](design-authn-config.md)）；启动校验 `rp-id` 等于基址主机或其父域。**全局账户对应一个 RP ID**：凭据绑定 RP ID，换 RP ID 就是另一批凭据，库提供的单次仪式覆盖 RP ID 的口子不启用。公共后缀表的核对不做，是残余风险 |
+| 来源与 RP ID | RP ID、站点名与来源集合由配置给出（键、取值与缺省见 [authn-config](design-authn-config.md)）；启动校验 `rp-id` 等于基址主机或其父域。**全局账户对应一个 RP ID**：凭据绑定 RP ID，换 RP ID 就是另一批凭据，库提供的单次仪式覆盖 RP ID 的口子不启用。公共后缀表（[REF-public-suffix-list](../../../references.md)）的核对不做，是残余风险 |
 | 仪式数据 | 放流程记录的私有字节；`Timeouts.Login.Enforce` 与 `Timeouts.Registration.Enforce` 固定为真，库只在它为真时才设过期；一次性消费靠引擎对流程记录的比较并交换，库不防同一份仪式数据被消费两次；只取本库序列化、由服务端保完整的字节，被篡改的字节能让库按长度前缀分配数 GB 内存 |
 | 每次断言成功 | 条件更新写回 `sign_count`（`WHERE sign_count <= ?`）、`clone_warning`、`user_verified`、`backup_state`，库不替调用方落库；更新失败按重放处理。同步通行密钥的计数常恒为 0，库只在新计数不大于旧计数且不全为零时才置告警，所以不误伤 |
 | 克隆告警 | `clone_warning` 为真则本次校验失败：因素以 `StepRefused(authn.ErrFactorFlagged)` 拒绝本次断言，`MFA.Verify` 据该成因把因素行置停用并发布 `authn.factor.changed`（`flagged`）；断言本身的计数回退也写 `clone_warning` 并同样以该成因拒绝。通行密钥作第一因素时由登录引擎直接驱动方法、不经 `MFA` 编排，那一路只拒绝本次断言（对外并入 `login-failed`），写一行 Warn 安全日志，不置停用、不发事件；断言重放同样只拒绝并写一行 Info 安全日志。凭据自身的 `clone_warning` 使它在该路与 `Factor` 路上都不可用，清除该行经 `MFA.Remove` |

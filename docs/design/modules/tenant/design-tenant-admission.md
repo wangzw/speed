@@ -93,7 +93,7 @@ type ScopeGuard interface {
 | 401 | 缺身份而路由必需认证；或强度要求未满足 | 强度未满足时带加强认证挑战，见下 |
 | 503 | 成员核对、`Decider` 或 IdP 归属的读取出错 | 不放行，不当作拒绝 |
 
-强度未满足的 401 头为 `WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication", acr_values="…"`：`acr_values` 在多因素要求下取 `"2"`，在 SSO 要求下取 `"sso"`。Problem 类型随要求区分：多因素要求写 `urn:speed:authn:insufficient_user_authentication`，SSO 要求写 `urn:speed:authn:sso_required`，使客户端知道本地因素满足不了后一种要求、只有经本租户的提供方重新登录才行。方案名取身份的 `Challenge()`，即网关按凭据载体盖章的那一个。挑战不带 `max_age`：准入层只比对等级与提供方，不含新鲜度要求，没有可填的取值。账户登记了因素与没有登记因素时收到同一个多因素应答，客户端据此走加强认证或登记；准入层不读因素登记簿，登记与加强认证的端点所在的端不受租户解析守卫，客户端总有路可走（[design-authn-mfa](../authn/design-authn-mfa.md)）。
+强度未满足的 401 头为 `WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication", acr_values="…"`（[REF-rfc9470](../../../references.md)）：`acr_values` 在多因素要求下取 `"2"`，在 SSO 要求下取 `"sso"`。Problem 类型随要求区分：多因素要求写 `urn:speed:authn:insufficient_user_authentication`，SSO 要求写 `urn:speed:authn:sso_required`，使客户端知道本地因素满足不了后一种要求、只有经本租户的提供方重新登录才行。方案名取身份的 `Challenge()`，即网关按凭据载体盖章的那一个。挑战不带 `max_age`：准入层只比对等级与提供方，不含新鲜度要求，没有可填的取值。账户登记了因素与没有登记因素时收到同一个多因素应答，客户端据此走加强认证或登记；准入层不读因素登记簿，登记与加强认证的端点所在的端不受租户解析守卫，客户端总有路可走（[design-authn-mfa](../authn/design-authn-mfa.md)）。
 
 ### 配置与设置
 
@@ -115,7 +115,7 @@ type ScopeGuard interface {
 
 ### 对外接口面
 
-下列是本模块与其他模块之间的接口面：`tenant.Admission` 与 `authn.ScopeGuard` 的形状，模块名与交付标识，`endpoints` 的必填与不接受 `*`，设置键 `tenant.admission.require-mfa`、`require-sso`、`check-ttl`，`Decider` 动作 `authn.tenant.access` 的使用方式，指标名 `tenant.admission.decisions` 与其 Meter 名 `tenant`、属性 `outcome` 的取值，以及应答状态码的封闭集。改名、增减取值或扩大状态码集合是对宿主与授权功能目录的不兼容变更；设置键与指标属性值的变更同时是对运维面的不兼容变更。
+下列是本模块与其他模块之间的接口面：`tenant.Admission` 与 `authn.ScopeGuard` 的形状，模块名与交付标识，`endpoints` 的必填与不接受 `*`，设置键 `tenant.admission.require-mfa`、`require-sso`、`check-ttl`，`Decider` 动作 `authn.tenant.access` 的使用方式，指标名 `tenant.admission.decisions` 与其 Meter（[REF-opentelemetry-go](../../../references.md)）名 `tenant`、属性 `outcome` 的取值，以及应答状态码的封闭集。改名、增减取值或扩大状态码集合是对宿主与授权功能目录的不兼容变更；设置键与指标属性值的变更同时是对运维面的不兼容变更。
 
 ## 依赖
 

@@ -8,8 +8,8 @@
 
 限定可选范围的外部事实如下。
 
-- OWASP 的口令存储首选是 Argon2id，PBKDF2-HMAC-SHA256 的最低要求是 600000 次；需要 FIPS 140 合规的部署用 PBKDF2 且内部哈希为 HMAC-SHA-256。标准库没有 Argon2，派生在 `golang.org/x/crypto/argon2`。
-- PHC 字符串规范只定义 Argon2 的编码，没有定义 PBKDF2 的编码。PBKDF2 的 PHC 风格写法存在互不兼容的方言：RustCrypto 一派写 `i=<迭代>,l=<输出长度>`，盐与哈希用规范的 B64（标准字母表、无填充）；passlib 一派写裸迭代次数，字母表把 `+` 换成 `.`。现行条目的字母表与 RustCrypto 一派相同，迭代次数写法与 passlib 一派相同，与两派的整体写法都不同。
+- OWASP 的口令存储（[REF-owasp-password-storage](../references.md)）首选是 Argon2id（[REF-rfc9106](../references.md)），PBKDF2-HMAC-SHA256（[REF-rfc8018](../references.md)）的最低要求是 600000 次；需要 FIPS 140（[REF-fips-140-3](../references.md)）合规的部署用 PBKDF2 且内部哈希为 HMAC-SHA-256。标准库没有 Argon2，派生在 `golang.org/x/crypto/argon2`（[REF-golang-x-crypto](../references.md)）。
+- PHC（[REF-phc-string-format](../references.md)）字符串规范只定义 Argon2 的编码，没有定义 PBKDF2 的编码。PBKDF2 的 PHC 风格写法存在互不兼容的方言：RustCrypto（[REF-rustcrypto-password-hashes](../references.md)）一派写 `i=<迭代>,l=<输出长度>`，盐与哈希用规范的 B64（标准字母表、无填充）；passlib（[REF-passlib](../references.md)）一派写裸迭代次数，字母表把 `+` 换成 `.`。现行条目的字母表与 RustCrypto 一派相同，迭代次数写法与 passlib 一派相同，与两派的整体写法都不同。
 
 Argon2id 一次派生分配条目自带的 `m` KiB。库里导入的条目或口令表里的条目带一个很大的 `m` 时，一次登录请求即可分配数 GiB；并发登录的内存峰值是并发数乘以 `m`。解析与派生之间若没有界限核对，条目的内容就决定了进程的内存用量。
 
@@ -25,7 +25,7 @@ Argon2id 一次派生分配条目自带的 `m` KiB。库里导入的条目或口
 
 ### 口令条目的读写全部交给第三方 PHC 库
 
-以 `go-crypt/crypt` 这类覆盖多种算法的库统一解码、校验与写出，authn 不自写任何编解码。
+以 `go-crypt/crypt`（[REF-go-crypt](../references.md)）这类覆盖多种算法的库统一解码、校验与写出，authn 不自写任何编解码。
 
 **否决**：该库只实现 passlib 一派方言，读不了现行条目：对 40 条现行写法的条目，原样交给它 0 条通过，补上前导 `$` 后仍只有 11 条通过，其余因字母表不同解码失败。该库仍是 0.x 版本，主分支已要求更新的 Go 工具链。写进配置文件、比二进制活得长的格式，不宜绑在只读了一派方言的第三方行为上；而 PBKDF2 的 PHC 写法本来就没有规范可依，选哪一派方言是一项必须由本项目自己落定的设计。
 
@@ -71,7 +71,7 @@ Argon2id 一次派生分配条目自带的 `m` KiB。库里导入的条目或口
 
 **编解码与依赖。**
 
-- Argon2id 的 PHC 编码用 `alexedwards/argon2id` 解码与校验（`CreateHash`、`DecodeHash`、`CheckHash`），派生是 `golang.org/x/crypto/argon2`。
+- Argon2id 的 PHC 编码用 `alexedwards/argon2id`（[REF-alexedwards-argon2id](../references.md)）解码与校验（`CreateHash`、`DecodeHash`、`CheckHash`），派生是 `golang.org/x/crypto/argon2`。
 - PBKDF2-SHA256 的派生用标准库 `crypto/pbkdf2`，PHC 写法由 authn 自写，取 RustCrypto 方言：参数 `i`、`l`，盐与哈希用 B64。
 - authn 不引入 `go-crypt/crypt`。
 
@@ -83,7 +83,7 @@ Argon2id 一次派生分配条目自带的 `m` KiB。库里导入的条目或口
 - 口令表里读到的条目不设下界。低于下限的条目在启动时逐条点名记 Warn；旧写法的条目在启动时逐条记 Warn，提示按新写法重写。
 - 校验成功后，库里条目的算法或参数弱于当前设置时，按当前设置重写，写入是对旧哈希的比较并替换，失败不影响本次登录。口令表条目不能被 authn 重写，只记 Warn。
 
-**规范化。** 账户库里的口令先做 NFKC 再哈希。口令表条目不做 NFKC，原样按字节哈希，已写下的条目照原样读。
+**规范化。** 账户库里的口令先做 NFKC（[REF-unicode-uax15](../references.md)）再哈希。口令表条目不做 NFKC，原样按字节哈希，已写下的条目照原样读。
 
 **资源约束。** 口令派生受并发与内存两道上界约束，上界在启动时定下、运行期不可调；占不到份额的派生以忙拒绝，不排队等待。
 

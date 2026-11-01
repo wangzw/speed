@@ -4,13 +4,13 @@
 
 前端唯一的**手写 HTTP 运行时**，包 `web/packages/api-client`。`createClient` 把若干可注入的接缝——可注入的 `fetch`、可选的仅内存的访问令牌存储、凭据模式、401 刷新钩子、重试策略、每次交换的超时、结构化上报端、语言提供者、租户提供者——接成一个请求函数 `RequestFn`；前端的每一次 HTTP 调用都经它发出，每一次失败都以 `ApiError` 拒绝。
 
-- **它为什么存在。** 契约的生成面（[api-sdk](design-web-api-sdk.md)、orval 的产物）产出的是**形状**——类型与每端点的函数、Query hook——它不产出**传输**。生成面把每次调用交给一个手写的适配器（`@speed/api-sdk` 的 `./runtime` 接缝），由适配器转发给本包的请求函数；宿主在装配处（[product-shell](design-web-product-shell.md) 的 `bootstrapSpeedApp`）以 `bindRequestFn` 把客户端绑进那条接缝。传输（基地址、令牌、刷新、重试、超时、上报、语言、租户）因此只在一处定义。工作区里除本包外没有任何一处手写 `fetch`/`axios`，这条由 `web/eslint.config.mjs` 的 `speed/no-direct-http` 规则守住，而白名单里只有本包。
-- **每次尝试接凭据。** 配了访问令牌存储时，请求函数在每次发送时从存储读一次当前令牌，接成 `Authorization: Bearer <token>`；一次请求可声明 `omitAccessToken`，声明后完全不读存储、不接任何存储令牌。cookie 会话不需要这一路：凭据是服务端的 httpOnly 会话 cookie，由浏览器按 `credentials` 模式（同源缺省即带上）附上，故 cookie 宿主完全不配存储。令牌只在内存：本包没有任何存储 API，令牌不落 `localStorage`/`sessionStorage`/IndexedDB/cookie。
+- **它为什么存在。** 契约的生成面（[api-sdk](design-web-api-sdk.md)、orval 的产物，[REF-orval](../../../references.md)）产出的是**形状**——类型与每端点的函数、Query hook——它不产出**传输**。生成面把每次调用交给一个手写的适配器（`@speed/api-sdk` 的 `./runtime` 接缝），由适配器转发给本包的请求函数；宿主在装配处（[product-shell](design-web-product-shell.md) 的 `bootstrapSpeedApp`）以 `bindRequestFn` 把客户端绑进那条接缝。传输（基地址、令牌、刷新、重试、超时、上报、语言、租户）因此只在一处定义。工作区里除本包外没有任何一处手写 `fetch`/`axios`（[REF-axios](../../../references.md)），这条由 `web/eslint.config.mjs` 的 `speed/no-direct-http` 规则守住，而白名单里只有本包。
+- **每次尝试接凭据。** 配了访问令牌存储时，请求函数在每次发送时从存储读一次当前令牌，接成 `Authorization: Bearer <token>`（[REF-rfc6750](../../../references.md)）；一次请求可声明 `omitAccessToken`，声明后完全不读存储、不接任何存储令牌。cookie 会话不需要这一路：凭据是服务端的 httpOnly 会话 cookie，由浏览器按 `credentials` 模式（同源缺省即带上）附上，故 cookie 宿主完全不配存储。令牌只在内存：本包没有任何存储 API，令牌不落 `localStorage`/`sessionStorage`/IndexedDB/cookie。
 - **租户按尝试播报，且不在令牌里。** 宿主交来一个租户提供者，本包每次尝试读一次，接成租户头；租户是请求期的路由事实，不在访问令牌的声明里，后端解析层正是从请求面（按配置取头、子域或路径）读它。租户头名缺省 `X-Tenant`，`tenantHeader` 可改名（部署的网关从别的头读租户时用）。未配提供者、或提供者答空时该头缺席；调用方自带的同名头不覆盖。
 - **静默的 401 单飞刷新。** 配了刷新钩子时，一次**带了凭据**（bearer 令牌，或凭据模式声明了 cookie 时会带的同源 cookie）的 401 触发一次刷新（并发的 401 共享同一次在飞刷新），随后原请求重试恰一次；凭据为空的 401 不经刷新路径，原样抛出。
 - **仅幂等、仅瞬时的重试。** `GET`／`HEAD`／`OPTIONS` 上的 429（honour `Retry-After`）、502／503／504、网络失败与超时按策略重试，其余一律不重试。
 - **每次交换一条超时，调用方取消原样透传。** `timeoutMs` 界定一次 HTTP 交换（一次发送加其正文读取）；调用方传入的 `AbortSignal` 取消时以原生 `AbortError` 拒绝，不包裹、不重试。
-- **`ApiError` 归一。** 后端以 RFC 9457 问题对象出行（机器可读的类在 `type`，取值 `urn:speed:<模块>:<码>`，正文不带 `code` 成员），本包从 `type` 推得模块码 `<模块>.<码>`（码段里的连字符归一为下划线，`urn:speed:objectstore:not-found` → `objectstore.not_found`），并保留后端给了的 `traceId`／`params`／`message`／`details`；带 `code` 成员的信封以 `code` 为准；两者都没有的应答取本包保留的 `client.*` 码。429 或 503 应答带 `Retry-After`（秒数或 HTTP 日期）时，解析出的等待毫秒数作为 `retryAfterMs` 落在 `ApiError` 上，解析失败或缺头时为 `undefined`。
+- **`ApiError` 归一。** 后端以 RFC 9457（[REF-rfc9457](../../../references.md)）问题对象出行（机器可读的类在 `type`，取值 `urn:speed:<模块>:<码>`，正文不带 `code` 成员），本包从 `type` 推得模块码 `<模块>.<码>`（码段里的连字符归一为下划线，`urn:speed:objectstore:not-found` → `objectstore.not_found`），并保留后端给了的 `traceId`／`params`／`message`／`details`；带 `code` 成员的信封以 `code` 为准；两者都没有的应答取本包保留的 `client.*` 码。429 或 503 应答带 `Retry-After`（秒数或 HTTP 日期）时，解析出的等待毫秒数作为 `retryAfterMs` 落在 `ApiError` 上，解析失败或缺头时为 `undefined`。
 - **语言按尝试播报。** 宿主交来一个语言提供者，本包每次尝试读一次，接成 `accept-language`，是传输通道而非响应本地化开关。
 - **结构化上报。** 本包自身只在刷新失败时经 `Reporter` 报一条警告；终态失败以 `ApiError` 拒绝，由调用方决定是否上报。
 - **服务端事件流。** `createClient` 除请求函数外交出 `openEventStream`：经同一组接缝（fetch、令牌存储、租户与语言提供者及租户头名、凭据模式、静默刷新）打开一条 `text/event-stream` 长连接，把 SSE 帧解析成事件交给调用方。它与请求函数分开承载，因为它不是一次请求/响应交换——无每次交换的超时、无幂等重试预算，也不重连。
@@ -23,7 +23,7 @@
 - **不认识租户，只播报宿主给的租户。** 本包不推导、不存租户标识，只在每次尝试把宿主经租户提供者交来的值接成租户头（缺省 `X-Tenant`，`tenantHeader` 可改名）；租户从哪来（路由、会话）是宿主的事实，本包不决定。查询键的租户分段是框架别处的事（[ADR-web-tenant-query-key](../../../adr/adr-web-tenant-query-key.md)）。
 - **不落存储。** 本包没有存储接缝，宿主因而无法配置令牌持久化；访问令牌只在内存，重载页面即登出直到会话层重建会话。刷新令牌的家在会话层（[auth-core](design-web-auth-core.md)），不在本包。
 - **不持会话状态、不驱动会话。** 401 时调用的刷新钩子由宿主提供（`@speed/auth-core` 的会话刷新）；本包不持有会话，不决定会话存续。
-- **不构造 QueryClient、不定义查询键。** 本包只交一个请求函数；server 状态的缓存归 TanStack Query，由宿主拥有。
+- **不构造 QueryClient（[REF-tanstack-query](../../../references.md)）、不定义查询键。** 本包只交一个请求函数；server 状态的缓存归 TanStack Query，由宿主拥有。
 - **不含用户可见文本，不带 i18n 资源。** 错误 `code` 是数据，由消费包在自己的文案目录里译成双语文本；上报消息是固定的英文串加 snake_case 属性；本包不渲染任何面向用户的文字。
 - **带二进制正文与原始字节应答。** 请求正文为一个二进制值（`Blob`、`ArrayBuffer` 或类型化数组）时原样送出，不 JSON 序列化（对象存储的内容上传即此）；一次请求声明 `responseType: 'blob'` 时把 2xx 正文读成 `Blob`（对象存储的内容下载即此），错误应答仍按 JSON 信封解析。
 - **服务端事件流由 `openEventStream` 承载。** 流式应答不是一次请求/应答交换，故不骑请求函数（它有逐次交换的超时与幂等重试预算，流没有），而由独立成员 `openEventStream` 经同一套接缝（fetch、令牌、租户与租户头名、语言、凭据模式、单飞刷新）开启（见职责与外部接口契约）。
@@ -230,7 +230,7 @@ sequenceDiagram
 |---|---|
 | 非 2xx 且带有效信封（`code` 或 `urn:speed:` 的 `type`） | `ApiError`，码取正文的 `code` 或由 `type` 推得的模块码（有则带 `traceId`/`params`/`message`/`details`） |
 | 非 2xx 且无可解析信封（既无 `code` 也无 `urn:speed:` 的 `type`） | `ApiError`，`client.http.<status>` |
-| 请求未到达可用响应（DNS／拒连／TLS／CORS／读体中途失败） | `ApiError`，`client.network`、`status` 为 0 |
+| 请求未到达可用响应（DNS／拒连／TLS／CORS／读体中途失败，[REF-whatwg-fetch](../../../references.md)） | `ApiError`，`client.network`、`status` 为 0 |
 | 本包的超时触发 | `ApiError`，`client.timeout`、`status` 为 0 |
 | 2xx 的 `content-type` 是 HTML 文档 | `ApiError`，`client.html`，早于任何解析 |
 | 2xx 正文不是 JSON 对象或数组 | `ApiError`，`client.protocol` |
@@ -280,4 +280,4 @@ sequenceDiagram
 | 结构化上报端 | 已实现 | `web/packages/api-client/src/reporter.ts` `createConsoleReporter`、`Reporter` |
 | 公开面不含预认证配置取回 | 已实现 | `web/packages/api-client/src/index.ts` |
 | 公开面不含 `./react` 子路径，不声明 `react` peer | 已实现 | `web/packages/api-client/src/index.ts`、`web/packages/api-client/package.json` |
-| 手写 HTTP 的 ESLint 白名单 | 已实现 | `web/eslint.config.mjs` `speed/no-direct-http` |
+| 手写 HTTP 的 ESLint（[REF-eslint](../../../references.md)）白名单 | 已实现 | `web/eslint.config.mjs` `speed/no-direct-http` |

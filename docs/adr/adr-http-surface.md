@@ -4,7 +4,7 @@
 
 入口模块交付路由与中间件的登记面。登记面上的类型跨模块流动：业务模块在这里绑定自己的 handler，横切模块在这里贡献自己的中间件，这些类型因而出现在每一个带 API 的模块的接口上。
 
-接口包可以暴露它所封装的第三方库，划界依据是模块与该库的关系——模块封装该库时用它的类型表达接口是正常形态，模块只是碰巧用到该库时那是实现绑定（[ADR-module-packaging](adr-module-packaging.md)）。判据不看模块在库之上是否另有装配：数据库模块在 GORM 之上安装各模块声明的插件、收齐迁移集并按依赖序应用，仍是 GORM 的封装（数据库模块的设计文档称它为 GORM 的封装）。
+接口包可以暴露它所封装的第三方库，划界依据是模块与该库的关系——模块封装该库时用它的类型表达接口是正常形态，模块只是碰巧用到该库时那是实现绑定（[ADR-module-packaging](adr-module-packaging.md)）。判据不看模块在库之上是否另有装配：数据库模块在 GORM（[REF-gorm](../references.md)）之上安装各模块声明的插件、收齐迁移集并按依赖序应用，仍是 GORM 的封装（数据库模块的设计文档称它为 GORM 的封装）。
 
 入口模块的功能面分两部分。一部分是装配：多个具名端点、路由与中间件的登记、中间件的跨模块排序、与生命周期各阶段的接驳，这些概念都不出自任何 HTTP 框架。另一部分是请求处理：路由匹配、中间件调度、请求体绑定与校验、响应渲染、panic 恢复，这些由 HTTP 框架提供，而且每个带 API 的模块都要用到。
 
@@ -12,7 +12,7 @@
 
 关联字段经 `context.Context` 传递，请求路径上的日志调用从上下文取 logger（[ADR-log-context](adr-log-context.md)）。
 
-架构把 HTTP 与 gRPC 并列为入口形态，二者都是模块，都在入口阶段开始监听（[ADR-core-scope](adr-core-scope.md)）。
+架构把 HTTP 与 gRPC（[REF-grpc](../references.md)）并列为入口形态，二者都是模块，都在入口阶段开始监听（[ADR-core-scope](adr-core-scope.md)）。
 
 ## 考虑过的选项
 
@@ -30,15 +30,15 @@
 
 ### 锚定 chi
 
-登记面用 chi 的路由与 `func(http.Handler) http.Handler` 中间件表达。
+登记面用 chi（[REF-chi](../references.md)）的路由与 `func(http.Handler) http.Handler` 中间件表达。
 
 **否决**：chi 的核心只提供路由与中间件，不提供请求体绑定、校验、响应渲染与错误响应，请求处理的缺口原样留在入口模块。它的中间件形状与标准库相同，改锚点几乎不改登记面，等于把路由引擎换成另一个实现，解决不了上面的缺口。
 
 ### 锚定 echo
 
-登记面用 echo 的 `HandlerFunc` 与 `MiddlewareFunc` 表达，绑定、校验与集中的错误处理接缝由 echo 提供。
+登记面用 echo（[REF-echo](../references.md)）的 `HandlerFunc` 与 `MiddlewareFunc` 表达，绑定、校验与集中的错误处理接缝由 echo 提供。
 
-**否决**：判据取使用者与维护者的熟悉程度（同 [ADR-config-parsing](adr-config-parsing.md)），熟悉程度以 pkg.go.dev 上引用该模块的包数衡量：gin 约 19 万，echo v4 约 3.2 万、fiber v2 约 3.1 万、chi v5 约 1.7 万，echo v5 约 1600，gin 在候选的 HTTP 框架中居首。echo v5 带有集中的错误处理接缝，v5.4.0 起另有 RFC 9457 的响应形状（`ProblemDetailsHTTPErrorHandler`），gin 两者都没有，选 gin 即由入口模块自备这一块（[ADR-http-errors](adr-http-errors.md)）；这笔代价已计入，没有因此改变判据。
+**否决**：判据取使用者与维护者的熟悉程度（同 [ADR-config-parsing](adr-config-parsing.md)），熟悉程度以 pkg.go.dev（[REF-pkg-go-dev](../references.md)）上引用该模块的包数衡量：gin（[REF-gin](../references.md)）约 19 万，echo v4 约 3.2 万、fiber（[REF-fiber](../references.md)） v2 约 3.1 万、chi v5 约 1.7 万，echo v5 约 1600，gin 在候选的 HTTP 框架中居首。echo v5 带有集中的错误处理接缝，v5.4.0 起另有 RFC 9457（[REF-rfc9457](../references.md)）的响应形状（`ProblemDetailsHTTPErrorHandler`），gin 两者都没有，选 gin 即由入口模块自备这一块（[ADR-http-errors](adr-http-errors.md)）；这笔代价已计入，没有因此改变判据。
 
 ### 锚定 fasthttp 系的框架
 
@@ -48,7 +48,7 @@
 
 ### 把接口定义推向 protobuf 优先
 
-登记面以 connect-go 这类方案表达，模块的 API 由 protobuf 定义，同一个端点同时服务 gRPC 与 HTTP。
+登记面以 connect-go（[REF-connect-go](../references.md)）这类方案表达，模块的 API 由 protobuf（[REF-protobuf](../references.md)）定义，同一个端点同时服务 gRPC 与 HTTP。
 
 **否决**：这是模块如何定义自己 API 的范式决定，作用范围远大于入口模块，应当单独裁定。它也不构成本记录的替代项——connect-go 本身以 `http.Handler` 收口，采纳本记录不妨碍把它的处理器经 gin 的适配挂进某个端点。
 

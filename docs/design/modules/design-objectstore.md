@@ -14,7 +14,7 @@
 
 **一条地址是持有即可用的能力凭证**，到它的到期时刻为止：本能力不记录签发对象是谁，不做二次校验，不做单次使用限制，也没有撤销 API；轮换是再要一条。
 
-**`Store` 的每个实现都排他交付**：一个进程里恰好一个生效，多于一个表态启用即启动失败（照 `pkg/sms` 的载体形态）。`fs` 落在本地目录，`s3` 落在 S3 兼容的对象存储；`s3` 另交付可选能力 `DirectURL`，`fs` 不交付。不装 `s3` 的装配不背那个 SDK（[architecture](../architecture.md) 不变量 11）。根包是接口包与公共类型，不登记模块（[ADR-objectstore-packaging](../../adr/adr-objectstore-packaging.md)）。
+**`Store` 的每个实现都排他交付**：一个进程里恰好一个生效，多于一个表态启用即启动失败（照 `pkg/sms` 的载体形态）。`fs` 落在本地目录，`s3` 落在 S3（[REF-amazon-s3](../../references.md)）兼容的对象存储；`s3` 另交付可选能力 `DirectURL`，`fs` 不交付。不装 `s3` 的装配不背那个 SDK（[architecture](../architecture.md) 不变量 11）。根包是接口包与公共类型，不登记模块（[ADR-objectstore-packaging](../../adr/adr-objectstore-packaging.md)）。
 
 **HTTP 面只有内容路由**：`metadata` 只挂 `/content`（GET/HEAD/PUT），且只在装配的字节后端不交付 `DirectURL` 时挂出（见「内容路由」与「装配契约」）。业务前端没有别的对象存储接口可调。
 
@@ -26,7 +26,7 @@
 - **不解释对象的内容与用途。** `Object.MIME` 是不透明值，`Declaration.Name` 是调用方给的标签，本模块只把它规整后存下、不读它的含义；本模块不知道一份字节是票据、头像还是日志归档。
 - **不认识内部键之外的存储布局。** 键的语法是本模块的私有约定；`fs` 与 `s3` 各自把它映射到自己的后端拼写（相对路径、对象键），映射细节不进接口，也不出现在任何应答里。
 - **不写审计行。** 本模块在根包声明审计动作的类型名常量，由宿主在不可逆的迁移点显式把事件发上总线（见「审计动作」）；本模块只声明动作的名字，不写审计行，也不点审计模块为依赖。
-- **不提供供终端用户调用的对象 CRUD 面。** 本模块挂出的路由只有内容路由，它服务签名地址，不进 OpenAPI；声明、列举与删除都只在进程内经 `Objects` 调用。
+- **不提供供终端用户调用的对象 CRUD 面。** 本模块挂出的路由只有内容路由，它服务签名地址，不进 OpenAPI（[REF-openapi](../../references.md)）；声明、列举与删除都只在进程内经 `Objects` 调用。
 - **不排队、不重试。** 一次上传与一次读取都是同步调用，`Store` 的方法在后端调用返回后才返回；后端不可达即那次调用失败，是否重试归调用方。
 - **不保证多副本下的字节可见性。** `fs` 的字节只在本进程能到达的目录里；多副本共享一份字节要用 `s3`（见「后端适配」与「错误与失败语义」的非保证）。
 
@@ -173,7 +173,7 @@ var (
 
 `Object.Checksum` 记录的是上传时算出的 SHA-256；`s3` 直连上传完成的对象在此为空串（字节不经过进程），`fs` 直连上传与进程内 `Upload` 会记录它。
 
-`Objects` 由 `objectstore.metadata` **排他**交付，`Store` 由 `objectstore.fs` 或 `objectstore.s3` **各自排他**交付，`DirectURL` 由 `s3` 在交付 `Store` 的同时以同实例交付。租户一律取自 `ctx`（`tenant.FromContext`），`Objects` 的每个方法在无租户时以租户侧的错误拒绝，对象行内嵌 `tenant.Model`，语句过滤由名册模块交付的 GORM 插件完成。
+`Objects` 由 `objectstore.metadata` **排他**交付，`Store` 由 `objectstore.fs` 或 `objectstore.s3` **各自排他**交付，`DirectURL` 由 `s3` 在交付 `Store` 的同时以同实例交付。租户一律取自 `ctx`（`tenant.FromContext`），`Objects` 的每个方法在无租户时以租户侧的错误拒绝，对象行内嵌 `tenant.Model`，语句过滤由名册模块交付的 GORM（[REF-gorm](../../references.md)）插件完成。
 
 `Objects` 各方法的语义，约束的主体是交付 `Objects` 的模块：
 
@@ -199,7 +199,7 @@ var (
 
 **`DirectURL` 是可声明的可选能力，不是 `Store` 的必选方法，也不是裸类型断言。** 一个后端在它的 `Spec` 里把 `Direct` 置真，工厂便把 `DirectURL` 与 `Store` 一并声明为交付；实例仍是 `Open` 返回的同一个值，同时实现两个接缝（与 `pkg/sms`、`pkg/authz/policy`、`pkg/audit/journal` 的「一模块一实例多 token」同形），`core.assertDelivered` 在构造时逐一校验。
 
-**`fs` 不 import 任何对象存储 SDK，也不认识 URL。** 它的依赖只有标准库与根包，因此一个只用本地目录的装配不背任何 SDK；它不 import `pkg/http`、不持有任何密钥、不交付 `DirectURL`。**`s3` 绑它自己的 SDK**（`github.com/minio/minio-go/v7` v7.3.0 及其 `pkg/credentials` 子包），SDK 只被 `pkg/objectstore/s3` 这一个实现子包 import，不进根包、不进 `fs`，也不进 `metadata`。
+**`fs` 不 import 任何对象存储 SDK，也不认识 URL。** 它的依赖只有标准库与根包，因此一个只用本地目录的装配不背任何 SDK；它不 import `pkg/http`、不持有任何密钥、不交付 `DirectURL`。**`s3` 绑它自己的 SDK**（`github.com/minio/minio-go/v7` v7.3.0 及其 `pkg/credentials` 子包，[REF-minio-go](../../references.md)），SDK 只被 `pkg/objectstore/s3` 这一个实现子包 import，不进根包、不进 `fs`，也不进 `metadata`。
 
 `fs` 与 `s3` 都排他：一个进程里恰好一个 `Store` 生效，多于一个表态启用即在消解阶段以排他冲突失败，宿主在命令树上点名其一。`metadata` 排他交付 `Objects`，它对 `Store` 的依赖是**必需**的——一个 `Store` 都没纳入的装配里，该功能缺提供者、启动失败；`DirectURL` 是可选依赖，缺席时地址改由内容路由发出。
 
@@ -231,7 +231,7 @@ const (
 
 内容路由挂在 `objectstore.metadata.content-endpoints` 点名的端点上，端点名按既有规则校验（具体名、不收 `*`、不重复、空清单在有路由器且后端不交付 `DirectURL` 的装配里失败）。这个端点**必须匿名**：浏览器 `<img src>` 既带不了 Authorization 也带不了租户头，令牌本身就是凭据。
 
-读应答的响应头：`Content-Type` 取对象行里的 `mime`（空则 `application/octet-stream`）；有名字时 `Content-Disposition` 取 `mime.FormatMediaType("inline", map[string]string{"filename": row.Name})`（RFC 6266／5987 的 `filename*` 由标准库生成，绝不裸拼）；`Cache-Control: private, max-age=<剩余秒>`；`X-Content-Type-Options: nosniff`；`Content-Security-Policy: sandbox`；`Referrer-Policy: no-referrer`。写应答成功为 204，并带 `Cache-Control: no-store`，所有应答都带这一条。
+读应答的响应头：`Content-Type` 取对象行里的 `mime`（空则 `application/octet-stream`）；有名字时 `Content-Disposition` 取 `mime.FormatMediaType("inline", map[string]string{"filename": row.Name})`（RFC 6266／5987 的 `filename*` 由标准库生成，绝不裸拼，[REF-rfc6266](../../references.md)、[REF-rfc5987](../../references.md)）；`Cache-Control: private, max-age=<剩余秒>`；`X-Content-Type-Options: nosniff`；`Content-Security-Policy: sandbox`；`Referrer-Policy: no-referrer`。写应答成功为 204，并带 `Cache-Control: no-store`，所有应答都带这一条。
 
 **内容路由不进 OpenAPI。** 它服务签名地址，不是客户端 API；发布进契约只会生成让调用方自己造 URL 的 SDK 操作。
 
@@ -263,7 +263,7 @@ http:
 
 2. `objectstore.metadata.content-endpoints: [content]`。装配的后端交付 `DirectURL` 时这一项不被读取。
 3. 该端点**必须不出现在** `authn.gate.endpoints`、`tenant.resolve.endpoints`、`tenant.admission.endpoints`、`authz.guard.endpoints`、`ratelimit.endpoints`、`audit.journal.endpoints` 里：写进认证、租户解析、租户准入或授权守卫会阻断匿名请求，写进限流会按图片计数，写进审计会给每张图片记一行。这些层都是端点级、没有按路由豁免。
-4. 跨源部署：设 `objectstore.metadata.public-url`，把该端点加进 `http.cors.endpoints`；`s3` 部署给桶配 CORS（允许前端来源的 `GET`、`HEAD`、`PUT`，暴露 `ETag`）。
+4. 跨源部署：设 `objectstore.metadata.public-url`，把该端点加进 `http.cors.endpoints`；`s3` 部署给桶配 CORS（[REF-whatwg-fetch](../../references.md)）（允许前端来源的 `GET`、`HEAD`、`PUT`，暴露 `ETag`）。
 5. 端点前缀必须覆盖 `/content`：没被任何 claim 覆盖时入口模块以 `ErrUnclaimedRoute` 启动失败。它与 `web` 的 `"/"` 冲突由最长前缀胜出解决，宿主自定前缀时要保证比 `"/"` 更具体。
 
 `Init` 写一条启动诊断：挂了哪些端点，或「后端直接铸址，内容路由未挂载」。
@@ -302,7 +302,7 @@ http:
 | `pkg/log` | `objectstore.s3` 直接 import；工厂取可选 `log.Logger`、以模块名绑定后交给 `Open`，实现持有它并记录每一次出站调用；工厂在 `New` 里登记各后端凭据的字面量脱敏匹配器；`metadata` 记诊断 |
 | `pkg/internal/literal` | 构造并登记字面量匹配器（各后端的凭据） |
 | `pkg/http` | `objectstore.metadata`：可选，入口模块的端点与路由面，挂内容路由 |
-| `github.com/gin-gonic/gin` | `objectstore.metadata`：处理器签名 |
+| `github.com/gin-gonic/gin`（[REF-gin](../../references.md)） | `objectstore.metadata`：处理器签名 |
 | S3 SDK | 只被 `pkg/objectstore/s3` import |
 
 **根包依赖 `pkg/core`、`pkg/config`、`pkg/internal/literal` 与可选的 `pkg/log`，不 import 任何对象存储 SDK，也不 import `pkg/http`、`pkg/db`、`pkg/tenant` 或 `pkg/authz`。** 工厂与公共类型都在根包，它经 `pkg/internal/literal` 登记字面量脱敏匹配器、取可选 `pkg/log` 的 logger（照 `pkg/sms/module.go` 的先例）；对象存储 SDK 只落在 `s3` 实现子包。方向是 `metadata` import `pkg/db`、`pkg/tenant`、`pkg/http` 的接口包与 gin，`fs` 只 import 标准库与根包，`s3` import 根包、`pkg/log` 与它自己的 SDK；根包不 import `metadata`、`fs`、`s3` 中的任何一个。
@@ -460,7 +460,7 @@ stateDiagram-v2
 
 **首次读表不得早于 `Init`。** `New` 早于 `Migrate`，`New` 里这些表还不存在，本模块因此不在 `New` 读表；路由在 `Init` 里只登记、不读表。第一次读表落在 `Start`：清扫的第一次 pass。清扫被关掉（`sweep-interval ≤ 0`）时，第一次读表是 `Serve` 阶段的第一条请求。
 
-**名字在入口规整一次。** `Create` 把声明的 `Name` 规整后写入 `name`，之后的每个读取方拿到的都是同一个值。存入的值满足：合法 UTF-8；不含 Unicode 类别为 Cc、Cf、Zl、Zp 的字符（控制字符、格式字符含方向控制与零宽字符、行分隔符与段分隔符），这些字符被丢弃；不含 `/` 与 `\`，它们被替换为 `_`；首尾无空白；至多 255 字节且不在字符中间截断，截断之后再去一次首尾空白；不是只由 `.` 组成，那样的名字存为空串。省略、空串与规整后为空同义，都存为空串。规整不去掉引号与分号，不检查扩展名，不保留末尾的扩展名。`name` 没有观测值一侧，`Object` 交出的就是存入的值；既有行的 `name` 为空串。
+**名字在入口规整一次。** `Create` 把声明的 `Name` 规整后写入 `name`，之后的每个读取方拿到的都是同一个值。存入的值满足：合法 UTF-8；不含 Unicode 类别（[REF-unicode-uax44](../../references.md)）为 Cc、Cf、Zl、Zp 的字符（控制字符、格式字符含方向控制与零宽字符、行分隔符与段分隔符），这些字符被丢弃；不含 `/` 与 `\`，它们被替换为 `_`；首尾无空白；至多 255 字节且不在字符中间截断，截断之后再去一次首尾空白；不是只由 `.` 组成，那样的名字存为空串。省略、空串与规整后为空同义，都存为空串。规整不去掉引号与分号，不检查扩展名，不保留末尾的扩展名。`name` 没有观测值一侧，`Object` 交出的就是存入的值；既有行的 `name` 为空串。
 
 **声明里的值与上传后记下的值并存。** `declared_size`、`declared_type`、`declared_checksum` 是调用方在声明时给的；`size`、`mime`、`checksum_sha256` 是上传时模块自己读出的。两者分列存放，本模块因此能在完成时看出后端持有的字节数与声明不符，又不把声明值改写成观测值。`Object` 交出的是观测值一侧。
 

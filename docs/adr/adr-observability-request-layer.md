@@ -2,7 +2,7 @@
 
 ## 背景
 
-请求路径的采集要完成下列事：从入站头部提取父跨度上下文，开始服务端跨度，在响应结束时按状态与错误标记跨度，记录请求的计量。上游为 gin 提供了做这些事的中间件，`go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin`（下称上游采集库）。它接受调用方交给它的 tracer provider、meter provider 与传播器，在 `c.Next` 返回后从 `c.Writer.Status()` 与 `c.Writer.Size()` 读取响应，产出服务端跨度与直方图：请求时长、请求体大小、响应体大小。
+请求路径的采集要完成下列事：从入站头部提取父跨度上下文，开始服务端跨度，在响应结束时按状态与错误标记跨度，记录请求的计量。上游为 gin（[REF-gin](../references.md)）提供了做这些事的中间件，`go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin`（[REF-opentelemetry-go-contrib](../references.md)）（下称上游采集库）。它接受调用方交给它的 tracer provider、meter provider 与传播器，在 `c.Next` 返回后从 `c.Writer.Status()` 与 `c.Writer.Size()` 读取响应，产出服务端跨度与直方图：请求时长、请求体大小、响应体大小。
 
 上游采集库不接住 panic。panic 穿过它时，上游 SDK 在结束跨度的那一步调 `recover()` 记录它：值非 nil 时给跨度补一个 `exception` 事件（默认不带堆栈）并把值重抛，值为 nil（`GODEBUG=panicnil=1`）时既不记录也不重抛；之后的计量记录不再执行，这条请求不进任何一个直方图。
 
@@ -25,7 +25,7 @@
 
 采纳它意味着本模块自己写提取、跨度、状态映射与请求时长的计量，属性面与跨度名按本模块的决定收窄。
 
-**否决**：属性名、单位、桶边界、跨度名的形式与方法的折叠都出自上游的语义约定，约定每换一版，自写的那一份都要跟着对一遍，而它与上游采集库产出的是同一份信号。本模块的定位是上游库的桥，信号的语义本体由上游库定义（[ADR-observability-scope](adr-observability-scope.md)）；自写等于在请求路径上另造一份等价实现。
+**否决**：属性名、单位、桶边界、跨度名的形式与方法的折叠都出自上游的语义约定（[REF-opentelemetry-semconv](../references.md)），约定每换一版，自写的那一份都要跟着对一遍，而它与上游采集库产出的是同一份信号。本模块的定位是上游库的桥，信号的语义本体由上游库定义（[ADR-observability-scope](adr-observability-scope.md)）；自写等于在请求路径上另造一份等价实现。
 
 ### 原样使用上游采集库
 
@@ -47,7 +47,7 @@
 
 ### 上游采集库加 View、写出者包装与跨度名覆盖，保持方法与状态码的闭集属性面与 1xx 的折叠口径
 
-采纳它意味着用 OpenTelemetry 的 View 把计量的属性收回方法与状态码、丢掉请求体大小与响应体大小的直方图，用一个包装 `c.Writer` 的层把 1xx 折叠为最终状态并让无响应体的请求记 `0`，用跨度名格式化函数把非标准方法折成 `_OTHER`。
+采纳它意味着用 OpenTelemetry（[REF-opentelemetry-go](../references.md)）的 View 把计量的属性收回方法与状态码、丢掉请求体大小与响应体大小的直方图，用一个包装 `c.Writer` 的层把 1xx 折叠为最终状态并让无响应体的请求记 `0`，用跨度名格式化函数把非标准方法折成 `_OTHER`。
 
 **否决**：每一项都是改上游采集库的行为：View 作用在整个 meter provider 上，要对着上游的仪器名与作用域名写，上游改名即失效；写出者包装要转发写出者携带的 `Flusher`、`Hijacker` 与 `Unwrap`，漏掉一个会让每个被采集的端静默退化；跨度名格式化与状态折叠把上游约定的形式拉回自写的一份。采纳上游采集库的目的是不再持有这一面，这些做法把它又收了回来，并且每一项都要随上游的版本维护。
 
@@ -78,7 +78,7 @@ panic 的处理不归本模块。入口模块的恢复层内建在 gin 引擎之
 - **守护层按 `After` 放置，不按相邻放置。** 别的层可以被放在外层与守护层之间，这样的层是观测层的，在恢复层之外：它抛出的 panic 不被恢复层接住，直接穿过上游采集库与引擎抵达 `net/http`，连接被关闭，跨度以状态未设结束（上游 SDK 在结束跨度时给它记一个不含堆栈的 `exception` 事件），请求不进任何直方图。
 - **链没有正常返回时，跨度以未标记结束、请求不进任何直方图。** handler 调用 `runtime.Goexit`，或用 `http.ErrAbortHandler` 请恢复层放行连接时，展开越过两层而不回到上游采集库的计量记录：跨度结束时没有本模块设的状态，请求不进任何直方图。客户端主动断开的那一档如此是应当的；`Goexit` 的那一档是一条真缺陷，跨度不显示它，恢复层自己写一条日志记录承接。守护层不 `recover`，因为能看见这两种展开的 `recover` 正是会吞掉 `ErrAbortHandler` 的那个，连接将不再被关闭。
 - **`GODEBUG=panicnil=1` 下的 `panic(nil)` 由恢复层按「链没有返回」处理。** `recover` 读到的是 `nil` 而不是 panic 值，恢复层照 handler 停下的缺陷处理：把一个定型的错误登记进请求的错误列表、应答 `500`、中止其后的链，跨度随之标错。
-- **依赖随上游采集库与 OTLP 导出器的版本而定。** `pkg` 模块依赖上游采集库；OpenTelemetry 的各模块与导出器与它所要求的版本对齐，上游采集库自己的 `go.mod` 要求更高最低版本的间接依赖（gin 的序列化与校验一侧的库等）取该版本；OTLP 导出器的该版本要求更高的 `google.golang.org/grpc` 与 `google.golang.org/genproto/googleapis/api`、`google.golang.org/genproto/googleapis/rpc`，这一部分不出自上游采集库。依赖 `pkg` 的宿主的 `go.mod` 与 `go.sum` 带着同样的版本。
+- **依赖随上游采集库与 OTLP（[REF-otlp](../references.md)）导出器的版本而定。** `pkg` 模块依赖上游采集库；OpenTelemetry 的各模块与导出器与它所要求的版本对齐，上游采集库自己的 `go.mod` 要求更高最低版本的间接依赖（gin 的序列化与校验一侧的库等）取该版本；OTLP 导出器的该版本要求更高的 `google.golang.org/grpc`（[REF-grpc](../references.md)）与 `google.golang.org/genproto/googleapis/api`（[REF-genproto](../references.md)）、`google.golang.org/genproto/googleapis/rpc`，这一部分不出自上游采集库。依赖 `pkg` 的宿主的 `go.mod` 与 `go.sum` 带着同样的版本。
 - **panic 值的文本进恢复层的日志记录，不进跨度。** 恢复层登记到请求错误列表里的是一个定型错误、不带 panic 值，跨度的状态描述因此不携带它，`error.type` 只是那个类型名；panic 值与堆栈留在恢复层的日志记录里。
 
 ## 失效条件

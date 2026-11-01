@@ -16,7 +16,7 @@
 
 ### 非职责
 
-- **不解释任何凭据。** 网关只读 `Authorization` 头与 cookie 的名字和值的原文，连 `Basic` 也由认领它的后端自己解。网关对 scheme 的分支只有一处：跨源检查要判载体会不会由浏览器自己附带，cookie 会，`Authorization` 头里只有 `Bearer` 不会，规则见请求期判定里跨源检查的一步；判据是载体的附带方式，不读凭据里的内容（[ADR-authn-credential-dispatch](../../../adr/adr-authn-credential-dispatch.md)）。凭据来源只有 `Authorization` 头与被某个后端认领的 cookie；请求体、查询串与其他头不是凭据来源。
+- **不解释任何凭据。** 网关只读 `Authorization` 头与 cookie 的名字和值的原文，连 `Basic` 也由认领它的后端自己解。网关对 scheme 的分支只有一处：跨源检查要判载体会不会由浏览器自己附带，cookie 会，`Authorization` 头里只有 `Bearer`（[REF-rfc6750](../../../references.md)）不会，规则见请求期判定里跨源检查的一步；判据是载体的附带方式，不读凭据里的内容（[ADR-authn-credential-dispatch](../../../adr/adr-authn-credential-dispatch.md)）。凭据来源只有 `Authorization` 头与被某个后端认领的 cookie；请求体、查询串与其他头不是凭据来源。
 - **不持有会话、令牌与账户的存储，不依赖 `pkg/db`。** 读库的校验在会话与令牌后端里（见 [design-authn-session](design-authn-session.md)、[design-authn-token](design-authn-token.md)）。
 - **不做授权判定，网关不写 403。** 跨源检查不通过的拒绝也是 401。「这个身份能不能做这件事」归授权与 `Decider`（见 [design-authn-admin](design-authn-admin.md)）。
 - **不定义响应体的形状。** 本模块决定拒绝的状态码与必要的响应头，响应体由入口模块的 `Fail` 写出（见 [design-http](../http/design-http.md)）。
@@ -78,9 +78,9 @@ type CookieClearer interface {
 ```
 
 - **`Name()`** 报出后端的名字，形状 `[a-z0-9][a-z0-9.-]*`，在装配内唯一；取值是代码里的常量（口令表是 `static`，会话与令牌后端各自是 `session`、`token`），不是输入项。网关把它盖到身份的 `Backend()` 上。`ResolveAll` 返回的实例不带模块名，所以名字由功能接口自己提供。`Name()` 与该子包 `ModuleName` 是否一致只靠约定，机制不校验：网关拿不到实例的模块名。
-- **`Accepts()`** 在 `Init` 里读取一次。`Schemes` 与 `Cookies` 是整条认领的载体：带这些 scheme 的头、或带这些名字的 cookie，一律交给本后端。网关把 `Accepts` 里的 scheme 折叠为小写并去掉空白后入表，与交给后端的 `Credential.Scheme` 同一形式；后端按字面比较大小写形式的 scheme 永不命中，判据是 HTTP 的 scheme 大小写不敏感（RFC 9110）。`Accounts` 是账户命名空间声明，一个后端只声明一个前缀；需要交出多片命名空间的宿主后端拆成多个后端。
+- **`Accepts()`** 在 `Init` 里读取一次。`Schemes` 与 `Cookies` 是整条认领的载体：带这些 scheme 的头、或带这些名字的 cookie，一律交给本后端。网关把 `Accepts` 里的 scheme 折叠为小写并去掉空白后入表，与交给后端的 `Credential.Scheme` 同一形式；后端按字面比较大小写形式的 scheme 永不命中，判据是 HTTP 的 scheme 大小写不敏感（RFC 9110，[REF-rfc9110](../../../references.md)）。`Accounts` 是账户命名空间声明，一个后端只声明一个前缀；需要交出多片命名空间的宿主后端拆成多个后端。
 - **`Verify`** 校验一条落在 `Accepts` 里的凭据，返回判决；`ctx` 携带网关给这次调用的预算作为 deadline，后端必须响应它。判决与 `Principal` 的形状见 [design-authn](design-authn.md)；`Verify` 没有调用方声称的主体入参，因为 cookie 与令牌里没有它，`Basic` 的用户名是登录名而不是账户标识。
-- **`Challenger`** 与 **`CookieClearer`** 由后端按需实现，网关用类型断言发现。令牌后端用 `Challenger` 在被拒时加 `error="invalid_token"`（RFC 6750、RFC 9068）；会话后端用 `CookieClearer` 清除失效的 cookie。`Challenge` 返回的每个字符串是一条完整的挑战，即方案名加它的参数（`Bearer realm="…", error="invalid_token"`），不是只有参数；含换行的字符串被丢弃，因为换行会开出第二个响应头。入参 `realm` 已转义，可以直接写进引号串。网关把各后端的挑战去重、按字典序、以逗号连接成该端 401 唯一的一条 `WWW-Authenticate` 头。
+- **`Challenger`** 与 **`CookieClearer`** 由后端按需实现，网关用类型断言发现。令牌后端用 `Challenger` 在被拒时加 `error="invalid_token"`（RFC 6750、RFC 9068，[REF-rfc9068](../../../references.md)）；会话后端用 `CookieClearer` 清除失效的 cookie。`Challenge` 返回的每个字符串是一条完整的挑战，即方案名加它的参数（`Bearer realm="…", error="invalid_token"`），不是只有参数；含换行的字符串被丢弃，因为换行会开出第二个响应头。入参 `realm` 已转义，可以直接写进引号串。网关把各后端的挑战去重、按字典序、以逗号连接成该端 401 唯一的一条 `WWW-Authenticate` 头。
 - **交付声明**写作 `Provides: []core.Provision{{Token: (*Verifier)(nil)}}`，`Exclusive` 一律留空，这条不可局部违反：任何一个后端写成排他，结果按排他者自己的表态分：表态 `StateEnabled` 时，只要还有第二个启用的提供者，整组启动失败于 `ErrExclusiveViolated`；表态 `StateAuto` 时，同侪有表态 `StateEnabled` 的，它自己被传播静默踢掉而不产生任何失败，否则同样落到 `ErrExclusiveViolated`。本功能目录里的后端一律表态 `StateEnabled`，静默踢掉的分支只对宿主自写、表态 `StateAuto` 的后端可达（[ADR-module-enablement](../../../adr/adr-module-enablement.md)）。
 
 ### 准入条件
@@ -125,7 +125,7 @@ type Gate interface {
 
 各登记方法共用同一套规则（[ADR-authn-exemption](../../../adr/adr-authn-exemption.md)）：
 
-- `method` 与 `path` 是登记方传给 `Endpoint.Route` 的那一对，路径取 gin 规整后的写法，网关不解释路径。登记方把传给 `Route` 的那一对值原样传给登记方法，即与 `c.FullPath()` 逐字相同。
+- `method` 与 `path` 是登记方传给 `Endpoint.Route` 的那一对，路径取 gin（[REF-gin](../../../references.md)）规整后的写法，网关不解释路径。登记方把传给 `Route` 的那一对值原样传给登记方法，即与 `c.FullPath()` 逐字相同。
 - **登记窗口借用 `Migrate` 到 `Start`**：登记只在这段时间内接受；窗口外调用登记方法一律 panic，这是调用点所处阶段的编程错误，不是运行期失败。登记方在自己的 `Init` 里 `core.Resolve[authn.Gate](reg)` 取登记面，不在 `Requires` 里声明它。取不到登记面时怎么处置由登记方自己决定；「取不到就跳过」这个默认写法落在放行一侧，列在 [design-authn](design-authn.md) 的非保证里。
 - **`Start` 关窗后逐条校验，全部失败都终止启动**：端名必须是入口模块声明的端（`ErrUnknownEndpoint`）；登记所在的端必须被本网关守（`ErrExemptionUnguarded`，各类登记共用）；同一（端，方法，路径）不得既是 `Exempt` 又是 `Optional`，也不得既是 `Exempt` 又是 `Impersonable`（`ErrAccessConflict`）。同一路由同时登记 `Optional` 与 `Impersonable` 不冲突：`Optional` 只管没有凭据的请求，`Impersonable` 只管凭据校验得出冒充身份的请求，两者作用于互不相交的情形。校验通过后登记表冻结为只读快照。
 - 同一类别内对同一（方法，路径）的重复登记仍是一条登记，冻结时合并，启动诊断里只出现一次。
@@ -198,7 +198,7 @@ func ParseHash(encoded string) error         // 只校验形状与界限，PHC �
 var ErrMalformedHash error
 ```
 
-`Verify` 自己解 `Basic`（base64 的 `用户名:口令`，按第一个 `:` 切）：用户名按出示的原样在表里查找，区分大小写，不在表里即快速 `Denied`，不派生；在表里则校验口令，通过时交出 `Principal{Account: "static." + 名, Methods: [MethodStatic], Assurance: AssuranceSingle, AuthTime: 此刻}`，无会话。口令表主体不是库账户，没有成员关系。条目的 PHC 写法、遗留写法与解析界限见 [design-authn-account](design-authn-account.md)，选择依据见 [ADR-authn-password-hash](../../../adr/adr-authn-password-hash.md)。
+`Verify` 自己解 `Basic`（base64 的 `用户名:口令`，按第一个 `:` 切）：用户名按出示的原样在表里查找，区分大小写，不在表里即快速 `Denied`，不派生；在表里则校验口令，通过时交出 `Principal{Account: "static." + 名, Methods: [MethodStatic], Assurance: AssuranceSingle, AuthTime: 此刻}`，无会话。口令表主体不是库账户，没有成员关系。条目的 PHC（[REF-phc-string-format](../../../references.md)）写法、遗留写法与解析界限见 [design-authn-account](design-authn-account.md)，选择依据见 [ADR-authn-password-hash](../../../adr/adr-authn-password-hash.md)。
 
 口令表后端的账户命名空间是 `static.`，用户名因此不得以 `static.` 起头。`static.` 前缀属于账户标识命名空间；用户名的保留用户名清单针对系统路径与名字，规则与清单见 [design-authn-account](design-authn-account.md) 的「标识的规范化」。内置清单里的 `static` 恰好覆盖同形体，两种校验不合并，网关的前缀校验表不变。
 
@@ -217,7 +217,7 @@ var ErrMalformedHash error
 | `authn.gate.in-flight` | 同时在飞的后端调用数；满则 503，不排队 |
 | `authn.gate.mount.endpoints.default`、`.tenants`、`.system` | 各作用域的路由挂在哪个端。`default` 为空且入口模块恰好声明了一个端时取那一个，否则 `ErrRoutesUnconfigured`（由 `authn.mount` 在 `Init` 里判，网关在 `Start` 对同一规则再判一次）；`system` 为空取 `default`；`tenants` 无缺省，为空时该作用域不可挂载，`authn.mount` 拒绝登记租户作用域的路由。每一项都必须是网关所守的端（`ErrRoutesUnguarded`）。`default` 与 `system` 不得是准入层所守的端（`ScopeGuard.Covers` 为真即 `ErrInvalidConfig`），也不得出现在 `tenant.resolve.endpoints` 里：全局账户的请求不带租户名，被解析层所守的端对它们答 404；网关在 `Start` 核对，读得出该清单且端在其中时 `ErrInvalidConfig`，读不出解码形状时只写一行 `Warn`。`tenants` 的方向相反：必须同时被 `ScopeGuard` 所守且列在 `tenant.resolve.endpoints` 里，该清单读不出即 `ErrInvalidConfig`，因为租户管理路由在该租户的策略域判定，落不到这两层上就会在没有租户、没有成员检查的链上被服务 |
 | `authn.gate.mount.bases.default`、`.tenants`、`.system` | 各作用域的路由基路径 `B`；须是 gin 规整后的写法，以 `/` 起头、不以 `/` 结尾、无通配 |
-| `authn.gate.mount.public-url` | 对外基址，只含来源、不含路径；入口模块没有对外基址的概念，不能从 `Host` 与 `X-Forwarded-*` 可靠推出。OIDC 的 `redirect_uri`、SAML 的 ACS 与实体标识、通行密钥的依赖方来源、令牌的 `iss`、`__Host-` cookie 都要它；需要它的模块在自己的 `Prepare` 里读，空即 `ErrInvalidConfig`。要求 `https`，回环主机除外，否则 `ErrInsecureConfig` |
+| `authn.gate.mount.public-url` | 对外基址，只含来源、不含路径；入口模块没有对外基址的概念，不能从 `Host` 与 `X-Forwarded-*` 可靠推出。OIDC（[REF-openid-connect-core](../../../references.md)）的 `redirect_uri`、SAML（[REF-saml2](../../../references.md)）的 ACS 与实体标识、通行密钥的依赖方来源（[REF-webauthn](../../../references.md)）、令牌的 `iss`、`__Host-`（[REF-rfc6265bis](../../../references.md)） cookie 都要它；需要它的模块在自己的 `Prepare` 里读，空即 `ErrInvalidConfig`。要求 `https`，回环主机除外，否则 `ErrInsecureConfig` |
 | `authn.gate.mount.allow-insecure` | 仅开发：放行 http 基址，cookie 去掉 `__Host-` 前缀与 `Secure`；为真时启动诊断写一行 Warn |
 | `authn.gate.trusted-origins` | 跨源检查与 `return_to` 额外信任的来源，每项 `scheme://host[:port]`；每项先规范成浏览器发送的形式再匹配，规则见可信来源的规范形式；`public-url` 的来源恒可信 |
 | `authn.static.subjects` | 口令表：主体名到口令条目的映射；必填、敏感；主体名匹配 `[A-Za-z0-9][A-Za-z0-9_-]{0,56}` |
@@ -252,7 +252,7 @@ var ErrMalformedHash error
 
 ## 依赖
 
-网关子包 import 根包、`pkg/core`、`pkg/config`、`pkg/http`、`pkg/log`，以及 `pkg/observability` 的接口包与它封装的指标 API；登记的中间件是 `gin.HandlerFunc`，gin 已在 `pkg/http` 的依赖闭包里；跨源检查用标准库 `net/http.CrossOriginProtection`。网关不 import `pkg/db`、`pkg/kv`、`pkg/event`、`pkg/settings`、`pkg/tenant`，也不 import `authn.static`，口令表后端同样不 import 网关；闭包守护测试按生产代码的闭包断言，网关的外部测试包为了对真实口令表跑集成用例而 import 后端，测试的 import 不是闭包的边。`authn.mount` import 根包、`pkg/core`、`pkg/config`、`pkg/http` 与 `internal/mount`。`authn.static` import 根包、`pkg/core`、`pkg/config`、`internal/password` 与 `pkg/settings`：设置存储的接口与它的实现声明在同一个包里，口令表后端的闭包因此含 `pkg/settings` 及其传递依赖（`pkg/db`、`pkg/event` 与 gorm），不含数据库驱动、消息与缓存客户端、网关与 `authntest`，闭包守护测试断言的正是这一份接受与不接受。校验后端子包 import 根包，以及它那个凭据来源所需的东西。
+网关子包 import 根包、`pkg/core`、`pkg/config`、`pkg/http`、`pkg/log`，以及 `pkg/observability` 的接口包与它封装的指标 API；登记的中间件是 `gin.HandlerFunc`，gin 已在 `pkg/http` 的依赖闭包里；跨源检查用标准库 `net/http.CrossOriginProtection`。网关不 import `pkg/db`、`pkg/kv`、`pkg/event`、`pkg/settings`、`pkg/tenant`，也不 import `authn.static`，口令表后端同样不 import 网关；闭包守护测试按生产代码的闭包断言，网关的外部测试包为了对真实口令表跑集成用例而 import 后端，测试的 import 不是闭包的边。`authn.mount` import 根包、`pkg/core`、`pkg/config`、`pkg/http` 与 `internal/mount`。`authn.static` import 根包、`pkg/core`、`pkg/config`、`internal/password` 与 `pkg/settings`：设置存储的接口与它的实现声明在同一个包里，口令表后端的闭包因此含 `pkg/settings` 及其传递依赖（`pkg/db`、`pkg/event` 与 gorm，[REF-gorm](../../../references.md)），不含数据库驱动、消息与缓存客户端、网关与 `authntest`，闭包守护测试断言的正是这一份接受与不接受。校验后端子包 import 根包，以及它那个凭据来源所需的东西。
 
 **网关的 `Requires` 为空，只对 `log.Logger` 写 `Optional`**（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。路由登记面、校验后端、`ScopeGuard` 与指标功能都在 `Init` 里取：`New` 里用不到它们，没有要排的构造次序；判据与否决的写法见该记录。取不到路由登记面是 `ErrNoRouter`，取到零个校验后端是 `ErrNoVerifier`，都是启动失败，不降级为放行。
 
@@ -427,7 +427,7 @@ sequenceDiagram
 | 阶段 | 网关 | `authn.mount` |
 |---|---|---|
 | `Prepare` | 取配置读取面并 `Decode` 自己那份配置；校验 `public-url`（非空时）与 `bases` 的形状；表态 `StateEnabled`。任何输入项都有缺省，本阶段不因缺项失败 | 不声明输入项；读 `authn.gate.mount.*` 与 `trusted-origins`；表态 `StateEnabled` |
-| `New` | 建在飞闸门、`CrossOriginProtection`（加入 `trusted-origins` 与 `public-url` 的来源）与 `Gate` 实例；向日志功能登记键名脱敏规则与不依赖 scheme 的值形状规则（JWT、令牌前缀、`otpauth://`、查询串里的机密对、会话 cookie 的 `sid` 对） | 建 `Mounter`，含它自己的 `CrossOriginProtection` |
+| `New` | 建在飞闸门、`CrossOriginProtection`（加入 `trusted-origins` 与 `public-url` 的来源）与 `Gate` 实例；向日志功能登记键名脱敏规则与不依赖 scheme 的值形状规则（JWT、令牌前缀、`otpauth://`、查询串里的机密对、会话 cookie 的 `sid` 对，[REF-rfc7519](../../../references.md)、[REF-otpauth-key-uri-format](../../../references.md)） | 建 `Mounter`，含它自己的 `CrossOriginProtection` |
 | `Migrate` | 打开 `Exempt`、`Optional`、`Impersonable` 的登记窗口 | 无动作 |
 | `Init` | 取 `Router`（缺则 `ErrNoRouter`）；`Router.Endpoints()` 得全集并算出受守的端；`ResolveAll[Verifier]` 建分派表并校验准入；可选取 `ScopeGuard`；逐端建挑战；逐端 `Use` 中间件；取日志（`Named`）与指标；登记依赖各后端认领的 scheme 的值形状脱敏规则；写启动诊断，其中每个不带 `__Host-` 前缀的被认领 cookie 名各占一行 `Warn` | 取 `Router`，经 `mount.Endpoint` 得出各作用域的挂载端：`default` 为空而入口声明的端不是恰好一个（零个或多个）即 `ErrRoutesUnconfigured`，`system` 为空取 `default`，`tenants` 为空则该作用域不可挂载；挂路由的模块在各自的 `Init` 里经 `Mounter` 登记 |
 | `Start` | 关闭登记窗口；校验并冻结登记表；逐作用域校验生效的挂载端：存在、受守；`default` 与 `system` 不被 `ScopeGuard` 守且不在 `tenant.resolve.endpoints` 里（该清单读不出只写一行 `Warn`），`tenants` 反向要求被两者覆盖（读不出即失败）。配置写明的端一律核对；`default` 为空时，仅当装配里有交付 `mount.Mounter` 的模块才核对入口模块的唯一端，没有挂路由的模块就没有挂载端可核对，一个只有单端、该端本就开了租户解析而又不挂 authn 路由的命令因此不被误拒 | 无动作 |
@@ -567,8 +567,8 @@ sequenceDiagram
 - **`Basic` 仅当有后端的 `Accepts().Schemes` 含 `basic` 时出现**，即 `authn.static` 在场；装配里没有后端认领 `basic` 时，浏览器不会为一条到不了任何后端的凭据弹出口令框。
 - realm 取该端点的端名，写进头之前转义引号与反斜线、丢弃换行，否则配置里的一个引号能在挑战里多带出几个参数，一个换行能多带出一个响应头。
 - 请求带着某后端认领的凭据而被拒时，该后端的挑战用 `rejected=true` 重新生成；令牌后端写 `Bearer realm="…", error="invalid_token"`。这一条对网关自判的拒绝同样成立：出口检查不符与冒充范围不符，请求带着的仍是该后端认领的凭据，用普通挑战会让调用方去出示它已经出示过的凭据。凭据没有交给后端评判的拒绝用普通挑战：没有凭据、头不合规、没有后端认领该 scheme、被认领的 cookie 歧义、跨源检查不过。
-- 没有任何后端认领头 scheme（只有 cookie 的装配）时，RFC 9110 要求 401 至少带一个挑战，写 `Cookie realm="<端名>"`。「Cookie」不在 IANA 的 HTTP 认证方案登记表里，是一个约定而不是标准，没有标准客户端认识它，只为满足「401 必带挑战」而存在；浏览器对 `Basic`、`Digest` 之外的方案名不弹口令框。
-- 加强认证的挑战（`insufficient_user_authentication`）由 `guard.Require` 与 `tenant.admission` 另写，方案名取 `Identity.Challenge()`。authn 自己处理器答的 401 只带 `Bearer` 与 `Cookie` 挑战，不带 `Basic`。
+- 没有任何后端认领头 scheme（只有 cookie 的装配）时，RFC 9110 要求 401 至少带一个挑战，写 `Cookie realm="<端名>"`。「Cookie」不在 IANA 的 HTTP 认证方案登记表（[REF-iana-http-authschemes](../../../references.md)）里，是一个约定而不是标准，没有标准客户端认识它，只为满足「401 必带挑战」而存在；浏览器对 `Basic`、`Digest` 之外的方案名不弹口令框。
+- 加强认证的挑战（`insufficient_user_authentication`，[REF-rfc9470](../../../references.md)）由 `guard.Require` 与 `tenant.admission` 另写，方案名取 `Identity.Challenge()`。authn 自己处理器答的 401 只带 `Bearer` 与 `Cookie` 挑战，不带 `Basic`。
 
 ### 脱敏规则
 
@@ -583,7 +583,7 @@ sequenceDiagram
 - **scheme 名后面紧跟一张固定公开词表里的词时不遮蔽**：scheme 名本身也是英文词，谈论凭据的文字在它后面写的是普通词，遮掉它会让拒绝成因读不懂。放行按词表而不按形状，判据是放行不泄露任何东西：词表公开，恰好等于表中某个词的凭据，读过词表的人都叫得出来。词表之外的词跟在 scheme 名后面时照样被遮蔽，这是登记过宽的一面，由登记方承担。
 - **值形状规则只遮蔽 scheme 名之后的一个词**：以 auth-param 列表写出的凭据、取值跨了几个词的凭据、不带 scheme 名写出的凭据，都有部分或全部留在明文里。
 - **登记只对此后的判定生效，经 `With` 绑定的属性在绑定时就判定完毕**：网关在 `Init` 登记的规则弱于日志模块给模块的时机保证（在自己的 `New` 里、取得 logger 之前登记）。在它之前已绑好的属性不受它约束，哪怕记录写在登记之后；各模块因此不在自己的 `New` 里往 logger 绑任何敏感属性，这条约束写进 `pkg/authn/AGENTS.md`。
-- **永不记录凭据与一次性秘密的原文**；下列是例举，不是封闭集：请求体、表单字段、验证码、口令、令牌、cookie 值、断言原文、授权码、`state`、PKCE 校验串、流程令牌、微信带 `secret` 的 URL。记的是类别、标识与结果。
+- **永不记录凭据与一次性秘密的原文**；下列是例举，不是封闭集：请求体、表单字段、验证码、口令、令牌、cookie 值、断言原文、授权码、`state`、PKCE（[REF-rfc7636](../../../references.md)）校验串、流程令牌、微信（[REF-wechat-website-login](../../../references.md)、[REF-wechat-oa-web-auth](../../../references.md)）带 `secret` 的 URL。记的是类别、标识与结果。
 - **`Sensitive` 的配置项不向日志登记任何规则**（它只管错误文本、帮助默认值与必须带说明），所以「`Sensitive` 值不进日志」是 authn 自己的纪律：持有秘密配置值的模块把值本身登记成字面量匹配器，并有测试对每个模块的错误路径断言输出里不含配置里的哨兵值。审计的敏感键名是闭集（`password`、`secret`、`token`、`credential`、`authorization`，逐字比对、嵌套值里的键不比对），authn 写审计明细时只用事件与审计文档里的键名，不依赖闭集去遮蔽秘密（见 [design-authn-events](design-authn-events.md)）。
 
 ### 收口计数
@@ -604,7 +604,7 @@ sequenceDiagram
   - **键折叠大小写，所以只在大小写上不同的主体共用一份退避。** 口令表的主体名区分大小写、允许混合大小写，表里同时有 `Admin` 与 `admin` 这类名字时，它们共用一个退避键，一个被锁另一个也被锁。这个耦合保持，装配期不拒绝这样的表，因为已有的表可以合法地含有这类名字；启动诊断对每一组这样的主体写一行 `Warn`，点名这组主体（`entries`），让耦合在启动时可见。
   - 锁定中的主体答 `Denied`，成因是带着还要等待的时长的 `ThrottledError`。多副本时的总量不保证，见本机制不作的保证。
   - 一个名字刚好越过自由次数的那一次失败写一行 Info，带 `reason_class=throttled`（取值见 [design-authn-events](design-authn-events.md)）；表内主体的名字随行写出，不在表里的名字不写。
-- **并发上限与内存预算**：口令派生受进程内信号量约束，上限取配置 `concurrency`；另有一份按字节计的内存预算，缺省 512 MiB，口令表为它不设键，由口令表后端自己持有，不与账户后端共用。任何一份已满都不排队等待，当场 `Unavailable`（503，响应带 `Retry-After: 1`）。标准库与 argon2 库的派生都不接收上下文、一旦开始就跑完，所以派生不受调用预算约束：口令表后端只在派生开始之前响应 `ctx`，已结束即答故障；信号量补上并发这一半。调用方在派生期间断开，既不中断它，也不改变它的结局：错口令照常记一次失败，否则断开连接就成了不被计数地试口令的办法。
+- **并发上限与内存预算**：口令派生受进程内信号量约束，上限取配置 `concurrency`；另有一份按字节计的内存预算，缺省 512 MiB，口令表为它不设键，由口令表后端自己持有，不与账户后端共用。任何一份已满都不排队等待，当场 `Unavailable`（503，响应带 `Retry-After: 1`）。标准库与 argon2 库（[REF-golang-x-crypto](../../../references.md)）的派生都不接收上下文、一旦开始就跑完，所以派生不受调用预算约束：口令表后端只在派生开始之前响应 `ctx`，已结束即答故障；信号量补上并发这一半。调用方在派生期间断开，既不中断它，也不改变它的结局：错口令照常记一次失败，否则断开连接就成了不被计数地试口令的办法。
 - **弱条目的诊断**：启动诊断对迭代次数低于当前策略下限的条目逐个点名，不终止启动：表在配置里由运维写，「静默的弱条目」因此变成「有记录的弱条目」。遗留写法的条目可读，启动时逐条 `Warn`。这些行里主体名的字段叫 `entry`，不叫 `subject`（见 [design-authn-events](design-authn-events.md)）。这条 `Warn` 不被压制也不被放宽：宿主的测试用生产成本的条目，口令校验缓存使同一个口令在一个缓存有效期内只派生一次，测试不靠低成本条目避开它。
 - **读不出或越出取值域的设置**按声明的默认值取用并记 `Error`。设置在每个请求里都被读取，所以同一种故障只记一次，故障的内容变了或恢复之后又出现时再记：逐请求记会被攻击流量刷屏，把有用的那一行淹掉。
 

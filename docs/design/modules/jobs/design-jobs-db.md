@@ -120,7 +120,7 @@ type Handler interface {
 | `pkg/tenant` | 租户列（`tenant.Model`）、`Catalog.Enter`、`Catalog` 的进入方法、`FromContext` |
 | `pkg/event` | 可选：终态事件 |
 | `pkg/log` | 可选：诊断 |
-| GORM | 经交付句柄发出的语句 |
+| GORM（[REF-gorm](../../../references.md)） | 经交付句柄发出的语句 |
 
 **方向。** 本模块 import 数据库、租户与 `pkg/jobs` 的根包，不 import 任何上层功能目录，也不 import `pkg/http`——提交与取消是进程内接缝，没有路由。数据库与租户都在本模块之前构造、在本模块之后停止。`event.Bus` 与 `log.Logger` 都是可选取用：取不到时终态事件不发、诊断减少，作业照常执行与结清。
 

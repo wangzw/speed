@@ -133,7 +133,7 @@ type Message struct {
 
 **`RecipientClass` 的闭集是 `user` 与 `external`。** `external` 取值留在闭集里以保证闭集稳定，但本轮没有生产者：没有任何一条派发的收件人是 `external`，给 `external` 的派发在本轮被拒（见非职责）。`Recipient.Class` 是收件人的种类，`Recipient.UserID` 在 `user` 类下是系统账户标识。
 
-**`Dispatch.Locale` 非空**，是一条 BCP 47 标签。它决定渲染用哪种语言，也参与去重键；本能力不校验它是否受支持（受支持集由 i18n 目录派生，只有渲染引擎知道），一个不受支持而形状合法的标签在渲染时回落默认语言。`Dispatch.OccurrenceID` 是同一逻辑事件的重发标识：同一个逻辑事件重发必须携带同一个值，它在去重键里区分「同一件事的两次投递」与「两件事」。
+**`Dispatch.Locale` 非空**，是一条 BCP 47（[REF-bcp47](../../../references.md)）标签。它决定渲染用哪种语言，也参与去重键；本能力不校验它是否受支持（受支持集由 i18n 目录派生，只有渲染引擎知道），一个不受支持而形状合法的标签在渲染时回落默认语言。`Dispatch.OccurrenceID` 是同一逻辑事件的重发标识：同一个逻辑事件重发必须携带同一个值，它在去重键里区分「同一件事的两次投递」与「两件事」。
 
 **`Message` 的 `Title` 与 `Body` 是已渲染的成品文本**，不是模板。`Params` 是这条消息携带的参数原值，供客户端二次使用。`ReadAt` 为空表示未读。
 
@@ -371,7 +371,7 @@ sequenceDiagram
 | `notification_preferences` | `notification.preferences` | `id`、`tenant_id`、`recipient_user_id`、`type_key`、`channels`、`created_at`、`updated_at` | `(tenant_id, recipient_user_id, type_key)` 唯一 |
 | `notification_sends` | `notification.delivery` | `id`、`tenant_id`、`type_key`、`channel`、`recipient_class`、`recipient_user_id`、`status`、`duration_ms`、`error`、`provider_receipt_id`、`idempotency_key`、`created_at`、`updated_at` | `(tenant_id, idempotency_key)` 唯一 |
 
-这些表都是**租户作用域**，各内嵌租户模型（约定列名 `tenant_id`）；语句过滤由租户名册模块交付的 GORM 插件完成，上下文无租户时受约束模型的语句拒绝执行，跨租户必须在调用点字面写出。
+这些表都是**租户作用域**，各内嵌租户模型（约定列名 `tenant_id`）；语句过滤由租户名册模块交付的 GORM（[REF-gorm](../../../references.md)）插件完成，上下文无租户时受约束模型的语句拒绝执行，跨租户必须在调用点字面写出。
 
 **投递账是租户作用域，不设平台行。** 一次投递的收件人要么是一个账户（`recipient_class = user`），要么是后置的外部联系人（`external`，本轮无生产者）；两种收件人都属于一个租户，因此每一行总有一个租户。平台级广播与平台级黑名单需要一个不属于任何租户的收件人，本能力在设计上排除了它们（见非职责）。
 

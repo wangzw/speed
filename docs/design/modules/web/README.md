@@ -8,13 +8,13 @@
 |---|---|
 | [web](design-web.md) | 前端：包的分层与判据、契约边界、装配与内容分离、特性门控的分工、不经特性门控的后端模块、装配入口与对外接口面、错误与失败语义、扩展点 |
 | [layout](design-web-layout.md) | 布局与响应式：外壳的区域划分与导航层次、断点标度、外壳级与组件级响应手段的分工、页型骨架、窄视口降级 |
-| [tokens](design-web-tokens.md) | 设计令牌：默认 token 树、覆写层的深度合并、MUI 对齐口径 |
+| [tokens](design-web-tokens.md) | 设计令牌：默认 token 树、覆写层的深度合并、MUI（[REF-mui](../../../references.md)）对齐口径 |
 | [theme-presets](design-web-theme-presets.md) | 主题预设：随包的成品风格、预设可改的段、与默认/项目/租户层的装配次序 |
 | [i18n](design-web-i18n.md) | 平台 i18n 层：实例创建、语言协商与持久化、命名空间注册与校验、缺键纪律、错误码文本约定 |
 | [ui-kit](design-web-ui-kit.md) | 组件族与主题适配：主题工厂、受控组件、跨表面状态原语 |
 | [layout-kit](design-web-layout-kit.md) | 与认证无关的应用外壳：响应式框架与按注入状态放行的门禁 |
 | [api-client](design-web-api-client.md) | 契约无关的手写传输运行时：请求函数、`ApiError` 归一、令牌存储、刷新、重试、上报、服务端事件流 |
-| [api-sdk](design-web-api-sdk.md) | 生成的契约面：orval 产物、特性名类型、运行时接缝与 mutator、生成配置 |
+| [api-sdk](design-web-api-sdk.md) | 生成的契约面：orval（[REF-orval](../../../references.md)）产物、特性名类型、运行时接缝与 mutator、生成配置 |
 | [route-kit](design-web-route-kit.md) | 路由与导航独立层：声明式注册面、按特性在场收窄注册面、路径匹配、链接构造、导航选中态与未命中回退 |
 | [auth-core](design-web-auth-core.md) | 浏览器会话状态机：登录流程、登出、快照、特性态、React hook、租户上下文与租户作用域查询键 |
 | [auth-ui](design-web-auth-ui.md) | 登录组件族：口令、短信、社交渠道与会话面 |

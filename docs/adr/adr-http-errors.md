@@ -4,11 +4,11 @@
 
 请求路径上的各层各自收口自己的拒绝：认证网关写 401，限流层写 429，租户解析层写 404 与 500，兜底层写 500。它们各自调用 `WriteHeader`，没有共用的响应形状，同一个 API 的客户端要为每一类拒绝分别处理。认证、租户、审计各自处理 panic 而口径互不一致，已在 [ADR-http-recovery](adr-http-recovery.md) 的背景里记过一次；错误响应是同一类分歧的另一处。
 
-登记面锚定 gin（[ADR-http-surface](adr-http-surface.md)）。gin 把错误交给 handler 自己写出，不定义统一的错误响应形状，也没有集中的错误处理接缝。
+登记面锚定 gin（[REF-gin](../references.md)）（[ADR-http-surface](adr-http-surface.md)）。gin 把错误交给 handler 自己写出，不定义统一的错误响应形状，也没有集中的错误处理接缝。
 
 兜底层是引擎上的一个 gin handler，手里有 `*gin.Context`。写出仍经同一处接缝：`ErrorResponder` 的签名只取 `http.ResponseWriter` 与 `*http.Request`，形状因而不依赖 gin 的类型。
 
-RFC 9457 是 HTTP API 错误响应的现成标准，规定了字段与 `application/problem+json` 媒体类型。
+RFC 9457（[REF-rfc9457](../references.md)）是 HTTP API 错误响应的现成标准，规定了字段与 `application/problem+json` 媒体类型。
 
 ## 考虑过的选项
 

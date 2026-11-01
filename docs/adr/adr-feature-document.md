@@ -30,7 +30,7 @@
 
 取路由登记与契约的交，发布本进程在服的操作名；发布者放在一个独立的顶层功能目录。
 
-**否决**：要给 `http.Router` 加列举路由的方法、给 `authn.Gate` 加读面，都是 Go 接口的破坏性变更。OpenAPI 的 `{name}` 与 `gin` 的 `:name` 要互译，`authn.gate.mount.base-path` 一改值，整片都对不上。一个页面要列多个操作名。该做法附带一份匿名可读的操作清单，与「未登录者读不到装配信息」相抵。
+**否决**：要给 `http.Router` 加列举路由的方法、给 `authn.Gate` 加读面，都是 Go 接口的破坏性变更。OpenAPI（[REF-openapi](../references.md)）的 `{name}` 与 `gin`（[REF-gin](../references.md)）的 `:name` 要互译，`authn.gate.mount.base-path` 一改值，整片都对不上。一个页面要列多个操作名。该做法附带一份匿名可读的操作清单，与「未登录者读不到装配信息」相抵。
 
 ### 从路由表或分派前缀反推
 

@@ -2,7 +2,7 @@
 
 ## 背景
 
-浏览器对一个跨源请求的放行取决于响应上的 CORS 头：缺少这些头，脚本读不到响应体与状态码，只看到一个网络错误；真实请求之前还有一次预检 `OPTIONS`，其应答决定浏览器是否继续。链上因而需要一层据策略写入这些头，并直接应答预检。
+浏览器对一个跨源请求的放行取决于响应上的 CORS（[REF-whatwg-fetch](../references.md)）头：缺少这些头，脚本读不到响应体与状态码，只看到一个网络错误；真实请求之前还有一次预检 `OPTIONS`，其应答决定浏览器是否继续。链上因而需要一层据策略写入这些头，并直接应答预检。
 
 链按阶段定位，跨类别的先后由阶段边界决定（[ADR-http-stages](adr-http-stages.md)）。本层要满足两条约束，二者都由它的位置决定：预检要在任何会拒绝请求的层之前得到应答，因而排在鉴别阶段之外；任何内侧层的拒绝要带着 CORS 头抵达浏览器，因而排在会拒绝的同类层之外。缺失这两条时，预检会被鉴权层拒成 401、浏览器不再发出真实请求，或者 429、401 上没有任何 CORS 头、浏览器读不到状态码。
 
@@ -14,7 +14,7 @@ CORS 的来源匹配、通配符、browser-extension 与 WebSocket 等 schema �
 
 自研可以完全控制响应头，去掉对上游库的依赖。
 
-**否决**：本仓对「有成熟现成库的常见需求」的既定做法是桥接该库、不重复发明（`pkg/db` 之于 GORM、`pkg/config` 之于 viper 与 mapstructure、`pkg/http` 之于 gin 皆是）。CORS 的来源规则与预检语义有规范定义的边界情形，自研要逐一重造，且上游库已就这些情形积累过修正。
+**否决**：本仓对「有成熟现成库的常见需求」的既定做法是桥接该库、不重复发明（`pkg/db` 之于 GORM，[REF-gorm](../references.md)、`pkg/config` 之于 viper，[REF-viper](../references.md) 与 mapstructure，[REF-mapstructure](../references.md)、`pkg/http` 之于 gin，[REF-gin](../references.md) 皆是）。CORS 的来源规则与预检语义有规范定义的边界情形，自研要逐一重造，且上游库已就这些情形积累过修正。
 
 ### 桥接上游库，把层放进入口模块的根包
 
@@ -34,13 +34,13 @@ CORS 的来源匹配、通配符、browser-extension 与 WebSocket 等 schema �
 
 ## 决策
 
-采用 gin-contrib/cors 作为本层的实现：在 `pkg/http` 下新建子包 `pkg/http/cors`，把配置译成该库的配置并委托它判定，登记为 `StageGuard` 加 `OrderOutermost` 的一层。
+采用 gin-contrib/cors（[REF-gin-contrib-cors](../references.md)）作为本层的实现：在 `pkg/http` 下新建子包 `pkg/http/cors`，把配置译成该库的配置并委托它判定，登记为 `StageGuard` 加 `OrderOutermost` 的一层。
 
 ## 后果
 
 **付出的代价：**
 
-- **本层的拒绝与预检应答由库写出，不经入口模块的 `Fail`。** 来源不被允许时库以 `c.AbortWithStatus` 写出一个空体 403，预检上它写出配置的状态码。这偏离「错误响应集中一处」的规则——那一处写出 `problem+json` 或交付的 `ErrorResponder` 形状。这个 403 只抵达带 `Origin` 的请求，而这类请求来自浏览器，浏览器在缺少 CORS 头时本就不把响应交给脚本；不带 `Origin` 的客户端不受约束，走不到这个分支。代价由设计文档记载，不在本记录内展开。
+- **本层的拒绝与预检应答由库写出，不经入口模块的 `Fail`。** 来源不被允许时库以 `c.AbortWithStatus` 写出一个空体 403，预检上它写出配置的状态码。这偏离「错误响应集中一处」的规则——那一处写出 `problem+json`（[REF-rfc9457](../references.md)）或交付的 `ErrorResponder` 形状。这个 403 只抵达带 `Origin` 的请求，而这类请求来自浏览器，浏览器在缺少 CORS 头时本就不把响应交给脚本；不带 `Origin` 的客户端不受约束，走不到这个分支。代价由设计文档记载，不在本记录内展开。
 - **引入一个第三方依赖，且它随本子包而非根包交付。** 不 import 本子包的宿主不编译它。入口模块对子目录下的包同样要求依赖预算，这个包是预算里那个被明确放行的例外。
 - **本层不交付功能标识，链上没有据它定序的锚点。** 别的层不能写 `After(Audit)` 那样的一条边来相对本层定位，只能靠阶段与阶段内的位置。
 - **`OrderOutermost` 是偏好而非保证。** 另一个防护层的层若同样取 `OrderOutermost`，二者同值即无序，先后由登记顺序决定，这一并列不产生任何信号；此时预检与拒绝是否仍在本层之内取决于登记顺序。

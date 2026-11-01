@@ -2,7 +2,7 @@
 
 ## 背景
 
-网关以（请求方法，`c.FullPath()`）在该端的登记表里逐字查找 `Exempt`、`Optional`、`Impersonable` 登记；`c.FullPath()` 为空串时不命中任何一条，访问级别取零值，即须认证（[ADR-authn-exemption](adr-authn-exemption.md)）。没有匹配的路由、路径存在而方法不被允许，`c.FullPath()` 都是空串。网关是鉴别阶段的一层，排在端点引擎的路由匹配之后；端点引擎对无匹配与方法不允许的请求同样跑整条链，gin 为方法不允许写下的 `Allow` 头由入口模块先摘下，各层放行之后才写回。
+网关以（请求方法，`c.FullPath()`）在该端的登记表里逐字查找 `Exempt`、`Optional`、`Impersonable` 登记；`c.FullPath()` 为空串时不命中任何一条，访问级别取零值，即须认证（[ADR-authn-exemption](adr-authn-exemption.md)）。没有匹配的路由、路径存在而方法不被允许，`c.FullPath()` 都是空串。网关是鉴别阶段的一层，排在端点引擎的路由匹配之后；端点引擎对无匹配与方法不允许的请求同样跑整条链，gin（[REF-gin](../references.md)）为方法不允许写下的 `Allow` 头由入口模块先摘下，各层放行之后才写回。
 
 网关拒绝时写出什么，由请求带的凭据决定：挑战头列出各后端认领的 scheme；带被后端判否的 cookie 时，认领该 cookie 的后端写出清除头；不安全方法上由浏览器自己附带的载体过不了跨源检查时，是网关自己的 401。这些判定都不读路由。冒充范围的核对读路由的 `Impersonable` 登记，只作用于凭据成立、主体带冒充者的请求（[ADR-authn-impersonation](adr-authn-impersonation.md)）。
 

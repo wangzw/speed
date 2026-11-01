@@ -19,10 +19,10 @@
 
 | 产品 | 机制 | 数字与阶段的关系 |
 |---|---|---|
-| Spring Security | 框架给内建过滤器分配序号；自定义过滤器只写相对某个锚点的 `addFilterBefore`、`addFilterAfter`、`addFilterAt` | 数字由框架分配，使用者不写数字，只写锚点 |
-| Micronaut | 命名的阶段（`ServerFilterPhase`），每个阶段带前后两个序号 | 阶段是槽位；数字只是阶段的编码，因为 Java 的 `Ordered` 只认一个整数 |
-| Spring Boot | 整数加公开常量划分区段 | 数字就是全部依据，再由公开常量补上区段的含义 |
-| Kong | 插件分阶段运行，插件自带静态优先级 | 阶段在先，优先级在阶段内比较；相对约束是后来补上的，且只作用于一个阶段 |
+| Spring Security（[REF-spring-security](../references.md)） | 框架给内建过滤器分配序号；自定义过滤器只写相对某个锚点的 `addFilterBefore`、`addFilterAfter`、`addFilterAt` | 数字由框架分配，使用者不写数字，只写锚点 |
+| Micronaut（[REF-micronaut](../references.md)） | 命名的阶段（`ServerFilterPhase`），每个阶段带前后两个序号 | 阶段是槽位；数字只是阶段的编码，因为 Java 的 `Ordered` 只认一个整数 |
+| Spring Boot（[REF-spring-boot](../references.md)） | 整数加公开常量划分区段 | 数字就是全部依据，再由公开常量补上区段的含义 |
+| Kong（[REF-kong-gateway](../references.md)） | 插件分阶段运行，插件自带静态优先级 | 阶段在先，优先级在阶段内比较；相对约束是后来补上的，且只作用于一个阶段 |
 
 speed 的 `Order` 与 Kong 同形：阶段在先，`Order` 只在阶段内比较，跨阶段的数值不参与先后。数字不承担类别，类别由 `Stage` 给出，数值因而只在同一阶段之内需要协调——同阶段里两个模块的数字撞上，也不会跨类别错位。
 

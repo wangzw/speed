@@ -21,7 +21,7 @@
 
 **按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户面、`console-ui` 对租户与设置与审计三个管理面、`notification-ui` 对通知的收件箱、偏好与推送三个面。判据是每个能力 UI 包都是某个后端能力在浏览器里的面。证据是各包 `src/index.ts` 的包文档——`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
 
-**按契约边界。** `api-sdk` 是唯一与后端耦合的包，且是从后端契约生成的产物：orval 从 `contracts/api.json` 生成操作面，特性名生成器从 `contracts/features.json` 生成特性名类型（[api-sdk](design-web-api-sdk.md)）；`api-client` 是契约无关的手写传输运行时。判据是包与后端契约的耦合程度。证据是 `web/packages/api-sdk/src/runtime.ts` 的包文档（生成面保持与 fetch、axios、tenant 无关）与 `web/orval.config.ts` 的 mutator 指向（生成面经该接缝转发给宿主绑定的请求函数）。
+**按契约边界。** `api-sdk` 是唯一与后端耦合的包，且是从后端契约生成的产物：orval（[REF-orval](../../../references.md)）从 `contracts/api.json` 生成操作面，特性名生成器从 `contracts/features.json` 生成特性名类型（[api-sdk](design-web-api-sdk.md)）；`api-client` 是契约无关的手写传输运行时。判据是包与后端契约的耦合程度。证据是 `web/packages/api-sdk/src/runtime.ts` 的包文档（生成面保持与 fetch、axios、tenant 无关，[REF-axios](../../../references.md)）与 `web/orval.config.ts` 的 mutator 指向（生成面经该接缝转发给宿主绑定的请求函数）。
 
 **装配与内容分离。** 壳拥有框架与会话分支机（未登录、已登录、会话结束），不做导航、不发请求；业务内容由宿主经 `SpeedAppDefinition` 传入。判据是导航与请求是否由壳做出。证据是 `web/packages/product-shell/src/index.ts` 的包文档（壳不做任何会话操作、不导航、不发请求）与 `web/packages/product-shell/src/bootstrap.tsx` 的 `bootstrapSpeedApp`（视图根由 `SpeedAppDefinition.view` 给出）。
 
@@ -32,7 +32,7 @@
 - **不做服务端渲染。** 产物在浏览器里渲染；服务端只交出产物，不渲染它（[ADR-web-static-hosting](../../../adr/adr-web-static-hosting.md)）。
 - **不内建业务页面。** 模块交付框架、组件族与装配入口，不交付任何具体业务页面。
 - **不决定业务模块的形态。** 业务模块的声明面由模块自己给出，前端只收集与渲染。
-- **不拥有后端契约。** `api-sdk` 的面由后端模块的 OpenAPI 片段生成；前端不定义端点，也不定义请求形状。特性名由服务它的后端模块声明，前端只引用生成的特性名类型，不定义特性名（[feature](../design-feature.md)）。
+- **不拥有后端契约。** `api-sdk` 的面由后端模块的 OpenAPI（[REF-openapi](../../../references.md)）片段生成；前端不定义端点，也不定义请求形状。特性名由服务它的后端模块声明，前端只引用生成的特性名类型，不定义特性名（[feature](../design-feature.md)）。
 - **不决定哪些特性在场。** 特性是否在场由后端的特性文档回答（[feature](../design-feature.md)）；前端只门控自己已带着代码的面，不按配置值、方法名或权限码推断一个面在不在。
 - **不托管构建产物。** 把产物经 HTTP 交出（静态应答、客户端路由回退、缓存口径）归后端的静态托管模块（[webui](../design-webui.md)）；前端只产出它（[ADR-web-static-hosting](../../../adr/adr-web-static-hosting.md)）。
 
@@ -47,8 +47,8 @@
 | `@speed/product-shell` | `./bootstrap` | 装配入口 `bootstrapSpeedApp` 与 `SpeedAppDefinition` 等类型 |
 | `@speed/api-sdk` | `./runtime` | 宿主绑定请求函数的接缝：`bindRequestFn` |
 | `@speed/api-sdk` | `./features` | 由 `contracts/features.json` 生成的特性名类型 `FeatureName` 与全部特性名 `FEATURE_NAMES` |
-| `@speed/i18n` | `./mui-locale`、`./platform-errors` | MUI 本地化助手与平台错误文案包 |
-| `@speed/auth-core` | `./webauthn` | 通行密钥单步仪式的编解码与执行（不渲染、不推进流程） |
+| `@speed/i18n` | `./mui-locale`、`./platform-errors` | MUI（[REF-mui](../../../references.md)）本地化助手与平台错误文案包 |
+| `@speed/auth-core` | `./webauthn` | 通行密钥单步仪式（[REF-webauthn](../../../references.md)）的编解码与执行（不渲染、不推进流程） |
 
 ### 装配入口
 
@@ -70,7 +70,7 @@ interface SpeedAppDefinition {
 }
 ```
 
-**一次装配的接线次序固定**：i18n 实例（先注册框架命名空间并开启平台错误兜底，再依次注册应用的命名空间）→ 会话（内存 access token store 喂会话状态机并 attach）→ 客户端（`createClient` 以会话静默刷新为 401 腿、以 i18n 实例当前语言为语言源）→ 把客户端绑进 `api-sdk` 的 runtime 接缝 → 查询客户端与会话结束策略 → provider 栈（I18next → 主题 → QueryClient → 应用的 provider，应用 provider 最外层在前）→ 视图。装配返回 `SpeedAppBootstrap { root, i18n, queryClient, session }`。
+**一次装配的接线次序固定**：i18n 实例（先注册框架命名空间并开启平台错误兜底，再依次注册应用的命名空间）→ 会话（内存 access token store 喂会话状态机并 attach）→ 客户端（`createClient` 以会话静默刷新为 401 腿、以 i18n 实例当前语言为语言源）→ 把客户端绑进 `api-sdk` 的 runtime 接缝 → 查询客户端与会话结束策略 → provider 栈（I18next → 主题 → QueryClient → 应用的 provider，应用 provider 最外层在前，[REF-i18next](../../../references.md)、[REF-tanstack-query](../../../references.md)）→ 视图。装配返回 `SpeedAppBootstrap { root, i18n, queryClient, session }`。
 
 **装配入口是一个子路径出口**（`@speed/product-shell/bootstrap`）：主出口维持组件包最小的依赖底（`auth-core`、`auth-ui`、`layout-kit`、`i18n`），这个出口额外 import 应用入口要驱动的那几件（`@speed/api-client`、`@speed/api-sdk/runtime`、`@speed/ui-kit` 与 react-query），它们都在主出口的传递闭包内。
 
@@ -84,7 +84,7 @@ interface SpeedAppDefinition {
 
 `bootstrapSpeedApp` 的 `baseUrl` 缺省是 `window.location.origin`，即假设前后端同源。跨域部署要在运行期注入：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它、把其中的 API origin 作为 `baseUrl` 传给 `bootstrapSpeedApp`；文件不存在、不可读或没有 origin 时回落到同源（[ADR-web-runtime-config](../../../adr/adr-web-runtime-config.md)）。这份文件按**入口文档所在源下的根路径**解析，不按当前 URL 解析：深链接（如控制台页的 `/console/tenants`）因而仍取到根下的文件，而不是它自己目录下的同名文件。该解析不依赖已解析的 origin，故不陷入「取配置本身需要配置」的循环；它也不随部署拓扑变化，故同一份产物在合一拓扑与分离拓扑下共用。这份文件由部署方写出，不反映后端装配；后端服务哪些面由特性文档回答（见「特性门控」）。
 
-**是否配置 CORS 由部署拓扑决定。** 合一拓扑是单端口同源：产物与 API 由同一个进程在同一个源答出，浏览器不发跨域请求，部署面里因而没有 CORS 这一环——demo 骨架即此拓扑。分离拓扑把前端交静态主机、后端只做 API，两者异源，跨域请求才出现，CORS 在此时进入部署面。跨域部署是受支持的形态，但它不是 demo 骨架的形态。
+**是否配置 CORS（[REF-whatwg-fetch](../../../references.md)）由部署拓扑决定。** 合一拓扑是单端口同源：产物与 API 由同一个进程在同一个源答出，浏览器不发跨域请求，部署面里因而没有 CORS 这一环——demo 骨架即此拓扑。分离拓扑把前端交静态主机、后端只做 API，两者异源，跨域请求才出现，CORS 在此时进入部署面。跨域部署是受支持的形态，但它不是 demo 骨架的形态。
 
 ### 新增三件的契约
 
@@ -125,7 +125,7 @@ interface SpeedAppDefinition {
 |---|---|---|
 | `tokens` | 设计令牌的默认值与覆盖入口 | 无 |
 | `theme-presets` | 命名的主题预设货架：相对默认树的成品风格差异 | `tokens`（仅类型） |
-| `i18n` | 每宿主一个 react-i18next 实例、按包命名空间登记与校验、缺键纪律 | 无 |
+| `i18n` | 每宿主一个 react-i18next（[REF-react-i18next](../../../references.md)）实例、按包命名空间登记与校验、缺键纪律 | 无 |
 | `ui-kit` | `tokens` 到 MUI 主题的适配与一组受控组件 | `tokens`、`i18n` |
 | `layout-kit` | 与认证无关的框架与路由门禁 | `ui-kit`、`i18n` |
 | `api-client` | 契约无关的手写 HTTP 运行时与错误、重试、超时、上报接缝 | 无 |
@@ -235,7 +235,7 @@ graph TD
 
 ### 浏览器层
 
-jsdom 不求值媒体查询与容器查询，不做布局，也不判定可聚焦性，所以版面与可聚焦性的不变量由独立的浏览器层在真实 Chromium 里断言（[ADR-web-browser-tier](../../../adr/adr-web-browser-tier.md)）。浏览器用例写在与被测组件相邻的 `*.browser.test.tsx` 里，不进各包默认的 `test`，由根 `Makefile` 的 `web-browser` 入口运行，定时的 CI 任务调用同一个入口；它不进 `make check`。
+jsdom（[REF-jsdom](../../../references.md)）不求值媒体查询与容器查询，不做布局，也不判定可聚焦性，所以版面与可聚焦性的不变量由独立的浏览器层在真实 Chromium 里断言（[ADR-web-browser-tier](../../../adr/adr-web-browser-tier.md)）。浏览器用例写在与被测组件相邻的 `*.browser.test.tsx` 里，不进各包默认的 `test`，由根 `Makefile` 的 `web-browser` 入口运行，定时的 CI 任务调用同一个入口；它不进 `make check`。
 
 ## 错误与失败语义
 

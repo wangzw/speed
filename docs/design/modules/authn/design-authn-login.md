@@ -10,7 +10,7 @@
 - 在 `authn.gate.mount.endpoints.default` 指定的端、普通面的基路径之下挂登录路由、回跳路由、方式列表与账户自助路由：未认证的登录流程与回调挂普通面的基路径。登录、注册与自助面是全局账户的请求，不带租户名，因而不得落到任何被租户解析或准入层所守的端上。路由与访问级别经 `mount.Mounter` 用同一个调用声明（[authn-gate](design-authn-gate.md)）。账户自助里随装配成立的面声明为[条件特性](../../../glossary.md)，在决定它们是否成立的同一处判定里经 `feature.Board` 的 `Post` 报告：手机号自助在挂其路由的分支里，邮箱分支在与该分支答 503 同源的判定处（见「声明的特性」）。
 - 挂匿名注册路由 `POST B/register`，经账户模块的 `Signups.Register` 一次建号：注册收集用户名、口令与邮箱，不建立会话、不发送邮件；同一事务插入的邮箱预留以唯一索引仲裁地址占用，预留不是标识，既不作登录方式，也不作联系方式或默认联系地址（REQ-signup-007；[ADR-authn-signup](../../../adr/adr-authn-signup.md)、[ADR-authn-contact-claim](../../../adr/adr-authn-contact-claim.md)）。开户后客户端走既有的 `POST B/flows` 口令方法登录，邮箱在登录后经账户自助回路验证。
 - 规定认证前的失败退避与枚举防护在登录路径上的形状：在何处计数、何时拒绝校验、应答怎样同形同时。退避状态的存取面 `Throttle` 与 `authn_throttles` 表归 [authn-account](design-authn-account.md)（[ADR-authn-throttling](../../../adr/adr-authn-throttling.md)）。
-- 规定口令、社交登录（Google、GitHub）与微信各方式的流程。短信、通行密钥、企业 OIDC 与 SAML 作为方式接入同一接缝，各自的状态机与校验分别归 [authn-sms](design-authn-sms.md)、[authn-mfa](design-authn-mfa.md)、[authn-sso](design-authn-sso.md)。
+- 规定口令、社交登录（Google，[REF-google-openid-connect](../../../references.md)、GitHub，[REF-github-oauth-apps](../../../references.md)）与微信（[REF-wechat-website-login](../../../references.md)、[REF-wechat-oa-web-auth](../../../references.md)）各方式的流程。短信、通行密钥（[REF-webauthn](../../../references.md)）、企业 OIDC（[REF-openid-connect-core](../../../references.md)）与 SAML（[REF-saml2](../../../references.md)）作为方式接入同一接缝，各自的状态机与校验分别归 [authn-sms](design-authn-sms.md)、[authn-mfa](design-authn-mfa.md)、[authn-sso](design-authn-sso.md)。
 
 ### 非职责
 
@@ -143,7 +143,7 @@ type Proof struct {
 
 - 必须响应 `ctx`。引擎对单次方法调用另设预算（设置 `authn.login.call-budget`，含外部提供方往返），超出即作废该次回答。
 - 宕机时交 `StepUnavailable`，不交 `StepRefused`：503 与 401 不混桶。
-- 不自己开户、并入或建会话；不碰 HTTP、gin、会话与令牌；不自己读写流程记录，比较并交换归引擎。
+- 不自己开户、并入或建会话；不碰 HTTP、gin（[REF-gin](../../../references.md)）、会话与令牌；不自己读写流程记录，比较并交换归引擎。
 - 失败时不得因标识存不存在而在耗时与错误形态上有差别。
 - `Name()` 全局唯一。
 - 发送短信的方法在每次调用 `SMSCodes.Send` 之前核对 `Start.SendsLeft` 或 `FlowState.SendsLeft`，并按「短信发送的每流程上限」报告已发条数。
@@ -164,7 +164,7 @@ type Proof struct {
 | `POST B/flows/authenticated` | Required，`Impersonable` | 在已登录的身份上开始 `link`、`step-up` 或 `enroll`（body 同上加 `purpose`）；流程记录绑定生效账户与会话；冒充期间绑定被冒充账户与发起者的会话；`enroll` 是因素登记的唯一入口；起始状态与前置要求见「在已登录身份上开始流程」 |
 | `POST B/flows/answer` | Open | 答复当前步，body `{seq, step, input, human_proof}`；`step` 取 `answer`、`factor`、`enroll`、`complete`；要求流程绑定。待建号状态下的 `step=answer` 由引擎处理用户名，不交给方法 |
 | `GET B/flows/current`、`DELETE B/flows/current` | Open | 读当前流程状态，供界面刷新后续接；放弃流程，幂等；要求绑定 |
-| `GET\|POST B/callback/:provider` | Open | OAuth 与企业 OIDC 的回跳、SAML 的 ACS；`:provider` 对社交类方法是方法名，对企业 SSO 是 IdP 标识；`POST` 登记跨源检查旁路；SAML 回跳的体上限见 [authn-sso](design-authn-sso.md) |
+| `GET\|POST B/callback/:provider` | Open | OAuth（[REF-rfc6749](../../../references.md)）与企业 OIDC 的回跳、SAML 的 ACS；`:provider` 对社交类方法是方法名，对企业 SSO 是 IdP 标识；`POST` 登记跨源检查旁路；SAML 回跳的体上限见 [authn-sso](design-authn-sso.md) |
 | `PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`POST B/identifiers`、`POST B/identifiers/verify`、`PUT B/identifiers/:id`、`DELETE B/identifiers/:id`、`DELETE B/links/:id` | Required，`Impersonable` | 账户自助：改口令、添加或更换邮箱与手机、添加用户名、设置标识的登录方式与默认联系地址、删标识、解绑外部身份；改口令、添加用户名、选作或取消登录方式、设置默认联系地址、删除标识与解绑外部身份要求新鲜认证并过 CSRF，登记并验证一条邮箱或手机本身不要求新鲜认证、不轮换会话、不结束其他会话，但其证明改变账户据以证明或找回自己的事实时例外——一条将取代默认联系地址或成为唯一邮箱地址的邮箱、一个将取代已启用短信因素发码目标的新手机号，其证明要求新鲜认证；冒充身份与被冒充账户本人相同；`POST B/phone` 与 `POST B/phone/verify` 只在 `SMSCodes` 在场时挂；`POST B/identifiers` 的邮箱分支只在 `EmailCodeSender` 在场时可用；发送验证码的分支（`POST B/phone` 与邮箱分支）先校验人机凭证 |
 | `POST B/password-reset` | Open | 匿名口令重置的第一步：body `{channel, identifier, human_proof?}`；按渠道发送验证码或走抑制路径，合格与不合格目标同形；建立独立的 `__Host-authn-reset` 绑定，不读登录流程 cookie |
 | `GET\|DELETE B/password-reset/current` | Open | 读当前重置流程或放弃它；要求重置绑定；`GET` 只答状态与期限，不答账户或标识 |
@@ -214,7 +214,7 @@ type Proof struct {
 | `factor` | `factors: [{id, kind, label}]`，种类须与第一因素不同 |
 | `enroll` | `kinds` |
 | `complete` | 流程已就绪，客户端以 `step=complete` 取走结果 |
-| `webauthn` | 数据步：`options` 是该因素自己的 JSON 对象——通行密钥的仪式取库生成的创建或请求选项，TOTP 登记取 `otpauth_uri`（二维码由客户端画） |
+| `webauthn` | 数据步：`options` 是该因素自己的 JSON 对象——通行密钥的仪式取库生成的创建或请求选项，TOTP（[REF-rfc6238](../../../references.md)）登记取 `otpauth_uri`（二维码由客户端画） |
 
 完成时，`delivery=session` 设 cookie，体为 `{"state":"authenticated","session":{"id","expires_at"}}`；`delivery=token` 体为 `{"state":"authenticated","token_type":"Bearer","access_token","expires_in","refresh_token"}`。
 
@@ -251,7 +251,7 @@ type Proof struct {
 
 **渠道由用户选择。** 同一个账户同时具备已证明邮箱与已证明手机时两种渠道都可走，只有一种时只有那一种可走。邮箱经根包可选的 `EmailResetCodeSender` 投递，短信经 `SMSCodes.Send` 的 `reset` 用途发送，模板是 `authn.code.reset`。每个渠道的发送都先核验人机验证门槛，再核验预算。
 
-**绑定与状态。** 重置有独立的绑定 cookie（`__Host-authn-reset`，`Secure`、`HttpOnly`、`SameSite=Strict`、`Path=/`；允许不安全传输时用不带 `__Host-` 的名字且不设 `Secure`）与独立的 KV 记录，键是 cookie 令牌的 SHA-256。记录保存账户标识与标识行标识（不合格目标为空）、渠道、规范化标识的带密钥摘要、真实或抑制的标记、码的摘要（邮箱为发码时的码摘要；真实短信在验证前是挑战标识，通过后改记该码的本地摘要，使同一个码可以按成功再答一次；抑制记录为本地随机摘要）、状态、每码尝试计数、已发送条数、码过期时刻与记录期限，不保存邮箱或手机原文；记录期限严格长于码过期时刻，因此码过期答 `401 login-failed`、记录过期答 `401 flow-invalid` 都可达。状态是 `sent`、`verified`、`processing`、`failed`；`processing` 是写口令期间的内部态，`GET current` 对它答 `401 flow-invalid`；写入成功即删除记录，没有 `done`。每次迁移是比较并交换，并发败者按 `flow-invalid` 拒绝。记录过期、被删除、绑定不符或状态不符都读作 `401 flow-invalid`，唯一的例外是 `verify` 在 `failed` 上仍答 `401 login-failed`，与错码同形。每条记录只属于请求它的 cookie，另一个 cookie 不能兑现它的码；不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时，各自得到自己的记录，发送被通道的重发窗口抑制并答 202。`expires_in` 在 `sent` 取该渠道的码有效期（短信 `authn.sms.code-ttl`、邮箱 `authn.login.email-code-ttl`），在 `verified` 取 `authn.login.password-reset-ticket-ttl`；验证通过时同时把绑定 cookie 的 `Max-Age` 刷新到票据期限。
+**绑定与状态。** 重置有独立的绑定 cookie（`__Host-authn-reset`，`Secure`、`HttpOnly`、`SameSite=Strict`、`Path=/`；允许不安全传输时用不带 `__Host-` 的名字且不设 `Secure`，[REF-rfc6265bis](../../../references.md)）与独立的 KV 记录，键是 cookie 令牌的 SHA-256。记录保存账户标识与标识行标识（不合格目标为空）、渠道、规范化标识的带密钥摘要、真实或抑制的标记、码的摘要（邮箱为发码时的码摘要；真实短信在验证前是挑战标识，通过后改记该码的本地摘要，使同一个码可以按成功再答一次；抑制记录为本地随机摘要）、状态、每码尝试计数、已发送条数、码过期时刻与记录期限，不保存邮箱或手机原文；记录期限严格长于码过期时刻，因此码过期答 `401 login-failed`、记录过期答 `401 flow-invalid` 都可达。状态是 `sent`、`verified`、`processing`、`failed`；`processing` 是写口令期间的内部态，`GET current` 对它答 `401 flow-invalid`；写入成功即删除记录，没有 `done`。每次迁移是比较并交换，并发败者按 `flow-invalid` 拒绝。记录过期、被删除、绑定不符或状态不符都读作 `401 flow-invalid`，唯一的例外是 `verify` 在 `failed` 上仍答 `401 login-failed`，与错码同形。每条记录只属于请求它的 cookie，另一个 cookie 不能兑现它的码；不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时，各自得到自己的记录，发送被通道的重发窗口抑制并答 202。`expires_in` 在 `sent` 取该渠道的码有效期（短信 `authn.sms.code-ttl`、邮箱 `authn.login.email-code-ttl`），在 `verified` 取 `authn.login.password-reset-ticket-ttl`；验证通过时同时把绑定 cookie 的 `Max-Age` 刷新到票据期限。
 
 | 路由 | 行为 |
 |---|---|
@@ -265,7 +265,7 @@ type Proof struct {
 
 **预算与重发。** 邮箱复用 `authn.login.email-*` 的数值设置，按重置用途使用独立的计数键；按账户的预算只在合格目标上计数，超限抑制。短信复用 `authn.sms` 的按号码与按来源预算，另加 `authn.sms.global-hourly-reset` 的全局小时预算；`reset` 不填 `Account`，不设按账户维度。重发窗口按发往的地址或号码持有，跨渠道用途共享：一个收件箱或号码在窗口内只发一条码。邮箱的发送交给有界工作池，响应路径不等待载体；工作池满时在写记录之前答 503，合格与抑制目标走同一次容量判定。短信发送本来就在 `authn.sms` 的有界工作池里。人机凭证在任何预算被消耗之前核验。
 
-**写入与结算。** `POST B/password-reset/complete` 在写口令之前写强制档审计 `authn.password.reset` 的 `attempted` 行；审计写不成即答 503，口令不变，记录留在 `verified`。`Passwords.Set` 的 `AdvanceValidAfter` 在同一事务里把 `valid_after` 推进到本秒之后，撤销语句随后结束该账户的 browser 与 token 会话；`Set` 成功后补一条 `success` 审计行，拒绝时补一条 `denied` 行，两条都用同一个 `action_id` 关联。`Set` 拒绝时口令不变，记录回到 `verified`；撤销失败只记 Error，口令已改，应答仍是 204。`authn.password.changed` 由 `Set` 发出，`by=reset`、`channel` 取本次渠道；`authn.session.revoked` 由撤销语句发出，`reason_class=password-change`。重置不结束发起者的 cookie 冒充会话（它属于发起者）；目标账户的 bearer 冒充令牌按 `valid_after` 失效，这是目标凭据变更的自然结果。`success`/`denied` 行写失败只记 Error 与指标，不改变已提交的口令；`attempted` 行是这条路径的强制留痕。
+**写入与结算。** `POST B/password-reset/complete` 在写口令之前写强制档审计 `authn.password.reset` 的 `attempted` 行；审计写不成即答 503，口令不变，记录留在 `verified`。`Passwords.Set` 的 `AdvanceValidAfter` 在同一事务里把 `valid_after` 推进到本秒之后，撤销语句随后结束该账户的 browser 与 token 会话；`Set` 成功后补一条 `success` 审计行，拒绝时补一条 `denied` 行，两条都用同一个 `action_id` 关联。`Set` 拒绝时口令不变，记录回到 `verified`；撤销失败只记 Error，口令已改，应答仍是 204。`authn.password.changed` 由 `Set` 发出，`by=reset`、`channel` 取本次渠道；`authn.session.revoked` 由撤销语句发出，`reason_class=password-change`。重置不结束发起者的 cookie 冒充会话（它属于发起者）；目标账户的 bearer（[REF-rfc6750](../../../references.md)）冒充令牌按 `valid_after` 失效，这是目标凭据变更的自然结果。`success`/`denied` 行写失败只记 Error 与指标，不改变已提交的口令；`attempted` 行是这条路径的强制留痕。
 
 **MFA。** 因素行、`mfa_required` 与因素启用时长都不改变。重置不解除、不降级、不重新登记任何因素；下一次用新口令登录仍按账户原来的要求过第二因素。
 
@@ -273,7 +273,7 @@ type Proof struct {
 
 ### 问题码
 
-失败一律是 `application/problem+json`，机器可读的码放在 `Problem.Type`，取 `urn:speed:authn:<码>`；入口模块的 `Problem` 没有扩展成员，`type` 是现成字段。`Fail` 之前设置的响应头保留，响应体不带成因。码的集合是封闭集，新增码是兼容的，删除、改名或改变既有码的含义是破坏性变更：
+失败一律是 `application/problem+json`（[REF-rfc9457](../../../references.md)），机器可读的码放在 `Problem.Type`，取 `urn:speed:authn:<码>`；入口模块的 `Problem` 没有扩展成员，`type` 是现成字段。`Fail` 之前设置的响应头保留，响应体不带成因。码的集合是封闭集，新增码是兼容的，删除、改名或改变既有码的含义是破坏性变更：
 
 | 状态 | 码 | 场景 |
 |---|---|---|
@@ -281,7 +281,7 @@ type Proof struct {
 | 401 | `login-failed` | 未知标识、错口令、停用、无口令、验证码错、方法内校验失败；**同一个应答**，成因是号码前缀不在放行表或标识无法规范化时按 400 答 |
 | 401 | `flow-invalid` | 流程过期、已用、绑定不符、步序不符、被并发消费 |
 | 401 | `link-required` | 社交或企业即时开通无绑定，而提供方声明的地址已登记在现有账户的邮箱标识上；登录不进入该账户，也不另开账户（REQ-signin-017） |
-| 401 | `insufficient_user_authentication` | 加强认证，同时带 `WWW-Authenticate`（[authn-mfa](design-authn-mfa.md)） |
+| 401 | `insufficient_user_authentication`（[REF-rfc9470](../../../references.md)） | 加强认证，同时带 `WWW-Authenticate`（[authn-mfa](design-authn-mfa.md)） |
 | 401 | `sso_required` | 租户准入层要求经本租户的企业单点登录重新认证，由 [tenant.admission](../tenant/design-tenant-admission.md) 写出；本地因素解不了它 |
 | 403 | `method-disabled`、`account-unavailable`、`impersonation-restricted`、`forbidden`、`factor-not-seasoned`、`signup-closed`、`contact-required`、`human-verification-required`、`password-reset-closed`、`password-reset-unavailable` | 对认证之外的策略的转述，只在 authn 自己的处理器里写；`signup-closed` 是自助注册开关关闭，`contact-required` 是未验证账户（有邮箱而没有一条已证明的）调用了要求已验证邮箱的能力，`human-verification-required` 是部署要求人机验证而请求缺少或提交了无效的凭证且因此不发送，`password-reset-closed` 是匿名口令重置开关关闭或短信渠道被 `disabled-methods` 关闭，`password-reset-unavailable` 是重置的账户在验证之后不再满足资格（停用、删除、失去口令或标识不再由同一证明渠道证明）；`method-disabled` 只来自 `disabled-methods` 关闭的非口令方式，口令方式不在可关闭集合内，读取侧也不把库里的越域取值当作关闭口令方式 |
 | 409 | `conflict`、`login-identifier-required`、`username-immutable`、`username-taken`、`email-taken` | 外部身份冲突、删最后一个因素、某种因素已达上限；账户没有用户名、也没有被选作登录方式的已验证邮箱而设口令，或删除带口令凭据账户的最后一个被选作登录方式的已验证邮箱；删除用户名标识；自助注册或首登开户的用户名已被占用；邮箱地址已被别的账户预留或持有 |
@@ -508,7 +508,7 @@ kv 键是 `authn:flow:<流程令牌的 SHA-256 十六进制>`。kv 不划分命�
 | `account`、`proof` | 解析出的账户标识与方法交出的证明，解析之后才有 |
 | `pending` | 待建号的开户事实：账户解析判定要开户之后、用户名取得之前，方法交出的开户所需部分（外部身份或手机标识、来源租户、`EmailVerified`、显示名、属性、`Aliases`）与开户用途。它只在 kv 的流程记录里，账户、绑定、标识与成员关系行在用户名答复之前都不存在 |
 | `mfa` | `{required, offered, challenge_ref, attempts, passed, enrolled}`：`passed` 是第二因素通过的结论，形如 `{methods, user_verified}`，供完成时经 `MFA.Assurance` 合成保障等级；`enrolled` 是 `enroll` 状态里已登记的因素标识（因素行在 `MFA.Enroll` 的最后一步已置为启用，记录只留它的标识） |
-| `method_state` | 方法私有状态：OAuth 的 `state` 摘要、PKCE 校验串、`nonce`；SAML 的请求标识与提供方标识；WebAuthn 仪式数据 |
+| `method_state` | 方法私有状态：OAuth 的 `state` 摘要、PKCE（[REF-rfc7636](../../../references.md)）校验串、`nonce`；SAML 的请求标识与提供方标识；WebAuthn 仪式数据 |
 | `method_step` | 方法自己的步名，`FlowState.Step` 取它：方法在 `StepPrompt` 上命名的步（如口令的 `new_password`），答复时按它分派回方法 |
 | `merged` | 恒为假；自动并入不再发生，完成时不再执行 A10。读到旧的 `merged = true` 记录按流程失效处理 |
 | `delivery`、`return_to` | `session` 或 `token`；登录后的回跳，`Begin` 时校验，回跳时只用记录里的值 |
@@ -762,7 +762,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 
 `Begin` 收 `identifier` 与 `password`。方法只服务 `login` 与 `step-up` 两个目的；`link`、`enroll` 或空目的一律交 `StepRefused`，既不读入参也不计数——口令证明的是账户，不是外部身份或因素。口令登录接受用户名，或账户持有并已选作登录方式的已验证邮箱；提供方声明的地址只有在该标记为真时才是口令登录名，账户唯一的邮箱地址在被证明后由系统置真（REQ-account-068、REQ-signin-006、REQ-signin-038）。手机号不作口令登录名。
 
-口令方法先以提交的标识为键 `Throttle.Check(ScopeIdentifier, 键)`，退避中（等待非零，含为负的保守情形）交 `StepThrottled`；然后调 `Passwords.Verify`。键只把提交的标识去首尾空白并折小写再取 SHA-256，不含账户模块 `NormalizeIdentifier` 的其余规则（NFKC、邮箱域名、手机 E.164）；某些拼写（NFKC 等价的全角与半角等）在这里落到不同键，靠账户模块的账户级静默退避把它们合在一起计数（[authn-account](design-authn-account.md)）。逐条：
+口令方法先以提交的标识为键 `Throttle.Check(ScopeIdentifier, 键)`，退避中（等待非零，含为负的保守情形）交 `StepThrottled`；然后调 `Passwords.Verify`。键只把提交的标识去首尾空白并折小写再取 SHA-256，不含账户模块 `NormalizeIdentifier` 的其余规则（NFKC、邮箱域名、手机 E.164，[REF-unicode-uax15](../../../references.md)、[REF-itu-t-e164](../../../references.md)）；某些拼写（NFKC 等价的全角与半角等）在这里落到不同键，靠账户模块的账户级静默退避把它们合在一起计数（[authn-account](design-authn-account.md)）。逐条：
 
 - 成功：`Throttle.Succeed` 清零，交 `StepProven`，`Methods = [pwd]`，`Proof.Account` 是校验出的账户。
 - `ErrInvalidCredentials`、`ErrAccountNotFound`：`Throttle.Fail`，交 `StepRefused`，成因 `ErrInvalidCredentials`，对外 401 `login-failed`。
@@ -777,7 +777,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 
 适用于 `google`、`github` 与企业 `oidc`。库的分工与自做部分的判据见 [ADR-authn-oauth-flow](../../../adr/adr-authn-oauth-flow.md)。本节与「微信」一节里的社交方法，连同企业 `oidc` 与 `saml`，服务 `login`、`link` 与 `step-up` 三个目的，不受理 `enroll`：只有交回 `External` 的方法能承担 `link`（外部绑定经它建立与解绑），而 `enroll` 是登记第二因素、由 `MFA.Enroll` 承担。空目的与 `enroll` 在读到任何参数之前被拒。
 
-**`Begin`。** 方法生成 `state`（32 字节随机数的 base64url）、PKCE 校验串（`oauth2.GenerateVerifier`）、OIDC 的 `nonce`（32 字节随机数），连同绑定存入 `method_state`，`state` 存摘要。授权地址由 `oauth2.Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce))` 生成，PKCE 一律 S256。`redirect_uri` 是 `public-url + B/callback/<提供方>`，每个提供方的回跳路径不同，把 A 的回跳投给 B 因路径不同而不可能；回跳里若带 `iss` 仍与该提供方的 issuer 比对（RFC 9207）。
+**`Begin`。** 方法生成 `state`（32 字节随机数的 base64url）、PKCE 校验串（`oauth2.GenerateVerifier`）、OIDC 的 `nonce`（32 字节随机数），连同绑定存入 `method_state`，`state` 存摘要。授权地址由 `oauth2.Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce))` 生成，PKCE 一律 S256。`redirect_uri` 是 `public-url + B/callback/<提供方>`，每个提供方的回跳路径不同，把 A 的回跳投给 B 因路径不同而不可能；回跳里若带 `iss` 仍与该提供方的 issuer 比对（RFC 9207，[REF-rfc9207](../../../references.md)）。
 
 **回跳。** 引擎已核对流程状态、方法与路径、绑定，并已置 `processing`（见「回跳类的一步」）。方法依次：
 
@@ -793,11 +793,11 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 
 `google` 与 `github` 各有一组可选覆盖项把方法指向别的提供方：前者是 `authn.login.google.issuer`，后者是 `authn.login.github.authorize-url`、`token-url` 与 `api-base`；缺省值就是内置的 Google issuer 与 GitHub 端点。两者的受限出站客户端另由 `allow-loopback` 与 `root-ca-file` 成形：缺省为拒回环、用系统根，根证书文件追加到系统根（不替换）并在启动时读取。指向自定义端点即由部署方承担对该端点与其证书的信任；缺省路径上的校验与行为不变（[ADR-authn-social-endpoints](../../../adr/adr-authn-social-endpoints.md)）。
 
-**Google。** 对 issuer `https://accounts.google.com` 用 go-oidc 做发现（`authn.login.google.issuer` 可覆盖，覆盖值须是绝对 https 地址，回环主机的 http issuer 仅在 `allow-loopback` 为真时接受），首次使用时懒发现、缓存，失败不终止启动，期间该方式答 503。`sub` 作主体。配置了 `hosted-domain` 时检查 ID 令牌的 `hd` 声明：限定组织的依据是 `hd`，不是邮箱域名，授权请求里的 `hd` 参数只是界面优化。
+**Google。** 对 issuer `https://accounts.google.com` 用 go-oidc（[REF-go-oidc](../../../references.md)）做发现（[REF-openid-connect-discovery](../../../references.md)）（`authn.login.google.issuer` 可覆盖，覆盖值须是绝对 https 地址，回环主机的 http issuer 仅在 `allow-loopback` 为真时接受），首次使用时懒发现、缓存，失败不终止启动，期间该方式答 503。`sub` 作主体。配置了 `hosted-domain` 时检查 ID 令牌的 `hd` 声明：限定组织的依据是 `hd`，不是邮箱域名，授权请求里的 `hd` 参数只是界面优化。
 
 **验证路径上的取键集不受调用预算约束。** go-oidc 构造密钥集时用 `context.Background()` 而非本次调用的 `ctx`，叠加 `internal/egress` 按设计不设总超时，一个接受连接却不作答的密钥集端点能把这次登录请求拖过 `authn.login.call-budget`。这条缺陷的修法在 `egress`（加总超时选项）或引擎（并发跑方法、作废迟到的回答），不在方法叶子包里。受此影响，验证路径上取键集失败一律答 `StepRefused`，不答 `StepUnavailable`：go-oidc 把「取不到密钥集」与「验签失败」压成同一个错误字符串，两者无法区分；发现与换令牌的不可用仍答 `StepUnavailable`。
 
-**GitHub。** `x/oauth2` 加 `endpoints.GitHub`（授权、令牌与 API 基址可由 `authn.login.github.authorize-url`、`token-url` 与 `api-base` 覆盖，覆盖值须是绝对 https 地址），作用域 `read:user user:email`，PKCE S256。GitHub 是纯 OAuth 2.0，没有 discovery、没有 issuer，也从不发 `iss`，所以共同事务里「回跳带 `iss` 就与该提供方的 issuer 比对」对它不适用。授权码换到访问令牌后自写对 `/user` 与 `/user/emails` 的 GET：`/user` 取数字 `id` 作主体；`/user/emails` 取 `primary` 且 `verified` 的邮箱，没有这样的一条时邮箱为空、`EmailVerified` 为假，不报错。`/user` 返回的 `email` 没有已验证标记，不采用。**这两次 GET 返回非 200、或 `/user` 里没有正整数 `id`，都答 `StepRefused`（拒绝，fail-closed），不是 `StepUnavailable`；只有传输失败或响应体解不开才答 `StepUnavailable`。** 因此 `/user/emails` 临时抖动会让一个此前已绑定的身份也登录不上，这是 fail-closed 的代价。访问令牌用完即弃，不存、不刷新。取舍见 [ADR-authn-oauth-flow](../../../adr/adr-authn-oauth-flow.md)。
+**GitHub。** `x/oauth2`（[REF-golang-x-oauth2](../../../references.md)）加 `endpoints.GitHub`（授权、令牌与 API 基址可由 `authn.login.github.authorize-url`、`token-url` 与 `api-base` 覆盖，覆盖值须是绝对 https 地址），作用域 `read:user user:email`，PKCE S256。GitHub 是纯 OAuth 2.0，没有 discovery、没有 issuer，也从不发 `iss`，所以共同事务里「回跳带 `iss` 就与该提供方的 issuer 比对」对它不适用。授权码换到访问令牌后自写对 `/user` 与 `/user/emails`（[REF-github-rest-users](../../../references.md)）的 GET：`/user` 取数字 `id` 作主体；`/user/emails` 取 `primary` 且 `verified` 的邮箱，没有这样的一条时邮箱为空、`EmailVerified` 为假，不报错。`/user` 返回的 `email` 没有已验证标记，不采用。**这两次 GET 返回非 200、或 `/user` 里没有正整数 `id`，都答 `StepRefused`（拒绝，fail-closed），不是 `StepUnavailable`；只有传输失败或响应体解不开才答 `StepUnavailable`。** 因此 `/user/emails` 临时抖动会让一个此前已绑定的身份也登录不上，这是 fail-closed 的代价。访问令牌用完即弃，不存、不刷新。取舍见 [ADR-authn-oauth-flow](../../../adr/adr-authn-oauth-flow.md)。
 
 ### 微信（wechat.web 与 wechat.mp）
 
@@ -827,7 +827,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 |---|---|
 | `PUT B/password` | 改口令；请求体的当前口令可空（经提供方开户的账户没有口令），经 `SetPasswordOptions.Current` 交给 `Passwords.Set`，由账户模块校验当前口令与策略、失败即 `ErrPasswordPolicy`（400）或 `ErrInvalidCredentials`（401），本路由不单独计数退避；成功后处理器调 `Sessions.Rotate` 与 `Sessions.RevokeAccount(except = 当前会话)`；账户没有可作登录名的标识（没有用户名也没有被选作登录方式的已验证邮箱）时 409 `login-identifier-required` |
 | `POST B/phone`、`POST B/phone/verify` | 添加或更换手机，经短信验证新号码（`verified_via = sms-code`）；通过后是已验证的手机标识，不自动选作登录方式；是否作登录方式经 `PUT B/identifiers/:id` 选择（REQ-account-014）；两步本身都不要求新鲜认证，验证不轮换当前会话也不结束其他会话，但新号码取代已启用短信因素的发码目标时，证明要求新鲜认证；服务端状态与步骤见「手机号验证」 |
-| `POST B/identifiers` | 添加本人登录标识，体 `{kind, value}`：`kind` 取 `username` 或 `email`，手机走 `POST B/phone`。用户名是登录名，无所有权可证，一步写入，要求新鲜认证，`verified_via = self`；邮箱先经 `EmailCodeSender` 发码并在 kv 写一条按会话的待验证记录，应答 `{state: "pending", expires_in, resend_after}`（用户名成功应答 `{state: "added"}`）；没有 `EmailCodeSender` 时邮箱分支答 503 `unavailable`；发码之前读 `Accounts.Lookup` 与 `SignupVerification.PendingAccountByContact`，地址已被**其他**账户持有或留有未证明预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算，读失败答 503。账户自己已经持有的地址不在此列：它是一次重发到该地址的证明请求，发码照常，兑现后由账户模块就地证明那一行。对同一收件箱的预算形式（局部部分从第一个 `+` 起的后缀在所有域丢弃，`gmail.com` 与 `googlemail.com` 另外去掉局部部分的点并归一为同一个域）、间隔内的重发答 429 `throttled`（窗口按收件箱持有，跨会话与账户共享，一个收件箱在一次窗口内只发一条码）；用户名的成功写入撤销其余会话；邮箱分支要求身份与登录会话，本身不要求新鲜认证，也不轮换会话，其证明的后果见 `POST B/identifiers/verify`。`verified_via` 由写标识的这一步定，非管理员自陈，见 [ADR-authn-selfservice-identifier](../../../adr/adr-authn-selfservice-identifier.md)。邮箱验证通过后是已验证的邮箱记录，它从登记起就是联系方式、`contact` 为真，`sign_in` 为假；账户此前没有默认联系地址时它成为默认联系地址，是否选作登录方式经 `PUT B/identifiers/:id` 选择（REQ-account-061、REQ-account-062、REQ-account-063、REQ-account-064） |
+| `POST B/identifiers` | 添加本人登录标识，体 `{kind, value}`：`kind` 取 `username` 或 `email`，手机走 `POST B/phone`。用户名是登录名，无所有权可证，一步写入，要求新鲜认证，`verified_via = self`；邮箱先经 `EmailCodeSender` 发码并在 kv 写一条按会话的待验证记录，应答 `{state: "pending", expires_in, resend_after}`（用户名成功应答 `{state: "added"}`）；没有 `EmailCodeSender` 时邮箱分支答 503 `unavailable`；发码之前读 `Accounts.Lookup` 与 `SignupVerification.PendingAccountByContact`，地址已被**其他**账户持有或留有未证明预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算，读失败答 503。账户自己已经持有的地址不在此列：它是一次重发到该地址的证明请求，发码照常，兑现后由账户模块就地证明那一行。对同一收件箱的预算形式（局部部分从第一个 `+` 起的后缀在所有域丢弃，`gmail.com` 与 `googlemail.com` 另外去掉局部部分的点并归一为同一个域，[REF-gmail-dots](../../../references.md)）、间隔内的重发答 429 `throttled`（窗口按收件箱持有，跨会话与账户共享，一个收件箱在一次窗口内只发一条码）；用户名的成功写入撤销其余会话；邮箱分支要求身份与登录会话，本身不要求新鲜认证，也不轮换会话，其证明的后果见 `POST B/identifiers/verify`。`verified_via` 由写标识的这一步定，非管理员自陈，见 [ADR-authn-selfservice-identifier](../../../adr/adr-authn-selfservice-identifier.md)。邮箱验证通过后是已验证的邮箱记录，它从登记起就是联系方式、`contact` 为真，`sign_in` 为假；账户此前没有默认联系地址时它成为默认联系地址，是否选作登录方式经 `PUT B/identifiers/:id` 选择（REQ-account-061、REQ-account-062、REQ-account-063、REQ-account-064） |
 | `POST B/identifiers/verify` | 提交自助邮箱验证码，体 `{code}`：读会话的待验证记录，比对码；不符计数、用尽五次即废、记录过期靠键的生存期；通过才以 `verified_via = email-code` 调 `AccountAdmin.AddIdentifier` 证明该地址、删记录；证明本身不要求新鲜认证，也不轮换当前会话或撤销其他会话，但若这条邮箱将成为账户的默认联系地址或唯一邮箱地址（因而自动登录方式），证明要求新鲜认证。写标识是权威的占用判定：账户自己已经持有的同值邮箱标识由 `AddIdentifier` 就地提升为已证明（幂等，不新增第二行），所以对注册时留下的未证明地址或管理员预置的地址兑现验证码会成功；地址在发码之后被**别的**账户取得时 `ErrContactTaken` 答 409 `email-taken`，`ErrAccountExists` 只在绕过预留表的重复行上出现，同样答 409；没有待验证记录（或记录不属于本账户）与错码同答 401 `login-failed`。验证不改变登录方式上的选择；账户此前没有默认联系地址时它成为默认联系地址（REQ-account-062、REQ-account-063） |
 | `PUT B/identifiers/:id` | 设置本人一条邮箱或手机的登录方式与默认联系地址，体 `{contact, sign_in, default_contact}`，字段可省略：`contact` 对登记的邮箱与手机恒为真，写成假答 400 `bad-request`，写成真不改变任何事实；`sign_in` 为真要求该标识已证明；`default_contact` 只接受已证明的邮箱，为真时把它设为默认联系地址并清除同一账户此前的选择。未证明的 `sign_in`、不属于本人的标识或不是邮箱的默认选择答 400 `bad-request`；`sign_in` 置假会留下没有登录方式的账户时答 409 `last-login-method`，带口令凭据的账户因此失去最后一个被选作登录方式的已验证邮箱时答 409 `login-identifier-required`，两种情况都不生效。改动 `sign_in` 或 `default_contact` 要求新鲜认证并过 CSRF；写 `contact` 不要求新鲜认证，只过 CSRF。 |
 | `DELETE B/identifiers/:id` | 删本人持有的标识；标识不属本人与不存在同形，都答 400 `bad-request`；删除用户名答 409 `username-immutable`（`ErrUsernameImmutable`），删除不生效（[ADR-authn-username-permanent](../../../adr/adr-authn-username-permanent.md)）；带口令凭据的账户删除最后一个被选作登录方式的已验证邮箱时答 409 `login-identifier-required`，删除不生效，这条规则先于下一条且答案不变；删除任何标识后，账户若不再持有口令凭据、被选作登录方式的已验证手机号与外部身份中的任何一种，答 409 `last-login-method`，删除不生效，通行密钥不算，未证明或未被选中的手机号也不算，无口令账户的最后一个登录名也按此判；不撤销会话；`authn.identifier.changed` 由 [authn-account](design-authn-account.md) 在删除时发布 |

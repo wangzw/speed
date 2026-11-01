@@ -15,8 +15,8 @@
 
 ### 非职责
 
-- **不做 HTTP。** 读写都经生成面 `@speed/api-sdk` 的 react-query hooks，实时连接经宿主交来的 `@speed/api-client` 事件流开启器；本包不建客户端、不手写请求、不手写端点路径与响应类型。
-- **不定义契约。** 端点路径、请求体与响应形状由后端模块的 OpenAPI 片段给出；本包只声明这些面怎么渲染。
+- **不做 HTTP。** 读写都经生成面 `@speed/api-sdk` 的 react-query（[REF-tanstack-query](../../../references.md)） hooks，实时连接经宿主交来的 `@speed/api-client` 事件流开启器；本包不建客户端、不手写请求、不手写端点路径与响应类型。
+- **不定义契约。** 端点路径、请求体与响应形状由后端模块的 OpenAPI（[REF-openapi](../../../references.md)）片段给出；本包只声明这些面怎么渲染。
 - **不做路由与路径匹配。** `notificationRoutes` 是结构与 `@speed/route-kit` 的声明相同的数据加视图，宿主收集并交给它选的路由层。
 - **不判定权限。** 通知的后端路由不带自有权限闸，访问控制由宿主侧的授权决定；本包不声明权限点，也不据权限隐藏入口。
 - **不读会话。** 实时订阅是否需要打开由宿主的 `enabled` 入参给出，本包不为它读会话状态；本包只读当前租户（`@speed/auth-core` 的 `useCurrentTenant`），供查询键分段。
@@ -135,7 +135,7 @@ interface NotificationPresenceProviderProps {
 | `@speed/auth-core` | 依赖 | 当前租户（`useCurrentTenant`）与租户作用域查询键（`tenantQueryKey`、`useTenantQueryKey`）；准入层拒绝的判定（`isTenantAdmissionRefusal`） |
 | `@speed/i18n` | 依赖 | 命名空间翻译与错误码文本解析（`createErrorTextResolver`、会话生命周期与传输码）；时间的显示时区解析与格式化（`resolveTimeZone`、`formatInstant`） |
 | `@speed/ui-kit` | 依赖 | 页头、空态、列表骨架、四态分支、内联错误等受控组件；显示时区上下文（`useDisplayTimeZone`） |
-| `react`、`react-dom`、`@mui/material`、`@emotion/*`、`@tanstack/react-query` | peer | 宿主持有的 React/MUI 树与查询客户端；单份使主题与查询上下文不分叉 |
+| `react`、`react-dom`、`@mui/material`（[REF-mui](../../../references.md)）、`@emotion/*`（[REF-emotion](../../../references.md)）、`@tanstack/react-query` | peer | 宿主持有的 React/MUI 树与查询客户端；单份使主题与查询上下文不分叉 |
 
 本包不 import 同层的其他能力 UI 包，也不同 `@speed/route-kit` 建边：`notificationRoutes` 的形状是复制的，不是 import 的。
 

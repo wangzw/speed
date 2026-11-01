@@ -6,7 +6,7 @@
 
 路由是 `GET /health`、`GET /ready`、`GET /openapi.json`：`/health` 答进程存活，`/ready` 答进程可否服务，`/openapi.json` 答这个二进制提供哪些 API。它们挂在**不设防的端**上——探针不带凭据、不指名租户，因而不经过认证、租户解析或授权层，本模块也不在 handler 内判定权限。
 
-把各模块声明的 OpenAPI 片段合并成一份文档是本模块的核心：取材域、冲突的判定时机与点名的对象都在本模块，见「核心算法与流程」。
+把各模块声明的 OpenAPI（[REF-openapi](../../references.md)）片段合并成一份文档是本模块的核心：取材域、冲突的判定时机与点名的对象都在本模块，见「核心算法与流程」。
 
 ### 非职责
 
@@ -171,7 +171,7 @@ sequenceDiagram
 
 **合并文档带扩展键 `x-fragments` 与 `x-endpoint`。** `x-fragments` 列出参与合并的每份片段的来源（模块与端）；每个 operation 上的 `x-endpoint` 记下这条 operation 服务在哪个端上——一份文档描述多个端点，光凭路径说不出它由哪个端应答。
 
-**分组与鉴权也由合并写出。** 每个 operation 的 `tags` 带上声明它的模块名，顶层 `tags` 汇总这些名字并按序排列，读者因而按 `x-fragments` 用的同一套词汇分组。宿主写制品时可以把一个 operation 的模块标签换成它自己的所有者标签（`gen` 对应用所有的操作这么做，并从顶层 `tags` 里摘掉该模块名）：一个 operation 只带一个标签，按标签分组的读者不会把它列两次。`security` 来自 operation 自己的访问级别；片段没写 `security` 的 operation 被补成受保护要求，公开必须显式声明为 `[]`。`components.securitySchemes` 由合并统一写出 `bearerAuth`（`Authorization: Bearer`）与 `sessionCookie`（`sid` cookie 及其带前缀的写法），片段只引用名字、不自定义载体（[ADR-http-contract-metadata](../../adr/adr-http-contract-metadata.md)）。
+**分组与鉴权也由合并写出。** 每个 operation 的 `tags` 带上声明它的模块名，顶层 `tags` 汇总这些名字并按序排列，读者因而按 `x-fragments` 用的同一套词汇分组。宿主写制品时可以把一个 operation 的模块标签换成它自己的所有者标签（`gen` 对应用所有的操作这么做，并从顶层 `tags` 里摘掉该模块名）：一个 operation 只带一个标签，按标签分组的读者不会把它列两次。`security` 来自 operation 自己的访问级别；片段没写 `security` 的 operation 被补成受保护要求，公开必须显式声明为 `[]`。`components.securitySchemes` 由合并统一写出 `bearerAuth`（`Authorization: Bearer`，[REF-rfc6750](../../references.md)）与 `sessionCookie`（`sid` cookie 及其带前缀的写法），片段只引用名字、不自定义载体（[ADR-http-contract-metadata](../../adr/adr-http-contract-metadata.md)）。
 
 ## 核心算法与流程
 

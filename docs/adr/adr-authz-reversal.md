@@ -2,7 +2,7 @@
 
 ## 背景
 
-早先的实现与其文档成文否决了 Casbin，否决给出的理由落在存储、适配器与引擎上。存储一侧：官方 `casbin_rule` 表没有 `tenant_id` 列，租户藏在策略串（domain）里，于是全产品最安全敏感的一张表会同时退出租户隔离——GORM 插件注入不到过滤条件、用不了 `Repository[T]`、Postgres 行级安全策略以 `tenant_id` 列为准而无从下手，`tenancytest.AssertIsolated` 对它跑不起来。适配器一侧：官方 `gorm-adapter` 自己持有 `*gorm.DB` 并自行发查询，正是本仓库数据规则禁止的裸访问形态，且默认 `AutoMigrate`。引擎一侧的价值判断：Casbin 的可插拔 `model.conf`、ABAC、RESTful matcher 在那个设计里用不上，判定链就是 `subject → bindings → role → permissions` 加一次物化路径前缀判断。
+早先的实现与其文档成文否决了 Casbin（[REF-casbin](../references.md)），否决给出的理由落在存储、适配器与引擎上。存储一侧：官方 `casbin_rule` 表没有 `tenant_id` 列，租户藏在策略串（domain）里，于是全产品最安全敏感的一张表会同时退出租户隔离——GORM（[REF-gorm](../references.md)）插件注入不到过滤条件、用不了 `Repository[T]`、Postgres 行级安全策略以 `tenant_id` 列为准而无从下手，`tenancytest.AssertIsolated` 对它跑不起来。适配器一侧：官方 `gorm-adapter`（[REF-casbin-gorm-adapter](../references.md)）自己持有 `*gorm.DB` 并自行发查询，正是本仓库数据规则禁止的裸访问形态，且默认 `AutoMigrate`。引擎一侧的价值判断：Casbin 的可插拔 `model.conf`、ABAC、RESTful matcher 在那个设计里用不上，判定链就是 `subject → bindings → role → permissions` 加一次物化路径前缀判断。
 
 本设计为授权选择引擎与存储（[ADR-authz-engine](adr-authz-engine.md)、[ADR-authz-store](adr-authz-store.md)），结论是采纳 Casbin 引擎、经自写薄适配器落到带真实 `tenant_id` 列的表上。这与旧树的结论直接冲突：旧树说的是「不用 Casbin」。站点 rbac 页仍把「不用 Casbin」写成明确的否定结论，读者可能把它当作现行设计。
 

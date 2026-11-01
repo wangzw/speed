@@ -2,13 +2,13 @@
 
 ## 背景
 
-引擎桥接 Casbin v3（[ADR-authz-engine](adr-authz-engine.md)），策略持久化经 Casbin 的存储接口 `persist.Adapter` 完成。
+引擎桥接 Casbin（[REF-casbin](../references.md)） v3（[ADR-authz-engine](adr-authz-engine.md)），策略持久化经 Casbin 的存储接口 `persist.Adapter` 完成。
 
-本仓的数据经数据库模块交付的句柄发出，隔离落在共享表加一列租户标识上：过滤经一条 GORM 插件作用于每一条针对受约束模型的语句，模型按约定声明自己受约束；上下文无租户时受约束模型的语句拒绝执行，跨租户必须在调用点字面写出（[ADR-tenant-isolation](adr-tenant-isolation.md)、[ADR-tenant-scoping](adr-tenant-scoping.md)）。隔离落脚的是一列真实的、可被插件与受约束模型认出的租户列。
+本仓的数据经数据库模块交付的句柄发出，隔离落在共享表加一列租户标识上：过滤经一条 GORM（[REF-gorm](../references.md)）插件作用于每一条针对受约束模型的语句，模型按约定声明自己受约束；上下文无租户时受约束模型的语句拒绝执行，跨租户必须在调用点字面写出（[ADR-tenant-isolation](adr-tenant-isolation.md)、[ADR-tenant-scoping](adr-tenant-scoping.md)）。隔离落脚的是一列真实的、可被插件与受约束模型认出的租户列。
 
 旧实现成文否决了 Casbin（[ADR-authz-reversal](adr-authz-reversal.md)）。其针对存储的那条理由：官方 `casbin_rule` 表没有 `tenant_id` 列，租户藏在策略串的域值里，这张全产品最安全敏感的表因而退出租户隔离的全部三层——GORM 插件注入不到过滤条件、受约束模型用不了、Postgres 行级安全以 `tenant_id` 列为准而无从下手——隔离退化成「调用方传对了域字符串」。本记录正面回答该理由。
 
-Casbin 的默认存储把全部策略落成一张 `casbin_rule` 表：一行是策略类型加若干文本列，没有一列承载租户。官方 `casbin/gorm-adapter` 能把这张表建在 GORM 之上，但它的默认构造自己开 `*gorm.DB`（`NewAdapter` 直接调 `gorm.Open`），与本仓经数据库模块交付的句柄、插件与租户过滤不是同一条路。
+Casbin 的默认存储把全部策略落成一张 `casbin_rule` 表：一行是策略类型加若干文本列，没有一列承载租户。官方 `casbin/gorm-adapter`（[REF-casbin-gorm-adapter](../references.md)）能把这张表建在 GORM 之上，但它的默认构造自己开 `*gorm.DB`（`NewAdapter` 直接调 `gorm.Open`），与本仓经数据库模块交付的句柄、插件与租户过滤不是同一条路。
 
 ## 考虑过的选项
 

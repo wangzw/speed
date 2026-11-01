@@ -2,7 +2,7 @@
 
 ## 背景
 
-企业 SSO 的域所有权证明经 DNS TXT 记录完成，企业 OIDC 的出站客户端按 TLS 校验证书。两者当前只取系统的答案：TXT 查询走 `net.DefaultResolver`，出站客户端只信任系统根证书。这段行为由 [ADR-authn-sso](adr-authn-sso.md) 的受限出站客户端与域发现两节给出。
+企业 SSO 的域所有权证明经 DNS TXT 记录完成，企业 OIDC（[REF-openid-connect-core](../references.md)）的出站客户端按 TLS 校验证书。两者当前只取系统的答案：TXT 查询走 `net.DefaultResolver`，出站客户端只信任系统根证书。这段行为由 [ADR-authn-sso](adr-authn-sso.md) 的受限出站客户端与域发现两节给出。
 
 两种部署需要改变答案的来源，而不改变校验本身：
 
@@ -51,7 +51,7 @@
 
 ### `authn.sso.oidc-ca-file`
 
-判据：**信任根是部署的输入；缺省不配置时，只信任系统根证书。** 取值为 PEM 文件路径，只取主配置源。
+判据：**信任根是部署的输入；缺省不配置时，只信任系统根证书。** 取值为 PEM（[REF-rfc7468](../references.md)）文件路径，只取主配置源。
 
 - 未配置：出站客户端的 `RootCAs` 为空，即系统根证书，与现状相同。
 - 配置：系统根证书加上文件里的证书构成信任根，交给企业 OIDC 出站客户端的 `egress.Options.RootCAs`。证书校验本身不关闭。
@@ -72,7 +72,7 @@ OIDC 的 issuer 仍必须是具体的 https issuer；TXT 记录的名字、内�
 
 ### 与社交登录的出站信任并列
 
-社交登录有一套同形的部署级输入：`authn.login.google.*` 与 `authn.login.github.*` 下的 `allow-loopback` 与 `root-ca-file`（[ADR-authn-social-endpoints](adr-authn-social-endpoints.md)）。两者的规则相同：根证书文件追加到系统根，回环只由该方法的显式开关打开，证书校验从不关闭。社交方式的键只作用于 Google 与 GitHub 的出站，不作用于本记录的 TXT 查询与企业 OIDC 出站；本记录的两个键也不作用于社交方式。
+社交登录有一套同形的部署级输入：`authn.login.google.*` 与 `authn.login.github.*` 下的 `allow-loopback` 与 `root-ca-file`（[ADR-authn-social-endpoints](adr-authn-social-endpoints.md)）。两者的规则相同：根证书文件追加到系统根，回环只由该方法的显式开关打开，证书校验从不关闭。社交方式的键只作用于 Google（[REF-google-openid-connect](../references.md)）与 GitHub（[REF-github-oauth-apps](../references.md)）的出站，不作用于本记录的 TXT 查询与企业 OIDC 出站；本记录的两个键也不作用于社交方式。
 
 ## 后果
 

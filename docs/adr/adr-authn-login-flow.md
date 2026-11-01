@@ -2,7 +2,7 @@
 
 ## 背景
 
-登录由多种第一因素构成：口令、短信验证码、通行密钥、社交登录、企业 OIDC 与 SAML、微信的网站应用与公众号入口。这些方式的步数不同，有的一步完成，有的要往返客户端，有的要把用户代理送到外部提供方再等回跳。第一因素之后还有一串与方式无关的动作：把证明解析成账户或开户、按策略判定是否需要第二因素或登记因素、建登录会话或发令牌，以及在已登录的身份上关联外部身份、加强认证、登记因素（[ADR-authn-scope](adr-authn-scope.md)、[ADR-authn-mfa](adr-authn-mfa.md)）。
+登录由多种第一因素构成：口令、短信验证码、通行密钥（[REF-webauthn](../references.md)）、社交登录、企业 OIDC（[REF-openid-connect-core](../references.md)）与 SAML（[REF-saml2](../references.md)）、微信的网站应用（[REF-wechat-website-login](../references.md)）与公众号（[REF-wechat-oa-web-auth](../references.md)）入口。这些方式的步数不同，有的一步完成，有的要往返客户端，有的要把用户代理送到外部提供方再等回跳。第一因素之后还有一串与方式无关的动作：把证明解析成账户或开户、按策略判定是否需要第二因素或登记因素、建登录会话或发令牌，以及在已登录的身份上关联外部身份、加强认证、登记因素（[ADR-authn-scope](adr-authn-scope.md)、[ADR-authn-mfa](adr-authn-mfa.md)）。
 
 约束如下：
 
@@ -32,7 +32,7 @@
 
 状态序列化进签名 cookie 或令牌，随每次请求带回，服务端不存流程。
 
-**否决**：一次性消费无法靠服务端的原子操作保证。授权码与断言的重放、并发重复提交只能靠额外的服务端状态去拦，那就是流程存储本身。客户端持有状态还使 `state`、PKCE 校验串、`nonce` 这类对外部提供方保密的值落到客户端可读的位置。
+**否决**：一次性消费无法靠服务端的原子操作保证。授权码与断言的重放、并发重复提交只能靠额外的服务端状态去拦，那就是流程存储本身。客户端持有状态还使 `state`、PKCE（[REF-rfc7636](../references.md)）校验串、`nonce` 这类对外部提供方保密的值落到客户端可读的位置。
 
 ### 方法自己对流程记录做比较并交换
 
@@ -56,7 +56,7 @@
 
 沿用浏览器端会话 cookie 的通常取值。
 
-**否决**：SAML 的断言由 IdP 页面发起跨站 POST 送回，`Lax` 的 cookie 不随跨站 POST 发送，绑定在回跳时丢失，企业 SSO 无法完成。取 `SameSite=None` 并以 `__Host-` 前缀限定为无 `Domain`、`Path=/`、`Secure` 的 cookie，使子域不能写入同名 cookie。代价由 cookie 的内容抵消：它只承载一个不透明值，只对流程端点有意义，服务端只存其哈希，流程完成即作废。
+**否决**：SAML 的断言由 IdP 页面发起跨站 POST 送回，`Lax` 的 cookie 不随跨站 POST 发送，绑定在回跳时丢失，企业 SSO 无法完成。取 `SameSite=None`（[REF-rfc6265bis](../references.md)）并以 `__Host-` 前缀限定为无 `Domain`、`Path=/`、`Secure` 的 cookie，使子域不能写入同名 cookie。代价由 cookie 的内容抵消：它只承载一个不透明值，只对流程端点有意义，服务端只存其哈希，流程完成即作废。
 
 ### authn 自己处理器的 401 沿用网关的挑战
 
@@ -76,7 +76,7 @@
 
 - **方法与引擎的分工。**
   - `LoginMethod` 是非排他接缝，经 `core.ResolveAll` 取用。方法只交出「这个人证明了什么」的事实，不判定保障等级；保障等级只在 `authn.mfa` 一处合成（[ADR-authn-mfa](adr-authn-mfa.md)）。引擎据事实解析账户，不信任方法对账户存在与否的任何断言。
-  - 账户解析、开户与关联、MFA 判定、建会话与发令牌由引擎做。方法不碰 HTTP、gin、会话、令牌，也不读写流程记录，所以能脱离 HTTP 与存储单测。
+  - 账户解析、开户与关联、MFA 判定、建会话与发令牌由引擎做。方法不碰 HTTP、gin（[REF-gin](../references.md)）、会话、令牌，也不读写流程记录，所以能脱离 HTTP 与存储单测。
   - **目的的服务面按方法交出的来源字段定。** 目的是封闭集，方法只服务它能产出证明的其中一部分：产出 `External` 的社交与企业方法服务 `login`、`link` 与 `step-up`（外部绑定经 `link` 建立与解绑），口令与短信方法服务 `login` 与 `step-up`；`enroll` 是登记第二因素，由 `MFA.Enroll` 承担，不经任何第一因素方法（[ADR-authn-mfa](adr-authn-mfa.md)）。空目的在读到参数之前被拒。
   - `Proof` 的字段、方法回答的种类、方法的准入条件与故障收口见 authn-login，第三方方法同受约束。
 - **流程记录与比较并交换。**
@@ -88,7 +88,7 @@
 - **按目的的终态动作。** 目的是封闭集：`login`、`link`、`step-up`、`enroll`。`login` 建登录会话或发令牌对；其余三种是在已登录身份上的操作，完成发生在 `Open` 的路由上、网关没有读会话，所以引擎先复核记录里的发起会话仍有效且账户一致，复核通过后才执行各自的动作。完成动作的逐项次序与事件见 authn-login。
 - **IdP 发起的 SAML。** 提供方行允许时，没有流程 cookie 的回跳由引擎当场新建一条登录流程并直接置「处理中」，其余同回跳。方法不创建流程记录。
 - **统一的 `flows` 路由。** 全部目的与方式共用一组 `flows` 路由，加上回跳路由与方式列表；新增方式不新增路由。路由、请求、响应与错误码的全集见 authn-login。
-- **authn 自己处理器的 401 不带 `Basic`。** 这些处理器答的 401 只带 `Bearer` 与 `Cookie` 挑战；网关自产的 401 沿用网关为该端建成的挑战（authn-gate）。
+- **authn 自己处理器的 401 不带 `Basic`。** 这些处理器答的 401 只带 `Bearer`（[REF-rfc6750](../references.md)）与 `Cookie` 挑战；网关自产的 401 沿用网关为该端建成的挑战（authn-gate）。
 - **认证前限流自备。** 开始流程与登录前各步的失败退避、枚举防护走 [ADR-authn-throttling](adr-authn-throttling.md) 的契约，不经 `pkg/ratelimit`。
 
 ```mermaid

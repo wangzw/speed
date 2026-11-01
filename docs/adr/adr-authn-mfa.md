@@ -6,14 +6,14 @@
 
 约束如下：
 
-- 内置的因素种类有 TOTP、短信码与 WebAuthn（通行密钥），第三方可另行实现；各种因素有自己的密码学与状态，而策略、失败退避、审计与事件对每种因素的要求相同。
+- 内置的因素种类有 TOTP（[REF-rfc6238](../references.md)）、短信码与 WebAuthn（[REF-webauthn](../references.md)）（通行密钥），第三方可另行实现；各种因素有自己的密码学与状态，而策略、失败退避、审计与事件对每种因素的要求相同。
 - 强度由多处读取。任何一处自行判断，都会在边界情形上与其他处分歧，分歧的方向是某处放行了另一处会拒绝的请求。
 - 登录时账户是全局的，租户未知（[ADR-authn-accounts](adr-authn-accounts.md)）。一个全局账户可属多个租户，每个租户的管理员只管理自己租户的 IdP 登记行，对别的租户没有权限。
 - 第一因素的方法可由第三方实现，方法只回答「这个人证明了什么」，不做其余判断（[ADR-authn-login-flow](adr-authn-login-flow.md)）。
 - 账户尚无任何因素时，持口令者与真用户不可区分。authn 不含邮件通道，只留发送接缝；不提供恢复码，找回途径与代价另有记录（[ADR-authn-mfa-recovery](adr-authn-mfa-recovery.md)）。
-- 企业 IdP 断言里的 `amr`、`acr` 是外部声明，应用自己验证这些声明才算合规（OWASP ASVS 6.8.4）。
-- 短信与 PSTN 带外认证被 NIST SP 800-63B 列为受限认证器，且短信同时可作第一因素与第二因素。
-- `pquerna/otp` 的 `Validate` 只回布尔值，不报命中的计数器，没有重放防护；`go-webauthn` 不防同一份仪式数据被消费两次，也不替调用方把断言后的签名计数落库。
+- 企业 IdP 断言里的 `amr`、`acr` 是外部声明，应用自己验证这些声明才算合规（OWASP ASVS 6.8.4，[REF-owasp-asvs](../references.md)）。
+- 短信与 PSTN 带外认证被 NIST SP 800-63B（[REF-nist-sp-800-63b](../references.md)）列为受限认证器，且短信同时可作第一因素与第二因素。
+- `pquerna/otp`（[REF-pquerna-otp](../references.md)）的 `Validate` 只回布尔值，不报命中的计数器，没有重放防护；`go-webauthn`（[REF-go-webauthn](../references.md)）不防同一份仪式数据被消费两次，也不替调用方把断言后的签名计数落库。
 - 状态按丢失的方向放置（[ADR-authn-state-placement](adr-authn-state-placement.md)）：因素登记簿与 TOTP 的重放计数器丢失会放宽校验，属于 db。
 
 ## 考虑过的选项
@@ -167,7 +167,7 @@ flowchart LR
 - 账户只有同种类因素时，一次登录无法完成，用户只看到 `login-failed`，运维从日志与事件发现。
 - 强度合成集中在一处，该处的缺陷影响所有读取处，该处的测试因此承担全部判定的覆盖。
 - TOTP 种子在库里是加密列，但应用进程能解密，应用被攻破等于种子泄露。算法取 SHA-1 以兼容主流认证器。TOTP 依赖各副本时钟同步，不做漂移校正，漂移出一步就持续失败。校验窗口固定为前后各一步，不做成设置。
-- 通行密钥只支持单一 RP ID 与一组来源，不支持每租户一个域名；证明格式取 `none`，不做认证器型号白名单；可同步的通行密钥签名计数恒为 0，检测不到克隆。RP ID 的启动校验不核对公共后缀表，是残余风险。
+- 通行密钥只支持单一 RP ID 与一组来源，不支持每租户一个域名；证明格式取 `none`，不做认证器型号白名单；可同步的通行密钥签名计数恒为 0，检测不到克隆。RP ID 的启动校验不核对公共后缀表（[REF-public-suffix-list](../references.md)），是残余风险。
 - `go-webauthn` 是 0.x 版本，`go.mod` 固定版本，升级要读其迁移说明并排空在途仪式。
 - 管理员重置因素是找回链上最弱的一环，其代价记在 [ADR-authn-mfa-recovery](adr-authn-mfa-recovery.md)。
 

@@ -73,7 +73,7 @@ type Inbox interface {
 
 ### 路由
 
-基路径 `/api/v1/notifications`，本模块在 `Init` 里把路由挂在入口模块的登记面上，端取自配置项 `notification.inbox.endpoints` 点名的那些端，路径取 gin 写法。每条路由点名一个路径参数 `:messageId` 或不分页参数，**不带自有权限闸**：路由本身的访问控制由宿主侧的授权决定。下表是路由的全集（封闭集），列出方法、路径与成功应答。
+基路径 `/api/v1/notifications`，本模块在 `Init` 里把路由挂在入口模块的登记面上，端取自配置项 `notification.inbox.endpoints` 点名的那些端，路径取 gin（[REF-gin](../../../references.md)）写法。每条路由点名一个路径参数 `:messageId` 或不分页参数，**不带自有权限闸**：路由本身的访问控制由宿主侧的授权决定。下表是路由的全集（封闭集），列出方法、路径与成功应答。
 
 | 方法 路径 | 成功应答 |
 |---|---|
@@ -241,5 +241,5 @@ classDiagram
 | 路由与判定顺序 | 已实现 | `pkg/notification/inbox/routes.go` `routes`、`mount`；`pkg/notification/inbox/handlers.go` `caller`、`handleList`、`handleUnreadCount`、`handleReadAll`、`handleMessageRead` |
 | 事件发布 | 已实现 | `pkg/notification/inbox/inbox.go` `EventInboxCreated`、`Created`；`pkg/notification/inbox/store.go` `publishCreated` |
 | 列出、计数与标记已读 | 已实现 | `pkg/notification/inbox/store.go` `List`、`UnreadCount`、`MarkRead`、`ReadAll` |
-| operation 声明与 OpenAPI 片段生成 | 已实现 | `pkg/notification/inbox/operations.go`；`pkg/notification/inbox/openapi_generated_test.go`；片段 `pkg/notification/inbox/openapi/inbox.json` |
+| operation 声明与 OpenAPI（[REF-openapi](../../../references.md)）片段生成 | 已实现 | `pkg/notification/inbox/operations.go`；`pkg/notification/inbox/openapi_generated_test.go`；片段 `pkg/notification/inbox/openapi/inbox.json` |
 | 静态特性 `notification.inbox` 的 `feature.Spec` 声明 | 已实现 | `pkg/notification/inbox/inbox.go` `Module`；`pkg/notification/inbox/feature_test.go` `TestTheModuleDeclaresTheInboxFeature` |

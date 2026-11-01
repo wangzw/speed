@@ -140,7 +140,7 @@ core.Module{
 - 名字升序排列，无重复。
 - 外层是对象，在外层加字段是兼容变更。
 - 契约片段的描述写明：内容对调用者与租户可能不同，不得跨会话缓存。
-- 匿名请求得到网关的 401 problem+json，本模块不另定形状。
+- 匿名请求得到网关的 401 problem+json（[REF-rfc9457](../../references.md)），本模块不另定形状。
 - 应答里只有名字，没有任何配置值、方法描述符或渲染描述。
 
 **接口面。** 模块名 `feature.board`、配置键 `feature.board.endpoint`、路由 `GET /api/v1/features`、operation `feature.board.list`、应答的形状与 `Cache-Control` 头，是宿主与前端写下来、读进去的东西；改动它们是宿主可见的破坏性变更。
@@ -164,7 +164,7 @@ core.Module{
 | `pkg/core` | `feature.board` | 描述符、`Resources`、`Resolve`、`Enablement`、`AllResourcesInForce` |
 | `pkg/config` | `feature.board` | 声明并读取 `feature.board.endpoint` |
 | `pkg/http` | `feature.board` | `Router`、`Endpoint`、`Spec`；挂路由、声明片段 |
-| gin | `feature.board` | 路由的 handler 是 `gin.HandlerFunc`；已在 `pkg/http` 的依赖闭包里 |
+| gin（[REF-gin](../../references.md)） | `feature.board` | 路由的 handler 是 `gin.HandlerFunc`；已在 `pkg/http` 的依赖闭包里 |
 | `pkg/authn` 根包 | `feature.board` | `Gate`：登记可冒充；`ErrExemptionUnguarded` 由网关报出 |
 | `pkg/authz` 根包 | `feature.board` | 可选：`Gate`，登记开放 |
 | `pkg/log` | `feature.board` | 可选：`Start` 的集合摘要 |

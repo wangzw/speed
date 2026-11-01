@@ -6,7 +6,7 @@
 
 ## 范围
 
-登录方式的匿名发现，口令登录，短信验证码登录，社交登录（Google、GitHub、微信），企业单点登录（OIDC、SAML），通行密钥登录，外部提供方回跳的落点与失败落地，登录失败的可见结果与退避，认证守卫对未登录者的拒绝，以及登录面上的忘记口令入口。
+登录方式的匿名发现，口令登录，短信验证码登录，社交登录（Google、GitHub、微信，[REF-google-openid-connect](../../references.md)、[REF-github-oauth-apps](../../references.md)、[REF-wechat-website-login](../../references.md)、[REF-wechat-oa-web-auth](../../references.md)），企业单点登录（OIDC、SAML，[REF-openid-connect-core](../../references.md)、[REF-saml2](../../references.md)），通行密钥登录（[REF-webauthn](../../references.md)），外部提供方回跳的落点与失败落地，登录失败的可见结果与退避，认证守卫对未登录者的拒绝，以及登录面上的忘记口令入口。
 
 ### 不在范围内
 

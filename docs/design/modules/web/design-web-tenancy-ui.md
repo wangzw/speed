@@ -53,7 +53,7 @@ interface TenantSwitcherProps {
 - `menuFooter(close)` 在租户行之后、同一菜单内的分隔线下方渲染宿主条目。`close` 关闭菜单；需要跳转的宿主条目在跳转前调用它。未提供时菜单只有租户行。
 - `announcement` 选择切换确认的位置：`inline`（缺省）在触发器旁绘制确认文本，`visually-hidden` 始终裁切、只留在无障碍树中播报。两种取值都从挂载起就渲染同一条 `role="status"` 区域。
 - `triggerProps` 只携带呈现属性——`variant`、`size`、`sx`、`startIcon`——展开到触发器按钮上，使控件的外观与宿主自己的 chrome 一致。未提供时触发器是继承环境文字颜色的描边按钮。
-- `compact` 把触发器收成仅图标形态，供放不下租户名的窄 chrome（收起侧栏的图标窄栏）使用：可及名仍是文字触发器会显示的那个租户名，`triggerProps.startIcon` 给出时作图标，否则用包内字形；MUI 按钮的 64px 最小宽与两侧内边距在形态内取消。列表、当前租户行的禁用与切换播报不变。
+- `compact` 把触发器收成仅图标形态，供放不下租户名的窄 chrome（收起侧栏的图标窄栏）使用：可及名仍是文字触发器会显示的那个租户名，`triggerProps.startIcon` 给出时作图标，否则用包内字形；MUI（[REF-mui](../../../references.md)）按钮的 64px 最小宽与两侧内边距在形态内取消。列表、当前租户行的禁用与切换播报不变。
 
 **`onSelect` 在用户选一个非当前租户时触发一次，携带选中的租户标识。** 宿主在那里把路由切过去、更新租户上下文、重取数据并逐出上一租户的查询缓存；回调抛出不是选择失败，本包把它包住，既不当错误渲染，也不让它逃成未处理的拒绝。
 
@@ -65,7 +65,7 @@ interface TenantSwitcherProps {
 |---|---|
 | `@speed/i18n` | 命名空间注册与文案的翻译钩子 |
 | `@speed/ui-kit` | `src/` 取共享的裁切配方 `visuallyHiddenSx`；`test-utils/` 用它的主题 provider 与 `ui-kit` 命名空间，宿主在 ui-kit 的主题下组合本包 |
-| `@mui/material`、`react`、`react-dom`、`@emotion/*` | peer（必需）：`Button`／`Menu`／`MenuItem` 原语与宿主拥有的 MUI／React 树 |
+| `@mui/material`、`react`、`react-dom`、`@emotion/*`（[REF-emotion](../../../references.md)） | peer（必需）：`Button`／`Menu`／`MenuItem` 原语与宿主拥有的 MUI／React 树 |
 
 `@speed/auth-core`、`@speed/api-client` 与 `@speed/api-sdk` 是 devDependency：本包的 `src/` 不引用它们，公开类型也不引用。`@speed/ui-kit` 在本包之下，本包的 `src/` 只从它取共享的裁切配方 `visuallyHiddenSx`；本包与 `@speed/auth-ui` 同为能力 UI，同层之间互不 import。
 

@@ -6,15 +6,15 @@
 
 **账户与租户的关系。** 一个人可以属于零到多个租户。登录时要跨租户列出账户的成员关系，请求期的成员判定读同一份数据。会话、令牌、审计行、角色绑定与事件都以账户标识指向账户（[ADR-authn-identity](adr-authn-identity.md)）；标识若可变或可复用，这些引用悬空，或者转移到另一个人名下。
 
-**标识的证明。** 邮箱与手机号登记即作为账户的联系方式，是否作登录方式由持有人选择，验证只证明所有权（[ADR-authn-contact-and-login-ways](adr-authn-contact-and-login-ways.md)）；它们不作识别账户或建立外部身份绑定的键，企业预置账户按管理员断言渠道邮箱匹配的情形除外（[ADR-authn-external-binding](adr-authn-external-binding.md)）。邮箱与手机的唯一约束全局生效。库里若允许未经证明的标识行，攻击者可以先用受害者的邮箱建号并占住其唯一值，使受害者无法再用该地址登记或把它选作登录方式。外部提供方对「已验证」的口径不一致：GitHub 的 `/user` 返回的邮箱不带验证状态，微信没有邮箱，提供方的邮箱会被回收复用。迁移导入的账户来自旧系统，旧系统从未验证过它们的邮箱；管理员代建的账户则是管理员为某个人建的。
+**标识的证明。** 邮箱与手机号登记即作为账户的联系方式，是否作登录方式由持有人选择，验证只证明所有权（[ADR-authn-contact-and-login-ways](adr-authn-contact-and-login-ways.md)）；它们不作识别账户或建立外部身份绑定的键，企业预置账户按管理员断言渠道邮箱匹配的情形除外（[ADR-authn-external-binding](adr-authn-external-binding.md)）。邮箱与手机的唯一约束全局生效。库里若允许未经证明的标识行，攻击者可以先用受害者的邮箱建号并占住其唯一值，使受害者无法再用该地址登记或把它选作登录方式。外部提供方对「已验证」的口径不一致：GitHub 的 `/user`（[REF-github-rest-users](../references.md)）返回的邮箱不带验证状态，微信（[REF-wechat-website-login](../references.md)、[REF-wechat-oa-web-auth](../references.md)）没有邮箱，提供方的邮箱会被回收复用。迁移导入的账户来自旧系统，旧系统从未验证过它们的邮箱；管理员代建的账户则是管理员为某个人建的。
 
 **成员关系与租户模块的约定。** 受租户约束的模型内嵌 `tenant.Model`：租户列进主键，其余索引以租户列打头，上下文里没有租户时语句被拒，跨租户的唯一途径是 `tenant.CrossTenant`，该途径不判权、只靠调用点自律（[ADR-tenant-scoping](adr-tenant-scoping.md)）。没有装载租户名册模块的命令里，受约束模型的插入因租户标识为空而失败。按账户反查「属于哪些租户」与约定要求的索引形状不合。`pkg/tenant` 位于 `pkg/authn` 之上，`tenant/resolve` 已经 import `pkg/authn` 根包，authn 的子包反向 import `pkg/tenant` 使两个目录互相依赖（[ADR-tenant-admission](adr-tenant-admission.md)）。已有的表不内嵌约定的先例是审计表（[ADR-audit-sink](adr-audit-sink.md)）。
 
 **表之间与模块之间的完整性。** 每个模块只在自己的事务里写自己的表：`pkg/db` 没有跨模块传递事务句柄的通道，别的模块的表可能因模块未纳入而不存在。迁移的依赖序只在一次迁移收集之内成立。SQLite 上外键开关是否打开未经核实。
 
-**删除与个人数据。** 邮箱、手机号与显示名是个人数据，删除账户要能抹除它们。GORM 的 `DeletedAt` 软删除保留行的全部内容，也不记录删除者（[ADR-db-plugin-scope](adr-db-plugin-scope.md)）。
+**删除与个人数据。** 邮箱、手机号与显示名是个人数据，删除账户要能抹除它们。GORM（[REF-gorm](../references.md)）的 `DeletedAt` 软删除保留行的全部内容，也不记录删除者（[ADR-db-plugin-scope](adr-db-plugin-scope.md)）。
 
-**时间的存储。** GORM 的 `NowFunc` 默认取本地时间，`pkg/db` 没有覆盖它。SQLite 驱动把 `time.Time` 按其所在时区存成文本，比较是字符串比较。实测（`glebarez/go-sqlite` v1.21.2）：写入 `07:00-05:00`（即 12:00Z）之后，`WHERE at > 11:00Z` 命中 0 行。PostgreSQL 的 `TIMESTAMPTZ` 不受影响。
+**时间的存储。** GORM 的 `NowFunc` 默认取本地时间，`pkg/db` 没有覆盖它。SQLite 驱动把 `time.Time` 按其所在时区存成文本，比较是字符串比较。实测（`glebarez/go-sqlite` v1.21.2，[REF-glebarez-go-sqlite](../references.md)）：写入 `07:00-05:00`（即 12:00Z）之后，`WHERE at > 11:00Z` 命中 0 行。PostgreSQL 的 `TIMESTAMPTZ` 不受影响。
 
 **加密列与盲索引。** `pkg/db` 的盲索引不替调用方规范化，一侧没规范化就查不到而不报错；换根密钥后每个已存摘要失效，要逐行重写；缺根密钥时 `BlindIndex` panic（[ADR-db-encryption](adr-db-encryption.md)）。
 
@@ -30,7 +30,7 @@
 
 ### 邮箱作外部身份的主键或自动合并键
 
-**否决**：提供方的邮箱会被回收复用，各提供方的「已验证」口径不同，微信根本没有邮箱；以邮箱为键等于让预占劫持成为一条合法路径。外部身份的键取（提供方，主体）。
+**否决**：提供方的邮箱会被回收复用，各提供方的「已验证」口径不同，微信根本没有邮箱；以邮箱为键等于让预占劫持（[REF-pre-hijacked-accounts](../references.md)）成为一条合法路径。外部身份的键取（提供方，主体）。
 
 ### 允许未验证的邮箱标识存在，用 `verified_at` 区分
 
@@ -86,7 +86,7 @@
 
 **账户。**
 
-- 库里生成的账户标识 `AccountID` 是 UUIDv7 文本，由 `authn.account` 生成；宿主导入既有用户时可带入自己的标识，须满足 `ParseAccountID` 的格式且不以 `static.` 起头。两种来源的标识都不可变、不复用。UUIDv7 可在任一副本上离线生成，不暴露规模，生成的标识次序近似创建次序。
+- 库里生成的账户标识 `AccountID` 是 UUIDv7（[REF-rfc9562](../references.md)）文本，由 `authn.account` 生成；宿主导入既有用户时可带入自己的标识，须满足 `ParseAccountID` 的格式且不以 `static.` 起头。两种来源的标识都不可变、不复用。UUIDv7 可在任一副本上离线生成，不暴露规模，生成的标识次序近似创建次序。
 - 账户状态的零值读作停用：一个没有被显式启用的账户不能认证，与租户名册、判决零值取同一判据。
 - 账户行带 `valid_after`：此刻之前签发的会话与令牌一律失效。停用与删除把它前移，重新启用不回退。清理没做完时，它是校验后端拒绝残留会话的底线（[ADR-authn-account-lifecycle](adr-authn-account-lifecycle.md)）。
 - 运维口令表里的账户不进库，标识带 `static.` 前缀；库里生成的标识不带这个前缀，两个来源的标识不相撞（[ADR-authn-credential-dispatch](adr-authn-credential-dispatch.md)）。

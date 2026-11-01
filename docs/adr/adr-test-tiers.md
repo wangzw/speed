@@ -2,11 +2,11 @@
 
 ## 背景
 
-`pkg` 下多个模块的用例要跑在真服务器上：PostgreSQL 用于数据库、键值与事件的 postgres 实现，Redis 用于键值与事件的 redis 实现，NATS 用于两者的 nats 实现，Memcached 用于键值模块的 memcached 实现。这些服务器都不是被测代码的一部分，而是测试环境：被测的是模块在这类后端上的行为（PostgreSQL 事务内的 DDL、Redis 的流消费组与 `SET` 的 `KEEPTTL`、JetStream 的 compare-and-swap 与拉取消费、Memcached 的 compare-and-swap），换掉后端就是换掉被测对象。
+`pkg` 下多个模块的用例要跑在真服务器上：PostgreSQL 用于数据库、键值与事件的 postgres 实现，Redis 用于键值与事件的 redis 实现，NATS（[REF-nats](../references.md)）用于两者的 nats 实现，Memcached 用于键值模块的 memcached 实现。这些服务器都不是被测代码的一部分，而是测试环境：被测的是模块在这类后端上的行为（PostgreSQL 事务内的 DDL、Redis 的流消费组与 `SET` 的 `KEEPTTL`、JetStream 的 compare-and-swap 与拉取消费、Memcached 的 compare-and-swap），换掉后端就是换掉被测对象。
 
 约束来自以下几条。
 
-**提交门禁必须在任何装了 Go 工具链的机器上跑。** 门禁是每次提交的判据，而 `docker` 及其 compose 插件不在 `.mise.toml` 提供的工具链里。
+**提交门禁必须在任何装了 Go 工具链的机器上跑。** 门禁是每次提交的判据，而 `docker` 及其 compose 插件不在 `.mise.toml`（[REF-mise](../references.md)）提供的工具链里。
 
 **多个测试二进制并行。** `go test` 并行跑一个模块的包，`make check` 又跑两条腿，同一台机器上还可能有多个检出；同一时刻可能有几十个用例各自要一块隔离的数据。
 
@@ -22,7 +22,7 @@
 
 ### 用测试容器库
 
-以 testcontainers 一类库管理容器。
+以 testcontainers（[REF-testcontainers-go](../references.md)）一类库管理容器。
 
 **否决**：一个只被测试用到的依赖仍会进入模块的依赖清单，而它替夹具做的只是「起容器、读端口」。
 

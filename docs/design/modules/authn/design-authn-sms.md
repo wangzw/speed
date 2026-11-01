@@ -17,7 +17,7 @@
 - **不持有失败退避。** 退避状态在 `authn.account` 交付的 `Throttle` 里，由使用方在答复阶段施加，施加的方式见「失败退避的施加」；本模块不依赖 `Throttle`，只管每条挑战自己的尝试次数。
 - **不持有流程记录，不核对每流程的发送上限。** 流程记录的 `sends` 在 kv 里，由登录引擎在调用 `Send` 之前核对（见 [design-authn-login](design-authn-login.md)）。
 - **不定保障等级。** 单凭短信码只算一个因素，等级只在 `authn.mfa` 一处合成。
-- **不规范化号码。** `SendCode.Phone` 由调用方规范化为 E.164；`BlindIndex` 对输入原样计算，不规范化（见 [design-db](../design-db.md)）。
+- **不规范化号码。** `SendCode.Phone` 由调用方规范化为 E.164（[REF-itu-t-e164](../../../references.md)）；`BlindIndex` 对输入原样计算，不规范化（见 [design-db](../design-db.md)）。
 - **不托管厂商侧验证码，不重试厂商调用。** 生成、校验、重放与失败计数的规则全在本模块；适配器从不自行重发。
 - **不承载邮件或其他渠道。** 本模块经 `pkg/sms` 的 `Sender` 发送，那条接缝是短信专用的；邮件通道是与它对称的另一个接缝（根包 `EmailCodeSender`，`pkg/authn/email.go`），属登录模块的自助件，不在本模块之内。
 - **不认识租户。** 账户全局，`authn` 的任何子包都不 import `pkg/tenant`。
@@ -121,7 +121,7 @@ type SMSCodes interface {
 
 ### 对外接口面
 
-- `SMSCodes`、`SendCode` 的字段与方法集，以及用途与模板键这两个封闭集，是本模块对使用方的接口面。`SendCode.Locale` 的取值不是封闭集：它是一个 BCP 47 标签，由本模块解析到该消息所用模板声明的语言；`SendCode.Source` 是来源地址的原文，不是封闭集，其空值有「不施加来源维度」的语义，是本模块与使用方的契约。模板键（`authn.code.login`、`authn.code.mfa`、`authn.code.enroll`、`authn.code.reset`）是配置文件里出现的取值，是本模块与载体的配置接口面。增删封闭集的成员会同时改变使用方与载体看到的面，两者一并复核。`authn.code.reset` 是可选成员：它的缺席只关闭短信重置渠道，不使启动失败。
+- `SMSCodes`、`SendCode` 的字段与方法集，以及用途与模板键这两个封闭集，是本模块对使用方的接口面。`SendCode.Locale` 的取值不是封闭集：它是一个 BCP 47（[REF-bcp47](../../../references.md)）标签，由本模块解析到该消息所用模板声明的语言；`SendCode.Source` 是来源地址的原文，不是封闭集，其空值有「不施加来源维度」的语义，是本模块与使用方的契约。模板键（`authn.code.login`、`authn.code.mfa`、`authn.code.enroll`、`authn.code.reset`）是配置文件里出现的取值，是本模块与载体的配置接口面。增删封闭集的成员会同时改变使用方与载体看到的面，两者一并复核。`authn.code.reset` 是可选成员：它的缺席只关闭短信重置渠道，不使启动失败。
 - 挑战表的列与索引是本模块私有的存储形状，不在对外接口面内：其他模块不读 `authn_challenges`，只经 `SMSCodes` 与 `AccountLifecycle` 交互。
 - 单个载体叶子包可替换、可撤掉，不改变 `SMSCodes` 的行为。
 
@@ -137,7 +137,7 @@ type SMSCodes interface {
 | `audit.Audit` | 取用，缺席合法 | 放宽设置的尽力档审计 | 只写 `Warn` |
 | `log.Logger` | 取用，缺席合法 | 脱敏规则登记、日志 | 无日志 |
 
-厂商适配住在顶层 `pkg/sms` 下（`pkg/sms/aliyun`、`pkg/sms/tencent`），只绑定各自的厂商 SDK，所以 SDK 只进 import 了该叶子包的宿主的依赖闭包（[ADR-authn-packaging](../../../adr/adr-authn-packaging.md)、[ADR-sms-capability](../../../adr/adr-sms-capability.md)）。两家 SDK 的封边与钉版由 `pkg/sms/deps_test.go` 的守卫守住，版本与阿里云 SDK 的 genproto 备注见 [design-sms](../design-sms.md)。本模块只经 `sms.Registry` 与 `sms.Sender` 取用模板与发送方，不 import 任何载体叶子包。
+厂商适配住在顶层 `pkg/sms` 下（`pkg/sms/aliyun`、`pkg/sms/tencent`），只绑定各自的厂商 SDK，所以 SDK 只进 import 了该叶子包的宿主的依赖闭包（[ADR-authn-packaging](../../../adr/adr-authn-packaging.md)、[ADR-sms-capability](../../../adr/adr-sms-capability.md)）。两家 SDK 的封边与钉版由 `pkg/sms/deps_test.go` 的守卫守住，版本与阿里云 SDK（[REF-alibabacloud-dysmsapi-go](../../../references.md)）的 genproto（[REF-genproto](../../../references.md)）备注见 [design-sms](../design-sms.md)。本模块只经 `sms.Registry` 与 `sms.Sender` 取用模板与发送方，不 import 任何载体叶子包。
 
 依赖方向满足架构不变量：
 
@@ -474,7 +474,7 @@ flowchart TD
 - **注册开放时未知号码也真实发送。** 此时没有可隐藏的差别，成本由预算承担。
 - **根密钥轮换使在途挑战失效，也使 `phone_mac` 与旧值不再相等。** 轮换之后至多一日的窗口内，号码维度的预算按新摘要从空窗口计起，旧行在清扫之前仍占表。
 - **耗时只能证否，不能证真。** 抑制行与真实行的耗时差由统一路径压到最小，对照不出差别不构成证明。
-- **短信是受限认证器。** SIM 劫持与号码携转使短信弱于 TOTP 与通行密钥，号码被回收后新持有者可用短信登录旧账户；发送前的风险信号检查不做（[design-authn-threats](design-authn-threats.md)）。
+- **短信是受限认证器（[REF-nist-sp-800-63b](../../../references.md)）。** SIM 劫持与号码携转使短信弱于 TOTP（[REF-rfc6238](../../../references.md)）与通行密钥，号码被回收后新持有者可用短信登录旧账户；发送前的风险信号检查不做（[design-authn-threats](design-authn-threats.md)）。
 
 ### 假设与守住它们的测试
 

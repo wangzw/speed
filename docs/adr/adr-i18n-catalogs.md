@@ -22,7 +22,7 @@
 
 消息文件用 TOML，或引入一个提供复数、性别等能力的文案库。
 
-**否决**：本需求不止「键到字符串、支持插值」——一条消息还要按语言选择复数分支、按语言格式化数字，这些能力与它们的写法由 [ADR-i18n-message-rendering](adr-i18n-message-rendering.md) 定；但它们由已在本能力目录闭包内的 `golang.org/x/text` 提供，目录格式仍是标准库可解析、与 `embed` 天然配合的 JSON，`html/template` 与 `text/template` 能承担插值，不必为一个专门的文案库引入新依赖。
+**否决**：本需求不止「键到字符串、支持插值」——一条消息还要按语言选择复数分支、按语言格式化数字，这些能力与它们的写法由 [ADR-i18n-message-rendering](adr-i18n-message-rendering.md) 定；但它们由已在本能力目录闭包内的 `golang.org/x/text`（[REF-golang-x-text](../references.md)）提供，目录格式仍是标准库可解析、与 `embed` 天然配合的 JSON，`html/template` 与 `text/template` 能承担插值，不必为一个专门的文案库引入新依赖。
 
 ### 从磁盘运行期加载文案
 

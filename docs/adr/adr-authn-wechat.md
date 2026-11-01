@@ -2,15 +2,15 @@
 
 ## 背景
 
-微信的浏览器端授权入口是网站应用扫码登录（授权范围 `snsapi_login`）与公众号网页授权（授权范围 `snsapi_userinfo`），入口集合以这两项为限。两个入口的授权地址、授权范围与应用凭据各自独立，宿主可以只用其中一个。登录方式的总体取舍见 [ADR-authn-login-flow](adr-authn-login-flow.md)，流程与配置键见 design-authn-login 与 design-authn-config，本记录只决定微信一侧的实现来源与模块切分。
+微信的浏览器端授权入口是网站应用（[REF-wechat-website-login](../references.md)）扫码登录（授权范围 `snsapi_login`）与公众号网页授权（[REF-wechat-oa-web-auth](../references.md)）（授权范围 `snsapi_userinfo`），入口集合以这两项为限。两个入口的授权地址、授权范围与应用凭据各自独立，宿主可以只用其中一个。登录方式的总体取舍见 [ADR-authn-login-flow](adr-authn-login-flow.md)，流程与配置键见 design-authn-login 与 design-authn-config，本记录只决定微信一侧的实现来源与模块切分。
 
 下列事实限定了可选范围。
 
 - 微信换令牌的接口是带 `appid`、`secret`、`code`、`grant_type` 的 `GET`，`secret` 在查询串里。失败以 HTTP 200 返回，响应体带非零 `errcode`，状态码不区分成败。
-- 微信的授权协议没有 PKCE、没有 `nonce`、没有 ID 令牌。授权回跳的 CSRF 防线只有 `state` 与流程绑定，比 Google、GitHub 与企业 OIDC 少一层（[ADR-authn-oauth-flow](adr-authn-oauth-flow.md)）。
+- 微信的授权协议没有 PKCE（[REF-rfc7636](../references.md)）、没有 `nonce`、没有 ID 令牌（[REF-openid-connect-core](../references.md)）。授权回跳的 CSRF 防线只有 `state` 与流程绑定，比 Google（[REF-google-openid-connect](../references.md)）、GitHub（[REF-github-oauth-apps](../references.md)）与企业 OIDC 少一层（[ADR-authn-oauth-flow](adr-authn-oauth-flow.md)）。
 - 微信不提供邮箱。外部身份的主体取 `unionid`，没有则取按应用区分的 `openid`（[ADR-authn-external-binding](adr-authn-external-binding.md)）。
 - Go 的 `*url.Error` 的文本带完整请求 URL。`secret` 在查询串里，任何把出站错误原样记入日志、写入响应或转交调用方的路径都会泄露它。
-- 认证模块取现成库与 speed 之间的桥，自写需要现成库承担不了的理由（[ADR-authn-scope](adr-authn-scope.md)）。社交与企业 OIDC 的校验已取 `go-oidc` 加 `x/oauth2`。
+- 认证模块取现成库与 speed 之间的桥，自写需要现成库承担不了的理由（[ADR-authn-scope](adr-authn-scope.md)）。社交与企业 OIDC 的校验已取 `go-oidc`（[REF-go-oidc](../references.md)）加 `x/oauth2`（[REF-golang-x-oauth2](../references.md)）。
 - 一个模块只有一个实例，一个实例只报一个登录方式名；每个模块依据自己那份应用凭据决定是否运行——两项凭据都空时自行关闭，只给一项时是半配置（[ADR-authn-packaging](adr-authn-packaging.md)、[ADR-module-enablement](adr-module-enablement.md)）。
 - 日志脱敏由规则登记提供，持有秘密的模块在 `New` 里先于日志器绑定登记（[ADR-log-redaction](adr-log-redaction.md)、[ADR-authn-wiring](adr-authn-wiring.md)）。
 
@@ -28,13 +28,13 @@
 
 ### 桥接 goth 的微信提供方
 
-经 `goth` 取微信登录，由它产出用户信息。
+经 `goth`（[REF-goth](../references.md)）取微信登录，由它产出用户信息。
 
 **否决**：`goth` 的微信提供方为外部身份引入下列与已定规则相悖的行为。它合成形如 `<openid>@wechat.com` 的邮箱，下游会把合成值当作提供方断言的邮箱；邮箱既不作绑定键，也不写入账户或用于识别账户，微信也没有邮箱（[ADR-authn-external-binding](adr-authn-external-binding.md)、[ADR-authn-contact-and-login-ways](adr-authn-contact-and-login-ways.md)）。它丢掉 `unionid`，`openid` 按应用区分，同一个人在网站应用与公众号下得到不同的主体，绑定键因而分裂。它把 `secret` 放在 URL 里，错误净化落在不受本项目控制的库内部。`goth` 作为整体的其余缺陷见 [ADR-authn-oauth-flow](adr-authn-oauth-flow.md)。
 
 ### 桥接 silenceper/wechat/v2 的公众号网页授权包
 
-宿主取 `silenceper/wechat/v2` 的 `officialaccount/oauth`，由它换令牌，自己净化错误并自生成 `state`。
+宿主取 `silenceper/wechat/v2`（[REF-silenceper-wechat](../references.md)）的 `officialaccount/oauth`，由它换令牌，自己净化错误并自生成 `state`。
 
 **否决**：该库在下列各点上不能直接承载这一步。清单是已核实的项，不是该库问题的全集。
 
@@ -42,9 +42,9 @@
 - `state` 不转义。
 - 非 200 响应时，错误文本带含 `secret` 的完整请求 URI。
 - 构造要整个公众号上下文，只为换一个授权码而装配公众号的全部能力。
-- 带入另一个 Redis 客户端主版本（`go-redis/redis/v8`），仓库使用 v9。
+- 带入另一个 Redis 客户端主版本（`go-redis/redis/v8`，[REF-go-redis](../references.md)），仓库使用 v9。
 
-净化错误与自生成 `state` 是桥接方案自己要补的两块，补完之后留给库的只剩一次 `GET` 与对响应体的解码，而这一步又要绕开它的全局 HTTP 客户端。`chanxuehong/wechat`、`PowerWeChat` 一类整套微信 SDK 与它同属为公众号运营而设的整体，依赖足迹与适配成本同样大，按同一理由不取。
+净化错误与自生成 `state` 是桥接方案自己要补的两块，补完之后留给库的只剩一次 `GET` 与对响应体的解码，而这一步又要绕开它的全局 HTTP 客户端。`chanxuehong/wechat`（[REF-chanxuehong-wechat](../references.md)）、`PowerWeChat`（[REF-powerwechat](../references.md)）一类整套微信 SDK 与它同属为公众号运营而设的整体，依赖足迹与适配成本同样大，按同一理由不取。
 
 ### 一个模块交付两个入口
 
@@ -91,7 +91,7 @@
 
 下列情形出现时，本决策需要重议：
 
-- 出现满足下列条件的桥：把标准 OAuth2 库接到微信，处理参数名、请求方法与 200 加 `errcode` 的错误形状，HTTP 客户端可逐实例注入且有超时，错误文本不带 `secret`，`state` 的生成与转义可由调用方掌握，依赖足迹与仓库已有版本相容。此时自写的前提不成立，应改为桥接。
+- 出现满足下列条件的桥：把标准 OAuth2（[REF-rfc6749](../references.md)）库接到微信，处理参数名、请求方法与 200 加 `errcode` 的错误形状，HTTP 客户端可逐实例注入且有超时，错误文本不带 `secret`，`state` 的生成与转义可由调用方掌握，依赖足迹与仓库已有版本相容。此时自写的前提不成立，应改为桥接。
 - 桥接某个微信 SDK 所需补的部分（设置该库的包级 HTTP 客户端、净化库的错误文本、自生成 `state`）的维护成本，低于维护本客户端的成本。此时自写的前提不成立，应改为桥接。
 - 微信的授权协议加入 PKCE、`nonce` 或 ID 令牌。残余风险一节的前提不再成立，客户端与威胁模型随之重议。
 

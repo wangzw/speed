@@ -2,7 +2,7 @@
 
 ## 背景
 
-`http` 设计文档的「Serve 阶段的组装」一节写明，登记层按排序结果依次交给该端 gin 引擎的 `Use`，每一层作用于该端的全部路由，包括无匹配路由与方法不允许的响应。层在引擎之内、路由匹配之后运行。
+`http` 设计文档的「Serve 阶段的组装」一节写明，登记层按排序结果依次交给该端 gin（[REF-gin](../references.md)）引擎的 `Use`，每一层作用于该端的全部路由，包括无匹配路由与方法不允许的响应。层在引擎之内、路由匹配之后运行。
 
 已匹配的路由在链上可读：`c.FullPath()` 返回已匹配路由的完整路径写法，与登记方传给 `Endpoint.Route` 的 `path` 相同，没有匹配的路由时为空串。登记面锚定 gin（[ADR-http-surface](adr-http-surface.md)），`c.FullPath()` 给出的是路由模板（`/orders/:id`），不是请求的实际路径（`/orders/7`）：模板的取值个数以登记的路由数为上界，不随流量增长。
 
@@ -10,7 +10,7 @@
 
 属性是闭集还是开放集合，决定它日后改不改得动。含标识的维度一旦被宿主的看板与告警引用，改名与去留都要连带改那些引用；认证把这条代价写在自己的后果一节（[ADR-authn-verdict](adr-authn-verdict.md)：「未表态」作为可观测面上的一类计数，名字一旦被看板与告警引用就改不动）。属性表因此是一条决策，不是实现的细节：放宽容易，收回不行。
 
-闭集的做法是计量只带请求方法与响应状态码，方法取标准方法之一、其余折叠为一个固定值；它把基数限制在协议给出的范围内。这个集合不是上游采集库产出的集合：上游采集库的计量另带路由、`url.scheme`、`server.address`、`server.port`、协议名与版本，请求带有错误时另带 `error.type`。在上游的仪器上保持闭集，要用 OpenTelemetry 的 View 收窄属性，或者自己持有这个仪器；[ADR-observability-request-layer](adr-observability-request-layer.md) 否决了这两种做法。
+闭集的做法是计量只带请求方法与响应状态码，方法取标准方法之一、其余折叠为一个固定值；它把基数限制在协议给出的范围内。这个集合不是上游采集库产出的集合：上游采集库的计量另带路由、`url.scheme`、`server.address`、`server.port`、协议名与版本，请求带有错误时另带 `error.type`。在上游的仪器上保持闭集，要用 OpenTelemetry（[REF-opentelemetry-go](../references.md)）的 View 收窄属性，或者自己持有这个仪器；[ADR-observability-request-layer](adr-observability-request-layer.md) 否决了这两种做法。
 
 租户是另一个候选维度。它的取值与租户一一对应，取值集合随租户数增长。
 
@@ -38,7 +38,7 @@
 
 采纳它意味着跨度名为「端名 方法 路由模板」，端名同时留在名称里。
 
-**否决**：名称偏离上游语义约定给服务端跨度定的「方法 路由」形式；同一追踪后端里，遵循该约定的其他服务以标准方法产出的服务端跨度是「方法 路由」形式，两种命名在每一条路由上并存，按名称写的查询与告警要分别写。端名作为属性同样可筛选，放进名称不增加可查询的信息。覆盖跨度名的格式化函数以补上端名，同样改了上游采集库的行为（[ADR-observability-request-layer](adr-observability-request-layer.md)）。
+**否决**：名称偏离上游语义约定（[REF-opentelemetry-semconv](../references.md)）给服务端跨度定的「方法 路由」形式；同一追踪后端里，遵循该约定的其他服务以标准方法产出的服务端跨度是「方法 路由」形式，两种命名在每一条路由上并存，按名称写的查询与告警要分别写。端名作为属性同样可筛选，放进名称不增加可查询的信息。覆盖跨度名的格式化函数以补上端名，同样改了上游采集库的行为（[ADR-observability-request-layer](adr-observability-request-layer.md)）。
 
 ### 带上租户属性
 

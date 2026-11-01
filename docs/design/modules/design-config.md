@@ -6,7 +6,7 @@
 
 - 定义输入项声明、传输与格式这些资源类型，遍历注册表收齐它们，汇总为完整的输入项清单并校验冲突。
 - 组装命令树。宿主在其上写出子命令，并列举每个命令纳入哪些模块；本模块据此得出命令树为每一层决定的参与集与该层的命令行参数（[ADR-command-tree](../../adr/adr-command-tree.md)）。
-- 把清单交给解析工具，不自行解析：命令行与命令树交给 pflag 与 cobra，主配置源与层叠交给 viper，文本到目标类型的转换交给 mapstructure（[ADR-config-parsing](../../adr/adr-config-parsing.md)）。环境变量层是例外：viper 每次取值都重新读一遍进程环境，与配置是启动时的快照相悖（[ADR-config-lifecycle](../../adr/adr-config-lifecycle.md)），本模块因此在加载开始时取下一份进程环境，环境变量层从这份快照里读，在层叠中的位置不变。各输入项只从自己声明的来源取值，这一约束由本模块施加在解析工具之上。
+- 把清单交给解析工具，不自行解析：命令行与命令树交给 pflag（[REF-pflag](../../references.md)）与 cobra（[REF-cobra](../../references.md)），主配置源与层叠交给 viper（[REF-viper](../../references.md)），文本到目标类型的转换交给 mapstructure（[REF-mapstructure](../../references.md)）（[ADR-config-parsing](../../adr/adr-config-parsing.md)）。环境变量层是例外：viper 每次取值都重新读一遍进程环境，与配置是启动时的快照相悖（[ADR-config-lifecycle](../../adr/adr-config-lifecycle.md)），本模块因此在加载开始时取下一份进程环境，环境变量层从这份快照里读，在层叠中的位置不变。各输入项只从自己声明的来源取值，这一约束由本模块施加在解析工具之上。
 - 给出了配置定位符时，按其 scheme 选定主配置源、按格式选定解析器并读入数据；未给出则跳过这一层。
 - 读入宿主随二进制编译进来的默认文档，把它的取值折进默认值层。文档可缺席，一次运行至多一份。
 - 登记 `config` 模块，向各模块交付按路径取回自己那份值的功能。
@@ -573,7 +573,7 @@ core.ProcessRegistry.Register(core.Module{
 
 默认定位符缺席时主配置源由环境变量或命令行给出，都不给出则没有主配置源。
 
-**scheme 不区分大小写，登记与匹配都按小写的规范形式**（RFC 3986 如此规定）。`Source` 声明的 scheme 由本模块小写化后入表，定位符那一侧的 scheme 经 URI 解析本就已是小写，两侧因此对得上。由此「传输 scheme 重复」这条判据把 `ETCD` 与 `etcd` 视为同一个 scheme，判据的措辞不变，变的只是它涵盖的范围。
+**scheme 不区分大小写，登记与匹配都按小写的规范形式**（RFC 3986 如此规定，[REF-rfc3986](../../references.md)）。`Source` 声明的 scheme 由本模块小写化后入表，定位符那一侧的 scheme 经 URI 解析本就已是小写，两侧因此对得上。由此「传输 scheme 重复」这条判据把 `ETCD` 与 `etcd` 视为同一个 scheme，判据的措辞不变，变的只是它涵盖的范围。
 
 定位符是 URI，其 scheme 选定传输：
 
@@ -583,7 +583,7 @@ file:config.yaml
 etcd://10.0.0.1:2379/myapp/config
 ```
 
-`file://` 接受空 host 与 `localhost`（RFC 8089 把 `localhost` 等同于本机），其余非空 host 即 `ErrMalformedLocator`。不带斜线的 `file:config.yaml` 解释为相对进程工作目录的路径：定位符是人要在命令行上敲的东西，开发期用相对路径是常见需求，而三斜线的绝对形式表达不了它；这个形态是 URI 语法里现成的位置，不必为此发明新语法。
+`file://` 接受空 host 与 `localhost`（RFC 8089 把 `localhost` 等同于本机，[REF-rfc8089](../../references.md)），其余非空 host 即 `ErrMalformedLocator`。不带斜线的 `file:config.yaml` 解释为相对进程工作目录的路径：定位符是人要在命令行上敲的东西，开发期用相对路径是常见需求，而三斜线的绝对形式表达不了它；这个形态是 URI 语法里现成的位置，不必为此发明新语法。
 
 定位符只能有一个值，主配置源的唯一性因此无需额外校验即成立。
 
@@ -636,7 +636,7 @@ MYAPP_KV__LABELS='{"Zone":"EU-West","TierName":"Cold"}'
 
 **路径段的限制。** 派生变量名用双下划线分隔路径段，因此配置路径的段名不得含连续两个下划线。收集阶段把段名限定为小写字母、数字与短横线，下划线一律不接受，这条限制比「不含 `__`」更严，由 `segmentDefect` 执行：它在声明期就拒绝，不靠运行到那一次取值才暴露。
 
-**大容器与敏感容器优先用配置文件或挂载。** 环境变量对同机进程可见（Linux 上是 `/proc/<pid>/environ`，权限合适时任何进程都能读），也被容器运行时记进 inspect 输出；Kubernetes 的 ConfigMap 单份上限为 1 MiB。一份很大的容器、或带凭据的容器，写在配置文件里、由编排系统挂载成文件，或交给平台的机密机制（Kubernetes Secret 挂载、Fly 机密等）；环境变量适合小块、非敏感、随部署变化的容器。平台机密若只能经环境变量交付，则按上一条输出名字与来源，并在部署侧限制进程与 inspect 的可见范围。
+**大容器与敏感容器优先用配置文件或挂载。** 环境变量对同机进程可见（Linux 上是 `/proc/<pid>/environ`，权限合适时任何进程都能读），也被容器运行时记进 inspect 输出；Kubernetes（[REF-kubernetes](../../references.md)）的 ConfigMap 单份上限为 1 MiB。一份很大的容器、或带凭据的容器，写在配置文件里、由编排系统挂载成文件，或交给平台的机密机制（Kubernetes Secret 挂载、Fly 机密等，[REF-fly-io](../../references.md)）；环境变量适合小块、非敏感、随部署变化的容器。平台机密若只能经环境变量交付，则按上一条输出名字与来源，并在部署侧限制进程与 inspect 的可见范围。
 
 ### 格式的选定
 

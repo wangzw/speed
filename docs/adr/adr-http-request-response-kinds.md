@@ -2,7 +2,7 @@
 
 ## 背景
 
-绑定式 operation 的第一个版本只覆盖「参数 + JSON 请求体 + 固定成功应答」。而 `*gin.Context` 在实际 handler 里还承担：动态响应头与 Cookie、重定向、流式与二进制应答、表单与 multipart 请求、handler 自选状态、client IP 与路由模板、请求内的错误清单。作为库，绑定式模型若表达不了这些，宿主遇到其中之一就只能退回 Gin handler，契约与实现重新分叉。这正是要消灭的那类分叉。
+绑定式 operation 的第一个版本只覆盖「参数 + JSON 请求体 + 固定成功应答」。而 `*gin.Context`（[REF-gin](../references.md)）在实际 handler 里还承担：动态响应头与 Cookie、重定向、流式与二进制应答、表单与 multipart 请求、handler 自选状态、client IP 与路由模板、请求内的错误清单。作为库，绑定式模型若表达不了这些，宿主遇到其中之一就只能退回 Gin handler，契约与实现重新分叉。这正是要消灭的那类分叉。
 
 ## 考虑过的选项
 
@@ -30,7 +30,7 @@
 
 ## 后果
 
-- 绑定式 operation 能表达本仓库使用中的全部 HTTP 形态；Gin handler 只留给 OpenAPI 描述不了或模型尚未覆盖的协议，且这种保留是显式的。
+- 绑定式 operation 能表达本仓库使用中的全部 HTTP 形态；Gin handler 只留给 OpenAPI（[REF-openapi](../references.md)）描述不了或模型尚未覆盖的协议，且这种保留是显式的。
 - 请求侧保持了编译期边界：handler 只能通过 `In` 读输入。
 - 应答侧的状态/媒体类型/头名是运行期核对；JSON body 类型在构造应答时也只在运行期可比。这是动态应答无法做成编译期闭集的代价。
 

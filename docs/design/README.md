@@ -2,7 +2,7 @@
 
 speed 是一个配置驱动的模块化应用程序框架，以 Go 库的形式交付。它为 Go 应用程序提供模块化的骨架与一批通用模块。
 
-本目录只记录设计结论。决策的理由、考虑过的选项与付出的代价记录在[架构决策记录](../adr/README.md)中；术语见[术语表](../glossary.md)。
+本目录只记录设计结论。决策的理由、考虑过的选项与付出的代价记录在[架构决策记录](../adr/README.md)中；术语见[术语表](../glossary.md)，引用的外部来源见[外部来源](../references.md)。
 
 ## 索引
 
@@ -28,9 +28,9 @@ speed 是一个配置驱动的模块化应用程序框架，以 Go 库的形式�
 | [i18n](modules/design-i18n.md) | 面向用户文本的渲染机制：消息目录的收集与装载、语言与时区的解析链、Accept-Language 协商、账户偏好的存取 |
 | [jobs](modules/jobs/README.md) | 作业队列：必须跨副本收敛的定时、周期与异步执行，作业生命周期与多副本认领；数据库后端与周期调度器为其子模块 |
 | [notification](modules/notification/README.md) | 通知：站内信收件箱、按类型的渠道偏好、经作业队列的出站投递与实时推送；收件箱、偏好、投递与推送为其子模块 |
-| [objectstore](modules/design-objectstore.md) | 对象存储：对象的声明与生命周期、上传窗口与过期清扫，字节经可插拔接缝存取；本地目录与 S3 各为一个后端 |
+| [objectstore](modules/design-objectstore.md) | 对象存储：对象的声明与生命周期、上传窗口与过期清扫，字节经可插拔接缝存取；本地目录与 S3（[REF-amazon-s3](../references.md)）各为一个后端 |
 | [feature](modules/design-feature.md) | 特性：模块以资源声明的特性、条件特性在运行期的报告、按启用集算出并只对已认证者发布的特性文档 |
-| [ops](modules/design-ops.md) | 运行面：探针路由与合并后的 API 规格，读取各模块声明的 OpenAPI 片段 |
+| [ops](modules/design-ops.md) | 运行面：探针路由与合并后的 API 规格，读取各模块声明的 OpenAPI（[REF-openapi](../references.md)）片段 |
 | [web](modules/web/README.md) | 前端：包的分层与判据、契约边界、装配与内容分离、装配入口与对外接口面；设计令牌、i18n、组件族、传输运行时、生成的契约面、路由、会话与各能力 UI 包为其子模块 |
 | [webui](modules/design-webui.md) | 前端产物交付：静态应答、客户端路由回退、缓存口径 |
 | [starters](modules/design-starters.md) | 脚手架 starters/demo：可运行的示范骨架，命令树、部署栈、前端应用与打包约定 |

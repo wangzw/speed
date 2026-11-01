@@ -13,9 +13,9 @@
 
 **存放的既有结论。** 状态按「丢失之后校验会不会变宽」放置，撤销标记属于会放宽的一类，进 db（[ADR-authn-state-placement](adr-authn-state-placement.md)）。本记录在这个结论之上决定会话的具体形态。
 
-**现成库的事实。** 会话库按「现成库与 speed 之间的桥」处理，不重复发明。`alexedwards/scs/v2`（v2.9.0）覆盖的部分包括：256 位随机令牌、存储中只留令牌的 SHA-256、cookie 属性的写出、创建路径、可换的编码器与带上下文的存储接缝。它不覆盖账户概念，没有按账户列出与撤销，没有 CSRF。与 speed 对接时有以下约束：
+**现成库的事实。** 会话库按「现成库与 speed 之间的桥」处理，不重复发明。`alexedwards/scs/v2`（[REF-scs](../references.md)）（v2.9.0）覆盖的部分包括：256 位随机令牌、存储中只留令牌的 SHA-256、cookie 属性的写出、创建路径、可换的编码器与带上下文的存储接缝。它不覆盖账户概念，没有按账户列出与撤销，没有 CSRF。与 speed 对接时有以下约束：
 
-- scs 的中间件 `LoadAndSave` 包装 `http.ResponseWriter`，在处理器返回后才提交并写 `Set-Cookie`。入口模块的处理器经 gin 的 `c.Writer` 写响应，包装写入器看不到写入，首次写响应时头已发出，登录应答里没有 `Set-Cookie`。提交点必须在首次写响应之前。
+- scs 的中间件 `LoadAndSave` 包装 `http.ResponseWriter`，在处理器返回后才提交并写 `Set-Cookie`。入口模块的处理器经 gin（[REF-gin](../references.md)）的 `c.Writer` 写响应，包装写入器看不到写入，首次写响应时头已发出，登录应答里没有 `Set-Cookie`。提交点必须在首次写响应之前。
 - 设置了 `IdleTimeout` 后，scs 每次加载都把状态置为已修改并强制续写，每个请求一次写库。
 - 创建路径 `CommitCtx` 收到的 `expiry` 由 scs 的 `Lifetime` 推出。会话期限是运行期可变的设置，`Init` 里读设置要求取用设置模块，且在设置自己的 `Init` 之前读取返回未载入错误，所以 `Lifetime` 无法取设置的当前值，只能取设置域的上界。
 - `RenewToken` 先删旧令牌，到 `Commit` 时才写新令牌，中途失败则会话丢失；它同时重置 scs 自己的期限；它按请求里的令牌寻址，而加强认证与冒充的开始结束由 API 端调用，手里没有 cookie 令牌，只有公开的会话标识。
@@ -23,7 +23,7 @@
 - `Secure` 默认关闭。
 - 默认编码器是 gob，要求类型登记，解码面更大。
 
-**cookie 与跨源。** `SameSite=Lax` 不拦同站兄弟子域发起的请求，也不覆盖不支持该属性的旧浏览器。标准库 `net/http.CrossOriginProtection` 以 `Sec-Fetch-Site` 判跨源，缺失时比较 `Origin` 与 `Host`，两个头都没有的请求按非浏览器或同源放行。
+**cookie 与跨源。** `SameSite=Lax`（[REF-rfc6265bis](../references.md)）不拦同站兄弟子域发起的请求，也不覆盖不支持该属性的旧浏览器。标准库 `net/http.CrossOriginProtection` 以 `Sec-Fetch-Site` 判跨源，缺失时比较 `Origin` 与 `Host`，两个头都没有的请求按非浏览器或同源放行。
 
 ## 考虑过的选项
 
@@ -41,7 +41,7 @@
 
 ### gorilla/sessions 的 CookieStore，或 gin-contrib/sessions
 
-`CookieStore` 把会话数据整体放进签名的 cookie；`gin-contrib/sessions` 是 gorilla 之上的 gin 薄层。
+`CookieStore` 把会话数据整体放进签名的 cookie；`gin-contrib/sessions`（[REF-gin-contrib-sessions](../references.md)）是 gorilla（[REF-gorilla-sessions](../references.md)）之上的 gin 薄层。
 
 **否决**：`CookieStore` 的数据在客户端，服务端无法撤销单个会话，与踢下线直接冲突。`gin-contrib/sessions` 把会话挂在 `gin.Context` 上而不在 `context.Context` 里，校验后端的 `Verify` 方法取不到它；它建在 gorilla 之上，`go.mod` 声明了多个存储库，进入模块图。gorilla 的服务端存储只有文件系统一种，没有空闲超时与令牌轮换的内建概念。
 
@@ -111,7 +111,7 @@ cookie 带 `Max-Age` 或 `Expires`，关闭浏览器后仍在。
   - 每账户的会话数上限只统计 `browser` 与 `token`，`service` 不占。
 - **cookie 缺省仅主机、会话期。** 缺省的 cookie 名带 `__Host-` 前缀，`Secure` 不可单独关闭并由启动校验强制，`HttpOnly`，不设 `Domain`，不设 `Max-Age` 与 `Expires`；没有记住我。偏离缺省只经显式配置：配 `cookie-domain` 时名字改用 `__Secure-` 前缀并写出 `Domain`，`same-site` 可取更严的值，开发用的 `allow-insecure` 去掉前缀与 `Secure`。哪些开关存在、取值与启动诊断由设计文档与配置文档承载；偏离缺省会失去 `__Host-` 所保证的子域不可写，这一代价写在后果里。
 - **cookie 的写出与清除只有一处。** `Sessions` 的 `SetCookie` 与 `ClearCookie` 是唯一写出点，`authn.login`、`authn.impersonation` 等别的模块以及宿主换上的会话模块都不自己拼。凭据被拒、登出与撤销时清除 cookie；跨源检查不通过时不清除，因为 cookie 本身有效、被拒的是请求的意图，跨站请求不能借一次被拒的 POST 让用户登出。
-- **浏览器可能自己附带的凭据的跨源检查在网关。** 载体是 cookie 或 `Authorization` 头里 `Bearer` 以外的 scheme、且方法不是 `GET`、`HEAD`、`OPTIONS` 的请求，由网关在调用校验后端之前用标准库 `CrossOriginProtection` 检查，载体判据与否决项见 [ADR-authn-credential-dispatch](adr-authn-credential-dispatch.md)。不通过即 401，由网关自产，不写 403。检查与 `SameSite` 互为兜底，不做令牌式 CSRF；外部方回跳的端点登记检查的旁路；跨源的单页应用用承载令牌，不用 cookie。可信来源的取值与覆盖的路由由设计文档承载。
+- **浏览器可能自己附带的凭据的跨源检查在网关。** 载体是 cookie 或 `Authorization` 头里 `Bearer`（[REF-rfc6750](../references.md)）以外的 scheme、且方法不是 `GET`、`HEAD`、`OPTIONS` 的请求，由网关在调用校验后端之前用标准库 `CrossOriginProtection` 检查，载体判据与否决项见 [ADR-authn-credential-dispatch](adr-authn-credential-dispatch.md)。不通过即 401，由网关自产，不写 403。检查与 `SameSite` 互为兜底，不做令牌式 CSRF；外部方回跳的端点登记检查的旁路；跨源的单页应用用承载令牌，不用 cookie。可信来源的取值与覆盖的路由由设计文档承载。
 - **校验缓存的有效期是撤销生效的上界。** 会话校验经进程内缓存，缓存有效期是撤销在其他副本上生效的上界，属于有界放宽，由 [ADR-authn-failure](adr-authn-failure.md) 逐项列出；缺省取短值，上限由设置的取值域封顶。读库出错是 `Unavailable`，失败时拒绝，不是放行。缓存的键、次序与读库次数见 design-authn-session。
 - **账户停用、删除与密钥撤销的清理**经账户生命周期钩子与事件补偿完成，会话校验对账户状态与 `valid_after` 的核对是钩子之外的双重校验（[ADR-authn-account-lifecycle](adr-authn-account-lifecycle.md)）。
 
@@ -129,7 +129,7 @@ cookie 带 `Max-Age` 或 `Expires`，关闭浏览器后仍在。
 - **需要跨子域共享 cookie 或更严 `SameSite` 的部署要放弃缺省。** 配 `cookie-domain` 之后 `__Host-` 前缀所保证的子域不可写随之失去，同域下的兄弟子域可以覆盖这个 cookie，启动诊断为此写一行 Warn；开发用的 `allow-insecure` 同样失去前缀与 `Secure`。`same-site` 取更严的值会使从外站链接进入时首个请求不带 cookie。
 - **标准库的跨源检查对既无 `Sec-Fetch-Site` 又无 `Origin` 的请求放行**，只有极旧的浏览器与非浏览器客户端落在这一档；兄弟子域按跨源处理，除非把它的来源加进可信来源。
 - **会话令牌在 `HttpOnly` cookie 里**，脚本读不到，但注入的脚本能借浏览器发出同源请求。这一类风险靠应用自身的内容安全策略，不在 authn 的保证之内；会话没有绑定设备或网络，绑定在 NAT 与移动网络下会误杀；列出会话时 `ClientInfo.IP` 在未配置可信代理的代理之后是代理地址，仅供记录与展示。
-- **跨源的单页应用不能用 cookie 会话。** 它用承载令牌；单页应用与 API 跨域时需要一个排在网关之外的 CORS 层（防护阶段），否则预检在网关被 401，该层由宿主提供，authn 不提供。
+- **跨源的单页应用不能用 cookie 会话。** 它用承载令牌；单页应用与 API 跨域时需要一个排在网关之外的 CORS（[REF-whatwg-fetch](../references.md)）层（防护阶段），否则预检在网关被 401，该层由宿主提供，authn 不提供。
 - **会话期 cookie 随浏览器关闭而丢**，没有记住我；长期免登录只经刷新令牌，面向非浏览器客户端。
 
 ## 失效条件

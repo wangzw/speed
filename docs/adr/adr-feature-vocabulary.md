@@ -9,7 +9,7 @@
 约束：
 
 - 声明模块经 `feature.Board` 的 `Post` 报告的名字若不是它声明的条件特性，发布者在 Start 让启动失败；任何一次可能的应答因此都是可用集声明的子集；一份按可用集写出的静态名字清单覆盖全部可能的应答。
-- 示范的 `gen` 从同一个二进制的 import 闭包写出 `contracts/api.json`；`@speed/api-sdk` 由 `orval` 从它生成，是前端唯一与后端契约耦合的包。
+- 示范的 `gen` 从同一个二进制的 import 闭包写出 `contracts/api.json`；`@speed/api-sdk` 由 `orval`（[REF-orval](../references.md)）从它生成，是前端唯一与后端契约耦合的包。
 - `@speed/route-kit` 不 import 任何同族前端包。
 - 宿主可以有自己的应用模块，它们也可能声明特性。
 
@@ -25,7 +25,7 @@
 
 ### 从片段归属生成模块名类型
 
-由 OpenAPI 的 `x-fragments` 生成一个模块名的联合类型。
+由 OpenAPI（[REF-openapi](../references.md)）的 `x-fragments` 生成一个模块名的联合类型。
 
 **否决**：发布单位不是模块名（ADR-feature-document）。
 

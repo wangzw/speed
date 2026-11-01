@@ -6,7 +6,7 @@
 
 复用者是从 `starters/demo` 拷出骨架、按版本区间安装 `@speed/*` 的产品，改不了包源码，只能用包公开的 props、导出与子路径。因此凡宿主合理会改或合理会直接使用的行为，都必须由包提供接缝。
 
-认证族里同一段逻辑各有本地副本：通行密钥仪式驱动在 `auth-ui`、`account-ui` 与 `console-ui` 各有一份（`auth-ui` 版多一个可取消的 `signal`）；步进门控在 `account-ui` 与 `console-ui` 各有一份（前者记住任意动作，后者记住闭包并带 `intercept`）；流程步渲染器在 `auth-ui`、`account-ui` 与 `console-ui` 各有一份。副本已经漂移，同一个修正只到其中一处。步进对话框同样在 `account-ui` 与 `console-ui` 各有一份，而两者都要被宿主使用。
+认证族里同一段逻辑各有本地副本：通行密钥仪式（[REF-webauthn](../references.md)）驱动在 `auth-ui`、`account-ui` 与 `console-ui` 各有一份（`auth-ui` 版多一个可取消的 `signal`）；步进门控在 `account-ui` 与 `console-ui` 各有一份（前者记住任意动作，后者记住闭包并带 `intercept`）；流程步渲染器在 `auth-ui`、`account-ui` 与 `console-ui` 各有一份。副本已经漂移，同一个修正只到其中一处。步进对话框同样在 `account-ui` 与 `console-ui` 各有一份，而两者都要被宿主使用。
 
 ## 考虑过的选项
 

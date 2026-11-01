@@ -10,7 +10,7 @@
 
 「订阅者收到并处理了吗」在遥测模块产出的信号里没有答案。遥测模块已决定不订阅总线，并把「在总线的分发层为每个订阅者记跨度」判为不在本模块、「属于事件模块」（[ADR-observability-events](adr-observability-events.md)）。事件模块此前没有承接这一条：`pkg/event` 不产生任何跨度，`pkg/event/internal/dispatch` 没有埋点。
 
-跨进程的追踪要在两侧都做：发布方把当前跨度上下文写进事件，订阅方从事件取出它作为父跨度。遥测模块的传播器只承载 W3C 追踪上下文，不承载 baggage（[ADR-observability-propagation](adr-observability-propagation.md)），provider 只经注册表交付，不装进程级全局（[ADR-observability-provider](adr-observability-provider.md)）。
+跨进程的追踪要在两侧都做：发布方把当前跨度上下文写进事件，订阅方从事件取出它作为父跨度。遥测模块的传播器只承载 W3C 追踪上下文（[REF-w3c-trace-context](../references.md)），不承载 baggage（[REF-w3c-baggage](../references.md)）（[ADR-observability-propagation](adr-observability-propagation.md)），provider 只经注册表交付，不装进程级全局（[ADR-observability-provider](adr-observability-provider.md)）。
 
 事务发件箱在写入的事务里暂存事件、提交之后由中继发布（[ADR-outbox-scope](adr-outbox-scope.md)）。发布的那一刻早已离开调用方所在的跨度，事件要在暂存时带上当时的追踪上下文，中继才能在发布之后把同一条追踪接到投递上。
 
@@ -68,9 +68,9 @@
 - **事件标识进入跨度属性，基数随事件数增长。** 跨度名取自订阅者名，是低基数、稳定的；事件类型、事件标识与后端系统作为属性，其中事件标识每个事件一个取值。租户不进跨度：它的取值个数与租户数同阶，与请求路径的计量同一理由（[ADR-observability-instruments](adr-observability-instruments.md)）。
 - **每个 `Subscribe` 调用点要给出一个名字。** 名字是必填的位置参数，现有的每个订阅点因此各改一次，连同一致性套件的订阅调用与各实现对 `Subscribe` 的转发：它是本模块对外交付的接口方法，改动落到每一个实现与每一个调用点上。各订阅点已持有自己的身份，可径直用作名字。两个订阅者取同一个名字不报错，它们的跨度靠事件类型属性区分，类型也相同时不可区分。
 - **事务发件箱的暂存表与 PostgreSQL 实现自己的发件箱表各多一列。** 追踪上下文在暂存时写入、发布时读出，订阅者的跨度因而以暂存方所在的跨度为父。此前建成的表在迁移或启动时补上这一列，旧行取默认的空值。
-- **线格式是破坏性升级。** 追踪上下文进入了 NATS 与 Redis 的 envelope、PostgreSQL 发件箱表的 insert 与 select、事务发件箱的暂存表与各方言的迁移。旧条目与旧行没有这一部分，解出来是空值，那次投递的订阅者跨度自成一条追踪的根，不是发布方那条的子。这份缺失按事件逐条出现，新旧并存期间没有一层会报出来。
+- **线格式是破坏性升级。** 追踪上下文进入了 NATS（[REF-nats](../references.md)）与 Redis 的 envelope、PostgreSQL 发件箱表的 insert 与 select、事务发件箱的暂存表与各方言的迁移。旧条目与旧行没有这一部分，解出来是空值，那次投递的订阅者跨度自成一条追踪的根，不是发布方那条的子。这份缺失按事件逐条出现，新旧并存期间没有一层会报出来。
 - **provider 的接缝多一层适配。** 根包不 import 遥测的接口包，`Spec[C].Open` 收到的是本模块自己定义的窄接口，不是遥测模块的类型别名；实现子包要把遥测的 provider 适配成它，这层适配是隔离的代价。换来的是根包的依赖面不变——遥测接口包经它的类型别名带上的上游追踪 API、指标 API 与两个 SDK 导出接口包，不进每一个发布事件的模块的依赖闭包，无论装配里有没有遥测功能。
 
 ## 失效条件
 
-追踪格式被要求可配置（本记录定死为 W3C 追踪上下文，与遥测模块的传播器一致），或上游的消息处理语义约定给出与本记录不同的跨度命名或父子形态时，本记录要重新检验。
+追踪格式被要求可配置（本记录定死为 W3C 追踪上下文，与遥测模块的传播器一致），或上游的消息处理语义约定（[REF-opentelemetry-semconv](../references.md)）给出与本记录不同的跨度命名或父子形态时，本记录要重新检验。

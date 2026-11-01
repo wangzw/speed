@@ -4,7 +4,7 @@
 
 跨进程的链路要在两侧都做：服务端不提取父上下文，调用方的跨度就接不上；客户端不注入，下游就看不到这条链路。
 
-上游库的默认复合传播器是空的：进程的默认传递器是一个零委托的复合传播器（`propagation.NewCompositeTextMapPropagator`，`go.opentelemetry.io/otel/internal/global` 的 noop 委托），注入与提取都静默空转，不报错。
+上游库的默认复合传播器是空的：进程的默认传递器是一个零委托的复合传播器（`propagation.NewCompositeTextMapPropagator`，`go.opentelemetry.io/otel/internal/global` 的 noop 委托，[REF-opentelemetry-go](../references.md)），注入与提取都静默空转，不报错。
 
 `pkg/http` 只有入站侧：它组装每个端点的链（`http.Endpoint.Use` 逐端登记中间件），没有出站客户端的概念；出站请求由各调用点自己构造。
 
@@ -26,7 +26,7 @@
 
 ### 传播器在追踪上下文之外一并承载 baggage
 
-采纳它意味着传播器是追踪上下文与 baggage 的复合，入站的 baggage 随父跨度一起提取进请求上下文，出站时随追踪头部一起注入。
+采纳它意味着传播器是追踪上下文（[REF-w3c-trace-context](../references.md)）与 baggage（[REF-w3c-baggage](../references.md)）的复合，入站的 baggage 随父跨度一起提取进请求上下文，出站时随追踪头部一起注入。
 
 **否决**：采集层的提取发生在认证之前，入站的 baggage 是任何调用方都能写下的内容；提取之后它留在请求上下文里，传输包装再以本服务的身份把它转发给这次请求调用的每一个第三方。接续一条追踪只需要跨度上下文，baggage 换来的是一条把不受信的输入带过信任边界的通道。
 

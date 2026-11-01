@@ -19,7 +19,7 @@
 - **不做 HTTP 机制。** 路由、中间件的排序与阶段归 [http](http/design-http.md)；`i18n.http` 只是使用它的登记面在每个端挂层。
 - **不改机器码与状态码。** 机器码 `Problem.Type`、`Problem.Status` 与 `Problem.Detail` 原样保留，不随语言变化；本功能目录渲染的是消息文本，不决定错误响应的形状（[ADR-i18n-error-rendering](../../adr/adr-i18n-error-rendering.md)）。
 - **不替消费方渲染消息。** 一条消息由产生它的模块渲染：那个模块承载自己的目录、取用引擎、把成品文本写出；本功能目录只提供引擎与目录机制，不集中渲染任何模块的文本，也不认识某条消息的插值上下文（[ADR-i18n-rendering-ownership](../../adr/adr-i18n-rendering-ownership.md)）。
-- **不决定返回形态。** 日期与时间的渲染归属由**返回形态**决定：一条消息里出现的日期与时间，与文本、计数（复数）、数字一样由引擎渲染，日期与时间另按账户时区（见核心算法与流程一节）；而**作为独立字段**返回给客户端的日期与时间走标准 ISO 格式、由客户端渲染。后者是模块选择不发复合字符串的场合，不是本功能目录的职责。本功能目录交出账户的 IANA 时区（`Resolver.TimeZoneOf`、`Resolver.TimeZoneFor`）供两者使用（[ADR-i18n-message-rendering](../../adr/adr-i18n-message-rendering.md)）。
+- **不决定返回形态。** 日期与时间的渲染归属由**返回形态**决定：一条消息里出现的日期与时间，与文本、计数（复数）、数字一样由引擎渲染，日期与时间另按账户时区（见核心算法与流程一节）；而**作为独立字段**返回给客户端的日期与时间走标准 ISO 格式（[REF-iso8601](../../references.md)）、由客户端渲染。后者是模块选择不发复合字符串的场合，不是本功能目录的职责。本功能目录交出账户的 IANA 时区（[REF-iana-tz](../../references.md)）（`Resolver.TimeZoneOf`、`Resolver.TimeZoneFor`）供两者使用（[ADR-i18n-message-rendering](../../adr/adr-i18n-message-rendering.md)）。
 - **不做热加载。** 目录有内嵌声明与配置指定的覆盖目录两个来源，两者都在装配期读取，此后只读，运行期没有更换目录或增删消息的接口（[ADR-i18n-catalogs](../../adr/adr-i18n-catalogs.md)）。
 - **不发送消息。** 短信与邮件的模板与发送归各自的模块；本功能目录渲染的是本进程写出的文本，不投递给任何外部通道。
 
@@ -29,12 +29,12 @@
 
 | 术语 | 英文 | 定义 |
 |---|---|---|
-| 语言 | locale | 一次渲染所用的语言，写作 BCP 47 标签，如 `zh-CN`、`en-US`；在本模块是一份偏好，不是任何判定依据。 |
+| 语言 | locale | 一次渲染所用的语言，写作 BCP 47（[REF-bcp47](../../references.md)）标签，如 `zh-CN`、`en-US`；在本模块是一份偏好，不是任何判定依据。 |
 | 目录 | catalog | 一组消息文件，每个文件按它承载的语言命名，正文是键到消息的 JSON 对象。来源有二：一个模块以 `//go:embed` 声明的内嵌目录，以及配置项 `i18n.catalogs-dir` 指定的覆盖目录。两者都在装配期装载，运行期不再读。 |
 | 覆盖目录 | overlay | 配置项 `i18n.catalogs-dir` 指定的目录，与内嵌声明同形。装配期读取并并入同一索引，排在已声明目录之后：同一个键上胜过声明，只被它承载的语言因此进入受支持的语言集。 |
 | 键 | key | 一条消息在目录中的标识，扁平且带模块命名空间，如 `http.404`、`authn.login-failed`。 |
 | 参数 | args | 一条参数化消息插值用的名值对；消息写 `{{name}}`、一段复数或一段时间，缺参时该处原样保留。值带类型：字符串原样写入，整数与数字按消息的语言格式化，时间只有经一段时间段才渲染（按时间段自带的布局与渲染上下文的时区），裸 `{{name}}` 里的时间原样保留。 |
-| 复数段 | plural segment | 消息里按计数选择分支的一段，写作 `{{name, plural, <category>=<text>, ...}}`；类别是六个 CLDR 类别 `zero`、`one`、`two`、`few`、`many`、`other`，`other` 必填，分支里的 `#` 是格式化后的计数。分支文本是一段字面文本与 `#`，不能再嵌一个占位符。 |
+| 复数段 | plural segment | 消息里按计数选择分支的一段，写作 `{{name, plural, <category>=<text>, ...}}`；类别是六个 CLDR（[REF-unicode-cldr](../../references.md)）类别 `zero`、`one`、`two`、`few`、`many`、`other`，`other` 必填，分支里的 `#` 是格式化后的计数。分支文本是一段字面文本与 `#`，不能再嵌一个占位符。 |
 | 时间段 | time form | 消息里按一个时间取值渲染的一段，写作 `{{name, time, <layout>}}`；`<layout>` 是一个 Go 布局，由消息文本自带，时间按渲染上下文的时区渲染成文本。参数缺失或不是时间时原样保留。 |
 | 计数 | count | 复数段据以选分支的整数值，也是分支里 `#` 展开成的数字。 |
 | 协商 | negotiation | 按请求的 `Accept-Language` 头，在本次支持的受语言集中选出最匹配的一个。 |
@@ -223,7 +223,7 @@ func ValidTimeZone(name string) bool
 
 **依赖方向。** 根包 `pkg/i18n` 只依赖标准库，因而一个只读语言的模块 import 它不拉进任何第三方库；这与 [authn](authn/design-authn.md) 根包的位置同一条。子包各自 import 根包与 `pkg/core`，并按其用途 import `pkg/http` 或 `pkg/authn`。**`pkg/authn` 的任何包都不 import `pkg/i18n` 的根包以外的部分，且 `pkg/authn` 根包不 import `pkg/i18n`**（[authn](authn/design-authn.md) 的依赖方向）：认证根包只依赖标准库与自己的内部包，一个语言偏好不改变这一点。需要同时读身份与语言的层要么在 `i18n.http` 里，要么在 `pkg/authn/login` 这类子包里——子包 import `pkg/i18n` 是许可的，本功能目录不 import 认证的任何子包。**`pkg/http` import `pkg/i18n` 的根包**：它渲染自己写出的四类拒绝（无匹配路由的 404、方法不允许的 405、请求体超限的 413、接住 panic 的 500），把 `i18n.Localizer` 作为可选依赖取用（[ADR-i18n-error-rendering](../../adr/adr-i18n-error-rendering.md)）。方向是本功能目录的根包被入口模块取用；根包只依赖标准库，因而不使入口模块的依赖预算增长（[ADR-i18n-locale-type](../../adr/adr-i18n-locale-type.md)）。
 
-**在本功能目录里，`golang.org/x/text` 只出现在引擎 `pkg/i18n/catalog`。** 它在本功能目录承担三处：`language` 用 `ParseAcceptLanguage` 解析 `Accept-Language` 头值、用 `language.Matcher` 在受支持语言集中匹配；`feature/plural` 按语言标签判定计数的 CLDR 类别；`message` 与 `number` 按语言把整数与数字格式化成十进制，分组与分隔取该语言的 CLDR 数据。三者都只在引擎里出现。根包与其余子包不拉它，`i18n.http` 经 `i18n.Negotiator` 取用协商结果，一个只读 `Locale` 的模块因而拿不到匹配或数字格式化库。
+**在本功能目录里，`golang.org/x/text`（[REF-golang-x-text](../../references.md)）只出现在引擎 `pkg/i18n/catalog`。** 它在本功能目录承担三处：`language` 用 `ParseAcceptLanguage` 解析 `Accept-Language` 头值、用 `language.Matcher` 在受支持语言集中匹配；`feature/plural` 按语言标签判定计数的 CLDR 类别；`message` 与 `number` 按语言把整数与数字格式化成十进制，分组与分隔取该语言的 CLDR 数据。三者都只在引擎里出现。根包与其余子包不拉它，`i18n.http` 经 `i18n.Negotiator` 取用协商结果，一个只读 `Locale` 的模块因而拿不到匹配或数字格式化库。
 
 ## UML 图
 
@@ -430,7 +430,7 @@ sequenceDiagram
 - **`Profile` 是非排他接缝。** 任何能读到账户语言与时区的模块实现它，引擎用 `core.ResolveAll` 取用每一个，一个都没有是合法配置。`i18n.account` 是内置的一个实现。
 - **`Catalog` 是声明式的接缝。** 任何模块以 `//go:embed` 声明自己的目录，引擎取可用集合并进索引；新增一种语言的覆盖是加一份目录，不是接入一个模块。
 - **配置项 `i18n.catalogs-dir` 指定的覆盖目录是第二个文案来源。** 运维经它不改二进制、不接入模块地覆盖或补一条文案、补一种语言；与声明目录同形，装配期读取并入索引，同名键上胜过声明目录。
-- **`ErrorResponder` 是非排他接缝，归入口模块。** 一个拥有某套 API 错误形状的模块交付自己的实现替换默认形状；它只决定形状，不承载语言。没有实现时，[http](http/design-http.md) 写出默认的 `application/problem+json`。
+- **`ErrorResponder` 是非排他接缝，归入口模块。** 一个拥有某套 API 错误形状的模块交付自己的实现替换默认形状；它只决定形状，不承载语言。没有实现时，[http](http/design-http.md) 写出默认的 `application/problem+json`（[REF-rfc9457](../../references.md)）。
 - **`Localizer`、`Negotiator`、`Resolver` 由引擎排他交付，不是可替换的后端。** 语言集是进程级的一份，多于一个引擎即启动失败；换一套语言匹配是改本功能目录的代码，不是接一块实现。
 
 ## 实现状态

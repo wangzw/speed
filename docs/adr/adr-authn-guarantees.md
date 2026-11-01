@@ -8,7 +8,7 @@
 
 认证网关是否在场由宿主的命令树与预置决定，模块不声明、也无从知道自己出现在哪条命令下（[ADR-command-tree](adr-command-tree.md)、[ADR-supplied-instance](adr-supplied-instance.md)）。未被本次命令纳入、也没有预置实例的模块不在参与集里，连 `Prepare` 都不执行。启动诊断的义务写的是：启动成功时，未进入启用集的模块必须在诊断中列出，并给出它被消解禁用的原因。架构文档把未被纳入的模块明确排除在这条义务之外，理由是它起于宿主写在命令树上的决定、不是意外；义务要求的那个原因它也一个都写不出——`Prepare` 都没执行，没有参与消解。按名查询启用结果对这种模块给出禁用，原因写明它不在这条命令的参与集里；注册表另有一个查询单独回答它在不在本次参与集内。这些查询都要宿主主动去问，不会自己出现在任何输出里。
 
-认证的覆盖面随范围扩大而变宽。网关校验的凭据除 `Authorization` 头之外还有校验后端认领的 cookie；登录会话令牌、JWT 访问令牌、刷新令牌都是凭据，各自经头、cookie 或请求体到达（[ADR-authn-credential-dispatch](adr-authn-credential-dispatch.md)）。网关默认守入口模块声明的全部端，显式清单只作收窄，枚举靠入口模块的端名读口（[ADR-http-enumeration](adr-http-enumeration.md)）。冒充身份只被放进租户准入层所守的端与登记为可冒充的路由，准入层是 tenant 目录的模块，由它交付 `authn.ScopeGuard`（[ADR-authn-impersonation](adr-authn-impersonation.md)）。
+认证的覆盖面随范围扩大而变宽。网关校验的凭据除 `Authorization` 头之外还有校验后端认领的 cookie；登录会话令牌、JWT（[REF-rfc7519](../references.md)）访问令牌、刷新令牌都是凭据，各自经头、cookie 或请求体到达（[ADR-authn-credential-dispatch](adr-authn-credential-dispatch.md)）。网关默认守入口模块声明的全部端，显式清单只作收窄，枚举靠入口模块的端名读口（[ADR-http-enumeration](adr-http-enumeration.md)）。冒充身份只被放进租户准入层所守的端与登记为可冒充的路由，准入层是 tenant 目录的模块，由它交付 `authn.ScopeGuard`（[ADR-authn-impersonation](adr-authn-impersonation.md)）。
 
 想要而拿不到的是这样一类性质：成立与否取决于本次装配里还有哪些层、它们各自怎么写，而认证既不认识它们，也没有任何声明位能约束它们。链上没有任何一层能绕过认证层、凭据不向认证层以内泄漏、认证层以内的缓存或合并层不把一个主体的应答交给另一个主体、准入层所守的端上的路由都带着租户上下文，都属于这一类。要把其中任何一条变成入口模块强制的性质，落点都在 `pkg/http` 的接口面上——那是认证不拥有的模块，它的接口被每一个贡献路由的模块使用，新增的代价落在每一个宿主头上，与这个宿主是否纳入认证无关。
 

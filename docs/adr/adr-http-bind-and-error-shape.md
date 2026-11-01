@@ -2,7 +2,7 @@
 
 ## 背景
 
-入口模块 `pkg/http` 已定义错误响应的内容与形状：`Problem` 取 RFC 9457 的字段，`Fail` 是写出入口，`ErrorResponder` 是整体替换形状的可选接缝（`pkg/http/problem.go`；[ADR-http-errors](adr-http-errors.md)）。`Problem` 的 `Title` 与 `Detail` 是已经渲染完成的成品文本，形状接缝不承载语言；`Type` 与 `Status` 是机器码，不随语言变（[ADR-i18n-error-rendering](adr-i18n-error-rendering.md)）。
+入口模块 `pkg/http` 已定义错误响应的内容与形状：`Problem` 取 RFC 9457（[REF-rfc9457](../references.md)）的字段，`Fail` 是写出入口，`ErrorResponder` 是整体替换形状的可选接缝（`pkg/http/problem.go`；[ADR-http-errors](adr-http-errors.md)）。`Problem` 的 `Title` 与 `Detail` 是已经渲染完成的成品文本，形状接缝不承载语言；`Type` 与 `Status` 是机器码，不随语言变（[ADR-i18n-error-rendering](adr-i18n-error-rendering.md)）。
 
 宿主各自处理请求体绑定。示例宿主的 `bindBody` 读 body、按 `*nethttp.MaxBytesError` 把失败分 413 与 400、再调 `dst` 自带的 `Validate` 分 422。第二个宿主的 `bindFailureStatus` 重复了同一套 413 与 400 的判定。
 
@@ -26,7 +26,7 @@
 
 ### 不抽，让 handler 直接用 gin 的 `ShouldBindJSON`
 
-**否决**：gin 把「超限」与「JSON 不可读」归成同一次 error，状态码要调用方自己按 `errors.As` 分；不抽就是把这段判定留在每个宿主，这正是重复发生的地方。
+**否决**：gin（[REF-gin](../references.md)）把「超限」与「JSON 不可读」归成同一次 error，状态码要调用方自己按 `errors.As` 分；不抽就是把这段判定留在每个宿主，这正是重复发生的地方。
 
 ## 决策
 

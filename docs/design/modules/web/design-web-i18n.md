@@ -2,9 +2,9 @@
 
 ## 职责
 
-本包是 web 包树的国际化层，包裹 react-i18next 与 i18next 并加上一套纪律：每宿主一个实例，一个协商出的起始语言，按包注册的命名空间（注册时校验覆盖与键集），以及**缺键绝不静默回落到另一种语言**。
+本包是 web 包树的国际化层，包裹 react-i18next（[REF-react-i18next](../../../references.md)）与 i18next（[REF-i18next](../../../references.md)）并加上一套纪律：每宿主一个实例，一个协商出的起始语言，按包注册的命名空间（注册时校验覆盖与键集），以及**缺键绝不静默回落到另一种语言**。
 
-它把一个宿主需要的整条 i18n 面收在一处：实例创建（`createI18n`）、语言切换（`switchLanguage`）、命名空间注册（`registerNamespace`）、注册前的资源覆盖（`overlayResources`）、实例自身受支持语言的读取（`readSupportedLanguages`）、缺键处置（`defaultMissingKeyHandler` 与 `MissingKeyDetails`）、错误码到文本的约定（`createErrorTextResolver` 及其 `httpFamily`/`fallthrough`/`wait` 选项、共享错误码家族）、显示时区与时间格式化的纯函数（`resolveTimeZone`、`isSupportedTimeZone`、`formatInstant`）、语言名（`languageDisplayName`），以及 react-i18next 的绑定再导出（`I18nextProvider`、`useTranslation`）。MUI 本地化助手在独立子路径 `@speed/i18n/mui-locale`，平台错误文案包在 `@speed/i18n/platform-errors`。
+它把一个宿主需要的整条 i18n 面收在一处：实例创建（`createI18n`）、语言切换（`switchLanguage`）、命名空间注册（`registerNamespace`）、注册前的资源覆盖（`overlayResources`）、实例自身受支持语言的读取（`readSupportedLanguages`）、缺键处置（`defaultMissingKeyHandler` 与 `MissingKeyDetails`）、错误码到文本的约定（`createErrorTextResolver` 及其 `httpFamily`/`fallthrough`/`wait` 选项、共享错误码家族）、显示时区与时间格式化的纯函数（`resolveTimeZone`、`isSupportedTimeZone`、`formatInstant`）、语言名（`languageDisplayName`），以及 react-i18next 的绑定再导出（`I18nextProvider`、`useTranslation`）。MUI（[REF-mui](../../../references.md)）本地化助手在独立子路径 `@speed/i18n/mui-locale`，平台错误文案包在 `@speed/i18n/platform-errors`。
 
 react 绑定只从这里再导出，组件包与宿主不直接 import `react-i18next`：版本锁步使一个树里只有一个 react-i18next 副本，`useTranslation` 在交付出去的组件里因此安全。
 
@@ -106,12 +106,12 @@ sequenceDiagram
 | 资源包 | `ResourceBundle` | 语言到 bundle；bundle 是嵌套的字符串叶子 |
 | 资源覆盖 | `ResourceOverlay` | 语言到部分 bundle 的覆盖层；改写不存在的叶子即抛错 |
 | 错误解析选项 | `ErrorTextResolverOptions` | `httpFamily` 与 `fallthrough`；都不给时与既有约定一致 |
-| 显示时区 | 字符串 | 宿主解析出的 IANA 时区名；本包只解析与格式化，不持有 |
+| 显示时区 | 字符串 | 宿主解析出的 IANA 时区名（[REF-iana-tz](../../../references.md)）；本包只解析与格式化，不持有 |
 | 存储面 | `StorageLike` | `getItem`/`setItem`；满足 localStorage 与宿主测试替身 |
 | 存储绑定 | 挂在实例自身上的私有记录 | 创建时解析的存储与键以包内注册符号为键挂在实例上，切换经同一绑定写；从实例派生的对象（如 `useTranslation` 交回的包装）连同其余自有属性一起携带它 |
 | 缺键详情 | `MissingKeyDetails` | 查找涉及的语言、命名空间、键 |
 
-**实例由创建时的选项定型**：纪律选项（受支持集、`fallbackLng: false`、`load: 'currentOnly'`、`saveMissing` 与缺键处理器）保证缺键不回落到别的语言，协商结果（起始语言）决定从哪种语言开始。**插值按原样进入文本**：实例固定 `interpolation.escapeValue: false`，因为 React 把译文字符串当作文本节点渲染时已转义一次，引擎再转义一次会把实体本身（路径里的 `/` 显示成 `&#x2F;`、租户名里的 `&` 显示成 `&amp;`）呈现给用户；本包只渲染进 React，没有任何一层消费 HTML。这条前提由工作区的 `speed/no-dangerous-html` ESLint 规则守住：运行时源码里的 `dangerouslySetInnerHTML`、`innerHTML` 或 `outerHTML` 的赋值、`insertAdjacentHTML` 与 `document.write` 报错，故新增一处 HTML 消费点不会让本实例的原文插值静默变成 XSS 通道。`fallbackNamespaces` 是唯一到达 i18next 自身选项面的宿主选项（落为 `fallbackNS`），其未设状态（`fallbackNS` 为 false）与「没有配置回退命名空间」是同一件事。
+**实例由创建时的选项定型**：纪律选项（受支持集、`fallbackLng: false`、`load: 'currentOnly'`、`saveMissing` 与缺键处理器）保证缺键不回落到别的语言，协商结果（起始语言）决定从哪种语言开始。**插值按原样进入文本**：实例固定 `interpolation.escapeValue: false`，因为 React 把译文字符串当作文本节点渲染时已转义一次，引擎再转义一次会把实体本身（路径里的 `/` 显示成 `&#x2F;`、租户名里的 `&` 显示成 `&amp;`）呈现给用户；本包只渲染进 React，没有任何一层消费 HTML。这条前提由工作区的 `speed/no-dangerous-html` ESLint（[REF-eslint](../../../references.md)）规则守住：运行时源码里的 `dangerouslySetInnerHTML`、`innerHTML` 或 `outerHTML` 的赋值、`insertAdjacentHTML` 与 `document.write` 报错，故新增一处 HTML 消费点不会让本实例的原文插值静默变成 XSS 通道。`fallbackNamespaces` 是唯一到达 i18next 自身选项面的宿主选项（落为 `fallbackNS`），其未设状态（`fallbackNS` 为 false）与「没有配置回退命名空间」是同一件事。
 
 ## 核心算法与流程
 

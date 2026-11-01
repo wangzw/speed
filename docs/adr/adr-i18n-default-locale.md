@@ -28,7 +28,7 @@ i18n 引擎有自己的默认，认证模块有自己的默认。
 
 ## 决策
 
-采纳：默认语言是配置项 `i18n.default-locale`，取值是一个 BCP 47 标签，未设置时为 `en-US`。它是 i18n 引擎的 `Resolver.Default` 报告的语言，也是短信模块在请求语言为空或解析不到时的落点；一处配置同时决定错误文本与未声明语言时短信发的是哪种模板。
+采纳：默认语言是配置项 `i18n.default-locale`，取值是一个 BCP 47（[REF-bcp47](../references.md)）标签，未设置时为 `en-US`。它是 i18n 引擎的 `Resolver.Default` 报告的语言，也是短信模块在请求语言为空或解析不到时的落点；一处配置同时决定错误文本与未声明语言时短信发的是哪种模板。
 
 两个能力目录读的是同一项。命名空间与项名由 `pkg/i18n` 根包导出为 `ConfigNamespace` 与 `DefaultLocaleItem`，短信模块经 `reader.Decode(i18n.ConfigNamespace, &cfg)` 读它；该项在短信一侧预置为 `en-US`，因而一个没有纳入 i18n 引擎、也就没有该命名空间的装配读到的仍是英文，与那个引擎自己会读的默认一致。
 

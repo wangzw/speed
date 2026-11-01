@@ -6,7 +6,7 @@
 
 入口模块的 panic 兜底由它内建，落在观测阶段之内、排在观测阶段的登记层之内（见 `http` 设计文档的兜底层一节、[ADR-http-recovery](adr-http-recovery.md)）。它之内的层抛出的 panic 才到它；观测阶段本身的层抛出的 panic 越过它，抵达协议层。
 
-采集层由上游 gin 采集库的中间件与本模块的守护层组成（[ADR-observability-request-layer](adr-observability-request-layer.md)）。上游采集库不接住 panic，穿过它的 panic 不进计量，接住它的一层因而必须位于它之内。
+采集层由上游 gin（[REF-gin](../references.md)）采集库的中间件与本模块的守护层组成（[ADR-observability-request-layer](adr-observability-request-layer.md)）。上游采集库不接住 panic，穿过它的 panic 不进计量，接住它的一层因而必须位于它之内。
 
 ## 考虑过的选项
 

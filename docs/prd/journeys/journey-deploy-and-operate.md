@@ -8,7 +8,7 @@
 
 - 持有部署目标平台的账户与容器运行时，能在其上构建并运行容器镜像。
 - 已创建一块持久卷，卷在重启与重新部署之间保留。
-- 公开来源使用 https；Google 与 GitHub 各自登记的授权回调地址为 `<公开来源>/api/v1/auth/callback/google` 与 `<公开来源>/api/v1/auth/callback/github`。
+- 公开来源使用 https；Google（[REF-google-openid-connect](../../references.md)）与 GitHub（[REF-github-oauth-apps](../../references.md)）各自登记的授权回调地址为 `<公开来源>/api/v1/auth/callback/google` 与 `<公开来源>/api/v1/auth/callback/github`。
 - 已取得邮件中继的主机与发件地址，以及 Google 与 GitHub 各自的应用标识与密钥。
 - 已为数据库准备一个加密根键，并将在该卷的整个生命期内沿用同一个键。
 - 配置中给出的运营者邮箱可接收邮件，该账户的口令满足部署当时的账户口令策略。

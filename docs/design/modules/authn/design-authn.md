@@ -32,7 +32,7 @@
 | [design-authn-mfa](design-authn-mfa.md) | 因素、多因素编排、保障等级的合成、加强认证、找回 |
 | [design-authn-session](design-authn-session.md) | 登录会话、期限、cookie 与跨源检查、撤销 |
 | [design-authn-token](design-authn-token.md) | 访问令牌、刷新令牌、签名密钥、服务账户 |
-| [design-authn-sso](design-authn-sso.md) | 企业 SSO 的提供方、域、SAML 与企业 OIDC |
+| [design-authn-sso](design-authn-sso.md) | 企业 SSO 的提供方、域、SAML（[REF-saml2](../../../references.md)）与企业 OIDC（[REF-openid-connect-core](../../../references.md)） |
 | [design-authn-impersonation](design-authn-impersonation.md) | 冒充的记录、限制、承载与审计顺序 |
 | [design-authn-admin](design-authn-admin.md) | 对授权的承诺、判定接缝、管理面 |
 | [design-authn-config](design-authn-config.md) | 配置、设置与秘密 |
@@ -46,7 +46,7 @@
 
 以下原则是封闭集，约束本功能目录的全部设计，各方面文档的取舍以它们为准。
 
-- **根包只放接口与数据类型，只依赖标准库**，外加同样只依赖标准库的内部包 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`；库类型、gin、gorm 不出现在根包签名里（[ADR-authn-packaging](../../../adr/adr-authn-packaging.md)）。
+- **根包只放接口与数据类型，只依赖标准库**，外加同样只依赖标准库的内部包 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`；库类型、gin（[REF-gin](../../../references.md)）、gorm（[REF-gorm](../../../references.md)）不出现在根包签名里（[ADR-authn-packaging](../../../adr/adr-authn-packaging.md)）。
 - **请求链上的身份只由网关盖章。** 校验后端交出事实，网关校验形状与账户命名空间后盖章；登录会话与令牌只在 authn 树内创建（[ADR-authn-verdict](../../../adr/adr-authn-verdict.md)）。
 - **默认拒绝。** 网关默认守入口模块的全部端；判定接缝缺席时他人账户与租户级资源的管理面动作、冒充一律拒绝；依赖不可用时答 401 或 503，不答 200（[design-authn-failure](design-authn-failure.md)）。
 - **状态按丢失的方向放置**：丢失会放宽校验的进 db，丢失只会让流程失败的进 kv（[ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)）。
@@ -85,7 +85,7 @@
 | 账户 | account | 全局的认证主体，由不可变、不复用的账户标识 `AccountID` 指称；可属于多个租户。口令表中的主体取形如 `static.<名>` 的账户标识，没有账户记录，也没有成员关系。 |
 | 成员关系 | membership | 账户与租户之间的一行关系，带状态，状态的零值是暂停。它回答“这个账户是不是这个租户的成员”，不含角色；角色归 `authz.policy`。 |
 | 登录会话 | login session | 数据库里的服务端记录，加 cookie 或令牌作载体，是唯一的撤销面。始终带“登录”二字，与 GORM 的数据库会话分开。 |
-| 访问令牌 | access token | 携带身份事实、短期有效的 JWT。与 `core.Token` 区分：`core.Token` 在本功能目录的文档里一律写作功能标识。 |
+| 访问令牌 | access token | 携带身份事实、短期有效的 JWT（[REF-rfc7519](../../../references.md)）。与 `core.Token` 区分：`core.Token` 在本功能目录的文档里一律写作功能标识。 |
 | 刷新令牌 | refresh token | 不透明、挂在登录会话上、只用于换新访问令牌的凭据。 |
 | 认证方式 | method | 一次认证用到的方式，取值是封闭集 `Method`。 |
 | 保障等级 | assurance | 由已证明的因素种类得出的有序等级 `Assurance`，只在多因素编排一处合成。 |
@@ -171,7 +171,7 @@ func AccessFromContext(ctx context.Context) Access // 无回落；零值读作 A
 
 **对授权的约定用法**：`AccessOpen` 放行；`AccessOptional` 且无身份按授权自己的匿名规则判；`AccessRequired` 而无身份、或 `AccessUnknown`，说明该端不在网关所守之列或网关缺席，授权拒绝：认证缺席时的失败方向是拒绝。
 
-**测试构造口。** `pkg/authn/authntest` 的 `Context(t testing.TB, ctx context.Context, opts ...Option)` 返回携带一个真实 `Identity` 与访问级别的上下文，等价于网关盖章的结果，选项覆盖身份的每个类型化字段与 `Access`：重新认证的挑战方案名由 `WithChallenge` 设，取值是网关写法的方案名（`Cookie`、`Basic`、`Bearer` 一类），缺省 `Bearer`。`Context` 拒绝 `AccessOpen` 与 `AccessUnknown` 配身份，因为网关不产出这样的配对；`Anonymous(t, ctx, access)` 返回只带访问级别、不带身份的上下文，只接受 `AccessOpen` 与 `AccessOptional`，对应豁免路由与无凭据的可选路由。同一个包还导出 `ConfigReader` 与 `ConfigReaderAll`，在真实的配置加载器上，以 JSON 主配置源构造被测模块读取的 `config.Reader`；读取器不是替身，因为必填项被拒绝这类行为出自声明本身。`Context` 复述网关出口检查对形状与界限的要求，所以用它造出的身份是网关盖得出的那一种；这些形状与界限是出口检查那一份的第二份拷贝，两处的数值必须一致，属性集的界限表只在 [design-authn-gate](design-authn-gate.md#出口检查) 写一份，两份拷贝是否分叉由网关包里的对拍测试断言。出口检查里需要网关时钟或后端声明才判得了的几项，它不复述：认证时刻相对网关时钟的 120 秒偏移、`static.` 以外的账户命名空间、`Accepts` 里声明的能力、保留的属性前缀。签名里的 `testing.TB` 不是屏障：非测试代码同样可以传入一个实现了该接口的值，类型层面没有防线，防线只有依赖测试。它位于 `pkg/authn/**` 之下，所以能 import `internal/identity` 与 `internal/model`；编译器拦不住生产代码 import 它，所以 `pkg/authn/deps_test.go` 对 `pkg` 模块里每个包断言：任何非测试代码 import `authntest` 即失败。宿主是 `go.work` 里的独立模块，不在那条断言的范围内。
+**测试构造口。** `pkg/authn/authntest` 的 `Context(t testing.TB, ctx context.Context, opts ...Option)` 返回携带一个真实 `Identity` 与访问级别的上下文，等价于网关盖章的结果，选项覆盖身份的每个类型化字段与 `Access`：重新认证的挑战方案名由 `WithChallenge` 设，取值是网关写法的方案名（`Cookie`、`Basic`、`Bearer` 一类，[REF-rfc6750](../../../references.md)），缺省 `Bearer`。`Context` 拒绝 `AccessOpen` 与 `AccessUnknown` 配身份，因为网关不产出这样的配对；`Anonymous(t, ctx, access)` 返回只带访问级别、不带身份的上下文，只接受 `AccessOpen` 与 `AccessOptional`，对应豁免路由与无凭据的可选路由。同一个包还导出 `ConfigReader` 与 `ConfigReaderAll`，在真实的配置加载器上，以 JSON 主配置源构造被测模块读取的 `config.Reader`；读取器不是替身，因为必填项被拒绝这类行为出自声明本身。`Context` 复述网关出口检查对形状与界限的要求，所以用它造出的身份是网关盖得出的那一种；这些形状与界限是出口检查那一份的第二份拷贝，两处的数值必须一致，属性集的界限表只在 [design-authn-gate](design-authn-gate.md#出口检查) 写一份，两份拷贝是否分叉由网关包里的对拍测试断言。出口检查里需要网关时钟或后端声明才判得了的几项，它不复述：认证时刻相对网关时钟的 120 秒偏移、`static.` 以外的账户命名空间、`Accepts` 里声明的能力、保留的属性前缀。签名里的 `testing.TB` 不是屏障：非测试代码同样可以传入一个实现了该接口的值，类型层面没有防线，防线只有依赖测试。它位于 `pkg/authn/**` 之下，所以能 import `internal/identity` 与 `internal/model`；编译器拦不住生产代码 import 它，所以 `pkg/authn/deps_test.go` 对 `pkg` 模块里每个包断言：任何非测试代码 import `authntest` 即失败。宿主是 `go.work` 里的独立模块，不在那条断言的范围内。
 
 ### 判决与证明
 
@@ -196,7 +196,7 @@ func Denied(cause error) Verdict
 func Unavailable(cause error) Verdict
 ```
 
-**`Session` 只指库里的登录会话**，值是 UUIDv7 文本。宿主自写、不用库会话的后端把它留空：库的登出路由只结束库里的登录会话，结束宿主自己那种会话是宿主按自己的凭据处理的事，网关没有义务代它识别。冒充身份恒带会话：出口检查要求 `Actor` 非零时 `Session` 非空。
+**`Session` 只指库里的登录会话**，值是 UUIDv7（[REF-rfc9562](../../../references.md)）文本。宿主自写、不用库会话的后端把它留空：库的登出路由只结束库里的登录会话，结束宿主自己那种会话是宿主按自己的凭据处理的事，网关没有义务代它识别。冒充身份恒带会话：出口检查要求 `Actor` 非零时 `Session` 非空。
 
 **判决不可字面构造**，判据是零值必须有确定的读法：本形状下零值读作“没答”，网关收口 401 并单独计一次缺陷（桶名 `unspoken`），与拒绝不混桶——故障那一桶要能拿来告警，缺陷那一桶要能拿来发现后端写错。被否决的其他形状与各自的否决理由见 [ADR-authn-verdict](../../../adr/adr-authn-verdict.md)。`Verdict` 与 `Identity` 内部字段的读取函数（`OutcomeOf`、`PrincipalOf`、`CauseOf`）是包级函数而不是方法：方法会随别名带到任何包，包级函数才留得住“只有 authn 树内能读内部字段”这一边界。`Step` 的读取函数同样是包级函数，见 [design-authn-login](design-authn-login.md)。
 
@@ -256,7 +256,7 @@ type Requirement struct {
 | 场景 | 点名的 authn 模块 |
 |---|---|
 | 只有运营口令表与 Basic | `authn.gate`、`authn.static`（不需要 db、kv、settings） |
-| 浏览器应用：口令加 TOTP | `authn.gate`、`authn.mount`、`authn.account`、`authn.session`、`authn.login`、`authn.login.password`、`authn.mfa`、`authn.mfa.totp`，另加 `tenant.resolve` 与 `tenant.admission` |
+| 浏览器应用：口令加 TOTP（[REF-rfc6238](../../../references.md)） | `authn.gate`、`authn.mount`、`authn.account`、`authn.session`、`authn.login`、`authn.login.password`、`authn.mfa`、`authn.mfa.totp`，另加 `tenant.resolve` 与 `tenant.admission` |
 | 加 API 令牌与服务账户 | 再加 `authn.token` |
 | 企业 SSO | 再加 `authn.sso` 与 `authn.sso.oidc` 或 `authn.sso.saml` |
 | 短信登录与短信因素 | 再加 `authn.sms`、`sms.aliyun`（或 `sms.tencent`）、`authn.login.sms`、`authn.mfa.sms` |
@@ -295,7 +295,7 @@ type Requirement struct {
 | `authn/login/google`、`authn/login/github` | `authn.login.google`、`authn.login.github` | `LoginMethod` | 否 | 无 | 无 | 无 |
 | `authn/login/wechatweb` | `authn.login.wechat-web` | `LoginMethod`（名 `wechat.web`） | 否 | 无 | 无 | 无 |
 | `authn/login/wechatmp` | `authn.login.wechat-mp` | `LoginMethod`（名 `wechat.mp`） | 否 | 无 | 无 | 无 |
-| `authn/humanverify` | `authn.humanverify` | `HumanVerifier` | 是 | 无 | `kv.KV` ○（`pow` 的挑战与一次性消费）、`settings.Store` ○（`pow` 的两项设置）、`mount.Mounter` ○（`pow` 的挑战路由）、`log.Logger` ○（登记 Turnstile 密钥的字面量脱敏规则） | 无 |
+| `authn/humanverify` | `authn.humanverify` | `HumanVerifier` | 是 | 无 | `kv.KV` ○（`pow` 的挑战与一次性消费）、`settings.Store` ○（`pow` 的两项设置）、`mount.Mounter` ○（`pow` 的挑战路由）、`log.Logger` ○（登记 Turnstile 密钥的字面量脱敏规则，[REF-cloudflare-turnstile](../../../references.md)） | 无 |
 | `authn/mfa` | `authn.mfa` | `MFA`；`AccountLifecycle` | 是 | `db.Database`、`mount.Mounter`、`Accounts`、`AccountAdmin`、`Throttle` | 全部 `Factor`、`Sessions` ○（重置时撤销会话；缺席则只停因素）、`settings.Store` ○、`audit.Audit` ○、`event.Bus` ○ | `authn_factors` |
 | `authn/mfa/totp` | `authn.mfa.totp` | `Factor` | 否 | `db.Database`、`MFA` | 无 | `authn_totp_secrets` |
 | `authn/mfa/sms` | `authn.mfa.sms` | `Factor` | 否 | `SMSCodes`、`Accounts` | 无 | 无 |
@@ -332,7 +332,7 @@ type Requirement struct {
 ### 依赖方向
 
 - **根包**只 import 标准库（含 `net/http` 里的 `*http.Cookie`、`http.ResponseWriter`、`*http.Request`，不含 gin）与 `pkg/authn/internal/{model,identity,verdict,step}`；这些内部包同样只依赖标准库，`identity`、`verdict`、`step` 各自 import `model`，彼此不 import。根包被 `tenant/resolve`、`audit/journal`、`ratelimit` 与 `tenant/admission` import，根包新增的任何 import 会进它们的闭包，所以 `pkg/authn/deps_test.go` 守住：根包的非测试 import 只许标准库与上述内部包，并断言这些内部包只依赖标准库。
-- **库类型只出现在叶子包里**：`go-jose`、`go-oidc`、`x/oauth2`、`gosaml2`、`go-webauthn`、`scs` 各落在使用它的叶子子包，只有 import 该子包的宿主才背负（[ADR-module-layout](../../../adr/adr-module-layout.md)）。短信厂商 SDK 不在此列：随发送能力住在顶层 `pkg/sms` 的载体叶子包下（[ADR-sms-capability](../../../adr/adr-sms-capability.md)）。
+- **库类型只出现在叶子包里**：`go-jose`（[REF-go-jose](../../../references.md)）、`go-oidc`（[REF-go-oidc](../../../references.md)）、`x/oauth2`（[REF-golang-x-oauth2](../../../references.md)）、`gosaml2`（[REF-gosaml2](../../../references.md)）、`go-webauthn`（[REF-go-webauthn](../../../references.md)）、`scs`（[REF-scs](../../../references.md)）各落在使用它的叶子子包，只有 import 该子包的宿主才背负（[ADR-module-layout](../../../adr/adr-module-layout.md)）。短信厂商 SDK 不在此列：随发送能力住在顶层 `pkg/sms` 的载体叶子包下（[ADR-sms-capability](../../../adr/adr-sms-capability.md)）。
 - **接口包不依赖 `pkg/db`，这是本功能目录的自我约束而不是架构的要求**（架构对跨功能目录依赖的要求是一律指向对方的接口包，见 [architecture](../../architecture.md)，指向 `pkg/db` 的接口包并不违反它）。带表的子包把 `db` 依赖、迁移集与模型留在自己的子包里；其他 authn 子包与授权功能目录只经根包的能力接口读写，拿不到 `*gorm.DB`。
 - **authn 的任何子包都不 import `pkg/tenant`。** 方向是 tenant 指向 authn：`tenant/resolve` 排在网关之后，`tenant/admission` 读身份与租户上下文，`tenant/resolve` 与 `tenant/admission` 都 import 根包，准入层经根包的 `ScopeGuard` 向网关说出它守哪些端；授权功能目录位于本功能目录之上（[authz](../design-authz.md)）：`authz.guard` 交付 `Decider`，`authz.policy` 交付 `AccountLifecycle`，两者都 import 根包；本功能目录不认识它（[ADR-authn-scope](../../../adr/adr-authn-scope.md)）。
 - **网关与别的模块的关系只经链上锚点**：网关交付 `(*authn.Gate)(nil)`，不 import `tenant`、`audit`、`ratelimit` 的任何包（见[链上次序](#链上次序)）。`tenant/admission` 声明授权阶段，该阶段本身就在记录与限流之内，位置由阶段给出；它不为定序 import `pkg/ratelimit` 或 `pkg/audit` 的锚点包。
@@ -416,7 +416,7 @@ classDiagram
 
 `gateway` 未导出，它持有各类登记表、按 scheme 与 cookie 名的分派表与在飞闸门（见 [design-authn-gate](design-authn-gate.md)）。
 
-下图给出包之间的依赖方向。箭头从依赖方指向被依赖方，虚线是可选依赖。根包只依赖标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，这些内部包只依赖标准库；其余内部包是实现侧共用的部件，不被根包 import，可以依赖根包、`pkg/log` 与第三方库（`internal/mount` 依赖根包与 gin，`internal/password` 依赖根包、Argon2 与信号量库）；库类型只出现在叶子包里；`pkg/internal/literal` 是共享单元，被两个短信载体与四个登录叶子共用；authn 的任何子包都不 import `pkg/tenant`，tenant 目录与授权功能目录经根包的接口依赖本功能目录。`authn/emailcode` 是可选的邮件适配模块：它交付 `EmailCodeSender` 与 `EmailResetCodeSender`，经 `mail.Sender` 投递、经 `i18n.Localizer` 渲染模板，不装配它的宿主不因此把邮件能力带进闭包。
+下图给出包之间的依赖方向。箭头从依赖方指向被依赖方，虚线是可选依赖。根包只依赖标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，这些内部包只依赖标准库；其余内部包是实现侧共用的部件，不被根包 import，可以依赖根包、`pkg/log` 与第三方库（`internal/mount` 依赖根包与 gin，`internal/password` 依赖根包、Argon2（[REF-rfc9106](../../../references.md)）与信号量库）；库类型只出现在叶子包里；`pkg/internal/literal` 是共享单元，被两个短信载体与四个登录叶子共用；authn 的任何子包都不 import `pkg/tenant`，tenant 目录与授权功能目录经根包的接口依赖本功能目录。`authn/emailcode` 是可选的邮件适配模块：它交付 `EmailCodeSender` 与 `EmailResetCodeSender`，经 `mail.Sender` 投递、经 `i18n.Localizer` 渲染模板，不装配它的宿主不因此把邮件能力带进闭包。
 
 ```mermaid
 flowchart LR
@@ -523,7 +523,7 @@ flowchart LR
     auditj[pkg/audit/journal] --> R
 ```
 
-除上文只依赖标准库的 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step` 外，`pkg/authn/internal` 下还有下列包，它们与上述内部包合起来是内部包的封闭名册：`internal/password` 放 PHC 编解码、派生、校验缓存、进程内退避与并发和内存预算，`internal/egress` 放受限的出站 `http.Client`，`internal/mount` 放 `Mounter` 接口、路由登记选项与挂路由模块共用的路由部件（问题码与 `Fail` 一族、请求体解码 `Decode`、每条登记都经过的 `Wrap`、回跳旁路 `AllowCallback`，以及挂载端与可信来源规则 `Endpoint`、`TrustedOrigins`、`CrossOrigin`），`internal/mount/mounttest` 放测试用的 `Mounter`，`internal/acctcache` 放按键有界、带有效期的进程内缓存（值类型是参数，账户快照与口令校验缓存各自取用），`internal/clock` 放写入数据库或绑定为查询参数的时间的来源（一律 UTC），`internal/budgetalias` 放邮箱验证码预算键与重发键的收件箱别名归一（只依赖标准库）；`pkg/internal/literal` 不在此列：它是共享单元，被两个短信载体、四个登录叶子与人机验证模块共用，持有秘密配置值的模块在自己的 `New` 里调用它；只做进程内时长比较的计时（口令校验缓存、失败退避、账户快照缓存的默认时钟）可以直接取单调时钟，并允许测试注入。没有 `internal/configreader`：读取器的构造由 `authntest` 的 `ConfigReader` 承担。内部包名册里的各包都只能被 `pkg/authn` 之下的包 import。
+除上文只依赖标准库的 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step` 外，`pkg/authn/internal` 下还有下列包，它们与上述内部包合起来是内部包的封闭名册：`internal/password` 放 PHC（[REF-phc-string-format](../../../references.md)）编解码、派生、校验缓存、进程内退避与并发和内存预算，`internal/egress` 放受限的出站 `http.Client`，`internal/mount` 放 `Mounter` 接口、路由登记选项与挂路由模块共用的路由部件（问题码与 `Fail` 一族、请求体解码 `Decode`、每条登记都经过的 `Wrap`、回跳旁路 `AllowCallback`，以及挂载端与可信来源规则 `Endpoint`、`TrustedOrigins`、`CrossOrigin`），`internal/mount/mounttest` 放测试用的 `Mounter`，`internal/acctcache` 放按键有界、带有效期的进程内缓存（值类型是参数，账户快照与口令校验缓存各自取用），`internal/clock` 放写入数据库或绑定为查询参数的时间的来源（一律 UTC），`internal/budgetalias` 放邮箱验证码预算键与重发键的收件箱别名归一（只依赖标准库）；`pkg/internal/literal` 不在此列：它是共享单元，被两个短信载体、四个登录叶子与人机验证模块共用，持有秘密配置值的模块在自己的 `New` 里调用它；只做进程内时长比较的计时（口令校验缓存、失败退避、账户快照缓存的默认时钟）可以直接取单调时钟，并允许测试注入。没有 `internal/configreader`：读取器的构造由 `authntest` 的 `ConfigReader` 承担。内部包名册里的各包都只能被 `pkg/authn` 之下的包 import。
 
 ## 核心数据结构
 
@@ -576,7 +576,7 @@ type SessionID string // 登录会话的公开标识（UUIDv7 文本），不是
 | 短信验证码、尝试次数、发送预算 | db（`authn_challenges`） | 同上 |
 | SAML 断言标识去重集 | db（唯一约束） | 丢了就能在有效期内重放断言 |
 | IdP 配置、域声明 | db（密钥列加密） | 权威配置 |
-| 登录流程记录（OAuth 的 `state`、PKCE 校验串、`nonce`；SAML 的请求标识；WebAuthn 仪式数据） | kv，有界有效期 | 流程失败，用户重来；方向是拒绝 |
+| 登录流程记录（OAuth 的 `state`、PKCE 校验串、`nonce`；SAML 的请求标识；WebAuthn 仪式数据，[REF-rfc6749](../../../references.md)、[REF-rfc7636](../../../references.md)、[REF-webauthn](../../../references.md)） | kv，有界有效期 | 流程失败，用户重来；方向是拒绝 |
 | 按来源地址的粗粒度洪泛计数（缺省关闭） | kv | 计数归零，放宽；权威退避在 db，所以放宽有界 |
 | 口令校验缓存（仅 `authn.static` 的逐请求 `Basic`）、账户快照缓存、会话校验缓存 | 进程内存 | 丢了只是多算一次或多读一次 |
 | 跨模块的账户清理（账户停用与删除之后的会话、因素、短信挑战） | 钩子同步调用，发件箱事件为补偿，钩子与补偿都幂等 | 清理没做完：残留的行不能用于认证（`valid_after` 与账户状态兜底），抹除要靠重试或事件补偿 |

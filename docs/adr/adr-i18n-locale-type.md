@@ -4,9 +4,9 @@
 
 语言要在多处跨模块传递：经 context 传给下游，作为接口方法与值类型的字段，以及作为模块声明消息目录时的依据。
 
-`golang.org/x/text/language` 提供语言的解析与匹配（`language.Tag`、`MatchStrings`）。它的解析能力要有一处用到，但把它放到接口面上，它的依赖闭包就落到每一个消费方：一个只想读一个语言并把它传给下一层、自己不匹配任何东西的模块，也要承受这个库。
+`golang.org/x/text/language`（[REF-golang-x-text](../references.md)）提供语言的解析与匹配（`language.Tag`、`MatchStrings`）。它的解析能力要有一处用到，但把它放到接口面上，它的依赖闭包就落到每一个消费方：一个只想读一个语言并把它传给下一层、自己不匹配任何东西的模块，也要承受这个库。
 
-**实测前提：`golang.org/x/text` 已经在 gin 的依赖闭包内。** gin 经 `go-playground/validator/v10` 传递地依赖 `golang.org/x/text`，`gin` 的 `go.mod` 把它列为间接依赖。入口模块的 `pkg/http/deps_test.go` 以「标准库 ∪ 本仓库模块 ∪ `pkg/config` 的当前闭包 ∪ gin 的当前闭包」为预算扫描本模块取用到的包，`x/text/language` 因而已在预算之内，本能力目录引入它不使该预算增长。本能力目录的引擎子包位于 `pkg/i18n/**` 下；`pkg/http` 只 import 本能力目录的根包，取不到引擎，因而不经它拉进 `x/text/language`。
+**实测前提：`golang.org/x/text` 已经在 gin（[REF-gin](../references.md)）的依赖闭包内。** gin 经 `go-playground/validator/v10`（[REF-go-playground-validator](../references.md)）传递地依赖 `golang.org/x/text`，`gin` 的 `go.mod` 把它列为间接依赖。入口模块的 `pkg/http/deps_test.go` 以「标准库 ∪ 本仓库模块 ∪ `pkg/config` 的当前闭包 ∪ gin 的当前闭包」为预算扫描本模块取用到的包，`x/text/language` 因而已在预算之内，本能力目录引入它不使该预算增长。本能力目录的引擎子包位于 `pkg/i18n/**` 下；`pkg/http` 只 import 本能力目录的根包，取不到引擎，因而不经它拉进 `x/text/language`。
 
 ## 考虑过的选项
 
@@ -30,7 +30,7 @@
 
 ## 决策
 
-采纳：跨模块边界上的语言是 BCP 47 字符串，类型为 `i18n.Locale`（底层是 `string`）。它穿过 context、接口方法与值类型的字段、以及模块声明消息目录的依据。
+采纳：跨模块边界上的语言是 BCP 47（[REF-bcp47](../references.md)）字符串，类型为 `i18n.Locale`（底层是 `string`）。它穿过 context、接口方法与值类型的字段、以及模块声明消息目录的依据。
 
 `golang.org/x/text/language` 只在需要匹配的实现子包里出现——引擎（收集目录并按请求语言匹配）。`i18n` 根包只依赖标准库，因此一个只读一个 locale 并把语言往下传的模块 import 它时不承受任何第三方库。
 

@@ -2,24 +2,24 @@
 
 ## 背景
 
-企业租户必须能用自己的 IdP 登录，协议为 SAML 2.0 或 OIDC（REQ-platform-config-017、REQ-signin-020、REQ-signin-023）。这件事带来以下彼此牵连的约束。
+企业租户必须能用自己的 IdP 登录，协议为 SAML 2.0（[REF-saml2](../references.md)）或 OIDC（[REF-openid-connect-core](../references.md)）（REQ-platform-config-017、REQ-signin-020、REQ-signin-023）。这件事带来以下彼此牵连的约束。
 
 **IdP 的配置是运行期才出现、数量不定、带秘密的数据。** 每个租户有自己的 IdP，租户管理员在运行期创建、修改与删除；OIDC 的 `client_secret` 属于它。设置的键必须在启动前静态声明，类型封闭、没有容器，值明文落库，读取接口照常交出敏感项（settings）；配置的容器叶子只能来自主配置源，整体替换，键不进清单（config）。两者都不是为这种数据设计的。
 
 **回调到达时没有租户上下文。** 校验后端在租户解析之前运行，看不到租户（[ADR-tenant-ordering](adr-tenant-ordering.md)）。IdP 把浏览器送回回调地址时，处理器要知道这次登录属于哪一个 IdP，而请求面上没有租户可读。租户插件对「没有租户上下文的受约束语句」直接拒绝，IdP 表要在没有租户上下文的路径上被读取。
 
-**URL 来自租户管理员的输入。** OIDC 的发现文档与 JWKS、SAML 的元数据都由服务端按管理员给出的地址发起请求。租户管理员不是平台运营方，这些请求是服务端请求伪造的入口。
+**URL 来自租户管理员的输入。** OIDC 的发现文档（[REF-openid-connect-discovery](../references.md)）与 JWKS（[REF-rfc7517](../references.md)）、SAML 的元数据都由服务端按管理员给出的地址发起请求。租户管理员不是平台运营方，这些请求是服务端请求伪造的入口。
 
 **邮箱域是一种登录入口，也是一种接管入口。** 按邮箱域把用户引向某个 IdP，要求「这个域属于这个租户」（REQ-platform-config-020）。该事实若可以被租户管理员自行声明，则声明 `gmail.com` 或竞争对手的域，就能劫持其登录入口，并借自己 IdP 的断言接管该域名下的账户。
 
 **SAML 的现成库不替调用方做完校验。** 对源码的核读结果，列出与本决策相关的缺口，是例举，不是库缺陷的全集：
 
-- gosaml2 的 `RetrieveAssertionInfo` 只取第一条断言，不检查 `InResponseTo`，`IdentityProviderIssuer` 为空时跳过颁发者比较，`Destination` 为空时跳过目的地比较。
+- gosaml2（[REF-gosaml2](../references.md)）的 `RetrieveAssertionInfo` 只取第一条断言，不检查 `InResponseTo`，`IdentityProviderIssuer` 为空时跳过颁发者比较，`Destination` 为空时跳过目的地比较。
 - 断言条件不满足时，库不返回错误，只在 `WarningInfo` 里置位；没有受众限制的断言库放行。
 - 库的时间比较没有容差字段。
-- goxmldsig 的 `ValidationContext` 只有证书库、标识属性与时钟这几个字段，没有拒绝签名算法的开关，验签面接受 SHA-1。
+- goxmldsig（[REF-goxmldsig](../references.md)）的 `ValidationContext` 只有证书库、标识属性与时钟这几个字段，没有拒绝签名算法的开关，验签面接受 SHA-1。
 - gosaml2 没有 IdP 元数据的解析助手，没有断言标识的去重。
-- 签名包装类缺陷在 crewjam/saml、gosaml2 与 goxmldsig 的历史记录里都出现过：被验签的元素与被使用的元素不是同一个。goxmldsig 在 v1.6.0 之前存在同一 `SignedInfo` 含多个引用时的签名绕过（CVE-2026-33487），crewjam/saml 默认解析到的 goxmldsig 版本落在受影响范围内。
+- 签名包装类缺陷在 crewjam/saml（[REF-crewjam-saml](../references.md)）、gosaml2 与 goxmldsig 的历史记录里都出现过：被验签的元素与被使用的元素不是同一个。goxmldsig 在 v1.6.0 之前存在同一 `SignedInfo` 含多个引用时的签名绕过（CVE-2026-33487，[REF-cve-2026-33487](../references.md)），crewjam/saml 默认解析到的 goxmldsig 版本落在受影响范围内。
 
 **IdP 侧的状态变化不会通知 speed。** 员工在 IdP 被停用后，speed 的会话不会因此终止，登出与停用都没有回传通道，除非另做单点登出。
 
@@ -63,7 +63,7 @@
 
 ### 不在进程内做 SAML，由前置的身份代理承担
 
-SAML 交给独立部署的身份代理（Dex、Keycloak 一类），speed 只做企业 OIDC。
+SAML 交给独立部署的身份代理（Dex，[REF-dex](../references.md)、Keycloak，[REF-keycloak](../references.md) 一类），speed 只做企业 OIDC。
 
 **否决**：企业 SSO 的范围包含 SAML，部署形态不应成为是否支持 SAML 的前提；宿主要为此另部署并运维一个服务。这一路线仍然可用：`authn.sso.oidc` 能接任何 OIDC 代理，宿主愿意前置代理时，代理作为一个企业 OIDC 的 IdP 登记即可（[ADR-authn-scope](adr-authn-scope.md)）。
 
@@ -83,7 +83,7 @@ SAML 交给独立部署的身份代理（Dex、Keycloak 一类），speed 只做
 
 SP 的私钥与证书成为按租户的数据，附带生成与轮换流程。
 
-**否决**：一组 PEM 文件变成按租户的数据与轮换流程，范围随之扩大。默认不请求加密断言，签名 AuthnRequest 本就是可选，SP 私钥只在 IdP 要求时才用到。需要时可在 IdP 记录上加可选的密钥覆盖，不改变接缝。
+**否决**：一组 PEM（[REF-rfc7468](../references.md)）文件变成按租户的数据与轮换流程，范围随之扩大。默认不请求加密断言，签名 AuthnRequest 本就是可选，SP 私钥只在 IdP 要求时才用到。需要时可在 IdP 记录上加可选的密钥覆盖，不改变接缝。
 
 ### 把断言重放行加进 SSOProviders 的方法集，或另立一个根包能力接口
 
@@ -106,7 +106,7 @@ SP 的私钥与证书成为按租户的数据，附带生成与轮换流程。
 
 **否决**：
 
-- SLO 没有需求，表面积大于收益；gosaml2 的登出请求校验在 v0.11.0 之前曾接受未签名的请求（GHSA-pcgw-qcv5-h8ch）。会话的绝对期限给出上界。
+- SLO 没有需求，表面积大于收益；gosaml2 的登出请求校验在 v0.11.0 之前曾接受未签名的请求（GHSA-pcgw-qcv5-h8ch，[REF-ghsa-pcgw-qcv5-h8ch](../references.md)）。会话的绝对期限给出上界。
 - IdP 发起的断言没有可比对的流程，没有 `InResponseTo`，登录 CSRF（攻击者把自己的断言投给受害者的浏览器）无解。能收窄的只有断言的新鲜度、标识唯一、受众与接收者，残余风险无解，所以缺省关闭。
 
 ### 出站目的地用黑名单，在解析阶段检查
@@ -115,7 +115,7 @@ SP 的私钥与证书成为按租户的数据，附带生成与轮换流程。
 
 **否决**：
 
-- 黑名单挡不住不在名单里的特殊用途段，也挡不住内嵌写法：IPv4 映射的 IPv6、NAT64、6to4 与 Teredo 地址都能把内网目的地写成一个看似全局的 IPv6 地址。
+- 黑名单挡不住不在名单里的特殊用途段，也挡不住内嵌写法：IPv4 映射的 IPv6、NAT64（[REF-rfc6052](../references.md)）、6to4（[REF-rfc3056](../references.md)）与 Teredo（[REF-rfc4380](../references.md)）地址都能把内网目的地写成一个看似全局的 IPv6 地址。
 - 解析阶段检查的地址与实际连接的地址可以不同，DNS 重绑定与多记录的应答因此绕得过去。检查要落在每次连接尝试的实际地址上。
 
 ### 只放行标准库判为全局单播的地址
@@ -148,7 +148,7 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 
 ## 决策
 
-采纳：企业 IdP 是 authn 自己表里的数据；SAML 用 gosaml2 与 goxmldsig，在库之上补充校验；企业 OIDC 与社交 OIDC 共用 go-oidc 加 x/oauth2 的校验桥；邮箱域发现要求域所有权证明；由外部输入决定目的地的出站请求走受限客户端；开户方式无缺省值，角色与组不映射。各项的条目、表与接口见 authn-sso，本节只写判据。
+采纳：企业 IdP 是 authn 自己表里的数据；SAML 用 gosaml2 与 goxmldsig，在库之上补充校验；企业 OIDC 与社交 OIDC 共用 go-oidc（[REF-go-oidc](../references.md)）加 x/oauth2（[REF-golang-x-oauth2](../references.md)）的校验桥；邮箱域发现要求域所有权证明；由外部输入决定目的地的出站请求走受限客户端；开户方式无缺省值，角色与组不映射。各项的条目、表与接口见 authn-sso，本节只写判据。
 
 ### IdP 是表里的数据
 
@@ -161,7 +161,7 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 ### 协议与库
 
 - SAML 用 gosaml2 与 goxmldsig，goxmldsig 须不低于 v1.6.1，版本要求写在 `pkg/go.mod` 里。
-- 企业 OIDC 用 go-oidc 加 x/oauth2，与 Google 走同一条代码路径，差别只在配置来源：Google 来自配置，企业 IdP 来自表。`state`、PKCE 与 `nonce` 自做，细节见 [ADR-authn-oauth-flow](adr-authn-oauth-flow.md)。
+- 企业 OIDC 用 go-oidc 加 x/oauth2，与 Google（[REF-google-openid-connect](../references.md)）走同一条代码路径，差别只在配置来源：Google 来自配置，企业 IdP 来自表。`state`、PKCE（[REF-rfc7636](../references.md)）与 `nonce` 自做，细节见 [ADR-authn-oauth-flow](adr-authn-oauth-flow.md)。
 - 每个 IdP 一个缓存的库实例，库不认识租户。构造失败只影响这一个 IdP。
 
 ### SAML 的补充校验
@@ -206,7 +206,7 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 
 **接受的代价：**
 
-- gosaml2 在 v0.11.0 之前披露过 CBC 解密越界、未签名 LogoutRequest 与 goxmldsig 签名绕过，攻击面包含 XML 签名校验与解密；补充校验的每一条都要有负向测试，漏一条就是静默放行。版本固定，升级走专门变更。
+- gosaml2 在 v0.11.0 之前披露过 CBC 解密越界、未签名 LogoutRequest 与 goxmldsig 签名绕过，攻击面包含 XML 签名（[REF-xmldsig-core](../references.md)）校验与解密；补充校验的每一条都要有负向测试，漏一条就是静默放行。版本固定，升级走专门变更。
 - IdP 发起登录与 SLO 缺省关，一部分企业的开箱即用体验变差。员工在 IdP 被停用后，其 authn 会话要到空闲或绝对期限才失效，SSO 专用的绝对期限只是缓解，不是消除。
 - JIT 从不并入现有账户：已有账户的员工第一次企业 SSO 登录得到 `link-required`，要先用原方式登录再关联。租户 IdP 对跨租户全局账户的权限边界划在这里。
 - 创建提供方时多一个必填项；租户若要按 IdP 的组授权，只能在授权一侧另行配置，IdP 的组声明不会自动生效。
@@ -227,7 +227,7 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 - **假设：gosaml2 的 `ValidateEncodedResponse` 返回验过签的响应，且调用不要求对同一字节再解析。** 守住它的测试：以签名包装样本（被签名的元素与被取用的元素不是同一个）调用，断言结果要么被拒，要么取得的主体与属性全部来自被签名的元素；返回类型不再是验过签的响应时，测试无法编译。与假设不符，则「单次解析验签」的做法要调整。
 - **假设：gosaml2 对 NameID 中夹带 XML 注释的截断攻击已有防护。** 守住它的测试：构造含注释的 NameID，断言取得的主体不被截断。
 - **假设：gosaml2 的 `SPKeyStore` 不同时接受两把解密密钥。** 守住它的测试：用旧钥加密的断言，在 `SPKeyStore` 只交出新钥时必须解密失败而被拒绝。库升级后该测试失败，说明库已支持双钥，SP 证书的轮换步骤可以简化；在假设成立期间，SP 证书的轮换要在 IdP 元数据刷新的重叠期内完成。
-- **假设：特殊用途地址段的清单与 IANA 登记表一致。** 守住它的测试：逐段的向量，每一整块与每一种嵌入写法（NAT64、6to4、Teredo）各一条，以及十六进制、八进制与十进制写法的 IPv4 字面量，断言被拒；向量是改表时逐条对照登记表的记录。向量不比较登记表本身，包内也不保留登记表的副本，所以登记表新增整块之后这条假设会漂移，对照要在改表时重做。
+- **假设：特殊用途地址段的清单与 IANA 登记表（[REF-iana-ipv4-special-registry](../references.md)、[REF-iana-ipv6-special-registry](../references.md)）一致。** 守住它的测试：逐段的向量，每一整块与每一种嵌入写法（NAT64、6to4、Teredo）各一条，以及十六进制、八进制与十进制写法的 IPv4 字面量，断言被拒；向量是改表时逐条对照登记表的记录。向量不比较登记表本身，包内也不保留登记表的副本，所以登记表新增整块之后这条假设会漂移，对照要在改表时重做。
 
 若认证获得「先解析、后校验」的分段形态，使校验后端能在判决之前读到租户，则提供方标识放进回调路径所绕开的约束不再存在，路径形态要按 [ADR-tenant-ordering](adr-tenant-ordering.md) 的失效条件重新比较。
 

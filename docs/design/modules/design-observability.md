@@ -5,7 +5,7 @@
 `pkg/observability` 承载运行期的遥测：追踪与指标两种信号。产品是上游遥测 SDK 的 provider，加上请求路径的采集与一条出站注入工具。
 
 - **交付上游 SDK 的 provider**，追踪与指标各是一个功能，两者由同一个装配器模块排他交付。
-- **请求路径的采集**：以上游 gin 采集库为基座，由它提取父跨度上下文、开始与结束服务端跨度、记请求计量；本模块只补它没有的日志关联字段与端名属性（[ADR-observability-request-layer](../../adr/adr-observability-request-layer.md)、[ADR-observability-instruments](../../adr/adr-observability-instruments.md)）。
+- **请求路径的采集**：以上游 gin（[REF-gin](../../references.md)）采集库为基座，由它提取父跨度上下文、开始与结束服务端跨度、记请求计量；本模块只补它没有的日志关联字段与端名属性（[ADR-observability-request-layer](../../adr/adr-observability-request-layer.md)、[ADR-observability-instruments](../../adr/adr-observability-instruments.md)）。
 - **出站注入**：把当前跨度上下文按上游的传播格式写进 `net/http` 客户端的出站头部（[ADR-observability-propagation](../../adr/adr-observability-propagation.md)）。
 - **导出后端的扩展点**：一个导出目的地是一个模块，交付一个导出器功能（[ADR-observability-packaging](../../adr/adr-observability-packaging.md)）。
 
@@ -38,7 +38,7 @@
 | 采集层 | instrumentation layer | 装配器登记到端点上的中间件层的合称，由外层与守护层构成：跨度与计量由上游采集库产出，守护层补上它没有的日志关联字段与端名。 |
 | 外层 | outer layer | 采集层中位于外侧的那一层：上游采集库的中间件；在链上代表追踪与指标两个功能。 |
 | 守护层 | guard layer | 采集层中位于外层之内的那一层：把跨度的标识绑进日志上下文，给跨度写端名；不代表任何功能。 |
-| 上游采集库 | upstream gin instrumentation | `go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin`：为 gin 提供服务端跨度与请求计量的中间件，外层以它为基座。 |
+| 上游采集库 | upstream gin instrumentation | `go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin`（[REF-opentelemetry-go-contrib](../../references.md)）：为 gin 提供服务端跨度与请求计量的中间件，外层以它为基座。 |
 | 转发包装 | forwarding wrapper | 装配器套在导出器外的装饰器：除关闭之外逐方法转发到内层，并在导出失败时写日志行。 |
 
 ## 外部接口契约
@@ -74,7 +74,7 @@ type Exporters struct {
 
 接口包暴露的上游类型限于上表所列的别名。**这是本模块唯一被允许引入第三方类型的位置**：别名必须写出被别名的包，因而根包的依赖闭包含上游的追踪 API、指标 API 与 SDK 导出接口所在的包。SDK 导出接口上接口面的理由与 API 侧相同——本模块就是那个库的封装，导出器是本模块的扩展点，另造一层等价抽象只会让后端实现方在两套类型之间来回转换（[ADR-observability-library](../../adr/adr-observability-library.md)）。
 
-**传播器只承载 W3C 追踪上下文，不承载 baggage**（[ADR-observability-propagation](../../adr/adr-observability-propagation.md)）。采集层的提取发生在认证之前，入站的 baggage 是任何调用方都能写下的内容；它若被提取，就会留在请求上下文里，再由 `Transport` 以本服务的身份转发给这次请求调用的每一个第三方。入站的 `baggage` 头部因而不进上下文，出站请求也不带它。
+**传播器只承载 W3C 追踪上下文（[REF-w3c-trace-context](../../references.md)），不承载 baggage（[REF-w3c-baggage](../../references.md)）**（[ADR-observability-propagation](../../adr/adr-observability-propagation.md)）。采集层的提取发生在认证之前，入站的 baggage 是任何调用方都能写下的内容；它若被提取，就会留在请求上下文里，再由 `Transport` 以本服务的身份转发给这次请求调用的每一个第三方。入站的 `baggage` 头部因而不进上下文，出站请求也不带它。
 
 `Transport` 与 `Propagator` 都只用标准库与上游 API，不 import `pkg/http`、不经注册表、不参与装配。`Transport` 是否被调用由调用点决定。
 
@@ -107,7 +107,7 @@ const ModuleName = "observability.stdout"   // pkg/observability/stdout
 
 根包只 import 上游的追踪 API、指标 API、两个 SDK 导出接口所在的包。它不 import 本仓库的任何模块：类型别名不需要 `core`，两条工具函数不收也不交任何模块产物（功能标识由写 `Provides` 的那一方构造，`(*TracerProvider)(nil)` 指向的就是别名本身）。它同样不 import `pkg/config`（不声明配置）与 `pkg/log`（只给出字段名常量，不取 logger、不写记录）。
 
-各实现子包 import `pkg/core`（`init` 中登记）、`pkg/config`（声明并读取自己的配置）、根包，以及自己所绑的后端。`otlp` 另 import `pkg/log` 与 `pkg/internal/literal`（取 logger 用于明文头部与被忽略的标准变量的告警，并在 `New` 里把 `headers` 的每个值登记为日志的字面量匹配器）。装配器另 import `pkg/log`（取 logger 用于导出失败的日志行）、`pkg/http`（在端点上登记采集层）、gin 与上游采集库（外层与守护层都是 `gin.HandlerFunc`，外层的中间件由上游采集库给出）。gin 已在 `pkg/http` 的依赖闭包里；上游采集库的闭包不在，随装配器进入宿主，它对 OpenTelemetry 各模块给出最低版本，宿主的 `go.mod` 按此对齐（[ADR-observability-request-layer](../../adr/adr-observability-request-layer.md)）。
+各实现子包 import `pkg/core`（`init` 中登记）、`pkg/config`（声明并读取自己的配置）、根包，以及自己所绑的后端。`otlp` 另 import `pkg/log` 与 `pkg/internal/literal`（取 logger 用于明文头部与被忽略的标准变量的告警，并在 `New` 里把 `headers` 的每个值登记为日志的字面量匹配器）。装配器另 import `pkg/log`（取 logger 用于导出失败的日志行）、`pkg/http`（在端点上登记采集层）、gin 与上游采集库（外层与守护层都是 `gin.HandlerFunc`，外层的中间件由上游采集库给出）。gin 已在 `pkg/http` 的依赖闭包里；上游采集库的闭包不在，随装配器进入宿主，它对 OpenTelemetry（[REF-opentelemetry-go](../../references.md)）各模块给出最低版本，宿主的 `go.mod` 按此对齐（[ADR-observability-request-layer](../../adr/adr-observability-request-layer.md)）。
 
 **装配器对日志功能的依赖是必需的。** 日志模块排他交付它的功能，而排他交付的提供者不被依赖闭包展开，因此运行级纳入装配器的命令都必须在命令树上点名日志模块或为它预置实例，否则启动以缺提供者失败。代价是命令树上多一行；换来的是一条能定位的启动失败，而不是日志静默落到进程根 logger 那条只写标准输出的链上。
 
@@ -126,7 +126,7 @@ pkg/observability/stdout     导出后端，登记 observability.stdout
 
 实现子包的非测试代码之间互不 import，跨子包的引用一律指向根包；装配器的外部测试可以导入 `otlp`，用真实的导出器验证停机行为。本模块不设共享单元：抽取判据是两个实现子包共用同一份第三方客户端构造或测试夹具，而各导出后端各绑各的库、装配器独占 provider 的构造，判据不触发。两个导出后端唯一共用的东西是产物类型 `Exporters`，它住在接口包——判据同样不触发，因为它既不是第三方客户端也不是夹具，而是一个由该包自己定义的两个接口组合出来的值。
 
-`observability/otlp` 与 `observability/stdout` 各自绑定自己的传输库（前者含 gRPC 与 protobuf）。只 import 接口包或装配器的宿主，其 `go.mod` 不带这些库。
+`observability/otlp` 与 `observability/stdout` 各自绑定自己的传输库（前者含 gRPC 与 protobuf，[REF-grpc](../../references.md)、[REF-protobuf](../../references.md)）。只 import 接口包或装配器的宿主，其 `go.mod` 不带这些库。
 
 方向满足架构不变量：本功能目录位于 `core`、`config`、`log` 之上，不 import 其中任何一个模块的实例。
 
@@ -246,7 +246,7 @@ type Config struct {
 
 **`endpoints` 默认是单个星号，指入口模块声明的每一个端。** 星号是入口模块保留的端名（见 [http](http/design-http.md)，[ADR-http-enumeration](../../adr/adr-http-enumeration.md)），在这份清单里只能是整份清单：写具体端名就只在这些端登记，写成空清单就一个都不登记，星号与清单里的任何别的条目并列（包括再写一次星号）则 `Prepare` 以 `ErrWildcardBesideEndpointNames` 失败，错误点名 `observability.otel.endpoints` 并给出正确写法（星号单写，或只写端名）。空清单是一个给定的值而不是缺席：文件里的空数组与值为空的环境变量都解码为空清单，不回到默认的星号。值为 null（YAML 里键后面留空或写 `~`，JSON 里写 `null`）按缺席处理，保留默认的星号；要清空须写空数组。清单决定的取用见[装配器的各阶段](#装配器的各阶段)；默认覆盖而对入口模块不设必需依赖的取舍见 [ADR-observability-coverage](../../adr/adr-observability-coverage.md)。
 
-**`service-name` 不是必填项，没配时服务名交给上游。** 键缺席与显式写成空串解码到同一个值，两者都按没配处理，都不是故障。没配时本模块不给出 `service.name`，服务名由上游按[provider 的构造次序](#provider-的构造次序)一节写明的次序定下；该次序里的「环境变量」指 `OTEL_SERVICE_NAME` 与 `OTEL_RESOURCE_ATTRIBUTES` 两个变量，不只是 `OTEL_SERVICE_NAME`。留空的后果由[非保证](#非保证)一节的「服务名」一条承接。
+**`service-name` 不是必填项，没配时服务名交给上游。** 键缺席与显式写成空串解码到同一个值，两者都按没配处理，都不是故障。没配时本模块不给出 `service.name`，服务名由上游按[provider 的构造次序](#provider-的构造次序)一节写明的次序定下；该次序里的「环境变量」指 `OTEL_SERVICE_NAME`（[REF-opentelemetry-specification](../../references.md)）与 `OTEL_RESOURCE_ATTRIBUTES` 两个变量，不只是 `OTEL_SERVICE_NAME`。留空的后果由[非保证](#非保证)一节的「服务名」一条承接。
 
 导出后端的配置，`observability.otlp`：
 
@@ -272,13 +272,13 @@ type Config struct {
 
 形态校验只拒绝空串、含 scheme、含路径、含空白这几种写法，下列错误不在校验之内：端口与协议不成对；端口不是数字或为空、未加方括号又带端口的 IPv6 地址这类别的畸形写法，它们交给上游，在 `New` 里以上游的文本失败，或在导出时投递不出；主机写错，那是探测的事（见[端点不可达](#端点不可达)）。
 
-**`protocol` 另接受 `http/protobuf`**，即 OTLP 规范给 http 传输起的名字。解码之后它读作 `http`，此后只认 `grpc` 与 `http`。其余取值以 `ErrUnknownProtocol` 失败，文本列出全部合法取值。
+**`protocol` 另接受 `http/protobuf`**，即 OTLP 规范（[REF-otlp](../../references.md)）给 http 传输起的名字。解码之后它读作 `http`，此后只认 `grpc` 与 `http`。其余取值以 `ErrUnknownProtocol` 失败，文本列出全部合法取值。
 
 **`headers` 的每个元素形如 `k=v`。** 元素、键与值两端的空白都去掉：环境变量里的字符串列表以逗号分隔（见 [config](design-config.md)），切出的元素保留两端的空白，`a=1, b=2` 的第二个元素带着前导空格，原样读入就成了一个带前导空格的头部名。没有 `=`、键为空、键去掉两端空白之后仍含空白的元素，`Prepare` 以 `ErrInvalidHeader` 失败。错误按位置点名元素，不复述元素的任何部分：没有分隔符的元素无键可点，整串照抄就带出了凭据，键也不能当作一定无害的那一半。错误文本另说明元素以逗号分隔，值里含逗号的头部要写在主配置源里——逗号分隔的写法不支持转义。
 
 **头部经明文发往非回环的主机时，导出后端在 `New` 里写一行告警。** 下列条件同时成立时写：`headers` 非空，`insecure` 为真，`endpoint` 的主机不是回环地址（`localhost`、`127.0.0.0/8`、`::1`）。回环只认这几个写法：主机为空的写法（`:4317`）与未指定地址（`0.0.0.0`）不算，形似回环的主机名（`localhost.collector.example`）也不算，比对的是整个主机。这一行说明头部将经明文发送、应把 `insecure` 设为 `false`，不含任何头部的名字或取值，也不含端点。它是告警而不是失败，`insecure` 默认为真（[ADR-observability-config](../../adr/adr-observability-config.md)）。告警经日志功能写出，导出后端对它的依赖是可选的（见[依赖](#依赖)）。
 
-**`ca-file`、`client-cert-file`、`client-key-file` 给出私有证书机构与客户端证书。** 这些证书项都是文件路径，默认为空，语义取上游对 `OTEL_EXPORTER_OTLP_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_KEY` 的处理：`ca-file` 是 PEM 证书文件，读入后自成一个根证书池，校验采集端的证书时用它代替主机的根证书，不追加在主机的根证书之上；`client-cert-file` 与 `client-key-file` 是一对 PEM 证书与私钥，按 `tls.X509KeyPair` 的规则配对，采集端要求客户端证书时出示，校验采集端用的仍是 `ca-file` 或主机的根证书。两种协议下，追踪与指标两个导出器带同一份 TLS 配置。失败的处理与上游不同：上游对读不进或解析不了的文件经它自己的内部日志器写一行，然后当作没给，对只给了一半的证书与私钥不作任何提示、直接当作没给；本模块在 `Prepare` 里校验——文件读不进、`ca-file` 里没有一张能解析的 PEM 证书、证书与私钥配不成一对，以 `ErrUnreadableCertificate` 失败；只给了证书或只给了私钥，以 `ErrUnpairedClientCertificate` 失败；`insecure` 为真而证书项中任一项有取值，两者互相矛盾，以 `ErrCertificateOverPlaintext` 失败。错误点名涉及的输入项与原因，不复述文件内容，读不进时的原因里带着文件路径。校验在 `Prepare` 里读文件，代价是纳入本后端的每条命令——连只取表态的浅深度命令在内——都要求证书项给出的文件可读、能解析，文件缺席的环境里一条只打印版本的命令也会失败。证书文件在装配时读入，进程运行期间不再读：文件内容的变更，证书轮换在内，要到进程重启才生效，与上游对证书变量的处理相同。证书项承载的是路径而不是凭据，不标注敏感；私钥文件本身的保护归部署。
+**`ca-file`、`client-cert-file`、`client-key-file` 给出私有证书机构与客户端证书。** 这些证书项都是文件路径，默认为空，语义取上游对 `OTEL_EXPORTER_OTLP_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_KEY` 的处理：`ca-file` 是 PEM（[REF-rfc7468](../../references.md)）证书文件，读入后自成一个根证书池，校验采集端的证书时用它代替主机的根证书，不追加在主机的根证书之上；`client-cert-file` 与 `client-key-file` 是一对 PEM 证书与私钥，按 `tls.X509KeyPair` 的规则配对，采集端要求客户端证书时出示，校验采集端用的仍是 `ca-file` 或主机的根证书。两种协议下，追踪与指标两个导出器带同一份 TLS 配置。失败的处理与上游不同：上游对读不进或解析不了的文件经它自己的内部日志器写一行，然后当作没给，对只给了一半的证书与私钥不作任何提示、直接当作没给；本模块在 `Prepare` 里校验——文件读不进、`ca-file` 里没有一张能解析的 PEM 证书、证书与私钥配不成一对，以 `ErrUnreadableCertificate` 失败；只给了证书或只给了私钥，以 `ErrUnpairedClientCertificate` 失败；`insecure` 为真而证书项中任一项有取值，两者互相矛盾，以 `ErrCertificateOverPlaintext` 失败。错误点名涉及的输入项与原因，不复述文件内容，读不进时的原因里带着文件路径。校验在 `Prepare` 里读文件，代价是纳入本后端的每条命令——连只取表态的浅深度命令在内——都要求证书项给出的文件可读、能解析，文件缺席的环境里一条只打印版本的命令也会失败。证书文件在装配时读入，进程运行期间不再读：文件内容的变更，证书轮换在内，要到进程重启才生效，与上游对证书变量的处理相同。证书项承载的是路径而不是凭据，不标注敏感；私钥文件本身的保护归部署。
 
 **上游的环境变量不是这些输入项的第二个来源。** 上游的 OTLP 导出器对没有显式给出的设置读取标准的 `OTEL_EXPORTER_OTLP_*` 变量，并且先应用变量、后应用选项。导出后端因而把配置声明的每一项、以及本文写明的线上形态逐项显式交给上游——端点与它的路径（`/v1/traces`、`/v1/metrics`）、明文与 TLS 的开关及其证书、头部、编码（protobuf）、指标的时间性与聚合——即便显式的取值就是上游的默认值。少给一项，那个变量就成了本模块前缀之外、诊断之外、敏感标记之外的又一个来源：一个头部变量能注入配置从未给出的凭据，一个 insecure 变量能在要求 TLS 的配置下把它关掉，一个证书变量能让明文配置的导出器在构造时就失败。TLS 一侧的根证书与客户端证书只来自 `ca-file`、`client-cert-file` 与 `client-key-file`：证书项都没给时用主机的根证书、不出示客户端证书，与上游什么都不给时相同；上游的证书变量（`OTEL_EXPORTER_OTLP_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_KEY` 及其按信号区分的变体）既不替换配置给出的证书，也不补上配置没给的那一项。配置交给库的传输细节——压缩、单次请求的超时、重试与退避——仍归上游，连同设置它们的变量。
 
@@ -339,9 +339,9 @@ type Config struct {
 
 **环境变量这一层由本模块自己叠入，尽管上游的默认资源已经含有环境变量。** 上游的默认资源每个进程只算一次，保留的是第一次计算时的环境。环境只有在默认资源算出之后才发生变化时，才需要本模块再读一次：之后才设置的变量重新读一次才看得到；之后被删的变量则不然，其值仍残留在默认资源里，重新读也去不掉它。生产里环境在进程内恒定，这一层与默认资源重合，上述差异主要出现在测试里。
 
-叠合遇到两个不同的模式地址（`schema URL`）时，上游返回错误，并附一份可能混着另一版语义约定的属性的资源，是否采用交给调用方；本模块不采用，装配以失败结束。环境与本模块的属性不带模式地址，上游的默认资源内部一致，现有的上游版本因此触发不到它。
+叠合遇到两个不同的模式地址（`schema URL`）时，上游返回错误，并附一份可能混着另一版语义约定（[REF-opentelemetry-semconv](../../references.md)）的属性的资源，是否采用交给调用方；本模块不采用，装配以失败结束。环境与本模块的属性不带模式地址，上游的默认资源内部一致，现有的上游版本因此触发不到它。
 
-**`service.instance.id` 是这一次装配在 `New` 中生成的随机 UUID**（版本 4，上游语义约定推荐的形式）。同一服务的多个副本导出的指标流名字与属性都相同，资源只带服务名时，两个副本的累计流在采集端或指标存储里是同一条序列，取值在两个副本之间来回跳；实例标识把它们分开。它每次启动都变，这正是「实例」的含义；它由本模块生成而不来自配置，因为副本之间的配置没有可以区分彼此的地方。它在最上一层，`OTEL_RESOURCE_ATTRIBUTES` 里的同名属性因而不能让两个副本共用一个实例标识。
+**`service.instance.id` 是这一次装配在 `New` 中生成的随机 UUID**（版本 4，上游语义约定推荐的形式，[REF-rfc9562](../../references.md)）。同一服务的多个副本导出的指标流名字与属性都相同，资源只带服务名时，两个副本的累计流在采集端或指标存储里是同一条序列，取值在两个副本之间来回跳；实例标识把它们分开。它每次启动都变，这正是「实例」的含义；它由本模块生成而不来自配置，因为副本之间的配置没有可以区分彼此的地方。它在最上一层，`OTEL_RESOURCE_ATTRIBUTES` 里的同名属性因而不能让两个副本共用一个实例标识。
 
 **转发包装以内嵌的方式转发到内层，只截下两个调用。** 包装内嵌导出器接口，导出与关闭之外的每一个方法——包括与导出数据无关的那些：指标的时间性、聚合选择、强制刷出——都原样传到内层。截下的一个是导出调用，为的是下面那两行日志与停机时的截断；另一个是关闭调用：provider 关停时对它持有的导出器发出的关闭不传到后端，后端由装配器在两个 provider 都关停之后释放，理由见[关停时的刷出](#关停时的刷出)。
 

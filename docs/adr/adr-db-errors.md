@@ -2,7 +2,7 @@
 
 ## 背景
 
-本模块封装 GORM 而不抽象它，接口面就是 `*gorm.DB`（[ADR-module-packaging](adr-module-packaging.md)）。本模块的哨兵表只给启动期的失败分类，运行期的错误由 GORM 带回发出语句的那一处。
+本模块封装 GORM（[REF-gorm](../references.md)）而不抽象它，接口面就是 `*gorm.DB`（[ADR-module-packaging](adr-module-packaging.md)）。本模块的哨兵表只给启动期的失败分类，运行期的错误由 GORM 带回发出语句的那一处。
 
 一条语句被唯一约束或外键拒绝时，调用点拿到的是驱动的原始错误，两个引擎的形态互不相同：SQLite 的驱动报扩展结果码，唯一约束、主键、rowid 与外键各有一个；PostgreSQL 的驱动报 SQLSTATE。宿主要把业务唯一键的冲突答成冲突应答，就得对两种驱动错误各写一遍判断，并 import 两个驱动，而驱动按设计只出现在绑定它的实现子包里。
 

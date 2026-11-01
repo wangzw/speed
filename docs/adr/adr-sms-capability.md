@@ -2,11 +2,11 @@
 
 ## 背景
 
-短信的**发送**能力（载体接缝与阿里云、腾讯云适配）与短信的**验证码状态机**（挑战行、预算、尝试次数、校验、发送队列与指标）原在同一模块 `pkg/authn/sms` 里，作为认证树的子包。但「按模板把一条短信发出去」与认证无关，是一件通用基础能力，与 `pkg/kv`、`pkg/event` 同级。
+短信的**发送**能力（载体接缝与阿里云、腾讯云适配，[REF-aliyun-sms](../references.md)、[REF-tencent-cloud-sms](../references.md)）与短信的**验证码状态机**（挑战行、预算、尝试次数、校验、发送队列与指标）原在同一模块 `pkg/authn/sms` 里，作为认证树的子包。但「按模板把一条短信发出去」与认证无关，是一件通用基础能力，与 `pkg/kv`、`pkg/event` 同级。
 
 约束如下：
 
-- **部分厂商只收预先审核通过的签名与模板，不收自由文本**：阿里云与腾讯云要求逐模板审核、按语言分别审核，位置参数厂商（腾讯云）还要求参数按审核时的次序给出。另一些厂商（AWS Pinpoint、Twilio）接受按模板模型声明的正文，不做逐模板审核。逐模板审核因此是载体的能力，不是本能力的普遍前提（[ADR-sms-template-review-is-carrier-capability](adr-sms-template-review-is-carrier-capability.md)）。通用接口仍以模板为中心，把「模板」做成一等声明：这些厂商要求它，正文也必须由注册表按声明渲染。
+- **部分厂商只收预先审核通过的签名与模板，不收自由文本**：阿里云与腾讯云要求逐模板审核、按语言分别审核，位置参数厂商（腾讯云）还要求参数按审核时的次序给出。另一些厂商（AWS Pinpoint，[REF-aws-end-user-messaging-sms](../references.md)、Twilio，[REF-twilio-messaging](../references.md)）接受按模板模型声明的正文，不做逐模板审核。逐模板审核因此是载体的能力，不是本能力的普遍前提（[ADR-sms-template-review-is-carrier-capability](adr-sms-template-review-is-carrier-capability.md)）。通用接口仍以模板为中心，把「模板」做成一等声明：这些厂商要求它，正文也必须由注册表按声明渲染。
 - **模板的集合是运行期数据。** 运营者必须在运行期登记、送审、启停与移除模板，并按语言读回厂商的审核状态，模板按语言分别审核（REQ-platform-config-010、REQ-platform-config-011、REQ-platform-config-012、REQ-platform-config-013、REQ-platform-config-031）。一份在装配期冻结、此后只读的模板声明表达不了它。
 - **现状已经模板化**：`authn.SMS` 的字段是模板键加参数，不是自由文本。不通用之处只在：模板键的词表是认证的（`login`、`mfa`、`enroll`）、载体配置硬编码这组用途、语言常量取自认证根包、命名空间与整棵树挂在 `pkg/authn` 下。
 - **Go 的 `internal` 规则**禁止 `pkg/sms/**` import `pkg/authn/internal/literal`，而两家载体都用它登记凭据的脱敏匹配器；它另被四个登录叶子共用。发送能力离开认证目录时，这个包必须上移到共享单元的位置。

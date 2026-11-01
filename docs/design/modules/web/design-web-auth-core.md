@@ -5,12 +5,12 @@
 浏览器会话生命周期，包 `web/packages/auth-core`。把 `@speed/api-sdk` 生成的 authn 操作接成一个可观察的会话状态机，并交付读取它的 React hook。
 
 - **会话状态机（cookie 承载）。** `createAuthSession` 把生成的 authn 操作（登录流程的开始与推进、登出、方式列表、页面重载时的会话读取，以及已登录身份上的 link、step-up、enroll 流程）接成一个会话。会话由服务端 cookie 承载：cookie 路径的登录流程以 `delivery: 'session'` 开始，完成应答为 `{state: 'authenticated', session: {id, expires_at}}`，服务端在同一次应答里 `Set-Cookie`；浏览器自行把该 cookie 附到每个同源请求上，故本包不持有任何凭据——没有访问令牌，也没有刷新令牌。`restore()` 读 `GET /api/v1/auth/session` 从该 cookie 重建快照，这是页面重载后**仍保持登录**的机制，也是 cookie 失效时结束本地会话的机制。宿主另传一个 `AccessTokenStore` 时走**显式的令牌路径**：`delivery: 'token'` 的完成把访问令牌写进该存储（`@speed/api-client` 的桥），刷新令牌只活在会话闭包内，由 `refresh()` 驱动；平台自身的装配不传存储，故不持凭据。令牌路径的登录流程由宿主自己开始——用生成的 `authnLoginStart({ delivery: 'token' })`，再把每一步的答复交给 `answerFlow`，因为本包的 `startFlow` 一律强制 cookie 交付。令牌会话不经 `restore()` 重建（该方法读 `GET /api/v1/auth/session`，其应答来自会话 cookie，令牌宿主没有这条 cookie），页面重载即失去；`restore()` 只是 cookie 会话的静默腿。订阅者观察 `AuthSnapshot` 的翻转。
-- **登录按流程推进。** 一次登录是一条服务端流程记录，由前端经生成的 `authn.login` 操作分步推进：`POST /api/v1/auth/flows` 开始，`POST /api/v1/auth/flows/answer` 按步答复，`GET /api/v1/auth/flows/current` 供页面刷新后续接，`DELETE /api/v1/auth/flows/current` 放弃。流程绑定以 cookie 承载（开始请求的 `binding: 'cookie'`，缺省），前端从不读流程令牌——回跳类方式只在 cookie 绑定下走得完（[authn 登录](../authn/design-authn-login.md)）。流程在某一步就绪（`next.kind = complete`）时，客户端以 `step: 'complete'` 取走结果；`startFlow` 与 `useStepUp` 开始的一律是 cookie 流程（前者以 `delivery: 'session'` 开始，后者不设交付方式、服务端取其缺省的 cookie 会话），故这两者交回的完成是会话文档而非令牌对；`startAuthenticatedFlow` 把交付方式留给调用方，账户面不设，故同样是 cookie 会话。浏览器部署里前端与 API 必须**同站**：会话 cookie 是 `SameSite=Lax`（运维可收紧为 `Strict`），服务端拒绝 `None`，跨站前端带不上这条凭据。
+- **登录按流程推进。** 一次登录是一条服务端流程记录，由前端经生成的 `authn.login` 操作分步推进：`POST /api/v1/auth/flows` 开始，`POST /api/v1/auth/flows/answer` 按步答复，`GET /api/v1/auth/flows/current` 供页面刷新后续接，`DELETE /api/v1/auth/flows/current` 放弃。流程绑定以 cookie 承载（开始请求的 `binding: 'cookie'`，缺省），前端从不读流程令牌——回跳类方式只在 cookie 绑定下走得完（[authn 登录](../authn/design-authn-login.md)）。流程在某一步就绪（`next.kind = complete`）时，客户端以 `step: 'complete'` 取走结果；`startFlow` 与 `useStepUp` 开始的一律是 cookie 流程（前者以 `delivery: 'session'` 开始，后者不设交付方式、服务端取其缺省的 cookie 会话），故这两者交回的完成是会话文档而非令牌对；`startAuthenticatedFlow` 把交付方式留给调用方，账户面不设，故同样是 cookie 会话。浏览器部署里前端与 API 必须**同站**：会话 cookie 是 `SameSite=Lax`（[REF-rfc6265bis](../../../references.md)）（运维可收紧为 `Strict`），服务端拒绝 `None`，跨站前端带不上这条凭据。
 - **特性态。** 会话在登录提交与从匿名状态开始的恢复时，与 `GET /api/v1/auth/me` 并行取回[特性文档](../../../glossary.md)（`GET /api/v1/features`，[feature](../design-feature.md)），作为快照的 `features` 字段与主体一起提交；读取失败是独立的状态，既不当作特性缺席，也不当作特性在场。特性态与权限表同一套存活规则（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）。
 - **React hook。** `attachSession` 在启动期把一个会话接上（后接者胜），`useAuthState` 暴露快照，`useCurrentTenant` 暴露宿主当前租户，`usePermission` 在宿主附上的按域权限表上做 fail-closed 的集合查询，`useFeature` 与 `useFeatureState` 读特性态。在接上会话之前与登出之后，读接上的会话的每个 hook 都 fail-closed：匿名快照、租户为 null、权限为 false、特性为 false、特性态为 `none`。`useStepUp` 不读接上的会话，在入参的会话上驱动一次步进认证。
 - **租户作用域的 query key 约定。** 交付一个 key 工厂与一个逐出助手，把「query 缓存按当前租户命名」这条约定收在一处（见「核心算法与流程」）。
 
-会话状态机放在本包而非视图层：它无 UI，主入口无 DOM，视图只读它的快照。`./webauthn` 子路径是包级「无 DOM」的唯一例外：它驱动浏览器的通行密钥仪式，调用 `navigator.credentials`，但不渲染任何界面，也不被主入口引用。
+会话状态机放在本包而非视图层：它无 UI，主入口无 DOM，视图只读它的快照。`./webauthn` 子路径是包级「无 DOM」的唯一例外：它驱动浏览器的通行密钥仪式（[REF-webauthn](../../../references.md)），调用 `navigator.credentials`，但不渲染任何界面，也不被主入口引用。
 
 ### 非职责
 
@@ -89,7 +89,7 @@ export interface AuthSession {
 
 ### 生成的响应模型与解析守卫
 
-authn 片段在契约里宣告各自的 2xx 响应 schema，orval 因而把它们的返回类型生成为具名模型：流程态（`AuthnLoginFlow`、`AuthnLoginToken`、`AuthnLoginActionResult`）、一步（`AuthnLoginStep`）、`AuthnLoginField`、`AuthnLoginFactor`、`AuthnPrincipal`、`AuthnLoginMethods`（连同每种方法的描述符、注册开关 `signup.enabled` 与 `signup.password.enabled`、部署级因素种类与匿名口令重置能力 `password_reset`）、注册操作 `register` 的请求体 `AuthnLoginRegisterBody` 与应答 `AuthnLoginRegistration`，以及 `AuthnSsoProvider`。本包从生成面取用这些模型，并在其上为每个「2xx 必须携带文档」的操作配一个运行时解析守卫：守卫先校验体是对象、再校验其必需字段，任一项不过即拒为 `status: 200`、`code: client.protocol` 的 `ApiError`——一个契约违背的 2xx 不是成功。
+authn 片段在契约里宣告各自的 2xx 响应 schema，orval（[REF-orval](../../../references.md)）因而把它们的返回类型生成为具名模型：流程态（`AuthnLoginFlow`、`AuthnLoginToken`、`AuthnLoginActionResult`）、一步（`AuthnLoginStep`）、`AuthnLoginField`、`AuthnLoginFactor`、`AuthnPrincipal`、`AuthnLoginMethods`（连同每种方法的描述符、注册开关 `signup.enabled` 与 `signup.password.enabled`、部署级因素种类与匿名口令重置能力 `password_reset`）、注册操作 `register` 的请求体 `AuthnLoginRegisterBody` 与应答 `AuthnLoginRegistration`，以及 `AuthnSsoProvider`。本包从生成面取用这些模型，并在其上为每个「2xx 必须携带文档」的操作配一个运行时解析守卫：守卫先校验体是对象、再校验其必需字段，任一项不过即拒为 `status: 200`、`code: client.protocol` 的 `ApiError`——一个契约违背的 2xx 不是成功。
 
 本包把生成的 `AuthnLoginStep` 按 `kind` 收窄成一个判别联合 `AuthnStep`，使视图只读它自己那一步携带的字段；`AuthnFlowState` 把生成的流程应答按 `state` 收窄成开放流程（带 `seq` 与 `next`）与三类完成（`authenticated`、`elevated`、`linked`／`enrolled`）：
 
@@ -222,7 +222,7 @@ export const POW_HASH = 'sha256'
 export type AuthnHumanGate = AuthnLoginHuman
 ```
 
-- **门槛取自发现文档的 `human`。** `AuthnHumanGate` 是生成模型 `AuthnLoginHuman`：`required` 表示每次发送是否必须先交证明，`provider` 是 `off`、`pow` 或 `turnstile`，`site_key` 是 Turnstile 控件渲染用的公开标识。文档省略 `human` 时读作 `{required: false, provider: 'off'}`，比服务端新的客户端因此不会拒绝旧服务端的应答；`human` 在场时 `required` 与 `provider` 必填，`site_key` 出现时必须是字符串。宿主已经把文档读到手时经 `options.gate` 传入，hook 不再读一次。
+- **门槛取自发现文档的 `human`。** `AuthnHumanGate` 是生成模型 `AuthnLoginHuman`：`required` 表示每次发送是否必须先交证明，`provider` 是 `off`、`pow` 或 `turnstile`，`site_key` 是 Turnstile（[REF-cloudflare-turnstile](../../../references.md)）控件渲染用的公开标识。文档省略 `human` 时读作 `{required: false, provider: 'off'}`，比服务端新的客户端因此不会拒绝旧服务端的应答；`human` 在场时 `required` 与 `provider` 必填，`site_key` 出现时必须是字符串。宿主已经把文档读到手时经 `options.gate` 传入，hook 不再读一次。
 - **`pow` 在 Worker 中求解。** `requestPowProof` 读 `POST /api/v1/auth/human/challenge`，校验应答的 `provider: 'pow'`、`algorithm: 'sha256'`、挑战与难度，再找满足难度的 nonce；证明是 `challenge.nonce`，与提供方 `Verify` 的解析形状一致。求解默认在 Web Worker 中运行（`src/pow.ts` 的紧凑 SHA-256，难度来自挑战）；平台没有 `Worker`、Worker 构造失败或加载失败时在调用线程求解。`powProofFromChallenge` 是不经 Worker 的同步入口，`solvePowChallenge` 是纯求解器。
 - **`turnstile` 的 token 由控件交出。** 本包只经 `adoptToken` 存下 ui-kit 控件交来的 token，或在其过期、失败时清空；token 的取得与重置于本包无涉。
 - **证明一次性。** 每次发送之后调用 `consume()`：证明清空，`pow` 立刻取一份新的，`turnstile` 的控件在证明清空时重置。`humanGateNeedsProof` 只对 `pow` 与 `turnstile` 答真；未知机制不阻塞发送，由服务端判定。
@@ -241,7 +241,7 @@ export function webauthnStepOf(options: unknown): WebauthnStep
 export function runWebauthn(options: unknown, signal?: AbortSignal): Promise<string>
 ```
 
-子路径只交付仪式驱动，不渲染界面，也不被主入口引用：只读会话的宿主因此不会加载触及 DOM 的代码。`webauthnStepOf` 由一步的 options 形状判定步骤——带 `otpauth_uri` 是 TOTP，带 `user` 是登记，其余是断言。`runWebauthn` 把服务端 marshal 的 options 里的 base64url 二进制字段解码为 `BufferSource` 交给 `navigator.credentials.create`（登记）或 `.get`（断言），再把返回的凭据重新编码成 go-webauthn 解码器读取的 JSON（`id`、`rawId`、`type`、`response.*`，每个二进制字段 base64url）。`signal` 是调用方放弃仪式的尽力而为手柄：浏览器若兑现它便自行收起提示并以 `AbortError` 拒绝；延迟到达的结果仍由调用方自行忽略。失败归为三类：浏览器没有 WebAuthn 或页面不是安全上下文（`unsupported`）、用户关闭提示或仪式被中止（`cancelled`）、其余仪式失败（`failed`）。TOTP 步骤不归它执行，请求它即 `failed`。
+子路径只交付仪式驱动，不渲染界面，也不被主入口引用：只读会话的宿主因此不会加载触及 DOM 的代码。`webauthnStepOf` 由一步的 options 形状判定步骤——带 `otpauth_uri` 是 TOTP（[REF-rfc6238](../../../references.md)），带 `user` 是登记，其余是断言。`runWebauthn` 把服务端 marshal 的 options 里的 base64url 二进制字段解码为 `BufferSource` 交给 `navigator.credentials.create`（登记）或 `.get`（断言），再把返回的凭据重新编码成 go-webauthn（[REF-go-webauthn](../../../references.md)）解码器读取的 JSON（`id`、`rawId`、`type`、`response.*`，每个二进制字段 base64url）。`signal` 是调用方放弃仪式的尽力而为手柄：浏览器若兑现它便自行收起提示并以 `AbortError` 拒绝；延迟到达的结果仍由调用方自行忽略。失败归为三类：浏览器没有 WebAuthn 或页面不是安全上下文（`unsupported`）、用户关闭提示或仪式被中止（`cancelled`）、其余仪式失败（`failed`）。TOTP 步骤不归它执行，请求它即 `failed`。
 
 ### 租户上下文与租户作用域的 query key
 
@@ -292,7 +292,7 @@ export function evictTenantQueries(
 | `@speed/api-client` | `AccessTokenStore` 接缝（桥），以及 `ApiError`、`isApiError`、`ERROR_CODE_PROTOCOL` |
 | `@speed/api-sdk` | 生成的 authn 操作与其请求/响应类型；生成的特性文档读取 `featureBoardList`；`./features` 子路径的 `FeatureName` |
 
-peer（必需）：`react`（任何渲染 hook 的宿主本就渲染 React）。本项使 `@tanstack/react-query` 加入本包的 peer——宿主本就提供 `QueryClient` 实例，本包只调它的 `removeQueries`，不构造它。
+peer（必需）：`react`（任何渲染 hook 的宿主本就渲染 React）。本项使 `@tanstack/react-query`（[REF-tanstack-query](../../../references.md)）加入本包的 peer——宿主本就提供 `QueryClient` 实例，本包只调它的 `removeQueries`，不构造它。
 
 **方向：本包直接位于 `@speed/api-client` 与 `@speed/api-sdk` 之上，不被其中任何一个 import。** 本包不 import 任何 UI 包（`auth-ui`、`ui-kit` 等），也不 import 任何装配壳，也不 import `@speed/route-kit`：`featurePresence` 的结果与路由层的在场判定按结构相容。
 
@@ -336,7 +336,7 @@ stateDiagram-v2
 | 主体 | `AuthnPrincipal` | 生成模型，逐字段取自 `GET /api/v1/auth/me` |
 | 发现文档 | `AuthnMethodList` | 生成模型：方法描述符数组，外加注册开关（`signup.enabled` 与 `signup.password.enabled`）、部署级因素种类与匿名口令重置能力（`password_reset.enabled` 与方法清单） |
 | 注册应答 | `AuthnLoginRegistration` | 生成模型：`state: 'registered'`、账户标识与未证明预留 `{state: 'pending', email}`；注册不改变会话快照 |
-| 企业提供方 | `AuthnSsoProvider` | 生成模型：`id`、`name`、`protocol`（oidc 或 saml） |
+| 企业提供方 | `AuthnSsoProvider` | 生成模型：`id`、`name`、`protocol`（oidc 或 saml，[REF-openid-connect-core](../../../references.md)、[REF-saml2](../../../references.md)） |
 | 已校验的签发应答 | `IssuedTokens`（内部） | `accessToken`、`refreshToken`（未铸造时为 null）、`principal` |
 | 落败的竞态 | `OperationSupersededError` | 带当前（胜者）快照的拒绝 |
 | 人机门槛 | `AuthnHumanGate` | 生成模型：`required`、`provider`（`off`／`pow`／`turnstile`）与 `site_key`（Turnstile 控件用）；文档省略时读作 off |

@@ -2,7 +2,7 @@
 
 ## 背景
 
-语义角色的 `main` 在界面上有两种读法：填充控件与状态标签把它当底色，文字取 `contrastText`；提示与状态文案（MUI Alert 等）则直接把 `main` 当文字色。WCAG 2.1 AA 对两种读法都要求普通文本 4.5:1。
+语义角色的 `main` 在界面上有两种读法：填充控件与状态标签把它当底色，文字取 `contrastText`；提示与状态文案（MUI Alert 等，[REF-mui](../references.md)）则直接把 `main` 当文字色。WCAG 2.1（[REF-wcag21](../references.md)） AA 对两种读法都要求普通文本 4.5:1。
 
 原来的浅色取值只照顾了第一种：warning `#D97706`、info `#0284C7`、success `#16A34A` 上的白色文字分别为 3.19:1、4.10:1、3.30:1。把 `contrastText` 改为 `neutral[950]` 修好了填充标签，但同一个 `main` 作为文字落在浅色表面上仍只有同样的比值，提示与状态文案因此不达标。
 

@@ -403,7 +403,7 @@ flowchart TD
 | 删除标识的请求指向用户名 | 409 `username-immutable`（`ErrUsernameImmutable`），删除不生效，先于最后登录名规则（[ADR-authn-username-permanent](../../../adr/adr-authn-username-permanent.md)） | 拒 |
 | 发起者读作未验证（`SignupPending`），而这是管理面人类写 | 403 `contact-required`（`ErrContactRequired`） | 拒 |
 | 读取发起者的注册验证状态失败 | 503 `urn:speed:authn:unavailable`（`ErrUnavailable`），动作不执行 | 拒 |
-| 发起者的强度不足 | 401 `insufficient_user_authentication`（`ErrStepUpRequired`） | 拒 |
+| 发起者的强度不足 | 401 `insufficient_user_authentication`（[REF-rfc9470](../../../references.md)）（`ErrStepUpRequired`） | 拒 |
 | 管理员重置因素与重置口令时，发起者名下没有启用已满 `sensitive-min-age` 的非短信因素（`Seasoned` 为假），在强度判定通过之后判定 | 403 `factor-not-seasoned`（`ErrFactorNotSeasoned`） | 拒 |
 | 管理员重置因素时，目标账户没有口令凭据、被选作登录方式的已验证手机号与外部身份中的任何一种（通行密钥不算，未被选作登录方式的手机号也不算） | 409 `last-login-method`（`ErrLastLoginMethod`），不调 `MFA.Reset`，补一条 `failed` 审计行 | 拒 |
 | 强制档审计写失败（含 `ErrNotAccepting`、`ErrWriteFailed`） | 503（`ErrAuditRequired`），动作不执行 | 拒 |
@@ -476,5 +476,5 @@ flowchart TD
 | 注册验证状态的门控 | 已实现 | `pkg/authn/admin/pipeline.go` `(*product).gateSignup`；`pkg/authn/admin/account.go`、`factor.go`、`membership.go`、`session.go`、`secret.go`、`sso.go`、`impersonation.go` 的各写处理器；`pkg/authn/admin/admin.go` `Module`、`product.verification` |
 | 根包的 import 白名单与网关闭包的禁止表 | 已实现 | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |
 | `authn.admin` 子包的 import 方向：不 import `pkg/tenant`、授权功能目录、宿主与别的实现子包 | 已实现 | `pkg/authn/admin` 的 import 清单；`pkg/authn/deps_test.go` `tenantViolations` 规则（本目录每个包都不达 `pkg/tenant`） |
-| operation 声明与 OpenAPI 片段生成 | 已实现 | `pkg/authn/admin/operations.go`；`pkg/authn/admin/openapi_generated_test.go`；片段 `pkg/authn/admin/openapi/admin.json` |
+| operation 声明与 OpenAPI（[REF-openapi](../../../references.md)）片段生成 | 已实现 | `pkg/authn/admin/operations.go`；`pkg/authn/admin/openapi_generated_test.go`；片段 `pkg/authn/admin/openapi/admin.json` |
 | 静态特性 `authn.admin` 与各条件分组特性的声明、在挂载分支里的报告 | 已实现 | `pkg/authn/admin/admin.go` `Module`、`featureAdmin`、`featureSessions`、`featureFactors`、`featureServiceKeys`、`featureSSO`、`featureSSOMetadata`、`featureImpersonations`、`postFeature`；`pkg/authn/admin/routes.go` `mountRoutes`、`mountAccountRoutes`；`pkg/authn/admin/feature_test.go` `TestAGroupIsPresentExactlyWhenItIsNamedAndMounted`、`TestEveryDeclaredNameIsSpecified` |

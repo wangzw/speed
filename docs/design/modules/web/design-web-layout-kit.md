@@ -111,7 +111,7 @@ export function Avatar(props: AvatarProps): ReactElement
 export function avatarInitials(name: string | undefined): string
 ```
 
-- **一个纯展示的身份块，不持状态、不发请求。** 有 `src` 时渲染图片（其 `alt` 即 `name`）；否则由 `name` 取最多两个大写首字母（首词与末词）。带名且非装饰时，它暴露 `name` 为其可及名（`role="img"` 加 `aria-label`），使有名无图的头像读作名字而非裸首字母；`decorative` 为真时整块移出无障碍树，由包着它的控件（一个 `aria-label` 的按钮）承担唯一播报。**移出可及树不等于移出可见文本**：无障碍检查按可见文本核对可及名，包着装饰头像的控件若把首字母显示在按钮里，可及名必须含那串首字母，否则判 `label-content-name-mismatch`。
+- **一个纯展示的身份块，不持状态、不发请求。** 有 `src` 时渲染图片（其 `alt` 即 `name`）；否则由 `name` 取最多两个大写首字母（首词与末词）。带名且非装饰时，它暴露 `name` 为其可及名（`role="img"` 加 `aria-label`），使有名无图的头像读作名字而非裸首字母；`decorative` 为真时整块移出无障碍树，由包着它的控件（一个 `aria-label` 的按钮）承担唯一播报。**移出可及树不等于移出可见文本**：无障碍检查按可见文本核对可及名，包着装饰头像的控件若把首字母显示在按钮里，可及名必须含那串首字母，否则判 `label-content-name-mismatch`（[REF-axe-core](../../../references.md)）。
 - **`avatarInitials` 是同一份派生，导出给这类控件用。** 包着装饰头像的控件按上一条把可见的首字母并进自己的可及名；用同一个派生拼，两侧不会各算各的。
 - **`AppShell` 的桌面侧边栏收起是宿主显式选择的受控面。** `sidebarCollapsed` 是收起态，`onSidebarCollapsedChange` 是收起开关的回报通道；给出后者即在顶栏渲染收起／展开按钮，两者都省略即维持一直展开的常驻抽屉。收起能力未选择时，宿主的抽屉形态与收起出现前相同；唯一对所有宿主都生效的加严是触摸设备上的可点击目标下限（**所有可点击目标**不小于 44×44，导航项随主题层一并满足，见[布局](design-web-layout.md)的指针能力查询一节），它随无障碍要求一并落下，与是否选择收起无关。收起只在 `md` 及以上生效，移动（临时）抽屉不受影响。收起态是宿主持有的普通值，本包不在内部推导。收起把常驻抽屉收为仅图标的窄栏：固定宽（由主题间距基数算出，且不小于其内容所需的下限——触摸目标下限、焦点环在控件两侧的外扩与纸面的分隔线之和）、图标保留、标签裁剪并以提示补足文案，条目无图标时保留其标签；收起态两行的水平内边距取焦点环的外扩值，不随主题间距基数收缩。抽屉本身不卸载，`nav` 地标与各条目的可及名都保留。标签的裁切与省略号落在标签的文本元素上（按钮的 `overflow` 只作兜底）：文本在按钮内的后代块里，`text-overflow` 只作用于元素自身的行内内容，挂在按钮上时省略号永不生效、按钮的裁切会把字从中间切断；落在文本元素上，无图标条目才以可读的省略收尾。
 
@@ -138,7 +138,7 @@ export function RouteGuard(props: RouteGuardProps): ReactElement
 ```
 
 - **判决是值，不是回调。** `status` 是宿主计算并随之重渲染的普通值，RouteGuard 从不调用宿主来获知判决，也不持有任何认证状态。
-- **缺省占位。** 等待态的缺省是一个居中的、带无障碍标签的 MUI `CircularProgress`；拒绝态的缺省是 `@speed/ui-kit` 的 `EmptyState variant="noPermission"`，按 `headingLevel` 渲染标题层级。`deniedFallback` 或 `pendingFallback` 给出时整体替换缺省占位。
+- **缺省占位。** 等待态的缺省是一个居中的、带无障碍标签的 MUI（[REF-mui](../../../references.md)） `CircularProgress`；拒绝态的缺省是 `@speed/ui-kit` 的 `EmptyState variant="noPermission"`，按 `headingLevel` 渲染标题层级。`deniedFallback` 或 `pendingFallback` 给出时整体替换缺省占位。
 - **`onDenied` 每次进入拒绝态触发一次。** 它从一个按 `status` 键控的副作用中触发，只在从非拒绝态转入拒绝态的那一次沿上触发，一次「一直停在拒绝态」的重渲染不再触发。
 - **`headingLevel` 只作用于缺省拒绝态。** 拒绝态的缺省占位替换它所守住的那页内容，其标题即该页自身标题，故缺省为 `h1`；宿主自带标题时传入续接的层级。宿主以 `deniedFallback` 整体替换时不咨询这一项。
 
@@ -159,7 +159,7 @@ export const layoutKitResources: Readonly<Record<string, ResourceBundle>>
 |---|---|---|
 | `react`、`react-dom` | peer（必需） | 宿主持有 React 树 |
 | `@mui/material` | peer（必需） | `AppBar`、`Drawer`、`CircularProgress` 与经 `useTheme()` 读取的环境主题（断点、z-index） |
-| `@emotion/react`、`@emotion/styled` | peer（必需） | MUI 的运行时要求 |
+| `@emotion/react`（[REF-emotion](../../../references.md)）、`@emotion/styled` | peer（必需） | MUI 的运行时要求 |
 | `@speed/i18n` | dependency | 命名空间注册与翻译 hook |
 | `@speed/ui-kit` | dependency | `RouteGuard` 缺省拒绝态的 `EmptyState`；`AppShell` 收起窄栏的 `visuallyHiddenSx`（裁剪标签保留可及名）。触摸目标下限由主题层对基础控件统一给出，本包不逐处指定 |
 
@@ -231,7 +231,7 @@ classDiagram
 1. 以 `useMediaQuery(theme.breakpoints.up('md'))` 得到桌面/移动的布尔值，不引入新断点。抽屉的两态由此布尔值在 JS 中选择（桌面 `permanent`、移动 `temporary`），而非经 CSS 断点 sx 切换，使「桌面抽屉是否在显示」只有一个确定答案，避免两个 DOM 节点在绘制上竞争。
 2. 地标按形态落位：顶栏形态的顶部栏是 `header`/banner 地标；侧栏形态在桌面不渲染顶部栏，因而没有该地标，其窄视口的极简顶栏承担它。导航抽屉恒是带无障碍名（`appShell.navLabel`）的 `nav` 地标，内容区恒是 `main` 地标。
 3. 跳转链接（`appShell.skipToContent`）是外壳里第一个可聚焦元素，激活时以编程方式把焦点移到 `main` 地标，而不是导航到一个片段：片段导航会改写 `location.hash`，在以 hash 路由的宿主里那个片段就是路由本身，导航会顶掉当前路由。
-4. 顶部栏在 `md` 及以上是一排、以下至多两排（见「顶栏形态的顶部栏按视口宽度排成一排或两排」），横幅的高度取自宿主节点；固定头容器的渲染高度由 `ResizeObserver` 测量，`main` 与抽屉纸内的三处偏移占位由这一个测量取值，使换行的顶部栏或较高的横幅不遮住其下内容。只测这一个容器，不分别测顶部栏与横幅再互相推算偏移；抽屉纸元素本身不设顶偏移，每一处高度只被计一次。切换形态或跨断点时测量值复位，旧形态的测量不残留到新形态。侧栏形态在桌面且无横幅时不渲染固定头，也不渲染占位。占位的高度写成不会被主题工具条的断点规则覆盖的形式（内联样式，或不带该规则的元素），否则桌面断点上占位恒为主题的工具条高度，固定头之下的内容被它盖住；jsdom 不求值媒体查询，占位高度因此要有真实浏览器里的覆盖。无 `ResizeObserver` 时（jsdom）占位退回主题的单行工具条高度；横幅按文档流排在顶部栏之下，不依赖测量，测量尚未到达时也不与顶部栏重叠。
+4. 顶部栏在 `md` 及以上是一排、以下至多两排（见「顶栏形态的顶部栏按视口宽度排成一排或两排」），横幅的高度取自宿主节点；固定头容器的渲染高度由 `ResizeObserver` 测量，`main` 与抽屉纸内的三处偏移占位由这一个测量取值，使换行的顶部栏或较高的横幅不遮住其下内容。只测这一个容器，不分别测顶部栏与横幅再互相推算偏移；抽屉纸元素本身不设顶偏移，每一处高度只被计一次。切换形态或跨断点时测量值复位，旧形态的测量不残留到新形态。侧栏形态在桌面且无横幅时不渲染固定头，也不渲染占位。占位的高度写成不会被主题工具条的断点规则覆盖的形式（内联样式，或不带该规则的元素），否则桌面断点上占位恒为主题的工具条高度，固定头之下的内容被它盖住；jsdom（[REF-jsdom](../../../references.md)）不求值媒体查询，占位高度因此要有真实浏览器里的覆盖。无 `ResizeObserver` 时（jsdom）占位退回主题的单行工具条高度；横幅按文档流排在顶部栏之下，不依赖测量，测量尚未到达时也不与顶部栏重叠。
 
 ### AppShell 的抽屉交互
 

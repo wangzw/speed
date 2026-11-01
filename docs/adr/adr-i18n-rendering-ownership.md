@@ -44,7 +44,7 @@
 
 一个决定响应形状的模块不再同时承载语言：形状接缝接收的是成品文本，语言在产生文本的模块里已经定下（[ADR-i18n-error-rendering](adr-i18n-error-rendering.md)）。
 
-一段复合文本里的计数、数字与日期时间按它的语言渲染，日期时间另按账户时区；一个把日期时间**作为独立字段**返回的模块才把渲染交给客户端，那时它走标准 ISO 格式（[ADR-i18n-message-rendering](adr-i18n-message-rendering.md)）。**归属由返回形态决定，不按字段种类决定。**
+一段复合文本里的计数、数字与日期时间按它的语言渲染，日期时间另按账户时区；一个把日期时间**作为独立字段**返回的模块才把渲染交给客户端，那时它走标准 ISO 格式（[REF-iso8601](../references.md)）（[ADR-i18n-message-rendering](adr-i18n-message-rendering.md)）。**归属由返回形态决定，不按字段种类决定。**
 
 **接受的代价：**
 

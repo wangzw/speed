@@ -4,17 +4,17 @@
 
 `pkg/authn/token` 是 authn 功能目录里交付令牌的子包，登记一个模块 `authn.token`。本文档承载它的接口、校验次序、签名密钥与刷新令牌的全部细节；authn 的整体划分见 [design-authn](design-authn.md)，决策依据见 [ADR-authn-token](../../../adr/adr-authn-token.md)。
 
-- 签发访问令牌：短寿命的 JWT，声明集固定，签名算法与密钥由配置给出。
+- 签发访问令牌：短寿命的 JWT（[REF-rfc7519](../../../references.md)），声明集固定，签名算法与密钥由配置给出。
 - 签发、轮换与撤销刷新令牌：不透明的随机串，库里只存哈希，每次使用即轮换，重用即撤销整个令牌族。
-- 作为校验后端认领 `Authorization` 的 `bearer` 方案：把访问令牌校验成 `Principal`，交给网关盖章（[design-authn-gate](design-authn-gate.md)）。
-- 受理令牌端点：`client_credentials` 与 `refresh_token` 两个 grant（封闭集），以及 RFC 7009 的撤销。
-- 发布 JWKS，持有启动时装入的签名与验证密钥集。
+- 作为校验后端认领 `Authorization` 的 `bearer`（[REF-rfc6750](../../../references.md)）方案：把访问令牌校验成 `Principal`，交给网关盖章（[design-authn-gate](design-authn-gate.md)）。
+- 受理令牌端点：`client_credentials`（[REF-rfc6749](../../../references.md)）与 `refresh_token` 两个 grant（封闭集），以及 RFC 7009（[REF-rfc7009](../../../references.md)）的撤销。
+- 发布 JWKS（[REF-rfc7517](../../../references.md)），持有启动时装入的签名与验证密钥集。
 - 持有 `authn_refresh_tokens` 表与它的清扫。
 - 定义宿主向访问令牌追加声明的接缝 `ClaimsContributor`，并在签发时调用它。
 
 ### 非职责
 
-- **不是 OIDC 的 OP。** 不提供授权端点，不实现授权码授权，不提供自省端点；支持的 grant 是封闭集：`client_credentials` 与 `refresh_token`。不提供个人访问令牌：长期凭据由服务账户承担（[ADR-authn-token](../../../adr/adr-authn-token.md)）。
+- **不是 OIDC（[REF-openid-connect-core](../../../references.md)）的 OP。** 不提供授权端点，不实现授权码授权，不提供自省端点；支持的 grant 是封闭集：`client_credentials` 与 `refresh_token`。不提供个人访问令牌：长期凭据由服务账户承担（[ADR-authn-token](../../../adr/adr-authn-token.md)）。
 - **不在令牌里携带授权。** 声明集不含角色、租户、权限与范围；[authz](../design-authz.md) 实时查询并自行缓存。宿主经 `ClaimsContributor` 追加声明是宿主的选择，追加的声明在令牌有效期内无法撤销（[design-authn-admin](design-authn-admin.md)）。
 - **不携带注册验证状态。** 账户是否已验证邮箱不进访问令牌、刷新令牌或它们的校验：声明集是封闭集，不因这个状态增减；状态由 `GET B/me` 与 `SignupVerification.SignupStateOf` 在请求期活读，门控在请求期按当前值判定（[design-authn](design-authn.md)）。
 - **不持有登录会话。** 会话行、撤销标记与期限判定归 `authn.session`，本模块经 `Sessions` 接缝读取与撤销（[design-authn-session](design-authn-session.md)）；清扫的批量删除条件直接 JOIN `authn_sessions`，是本模块唯一直接读会话表的地方（见[清扫](#清扫)）。
@@ -23,7 +23,7 @@
 - **不做授权判定，不写 403。** 令牌端点与撤销端点答 OAuth 的错误形状，校验后端只交回 `Authenticated`、`Denied` 或 `Unavailable`。
 - **不维护按 `jti` 的撤销清单。** 撤销面只有会话，令牌侧没有第二份撤销状态；`jti` 只用于日志与关联。
 - **不自动生成与轮换签名密钥，不提供 KMS 或 HSM 的签名接缝。** 密钥来自配置给出的文件，轮换由运维按流程执行。
-- **不提供发送方约束**（DPoP、mTLS）与 OAuth 范围、按资源的 `aud`。令牌的权能等于主体的权能。
+- **不提供发送方约束**（DPoP、mTLS，[REF-rfc9449](../../../references.md)、[REF-rfc8705](../../../references.md)）与 OAuth 范围、按资源的 `aud`。令牌的权能等于主体的权能。
 - **不把令牌放进 cookie。** 令牌发给 API 客户端，cookie 会话发给浏览器，各自载体有各自的防线。
 - **不约束外部资源服务器。** 外部方用 JWKS 离线校验时自行承担校验与「读不到撤销」的后果，该义务写在[外部资源服务器的义务](#外部资源服务器的义务)。
 
@@ -113,7 +113,7 @@ type ClaimsContributor interface {
 |---|---|
 | `Name()` | `token` |
 | `Accepts` | `{Schemes: ["bearer"], Accounts: 库命名空间, Impersonation: true, SSO: true}` |
-| 可选接口 | `Challenger`：凭据被判拒绝时在 401 里加 `error="invalid_token"`（RFC 6750、RFC 9068） |
+| 可选接口 | `Challenger`：凭据被判拒绝时在 401 里加 `error="invalid_token"`（RFC 6750、RFC 9068，[REF-rfc9068](../../../references.md)） |
 
 `Accepts` 的各字段、网关盖章前的出口检查与认领冲突的判定由 [design-authn-gate](design-authn-gate.md) 承载。库命名空间的标识不得落在任何别的后端声明的非空前缀之下；`static.` 前缀只属于口令表后端，本模块交出的 `Account` 与 `Actor` 都不会以它起头。校验次序见[校验次序](#校验次序)。
 
@@ -127,11 +127,11 @@ type ClaimsContributor interface {
 | `POST B/token/revoke` | 表单字段 `token`、`token_type_hint` | 出示的令牌有效、无效或不存在都答 200 空体；依赖答不出来答 `temporarily_unavailable`（503） | RFC 7009；持有即授权，不要求客户端认证 |
 | `GET B/jwks.json` | 无 | 200，`Content-Type: application/jwk-set+json`，`Cache-Control: public, max-age=300` | 内容是全部已配置密钥的公钥 JWK，含 `kid`、`alg`、`use=sig`，不含任何私钥字段 |
 
-两个 `POST` 端点经 `Callback` 登记，不做跨源检查：端点不读 cookie 与其他环境凭据，客户端认证在 `Authorization: Basic` 或表单字段里，撤销以持有令牌为授权，跨源检查所防的伪造请求在这里借不到任何凭据。跨源的单页应用因此能直接调用这两个端点，浏览器的跨源读取许可由宿主的 CORS 层给出（[design-authn-session](design-authn-session.md)）。
+两个 `POST` 端点经 `Callback` 登记，不做跨源检查：端点不读 cookie 与其他环境凭据，客户端认证在 `Authorization: Basic` 或表单字段里，撤销以持有令牌为授权，跨源检查所防的伪造请求在这里借不到任何凭据。跨源的单页应用因此能直接调用这两个端点，浏览器的跨源读取许可由宿主的 CORS（[REF-whatwg-fetch](../../../references.md)）层给出（[design-authn-session](design-authn-session.md)）。
 
 `GET B/jwks.json` 的 `Cache-Control` 是 authn 响应一律带 `no-store` 的唯一例外：处理函数自行写出该头，覆盖 `Mounter` 的缺省值。内容只随启动时装入的密钥集变化且不含秘密，公开缓存没有代价；缓存时长是密钥轮换等待时间的依据。
 
-令牌端点的失败应答**不走入口模块 `Fail` 的缺省形状**，而是 RFC 6749 §5.2 的 JSON：OAuth 客户端库按 `error` 字段解析，读不懂 `problem+json`。这是对「拒绝经 `Fail` 写出」的有意例外，范围只限 `POST B/token` 与 `POST B/token/revoke`。
+令牌端点的失败应答**不走入口模块 `Fail` 的缺省形状**，而是 RFC 6749 §5.2 的 JSON：OAuth 客户端库按 `error` 字段解析，读不懂 `problem+json`（[REF-rfc9457](../../../references.md)）。这是对「拒绝经 `Fail` 写出」的有意例外，范围只限 `POST B/token` 与 `POST B/token/revoke`。
 
 `error` 的取值是封闭集，应答不带 `error_description`，成因只进日志：
 
@@ -147,7 +147,7 @@ db 不可用时答 `temporarily_unavailable`，**不答 `invalid_grant`**：客�
 
 ### 声明集
 
-访问令牌的头是 `{"alg":"ES256","typ":"at+jwt","kid":"<密钥的 RFC 7638 指纹>"}`，`typ` 经 `SignerOptions.WithType` 写入，`alg` 取签名密钥登记的算法。声明如下，「校验」列是校验后端对该声明的判据。
+访问令牌的头是 `{"alg":"ES256","typ":"at+jwt","kid":"<密钥的 RFC 7638 指纹>"}`（[REF-rfc7638](../../../references.md)、[REF-rfc7518](../../../references.md)），`typ` 经 `SignerOptions.WithType` 写入，`alg` 取签名密钥登记的算法。声明如下，「校验」列是校验后端对该声明的判据。
 
 | 声明 | 取值 | 校验 |
 |---|---|---|
@@ -155,10 +155,10 @@ db 不可用时答 `temporarily_unavailable`，**不答 `invalid_grant`**：客�
 | `sub` | 生效账户标识（冒充时是被冒充者）；服务账户令牌里也是该账户标识，不是 `client_id`，避免客户端自选 `sub` 的混淆（RFC 9068 §5） | 合法 `AccountID` |
 | `aud` | `authn.token.audience`；缺省为空时取 `[iss]`，显式写成空列表也等同未设置 | 与配置集合有交集 |
 | `exp`、`iat`、`nbf` | `iat + TTL`、签发时刻、签发时刻；`TTL` 为零取 `authn.token.access-ttl`，冒充令牌取 `min(access-ttl, 冒充记录剩余时限)`，使 `exp` 不晚于记录到期；任何取值都不得使 `exp - iat` 超过 1 小时 | `exp` 与 `iat` 必须存在；容差 `leeway`；`exp - iat` 不得超过 1 小时 |
-| `jti` | UUIDv7 文本 | 必须存在；只用于日志与关联 |
+| `jti` | UUIDv7（[REF-rfc9562](../../../references.md)）文本 | 必须存在；只用于日志与关联 |
 | `sid` | `SessionID`；冒充令牌指向发起者的会话；service 种令牌指向该密钥那一行 service 会话 | 必须存在；对应会话有效 |
 | `amr`、`acr`、`auth_time` | `Methods` 数组、`"1"` 或 `"2"`、认证时刻（秒）；冒充令牌取发起者会话的同名值 | **不与会话行比较，也不因不一致而拒绝** |
-| `act` | `{"sub": "<操作者>"}`，仅冒充（RFC 8693 §4.1） | 与会话账户一致 |
+| `act` | `{"sub": "<操作者>"}`，仅冒充（RFC 8693 §4.1，[REF-rfc8693](../../../references.md)） | 与会话账户一致 |
 | `imp` | 冒充记录标识，仅冒充 | `Impersonation.Active(imp)` 有效，其目标等于 `sub`、操作者等于 `act.sub` |
 | `imp_tenant` | 冒充记录的租户标识，仅冒充 | 只供外部校验方读到冒充的范围；本进程校验时范围取自冒充记录，不取这个声明 |
 | `client_id` | RFC 9068 必备：服务账户令牌取账户标识，会话换来的令牌取 `authn.token.client-id`，缺省 `speed` | 非空 |
@@ -187,7 +187,7 @@ db 不可用时答 `temporarily_unavailable`，**不答 `invalid_grant`**：客�
 | `ClaimsContributor` | 可选，`ResolveAll` | 签发时追加声明；缺席即不追加 |
 | `settings.Store` | 可选 | 运行期读取 `authn.token.*` 设置；缺席取声明的默认值 |
 | `observability.MeterProvider`、`event.Bus`、`audit.Audit` | 可选 | 指标、`authn.token.reuse-detected` 事件与 `authn.token.refresh-reuse` 审计；缺席合法 |
-| `go-jose/go-jose/v4`（`jose`、`jwt`） | 库 | JOSE 的唯一桥；`pkg/go.mod` 对它的下限是 v4.1.5，且由 `pkg/go.mod` 自己声明，不靠传递依赖带入；选型理由见 [ADR-authn-token](../../../adr/adr-authn-token.md) |
+| `go-jose/go-jose/v4`（`jose`、`jwt`，[REF-go-jose](../../../references.md)） | 库 | JOSE（[REF-rfc7515](../../../references.md)）的唯一桥；`pkg/go.mod` 对它的下限是 v4.1.5，且由 `pkg/go.mod` 自己声明，不靠传递依赖带入；选型理由见 [ADR-authn-token](../../../adr/adr-authn-token.md) |
 
 `Requires` 里没有任何非排他功能：`Verifier` 与 `ClaimsContributor` 一律 `ResolveAll`（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。`Impersonation` 是可选取用，因为令牌后端在没有冒充能力的装配里仍要工作；令牌带 `imp` 而能力缺席是 `Denied`，不是放行。`authn.token` 依赖的全是 authn 目录内的根包接口与基础设施功能，不 import `pkg/tenant`，方向满足自底向上的依赖不变量（[architecture](../../architecture.md)）。冒充令牌的租户范围由网关与准入层在请求期执行（[design-tenant-admission](../tenant/design-tenant-admission.md)），本模块只负责把范围放进 `Principal.Scope`。
 
@@ -365,7 +365,7 @@ CREATE INDEX authn_refresh_tokens_expiry  ON authn_refresh_tokens (idle_expires_
 
 | 步骤 | 校验 | 说明 |
 |---|---|---|
-| 限长与结构 | 令牌总长不超过 8192 字节，恰有三段 | 先限长再解析：`go-jose` 已披露的畸形输入触发 panic 的公告（GHSA-6mp9-8xrw-74r4、CVE-2026-34986）由限长与网关的 `recover` 收口。假设限长加 `recover` 足以收口，守住它的测试见 [ADR-authn-token](../../../adr/adr-authn-token.md) 的失效条件 |
+| 限长与结构 | 令牌总长不超过 8192 字节，恰有三段 | 先限长再解析：`go-jose` 已披露的畸形输入触发 panic 的公告（GHSA-6mp9-8xrw-74r4、CVE-2026-34986，[REF-ghsa-6mp9-8xrw-74r4](../../../references.md)、[REF-cve-2026-34986](../../../references.md)）由限长与网关的 `recover` 收口。假设限长加 `recover` 足以收口，守住它的测试见 [ADR-authn-token](../../../adr/adr-authn-token.md) 的失效条件 |
 | 头与算法白名单 | 经 JOSE 桥以已配置密钥里的算法为白名单解析（底层的 `jwt.ParseSigned`），且恰有一个签名；头里有 `kid`；`typ` 必须是 `at+jwt` 或 `application/at+jwt`，大小写不敏感，其余一律拒绝；头里有 `crit` 即拒绝；`jku`、`x5u`、`jwk`、`x5c` 一律不采用、不抓取 | `typ` 由桥从 `Headers[0].ExtraHeaders[jose.HeaderType]` 读出。假设读取 `typ` 头的接口与签发时设置 `typ` 的 `WithType` 选项，在 `pkg/go.mod` 要求的 `go-jose` 版本上按此处所述工作，守住它的测试见 [ADR-authn-token](../../../adr/adr-authn-token.md) 的失效条件 |
 | 本地密钥选取 | 用 `kid` 在本地密钥集里取公钥，取不到即拒绝；该密钥登记的算法必须等于头里的 `alg` | 不对 `kid` 拼任何查询，不识别也不抓取头里指向的地址。假设 `go-jose` 不在运算时核对每把密钥只配一种算法，所以由本步骤自己核对 |
 | 验签 | 经 JOSE 桥以该公钥验签并解出声明（底层的 `token.Claims`） | `UnsafeClaimsWithoutVerification` 不得出现在非测试代码里，由 `deps_test` 或静态检查守住 |
@@ -419,7 +419,7 @@ CREATE INDEX authn_refresh_tokens_expiry  ON authn_refresh_tokens (idle_expires_
 | 重用 | `Sessions.Revoke(sid, "refresh-reuse")`，整族失效；发 `authn.token.reuse-detected`，写审计 `authn.token.refresh-reuse`（结果 `detected`，尽力档），应答 `invalid_grant` |
 | 保障等级 | 刷新不抬高保障等级：新访问令牌的 `acr` 与 `auth_time` 取自会话行 |
 
-- 合法客户端与窃取者必有一方出示已作废的令牌，服务端分不清是谁，所以重用时撤销当前有效的整族，代价是合法客户端要重新登录（RFC 9700 §4.14.2）。
+- 合法客户端与窃取者必有一方出示已作废的令牌，服务端分不清是谁，所以重用时撤销当前有效的整族，代价是合法客户端要重新登录（RFC 9700 §4.14.2，[REF-rfc9700](../../../references.md)）。
 - 影响行数决定胜负，**不依赖 `RETURNING`**。假设该条件更新能在 db 模块支持的各方言下仲裁并发刷新，守住它的测试是对同一刷新令牌的并发出示恰有一个成功，其余按宽限或重用处理（[ADR-authn-token](../../../adr/adr-authn-token.md) 的失效条件）。
 - 签发或插入新行失败使事务回滚，旧令牌保持未用，客户端可以重试同一个令牌。
 - 绝对期限是会话的 `expires_at`（`authn.session.token-absolute-timeout`；`Provider` 非空的会话与 `authn.session.sso-absolute-timeout` 取较小者）；空闲期限在刷新令牌行上，每次轮换重置为 `refresh-idle-ttl`。`token` 种会话不受浏览器会话的空闲期限约束。
@@ -601,6 +601,6 @@ service 种访问令牌的撤销是无操作：该会话行由同一密钥签出
 | 刷新令牌表的清扫协程 | 已实现 | `pkg/authn/token/sweep.go`（`startSweep`、`sweepOnce`） |
 | 指标 `authn.token.operations`、事件 `authn.token.reuse-detected`、审计 `authn.token.refresh-reuse` | 已实现 | `pkg/authn/token/product.go`（`takeMeter`）、`pkg/authn/token/issue.go`（`recordOperation`）、`pkg/authn/token/refresh.go`（`revokeFamily` 发 `authn.token.reuse-detected`、写审计 `authn.token.refresh-reuse`） |
 | `pkg/go.mod` 对 `go-jose` 的下限要求与 `UnsafeClaimsWithoutVerification` 的静态检查 | 已实现 | `pkg/go.mod`（`github.com/go-jose/go-jose/v4` v4.1.5）；`pkg/authn/deps_test.go`（`TestTheTokenBridgeIsTheOnlyGoJoseUserAndTheFloorIsHeld`） |
-| operation 声明与 OpenAPI 片段生成 | 已实现 | `pkg/authn/token/operations.go`；`pkg/authn/token/openapi_generated_test.go`；片段 `pkg/authn/token/openapi/token.json` |
+| operation 声明与 OpenAPI（[REF-openapi](../../../references.md)）片段生成 | 已实现 | `pkg/authn/token/operations.go`；`pkg/authn/token/openapi_generated_test.go`；片段 `pkg/authn/token/openapi/token.json` |
 
 指标、事件与审计的名字、属性与档位由 [design-authn-events](design-authn-events.md) 承载；配置键与设置键的取值域由 [design-authn-config](design-authn-config.md) 承载。

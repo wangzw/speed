@@ -6,7 +6,7 @@
 
 发出语句的路径不止一条。HTTP 请求经过解析层，上下文里一定有标识或一定没有；后台任务、管理面、迁移与宿主的自检代码则可能在一个与请求无关的上下文里访问受约束表，而它们恰恰是最需要跨租户读的地方。
 
-数据库模块把物理删除留给 `Unscoped().Delete`，理由是"谁可以物理删除是权限问题"（见 `db` 设计文档的非职责）。`Unscoped` 是 GORM 为软删除提供的开关，它在 `Statement` 上是一个可读的字段。
+数据库模块把物理删除留给 `Unscoped().Delete`，理由是"谁可以物理删除是权限问题"（见 `db` 设计文档的非职责）。`Unscoped` 是 GORM（[REF-gorm](../references.md)）为软删除提供的开关，它在 `Statement` 上是一个可读的字段。
 
 认证为零值判决立过同一条防线：判决的零值读作"没答"而非"通过"，导出注入口等于让链上任何一层改写身份（[ADR-authn-verdict](adr-authn-verdict.md)、[ADR-authn-packaging](adr-authn-packaging.md)）。本记录是这条防线在数据一侧的对应物。
 

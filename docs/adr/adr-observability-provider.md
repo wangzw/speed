@@ -2,7 +2,7 @@
 
 ## 背景
 
-上游遥测库 `go.opentelemetry.io/otel` 自带进程级单例：`otel.SetTracerProvider` 与 `otel.SetMeterProvider` 装入的 provider，`otel.SetErrorHandler` 装入的错误处理器，都挂在进程上。未装 provider 时全局给出空实现，跨度与指标照常被调用、什么都不产生；未装错误处理器时上游把内部错误记到标准错误。两者都不随注册表走。
+上游遥测库 `go.opentelemetry.io/otel`（[REF-opentelemetry-go](../references.md)）自带进程级单例：`otel.SetTracerProvider` 与 `otel.SetMeterProvider` 装入的 provider，`otel.SetErrorHandler` 装入的错误处理器，都挂在进程上。未装 provider 时全局给出空实现，跨度与指标照常被调用、什么都不产生；未装错误处理器时上游把内部错误记到标准错误。两者都不随注册表走。
 
 模块之间只按功能取用彼此，不使用全局变量传递实例（架构不变量 9）。该条约束的是取得另一个模块实例的途径：凡是由注册表持有的模块实例，无论由模块在 `New` 中构造还是由宿主预置，一律经 `core.Resolve` 取得。
 

@@ -2,7 +2,7 @@
 
 ## 背景
 
-入口模块以 RFC 9457 的字段定义错误响应的内容（`Problem`），默认以 `application/problem+json` 写出，并允许一个模块交付 `ErrorResponder` 整体替换这一形状（[ADR-http-errors](adr-http-errors.md)）。`Problem.Type` 是客户端据以分支的机器码，不随语言变化（[ADR-i18n-scope](adr-i18n-scope.md)）。
+入口模块以 RFC 9457（[REF-rfc9457](../references.md)）的字段定义错误响应的内容（`Problem`），默认以 `application/problem+json` 写出，并允许一个模块交付 `ErrorResponder` 整体替换这一形状（[ADR-http-errors](adr-http-errors.md)）。`Problem.Type` 是客户端据以分支的机器码，不随语言变化（[ADR-i18n-scope](adr-i18n-scope.md)）。
 
 一条错误消息由产生它的模块渲染，一个决定响应形状的接缝不承载语言（[ADR-i18n-rendering-ownership](adr-i18n-rendering-ownership.md)）。`pkg/http` 自己写出四类拒绝——无匹配路由的 404、方法不允许的 405、请求体超限的 413、接住 panic 的 500。这些拒绝的文本要随请求语言变化，就需要一处渲染点与一份文案来源。
 

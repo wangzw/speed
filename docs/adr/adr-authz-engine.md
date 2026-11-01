@@ -8,9 +8,9 @@
 
 判定采用的模型已定：角色到权限，权限按（资源，动作）声明，租户即策略域（[ADR-authz-model](adr-authz-model.md)）。判定链是 `subject → bindings → role → permissions` 加一次精确匹配。策略数据由宿主写，判定语言不开放给宿主改写。
 
-本仓的既有做法是把成熟库桥接进来而不重复发明，例如：命令行与配置的解析委托给成熟库（[ADR-config-parsing](adr-config-parsing.md)），入口模块的登记面锚定 gin（[ADR-http-surface](adr-http-surface.md)），遥测模块装配上游 SDK 的 provider（[ADR-observability-library](adr-observability-library.md)）。匹配求值与模型解析属于同一类可桥接的能力。
+本仓的既有做法是把成熟库桥接进来而不重复发明，例如：命令行与配置的解析委托给成熟库（[ADR-config-parsing](adr-config-parsing.md)），入口模块的登记面锚定 gin（[REF-gin](../references.md)）（[ADR-http-surface](adr-http-surface.md)），遥测模块装配上游 SDK 的 provider（[ADR-observability-library](adr-observability-library.md)）。匹配求值与模型解析属于同一类可桥接的能力。
 
-早期实现自研了一套判定引擎，其适用范围止于 `resource:action` 的精确匹配加一次物化路径前缀判断。Casbin 提供可插拔的模型文本、ABAC 谓词与 RESTful matcher：这些能力在本模型里用不上，但其中「判定语言可由一份策略模型表达」是宿主可能需要用到的扩展面。
+早期实现自研了一套判定引擎，其适用范围止于 `resource:action` 的精确匹配加一次物化路径前缀判断。Casbin（[REF-casbin](../references.md)）提供可插拔的模型文本、ABAC 谓词与 RESTful matcher：这些能力在本模型里用不上，但其中「判定语言可由一份策略模型表达」是宿主可能需要用到的扩展面。
 
 ## 考虑过的选项
 
@@ -40,7 +40,7 @@
 
 采纳：判定引擎桥接 `github.com/casbin/casbin/v3`（选定版本 v3.11.0，Apache-2.0）；模型的文本固定在本模块的代码里，宿主只写策略数据，改不了判定语言。
 
-- **引擎与版本。** 判定经 Casbin v3 的强制器求值，版本在依赖里钉死。选型依据是许可（Apache-2.0）与直接依赖数量：v3.11.0 的直接依赖是 `bmatcuk/doublestar/v4`、`casbin/govaluate`、`google/uuid`。
+- **引擎与版本。** 判定经 Casbin v3 的强制器求值，版本在依赖里钉死。选型依据是许可（Apache-2.0）与直接依赖数量：v3.11.0 的直接依赖是 `bmatcuk/doublestar/v4`（[REF-doublestar](../references.md)）、`casbin/govaluate`（[REF-casbin-govaluate](../references.md)）、`google/uuid`（[REF-google-uuid](../references.md)）。
 - **模型文本固定在代码里。** 模型定义是根包的一个常量 `ModelText`，经 `model.NewModelFromString` 装载，不读文件、不接受宿主提供。可插拔的模型文本不在本模块的承诺里。
 - **策略数据与判定语言分离。** 宿主经本模块的管理接口写角色、授权与绑定这些策略行，不能改模型文本；判定语言属于设计对外接口面（[ADR-authz-reversal](adr-authz-reversal.md)）。
 - **策略的持久化不在本记录。** 引擎经策略存储接口装卸策略，其落点见 [ADR-authz-store](adr-authz-store.md)。

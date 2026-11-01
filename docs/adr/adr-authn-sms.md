@@ -9,7 +9,7 @@
 - 验证码空间只有百万量级，不带密钥的摘要等于明文；库一旦被转储，在途挑战即可被直接还原。
 - 每条短信有真实成本，短信轰炸专打特定国家与高价号段。匿名流量能触发的发送，上界只能由服务端预算给出。
 - 号码是否已登记不得对外暴露（REQ-signin-014）。任何一个预算、应答形态或耗时在已登记与未登记号码之间不同，请求方就能把发送接口当作枚举预言机（枚举防护的总体规则见 [ADR-authn-throttling](adr-authn-throttling.md)）。
-- 认证选用的国内厂商（阿里云、腾讯云）只收预先审核通过的签名加模板，不收自由文本；模板按语言分别审核，语言因此是模板的一个维度。这是载体侧的性质，不是短信能力的普遍前提：AWS Pinpoint 与 Twilio 不做逐模板审核，接受按模板声明的正文（[ADR-sms-template-review-is-carrier-capability](adr-sms-template-review-is-carrier-capability.md)）。
+- 认证选用的国内厂商（阿里云，[REF-aliyun-sms](../references.md)、腾讯云，[REF-tencent-cloud-sms](../references.md)）只收预先审核通过的签名加模板，不收自由文本；模板按语言分别审核，语言因此是模板的一个维度。这是载体侧的性质，不是短信能力的普遍前提：AWS Pinpoint（[REF-aws-end-user-messaging-sms](../references.md)）与 Twilio（[REF-twilio-messaging](../references.md)）不做逐模板审核，接受按模板声明的正文（[ADR-sms-template-review-is-carrier-capability](adr-sms-template-review-is-carrier-capability.md)）。
 - 厂商发送接口不保证幂等：阿里云接口注释明说不幂等，超时之后调用方无从知道短信是否已发出。
 - 厂商 SDK 各自绑定不同的依赖闭包，宿主只应为自己选用的厂商付出依赖（[ADR-authn-packaging](adr-authn-packaging.md)）。
 - 预算由挑战行的行数得出，行丢失会使预算被放宽，所以挑战行按状态放置的判据进 db（[ADR-authn-state-placement](adr-authn-state-placement.md)）。
@@ -19,7 +19,7 @@
 
 ### 厂商托管的验证码接口作主路径
 
-由阿里云 `dypnsapi` 一类的托管接口生成、发送、校验验证码，本模块只转发。
+由阿里云 `dypnsapi`（[REF-aliyun-pnvs](../references.md)）一类的托管接口生成、发送、校验验证码，本模块只转发。
 
 **否决**：尝试次数、重放、失败计数是否因重发清零、跨租户的节流如何做，都由厂商决定，且各厂商的规则互不一致，`sms.Sender` 无法立一份统一契约；规则落在厂商一侧，也使「重发不清零失败计数」「抑制行与真实行同路径计数」无法由本模块保证。
 
@@ -97,7 +97,7 @@ SMSCodes 排他持有挑战状态机，`sms.Sender` 作排他的可插拔发送�
 - **不确定即视为已发送的代价。** 超时而实际未发出时，用户要等重发间隔，并为这次重发占用预算。适配器不重试，瞬时网络错误也让用户多点一次重发。
 - **确定未送达的发送不耗预算，预算只约束可能送达的发送。** 一次能被证明没有离开本模块或没有进入厂商管线的发送退还它占用的全部维度，因此预算不再限制对必然失败目的地的尝试次数：攻击者可以对一个必然失败的号码或目的地重复触发发送、重复调用厂商，只受每号码重发间隔约束。
 - **缺省拒绝使短信开箱不可用。** 宿主没有配置放行前缀，短信登录与短信因素一律不发送。放行表是可在运行期改的设置，改到更宽松时写一行警告并记一条尽力档审计，事前不拦（[ADR-authn-settings-and-secrets](adr-authn-settings-and-secrets.md)）。
-- **短信是受限认证器。** SIM 劫持与号码携转使短信登录与短信因素弱于 TOTP 与通行密钥，号码被回收后新持有者可用短信登录旧账户；发送前的风险信号检查不做（人机验证是可选的独立闸，缺省关闭，打开后只要求一份一次性证明，不读取风险信号），因素层面的限制见 [ADR-authn-mfa](adr-authn-mfa.md)。
+- **短信是受限认证器。** SIM 劫持与号码携转使短信登录与短信因素弱于 TOTP（[REF-rfc6238](../references.md)）与通行密钥，号码被回收后新持有者可用短信登录旧账户；发送前的风险信号检查不做（人机验证是可选的独立闸，缺省关闭，打开后只要求一份一次性证明，不读取风险信号），因素层面的限制见 [ADR-authn-mfa](adr-authn-mfa.md)。
 - **厂商 SDK 进入 `pkg` 的依赖。** 叶子包随 `pkg` 模块一并解析，宿主的 `go.sum` 带上未选用厂商的依赖；撤掉叶子包是回退办法。
 
 ## 失效条件
@@ -112,5 +112,5 @@ SMSCodes 排他持有挑战状态机，`sms.Sender` 作排他的可插拔发送�
 
 - 假设阿里云各错误码都可归入发送哨兵之一，且超时一类错误只归「不确定」一类。适配层测试用 `httptest` 起假端点，对照 SDK 与厂商文档逐个错误码断言归类，未列出的错误码断言落入「不确定」一类。
 - 假设腾讯云 `LimitExceeded.*` 错误码全部是按号码的限流，归 `sms.ErrThrottled` 不会误吞其他含义的限流。适配层测试逐码断言归类。
-- 假设阿里云与腾讯云的 SDK 与 TOTP、WebAuthn、SAML、go-oidc 的库在同一个 `pkg` 模块里编译兼容。构建检查把全部厂商适配叶子包与那些库一起编译。
+- 假设阿里云与腾讯云的 SDK 与 TOTP、WebAuthn（[REF-webauthn](../references.md)）、SAML（[REF-saml2](../references.md)）、go-oidc（[REF-go-oidc](../references.md)）的库在同一个 `pkg` 模块里编译兼容。构建检查把全部厂商适配叶子包与那些库一起编译。
 - 假设已登记号码、未登记且注册关闭的号码，其 `Send` 应答在状态码、响应体与头上相同，预算计数的增量相同。契约测试对已登记与抑制两种号码各发一轮，断言应答同形、`authn_challenges` 的计数路径一致；耗时只能证否，不能证真，对照不出差别不构成证明。

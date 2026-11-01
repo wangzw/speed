@@ -110,7 +110,7 @@ type Row struct {
 
 列表的应答是 200 加一页记录视图与下一页的游标：`entries` 是记录视图的列表，`next` 是下一页游标，末页为空串。取一行的应答是 200 加一份记录视图。
 
-**导出的应答是 200 加一份 NDJSON 正文。** 正文一行一条记录视图：每行是一个 JSON 对象，字段与记录视图相同，行尾是一个换行符；没有信封、没有表头行、没有总计行。`detail` 因而是每行里的一个 JSON 对象，键值表的结构在文件里保留下来。媒体类型是 `application/x-ndjson`。应答带 `Content-Disposition: attachment`，文件名由 `mime.FormatMediaType` 从 `audit-records-<导出发起时刻>.ndjson` 生成，时刻按 UTC 写成紧凑形式（如 `20261024T101500Z`）；另带 `Cache-Control: no-store`，一份审计数据不留在任何缓存里。没有匹配行时是 200 与空正文——一个零行的文件仍是一次成功的导出。
+**导出的应答是 200 加一份 NDJSON（[REF-ndjson](../../../references.md)）正文。** 正文一行一条记录视图：每行是一个 JSON 对象，字段与记录视图相同，行尾是一个换行符；没有信封、没有表头行、没有总计行。`detail` 因而是每行里的一个 JSON 对象，键值表的结构在文件里保留下来。媒体类型是 `application/x-ndjson`。应答带 `Content-Disposition: attachment`，文件名由 `mime.FormatMediaType` 从 `audit-records-<导出发起时刻>.ndjson` 生成，时刻按 UTC 写成紧凑形式（如 `20261024T101500Z`）；另带 `Cache-Control: no-store`，一份审计数据不留在任何缓存里。没有匹配行时是 200 与空正文——一个零行的文件仍是一次成功的导出。
 
 ### 查询参数
 
@@ -118,7 +118,7 @@ type Row struct {
 
 | 参数 | 含义 |
 |---|---|
-| `since` | 时间下界（RFC 3339），含该时刻；缺省为无下界 |
+| `since` | 时间下界（RFC 3339，[REF-rfc3339](../../../references.md)），含该时刻；缺省为无下界 |
 | `until` | 时间上界（RFC 3339），不含该时刻；缺省为无上界 |
 | `action` | 动作，可重复；给出时只读这些动作的行 |
 | `outcome` | 结果，可重复；给出时只读这些结果的行 |

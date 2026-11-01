@@ -2,7 +2,7 @@
 
 ## 背景
 
-账户是全局的，不属于任何一个租户，一个账户可以同时属于零到多个租户（[ADR-authn-accounts](adr-authn-accounts.md)）。登录方式除口令与短信之外，还有社交登录（Google、GitHub、微信）与企业 SSO（按租户配置的 OIDC 与 SAML 提供方）。这些方式在提供方处完成认证，交给 authn 的是一份外部身份断言：提供方、该提供方命名空间内的主体，以及可有可无的邮箱与「邮箱已验证」声明。登录引擎要把断言落到一个账户上：找到已绑定的账户、在已登录的账户上显式建立绑定、或开一个新账户。
+账户是全局的，不属于任何一个租户，一个账户可以同时属于零到多个租户（[ADR-authn-accounts](adr-authn-accounts.md)）。登录方式除口令与短信之外，还有社交登录（Google，[REF-google-openid-connect](../references.md)、GitHub，[REF-github-oauth-apps](../references.md)、微信，[REF-wechat-website-login](../references.md)、[REF-wechat-oa-web-auth](../references.md)）与企业 SSO（按租户配置的 OIDC 与 SAML 提供方，[REF-openid-connect-core](../references.md)、[REF-saml2](../references.md)）。这些方式在提供方处完成认证，交给 authn 的是一份外部身份断言：提供方、该提供方命名空间内的主体，以及可有可无的邮箱与「邮箱已验证」声明。登录引擎要把断言落到一个账户上：找到已绑定的账户、在已登录的账户上显式建立绑定、或开一个新账户。
 
 下列事实限定了这一步的可选范围。
 

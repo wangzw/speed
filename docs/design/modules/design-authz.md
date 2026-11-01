@@ -2,7 +2,7 @@
 
 ## 职责
 
-`pkg/authz` 交付**授权**：在已认定的身份与已解析的租户之上，判定这个身份能否对某个资源做某个动作。模型是经典 RBAC——角色到权限，权限按（资源，动作）声明，**一个租户是一个策略域**（[ADR-authz-model](../../adr/adr-authz-model.md)）。引擎桥接 `github.com/casbin/casbin/v3`，策略持久化经 `pkg/db` 由本模块自写的一个薄 adapter 落到自己的表（[ADR-authz-engine](../../adr/adr-authz-engine.md)、[ADR-authz-store](../../adr/adr-authz-store.md)）。
+`pkg/authz` 交付**授权**：在已认定的身份与已解析的租户之上，判定这个身份能否对某个资源做某个动作。模型是经典 RBAC——角色到权限，权限按（资源，动作）声明，**一个租户是一个策略域**（[ADR-authz-model](../../adr/adr-authz-model.md)）。引擎桥接 `github.com/casbin/casbin/v3`（[REF-casbin](../../references.md)），策略持久化经 `pkg/db` 由本模块自写的一个薄 adapter 落到自己的表（[ADR-authz-engine](../../adr/adr-authz-engine.md)、[ADR-authz-store](../../adr/adr-authz-store.md)）。
 
 归属本模块的判据是判定所需的输入：还需要资源、动作与策略，而认证事实（凭据、账户、标识、会话、令牌、因素、IdP 配置、冒充记录）不足以单独裁决的，归本模块；只需认证事实即可裁决的归认证。本模块的回答是：这个身份对（域，资源，动作）有没有匹配的策略行。
 
@@ -198,7 +198,7 @@ type Seeder interface {
 }
 ```
 
-上列接口与类型都在根包。根包只依赖标准库，因此它不声明取 `*gin.Context` 的接口：handler 内判定 API `Guard` 由此不在根包，而由 `authz.guard` 随中间件一并交付。
+上列接口与类型都在根包。根包只依赖标准库，因此它不声明取 `*gin.Context`（[REF-gin](../../references.md)）的接口：handler 内判定 API `Guard` 由此不在根包，而由 `authz.guard` 随中间件一并交付。
 
 接口在根包的对外接口面是签名与方法集：加方法与改签名对取用它们的模块、实现了它们的宿主即是不兼容变更。
 
@@ -363,7 +363,7 @@ const (
 
 **应答。** 200 加一份视图：`platform` 是主体在平台域 `system` 持有的权限名，`tenant` 是主体在请求解析出的租户域持有的权限名。两个成员恒在，按权限名升序，空结果写 `[]` 而不是 `null`。请求没有解析出租户时 `tenant` 为空——不回退到平台域，否则平台域的同一份答案会以两个名字各出现一次。主体取 `Identity.Account()`，不经路径参数或正文点名。
 
-**访问控制。** 路由不带权限：每个已认证调用方都能读自己的权限，而一条要求权限的路由只能被已经持有该权限的调用方走到——那正是这条读取要回答的问题。路由在声明表上登记为开放，好让强制中间件放行到 handler；认证准入是网关的：路由挂在 `authz.self.endpoints` 列出的端上，受守端上没有豁免登记的路由要求凭据，没有凭据的请求在 handler 之前即被拒。handler 自己在没有身份时写出与其他已认证面相同的 401：只有状态、没有 `Problem.Type`，挑战为 `Bearer` 与 `Cookie`，realm 取该端点的端名。
+**访问控制。** 路由不带权限：每个已认证调用方都能读自己的权限，而一条要求权限的路由只能被已经持有该权限的调用方走到——那正是这条读取要回答的问题。路由在声明表上登记为开放，好让强制中间件放行到 handler；认证准入是网关的：路由挂在 `authz.self.endpoints` 列出的端上，受守端上没有豁免登记的路由要求凭据，没有凭据的请求在 handler 之前即被拒。handler 自己在没有身份时写出与其他已认证面相同的 401：只有状态、没有 `Problem.Type`，挑战为 `Bearer`（[REF-rfc6750](../../references.md)）与 `Cookie`，realm 取该端点的端名。
 
 **失败。** 策略读不出来时答 503，成因只进日志；路由集里没有 403 与 404，因为它不判定权限、也没有寻址对象。模块不持有策略、不缓存结果，也不给自己授予任何权限。
 
@@ -398,7 +398,7 @@ const (
 
 ### 依赖方向
 
-- **根包只依赖标准库。** 它被每个使用方 import，第三方的 Casbin 库与 gin、gorm 不出现在根包签名里，也不进根包的非测试 import 闭包。`pkg/authz/deps_test.go` 守住这条断言。
+- **根包只依赖标准库。** 它被每个使用方 import，第三方的 Casbin 库与 gin、gorm（[REF-gorm](../../references.md)）不出现在根包签名里，也不进根包的非测试 import 闭包。`pkg/authz/deps_test.go` 守住这条断言。
 - **库类型只出现在叶子与库包里。** `github.com/casbin/casbin/v3` 落在 `internal/policy` 与 `internal/persist`，gin 落在 `guard` 与 `admin`，gorm 与 `pkg/db` 落在 `policy`。只有 import 该子包的宿主才背负它（[ADR-module-layout](../../adr/adr-module-layout.md)）。
 - **本模块 import `pkg/authn` 根包并交付其中的接缝，认证不 import 本模块**（[ADR-authn-scope](../../adr/adr-authn-scope.md)）。`authz/guard` 实现 `authn.Decider`，读 `Identity` 的方法集；方向是授权指向认证。
 - **本模块 import `pkg/tenant` 根包取 `tenant.FromContext` 与 `tenant.CrossTenant`，不 import 它的子包。** 准入层交付的 `(*tenant.Admission)(nil)` 是授权阶段内的定序锚点，本模块的中间件用 `After` 指向它（[tenant-admission](tenant/design-tenant-admission.md)）。

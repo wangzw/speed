@@ -36,7 +36,7 @@
 
 ### 事件
 
-事件是提示，不是权威。账户状态、成员关系、会话与撤销的权威在 db；订阅方只能用事件清本地缓存与触发清理，不得把它当唯一依据。总线各传输实现的投递语义不同（Redis 至多一次，NATS 可能重复，进程内只在本副本可见，`Start` 窗口内会丢，都不回放），所以每个订阅方按 `Event.ID` 去重，不依赖次序与次数，不依赖「先 created 后 changed」。
+事件是提示，不是权威。账户状态、成员关系、会话与撤销的权威在 db；订阅方只能用事件清本地缓存与触发清理，不得把它当唯一依据。总线各传输实现的投递语义不同（Redis 至多一次，NATS 可能重复，进程内只在本副本可见，`Start` 窗口内会丢，都不回放，[REF-nats](../../../references.md)），所以每个订阅方按 `Event.ID` 去重，不依赖次序与次数，不依赖「先 created 后 changed」。
 
 **类型。** 事件类型的集合是封闭集合，即下表。集合在各模块 `Init` 之前静态已知；类型按功能划分，不按 IdP、登录方式或租户展开，变化用载荷字段表达。没有登录失败事件：失败只走审计、日志与计数器，退避开始时才发 `authn.throttle.engaged`：发出方是调用 `Throttle.Fail` 并得到 `engaged` 为真的使用方，同时让 `authn.throttle.engagements` 加一；使用方的名单见 [design-authn-account](design-authn-account.md) 的 `Throttle` 一节。
 
@@ -44,7 +44,7 @@
 
 - JSON 标签小写下划线，顶层字段全是标量。
 - 载荷的顶层字段只放标识、枚举与时刻。不放秘密、自由文本（理由、显示名）、邮箱、手机号与登录标识。判据：载荷的每个顶层字段都会被审计写进明细，所以放进去的值在审计明细里出现时必须无害。
-- 时刻用 RFC 3339 字符串；数字经传输后成为 `json.Number`，超过 2^53 会被舍入。
+- 时刻用 RFC 3339（[REF-rfc3339](../../../references.md)）字符串；数字经传输后成为 `json.Number`，超过 2^53 会被舍入。
 - 事件订阅者拿到的上下文不带租户；需要租户的订阅方按 `Event.TenantID` 经 `Catalog.Enter` 进入。
 
 **投递路径。** 下表「发件箱」列为「是」的类型，在 `outbox.Outbox` 在场时于写入的同一事务里暂存，由中继在提交之后发布，至少一次，同一个 `Event.ID`；发件箱缺席则在提交之后 `Bus.Publish`，尽力而为；发件箱与总线都不在场则不发布。「发件箱」列为「否」的类型一律在提交之后 `Bus.Publish`。发布失败只记 Warn，从不令业务操作失败。发件箱缺席时启动诊断写一行 Warn，点明经发件箱发出的那些类型在该装配里按尽力而为发出；总线也缺席时同一行注明不发布。发件箱在场则用，不构成硬依赖。
@@ -194,7 +194,7 @@
 
 - **放宽开关表里的键一律用 `relax`，与取值类型无关。** 表见 [design-authn-config](design-authn-config.md) 的放宽开关一节，键是 `authn.account.signup`、`authn.account.password-signup`、`authn.token.check-session` 与 `authn.login.password-reset`，`relax` 表示「一个声明为放宽开关的键被移到该键的放宽取值」。单列这一取值有两个理由。其一，`authn.account.signup` 与 `authn.account.password-signup` 的取值域是无序枚举（`closed`/`open`），既不是数值也不是布尔，机械类的六个取值没有一个能表达它们的移动；为每个枚举各造一个取值（如 `to-open`）会让取值集随开关增加而增长，而按类型分派又要求运维先知道每个键的类型。其二，这些键要表达的是同一件事：一个显式放宽开关被打开。运维的告警规则据此按类别匹配一条规则即可，不必按每个键的取值类型各配一条。`authn.token.check-session` 虽是布尔、其移动本可写成 `to-false`，但把它拆出去会让同一类开关分散在两个取值上，正与上一条理由相反，所以它随类别取 `relax`。
 - **不属放宽开关表的设置按值的机械移动定。** 取值变大即放宽的用 `increase`，变小即放宽的用 `decrease`，列表加入成员即放宽的用 `add-member`，列表移除成员即放宽的用 `remove-member`，数值改为 0 即放宽（0 表示关闭）的用 `to-zero`；布尔设置中不属放宽开关表的（如 `authn.mfa` 与 `tenant.admission` 的 `require-*`）由 `true` 改 `false` 即放宽的用 `to-false`。
-- **取值有强弱次序而无数值次序、移动即降级的设置用 `downgrade`。** `authn.account.password-algorithm` 的取值域是 `argon2id` 与 `pbkdf2-sha256`，两者是无序枚举：移到 `pbkdf2-sha256` 降低哈希的计算成本，是一次降级，而它既不是更大的数也不是更小的数，机械类的六个取值没有一个能表达这次移动。为它单列 `downgrade`，方向说的是「换成了更弱的一档」，与数值移动无关；改回 `argon2id` 不放宽，不写记录。
+- **取值有强弱次序而无数值次序、移动即降级的设置用 `downgrade`。** `authn.account.password-algorithm` 的取值域是 `argon2id`（[REF-rfc9106](../../../references.md)）与 `pbkdf2-sha256`（[REF-rfc8018](../../../references.md)），两者是无序枚举：移到 `pbkdf2-sha256` 降低哈希的计算成本，是一次降级，而它既不是更大的数也不是更小的数，机械类的六个取值没有一个能表达这次移动。为它单列 `downgrade`，方向说的是「换成了更弱的一档」，与数值移动无关；改回 `argon2id` 不放宽，不写记录。
 
 方向由设置项的语义给出，新增放宽项时按同一判据补列：先判它是否归入放宽开关表，归入的用 `relax`；取值有强弱次序而无数值次序的算法选择用 `downgrade`；其余按值的机械移动选一个。
 
@@ -219,7 +219,7 @@
 |---|---|
 | Info | 登录失败、退避、验证码错、跨源检查不过、令牌过期、`link-required`、冒充被拒、`anonymous` 放行 |
 | Warn | db 或 kv 不可用、短信发送方故障、IdP 断言验签失败或时间不符、刷新宽限命中、断言重放、克隆告警、放宽项在用、事件发布失败 |
-| Error | 零值判决、证明形状不合、后端与网关 panic、强制档审计写失败、SAML 校验里库返回成功而补充校验失败 |
+| Error | 零值判决、证明形状不合、后端与网关 panic、强制档审计写失败、SAML（[REF-saml2](../../../references.md)）校验里库返回成功而补充校验失败 |
 
 **永不记录**的判据：凡持有它即可冒用或重放认证过程的值，以及用户提交的原文。记录的是类别、标识与结果。例举与登记规则见 [design-authn-gate](design-authn-gate.md) 的脱敏规则一节。
 

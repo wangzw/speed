@@ -7,7 +7,7 @@
 本模块负责下列事项（封闭集合，不在其内的事项归非职责一节点名的模块）：
 
 - 交付 `Sessions`：会话的创建、读取、列出、撤销、轮换、提权、冒充挂接、按服务密钥取建与撤销。权威存放在 db 的 `authn_sessions`，不在 kv。
-- 作为登录会话 cookie 的写出、清除与读取的唯一一处：cookie 的名字、前缀、`SameSite`、`Domain`、`Secure` 只在本模块决定，别的模块只经 `Sessions.SetCookie` 与 `Sessions.ClearCookie` 写 cookie。
+- 作为登录会话 cookie 的写出、清除与读取的唯一一处：cookie 的名字、前缀、`SameSite`（[REF-rfc6265bis](../../../references.md)）、`Domain`、`Secure` 只在本模块决定，别的模块只经 `Sessions.SetCookie` 与 `Sessions.ClearCookie` 写 cookie。
 - 作为校验后端认领会话 cookie，把 cookie 认成一份 `Principal`：先查进程内缓存，再读库，再核对账户状态与冒充记录（冒充记录的有效性同样经进程内缓存），最后交给网关盖章。
 - 按种类判定会话是否有效：`browser`、`token`、`service` 各有自己的期限语义。
 - 维护唯一的撤销面：撤销一个会话即撤销挂在它上面的访问令牌、刷新令牌与冒充记录，撤销以会话行的 `revoked_at` 为准，不比较时间。
@@ -27,9 +27,9 @@
 - **不写管理面路由。** 列出与撤销他人会话、按账户批量撤销的 HTTP 路由、判定接缝与强制审计归 `authn.admin`（[design-authn-admin](design-authn-admin.md)）；本模块只提供它调用的方法。
 - **不做授权，不写 403。** 本模块回答「这个 cookie 属于哪个账户、会话是否有效」，不回答「能不能做某件事」。
 - **不定义审计、事件与指标的取值。** 审计的写入点与档位、事件与指标的取值表归 [design-authn-events](design-authn-events.md)；本文只写本模块在何处发布与订阅。
-- **不提供 CORS 层。** 单页应用与 API 跨域时需要一个排在网关之外的 CORS 层（防护阶段），由宿主提供。
+- **不提供 CORS（[REF-whatwg-fetch](../../../references.md)）层。** 单页应用与 API 跨域时需要一个排在网关之外的 CORS 层（防护阶段），由宿主提供。
 - **不提供「记住我」，不绑定设备或来源地址，不做令牌式 CSRF。** 长期免登录只经刷新令牌，面向非浏览器客户端。
-- **不保存登录流程状态。** OAuth 的 `state`、一次性占位等流程记录在 kv，由登录引擎持有（[design-authn-login](design-authn-login.md)）。
+- **不保存登录流程状态。** OAuth（[REF-rfc6749](../../../references.md)）的 `state`、一次性占位等流程记录在 kv，由登录引擎持有（[design-authn-login](design-authn-login.md)）。
 
 ## 外部接口契约
 
@@ -147,8 +147,8 @@ cookie 的 `Secure` 没有独立开关。`public-url` 不是 https（回环主�
 | `settings.Store` | `Init` 取用，○ | 读 `authn.session.*` 设置；缺席取缺省值。 |
 | `event.Bus` | `Init` 取用，○ | 发布与订阅 `authn.session.revoked` 等事件，订阅 `authn.impersonation.ended` 清冒充记录缓存；缺席则不发布也不订阅，跨副本的缓存失效只靠缓存有效期。 |
 | `log.Logger`、`observability.MeterProvider` | `Init` 取用，○ | 日志与 `authn.session.operations` 指标；缺席合法，缺提供者静默跳过。 |
-| `alexedwards/scs/v2` | 库 | 令牌生成、存储里只留令牌的 SHA-256、cookie 属性写出、创建路径、可换的编码器与存储接缝。库只出现在本叶子包里，不 import 本模块的宿主不背负它。 |
-| gin | 库 | 路由处理器的胶水，经 `pkg/http` 的登记面；不出现在根包签名里。 |
+| `alexedwards/scs/v2`（[REF-scs](../../../references.md)） | 库 | 令牌生成、存储里只留令牌的 SHA-256、cookie 属性写出、创建路径、可换的编码器与存储接缝。库只出现在本叶子包里，不 import 本模块的宿主不背负它。 |
+| gin（[REF-gin](../../../references.md)） | 库 | 路由处理器的胶水，经 `pkg/http` 的登记面；不出现在根包签名里。 |
 
 方向：本模块只依赖 `pkg/authn` 根包的接口与值类型、`pkg/db`、`pkg/settings`、`pkg/event`、`pkg/log`、`pkg/observability` 与 `authn.mount`；不 import `pkg/tenant`，也不 import 别的 authn 叶子包。`Impersonation` 不写进 `Requires`：`authn.impersonation` 把 `Sessions` 写进自己的 `Requires`，反向取用只能在 `Init` 里取已构造的实例，所以不构成构造环。
 
@@ -494,7 +494,7 @@ stateDiagram-v2
 
 **轮换点**是下列动作（封闭集合）：登录完成；加强认证完成；改口令；删除因素；解绑外部身份；添加用户名；把一条已证明的邮箱或手机选作登录方式（REQ-account-013、REQ-security-029）；冒充的开始。登记因素与关联外部身份会撤销该账户的其余会话，但不轮换当前令牌 —— 它们收窄的是其他设备的会话，发起设备继续用原令牌。冒充的结束不是轮换点，只清除会话行上的标识（决策见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)）。轮换指旧令牌脱钩、新令牌写入，对会话行的条件更新，行已被撤销则整件事失败。调用方在动作成功之后调用 `Rotate`（改口令、删除因素、解绑外部身份、添加用户名、`PUT B/identifiers/:id` 把一条已证明的邮箱或手机的 `sign_in` 置真）、`Elevate`（加强认证）或 `SetImpersonation`（冒充开始；结束只清标识，不换令牌也不写 cookie），再调用 `SetCookie`。改口令、删除已启用因素、添加用户名、把一条已证明的邮箱或手机选作登录方式、解绑外部身份成功之后，各自的处理器（删除因素是它的用户面 DELETE 路由）另调 `RevokeAccount(except = 当前会话)`；登记因素与关联外部身份完成之后也调它，只是不轮换当前令牌。`MFA.Remove` 自己不撤销，也就不依赖会话模块。`Rotate` 换当前会话的令牌，`RevokeAccount` 撤销其余会话，二者是两个动作。`Passwords.Set` 不替调用方撤销，使 `Passwords` 不依赖会话模块。登记并验证一条邮箱或手机不是轮换点，也不调 `RevokeAccount`：证明只回答所有权，一条邮箱成为账户唯一地址时自动成为登录方式这一后果随验证发生、要求新鲜认证，但同样不轮换会话；其余是否选作登录方式由持有人另经 `PUT B/identifiers/:id` 选择；用户名标识恒为登录名（[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)）。
 
-登录完成时，请求若带着可解析的旧会话 cookie（经 `Sessions.Current`），旧会话被撤销，不让它继续并存。这不是会话固定的防线：防线是登录总是新建会话与新令牌，加上令牌只由服务端生成。SAML 的跨站 POST 不带 `SameSite=Lax` 的 cookie，旧会话无从撤销。
+登录完成时，请求若带着可解析的旧会话 cookie（经 `Sessions.Current`），旧会话被撤销，不让它继续并存。这不是会话固定的防线：防线是登录总是新建会话与新令牌，加上令牌只由服务端生成。SAML（[REF-saml2](../../../references.md)）的跨站 POST 不带 `SameSite=Lax` 的 cookie，旧会话无从撤销。
 
 下表是撤销面的入口与它们的后续动作（封闭集合）。
 
@@ -659,6 +659,6 @@ stateDiagram-v2
 | 自助路由 `B/session`、`B/logout`、`B/sessions` | 已实现 | `pkg/authn/session/routes.go` |
 | 到期行的清扫协程 | 已实现 | `pkg/authn/session/sweep.go` |
 | `authn.session.revoked` 事件的发布与订阅、`authn.impersonation.ended` 的订阅、`authn.session.operations` 指标 | 已实现 | `pkg/authn/session/lifecycle.go`；`pkg/authn/session/status.go` |
-| operation 声明（Cookie 与 204 应答）与 OpenAPI 片段生成 | 已实现 | `pkg/authn/session/operations.go`；`pkg/authn/session/openapi_generated_test.go`；片段 `pkg/authn/session/openapi/session.json` |
+| operation 声明（Cookie 与 204 应答）与 OpenAPI（[REF-openapi](../../../references.md)）片段生成 | 已实现 | `pkg/authn/session/operations.go`；`pkg/authn/session/openapi_generated_test.go`；片段 `pkg/authn/session/openapi/session.json` |
 
 浏览器自行附带的凭据下的跨源检查由网关执行，它的实现状态由 [design-authn-gate](design-authn-gate.md) 承载。

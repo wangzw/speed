@@ -43,7 +43,7 @@
 **接受的代价：**
 
 - **排他交付让两条信号的成败耦合。** 装配器对追踪与指标分别声明排他并表态 `StateEnabled`，消解的退让只落在「声明排他且表态 `StateAuto`」的提供者身上，装配器因此不会被消解禁用。任一条信号上出现第二个仍然启用的提供者时，由裁决判 `ErrExclusiveViolated` 并终止整次启动：竞争者出现在指标一侧时，追踪一侧即使自身没有竞争者也随之无法启动（[ADR-module-enablement](adr-module-enablement.md)）。
-- **点名装配器即承受上游 SDK 的闭包。** 只 import 接口包的宿主同样带上上游的追踪 API、指标 API 与两个 SDK 导出接口所在的包（别名必须写出被别名的包），但不带任何导出后端所绑的传输库。装配器另绑上游 gin 采集库，它的闭包随装配器进入宿主（[ADR-observability-request-layer](adr-observability-request-layer.md)）。`go.sum` 与整图读取的那部分代价另见 [ADR-module-layout](adr-module-layout.md)。
+- **点名装配器即承受上游 SDK 的闭包。** 只 import 接口包的宿主同样带上上游的追踪 API、指标 API 与两个 SDK 导出接口所在的包（别名必须写出被别名的包），但不带任何导出后端所绑的传输库。装配器另绑上游 gin（[REF-gin](../references.md)）采集库，它的闭包随装配器进入宿主（[ADR-observability-request-layer](adr-observability-request-layer.md)）。`go.sum` 与整图读取的那部分代价另见 [ADR-module-layout](adr-module-layout.md)。
 - **每个导出后端是一个模块，宿主在命令树上逐个点名，或为它预置实例。** 既没点名也没有预置实例的后端，那条目的地没有数据，启动期不失败，也不进启动诊断。
 
 ## 失效条件

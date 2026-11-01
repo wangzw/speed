@@ -10,7 +10,7 @@
 
 路由的认证策略归认证功能目录，登记由登记方在 `Init` 期写入，与它挂的路由一起（[ADR-authn-scope](adr-authn-scope.md)）。
 
-认证层是入口模块链上的一层，在 gin 引擎之内、路由匹配之后运行。`c.FullPath()` 给出已匹配路由的完整路径写法，没有匹配的路由时是空串，路径语法是 gin 的（[ADR-http-surface](adr-http-surface.md)）。登记方传给 `Route` 的路径须已是 gin 规整后的写法，因而 `c.FullPath()` 与登记时的路径逐字相同。入口模块的登记面只列出端名，不提供路由枚举，认证层读不到入口模块的路由表（[ADR-http-enumeration](adr-http-enumeration.md)）。
+认证层是入口模块链上的一层，在 gin（[REF-gin](../references.md)）引擎之内、路由匹配之后运行。`c.FullPath()` 给出已匹配路由的完整路径写法，没有匹配的路由时是空串，路径语法是 gin 的（[ADR-http-surface](adr-http-surface.md)）。登记方传给 `Route` 的路径须已是 gin 规整后的写法，因而 `c.FullPath()` 与登记时的路径逐字相同。入口模块的登记面只列出端名，不提供路由枚举，认证层读不到入口模块的路由表（[ADR-http-enumeration](adr-http-enumeration.md)）。
 
 登记面的写入窗口借用 `Migrate` 与 `Start` 的阶段位，框住全局 `Init` 阶段（[ADR-http-routing](adr-http-routing.md)）。各登记方在自己的 `Init` 里按依赖序逐个写入，被守的端集合由网关在自己的 `Init` 里展开，一份登记是否自洽，要等全部登记方写完才有答案。
 

@@ -70,7 +70,7 @@ SQLite 的"no such table"、PostgreSQL 的 `42P01`，认出其一才带上 `ErrR
 
 ### 失败之后列出库里的表
 
-经 GORM 的迁移器列出库里的表，列出的表里没有名册表时带上 `ErrRosterMissing`。
+经 GORM（[REF-gorm](../references.md)）的迁移器列出库里的表，列出的表里没有名册表时带上 `ErrRosterMissing`。
 
 **否决**：PostgreSQL 上迁移器读信息模式，而信息模式只列出当前角色有某种权限的表。一个对名册表没有任何权限的角色，读写失败之后列表里没有它，一次权限不足就被答成表不在，哨兵给的修复是错的。
 

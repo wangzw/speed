@@ -2,7 +2,7 @@
 
 ## 背景
 
-短信厂商对模板的处理分两类。阿里云与腾讯云要求每一个模板都预先审核：发送时只能引用审核通过的编号，审核按语言分别给出，未过审的模板不能发送。AWS Pinpoint 的 `SendTextMessage` 直接收一条正文，厂商没有逐模板审核；Twilio 的 Content API 把正文登记成一个内容资源并返回 SID，同样没有逐模板审核。
+短信厂商对模板的处理分两类。阿里云（[REF-aliyun-sms](../references.md)）与腾讯云（[REF-tencent-cloud-sms](../references.md)）要求每一个模板都预先审核：发送时只能引用审核通过的编号，审核按语言分别给出，未过审的模板不能发送。AWS Pinpoint（[REF-aws-end-user-messaging-sms](../references.md)）的 `SendTextMessage` 直接收一条正文，厂商没有逐模板审核；Twilio 的 Content API（[REF-twilio-content-api](../references.md)）把正文登记成一个内容资源并返回 SID，同样没有逐模板审核。
 
 此前的设计把「逐模板审核」当作能力的普遍不变量：每条运行期模板起于 `Pending`，每个语言各记一条审核状态，可发送的条件是该语言的状态为 `Approved`。这个不变量对没有逐模板审核的厂商不成立——它们要么被迫报告一个厂商从未给出的状态，要么在启动时就没有一条能通过的模板。
 
@@ -43,7 +43,7 @@
 
 采纳：**逐模板的厂商审核是载体的能力，由 `CarrierModel.Review.PerTemplate` 声明，不是能力的普遍不变量。**
 
-- **两种载体。** `Review.PerTemplate` 为真的载体（阿里云、腾讯云）按语言跟踪审核，每个语言起于 `Pending`，可发送的条件是该语言 `Approved`。`Review.PerTemplate` 为假的载体（AWS、Twilio）不跟踪审核，运行期模板的每个语言是 `ApprovalNotRequired`，`Approval` 答 `ApprovalNotRequired`，`Offer` 不等待审核结果。
+- **两种载体。** `Review.PerTemplate` 为真的载体（阿里云、腾讯云）按语言跟踪审核，每个语言起于 `Pending`，可发送的条件是该语言 `Approved`。`Review.PerTemplate` 为假的载体（AWS、Twilio，[REF-twilio-messaging](../references.md)）不跟踪审核，运行期模板的每个语言是 `ApprovalNotRequired`，`Approval` 答 `ApprovalNotRequired`，`Offer` 不等待审核结果。
 - **新增审核状态 `ApprovalNotRequired`。** 它表示厂商没有这条审核；`ApprovalUnknown` 表示这条审核存在而本进程不跟踪它。两者不可互相替代。
 - **可发送的状态是 `Approved` 与 `ApprovalNotRequired`。** `Pending`、`Rejected`、`Withdrawn`、`Unknown` 仍然不可发送。
 - **形状校验随载体收紧。** `Review.PerTemplate` 为真时每个语言必须带厂商编号——审核的对象就是编号；为假时不要求编号，正文足以让载体构造发送请求或在厂商侧创建内容资源。

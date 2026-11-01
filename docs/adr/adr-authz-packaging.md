@@ -4,7 +4,7 @@
 
 宿主的依赖面由它 import 的包决定，登记随 import 发生——import 一个包即执行它的 `init`，该包登记的模块随之进入可用集（[ADR-module-layout](adr-module-layout.md)、[ADR-module-registration](adr-module-registration.md)）。一个包所绑的第三方库只有 import 它的宿主才背负；被每个使用方 import 的根包，其 import 随之进入全部使用方的依赖闭包。
 
-授权的各项交付依赖闭包不同：策略引擎经数据库模块读写自己的表，绑定 Casbin 引擎；请求路径上的强制点落在入口模块的授权阶段，读租户上下文；管理面 HTTP 路由落在入口模块，取用策略模块的 `Manager` 与 `Catalog`。判定接口、权限常量与模型文本要被这几处与读取权限的代码共用。
+授权的各项交付依赖闭包不同：策略引擎经数据库模块读写自己的表，绑定 Casbin（[REF-casbin](../references.md)）引擎；请求路径上的强制点落在入口模块的授权阶段，读租户上下文；管理面 HTTP 路由落在入口模块，取用策略模块的 `Manager` 与 `Catalog`。判定接口、权限常量与模型文本要被这几处与读取权限的代码共用。
 
 `authn` 功能目录的先例是根包只放接口、一个功能一个叶子包一个模块，判据是依赖闭包（[ADR-authn-packaging](adr-authn-packaging.md)）。把一个交付拆成独立 Go module 的判据是「该功能自身需要独立发布节奏」（[ADR-module-layout](adr-module-layout.md)）。
 

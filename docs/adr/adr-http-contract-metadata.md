@@ -2,7 +2,7 @@
 
 ## 背景
 
-合并后的文档此前只有 `openapi`、`info`（标题与版本）、`paths`、`components` 与两个扩展键。一份给外部消费者读的契约缺少三类信息：operation 没有分组，读者只能按路径前缀猜测归属；没有 `securitySchemes` 与 `security`，读者无法知道哪条 operation 需要凭据、需要哪一种；顶层没有 `servers` 与 `info.description`，文档不说它描述的服务在哪里、是什么。生成的组件里也有一批只有字段说明、没有组件说明的类型。
+合并后的文档此前只有 `openapi`（[REF-openapi](../references.md)）、`info`（标题与版本）、`paths`、`components` 与两个扩展键。一份给外部消费者读的契约缺少三类信息：operation 没有分组，读者只能按路径前缀猜测归属；没有 `securitySchemes` 与 `security`，读者无法知道哪条 operation 需要凭据、需要哪一种；顶层没有 `servers` 与 `info.description`，文档不说它描述的服务在哪里、是什么。生成的组件里也有一批只有字段说明、没有组件说明的类型。
 
 访问级别在运行期由网关逐条决定：模块把路由登记为豁免、可选或受保护，默认受保护。这份事实此前只存在于挂载调用里，operation 声明不携带它；若生成器另写一份，两者会各自维护、各自漂移，而漂移的方向之一（文档说受保护、实际豁免）会让读者低估暴露面。
 
@@ -24,7 +24,7 @@
 
 ### 让片段自己定义 securitySchemes
 
-**否决**：载体是平台词表（`Authorization: Bearer` 与 `sid` cookie），由每份片段各写一遍会让同一载体出现多种拼法；合并器写一次，片段只引用名字。
+**否决**：载体是平台词表（`Authorization: Bearer`，[REF-rfc6750](../references.md) 与 `sid` cookie），由每份片段各写一遍会让同一载体出现多种拼法；合并器写一次，片段只引用名字。
 
 ## 决策
 

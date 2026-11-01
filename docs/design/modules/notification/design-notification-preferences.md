@@ -74,7 +74,7 @@ type Preferences interface {
 | `GET /api/v1/notifications/preferences` | 200，调用方的偏好矩阵 | 是 |
 | `PUT /api/v1/notifications/preferences/:typeKey/:channel` | 200，该类型的有效集 | 否 |
 
-**端名清单必填，因为本模块的路由不能落在每一个端上。** 一个已被通配路由（gin 的 `/*path`）独占路径空间的端不能再承载具体路由：路由引擎在同一方法树上拒绝这一对，入口模块在组装链时以路由冲突终止启动。**前端与 API 同进程**是既定拓扑之一，而前端模块正是在它拿到的那个端上挂通配路由，所以两种路由必须分端；本模块的路由落在 `notification.preferences.endpoints` 点名的那些端上。取舍见 [ADR-notification-endpoints](../../../adr/adr-notification-endpoints.md)。
+**端名清单必填，因为本模块的路由不能落在每一个端上。** 一个已被通配路由（gin 的 `/*path`，[REF-gin](../../../references.md)）独占路径空间的端不能再承载具体路由：路由引擎在同一方法树上拒绝这一对，入口模块在组装链时以路由冲突终止启动。**前端与 API 同进程**是既定拓扑之一，而前端模块正是在它拿到的那个端上挂通配路由，所以两种路由必须分端；本模块的路由落在 `notification.preferences.endpoints` 点名的那些端上。取舍见 [ADR-notification-endpoints](../../../adr/adr-notification-endpoints.md)。
 
 **`GET /types` 与 `GET /preferences` 的应答带 `Vary: Accept-Language`。** 应答体不随语言变化，但这条端点的表示按协商语言分键，使共享缓存不把一种语言下算出的表示当作另一种的：本模块为这些路由写出的错误应答按协商语言渲染，端点因此把语言计入缓存键。
 
@@ -266,7 +266,7 @@ classDiagram
 
 | 情形 | 表现 |
 |---|---|
-| `PUT` 的 `Content-Type` 缺失或不是 `application/json` | 415，由入口模块在 handler 之前拒绝；`Problem.Type` 为 `about:blank`，标题是标准英文状态文本，没有 detail，不触达存储 |
+| `PUT` 的 `Content-Type` 缺失或不是 `application/json` | 415，由入口模块在 handler 之前拒绝；`Problem.Type` 为 `about:blank`（[REF-rfc9457](../../../references.md)），标题是标准英文状态文本，没有 detail，不触达存储 |
 | `PUT` 正文为空（声明为必需） | 400，由入口模块在 handler 之前拒绝；`Problem.Type` 为 `about:blank`，标题是标准英文状态文本，没有 detail，不触达存储 |
 | `PUT` 正文不是 JSON 对象（字面量 `null` 除外）、`enabled` 是 `null` 之外的其它非布尔值、或带声明之外的成员 | 400，由入口模块在 handler 之前拒绝；`Problem.Type` 为 `about:blank`，标题是标准英文状态文本，没有 detail，不触达存储 |
 | `PUT` 正文不含 `enabled`（`enabled` 为 `null` 同形），或正文本身是字面量 `null`（按空对象绑定） | 400 `urn:speed:notification:bad-request`，标题与 detail 由本模块的消息目录渲染，不触达存储 |
@@ -306,5 +306,5 @@ classDiagram
 | 有效集的计算 | 已实现 | `pkg/notification/preferences/store.go` `Effective`、`canonicalChannels`；`pkg/notification/preferences/routes.go` `effectiveChannels` |
 | 偏好路由与 PUT 的判定顺序 | 已实现 | `pkg/notification/preferences/preferences.go` `routes`、`mount`；`pkg/notification/preferences/operations.go` `listTypesOperation`、`listPreferencesOperation`、`updatePreferenceOperation`；`pkg/notification/preferences/routes.go` `listTypes`、`listPreferences`、`setPreference`；`pkg/notification/preferences/store.go` `Set` |
 | 配置命名空间与端名清单 | 已实现 | `pkg/notification/preferences/config.go` `ConfigNamespace`、`schema`、`validateEndpoints`、`readConfig`；`pkg/notification/preferences/preferences.go` `readerOf`、`mount` |
-| operation 声明与 OpenAPI 片段生成 | 已实现 | `pkg/notification/preferences/operations.go`；`pkg/notification/preferences/openapi_generated_test.go`；片段 `pkg/notification/preferences/openapi/preferences.json` |
+| operation 声明与 OpenAPI（[REF-openapi](../../../references.md)）片段生成 | 已实现 | `pkg/notification/preferences/operations.go`；`pkg/notification/preferences/openapi_generated_test.go`；片段 `pkg/notification/preferences/openapi/preferences.json` |
 | 静态特性 `notification.preferences` 的 `feature.Spec` 声明 | 已实现 | `pkg/notification/preferences/preferences.go` `Module`；`pkg/notification/preferences/feature_test.go` `TestTheModuleDeclaresThePreferencesFeature` |

@@ -33,8 +33,8 @@
 
 - **公共失败集加按 operation 覆盖。** 模块声明一组 `Response` 作为它的公共失败集；`Failures(common, specific...)` 合并两者：同状态的具体应答替换公共应答，任一侧独有的状态被加入。合并结果是 operation 的封闭应答集，既是片段发布的内容，也是入口模块接受 handler 返回状态的范围。
 - **`Fault` 是类型化的失败。** 它携带状态、Problem 类型、标题与详情，实现 `Failure`；handler 既可以返回它，也可以 `panic` 它。
-- **恢复层识别已声明的 Fault panic。** 入口模块在调用绑定式 handler 之前，把该 operation 的应答状态集放进请求上下文；恢复层遇到携带 Problem 的 panic 时，只有该状态在集合里才按它写出应答，否则仍按缺陷写 500。没有声明集合的路由（旧的 gin handler）上，Fault panic 也是 500。
-- **错误形状是声明。** `ErrorShape{MediaType, Structure}` 描述入口模块实际写出的错误体；`ErrorResponse` 用它声明一条错误应答，默认形状是 RFC 9457 问题文档。宿主交付自定义 `ErrorResponder` 时，用同一个形状声明它的模块错误应答，片段因此描述真正会写出的内容。
+- **恢复层识别已声明的 Fault panic。** 入口模块在调用绑定式 handler 之前，把该 operation 的应答状态集放进请求上下文；恢复层遇到携带 Problem 的 panic 时，只有该状态在集合里才按它写出应答，否则仍按缺陷写 500。没有声明集合的路由（旧的 gin handler，[REF-gin](../references.md)）上，Fault panic 也是 500。
+- **错误形状是声明。** `ErrorShape{MediaType, Structure}` 描述入口模块实际写出的错误体；`ErrorResponse` 用它声明一条错误应答，默认形状是 RFC 9457（[REF-rfc9457](../references.md)）问题文档。宿主交付自定义 `ErrorResponder` 时，用同一个形状声明它的模块错误应答，片段因此描述真正会写出的内容。
 
 ## 后果
 

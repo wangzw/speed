@@ -2,7 +2,7 @@
 
 ## 职责
 
-企业单点登录由下列登记单元承担：`authn.sso`（包 `pkg/authn/sso`）、`authn.sso.saml`（包 `pkg/authn/sso/saml`）与 `authn.sso.oidc`（包 `pkg/authn/sso/oidc`）。它们持有租户自有身份提供方（IdP）的登记、邮箱域的所有权证明与发现、SAML 断言与企业 OIDC 的 ID 令牌的校验，以及这些校验用到的受限出站客户端。取舍见 [ADR-authn-sso](../../../adr/adr-authn-sso.md)，包与模块的划分见 [ADR-authn-packaging](../../../adr/adr-authn-packaging.md)。
+企业单点登录由下列登记单元承担：`authn.sso`（包 `pkg/authn/sso`）、`authn.sso.saml`（包 `pkg/authn/sso/saml`）与 `authn.sso.oidc`（包 `pkg/authn/sso/oidc`）。它们持有租户自有身份提供方（IdP）的登记、邮箱域的所有权证明与发现、SAML（[REF-saml2](../../../references.md)）断言与企业 OIDC（[REF-openid-connect-core](../../../references.md)）的 ID 令牌的校验，以及这些校验用到的受限出站客户端。取舍见 [ADR-authn-sso](../../../adr/adr-authn-sso.md)，包与模块的划分见 [ADR-authn-packaging](../../../adr/adr-authn-packaging.md)。
 
 本功能包括下列部分（封闭集合，不在其内的事项归非职责一节点名的模块）：
 
@@ -11,7 +11,7 @@
 - **SAML 登录方式。** `authn.sso.saml` 交付 `LoginMethod`（名 `saml`）：发起、SP 元数据、断言消费与逐项补充校验。断言标识的去重表 `authn_saml_assertions` 由 `authn.sso` 持有。
 - **企业 OIDC 登录方式。** `authn.sso.oidc` 交付 `LoginMethod`（名 `oidc`），与社交登录的 Google 走同一条校验代码路径，差别只在配置来源。
 - **元数据刷新。** `authn.sso.saml` 交付 `SSOMetadataRefresher`，由管理员或宿主触发，不在后台自动运行。
-- **受限出站客户端。** `pkg/authn/internal/egress` 提供发现文档、JWKS、元数据与 userinfo 一类出站请求共用的 `http.Client`，因为这些 URL 来自租户管理员的输入。
+- **受限出站客户端。** `pkg/authn/internal/egress` 提供发现文档（[REF-openid-connect-discovery](../../../references.md)）、JWKS（[REF-rfc7517](../../../references.md)）、元数据与 userinfo 一类出站请求共用的 `http.Client`，因为这些 URL 来自租户管理员的输入。
 - **清扫。** `authn.sso` 在 `Start` 起有界协程，清扫已过期的断言标识与久未验证的域声明。
 
 ### 非职责
@@ -25,7 +25,7 @@
 - **不映射角色与组。** IdP 的组声明不转成任何角色或属性，角色归授权。`attr.<名>` 只是给宿主读的只读属性。
 - **不做单点登出，不做元数据的后台自动刷新，不做每租户的 SP 密钥，不支持经出站代理访问 IdP，不支持按租户子域名的回调。** 对应的否决理由见 ADR。
 - **不认识租户上下文。** 提供方行带 `tenant_id` 字符串，但 `authn` 的任何子包都不 import `pkg/tenant`，这些表都不嵌入 `tenant.Model`，所以租户插件不触及它们。回调路径上的租户由提供方行得出，不由请求面得出。
-- **不承载社交登录。** Google、GitHub 与微信的方法归 [design-authn-login](design-authn-login.md)；企业 OIDC 与它们共用的 OAuth 与 OIDC 共同事务也写在那里，本文只写企业 IdP 特有的部分。
+- **不承载社交登录。** Google、GitHub 与微信的方法归 [design-authn-login](design-authn-login.md)；企业 OIDC 与它们共用的 OAuth（[REF-rfc6749](../../../references.md)）与 OIDC 共同事务也写在那里，本文只写企业 IdP 特有的部分。
 
 ## 外部接口契约
 
@@ -42,7 +42,7 @@
 - **排他与并立。** `SSOProviders` 排他：宿主点名 `authn.sso.saml` 或 `authn.sso.oidc` 而漏点名 `authn.sso`，在 `Requires` 消解阶段以 `core.ErrMissingProvider` 失败。`LoginMethod` 与 `SSOMetadataRefresher` 并立，由消费方 `ResolveAll` 取用，从不写进 `Requires`（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。
 - **一个模块一个方法名。** `authn.sso.saml` 的 `LoginMethod.Name()` 恒为 `saml`，`authn.sso.oidc` 的恒为 `oidc`；全局重名即 `ErrMethodConflict`。
 - **方法名两两不相交。** `authn.sso.saml` 交付的接口方法名为 `Name`、`Begin`、`Answer` 与 `Protocol`、`Refresh`，互不相交；包内为每个交付的接口加 `var _ authn.X = (*product)(nil)` 编译期断言。
-- **库只在叶子包里。** gosaml2 与 goxmldsig 只被 `authn.sso.saml` import；`authn.sso` 不 import 任何协议库，宿主只纳入 `authn.sso.oidc` 时 gosaml2 不进它的依赖闭包。**在 `authn.sso` 模块内**，go-oidc 只被 `authn.sso.oidc` import，x/oauth2 同样只被它 import；**在 `pkg/authn` 全树内**这两个库另被社交登录方式 import——go-oidc 另被 `authn.login.google` import，x/oauth2 另被 `authn.login.google` 与 `authn.login.github` import——因为它们与 Google 走同一条 OAuth/OIDC 共同事务（见 [design-authn-login](design-authn-login.md) 的「社交登录与企业 OIDC 的共同事务」）。
+- **库只在叶子包里。** gosaml2（[REF-gosaml2](../../../references.md)）与 goxmldsig（[REF-goxmldsig](../../../references.md)）只被 `authn.sso.saml` import；`authn.sso` 不 import 任何协议库，宿主只纳入 `authn.sso.oidc` 时 gosaml2 不进它的依赖闭包。**在 `authn.sso` 模块内**，go-oidc（[REF-go-oidc](../../../references.md)）只被 `authn.sso.oidc` import，x/oauth2（[REF-golang-x-oauth2](../../../references.md)）同样只被它 import；**在 `pkg/authn` 全树内**这两个库另被社交登录方式 import——go-oidc 另被 `authn.login.google` import，x/oauth2 另被 `authn.login.google` 与 `authn.login.github` import——因为它们与 Google 走同一条 OAuth/OIDC 共同事务（见 [design-authn-login](design-authn-login.md) 的「社交登录与企业 OIDC 的共同事务」）。
 - **命名空间约束。** `authn.sso` 的配置与设置叶子不得叫 `saml`、`oidc`，否则与协议模块的命名空间相撞（[design-authn-config](design-authn-config.md)）。
 
 ### SSOProvider 与 SSOProviders
@@ -134,7 +134,7 @@ type SSOMetadataRefresher interface {
 
 - **`authn.sso.allow-private-egress`**：放开受限出站客户端对回环地址的拒绝，只用于开发。只取主配置源，环境变量与命令行都改不了；开启时启动诊断写一行 `Warn`。
 - **`authn.sso.dns-resolver`**：域所有权证明查 TXT 记录所用的解析器地址（`host:port`），只取主配置源。缺省为空，用系统解析器；配置后由这个解析器作答，TXT 记录的内容与比对不随之改变。
-- **`authn.sso.oidc-ca-file`**：企业 OIDC 出站客户端在系统根证书之外额外信任的 PEM 根证书文件，只取主配置源。缺省为空，只用系统根证书；配置后文件里的证书追加到系统根证书，证书校验本身不关闭。
+- **`authn.sso.oidc-ca-file`**：企业 OIDC 出站客户端在系统根证书之外额外信任的 PEM（[REF-rfc7468](../../../references.md)）根证书文件，只取主配置源。缺省为空，只用系统根证书；配置后文件里的证书追加到系统根证书，证书校验本身不关闭。
 - **`authn.sso.saml.sp-key-file`、`sp-cert-file`、`sp-next-cert-file`**：整个部署共用的 SP 私钥、当前证书与下一张证书的文件路径，可缺省。私钥只在提供方要求签名 AuthnRequest（`sign_requests` 为真）时用到；加密断言一律拒收（见「SAML：断言消费」），所以解密路径不启用。`sign_requests` 为真而私钥未配置，以 `ErrInvalidConfig` 拒绝。
 - **`authn.sso.assertion-max-age`**：SAML 断言的 `IssueInstant` 允许早于当前时刻的最大间隔。设置，请求期读。
 - **`authn.sso.provider-cache-ttl`**：进程内缓存的 `*oidc.Provider`、`*oauth2.Config` 与 SAML `ServiceProvider` 的有效期。设置，请求期读。
@@ -341,7 +341,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 
 | 协议 | 键 | 含义与校验 |
 |---|---|---|
-| oidc | `issuer`、`client_id`、`scopes`、`algs` | `issuer` 必须是具体的 `https` issuer，与发现文档的 `issuer` 逐字相等（含末尾斜杠，go-oidc 的要求），拒绝 `common`、`organizations` 这类聚合地址，所以不用库注释自称不安全的 `InsecureIssuerURLContext`；`scopes` 缺省 `["openid","email","profile"]`，`openid` 是取回 ID 令牌所必需；`algs` 缺省 `["RS256","ES256"]`，不得含 `none` 与 `HS*` |
+| oidc | `issuer`、`client_id`、`scopes`、`algs` | `issuer` 必须是具体的 `https` issuer，与发现文档的 `issuer` 逐字相等（含末尾斜杠，go-oidc 的要求），拒绝 `common`、`organizations` 这类聚合地址，所以不用库注释自称不安全的 `InsecureIssuerURLContext`；`scopes` 缺省 `["openid","email","profile"]`，`openid` 是取回 ID 令牌所必需；`algs` 缺省 `["RS256","ES256"]`（[REF-rfc7518](../../../references.md)），不得含 `none` 与 `HS*` |
 | oidc、saml | `claims` | 声明名到目标的映射，目标只许 `email`、`display_name`、`subject`（缺省 OIDC 取 `sub`、SAML 取 `NameID`）与至多 8 个 `attr.<名>`（写入属性集时加 `idp.` 前缀）。只有 `subject` 有缺省；`email` 与 `display_name` 没有缺省，未映射即留空——`jit` 开户不要求 `email` 映射，缺它只是没有可匹配的现有账户。取值只从字符串声明填充，非字符串（数组、数字）的声明值被丢弃。映射到 `subject` 的声明必须是该提供方给出的稳定标识；取值于标准邮箱声明名（`email`）的映射不得指向 `subject`，校验按 `ErrInvalidConfig` 拒绝——邮箱会变，作主体会让提供方侧换邮箱后的登录找不到原绑定。其他声明名是否承载会变的资料，校验看不到，由配置书写者保证 |
 | oidc、saml | `mfa_acr_values` | `trust_idp_mfa` 为真时，哪些 `acr` 或 `AuthnContextClassRef` 取值算多因素；空表即不信任任何取值 |
 | saml | `idp_entity_id`、`idp_sso_url`、`idp_certs` | 以下键必填：`idp_entity_id` 为空时库跳过颁发者校验；`idp_sso_url` 为 https 且无用户信息；`idp_certs` 是 IdP 签名证书的 PEM 列表，1 到 4 个，任一可验签（证书轮换时当前与下一张并存），证书是公钥，不加密 |
@@ -380,7 +380,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 
 ### 域所有权与发现
 
-**域的规范化。** 邮箱的域取小写 ASCII 的 punycode 形式，规范化规则与标识的规范化同一套（[design-authn-account](design-authn-account.md)）；含非 ASCII 字符而无法规范化的域，发现请求以 400 `bad-request` 拒绝，声明写入同样拒绝。
+**域的规范化。** 邮箱的域取小写 ASCII 的 punycode（[REF-rfc3492](../../../references.md)）形式，规范化规则与标识的规范化同一套（[design-authn-account](design-authn-account.md)）；含非 ASCII 字符而无法规范化的域，发现请求以 400 `bad-request` 拒绝，声明写入同样拒绝。
 
 **声明与验证。** `ClaimDomain` 写一行未验证声明，生成随机 `verify_token`，由租户管理员写进 `_speed-authn.<域>` 的 TXT 记录，内容为 `speed-authn=<token>`。`VerifyDomain` 经 `net.Resolver.LookupTXT` 查该记录，超时 5 秒，命中则置 `verified_at`。解析器缺省是系统解析器，配置 `authn.sso.dns-resolver` 时改为该地址上的解析器；记录的内容与比对不随之改变。验证不要求 DNSSEC，解析器被投毒时验证可被骗过，写进非保证；验证失败不改状态。
 
@@ -416,10 +416,10 @@ gosaml2 没有元数据解析助手，`authn.sso.saml` 用标准库 `encoding/xm
 | 单次解析并验签 | `ValidateEncodedResponse` 得到验过签的 `types.Response`，不对同一字节做第二次解析；要求响应或断言至少一个 `SignatureValidated` | 签名包装类攻击的根源是被验的元素与被用的元素不是同一个；gosaml2 用验过签返回的元素解码 | `signature` |
 | 目的地 | `Response.Destination` 非空且等于 ACS 地址 | 库只在非空时比较 | `destination` |
 | 请求标识 | `Response.InResponseTo` 与每个断言的 `SubjectConfirmationData.InResponseTo` 等于流程记录里的请求标识；IdP 发起（两者都空）仅当该提供方 `allow_idp_initiated` 为真 | 库对 `InResponseTo` 完全不检查 | `in-response-to` |
-| 断言个数 | `len(Response.Assertions) == 1` 且没有残留的 `EncryptedAssertions` | `RetrieveAssertionInfo` 只用第一条，多断言是 CVE-2022-41912（crewjam/saml）一类的入口 | `other` |
+| 断言个数 | `len(Response.Assertions) == 1` 且没有残留的 `EncryptedAssertions` | `RetrieveAssertionInfo` 只用第一条，多断言是 CVE-2022-41912（[REF-cve-2022-41912](../../../references.md)）（crewjam/saml，[REF-crewjam-saml](../../../references.md)）一类的入口 | `other` |
 | 断言条件 | `VerifyAssertionConditions` 的 `WarningInfo` 里 `InvalidTime` 或 `NotInAudience` 任一为真即拒；`ProxyRestriction` 非空即拒；`Conditions` 里至少一个 `AudienceRestriction` 且含本 SP 的 `entityID` | 库不报错只置位，没有受众限制的断言库放行；时间条件取严格判、不设容差，`SubjectConfirmationData.NotOnOrAfter` 同样严格 | 时间不符为 `time`，其余为 `audience` |
 | 颁发者与确认 | 断言的 `Issuer` 等于 `idp_entity_id`；`Status` 为 Success；`SubjectConfirmation` 方法为 bearer；`Recipient` 等于 ACS 地址；`IssueInstant` 不早于当前减 `authn.sso.assertion-max-age`（只比较过去方向，未来方向由「断言条件」对 `NotBefore` 的严格判断承担）；`NotOnOrAfter` 距 `IssueInstant` 不超过 10 分钟 | 对库的复核；限制断言可被重放的窗口 | 颁发者与状态不符为 `issuer`，接收者不符为 `destination`，时刻不符为 `time`，其余为 `other` |
-| 断言标识去重 | `INSERT INTO authn_saml_assertions (idp_id, assertion_id, not_on_or_after, seen_at)`，撞唯一约束（`gorm.ErrDuplicatedKey`）即重放，返回 `ErrAssertionReplay`；`not_on_or_after` 取断言与 `SubjectConfirmationData` 里较小的那个 | 库不做；用 db 而不是 kv，因为 kv 丢键则重放窗口重开 | `replay` |
+| 断言标识去重 | `INSERT INTO authn_saml_assertions (idp_id, assertion_id, not_on_or_after, seen_at)`，撞唯一约束（`gorm.ErrDuplicatedKey`，[REF-gorm](../../../references.md)）即重放，返回 `ErrAssertionReplay`；`not_on_or_after` 取断言与 `SubjectConfirmationData` 里较小的那个 | 库不做；用 db 而不是 kv，因为 kv 丢键则重放窗口重开 | `replay` |
 | 主体与属性的提取 | 见下文 | | `other` |
 
 **可达域。** 第 4 步的 `ValidateEncodedResponse` 内部会先调用库的 `sp.Validate`，它在本方法第 5 步起的逐项校验之前就拒绝若干情形：`Destination` 与 ACS 不符、`Issuer` 为空或不符、`Status` 非 Success、`SubjectConfirmation` 非 bearer、`Recipient` 与 ACS 不符、`SubjectConfirmationData.NotOnOrAfter` 已过期。这些被库先拦下的情形计入第 4 步的 `signature`，而不是表里给目的地、颁发者与时间各行的 `destination`、`issuer`、`time`。所以那几行的取值只在库跳过该比较（如 `Destination`、`Issuer` 为空）或本方法在库之外另行判断时才真正产出；库返回成功而本方法补充拒绝的每一项仍按表里的取值计数。
@@ -444,7 +444,7 @@ NameID 里夹带 XML 注释会被截断是一类已知的 SAML 攻击，gosaml2 
 
 ### 企业 OIDC
 
-通用事务（`state`、PKCE、`nonce`、授权码交换、ID 令牌校验）写在 [design-authn-login](design-authn-login.md) 的「社交登录与企业 OIDC 的共同事务」一节，本节只写企业 IdP 特有的部分：
+通用事务（`state`、PKCE、`nonce`、授权码交换、ID 令牌校验，[REF-rfc7636](../../../references.md)）写在 [design-authn-login](design-authn-login.md) 的「社交登录与企业 OIDC 的共同事务」一节，本节只写企业 IdP 特有的部分：
 
 - 每个提供方一份缓存的 `*oidc.Provider` 与 `*oauth2.Config`，见「进程内缓存」；`client_secret` 由 `SSOProviders.Secret` 取。
 - 是否交付由 `authn.sso.oidc.enabled` 决定，缺省关闭。提供方是运行期的行，注册表为空不表示部署不要企业登录，所以判据只能来自显式开关；开启后网关公开地址与出口项照常校验，不合法即启动失败。增删提供方不改变这项开关。
@@ -465,20 +465,20 @@ Google 与企业 OIDC 走同一条代码路径，差别在配置来源与启用�
 
 | 项 | 做法 |
 |---|---|
-| 目的地址 | `net.Dialer.Control` 在**实际连接的地址**上判，每次连接尝试都判，所以 DNS 重绑定与多记录无从绕过。白名单思路：只放行 `netip.Addr.IsGlobalUnicast()` 为真、且不落在下列特殊用途段的地址，IPv6 地址另须落在已分配给全球单播的 `2000::/3` 内；IPv4 映射的 IPv6 先还原再判；NAT64 的 `64:ff9b::/96` 与 6to4 的 `2002::/16` 抽出内嵌的 IPv4 再按 IPv4 判（IPv6-only 网络里经 DNS64 合成的真实公网地址因此仍可达）；Teredo 的 `2001::/32` 与 `64:ff9b:1::/48` 一律拒绝 |
+| 目的地址 | `net.Dialer.Control` 在**实际连接的地址**上判，每次连接尝试都判，所以 DNS 重绑定与多记录无从绕过。白名单思路：只放行 `netip.Addr.IsGlobalUnicast()` 为真、且不落在下列特殊用途段的地址，IPv6 地址另须落在已分配给全球单播的 `2000::/3` 内；IPv4 映射的 IPv6 先还原再判；NAT64（[REF-rfc6052](../../../references.md)）的 `64:ff9b::/96` 与 6to4（[REF-rfc3056](../../../references.md)）的 `2002::/16` 抽出内嵌的 IPv4 再按 IPv4 判（IPv6-only 网络里经 DNS64 合成的真实公网地址因此仍可达，[REF-rfc6147](../../../references.md)）；Teredo（[REF-rfc4380](../../../references.md)）的 `2001::/32` 与 `64:ff9b:1::/48` 一律拒绝 |
 | 方案与重定向 | 只许 `https`，其他方案在建立连接之前失败；不跟随重定向，3xx 应答原样返回，发现文档不应重定向 |
 | 超时与大小 | 总期限取 `authn.sso.egress-timeout`，每次调用用 `context` 的期限，调用方必须带期限：不带期限的调用只受握手超时与对端约束。名称解析与每次连接尝试随调用的期限与取消而结束，每次尝试分得剩余期限的均分份额，第一个不可达的地址耗不尽后面的地址要用的时间；连接按地址逐个尝试，不做并行回退。响应体上限 1 MiB，超出的读失败，不静默截断；响应头上限 64 KiB |
 | TLS 与代理 | 信任根缺省是系统根证书；配置 `authn.sso.oidc-ca-file`、`authn.login.google.root-ca-file` 或 `authn.login.github.root-ca-file` 时，文件里的证书追加到系统根证书，不替换系统根。从不关闭校验，TLS 1.2 为下限；`Proxy` 置空：经代理时 `Control` 看到的是代理地址，目的地判断失效，所以不支持经出站代理访问 IdP |
 | 额外信任根 | `authn.sso.oidc-ca-file`（仅主配置源，缺省空）给企业 OIDC 的出站客户端追加根证书；`authn.login.google.root-ca-file` 与 `authn.login.github.root-ca-file`（缺省空）给对应社交方法的出站客户端追加根证书。空值都只用系统根证书；文件读不到或没有证书时启动失败，不回落到系统根证书 |
-| 观测 | 追踪头由调用方在客户端的 `Transport` 外自行套 `observability.Transport` 注入，`internal/egress` 不提供这层包装；`authn.sso.oidc` 与 `authn.sso.saml` 的客户端在 `observability.Transport` 之内再套 `log.Transport`，每次出站请求写一条记录（方法、主机、不含 query 的路径、对端状态、`outcome`、耗时，无应答时带底层成因），不记 query、请求头与正文；微信客户端同样套这两层，它 query 里的 `secret` 与授权码不进记录 |
+| 观测 | 追踪头由调用方在客户端的 `Transport` 外自行套 `observability.Transport` 注入，`internal/egress` 不提供这层包装；`authn.sso.oidc` 与 `authn.sso.saml` 的客户端在 `observability.Transport` 之内再套 `log.Transport`，每次出站请求写一条记录（方法、主机、不含 query 的路径、对端状态、`outcome`、耗时，无应答时带底层成因），不记 query、请求头与正文；微信（[REF-wechat-website-login](../../../references.md)、[REF-wechat-oa-web-auth](../../../references.md)）客户端同样套这两层，它 query 里的 `secret` 与授权码不进记录 |
 | 开发开关 | `authn.sso.allow-private-egress`（仅主配置源，缺省假）放开回环；`authn.login.google` 与 `authn.login.github` 的 `allow-loopback`（缺省假）同样只放开回环地址 |
 
 **每次出站调用都留下一条记录。** `authn.sso.oidc` 与 `authn.sso.saml` 建客户端时把 `log.Transport` 套在 `observability.Transport` 之内：发现文档、密钥集、令牌与 SAML 元数据的每一次请求，成功与失败各写一条记录，经操作上下文里的 logger 写出，上下文没有 logger 时落在 `Default()` 的引导链上。记录记方法、主机、不含 query 的路径、对端状态、`outcome` 与耗时，无应答时记 `url.Error` 之下的底层成因；授权码、令牌、`state`、断言与正文都不进记录。
 
-**特殊用途段**（封闭集，取自 IANA 特殊用途地址登记表，与登记表的一致是假设，见「假设与守住它们的测试」）：
+**特殊用途段**（封闭集，取自 IANA 特殊用途地址登记表，与登记表的一致是假设，见「假设与守住它们的测试」，[REF-iana-ipv4-special-registry](../../../references.md)、[REF-iana-ipv6-special-registry](../../../references.md)）：
 
 - IPv4：`0.0.0.0/8`、`10.0.0.0/8`、`100.64.0.0/10`、`127.0.0.0/8`、`169.254.0.0/16`、`172.16.0.0/12`、`192.0.0.0/24`、`192.0.2.0/24`、`192.88.99.0/24`、`192.168.0.0/16`、`198.18.0.0/15`、`198.51.100.0/24`、`203.0.113.0/24`、`224.0.0.0/4`、`240.0.0.0/4`。
-- IPv6：`::/128`、`::1/128`、`100::/64`、`2001::/23`、`2001:2::/48`、`2001:db8::/32`、`3fff::/20`、`fc00::/7`、`fe80::/10`、`ff00::/8`。`2001::/23` 是登记表里整块不可全局到达的 IETF 协议分配段，含 Teredo 与基准测试段，其中登记为可全局到达的任播与覆盖网前缀没有 IdP 在那里，随整块拒绝；`3fff::/20` 是文档段（RFC 9637）。`2000::/3` 之外的整块（`::/128`、`::1/128`、`100::/64`、`fc00::/7`、`fe80::/10`、`ff00::/8`）同时被 `2000::/3` 的要求拒绝，仍照登记表列出；登记表里的 `100:0:0:1::/64`（RFC 9780）与 `5f00::/16`（RFC 9602）也在 `2000::/3` 之外，只由这条要求拒绝，不在表里；`2001::/32`（Teredo）与 `64:ff9b:1::/48` 在查表之前即被拒绝。IPv4 的 `192.0.0.0/24` 里登记为可全局到达的 `192.0.0.9`、`192.0.0.10` 随父块一起拒绝，是保守的读法。
+- IPv6：`::/128`、`::1/128`、`100::/64`、`2001::/23`、`2001:2::/48`、`2001:db8::/32`、`3fff::/20`、`fc00::/7`、`fe80::/10`、`ff00::/8`。`2001::/23` 是登记表里整块不可全局到达的 IETF 协议分配段，含 Teredo 与基准测试段，其中登记为可全局到达的任播与覆盖网前缀没有 IdP 在那里，随整块拒绝；`3fff::/20` 是文档段（RFC 9637，[REF-rfc9637](../../../references.md)）。`2000::/3` 之外的整块（`::/128`、`::1/128`、`100::/64`、`fc00::/7`、`fe80::/10`、`ff00::/8`）同时被 `2000::/3` 的要求拒绝，仍照登记表列出；登记表里的 `100:0:0:1::/64`（RFC 9780，[REF-rfc9780](../../../references.md)）与 `5f00::/16`（RFC 9602，[REF-rfc9602](../../../references.md)）也在 `2000::/3` 之外，只由这条要求拒绝，不在表里；`2001::/32`（Teredo）与 `64:ff9b:1::/48` 在查表之前即被拒绝。IPv4 的 `192.0.0.0/24` 里登记为可全局到达的 `192.0.0.9`、`192.0.0.10` 随父块一起拒绝，是保守的读法。
 
 表与 IANA 的 IPv4 与 IPv6 特殊用途地址登记表逐条核对，一致的版本是 2026-10-11 取得的那一份，含 RFC 9637、RFC 9780、RFC 9602 的新增项；表按登记表的整块列，登记表新增整块时表随之增补。`internal/egress` 不保留登记表的副本，向量测试是每一整块核对过什么的记录；复核的时机见 [design-authn-threats](design-authn-threats.md)。
 
@@ -488,7 +488,7 @@ Google 与企业 OIDC 走同一条代码路径，差别在配置来源与启用�
 
 ### 租户强制 SSO 的承接
 
-租户级强制 SSO 只在请求期由 `tenant.admission` 执行（[design-tenant-admission](../tenant/design-tenant-admission.md)）：租户设置 `require-sso` 为真时，要求该租户内请求所用会话是经**这个租户**的某个提供方登录的。判据是会话上的提供方标识（`Identity.Provider()`），再经 `SSOProviders.Tenant` 核对其租户；不看 `Methods`，因为加强认证会把方式集换成新那次事件的方式集，而提供方标识不随之丢失。不满足则 `401 insufficient_user_authentication`，`acr_values` 取 `sso`。
+租户级强制 SSO 只在请求期由 `tenant.admission` 执行（[design-tenant-admission](../tenant/design-tenant-admission.md)）：租户设置 `require-sso` 为真时，要求该租户内请求所用会话是经**这个租户**的某个提供方登录的。判据是会话上的提供方标识（`Identity.Provider()`），再经 `SSOProviders.Tenant` 核对其租户；不看 `Methods`，因为加强认证会把方式集换成新那次事件的方式集，而提供方标识不随之丢失。不满足则 `401 insufficient_user_authentication`（[REF-rfc9470](../../../references.md)），`acr_values` 取 `sso`。
 
 账户全局，强制只作用于该租户内的请求，账户仍可用口令登录并访问别的租户。`authn_memberships.sso_exempt` 为真的成员可以不经 SSO，该开关的设置、审计与残余风险归 [design-authn-account](design-authn-account.md) 与 [design-authn-admin](design-authn-admin.md)。`authn.sso` 在 `Start` 里若 `core.Registry.Participating("tenant.admission")` 为假，写一行 `Warn`：租户级强制 SSO 无人执行。
 

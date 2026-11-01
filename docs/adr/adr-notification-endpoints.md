@@ -4,7 +4,7 @@
 
 `notification.preferences` 在 `Init` 里遍历入口模块登记面报出的端名，在**每一个**端上挂 `/api/v1/notifications` 下的三条路由。当时的依据是 i18n 一侧的先例：`pkg/i18n/http` 同样遍历 `Router.Endpoints()`，在每个端上登记本地化层。
 
-这条先例不适用，因为两者登记的东西不同。i18n 登记的是**中间件**（`Endpoint.Use`）：中间件不占路径空间，挂在哪条路由旁边都不冲突。preferences 登记的是**路由**，而同一个端上不能既有一条通配路由又有一条具体路由——gin 在同一个方法树上拒绝 `/*path` 与具名路径共存，入口模块在组装链时以路由冲突终止启动，错误形如 `endpoint "web": the routes "GET /api/v1/notifications/types" and "GET /*path" cannot both be mounted`。
+这条先例不适用，因为两者登记的东西不同。i18n 登记的是**中间件**（`Endpoint.Use`）：中间件不占路径空间，挂在哪条路由旁边都不冲突。preferences 登记的是**路由**，而同一个端上不能既有一条通配路由又有一条具体路由——gin（[REF-gin](../references.md)）在同一个方法树上拒绝 `/*path` 与具名路径共存，入口模块在组装链时以路由冲突终止启动，错误形如 `endpoint "web": the routes "GET /api/v1/notifications/types" and "GET /*path" cannot both be mounted`。
 
 冲突是硬的，且落在一条既定拓扑上。入口模块只要声明了 `web` 端，`pkg/webui` 就在那个端上挂一条覆盖整个路径空间的通配路由（`GET /*path` 与其 `HEAD` 一条），做深链接回退；preferences 的路由随之落在同一个端上，进程启动失败。**一个同时服务前端的进程因此装不了偏好矩阵**，而「前端 + API 同进程」是本框架的两种既定拓扑之一。
 

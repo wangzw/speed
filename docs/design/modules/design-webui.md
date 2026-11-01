@@ -52,15 +52,15 @@ type Config struct {
 }
 ```
 
-`endpoint` 必填，缺席即 `Prepare` 以 `config.ErrMissingRequired` 失败，错误以完整路径 `webui.endpoint` 点名缺的这一项。`asset-prefix` 可缺省，缺省值是 `assets`：构建工具把内容寻址的文件集中在一棵子树下，本模块按这棵子树判定长缓存。`resource-prefixes` 可缺省，缺省值是 `[".well-known"]`：一条未命中的路径落在其中某个前缀下时，无论末段有无文件扩展名都答 404 不回退，用来把无扩展名的静态资源（如 RFC 8615 的 well-known 空间下的 ACME HTTP-01 挑战令牌、根下的 `CNAME`）纳到资源侧——这类资源末段无扩展名，形状上与客户端路由无法区分，只能靠它所在的名字空间判定。给定时它整体替换缺省值：一份只写了 `["CNAME"]` 的配置不再保护 `.well-known` 那一段，要把缺省里的前缀留住，须一并列出。端的集合来自入口模块的配置这份数据，端名未声明时登记面给出 `http.ErrUnknownEndpoint`，在 `Init` 阶段终止启动。
+`endpoint` 必填，缺席即 `Prepare` 以 `config.ErrMissingRequired` 失败，错误以完整路径 `webui.endpoint` 点名缺的这一项。`asset-prefix` 可缺省，缺省值是 `assets`：构建工具把内容寻址的文件集中在一棵子树下，本模块按这棵子树判定长缓存。`resource-prefixes` 可缺省，缺省值是 `[".well-known"]`：一条未命中的路径落在其中某个前缀下时，无论末段有无文件扩展名都答 404 不回退，用来把无扩展名的静态资源（如 RFC 8615 的 well-known 空间下的 ACME HTTP-01 挑战令牌、根下的 `CNAME`，[REF-rfc8615](../../references.md)、[REF-rfc8555](../../references.md)）纳到资源侧——这类资源末段无扩展名，形状上与客户端路由无法区分，只能靠它所在的名字空间判定。给定时它整体替换缺省值：一份只写了 `["CNAME"]` 的配置不再保护 `.well-known` 那一段，要把缺省里的前缀留住，须一并列出。端的集合来自入口模块的配置这份数据，端名未声明时登记面给出 `http.ErrUnknownEndpoint`，在 `Init` 阶段终止启动。
 
 `asset-prefix` 是配置项而非设置项：它是嵌入产物那棵子树的名称，本模块在构造时按它判定长缓存，改变它要重启进程、已答出的页面与新的缓存判定也要一起换；按 [ADR-config-scope](../../adr/adr-config-scope.md) 的判据 (b)，它塑造启动结构。`resource-prefixes` 同判。
 
-**登记的路由。** 本模块在点名的端上为 `GET` 与 `HEAD` 各登记一条覆盖该端路径空间的路由，路径写成入口模块路由面接受的 gin 通配写法（`/*path`）。通配路由匹配该端上的一切路径，根路径也在内；`GET` 与 `HEAD` 分属不同的方法树，互不冲突。
+**登记的路由。** 本模块在点名的端上为 `GET` 与 `HEAD` 各登记一条覆盖该端路径空间的路由，路径写成入口模块路由面接受的 gin（[REF-gin](../../references.md)）通配写法（`/*path`）。通配路由匹配该端上的一切路径，根路径也在内；`GET` 与 `HEAD` 分属不同的方法树，互不冲突。
 
 **答出面的语义是承诺。** `GET` 与 `HEAD` 是答出的方法全集；未命中时，命名客户端路由的路径回退到 `index.html`，命名静态资源的路径答 404；内容寻址子树下的文件长缓存，其余不缓存。这些语义是宿主与运维据以部署的契约。
 
-**与入口模块「无匹配路由」答复的关系。** 入口模块在组装每个端时给引擎装了一个无匹配路由的答复（`pkg/http/assemble.go` 的 `NoRoute`）：它是 404 的 `application/problem+json` 写出器，面向一个不存在的 API 路径，答案是一份问题文档。它不是 SPA 回退，两者不能互换。本模块的回退是它自己登记的一条路由，在它服务的端上请求永远命中这条路由，入口模块的无匹配答复因而不会触发；把 SPA 回退塞进那条无匹配答复，会让一份 API 的 404 变成一份 HTML，反过来把这条通配路由当成 API 的未命中答复，会吞掉真正该报 404 的请求。
+**与入口模块「无匹配路由」答复的关系。** 入口模块在组装每个端时给引擎装了一个无匹配路由的答复（`pkg/http/assemble.go` 的 `NoRoute`）：它是 404 的 `application/problem+json`（[REF-rfc9457](../../references.md)）写出器，面向一个不存在的 API 路径，答案是一份问题文档。它不是 SPA 回退，两者不能互换。本模块的回退是它自己登记的一条路由，在它服务的端上请求永远命中这条路由，入口模块的无匹配答复因而不会触发；把 SPA 回退塞进那条无匹配答复，会让一份 API 的 404 变成一份 HTML，反过来把这条通配路由当成 API 的未命中答复，会吞掉真正该报 404 的请求。
 
 **对外接口面。** 模块名 `webui`、配置键 `webui.endpoint`、`webui.asset-prefix` 与 `webui.resource-prefixes`、构造函数签名 `New(fs.FS) core.Module`，以及答出面的语义与 `asset-prefix` 的缺省值 `assets`、`resource-prefixes` 的缺省值 `[".well-known"]`，是宿主可见面；改动它们是破坏性变更。
 

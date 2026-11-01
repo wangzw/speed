@@ -75,11 +75,11 @@
 | `authn.gate.call-budget` | `time.Duration` | `5s` | 默认 | | 一次进入校验后端的调用的期限；须为正 |
 | `authn.gate.in-flight` | 整数 | `64` | 默认 | | 同时进行的后端调用数上限，满时请求收口 503；须为正 |
 | `authn.gate.mount.endpoints.default`、`.tenants`、`.system` | 字符串 | 空 | 默认 | | 各作用域的路由所挂的入口端。`default` 为空取入口模块声明的唯一端，`system` 为空取 `default`；`tenants` 无缺省，为空时该作用域不可挂载（租户管理路由的判定在该租户的策略域，必须落在租户两层的端上） |
-| `authn.gate.mount.bases.default`、`.tenants`、`.system` | 字符串 | `/api/v1/auth`、`/api/v1/tenants`、`/api/v1/system` | 默认 | | 各作用域的路由基路径；以 `/` 起头、不以 `/` 结尾、无通配，是 gin 规整后的写法。`system` 是整段平台管理命名空间的根，其下的 `/auth/...` 与 `/tenants/...` 都相对它书写 |
+| `authn.gate.mount.bases.default`、`.tenants`、`.system` | 字符串 | `/api/v1/auth`、`/api/v1/tenants`、`/api/v1/system` | 默认 | | 各作用域的路由基路径；以 `/` 起头、不以 `/` 结尾、无通配，是 gin（[REF-gin](../../../references.md)）规整后的写法。`system` 是整段平台管理命名空间的根，其下的 `/auth/...` 与 `/tenants/...` 都相对它书写 |
 | `authn.gate.mount.public-url` | 字符串 | 空 | 默认 | | 对外基址，只含来源不含路径 |
-| `authn.gate.mount.allow-insecure` | 布尔 | `false` | 主 | | 仅开发用的放宽项，配置项：放行 http 基址，cookie 去掉 `__Host-` 前缀与 `Secure`；改动要重启 |
+| `authn.gate.mount.allow-insecure` | 布尔 | `false` | 主 | | 仅开发用的放宽项，配置项：放行 http 基址，cookie 去掉 `__Host-`（[REF-rfc6265bis](../../../references.md)）前缀与 `Secure`；改动要重启 |
 | `authn.gate.trusted-origins` | 字符串列表 | 空 | 主 | | 跨源检查与 `return_to` 额外信任的来源，每项 `scheme://host[:port]`，先规范成浏览器发送的形式再匹配（规则见 [design-authn-gate](design-authn-gate.md#可信来源的规范形式)）；`public-url` 的来源恒可信 |
-| `authn.static.subjects` | 主体名到 PHC 条目的映射 | 无 | 主 | 必填、敏 | 口令表；键是主体名，值是 PHC 条目，遗留写法只读并告警 |
+| `authn.static.subjects` | 主体名到 PHC（[REF-phc-string-format](../../../references.md)）条目的映射 | 无 | 主 | 必填、敏 | 口令表；键是主体名，值是 PHC 条目，遗留写法只读并告警 |
 | `authn.static.cache-size` | 整数 | `1024` | 默认 | | 口令校验缓存的容量，取值 1 到 1000000，0 被拒绝（要关闭缓存，把设置 `authn.static.cache-ttl` 设为 0），构造时分配 |
 | `authn.static.concurrency` | 整数 | `min(GOMAXPROCS,8)` | 默认 | | 口令派生的并发上限，取值 1 到 256，构造时分配 |
 
@@ -90,15 +90,15 @@
 | 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
 |---|---|---|---|---|---|
 | `authn.account.password-concurrency` | 整数 | `min(GOMAXPROCS,8)` | 默认 | | 口令派生的并发上限 |
-| `authn.account.signup-concurrency` | 整数 | `min(GOMAXPROCS,8)` | 默认 | | 注册口令派生的并发名额，与口令登录的并发名额各自独立；耗尽时注册答 503，不挤占登录；名额在构造时分配。注册不另设内存预算，单次派生的 Argon2 内存由该名额的上界约束 |
+| `authn.account.signup-concurrency` | 整数 | `min(GOMAXPROCS,8)` | 默认 | | 注册口令派生的并发名额，与口令登录的并发名额各自独立；耗尽时注册答 503，不挤占登录；名额在构造时分配。注册不另设内存预算，单次派生的 Argon2（[REF-rfc9106](../../../references.md)）内存由该名额的上界约束 |
 | `authn.account.password-memory-budget-mib` | 整数 | `512` | 默认 | | 账户后端的口令派生内存预算，启动时分配（口令表后端另持自己的一份缺省预算，不设键）；至少是 `authn.account.password-argon2-memory-kib` 取值域上限的两倍，否则 `ErrInvalidConfig` |
 | `authn.session.cookie-domain` | 字符串 | 空 | 默认 | | 非空则 cookie 名改为 `__Secure-sid` 并写出 `Domain` 属性 |
 | `authn.session.same-site` | 字符串 | `lax` | 默认 | | `lax` 或 `strict`；`none` 被拒绝 |
 | `authn.token.issuer` | 字符串 | `authn.gate.mount.public-url` | 默认 | | 访问令牌的 `iss` |
 | `authn.token.audience` | 字符串列表 | `[issuer]` | 默认 | | 访问令牌的 `aud`；缺省为空时取 `[issuer]` |
 | `authn.token.client-id` | 字符串 | `speed` | 默认 | | 会话换来的令牌的 `client_id` 声明 |
-| `authn.token.algorithm` | 字符串 | `ES256` | 默认 | | 签名算法，`ES256` 或 `RS256` |
-| `authn.token.signing-key-file` | 字符串，文件路径 | 无 | 默认 | 敏 | 当前签名私钥，PKCS#8 PEM；不填则本模块只验证、不签发 |
+| `authn.token.algorithm` | 字符串 | `ES256`（[REF-rfc7518](../../../references.md)） | 默认 | | 签名算法，`ES256` 或 `RS256` |
+| `authn.token.signing-key-file` | 字符串，文件路径 | 无 | 默认 | 敏 | 当前签名私钥，PKCS#8（[REF-rfc5958](../../../references.md)） PEM（[REF-rfc7468](../../../references.md)）；不填则本模块只验证、不签发 |
 | `authn.token.verify-key-files` | 字符串列表，文件路径 | 空 | 默认 | | 只用来验签与发布的密钥文件 |
 
 下表是登录方式与多因素的配置项（封闭集合）。提供方的客户端标识与密钥在声明里标 `Required`，用途是让方法分得出「一个来源都没给」；它们不再是「缺了就一定启动失败」的启动必须项：两项都没有时方法在 `Prepare` 里自行关闭，只给了一项时是半配置，启动失败并点名缺的那项（[design-config](../design-config.md)、[ADR-module-enablement](../../../adr/adr-module-enablement.md)）。
@@ -107,23 +107,23 @@
 |---|---|---|---|---|---|
 | `authn.login.google.client-id` | 字符串 | 无 | 默认 | 必填 | 提供方的客户端标识；与 `client-secret` 都空时方法自行关闭，只给一项即 `ErrInvalidConfig` |
 | `authn.login.google.client-secret` | 字符串 | 无 | 默认 | 必填、敏 | 提供方的客户端密钥；与 `client-id` 同上 |
-| `authn.login.google.hosted-domain` | 字符串 | 空 | 默认 | | 非空时要求 ID 令牌的 `hd` 声明相等 |
-| `authn.login.google.issuer` | 字符串 | `https://accounts.google.com` | 默认 | | 发现用的 OIDC issuer；非空时须是绝对 https 地址，回环主机的 http 地址仅在 `allow-loopback` 为真时接受 |
+| `authn.login.google.hosted-domain` | 字符串 | 空 | 默认 | | 非空时要求 ID 令牌（[REF-openid-connect-core](../../../references.md)）的 `hd`（[REF-google-openid-connect](../../../references.md)）声明相等 |
+| `authn.login.google.issuer` | 字符串 | `https://accounts.google.com` | 默认 | | 发现（[REF-openid-connect-discovery](../../../references.md)）用的 OIDC issuer；非空时须是绝对 https 地址，回环主机的 http 地址仅在 `allow-loopback` 为真时接受 |
 | `authn.login.google.allow-loopback` | 布尔 | `false` | 默认 | | 仅开发用：放开受限出站客户端对回环地址的拒绝；不放开明文 http |
 | `authn.login.google.root-ca-file` | 字符串，文件路径 | 无 | 默认 | | 追加到系统根的 PEM 文件，不替换系统根；启动时须可读且含至少一张证书，空只用系统根 |
 | `authn.login.github.client-id` | 字符串 | 无 | 默认 | 必填 | 提供方的客户端标识；与 `client-secret` 都空时方法自行关闭，只给一项即 `ErrInvalidConfig` |
 | `authn.login.github.client-secret` | 字符串 | 无 | 默认 | 必填、敏 | 提供方的客户端密钥；与 `client-id` 同上 |
 | `authn.login.github.authorize-url` | 字符串 | `https://github.com/login/oauth/authorize` | 默认 | | 授权端点；非空时须是绝对 https 地址 |
 | `authn.login.github.token-url` | 字符串 | `https://github.com/login/oauth/access_token` | 默认 | | 令牌端点；非空时须是绝对 https 地址 |
-| `authn.login.github.api-base` | 字符串 | `https://api.github.com` | 默认 | | `/user` 与 `/user/emails` 的基址；非空时须是绝对 https 地址 |
+| `authn.login.github.api-base` | 字符串 | `https://api.github.com` | 默认 | | `/user` 与 `/user/emails`（[REF-github-rest-users](../../../references.md)）的基址；非空时须是绝对 https 地址 |
 | `authn.login.github.allow-loopback` | 布尔 | `false` | 默认 | | 仅开发用：放开受限出站客户端对回环地址的拒绝；不放开明文 http |
 | `authn.login.github.root-ca-file` | 字符串，文件路径 | 无 | 默认 | | 追加到系统根的 PEM 文件，不替换系统根；启动时须可读且含至少一张证书，空只用系统根 |
-| `authn.login.wechat-web.app-id` | 字符串 | 无 | 默认 | 必填 | 网站应用扫码登录的应用标识；与 `app-secret` 都空时方法自行关闭，只给一项即 `ErrInvalidConfig` |
+| `authn.login.wechat-web.app-id` | 字符串 | 无 | 默认 | 必填 | 网站应用（[REF-wechat-website-login](../../../references.md)）扫码登录的应用标识；与 `app-secret` 都空时方法自行关闭，只给一项即 `ErrInvalidConfig` |
 | `authn.login.wechat-web.app-secret` | 字符串 | 无 | 默认 | 必填、敏 | 同上的应用密钥 |
-| `authn.login.wechat-mp.app-id` | 字符串 | 无 | 默认 | 必填 | 公众号网页授权登录的应用标识；与网站应用各自一份配置，没有联合判定；与 `app-secret` 都空时方法自行关闭 |
+| `authn.login.wechat-mp.app-id` | 字符串 | 无 | 默认 | 必填 | 公众号网页授权（[REF-wechat-oa-web-auth](../../../references.md)）登录的应用标识；与网站应用各自一份配置，没有联合判定；与 `app-secret` 都空时方法自行关闭 |
 | `authn.login.wechat-mp.app-secret` | 字符串 | 无 | 默认 | 必填、敏 | 同上的应用密钥 |
-| `authn.mfa.totp.issuer` | 字符串 | `authn.gate.mount.public-url` 的主机名 | 默认 | | 写进 `otpauth://` 地址的发行者名 |
-| `authn.mfa.webauthn.rp-id` | 字符串 | `authn.gate.mount.public-url` 的主机名 | 默认 | | 依赖方标识；须等于基址主机或其父域 |
+| `authn.mfa.totp.issuer` | 字符串 | `authn.gate.mount.public-url` 的主机名 | 默认 | | 写进 `otpauth://`（[REF-otpauth-key-uri-format](../../../references.md)）地址的发行者名 |
+| `authn.mfa.webauthn.rp-id` | 字符串 | `authn.gate.mount.public-url` 的主机名 | 默认 | | 依赖方标识（[REF-webauthn](../../../references.md)）；须等于基址主机或其父域 |
 | `authn.mfa.webauthn.rp-name` | 字符串 | `speed` | 默认 | | 依赖方的显示名 |
 | `authn.mfa.webauthn.origins` | 字符串列表 | `authn.gate.mount.public-url` 的来源 | 默认 | | 依赖方接受的来源 |
 
@@ -131,7 +131,7 @@
 
 `authn.mfa.webauthn` 的 `Timeouts.*.Enforce` 固定为真，不做成配置项。
 
-下表是人机验证的配置项（封闭集合）。`mode` 有缺省值，因此不是必填；Turnstile 的几项由 `mode` 判定，不由加载器判定：闸关闭或运行工作量证明时，它们不必给值，只有 `turnstile` 模式要求站点键、密钥与主机名齐备。
+下表是人机验证的配置项（封闭集合）。`mode` 有缺省值，因此不是必填；Turnstile（[REF-cloudflare-turnstile](../../../references.md)）的几项由 `mode` 判定，不由加载器判定：闸关闭或运行工作量证明时，它们不必给值，只有 `turnstile` 模式要求站点键、密钥与主机名齐备。
 
 | 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
 |---|---|---|---|---|---|
@@ -168,7 +168,7 @@
 - **租**列：「是」表示按租户回落，取值依次取租户行、全局行、声明默认值；空白表示只读全局层。
 - **取值域**由 `Item.Domain` 声明，写入时判，读取不判；每项带 `Description`。设置声明的默认值必须在自己的取值域内。
 - **放宽方向**列给出该键取值朝哪个方向改动即放宽校验或扩大发送面；空白表示该键的改动不放宽校验，不被监视。判据与监视见[放宽变更的监视](#放宽变更的监视)。
-- 数字缺省值是起点，不是对规范条文的引用。NIST SP 800-63B-4 与 ASVS 5.0 给的是上界与定性要求：验证码长度至少 6、有效期至多 10 分钟、单次有效、重发不清零失败计数、尝试次数上界 100；规范没有给出重发频率与发送预算的数字。这些条文的条号未逐条核对，缺省值不构成合规声明。
+- 数字缺省值是起点，不是对规范条文的引用。NIST SP 800-63B-4（[REF-nist-sp-800-63b](../../../references.md)）与 ASVS 5.0（[REF-owasp-asvs](../../../references.md)）给的是上界与定性要求：验证码长度至少 6、有效期至多 10 分钟、单次有效、重发不清零失败计数、尝试次数上界 100；规范没有给出重发频率与发送预算的数字。这些条文的条号未逐条核对，缺省值不构成合规声明。
 
 下表是会话与令牌的设置项（封闭集合）。
 
@@ -192,7 +192,7 @@
 
 | 键 | 类型 | 缺省 | 取值域 | 租 | 放宽方向 |
 |---|---|---|---|---|---|
-| `authn.account.password-algorithm` | 字符串 | `argon2id` | `argon2id` 或 `pbkdf2-sha256` | | 改为 `pbkdf2-sha256`（降级） |
+| `authn.account.password-algorithm` | 字符串 | `argon2id` | `argon2id` 或 `pbkdf2-sha256`（[REF-rfc8018](../../../references.md)） | | 改为 `pbkdf2-sha256`（降级） |
 | `authn.static.free-attempts` | 整数 | `5` | 1 到 20 | | 增大 |
 | `authn.static.fail-window` | `time.Duration` | `15m` | 1m 到 24h | | 减小 |
 | `authn.static.max-backoff` | `time.Duration` | `15m` | 10s 到 24h | | 减小 |
@@ -220,7 +220,7 @@
 
 `cache-ttl` 是绝对期限：自一次真实派生通过起算，命中不续期，0 关闭缓存。`fail-window` 与 `max-backoff` 的取值域各自独立，所以 `max-backoff` 大于 `fail-window` 的组合合法。失败计数在窗口已过、且这些失败赚得的等待也已走完之后才归零，窗口不会在锁定期结束之前把计数清掉；缺省值下两者相等，行为与按窗口归零相同。账户的 `throttle-decay` 与 `throttle-max-delay` 同判（[design-authn-account](design-authn-account.md)）。
 
-Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项取值域内判，而 OWASP 最低组合按（m, t, p）的组合判：各自合法而组合低于下限时，写入不被拒绝，使用处回落到默认组合并记 `Error`（回落与内存预算的口径见 [design-authn-account](design-authn-account.md)）。`secret-retention` 是服务密钥到期或撤销之后行的保留期。
+Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项取值域内判，而 OWASP 最低组合（[REF-owasp-password-storage](../../../references.md)）按（m, t, p）的组合判：各自合法而组合低于下限时，写入不被拒绝，使用处回落到默认组合并记 `Error`（回落与内存预算的口径见 [design-authn-account](design-authn-account.md)）。`secret-retention` 是服务密钥到期或撤销之后行的保留期。
 
 `authn.account.password-algorithm` 在每次写哈希时读取：登记账户与改口令，以及登录成功后的再哈希。它是设置项，但读取没有回落：设置缺席时取声明默认值 `argon2id`；读取失败或取值越出取值域时，哈希写入失败而不是改用另一个算法——登记账户与改口令答不可用，登录后的再哈希跳过、记一行 `Error`，登录本身仍成功。键没有任何声明覆盖（本模块自身 schema 的缺陷）是唯一的例外：按声明默认值 `argon2id` 写出并记一行 `Error`，不令写失败。理由是回落到另一个算法会让宿主以为选定的算法在生效，而实际写下的条目用了别的算法。
 
@@ -254,7 +254,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.login.email-per-source-hourly` | 整数 | `30` | 1 到 10000 | | 增大 |
 | `authn.login.email-per-source-daily` | 整数 | `100` | 1 到 100000 | | 增大 |
 | `authn.login.email-global-hourly` | 整数 | `300` | 1 到 1000000 | | 增大 |
-| `authn.sms.allowed-prefixes` | 字符串，JSON 数组 | `[]`，空即一律拒绝发送 | E.164 前缀的数组 | | 加入成员 |
+| `authn.sms.allowed-prefixes` | 字符串，JSON 数组 | `[]`，空即一律拒绝发送 | E.164（[REF-itu-t-e164](../../../references.md)）前缀的数组 | | 加入成员 |
 | `authn.sms.code-length` | 整数 | `6` | 6 到 8 | | 减小 |
 | `authn.sms.code-ttl` | `time.Duration` | `5m` | 1m 到 10m | | 增大 |
 | `authn.sms.code-attempts` | 整数 | `5` | 1 到 10 | | 增大 |
@@ -283,7 +283,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 - `authn.sms.global-hourly-*` 按用途分设：登录的预算耗尽不挤占已通过口令的第二因素与因素登记。全局维度只计未抑制的行，抑制行不消耗它，理由与其余维度的口径见 [design-authn-sms](design-authn-sms.md)。
 - `authn.sms.per-account-hourly` 只对 `mfa` 与 `enroll` 用途计数。
 - `authn.sms.per-source-hourly` 与 `per-source-daily` 按发送请求的来源地址计数，跨用途累计，窗口分别是滚动一小时与滚动一日；地址先经 `netip.ParseAddr` 规范化再取摘要。`SendCode.Source` 为空（调用方没有可信来源）时不施加这两个维度，见 [design-authn-sms](design-authn-sms.md)。
-- 邮箱验证码的预算由 `authn.login.email-per-address-hourly`、`email-per-address-daily`、`email-per-account-hourly`、`email-per-account-daily`、`email-per-source-hourly`、`email-per-source-daily` 与 `email-global-hourly` 设置。按地址的预算是 `email-per-address-hourly` 与 `email-per-address-daily`，它们与重发窗口都按**预算形式**计数：局部部分从第一个 `+` 起的后缀在所有域都丢掉，`gmail.com` 与 `googlemail.com` 另外去掉局部部分的点并视为同一个域；这个折叠只用于预算键与重发键，标识的语义、`Lookup`、待验证记录与真正投递的地址都保持规范化后的原样。按地址的窗口跨会话与账户共享，一个收件箱在一次重发窗口内只发一条码；`email-per-account-hourly` 与 `email-per-account-daily` 按发起的账户计；`email-per-source-hourly` 与 `email-per-source-daily` 按请求的来源地址计，地址先经 `netip.ParseAddr` 规范化再取摘要，来源为空时不施加（fail-open，不落进同一个键）。`email-global-hourly` 是全部账户与地址共享的小时总量。按地址、按账户与按来源的日窗口都是固定的 UTC 日，小时窗口都是固定的 UTC 小时。预算先预留后确认：请求被任一层拒绝时退还本次已占用的全部计数；发送失败只有在通道能证明消息未离开时退还，结果不确定时保留。地址已被其他账户预留或持有时答 409 `email-taken`，不发信、不占重发窗口、不花预算。
+- 邮箱验证码的预算由 `authn.login.email-per-address-hourly`、`email-per-address-daily`、`email-per-account-hourly`、`email-per-account-daily`、`email-per-source-hourly`、`email-per-source-daily` 与 `email-global-hourly` 设置。按地址的预算是 `email-per-address-hourly` 与 `email-per-address-daily`，它们与重发窗口都按**预算形式**计数：局部部分从第一个 `+` 起的后缀在所有域都丢掉，`gmail.com` 与 `googlemail.com`（[REF-gmail-dots](../../../references.md)）另外去掉局部部分的点并视为同一个域；这个折叠只用于预算键与重发键，标识的语义、`Lookup`、待验证记录与真正投递的地址都保持规范化后的原样。按地址的窗口跨会话与账户共享，一个收件箱在一次重发窗口内只发一条码；`email-per-account-hourly` 与 `email-per-account-daily` 按发起的账户计；`email-per-source-hourly` 与 `email-per-source-daily` 按请求的来源地址计，地址先经 `netip.ParseAddr` 规范化再取摘要，来源为空时不施加（fail-open，不落进同一个键）。`email-global-hourly` 是全部账户与地址共享的小时总量。按地址、按账户与按来源的日窗口都是固定的 UTC 日，小时窗口都是固定的 UTC 小时。预算先预留后确认：请求被任一层拒绝时退还本次已占用的全部计数；发送失败只有在通道能证明消息未离开时退还，结果不确定时保留。地址已被其他账户预留或持有时答 409 `email-taken`，不发信、不占重发窗口、不花预算。
 
 匿名口令重置复用同一组数值设置，但按用途使用独立的计数键。邮箱的按地址、按来源、按账户与全局预算，以及短信的按号码、按来源与全局预算，超限时一律抑制发送并仍答同形的成功，不作为账户存在性的信号；只有同一 cookie 的重发间隔与登录的 `ip-limit` 答 429。短信的 `reset` 用途不填 `Account`，不设按账户维度。
 - `authn.mfa.sensitive-min-age` 是冒充发起与管理员重置因素所要求的因素启用年龄。
@@ -353,11 +353,11 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | 口令表条目 | 配置 `authn.static.subjects`，PHC 字符串 | 运维重写条目 | 配置文件的访问控制 |
 | 会话令牌、刷新令牌、服务密钥 | 客户端持有；库里只存 SHA-256 | 会话在登录与提权时换；刷新令牌每次使用即换；服务密钥多把并存，旧的过期或撤销 | 库转储得不到可用凭据 |
 | 短信验证码 | db，带密钥摘要（`BlindIndex`） | 每次发送新码 | 密钥是 db 根密钥派生的子密钥；根密钥轮换使在途挑战失效 |
-| TOTP 种子 | `authn_totp_secrets.secret` 加密列 | 用户删除并重新登记 | db 根密钥；只在登记应答里出现一次；应用被攻破即种子泄露 |
+| TOTP（[REF-rfc6238](../../../references.md)）种子 | `authn_totp_secrets.secret` 加密列 | 用户删除并重新登记 | db 根密钥；只在登记应答里出现一次；应用被攻破即种子泄露 |
 | WebAuthn 公钥 | 明文列 | 用户删除并重新登记 | 非秘密 |
-| JWT 签名私钥 | 配置里的文件路径，PKCS#8 PEM | 两相轮换与应急撤销，步骤见 [design-authn-token](design-authn-token.md) | 文件权限只能 `Warn`、不能强制；Kubernetes 密钥挂载是自然的承载 |
+| JWT（[REF-rfc7519](../../../references.md)）签名私钥 | 配置里的文件路径，PKCS#8 PEM | 两相轮换与应急撤销，步骤见 [design-authn-token](design-authn-token.md) | 文件权限只能 `Warn`、不能强制；Kubernetes（[REF-kubernetes](../../../references.md)）密钥挂载是自然的承载 |
 | 企业 OIDC 客户端密钥 | `authn_idps.client_secret` 加密列 | 管理面 `PUT` 带新密钥，`version` 加一，各副本按版本重建缓存 | 读取接口从不交出它，应答里只有「是否已设置」 |
-| SAML 的 SP 私钥 | 配置里的文件路径 | `authn.sso.saml.sp-next-cert-file` 先发布新证书，IdP 侧更新后换位 | 同 JWT 签名私钥 |
+| SAML（[REF-saml2](../../../references.md)）的 SP 私钥 | 配置里的文件路径 | `authn.sso.saml.sp-next-cert-file` 先发布新证书，IdP 侧更新后换位 | 同 JWT 签名私钥 |
 | IdP 的签名证书 | `config.idp_certs`，公钥证书 | 管理员更新，可同时放当前与下一张 | 非秘密，但变更要经管理面，强制审计 |
 | 社交登录与微信的密钥 | 配置的敏感项 | 运维改配置并滚动重启；提供方允许新旧并存的，先加新、再换、再删旧 | 另登记为日志的字面量匹配器 |
 | 校验缓存的 HMAC 密钥 | 进程内存，启动时随机 | 重启即换 | 不落盘 |
@@ -496,7 +496,7 @@ flowchart TD
 | `authn.gate.endpoints` 非空、无空名、无重名，`*` 不与具体端名混写；`authn.gate.call-budget` 与 `authn.gate.in-flight` 为正；`authn.token.issuer` 解析后非空（`issuer` 与 `authn.gate.mount.public-url` 都没给出即失败，此时空的 `audience` 也无从取默认值）、`authn.token.algorithm` 取 `ES256` 或 `RS256`、`authn.token.client-id` 非空 | `ErrInvalidConfig` |
 | `tenant.admission.endpoints` 非空，且不含 `*`；每一项都在 `tenant.resolve.endpoints` 里（该清单读得出时） | `ErrInvalidConfig` |
 | `authn.gate.endpoints` 里的端名存在于入口模块 | `ErrUnknownEndpoint` |
-| `authn.gate.mount.public-url` 非空（由需要它的模块判）；`authn.gate.mount.public-url` 不是带主机的 http 或 https URL，或带用户信息、路径、查询、片段、空端口、越界端口、通配，或主机不是 ASCII（国际化域名写 punycode） | `ErrInvalidConfig` |
+| `authn.gate.mount.public-url` 非空（由需要它的模块判）；`authn.gate.mount.public-url` 不是带主机的 http 或 https URL，或带用户信息、路径、查询、片段、空端口、越界端口、通配，或主机不是 ASCII（国际化域名写 punycode，[REF-rfc3492](../../../references.md)） | `ErrInvalidConfig` |
 | `authn.gate.mount.bases.{default,tenants,system}` 的任一项不以 `/` 起头、以 `/` 结尾、含通配或路径参数（`*`、`:`）、`?` 或 `#`，或不是 `path.Clean` 之后的写法 | `ErrInvalidConfig` |
 | `authn.gate.trusted-origins` 的某一项不是 `scheme://host[:port]`：scheme 不是 http 或 https，带用户信息、路径、查询、片段、空端口、通配，端口不在 1 到 65535，或主机不是 ASCII（国际化域名写 punycode）；每项先规范成浏览器发送的形式，规范后相同的项并作一项 | `ErrInvalidConfig` |
 | `authn.static.cache-size` 不在 1 到 1000000（0 被拒绝）；`authn.static.concurrency` 不在 1 到 256 | `ErrInvalidConfig` |

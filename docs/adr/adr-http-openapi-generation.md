@@ -2,7 +2,7 @@
 
 ## 背景
 
-模块的 OpenAPI 片段此前是手写 JSON，与 handler 各自维护，靠一致性测试桥接。独立审查在这棵树上找到的偏差说明这个机制不够：不可达的应答应、可达而未声明的应答、被路由拒收的请求字段、声明为 `application/json` 而实现写 `application/problem+json` 的错误体，都能通过「方法+路径」这一层的核对。请求参数与请求体字段只有在少数模块有专门核对，新增一个参数而忘记文档不会被发现。
+模块的 OpenAPI（[REF-openapi](../references.md)）片段此前是手写 JSON，与 handler 各自维护，靠一致性测试桥接。独立审查在这棵树上找到的偏差说明这个机制不够：不可达的应答应、可达而未声明的应答、被路由拒收的请求字段、声明为 `application/json` 而实现写 `application/problem+json`（[REF-rfc9457](../references.md)）的错误体，都能通过「方法+路径」这一层的核对。请求参数与请求体字段只有在少数模块有专门核对，新增一个参数而忘记文档不会被发现。
 
 要的是「加参数忘文档」在代码里写不出来。文档是数据、handler 是代码，Go 编译器只把代码与代码联系起来；只有让一侧由另一侧生成才可能。
 
@@ -30,7 +30,7 @@
 
 ### 从 Go 声明生成片段，并让声明绑定 handler
 
-模块在 Go 里声明 operation 及其 handler 的输入与成功应答类型；生成器把类型反射成 JSON Schema 并组装成片段，入口模块按声明绑定请求、调用 handler、写出声明的应答。生成器桥接现成库 `github.com/swaggest/openapi-go`，只做 OpenAPI 3.1 的 schema 反射与文档组装。
+模块在 Go 里声明 operation 及其 handler 的输入与成功应答类型；生成器把类型反射成 JSON Schema（[REF-json-schema](../references.md)）并组装成片段，入口模块按声明绑定请求、调用 handler、写出声明的应答。生成器桥接现成库 `github.com/swaggest/openapi-go`（[REF-swaggest-openapi-go](../references.md)），只做 OpenAPI 3.1 的 schema 反射与文档组装。
 
 **采纳**，见「决策」。
 
@@ -55,7 +55,7 @@
 - 生成片段需要多一步构建动作，忘记重新生成会让漂移测试变红。
 - 生成器的规整规则是平台自己的约束；库新增一个默认字段就可能改变契约字节，需要相应更新规整或接受契约变化。
 - 描述从 JSON 搬进 Go tag 后，长文本的可读性不如独立 JSON 文件。
-- 迁移后的 handler 拿不到 `*gin.Context`；动态响应头、重定向、Cookie、流式响应由应答声明模型表达（见 [ADR-http-request-response-kinds](adr-http-request-response-kinds.md)），模型以外的协议仍留在 gin handler 写法上。
+- 迁移后的 handler 拿不到 `*gin.Context`（[REF-gin](../references.md)）；动态响应头、重定向、Cookie、流式响应由应答声明模型表达（见 [ADR-http-request-response-kinds](adr-http-request-response-kinds.md)），模型以外的协议仍留在 gin handler 写法上。
 - 错误状态是否已声明只在运行期核对：handler 返回一个未声明的状态会答 500，而不是编译失败。
 
 ## 失效条件

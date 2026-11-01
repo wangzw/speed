@@ -2,7 +2,7 @@
 
 ## 背景
 
-Twilio 载体的发送走 Messages API，模板管理走 Content API：前者按内容 SID 与变量发送一条消息，后者把一条正文登记成内容资源、返回 SID，并在删除时释放它。两个 API 都以 HTTP Basic 认证（账户 SID 与认证令牌），错误以 HTTP 状态码加 Twilio 自己的错误码表达。
+Twilio（[REF-twilio-messaging](../references.md)）载体的发送走 Messages API，模板管理走 Content API（[REF-twilio-content-api](../references.md)）：前者按内容 SID 与变量发送一条消息，后者把一条正文登记成内容资源、返回 SID，并在删除时释放它。两个 API 都以 HTTP Basic 认证（账户 SID 与认证令牌），错误以 HTTP 状态码加 Twilio 自己的错误码表达。
 
 Content API 相对较新，它的资源形状（内容类型、语言、变量、审核）独立于 Messages API 演进。手写客户端意味着同时维护两套请求与响应结构、认证、分页、错误解码，并在 Twilio 改动任一处时跟着改。本能力已经把厂商 SDK 限制在载体叶子包内，根包与注册表不 import 任何 SDK，依赖闭包由 `deps_test.go` 守住；把官方 SDK 放进 Twilio 叶子包与这条封边一致。
 
@@ -34,7 +34,7 @@ Content API 相对较新，它的资源形状（内容类型、语言、变量�
 
 ## 决策
 
-采纳：**Twilio 载体绑定官方 SDK `github.com/twilio/twilio-go`，只在其 `pkg/sms/twilio` 叶子包内 import。**
+采纳：**Twilio 载体绑定官方 SDK `github.com/twilio/twilio-go`（[REF-twilio-go](../references.md)），只在其 `pkg/sms/twilio` 叶子包内 import。**
 
 - **两个子包对应两个 API。** 发送用 `rest/api/v2010`，内容资源的创建与删除用 `rest/content/v1`。
 - **SDK 被包在 `Product` 后面。** 厂商类型只出现在 `Open` 与载体内部，不越过接缝；注册表、管理面与调用方只看到 `sms` 包的类型。
@@ -52,7 +52,7 @@ Twilio 的两套 API 由上游维护，载体只写映射与归类；Content API
 - **升级节奏由上游决定。** Content API 变更时，要等 SDK 发布对应版本；载体只能在一个版本内使用 SDK 已暴露的能力，未覆盖的接口在升级前不可用。
 - **SDK 的默认行为需要逐项检查。** 重试、超时与错误包装的默认值可能与本能力的契约相反，载体必须在 `Open` 里显式设定；漏掉一处，例如默认重试，就会直接违反「载体从不重试」。
 - **测试经过真实 SDK。** 适配层测试用回环 `httptest` 端点驱动 `Send` 与内容创建，断言请求形状与错误归类；没有真实凭据，SDK 的行为只能按它发出的请求与它解析的响应来验证。
-- **一个 SDK 的依赖冲突可能波及工作区。** 若它的某个传递依赖与工作区其它模块冲突（阿里云 SDK 的 `genproto` 单体曾经如此），要用 `go.work` 的 `replace` 钉版或换用替代方案；这属于依赖管理成本，不是载体逻辑的成本。
+- **一个 SDK 的依赖冲突可能波及工作区。** 若它的某个传递依赖与工作区其它模块冲突（阿里云 SDK 的 `genproto` 单体曾经如此，[REF-alibabacloud-dysmsapi-go](../references.md)、[REF-genproto](../references.md)），要用 `go.work` 的 `replace` 钉版或换用替代方案；这属于依赖管理成本，不是载体逻辑的成本。
 
 ## 失效条件
 

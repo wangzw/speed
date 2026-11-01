@@ -9,7 +9,7 @@
 - **发件人是有约束的身份。** 中继通常只接受它自己域内的发件人；一个进程默认以一个身份发信，接口要允许逐封覆盖，而配置要能收窄可用的发件人。
 - **发送接口不幂等。** SMTP 事务重复一次会投递并计费第二封，超时之后调用方无从知道邮件是否已发出，重试会重复投递。
 - **`net/smtp` 已被冻结，且不带上下文。** 走它就得自己实现 MIME 组装：多部分正文、附件编码、非 ASCII 头的编码字与点填充。
-- **两家国内厂商的 OpenAPI 都够不着这封邮件的全部字段。** 腾讯云 SES 的 OpenAPI 默认只能发模板邮件，它的自由文本参数 `Simple` 已被文档标记为 `Abandoned`，错误码是 `FailedOperation.WithOutPermission`；阿里云 DirectMail 的 OpenAPI 没有抄送与密送。两家都提供覆盖全部信封字段的 SMTP 端点。
+- **两家国内厂商的 OpenAPI 都够不着这封邮件的全部字段。** 腾讯云 SES（[REF-tencent-cloud-ses](../references.md)）的 OpenAPI 默认只能发模板邮件，它的自由文本参数 `Simple` 已被文档标记为 `Abandoned`，错误码是 `FailedOperation.WithOutPermission`；阿里云 DirectMail（[REF-aliyun-directmail](../references.md)）的 OpenAPI 没有抄送与密送。两家都提供覆盖全部信封字段的 SMTP 端点。
 - **发送能力的形态在短信上已经定下**：根包接口与工厂、载体叶子排他交付、哨兵 `ErrThrottled`/`ErrRejected`/`ErrUncertain`/`ErrInvalidConfig`、无队列无重试（[ADR-sms-capability](adr-sms-capability.md)）。
 - **共享单元必须能被两个功能目录取用。** `pkg/sms` 下的包不能 import `pkg/mail` 的 `internal` 包，`pkg/internal/dedupe` 与 `pkg/internal/configtest` 已被两个功能目录的载体取用。
 
@@ -43,7 +43,7 @@
 
 在 SMTP 载体叶子包内自己组装 MIME 报文与 SMTP 会话，不引入第三方库。
 
-**否决**：`net/smtp` 已被冻结、且不带上下文；自己实现多部分正文、附件编码、非 ASCII 头的编码字与点填充，只会把这些细节的缺陷留给本仓库。采纳桥接 `github.com/wneessen/go-mail`，代价是 `pkg/go.mod` 多一个第三方依赖，要钉版并加封边守卫。
+**否决**：`net/smtp` 已被冻结、且不带上下文；自己实现多部分正文、附件编码、非 ASCII 头的编码字与点填充，只会把这些细节的缺陷留给本仓库。采纳桥接 `github.com/wneessen/go-mail`（[REF-go-mail](../references.md)），代价是 `pkg/go.mod` 多一个第三方依赖，要钉版并加封边守卫。
 
 ### 共享单元留在 pkg/sms 下，mail 从那里取用
 

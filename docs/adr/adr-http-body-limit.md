@@ -4,14 +4,14 @@
 
 请求体上限要约束到达该端的每一条请求，无论哪个层或 handler 以哪种方式读 body。上限本身是配置项 `max-body-bytes`。
 
-一个上限若施加在引擎之外、链路的一切层之前（`http:base` 那一级），超限的原因会静默丢失。按 gin v1.12 的实测，用 `MaxBytesReader` 包在 base 时：
+一个上限若施加在引擎之外、链路的一切层之前（`http:base` 那一级），超限的原因会静默丢失。按 gin（[REF-gin](../references.md)） v1.12 的实测，用 `MaxBytesReader` 包在 base 时：
 
 - 走 `ShouldBindJSON` 的 handler，超限与格式错误被收成同一个 400，调用方分辨不出；
 - 走 `BindJSON` 的 handler 得到 413，但原因只写进 `c.Errors`，当时的观测层不读它；
 - handler 自己读 body 而忽略错误时，截断后的数据以 201 成功落地；
 - 三种情形都不写任何日志。
 
-上限的位置由两条约束决定。其一，它写出的 413 是一次拒绝，按 [ADR-http-stages](adr-http-stages.md) 与 [ADR-http-cors](adr-http-cors.md)，会拒绝的层要落在 CORS 之内，否则 413 上没有 `Access-Control-Allow-Origin`，浏览器读不到这次拒绝。其二，防护阶段的层按契约不读 body——来源限流只看地址，CORS 只看头部与预检——所以上限不能落在防护阶段之前：那会在来源限流计数之前就把超限请求挡掉。
+上限的位置由两条约束决定。其一，它写出的 413 是一次拒绝，按 [ADR-http-stages](adr-http-stages.md) 与 [ADR-http-cors](adr-http-cors.md)，会拒绝的层要落在 CORS（[REF-whatwg-fetch](../references.md)）之内，否则 413 上没有 `Access-Control-Allow-Origin`，浏览器读不到这次拒绝。其二，防护阶段的层按契约不读 body——来源限流只看地址，CORS 只看头部与预检——所以上限不能落在防护阶段之前：那会在来源限流计数之前就把超限请求挡掉。
 
 ## 考虑过的选项
 

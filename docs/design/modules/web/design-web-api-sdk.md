@@ -2,11 +2,11 @@
 
 ## 职责
 
-前端对 speed 平台的**生成式、契约优先的类型化接口面**，包 `web/packages/api-sdk`。操作函数、TanStack Query 钩子与响应模型由 orval 从合并的平台 OpenAPI 文档生成；特性名类型由特性名生成器从 `contracts/features.json` 生成；每一次生成的调用都经 [`api-client`](design-web-api-client.md) 的请求函数发出。
+前端对 speed 平台的**生成式、契约优先的类型化接口面**，包 `web/packages/api-sdk`。操作函数、TanStack Query（[REF-tanstack-query](../../../references.md)）钩子与响应模型由 orval（[REF-orval](../../../references.md)）从合并的平台 OpenAPI（[REF-openapi](../../../references.md)）文档生成；特性名类型由特性名生成器从 `contracts/features.json` 生成；每一次生成的调用都经 [`api-client`](design-web-api-client.md) 的请求函数发出。
 
 - **整份由契约生成。** `src/` 除一个文件外全是生成产物：orval 从 `contracts/api.json` 生成 `src/index.ts`，特性名生成器 `web/scripts/feature-names.mjs` 从 `contracts/features.json` 生成 `src/features.ts`。`src/index.ts` 带 `web/orval.config.ts` 注入的 DO-NOT-EDIT 头，头里锚着生成器的版本，故生成器与已提交产物之间的漂移表现为头本身的一次 diff；`src/features.ts` 带同形的 DO-NOT-EDIT 头。
 - **唯一的源码接手点。** `src/runtime.ts` 是本包唯一的手写源码文件，作为 `./runtime` 子路径导出。它存在，是因为生成的代码不能知道宿主如何接上 HTTP 传输。
-- **生成面与传输无关。** 生成的调用把一个 axios 形状的选项对象交给一个 mutator；mutator 把它适配成 [`api-client`](design-web-api-client.md) 的请求函数形状并转发。生成的代码里没有 `fetch`、没有 `axios`、没有租户头，也没有租户查询键。
+- **生成面与传输无关。** 生成的调用把一个 axios（[REF-axios](../../../references.md)）形状的选项对象交给一个 mutator；mutator 把它适配成 [`api-client`](design-web-api-client.md) 的请求函数形状并转发。生成的代码里没有 `fetch`、没有 `axios`、没有租户头，也没有租户查询键。
 - **生成面与租户无关。** 生成的查询键是裸的 spec 路径，不带租户维度；租户由服务端在请求期按端解析，生成面既不传也不收租户（[ADR-web-tenant-query-key](../../../adr/adr-web-tenant-query-key.md)）。
 - **契约从模块片段流入。** orval 的输入是各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的一份文档（落 `contracts/api.json`）；一个有 HTTP 片段的平台模块即合并文档的成员，因而进入本包的生成面。合并文档的成员带所有者：平台模块的片段为平台所有，示范宿主自己的模块的片段为应用所有；应用所有的操作带应用所有的标记（标记的形态须能被 orval 的过滤读取），本包的生成过滤掉它们，应用级生成（[starters](../design-starters.md) 的第二级契约）取全部，本包的生成面因此始终只含平台操作。测试从两个方向约束本包的生成面：生成面不含任何带应用标记的操作，合并文档里的每个平台操作都在生成面。每个片段的端点路径与操作经 [api-client](design-web-api-client.md) 发出。
 - **特性名从模块声明流入。** 后端模块以资源 `feature.Spec` 声明它服务的[特性](../../../glossary.md)（[feature](../design-feature.md)）；示范宿主的 `gen` 命令以 `--features` 写出 `contracts/features.json`：可用集里的全部特性声明，每项带名字、声明模块与是否条件特性，按名字排序。它与 `contracts/api.json` 同源，出自同一个二进制的 import 闭包，是同一份契约的另一半（[starters](../design-starters.md)、[ADR-feature-vocabulary](../../../adr/adr-feature-vocabulary.md)）。
@@ -15,7 +15,7 @@
 
 - **不做 HTTP。** 生成的代码不做网络调用；每次调用经 mutator 转发给宿主绑定的 `@speed/api-client` 的请求函数。工作区里除 `api-client` 外没有一处手写 `fetch`/`axios`（`speed/no-direct-http` 规则，白名单只有 `api-client`）；本包的 `src/` 每次重生成后都必须仍通过该规则。
 - **不认识租户。** 生成面里没有租户头、没有租户查询键，认证片段也不带任何租户字段：认证的请求与应答里没有 `tenant_id`，租户在请求期由服务端的解析层按端解析。租户查询键的分段是消费方壳的纪律（[auth-core](design-web-auth-core.md)）。
-- **不含用户可见文本，不带 i18n 资源。** 错误以契约的 RFC 9457 问题对象类型化（机器可读的类在 `type`，取值 `urn:speed:<模块>:<码>`）；码由消费包的文案目录译成双语文本。
+- **不含用户可见文本，不带 i18n 资源。** 错误以契约的 RFC 9457（[REF-rfc9457](../../../references.md)）问题对象类型化（机器可读的类在 `type`，取值 `urn:speed:<模块>:<码>`）；码由消费包的文案目录译成双语文本。
 - **不构造 QueryClient。** `react` 与 `@tanstack/react-query` 是 peer，宿主共享一个 QueryClient/Provider；本包从不构造。
 - **不接受手工编辑。** `src/index.ts` 与 `src/features.ts` 从不手改，也不在 `src/` 里另加一个手写源码文件来补生成的缺口：工具的问题归工具（见「核心算法与流程」的生成一节）。
 - **不回答一个面在不在。** 合并文档与特性名清单都取可用集（[ADR-ops-spec-reader](../../../adr/adr-ops-spec-reader.md)）：本包里有某个操作函数，不能据此推断本部署服务它；一个名字属于 `FeatureName`，只说明它在可用集里有声明。特性在场由特性文档在运行期回答（[auth-core](design-web-auth-core.md)）。

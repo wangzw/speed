@@ -2,10 +2,10 @@
 
 ## 背景
 
-Google 与 GitHub 两个登录方式把提供方地址写死在代码里：Google 的 issuer 是 `https://accounts.google.com`，GitHub 的授权、令牌与 API 端点取自 `x/oauth2` 的 `endpoints.GitHub` 与 `https://api.github.com`；两者的受限出站客户端一律拒绝回环地址并用系统根证书。这个形状堵住两件事：
+Google（[REF-google-openid-connect](../references.md)）与 GitHub（[REF-github-oauth-apps](../references.md)）两个登录方式把提供方地址写死在代码里：Google 的 issuer 是 `https://accounts.google.com`，GitHub 的授权、令牌与 API 端点取自 `x/oauth2`（[REF-golang-x-oauth2](../references.md)）的 `endpoints.GitHub` 与 `https://api.github.com`；两者的受限出站客户端一律拒绝回环地址并用系统根证书。这个形状堵住两件事：
 
 - 自动化端到端测试无法走完一次真实的社交登录回跳，因为没有回调能到达本地提供方。
-- 指向 GitHub Enterprise 或自建 OIDC 提供方的部署没有配置入口，只能改代码。
+- 指向 GitHub Enterprise 或自建 OIDC（[REF-openid-connect-core](../references.md)）提供方的部署没有配置入口，只能改代码。
 
 约束：
 
@@ -29,7 +29,7 @@ Google 与 GitHub 两个登录方式把提供方地址写死在代码里：Googl
 
 ### 每个方法一组可选覆盖项，缺省即内置值
 
-Google 接受 issuer 覆盖，GitHub 接受授权、令牌与 API 基址覆盖；两者各接受回环开关与追加到系统根的 PEM 文件。
+Google 接受 issuer 覆盖，GitHub 接受授权、令牌与 API 基址覆盖；两者各接受回环开关与追加到系统根的 PEM（[REF-rfc7468](../references.md)）文件。
 
 **采纳** — 见决策。
 

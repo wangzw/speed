@@ -8,7 +8,7 @@
 - **按特性在场收窄注册面。** 宿主给出在场谓词，本包据它算出有效注册面：带 `requires` 的声明只在其中特性全部在场时渲染视图、进入导航；特性缺席的页面与未登记的路径走同一个 `fallback`。谓词读取中或读取失败时，门控的路径渲染宿主给出的等待视图或失败视图（[ADR-web-route-kit](../../../adr/adr-web-route-kit.md)）。
 - **路由与导航独立成层。** 本包是独立包，**不被壳 import，也不 import 任何同族前端包**；一个产品要加页面，插的是本包的注册面，不动壳。它交出的导航条目是一种结构性形状（`id`、`label`、`href`、`selected` 与可选 `onClick`），壳的框架按结构接受它，因而不需要一条共享类型边。
 - **这些事由本包一处承担：** 选中态（当前 URL 命中哪一条导航项）、链接构造（由路径生成可点的链接）、深链接解析（一个深链接直接打开对应页面）、未命中回退（没有登记项匹配时渲染回退视图）、精确命中的查询（当前 URL 在有效注册面上命中哪一条声明），以及入口判定（一条路径是否在有效注册面上有声明）。
-- **链接属性与历史动作也由本包交出。** `RouteLink` 渲染可点链接并透传其余 props；`useRouteLinkProps` 交出宿主自绘锚点所需的 `href` 与点击处理器；`useNavigate` 推入历史、`useRedirect` 替换当前历史项、`useLocationPath` 交出当前 URL 的原始路径与查询串。宿主因此不直接 import react-router-dom。
+- **链接属性与历史动作也由本包交出。** `RouteLink` 渲染可点链接并透传其余 props；`useRouteLinkProps` 交出宿主自绘锚点所需的 `href` 与点击处理器；`useNavigate` 推入历史、`useRedirect` 替换当前历史项、`useLocationPath` 交出当前 URL 的原始路径与查询串。宿主因此不直接 import react-router-dom（[REF-react-router](../../../references.md)）。
 - **壳共用同一注册面。** 租户侧装配壳 [product-shell](design-web-product-shell.md) 与平台控制台壳 [console-ui](design-web-console-ui.md) 都用这套注册面，差别只在各自的壳。
 
 ### 非职责
@@ -311,7 +311,7 @@ flowchart TD
 
 ### 链接构造与命令式导航
 
-`RouteLink` 由目标路径生成一个可点链接，点击经历史导航推入该路径，不整页刷新；其余 props 透传给 react-router-dom 的 `Link`，因此可以充当 MUI 的 `component` 目标。`useRouteLinkProps` 交出同一目标路径的 `href` 与点击处理器：`href` 经 `useHref` 生成、含部署的 basename，处理器只在普通主键单击时导航（主键、无修饰键、`target` 缺失或为 `_self`、无 `download`、未被 `preventDefault`），其余点击不处理而由浏览器完成新标签、下载或默认导航。宿主自绘锚点、或把两者交给接受 `href` 与 `onClick` 的组件时用它。
+`RouteLink` 由目标路径生成一个可点链接，点击经历史导航推入该路径，不整页刷新；其余 props 透传给 react-router-dom 的 `Link`，因此可以充当 MUI（[REF-mui](../../../references.md)）的 `component` 目标。`useRouteLinkProps` 交出同一目标路径的 `href` 与点击处理器：`href` 经 `useHref` 生成、含部署的 basename，处理器只在普通主键单击时导航（主键、无修饰键、`target` 缺失或为 `_self`、无 `download`、未被 `preventDefault`），其余点击不处理而由浏览器完成新标签、下载或默认导航。宿主自绘锚点、或把两者交给接受 `href` 与 `onClick` 的组件时用它。
 
 `useNavigate` 推入历史，供事件处理器使用（如一个成败提示后的返回）；`useRedirect` 以替换语义改当前历史项，用于回调页、登录完成这类不应留在后退栈里的跳转；`useLocationPath` 交出当前 URL 的原始路径与查询串，路径不因是否命中声明而不同。这些接口都只改或读 URL，页面随之被 `RouteView` 按匹配重渲染——`RouteView` 读的是 URL，不是任何组件局部状态。
 

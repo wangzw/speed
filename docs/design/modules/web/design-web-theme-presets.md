@@ -5,7 +5,7 @@
 主题预设的货架，包 `web/packages/theme-presets`。它是一个纯数据包：每个预设是一份 `ThemePreset`，内容是相对默认 token 树的一份差异，由装配层与其它层一并交给主题 provider。
 
 - **交付随包的成品风格。** 基线 `default`，以及 `classic`（传统管理后台）、`modern`（时尚产品页）、`compact`（信息密集型）、`glass`（液态玻璃）、`ascii`（ASCII 终端）。
-- **只写设计取值。** 预设改 token 的段——配色、排版、间距、圆角、阴影、表面——不写 MUI 的组件覆盖。效果映射是主题适配器的事（[ui-kit](design-web-ui-kit.md)）。
+- **只写设计取值。** 预设改 token 的段——配色、排版、间距、圆角、阴影、表面——不写 MUI（[REF-mui](../../../references.md)）的组件覆盖。效果映射是主题适配器的事（[ui-kit](design-web-ui-kit.md)）。
 - **不持文案。** 预设只有 `id` 与 `tokens`；显示名是产品文案，归宿主的 i18n 资源。
 
 ### 非职责

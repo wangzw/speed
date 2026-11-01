@@ -4,7 +4,7 @@
 
 架构文档的错误模型按入口开始接受流量的时刻划分启动期与运行期，规定启动期错误一律终止启动、不降级、不跳过；它举出的启动失败是依赖缺失、配置缺失与排他冲突，都是装配自身的状态。端点此刻可达与否不由装配决定，落在这条判据之外。
 
-上游的导出器按惰性连接构造：构造不与端点建立连接，投递失败由库自行重试与缓冲（`go.opentelemetry.io/otel/sdk/trace` 的 `SpanExporter` 契约把重试放在实现之内）。端点是否可达因而是运行期的事实，不做探测时装配阶段确定不了它。
+上游的导出器按惰性连接构造：构造不与端点建立连接，投递失败由库自行重试与缓冲（`go.opentelemetry.io/otel/sdk/trace` 的 `SpanExporter` 契约把重试放在实现之内，[REF-opentelemetry-go](../references.md)）。端点是否可达因而是运行期的事实，不做探测时装配阶段确定不了它。
 
 `pkg/core` 的 `Prepare` 阶段对本次命令纳入的每个模块执行（预置了实例的模块除外），包括只取表态、不构造任何东西的浅深度命令（`core.StagePrepare` 见 `pkg/core/stage.go`，`Module.Prepare` 见 `pkg/core/module.go`）。把一个网络往返放进这个阶段，这些命令也要承担它。
 

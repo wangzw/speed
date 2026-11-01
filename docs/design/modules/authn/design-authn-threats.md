@@ -20,7 +20,7 @@
 - **不承载哨兵表与依赖不可用时每条路径的方向。** 它们由 [design-authn-failure](design-authn-failure.md) 承载；本文只写这些方向在威胁上的含义。
 - **不承载设计取舍。** 为什么选这个对策、否决了哪些替代、接受了什么代价的论证，在决策记录里。
 - **不防护[未覆盖的威胁](#未覆盖的威胁)里列出的威胁。**
-- **不做以下防护措施。** 下列各项是例举，凡不在模块清单里的防护同样不提供：行为风控；会话绑定来源地址或 User-Agent；定期强制改口令；以「检测到可疑行为」为条件的封号；全局统一的威胁等级开关；泄露口令库比对；持有人证明（DPoP、mTLS）；自适应风险评分。
+- **不做以下防护措施。** 下列各项是例举，凡不在模块清单里的防护同样不提供：行为风控；会话绑定来源地址或 User-Agent；定期强制改口令；以「检测到可疑行为」为条件的封号；全局统一的威胁等级开关；泄露口令库比对；持有人证明（DPoP、mTLS，[REF-rfc9449](../../../references.md)、[REF-rfc8705](../../../references.md)）；自适应风险评分。
 - **不判定一条对策是否已经实现。** 实现与否以[实现状态](#实现状态)和各模块文档的实现状态为准。
 
 ## 术语表
@@ -29,7 +29,7 @@
 
 | 术语 | 范围 | 定义 |
 |---|---|---|
-| 协议层对策 | 本文 | 协议或库本身提供的防护，例如 WebAuthn 把凭据绑定到 RP ID 与来源。库没做的校验不属于这一层。 |
+| 协议层对策 | 本文 | 协议或库本身提供的防护，例如 WebAuthn（[REF-webauthn](../../../references.md)）把凭据绑定到 RP ID 与来源。库没做的校验不属于这一层。 |
 | 装配层对策 | 本文 | authn 自己的代码与装配补上的防护：对库的补充校验、状态放置、统一应答、默认拒绝。表中没有标注层次的对策属于这一层。 |
 | 部署层前提 | 本文 | 对策成立所依赖、只有宿主能提供的条件，例如时钟同步、秘密的保管、前端的安全响应头。前提不成立时，依赖它的对策失效，失效的范围写在[部署层前提](#部署层前提)里。 |
 | 残余风险 | 本文 | 全部对策生效之后仍然存在的风险；不是对策自身的缺陷清单。 |
@@ -48,23 +48,23 @@
 
 | 威胁 | 对策 | 落点 | 残余风险 |
 |---|---|---|---|
-| 口令猜测、撞库、喷洒 | 按提交标识的失败退避：自由尝试用尽后指数退避并设上限，退避期内不派生、不比对；账户级静默退避；口令表的进程内退避在检查时预占一次尝试、成功不清零，并发的猜测互相计数，穿插一次合法请求也清不掉失败计数；口令用 Argon2id；口令派生有并发上限；`Passwords.Verify` 统一应答并对未知标识做诱饵派生 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 用户的口令在别处泄露且攻击者对每个账户只试一两次时，退避挡不住，靠第二因素；不做泄露口令库比对；登录尝试不经人机验证（验证闸的是发送，见[短信、枚举与时序](#短信枚举与时序)）。**接受** |
-| 暴力破解一次性码（TOTP、短信） | 以因素与手机号为键的退避；每个短信码尝试次数用尽即作废；TOTP 计数器只进不退；重发不清零失败计数 | [design-authn-mfa](design-authn-mfa.md)、[design-authn-sms](design-authn-sms.md) | 对单个因素的在线猜测被限到每天百次量级；每天 100 次猜测对 6 位码（10^6 个取值）的命中概率上界是 10^-4，同时有效的码有 k 个时按 k 倍计 |
+| 口令猜测、撞库、喷洒 | 按提交标识的失败退避：自由尝试用尽后指数退避并设上限，退避期内不派生、不比对；账户级静默退避；口令表的进程内退避在检查时预占一次尝试、成功不清零，并发的猜测互相计数，穿插一次合法请求也清不掉失败计数；口令用 Argon2id（[REF-rfc9106](../../../references.md)）；口令派生有并发上限；`Passwords.Verify` 统一应答并对未知标识做诱饵派生 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 用户的口令在别处泄露且攻击者对每个账户只试一两次时，退避挡不住，靠第二因素；不做泄露口令库比对；登录尝试不经人机验证（验证闸的是发送，见[短信、枚举与时序](#短信枚举与时序)）。**接受** |
+| 暴力破解一次性码（TOTP、短信，[REF-rfc6238](../../../references.md)） | 以因素与手机号为键的退避；每个短信码尝试次数用尽即作废；TOTP 计数器只进不退；重发不清零失败计数 | [design-authn-mfa](design-authn-mfa.md)、[design-authn-sms](design-authn-sms.md) | 对单个因素的在线猜测被限到每天百次量级；每天 100 次猜测对 6 位码（10^6 个取值）的命中概率上界是 10^-4，同时有效的码有 k 个时按 k 倍计 |
 | 退避被用来锁住受害者 | 退避只针对口令方式，其他方式照常；上限与窗口是设置；标识级与账户级退避并存；运维主体（口令表）另有进程内退避 | [design-authn-login](design-authn-login.md)、[design-authn-account](design-authn-account.md) | 匿名攻击者对任一已知标识连续失败，可使其口令登录在 `throttle-max-delay` 之内不可用；换标识拼写不是缓解，账户级静默计数按账户计；受害者可改用短信、社交、SSO 与通行密钥登录。**接受** |
-| SIM 劫持与号码携转 | 短信是受限认证器：不计入管理面动作的强认证；冒充发起与重置他人因素、口令不接受仅短信 | [design-authn-mfa](design-authn-mfa.md)、[design-authn-impersonation](design-authn-impersonation.md) | 以短信作登录或第二因素的普通账户仍受影响，短信登录与短信因素是本功能目录提供的方式；发送前的风险信号检查不做；号码被回收后，新持有者可用短信登录旧账户。**接受** |
+| SIM 劫持与号码携转 | 短信是受限认证器（[REF-nist-sp-800-63b](../../../references.md)）：不计入管理面动作的强认证；冒充发起与重置他人因素、口令不接受仅短信 | [design-authn-mfa](design-authn-mfa.md)、[design-authn-impersonation](design-authn-impersonation.md) | 以短信作登录或第二因素的普通账户仍受影响，短信登录与短信因素是本功能目录提供的方式；发送前的风险信号检查不做；号码被回收后，新持有者可用短信登录旧账户。**接受** |
 | 预占抢注：先用受害者的邮箱建号，等受害者经 SSO 或社交登录时被并入该账户 | 提供方声明的地址只用于判定需先绑定，以及与企业预置账户的邮箱标识比对；它不关联提供方，不进入其他既有账户，也不写进新账户。命中现有账户已登记的邮箱时报告 `link-required`，不进入该账户也不另开账户，当事人以自己的登录方式登录后显式绑定该提供方；企业预置的账户由 IdP 断言同一已验证邮箱直接进入，这是租户预先开户的合同，不是按地址关联既有账户 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 预置账户的匹配采信管理员断言的邮箱，管理员写错邮箱即错配；迁移导入的邮箱不经验证，由导入方负责标成 `import-unverified`。**接受** |
-| 社交与 SSO 的账户关联接管 | 键永远是（提供方，主体）；提供方声明的地址不参与识别，也不写进新账户，只用于判定需先绑定与企业预置的匹配；邮箱变化不更新账户；关联与解绑要求新鲜的本地多因素；`link-required` 只对提供方已证明邮箱或其域的调用者给出 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 提供方的「已验证」只在断言那一刻成立：Google Workspace 管理员可改邮箱，邮箱地址可被回收；它改变不了账户归属，但当事人显式绑定时采信的是那一刻的断言。**接受** |
+| 社交与 SSO 的账户关联接管 | 键永远是（提供方，主体）；提供方声明的地址不参与识别，也不写进新账户，只用于判定需先绑定与企业预置的匹配；邮箱变化不更新账户；关联与解绑要求新鲜的本地多因素；`link-required` 只对提供方已证明邮箱或其域的调用者给出 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 提供方的「已验证」只在断言那一刻成立：Google Workspace（[REF-google-workspace-change-user-email](../../../references.md)）管理员可改邮箱，邮箱地址可被回收；它改变不了账户归属，但当事人显式绑定时采信的是那一刻的断言。**接受** |
 | 租户 IdP 对跨租户的全局账户的权限边界 | 企业 SSO 的 JIT 从不并入现有账户，`merge_existing` 的取值不打开并入；`preprovisioned` 只匹配管理员为该租户预建、带该邮箱标识的账户，匹配不上即拒绝；成员关系只在建绑定的同一事务里新建，已有绑定的登录不读不写成员关系，被暂停或移除的成员不会被复活；IdP 声明的多因素只在该提供方所属租户内算数，账户安全类操作不采信；IdP 行的变更是强制审计的管理动作 | [design-authn-sso](design-authn-sso.md)、[design-authn-account](design-authn-account.md) | 租户的 IdP 管理员对自己租户新建的账户有登录控制权，这是企业 SSO 的本质；预置账户的邮箱由管理员断言，写错即错配；该 IdP 对预置账户有永久的登录能力，直到绑定被解除。**接受** |
 | 租户 A 的 IdP 声明的多因素被租户 B 的 `require-mfa` 采信，或覆盖账户自己的因素 | `idp_assured` 记在会话上，只在该提供方所属的租户内算数；账户有因素时 IdP 的声明盖不过；账户安全类操作与冒充发起不采信 | [design-authn-mfa](design-authn-mfa.md)、[design-authn-sso](design-authn-sso.md) | 租户 A 的 IdP 管理员对自己租户内请求的 MFA 判定有话语权，这是企业 SSO 的信任边界。**接受** |
 | 首次登记的因素被抢先：持口令者先于真用户登记自己的因素 | 登录期间登记的因素不计入本次保障等级；账户安全类操作要求本地验证过的因素；冒充发起与管理员重置要求启用已满规定时长的因素（`MFA.Seasoned`） | [design-authn-mfa](design-authn-mfa.md) | 账户尚无因素时，持口令者与真用户不可区分：抢先登记者得到一个普通的多因素会话，真用户被锁在外，要靠管理员重置；首次登记没有带外证明（本模块不以邮箱验证码作因素证明）。**接受** |
 | 恶意租户管理员用自己的 IdP 断言别家的邮箱 | 企业 SSO 的邮箱域必须属于该租户已验证的域；已验证的域全局唯一 | [design-authn-sso](design-authn-sso.md)、[design-authn-account](design-authn-account.md) | 域名所有权后来转手、旧租户的 IdP 仍可断言，直到管理者移除 |
-| 钓鱼与实时代理 | 协议层：WebAuthn 与通行密钥绑定 RP ID 与来源，对钓鱼免疫；装配层：`__Host-` cookie；`return_to` 校验 | [design-authn-mfa](design-authn-mfa.md)、[design-authn-session](design-authn-session.md) | TOTP、短信、口令对实时代理不免疫；启动校验只要求 `rp-id` 等于基址主机或其父域，不核对父域是否为公共后缀，取公共后缀时凭据的作用域覆盖该后缀下的全部站点，见 [design-authn-mfa](design-authn-mfa.md)。**接受** |
+| 钓鱼与实时代理 | 协议层：WebAuthn 与通行密钥绑定 RP ID 与来源，对钓鱼免疫；装配层：`__Host-`（[REF-rfc6265bis](../../../references.md)） cookie；`return_to` 校验 | [design-authn-mfa](design-authn-mfa.md)、[design-authn-session](design-authn-session.md) | TOTP、短信、口令对实时代理不免疫；启动校验只要求 `rp-id` 等于基址主机或其父域，不核对父域是否为公共后缀（[REF-public-suffix-list](../../../references.md)），取公共后缀时凭据的作用域覆盖该后缀下的全部站点，见 [design-authn-mfa](design-authn-mfa.md)。**接受** |
 | 找回路径绕过 MFA | 匿名口令重置只写口令、不触碰因素，不产生会话；经短信、社交、SSO 登录后同样过第二因素；管理员重置不绕过第一因素 | [design-authn-mfa](design-authn-mfa.md)、[design-authn-login](design-authn-login.md) | 邮箱或短信被接管者可改口令；没有第二因素的账户因此等于被接管，有第二因素的账户仍进不去。只有一个因素又无管理员的账户丢失因素后没有自助找回；管理员重置依赖宿主的核验流程，社会工程是风险。**接受** |
 | 匿名口令重置的账户枚举与跨账户绑定 | 合格与不合格目标得到同一个 202、同一组响应头与同一枚重置 cookie；不合格目标写诱饵记录（邮箱为随机摘要，短信为 `Deliver=false` 的抑制挑战行），验证步走同一比较与计数；发送预算超限一律抑制发送并仍答 202；只有同一 cookie 的重发间隔与登录的 `ip-limit` 答 429；记录以重置令牌的 SHA-256 为键，绑定账户与标识行，客户端不能指定账户；验证码与口令不进日志、审计与事件 | [design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md) | 收到消息本身证明该地址或号码属于某账户，这是任何找回流程都有的披露，且持有该渠道的人本就能接收；合格路径比抑制路径多一次账户读与一次真实发送，发送已异步化，残余的本地时延差不可从响应稳定观测，写成接受的残余；知道受害者地址或号码的人可以在预算窗口内耗尽该地址或号码的发送预算，使受害者的重置被抑制，受害者可换渠道或等窗口。**接受** |
 | 匿名口令重置的验证码猜解与重放 | 六位码、每码尝试上限、码有效期、重发间隔与按地址/号码、来源、全局的预算；验证码通过时以比较并交换消费记录，写口令前再以 `verified→processing` 的比较并交换保证一次生效；并发与重放败者答 `flow-invalid` | [design-authn-login](design-authn-login.md)、[design-authn-sms](design-authn-sms.md) | 攻击者在预算内仍可在线猜测，命中概率受尝试上限与码空间约束；没有跨挑战的标识退避，攻击者可按发送预算重复取得新码并各试数次；受害者可换渠道或走管理员。**接受** |
 | 匿名口令重置的发送轰炸与审计缺失 | 每次发送先过人机验证门槛，再受按地址或号码、按来源与全局预算约束；邮箱发送在有界工作池里；匿名口令重置在写口令之前写强制档 `authn.password.reset` 的 `attempted` 行，写不成即 503 且不写口令，成功或拒绝在其后补行；审计或渠道缺失时发现面不发布该能力 | [design-authn-login](design-authn-login.md)、[design-authn-events](design-authn-events.md)、[ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md) | 人机验证缺省关闭时，轰炸仍只受预算约束；全局预算耗尽会抑制所有目标的发送，合法用户也收不到码；进程在 `attempted` 行与结局行之间崩溃会留下一条没有结局的行，不误报成功。**接受** |
 | 特权写入伪造 `verified_via` | 匿名口令重置的资格只读 `email-code` 与 `sms-code`；`email-code` 与 `sms-code` 由自助验证码兑现路径写入。持有 `AccountAdmin` 的宿主命令与管理面也能写同一标签，但它们本就能直接重置口令，不构成新的提权 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 有管理权限的调用方可以绕过验证码把一条标识标成已证明；这是管理权限的既有能力，不是匿名调用方可达的路径。**接受** |
-| 匿名口令重置与冒充的交互 | 重置推进目标账户的 `valid_after`；cookie 冒充会话属于发起者，继续有效；目标账户的 bearer 冒充令牌按 `valid_after` 失效 | [design-authn-token](design-authn-token.md)、[design-authn-impersonation](design-authn-impersonation.md) | 同一次重置对 bearer 冒充令牌与 cookie 冒充会话的结果不同；这是 `valid_after` 判定的直接结果，事故处置需按令牌种类区分。**接受** |
+| 匿名口令重置与冒充的交互 | 重置推进目标账户的 `valid_after`；cookie 冒充会话属于发起者，继续有效；目标账户的 bearer（[REF-rfc6750](../../../references.md)）冒充令牌按 `valid_after` 失效 | [design-authn-token](design-authn-token.md)、[design-authn-impersonation](design-authn-impersonation.md) | 同一次重置对 bearer 冒充令牌与 cookie 冒充会话的结果不同；这是 `valid_after` 判定的直接结果，事故处置需按令牌种类区分。**接受** |
 | 账户停用后仍可用 | 状态与 `valid_after` 在 `authn.account` 的事务里写；`Sessions.Status` 把账户启用与 `CreatedAt` 不早于 `valid_after` 写进有效性，所有调用 `Sessions.Status` 的校验路径共用；校验后端再查账户快照；清理由钩子同步调用、事件补偿 | [design-authn-account](design-authn-account.md)、[design-authn-session](design-authn-session.md) | 缓存内的校验至 `check-ttl`；`check-session=false` 下至令牌到期；钩子失败时残留行不能用于认证，但抹除不保证 |
 | 账户枚举 | 统一应答与等时；失败退避按提交内容计；账户级退避静默；短信对已登记与未登记的号码走同一条计数路径与同形应答（未登记且注册关闭时写抑制行）；发现只看域不看本地部分；因素清单只在首因素通过后给；`link-required` 在社交路径上只在 `EmailVerified` 为真时给，企业 JIT 路径以邮箱域属于该提供方所属租户已验证的域为前提 | [design-authn-login](design-authn-login.md)、[design-authn-sms](design-authn-sms.md)、[design-authn-sso](design-authn-sso.md) | `link-required` 对已被提供方证明拥有该邮箱或其域的调用者暴露其账户存在，接受；口令表的用户名因快速拒绝而可被枚举，接受；开户开放时，未知号码也会真的发送；设置变更之后到账户升级哈希之前，已知与未知标识的口令派生耗时有差别。**接受** |
 
@@ -77,19 +77,19 @@
 | 批量注册 | 按来源地址的分钟预算（`authn.account.signup-ip-limit`）、全局小时预算与 `ratelimit` 的地址盾（按来源地址限制单位时间内的请求数，不数消息）；注册派生有独立的并发名额；注册不发送任何邮件，不为批量提交附带发送成本 | [design-authn-config](design-authn-config.md)、[design-authn-login](design-authn-login.md)、[design-ratelimit](../design-ratelimit.md) | 预算额度之内仍可批量建号；注册不发送消息，因此不经人机验证；不做行为风控与一次性邮箱识别（见[未覆盖的威胁](#未覆盖的威胁)）。**接受** |
 | 注册的口令派生（Argon2id）耗尽 CPU 与内存 | 注册使用独立的派生并发上限，耗尽答 503，不挤占口令登录的派生容量；先做用户名唯一性检查，再做派生 | [design-authn-account](design-authn-account.md)、[design-authn-config](design-authn-config.md) | 独立容量之内的占用仍可拖慢注册；注册关闭的部署没有这条路径 |
 | 未验证账户越过能力边界 | 读作未验证（`SignupPending`：有邮箱而没有一条已证明的）的账户在 REQ-signup-025 列明的封闭动作上一律 403 `contact-required`，REQ-signup-024 列明的动作照常放行；判定与账户来源无关（REQ-signup-027）；服务账户与没有任何邮箱的账户（`SignupNone`）豁免；门控在身份确定之后、授权与强度判定之前，只收紧不放行，读状态失败答 503，不按放行处理。平台强制的门控限于这些身份与运营面；`objectstore`、`notification`、`jobs` 一类业务写面的门控由宿主决定，平台不统一拦截 | [design-authn-admin](design-authn-admin.md)、[design-authn-config](design-authn-config.md)、[design-authn](design-authn.md) | 允许的面（登录、本人资料读写、改口令、登记多因素与通行密钥、添加并验证邮箱或手机、退出与撤销本人其他会话、接受邀请、读特性文档）仍是攻击面；未验证账户可以消耗发送预算与允许面内的资源。删除最后一个已证明邮箱会让账户不再有邮箱，判定落到 `SignupNone` 而不再受限，这是「没有邮箱不拦截」的直接结果。**接受** |
-| 未验证邮箱与 pre-hijacking：先用受害者的地址注册 | 联系方式预留 `(kind, value)` 全局唯一，注册插入预留即原子仲裁，未证明预留被接受为占用；预留只由证明、删除标识或未验证账户的清理释放；未证明预留不进 `authn_identifiers`，`Lookup`、口令登录名与提供方登录都看不到它；只有邮箱被证明（`email-code`，或邀请接受命中同一预留）才写入标识并解除限制 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 受害者地址被一个未验证账户预占时，受害者自己的注册得到 409 `email-taken`，只能等预占账户被删除或经 `unverified-ttl` 清理，或由管理员处理；没有所有者凭证明接管的路径。该账户的持有人登录后可以为这个地址请求验证码，使受害者收到邮件，见下一条。**接受** |
-| 认证后的邮件轰炸 | 注册本身不发送任何邮件；发码发生在已认证账户的自助验证与匿名口令重置，按地址（小时与 UTC 日）、按账户（小时与 UTC 日）、按请求来源（小时与 UTC 日）与全局小时预算限；重置按用途使用独立计数键，任何发送预算超限都抑制发送并仍答 202；按地址的重发窗口跨会话与账户共享，同一收件箱的 `+` 后缀、Gmail 局部部分的点与 `googlemail.com` 归一后共用地址预算与重发窗口，来源为空时来源维度 fail-open；地址已被其他账户预留或持有时答 409 `email-taken`，不发信、不占重发窗口、不花预算；能证明未发出的失败退还本次占用的预算，结果不确定的失败保留；验证码六位、五次尝试、十分钟有效、常量时间比较、原子计数，且不进日志、事件与指标 | [design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md) | 已登录的账户仍可向任意未占用地址发码，逐个地址试探即在预算内对第三方轰炸；按地址的预算只约束单个收件箱，全局预算只给总量一个上界；来源维度按地址不按人，共享出口之后的用户共用一个来源窗口，调用方没有可信来源时该维度不设上界；地址占用在发码前即可读出，匿名注册与自助添加都能确认一个地址是否已被占用。匿名口令重置的邮箱发送受同一组数值预算与人机门槛约束，不合格目标走抑制路径、不投递。**接受** |
+| 未验证邮箱与 pre-hijacking（[REF-pre-hijacked-accounts](../../../references.md)）：先用受害者的地址注册 | 联系方式预留 `(kind, value)` 全局唯一，注册插入预留即原子仲裁，未证明预留被接受为占用；预留只由证明、删除标识或未验证账户的清理释放；未证明预留不进 `authn_identifiers`，`Lookup`、口令登录名与提供方登录都看不到它；只有邮箱被证明（`email-code`，或邀请接受命中同一预留）才写入标识并解除限制 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 受害者地址被一个未验证账户预占时，受害者自己的注册得到 409 `email-taken`，只能等预占账户被删除或经 `unverified-ttl` 清理，或由管理员处理；没有所有者凭证明接管的路径。该账户的持有人登录后可以为这个地址请求验证码，使受害者收到邮件，见下一条。**接受** |
+| 认证后的邮件轰炸 | 注册本身不发送任何邮件；发码发生在已认证账户的自助验证与匿名口令重置，按地址（小时与 UTC 日）、按账户（小时与 UTC 日）、按请求来源（小时与 UTC 日）与全局小时预算限；重置按用途使用独立计数键，任何发送预算超限都抑制发送并仍答 202；按地址的重发窗口跨会话与账户共享，同一收件箱的 `+` 后缀、Gmail（[REF-gmail-dots](../../../references.md)）局部部分的点与 `googlemail.com` 归一后共用地址预算与重发窗口，来源为空时来源维度 fail-open；地址已被其他账户预留或持有时答 409 `email-taken`，不发信、不占重发窗口、不花预算；能证明未发出的失败退还本次占用的预算，结果不确定的失败保留；验证码六位、五次尝试、十分钟有效、常量时间比较、原子计数，且不进日志、事件与指标 | [design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md) | 已登录的账户仍可向任意未占用地址发码，逐个地址试探即在预算内对第三方轰炸；按地址的预算只约束单个收件箱，全局预算只给总量一个上界；来源维度按地址不按人，共享出口之后的用户共用一个来源窗口，调用方没有可信来源时该维度不设上界；地址占用在发码前即可读出，匿名注册与自助添加都能确认一个地址是否已被占用。匿名口令重置的邮箱发送受同一组数值预算与人机门槛约束，不合格目标走抑制路径、不投递。**接受** |
 | 清理误删未验证账户 | 自动清理只删 `signup_state=1`、`signup_verified_at` 为空、没有已验证邮箱且长期未登录的自助注册账户；`signup_state=0` 与 `signup_state=2` 的账户永不清理；期限与清扫间隔是设置 | [design-authn-account](design-authn-account.md)、[design-authn-config](design-authn-config.md) | 长期不登录的合法用户会在期限之后被删除，删除是破坏性动作；账户标识留墓碑，但账户资料与联系方式预留不恢复。**接受** |
 
 #### 会话与 CSRF
 
 | 威胁 | 对策 | 落点 | 残余风险 |
 |---|---|---|---|
-| 会话固定 | 令牌只由服务端生成（scs 对未知令牌新建会话，不沿用客户端给的令牌）；没有登录前的匿名会话；登录、提权、冒充开始时换令牌；登录时撤销请求带来的旧会话；`__Host-` cookie 阻止子域预置 | [design-authn-session](design-authn-session.md) | 无已知剩余项 |
+| 会话固定 | 令牌只由服务端生成（scs 对未知令牌新建会话，不沿用客户端给的令牌，[REF-scs](../../../references.md)）；没有登录前的匿名会话；登录、提权、冒充开始时换令牌；登录时撤销请求带来的旧会话；`__Host-` cookie 阻止子域预置 | [design-authn-session](design-authn-session.md) | 无已知剩余项 |
 | cookie 被盗 | `HttpOnly`、`Secure`（不可关）、`__Host-`；库里只存哈希；空闲与绝对超时；可撤销、可列出；会话期 cookie | [design-authn-session](design-authn-session.md) | 窃取者在会话有效期内可用，没有设备绑定（NAT 与移动网络下绑定会误杀）；缓解是缩短期限与 `strict`。**接受** |
 | cookie 投放与子域接管 | `__Host-` 前缀；同名 cookie 出现多次即 401 | [design-authn-session](design-authn-session.md)、[design-authn-gate](design-authn-gate.md) | 设了共享域（`__Secure-`）或开发时关闭 `__Host-`，即失去这一层；开启时写 Warn |
 | CSRF（浏览器可能自己附带的凭据） | `SameSite=Lax`；网关对这些载体来源的非安全方法做 `CrossOriginProtection`，失败答 401、不清 cookie、凭据不交给后端；哪些载体算在内的判据只在 [design-authn-gate](design-authn-gate.md) 的请求期判定 | [design-authn-session](design-authn-session.md)、[design-authn-gate](design-authn-gate.md) | 既无 `Sec-Fetch-Site` 又无 `Origin` 的请求被放行（极旧的浏览器与非浏览器客户端）；`same-site` 的兄弟子域按跨源处理，除非列入 `trusted-origins`；同源 XSS 能借浏览器发请求，XSS 是宿主前端的责任 |
-| 登录 CSRF：把受害者登入攻击者的账户 | 流程绑定 cookie 加 `seq`；回跳必须与发起流程的浏览器绑定；登录与流程路由的非安全方法过跨源检查 | [design-authn-login](design-authn-login.md) | IdP 发起的 SAML 登录无从绑定：缺省关闭，开启时写警告；绑定 cookie 是 `SameSite=None`，会随任何跨站请求发往该主机，只是不透明值，对其他端点没有权限 |
+| 登录 CSRF：把受害者登入攻击者的账户 | 流程绑定 cookie 加 `seq`；回跳必须与发起流程的浏览器绑定；登录与流程路由的非安全方法过跨源检查 | [design-authn-login](design-authn-login.md) | IdP 发起的 SAML（[REF-saml2](../../../references.md)）登录无从绑定：缺省关闭，开启时写警告；绑定 cookie 是 `SameSite=None`，会随任何跨站请求发往该主机，只是不透明值，对其他端点没有权限 |
 | 撤销不及时 | 单个与全部撤销、`valid_after`、停用时同步清理；缓存滞后至多 `check-ttl` | [design-authn-session](design-authn-session.md) | 滞后窗口内的请求仍被放行；`check-ttl` 设 0 即严格 |
 | 点击劫持、响应被中间缓存 | authn 的端点只返回 JSON、没有界面，界面的 `frame-ancestors` 由宿主加；authn 的全部响应带 `Cache-Control: no-store` | [design-authn-session](design-authn-session.md)、[design-authn-gate](design-authn-gate.md) | 仓库没有安全响应头策略；宿主界面的响应头是宿主的责任 |
 
@@ -99,12 +99,12 @@
 |---|---|---|---|
 | 访问令牌被盗与重放 | 访问令牌寿命短；撤销经会话；`sid` 核对；`valid_after`；令牌不进 URL 与日志 | [design-authn-token](design-authn-token.md) | 寿命内可重放；没有持有人证明；服务账户的令牌无法逐枚撤销。**接受** |
 | 刷新令牌被盗 | 每次使用即轮换，重用即撤销整族；只存哈希；空闲与绝对期限；缺省不设宽限；出示任意不存在的秘密不触发撤销，只有出示真实存在的已用旧令牌才判重用 | [design-authn-token](design-authn-token.md) | 窃取者先于合法客户端使用时，合法客户端被踢下线，窃取者持有新令牌直到下次重用被发现；开宽限则多一个窗口 |
-| 算法混淆（`none`、RS256 当作 HS256） | 不支持对称算法；白名单等于已配置密钥里的算法；每把密钥一个算法并核对 | [design-authn-token](design-authn-token.md) | 无已知剩余项 |
-| `kid`、`jku`、`x5u`、`jwk`、`x5c` 注入 | `kid` 只在本地密钥集里比对；不识别也不抓取其余几个头；不对 `kid` 拼任何查询 | [design-authn-token](design-authn-token.md) | 无已知剩余项 |
-| 令牌类型混淆、库默认放行（缺 `exp`） | `typ` 必须是 `at+jwt`；`iss`、`aud` 必校；显式要求 `exp`、`iat`、`jti`、`sub`、`sid`；`exp - iat` 有上界 | [design-authn-token](design-authn-token.md) | 无已知剩余项 |
-| 畸形令牌的拒绝服务（go-jose 的 panic 类缺陷） | 先限长；`pkg/go.mod` 对 go-jose 设版本下限（数值见 [design-authn-token](design-authn-token.md) 的依赖）；校验在 `recover` 之内 | [design-authn-token](design-authn-token.md) | 库将来的新缺陷：go-jose 已有高危公告 |
+| 算法混淆（`none`、RS256 当作 HS256，[REF-rfc7518](../../../references.md)） | 不支持对称算法；白名单等于已配置密钥里的算法；每把密钥一个算法并核对 | [design-authn-token](design-authn-token.md) | 无已知剩余项 |
+| `kid`、`jku`、`x5u`、`jwk`、`x5c`（[REF-rfc7515](../../../references.md)）注入 | `kid` 只在本地密钥集里比对；不识别也不抓取其余几个头；不对 `kid` 拼任何查询 | [design-authn-token](design-authn-token.md) | 无已知剩余项 |
+| 令牌类型混淆、库默认放行（缺 `exp`） | `typ` 必须是 `at+jwt`（[REF-rfc9068](../../../references.md)）；`iss`、`aud` 必校；显式要求 `exp`、`iat`、`jti`、`sub`、`sid`；`exp - iat` 有上界 | [design-authn-token](design-authn-token.md) | 无已知剩余项 |
+| 畸形令牌的拒绝服务（go-jose 的 panic 类缺陷，[REF-go-jose](../../../references.md)） | 先限长；`pkg/go.mod` 对 go-jose 设版本下限（数值见 [design-authn-token](design-authn-token.md) 的依赖）；校验在 `recover` 之内 | [design-authn-token](design-authn-token.md) | 库将来的新缺陷：go-jose 已有高危公告 |
 | 签名密钥泄露 | 私钥在文件里，不在库的转储里；双钥轮换；应急撤销（从配置删去并滚动重启） | [design-authn-token](design-authn-token.md)、[design-authn-config](design-authn-config.md) | 文件与部署的秘密管理同时失守，即全部令牌可伪造；没有 KMS 接缝，列为扩展方向。**接受** |
-| JWKS 缓存陈旧，致撤销的密钥仍被外部校验方接受 | JWKS 的缓存期有界；认证核心不依赖外部校验方的缓存 | [design-authn-token](design-authn-token.md) | 外部校验方的缓存时间之内 |
+| JWKS（[REF-rfc7517](../../../references.md)）缓存陈旧，致撤销的密钥仍被外部校验方接受 | JWKS 的缓存期有界；认证核心不依赖外部校验方的缓存 | [design-authn-token](design-authn-token.md) | 外部校验方的缓存时间之内 |
 | 访问令牌带角色而无法撤销 | 默认不带角色；`ClaimsContributor` 由宿主显式选择 | [design-authn-token](design-authn-token.md) | 宿主选了就承担 |
 
 #### 冒充滥用
@@ -121,16 +121,16 @@
 
 | 威胁 | 对策 | 落点 | 残余风险 |
 |---|---|---|---|
-| XML 签名包装 | 单次解析，使用验过签后返回的元素；要求恰一条断言；核对 `SignatureValidated`；`pkg/go.mod` 对 goxmldsig 设版本下限（数值见 [design-authn-sso](design-authn-sso.md) 的依赖） | [design-authn-sso](design-authn-sso.md) | 库将来的新缺陷：gosaml2 与 goxmldsig 都有过高危公告，这一类缺陷在 SAML 库与 goxmldsig 的历史上反复出现；每个补充校验都要有负向测试 |
+| XML 签名（[REF-xmldsig-core](../../../references.md)）包装 | 单次解析，使用验过签后返回的元素；要求恰一条断言；核对 `SignatureValidated`；`pkg/go.mod` 对 goxmldsig（[REF-goxmldsig](../../../references.md)）设版本下限（数值见 [design-authn-sso](design-authn-sso.md) 的依赖） | [design-authn-sso](design-authn-sso.md) | 库将来的新缺陷：gosaml2（[REF-gosaml2](../../../references.md)）与 goxmldsig 都有过高危公告，这一类缺陷在 SAML 库与 goxmldsig 的历史上反复出现；每个补充校验都要有负向测试 |
 | 断言重放 | `authn_saml_assertions` 的唯一约束（db，不是 kv）；断言新鲜度有上界；一次性流程 | [design-authn-sso](design-authn-sso.md) | 无已知剩余项 |
 | `InResponseTo` 缺失与跨会话投放；IdP 发起 | 响应与断言两级核对流程记录里的请求标识；IdP 发起缺省关闭 | [design-authn-sso](design-authn-sso.md)、[design-authn-login](design-authn-login.md) | IdP 发起开启时，登录 CSRF 无解 |
 | `Destination`、`Audience`、`Recipient`、颁发者混淆 | 库对空值跳过的几处（`IdentityProviderIssuer`、`Destination`、无 `AudienceRestriction`），由 authn 要求非空并复核 | [design-authn-sso](design-authn-sso.md) | 无已知剩余项 |
 | 弱算法（SHA-1） | 调用库之前，预扫描解码后的 XML 里的全部 `Algorithm` 属性，出现 SHA-1 即拒绝，除非该 IdP 设了 `allow_sha1` | [design-authn-sso](design-authn-sso.md) | 预扫描按 `Algorithm` 属性的取值判定，出现 SHA-1 取值即拒绝，不区分该属性是否属于已采信的签名，含 SHA-1 取值而未用于验签的文档同样被拒；个别遗留 IdP 要求 SHA-1，开启即接受降级；靠 SHA-1 样本的负向测试守住 |
-| XML 实体、压缩炸弹、过大的文档 | 请求体有大小上限；`MaximumDecompressedBodySize` 与 `MaximumXMLTokens` 显式设值；Go 标准库的 `encoding/xml` 不展开外部实体 | [design-authn-sso](design-authn-sso.md) | `xml-roundtrip-validator` 已停止维护。**接受** |
+| XML 实体、压缩炸弹、过大的文档 | 请求体有大小上限；`MaximumDecompressedBodySize` 与 `MaximumXMLTokens` 显式设值；Go 标准库的 `encoding/xml` 不展开外部实体 | [design-authn-sso](design-authn-sso.md) | `xml-roundtrip-validator`（[REF-xml-roundtrip-validator](../../../references.md)）已停止维护。**接受** |
 | NameID 碰撞与注释截断 | `transient` 拒绝；邮箱格式的 NameID 须配专门属性；键含 IdP 命名空间；含注释的 NameID 有负向测试 | [design-authn-sso](design-authn-sso.md) | gosaml2 对注释截断的处理未核实（见[依赖未核实行为的假设](#依赖未核实行为的假设)）；IdP 自身重新分配 NameID |
 | 属性注入 | `idp.` 前缀只由映射写入，`authn.` 前缀保留，账户属性不得使用 `idp.` 与 `authn.` 前缀，均靠写属性的一方保证，网关在盖章处不判；类型化事实不进属性集 | [design-authn](design-authn.md)、[design-authn-sso](design-authn-sso.md) | 授权若盲信 `idp.*`，即信任 IdP；宿主自写的后端能交出任意 `idp.*` 键，网关拦不住，信任这些键就是信任该后端 |
 | 域名声明劫持、跨租户的 IdP 断言 | 域名所有权经 DNS TXT 证明，已验证的域全局唯一；提供方行属于一个租户，成员关系只在该租户内建立 | [design-authn-sso](design-authn-sso.md) | DNS 没有 DNSSEC 校验；域名转手 |
-| IdP 元数据或证书被替换；服务端请求伪造 | 元数据 URL 走受限客户端并限大小；证书变更要经管理面（强制审计）；连接时检查实际对端地址（只放行全局单播（IPv6 须在 `2000::/3` 内）且不在特殊用途段的地址，NAT64 与 6to4 抽出内嵌的 IPv4 再判，Teredo 拒绝）；不跟随重定向；不用代理 | [design-authn-sso](design-authn-sso.md)、[design-authn-admin](design-authn-admin.md) | 需要经出站代理的网络里要放弃该检查；受限客户端是自写的安全部件，特殊用途段表与 IANA 登记表一致是假设，见[依赖未核实行为的假设](#依赖未核实行为的假设) |
+| IdP 元数据或证书被替换；服务端请求伪造 | 元数据 URL 走受限客户端并限大小；证书变更要经管理面（强制审计）；连接时检查实际对端地址（只放行全局单播（IPv6 须在 `2000::/3` 内）且不在特殊用途段的地址，NAT64 与 6to4 抽出内嵌的 IPv4 再判，Teredo 拒绝，[REF-rfc6052](../../../references.md)、[REF-rfc3056](../../../references.md)、[REF-rfc4380](../../../references.md)）；不跟随重定向；不用代理 | [design-authn-sso](design-authn-sso.md)、[design-authn-admin](design-authn-admin.md) | 需要经出站代理的网络里要放弃该检查；受限客户端是自写的安全部件，特殊用途段表与 IANA 登记表（[REF-iana-ipv4-special-registry](../../../references.md)、[REF-iana-ipv6-special-registry](../../../references.md)）一致是假设，见[依赖未核实行为的假设](#依赖未核实行为的假设) |
 
 #### 短信、枚举与时序
 
@@ -145,8 +145,8 @@
 
 | 威胁 | 对策 | 落点 | 残余风险 |
 |---|---|---|---|
-| `state` 缺失、可预测、可由发起方指定（goth 的缺陷） | 32 字节随机数，存摘要，回跳时常量时间比较；自己生成，不接受外部指定；与流程绑定一同校验 | [design-authn-login](design-authn-login.md) | 无已知剩余项 |
-| PKCE 缺失或降级、授权码截获 | Google、GitHub、企业 OIDC 一律 S256；校验串存流程记录 | [design-authn-login](design-authn-login.md) | 微信协议不支持 PKCE；Google 是否强制 PKCE 未核实 |
+| `state` 缺失、可预测、可由发起方指定（goth 的缺陷，[REF-goth](../../../references.md)） | 32 字节随机数，存摘要，回跳时常量时间比较；自己生成，不接受外部指定；与流程绑定一同校验 | [design-authn-login](design-authn-login.md) | 无已知剩余项 |
+| PKCE（[REF-rfc7636](../../../references.md)）缺失或降级、授权码截获 | Google（[REF-google-openid-connect](../../../references.md)）、GitHub（[REF-github-oauth-apps](../../../references.md)）、企业 OIDC（[REF-openid-connect-core](../../../references.md)）一律 S256；校验串存流程记录 | [design-authn-login](design-authn-login.md) | 微信（[REF-wechat-website-login](../../../references.md)、[REF-wechat-oa-web-auth](../../../references.md)）协议不支持 PKCE；Google 是否强制 PKCE 未核实 |
 | 授权码重放与注入、登录 CSRF | 回跳时对流程记录比较并交换，置为「正在交换」，授权码至多换一次；流程绑定 | [design-authn-login](design-authn-login.md) | 无已知剩余项 |
 | 开放重定向（`return_to`、`redirect_uri`） | `redirect_uri` 由配置的 `public-url` 拼出；`return_to` 只接受相对路径或可信来源，开始时校验并存服务端，回跳时只用记录里的值 | [design-authn-login](design-authn-login.md) | `trusted-origins` 配宽了即开放；宿主前端若把任意 `return_to` 里的路径当重定向目标，要自己校验 |
 | 混淆攻击：把 A 提供方的回跳投给 B | 每个提供方的回跳路径不同；流程里记提供方；回跳带 `iss` 时仍比对 | [design-authn-login](design-authn-login.md) | 无已知剩余项 |
@@ -227,7 +227,7 @@
 | 冒充滥用 | [design-authn-impersonation](design-authn-impersonation.md)、[design-authn-admin](design-authn-admin.md)、[design-tenant-admission](../tenant/design-tenant-admission.md) | [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)、[ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)、[ADR-tenant-admission](../../../adr/adr-tenant-admission.md) |
 | SSO 断言攻击 | [design-authn-sso](design-authn-sso.md) | [ADR-authn-sso](../../../adr/adr-authn-sso.md) |
 | 短信、枚举与时序 | [design-authn-sms](design-authn-sms.md)、[design-authn-login](design-authn-login.md) | [ADR-authn-sms](../../../adr/adr-authn-sms.md)、[ADR-authn-throttling](../../../adr/adr-authn-throttling.md)、[ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md) |
-| OAuth 与 OIDC 回调 | [design-authn-login](design-authn-login.md) | [ADR-authn-oauth-flow](../../../adr/adr-authn-oauth-flow.md)、[ADR-authn-wechat](../../../adr/adr-authn-wechat.md) |
+| OAuth（[REF-rfc6749](../../../references.md)）与 OIDC 回调 | [design-authn-login](design-authn-login.md) | [ADR-authn-oauth-flow](../../../adr/adr-authn-oauth-flow.md)、[ADR-authn-wechat](../../../adr/adr-authn-wechat.md) |
 | 注册与邮件 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md)、[design-authn-admin](design-authn-admin.md) | [ADR-authn-signup](../../../adr/adr-authn-signup.md)、[ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md)、[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md) |
 | 基础设施与服务端 | [design-authn-config](design-authn-config.md)、[design-authn-events](design-authn-events.md)、[design-authn-failure](design-authn-failure.md)、[design-authn-gate](design-authn-gate.md) | [ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)、[ADR-authn-events-and-audit](../../../adr/adr-authn-events-and-audit.md)、[ADR-authn-failure](../../../adr/adr-authn-failure.md)、[ADR-authn-guarantees](../../../adr/adr-authn-guarantees.md)、[ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md) |
 
@@ -246,7 +246,7 @@
 | go-jose/v4 | `pkg/go.mod` 的版本下限，对应畸形令牌触发 panic 的缺陷；数值见 [design-authn-token](design-authn-token.md) | 删去该要求会使依赖图把版本带回受影响的版本 |
 | goxmldsig | `pkg/go.mod` 的版本下限，对应签名绕过缺陷；数值见 [design-authn-sso](design-authn-sso.md) | 同上 |
 | scs | 对库里没有的令牌新建会话，不沿用客户端给的令牌 | 会话固定对策失效 |
-| Turnstile 的 siteverify | 同一 token 的第二次提交答 `success` 为假；`hostname` 与 `action` 如实报告 | 重放的证明可能被再次接受，来源与用途的核对失去意义 |
+| Turnstile（[REF-cloudflare-turnstile](../../../references.md)）的 siteverify | 同一 token 的第二次提交答 `success` 为假；`hostname` 与 `action` 如实报告 | 重放的证明可能被再次接受，来源与用途的核对失去意义 |
 
 ## UML 图
 
@@ -345,7 +345,7 @@ flowchart LR
 | 放宽项各是显式开关、缺省取最严、启动诊断各占一行 Warn | 配置错误、设置写权限滥用 | [design-authn-config](design-authn-config.md) |
 | 状态按丢失的方向放置 | 缓存或 kv 丢失导致校验被放宽 | [ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md) |
 | 凭据与秘密不以明文落地：哈希、摘要、加密列、脱敏 | 数据库转储、秘密进入日志与事件 | [design-authn-account](design-authn-account.md)、[design-authn-events](design-authn-events.md) |
-| 对库没做的校验由 authn 补，补充校验失败一律按失败 | XML 签名包装、SAML 空值跳过、JWT 缺 `exp` | [design-authn-sso](design-authn-sso.md)、[design-authn-token](design-authn-token.md) |
+| 对库没做的校验由 authn 补，补充校验失败一律按失败 | XML 签名包装、SAML 空值跳过、JWT（[REF-rfc7519](../../../references.md)）缺 `exp` | [design-authn-sso](design-authn-sso.md)、[design-authn-token](design-authn-token.md) |
 | 撤销以账户状态与 `valid_after` 为准，不依赖时钟 | 撤销不及时、时钟偏差 | [design-authn-account](design-authn-account.md)、[design-authn-session](design-authn-session.md) |
 | 宁可重复校验也不省略 | 单点校验被绕过 | [design-authn](design-authn.md) 的设计原则 |
 | 注册验证状态的门控 | 未验证账户越过能力边界 | [design-authn-admin](design-authn-admin.md)、[design-authn](design-authn.md) |
@@ -367,7 +367,7 @@ flowchart LR
 | goxmldsig 没有另外的拒绝 SHA-1 的途径，预扫描足以拦住 SHA-1 | SHA-1 签名向量的负向测试 |
 | go-jose：每把密钥只配一种算法，并在运算时检查，由 authn 自己查令牌头里的算法完成；已解析令牌的 `typ` 头可取 | `alg` 在白名单之外、`typ` 不符、缺 `exp` 的令牌各被拒；依赖测试断言 `pkg/go.mod` 对 go-jose 的版本下限不低于 [design-authn-token](design-authn-token.md) 的依赖写明的版本 |
 | scs 对库里没有的令牌新建空会话，不沿用客户端给的令牌；存储键的哈希与 authn 自己轮换时算出的一致 | 提交一个预置令牌，断言判为无此会话；断言两处算出的存储键相等 |
-| `CrossOriginProtection` 的旁路模式能覆盖 gin 的路径参数，且只旁路回跳路由 | 对回跳路由的跨站 POST 用例，同时断言其他流程路由的跨源请求仍被拒 |
+| `CrossOriginProtection` 的旁路模式能覆盖 gin（[REF-gin](../../../references.md)）的路径参数，且只旁路回跳路由 | 对回跳路由的跨站 POST 用例，同时断言其他流程路由的跨源请求仍被拒 |
 | Google 的授权端点接受带 `code_challenge`（S256）的请求 | 用测试客户端对授权端点发带 `code_challenge` 的请求 |
 | 受限出站客户端的特殊用途地址段表与 IANA 登记表一致；NAT64（RFC 6052）与 6to4（RFC 3056）内嵌 IPv4 的位置与掩码正确 | 对照登记表与 RFC 原文的向量测试；它守住的是核对那一天的状态，复核时机见下 |
 | 口令派生在并发上限与内存预算下的并发内存峰值在目标部署规格之内 | 对并发上限下的 Argon2id 派生做压测，记录峰值 |

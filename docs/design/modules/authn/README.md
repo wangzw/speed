@@ -13,8 +13,8 @@
 | [authn-sms](design-authn-sms.md) | 短信验证码：挑战状态机、发送预算与尝试上限、发送方接缝 |
 | [authn-mfa](design-authn-mfa.md) | 多因素：因素登记簿、第二因素的策略判定、因素的登记与校验编排、保障等级的合成 |
 | [authn-session](design-authn-session.md) | 登录会话：浏览器、令牌、服务三种种类的存放与期限、cookie 与 CSRF、撤销面 |
-| [authn-token](design-authn-token.md) | 令牌与服务账户：JWT 访问令牌、不透明刷新令牌、签名密钥与 JWKS、令牌端点 |
-| [authn-sso](design-authn-sso.md) | 企业单点登录：租户自有身份提供方的登记、邮箱域所有权与发现、SAML 与企业 OIDC 的校验 |
+| [authn-token](design-authn-token.md) | 令牌与服务账户：JWT（[REF-rfc7519](../../../references.md)）访问令牌、不透明刷新令牌、签名密钥与 JWKS（[REF-rfc7517](../../../references.md)）、令牌端点 |
+| [authn-sso](design-authn-sso.md) | 企业单点登录：租户自有身份提供方的登记、邮箱域所有权与发现、SAML（[REF-saml2](../../../references.md)）与企业 OIDC（[REF-openid-connect-core](../../../references.md)）的校验 |
 | [authn-impersonation](design-authn-impersonation.md) | 冒充：有期限的冒充记录、结构性限制、有效性判定、审计先于动作 |
 | [authn-admin](design-authn-admin.md) | 对授权的承诺：判定接缝、管理面模块、自助范围的判据、403 的收窄 |
 | [authn-invite](design-authn-invite.md) | 邀请：自持状态机与不透明令牌、接受即兑现的账户与成员关系创建、被邀请地址只登记为已证明邮箱 |

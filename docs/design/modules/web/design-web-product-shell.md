@@ -7,7 +7,7 @@
 本包交付两处：
 
 - **`ProductShell`** —— 一台三支的视图机，读 `@speed/auth-core` 的会话快照（经 `useAuthState`，只读不驱动），按快照落到三个分支之一：已认证分支用 layout-kit 的框架包住业务子节点；会话结束分支用于「曾进过应用、随后转匿名」的访问者，渲染 `sessionEnded` 槽；未登录分支用于全新访问者或尚未接上会话的页面，渲染 `signIn` 槽。
-- **`bootstrapSpeedApp(container, definition)`** —— 应用入口装配，交付在 `@speed/product-shell/bootstrap` 子路径下。它以一份声明式定义一次装配整页：i18n 命名空间、会话、API 客户端、QueryClient 与主题，再按定义渲染视图。
+- **`bootstrapSpeedApp(container, definition)`** —— 应用入口装配，交付在 `@speed/product-shell/bootstrap` 子路径下。它以一份声明式定义一次装配整页：i18n 命名空间、会话、API 客户端、QueryClient（[REF-tanstack-query](../../../references.md)）与主题，再按定义渲染视图。
 
 会话结束分支的存在正是本包作为组件而非两行 hook 的理由：一个曾在应用内的用户被登出后，必须落到一个提供「再次登录」出路的结束页，而不是新访问者的登录页（REQ-security-025）。
 
@@ -202,7 +202,7 @@ export const productShellResources: Readonly<Record<string, ResourceBundle>>
 | `@speed/api-sdk` | 仅 `./bootstrap`：绑定每个生成调用经过的运行时接缝（`./runtime`） |
 | `@speed/ui-kit` | 仅 `./bootstrap`：主题 provider；主入口只经 layout-kit 间接用到它 |
 
-peer（必需）：`react`、`react-dom`、`@mui/material`、`@emotion/react`、`@emotion/styled`、`react-hook-form`（配对的 auth-ui 登录族渲染所依）、`@tanstack/react-query`（装配的 QueryClient 所在库，宿主提供实例）。
+peer（必需）：`react`、`react-dom`、`@mui/material`（[REF-mui](../../../references.md)）、`@emotion/react`（[REF-emotion](../../../references.md)）、`@emotion/styled`、`react-hook-form`（[REF-react-hook-form](../../../references.md)）（配对的 auth-ui 登录族渲染所依）、`@tanstack/react-query`（装配的 QueryClient 所在库，宿主提供实例）。
 
 **主入口的依赖下限止于四个包**——`layout-kit`、`auth-ui`、`auth-core`、`i18n`。平台侧的同层兄弟外壳必须能原样复用这条下限，故 `ui-kit`、`api-client`、`api-sdk` 不进主入口的 import 图。`./bootstrap` 子路径额外 import `api-client`、`api-sdk`、`ui-kit` 与 `@tanstack/react-query`，每一项都已在主入口依赖的传递闭包内（auth-core 拉前两者，layout-kit 与 auth-ui 拉 ui-kit），故不为消费者新增安装项。`@speed/tenancy-ui` 故意缺席：切换器是 `userMenu` 槽里的宿主组装，tenancy-ui 只是测试套件的 dev 依赖，本包不 import、不打包、不依赖它。
 

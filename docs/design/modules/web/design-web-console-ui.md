@@ -35,7 +35,7 @@
 - **不做判定。** 名册、账户、会话、冒充、权限、邀请与成员、SSO、设置与审计的授权判定都在服务端做出（判定域按能力：冒充与权限在平台域，邀请与成员、SSO 在那个租户的域，设置的全局层在平台域、租户层在那个租户的域），本包只渲染应答；路由级的授权是宿主的组合（经 [layout-kit](design-web-layout-kit.md) 的路由守卫与 [auth-core](design-web-auth-core.md) 的权限读数），不在本包内。
 - **不遮蔽敏感值。** 敏感设置项的值由 [settings.admin](../settings/design-settings-admin.md) 在应答里遮蔽；本包照渲染应答，不做第二处遮蔽。
 - **不持规则、不持数据。** 每条路的动作是一次生成的调用；名册的写入语义、账户的状态机、权限的取值、审计的列都在各自的模块里定义。
-- **不拥有查询客户端。** 读经 `@speed/api-sdk` 的生成 react-query 钩子跑在宿主拥有的 QueryClient 上，写经同一 `bindRequestFn` 绑定的生成 mutation；本包从不自造 QueryClient。查询键由生成钩子自带（`get<operation>QueryKey`），本包不自写键；按租户寻址的读的键由生成工厂按租户分段，故切租户即换键。
+- **不拥有查询客户端。** 读经 `@speed/api-sdk` 的生成 react-query（[REF-tanstack-query](../../../references.md)）钩子跑在宿主拥有的 QueryClient 上，写经同一 `bindRequestFn` 绑定的生成 mutation；本包从不自造 QueryClient。查询键由生成钩子自带（`get<operation>QueryKey`），本包不自写键；按租户寻址的读的键由生成工厂按租户分段，故切租户即换键。
 
 ## 外部接口契约
 
@@ -235,7 +235,7 @@ interface ConsoleProviderProps {
 
 ### 写入的请求参数由平台的 OpenAPI 片段声明
 
-本包的写请求经生成的客户端发出，请求体来自平台 OpenAPI 片段里该端点的 `requestBody`。片段为每个变更端点声明了请求体，故生成的客户端为每次写发送请求体，本包为每个写渲染控件。请求体的字段与后端处理器 `mount.Decode` 解码的目标结构一致，且片段里声明的 `requestBody` 与处理器是否解码请求体一致（`pkg/authn/admin/requestbody_test.go` 把这条当成契约守住：处理器解码请求体而片段未声明 `requestBody`，即该写从生成客户端不可达，测试即失败）。
+本包的写请求经生成的客户端发出，请求体来自平台 OpenAPI（[REF-openapi](../../../references.md)）片段里该端点的 `requestBody`。片段为每个变更端点声明了请求体，故生成的客户端为每次写发送请求体，本包为每个写渲染控件。请求体的字段与后端处理器 `mount.Decode` 解码的目标结构一致，且片段里声明的 `requestBody` 与处理器是否解码请求体一致（`pkg/authn/admin/requestbody_test.go` 把这条当成契约守住：处理器解码请求体而片段未声明 `requestBody`，即该写从生成客户端不可达，测试即失败）。
 
 **对外接口面。** 公开面是 `src/index.ts` 的导出集；每条路的请求经绑定的客户端，写经生成的 mutation。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。本包不提供当前租户，不 import `route-kit` 与 `tenancy-ui`。
 
@@ -244,12 +244,12 @@ interface ConsoleProviderProps {
 | 依赖 | 用途 |
 |---|---|
 | `@speed/api-sdk` | 各管理面端点的生成读钩子与写 mutation；子路径 `@speed/api-sdk/features` 的特性名类型 `FeatureName`，用作 `requires` 的元素类型与 `hasFeature` 的参数类型 |
-| `@speed/auth-core` | 会话：宿主把会话交给壳，页面在特权写被答 401 步进时打开重认证对话框、重放该写；门控用 auth-core 的 `useStepUpGate`，控制台显式传入 `session.isStepUpShortfall` 作为判别。通行密钥仪式经子路径 `@speed/auth-core/webauthn`。本包不读当前租户 |
+| `@speed/auth-core` | 会话：宿主把会话交给壳，页面在特权写被答 401 步进时打开重认证对话框、重放该写；门控用 auth-core 的 `useStepUpGate`，控制台显式传入 `session.isStepUpShortfall` 作为判别。通行密钥仪式（[REF-webauthn](../../../references.md)）经子路径 `@speed/auth-core/webauthn`。本包不读当前租户 |
 | `@speed/ui-kit` | 主题、表单、对话框、数据表与空态原语；页的刷新控件与机制（`RefreshButton`、`usePageRefresh`、`pageRefreshRead`）、按状态读失败（`httpStatusOf`）、复制控件与一次性值面板（`CopyButton`、`OneTimeValuePanel`）也由它提供 |
 | `@speed/layout-kit` | 外壳骨架：`AppShell` 的两种外壳形态（顶栏 / 侧栏）、响应式导航抽屉与内容区，以及就地导航的纯点击判定 `isPlainPrimaryClick` |
 | `@speed/i18n` | 命名空间注册与文案的翻译钩子；时间渲染用 `formatInstant`（本包固定 UTC） |
 | `@tanstack/react-query` | peer（必需）：宿主供给的 QueryClient |
-| `react`、`react-dom`、`@mui/material`、`@emotion/*` | peer（必需）：宿主拥有的 React／MUI 树 |
+| `react`、`react-dom`、`@mui/material`（[REF-mui](../../../references.md)）、`@emotion/*`（[REF-emotion](../../../references.md)） | peer（必需）：宿主拥有的 React／MUI 树 |
 
 **本包不 import `route-kit` 与 `tenancy-ui`。** 页面声明即 route-kit 的 `RouteDeclaration`，收集方在应用的组合层；本包没有当前租户切换器，故租户侧的切换控件不在这里出现。按租户寻址的页面持的租户选择器由本包自造，取自平台名册读，与 tenancy-ui 的切换控件无关。壳交出的 `onNavigate` 是一个回调，由宿主接上它自己的路由器，本包与 `route-kit` 之间仍无 import 边。
 
@@ -347,7 +347,7 @@ graph TD
 
 审计查询页的工具栏在筛选之外带一个导出控件。它把**已应用**的筛选（`since`、`until`、`action`、`outcome` 与 `actor`，即当前列表读正在用的那一份）交给导出的操作，不带游标与页大小——导出的范围是筛选匹配的全部记录，不是当前页。
 
-导出是契约里的二进制操作。200 的正文声明为 `application/x-ndjson`，生成的调用因此带 `responseType: 'blob'`（[api-sdk](design-web-api-sdk.md) 的二进制路径），传输把正文读成 `Blob`。导出是操作束里的一个发起函数（不是查询钩子——挂成钩子会在渲染时发出一次导出），页面在点击时调用它一次。拿到 `Blob` 后页面经一个对象 URL 与带 `download` 的链接把它存成文件，文件名按发起导出的时刻给出（`audit-records-<UTC 时刻>.ndjson`），不读应答头；直接打开导出路由的调用方看到的文件名来自服务端的 `Content-Disposition`（[audit.admin](../audit/design-audit-admin.md)）。
+导出是契约里的二进制操作。200 的正文声明为 `application/x-ndjson`（[REF-ndjson](../../../references.md)），生成的调用因此带 `responseType: 'blob'`（[api-sdk](design-web-api-sdk.md) 的二进制路径），传输把正文读成 `Blob`。导出是操作束里的一个发起函数（不是查询钩子——挂成钩子会在渲染时发出一次导出），页面在点击时调用它一次。拿到 `Blob` 后页面经一个对象 URL 与带 `download` 的链接把它存成文件，文件名按发起导出的时刻给出（`audit-records-<UTC 时刻>.ndjson`），不读应答头；直接打开导出路由的调用方看到的文件名来自服务端的 `Content-Disposition`（[audit.admin](../audit/design-audit-admin.md)）。
 
 导出发起后在途期间控件标忙、不发第二次。成功即交出文件，页面不另渲染别的——导出不写审计行，没有成功确认可播报。被拒绝（403）或被依赖故障（503）时控件恢复，页面渲染一条错误文案；这不走各读的占位面，因为导出是一次点击的动作，不是描述页面主体的读。
 

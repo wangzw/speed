@@ -4,14 +4,14 @@
 
 - 依据配置打开各条监听，在 `Serve` 阶段绑定其地址并开始接受请求；多个端点可挂在同一条监听上，共享它的套接字。
 - 提供路由与中间件的登记面，写入闸门借用 `Migrate` 与 `Start` 阶段位，框住全局 `Init` 阶段。
-- 按各中间件声明的阶段与阶段内约束组装每个端点的链，交给该端的 gin 引擎；监听持有一个分派 handler，按配置认领的前缀把请求交给认领它的端点，选端只由配置决定（[ADR-http-dispatch](../../../adr/adr-http-dispatch.md)）。
+- 按各中间件声明的阶段与阶段内约束组装每个端点的链，交给该端的 gin（[REF-gin](../../../references.md)）引擎；监听持有一个分派 handler，按配置认领的前缀把请求交给认领它的端点，选端只由配置决定（[ADR-http-dispatch](../../../adr/adr-http-dispatch.md)）。
 - 接住各登记层与 handler 抛出的 panic，收口一次响应并记一行日志（[ADR-http-recovery](../../../adr/adr-http-recovery.md)）。
 - 为每个到达该端的请求写一条访问记录，成功与被拒的都在内（[ADR-http-access-log](../../../adr/adr-http-access-log.md)）。
 - 按该端配置的 `max-body-bytes` 施加请求体上限，超限的请求体被限界并留下记录（[ADR-http-body-limit](../../../adr/adr-http-body-limit.md)）。
 - 建立请求上下文，把日志模块的 logger 注入其中，供链上各层与 handler 取用。
 - 停机时由 `Stop` 关闭各条监听的套接字，并等在途请求排空结束才返回（[ADR-http-shutdown](../../../adr/adr-http-shutdown.md)）；排空开始时向不会自行结束的响应发出信号。
 - 报告各端点是否仍在接受请求，其状态取自该端点所属的监听。
-- 定义资源类型 `Spec`，供模块声明自己的 OpenAPI 文档片段，并在启动时校验其形状。
+- 定义资源类型 `Spec`，供模块声明自己的 OpenAPI（[REF-openapi](../../../references.md)）文档片段，并在启动时校验其形状。
 - 定义默认的错误响应形状，经可选接缝接受定制，并提供写出它的入口，供各层与 handler 取用（[ADR-http-errors](../../../adr/adr-http-errors.md)）。
 - 提供一个请求体绑定的入口 `BindJSON`，把绑定与校验的失败归成 413、400 或 422，并经写出入口答出（[ADR-http-bind-and-error-shape](../../../adr/adr-http-bind-and-error-shape.md)）。
 
@@ -200,9 +200,9 @@ type Spec struct {
 
 **应答是封闭集，动态部分运行期核对。** 状态必须已声明；媒体类型必须与该状态的声明一致（声明 `*/*` 表示由 handler 在该状态内选择）；动态响应头的名字必须已声明；JSON 应答的 body 类型必须等于声明的结构；未声明或类型不符按内部错误答 500，不写出未声明的应答。这类拒绝在构建 handler 时也会对明显无法描述的声明生效：空媒体类型的 body、无结构的 JSON body、204/304 带 body、简单形态的多个 2xx。
 
-**错误应答由公共集加覆盖声明。** 模块把一组 `Response` 作为公共失败集，`Failures(common, specific...)` 按状态合并：operation 同名状态的应答覆盖公共应答，任一侧独有的状态被加入。`Fault` 承载状态、问题类型、标题与详情，handler 可以返回它，也可以 `panic` 它；入口模块只写出该 operation 声明过的状态，未声明的一律 500。恢复层把携带 Problem 的 panic 只在该状态已声明时当作拒绝写出，其余 panic 仍按缺陷处理。`Response` 携带可选的问题类型（`ProblemResponseOf` 声明它）：入口模块在 handler 运行之前以某个状态拒绝请求（请求体绑定失败）时，写出该状态声明的问题类型，一个能力的绑定拒绝与它的 handler 拒绝因而使用同一套问题代码。**错误体形状是一份声明**（`ErrorShape`）：默认是 RFC 9457 问题文档；宿主交付自定义 `ErrorResponder` 时，用同一个形状声明它的错误应答，片段因此描述真正会写出的内容（[ADR-http-failure-responses](../../../adr/adr-http-failure-responses.md)）。
+**错误应答由公共集加覆盖声明。** 模块把一组 `Response` 作为公共失败集，`Failures(common, specific...)` 按状态合并：operation 同名状态的应答覆盖公共应答，任一侧独有的状态被加入。`Fault` 承载状态、问题类型、标题与详情，handler 可以返回它，也可以 `panic` 它；入口模块只写出该 operation 声明过的状态，未声明的一律 500。恢复层把携带 Problem 的 panic 只在该状态已声明时当作拒绝写出，其余 panic 仍按缺陷处理。`Response` 携带可选的问题类型（`ProblemResponseOf` 声明它）：入口模块在 handler 运行之前以某个状态拒绝请求（请求体绑定失败）时，写出该状态声明的问题类型，一个能力的绑定拒绝与它的 handler 拒绝因而使用同一套问题代码。**错误体形状是一份声明**（`ErrorShape`）：默认是 RFC 9457（[REF-rfc9457](../../../references.md)）问题文档；宿主交付自定义 `ErrorResponder` 时，用同一个形状声明它的错误应答，片段因此描述真正会写出的内容（[ADR-http-failure-responses](../../../adr/adr-http-failure-responses.md)）。
 
-`pkg/internal/openapigen` 从同一份声明生成片段，桥接 `swaggest/openapi-go` 做 JSON Schema 反射与 OpenAPI 3.1 组装；`pkg/http/openapigen` 是它的转出口，给位于 `pkg` 树之外、Go internal 规则够不到的宿主模块（如 `starters/`）使用同一个生成器；片段因此是构建产物，生成结果与提交的片段不一致即生成测试失败；每个声明 API 的模块都从自己的 operation 声明生成片段，没有手写的片段。`Spec` 给片段的文档与 API 根，`Operations` 给文档的内容；两者都在 `Resources` 里静态声明，都不参与路由（[ADR-http-openapi-generation](../../../adr/adr-http-openapi-generation.md)）。
+`pkg/internal/openapigen` 从同一份声明生成片段，桥接 `swaggest/openapi-go`（[REF-swaggest-openapi-go](../../../references.md)）做 JSON Schema（[REF-json-schema](../../../references.md)）反射与 OpenAPI 3.1 组装；`pkg/http/openapigen` 是它的转出口，给位于 `pkg` 树之外、Go internal 规则够不到的宿主模块（如 `starters/`）使用同一个生成器；片段因此是构建产物，生成结果与提交的片段不一致即生成测试失败；每个声明 API 的模块都从自己的 operation 声明生成片段，没有手写的片段。`Spec` 给片段的文档与 API 根，`Operations` 给文档的内容；两者都在 `Resources` 里静态声明，都不参与路由（[ADR-http-openapi-generation](../../../adr/adr-http-openapi-generation.md)）。
 
 `Spec` 不参与路由。它供文档合并、网关配置与权限清单这些发生在装配之外的用途读取，与实际登记是两份各自维护的事实（[ADR-http-routing](../../../adr/adr-http-routing.md)）。读取方用 `core.Resources[http.Spec](reg)` 取得全部片段，每一份都带着声明它的模块名，合并冲突因而能点到来源。**本模块交付的片段由运行面 [ops](../design-ops.md) 合并并发布，它取可用集、不做减法**（见 [ops](../design-ops.md) 的取材域与 [ADR-ops-spec-reader](../../../adr/adr-ops-spec-reader.md)）。
 
@@ -555,7 +555,7 @@ stateDiagram-v2
 | 阶段 | 进入时可依赖 | 本阶段的层做什么 | 不可做 |
 |---|---|---|---|
 | `StageObserve` | 请求已被访问日志看见；请求上下文里的 logger 已就位 | 计时、开 span、往上下文里绑字段 | 拒绝请求、写出响应；`c.Next` 必须恰好调用一次；按请求是否匹配路由、匹配了哪一条改变应答，`c.FullPath()` 与 `c.Params` 只读来记日志与打点 |
-| `StageGuard` | 请求已被观测；本层（及其内层）的 panic 会被兜底层接住 | 与身份无关的拒绝：CORS 的 403、来源地址的 429；改写请求头与响应头 | 读身份；读请求体——请求体上限在本阶段之内，防护层不能依赖一个有界的 body；按请求是否匹配路由、匹配了哪一条决定拒绝与否或改变应答，`c.FullPath()` 与 `c.Params` 只读来记日志与打点 |
+| `StageGuard` | 请求已被观测；本层（及其内层）的 panic 会被兜底层接住 | 与身份无关的拒绝：CORS（[REF-whatwg-fetch](../../../references.md)）的 403、来源地址的 429；改写请求头与响应头 | 读身份；读请求体——请求体上限在本阶段之内，防护层不能依赖一个有界的 body；按请求是否匹配路由、匹配了哪一条决定拒绝与否或改变应答，`c.FullPath()` 与 `c.Params` 只读来记日志与打点 |
 | `StageIdentify` | 同上；请求体已限界 | 写入身份与租户；拒绝：401、404、503 | 按身份配额 |
 | `StageThrottle` | 身份与租户已确定（在场的话）；请求体已限界 | 拒绝：429 | |
 | `StageRecord` | 请求已通过前面的准入控制 | 记录 | 拒绝请求 |
@@ -587,7 +587,7 @@ stateDiagram-v2
 
 **兜底层是引擎上的一个 handler，名字是 `http:recovery`，落在观测阶段之内、防护阶段之外，每端唯一。** 它接住的是它之内各层与路由的 handler 抛出的 panic：接住之后当次请求结束，进程继续服务其余连接（[ADR-http-recovery](../../../adr/adr-http-recovery.md)、[ADR-http-stages](../../../adr/adr-http-stages.md)）。它不在登记面上：`Endpoint` 的方法集里没有它，不参与中间件的排序，也不出现在任何一层的约束里；它在链清单里列作 `http:recovery`。
 
-**写在观测阶段之内，判据是观测层要看得到这一次失败。** 兜底层在观测层之内，于是观测层看到的是一个正常返回、响应是 500 的请求，据以构建状态码、`error.type` 与时长直方图；兜底层在观测层之外时，panic 会先穿过观测层，一个 `c.Next` 不返回的追踪层的跨度会以无状态结束，并跳过它在调用之后度量的一切。请求上下文此时已经建立，被接住的那一次因而在配置的目的地上写出一条记录；它读的是接住那一刻的 `c.Request`，链上各层到那时为止绑进去的关联字段随之出现在它写出的记录上——观测层在它之外绑的 trace 与 span 标识在列，请求走到鉴别阶段之后，主体与租户标识也在列。**它写进 gin 上下文错误列表的是一个固定类型的错误**，类型名就是观测层读到的 `error.type`，不带 panic 值：panic 值只进日志，不进跨度。
+**写在观测阶段之内，判据是观测层要看得到这一次失败。** 兜底层在观测层之内，于是观测层看到的是一个正常返回、响应是 500 的请求，据以构建状态码、`error.type`（[REF-opentelemetry-semconv](../../../references.md)）与时长直方图；兜底层在观测层之外时，panic 会先穿过观测层，一个 `c.Next` 不返回的追踪层的跨度会以无状态结束，并跳过它在调用之后度量的一切。请求上下文此时已经建立，被接住的那一次因而在配置的目的地上写出一条记录；它读的是接住那一刻的 `c.Request`，链上各层到那时为止绑进去的关联字段随之出现在它写出的记录上——观测层在它之外绑的 trace 与 span 标识在列，请求走到鉴别阶段之后，主体与租户标识也在列。**它写进 gin 上下文错误列表的是一个固定类型的错误**，类型名就是观测层读到的 `error.type`，不带 panic 值：panic 值只进日志，不进跨度。
 
 **写出的响应经错误响应的接缝决定**（见外部接口契约）：状态码 500，`Problem.Cause` 是包着 panic 值的错误，默认形状不把它写进响应体，并丢弃 handler 原打算写出的内容所描述的那几个头（见错误响应一节）。接住之后不再向下或向上传递；handler 已经写出部分输出的那一档状态码改不动，见错误与失败语义。
 

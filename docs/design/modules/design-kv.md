@@ -4,7 +4,7 @@
 
 本模块交付**键值原语**：以不透明的键存取不透明的值，附带过期时间与原子操作。键与值都是字节，模块不解释其中任何一个，唯一的例外是自增操作读写的数值编码。
 
-实现有多个，绑定不同后端：进程内映射、Redis、PostgreSQL、Memcached、NATS JetStream。**功能排他交付**：同一个进程里恰好一个实现生效，多于一个表态启用即启动失败（[ADR-kv-implementations](../../adr/adr-kv-implementations.md)）。
+实现有多个，绑定不同后端：进程内映射、Redis、PostgreSQL、Memcached、NATS JetStream（[REF-nats](../../references.md)）。**功能排他交付**：同一个进程里恰好一个实现生效，多于一个表态启用即启动失败（[ADR-kv-implementations](../../adr/adr-kv-implementations.md)）。
 
 接口面按**最弱后端**设计，这是接口包与实现子包之间那条分界的核心约束：不暴露服务端脚本、管道、有序结构或超出不透明字节之外的数据类型。凡是接口承诺的，每一个实现都能实现；需要更强能力的调用方得不到它，而不是在一个后端上得到、在另一个上失效（[ADR-kv-scope](../../adr/adr-kv-scope.md)）。
 

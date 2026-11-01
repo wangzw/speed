@@ -235,7 +235,7 @@ func Transport(base http.RoundTripper) http.RoundTripper
 
 本模块自身不引入第三方依赖：处理链、脱敏、上下文存取、出站请求的记录、配置解读、文本与 JSON 编码、滚动与清理，全部在 `log/slog`、`net/http`、`context`、`io`、`os` 这些标准库范围内完成。
 
-取用配置则承受 `pkg/config` 的解析工具依赖：cobra、viper、pflag 与 mapstructure 经 `pkg/config` 进入本模块的传递闭包，凡 import 本模块的宿主都带上它们，这是 [ADR-config-parsing](../../adr/adr-config-parsing.md) 记下的代价。
+取用配置则承受 `pkg/config` 的解析工具依赖：cobra（[REF-cobra](../../references.md)）、viper（[REF-viper](../../references.md)）、pflag（[REF-pflag](../../references.md)）与 mapstructure（[REF-mapstructure](../../references.md)）经 `pkg/config` 进入本模块的传递闭包，凡 import 本模块的宿主都带上它们，这是 [ADR-config-parsing](../../adr/adr-config-parsing.md) 记下的代价。
 
 依赖扫描因而按"自身不新增"判定：预算是标准库、本仓库的模块与 `pkg/config` 的当前闭包，越出预算的包才是本模块自己引入的（`pkg/log/deps_test.go` `TestLogAddsNoThirdPartyDependency`）。预算取 `pkg/config` 的实测闭包而不是一份库名清单，那一侧换掉某个间接依赖不牵动本条判定。
 

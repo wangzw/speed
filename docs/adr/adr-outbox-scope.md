@@ -27,7 +27,7 @@
 
 `Bus` 增加一个带事务的发布方法，由实现把事件写进调用方的事务。
 
-**否决**：进程内、Redis 与 NATS 实现无从在一个数据库事务里写入，只有 PostgreSQL 实现在总线与写入同库时做得到，一项跨实现的接口承诺于是只在一种部署下成立。`Bus` 的签名还会带上 `*gorm.DB`，事件根包被每一个发布方 import，GORM 随之进入每一个发布方的闭包（[ADR-event-scope](adr-event-scope.md)）。
+**否决**：进程内、Redis 与 NATS（[REF-nats](../references.md)）实现无从在一个数据库事务里写入，只有 PostgreSQL 实现在总线与写入同库时做得到，一项跨实现的接口承诺于是只在一种部署下成立。`Bus` 的签名还会带上 `*gorm.DB`（[REF-gorm](../references.md)），事件根包被每一个发布方 import，GORM 随之进入每一个发布方的闭包（[ADR-event-scope](adr-event-scope.md)）。
 
 ### 两阶段提交
 

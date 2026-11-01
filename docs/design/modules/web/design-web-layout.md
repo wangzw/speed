@@ -101,7 +101,7 @@
 
 ### 断点标度
 
-断点取值来自 tokens 的 `breakpoints.values`，等于所安装 MUI 主题的默认值（[tokens](design-web-tokens.md) 把这一相等钉住），标签为 `xs`、`sm`、`md`、`lg`、`xl`。响应式只在既有标度上取区间；新增数值刻度是对本设计的偏离。
+断点取值来自 tokens 的 `breakpoints.values`，等于所安装 MUI（[REF-mui](../../../references.md)）主题的默认值（[tokens](design-web-tokens.md) 把这一相等钉住），标签为 `xs`、`sm`、`md`、`lg`、`xl`。响应式只在既有标度上取区间；新增数值刻度是对本设计的偏离。
 
 ### 响应手段的分工
 
@@ -187,7 +187,7 @@ graph TD
 
 ## 扩展点
 
-- **新增一种外壳形态。** 形态是闭合的枚举，不是自由插槽：新增一种形态 = 在 `AppShellShellLayout` 上加一个成员、在 `AppShell` 里给出该形态的区域映射、补 jsdom 与真实浏览器的用例、更新本设计与 [layout-kit](design-web-layout-kit.md)；宿主的调用面不变。
+- **新增一种外壳形态。** 形态是闭合的枚举，不是自由插槽：新增一种形态 = 在 `AppShellShellLayout` 上加一个成员、在 `AppShell` 里给出该形态的区域映射、补 jsdom（[REF-jsdom](../../../references.md)）与真实浏览器的用例、更新本设计与 [layout-kit](design-web-layout-kit.md)；宿主的调用面不变。
 - **只换内容不换结构。** 客户换品牌、头部动作或用户菜单时走现有槽位，不动 `shellLayout`。
 - **新增一个组件。** 若它会随可用宽度改变自身排布，按容器响应：在自身根节点声明 `container-type: inline-size`，并按自身的宽度取档重排。
 - **新增一个控制台页。** 页内的排布沿用本设计的区域与降级约定；页的组织归该页所属的能力 UI 包。

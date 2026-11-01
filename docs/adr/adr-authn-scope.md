@@ -20,7 +20,7 @@
 
 ### 前置身份代理作整体方案
 
-登录、会话、令牌、多因素、企业 SSO 与账户存储交给独立部署的身份服务（Ory Kratos、Dex、Keycloak 一类）。`pkg/authn` 缩成一个校验后端，校验该服务签发的令牌或会话。
+登录、会话、令牌、多因素、企业 SSO 与账户存储交给独立部署的身份服务（Ory Kratos，[REF-ory-kratos](../references.md)、Dex，[REF-dex](../references.md)、Keycloak，[REF-keycloak](../references.md) 一类）。`pkg/authn` 缩成一个校验后端，校验该服务签发的令牌或会话。
 
 **否决**：
 
@@ -29,7 +29,7 @@
 - 这类服务各自有自己的租户或域模型，与 speed 的租户模型是两套；账户与租户的映射、成员关系与租户级强度策略要另行同步，同步的滞后落在放宽一侧。
 - 模块的取向是现成库与 speed 之间的桥；独立的身份服务不是库，没有可桥接的接口，登录流程、账户存储与成员关系表仍要自写，代理只替掉其中一部分。
 
-这一否决只针对整体方案。Dex、Keycloak 一类服务作为企业租户的上游 IdP，经企业 OIDC 接入，不受影响（[ADR-authn-sso](adr-authn-sso.md)）。
+这一否决只针对整体方案。Dex、Keycloak 一类服务作为企业租户的上游 IdP，经企业 OIDC（[REF-openid-connect-core](../references.md)）接入，不受影响（[ADR-authn-sso](adr-authn-sso.md)）。
 
 ### 认证与授权同属一个功能目录，`pkg/authn` import 授权
 

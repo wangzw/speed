@@ -34,7 +34,7 @@
 
 ## 决策
 
-采纳：语言存 `Account.Attributes["i18n.locale"]`（BCP 47 标签），时区存 `Account.Attributes["i18n.tz"]`（IANA 名称）。两个键用属性集保留前缀之下的 `i18n.` 命名空间，不与宿主的自有属性撞名，也不改 authn 的表结构。
+采纳：语言存 `Account.Attributes["i18n.locale"]`（BCP 47 标签，[REF-bcp47](../references.md)），时区存 `Account.Attributes["i18n.tz"]`（IANA 名称，[REF-iana-tz](../references.md)）。两个键用属性集保留前缀之下的 `i18n.` 命名空间，不与宿主的自有属性撞名，也不改 authn 的表结构。
 
 读写都经属性集的通用界面：写经 `AccountAdmin.SetAttributes`，读经账户快照 `Identity.Attribute`。属性集的通用界（键形状、值形状、条目数与字节上限）对这两个键照常适用；值另受本能力目录的校验——语言是良构的 BCP 47 标签，时区是一个进程能加载、且不是 Go 特殊名 `Local` 的 IANA 名称。
 
