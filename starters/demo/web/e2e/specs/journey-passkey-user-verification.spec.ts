@@ -194,15 +194,22 @@ async function confirmSettledEnrolment(mfa: Locator): Promise<void> {
   }
 }
 
-/** The shared secret the rendered authenticator setup URI carries. */
-function secretOf(setupUri: string): string {
-  const secret = new URL(setupUri).searchParams.get('secret')
-  if (secret === null || secret === '') {
-    throw new Error(
-      'the authenticator setup URI the page rendered carries no secret',
-    )
-  }
-  return secret
+/**
+ * Read the base32 setup key the wizard's manual-entry disclosure shows. The
+ * panel groups the key into four-character blocks for hand entry; an
+ * authenticator takes it without the spaces.
+ */
+async function revealedTotpSecret(mfa: Locator): Promise<string> {
+  await mfa
+    .getByRole('button', {
+      name: copy('accountUi', 'flowStep.totpManualToggle'),
+      exact: true,
+    })
+    .click()
+  const secret = mfa.locator('code')
+  await expect(secret).toHaveCount(1)
+  await expect(secret).toBeVisible()
+  return (await secret.innerText()).replace(/\s+/gu, '')
 }
 
 /**
@@ -221,14 +228,15 @@ async function enrolTotp(page: Page): Promise<string> {
     })
     .click()
 
-  // The wizard shows the setup URI as a read-only field beside the code
-  // field: the URI is the value an authenticator app would import.
-  const uriField = mfa.getByRole('textbox', {
-    name: copy('accountUi', 'flowStep.enrollTotpUriLabel'),
-    exact: true,
-  })
-  await expect(uriField).toBeVisible()
-  const secret = secretOf(await uriField.inputValue())
+  // The wizard shows the setup URI as a scannable symbol; the manual
+  // disclosure reveals the base32 key behind it for setup by hand.
+  await expect(
+    mfa.getByRole('img', {
+      name: copy('accountUi', 'flowStep.totpQrLabel'),
+      exact: true,
+    }),
+  ).toBeVisible()
+  const secret = await revealedTotpSecret(mfa)
 
   const codeField = mfa.getByRole('textbox', {
     name: copy('accountUi', 'flowStep.codeLabel'),
