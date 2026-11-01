@@ -5,7 +5,7 @@
 本包是平台第一个渲染 DOM 的包。它交付：
 
 - **主题工厂**：`createAppTheme` 把合并后的 `@speed/tokens` token 树映射成一个 MUI v9（[REF-mui](../../../references.md)）主题，并承载触摸设备上所有可点击目标的 44×44 下限、表面映射与页面基线（组件级 `styleOverrides`，见下文主题工厂一节）；`AppThemeProvider` 把主题、MUI 本地化联动、颜色模式、可选的主题预设层与全局重置组成一个运行期。
-- **受控组件**：`PageLayout`、`PageHeader`、`SectionCard`、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`PhoneNumberField`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`、`TotpQrCode`、`TotpEnrollmentPanel`，外加跨表面的状态原语（`errorCodeOf`、`httpStatusOf`、`useWriteFeedback`、`visuallyHiddenSx`、`touchTargetSx`）、电话号码的两部分组装助手（`toE164`、`validatePhoneNumber`、`defaultPhoneCountry` 等）、邮箱地址规则（`parseEmailAddress`、`EMAIL_ADDRESS_MAX_BYTES`）、刷新动作的一对（`RefreshButton` 与 `usePageRefresh`／`pageRefreshRead`）、一次值交接的一对（`CopyButton`、`OneTimeValuePanel`）与两个显示偏好上下文（`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`）。除 TOTP 登记的一对外，每个组件自带的文案来自 `ui-kit` 命名空间；`TotpQrCode` 与 `TotpEnrollmentPanel` 的全部文案与可及名由调用方经 props 传入。
+- **受控组件**：`PageLayout`、`PageHeader`、`SectionCard`、`ActionRow`（连同 `ActionButton`）、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`PhoneNumberField`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`、`TotpQrCode`、`TotpEnrollmentPanel`，外加跨表面的状态原语（`errorCodeOf`、`httpStatusOf`、`useWriteFeedback`、`visuallyHiddenSx`、`touchTargetSx`）、电话号码的两部分组装助手（`toE164`、`validatePhoneNumber`、`defaultPhoneCountry` 等）、邮箱地址规则（`parseEmailAddress`、`EMAIL_ADDRESS_MAX_BYTES`）、刷新动作的一对（`RefreshButton` 与 `usePageRefresh`／`pageRefreshRead`）、一次值交接的一对（`CopyButton`、`OneTimeValuePanel`）与两个显示偏好上下文（`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`）。除 TOTP 登记的一对外，每个组件自带的文案来自 `ui-kit` 命名空间；`TotpQrCode` 与 `TotpEnrollmentPanel` 的全部文案与可及名由调用方经 props 传入。
 
 **受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不自带传输取数、从不改数据、从不持业务状态——同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。交互局部状态只出现在必须能证明它只在交互内存在的组件里，例如 `ConfirmDialog` 的双次确认待命（弹窗一关即复位）与 `PhoneNumberField` 的国际号码草稿和触碰标记；`SidePanel` 不持有任何状态，打开、忙碌与内容都由宿主经 props 给出；`useWriteFeedback` 的状态属于调用它的宿主组件，ui-kit 的组件仍不持有业务状态与写入结果。唯一的读接缝是刷新动作的一对：`usePageRefresh` 调用宿主交来的查询句柄的 `refetch`，只按结构读取句柄，本包不 import 查询客户端、api-client 或任何传输；`CopyButton` 读剪贴板 API 在浏览器本地，不经网络。两个显示偏好 provider 只转交宿主的取值，自身不持状态、不做校验。TOTP 登记的一对同样只收宿主解析好的值与文案：它不解析 `otpauth://`、不读命名空间、不做网络或存储副作用；手动入口的展开是唯一交互局部状态，随组件卸载复位。
 
@@ -87,6 +87,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `PageLayout` | `title`（渲染为页面的 `h1`）、`description`、`breadcrumbs`、`actions`、子节点、`sx` | 面包屑链接的 `onClick` |
 | `PageHeader` | 标题（渲染为语义 `h1`）、可选面包屑、描述、动作区 | 面包屑链接的 `onClick` |
 | `SectionCard` | `title`、`description`、`actions`、`headingLevel`（`h2`–`h6`，缺省 `h2`）、`flushContent`、子节点、`sx` | — |
+| `ActionRow`／`ActionButton` | `ActionRow`：`children`（按显示顺序，主操作在后）、`size`（`medium`/`small`，缺省 `medium`）、`sx`；`ActionButton`：`emphasis`（`primary`/`secondary`，缺省 `secondary`）、`tone`（`default`/`danger`，缺省 `default`）、`size`（缺省继承所在行）、其余 MUI 按钮 props | 按钮自身的 `onClick` 等宿主回调 |
 | `EmptyState` | `variant`（`empty`/`noPermission`/`error`）、可覆写的标题与描述、动作、图标、`headingLevel`（`h1`–`h6` 或 `none`：`none` 把标题渲染为非标题元素、整块成为 `role="status"` 区域，用于不该进入目录层级的空/状态占位） | 动作节点内的宿主回调 |
 | `ConfirmDialog` | `open`、标题、消息、`variant`、`doubleConfirm`、标签、`confirmLoading`、`children`（渲染在消息之后、不进 `aria-describedby`）、`confirmDisabled`（只禁用确认按钮，不改动双次确认的待命与锁定逻辑） | `onConfirm`、`onCancel` |
 | `SidePanel` | `open`、`title`（必填）、`description`、`size`（`medium` 或 `wide`，缺省 `medium`）、`busy`、`closeLabel`、子节点 | `onClose`、`onExited` |
@@ -171,7 +172,7 @@ export const uiKitResources: Readonly<Record<string, ResourceBundle>>
 
 `parseEmailAddress` 把 authn 账户模块的邮箱规范化规则（`NormalizeIdentifier` 的 email 分支）表述在客户端：去空白、可打印 ASCII（0x21 到 0x7e）、恰好一个 `@` 且两侧非空、不超过 254 字节；返回去空白后的地址，不合格返回 `null`。它不改大小写——服务端折叠大小写，而折叠用户正在编辑的值会改掉他们的输入。
 
-`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口面。基线导出之外的接缝：`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`OneTimeValuePanelDetail`（`details` 的元素：标签、值与其复制控件的文案）、`TotpQrCode`、`TotpEnrollmentPanel`、`TotpEnrollmentParameter`、`TotpEnrollmentSecret`、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`parseEmailAddress`／`EMAIL_ADDRESS_MAX_BYTES`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`ConfirmDialog.children`／`confirmDisabled`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。公开面的一次改动要与代码、测试、README 与 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有消费方逐字节不受影响。
+`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口面。基线导出之外的接缝：`ActionRow`／`ActionButton` 及其 `ActionRowSize`、`ActionEmphasis`、`ActionTone`、`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`OneTimeValuePanelDetail`（`details` 的元素：标签、值与其复制控件的文案）、`TotpQrCode`、`TotpEnrollmentPanel`、`TotpEnrollmentParameter`、`TotpEnrollmentSecret`、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`parseEmailAddress`／`EMAIL_ADDRESS_MAX_BYTES`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`ConfirmDialog.children`／`confirmDisabled`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。公开面的一次改动要与代码、测试、README 与 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有消费方逐字节不受影响。
 
 ## 依赖
 
@@ -223,6 +224,7 @@ sequenceDiagram
 | 预设控制 | `AppThemePresetControl` | 当前预设 id 与切换函数；由 `useAppThemePreset` 读取 |
 | 表面角色（解析后） | `SurfaceTheme`、`SurfaceThemeRole` | `page`、`container`、`overlay`、`header`；`fill`（已乘 `opacity`）、`borderColor`（按模式取 `borderColorDark` 或 `borderColor`）、`borderWidth` 是解析后的具体值，`elevation` 与 `backdropFilter` 缺席表示保留组件自身层级或不加滤镜 |
 | 内容节入参 | `SectionCardProps` | 标题、描述、动作、标题层级（`h2`–`h6`）、`flushContent`、子节点、`sx` |
+| 操作行尺寸与按钮档位 | `ActionRowSize`、`ActionEmphasis`、`ActionTone` | 行的两个尺寸（`medium`/`small`）与按钮的两个正交档位（权重与语义色）；缺省 `medium`、`secondary`、`default` |
 | 表单字段渲染状态 | `FormFieldRenderState` | 绑定字段、`invalid`、`isTouched`、`required`、原始错误消息、解析后的显示文本 |
 | 表单校验桥 | `zodFormResolver`、`INVALID_ERROR_KEY` | 把 zod schema 适配成 RHF `Resolver`，失败折成 `ui-kit` 命名空间的键 |
 | 表格列 | `DataTableColumn` | 列 id、表头、可排序、对齐、宽度、优先级、折行策略（`cellWrap`）、完整值访问器（`cellFullValue`）、内容宽度上限（`contentMaxWidth`）、单元格渲染器 |
@@ -287,6 +289,25 @@ sequenceDiagram
 **内容内边距。** 内容默认取主题间距的 `p: 3`；`flushContent` 去掉内容内边距，让表格或列表贴边，表面本身不变。贴边时节标题块取主题间距的 `pb: 3`：标题与贴边内容之间的距离因此是一段间距标尺值，不取决于行高余量——行高余量随预设收紧行高而消失，表头的底色带会压上标题的下伸笔画。
 
 **嵌套层级。** 节内再分的块用 `h3`（`headingLevel="h3"`），依次向下。`SidePanel` 本身是浮层表面，面板内不叠 `SectionCard`，用标题与分隔线分节。
+
+### 操作行
+
+**`ActionRow` 是页面表单、对话框与行内动作的唯一布局原语，`ActionButton` 是它承载的按钮档位。** 操作行把一组动作靠右成组：行容器取 `display: flex`、`justify-content: flex-end`、`align-items: center` 与 `flex-wrap: wrap`，组内相邻控件之间只用主题间距的一个步长（`theme.spacing(1)`，即 `gap: 1`）。行容器只拥有这一条布局规则，不持有状态、不排序、不裁剪子节点；动作的显示顺序由调用方给出。
+
+**位置：整行靠右，不把按钮分置两端。** 操作行里的按钮是一个相邻的组，主操作在组的最右端。调用方不得用 `marginLeft: 'auto'`（或等价的自动外边距）把某个按钮推到行的另一端：这种做法把组拆成两半，使相邻间距不再由唯一 token 决定，也让键盘与读屏用户面对两个互不相关的动作区。需要把两个动作分开的场合不属于操作行。
+
+**间距只有一个 token。** 组内相邻控件之间的距离恒为 `theme.spacing(1)`；操作行不提供逐控件间距，也不读第二个间距值。`gap` 同时作用于折行后的行间距，窄宽度下折行时纵向间隔与横向一致。
+
+**层级由按钮档位表达，调用方不另立体。** `ActionButton` 以两个正交的档位描述一个动作：`emphasis` 定视觉权重，`tone` 定语义色。
+- `emphasis="secondary"`（缺省）配 `tone="default"`：`text` 变体，是行里的次要动作（取消、返回、更换）。
+- `emphasis="primary"` 配 `tone="default"`：`contained` 变体，一行至多一个，渲染在组的最右端。
+- `tone="danger"`：取 error 语义色；作为主操作时是 `contained` 填充，作为次操作时是 `outlined` 描边。删除、撤销、停用这类不可逆动作使用它。
+
+`ActionButton` 不接受 `variant` 与 `color`：变体与语义色由档位决定，调用方无法在操作行里另立一套按钮外观；按钮的其他外观由主题承担，与主题工厂一节的映射一致。
+
+**尺寸由调用方按场合传入，行内按钮继承。** `ActionRow` 的 `size` 只有两个取值：页面表单与对话框用 `medium`（缺省），表格行内与菜单用 `small`。尺寸经 provider 传给行内的 `ActionButton`，按钮不必逐个声明；脱离操作行单独使用的 `ActionButton` 可按同一取值自行给出 `size`。尺寸不随容器宽度自动切换：同一场合的按钮大小是版式决定，不是容器查询。
+
+**两类既有形态不强行改造。** `EmptyState.action` 是居中的重试动作，不是靠右成组的操作行，保持原样；表格行内、菜单项内等既有的行内动作簇已经靠右且组内共用同一间距 token，可以继续使用自己的容器，不因本原语的存在而重写。除这两类之外，页面的表单与对话框动作行以本原语为唯一承载。
 
 ### 焦点环与降级动效
 
@@ -443,6 +464,7 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 | 表面解析与主题组件映射 | 已实现 | `web/packages/ui-kit/src/theme/surface.ts` `resolveSurfaceTheme`、`surfaceComponents`、`mergeThemeComponents`、`SurfaceTheme`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 浅色模式 warning、info、success 的 700 调 `main` 与白色标签 | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`；`web/packages/tokens/src/color.ts` `colorTokens.semantic` |
 | 内容节表面 `SectionCard` | 已实现 | `web/packages/ui-kit/src/components/SectionCard.tsx` `SectionCard`、`SectionCardProps` |
+| 操作行 `ActionRow` 与按钮档位 `ActionButton` | 已实现 | `web/packages/ui-kit/src/components/ActionRow.tsx` `ActionRow`、`ActionButton`、`ActionRowSize`、`ActionEmphasis`、`ActionTone` |
 | 统一焦点环 | 已实现 | `web/packages/ui-kit/src/theme/focus-ring.ts` `focusRingComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 输入框静止描边取 `text.secondary`（非文本 3:1） | 已实现 | `web/packages/ui-kit/src/theme/control-borders.ts` `controlBorderComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 降级动效 | 已实现 | `web/packages/ui-kit/src/theme/reduced-motion.ts` `reducedMotionComponents`、`REDUCED_MOTION_QUERY`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |

@@ -14,7 +14,10 @@ components (`PageLayout`, `PageHeader`, `SectionCard`, `EmptyState`,
 `ConfirmDialog`, `SidePanel`,
 `FormField`, `FormLayout`, `PhoneNumberField`, `DataTable`,
 `FileUploader`, `InlineError`, `InlineSuccess`, `WriteFeedbackRegion`,
-`ListSkeleton`, `AsyncSection`, `HumanVerification`)
+`ListSkeleton`, `AsyncSection`, `HumanVerification`, and the one action
+row (`ActionRow` with its `ActionButton`, right-aligned, one spacing
+token between adjacent controls, the primary action last, weight and
+colour from `emphasis`/`tone` and size from the row)
 that render only the
 state hosts give them, plus the form family's zod validation bridge
 (`zodFormResolver`), the phone parts' composition helpers (`toE164`,
@@ -155,6 +158,21 @@ plumbing and deliberately not exported.
   refusal copy and is never derived here: ui-kit inspects no status and
   knows no permission semantics.
 
+- **The action row is the one primitive for page, dialog and row actions.**
+  `ActionRow` lays its actions out as one right-aligned group with
+  `theme.spacing(1)` between adjacent controls (the single spacing
+  token) and the primary action last, so it closes the group at the
+  right end. A call site must not separate buttons with
+  `marginLeft: 'auto'` (or any automatic margin): the row is one group,
+  never two ends. `ActionButton` derives its face from two independent
+  slots -- `emphasis` (`primary` = contained, `secondary` = text) and
+  `tone` (`default` = primary role, `danger` = error role, filled when
+  primary and outlined when secondary) -- and deliberately accepts no
+  `variant`/`color`. `size` is the surface's decision: `medium` for page
+  forms and dialogs, `small` for table rows and menus; the row passes it
+  to every button below it, and a standalone `ActionButton` takes it
+  directly. `EmptyState.action` (a centred retry) and existing per-row
+  inline action clusters are not action rows and keep their own layout.
 - **The monospace stack is exposed by module augmentation.** The token
   tree's `typography.fontFamily.mono` maps to
   `theme.typography.fontFamilyMono` through a `declare module
@@ -309,7 +327,14 @@ through the same `expectNoAxeViolations` used everywhere here. The TOTP
 pair's suites drive the symbol, the manual disclosure and the copy
 control entirely from caller props -- they assert those props, never a
 bundle -- and pin the code field's numeric six-character contract and
-the secondary-before-primary action order. The usage example's upload panel drives the documented host
+the secondary-before-primary action order. The action row's suite pins
+the row's one-group layout (`flex-end`, the gap equal to the token's
+spacing unit) and the button's two slots -- text/contained by
+`emphasis`, error fill/outline by `tone` -- plus size inheritance from
+the row and a standalone button's medium default; its browser case
+measures the rendered boxes in Chromium: both controls on one line,
+exactly one spacing unit between them, and the primary closing the group
+at the row's right edge. The usage example's upload panel drives the documented host
 composition — host-owned queue, host AbortControllers, host transport
 — over a scripted fetch answering genuine `Response` objects; scripted
 transports and their fixture URLs live in test files only, and the

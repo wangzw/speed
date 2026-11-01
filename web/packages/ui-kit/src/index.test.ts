@@ -115,6 +115,13 @@ function createEntryProgram(): {
 
 /** Every name a consumer can import from the package entry. */
 const PUBLIC_EXPORTS = [
+  'ActionButton',
+  'ActionButtonProps',
+  'ActionEmphasis',
+  'ActionRow',
+  'ActionRowProps',
+  'ActionRowSize',
+  'ActionTone',
   'AppTheme',
   'AppThemeMode',
   'AppThemeModeControl',

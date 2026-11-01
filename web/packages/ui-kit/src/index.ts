@@ -34,7 +34,10 @@
  * that fall back to their own defaults when it is absent; and
  * SectionSurfaceProvider tells the sections below it whether the
  * enclosing surface already supplies the card, so a nested section can
- * contribute its content alone.
+ * contribute its content alone; and ActionRow + ActionButton are the one
+ * right-aligned action row, with the button's weight, colour and size
+ * derived from the row's emphasis, tone and size rather than from a
+ * call-site variant.
  * Everything else stays internal: helpers shared between components live
  * in src/internal/ and are deliberately not exported.
  */
@@ -72,6 +75,15 @@ export {
   type SectionSurface,
   type SectionSurfaceProviderProps,
 } from './components/SectionCard.js'
+export {
+  ActionButton,
+  ActionRow,
+  type ActionButtonProps,
+  type ActionEmphasis,
+  type ActionRowProps,
+  type ActionRowSize,
+  type ActionTone,
+} from './components/ActionRow.js'
 export {
   EmptyState,
   type EmptyStateHeadingLevel,

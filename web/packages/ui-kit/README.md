@@ -43,6 +43,7 @@ reads no bundle of its own.
 | `theme/system-color-mode.ts` | (internal) `useSystemColorMode` |
 | `components/PageLayout.tsx` | `PageLayout`, `PageLayoutProps` |
 | `components/PageHeader.tsx` | `PageHeader`, `PageHeaderProps`, `PageHeaderBreadcrumb` |
+| `components/ActionRow.tsx` | `ActionRow`, `ActionRowProps`, `ActionRowSize`, `ActionButton`, `ActionButtonProps`, `ActionEmphasis`, `ActionTone` |
 | `components/EmptyState.tsx` | `EmptyState`, `EmptyStateProps`, `EmptyStateVariant`, `EmptyStateHeadingLevel`, `EmptyStateNoHeading` |
 | `components/ConfirmDialog.tsx` | `ConfirmDialog`, `ConfirmDialogProps`, `ConfirmDialogVariant`, `CONFIRM_ARM_LOCKOUT_MS` |
 | `components/SidePanel.tsx` | `SidePanel`, `SidePanelProps`, `SidePanelSize` |
@@ -522,6 +523,47 @@ notifications" under a "Notifications" h1) -- passes
 `<div>`, never a `<p>` -- a styled `<p>` would itself trip axe's
 p-as-heading rule) and the whole placeholder becomes one `role="status"`
 region, announced politely without claiming a heading level.
+
+### ActionRow and ActionButton (the action row)
+
+The one action row for page, dialog and row actions. `ActionRow` is a
+layout container and nothing more: it lays its children out as a single group
+against the right edge, keeps adjacent controls exactly one spacing unit
+apart (`theme.spacing(1)`), and wraps rather than overflowing when the
+width runs out. The primary action is the last child, so it closes the
+group at the right end. Callers order their actions that way; they do not
+push one button to the far side with `marginLeft: 'auto'` -- an action row
+is one group, never two ends.
+
+`ActionButton` is the row's button. Its weight and colour come from two
+independent slots, and `variant` / `color` are deliberately not accepted
+so a call site cannot introduce a third button face:
+
+- `emphasis="secondary"` (the default) with `tone="default"`: a `text`
+  button, for the row's secondary actions (cancel, back, change).
+- `emphasis="primary"` with `tone="default"`: a `contained` button. A
+  row carries at most one, and it is the rightmost action.
+- `tone="danger"`: the error palette role. It is filled (`contained`)
+  when the action carries the primary emphasis and outlined when it is
+  secondary, for irreversible actions (delete, revoke, deactivate).
+
+`size` is the surface's decision, not the button's: page forms and
+dialogs pass `'medium'` (the default), table rows and menus pass
+`'small'`. `ActionRow` hands its size to every `ActionButton` below it;
+an `ActionButton` used outside a row takes the same prop directly.
+`EmptyState.action` (a centred retry) and existing per-row inline action
+clusters are not action rows and keep their own layout.
+
+```tsx
+import { ActionButton, ActionRow } from '@speed/ui-kit'
+
+<ActionRow>
+  <ActionButton onClick={close}>Cancel</ActionButton>
+  <ActionButton type="submit" emphasis="primary" loading={saving}>
+    Save
+  </ActionButton>
+</ActionRow>
+```
 
 ### ConfirmDialog
 
@@ -1612,12 +1654,6 @@ same rationale documented here.
 
 ## Deferrals and recorded decisions
 
-- **No browser test runner**: the suite is jsdom plus axe. Rendered
-  geometry -- the whole-cell cap (`contentMaxWidth`) counting the copy
-  control, the primary identity at 160px/200px across the 900px
-  boundary, and the flat 160px long-text cap, at 600/900/1200px
-  containers -- is measured in Chromium ad hoc, not by a committed gate;
-  a CI browser leg would need a runner dependency and a shared harness.
 - **DataTable column-hiding / priority-reflow for narrow containers**:
   shipped (see the DataTable section's Column priority subsection) --
   an opt-in `priority` field on `DataTableColumn` hides lower-priority
@@ -1652,8 +1688,11 @@ same rationale documented here.
 ## Development
 
 From `web/packages/ui-kit`: `pnpm lint`, `pnpm typecheck`, `pnpm test`,
-`pnpm build`. The test suite runs in jsdom
-(`vitest.config.ts`); shared helpers live in `test-utils/`
+`pnpm build`. The unit suite runs in jsdom (`vitest.config.ts`); the
+`*.browser.test.tsx` cases run in real Chromium through the workspace's
+browser config (`web/vitest.browser.config.ts`, `make web-browser`), so
+rendered geometry and focus behavior are measured against real layout.
+Shared helpers live in `test-utils/`
 (`renderWithProviders` builds the host tree -- fresh i18n instance per
 call, namespace registered -- `expectNoAxeViolations` runs axe -- and
 `@speed/test-utils/emitted-css`'s `emittedStyleText()` reads the CSS text emotion has
