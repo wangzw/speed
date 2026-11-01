@@ -55,8 +55,12 @@
  *    factors of one kind can stand side by side. Removing an active factor
  *    rotates the requesting session's cookie; removing a pending or
  *    disabled one does not (the route settles the sessions only for a
- *    factor that was active, and treats a name it no longer finds as
- *    already removed, rotating all the same). The rotating removal runs
+ *    factor that was active). A 404 `authn.factor_not_found` -- the row was
+ *    removed on another device, or never was the account's -- renders the
+ *    code's sentence in the row-actions region and rereads the factors
+ *    once. The route settles the sessions for a name it no longer finds
+ *    and may rotate this one, so that reread runs in a transition window
+ *    too. The rotating removal runs
  *    inside an identity-transition window (session.beginIdentityTransition):
  *    a read that lands with the outgoing credential and answers anonymous
  *    is discarded instead of ending the session, and the window closes once
@@ -458,9 +462,18 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         setRemoveTarget(null)
         // A row another device removed while this list showed it reads as
         // gone: reread once so the list converges, then render the code's
-        // sentence in the row-actions region.
+        // sentence in the row-actions region. The route settles the
+        // sessions for a name it no longer finds and may rotate this one,
+        // so the reread runs in a transition window like the success path
+        // does: a read that left under the replaced credential is
+        // discarded instead of ending the session.
         if (factorIsGone(error)) {
-          await invalidateFactors()
+          const release = session.beginIdentityTransition()
+          try {
+            await invalidateFactors()
+          } finally {
+            release()
+          }
         }
         const code = errorCodeOf(error)
         const reason = stepUpReasonOf(code)
