@@ -171,7 +171,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 
 **SSO 加强认证用 `sso_required`。** 租户的 `require-sso` 未满足时，准入层的 401 的 `Problem.Type` 为 `urn:speed:authn:sso_required`；`WWW-Authenticate` 与多因素同形（`error="insufficient_user_authentication"`），`acr_values="sso"`。单独的码使客户端知道本地的 TOTP、短信与通行密钥都满足不了这次要求，只有经本租户的提供方重新登录才行；多因素要求仍答 `insufficient_user_authentication`。判定与其余应答见 [tenant.admission](../tenant/design-tenant-admission.md)。
 
-一次加强认证（`purpose=step-up`）要求一个认证方式不落在会话已有方式里、且启用时刻不早于会话认证时刻的因素，所以只有一种因素种类的装配里没有可用的加强认证因素：这样的装配取到满足要求的 200 靠登录时完成第二因素，加强认证的入口留给种类多于一种的装配。同一份约束见 [design-authn-login](design-authn-login.md) 的「在已登录身份上开始流程」一节。
+一次加强认证（`purpose=step-up`）要求一个认证方式不落在会话已有方式里的因素：启用时刻早于会话认证时刻的因素可直接使用，本次会话期间登记的因素须在账户再次证明口令之后使用。只有一种因素种类的装配里没有可用的加强认证因素：这样的装配取到满足要求的 200 靠登录时完成第二因素，加强认证的入口留给种类多于一种的装配。同一份约束见 [design-authn-login](design-authn-login.md) 的「在已登录身份上开始流程」一节。
 
 ### 声明的特性
 
@@ -440,7 +440,7 @@ CREATE TABLE authn_webauthn_credentials (
 
 **调用约定。** 登录引擎只在结局为 `MFANone` 与第二因素通过之后调用 `Assurance`。结局为 `MFAEnroll` 的登录不调用它：会话记单因素，`Methods` 只含第一因素，`IDPAssured` 为假。第二因素通过时，`Assurance` 不抬高 `IDPAssured`：账户有有效因素即不满足采信条件。
 
-**登录期间登记的因素不计入本次强度。** 要得到多因素，须下一次登录，或加强认证时通过一个早于该次认证登记的因素：加强认证只接受启用时刻早于当前会话 `AuthTime` 的因素。否则只知道口令的人抢在真用户之前登记自己的 TOTP，立即得到多因素会话，并凭它删因素、解绑、创建服务密钥。
+**本次会话期间登记的因素不抬高登记它们的这次登录的强度。** 这次登录的会话记单因素。要得到多因素，须下一次登录，或做加强认证：加强认证先要求账户再次证明口令，通过之后才提供本次会话期间登记的因素；启用时刻早于当前会话 `AuthTime` 的因素无需再次证明口令。
 
 ### 请求期的租户级判定
 
@@ -475,9 +475,9 @@ CREATE TABLE authn_webauthn_credentials (
 
 加强认证以新鲜度为判据：敏感动作要求 `Identity.Satisfies(Requirement{AssuranceMulti, MaxAge})`，`MaxAge` 缺省取 `recent-window`。
 
-- 入口是 `POST B/flows/authenticated {purpose:"step-up"}`，复用登录引擎：账户有因素时直接进入第二因素待答，无因素时要求重新证明第一因素。
+- 入口是 `POST B/flows/authenticated {purpose:"step-up"}`，复用登录引擎：账户有早于会话认证时刻的因素时直接进入第二因素待答；账户没有因素，或因素都在本次会话期间登记录入时，要求重新证明第一因素，其中因素都在本次会话期间登记时以 `password` 作第一因素，口令证明后这些因素进入第二因素待答。
 - 完成时不建新会话，由 `Sessions.Elevate` 更新当前会话的 `assurance`、`auth_time`、方式集并轮换会话令牌，防会话固定。令牌发放的客户端在 `complete` 的应答里拿到新访问令牌，`acr` 与 `auth_time` 已更新。
-- 加强认证只接受启用时刻早于当前会话 `AuthTime` 的因素。
+- 加强认证可直接使用启用时刻早于当前会话 `AuthTime` 的因素；本次会话期间登记的因素须在再次证明口令之后使用，账户没有口令时该步进答 401 `insufficient_user_authentication`。
 - 联邦登录的会话步进重走同一个 IdP：OIDC（[REF-openid-connect-core](../../../references.md)）加 `prompt=login`，回来后核对 `auth_time` 不早于流程开始；SAML（[REF-saml2](../../../references.md)）请求带 `ForceAuthn`。SAML 库不支持 `ForceAuthn` 时，联邦会话的步进改为要求账户已登记因素并走因素流程。
 
 ### TOTP

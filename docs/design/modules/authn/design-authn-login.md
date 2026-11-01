@@ -365,7 +365,7 @@ type Proof struct {
 
 ```mermaid
 stateDiagram-v2
-    [*] --> 第一因素: POST flows 选定登录方式 或 已登录身份上的 link 与无因素的 step-up
+    [*] --> 第一因素: POST flows 选定登录方式 或 已登录身份上从第一因素起始的 link 与 step-up
     [*] --> 第二因素: 已登录身份上有可用因素的 step-up
     [*] --> 登记因素: 已登录身份上的 enroll
     第一因素 --> 第一因素: submit 需要多步或被拒后重试 每流程至多八次答复
@@ -583,11 +583,13 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `link` | `method`、`input` | 请求的 `method` | `first` | 账户安全类动作的要求；发起者须不是未验证账户，`SignupStateOf` 为 `SignupPending` 时在写记录之前即 403 `contact-required` |
 | `step-up`，账户有可用因素 | 不带 `method` | 空 | `second` | 无附加要求 |
 | `step-up`，账户没有因素 | `method` | 请求的 `method` | `first` | 无附加要求 |
+| `step-up`，账户的因素都在本次会话认证后启用，且有口令 | 不带 `method` | `password` | `first` | 无附加要求 |
+| `step-up`，账户的因素都在本次会话认证后启用，且没有口令 | 不带 `method` | — | 拒绝，401 `insufficient_user_authentication` | 无附加要求 |
 | `enroll` | `input.kind`；可选 `input.label` | 空；因素种类交给 `MFA.Enroll` | `enroll` | 账户安全类动作的要求 |
 
 「账户安全类动作的要求」是 `Requirement`：生效账户有有效因素（`MFA.Factors` 里状态为启用的行）时为新鲜的本地多因素，没有因素时为新鲜的第一因素，取值与单位归 [authn-mfa](design-authn-mfa.md)。引擎以 `StatusFresh` 交回的 `Assurance`、`AuthTime`、`IDPAssured` 按 `Identity.Satisfies` 的同一判据核对。
 
-`step-up` 的可用清单这样产生：引擎以会话的方式集构造只含 `Methods` 的 `Proof`，调 `MFA.Require(证明账户, 生效账户, Proof)` 取认证方式与会话方式不相交的启用因素，再剔除启用时刻不早于会话 `AuthTime` 的因素（`FactorRecord.ActivatedAt`）：登录期间登记的因素不得用来加强认证。证明账户是发起者自己的账户，不冒充时就是生效账户；结局按生效账户取定，清单取证明账户的因素。`Require` 的结局不是 `MFAFactor` 即生效账户没有因素，起始状态取 `first`；结局是 `MFAFactor` 而剔除后清单为空，401 `insufficient_user_authentication`，不写记录。清单为空在只有一种因素种类的装配里是常态：会话在登录时已答过该种类，没有不相交的因素可提供，所以这样的装配取到满足要求的 200 靠登录时完成第二因素，加强认证的入口留给种类多于一种的装配。
+`step-up` 的可用清单这样产生：引擎以会话的方式集构造只含 `Methods` 的 `Proof`，调 `MFA.Require(证明账户, 生效账户, Proof)` 取认证方式与会话方式不相交的启用因素，再按启用时刻分成两类（`FactorRecord.ActivatedAt`）：启用时刻早于会话 `AuthTime` 的因素可直接加强会话；启用时刻不早于它的因素是本次会话期间登记的因素，只有在账户再次证明口令之后才可加强会话。证明账户是发起者自己的账户，不冒充时就是生效账户；结局按生效账户取定，清单取证明账户的因素。`Require` 的结局不是 `MFAFactor` 即生效账户没有因素，起始状态取 `first`；结局是 `MFAFactor` 且其中存在早于会话认证时刻的因素，起始状态取 `second`，清单是这类因素；结局是 `MFAFactor`、证明账户只有本次会话期间登记的因素，且账户有口令时，起始状态取 `first`，记录的 `method` 为 `password`，口令证明后这些因素作为第二因素提供；证明账户只有本次会话期间登记的因素而没有口令时 401 `insufficient_user_authentication`，不写记录。清单为空在只有一种因素种类的装配里是常态：会话在登录时已答过该种类，没有不相交的因素可提供，所以这样的装配取到满足要求的 200 靠登录时完成第二因素，加强认证的入口留给种类多于一种的装配。
 
 `step-up` 在 `first` 起始时，方法证明的账户必须是那条证明所属的人，否则落入 `failed`，401 `login-failed`：不是冒充身份时它就是记录的 `account`；冒充期间需要证明现有因素的是发起者，方法证明的因此是发起者自己的账户（见下段）。`link` 的外部身份不按绑定解析账户，账户取记录的 `account`。
 
@@ -691,7 +693,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 说明：
 
 - `login` 撤销旧会话不是会话固定防护所依赖的环节：登录总是新建会话、不沿用任何旧令牌。SAML 的跨站 POST 不带 `SameSite=Lax` 的 cookie，旧会话无从撤销，这是已知的例外。
-- 口令方式的 `must_change` 路径完成后，引擎调 `Sessions.RevokeAccount(except = 新会话)`，因为口令变了。引擎判断这条路径有没有走由 `Proof.PasswordChanged` 承载：口令方法在自己重设了凭据（`Passwords.Set` 成功）时把它的证明上的该字段置真，引擎据此在完成时撤销其余会话。撤销其余会话只对 `login` 生效；`step-up` 的 `must_change`（账户无因素时以口令走第一因素）同样置真，但 `step-up` 完成时不撤销其余会话，本设计不为它加这一动作。
+- 口令方式的 `must_change` 路径完成后，引擎调 `Sessions.RevokeAccount(except = 新会话)`，因为口令变了。引擎判断这条路径有没有走由 `Proof.PasswordChanged` 承载：口令方法在自己重设了凭据（`Passwords.Set` 成功）时把它的证明上的该字段置真，引擎据此在完成时撤销其余会话。撤销其余会话只对 `login` 生效；`step-up` 的 `must_change`（以口令走第一因素时）同样置真，但 `step-up` 完成时不撤销其余会话，本设计不为它加这一动作。
 - `login` 的审计行用新认定的身份派生上下文，使 `actor` 是登录的账户而不是空串；登录失败写同名审计行，`actor` 为空；本实现不写 `identifier_mac`，失败因此不经审计按标识关联。失败不发事件，只走审计、日志与计数器，否则 `login.failed` 会成为枚举旁路（[authn-events](design-authn-events.md)、[ADR-authn-events-and-audit](../../../adr/adr-authn-events-and-audit.md)）。
 - 会话与令牌的期限、cookie 的属性与 CSRF 归 [authn-session](design-authn-session.md) 与 [authn-token](design-authn-token.md)。
 
