@@ -24,7 +24,7 @@ and bulk revocation), `SocialBindingsSection` plus
 `BindingCallbackHandler` (the social bindings surface and the callback
 route that completes a link flow), and `MfaSection` (the two-step
 verification surface: the factors read from `GET /api/v1/auth/factors`, their
-removal, and the enroll flow). The package sits one step above
+label and row times, their rename and removal, and the enroll flow). The package sits one step above
 `@speed/auth-ui`'s tier: reads go through the react-query hooks generated
 into `@speed/api-sdk` over the host's QueryClient (the shared-QueryClient
 contract: one host-bound QueryClient, never package-constructed), and
@@ -206,6 +206,15 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   banner. A phone is a sign-in method and an additional security factor;
   verifying it never lifts the account's verification restriction -- only a
   proved email address does.
+- **A factor row reads as its name and its register instants.** `MfaSection`
+  renders each row's label (the kind name when the label is empty), its
+  status, its creation time and its last successful verification (a row that
+  has never passed one says so), the two times through the same account
+  timezone chain as every other surface. The inline rename writes the label
+  through the generated mutation; an empty value clears it and the row falls
+  back to the kind, and a landed rename refetches the list. The enrollment
+  name form is prefilled with the browser/OS summary the session rows show
+  (`summarizeUserAgent`), editable, and may be submitted empty.
 - **The error surface is a code whitelist with guarded vocabulary.**
   Every failure path resolves to one error code rendered in one
   `role="alert"` banner; codes outside the whitelist render
@@ -258,7 +267,14 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
    renders exactly the operations that exist.** Registration is not a
    factor route — it is the login engine's enroll purpose — so
    `MfaSection` never declares an enable operation; the factors are read
-   from `GET /api/v1/auth/factors` and removal is `DELETE /api/v1/auth/factors/{id}`.
+   from `GET /api/v1/auth/factors`, renamed through `PATCH
+   /api/v1/auth/factors/{id}`, and removed through `DELETE
+   /api/v1/auth/factors/{id}`. The enrollment's label travels with the
+   flow's first input (`{kind, label}`), so the entry collects it before
+   the flow starts and later steps do not read it; an empty label is sent
+   as such, the server stores no name, the row falls back to its kind, and
+   the form imposes no required rule. A rename is metadata and asks for no
+   step-up, so the section opens no gate for it.
    The enrollment entries are the deployment's own answer too: the section
    reads `GET /api/v1/auth/methods`' `mfa.factors` (through `session.listMethods`)
    and offers one entry per listed kind, so it never offers a factor the

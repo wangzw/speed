@@ -142,6 +142,13 @@
     "remove": "移除",
     "removeAria": "移除此两步验证方式：{{factor}}",
     "removed": "{{factor}} 已移除。",
+    "rename": "重命名",
+    "renameAria": "重命名此两步验证方式：{{factor}}",
+    "renamed": "{{factor}} 的名称已更新。",
+    "renameLabel": "名称",
+    "renameHint": "最多 64 个字符；留空则显示方式名称。",
+    "renameSave": "保存",
+    "renameCancel": "取消",
     "removeConfirm": {
       "title": "移除此两步验证方式？",
       "message": "移除后将不再要求使用它。账户至少需要保留一种登录方式。",
@@ -158,7 +165,10 @@
         "active": "已启用",
         "pending": "待确认",
         "disabled": "已停用"
-      }
+      },
+      "createdAt": "创建于 {{time}}",
+      "lastUsedAt": "最近使用：{{time}}",
+      "neverUsed": "最近使用：从未"
     },
     "enroll": {
       "title": "设置验证方式",
@@ -169,6 +179,8 @@
       "other": "添加其他验证方式",
       "confirmLabel": "确认",
       "cancelLabel": "取消",
+      "labelField": "名称（可选）",
+      "labelHelp": "用于在列表中区分这个方式；留空则显示方式名称。",
       "enrolled": "{{factor}} 已添加。"
     },
     "stepUp": {

@@ -21,6 +21,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { formatInstant } from '@speed/i18n'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   errorResponse,
@@ -77,14 +78,64 @@ function factor(overrides: Record<string, unknown>): Record<string, unknown> {
 
 function mount(
   respond: RealResponder,
-  options: { readonly returnPath?: string } = {},
+  options: {
+    readonly returnPath?: string
+    readonly profile?: Record<string, unknown>
+  } = {},
 ) {
-  const rig = makeRealClientRig(respond)
+  // Every section that formats a time reads the profile for the account's
+  // stored zone; answer that read here unless the case wants a specific
+  // profile, so a case scripts only the calls it is about.
+  const rig = makeRealClientRig((call: RealCall) => {
+    if (call.method === 'GET' && call.path === PROFILE_PATH) {
+      return jsonResponse(200, options.profile ?? profileBody())
+    }
+    return respond(call)
+  })
   rig.store.set('access-1')
   const rendered = renderWithProviders(
     <MfaSection session={rig.session} returnPath={options.returnPath} />,
   )
   return { rig, ...rendered }
+}
+
+/** The browser/OS summary the name form is prefilled with for a given user
+ * agent (the same summary the session rows show). */
+const SUGGESTED_NAME = 'Chrome · macOS'
+
+/** Replaces the browser's user agent for one case; the returned function
+ * restores whatever was there. */
+function stubUserAgent(ua: string): () => void {
+  const original = Object.getOwnPropertyDescriptor(
+    window.navigator,
+    'userAgent',
+  )
+  Object.defineProperty(window.navigator, 'userAgent', {
+    value: ua,
+    configurable: true,
+  })
+  return () => {
+    if (original === undefined) {
+      delete (window.navigator as { userAgent?: string }).userAgent
+    } else {
+      Object.defineProperty(window.navigator, 'userAgent', original)
+    }
+  }
+}
+
+/**
+ * Open the enrollment name step, clear the prefilled name and confirm it, so
+ * the flow starts with an empty label. Answers the typed name field.
+ */
+async function startEnrollWithEmptyName(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<HTMLElement> {
+  const field = await screen.findByLabelText(zhCN.mfa.enroll.labelField)
+  await user.clear(field)
+  await user.click(
+    screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
+  )
+  return field
 }
 
 /** The accessible name of a method's action while that method already has an
@@ -874,6 +925,7 @@ describe('MfaSection', () => {
     await user.click(
       await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
     )
+    await startEnrollWithEmptyName(user)
 
     await waitFor(() => {
       const start = rig.calls.find(
@@ -924,12 +976,16 @@ describe('MfaSection', () => {
     await user.click(
       await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
     )
+    await startEnrollWithEmptyName(user)
 
-    // The enroll start names the factor kind.
+    // The enroll start names the factor kind and the (cleared) label.
     const start = rig.calls.find(
       (call) => call.method === 'POST' && call.path === FLOW_START,
     )
-    expect(start?.body).toEqual({ purpose: 'enroll', input: { kind: 'totp' } })
+    expect(start?.body).toEqual({
+      purpose: 'enroll',
+      input: { kind: 'totp', label: '' },
+    })
 
     // The step's otpauth URI is its own scannable symbol: the step's JSON is
     // never rendered as a blob, and the URI never appears as text.
@@ -1020,6 +1076,260 @@ describe('MfaSection', () => {
         (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
       ),
     ).toHaveLength(1)
+  })
+
+  it('prefills the enrollment name with this browser and sends it', async () => {
+    const restore = stubUserAgent(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    )
+    try {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return jsonResponse(200, methodsDoc(['totp']))
+        }
+        if (call.method === 'GET' && call.path === FACTORS_PATH) {
+          return jsonResponse(200, { factors: [] })
+        }
+        if (call.method === 'POST' && call.path === FLOW_START) {
+          return jsonResponse(200, {
+            seq: 1,
+            state: 'enroll',
+            next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond)
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', {
+          name: addNameOf(zhCN.mfa.factor.kind.totp),
+        }),
+      )
+      // The name step carries the browser/OS summary the session rows show,
+      // editable and sent with the flow's first input.
+      const field = await screen.findByLabelText(zhCN.mfa.enroll.labelField)
+      expect(field).toHaveValue(SUGGESTED_NAME)
+      await expectNoAxeViolations()
+
+      await user.click(
+        screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
+      )
+      await waitFor(() => {
+        const start = rig.calls.find(
+          (call) => call.method === 'POST' && call.path === FLOW_START,
+        )
+        expect(start?.body).toEqual({
+          purpose: 'enroll',
+          input: { kind: 'totp', label: SUGGESTED_NAME },
+        })
+      })
+    } finally {
+      restore()
+    }
+  })
+
+  it('submits an empty name when the reader clears the prefill', async () => {
+    const restore = stubUserAgent(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    )
+    try {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return jsonResponse(200, methodsDoc(['totp']))
+        }
+        if (call.method === 'GET' && call.path === FACTORS_PATH) {
+          return jsonResponse(200, { factors: [] })
+        }
+        if (call.method === 'POST' && call.path === FLOW_START) {
+          return jsonResponse(200, {
+            seq: 1,
+            state: 'enroll',
+            next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond)
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', {
+          name: addNameOf(zhCN.mfa.factor.kind.totp),
+        }),
+      )
+      // Clearing the prefill is not a client-side validation failure: the
+      // empty value is sent, and the server stores no name.
+      const field = await startEnrollWithEmptyName(user)
+      expect(field).toHaveValue('')
+      await waitFor(() => {
+        const start = rig.calls.find(
+          (call) => call.method === 'POST' && call.path === FLOW_START,
+        )
+        expect(start?.body).toEqual({
+          purpose: 'enroll',
+          input: { kind: 'totp', label: '' },
+        })
+      })
+    } finally {
+      restore()
+    }
+  })
+
+  it('shows each row’s name, creation time and last use in the account time zone', async () => {
+    const timeZone = 'Asia/Shanghai'
+    const created = formatInstant('2026-01-01T00:00:00Z', 'zh-CN', {
+      timeZone,
+    })
+    const lastUsed = formatInstant('2026-02-01T00:00:00Z', 'zh-CN', {
+      timeZone,
+    })
+    const laterCreated = formatInstant('2026-03-01T00:00:00Z', 'zh-CN', {
+      timeZone,
+    })
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            factor({
+              id: 'factor-1',
+              kind: 'totp',
+              label: 'Phone app',
+              created_at: '2026-01-01T00:00:00Z',
+              last_used_at: '2026-02-01T00:00:00Z',
+            }),
+            factor({
+              id: 'factor-2',
+              kind: 'totp',
+              label: '',
+              created_at: '2026-03-01T00:00:00Z',
+            }),
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond, { profile: profileBody({ time_zone: timeZone }) })
+
+    expect(await screen.findByText('Phone app')).toBeTruthy()
+    expect(
+      screen.getByText(zhCN.mfa.factor.createdAt.replace('{{time}}', created)),
+    ).toBeTruthy()
+    expect(
+      screen.getByText(
+        zhCN.mfa.factor.lastUsedAt.replace('{{time}}', lastUsed),
+      ),
+    ).toBeTruthy()
+    expect(
+      screen.getByText(
+        zhCN.mfa.factor.createdAt.replace('{{time}}', laterCreated),
+      ),
+    ).toBeTruthy()
+    // The unnamed row reads as its kind; the method heading is the only
+    // other place that text appears.
+    expect(screen.getAllByText(zhCN.mfa.factor.kind.totp)).toHaveLength(2)
+    // A factor that has never passed a verification says so.
+    expect(screen.getAllByText(zhCN.mfa.factor.neverUsed)).toHaveLength(1)
+  })
+
+  it('renames a factor through PATCH and refetches the list', async () => {
+    let renamed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            factor({
+              id: 'factor-1',
+              label: renamed ? 'New name' : 'Old name',
+            }),
+          ],
+        })
+      }
+      if (
+        call.method === 'PATCH' &&
+        call.path === '/api/v1/auth/factors/factor-1'
+      ) {
+        renamed = true
+        return jsonResponse(200, factor({ id: 'factor-1', label: 'New name' }))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.mfa.renameAria.replace('{{factor}}', 'Old name'),
+      }),
+    )
+    const field = await screen.findByLabelText(zhCN.mfa.renameLabel)
+    await expectNoAxeViolations()
+    await user.clear(field)
+    await user.type(field, 'New name')
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.renameSave }))
+
+    await waitFor(() => {
+      const patch = rig.calls.find(
+        (call) =>
+          call.method === 'PATCH' &&
+          call.path === '/api/v1/auth/factors/factor-1',
+      )
+      expect(patch?.body).toEqual({ label: 'New name' })
+    })
+    expect(
+      await screen.findByText(
+        zhCN.mfa.renamed.replace('{{factor}}', 'New name'),
+      ),
+    ).toBeTruthy()
+    // The list converged on the server's answer.
+    expect(await screen.findByText('New name')).toBeTruthy()
+    expect(screen.queryByText('Old name')).toBeNull()
+  })
+
+  it('renders a refused rename as its error code and keeps the editor open', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [factor({ id: 'factor-1', label: 'Old name' })],
+        })
+      }
+      if (
+        call.method === 'PATCH' &&
+        call.path === '/api/v1/auth/factors/factor-1'
+      ) {
+        return errorResponse(400, 'authn.bad_request')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.mfa.renameAria.replace('{{factor}}', 'Old name'),
+      }),
+    )
+    const field = await screen.findByLabelText(zhCN.mfa.renameLabel)
+    await user.clear(field)
+    // Over the label's 64-character domain: the server refuses it.
+    await user.type(field, 'x'.repeat(65))
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.renameSave }))
+
+    expect(
+      await screen.findByText(zhCN.errors.authn.bad_request),
+    ).toBeTruthy()
+    // The editor stays open so the value can be corrected.
+    expect(screen.getByLabelText(zhCN.mfa.renameLabel)).toBeVisible()
   })
 
   it('names the removed row when two factors share a kind', async () => {
@@ -1143,6 +1453,7 @@ describe('MfaSection', () => {
         name: manageNameOf(zhCN.mfa.factor.kind.totp),
       }),
     )
+    await startEnrollWithEmptyName(user)
     await user.type(
       await screen.findByLabelText(zhCN.flowStep.codeLabel),
       '123456',
@@ -1210,6 +1521,7 @@ describe('MfaSection', () => {
     await user.click(
       await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
     )
+    await startEnrollWithEmptyName(user)
 
     expect(await screen.findByLabelText(zhCN.flowStep.codeLabel)).toBeVisible()
     expect(
@@ -1282,6 +1594,7 @@ describe('MfaSection', () => {
       await user.click(
         await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.webauthn) }),
       )
+      await startEnrollWithEmptyName(user)
       // The registration step drives navigator.credentials.create and
       // reports the credential under the enroll step, not a free-text field.
       await user.click(
@@ -1342,12 +1655,16 @@ describe('MfaSection', () => {
     expect(unknown).toBeTruthy()
 
     await user.click(unknown)
+    await startEnrollWithEmptyName(user)
     // The unknown kind's own flow starts; the generic label never hides
     // the deployment's vocabulary from the request.
     const start = rig.calls.find(
       (call) => call.method === 'POST' && call.path === FLOW_START,
     )
-    expect(start?.body).toEqual({ purpose: 'enroll', input: { kind: 'magic' } })
+    expect(start?.body).toEqual({
+      purpose: 'enroll',
+      input: { kind: 'magic', label: '' },
+    })
   })
 
   it('raises the factor remove control to the 44px floor under a coarse pointer', async () => {

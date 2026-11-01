@@ -142,6 +142,13 @@
     "remove": "Remove",
     "removeAria": "Remove this two-step verification method: {{factor}}",
     "removed": "{{factor}} removed.",
+    "rename": "Rename",
+    "renameAria": "Rename this two-step verification method: {{factor}}",
+    "renamed": "{{factor}} renamed.",
+    "renameLabel": "Name",
+    "renameHint": "Up to 64 characters; leave empty to show the method name.",
+    "renameSave": "Save",
+    "renameCancel": "Cancel",
     "removeConfirm": {
       "title": "Remove this two-step verification method?",
       "message": "Removing it means you will no longer be asked for it. An account must keep at least one sign-in method.",
@@ -158,7 +165,10 @@
         "active": "Active",
         "pending": "Pending",
         "disabled": "Disabled"
-      }
+      },
+      "createdAt": "Created {{time}}",
+      "lastUsedAt": "Last used: {{time}}",
+      "neverUsed": "Last used: never"
     },
     "enroll": {
       "title": "Set up a verification method",
@@ -169,6 +179,8 @@
       "other": "Add another verification method",
       "confirmLabel": "Confirm",
       "cancelLabel": "Cancel",
+      "labelField": "Name (optional)",
+      "labelHelp": "Helps you tell this method apart in the list; leave empty to show the method name.",
       "enrolled": "{{factor}} added."
     },
     "stepUp": {

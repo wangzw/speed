@@ -559,27 +559,42 @@ interface BindingCallbackHandlerProps {
 
 ## MfaSection
 
-The two-step-verification surface. The authn factor routes list and
-remove factors (`GET /api/v1/auth/factors`, `DELETE /api/v1/auth/factors/{id}`);
+The two-step-verification surface. The authn factor routes list,
+rename and remove factors (`GET /api/v1/auth/factors`, `PATCH
+/api/v1/auth/factors/{id}`, `DELETE /api/v1/auth/factors/{id}`);
 registration is not among them -- the one entry is the login engine's
 `enroll` purpose -- so the section renders the factors it reads and
 offers the enrollment entries THIS deployment carries, each driving a
 `purpose: 'enroll'` flow. Which kinds those are is the deployment's own
-answer: the section reads `GET /api/v1/auth/methods`' `mfa.factors` once through
+answer: the section reads `GET /api/v1/auth/methods' `mfa.factors` once through
 `session.listMethods` and offers one entry per reported kind, so a
 deployment whose assembly has no passkey relying party shows no passkey
 entry. A known kind (`totp`, `webauthn`, `sms`) renders its translated
 name under `mfa.enroll.<kind>`; an unknown kind gets the generic other
 label but still starts that kind's own flow.
 
-- Enroll. `session.startAuthenticatedFlow({purpose: 'enroll', input: {kind}})`
-  opens the wizard; each reply's next step is rendered and answered
-  (`session.answerFlow`). A `webauthn` step hands the factor its own JSON:
-  TOTP's `otpauth_uri` renders as a scannable QR symbol with a
-  manual-entry disclosure that shows the parsed base32 secret and a copy
-  control, and a passkey's creation options are driven through the
+Each row shows the name the server stored (the kind name when the label
+is empty), its status, its creation time and its last successful
+verification (a row that has never passed one says so); both times are
+formatted with the account's display-timezone chain.
+
+- Enroll. The entry first shows a name form, prefilled with the
+  browser/OS summary the session rows show and editable; an empty name is
+  allowed and sent as empty, and the row then reads as its kind. The name
+  travels with the flow's first input
+  (`session.startAuthenticatedFlow({purpose: 'enroll', input: {kind, label}})`,
+  because later steps do not read it), and each reply's next step is
+  rendered and answered (`session.answerFlow`). A `webauthn` step hands the
+  factor its own JSON: TOTP's `otpauth_uri` renders as a scannable QR symbol
+  with a manual-entry disclosure that shows the parsed base32 secret and a
+  copy control, and a passkey's creation options are driven through the
   browser's WebAuthn API by `@speed/auth-core/webauthn`. The settled
   `enrolled` refetches the factors.
+- Rename. A row's inline editor sends `PATCH /api/v1/auth/factors/{id}`
+  with the new label. The label is metadata, so no step-up gates it; an
+  empty value clears the name and the row reads as its kind. A landed
+  rename confirms below the list, naming the name the server stored, and
+  refetches the list; a refusal renders its error code there.
 - Remove. A row's action sends `DELETE /api/v1/auth/factors/{id}` behind the
   danger confirm. The route asks for a fresh multi-factor
   authentication: an unelevated caller is answered 401

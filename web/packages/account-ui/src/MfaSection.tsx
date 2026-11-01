@@ -2,8 +2,9 @@
  * MfaSection: the two-step-verification (TOTP authenticator + passkey)
  * surface of the account page.
  *
- * The authn factor surface lists and removes factors (GET /api/v1/auth/factors,
- * DELETE /api/v1/auth/factors/{id}); registration is not among its routes -- the
+ * The authn factor surface lists, renames and removes factors (GET
+ * /api/v1/auth/factors, PATCH /api/v1/auth/factors/{id}, DELETE
+ * /api/v1/auth/factors/{id}); registration is not among its routes -- the
  * one entry for it is the login engine's `enroll` purpose. The section
  * therefore renders the factors it reads and offers the enrollment entries
  * THIS deployment carries, each of which opens a `purpose: 'enroll'` flow
@@ -17,14 +18,28 @@
  * enroll flow uses -- and an unresolved read withholds the entries (fail
  * closed) rather than guessing.
  *
- *  - Enroll. `startAuthenticatedFlow({purpose: 'enroll', input: {kind}})`
- *    opens the wizard; each reply's next step is rendered (FlowStep) and
- *    answered. A `webauthn` step hands the factor its own JSON -- TOTP's
- *    otpauth_uri, or a passkey's creation options -- of which the wizard
- *    renders TOTP's URI as a QR symbol with a manual-entry disclosure for
- *    its base32 secret, and drives a passkey's options through the
- *    browser's WebAuthn API. The flow settles `enrolled` without changing
+ *  - Enroll. The entry opens a name form first: the enrollment step carries
+ *    the label with its `kind` (`POST B/flows/authenticated
+ *    {purpose:"enroll", input:{kind, label}}`), and later steps do not read
+ *    it. The field is prefilled with the browser/OS summary the session rows
+ *    show (summarizeUserAgent) so a factor registered from this device is
+ *    recognisable, is editable, and may be submitted empty -- the server
+ *    stores no name then and the row falls back to its kind. The form has no
+ *    required rule. Continue starts the flow; each reply's next step is
+ *    rendered (FlowStep) and answered. A `webauthn` step hands the factor its
+ *    own JSON -- TOTP's otpauth_uri, or a passkey's creation options -- of
+ *    which the wizard renders TOTP's URI as a QR symbol with a manual-entry
+ *    disclosure for its base32 secret, and drives a passkey's options through
+ *    the browser's WebAuthn API. The flow settles `enrolled` without changing
  *    this session's level; the factors list is then refetched.
+ *  - Rename. A row's inline editor sends PATCH /api/v1/auth/factors/{id}
+ *    with the new label. The label is metadata, so the route asks for no
+ *    step-up and the section opens no gate for it; an empty value clears the
+ *    name and the row falls back to its kind. A landed rename confirms itself
+ *    below the list, naming the row by the name the server stored, and the
+ *    factors list is refetched. A refused rename renders its error code in
+ *    the same region (a 400 for a value outside the label's domain, a 404
+ *    when the row is gone).
  *  - Remove. A row's row-end action sends DELETE /api/v1/auth/factors/{id}
  *    behind the ui-kit danger ConfirmDialog (removing a factor is
  *    irreversible). The route asks for a fresh multi-factor
@@ -46,6 +61,13 @@
  *    read as pending or disabled runs bare: no credential is replaced, so
  *    a genuine anonymous answer must still end the session.
  *
+ * Every row shows its name (the label, else the kind), its status, and the
+ * instants the register records: when it was created and when it last passed
+ * a verification (the latter says so when it has never passed one). Both are
+ * formatted with the account's timezone chain -- the stored preference, the
+ * host's display-timezone context, the device zone, then UTC -- the same
+ * chain every other surface uses.
+ *
  * Both gated entries share one dialog: the pending action is remembered
  * so a success re-runs exactly that action and a cancel re-runs nothing.
  *
@@ -63,35 +85,40 @@
  * kind, because then there is no entry to point at.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
+import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   getAuthnMfaFactorsQueryKey,
   useAuthnMfaRemoveFactor,
+  useAuthnMfaUpdateFactor,
 } from '@speed/api-sdk'
 import type { AuthSession, AuthnStep, StepUpReason } from '@speed/auth-core'
 import { stepUpReasonOf } from '@speed/auth-core'
+import { formatInstant, isSupportedTimeZone, resolveTimeZone } from '@speed/i18n'
 import {
   ConfirmDialog,
   errorCodeOf,
   FORM_MAX_WIDTH,
   ListSkeleton,
   SectionCard,
+  useDisplayTimeZone,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
 import { FlowStep } from './internal/flow-step.js'
 import type { FlowStepAnswer } from './internal/flow-step.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
-import { useFactorsQuery } from './internal/queries.js'
+import { useFactorsQuery, useProfileQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
+import { summarizeUserAgent } from './internal/ua-summary.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 export interface MfaSectionProps {
@@ -121,6 +148,7 @@ type GatedAction =
   | {
       readonly kind: 'enroll'
       readonly factorKind: string
+      readonly label: string
       readonly reason: StepUpReason
     }
   | {
@@ -133,6 +161,40 @@ type GatedAction =
 interface EnrollWizard {
   readonly step: AuthnStep
   readonly seq: number
+}
+
+/** The enrollment's name form: the kind the entry was clicked for and the
+ * label typed so far. It is shown before the flow starts because the label
+ * travels with the flow's first (`enroll`) input. */
+interface EnrollDraft {
+  readonly kind: string
+  readonly label: string
+}
+
+/** The row whose name is being edited: its identifier and the input value. */
+interface RenameDraft {
+  readonly id: string
+  readonly label: string
+}
+
+/** The name suggested for a factor registered from this browser: the same
+ * short browser/OS summary the session rows show. An unrecognised user
+ * agent suggests no name; the reader can type one or leave it empty. */
+function suggestedFactorName(): string {
+  if (typeof navigator === 'undefined') {
+    return ''
+  }
+  return summarizeUserAgent(navigator.userAgent) ?? ''
+}
+
+/** Parses a server timestamp; answers null for an absent or malformed
+ * value so a bad row can never reach Intl and throw. */
+function parseDate(iso: string | undefined): Date | null {
+  if (iso === undefined) {
+    return null
+  }
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 /** The pending-state placeholder, read aloud as one loading announcement. */
@@ -158,33 +220,64 @@ const METHOD_HELP_KEYS: Readonly<Record<string, string>> = {
 }
 
 export function MfaSection({ session, returnPath }: MfaSectionProps) {
-  const { t } = useAccountUiTranslation()
+  const { t, i18n } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useFactorsQuery()
   const removeMutation = useAuthnMfaRemoveFactor()
+  const updateMutation = useAuthnMfaUpdateFactor()
+  const { data: profile } = useProfileQuery()
+  const hostTimeZone = useDisplayTimeZone()
 
   // The action a won step-up re-runs, if any.
   const [gate, setGate] = useState<GatedAction | null>(null)
+  // The open enrollment's name form, if any.
+  const [enrollDraft, setEnrollDraft] = useState<EnrollDraft | null>(null)
   // The open enrollment, if any.
   const [wizard, setWizard] = useState<EnrollWizard | null>(null)
   // The enrollment's in-flight state.
   const [enrolling, setEnrolling] = useState(false)
   // The row whose removal is being confirmed.
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
+  // The row whose name is being edited, if any.
+  const [renameDraft, setRenameDraft] = useState<RenameDraft | null>(null)
   // The kind of the enrollment in progress, so its confirmation names the
   // factor kind once the flow settles.
   const [enrollKind, setEnrollKind] = useState<string | null>(null)
-  // Enrollment and removal are two control groups with their own scopes: the
-  // enrollment result sits below its entries, the removal result below the
-  // list, and one group's outcome never clears the other's.
+  // Enrollment, rename and removal are separate control groups with their
+  // own scopes: the enrollment result sits below its entries or form, and
+  // the row-action results sit below the list, so one group's outcome never
+  // clears another's.
   const enrollFeedback = useWriteFeedback()
   const removeFeedback = useWriteFeedback()
+  const renameFeedback = useWriteFeedback()
   // The deployment's enrollable factor kinds (GET /api/v1/auth/methods'
   // mfa.factors). null is unresolved -- still reading, or the read failed:
   // the enroll entries are then withheld rather than guessed.
   const [enrollableKinds, setEnrollableKinds] = useState<
     readonly string[] | null
   >(null)
+
+  // The display-timezone chain: the account's stored preference wins, then
+  // the host's display-timezone context (which replaces only the device
+  // tier), then the device zone, then UTC. Every candidate is validated
+  // through the shared i18n helper, so the formatter never receives a zone
+  // the engine refuses.
+  const timeZone = useMemo(() => {
+    const stored = profile?.time_zone?.trim() ?? ''
+    if (stored !== '' && isSupportedTimeZone(stored)) {
+      return stored
+    }
+    if (
+      hostTimeZone !== undefined &&
+      hostTimeZone !== '' &&
+      isSupportedTimeZone(hostTimeZone)
+    ) {
+      return hostTimeZone
+    }
+    return resolveTimeZone(undefined)
+  }, [profile?.time_zone, hostTimeZone])
+  const formatTime = (value: string | number | Date): string =>
+    formatInstant(value, i18n.language, { timeZone })
 
   // Read the deployment's factors once per session. The guard survives
   // StrictMode's double effect invocation, so a settled answer is only
@@ -218,8 +311,10 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const busy =
     enrolling ||
     removeMutation.isPending ||
+    updateMutation.isPending ||
     enrollFeedback.pending ||
-    removeFeedback.pending
+    removeFeedback.pending ||
+    renameFeedback.pending
 
   /** The translated name of a factor kind, the guarded vocabulary's generic
    * label for a kind this package has no wording for. */
@@ -239,17 +334,28 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     })
   }
 
-  /** Start (or restart) an enrollment for one factor kind. */
-  function startEnroll(factorKind: string): Promise<void> {
+  /** Open the enrollment's name form for one factor kind. The suggested
+   * name is filled in but editable, and submitting it empty is allowed: the
+   * server then stores no name. */
+  function openEnroll(factorKind: string): void {
+    enrollFeedback.reset()
+    setEnrollDraft({ kind: factorKind, label: suggestedFactorName() })
+  }
+
+  /** Start (or restart) an enrollment for one factor kind and label. The
+   * label travels with the flow's first input, so a retry after a won
+   * step-up sends the same one. */
+  function startEnroll(factorKind: string, label: string): Promise<void> {
     setEnrollKind(factorKind)
     return enrollFeedback.run(async () => {
       setEnrolling(true)
       try {
         const state = await session.startAuthenticatedFlow({
           purpose: 'enroll',
-          input: { kind: factorKind },
+          input: { kind: factorKind, label },
           ...(returnPath === undefined ? {} : { return_to: returnPath }),
         })
+        setEnrollDraft(null)
         if ('next' in state) {
           setWizard({ step: state.next, seq: state.seq })
           return null
@@ -269,7 +375,8 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         const code = errorCodeOf(error)
         const reason = stepUpReasonOf(code)
         if (reason !== null) {
-          setGate({ kind: 'enroll', factorKind, reason })
+          setEnrollDraft(null)
+          setGate({ kind: 'enroll', factorKind, label, reason })
           return null
         }
         throw error
@@ -371,11 +478,32 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     })
   }
 
+  /** Rename one factor. The label is metadata, so no step-up can gate this
+   * write; a refusal lands in the row actions' feedback region. */
+  function renameFactor(factorId: string, label: string): Promise<void> {
+    return renameFeedback.run(async () => {
+      const updated = await updateMutation.mutateAsync({
+        id: factorId,
+        data: { label },
+      })
+      setRenameDraft(null)
+      await invalidateFactors()
+      // The confirmation names the row by the name the server stored; an
+      // empty name means the row reads as its kind.
+      const name =
+        updated.label !== '' ? updated.label : factorKindLabel(updated.kind ?? '')
+      return t('mfa.renamed', {
+        factor: name,
+        interpolation: { escapeValue: false },
+      })
+    })
+  }
+
   function handleStepUpSuccess(): void {
     const action = gate
     setGate(null)
     if (action?.kind === 'enroll') {
-      void startEnroll(action.factorKind)
+      void startEnroll(action.factorKind, action.label)
     } else if (action?.kind === 'remove') {
       void removeFactor(action.factorId)
     }
@@ -459,6 +587,67 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
               />
               {/* The enrollment group's result, below the step and its
                   actions. */}
+              <WriteFeedbackRegion outcome={enrollFeedback.outcome} />
+            </Box>
+          ) : enrollDraft !== null ? (
+            <Box sx={{ py: 1.5, maxWidth: FORM_MAX_WIDTH }}>
+              <Typography variant="subtitle1" component="h3">
+                {t('mfa.enroll.title')}
+              </Typography>
+              {/* The name travels with the flow's first input, so it is
+                  collected before the flow starts. The field is prefilled,
+                  editable and may be submitted empty. */}
+              <Box
+                component="form"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void startEnroll(enrollDraft.kind, enrollDraft.label)
+                }}
+                sx={{ mt: 2 }}
+              >
+                <TextField
+                  label={t('mfa.enroll.labelField')}
+                  value={enrollDraft.label}
+                  onChange={(event) =>
+                    setEnrollDraft({
+                      kind: enrollDraft.kind,
+                      label: event.target.value,
+                    })
+                  }
+                  helperText={t('mfa.enroll.labelHelp')}
+                  disabled={enrolling}
+                  fullWidth
+                />
+                {/* Cancel on the left, confirm closing the row on the
+                    right -- the wizard's own action-row convention. */}
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    mt: 2,
+                  }}
+                >
+                  <Button
+                    type="button"
+                    disabled={enrolling}
+                    onClick={() => {
+                      setEnrollDraft(null)
+                      enrollFeedback.reset()
+                    }}
+                  >
+                    {t('mfa.enroll.cancelLabel')}
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    sx={{ marginLeft: 'auto' }}
+                    disabled={enrolling}
+                  >
+                    {t('mfa.enroll.confirmLabel')}
+                  </Button>
+                </Box>
+              </Box>
               <WriteFeedbackRegion outcome={enrollFeedback.outcome} />
             </Box>
           ) : (
@@ -574,7 +763,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                   interpolation: { escapeValue: false },
                                 })
                           }
-                          onClick={() => void startEnroll(kind)}
+                          onClick={() => openEnroll(kind)}
                         >
                           {activeCount > 0
                             ? t('mfa.action.manage')
@@ -607,45 +796,178 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                               KNOWN_FACTOR_STATUSES.has(factor.status)
                                 ? factor.status
                                 : null
+                            // The row reads as its name; an unnamed factor
+                            // reads as its kind.
+                            const displayName =
+                              factor.label != null && factor.label !== ''
+                                ? factor.label
+                                : kindLabel
+                            const created = parseDate(factor.created_at)
+                            const lastUsed = parseDate(factor.last_used_at)
                             return (
                               <Box
                                 component="li"
                                 key={id ?? String(factorIndex)}
                                 sx={{
                                   display: 'flex',
-                                  alignItems: 'center',
+                                  alignItems: 'flex-start',
                                   gap: 1.5,
                                   minWidth: 0,
                                 }}
                               >
-                                <Typography variant="body2">
-                                  {factor.label != null &&
-                                  factor.label !== ''
-                                    ? factor.label
-                                    : kindLabel}
-                                </Typography>
-                                {status !== null && (
-                                  <Chip
-                                    size="small"
-                                    variant="outlined"
-                                    label={t(`mfa.factor.status.${status}`)}
-                                  />
-                                )}
-                                {id !== null && (
-                                  <Button
-                                    variant="outlined"
-                                    color="error"
-                                    size="small"
-                                    disabled={busy}
-                                    aria-label={t('mfa.removeAria', {
-                                      factor: kindLabel,
-                                      interpolation: { escapeValue: false },
-                                    })}
-                                    onClick={() => setRemoveTarget(id)}
-                                    sx={{ marginLeft: 'auto' }}
+                                <Box sx={{ minWidth: 0, flex: '1 1 auto' }}>
+                                  <Box
+                                    sx={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 1,
+                                      flexWrap: 'wrap',
+                                    }}
                                   >
-                                    {t('mfa.remove')}
-                                  </Button>
+                                    <Typography
+                                      variant="body2"
+                                      sx={{
+                                        fontWeight: 600,
+                                        overflowWrap: 'anywhere',
+                                      }}
+                                    >
+                                      {displayName}
+                                    </Typography>
+                                    {status !== null && (
+                                      <Chip
+                                        size="small"
+                                        variant="outlined"
+                                        label={t(
+                                          `mfa.factor.status.${status}`,
+                                        )}
+                                      />
+                                    )}
+                                  </Box>
+                                  <Box sx={{ mt: 0.5 }}>
+                                    <Typography
+                                      variant="body2"
+                                      color="text.secondary"
+                                    >
+                                      {created === null
+                                        ? ''
+                                        : t('mfa.factor.createdAt', {
+                                            time: formatTime(created),
+                                            interpolation: {
+                                              escapeValue: false,
+                                            },
+                                          })}
+                                    </Typography>
+                                    <Typography
+                                      variant="body2"
+                                      color="text.secondary"
+                                    >
+                                      {lastUsed === null
+                                        ? t('mfa.factor.neverUsed')
+                                        : t('mfa.factor.lastUsedAt', {
+                                            time: formatTime(lastUsed),
+                                            interpolation: {
+                                              escapeValue: false,
+                                            },
+                                          })}
+                                    </Typography>
+                                  </Box>
+                                  {renameDraft !== null &&
+                                    renameDraft.id === id && (
+                                      <Box
+                                        component="form"
+                                        onSubmit={(event) => {
+                                          event.preventDefault()
+                                          void renameFactor(
+                                            renameDraft.id,
+                                            renameDraft.label,
+                                          )
+                                        }}
+                                        sx={{
+                                          mt: 1,
+                                          display: 'flex',
+                                          alignItems: 'flex-start',
+                                          gap: 1,
+                                          flexWrap: 'wrap',
+                                        }}
+                                      >
+                                        <TextField
+                                          size="small"
+                                          label={t('mfa.renameLabel')}
+                                          value={renameDraft.label}
+                                          onChange={(event) =>
+                                            setRenameDraft({
+                                              id: renameDraft.id,
+                                              label: event.target.value,
+                                            })
+                                          }
+                                          helperText={t('mfa.renameHint')}
+                                          disabled={
+                                            updateMutation.isPending
+                                          }
+                                          sx={{
+                                            flex: '1 1 220px',
+                                            minWidth: 0,
+                                          }}
+                                        />
+                                        <Button
+                                          type="submit"
+                                          variant="contained"
+                                          size="small"
+                                          disabled={busy}
+                                        >
+                                          {t('mfa.renameSave')}
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          size="small"
+                                          disabled={updateMutation.isPending}
+                                          onClick={() => setRenameDraft(null)}
+                                        >
+                                          {t('mfa.renameCancel')}
+                                        </Button>
+                                      </Box>
+                                    )}
+                                </Box>
+                                {id !== null && (
+                                  <Box
+                                    sx={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 1,
+                                      marginLeft: 'auto',
+                                    }}
+                                  >
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      disabled={busy}
+                                      aria-label={t('mfa.renameAria', {
+                                        factor: displayName,
+                                        interpolation: { escapeValue: false },
+                                      })}
+                                      onClick={() =>
+                                        setRenameDraft({
+                                          id,
+                                          label: factor.label ?? '',
+                                        })
+                                      }
+                                    >
+                                      {t('mfa.rename')}
+                                    </Button>
+                                    <Button
+                                      variant="outlined"
+                                      color="error"
+                                      size="small"
+                                      disabled={busy}
+                                      aria-label={t('mfa.removeAria', {
+                                        factor: kindLabel,
+                                        interpolation: { escapeValue: false },
+                                      })}
+                                      onClick={() => setRemoveTarget(id)}
+                                    >
+                                      {t('mfa.remove')}
+                                    </Button>
+                                  </Box>
                                 )}
                               </Box>
                             )
@@ -658,9 +980,11 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
               </Box>
               )}
 
-              {/* The removal group's result, below the list its row actions
-                  belong to. */}
+              {/* The row actions' results, below the list they belong to.
+                  Rename and removal each own a scope so one action's
+                  outcome never clears the other's. */}
               <WriteFeedbackRegion outcome={removeFeedback.outcome} />
+              <WriteFeedbackRegion outcome={renameFeedback.outcome} />
               {enrollFeedback.outcome === null ? null : (
                 <Box sx={{ mt: 2 }}>
                   <WriteFeedbackRegion outcome={enrollFeedback.outcome} />

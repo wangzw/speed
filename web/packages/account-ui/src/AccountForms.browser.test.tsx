@@ -274,7 +274,17 @@ describe('account-ui form geometry', () => {
 
     await user.click(await screen.findByTestId('mfa-add-totp'))
 
-    const confirm = await screen.findByRole('button', {
+    // The name step comes first and carries the same confirm/cancel row;
+    // confirm it to open the flow's own step.
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.mfa.enroll.confirmLabel,
+      }),
+    )
+
+    // The flow's step is on screen once its own code field is.
+    const codeField = await screen.findByLabelText(zhCN.flowStep.codeLabel)
+    const confirm = screen.getByRole('button', {
       name: zhCN.mfa.enroll.confirmLabel,
     })
     const cancel = screen.getByRole('button', {
@@ -293,7 +303,6 @@ describe('account-ui form geometry', () => {
     ).toHaveClass('MuiTypography-subtitle1')
 
     // The wizard's fields inherit the form width cap, not the card width.
-    const codeField = screen.getByLabelText(zhCN.flowStep.codeLabel)
     expect(codeField.getBoundingClientRect().width).toBeLessThanOrEqual(601)
   })
 
