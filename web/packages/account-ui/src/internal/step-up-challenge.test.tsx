@@ -286,6 +286,7 @@ function mount(
 function mountSession(
   session: AuthSession,
   handlers: {
+    readonly reason?: 'mfa' | 'sso'
     readonly onSuccess?: () => void
     readonly onCancel?: () => void
     readonly onRelogin?: () => void
@@ -296,6 +297,7 @@ function mountSession(
   renderWithProviders(
     <StepUpChallenge
       open
+      reason={handlers.reason}
       session={session}
       onSuccess={onSuccess}
       onCancel={onCancel}
@@ -1324,6 +1326,31 @@ describe('StepUpChallenge', () => {
     )
     // The resume record is written first, then the gate clears, then the
     // session ends.
+    expect(order).toEqual(['relogin', 'cancel', 'logout'])
+    expect(logout).toHaveBeenCalledTimes(1)
+  })
+
+  it('records the operation before ending the session on the SSO re-login exit', async () => {
+    // The SSO refusal is answered by the same exit: a sign-in through the
+    // tenant's identity provider resumes the refused write, so the caller
+    // records it before the cancel clears the gate and the logout ends the
+    // session.
+    const order: string[] = []
+    const logout = vi.fn(() => {
+      order.push('logout')
+      return Promise.resolve()
+    })
+    mountSession(refusingStartSession('unused', logout), {
+      reason: 'sso',
+      onRelogin: () => order.push('relogin'),
+      onCancel: () => order.push('cancel'),
+    })
+    const user = userEvent.setup()
+
+    expect(await screen.findByText(zhCN.mfa.stepUp.ssoRequired)).toBeTruthy()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.relogin }),
+    )
     expect(order).toEqual(['relogin', 'cancel', 'logout'])
     expect(logout).toHaveBeenCalledTimes(1)
   })

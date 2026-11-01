@@ -97,7 +97,7 @@ interface StepUpDialogProps {
   readonly onSuccess: () => void
   readonly onCancel: () => void
   readonly accountHref?: string // 宿主的账户设置路由；给出时在「先登记两步验证」旁渲染链接
-  readonly onRelogin?: () => void // 重新登录出口先触发它，供宿主记录待恢复的操作；随后才取消门控并结束会话
+  readonly onRelogin?: () => void // 重新登录出口（本部署无法升级、会话方法无法复证或企业单点登录要求）先触发它，供宿主记录待恢复的操作；随后才取消门控并结束会话
 }
 
 interface BindingCallbackHandlerProps {
@@ -244,7 +244,7 @@ sequenceDiagram
 
 一次门控动作在被拒时打开加强认证流程，记住被门控的动作；一次成功的流程落定提权，成功路径重试那次被门控的操作恰好一次，取消则不重试。提权只活在那次会话的存续期内，对话框从不承诺不再询问。
 
-**重登之后回到原页并续做。** 对话框判定本部署无法升级（起手被 401 `authn.insufficient_user_authentication` 拒绝且会话仍在），或会话方法无法在本会话复证（`reloginOnly`）时，重新登录出口先触发 `onRelogin`，再取消门控并以 `session.logout` 结束会话。宿主在自己的会话门之后以同一 URL 呈现登录面，登录成功即回到原页。`unavailable` 分支的说明陈述本次会话无法用已登记的验证方式完成这次确认：这些方式可能是在本次登录之后才登记的，或本站没有能进一步加强本次登录的验证方式；并说明重新登录一次后回到原处继续。节在 `onRelogin` 里把「所在页 + 待办操作」写进本包的步进恢复记录（`internal/step-up-resume.ts`，标签页会话存储），回到该页挂载时经门控重跑一次并消费记录。记录承载所在页、所属节与节自己可重建的操作：节只取属于自己的记录，别节的记录原样留下。`SocialBindingsSection` 记绑定方法或解绑行；`IdentifiersSection` 记删除、登录方式开关、默认联系地址与整组登录邮箱选择。改口令的字段与一次性验证码不落盘，那两类写留给人重新发起。记录命名的是另一页时，节原样放回，由该页的节恢复。
+**重登之后回到原页并续做。** 对话框判定本部署无法升级（起手被 401 `authn.insufficient_user_authentication` 拒绝且会话仍在）、会话方法无法在本会话复证（`reloginOnly`），或拒绝为企业单点登录要求（`reason` 为 `sso`）时，重新登录出口先触发 `onRelogin`，再取消门控并以 `session.logout` 结束会话。宿主在自己的会话门之后以同一 URL 呈现登录面，登录成功即回到原页。`unavailable` 分支的说明陈述本次会话无法用已登记的验证方式完成这次确认：这些方式可能是在本次登录之后才登记的，或本站没有能进一步加强本次登录的验证方式；并说明重新登录一次后回到原处继续。节在 `onRelogin` 里把「所在页 + 待办操作」写进本包的步进恢复记录（`internal/step-up-resume.ts`，标签页会话存储），回到该页挂载时经门控重跑一次并消费记录。记录承载所在页、所属节与节自己可重建的操作：节只取属于自己的记录，别节的记录原样留下。`SocialBindingsSection` 记绑定方法或解绑行；`IdentifiersSection` 记删除、登录方式开关、默认联系地址与整组登录邮箱选择。改口令的字段与一次性验证码不落盘，那两类写留给人重新发起。记录命名的是另一页时，节原样放回，由该页的节恢复。
 
 **只有一个启用因素时就地说明。** 因素读回的行里恰好一行处于启用状态（`status` 为 `active`；待确认与已停用的行不计）时，`MfaSection` 在分组上方就地说明本账户只启用了一种两步验证方式，并指向各分组标题上的添加动作再登记一种。计数取自同一份因素读（`GET /api/v1/auth/factors`），不另发请求；登录与登记的应答不带 `warnings`，这条补救提示由本节承担。零个或两个以上启用因素时不渲染该说明；部署没有可登记种类（`mfa.factors` 为空或读失败）时同样不渲染，因为说明要指向的添加动作不存在。
 
@@ -282,7 +282,7 @@ sequenceDiagram
 | 一次发送缺少、无效、过期或已用的人机证明（403 `human-verification-required`） | 一条横幅渲染 `authn.human_verification_required` 的文本；块取得新证明后发送可重试 |
 | 登记通行密钥时认证器已持有该账户的凭据（浏览器答 `InvalidStateError`，服务端下发的 `excludeCredentials` 命中） | 仪式失败横幅渲染 `flowStep.passkeyAlreadyRegistered`：说明此设备已登记过通行密钥，提示换一台设备或改用验证器应用；不把同一设备上的重试当作可修复的失败 |
 | 需要新鲜认证的自助写被答 401 `authn.insufficient_user_authentication` | 打开提权对话框，成功后重跑那次被拒的写一次 |
-| 经提权门控的自助写（`PasswordSection`、`IdentifiersSection`）被答 401 `authn.sso_required` | 打开企业单点登录对话框：点名该要求并给重新登录出口，不读因素、不起流程、不重跑那次写。这条只属于驱动提权门控的节；`ProfileSection` 与 `PreferencesSection` 不接会话、无门控 |
+| 经提权门控的自助写（`PasswordSection`、`IdentifiersSection`）被答 401 `authn.sso_required` | 打开企业单点登录对话框：点名该要求并给重新登录出口，不读因素、不起流程、不重跑那次写；出口记录待恢复的操作，登录后回到原处续做。这条只属于驱动提权门控的节；`ProfileSection` 与 `PreferencesSection` 不接会话、无门控 |
 | 口令写被拒为 400 `authn.bad_request` | 一条横幅渲染口令策略句，覆盖长度不合适（过短或过长）、与账户的用户名、邮箱、手机号相同、与当前口令相同（修改时）；句子不写数字，长度下限是部署的设置 |
 | 加用户名被拒为 409 `authn.username_taken`（或该路由仍答的 `authn.conflict`） | 用户名字段渲染 `identifiers.add.usernameTaken`（`aria-invalid`），焦点移到该字段；添加面在账户已有用户名时不提供用户名，该码在此只意味着被他人占用 |
 | 加用户名被拒为 400 `authn.username_reserved` | 用户名字段渲染 `identifiers.add.usernameReserved`（`aria-invalid`），焦点移到该字段 |
