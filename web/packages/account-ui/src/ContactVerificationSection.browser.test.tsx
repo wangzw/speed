@@ -70,10 +70,14 @@ describe('ContactVerificationSection verification actions in Chromium', () => {
     // secondary pair leads and the primary closes the row.
     expect(changeBox.left - sendBox.right).toBeCloseTo(8, 0)
     expect(verifyBox.left - changeBox.right).toBeCloseTo(8, 0)
-    const row = verify.parentElement as HTMLElement
-    const rowBox = row.getBoundingClientRect()
+    const row = verify.closest<HTMLElement>('[data-action-row]')
+    expect(row).not.toBeNull()
+    expect(send.closest('[data-action-row]')).toBe(row)
+    expect(change.closest('[data-action-row]')).toBe(row)
+    const rowBox = (row as HTMLElement).getBoundingClientRect()
     const contentRight =
-      rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
+      rowBox.right -
+      Number.parseFloat(getComputedStyle(row as HTMLElement).paddingRight)
     expect(Math.abs(verifyBox.right - contentRight)).toBeLessThanOrEqual(1)
   })
 })

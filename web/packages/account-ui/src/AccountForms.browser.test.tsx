@@ -61,6 +61,15 @@ function expectRightEdge(a: Element, b: Element): void {
   expect(Math.abs(aBox.right - bBox.right)).toBeLessThanOrEqual(1)
 }
 
+/** The row an action belongs to, found by the row's own marker. */
+function actionRowOf(action: Element): HTMLElement {
+  const row = action.closest<HTMLElement>('[data-action-row]')
+  if (row === null) {
+    throw new Error('the action is not inside an action row')
+  }
+  return row
+}
+
 /**
  * The controls are one action group: same line, one spacing token apart,
  * with the primary closing the group at the row's content edge. A row
@@ -73,7 +82,9 @@ function expectOneActionGroup(primary: Element, secondary: Element): void {
   expect(sameTop(primary, secondary)).toBe(true)
   expect(rightOf(primary, secondary)).toBe(true)
   expect(primaryBox.left - secondaryBox.right).toBeCloseTo(ACTION_GAP, 0)
-  const row = primary.parentElement as HTMLElement
+  const row = actionRowOf(primary)
+  // Both controls belong to the same row: the form renders one group.
+  expect(actionRowOf(secondary)).toBe(row)
   const rowBox = row.getBoundingClientRect()
   const contentRight =
     rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
@@ -229,7 +240,7 @@ describe('account-ui form geometry', () => {
     expectOneActionGroup(send, cancel)
     expect(send).toHaveClass('MuiButton-contained')
     expect(cancel).not.toHaveClass('MuiButton-contained')
-    expectRightEdge(send, send.parentElement as HTMLElement)
+    expectRightEdge(send, actionRowOf(send))
 
     await user.type(
       screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
@@ -250,7 +261,7 @@ describe('account-ui form geometry', () => {
     expectOneActionGroup(verify, change)
     expect(verify).toHaveClass('MuiButton-contained')
     expect(change).not.toHaveClass('MuiButton-contained')
-    expectRightEdge(verify, verify.parentElement as HTMLElement)
+    expectRightEdge(verify, actionRowOf(verify))
 
     await user.type(
       screen.getByLabelText(zhCN.identifiers.add.code.label),
