@@ -132,7 +132,7 @@ type MFA interface {
 | 列出自己的因素 | `GET B/factors` | 无附加要求 |
 | 登记因素 | `POST B/flows/authenticated {purpose:"enroll", input:{kind, label?}}`，随后经 `POST B/flows/answer {step:"enroll"}` 推进；登记只经登录引擎这一个入口 | 账户已有有效因素：新鲜的本地多因素；账户没有因素：新鲜的第一因素；CSRF。冒充期间登记的是被冒充账户的因素，认证事实取自发起者自己的会话。 |
 | 删除因素 | `DELETE B/factors/:id` | 新鲜的本地多因素；`mfa_required` 的账户不得删最后一个；CSRF。冒充期间删除的是被冒充账户的因素。 |
-| 改名因素 | `PATCH B/factors/:id` | 无附加要求，标签是元数据；冒充期间改名的是被冒充账户的因素。别人的因素标识按不存在应答 404。 |
+| 改名因素 | `PATCH B/factors/:id` | 无附加要求，标签是元数据；CSRF。冒充期间改名的是被冒充账户的因素。别人的因素标识按不存在应答 404。 |
 | 加强认证 | `POST B/flows/authenticated {purpose:"step-up"}` | 复用登录引擎；见「加强认证」 |
 | 管理员重置因素 | `POST B/accounts/:id/mfa-reset`（路由由 `authn.admin` 挂） | 见「删除与重置」 |
 
