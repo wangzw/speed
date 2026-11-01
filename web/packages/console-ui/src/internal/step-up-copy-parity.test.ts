@@ -8,7 +8,9 @@
  * surface then adds how the new sign-in resumes the refused write. Only
  * the leading cause clause is shared, so the two sentences are not
  * identical by design; that clause is the same description of the same
- * server answer and must not drift apart.
+ * server answer and must not drift apart. The resume promise belongs to
+ * account-ui alone: console-ui ends the session without a resume record,
+ * so its sentence must not promise a return.
  *
  * The sentence is read from both locale bundles, not written here: the
  * package that narrows the cause again -- naming one reason where the
@@ -30,6 +32,16 @@ const packagesDir = join(
 const LANGUAGES = ['zh-CN', 'en-US'] as const
 
 type Language = (typeof LANGUAGES)[number]
+
+/**
+ * The account-only resume promise each language's sentence carries. The
+ * console surface ends the session without a resume record, so its sentence
+ * must not promise a return.
+ */
+const RESUME_PROMISE: Record<Language, string> = {
+  'zh-CN': '回到原处继续',
+  'en-US': 'come back here to continue',
+}
 
 /** The leaf each package carries under its own namespace. */
 interface Bundle {
@@ -87,18 +99,17 @@ describe('the shared unavailable explanation', () => {
   )
 
   it.each(LANGUAGES)(
-    'lets account-ui add the resume sentence after the shared clause (%s)',
+    'keeps the resume promise in account-ui alone (%s)',
     (language) => {
-      // Both sentences open with the shared cause clause; account-ui then
-      // continues with how the new sign-in resumes the refused write, while
-      // console-ui ends the session without a resume record and closes with
-      // the shorter re-login instruction.
+      // Both sentences open with the shared cause clause. account-ui then
+      // promises the new sign-in returns to the same page and resumes the
+      // refused write; console-ui records no resume and closes with the
+      // re-login instruction alone.
       const clause = causeClause(consoleSentence(language))
       expect(accountSentence(language).startsWith(clause)).toBe(true)
       expect(consoleSentence(language).startsWith(clause)).toBe(true)
-      expect(accountSentence(language).length).toBeGreaterThan(
-        consoleSentence(language).length,
-      )
+      expect(accountSentence(language)).toContain(RESUME_PROMISE[language])
+      expect(consoleSentence(language)).not.toContain(RESUME_PROMISE[language])
     },
   )
 })
