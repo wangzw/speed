@@ -158,15 +158,31 @@ function summarizeTargets(rule: axe.Result): string {
 }
 
 /**
- * Names the environment the scan is running in, so an indeterminate report
- * says where the rule could not be decided. jsdom puts itself in the user
- * agent (`jsdom/<version>`); the browser tier serves a real browser whose
- * user agent names its own engine instead.
+ * Names the environment a scan ran in from its user agent. Pure, so the
+ * mapping is exercised without a DOM: jsdom puts itself in the user
+ * agent (`jsdom/<version>`), the browser tier serves a real browser whose
+ * user agent names its own engine, and anything else is neither. The
+ * result slots into the indeterminate report below.
+ */
+export function environmentLabel(userAgent: string): string {
+  if (/jsdom/i.test(userAgent)) {
+    return 'the jsdom'
+  }
+  if (/Chrome\/|Chromium\/|Firefox\/|Safari\//i.test(userAgent)) {
+    return 'the browser'
+  }
+  return 'an unknown environment'
+}
+
+/**
+ * Thin shell over environmentLabel: reads the user agent the scan is
+ * running under, so an indeterminate report says where the rule could
+ * not be decided.
  */
 function describeEnvironment(): string {
-  return typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)
-    ? 'jsdom'
-    : 'the browser'
+  return environmentLabel(
+    typeof navigator !== 'undefined' ? navigator.userAgent : '',
+  )
 }
 
 function reportNonCriticalIncomplete(incomplete: readonly axe.Result[]): void {
@@ -220,7 +236,7 @@ async function runAxeAssertions(
       disabled.add(rule)
     }
     console.warn(
-      `[test-utils/axe] open modal detected: page-context rule(s) ${PAGE_CONTEXT_RULES.join(', ')} exempted (a browser resolves them through axe's passForModal)`,
+      `[test-utils/axe] open overlay detected: page-context rule(s) ${PAGE_CONTEXT_RULES.join(', ')} exempted; the overlay does not resolve aria-hidden-focus -- whether its focus trap keeps aria-hidden content out of the tab order cannot be decided by static analysis, and both jsdom and Chromium report it as indeterminate`,
     )
   }
   const result = await runAxeScan({

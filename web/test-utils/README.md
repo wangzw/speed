@@ -89,5 +89,6 @@ through `node_modules` rather than the map.
 ## Testing
 
 `src/session-harness.test.ts` is the harness's own regression (the
-script dispatch gate's prototype-chain branch). Run it with
-`pnpm test` from this directory.
+script dispatch gate's prototype-chain branch); `src/axe.test.ts` pins
+the environment label the indeterminate report interpolates. Run them
+with `pnpm test` from this directory.
