@@ -85,19 +85,19 @@ var patchOperation = speedhttp.NewOperation[patchInput, AuthnProfilePatch](
 	"authn.profile.patch",
 	http.MethodPatch,
 	pathMe,
-	"Write the caller's own display name, attribute set, locale and time zone",
-	"Writes the caller's own display name, its whole attribute set, and the language and time zone "+
-		"named inside that set; every body field is optional and a field left out is left as it is. "+
-		"The display name is written before the attribute set, and the two writes are not one atomic "+
-		"change: when the second fails, the first is already in force and the answer is that failure's. "+
-		"An impersonating identity writes the impersonated account's profile like any other caller; a "+
-		"caller with no login session is refused 401 before anything is written. The write asks for no "+
-		"freshness beyond the login session itself.",
+	"Write the caller's own display name, attribute set, locale, time zone and color mode",
+	"Writes the caller's own display name, its whole attribute set, and the language, time zone and "+
+		"color mode named inside that set; every body field is optional and a field left out is left as "+
+		"it is. The display name is written before the attribute set, and the two writes are not one "+
+		"atomic change: when the second fails, the first is already in force and the answer is that "+
+		"failure's. An impersonating identity writes the impersonated account's profile like any other "+
+		"caller; a caller with no login session is refused 401 before anything is written. The write asks "+
+		"for no freshness beyond the login session itself.",
 	&speedhttp.RequestBody{
 		MediaType: "application/json",
 		Description: "Fields to write; all are optional and an absent field is left unchanged, while " +
-			"an unknown field is refused. locale and time_zone are trimmed of surrounding whitespace " +
-			"before they are checked and stored, and an empty one clears its key.",
+			"an unknown field is refused. locale, time_zone and color_mode are trimmed of surrounding " +
+			"whitespace before they are checked and stored, and an empty one clears its key.",
 		Required: true,
 	},
 	[]speedhttp.Response{

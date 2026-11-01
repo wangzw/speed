@@ -24,7 +24,7 @@ func decodeProfile(t *testing.T, rec *httptest.ResponseRecorder) AuthnProfilePro
 
 // TestGetReturnsTheCallersOwnProfile holds the read face: the profile is built
 // from the account the identity names, with the identifiers, the external
-// bindings and the two preferences read out of the attribute set.
+// bindings and the three preferences read out of the attribute set.
 func TestGetReturnsTheCallersOwnProfile(t *testing.T) {
 	r := newRig(t)
 	created := time.Date(2026, time.March, 4, 5, 6, 7, 0, time.UTC)
@@ -39,6 +39,7 @@ func TestGetReturnsTheCallersOwnProfile(t *testing.T) {
 			"dept":                    "eng",
 			i18n.LocaleAttributeKey:   "zh-CN",
 			i18n.TimeZoneAttributeKey: "Asia/Shanghai",
+			ColorModeAttributeKey:     "dark",
 		},
 	})
 	r.accounts.identifiers[meAccount] = []authn.Identifier{{
@@ -64,8 +65,9 @@ func TestGetReturnsTheCallersOwnProfile(t *testing.T) {
 	if got.CreatedAt != created.Format(time.RFC3339) {
 		t.Errorf("created_at = %q, want %q", got.CreatedAt, created.Format(time.RFC3339))
 	}
-	if got.Locale != "zh-CN" || got.TimeZone != "Asia/Shanghai" {
-		t.Errorf("locale/time_zone = %q/%q, want zh-CN/Asia/Shanghai", got.Locale, got.TimeZone)
+	if got.Locale != "zh-CN" || got.TimeZone != "Asia/Shanghai" || got.ColorMode != "dark" {
+		t.Errorf("locale/time_zone/color_mode = %q/%q/%q, want zh-CN/Asia/Shanghai/dark",
+			got.Locale, got.TimeZone, got.ColorMode)
 	}
 	if got.Attributes["dept"] != "eng" {
 		t.Errorf("attributes = %v, want dept=eng", got.Attributes)

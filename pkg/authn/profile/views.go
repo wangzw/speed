@@ -14,8 +14,10 @@ import (
 // the shape the handler returns.
 
 // AuthnProfileProfile is GET B/me's answer: the caller's own profile. It
-// carries the account's self fields plus the read-only identifiers and external
-// bindings, whose values are never written under this surface.
+// carries the account's self fields — the display name, the whole attribute set
+// and the language, time zone and color mode read out of it — plus the read-only
+// identifiers and external bindings, whose values are never written under this
+// surface.
 type AuthnProfileProfile struct {
 	_ struct{} `description:"The caller's own profile: the account's self fields plus its identifiers and external bindings, which this surface only reads. It is built field by field from the account module's values, so a field added to the record there does not reach a client by being there."`
 
@@ -28,6 +30,7 @@ type AuthnProfileProfile struct {
 	Attributes   map[string]string        `json:"attributes" required:"true" description:"Never null; the empty object when the account carries none"`
 	Locale       string                   `json:"locale" required:"true" description:"Read out of the attribute set, empty when it carries none"`
 	TimeZone     string                   `json:"time_zone" required:"true" description:"Read out of the attribute set, empty when it carries none"`
+	ColorMode    string                   `json:"color_mode" required:"true" description:"Read out of the attribute set, empty when it carries none"`
 	Identifiers  []AuthnProfileIdentifier `json:"identifiers" required:"true" description:"The account's identifiers; always an array, never null, and empty when the account has none. An email the account holds is among them even while it is unproved; a pending reservation is not an identifier and is not listed"`
 	Verification AuthnProfileVerification `json:"verification" required:"true" description:"How far the account's email verification has got, read at request time and never stored in a session or an access token"`
 	Links        []AuthnProfileLink       `json:"links" required:"true" description:"The account's external bindings; always an array, never null, and empty when there are none. The provider's own subject for the person is not included"`
@@ -74,7 +77,7 @@ type AuthnProfileLink struct {
 
 // AuthnProfilePatch is PATCH B/me's answer: the self-writable fields as they
 // stand after the write — the display name, the whole attribute set, and the
-// language and time zone read out of it.
+// language, time zone and color mode read out of it.
 type AuthnProfilePatch struct {
 	_ struct{} `description:"The self-writable fields as they stand after a profile write, read back from what was stored."`
 
@@ -82,6 +85,7 @@ type AuthnProfilePatch struct {
 	Attributes  map[string]string `json:"attributes" required:"true" description:"The whole attribute set as it stands, never null"`
 	Locale      string            `json:"locale" required:"true" description:"Read out of the attribute set, empty when it carries none"`
 	TimeZone    string            `json:"time_zone" required:"true" description:"Read out of the attribute set, empty when it carries none"`
+	ColorMode   string            `json:"color_mode" required:"true" description:"Read out of the attribute set, empty when it carries none"`
 }
 
 // profileViewOf builds the read view from the account module's read surface.
@@ -99,6 +103,7 @@ func profileViewOf(account authn.Account, identifiers []authn.Identifier, links 
 		Attributes:   attributes,
 		Locale:       attributes[i18n.LocaleAttributeKey],
 		TimeZone:     attributes[i18n.TimeZoneAttributeKey],
+		ColorMode:    attributes[ColorModeAttributeKey],
 		Identifiers:  make([]AuthnProfileIdentifier, 0, len(identifiers)),
 		Verification: AuthnProfileVerification{State: signupStateName(signup.State), Email: signup.Email, Since: instant(signup.Since)},
 		Links:        make([]AuthnProfileLink, 0, len(links)),
@@ -135,6 +140,7 @@ func patchViewOf(displayName string, attributes map[string]string) AuthnProfileP
 		Attributes:  copyAttributes(attributes),
 		Locale:      attributes[i18n.LocaleAttributeKey],
 		TimeZone:    attributes[i18n.TimeZoneAttributeKey],
+		ColorMode:   attributes[ColorModeAttributeKey],
 	}
 }
 

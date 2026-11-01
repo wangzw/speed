@@ -258,6 +258,109 @@ func TestPatchEmptyLocaleClearsTheKey(t *testing.T) {
 	}
 }
 
+// TestPatchMergesColorModeIntoTheAttributeSet holds the color-mode preference as
+// a named use of the attribute set: with the language and time zone it overwrites
+// its own key and leaves the rest of the set alone.
+func TestPatchMergesColorModeIntoTheAttributeSet(t *testing.T) {
+	r := newRig(t)
+	body := map[string]any{"locale": "zh-CN", "time_zone": "Asia/Shanghai", "color_mode": "dark"}
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", body, me()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	attrs, _ := r.admin.lastAttributes()
+	if attrs["dept"] != "eng" {
+		t.Errorf("the merge dropped the current attribute dept: %v", attrs)
+	}
+	if attrs[i18n.LocaleAttributeKey] != "zh-CN" || attrs[i18n.TimeZoneAttributeKey] != "Asia/Shanghai" ||
+		attrs[ColorModeAttributeKey] != "dark" {
+		t.Errorf("the merge did not write the three preferences: %v", attrs)
+	}
+	got := decodePatch(t, rec)
+	if got.Locale != "zh-CN" || got.TimeZone != "Asia/Shanghai" || got.ColorMode != "dark" {
+		t.Errorf("the answer's locale/time_zone/color_mode = %q/%q/%q, want zh-CN/Asia/Shanghai/dark",
+			got.Locale, got.TimeZone, got.ColorMode)
+	}
+}
+
+// TestPatchEmptyColorModeClearsTheKey holds the clear semantics: a color mode
+// given as the empty string removes its key and leaves the rest of the set alone.
+func TestPatchEmptyColorModeClearsTheKey(t *testing.T) {
+	r := newRig(t)
+	r.accounts.put(meAccount, authn.Account{
+		Kind: authn.KindUser, Status: authn.StatusActive,
+		Attributes: map[string]string{ColorModeAttributeKey: "dark", "dept": "eng"},
+	})
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"color_mode": ""}, me()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	attrs, _ := r.admin.lastAttributes()
+	if _, present := attrs[ColorModeAttributeKey]; present {
+		t.Errorf("the empty color mode did not clear the key: %v", attrs)
+	}
+	if attrs["dept"] != "eng" {
+		t.Errorf("clearing the color mode dropped another attribute: %v", attrs)
+	}
+}
+
+// TestPatchInvalidColorModeIs400 holds the value domain: a value outside light,
+// dark and system is refused 400 with the capability's own problem type and
+// reaches no write.
+func TestPatchInvalidColorModeIs400(t *testing.T) {
+	cases := map[string]string{
+		"a mode outside the set":       "sepia",
+		"a differently cased mode":     "Dark",
+		"a mode the set does not name": "auto",
+	}
+	for name, value := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t)
+			rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"color_mode": value}, me()...)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rec.Code)
+			}
+			if got, want := problemTypeOf(t, rec), typePrefix+mount.CodeBadRequest; got != want {
+				t.Errorf("problem type = %q, want %q", got, want)
+			}
+			if r.admin.count("set-attributes") != 0 {
+				t.Error("a refused value reached a write")
+			}
+		})
+	}
+}
+
+// TestPatchColorModeAloneWritesTheAttributeSetAndTheAuditRow holds the body that
+// carries only the color mode: the attribute set is written once and the write is
+// audited, because it changed something.
+func TestPatchColorModeAloneWritesTheAttributeSetAndTheAuditRow(t *testing.T) {
+	r := newRig(t)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"color_mode": "system"}, me()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if got := r.admin.count("set-display-name"); got != 0 {
+		t.Errorf("SetDisplayName calls = %d, want 0", got)
+	}
+	if got := r.admin.count("set-attributes"); got != 1 {
+		t.Errorf("SetAttributes calls = %d, want 1", got)
+	}
+	attrs, ok := r.admin.lastAttributes()
+	if !ok {
+		t.Fatal("SetAttributes was not called")
+	}
+	if attrs[ColorModeAttributeKey] != "system" {
+		t.Errorf("the written color mode = %q, want system", attrs[ColorModeAttributeKey])
+	}
+	if attrs["dept"] != "eng" {
+		t.Errorf("the merge dropped the current attribute dept: %v", attrs)
+	}
+	rows := r.audit.entries()
+	if len(rows) != 1 || rows[0].Action != actionProfileUpdate {
+		t.Errorf("audit rows = %+v, want one %s row", rows, actionProfileUpdate)
+	}
+}
+
 // TestPatchEmptyBodyChangesNothing holds the all-absent case: neither write is
 // called and no audit row is written.
 func TestPatchEmptyBodyChangesNothing(t *testing.T) {

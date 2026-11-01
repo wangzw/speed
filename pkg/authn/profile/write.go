@@ -16,11 +16,12 @@ import (
 )
 
 // patchInput is the request of PATCH B/me. Every field is optional: a field left
-// out is left as it is, and an unknown field is refused. display_name, locale
-// and time_zone are pointers so that a field left out is told apart from one
-// given empty; attributes is a map, so a given one — the empty map included —
-// replaces the whole set and an absent one leaves it alone. The declaration
-// reflects the type, so the descriptions below are the body's published schema.
+// out is left as it is, and an unknown field is refused. display_name, locale,
+// time_zone and color_mode are pointers so that a field left out is told apart
+// from one given empty; attributes is a map, so a given one — the empty map
+// included — replaces the whole set and an absent one leaves it alone. The
+// declaration reflects the type, so the descriptions below are the body's
+// published schema.
 type patchInput struct {
 	_ struct{} `description:"The profile write; the set of fields is closed and every one is optional. A body carrying no field succeeds and changes nothing."`
 
@@ -28,6 +29,7 @@ type patchInput struct {
 	Attributes  map[string]string `json:"attributes" description:"The whole attribute set to store, as string keys and string values; a given one - the empty object included - replaces the current set, and an absent one leaves it alone. A set outside the account module's bounds is refused 400."`
 	Locale      *string           `json:"locale" description:"A BCP 47 language tag stored under the i18n.locale attribute. An invalid tag is refused 400; the empty string clears the attribute and an absent field leaves it alone."`
 	TimeZone    *string           `json:"time_zone" description:"An IANA time-zone name stored under the i18n.tz attribute. A name outside the IANA set is refused 400; the empty string clears the attribute and an absent field leaves it alone."`
+	ColorMode   *string           `json:"color_mode" description:"The color-mode preference stored under the presentation.color-mode attribute: light, dark or system. Any other value is refused 400; the empty string clears the attribute and an absent field leaves it alone."`
 }
 
 // patchEntry is the complete handler of the write route: the checks below, the
@@ -123,12 +125,13 @@ func (p *product) guardPatch(next gin.HandlerFunc) gin.HandlerFunc {
 }
 
 // handlePatchMe answers PATCH B/me: it writes the caller's own display name, its
-// whole attribute set, and the language and time zone named inside that set. The
-// writable set is closed; the account's status, its identifiers and its external
-// bindings are not writable here and no field of this body reaches them.
+// whole attribute set, and the language, time zone and color mode named inside
+// that set. The writable set is closed; the account's status, its identifiers
+// and its external bindings are not writable here and no field of this body
+// reaches them.
 //
 // The order is fixed: the checks guardPatch makes before the body is read, the
-// body's shape and the two value domains, the account read, the writes, the
+// body's shape and the value domains, the account read, the writes, the
 // best-effort audit row, the answer. The identity and session conditions are
 // checked again here as the fallback for a registration that did not go through
 // patchEntry. An impersonating identity is not refused: the write is the
@@ -152,11 +155,15 @@ func (p *product) handlePatchMe(ctx context.Context, body patchInput) (AuthnProf
 	if hasZone && !i18n.ValidTimeZone(zone) {
 		return AuthnProfilePatch{}, authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
 	}
+	colorMode, hasColorMode := trimmed(body.ColorMode)
+	if hasColorMode && colorMode != "" && !ValidColorMode(colorMode) {
+		return AuthnProfilePatch{}, authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
+	}
 	account, err := p.accounts.Get(ctx, id.Account())
 	if err != nil {
 		return AuthnProfilePatch{}, p.writeFailure(err)
 	}
-	attributes := mergeAttributes(account.Attributes, body.Attributes, hasLocale, locale, hasZone, zone)
+	attributes := mergeAttributes(account.Attributes, body.Attributes, hasLocale, locale, hasZone, zone, hasColorMode, colorMode)
 	displayName := account.DisplayName
 	if body.DisplayName != nil {
 		displayName = *body.DisplayName
@@ -164,7 +171,7 @@ func (p *product) handlePatchMe(ctx context.Context, body patchInput) (AuthnProf
 			return AuthnProfilePatch{}, p.writeFailure(err)
 		}
 	}
-	attributesWritten := body.Attributes != nil || hasLocale || hasZone
+	attributesWritten := body.Attributes != nil || hasLocale || hasZone || hasColorMode
 	if attributesWritten {
 		if err := p.accountAdm.SetAttributes(ctx, id.Account(), attributes); err != nil {
 			return AuthnProfilePatch{}, p.writeFailure(err)
@@ -177,20 +184,20 @@ func (p *product) handlePatchMe(ctx context.Context, body patchInput) (AuthnProf
 }
 
 // mergeAttributes composes the attribute set one SetAttributes writes: a given
-// set replaces the whole of the current one, and a given locale or time zone
-// then overwrites its key. An empty locale or time zone clears the key. The
-// merge is "read the current, merge, write the whole back": two concurrent
-// writes that change different keys can lose one of them, and the loss is
-// bounded to the concurrent pair.
-func mergeAttributes(current, given map[string]string, hasLocale bool, locale string, hasZone bool, zone string) map[string]string {
+// set replaces the whole of the current one, and a given locale, time zone or
+// color mode then overwrites its key. An empty one clears the key. The merge is
+// "read the current, merge, write the whole back": two concurrent writes that
+// change different keys can lose one of them, and the loss is bounded to the
+// concurrent pair.
+func mergeAttributes(current, given map[string]string, hasLocale bool, locale string, hasZone bool, zone string, hasColorMode bool, colorMode string) map[string]string {
 	var merged map[string]string
 	if given != nil {
-		merged = make(map[string]string, len(given)+2)
+		merged = make(map[string]string, len(given)+3)
 		for k, v := range given {
 			merged[k] = v
 		}
 	} else {
-		merged = make(map[string]string, len(current)+2)
+		merged = make(map[string]string, len(current)+3)
 		for k, v := range current {
 			merged[k] = v
 		}
@@ -200,6 +207,9 @@ func mergeAttributes(current, given map[string]string, hasLocale bool, locale st
 	}
 	if hasZone {
 		setOrClear(merged, i18n.TimeZoneAttributeKey, zone)
+	}
+	if hasColorMode {
+		setOrClear(merged, ColorModeAttributeKey, colorMode)
 	}
 	return merged
 }

@@ -2313,7 +2313,7 @@
         "x-endpoint": "account"
       },
       "patch": {
-        "description": "Writes the caller's own display name, its whole attribute set, and the language and time zone named inside that set; every body field is optional and a field left out is left as it is. The display name is written before the attribute set, and the two writes are not one atomic change: when the second fails, the first is already in force and the answer is that failure's. An impersonating identity writes the impersonated account's profile like any other caller; a caller with no login session is refused 401 before anything is written. The write asks for no freshness beyond the login session itself.",
+        "description": "Writes the caller's own display name, its whole attribute set, and the language, time zone and color mode named inside that set; every body field is optional and a field left out is left as it is. The display name is written before the attribute set, and the two writes are not one atomic change: when the second fails, the first is already in force and the answer is that failure's. An impersonating identity writes the impersonated account's profile like any other caller; a caller with no login session is refused 401 before anything is written. The write asks for no freshness beyond the login session itself.",
         "operationId": "authn.profile.patch",
         "requestBody": {
           "content": {
@@ -2328,6 +2328,10 @@
                     },
                     "description": "The whole attribute set to store, as string keys and string values; a given one - the empty object included - replaces the current set, and an absent one leaves it alone. A set outside the account module's bounds is refused 400.",
                     "type": "object"
+                  },
+                  "color_mode": {
+                    "description": "The color-mode preference stored under the presentation.color-mode attribute: light, dark or system. Any other value is refused 400; the empty string clears the attribute and an absent field leaves it alone.",
+                    "type": "string"
                   },
                   "display_name": {
                     "description": "The new display name, at most 100 characters; absent leaves the current one. A longer value is refused 400 by the account module.",
@@ -2346,7 +2350,7 @@
               }
             }
           },
-          "description": "Fields to write; all are optional and an absent field is left unchanged, while an unknown field is refused. locale and time_zone are trimmed of surrounding whitespace before they are checked and stored, and an empty one clears its key.",
+          "description": "Fields to write; all are optional and an absent field is left unchanged, while an unknown field is refused. locale, time_zone and color_mode are trimmed of surrounding whitespace before they are checked and stored, and an empty one clears its key.",
           "required": true
         },
         "responses": {
@@ -2427,7 +2431,7 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Write the caller's own display name, attribute set, locale and time zone",
+        "summary": "Write the caller's own display name, attribute set, locale, time zone and color mode",
         "tags": [
           "authn.profile"
         ],
@@ -13826,6 +13830,10 @@
             "description": "The whole attribute set as it stands, never null",
             "type": "object"
           },
+          "color_mode": {
+            "description": "Read out of the attribute set, empty when it carries none",
+            "type": "string"
+          },
           "display_name": {
             "description": "The display name as it stands after the write; the account's current one when the body carried none",
             "type": "string"
@@ -13843,7 +13851,8 @@
           "display_name",
           "attributes",
           "locale",
-          "time_zone"
+          "time_zone",
+          "color_mode"
         ],
         "type": "object"
       },
@@ -13860,6 +13869,10 @@
             },
             "description": "Never null; the empty object when the account carries none",
             "type": "object"
+          },
+          "color_mode": {
+            "description": "Read out of the attribute set, empty when it carries none",
+            "type": "string"
           },
           "created_at": {
             "description": "RFC 3339 in UTC, empty when the account carries no creation instant",
@@ -13918,6 +13931,7 @@
           "attributes",
           "locale",
           "time_zone",
+          "color_mode",
           "identifiers",
           "verification",
           "links"
