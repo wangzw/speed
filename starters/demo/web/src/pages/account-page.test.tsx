@@ -572,7 +572,10 @@ describe('AccountBindingCallbackPage', () => {
     return { readFlow }
   }
 
-  it('words a refused link from the fragment and returns to the account page', async () => {
+  it('returns to the security pane when the callback names no source', async () => {
+    // The callback route carries the pane it started from in its `return`
+    // query. Without one the safe landing is the security pane -- where the
+    // binding surface lives -- not the group address's first (profile) pane.
     window.history.replaceState(
       {},
       '',
@@ -602,9 +605,51 @@ describe('AccountBindingCallbackPage', () => {
       .click(
         screen.getByRole('button', { name: bindingEnUS.backToAccount ?? '' }),
       )
-    // The account's group address lands on its first pane.
     await waitFor(() =>
-      expect(window.location.pathname).toBe(ACCOUNT_SECTION_PATHS.profile),
+      expect(window.location.pathname).toBe(ACCOUNT_SECTION_PATHS.security),
+    )
+  })
+
+  it('returns to the pane the binding started from', async () => {
+    // The link flow carried `/account/security` inside its return_to, and the
+    // server landed the refused round trip back on the callback route with
+    // that source in the query. The callback returns the viewer there.
+    window.history.replaceState(
+      {},
+      '',
+      `${ACCOUNT_CALLBACK_PATH}?return=%2Faccount%2Fsessions#authn_error=conflict`,
+    )
+    renderCallback()
+
+    await screen.findByRole('alert')
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole('button', { name: bindingEnUS.backToAccount ?? '' }),
+      )
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(ACCOUNT_SECTION_PATHS.sessions),
+    )
+  })
+
+  it('ignores a source that names another origin', async () => {
+    // A crafted `return` naming another origin is not a site path, so the
+    // callback falls back to its safe landing instead of navigating there.
+    window.history.replaceState(
+      {},
+      '',
+      `${ACCOUNT_CALLBACK_PATH}?return=https%3A%2F%2Felsewhere.example#authn_error=conflict`,
+    )
+    renderCallback()
+
+    await screen.findByRole('alert')
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole('button', { name: bindingEnUS.backToAccount ?? '' }),
+      )
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(ACCOUNT_SECTION_PATHS.security),
     )
   })
 

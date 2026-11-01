@@ -89,6 +89,7 @@ import {
   ACCOUNT_UI_NAMESPACE,
   AppearanceSection,
   BindingCallbackHandler,
+  bindingReturnTarget,
   ColorModeSection,
   ContactVerificationSection,
   IdentifiersSection,
@@ -135,7 +136,10 @@ import {
   pendingInvitationLanding,
 } from '../invitation-return.js'
 import type { AccountSection } from '../paths.js'
-import { ACCOUNT_CALLBACK_PATH, ACCOUNT_PATH } from '../paths.js'
+import {
+  ACCOUNT_CALLBACK_PATH,
+  ACCOUNT_SECTION_PATHS,
+} from '../paths.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
 import { useCallbackLanding } from '../use-callback-landing.js'
 import { NotFoundPage } from './not-found-page.js'
@@ -956,34 +960,46 @@ export function AccountSettingsPage({
 
 /**
  * The social-binding callback route: account-ui's handler reads the
- * `link` flow back and, on completion, returns the viewer to the account
- * page. With no provider configured no flow reaches here today; the route
- * exists so a product that configures one has the completion point wired.
- * The page carries its own PageHeader (the one h1 for the route), because
- * account-ui's handler renders none and the route still needs a
- * page-level heading. A deployment with no redirect method has no binding
- * round trip: the handler renders the app's 404 instead of a
- * flow-not-found banner.
+ * `link` flow back and, on completion, returns the viewer to the page the
+ * binding started from. With no provider configured no flow reaches here
+ * today; the route exists so a product that configures one has the
+ * completion point wired. The page carries its own PageHeader (the one h1
+ * for the route), because account-ui's handler renders none and the route
+ * still needs a page-level heading. A deployment with no redirect method
+ * has no binding round trip: the handler renders the app's 404 instead of
+ * a flow-not-found banner.
+ *
+ * The source page rides inside the flow's `return_to` as the callback
+ * route's `return` query. account-ui's reader accepts only a site-internal
+ * relative path; a missing or unusable value falls back to the security
+ * pane, where the binding surface lives -- never the profile pane, which is
+ * merely the group address's first landing.
  *
  * A refused round trip lands here with its problem code in the URL
  * fragment, the same shape a refused login lands with; there is no flow
  * left to read, so the page hands the code to the handler and gives it the
- * way back to the account page.
+ * way back to the starting page.
  */
 export function AccountBindingCallbackPage(): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const { landing } = useCallbackLanding()
+  const { search } = useLocationPath()
+  const { landing, dismiss } = useCallbackLanding()
+  const target =
+    bindingReturnTarget(search) ?? ACCOUNT_SECTION_PATHS.security
   return (
     <Box sx={{ maxWidth: 480 }}>
       <PageHeader title={t('account.bindingCallback.title')} sx={{ mb: 3 }} />
       <BindingCallbackHandler
         session={session}
-        onBound={() => navigate(ACCOUNT_PATH)}
+        onBound={() => navigate(target)}
         absent={<NotFoundPage path={ACCOUNT_CALLBACK_PATH} />}
         initialError={landing?.code}
-        onDismiss={() => navigate(ACCOUNT_PATH)}
+        onDismiss={() => {
+          dismiss()
+          navigate(target)
+        }}
       />
     </Box>
   )

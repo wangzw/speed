@@ -76,6 +76,14 @@ export {
   BindingCallbackHandler,
   type BindingCallbackHandlerProps,
 } from './BindingCallbackHandler.js'
+/**
+ * The binding callback route's source-page reader. The link flow carries
+ * the page it started from inside its `return_to`; the host mounts the
+ * callback handler on that route and reads the page back with this, so a
+ * completed round trip returns to where it began. A missing or unusable
+ * value reads as undefined, leaving the host its own safe landing.
+ */
+export { bindingReturnTarget } from './internal/binding-return.js'
 export { MfaSection, type MfaSectionProps } from './MfaSection.js'
 /**
  * The step-up re-verification dialog, exported for the host. Its gate is

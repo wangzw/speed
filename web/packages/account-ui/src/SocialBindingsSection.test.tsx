@@ -1122,6 +1122,107 @@ describe('SocialBindingsSection', () => {
     })
   })
 
+  it('carries the source page inside the link flow return_to', async () => {
+    // A binding starts from an account pane, but the provider lands the
+    // browser on the host's callback route. The source page rides inside the
+    // flow's return_to as the callback route's `return` query, so the
+    // callback can send the viewer back where they started.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profile([]))
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([{ name: 'wechat', label: 'WeChat' }]),
+        )
+      }
+      if (call.method === 'POST' && call.path === LINK_FLOW_PATH) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: { kind: 'redirect', url: WECHAT_AUTHORIZE_URL, method: 'GET' },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+        returnPath="/account/security"
+        onAuthorizeUrl={() => undefined}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(await findBindButton('WeChat'))
+
+    await waitFor(() =>
+      expect(
+        rig.calls.find(
+          (call) => call.method === 'POST' && call.path === LINK_FLOW_PATH,
+        )?.body,
+      ).toEqual({
+        purpose: 'link',
+        method: 'wechat',
+        return_to: `${ACCOUNT_CALLBACK}?return=%2Faccount%2Fsecurity`,
+      }),
+    )
+  })
+
+  it('drops a source that names another origin from the return_to', async () => {
+    // Only a site-internal path is carried. A source value that names an
+    // origin is dropped rather than sent, and the callback uses its own safe
+    // landing.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profile([]))
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([{ name: 'wechat', label: 'WeChat' }]),
+        )
+      }
+      if (call.method === 'POST' && call.path === LINK_FLOW_PATH) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: { kind: 'redirect', url: WECHAT_AUTHORIZE_URL, method: 'GET' },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+        returnPath="//elsewhere.example/account"
+        onAuthorizeUrl={() => undefined}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(await findBindButton('WeChat'))
+
+    await waitFor(() =>
+      expect(
+        rig.calls.find(
+          (call) => call.method === 'POST' && call.path === LINK_FLOW_PATH,
+        )?.body,
+      ).toEqual({
+        purpose: 'link',
+        method: 'wechat',
+        return_to: ACCOUNT_CALLBACK,
+      }),
+    )
+  })
+
   it('falls back to the closed provider vocabulary when no descriptor matches', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {

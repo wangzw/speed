@@ -122,6 +122,7 @@ import {
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
+import { withBindingReturn } from './internal/binding-return.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
@@ -151,9 +152,11 @@ export interface SocialBindingsSectionProps {
    */
   readonly providerIcon?: (provider: string) => ReactNode
   /**
-   * The host's current path, sent as the step-up flow's `return_to` (the
-   * link flow carries its own `returnTo` above). Omitted, the deployment's
-   * default return target applies.
+   * The host's current path. The link flow carries it inside `return_to` as
+   * the page the round trip returns to, and the step-up flow sends it as
+   * its own `return_to`. Only a site-internal relative path is carried;
+   * anything else is dropped and the callback falls back to its safe
+   * landing. Omitted, the deployment's default return target applies.
    */
   readonly returnPath?: string
 }
@@ -497,7 +500,7 @@ export function SocialBindingsSection({
         const state = await session.startAuthenticatedFlow({
           purpose: 'link',
           method: method.name,
-          return_to: returnTo,
+          return_to: withBindingReturn(returnTo, returnPath),
         })
         if ('next' in state && state.next.kind === 'redirect') {
           onAuthorizeUrl?.(state.next.url)
