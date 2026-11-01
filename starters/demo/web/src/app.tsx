@@ -67,6 +67,7 @@ import {
 } from '@speed/notification-ui'
 import type { ConsoleRoute } from '@speed/console-ui'
 import { ProductShell } from '@speed/product-shell'
+import { useAppThemeMode } from '@speed/ui-kit'
 import {
   presentDeclarations,
   RouteProvider,
@@ -98,7 +99,7 @@ import {
   AppBrand,
   getCurrentTenantId,
   getRecordedTenantAlias,
-  HeaderActions,
+  persistColorModePreference,
   setCurrentTenantId,
   setTenantAlias,
   setTenantAliases,
@@ -419,6 +420,49 @@ function AppFrame({
       <RouteView />
     </TenantFrame>
   )
+}
+
+/**
+ * Mirrors the account's saved color-mode preference onto the theme provider.
+ *
+ * The account page writes the preference to the server and the device; this
+ * component is the read side, so a viewer who signs in on a second device
+ * -- or whose account choice differs from the device mirror -- sees the
+ * account's own mode without visiting the preferences pane. It renders
+ * nothing and issues no write of its own: the profile read the frame already
+ * shares supplies the value, and only a non-empty `color_mode` is applied.
+ *
+ * The applied value is tracked in a ref: the effect re-runs whenever the
+ * provider's preference changes, and re-applying the account's stored value
+ * after the viewer moved the preference themselves would undo their change
+ * while its own write is still in flight. One distinct stored value is
+ * applied at most once.
+ */
+function ColorModeSync(): null {
+  const { data } = useAuthnProfileGet()
+  const { preference, setPreference } = useAppThemeMode()
+  const applied = useRef<string | null>(null)
+  const storedMode = data?.color_mode ?? ''
+  useEffect(() => {
+    // The server constrains color_mode to the three-value set; an empty or
+    // foreign value is not a preference and is left alone.
+    if (
+      storedMode !== 'light' &&
+      storedMode !== 'dark' &&
+      storedMode !== 'system'
+    ) {
+      return
+    }
+    if (applied.current === storedMode) {
+      return
+    }
+    applied.current = storedMode
+    if (storedMode !== preference) {
+      setPreference(storedMode)
+      persistColorModePreference(storedMode)
+    }
+  }, [storedMode, preference, setPreference])
+  return null
 }
 
 /**
@@ -926,6 +970,11 @@ function TenantFrame({
 
   return (
     <TenantProvider tenantId={tenantId}>
+      {/* The account's saved color-mode preference, mirrored onto the theme
+          provider while the tenant frame is the authenticated surface. It
+          renders nothing: it only reconciles the two once the profile read
+          lands. */}
+      {authenticated ? <ColorModeSync /> : null}
       {/* The live notification subscription: it opens the api client's
           event-stream seam (the assembled client's openEventStream) for
           the acting tenant and re-reads the unread count and message list
@@ -991,7 +1040,6 @@ function TenantFrame({
                   onClick={() => navigate(NOTIFICATIONS_PATH)}
                 />
               ) : null}
-              <HeaderActions />
               <ConsoleEntry routes={consoleRoutes} narrow={rail.narrow} />
             </>
           )}

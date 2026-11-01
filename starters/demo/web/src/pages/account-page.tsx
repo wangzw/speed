@@ -18,8 +18,8 @@
  * - security: the password, the sign-in ways, two-step verification when
  *   `authn.mfa` is served, and the social bindings, one card each.
  * - sessions: SessionsSection, already a device list with revoke actions.
- * - preferences: the theme preset picker and the language and time zone
- *   selects.
+ * - preferences: the theme preset and color-mode selects, and the language
+ *   and time zone selects.
  *
  * The page reads the caller's profile once through the generated
  * `useAuthnProfileGet` for the profile pane's facts and the verification
@@ -27,12 +27,14 @@
  * empty, error) from the account-ui namespace, so nothing here repeats a
  * spinner or an error block.
  *
- * The account page is also where the user's theme preset is chosen: the
- * appearance section sits in the preferences pane, wired to the theme
- * provider's active preset and to the device's stored choice, so a pick applies
- * immediately and survives a reload (src/chrome.tsx holds the storage
- * helpers). The preset names are this bundle's copy; the package renders the
- * options the host hands it.
+ * The account page is also where the user's appearance is chosen: the
+ * appearance and color-mode sections sit in the preferences pane, wired to the
+ * theme provider's preset and preference and to the device's stored choices,
+ * so a pick applies immediately and survives a reload (src/chrome.tsx holds
+ * the storage helpers). The preset names are this bundle's copy; the package
+ * renders the options the host hands it. The color-mode section writes the
+ * account first, and only a confirmed write is applied to the provider and
+ * mirrored to the device.
  *
  * The phone write (account-ui's PhoneSection) is mounted only when the
  * deployment serves the `authn.phone` feature: its two routes are registered
@@ -87,6 +89,7 @@ import {
   ACCOUNT_UI_NAMESPACE,
   AppearanceSection,
   BindingCallbackHandler,
+  ColorModeSection,
   ContactVerificationSection,
   IdentifiersSection,
   MfaSection,
@@ -105,12 +108,14 @@ import {
   useNavigate,
 } from '@speed/route-kit'
 import { themePresets } from '@speed/theme-presets'
+import type { AppThemeModePreference } from '@speed/ui-kit'
 import {
   ConfirmDialog,
   errorCodeOf,
   PageHeader,
   PageLayout,
   SectionSurfaceProvider,
+  useAppThemeMode,
   useAppThemePreset,
 } from '@speed/ui-kit'
 import { useQueryClient } from '@tanstack/react-query'
@@ -121,7 +126,10 @@ import {
 } from '../app-api/index.js'
 import { useAppServices } from '../app-services.js'
 import { CallbackLandingNotice } from '../callback-error-notice.js'
-import { persistThemePreset } from '../chrome.js'
+import {
+  persistColorModePreference,
+  persistThemePreset,
+} from '../chrome.js'
 import {
   forgetInvitationLanding,
   pendingInvitationLanding,
@@ -517,6 +525,15 @@ export function AccountSettingsPage({
     setPreset(id)
     persistThemePreset(id)
   }
+  // The color-mode preference the provider is applying, and its setter. The
+  // account section writes the server first; its `onApplied` then lands the
+  // confirmed preference here and on the device, so the next boot reads it
+  // back (src/chrome.tsx's initialColorModePreference).
+  const { preference, setPreference } = useAppThemeMode()
+  const applyColorMode = (value: AppThemeModePreference): void => {
+    setPreference(value)
+    persistColorModePreference(value)
+  }
   // The security pane reports each row's state from the same answers the
   // sections read: the profile for the password.
   const [openSecurityRow, setOpenSecurityRow] = useState<string | null>(null)
@@ -894,6 +911,13 @@ export function AccountSettingsPage({
                         presets={presetChoices}
                         value={preset}
                         onChange={choosePreset}
+                        hideLabel
+                      />
+                    </AccountItem>
+                    <AccountItem title={t('account.rows.label.colorMode')}>
+                      <ColorModeSection
+                        effective={preference}
+                        onApplied={applyColorMode}
                         hideLabel
                       />
                     </AccountItem>

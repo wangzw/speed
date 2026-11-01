@@ -132,10 +132,12 @@ program beside this directory embeds with `go:embed` and serves through
   of reloading the page, so neither the console pages nor the exit are a
   navigation dead end.
 - **The app composes its own chrome.** `src/chrome.tsx` holds the shared top-bar
-  pieces the tenant frame and the console frame render: the brand, the app-wide
-  color-mode toggle, the tenant switcher over the caller tenant list
-  (`TenantMenu`), and the avatar account menu (profile / account settings /
-  sign out). The tenant frame puts the actions in `headerActions` and the
+  pieces the tenant frame and the console frame render: the brand, the tenant
+  switcher over the caller tenant list (`TenantMenu`), and the avatar account
+  menu (profile / account settings / sign out). Neither frame carries a
+  color-mode toggle: the choice is the account page's `ColorModeSection`.
+  `TenantMenu` passes `announcement="visually-hidden"`, so a switch is
+  announced through the status region but never painted beside the trigger. The tenant frame puts the actions in `headerActions` and the
   switcher plus the account menu in `userMenu`; the console frame renders the
   actions and the account menu but not the switcher (the console resolves no
   tenant). The slot composition is identical in both `shellLayout` forms:
@@ -147,7 +149,7 @@ program beside this directory embeds with `go:embed` and serves through
   `/account/profile` (profile, identifiers and the registration contact's
   verification), `/account/security` (password, sign-in ways, social bindings
   and MFA), `/account/sessions`, and `/account/preferences` (the appearance
-  theme choice, language and time zone). The preferences pane is the only
+  theme choice, the color mode, language and time zone). The preferences pane is the only
   place the interface language is set; the header carries no language switch.
   `src/paths.ts` declares the pane list
   and its paths. `src/routes.tsx` gives every pane a page of its own and makes
@@ -164,7 +166,14 @@ program beside this directory embeds with `go:embed` and serves through
   (`useAppThemePreset`), and a pick calls `setPreset` and
   `persistThemePreset` in one handler, so the theme applies at once and the
   device remembers it (`demo-web.theme-preset`; `src/chrome.tsx` resolves
-  the boot choice as device > deployment > `default`). The phone write is
+  the boot choice as device > deployment > `default`). The color mode sits
+  beside it as `account-ui`'s `ColorModeSection`, which reads and writes the
+  account's `color_mode` itself; the page supplies the provider's current
+  preference as `effective` and, in `onApplied`, calls the provider's
+  `setPreference` and `persistColorModePreference`, so the account is the
+  source of truth and `demo-web.color-mode` is only the first-paint mirror.
+  A `ColorModeSync` in the tenant frame applies a stored account value that
+  differs from the current preference once the profile read lands. The phone write is
   deliberately left out: its two routes are
   registered only when the deployment delivers an SMS code provider, which this
   skeleton's baseline does not (the SMS family needs a carrier's credentials, so

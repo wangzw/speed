@@ -1,12 +1,12 @@
 /**
  * The boot theme's persisted half: src/main.tsx hands the assembly the
- * device's remembered colour mode (demoThemeOptions' defaultMode), so a reload
- * starts in the mode the user left.
+ * device's remembered colour-mode preference (demoThemeOptions' defaultMode),
+ * so a reload starts in the preference the user left.
  *
- * The suite's setup stubs matchMedia to match every query, so the
- * operating-system branch answers dark. A stored light choice must still win
- * -- that is what distinguishes reading the persisted value from following the
- * system -- and a stored dark choice must reach the assembly unchanged.
+ * A stored preference -- including an explicit one -- reaches the assembly
+ * unchanged; a device with nothing stored starts at 'system', which lets the
+ * theme provider follow the operating system rather than freezing the device
+ * branch into an explicit mode.
  */
 
 import type { ReactElement } from 'react'
@@ -79,16 +79,21 @@ describe('the boot theme', () => {
     vi.unstubAllGlobals()
   })
 
-  it('starts in a stored light choice over the system preference', () => {
+  it('starts at system when nothing is stored', () => {
+    installStorageDouble()
+    expect(demoThemeOptions().defaultMode).toBe('system')
+  })
+
+  it('hands a stored preference through unchanged', () => {
     const entries = installStorageDouble()
     entries.set(COLOR_MODE_STORAGE_KEY, 'light')
     expect(demoThemeOptions().defaultMode).toBe('light')
-  })
 
-  it('starts in the stored dark choice', () => {
-    const entries = installStorageDouble()
     entries.set(COLOR_MODE_STORAGE_KEY, 'dark')
     expect(demoThemeOptions().defaultMode).toBe('dark')
+
+    entries.set(COLOR_MODE_STORAGE_KEY, 'system')
+    expect(demoThemeOptions().defaultMode).toBe('system')
   })
 
   it('keeps the platform palette as the brand placeholder', () => {

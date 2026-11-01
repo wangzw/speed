@@ -99,6 +99,7 @@
         "loginWays": "登录方式",
         "social": "社交账号",
         "theme": "主题",
+        "colorMode": "颜色模式",
         "languageTimeZone": "语言与时区"
       },
       "badge": {
@@ -184,10 +185,6 @@
     "accountSettings": "账户设置",
     "signOut": "退出登录"
   },
-  "colorMode": {
-    "toDark": "切换到深色主题",
-    "toLight": "切换到浅色主题"
-  },
   "themePreset": {
     "default": "默认",
     "classic": "传统",
@@ -201,10 +198,10 @@
     "retry": "重试"
   },
   "workspace": {
-    "personal": "个人空间",
+    "personal": "工作区",
     "failure": {
-      "title": "无法准备你的空间",
-      "description": "准备个人空间时出了问题，请稍后重试。",
+      "title": "无法准备你的工作区",
+      "description": "准备工作区时出了问题，请稍后重试。",
       "retry": "重试"
     }
   },

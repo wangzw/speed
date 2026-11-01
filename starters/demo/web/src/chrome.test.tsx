@@ -5,10 +5,11 @@
  * them apart, above all for the diverged case the demo's own seeded tenant does
  * not exhibit.
  *
- * The header-actions suite renders the shared chrome under the real provider
- * tree, because what it holds is a property of the composition: the header
- * carries the color-mode toggle and no language switch, since the language is
- * set on the account preferences page alone.
+ * The device's colour-mode preference is the other half: the three-valued
+ * storage helpers read what the account page and the boot path mirror, treat a
+ * foreign value as absent, and never throw when storage is refused. The
+ * switcher's confirmation must stay announced but clipped in both trigger
+ * forms, so its text reaches an assistive reader without being painted.
  */
 
 import { render, screen } from '@testing-library/react'
@@ -26,12 +27,11 @@ import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import { AppServicesProvider } from './app-services.js'
 import {
   COLOR_MODE_STORAGE_KEY,
-  ColorModeToggle,
   getCurrentTenantAlias,
   getCurrentTenantId,
-  HeaderActions,
-  initialColorMode,
-  readStoredColorMode,
+  initialColorModePreference,
+  persistColorModePreference,
+  readStoredColorModePreference,
   setCurrentTenantId,
   setTenantAliases,
   tenantAlias,
@@ -105,31 +105,6 @@ function installStorageDouble(): Map<string, string> {
   })
   return entries
 }
-
-describe('the header actions', () => {
-  it('carries the color-mode toggle and no language switch', () => {
-    const i18n = createSpeedI18n({
-      supportedLanguages: ['zh-CN', 'en-US'],
-      defaultLanguage: 'en-US',
-      storage: null,
-      urlParameterName: null,
-      navigatorLanguages: [],
-      namespaces: [{ namespace: DEMO_NAMESPACE, resources: demoResources }],
-    })
-    render(
-      <SpeedAppProviders i18n={i18n} queryClient={createQueryClient()}>
-        <HeaderActions />
-      </SpeedAppProviders>,
-    )
-
-    // The language entry lives on the account preferences page alone, so the
-    // header's only control is the colour-mode toggle.
-    const t = i18n.getFixedT('en-US', DEMO_NAMESPACE)
-    const controls = screen.getAllByRole('button')
-    expect(controls).toHaveLength(1)
-    expect(controls[0]).toHaveAccessibleName(t('colorMode.toDark'))
-  })
-})
 
 /** Two tenants, as a host with a membership source would offer them. */
 const TWO_TENANTS: readonly DemoTenant[] = [
@@ -205,87 +180,88 @@ describe('the tenant switch', () => {
       queryClient.getQueryData(tenantQueryKey('acme', 'rows')),
     ).toBeUndefined()
   })
+
+  it('keeps the switch confirmation announced but clipped', async () => {
+    const user = userEvent.setup()
+    renderTenantSwitch()
+    await user.click(screen.getByRole('button', { name: 'acme' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'globex' }))
+
+    // The confirmation reaches an assistive reader through the live region,
+    // but the header has no room to paint it: the region stays out of flow
+    // and in a 1x1 box. An inline confirmation would be the defect.
+    const switchedTo = (
+      tenancyUiResources['en-US'] as {
+        readonly tenantSwitcher: { readonly switchedTo: string }
+      }
+    ).tenantSwitcher.switchedTo.replace('{{tenant}}', 'globex')
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent(switchedTo)
+    const style = getComputedStyle(status)
+    expect(style.position).toBe('absolute')
+    expect(parseFloat(style.width)).toBeLessThanOrEqual(1)
+    expect(parseFloat(style.height)).toBeLessThanOrEqual(1)
+  })
 })
 
 /** A browser-storage stand-in for the colour-mode suite (see
  * installStorageDouble for why jsdom's own is unavailable). */
-describe('the colour mode choice', () => {
+describe('the colour mode preference', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 
-  it("starts in the device's stored choice", () => {
+  it('reads back a stored explicit choice', () => {
     const entries = installStorageDouble()
-    // The suite's matchMedia stub matches every query (so the
-    // operating-system branch would answer dark); a stored light choice must
-    // win over it, which is what distinguishes reading the stored value from
-    // following the system.
     entries.set(COLOR_MODE_STORAGE_KEY, 'light')
-    expect(readStoredColorMode()).toBe('light')
-    expect(initialColorMode()).toBe('light')
+    expect(readStoredColorModePreference()).toBe('light')
+    expect(initialColorModePreference()).toBe('light')
+
+    entries.set(COLOR_MODE_STORAGE_KEY, 'dark')
+    expect(readStoredColorModePreference()).toBe('dark')
+    expect(initialColorModePreference()).toBe('dark')
   })
 
-  it('ignores a stored value that is not a mode', () => {
+  it('reads back the system preference', () => {
+    const entries = installStorageDouble()
+    entries.set(COLOR_MODE_STORAGE_KEY, 'system')
+    expect(readStoredColorModePreference()).toBe('system')
+    expect(initialColorModePreference()).toBe('system')
+  })
+
+  it('treats an unrecognised stored value as absent and boots to system', () => {
     const entries = installStorageDouble()
     entries.set(COLOR_MODE_STORAGE_KEY, 'sepia')
-    // With nothing usable stored, the operating system's preference decides
-    // (the suite's default stub reports every query as matching, so dark is
-    // the answer here).
-    expect(readStoredColorMode()).toBeNull()
-    expect(initialColorMode()).toBe('dark')
+    expect(readStoredColorModePreference()).toBeNull()
+    expect(initialColorModePreference()).toBe('system')
   })
 
-  it('follows the operating system when nothing was stored', () => {
+  it('boots to system when nothing was stored', () => {
     installStorageDouble()
-    const original = window.matchMedia
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-      matches: query === '(prefers-color-scheme: dark)',
-      media: query,
-      onchange: null,
-      addListener: () => {},
-      removeListener: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      dispatchEvent: () => true,
-    })) as unknown as typeof window.matchMedia
-    try {
-      expect(initialColorMode()).toBe('dark')
-    } finally {
-      window.matchMedia = original
-    }
+    expect(readStoredColorModePreference()).toBeNull()
+    expect(initialColorModePreference()).toBe('system')
   })
 
-  it('writes the flipped mode to the device from the header control', async () => {
-    const entries = installStorageDouble()
-    const user = userEvent.setup()
-    const i18n = createSpeedI18n({
-      supportedLanguages: ['zh-CN', 'en-US'],
-      defaultLanguage: 'en-US',
-      storage: null,
-      urlParameterName: null,
-      navigatorLanguages: [],
-      namespaces: [{ namespace: DEMO_NAMESPACE, resources: demoResources }],
+  it('does not throw when storage refuses reads or writes', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('denied')
+      },
+      setItem: () => {
+        throw new Error('denied')
+      },
+      removeItem: () => {
+        throw new Error('denied')
+      },
+      clear: () => {
+        throw new Error('denied')
+      },
     })
-    const queryClient = createQueryClient()
-    render(
-      <SpeedAppProviders i18n={i18n} queryClient={queryClient}>
-        <ColorModeToggle />
-      </SpeedAppProviders>,
-    )
 
-    // The label comes from the instance the tree renders with, the way the
-    // control resolves it.
-    const t = i18n.getFixedT('en-US', DEMO_NAMESPACE)
-    await user.click(
-      screen.getByRole('button', { name: t('colorMode.toDark') }),
-    )
-
-    // The choice is manual, so it must survive a reload: the next boot reads
-    // it back as the theme's defaultMode.
-    expect(entries.get(COLOR_MODE_STORAGE_KEY)).toBe('dark')
-    expect(
-      screen.getByRole('button', { name: t('colorMode.toLight') }),
-    ).toBeInTheDocument()
+    expect(() => readStoredColorModePreference()).not.toThrow()
+    expect(readStoredColorModePreference()).toBeNull()
+    expect(() => persistColorModePreference('dark')).not.toThrow()
+    expect(initialColorModePreference()).toBe('system')
   })
 })

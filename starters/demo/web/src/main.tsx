@@ -45,7 +45,7 @@ import { AppServicesProvider } from './app-services.js'
 import { DemoApp } from './app.js'
 import {
   getCurrentTenantAlias,
-  initialColorMode,
+  initialColorModePreference,
   initialThemePreset,
 } from './chrome.js'
 import { applyDocumentMetadata } from './document-metadata.js'
@@ -58,9 +58,10 @@ export type DemoAppBootstrap = SpeedAppBootstrap
 
 /**
  * The theme options the bootstrap hands the assembly. The tree starts in the
- * device's remembered colour mode, else the operating system's preference,
- * else light (src/chrome.tsx reads it before the first render, so a reload
- * renders in the mode the user left). The preset shelf is the shipped one,
+ * device's remembered colour-mode preference, else 'system' (src/chrome.tsx
+ * reads it before the first render, so a reload renders in the preference
+ * the user left and an unset device follows the operating system). The
+ * preset shelf is the shipped one,
  * starting on the device's remembered preset, else the deployment's, else
  * 'default'; the project-layer tokens are the brand placeholder: an empty
  * override keeps the platform's shipped palette, and a product replaces it
@@ -68,7 +69,7 @@ export type DemoAppBootstrap = SpeedAppBootstrap
  */
 export function demoThemeOptions(themePreset?: string): SpeedAppThemeOptions {
   return {
-    defaultMode: initialColorMode(),
+    defaultMode: initialColorModePreference(),
     projectTokens: {},
     presets: themePresets,
     defaultPreset: initialThemePreset(themePreset),

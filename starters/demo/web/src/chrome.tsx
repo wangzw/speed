@@ -1,7 +1,6 @@
 /**
- * The shell chrome the app's two areas share: the brand, the header action
- * controls and the user menu the tenant frame and the console frame both
- * render in their top bar.
+ * The shell chrome the app's two areas share: the brand and the user menu the
+ * tenant frame and the console frame both render in their top bar.
  *
  * The tenant area (product-shell's frame) and the console area (console-ui's
  * frame) are two different shells -- the console carries no tenant switcher --
@@ -12,16 +11,20 @@
  * The pieces:
  *
  *  - AppBrand: the demo namespace's product title.
- *  - HeaderActions: the app-wide color-mode toggle, for the frame's
- *    headerActions slot. Both shells render it.
  *  - TenantMenu: tenancy-ui's TenantSwitcher over the caller's own tenant
  *    list (the caller tenant read). product-shell places the switcher in the
  *    userMenu slot; the console banner, which resolves no tenant, does not
- *    render it.
+ *    render it. Its switch confirmation is announced but never painted.
  *  - UserMenu: an avatar trigger opening a menu of profile / account-settings
  *    / sign-out, replacing the bare sign-out button. While an impersonation
  *    is in force, auth-ui's end item sits first: closing the banner must not
  *    strand the operator without a way to end it.
+ *
+ * The module also owns the device side of the color-mode preference: the
+ * storage helpers the account page and the tenant frame use to mirror the
+ * account's choice, and the boot value src/main.tsx hands the theme provider.
+ * The preference is the three-valued one ui-kit exposes -- light, dark or
+ * system -- and an account with no saved value follows the device.
  */
 
 import { useCallback, useId, useRef, useState, useSyncExternalStore } from 'react'
@@ -40,8 +43,7 @@ import { useNavigate } from '@speed/route-kit'
 import { TenantSwitcher } from '@speed/tenancy-ui'
 import type { TenantOption } from '@speed/tenancy-ui'
 import { themePresets } from '@speed/theme-presets'
-import { useAppThemeMode } from '@speed/ui-kit'
-import type { AppThemeMode } from '@speed/ui-kit'
+import type { AppThemeModePreference } from '@speed/ui-kit'
 import { useAppServices } from './app-services.js'
 import { ACCOUNT_PATH } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
@@ -276,16 +278,6 @@ export function AppBrand(): ReactElement {
 }
 
 /**
- * The app-wide header action controls: the color-mode toggle. Both shells --
- * the tenant frame and the console banner -- render it; it is the same chrome
- * in either area. The language is not among them: it is set on the account
- * preferences page alone, so the header carries no per-view language entry.
- */
-export function HeaderActions(): ReactElement {
-  return <ColorModeToggle />
-}
-
-/**
  * The tenant switcher over the caller's own tenant list. The current tenant is
  * a host fact (a route change, not a session op), and product-shell places the
  * switcher in the userMenu slot; the console banner, which resolves no tenant,
@@ -294,9 +286,9 @@ export function HeaderActions(): ReactElement {
  * Every row the host offers is rendered. A tenant record carries no display
  * name, so a row renders its alias -- the request-surface name, never
  * translated -- except the account's own personal tenant, which renders the
- * host's bilingual 「个人空间 / Personal workspace」 text. The personal row is
- * recognised by the derived identifier compared EXACTLY: another account's
- * personal tenant shares the prefix and must render its alias instead.
+ * host's bilingual 「工作区 / Workspace」 text. The personal row is recognised
+ * by the derived identifier compared EXACTLY: another account's personal
+ * tenant shares the prefix and must render its alias instead.
  */
 export function TenantMenu({
   tenants: offered,
@@ -318,8 +310,8 @@ export function TenantMenu({
   /** Reports the tenant the user picked; the host switches its route/state. */
   readonly onTenantSelect: (tenantId: string) => void
   /** Icon-only trigger for the collapsed sidebar rail, where the tenant
-   * name does not fit; the switch confirmation stays announced but is not
-   * painted there. */
+   * name does not fit. The switch confirmation is announced but never
+   * painted, in this form and the full one alike. */
   readonly compact?: boolean
 }): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
@@ -334,7 +326,7 @@ export function TenantMenu({
       currentTenantId={tenantId}
       onSelect={onTenantSelect}
       compact={compact}
-      announcement={compact ? 'visually-hidden' : 'inline'}
+      announcement="visually-hidden"
     />
   )
 }
@@ -405,20 +397,23 @@ function RefreshIcon() {
   )
 }
 
-/** The device key the chosen colour mode is remembered under. */
+/** The device key the chosen colour-mode preference is remembered under. */
 export const COLOR_MODE_STORAGE_KEY = 'demo-web.color-mode'
 
-/** Whether a stored value is one of the two theme modes. */
-function isColorMode(value: unknown): value is AppThemeMode {
-  return value === 'light' || value === 'dark'
+/** Whether a stored value names one of the three theme preferences. */
+function isColorModePreference(
+  value: unknown,
+): value is AppThemeModePreference {
+  return value === 'light' || value === 'dark' || value === 'system'
 }
 
-/** The colour mode the device remembers, or null when none was stored (or
- * the storage is unavailable). */
-export function readStoredColorMode(): AppThemeMode | null {
+/** The colour-mode preference the device remembers, or null when none was
+ * stored, the stored value names no preference, or the storage is
+ * unavailable. */
+export function readStoredColorModePreference(): AppThemeModePreference | null {
   try {
     const stored = window.localStorage.getItem(COLOR_MODE_STORAGE_KEY)
-    return isColorMode(stored) ? stored : null
+    return isColorModePreference(stored) ? stored : null
   } catch {
     // Storage can be refused (privacy modes, a sandboxed document). The
     // choice then lasts the page instead of failing the render.
@@ -426,37 +421,27 @@ export function readStoredColorMode(): AppThemeMode | null {
   }
 }
 
-/** Records the user's colour-mode choice on the device. */
-export function persistColorMode(mode: AppThemeMode): void {
+/** Records the user's colour-mode preference on the device. */
+export function persistColorModePreference(
+  preference: AppThemeModePreference,
+): void {
   try {
-    window.localStorage.setItem(COLOR_MODE_STORAGE_KEY, mode)
+    window.localStorage.setItem(COLOR_MODE_STORAGE_KEY, preference)
   } catch {
-    // See readStoredColorMode: a refused storage is not a failed switch.
+    // See readStoredColorModePreference: a refused storage is not a failed
+    // switch.
   }
 }
 
 /**
- * The mode the app starts in: the device's stored choice, else the operating
- * system's preference, else light. Read at boot (src/main.tsx passes it to
- * the assembly as the theme's defaultMode), so a reload with a stored choice
- * renders in it without a flash of the other mode.
+ * The preference the app starts in: the device's stored choice, else
+ * 'system'. Read at boot (src/main.tsx passes it to the assembly as the
+ * theme's defaultMode), so a reload with a stored choice renders in it
+ * without a flash of another preference; a device with nothing stored
+ * follows the operating system through the theme provider.
  */
-export function initialColorMode(): AppThemeMode {
-  const stored = readStoredColorMode()
-  if (stored !== null) {
-    return stored
-  }
-  try {
-    if (
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches
-    ) {
-      return 'dark'
-    }
-  } catch {
-    // No media-query support: fall through to the light default.
-  }
-  return 'light'
+export function initialColorModePreference(): AppThemeModePreference {
+  return readStoredColorModePreference() ?? 'system'
 }
 
 /** The device key the chosen theme preset is remembered under. */
@@ -507,32 +492,6 @@ export function initialThemePreset(deploymentPreset?: string): string {
     return stored
   }
   return isThemePresetId(deploymentPreset) ? deploymentPreset : 'default'
-}
-
-/**
- * The color-mode toggle: a moon/sun button reading the active mode from
- * ui-kit's AppThemeProvider and flipping it. The button's accessible name
- * describes the action (switch to the other mode). The flip is a manual
- * choice, so it is written to the device: the next boot reads it back as the
- * theme's defaultMode (initialColorMode).
- */
-export function ColorModeToggle(): ReactElement {
-  const { t } = useTranslation(DEMO_NAMESPACE)
-  const { mode, toggleMode } = useAppThemeMode()
-  const dark = mode === 'dark'
-  const toggle = (): void => {
-    persistColorMode(dark ? 'light' : 'dark')
-    toggleMode()
-  }
-  return (
-    <IconButton
-      color="inherit"
-      aria-label={dark ? t('colorMode.toLight') : t('colorMode.toDark')}
-      onClick={toggle}
-    >
-      {dark ? <SunIcon /> : <MoonIcon />}
-    </IconButton>
-  )
 }
 
 /**
@@ -626,51 +585,5 @@ export function UserMenu({
         <MenuItem onClick={signOut}>{t('userMenu.signOut')}</MenuItem>
       </Menu>
     </Box>
-  )
-}
-
-interface IconProps {
-  /** Box length in px; stroke geometry is sized for the 24 grid. */
-  readonly size?: number
-}
-
-/** A hand-drawn moon glyph, for the switch to dark mode (decorative). */
-function MoonIcon({ size = 22 }: IconProps): ReactElement {
-  return (
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      viewBox="0 0 24 24"
-      width={size}
-      height={size}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
-    </svg>
-  )
-}
-
-/** A hand-drawn sun glyph, for the switch to light mode (decorative). */
-function SunIcon({ size = 22 }: IconProps): ReactElement {
-  return (
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      viewBox="0 0 24 24"
-      width={size}
-      height={size}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="4.5" />
-      <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19" />
-    </svg>
   )
 }

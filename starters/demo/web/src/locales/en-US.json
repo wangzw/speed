@@ -8,7 +8,7 @@
   "nav": {
     "account": "Account settings",
     "home": "Home",
-    "console": "Console"
+    "console": "Admin"
   },
   "console": {
     "backToApp": "Back to app",
@@ -99,6 +99,7 @@
         "loginWays": "Sign-in ways",
         "social": "Social accounts",
         "theme": "Theme",
+        "colorMode": "Color mode",
         "languageTimeZone": "Language and time zone"
       },
       "badge": {
@@ -184,10 +185,6 @@
     "accountSettings": "Account settings",
     "signOut": "Sign out"
   },
-  "colorMode": {
-    "toDark": "Switch to dark theme",
-    "toLight": "Switch to light theme"
-  },
   "themePreset": {
     "default": "Default",
     "classic": "Classic",
@@ -201,10 +198,10 @@
     "retry": "Try again"
   },
   "workspace": {
-    "personal": "Personal workspace",
+    "personal": "Workspace",
     "failure": {
       "title": "Could not prepare your workspace",
-      "description": "Something went wrong while preparing your personal workspace. Please try again.",
+      "description": "Something went wrong while preparing your workspace. Please try again.",
       "retry": "Try again"
     }
   },

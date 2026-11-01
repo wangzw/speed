@@ -179,7 +179,7 @@ development wiring that a copied-out project drops**:
 | `src/app.tsx` | `DemoApp`: the route provider around the shell switch -- the tenant shell or the console area, chosen by the URL. |
 | `src/routes.tsx` | The route table: the business slot plus the mounted console area. |
 | `src/paths.ts` | The app's own route paths, shared by the route table and the chrome that links into them. |
-| `src/chrome.tsx` | The shared top-bar chrome: the brand, the app-wide color-mode toggle, the tenant switcher and the avatar account menu. |
+| `src/chrome.tsx` | The shared top-bar chrome: the brand, the tenant switcher and the avatar account menu. |
 | `src/console/console-area.tsx` | The platform console, the second shell, over `@speed/console-ui`. |
 | `src/pages/` | The app's pages: the starting page (the `/` card grid over the assembled capabilities), the account page, and the setup and verification landing pages a registration completes on. |
 | `src/runtime-config.ts` | Reads the deployment's runtime configuration from `runtime-config.json` at the deployment root (resolved against the entry document, not the current URL): the API origin, the shell layout and the default theme preset, each falling back on its own. |
@@ -297,8 +297,8 @@ cookie is the browser's, not a script's.
 
 The tenant frame's `headerActions` slot carries a console entry pointing at
 `/console`, which
-redirects to the console's first page. It sits with the color-mode toggle
-and the notification bell -- in the top bar in the
+redirects to the console's first page. It sits with the notification bell
+-- in the top bar in the
 default shell form, in the drawer paper's bottom row in the `sidebar`
 form -- not in the navigation, and appears only to a principal that holds a platform
 permission, so an ordinary member is offered no way in. The console area itself
@@ -351,19 +351,23 @@ existing bindings with no add area, and the binding-callback route is mounted
 beside the page for a product that configures a provider.
 
 The shell chrome carries the tenant switcher (over the caller tenant list from
-the `tenant.self` read), an app-wide color-mode toggle, and an avatar account
-menu (profile / account settings / sign out), all from `src/chrome.tsx`;
-AppShell places them in the top bar or, in the `sidebar` form, in the drawer
-paper's top and bottom rows. The color-mode control appears in the console
-frame too; the tenant switcher does not (the console resolves no tenant). The
-interface language is set on the account page's preferences section alone --
-the header carries no language switch. The appearance preset selector does not
-live in the shell chrome either: it is the account page's appearance section,
-while the chrome keeps the color-mode toggle; the two choices are orthogonal
-and both persist.
-The color-mode choice is written to the device and read back at boot (with the
-operating system's `prefers-color-scheme` as the fallback), so a reload starts
-in the mode the user left. A tenant switch evicts the departing tenant's
+the `tenant.self` read) and an avatar account menu (profile / account settings /
+sign out), all from `src/chrome.tsx`; AppShell places them in the top bar or, in
+the `sidebar` form, in the drawer paper's top and bottom rows. The tenant
+switcher does not appear in the console frame (the console resolves no tenant).
+
+Neither the interface language nor the color mode has a header control: both are
+set on the account page. The appearance preset selector is that page's appearance
+section too, so the three appearance choices sit together, and the console reaches
+the same page through its account menu.
+
+The color-mode preference is stored on the account (the profile's `color_mode`,
+written through `PATCH /api/v1/auth/me`), so another device inherits it. A
+device-local copy under `demo-web.color-mode` supplies the first paint before the
+profile read lands: it is read at boot as the theme provider's starting
+preference, and a device with nothing stored starts at `system`, which follows
+the operating system's `prefers-color-scheme`; the account's value takes over
+once the profile arrives. A tenant switch evicts the departing tenant's
 cached rows (`src/chrome.tsx`'s `useTenantSelection` calls auth-core's
 `evictTenantQueries` with the id read before the switch), so the next
 tenant's reads never see the previous one's data.

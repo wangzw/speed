@@ -24,11 +24,18 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
+import type { ReactElement, ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { accountUiResources } from '@speed/account-ui'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
+import type { SpeedAppThemeOptions } from '@speed/product-shell/bootstrap'
+import { useAppThemeMode } from '@speed/ui-kit'
 import { createBackend } from '../a11y/backends.js'
+import {
+  COLOR_MODE_STORAGE_KEY,
+  initialColorModePreference,
+} from '../chrome.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import {
   ACCOUNT_CALLBACK_PATH,
@@ -60,7 +67,17 @@ const accountEnUS = accountUiResources['en-US'] as {
     readonly current: string
     readonly revokeOthers: { readonly label: string }
   }
-  readonly appearance: { readonly theme: { readonly label: string } }
+  readonly appearance: {
+    readonly theme: { readonly label: string }
+    readonly colorMode: {
+      readonly label: string
+      readonly options: {
+        readonly dark: string
+        readonly light: string
+        readonly system: string
+      }
+    }
+  }
   readonly preferences: {
     readonly language: { readonly label: string }
     readonly timezone: { readonly label: string }
@@ -86,11 +103,41 @@ const accountEnUS = accountUiResources['en-US'] as {
 const bindingEnUS = accountEnUS.bindingCallback
 
 /** The calls the page issued in the current case, in order. */
-let calls: { readonly method: string; readonly path: string }[] = []
+let calls: {
+  readonly method: string
+  readonly path: string
+  readonly body?: unknown
+}[] = []
+
+/** The theme provider's resolution, recorded by the probe below. */
+const themeProbe: {
+  mode: string | null
+  preference: string | null
+} = { mode: null, preference: null }
+
+/** Reads the provider's resolved mode and preference from inside the tree. */
+function ThemeModeProbe(): null {
+  const { mode, preference } = useAppThemeMode()
+  themeProbe.mode = mode
+  themeProbe.preference = preference
+  return null
+}
+
+/** Mounts the probe beside the app, inside the same provider stack. */
+function withThemeModeProbe(app: ReactElement): ReactNode {
+  return (
+    <>
+      {app}
+      <ThemeModeProbe />
+    </>
+  )
+}
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
   calls = []
+  themeProbe.mode = null
+  themeProbe.preference = null
 })
 
 /** The send calls the page issued so far. */
@@ -109,6 +156,11 @@ interface RenderAccountOptions {
    * group address's redirect.
    */
   readonly path?: string
+  /** The theme options the provider stack starts with (src/main.tsx's boot
+   * options in production). */
+  readonly theme?: SpeedAppThemeOptions
+  /** A wrapper rendered inside the provider tree, for probes. */
+  readonly wrap?: (app: ReactElement) => ReactNode
 }
 
 /** Renders the account page at ACCOUNT_PATH plus the landing's query. */
@@ -121,7 +173,11 @@ function renderAccount(
     path: string,
     requestOptions?: RequestOptions,
   ): Promise<T> => {
-    calls.push({ method: requestOptions?.method ?? 'GET', path })
+    calls.push({
+      method: requestOptions?.method ?? 'GET',
+      path,
+      body: requestOptions?.body,
+    })
     return (await backend(path, requestOptions)) as T
   }) as RequestFn
   bindRequestFn(request)
@@ -136,6 +192,8 @@ function renderAccount(
         features: readyFeatures(...(options.features ?? [])),
       }),
     ),
+    theme: options.theme,
+    wrap: options.wrap,
   })
 }
 
@@ -367,7 +425,7 @@ describe('AccountSettingsPage sections', () => {
   it('renders the preference controls directly', async () => {
     renderAccount('?section=preferences')
 
-    // The appearance block is one card; its three controls render in place,
+    // The appearance block is one card; its four controls render in place,
     // with no section to open first.
     const block = await screen.findByRole('region', {
       name: demoEnUS.account.blocks.appearance,
@@ -375,8 +433,12 @@ describe('AccountSettingsPage sections', () => {
     expect(
       within(block).getByText(demoEnUS.account.rows.label.theme),
     ).toBeInTheDocument()
+    expect(
+      within(block).getByText(demoEnUS.account.rows.label.colorMode),
+    ).toBeInTheDocument()
     for (const name of [
       accountEnUS.appearance.theme.label,
+      accountEnUS.appearance.colorMode.label,
       accountEnUS.preferences.language.label,
       accountEnUS.preferences.timezone.label,
     ]) {
@@ -384,6 +446,74 @@ describe('AccountSettingsPage sections', () => {
         await within(block).findByRole('combobox', { name }),
       ).toBeInTheDocument()
     }
+  })
+
+  it('applies a color-mode choice at once, writes the device key and sends only color_mode', async () => {
+    // The account has never saved a mode, so the control reads the provider's
+    // current preference; the suite boots at light.
+    window.localStorage.removeItem(COLOR_MODE_STORAGE_KEY)
+    renderAccount('?section=preferences', { wrap: withThemeModeProbe })
+
+    const select = await screen.findByRole('combobox', {
+      name: accountEnUS.appearance.colorMode.label,
+    })
+    await waitFor(() =>
+      expect(select).toHaveTextContent(
+        accountEnUS.appearance.colorMode.options.light,
+      ),
+    )
+
+    fireEvent.mouseDown(select)
+    fireEvent.click(
+      screen.getByRole('option', {
+        name: accountEnUS.appearance.colorMode.options.dark,
+      }),
+    )
+
+    // The confirmed write lands the preference in the provider and mirrors it
+    // to the device, so the next boot starts dark.
+    await waitFor(() => expect(themeProbe.mode).toBe('dark'))
+    expect(themeProbe.preference).toBe('dark')
+    expect(window.localStorage.getItem(COLOR_MODE_STORAGE_KEY)).toBe('dark')
+
+    // One write, carrying the account's color_mode alone: the theme preset is
+    // a device-level choice and sends no PATCH of its own.
+    const patches = calls.filter(
+      (call) => call.method === 'PATCH' && call.path === '/api/v1/auth/me',
+    )
+    expect(patches).toHaveLength(1)
+    expect(patches[0]?.body).toEqual({ color_mode: 'dark' })
+    // The control shows the applied choice once the write's invalidation has
+    // converged.
+    await waitFor(() =>
+      expect(select).toHaveTextContent(
+        accountEnUS.appearance.colorMode.options.dark,
+      ),
+    )
+  })
+
+  it('resolves a stored system preference to the dark palette', async () => {
+    // A device whose stored preference is 'system', and a matchMedia stub
+    // that reports the dark query as matching (the suite default): the boot
+    // preference is 'system' and the provider resolves it to dark.
+    window.localStorage.setItem(COLOR_MODE_STORAGE_KEY, 'system')
+    renderAccount('?section=preferences', {
+      theme: { defaultMode: initialColorModePreference() },
+      wrap: withThemeModeProbe,
+    })
+
+    const select = await screen.findByRole('combobox', {
+      name: accountEnUS.appearance.colorMode.label,
+    })
+    // The account has saved no mode, so the control shows the preference in
+    // effect.
+    await waitFor(() =>
+      expect(select).toHaveTextContent(
+        accountEnUS.appearance.colorMode.options.system,
+      ),
+    )
+    expect(themeProbe.preference).toBe('system')
+    expect(themeProbe.mode).toBe('dark')
   })
 })
 

@@ -1059,13 +1059,9 @@ describe('the tenant area header controls', () => {
 
   it('raises the header icon controls to the 44px floor under a coarse pointer', async () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
-    // The color-mode toggle and the account-menu trigger share the header
-    // row with the notification bell; on a finger-driven device each one
-    // gates up to the 44x44 floor.
-    const gated = [
-      await screen.findByRole('button', { name: demoEnUS.colorMode.toDark }),
-      screen.getByTestId('user-menu-trigger'),
-    ]
+    // The account-menu trigger shares the header row with the notification
+    // bell; on a finger-driven device each one gates up to the 44x44 floor.
+    const gated = [await screen.findByTestId('user-menu-trigger')]
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
     }
@@ -1120,19 +1116,6 @@ describe('the tenant area header controls', () => {
     ).toBeInTheDocument()
   })
 
-  it('toggles the color mode from the header control', async () => {
-    const user = userEvent.setup()
-    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
-
-    // The control describes the action; after the flip it offers the other
-    // mode.
-    await user.click(
-      screen.getByRole('button', { name: demoEnUS.colorMode.toDark }),
-    )
-    expect(
-      screen.getByRole('button', { name: demoEnUS.colorMode.toLight }),
-    ).toBeInTheDocument()
-  })
 })
 
 describe('the tenant navigation', () => {

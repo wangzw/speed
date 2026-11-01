@@ -42,7 +42,7 @@ import type { FeatureName } from '@speed/api-sdk/features'
 import type { ReactElement, ReactNode } from 'react'
 import { useAppServices } from '../app-services.js'
 import { CallbackLandingNotice } from '../callback-error-notice.js'
-import { AppBrand, HeaderActions, UserMenu } from '../chrome.js'
+import { AppBrand, UserMenu } from '../chrome.js'
 import { TENANT_HOME_PATH } from '../pages/not-found-page.js'
 import { invitationPath, ACCOUNT_PATH } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
@@ -207,7 +207,6 @@ function ConsoleHeaderActions({
           {t('console.backToApp')}
         </Link>
       )}
-      <HeaderActions />
       <UserMenu />
     </>
   )
