@@ -387,8 +387,15 @@ function StepUpFlow({
   // whole surface, as in the console's challenge.
   const flowInvalid =
     phase === 'failed' && step !== null && errorCode === 'authn.flow_invalid'
+  // A challenge answered before any second factor is chosen is the first
+  // factor, which travels under `answer`: the password re-proof the dialog
+  // asks for, and a password the server asks for when every factor was
+  // registered during the session. A challenge that follows a chosen factor,
+  // and every webauthn step, travels under `factor`.
   const answerStep =
-    chosenFactor.current !== null || !reproveFirst ? 'factor' : 'answer'
+    step !== null && step.kind === 'challenge' && chosenFactor.current === null
+      ? 'answer'
+      : 'factor'
   // True exactly when a FlowStep is on screen. While it is, the step's own
   // action row carries the dialog's cancel control beside its primary
   // action, so one row holds both and the primary always closes it. Every

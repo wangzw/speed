@@ -195,6 +195,45 @@ function makeReadyAfterFirstFactorResponder(overrides: {
   }
 }
 
+/** A step-up whose account holds a factor registered during this session: the
+ * server starts at the password and offers the factor only once it is proved
+ * again. The caller's own factor read answers one active factor, so the
+ * dialog starts the flow without asking for a first-factor re-proof. */
+function makeFactorsRegisteredThisSessionResponder(): RealResponder {
+  return (call: RealCall) => {
+    if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+      return jsonResponse(200, { factors: [ACTIVE_FACTOR] })
+    }
+    if (call.method === 'POST' && call.path === FLOW_START) {
+      return jsonResponse(200, {
+        seq: 1,
+        state: 'first',
+        next: {
+          kind: 'challenge',
+          fields: [{ name: 'password', kind: 'password', secret: true }],
+        },
+      })
+    }
+    if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+      return jsonResponse(200, {
+        seq: 2,
+        state: 'second',
+        next: {
+          kind: 'factor',
+          factors: [{ id: 'factor-1', kind: 'totp', label: 'Authenticator app' }],
+        },
+      })
+    }
+    if (
+      call.method === 'DELETE' &&
+      call.path === '/api/v1/auth/flows/current'
+    ) {
+      return new Response(null, { status: 204 })
+    }
+    throw new Error(`unexpected ${call.method} ${call.path}`)
+  }
+}
+
 /** The 429 the ratelimit layer answers a throttled request with: the
  * platform problem type and the wait its Retry-After names. */
 function throttledResponse(retryAfterSeconds: number): Response {
@@ -452,6 +491,35 @@ describe('StepUpChallenge', () => {
     // the complete step, and it is the only completion sent.
     expect(answers[1]?.body).toEqual({ seq: 2, step: 'complete' })
     expect(answers).toHaveLength(2)
+  })
+
+  it('answers a first-factor password under the answer step when the account already holds factors', async () => {
+    // A factor registered during the session does not put the flow at the
+    // factor step: the server proves the password again first, then offers
+    // the factor. The dialog did not ask for a first-factor re-proof, yet
+    // this challenge is the first factor, so its answer travels under
+    // `answer` rather than `factor`.
+    const { rig } = mount(makeFactorsRegisteredThisSessionResponder())
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.field.password),
+      'secret',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    await waitFor(() => {
+      const answer = rig.calls.find(
+        (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
+      )
+      expect(answer?.body).toEqual({
+        seq: 1,
+        step: 'answer',
+        input: { password: 'secret' },
+      })
+    })
   })
 
   it('falls back to the confirmation button when the automatic answer is refused', async () => {

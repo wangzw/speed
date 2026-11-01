@@ -272,6 +272,15 @@ function StepUpFlow({
     answer(value)
   }
 
+  // A challenge answered before any second factor is chosen is the first
+  // factor, which travels under `answer`: the password the server asks for
+  // when every factor was registered during the session. A challenge that
+  // follows a chosen factor, and every webauthn step, travels under `factor`.
+  const answerStep =
+    step !== null && step.kind === 'challenge' && chosenFactor.current === null
+      ? 'answer'
+      : 'factor'
+
   const starting = phase === 'starting'
   // The flow reached its ready state and the hook is answering its
   // `complete` step on its own: the starting placeholder covers that answer
@@ -359,7 +368,7 @@ function StepUpFlow({
                       key={`${seq ?? 0}-${step.kind}`}
                       step={step}
                       sequence={seq ?? 0}
-                      answerStep="factor"
+                      answerStep={answerStep}
                       submitLabel={t('stepUp.submit')}
                       onSubmit={handleAnswer}
                       submitDisabled={waiting}

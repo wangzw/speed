@@ -114,6 +114,43 @@ function flowSession(): {
   return { session, answers }
 }
 
+/** A session whose step-up flow starts at the password because every factor
+ * was registered during the session, then offers the factor once the password
+ * is proved. It records every answer's step and input. */
+function firstFactorSession(): {
+  readonly session: AuthSession
+  readonly answers: Array<{
+    readonly step?: string
+    readonly input?: Readonly<Record<string, string>>
+  }>
+} {
+  const answers: Array<{
+    readonly step?: string
+    readonly input?: Readonly<Record<string, string>>
+  }> = []
+  const session: AuthSession = {
+    ...flowSession().session,
+    startAuthenticatedFlow: () =>
+      Promise.resolve<AuthnFlowState>({
+        seq: 1,
+        state: 'first',
+        next: {
+          kind: 'challenge',
+          fields: [{ name: 'password', kind: 'password', secret: true }],
+        },
+      }),
+    answerFlow: (request) => {
+      answers.push(request)
+      return Promise.resolve<AuthnFlowState>({
+        seq: 2,
+        state: 'second',
+        next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+      })
+    },
+  }
+  return { session, answers }
+}
+
 /** A session whose step-up flow offers one factor, asks for its code, parks
  * on the ready state's `complete` step, and settles the elevation when that
  * step is answered. It records every answer's step and input, so a suite can
@@ -340,6 +377,33 @@ describe('StepUpChallenge', () => {
     // The factor-choice answer carries the id; the code answer carries the
     // same id again beside the code.
     expect(answers).toEqual([{ factor: 'f1' }, { code: '123456', factor: 'f1' }])
+  })
+
+  it('answers a first-factor password under the answer step when the account already holds factors', async () => {
+    // A factor registered during the session does not put the flow at the
+    // factor step: the server proves the password again first. The dialog
+    // did not ask for a first-factor re-proof, yet this challenge is the
+    // first factor, so its answer travels under `answer`.
+    bindFactors([ACTIVE_FACTOR])
+    const user = userEvent.setup()
+    const { session, answers } = firstFactorSession()
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={session}
+        onSuccess={vi.fn()}
+        onCancel={() => undefined}
+      />,
+    )
+
+    await user.type(await screen.findByLabelText(/password/), 'secret')
+    await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
+
+    await waitFor(() => expect(answers).toHaveLength(1))
+    expect(answers[0]).toMatchObject({
+      step: 'answer',
+      input: { password: 'secret' },
+    })
   })
 
   it('answers the ready step on its own without a second click', async () => {
