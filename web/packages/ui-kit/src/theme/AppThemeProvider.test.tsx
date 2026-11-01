@@ -11,7 +11,7 @@ import { useEffect } from 'react'
 import { createTheme, ThemeProvider, useTheme } from '@mui/material/styles'
 import type { Theme } from '@mui/material/styles'
 import { enUS, zhCN } from '@mui/material/locale'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n, I18nextProvider, switchLanguage } from '@speed/i18n'
 import { defaultTokens } from '@speed/tokens'
 import type { TokensOverride } from '@speed/tokens'
@@ -23,11 +23,16 @@ import {
   type AppThemeModeControl,
   type AppThemePresetControl,
 } from './AppThemeProvider.js'
+import type { AppThemeModePreference } from './createAppTheme.js'
 import {
   createUiKitI18n,
   renderWithProviders,
   type RenderWithProvidersOptions,
 } from '../../test-utils/render.js'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 /** Read the theme MUI context hands the tree at render time. */
 function ThemeProbe({ onTheme }: { onTheme: (theme: Theme) => void }) {
@@ -43,6 +48,34 @@ function ModeProbe({
 }) {
   onControl(useAppThemeMode())
   return null
+}
+
+/** Install a matchMedia stub for the system color-mode query. */
+function stubSystemColorMode(matches: boolean): {
+  readonly changeMatches: (next: boolean) => void
+} {
+  let current = matches
+  const listeners = new Set<() => void>()
+  const list = {
+    get matches(): boolean {
+      return current
+    },
+    addEventListener: (_type: string, listener: () => void): void => {
+      listeners.add(listener)
+    },
+    removeEventListener: (_type: string, listener: () => void): void => {
+      listeners.delete(listener)
+    },
+  }
+  vi.stubGlobal('matchMedia', vi.fn(() => list))
+  return {
+    changeMatches(next: boolean): void {
+      current = next
+      for (const listener of listeners) {
+        listener()
+      }
+    },
+  }
 }
 
 /** Capture the provider's preset control at render time. */
@@ -245,7 +278,7 @@ describe('AppThemeProvider', () => {
     expect(getByText('child content')).toBeInTheDocument()
   })
 
-  it('starts in light mode and exposes a toggle that re-assembles the theme dark', () => {
+  it('starts in light mode and re-assembles the theme dark when the preference changes', () => {
     let seen: Theme | undefined
     let control: AppThemeModeControl | undefined
     renderWithProviders(
@@ -255,18 +288,20 @@ describe('AppThemeProvider', () => {
       </>,
     )
     expect(control?.mode).toBe('light')
+    expect(control?.preference).toBe('light')
     expect(seen?.palette.mode).toBe('light')
     const neutral = defaultTokens.color.neutral
 
     act(() => {
-      control?.toggleMode()
+      control?.setPreference('dark')
     })
     expect(control?.mode).toBe('dark')
+    expect(control?.preference).toBe('dark')
     expect(seen?.palette.mode).toBe('dark')
     expect(seen?.palette.background.default).toBe(neutral[900])
 
     act(() => {
-      control?.setMode('light')
+      control?.setPreference('light')
     })
     expect(seen?.palette.mode).toBe('light')
   })
@@ -282,6 +317,124 @@ describe('AppThemeProvider', () => {
       </I18nextProvider>,
     )
     expect(seen?.palette.mode).toBe('dark')
+  })
+
+  it('follows the system preference while defaultMode is system', () => {
+    const media = stubSystemColorMode(false)
+    let seen: Theme | undefined
+    let control: AppThemeModeControl | undefined
+    renderWithProviders(
+      <>
+        <ThemeProbe onTheme={(t) => (seen = t)} />
+        <ModeProbe onControl={(c) => (control = c)} />
+      </>,
+      { defaultMode: 'system' },
+    )
+    expect(control?.preference).toBe('system')
+    expect(control?.mode).toBe('light')
+    expect(seen?.palette.mode).toBe('light')
+
+    act(() => {
+      media.changeMatches(true)
+    })
+    expect(control?.mode).toBe('dark')
+    expect(seen?.palette.mode).toBe('dark')
+    expect(seen?.palette.background.default).toBe(
+      defaultTokens.color.neutral[900],
+    )
+  })
+
+  it('resolves system to light without matchMedia and without throwing', () => {
+    vi.stubGlobal('matchMedia', undefined)
+    let seen: Theme | undefined
+    let control: AppThemeModeControl | undefined
+    expect(() =>
+      renderWithProviders(
+        <>
+          <ThemeProbe onTheme={(t) => (seen = t)} />
+          <ModeProbe onControl={(c) => (control = c)} />
+        </>,
+        { defaultMode: 'system' },
+      ),
+    ).not.toThrow()
+    expect(control?.preference).toBe('system')
+    expect(control?.mode).toBe('light')
+    expect(seen?.palette.mode).toBe('light')
+  })
+
+  it('keeps an explicit mode when the system preference changes', () => {
+    const media = stubSystemColorMode(true)
+    let seen: Theme | undefined
+    let control: AppThemeModeControl | undefined
+    renderWithProviders(
+      <>
+        <ThemeProbe onTheme={(t) => (seen = t)} />
+        <ModeProbe onControl={(c) => (control = c)} />
+      </>,
+      { defaultMode: 'dark' },
+    )
+    expect(control?.preference).toBe('dark')
+    expect(control?.mode).toBe('dark')
+    expect(seen?.palette.mode).toBe('dark')
+
+    act(() => {
+      media.changeMatches(false)
+    })
+    expect(control?.mode).toBe('dark')
+    expect(seen?.palette.mode).toBe('dark')
+  })
+
+  it('starts at the defaultMode preference and follows the system after setPreference', () => {
+    const media = stubSystemColorMode(true)
+    let seen: Theme | undefined
+    let control: AppThemeModeControl | undefined
+    renderWithProviders(
+      <>
+        <ThemeProbe onTheme={(t) => (seen = t)} />
+        <ModeProbe onControl={(c) => (control = c)} />
+      </>,
+      { defaultMode: 'light' },
+    )
+    expect(control?.preference).toBe('light')
+    expect(control?.mode).toBe('light')
+    expect(seen?.palette.mode).toBe('light')
+
+    act(() => {
+      control?.setPreference('system')
+    })
+    expect(control?.preference).toBe('system')
+    expect(control?.mode).toBe('dark')
+    expect(seen?.palette.mode).toBe('dark')
+
+    act(() => {
+      media.changeMatches(false)
+    })
+    expect(control?.mode).toBe('light')
+    expect(seen?.palette.mode).toBe('light')
+  })
+
+  it('ignores a setPreference value outside the three-value set', () => {
+    let control: AppThemeModeControl | undefined
+    renderWithProviders(
+      <>
+        <ThemeProbe onTheme={() => undefined} />
+        <ModeProbe onControl={(c) => (control = c)} />
+      </>,
+    )
+    act(() => {
+      control?.setPreference('sepia' as AppThemeModePreference)
+    })
+    expect(control?.preference).toBe('light')
+    expect(control?.mode).toBe('light')
+  })
+
+  it('falls back to light for an unrecognised defaultMode', () => {
+    let control: AppThemeModeControl | undefined
+    renderWithProviders(<ModeProbe onControl={(c) => (control = c)} />, {
+      defaultMode: 'sepia' as AppThemeModePreference,
+    })
+    expect(control?.preference).toBe('light')
+    expect(control?.mode).toBe('light')
   })
 
   it('throws when the mode hook is read without a provider above', () => {
@@ -378,9 +531,10 @@ describe('AppThemeProvider', () => {
       expect(seen?.shape.borderRadius).toBe(2)
 
       act(() => {
-        modeControl?.toggleMode()
+        modeControl?.setPreference('dark')
       })
       expect(modeControl?.mode).toBe('dark')
+      expect(modeControl?.preference).toBe('dark')
       expect(seen?.palette.mode).toBe('dark')
       expect(presetControl?.preset).toBe('sharp')
       expect(seen?.shape.borderRadius).toBe(2)
@@ -393,9 +547,10 @@ describe('AppThemeProvider', () => {
       expect(seen?.palette.mode).toBe('dark')
 
       act(() => {
-        modeControl?.setMode('light')
+        modeControl?.setPreference('light')
       })
       expect(modeControl?.mode).toBe('light')
+      expect(modeControl?.preference).toBe('light')
       expect(seen?.palette.mode).toBe('light')
       expect(presetControl?.preset).toBe('round')
       expect(seen?.shape.borderRadius).toBe(18)

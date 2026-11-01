@@ -34,8 +34,9 @@ string lives in the bilingual `ui-kit` namespace registered through
 
 | Module | Exports |
 |---|---|
-| `theme/createAppTheme.ts` | `createAppTheme`, `AppTheme`, `AppThemeMode` |
+| `theme/createAppTheme.ts` | `createAppTheme`, `AppTheme`, `AppThemeMode`, `AppThemeModePreference` |
 | `theme/AppThemeProvider.tsx` | `AppThemeProvider`, `AppThemeProviderProps`, `useAppThemeMode`, `AppThemeModeControl` |
+| `theme/system-color-mode.ts` | (internal) `useSystemColorMode` |
 | `components/PageLayout.tsx` | `PageLayout`, `PageLayoutProps` |
 | `components/PageHeader.tsx` | `PageHeader`, `PageHeaderProps`, `PageHeaderBreadcrumb` |
 | `components/EmptyState.tsx` | `EmptyState`, `EmptyStateProps`, `EmptyStateVariant`, `EmptyStateHeadingLevel`, `EmptyStateNoHeading` |
@@ -330,21 +331,33 @@ label below 4.5:1; dark mode therefore maps `dark` to the light tone mixed
 20% toward white, a visible hover step that keeps the label readable. A
 brand recolor names `main` (light surfaces) and `light` (dark surfaces):
 overriding only `main` leaves dark mode on the role's light tone.
-`AppThemeProvider` holds the active mode
-in its own state (starting at its `defaultMode` prop, `'light'`) and
-exposes the mode with a setter and a toggle through `useAppThemeMode` -- a
-host renders its own mode control against that hook and the whole subtree
-re-renders with the new palette:
+`createAppTheme` accepts only a resolved mode. The preference is a
+separate type, `AppThemeModePreference` (`'light' | 'dark' | 'system'`).
+`AppThemeProvider` holds that preference in its own state (starting at its
+`defaultMode` prop, `'light'`) and resolves `'system'` against
+`prefers-color-scheme: dark`, subscribing to the media query while the
+preference is `'system'`. A missing `matchMedia`, one that throws, and the
+server snapshot all resolve to `'light'`. `useAppThemeMode` exposes the
+resolved `mode`, the `preference`, and `setPreference` -- a host renders
+its own control against that hook and the whole subtree re-renders with
+the new palette:
 
 ```tsx
 import { useAppThemeMode } from '@speed/ui-kit'
 
-function ModeToggle() {
-  const { mode, toggleMode } = useAppThemeMode()
+function ModeChoice() {
+  const { preference, setPreference } = useAppThemeMode()
   return (
-    <button type="button" onClick={toggleMode}>
-      {mode === 'dark' ? 'Light' : 'Dark'}
-    </button>
+    <select
+      value={preference}
+      onChange={(event) =>
+        setPreference(event.target.value as 'light' | 'dark' | 'system')
+      }
+    >
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+      <option value="system">Follow device</option>
+    </select>
   )
 }
 ```
@@ -396,8 +409,9 @@ never throws mid-render: the i18n supported set is host-chosen and may
 include languages the two MUI mappings do not cover, and MUI's built-in
 texts then fall back to the en-US MUI locale while the app's own
 translations keep rendering in the active language. Its props are the
-i18n instance, the optional two token layers, the initial color mode
-(`defaultMode`, default `'light'`), and children. Hosts composing their
+i18n instance, the optional two token layers, the initial color-mode
+preference (`defaultMode`, default `'light'`, may be `'system'`), and
+children. Hosts composing their
 own theme tree do the same merge explicitly:
 
 ```ts

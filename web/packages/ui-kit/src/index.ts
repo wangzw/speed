@@ -41,6 +41,7 @@ export {
   createAppTheme,
   type AppTheme,
   type AppThemeMode,
+  type AppThemeModePreference,
 } from './theme/createAppTheme.js'
 export {
   AppThemeProvider,

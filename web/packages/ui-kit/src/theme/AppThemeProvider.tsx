@@ -20,12 +20,17 @@
  *    texts (table pagination labels, date picker strings, ...) follow
  *    every language switch. The locale merge lands after the token
  *    mapping, so MUI component defaults never overwrite theme tokens.
- * 4. Color mode -- the provider holds the active AppThemeMode in local
- *    state (starting at defaultMode, 'light') and exposes it, with a
- *    setter and a toggle, through useAppThemeMode. A mode change
- *    re-assembles the theme; every child under the provider re-renders
- *    with the new palette. The default is 'light', so a host that never
- *    reads the hook sees exactly the previous behavior.
+ * 4. Color mode -- the provider holds the three-valued preference
+ *    (AppThemeModePreference: 'light', 'dark' or 'system') in local
+ *    state, starting at defaultMode ('light'), and derives the resolved
+ *    mode from it: an explicit preference resolves to itself, while
+ *    'system' follows the device's prefers-color-scheme query through
+ *    useSystemColorMode. Both the resolved mode and the preference
+ *    surface through useAppThemeMode, the latter with a setter. A
+ *    resolved-mode change re-assembles the theme; every child under the
+ *    provider re-renders with the new palette. The default is 'light',
+ *    so a host that never reads the hook sees exactly the previous
+ *    behavior.
  * 5. Global reset -- CssBaseline renders the theme-aware baseline
  *    (background color from theme.palette.background.default, no body
  *    margin) once, under the same theme context as the children.
@@ -55,7 +60,8 @@ import { deepMerge } from '@speed/tokens'
 import type { TokensOverride } from '@speed/tokens'
 import type { ThemePreset } from '@speed/theme-presets'
 import { createAppTheme } from './createAppTheme.js'
-import type { AppThemeMode } from './createAppTheme.js'
+import type { AppThemeMode, AppThemeModePreference } from './createAppTheme.js'
+import { useSystemColorMode } from './system-color-mode.js'
 
 /**
  * The MUI localization for the active language, or the en-US MUI locale
@@ -77,16 +83,29 @@ function muiLocaleForOrDefault(language: string): Localization {
 }
 
 /**
- * The color-mode surface useAppThemeMode exposes: the active mode, a
- * setter and a toggle. Backed by the provider's own state.
+ * The three values AppThemeModePreference admits. The type is erased at
+ * runtime, while defaultMode and setPreference can still be handed a
+ * foreign value by decoded config or storage, so both entry points check
+ * against this.
+ */
+function isAppThemeModePreference(
+  value: unknown,
+): value is AppThemeModePreference {
+  return value === 'light' || value === 'dark' || value === 'system'
+}
+
+/**
+ * The color-mode surface useAppThemeMode exposes: the resolved mode, the
+ * preference behind it, and a setter for the preference. Backed by the
+ * provider's own state.
  */
 export interface AppThemeModeControl {
-  /** The active color mode. */
+  /** The resolved color mode, ready to pass to createAppTheme. */
   readonly mode: AppThemeMode
-  /** Switch to an explicit mode. */
-  readonly setMode: (mode: AppThemeMode) => void
-  /** Flip between 'light' and 'dark'. */
-  readonly toggleMode: () => void
+  /** The active preference; 'system' follows the device. */
+  readonly preference: AppThemeModePreference
+  /** Switch the preference. A value outside the three-value set is ignored. */
+  readonly setPreference: (preference: AppThemeModePreference) => void
 }
 
 /** The provider's mode control; null until an AppThemeProvider is mounted. */
@@ -161,8 +180,12 @@ export interface AppThemeProviderProps {
    * not white-screen the tree.
    */
   readonly defaultPreset?: string
-  /** The color mode the tree starts in; defaults to 'light'. */
-  readonly defaultMode?: AppThemeMode
+  /**
+   * The color-mode preference the tree starts in ('light', 'dark' or
+   * 'system'); defaults to 'light'. A value outside the three-value set
+   * falls back to 'light'.
+   */
+  readonly defaultMode?: AppThemeModePreference
   readonly children?: ReactNode
 }
 
@@ -180,20 +203,30 @@ export function AppThemeProvider({
   defaultMode = 'light',
   children,
 }: AppThemeProviderProps) {
-  // The active color mode is the provider's own state, promoted through
-  // useAppThemeMode so any descendant can flip it. It starts at
+  // The color-mode preference is the provider's own state, promoted
+  // through useAppThemeMode so any descendant can switch it. It starts at
   // defaultMode ('light'), so a host that never reads the hook renders
-  // exactly as before.
-  const [mode, setModeState] = useState<AppThemeMode>(defaultMode)
-  const setMode = useCallback((next: AppThemeMode) => {
-    setModeState(next)
+  // exactly as before; a value outside the three-value set falls back to
+  // 'light' rather than reaching createAppTheme.
+  const [preference, setPreferenceState] = useState<AppThemeModePreference>(
+    isAppThemeModePreference(defaultMode) ? defaultMode : 'light',
+  )
+  const setPreference = useCallback((next: AppThemeModePreference) => {
+    // An unrecognised value is ignored: the three-value set defines the
+    // addressable preferences.
+    if (isAppThemeModePreference(next)) {
+      setPreferenceState(next)
+    }
   }, [])
-  const toggleMode = useCallback(() => {
-    setModeState((current) => (current === 'light' ? 'dark' : 'light'))
-  }, [])
+  // 'system' follows the device while it is selected; an explicit
+  // preference subscribes to nothing. The resolved mode is what the theme
+  // factory accepts.
+  const systemMode = useSystemColorMode(preference === 'system')
+  const mode: AppThemeMode =
+    preference === 'system' ? systemMode : preference
   const modeControl = useMemo<AppThemeModeControl>(
-    () => ({ mode, setMode, toggleMode }),
-    [mode, setMode, toggleMode],
+    () => ({ mode, preference, setPreference }),
+    [mode, preference, setPreference],
   )
 
   // The preset shelf is the provider's own state too, but it is a selection

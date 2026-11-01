@@ -23,6 +23,7 @@ import { createTestI18n } from '@speed/test-utils/render'
 import type { RenderWithProvidersOptions as BaseOptions } from '@speed/test-utils/render'
 import type { RenderWithProvidersResult } from '@speed/test-utils/render'
 import { AppThemeProvider } from '../src/theme/AppThemeProvider.js'
+import type { AppThemeModePreference } from '../src/theme/createAppTheme.js'
 import { UI_KIT_NAMESPACE, uiKitResources } from '../src/resources.js'
 
 export type { RenderWithProvidersResult }
@@ -36,6 +37,8 @@ export interface RenderWithProvidersOptions extends BaseOptions {
   readonly presets?: readonly ThemePreset[]
   /** The preset id the provider starts at. */
   readonly defaultPreset?: string
+  /** The color-mode preference the provider starts at. */
+  readonly defaultMode?: AppThemeModePreference
 }
 
 export function createUiKitI18n(language: string = 'zh-CN'): I18nInstance {
@@ -55,6 +58,7 @@ export function renderWithProviders(
     tenantOverrides,
     presets,
     defaultPreset,
+    defaultMode,
   } = options
   const instance = i18n ?? createUiKitI18n(language)
   const result = render(
@@ -65,6 +69,7 @@ export function renderWithProviders(
         tenantOverrides={tenantOverrides}
         presets={presets}
         defaultPreset={defaultPreset}
+        defaultMode={defaultMode}
       >
         {ui}
       </AppThemeProvider>

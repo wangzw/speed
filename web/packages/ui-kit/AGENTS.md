@@ -5,10 +5,11 @@
 The first DOM-rendering package: the `createAppTheme` theme factory that
 maps the merged token tree onto an MUI v9 theme and carries the
 coarse-pointer 44px floor for the base controls, `AppThemeProvider`
-(theme + MUI locale linkage + color mode + CssBaseline; the active
-`AppThemeMode` -- `'light'`/`'dark'` -- is read and flipped through
-`useAppThemeMode`, the dark surface reading the neutral ramp from its dark
-end), and the controlled
+(theme + MUI locale linkage + color mode + CssBaseline; the
+`AppThemeModePreference` -- `'light'`/`'dark'`/`'system'` -- is held as a
+preference and resolved to an `AppThemeMode` through `useAppThemeMode`,
+`'system'` following the device while it is selected, the dark surface
+reading the neutral ramp from its dark end), and the controlled
 components (`PageLayout`, `PageHeader`, `SectionCard`, `EmptyState`,
 `ConfirmDialog`, `SidePanel`,
 `FormField`, `FormLayout`, `PhoneNumberField`, `DataTable`,
@@ -102,8 +103,9 @@ plumbing and deliberately not exported.
 - **`useWriteFeedback` and `usePageRefresh` are the exported hooks that
   hold state, and their state belongs to the calling host component.**
   Every component above stays controlled; `useAppThemeMode`,
-  `useDisplayTimeZone` and `usePhoneCountryDefault` only read provider
-  context. `useWriteFeedback` holds one feedback scope's slot and
+  `useDisplayTimeZone` and `usePhoneCountryDefault` read provider
+  context and hold no state of their own (the mode hook also exposes the
+  provider's `setPreference`). `useWriteFeedback` holds one feedback scope's slot and
   in-flight count for the component that calls it -- never provider or
   global state, never data from the network. `usePageRefresh` holds one
   surface's refresh bookkeeping (in-flight guard, settle times,
@@ -251,11 +253,12 @@ plumbing and deliberately not exported.
   gets the container-query-keyed hide/show. `DataTableColumn`'s
   `cellWrap?: 'wrap' | 'nowrap'` follows it as well: omitting it (or
   passing `'wrap'`) is normal text flow, and only `'nowrap'` emits the
-  single-line declaration. The color mode follows the same
-  template: `createAppTheme`'s third `mode` argument and
-  `AppThemeProvider`'s `defaultMode` both default to `'light'`, exactly
-  the previous always-light theme, and `useAppThemeMode` is a new
-  export -- so every existing host is byte-for-byte unaffected.
+  single-line declaration. The color mode follows the same template
+  where it can: `createAppTheme`'s third `mode` argument and
+  `AppThemeProvider`'s `defaultMode` both default to `'light'`. The
+  preference is three-valued (`AppThemeModePreference`), and
+  `AppThemeModeControl` exposes `mode`, `preference` and
+  `setPreference`.
 
 ## Testing
 

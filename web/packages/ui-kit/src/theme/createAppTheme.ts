@@ -190,6 +190,13 @@ const ELEVATION_SLOTS = [1, 2, 4, 8, 16, 24] as const
  */
 export type AppThemeMode = 'light' | 'dark'
 
+/**
+ * The color-mode preference a host may hold: an explicit resolved mode,
+ * or 'system' to follow the device. Only the provider resolves 'system';
+ * createAppTheme itself accepts the resolved AppThemeMode alone.
+ */
+export type AppThemeModePreference = AppThemeMode | 'system'
+
 /** What the factory hands back: the merged tokens and the theme built from them. */
 export interface AppTheme {
   /**

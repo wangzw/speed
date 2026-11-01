@@ -118,6 +118,7 @@ const PUBLIC_EXPORTS = [
   'AppTheme',
   'AppThemeMode',
   'AppThemeModeControl',
+  'AppThemeModePreference',
   'AppThemePresetControl',
   'AppThemeProvider',
   'AppThemeProviderProps',
