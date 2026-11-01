@@ -35,8 +35,17 @@ const OPERATIONS: PasswordResetOperations = {
   completeReset: () => Promise.resolve(),
 }
 
-function contentRightOf(element: Element): number {
-  const row = element.parentElement as HTMLElement
+/** The row an action belongs to, found by the row's own marker. */
+function actionRowOf(action: Element): HTMLElement {
+  const row = action.closest<HTMLElement>('[data-action-row]')
+  if (row === null) {
+    throw new Error('the action is not inside an action row')
+  }
+  return row
+}
+
+/** The row's right content edge (the row may carry its own padding). */
+function contentRightOf(row: HTMLElement): number {
   const rowBox = row.getBoundingClientRect()
   return rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
 }
@@ -56,8 +65,9 @@ describe('PasswordResetScreen action row in Chromium', () => {
     const submit = await screen.findByRole('button', {
       name: enUS.passwordReset.send,
     })
+    const row = actionRowOf(submit)
     expect(
-      Math.abs(submit.getBoundingClientRect().right - contentRightOf(submit)),
+      Math.abs(submit.getBoundingClientRect().right - contentRightOf(row)),
     ).toBeLessThanOrEqual(1)
   })
 
@@ -96,6 +106,10 @@ describe('PasswordResetScreen action row in Chromium', () => {
     const backBox = back.getBoundingClientRect()
     const resendBox = resend.getBoundingClientRect()
     const submitBox = submit.getBoundingClientRect()
+    const row = actionRowOf(submit)
+    // All three controls are members of the one row.
+    expect(actionRowOf(back)).toBe(row)
+    expect(actionRowOf(resend)).toBe(row)
 
     // One line.
     expect(Math.abs(backBox.top - submitBox.top)).toBeLessThanOrEqual(1)
@@ -103,7 +117,7 @@ describe('PasswordResetScreen action row in Chromium', () => {
     // Adjacent, one spacing token apart, primary last and right.
     expect(resendBox.left - backBox.right).toBeCloseTo(ACTION_GAP, 0)
     expect(submitBox.left - resendBox.right).toBeCloseTo(ACTION_GAP, 0)
-    expect(Math.abs(submitBox.right - contentRightOf(submit))).toBeLessThanOrEqual(
+    expect(Math.abs(submitBox.right - contentRightOf(row))).toBeLessThanOrEqual(
       1,
     )
   })

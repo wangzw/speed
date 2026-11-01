@@ -108,10 +108,17 @@ describe('SignInScreen password channel layout in Chromium', () => {
     // One adjacent group, one spacing token apart -- not the two ends the
     // old space-between row left -- with the submit closing the row.
     expect(submitBox.left - forgotBox.right).toBeCloseTo(8, 0)
-    const row = submit.parentElement as HTMLElement
-    const rowBox = row.getBoundingClientRect()
-    const contentRight =
-      rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
-    expect(Math.abs(submitBox.right - contentRight)).toBeLessThanOrEqual(1)
+    const row = submit.closest<HTMLElement>('[data-action-row]')
+    expect(row).not.toBeNull()
+    expect(forgot.closest('[data-action-row]')).toBe(row)
+    expect(
+      Math.abs(submitBox.right - contentRightOf(row as HTMLElement)),
+    ).toBeLessThanOrEqual(1)
   })
 })
+
+/** The row's right content edge (the row may carry its own padding). */
+function contentRightOf(row: HTMLElement): number {
+  const rowBox = row.getBoundingClientRect()
+  return rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
+}
