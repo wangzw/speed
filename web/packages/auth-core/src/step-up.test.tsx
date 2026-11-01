@@ -459,6 +459,66 @@ describe('useStepUp', () => {
     }
   })
 
+  it('never publishes a zero-second wait at its deadline', async () => {
+    // The wait clears the moment the deadline is crossed. A zero published
+    // for one render would keep a caller's retry control disabled and show
+    // "0 seconds" for that frame, so every value the hook hands to a render
+    // must be null or positive.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const { session } = makeCookieHarness({
+        [LOGIN_START_AUTHENTICATED]: () =>
+          openFlow({ next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] } }),
+        [LOGIN_ANSWER]: () => {
+          throw new ApiError({
+            status: 429,
+            code: 'ratelimit.throttled',
+            attempts: 1,
+            retryAfterMs: 30_000,
+          })
+        },
+        [LOGIN_ABANDON]: () => ({}),
+      })
+      const onElevated = vi.fn()
+      const rendered: Array<number | null> = []
+      const { result, rerender } = renderHook(
+        ({ active }: { active: boolean }) => {
+          const state = useStepUp(session, active, onElevated)
+          rendered.push(state.retryAfterSeconds)
+          return state
+        },
+        { initialProps: { active: false } },
+      )
+      rerender({ active: true })
+      await waitFor(() => {
+        expect(result.current.phase).toBe('step')
+      })
+
+      act(() => {
+        result.current.answer({ step: 'factor', input: { factor: 'f1' } })
+      })
+      await waitFor(() => {
+        expect(result.current.phase).toBe('failed')
+      })
+      expect(result.current.retryAfterSeconds).toBe(30)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000)
+      })
+      await waitFor(() => {
+        expect(result.current.retryAfterSeconds).toBeNull()
+      })
+      // The step is answerable again and no render ever saw a zero wait.
+      expect(result.current.step?.kind).toBe('factor')
+      expect(rendered).not.toContain(0)
+      expect(
+        rendered.filter((value) => value !== null).every((value) => value > 0),
+      ).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('surfaces a failed start as a resolved code', async () => {
     const { session } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () => {

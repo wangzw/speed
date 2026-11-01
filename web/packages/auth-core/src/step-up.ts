@@ -133,8 +133,9 @@ export interface StepUpState {
    * when it stated none. A 429 (or 503) answer carries the api-client's
    * `retryAfterMs`, and the caller holds its retry control until this
    * counts down to zero. The value ticks once a second while it is set and
-   * clears at zero; the failure code stays, so the caller renders that
-   * code's wait-free text and its form becomes submittable again.
+   * clears when no time remains -- it never reads zero -- so the failure
+   * code stays, the caller renders that code's wait-free text, and its form
+   * becomes submittable again in the frame the wait ends.
    */
   readonly retryAfterSeconds: number | null
   /** The deployment's human-verification gate and the proof this challenge
@@ -253,10 +254,14 @@ export function useStepUp(
   // the true remaining time instead of drifting.
   const [waitUntil, setWaitUntil] = useState<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
+  // The remaining wait, or null once no time remains. A deadline that has
+  // passed publishes no wait -- never zero -- so a caller holding its retry
+  // control on a non-null value frees it in the same frame the deadline is
+  // crossed instead of showing "0 seconds" for one more render.
+  const remainingSeconds =
+    waitUntil === null ? null : Math.ceil((waitUntil - now) / 1000)
   const retryAfterSeconds =
-    waitUntil === null
-      ? null
-      : Math.max(0, Math.ceil((waitUntil - now) / 1000))
+    remainingSeconds === null || remainingSeconds <= 0 ? null : remainingSeconds
   // The elevated callback is read through a ref, so a caller may pass a
   // fresh closure every render without restarting the flow.
   const elevatedRef = useRef(onElevated)
@@ -403,9 +408,11 @@ export function useStepUp(
 
   // The wait elapsed: the caller's retry control is free again. The failure
   // code stays -- it still names what the last attempt hit -- and renders
-  // its own wait-free text; a retry or a reopen clears it.
+  // its own wait-free text; a retry or a reopen clears it. A wait that has
+  // elapsed reads as null, so this clears the deadline the moment the
+  // remaining time reaches zero rather than publishing a zero-second wait.
   useEffect(() => {
-    if (waitUntil === null || retryAfterSeconds !== 0) {
+    if (waitUntil === null || retryAfterSeconds !== null) {
       return
     }
     setWaitUntil(null)
