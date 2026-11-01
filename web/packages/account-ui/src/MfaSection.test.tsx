@@ -125,7 +125,11 @@ describe('MfaSection', () => {
     expect(
       screen.getAllByText(zhCN.mfa.factor.kind.totp).length,
     ).toBeGreaterThan(0)
-    expect(screen.getByText(zhCN.mfa.factor.status.active)).toBeTruthy()
+    // The active state reads the same word on the method row and on the
+    // factor row, so the one active factor puts that word on screen twice.
+    expect(
+      screen.getAllByText(zhCN.mfa.factor.status.active),
+    ).toHaveLength(2)
     expect(screen.getByText(zhCN.mfa.factor.status.pending)).toBeTruthy()
     // Both enrollment entries are offered (the deployment reports both); the
     // one whose method already has an active factor reads as its manager.
@@ -139,6 +143,63 @@ describe('MfaSection', () => {
     ).toBeTruthy()
 
     await expectNoAxeViolations()
+  })
+
+  it('offers another device for a method that already has an active factor', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [factor({ status: 'active' })] })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    const button = await screen.findByRole('button', {
+      name: manageNameOf(zhCN.mfa.factor.kind.totp),
+    })
+    // The action starts an enrollment even while the method has an active
+    // factor, so its word is the add word rather than a management one.
+    expect(button.textContent).toBe(zhCN.mfa.action.manage)
+    expect(button.textContent).toContain(zhCN.mfa.action.add)
+  })
+
+  it('offers the plain add action for a method with no active factor', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    const button = await screen.findByRole('button', {
+      name: addNameOf(zhCN.mfa.factor.kind.totp),
+    })
+    expect(button.textContent).toBe(zhCN.mfa.action.add)
+  })
+
+  it('names the method state and the factor row state with one word', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [factor({ status: 'active' })] })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    // One active factor: the method row's state chip and the factor row's
+    // status chip describe the same state, so they read the same word.
+    expect(zhCN.mfa.state.on).toBe(zhCN.mfa.factor.status.active)
+    expect(await screen.findAllByText(zhCN.mfa.state.on)).toHaveLength(2)
   })
 
   it('offers only the enrollment entries the deployment reports', async () => {

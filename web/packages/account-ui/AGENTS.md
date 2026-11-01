@@ -247,7 +247,13 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
    so a re-sent challenge starts a fresh ceremony while an ordinary
    re-render does not, and start a registration ceremony on a click,
    because a creation ceremony needs the user activation some browsers
-   require.
+   require. Each copy owns its failure wording: this copy renders
+   `unsupported`, `cancelled` and `already-registered` as their own
+   sentences — the last for a browser's `InvalidStateError`, which means
+   the authenticator already holds a credential the server's
+   `excludeCredentials` excludes — and its generic failure sentence names
+   the ceremony, so a failed registration reads as a registration rather
+   than a sign-in.
 2. **State is discovered through the spec's own answers; the package
    renders exactly the operations that exist.** Registration is not a
    factor route — it is the login engine's enroll purpose — so

@@ -558,11 +558,11 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                           size="small"
                           disabled={busy}
                           data-testid={`mfa-add-${kind}`}
-                          // The visible text is one action word for every
-                          // method, and the accessible name begins with that
-                          // same word followed by the method, so it contains
-                          // the visible label (WCAG 2.5.3) while still telling
-                          // several method buttons apart.
+                          // The accessible name carries the visible action
+                          // word (another device, or a plain add) and names
+                          // the method, so it contains the visible label
+                          // (WCAG 2.5.3) while still telling several method
+                          // buttons apart.
                           aria-label={
                             activeCount > 0
                               ? t('mfa.manageAria', {

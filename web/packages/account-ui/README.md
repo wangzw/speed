@@ -697,7 +697,11 @@ is `test-utils/real-client.ts`, the render harness
   while a registration step waits for a click. The step waits visibly,
   can be
   cancelled (best effort, by aborting the ceremony) and retried, and
-  abandons a pending ceremony on unmount.
+  abandons a pending ceremony on unmount. A device that already holds the
+  account's passkey is refused by the browser as `InvalidStateError`; the
+  step reports that separately, telling the viewer to use another device
+  or an authenticator app rather than retrying the same one, and its
+  generic failure sentence names the ceremony that did not complete.
 - The step-up dialog covers the factor and challenge steps; a flow that
   starts at the first factor (an account with no usable strengthening
   factor) renders its challenge fields and is answerable, but the

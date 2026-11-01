@@ -347,12 +347,14 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
       await selectAccountSection(page, 'security')
       await expandAccountRows(page)
       secret = await enrolTotp(page)
+      // The one active factor puts the word on the method row and on the
+      // factor row.
       await expect(
         mfaSection(page).getByText(
           copy('accountUi', 'mfa.factor.status.active'),
           { exact: true },
         ),
-      ).toHaveCount(1)
+      ).toHaveCount(2)
     })
 
     await test.step('step 2: a fresh password sign-in proves the second factor, which makes the session recent enough to write the passkey', async () => {
@@ -368,12 +370,13 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
 
     await test.step('step 3: the account enrols a discoverable passkey beside the second factor', async () => {
       await enrolPasskey(page)
+      // Two active factors, each read on its method row and its factor row.
       await expect(
         mfaSection(page).getByText(
           copy('accountUi', 'mfa.factor.status.active'),
           { exact: true },
         ),
-      ).toHaveCount(2)
+      ).toHaveCount(4)
     })
 
     await test.step('step 4: choosing the passkey entry completes the login with user verification and no second factor', async () => {
@@ -424,13 +427,14 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
       await selectAccountSection(otherPage, 'security')
       await expandAccountRows(otherPage)
       await enrolPasskey(otherPage)
-      // The account holds exactly one factor, the passkey.
+      // The account holds exactly one factor, the passkey; its state reads on
+      // the method row and on the factor row.
       await expect(
         mfaSection(otherPage).getByText(
           copy('accountUi', 'mfa.factor.status.active'),
           { exact: true },
         ),
-      ).toHaveCount(1)
+      ).toHaveCount(2)
 
       await otherAccounts.signOut()
       await otherAccounts.openSignIn()

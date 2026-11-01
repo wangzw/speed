@@ -135,7 +135,7 @@
     "loading": "正在加载两步验证",
     "empty": "尚未设置任何两步验证方式。",
     "singleFactor": "当前只启用了一种两步验证方式。请在下方再添加一种，以便丢失这一种后仍能登录。",
-    "manageAria": "管理{{method}}",
+    "manageAria": "为{{method}}添加另一台设备",
     "addAria": "添加{{method}}",
     "remove": "移除",
     "removeAria": "移除此两步验证方式：{{factor}}",
@@ -190,13 +190,13 @@
     },
     "retry": "重试",
     "state": {
-      "on": "已开启",
+      "on": "已启用",
       "off": "未开启"
     },
     "action": {
       "setup": "设置",
       "add": "添加",
-      "manage": "管理"
+      "manage": "添加另一台设备"
     },
     "method": {
       "totp": "用验证器应用生成六位验证码。",
@@ -223,7 +223,10 @@
     "passkeyRetry": "重试",
     "passkeyUnsupported": "此浏览器无法使用通行密钥登录，请改用其他方式。",
     "passkeyCancelled": "通行密钥提示已取消，请重试。",
-    "passkeyFailed": "通行密钥登录未完成，请重试。"
+    "passkeyAlreadyRegistered": "此设备已登记过通行密钥，请换一台设备，或改用验证器应用。",
+    "passkeyActionRegister": "登记",
+    "passkeyActionSignIn": "登录",
+    "passkeyFailed": "通行密钥{{action}}未完成，请重试。"
   },
   "appearance": {
     "title": "外观",

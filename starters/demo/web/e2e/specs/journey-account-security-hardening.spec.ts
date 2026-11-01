@@ -451,8 +451,9 @@ test('account-security-hardening: an account enrols two factors, ends another de
       await confirmSettledEnrolment(mfa)
 
       // The settled enrolment confirms itself and the list re-reads: one
-      // active authenticator app. The section keeps one row per method the
-      // deployment serves, so the factor is the one active status in it.
+      // active authenticator app. The active state reads on the method row
+      // and on the factor row, so the one active method carries the word
+      // twice.
       await expect(
         mfa.getByText(
           copy('accountUi', 'mfa.enroll.enrolled', {
@@ -465,7 +466,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
         mfa.getByText(copy('accountUi', 'mfa.factor.status.active'), {
           exact: true,
         }),
-      ).toHaveCount(1)
+      ).toHaveCount(2)
       await expect(
         mfa
           .getByText(copy('accountUi', 'mfa.factor.kind.totp'), {
@@ -575,12 +576,13 @@ test('account-security-hardening: an account enrols two factors, ends another de
           { exact: true },
         ),
       ).toBeVisible({ timeout: 20_000 })
-      // Two factors are active now, one under each method row.
+      // Two factors are active now, one under each method row; each counts
+      // twice because the method row's own state chip reads the same word.
       await expect(
         mfa.getByText(copy('accountUi', 'mfa.factor.status.active'), {
           exact: true,
         }),
-      ).toHaveCount(2)
+      ).toHaveCount(4)
       await expect(
         mfa
           .getByText(copy('accountUi', 'mfa.factor.kind.webauthn'), {

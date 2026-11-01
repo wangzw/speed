@@ -605,13 +605,13 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       ).toBeVisible()
 
       // The passkey registered during the sign-in is the account's one active
-      // factor.
+      // factor; its state reads on the method row and on the factor row.
       await expect(
         mfaSection(page).getByText(
           copy('accountUi', 'mfa.factor.status.active'),
           { exact: true },
         ),
-      ).toHaveCount(1)
+      ).toHaveCount(2)
 
       // The contact list is empty: the profile pane's email card lists no
       // address row (the only remaining identifier is the username, which has

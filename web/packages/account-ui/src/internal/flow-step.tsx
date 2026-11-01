@@ -384,8 +384,11 @@ interface PasskeyPromptProps {
  * (the credential API does not guarantee it honours an abort). A late
  * answer from an abandoned ceremony is discarded by attempt. Unmount
  * abandons the ceremony the same way. A browser without WebAuthn, a
- * dismissed prompt and a failed ceremony each render their own message,
- * and the retry action runs the ceremony again against the same step. */
+ * dismissed prompt, a device that already holds the account's credential
+ * and a failed ceremony each render their own message; the generic failure
+ * sentence names the ceremony, so a failed registration does not read as a
+ * failed sign-in. The retry action runs the ceremony again against the
+ * same step. */
 function PasskeyPrompt({
   options,
   sequence,
@@ -397,11 +400,13 @@ function PasskeyPrompt({
   secondaryAction,
 }: PasskeyPromptProps) {
   const { t } = useAccountUiTranslation()
+  const step = webauthnStepOf(options)
+  const registering = step === 'register'
   // An assertion step starts on arrival, so its first render is already the
   // waiting state and the start control never flashes.
   const arrivalKey = assertionKey(options, sequence)
   const [working, setWorking] = useState(arrivalKey !== null)
-  const [errorKey, setErrorKey] = useState<string | null>(null)
+  const [failure, setFailure] = useState<PasskeyFailure | null>(null)
   // The waiting notice's text, one commit behind the waiting phase: the
   // region must mount empty.
   const [waitingCommitted, setWaitingCommitted] = useState(false)
@@ -447,15 +452,15 @@ function PasskeyPrompt({
     const controller = new AbortController()
     pendingRef.current = { attempt, controller }
     setWorking(true)
-    setErrorKey(null)
+    setFailure(null)
     try {
       const credential = await runWebauthn(options, controller.signal)
       if (pendingRef.current?.attempt === attempt) {
         onSubmit({ step: answerStep, input: { credential } })
       }
-    } catch (failure) {
+    } catch (error) {
       if (pendingRef.current?.attempt === attempt) {
-        setErrorKey(webauthnErrorKey(failure))
+        setFailure(webauthnErrorKey(error, registering))
       }
     } finally {
       if (pendingRef.current?.attempt === attempt) {
@@ -501,20 +506,25 @@ function PasskeyPrompt({
     // its eventual settlement are both ignored: its attempt no longer
     // matches pendingRef.
     setWorking(false)
-    setErrorKey('flowStep.passkeyCancelled')
+    setFailure({ key: 'flowStep.passkeyCancelled' })
   }
 
   return (
     <Box sx={{ mt: 2 }}>
       <Typography variant="body2" color="text.secondary">
-        {webauthnStepOf(options) === 'register'
+        {registering
           ? t('flowStep.passkeyRegisterPrompt')
           : t('flowStep.passkeyPrompt')}
       </Typography>
-      {errorKey !== null && (
+      {failure !== null && (
         <Box sx={{ mt: 1 }}>
           <Alert severity="error" role="alert">
-            {t(errorKey)}
+            {t(
+              failure.key,
+              failure.actionKey === undefined
+                ? undefined
+                : { action: t(failure.actionKey) },
+            )}
           </Alert>
         </Box>
       )}
@@ -551,7 +561,7 @@ function PasskeyPrompt({
             disabled={busy || submitDisabled}
             onClick={() => void run()}
           >
-            {errorKey === null ? submitLabel : t('flowStep.passkeyRetry')}
+            {failure === null ? submitLabel : t('flowStep.passkeyRetry')}
           </Button>
         </Box>
       )}
@@ -581,19 +591,33 @@ function assertionKey(options: unknown, sequence: number): string | null {
   return `assert:${sequence}:${challenge}`
 }
 
-/** The bundle key of the message a failed ceremony renders. */
-function webauthnErrorKey(failure: unknown): string {
+/** A failed ceremony's message: the bundle key, and for the generic failure
+ * the ceremony's action key the sentence interpolates, because a failed
+ * registration and a failed sign-in read differently. */
+interface PasskeyFailure {
+  readonly key: string
+  readonly actionKey?: string
+}
+
+/** The message a failed ceremony renders, by the reason it carries and the
+ * ceremony it ran. */
+function webauthnErrorKey(failure: unknown, registering: boolean): PasskeyFailure {
+  const actionKey = registering
+    ? 'flowStep.passkeyActionRegister'
+    : 'flowStep.passkeyActionSignIn'
   if (failure instanceof WebauthnError) {
     switch (failure.reason) {
       case 'unsupported':
-        return 'flowStep.passkeyUnsupported'
+        return { key: 'flowStep.passkeyUnsupported' }
       case 'cancelled':
-        return 'flowStep.passkeyCancelled'
+        return { key: 'flowStep.passkeyCancelled' }
+      case 'already-registered':
+        return { key: 'flowStep.passkeyAlreadyRegistered' }
       default:
-        return 'flowStep.passkeyFailed'
+        return { key: 'flowStep.passkeyFailed', actionKey }
     }
   }
-  return 'flowStep.passkeyFailed'
+  return { key: 'flowStep.passkeyFailed', actionKey }
 }
 
 /** The TOTP setup URI a step's options carry, or null when they carry none.

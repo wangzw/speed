@@ -15,8 +15,9 @@
  * its cancel control (with the focus the control that opened the step
  * held), the immediate failure a cancel renders and the retry that runs
  * the ceremony again, a registration step waiting for a click, the
- * registration prompt's own wording, and the ceremony being abandoned when
- * the step unmounts.
+ * registration prompt's own wording, the ceremony being abandoned when the
+ * step unmounts, the already-registered refusal's own sentence, and the
+ * generic failure sentence naming the ceremony it ran.
  */
 
 import { useState } from 'react'
@@ -76,6 +77,18 @@ const ASSERTION_CREDENTIAL = {
 const ASSERT_STEP: AuthnStep = {
   kind: 'webauthn',
   options: { challenge: 'Y2hhbGxlbmdl' },
+}
+
+/** A step whose options ask the browser for a registration. The `user`
+ * member is what tells the ceremony apart from an assertion. */
+const REGISTER_STEP: AuthnStep = {
+  kind: 'webauthn',
+  options: {
+    challenge: 'Y2hhbGxlbmdl',
+    user: { id: 'AQID', name: 'ada' },
+    rp: { id: 'localhost', name: 'demo' },
+    pubKeyCredParams: [],
+  },
 }
 
 describe('FlowStep labels', () => {
@@ -366,6 +379,59 @@ describe('FlowStep labels', () => {
 
       unmount()
       expect(received?.signal?.aborted).toBe(true)
+    } finally {
+      restore()
+    }
+  })
+
+  it('reports a device that already holds this account as already registered', async () => {
+    // The server sends excludeCredentials for the account's existing passkeys,
+    // and an authenticator that already holds one refuses the creation with
+    // InvalidStateError. That answer names its own remedy instead of the
+    // generic failure the viewer would retry forever.
+    const create = vi
+      .fn()
+      .mockRejectedValue(
+        new DOMException('the authenticator already holds this credential', 'InvalidStateError'),
+      )
+    const restore = installCredentials({ create, get: vi.fn() })
+    try {
+      render(REGISTER_STEP)
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'Continue' }))
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toBe(zhCN.flowStep.passkeyAlreadyRegistered)
+    } finally {
+      restore()
+    }
+  })
+
+  it('names the ceremony in the generic failure sentence', async () => {
+    // A registration and a sign-in that fail the same way read differently:
+    // the sentence says which ceremony did not complete, so the viewer is not
+    // told a sign-in failed while they were enrolling a factor.
+    const composed = (action: string): string =>
+      zhCN.flowStep.passkeyFailed.replace('{{action}}', action)
+    const boom = (): Promise<never> => Promise.reject(new Error('boom'))
+    const restore = installCredentials({
+      create: vi.fn().mockImplementation(boom),
+      get: vi.fn().mockImplementation(boom),
+    })
+    try {
+      const register = render(REGISTER_STEP)
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'Continue' }))
+      const registerText = (await screen.findByRole('alert')).textContent
+      register.unmount()
+
+      render(ASSERT_STEP)
+      const signInText = (await screen.findByRole('alert')).textContent
+
+      expect(registerText).toBe(composed(zhCN.flowStep.passkeyActionRegister))
+      expect(signInText).toBe(composed(zhCN.flowStep.passkeyActionSignIn))
+      expect(registerText).not.toBe(signInText)
     } finally {
       restore()
     }

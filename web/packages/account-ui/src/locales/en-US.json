@@ -135,7 +135,7 @@
     "loading": "Loading two-step verification",
     "empty": "No two-step verification method is set up yet.",
     "singleFactor": "Only one two-step verification method is enabled. Add another one below so you can still sign in if you lose this one.",
-    "manageAria": "Manage {{method}}",
+    "manageAria": "Add another device for {{method}}",
     "addAria": "Add {{method}}",
     "remove": "Remove",
     "removeAria": "Remove this two-step verification method: {{factor}}",
@@ -190,13 +190,13 @@
     },
     "retry": "Retry",
     "state": {
-      "on": "On",
+      "on": "Active",
       "off": "Off"
     },
     "action": {
       "setup": "Set up",
       "add": "Add",
-      "manage": "Manage"
+      "manage": "Add another device"
     },
     "method": {
       "totp": "Use an authenticator app to get a six-digit code when asked.",
@@ -223,7 +223,10 @@
     "passkeyRetry": "Try again",
     "passkeyUnsupported": "This browser can't use a passkey. Try another way to sign in.",
     "passkeyCancelled": "The passkey prompt was dismissed. Try again.",
-    "passkeyFailed": "Passkey sign-in didn't complete. Try again."
+    "passkeyAlreadyRegistered": "This device already has a passkey registered. Use another device, or switch to an authenticator app.",
+    "passkeyActionRegister": "registration",
+    "passkeyActionSignIn": "sign-in",
+    "passkeyFailed": "Passkey {{action}} didn't complete. Try again."
   },
   "appearance": {
     "title": "Appearance",
