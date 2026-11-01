@@ -1008,8 +1008,11 @@ describe('SocialCallbackHandler social account-opening face', () => {
     // The face adds no second heading: the card's own h1 says this is a
     // sign-in.
     expect(within(face).queryByRole('heading', { level: 2 })).toBeNull()
+    // The card frame renders before the face it wraps: the flow's first
+    // read fills the content, so the assertion waits for it instead of
+    // reading the loading state the synchronous query would catch.
     expect(
-      within(face).getByText(zhCN.signInFlow.signupAccountInstruction),
+      await within(face).findByText(zhCN.signInFlow.signupAccountInstruction),
     ).toBeInTheDocument()
     expect(within(face).getByText('Ada Lovelace')).toBeInTheDocument()
     expect(
