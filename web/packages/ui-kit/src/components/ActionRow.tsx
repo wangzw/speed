@@ -1,5 +1,5 @@
 /**
- * ActionRow and ActionButton: the one action row for page and dialog
+ * ActionRow and ActionButton: the one action row for page, dialog and row
  * actions.
  *
  * `ActionRow` owns the row's layout and nothing else. Its children are the
