@@ -24,9 +24,10 @@
  * default (the client base URL falls back to window.location.origin), so this
  * server proxies the namespaces those endpoints claim onto that port --
  * overridable through DEMO_WEB_BACKEND_PROXY when a run moves it. The dev
- * server itself listens on 8080, overridable through DEMO_WEB_PORT; an
- * override that is not a port stops the load with an error rather than
- * silently keeping the default. The claimed namespaces come from
+ * server itself listens on the IPv4 loopback (127.0.0.1, not `::1`) at 8080,
+ * overridable through DEMO_WEB_PORT; the host stays pinned, and an override
+ * that is not a port stops the load with an error rather than silently
+ * keeping the default. The claimed namespaces come from
  * backend-prefixes.json (src/backend-prefixes.ts) -- a hand-kept mirror of the
  * claims in the server configuration, held to them by the server's
  * TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims.
@@ -125,6 +126,11 @@ export default defineConfig({
     },
   },
   server: {
+    // Bind the IPv4 loopback explicitly rather than leaving the host unset:
+    // vite then listens on `localhost`, whose resolution can land on `::1`,
+    // while the backend listener this server proxies to is IPv4. The host is
+    // not an override; only the port moves.
+    host: devServer.host,
     // The port a local run yields to another checkout's run through
     // DEMO_WEB_PORT. strictPort keeps two runs from fighting over 8080: a
     // taken port fails the start instead of quietly moving to another one the

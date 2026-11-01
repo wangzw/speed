@@ -3,19 +3,26 @@ import { describe, expect, it } from 'vitest'
 import {
   DEMO_WEB_DEFAULT_BACKEND_PROXY,
   DEMO_WEB_DEFAULT_PORT,
+  DEMO_WEB_DEV_HOST,
   devServerPlan,
   devServerPort,
 } from './dev-server'
 
 describe('the dev server settings', () => {
-  it('defaults to port 8080 and the compiled backend listener', () => {
+  it('binds the IPv4 loopback, port 8080 and the compiled backend listener', () => {
     expect(devServerPlan({})).toEqual({
+      host: '127.0.0.1',
       port: 8080,
       strictPort: true,
       proxyTarget: 'http://127.0.0.1:8081',
     })
+    expect(DEMO_WEB_DEV_HOST).toBe('127.0.0.1')
     expect(DEMO_WEB_DEFAULT_PORT).toBe(8080)
     expect(DEMO_WEB_DEFAULT_BACKEND_PROXY).toBe('http://127.0.0.1:8081')
+  })
+
+  it('keeps the host fixed when DEMO_WEB_PORT moves the port', () => {
+    expect(devServerPlan({ DEMO_WEB_PORT: '9080' }).host).toBe('127.0.0.1')
   })
 
   it('follows DEMO_WEB_PORT and DEMO_WEB_BACKEND_PROXY when they are set', () => {
@@ -25,6 +32,7 @@ describe('the dev server settings', () => {
         DEMO_WEB_BACKEND_PROXY: 'http://127.0.0.1:9081',
       }),
     ).toEqual({
+      host: '127.0.0.1',
       port: 9080,
       strictPort: true,
       proxyTarget: 'http://127.0.0.1:9081',

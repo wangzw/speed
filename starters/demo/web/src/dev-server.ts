@@ -1,5 +1,5 @@
 /**
- * The dev server's port and backend target, read from the environment.
+ * The dev server's host, port and backend target.
  *
  * The local loop runs several checkouts side by side, so the port is a run
  * value rather than a constant: `DEMO_WEB_PORT` moves the dev server off 8080
@@ -7,7 +7,15 @@
  * backend listener at 127.0.0.1:8081. An override that is not a port is a
  * configuration error, not something to fall back from silently, so parsing
  * lives here where a case can hold it.
+ *
+ * The host is fixed, not overridable: the dev server binds the IPv4 loopback
+ * explicitly. Left unset, vite's host is `localhost`, whose resolution can
+ * land on `::1`, while the rest of the local circuit -- the backend listener
+ * and the proxy target -- is IPv4.
  */
+
+/** The address the dev server binds: IPv4 loopback, never the dual-stack `::1`. */
+export const DEMO_WEB_DEV_HOST = '127.0.0.1'
 
 /** The dev server's port when DEMO_WEB_PORT is unset. */
 export const DEMO_WEB_DEFAULT_PORT = 8080
@@ -17,6 +25,8 @@ export const DEMO_WEB_DEFAULT_BACKEND_PROXY = 'http://127.0.0.1:8081'
 
 /** The dev server's resolved settings. */
 export interface DevServerPlan {
+  /** The address to bind; fixed, so DEMO_WEB_PORT cannot move it to `::1`. */
+  readonly host: string
   readonly port: number
   /** Fail instead of silently moving to another port when this one is taken. */
   readonly strictPort: true
@@ -33,6 +43,7 @@ export function devServerPlan(
   env: Readonly<Record<string, string | undefined>>,
 ): DevServerPlan {
   return {
+    host: DEMO_WEB_DEV_HOST,
     port: devServerPort(env.DEMO_WEB_PORT),
     strictPort: true,
     proxyTarget: env.DEMO_WEB_BACKEND_PROXY ?? DEMO_WEB_DEFAULT_BACKEND_PROXY,
