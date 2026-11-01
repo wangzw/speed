@@ -159,9 +159,46 @@ const abandonCalls = (calls: readonly RealCall[]): RealCall[] =>
   calls.filter(
     (call) => call.method === 'DELETE' && call.path === FLOW_CURRENT,
   )
+/** The accessible name of one row's overflow-menu trigger. */
+const actionsNameOf = (factor: string): string =>
+  zhCN.mfa.actionsAria.replace('{{factor}}', factor)
+
+/** Opens one factor row's overflow menu. */
+async function openRowMenu(
+  user: ReturnType<typeof userEvent.setup>,
+  factor: string,
+): Promise<void> {
+  await user.click(
+    await screen.findByRole('button', { name: actionsNameOf(factor) }),
+  )
+}
+
+/** Opens the danger confirm for one row through its overflow menu. */
+async function openRemoveConfirm(
+  user: ReturnType<typeof userEvent.setup>,
+  factor: string,
+): Promise<HTMLElement> {
+  await openRowMenu(user, factor)
+  await user.click(
+    await screen.findByRole('menuitem', { name: zhCN.mfa.remove }),
+  )
+  return screen.findByRole('dialog')
+}
+
+/** Opens one row's inline rename editor through its overflow menu. */
+async function openRenameEditor(
+  user: ReturnType<typeof userEvent.setup>,
+  factor: string,
+): Promise<HTMLElement> {
+  await openRowMenu(user, factor)
+  await user.click(
+    await screen.findByRole('menuitem', { name: zhCN.mfa.rename }),
+  )
+  return screen.findByLabelText(zhCN.mfa.renameLabel)
+}
 
 describe('MfaSection', () => {
-  it('renders the factors with their kind, label and status, and passes axe', async () => {
+  it('renders the factors grouped by kind and passes axe', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
@@ -187,20 +224,22 @@ describe('MfaSection', () => {
       await screen.findByRole('heading', { name: zhCN.mfa.title }),
     ).toBeTruthy()
     expect(await screen.findByText('My authenticator')).toBeTruthy()
+    // Every assembled kind is its own group, named by the kind.
     expect(
-      screen.getAllByText(zhCN.mfa.factor.kind.totp).length,
-    ).toBeGreaterThan(0)
-    // The active state reads the same word on the method row and on the
-    // factor row, so the one active factor puts that word on screen twice.
+      screen.getByRole('region', { name: zhCN.mfa.factor.kind.totp }),
+    ).toBeTruthy()
     expect(
-      screen.getAllByText(zhCN.mfa.factor.status.active),
-    ).toHaveLength(2)
-    expect(screen.getByText(zhCN.mfa.factor.status.pending)).toBeTruthy()
-    // Both enrollment entries are offered (the deployment reports both); the
-    // one whose method already has an active factor reads as its manager.
+      screen.getByRole('region', { name: zhCN.mfa.factor.kind.webauthn }),
+    ).toBeTruthy()
+    // The pending passkey is the enrollment's intermediate state: it is not
+    // rendered as a row, and no row carries a status chip.
+    expect(screen.queryByText(zhCN.mfa.factor.status.pending)).toBeNull()
+    expect(screen.queryByText(zhCN.mfa.factor.status.active)).toBeNull()
+    // Both groups are enrollable; the authenticator group already has an
+    // enabled row and still words its action as a plain add.
     expect(
       await screen.findByRole('button', {
-        name: manageNameOf(zhCN.mfa.factor.kind.totp),
+        name: addNameOf(zhCN.mfa.factor.kind.totp),
       }),
     ).toBeTruthy()
     expect(
@@ -210,24 +249,26 @@ describe('MfaSection', () => {
     await expectNoAxeViolations()
   })
 
-  it('offers another device for a method that already has an active factor', async () => {
+  it('offers another device for a passkey group with an enabled row', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        return jsonResponse(200, methodsDoc(['totp']))
+        return jsonResponse(200, methodsDoc(['webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
-        return jsonResponse(200, { factors: [factor({ status: 'active' })] })
+        return jsonResponse(200, {
+          factors: [factor({ kind: 'webauthn', status: 'active' })],
+        })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mount(respond)
 
     const button = await screen.findByRole('button', {
-      name: manageNameOf(zhCN.mfa.factor.kind.totp),
+      name: manageNameOf(zhCN.mfa.factor.kind.webauthn),
     })
-    // The action starts an enrollment even while the method has an active
-    // factor, so its word is the add word rather than a management one.
     expect(button.textContent).toBe(zhCN.mfa.action.manage)
+    // The visible word still contains the add verb the accessible name
+    // leads with.
     expect(button.textContent).toContain(zhCN.mfa.action.add)
   })
 
@@ -249,7 +290,7 @@ describe('MfaSection', () => {
     expect(button.textContent).toBe(zhCN.mfa.action.add)
   })
 
-  it('names the method state and the factor row state with one word', async () => {
+  it('words a non-passkey group\'s action as a plain add even with an enabled row', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['totp']))
@@ -261,10 +302,100 @@ describe('MfaSection', () => {
     }
     mount(respond)
 
-    // One active factor: the method row's state chip and the factor row's
-    // status chip describe the same state, so they read the same word.
-    expect(zhCN.mfa.state.on).toBe(zhCN.mfa.factor.status.active)
-    expect(await screen.findAllByText(zhCN.mfa.state.on)).toHaveLength(2)
+    const button = await screen.findByRole('button', {
+      name: addNameOf(zhCN.mfa.factor.kind.totp),
+    })
+    expect(button.textContent).toBe(zhCN.mfa.action.add)
+  })
+
+  it('does not render a pending factor as a row', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            factor({ id: 'factor-1', status: 'active', label: 'Kept row' }),
+            factor({ id: 'factor-2', status: 'pending', label: 'Pending row' }),
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('Kept row')).toBeTruthy()
+    expect(screen.queryByText('Pending row')).toBeNull()
+    expect(screen.queryByText(zhCN.mfa.factor.status.pending)).toBeNull()
+  })
+
+  it('keeps a disabled row with a muted marker and no status chip', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            factor({ id: 'factor-1', status: 'disabled', label: 'Old app' }),
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('Old app')).toBeTruthy()
+    // The disabled state is a muted word beside the name, not a chip.
+    expect(screen.getByText(zhCN.mfa.factor.status.disabled)).toBeTruthy()
+    expect(screen.queryByText(zhCN.mfa.factor.status.active)).toBeNull()
+    expect(screen.queryByText(zhCN.mfa.factor.status.disabled, { selector: '.MuiChip-label' })).toBeNull()
+  })
+
+  it('offers rename and remove in an enabled row\'s menu, and only remove on a disabled row', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            factor({ id: 'factor-1', status: 'active', label: 'Active row' }),
+            factor({
+              id: 'factor-2',
+              status: 'disabled',
+              label: 'Disabled row',
+            }),
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await openRowMenu(user, 'Active row')
+    expect(
+      screen.getByRole('menuitem', { name: zhCN.mfa.rename }),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('menuitem', { name: zhCN.mfa.remove }),
+    ).toBeTruthy()
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('menuitem', { name: zhCN.mfa.rename }),
+      ).toBeNull(),
+    )
+
+    await openRowMenu(user, 'Disabled row')
+    expect(
+      screen.queryByRole('menuitem', { name: zhCN.mfa.rename }),
+    ).toBeNull()
+    expect(
+      screen.getByRole('menuitem', { name: zhCN.mfa.remove }),
+    ).toBeTruthy()
   })
 
   it('offers only the enrollment entries the deployment reports', async () => {
@@ -312,11 +443,10 @@ describe('MfaSection', () => {
     mount(respond)
 
     expect(await screen.findByText(zhCN.mfa.singleFactor)).toBeTruthy()
-    // The note points at entries that are actually on the page; the enabled
-    // method's own entry reads as its manager.
+    // The note points at an add action that is actually on the page.
     expect(
       screen.getByRole('button', {
-        name: manageNameOf(zhCN.mfa.factor.kind.totp),
+        name: addNameOf(zhCN.mfa.factor.kind.totp),
       }),
     ).toBeTruthy()
   })
@@ -358,7 +488,14 @@ describe('MfaSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findByText('My authenticator')).toBeTruthy()
+    expect(
+      await screen.findByRole('button', {
+        name: addNameOf(zhCN.mfa.factor.kind.totp),
+      }),
+    ).toBeTruthy()
+    // The only row is pending, so it is not rendered and counts for
+    // nothing; the note speaks for enabled rows alone.
+    expect(screen.queryByText('My authenticator')).toBeNull()
     expect(screen.queryByText(zhCN.mfa.singleFactor)).toBeNull()
   })
 
@@ -396,7 +533,9 @@ describe('MfaSection', () => {
     // The method is on the page ready to be set up; no "nothing set up"
     // sentence competes with it.
     expect(await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) })).toBeTruthy()
-    expect(screen.getByText(zhCN.mfa.state.off)).toBeTruthy()
+    expect(
+      screen.getByRole('region', { name: zhCN.mfa.factor.kind.totp }),
+    ).toBeTruthy()
     expect(screen.queryByText(zhCN.mfa.empty)).toBeNull()
   })
 
@@ -420,22 +559,13 @@ describe('MfaSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
-      }),
-    )
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await openRemoveConfirm(user, 'My authenticator')
     await user.click(
       within(dialog).getByRole('button', {
         name: zhCN.mfa.removeConfirm.confirmLabel,
       }),
     )
 
-    await waitFor(() =>
-      expect(screen.getAllByText(zhCN.mfa.state.off)).toHaveLength(2),
-    )
-    expect(screen.queryByText(zhCN.mfa.state.on)).toBeNull()
     // The removal confirms itself, naming the factor row removed -- its own
     // label, not just its kind.
     expect(zhCN.mfa.removed).toContain('{{factor}}')
@@ -478,12 +608,7 @@ describe('MfaSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
-      }),
-    )
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await openRemoveConfirm(user, 'My authenticator')
     await user.click(
       within(dialog).getByRole('button', {
         name: zhCN.mfa.removeConfirm.confirmLabel,
@@ -556,12 +681,7 @@ describe('MfaSection', () => {
     const rig = await makeRotationRig(respond)
     renderWithProviders(<MfaSection session={rig.session} />)
     const user = userEvent.setup()
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
-      }),
-    )
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await openRemoveConfirm(user, 'My authenticator')
     await user.click(
       within(dialog).getByRole('button', {
         name: zhCN.mfa.removeConfirm.confirmLabel,
@@ -589,8 +709,8 @@ describe('MfaSection', () => {
     expect(rig.endedEdges()).toBe(0)
   })
 
-  it('lets a real anonymous answer end the session when a pending factor removal rotates nothing', async () => {
-    // Removing a pending factor replaces no credential: the route settles
+  it('lets a real anonymous answer end the session when a disabled factor removal rotates nothing', async () => {
+    // Removing a disabled factor replaces no credential: the route settles
     // the sessions only for a factor that was active. The removal therefore
     // runs bare, without an identity-transition window, so a read that lands
     // anonymous after it is the session genuinely ending -- the opposite of
@@ -617,7 +737,7 @@ describe('MfaSection', () => {
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return removed
           ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, { factors: [factor({ status: 'pending' })] })
+          : jsonResponse(200, { factors: [factor({ status: 'disabled' })] })
       }
       if (
         call.method === 'DELETE' &&
@@ -631,12 +751,7 @@ describe('MfaSection', () => {
     const rig = await makeRotationRig(respond)
     renderWithProviders(<MfaSection session={rig.session} />)
     const user = userEvent.setup()
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
-      }),
-    )
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await openRemoveConfirm(user, 'My authenticator')
     await user.click(
       within(dialog).getByRole('button', {
         name: zhCN.mfa.removeConfirm.confirmLabel,
@@ -692,12 +807,7 @@ describe('MfaSection', () => {
     const rig = await makeRotationRig(respond)
     renderWithProviders(<MfaSection session={rig.session} />)
     const user = userEvent.setup()
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
-      }),
-    )
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await openRemoveConfirm(user, 'My authenticator')
     await user.click(
       within(dialog).getByRole('button', {
         name: zhCN.mfa.removeConfirm.confirmLabel,
@@ -733,12 +843,7 @@ describe('MfaSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
-      }),
-    )
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await openRemoveConfirm(user, 'My authenticator')
     await user.click(
       within(dialog).getByRole('button', {
         name: zhCN.mfa.removeConfirm.confirmLabel,
@@ -801,12 +906,7 @@ describe('MfaSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
-      }),
-    )
-    const confirm = await screen.findByRole('dialog')
+    const confirm = await openRemoveConfirm(user, 'My authenticator')
     await user.click(
       within(confirm).getByRole('button', {
         name: zhCN.mfa.removeConfirm.confirmLabel,
@@ -823,7 +923,11 @@ describe('MfaSection', () => {
 
     // The won step-up re-runs the removal exactly once, which now lands.
     await waitFor(() =>
-      expect(screen.getAllByText(zhCN.mfa.state.off).length).toBeGreaterThan(0),
+      expect(
+        screen.getByText(
+          zhCN.mfa.removed.replace('{{factor}}', 'My authenticator'),
+        ),
+      ).toBeTruthy(),
     )
     expect(
       rig.calls.filter(
@@ -924,12 +1028,7 @@ describe('MfaSection', () => {
     renderWithProviders(<MfaSection session={rig.session} />)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
-      }),
-    )
-    const confirm = await screen.findByRole('dialog')
+    const confirm = await openRemoveConfirm(user, 'My authenticator')
     await user.click(
       within(confirm).getByRole('button', {
         name: zhCN.mfa.removeConfirm.confirmLabel,
@@ -1048,6 +1147,9 @@ describe('MfaSection', () => {
     ).toBeTruthy()
     await startEnrollWithEmptyName(user)
 
+    // Every step states what confirming will do before its controls.
+    expect(screen.getByText(zhCN.mfa.enroll.note.totp)).toBeVisible()
+
     // The enroll start names the factor kind and the (cleared) label.
     const start = rig.calls.find(
       (call) => call.method === 'POST' && call.path === FLOW_START,
@@ -1078,6 +1180,8 @@ describe('MfaSection', () => {
       screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
     )
 
+    // The ready step carries the same statement of what confirming does.
+    expect(screen.getByText(zhCN.mfa.enroll.note.totp)).toBeVisible()
     // The ready step is taken with `step: 'complete'`.
     await user.click(
       await screen.findByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
@@ -1254,15 +1358,9 @@ describe('MfaSection', () => {
     }
   })
 
-  it('shows each row’s name, creation time and last use in the account time zone', async () => {
+  it('shows each row’s name and last use in the account time zone', async () => {
     const timeZone = 'Asia/Shanghai'
-    const created = formatInstant('2026-01-01T00:00:00Z', 'zh-CN', {
-      timeZone,
-    })
     const lastUsed = formatInstant('2026-02-01T00:00:00Z', 'zh-CN', {
-      timeZone,
-    })
-    const laterCreated = formatInstant('2026-03-01T00:00:00Z', 'zh-CN', {
       timeZone,
     })
     const respond: RealResponder = (call: RealCall) => {
@@ -1294,19 +1392,11 @@ describe('MfaSection', () => {
 
     expect(await screen.findByText('Phone app')).toBeTruthy()
     expect(
-      screen.getByText(zhCN.mfa.factor.createdAt.replace('{{time}}', created)),
-    ).toBeTruthy()
-    expect(
       screen.getByText(
         zhCN.mfa.factor.lastUsedAt.replace('{{time}}', lastUsed),
       ),
     ).toBeTruthy()
-    expect(
-      screen.getByText(
-        zhCN.mfa.factor.createdAt.replace('{{time}}', laterCreated),
-      ),
-    ).toBeTruthy()
-    // The unnamed row reads as its kind; the method heading is the only
+    // The unnamed row reads as its kind; the group heading is the only
     // other place that text appears.
     expect(screen.getAllByText(zhCN.mfa.factor.kind.totp)).toHaveLength(2)
     // A factor that has never passed a verification says so.
@@ -1341,12 +1431,7 @@ describe('MfaSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.renameAria.replace('{{factor}}', 'Old name'),
-      }),
-    )
-    const field = await screen.findByLabelText(zhCN.mfa.renameLabel)
+    const field = await openRenameEditor(user, 'Old name')
     await expectNoAxeViolations()
     await user.clear(field)
     await user.type(field, 'New name')
@@ -1391,12 +1476,7 @@ describe('MfaSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.renameAria.replace('{{factor}}', 'Old name'),
-      }),
-    )
-    const field = await screen.findByLabelText(zhCN.mfa.renameLabel)
+    const field = await openRenameEditor(user, 'Old name')
     await user.clear(field)
     // Over the label's 64-character domain: the server refuses it.
     await user.type(field, 'x'.repeat(65))
@@ -1435,12 +1515,7 @@ describe('MfaSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.renameAria.replace('{{factor}}', 'Old name'),
-      }),
-    )
-    const field = await screen.findByLabelText(zhCN.mfa.renameLabel)
+    const field = await openRenameEditor(user, 'Old name')
     await user.clear(field)
     await user.type(field, 'New name')
     await user.click(screen.getByRole('button', { name: zhCN.mfa.renameSave }))
@@ -1484,16 +1559,11 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
 
     // Two factors of the same kind are told apart by their own names, not
-    // by the kind they share.
-    await screen.findByRole('button', {
-      name: zhCN.mfa.removeAria.replace('{{factor}}', 'Phone app'),
-    })
-    await user.click(
-      screen.getByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', 'Tablet app'),
-      }),
-    )
-    const dialog = await screen.findByRole('dialog')
+    // by the kind they share: each row carries its own menu trigger.
+    expect(
+      await screen.findByRole('button', { name: actionsNameOf('Phone app') }),
+    ).toBeTruthy()
+    const dialog = await openRemoveConfirm(user, 'Tablet app')
     await user.click(
       within(dialog).getByRole('button', {
         name: zhCN.mfa.removeConfirm.confirmLabel,
@@ -1576,7 +1646,7 @@ describe('MfaSection', () => {
 
     await user.click(
       await screen.findByRole('button', {
-        name: manageNameOf(zhCN.mfa.factor.kind.totp),
+        name: addNameOf(zhCN.mfa.factor.kind.totp),
       }),
     )
     await startEnrollWithEmptyName(user)
@@ -1598,12 +1668,7 @@ describe('MfaSection', () => {
     expect(await screen.findByText(enrollText)).toBeTruthy()
 
     // Remove the pre-existing row through its own scope.
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.removeAria.replace('{{factor}}', 'Old app'),
-      }),
-    )
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await openRemoveConfirm(user, 'Old app')
     await user.click(
       within(dialog).getByRole('button', {
         name: zhCN.mfa.removeConfirm.confirmLabel,
@@ -1725,6 +1790,11 @@ describe('MfaSection', () => {
         }),
       ).toBeTruthy()
       await startEnrollWithEmptyName(user)
+      // The passkey registration step states what confirming will do; its
+      // own prompt does not carry that sentence.
+      expect(
+        screen.getByText(zhCN.mfa.enroll.note.webauthn),
+      ).toBeVisible()
       // The registration step drives navigator.credentials.create and
       // reports the credential under the enroll step, not a free-text field.
       await user.click(
@@ -1816,7 +1886,7 @@ describe('MfaSection', () => {
     }
     mount(respond)
     const remove = await screen.findByRole('button', {
-      name: zhCN.mfa.removeAria.replace('{{factor}}', 'My authenticator'),
+      name: actionsNameOf('My authenticator'),
     })
     expect(hasCoarsePointerTouchTarget(remove)).toBe(true)
   })

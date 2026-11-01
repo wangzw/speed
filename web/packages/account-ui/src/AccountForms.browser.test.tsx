@@ -274,13 +274,22 @@ describe('account-ui form geometry', () => {
 
     await user.click(await screen.findByTestId('mfa-add-totp'))
 
-    // The name step comes first and carries the same confirm/cancel row;
-    // confirm it to open the flow's own step.
-    await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.enroll.confirmLabel,
-      }),
-    )
+    // The name step comes first, and its cancel and confirm share one
+    // action row with the ordinary spacing: the confirm sits next to the
+    // cancel, not at the far end of the form.
+    const nameConfirm = await screen.findByRole('button', {
+      name: zhCN.mfa.enroll.confirmLabel,
+    })
+    const nameCancel = screen.getByRole('button', {
+      name: zhCN.mfa.enroll.cancelLabel,
+    })
+    expect(sameTop(nameConfirm, nameCancel)).toBe(true)
+    expect(rightOf(nameConfirm, nameCancel)).toBe(true)
+    expect(
+      nameConfirm.getBoundingClientRect().left -
+        nameCancel.getBoundingClientRect().right,
+    ).toBeLessThanOrEqual(32)
+    await user.click(nameConfirm)
 
     // The flow's step is on screen once its own code field is.
     const codeField = await screen.findByLabelText(zhCN.flowStep.codeLabel)
@@ -292,6 +301,10 @@ describe('account-ui form geometry', () => {
     })
     expect(sameTop(confirm, cancel)).toBe(true)
     expect(rightOf(confirm, cancel)).toBe(true)
+    expect(
+      confirm.getBoundingClientRect().left -
+        cancel.getBoundingClientRect().right,
+    ).toBeLessThanOrEqual(32)
 
     // The wizard title is a sub-form heading, one step below the card title
     // (subtitle1, not the larger h6), and names the factor kind enrolled.
@@ -382,18 +395,20 @@ describe('account-ui form geometry', () => {
     renderWithProviders(<MfaSection session={rig.session} />)
     const user = userEvent.setup()
 
-    const removeName = (factorLabel: string): string =>
-      zhCN.mfa.removeAria.replace('{{factor}}', factorLabel)
-    const totpRemove = await screen.findByRole('button', {
-      name: removeName('App'),
+    const actionsName = (factorLabel: string): string =>
+      zhCN.mfa.actionsAria.replace('{{factor}}', factorLabel)
+    const totpActions = await screen.findByRole('button', {
+      name: actionsName('App'),
     })
-    const smsRemove = screen.getByRole('button', { name: removeName('Phone') })
-    // One method offers Add/Manage and the other does not, but both
-    // removals sit on the same right edge.
+    const smsActions = screen.getByRole('button', {
+      name: actionsName('Phone'),
+    })
+    // One group offers an add action and the other does not, but both row
+    // menus sit on the same right edge.
     expect(screen.getByTestId('mfa-add-totp')).toBeTruthy()
     expect(screen.queryByTestId('mfa-add-sms')).toBeNull()
-    expectRightEdge(totpRemove, smsRemove)
-    expect(sameTop(totpRemove, smsRemove)).toBe(false)
+    expectRightEdge(totpActions, smsActions)
+    expect(sameTop(totpActions, smsActions)).toBe(false)
   })
 
   it('ends the password submit flush with its fields', async () => {

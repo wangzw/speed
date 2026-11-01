@@ -144,10 +144,6 @@ export function FlowStep({
   formId,
   secondaryAction,
 }: FlowStepProps) {
-  // With a secondary control beside it, the primary closes the row; alone
-  // it keeps the step's own left alignment.
-  const primaryEndSx =
-    secondaryAction === undefined ? undefined : { marginLeft: 'auto' }
   const { t } = useAccountUiTranslation()
   // The free-text answer of a TOTP code field, and the typed values of a
   // `challenge` step's fields.
@@ -160,7 +156,6 @@ export function FlowStep({
         <Button
           type="button"
           variant="contained"
-          sx={primaryEndSx}
           disabled={busy || submitDisabled}
           onClick={() => onSubmit({ step: 'complete' })}
         >
@@ -181,7 +176,6 @@ export function FlowStep({
           <Button
             type="button"
             variant="contained"
-            sx={primaryEndSx}
             disabled={busy || submitDisabled || onRedirect === undefined}
             onClick={() => onRedirect?.(step.url)}
           >
@@ -295,7 +289,6 @@ export function FlowStep({
           <Button
             type="submit"
             variant="contained"
-            sx={primaryEndSx}
             disabled={busy || submitDisabled}
           >
             {submitLabel}
@@ -608,7 +601,6 @@ function PasskeyPrompt({
           <Button
             type="button"
             variant="contained"
-            sx={secondaryAction === undefined ? undefined : { marginLeft: 'auto' }}
             disabled={busy || submitDisabled}
             onClick={() => void run()}
           >

@@ -140,6 +140,7 @@
     "singleFactor": "当前只启用了一种两步验证方式。请在下方再添加一种，以便丢失这一种后仍能登录。",
     "manageAria": "为{{method}}添加另一台设备",
     "addAria": "添加{{method}}",
+    "actionsAria": "{{factor}} 的操作",
     "remove": "移除",
     "removeAria": "移除此两步验证方式：{{factor}}",
     "removed": "{{factor}} 已移除。",
@@ -182,7 +183,13 @@
       "cancelLabel": "取消",
       "labelField": "名称（可选）",
       "labelHelp": "用于在列表中区分这个方式；留空则显示方式名称。",
-      "enrolled": "{{factor}} 已添加。"
+      "enrolled": "{{factor}} 已添加。",
+      "note": {
+        "totp": "确认后，这个身份验证器应用将被添加，下次登录时即可使用。",
+        "webauthn": "确认后，此设备的通行密钥将被添加，下次登录时即可使用。",
+        "sms": "确认后，这个手机号将被添加为第二重验证，下次登录时可接收验证码。",
+        "other": "确认后，这个方式将被添加，下次登录时即可使用。"
+      }
     },
     "stepUp": {
       "title": "重新验证身份",

@@ -140,6 +140,7 @@
     "singleFactor": "Only one two-step verification method is enabled. Add another one below so you can still sign in if you lose this one.",
     "manageAria": "Add another device for {{method}}",
     "addAria": "Add {{method}}",
+    "actionsAria": "Actions for {{factor}}",
     "remove": "Remove",
     "removeAria": "Remove this two-step verification method: {{factor}}",
     "removed": "{{factor}} removed.",
@@ -182,7 +183,13 @@
       "cancelLabel": "Cancel",
       "labelField": "Name (optional)",
       "labelHelp": "Helps you tell this method apart in the list; leave empty to show the method name.",
-      "enrolled": "{{factor}} added."
+      "enrolled": "{{factor}} added.",
+      "note": {
+        "totp": "After you confirm, this authenticator app is added and can be used the next time you sign in.",
+        "webauthn": "After you confirm, this device's passkey is added and can be used the next time you sign in.",
+        "sms": "After you confirm, this phone number is added as a second step and can receive codes the next time you sign in.",
+        "other": "After you confirm, this method is added and can be used the next time you sign in."
+      }
     },
     "stepUp": {
       "title": "Verify your identity",
