@@ -196,7 +196,7 @@
       "starting": "Starting verification…",
       "confirmLabel": "Verify",
       "cancelLabel": "Cancel",
-      "cannotElevate": "This sign-in predates the verification methods you registered, so this session can't be raised with them. Sign in once more to verify with them; you'll come back here to continue.",
+      "cannotElevate": "This session can't be confirmed with the verification methods you registered: they may have been registered after this sign-in, or this site may have no way to verify you further for this sign-in. Sign in once more, and you'll come back here to continue.",
       "relogin": "Sign in to continue",
       "restart": "Restart verification",
       "firstFactorRelogin": "This action needs a recent sign-in, and your current sign-in can't confirm your identity here. Sign in again, then retry the action.",

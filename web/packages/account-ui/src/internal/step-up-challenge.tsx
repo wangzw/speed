@@ -76,8 +76,11 @@
  * satisfy: the hook's 'unavailable' phase -- a 401
  * insufficient_user_authentication (the account has factors, but none
  * whose methods may strengthen this session, or none it can prove again
- * without a password). The dialog says the sign-in predates those methods
- * and offers a re-login that continues afterwards -- it fires `onRelogin`
+ * without a password). The dialog says this session cannot be confirmed
+ * with the registered methods -- they may have been registered after this
+ * sign-in, or the deployment may have no way to verify the sign-in
+ * further -- and offers a re-login that continues afterwards -- it fires
+ * `onRelogin`
  * first, so the caller can record the page and the operation a new sign-in
  * must re-issue, then ends the session through the session's own logout, and
  * the host's session gate converges on its sign-in surface at the same page
