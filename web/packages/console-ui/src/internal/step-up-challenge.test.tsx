@@ -28,6 +28,7 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { ApiError } from '@speed/api-client'
 import type {
   AuthSession,
   AuthSessionListener,
@@ -417,6 +418,92 @@ describe('StepUpChallenge', () => {
     expect(
       answers.filter((answer) => answer.step === 'complete'),
     ).toHaveLength(2)
+  })
+
+  it('holds the submit for the wait a throttled answer stated', async () => {
+    // A throttled answer arrives as the ratelimit layer's 429 with a
+    // Retry-After. The dialog names the wait, keeps the step form but
+    // disables its submit until the interval elapses, then clears the
+    // failure and makes the step answerable again.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      bindFactors([ACTIVE_FACTOR])
+      let answered = 0
+      const session: AuthSession = {
+        ...flowSession().session,
+        answerFlow: () => {
+          answered += 1
+          if (answered === 1) {
+            return Promise.resolve<AuthnFlowState>({
+              seq: 2,
+              state: 'second',
+              next: {
+                kind: 'challenge',
+                fields: [{ name: 'code', kind: 'code', required: true }],
+              },
+            })
+          }
+          return Promise.reject(
+            new ApiError({
+              status: 429,
+              code: 'ratelimit.throttled',
+              attempts: 1,
+              retryAfterMs: 30_000,
+            }),
+          )
+        },
+      }
+      const user = userEvent.setup({
+        advanceTimers: vi.advanceTimersByTimeAsync,
+      })
+      renderWithProviders(
+        <StepUpChallenge
+          open
+          session={session}
+          onSuccess={() => undefined}
+          onCancel={() => undefined}
+        />,
+      )
+
+      await user.click(
+        await screen.findByRole('button', {
+          name: zhCN.stepUp.factorKind.totp,
+        }),
+      )
+      await user.type(await screen.findByLabelText(/code/), '123456')
+      await user.click(
+        screen.getByRole('button', { name: zhCN.stepUp.submit }),
+      )
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(
+        zhCN.throttle.retryAfter.replace('{{seconds}}', '30'),
+      )
+      const submit = screen.getByRole('button', {
+        name: zhCN.stepUp.submit,
+      }) as HTMLButtonElement
+      expect(submit.disabled).toBe(true)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000)
+      })
+      await waitFor(() => {
+        expect(
+          (
+            screen.getByRole('button', {
+              name: zhCN.stepUp.submit,
+            }) as HTMLButtonElement
+          ).disabled,
+        ).toBe(false)
+      })
+      // The wait is spent, so the banner falls back to the code's own
+      // wait-free sentence instead of a stale countdown.
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.errors.ratelimit.throttled,
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('answers a passkey step-up under the factor step, driven by its options', async () => {

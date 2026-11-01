@@ -45,6 +45,9 @@
       "httpForbidden": "你没有执行此操作的权限。",
       "httpUnauthorized": "会话已结束，请重新登录。"
     },
+    "ratelimit": {
+      "throttled": "尝试次数过多，请在 {{seconds}} 秒后重试。"
+    },
     "tenant": {
       "bad_request": "提交的内容有误，请检查表单后重试。",
       "conflict": "该标识或别名已被其他租户占用。"

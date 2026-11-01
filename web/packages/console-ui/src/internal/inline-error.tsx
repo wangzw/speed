@@ -19,10 +19,22 @@ import { useConsoleUiErrorText } from './error-text.js'
 export interface InlineErrorProps {
   /** The code to render, or null for no error (renders nothing). */
   readonly code: string | null
+  /**
+   * The wait a throttled answer stated, in whole seconds. Given, the
+   * resolver renders the sentence that names it instead of the code's
+   * plain text.
+   */
+  readonly retryAfterSeconds?: number
 }
 
 /** The surface's whole-attempt failure banner, one role="alert" per error. */
-export function InlineError({ code }: InlineErrorProps) {
+export function InlineError({ code, retryAfterSeconds }: InlineErrorProps) {
   const resolve = useConsoleUiErrorText()
-  return <SharedInlineError code={code} resolve={resolve} />
+  return (
+    <SharedInlineError
+      code={code}
+      resolve={resolve}
+      retryAfterSeconds={retryAfterSeconds}
+    />
+  )
 }

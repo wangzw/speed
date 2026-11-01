@@ -110,6 +110,28 @@ describe('console-ui error text', () => {
     expect(notAllowed).not.toBe(bundle.errors.unknown)
   })
 
+  it('names the wait a throttled ratelimit answer stated', () => {
+    // The step-up flow's start and answers can be refused by the ratelimit
+    // layer with a Retry-After; the sentence names how long the operator
+    // must wait instead of collapsing onto the unknown fallback.
+    const i18n = createConsoleUiI18n('en-US')
+    const { result } = renderHook(() => useConsoleUiErrorText(), {
+      wrapper: ({ children }: { readonly children: ReactNode }) =>
+        createElement(I18nextProvider, { i18n }, children),
+    })
+    const bundle = consoleUiResources['en-US'] as {
+      throttle: { retryAfter: string }
+      errors: { unknown: string }
+    }
+    expect(result.current('ratelimit.throttled', 45)).toBe(
+      bundle.throttle.retryAfter.replace('{{seconds}}', '45'),
+    )
+    expect(result.current('ratelimit.throttled', 45)).toContain('45')
+    expect(result.current('ratelimit.throttled', 45)).not.toBe(
+      bundle.errors.unknown,
+    )
+  })
+
   it('resolves every module refusal a write can be answered with to its own text', () => {
     // The api-client derives a module code from a refusal's RFC 9457
     // problem `type` (urn:speed:<module>:<code>), so a console write the

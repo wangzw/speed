@@ -232,13 +232,8 @@ function StepUpFlow({
     }
   }, [onSuccess])
   const returnPath = useConsoleReturnPath()
-  const { phase, step, seq, errorCode, human, answer } = useStepUp(
-    session,
-    true,
-    elevated,
-    undefined,
-    returnPath,
-  )
+  const { phase, step, seq, errorCode, retryAfterSeconds, human, answer } =
+    useStepUp(session, true, elevated, undefined, returnPath)
   // The second factor the operator chose. The verification step that
   // follows it (the code challenge) is answered under the `factor` step
   // and must re-name the same factor alongside the code -- a challenge
@@ -302,6 +297,11 @@ function StepUpFlow({
   // banner; an answer attempt has already cleared the ceremony banner, so
   // a server failure is the only source left.
   const serverFailure = errorCode !== null && ceremonyError === null
+  // A throttled answer names how long the caller must hold off: the banner
+  // counts that wait down and the primary action stays disabled until it
+  // elapses, then the action returns and the banner renders the code's own
+  // wait-free sentence.
+  const waiting = retryAfterSeconds !== null
 
   // The unavailable phase's one action: end the session -- forgetting the
   // refused write, as a cancel does -- so the host's session gate converges
@@ -319,7 +319,10 @@ function StepUpFlow({
         {terminalFailure ? (
           // No description and no step: there is nothing to answer, so the
           // code's banner and the restart action are the whole surface.
-          <InlineError code={errorCode} />
+          <InlineError
+            code={errorCode}
+            retryAfterSeconds={retryAfterSeconds ?? undefined}
+          />
         ) : unavailable ? (
           <Typography variant="body2" color="text.secondary">
             {t('stepUp.cannotElevate')}
@@ -329,7 +332,12 @@ function StepUpFlow({
             <Typography variant="body2" color="text.secondary">
               {t('stepUp.description')}
             </Typography>
-            {serverFailure ? <InlineError code={errorCode} /> : null}
+            {serverFailure ? (
+              <InlineError
+                code={errorCode}
+                retryAfterSeconds={retryAfterSeconds ?? undefined}
+              />
+            ) : null}
             {starting || autoCompleting ? (
               <Typography variant="body2" sx={{ mt: 2 }}>
                 {t('stepUp.starting')}
@@ -356,6 +364,7 @@ function StepUpFlow({
                       answerStep="factor"
                       submitLabel={t('stepUp.submit')}
                       onSubmit={handleAnswer}
+                      submitDisabled={waiting}
                       ceremonyError={ceremonyError}
                       onCeremonyError={setCeremonyError}
                     />
@@ -369,7 +378,7 @@ function StepUpFlow({
       <DialogActions>
         <Button onClick={onCancel}>{t('common.cancel')}</Button>
         {terminalFailure ? (
-          <Button variant="contained" onClick={onRestart}>
+          <Button variant="contained" disabled={waiting} onClick={onRestart}>
             {t('stepUp.restart')}
           </Button>
         ) : unavailable ? (

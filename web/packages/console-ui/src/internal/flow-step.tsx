@@ -80,6 +80,13 @@ export interface FlowStepProps {
   readonly submitLabel: string
   readonly onSubmit: (answer: AuthnFlowAnswer) => void
   /**
+   * True while the driver holds the step's primary action back -- a
+   * throttled answer's wait. The fields stay editable and a secondary
+   * control (cancel) stays usable; only the actions that would send another
+   * answer are disabled.
+   */
+  readonly submitDisabled?: boolean
+  /**
    * The passkey ceremony's failure, held by the caller so one failure
    * banner stands at a time in the surrounding region. Omit it and the
    * ceremony keeps its own local banner.
@@ -96,6 +103,7 @@ export function FlowStep({
   answerStep,
   submitLabel,
   onSubmit,
+  submitDisabled = false,
   ceremonyError,
   onCeremonyError,
 }: FlowStepProps) {
@@ -107,7 +115,12 @@ export function FlowStep({
   if (step.kind === 'complete') {
     return (
       <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
-        <Button type="button" variant="contained" onClick={() => onSubmit({ step: 'complete' })}>
+        <Button
+          type="button"
+          variant="contained"
+          disabled={submitDisabled}
+          onClick={() => onSubmit({ step: 'complete' })}
+        >
           {submitLabel}
         </Button>
       </Box>
@@ -132,6 +145,7 @@ export function FlowStep({
             key={factor.id}
             type="button"
             variant="outlined"
+            disabled={submitDisabled}
             onClick={() => onSubmit({ step: 'factor', input: { factor: factor.id } })}
           >
             {factor.label ?? factorKindLabel(factor.kind, t)}
@@ -149,6 +163,7 @@ export function FlowStep({
             key={kind}
             type="button"
             variant="outlined"
+            disabled={submitDisabled}
             onClick={() => onSubmit({ step: 'enroll', input: { kind } })}
           >
             {factorKindLabel(kind, t)}
@@ -192,7 +207,7 @@ export function FlowStep({
             <Button
               type="button"
               variant="contained"
-              disabled={(values.code ?? '').trim() === ''}
+              disabled={submitDisabled || (values.code ?? '').trim() === ''}
               onClick={() => onSubmit({ step: answerStep, input: { code: (values.code ?? '').trim() } })}
             >
               {submitLabel}
@@ -208,6 +223,7 @@ export function FlowStep({
         answerStep={answerStep}
         submitLabel={submitLabel}
         onSubmit={onSubmit}
+        submitDisabled={submitDisabled}
         ceremonyError={ceremonyError}
         onCeremonyError={onCeremonyError}
       />
@@ -237,7 +253,7 @@ export function FlowStep({
         ))}
       </Box>
       <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
-        <Button type="submit" variant="contained">
+        <Button type="submit" variant="contained" disabled={submitDisabled}>
           {submitLabel}
         </Button>
       </Box>
@@ -254,6 +270,8 @@ interface PasskeyPromptProps {
   readonly answerStep: string
   readonly submitLabel: string
   readonly onSubmit: (answer: AuthnFlowAnswer) => void
+  /** True while a throttled answer's wait holds the start/retry action back. */
+  readonly submitDisabled?: boolean
   readonly ceremonyError?: string | null
   readonly onCeremonyError?: (errorKey: string | null) => void
 }
@@ -288,6 +306,7 @@ function PasskeyPrompt({
   answerStep,
   submitLabel,
   onSubmit,
+  submitDisabled = false,
   ceremonyError,
   onCeremonyError,
 }: PasskeyPromptProps) {
@@ -449,6 +468,7 @@ function PasskeyPrompt({
           <Button
             type="button"
             variant="contained"
+            disabled={submitDisabled}
             onClick={() => void run()}
           >
             {errorKey === null ? submitLabel : t('stepUp.passkeyRetry')}

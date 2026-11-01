@@ -45,6 +45,9 @@
       "httpForbidden": "You do not have permission to do that.",
       "httpUnauthorized": "Your session has ended. Sign in again."
     },
+    "ratelimit": {
+      "throttled": "Too many attempts. Try again in {{seconds}} seconds."
+    },
     "tenant": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
       "conflict": "That identifier or alias is already taken by another tenant."

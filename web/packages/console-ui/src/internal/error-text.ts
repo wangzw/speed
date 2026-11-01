@@ -118,6 +118,9 @@ export const ERROR_TEXT_CODES = [
   'authn.throttled',
   'authn.unavailable',
   'authn.human_verification_required',
+  // The platform-level refusal the ratelimit layer answers a throttled
+  // request with; the step-up flow's own start and answers can meet it.
+  'ratelimit.throttled',
   // audit admin: the 400 a malformed query is answered with.
   'audit.bad_request',
   // settings admin: a 400 shape refusal and the 422 a write whose value
@@ -141,10 +144,11 @@ export const ERROR_TEXT_CODES = [
  * unknown fallback. Reads the current language reactively (the returned
  * function is recreated when the language changes).
  */
-/** The leaves that name a throttled answer's wait, and the code carrying it. */
+/** The leaves that name a throttled answer's wait, and the codes carrying
+ * one. */
 const WAIT_KEY = 'throttle.retryAfter'
 const WAIT_LONG_KEY = 'throttle.retryAfterLong'
-const WAIT_CODES = ['authn.throttled'] as const
+const WAIT_CODES = ['authn.throttled', 'ratelimit.throttled'] as const
 
 export function useConsoleUiErrorText(): (
   code: string,
