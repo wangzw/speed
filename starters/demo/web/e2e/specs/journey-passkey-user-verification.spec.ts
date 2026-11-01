@@ -47,6 +47,7 @@ import {
   selectAccountSection,
 } from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
+import { submitFactorNameForm } from '../helpers/mfa'
 import { totpCode } from '../helpers/totp'
 import {
   addVirtualAuthenticator,
@@ -227,6 +228,7 @@ async function enrolTotp(page: Page): Promise<string> {
       exact: true,
     })
     .click()
+  await submitFactorNameForm(mfa)
 
   // The wizard shows the setup URI as a scannable symbol; the manual
   // disclosure reveals the base32 key behind it for setup by hand.
@@ -281,6 +283,7 @@ async function enrolPasskey(page: Page): Promise<void> {
       exact: true,
     })
     .click()
+  await submitFactorNameForm(mfa)
   await expect(
     mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
       exact: true,

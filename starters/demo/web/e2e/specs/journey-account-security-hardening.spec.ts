@@ -60,6 +60,7 @@ import {
 } from '../helpers/account-sections'
 import { expect, test } from '../fixtures/demo'
 import { copy, copyPattern } from '../helpers/i18n'
+import { submitFactorNameForm } from '../helpers/mfa'
 import { totpCode } from '../helpers/totp'
 import {
   addVirtualAuthenticator,
@@ -430,6 +431,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
           exact: true,
         })
         .click()
+      await submitFactorNameForm(mfa)
 
       // The wizard shows the setup URI as a scannable symbol; the manual
       // disclosure reveals the base32 key behind it for setup by hand.
@@ -521,6 +523,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
           exact: true,
         })
         .click()
+      await submitFactorNameForm(mfa)
       await expect(
         mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
           exact: true,
