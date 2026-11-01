@@ -1,11 +1,14 @@
 /**
- * axe-core assertions for the workspace's jsdom component tests.
+ * axe-core assertions for the workspace's component and page tests -- the
+ * jsdom unit suites and the Chromium browser tier.
  *
- * Runs axe over the whole jsdom document and fails the test on any
- * violation (component-level renders are small enough that scanning the
- * document is fine). color-contrast is disabled by default: jsdom does
- * no layout or color computation, so contrast results there are neither
- * trustworthy nor actionable -- contrast lives in the theme and is
+ * Runs axe over the whole document and fails the test on any violation
+ * (component-level renders are small enough that scanning the document
+ * is fine). color-contrast is disabled by default, and the same disabled
+ * set applies in both tiers: jsdom does no layout or color computation,
+ * so contrast results there are neither trustworthy nor actionable, and
+ * the browser tier shares this helper's rule set instead of growing a
+ * contrast gate of its own -- contrast lives in the theme and is
  * verified visually/browser-side. Tests that specifically probe
  * contrast affordances (colors roles, text colors on surfaces) assert
  * the theme values instead.
@@ -60,14 +63,21 @@
  *   host content must supply the `main` and any page heading the chrome
  *   does not render itself.
  *
- * Remaining jsdom indeterminacies (a rule that genuinely cannot answer
- * under jsdom and is not on the page-context list, e.g. aria-hidden-focus
- * deciding whether an aria-hidden modal background stays out of the tab
- * order) are REPORTED through console.warn -- surfaced, never silently
- * dropped -- and do not fail the scan: jsdom cannot determine them at
- * all, a real browser resolves them, and the modal-open shapes a scan
- * covers are exactly the case axe's modal semantics are designed to
- * exempt.
+ * Remaining indeterminacies (a rule that cannot answer in the environment
+ * the scan runs in and is not on the page-context list, e.g.
+ * aria-hidden-focus deciding whether an aria-hidden modal background
+ * stays out of the tab order while an overlay is open) are REPORTED
+ * through console.warn -- surfaced, never silently dropped -- and do not
+ * fail the scan. They are not a jsdom artefact that a real browser
+ * clears: the Chromium browser tier reports the same aria-hidden-focus
+ * indeterminacy on the same open-overlay scan, because axe's static
+ * analysis cannot tell whether the overlay's focus trap keeps the
+ * aria-hidden content out of the tab order. jsdom carries its own
+ * indeterminacies on top: it lays nothing out and has no canvas 2D
+ * context, so text-measurement rules (label-content-name-mismatch) and
+ * anything else needing rendered geometry cannot decide either. The
+ * report names the environment it ran in; the behaviour is the same in
+ * both -- report, never assert.
  */
 
 import { expect } from 'vitest'
@@ -147,23 +157,36 @@ function summarizeTargets(rule: axe.Result): string {
   return `${rule.id}: ${rule.help} (${targets || 'no target'})`
 }
 
+/**
+ * Names the environment the scan is running in, so an indeterminate report
+ * says where the rule could not be decided. jsdom puts itself in the user
+ * agent (`jsdom/<version>`); the browser tier serves a real browser whose
+ * user agent names its own engine instead.
+ */
+function describeEnvironment(): string {
+  return typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)
+    ? 'jsdom'
+    : 'the browser'
+}
+
 function reportNonCriticalIncomplete(incomplete: readonly axe.Result[]): void {
   for (const rule of incomplete) {
     // Deliberate, documented report (never a silent drop): this rule
-    // genuinely cannot be determined under jsdom (see the header
-    // comment) and is not on the PAGE_CONTEXT_RULES list that must fail
-    // when indeterminate. A real browser run resolves it; the report
-    // keeps it visible in the suite output instead of vanishing.
+    // cannot be determined in the environment the scan runs in (see the
+    // header comment) and is not on the PAGE_CONTEXT_RULES list that must
+    // fail when indeterminate. The report names that environment, so its
+    // result is not misread as a jsdom-only artefact a browser would clear.
     console.warn(
-      `[test-utils/axe] indeterminate under jsdom (reported, not asserted): ${summarizeTargets(rule)}`,
+      `[test-utils/axe] indeterminate in ${describeEnvironment()} (reported, not asserted): ${summarizeTargets(rule)}`,
     )
   }
 }
 
 async function runAxeScan(options: axe.RunOptions = {}): Promise<axe.AxeResults> {
   polyfillElementsFromPoint()
-  // Component-level scans run on a bare jsdom document: give it the two
-  // attributes page-level rules demand so those never fail a unit test.
+  // A bare test document (jsdom's, or a fresh browser page) has neither
+  // attribute; supply the two page-level rules demand so they never fail
+  // a test for the harness's own missing chrome.
   document.title = document.title || 'test document'
   document.documentElement.lang = document.documentElement.lang || 'en'
   return axe.run(document, options)
@@ -204,14 +227,15 @@ async function runAxeAssertions(
     rules: Object.fromEntries([...disabled].map((rule) => [rule, { enabled: false }])),
   })
   if (result.violations.length > 0) {
-    // aria-hidden-focus verdicts depend on live focus management jsdom
-    // cannot run: while an open MUI overlay (dialog/drawer/menu/popover
-    // -- all Modal-based) is showing, MUI aria-hides the page behind it,
-    // and axe's static analysis cannot tell whether the overlay's focus
-    // trap keeps that content out of the tab order (axe itself leaves
-    // the modal case incomplete). Under a really open overlay such a
-    // violation is reported, not asserted; without one (nothing to trap
-    // focus) it fails the scan like any other violation.
+    // aria-hidden-focus verdicts depend on live focus management, which
+    // static analysis cannot observe: while an open MUI overlay
+    // (dialog/drawer/menu/popover -- all Modal-based) is showing, MUI
+    // aria-hides the page behind it, and axe cannot tell whether the
+    // overlay's focus trap keeps that content out of the tab order (axe
+    // itself leaves the modal case incomplete -- measured in both jsdom
+    // and Chromium). Under a really open overlay such a violation is
+    // reported, not asserted; without one (nothing to trap focus) it
+    // fails the scan like any other violation.
     const focusTrapDependent = result.violations.filter(
       (rule) => rule.id === 'aria-hidden-focus' && hasOpenOverlay(),
     )
@@ -245,8 +269,8 @@ async function runAxeAssertions(
 
 /**
  * Assert the current document has no axe violations, with
- * color-contrast disabled (jsdom cannot compute colors -- see header)
- * and the widget-tier carve-out applied (see header). Page-context
+ * color-contrast disabled (see header) and the widget-tier carve-out
+ * applied (see header). Page-context
  * rules left enabled are determinate (see header): a scan without
  * page-heading context fails rather than passing by indeterminacy, and
  * genuinely indeterminate non-page rules are reported, never silently
