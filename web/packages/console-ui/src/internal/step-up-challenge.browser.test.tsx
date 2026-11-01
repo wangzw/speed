@@ -2,8 +2,11 @@
  * StepUpChallenge's dialog action row in a real browser: the cancel and
  * the primary exit (restart/relogin) are one group, one spacing token
  * apart, with the primary closing the row at its right edge. The dialog
- * used to lay its exits out through MUI's DialogActions, which left no
- * gap between them; jsdom lays nothing out, so only this tier can tell.
+ * used to lay its exits out through MUI's DialogActions; that band already
+ * put 8px (one spacing token) between adjacent buttons, but it owned the
+ * band's layout. The exits now render through the shared action row with
+ * the same padding the band used, so the gap and the right edge are the
+ * row's own. jsdom lays nothing out, so only this tier can measure them.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -68,10 +71,15 @@ describe('StepUpChallenge actions in Chromium', () => {
       expect(Math.abs(cancelBox.top - restartBox.top)).toBeLessThanOrEqual(1)
       expect(restartBox.left - cancelBox.right).toBeCloseTo(ACTION_GAP, 0)
 
-      const row = restart.parentElement as HTMLElement
-      const rowBox = row.getBoundingClientRect()
+      // The exits belong to the row the row itself marks, and the primary
+      // closes that row at its right content edge.
+      const row = restart.closest<HTMLElement>('[data-action-row]')
+      expect(row).not.toBeNull()
+      expect(cancel.closest('[data-action-row]')).toBe(row)
+      const rowBox = (row as HTMLElement).getBoundingClientRect()
       const contentRight =
-        rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
+        rowBox.right -
+        Number.parseFloat(getComputedStyle(row as HTMLElement).paddingRight)
       expect(Math.abs(restartBox.right - contentRight)).toBeLessThanOrEqual(1)
     }
   })

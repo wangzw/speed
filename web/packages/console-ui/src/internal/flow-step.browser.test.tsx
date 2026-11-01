@@ -15,9 +15,17 @@ import { FlowStep } from './flow-step.js'
 
 const OTPAUTH_URI = 'otpauth://totp/speed:ada?issuer=speed'
 
+/** The row an action belongs to, found by the row's own marker. */
+function actionRowOf(action: Element): HTMLElement {
+  const row = action.closest<HTMLElement>('[data-action-row]')
+  if (row === null) {
+    throw new Error('the action is not inside an action row')
+  }
+  return row
+}
+
 /** The row's right content edge (the row may carry its own padding). */
-function contentRightOf(element: Element): number {
-  const row = element.parentElement as HTMLElement
+function contentRightOf(row: HTMLElement): number {
   const rowBox = row.getBoundingClientRect()
   return rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
 }
@@ -26,8 +34,9 @@ async function expectClosedOnTheRight(button: HTMLElement): Promise<void> {
   await waitFor(() => {
     expect(button.getBoundingClientRect().width).toBeGreaterThan(0)
   })
+  const row = actionRowOf(button)
   expect(
-    Math.abs(button.getBoundingClientRect().right - contentRightOf(button)),
+    Math.abs(button.getBoundingClientRect().right - contentRightOf(row)),
   ).toBeLessThanOrEqual(1)
 }
 
