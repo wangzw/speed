@@ -351,6 +351,27 @@ describe('FlowStep labels', () => {
     }
   })
 
+  it('starts one registration ceremony per click under StrictMode', async () => {
+    // StrictMode double-invokes mount effects, but a registration ceremony is
+    // click-driven: the double mount starts none, and one click asks the
+    // browser once.
+    const create = vi.fn().mockReturnValue(new Promise(() => {}))
+    const restore = installCredentials({ get: vi.fn(), create })
+    configure({ reactStrictMode: true })
+    try {
+      render(REGISTER_STEP)
+      expect(create).not.toHaveBeenCalled()
+
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'Continue' }))
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    } finally {
+      configure({ reactStrictMode: false })
+      restore()
+    }
+  })
+
   it('renders the registration prompt for a creation step', () => {
     // A creation step (its options carry the user) says it registers a
     // passkey rather than reusing the assertion's wording.
