@@ -687,24 +687,39 @@ export function SsoPage({
                         '&:last-of-type': { borderBottom: 0 },
                       }}
                     >
-                      <Typography
-                        variant="body2"
-                        sx={(theme) => ({
-                          fontFamily: theme.typography.fontFamilyMono,
-                          wordBreak: 'break-all',
-                        })}
+                      {/* The text block takes the free width, so the
+                          row's control cluster sits at the end without an
+                          automatic margin. */}
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          alignItems: 'center',
+                          columnGap: 2,
+                          rowGap: 1,
+                          flexGrow: 1,
+                          minWidth: 0,
+                        }}
                       >
-                        {declared.domain}
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        color={declared.verified ? 'success.main' : 'text.secondary'}
-                      >
-                        {declared.verified
-                          ? t('sso.domains.state.verified')
-                          : t('sso.domains.state.unverified')}
-                      </Typography>
-                      <Box sx={{ display: 'flex', columnGap: 1, ml: 'auto' }}>
+                        <Typography
+                          variant="body2"
+                          sx={(theme) => ({
+                            fontFamily: theme.typography.fontFamilyMono,
+                            wordBreak: 'break-all',
+                          })}
+                        >
+                          {declared.domain}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          color={declared.verified ? 'success.main' : 'text.secondary'}
+                        >
+                          {declared.verified
+                            ? t('sso.domains.state.verified')
+                            : t('sso.domains.state.unverified')}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', columnGap: 1, flexShrink: 0 }}>
                         {!declared.verified && (
                           <Button
                             type="button"
