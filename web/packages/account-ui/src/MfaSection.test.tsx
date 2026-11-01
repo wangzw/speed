@@ -1117,6 +1117,7 @@ describe('MfaSection', () => {
     await user.click(
       await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
     )
+    await startEnrollWithEmptyName(user)
     const code = await screen.findByLabelText(zhCN.flowStep.codeLabel)
     await user.type(code, '123456')
     // Typing alone issues nothing: only the confirm control answers.
