@@ -229,6 +229,8 @@ import type { AuthnProfileIdentifier } from '@speed/api-sdk'
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
 import { humanGateNeedsProof, stepUpReasonOf, useStepUpGate, useHumanVerification } from '@speed/auth-core'
 import {
+  ActionButton,
+  ActionRow,
   ConfirmDialog,
   errorCodeOf,
   FORM_MAX_WIDTH,
@@ -1343,7 +1345,14 @@ export function IdentifiersSection({
             : undefined
         }
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1.5,
+          }}
+        >
           {named ? (
             <Typography
               id={headingId}
@@ -1355,8 +1364,7 @@ export function IdentifiersSection({
             </Typography>
           ) : null}
           {kind === 'username' ? null : kind === 'email' ? (
-            <Button
-              variant="outlined"
+            <ActionButton
               size="small"
               disabled={
                 writeBusy ||
@@ -1366,7 +1374,6 @@ export function IdentifiersSection({
               aria-describedby={
                 emailSignInRow === null ? `${headingId}-off` : undefined
               }
-              sx={{ marginLeft: 'auto' }}
               onClick={() => {
                 if (emailSignInRow !== null) {
                   setLastDisabledSignInEmail({
@@ -1407,13 +1414,11 @@ export function IdentifiersSection({
               {emailSignInRow === null
                 ? t('identifiers.action.enable')
                 : t('identifiers.action.disable')}
-            </Button>
+            </ActionButton>
           ) : signInRow?.id != null ? (
-            <Button
-              variant="outlined"
+            <ActionButton
               size="small"
               disabled={writeBusy || addBusy}
-              sx={{ marginLeft: 'auto' }}
               onClick={() =>
                 void setFlags(signInRow.id as string, signInRow.value ?? '', {
                   signIn: signInRow.sign_in !== true,
@@ -1423,7 +1428,7 @@ export function IdentifiersSection({
               {signInRow.sign_in === true
                 ? t('identifiers.action.disable')
                 : t('identifiers.action.enable')}
-            </Button>
+            </ActionButton>
           ) : null}
         </Box>
         {kind === 'email' ? (
@@ -1593,28 +1598,17 @@ export function IdentifiersSection({
               }}
             />
           )}
-          <Box
-            sx={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              gap: 1,
-              width: '100%',
-            }}
-          >
-            <Button
+          <ActionRow size="small" sx={{ width: '100%' }}>
+            <ActionButton
               type="button"
-              size="small"
               disabled={addBusy}
               onClick={closeRowVerify}
             >
               {t('identifiers.add.cancel')}
-            </Button>
+            </ActionButton>
             {rowSentTo === null ? null : (
-              <Button
+              <ActionButton
                 type="button"
-                variant="outlined"
-                size="small"
                 disabled={addBusy || proofBlocked || rowRemainingSeconds > 0}
                 loading={addIdentifier.isPending}
                 aria-describedby={
@@ -1623,32 +1617,28 @@ export function IdentifiersSection({
                 onClick={() => void rowSend(address)}
               >
                 {t('verification.resend')}
-              </Button>
+              </ActionButton>
             )}
             {rowSentTo === null ? (
-              <Button
+              <ActionButton
                 type="submit"
-                variant="contained"
-                size="small"
-                sx={{ marginLeft: 'auto' }}
+                emphasis="primary"
                 disabled={addBusy || proofBlocked}
                 loading={addIdentifier.isPending}
               >
                 {t('identifiers.add.submitEmail')}
-              </Button>
+              </ActionButton>
             ) : (
-              <Button
+              <ActionButton
                 type="submit"
-                variant="contained"
-                size="small"
-                sx={{ marginLeft: 'auto' }}
+                emphasis="primary"
                 disabled={addBusy || rowCode.trim() === ''}
                 loading={verifyIdentifier.isPending}
               >
                 {t('identifiers.add.verify')}
-              </Button>
+              </ActionButton>
             )}
-          </Box>
+          </ActionRow>
           {rowSentTo !== null && rowRemainingSeconds > 0 ? (
             <Typography
               id={ROW_RESEND_NOTE_ID}
@@ -1719,7 +1709,14 @@ export function IdentifiersSection({
         key={rowKey}
         sx={{ py: 1.5, minWidth: 0 }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1.5,
+          }}
+        >
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="body1" noWrap sx={{ fontWeight: 600 }}>
               {value}
@@ -1735,7 +1732,6 @@ export function IdentifiersSection({
           </Box>
           <Box
             sx={{
-              marginLeft: 'auto',
               flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
@@ -2113,25 +2109,19 @@ export function IdentifiersSection({
                   {axis === 'contact' || formKind === 'email'
                     ? humanBlock
                     : null}
-                  {/* Cancel on the left, the primary submit closing the
-                      row on the right, as every inline form in the package
-                      does. */}
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
-                      gap: 1,
-                      width: '100%',
-                    }}
-                  >
-                    <Button type="button" disabled={addBusy} onClick={closeAdd}>
+                  {/* Cancel leads the inline form's action row; the
+                      primary submit closes it on the right. */}
+                  <ActionRow sx={{ width: '100%' }}>
+                    <ActionButton
+                      type="button"
+                      disabled={addBusy}
+                      onClick={closeAdd}
+                    >
                       {t('identifiers.add.cancel')}
-                    </Button>
-                    <Button
+                    </ActionButton>
+                    <ActionButton
                       type="submit"
-                      variant="contained"
-                      sx={{ marginLeft: 'auto' }}
+                      emphasis="primary"
                       disabled={
                         addBusy ||
                         ((axis === 'contact' || formKind === 'email') &&
@@ -2142,8 +2132,8 @@ export function IdentifiersSection({
                       {axis === 'contact' || formKind === 'email'
                         ? t('identifiers.add.submitEmail')
                         : t('identifiers.add.submitUsername')}
-                    </Button>
-                  </Box>
+                    </ActionButton>
+                  </ActionRow>
                 </>
               ) : (
                 <>
@@ -2173,16 +2163,8 @@ export function IdentifiersSection({
                     disabled={addBusy}
                     onChange={(event) => setCode(event.target.value)}
                   />
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
-                      gap: 1,
-                      width: '100%',
-                    }}
-                  >
-                    <Button
+                  <ActionRow sx={{ width: '100%' }}>
+                    <ActionButton
                       type="button"
                       disabled={addBusy}
                       onClick={() => {
@@ -2193,16 +2175,15 @@ export function IdentifiersSection({
                       }}
                     >
                       {t('identifiers.add.change')}
-                    </Button>
-                    <Button
+                    </ActionButton>
+                    <ActionButton
                       type="submit"
-                      variant="contained"
-                      sx={{ marginLeft: 'auto' }}
+                      emphasis="primary"
                       disabled={addBusy || code.trim() === ''}
                     >
                       {t('identifiers.add.verify')}
-                    </Button>
-                  </Box>
+                    </ActionButton>
+                  </ActionRow>
                 </>
               )}
             </Box>

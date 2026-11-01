@@ -66,9 +66,14 @@ describe('ContactVerificationSection verification actions in Chromium', () => {
     expect(Math.abs(sendBox.bottom - changeBox.bottom)).toBeLessThanOrEqual(1)
     expect(Math.abs(verifyBox.bottom - sendBox.bottom)).toBeLessThanOrEqual(1)
 
-    // The primary action closes the row: it starts to the right of both
-    // secondary actions.
-    expect(verifyBox.left).toBeGreaterThan(changeBox.right)
-    expect(verifyBox.left).toBeGreaterThan(sendBox.right)
+    // One adjacent group, one spacing token apart, not two ends: the
+    // secondary pair leads and the primary closes the row.
+    expect(changeBox.left - sendBox.right).toBeCloseTo(8, 0)
+    expect(verifyBox.left - changeBox.right).toBeCloseTo(8, 0)
+    const row = verify.parentElement as HTMLElement
+    const rowBox = row.getBoundingClientRect()
+    const contentRight =
+      rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
+    expect(Math.abs(verifyBox.right - contentRight)).toBeLessThanOrEqual(1)
   })
 })

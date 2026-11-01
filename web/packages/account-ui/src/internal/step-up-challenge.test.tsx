@@ -395,12 +395,13 @@ describe('StepUpChallenge', () => {
     )
 
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
-    // Cancel is the neutral secondary control every dialog in the family
-    // uses, not a primary-colored text button.
+    // Cancel is the action row's secondary control: a text button, not the
+    // primary (contained) confirm beside it.
     const cancel = screen.getByRole('button', {
       name: zhCN.mfa.stepUp.cancelLabel,
     })
-    expect(cancel).toHaveClass('MuiButton-colorInherit')
+    expect(cancel).toHaveClass('MuiButton-text')
+    expect(cancel).not.toHaveClass('MuiButton-contained')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )

@@ -86,7 +86,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -99,6 +98,8 @@ import {
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
 import { humanGateNeedsProof, stepUpReasonOf, useHumanVerification, useStepUpGate } from '@speed/auth-core'
 import {
+  ActionButton,
+  ActionRow,
   errorCodeOf,
   FORM_MAX_WIDTH,
   HumanVerification,
@@ -504,20 +505,20 @@ export function ContactVerificationSection({
           onChange={(event) => setEmailEntry(event.target.value)}
         />
         {humanBlock}
-        {/* The step's only action is its primary, so it closes the row on
-            the field's right edge, as every inline form in the package
-            does. */}
-        <Button
-          type="submit"
-          variant="contained"
-          sx={{ marginLeft: 'auto' }}
-          disabled={busy || proofBlocked || emailEntry.trim() === ''}
-          loading={addIdentifier.isPending}
-        >
-          {t('verification.addSubmit')}
-        </Button>
-        {/* The add form is the section's send group here: its result sits
-            below the action that made it. */}
+        {/* The step's only action is its primary; it still closes its
+            action row at the field's right edge. */}
+        <ActionRow sx={{ width: '100%' }}>
+          <ActionButton
+            type="submit"
+            emphasis="primary"
+            disabled={busy || proofBlocked || emailEntry.trim() === ''}
+            loading={addIdentifier.isPending}
+          >
+            {t('verification.addSubmit')}
+          </ActionButton>
+        </ActionRow>
+        {/* The add form is the send group's control here: its result
+            sits below the action that made it. */}
         <WriteFeedbackRegion
           outcome={feedback.outcome}
           sx={{ alignSelf: 'stretch', width: '100%' }}
@@ -599,18 +600,9 @@ export function ContactVerificationSection({
               resend sends another code. The group's one result sits
               directly below the row. */}
           {humanBlock}
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              flexWrap: 'wrap',
-              width: '100%',
-            }}
-          >
-            <Button
+          <ActionRow sx={{ width: '100%' }}>
+            <ActionButton
               type="button"
-              variant="outlined"
               disabled={busy || proofBlocked || remainingSeconds > 0}
               loading={addIdentifier.isPending}
               aria-describedby={
@@ -621,8 +613,8 @@ export function ContactVerificationSection({
               {sentTo === null
                 ? t('verification.send')
                 : t('verification.resend')}
-            </Button>
-            <Button
+            </ActionButton>
+            <ActionButton
               type="button"
               disabled={busy}
               onClick={() => {
@@ -633,17 +625,16 @@ export function ContactVerificationSection({
               {entryOpen
                 ? t('verification.changeCancel')
                 : t('verification.change')}
-            </Button>
-            <Button
+            </ActionButton>
+            <ActionButton
               type="submit"
-              variant="contained"
-              sx={{ marginLeft: 'auto' }}
+              emphasis="primary"
               disabled={busy || code.trim() === ''}
               loading={verifyIdentifier.isPending}
             >
               {t('verification.verify')}
-            </Button>
-          </Box>
+            </ActionButton>
+          </ActionRow>
           {/* The group's one result: the resend, change-address send and the
               code verification all write into it, and it sits directly under
               the action row so the result stands next to the action that
@@ -699,14 +690,15 @@ export function ContactVerificationSection({
                 disabled={busy}
                 onChange={(event) => setEmailEntry(event.target.value)}
               />
-              <Button
-                type="submit"
-                variant="contained"
-                sx={{ marginLeft: 'auto' }}
-                disabled={busy || proofBlocked || emailEntry.trim() === ''}
-              >
-                {t('verification.changeSubmit')}
-              </Button>
+              <ActionRow sx={{ width: '100%' }}>
+                <ActionButton
+                  type="submit"
+                  emphasis="primary"
+                  disabled={busy || proofBlocked || emailEntry.trim() === ''}
+                >
+                  {t('verification.changeSubmit')}
+                </ActionButton>
+              </ActionRow>
             </Box>
           </Box>
         ) : null}

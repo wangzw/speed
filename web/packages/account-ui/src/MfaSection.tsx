@@ -125,6 +125,8 @@ import type { AuthSession, AuthnStep, StepUpReason } from '@speed/auth-core'
 import { stepUpReasonOf } from '@speed/auth-core'
 import { formatInstant } from '@speed/i18n'
 import {
+  ActionButton,
+  ActionRow,
   ConfirmDialog,
   errorCodeOf,
   FORM_MAX_WIDTH,
@@ -862,7 +864,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                               submitLabel={t('mfa.enroll.confirmLabel')}
                               onSubmit={(answer) => void answerEnroll(answer)}
                               secondaryAction={
-                                <Button
+                                <ActionButton
                                   type="button"
                                   disabled={enrolling}
                                   onClick={() => {
@@ -872,7 +874,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                   }}
                                 >
                                   {t('mfa.enroll.cancelLabel')}
-                                </Button>
+                                </ActionButton>
                               }
                             />
                             <WriteFeedbackRegion
@@ -910,15 +912,8 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                 disabled={enrolling}
                                 fullWidth
                               />
-                              <Box
-                                sx={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 1.5,
-                                  mt: 2,
-                                }}
-                              >
-                                <Button
+                              <ActionRow sx={{ mt: 2 }}>
+                                <ActionButton
                                   type="button"
                                   disabled={enrolling}
                                   onClick={() => {
@@ -927,15 +922,15 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                   }}
                                 >
                                   {t('mfa.enroll.cancelLabel')}
-                                </Button>
-                                <Button
+                                </ActionButton>
+                                <ActionButton
                                   type="submit"
-                                  variant="contained"
+                                  emphasis="primary"
                                   disabled={enrolling}
                                 >
                                   {t('mfa.enroll.confirmLabel')}
-                                </Button>
-                              </Box>
+                                </ActionButton>
+                              </ActionRow>
                             </Box>
                             <WriteFeedbackRegion
                               outcome={enrollFeedback.outcome}
@@ -1050,13 +1045,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                                   renameDraft.label,
                                                 )
                                               }}
-                                              sx={{
-                                                mt: 1,
-                                                display: 'flex',
-                                                alignItems: 'flex-start',
-                                                gap: 1,
-                                                flexWrap: 'wrap',
-                                              }}
+                                              sx={{ mt: 1 }}
                                             >
                                               <TextField
                                                 size="small"
@@ -1074,31 +1063,29 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                                 disabled={
                                                   updateMutation.isPending
                                                 }
-                                                sx={{
-                                                  flex: '1 1 220px',
-                                                  minWidth: 0,
-                                                }}
+                                                fullWidth
+                                                sx={{ mb: 1 }}
                                               />
-                                              <Button
-                                                type="submit"
-                                                variant="contained"
-                                                size="small"
-                                                disabled={busy}
-                                              >
-                                                {t('mfa.renameSave')}
-                                              </Button>
-                                              <Button
-                                                type="button"
-                                                size="small"
-                                                disabled={
-                                                  updateMutation.isPending
-                                                }
-                                                onClick={() =>
-                                                  setRenameDraft(null)
-                                                }
-                                              >
-                                                {t('mfa.renameCancel')}
-                                              </Button>
+                                              <ActionRow size="small">
+                                                <ActionButton
+                                                  type="button"
+                                                  disabled={
+                                                    updateMutation.isPending
+                                                  }
+                                                  onClick={() =>
+                                                    setRenameDraft(null)
+                                                  }
+                                                >
+                                                  {t('mfa.renameCancel')}
+                                                </ActionButton>
+                                                <ActionButton
+                                                  type="submit"
+                                                  emphasis="primary"
+                                                  disabled={busy}
+                                                >
+                                                  {t('mfa.renameSave')}
+                                                </ActionButton>
+                                              </ActionRow>
                                             </Box>
                                           )}
                                       </Box>

@@ -42,6 +42,10 @@ const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 const PHONE_PATH = '/api/v1/auth/phone'
 const OTPAUTH_URI = 'otpauth://totp/speed:ada?issuer=speed'
 
+/** The one spacing token an action row puts between adjacent controls
+ * (`theme.spacing(1)`). */
+const ACTION_GAP = 8
+
 /** Two boxes are on the same line when their top edges agree. */
 function sameTop(a: Element, b: Element): boolean {
   return Math.abs(a.getBoundingClientRect().top - b.getBoundingClientRect().top) <= 1
@@ -55,6 +59,25 @@ function expectRightEdge(a: Element, b: Element): void {
   const aBox = a.getBoundingClientRect()
   const bBox = b.getBoundingClientRect()
   expect(Math.abs(aBox.right - bBox.right)).toBeLessThanOrEqual(1)
+}
+
+/**
+ * The controls are one action group: same line, one spacing token apart,
+ * with the primary closing the group at the row's content edge. A row
+ * that pushed the primary to the far side with an automatic margin would
+ * leave hundreds of pixels between the two.
+ */
+function expectOneActionGroup(primary: Element, secondary: Element): void {
+  const primaryBox = primary.getBoundingClientRect()
+  const secondaryBox = secondary.getBoundingClientRect()
+  expect(sameTop(primary, secondary)).toBe(true)
+  expect(rightOf(primary, secondary)).toBe(true)
+  expect(primaryBox.left - secondaryBox.right).toBeCloseTo(ACTION_GAP, 0)
+  const row = primary.parentElement as HTMLElement
+  const rowBox = row.getBoundingClientRect()
+  const contentRight =
+    rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
+  expect(Math.abs(primaryBox.right - contentRight)).toBeLessThanOrEqual(1)
 }
 
 describe('account-ui form geometry', () => {
@@ -162,8 +185,7 @@ describe('account-ui form geometry', () => {
     const cancel = screen.getByRole('button', {
       name: zhCN.identifiers.add.cancel,
     })
-    expect(sameTop(submit, cancel)).toBe(true)
-    expect(rightOf(submit, cancel)).toBe(true)
+    expectOneActionGroup(submit, cancel)
   })
 
   it('keeps the email add face\'s two steps on one right-closed action row', async () => {
@@ -204,8 +226,7 @@ describe('account-ui form geometry', () => {
     const cancel = screen.getByRole('button', {
       name: zhCN.identifiers.add.cancel,
     })
-    expect(sameTop(send, cancel)).toBe(true)
-    expect(rightOf(send, cancel)).toBe(true)
+    expectOneActionGroup(send, cancel)
     expect(send).toHaveClass('MuiButton-contained')
     expect(cancel).not.toHaveClass('MuiButton-contained')
     expectRightEdge(send, send.parentElement as HTMLElement)
@@ -226,8 +247,7 @@ describe('account-ui form geometry', () => {
       name: zhCN.identifiers.add.change,
     })
     expect(verify).toBeDisabled()
-    expect(sameTop(verify, change)).toBe(true)
-    expect(rightOf(verify, change)).toBe(true)
+    expectOneActionGroup(verify, change)
     expect(verify).toHaveClass('MuiButton-contained')
     expect(change).not.toHaveClass('MuiButton-contained')
     expectRightEdge(verify, verify.parentElement as HTMLElement)
@@ -237,8 +257,7 @@ describe('account-ui form geometry', () => {
       '123456',
     )
     expect(verify).toBeEnabled()
-    expect(sameTop(verify, change)).toBe(true)
-    expect(rightOf(verify, change)).toBe(true)
+    expectOneActionGroup(verify, change)
   })
 
   it('keeps the enrollment confirm and cancel on one row, with the fields capped', async () => {
@@ -305,6 +324,7 @@ describe('account-ui form geometry', () => {
       confirm.getBoundingClientRect().left -
         cancel.getBoundingClientRect().right,
     ).toBeLessThanOrEqual(32)
+    expectOneActionGroup(confirm, cancel)
 
     // The wizard title is a sub-form heading, one step below the card title
     // (subtitle1, not the larger h6), and names the factor kind enrolled.
@@ -365,8 +385,7 @@ describe('account-ui form geometry', () => {
     const cancel = screen.getByRole('button', {
       name: zhCN.identifiers.add.cancel,
     })
-    expect(sameTop(submit, cancel)).toBe(true)
-    expect(rightOf(submit, cancel)).toBe(true)
+    expectOneActionGroup(submit, cancel)
   })
 
   it('closes every factor removal on one right rail', async () => {
@@ -452,8 +471,7 @@ describe('account-ui form geometry', () => {
     // Number step: the close control leads, the send primary closes the row.
     const send = await screen.findByRole('button', { name: zhCN.phone.send })
     const close = screen.getByRole('button', { name: zhCN.phone.close })
-    expect(sameTop(send, close)).toBe(true)
-    expect(rightOf(send, close)).toBe(true)
+    expectOneActionGroup(send, close)
 
     await user.type(
       screen.getByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
@@ -467,8 +485,7 @@ describe('account-ui form geometry', () => {
     const verify = screen.getByRole('button', { name: zhCN.phone.verify })
     const back = screen.getByRole('button', { name: zhCN.phone.close })
     expect(verify).toBeDisabled()
-    expect(sameTop(verify, back)).toBe(true)
-    expect(rightOf(verify, back)).toBe(true)
+    expectOneActionGroup(verify, back)
   })
 
   it('renders a host secondary control beside a step primary on one row', async () => {
@@ -486,8 +503,7 @@ describe('account-ui form geometry', () => {
     )
     const confirm = screen.getByRole('button', { name: 'Confirm' })
     const cancel = screen.getByRole('button', { name: 'Cancel' })
-    expect(sameTop(confirm, cancel)).toBe(true)
-    expect(rightOf(confirm, cancel)).toBe(true)
+    expectOneActionGroup(confirm, cancel)
     unmount()
   })
 })

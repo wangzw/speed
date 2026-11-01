@@ -89,9 +89,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Link from '@mui/material/Link'
@@ -104,7 +102,7 @@ import type {
   StepUpReason,
 } from '@speed/auth-core'
 import { humanGateNeedsProof, useStepUp } from '@speed/auth-core'
-import { HumanVerification } from '@speed/ui-kit'
+import { ActionButton, ActionRow, HumanVerification } from '@speed/ui-kit'
 import { InlineError } from './inline-error.js'
 import { FlowStep } from './flow-step.js'
 import { useFactorsQuery, useSessionViewQuery } from './queries.js'
@@ -267,14 +265,14 @@ export function StepUpChallenge({
               {t('mfa.stepUp.ssoRequired')}
             </Typography>
           </DialogContent>
-          <DialogActions>
-            <Button color="inherit" onClick={onCancel}>
+          <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
+            <ActionButton onClick={onCancel}>
               {t('mfa.stepUp.cancelLabel')}
-            </Button>
-            <Button variant="contained" onClick={handleRelogin}>
+            </ActionButton>
+            <ActionButton emphasis="primary" onClick={handleRelogin}>
               {t('mfa.stepUp.relogin')}
-            </Button>
-          </DialogActions>
+            </ActionButton>
+          </ActionRow>
         </>
       ) : (
         <StepUpFlow
@@ -404,9 +402,9 @@ function StepUpFlow({
     !unavailable &&
     !starting
   const cancelButton = (
-    <Button color="inherit" onClick={onCancel}>
+    <ActionButton onClick={onCancel}>
       {t('mfa.stepUp.cancelLabel')}
-    </Button>
+    </ActionButton>
   )
 
   // The unavailable phase's and the unknown-method state's one action:
@@ -495,18 +493,18 @@ function StepUpFlow({
         )}
       </DialogContent>
       {stepShown ? null : (
-        <DialogActions>
+        <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
           {cancelButton}
           {flowInvalid ? (
-            <Button variant="contained" onClick={onRestart}>
+            <ActionButton emphasis="primary" onClick={onRestart}>
               {t('mfa.stepUp.restart')}
-            </Button>
+            </ActionButton>
           ) : unavailable || reloginOnly ? (
-            <Button variant="contained" onClick={handleRelogin}>
+            <ActionButton emphasis="primary" onClick={handleRelogin}>
               {t('mfa.stepUp.relogin')}
-            </Button>
+            </ActionButton>
           ) : null}
-        </DialogActions>
+        </ActionRow>
       )}
     </>
   )

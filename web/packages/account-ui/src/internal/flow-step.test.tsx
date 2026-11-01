@@ -165,9 +165,13 @@ describe('FlowStep labels', () => {
         zhCN.flowStep.passkeyCancelled,
       )
 
-      await user.click(
-        screen.getByRole('button', { name: zhCN.flowStep.passkeyRetry }),
-      )
+      // The retry uses the one primary action mapping every action row
+      // shares, so the three retry surfaces cannot drift apart.
+      const retry = screen.getByRole('button', {
+        name: zhCN.flowStep.passkeyRetry,
+      })
+      expect(retry).toHaveClass('MuiButton-contained')
+      await user.click(retry)
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
       expect(get).toHaveBeenCalledTimes(2)
       expect(onSubmit).toHaveBeenCalledWith({

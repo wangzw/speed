@@ -52,7 +52,6 @@
 
 import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
@@ -69,6 +68,8 @@ import {
   useStepUpGate,
 } from '@speed/auth-core'
 import {
+  ActionButton,
+  ActionRow,
   errorCodeOf,
   HumanVerification,
   PhoneNumberField,
@@ -279,30 +280,20 @@ export function PhoneSection({
               onRetry={human.retry}
               disabled={busy}
             />
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                width: '100%',
-              }}
-            >
+            <ActionRow sx={{ width: '100%' }}>
               {onCancel === undefined ? null : (
-                <Button type="button" disabled={busy} onClick={onCancel}>
+                <ActionButton type="button" disabled={busy} onClick={onCancel}>
                   {t('phone.close')}
-                </Button>
+                </ActionButton>
               )}
-              <Button
+              <ActionButton
                 type="submit"
-                variant="contained"
-                sx={
-                  onCancel === undefined ? undefined : { marginLeft: 'auto' }
-                }
+                emphasis="primary"
                 disabled={busy || proofBlocked || nationalNumber === ''}
               >
                 {t('phone.send')}
-              </Button>
-            </Box>
+              </ActionButton>
+            </ActionRow>
           </>
         ) : (
           <>
@@ -332,15 +323,8 @@ export function PhoneSection({
               disabled={busy}
               onChange={(event) => setCode(event.target.value)}
             />
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                width: '100%',
-              }}
-            >
-              <Button
+            <ActionRow sx={{ width: '100%' }}>
+              <ActionButton
                 type="button"
                 disabled={busy}
                 onClick={() => {
@@ -354,16 +338,15 @@ export function PhoneSection({
                 }}
               >
                 {onCancel === undefined ? t('phone.cancel') : t('phone.close')}
-              </Button>
-              <Button
+              </ActionButton>
+              <ActionButton
                 type="submit"
-                variant="contained"
-                sx={{ marginLeft: 'auto' }}
+                emphasis="primary"
                 disabled={busy || code.trim() === ''}
               >
                 {t('phone.verify')}
-              </Button>
-            </Box>
+              </ActionButton>
+            </ActionRow>
           </>
         )}
 

@@ -46,7 +46,11 @@ import Typography from '@mui/material/Typography'
 import type { AuthnStep } from '@speed/auth-core'
 import { formatSecretForDisplay, parseOtpauth } from '@speed/auth-core/otpauth'
 import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
-import { TotpEnrollmentPanel } from '@speed/ui-kit'
+import {
+  ActionButton,
+  ActionRow,
+  TotpEnrollmentPanel,
+} from '@speed/ui-kit'
 import { useAccountUiTranslation } from './translation.js'
 
 /** The bundle keys of the field names the family has wording for. A name
@@ -151,17 +155,17 @@ export function FlowStep({
 
   if (step.kind === 'complete') {
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
+      <ActionRow sx={{ mt: 2 }}>
         {secondaryAction}
-        <Button
+        <ActionButton
           type="button"
-          variant="contained"
+          emphasis="primary"
           disabled={busy || submitDisabled}
           onClick={() => onSubmit({ step: 'complete' })}
         >
           {submitLabel}
-        </Button>
-      </Box>
+        </ActionButton>
+      </ActionRow>
     )
   }
 
@@ -171,17 +175,17 @@ export function FlowStep({
         <Alert severity="info">
           {t('flowStep.redirectNotice')}
         </Alert>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 1.5 }}>
+        <ActionRow sx={{ mt: 1.5 }}>
           {secondaryAction}
-          <Button
+          <ActionButton
             type="button"
-            variant="contained"
+            emphasis="primary"
             disabled={busy || submitDisabled || onRedirect === undefined}
             onClick={() => onRedirect?.(step.url)}
           >
             {t('flowStep.continueLabel')}
-          </Button>
-        </Box>
+          </ActionButton>
+        </ActionRow>
       </Box>
     )
   }
@@ -284,16 +288,16 @@ export function FlowStep({
         ))}
       </Box>
       {external ? null : (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
+        <ActionRow sx={{ mt: 2 }}>
           {secondaryAction}
-          <Button
+          <ActionButton
             type="submit"
-            variant="contained"
+            emphasis="primary"
             disabled={busy || submitDisabled}
           >
             {submitLabel}
-          </Button>
-        </Box>
+          </ActionButton>
+        </ActionRow>
       )}
     </Box>
   )
@@ -378,14 +382,14 @@ function TotpEnrollStep({
       busy={busy}
       secondaryAction={secondaryAction}
       primaryAction={
-        <Button
+        <ActionButton
           type="button"
-          variant="contained"
+          emphasis="primary"
           disabled={busy || code.trim() === ''}
           onClick={() => onSubmit(code.trim())}
         >
           {submitLabel}
-        </Button>
+        </ActionButton>
       }
     />
   )
@@ -583,30 +587,29 @@ function PasskeyPrompt({
               {waitingCommitted ? t('flowStep.passkeyWaiting') : ''}
             </Typography>
           </Box>
-          <Box sx={{ mt: 1.5 }}>
-            <Button
+          <ActionRow sx={{ mt: 1.5 }}>
+            <ActionButton
               ref={cancelRef}
               type="button"
-              variant="outlined"
               disabled={busy}
               onClick={cancel}
             >
               {t('flowStep.passkeyCancel')}
-            </Button>
-          </Box>
+            </ActionButton>
+          </ActionRow>
         </>
       ) : (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
+        <ActionRow sx={{ mt: 2 }}>
           {secondaryAction}
-          <Button
+          <ActionButton
             type="button"
-            variant="contained"
+            emphasis="primary"
             disabled={busy || submitDisabled}
             onClick={() => void run()}
           >
             {failure === null ? submitLabel : t('flowStep.passkeyRetry')}
-          </Button>
-        </Box>
+          </ActionButton>
+        </ActionRow>
       )}
     </Box>
   )
