@@ -499,6 +499,10 @@ export function PermissionsPage({
     if (permission === '') {
       return
     }
+    // The grant and the revoke share the grants scope: a new attempt starts
+    // from a clean result, so the refused row's marker and its inline reason
+    // do not outlive the result they described.
+    setFailedGrant(null)
     void grantsFeedback.run(async () => {
       await grantPermissionMutation.mutateAsync({
         tenant,

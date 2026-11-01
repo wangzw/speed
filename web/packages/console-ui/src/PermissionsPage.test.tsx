@@ -1191,6 +1191,56 @@ describe('PermissionsPage', () => {
     await expectNoAxeViolations()
   })
 
+  it('drops the refused grant row marker when the next grant starts', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      listGrants: () => Promise.resolve([grant()]),
+      revokePermission: () => Promise.reject({ code: 'authz.forbidden' }),
+      grantPermission: () => Promise.resolve(),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.click(
+      await screen.findByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
+      }),
+    )
+    const grants = section(zhCN.permissions.grants.title)
+    const failed = await within(grants).findByRole('button', {
+      name: text(zhCN.permissions.grants.revokeAria, {
+        permission: 'crm.deal.read',
+      }),
+    })
+    await user.click(failed)
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authz.forbidden,
+    )
+    expect(failed).toHaveAttribute('aria-invalid', 'true')
+
+    // The grant and the revoke share the grants scope: a new attempt starts
+    // from a clean result, so the refused row's marker and its inline reason
+    // do not outlive the result they described.
+    await user.click(
+      screen.getByLabelText(zhCN.permissions.grants.permissionLabel),
+    )
+    await user.click(
+      await screen.findByRole('option', { name: 'crm.deal.write' }),
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.permissions.grants.add }),
+    )
+    expect(
+      await screen.findByText(
+        text(zhCN.permissions.grants.granted, {
+          role: 'editor',
+          permission: 'crm.deal.write',
+        }),
+      ),
+    ).toBeInTheDocument()
+    expect(failed).toHaveAttribute('aria-invalid', 'false')
+  })
+
   it('keeps a refused lookup read in the permission placeholder, not a write error', async () => {
     const user = userEvent.setup()
     const operations = withAuthz({
