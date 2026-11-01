@@ -52,6 +52,15 @@ describe('withBindingReturn', () => {
     )
   })
 
+  it('writes the return parameter before a fragment the callback carries', () => {
+    // A fragment is not part of the query. Appending the parameter after
+    // the `#` would put it inside the fragment, where the callback's query
+    // reader never sees it.
+    expect(
+      withBindingReturn('/account/callback#offline', '/account/security'),
+    ).toBe('/account/callback?return=%2Faccount%2Fsecurity#offline')
+  })
+
   it('appends to an absolute callback URL under a trusted origin', () => {
     const composed = withBindingReturn(
       'https://app.example/account/callback',

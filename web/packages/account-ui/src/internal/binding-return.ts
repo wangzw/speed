@@ -28,6 +28,13 @@ const MAX_TARGET_BYTES = 2048
 
 const ABSOLUTE_URL_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:/
 
+/**
+ * A placeholder origin for parsing a relative callback route. Only the
+ * parsed path, query and fragment are read back, so the origin never
+ * reaches the returned value.
+ */
+const RELATIVE_ORIGIN = 'http://site.invalid'
+
 /** The UTF-8 byte length of a string, without allocating an encoder. */
 function byteLength(value: string): number {
   let bytes = 0
@@ -86,10 +93,18 @@ export function withBindingReturn(
   if (source === undefined || !isSitePath(source)) {
     return callback
   }
-  if (ABSOLUTE_URL_PATTERN.test(callback)) {
-    const url = new URL(callback)
+  const absolute = ABSOLUTE_URL_PATTERN.test(callback)
+  const relativeRoute =
+    callback.startsWith('/') && !callback.startsWith('//')
+  if (absolute || relativeRoute) {
+    // Both forms are parsed so the parameter is written to the query: a
+    // callback route that carries a fragment keeps it as a fragment
+    // instead of having the parameter appended after the `#`.
+    const url = new URL(callback, RELATIVE_ORIGIN)
     url.searchParams.set(RETURN_PARAM, source)
-    return url.toString()
+    return absolute
+      ? url.toString()
+      : `${url.pathname}${url.search}${url.hash}`
   }
   const separator = callback.includes('?') ? '&' : '?'
   return `${callback}${separator}${RETURN_PARAM}=${encodeURIComponent(source)}`
