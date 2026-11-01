@@ -25,6 +25,7 @@ python3 tools/check_conflict_markers.py
 python3 tools/check_observability_readiness.py
 python3 tools/check_test_tiers.py
 python3 tools/check_e2e_honesty.py
+python3 tools/check_platform_errors.py
 ```
 
 Their own test suites run together, from the repository root:
@@ -176,3 +177,29 @@ below the clause is prose. Exit codes: 0 clean, 1 a finding (each with
 file, line and what it is), 2 infrastructure error (the root is not a
 directory, the Makefile passes no tag, or a check found no subject at all
 — the integration layer gone, or no library to read).
+
+`check_platform_errors.py` — holds the platform error-copy bundle
+(`web/packages/i18n/src/platform-errors/locales/{zh-CN,en-US}.json`) to
+the code set the backend can write. The frontend resolves a refusal
+through that bundle by the `<module>.<code>` form of its RFC 9457 problem
+type (`urn:speed:<module>:<code>`, each dash in the code normalized to an
+underscore), so a code the backend writes without a bundle entry renders
+as the raw key, and an entry no backend writes is dead copy no lookup can
+reach. The gate derives the writable set from the Go source of the two
+modules `go.work` lists (`pkg/` and `starters/`) rather than restating
+it: a whole URN literal, a package's `urn:speed:<module>:` prefix plus a
+literal or a resolved constant (`mount.CodeLoginFailed`, from the same
+package or an imported one), a helper's call-site arguments when it takes
+the code as a parameter, and a mount-style `Code…` table. A missing code
+is a finding; so is an entry the backend never writes, unless it is in
+the script's `KEPT` list with the frontend files that still refer to it —
+legacy codes the web packages name themselves (the shared
+session-lifecycle vocabulary, tests that pin a fallback lookup) would
+break their own callers if deleted. A `KEPT` entry whose reference is
+gone is itself a finding, so the list cannot rot silently, and a
+duplicate key in either language file is a finding unless `DUPLICATES`
+names it. Both language files must carry the same leaf set. Exit codes:
+0 clean, 1 a finding (each with the key and what is wrong with it), 2
+infrastructure error (the root is not a directory, a backend root or the
+locale directory is missing, a Go file cannot be read, a helper's call
+sites named no code, or the derivation found nothing at all).

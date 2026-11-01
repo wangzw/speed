@@ -324,13 +324,13 @@ Chinese UI with English locale text. It is identity-stable per language.
 
 ## Platform error copy (`./platform-errors`)
 
-The backend modules publish their error text: each catalog entry's key is
-an apperr code and its value is the message the backend renders for it.
-This package's client bundle
-(`src/platform-errors/locales/{zh-CN,en-US}.json`) was generated from the
-earlier implementation's catalogs and is hand-maintained now, a host
-registers it once at bootstrap, and the fallback namespace above makes it
-reachable from every package lookup:
+The bundle (`src/platform-errors/locales/{zh-CN,en-US}.json`) is the
+lookup table a host registers once at bootstrap; the fallback namespace
+above makes it reachable from every package lookup. A code resolves to a
+flat dotted leaf under its `errors` section (`errors.authn.login_failed`),
+which is the `<module>.<code>` form @speed/api-client derives from an
+RFC 9457 problem type (`urn:speed:<module>:<code>`, each dash in the code
+part normalized to an underscore):
 
 ```ts
 import { createI18n } from '@speed/i18n'
@@ -358,34 +358,20 @@ registration behaves exactly as before. `platformErrorResources` exports
 the shipped `zh-CN`/`en-US` pair for a host that overlays it before
 registering.
 
-Two properties of the bundle are deliberate and worth knowing
-before reading a miss as a bug:
-
-- **It is not status-filtered.** Every catalog entry ships, including
-  refusal classes a user is unlikely to see and wording that reads like
-  a developer's note (a boot-time wiring refusal, for one). The bundle is
-  a lookup table, not a curated user-facing catalog; what a client shows
-  is the resolver's decision, not the bundle's.
-- **It covers the codes the catalogs cover, not every code.** Codes the
-  backend declares no copy for (request-time refusals answered as a
-  structured code only, boot-time refusals) have no entry here and keep
-  resolving through each package's own fallback text.
-
-**Known coverage gap: bundle membership is unasserted.** Every bundled
-key was once pinned against the platform's apperr census, the generated
-index `docs/error-codes.json`. That index and its generator
-(`tools/gen_error_code_index.py`) are no longer in the tree, so nothing
-asserts that the bundle ships only real error codes -- the membership
-property has no test on the web side. Closing the gap means building a
-census from the `pkg/` modules and pinning the bundle against it; no tool
-in the tree does that today.
-
-The committed bundle at `src/platform-errors/locales/` is
-hand-maintained: its generator retired with the earlier implementation,
-and the current `pkg/` catalogs (`pkg/<module>/locales/*.json`, a
-different set of codes in a different format) cannot reproduce it.
-Entries left from that implementation stay only so old error codes still
-render. There is no regeneration command.
+Membership is the backend's writable set plus the legacy codes the web
+packages still name. `tools/check_platform_errors.py` derives every
+problem code the Go source under `pkg/` and `starters/` can write and
+holds the catalog to it (`tools/README.md` has the derivation rules): a
+written code with no entry is a finding, because the refusal would render
+as the raw key; an entry no backend writes is a finding too, unless the
+gate's `KEPT` list names it with the frontend files that still refer to
+it. The list is what keeps a code the web packages name themselves —
+the shared session-lifecycle vocabulary, a test that pins a fallback
+lookup — from being deleted out from under them; an entry whose reference
+is gone is reported as stale, so the list cannot rot silently. Both
+language files must carry the same leaves and no duplicate key. Adding
+copy for a new backend code therefore means adding its leaf to both
+language files in one change; there is no generation command.
 
 ## Error-code text convention
 

@@ -6,8 +6,8 @@
  * from the code, never from an API's English fallback message (which
  * exists for log triage only). The convention: a listed code resolves
  * to its own leaf under the bundle's `errors` section
- * ('errors.<code>' -- the section the hand-maintained platform bundle and
- * the package catalogs share), and anything unlisted to `errors.unknown`.
+ * ('errors.<code>' -- the section the platform error bundle and the
+ * package catalogs share), and anything unlisted to `errors.unknown`.
  * A resolver built here can therefore never render a raw key, and a
  * missing translation never leaks another language's text.
  *

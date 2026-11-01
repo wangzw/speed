@@ -9,7 +9,7 @@ negotiated start language (`createI18n`), the manual language switch
 (`readSupportedLanguages`, exported for surfaces that render a language
 picker from the instance's real set rather than the package default),
 resource overlays for a host-supplied bundle (`overlayResources`), the
-MUI localization bridge (`./mui-locale`), the hand-maintained platform
+MUI localization bridge (`./mui-locale`), the backend-derived platform
 error-copy bundle with its registration and exported resources
 (`./platform-errors`: `PLATFORM_ERRORS_NAMESPACE`,
 `platformErrorResources`, `registerPlatformErrors`), the error-code text
@@ -118,6 +118,19 @@ catalog) and is non-negotiable here.
   nothing. `overlayResources` exists to make that failure loud: replacing
   a leaf the base bundle does not carry throws instead of adding a key.
   Do not satisfy an overlay complaint by dropping the check.
+- **The platform error bundle's key set is the backend's writable code
+  set, plus the legacy codes declared in `tools/check_platform_errors.py`.**
+  The backend writes a refusal's kind as `urn:speed:<module>:<code>`, and
+  the api-client reads it back as the `<module>.<code>` leaf this bundle
+  keys on; `make repo-check` runs that gate. A code the backend writes
+  without a leaf renders as the raw key, and a leaf no backend writes is
+  dead copy a lookup cannot reach, so adding copy for a new backend code
+  means adding its leaf to both language files (the gate reports the
+  missing one). A legacy leaf stays only through the gate's `KEPT` list,
+  which names the frontend source or test that still refers to it and is
+  reported stale when that reference goes; do not widen it to keep copy
+  nothing reads. Both language files carry the same leaves and no
+  duplicate key.
 - **Time and language names are formatted through Intl only.** The
   display-timezone chain lives in `resolveTimeZone` (stored value, then
   device, then UTC) and every Intl construction is guarded, so one stale

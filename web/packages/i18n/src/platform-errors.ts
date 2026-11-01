@@ -1,15 +1,20 @@
 /**
  * The platform error-copy bundle and its registration.
  *
- * The bundle is the client-side text for the apperr codes the earlier
- * implementation published a catalog entry for; it is hand-maintained now
- * (its generator retired with that implementation), and backend-only
- * content (invitation emails, notification templates, SMS bodies, seed
- * copy) has no code to be looked up with and is therefore absent by
- * construction. Keys are the `errors` section the packages'
- * resolvers already navigate, one flat dotted apperr code per leaf
- * (`errors.authn.invalid_credentials`), so `t('errors.' + code)` resolves
- * through i18next's own deepFind without a lookup helper.
+ * The bundle is the client-side text for the problem codes the backend can
+ * write: a refusal's kind is the RFC 9457 problem `type`
+ * `urn:speed:<module>:<code>`, and the api-client derives the
+ * `<module>.<code>` key this bundle carries from it. The key set is held to
+ * that writable set by `tools/check_platform_errors.py`, which derives it
+ * from the Go source and runs in `make repo-check`; the legacy codes the web
+ * packages still name are the gate's explicit `KEPT` list, not a second
+ * hand-maintained catalog. Backend-only content (invitation emails,
+ * notification templates, SMS bodies, seed copy) has no problem code to be
+ * looked up with and is therefore absent by construction. Keys are the
+ * `errors` section the packages' resolvers already navigate, one flat dotted
+ * apperr code per leaf (`errors.authn.invalid_credentials`), so
+ * `t('errors.' + code)` resolves through i18next's own deepFind without a
+ * lookup helper.
  *
  * Isolated in its own subpath so the main entry's export table stays
  * exactly as documented (the ./mui-locale precedent: a consumer that
