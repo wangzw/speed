@@ -85,7 +85,7 @@
  * kind, because then there is no entry to point at.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -101,22 +101,22 @@ import {
 } from '@speed/api-sdk'
 import type { AuthSession, AuthnStep, StepUpReason } from '@speed/auth-core'
 import { stepUpReasonOf } from '@speed/auth-core'
-import { formatInstant, isSupportedTimeZone, resolveTimeZone } from '@speed/i18n'
+import { formatInstant } from '@speed/i18n'
 import {
   ConfirmDialog,
   errorCodeOf,
   FORM_MAX_WIDTH,
   ListSkeleton,
   SectionCard,
-  useDisplayTimeZone,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
 import { FlowStep } from './internal/flow-step.js'
 import type { FlowStepAnswer } from './internal/flow-step.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
-import { useFactorsQuery, useProfileQuery } from './internal/queries.js'
+import { useFactorsQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
+import { useAccountTimeZone } from './internal/time-zone.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { summarizeUserAgent } from './internal/ua-summary.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
@@ -225,8 +225,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const { data, isPending, isFetching, error, refetch } = useFactorsQuery()
   const removeMutation = useAuthnMfaRemoveFactor()
   const updateMutation = useAuthnMfaUpdateFactor()
-  const { data: profile } = useProfileQuery()
-  const hostTimeZone = useDisplayTimeZone()
 
   // The action a won step-up re-runs, if any.
   const [gate, setGate] = useState<GatedAction | null>(null)
@@ -257,25 +255,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     readonly string[] | null
   >(null)
 
-  // The display-timezone chain: the account's stored preference wins, then
-  // the host's display-timezone context (which replaces only the device
-  // tier), then the device zone, then UTC. Every candidate is validated
-  // through the shared i18n helper, so the formatter never receives a zone
-  // the engine refuses.
-  const timeZone = useMemo(() => {
-    const stored = profile?.time_zone?.trim() ?? ''
-    if (stored !== '' && isSupportedTimeZone(stored)) {
-      return stored
-    }
-    if (
-      hostTimeZone !== undefined &&
-      hostTimeZone !== '' &&
-      isSupportedTimeZone(hostTimeZone)
-    ) {
-      return hostTimeZone
-    }
-    return resolveTimeZone(undefined)
-  }, [profile?.time_zone, hostTimeZone])
+  const timeZone = useAccountTimeZone()
   const formatTime = (value: string | number | Date): string =>
     formatInstant(value, i18n.language, { timeZone })
 

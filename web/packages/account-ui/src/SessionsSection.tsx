@@ -50,9 +50,9 @@
  * text is only ever asserted for an answer that genuinely listed none.
  */
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { formatInstant, isSupportedTimeZone, resolveTimeZone } from '@speed/i18n'
+import { formatInstant } from '@speed/i18n'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -75,11 +75,11 @@ import {
   ConfirmDialog,
   ListSkeleton,
   SectionCard,
-  useDisplayTimeZone,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
-import { useProfileQuery, useSessionsQuery } from './internal/queries.js'
+import { useSessionsQuery } from './internal/queries.js'
+import { useAccountTimeZone } from './internal/time-zone.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { summarizeUserAgent } from './internal/ua-summary.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
@@ -188,28 +188,7 @@ export function SessionsSection({
   // leave the view on a page past the end.
   const [page, setPage] = useState(1)
 
-  // The display-timezone chain: the account's stored preference wins, then
-  // the host's display-timezone context (which replaces only the device
-  // tier), then the device zone, then UTC. The rows render in the
-  // account's chosen zone, not whatever machine happens to run the
-  // client. Every candidate is validated through the shared i18n helper,
-  // so the formatter never receives a zone the engine refuses.
-  const { data: profile } = useProfileQuery()
-  const hostTimeZone = useDisplayTimeZone()
-  const timeZone = useMemo(() => {
-    const stored = profile?.time_zone?.trim() ?? ''
-    if (stored !== '' && isSupportedTimeZone(stored)) {
-      return stored
-    }
-    if (
-      hostTimeZone !== undefined &&
-      hostTimeZone !== '' &&
-      isSupportedTimeZone(hostTimeZone)
-    ) {
-      return hostTimeZone
-    }
-    return resolveTimeZone(undefined)
-  }, [profile?.time_zone, hostTimeZone])
+  const timeZone = useAccountTimeZone()
   const formatTime = (value: string | number | Date): string =>
     formatInstant(value, i18n.language, { timeZone })
 
