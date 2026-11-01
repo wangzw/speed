@@ -50,9 +50,11 @@
  * A host that splits the surface with `axis` gets the same blocks in the view
  * it shows: the contact axis's own table carries the default-contact choice
  * and the row actions on each address, and the sign-in axis renders the kind
- * groups alone, without the merged view's sign-in ways heading. The control
- * reads every row of its kind in both views; the login-ways page keeps no
- * per-address rows of its own.
+ * groups alone, without the merged view's sign-in ways heading. The merged
+ * view's contact list keeps the default-contact radio on the row and moves
+ * verification and removal into the same trailing menu the table uses. The
+ * control reads every row of its kind in both views; the login-ways page
+ * keeps no per-address rows of its own.
  *
  * A group's sign-in write is PUT
  * /api/v1/auth/identifiers/{id} (authn.login.updateIdentifier) with
@@ -72,10 +74,11 @@
  * record, in the contacts list (the list that record's state makes
  * canonical), so one address never offers two controls for one position.
  *
- * A row whose identifier carries an id has a row-end remove action that
- * sits behind the ui-kit danger ConfirmDialog -- removing an identifier is
- * irreversible (it is re-established only by walking the route that
- * proves it again). The removal is DELETE /api/v1/auth/identifiers/{id}
+ * A row whose identifier carries an id has a remove item in the row's
+ * trailing overflow menu, sitting behind the ui-kit danger ConfirmDialog --
+ * removing an identifier is irreversible (it is re-established only by
+ * walking the route that proves it again). The removal is DELETE
+ * /api/v1/auth/identifiers/{id}
  * (authn.login.removeIdentifier). The account module refuses to remove the
  * account's last way to log in with a 409, whose code text renders above
  * the list; a refused removal re-reads the profile, so a guard that read a
@@ -93,10 +96,11 @@
  * authority on the last way in; the note states the one case the profile can
  * reveal.
  *
- * An unverified email row carries a verify action beside its remove action
- * (the remove action is withheld while the row is the password account's only
- * login name; the verify action is not). The action proves the address the row
- * already shows: POST /api/v1/auth/identifiers re-sends a code to that same
+ * An unverified email row carries a verify item in the same trailing menu as
+ * its remove item (the remove item is withheld while the row is the password
+ * account's only login name; the verify item is not). The action proves the
+ * address the row already shows: POST /api/v1/auth/identifiers re-sends a code
+ * to that same
  * address -- the route accepts the account's own address as a re-add of its
  * proof -- and POST /api/v1/auth/identifiers/verify submits the code. The write
  * is idempotent, so the refetched row flips to `verified`. The address stays
@@ -296,20 +300,28 @@ export interface IdentifiersSectionProps {
 interface ContactActionsMenuProps {
   readonly value: string
   readonly canVerify: boolean
-  readonly canDefault: boolean
-  readonly isDefault: boolean
+  /** Set while this row's verification flow is already open, so its item
+   * cannot start the same flow again. */
+  readonly verifyDisabled?: boolean
+  readonly canDefault?: boolean
+  readonly isDefault?: boolean
+  readonly canRemove?: boolean
   readonly disabled: boolean
   readonly onVerify: () => void
-  readonly onSetDefault: () => void
+  readonly onSetDefault?: () => void
   readonly onRemove: () => void
 }
 
-/** One contact row's overflow menu: make it the default, or remove it. */
+/** One contact row's overflow menu: verify it, make it the default, or
+ * remove it. A contacts-table row offers the default item; a merged-view
+ * row does not, because its radio already carries that choice. */
 function ContactActionsMenu({
   value,
   canVerify,
-  canDefault,
-  isDefault,
+  verifyDisabled = false,
+  canDefault = false,
+  isDefault = false,
+  canRemove = true,
   disabled,
   onVerify,
   onSetDefault,
@@ -350,6 +362,7 @@ function ContactActionsMenu({
       >
         {canVerify ? (
           <MenuItem
+            disabled={verifyDisabled}
             onClick={() => {
               setAnchor(null)
               onVerify()
@@ -358,7 +371,7 @@ function ContactActionsMenu({
             {t('identifiers.verify')}
           </MenuItem>
         ) : null}
-        {canDefault ? (
+        {canDefault && onSetDefault !== undefined ? (
           // The current default is marked, not greyed: `selected` says
           // "this is the one in force", where a disabled item left the
           // reader guessing why it could not be chosen.
@@ -374,15 +387,17 @@ function ContactActionsMenu({
             {t('identifiers.axes.defaultContact')}
           </MenuItem>
         ) : null}
-        <MenuItem
-          sx={{ color: 'error.main' }}
-          onClick={() => {
-            setAnchor(null)
-            onRemove()
-          }}
-        >
-          {t('identifiers.remove')}
-        </MenuItem>
+        {canRemove ? (
+          <MenuItem
+            sx={{ color: 'error.main' }}
+            onClick={() => {
+              setAnchor(null)
+              onRemove()
+            }}
+          >
+            {t('identifiers.remove')}
+          </MenuItem>
+        ) : null}
       </Menu>
     </>
   )
@@ -1652,8 +1667,10 @@ export function IdentifiersSection({
 
   /**
    * One row in the contacts list. The per-record actions (the
-   * default-contact choice, verification and removal) render on the row, so
-   * one address never offers the same action twice. Whether an email or
+   * default-contact choice, verification and removal) render once per
+   * record, so one address never offers the same action twice: the
+   * default-contact radio stands below the row, and verification and
+   * removal sit in the row's trailing overflow menu. Whether an email or
    * phone signs in is a group decision, so no row carries a switch for it.
    */
   function renderContactRow(
@@ -1693,6 +1710,8 @@ export function IdentifiersSection({
       loginNameCount === 1 &&
       kind === 'email' &&
       axes.signIn
+    const canRemoveRow = id !== null && !lastLoginName
+    const showActionsMenu = canVerifyRow || canRemoveRow
     const disabled = writeBusy || addBusy || id === null
     return (
       <Box
@@ -1731,39 +1750,21 @@ export function IdentifiersSection({
                 label={stateLabel}
               />
             ) : null}
-            {canVerifyRow ? (
-              <Button
-                variant="outlined"
-                size="small"
-                disabled={writeBusy || addBusy || rowFlowOpen}
-                aria-label={t('identifiers.verifyAria', {
-                  value,
-                  interpolation: { escapeValue: false },
-                })}
-                onClick={() => openRowVerify(rowKey, value)}
-              >
-                {t('identifiers.verify')}
-              </Button>
-            ) : null}
-            {id !== null && !lastLoginName && (
-              <Button
-                variant="outlined"
-                color="error"
-                size="small"
+            {showActionsMenu ? (
+              <ContactActionsMenu
+                value={value}
+                canVerify={canVerifyRow}
+                verifyDisabled={addBusy || rowFlowOpen}
+                canRemove={canRemoveRow}
                 disabled={writeBusy}
-                aria-label={t('identifiers.removeAria', {
-                  value,
-                  // The label is an aria-label, not HTML: the identifier's
-                  // value (an email or a phone number with a '+') must reach
-                  // the accessibility tree verbatim (i18next's default value
-                  // escaping would embed an entity for it).
-                  interpolation: { escapeValue: false },
-                })}
-                onClick={() => setRemoveTarget(id)}
-              >
-                {t('identifiers.remove')}
-              </Button>
-            )}
+                onVerify={() => openRowVerify(rowKey, value)}
+                onRemove={() => {
+                  if (id !== null) {
+                    setRemoveTarget(id)
+                  }
+                }}
+              />
+            ) : null}
           </Box>
         </Box>
         {kind === 'email' && verified ? (

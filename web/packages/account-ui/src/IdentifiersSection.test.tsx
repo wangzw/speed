@@ -66,6 +66,18 @@ function mount(
   return { rig, ...rendered }
 }
 
+/** Open the trailing actions menu of the contact row that shows `value`. */
+async function openContactMenu(
+  user: ReturnType<typeof userEvent.setup>,
+  value: string,
+) {
+  await user.click(
+    await screen.findByRole('button', {
+      name: zhCN.identifiers.actionsAria.replace('{{value}}', value),
+    }),
+  )
+}
+
 describe('IdentifiersSection', () => {
   it('renders each identifier with its kind, value and verification, and passes axe', async () => {
     const respond: RealResponder = (call: RealCall) => {
@@ -170,21 +182,22 @@ describe('IdentifiersSection', () => {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mount(respond)
+    const user = userEvent.setup()
 
     // The unverified address is a contact; the picker displays the account's
     // chosen address, so this one reads once.
     expect(await screen.findAllByText('second@x.test')).toHaveLength(1)
     // The account as a whole is verified, so the banner offers no entry for
-    // this row; the row itself must.
+    // this row; the row's trailing menu must.
+    await openContactMenu(user, 'second@x.test')
     expect(
-      screen.getByRole('button', {
-        name: zhCN.identifiers.verifyAria.replace('{{value}}', 'second@x.test'),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
     ).toBeTruthy()
+    await user.keyboard('{Escape}')
+    // A proved address has nothing to verify, so its menu omits the item.
+    await openContactMenu(user, 'ada@x.test')
     expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.verifyAria.replace('{{value}}', 'ada@x.test'),
-      }),
+      screen.queryByRole('menuitem', { name: zhCN.identifiers.verify }),
     ).toBeNull()
   })
 
@@ -213,18 +226,29 @@ describe('IdentifiersSection', () => {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mount(respond)
+    const user = userEvent.setup()
 
     expect(await screen.findAllByText('only@x.test')).toHaveLength(2)
+    // Both actions live in the row's trailing menu; the row carries no inline
+    // button.
     expect(
       screen.queryByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'only@x.test'),
       }),
     ).toBeNull()
     expect(
-      screen.getByRole('button', {
+      screen.queryByRole('button', {
         name: zhCN.identifiers.verifyAria.replace('{{value}}', 'only@x.test'),
       }),
+    ).toBeNull()
+    await openContactMenu(user, 'only@x.test')
+    expect(
+      screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
     ).toBeTruthy()
+    // The only login name withholds removal, not verification.
+    expect(
+      screen.queryByRole('menuitem', { name: zhCN.identifiers.remove }),
+    ).toBeNull()
   })
 
   it('proves an unverified row through its own address and flips the chip', async () => {
@@ -267,10 +291,9 @@ describe('IdentifiersSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
+    await openContactMenu(user, 'second@x.test')
     await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.identifiers.verifyAria.replace('{{value}}', 'second@x.test'),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
     )
 
     // The flow shows the row's address and does not let it change.
@@ -371,30 +394,15 @@ describe('IdentifiersSection', () => {
       )
       const user = userEvent.setup()
 
-      // The table view opens the flow from the row's actions menu; the
-      // merged view carries the verify button on the row itself.
-      if (axis === 'contact') {
-        await user.click(
-          await screen.findByRole('button', {
-            name: zhCN.identifiers.actionsAria.replace(
-              '{{value}}',
-              'ada@x.test',
-            ),
-          }),
-        )
-        await user.click(
-          screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
-        )
-      } else {
-        await user.click(
-          await screen.findByRole('button', {
-            name: zhCN.identifiers.verifyAria.replace(
-              '{{value}}',
-              'ada@x.test',
-            ),
-          }),
-        )
-      }
+      // Both views open the flow from the row's trailing actions menu.
+      await user.click(
+        await screen.findByRole('button', {
+          name: zhCN.identifiers.actionsAria.replace('{{value}}', 'ada@x.test'),
+        }),
+      )
+      await user.click(
+        screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
+      )
 
       const send = await screen.findByRole('button', {
         name: zhCN.identifiers.add.submitEmail,
@@ -479,6 +487,7 @@ describe('IdentifiersSection', () => {
         return jsonResponse(
           200,
           profileBody({
+            password_set: false,
             verification: {
               state: 'pending',
               email: 'pending@x.test',
@@ -499,17 +508,19 @@ describe('IdentifiersSection', () => {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mount(respond)
+    const user = userEvent.setup()
 
     expect(await screen.findAllByText('pending@x.test')).toHaveLength(2)
     expect(screen.getAllByText(zhCN.identifiers.unverified)).toHaveLength(1)
+    // The row still offers its trailing menu (removal), but the verify item
+    // is absent while the account-wide flow owns the pending code.
+    await openContactMenu(user, 'pending@x.test')
     expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.verifyAria.replace(
-          '{{value}}',
-          'pending@x.test',
-        ),
-      }),
+      screen.queryByRole('menuitem', { name: zhCN.identifiers.verify }),
     ).toBeNull()
+    expect(
+      screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
+    ).toBeTruthy()
   })
 
   it('renders no verification chip for a username', async () => {
@@ -636,20 +647,21 @@ describe('IdentifiersSection', () => {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mount(respond)
+    const user = userEvent.setup()
 
     expect(await screen.findAllByText('ada')).toHaveLength(1)
     expect(screen.getByText('+14155550123')).toBeTruthy()
     // The username is permanent, so its group renders no removal action; the
-    // phone signs in through its own code route and stays removable.
+    // phone signs in through its own code route and stays removable from its
+    // trailing menu.
     expect(
       screen.queryByRole('button', {
         name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
       }),
     ).toBeNull()
+    await openContactMenu(user, '+14155550123')
     expect(
-      screen.getByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', '+14155550123'),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
     ).toBeEnabled()
     // The permanence note belongs to the username group, not to the phone row.
     expect(screen.getByText(zhCN.identifiers.usernamePermanent)).toBeTruthy()
@@ -716,12 +728,14 @@ describe('IdentifiersSection', () => {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mount(respond)
+    const user = userEvent.setup()
 
     expect(await screen.findAllByText('ada@x.test')).toHaveLength(2)
+    // With no password the address is not the withheld "last login name", so
+    // its menu keeps the removal item.
+    await openContactMenu(user, 'ada@x.test')
     expect(
-      screen.getByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@x.test'),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
     ).toBeTruthy()
     expect(screen.queryByText(zhCN.identifiers.lastLoginName)).toBeNull()
   })
@@ -779,10 +793,9 @@ describe('IdentifiersSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
+    await openContactMenu(user, 'ada@example.test')
     await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@example.test'),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
     )
     const dialog = await screen.findByRole('dialog')
     await user.click(
@@ -828,10 +841,9 @@ describe('IdentifiersSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
+    await openContactMenu(user, 'ada@example.test')
     await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@example.test'),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
     )
     const dialog = await screen.findByRole('dialog')
     await user.click(
@@ -868,10 +880,9 @@ describe('IdentifiersSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
+    await openContactMenu(user, 'ada@example.test')
     await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@example.test'),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
     )
     const dialog = await screen.findByRole('dialog')
     await user.click(
@@ -938,10 +949,9 @@ describe('IdentifiersSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
+    await openContactMenu(user, 'ada@x.test')
     await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@x.test'),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
     )
     const dialog = await screen.findByRole('dialog')
     await user.click(
@@ -1031,10 +1041,9 @@ describe('IdentifiersSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
+    await openContactMenu(user, 'ada@example.test')
     await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@example.test'),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
     )
     const confirm = await screen.findByRole('dialog')
     await user.click(
@@ -2021,8 +2030,8 @@ describe('IdentifiersSection', () => {
   })
 
   it('raises the identifier actions to the 44px floor under a coarse pointer', async () => {
-    // The row remove and the add-open controls are compact actions; on a
-    // finger-driven device each one gates up to the 44x44 floor.
+    // The row's trailing actions button and the add-open control are compact
+    // actions; on a finger-driven device each one gates up to the 44x44 floor.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -2036,11 +2045,14 @@ describe('IdentifiersSection', () => {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mount(respond)
-    const remove = await screen.findByRole('button', {
-      name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@example.test'),
+    const actions = await screen.findByRole('button', {
+      name: zhCN.identifiers.actionsAria.replace(
+        '{{value}}',
+        'ada@example.test',
+      ),
     })
     const add = screen.getByRole('button', { name: zhCN.identifiers.add.open })
-    expect(hasCoarsePointerTouchTarget(remove)).toBe(true)
+    expect(hasCoarsePointerTouchTarget(actions)).toBe(true)
     expect(hasCoarsePointerTouchTarget(add)).toBe(true)
   })
 
@@ -2235,10 +2247,9 @@ describe('IdentifiersSection', () => {
     renderWithProviders(<IdentifiersSection session={rig.session} />)
     const user = userEvent.setup()
 
+    await openContactMenu(user, 'second@x.test')
     await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.identifiers.verifyAria.replace('{{value}}', 'second@x.test'),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
     )
     await user.click(
       screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
@@ -2939,10 +2950,9 @@ describe('IdentifiersSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
+    await openContactMenu(user, 'second@x.test')
     await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.identifiers.verifyAria.replace('{{value}}', 'second@x.test'),
-      }),
+      screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
     )
     await user.click(
       screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
@@ -3739,6 +3749,108 @@ describe('IdentifiersSection', () => {
     )
     const dialog = await screen.findByRole('dialog')
     expect(dialog).toHaveTextContent(zhCN.identifiers.confirmTitle)
+  })
+
+  it('collects a merged contact row\'s verify and remove into its trailing menu', async () => {
+    let removed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: false,
+            identifiers: removed
+              ? []
+              : [
+                  identifier({
+                    id: 'id-email',
+                    kind: 'email',
+                    value: 'ada@example.test',
+                    proven: false,
+                    verified_at: '',
+                    verified_via: 'admin',
+                  }),
+                ],
+          }),
+        )
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/identifiers/id-email'
+      ) {
+        removed = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await screen.findAllByText('ada@example.test')
+    // The merged view's contact row carries one trailing menu button; the
+    // verify and remove buttons no longer stand inline on the row.
+    expect(
+      screen.getAllByRole('button', {
+        name: zhCN.identifiers.actionsAria.replace(
+          '{{value}}',
+          'ada@example.test',
+        ),
+      }),
+    ).toHaveLength(1)
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.identifiers.verifyAria.replace(
+          '{{value}}',
+          'ada@example.test',
+        ),
+      }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.identifiers.removeAria.replace(
+          '{{value}}',
+          'ada@example.test',
+        ),
+      }),
+    ).toBeNull()
+
+    // Both items are usable from the menu: the verify item opens the row's
+    // fixed-address flow, and the remove item still asks for confirmation
+    // before its write.
+    await openContactMenu(user, 'ada@example.test')
+    expect(
+      screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
+    ).toBeEnabled()
+    expect(
+      screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
+    ).toBeEnabled()
+    await user.click(
+      screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
+    )
+    expect(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+    ).toHaveValue('ada@example.test')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.cancel }),
+    )
+
+    await openContactMenu(user, 'ada@example.test')
+    await user.click(
+      screen.getByRole('menuitem', { name: zhCN.identifiers.remove }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent(zhCN.identifiers.confirmTitle)
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.identifiers.confirmLabel,
+      }),
+    )
+    await waitFor(() =>
+      expect(screen.getByText(zhCN.identifiers.empty.title)).toBeTruthy(),
+    )
+    expect(
+      rig.calls.filter((call) => call.method === 'DELETE'),
+    ).toHaveLength(1)
   })
 })
 
