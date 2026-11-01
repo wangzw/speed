@@ -125,6 +125,7 @@ class DerivationTest(unittest.TestCase):
         write(self.root / "pkg" / "alpha" / "alpha.go", ALPHA)
         write(self.root / "pkg" / "beta" / "beta.go", BETA)
         write(self.root / "pkg" / "mount" / "mount.go", MOUNT)
+        (self.root / "starters").mkdir()
 
     def tearDown(self) -> None:
         shutil.rmtree(self.root)
@@ -162,6 +163,7 @@ class DerivationTest(unittest.TestCase):
                 '\tgoneCode    = "gone-code"\n'
                 ")\n",
             )
+            (root / "starters").mkdir()
             derived, _, _ = m.derive(str(root))
             self.assertEqual(derived, {"gamma.gone_code"})
         finally:
@@ -170,11 +172,43 @@ class DerivationTest(unittest.TestCase):
     def test_a_tree_with_no_go_file_is_infrastructure(self) -> None:
         empty = pathlib.Path(tempfile.mkdtemp(prefix="platform-errors-empty-"))
         try:
+            (empty / "pkg").mkdir()
+            (empty / "starters").mkdir()
             code, _, err = run(empty)
             self.assertEqual(code, 2)
             self.assertIn("no Go file", err)
         finally:
             shutil.rmtree(empty)
+
+    def test_a_missing_backend_root_is_infrastructure(self) -> None:
+        # A workspace root the gate scans but that is not present is an
+        # infrastructure error: skipping it would silently shrink the derived
+        # set, and an empty set must never read as clean.
+        root = pathlib.Path(tempfile.mkdtemp(prefix="platform-errors-missing-"))
+        try:
+            write(root / "pkg" / "alpha" / "alpha.go", ALPHA)
+            code, _, err = run(root)
+            self.assertEqual(code, 2)
+            self.assertIn("backend root starters/ is missing", err)
+        finally:
+            shutil.rmtree(root)
+
+    def test_an_unreadable_go_file_is_infrastructure(self) -> None:
+        root = pathlib.Path(tempfile.mkdtemp(prefix="platform-errors-unreadable-"))
+        try:
+            write(root / "pkg" / "alpha" / "alpha.go", ALPHA)
+            (root / "starters").mkdir()
+            # A broken symlink named like a Go source is listed by the walk and
+            # fails to open, which is the unreadable-file path without needing
+            # a permission bit that a privileged test runner would ignore.
+            (root / "pkg" / "alpha" / "broken.go").symlink_to(
+                root / "pkg" / "alpha" / "absent.go"
+            )
+            code, _, err = run(root)
+            self.assertEqual(code, 2)
+            self.assertIn("could not be read", err)
+        finally:
+            shutil.rmtree(root)
 
 
 class CatalogTest(unittest.TestCase):
@@ -182,6 +216,7 @@ class CatalogTest(unittest.TestCase):
         self.root = pathlib.Path(tempfile.mkdtemp(prefix="platform-errors-"))
         write(self.root / "pkg" / "alpha" / "alpha.go", ALPHA)
         write(self.root / "pkg" / "mount" / "mount.go", MOUNT)
+        (self.root / "starters").mkdir()
         self.saved_kept = dict(m.KEPT)
         self.saved_duplicates = dict(m.DUPLICATES)
         m.KEPT = {}

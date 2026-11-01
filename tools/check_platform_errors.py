@@ -127,10 +127,11 @@ FRONTEND_SKIPPED_DIRS = frozenset(
 )
 
 # Catalog entries the backend does not write and that stay anyway, each with
-# the reason: the files of this repository that refer to the code. A reason
-# is a claim about the tree, and the gate does not re-run the reference scan
-# -- it says what the entry is for. An entry whose code the backend starts
-# writing is reported as a stale exemption.
+# the reason: the files of this repository that refer to the code. The gate
+# re-runs the reference scan over the frontend tree, so a reason that names a
+# file which no longer mentions the code is reported as a stale exemption --
+# the list cannot rot into claims nobody checks. An entry whose code the
+# backend starts writing is reported as stale in the same way.
 KEPT = {
     "admin.impersonation_reason_required": (
         "referenced by web/packages/product-shell/src/bootstrap.test.tsx as a "
@@ -220,7 +221,10 @@ class Source:
     def __init__(self, path: str):
         self.path = path
         self.dir = os.path.dirname(path)
-        self.text = _read(path)
+        try:
+            self.text = _read(path)
+        except OSError as exc:
+            _infra(f"error: {path} could not be read: {exc}")
 
     def consts(self) -> dict[str, str]:
         """The plain string constants declared on one line each."""
@@ -275,12 +279,18 @@ def _infra(message: str) -> None:
 
 
 def go_files(root: str) -> list[str]:
-    """Every non-test Go file under the backend roots, sorted."""
+    """Every non-test Go file under the backend roots, sorted.
+
+    A backend root the workspace names but that is not a directory is an
+    infrastructure error, not an empty module: skipping it would shrink the
+    derived set silently and could leave an empty set looking clean.
+    """
     found: list[str] = []
     for name in BACKEND_ROOTS:
         base = os.path.join(root, name)
         if not os.path.isdir(base):
-            continue
+            _infra(f"error: the backend root {name}/ is missing, so the backend's "
+                   "writable code set has no subject")
         for current, dirs, files in os.walk(base):
             dirs[:] = [d for d in dirs if d not in SKIPPED_DIRS]
             for filename in files:
