@@ -19,8 +19,10 @@
  * groups (or which mutually exclusive branches of one scope) the regions
  * serve. The workspace scan in the rule's test keeps the list exactly
  * equal to the set of multi-region components under each package's `src`
- * (the scope the lint config applies the rule to), so a new one must be
- * registered deliberately and a stale entry is removed.
+ * and the demo host's `src` (the scopes the two lint configs apply the
+ * rule to: the host is part of the product, so its own config turns the
+ * rule on over the same shared implementation and the same list), so a
+ * new one must be registered deliberately and a stale entry is removed.
  *
  * A queue of independent per-row transfers is the design's allowed
  * exception (an upload row is its own slot), and it does not trip this
@@ -47,10 +49,11 @@ const REGION_TAG_NAMES = new Set([
 
 /**
  * Components that legitimately render more than one region. Keyed by the
- * workspace-relative file and the component's declaration name; the
+ * file (a package source as `packages/...`, a demo host source as
+ * `starters/demo/web/src/...`) and the component's declaration name; the
  * reason states why the regions are separate control groups (or two
  * mutually exclusive branches of one scope). The scan test in
- * no-double-feedback-region.test.mjs holds this list to the tree.
+ * no-double-feedback-region.test.mjs holds this list to both trees.
  */
 export const WRITE_FEEDBACK_REGION_EXEMPTIONS = [
   {
@@ -115,16 +118,27 @@ export const WRITE_FEEDBACK_REGION_EXEMPTIONS = [
   },
 ]
 
-/** The workspace-relative path in a message: everything from `web/` on,
- * whichever directory the lint run started in. A path handed in already
- * relative to the workspace stays as it is. */
+/** The path in a message, relative to the repository for a host source
+ * and to `web/` for a package source, whichever directory the lint run
+ * started in. A path handed in already relative to its root stays as it
+ * is. */
 export function displayFile(filename) {
   const normalized = String(filename)
     .split(path.sep)
     .join('/')
     .replaceAll('\\', '/')
-  if (normalized.startsWith('packages/')) {
+  if (
+    normalized.startsWith('packages/') ||
+    normalized.startsWith('starters/')
+  ) {
     return normalized
+  }
+  // A starter is a program assembled from the packages, not a member of
+  // the package library; its sources are keyed from the repository root
+  // so a host file cannot collide with a package-relative one.
+  const startersIndex = normalized.lastIndexOf('/starters/')
+  if (startersIndex !== -1) {
+    return normalized.slice(startersIndex + 1)
   }
   const webIndex = normalized.lastIndexOf('/web/')
   if (webIndex !== -1) {

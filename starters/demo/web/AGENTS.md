@@ -48,6 +48,11 @@ program beside this directory embeds with `go:embed` and serves through
   enabled, and whether registration is offered, are the deployment's facts
   rather than text the page asserts. A product that wants its own copy adds
   it as host content.
+- **A control group reports through one feedback region.** The host's `src`
+  runs the workspace's `speed/no-double-feedback-region` rule from
+  `web/eslint-rules/`, with the same exemption list and the same reasons;
+  the host is part of the product, so a component that renders two
+  `WriteFeedbackRegion` elements can show two results at once there too.
 - **Every backend call goes through a generated operation** -- the platform's,
   from `@speed/api-sdk`, or the app's own, from `src/app-api` -- over the
   request function the assembly binds into the runtime seam

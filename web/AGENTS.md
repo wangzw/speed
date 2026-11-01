@@ -119,9 +119,11 @@ verbatim interpolation rests on. `speed/no-double-feedback-region` holds a
 component to one `WriteFeedbackRegion`: a feedback scope is one
 `useWriteFeedback` instance plus one region for its control group, and two
 regions in one component can show two results at once. Its message names
-the file, the component and the region count. Package tests and `test-utils/`
-are exempt by config for these rules, because fixture strings and scripted
-stand-ins are data.
+the file, the component and the region count. The demo host turns this rule
+on over its own `src` too: a host is part of the product, so it uses the same
+rule and the same exemption list rather than a copy. Package tests and
+`test-utils/` are exempt by config for these rules, because fixture strings
+and scripted stand-ins are data.
 
 ### One feedback region per component
 
@@ -160,10 +162,13 @@ of one scope):
 
 Adding a multi-region component means adding an entry with a reason; the
 rule's scan test (`no-double-feedback-region.test.mjs`) reads every
-runtime TSX file under `packages/*/src` -- the same scope the lint config
-gives the rule, with tests and `test-utils/` left out -- and fails when
-the list and the tree disagree in either direction, so a new component
-cannot slip through unregistered and a stale entry is removed. A queue
+runtime TSX file under `packages/*/src` and the demo host's
+`starters/demo/web/src` -- the scopes the two lint configs give the rule,
+with tests and `test-utils/` left out -- and fails when the list and the
+trees disagree in either direction, so a new component cannot slip
+through unregistered and a stale entry is removed. A package entry is
+keyed from `web/` (`packages/...`), a host entry from the repository root
+(`starters/demo/web/src/...`). A queue
 of independent per-row transfers is the design's allowed exception (each
 upload row is its own slot): `FileUploader` renders each row's status as
 text from its `rows` props and never renders `WriteFeedbackRegion`, and a

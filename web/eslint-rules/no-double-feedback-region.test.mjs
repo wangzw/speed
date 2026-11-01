@@ -5,13 +5,14 @@
  *   pnpm exec vitest run eslint-rules/no-double-feedback-region.test.mjs
  *
  * The RuleTester cases pin the rule's judgement; the final suite scans
- * every runtime TSX file under web/packages/<name>/src -- the scope the
- * workspace lint config gives the rule -- and holds the exemption list
- * exactly equal to the multi-region components in the tree, so a new one
- * cannot slip in unregistered and a stale entry cannot linger.
+ * every runtime TSX file under web/packages/<name>/src and the demo
+ * host's src -- the scopes the workspace and host lint configs give the
+ * rule -- and holds the exemption list exactly equal to the multi-region
+ * components in either tree, so a new one cannot slip in unregistered and
+ * a stale entry cannot linger.
  *
  * Test snippets are fixture code for the rule under test; the scanned
- * files are the packages' own source.
+ * files are the packages' and the host's own source.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
@@ -53,6 +54,8 @@ function runRule(valid, invalid) {
 const SOCIAL_BINDINGS_FILE =
   'packages/account-ui/src/SocialBindingsSection.tsx'
 const ACCOUNTS_PAGE_FILE = 'packages/console-ui/src/AccountsPage.tsx'
+const HOST_CONTROL_FILE =
+  'starters/demo/web/src/review-notice-control.tsx'
 
 describe('no-double-feedback-region rule', () => {
   it('accepts one region per component', () => {
@@ -204,6 +207,29 @@ describe('no-double-feedback-region rule', () => {
     )
   })
 
+  it('flags two regions in a demo host component by its repository path', () => {
+    runRule(
+      [],
+      [
+        {
+          filename: HOST_CONTROL_FILE,
+          code:
+            'function ReviewNoticeControl() { return <><WriteFeedbackRegion outcome={a.outcome} /><WriteFeedbackRegion outcome={b.outcome} /></> }',
+          errors: [
+            {
+              messageId: 'doubleRegion',
+              data: {
+                file: HOST_CONTROL_FILE,
+                component: 'ReviewNoticeControl',
+                count: 2,
+              },
+            },
+          ],
+        },
+      ],
+    )
+  })
+
   it('spells the file and the count in the message', () => {
     runRule(
       [],
@@ -266,6 +292,7 @@ function parseProgram(file) {
 describe('no-double-feedback-region exemptions', () => {
   const webRoot = fileURLToPath(new URL('..', import.meta.url))
   const packagesRoot = join(webRoot, 'packages')
+  const hostSrcRoot = join(webRoot, '..', 'starters/demo/web/src')
 
   /** The `src` directory of every workspace package that has one. */
   function packageSrcDirs() {
@@ -274,17 +301,34 @@ describe('no-double-feedback-region exemptions', () => {
       .filter((dir) => existsSync(dir) && statSync(dir).isDirectory())
   }
 
+  /** Every runtime source root the two lint configs give the rule, with
+   * the prefix its exemption entries use: a package keys from `web/`, the
+   * demo host from the repository root. */
+  function sourceScopes() {
+    return [
+      ...packageSrcDirs().map((dir) => ({
+        root: dir,
+        prefix: `packages/${relative(packagesRoot, dir).split('\\').join('/')}/`,
+      })),
+      { root: hostSrcRoot, prefix: 'starters/demo/web/src/' },
+    ]
+  }
+
   function multiRegionComponents() {
     const components = []
-    const files = packageSrcDirs().flatMap((dir) => runtimeTsxFiles(dir))
-    for (const file of files) {
-      for (const entry of collectRegionComponents(parseProgram(file))) {
-        if (entry.nodes.length >= 2) {
-          components.push({
-            file: `packages/${relative(packagesRoot, file).split('\\').join('/')}`,
-            component: entry.component,
-            count: entry.nodes.length,
-          })
+    for (const scope of sourceScopes()) {
+      if (!existsSync(scope.root) || !statSync(scope.root).isDirectory()) {
+        continue
+      }
+      for (const file of runtimeTsxFiles(scope.root)) {
+        for (const entry of collectRegionComponents(parseProgram(file))) {
+          if (entry.nodes.length >= 2) {
+            components.push({
+              file: `${scope.prefix}${relative(scope.root, file).split('\\').join('/')}`,
+              component: entry.component,
+              count: entry.nodes.length,
+            })
+          }
         }
       }
     }

@@ -7,8 +7,9 @@
  * importing the web config wholesale and appending the speed discipline
  * rules over the app's own src/. Flat-config objects are anchored to the
  * directory of the config that declared them, so the imported web config's
- * `packages/*` patterns never reach these files -- the two rules are restated
- * here, scoped to this app.
+ * `packages/*` patterns never reach these files -- the rules are restated
+ * here, scoped to this app, and each keeps the shared implementation and
+ * exemption list in web/eslint-rules/.
  *
  * The app's runtime src must not carry inline user-facing text (every string
  * renders from the demo namespace), and must not call HTTP directly: the app
@@ -41,6 +42,7 @@ export default [
     ...APP_RUNTIME_SRC,
     rules: {
       'speed/no-dangerous-html': 'error',
+      'speed/no-double-feedback-region': 'error',
       'speed/no-literal-text': 'error',
     },
   },
