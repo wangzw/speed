@@ -1,10 +1,6 @@
 ---
 name: document-standards
 description: Documentation standards for design documents, requirements documents and architecture decision records — path and language configuration, the rules common to every document type, and the entry point to each type's own standard. Load before creating or editing any document under the configured documentation paths. Use when writing or editing a design document, creating an architecture overview, documenting a module or adding one to the design docs, writing a requirements document, writing an architecture decision record, or reviewing documentation.
-paths:
-  - "docs/design/**/*.md"
-  - "docs/prd/**/*.md"
-  - "docs/adr/**/*.md"
 ---
 
 # Document Standards
