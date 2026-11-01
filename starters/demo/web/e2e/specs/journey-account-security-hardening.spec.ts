@@ -85,6 +85,12 @@ const WINDOW_MARGIN_MS = 3_000
 /** The password the account holds after the change. */
 const NEW_PASSWORD = 'e2e-Password-456'
 
+// The names this journey gives its factors. Enrolment stores a name, and the
+// sign-in and step-up surfaces offer an account's factors by that name rather
+// than by kind, so every selection below addresses the same fixed string.
+const TOTP_FACTOR_NAME = 'Work phone'
+const PASSKEY_FACTOR_NAME = 'Backup passkey'
+
 /** The home page's heading, the landing after a completed sign-in. */
 function homeHeading(page: Page): Locator {
   return page.getByRole('heading', {
@@ -206,8 +212,8 @@ async function nextTotpCode(secret: string): Promise<string> {
 
 /**
  * Complete a password sign-in's second factor with the authenticator app. The
- * factor step offers the account's active factors; choosing the authenticator
- * app opens its six-digit challenge.
+ * factor step offers the account's active factors by their stored names;
+ * choosing this journey's authenticator opens its six-digit challenge.
  */
 async function completeTotpFactor(page: Page, secret: string): Promise<void> {
   // The step belongs to the password channel, which renders in its own panel.
@@ -218,7 +224,7 @@ async function completeTotpFactor(page: Page, secret: string): Promise<void> {
     exact: true,
   })
   const choice = panel.getByRole('button', {
-    name: copy('authUi', 'signInFlow.factorKind.totp'),
+    name: TOTP_FACTOR_NAME,
     exact: true,
   })
   await expect(choice).toBeVisible()
@@ -431,7 +437,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
           exact: true,
         })
         .click()
-      await submitFactorNameForm(mfa)
+      await submitFactorNameForm(mfa, TOTP_FACTOR_NAME)
 
       // The wizard shows the setup URI as a scannable symbol; the manual
       // disclosure reveals the base32 key behind it for setup by hand.
@@ -523,7 +529,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
           exact: true,
         })
         .click()
-      await submitFactorNameForm(mfa)
+      await submitFactorNameForm(mfa, PASSKEY_FACTOR_NAME)
       await expect(
         mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
           exact: true,
@@ -772,20 +778,20 @@ test('account-security-hardening: an account enrols two factors, ends another de
       ).toBeVisible()
       await expect(
         dialog.getByRole('button', {
-          name: copy('accountUi', 'mfa.factor.kind.webauthn'),
+          name: PASSKEY_FACTOR_NAME,
           exact: true,
         }),
       ).toHaveCount(1)
       await expect(
         dialog.getByRole('button', {
-          name: copy('accountUi', 'mfa.factor.kind.totp'),
+          name: TOTP_FACTOR_NAME,
           exact: true,
         }),
       ).toHaveCount(0)
 
       await dialog
         .getByRole('button', {
-          name: copy('accountUi', 'mfa.factor.kind.webauthn'),
+          name: PASSKEY_FACTOR_NAME,
           exact: true,
         })
         .click()

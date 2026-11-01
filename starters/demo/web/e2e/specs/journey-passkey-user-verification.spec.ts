@@ -59,6 +59,12 @@ import {
 // journey, so a slow assembly reports the harness's own diagnostics.
 test.describe.configure({ timeout: 300_000 })
 
+// The names this journey gives its factors. Enrolment stores a name, and the
+// sign-in surface offers an account's factors by that name rather than by
+// kind, so every selection below addresses the same fixed string.
+const TOTP_FACTOR_NAME = 'Work phone'
+const PASSKEY_FACTOR_NAME = 'Backup passkey'
+
 /** The home page's heading, the landing after a completed sign-in. */
 function homeHeading(page: Page): Locator {
   return page.getByRole('heading', {
@@ -159,7 +165,7 @@ async function completeTotpFactor(page: Page, secret: string): Promise<void> {
     exact: true,
   })
   const choice = panel.getByRole('button', {
-    name: copy('authUi', 'signInFlow.factorKind.totp'),
+    name: TOTP_FACTOR_NAME,
     exact: true,
   })
   await expect(choice).toBeVisible()
@@ -228,7 +234,7 @@ async function enrolTotp(page: Page): Promise<string> {
       exact: true,
     })
     .click()
-  await submitFactorNameForm(mfa)
+  await submitFactorNameForm(mfa, TOTP_FACTOR_NAME)
 
   // The wizard shows the setup URI as a scannable symbol; the manual
   // disclosure reveals the base32 key behind it for setup by hand.
@@ -283,7 +289,7 @@ async function enrolPasskey(page: Page): Promise<void> {
       exact: true,
     })
     .click()
-  await submitFactorNameForm(mfa)
+  await submitFactorNameForm(mfa, PASSKEY_FACTOR_NAME)
   await expect(
     mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
       exact: true,
