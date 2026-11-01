@@ -66,12 +66,14 @@
  * BindingCallbackHandler. `returnTo` thus moves the round trip's landing
  * point into the flow record itself; in a split-origin deployment it is
  * an absolute URL under an origin the deployment trusts (the server
- * accepts a path or such a URL). A refused start renders its code text in
- * the add area's own write-feedback region, and the button re-arms for
- * another attempt. Starting the flow does not rotate this session's
- * credential -- the callback handler completes it -- so no
- * identity-transition window is opened here. One bind flow at a
- * time: while a channel's flow is being started every provider button is
+ * accepts a path or such a URL). The rows' unlink actions and the add
+ * area's flow starts report through the list's one write-feedback scope:
+ * its one region below the rows holds at most one result, so a refused
+ * start replaces an earlier unlink confirmation instead of standing beside
+ * it, and the button re-arms for another attempt. Starting the flow does
+ * not rotate this session's credential -- the callback handler completes
+ * it -- so no identity-transition window is opened here. One bind flow at
+ * a time: while a channel's flow is being started every provider button is
  * disabled, so a second start -- any channel's -- cannot begin before the
  * first answers. When every redirect method is already bound the add area
  * does not render.
@@ -322,10 +324,11 @@ export function SocialBindingsSection({
     readonly label: string
   } | null>(null)
   const [busyProvider, setBusyProvider] = useState<string | null>(null)
-  // Two control groups, two scopes: the bound rows' unlink result below the
-  // list, and the add area's flow-start result inside the add area.
-  const unbindFeedback = useWriteFeedback()
-  const authorizeFeedback = useWriteFeedback()
+  // One write scope for the whole list: the bound rows' unlink actions and
+  // the add area's flow starts report through one slot, rendered in one
+  // region below the rows, so two results never stand side by side and the
+  // attempt that settles last is the one the region shows.
+  const feedback = useWriteFeedback()
   // The unlink a won step-up re-runs, remembered through the shared gate so
   // the challenge replays exactly that row once and a cancel replays none.
   const gate = useStepUpGate<BindingAction>((action) => {
@@ -439,7 +442,7 @@ export function SocialBindingsSection({
     pending || (rows !== undefined && (rows.length > 0 || hasAddArea))
 
   function handleUnbind(linkId: string, providerLabel: string): Promise<void> {
-    return unbindFeedback.run(async () => {
+    return feedback.run(async () => {
       try {
         // The unlink replaces this session's credential as it commits, so
         // the window is open before the write and closes once the profile
@@ -489,7 +492,7 @@ export function SocialBindingsSection({
       return Promise.resolve()
     }
     setBusyProvider(method.name)
-    return authorizeFeedback.run(async () => {
+    return feedback.run(async () => {
       try {
         const state = await session.startAuthenticatedFlow({
           purpose: 'link',
@@ -519,10 +522,7 @@ export function SocialBindingsSection({
   // Disabled through the whole attempt, including the profile refetch that
   // follows the mutation, so the row's unlink action cannot re-arm while the
   // scope is still pending -- the dialog closing is not the attempt settling.
-  const unbindBusy =
-    unbindMutation.isPending ||
-    unbindFeedback.pending ||
-    authorizeFeedback.pending
+  const unbindBusy = unbindMutation.isPending || feedback.pending
 
   return (
     <>
@@ -725,25 +725,16 @@ export function SocialBindingsSection({
               })}
             </Box>
 
-            {/* The flow-start group's result sits below the rows that start
-                it; the unlink group's own region is outside this content so
-                it survives the list emptying. */}
-            {authorizeFeedback.outcome === null ? null : (
-              <Box sx={{ mt: 2 }}>
-                <WriteFeedbackRegion outcome={authorizeFeedback.outcome} />
-              </Box>
-            )}
           </Box>
         )}
       </AccountAsyncSection>
-      {/* The unlink control group's result, below the list and the add area
-          whose row actions and flow starts write into it, and outside the
-          settled content, so it survives the list becoming empty when the
-          last binding goes. Its success names the provider, and a failure is
-          one banner in the same place. */}
-      {unbindFeedback.outcome === null ? null : (
-        <WriteFeedbackRegion outcome={unbindFeedback.outcome} sx={{ mt: 1.5 }} />
-      )}
+      {/* The list's one write scope: the unlink row actions and the add
+          area's flow starts both report here, so their results share one
+          slot and never stand side by side. The region sits below the rows
+          and outside the settled content, so it survives the list becoming
+          empty when the last binding goes. Its success names the provider,
+          and a failure is one banner in the same place. */}
+      <WriteFeedbackRegion outcome={feedback.outcome} sx={{ mt: 1.5 }} />
       </SectionCard>
 
       <ConfirmDialog

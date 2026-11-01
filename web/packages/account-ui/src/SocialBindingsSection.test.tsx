@@ -14,10 +14,10 @@
  * descriptors; an unlink DELETE-s the link and refetches the profile, and
  * its row action stays disabled through that refetch; a refused unlink (the
  * account's last sign-in method) renders its code text below the list and
- * leaves the row; the unlink and add-area scopes never clear each other; and
- * the add area's click starts a link flow carrying the host's `return_to` at
- * the top level, whose redirect step's URL is reported upward (the section
- * never navigates).
+ * leaves the row; the unlink actions and the add area's flow starts share one
+ * write scope, so their results never stand side by side; and the add area's
+ * click starts a link flow carrying the host's `return_to` at the top level,
+ * whose redirect step's URL is reported upward (the section never navigates).
  */
 
 import { describe, expect, it } from 'vitest'
@@ -529,10 +529,10 @@ describe('SocialBindingsSection', () => {
     await waitFor(() => expect(rowUnlink()).toBeNull())
   })
 
-  it('keeps the unlink result when the add area settles later', async () => {
-    // Two control groups, two scopes: the unlink success and the add area's
-    // refused start must stand side by side, each in its own result
-    // position -- one group's settling never clears the other's.
+  it('holds one result slot for the unlink and add-area writes', async () => {
+    // One list, one scope: the unlink success and the add area's refused
+    // start report through the same slot, so they can never stand side by
+    // side -- the attempt that settles last replaces the one before it.
     let unlinked = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -588,15 +588,14 @@ describe('SocialBindingsSection', () => {
     )
     expect(await screen.findByText(unlinkedText)).toBeTruthy()
 
-    // Now drive the add area's scope to a failure of its own.
+    // Now drive the same scope to a failure from the add area.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await user.click(bindButton('GitHub'))
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
-    // The unlink success is still there, in its own status region.
-    const confirmation = screen.getByText(unlinkedText)
-    expect(confirmation.closest('[role="status"]')).not.toBeNull()
-    expect(confirmation.closest('[role="status"]')).not.toBe(alert)
+    // The failure is the slot's one result: the earlier unlink confirmation
+    // was cleared when this attempt started and does not stand beside it.
+    expect(screen.queryByText(unlinkedText)).toBeNull()
   })
 
   it('keeps the unbind confirmation when the list empties', async () => {
