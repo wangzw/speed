@@ -266,14 +266,15 @@
     },
     "colorMode": {
       "title": "颜色模式",
-      "description": "选择深色或浅色外观，或跟随设备。",
+      "description": "选择深色或浅色外观，或保持未选择以跟随设备外观。",
       "label": "颜色模式",
       "options": {
         "dark": "深色",
         "light": "浅色",
-        "system": "跟随设备"
+        "system": "未选择（跟随设备外观）"
       },
-      "saved": "颜色模式已设为{{value}}。"
+      "saved": "颜色模式已设为{{value}}。",
+      "savedSystem": "颜色模式已设为跟随设备外观。"
     }
   },
   "preferences": {
@@ -283,13 +284,15 @@
       "label": "语言",
       "notChosen": "未选择（跟随设备语言）",
       "helper": "我们发给你的邮件及其他消息使用的语言。",
-      "saved": "语言已设为 {{value}}。"
+      "saved": "语言已设为 {{value}}。",
+      "followsDevice": "语言已设为跟随设备语言。"
     },
     "timezone": {
       "label": "时区",
       "notChosen": "未选择（跟随设备时区）",
       "helper": "账户中显示的时间使用该时区。",
-      "saved": "时区已设为 {{value}}。"
+      "saved": "时区已设为 {{value}}。",
+      "followsDevice": "时区已设为跟随设备时区。"
     },
     "error": {
       "title": "无法加载偏好设置",

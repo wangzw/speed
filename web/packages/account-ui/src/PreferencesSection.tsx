@@ -160,12 +160,14 @@ export function PreferencesSection() {
       // control and the chosen value.
       const target = locale === '' ? i18n.language : locale
       const translate = i18n.getFixedT(target, ACCOUNT_UI_NAMESPACE)
-      const value =
-        locale === ''
-          ? translate('preferences.language.notChosen')
-          : languageDisplayName(locale, target, languageOptions)
+      // Clearing the preference is a behaviour, not a language choice, so
+      // it confirms with its own sentence instead of naming the
+      // "not chosen" option.
+      if (locale === '') {
+        return translate('preferences.language.followsDevice')
+      }
       return translate('preferences.language.saved', {
-        value,
+        value: languageDisplayName(locale, target, languageOptions),
         interpolation: { escapeValue: false },
       })
     })
@@ -177,8 +179,14 @@ export function PreferencesSection() {
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),
       })
+      // Clearing the preference is a behaviour, not a zone choice, so it
+      // confirms with its own sentence instead of naming the "not chosen"
+      // option.
+      if (timezone === '') {
+        return t('preferences.timezone.followsDevice')
+      }
       return t('preferences.timezone.saved', {
-        value: timezone === '' ? t('preferences.timezone.notChosen') : timezone,
+        value: timezone,
         interpolation: { escapeValue: false },
       })
     })

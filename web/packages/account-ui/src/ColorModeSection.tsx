@@ -84,7 +84,11 @@ export function ColorModeSection({
       onApplied(mode)
       // The confirmation names the control and the chosen value, like the
       // language and time-zone writes: an account-setting write without a
-      // success line reads as unattempted.
+      // success line reads as unattempted. The unchosen value is a
+      // behaviour, not a mode name, so it confirms with its own sentence.
+      if (mode === 'system') {
+        return t('appearance.colorMode.savedSystem')
+      }
       return t('appearance.colorMode.saved', {
         value: t(OPTION_LABEL_KEYS[mode]),
         interpolation: { escapeValue: false },

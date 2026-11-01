@@ -219,6 +219,23 @@ describe('ColorModeSection', () => {
     )
   })
 
+  it('confirms the unchosen mode with its own follow-the-device sentence', async () => {
+    const { respond, stored } = makeProfileResponder({ color_mode: 'dark' })
+    mountSection(respond, 'dark')
+
+    const select = modeSelect()
+    await waitFor(() =>
+      expect(select).toHaveTextContent(zhCN.appearance.colorMode.options.dark),
+    )
+    chooseOption(select, zhCN.appearance.colorMode.options.system)
+
+    // The stored value stays `system`; the copy reads as a behaviour.
+    await waitFor(() => expect(stored.color_mode).toBe('system'))
+    expect(
+      await screen.findByText(zhCN.appearance.colorMode.savedSystem),
+    ).toBeInTheDocument()
+  })
+
   it('leaves the shown value unchanged and renders the failure text when the write is refused', async () => {
     const respond: RealResponder = async (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {

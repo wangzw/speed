@@ -266,14 +266,15 @@
     },
     "colorMode": {
       "title": "Color mode",
-      "description": "Choose a dark or light appearance, or follow the device.",
+      "description": "Choose a dark or light appearance, or leave it unchosen to follow your device's appearance.",
       "label": "Color mode",
       "options": {
         "dark": "Dark",
         "light": "Light",
-        "system": "Follow device"
+        "system": "Not chosen (use your device's appearance)"
       },
-      "saved": "Color mode set to {{value}}."
+      "saved": "Color mode set to {{value}}.",
+      "savedSystem": "Color mode now follows your device's appearance."
     }
   },
   "preferences": {
@@ -283,13 +284,15 @@
       "label": "Language",
       "notChosen": "Not chosen (use your device's language)",
       "helper": "The language for emails and other messages we send you.",
-      "saved": "Language set to {{value}}."
+      "saved": "Language set to {{value}}.",
+      "followsDevice": "Language now follows your device's language."
     },
     "timezone": {
       "label": "Time zone",
       "notChosen": "Not chosen (use your device's time zone)",
       "helper": "Times shown in your account use this time zone.",
-      "saved": "Time zone set to {{value}}."
+      "saved": "Time zone set to {{value}}.",
+      "followsDevice": "Time zone now follows your device's time zone."
     },
     "error": {
       "title": "Could not load preferences",

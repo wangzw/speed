@@ -331,14 +331,10 @@ describe('PreferencesSection', () => {
     await waitFor(() =>
       expect(language).toHaveTextContent(zhCN.preferences.language.notChosen),
     )
-    // The clearing write confirms itself too, naming the control and the
-    // "not chosen" value.
+    // The clearing write confirms with the follow-the-device sentence.
     await waitFor(() =>
       expect(regionOf(groupOf(language))).toHaveTextContent(
-        zhCN.preferences.language.saved.replace(
-          '{{value}}',
-          zhCN.preferences.language.notChosen,
-        ),
+        zhCN.preferences.language.followsDevice,
       ),
     )
   })
@@ -422,14 +418,10 @@ describe('PreferencesSection', () => {
     // Back to "not chosen": the clearing value is the empty string.
     chooseOption(timezone, zhCN.preferences.timezone.notChosen)
     await waitFor(() => expect(stored.time_zone).toBe(''))
-    // The clearing write confirms in the timezone scope, naming the control
-    // and the "not chosen" value.
+    // The clearing write confirms with the follow-the-device sentence.
     await waitFor(() =>
       expect(regionOf(groupOf(timezone))).toHaveTextContent(
-        zhCN.preferences.timezone.saved.replace(
-          '{{value}}',
-          zhCN.preferences.timezone.notChosen,
-        ),
+        zhCN.preferences.timezone.followsDevice,
       ),
     )
     const patches = rig.calls.filter((call) => call.method === 'PATCH')
