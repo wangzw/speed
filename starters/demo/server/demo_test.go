@@ -188,14 +188,14 @@ ops:
   title: demo
   version: 0.1.0
   description: "The demo assembly's API: every operation the modules named in this stack declare, merged from their OpenAPI fragments."
-  servers: ["http://localhost:8080"]
+  servers: ["http://localhost:8081"]
 observability:
   otel:
     service-name: demo
 authn:
   gate:
     mount:
-      public-url: "http://localhost:8080"
+      public-url: "http://localhost:8081"
   token:
     signing-key-file: "%s"
   mfa:
@@ -205,7 +205,7 @@ authn:
       rp-id: localhost
       rp-name: demo
       origins:
-        - "http://localhost:8080"
+        - "http://localhost:8081"
 workspace:
   personal:
     enabled: false

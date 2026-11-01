@@ -32,7 +32,7 @@
 http:
   listeners:
     backend:
-      address: "127.0.0.1:8080"
+      address: "127.0.0.1:8081"
   # The CORS layer guards the api endpoint. This stack serves the frontend
   # bundle from the same listener as the API, so a browser reaching the API from
   # the page needs no CORS headers and this policy is not exercised here. It is
@@ -51,7 +51,7 @@ ops:
   title: demo
   version: 0.1.0
   description: "The demo assembly's API: every operation the modules named in this stack declare, merged from their OpenAPI fragments."
-  servers: ["http://localhost:8080"]
+  servers: ["http://localhost:8081"]
 
 observability:
   otel:
@@ -69,7 +69,7 @@ authn:
       # to. It is the address the backend listener serves (http.listeners),
       # written by host name — a relying party id has to be a domain, so the
       # loopback address is localhost.
-      public-url: "http://localhost:8080"
+      public-url: "http://localhost:8081"
   # DEV: the token signing key. The program generates one at
   # var/token-signing-key.pem, relative to the working directory, on the first
   # run and keeps it afterwards. Replace it with your own key material before a
@@ -89,7 +89,7 @@ authn:
       rp-id: localhost
       rp-name: demo
       origins:
-        - "http://localhost:8080"
+        - "http://localhost:8081"
 
 # The host's own personal-tenant policy. Off by default: when on, an account
 # with no membership gets a personal tenant from POST /workspace/personal so a

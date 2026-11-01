@@ -38,10 +38,11 @@ fail the start rather than silently moving to another one.
 
 Run the backend on the compiled defaults first — `go -C starters/demo/server run .
 sqlite seed` once, then the same command with `sqlite serve` — which bind
-`127.0.0.1:8081`, this server's proxy target. A stack whose configuration binds
-another address (the `sqlite-memory` sample binds `127.0.0.1:8080`) needs
-`DEMO_WEB_BACKEND_PROXY` pointed at it, and `DEMO_WEB_PORT` moved so the two
-servers do not share a port. Then run `pnpm dev`.
+`127.0.0.1:8081`, this server's proxy target. Every sample configuration binds
+that same listener, so `pnpm dev` reaches them as they stand. A configuration
+that binds another address needs `DEMO_WEB_BACKEND_PROXY` pointed at it, and
+`DEMO_WEB_PORT` moved if that address is this server's own port. Then run
+`pnpm dev`.
 
 ## Build
 

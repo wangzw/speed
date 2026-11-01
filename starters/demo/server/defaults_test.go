@@ -478,6 +478,42 @@ func TestTheCompiledDefaultsNameOneListenerAndTheOpsPrefixes(t *testing.T) {
 		[]string{"/health", "/ready", "/openapi.json"})
 }
 
+// TestTheSampleStacksBindTheCompiledListener holds the six sample
+// configurations to the compiled defaults for the values a copy inherits unless
+// it changes them: the backend listener, the operations document's server
+// origin, the public URL the gateway advertises and the WebAuthn origin. A
+// sample is an override document and may choose another address, but what it
+// ships is the compiled default, so a copy starts on the socket a bare run
+// binds and the dev server's proxy target reaches it without a flag. A sample
+// left on an older port runs a socket nothing names.
+func TestTheSampleStacksBindTheCompiledListener(t *testing.T) {
+	clearHostEnvironment(t)
+	reader, err := config.Load(t.Context(), core.ProcessRegistry, nil)
+	if err != nil {
+		t.Fatalf("loading the configuration of a run with no primary source: %v", err)
+	}
+	var compiled compiledDefaults
+	if err := reader.Decode("", &compiled); err != nil {
+		t.Fatalf("decoding the compiled defaults: %v", err)
+	}
+	wantAddress := compiled.HTTP.Listeners["backend"].Address
+	wantServers := compiled.Ops.Servers
+	wantPublicURL := compiled.Authn.Gate.Mount.PublicURL
+	wantOrigins := compiled.Authn.MFA.WebAuthn.Origins
+
+	for _, sample := range testdataFiles {
+		t.Run(sample, func(t *testing.T) {
+			name := "testdata/" + sample
+			var doc compiledDefaults
+			readEffective(t, name, "file:"+filepath.Join("testdata", sample), "", &doc)
+			wantString(t, "http.listeners.backend.address", doc.HTTP.Listeners["backend"].Address, wantAddress)
+			wantStrings(t, "ops.servers", doc.Ops.Servers, wantServers)
+			wantString(t, "authn.gate.mount.public-url", doc.Authn.Gate.Mount.PublicURL, wantPublicURL)
+			wantStrings(t, "authn.mfa.webauthn.origins", doc.Authn.MFA.WebAuthn.Origins, wantOrigins)
+		})
+	}
+}
+
 // tokenIssuer reads the iss claim out of a JWT without verifying it. The case
 // is about which value the program signed, not about the signature's validity.
 func tokenIssuer(t *testing.T, token string) string {
