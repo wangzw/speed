@@ -15,7 +15,8 @@ read from the profile's `verification`, over the same identifier write pair),
 /api/v1/auth/me`), `AppearanceSection` (the controlled theme-preset
 picker: the host supplies the shelf and the labels, the section reports
 the pick and reads no theme provider), `ColorModeSection` (the
-dark/light/follow-device select over the profile's own `color_mode`: it
+dark/light/not-chosen (follow the device's appearance) select over the
+profile's own `color_mode`: it
 reads and writes that field itself, shows the host's `effective`
 preference when the account has none, and reports every successful write
 through `onApplied` -- applying it is the host's half),
@@ -24,7 +25,7 @@ and bulk revocation), `SocialBindingsSection` plus
 `BindingCallbackHandler` (the social bindings surface and the callback
 route that completes a link flow), and `MfaSection` (the two-step
 verification surface: the factors read from `GET /api/v1/auth/factors`, their
-label and row times, their rename and removal, and the enroll flow). The package sits one step above
+kind-grouped rows, their row menus, and the enroll flow). The package sits one step above
 `@speed/auth-ui`'s tier: reads go through the react-query hooks generated
 into `@speed/api-sdk` over the host's QueryClient (the shared-QueryClient
 contract: one host-bound QueryClient, never package-constructed), and
@@ -206,25 +207,35 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   banner. A phone is a sign-in method and an additional security factor;
   verifying it never lifts the account's verification restriction -- only a
   proved email address does.
-- **A factor row reads as its name and its register instants.** `MfaSection`
-  renders each row's label (the kind name when the label is empty), its
-  status, its creation time and its last successful verification (a row that
-  has never passed one says so), the two times through the same account
-  timezone chain as every other surface. The inline rename writes the label
-  through the generated mutation; an empty value clears it and the row falls
-  back to the kind, and a landed rename refetches the list. The enrollment
-  name form is prefilled with the browser/OS summary the session rows show
-  (`summarizeUserAgent`), editable, and may be submitted empty. The
-  enrollment wizard's heading names the kind being enrolled through the
-  parameterized `mfa.enroll.title`, whose method slot carries that kind's
-  `mfa.factor.kind.*` name (the generic other label for an unknown kind);
-  the name form and the flow's own steps share the heading. A wizard the reader
-  cancels, or the section unmounting while a wizard is open, releases the flow
-  through `session.abandonFlow()` so the server drops the pending row the
-  registration wrote (`releaseEnrollFlow`); each wizard instance releases at
-  most once, a settled flow releases nothing, the unmount release is deferred
-  one microtask so StrictMode's remount keeps the flow, and a failed release is
-  ignored rather than shown.
+- **A factor row reads as its name and its last verification instant.**
+  `MfaSection` groups the factors by kind; each assembled kind is a section
+  whose heading names it, and an enrollable group carries one add action on
+  that heading, worded "add another device" for a passkey that already has
+  an enabled row and "add" otherwise. A group lists its enabled and disabled
+  rows; a pending row is the enrollment's intermediate state and is
+  withheld. A disabled row carries a muted "disabled" marker and offers
+  removal alone. Each row shows its label (the kind name when the label is
+  empty) and its last successful verification (a row that has never passed
+  one says so), through the same account timezone chain as every other
+  surface. The row's trailing overflow menu holds rename and removal; the
+  inline rename writes the label through the generated mutation, an empty
+  value clears it and the row falls back to the kind, and a landed rename
+  refetches the list. The enrollment name form is prefilled with the
+  browser/OS summary the session rows show (`summarizeUserAgent`), editable,
+  and may be submitted empty. The wizard opens inside the enrolling kind's
+  group and replaces its rows; its heading names the kind being enrolled
+  through the parameterized `mfa.enroll.title`, whose method slot carries
+  that kind's `mfa.factor.kind.*` name (the generic other label for an
+  unknown kind). Every step states what confirming does before its controls,
+  and the step's cancel sits on the left of its confirm with the ordinary
+  action-row spacing; the name form and the flow's own steps share the
+  heading.
+  A wizard the reader cancels, or the section unmounting while a wizard
+  is open, releases the flow through `session.abandonFlow()` so the server
+  drops the pending row the registration wrote (`releaseEnrollFlow`); each
+  wizard instance releases at most once, a settled flow releases nothing,
+  the unmount release is deferred one microtask so StrictMode's remount
+  keeps the flow, and a failed release is ignored rather than shown.
 - **The error surface is a code whitelist with guarded vocabulary.**
   Every failure path resolves to one error code rendered in one
   `role="alert"` banner; codes outside the whitelist render
@@ -290,8 +301,8 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
    step-up, so the section opens no gate for it.
    The enrollment entries are the deployment's own answer too: the section
    reads `GET /api/v1/auth/methods`' `mfa.factors` (through `session.listMethods`)
-   and offers one entry per listed kind, so it never offers a factor the
-   assembly cannot complete. A known kind renders its
+   and offers an add action on each listed kind's section, so it never
+   offers a factor the assembly cannot complete. A known kind renders its
    `mfa.factor.kind.<kind>` name; an unknown kind renders
    `mfa.factor.kind.other` and still starts that kind's flow. The spec
    ships no disable operation: the server answers
