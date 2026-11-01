@@ -449,9 +449,10 @@ pinned in both languages by `src/internal/error-text.test.ts`.
   `DELETE flows/current`. The pending factor row the flow's first step
   wrote is removed by the `authn.mfa` sweep once it is past
   `pending-ttl`; until then it never appears among the factors a sign-in
-  offers. The account's own two-step verification list is the one place
-  it stays visible: it renders the row with a `pending` status until the
-  sweep removes it (`MfaSection`'s factor list).
+  offers, and the account's own two-step verification list withholds it
+  too: each kind's group renders only its enabled and disabled rows, so a
+  pending row is visible nowhere in this package until the sweep removes
+  it.
 
 Recorded, with the current disposition, in the README's Known
 limitations and deferrals. The load-bearing ones for a contributor: the
