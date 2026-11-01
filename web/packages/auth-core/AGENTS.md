@@ -367,6 +367,16 @@ to be public.
 
 ## Known limitations
 
+- **One browser binding holds one flow, and only the current one can be
+  abandoned -- a known constraint, not an oversight.** The flow is bound
+  by a single server-set flow cookie: a login start or an authenticated
+  start replaces whatever flow that cookie named before. `abandonFlow()`
+  issues `DELETE /api/v1/auth/flows/current`, so it releases the flow
+  currently bound, which is not necessarily the one a given view opened.
+  A view that holds an open enrollment wizard while another surface or tab
+  starts a new flow will, on cancel or unmount, abandon that newer flow;
+  the flow it opened is no longer bound and is left to its own expiry.
+  A view that needs to abandon a specific flow cannot express that here.
 - The token path is opt-in. The default (and the platform's own
   composition) is the cookie session: `createAuthSession()` with no
   store, `credentials` on the client and `restore()` at boot -- a reload
