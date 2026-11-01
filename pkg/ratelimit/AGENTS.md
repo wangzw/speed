@@ -173,8 +173,9 @@ The API is the package's godoc.
   bucket.** The gate at the front spends one token and refuses with a 429 when
   there is none; after `c.Next` a 404, or a 401 that refused a credential, spends
   the penalty on top, and a success spends nothing more. A 401 that asks an
-  authenticated caller to step up is not a credential refusal: the writer marks
-  it with `http.MarkStepUp`, the shield reads the mark with `http.IsStepUp`, and
+  authenticated caller to step up is not a credential refusal: `http.Fail` marks
+  that answer by its problem type wherever it is written, the shield reads the
+  mark with `http.IsStepUp`, and
   that answer pays the one token only, because it is an exchange the client must
   complete rather than the signature of an attack. Only those statuses are
   charged: they are what credential stuffing and tenant enumeration produce, and

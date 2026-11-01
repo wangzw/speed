@@ -31,6 +31,7 @@ var exportedSurface = []string{
 	"const ScopeTenants",
 	"const StageAuthorize",
 	"const StageGuard",
+	"const TypeStepUp",
 	"const StageIdentify",
 	"const StageObserve",
 	"const StageRecord",

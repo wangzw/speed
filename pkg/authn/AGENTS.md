@@ -213,10 +213,13 @@ field comments before writing a backend.
   `internal/mount`, written once.** The closed set of problem codes, each with
   the one status it is answered in, and the writers that answer in them: `Fail`
   for the 400s, the 409s and the 415, `Unauthorized` and `StepUpRequired` for the
-  401s, `Forbidden`, `Throttled`, `Unavailable` and `Busy`. `StepUpRequired` also
-  marks its answer with `speedhttp.MarkStepUp`, so a layer charging a source by
-  outcome can tell a step-up handshake from a refused credential; `Unauthorized`
-  does not mark, and that difference is the whole meaning of the mark. The request body
+  401s, `Forbidden`, `Throttled`, `Unavailable` and `Busy`. A 401 that asks for a
+  step-up is marked so a layer charging a source by outcome can tell a handshake
+  from a refused credential, and the mark comes from `speedhttp.Fail` recognising
+  the problem type: every path that writes `insufficient_user_authentication` —
+  this package's `StepUpRequired`, the gateway's middleware, the tenant admission
+  layer and a typed handler's fault — is covered, while `Unauthorized` writes a
+  code that never carries the mark. The request body
   decoder `Decode`, which takes only `application/json` and holds a body to 64
   KiB, a body over it being a 400 `bad-request` like every other body that is
   not one object. The wrapper `Wrap`, which every registration passes through: it

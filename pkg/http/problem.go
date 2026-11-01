@@ -67,6 +67,13 @@ func Fail(c *gin.Context, p Problem) {
 	if c.Writer.Written() {
 		return
 	}
+	// The step-up answer shares its status with a refused credential, and a
+	// layer that charges a source by outcome has to tell them apart. Every
+	// writer of the answer writes this type, so it is recognised here rather
+	// than at each of them.
+	if p.Status == nethttp.StatusUnauthorized && p.Type == TypeStepUp {
+		MarkStepUp(c)
+	}
 	respondProblem(c.Writer, c.Request, p, responderFrom(c.Request.Context()))
 }
 

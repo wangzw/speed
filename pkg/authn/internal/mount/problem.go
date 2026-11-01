@@ -174,10 +174,10 @@ const stepUpDescription = "A stronger or more recent authentication is required"
 // RFC 9470 defines the parameters for Bearer; carrying them on Cookie and Basic
 // is this capability's convention.
 //
-// The answer is marked with speedhttp.MarkStepUp: it is a 401 that asks an
-// already-authenticated caller to prove itself again, not one that refused a
-// credential, and a layer charging a source by outcome reads the mark to keep
-// the two apart.
+// This is the answer that asks an already-authenticated caller to prove itself
+// again, not one that refused a credential. speedhttp.Fail marks it by its
+// problem type, so every path that writes the type is marked, this one
+// included, and a layer charging a source by outcome keeps the two apart.
 func StepUpRequired(c *gin.Context, id authn.Identity, r authn.Requirement) {
 	var b strings.Builder
 	b.WriteString(challengeScheme(id.Challenge()))
@@ -192,7 +192,6 @@ func StepUpRequired(c *gin.Context, id authn.Identity, r authn.Requirement) {
 		b.WriteByte('"')
 	}
 	c.Header("WWW-Authenticate", b.String())
-	speedhttp.MarkStepUp(c)
 	problem(c, http.StatusUnauthorized, CodeInsufficientUserAuthentication)
 }
 

@@ -296,9 +296,10 @@ func (l *limiter) shieldThresholds(d *decision) shieldLimits {
 // that asks an already authenticated caller for a stronger or more recent
 // authentication — a step-up handshake — is also a 401, but a client repeats it
 // as its session ages, and charging for it would spend a legitimate client's
-// budget on the exchange it must complete. That answer is marked
-// (speedhttp.MarkStepUp) and shield reads the mark, so this function answers for
-// the status and the caller decides whether the mark excludes it.
+// budget on the exchange it must complete. speedhttp.Fail marks that answer by
+// its problem type, wherever it is written, and shield reads the mark, so this
+// function answers for the status and the caller decides whether the mark
+// excludes it.
 //
 // A 2xx is ordinary traffic and pays only the one token every request costs —
 // little, so a normal client barely notices the shield. Other refusals — a 403,
