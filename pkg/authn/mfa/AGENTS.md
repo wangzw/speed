@@ -124,10 +124,11 @@ dashboard or an audit query written against it.
   requires one is `ErrLastFactor`, refused before any session is touched. The
   session store is therefore a failure point of that route: a revocation or
   rotation failure after the row is gone answers 503, and repeating the request
-  finishes what is left, because a name that is no longer there reads as a removal
-  that has already happened and settles the sessions all the same. The price is
-  explicit: a DELETE naming a factor that never existed ends the caller's other
-  sessions and rotates the caller's own as well. A module with no session store
+  answers 404 `factor-not-found` because the row is gone, while still settling
+  the sessions; a rotation the repeat performs reaches the client on that 404's
+  cookie. The price is explicit: a DELETE naming a factor that never existed
+  answers 404 and ends the caller's other sessions and rotates the caller's own
+  as well. A module with no session store
   removes the factor and logs a warning that the sessions stay valid
   (`TestRemoveHasTheFactorCleanItsDataBeforeTheRowGoes`,
   `TestRemoveEndsNoSessionItself`,
@@ -167,12 +168,14 @@ dashboard or an audit query written against it.
   factors and nothing of a kind's own; `DELETE B/factors/:id` acts on the
   effective account's factors, requires `FreshLocalMulti(recent-window)` from
   the caller's own proof — an IdP's declared multi-factor does not satisfy it —
-  and reads a factor that is not the effective account's as one already gone;
+  and reads a factor that is not the effective account's as one already gone,
+  answering 404 with the problem type `urn:speed:authn:factor-not-found`;
   `PATCH B/factors/:id` writes the label of one of the effective account's
-  factors, answers the updated row, and answers 404 for another account's
-  identifier, the same as one that is not there. A label outside its domain is
-  400 and leaves the stored one as it is; the rename writes no audit row and
-  publishes no event
+  factors, answers the updated row, and answers 404 with the problem type
+  `urn:speed:authn:factor-not-found` for another account's identifier, the same
+  as one that is not there; telling the two apart would say the factor exists. A
+  label outside its domain is 400 and leaves the stored one as it is; the rename
+  writes no audit row and publishes no event
   (`TestTheRoutesAreTheThreeTheDesignNamesAndAllAreGuarded`,
   `TestDeletingAFactorNeedsAFreshMultiFactorAuthenticationVerifiedHere`,
   `TestAnImpersonatingIdentityRemovesTheEffectiveAccountsFactor`,

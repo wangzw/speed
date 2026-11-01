@@ -125,9 +125,12 @@ func (m *product) listFactors(ctx context.Context, _ struct{}) (AuthnMfaFactorLi
 // where the account's other sessions are ended after a successful removal of an
 // active factor and the requesting one is rotated: the device that removed the
 // factor stays signed in on a new token, and the token it held before no longer
-// authenticates. A factor that is not the caller's reads as one already gone,
-// because the route has no 404 among its answers and a different answer for
-// another account's identifier would say it exists.
+// authenticates. A factor that is not the caller's reads as one already gone and
+// answers 404 factor-not-found, the same as one that is not there, because a
+// different answer for another account's identifier would say it exists. The
+// name being gone may be a retry of an attempt whose factor removal landed
+// before its session settlement failed, so the route still settles the sessions
+// and carries the rotated cookie on that 404.
 func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -142,13 +145,25 @@ func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *spe
 	}
 	issued, err := m.removeFactorAndSettleSessions(ctx, id.Account(), in.ID, id.Session())
 	switch {
-	case err == nil, errors.Is(err, authn.ErrFactorNotEnrolled):
+	case err == nil:
 		reply := speedhttp.EmptyReply(http.StatusNoContent)
 		if cookie := m.issuedCookie(issued); cookie != nil {
 			mount.AddResponseHeader(ctx, "Cache-Control", cacheControlSetCookie)
 			reply = speedhttp.WithCookies(reply, cookie)
 		}
 		return reply, nil
+	case errors.Is(err, authn.ErrFactorNotEnrolled):
+		fault := speedhttp.Fault{
+			Status: http.StatusNotFound,
+			Type:   typePrefix + mount.CodeFactorNotFound,
+		}
+		if cookie := m.issuedCookie(issued); cookie != nil {
+			fault.Headers = []speedhttp.HeaderValue{
+				{Name: "Cache-Control", Value: cacheControlSetCookie},
+				{Name: "Set-Cookie", Value: cookie.String()},
+			}
+		}
+		return nil, fault
 	default:
 		return nil, m.answerError(id.Account(), err)
 	}
@@ -156,9 +171,9 @@ func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *spe
 
 // updateFactor answers PATCH /factors/:id. The label is metadata and is written
 // without a step-up: it changes how the factor is shown and nothing it can
-// verify with. A factor that is not the caller's answers 404, the same as one
-// that is not there, so another account's identifier says nothing about whether
-// it exists.
+// verify with. A factor that is not the caller's answers 404 factor-not-found,
+// the same as one that is not there, so another account's identifier says
+// nothing about whether it exists.
 func (m *product) updateFactor(ctx context.Context, in updateFactorInput) (AuthnMfaFactor, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -176,7 +191,7 @@ func (m *product) updateFactor(ctx context.Context, in updateFactorInput) (Authn
 		return AuthnMfaFactor{}, m.answerError(id.Account(), err)
 	}
 	if !found {
-		return AuthnMfaFactor{}, speedhttp.Fault{Status: http.StatusNotFound}
+		return AuthnMfaFactor{}, authnFailure(http.StatusNotFound, mount.CodeFactorNotFound)
 	}
 	return viewOf(rec), nil
 }

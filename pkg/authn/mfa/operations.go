@@ -117,6 +117,34 @@ var factorsOperation = speedhttp.NewOperation[struct{}, AuthnMfaFactorList](
 	),
 )
 
+// removeNotFoundResponse is the 404 of a removal whose identifier is not there
+// or is not the caller's. Both answer the one code, because telling them apart
+// would say the factor exists. The answer may also carry the requesting
+// session's rotated cookie: a name that is gone can be a retry of an attempt
+// whose removal landed before its session settlement failed, and settling here
+// finishes that work.
+var removeNotFoundResponse = func() speedhttp.Response {
+	response := speedhttp.ProblemResponseOf(http.StatusNotFound,
+		"No factor of the caller's account has this identifier: it is not there, or it belongs to "+
+			"another account. Both answer the problem type urn:speed:authn:factor-not-found. When "+
+			"an earlier removal had landed but its session settlement failed, this answer still "+
+			"settles the sessions and carries the requesting session's new cookie",
+		typePrefix+mount.CodeFactorNotFound)
+	response.Headers = []speedhttp.Header{
+		{
+			Name: "Cache-Control",
+			Description: "The no-cache directive a response that carries a rotated session cookie " +
+				"adds beside the mounter's no-store",
+		},
+		{
+			Name: "Set-Cookie",
+			Description: "The requesting session's new cookie, when the answer settled the sessions " +
+				"of a removal whose factor row was already gone",
+		},
+	}
+	return response
+}()
+
 // removeFactorOperation declares the route that removes one of the caller's own
 // factors. The handler builds the 204 itself, and each refusal is a fault whose
 // 401 carries the capability's challenge.
@@ -134,15 +162,18 @@ var removeFactorOperation = speedhttp.NewReplyOperation[removeFactorInput](
 		"The call requires a fresh multi-factor authentication verified "+
 		"locally, so one merely declared by an identity provider does not satisfy it; the requirement is "+
 		"the effective account's and the proof is the caller's own, so an impersonating identity removes "+
-		"the impersonated account's factor. A factor that is not the caller's answers the same as one already gone, "+
-		"so the route never answers 404 and repeating a removal is idempotent: it finishes any session "+
-		"revocation and rotation an earlier attempt could not. When the account has "+
+		"the impersonated account's factor. A factor that is not the caller's answers 404 with the "+
+		"problem type urn:speed:authn:factor-not-found, the same as one that is not there, so another "+
+		"account's identifier says nothing about whether it exists. The name being gone may be a retry "+
+		"of an attempt whose session settlement failed after the removal landed, so that 404 still "+
+		"settles the sessions and carries the requesting session's new cookie. When the account has "+
 		"mfa_required set, its last active factor cannot be removed.",
 	nil,
 	speedhttp.Failures(nil,
 		speedhttp.ProblemResponse(http.StatusBadRequest, "The factor identifier is malformed"),
 		unauthorized(removeChallengeHeader,
 			"No usable credential, or a fresh multi-factor authentication is required"),
+		removeNotFoundResponse,
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The factor is the account's last active factor, which cannot be removed while the account "+
 				"requires multi-factor authentication"),
@@ -153,9 +184,9 @@ var removeFactorOperation = speedhttp.NewReplyOperation[removeFactorInput](
 				"rotating the requesting session"),
 		speedhttp.Response{
 			Status: http.StatusNoContent,
-			Description: "The factor was removed, or is not the caller's and reads as already gone. " +
-				"When an active factor was removed, the answer also sets the requesting session's new " +
-				"cookie, and the token the request was made with no longer authenticates",
+			Description: "The factor was removed. When an active factor was removed, the answer also " +
+				"sets the requesting session's new cookie, and the token the request was made with no " +
+				"longer authenticates",
 		},
 	),
 )
@@ -173,8 +204,9 @@ var updateFactorOperation = speedhttp.NewOperation[updateFactorInput, AuthnMfaFa
 		"beyond the login session itself, and an impersonating identity renames the impersonated "+
 		"account's factor. The value is trimmed of surrounding whitespace and must be at most 64 "+
 		"characters with no control character; an empty value clears the name, and the module "+
-		"generates none. A factor that is not the caller's answers 404, the same as one that is "+
-		"not there, so another account's identifier says nothing about whether it exists.",
+		"generates none. A factor that is not the caller's answers 404 with the problem type "+
+		"urn:speed:authn:factor-not-found, the same as one that is not there, so another account's "+
+		"identifier says nothing about whether it exists.",
 	&speedhttp.RequestBody{
 		MediaType: "application/json",
 		Description: "The factor's new label. The member is required and an empty value clears the " +
@@ -192,7 +224,10 @@ var updateFactorOperation = speedhttp.NewOperation[updateFactorInput, AuthnMfaFa
 			"The factor identifier is malformed, or the label is outside its domain",
 			typePrefix+mount.CodeBadRequest),
 		unauthorized(plainChallengeHeader, "No usable credential"),
-		speedhttp.ProblemResponse(http.StatusNotFound, "No such factor of the caller's account"),
+		speedhttp.ProblemResponseOf(http.StatusNotFound,
+			"No factor of the caller's account has this identifier: it is not there, or it belongs "+
+				"to another account. Both cases answer the problem type urn:speed:authn:factor-not-found",
+			typePrefix+mount.CodeFactorNotFound),
 		speedhttp.ProblemResponseOf(http.StatusUnsupportedMediaType, "The request body is not application/json",
 			typePrefix+mount.CodeUnsupportedMediaType),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable,

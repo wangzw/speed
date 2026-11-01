@@ -79,6 +79,7 @@ var codeTable = []struct {
 	{"human-verification-required", 403},
 	{"password-reset-closed", 403},
 	{"password-reset-unavailable", 403},
+	{"factor-not-found", 404},
 	{"conflict", 409},
 	{"login-identifier-required", 409},
 	{"last-login-method", 409},
@@ -124,7 +125,7 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 		CodeInsufficientUserAuthentication, CodeMethodDisabled, CodeAccountUnavailable,
 		CodeImpersonationRestricted, CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed,
 		CodeContactRequired, CodeHumanVerificationRequired, CodePasswordResetClosed,
-		CodePasswordResetUnavailable, CodeConflict, CodeLoginIdentifierRequired,
+		CodePasswordResetUnavailable, CodeFactorNotFound, CodeConflict, CodeLoginIdentifierRequired,
 		CodeLastLoginMethod, CodeUsernameImmutable, CodeUsernameTaken, CodeEmailTaken,
 		CodeUnsupportedMediaType, CodeThrottled, CodeUnavailable,
 	}
@@ -140,7 +141,7 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 // that is nothing but the problem's own members, and the headers the handler set
 // before the call.
 func TestFailWritesTheCodeAsAProblemWithNoCause(t *testing.T) {
-	for _, code := range []string{CodeBadRequest, CodeUnsupportedRegion, CodeConflict, CodeLoginIdentifierRequired, CodeLastLoginMethod, CodeUsernameTaken, CodeEmailTaken, CodeUnsupportedMediaType} {
+	for _, code := range []string{CodeBadRequest, CodeUnsupportedRegion, CodeFactorNotFound, CodeConflict, CodeLoginIdentifierRequired, CodeLastLoginMethod, CodeUsernameTaken, CodeEmailTaken, CodeUnsupportedMediaType} {
 		t.Run(code, func(t *testing.T) {
 			w := serve(func(c *gin.Context) {
 				c.Header("X-Kept", "yes")

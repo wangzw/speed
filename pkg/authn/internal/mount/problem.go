@@ -40,6 +40,7 @@ const (
 	CodeHumanVerificationRequired      = "human-verification-required"      // 403
 	CodePasswordResetClosed            = "password-reset-closed"            // 403
 	CodePasswordResetUnavailable       = "password-reset-unavailable"       // 403
+	CodeFactorNotFound                 = "factor-not-found"                 // 404
 	CodeConflict                       = "conflict"                         // 409
 	CodeLoginIdentifierRequired        = "login-identifier-required"        // 409
 	CodeLastLoginMethod                = "last-login-method"                // 409
@@ -70,6 +71,7 @@ var statusOf = map[string]int{
 	CodeHumanVerificationRequired:      http.StatusForbidden,
 	CodePasswordResetClosed:            http.StatusForbidden,
 	CodePasswordResetUnavailable:       http.StatusForbidden,
+	CodeFactorNotFound:                 http.StatusNotFound,
 	CodeConflict:                       http.StatusConflict,
 	CodeLoginIdentifierRequired:        http.StatusConflict,
 	CodeLastLoginMethod:                http.StatusConflict,
@@ -123,13 +125,13 @@ func mustCode(fn, code string, allowed ...int) int {
 }
 
 // Fail writes the problem code in its status. It is for the codes that carry no
-// challenge and no header of their own: the 400s, 409 and 415. A 401 is written
-// with Unauthorized or StepUpRequired, a 403 with Forbidden, a 429 with
+// challenge and no header of their own: the 400s, 404, 409 and 415. A 401 is
+// written with Unauthorized or StepUpRequired, a 403 with Forbidden, a 429 with
 // Throttled and a 503 with Unavailable or Busy. A string that is not one of the
 // codes, or a code of another kind, panics.
 func Fail(c *gin.Context, code string) {
 	problem(c, mustCode("Fail", code,
-		http.StatusBadRequest, http.StatusConflict, http.StatusUnsupportedMediaType), code)
+		http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusUnsupportedMediaType), code)
 }
 
 // challenge is the WWW-Authenticate value of a 401 on realm. It offers Bearer
