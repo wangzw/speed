@@ -132,14 +132,18 @@ type options struct {
 // empty the bucket and lock the client out until it refills. A refusal costs
 // one plus a penalty of twenty — a quarter of the bucket — so an ordinary
 // success pays one token while a 404, or a 401 that refused a credential, pays
-// twenty-one: four refusals empty a full bucket, and the address is then
-// admitted about once every five seconds until it stops being refused, which is
-// where credential stuffing and tenant enumeration stop being economical. A
-// step-up handshake — a 401 that asks an already authenticated caller to prove
-// itself again — is the same status but not the same event: a client repeats it
-// as its session ages, so it pays the one token every request costs and no
-// penalty, and cannot lock itself out of the handshake it has to complete. A
-// normal client never gets near the penalty, so its throughput is unchanged.
+// twenty-one: four refusals empty a full bucket. The penalty raises the one-time
+// burst a source can spend, not its steady-state rate. Once the bucket is empty
+// a source that keeps being refused is admitted at the refill rate, one request
+// every quarter second, because each request spends only the tokens that have
+// accrued; the penalty drains them again with the refusal. Lowering that
+// steady-state rate is a different design decision — it belongs in the rate,
+// not in the penalty — and is not part of this one. A step-up handshake — a 401
+// that asks an already authenticated caller to prove itself again — is the same
+// status but not the same event: a client repeats it as its session ages, so it
+// pays the one token every request costs and no penalty, and cannot lock itself
+// out of the handshake it has to complete. A normal client never gets near the
+// penalty, so its throughput is unchanged.
 var defaults = options{
 	Window: time.Minute,
 	Limit:  100,
