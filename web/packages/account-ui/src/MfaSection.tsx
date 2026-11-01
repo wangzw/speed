@@ -1045,7 +1045,18 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                                   renameDraft.label,
                                                 )
                                               }}
-                                              sx={{ mt: 1 }}
+                                              // The row's in-place edit: the
+                                              // name field and its actions
+                                              // share one line, so opening
+                                              // the editor does not change
+                                              // the list's height.
+                                              sx={{
+                                                mt: 1,
+                                                display: 'flex',
+                                                alignItems: 'flex-start',
+                                                gap: 1,
+                                                flexWrap: 'wrap',
+                                              }}
                                             >
                                               <TextField
                                                 size="small"
@@ -1063,8 +1074,10 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                                 disabled={
                                                   updateMutation.isPending
                                                 }
-                                                fullWidth
-                                                sx={{ mb: 1 }}
+                                                sx={{
+                                                  flex: '1 1 220px',
+                                                  minWidth: 0,
+                                                }}
                                               />
                                               <ActionRow size="small">
                                                 <ActionButton

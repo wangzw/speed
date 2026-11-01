@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
+import { defaultTokens } from '@speed/tokens'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { profileBody } from '../test-utils/fixtures.js'
 import {
@@ -36,6 +37,12 @@ const FACTOR_PATH = '/api/v1/auth/factors/f-passkey'
 
 /** The one enabled passkey row the case removes. */
 const ROW_NAME = 'This Mac'
+
+/** The single spacing token an action row puts between adjacent controls. */
+const SPACING_UNIT = defaultTokens.spacing.unit
+
+/** One pixel of tolerance for subpixel layout rounding. */
+const TOLERANCE = 0.5
 
 describe('MfaSection row overflow menu', () => {
   it('removes a factor from its row menu and updates the group action', async () => {
@@ -130,5 +137,101 @@ describe('MfaSection row overflow menu', () => {
         (call) => call.method === 'DELETE' && call.path === FACTOR_PATH,
       ),
     ).toHaveLength(1)
+  })
+})
+
+describe('MfaSection rename editor', () => {
+  /**
+   * The editor is the row's in-place edit: the name field and the action
+   * row share one line, with the actions starting right after the field,
+   * so opening the editor does not push the actions onto a new line and
+   * change the list's height. jsdom lays nothing out, so the geometry is
+   * measured here.
+   *
+   * Which assertions discriminate: the shared line (the action row starts
+   * one spacing token past the field's right edge, on the field's own top)
+   * fails on the full-width-field-then-actions-below layout this change
+   * replaces. The group's adjacency and order hold on both layouts -- the
+   * action row itself did not move -- so those are a regression nail for
+   * the group, not a discriminator of this fix.
+   */
+  it('keeps the name field and its actions on one row, cancel left of save', async () => {
+    await page.viewport(1100, 900)
+    const rowLabel = 'Daily codes'
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody())
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, {
+          methods: [],
+          signup: { enabled: false, password: { enabled: false } },
+          mfa: { factors: ['totp'] },
+          human: { required: false, provider: 'off' },
+        })
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            {
+              id: 'f-totp',
+              kind: 'totp',
+              label: rowLabel,
+              status: 'active',
+              created_at: '',
+            },
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<MfaSection session={rig.session} />)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.mfa.actionsAria.replace('{{factor}}', rowLabel),
+      }),
+    )
+    await user.click(
+      await screen.findByRole('menuitem', { name: zhCN.mfa.rename }),
+    )
+
+    const field = await screen.findByLabelText(zhCN.mfa.renameLabel)
+    const cancel = screen.getByRole('button', { name: zhCN.mfa.renameCancel })
+    const save = screen.getByRole('button', { name: zhCN.mfa.renameSave })
+    await waitFor(() =>
+      expect(field.getBoundingClientRect().width).toBeGreaterThan(0),
+    )
+    await document.fonts.ready
+
+    const control = field.closest<HTMLElement>('.MuiFormControl-root')
+    const row = save.closest<HTMLElement>('[data-action-row]')
+    expect(control).not.toBeNull()
+    expect(row).not.toBeNull()
+    const controlBox = (control as HTMLElement).getBoundingClientRect()
+    const rowBox = (row as HTMLElement).getBoundingClientRect()
+    const cancelBox = cancel.getBoundingClientRect()
+    const saveBox = save.getBoundingClientRect()
+
+    // One line: the actions follow the field's right edge by the form's one
+    // spacing token, on the field's own top instead of under it.
+    expect(
+      Math.abs(rowBox.left - controlBox.right - SPACING_UNIT),
+    ).toBeLessThanOrEqual(TOLERANCE)
+    expect(Math.abs(rowBox.top - controlBox.top)).toBeLessThanOrEqual(TOLERANCE)
+
+    // One group, never two ends: cancel sits left of save, the two are
+    // exactly one spacing token apart, and the row hugs them.
+    expect(cancelBox.left).toBeLessThan(saveBox.left)
+    expect(Math.abs(cancelBox.top - saveBox.top)).toBeLessThanOrEqual(TOLERANCE)
+    expect(saveBox.left).toBeGreaterThanOrEqual(cancelBox.right)
+    expect(
+      Math.abs(saveBox.left - cancelBox.right - SPACING_UNIT),
+    ).toBeLessThanOrEqual(TOLERANCE)
+    expect(Math.abs(cancelBox.left - rowBox.left)).toBeLessThanOrEqual(TOLERANCE)
+    expect(Math.abs(saveBox.right - rowBox.right)).toBeLessThanOrEqual(TOLERANCE)
   })
 })
