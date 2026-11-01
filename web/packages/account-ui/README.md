@@ -566,7 +566,7 @@ registration is not among them -- the one entry is the login engine's
 `enroll` purpose -- so the section renders the factors it reads and
 offers the enrollment entries THIS deployment carries, each driving a
 `purpose: 'enroll'` flow. Which kinds those are is the deployment's own
-answer: the section reads `GET /api/v1/auth/methods' `mfa.factors` once through
+answer: the section reads `GET /api/v1/auth/methods`'s `mfa.factors` once through
 `session.listMethods` and offers one entry per reported kind, so a
 deployment whose assembly has no passkey relying party shows no passkey
 entry. A known kind (`totp`, `webauthn`, `sms`) renders its translated
