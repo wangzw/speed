@@ -570,6 +570,91 @@ func TestAStepUpWithOnlyFactorsRegisteredThisSessionReprovesThePassword(t *testi
 	}
 }
 
+// TestAStepUpWithAFactorRegisteredThisSessionHonoursTheRequestedMethod holds
+// that a step-up whose only factors were registered during this session starts
+// at the method the request names when the deployment takes it in: that
+// method's own first step runs, not the password's, and the registered factors
+// stay on offer as the second step.
+func TestAStepUpWithAFactorRegisteredThisSessionHonoursTheRequestedMethod(t *testing.T) {
+	password := &fakeMethod{name: "password"}
+	password.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("password", nil,
+			authn.Field{Name: "password", Kind: authn.FieldPassword, Required: true}), nil
+	}
+	sms := &fakeMethod{name: "sms"}
+	sms.desc = authn.MethodDescriptor{
+		Name: "sms", Kind: authn.MethodKindForm,
+		Fields: []authn.Field{{Name: "phone", Kind: authn.FieldPhone, Required: true}},
+	}
+	sms.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("code", nil,
+			authn.Field{Name: "code", Kind: authn.FieldCode, Required: true}), nil
+	}
+	r := newRigMethods(t, password, sms)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allowWithPassword("acct1")
+	r.mfa.outcome = authn.MFAFactor
+	r.mfa.offered = []authn.FactorRecord{{
+		ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive,
+		ActivatedAt: time.Now().Add(time.Minute),
+	}}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"step-up","method":"sms","input":{"phone":"+14155550123"}}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("a step-up naming sms answered %d, want 200: %s", start.Code, start.Body.String())
+	}
+	body := decode(t, start.Body.String())
+	if body["state"] != "first" {
+		t.Fatalf("the step-up state is %v, want first", body["state"])
+	}
+	next := body["next"].(map[string]any)
+	fields := next["fields"].([]any)
+	if name := fields[0].(map[string]any)["name"]; name != "code" {
+		t.Fatalf("the first step asks for %v, want the sms code challenge", name)
+	}
+	if sms.calls != 1 {
+		t.Errorf("the sms method began %d times, want one", sms.calls)
+	}
+	if password.calls != 0 {
+		t.Errorf("the password method began %d times, want none", password.calls)
+	}
+}
+
+// TestAStepUpWithAFactorRegisteredThisSessionFallsBackToThePasswordForAnUnassembledMethod
+// holds the fallback a method this deployment does not take in gets: it is not
+// a bad request there, and the flow starts at the password the account holds
+// again, exactly as a request that named no method does.
+func TestAStepUpWithAFactorRegisteredThisSessionFallsBackToThePasswordForAnUnassembledMethod(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("password", nil,
+			authn.Field{Name: "password", Kind: authn.FieldPassword, Required: true}), nil
+	}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allowWithPassword("acct1")
+	r.mfa.outcome = authn.MFAFactor
+	r.mfa.offered = []authn.FactorRecord{{
+		ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive,
+		ActivatedAt: time.Now().Add(time.Minute),
+	}}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"step-up","method":"carrier-pigeon"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("a step-up naming an unassembled method answered %d, want 200: %s", start.Code, start.Body.String())
+	}
+	body := decode(t, start.Body.String())
+	if body["state"] != "first" {
+		t.Fatalf("the step-up state is %v, want first", body["state"])
+	}
+	fields := body["next"].(map[string]any)["fields"].([]any)
+	if name := fields[0].(map[string]any)["name"]; name != "password" {
+		t.Fatalf("the first step asks for %v, want the password challenge", name)
+	}
+}
+
 // TestAStepUpWithNoPasswordIsRefused holds the boundary: an account with no
 // password to prove again has no first factor that lets factors registered
 // during the session strengthen it, so the step-up is refused and the person

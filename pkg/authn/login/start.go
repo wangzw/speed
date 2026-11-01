@@ -280,9 +280,12 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 // the ones the session's own account (the operator, under an impersonation)
 // holds. A factor registered before the session authenticated keeps the flow at
 // the second factor. When every factor was registered during the session, the
-// flow starts at the password instead and offers those factors as the second
-// step: proving the password again is what lets them strengthen the session. An
-// account with no password to prove again is refused as insufficient, the same
+// flow starts at a first factor and offers those factors as the second step:
+// proving the first factor again is what lets them strengthen the session. That
+// first factor is the method the request names when the deployment takes it in;
+// a request that names none, or names one the deployment does not take in,
+// starts at the password instead. An account with no password to prove again,
+// and no usable method to start with, is refused as insufficient, the same
 // answer as an account with factors none of which may strengthen this session.
 func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, requirement authn.AccountID, requested string) (start, method string, offered []factorView, insufficient bool, err error) {
 	firstProof := authn.Proof{Methods: status.Methods}
@@ -308,6 +311,16 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 		// password proved again unlocks.
 		if len(factors) == 0 {
 			return "", "", nil, true, nil
+		}
+		// No factor may strengthen the session yet. A first factor the request
+		// names, and the deployment takes in, is what the person proves again;
+		// proving it lets the factors registered during this session strengthen
+		// the session. Only a request that names none, or names one this
+		// deployment does not take in, falls back to the password.
+		if requested != "" {
+			if _, ok := r.method(requested); ok {
+				return stateFirst, requested, factorViews(factors), false, nil
+			}
 		}
 		hasPassword, perr := r.accountHasPassword(ctx, status.Account)
 		if perr != nil {
