@@ -68,10 +68,12 @@
  * instead of behind the open modal, the two action rows in the detail
  * share one scope, each table shares one with its row actions, and the
  * list's row delete and the create success share the list's scope below
- * the table. The panel is `busy` while any scope inside it has a write in
- * flight, so a write's result always lands in a region that is still
- * mounted. Every settled action without a failure confirms with a message
- * naming the account and, for a row action, the row.
+ * the table. Paging and a submitted filter change the list's context, so
+ * both reset that scope before the new page is read. The panel is `busy`
+ * while any scope inside it has a write in flight, so a write's result
+ * always lands in a region that is still mounted. Every settled action
+ * without a failure confirms with a message naming the account and, for a
+ * row action, the row.
  *
  * A created service secret is a value handed out once. Its state is held
  * by the page, not by the panel content that unmounts on close, so a scope
@@ -372,6 +374,9 @@ export function AccountsPage({
       return
     }
     if (nextPage === page - 1 && page > 0) {
+      // A page move is a change of the list's context: the previous page's
+      // result does not describe the page now shown.
+      listWrite.reset()
       setPage(nextPage)
       return
     }
@@ -382,6 +387,9 @@ export function AccountsPage({
     if (nextCursor === '') {
       return
     }
+    // One scope, one list: advancing drops the page it leaves behind's
+    // result.
+    listWrite.reset()
     setCursors((previous) => {
       const grown = [...previous]
       grown[page + 1] = nextCursor
@@ -1040,6 +1048,9 @@ export function AccountsPage({
             variant="contained"
             disabled={listWrite.pending}
             onClick={() => {
+              // A submitted filter is a new list: the result written under
+              // the previous filter does not describe it.
+              listWrite.reset()
               setIdentifier(identifierDraft.trim())
               setIdentifierKind(kindDraft)
               setDisplayName(displayNameDraft.trim())

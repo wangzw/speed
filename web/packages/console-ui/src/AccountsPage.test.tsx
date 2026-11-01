@@ -195,6 +195,27 @@ async function openDetail(user: ReturnType<typeof userEvent.setup>): Promise<voi
   await user.click(screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME }))
 }
 
+/**
+ * Opens and confirms the fixture account's two-step delete, then waits for
+ * the dialog to close so the page's own region is reachable.
+ */
+async function deleteThroughConfirm(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<void> {
+  await user.click(screen.getByRole('button', { name: DELETE_ACCOUNT_NAME }))
+  const dialog = await screen.findByRole('dialog')
+  await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
+  await act(async () => {
+    await new Promise((resolve) =>
+      setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+    )
+  })
+  await user.click(
+    within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+  )
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+}
+
 /** The zh-CN label the confirm button shows once the two-step guard arms. */
 const CONFIRM_AGAIN_LABEL = (
   uiKitResources['zh-CN'] as unknown as {
@@ -1225,6 +1246,73 @@ describe('AccountsPage', () => {
     await user.click(screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL }))
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
     expect(screen.queryByText('Grace Hopper')).not.toBeInTheDocument()
+  })
+
+  it('drops the list result when the page changes', async () => {
+    // A page move is a change of the list's context: the previous page's
+    // refused row action does not describe the page now shown.
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: (params) =>
+          Promise.resolve(
+            params?.after === undefined
+              ? {
+                  accounts: [
+                    accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
+                  ],
+                  next_cursor: 'cursor-1',
+                }
+              : {
+                  accounts: [
+                    accountFixture({ id: 'acc-2', display_name: 'Grace Hopper' }),
+                  ],
+                  next_cursor: '',
+                },
+          ),
+        deleteAccount: () =>
+          Promise.reject({ code: 'authn.account_not_found' }),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await screen.findByText('Ada Lovelace')
+    await deleteThroughConfirm(user)
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    expect(await screen.findByText('Grace Hopper')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('drops the list result when a filter is submitted', async () => {
+    // A submitted filter is a new list: the result written under the
+    // previous filter does not describe it.
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: () =>
+          Promise.resolve({
+            accounts: [
+              accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
+            ],
+            next_cursor: '',
+          }),
+        deleteAccount: () =>
+          Promise.reject({ code: 'authn.account_not_found' }),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await screen.findByText('Ada Lovelace')
+    await deleteThroughConfirm(user)
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText(zhCN.accounts.identifierLabel), {
+      target: { value: 'grace' },
+    })
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   })
 
   it('keeps the previous-page control on an empty later page', async () => {
