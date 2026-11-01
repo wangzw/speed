@@ -27,6 +27,14 @@
  * the window it last used and waits for the next one before presenting another
  * code; it never re-submits a code.
  *
+ * A REGISTRATION THE READER GIVES UP IS RELEASED AT ONCE. Starting an
+ * enrollment writes a pending factor row on the server. The journey enters an
+ * authenticator-app enrollment far enough to have that row written, cancels the
+ * wizard, and rereads the list: the pending row is gone and the active factor
+ * the account already held is untouched. The reread waits for the product's own
+ * flow-release request, so it observes what the server kept rather than a list
+ * the section has not re-read.
+ *
  * WHAT IS NOT ASSERTED. The sessions section renders one table row per live
  * session, with the device summary, the address, the last-active time and the
  * row's action column, and marks the current session. The table's header names
@@ -90,6 +98,11 @@ const NEW_PASSWORD = 'e2e-Password-456'
 // than by kind, so every selection below addresses the same fixed string.
 const TOTP_FACTOR_NAME = 'Work phone'
 const PASSKEY_FACTOR_NAME = 'Backup passkey'
+
+// The name given to an enrollment this journey opens only to cancel it. If the
+// wizard's cancel left the flow open, the server's pending row would carry this
+// name back onto the list.
+const ABANDONED_FACTOR_NAME = 'Abandoned authenticator'
 
 /** The home page's heading, the landing after a completed sign-in. */
 function homeHeading(page: Page): Locator {
@@ -511,6 +524,93 @@ test('account-security-hardening: an account enrols two factors, ends another de
       ).toBeVisible()
       await expect(homeHeading(page)).toHaveCount(0)
       await completeTotpFactor(page, secret)
+    })
+
+    await test.step('step 4b: cancelling an enrollment wizard leaves the factor list as it was', async () => {
+      // The sign-in just completed is a fresh local multi-factor one, which is
+      // what opening a registration for an account that already holds an
+      // active factor asks for; the account page is reached from the home
+      // surface that sign-in landed on.
+      await openAccountSection(page, 'security')
+      await expandAccountRows(page)
+      const mfa = mfaSection(page)
+      // The list before the wizard: three method rows and the one active
+      // authenticator enrolled in step 2.
+      await expect(mfa.getByRole('listitem')).toHaveCount(4)
+      await expect(
+        mfa.getByText(TOTP_FACTOR_NAME, { exact: true }),
+      ).toHaveCount(1)
+      await expect(
+        mfa.getByText(copy('accountUi', 'mfa.factor.status.pending'), {
+          exact: true,
+        }),
+      ).toHaveCount(0)
+
+      // The authenticator app is the entry that needs no device ceremony: the
+      // step after its name form asks for a code an app would show, so giving
+      // it up never needs one. An account that already holds a factor of this
+      // kind reaches the same name form through the manage entry.
+      await mfa
+        .getByRole('button', {
+          name: copy('accountUi', 'mfa.manageAria', {
+            method: copy('accountUi', 'mfa.factor.kind.totp'),
+          }),
+          exact: true,
+        })
+        .click()
+      await submitFactorNameForm(mfa, ABANDONED_FACTOR_NAME)
+      // Starting the flow writes a pending factor row; the wizard is parked on
+      // the authenticator step, which is where the reader gives it up.
+      await expect(
+        mfa.getByRole('img', {
+          name: copy('accountUi', 'flowStep.totpQrLabel'),
+          exact: true,
+        }),
+      ).toBeVisible()
+
+      // The wizard's cancel releases the flow on the server. The release is a
+      // request the product sends itself, so the reread below waits for its
+      // answer rather than racing the navigation that follows.
+      const released = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'DELETE' &&
+          new URL(response.url()).pathname === '/api/v1/auth/flows/current',
+        { timeout: 15_000 },
+      )
+      await mfa
+        .getByRole('button', {
+          name: copy('accountUi', 'mfa.enroll.cancelLabel'),
+          exact: true,
+        })
+        .click()
+      expect((await released).ok()).toBe(true)
+
+      // Back on the entries, then a fresh read of the list: the cancelled
+      // registration's pending row is gone, while the three method rows and
+      // the one active factor are unchanged.
+      await expect(
+        mfa.getByRole('button', {
+          name: copy('accountUi', 'mfa.manageAria', {
+            method: copy('accountUi', 'mfa.factor.kind.totp'),
+          }),
+          exact: true,
+        }),
+      ).toBeVisible()
+      await openAccountSection(page, 'security')
+      await expandAccountRows(page)
+      const reread = mfaSection(page)
+      await expect(reread.getByRole('listitem')).toHaveCount(4)
+      await expect(
+        reread.getByText(TOTP_FACTOR_NAME, { exact: true }),
+      ).toHaveCount(1)
+      await expect(
+        reread.getByText(ABANDONED_FACTOR_NAME, { exact: true }),
+      ).toHaveCount(0)
+      await expect(
+        reread.getByText(copy('accountUi', 'mfa.factor.status.pending'), {
+          exact: true,
+        }),
+      ).toHaveCount(0)
     })
 
     await test.step('step 5: a passkey is added after the waiting state, its cancel and its retry', async () => {
