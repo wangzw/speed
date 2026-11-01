@@ -31,26 +31,34 @@ The API is the package's godoc.
 - **The failure direction is closed.** A request with no identity is refused, not
   passed: the middleware refuses unless the identity is present and satisfies the
   requirement, so it stays safe if it is ever mounted ahead of the gateway
-  (`TestARequestWithNoIdentityIsRefused`, `Require`).
-- **The challenge names the identity's own carrier, and no scheme it cannot trust
-  reaches the field.** The scheme is `Identity.Challenge()`, the folded name the
-  gateway stamped from the credential's carrier. A value that is not an RFC 9110
-  token — which a zero identity or a defect could carry — is written as `Bearer`,
-  because a 401 with no scheme, or one that put a line ending into the field,
-  would not be a challenge at all (`challengeScheme`,
+  (`TestARequestWithNoIdentityIsRefused`, `Require`). Its 401 is the entry
+  point's untyped answer — both carriers in the challenge, no problem type and
+  no step-up code — so a layer that charges a source by outcome charges it like
+  a refused credential rather than exempting it as a handshake
+  (`TestAnAnonymousRefusalIsDistinguishedFromAStepUp`, `refuseAnonymous`).
+- **The step-up challenge names the identity's own carrier, and no scheme it
+  cannot trust reaches the field.** This is the refusal of an identity that is
+  present and short of the requirement; an anonymous request is answered by
+  `refuseAnonymous` and never reaches it. The scheme is `Identity.Challenge()`,
+  the folded name the gateway stamped from the credential's carrier. A value that
+  is not an RFC 9110 token — which a zero identity or a defect could carry — is
+  written as `Bearer`, because a 401 with no scheme, or one that put a line
+  ending into the field, would not be a challenge at all (`challengeScheme`,
   `TestASchemeThatIsNotATokenIsWrittenAsBearer`).
 - **`acr_values` is the level's number and `max_age` is the requirement's
   seconds.** The number is the assurance level's decimal text, the same text a
   token's `acr` claim carries; `max_age` is written only when the requirement asks
-  for freshness, in whole seconds rounded up, and a requirement that no identity
-  satisfies writes no `max_age`
+  for freshness, in whole seconds rounded up, and a window that is not positive
+  writes no `max_age`
   (`TestTheChallengeNamesTheLevelTheAgeAndTheScheme`,
   `TestARefusalIsTheSameShapeTheRestOfTheCapabilityWrites`).
-- **The refusal is the entry point's, not a body of this package's choosing.** The
-  header is set and then `http.Fail` writes the 401 with
-  `Problem.Type = urn:speed:authn:insufficient_user_authentication`; a delivered
-  `ErrorResponder` decides the body, as it does for every other failure
-  (`refuse`).
+- **The two refusals are the entry point's, not bodies of this package's
+  choosing.** The header is set and then `http.Fail` writes the 401. The
+  step-up refusal carries `Problem.Type =
+  urn:speed:authn:insufficient_user_authentication`; the anonymous refusal
+  carries no type, which `Fail` writes as `about:blank`. A delivered
+  `ErrorResponder` decides the body in both cases, as it does for every other
+  failure (`refuse`, `refuseAnonymous`).
 
 ## Running it
 

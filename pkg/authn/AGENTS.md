@@ -217,9 +217,13 @@ field comments before writing a backend.
   step-up is marked so a layer charging a source by outcome can tell a handshake
   from a refused credential, and the mark comes from `speedhttp.Fail` recognising
   the problem type: every path that writes `insufficient_user_authentication` —
-  this package's `StepUpRequired`, the gateway's middleware, the tenant admission
-  layer and a typed handler's fault — is covered, while `Unauthorized` writes a
-  code that never carries the mark. The request body
+  this package's `StepUpRequired`, the step-up guard (`guard.Require`), the
+  tenant admission layer and a typed handler's fault — is covered, while
+  `Unauthorized` writes a code that never carries the mark. The gateway's 401
+  for a request with no credential carries no type and is not marked, and the
+  guard's 401 for a request with no identity is untyped for the same reason;
+  only an identity that is present and falls short is answered with
+  `StepUpRequired`. The request body
   decoder `Decode`, which takes only `application/json` and holds a body to 64
   KiB, a body over it being a 400 `bad-request` like every other body that is
   not one object. The wrapper `Wrap`, which every registration passes through: it

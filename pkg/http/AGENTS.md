@@ -207,12 +207,16 @@ Read `Middleware`'s field comments before adding a seat to a layer.
 - **A 401 that asks for a step-up is marked, not told apart by its status.**
   `MarkStepUp` and `IsStepUp` carry one boolean on the gin context, and `Fail`
   sets it for every 401 whose type is `TypeStepUp`. Every writer of that answer —
-  the mount helpers, the gateway middleware, the admission layer and a typed
-  handler's fault — ends in `Fail`, so none of them calls `MarkStepUp` itself and
-  a path added later is covered. A layer that charges a source by outcome reads
-  the mark so that a handshake is not charged as a refused credential. The marker
-  says nothing about any other status; a layer reading it still decides on the
-  status, and only a 401 consults the mark.
+  the mount helpers, the step-up guard (`pkg/authn/guard`), the admission layer
+  and a typed handler's fault — ends in `Fail`, so none of them calls
+  `MarkStepUp` itself and a path added later is covered. The untyped 401s are
+  not this answer: the gateway's 401 for a request that carried no credential,
+  and the step-up guard's 401 for a request with no identity, carry no type, so
+  a layer that charges a source by outcome charges both like a refused
+  credential. A layer that charges a source by outcome reads the mark so that a
+  handshake is not charged as a refused credential. The marker says nothing
+  about any other status; a layer reading it still decides on the status, and
+  only a 401 consults the mark.
 - **This module renders the refusals it produces itself.** The four refusals it
   writes on its own — the 404, 405, 413 and 500 — carry their title as finished
   text, rendered here from this module's own catalog under `http.<status>` keys

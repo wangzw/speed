@@ -2,6 +2,10 @@
 // handler mounted in front of a route's own handler admits the request only when
 // the identity the gateway stamped on it meets a requirement, and otherwise ends
 // it with the 401 that says the authentication was not strong or recent enough.
+// A request that carries no identity at all is answered with the entry point's
+// untyped 401 instead — no problem type, the same shape the authorization stage
+// writes for that condition — so a layer charging a source by outcome does not
+// exempt it as a handshake.
 //
 // Require returns the middleware. A host or a permission module mounts it on a
 // route of its own, after the gateway, so that the identity is on the request
@@ -54,14 +58,20 @@ const insufficientUserAuthentication = "insufficient_user_authentication"
 const stepUpDescription = "A stronger or more recent authentication is required"
 
 // Require returns a middleware that lets the request reach the next handler only
-// when the identity the gateway put in its context meets req, and answers the
-// step-up 401 otherwise.
+// when the identity the gateway put in its context meets req, and refuses
+// otherwise.
 //
 // The identity is read from the request's context and the decision is
 // Identity.Satisfies at the moment of the request. A request with no identity is
-// refused: an absent identity is not a caller that met nothing, and this is the
-// part of the middleware that stands on its own if it is ever mounted ahead of
-// the gateway. The request goes on untouched when the requirement holds.
+// refused with the entry point's untyped 401, the answer the gateway and the
+// other layers write for the same condition: an absent identity is not a caller
+// that met nothing, and this is the part of the middleware that stands on its
+// own if it is ever mounted ahead of the gateway. Only an identity that is
+// present and falls short of the requirement is answered with the typed step-up
+// 401. The distinction matters to a layer that charges a source by outcome: the
+// untyped 401 is a refused credential and is charged as one, while the typed
+// answer is a handshake and is exempt. The request goes on untouched when the
+// requirement holds.
 //
 // The middleware imports no store and takes no dependency, so it works in an
 // assembly that took up nothing, and its failure direction is closed: it refuses
@@ -69,7 +79,11 @@ const stepUpDescription = "A stronger or more recent authentication is required"
 func Require(req authn.Requirement) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, ok := authn.FromContext(c.Request.Context())
-		if ok && id.Satisfies(req, time.Now()) {
+		if !ok {
+			refuseAnonymous(c)
+			return
+		}
+		if id.Satisfies(req, time.Now()) {
 			c.Next()
 			return
 		}
@@ -77,13 +91,27 @@ func Require(req authn.Requirement) gin.HandlerFunc {
 	}
 }
 
-// refuse writes the step-up 401 for an identity that does not meet req, or a
-// zero identity for a request that carried none. The challenge names the scheme
-// the identity authenticated with — what a client re-shows to step up — and then
-// the level the route wants as acr_values, the number of the assurance, and,
-// when the requirement asks for freshness, max_age in whole seconds. A level
-// only an IdP declared still counts when the requirement is not Local, because
-// the decision is Identity.Satisfies's and not this package's.
+// refuseAnonymous writes the 401 of a request that carries no identity at all.
+// It is the entry point's untyped answer — the same shape the authorization
+// stage writes for the same condition — with both carriers named in the
+// challenge and no problem type. The middleware knows no endpoint name, so the
+// realm is empty; what it owes a caller is a challenge it can act on. The absent
+// type is what keeps this answer out of the step-up mark: a layer charging a
+// source by outcome charges this 401 like the refused credential it is rather
+// than exempting it as a handshake.
+func refuseAnonymous(c *gin.Context) {
+	c.Header(challengeHeader, `Bearer realm="", Cookie realm=""`)
+	speedhttp.Fail(c, speedhttp.Problem{Status: nethttp.StatusUnauthorized})
+}
+
+// refuse writes the step-up 401 for an identity that does not meet req. The
+// challenge names the scheme the identity authenticated with — what a client
+// re-shows to step up — and then the level the route wants as acr_values, the
+// number of the assurance, and, when the requirement asks for freshness,
+// max_age in whole seconds. A level only an IdP declared still counts when the
+// requirement is not Local, because the decision is Identity.Satisfies's and
+// not this package's. A request that carried no identity never reaches this
+// function; refuseAnonymous answers it.
 func refuse(c *gin.Context, id authn.Identity, req authn.Requirement) {
 	var b strings.Builder
 	b.WriteString(challengeScheme(id.Challenge()))

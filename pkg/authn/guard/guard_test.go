@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,9 +129,10 @@ func TestRequireAdmitsAnIdentityThatMeetsTheRequirement(t *testing.T) {
 
 // TestRequireRefusesWithTheStepUp401 holds the refuse side: an identity below the
 // level, one an IdP declared when the requirement is local, one too old for the
-// window, a requirement whose window is not positive, and a request with no
-// identity at all are all answered 401 with the step-up problem, and the handler
-// past the middleware never runs.
+// window, a requirement whose window is not positive, and a negative window are
+// all answered 401 with the step-up problem, and the handler past the middleware
+// never runs. A request with no identity is held separately, because its 401 is
+// untyped.
 func TestRequireRefusesWithTheStepUp401(t *testing.T) {
 	now := time.Now()
 	for _, c := range []struct {
@@ -144,7 +146,6 @@ func TestRequireRefusesWithTheStepUp401(t *testing.T) {
 		{"a multi factor too old for the window", ctxWith(t, multiFactors()...), authn.Requirement{Assurance: authn.AssuranceMulti, MaxAge: 5 * time.Minute}},
 		{"a window that is not positive reads as nobody", ctxWith(t, append(multiFactors(), authntest.WithAuthTime(now))...), authn.FreshLocalMulti(0)},
 		{"a negative window reads as nobody", ctxWith(t, append(multiFactors(), authntest.WithAuthTime(now))...), authn.FreshLocalMulti(-time.Minute)},
-		{"no identity", context.Background(), authn.Requirement{Assurance: authn.AssuranceMulti}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			w := serveAs(c.ctx, c.req)
@@ -191,9 +192,9 @@ func TestTheChallengeNamesTheLevelTheAgeAndTheScheme(t *testing.T) {
 		},
 		{
 			"a level asked with no age",
-			context.Background(),
-			authn.Requirement{Assurance: authn.AssuranceSingle},
-			`Bearer error="insufficient_user_authentication", error_description="` + stepUpDescription + `", acr_values="1"`,
+			ctxWith(t),
+			authn.Requirement{Assurance: authn.AssuranceMulti},
+			`Bearer error="insufficient_user_authentication", error_description="` + stepUpDescription + `", acr_values="2"`,
 		},
 		{
 			"an age that is not whole seconds is rounded up",
@@ -212,12 +213,6 @@ func TestTheChallengeNamesTheLevelTheAgeAndTheScheme(t *testing.T) {
 			ctxWith(t),
 			authn.Requirement{Assurance: authn.AssuranceMulti, MaxAge: -time.Minute},
 			`Bearer error="insufficient_user_authentication", error_description="` + stepUpDescription + `", acr_values="2"`,
-		},
-		{
-			"the zero identity",
-			context.Background(),
-			authn.Requirement{Assurance: authn.AssuranceMulti, MaxAge: time.Minute},
-			`Bearer error="insufficient_user_authentication", error_description="` + stepUpDescription + `", acr_values="2", max_age="60"`,
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -254,17 +249,54 @@ func TestASchemeThatIsNotATokenIsWrittenAsBearer(t *testing.T) {
 
 // TestARequestWithNoIdentityIsRefused holds the closed failure direction on its
 // own: a request the gateway left no identity on is refused, not passed, so the
-// middleware is safe wherever it is mounted.
+// middleware is safe wherever it is mounted. Its 401 is the entry point's
+// untyped one, not the step-up answer: the challenge names both carriers and
+// carries no step-up code, and the body carries no problem type.
 func TestARequestWithNoIdentityIsRefused(t *testing.T) {
 	w := serveAs(context.Background(), authn.Requirement{Assurance: authn.AssuranceMulti})
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", w.Code)
 	}
-	if typ := problemType(t, w); typ != typePrefix+insufficientUserAuthentication {
-		t.Errorf("type = %q, want %s%s", typ, typePrefix, insufficientUserAuthentication)
+	if typ := problemType(t, w); typ != "about:blank" {
+		t.Errorf("type = %q, want about:blank: an anonymous refusal is not a step-up", typ)
 	}
-	if got := w.Header().Get(challengeHeader); got == "" {
-		t.Error("the refusal carries no challenge, so a caller is told nothing it can act on")
+	if got, want := w.Header().Values(challengeHeader), []string{`Bearer realm="", Cookie realm=""`}; !slices.Equal(got, want) {
+		t.Errorf("%s = %q, want %q", challengeHeader, got, want)
+	}
+	if got := w.Header().Get(challengeHeader); strings.Contains(got, insufficientUserAuthentication) {
+		t.Errorf("the anonymous challenge asks for a step-up: %q", got)
+	}
+}
+
+// TestAnAnonymousRefusalIsDistinguishedFromAStepUp holds the two 401s apart: an
+// anonymous request is answered with an untyped 401 that the address shield
+// charges as a refused credential, while an identity that is present and below
+// the requirement is answered with the typed step-up 401 that the shield
+// exempts. The shield reads a mark http.Fail writes from the problem type
+// alone, so the body type is what tells the two answers apart.
+func TestAnAnonymousRefusalIsDistinguishedFromAStepUp(t *testing.T) {
+	req := authn.Requirement{Assurance: authn.AssuranceMulti}
+	for _, c := range []struct {
+		name       string
+		w          *httptest.ResponseRecorder
+		wantStepUp bool
+	}{
+		{"anonymous", serveAs(context.Background(), req), false},
+		{"present but below the requirement", serveAs(ctxWith(t), req), true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if c.w.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", c.w.Code)
+			}
+			typ := problemType(t, c.w)
+			if got := typ == typePrefix+insufficientUserAuthentication; got != c.wantStepUp {
+				t.Errorf("type = %q names the step-up answer = %v, want %v", typ, got, c.wantStepUp)
+			}
+			challenge := c.w.Header().Get(challengeHeader)
+			if got := strings.Contains(challenge, insufficientUserAuthentication); got != c.wantStepUp {
+				t.Errorf("the challenge %q names the step-up code = %v, want %v", challenge, got, c.wantStepUp)
+			}
+		})
 	}
 }
 

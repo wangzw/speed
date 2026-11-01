@@ -12,6 +12,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
 
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/authntest"
+	"github.com/vislake/speed/pkg/authn/guard"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/settings"
 )
@@ -191,6 +194,52 @@ func TestANotFoundStillSpendsThePenalty(t *testing.T) {
 
 	requireProblem(t, h.get(t, "/nowhere"), nethttp.StatusNotFound)
 	requireThrottledProblem(t, h.get(t, "/nowhere"))
+}
+
+// The distinction the shield depends on holds on the answers the real guard
+// writes. An anonymous request gets the guard's untyped 401, which the shield
+// charges as a refused credential; an identity that is present and short of
+// the requirement gets the typed step-up 401, which the shield exempts. Each
+// source address has its own bucket, so the two answers are measured apart.
+func TestTheGuardDistinguishesItsAnonymousRefusalFromTheStepUp(t *testing.T) {
+	l := pinned()
+	l.addressEndpoints = []string{guardedEndpoint}
+	l.counters = newFakeKV()
+	l.store = &fakeStore{values: smallShieldValues()}
+	below := authntest.Context(t, context.Background())
+	req := authn.Requirement{Assurance: authn.AssuranceMulti}
+	h := startHost(t, hostOptions{
+		limiter:        l,
+		viaModule:      true,
+		trustedProxies: []string{"127.0.0.1/32"},
+		register: func(ep speedhttp.Endpoint) {
+			ep.Route(nethttp.MethodGet, "/guard-anonymous", guard.Require(req))
+			ep.Route(nethttp.MethodGet, "/guard-below",
+				func(c *gin.Context) { c.Request = c.Request.WithContext(below) },
+				guard.Require(req))
+		},
+	})
+	from := func(address string) map[string]string {
+		return map[string]string{"X-Forwarded-For": address}
+	}
+	anonymous := from("10.0.0.7")
+	anonymous[anonymousHeader] = "1"
+	stepUp := from("10.0.0.8")
+
+	// The untyped 401 spends the penalty: with a burst of four the first
+	// refusal drains the bucket and the second request is shut out.
+	requireProblem(t, h.send(t, nethttp.MethodGet, "/guard-anonymous", anonymous), nethttp.StatusUnauthorized)
+	requireThrottledProblem(t, h.send(t, nethttp.MethodGet, "/guard-anonymous", anonymous))
+
+	// The typed step-up 401 pays one token and no penalty: four reach the
+	// route and only the fifth is shut out.
+	for i := 0; i < 4; i++ {
+		got := h.send(t, nethttp.MethodGet, "/guard-below", stepUp)
+		if got.status != nethttp.StatusUnauthorized {
+			t.Fatalf("a step-up refusal answered %d, want 401 (body %q)", got.status, got.body)
+		}
+	}
+	requireThrottledProblem(t, h.send(t, nethttp.MethodGet, "/guard-below", stepUp))
 }
 
 // --- the layer's metadata --------------------------------------------------
