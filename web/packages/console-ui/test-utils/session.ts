@@ -33,6 +33,7 @@ export const AUTHENTICATED_SNAPSHOT: AuthSnapshot = {
     attributes: {},
     locale: 'zh-CN',
     time_zone: 'UTC',
+    color_mode: '',
     identifiers: [],
     links: [],
     verification: { state: 'none', email: '', since: '' },

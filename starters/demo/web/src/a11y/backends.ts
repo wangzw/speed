@@ -182,6 +182,7 @@ const PROFILE: AuthnProfileProfile = {
   password_set: true,
   created_at: INSTANT,
   attributes: {},
+  color_mode: '',
   locale: 'en-US',
   time_zone: 'UTC',
   identifiers: [

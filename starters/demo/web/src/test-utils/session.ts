@@ -70,6 +70,7 @@ export function authenticatedSnapshot(options: {
       password_set: true,
       created_at: '',
       attributes: {},
+      color_mode: '',
       locale: 'en-US',
       time_zone: 'UTC',
       identifiers: [],

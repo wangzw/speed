@@ -48,6 +48,7 @@ function profileOf(
     password_set: overrides.password_set,
     created_at: '2026-01-01T00:00:00Z',
     attributes: {},
+    color_mode: '',
     locale: 'en-US',
     time_zone: 'UTC',
     identifiers: overrides.identifiers,

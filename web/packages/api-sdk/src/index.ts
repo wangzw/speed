@@ -469,6 +469,8 @@ export interface AuthnProfileProfile {
   account_id: string;
   /** Never null; the empty object when the account carries none */
   attributes: AuthnProfileProfileAttributes;
+  /** Read out of the attribute set, empty when it carries none */
+  color_mode: string;
   /** RFC 3339 in UTC, empty when the account carries no creation instant */
   created_at: string;
   /** The account's display name, empty when it carries none */
@@ -502,6 +504,8 @@ export type AuthnProfilePatchAttributes = {[key: string]: string};
 export interface AuthnProfilePatch {
   /** The whole attribute set as it stands, never null */
   attributes: AuthnProfilePatchAttributes;
+  /** Read out of the attribute set, empty when it carries none */
+  color_mode: string;
   /** The display name as it stands after the write; the account's current one when the body carried none */
   display_name: string;
   /** Read out of the attribute set, empty when it carries none */
@@ -2035,6 +2039,8 @@ export type AuthnProfilePatchBodyAttributes = {[key: string]: string};
 export type AuthnProfilePatchBody = {
   /** The whole attribute set to store, as string keys and string values; a given one - the empty object included - replaces the current set, and an absent one leaves it alone. A set outside the account module's bounds is refused 400. */
   attributes?: AuthnProfilePatchBodyAttributes;
+  /** The color-mode preference stored under the presentation.color-mode attribute: light, dark or system. Any other value is refused 400; the empty string clears the attribute and an absent field leaves it alone. */
+  color_mode?: string;
   /** The new display name, at most 100 characters; absent leaves the current one. A longer value is refused 400 by the account module. */
   display_name?: string;
   /** A BCP 47 language tag stored under the i18n.locale attribute. An invalid tag is refused 400; the empty string clears the attribute and an absent field leaves it alone. */
@@ -4118,8 +4124,8 @@ export function useAuthnProfileGet<TData = Awaited<ReturnType<typeof authnProfil
 
 
 /**
- * Writes the caller's own display name, its whole attribute set, and the language and time zone named inside that set; every body field is optional and a field left out is left as it is. The display name is written before the attribute set, and the two writes are not one atomic change: when the second fails, the first is already in force and the answer is that failure's. An impersonating identity writes the impersonated account's profile like any other caller; a caller with no login session is refused 401 before anything is written. The write asks for no freshness beyond the login session itself.
- * @summary Write the caller's own display name, attribute set, locale and time zone
+ * Writes the caller's own display name, its whole attribute set, and the language, time zone and color mode named inside that set; every body field is optional and a field left out is left as it is. The display name is written before the attribute set, and the two writes are not one atomic change: when the second fails, the first is already in force and the answer is that failure's. An impersonating identity writes the impersonated account's profile like any other caller; a caller with no login session is refused 401 before anything is written. The write asks for no freshness beyond the login session itself.
+ * @summary Write the caller's own display name, attribute set, locale, time zone and color mode
  */
 export const authnProfilePatch = (
     authnProfilePatchBody: AuthnProfilePatchBody,
@@ -4169,7 +4175,7 @@ const {mutation: mutationOptions} = options ?
     export type AuthnProfilePatchMutationError = Problem
 
     /**
- * @summary Write the caller's own display name, attribute set, locale and time zone
+ * @summary Write the caller's own display name, attribute set, locale, time zone and color mode
  */
 export const useAuthnProfilePatch = <TError = Problem,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnProfilePatch>>, TError,{data: AuthnProfilePatchBody}, TContext>, }

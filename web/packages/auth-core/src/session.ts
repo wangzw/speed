@@ -728,6 +728,7 @@ function parsePrincipal(body: unknown): AuthnPrincipal {
     password_set: rec.password_set === true,
     created_at: typeof rec.created_at === 'string' ? rec.created_at : '',
     attributes: parseStringMap(rec.attributes),
+    color_mode: typeof rec.color_mode === 'string' ? rec.color_mode : '',
     locale: typeof rec.locale === 'string' ? rec.locale : '',
     time_zone: typeof rec.time_zone === 'string' ? rec.time_zone : '',
     identifiers: Array.isArray(identifiers)
