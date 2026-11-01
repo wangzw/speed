@@ -284,7 +284,7 @@ type Proof struct {
 | 401 | `insufficient_user_authentication`（[REF-rfc9470](../../../references.md)） | 加强认证，同时带 `WWW-Authenticate`（[authn-mfa](design-authn-mfa.md)） |
 | 401 | `sso_required` | 租户准入层要求经本租户的企业单点登录重新认证，由 [tenant.admission](../tenant/design-tenant-admission.md) 写出；本地因素解不了它 |
 | 403 | `method-disabled`、`account-unavailable`、`impersonation-restricted`、`forbidden`、`factor-not-seasoned`、`signup-closed`、`contact-required`、`human-verification-required`、`password-reset-closed`、`password-reset-unavailable` | 对认证之外的策略的转述，只在 authn 自己的处理器里写；`signup-closed` 是自助注册开关关闭，`contact-required` 是未验证账户（有邮箱而没有一条已证明的）调用了要求已验证邮箱的能力，`human-verification-required` 是部署要求人机验证而请求缺少或提交了无效的凭证且因此不发送，`password-reset-closed` 是匿名口令重置开关关闭或短信渠道被 `disabled-methods` 关闭，`password-reset-unavailable` 是重置的账户在验证之后不再满足资格（停用、删除、失去口令或标识不再由同一证明渠道证明）；`method-disabled` 只来自 `disabled-methods` 关闭的非口令方式，口令方式不在可关闭集合内，读取侧也不把库里的越域取值当作关闭口令方式 |
-| 404 | `factor-not-found` | 因素标识不存在或不属于调用者；删除与改名两条因素路由写出此码，两种情况共用一个码，区分会变成存在性探测（[authn-mfa](design-authn-mfa.md)） |
+| 404 | `factor-not-found` | 因素的改名路由：标识不存在或不属于调用者，两种情况共用一个码，区分会变成存在性探测（[authn-mfa](design-authn-mfa.md)） |
 | 409 | `conflict`、`login-identifier-required`、`username-immutable`、`username-taken`、`email-taken` | 外部身份冲突、删最后一个因素、某种因素已达上限；账户没有用户名、也没有被选作登录方式的已验证邮箱而设口令，或删除带口令凭据账户的最后一个被选作登录方式的已验证邮箱；删除用户名标识；自助注册或首登开户的用户名已被占用；邮箱地址已被别的账户预留或持有 |
 | 409 | `last-login-method` | 解绑最后一种登录方式、取消登录方式或删除标识会留下没有口令凭据、被选作登录方式的已验证手机号与外部身份中任何一种的账户 |
 | 415、429、503 | `unsupported-media-type`、`throttled`（带 `Retry-After`）、`unavailable` | `unavailable` 对外不区分是哪个依赖不可用 |

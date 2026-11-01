@@ -239,20 +239,17 @@ func TestDeletingAFactorNeedsAFreshMultiFactorAuthenticationVerifiedHere(t *test
 	}
 }
 
-// A factor that is not the caller's and one that is not there answer the one
-// not-found code: telling them apart would say the factor exists. The other
-// account's row is untouched.
-func TestDeletingAnotherAccountsFactorReadsAsNotFound(t *testing.T) {
+// A factor that is not the caller's and one that is not there both read as
+// already gone and answer the same 204 a landed removal gives: a different
+// answer for another account's identifier would say it exists, and repeating a
+// removal is idempotent. The other account's row is untouched.
+func TestDeletingAFactorThatIsNotTheCallersOrIsGoneReadsAsAlreadyDone(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	theirs := r.activeFactor("someone-else", authn.FactorTOTP, time.Hour)
 	r.mounter.As(multiAt(time.Minute)...)
 	for _, id := range []string{theirs, "no-such-factor"} {
-		w := r.do(http.MethodDelete, listPath+"/"+id, nil)
-		if w.Code != http.StatusNotFound {
-			t.Errorf("DELETE %s = %d (%s), want 404", id, w.Code, w.Body.String())
-		}
-		if got := problemOf(t, w).Type; got != problemType+mount.CodeFactorNotFound {
-			t.Errorf("DELETE %s answers type %q, want %q", id, got, problemType+mount.CodeFactorNotFound)
+		if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusNoContent {
+			t.Errorf("DELETE %s = %d (%s), want 204", id, w.Code, w.Body.String())
 		}
 	}
 	if _, there := r.status(theirs); !there {
@@ -263,11 +260,10 @@ func TestDeletingAnotherAccountsFactorReadsAsNotFound(t *testing.T) {
 		t.Errorf("an identifier longer than any there is = %d, want 400", w.Code)
 	}
 	// The longest identifier the guard admits is not over it: it reaches the
-	// register as an identifier that is not there and answers the code, not
-	// 400.
+	// register as an identifier that is not there and answers 204, not 400.
 	boundary := strings.Repeat("x", maxFactorIDLen)
-	if w := r.do(http.MethodDelete, listPath+"/"+boundary, nil); w.Code != http.StatusNotFound {
-		t.Errorf("an identifier of exactly the longest admitted length = %d, want 404 as a factor that is not there", w.Code)
+	if w := r.do(http.MethodDelete, listPath+"/"+boundary, nil); w.Code != http.StatusNoContent {
+		t.Errorf("an identifier of exactly the longest admitted length = %d, want 204 as a factor that is not there", w.Code)
 	}
 }
 
@@ -450,7 +446,7 @@ func TestADeletionThatFailsInTheFactorEndsNoSession(t *testing.T) {
 
 // A session store that fails after the row is gone is reported as an outage: the
 // factor is already removed and the other devices are still signed in. Repeating
-// the request answers the not-found code because the row is gone, and still ends
+// the request answers 204 because the row already reads as gone, and still ends
 // the other sessions and rotates the requesting one, so the retry finishes the
 // work the first attempt could not.
 func TestADeletionWhoseSessionRevocationFailsReportsItAndARetryFinishes(t *testing.T) {
@@ -484,8 +480,8 @@ func TestADeletionWhoseSessionRevocationFailsReportsItAndARetryFinishes(t *testi
 
 	r.sessions.err = nil
 	w = r.do(http.MethodDelete, listPath+"/"+id, nil)
-	if w.Code != http.StatusNotFound || problemOf(t, w).Type != problemType+mount.CodeFactorNotFound {
-		t.Fatalf("the retry = %d %s, want 404 factor-not-found", w.Code, w.Body.String())
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("the retry = %d %s, want 204", w.Code, w.Body.String())
 	}
 	if r.sessions.isLive("another-session") {
 		t.Error("the retry did not end the other session")
@@ -510,8 +506,8 @@ func TestADeletionWhoseSessionRevocationFailsReportsItAndARetryFinishes(t *testi
 
 // A rotation that fails after the row is gone is reported as an outage, like a
 // failed revocation: the factor is already removed and the requesting device
-// still holds its old token, which is valid. Repeating the request answers the
-// not-found code because the row is gone, and still rotates the requesting
+// still holds its old token, which is valid. Repeating the request answers 204
+// because the row already reads as gone, and still rotates the requesting
 // session, so the retry finishes the work the first attempt could not.
 func TestADeletionWhoseRotationFailsReportsItAndARetryRotates(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
@@ -541,8 +537,8 @@ func TestADeletionWhoseRotationFailsReportsItAndARetryRotates(t *testing.T) {
 
 	r.sessions.rotateErr = nil
 	w = r.do(http.MethodDelete, listPath+"/"+id, nil)
-	if w.Code != http.StatusNotFound || problemOf(t, w).Type != problemType+mount.CodeFactorNotFound {
-		t.Fatalf("the retry = %d %s, want 404 factor-not-found", w.Code, w.Body.String())
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("the retry = %d %s, want 204", w.Code, w.Body.String())
 	}
 	fresh := r.sessions.tokenOf(sessionUUID)
 	if fresh == old {

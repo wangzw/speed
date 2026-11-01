@@ -64,7 +64,7 @@
 ### 对外的失败应答
 
 - **503 的形状。** authn 自己的处理器答 503 时，`Problem.Type` 为 `urn:speed:authn:unavailable`；令牌端点按 OAuth（[REF-rfc6749](../../../references.md)）的约定答 `temporarily_unavailable`。网关的 503 只带状态码（入口模块的 `Fail` 只带状态码），同样不区分成因。503 的应答里只有 `ErrBusy` 带 `Retry-After: 1`。
-- **404 的形状。** 管理面找不到资源时答裸 404，不带本能力的 problem 码。因素的删除与改名两条路由是例外，`Problem.Type` 为 `urn:speed:authn:factor-not-found`：因素标识不存在与不属于调用者共用这一个码，区分会变成存在性探测（[authn-mfa](design-authn-mfa.md)）。删除路由的行已不在也可能是会话收口失败后的重试，故它的 404 仍收口会话，并在轮换时带上新 cookie。
+- **404 的形状。** 管理面找不到资源时答裸 404，不带本能力的 problem 码。因素的改名路由是例外，`Problem.Type` 为 `urn:speed:authn:factor-not-found`：因素标识不存在与不属于调用者共用这一个码，区分会变成存在性探测（[authn-mfa](design-authn-mfa.md)）。删除路由不答 404：不存在或不属于调用者的标识按已删除处理，答 204，并在行已不在时仍收口会话、在轮换时带上新 cookie。
 - **其余形状。** 机器可读的码取 `urn:speed:authn:<码>`，码的集合与新增规则在 [design-authn-login](design-authn-login.md)；运行期哨兵表的 HTTP 列是码与状态的对应。
 - **注册与验证的冲突形状。** `POST B/register` 把用户名冲突答 409 `username-taken`，把邮箱地址冲突答 409 `email-taken`：注册在开户事务里插入邮箱预留，`(kind, value)` 的唯一索引是地址的唯一仲裁点，冲突返回 `ErrContactTaken`，账户、用户名与口令随事务回滚。自助添加邮箱也在发码之前读标识表与未证明预留，地址已被别的账户持有或预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算；写标识是权威拒绝，地址在发码之后被占用时 `ErrContactTaken` 与 `ErrAccountExists` 都答 409 `email-taken`。读预留或标识失败答 503，不按空闲处理。
 - **未验证账户的能力限制。** 要求已验证邮箱的能力对读作 `SignupPending` 的账户答 403 `contact-required`——持有邮箱而没有一条已证明的邮箱，不论账户是自助注册、管理员预置还是导入写出的；没有邮箱的账户读作 `SignupNone`，不受这条门控约束。状态读取失败答 503，不按放行处理（[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。

@@ -124,10 +124,10 @@ dashboard or an audit query written against it.
   requires one is `ErrLastFactor`, refused before any session is touched. The
   session store is therefore a failure point of that route: a revocation or
   rotation failure after the row is gone answers 503, and repeating the request
-  answers 404 `factor-not-found` because the row is gone, while still settling
-  the sessions; a rotation the repeat performs reaches the client on that 404's
+  answers 204 because the row already reads as gone, while still settling the
+  sessions; a rotation the repeat performs reaches the client on that 204's
   cookie. The price is explicit: a DELETE naming a factor that never existed
-  answers 404 and ends the caller's other sessions and rotates the caller's own
+  answers 204 and ends the caller's other sessions and rotates the caller's own
   as well. A module with no session store
   removes the factor and logs a warning that the sessions stay valid
   (`TestRemoveHasTheFactorCleanItsDataBeforeTheRowGoes`,
@@ -169,7 +169,8 @@ dashboard or an audit query written against it.
   effective account's factors, requires `FreshLocalMulti(recent-window)` from
   the caller's own proof — an IdP's declared multi-factor does not satisfy it —
   and reads a factor that is not the effective account's as one already gone,
-  answering 404 with the problem type `urn:speed:authn:factor-not-found`;
+  answering the same 204 a landed removal gives so that a repeated removal is
+  idempotent and neither case says whether the factor exists;
   `PATCH B/factors/:id` writes the label of one of the effective account's
   factors, answers the updated row, and answers 404 with the problem type
   `urn:speed:authn:factor-not-found` for another account's identifier, the same

@@ -131,7 +131,7 @@ type MFA interface {
 |---|---|---|
 | 列出自己的因素 | `GET B/factors` | 无附加要求 |
 | 登记因素 | `POST B/flows/authenticated {purpose:"enroll", input:{kind, label?}}`，随后经 `POST B/flows/answer {step:"enroll"}` 推进；登记只经登录引擎这一个入口 | 账户已有有效因素：新鲜的本地多因素；账户没有因素：新鲜的第一因素；CSRF。冒充期间登记的是被冒充账户的因素，认证事实取自发起者自己的会话。 |
-| 删除因素 | `DELETE B/factors/:id` | 新鲜的本地多因素；`mfa_required` 的账户不得删最后一个；CSRF。冒充期间删除的是被冒充账户的因素。因素标识不存在或不属于调用者时答 404，`Problem.Type` 为 `urn:speed:authn:factor-not-found`；两种情况共用一个码，区分会变成存在性探测。行已不在也可能是「删除已落地、会话收口失败」的重试，故这个 404 仍收口会话，并在轮换时带上新 cookie。 |
+| 删除因素 | `DELETE B/factors/:id` | 新鲜的本地多因素；`mfa_required` 的账户不得删最后一个；CSRF。冒充期间删除的是被冒充账户的因素。因素标识不存在或不属于调用者时按已删除处理，答 204，删除因此是幂等的；两种情况不区分，区分会变成存在性探测。行已不在也可能是「删除已落地、会话收口失败」的重试，故这次 204 仍收口会话，并在轮换时带上新 cookie。 |
 | 改名因素 | `PATCH B/factors/:id` | 无附加要求，标签是元数据；CSRF。冒充期间改名的是被冒充账户的因素。因素标识不存在或不属于调用者时答 404，`Problem.Type` 为 `urn:speed:authn:factor-not-found`；两种情况共用一个码，区分会变成存在性探测。 |
 | 加强认证 | `POST B/flows/authenticated {purpose:"step-up"}` | 复用登录引擎；见「加强认证」 |
 | 管理员重置因素 | `POST B/accounts/:id/mfa-reset`（路由由 `authn.admin` 挂） | 见「删除与重置」 |
@@ -521,7 +521,7 @@ CREATE TABLE authn_webauthn_credentials (
 1. 被删因素处于启用状态：经 `Sessions.RevokeAccount(ctx, account, 发起会话, authn.ReasonSelf)` 撤销该账户除发起会话之外的其余会话；撤销成功之后经 `Sessions.Rotate` 为发起会话换令牌，并经 `Sessions.SetCookie` 把它写回应答。发起删除的设备因此以新令牌保持登录，旧令牌不再有效。`Sessions` 缺席时跳过并写一行 Warn，会话保持有效。
 2. 待确认或已停用：不撤销、不轮换。这两种因素不改变账户已有的强度，删掉它们不改变其余会话的可信度。
 
-拒绝（`ErrLastFactor`、账户读失败）与删除本身的失败都发生在撤销之前，被拒或失败的删除不动会话。撤销与轮换都在因素行删掉之后进行，且撤销先于轮换：`Sessions.RevokeAccount` 或 `Sessions.Rotate` 失败时路由答 503，此时因素已经删掉，发起会话在撤销失败时不被轮换、在轮换失败时保持原令牌，重发同一请求按「因素已不存在」处理并补完撤销与轮换。一个本来就不存在的名字与一个已删掉的名字无从区分，同样按已删处理：应答 404 `factor-not-found`，并结束其余会话、轮换发起会话——这是重试得以收口的代价，账下本没有这个因素时这两步只是把该账户按更严的方向收口。代价说白：一条把因素标识写错的 DELETE，会结束调用者自己的其他会话并换掉自己的令牌。
+拒绝（`ErrLastFactor`、账户读失败）与删除本身的失败都发生在撤销之前，被拒或失败的删除不动会话。撤销与轮换都在因素行删掉之后进行，且撤销先于轮换：`Sessions.RevokeAccount` 或 `Sessions.Rotate` 失败时路由答 503，此时因素已经删掉，发起会话在撤销失败时不被轮换、在轮换失败时保持原令牌，重发同一请求按「因素已不存在」处理并补完撤销与轮换。一个本来就不存在的名字与一个已删掉的名字无从区分，同样按已删处理并结束其余会话、轮换发起会话——这是重试得以收口的代价，账下本没有这个因素时这两步只是把该账户按更严的方向收口。代价说白：一条把因素标识写错的 DELETE，会结束调用者自己的其他会话并换掉自己的令牌。
 
 删除单个因素的原因是账户持有人在改自己的凭据，会话撤销取 `authn.ReasonSelf`，与解绑等自助变更同类；`Reset` 是管理员动作，固定用 `authn.ReasonFactorReset`。
 

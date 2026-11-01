@@ -101,11 +101,9 @@ func (m *product) Remove(ctx context.Context, id authn.AccountID, factorID strin
 // The factor is read before the removal, so a pending or disabled row, which never
 // added to the account's strength, ends no session and rotates none. The removal's
 // refusals and its failures are returned before any session is touched. A name
-// that is not there is a removal that has already happened: the sessions are
-// settled all the same and ErrFactorNotEnrolled is returned after them, so a
-// retry after the session store failed finishes the revocation and the rotation
-// the first call could not. The route turns that sentinel into the not-found
-// code and carries the rotated cookie. When
+// that is not there is a removal that has already happened: the route answers as
+// done and settles the sessions all the same, so a retry after the session store
+// failed finishes the revocation and the rotation the first call could not. When
 // no session module is taken in, the factor is removed and a Warn says the
 // sessions stay valid, as Reset does.
 //
@@ -127,18 +125,7 @@ func (m *product) removeFactorAndSettleSessions(ctx context.Context, id authn.Ac
 	if found && rec.Status != authn.FactorActive {
 		return authn.Issued{}, nil
 	}
-	issued, err := m.settleSessions(ctx, id, current, authn.ReasonSelf, "a factor was removed")
-	if err != nil {
-		return authn.Issued{}, err
-	}
-	if !found {
-		// The row may be gone because an earlier attempt removed it and
-		// failed to settle the sessions. Settling here finishes that work;
-		// the route answers the not-found code and carries the rotated
-		// cookie the client needs to stay signed in.
-		return issued, authn.ErrFactorNotEnrolled
-	}
-	return issued, nil
+	return m.settleSessions(ctx, id, current, authn.ReasonSelf, "a factor was removed")
 }
 
 // settleSessions ends the account's other sessions and rotates the one named by
