@@ -265,25 +265,38 @@ request body.
   `useCurrentTenant` stays unused.
 - **Shared units live in the lower packages.** The refresh control and
   mechanism (`RefreshButton`, `usePageRefresh`, `pageRefreshRead`),
-  `httpStatusOf`, `CopyButton` and `OneTimeValuePanel` come from
-  `@speed/ui-kit`; the WebAuthn ceremony from `@speed/auth-core/webauthn`;
-  the step-up gate from `@speed/auth-core` (called with
-  `session.isStepUpShortfall` as the discriminator); instant formatting
-  from `@speed/i18n`'s `formatInstant`, fixed to UTC. This package keeps
-  no copy of any of them.
+  `httpStatusOf`, `CopyButton`, `OneTimeValuePanel` and
+  `TotpEnrollmentPanel` come from `@speed/ui-kit`; the WebAuthn ceremony
+  from `@speed/auth-core/webauthn` and the `otpauth://` parser from
+  `@speed/auth-core/otpauth`; the step-up gate from `@speed/auth-core`
+  (called with `session.isStepUpShortfall` as the discriminator); instant
+  formatting from `@speed/i18n`'s `formatInstant`, fixed to UTC. This
+  package keeps no copy of any of them.
 - **The step renderer has two siblings.** `src/internal/flow-step.tsx` is
   one of three copies (`auth-ui`, `account-ui`, `console-ui`) kept in
   lockstep by hand: a change to how a step renders lands in all three in
   the same change. This package hosts the workspace's source-level parity
   suite (`src/internal/flow-step-parity.test.ts`): it reads the three
   files, compares the rendered step kinds, the answer properties, the
-  render primitives and the WebAuthn seam, and names the copy that drifts. All
-  three start an assertion passkey ceremony on the step's arrival -- the
-  entry was the click -- keying the arrival on the step number and the
-  challenge so a re-sent challenge starts a fresh ceremony while an
-  ordinary re-render does not, and start a registration ceremony on a
-  click, because a creation ceremony needs the user activation some
-  browsers require.
+  render primitives and the WebAuthn seam, and names the copy that drifts.
+  A `webauthn` step renders the factor its options name: TOTP's
+  `otpauth_uri` is parsed by `@speed/auth-core/otpauth` and rendered
+  through ui-kit's `TotpEnrollmentPanel` as a scannable QR symbol with a
+  manual-entry disclosure for the base32 secret and its parameters, beside
+  a six-digit code field (the URI itself is never shown as text), while a
+  passkey's public-key options drive the browser's WebAuthn ceremony
+  (`@speed/auth-core/webauthn`) and the credential it returns is reported
+  upward. All three start an assertion passkey ceremony on the step's
+  arrival -- the entry was the click -- keying the arrival on the step
+  number and the challenge so a re-sent challenge starts a fresh ceremony
+  while an ordinary re-render does not, and start a registration ceremony
+  on a click, because a creation ceremony needs the user activation some
+  browsers require. Each ceremony failure keeps its own wording:
+  `unsupported`, `cancelled` and `already-registered` (the browser's
+  `InvalidStateError`, meaning the authenticator already holds a
+  credential the server's `excludeCredentials` excludes) have their own
+  sentences, and the generic failure sentence names the ceremony, so a
+  failed registration does not read as a failed sign-in.
 - **No routing in package code.** No path matching, no `react-router`. The
   shell links each labelled entry to its declaration's path; a page builds
   a row's detail link from its own matched path plus a row id, and a

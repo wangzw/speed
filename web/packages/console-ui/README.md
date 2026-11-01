@@ -293,6 +293,19 @@ own factors through `GET /api/v1/auth/factors`. Both act on the caller's own
 session rather than an administration surface, so neither is replaceable
 through the bundle.
 
+The dialog renders each parked step through the package's step renderer
+(`src/internal/flow-step.tsx`). A `webauthn` step renders the factor its
+options name: a TOTP enrolment's `otpauth_uri` is parsed by
+`@speed/auth-core/otpauth` and drawn through `@speed/ui-kit`'s
+`TotpEnrollmentPanel` as a scannable QR symbol with a manual-entry
+disclosure for the base32 secret and its parameters, beside a six-digit
+code field, and the URI itself is never shown as text; a passkey's
+options drive `@speed/auth-core/webauthn`. Each passkey ceremony failure
+renders its own sentence: an unsupported browser, a dismissed prompt and
+a device that already holds the credential each have their own wording,
+and the generic failure sentence names the ceremony, so a failed
+registration does not read as a failed sign-in.
+
 The package ships that bundle. `consoleOperations` is bound to the
 generated `@speed/api-sdk` surface -- every administration read and write
 across the modules' admin routes, through the generated query keys and

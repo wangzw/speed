@@ -18,11 +18,14 @@
  *    identifier travels under `factor` as the field `factor`.
  *  - `enroll`: the factor kinds the assembly takes in; the chosen kind
  *    travels under `enroll` as the field `kind`.
- *  - `webauthn`: the factor's own JSON. TOTP's otpauth_uri is rendered as
- *    text beside a code field; a passkey's request options are driven by
- *    the WebAuthn ceremony (@speed/auth-core/webauthn), whose credential is
- *    reported under the answer step the CALLER names -- the record's state
- *    decides it, so the second factor of a step-up answers under `factor`.
+ *  - `webauthn`: the factor's own JSON. TOTP's `otpauth_uri`, when it
+ *    parses, is rendered as a scannable QR symbol with a manual-entry
+ *    disclosure for its base32 secret, beside a six-digit code field --
+ *    the step's JSON is never shown as a blob; a passkey's request or
+ *    creation options are driven by the WebAuthn ceremony
+ *    (@speed/auth-core/webauthn), whose credential is reported under the
+ *    answer step the CALLER names -- the record's state decides it, so the
+ *    second factor of a step-up answers under `factor`.
  *  - `complete`: a single confirm that takes the flow's result with
  *    `step: 'complete'`.
  *  - `redirect`: an external URL; the component never navigates.
@@ -33,7 +36,7 @@
  * factor option's server-supplied label wins over both.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -43,7 +46,9 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type { AuthnStep } from '@speed/auth-core'
 import type { AuthnFlowAnswer } from '@speed/auth-core'
+import { formatSecretForDisplay, parseOtpauth } from '@speed/auth-core/otpauth'
 import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
+import { TotpEnrollmentPanel } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './translation.js'
 
 /** The factor/enroll kinds the family has wording for. A known kind
@@ -176,44 +181,15 @@ export function FlowStep({
   if (step.kind === 'webauthn') {
     const options = step.options
     if (webauthnStepOf(options) === 'totp') {
-      // TOTP's enrollment shows the otpauth_uri to add to an authenticator
-      // app, then takes the six-digit code the app shows.
       return (
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="body2" color="text.secondary">
-            {t('stepUp.codeHelp')}
-          </Typography>
-          <Typography
-            variant="body2"
-            component="pre"
-            sx={{
-              fontFamily: 'monospace',
-              wordBreak: 'break-all',
-              whiteSpace: 'pre-wrap',
-              mt: 1,
-              mb: 1.5,
-            }}
-          >
-            {safeJson(options)}
-          </Typography>
-          <TextField
-            label={t('stepUp.codeLabel')}
-            value={values.code ?? ''}
-            onChange={(event) => setValues({ ...values, code: event.target.value })}
-            fullWidth
-            autoComplete="one-time-code"
-          />
-          <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
-            <Button
-              type="button"
-              variant="contained"
-              disabled={submitDisabled || (values.code ?? '').trim() === ''}
-              onClick={() => onSubmit({ step: answerStep, input: { code: (values.code ?? '').trim() } })}
-            >
-              {submitLabel}
-            </Button>
-          </Box>
-        </Box>
+        <TotpEnrollStep
+          uri={otpauthUriOf(options)}
+          code={values.code ?? ''}
+          onCodeChange={(code) => setValues({ ...values, code })}
+          submitLabel={submitLabel}
+          submitDisabled={submitDisabled}
+          onSubmit={(code) => onSubmit({ step: answerStep, input: { code } })}
+        />
       )
     }
     return (
@@ -258,6 +234,96 @@ export function FlowStep({
         </Button>
       </Box>
     </Box>
+  )
+}
+
+interface TotpEnrollStepProps {
+  /** The step's `otpauth_uri`, or null when it carries none. */
+  readonly uri: string | null
+  /** The six-digit code typed so far. */
+  readonly code: string
+  readonly onCodeChange: (code: string) => void
+  readonly submitLabel: string
+  /** True while a throttled answer's wait holds the confirm action back.
+   * The code field stays editable. */
+  readonly submitDisabled?: boolean
+  /** Reports the trimmed code; the caller answers the flow with it. */
+  readonly onSubmit: (code: string) => void
+}
+
+/**
+ * The authenticator-app enrolment block: the step's `otpauth_uri` as a
+ * scannable QR symbol, a disclosure that shows the parsed base32 secret for
+ * hand entry with a copy control, and the six-digit code field the app
+ * generates.
+ *
+ * This wrapper owns the parse and the wording; the panel in @speed/ui-kit
+ * owns the layout. The URI is never rendered as text: the panel shows the
+ * parsed parts alone. A URI that does not parse renders neither the symbol
+ * nor the manual block, and withholds the guidance that names a code to
+ * scan, so the panel never advertises a code it did not draw. The code
+ * field stays. The code is submitted only by the confirm control, never on
+ * typing.
+ */
+function TotpEnrollStep({
+  uri,
+  code,
+  onCodeChange,
+  submitLabel,
+  submitDisabled = false,
+  onSubmit,
+}: TotpEnrollStepProps) {
+  const { t } = useConsoleUiTranslation()
+  const otpauth = useMemo(() => {
+    if (uri === null) {
+      return null
+    }
+    const parsed = parseOtpauth(uri)
+    return parsed.ok ? parsed.otpauth : null
+  }, [uri])
+
+  const parameters =
+    otpauth === null
+      ? undefined
+      : [
+          { label: t('stepUp.totpAlgorithm'), value: otpauth.algorithm },
+          { label: t('stepUp.totpDigits'), value: String(otpauth.digits) },
+          { label: t('stepUp.totpPeriod'), value: String(otpauth.period) },
+        ]
+
+  return (
+    <TotpEnrollmentPanel
+      otpauthUri={otpauth === null ? undefined : (uri ?? undefined)}
+      qrLabel={t('stepUp.totpQrLabel')}
+      guidance={otpauth === null ? undefined : t('stepUp.enrollTotpHelp')}
+      manualToggleLabel={t('stepUp.totpManualToggle')}
+      secret={
+        otpauth === null
+          ? undefined
+          : {
+              value: otpauth.secret,
+              display: formatSecretForDisplay(otpauth.secret),
+            }
+      }
+      secretLabel={t('stepUp.totpSecretLabel')}
+      copyLabel={t('stepUp.totpCopyLabel')}
+      copiedLabel={t('stepUp.totpCopiedLabel')}
+      copyVisibleLabel={t('stepUp.totpCopyVisibleLabel')}
+      parameters={parameters}
+      codeLabel={t('stepUp.codeLabel')}
+      code={code}
+      onCodeChange={onCodeChange}
+      primaryAction={
+        <Button
+          type="button"
+          variant="contained"
+          disabled={submitDisabled || code.trim() === ''}
+          onClick={() => onSubmit(code.trim())}
+        >
+          {submitLabel}
+        </Button>
+      }
+    />
   )
 }
 
@@ -311,6 +377,7 @@ function PasskeyPrompt({
   onCeremonyError,
 }: PasskeyPromptProps) {
   const { t } = useConsoleUiTranslation()
+  const registering = webauthnStepOf(options) === 'register'
   // An assertion step starts on arrival, so its first render is already the
   // waiting state and the start control never flashes.
   const arrivalKey = assertionKey(options, sequence)
@@ -378,7 +445,7 @@ function PasskeyPrompt({
       }
     } catch (failure) {
       if (pendingRef.current?.attempt === attempt) {
-        reportError(webauthnErrorKey(failure))
+        reportError(webauthnErrorKey(failure, registering))
       }
     } finally {
       if (pendingRef.current?.attempt === attempt) {
@@ -430,7 +497,7 @@ function PasskeyPrompt({
   return (
     <Box sx={{ mt: 2 }}>
       <Typography variant="body2" color="text.secondary">
-        {webauthnStepOf(options) === 'register'
+        {registering
           ? t('stepUp.passkeyRegisterPrompt')
           : t('stepUp.passkeyPrompt')}
       </Typography>
@@ -501,27 +568,38 @@ function assertionKey(options: unknown, sequence: number): string | null {
   return `assert:${sequence}:${challenge}`
 }
 
-/** The bundle key of the message a failed ceremony renders. */
-function webauthnErrorKey(failure: unknown): string {
+/** The bundle key of the message a failed ceremony renders, by the reason it
+ * carries and the ceremony it ran: a failed registration and a failed
+ * sign-in read differently, and a device that already holds the credential
+ * names its own remedy. */
+function webauthnErrorKey(failure: unknown, registering: boolean): string {
   if (failure instanceof WebauthnError) {
     switch (failure.reason) {
       case 'unsupported':
         return 'stepUp.passkeyUnsupported'
       case 'cancelled':
         return 'stepUp.passkeyCancelled'
+      case 'already-registered':
+        return 'stepUp.passkeyAlreadyRegistered'
       default:
-        return 'stepUp.passkeyFailed'
+        return registering
+          ? 'stepUp.passkeyFailedRegister'
+          : 'stepUp.passkeyFailedSignIn'
     }
   }
-  return 'stepUp.passkeyFailed'
+  return registering
+    ? 'stepUp.passkeyFailedRegister'
+    : 'stepUp.passkeyFailedSignIn'
 }
 
-/** The step's payload as readable text; a non-serializable value reads as
- * its string form rather than throwing in a render. */
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
+/** The TOTP setup URI a step's options carry, or null when they carry none.
+ * Only this one field of the step's JSON is rendered: the options are the
+ * flow engine's answer, not a document to show, so a step without a usable
+ * URI renders no payload at all. */
+function otpauthUriOf(options: unknown): string | null {
+  if (typeof options !== 'object' || options === null) {
+    return null
   }
+  const uri = (options as Record<string, unknown>).otpauth_uri
+  return typeof uri === 'string' && uri !== '' ? uri : null
 }

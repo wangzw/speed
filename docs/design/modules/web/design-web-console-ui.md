@@ -244,8 +244,8 @@ interface ConsoleProviderProps {
 | 依赖 | 用途 |
 |---|---|
 | `@speed/api-sdk` | 各管理面端点的生成读钩子与写 mutation；子路径 `@speed/api-sdk/features` 的特性名类型 `FeatureName`，用作 `requires` 的元素类型与 `hasFeature` 的参数类型 |
-| `@speed/auth-core` | 会话：宿主把会话交给壳，页面在特权写被答 401 步进时打开重认证对话框、重放该写；门控用 auth-core 的 `useStepUpGate`，控制台显式传入 `session.isStepUpShortfall` 作为判别。通行密钥仪式（[REF-webauthn](../../../references.md)）经子路径 `@speed/auth-core/webauthn`。本包不读当前租户 |
-| `@speed/ui-kit` | 主题、表单、对话框、数据表与空态原语；页的刷新控件与机制（`RefreshButton`、`usePageRefresh`、`pageRefreshRead`）、按状态读失败（`httpStatusOf`）、复制控件与一次性值面板（`CopyButton`、`OneTimeValuePanel`）也由它提供 |
+| `@speed/auth-core` | 会话：宿主把会话交给壳，页面在特权写被答 401 步进时打开重认证对话框、重放该写；门控用 auth-core 的 `useStepUpGate`，控制台显式传入 `session.isStepUpShortfall` 作为判别。`./otpauth` 子路径解析 `otpauth://` 登记 URI 并格式化 base32 密钥供手工输入，通行密钥仪式（[REF-webauthn](../../../references.md)）经子路径 `@speed/auth-core/webauthn`。本包不读当前租户 |
+| `@speed/ui-kit` | 主题、表单、对话框、数据表与空态原语；页的刷新控件与机制（`RefreshButton`、`usePageRefresh`、`pageRefreshRead`）、按状态读失败（`httpStatusOf`）、复制控件与一次性值面板（`CopyButton`、`OneTimeValuePanel`）、认证器应用的登记面板 `TotpEnrollmentPanel` 也由它提供 |
 | `@speed/layout-kit` | 外壳骨架：`AppShell` 的两种外壳形态（顶栏 / 侧栏）、响应式导航抽屉与内容区，以及就地导航的纯点击判定 `isPlainPrimaryClick` |
 | `@speed/i18n` | 命名空间注册与文案的翻译钩子；时间渲染用 `formatInstant`（本包固定 UTC） |
 | `@tanstack/react-query` | peer（必需）：宿主供给的 QueryClient |
@@ -430,7 +430,9 @@ graph TD
 
 **步进对话框的失败面。** 回答的错误码按本包白名单解析，白名单含步进回答路径会收到的认证码（`authn.login_failed`、`authn.flow_invalid`、`authn.throttled`、`authn.unavailable`、`authn.human_verification_required`）与限流层答 429 时的问题码 `ratelimit.throttled`，验证码输错渲染该码的文本而不是通用兜底。429 带 `Retry-After` 时，失败横幅（`role="alert"`）只渲染该码无秒数的静态句，播报一次；剩余秒数渲染在横幅之外的一条非 live 行（`aria-live="off"`），随 `retryAfterSeconds` 每秒更新，读屏不会整句重念。对话框在该时长内禁用这一步的提交（取消仍可用），倒计时到点后恢复可提交，非 live 行随之消失，横幅仍是该码的静态句。起手失败（既不是 401 步进不足，也不是会话仍成立时的 400）与回答被 `authn.flow_invalid` 拒绝（流程已过期、已被消费、已无可答复）同样处理：对话框不渲染描述正文（`stepUp.description`）与步骤表单，渲染该码的失败横幅、重新起手的动作与取消；重新起手是对话框本地的，由它重新驱动 `useStepUp`，不改 auth-core。通行密钥仪式的失败与服务端的失败横幅互斥，同一时刻只渲染一条（[ui-kit](design-web-ui-kit.md) 的「写入的反馈」）。步进对话框自带区域，失败横幅在模态之内。
 
-**通行密钥仪式步的等待、取消与重试。** 断言仪式步到达即进入等待态，没有第二次点击：选择通行密钥因素的那次点击就是全部交互，界面直接显示等待文案与一个取消控件。登记仪式步（选项带 `user`）仍需一次点击开始，因为创建仪式在部分浏览器要求用户激活。到达按步号与挑战共同辨认：服务端在下一步重发同一挑战时仪式重新开始，普通重渲染不重开。仪式可能在浏览器上停留很久（没有可用认证器时一直等到用户放弃），等待通知因此挂成空的 `role="status"` 区域（`stepUp.passkeyWaiting`）、下一提交再填文本，焦点移到取消控件（`stepUp.passkeyCancel`，等待态取代了继续/入口控件）。取消不等仪式落定，立即渲染取消文案（`stepUp.passkeyCancelled`）并给出重试（`stepUp.passkeyRetry`），只尽力经 `AbortController` 让浏览器放弃仪式（凭据 API 不保证响应中止）；被放弃仪式的迟到应答按尝试序号丢弃，步在仪式途中卸载时同样放弃仪式。浏览器不支持 WebAuthn、用户放弃提示与仪式失败各渲染自己的文案（`stepUp.passkeyUnsupported`、`stepUp.passkeyCancelled`、`stepUp.passkeyFailed`）。这一步与 auth-ui、account-ui 的两个副本保持同步：三处行为一致，改动同批落到三处。
+**通行密钥仪式步的等待、取消与重试。** 断言仪式步到达即进入等待态，没有第二次点击：选择通行密钥因素的那次点击就是全部交互，界面直接显示等待文案与一个取消控件。登记仪式步（选项带 `user`）仍需一次点击开始，因为创建仪式在部分浏览器要求用户激活。到达按步号与挑战共同辨认：服务端在下一步重发同一挑战时仪式重新开始，普通重渲染不重开。仪式可能在浏览器上停留很久（没有可用认证器时一直等到用户放弃），等待通知因此挂成空的 `role="status"` 区域（`stepUp.passkeyWaiting`）、下一提交再填文本，焦点移到取消控件（`stepUp.passkeyCancel`，等待态取代了继续/入口控件）。取消不等仪式落定，立即渲染取消文案（`stepUp.passkeyCancelled`）并给出重试（`stepUp.passkeyRetry`），只尽力经 `AbortController` 让浏览器放弃仪式（凭据 API 不保证响应中止）；被放弃仪式的迟到应答按尝试序号丢弃，步在仪式途中卸载时同样放弃仪式。浏览器不支持 WebAuthn、用户放弃提示、设备已登记本账户的通行密钥与其余失败各渲染自己的文案：浏览器不支持 WebAuthn 取 `stepUp.passkeyUnsupported`，用户放弃提示取 `stepUp.passkeyCancelled`，设备已登记取 `stepUp.passkeyAlreadyRegistered`，其余失败按仪式取 `stepUp.passkeyFailedRegister` 或 `stepUp.passkeyFailedSignIn`，登记失败不读作登录失败。这一步与 auth-ui、account-ui 的两个副本保持同步：三处行为一致，改动同批落到三处。
+
+**TOTP 登记步的二维码与手动密钥。** `webauthn` 步的选项带 `otpauth_uri` 时是认证器应用的登记步：`@speed/auth-core/otpauth` 解析该 URI，ui-kit 的 `TotpEnrollmentPanel` 渲染可扫描的二维码、可展开的 base32 密钥（配复制控件与算法、位数、周期说明）以及六位验证码字段；URI 本身不作文本展示，步骤的 JSON 也不作整块展示。URI 缺席或不解析时不出示二维码、手动入口与「扫描二维码」的引导，只保留验证码字段。验证码不在输入时提交，由确认控件触发，被拒时保留已输入内容。这一步与 auth-ui、account-ui 的两个副本保持同步：三处行为一致，改动同批落到三处。
 
 ### 写入的反馈与读的刷新
 
@@ -546,6 +548,8 @@ graph TD
 | 读的陈旧提示、刷新忙态与详情页 404 占位 | 已实现 | `web/packages/console-ui/src/internal/async-section.tsx` `ConsoleAsyncSection`、`refreshing`、`notFoundState`、`isNotFound`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage`；`web/packages/console-ui/src/AuditDetailPage.tsx` `AuditDetailPage`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage` |
 | 租户选择器的加载、失败与空态 | 已实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope` |
 | 步进对话框的失败面 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/console-ui/src/internal/flow-step.tsx` `FlowStep` |
+| TOTP 登记步以二维码与手动密钥渲染，URI 不作文本 | 已实现 | `web/packages/console-ui/src/internal/flow-step.tsx` `FlowStep`、`TotpEnrollStep`；`web/packages/auth-core/src/otpauth.ts` `parseOtpauth`、`formatSecretForDisplay`；`web/packages/ui-kit/src/components/TotpEnrollmentPanel.tsx` `TotpEnrollmentPanel` |
+| 通行密钥仪式失败各取自身文案（含设备已登记，通用句按登记与登录区分） | 已实现 | `web/packages/console-ui/src/internal/flow-step.tsx` `webauthnErrorKey`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | 写入失败的裸 403 与裸 401 文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `useConsoleUiErrorText`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | `authn.factor_not_seasoned` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | `authn.login_identifier_required` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |

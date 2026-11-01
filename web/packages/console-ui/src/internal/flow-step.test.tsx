@@ -1,12 +1,16 @@
 /**
- * FlowStep behaviour: the guarded factor-kind vocabulary of a flow step.
+ * FlowStep behaviour: the guarded factor-kind vocabulary of a flow step, the
+ * TOTP enrolment block and the passkey ceremony's failure wording.
  *
  * What this suite pins: a factor option renders its server-supplied label
  * when one arrives, otherwise a known kind's translated name, and an
  * unknown kind shows the kind as given; an enrollment kind follows the
  * same known/unknown rule. The package keeps its vocabulary locally
- * (auth-ui, account-ui and console-ui keep their own copies), so this
- * suite is the console-ui side of the registered sync obligation.
+ * (auth-ui and account-ui keep their own copies), so this suite is the
+ * console-ui side of the registered sync obligation. The TOTP cases pin
+ * the step's URI becoming the shipped panel's QR symbol and manual secret,
+ * never text; the failure cases pin the already-registered remedy and the
+ * generic sentence naming the ceremony it ran.
  */
 
 import { useState } from 'react'
@@ -15,6 +19,7 @@ import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthnStep } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
+import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { FlowStep } from './flow-step.js'
 
@@ -315,6 +320,196 @@ describe('FlowStep passkey ceremony', () => {
         step: 'answer',
         input: { credential: expect.stringContaining('second') },
       })
+    } finally {
+      restore()
+    }
+  })
+})
+
+const OTPAUTH_URI =
+  'otpauth://totp/Example%20Co:alice%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example%20Co'
+const OTPAUTH_SECRET_GROUPED = 'JBSW Y3DP EHPK 3PXP'
+
+const TOTP_STEP: AuthnStep = {
+  kind: 'webauthn',
+  options: { otpauth_uri: OTPAUTH_URI },
+}
+
+/** A step whose options ask the browser to create a credential. */
+const REGISTER_STEP: AuthnStep = {
+  kind: 'webauthn',
+  options: {
+    challenge: 'Y2hhbGxlbmdl',
+    user: { id: 'AQID', name: 'ada' },
+  },
+}
+
+describe('FlowStep TOTP enrolment', () => {
+  it('renders the otpauth URI as a QR symbol, never as text', () => {
+    const { getByRole } = render(TOTP_STEP)
+    const image = getByRole('img', { name: zhCN.stepUp.totpQrLabel })
+    const path = image.querySelector('path')?.getAttribute('d')
+    expect(path).toBeTruthy()
+
+    // A different URI draws a different matrix: the symbol's payload is the
+    // step's otpauth_uri, not a fixed decoration.
+    const other = render({
+      kind: 'webauthn',
+      options: {
+        otpauth_uri: 'otpauth://totp/speed:ada?secret=KRSXG5CTMVRXEZLU',
+      },
+    })
+    const otherPath = other.container
+      .querySelector('svg[role="img"] path')
+      ?.getAttribute('d')
+    expect(otherPath).toBeTruthy()
+    expect(otherPath).not.toBe(path)
+
+    expect(screen.queryByText(/otpauth:\/\//)).toBeNull()
+  })
+
+  it('passes the parsed secret and parameters to the manual disclosure', async () => {
+    const user = userEvent.setup()
+    render(TOTP_STEP)
+
+    const toggle = screen.getByRole('button', {
+      name: zhCN.stepUp.totpManualToggle,
+    })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText(OTPAUTH_SECRET_GROUPED)).toBeNull()
+
+    await user.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText(OTPAUTH_SECRET_GROUPED)).toBeTruthy()
+    expect(screen.queryByText(/otpauth:\/\//)).toBeNull()
+    expect(screen.getByText(zhCN.stepUp.totpAlgorithm)).toBeTruthy()
+    expect(screen.getByText('SHA1')).toBeTruthy()
+    expect(screen.getByText(zhCN.stepUp.totpDigits)).toBeTruthy()
+    expect(screen.getByText('6')).toBeTruthy()
+    expect(screen.getByText(zhCN.stepUp.totpPeriod)).toBeTruthy()
+    expect(screen.getByText('30')).toBeTruthy()
+  })
+
+  it('answers only when the confirm control is clicked, not while typing', async () => {
+    const user = userEvent.setup()
+    const { onSubmit } = render(TOTP_STEP)
+
+    const input = screen.getByLabelText(zhCN.stepUp.codeLabel)
+    await user.type(input, '123456')
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledWith({
+      step: 'answer',
+      input: { code: '123456' },
+    })
+  })
+
+  it('withholds the scan guidance when the step carries no URI', () => {
+    render({ kind: 'webauthn', options: { otpauth_uri: '' } })
+
+    expect(screen.queryByText(zhCN.stepUp.enrollTotpHelp)).toBeNull()
+    expect(screen.queryByRole('img')).toBeNull()
+    expect(screen.getByLabelText(zhCN.stepUp.codeLabel)).toBeTruthy()
+  })
+
+  it('renders no symbol or manual entry for a URI that does not parse', () => {
+    render({
+      kind: 'webauthn',
+      options: { otpauth_uri: 'https://example.com/not-an-otpauth-uri' },
+    })
+
+    expect(screen.queryByRole('img')).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: zhCN.stepUp.totpManualToggle }),
+    ).toBeNull()
+    expect(screen.queryByText(zhCN.stepUp.enrollTotpHelp)).toBeNull()
+    expect(screen.getByLabelText(zhCN.stepUp.codeLabel)).toBeTruthy()
+  })
+
+  it('passes axe with the manual disclosure open', async () => {
+    const user = userEvent.setup()
+    // The scan needs the page heading context the dialog supplies in a real
+    // host: an isolated widget render has no h1 and fails page-has-heading-one.
+    renderWithProviders(
+      <>
+        <h1>Verify it's you</h1>
+        <FlowStep
+          step={TOTP_STEP}
+          sequence={1}
+          answerStep="answer"
+          submitLabel="Continue"
+          onSubmit={vi.fn()}
+        />
+      </>,
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.stepUp.totpManualToggle }),
+    )
+    await expectNoAxeViolations()
+  })
+})
+
+describe('FlowStep passkey failure wording', () => {
+  it('names the already-registered remedy when the device holds the credential', async () => {
+    // The server sends excludeCredentials for the account's existing passkeys,
+    // and an authenticator that already holds one refuses the creation with
+    // InvalidStateError. That answer names its own remedy instead of the
+    // generic failure the viewer would retry forever.
+    const create = vi
+      .fn()
+      .mockRejectedValue(
+        new DOMException(
+          'the authenticator already holds this credential',
+          'InvalidStateError',
+        ),
+      )
+    const restore = installCredentials({ create, get: vi.fn() })
+    try {
+      render(REGISTER_STEP)
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'Continue' }))
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toBe(zhCN.stepUp.passkeyAlreadyRegistered)
+    } finally {
+      restore()
+    }
+  })
+
+  it('names a failed registration as a registration', async () => {
+    const restore = installCredentials({
+      create: vi.fn().mockRejectedValue(new Error('boom')),
+      get: vi.fn(),
+    })
+    try {
+      render(REGISTER_STEP)
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'Continue' }))
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toBe(zhCN.stepUp.passkeyFailedRegister)
+      expect(alert.textContent).not.toBe(zhCN.stepUp.passkeyFailedSignIn)
+    } finally {
+      restore()
+    }
+  })
+
+  it('names a failed assertion as a sign-in', async () => {
+    // A failed registration and a failed sign-in read differently, so the
+    // viewer is not told a sign-in failed while they were enrolling a factor.
+    const restore = installCredentials({
+      create: vi.fn(),
+      get: vi.fn().mockRejectedValue(new Error('boom')),
+    })
+    try {
+      render(ASSERT_STEP)
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toBe(zhCN.stepUp.passkeyFailedSignIn)
+      expect(alert.textContent).not.toBe(zhCN.stepUp.passkeyFailedRegister)
     } finally {
       restore()
     }

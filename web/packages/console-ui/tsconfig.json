@@ -33,6 +33,7 @@
       "@speed/api-sdk/features": ["../api-sdk/src/features.ts"],
       "@speed/api-sdk": ["../api-sdk/src/index.ts"],
       "@speed/api-client": ["../api-client/src/index.ts"],
+      "@speed/auth-core/otpauth": ["../auth-core/src/otpauth.ts"],
       "@speed/auth-core/webauthn": ["../auth-core/src/webauthn.ts"],
       "@speed/auth-core": ["../auth-core/src/index.ts"],
       "@speed/i18n/mui-locale": ["../i18n/src/mui-locale.ts"],
