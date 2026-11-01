@@ -17,7 +17,9 @@ convention the error surfaces resolve through (`createErrorTextResolver`
 plus the shared code families `SESSION_LIFECYCLE_ERROR_CODES` and
 `CLIENT_TRANSPORT_ERROR_CODES`), and the Intl-only display helpers
 (`resolveTimeZone`, `isSupportedTimeZone`, `formatInstant`,
-`languageDisplayName`).
+`languageDisplayName`, which names a tag by its base language subtag
+unless the optional supported-set argument shows two regional variants of
+the same language).
 It wraps react-i18next/i18next and adds the platform's discipline on top:
 pinned supported-language sets, per-language coverage, key-set parity, and
 missing keys that warn and render as the key -- never another language's

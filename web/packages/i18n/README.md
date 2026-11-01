@@ -144,6 +144,7 @@ isSupportedTimeZone('Asia/Tokyo') // true; an unknown zone answers false, never 
 formatInstant('2026-10-19T08:30:00Z', 'en-US', { timeZone: 'UTC' }) // medium date, short time
 formatInstant(Date.now(), 'en-US', { timeZone: 'UTC', style: 'long' }) // medium date, long time with zone name
 languageDisplayName('zh-CN', 'en-US') // the language's name in the UI language
+languageDisplayName('en-US', 'en-US', ['zh-CN', 'en-US']) // 'English' -- no region name for a lone variant
 ```
 
 The display-timezone chain is three tiers, first usable one wins: the
@@ -160,7 +161,11 @@ string, and so does a language the engine refuses.
 
 `languageDisplayName` resolves through `Intl.DisplayNames` and falls back
 to the raw tag when the engine cannot name it, so a language picker never
-renders an empty label.
+renders an empty label. It names a tag by its base language subtag, so
+`en-US` reads `English` and not `American English`; the optional third
+argument is the deployment's supported set, and when that set holds more
+than one tag of the same base language the full tag is named instead, so
+two regional variants still read differently (ADR-web-language-display-name).
 
 ## Namespaces and registration
 

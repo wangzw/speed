@@ -1,25 +1,57 @@
 /**
  * language-name.ts behaviour: the UI-language name of a tag through
- * Intl.DisplayNames, and the raw-tag fallback when the engine cannot
- * answer. The expected values are computed through Intl itself, so the
- * test does not pin one ICU release's exact wording.
+ * Intl.DisplayNames, the base-language naming rule that ignores a region
+ * variant unless the supported set carries two of them, and the raw-tag
+ * fallback when the engine cannot answer. The expected values are computed
+ * through Intl itself, so the test does not pin one ICU release's exact
+ * wording.
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import { languageDisplayName } from './language-name.js'
 
+function displayName(tag: string, uiLanguage: string): string | undefined {
+  return new Intl.DisplayNames([uiLanguage], { type: 'language' }).of(tag)
+}
+
 describe('languageDisplayName', () => {
-  it('names the tag in the UI language', () => {
+  it('names the tag by its base language subtag when the supported set has no variants', () => {
     for (const [tag, uiLanguage] of [
       ['en-US', 'zh-CN'],
       ['zh-CN', 'en-US'],
       ['fr-FR', 'en-US'],
     ] as const) {
-      const expected = new Intl.DisplayNames([uiLanguage], {
-        type: 'language',
-      }).of(tag)
-      expect(languageDisplayName(tag, uiLanguage)).toBe(expected)
+      const base = new Intl.Locale(tag).language
+      expect(languageDisplayName(tag, uiLanguage)).toBe(
+        displayName(base, uiLanguage),
+      )
     }
+  })
+
+  it('reads en-US as the base language name, not the region variant name', () => {
+    // The base-language name differs from the full-tag name in both UI
+    // languages ('English' vs 'American English', '英语' vs '美式英语'),
+    // which is what the current implementation must not return.
+    for (const uiLanguage of ['en-US', 'zh-CN'] as const) {
+      const baseName = displayName('en', uiLanguage)
+      expect(languageDisplayName('en-US', uiLanguage, ['zh-CN', 'en-US'])).toBe(
+        baseName,
+      )
+      expect(baseName).not.toBe(displayName('en-US', uiLanguage))
+      // An absent or empty supported set means no variants either.
+      expect(languageDisplayName('en-US', uiLanguage, [])).toBe(baseName)
+      expect(languageDisplayName('en-US', uiLanguage)).toBe(baseName)
+    }
+  })
+
+  it('keeps regional variants distinct when the supported set carries two of them', () => {
+    const uiLanguage = 'en-US'
+    const supported = ['en-US', 'en-GB'] as const
+    const usName = displayName('en-US', uiLanguage)
+    const gbName = displayName('en-GB', uiLanguage)
+    expect(languageDisplayName('en-US', uiLanguage, supported)).toBe(usName)
+    expect(languageDisplayName('en-GB', uiLanguage, supported)).toBe(gbName)
+    expect(usName).not.toBe(gbName)
   })
 
   it('falls back to the raw tag when the engine refuses the construction', () => {
