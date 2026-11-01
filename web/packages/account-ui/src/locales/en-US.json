@@ -145,7 +145,6 @@
     "removeAria": "Remove this two-step verification method: {{factor}}",
     "removed": "{{factor}} removed.",
     "rename": "Rename",
-    "renameAria": "Rename this two-step verification method: {{factor}}",
     "renamed": "{{factor}} renamed.",
     "renameLabel": "Name",
     "renameHint": "Up to 64 characters; leave empty to show the method name.",
@@ -168,7 +167,6 @@
         "pending": "Pending",
         "disabled": "Disabled"
       },
-      "createdAt": "Created {{time}}",
       "lastUsedAt": "Last used: {{time}}",
       "neverUsed": "Last used: never"
     },
@@ -211,10 +209,6 @@
       "description": "Something went wrong while loading your two-step verification methods. Please try again."
     },
     "retry": "Retry",
-    "state": {
-      "on": "Active",
-      "off": "Off"
-    },
     "action": {
       "setup": "Set up",
       "add": "Add",
