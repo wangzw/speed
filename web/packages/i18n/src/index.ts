@@ -20,7 +20,9 @@ export { overlayResources, type ResourceOverlay } from './overlay.js'
 export {
   CLIENT_TRANSPORT_ERROR_CODES,
   SESSION_LIFECYCLE_ERROR_CODES,
+  WAIT_LONG_FROM_SECONDS,
   createErrorTextResolver,
+  waitCountdownText,
   type ErrorTextResolverOptions,
   type ErrorTextTranslate,
   type HttpFamilyOptions,

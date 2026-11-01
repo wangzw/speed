@@ -85,6 +85,30 @@ export interface ErrorTextWaitOptions {
   readonly longFromSeconds?: number
 }
 
+/**
+ * The wait from which a countdown sentence names whole minutes instead of
+ * seconds. A wait below it reads in seconds, because "3540 seconds" is no
+ * answer a reader can use.
+ */
+export const WAIT_LONG_FROM_SECONDS = 120
+
+/**
+ * The remaining wait as a countdown sentence: seconds for a short wait, whole
+ * minutes from WAIT_LONG_FROM_SECONDS. A surface renders this line outside its
+ * live region, so the announced banner can stay the code's static sentence
+ * while only this text changes as the wait ticks.
+ */
+export function waitCountdownText(
+  t: ErrorTextTranslate,
+  keys: { readonly short: string; readonly long?: string },
+  seconds: number,
+): string {
+  if (seconds >= WAIT_LONG_FROM_SECONDS && keys.long !== undefined) {
+    return t(keys.long, { minutes: Math.ceil(seconds / 60) })
+  }
+  return t(keys.short, { seconds })
+}
+
 /** Options extending the resolver; omitting them keeps the default. */
 export interface ErrorTextResolverOptions {
   /** Resolve client.http.<status> through a parameterized leaf, not unknown. */
@@ -129,7 +153,7 @@ export function createErrorTextResolver(
   options: ErrorTextResolverOptions = {},
 ): (code: string, retryAfterSeconds?: number) => string {
   const { httpFamily, fallthrough, wait } = options
-  const longFrom = wait?.longFromSeconds ?? 120
+  const longFrom = wait?.longFromSeconds ?? WAIT_LONG_FROM_SECONDS
   return (code, retryAfterSeconds) => {
     if (knownCodes.has(code)) {
       // A refusal that stated how long to wait says so, in the surface's

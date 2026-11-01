@@ -9,7 +9,10 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   CLIENT_TRANSPORT_ERROR_CODES,
   SESSION_LIFECYCLE_ERROR_CODES,
+  WAIT_LONG_FROM_SECONDS,
   createErrorTextResolver,
+  waitCountdownText,
+  type ErrorTextTranslate,
 } from './error-text.js'
 
 describe('createErrorTextResolver', () => {
@@ -198,5 +201,46 @@ describe('the shared code vocabulary', () => {
       'client.timeout',
       'client.protocol',
     ])
+  })
+})
+
+describe('waitCountdownText', () => {
+  const keys = { short: 'throttle.countdown', long: 'throttle.countdownLong' }
+  type TranslateCall = Parameters<ErrorTextTranslate>
+
+  function recordingTranslate(): {
+    t: ErrorTextTranslate
+    calls: TranslateCall[]
+  } {
+    const calls: TranslateCall[] = []
+    const t: ErrorTextTranslate = (key, options) => {
+      calls.push([key, options])
+      return key
+    }
+    return { t, calls }
+  }
+
+  it('names the remaining seconds below the long threshold', () => {
+    const { t, calls } = recordingTranslate()
+    expect(waitCountdownText(t, keys, WAIT_LONG_FROM_SECONDS - 1)).toBe(
+      'throttle.countdown',
+    )
+    expect(calls).toEqual([['throttle.countdown', { seconds: 119 }]])
+  })
+
+  it('names whole minutes from the long threshold', () => {
+    const { t, calls } = recordingTranslate()
+    expect(waitCountdownText(t, keys, WAIT_LONG_FROM_SECONDS)).toBe(
+      'throttle.countdownLong',
+    )
+    expect(calls).toEqual([['throttle.countdownLong', { minutes: 2 }]])
+  })
+
+  it('keeps the seconds form when no long leaf is supplied', () => {
+    const t = vi.fn((key: string) => key)
+    expect(waitCountdownText(t, { short: 'throttle.countdown' }, 600)).toBe(
+      'throttle.countdown',
+    )
+    expect(t).toHaveBeenCalledWith('throttle.countdown', { seconds: 600 })
   })
 })

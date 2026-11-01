@@ -19,6 +19,7 @@ describe('@speed/i18n main entry', () => {
       'I18nextProvider',
       'SESSION_LIFECYCLE_ERROR_CODES',
       'SPEED_LOCALE_STORAGE_KEY',
+      'WAIT_LONG_FROM_SECONDS',
       'createErrorTextResolver',
       'createI18n',
       'defaultMissingKeyHandler',
@@ -33,6 +34,7 @@ describe('@speed/i18n main entry', () => {
       'resolveTimeZone',
       'switchLanguage',
       'useTranslation',
+      'waitCountdownText',
     ])
   })
 
@@ -48,6 +50,8 @@ describe('@speed/i18n main entry', () => {
     expect(typeof i18nModule.defaultMissingKeyHandler).toBe('function')
     expect(typeof i18nModule.useTranslation).toBe('function')
     expect(typeof i18nModule.createErrorTextResolver).toBe('function')
+    expect(typeof i18nModule.waitCountdownText).toBe('function')
+    expect(i18nModule.WAIT_LONG_FROM_SECONDS).toBe(120)
     expect(typeof i18nModule.resolveTimeZone).toBe('function')
     expect(typeof i18nModule.isSupportedTimeZone).toBe('function')
     expect(typeof i18nModule.formatInstant).toBe('function')
