@@ -22,7 +22,8 @@
     "@speed/api-sdk": "workspace:*",
     "@speed/auth-core": "workspace:*",
     "@speed/i18n": "workspace:*",
-    "@speed/ui-kit": "workspace:*"
+    "@speed/ui-kit": "workspace:*",
+    "qrcode-generator": "^2.0.4"
   },
   "peerDependencies": {
     "@emotion/react": "^11.5.0",
