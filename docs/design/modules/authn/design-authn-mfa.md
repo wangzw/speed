@@ -121,6 +121,8 @@ type MFA interface {
 | `Seasoned` | 账户有至少一个非短信、状态为启用且启用已满 `sensitive-min-age` 的因素时为真。 |
 | `Kinds` | 已纳入的因素种类，用于启动诊断与登录期的「该因素不可用」判断。 |
 
+`authn.mfa` 另外实现登录引擎的可选放弃回调 `authn.MethodAbandoner`（`Abandon`）：它不是 `MFA` 的一部分，只在流程被放弃时由登录引擎经类型断言找到，见「因素登记」。
+
 **统一收口的范围。** `Challenge`、`Verify`、`Enroll` 里的失败退避、审计记录与事件发布由 `MFA` 统一做；审计动作 `authn.factor.enroll`、`authn.factor.remove` 为尽力档，`authn.mfa.reset` 为强制档，事件 `authn.factor.changed` 的 `change` 取 `enrolled`、`removed`、`reset`、`flagged`；名字与载荷的完整定义在 [authn-events](design-authn-events.md)。
 
 ### 登记、删除与加强认证的路由与要求
@@ -273,6 +275,7 @@ classDiagram
 stateDiagram-v2
     [*] --> Pending : 登记开始
     Pending --> Active : 登记的最后一步完成
+    Pending --> [*] : 流程被放弃（Abandon）
     Pending --> [*] : 超过 pending-ttl 被清扫
     Active --> Disabled : 管理员重置或克隆告警
     Active --> [*] : MFA.Remove
@@ -462,6 +465,8 @@ CREATE TABLE authn_webauthn_credentials (
 4. 因素实现的最后一步交出 `StepEnrolled`，`MFA` 把行置为启用（`FactorActive`），写入 `activated_at`，写审计并发 `authn.factor.changed`（`enrolled`）。
 5. 引擎在完成时撤销该账户除发起会话之外的其余会话；会话的保障等级不变（[authn-login](design-authn-login.md)）。
 
+**放弃登记流程。** 引擎在删除流程记录前把流程的私有字节交给 `MFA.Abandon`；它从中取出这次流程写下的待确认行标识，按「仍为待确认」条件删除该行，并让该因素的实现清掉它为这行保存的数据。同一账户里另一条登记写下的待确认行不受影响；标识缺失、行已不在或已不是待确认时按无事发生处理，因此对同一流程重复放弃是安全的。回调失败只记日志，流程记录照常删除（[authn-login](design-authn-login.md)）。
+
 **名称。** 因素行有一个显示名称，取值域是：先去除首尾空白，最多 64 个字符，不得含控制字符（含换行与制表符）。登记在第一步接收可选的 `input.label`，按该取值域规整后原样存入因素行；空值表示这个因素没有名称，服务端不生成任何名称。后续步骤不再读取名称。改名走 `PATCH B/factors/:id`，请求体 `{label}` 用同一取值域，空值清除名称，应答是更新后的因素行。改名只写因素行的 `label`：它是元数据，不要求新鲜认证，不写审计行，也不发事件。因素标识属于别的账户时按不存在应答 404 `factor-not-found`，与标识不存在无从区分。
 
 首次登记因素按信任首次使用：账户尚无因素时，持口令者与真用户不可区分，本模块不以邮箱验证码作为因素登记的带外证明。这一条把抢先登记的危害限制在普通业务路由上：抢先登记的因素计不进本次强度，换不到 `Seasoned` 所守的最高权限动作。待确认超过 `pending-ttl` 的行由 `authn.mfa` 在 `Start` 起的有界清扫协程每小时删一次，`Stop` 与 `Close` 的 context 去掉了取消，协程的退出自带时限。
@@ -614,6 +619,7 @@ CREATE TABLE authn_webauthn_credentials (
 - **仪式数据的一次性消费靠引擎对流程记录的比较并交换。** 本模块不持有 kv。
 - **退避的原子递增在 `Throttle` 一侧**，本模块的 `Check`、`Fail`、`Succeed` 不自带锁。
 - **清扫协程每小时删一次待确认的过期行。** 删除只作用于状态为待确认且超过 `pending-ttl` 的行，与登记并发时不触及进行中的登记。
+- **放弃流程只删这次流程写下的那一行。** `Abandon` 以私有字节里的行标识与账户为条件找到行，再以「状态仍为待确认」为条件删除，与清扫和登记完成并发时不删别人的行；删除成功后才清该行种类自己的数据。
 - **删除路由与 `MFA.Remove` 各读一次因素状态，两次读之间有一个窄窗口。** 状态在这期间翻转时，撤销会保守地多执行一次（启用转为停用）或漏掉一次（待确认转为启用）。这是不保证：不为它另造机制，也不写用例假装覆盖；窗口内的一次误撤销只会把账户按更严的方向收口，一次漏撤销要等下一次改动凭据才收口。
 - **时间一律取自认证功能目录的统一时钟，写入 UTC。**
 

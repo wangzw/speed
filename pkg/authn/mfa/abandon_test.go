@@ -1,0 +1,110 @@
+package mfa
+
+import (
+	"context"
+	"testing"
+
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/step"
+)
+
+// TestAbandonReleasesOnlyTheRowItsFlowWrote holds that abandoning a registration
+// flow removes the pending row that flow wrote and nothing else: another
+// registration's pending row for the same account stays, and the factor's own
+// data is removed for the one row that went.
+func TestAbandonReleasesOnlyTheRowItsFlowWrote(t *testing.T) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
+		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
+		totp.enrollFn = func(context.Context, authn.FlowState, authn.StepInput) (authn.Step, error) {
+			return confirming("seed-state"), nil
+		}
+		ctx := context.Background()
+
+		first, err := r.p.Enroll(ctx, flow(acct), authn.FactorTOTP, authn.StepInput{})
+		if err != nil {
+			t.Fatalf("Enroll, first flow: %v", err)
+		}
+		second, err := r.p.Enroll(ctx, flow(acct), authn.FactorTOTP, authn.StepInput{})
+		if err != nil {
+			t.Fatalf("Enroll, second flow: %v", err)
+		}
+		if rows := r.rows(acct); len(rows) != 2 {
+			t.Fatalf("two registrations left %d rows, want two", len(rows))
+		}
+		abandonedID, _, ok := unwrapPrivate(step.PrivateOf(first))
+		if !ok {
+			t.Fatalf("the first step's private bytes %q carry no row identifier", step.PrivateOf(first))
+		}
+		keptID, _, ok := unwrapPrivate(step.PrivateOf(second))
+		if !ok || keptID == abandonedID {
+			t.Fatalf("the second step's private bytes %q carry no distinct row identifier", step.PrivateOf(second))
+		}
+
+		abandoned := flow(acct)
+		abandoned.Private = step.PrivateOf(first)
+		if err := r.p.Abandon(ctx, abandoned); err != nil {
+			t.Fatalf("Abandon: %v", err)
+		}
+
+		rows := r.rows(acct)
+		if len(rows) != 1 || rows[0].ID != keptID {
+			t.Fatalf("after the abandonment the register holds %+v, want only the row %s the other flow wrote", rows, keptID)
+		}
+		if len(totp.removed) != 1 || totp.removed[0] != abandonedID {
+			t.Errorf("the factor's own data was removed for %v, want only the abandoned row %s", totp.removed, abandonedID)
+		}
+	})
+}
+
+// TestAbandonWithoutAPendingRowChangesNothing holds that a flow whose private
+// bytes carry no identifier, an identifier of a row that is not there, or one
+// of a row that is no longer pending is a no-op: the register and the factor's
+// data stay as they were.
+func TestAbandonWithoutAPendingRowChangesNothing(t *testing.T) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
+		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
+		totp.enrollFn = func(context.Context, authn.FlowState, authn.StepInput) (authn.Step, error) {
+			return confirming("seed-state"), nil
+		}
+		ctx := context.Background()
+		pending, err := r.p.Enroll(ctx, flow(acct), authn.FactorTOTP, authn.StepInput{})
+		if err != nil {
+			t.Fatalf("Enroll: %v", err)
+		}
+		if rows := r.rows(acct); len(rows) != 1 {
+			t.Fatalf("the registration left %d rows, want one", len(rows))
+		}
+		activeID := r.insertRow(acct, authn.FactorTOTP, authn.FactorActive, base, nil)
+		keptID, _, ok := unwrapPrivate(step.PrivateOf(pending))
+		if !ok {
+			t.Fatalf("the step's private bytes %q carry no row identifier", step.PrivateOf(pending))
+		}
+
+		cases := map[string]authn.FlowState{
+			"no private state":               flow(acct),
+			"a row that is not there":        privateFlow(acct, wrapPrivate("no-such-row", nil)),
+			"a row that is not pending":      privateFlow(acct, wrapPrivate(activeID, nil)),
+			"bytes that are not an envelope": privateFlow(acct, []byte("not-an-envelope")),
+		}
+		for name, f := range cases {
+			if err := r.p.Abandon(ctx, f); err != nil {
+				t.Errorf("%s: Abandon = %v, want no error", name, err)
+			}
+		}
+
+		rows := r.rows(acct)
+		if len(rows) != 2 {
+			t.Fatalf("after the no-ops the register holds %+v, want the pending row %s and the active row %s", rows, keptID, activeID)
+		}
+		if len(totp.removed) != 0 {
+			t.Errorf("the factor's own data was removed for %v, want nothing", totp.removed)
+		}
+	})
+}
+
+// privateFlow is a flow of the account whose private bytes are the given ones.
+func privateFlow(account authn.AccountID, private []byte) authn.FlowState {
+	f := flow(account)
+	f.Private = private
+	return f
+}

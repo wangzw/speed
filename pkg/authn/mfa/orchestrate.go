@@ -288,8 +288,10 @@ func withEnvelope(id string, s authn.Step) authn.Step {
 // the factor. Every later step finds that row again through the private bytes the
 // previous step left and calls the factor on it. The last step, the one the
 // factor answers with StepEnrolled, makes the row active and publishes the
-// change. A row that is not active is never used to verify, and a registration
-// that is abandoned is swept once it has been pending past pending-ttl.
+// change. A row that is not active is never used to verify; a registration whose
+// flow is abandoned is released by Abandon at once, and one left behind by a
+// flow that was never abandoned is swept once it has been pending past
+// pending-ttl.
 //
 // A step after the first checks the factor's back-off and counts a refusal
 // against it, because the confirmation step is a guess at a code.
@@ -407,6 +409,36 @@ func (m *product) finishEnroll(ctx context.Context, rec authn.FactorRecord, got 
 	m.publishChanged(ctx, rec, changeEnrolled, byClassSelf)
 	m.record(ctx, actionEnroll, outcomeSuccess, rec, byClassSelf)
 	return authn.StepEnrolled(rec).WithSends(step.SendsOf(got))
+}
+
+// Abandon releases what a registration flow created when the flow is abandoned
+// before its last step. The flow's private bytes carry the identifier of the
+// pending row the flow wrote, and only that row is removed -- and only while it
+// is still pending. Bytes that are not this module's envelope, a row that is
+// not there, and a row a sweep, a reset or a removal already took all leave the
+// register as it was, so a flow may be released more than once. The factor's
+// own data goes with the row, as it does when the sweep removes one.
+func (m *product) Abandon(ctx context.Context, f authn.FlowState) error {
+	id, _, ok := unwrapPrivate(f.Private)
+	if !ok {
+		return nil
+	}
+	rec, found, err := m.register.find(ctx, f.Account, id)
+	if err != nil {
+		return fmt.Errorf("reading the factor a flow registered: %w", err)
+	}
+	if !found || rec.Status != authn.FactorPending {
+		return nil
+	}
+	removed, err := m.register.removePending(ctx, id)
+	if err != nil {
+		return fmt.Errorf("removing the pending factor a flow registered: %w", err)
+	}
+	if !removed {
+		return nil
+	}
+	m.cleanKind(ctx, rec)
+	return nil
 }
 
 // dropPending removes a pending row that no later step will find, and the data

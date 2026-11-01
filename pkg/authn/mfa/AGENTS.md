@@ -88,6 +88,16 @@ dashboard or an audit query written against it.
   `TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing`,
   `TestARegistrationRefusesALabelOutsideItsDomain`,
   `TestAnActivationThatLostTheRaceIsRefused`).
+- **An abandoned registration releases its pending row at once.** `Abandon` is
+  the login engine's optional abandon callback, which this module implements. It
+  reads the row identifier out of the flow's private bytes and deletes only that
+  row, and only while it is still pending, together with the factor's own data.
+  Bytes that are not this module's envelope, a row of another account, a row
+  that is not there and one that has already become active are no-ops, so the
+  callback is idempotent; another registration's pending row for the same
+  account stays (`Abandon`, `TestAbandonReleasesOnlyTheRowItsFlowWrote`,
+  `TestAbandonWithoutAPendingRowChangesNothing`). The login engine removes the
+  flow record even when the callback fails.
 - **`Verify` and `Challenge` throttle first and call the factor only if the
   back-off lets them.** The scope is `ScopeFactor` and the key is the factor's
   identifier. A back-off that cannot be read does not let an attempt through
