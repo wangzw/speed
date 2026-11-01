@@ -159,11 +159,17 @@ describe('IdentifiersSection', () => {
     // authentication the session could not supply, so the re-login exit
     // recorded it. The surface mounts again on the recorded page and replays
     // the removal once, then consumes the record.
-    rememberStepUpResume('identifiers', '/account/profile', {
+    rememberStepUpResume('user-1', 'identifiers', '/account/profile', {
       step: 'remove',
       id: 'id-phone',
     })
     const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
           200,
@@ -186,8 +192,7 @@ describe('IdentifiersSection', () => {
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    const rig = makeRealClientRig(respond)
-    rig.store.set('access-1')
+    const rig = await makeRotationRig(respond)
     renderWithProviders(
       <IdentifiersSection
         session={rig.session}
@@ -204,7 +209,7 @@ describe('IdentifiersSection', () => {
         ),
       ).toBe(true),
     )
-    expect(pendingStepUpResume()).toBeNull()
+    expect(pendingStepUpResume('user-1')).toBeNull()
   })
 
   it('renders every unproved address as Not verified, whatever established it', async () => {

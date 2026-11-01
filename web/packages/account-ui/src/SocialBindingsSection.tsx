@@ -417,7 +417,8 @@ export function SocialBindingsSection({
   // The re-login exit records the operation a new sign-in must re-issue. Both
   // binding operations are pure requests, so a JSON-safe descriptor carries
   // them; the gate hands the remembered action back before the dialog's
-  // cancel clears it.
+  // cancel clears it. The record is bound to the account the session snapshot
+  // carries, so it never replays for an account a later sign-in lands on.
   const rememberRelogin = useCallback(() => {
     if (returnPath === undefined) {
       return
@@ -430,8 +431,13 @@ export function SocialBindingsSection({
       action.kind === 'authorize'
         ? { kind: 'authorize', method: action.method.name }
         : { kind: 'unbind', id: action.id, label: action.label }
-    rememberStepUpResume(RESUME_SCOPE, returnPath, operation)
-  }, [returnPath, gate.peek])
+    rememberStepUpResume(
+      session.getSnapshot().principal?.account_id ?? '',
+      RESUME_SCOPE,
+      returnPath,
+      operation,
+    )
+  }, [returnPath, gate.peek, session])
 
   // The page a re-login returns to re-issues the recorded operation once, as
   // soon as the deployment's methods have loaded so an authorize can resolve
@@ -443,12 +449,18 @@ export function SocialBindingsSection({
       return
     }
     resumed.current = true
-    const record = takeStepUpResume(RESUME_SCOPE)
+    const account = session.getSnapshot().principal?.account_id ?? ''
+    const record = takeStepUpResume(account, RESUME_SCOPE)
     if (record === null) {
       return
     }
     if (record.path !== returnPath) {
-      rememberStepUpResume(record.scope, record.path, record.operation)
+      rememberStepUpResume(
+        record.account,
+        record.scope,
+        record.path,
+        record.operation,
+      )
       return
     }
     const operation = record.operation
@@ -465,7 +477,7 @@ export function SocialBindingsSection({
       return
     }
     void handleUnbind(operation.id, operation.label)
-  }, [methods, returnPath])
+  }, [methods, returnPath, session])
 
   const links = data?.links
   // The answer is unresolved whenever there is no data yet: the first

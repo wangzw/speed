@@ -1133,7 +1133,8 @@ describe('SocialBindingsSection', () => {
     )
 
     expect(logout).toHaveBeenCalledTimes(1)
-    expect(pendingStepUpResume()).toEqual({
+    expect(pendingStepUpResume('user-1')).toEqual({
+      account: 'user-1',
       scope: 'social-bindings',
       path: '/account/security',
       operation: { kind: 'authorize', method: 'wechat' },
@@ -1143,12 +1144,18 @@ describe('SocialBindingsSection', () => {
   it('re-issues the recorded bind when the page mounts after the new sign-in', async () => {
     // The surface mounted again on the page the record names: it starts the
     // recorded bind once, without a click, and consumes the record.
-    rememberStepUpResume('social-bindings', '/account/security', {
+    rememberStepUpResume('user-1', 'social-bindings', '/account/security', {
       kind: 'authorize',
       method: 'wechat',
     })
     const reports: string[] = []
     const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profile([]))
       }
@@ -1171,8 +1178,7 @@ describe('SocialBindingsSection', () => {
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    const rig = makeRealClientRig(respond)
-    rig.store.set('access-1')
+    const rig = await makeRotationRig(respond)
     renderWithProviders(
       <SocialBindingsSection
         session={rig.session}
@@ -1183,15 +1189,21 @@ describe('SocialBindingsSection', () => {
     )
 
     await waitFor(() => expect(reports).toEqual([WECHAT_AUTHORIZE_URL]))
-    expect(pendingStepUpResume()).toBeNull()
+    expect(pendingStepUpResume('user-1')).toBeNull()
   })
 
   it('leaves a record that names another page for that page to resume', async () => {
-    rememberStepUpResume('social-bindings', '/account/sessions', {
+    rememberStepUpResume('user-1', 'social-bindings', '/account/sessions', {
       kind: 'authorize',
       method: 'wechat',
     })
     const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profile([]))
       }
@@ -1203,8 +1215,7 @@ describe('SocialBindingsSection', () => {
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    const rig = makeRealClientRig(respond)
-    rig.store.set('access-1')
+    const rig = await makeRotationRig(respond)
     renderWithProviders(
       <SocialBindingsSection
         session={rig.session}
@@ -1224,7 +1235,8 @@ describe('SocialBindingsSection', () => {
         ),
       ).toBe(false),
     )
-    expect(pendingStepUpResume()).toEqual({
+    expect(pendingStepUpResume('user-1')).toEqual({
+      account: 'user-1',
       scope: 'social-bindings',
       path: '/account/sessions',
       operation: { kind: 'authorize', method: 'wechat' },

@@ -772,16 +772,23 @@ export function IdentifiersSection({
 
   // The re-login exit records the write a new sign-in must re-issue. Only the
   // operations with no one-time code are recorded; the add face's typed
-  // address and the two code steps are left for the person to redo.
+  // address and the two code steps are left for the person to redo. The record
+  // is bound to the account the session snapshot carries, so it never replays
+  // for an account a later sign-in lands on.
   const rememberRelogin = useCallback(() => {
     if (returnPath === undefined) {
       return
     }
     const action = gate.peek()
     if (action !== null && resumableAction(action) !== null) {
-      rememberStepUpResume(RESUME_SCOPE, returnPath, action)
+      rememberStepUpResume(
+        session.getSnapshot().principal?.account_id ?? '',
+        RESUME_SCOPE,
+        returnPath,
+        action,
+      )
     }
-  }, [returnPath, gate.peek])
+  }, [returnPath, gate.peek, session])
 
   // The page a re-login returns to replays the recorded write once, through
   // the gate's own replay, so a second shortfall opens the challenge again.
@@ -793,12 +800,18 @@ export function IdentifiersSection({
       return
     }
     resumed.current = true
-    const record = takeStepUpResume(RESUME_SCOPE)
+    const account = session.getSnapshot().principal?.account_id ?? ''
+    const record = takeStepUpResume(account, RESUME_SCOPE)
     if (record === null) {
       return
     }
     if (record.path !== returnPath) {
-      rememberStepUpResume(record.scope, record.path, record.operation)
+      rememberStepUpResume(
+        record.account,
+        record.scope,
+        record.path,
+        record.operation,
+      )
       return
     }
     const action = resumableAction(record.operation)
@@ -807,7 +820,7 @@ export function IdentifiersSection({
     }
     gate.arm(action)
     gate.succeed()
-  }, [returnPath, data, gate])
+  }, [returnPath, data, gate, session])
 
   const pending = isPending && data === undefined
   const rows = !pending && data !== undefined ? data.identifiers : undefined
