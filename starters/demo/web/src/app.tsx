@@ -1192,8 +1192,17 @@ function ConsoleEntryLink({
       </IconButton>
     )
   }
+  // The entry is an action, not a label: it wears the header's outlined
+  // pill — the same visual language and size tier as the SYSTEM capsule —
+  // while the collapsed rail keeps its icon-only form.
   return (
-    <Button color="inherit" href={href} onClick={onClick}>
+    <Button
+      color="inherit"
+      variant="outlined"
+      size="small"
+      href={href}
+      onClick={onClick}
+    >
       <DemoNavLabel labelKey="nav.console" />
     </Button>
   )

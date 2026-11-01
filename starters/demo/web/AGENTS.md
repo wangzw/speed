@@ -140,7 +140,8 @@ program beside this directory embeds with `go:embed` and serves through
   announced through the status region but never painted beside the trigger. The tenant frame puts the actions in `headerActions` and the
   switcher plus the account menu in `userMenu`; the console frame renders the
   actions and the account menu but not the switcher (the console resolves no
-  tenant). The slot composition is identical in both `shellLayout` forms:
+  tenant). Entry-point actions in that chrome are always outlined; plain text
+  is reserved for labels that are not clickable. The slot composition is identical in both `shellLayout` forms:
   AppShell moves the same slots into its drawer paper in the sidebar form, so
   `src/chrome.tsx` never branches on the layout. `src/paths.ts` holds the
   route paths the chrome links into, shared with the route table.
