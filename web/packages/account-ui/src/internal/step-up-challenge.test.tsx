@@ -431,7 +431,7 @@ describe('StepUpChallenge', () => {
 
     // The factor step offers the flow's factor.
     await user.click(
-      await screen.findByRole('button', { name: 'Authenticator app' }),
+      await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp }),
     )
     // The chosen factor is answered under the `factor` step.
     await waitFor(() =>
@@ -708,7 +708,7 @@ describe('StepUpChallenge', () => {
       const { rig } = mount(respond)
       const user = userEvent.setup()
 
-      await screen.findByRole('button', { name: 'Phone' })
+      await screen.findByRole('button', { name: zhCN.mfa.factor.kind.sms })
       // The block renders above the SMS factor choice; its widget yields a
       // single-use token.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
@@ -717,7 +717,9 @@ describe('StepUpChallenge', () => {
         fake.token('token-1')
       })
 
-      await user.click(screen.getByRole('button', { name: 'Phone' }))
+      await user.click(
+        screen.getByRole('button', { name: zhCN.mfa.factor.kind.sms }),
+      )
 
       await waitFor(() => {
         const body = rig.calls.find(
@@ -745,7 +747,7 @@ describe('StepUpChallenge', () => {
     const user = userEvent.setup()
 
     await user.click(
-      await screen.findByRole('button', { name: 'Authenticator app' }),
+      await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp }),
     )
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '000000')
     await user.click(
@@ -786,7 +788,7 @@ describe('StepUpChallenge', () => {
       )
 
       await user.click(
-        await screen.findByRole('button', { name: 'Authenticator app' }),
+        await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp }),
       )
       await user.type(
         await screen.findByLabelText(zhCN.flowStep.codeLabel),
@@ -865,7 +867,7 @@ describe('StepUpChallenge', () => {
     const user = userEvent.setup()
 
     await user.click(
-      await screen.findByRole('button', { name: 'Authenticator app' }),
+      await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp }),
     )
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '000000')
     await user.click(
@@ -888,7 +890,7 @@ describe('StepUpChallenge', () => {
     })
     // The fresh flow is parked on its own first step again.
     expect(
-      await screen.findByRole('button', { name: 'Authenticator app' }),
+      await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp }),
     ).toBeTruthy()
   })
 
@@ -896,7 +898,7 @@ describe('StepUpChallenge', () => {
     const { onSuccess, onCancel } = mount(makeStepUpResponder())
     const user = userEvent.setup()
 
-    await screen.findByRole('button', { name: 'Authenticator app' })
+    await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.cancelLabel }),
     )

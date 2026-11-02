@@ -1197,8 +1197,8 @@ describe('IdentifiersSection', () => {
     )
 
     // The 401 opens the step-up dialog; winning it re-runs the removal.
-    await screen.findByRole('button', { name: 'App' })
-    await user.click(screen.getByRole('button', { name: 'App' }))
+    await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
@@ -2988,8 +2988,8 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
     )
 
-    await screen.findByRole('button', { name: 'App' })
-    await user.click(screen.getByRole('button', { name: 'App' }))
+    await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
@@ -3109,8 +3109,8 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
     )
 
-    await screen.findByRole('button', { name: 'App' })
-    await user.click(screen.getByRole('button', { name: 'App' }))
+    await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
@@ -3446,8 +3446,8 @@ describe('IdentifiersSection', () => {
 
     // The first write meets the refusal and arms the dialog with the whole
     // selection; one challenge lands both rows.
-    await screen.findByRole('button', { name: 'App' })
-    await user.click(screen.getByRole('button', { name: 'App' }))
+    await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),

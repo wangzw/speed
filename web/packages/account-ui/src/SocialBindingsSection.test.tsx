@@ -790,7 +790,7 @@ describe('SocialBindingsSection', () => {
     expect(
       await screen.findByRole('dialog', { name: zhCN.mfa.stepUp.title }),
     ).toBeTruthy()
-    expect(await screen.findByRole('button', { name: 'App' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })).toBeTruthy()
     expect(screen.queryAllByRole('alert', { hidden: true })).toHaveLength(0)
     // No automatic replay: the unlink waits for a won challenge.
     expect(
@@ -887,7 +887,7 @@ describe('SocialBindingsSection', () => {
       }),
     )
 
-    await user.click(await screen.findByRole('button', { name: 'App' }))
+    await user.click(await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(
       await screen.findByLabelText(zhCN.flowStep.codeLabel),
       '123456',
@@ -1063,7 +1063,7 @@ describe('SocialBindingsSection', () => {
 
     await user.click(await findBindButton('WeChat'))
     // The refusal opens the shared challenge rather than settling as a banner.
-    await user.click(await screen.findByRole('button', { name: 'App' }))
+    await user.click(await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(
       await screen.findByLabelText(zhCN.flowStep.codeLabel),
       '123456',

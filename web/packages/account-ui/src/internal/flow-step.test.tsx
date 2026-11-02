@@ -3,10 +3,11 @@
  * TOTP enrolment block and the passkey ceremony's own states.
  *
  * What this suite pins: a challenge field name the family knows renders
- * its translated label, an unknown name renders verbatim; a factor
- * option renders its server-supplied label when one arrives, otherwise a
- * known kind's translated name, and an unknown kind shows the kind as
- * given; an enrollment kind follows the same known/unknown rule. The
+ * its translated label, an unknown name renders verbatim; a factor option
+ * reads as its kind's translated name, a repeated kind distinguishes its
+ * entries by name ("Kind · Name") and an unnamed entry from the second on
+ * by ordinal ("Kind (2)"), and an unknown kind shows the kind as given; an
+ * enrollment kind follows the same known/unknown rule. The
  * package keeps its vocabulary locally (auth-ui and console-ui keep their
  * own copies), so this suite is the account-ui side of the registered
  * sync obligation. The ceremony cases pin the assertion step starting its
@@ -111,7 +112,7 @@ describe('FlowStep labels', () => {
     expect(screen.getByLabelText('deployment_field')).toBeTruthy()
   })
 
-  it('lets a server label win and translates a known factor kind', () => {
+  it('reads each factor as its kind, ignoring a sole factor’s name', () => {
     render({
       kind: 'factor',
       factors: [
@@ -120,12 +121,58 @@ describe('FlowStep labels', () => {
       ],
     })
 
-    // The server's own label wins over the bundle's wording; a factor
-    // without one renders its kind's translated name.
-    expect(screen.getByRole('button', { name: 'My app' })).toBeTruthy()
+    // Each kind is offered once, so the kind name is the whole label; the
+    // registration-time name does not replace it.
+    expect(
+      screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }),
+    ).toBeTruthy()
     expect(
       screen.getByRole('button', { name: zhCN.mfa.factor.kind.sms }),
     ).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'My app' })).toBeNull()
+  })
+
+  it('labels same-named factors of different kinds by their kinds', () => {
+    // Two factors whose registration-time names match must not render two
+    // identical buttons: the step answers "how do I prove it", so the kind
+    // is the label.
+    render({
+      kind: 'factor',
+      factors: [
+        { id: 'f1', kind: 'webauthn', label: 'Chrome · macOS' },
+        { id: 'f2', kind: 'totp', label: 'Chrome · macOS' },
+      ],
+    })
+
+    expect(
+      screen.getByRole('button', { name: zhCN.mfa.factor.kind.webauthn }),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }),
+    ).toBeTruthy()
+    expect(
+      screen.queryAllByRole('button', { name: 'Chrome · macOS' }),
+    ).toHaveLength(0)
+  })
+
+  it('distinguishes a repeated kind by name and by ordinal', () => {
+    render({
+      kind: 'factor',
+      factors: [
+        { id: 'f1', kind: 'webauthn', label: 'Work MacBook' },
+        { id: 'f2', kind: 'webauthn' },
+      ],
+    })
+
+    const kind = zhCN.mfa.factor.kind.webauthn
+    const named = zhCN.mfa.factor.optionNamed
+      .replace('{{kind}}', kind)
+      .replace('{{name}}', 'Work MacBook')
+    const ordinal = zhCN.mfa.factor.optionOrdinal
+      .replace('{{kind}}', kind)
+      .replace('{{position}}', '2')
+    expect(screen.getByRole('button', { name: named })).toBeTruthy()
+    expect(screen.getByRole('button', { name: ordinal })).toBeTruthy()
   })
 
   it('translates known enroll kinds and shows an unknown kind as given', () => {

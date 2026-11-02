@@ -100,10 +100,6 @@ function mount(
   return { rig, ...rendered }
 }
 
-/** The browser/OS summary the name form is prefilled with for a given user
- * agent (the same summary the session rows show). */
-const SUGGESTED_NAME = 'Chrome · macOS'
-
 /** Replaces the browser's user agent for one case; the returned function
  * restores whatever was there. */
 function stubUserAgent(ua: string): () => void {
@@ -125,14 +121,13 @@ function stubUserAgent(ua: string): () => void {
 }
 
 /**
- * Open the enrollment name step, clear the prefilled name and confirm it, so
- * the flow starts with an empty label. Answers the typed name field.
+ * Open the enrollment name step and confirm it without typing, so the flow
+ * starts with an empty label. Answers the name field.
  */
 async function startEnrollWithEmptyName(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<HTMLElement> {
   const field = await screen.findByLabelText(zhCN.mfa.enroll.labelField)
-  await user.clear(field)
   await user.click(
     screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
   )
@@ -945,8 +940,8 @@ describe('MfaSection', () => {
     )
 
     // The 401 opens the step-up dialog.
-    await screen.findByRole('button', { name: 'App' })
-    await user.click(screen.getByRole('button', { name: 'App' }))
+    await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
@@ -1067,8 +1062,8 @@ describe('MfaSection', () => {
     )
 
     // The 401 opens the step-up dialog.
-    await screen.findByRole('button', { name: 'App' })
-    await user.click(screen.getByRole('button', { name: 'App' }))
+    await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
@@ -1290,7 +1285,9 @@ describe('MfaSection', () => {
     ).toHaveLength(1)
   })
 
-  it('prefills the enrollment name with this browser and sends it', async () => {
+  it('starts the enrollment name empty and shows an example', async () => {
+    // A recognised browser is the case that used to be pre-filled with its
+    // browser/OS summary; the name is now the reader's to give.
     const restore = stubUserAgent(
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     )
@@ -1302,16 +1299,9 @@ describe('MfaSection', () => {
         if (call.method === 'GET' && call.path === FACTORS_PATH) {
           return jsonResponse(200, { factors: [] })
         }
-        if (call.method === 'POST' && call.path === FLOW_START) {
-          return jsonResponse(200, {
-            seq: 1,
-            state: 'enroll',
-            next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
-          })
-        }
         throw new Error(`unexpected ${call.method} ${call.path}`)
       }
-      const { rig } = mount(respond)
+      mount(respond)
       const user = userEvent.setup()
 
       await user.click(
@@ -1319,74 +1309,58 @@ describe('MfaSection', () => {
           name: addNameOf(zhCN.mfa.factor.kind.totp),
         }),
       )
-      // The name step carries the browser/OS summary the session rows show,
-      // editable and sent with the flow's first input.
+      // The name is the reader's to give: the form starts empty and shows a
+      // neutral example rather than guessing one from the browser.
       const field = await screen.findByLabelText(zhCN.mfa.enroll.labelField)
-      expect(field).toHaveValue(SUGGESTED_NAME)
-      await expectNoAxeViolations()
-
-      await user.click(
-        screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
+      expect(field).toHaveValue('')
+      expect(field).toHaveAttribute(
+        'placeholder',
+        zhCN.mfa.enroll.labelPlaceholder,
       )
-      await waitFor(() => {
-        const start = rig.calls.find(
-          (call) => call.method === 'POST' && call.path === FLOW_START,
-        )
-        expect(start?.body).toEqual({
-          purpose: 'enroll',
-          input: { kind: 'totp', label: SUGGESTED_NAME },
-        })
-      })
+      await expectNoAxeViolations()
     } finally {
       restore()
     }
   })
 
-  it('submits an empty name when the reader clears the prefill', async () => {
-    const restore = stubUserAgent(
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    )
-    try {
-      const respond: RealResponder = (call: RealCall) => {
-        if (call.method === 'GET' && call.path === METHODS_PATH) {
-          return jsonResponse(200, methodsDoc(['totp']))
-        }
-        if (call.method === 'GET' && call.path === FACTORS_PATH) {
-          return jsonResponse(200, { factors: [] })
-        }
-        if (call.method === 'POST' && call.path === FLOW_START) {
-          return jsonResponse(200, {
-            seq: 1,
-            state: 'enroll',
-            next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
-          })
-        }
-        throw new Error(`unexpected ${call.method} ${call.path}`)
+  it('submits an empty name when the reader leaves it empty', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
       }
-      const { rig } = mount(respond)
-      const user = userEvent.setup()
-
-      await user.click(
-        await screen.findByRole('button', {
-          name: addNameOf(zhCN.mfa.factor.kind.totp),
-        }),
-      )
-      // Clearing the prefill is not a client-side validation failure: the
-      // empty value is sent, and the server stores no name.
-      const field = await startEnrollWithEmptyName(user)
-      expect(field).toHaveValue('')
-      await waitFor(() => {
-        const start = rig.calls.find(
-          (call) => call.method === 'POST' && call.path === FLOW_START,
-        )
-        expect(start?.body).toEqual({
-          purpose: 'enroll',
-          input: { kind: 'totp', label: '' },
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'enroll',
+          next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
         })
-      })
-    } finally {
-      restore()
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
     }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: addNameOf(zhCN.mfa.factor.kind.totp),
+      }),
+    )
+    // An empty name is not a client-side validation failure: the empty
+    // value is sent, and the server stores no name.
+    const field = await startEnrollWithEmptyName(user)
+    expect(field).toHaveValue('')
+    await waitFor(() => {
+      const start = rig.calls.find(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      )
+      expect(start?.body).toEqual({
+        purpose: 'enroll',
+        input: { kind: 'totp', label: '' },
+      })
+    })
   })
 
   it('shows each row’s name and last use in the account time zone', async () => {

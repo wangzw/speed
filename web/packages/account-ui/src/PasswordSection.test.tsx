@@ -589,8 +589,8 @@ describe('PasswordSection', () => {
     await user.type(screen.getByLabelText(zhCN.password.confirm.label), 'new-pass')
     await user.click(screen.getByRole('button', { name: zhCN.password.submit }))
 
-    await screen.findByRole('button', { name: 'App' })
-    await user.click(screen.getByRole('button', { name: 'App' }))
+    await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),

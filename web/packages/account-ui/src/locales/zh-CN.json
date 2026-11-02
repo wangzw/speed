@@ -160,6 +160,8 @@
         "sms": "短信",
         "other": "其他"
       },
+      "optionNamed": "{{kind}} · {{name}}",
+      "optionOrdinal": "{{kind}}（{{position}}）",
       "status": {
         "active": "已启用",
         "pending": "待确认",
@@ -178,6 +180,7 @@
       "confirmLabel": "确认",
       "cancelLabel": "取消",
       "labelField": "名称（可选）",
+      "labelPlaceholder": "例如：工作手机",
       "labelHelp": "用于在列表中区分这个方式；留空则显示方式名称。",
       "enrolled": "{{factor}} 已添加。",
       "note": {

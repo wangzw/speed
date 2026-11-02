@@ -66,8 +66,7 @@ const FIELD_LABEL_KEYS: Readonly<Record<string, string>> = {
 
 /** The factor/enroll kinds the family has wording for. A known kind
  * renders its translated name; an unknown one renders the kind's own
- * name (the deployment's vocabulary, shown as given). A factor option's
- * server-supplied label wins over both. */
+ * name (the deployment's vocabulary, shown as given). */
 const FACTOR_KIND_KEYS: Readonly<Record<string, string>> = {
   totp: 'mfa.factor.kind.totp',
   webauthn: 'mfa.factor.kind.webauthn',
@@ -84,6 +83,49 @@ function fieldLabel(name: string, t: (key: string) => string): string {
 function factorKindLabel(kind: string, t: (key: string) => string): string {
   const key = FACTOR_KIND_KEYS[kind]
   return key === undefined ? kind : t(key)
+}
+
+/** A factor option as the choice labels read it. */
+interface FactorChoice {
+  readonly kind: string
+  readonly label?: string
+}
+
+/**
+ * The labels a factor step renders, one per offered factor.
+ *
+ * A factor step answers "how do I prove it", so each entry's kind leads. A
+ * kind offered once reads as its kind name alone, whatever name the factor
+ * carries. Only when one kind is offered more than once does the entry's
+ * own name distinguish the entries, after the kind ("Kind · Name"); an
+ * unnamed entry keeps the kind alone in first position and takes its
+ * ordinal from the second on ("Kind (2)"), so two entries never read the
+ * same. `named` and `ordinal` build those two forms from the bundle.
+ */
+function factorChoiceLabels(
+  factors: readonly FactorChoice[],
+  kindLabel: (kind: string) => string,
+  named: (kind: string, name: string) => string,
+  ordinal: (kind: string, position: number) => string,
+): string[] {
+  const counts = new Map<string, number>()
+  for (const factor of factors) {
+    counts.set(factor.kind, (counts.get(factor.kind) ?? 0) + 1)
+  }
+  const positions = new Map<string, number>()
+  return factors.map((factor) => {
+    const kind = kindLabel(factor.kind)
+    const position = (positions.get(factor.kind) ?? 0) + 1
+    positions.set(factor.kind, position)
+    if ((counts.get(factor.kind) ?? 0) <= 1) {
+      return kind
+    }
+    const name = factor.label ?? ''
+    if (name.trim() !== '') {
+      return named(kind, name)
+    }
+    return position === 1 ? kind : ordinal(kind, position)
+  })
 }
 
 /** One answer to a flow step: the answer step name and its input. */
@@ -191,9 +233,15 @@ export function FlowStep({
   }
 
   if (step.kind === 'factor') {
+    const factorLabels = factorChoiceLabels(
+      step.factors,
+      (kind) => factorKindLabel(kind, t),
+      (kind, name) => t('mfa.factor.optionNamed', { kind, name }),
+      (kind, position) => t('mfa.factor.optionOrdinal', { kind, position }),
+    )
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2 }}>
-        {step.factors.map((factor) => (
+        {step.factors.map((factor, index) => (
           <Button
             key={factor.id}
             type="button"
@@ -201,7 +249,7 @@ export function FlowStep({
             disabled={busy || submitDisabled}
             onClick={() => onSubmit({ step: 'factor', input: { factor: factor.id } })}
           >
-            {factor.label ?? factorKindLabel(factor.kind, t)}
+            {factorLabels[index] ?? factorKindLabel(factor.kind, t)}
           </Button>
         ))}
         {secondaryAction === undefined ? null : (

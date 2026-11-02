@@ -1233,8 +1233,8 @@ describe('ContactVerificationSection', () => {
     )
 
     // The 401 opens the dialog; winning it replays the same code.
-    await screen.findByRole('button', { name: 'App' })
-    await user.click(screen.getByRole('button', { name: 'App' }))
+    await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),

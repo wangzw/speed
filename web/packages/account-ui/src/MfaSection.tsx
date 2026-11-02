@@ -21,11 +21,12 @@
  *  - Enroll. The entry opens a name form first: the enrollment step carries
  *    the label with its `kind` (`POST B/flows/authenticated
  *    {purpose:"enroll", input:{kind, label}}`), and later steps do not read
- *    it. The field is prefilled with the browser/OS summary the session rows
- *    show (summarizeUserAgent) so a factor registered from this device is
- *    recognisable, is editable, and may be submitted empty -- the server
- *    stores no name then and the row falls back to its kind. The form has no
- *    required rule. Continue starts the flow; the wizard opens inside the
+ *    it. The field starts empty and shows a neutral example as its
+ *    placeholder: the name is this account page's answer to which factor a
+ *    row is, not something the browser can infer. It is editable and may be
+ *    submitted empty -- the server stores no name then and the row falls
+ *    back to its kind. The form has no required rule. Continue starts the
+ *    flow; the wizard opens inside the
  *    method's own group and replaces that group's rows, its heading naming
  *    the method being added, and each step states what confirming will do
  *    before its controls. The step's cancel sits on the left of its confirm
@@ -145,7 +146,6 @@ import { useFactorsQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountTimeZone } from './internal/time-zone.js'
 import { useAccountUiTranslation } from './internal/translation.js'
-import { summarizeUserAgent } from './internal/ua-summary.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 export interface MfaSectionProps {
@@ -200,16 +200,6 @@ interface EnrollDraft {
 interface RenameDraft {
   readonly id: string
   readonly label: string
-}
-
-/** The name suggested for a factor registered from this browser: the same
- * short browser/OS summary the session rows show. An unrecognised user
- * agent suggests no name; the reader can type one or leave it empty. */
-function suggestedFactorName(): string {
-  if (typeof navigator === 'undefined') {
-    return ''
-  }
-  return summarizeUserAgent(navigator.userAgent) ?? ''
 }
 
 /** Parses a server timestamp; answers null for an absent or malformed
@@ -492,13 +482,13 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     })
   }
 
-  /** Open the enrollment's name form for one factor kind. The suggested
-   * name is filled in but editable, and submitting it empty is allowed: the
-   * server then stores no name. */
+  /** Open the enrollment's name form for one factor kind. The name starts
+   * empty and is editable, and submitting it empty is allowed: the server
+   * then stores no name. */
   function openEnroll(factorKind: string): void {
     enrollFeedback.reset()
     setEnrollKind(factorKind)
-    setEnrollDraft({ kind: factorKind, label: suggestedFactorName() })
+    setEnrollDraft({ kind: factorKind, label: '' })
   }
 
   /** Start (or restart) an enrollment for one factor kind and label. The
@@ -877,9 +867,10 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                           <Box sx={{ maxWidth: FORM_MAX_WIDTH }}>
                             {/* The name travels with the flow's first input,
                                 so it is collected before the flow starts.
-                                The field is prefilled, editable and may be
-                                submitted empty. Cancel and confirm share one
-                                action row, cancel on the left. */}
+                                The field starts empty, shows an example as
+                                its placeholder, and may be submitted empty.
+                                Cancel and confirm share one action row,
+                                cancel on the left. */}
                             <Box
                               component="form"
                               onSubmit={(event) => {
@@ -900,6 +891,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                     label: event.target.value,
                                   })
                                 }
+                                placeholder={t('mfa.enroll.labelPlaceholder')}
                                 helperText={t('mfa.enroll.labelHelp')}
                                 disabled={enrolling}
                                 fullWidth
