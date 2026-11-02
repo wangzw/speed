@@ -250,7 +250,7 @@ sequenceDiagram
 
 **放弃登记流程。** 登记面板取消、或面板仍开着时节卸载时，本节经 `session.abandonFlow()` 发出 `DELETE /api/v1/auth/flows/current`，让服务端删掉这次登记写下的待确认因素行，而不等待确认清扫（[authn-mfa](../authn/design-authn-mfa.md)）。每个面板实例至多释放一次；已落定的流程不再释放；起流程的请求在面板关闭或节卸载之后才落定时，它开出的流程同样被释放。卸载时的释放延后一个微任务，StrictMode 在同一次提交内的重挂会取消它，重挂的节继续持有同一条流程。释放失败被忽略，不打断界面。
 
-**重命名。** 每个因素行的行尾菜单提供重命名，名字在行内展开编辑器：名称字段占满编辑器的文本列，取消与保存的动作行在其下一行靠右；写经 `PATCH /api/v1/auth/factors/{id}` 提交 `{label}`。名称是元数据，路由不要求新鲜认证，本节不为它开提权对话框；空值清除名称，行回退种类名。成功在列表下方的行动作反馈区确认，点名服务端存下的名称，并失效重读因素列表；被拒（400 的取值域）在同一区域渲染错误码文本。404 `authn.factor_not_found` 表示这个方式已不存在或不属于本人：关闭行内编辑器，失效重读因素列表一次，并在同一区域渲染该码的句子；重取的应答不再触发重取。重命名与移除共用一个反馈作用域：两条写操作的落定结果落在同一区域，后一条替换前一条。
+**重命名。** 每个因素行的行尾菜单提供重命名，名字在行内展开编辑器：名称字段占满编辑器的文本列，取消与保存的动作行在其下一行靠右；写经 `PATCH /api/v1/auth/factors/{id}` 提交 `{label}`。名称是元数据，路由不要求新鲜认证，本节不为它开提权对话框；空值清除名称，行回退种类名。成功在列表下方的节结果区确认，点名服务端存下的名称，并失效重读因素列表；被拒（400 的取值域）在同一区域渲染错误码文本。404 `authn.factor_not_found` 表示这个方式已不存在或不属于本人：关闭行内编辑器，失效重读因素列表一次，并在同一区域渲染该码的句子；重取的应答不再触发重取。重命名、登记与移除共用本节的一个结果槽：它们的落定结果落在同一区域，后一条替换前一条。
 
 步进渲染器的通行密钥步把仪式做成可等待、可取消、可重试的一步。断言仪式步到达即进入等待态，没有第二次点击：打开该步的那次点击就是全部交互，界面直接显示等待文案与一个取消控件，不先渲染一个「继续」按钮。登记仪式步（选项带 `user`）仍需一次点击开始，因为创建仪式在部分浏览器要求用户激活。到达按步号与挑战共同辨认：服务端在下一步重发同一挑战时仪式重新开始，普通重渲染不重开。仪式可能在浏览器上停留很久（没有可用认证器时一直等到用户放弃），因此等待通知挂成空的 `role="status"` 区域、下一提交再填文本，焦点移到取消控件（等待态取代了继续/入口控件）。取消不等仪式落定，立即渲染取消文案并给出重试；重试以同一步重跑仪式，取消时只尽力请浏览器放弃原仪式（凭据 API 不保证响应中止）。被放弃仪式的迟到应答按尝试序号丢弃；步在仪式途中卸载时同样放弃仪式。浏览器不支持 WebAuthn、用户放弃提示、认证器已持有该账户的凭据与仪式失败各渲染自己的文案；通用失败句按仪式类型区分登记与登录。
 
@@ -387,7 +387,7 @@ sequenceDiagram
 | TOTP 登记以二维码为主入口，手动密钥可展开复制 | 已实现 | `web/packages/account-ui/src/internal/flow-step.tsx` `FlowStep`、`TotpEnrollStep`；`web/packages/auth-core/src/otpauth.ts` `parseOtpauth`、`formatSecretForDisplay`；`web/packages/ui-kit/src/components/TotpQrCode.tsx` `TotpQrCode`；`web/packages/ui-kit/src/components/TotpEnrollmentPanel.tsx` `TotpEnrollmentPanel` |
 | 两步验证因素行的名称、最近使用时刻、行尾菜单（重命名与移除） | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `mfa.actionsAria`、`mfa.rename`、`mfa.renamed`、`mfa.renameLabel`、`mfa.renameHint`、`mfa.renameSave`、`mfa.renameCancel`、`mfa.remove`、`mfa.removeConfirm`、`mfa.factor.lastUsedAt`、`mfa.factor.neverUsed`、`mfa.factor.status.disabled`、`mfa.enroll.labelField`、`mfa.enroll.labelHelp` |
 | 两步验证按种类分组，待确认行不渲染，登记面板就地展开并说明确认后果 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `mfa.enroll.title`、`mfa.enroll.note`、`mfa.addAria`、`mfa.action.add` |
-| 两步验证的登记、重命名与移除共用一个结果槽，位于分组列表下方 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`、`feedback`；`web/packages/account-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion` |
+| 两步验证的登记、重命名与移除共用一个结果槽，位于分组列表下方 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/ui-kit/src/write-feedback.ts` `useWriteFeedback`；`web/packages/account-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion` |
 | 命名空间资源 | 已实现 | `web/packages/account-ui/src/resources.ts` `ACCOUNT_UI_NAMESPACE`、`accountUiResources` |
 | 登录标识节的邮箱可用性属性 `emailAvailable` | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps` |
 | 档案已列出用户名时，添加面不提供用户名 kind | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
