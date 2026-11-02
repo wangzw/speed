@@ -7,6 +7,10 @@
  * action row. jsdom proves node ancestry; only the browser tier lays the page
  * out, so only here can the placements be told apart by their boxes.
  *
+ * The panes' status chips are swept here too: every chip the four account
+ * panes render is read from the live DOM, so one chip that carries primary
+ * away from the current session is named beside the panes that are correct.
+ *
  * A block header is one icon column fixed at 2rem followed by one spacing-unit
  * gap before the title; the block's content skips the same column and gap. The
  * content inset therefore has to read the theme's spacing base, not a fixed
@@ -16,17 +20,18 @@
  * which renders both block shapes -- a titled AccountSection and an expandable
  * SecurityRow.
  */
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { accountUiResources } from '@speed/account-ui'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
+import { chipClasses } from '@mui/material/Chip'
 import { themePresets } from '@speed/theme-presets'
 import { createBackend } from '../a11y/backends.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
-import { ACCOUNT_SECTION_PATHS } from '../paths.js'
+import { ACCOUNT_SECTIONS, ACCOUNT_SECTION_PATHS } from '../paths.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import {
   authenticatedSnapshot,
@@ -35,10 +40,15 @@ import {
 } from '../test-utils/session.js'
 
 const accountEnUS = accountUiResources['en-US'] as {
-  readonly identifiers: { readonly kind: { readonly username: string } }
+  readonly identifiers: {
+    readonly kind: { readonly username: string }
+    readonly verified: string
+  }
   readonly password: { readonly current: { readonly label: string } }
+  readonly preferences: { readonly timezone: { readonly label: string } }
   readonly sessions: {
     readonly title: string
+    readonly current: string
     readonly revokeOthers: { readonly label: string }
   }
 }
@@ -193,4 +203,96 @@ it('puts the sessions bulk action on the block title row, above the list', async
   // It is lifted out of the list: the control ends above the list's own top
   // edge, where the section's standalone action row used to sit.
   expect(bulkBox.bottom).toBeLessThanOrEqual(listBox.top + 1)
+})
+
+/**
+ * Waits for the pane's own data-driven content, so the chip sweep below runs
+ * on settled rows rather than on a loading skeleton. Each pane names the
+ * element its reads fill; preferences carries no chip, so its time zone
+ * select is the readiness signal there.
+ */
+async function waitForSettledPane(
+  section: (typeof ACCOUNT_SECTIONS)[number],
+): Promise<void> {
+  switch (section) {
+    case 'profile':
+      await screen.findByText(accountEnUS.identifiers.verified, {
+        selector: `.${chipClasses.label}`,
+      })
+      return
+    case 'security':
+      await screen.findByText(demoEnUS.account.rows.value.passwordSet, {
+        selector: `.${chipClasses.label}`,
+      })
+      return
+    case 'sessions':
+      await screen.findByText(accountEnUS.sessions.current, {
+        selector: `.${chipClasses.label}`,
+      })
+      return
+    case 'preferences':
+      await waitFor(() => {
+        expect(
+          screen.getByRole('combobox', {
+            name: accountEnUS.preferences.timezone.label,
+          }),
+        ).toHaveTextContent('UTC')
+      })
+  }
+}
+
+describe('account pane status chip colors', () => {
+  for (const section of ACCOUNT_SECTIONS) {
+    it(`uses success or default for status chips on the ${section} pane, with primary only on the current session`, async () => {
+      // A status chip states a completed positive state (success) or a
+      // neutral/unfinished one (default). Primary is not a status: it marks
+      // the session the viewer is using, and nowhere else.
+      await page.viewport(1280, 900)
+      bindRequestFn(createBackend('data'))
+      const path = ACCOUNT_SECTION_PATHS[section]
+      window.history.replaceState({}, '', path)
+      renderDemoApp({
+        session: createTestSession(
+          authenticatedSnapshot({ features: readyFeatures() }),
+        ),
+      })
+      await waitForSettledPane(section)
+
+      const chips = Array.from(
+        document.querySelectorAll<HTMLElement>(`.${chipClasses.root}`),
+      )
+      const violations: string[] = []
+      for (const chip of chips) {
+        const text = (chip.textContent ?? '').trim()
+        const colorClasses = Array.from(chip.classList).filter((name) =>
+          name.startsWith(`${chipClasses.root}-color`),
+        )
+        if (chip.classList.contains(chipClasses.colorPrimary)) {
+          // Primary is allowed on exactly one chip: the current session's.
+          const currentSession =
+            section === 'sessions' && text === accountEnUS.sessions.current
+          if (!currentSession) {
+            violations.push(
+              `${path}: "${text}" uses primary, which belongs only to "${accountEnUS.sessions.current}"`,
+            )
+          }
+          continue
+        }
+        const status =
+          chip.classList.contains(chipClasses.colorSuccess) ||
+          chip.classList.contains(chipClasses.colorDefault)
+        if (!status) {
+          violations.push(
+            `${path}: "${text}" uses ${
+              colorClasses.length === 0
+                ? 'no color class'
+                : colorClasses.join(', ')
+            }, but a status chip must use success or default`,
+          )
+        }
+      }
+
+      expect(violations, `off-palette status chips on ${path}`).toEqual([])
+    })
+  }
 })

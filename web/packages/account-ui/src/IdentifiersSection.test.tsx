@@ -22,6 +22,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { chipClasses } from '@mui/material/Chip'
 import enUS from './locales/en-US.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { identifier, profileBody } from '../test-utils/fixtures.js'
@@ -152,6 +153,78 @@ describe('IdentifiersSection', () => {
     expect(screen.getByText(zhCN.identifiers.unverified)).toBeTruthy()
 
     await expectNoAxeViolations()
+  })
+
+  describe('verification chip colors', () => {
+    /** The chip whose visible label is `text`. */
+    function chipFor(text: string): HTMLElement {
+      const label = screen.getByText(text, {
+        selector: `.${chipClasses.label}`,
+      })
+      const chip = label.closest(`.${chipClasses.root}`)
+      if (chip === null) {
+        throw new Error(`the "${text}" label is not inside a chip`)
+      }
+      return chip as HTMLElement
+    }
+
+    // Both views that show a verification state: the merged view's contact
+    // list and the contact axis's address table.
+    const views = [
+      { name: 'the merged view', axis: undefined },
+      { name: 'the contact table', axis: 'contact' as const },
+    ]
+
+    for (const view of views) {
+      it(`colors a proved identifier success and an unproved one default in ${view.name}`, async () => {
+        // The chip's color states the same one-of-two answer as its label:
+        // proved ownership is a completed positive state (success), and an
+        // unproved address is neutral (default). Primary is reserved for the
+        // session the viewer is using, never for a status.
+        const respond: RealResponder = (call: RealCall) => {
+          if (call.method === 'GET' && call.path === PROFILE_PATH) {
+            return jsonResponse(
+              200,
+              profileBody({
+                identifiers: [
+                  identifier({
+                    id: 'id-verified',
+                    kind: 'email',
+                    value: 'ada@x.test',
+                    proven: true,
+                    sign_in: true,
+                  }),
+                  identifier({
+                    id: 'id-unverified',
+                    kind: 'email',
+                    value: 'bea@x.test',
+                    proven: false,
+                    verified_at: '',
+                    verified_via: 'admin',
+                    sign_in: false,
+                  }),
+                ],
+              }),
+            )
+          }
+          throw new Error(`unexpected ${call.method} ${call.path}`)
+        }
+        const rig = makeRealClientRig(respond)
+        rig.store.set('access-1')
+        renderWithProviders(
+          <IdentifiersSection session={rig.session} axis={view.axis} />,
+        )
+
+        expect(await screen.findAllByText('ada@x.test')).not.toHaveLength(0)
+        const verified = chipFor(zhCN.identifiers.verified)
+        expect(verified).toHaveClass(chipClasses.colorSuccess)
+        expect(verified).not.toHaveClass(chipClasses.colorPrimary)
+
+        const unverified = chipFor(zhCN.identifiers.unverified)
+        expect(unverified).toHaveClass(chipClasses.colorDefault)
+        expect(unverified).not.toHaveClass(chipClasses.colorPrimary)
+      })
+    }
   })
 
   it('re-issues the recorded removal when the page mounts after the new sign-in', async () => {
