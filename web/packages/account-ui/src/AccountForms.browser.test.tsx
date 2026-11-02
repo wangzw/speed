@@ -323,7 +323,7 @@ describe('account-ui form geometry', () => {
     ).toBeLessThanOrEqual(32)
     expectOneActionGroup(confirm, cancel)
 
-    // The wizard title is a sub-form heading, one step below the card title
+    // The panel title is a sub-form heading, one step below the card title
     // (subtitle1, not the larger h6), and names the factor kind enrolled.
     expect(
       screen.getByRole('heading', {
@@ -335,7 +335,7 @@ describe('account-ui form geometry', () => {
       }),
     ).toHaveClass('MuiTypography-subtitle1')
 
-    // The wizard's fields inherit the form width cap, not the card width.
+    // The panel's fields inherit the form width cap, not the card width.
     expect(codeField.getBoundingClientRect().width).toBeLessThanOrEqual(601)
   })
 

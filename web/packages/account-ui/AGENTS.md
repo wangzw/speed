@@ -54,7 +54,7 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   touches HTTP. The session arrives as a prop only where a flow
   operation exists that a plain generated call cannot express —
   `session.startAuthenticatedFlow` / `session.answerFlow` in the
-  bindings add area, the enroll wizard and the step-up dialog, and
+  bindings add area, the enrollment panel and the step-up dialog, and
   `session.readFlow` in the callback handler. A surface with no flow to
   drive takes no session prop.
 - **Every form puts its action row beneath its fields.** The row spans
@@ -230,22 +230,33 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   text-column width, with the cancel-and-save action row beneath it closed
   on the right. The rename writes the label through the generated
   mutation, an empty value clears it and the row falls back to the kind,
-  and a landed rename refetches the list. The enrollment name form is
-  prefilled with the browser/OS summary the session rows show
-  (`summarizeUserAgent`), editable, and may be submitted empty. The wizard opens inside the enrolling kind's
-  group and replaces its rows; its heading names the kind being enrolled
+  and a landed rename refetches the list. The enrollment panel opens inside
+  the enrolling kind's group and replaces its rows, starting the
+  `purpose: 'enroll'` flow at once so the method's body sits on the same
+  panel as the name field; its heading names the kind being enrolled
   through the parameterized `mfa.enroll.title`, whose method slot carries
   that kind's `mfa.factor.kind.*` name (the generic other label for an
-  unknown kind). Every step states what confirming does before its controls,
-  and the step's cancel sits on the left of its confirm with the ordinary
-  action-row spacing; the name form and the flow's own steps share the
-  heading.
-  A wizard the reader cancels, or the section unmounting while a wizard
-  is open, releases the flow through `session.abandonFlow()` so the server
-  drops the pending row the registration wrote (`releaseEnrollFlow`); each
-  wizard instance releases at most once, a settled flow releases nothing,
-  the unmount release is deferred one microtask so StrictMode's remount
-  keeps the flow, and a failed release is ignored rather than shown.
+  unknown kind). The name field starts empty with a neutral placeholder, is
+  editable, and may be left empty; the flow's first input carries an empty
+  label, and a name typed in the panel is written to the row the flow added
+  through the generated rename mutation once the flow settles `enrolled`.
+  The step states what confirming does before its controls, and its cancel
+  sits on the left of its confirm with the ordinary action-row spacing. One
+  confirm takes the step; a bare `complete` step the server answers with is
+  submitted automatically (at most once per seq), so the reader confirms
+  once, and a refused automatic submission parks that step with its own
+  confirm. A refused start or answer renders in the panel's own failure
+  region, which stays open. A panel the reader cancels, or the section
+  unmounting while a panel is open, releases the flow through
+  `session.abandonFlow()` so the server drops the pending row the
+  registration wrote (`releaseEnrollFlow`); each panel instance releases at
+  most once, a settled flow releases nothing, the unmount release is
+  deferred one microtask so StrictMode's remount keeps the flow, and a
+  failed release is ignored rather than shown. A start that answers after
+  the panel closed or the section unmounted releases the flow it opened.
+  Enrollment, rename and removal report through the section's one
+  `useWriteFeedback` slot, rendered once below the grouped methods; a new
+  attempt resets it and the later result replaces the earlier one.
 - **The error surface is a code whitelist with guarded vocabulary.**
   Every failure path resolves to one error code rendered in one
   `role="alert"` banner; codes outside the whitelist render
@@ -444,25 +455,14 @@ pinned in both languages by `src/internal/error-text.test.ts`.
 
 ## Known limitations
 
-- **The enrollment wizard releases the current flow, not necessarily its
+- **The enrollment panel releases the current flow, not necessarily its
   own -- a known constraint, not an oversight.** The flow binding is one
   server-set cookie, so starting a flow replaces the bound one
   (`@speed/auth-core` carries the same limit). `releaseEnrollFlow` calls
   `session.abandonFlow()`, which deletes whatever flow is current: when a
-  new flow starts elsewhere while the wizard is open, the newer flow is
-  the one abandoned on cancel or unmount, and the wizard's own flow is
+  new flow starts elsewhere while the panel is open, the newer flow is
+  the one abandoned on cancel or unmount, and the panel's own flow is
   left to expire.
-- **A departure during the enrollment start releases nothing -- a known
-  constraint, not an oversight.** `startEnroll` records the flow as open
-  only after `session.startAuthenticatedFlow` returns a step, so leaving
-  the page between the name submission and that return sends no
-  `DELETE flows/current`. The pending factor row the flow's first step
-  wrote is removed by the `authn.mfa` sweep once it is past
-  `pending-ttl`; until then it never appears among the factors a sign-in
-  offers, and the account's own two-step verification list withholds it
-  too: each kind's group renders only its enabled and disabled rows, so a
-  pending row is visible nowhere in this package until the sweep removes
-  it.
 
 Recorded, with the current disposition, in the README's Known
 limitations and deferrals. The load-bearing ones for a contributor: the

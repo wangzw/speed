@@ -148,7 +148,7 @@ async function confirmEnrollment(
   )
 }
 
-/** The enrollment wizard's heading for one factor kind: the parameterized
+/** The enrollment panel's heading for one factor kind: the parameterized
  * title with the kind's own name in its method slot. */
 const enrollTitleOf = (method: string): string =>
   zhCN.mfa.enroll.title.replace('{{method}}', method)
@@ -2114,7 +2114,7 @@ describe('MfaSection', () => {
     await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
   })
 
-  it('abandons the enrollment flow once when the wizard is cancelled', async () => {
+  it('abandons the enrollment flow once when the panel is cancelled', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['totp']))
@@ -2144,7 +2144,7 @@ describe('MfaSection', () => {
     )
 
     await waitFor(() => expect(abandonCalls(rig.calls)).toHaveLength(1))
-    // The wizard closed onto the entries, and no second release follows.
+    // The panel closed onto the entries, and no second release follows.
     expect(
       await screen.findByRole('button', {
         name: addNameOf(zhCN.mfa.factor.kind.totp),

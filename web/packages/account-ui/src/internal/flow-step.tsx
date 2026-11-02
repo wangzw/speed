@@ -2,7 +2,7 @@
  * FlowStep: renders one step of an authn flow and reports the answer
  * back to the caller's driver.
  *
- * The step-up dialog and the enrollment wizard both advance a flow one
+ * The step-up dialog and the enrollment panel both advance a flow one
  * answer at a time: each reads the current `AuthnStep` and answers it
  * with `session.answerFlow`. This component is the whole of what the two
  * share -- the rendering of a step's inputs and the shape of the answer

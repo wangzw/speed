@@ -28,7 +28,7 @@
  * area starts a `purpose: 'link'` flow (session.startAuthenticatedFlow),
  * the callback handler reads that flow back and completes it
  * (session.readFlow / session.answerFlow), and the two-factor enroll
- * wizard and step-up dialog drive `purpose: 'enroll'` and `purpose:
+ * panel and step-up dialog drive `purpose: 'enroll'` and `purpose:
  * 'step-up'` flows the same way. A social channel is the deployment's
  * own login-method name, read from the discovery document; the package
  * carries no host-supplied channel list.
