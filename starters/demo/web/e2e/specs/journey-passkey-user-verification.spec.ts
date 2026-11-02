@@ -118,20 +118,13 @@ function mfaGroup(page: Page, kind: MfaKind): Locator {
 }
 
 /**
- * The add action on a method group's heading. A passkey group that already has
- * an enabled row words it "add another device"; every other group, and a
- * passkey with no enabled row, words it "add".
+ * The add action on a method group's heading. Every group words it "add",
+ * whether or not it already has an enabled row.
  */
-function addFactorAction(
-  page: Page,
-  kind: MfaKind,
-  another: boolean,
-): Locator {
+function addFactorAction(page: Page, kind: MfaKind): Locator {
   const method = copy('accountUi', `mfa.factor.kind.${kind}`)
   return mfaGroup(page, kind).getByRole('button', {
-    name: copy('accountUi', another ? 'mfa.manageAria' : 'mfa.addAria', {
-      method,
-    }),
+    name: copy('accountUi', 'mfa.addAria', { method }),
     exact: true,
   })
 }
@@ -260,7 +253,7 @@ async function revealedTotpSecret(mfa: Locator): Promise<string> {
  */
 async function enrolTotp(page: Page): Promise<string> {
   const mfa = mfaSection(page)
-  await addFactorAction(page, 'totp', false).click()
+  await addFactorAction(page, 'totp').click()
   await submitFactorNameForm(mfa, TOTP_FACTOR_NAME)
 
   // The wizard shows the setup URI as a scannable symbol; the manual
@@ -312,7 +305,7 @@ async function enrolTotp(page: Page): Promise<string> {
  */
 async function enrolPasskey(page: Page): Promise<void> {
   const mfa = mfaSection(page)
-  await addFactorAction(page, 'webauthn', false).click()
+  await addFactorAction(page, 'webauthn').click()
   await submitFactorNameForm(mfa, PASSKEY_FACTOR_NAME)
   await expect(
     mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
@@ -342,14 +335,14 @@ async function enrolPasskey(page: Page): Promise<void> {
     ),
   ).toBeVisible({ timeout: 20_000 })
   // The settled enrolment lists one enabled passkey in the passkey group,
-  // whose heading now offers another device.
+  // whose heading offers the same plain add.
   const group = mfaGroup(page, 'webauthn')
   await expect(group.getByRole('listitem')).toHaveCount(1)
   await expect(
     group.getByText(PASSKEY_FACTOR_NAME, { exact: true }),
   ).toBeVisible()
-  await expect(addFactorAction(page, 'webauthn', true)).toHaveText(
-    copy('accountUi', 'mfa.action.manage'),
+  await expect(addFactorAction(page, 'webauthn')).toHaveText(
+    copy('accountUi', 'mfa.action.add'),
   )
 }
 

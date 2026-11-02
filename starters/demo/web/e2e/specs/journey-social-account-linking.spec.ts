@@ -198,20 +198,13 @@ function mfaGroup(page: Page, kind: MfaKind): Locator {
 }
 
 /**
- * The add action on a method group's heading. A passkey group that already has
- * an enabled row words it "add another device"; every other group, and a
- * passkey with no enabled row, words it "add".
+ * The add action on a method group's heading. Every group words it "add",
+ * whether or not it already has an enabled row.
  */
-function addFactorAction(
-  page: Page,
-  kind: MfaKind,
-  another: boolean,
-): Locator {
+function addFactorAction(page: Page, kind: MfaKind): Locator {
   const method = copy('accountUi', `mfa.factor.kind.${kind}`)
   return mfaGroup(page, kind).getByRole('button', {
-    name: copy('accountUi', another ? 'mfa.manageAria' : 'mfa.addAria', {
-      method,
-    }),
+    name: copy('accountUi', 'mfa.addAria', { method }),
     exact: true,
   })
 }
@@ -238,7 +231,7 @@ async function confirmSettledEnrolment(mfa: Locator): Promise<void> {
  */
 async function enrolPasskey(page: Page): Promise<void> {
   const mfa = mfaSection(page)
-  await addFactorAction(page, 'webauthn', false).click()
+  await addFactorAction(page, 'webauthn').click()
   await submitFactorNameForm(mfa, PASSKEY_FACTOR_NAME)
   await expect(
     mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {

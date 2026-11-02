@@ -624,8 +624,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
 
       // The passkey registered during the sign-in is the account's one active
       // factor: its group holds that one row, the row's menu names it, and the
-      // group's action offers another device rather than a setup, which is
-      // the word an active factor earns.
+      // group's action reads as a plain add.
       const passkeyGroup = mfaSection(page).getByRole('region', {
         name: copy('accountUi', 'mfa.factor.kind.webauthn'),
         exact: true,
@@ -641,7 +640,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       ).toBeVisible()
       await expect(
         passkeyGroup.getByRole('button', {
-          name: copy('accountUi', 'mfa.manageAria', {
+          name: copy('accountUi', 'mfa.addAria', {
             method: copy('accountUi', 'mfa.factor.kind.webauthn'),
           }),
           exact: true,

@@ -156,20 +156,13 @@ function mfaGroup(page: Page, kind: MfaKind): Locator {
 }
 
 /**
- * The add action on a method group's heading. A passkey group that already has
- * an enabled row words it "add another device"; every other group, and a
- * passkey with no enabled row, words it "add".
+ * The add action on a method group's heading. Every group words it "add",
+ * whether or not it already has an enabled row.
  */
-function addFactorAction(
-  page: Page,
-  kind: MfaKind,
-  another: boolean,
-): Locator {
+function addFactorAction(page: Page, kind: MfaKind): Locator {
   const method = copy('accountUi', `mfa.factor.kind.${kind}`)
   return mfaGroup(page, kind).getByRole('button', {
-    name: copy('accountUi', another ? 'mfa.manageAria' : 'mfa.addAria', {
-      method,
-    }),
+    name: copy('accountUi', 'mfa.addAria', { method }),
     exact: true,
   })
 }
@@ -454,7 +447,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
             exact: true,
           }),
         ).toBeVisible()
-        const add = addFactorAction(page, kind, false)
+        const add = addFactorAction(page, kind)
         await expect(add).toBeVisible()
         await expect(add).toHaveText(copy('accountUi', 'mfa.action.add'))
         await expect(group.getByRole('listitem')).toHaveCount(0)
@@ -463,7 +456,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
 
     await test.step('step 2: the authenticator app is enrolled with a current code and becomes active', async () => {
       const mfa = mfaSection(page)
-      await addFactorAction(page, 'totp', false).click()
+      await addFactorAction(page, 'totp').click()
       await submitFactorNameForm(mfa, TOTP_FACTOR_NAME)
 
       // The wizard shows the setup URI as a scannable symbol; the manual
@@ -509,7 +502,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
         totpGroup.getByText(TOTP_FACTOR_NAME, { exact: true }),
       ).toBeVisible()
       // An enabled authenticator row keeps that group's action a plain add.
-      await expect(addFactorAction(page, 'totp', false)).toHaveText(
+      await expect(addFactorAction(page, 'totp')).toHaveText(
         copy('accountUi', 'mfa.action.add'),
       )
     })
@@ -562,7 +555,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
       // step after its name form asks for a code an app would show, so giving
       // it up never needs one. A group whose method already has an enabled row
       // still offers its plain add action.
-      await addFactorAction(page, 'totp', false).click()
+      await addFactorAction(page, 'totp').click()
       await submitFactorNameForm(mfa, ABANDONED_FACTOR_NAME)
       // Starting the flow writes a pending factor row; the wizard is parked on
       // the authenticator step, which is where the reader gives it up.
@@ -593,7 +586,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
       // Back on the entries, then a fresh read of the list: the cancelled
       // registration left no row behind, so the list holds the same rows with
       // the same names as before the wizard opened.
-      await expect(addFactorAction(page, 'totp', false)).toBeVisible()
+      await expect(addFactorAction(page, 'totp')).toBeVisible()
       await openAccountSection(page, 'security')
       await expandAccountRows(page)
       const reread = mfaSection(page)
@@ -622,7 +615,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
       // Presence simulation is off for the first attempt: the ceremony stays
       // pending, which is exactly the waiting surface the journey describes.
       await authenticator?.setPresent(false)
-      await addFactorAction(page, 'webauthn', false).click()
+      await addFactorAction(page, 'webauthn').click()
       await submitFactorNameForm(mfa, PASSKEY_FACTOR_NAME)
       await expect(
         mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
@@ -693,9 +686,9 @@ test('account-security-hardening: an account enrols two factors, ends another de
       await expect(
         passkeyGroup.getByText(PASSKEY_FACTOR_NAME, { exact: true }),
       ).toBeVisible()
-      // With an enabled passkey, that group offers another device.
-      await expect(addFactorAction(page, 'webauthn', true)).toHaveText(
-        copy('accountUi', 'mfa.action.manage'),
+      // With an enabled passkey, that group still offers a plain add.
+      await expect(addFactorAction(page, 'webauthn')).toHaveText(
+        copy('accountUi', 'mfa.action.add'),
       )
     })
 
