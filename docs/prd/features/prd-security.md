@@ -354,7 +354,7 @@
 
 系统必须允许账户在登记一种两步验证方式时为其指定名称；账户没有指定名称时，清单以该方式的种类名显示它。
 
-- **验收**：登记向导提供名称输入，初始为空并给出一个中性的示例；提交后清单中该行显示所填名称；名称留空时该行显示种类名。
+- **验收**：登记向导提供名称输入，并预先填入一个可修改的建议名称；提交后清单中该行显示所填名称；名称留空时该行显示种类名。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
