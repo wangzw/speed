@@ -133,21 +133,23 @@ At `md` and up:
 |---|---|---|
 | Fixed head | `AppBar` carrying `header`, `headerActions` and `userMenu` | no `AppBar`; a `banner`, when given, is the head's only child at the very top |
 | Drawer paper, top row | -- | `header` plus the desktop collapse toggle, when `onSidebarCollapsedChange` is supplied |
-| Drawer paper, middle | `navHeader` -> `nav` (the paper scrolls) -> `navFooter` | the same slots in the same order, with `nav` taking the remaining height and scrolling itself |
+| Drawer paper, middle | `navHeader` -> `nav` (the one scrolling region) -> `navFooter`, with the footer at the paper's bottom edge | the same slots in the same order, between the top and bottom chrome rows |
 | Drawer paper, bottom row | -- | `headerActions` then `userMenu`, pinned to the bottom |
 | Content | `main` below the fixed head | `main` below the fixed head when one renders (a desktop shell with no banner starts at the viewport top); otherwise unchanged |
 
-The sidebar paper is a fixed column: the paper itself stops scrolling
-(`overflow: hidden`), the `nav` between the two rows takes
-`flex: 1 1 auto` with `minHeight: 0` and scrolls vertically, and the
-bottom row stays put (`flexShrink: 0`). Those three declarations are
-added only to the `sidebar` layout -- giving the nav `flexGrow`
-unconditionally would push `navFooter` to the bottom of an
-always-scrolling paper in the `topbar` layout. The content region
-remains the page's one scrolling layer in both layouts, and
-`navHeader`/`navFooter` remain siblings of the `nav` landmark with the
-same accessible name and slot contract; `narrow` still reflects the
-mounted drawer.
+Every drawer paper -- permanent and temporary, in both layouts -- is a
+fixed column: the paper itself stops scrolling (`overflow: hidden`), the
+`nav` takes `flex: 1 1 auto` with `minHeight: 0` and scrolls
+vertically, and the footer slot stays at the bottom of the column. This
+is a `topbar` requirement as much as a `sidebar` one: in the `topbar`
+layout the fixed app bar already carries the header, the actions and the
+user menu, so the drawer paper's bottom edge is the account entry's only
+home. The `sidebar` layout adds its own top row (brand and collapse
+toggle) before the `navHeader` slot and pins its bottom row
+(`flexShrink: 0`) after the footer. The content region remains the
+page's one scrolling layer in both layouts, and `navHeader`/`navFooter`
+remain siblings of the `nav` landmark with the same accessible name and
+slot contract; `narrow` still reflects the mounted drawer.
 
 Below `md`, a `sidebar` shell renders a minimal top bar holding only the
 drawer trigger and `header`; `headerActions` and `userMenu` stay in the

@@ -22,9 +22,11 @@
  * `header`, `headerActions` and `userMenu`. `shellLayout: 'sidebar'`
  * renders no app bar at `md` and up: the brand and the desktop collapse
  * toggle move to a row at the top of the drawer paper, and
- * `headerActions`/`userMenu` to a row pinned at its bottom, so the
- * drawer paper becomes a non-scrolling column whose `nav` takes the
- * remaining height and scrolls itself. Below `md` a sidebar shell keeps
+ * `headerActions`/`userMenu` to a row pinned at its bottom. In both
+ * layouts the drawer paper is a fixed flex column whose `nav` takes the
+ * remaining height and scrolls itself, with `navFooter` at the paper's
+ * bottom edge -- in the topbar layout that edge is the account entry's
+ * only home. Below `md` a sidebar shell keeps
  * a minimal top bar carrying only the drawer trigger and `header` (the
  * banner landmark); `headerActions`/`userMenu` stay in the temporary
  * drawer's bottom row, and the drawer renders no top row (the brand is
@@ -36,7 +38,8 @@
  * without a landmark around them a page-level axe scan rejects the
  * column (`region`); the `nav` landmark stays nested inside it.
  * `navHeader`/`navFooter` remain siblings of the `nav` landmark in both
- * layouts, and the content region is the one scrolling layer throughout.
+ * layouts; the drawer's `nav` is the paper's only scrolling region, and
+ * the content region scrolls independently.
  *
  * Slots (`header`, `headerActions`, `userMenu`, `banner`, `navHeader`,
  * `navFooter`, `children`)
@@ -1035,13 +1038,10 @@ export function AppShell({
   // temporary variant passes the close transition -- see the module doc
   // comment for who owns it in which mode.
   //
-  // In the sidebar layout the nav is the paper's one scrolling region:
-  // the paper itself stops scrolling (see its own sx) and the nav takes
-  // the height left between the top and bottom chrome rows. These three
-  // declarations are added only in that layout -- giving the nav
-  // `flexGrow` unconditionally would push `navFooter` to the bottom of an
-  // always-scrolling paper in the topbar layout, which is a behavior
-  // change no topbar host asked for.
+  // The paper is a fixed column in both layouts: the nav is its one
+  // growing, scrolling region, so navFooter sits at the paper's bottom
+  // edge. In the topbar layout that edge is the account entry's only
+  // home -- the fixed app bar carries the rest of the chrome.
   const navContent = (onNavigate?: () => void, narrow = false) => (
     <Box
       component="nav"

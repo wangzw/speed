@@ -75,15 +75,18 @@ rule. The public surface is `src/index.ts`; everything under
   existing slots and leaves `shellLayout` alone. Do not accept a host
   element in place of a form, and do not branch on a string this package
   does not enumerate.
-- **The `sidebar` form never changes the `topbar` form's behavior.**
-  Every deviation -- the paper's `overflow: hidden`, the nav's
-  `flex: 1 1 auto; minHeight: 0; overflowY: auto`, the pinned bottom
-  row, the absent app bar and head -- is conditional on
-  `shellLayout === 'sidebar'`. In particular, giving `nav` `flexGrow`
-  unconditionally would push `navFooter` to the bottom of an
-  always-scrolling paper for every `topbar` host. A change that cannot
-  be written as a sidebar-only condition does not belong in this
-  component.
+- **Every drawer paper is a fixed column; only the chrome rows are
+  layout-specific.** In both layouts the paper never scrolls
+  (`overflow: hidden`), the `nav` takes `flex: 1 1 auto; minHeight: 0;
+  overflowY: auto` as its one scrolling region, and `navFooter` follows
+  it at the bottom of the column. This is not optional in the `topbar`
+  layout: the fixed app bar already carries the header, the actions and
+  the user menu, so the paper's bottom edge is the account entry's only
+  home. The `sidebar` form adds its own chrome rows around that column
+  -- the brand and collapse toggle at the top, `headerActions` and
+  `userMenu` pinned at the bottom -- and drops the app bar and fixed
+  head at `md` and up. Those rows, not the scrolling behavior, are what
+  `shellLayout === 'sidebar'` conditions.
 - **`isPlainPrimaryClick` is shared by convention, not by dependency.**
   `@speed/console-ui` consumes it; `@speed/route-kit` keeps a
   private variant because that package is independent of
