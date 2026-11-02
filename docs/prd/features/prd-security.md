@@ -27,7 +27,7 @@
 系统必须让账户查看自己已登记的两步验证方式清单，按种类分组，逐项给出名称、最近使用时间与是否可用；每种已装配的方式各给出一个登记入口。
 
 - **验收**：账户页的两步验证节按种类分节，每节的标题是该方式的名字，且只有一个登记入口；已登记的每一种方式逐行给出其名称与最近使用时间，已停用的另有标记；登记过程中的中间状态不作为清单行出现；部署没有装配任何方式时才显示空态，而不是错误。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
 ### REQ-security-002
@@ -354,14 +354,14 @@
 
 系统必须允许账户在登记一种两步验证方式时为其指定名称；账户没有指定名称时，清单以该方式的种类名显示它。
 
-- **验收**：登记向导提供名称输入，并预先填入一个可修改的建议名称；提交后清单中该行显示所填名称；名称留空时该行显示种类名。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **验收**：登记向导提供名称输入，初始为空并给出一个中性的示例；提交后清单中该行显示所填名称；名称留空时该行显示种类名。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
 ### REQ-security-043
 
 系统必须允许账户重命名自己已登记的两步验证方式，改名不改变该方式的状态，也不影响它作为登录与重新验证依据的能力。
 
 - **验收**：改名后清单显示新名称，该方式仍为原状态且仍能用于登录与重新验证；他人名下的两步验证方式无法被改名。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：未实现
