@@ -63,7 +63,6 @@ test.describe.configure({ timeout: 300_000 })
 // factor row under the name it was enrolled with; the sign-in surface names
 // every offered factor by its kind, so the selections there read the kind's
 // language-pack label.
-const TOTP_FACTOR_NAME = 'Work phone'
 const PASSKEY_FACTOR_NAME = 'Backup passkey'
 
 /** The home page's heading, the landing after a completed sign-in. */
@@ -244,7 +243,14 @@ async function revealedTotpSecret(mfa: Locator): Promise<string> {
 async function enrolTotp(page: Page): Promise<string> {
   const mfa = mfaSection(page)
   await addFactorAction(page, 'totp').click()
-  await fillFactorName(mfa, TOTP_FACTOR_NAME)
+  // The authenticator entry carries no name: its panel shows the method's
+  // body alone.
+  await expect(
+    mfa.getByRole('textbox', {
+      name: copy('accountUi', 'mfa.enroll.labelField'),
+      exact: true,
+    }),
+  ).toHaveCount(0)
 
   // The panel shows the setup URI as a scannable symbol; the manual
   // disclosure reveals the base32 key behind it for setup by hand.
@@ -283,7 +289,13 @@ async function enrolTotp(page: Page): Promise<string> {
   // The settled enrolment lists one enabled row in the authenticator group.
   const group = mfaGroup(page, 'totp')
   await expect(group.getByRole('listitem')).toHaveCount(1)
-  await expect(group.getByText(TOTP_FACTOR_NAME, { exact: true })).toBeVisible()
+  // The single authenticator row reads as its kind; the group's heading
+  // carries the same words, so the assertion is scoped to the row.
+  await expect(
+    group
+      .getByRole('listitem')
+      .getByText(copy('accountUi', 'mfa.factor.kind.totp'), { exact: true }),
+  ).toBeVisible()
   return secret
 }
 

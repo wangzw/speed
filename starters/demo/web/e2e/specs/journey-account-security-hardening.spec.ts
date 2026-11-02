@@ -97,13 +97,11 @@ const NEW_PASSWORD = 'e2e-Password-456'
 // factor row under the name it was enrolled with; the sign-in and step-up
 // surfaces name every offered factor by its kind, so the selections there read
 // the kind's language-pack label.
-const TOTP_FACTOR_NAME = 'Work phone'
 const PASSKEY_FACTOR_NAME = 'Backup passkey'
 
 // The name given to an enrollment this journey opens only to cancel it. If the
 // wizard's cancel left the flow open, the server's pending row would carry this
 // name back onto the list.
-const ABANDONED_FACTOR_NAME = 'Abandoned authenticator'
 
 /** The home page's heading, the landing after a completed sign-in. */
 function homeHeading(page: Page): Locator {
@@ -157,13 +155,22 @@ function mfaGroup(page: Page, kind: MfaKind): Locator {
 }
 
 /**
- * The add action on a method group's heading. Every group words it "add",
- * whether or not it already has an enabled row.
+ * The add action on a method group's heading, for a group a plain add still
+ * belongs to: a kind held several times, or a group with nothing active yet.
  */
 function addFactorAction(page: Page, kind: MfaKind): Locator {
   const method = copy('accountUi', `mfa.factor.kind.${kind}`)
   return mfaGroup(page, kind).getByRole('button', {
     name: copy('accountUi', 'mfa.addAria', { method }),
+    exact: true,
+  })
+}
+
+/** The authenticator group's action once one entry is active: enrolling
+ * another replaces it, so the action says so. */
+function replaceFactorAction(page: Page): Locator {
+  return mfaGroup(page, 'totp').getByRole('button', {
+    name: copy('accountUi', 'mfa.replaceAria'),
     exact: true,
   })
 }
@@ -443,7 +450,14 @@ test('account-security-hardening: an account enrols two factors, ends another de
     await test.step('step 2: the authenticator app is enrolled with a current code and becomes active', async () => {
       const mfa = mfaSection(page)
       await addFactorAction(page, 'totp').click()
-      await fillFactorName(mfa, TOTP_FACTOR_NAME)
+      // The authenticator entry carries no name: the panel shows the method's
+      // body alone.
+      await expect(
+        mfa.getByRole('textbox', {
+          name: copy('accountUi', 'mfa.enroll.labelField'),
+          exact: true,
+        }),
+      ).toHaveCount(0)
 
       // The panel shows the setup URI as a scannable symbol; the manual
       // disclosure reveals the base32 key behind it for setup by hand.
@@ -483,12 +497,17 @@ test('account-security-hardening: an account enrols two factors, ends another de
       ).toBeVisible()
       const totpGroup = mfaGroup(page, 'totp')
       await expect(totpGroup.getByRole('listitem')).toHaveCount(1)
+      // The single authenticator row reads as its kind; the group's heading
+      // carries the same words, so the assertion is scoped to the row.
       await expect(
-        totpGroup.getByText(TOTP_FACTOR_NAME, { exact: true }),
+        totpGroup
+          .getByRole('listitem')
+          .getByText(copy('accountUi', 'mfa.factor.kind.totp'), { exact: true }),
       ).toBeVisible()
-      // An enabled authenticator row keeps that group's action a plain add.
-      await expect(addFactorAction(page, 'totp')).toHaveText(
-        copy('accountUi', 'mfa.action.add'),
+      // With an enabled authenticator entry, the group's action offers the
+      // replacement instead of another add.
+      await expect(replaceFactorAction(page)).toHaveText(
+        copy('accountUi', 'mfa.action.replace'),
       )
     })
 
@@ -525,11 +544,15 @@ test('account-security-hardening: an account enrols two factors, ends another de
       // step 2. A pending row is the enrollment's own intermediate state and
       // is never listed, so none reads now.
       await expect(
-        mfa.getByText(TOTP_FACTOR_NAME, { exact: true }),
+        mfa
+          .getByRole('listitem')
+          .getByText(copy('accountUi', 'mfa.factor.kind.totp'), { exact: true }),
       ).toBeVisible()
       const rowsBefore = await mfa.getByRole('listitem').allInnerTexts()
       expect(rowsBefore).toHaveLength(1)
-      expect(rowsBefore.join('\n')).toContain(TOTP_FACTOR_NAME)
+      expect(rowsBefore.join('\n')).toContain(
+        copy('accountUi', 'mfa.factor.kind.totp'),
+      )
       await expect(
         mfa.getByText(copy('accountUi', 'mfa.factor.status.pending'), {
           exact: true,
@@ -538,10 +561,16 @@ test('account-security-hardening: an account enrols two factors, ends another de
 
       // The authenticator app is the entry that needs no device ceremony: its
       // panel asks for a code an app would show, so giving it up never needs
-      // one. A group whose method already has an enabled row still offers its
-      // plain add action.
-      await addFactorAction(page, 'totp').click()
-      await fillFactorName(mfa, ABANDONED_FACTOR_NAME)
+      // one. A group whose method already has an enabled row offers the
+      // replacement action.
+      await replaceFactorAction(page).click()
+      // The replacement panel carries no name field.
+      await expect(
+        mfa.getByRole('textbox', {
+          name: copy('accountUi', 'mfa.enroll.labelField'),
+          exact: true,
+        }),
+      ).toHaveCount(0)
       // The flow starts with the panel and writes a pending factor row; the
       // panel is parked on the authenticator step, where the reader gives it up.
       await expect(
@@ -571,7 +600,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
       // Back on the entries, then a fresh read of the list: the cancelled
       // registration left no row behind, so the list holds the same rows with
       // the same names as before the wizard opened.
-      await expect(addFactorAction(page, 'totp')).toBeVisible()
+      await expect(replaceFactorAction(page)).toBeVisible()
       await openAccountSection(page, 'security')
       await expandAccountRows(page)
       const reread = mfaSection(page)
@@ -580,11 +609,10 @@ test('account-security-hardening: an account enrols two factors, ends another de
         rowsBefore,
       )
       await expect(
-        reread.getByText(TOTP_FACTOR_NAME, { exact: true }),
+        reread
+          .getByRole('listitem')
+          .getByText(copy('accountUi', 'mfa.factor.kind.totp'), { exact: true }),
       ).toHaveCount(1)
-      await expect(
-        reread.getByText(ABANDONED_FACTOR_NAME, { exact: true }),
-      ).toHaveCount(0)
       await expect(
         reread.getByText(copy('accountUi', 'mfa.factor.status.pending'), {
           exact: true,
