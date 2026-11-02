@@ -64,7 +64,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 **等宽字体走模块扩充。** MUI 的排版面没有等宽槽，而 token 树有 `typography.fontFamily.mono`；工厂经 `declare module '@mui/material/styles'` 给它加一个 `fontFamilyMono` 槽并总是填入合并后的取值（主题选项里该字段可选，宿主自行组合主题时不强制）。取值方式与 `fontFamily` 相同，含 `sx` 回调。
 
-**颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景、文本与分隔线改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板。六个语义角色同守这条纪律：`main` 是浅色表面上的色调，`light` 是给深色表面的色调，故 `'dark'` 时每个角色的 `main` 取它的 `light` 色调、`contrastText` 取中性色阶的深端（900），使填充控件的标签在该底色上仍可读（对比度判据由测试钉住）。浅色模式下六个角色统一用 token 的 `contrastText`（白色）；warning、info、success 的 `main` 因此取各自的 700 调，使同一个值既作填充底色、又作提示与状态文案的文字色时都满足 4.5:1（[ADR-web-light-contrast](../../../adr/adr-web-light-contrast.md)）。MUI 的悬停填充读角色的 `dark` 槽，token 的最深一档在该标签下不足 4.5:1，故 `'dark'` 时的 `dark` 取 `light` 向白色混入 20% 的色调，既保留悬停步进又守住标签对比度。只覆写 `main` 不会作用于深色模式：给品牌换色需同时给出 `light`。缺省即原行为，未传该入参的宿主逐字节不受影响。
+**颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景与文本改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板。六个语义角色同守这条纪律：`main` 是浅色表面上的色调，`light` 是给深色表面的色调，故 `'dark'` 时每个角色的 `main` 取它的 `light` 色调、`contrastText` 取中性色阶的深端（900），使填充控件的标签在该底色上仍可读（对比度判据由测试钉住）。浅色模式下六个角色统一用 token 的 `contrastText`（白色）；warning、info、success 的 `main` 因此取各自的 700 调，使同一个值既作填充底色、又作提示与状态文案的文字色时都满足 4.5:1（[ADR-web-light-contrast](../../../adr/adr-web-light-contrast.md)）。MUI 的悬停填充读角色的 `dark` 槽，token 的最深一档在该标签下不足 4.5:1，故 `'dark'` 时的 `dark` 取 `light` 向白色混入 20% 的色调，既保留悬停步进又守住标签对比度。只覆写 `main` 不会作用于深色模式：给品牌换色需同时给出 `light`。缺省即原行为，未传该入参的宿主逐字节不受影响。
 
 **偏好与已解析模式是两层。** `createAppTheme` 只接受已解析的 `AppThemeMode`；`'system'` 归 provider 解析——它在偏好为 `'system'` 期间读 `prefers-color-scheme: dark` 并订阅其变化，把结果作为 `mode` 交给工厂。引擎没有 `matchMedia`、构造或读取抛错、以及服务端渲染的快照，都解析为 `'light'`。偏好与模式是两份状态，主题预设与它们正交：改偏好只换 `mode`，改预设只换 token 层。
 
@@ -282,7 +282,7 @@ sequenceDiagram
 
 ### 分隔线与菜单表面
 
-**分隔线在两种模式下都由主题画实。** MUI 的 `Divider` 根把每条边归零、再用 CSS 的 `thin` 关键字抬起一条边，背景保持透明，线条的宽度因此交给引擎的默认值。主题的 `MuiDivider` 覆写把可见的那条边从 `palette.divider` 显式给出：水平分隔线画 1px 实线的下边，垂直分隔线画 1px 实线的右边，明暗两种模式一致；方向不用的那条边归零，使一条分隔线不带出第二条淡线。带子节点的分隔线由 MUI 的 with-children 变体经 `::before`／`::after` 画线、根边框本身归零，故该变体只取 `borderColor`，几何留给 MUI。实现见 `divider.ts` 的 `dividerComponents`，与其他主题覆写一起经 `mergeThemeComponents` 按槽深合并。
+**分隔线在两种模式下都由主题画实。** MUI 的 `Divider` 根把每条边归零、再用 CSS 的 `thin` 关键字抬起一条边，背景保持透明，线条的宽度因此交给引擎的默认值。主题的 `MuiDivider` 覆写把可见的那条边显式给出：水平分隔线画 1px 实线的下边，垂直分隔线画 1px 实线的右边，明暗两种模式一致；方向不用的那条边归零，使一条分隔线不带出第二条淡线。颜色按模式取。浅色模式取 `palette.divider`。深色模式下该 token（中性色阶 700）与纸面（中性色阶 800）只差一档，1px 画出来读作没有线，故取 `alpha(palette.text.primary, 0.16)` 的墨色薄层：它相对深色纸面的对比度不低于 1.5:1，同时保持半透明，预设的半透明表面（玻璃预设一类）因此透得出来，不会被一条不透明的线压平。颜色读 palette 而非写死，宿主覆写 `text.primary` 时这条线随之移动。带子节点的分隔线由 MUI 的 with-children 变体经 `::before`／`::after` 画线、根边框本身归零，故该变体只取同一 `borderColor`，几何留给 MUI。实现见 `divider.ts` 的 `dividerComponents` 与 `DARK_RULE_ALPHA`，与其他主题覆写一起经 `mergeThemeComponents` 按槽深合并。
 
 **菜单保留预设给出的填充，只添一条描边与一层阴影。** 菜单的纸面取 `overlay` 表面，填充由活动预设给出，半透明预设因此仍是半透明。需要可见边界的宿主在纸面上只添一条 `palette.divider` 色的 1px 描边与一层更深的阴影（取 `theme.shadows`），不改 `background`：用写死的底色覆盖纸面会让预设失效，也把菜单从主题的表面体系里切出去。
 
