@@ -505,6 +505,14 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     feedback.pending ||
     panelFeedback.pending
 
+  /** Whether a kind's factors carry a reader-chosen name. Only a kind that
+   * may be held more than once needs one: the account keeps a single
+   * authenticator entry, while several passkeys are told apart by their
+   * names. */
+  function takesName(kind: string): boolean {
+    return kind !== 'totp'
+  }
+
   /** The translated name of a factor kind, the guarded vocabulary's generic
    * label for a kind this package has no wording for. */
   function factorKindLabel(kind: string): string {
@@ -609,7 +617,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     feedback.reset()
     panelFeedback.reset()
     const token = ++panelTokenRef.current
-    const label = suggestedFactorName()
+    const label = takesName(factorKind) ? suggestedFactorName() : ''
     setPanel({ kind: factorKind, label, step: null, seq: 0 })
     void startEnrollFlow(factorKind, token, label)
   }
@@ -1006,6 +1014,11 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                       panel !== null && panel.kind === kind ? panel : null
                     const headingText =
                       open === null ? kindLabel : enrollTitle(kind)
+                    // The single authenticator entry is replaced rather than
+                    // added to: the entry already there is the one leaving.
+                    const replace =
+                      kind === 'totp' &&
+                      kindFactors.some((factor) => factor.status === 'active')
                     return (
                       <Box
                         component="section"
@@ -1042,43 +1055,51 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                               // contains the visible label (WCAG 2.5.3)
                               // while still telling several method buttons
                               // apart.
-                              aria-label={t('mfa.addAria', {
-                                method: kindLabel,
-                                interpolation: { escapeValue: false },
-                              })}
+                              aria-label={
+                                replace
+                                  ? t('mfa.replaceAria')
+                                  : t('mfa.addAria', {
+                                      method: kindLabel,
+                                      interpolation: { escapeValue: false },
+                                    })
+                              }
                               onClick={() => openEnroll(kind)}
                             >
-                              {t('mfa.action.add')}
+                              {t(
+                                replace
+                                  ? 'mfa.action.replace'
+                                  : 'mfa.action.add',
+                              )}
                             </Button>
                           )}
                         </Box>
                         {open !== null ? (
                           <Box sx={{ maxWidth: FORM_MAX_WIDTH }}>
-                            {/* The name field and the method's body share the
-                                panel: the name travels with no request of its
-                                own, and the row the enrollment adds is named
-                                once the flow settles. The field suggests the
-                                browser/OS summary the session rows show; it
-                                stays editable and may be cleared. */}
-                            <TextField
-                              label={t('mfa.enroll.labelField')}
-                              placeholder={t('mfa.enroll.labelPlaceholder')}
-                              value={open.label}
-                              onChange={(event) =>
-                                setPanel((current) =>
-                                  current !== null && current.kind === kind
-                                    ? {
-                                        ...current,
-                                        label: event.target.value,
-                                      }
-                                    : current,
-                                )
-                              }
-                              helperText={t('mfa.enroll.labelHelp')}
-                              disabled={enrolling}
-                              fullWidth
-                              sx={{ mt: 2 }}
-                            />
+                            {/* The name field belongs to a kind that may be
+                                held more than once: several passkeys are told
+                                apart by their names, while the single
+                                authenticator entry is the kind itself. */}
+                            {takesName(kind) ? (
+                              <TextField
+                                label={t('mfa.enroll.labelField')}
+                                placeholder={t('mfa.enroll.labelPlaceholder')}
+                                value={open.label}
+                                onChange={(event) =>
+                                  setPanel((current) =>
+                                    current !== null && current.kind === kind
+                                      ? {
+                                          ...current,
+                                          label: event.target.value,
+                                        }
+                                      : current,
+                                  )
+                                }
+                                helperText={t('mfa.enroll.labelHelp')}
+                                disabled={enrolling}
+                                fullWidth
+                                sx={{ mt: 2 }}
+                              />
+                            ) : null}
                             {/* The step states what confirming does; a
                                 passkey's registration prompt alone does not
                                 carry that sentence. */}
@@ -1170,9 +1191,12 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                   const id = factor.id ?? null
                                   const disabled =
                                     factor.status === 'disabled'
-                                  // The row reads as its name; an unnamed
-                                  // factor reads as its kind.
+                                  // A row of a kind that may be held once
+                                  // reads as its kind alone; a kind held
+                                  // several times reads as the name its
+                                  // holder gave, or the kind when unnamed.
                                   const displayName =
+                                    takesName(kind) &&
                                     factor.label != null &&
                                     factor.label !== ''
                                       ? factor.label
@@ -1305,7 +1329,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                       {id !== null ? (
                                         <FactorActionsMenu
                                           factorName={displayName}
-                                          canRename={!disabled}
+                                          canRename={
+                                            !disabled && takesName(kind)
+                                          }
                                           disabled={busy}
                                           onRename={() =>
                                             setRenameDraft({

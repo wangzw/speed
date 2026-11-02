@@ -139,6 +139,7 @@
     "empty": "No two-step verification method is set up yet.",
     "singleFactor": "Only one two-step verification method is enabled. Add another one below so you can still sign in if you lose this one.",
     "addAria": "Add {{method}}",
+    "replaceAria": "Replace authenticator app",
     "actionsAria": "Actions for {{factor}}",
     "remove": "Remove",
     "removed": "{{factor}} removed.",
@@ -215,7 +216,8 @@
     "retry": "Retry",
     "action": {
       "setup": "Set up",
-      "add": "Add"
+      "add": "Add",
+      "replace": "Replace authenticator app"
     },
     "method": {
       "totp": "Use an authenticator app to get a six-digit code when asked.",

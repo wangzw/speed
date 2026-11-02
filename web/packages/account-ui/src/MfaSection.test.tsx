@@ -79,6 +79,15 @@ function factor(overrides: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
+/** One passkey row: the kind whose entries may be several, and the only one
+ * whose rows carry a reader-chosen name. */
+function passkey(overrides: Record<string, unknown>): Record<string, unknown> {
+  return factor({ kind: 'webauthn', ...overrides })
+}
+
+/** The accessible name of the authenticator group's replacement action. */
+const replaceName = (): string => zhCN.mfa.replaceAria
+
 function mount(
   respond: RealResponder,
   options: {
@@ -223,7 +232,11 @@ describe('MfaSection', () => {
     expect(
       await screen.findByRole('heading', { name: zhCN.mfa.title }),
     ).toBeTruthy()
-    expect(await screen.findByText('My authenticator')).toBeTruthy()
+    // The single authenticator entry reads as its kind, whatever name the
+    // list carries; the group heading carries the same text.
+    expect(
+      (await screen.findAllByText(zhCN.mfa.factor.kind.totp)).length,
+    ).toBeGreaterThan(0)
     // Every assembled kind is its own group, named by the kind.
     expect(
       screen.getByRole('region', { name: zhCN.mfa.factor.kind.totp }),
@@ -235,12 +248,11 @@ describe('MfaSection', () => {
     // rendered as a row, and no row carries a status chip.
     expect(screen.queryByText(zhCN.mfa.factor.status.pending)).toBeNull()
     expect(screen.queryByText(zhCN.mfa.factor.status.active)).toBeNull()
-    // Both groups are enrollable; the authenticator group already has an
-    // enabled row and still words its action as a plain add.
+    // Both groups are enrollable. The authenticator group already holds its
+    // one entry, so its action offers a replacement; the passkey group holds
+    // none, so its action is a plain add.
     expect(
-      await screen.findByRole('button', {
-        name: addNameOf(zhCN.mfa.factor.kind.totp),
-      }),
+      await screen.findByRole('button', { name: replaceName() }),
     ).toBeTruthy()
     expect(
       screen.getByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.webauthn) }),
@@ -278,7 +290,7 @@ describe('MfaSection', () => {
     ).not.toBe(0)
   })
 
-  it('words every group\'s action as a plain add even with an enabled row', async () => {
+  it('words the authenticator action as a replacement once an entry is active', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
@@ -295,17 +307,17 @@ describe('MfaSection', () => {
     }
     mount(respond)
 
-    // Each group already holds an enabled row; both still word their action
-    // as a plain add, and the visible word matches the accessible name.
-    for (const method of [
-      zhCN.mfa.factor.kind.totp,
-      zhCN.mfa.factor.kind.webauthn,
-    ]) {
-      const button = await screen.findByRole('button', {
-        name: addNameOf(method),
-      })
-      expect(button.textContent).toBe(zhCN.mfa.action.add)
-    }
+    // The authenticator entry is single: with one active, its action offers
+    // to replace it. The passkey group may hold several, so its action is
+    // still a plain add.
+    const replace = await screen.findByRole('button', {
+      name: replaceName(),
+    })
+    expect(replace.textContent).toBe(zhCN.mfa.action.replace)
+    const add = screen.getByRole('button', {
+      name: addNameOf(zhCN.mfa.factor.kind.webauthn),
+    })
+    expect(add.textContent).toBe(zhCN.mfa.action.add)
   })
 
   it('offers the plain add action for a method with no active factor', async () => {
@@ -326,7 +338,7 @@ describe('MfaSection', () => {
     expect(button.textContent).toBe(zhCN.mfa.action.add)
   })
 
-  it('words a non-passkey group\'s action as a plain add even with an enabled row', async () => {
+  it('offers a replacement for the single authenticator entry', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['totp']))
@@ -339,21 +351,27 @@ describe('MfaSection', () => {
     mount(respond)
 
     const button = await screen.findByRole('button', {
-      name: addNameOf(zhCN.mfa.factor.kind.totp),
+      name: replaceName(),
     })
-    expect(button.textContent).toBe(zhCN.mfa.action.add)
+    expect(button.textContent).toBe(zhCN.mfa.action.replace)
+    // The passkey's plain add is not on this deployment.
+    expect(
+      screen.queryByRole('button', {
+        name: addNameOf(zhCN.mfa.factor.kind.webauthn),
+      }),
+    ).toBeNull()
   })
 
   it('does not render a pending factor as a row', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        return jsonResponse(200, methodsDoc(['totp']))
+        return jsonResponse(200, methodsDoc(['webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
           factors: [
-            factor({ id: 'factor-1', status: 'active', label: 'Kept row' }),
-            factor({ id: 'factor-2', status: 'pending', label: 'Pending row' }),
+            passkey({ id: 'factor-1', status: 'active', label: 'Kept row' }),
+            passkey({ id: 'factor-2', status: 'pending', label: 'Pending row' }),
           ],
         })
       }
@@ -369,12 +387,12 @@ describe('MfaSection', () => {
   it('keeps a disabled row with a muted marker and no status chip', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        return jsonResponse(200, methodsDoc(['totp']))
+        return jsonResponse(200, methodsDoc(['webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
           factors: [
-            factor({ id: 'factor-1', status: 'disabled', label: 'Old app' }),
+            passkey({ id: 'factor-1', status: 'disabled', label: 'Old app' }),
           ],
         })
       }
@@ -392,13 +410,13 @@ describe('MfaSection', () => {
   it('offers rename and remove in an enabled row\'s menu, and only remove on a disabled row', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        return jsonResponse(200, methodsDoc(['totp']))
+        return jsonResponse(200, methodsDoc(['webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
           factors: [
-            factor({ id: 'factor-1', status: 'active', label: 'Active row' }),
-            factor({
+            passkey({ id: 'factor-1', status: 'active', label: 'Active row' }),
+            passkey({
               id: 'factor-2',
               status: 'disabled',
               label: 'Disabled row',
@@ -479,10 +497,11 @@ describe('MfaSection', () => {
     mount(respond)
 
     expect(await screen.findByText(zhCN.mfa.singleFactor)).toBeTruthy()
-    // The note points at an add action that is actually on the page.
+    // The note points at an add action that is actually on the page: the
+    // passkey group holds nothing yet, so its action is the plain add.
     expect(
       screen.getByRole('button', {
-        name: addNameOf(zhCN.mfa.factor.kind.totp),
+        name: addNameOf(zhCN.mfa.factor.kind.webauthn),
       }),
     ).toBeTruthy()
   })
@@ -496,7 +515,7 @@ describe('MfaSection', () => {
         return jsonResponse(200, {
           factors: [
             factor({ id: 'factor-1', kind: 'totp', label: 'Phone app' }),
-            factor({ id: 'factor-2', kind: 'webauthn', label: 'Laptop key' }),
+            passkey({ id: 'factor-2', label: 'Laptop key' }),
           ],
         })
       }
@@ -504,8 +523,9 @@ describe('MfaSection', () => {
     }
     mount(respond)
 
-    // The list has settled before the note's absence is asserted.
-    expect(await screen.findByText('Phone app')).toBeTruthy()
+    // The list has settled before the note's absence is asserted. The
+    // authenticator entry reads as its kind; the passkey keeps its name.
+    await screen.findAllByText(zhCN.mfa.factor.kind.totp)
     expect(screen.getByText('Laptop key')).toBeTruthy()
     expect(screen.queryByText(zhCN.mfa.singleFactor)).toBeNull()
   })
@@ -544,7 +564,9 @@ describe('MfaSection', () => {
         return jsonResponse(200, methodsDoc([]))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
-        return jsonResponse(200, { factors: [factor({ status: 'active' })] })
+        return jsonResponse(200, {
+          factors: [passkey({ status: 'active' })],
+        })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
@@ -583,7 +605,7 @@ describe('MfaSection', () => {
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
-          factors: removed ? [] : [factor({})],
+          factors: removed ? [] : [passkey({})],
         })
       }
       if (call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-1') {
@@ -631,7 +653,7 @@ describe('MfaSection', () => {
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         factorsRead += 1
         return jsonResponse(200, {
-          factors: factorsRead === 1 ? [factor({})] : [],
+          factors: factorsRead === 1 ? [passkey({})] : [],
         })
       }
       if (
@@ -704,7 +726,7 @@ describe('MfaSection', () => {
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return removed
           ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, { factors: [factor({ status: 'active' })] })
+          : jsonResponse(200, { factors: [passkey({ status: 'active' })] })
       }
       if (
         call.method === 'DELETE' &&
@@ -774,7 +796,7 @@ describe('MfaSection', () => {
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return removed
           ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, { factors: [factor({ status: 'disabled' })] })
+          : jsonResponse(200, { factors: [passkey({ status: 'disabled' })] })
       }
       if (
         call.method === 'DELETE' &&
@@ -830,7 +852,7 @@ describe('MfaSection', () => {
         return jsonResponse(200, methodsDoc(['totp']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
-        return jsonResponse(200, { factors: [factor({ status: 'active' })] })
+        return jsonResponse(200, { factors: [passkey({ status: 'active' })] })
       }
       if (
         call.method === 'DELETE' &&
@@ -870,7 +892,7 @@ describe('MfaSection', () => {
         return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
-        return jsonResponse(200, { factors: [factor({})] })
+        return jsonResponse(200, { factors: [passkey({})] })
       }
       if (call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-1') {
         return errorResponse(409, 'authn.conflict')
@@ -901,7 +923,7 @@ describe('MfaSection', () => {
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
-          factors: removed ? [] : [factor({})],
+          factors: removed ? [] : [passkey({})],
         })
       }
       if (call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-1') {
@@ -1032,7 +1054,7 @@ describe('MfaSection', () => {
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return rotated
           ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, { factors: [factor({ status: 'active' })] })
+          : jsonResponse(200, { factors: [passkey({ status: 'active' })] })
       }
       if (
         call.method === 'DELETE' &&
@@ -1201,12 +1223,12 @@ describe('MfaSection', () => {
       })
     })
 
-    // The panel states what confirming will do before its controls; the
-    // name field suggests the browser/OS summary when one is recognised.
+    // The panel states what confirming will do before its controls. The
+    // single authenticator entry takes no name, so no name field renders.
     expect(screen.getByText(zhCN.mfa.enroll.note.totp)).toBeVisible()
-    expect(screen.getByLabelText(zhCN.mfa.enroll.labelField)).toHaveValue(
-      summarizeUserAgent(window.navigator.userAgent) ?? '',
-    )
+    expect(
+      screen.queryByLabelText(zhCN.mfa.enroll.labelField),
+    ).toBeNull()
 
     // The step's otpauth URI is its own scannable symbol: the step's JSON is
     // never rendered as a blob, and the URI never appears as text.
@@ -1229,7 +1251,9 @@ describe('MfaSection', () => {
     // follows the code is submitted without another click.
     await confirmEnrollment(user)
 
-    await waitFor(() => expect(screen.getByText('My authenticator')).toBeTruthy())
+    // The row the enrollment added reads as its kind: it is the account's
+    // single authenticator entry.
+    await screen.findAllByText(zhCN.mfa.factor.kind.totp)
     // The completed enrollment confirms itself, naming the factor kind.
     expect(zhCN.mfa.enroll.enrolled).toContain('{{factor}}')
     expect(
@@ -1240,12 +1264,11 @@ describe('MfaSection', () => {
         ),
       ),
     ).toBeTruthy()
-    // The panel closed and left the group's add action in place.
+    // The panel closed and the group's action now offers a replacement,
+    // because the account holds its one entry.
     expect(screen.queryByLabelText(zhCN.flowStep.codeLabel)).toBeNull()
     expect(
-      screen.getByRole('button', {
-        name: addNameOf(zhCN.mfa.factor.kind.totp),
-      }),
+      screen.getByRole('button', { name: replaceName() }),
     ).toBeTruthy()
     const answers = rig.calls.filter(
       (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
@@ -1316,15 +1339,14 @@ describe('MfaSection', () => {
       let renamed = false
       const respond: RealResponder = (call: RealCall) => {
         if (call.method === 'GET' && call.path === METHODS_PATH) {
-          return jsonResponse(200, methodsDoc(['totp']))
+          return jsonResponse(200, methodsDoc(['webauthn']))
         }
         if (call.method === 'GET' && call.path === FACTORS_PATH) {
           return jsonResponse(200, {
             factors: enrolled
               ? [
-                  factor({
+                  passkey({
                     id: 'factor-new',
-                    kind: 'totp',
                     label: renamed ? 'My phone' : '',
                   }),
                 ]
@@ -1357,7 +1379,7 @@ describe('MfaSection', () => {
           renamed = true
           return jsonResponse(
             200,
-            factor({ id: 'factor-new', kind: 'totp', label: 'My phone' }),
+            passkey({ id: 'factor-new', label: 'My phone' }),
           )
         }
         throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -1365,7 +1387,7 @@ describe('MfaSection', () => {
       const { rig } = mount(respond)
       const user = userEvent.setup()
 
-      await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+      await openEnrollment(user, zhCN.mfa.factor.kind.webauthn)
       await screen.findByRole('img', { name: zhCN.flowStep.totpQrLabel })
       // The name field suggests the browser/OS summary the session rows
       // show; the neutral example stays as the placeholder a cleared field
@@ -1387,7 +1409,7 @@ describe('MfaSection', () => {
       )
       expect(start?.body).toEqual({
         purpose: 'enroll',
-        input: { kind: 'totp', label: '' },
+        input: { kind: 'webauthn', label: '' },
       })
 
       await user.clear(field)
@@ -1417,13 +1439,11 @@ describe('MfaSection', () => {
     let enrolled = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        return jsonResponse(200, methodsDoc(['totp']))
+        return jsonResponse(200, methodsDoc(['webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
-          factors: enrolled
-            ? [factor({ id: 'factor-new', kind: 'totp', label: '' })]
-            : [],
+          factors: enrolled ? [passkey({ id: 'factor-new', label: '' })] : [],
         })
       }
       if (call.method === 'POST' && call.path === FLOW_START) {
@@ -1450,7 +1470,7 @@ describe('MfaSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
-    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+    await openEnrollment(user, zhCN.mfa.factor.kind.webauthn)
     // The suggested name is cleared: an empty name is the server's own
     // empty label, so no rename follows.
     await user.clear(screen.getByLabelText(zhCN.mfa.enroll.labelField))
@@ -1465,7 +1485,7 @@ describe('MfaSection', () => {
       await screen.findByText(
         zhCN.mfa.enroll.enrolled.replace(
           '{{factor}}',
-          zhCN.mfa.factor.kind.totp,
+          zhCN.mfa.factor.kind.webauthn,
         ),
       ),
     ).toBeTruthy()
@@ -1485,21 +1505,19 @@ describe('MfaSection', () => {
     })
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        return jsonResponse(200, methodsDoc(['totp']))
+        return jsonResponse(200, methodsDoc(['webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
           factors: [
-            factor({
+            passkey({
               id: 'factor-1',
-              kind: 'totp',
               label: 'Phone app',
               created_at: '2026-01-01T00:00:00Z',
               last_used_at: '2026-02-01T00:00:00Z',
             }),
-            factor({
+            passkey({
               id: 'factor-2',
-              kind: 'totp',
               label: '',
               created_at: '2026-03-01T00:00:00Z',
             }),
@@ -1518,7 +1536,7 @@ describe('MfaSection', () => {
     ).toBeTruthy()
     // The unnamed row reads as its kind; the group heading is the only
     // other place that text appears.
-    expect(screen.getAllByText(zhCN.mfa.factor.kind.totp)).toHaveLength(2)
+    expect(screen.getAllByText(zhCN.mfa.factor.kind.webauthn)).toHaveLength(2)
     // A factor that has never passed a verification says so.
     expect(screen.getAllByText(zhCN.mfa.factor.neverUsed)).toHaveLength(1)
   })
@@ -1527,12 +1545,12 @@ describe('MfaSection', () => {
     let renamed = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        return jsonResponse(200, methodsDoc(['totp']))
+        return jsonResponse(200, methodsDoc(['webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
           factors: [
-            factor({
+            passkey({
               id: 'factor-1',
               label: renamed ? 'New name' : 'Old name',
             }),
@@ -1544,7 +1562,7 @@ describe('MfaSection', () => {
         call.path === '/api/v1/auth/factors/factor-1'
       ) {
         renamed = true
-        return jsonResponse(200, factor({ id: 'factor-1', label: 'New name' }))
+        return jsonResponse(200, passkey({ id: 'factor-1', label: 'New name' }))
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
@@ -1578,11 +1596,11 @@ describe('MfaSection', () => {
   it('renders a refused rename as its error code and keeps the editor open', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        return jsonResponse(200, methodsDoc(['totp']))
+        return jsonResponse(200, methodsDoc(['webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
-          factors: [factor({ id: 'factor-1', label: 'Old name' })],
+          factors: [passkey({ id: 'factor-1', label: 'Old name' })],
         })
       }
       if (
@@ -1616,12 +1634,12 @@ describe('MfaSection', () => {
     let factorsRead = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        return jsonResponse(200, methodsDoc(['totp']))
+        return jsonResponse(200, methodsDoc(['webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         factorsRead += 1
         return jsonResponse(200, {
-          factors: [factor({ id: 'factor-1', label: 'Old name' })],
+          factors: [passkey({ id: 'factor-1', label: 'Old name' })],
         })
       }
       if (
@@ -1657,15 +1675,15 @@ describe('MfaSection', () => {
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        return jsonResponse(200, methodsDoc(['totp']))
+        return jsonResponse(200, methodsDoc(['webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
           factors: removed
-            ? [factor({ id: 'factor-1', kind: 'totp', label: 'Phone app' })]
+            ? [passkey({ id: 'factor-1', label: 'Phone app' })]
             : [
-                factor({ id: 'factor-1', kind: 'totp', label: 'Phone app' }),
-                factor({ id: 'factor-2', kind: 'totp', label: 'Tablet app' }),
+                passkey({ id: 'factor-1', label: 'Phone app' }),
+                passkey({ id: 'factor-2', label: 'Tablet app' }),
               ],
         })
       }
@@ -1698,7 +1716,7 @@ describe('MfaSection', () => {
     // The surviving same-kind row and the bare kind are not what it names.
     expect(
       screen.queryByText(
-        zhCN.mfa.removed.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+        zhCN.mfa.removed.replace('{{factor}}', zhCN.mfa.factor.kind.webauthn),
       ),
     ).toBeNull()
     expect(
@@ -1714,7 +1732,7 @@ describe('MfaSection', () => {
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        return jsonResponse(200, methodsDoc(['totp']))
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         if (removed) {
@@ -1727,14 +1745,14 @@ describe('MfaSection', () => {
         return jsonResponse(200, {
           factors: enrolled
             ? [
-                factor({ id: 'factor-old', kind: 'totp', label: 'Old app' }),
+                passkey({ id: 'factor-old', label: 'Old app' }),
                 factor({
                   id: 'factor-new',
                   kind: 'totp',
                   label: 'My authenticator',
                 }),
               ]
-            : [factor({ id: 'factor-old', kind: 'totp', label: 'Old app' })],
+            : [passkey({ id: 'factor-old', label: 'Old app' })],
         })
       }
       if (call.method === 'POST' && call.path === FLOW_START) {
@@ -1802,8 +1820,8 @@ describe('MfaSection', () => {
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
           factors: [
-            factor({ id: 'factor-1' }),
-            factor({ id: 'factor-2', label: 'Other app' }),
+            passkey({ id: 'factor-1' }),
+            passkey({ id: 'factor-2', label: 'Other app' }),
           ],
         })
       }
@@ -1889,7 +1907,7 @@ describe('MfaSection', () => {
         return jsonResponse(200, methodsDoc(['totp']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
-        return jsonResponse(200, { factors: [factor({ id: 'factor-1' })] })
+        return jsonResponse(200, { factors: [passkey({ id: 'factor-1' })] })
       }
       if (
         call.method === 'DELETE' &&
@@ -1976,7 +1994,7 @@ describe('MfaSection', () => {
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
-          factors: removed ? [] : [factor({ id: 'factor-1' })],
+          factors: removed ? [] : [passkey({ id: 'factor-1' })],
         })
       }
       if (
@@ -2027,14 +2045,14 @@ describe('MfaSection', () => {
         return jsonResponse(200, methodsDoc(['totp']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
-        const first = factor({
+        const first = passkey({
           id: 'factor-a',
           label: renamed ? 'Alpha2' : 'Alpha',
         })
         return jsonResponse(200, {
           factors: removed
             ? [first]
-            : [first, factor({ id: 'factor-b', label: 'Beta' })],
+            : [first, passkey({ id: 'factor-b', label: 'Beta' })],
         })
       }
       if (
@@ -2042,7 +2060,7 @@ describe('MfaSection', () => {
         call.path === '/api/v1/auth/factors/factor-a'
       ) {
         renamed = true
-        return jsonResponse(200, factor({ id: 'factor-a', label: 'Alpha2' }))
+        return jsonResponse(200, passkey({ id: 'factor-a', label: 'Alpha2' }))
       }
       if (
         call.method === 'DELETE' &&
@@ -2263,7 +2281,7 @@ describe('MfaSection', () => {
         return jsonResponse(200, methodsDoc(['totp']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
-        return jsonResponse(200, { factors: [factor({})] })
+        return jsonResponse(200, { factors: [passkey({})] })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
@@ -2284,7 +2302,7 @@ describe('MfaSection', () => {
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         reads += 1
         return reads === 1
-          ? jsonResponse(200, { factors: [factor({})] })
+          ? jsonResponse(200, { factors: [passkey({})] })
           : errorResponse(500, 'authn.unavailable')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -2307,6 +2325,104 @@ describe('MfaSection', () => {
     const readsBeforeRetry = reads
     await user.click(screen.getByRole('button', { name: zhCN.mfa.retry }))
     await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
+  })
+
+  it('names the authenticator row by its kind and offers no rename', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            factor({ id: 'factor-1', label: 'My authenticator' }),
+            passkey({ id: 'factor-2', label: 'Work key' }),
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    // The single authenticator entry reads as its kind, not as the name
+    // the list carries; the heading shows the same word.
+    expect(
+      (await screen.findAllByText(zhCN.mfa.factor.kind.totp)).length,
+    ).toBe(2)
+    expect(screen.queryByText('My authenticator')).toBeNull()
+    // With one entry active, the group's action offers a replacement rather
+    // than a plain add.
+    expect(
+      screen.getByRole('button', { name: replaceName() }),
+    ).toBeTruthy()
+    expect(
+      screen.queryByRole('button', {
+        name: addNameOf(zhCN.mfa.factor.kind.totp),
+      }),
+    ).toBeNull()
+
+    // The authenticator row's menu has no rename; the passkey's does.
+    await openRowMenu(user, zhCN.mfa.factor.kind.totp)
+    expect(
+      screen.queryByRole('menuitem', { name: zhCN.mfa.rename }),
+    ).toBeNull()
+    expect(
+      screen.getByRole('menuitem', { name: zhCN.mfa.remove }),
+    ).toBeTruthy()
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('menuitem', { name: zhCN.mfa.remove }),
+      ).toBeNull(),
+    )
+
+    await openRowMenu(user, 'Work key')
+    expect(
+      screen.getByRole('menuitem', { name: zhCN.mfa.rename }),
+    ).toBeTruthy()
+  })
+
+  it('asks for a name only on the passkey panel', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'enroll',
+          next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
+        })
+      }
+      if (call.method === 'DELETE' && call.path === FLOW_CURRENT) {
+        return new Response(null, { status: 401 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    // The passkey may be held several times, so its panel asks for a name.
+    await openEnrollment(user, zhCN.mfa.factor.kind.webauthn)
+    expect(screen.getByLabelText(zhCN.mfa.enroll.labelField)).toBeTruthy()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.enroll.cancelLabel }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText(zhCN.mfa.enroll.labelField),
+      ).toBeNull(),
+    )
+
+    // The single authenticator entry takes none.
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+    expect(
+      screen.queryByLabelText(zhCN.mfa.enroll.labelField),
+    ).toBeNull()
   })
 
   it('abandons the enrollment flow once when the panel is cancelled', async () => {

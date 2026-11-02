@@ -139,6 +139,7 @@
     "empty": "尚未设置任何两步验证方式。",
     "singleFactor": "当前只启用了一种两步验证方式。请在下方再添加一种，以便丢失这一种后仍能登录。",
     "addAria": "添加{{method}}",
+    "replaceAria": "更换验证器应用",
     "actionsAria": "{{factor}} 的操作",
     "remove": "移除",
     "removed": "{{factor}} 已移除。",
@@ -215,7 +216,8 @@
     "retry": "重试",
     "action": {
       "setup": "设置",
-      "add": "添加"
+      "add": "添加",
+      "replace": "更换验证器应用"
     },
     "method": {
       "totp": "用验证器应用生成六位验证码。",

@@ -189,7 +189,10 @@ describe('the README quick start, exercised over a real api-client', () => {
     }
     expect(screen.getByText(zhCN.sessions.current)).toBeTruthy()
     expect(screen.getByText(zhCN.bindings.provider.github)).toBeTruthy()
-    expect(screen.getByText('My authenticator')).toBeTruthy()
+    // The authenticator row reads as its kind: it takes no name.
+    expect(
+      screen.getAllByText(zhCN.mfa.factor.kind.totp).length,
+    ).toBeGreaterThan(0)
     await expectNoAxeViolations()
 
     // Two rows carry the unknown-device label; only the non-current one
