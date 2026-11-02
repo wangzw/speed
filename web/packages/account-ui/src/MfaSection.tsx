@@ -133,6 +133,7 @@ import {
   ListSkeleton,
   SectionCard,
   useWriteFeedback,
+  type WriteOutcome,
 } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
 import { FlowStep } from './internal/flow-step.js'
@@ -330,6 +331,17 @@ function FactorActionsMenu({
   )
 }
 
+/** The enrollment group's result region. The name form, the wizard's steps
+ * and a landed enrollment are mutually exclusive positions of one control
+ * group, so they render the group's one region through this component. */
+function EnrollmentFeedback({
+  outcome,
+}: {
+  readonly outcome: WriteOutcome | null
+}) {
+  return <WriteFeedbackRegion outcome={outcome} />
+}
+
 export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const { t, i18n } = useAccountUiTranslation()
   const queryClient = useQueryClient()
@@ -353,13 +365,12 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   // It outlives the wizard and the name form, so a landed enrollment's
   // confirmation still renders in the group that produced it.
   const [enrollKind, setEnrollKind] = useState<string | null>(null)
-  // Enrollment, rename and removal are separate control groups with their
-  // own scopes: the enrollment result sits below its entries or form, and
-  // the row-action results sit below the list, so one group's outcome never
-  // clears another's.
+  // Enrollment is its own control group: its result sits below the entries
+  // or the form of the group that produced it. The row actions -- rename and
+  // removal -- are one control group below the list, so they share one scope
+  // and one region, and the later result replaces the earlier one.
   const enrollFeedback = useWriteFeedback()
-  const removeFeedback = useWriteFeedback()
-  const renameFeedback = useWriteFeedback()
+  const rowFeedback = useWriteFeedback()
   // The deployment's enrollable factor kinds (GET /api/v1/auth/methods'
   // mfa.factors). null is unresolved -- still reading, or the read failed:
   // the enroll entries are then withheld rather than guessed.
@@ -451,8 +462,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     removeMutation.isPending ||
     updateMutation.isPending ||
     enrollFeedback.pending ||
-    removeFeedback.pending ||
-    renameFeedback.pending
+    rowFeedback.pending
 
   /** The translated name of a factor kind, the guarded vocabulary's generic
    * label for a kind this package has no wording for. */
@@ -602,7 +612,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     // same. A non-rotating removal runs bare, because wrapping it would
     // discard a genuine anonymous answer and postpone a real sign-out.
     const rotates = removed === undefined || removed.status === 'active'
-    return removeFeedback.run(async () => {
+    return rowFeedback.run(async () => {
       try {
         const write = () => removeMutation.mutateAsync({ id: factorId })
         const settle = async (): Promise<string> => {
@@ -642,7 +652,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
    * that is gone closes the editor and rereads the list once, so the
    * sentence and the list agree. */
   function renameFactor(factorId: string, label: string): Promise<void> {
-    return renameFeedback.run(async () => {
+    return rowFeedback.run(async () => {
       try {
         const updated = await updateMutation.mutateAsync({
           id: factorId,
@@ -860,7 +870,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                 </ActionButton>
                               }
                             />
-                            <WriteFeedbackRegion
+                            <EnrollmentFeedback
                               outcome={enrollFeedback.outcome}
                             />
                           </Box>
@@ -915,7 +925,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                 </ActionButton>
                               </ActionRow>
                             </Box>
-                            <WriteFeedbackRegion
+                            <EnrollmentFeedback
                               outcome={enrollFeedback.outcome}
                             />
                           </Box>
@@ -1101,7 +1111,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                             ) : null}
                             {enrollKind === kind ? (
                               <Box sx={{ mt: 2 }}>
-                                <WriteFeedbackRegion
+                                <EnrollmentFeedback
                                   outcome={enrollFeedback.outcome}
                                 />
                               </Box>
@@ -1114,11 +1124,10 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                 </Box>
               )}
 
-              {/* The row actions' results, below the groups they belong to.
-                  Rename and removal each own a scope so one action's
-                  outcome never clears the other's. */}
-              <WriteFeedbackRegion outcome={removeFeedback.outcome} />
-              <WriteFeedbackRegion outcome={renameFeedback.outcome} />
+              {/* The row actions' one result, below the groups they belong
+                  to. Rename and removal share this scope, so the later
+                  result replaces the earlier one. */}
+              <WriteFeedbackRegion outcome={rowFeedback.outcome} />
             </Box>
           )
         }}

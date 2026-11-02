@@ -69,12 +69,6 @@ export const WRITE_FEEDBACK_REGION_EXEMPTIONS = [
       'The status, MFA requirement, profile patch, temporary password, identifier add and secret create rows are six control groups, each with its own scope and its region under its own row.',
   },
   {
-    file: 'packages/account-ui/src/MfaSection.tsx',
-    component: 'MfaSection',
-    reason:
-      "The enrollment wizard's mutually exclusive steps render the enrollment scope's region, and the list's rename and remove row actions each own a scope and a region under the list.",
-  },
-  {
     file: 'packages/console-ui/src/PermissionsPage.tsx',
     component: 'PermissionsPage',
     reason:
