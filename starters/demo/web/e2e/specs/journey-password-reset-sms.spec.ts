@@ -249,12 +249,11 @@ test('password-reset-sms: a phone-code reset writes a new password and ends the 
         throw new Error('the second device has no page')
       }
       await other
-        .getByRole('banner')
-        .getByTestId('user-menu-trigger')
+        .getByTestId('account-entry-trigger')
         .click()
       await other
         .getByRole('menuitem', {
-          name: copy('demo', 'userMenu.accountSettings'),
+          name: copy('demo', 'account.sections.profile'),
           exact: true,
         })
         .click()

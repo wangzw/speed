@@ -296,12 +296,11 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     // The account page: the two preconditions the journey names, produced by the
     // product's own verification flows rather than written into the database.
     await page
-      .getByRole('banner')
-      .getByTestId('user-menu-trigger')
+      .getByTestId('account-entry-trigger')
       .click()
     await page
       .getByRole('menuitem', {
-        name: copy('demo', 'userMenu.accountSettings'),
+        name: copy('demo', 'account.sections.profile'),
         exact: true,
       })
       .click()

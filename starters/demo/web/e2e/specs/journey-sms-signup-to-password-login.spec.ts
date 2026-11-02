@@ -487,12 +487,11 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
       // not by its accessible name (which is the display name when the account
       // has one) and not by its position among the bar's other menus.
       await other
-        .getByRole('banner')
-        .getByTestId('user-menu-trigger')
+        .getByTestId('account-entry-trigger')
         .click()
       await other
         .getByRole('menuitem', {
-          name: copy('demo', 'userMenu.accountSettings'),
+          name: copy('demo', 'account.sections.profile'),
           exact: true,
         })
         .click()

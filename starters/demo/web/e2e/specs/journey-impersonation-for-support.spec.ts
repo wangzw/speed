@@ -628,7 +628,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
         { exact: true },
       ),
     ).toBeVisible()
-    const menuTrigger = page.getByRole('banner').getByTestId('user-menu-trigger')
+    const menuTrigger = page.getByTestId('account-entry-trigger')
     await expectAccountMenuName(menuTrigger, TARGET.displayName)
     await menuTrigger.click()
     await expect(
@@ -758,7 +758,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
       ),
     ).toHaveCount(0)
     await expectAccountMenuName(
-      page.getByRole('banner').getByTestId('user-menu-trigger'),
+      page.getByTestId('account-entry-trigger'),
       OPERATOR.displayName,
     )
     await expect(consoleEntry(page)).toBeVisible({ timeout: 10_000 })

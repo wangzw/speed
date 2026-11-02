@@ -173,12 +173,11 @@ test('password-reset-email: an addressed code resets the password and ends the o
         throw new Error('the second device has no page')
       }
       await other
-        .getByRole('banner')
-        .getByTestId('user-menu-trigger')
+        .getByTestId('account-entry-trigger')
         .click()
       await other
         .getByRole('menuitem', {
-          name: copy('demo', 'userMenu.accountSettings'),
+          name: copy('demo', 'account.sections.profile'),
           exact: true,
         })
         .click()

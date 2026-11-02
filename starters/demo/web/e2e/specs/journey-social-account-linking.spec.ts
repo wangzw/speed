@@ -350,7 +350,7 @@ test('social-account-linking: a password account links Google, then signs in wit
     // with the account menu in the banner, and never visited the sign-in
     // surface for this step.
     await expect(
-      page.getByRole('banner').getByTestId('user-menu-trigger'),
+      page.getByTestId('account-entry-trigger'),
     ).toBeVisible()
     await expect(signInHeading(page)).toHaveCount(0)
   })
@@ -547,7 +547,7 @@ test.describe('a passkey enrolled in this session', () => {
         // the shell is still signed in and the sign-in surface was never
         // visited for the binding.
         await expect(
-          page.getByRole('banner').getByTestId('user-menu-trigger'),
+          page.getByTestId('account-entry-trigger'),
         ).toBeVisible()
         await expect(signInHeading(page)).toHaveCount(0)
       })

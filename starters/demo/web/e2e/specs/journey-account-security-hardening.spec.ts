@@ -795,13 +795,12 @@ test('account-security-hardening: an account enrols two factors, ends another de
           return
         }
         const trigger = deviceB
-          .getByRole('banner')
-          .getByTestId('user-menu-trigger')
+          .getByTestId('account-entry-trigger')
         if ((await trigger.count()) > 0) {
           await trigger.click({ timeout: 1_000 }).catch(() => undefined)
           await deviceB
             .getByRole('menuitem', {
-              name: copy('demo', 'userMenu.accountSettings'),
+              name: copy('demo', 'account.sections.profile'),
               exact: true,
             })
             .click({ timeout: 1_000 })

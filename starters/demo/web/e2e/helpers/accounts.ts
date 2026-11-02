@@ -307,8 +307,7 @@ export function createAccounts({
     // address it for every account. The data attribute is the trigger's own,
     // independent of where it sits among the bar's other menus.
     await page
-      .getByRole('banner')
-      .getByTestId('user-menu-trigger')
+      .getByTestId('account-entry-trigger')
       .click()
     await page
       .getByRole('menuitem', {

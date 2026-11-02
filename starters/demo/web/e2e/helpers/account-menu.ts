@@ -20,7 +20,14 @@ export async function expectAccountMenuName(
   trigger: Locator,
   identity: string,
 ): Promise<void> {
-  const glyph = (await trigger.textContent())?.trim() ?? ''
+  // The entry renders the initials and the identity side by side: the text
+  // strips the identity off the end to read the glyph, and the accessible
+  // name is that glyph, a space, and the identity.
+  const text = (await trigger.textContent())?.trim() ?? ''
+  expect(text.endsWith(identity), 'the trigger renders the identity').toBe(
+    true,
+  )
+  const glyph = text.slice(0, text.length - identity.length).trim()
   expect(glyph, 'the trigger renders the initials glyph').not.toBe('')
   await expect(trigger).toHaveAccessibleName(
     new RegExp(`^${escapeRegExp(glyph)} ${escapeRegExp(identity)}$`),

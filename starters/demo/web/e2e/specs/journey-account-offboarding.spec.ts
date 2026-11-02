@@ -563,13 +563,12 @@ test('account-offboarding: an operator disables a member and the member returns 
       // describes; the state-based wait below is the assertion either way.
       if (!(await ended.isVisible())) {
         const trigger = memberB
-          .getByRole('banner')
-          .getByTestId('user-menu-trigger')
+          .getByTestId('account-entry-trigger')
         if ((await trigger.count()) > 0) {
           await trigger.click().catch(() => undefined)
           await memberB
             .getByRole('menuitem', {
-              name: copy('demo', 'userMenu.accountSettings'),
+              name: copy('demo', 'account.sections.profile'),
               exact: true,
             })
             .click()

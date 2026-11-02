@@ -750,8 +750,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     // just-in-time account opened from the claims would carry the claim.
     await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
     const userMenu = page
-      .getByRole('banner')
-      .getByTestId('user-menu-trigger')
+      .getByTestId('account-entry-trigger')
     await expectAccountMenuName(userMenu, tenantSSOAdmin.displayName)
   })
 

@@ -864,13 +864,13 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     // The account is the one the operator prepared: the user menu names the
     // display name the operator typed, which differs from the provider's name
     // claim. A just-in-time account would carry the provider's claim instead.
-    const userMenu = page.getByRole('banner').getByTestId('user-menu-trigger')
+    const userMenu = page.getByTestId('account-entry-trigger')
     await expectAccountMenuName(userMenu, EMPLOYEE_DISPLAY_NAME)
 
     await userMenu.click()
     await page
       .getByRole('menuitem', {
-        name: copy('demo', 'userMenu.accountSettings'),
+        name: copy('demo', 'account.sections.profile'),
         exact: true,
       })
       .click()
@@ -1074,7 +1074,7 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
     // The account carries the provider's display name, because no
     // administrator prepared one. The operator typed nothing for this
     // employee.
-    const userMenu = page.getByRole('banner').getByTestId('user-menu-trigger')
+    const userMenu = page.getByTestId('account-entry-trigger')
     await expectAccountMenuName(
       userMenu,
       enterpriseIdentityProviderUser.name,
@@ -1083,7 +1083,7 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
     await userMenu.click()
     await page
       .getByRole('menuitem', {
-        name: copy('demo', 'userMenu.accountSettings'),
+        name: copy('demo', 'account.sections.profile'),
         exact: true,
       })
       .click()
