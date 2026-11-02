@@ -57,6 +57,7 @@
   "signInFlow": {
     "submit": "继续",
     "factorTitle": "请选择一种验证方式",
+    "lostFactorHint": "丢失了这些验证方式？请联系管理员重置两步验证。",
     "enrollTitle": "请选择要登记的方式",
     "unsupportedStep": "此步骤无法在本页完成。",
     "unsupportedStepAction": "回到第一步",

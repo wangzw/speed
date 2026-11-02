@@ -433,16 +433,31 @@ export function FlowStepFields({
           t('signInFlow.factorOptionOrdinal', { kind, position }),
       )
       return (
-        <Choices
-          labelId={labelId}
-          title={t('signInFlow.factorTitle')}
-          busy={busy}
-          choices={step.next.factors.map((factor, index) => ({
-            key: factor.id,
-            label: factorLabels[index] ?? kindLabel(factor.kind),
-          }))}
-          onChoose={(id) => onAnswer({ factor: id })}
-        />
+        <Box>
+          <Choices
+            labelId={labelId}
+            title={t('signInFlow.factorTitle')}
+            busy={busy}
+            choices={step.next.factors.map((factor, index) => ({
+              key: factor.id,
+              label: factorLabels[index] ?? kindLabel(factor.kind),
+            }))}
+            onChoose={(id) => onAnswer({ factor: id })}
+          />
+          {/* The deployment offers no self-service recovery: a reader who
+              lost the listed methods needs an operator reset. The sentence
+              names that door without promising another, and an abnormal
+              factor step with nothing to choose does not show it. */}
+          {step.next.factors.length > 0 ? (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: 1.5 }}
+            >
+              {t('signInFlow.lostFactorHint')}
+            </Typography>
+          ) : null}
+        </Box>
       )
     }
     case 'enroll':

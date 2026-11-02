@@ -582,6 +582,22 @@ describe('FlowStepFields labels', () => {
     ).toBeNull()
   })
 
+  it('offers the administrator-reset door under the factor choices', () => {
+    render({ kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] })
+
+    expect(
+      screen.getByText(zhCN.signInFlow.lostFactorHint),
+    ).toBeInTheDocument()
+  })
+
+  it('hides the reset door when the step offers no factor at all', () => {
+    // A factor step with nothing to choose is an abnormal state, not a lost
+    // method: the sentence would point at a door that is not the problem.
+    render({ kind: 'factor', factors: [] })
+
+    expect(screen.queryByText(zhCN.signInFlow.lostFactorHint)).toBeNull()
+  })
+
   it('reads a sole factor as its kind even when it carries a name', () => {
     render({
       kind: 'factor',

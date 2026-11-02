@@ -57,6 +57,7 @@
   "signInFlow": {
     "submit": "Continue",
     "factorTitle": "Choose how to verify",
+    "lostFactorHint": "Lost these verification methods? Contact your administrator to reset two-step verification.",
     "enrollTitle": "Choose a factor to register",
     "unsupportedStep": "This step cannot be completed on this page.",
     "unsupportedStepAction": "Back to the first step",
