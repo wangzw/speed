@@ -526,9 +526,11 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         copy('accountUi', 'mfa.removeConfirm.title'),
         copy('accountUi', 'mfa.removeConfirm.confirmLabel'),
       )
+      // This was the account's last verification method, so the confirmation
+      // also states that the account is left with a single factor.
       await expect(
         mfaSection(page).getByText(
-          copy('accountUi', 'mfa.removed', {
+          copy('accountUi', 'mfa.removedLast', {
             factor: copy('accountUi', 'mfa.factor.kind.webauthn'),
           }),
           { exact: true },
