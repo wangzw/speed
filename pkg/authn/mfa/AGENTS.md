@@ -74,20 +74,32 @@ dashboard or an audit query written against it.
   registered during a login adds nothing to that login's level
   (`TestAFactorRegisteredDuringALoginAddsNothingToItsStrength`).
 - **`Enroll` is the only entry for registration, and it activates the row last.**
-  It counts the account's factors of the kind against `max-per-kind` and writes a
-  pending row, then calls the factor; the row becomes active only on the factor's
-  last step, and a row a sweep, a reset or a removal got to first is not brought
-  back. The first step stores the optional label carried in the input map under
-  `label`: trimmed, at most 64 characters with no control character, stored as
-  given, and empty when none is submitted because no name is generated. A label
-  outside that domain is refused before any row is written, and a label on a later
-  step changes nothing (`Enroll`, `PendingFactor`, `finishEnroll`,
-  `normalizeFactorLabel`,
+  It counts the account's factors of the kind against that kind's limit and
+  writes a pending row, then calls the factor; the row becomes active only on the
+  factor's last step, and a row a sweep, a reset or a removal got to first is not
+  brought back. The limit comes from `kindLimit`: every kind uses
+  `max-per-kind`, except the authenticator app, which an account holds once —
+  its cap is 1 and a new registration replaces the old row. A replacing
+  registration writes its pending row beside the active one, which keeps
+  verifying until the new code is proved; `activateReplacing` then activates the
+  new row and disables the old one in one transaction, keeping the old row and
+  its kind data for the audit trail. The first step stores the optional label
+  carried in the input map under `label`: trimmed, at most 64 characters with no
+  control character, stored as given, and empty when none is submitted because no
+  name is generated. A label names a factor among several, so a kind an account
+  holds once refuses one: a non-empty label for the authenticator app is the same
+  400 bad-request as a label outside the domain, refused before any row is
+  written, and a label on a later step changes nothing (`Enroll`,
+  `PendingFactor`, `finishEnroll`, `normalizeFactorLabel`, `kindLimit`,
+  `factorTakesName`,
   `TestEnrollRefusesPastTheLimitPerKindAndCountsOnlyWhatIsNotDisabled`,
   `TestARegistrationActivatesTheRowOnTheLastStepOnly`,
   `TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing`,
   `TestARegistrationRefusesALabelOutsideItsDomain`,
-  `TestAnActivationThatLostTheRaceIsRefused`).
+  `TestAnActivationThatLostTheRaceIsRefused`,
+  `TestASecondTOTPRegistrationReplacesTheActiveOne`,
+  `TestACancelledTOTPReplacementKeepsTheActiveEntry`,
+  `TestATOTPRegistrationRefusesAName`).
 - **An abandoned registration releases its pending row at once.** `Abandon` is
   the login engine's optional abandon callback, which this module implements. It
   reads the row identifier out of the flow's private bytes and deletes only that
