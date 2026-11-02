@@ -184,9 +184,12 @@ program beside this directory embeds with `go:embed` and serves through
   registered only when the deployment delivers an SMS code provider, which this
   skeleton's baseline does not (the SMS family needs a carrier's credentials, so
   a product adds it), and a section whose submit would answer 404 is a write the
-  page cannot keep. The skeleton configures no social provider either, so the
-  bindings section lists existing bindings with no add area, and the
-  binding-callback route is mounted beside it for a product that configures one.
+  page cannot keep. The skeleton configures no social provider either, so the social card is
+  the assembly's answer: the page asks `useSocialMethodsAvailable` and
+  renders the card only when the deployment serves a redirect method or the
+  account already holds a binding (an existing binding stays visible even
+  when that read fails), and the binding-callback route is mounted beside
+  the pane for a product that configures a provider.
   `src/main.tsx` registers the extra namespaces (console-ui, account-ui,
   tenancy-ui, notification-ui, demo) beside the four the assembly registers
   automatically.

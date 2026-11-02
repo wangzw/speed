@@ -25,7 +25,9 @@ two lines: the device with the current-session chip, then the address and
 last activity composed through `sessions.rowDetail` -- with per-session and
 bulk revocation), `SocialBindingsSection` plus
 `BindingCallbackHandler` (the social bindings surface and the callback
-route that completes a link flow), and `MfaSection` (the two-step
+route that completes a link flow; `useSocialMethodsAvailable` tells a host
+whether the deployment serves any social method, so the whole card can be
+withheld from an assembly that has none), and `MfaSection` (the two-step
 verification surface: the factors read from `GET /api/v1/auth/factors`, their
 kind-grouped rows, their row menus, and the enroll flow). The package sits one step above
 `@speed/auth-ui`'s tier: reads go through the react-query hooks generated
