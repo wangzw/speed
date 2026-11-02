@@ -2,10 +2,10 @@
  * Navigating the account settings pages.
  *
  * The account settings is four pane pages, one per route: the profile, the
- * security pane, the sessions pane and the preferences pane. The tenant
- * navigation nests their links under the account entry, so a journey opens a
- * pane either by its address or through that entry, and a pane is on screen
- * once its own heading (the page's h1) is.
+ * security pane, the sessions pane and the preferences pane. The account
+ * entry at the bottom of the navigation column opens a menu whose items lead
+ * to them, so a journey opens a pane either by its address or through that
+ * menu, and a pane is on screen once its own heading (the page's h1) is.
  *
  * Inside a pane the facts stand in cards headed by an h2: the identity, the
  * email address and the phone number on the profile pane; the password, the
@@ -53,34 +53,39 @@ function paneHeading(
 }
 
 /**
- * Select one pane on the account page already on screen: click its entry in
- * the tenant navigation and wait for the pane's own heading to arrive. The
- * account entry's disclosure is open on arrival; a closed one keeps its child
- * links in the document but hidden, so the entry is opened first when the
- * target link is not visible.
+ * The bundle key the account entry's menu labels each pane's item with. The
+ * panes' headings all come from `account.sections.*`, but the preferences item
+ * reuses the header menu's `userMenu.preferences` label, which differs from the
+ * pane heading in a language that translates the two words apart.
+ */
+const ACCOUNT_SECTION_MENU_KEYS: Readonly<Record<AccountSection, string>> = {
+  profile: 'account.sections.profile',
+  security: 'account.sections.security',
+  sessions: 'account.sections.sessions',
+  preferences: 'userMenu.preferences',
+}
+
+/**
+ * Select one pane on the account page already on screen: open the account
+ * entry at the bottom of the navigation column, click its menu item for the
+ * pane, and wait for the pane's own heading to arrive.
  */
 export async function selectAccountSection(
   page: Page,
   section: AccountSection,
   locale: CopyLocale = 'en-US',
 ): Promise<void> {
-  const nav = page.getByRole('navigation', {
-    name: copy('layoutKit', 'appShell.navLabel', {}, locale),
+  const column = page.getByRole('complementary', {
+    name: copy('layoutKit', 'appShell.sidebarRegionLabel', {}, locale),
     exact: true,
   })
-  const entry = nav.getByRole('link', {
-    name: copy('demo', `account.sections.${section}`, {}, locale),
-    exact: true,
-  })
-  if (!(await entry.isVisible())) {
-    await nav
-      .getByRole('button', {
-        name: copy('demo', 'nav.account', {}, locale),
-        exact: true,
-      })
-      .click()
-  }
-  await entry.click()
+  await column.getByTestId('account-entry-trigger').click()
+  await page
+    .getByRole('menuitem', {
+      name: copy('demo', ACCOUNT_SECTION_MENU_KEYS[section], {}, locale),
+      exact: true,
+    })
+    .click()
   await expect(paneHeading(page, section, locale)).toBeVisible()
 }
 
