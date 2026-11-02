@@ -1249,13 +1249,15 @@ describe('SMSSignInForm', () => {
       await user.type(code, '123456')
       await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
       // The flow parks on the second factor; choosing the SMS factor sends
-      // a code, so the answer carries the proof.
+      // a code, so the answer carries the proof. The only SMS factor reads
+      // as its kind, not by the name it was registered with.
+      const smsFactor = zhCN.signInFlow.factorKind.sms
       await waitFor(() =>
         expect(
-          screen.getByRole('button', { name: 'Phone' }),
+          screen.getByRole('button', { name: smsFactor }),
         ).toBeInTheDocument(),
       )
-      await user.click(screen.getByRole('button', { name: 'Phone' }))
+      await user.click(screen.getByRole('button', { name: smsFactor }))
       await waitFor(() =>
         expect(
           harness.calls.filter(

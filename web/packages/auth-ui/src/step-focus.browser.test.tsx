@@ -40,7 +40,8 @@ function smsCodeChallenge(): AuthnFlowState {
   })
 }
 
-/** A second factor offered as one labelled choice. */
+/** A second factor offered as one choice; the name it carries does not
+ * replace the kind on the sign-in screen. */
 function factorStep(seq: number, label: string): AuthnFlowState {
   return openFlow({
     seq,
@@ -106,7 +107,7 @@ describe('step-switch focus in Chromium', () => {
     )
 
     const factor = await screen.findByRole('button', {
-      name: 'Authenticator',
+      name: enUS.signInFlow.factorKind.totp,
     })
     await waitFor(() => expect(factor).toHaveFocus())
   })
@@ -135,7 +136,9 @@ describe('step-switch focus in Chromium', () => {
       screen.getByRole('button', { name: enUS.passwordSignIn.submit }),
     )
     await user.click(
-      await screen.findByRole('button', { name: 'Authenticator' }),
+      await screen.findByRole('button', {
+        name: enUS.signInFlow.factorKind.totp,
+      }),
     )
 
     // A lost flow drops the parked step and the channel's own first step
@@ -171,7 +174,7 @@ describe('step-switch focus in Chromium', () => {
 
     // Answering parks the next step, which did replace the answered one.
     const factor = await screen.findByRole('button', {
-      name: 'Authenticator',
+      name: enUS.signInFlow.factorKind.totp,
     })
     await waitFor(() => expect(factor).toHaveFocus())
   })

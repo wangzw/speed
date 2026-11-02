@@ -373,6 +373,8 @@ sequenceDiagram
 3. 每一步的答复经 `session.answerFlow` 发出（本包不直接触网）；流程落定后分叉：完成触发一次回调；被拒按错误码渲染一条 `role="alert"` 横幅、状态原地不变、可重试。
 4. 切换渠道时旧表单一并卸载，它的半填状态与整次失败的横幅随之消失——渠道的错误不跨面泄漏。
 
+**第二因素清单回答「用哪种方式证明」，不回答「是哪一把」。** 清单项以种类名为主体：某一品类只出现一项时只显示该品类名（`signInFlow.factorKind.*`），登记时写下的名称不参与；某一品类出现多项时才用名称区分，写成「种类 · 名称」（种类在前），没有名称的条目从第二条起以「种类（2）」这类序号收尾，使同一清单里不出现两个同名按钮。选项文字即按钮的可及名，二者同一口径。账户页的因素行回答「是哪一把」，名称在那里显示（[account-ui](design-web-account-ui.md)）。
+
 首登开户的用户名一步是这条管线的又一个 `challenge` 步。流程解析出这次登录会新开账户时，服务端在下一步索取开户所需的内容；答复经 `session.answerFlow` 发出，内容合法才建账户并落到完成。这一步复用登录面的版式：宿主把它渲染在与登录面同一张卡片里，品牌与页面标题同登录面一致，步骤本身只提供卡片内部的内容。**社交首登的这一步是一块完整的开户面，自身没有标题**：卡片标题已经说明这是登录，再加一个步骤标题是同一件事说两遍。**叙述区只有居中两句**：第一句点名这次登录用的是谁的账号，取「通过 {{provider}} 用户 {{name}} 登录」，14px 次要色，其中名字那一截取主色、字重 600——`next.provided_method` 是发起这次登录的方法名，标签按登录面同一套方法词表解析、词表外原样显示方法名，`next.provided_display_name` 是提供方给出的账号名；第二句说还差什么，取「设置用户名和密码。」，16px 主色。两句之后一条分隔线，把叙述区与表单区分开。
 
 **提供方分享的邮箱落在用户名下面，是一个只读字段**：字段顺序是用户名、邮箱、口令、确认口令。邮箱字段的标签取本族对 `email` 的词条，值取自 `next.provided_email`，浅底色、淡描边，与可编辑字段一眼可分；值是**可折行的文本**而不是单行输入框，长地址整条可见、不被截断，可选、可复制，以只读文本框的语义呈现（`role="textbox"`、`aria-readonly`）；字段下一行小字给出处与不可修改（「由 GitHub 提供，不可修改。」）。它与上一字段之间留出足够间距，使自己的浮动标签不贴着上一字段的说明文字：上一字段的说明折成三行时，标签与该说明之间仍留一行字的高度。邮箱是提供方分享的地址，不是社媒账号的 ID，界面不把它称作账号或 ID，它在账户上作什么用属于账户面，这一步不说。
@@ -518,7 +520,7 @@ sequenceDiagram
 | 发现读取与方法标签 | 已实现 | `web/packages/auth-ui/src/internal/use-signin-discovery.ts`；`web/packages/auth-ui/src/internal/labels.ts` |
 | 分渠道表单（专属与通用描述符） | 已实现 | `web/packages/auth-ui/src/PasswordSignInForm.tsx`；`web/packages/auth-ui/src/SMSSignInForm.tsx`；`web/packages/auth-ui/src/internal/sign-in-methods.tsx` |
 | 企业入口与通行密钥入口 | 已实现 | `web/packages/auth-ui/src/internal/sign-in-methods.tsx` |
-| 步进渲染器（含通行密钥仪式与 TOTP 登记） | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx`；`web/packages/auth-ui/src/internal/use-flow-driver.ts`；`web/packages/auth-ui/src/internal/flow.ts` |
+| 步进渲染器（含第二因素清单、通行密钥仪式与 TOTP 登记） | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx`；`web/packages/auth-ui/src/internal/use-flow-driver.ts`；`web/packages/auth-ui/src/internal/flow.ts` |
 | 社交区与回调 | 已实现 | `web/packages/auth-ui/src/SocialSignInSection.tsx`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` |
 | `link-required` 的落点：掩码地址与「先用自己的登录方式登录再绑定」的文案 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`（`initialError`、`initialErrorEmail`）；`web/packages/auth-ui/src/locales/en-US.json`、`zh-CN.json` `errors.authn.link_required`、`social.linkRequiredEmail` |
 | 会话面 | 已实现 | `web/packages/auth-ui/src/SignOutButton.tsx`；`web/packages/auth-ui/src/SignOutMenuItem.tsx`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` |

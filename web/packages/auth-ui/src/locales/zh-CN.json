@@ -103,6 +103,8 @@
       "webauthn": "通行密钥",
       "other": "其他方式"
     },
+    "factorOptionNamed": "{{kind}} · {{name}}",
+    "factorOptionOrdinal": "{{kind}}（{{position}}）",
     "signupIdentity": "通过 {{provider}} 用户 {{name}} 登录",
     "signupIdentityWithoutName": "通过 {{provider}} 登录"
   },

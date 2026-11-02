@@ -2,12 +2,15 @@
  * FlowStepFields behaviour: the factor, enroll and challenge vocabulary.
  *
  * What this suite pins: a known factor or enroll kind renders its
- * translated name, a server-supplied factor label wins over it, and a
- * kind the family has no wording for shows the kind as given -- the
- * deployment's own vocabulary, never a generic stand-in. That last rule
- * is the one the three flow-step copies share: account-ui and console-ui
- * render an unknown kind verbatim, so this package does too, and this
- * suite is the auth-ui side of the registered sync obligation.
+ * translated name, and a kind the family has no wording for shows the
+ * kind as given -- the deployment's own vocabulary, never a generic
+ * stand-in. A factor step answers "how do I prove it", so the kind leads:
+ * a kind offered once reads as its kind name alone, while a repeated kind
+ * distinguishes its entries by name ("Kind · Name") and an unnamed entry
+ * from the second on by ordinal ("Kind (2)"). That last rule is the one
+ * the three flow-step copies share: account-ui and console-ui render the
+ * same labels, so this suite is the auth-ui side of the registered sync
+ * obligation.
  *
  * The same rule holds for a challenge's fields: a name the family knows
  * renders the bundle's label and the explanatory text under it, and an
@@ -579,16 +582,63 @@ describe('FlowStepFields labels', () => {
     ).toBeNull()
   })
 
-  it('lets a server-supplied factor label win over the vocabulary', () => {
+  it('reads a sole factor as its kind even when it carries a name', () => {
     render({
       kind: 'factor',
       factors: [{ id: 'f1', kind: 'totp', label: 'My app' }],
     })
 
-    expect(screen.getByRole('button', { name: 'My app' })).toBeTruthy()
     expect(
-      screen.queryByRole('button', { name: zhCN.signInFlow.factorKind.totp }),
-    ).toBeNull()
+      screen.getByRole('button', { name: zhCN.signInFlow.factorKind.totp }),
+    ).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'My app' })).toBeNull()
+  })
+
+  it('labels same-named factors of different kinds by their kinds', () => {
+    // The bug this rule fixes: the login page used the registration-time
+    // name first, so two factors whose names happened to match -- here the
+    // browser/OS summary each device suggested -- rendered two identical
+    // buttons. The kind is what the viewer chooses between.
+    render({
+      kind: 'factor',
+      factors: [
+        { id: 'f1', kind: 'webauthn', label: 'Chrome · macOS' },
+        { id: 'f2', kind: 'totp', label: 'Chrome · macOS' },
+      ],
+    })
+
+    expect(
+      screen.getByRole('button', { name: zhCN.signInFlow.factorKind.webauthn }),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: zhCN.signInFlow.factorKind.totp }),
+    ).toBeTruthy()
+    expect(
+      screen.queryAllByRole('button', { name: 'Chrome · macOS' }),
+    ).toHaveLength(0)
+  })
+
+  it('distinguishes a repeated kind by name and by ordinal', () => {
+    // Both entries are passkeys, so the kind alone cannot tell them apart.
+    // The named one keeps the kind in front of its name; the unnamed second
+    // one takes an ordinal rather than repeating the kind's name alone.
+    render({
+      kind: 'factor',
+      factors: [
+        { id: 'f1', kind: 'webauthn', label: 'Work MacBook' },
+        { id: 'f2', kind: 'webauthn' },
+      ],
+    })
+
+    const kind = zhCN.signInFlow.factorKind.webauthn
+    const named = zhCN.signInFlow.factorOptionNamed
+      .replace('{{kind}}', kind)
+      .replace('{{name}}', 'Work MacBook')
+    const ordinal = zhCN.signInFlow.factorOptionOrdinal
+      .replace('{{kind}}', kind)
+      .replace('{{position}}', '2')
+    expect(screen.getByRole('button', { name: named })).toBeTruthy()
+    expect(screen.getByRole('button', { name: ordinal })).toBeTruthy()
   })
 
   it('translates a known enroll kind and shows an unknown kind as given', () => {

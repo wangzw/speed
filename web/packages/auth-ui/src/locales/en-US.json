@@ -103,6 +103,8 @@
       "webauthn": "Passkey",
       "other": "Other"
     },
+    "factorOptionNamed": "{{kind}} · {{name}}",
+    "factorOptionOrdinal": "{{kind}} ({{position}})",
     "signupIdentity": "Signing in with {{provider}} user {{name}}",
     "signupIdentityWithoutName": "Signing in with {{provider}}"
   },
