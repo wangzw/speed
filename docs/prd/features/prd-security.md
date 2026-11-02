@@ -379,5 +379,5 @@
 系统必须让账户同时最多保有一个验证器应用；再次登记成功后替换前一个，且在新的一次验证通过之前，前一个仍然有效。
 
 - **验收**：账户已有验证器应用时再登记一次，成功后清单里只有一个验证器应用，前一个用它的设置密钥算出的码被拒；再一次登记在验证码通过前被取消或输错码时，前一个仍可用且仍在清单里；没有已启用的验证器应用时才新增第一个。通行密钥不受此限，仍可保有多条。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
