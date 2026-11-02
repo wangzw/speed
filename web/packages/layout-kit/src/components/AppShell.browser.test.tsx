@@ -210,7 +210,9 @@ describe('AppShell geometry in Chromium', () => {
         sidebarCollapsed
         onSidebarCollapsedChange={() => undefined}
       >
-        <div style={{ height: 240 }}>content</div>
+        <div style={{ height: 240 }}>
+            <h1>content</h1>
+          </div>
       </AppShell>,
     )
 
@@ -241,7 +243,9 @@ describe('AppShell geometry in Chromium', () => {
     await page.viewport(400, VIEWPORT_HEIGHT)
     renderShell(
       <AppShell navItems={NAV_ITEMS} banner={<Banner height={40} />}>
-        <div style={{ height: 240 }}>content</div>
+        <div style={{ height: 240 }}>
+            <h1>content</h1>
+          </div>
       </AppShell>,
     )
 
@@ -281,7 +285,9 @@ describe('AppShell drawer slots in Chromium', () => {
         navHeader={<div data-testid="nav-header" style={{ height: 40 }}>header</div>}
         navFooter={<div data-testid="nav-footer" style={{ height: 48 }}>footer</div>}
       >
-        <div style={{ height: 240 }}>content</div>
+        <div style={{ height: 240 }}>
+            <h1>content</h1>
+          </div>
       </AppShell>,
     )
 
@@ -331,7 +337,9 @@ describe('AppShell drawer slots in Chromium', () => {
           </button>
         )}
       >
-        <div style={{ height: 240 }}>content</div>
+        <div style={{ height: 240 }}>
+            <h1>content</h1>
+          </div>
       </AppShell>,
     )
 
@@ -525,7 +533,9 @@ describe('AppShell sidebar layout in Chromium', () => {
         navItems={SCROLLING_NAV_ITEMS}
         {...SIDEBAR_CHROME}
       >
-        <div style={{ height: 240 }}>content</div>
+        <div style={{ height: 240 }}>
+            <h1>content</h1>
+          </div>
       </AppShell>,
     )
 
@@ -565,7 +575,9 @@ describe('AppShell sidebar layout in Chromium', () => {
         onSidebarCollapsedChange={() => undefined}
         {...RAIL_CHROME}
       >
-        <div style={{ height: 240 }}>content</div>
+        <div style={{ height: 240 }}>
+            <h1>content</h1>
+          </div>
       </AppShell>,
     )
 
@@ -625,7 +637,9 @@ describe('AppShell sidebar layout in Chromium', () => {
         }
         userMenu={control('Account')}
       >
-        <div style={{ height: 240 }}>content</div>
+        <div style={{ height: 240 }}>
+            <h1>content</h1>
+          </div>
       </AppShell>,
       // A dense preset's spacing base: 7 x 6 = 42px, so the rail renders at
       // its floor rather than at the derived width.
@@ -844,7 +858,9 @@ function narrowHeaderShell(): ReactElement {
         </>
       }
     >
-      <div style={{ height: 240 }}>content</div>
+      <div style={{ height: 240 }}>
+            <h1>content</h1>
+          </div>
     </AppShell>
   )
 }
@@ -951,5 +967,83 @@ describe('AppShell focus order in Chromium', () => {  it('makes the skip link th
     await waitFor(() => {
       expect(document.activeElement).toBe(screen.getByRole('main'))
     })
+  })
+})
+
+/** A bottom-slot probe: the element the footer placement is measured on. */
+function FooterProbe() {
+  return (
+    <div
+      data-testid="nav-footer"
+      style={{ height: 44, backgroundColor: '#808080' }}
+    >
+      footer
+    </div>
+  )
+}
+
+/** How far the footer's bottom edge sits above the drawer paper's bottom. */
+function footerGap(): number {
+  const paper = document.querySelector<HTMLElement>(`.${drawerClasses.paper}`)
+  const footer = screen.getByTestId('nav-footer')
+  if (paper === null) {
+    throw new Error('expected a drawer paper')
+  }
+  return paper.getBoundingClientRect().bottom - footer.getBoundingClientRect().bottom
+}
+
+describe('the drawer footer sticks to the bottom', () => {
+  for (const layout of ['topbar', 'sidebar'] as const) {
+    it(`keeps the footer at the paper's bottom in the ${layout} layout`, async () => {
+      await page.viewport(1280, VIEWPORT_HEIGHT)
+      renderShell(
+        <AppShell
+          shellLayout={layout}
+          navItems={NAV_ITEMS}
+          navFooter={<FooterProbe />}
+        >
+          <div style={{ height: 240 }}>
+            <h1>content</h1>
+          </div>
+        </AppShell>,
+      )
+      await waitFor(() => expect(screen.getByTestId('nav-footer')).toBeInTheDocument())
+      expect(footerGap()).toBeLessThanOrEqual(1)
+      await expectNoAxeViolations()
+    })
+  }
+
+  it('sticks in the collapsed rail', async () => {
+    await page.viewport(1280, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell
+        shellLayout="sidebar"
+        navItems={NAV_ITEMS}
+        navFooter={<FooterProbe />}
+        sidebarCollapsed
+        onSidebarCollapsedChange={() => undefined}
+      >
+        <div style={{ height: 240 }}>
+            <h1>content</h1>
+          </div>
+      </AppShell>,
+    )
+    await waitFor(() => expect(screen.getByTestId('nav-footer')).toBeInTheDocument())
+    expect(footerGap()).toBeLessThanOrEqual(1)
+  })
+
+  it('sticks in the temporary drawer', async () => {
+    await page.viewport(400, VIEWPORT_HEIGHT)
+    const user = userEvent.setup()
+    renderShell(
+      <AppShell shellLayout="sidebar" navItems={NAV_ITEMS} navFooter={<FooterProbe />}>
+        <div style={{ height: 240 }}>
+            <h1>content</h1>
+          </div>
+      </AppShell>,
+    )
+    await user.click(screen.getByRole('button', { name: OPEN_NAV }))
+    await waitFor(() => expect(screen.getByTestId('nav-footer')).toBeInTheDocument())
+    expect(footerGap()).toBeLessThanOrEqual(1)
   })
 })

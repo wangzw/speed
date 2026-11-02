@@ -1049,9 +1049,12 @@ export function AppShell({
       sx={{
         width: '100%',
         boxSizing: 'border-box',
-        ...(sidebarLayout
-          ? { flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }
-          : {}),
+        // The navigation is the drawer column's one growing, scrolling
+        // region in both layouts, so the footer slot after it sits at the
+        // paper's bottom edge.
+        flex: '1 1 auto',
+        minHeight: 0,
+        overflowY: 'auto',
         // The rows' pointer and selection states are tinted with the
         // primary color instead of MUI's neutral overlay: a neutral wash
         // turns grey on the shell's own tinted surface (and on a glass
@@ -1211,24 +1214,25 @@ export function AppShell({
   // landmark around the column gives that chrome a landmark home while
   // leaving the `nav` landmark and the slots' sibling contract untouched.
   // The topbar layout's paper renders exactly as it did before.
-  const drawerColumn = (contents: ReactNode): ReactNode =>
-    sidebarLayout ? (
-      <Box
-        component="aside"
-        aria-label={t('appShell.sidebarRegionLabel')}
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          width: '100%',
-          height: '100%',
-          minHeight: 0,
-        }}
-      >
-        {contents}
-      </Box>
-    ) : (
-      contents
-    )
+  // The drawer paper is one flex column in both layouts: brand rows and
+  // header slots first, the navigation growing in the middle, the footer
+  // slot last at the paper's bottom edge. The aside landmark names the
+  // column; the nav landmark stays nested inside it.
+  const drawerColumn = (contents: ReactNode): ReactNode => (
+    <Box
+      component="aside"
+      aria-label={t('appShell.sidebarRegionLabel')}
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        height: '100%',
+        minHeight: 0,
+      }}
+    >
+      {contents}
+    </Box>
+  )
 
   return (
     <Box
@@ -1464,16 +1468,12 @@ export function AppShell({
               '& .MuiDrawer-paper': {
                 boxSizing: 'border-box',
                 width: sidebarCollapsed ? collapsedSidebarWidth : sidebarWidth,
-                // The sidebar layout turns the paper into a fixed
-                // column: the nav between the two chrome rows is the one
-                // scrolling region, so the paper itself stops scrolling.
-                // The topbar layout keeps the paper's own scrolling and
-                // only clips the rail's horizontal overflow.
-                ...(sidebarLayout
-                  ? { overflow: 'hidden' }
-                  : sidebarCollapsed
-                    ? { overflowX: 'hidden' }
-                    : {}),
+                // The paper is a fixed column in both layouts: the nav
+                // between the chrome rows is the one scrolling region, so
+                // the paper itself stops scrolling (the rail also clips its
+                // horizontal overflow).
+                overflow: 'hidden',
+                ...(sidebarCollapsed ? { overflowX: 'hidden' } : {}),
               },
             }}
           >
@@ -1511,10 +1511,9 @@ export function AppShell({
                 // overflowing drawer; the permanent (desktop) Drawer
                 // above is untouched and keeps the plain sidebarWidth.
                 width: `min(${sidebarWidth}px, 85vw)`,
-                // Same fixed-column treatment as the permanent paper in
-                // the sidebar layout: the nav scrolls, the bottom row
-                // stays pinned.
-                ...(sidebarLayout ? { overflow: 'hidden' } : {}),
+                // The same fixed-column treatment as the permanent paper:
+                // the nav scrolls, the bottom slot stays pinned.
+                overflow: 'hidden',
               },
             }}
           >
