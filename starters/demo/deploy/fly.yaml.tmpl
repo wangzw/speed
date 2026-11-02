@@ -109,7 +109,9 @@ authn:
     webauthn:
       # The relying party id is a domain and carries no scheme or port.
       rp-id: "__PUBLIC_DOMAIN__"
-      rp-name: demo
+      # The site name the browser shows beside the account in a WebAuthn
+      # prompt.
+      rp-name: Speed Demo
       origins:
         - "__PUBLIC_ORIGIN__"
   # The human-verification gate. It runs off unless the deployment names a

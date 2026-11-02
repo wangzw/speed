@@ -195,7 +195,7 @@ func platformDefaultsDocument() map[string]any {
 				// the listener names.
 				"webauthn": map[string]any{
 					"rp-id":   "localhost",
-					"rp-name": "demo",
+					"rp-name": "Speed Demo",
 					"origins": []any{"http://localhost:8081"},
 				},
 			},

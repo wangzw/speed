@@ -309,7 +309,7 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantString(t, "authn.token.signing-key-file", doc.Authn.Token.SigningKeyFile, signingKeyPath)
 	wantString(t, "authn.mfa.totp.issuer", doc.Authn.MFA.TOTP.Issuer, "Speed Demo")
 	wantString(t, "authn.mfa.webauthn.rp-id", doc.Authn.MFA.WebAuthn.RPID, "localhost")
-	wantString(t, "authn.mfa.webauthn.rp-name", doc.Authn.MFA.WebAuthn.RPName, "demo")
+	wantString(t, "authn.mfa.webauthn.rp-name", doc.Authn.MFA.WebAuthn.RPName, "Speed Demo")
 	wantStrings(t, "authn.mfa.webauthn.origins", doc.Authn.MFA.WebAuthn.Origins, []string{"http://localhost:8081"})
 
 	// Tenancy and authorization.

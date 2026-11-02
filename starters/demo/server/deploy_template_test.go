@@ -105,6 +105,27 @@ func TestTheDeployTemplateNamesTheSiteInTheAuthenticator(t *testing.T) {
 	}
 }
 
+// webauthnSection is the part of the WebAuthn factor's section these cases
+// read. The section's other two items are named because pkg/config decodes a
+// container element whole and refuses a member no field answers for.
+type webauthnSection struct {
+	RPID    string   `config:"rp-id"`
+	RPName  string   `config:"rp-name"`
+	Origins []string `config:"origins"`
+}
+
+// TestTheDeployTemplateNamesTheSiteInThePasskeyPrompt holds the site name the
+// deployment template writes as the relying party's display name, which the
+// browser's WebAuthn prompt shows beside the account.
+func TestTheDeployTemplateNamesTheSiteInThePasskeyPrompt(t *testing.T) {
+	locator := writeConfigFile(t, renderDeployTemplate(t))
+	var got webauthnSection
+	readEffective(t, "deploy/fly.yaml.tmpl", locator, "authn.mfa.webauthn", &got)
+	if got.RPName != "Speed Demo" {
+		t.Errorf("authn.mfa.webauthn.rp-name = %q, want the site name Speed Demo", got.RPName)
+	}
+}
+
 // humanverifySection is the part of the human-verification module's section the
 // deployment template carries: the mechanism, the widget's public site key, the
 // siteverify secret and the hostname the widget must have run on.
