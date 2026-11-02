@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -139,7 +140,17 @@ func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *spe
 	}
 	requirement := authn.FreshLocalMulti(m.settings.recentWindow())
 	if !id.Satisfies(requirement, m.clock.Now()) {
-		return nil, m.stepUpRequired(id, requirement)
+		// Requiring the factor to prove its own deletion would lock out an
+		// account whose only factor was lost. The account's last active
+		// factor may be removed on a freshly proved first factor instead; any
+		// other removal still needs the multi-factor proof.
+		allowed, aerr := m.lastFactorOnAFreshFirstFactor(ctx, id, in.ID)
+		if aerr != nil {
+			return nil, m.answerError(id.Account(), aerr)
+		}
+		if !allowed {
+			return nil, m.stepUpRequired(id, requirement)
+		}
 	}
 	if in.ID == "" || len(in.ID) > maxFactorIDLen {
 		return nil, authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
@@ -156,6 +167,55 @@ func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *spe
 	default:
 		return nil, m.answerError(id.Account(), err)
 	}
+}
+
+// lastFactorOnAFreshFirstFactor reports whether id names the account's only
+// active factor and the caller's session holds a first factor proved within
+// the account-security window. That
+// combination is the one deletion a factor cannot be allowed to gate: the
+// reader may have lost the very factor they are removing.
+func (m *product) lastFactorOnAFreshFirstFactor(ctx context.Context, id authn.Identity, factorID string) (bool, error) {
+	if factorID == "" {
+		return false, nil
+	}
+	records, err := m.Factors(ctx, id.Account())
+	if err != nil {
+		return false, err
+	}
+	active := 0
+	target := false
+	for _, rec := range records {
+		if rec.Status != authn.FactorActive {
+			continue
+		}
+		active++
+		if rec.ID == factorID {
+			target = true
+		}
+	}
+	if active != 1 || !target {
+		return false, nil
+	}
+	window := m.settings.recentWindow()
+	if window <= 0 {
+		return false, nil
+	}
+	first := authn.Requirement{Assurance: authn.AssuranceSingle, MaxAge: window}
+	if !id.Satisfies(first, m.clock.Now()) {
+		return false, nil
+	}
+	account, err := m.accounts.Get(ctx, id.Account())
+	if err != nil {
+		return false, err
+	}
+	if !account.PasswordSet {
+		// An account without a password cannot prove one; a fresh first
+		// factor -- the re-login the step-up sends it to -- is its door.
+		return true, nil
+	}
+	// An account holding a password proves it: a session raised by an
+	// external identity alone does not remove the last factor.
+	return slices.Contains(id.Methods(), authn.MethodPassword), nil
 }
 
 // updateFactor answers PATCH /factors/:id. The label is metadata and is written

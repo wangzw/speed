@@ -196,8 +196,8 @@ func TestDeletingAFactorNeedsAFreshMultiFactorAuthenticationVerifiedHere(t *test
 		{"a local multi-factor authentication of a minute ago", multiAt(time.Minute), 0, http.StatusNoContent, "", true},
 		{"one just inside the window", multiAt(10*time.Minute - time.Second), 0, http.StatusNoContent, "", true},
 		{"one just outside the window", multiAt(10*time.Minute + time.Second), 0, http.StatusUnauthorized, "600", false},
-		{"a single factor, however fresh", []authntest.Option{authntest.WithAccount(acct), authntest.WithAuthTime(base)}, 0, http.StatusUnauthorized, "600", false},
-		{"a multi-factor level only an IdP declared", multiAt(time.Minute, authntest.WithIDPAssured(true), authntest.WithProvider(providerUUID)), 0, http.StatusUnauthorized, "600", false},
+		{"a single factor, fresh: the last factor may be removed by the first factor", []authntest.Option{authntest.WithAccount(acct), authntest.WithAuthTime(base)}, 0, http.StatusNoContent, "", true},
+		{"an IdP-declared multi factor, the last factor, an account without a password: the re-login door", multiAt(time.Minute, authntest.WithIDPAssured(true), authntest.WithProvider(providerUUID)), 0, http.StatusNoContent, "", true},
 		{"the window the setting says", multiAt(3 * time.Minute), 2 * time.Minute, http.StatusUnauthorized, "120", false},
 		{"a longer window the setting says", multiAt(40 * time.Minute), time.Hour, http.StatusNoContent, "", true},
 		{"a window outside the setting's domain reads as the default", multiAt(30 * time.Minute), 5 * time.Hour, http.StatusUnauthorized, "600", false},
@@ -237,6 +237,34 @@ func TestDeletingAFactorNeedsAFreshMultiFactorAuthenticationVerifiedHere(t *test
 			}
 		})
 	}
+}
+
+// A last factor is the only removal a fresh first factor may carry: with a
+// second active factor on the account, the same fresh first factor is refused,
+// and an old first factor is refused for the last factor too because the
+// deletion has not been proved freshly.
+func TestDeletingALastFactorNeedsAFreshFirstFactor(t *testing.T) {
+	t.Run("two factors, a fresh first factor", func(t *testing.T) {
+		r := routed(t, authn.FactorTOTP)
+		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+		r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+		r.mounter.As(authntest.WithAccount(acct), authntest.WithAuthTime(base))
+		if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusUnauthorized {
+			t.Errorf("DELETE with another factor left = %d, want 401", w.Code)
+		}
+		if _, there := r.status(id); !there {
+			t.Error("a factor guarded by another one was deleted on a first factor")
+		}
+	})
+	t.Run("the last factor, an old first factor", func(t *testing.T) {
+		r := routed(t, authn.FactorTOTP)
+		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+		old := base.Add(-20 * time.Minute)
+		r.mounter.As(authntest.WithAccount(acct), authntest.WithAuthTime(old))
+		if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusUnauthorized {
+			t.Errorf("DELETE of the last factor with an old first factor = %d, want 401", w.Code)
+		}
+	})
 }
 
 // A factor that is not the caller's and one that is not there both read as
