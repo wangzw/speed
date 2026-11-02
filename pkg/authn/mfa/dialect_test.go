@@ -73,7 +73,7 @@ func TestTheRegisterConvertsATimeItIsGivenToUTC(t *testing.T) {
 		ctx := context.Background()
 		local := base.In(ny)
 
-		rec, err := r.p.register.insertPending(ctx, acct, authn.FactorTOTP, "", 5, local)
+		rec, err := r.p.register.insertPending(ctx, acct, authn.FactorTOTP, "", 5, false, local)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -33,6 +33,18 @@ func (m *product) renameFactor(ctx context.Context, id authn.AccountID, factorID
 	if id == "" {
 		return authn.FactorRecord{}, false, authn.ErrInvalidAccountID
 	}
+	// Read before writing: a kind that takes no name refuses one without a
+	// write, and a row that is not the account's says so the same way.
+	existing, found, err := m.register.find(ctx, id, factorID)
+	if err != nil {
+		return authn.FactorRecord{}, false, m.unavailable(err)
+	}
+	if !found {
+		return authn.FactorRecord{}, false, nil
+	}
+	if !factorTakesName(existing.Kind) && label != "" {
+		return authn.FactorRecord{}, true, fmt.Errorf("%w: a %s factor carries no name", authn.ErrInvalidArgument, existing.Kind)
+	}
 	renamed, err := m.register.updateLabel(ctx, id, factorID, label)
 	if err != nil {
 		return authn.FactorRecord{}, false, m.unavailable(err)

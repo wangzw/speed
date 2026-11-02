@@ -246,6 +246,9 @@ func (m *product) updateFactor(ctx context.Context, in updateFactorInput) (Authn
 	}
 	rec, found, err := m.renameFactor(ctx, id.Account(), in.ID, label)
 	if err != nil {
+		if errors.Is(err, authn.ErrInvalidArgument) {
+			return AuthnMfaFactor{}, authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
+		}
 		return AuthnMfaFactor{}, m.answerError(id.Account(), err)
 	}
 	if !found {

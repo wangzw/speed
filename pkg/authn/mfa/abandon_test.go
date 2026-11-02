@@ -13,18 +13,18 @@ import (
 // registration's pending row for the same account stays, and the factor's own
 // data is removed for the one row that went.
 func TestAbandonReleasesOnlyTheRowItsFlowWrote(t *testing.T) {
-	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
-		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
-		totp.enrollFn = func(context.Context, authn.FlowState, authn.StepInput) (authn.Step, error) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorWebAuthn}, func(t *testing.T, r *rig) {
+		passkey := r.p.factors[authn.FactorWebAuthn].(*fakeFactor)
+		passkey.enrollFn = func(context.Context, authn.FlowState, authn.StepInput) (authn.Step, error) {
 			return confirming("seed-state"), nil
 		}
 		ctx := context.Background()
 
-		first, err := r.p.Enroll(ctx, flow(acct), authn.FactorTOTP, authn.StepInput{})
+		first, err := r.p.Enroll(ctx, flow(acct), authn.FactorWebAuthn, authn.StepInput{})
 		if err != nil {
 			t.Fatalf("Enroll, first flow: %v", err)
 		}
-		second, err := r.p.Enroll(ctx, flow(acct), authn.FactorTOTP, authn.StepInput{})
+		second, err := r.p.Enroll(ctx, flow(acct), authn.FactorWebAuthn, authn.StepInput{})
 		if err != nil {
 			t.Fatalf("Enroll, second flow: %v", err)
 		}
@@ -50,8 +50,8 @@ func TestAbandonReleasesOnlyTheRowItsFlowWrote(t *testing.T) {
 		if len(rows) != 1 || rows[0].ID != keptID {
 			t.Fatalf("after the abandonment the register holds %+v, want only the row %s the other flow wrote", rows, keptID)
 		}
-		if len(totp.removed) != 1 || totp.removed[0] != abandonedID {
-			t.Errorf("the factor's own data was removed for %v, want only the abandoned row %s", totp.removed, abandonedID)
+		if len(passkey.removed) != 1 || passkey.removed[0] != abandonedID {
+			t.Errorf("the factor's own data was removed for %v, want only the abandoned row %s", passkey.removed, abandonedID)
 		}
 	})
 }
@@ -61,13 +61,13 @@ func TestAbandonReleasesOnlyTheRowItsFlowWrote(t *testing.T) {
 // of a row that is no longer pending is a no-op: the register and the factor's
 // data stay as they were.
 func TestAbandonWithoutAPendingRowChangesNothing(t *testing.T) {
-	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
-		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
-		totp.enrollFn = func(context.Context, authn.FlowState, authn.StepInput) (authn.Step, error) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorWebAuthn}, func(t *testing.T, r *rig) {
+		passkey := r.p.factors[authn.FactorWebAuthn].(*fakeFactor)
+		passkey.enrollFn = func(context.Context, authn.FlowState, authn.StepInput) (authn.Step, error) {
 			return confirming("seed-state"), nil
 		}
 		ctx := context.Background()
-		pending, err := r.p.Enroll(ctx, flow(acct), authn.FactorTOTP, authn.StepInput{})
+		pending, err := r.p.Enroll(ctx, flow(acct), authn.FactorWebAuthn, authn.StepInput{})
 		if err != nil {
 			t.Fatalf("Enroll: %v", err)
 		}
@@ -96,8 +96,8 @@ func TestAbandonWithoutAPendingRowChangesNothing(t *testing.T) {
 		if len(rows) != 2 {
 			t.Fatalf("after the no-ops the register holds %+v, want the pending row %s and the active row %s", rows, keptID, activeID)
 		}
-		if len(totp.removed) != 0 {
-			t.Errorf("the factor's own data was removed for %v, want nothing", totp.removed)
+		if len(passkey.removed) != 0 {
+			t.Errorf("the factor's own data was removed for %v, want nothing", passkey.removed)
 		}
 	})
 }

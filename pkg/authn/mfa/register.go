@@ -115,7 +115,7 @@ func (g *register) find(ctx context.Context, account authn.AccountID, id string)
 // disabled row, which only a reset leaves behind, does not count, or an account
 // whose factors were all reset could not register another once it held the
 // limit. A count at the limit is ErrFactorLimit.
-func (g *register) insertPending(ctx context.Context, account authn.AccountID, kind authn.FactorKind, label string, limit int, at time.Time) (authn.FactorRecord, error) {
+func (g *register) insertPending(ctx context.Context, account authn.AccountID, kind authn.FactorKind, label string, limit int, besideActive bool, at time.Time) (authn.FactorRecord, error) {
 	rec := authn.FactorRecord{
 		ID:        event.NewID(),
 		Account:   account,
@@ -126,9 +126,17 @@ func (g *register) insertPending(ctx context.Context, account authn.AccountID, k
 	}
 	err := g.session(ctx).Transaction(func(tx *gorm.DB) error {
 		var count int64
-		if err := tx.Table(factorTable).
-			Where("account_id = ? AND kind = ? AND status <> ?", string(account), string(kind), int(authn.FactorDisabled)).
-			Count(&count).Error; err != nil {
+		// A kind the new registration replaces counts only the pending rows:
+		// the active row it will retire keeps verifying, and it is not a
+		// second factor while the new one is being proved. Any other kind
+		// counts everything that is not disabled.
+		query := tx.Table(factorTable).Where("account_id = ? AND kind = ?", string(account), string(kind))
+		if besideActive {
+			query = query.Where("status = ?", int(authn.FactorPending))
+		} else {
+			query = query.Where("status <> ?", int(authn.FactorDisabled))
+		}
+		if err := query.Count(&count).Error; err != nil {
 			return fmt.Errorf("counting the factors of a kind: %w", err)
 		}
 		if count >= int64(limit) {
@@ -153,6 +161,32 @@ func (g *register) activate(ctx context.Context, account authn.AccountID, id str
 		return false, fmt.Errorf("activating a factor: %w", res.Error)
 	}
 	return res.RowsAffected == 1, nil
+}
+
+// activateReplacing makes a pending row active and, in the same transaction,
+// disables the account's other active rows of the same kind -- the factor the
+// registration replaces. The replacement happens only when the activation won,
+// so a row a sweep, a reset or a removal took first leaves the old factor
+// active, and the old row keeps its data for the audit trail.
+func (g *register) activateReplacing(ctx context.Context, account authn.AccountID, id string, kind authn.FactorKind, at time.Time) (bool, error) {
+	won := false
+	err := g.session(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Exec("UPDATE "+factorTable+" SET status = ?, activated_at = ? WHERE id = ? AND account_id = ? AND status = ?",
+			int(authn.FactorActive), clock.UTC(at), id, string(account), int(authn.FactorPending))
+		if res.Error != nil {
+			return fmt.Errorf("activating a factor: %w", res.Error)
+		}
+		if res.RowsAffected != 1 {
+			return nil
+		}
+		won = true
+		return tx.Exec("UPDATE "+factorTable+" SET status = ? WHERE account_id = ? AND kind = ? AND status = ? AND id <> ?",
+			int(authn.FactorDisabled), string(account), string(kind), int(authn.FactorActive), id).Error
+	})
+	if err != nil {
+		return false, fmt.Errorf("activating a replacing factor: %w", err)
+	}
+	return won, nil
 }
 
 // updateLabel writes the label of one row of the account and says whether there

@@ -886,18 +886,18 @@ func TestEnrollingUnderAnUnreadableMaxPerKindUsesTheDeclaredDefault(t *testing.T
 // stored zero would refuse the first registration instead of admitting the fifth;
 // a stored twenty-one would admit a sixth.
 func TestAnOutOfDomainMaxPerKindUsesTheDeclaredDefault(t *testing.T) {
-	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorWebAuthn}, func(t *testing.T, r *rig) {
 		ctx := context.Background()
 		r.store.set(maxPerKindPath, 0)
-		if _, err := r.p.Enroll(ctx, flow("zero"), authn.FactorTOTP, authn.StepInput{}); err != nil {
+		if _, err := r.p.Enroll(ctx, flow("zero"), authn.FactorWebAuthn, authn.StepInput{}); err != nil {
 			t.Fatalf("with 0 stored, the first Enroll = %v, want it allowed under the declared default of %d",
 				err, defaults.MaxPerKind)
 		}
 		r.store.set(maxPerKindPath, maxMaxPerKind+1)
 		for i := 0; i < defaults.MaxPerKind; i++ {
-			r.insertRow("over", authn.FactorTOTP, authn.FactorActive, r.clock.read(), nil)
+			r.insertRow("over", authn.FactorWebAuthn, authn.FactorActive, r.clock.read(), nil)
 		}
-		if _, err := r.p.Enroll(ctx, flow("over"), authn.FactorTOTP, authn.StepInput{}); !errors.Is(err, authn.ErrFactorLimit) {
+		if _, err := r.p.Enroll(ctx, flow("over"), authn.FactorWebAuthn, authn.StepInput{}); !errors.Is(err, authn.ErrFactorLimit) {
 			t.Errorf("with %d stored, the sixth Enroll = %v, want ErrFactorLimit under the declared default of %d",
 				maxMaxPerKind+1, err, defaults.MaxPerKind)
 		}
@@ -944,9 +944,9 @@ func TestAnEmptyIdentifierIsRefusedWithoutReadingTheRegister(t *testing.T) {
 // an empty one when the step carries none: the server generates no name. A
 // label submitted on a later step does not overwrite it.
 func TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing(t *testing.T) {
-	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
-		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
-		totp.enrollFn = func(_ context.Context, f authn.FlowState, _ authn.StepInput) (authn.Step, error) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorWebAuthn}, func(t *testing.T, r *rig) {
+		passkey := r.p.factors[authn.FactorWebAuthn].(*fakeFactor)
+		passkey.enrollFn = func(_ context.Context, f authn.FlowState, _ authn.StepInput) (authn.Step, error) {
 			if len(f.Private) == 0 {
 				return confirming("seed-state"), nil
 			}
@@ -954,7 +954,7 @@ func TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing(t *testing.T) {
 		}
 		ctx := context.Background()
 
-		first, err := r.p.Enroll(ctx, flow(acct), authn.FactorTOTP,
+		first, err := r.p.Enroll(ctx, flow(acct), authn.FactorWebAuthn,
 			authn.StepInput{Fields: map[string]string{"label": "  My phone  "}})
 		if err != nil {
 			t.Fatalf("Enroll, first step: %v", err)
@@ -969,7 +969,7 @@ func TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing(t *testing.T) {
 		// the registration was started with.
 		next := flow(acct)
 		next.Private = step.PrivateOf(first)
-		last, err := r.p.Enroll(ctx, next, authn.FactorTOTP,
+		last, err := r.p.Enroll(ctx, next, authn.FactorWebAuthn,
 			authn.StepInput{Fields: map[string]string{"label": "Another name"}})
 		if err != nil {
 			t.Fatalf("Enroll, last step: %v", err)
@@ -980,7 +980,7 @@ func TestARegistrationStoresTheSubmittedLabelAndGeneratesNothing(t *testing.T) {
 		}
 
 		// A registration with no label gets no generated name.
-		first, err = r.p.Enroll(ctx, flow("another-account"), authn.FactorTOTP, authn.StepInput{})
+		first, err = r.p.Enroll(ctx, flow("another-account"), authn.FactorWebAuthn, authn.StepInput{})
 		if err != nil {
 			t.Fatalf("Enroll without a label: %v", err)
 		}
@@ -1020,4 +1020,130 @@ func TestARegistrationRefusesALabelOutsideItsDomain(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestASecondTOTPRegistrationReplacesTheActiveOne holds the one-entry rule: an
+// account keeps a single active authenticator entry, a new registration lives
+// pending beside it, and the activation retires the old row in the same step.
+// The retired row is disabled, not deleted, so the audit trail keeps it, and it
+// can no longer verify.
+// activeIDs are the identifiers of the account's active rows of one kind.
+func activeIDs(rows []authn.FactorRecord, kind authn.FactorKind) []string {
+	var ids []string
+	for _, row := range rows {
+		if row.Kind == kind && row.Status == authn.FactorActive {
+			ids = append(ids, row.ID)
+		}
+	}
+	return ids
+}
+
+func TestASecondTOTPRegistrationReplacesTheActiveOne(t *testing.T) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
+		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
+		totp.enrollFn = func(_ context.Context, f authn.FlowState, _ authn.StepInput) (authn.Step, error) {
+			if len(f.Private) == 0 {
+				return confirming("seed-state"), nil
+			}
+			return authn.StepEnrolled(authn.FactorRecord{}), nil
+		}
+		ctx := context.Background()
+
+		first, err := r.p.Enroll(ctx, flow(acct), authn.FactorTOTP, authn.StepInput{})
+		if err != nil {
+			t.Fatalf("the first enrollment: %v", err)
+		}
+		old := r.rows(acct)[0].ID
+		finish := flow(acct)
+		finish.Private = step.PrivateOf(first)
+		if _, finishErr := r.p.Enroll(ctx, finish, authn.FactorTOTP, authn.StepInput{}); finishErr != nil {
+			t.Fatalf("finishing the first enrollment: %v", finishErr)
+		}
+
+		second, err := r.p.Enroll(ctx, flow(acct), authn.FactorTOTP, authn.StepInput{})
+		if err != nil {
+			t.Fatalf("a second enrollment must stand beside the active one: %v", err)
+		}
+		answerIs(t, second, step.KindPrompt)
+		// The old entry still verifies while the new one is being proved.
+		if got := activeIDs(r.rows(acct), authn.FactorTOTP); len(got) != 1 || got[0] != old {
+			t.Fatalf("the active entry while the new one is pending is %v, want the old row %s", got, old)
+		}
+		last := flow(acct)
+		last.Private = step.PrivateOf(second)
+		if _, lastErr := r.p.Enroll(ctx, last, authn.FactorTOTP, authn.StepInput{}); lastErr != nil {
+			t.Fatalf("finishing the replacement: %v", lastErr)
+		}
+
+		active := activeIDs(r.rows(acct), authn.FactorTOTP)
+		if len(active) != 1 {
+			t.Fatalf("the account holds %d active authenticator entries, want one", len(active))
+		}
+		if active[0] == old {
+			t.Fatalf("the replacement left the old entry active")
+		}
+		// The retired row is still there, disabled, and no longer verifies.
+		if found, there := r.status(old); !there || found != authn.FactorDisabled {
+			t.Errorf("the replaced row reads %v (there %v), want disabled", found, there)
+		}
+		got, err := r.p.Verify(ctx, flow(acct), old, authn.StepInput{})
+		if err != nil {
+			t.Fatalf("Verify of the replaced row: %v", err)
+		}
+		if k := step.KindOf(got); k != step.KindRefused {
+			t.Errorf("Verify of the replaced row = %v, want a refusal", k)
+		}
+	})
+}
+
+// TestACancelledTOTPReplacementKeepsTheActiveEntry holds the failure path: a
+// replacement the reader gives up leaves the pending row releaseable and the
+// old entry active, so the account never sits without its second factor.
+func TestACancelledTOTPReplacementKeepsTheActiveEntry(t *testing.T) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
+		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
+		totp.enrollFn = func(_ context.Context, f authn.FlowState, _ authn.StepInput) (authn.Step, error) {
+			if len(f.Private) == 0 {
+				return confirming("seed-state"), nil
+			}
+			return authn.StepEnrolled(authn.FactorRecord{}), nil
+		}
+		ctx := context.Background()
+		old := r.insertRow(acct, authn.FactorTOTP, authn.FactorActive, base, nil)
+
+		replacement, err := r.p.Enroll(ctx, flow(acct), authn.FactorTOTP, authn.StepInput{})
+		if err != nil {
+			t.Fatalf("the replacement enrollment: %v", err)
+		}
+		pending := flow(acct)
+		pending.Private = step.PrivateOf(replacement)
+		if err := r.p.Abandon(ctx, pending); err != nil {
+			t.Fatalf("Abandon: %v", err)
+		}
+		if found, there := r.status(old); !there || found != authn.FactorActive {
+			t.Errorf("the active entry reads %v (there %v) after a cancelled replacement, want active", found, there)
+		}
+		if rows := r.rows(acct); len(rows) != 1 || rows[0].ID != old {
+			t.Errorf("the register after a cancelled replacement holds %+v, want only the old row", rows)
+		}
+	})
+}
+
+// TestATOTPRegistrationRefusesAName holds that the single authenticator entry
+// takes no name: a label names a factor among several, and this kind cannot have
+// several.
+func TestATOTPRegistrationRefusesAName(t *testing.T) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
+		got, err := r.p.Enroll(context.Background(), flow(acct), authn.FactorTOTP,
+			authn.StepInput{Fields: map[string]string{"label": "Work phone"}})
+		if err != nil {
+			t.Fatalf("Enroll: %v", err)
+		}
+		if k := step.KindOf(got); k != step.KindRefused || !errors.Is(step.CauseOf(got), authn.ErrInvalidArgument) {
+			t.Errorf("a named TOTP registration = %v (cause %v), want a refusal of ErrInvalidArgument", k, step.CauseOf(got))
+		}
+		if rows := r.rows(acct); len(rows) != 0 {
+			t.Errorf("the refused registration wrote %+v, want no row", rows)
+		}
+	})
 }

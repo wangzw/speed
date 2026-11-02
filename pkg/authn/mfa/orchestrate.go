@@ -314,7 +314,13 @@ func (m *product) beginEnroll(ctx context.Context, f authn.FlowState, kind authn
 	if err != nil {
 		return authn.StepRefused(err), nil
 	}
-	rec, err := m.register.insertPending(ctx, f.Account, kind, label, m.settings.maxPerKind(), m.clock.Now())
+	// A kind that may be held only once has nothing for a name to tell
+	// apart, so it refuses one rather than storing a name no surface reads.
+	if !factorTakesName(kind) && label != "" {
+		return authn.StepRefused(fmt.Errorf("%w: a %s factor carries no name", authn.ErrInvalidArgument, kind)), nil
+	}
+	limit, replaces := m.kindLimit(kind)
+	rec, err := m.register.insertPending(ctx, f.Account, kind, label, limit, replaces, m.clock.Now())
 	switch {
 	case errors.Is(err, authn.ErrFactorLimit):
 		m.record(ctx, actionEnroll, outcomeDenied, authn.FactorRecord{Account: f.Account, Kind: kind}, byClassSelf)
@@ -393,7 +399,15 @@ func (m *product) settleEnroll(ctx context.Context, rec authn.FactorRecord, got 
 // brought back, and the registration is refused.
 func (m *product) finishEnroll(ctx context.Context, rec authn.FactorRecord, got authn.Step) authn.Step {
 	at := m.clock.Now()
-	won, err := m.register.activate(ctx, rec.Account, rec.ID, at)
+	var won bool
+	var err error
+	if _, replaces := m.kindLimit(rec.Kind); replaces {
+		// The single entry of this kind is replaced: the new row activates
+		// and the old one retires in one transaction.
+		won, err = m.register.activateReplacing(ctx, rec.Account, rec.ID, rec.Kind, at)
+	} else {
+		won, err = m.register.activate(ctx, rec.Account, rec.ID, at)
+	}
 	switch {
 	case err != nil:
 		m.logger.Warn(ModuleName+": the factor register could not be written",
