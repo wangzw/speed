@@ -118,7 +118,7 @@
 | [特性态由 auth-core 随会话提交持有，读取失败是独立状态，只有宿主读它](adr-web-feature-state.md) |
 | [route-kit 按宿主给出的特性在场判定收窄注册面，特性缺席的页面与未登记路径同走 `fallback`](adr-web-route-kit.md) |
 | [控制台列表页的行详情与创建改由侧边面板承载，面板是页内状态而非路由](adr-web-side-panel.md) |
-| [写入的结果由每个反馈作用域的一个槽承载，最后落定的结果为准，成功确认为默认](adr-web-write-feedback.md) |
+| [写入的结果由每个反馈作用域的一个槽承载，同页至多一条结果、以最后落定的为准，成功确认为默认](adr-web-write-feedback.md) |
 | [冒充期间由应用壳在应用栏之下显示可隐藏的横幅、外壳常驻 chrome 区里的身份指示并提供结束入口，身份变更按会话边界处理依赖身份的状态](adr-web-impersonation-shell.md) |
 | [宿主可为平台命名空间补整套语言，注册期全覆盖规则不变](adr-web-host-language-sets.md) |
 | [认证复用接缝的归属](adr-web-auth-seams.md) |
