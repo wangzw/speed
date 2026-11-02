@@ -216,6 +216,17 @@ interface RenameDraft {
   readonly label: string
 }
 
+/** What a reply leaves the flow doing: waiting on a step, or parked on a
+ * `complete` step whose automatic submission was refused. */
+type AdvanceOutcome =
+  | { readonly kind: 'state'; readonly state: AuthnFlowState }
+  | {
+      readonly kind: 'retry'
+      readonly step: AuthnStep
+      readonly seq: number
+      readonly failure: unknown
+    }
+
 /** Parses a server timestamp; answers null for an absent or malformed
  * value so a bad row can never reach Intl and throw. */
 function parseDate(iso: string | undefined): Date | null {
@@ -512,8 +523,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
    * confirm the reader gave takes the whole flow: such a step carries no
    * input and asks no question. A seq is submitted at most once, so a reply
    * that keeps naming the same one is rendered for the reader instead of
-   * looping. */
-  async function advanceFlow(state: AuthnFlowState): Promise<AuthnFlowState> {
+   * looping. A refused automatic submission parks the complete step with its
+   * own confirm, which is the control the reader retries. */
+  async function advanceFlow(state: AuthnFlowState): Promise<AdvanceOutcome> {
     let current = state
     const completed = new Set<number>()
     while (
@@ -521,13 +533,16 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       current.next.kind === 'complete' &&
       !completed.has(current.seq)
     ) {
-      completed.add(current.seq)
-      current = await session.answerFlow({
-        seq: current.seq,
-        step: 'complete',
-      })
+      const step = current.next
+      const seq = current.seq
+      completed.add(seq)
+      try {
+        current = await session.answerFlow({ seq, step: 'complete' })
+      } catch (failure) {
+        return { kind: 'retry', step, seq, failure }
+      }
     }
-    return current
+    return { kind: 'state', state: current }
   }
 
   /** The identifier of the row this enrollment added: the active row of the
@@ -597,19 +612,31 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     wizardFeedback.reset()
     setEnrolling(true)
     try {
-      const state = await advanceFlow(
+      const outcome = await advanceFlow(
         await session.startAuthenticatedFlow({
           purpose: 'enroll',
           input: { kind: factorKind, label: '' },
           ...(returnPath === undefined ? {} : { return_to: returnPath }),
         }),
       )
+      const stillOpen = outcome.kind === 'retry' || 'next' in outcome.state
       if (token !== panelTokenRef.current || !mountedRef.current) {
-        if ('next' in state) {
+        if (stillOpen) {
           void sessionRef.current.abandonFlow().catch(() => undefined)
         }
         return
       }
+      if (outcome.kind === 'retry') {
+        flowOpenRef.current = true
+        setPanel((current) =>
+          current !== null && current.kind === factorKind
+            ? { ...current, step: outcome.step, seq: outcome.seq }
+            : current,
+        )
+        wizardFeedback.fail(outcome.failure)
+        return
+      }
+      const state = outcome.state
       if ('next' in state) {
         flowOpenRef.current = true
         setPanel((current) =>
@@ -668,9 +695,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     wizardFeedback.reset()
     setEnrolling(true)
     try {
-      let state: AuthnFlowState
+      let outcome: AdvanceOutcome
       try {
-        state = await advanceFlow(
+        outcome = await advanceFlow(
           await session.answerFlow({
             seq: current.seq,
             step: answer.step,
@@ -685,12 +712,24 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         wizardFeedback.fail(failure)
         return
       }
+      const stillOpen = outcome.kind === 'retry' || 'next' in outcome.state
       if (token !== panelTokenRef.current || !mountedRef.current) {
-        if ('next' in state) {
+        if (stillOpen) {
           void sessionRef.current.abandonFlow().catch(() => undefined)
         }
         return
       }
+      if (outcome.kind === 'retry') {
+        flowOpenRef.current = true
+        setPanel((open) =>
+          open !== null && open.kind === kind
+            ? { ...open, step: outcome.step, seq: outcome.seq }
+            : open,
+        )
+        wizardFeedback.fail(outcome.failure)
+        return
+      }
+      const state = outcome.state
       if ('next' in state) {
         flowOpenRef.current = true
         setPanel((open) =>
