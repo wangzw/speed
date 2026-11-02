@@ -2,10 +2,11 @@
  * FlowStep behaviour: the guarded factor-kind vocabulary of a flow step, the
  * TOTP enrolment block and the passkey ceremony's failure wording.
  *
- * What this suite pins: a factor option renders its server-supplied label
- * when one arrives, otherwise a known kind's translated name, and an
- * unknown kind shows the kind as given; an enrollment kind follows the
- * same known/unknown rule. The package keeps its vocabulary locally
+ * What this suite pins: a factor option reads as its known kind's
+ * translated name, a repeated kind distinguishes its entries by name
+ * ("Kind · Name") and an unnamed entry from the second on by ordinal
+ * ("Kind (2)"), and an unknown kind shows the kind as given; an enrollment
+ * kind follows the same known/unknown rule. The package keeps its vocabulary locally
  * (auth-ui and account-ui keep their own copies), so this suite is the
  * console-ui side of the registered sync obligation. The TOTP cases pin
  * the step's URI becoming the shipped panel's QR symbol and manual secret,
@@ -75,7 +76,7 @@ function assertionCredential(id: string) {
 }
 
 describe('FlowStep labels', () => {
-  it('lets a server label win and translates a known factor kind', () => {
+  it('reads each factor as its kind, ignoring a sole factor’s name', () => {
     render({
       kind: 'factor',
       factors: [
@@ -84,10 +85,58 @@ describe('FlowStep labels', () => {
       ],
     })
 
-    expect(screen.getByRole('button', { name: 'My app' })).toBeTruthy()
+    // Each kind is offered once, so the kind name is the whole label; the
+    // registration-time name does not replace it.
+    expect(
+      screen.getByRole('button', { name: zhCN.stepUp.factorKind.totp }),
+    ).toBeTruthy()
     expect(
       screen.getByRole('button', { name: zhCN.stepUp.factorKind.sms }),
     ).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'My app' })).toBeNull()
+  })
+
+  it('labels same-named factors of different kinds by their kinds', () => {
+    // Two factors whose registration-time names match must not render two
+    // identical buttons: the step answers "how do I prove it", so the kind
+    // is the label.
+    render({
+      kind: 'factor',
+      factors: [
+        { id: 'f1', kind: 'webauthn', label: 'Chrome · macOS' },
+        { id: 'f2', kind: 'totp', label: 'Chrome · macOS' },
+      ],
+    })
+
+    expect(
+      screen.getByRole('button', { name: zhCN.stepUp.factorKind.webauthn }),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: zhCN.stepUp.factorKind.totp }),
+    ).toBeTruthy()
+    expect(
+      screen.queryAllByRole('button', { name: 'Chrome · macOS' }),
+    ).toHaveLength(0)
+  })
+
+  it('distinguishes a repeated kind by name and by ordinal', () => {
+    render({
+      kind: 'factor',
+      factors: [
+        { id: 'f1', kind: 'webauthn', label: 'Work MacBook' },
+        { id: 'f2', kind: 'webauthn' },
+      ],
+    })
+
+    const kind = zhCN.stepUp.factorKind.webauthn
+    const named = zhCN.stepUp.factorOptionNamed
+      .replace('{{kind}}', kind)
+      .replace('{{name}}', 'Work MacBook')
+    const ordinal = zhCN.stepUp.factorOptionOrdinal
+      .replace('{{kind}}', kind)
+      .replace('{{position}}', '2')
+    expect(screen.getByRole('button', { name: named })).toBeTruthy()
+    expect(screen.getByRole('button', { name: ordinal })).toBeTruthy()
   })
 
   it('translates known enroll kinds and shows an unknown kind as given', () => {

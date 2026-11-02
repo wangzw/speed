@@ -333,7 +333,9 @@ describe('StepUpChallenge', () => {
         />,
       )
       const user = userEvent.setup()
-      await screen.findByRole('button', { name: 'Phone' })
+      await screen.findByRole('button', {
+        name: zhCN.stepUp.factorKind.sms,
+      })
       // The block renders above the SMS factor choice; its widget yields a
       // single-use token the answer presents.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
@@ -341,7 +343,9 @@ describe('StepUpChallenge', () => {
       act(() => {
         fake.token('token-1')
       })
-      await user.click(screen.getByRole('button', { name: 'Phone' }))
+      await user.click(
+        screen.getByRole('button', { name: zhCN.stepUp.factorKind.sms }),
+      )
       await waitFor(() => expect(requests).toHaveLength(1))
       expect(requests[0]).toMatchObject({
         step: 'factor',
