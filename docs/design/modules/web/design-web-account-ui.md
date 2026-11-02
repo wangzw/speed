@@ -57,6 +57,10 @@ interface IdentifiersSectionProps {
   readonly emailAvailable?: boolean // 添加面是否提供邮箱一项；缺省提供
   readonly offerUsername?: boolean // 添加面是否提供用户名一项；缺省提供
   readonly humanGate?: AuthnHumanGate // 已读到的发现文档的人机门槛；缺省由本节读方法文档
+  readonly returnPath?: string // 宿主当前路径，随提权流程作 return_to；缺省用部署的默认回跳目标
+  readonly axis?: 'both' | 'signIn' | 'contact' // 本节管理哪条轴：both 缺省；signIn 去掉联系方式控件与列表；contact 去掉登录方式开关与列表
+  readonly showAddButton?: boolean // 本节是否渲染自己的添加入口；false 时把入口留给宿主，经 openAddSignal 打开
+  readonly openAddSignal?: number // 宿主递增以打开添加面；首次之后的每次变化打开
 }
 
 interface ContactVerificationSectionProps {
