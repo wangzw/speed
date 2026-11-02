@@ -297,7 +297,7 @@ type Requirement struct {
 | `authn/login/wechatmp` | `authn.login.wechat-mp` | `LoginMethod`（名 `wechat.mp`） | 否 | 无 | 无 | 无 |
 | `authn/humanverify` | `authn.humanverify` | `HumanVerifier` | 是 | 无 | `kv.KV` ○（`pow` 的挑战与一次性消费）、`settings.Store` ○（`pow` 的两项设置）、`mount.Mounter` ○（`pow` 的挑战路由）、`log.Logger` ○（登记 Turnstile 密钥的字面量脱敏规则，[REF-cloudflare-turnstile](../../../references.md)） | 无 |
 | `authn/mfa` | `authn.mfa` | `MFA`；`AccountLifecycle` | 是 | `db.Database`、`mount.Mounter`、`Accounts`、`AccountAdmin`、`Throttle` | 全部 `Factor`、`Sessions` ○（重置时撤销会话；缺席则只停因素）、`settings.Store` ○、`audit.Audit` ○、`event.Bus` ○ | `authn_factors` |
-| `authn/mfa/totp` | `authn.mfa.totp` | `Factor` | 否 | `db.Database`、`MFA` | 无 | `authn_totp_secrets` |
+| `authn/mfa/totp` | `authn.mfa.totp` | `Factor` | 否 | `db.Database`、`MFA`、`Accounts` | 无 | `authn_totp_secrets` |
 | `authn/mfa/sms` | `authn.mfa.sms` | `Factor` | 否 | `SMSCodes`、`Accounts` | 无 | 无 |
 | `authn/mfa/webauthn` | `authn.mfa.webauthn` | `Factor`、`LoginMethod`（通行密钥） | 否 | `db.Database`、`MFA`、`Accounts` | 无 | `authn_webauthn_users`、`authn_webauthn_credentials` |
 | `authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | 是 | `db.Database`、`sms.Registry`、`sms.Sender` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | `authn_challenges` |

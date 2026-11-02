@@ -122,7 +122,7 @@
 | `authn.login.wechat-web.app-secret` | 字符串 | 无 | 默认 | 必填、敏 | 同上的应用密钥 |
 | `authn.login.wechat-mp.app-id` | 字符串 | 无 | 默认 | 必填 | 公众号网页授权（[REF-wechat-oa-web-auth](../../../references.md)）登录的应用标识；与网站应用各自一份配置，没有联合判定；与 `app-secret` 都空时方法自行关闭 |
 | `authn.login.wechat-mp.app-secret` | 字符串 | 无 | 默认 | 必填、敏 | 同上的应用密钥 |
-| `authn.mfa.totp.issuer` | 字符串 | `authn.gate.mount.public-url` 的主机名 | 默认 | | 写进 `otpauth://`（[REF-otpauth-key-uri-format](../../../references.md)）地址的发行者名 |
+| `authn.mfa.totp.issuer` | 字符串 | `authn.gate.mount.public-url` 的主机名 | 默认 | | 验证器应用里显示的站点名，即 `otpauth://`（[REF-otpauth-key-uri-format](../../../references.md)）地址的发行者；部署方自行设置 |
 | `authn.mfa.webauthn.rp-id` | 字符串 | `authn.gate.mount.public-url` 的主机名 | 默认 | | 依赖方标识（[REF-webauthn](../../../references.md)）；须等于基址主机或其父域 |
 | `authn.mfa.webauthn.rp-name` | 字符串 | `speed` | 默认 | | 依赖方的显示名 |
 | `authn.mfa.webauthn.origins` | 字符串列表 | `authn.gate.mount.public-url` 的来源 | 默认 | | 依赖方接受的来源 |

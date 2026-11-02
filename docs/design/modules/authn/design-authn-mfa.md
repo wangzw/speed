@@ -204,7 +204,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 | `audit.Audit` | 可选 | 尽力档审计；强制档动作的审计由管理面处理器承担，那里把它当必需。 |
 | `event.Bus` | 可选 | 发布 `authn.factor.changed`，提交之后 `Bus.Publish`，不经发件箱；订阅 `authn.account.deleted` 作补偿。 |
 
-因素子包的依赖：`authn.mfa.totp` 依赖 `db.Database` 与 `MFA`；`authn.mfa.sms` 依赖 `SMSCodes` 与 `Accounts`；`authn.mfa.webauthn` 依赖 `db.Database`、`MFA` 与 `Accounts`，另交付通行密钥登录方法。各因素子包都不依赖 kv。因素子包用到的第三方库在 `pkg/go.mod` 里精确钉版：`authn.mfa.totp` 用 `github.com/pquerna/otp`（[REF-pquerna-otp](../../../references.md)） v1.5.0，`authn.mfa.webauthn` 用 `github.com/go-webauthn/webauthn`（[REF-go-webauthn](../../../references.md)） v0.18.2；各库只被对应的因素叶子包 import，两条都由 `pkg/authn/deps_test.go` 的守卫守住。
+因素子包的依赖：`authn.mfa.totp` 依赖 `db.Database`、`MFA` 与 `Accounts`；`authn.mfa.sms` 依赖 `SMSCodes` 与 `Accounts`；`authn.mfa.webauthn` 依赖 `db.Database`、`MFA` 与 `Accounts`，另交付通行密钥登录方法。各因素子包都不依赖 kv。因素子包用到的第三方库在 `pkg/go.mod` 里精确钉版：`authn.mfa.totp` 用 `github.com/pquerna/otp`（[REF-pquerna-otp](../../../references.md)） v1.5.0，`authn.mfa.webauthn` 用 `github.com/go-webauthn/webauthn`（[REF-go-webauthn](../../../references.md)） v0.18.2；各库只被对应的因素叶子包 import，两条都由 `pkg/authn/deps_test.go` 的守卫守住。
 
 **被依赖方向。** `authn.login` 把 `MFA` 当必需：库里已有账户登记了因素而装配里没有因素编排时，登录不能无声跳过第二因素。`authn.impersonation` 也把 `MFA` 当必需：没有因素编排的装配里没有任何账户满足发起者的强认证要求。`authn.admin` 把 `MFA` 当可选，缺席时没有 `mfa-*` 与 `password` 路由，因为这些路由要核对 `MFA.Seasoned`。
 
@@ -482,7 +482,7 @@ CREATE TABLE authn_webauthn_credentials (
 
 ### TOTP
 
-- **登记。** 用 `pquerna/otp` 的 `totp.Generate`：20 字节随机密钥、SHA-1、6 位、30 秒，与各认证器应用的公约一致。发行者名由配置给出（见 [authn-config](design-authn-config.md)）。写一行待确认因素与加密的种子，返回 `otpauth://`（[REF-otpauth-key-uri-format](../../../references.md)）地址；二维码由客户端画，服务端不调库里的图像函数。**种子只在这次应答里出现一次。** 登记的确认步要求提交一个有效码才转启用。
+- **登记。** 用 `pquerna/otp` 的 `totp.Generate`：20 字节随机密钥、SHA-1、6 位、30 秒，与各认证器应用的公约一致。写一行待确认因素与加密的种子，返回 `otpauth://`（[REF-otpauth-key-uri-format](../../../references.md)）地址；二维码由客户端画，服务端不调库里的图像函数。**种子只在这次应答里出现一次。** 地址的标签是「发行者:账户名」：账户名取该账户的用户名标识，账户没有用户名或读取失败时取账户 ID，不因此失败登记；发行者是部署可配置的站点名（见 [authn-config](design-authn-config.md)）。登记的确认步要求提交一个有效码才转启用。
 - **校验。** 自写（取舍见 [ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）：用 `GenerateCodeCustom` 对前一步、当前步、后一步各生成一次，逐个做常量时间比较，取命中的计数器 `c`，要求 `c > last_counter`，然后条件更新：
 
   ```sql
