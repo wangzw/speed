@@ -60,7 +60,7 @@ interface IdentifiersSectionProps {
   readonly returnPath?: string // 宿主当前路径，随提权流程作 return_to；缺省用部署的默认回跳目标
   readonly axis?: 'both' | 'signIn' | 'contact' // 本节管理哪条轴：both 缺省；signIn 去掉联系方式控件与列表；contact 去掉登录方式开关与列表
   readonly showAddButton?: boolean // 本节是否渲染自己的添加入口；false 时把入口留给宿主，经 openAddSignal 打开
-  readonly openAddSignal?: number // 宿主递增以打开添加面；首次之后的每次变化打开
+  readonly openAddSignal?: number // 宿主递增以打开添加面；首次之后的每次变化打开；与本节自带的添加入口走同一条开启路径，开启时关闭行内验证并清空节内共享结果，因此一节同时至多一条码流程
 }
 
 interface ContactVerificationSectionProps {
