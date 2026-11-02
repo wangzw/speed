@@ -39,7 +39,18 @@
  *    with the ordinary action-row spacing.
  *  - Fail inside the panel. A refused start or answer renders its code in
  *    the panel's own region, beside the controls that can be corrected; the
- *    panel stays open with the typed code and name.
+ *    panel stays open with the typed code and name. This is the one place a
+ *    failure is not the section's result: a control group's result region is
+ *    below the groups, and the panel is the group it belongs to while it is
+ *    open.
+ *
+ *  - One result region. Enrollment, rename and removal are writes of this
+ *    section, so they report through one `useWriteFeedback` slot rendered
+ *    once below the grouped methods. A new attempt resets the slot first,
+ *    and the result that settles last replaces the earlier one: the
+ *    enrollment's confirmation and a later removal never stand side by
+ *    side. The result stays until the next attempt or until the reader
+ *    leaves the section; nothing clears it on a timer.
  *  - Abandon. A panel the reader cancels, or the section unmounting while a
  *    flow is open, releases the flow (DELETE /flows/current) so the server
  *    drops the pending row the registration wrote instead of leaving it to
@@ -326,9 +337,10 @@ function FactorActionsMenu({
   )
 }
 
-/** The enrollment group's result region. The panel's steps and a landed
- * enrollment are mutually exclusive positions of one control group, so they
- * render the group's one region through this component. */
+/** The enrollment panel's own failure region. A refused start or answer is
+ * correctable beside the controls that produced it, so it renders inside the
+ * panel; a settled enrollment reports through the section's result region
+ * instead. */
 function EnrollmentFeedback({
   outcome,
 }: {
@@ -354,16 +366,15 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
   // The row whose name is being edited, if any.
   const [renameDraft, setRenameDraft] = useState<RenameDraft | null>(null)
-  // The kind whose enrollment owns the group-level feedback slot, if any.
-  // It outlives the panel, so a landed enrollment's confirmation still
-  // renders in the group that produced it.
-  const [enrollKind, setEnrollKind] = useState<string | null>(null)
-  // Enrollment is its own control group: its result sits below the entries
-  // or the panel of the group that produced it. The row actions -- rename
-  // and removal -- are one control group below the list, so they share one
-  // scope and one region, and the later result replaces the earlier one.
-  const enrollFeedback = useWriteFeedback()
-  const rowFeedback = useWriteFeedback()
+  // The section's one result slot: enrollment, rename and removal all report
+  // through it, and it renders once below the grouped methods. The slot
+  // holds at most one outcome, so the result that settles last replaces the
+  // earlier one instead of standing beside it.
+  const feedback = useWriteFeedback()
+  // The open panel's own failure slot: a refused start or answer is
+  // correctable beside the controls that produced it, so it renders inside
+  // the panel rather than in the section's result region.
+  const wizardFeedback = useWriteFeedback()
   // The deployment's enrollable factor kinds (GET /api/v1/auth/methods'
   // mfa.factors). null is unresolved -- still reading, or the read failed:
   // the enroll entries are then withheld rather than guessed.
@@ -468,8 +479,8 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     enrolling ||
     removeMutation.isPending ||
     updateMutation.isPending ||
-    enrollFeedback.pending ||
-    rowFeedback.pending
+    feedback.pending ||
+    wizardFeedback.pending
 
   /** The translated name of a factor kind, the guarded vocabulary's generic
    * label for a kind this package has no wording for. */
@@ -568,8 +579,8 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         factor.id === undefined ? [] : [factor.id],
       ),
     )
-    enrollFeedback.reset()
-    setEnrollKind(null)
+    feedback.reset()
+    wizardFeedback.reset()
     const token = ++panelTokenRef.current
     setPanel({ kind: factorKind, label: '', step: null, seq: 0 })
     void startEnrollFlow(factorKind, token)
@@ -581,6 +592,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     factorKind: string,
     token: number,
   ): Promise<void> {
+    // A retry starts a new attempt: the slot is cleared before it goes out.
+    feedback.reset()
+    wizardFeedback.reset()
     setEnrolling(true)
     try {
       const state = await advanceFlow(
@@ -609,16 +623,15 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       flowOpenRef.current = false
       setPanel(null)
       if (state.state === 'enrolled') {
-        setEnrollKind(factorKind)
         try {
-          enrollFeedback.succeed(await finishEnrollment(factorKind, ''))
+          feedback.succeed(await finishEnrollment(factorKind, ''))
         } catch (failure) {
-          enrollFeedback.fail(failure)
+          feedback.fail(failure)
         }
         return
       }
       // A settled state other than 'enrolled' is not an enroll outcome.
-      enrollFeedback.fail({ code: 'client.unknown' })
+      feedback.fail({ code: 'client.unknown' })
     } catch (failure) {
       if (token !== panelTokenRef.current || !mountedRef.current) {
         return
@@ -631,7 +644,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         setGate({ kind: 'enroll', factorKind, reason })
         return
       }
-      enrollFeedback.fail(failure)
+      wizardFeedback.fail(failure)
     } finally {
       if (token === panelTokenRef.current) {
         setEnrolling(false)
@@ -650,7 +663,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     }
     const token = panelTokenRef.current
     const kind = current.kind
-    enrollFeedback.reset()
+    // A new attempt clears the section's slot before it goes out.
+    feedback.reset()
+    wizardFeedback.reset()
     setEnrolling(true)
     try {
       let state: AuthnFlowState
@@ -667,7 +682,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           return
         }
         // A refused answer is correctable in the panel that asked for it.
-        enrollFeedback.fail(failure)
+        wizardFeedback.fail(failure)
         return
       }
       if (token !== panelTokenRef.current || !mountedRef.current) {
@@ -688,18 +703,15 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       // A settled flow has spent its state, so there is nothing to release.
       flowOpenRef.current = false
       setPanel(null)
-      setEnrollKind(kind)
       if (state.state !== 'enrolled') {
         // A settled state other than 'enrolled' is not an enroll outcome.
-        enrollFeedback.fail({ code: 'client.unknown' })
+        feedback.fail({ code: 'client.unknown' })
         return
       }
       try {
-        enrollFeedback.succeed(
-          await finishEnrollment(kind, current.label.trim()),
-        )
+        feedback.succeed(await finishEnrollment(kind, current.label.trim()))
       } catch (failure) {
-        enrollFeedback.fail(failure)
+        feedback.fail(failure)
       }
     } finally {
       if (token === panelTokenRef.current) {
@@ -714,7 +726,8 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     panelTokenRef.current += 1
     releaseEnrollFlow()
     setPanel(null)
-    enrollFeedback.reset()
+    feedback.reset()
+    wizardFeedback.reset()
   }
 
   /** Whether a rename answer says the factor is not there, or is not the
@@ -744,7 +757,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     // same. A non-rotating removal runs bare, because wrapping it would
     // discard a genuine anonymous answer and postpone a real sign-out.
     const rotates = removed === undefined || removed.status === 'active'
-    return rowFeedback.run(async () => {
+    return feedback.run(async () => {
       try {
         const write = () => removeMutation.mutateAsync({ id: factorId })
         const settle = async (): Promise<string> => {
@@ -784,7 +797,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
    * that is gone closes the editor and rereads the list once, so the
    * sentence and the list agree. */
   function renameFactor(factorId: string, label: string): Promise<void> {
-    return rowFeedback.run(async () => {
+    return feedback.run(async () => {
       try {
         const updated = await updateMutation.mutateAsync({
           id: factorId,
@@ -1046,7 +1059,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                               />
                             )}
                             <EnrollmentFeedback
-                              outcome={enrollFeedback.outcome}
+                              outcome={wizardFeedback.outcome}
                             />
                           </Box>
                         ) : (
@@ -1229,13 +1242,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                 })}
                               </Box>
                             ) : null}
-                            {enrollKind === kind ? (
-                              <Box sx={{ mt: 2 }}>
-                                <EnrollmentFeedback
-                                  outcome={enrollFeedback.outcome}
-                                />
-                              </Box>
-                            ) : null}
                           </>
                         )}
                       </Box>
@@ -1244,10 +1250,10 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                 </Box>
               )}
 
-              {/* The row actions' one result, below the groups they belong
-                  to. Rename and removal share this scope, so the later
-                  result replaces the earlier one. */}
-              <WriteFeedbackRegion outcome={rowFeedback.outcome} />
+              {/* The section's one result, below the groups the writes
+                  belong to. Enrollment, rename and removal share this slot,
+                  so the later result replaces the earlier one. */}
+              <WriteFeedbackRegion outcome={feedback.outcome} />
             </Box>
           )
         }}

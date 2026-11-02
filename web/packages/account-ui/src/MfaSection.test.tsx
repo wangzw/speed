@@ -1684,9 +1684,10 @@ describe('MfaSection', () => {
     ).toBeNull()
   })
 
-  it('keeps the enrollment confirmation when a removal settles later', async () => {
-    // Enrollment and removal are two control groups with their own scopes:
-    // settling the removal must not clear the enrollment's confirmation.
+  it('shows only the later removal result after an enrollment', async () => {
+    // Enrollment and removal report through the section's one result slot:
+    // the later removal replaces the enrollment's confirmation instead of
+    // the two standing beside each other.
     let enrolled = false
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
@@ -1755,7 +1756,7 @@ describe('MfaSection', () => {
     )
     expect(await screen.findByText(enrollText)).toBeTruthy()
 
-    // Remove the pre-existing row through its own scope.
+    // Remove the pre-existing row.
     const dialog = await openRemoveConfirm(user, 'Old app')
     await user.click(
       within(dialog).getByRole('button', {
@@ -1765,18 +1766,65 @@ describe('MfaSection', () => {
 
     const removeText = zhCN.mfa.removed.replace('{{factor}}', 'Old app')
     expect(await screen.findByText(removeText)).toBeTruthy()
-    // Both outcomes stand, each in its own control group's region.
-    const enrollRegion = screen.getByText(enrollText).closest('[role="status"]')
-    const removeRegion = screen.getByText(removeText).closest('[role="status"]')
-    expect(enrollRegion).not.toBeNull()
-    expect(removeRegion).not.toBeNull()
-    expect(enrollRegion).not.toBe(removeRegion)
+    // The one slot holds the later result: the enrollment's confirmation is
+    // gone, not standing beside the removal's.
+    await waitFor(() => expect(screen.queryByText(enrollText)).toBeNull())
+  })
+
+  it('clears the previous result when a new attempt starts', async () => {
+    // The section's result slot is cleared when a new write attempt starts,
+    // even an attempt that opens an enrollment rather than a row action.
+    let removed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: removed ? [] : [factor({ id: 'factor-1' })],
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-1'
+      ) {
+        removed = true
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'enroll',
+          next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const dialog = await openRemoveConfirm(user, 'My authenticator')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+    const removeText = zhCN.mfa.removed.replace(
+      '{{factor}}',
+      'My authenticator',
+    )
+    expect(await screen.findByText(removeText)).toBeTruthy()
+
+    // Opening an enrollment is a new attempt: the slot is reset before the
+    // flow goes out, so the removal's confirmation leaves the screen.
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+    await waitFor(() => expect(screen.queryByText(removeText)).toBeNull())
   })
 
   it('replaces a rename result with a later removal result', async () => {
-    // Rename and removal are one control group below the list: the result
-    // that settles last replaces the earlier one instead of standing beside
-    // it.
+    // Rename and removal report through the section's one result slot: the
+    // result that settles last replaces the earlier one instead of standing
+    // beside it.
     let renamed = false
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
