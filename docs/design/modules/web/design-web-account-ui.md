@@ -14,7 +14,7 @@
 - `AppearanceSection`：外观主题的选择。它是受控节：预设列表、每个预设的显示名、当前值与选择回调都由宿主给出，本包不 import `@speed/theme-presets`、不读主题 provider，也不持有选择状态。宿主把选择接到主题 provider 后，切换立即生效。
 - `SessionsSection`：账户的会话与设备列表，当前会话所属的那条打上当前徽标，逐条撤销与批量撤销「其它会话」。撤销自己的会话是低损失动作（行上不再确认），撤销其余走 ui-kit 危险 `ConfirmDialog` 的单次确认——它是可恢复的动作（被登出的设备再登录即可），不设 `doubleConfirm` 两步守卫，免得比不可逆的删除还重。
 - `SocialBindingsSection` 加 `BindingCallbackHandler`：社交绑定面与在宿主回调路由上完成一次绑定的处理器。已绑定的社交与企业身份是登录方式组的一类，不列在联系方式组（REQ-account-067）。外部身份只经本节的显式添加建立；登录不按提供方声明的地址接管账户或并入绑定（REQ-signup-049）。添加区的渠道取自部署的发现文档（`GET /api/v1/auth/methods` 中 `kind=redirect` 的方法）。
-- `MfaSection`：经加强认证（step-up）门控的两步验证设置。清单经读发现，按种类分组：每个已装配种类成一节，标题取 `mfa.factor.kind.<kind>`（未知种类用通用的其它名称）；部署公布该种类可登记时，标题右侧有唯一一个添加动作，文案恒为「添加」，与该节是否已有已启用行无关。组内只列已启用与已停用条目，待确认（pending）行是登记流程的中间态、由向导持有，不渲染；已停用行在名称旁带弱化的「已停用」标记。行内显示名称（无名称回退种类名）与最近使用时刻（按账户时区链格式化），行尾溢出菜单提供重命名与移除，重命名在行内展开编辑器——名称字段独占一行并占满编辑区的文本列宽，取消与保存的动作行在其下方靠右（取消在前、保存在后）；已停用行只提供移除。重命名走 `PATCH /api/v1/auth/factors/{id}`；移除走 `DELETE /api/v1/auth/factors/{id}`，经 ui-kit 危险 `ConfirmDialog`，需要新鲜多因素认证时开提权对话框并在成功后重跑一次。登记入口按发现文档的 `mfa.factors` 逐个生成：点击后在该节就地展开向导、替换该节的条目，标题取参数化的 `mfa.enroll.title` 并点名正在添加的种类，每一步在控件之上给一句确认之后会发生什么的说明，取消在左、确认为主且相邻。只启用一种方式且部署公布可登记种类时，分组之上显示建议再添加一种的提示。因素行不渲染状态 chip。
+- `MfaSection`：经加强认证（step-up）门控的两步验证设置。清单经读发现，按种类分组：每个已装配种类成一节，标题取 `mfa.factor.kind.<kind>`（未知种类用通用的其它名称）；部署公布该种类可登记时，标题右侧有唯一一个添加动作，文案恒为「添加」，与该节是否已有已启用行无关。组内只列已启用与已停用条目，待确认（pending）行是登记流程的中间态、由登记面板持有，不渲染；已停用行在名称旁带弱化的「已停用」标记。行内显示名称（无名称回退种类名）与最近使用时刻（按账户时区链格式化），行尾溢出菜单提供重命名与移除，重命名在行内展开编辑器——名称字段独占一行并占满编辑区的文本列宽，取消与保存的动作行在其下方靠右（取消在前、保存在后）；已停用行只提供移除。重命名走 `PATCH /api/v1/auth/factors/{id}`；移除走 `DELETE /api/v1/auth/factors/{id}`，经 ui-kit 危险 `ConfirmDialog`，需要新鲜多因素认证时开提权对话框并在成功后重跑一次。登记入口按发现文档的 `mfa.factors` 逐个生成：点击后在该节就地展开登记面板、替换该节的条目，面板把名称字段、该方法的正文与唯一一个确认控件放在一起，标题取参数化的 `mfa.enroll.title` 并点名正在添加的种类，正文之上给一句确认之后会发生什么的说明，取消在左、确认为主且相邻。只启用一种方式且部署公布可登记种类时，分组之上显示建议再添加一种的提示。因素行不渲染状态 chip。
 
 这些面是节，不是一个带路由的屏：拥有它们的页面、它们之上的标题、以及本包之外的其它面（通用属性集的编辑、登录历史）都是宿主内容。
 
@@ -184,7 +184,7 @@ sequenceDiagram
 
 本包的每个表单把动作行排在字段之下：主操作在最右，次要操作在其左，相邻控件只隔主题间距的一个步长；动作行占满表单的内容宽度，右缘落在表单内容区右缘。没有提交动作的表单（例如内联显示名的自动提交字段）不渲染动作行。
 
-**表单字段宽度。** 文本字段占满所在容器的内容宽度：卡片内容区、对话框内容区或行内编辑器的文本列。同一页的表单字段取同一宽度，节内不以窄栏改写字段宽度；需要更窄的容器时由宿主限定容器，字段随之收窄。600px（ui-kit 的 `FORM_MAX_WIDTH`）是阅读宽度的上限：容器的内容宽度超过它时字段停在 600px，宿主与节都不为占满卡片把它改大。行内重命名编辑器的名称字段占满该编辑器的文本列，取消与保存的动作行在其下一行靠右。登记向导的名称表单与流程步沿用同一规则。
+**表单字段宽度。** 文本字段占满所在容器的内容宽度：卡片内容区、对话框内容区或行内编辑器的文本列。同一页的表单字段取同一宽度，节内不以窄栏改写字段宽度；需要更窄的容器时由宿主限定容器，字段随之收窄。600px（ui-kit 的 `FORM_MAX_WIDTH`）是阅读宽度的上限：容器的内容宽度超过它时字段停在 600px，宿主与节都不为占满卡片把它改大。行内重命名编辑器的名称字段占满该编辑器的文本列，取消与保存的动作行在其下一行靠右。登记面板的名称字段与流程步沿用同一规则。
 
 **控件宽度。** 下拉与选择器等控件按自身内容取宽，不属于表单字段：语言、时区、外观预设与颜色模式的选择器上限 24rem，登录方式组的邮箱选择器最小 18rem，都低于表单字段的 600px 阅读宽度上限。这些收窄是控件的宽度，不是表单字段的宽度；同页的文本字段不因它们而收窄。
 
@@ -243,12 +243,12 @@ sequenceDiagram
 
 ### 经流程门控的两步验证
 
-`MfaSection` 不声明因子状态，状态经读发现（`GET /api/v1/auth/factors`）；它提供的添加动作也只取本部署装配的因素（`GET /api/v1/auth/methods` 的 `mfa.factors`，经 `session.listMethods` 读回）——装配没有通行密钥的部署不显示通行密钥的添加动作，宿主不得提供本部署无法完成的能力。因素按种类分组：每个已装配种类成一节，标题取种类名，部署公布该种类可登记时标题右侧有唯一一个添加动作（文案恒为「添加」，与该组是否已有已启用行无关）。各节按固定强度顺序排列——通行密钥、身份验证器应用、短信，未知种类殿后——不随哪一组已启用而变化：用户刚启用一个方式，它的位置不会因此移动。组内只列已启用与已停用条目，待确认行由向导持有、不渲染；已停用行带弱化的「已停用」标记。因素行显示服务端读回的名称与最近使用时刻：名称取 `label`，为空时回退种类名；最近使用时刻取 `last_used_at`，从未通过校验的行明确说明从未使用；时刻经账户时区链显式格式化，与本节其他时间呈现同一口径。行尾溢出菜单提供重命名与移除，已停用行只提供移除。两次入口动作走同一条「先生成流程、再按步答复」的机器：
+`MfaSection` 不声明因子状态，状态经读发现（`GET /api/v1/auth/factors`）；它提供的添加动作也只取本部署装配的因素（`GET /api/v1/auth/methods` 的 `mfa.factors`，经 `session.listMethods` 读回）——装配没有通行密钥的部署不显示通行密钥的添加动作，宿主不得提供本部署无法完成的能力。因素按种类分组：每个已装配种类成一节，标题取种类名，部署公布该种类可登记时标题右侧有唯一一个添加动作（文案恒为「添加」，与该组是否已有已启用行无关）。各节按固定强度顺序排列——通行密钥、身份验证器应用、短信，未知种类殿后——不随哪一组已启用而变化：用户刚启用一个方式，它的位置不会因此移动。组内只列已启用与已停用条目，待确认行由登记面板持有、不渲染；已停用行带弱化的「已停用」标记。因素行显示服务端读回的名称与最近使用时刻：名称取 `label`，为空时回退种类名；最近使用时刻取 `last_used_at`，从未通过校验的行明确说明从未使用；时刻经账户时区链显式格式化，与本节其他时间呈现同一口径。行尾溢出菜单提供重命名与移除，已停用行只提供移除。两次入口动作走同一条「先生成流程、再按步答复」的机器：
 
-1. 登记一个因素。入口先给出名称表单，再起流程；向导在该种类自己的节内就地展开、替换该节的行，每一步在控件之上给一句确认之后会发生什么的说明，取消在左、确认为主且相邻：向导的标题经参数化键 `mfa.enroll.title` 点名正在登记的种类，`{{method}}` 代入 `mfa.factor.kind.*` 的名称（未知种类取通用的其它名称），名称表单与流程步共用这一标题。名称随流程首步输入一起发出（`startAuthenticatedFlow({purpose: 'enroll', input: {kind, label}})`），后续步不读取它。名称初始为空，输入框以占位文字给中性示例（`mfa.enroll.labelPlaceholder`，如「例如：工作手机」），可填写，也可留空——留空按空值提交，服务端不生成名称，行上回退种类名；表单不做必填校验。名称是账户页回答「是哪一把」的信息；登录页的第二因素清单只回答「用哪种方式证明」，按种类呈现，并在同品类的多项之间用名称或序号区分（[auth-ui](design-web-auth-ui.md)）。起流程后按应答的 `next.kind` 分派：`webauthn` 步把该因素自己的 JSON 对象交给步进渲染器——TOTP 的 `otpauth_uri` 由 ui-kit 的 `TotpEnrollmentPanel` 渲染为可扫描的二维码，二维码下方一个展开项给出手动入口（本包用 `parseOtpauth` 解析出的 base32 密钥，按四位分组显示，配复制控件与算法、位数、周期说明），随后是一个六位长度、输入提示为数字键盘的验证码字段；二维码与手动密钥按内容块排版，不套普通字段的浮动标签；验证码不自动提交，由确认控件触发，登记被拒时保留已输入内容并在登记一组的反馈区域渲染该错误码。通行密钥的创建选项（[REF-webauthn](../../../references.md)）由 `@speed/auth-core` 的 `./webauthn` 子路径驱动 `navigator.credentials.create` 并把返回的凭据序列化成答复键 `credential`；`enroll` 步给出可登记的种类。答完即因素登记完成，它不改变本次会话的等级。
+1. 登记一个因素。入口直接在该种类自己的节内就地展开登记面板、替换该节的行，并立即以 `startAuthenticatedFlow({purpose: 'enroll', input: {kind, label: ''}})` 起流程：名称字段、该方法的正文与唯一一个确认控件同在这个面板里，标题经参数化键 `mfa.enroll.title` 点名正在登记的种类，`{{method}}` 代入 `mfa.factor.kind.*` 的名称（未知种类取通用的其它名称）；取消在左、确认为主且相邻。名称字段初始为空，只给一个中性的占位示例、不预填，可留空，不做必填校验；流程首步在读者输入名称之前发出并携带空 `label`，读者在面板里填的名称于登记落定后经 `PATCH /api/v1/auth/factors/{id}` 写到这次流程新增的那一行，空名称不写。流程步按应答的 `next.kind` 分派：`webauthn` 步把该因素自己的 JSON 对象交给步进渲染器——TOTP 的 `otpauth_uri` 由 ui-kit 的 `TotpEnrollmentPanel` 渲染为可扫描的二维码，二维码下方一个展开项给出手动入口（本包用 `parseOtpauth` 解析出的 base32 密钥，按四位分组显示，配复制控件与算法、位数、周期说明），随后是一个六位长度、输入提示为数字键盘的验证码字段；二维码与手动密钥按内容块排版，不套普通字段的浮动标签；验证码不自动提交，由确认控件触发，登记被拒时保留已输入内容并在面板内的反馈区域渲染该错误码。通行密钥的创建选项（[REF-webauthn](../../../references.md)）由 `@speed/auth-core` 的 `./webauthn` 子路径驱动 `navigator.credentials.create` 并把返回的凭据序列化成答复键 `credential`；登记仪式的一次点击同时是面板的确认，因为创建仪式在部分浏览器要求用户激活。流程落到就绪（`ready`）、下一步是 `complete` 时，这一步没有输入，本节以 `{step: 'complete'}` 自动提交它（同一 `seq` 只自动提交一次），读者因此只确认一次；自动提交被拒时把该步连同其确认留给读者重试，拒绝码渲染在面板内。答完即因素登记完成，它不改变本次会话的等级。
 2. 提权以做安全类动作。一次 `startAuthenticatedFlow({purpose: 'step-up'})` 起一条加强认证流程；账户有早于本次认证启用的因素时从 `factor` 步进入（清单在应答里），因素都在本次会话期间登记时从 `password` 第一因素步进入、口令通过后进入 `factor` 步。挑战对话框驱动这条流程，成功后重跑被门控的动作。流程落到就绪（`ready`）状态、下一步是 `complete` 时，这一步没有输入，`useStepUp` 自动以 `{step: 'complete'}` 提交它（同一 `seq` 只自动提交一次），提交期间对话框显示起手文案；自动提交被拒时退回该步自带的确认按钮并渲染拒绝码，由用户手动重试。起手之前，对话框读一次本人已登记的因素（`GET /api/v1/auth/factors`）：没有任何启用因素时，对话框再读一次本人会话（`GET /api/v1/auth/session`），按会话是否已满足新鲜第一因素区分被拒的要求。请求层不暴露 401 的 `WWW-Authenticate` 挑战参数，由会话自身的状态回答同一个问题：会话的保证级别不低于单因素，且最近一次交互认证距今不超过五分钟（服务端 `authn.FreshFirstFactor` 固定的窗口，`account-ui` 内以一个常量镜像这个数值，两处同值）时，新鲜第一因素的要求本已满足，被拒的是多因素的要求；其余情形被拒的是新鲜第一因素。被拒的是新鲜第一因素时（注册后立即改口令撞上五分钟窗口就是这种），对话框以会话的 `methods` 里的 `pwd`（取 `password`）或 `sms`（取 `sms`）为方法起一条带 `method` 的步进流程，当场重新证明后重跑被拒的动作；会话没有这两种方法（社交与企业登录建立的会话），或会话读失败而方法无从得知时，给出重新登录的出口，不起流程。被拒的是多因素的要求而账户没有因素时，对话框提示先在账户设置里登记两步验证，不发起流程；宿主给了 `accountHref` 时在该说明旁渲染一条普通链接（本包自己不导航），不给则不渲染链接。区分在每次打开对话框时判定一次，依据打开之后读到的会话，不取缓存里更早的视图，对话框开着期间不变；会话读未落定时对话框显示起手中的占位。因素读失败不判定为没有因素，照常起手，由服务端的拒绝决定；有因素而服务端以 401 `authn.insufficient_user_authentication` 拒绝起手（有因素但没有能强化本会话的，或没有口令可再次证明）时，对话框判定本部署无法完成升级，给出重新登录的出口，不渲染任何步骤。答复被拒为 401 `authn.flow_invalid` 时（那条流程记录已不在：过期，或部署的流程存储随进程丢失），任何后续答复都落不上去，对话框因此不保留提交了也只会重复同一拒绝的表单：它只渲染该码的横幅，并以「重新开始验证」作为与取消并列的动作，点它重挂流程驱动、按同一判定起一条新流程。被拒的码是 401 `authn.sso_required` 时，本地因素满足不了它：对话框不读因素、不起流程，渲染点名企业单点登录的说明与重新登录出口。
 
-**放弃登记流程。** 向导取消、或向导仍开着时节卸载时，本节经 `session.abandonFlow()` 发出 `DELETE /api/v1/auth/flows/current`，让服务端删掉这次登记写下的待确认因素行，而不等待确认清扫（[authn-mfa](../authn/design-authn-mfa.md)）。每个向导实例至多释放一次；已落定的流程不再释放；卸载时的释放延后一个微任务，StrictMode 在同一次提交内的重挂会取消它，重挂的节继续持有同一条流程。释放失败被忽略，不打断界面。
+**放弃登记流程。** 登记面板取消、或面板仍开着时节卸载时，本节经 `session.abandonFlow()` 发出 `DELETE /api/v1/auth/flows/current`，让服务端删掉这次登记写下的待确认因素行，而不等待确认清扫（[authn-mfa](../authn/design-authn-mfa.md)）。每个面板实例至多释放一次；已落定的流程不再释放；起流程的请求在面板关闭或节卸载之后才落定时，它开出的流程同样被释放。卸载时的释放延后一个微任务，StrictMode 在同一次提交内的重挂会取消它，重挂的节继续持有同一条流程。释放失败被忽略，不打断界面。
 
 **重命名。** 每个因素行的行尾菜单提供重命名，名字在行内展开编辑器：名称字段占满编辑器的文本列，取消与保存的动作行在其下一行靠右；写经 `PATCH /api/v1/auth/factors/{id}` 提交 `{label}`。名称是元数据，路由不要求新鲜认证，本节不为它开提权对话框；空值清除名称，行回退种类名。成功在列表下方的行动作反馈区确认，点名服务端存下的名称，并失效重读因素列表；被拒（400 的取值域）在同一区域渲染错误码文本。404 `authn.factor_not_found` 表示这个方式已不存在或不属于本人：关闭行内编辑器，失效重读因素列表一次，并在同一区域渲染该码的句子；重取的应答不再触发重取。重命名与移除共用一个反馈作用域：两条写操作的落定结果落在同一区域，后一条替换前一条。
 
@@ -272,7 +272,7 @@ sequenceDiagram
 
 ### 写入的反馈
 
-每个节按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织反馈：一个控件组是一个反馈作用域，区域紧贴该控件组之下（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。偏好节的语言与时区各是一个控件组，各有自己的作用域与区域，一条的落定不清除另一条；档案、口令与手机各一个作用域；两步验证因素行的重命名与移除共用一个作用域，后一条结果替换前一条。
+每个节按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织反馈：一个控件组是一个反馈作用域，区域紧贴该控件组之下（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。偏好节的语言与时区各是一个控件组，各有自己的作用域与区域，一条的落定不清除另一条；档案、口令与手机各一个作用域。**两步验证节只有一个结果位置，因此只有一个槽。** 登记、重命名与移除都写这个槽，区域固定在分组列表下方一处；每次新的写尝试（打开一个登记面板、保存一次重命名、确认一次移除、提交登记的一步）先清空它，后落定的结果替换先落定的，登记确认与行操作结果不会同时出现。登记面板内被拒绝的一步留在面板自己的失败区域，不写这个槽；面板落定 `enrolled` 后关闭，登记结果写这个槽。结果不自动消失，只有下一次写尝试、取消面板或离开本节会清掉它。
 
 - **成功确认只经区域渲染。** 成功由 `WriteFeedbackRegion` 渲染，间距经区域的 `sx`；本包没有第二种成功区域，调用点不单独渲染 `InlineSuccess`。
 - **每个由用户发起、落定且无一失败的动作都有成功文案**，含撤销单个会话、删除标识、两步验证的登记、重命名与移除，文案点明被改动的对象。档案的文案点名显示名；偏好节的文案点名语言或时区及其新值，清除时读「未选择」；手机验证的文案点名号码。社交绑定的完成是例外：`onBound` 是宿主离开回调路由的信号，离开的宿主以刷新后的绑定行呈现结果；留在该路由或未给 `onBound` 的宿主得到 `done` 阶段的绑定成功文案，挂在 `role="status"` 区域里。
@@ -329,7 +329,7 @@ sequenceDiagram
 | 解绑会抽掉最后一个登录方式 | 一条横幅渲染该错误码文本，服务端按自己的登录方式计数判定 |
 | 未验证账户发起外部身份绑定被 403 `authn.contact_required` 拒绝 | 一条横幅渲染该码文本，说明先验证邮箱；绑定动作保持可重试 |
 | 重命名时因素已不存在或不属于调用者（404 `authn.factor_not_found`） | 一条横幅渲染该码文本，说明该方式已不存在；因素列表重取一次，重取的应答不再触发重取；行内编辑器关闭 |
-| 两步验证登记被拒（他人的登记抢先、因素消失） | 关掉向导并渲染错误码文本；一次错码是字段级错误、可重试 |
+| 两步验证登记被拒（他人的登记抢先、因素消失） | 关掉面板并渲染错误码文本；一次错码是字段级错误、可重试 |
 | TOTP 登记填写的验证码被拒 | 登记一组的 `WriteFeedbackRegion` 渲染该错误码文本；二维码与手动密钥保留，已输入的验证码不清空，可修改后重试 |
 | 加强认证流程的码已被用过 | 清空字段、渲染用过的码文本，绝不用同一码重试 |
 | 本人账户没有启用的因素（`GET /api/v1/auth/factors` 读回的行里没有处于启用状态的），会话已满足新鲜第一因素 | 对话框提示先在账户设置里登记两步验证，不发起流程；宿主给了 `accountHref` 时在该说明旁渲染通往账户设置的普通链接，不给则不渲染链接 |
@@ -382,10 +382,12 @@ sequenceDiagram
 | 会话列表与撤销 | 已实现 | `web/packages/account-ui/src/SessionsSection.tsx` `SessionsSection` |
 | 社交绑定与回调 | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |
 | 两步验证设置 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection` |
-| 取消登记向导或向导开着时卸载，释放登记流程 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`、`releaseEnrollFlow`；`web/packages/auth-core/src/session.ts` `AuthSession.abandonFlow` |
+| 取消登记面板或面板开着时卸载，释放登记流程 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`、`releaseEnrollFlow`；`web/packages/auth-core/src/session.ts` `AuthSession.abandonFlow` |
+| 两步验证登记以一次确认完成，名称随后写入新增的行 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`、`advanceFlow`、`finishEnrollment`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `mfa.enroll.labelPlaceholder`、`mfa.enroll.starting` |
 | TOTP 登记以二维码为主入口，手动密钥可展开复制 | 已实现 | `web/packages/account-ui/src/internal/flow-step.tsx` `FlowStep`、`TotpEnrollStep`；`web/packages/auth-core/src/otpauth.ts` `parseOtpauth`、`formatSecretForDisplay`；`web/packages/ui-kit/src/components/TotpQrCode.tsx` `TotpQrCode`；`web/packages/ui-kit/src/components/TotpEnrollmentPanel.tsx` `TotpEnrollmentPanel` |
-| 两步验证因素行的名称、最近使用时刻、行尾菜单（重命名与移除） | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `mfa.actionsAria`、`mfa.rename`、`mfa.renamed`、`mfa.renameLabel`、`mfa.renameHint`、`mfa.renameSave`、`mfa.renameCancel`、`mfa.remove`、`mfa.removeConfirm`、`mfa.factor.lastUsedAt`、`mfa.factor.neverUsed`、`mfa.factor.status.disabled`、`mfa.enroll.labelField`、`mfa.enroll.labelPlaceholder`、`mfa.enroll.labelHelp` |
-| 两步验证按种类分组，待确认行不渲染，向导逐节就地展开并每步说明确认后果 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `mfa.enroll.title`、`mfa.enroll.note`、`mfa.addAria`、`mfa.action.add` |
+| 两步验证因素行的名称、最近使用时刻、行尾菜单（重命名与移除） | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `mfa.actionsAria`、`mfa.rename`、`mfa.renamed`、`mfa.renameLabel`、`mfa.renameHint`、`mfa.renameSave`、`mfa.renameCancel`、`mfa.remove`、`mfa.removeConfirm`、`mfa.factor.lastUsedAt`、`mfa.factor.neverUsed`、`mfa.factor.status.disabled`、`mfa.enroll.labelField`、`mfa.enroll.labelHelp` |
+| 两步验证按种类分组，待确认行不渲染，登记面板就地展开并说明确认后果 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `mfa.enroll.title`、`mfa.enroll.note`、`mfa.addAria`、`mfa.action.add` |
+| 两步验证的登记、重命名与移除共用一个结果槽，位于分组列表下方 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`、`feedback`；`web/packages/account-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion` |
 | 命名空间资源 | 已实现 | `web/packages/account-ui/src/resources.ts` `ACCOUNT_UI_NAMESPACE`、`accountUiResources` |
 | 登录标识节的邮箱可用性属性 `emailAvailable` | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps` |
 | 档案已列出用户名时，添加面不提供用户名 kind | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
