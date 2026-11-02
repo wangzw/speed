@@ -35,6 +35,7 @@ import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
+import type { Theme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 import { evictTenantQueries, useAuthState } from '@speed/auth-core'
 import { ImpersonationEndMenuItem } from '@speed/auth-ui'
@@ -607,39 +608,40 @@ const ACCOUNT_MENU_PANES = [
   {
     section: 'profile',
     key: 'account.sections.profile',
-    icon: <ProfileNavIcon size={20} />,
+    icon: <ProfileNavIcon size={24} />,
   },
   {
     section: 'security',
     key: 'account.sections.security',
-    icon: <SecurityNavIcon size={20} />,
+    icon: <SecurityNavIcon size={24} />,
   },
   {
     section: 'sessions',
     key: 'account.sections.sessions',
-    icon: <SessionsNavIcon size={20} />,
+    icon: <SessionsNavIcon size={24} />,
   },
   {
     section: 'preferences',
     key: 'userMenu.preferences',
-    icon: <PreferencesNavIcon size={20} />,
+    icon: <PreferencesNavIcon size={24} />,
   },
 ] as const
 
 /**
- * One menu entry's glyph box: a 36px advance holding the 20px mark centred.
- * The paper sits 9px in from the column with a 1px border, so the MenuItem's
- * 6px leading inset starts this box on the column's own 16px icon track; its
- * centre is then the navigation icon track's 34px and the label starts at the
- * navigation label's 52px. Every value is an absolute pixel, so a preset with
- * a different spacing base moves none of it.
+ * One menu entry's glyph box: the navigation's own icon cell -- MUI's
+ * ListItemIcon reserves theme.spacing(4.5) -- holding the navigation's 24px
+ * mark centred. The cell scales with the theme's spacing base exactly as the
+ * navigation's does, so the two tracks stay aligned in every preset. The
+ * paper sits 9px in from the column with a 1px border, so the MenuItem's 6px
+ * leading inset starts this box on the column's own 16px icon track; the
+ * label then starts where a navigation label starts.
  */
 const accountMenuItemIconSx = {
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
   flexShrink: 0,
-  width: '36px',
+  width: (theme: Theme) => theme.spacing(4.5),
   color: 'text.secondary',
 } as const
 
@@ -654,8 +656,8 @@ function SignOutIcon() {
       aria-hidden="true"
       focusable="false"
       viewBox="0 0 24 24"
-      width={20}
-      height={20}
+      width={24}
+      height={24}
       fill="none"
       stroke="currentColor"
       strokeWidth={1.7}
@@ -833,7 +835,7 @@ export function AccountEntry({
           sx={accountMenuItemSx}
         >
           <Box component="span" sx={accountMenuItemIconSx}>
-            <NotificationsNavIcon size={20} />
+            <NotificationsNavIcon size={24} />
           </Box>
           {t('userMenu.messages')}
         </MenuItem>

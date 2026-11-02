@@ -7,7 +7,9 @@
  * the navigation column, its width, the icon and avatar tracks, and the two
  * gaps around the account row -- can only be told apart here. The same is
  * true of the divider colour and the paper surface: a preset restyles them
- * through tokens, and the menu has to follow.
+ * through tokens, and the menu has to follow. Light mode paints the divider
+ * token; dark mode paints a translucent wash of `text.primary`, which has to
+ * separate from the paper it is drawn on.
  *
  * Every preset/mode combination is its own case so the matrix reports per
  * combination. A case measures every criterion before it fails and lists the
@@ -16,6 +18,7 @@
 
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { alpha } from '@mui/material/styles'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { themePresets } from '@speed/theme-presets'
@@ -31,14 +34,23 @@ const EXPECTED = {
   menuLeftInset: 9,
   menuWidth: 238,
   avatarInset: 16,
-  /** The navigation icon box's left edge, from the column's edge. */
-  itemIconInset: 16,
+  /** The navigation's own icon mark, and so every menu entry's. */
+  iconGlyphSize: 24,
   rowBottomGap: 12,
   dividerRowGap: 12,
 } as const
 
 /** The tolerance the contract allows on a geometric measurement. */
 const TOLERANCE = 1
+
+/**
+ * The alpha the theme applies to `text.primary` for a dark-mode rule (see
+ * the divider override in `@speed/ui-kit`).
+ */
+const DARK_RULE_ALPHA = 0.16
+
+/** The minimum paper-relative contrast a dark-mode rule must reach. */
+const MIN_DARK_RULE_CONTRAST = 1.5
 
 const COLOR_MODES = ['light', 'dark'] as const
 
@@ -86,6 +98,84 @@ function alphaOf(color: string): number {
   return parts.length === 4 ? (parts[3] ?? 1) : 1
 }
 
+interface Rgba {
+  readonly r: number
+  readonly g: number
+  readonly b: number
+  readonly a: number
+}
+
+/** Parse an `rgb()`/`rgba()` string; anything else is a test bug. */
+function parseColor(value: string): Rgba {
+  const match = /rgba?\(([^)]+)\)/.exec(value)
+  if (match === null) {
+    throw new Error(`unparsed colour: ${value}`)
+  }
+  const parts = (match[1] ?? '').split(/[,\s/]+/).filter(Boolean).map(Number)
+  const [r = 0, g = 0, b = 0, a = 1] = parts
+  return { r, g, b, a }
+}
+
+/** `foreground` composited over an opaque `background`. */
+function compositeOver(foreground: Rgba, background: Rgba): Rgba {
+  const mix = (fg: number, bg: number) =>
+    fg * foreground.a + bg * (1 - foreground.a)
+  return {
+    r: mix(foreground.r, background.r),
+    g: mix(foreground.g, background.g),
+    b: mix(foreground.b, background.b),
+    a: 1,
+  }
+}
+
+/** The WCAG linear channel value of an 8-bit sRGB channel. */
+function linearChannel(channel: number): number {
+  const value = channel / 255
+  return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+}
+
+/** The WCAG relative luminance of an opaque colour. */
+function relativeLuminance(color: Rgba): number {
+  return (
+    0.2126 * linearChannel(color.r) +
+    0.7152 * linearChannel(color.g) +
+    0.0722 * linearChannel(color.b)
+  )
+}
+
+/** The WCAG contrast ratio between two opaque colours. */
+function contrastRatio(first: Rgba, second: Rgba): number {
+  const [lighter, darker] = [
+    relativeLuminance(first),
+    relativeLuminance(second),
+  ].sort((left, right) => right - left) as [number, number]
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+/**
+ * The opaque colour a rule is drawn on: the nearest non-transparent ancestor
+ * backgrounds, layered in paint order over the page's own fill.
+ */
+function paperBehind(element: Element, pageFill: string): Rgba {
+  const layers: string[] = []
+  let node: Element | null = element
+  while (node !== null) {
+    const background = getComputedStyle(node).backgroundColor
+    if (alphaOf(background) > 0) {
+      layers.push(background)
+      if (alphaOf(background) >= 1) {
+        break
+      }
+    }
+    node = node.parentElement
+  }
+  let paper = parseColor(pageFill)
+  for (const layer of layers.reverse()) {
+    paper = compositeOver(parseColor(layer), paper)
+  }
+  return paper
+}
+
 /** Rounds a measured pixel value for a readable failure message. */
 function px(value: number): number {
   return Math.round(value * 100) / 100
@@ -109,15 +199,39 @@ function checkClose(
 }
 
 /**
+ * The left edge of an entry's own text, read from the direct text node that
+ * follows its icon cell. Measuring the text rather than deriving the offset
+ * from the cell's width keeps the comparison honest: it is where the label
+ * actually starts, not where the box arithmetic says it should.
+ */
+function menuItemLabelLeft(item: HTMLElement): number | undefined {
+  for (const node of Array.from(item.childNodes)) {
+    if (
+      node.nodeType === Node.TEXT_NODE &&
+      (node.textContent ?? '').trim() !== ''
+    ) {
+      const range = document.createRange()
+      range.selectNodeContents(node)
+      return range.getBoundingClientRect().left
+    }
+  }
+  return undefined
+}
+
+/**
  * Records a divider that is not the visible 1px solid rule in the theme's
  * divider colour. A zero width, a non-solid style or a transparent/other
- * colour all mean the rule would not read.
+ * colour all mean the rule would not read. In dark mode the rule is a
+ * translucent wash, so its drawn colour is also composited over the paper
+ * it sits on and required to separate from that paper.
  */
 function checkDivider(
   issues: string[],
   divider: Element,
   label: string,
   dividerColor: string,
+  pageFill: string,
+  minimumContrast?: number,
 ): void {
   const style = getComputedStyle(divider)
   if (style.borderBottomStyle !== 'solid') {
@@ -131,6 +245,16 @@ function checkDivider(
       `${label}: border-bottom-color is ${style.borderBottomColor}, theme divider is ${dividerColor}`,
     )
   }
+  if (minimumContrast !== undefined) {
+    const paper = paperBehind(divider, pageFill)
+    const drawn = compositeOver(parseColor(style.borderBottomColor), paper)
+    const ratio = contrastRatio(drawn, paper)
+    if (ratio < minimumContrast) {
+      issues.push(
+        `${label}: contrast over paper is ${px(ratio)}:1, expected at least ${minimumContrast}:1`,
+      )
+    }
+  }
 }
 
 describe('the account menu across theme presets', () => {
@@ -140,7 +264,17 @@ describe('the account menu across theme presets', () => {
         await page.viewport(1280, 900)
         const label = `${preset.id} / ${mode}`
         const theme = createAppTheme(preset.tokens, undefined, mode).theme
-        const dividerColor = normalizedColor(theme.palette.divider)
+        // Light mode paints the divider token; dark mode washes
+        // `text.primary` at a low alpha so the rule clears the dark paper.
+        const dividerColor = normalizedColor(
+          mode === 'dark'
+            ? alpha(theme.palette.text.primary, DARK_RULE_ALPHA)
+            : theme.palette.divider,
+        )
+        const minimumContrast =
+          mode === 'dark' ? MIN_DARK_RULE_CONTRAST : undefined
+        const pageFill = normalizedBackground(theme.palette.background.default)
+        const paperBorderColor = normalizedColor(theme.palette.divider)
         const issues: string[] = []
 
         renderDemoApp({
@@ -172,7 +306,14 @@ describe('the account menu across theme presets', () => {
 
         // The rule above the account row is visible in the theme's divider
         // colour, not a zero-width or transparent edge.
-        checkDivider(issues, rowDivider, `${label}: row divider`, dividerColor)
+        checkDivider(
+          issues,
+          rowDivider,
+          `${label}: row divider`,
+          dividerColor,
+          pageFill,
+          minimumContrast,
+        )
 
         // The row shares the navigation's icon track: the avatar starts 16px
         // in, the divider sits 12px above the row and the row 12px above the
@@ -195,6 +336,39 @@ describe('the account menu across theme presets', () => {
           triggerRect.top - rowDividerRect.bottom,
           EXPECTED.dividerRowGap,
         )
+
+        // The sidebar's own icon track is the reference, captured in this
+        // same render before the menu opens: a modal menu marks the rest of
+        // the page aria-hidden, so the navigation landmark can no longer be
+        // queried by role once it is open.
+        const navigation = screen.getByRole('navigation')
+        const navLink = navigation.querySelector('a')
+        const navIconCell = navLink?.querySelector('.MuiListItemIcon-root')
+        const navLabel = navLink?.querySelector('.MuiListItemText-root')
+        const navIconCellRect =
+          navIconCell instanceof HTMLElement
+            ? navIconCell.getBoundingClientRect()
+            : undefined
+        const navLabelLeft =
+          navLabel instanceof HTMLElement
+            ? navLabel.getBoundingClientRect().left
+            : undefined
+        if (navIconCellRect === undefined || navLabelLeft === undefined) {
+          issues.push(
+            `${label}: the navigation entry has no icon cell or label`,
+          )
+        }
+        if (navIconCell instanceof HTMLElement) {
+          const navGlyph = navIconCell.querySelector('svg')
+          if (navGlyph !== null) {
+            checkClose(
+              issues,
+              `${label}: navigation glyph`,
+              navGlyph.getBoundingClientRect().width,
+              EXPECTED.iconGlyphSize,
+            )
+          }
+        }
 
         await userEvent.setup().click(trigger)
         const menu = await screen.findByRole('menu', undefined, {
@@ -231,22 +405,53 @@ describe('the account menu across theme presets', () => {
           EXPECTED.menuWidth,
         )
 
-        // Every entry's glyph box starts on the navigation's icon track: a
-        // 16px inset from the column's edge, measured on the box that holds
-        // the glyph (not the glyph's own centred edge).
-        const items = within(menu).getAllByRole('menuitem')
-        for (const item of items) {
-          const iconBox = item.firstElementChild
-          if (!(iconBox instanceof HTMLElement)) {
-            issues.push(`${label}: menu entry has no icon box`)
-            continue
+        // The sidebar's own icon track is the reference: every entry shares
+        // it -- its icon cell starts where the navigation's does and is as
+        // wide, its glyph is the navigation's 24px mark, and its label starts
+        // exactly on the navigation label's left edge.
+        if (navIconCellRect !== undefined && navLabelLeft !== undefined) {
+          const items = within(menu).getAllByRole('menuitem')
+          for (const item of items) {
+            const text = item.textContent ?? ''
+            const iconBox = item.firstElementChild
+            const glyph = iconBox?.querySelector('svg')
+            if (!(iconBox instanceof HTMLElement) || glyph == null) {
+              issues.push(
+                `${label}: menu entry has no icon box or glyph (${text})`,
+              )
+              continue
+            }
+            const iconBoxRect = iconBox.getBoundingClientRect()
+            checkClose(
+              issues,
+              `${label}: item icon cell left (${text})`,
+              iconBoxRect.left,
+              navIconCellRect.left,
+            )
+            checkClose(
+              issues,
+              `${label}: item icon cell width (${text})`,
+              iconBoxRect.width,
+              navIconCellRect.width,
+            )
+            checkClose(
+              issues,
+              `${label}: item glyph (${text})`,
+              glyph.getBoundingClientRect().width,
+              EXPECTED.iconGlyphSize,
+            )
+            const labelLeft = menuItemLabelLeft(item)
+            if (labelLeft === undefined) {
+              issues.push(`${label}: menu entry has no label (${text})`)
+              continue
+            }
+            checkClose(
+              issues,
+              `${label}: item label left (${text})`,
+              labelLeft,
+              navLabelLeft,
+            )
           }
-          checkClose(
-            issues,
-            `${label}: item icon inset (${item.textContent ?? ''})`,
-            iconBox.getBoundingClientRect().left - columnContentLeft,
-            EXPECTED.itemIconInset,
-          )
         }
 
         // The menu's own dividers are visible rules too.
@@ -262,6 +467,8 @@ describe('the account menu across theme presets', () => {
             divider,
             `${label}: menu divider ${index + 1}`,
             dividerColor,
+            pageFill,
+            minimumContrast,
           )
         })
 
@@ -279,9 +486,9 @@ describe('the account menu across theme presets', () => {
             `${label}: menu border width is ${paperStyle.borderTopWidth}`,
           )
         }
-        if (paperStyle.borderTopColor !== dividerColor) {
+        if (paperStyle.borderTopColor !== paperBorderColor) {
           issues.push(
-            `${label}: menu border colour is ${paperStyle.borderTopColor}, theme divider is ${dividerColor}`,
+            `${label}: menu border colour is ${paperStyle.borderTopColor}, theme divider is ${paperBorderColor}`,
           )
         }
         const themeShadow = normalizedBoxShadow(theme.shadows[12])

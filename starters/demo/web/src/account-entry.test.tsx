@@ -78,13 +78,16 @@ describe('the account entry in the navigation column', () => {
     expect(items.map((item) => item.textContent)).toEqual(menuLabels)
     for (const item of items) {
       expect(item.querySelector('svg')).not.toBeNull()
-      // The glyph sits centred in the navigation's 36px icon advance. The
-      // paper is 9px in with a 1px border, so the entry's own 6px leading
-      // inset starts that box on the column's 16px track.
+      // The glyph sits centred in the navigation's own icon cell:
+      // theme.spacing(4.5) -- 36px at the default 8px spacing base -- holding
+      // the navigation's 24px mark. The paper is 9px in with a 1px border, so
+      // the entry's own 6px leading inset starts that box on the column's
+      // 16px track.
       const icon = item.firstElementChild as HTMLElement
       expect(getComputedStyle(icon).width).toBe('36px')
       expect(getComputedStyle(icon).justifyContent).toBe('center')
       expect(getComputedStyle(item).paddingLeft).toBe('6px')
+      expect(item.querySelector('svg')).toHaveAttribute('width', '24')
     }
     // One divider between Messages and the panes, one before sign-out.
     expect(screen.getAllByRole('separator')).toHaveLength(2)
