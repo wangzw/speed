@@ -394,6 +394,9 @@ function ContactActionsMenu({
             disabled={isDefault}
             onClick={() => {
               setAnchor(null)
+              // Defensive only: MUI does not dispatch a click on a disabled
+              // item, so this guard changes no observable behaviour; it keeps
+              // the handler honest without relying on that internal detail.
               if (!isDefault) {
                 onSetDefault()
               }
