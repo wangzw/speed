@@ -378,7 +378,9 @@ function ContactActionsMenu({
             disabled={verifyDisabled}
             onClick={() => {
               setAnchor(null)
-              onVerify()
+              if (!verifyDisabled) {
+                onVerify()
+              }
             }}
           >
             {t('identifiers.verify')}
@@ -392,7 +394,9 @@ function ContactActionsMenu({
             disabled={isDefault}
             onClick={() => {
               setAnchor(null)
-              onSetDefault()
+              if (!isDefault) {
+                onSetDefault()
+              }
             }}
           >
             {t('identifiers.axes.defaultContact')}
