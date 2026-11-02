@@ -139,8 +139,9 @@ program beside this directory embeds with `go:embed` and serves through
 - **The app composes its own chrome.** `src/chrome.tsx` holds the shared top-bar
   pieces the tenant frame and the console frame render: the brand, the tenant
   switcher over the caller tenant list (`TenantMenu`), and the avatar account
-  menu (profile / account settings / sign out). Neither frame carries a
-  color-mode toggle: the choice is the account page's `ColorModeSection`.
+  menu (the notification centre, the account panes and sign out). Neither
+  frame carries a color-mode toggle: the choice is the account page's
+  `ColorModeSection`.
   `TenantMenu` passes `announcement="visually-hidden"`, so a switch is
   announced through the status region but never painted beside the trigger.
   The tenant frame puts the actions in `headerActions` and the tenant switcher
@@ -157,6 +158,23 @@ program beside this directory embeds with `go:embed` and serves through
   AppShell moves the same slots into its drawer paper in the sidebar form, so
   `src/chrome.tsx` never branches on the layout. `src/paths.ts` holds the
   route paths the chrome links into, shared with the route table.
+- **The account entry is the bottom bar of the navigation column.** In the
+  `'sidebar'` placement `src/chrome.tsx` renders a `Divider` above a full-width
+  row carrying the signed-in user's avatar, display name and disclosure
+  chevron, with 12px above and below the row. The avatar starts 16px in from
+  the column's edge -- the row's leading inset -- and its icon box advances the
+  name to the point a navigation label starts. All of these are fixed pixel
+  values, not theme spacing steps, so a preset with a different spacing base
+  moves none of them. The row opens a menu upward whose six entries each carry
+  a 20px glyph centred in the navigation's 36px icon advance, so the glyph
+  centre sits on the navigation icon track and the label starts where a
+  navigation label starts: the notification centre, the four account panes and
+  sign out; an impersonation adds its end entry above them. The menu paper
+  keeps the preset's fill and gains only a 1px divider-coloured border and the
+  theme's elevation-12 shadow; it is 238px wide and sits 9px in from the
+  column's edge. The
+  navigation column itself lists the home entry alone: the notification centre
+  and the account panes are menu destinations, not navigation items.
 - **The account settings is one pane per route.** `src/pages/account-page.tsx`
   composes `@speed/account-ui`'s sections into four panes, one route each:
   `/account/profile` (profile, identifiers and the registration contact's
@@ -171,9 +189,8 @@ program beside this directory embeds with `go:embed` and serves through
   rest of the query along so `/account?verify=1` and `/account?change=email`
   still land where they meant to. Each pane composes a `@speed/ui-kit`
   `PageLayout` naming it, and every block inside a pane is its own outlined
-  card. The account entry in the tenant navigation is expandable: its second
-  level is the four panes, each with its own icon (the collapsed rail shows
-  the icon). The appearance section is `account-ui`'s controlled
+  card. The four panes are entries of the account entry's menu, each with its
+  own glyph. The appearance section is `account-ui`'s controlled
   `AppearanceSection`: the page maps the shipped preset shelf to this
   bundle's names and passes the provider's active preset and setter
   (`useAppThemePreset`), and a pick calls `setPreset` and
