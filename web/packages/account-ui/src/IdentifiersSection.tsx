@@ -625,7 +625,7 @@ export function IdentifiersSection({
       openAddSignal !== lastAddSignal.current
     ) {
       lastAddSignal.current = openAddSignal
-      setAddOpen(true)
+      openAdd()
     }
   }, [openAddSignal])
   const addIdentifier = useAuthnLoginAddIdentifier()
@@ -916,6 +916,16 @@ export function IdentifiersSection({
   function clearFailure(): void {
     feedback.reset()
     setFailureText(null)
+  }
+
+  /** Open the add face through its one entry, so the component's own button
+   * and the host's `openAddSignal` leave the section in the same state: the
+   * row flow on another row closes and the shared result slot clears, because
+   * one code flow runs at a time on this section. */
+  function openAdd(): void {
+    closeRowVerify()
+    setFieldErrorKey(null)
+    setAddOpen(true)
   }
 
   /** Settle the add face back to closed with no trace of the attempt: the
@@ -2155,11 +2165,7 @@ export function IdentifiersSection({
             variant="outlined"
             size="small"
             disabled={writeBusy || addBusy}
-            onClick={() => {
-              closeRowVerify()
-              setFieldErrorKey(null)
-              setAddOpen(true)
-            }}
+            onClick={openAdd}
           >
             {t('identifiers.add.open')}
           </Button>

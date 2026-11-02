@@ -20,6 +20,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ReactElement } from 'react'
+import { useState } from 'react'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { chipClasses } from '@mui/material/Chip'
@@ -506,6 +508,95 @@ describe('IdentifiersSection', () => {
     ).toBeTruthy()
 
     await expectNoAxeViolations()
+  })
+
+  it('opens the host add signal through the section entry, closing the row flow and its result', async () => {
+    // The host opens the add face with `openAddSignal`; the component's own
+    // button opens the same face. Both entries must settle the section the
+    // same way: one code flow at a time, and no result from the closed flow
+    // standing under the new form.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            verification: { state: 'verified', email: 'ada@x.test', since: '' },
+            identifiers: [
+              identifier({
+                id: 'id-secondary',
+                kind: 'email',
+                value: 'second@x.test',
+                proven: false,
+                verified_via: 'admin',
+              }),
+            ],
+          }),
+        )
+      }
+      if (
+        call.method === 'POST' &&
+        call.path === '/api/v1/auth/identifiers'
+      ) {
+        return errorResponse(503, 'authn.unavailable')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    // The host's stand-in for the card header's add button: it bumps the
+    // counter, which is the only entry the section sees.
+    function Host(): ReactElement {
+      const [signal, setSignal] = useState(0)
+      return (
+        <>
+          <button type="button" onClick={() => setSignal((count) => count + 1)}>
+            host-add
+          </button>
+          <IdentifiersSection
+            session={rig.session}
+            showAddButton={false}
+            openAddSignal={signal}
+          />
+        </>
+      )
+    }
+    renderWithProviders(<Host />)
+    const user = userEvent.setup()
+
+    await openContactMenu(user, 'second@x.test')
+    await user.click(
+      screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
+    )
+    // The row flow's send fails and settles the section's result slot.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+    expect(
+      await screen.findByText(zhCN.errors.authn.unavailable),
+    ).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'host-add' }))
+
+    // The add form owns the section now: one cancel action, one value field,
+    // and the row flow's failure is gone from the shared slot.
+    expect(
+      await screen.findByRole('heading', { name: zhCN.identifiers.add.title }),
+    ).toBeTruthy()
+    expect(
+      screen.getAllByRole('button', { name: zhCN.identifiers.add.cancel }),
+    ).toHaveLength(1)
+    expect(
+      screen.getAllByLabelText(zhCN.identifiers.add.value.labelEmail),
+    ).toHaveLength(1)
+    expect(screen.queryByText(zhCN.errors.authn.unavailable)).toBeNull()
+
+    // Cancelling the add form leaves no row flow behind to reappear.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.cancel }),
+    )
+    expect(
+      screen.queryByLabelText(zhCN.identifiers.add.value.labelEmail),
+    ).toBeNull()
   })
 
   it.each(['contact', 'both'] as const)(
