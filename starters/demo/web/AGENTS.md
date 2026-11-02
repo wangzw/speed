@@ -142,10 +142,17 @@ program beside this directory embeds with `go:embed` and serves through
   menu (profile / account settings / sign out). Neither frame carries a
   color-mode toggle: the choice is the account page's `ColorModeSection`.
   `TenantMenu` passes `announcement="visually-hidden"`, so a switch is
-  announced through the status region but never painted beside the trigger. The tenant frame puts the actions in `headerActions` and the
-  switcher plus the account menu in `userMenu`; the console frame renders the
-  actions and the account menu but not the switcher (the console resolves no
-  tenant). Entry-point actions in that chrome are always outlined; plain text
+  announced through the status region but never painted beside the trigger.
+  The tenant frame puts the actions in `headerActions` and the tenant switcher
+  in `userMenu`. The account entry is placed by the literal constant
+  `ACCOUNT_ENTRY` in `src/account-entry.ts`: `'sidebar'` (the default) renders
+  `AccountEntry` at the bottom of the navigation column through AppShell's
+  `navFooter` slot and no header avatar menu; `'header'` renders the
+  `UserMenu` in the `userMenu` slot and no column row; `'both'` renders both.
+  The console frame follows the same `ACCOUNT_ENTRY` constant (default
+  `'sidebar'`: a row at the bottom of the column, no header avatar menu;
+  `'header'`: the header menu only; `'both'`: both), and it renders the
+  actions but not the switcher (the console resolves no tenant). Entry-point actions in that chrome are always outlined; plain text
   is reserved for labels that are not clickable. The slot composition is identical in both `shellLayout` forms:
   AppShell moves the same slots into its drawer paper in the sidebar form, so
   `src/chrome.tsx` never branches on the layout. `src/paths.ts` holds the
