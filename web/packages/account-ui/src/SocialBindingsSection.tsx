@@ -391,7 +391,7 @@ export function SocialBindingsSection({
   >(null)
 
   // Read the deployment's discovery document once per session (the same
-  // seam the enroll wizard and the sign-in surface read). A failed read
+  // seam the enrollment panel and the sign-in surface read). A failed read
   // offers no channel: a deployment whose methods cannot be read is not
   // assumed to carry any.
   useEffect(() => {

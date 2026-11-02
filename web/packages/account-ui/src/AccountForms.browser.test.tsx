@@ -4,7 +4,7 @@
  *
  * The rules these cases pin are all about boxes, not callbacks: a replace
  * or change form puts its submit beneath its field, the primary action
- * closes an inline form's row on the right, a wizard's confirm and cancel
+ * closes an inline form's row on the right, a panel's confirm and cancel
  * share one row with the fields capped to the form width, the factor
  * list's removals close on one right rail, both phone steps close on their
  * primary, and the password form's submit ends flush with its fields.
