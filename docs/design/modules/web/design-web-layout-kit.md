@@ -66,7 +66,7 @@ export interface AppShellProps {
   readonly banner?: ReactNode                       // 应用栏之下的整幅横幅，宿主内容，已翻译；缺席、null、false 不渲染容器，宿主节点自身渲染为空时容器零高度
   readonly navLabel?: string                        // 导航地标（与临时抽屉）的可及名，缺省 appShell.navLabel
   readonly navHeader?: AppShellNavSlot              // 抽屉纸内导航地标之前的宿主内容；缺席、null、false 不渲染、不占高
-  readonly navFooter?: AppShellNavSlot              // 抽屉纸内导航地标之后的宿主内容；缺席、null、false 不渲染、不占高
+  readonly navFooter?: AppShellNavSlot              // 抽屉纸内导航地标之后的宿主内容，两种形态下都贴纸底；缺席、null、false 不渲染、不占高
   readonly children: ReactNode
   readonly mobileOpen?: boolean                    // 与下一项成对，控制态
   readonly onMobileOpenChange?: (open: boolean) => void
@@ -79,14 +79,14 @@ export interface AppShellProps {
 export function AppShell(props: AppShellProps): ReactElement
 ```
 
-- **`shellLayout` 是外壳形态的纯附加可选 prop。** `'topbar'`（缺省）是既有宿主得到的唯一形态：固定顶栏承载品牌、头部动作与用户菜单。`'sidebar'` 在 `md` 及以上把 chrome 移进抽屉纸：顶部行是 `header` 与桌面收起开关（`onSidebarCollapsedChange` 给出时），中部依次是 `navHeader`、`nav`（撑满剩余高度、自身滚动）、`navFooter`，底部行是 `headerActions` 与 `userMenu`，贴住纸底。抽屉纸在这一形态下 `overflow: hidden`，导航列取 `flex: 1 1 auto` 配 `minHeight: 0` 与 `overflowY: auto`，底部行取 `flexShrink: 0`；这三条只加在 `sidebar` 形态，顶栏形态的纸保持自身滚动。`main` 仍是页面内容的唯一滚动层。`md` 以下，侧栏形态渲染一条只含抽屉触发按钮与 `header` 的极简顶栏；`headerActions` 与 `userMenu` 在临时抽屉的底部行，临时抽屉没有顶部行，品牌全页只出现一次。窄视口下两种形态的 `banner` 都在顶栏之下；侧栏形态的桌面横幅贴在视口顶，且不渲染顶栏，因此没有 `banner` 地标，其极简顶栏是 `md` 以下的 `banner` 地标。
+- **`shellLayout` 是外壳形态的纯附加可选 prop。** `'topbar'`（缺省）是既有宿主得到的唯一形态：固定顶栏承载品牌、头部动作与用户菜单。`'sidebar'` 在 `md` 及以上把 chrome 移进抽屉纸：顶部行是 `header` 与桌面收起开关（`onSidebarCollapsedChange` 给出时），中部依次是 `navHeader`、`nav`（撑满剩余高度、自身滚动）、`navFooter`，底部行是 `headerActions` 与 `userMenu`。**两种形态下抽屉纸都是 flex 列**：品牌行、`navHeader`、`nav`、`navFooter` 与底部行自上而下排；`nav` 取 `flex: 1 1 auto`、`minHeight: 0` 与 `overflowY: auto`，是纸内唯一自撑高度并滚动的区域，其余行 `flexShrink: 0`，`navFooter` 因此贴住纸底；抽屉纸 `overflow: hidden`。窄栏（收起）与移动临时抽屉同样如此。`main` 仍是页面内容的唯一滚动层。`md` 以下，侧栏形态渲染一条只含抽屉触发按钮与 `header` 的极简顶栏；`headerActions` 与 `userMenu` 在临时抽屉的底部行，临时抽屉没有顶部行，品牌全页只出现一次。窄视口下两种形态的 `banner` 都在顶栏之下；侧栏形态的桌面横幅贴在视口顶，且不渲染顶栏，因此没有 `banner` 地标，其极简顶栏是 `md` 以下的 `banner` 地标。
 - **固定头只在有内容时渲染。** 顶栏形态的顶栏恒在；侧栏形态在桌面且无 `banner` 时不渲染固定头容器，三处偏移占位返回 `null`，否则未测量的占位会把主题工具条高度留成永久空隙。固定头的渲染高度由 `ResizeObserver` 测量，`main` 与抽屉纸内的占位取同一个值；切换形态或跨断点时测量值复位。收起开关在 `sidebar` 形态落在抽屉纸顶部行末尾，在 `topbar` 形态仍在顶栏；移动端触发按钮的文案复用 `appShell.openNav`/`closeNav`。
 - **顶栏形态的顶部栏按视口宽度排成一排或两排。** `md` 及以上不施加分排：抽屉触发（或桌面收起开关）、品牌、`headerActions` 与 `userMenu` 依次排在同一行，品牌占满剩余宽度，仅在内容超宽时按换行回落。`md` 以下排成至多两排：抽屉触发、品牌与 `headerActions` 在第一排，`userMenu` 独占整宽的第二排；工具条左右内边距与控件间距同时收紧一档，品牌以零弹性基准让出宽度并在自身框内省略，第一排因此容得下动作。收紧只作用于顶栏形态：侧栏形态的极简顶栏只有触发按钮与品牌，保持主题的两步间距。两种排布下每个头部控件的可及名、可点击与可见尺寸都保留，排布不靠隐藏或禁用控件取得。
 
 - **导航项与分组是同一入口的两种元素，拓宽是纯附加的。** `navItems` 的元素类型由 `AppShellNavItem` 拓宽为 `AppShellNavItem | AppShellNavGroup`（`AppShellNavEntry`）。这是一处纯附加：`AppShellNavItem[]` 仍可赋值给这个联合数组，未使用分组的宿主逐字节不变。分组渲染为一个带标题的可折叠区：标题本身即展开控件（`aria-expanded` 与其目标 `aria-controls`），组内是普通导航项。带 `children` 的项渲染为一个可展开的父项，其子项缩进渲染，各是真实链接或按钮；父项自身不再是一条导航行（其 `href`/`onClick`/`selected` 不渲染，路由在子项里）。分组与嵌套都复用同一套叶子激活（先 `onClick`、再 `onNavigate`）与 `selected`/`aria-current` 约定。折叠态的组或父项把其子项以 `hidden` 留在 DOM 里，故无障碍树与角色查询在收起时都取不到它们。分组标题可带一个可选图标（`AppShellNavGroup.icon`，纯附加的可选字段）：收起为窄栏时，带图标的标题按图标行呈现，标题文本裁剪但仍作可及名并由提示补足；无图标的标题保留截断的文本，与无图标条目同一回落。
 - **`banner` 是与顶部栏同属外壳固定头部的整幅槽，位于顶部栏之下，纯附加的可选字段**（决策见 [ADR-web-impersonation-shell](../../../adr/adr-web-impersonation-shell.md)）。外壳的固定头是一个固定在视口顶部的容器，顶部栏与横幅按文档流依次排在其中：顶部栏始终贴着视口顶，横幅紧随其下、占满视口宽度；内容区的顶部占位随之加高，使内容不被二者盖住；导航抽屉纸仍从视口顶开始，纸内的顶部占位同样加高，使抽屉里的内容落在顶部栏与横幅之下，常驻抽屉纸顶部被二者盖住的那一段不放内容。页面滚动时顶部栏与横幅一起留在视口里，外壳其余部分不动。顶部栏因内容换行而变高时，横幅随之下移，二者不重叠。任一断点都不隐藏它，宿主节点在窄屏下自行换行。它与顶部栏同层（`drawer` 加一），高于页面内容与抽屉纸、低于模态的侧边面板与对话框，不抢焦点。焦点顺序依文档顺序：跳转链接是外壳里第一个可聚焦元素，其后依次是顶部栏里的控件、横幅槽里的可聚焦内容、导航抽屉里的导航项，最后是 `main`。槽容器不带内边距、边框与最小高度，高度完全取自宿主节点：`banner` 缺席、为 `null` 或 `false` 时不渲染容器，宿主节点自身渲染为空（例如只含一个空的 live region）时容器零高度，顶部栏之下不留空隙，未使用它的宿主的外观与焦点顺序不变。槽不加地标也不加 `aria-live`，宿主节点自带它需要的角色与播报；它不是 `banner` 地标，`banner` 地标仍是顶部栏。槽属于 `AppShell` 自身，不属于 `children`，路由切换时不卸载、不重挂。
 
-- **`navHeader` 与 `navFooter` 是抽屉纸内导航地标前后的宿主内容槽，两者都是纯附加的可选字段。** 两个槽都渲染在抽屉纸里：`navHeader` 紧接在 `nav` 地标之前，`navFooter` 紧随其后，常驻与临时两种抽屉一致。它们是地标的兄弟节点而非其内容，故 `nav` 地标及其可及名不变，也不向导航项集合添加条目。槽可给普通宿主节点，也可给一个渲染函数，后者收到已挂载抽屉的状态（`AppShellNavSlotState`）：`narrow` 仅在挂载的是收起窄栏时为真，临时抽屉恒为假；`closeDrawer` 关闭非受控的临时抽屉、受控时经 `onMobileOpenChange(false)` 上报、常驻抽屉下无操作。槽缺席、为 `null` 或 `false` 时不渲染、不占高度。`headerActions` 与 `userMenu` 取同一状态：侧栏形态把它们放进底部行，收起窄栏时 `narrow` 为真，放到窄栏里放不下的宿主控件于是渲染其图标形态，而不是被纸面裁切。
+- **`navHeader` 与 `navFooter` 是抽屉纸内导航地标前后的宿主内容槽，两者都是纯附加的可选字段。** 两个槽都渲染在抽屉纸里：`navHeader` 紧接在 `nav` 地标之前，`navFooter` 紧随其后，常驻与临时两种抽屉一致。它们是地标的兄弟节点而非其内容，故 `nav` 地标及其可及名不变，也不向导航项集合添加条目。槽可给普通宿主节点，也可给一个渲染函数，后者收到已挂载抽屉的状态（`AppShellNavSlotState`）：`narrow` 仅在挂载的是收起窄栏时为真，临时抽屉恒为假；`closeDrawer` 关闭非受控的临时抽屉、受控时经 `onMobileOpenChange(false)` 上报、常驻抽屉下无操作。槽缺席、为 `null` 或 `false` 时不渲染、不占高度；`navFooter` 出现在抽屉纸最下沿——两种外壳形态、收起窄栏与移动临时抽屉都一样。`headerActions` 与 `userMenu` 取同一状态：侧栏形态把它们放进底部行，收起窄栏时 `narrow` 为真，放到窄栏里放不下的宿主控件于是渲染其图标形态，而不是被纸面裁切。
 
 ### isPlainPrimaryClick
 
