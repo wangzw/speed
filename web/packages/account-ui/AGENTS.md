@@ -57,6 +57,14 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   bindings add area, the enroll wizard and the step-up dialog, and
   `session.readFlow` in the callback handler. A surface with no flow to
   drive takes no session prop.
+- **Every form puts its action row beneath its fields.** The row spans
+  the form's content width and closes on its right edge, primary action
+  last, secondary controls to its left. Text fields fill their
+  container's content width -- the card's content area, the dialog's
+  content area, or the inline editor's text column -- so one form never
+  mixes two field widths. `ProfileSection`'s save button and the factor
+  rename editor follow the same rule; the inline display-name field
+  commits on blur and Enter and renders no action row.
 - **The generated-hooks tier, consumed.** Sign-in forms deliberately
   avoid react-query because their answers are one-shot; account lists are
   cacheable shared state that invalidates after its own mutations, which
@@ -218,11 +226,13 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   empty) and its last successful verification (a row that has never passed
   one says so), through the same account timezone chain as every other
   surface. The row's trailing overflow menu holds rename and removal; the
-  inline rename writes the label through the generated mutation, an empty
-  value clears it and the row falls back to the kind, and a landed rename
-  refetches the list. The enrollment name form is prefilled with the
-  browser/OS summary the session rows show (`summarizeUserAgent`), editable,
-  and may be submitted empty. The wizard opens inside the enrolling kind's
+  inline editor puts its name field on a line of its own at the editor's
+  text-column width, with the cancel-and-save action row beneath it closed
+  on the right. The rename writes the label through the generated
+  mutation, an empty value clears it and the row falls back to the kind,
+  and a landed rename refetches the list. The enrollment name form is
+  prefilled with the browser/OS summary the session rows show
+  (`summarizeUserAgent`), editable, and may be submitted empty. The wizard opens inside the enrolling kind's
   group and replaces its rows; its heading names the kind being enrolled
   through the parameterized `mfa.enroll.title`, whose method slot carries
   that kind's `mfa.factor.kind.*` name (the generic other label for an

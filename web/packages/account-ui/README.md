@@ -167,9 +167,10 @@ name, lets the field track that value until the user edits it, and
 PATCHes a one-field body from the save button, which is disabled while
 the field still holds the account's own name (a save with nothing changed
 would be a no-op PATCH). A successful save fills a `role="status"` notice
-and refetches the profile. The write needs no fresh authentication, so a
-refusal renders its code text in that notice's region and no step-up
-dialog opens.
+and refetches the profile. The save button closes the form's action row on
+the right, on a line beneath the field. The write needs no fresh
+authentication, so a refusal renders its code text in that notice's region
+and no step-up dialog opens.
 
 ```tsx
 interface ProfileSectionProps {
@@ -592,8 +593,10 @@ formatted with the account's display-timezone chain.
   browser's WebAuthn API by `@speed/auth-core/webauthn`. The settled
   `enrolled` refetches the factors.
 - Rename. A row's inline editor sends `PATCH /api/v1/auth/factors/{id}`
-  with the new label. The label is metadata, so no step-up gates it; an
-  empty value clears the name and the row reads as its kind. A landed
+  with the new label. The editor's name field fills the row's text column
+  and its cancel/save action row sits on the next line, closed on the
+  right. The label is metadata, so no step-up gates it; an empty value
+  clears the name and the row reads as its kind. A landed
   rename confirms below the list, naming the name the server stored, and
   refetches the list; a refusal renders its error code there.
 - Remove. A row's action sends `DELETE /api/v1/auth/factors/{id}` behind the

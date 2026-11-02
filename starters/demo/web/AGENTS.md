@@ -289,8 +289,11 @@ and the notification bell at zero, one and above the cap — because the shared
 them. It is part of the workspace browser tier, not this app's `test` or
 `test:a11y`: the root `make web-browser` entry discovers it through
 `web/vitest.browser.config.ts` (which names this directory's glob) and runs it
-in the one Chromium instance beside the packages' browser cases. Chromium is
-not part of the `.mise.toml` toolchain, so this leg is not in `make check`.
+in the one Chromium instance beside the packages' browser cases. The same tier
+carries `src/a11y/form-actions.browser.test.tsx`, which opens every form on the
+profile and security panes and measures each submit against its fields and the
+form's content right edge. Chromium is not part of the `.mise.toml` toolchain,
+so this leg is not in `make check`.
 
 axe covers only the mechanically decidable part of WCAG (roughly 30-40%);
 the gate proves no regression, and does not replace manual review. See the
