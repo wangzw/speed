@@ -19,8 +19,9 @@
  * closed) rather than guessing.
  *
  *  - Enroll. The entry opens the method's one panel and starts the flow at
- *    once: the panel holds the name field (empty, with a neutral example,
- *    and editable), the sentence stating what confirming does, and the
+ *    once: the panel holds the name field (prefilled with the browser/OS
+ *    summary the session rows show, editable and clearable), the sentence
+ *    stating what confirming does, and the
  *    method's body as its first step arrives -- TOTP's otpauth_uri as a QR
  *    symbol with a manual-entry disclosure for its base32 secret beside a
  *    six-digit code field, or a passkey's creation options driven through
@@ -167,6 +168,7 @@ import { asFactorList } from './internal/models.js'
 import { useFactorsQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountTimeZone } from './internal/time-zone.js'
+import { summarizeUserAgent } from './internal/ua-summary.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
@@ -226,6 +228,16 @@ type AdvanceOutcome =
       readonly seq: number
       readonly failure: unknown
     }
+
+/** The name suggested for a factor registered from this browser: the same
+ * short browser/OS summary the session rows show. An unrecognised user
+ * agent suggests no name; the reader can type one or leave it empty. */
+function suggestedFactorName(): string {
+  if (typeof navigator === 'undefined') {
+    return ''
+  }
+  return summarizeUserAgent(navigator.userAgent) ?? ''
+}
 
 /** Parses a server timestamp; answers null for an absent or malformed
  * value so a bad row can never reach Intl and throw. */
@@ -597,8 +609,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     feedback.reset()
     panelFeedback.reset()
     const token = ++panelTokenRef.current
-    setPanel({ kind: factorKind, label: '', step: null, seq: 0 })
-    void startEnrollFlow(factorKind, token)
+    const label = suggestedFactorName()
+    setPanel({ kind: factorKind, label, step: null, seq: 0 })
+    void startEnrollFlow(factorKind, token, label)
   }
 
   /** Start the enrollment flow of one method and park its first step on the
@@ -606,6 +619,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   async function startEnrollFlow(
     factorKind: string,
     token: number,
+    label: string,
   ): Promise<void> {
     // A retry starts a new attempt: the slot is cleared before it goes out.
     feedback.reset()
@@ -658,7 +672,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       setPanel(null)
       if (state.state === 'enrolled') {
         try {
-          feedback.succeed(await finishEnrollment(factorKind, ''))
+          feedback.succeed(await finishEnrollment(factorKind, label.trim()))
         } catch (failure) {
           feedback.fail(failure)
         }
@@ -1032,8 +1046,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                             {/* The name field and the method's body share the
                                 panel: the name travels with no request of its
                                 own, and the row the enrollment adds is named
-                                once the flow settles. The field starts empty
-                                with a neutral example. */}
+                                once the flow settles. The field suggests the
+                                browser/OS summary the session rows show; it
+                                stays editable and may be cleared. */}
                             <TextField
                               label={t('mfa.enroll.labelField')}
                               placeholder={t('mfa.enroll.labelPlaceholder')}
@@ -1082,7 +1097,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                     disabled={enrolling}
                                     onClick={() => {
                                       const token = ++panelTokenRef.current
-                                      void startEnrollFlow(kind, token)
+                                      void startEnrollFlow(kind, token, open.label)
                                     }}
                                   >
                                     {t('mfa.retry')}

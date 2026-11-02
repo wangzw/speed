@@ -32,6 +32,7 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { profileBody } from '../test-utils/fixtures.js'
+import { summarizeUserAgent } from './internal/ua-summary.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
 import {
@@ -1188,10 +1189,12 @@ describe('MfaSection', () => {
       })
     })
 
-    // The panel states what confirming will do before its controls, and the
-    // name field starts empty.
+    // The panel states what confirming will do before its controls; the
+    // name field suggests the browser/OS summary when one is recognised.
     expect(screen.getByText(zhCN.mfa.enroll.note.totp)).toBeVisible()
-    expect(screen.getByLabelText(zhCN.mfa.enroll.labelField)).toHaveValue('')
+    expect(screen.getByLabelText(zhCN.mfa.enroll.labelField)).toHaveValue(
+      summarizeUserAgent(window.navigator.userAgent) ?? '',
+    )
 
     // The step's otpauth URI is its own scannable symbol: the step's JSON is
     // never rendered as a blob, and the URI never appears as text.
@@ -1290,7 +1293,7 @@ describe('MfaSection', () => {
     ).toHaveLength(1)
   })
 
-  it('starts the enrollment name empty and names the added row with it', async () => {
+  it('suggests the browser summary and names the added row with the typed name', async () => {
     // The panel opens with the flow already started, so the name travels to
     // the row the enrollment adds rather than to the flow's first input.
     const restore = stubUserAgent(
@@ -1352,10 +1355,13 @@ describe('MfaSection', () => {
 
       await openEnrollment(user, zhCN.mfa.factor.kind.totp)
       await screen.findByRole('img', { name: zhCN.flowStep.totpQrLabel })
-      // The name field starts empty even for a browser the session rows can
-      // summarise; the neutral example is a placeholder, not a value.
+      // The name field suggests the browser/OS summary the session rows
+      // show; the neutral example stays as the placeholder a cleared field
+      // falls back to.
       const field = screen.getByLabelText(zhCN.mfa.enroll.labelField)
-      expect(field).toHaveValue('')
+      const suggested = summarizeUserAgent(window.navigator.userAgent)
+      expect(suggested).not.toBeNull()
+      expect(field).toHaveValue(suggested)
       expect(field).toHaveAttribute(
         'placeholder',
         zhCN.mfa.enroll.labelPlaceholder,
@@ -1372,6 +1378,7 @@ describe('MfaSection', () => {
         input: { kind: 'totp', label: '' },
       })
 
+      await user.clear(field)
       await user.type(field, 'My phone')
       await user.type(
         screen.getByLabelText(zhCN.flowStep.codeLabel),
@@ -1432,6 +1439,9 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
 
     await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+    // The suggested name is cleared: an empty name is the server's own
+    // empty label, so no rename follows.
+    await user.clear(screen.getByLabelText(zhCN.mfa.enroll.labelField))
     await user.type(
       await screen.findByLabelText(zhCN.flowStep.codeLabel),
       '123456',
