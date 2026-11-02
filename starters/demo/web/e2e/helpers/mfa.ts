@@ -2,10 +2,10 @@
  * The two-step-verification section's enrollment panel.
  *
  * A method's entry opens the panel with its flow already started: the name
- * field, the method's body and one confirm share the panel. The field starts
- * empty, and the typed name is written to the row the flow adds; a later step
- * that chooses the factor by name therefore addresses a fixed, recognisable
- * string rather than the browser's suggestion.
+ * field, the method's body and one confirm share the panel. The field
+ * suggests a browser/OS name; the caller replaces it with a fixed,
+ * recognisable string that a later step choosing the factor by name can
+ * address regardless of the browser.
  */
 import { expect, type Locator } from '@playwright/test'
 
@@ -21,7 +21,7 @@ export async function fillFactorName(
     exact: true,
   })
   await expect(field).toBeVisible()
-  // The field carries no prefill: the reader's name is the only value.
-  await expect(field).toHaveValue('')
+  // The suggested name is a value, not a placeholder: fill replaces it.
+  await expect(field).not.toHaveValue('')
   await field.fill(name)
 }
