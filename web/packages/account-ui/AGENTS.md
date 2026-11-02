@@ -210,8 +210,8 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
 - **A factor row reads as its name and its last verification instant.**
   `MfaSection` groups the factors by kind; each assembled kind is a section
   whose heading names it, and an enrollable group carries one add action on
-  that heading, worded "add another device" for a passkey that already has
-  an enabled row and "add" otherwise. A group lists its enabled and disabled
+  that heading, always worded "add" whether or not the group already has an
+  enabled row. A group lists its enabled and disabled
   rows; a pending row is the enrollment's intermediate state and is
   withheld. A disabled row carries a muted "disabled" marker and offers
   removal alone. Each row shows its label (the kind name when the label is
