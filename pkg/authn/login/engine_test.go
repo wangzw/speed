@@ -1051,7 +1051,9 @@ func TestDeletingTheLastFactorCanProveThePassword(t *testing.T) {
 	r.mfa.offered = []authn.FactorRecord{{
 		ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive, ActivatedAt: time.Now().Add(-time.Hour),
 	}}
-	r.mfa.assurance = authn.MFAResult{Assurance: authn.AssuranceMulti}
+	// A password proved alone is a single factor; the policy answering single
+	// here is what the elevation must carry through unchanged.
+	r.mfa.assurance = authn.MFAResult{Assurance: authn.AssuranceSingle}
 
 	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
 		`{"purpose":"step-up","input":{"exclude_factor":"f1"}}`)
@@ -1084,6 +1086,11 @@ func TestDeletingTheLastFactorCanProveThePassword(t *testing.T) {
 	}
 	if len(r.sessions.elevated) != 1 {
 		t.Fatalf("the step-up elevated %d sessions, want one", len(r.sessions.elevated))
+	}
+	// The password alone is a single factor: the elevation must not claim
+	// multi-factor strength, which would unlock every other account action.
+	if got := r.sessions.elevated[0].Assurance; got != authn.AssuranceSingle {
+		t.Errorf("the elevation is %v, want single-factor", got)
 	}
 }
 
