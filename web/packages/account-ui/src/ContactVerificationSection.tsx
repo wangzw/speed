@@ -357,6 +357,9 @@ export function ContactVerificationSection({
 
   function verify(nextCode: string): Promise<void> {
     setCodeInvalid(false)
+    // A verification is a new attempt in the shared result position, so the
+    // automatic send's step-up explanation does not stand beside its answer.
+    setAutoStepUp(false)
     return feedback.run(async () => {
       setVerifyFailureText(null)
       try {

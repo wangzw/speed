@@ -837,6 +837,45 @@ describe('ContactVerificationSection', () => {
     ).toHaveLength(2)
   })
 
+  it('clears the automatic step-up explanation when a verification starts', async () => {
+    // The explanation describes the automatic send's refusal, not a standing
+    // state: a verification is a new attempt in the shared result position,
+    // so it must not stand beside the attempt's answer.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+      }
+      if (call.method === 'POST' && call.path === ADD_PATH) {
+        return errorResponse(401, 'authn.insufficient_user_authentication')
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return errorResponse(401, 'authn.login_failed')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond, { autoSend: true })
+    const user = userEvent.setup()
+
+    expect(
+      await screen.findByText(zhCN.verification.autoStepUp),
+    ).toBeTruthy()
+
+    await user.type(
+      screen.getByLabelText(zhCN.verification.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.verification.verify }),
+    )
+
+    expect(
+      await screen.findByText(zhCN.verification.codeInvalid),
+    ).toBeTruthy()
+    // The failed verification's own wording is the one result: the automatic
+    // send's explanation left with the attempt that replaced it.
+    expect(screen.queryByText(zhCN.verification.autoStepUp)).toBeNull()
+  })
+
   it('changes the pending target by sending a code to the new address', async () => {
     let current = 'ada@x.test'
     // A stale profile answer after the change: the display and the resend
