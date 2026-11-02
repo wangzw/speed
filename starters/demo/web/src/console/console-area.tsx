@@ -23,6 +23,9 @@
  * and the sign-out action (src/chrome) -- plus an exit back to the tenant area,
  * so the console is not a navigation dead end. This one has no tenant
  * switcher, which is why the exit is a plain link rather than a switcher.
+ * The account entry follows the same ACCOUNT_ENTRY constant as the tenant
+ * frame (src/account-entry): by default it is the row at the bottom of the
+ * navigation column, and the header carries no avatar menu.
  */
 
 import { useCallback } from 'react'
@@ -40,9 +43,10 @@ import type { AppShellShellLayout } from '@speed/layout-kit'
 import { useLocationPath, useNavigate, useNavItems, useRouteLinkProps } from '@speed/route-kit'
 import type { FeatureName } from '@speed/api-sdk/features'
 import type { ReactElement, ReactNode } from 'react'
+import { ACCOUNT_ENTRY } from '../account-entry.js'
 import { useAppServices } from '../app-services.js'
 import { CallbackLandingNotice } from '../callback-error-notice.js'
-import { AppBrand, UserMenu } from '../chrome.js'
+import { AccountEntry, AppBrand, UserMenu } from '../chrome.js'
 import { TENANT_HOME_PATH } from '../pages/not-found-page.js'
 import { invitationPath, ACCOUNT_PATH } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
@@ -129,6 +133,18 @@ export function ConsoleArea({
       hasFeature={hasFeature}
       title={<AppBrand />}
       headerActions={(rail) => <ConsoleHeaderActions narrow={rail.narrow} />}
+      // The account entry's placement follows the tenant frame's constant:
+      // a row at the bottom of the navigation column by default, the header
+      // menu only when the host puts it there. The console keeps no tenant
+      // switcher, so the footer holds the account entry alone.
+      navFooter={(rail) =>
+        ACCOUNT_ENTRY === 'header' ? null : (
+          <AccountEntry
+            narrow={rail.narrow}
+            closeDrawer={rail.closeDrawer}
+          />
+        )
+      }
       onNavigate={navigate}
       // The session a step-up-gated console write elevates: a privileged
       // write refused for a strength shortfall opens the re-auth dialog,
@@ -207,7 +223,9 @@ function ConsoleHeaderActions({
           {t('console.backToApp')}
         </Link>
       )}
-      <UserMenu />
+      {/* The header carries the account menu only when the host places it
+          there; the default sidebar placement keeps it in the column. */}
+      {ACCOUNT_ENTRY === 'sidebar' ? null : <UserMenu />}
     </>
   )
 }

@@ -741,7 +741,7 @@ describe('the impersonation shell', () => {
       screen
         .getAllByRole('button')
         .filter((button) => button.getAttribute('aria-haspopup') === 'menu'),
-    ).toEqual([screen.getByTestId('user-menu-trigger')])
+    ).toEqual([screen.getByTestId('account-entry-trigger')])
     expect(
       screen.getByRole('button', { name: accountTriggerName('Target One') }),
     ).toBeInTheDocument()
@@ -2657,10 +2657,10 @@ describe('the impersonation shell', () => {
 
     // A tenant-area route change keeps the same frame and the same
     // dismissal: the notice does not pop back open on navigation.
-    await user.click(screen.getByTestId('user-menu-trigger'))
+    await user.click(screen.getByTestId('account-entry-trigger'))
     await user.click(
       screen.getByRole('menuitem', {
-        name: demoEnUS.userMenu.accountSettings,
+        name: demoEnUS.account.sections.profile,
       }),
     )
     // The account menu opens the group address, which lands on the first
@@ -2754,16 +2754,13 @@ describe('the impersonation shell', () => {
       screen.getByRole('link', { name: tLayout('appShell.skipToContent') }),
     ).toHaveFocus()
 
-    // Then the header's controls (the chip and the account trigger), then
-    // the banner's own controls.
+    // Then the header's remaining control (the chip), then the banner's own
+    // controls: the account entry now lives in the navigation column, so it
+    // no longer sits between them.
     const chip = screen.getByRole('button', {
       name: tAuth('impersonation.impersonating'),
     })
     chip.focus()
-    await user.tab()
-    expect(
-      screen.getByRole('button', { name: accountTriggerName('Target One') }),
-    ).toHaveFocus()
     await user.tab()
     expect(
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),

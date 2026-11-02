@@ -31,6 +31,7 @@ import { useCallback, useId, useRef, useState, useSyncExternalStore } from 'reac
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
@@ -45,7 +46,7 @@ import type { TenantOption } from '@speed/tenancy-ui'
 import { themePresets } from '@speed/theme-presets'
 import type { AppThemeModePreference } from '@speed/ui-kit'
 import { useAppServices } from './app-services.js'
-import { ACCOUNT_PATH } from './paths.js'
+import { ACCOUNT_PATH, ACCOUNT_SECTION_PATHS } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import { selfTenantAlias } from './tenant-self.js'
 
@@ -582,6 +583,143 @@ export function UserMenu({
         <MenuItem onClick={goToAccount}>
           {t('userMenu.accountSettings')}
         </MenuItem>
+        <MenuItem onClick={signOut}>{t('userMenu.signOut')}</MenuItem>
+      </Menu>
+    </Box>
+  )
+}
+
+/**
+ * The account entry at the bottom of the navigation column: the signed-in
+ * user's initials and display name, opening the account panes and the
+ * sign-out action upward. The collapsed rail keeps the avatar alone; the
+ * accessible name still carries the account, so the visible initials stay
+ * inside it (WCAG 2.5.3). The four panes are the same routes the tenant
+ * navigation lists; sign-out is the session's own logout.
+ */
+export function AccountEntry({
+  narrow = false,
+  closeDrawer,
+}: {
+  /** The collapsed rail's icon-only form. */
+  readonly narrow?: boolean
+  /** Closes a temporary (mobile) drawer before navigating. */
+  readonly closeDrawer?: () => void
+}): ReactElement {
+  const { session } = useAppServices()
+  const navigate = useNavigate()
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  const snapshot = useAuthState()
+  const menuId = useId()
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
+  const menuOpen = anchorEl !== null
+
+  const displayName =
+    snapshot.state === 'authenticated'
+      ? snapshot.principal?.display_name
+      : undefined
+  const initials = avatarInitials(displayName)
+  const triggerLabel =
+    displayName === undefined || displayName.trim() === ''
+      ? t('userMenu.accountMenu')
+      : initials === ''
+        ? displayName
+        : `${initials} ${displayName}`
+
+  const closeMenu = (): void => setAnchorEl(null)
+  const goTo = (path: string): void => {
+    closeMenu()
+    closeDrawer?.()
+    navigate(path)
+  }
+  const signOut = (): void => {
+    closeMenu()
+    closeDrawer?.()
+    // Logout is terminal either way (auth-core clears the local session and
+    // the shell flips to its ended/sign-in branch), so a refused server
+    // revocation has nothing left to retry against and needs no banner.
+    void session.logout().catch(() => undefined)
+  }
+
+  return (
+    <Box sx={{ width: '100%' }}>
+      <Button
+        fullWidth
+        color="inherit"
+        aria-label={triggerLabel}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        aria-controls={menuOpen ? menuId : undefined}
+        data-testid="account-entry-trigger"
+        onClick={(event) => setAnchorEl(event.currentTarget)}
+        sx={{
+          justifyContent: narrow ? 'center' : 'flex-start',
+          gap: 1,
+          px: narrow ? 0 : 1,
+          py: 0.75,
+          minWidth: 0,
+          textTransform: 'none',
+        }}
+      >
+        <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
+        {narrow ? null : (
+          <>
+            <Box
+              component="span"
+              sx={{
+                flex: '1 1 auto',
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                textAlign: 'left',
+                typography: 'body2',
+              }}
+            >
+              {displayName ?? t('userMenu.accountMenu')}
+            </Box>
+            <Box
+              component="svg"
+              aria-hidden="true"
+              focusable="false"
+              viewBox="0 0 24 24"
+              width={16}
+              height={16}
+              fill="currentColor"
+              sx={{ flex: '0 0 auto' }}
+            >
+              <path d="M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z" />
+            </Box>
+          </>
+        )}
+      </Button>
+      <Menu
+        id={menuId}
+        anchorEl={anchorEl}
+        open={menuOpen}
+        onClose={closeMenu}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+      >
+        {/* The same end attempt the header menu carries: an impersonation
+            ends from wherever the account entry lives. */}
+        <ImpersonationEndMenuItem divider onActivate={closeMenu} />
+        {(
+          [
+            ['profile', 'account.sections.profile'],
+            ['security', 'account.sections.security'],
+            ['sessions', 'account.sections.sessions'],
+            ['preferences', 'account.sections.preferences'],
+          ] as const
+        ).map(([section, key]) => (
+          <MenuItem
+            key={section}
+            onClick={() => goTo(ACCOUNT_SECTION_PATHS[section])}
+          >
+            {t(key)}
+          </MenuItem>
+        ))}
+        <Divider />
         <MenuItem onClick={signOut}>{t('userMenu.signOut')}</MenuItem>
       </Menu>
     </Box>

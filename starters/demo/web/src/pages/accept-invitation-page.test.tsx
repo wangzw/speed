@@ -351,10 +351,10 @@ describe('the invitation landing', () => {
 
     // A later visit to the home page in the same session does not bring it
     // back.
-    await user.click(screen.getByTestId('user-menu-trigger'))
+    await user.click(screen.getByTestId('account-entry-trigger'))
     await user.click(
       screen.getByRole('menuitem', {
-        name: demoEnUS.userMenu.accountSettings,
+        name: demoEnUS.account.sections.profile,
       }),
     )
     expect(

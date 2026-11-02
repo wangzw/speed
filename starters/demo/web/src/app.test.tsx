@@ -848,7 +848,7 @@ describe('the console area', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('renders the same brand and account menu in its top bar as the tenant frame', async () => {
+  it('renders the same brand in its top bar and the account entry in the nav drawer', async () => {
     window.history.replaceState({}, '', '/console/tenants')
     const user = userEvent.setup()
     renderDemoApp({
@@ -857,20 +857,25 @@ describe('the console area', () => {
 
     // The console frame is a different shell (no tenant switcher), but its
     // banner is the same chrome the tenant frame carries: the brand in the
-    // header's own type, and the account menu beside it. The routed page's
-    // PageHeader is also a <header> element, so scope to the banner that
-    // carries the brand.
+    // header's own type. The account entry follows ACCOUNT_ENTRY's default,
+    // so it is the row at the bottom of the navigation column and the header
+    // carries no avatar menu. The routed page's PageHeader is also a <header>
+    // element, so scope to the banner that carries the brand.
     const brand = await screen.findByText(demoEnUS.app.title)
     const banner = brand.closest('header')
     expect(banner).not.toBeNull()
+    expect(
+      within(banner as HTMLElement).queryByTestId('user-menu-trigger'),
+    ).toBeNull()
 
-    // The avatar trigger carries the signed-in principal's identity; its menu
-    // carries the account-settings / sign-out entries.
-    await user.click(
-      within(banner as HTMLElement).getByTestId('user-menu-trigger'),
-    )
+    // The account entry carries the signed-in principal's identity; its menu
+    // carries one entry per account pane plus sign-out.
+    await user.click(screen.getByTestId('account-entry-trigger'))
     for (const name of [
-      demoEnUS.userMenu.accountSettings,
+      demoEnUS.account.sections.profile,
+      demoEnUS.account.sections.security,
+      demoEnUS.account.sections.sessions,
+      demoEnUS.account.sections.preferences,
       demoEnUS.userMenu.signOut,
     ]) {
       expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
@@ -1043,25 +1048,27 @@ describe('a staff viewer whose platform permission is not the dashboard code', (
 })
 
 describe('the tenant area header controls', () => {
-  it('keeps the visible avatar glyph inside the account trigger name', async () => {
-    // The trigger's glyph is visible text, so WCAG 2.5.3 requires it inside
+  it('keeps the visible avatar glyph inside the account entry name', async () => {
+    // The entry's glyph is visible text, so WCAG 2.5.3 requires it inside
     // the control's accessible name, together with the identity it stands
-    // for.
+    // for. The entry sits at the bottom of the navigation column.
     const snapshot = authenticatedSnapshot()
     renderDemoApp({ session: createTestSession(snapshot) })
-    const trigger = await screen.findByTestId('user-menu-trigger')
-    const glyph = (trigger.textContent ?? '').trim()
+    const trigger = await screen.findByTestId('account-entry-trigger')
     const displayName = (snapshot.principal?.display_name ?? '').trim()
-    expect(glyph).not.toBe('')
+    const label = trigger.getAttribute('aria-label') ?? ''
     expect(displayName).not.toBe('')
-    expect(trigger.getAttribute('aria-label')).toBe(`${glyph} ${displayName}`)
+    // The initials lead, the identity follows.
+    expect(label.endsWith(displayName)).toBe(true)
+    expect(label.length).toBeGreaterThan(displayName.length)
+    expect((trigger.textContent ?? '').trim()).not.toBe('')
   })
 
   it('raises the header icon controls to the 44px floor under a coarse pointer', async () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
     // The account-menu trigger shares the header row with the notification
     // bell; on a finger-driven device each one gates up to the 44x44 floor.
-    const gated = [await screen.findByTestId('user-menu-trigger')]
+    const gated = [await screen.findByTestId('account-entry-trigger')]
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
     }
@@ -1071,17 +1078,15 @@ describe('the tenant area header controls', () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
     // The language entry lives on the account preferences page alone. The
-    // header's menus are the tenant switcher and the account menu; a third
-    // menu trigger would be the removed language switch.
-    const trigger = await screen.findByTestId('user-menu-trigger')
-    const banner = trigger.closest('header')
-    expect(banner).not.toBeNull()
+    // account entry is in the navigation column, so the header's only menu
+    // trigger is the tenant switcher; a second one would be a removed
+    // control.
+    const [banner] = await screen.findAllByRole('banner')
     const menus = within(banner as HTMLElement)
       .getAllByRole('button')
       .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
-    expect(menus).toHaveLength(2)
+    expect(menus).toHaveLength(1)
     expect(menus[0]).toHaveAccessibleName('acme')
-    expect(menus[1]).toBe(trigger)
   })
 
   it('offers only the tenants the seeded deployment registers', async () => {
@@ -1377,15 +1382,13 @@ describe('the account page', () => {
         name: tAccount('preferences.language.label'),
       }),
     ).toBeInTheDocument()
-    // ...and the tenant header carries no language switch: its menus are the
-    // tenant switcher and the account menu only.
-    const trigger = screen.getByTestId('user-menu-trigger')
-    const banner = trigger.closest('header')
-    expect(banner).not.toBeNull()
+    // ...and the tenant header carries no language switch: its only menu
+    // is the tenant switcher, because the account entry is in the column.
+    const [banner] = screen.getAllByRole('banner')
     const menus = within(banner as HTMLElement)
       .getAllByRole('button')
       .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
-    expect(menus).toHaveLength(2)
+    expect(menus).toHaveLength(1)
   })
 
   it('applies a chosen preset at once, remembers it, and restores it on a remount', async () => {
@@ -1446,21 +1449,20 @@ describe('the account page', () => {
 })
 
 describe('the sidebar shell layout', () => {
-  it('names the account trigger by its glyph and identity in the side column', async () => {
-    // The sidebar form mounts the same trigger in the drawer paper instead of
-    // the app bar; the visible glyph is still text inside the control, so
-    // WCAG 2.5.3 holds in both shell forms.
+  it('names the account entry by its glyph and identity in the side column', async () => {
+    // The account entry lives at the bottom of the navigation column; the
+    // visible glyph is text inside the control, so WCAG 2.5.3 holds.
     const snapshot = authenticatedSnapshot()
     renderDemoApp({
       session: createTestSession(snapshot),
       shellLayout: 'sidebar',
     })
-    const trigger = await screen.findByTestId('user-menu-trigger')
-    const glyph = (trigger.textContent ?? '').trim()
+    const trigger = await screen.findByTestId('account-entry-trigger')
     const displayName = (snapshot.principal?.display_name ?? '').trim()
-    expect(glyph).not.toBe('')
+    const label = trigger.getAttribute('aria-label') ?? ''
     expect(displayName).not.toBe('')
-    expect(trigger.getAttribute('aria-label')).toBe(`${glyph} ${displayName}`)
+    expect(label.endsWith(displayName)).toBe(true)
+    expect(label.length).toBeGreaterThan(displayName.length)
   })
 
   it('renders the brand and the account controls in the side column, with no banner landmark', async () => {
@@ -1475,7 +1477,7 @@ describe('the sidebar shell layout', () => {
     const nav = screen.getByRole('navigation', {
       name: tLayout('appShell.navLabel'),
     })
-    const account = screen.getByTestId('user-menu-trigger')
+    const account = screen.getByTestId('account-entry-trigger')
 
     // The desktop sidebar form renders no app bar: the brand sits in the
     // drawer paper rather than inside a header landmark. (The routed page
@@ -1483,8 +1485,8 @@ describe('the sidebar shell layout', () => {
     // absence is asserted on the brand's containing element, not on every
     // header in the document.)
     expect(brand.closest('header')).toBeNull()
-    // The brand and the account menu live in the drawer paper, outside the
-    // nav landmark: the brand before it, the menu after it.
+    // The brand and the account entry live in the drawer paper, outside the
+    // nav landmark: the brand before it, the entry after it at the bottom.
     expect(paper).toContainElement(brand)
     expect(paper).toContainElement(account)
     expect(nav.contains(brand)).toBe(false)
@@ -1493,7 +1495,7 @@ describe('the sidebar shell layout', () => {
       brand.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(
-      account.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_PRECEDING,
+      nav.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
   })
 
@@ -1518,14 +1520,16 @@ describe('the sidebar shell layout', () => {
     // `<header>` (its PageHeader) inside main, so the absence is asserted
     // on the brand's containing element, not on every header in the page.
     expect(brand.closest('header')).toBeNull()
-    const account = screen.getByTestId('user-menu-trigger')
+    // The account entry follows ACCOUNT_ENTRY's default: the row at the
+    // bottom of the column, after the navigation, as in the tenant frame.
+    const account = screen.getByTestId('account-entry-trigger')
     expect(nav.contains(brand)).toBe(false)
     expect(nav.contains(account)).toBe(false)
     expect(
       brand.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(
-      account.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_PRECEDING,
+      nav.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
   })
 })

@@ -106,10 +106,12 @@ import {
   TenantMenu,
   TenantRosterFailure,
   UserMenu,
+  AccountEntry,
   useCurrentTenantId,
   useTenantSelection,
 } from './chrome.js'
 import type { DemoTenant } from './chrome.js'
+import { ACCOUNT_ENTRY } from './account-entry.js'
 import { ConsoleArea } from './console/console-area.js'
 import {
   consoleShellRoutes,
@@ -1066,6 +1068,14 @@ function TenantFrame({
           // the identity-change gap keeps it out of the bar for the same
           // reason -- the host has no tenant to show yet, and its
           // no-current-tenant text belongs to a host that settles none.
+          navFooter={(rail) =>
+            ACCOUNT_ENTRY === 'header' ? null : (
+              <AccountEntry
+                narrow={rail.narrow}
+                closeDrawer={rail.closeDrawer}
+              />
+            )
+          }
           userMenu={(rail) => (
             <>
               {/* A failed roster read leaves the current tenant and the
@@ -1091,7 +1101,9 @@ function TenantFrame({
                   indication, and it toggles the notice (its close control
                   moves focus here). */}
               <ImpersonationChip narrow={rail.narrow} />
-              <UserMenu narrow={rail.narrow} />
+              {ACCOUNT_ENTRY === 'sidebar' ? null : (
+                <UserMenu narrow={rail.narrow} />
+              )}
             </>
           )}
           signIn={<SignInView />}

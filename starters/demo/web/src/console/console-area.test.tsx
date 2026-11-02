@@ -85,9 +85,9 @@ function renderConsoleArea(
   registerNamespace(i18n, CONSOLE_UI_NAMESPACE, consoleUiResources)
   registerNamespace(i18n, DEMO_NAMESPACE, demoResources)
 
-  // The frame's top bar carries the sign-out action (src/chrome's UserMenu),
-  // which reads the assembled session -- so the area needs the services
-  // provider even though the routed child here is a stand-in.
+  // The account entry (src/chrome's AccountEntry) reads the assembled
+  // session -- so the area needs the services provider even though the routed
+  // child here is a stand-in.
   const services: SpeedAppServices = {
     session: createTestSession(),
     api: createHarnessClient(),
@@ -165,6 +165,21 @@ describe('ConsoleArea', () => {
     // column in the collapsed rail, so a wrapper would leave the rail one
     // row of controls wider than the paper.
     expect(back.parentElement?.parentElement).toBe(toolbar)
+  })
+
+  it('renders the account entry in the navigation column and no header avatar menu', async () => {
+    renderConsoleArea()
+
+    // ACCOUNT_ENTRY's default places the entry at the bottom of the column,
+    // after the navigation, and leaves the header without an avatar menu --
+    // the tenant frame's placement carried into the console.
+    const trigger = await screen.findByTestId('account-entry-trigger')
+    const nav = screen.getByRole('navigation')
+    expect(nav.contains(trigger)).toBe(false)
+    expect(
+      nav.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.queryByTestId('user-menu-trigger')).toBeNull()
   })
 
   it('groups the platform navigation by the console group table', () => {
