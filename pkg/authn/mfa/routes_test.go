@@ -256,6 +256,39 @@ func TestDeletingALastFactorNeedsAFreshFirstFactor(t *testing.T) {
 			t.Error("a factor guarded by another one was deleted on a first factor")
 		}
 	})
+	t.Run("a password account, a fresh password session", func(t *testing.T) {
+		r := routed(t, authn.FactorTOTP)
+		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+		r.accounts.passwords[acct] = true
+		r.mounter.As(authntest.WithAccount(acct), authntest.WithAuthTime(base), authntest.WithMethods(authn.MethodPassword))
+		if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusNoContent {
+			t.Fatalf("DELETE by a fresh password session = %d, want 204: %s", w.Code, w.Body.String())
+		}
+		if _, there := r.status(id); there {
+			t.Error("the last factor was not removed by a fresh password session")
+		}
+	})
+	t.Run("a password account, a fresh first factor without the password", func(t *testing.T) {
+		r := routed(t, authn.FactorTOTP)
+		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+		r.accounts.passwords[acct] = true
+		r.mounter.As(authntest.WithAccount(acct), authntest.WithAuthTime(base), authntest.WithMethods(authn.MethodTOTP))
+		if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusUnauthorized {
+			t.Errorf("DELETE by a first factor that is not the password = %d, want 401", w.Code)
+		}
+	})
+	t.Run("an impersonating operator, the target's last factor", func(t *testing.T) {
+		r := routed(t, authn.FactorTOTP)
+		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+		r.sessions.add(sessionUUID, "admin-1")
+		r.mounter.As(authntest.WithAccount(acct), authntest.WithActor("admin-1"), authntest.WithSession(sessionUUID), authntest.WithScope("tenant-1"), authntest.WithAuthTime(base), authntest.WithMethods(authn.MethodTOTP))
+		if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusUnauthorized {
+			t.Errorf("DELETE of the target's last factor while impersonating = %d, want 401", w.Code)
+		}
+		if _, there := r.status(id); !there {
+			t.Error("an impersonating operator removed the target's last factor on a first factor")
+		}
+	})
 	t.Run("the last factor, an old first factor", func(t *testing.T) {
 		r := routed(t, authn.FactorTOTP)
 		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)

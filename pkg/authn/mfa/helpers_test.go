@@ -169,10 +169,11 @@ func (f *fakeThrottle) count(prefix string) int {
 // which panics: reaching one is a failure of the case.
 type fakeAccounts struct {
 	authn.Accounts
-	mu       sync.Mutex
-	required map[authn.AccountID]bool
-	getErr   error
-	gets     int
+	mu        sync.Mutex
+	required  map[authn.AccountID]bool
+	passwords map[authn.AccountID]bool
+	getErr    error
+	gets      int
 }
 
 func (a *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account, error) {
@@ -182,7 +183,7 @@ func (a *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account
 	if a.getErr != nil {
 		return authn.Account{}, a.getErr
 	}
-	return authn.Account{ID: id, Status: authn.StatusActive, MFARequired: a.required[id]}, nil
+	return authn.Account{ID: id, Status: authn.StatusActive, MFARequired: a.required[id], PasswordSet: a.passwords[id]}, nil
 }
 
 type fakeAdmin struct {
@@ -593,7 +594,7 @@ type rig struct {
 // one absent sets the field to nil on the product.
 func newRig(t *testing.T, h *gorm.DB, factors ...authn.Factor) *rig {
 	t.Helper()
-	accounts := &fakeAccounts{required: map[authn.AccountID]bool{}}
+	accounts := &fakeAccounts{required: map[authn.AccountID]bool{}, passwords: map[authn.AccountID]bool{}}
 	admin := &fakeAdmin{accounts: accounts}
 	throttle := newThrottle()
 	mounter := mounttest.New(t)

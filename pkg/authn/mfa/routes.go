@@ -122,7 +122,10 @@ func (m *product) listFactors(ctx context.Context, _ struct{}) (AuthnMfaFactorLi
 // authentication that was verified here: an IdP's declaration of one is not
 // enough to remove an account's own factor. The requirement is the effective
 // account's, while the proof is the caller's own, so an impersonating identity
-// removes the impersonated account's factor with its own freshness. The route is
+// removes the impersonated account's factor with its own freshness. One removal
+// may not be gated by the factor it removes: the account's own holder may delete
+// its last active factor on a first factor proved within the window, but an
+// impersonating operator does not take that door. The route is
 // where the account's other sessions are ended after a successful removal of an
 // active factor and the requesting one is rotated: the device that removed the
 // factor stays signed in on a new token, and the token it held before no longer
@@ -175,6 +178,12 @@ func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *spe
 // combination is the one deletion a factor cannot be allowed to gate: the
 // reader may have lost the very factor they are removing.
 func (m *product) lastFactorOnAFreshFirstFactor(ctx context.Context, id authn.Identity, factorID string) (bool, error) {
+	if id.Impersonating() {
+		return false, nil
+	}
+	// The door belongs to the account's own holder: an impersonating operator
+	// still proves the effective account's protection with the caller's fresh
+	// local multi-factor, because their first factor is not the target's.
 	if factorID == "" {
 		return false, nil
 	}
