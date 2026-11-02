@@ -258,7 +258,8 @@
     "title": "Appearance",
     "description": "Choose the visual theme for the interface.",
     "theme": {
-      "label": "Theme"
+      "label": "Theme",
+      "helper": "The interface's overall look: palette, corners and density."
     },
     "colorMode": {
       "title": "Color mode",

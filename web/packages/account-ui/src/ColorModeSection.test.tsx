@@ -96,11 +96,11 @@ describe('ColorModeSection', () => {
         name: zhCN.appearance.colorMode.title,
       }),
     ).toBeTruthy()
-    expect(
-      screen.getByText(zhCN.appearance.colorMode.description),
-    ).toBeTruthy()
-
+    // The description is the control's own helper, under the select.
     const select = modeSelect()
+    expect(select).toHaveAccessibleDescription(
+      zhCN.appearance.colorMode.description,
+    )
     await waitFor(() =>
       expect(select).toHaveTextContent(
         zhCN.appearance.colorMode.options.light,

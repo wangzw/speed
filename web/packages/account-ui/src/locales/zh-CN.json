@@ -258,7 +258,8 @@
     "title": "外观",
     "description": "选择界面的视觉主题。",
     "theme": {
-      "label": "主题"
+      "label": "主题",
+      "helper": "界面的整体外观：配色、圆角与排版密度。"
     },
     "colorMode": {
       "title": "颜色模式",

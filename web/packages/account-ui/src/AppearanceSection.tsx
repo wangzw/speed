@@ -82,6 +82,7 @@ export function AppearanceSection({
           inputLabel: hideLabel ? undefined : { shrink: true },
         }}
         label={hideLabel ? undefined : t('appearance.theme.label')}
+        helperText={t('appearance.theme.helper')}
         value={value}
         onChange={(event) => {
           onChange(event.target.value)

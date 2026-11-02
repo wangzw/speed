@@ -51,6 +51,11 @@ describe('AppearanceSection', () => {
       screen.getByRole('heading', { name: zhCN.appearance.title }),
     ).toBeTruthy()
     expect(screen.getByText(zhCN.appearance.description)).toBeTruthy()
+    // The control carries its own helper under the select, the same shape
+    // the preference selects use.
+    expect(presetSelect()).toHaveAccessibleDescription(
+      zhCN.appearance.theme.helper,
+    )
 
     const select = presetSelect()
     // The closed control shows the current choice, not an empty value.

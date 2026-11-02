@@ -97,10 +97,7 @@ export function ColorModeSection({
   }
 
   return (
-    <SectionCard
-      title={t('appearance.colorMode.title')}
-      description={t('appearance.colorMode.description')}
-    >
+    <SectionCard title={t('appearance.colorMode.title')}>
       <TextField
         select
         fullWidth
@@ -122,6 +119,7 @@ export function ColorModeSection({
           inputLabel: hideLabel ? undefined : { shrink: true },
         }}
         label={hideLabel ? undefined : t('appearance.colorMode.label')}
+        helperText={t('appearance.colorMode.description')}
         value={value}
         disabled={saving}
         onChange={(event) => {
