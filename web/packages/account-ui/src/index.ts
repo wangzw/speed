@@ -84,6 +84,10 @@ export {
  * value reads as undefined, leaving the host its own safe landing.
  */
 export { bindingReturnTarget } from './internal/binding-return.js'
+export {
+  useSocialMethodsAvailable,
+  type SocialMethodsAvailability,
+} from './social-methods.js'
 export { MfaSection, type MfaSectionProps } from './MfaSection.js'
 /**
  * The step-up re-verification dialog, exported for the host. Its gate is
