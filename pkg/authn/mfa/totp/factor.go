@@ -40,10 +40,12 @@ type enrollmentOptions struct {
 	OTPAuthURI string `json:"otpauth_uri"`
 }
 
-// factor is a TOTP second factor. It holds the seed store and the issuer name,
-// and it reads the time through a source a test replaces.
+// factor is a TOTP second factor. It holds the seed store, the account reads
+// that name the account in an authenticator app, and the issuer name, and it
+// reads the time through a source a test replaces.
 type factor struct {
 	register *register
+	accounts authn.Accounts
 	issuer   string
 	clock    clock.Source
 }
@@ -74,11 +76,12 @@ func (f *factor) Enroll(ctx context.Context, fs authn.FlowState, in authn.StepIn
 }
 
 // beginEnroll generates the seed, writes it and answers with the otpauth
-// address. The address carries the seed and is this answer alone.
+// address. The address carries the seed and is this answer alone. Its label is
+// the issuer and the account name that an authenticator app shows.
 func (f *factor) beginEnroll(ctx context.Context, rec authn.FactorRecord) (authn.Step, error) {
 	key, err := pquernaotp.Generate(pquernaotp.GenerateOpts{
 		Issuer:      f.issuer,
-		AccountName: string(rec.Account),
+		AccountName: f.accountName(ctx, rec.Account),
 		Period:      periodSeconds,
 		SecretSize:  secretBytes,
 		Digits:      otp.DigitsSix,
@@ -99,6 +102,23 @@ func (f *factor) beginEnroll(ctx context.Context, rec authn.FactorRecord) (authn
 		return authn.Step{}, err
 	}
 	return authn.StepData(stepEnroll, privateConfirm, enrollmentOptions{OTPAuthURI: key.URL()}), nil
+}
+
+// accountName is the label an authenticator app shows for the account: its
+// username identifier, or the account identifier when it has none. It never
+// fails an enrollment: a read that fails falls back to the identifier, because
+// the label is shown to the person registering and decides nothing.
+func (f *factor) accountName(ctx context.Context, account authn.AccountID) string {
+	identifiers, err := f.accounts.Identifiers(ctx, account)
+	if err != nil {
+		return string(account)
+	}
+	for _, identifier := range identifiers {
+		if identifier.Kind == authn.IdentifierUsername && identifier.Value != "" {
+			return identifier.Value
+		}
+	}
+	return string(account)
 }
 
 // finishEnroll requires a valid code and, on one, answers StepEnrolled. The

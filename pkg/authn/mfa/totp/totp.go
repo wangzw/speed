@@ -62,9 +62,10 @@ var _ authn.Factor = (*factor)(nil)
 //
 // The factor capability is delivered without claiming it, so several kinds stand
 // side by side and the multi-factor module takes them all. The database the seed
-// table is in and the multi-factor module that drives this factor are required:
-// a factor without its orchestrator is useless, so the drive fails at resolution
-// rather than leaving an assembly in which no second factor can be checked. The
+// table is in, the multi-factor module that drives this factor and the account
+// reads that name the account in an authenticator app are required: a factor
+// without its orchestrator is useless, so the drive fails at resolution rather
+// than leaving an assembly in which no second factor can be checked. The
 // multi-factor module delivers its capability exclusively, so the closure of a
 // command that names this one does not pull it in: the host writes it down.
 //
@@ -76,6 +77,7 @@ func Module() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*db.Database)(nil)},
 			{Token: (*authn.MFA)(nil)},
+			{Token: (*authn.Accounts)(nil)},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.Factor)(nil)},
@@ -135,7 +137,8 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 // newFactor takes up what the descriptor requires and assembles the factor. The
 // multi-factor module is resolved and not held: this factor is driven by it and
 // never calls it, and the resolve is what fails an assembly that took this
-// factor without the orchestrator.
+// factor without the orchestrator. The account reads are held, because the
+// otpauth label names the account by them.
 func newFactor(reg *core.Registry) (*factor, error) {
 	reader, err := readerOf(reg)
 	if err != nil {
@@ -149,11 +152,16 @@ func newFactor(reg *core.Registry) (*factor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the database: %w", ModuleName, err)
 	}
-	if _, err := core.Resolve[authn.MFA](reg); err != nil {
+	if _, err = core.Resolve[authn.MFA](reg); err != nil {
 		return nil, fmt.Errorf("%s: taking up the multi-factor module: %w", ModuleName, err)
+	}
+	accounts, err := core.Resolve[authn.Accounts](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the account reads: %w", ModuleName, err)
 	}
 	return &factor{
 		register: &register{handle: database.DB()},
+		accounts: accounts,
 		issuer:   cfg.issuer,
 		clock:    clock.Now,
 	}, nil

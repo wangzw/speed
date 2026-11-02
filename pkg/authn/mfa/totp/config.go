@@ -23,9 +23,9 @@ const (
 
 // moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
-	// Issuer is the name written into the otpauth address, the one an
-	// authenticator app shows beside the account. Empty takes the host name of
-	// the gateway's public address.
+	// Issuer is the site name an authenticator app shows beside the account,
+	// which the deployer sets. Empty takes the host name of the gateway's public
+	// address.
 	Issuer string `config:"issuer"`
 }
 
@@ -79,8 +79,8 @@ func schema() config.Schema {
 		Mounts:    []config.Mount{{Value: &moduleConfig{}}},
 		Items: map[string]config.Item{
 			issuerItem: {
-				Description: "the name written into the otpauth address an authenticator app shows; " +
-					"empty takes the host name of the gateway's public address",
+				Description: "the site name an authenticator app shows beside the account, set by the " +
+					"deployer; empty takes the host name of the gateway's public address",
 			},
 		},
 	}

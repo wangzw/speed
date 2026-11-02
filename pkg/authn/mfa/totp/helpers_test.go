@@ -35,6 +35,33 @@ var base = time.Date(2026, time.March, 14, 12, 0, 0, 0, time.UTC)
 // acct is the account the cases register factors for.
 const acct = authn.AccountID("acct-1")
 
+// username is the username identifier the cases bind to acct by default.
+const username = "alice"
+
+// fakeAccounts answers the account reads this factor makes. Only Identifiers is
+// its own; the rest of the interface is the embedded one's and is never called.
+type fakeAccounts struct {
+	authn.Accounts
+	identifiers map[authn.AccountID][]authn.Identifier
+	err         error
+}
+
+// Identifiers answers the identifiers of the account, or the configured failure.
+func (a fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]authn.Identifier, error) {
+	if a.err != nil {
+		return nil, a.err
+	}
+	return a.identifiers[id], nil
+}
+
+// named accounts are the account reads of an account whose username is
+// username, which is what a case that does not exercise the label sees.
+func named() fakeAccounts {
+	return fakeAccounts{identifiers: map[authn.AccountID][]authn.Identifier{
+		acct: {{Kind: authn.IdentifierUsername, Value: username}},
+	}}
+}
+
 // fakeClock is a clock a case moves. It reads in the zone it was built with, so
 // a case can hand the factor a time that is not UTC.
 type fakeClock struct {
@@ -141,9 +168,14 @@ func newRigOn(t *testing.T, database db.Database) *rig {
 	buildTable(t, h, migrationsFS, "sqlite")
 	clk := newClock(base)
 	return &rig{
-		t:      t,
-		h:      h,
-		factor: &factor{register: &register{handle: h}, issuer: "speed", clock: clk.read},
+		t: t,
+		h: h,
+		factor: &factor{
+			register: &register{handle: h},
+			accounts: named(),
+			issuer:   "speed",
+			clock:    clk.read,
+		},
 	}
 }
 
@@ -290,6 +322,11 @@ type assembly struct {
 	// register builds the factor register table before the drive, so that the
 	// multi-factor module's own Start finds it.
 	register bool
+	// accounts answers the account reads; the zero value names the account by
+	// its username.
+	accounts fakeAccounts
+	// issuer is the configured site name; empty is "speed".
+	issuer string
 }
 
 // drive advances the assembly to Start, runs action there, and returns what the
@@ -306,16 +343,25 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 		createRegister(t, h)
 	}
 
+	accounts := a.accounts
+	if accounts.identifiers == nil && accounts.err == nil {
+		accounts = named()
+	}
+	issuer := a.issuer
+	if issuer == "" {
+		issuer = "speed"
+	}
+
 	reg := core.New()
 	names := []string{ModuleName, mfa.ModuleName}
 	reg.Register(Module())
 	reg.Register(mfa.Module())
 	reg.Register(standIn(dbModule, database, true, (*db.Database)(nil)))
 	reg.Register(standIn(mounterModule, mounttest.New(t), true, (*mount.Mounter)(nil)))
-	reg.Register(standIn(accountModule, accountStandIn{Throttle: stubThrottle{}}, true,
+	reg.Register(standIn(accountModule, accountStandIn{Accounts: accounts, Throttle: stubThrottle{}}, true,
 		(*authn.Accounts)(nil), (*authn.AccountAdmin)(nil), (*authn.Throttle)(nil)))
 	reg.Register(config.Module())
-	reg.Supply(stubReader{issuer: "speed"}, config.ModuleName)
+	reg.Supply(stubReader{issuer: issuer}, config.ModuleName)
 	names = append(names, dbModule, mounterModule, accountModule, config.ModuleName)
 
 	return reg.Drive(t.Context(), core.Drive{

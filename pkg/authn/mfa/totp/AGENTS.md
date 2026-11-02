@@ -17,10 +17,10 @@ The API is the package's godoc. Read `factor.Enroll`'s comment before changing
 the two steps of a registration, and `factor.Verify`'s before changing the replay
 judgement.
 
-The one input item is `authn.mfa.totp.issuer`, defaulting to the host name of the
-gateway's public address. The `authn.mfa.verifications` instrument this factor's
-outcomes are counted under is the multi-factor module's, reported there and not
-here.
+The one input item is `authn.mfa.totp.issuer`, the site name an authenticator app
+shows, which the deployer sets; empty defaults to the host name of the gateway's
+public address. The `authn.mfa.verifications` instrument this factor's outcomes
+are counted under is the multi-factor module's, reported there and not here.
 
 ## Boundaries
 
@@ -35,7 +35,7 @@ here.
   `TestVerifyRefusesAForgedCode` does not leak it either). `Verify` and `Remove`
   never return it.
 - **The kind is `totp`, delivered without claiming it, and the module requires
-  the database and the multi-factor module.** The factor kinds stand side by side,
+  the database, the multi-factor module and the account reads.** The factor kinds stand side by side,
   so the provision is not exclusive; the multi-factor module drives this one and a
   command that takes this factor without it fails at resolution, because a factor
   without its orchestrator can check nothing
@@ -46,7 +46,9 @@ here.
 - **A registration writes the seed then requires a valid code.** The first step
   generates a 20-byte secret with the convention every authenticator app follows
   (SHA-1, six digits, a thirty-second step), writes it sealed and answers the
-  otpauth address. The confirmation step, told apart by the marker left in the
+  otpauth address labelled with the configured site name and the account's
+  username, or its identifier when it has no username or the read fails. The
+  confirmation step, told apart by the marker left in the
   factor's private bytes, requires the code of that seed and, on a match, answers
   `StepEnrolled`, which is what the multi-factor module activates the row on. A
   code that does not match leaves the row pending
@@ -146,4 +148,5 @@ conditional write and not the engine's write lock. `assembly_test.go` drives a
 real registry through the descriptor and the real multi-factor module with
 stand-in modules for the exclusive capabilities, which is what holds the startup
 checks and the registration-and-verification path end to end. `config_test.go`
-covers the issuer default off the public address.
+covers the issuer default off the public address, and `label_test.go` covers the
+otpauth label and the fallback to the account identifier.

@@ -22,8 +22,9 @@ func nothing(context.Context, *core.Registry, *gorm.DB) error { return nil }
 
 // TestTheDescriptorNamesWhatItDeliversAndRequires holds the descriptor's shape:
 // the factor capability is delivered and not claimed, so several kinds stand
-// side by side, and the database and the multi-factor module are required, both
-// delivered exclusively by another module, so the closure does not pull them in.
+// side by side, and the database, the multi-factor module and the account reads
+// are required, each delivered exclusively by another module, so the closure
+// does not pull them in.
 func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.mfa.totp" {
@@ -36,7 +37,7 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 		t.Errorf("Provides[0] = %+v, want authn.Factor and not exclusive: the factor kinds stand side by side", p)
 	}
 
-	wantRequired := []core.Token{(*db.Database)(nil), (*authn.MFA)(nil)}
+	wantRequired := []core.Token{(*db.Database)(nil), (*authn.MFA)(nil), (*authn.Accounts)(nil)}
 	if len(m.Requires) != len(wantRequired) {
 		t.Fatalf("Requires = %+v, want %v", m.Requires, wantRequired)
 	}

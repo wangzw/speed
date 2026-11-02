@@ -39,8 +39,8 @@ func TestGapOTPAuthURICarriesTheStoredParameters(t *testing.T) {
 	if u.Host != "totp" {
 		t.Errorf("the otpauth address names the type %q, want totp", u.Host)
 	}
-	if u.Path != "/speed:"+string(acct) {
-		t.Errorf("the otpauth label is %q, want the issuer and the account", u.Path)
+	if u.Path != "/speed:"+username {
+		t.Errorf("the otpauth label is %q, want the issuer and the account's username", u.Path)
 	}
 	q := u.Query()
 	if got := q.Get("digits"); got != "6" {
