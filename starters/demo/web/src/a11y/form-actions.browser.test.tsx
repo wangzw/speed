@@ -17,7 +17,7 @@
  * below-the-fields assertion on every viewport.
  */
 
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
@@ -46,9 +46,13 @@ const accountEnUS = accountUiResources['en-US'] as {
   }
   readonly phone: {
     readonly phone: { readonly label: string }
-    readonly send: string
   }
   readonly password: { readonly current: { readonly label: string } }
+  readonly identifiers: {
+    readonly add: {
+      readonly value: { readonly labelEmail: string }
+    }
+  }
   readonly mfa: {
     readonly actionsAria: string
     readonly rename: string
@@ -189,6 +193,28 @@ describe('account form action rows in Chromium', () => {
     await screen.findByLabelText(accountEnUS.phone.phone.label, {
       selector: 'input',
     })
+    expectEveryFormPlaced()
+  })
+
+  it('places the profile add form submit with the address field', async () => {
+    await page.viewport(1280, 900)
+    bindRequestFn(createBackend('empty'))
+    window.history.replaceState({}, '', '/account/profile')
+    renderDemoApp({ session: staffSession() })
+    await settle()
+    const user = userEvent.setup()
+
+    // An account with no pending verification reaches the add face from the
+    // email block's own action.
+    const emailBlock = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.email,
+    })
+    await user.click(
+      within(emailBlock).getByRole('button', {
+        name: demoEnUS.account.action.add,
+      }),
+    )
+    await screen.findByLabelText(accountEnUS.identifiers.add.value.labelEmail)
     expectEveryFormPlaced()
   })
 
