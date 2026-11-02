@@ -215,17 +215,22 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   banner. A phone is a sign-in method and an additional security factor;
   verifying it never lifts the account's verification restriction -- only a
   proved email address does.
-- **A factor row reads as its name and its last verification instant.**
-  `MfaSection` groups the factors by kind; each assembled kind is a section
-  whose heading names it, and an enrollable group carries one add action on
-  that heading, always worded "add" whether or not the group already has an
-  enabled row. A group lists its enabled and disabled
+- **A factor row reads as its name and its last verification instant, for
+  the kinds that can be held more than once.** `MfaSection` groups the
+  factors by kind; each assembled kind is a section whose heading names it.
+  An enrollable group carries one action on that heading: passkeys and SMS
+  word it "add", while the authenticator app, which an account holds once,
+  words it "replace the authenticator app" once the group has an enabled
+  row -- registering another replaces it, the new row pending beside the
+  old one until its code is proved. A group lists its enabled and disabled
   rows; a pending row is the enrollment's intermediate state and is
   withheld. A disabled row carries a muted "disabled" marker and offers
-  removal alone. Each row shows its label (the kind name when the label is
-  empty) and its last successful verification (a row that has never passed
-  one says so), through the same account timezone chain as every other
-  surface. The row's trailing overflow menu holds rename and removal; the
+  removal alone. A passkey row shows its label (the kind name when the
+  label is empty); an authenticator row shows the kind name alone, whatever
+  label the list carries. Both show their last successful verification (a
+  row that has never passed one says so), through the same account timezone
+  chain as every other surface. The passkey row's trailing overflow menu
+  holds rename and removal; the authenticator row offers removal alone. The
   inline editor puts its name field on a line of its own at the editor's
   text-column width, with the cancel-and-save action row beneath it closed
   on the right. The rename writes the label through the generated
@@ -233,14 +238,16 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   and a landed rename refetches the list. The enrollment panel opens inside
   the enrolling kind's group and replaces its rows, starting the
   `purpose: 'enroll'` flow at once so the method's body sits on the same
-  panel as the name field; its heading names the kind being enrolled
-  through the parameterized `mfa.enroll.title`, whose method slot carries
-  that kind's `mfa.factor.kind.*` name (the generic other label for an
-  unknown kind). The name field is prefilled with the browser/OS summary
-  the session rows show (empty when nothing is recognised), is editable
-  and may be cleared; the flow's first input carries an empty label, and a
-  name typed in the panel is written to the row the flow added through the
-  generated rename mutation once the flow settles `enrolled`.
+  panel; its heading names the kind being enrolled through the
+  parameterized `mfa.enroll.title`, whose method slot carries that kind's
+  `mfa.factor.kind.*` name (the generic other label for an unknown kind).
+  A passkey's panel adds a name field, prefilled with the browser/OS
+  summary the session rows show (empty when nothing is recognised),
+  editable and clearable; the flow's first input carries an empty label,
+  and a name typed in the panel is written to the row the flow added
+  through the generated rename mutation once the flow settles `enrolled`.
+  The authenticator's panel has no name field: its first input carries an
+  empty label and the server refuses a name for that kind.
   The step states what confirming does before its controls, and its cancel
   sits on the left of its confirm with the ordinary action-row spacing. One
   confirm takes the step; a bare `complete` step the server answers with is
