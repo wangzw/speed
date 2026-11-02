@@ -67,7 +67,7 @@ import {
 } from '@speed/notification-ui'
 import type { ConsoleRoute } from '@speed/console-ui'
 import { ProductShell } from '@speed/product-shell'
-import { useAppThemeMode } from '@speed/ui-kit'
+import { useAppThemeMode, WriteFeedbackPageProvider } from '@speed/ui-kit'
 import {
   presentDeclarations,
   RouteProvider,
@@ -271,27 +271,33 @@ export function DemoApp({
     void loadSelfTenants()
   }, [authenticated, principalId, impersonating])
   return (
-    <RouteProvider
-      table={routes}
-      fallback={(context: RouteContext) => <NotFoundPage path={context.path} />}
-      presence={presence}
-      pending={() => <RoutePresencePending />}
-      failed={() => <RoutePresenceFailed />}
-    >
-      {/* The identity-change action both areas report to: a start or end
-          swaps whose identity every cached row, the session, the attached
-          permission set, the current tenant and the live subscription
-          belong to (src/impersonation). */}
-      <IdentityChangeProvider>
-        {/* Above the shell switch: an accepted invitation announces the new
-            membership on its way from the landing (outside both shells) to
-            the tenant home (inside the tenant frame), so the confirmation has
-            to outlive that route change (src/tenant-membership-notice.tsx). */}
-        <TenantMembershipNoticeHost>
-          <AppFrame presence={presence} shellLayout={shellLayout} />
-        </TenantMembershipNoticeHost>
-      </IdentityChangeProvider>
-    </RouteProvider>
+    // The page's one feedback result: every write-feedback scope below
+    // this point clears its siblings' slots when it starts or settles a
+    // write, so the sign-in surface, the account panes, the console pages
+    // and the impersonation banner never show two results at once.
+    <WriteFeedbackPageProvider>
+      <RouteProvider
+        table={routes}
+        fallback={(context: RouteContext) => <NotFoundPage path={context.path} />}
+        presence={presence}
+        pending={() => <RoutePresencePending />}
+        failed={() => <RoutePresenceFailed />}
+      >
+        {/* The identity-change action both areas report to: a start or end
+            swaps whose identity every cached row, the session, the attached
+            permission set, the current tenant and the live subscription
+            belong to (src/impersonation). */}
+        <IdentityChangeProvider>
+          {/* Above the shell switch: an accepted invitation announces the new
+              membership on its way from the landing (outside both shells) to
+              the tenant home (inside the tenant frame), so the confirmation has
+              to outlive that route change (src/tenant-membership-notice.tsx). */}
+          <TenantMembershipNoticeHost>
+            <AppFrame presence={presence} shellLayout={shellLayout} />
+          </TenantMembershipNoticeHost>
+        </IdentityChangeProvider>
+      </RouteProvider>
+    </WriteFeedbackPageProvider>
   )
 }
 

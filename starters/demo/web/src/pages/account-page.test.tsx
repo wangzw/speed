@@ -30,6 +30,7 @@ import { accountUiResources } from '@speed/account-ui'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import type { SpeedAppThemeOptions } from '@speed/product-shell/bootstrap'
+import { languageDisplayName } from '@speed/i18n'
 import { useAppThemeMode } from '@speed/ui-kit'
 import { createBackend } from '../a11y/backends.js'
 import {
@@ -79,8 +80,8 @@ const accountEnUS = accountUiResources['en-US'] as {
     }
   }
   readonly preferences: {
-    readonly language: { readonly label: string }
-    readonly timezone: { readonly label: string }
+    readonly language: { readonly label: string; readonly saved: string }
+    readonly timezone: { readonly label: string; readonly saved: string }
   }
   readonly identifiers: {
     readonly verified: string
@@ -446,6 +447,45 @@ describe('AccountSettingsPage sections', () => {
         await within(block).findByRole('combobox', { name }),
       ).toBeInTheDocument()
     }
+  })
+
+  it('keeps only the later result when a language save is followed by a time zone save', async () => {
+    renderAccount('?section=preferences')
+    const zh = accountUiResources['zh-CN'] as {
+      readonly preferences: {
+        readonly language: { readonly label: string; readonly saved: string }
+        readonly timezone: { readonly label: string; readonly saved: string }
+      }
+    }
+
+    const language = await screen.findByRole('combobox', {
+      name: accountEnUS.preferences.language.label,
+    })
+    const chinese = languageDisplayName('zh-CN', 'en-US', ['zh-CN', 'en-US'])
+    fireEvent.mouseDown(language)
+    fireEvent.click(screen.getByRole('option', { name: chinese }))
+
+    // The language write switches the instance, so its confirmation and the
+    // rest of the page speak zh-CN.
+    const languageSaved = zh.preferences.language.saved.replace(
+      '{{value}}',
+      languageDisplayName('zh-CN', 'zh-CN', ['zh-CN', 'en-US']),
+    )
+    await screen.findByText(languageSaved, { exact: true })
+
+    const timezone = screen.getByRole('combobox', {
+      name: zh.preferences.timezone.label,
+    })
+    fireEvent.mouseDown(timezone)
+    fireEvent.click(screen.getByRole('option', { name: 'Europe/Berlin' }))
+
+    await screen.findByText(
+      zh.preferences.timezone.saved.replace('{{value}}', 'Europe/Berlin'),
+      { exact: true },
+    )
+    // The page carries one result: the earlier language confirmation is
+    // gone the moment the time zone attempt settles.
+    expect(screen.queryByText(languageSaved, { exact: true })).toBeNull()
   })
 
   it('applies a color-mode choice at once, writes the device key and sends only color_mode', async () => {
