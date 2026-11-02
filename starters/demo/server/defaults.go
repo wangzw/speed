@@ -189,7 +189,7 @@ func platformDefaultsDocument() map[string]any {
 			// constant run() ensures the file at.
 			"token": map[string]any{"signing-key-file": signingKeyPath},
 			"mfa": map[string]any{
-				"totp": map[string]any{"issuer": "demo"},
+				"totp": map[string]any{"issuer": "Speed Demo"},
 				// The relying party a step-up is bound to. The id has to be a
 				// domain, so it is the host name and not the loopback address
 				// the listener names.

@@ -104,7 +104,8 @@ authn:
     signing-key-file: var/token-signing-key.pem
   mfa:
     totp:
-      issuer: demo
+      # The site name an authenticator app shows beside the account.
+      issuer: Speed Demo
     webauthn:
       # The relying party id is a domain and carries no scheme or port.
       rp-id: "__PUBLIC_DOMAIN__"

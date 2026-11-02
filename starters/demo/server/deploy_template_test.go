@@ -88,6 +88,23 @@ func TestTheDeployTemplateCarriesTheSocialCredentials(t *testing.T) {
 	}
 }
 
+// totpSection is the part of the TOTP factor's section these cases read.
+type totpSection struct {
+	Issuer string `config:"issuer"`
+}
+
+// TestTheDeployTemplateNamesTheSiteInTheAuthenticator holds the site name the
+// deployment template writes into the otpauth address, which an authenticator
+// app shows beside the account.
+func TestTheDeployTemplateNamesTheSiteInTheAuthenticator(t *testing.T) {
+	locator := writeConfigFile(t, renderDeployTemplate(t))
+	var got totpSection
+	readEffective(t, "deploy/fly.yaml.tmpl", locator, "authn.mfa.totp", &got)
+	if got.Issuer != "Speed Demo" {
+		t.Errorf("authn.mfa.totp.issuer = %q, want the site name Speed Demo", got.Issuer)
+	}
+}
+
 // humanverifySection is the part of the human-verification module's section the
 // deployment template carries: the mechanism, the widget's public site key, the
 // siteverify secret and the hostname the widget must have run on.
