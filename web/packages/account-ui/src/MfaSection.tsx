@@ -1029,20 +1029,15 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                                 )
                                               }}
                                               // The row's in-place edit: the
-                                              // name field and its actions
-                                              // share one line, so opening
-                                              // the editor does not change
-                                              // the list's height.
-                                              sx={{
-                                                mt: 1,
-                                                display: 'flex',
-                                                alignItems: 'flex-start',
-                                                gap: 1,
-                                                flexWrap: 'wrap',
-                                              }}
+                                              // name field owns its line at
+                                              // the editor's text-column
+                                              // width, and the actions close
+                                              // the next line on the right.
+                                              sx={{ mt: 1 }}
                                             >
                                               <TextField
                                                 size="small"
+                                                fullWidth
                                                 label={t('mfa.renameLabel')}
                                                 value={renameDraft.label}
                                                 onChange={(event) =>
@@ -1057,12 +1052,12 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                                 disabled={
                                                   updateMutation.isPending
                                                 }
-                                                sx={{
-                                                  flex: '1 1 220px',
-                                                  minWidth: 0,
-                                                }}
+                                                sx={{ mb: 1 }}
                                               />
-                                              <ActionRow size="small">
+                                              <ActionRow
+                                                size="small"
+                                                sx={{ width: '100%' }}
+                                              >
                                                 <ActionButton
                                                   type="button"
                                                   disabled={

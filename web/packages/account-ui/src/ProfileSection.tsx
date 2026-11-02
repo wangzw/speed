@@ -33,7 +33,6 @@
 
 import { useState } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import { useQueryClient } from '@tanstack/react-query'
@@ -42,6 +41,8 @@ import {
   useAuthnProfilePatch,
 } from '@speed/api-sdk'
 import {
+  ActionButton,
+  ActionRow,
   FORM_MAX_WIDTH,
   SectionCard,
   useWriteFeedback,
@@ -181,17 +182,19 @@ export function ProfileSection({ inline = false }: ProfileSectionProps) {
             />
 
             {inline ? null : (
-              <Button
-                type="submit"
-                variant="contained"
-                // Disabled while the field still holds the account's own name:
-                // a save with nothing changed would fire a no-op PATCH, and the
-                // console account detail's save controls set the same
-                // no-change-disabled convention.
-                disabled={busy || name === (data?.display_name ?? '')}
-              >
-                {t('profile.save')}
-              </Button>
+              <ActionRow sx={{ width: '100%' }}>
+                <ActionButton
+                  type="submit"
+                  emphasis="primary"
+                  // Disabled while the field still holds the account's own
+                  // name: a save with nothing changed would fire a no-op
+                  // PATCH, and the console account detail's save controls set
+                  // the same no-change-disabled convention.
+                  disabled={busy || name === (data?.display_name ?? '')}
+                >
+                  {t('profile.save')}
+                </ActionButton>
+              </ActionRow>
             )}
 
             {/* One scope's result, below the control group it confirms. */}
