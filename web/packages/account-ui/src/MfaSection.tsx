@@ -385,7 +385,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   // The open panel's own failure slot: a refused start or answer is
   // correctable beside the controls that produced it, so it renders inside
   // the panel rather than in the section's result region.
-  const wizardFeedback = useWriteFeedback()
+  const panelFeedback = useWriteFeedback()
   // The deployment's enrollable factor kinds (GET /api/v1/auth/methods'
   // mfa.factors). null is unresolved -- still reading, or the read failed:
   // the enroll entries are then withheld rather than guessed.
@@ -491,7 +491,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     removeMutation.isPending ||
     updateMutation.isPending ||
     feedback.pending ||
-    wizardFeedback.pending
+    panelFeedback.pending
 
   /** The translated name of a factor kind, the guarded vocabulary's generic
    * label for a kind this package has no wording for. */
@@ -595,7 +595,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       ),
     )
     feedback.reset()
-    wizardFeedback.reset()
+    panelFeedback.reset()
     const token = ++panelTokenRef.current
     setPanel({ kind: factorKind, label: '', step: null, seq: 0 })
     void startEnrollFlow(factorKind, token)
@@ -609,16 +609,23 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   ): Promise<void> {
     // A retry starts a new attempt: the slot is cleared before it goes out.
     feedback.reset()
-    wizardFeedback.reset()
+    panelFeedback.reset()
     setEnrolling(true)
     try {
-      const outcome = await advanceFlow(
-        await session.startAuthenticatedFlow({
-          purpose: 'enroll',
-          input: { kind: factorKind, label: '' },
-          ...(returnPath === undefined ? {} : { return_to: returnPath }),
-        }),
-      )
+      const started = await session.startAuthenticatedFlow({
+        purpose: 'enroll',
+        input: { kind: factorKind, label: '' },
+        ...(returnPath === undefined ? {} : { return_to: returnPath }),
+      })
+      // A start that answers after the reader left the panel is not carried
+      // on: its flow is released and no automatic completion is sent.
+      if (token !== panelTokenRef.current || !mountedRef.current) {
+        if ('next' in started) {
+          void sessionRef.current.abandonFlow().catch(() => undefined)
+        }
+        return
+      }
+      const outcome = await advanceFlow(started)
       const stillOpen = outcome.kind === 'retry' || 'next' in outcome.state
       if (token !== panelTokenRef.current || !mountedRef.current) {
         if (stillOpen) {
@@ -633,7 +640,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
             ? { ...current, step: outcome.step, seq: outcome.seq }
             : current,
         )
-        wizardFeedback.fail(outcome.failure)
+        panelFeedback.fail(outcome.failure)
         return
       }
       const state = outcome.state
@@ -671,7 +678,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         setGate({ kind: 'enroll', factorKind, reason })
         return
       }
-      wizardFeedback.fail(failure)
+      panelFeedback.fail(failure)
     } finally {
       if (token === panelTokenRef.current) {
         setEnrolling(false)
@@ -692,26 +699,33 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     const kind = current.kind
     // A new attempt clears the section's slot before it goes out.
     feedback.reset()
-    wizardFeedback.reset()
+    panelFeedback.reset()
     setEnrolling(true)
     try {
-      let outcome: AdvanceOutcome
+      let answered: AuthnFlowState
       try {
-        outcome = await advanceFlow(
-          await session.answerFlow({
-            seq: current.seq,
-            step: answer.step,
-            input: answer.input,
-          }),
-        )
+        answered = await session.answerFlow({
+          seq: current.seq,
+          step: answer.step,
+          input: answer.input,
+        })
       } catch (failure) {
         if (token !== panelTokenRef.current || !mountedRef.current) {
           return
         }
         // A refused answer is correctable in the panel that asked for it.
-        wizardFeedback.fail(failure)
+        panelFeedback.fail(failure)
         return
       }
+      // A reader who left while the answer was in flight keeps its refusal or
+      // step, but no automatic completion follows it.
+      if (token !== panelTokenRef.current || !mountedRef.current) {
+        if ('next' in answered) {
+          void sessionRef.current.abandonFlow().catch(() => undefined)
+        }
+        return
+      }
+      const outcome = await advanceFlow(answered)
       const stillOpen = outcome.kind === 'retry' || 'next' in outcome.state
       if (token !== panelTokenRef.current || !mountedRef.current) {
         if (stillOpen) {
@@ -726,7 +740,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
             ? { ...open, step: outcome.step, seq: outcome.seq }
             : open,
         )
-        wizardFeedback.fail(outcome.failure)
+        panelFeedback.fail(outcome.failure)
         return
       }
       const state = outcome.state
@@ -766,7 +780,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     releaseEnrollFlow()
     setPanel(null)
     feedback.reset()
-    wizardFeedback.reset()
+    panelFeedback.reset()
   }
 
   /** Whether a rename answer says the factor is not there, or is not the
@@ -1098,7 +1112,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                               />
                             )}
                             <EnrollmentFeedback
-                              outcome={wizardFeedback.outcome}
+                              outcome={panelFeedback.outcome}
                             />
                           </Box>
                         ) : (
