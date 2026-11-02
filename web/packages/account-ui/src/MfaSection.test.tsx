@@ -1347,7 +1347,7 @@ describe('MfaSection', () => {
         }
         throw new Error(`unexpected ${call.method} ${call.path}`)
       }
-      mount(respond)
+      const { rig } = mount(respond)
       const user = userEvent.setup()
 
       await openEnrollment(user, zhCN.mfa.factor.kind.totp)
