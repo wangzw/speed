@@ -16,7 +16,9 @@ whole-attempt failure banner and its classifier
 (`InlineError` / `errorCodeOf`), its success twin (`InlineSuccess`, the
 mount-empty-then-fill `role="status"` notice), the write-feedback scope
 (`useWriteFeedback`, the one exported hook that holds state, paired with
-`WriteFeedbackRegion`, which renders that slot), the
+`WriteFeedbackRegion`, which renders that slot, and the optional
+`WriteFeedbackPageProvider` that coordinates a page's scopes into one
+visible result), the
 pending/error/empty/content branches of an async read (`ListSkeleton`,
 `AsyncSection`) and the
 shared style recipes (`visuallyHiddenSx` for hidden elements,

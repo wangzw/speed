@@ -26,7 +26,9 @@ functions in `src/phone-number.ts`), the email-address rule shared by the
 surfaces that accept one (`parseEmailAddress` and
 `EMAIL_ADDRESS_MAX_BYTES` in `src/email-address.ts`), the write-feedback scope
 (`useWriteFeedback`, with the slot's renderer
-`WriteFeedbackRegion`), the refresh pair (`RefreshButton` plus
+`WriteFeedbackRegion`) beside its optional page-level coordination
+(`WriteFeedbackPageProvider`, which registers each scope's clear callback
+and renders nothing itself), the refresh pair (`RefreshButton` plus
 `usePageRefresh` / `pageRefreshRead`, which re-reads the query handles the
 host hands it, reading them structurally and importing no query client or
 transport), the clipboard and hand-off pair (`CopyButton`,
@@ -123,7 +125,10 @@ plumbing and deliberately not exported.
   context and hold no state of their own (the mode hook also exposes the
   provider's `setPreference`). `useWriteFeedback` holds one feedback scope's slot and
   in-flight count for the component that calls it -- never provider or
-  global state, never data from the network. `usePageRefresh` holds one
+  global state, never data from the network. The hook reads an optional
+  `WriteFeedbackPageProvider` above it: when a host mounts one, starting or
+  settling an attempt clears the other scopes' slots, while `reset` stays
+  local; without one, slots are untouched by their siblings. `usePageRefresh` holds one
   surface's refresh bookkeeping (in-flight guard, settle times,
   announcement count); its `refetch` calls reach the network through the
   host's own reads, never through code in this package. Both hooks'
@@ -204,7 +209,11 @@ plumbing and deliberately not exported.
   `WriteFeedbackRegion` rendered directly under the controls. Each
   attempt starts with `reset`, and the slot holds at most one outcome --
   the one that settled last; overlapping attempts are never merged, and
-  an old failure and a new success never coexist. `run` settles from the
+  an old failure and a new success never coexist. A host that mounts
+  `WriteFeedbackPageProvider` gets one visible result per page: every
+  scope's `run` start, `succeed` and `fail` clears the siblings' slots
+  first, and `reset` clears only its own; the provider holds no slot and
+  renders no UI. `run` settles from the
   attempt's return or throw: a string (including an empty one) confirms --
   the empty string is stored verbatim and renders a banner with no text,
   so callers must pass non-empty copy; `null` does not touch the slot (a
