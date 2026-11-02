@@ -305,24 +305,9 @@ describe('account-ui form geometry', () => {
 
     await user.click(await screen.findByTestId('mfa-add-totp'))
 
-    // The name step comes first, and its cancel and confirm share one
-    // action row with the ordinary spacing: the confirm sits next to the
-    // cancel, not at the far end of the form.
-    const nameConfirm = await screen.findByRole('button', {
-      name: zhCN.mfa.enroll.confirmLabel,
-    })
-    const nameCancel = screen.getByRole('button', {
-      name: zhCN.mfa.enroll.cancelLabel,
-    })
-    expect(sameTop(nameConfirm, nameCancel)).toBe(true)
-    expect(rightOf(nameConfirm, nameCancel)).toBe(true)
-    expect(
-      nameConfirm.getBoundingClientRect().left -
-        nameCancel.getBoundingClientRect().right,
-    ).toBeLessThanOrEqual(32)
-    await user.click(nameConfirm)
-
-    // The flow's step is on screen once its own code field is.
+    // The flow starts with the panel, and its single step keeps the cancel
+    // and confirm on one action row with the ordinary spacing: the confirm
+    // sits next to the cancel, not at the far end of the form.
     const codeField = await screen.findByLabelText(zhCN.flowStep.codeLabel)
     const confirm = screen.getByRole('button', {
       name: zhCN.mfa.enroll.confirmLabel,
