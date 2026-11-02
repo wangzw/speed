@@ -75,7 +75,7 @@ import {
   openAccountSection,
 } from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
-import { submitFactorNameForm } from '../helpers/mfa'
+import { fillFactorName } from '../helpers/mfa'
 import { approveSocialSignIn } from '../helpers/social'
 import {
   addVirtualAuthenticator,
@@ -210,29 +210,14 @@ function addFactorAction(page: Page, kind: MfaKind): Locator {
 }
 
 /**
- * Click the enrolment wizard's confirmation when a settled answer parks the
- * flow's ready step as one further confirmation. The wizard closes itself when
- * the answer settles `enrolled`, so the call is a no-op then.
- */
-async function confirmSettledEnrolment(mfa: Locator): Promise<void> {
-  const confirm = mfa.getByRole('button', {
-    name: copy('accountUi', 'mfa.enroll.confirmLabel'),
-    exact: true,
-  })
-  if ((await confirm.count()) > 0 && (await confirm.isVisible())) {
-    await confirm.click()
-  }
-}
-
-/**
- * Enrol a passkey on the open account page. The wizard's confirmation carries
- * the user activation the creation ceremony needs, and the virtual
+ * Enrol a passkey on the open account page. The panel's one confirmation
+ * carries the user activation the creation ceremony needs, and the virtual
  * authenticator answers it.
  */
 async function enrolPasskey(page: Page): Promise<void> {
   const mfa = mfaSection(page)
   await addFactorAction(page, 'webauthn').click()
-  await submitFactorNameForm(mfa, PASSKEY_FACTOR_NAME)
+  await fillFactorName(mfa, PASSKEY_FACTOR_NAME)
   await expect(
     mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
       exact: true,
@@ -244,14 +229,13 @@ async function enrolPasskey(page: Page): Promise<void> {
       exact: true,
     })
     .click()
-  // The ceremony settles and the step leaves; a parked ready step is one
-  // further confirmation of the same control.
+  // The ceremony settles and the step leaves; the ready step that follows is
+  // submitted without another click.
   await expect(
     mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
       exact: true,
     }),
   ).toHaveCount(0, { timeout: 20_000 })
-  await confirmSettledEnrolment(mfa)
   await expect(
     mfa.getByText(
       copy('accountUi', 'mfa.enroll.enrolled', {

@@ -1,17 +1,18 @@
 /**
- * The two-step-verification section's enrollment name form.
+ * The two-step-verification section's enrollment panel.
  *
- * A method's entry opens a name form before its flow starts: the label travels
- * with the flow's first input, so it is collected first. The field starts
- * empty, so the caller supplies a fixed, recognisable name; a later step that
- * chooses the factor by name then does not depend on the browser.
+ * A method's entry opens the panel with its flow already started: the name
+ * field, the method's body and one confirm share the panel. The field starts
+ * empty, and the typed name is written to the row the flow adds; a later step
+ * that chooses the factor by name therefore addresses a fixed, recognisable
+ * string rather than the browser's suggestion.
  */
 import { expect, type Locator } from '@playwright/test'
 
 import { copy } from './i18n'
 
-/** Submit the name form that a method's entry opened. */
-export async function submitFactorNameForm(
+/** Fill the name field of a method's open enrollment panel. */
+export async function fillFactorName(
   mfa: Locator,
   name: string,
 ): Promise<void> {
@@ -20,11 +21,7 @@ export async function submitFactorNameForm(
     exact: true,
   })
   await expect(field).toBeVisible()
+  // The field carries no prefill: the reader's name is the only value.
+  await expect(field).toHaveValue('')
   await field.fill(name)
-  await mfa
-    .getByRole('button', {
-      name: copy('accountUi', 'mfa.enroll.confirmLabel'),
-      exact: true,
-    })
-    .click()
 }

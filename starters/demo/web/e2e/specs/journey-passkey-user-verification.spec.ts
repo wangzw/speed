@@ -47,7 +47,7 @@ import {
   selectAccountSection,
 } from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
-import { submitFactorNameForm } from '../helpers/mfa'
+import { fillFactorName } from '../helpers/mfa'
 import { totpCode } from '../helpers/totp'
 import {
   addVirtualAuthenticator,
@@ -219,22 +219,7 @@ async function completeTotpFactor(page: Page, secret: string): Promise<void> {
 }
 
 /**
- * Click the enrolment wizard's confirmation when a settled answer parks the
- * flow's ready step as one further confirmation. The wizard closes itself when
- * the answer settles `enrolled`, so the call is a no-op then.
- */
-async function confirmSettledEnrolment(mfa: Locator): Promise<void> {
-  const confirm = mfa.getByRole('button', {
-    name: copy('accountUi', 'mfa.enroll.confirmLabel'),
-    exact: true,
-  })
-  if ((await confirm.count()) > 0 && (await confirm.isVisible())) {
-    await confirm.click()
-  }
-}
-
-/**
- * Read the base32 setup key the wizard's manual-entry disclosure shows. The
+ * Read the base32 setup key the panel's manual-entry disclosure shows. The
  * panel groups the key into four-character blocks for hand entry; an
  * authenticator takes it without the spaces.
  */
@@ -259,9 +244,9 @@ async function revealedTotpSecret(mfa: Locator): Promise<string> {
 async function enrolTotp(page: Page): Promise<string> {
   const mfa = mfaSection(page)
   await addFactorAction(page, 'totp').click()
-  await submitFactorNameForm(mfa, TOTP_FACTOR_NAME)
+  await fillFactorName(mfa, TOTP_FACTOR_NAME)
 
-  // The wizard shows the setup URI as a scannable symbol; the manual
+  // The panel shows the setup URI as a scannable symbol; the manual
   // disclosure reveals the base32 key behind it for setup by hand.
   await expect(
     mfa.getByRole('img', {
@@ -283,10 +268,9 @@ async function enrolTotp(page: Page): Promise<string> {
       exact: true,
     })
     .click()
-  // The accepted code leaves the code form; a settled flow then parks its
-  // ready step as one further confirmation of the same control.
+  // One confirmation takes the whole flow: the ready step that follows the
+  // code is submitted without another click, and the panel closes.
   await expect(codeField).toHaveCount(0, { timeout: 15_000 })
-  await confirmSettledEnrolment(mfa)
 
   await expect(
     mfa.getByText(
@@ -304,14 +288,14 @@ async function enrolTotp(page: Page): Promise<string> {
 }
 
 /**
- * Enrol a passkey on the open account page. The wizard's confirmation carries
- * the user activation the creation ceremony needs, and the virtual
+ * Enrol a passkey on the open account page. The panel's one confirmation
+ * carries the user activation the creation ceremony needs, and the virtual
  * authenticator answers it.
  */
 async function enrolPasskey(page: Page): Promise<void> {
   const mfa = mfaSection(page)
   await addFactorAction(page, 'webauthn').click()
-  await submitFactorNameForm(mfa, PASSKEY_FACTOR_NAME)
+  await fillFactorName(mfa, PASSKEY_FACTOR_NAME)
   await expect(
     mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
       exact: true,
@@ -323,14 +307,13 @@ async function enrolPasskey(page: Page): Promise<void> {
       exact: true,
     })
     .click()
-  // The ceremony settles and the step leaves; a parked ready step is one
-  // further confirmation of the same control.
+  // The ceremony settles and the step leaves; the ready step that follows is
+  // submitted without another click.
   await expect(
     mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
       exact: true,
     }),
   ).toHaveCount(0, { timeout: 20_000 })
-  await confirmSettledEnrolment(mfa)
   await expect(
     mfa.getByText(
       copy('accountUi', 'mfa.enroll.enrolled', {
