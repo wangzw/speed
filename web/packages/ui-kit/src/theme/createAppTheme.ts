@@ -45,12 +45,14 @@
  *   deliberate: consumers can index theme.shadows like any stock MUI
  *   theme.
  * - components: the clickable-target floor, the surface mapping, the
- *   focus ring, the reduced-motion gate and the page baseline, merged by
- *   component slot (see touch-floor.ts, surface.ts, focus-ring.ts,
- *   reduced-motion.ts and baseline.ts). Every base control carries a
- *   `minWidth`/`minHeight` of 44 nested under `@media (pointer: coarse)`,
- *   so the floor reaches every consuming package with no per-surface
- *   gating; a fine pointer emits none of it. The surface overrides paint
+ *   focus ring, the control boundary, the divider rule, the reduced-motion
+ *   gate and the page baseline, merged by component slot (see
+ *   touch-floor.ts, surface.ts, focus-ring.ts, control-borders.ts,
+ *   divider.ts, reduced-motion.ts and baseline.ts). Every base control
+ *   carries a `minWidth`/`minHeight` of 44 nested under
+ *   `@media (pointer: coarse)`, so the floor reaches every consuming
+ *   package with no per-surface gating; a fine pointer emits none of it.
+ *   The surface overrides paint
  *   the container, overlay and header roles and read their values from
  *   `theme.surface`, never from the tokens directly; the baseline paints
  *   the page role on the body, together with the typography glow and the
@@ -119,6 +121,7 @@ import {
 } from '@speed/tokens'
 import { baselineComponents } from './baseline.js'
 import { controlBorderComponents } from './control-borders.js'
+import { dividerComponents } from './divider.js'
 import { focusRingComponents } from './focus-ring.js'
 import { reducedMotionComponents } from './reduced-motion.js'
 import { touchFloorComponents } from './touch-floor.js'
@@ -455,6 +458,7 @@ function tokensToThemeOptions(
       surfaceComponents,
       focusRingComponents,
       controlBorderComponents,
+      dividerComponents,
       reducedMotionComponents,
       baselineComponents(tokens, mode),
     ),
