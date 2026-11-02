@@ -880,7 +880,8 @@ export function IdentifiersSection({
   // while the face is open it stands where the list stood, so the form
   // replaces the list the way the phone block's form replaces its row,
   // rather than sitting below a whole table of addresses. The sign-in axis
-  // keeps its own in-section Add button and the list above it.
+  // renders the sign-in groups alone and offers no add face, so it never
+  // reaches this branch.
   const addFaceReplacesList =
     axis === 'contact' && addOpen && addKinds.length > 0
   // A settled read that lists none, or one whose body omitted the key,
