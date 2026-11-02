@@ -165,16 +165,18 @@ program beside this directory embeds with `go:embed` and serves through
   the column's edge -- the row's leading inset -- and its icon box advances the
   name to the point a navigation label starts. All of these are fixed pixel
   values, not theme spacing steps, so a preset with a different spacing base
-  moves none of them. The row opens a menu upward whose six entries each carry
-  a 20px glyph centred in the navigation's 36px icon advance, so the glyph
-  centre sits on the navigation icon track and the label starts where a
-  navigation label starts: the notification centre, the four account panes and
-  sign out; an impersonation adds its end entry above them. The menu paper
-  keeps the preset's fill and gains only a 1px divider-coloured border and the
-  theme's elevation-12 shadow; it is 238px wide and sits 9px in from the
-  column's edge. The
-  navigation column itself lists the home entry alone: the notification centre
-  and the account panes are menu destinations, not navigation items.
+  moves none of them. The row opens a menu upward whose entries each carry the
+  navigation's own icon mark: a 24px glyph centred in the navigation's icon
+  cell, MUI's `ListItemIcon` reserve of `theme.spacing(4.5)` (36px at the
+  default 8px spacing base). The cell scales with the spacing base exactly as
+  the navigation's does, so in every preset an entry's icon cell and label
+  start where a navigation item's do: the notification centre, the four
+  account panes and sign out; an impersonation adds its end entry above them.
+  The menu paper keeps the preset's fill and gains only a 1px divider-coloured
+  border and the theme's elevation-12 shadow; it is 238px wide and sits 9px in
+  from the column's edge. The navigation column itself lists the home entry
+  alone: the notification centre and the account panes are menu destinations,
+  not navigation items.
 - **The account settings is one pane per route.** `src/pages/account-page.tsx`
   composes `@speed/account-ui`'s sections into four panes, one route each:
   `/account/profile` (profile, identifiers and the registration contact's
