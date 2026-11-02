@@ -17,7 +17,7 @@
 - **不导航。** 本包不检查 URL，也不改 `location`；导航选择在 `navItems` 里由宿主算好。
 - **不发任何请求。** 组合视图发出的每一个请求都是经宿主绑定的 `api-client` 进行的会话操作；`bootstrapSpeedApp` 构造那个客户端，但自身不发请求。
 - **不做权限门。** 视图机从不消费 layout-kit 的 `RouteGuard`，从不调 `usePermission`，从不 `setPermissionSet`；路由级授权是宿主在 `children` 里的组装——把门挂在 `children` 内，喂给它一个由宿主自己附上的权限表算出的 `status`。
-- **不持租户切换器。** 切换当前租户是宿主的路由变更（[tenancy-ui](design-web-tenancy-ui.md) 的控件把选择报给宿主），切换控件属于 `userMenu` 槽的宿主组装；本包代码里不出现切换器。
+- **不持租户切换器。** 切换当前租户是宿主的路由变更（[tenancy-ui](design-web-tenancy-ui.md) 的控件把选择报给宿主），切换控件属于 `userMenu` 槽的宿主组装；本包代码里不出现切换器。账户入口同样只是槽的组装：宿主可把它放进顶栏 `userMenu`，也可放进抽屉底部的 `navFooter`，本包不规定放哪一处。
 - **不提供缺省登录界面。** 渠道组合（口令、短信、社交、注册）是产品决策，`signIn` 槽缺席时未登录分支什么都不渲染。
 - **不持租户作用域的 query key 约定。** key 工厂与逐租户逐出助手归 [auth-core](design-web-auth-core.md)（见该文档「职责」与「核心算法与流程」），本包不在两处都写。
 
