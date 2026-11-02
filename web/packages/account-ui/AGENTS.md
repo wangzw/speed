@@ -236,10 +236,11 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   panel as the name field; its heading names the kind being enrolled
   through the parameterized `mfa.enroll.title`, whose method slot carries
   that kind's `mfa.factor.kind.*` name (the generic other label for an
-  unknown kind). The name field starts empty with a neutral placeholder, is
-  editable, and may be left empty; the flow's first input carries an empty
-  label, and a name typed in the panel is written to the row the flow added
-  through the generated rename mutation once the flow settles `enrolled`.
+  unknown kind). The name field is prefilled with the browser/OS summary
+  the session rows show (empty when nothing is recognised), is editable
+  and may be cleared; the flow's first input carries an empty label, and a
+  name typed in the panel is written to the row the flow added through the
+  generated rename mutation once the flow settles `enrolled`.
   The step states what confirming does before its controls, and its cancel
   sits on the left of its confirm with the ordinary action-row spacing. One
   confirm takes the step; a bare `complete` step the server answers with is
