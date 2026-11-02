@@ -124,7 +124,7 @@
 | `authn.login.wechat-mp.app-secret` | 字符串 | 无 | 默认 | 必填、敏 | 同上的应用密钥 |
 | `authn.mfa.totp.issuer` | 字符串 | `authn.gate.mount.public-url` 的主机名 | 默认 | | 验证器应用里显示的站点名，即 `otpauth://`（[REF-otpauth-key-uri-format](../../../references.md)）地址的发行者；部署方自行设置 |
 | `authn.mfa.webauthn.rp-id` | 字符串 | `authn.gate.mount.public-url` 的主机名 | 默认 | | 依赖方标识（[REF-webauthn](../../../references.md)）；须等于基址主机或其父域 |
-| `authn.mfa.webauthn.rp-name` | 字符串 | `speed` | 默认 | | 依赖方的显示名 |
+| `authn.mfa.webauthn.rp-name` | 字符串 | `speed` | 默认 | | 依赖方在用户设备上显示的站点名；部署方自行设置 |
 | `authn.mfa.webauthn.origins` | 字符串列表 | `authn.gate.mount.public-url` 的来源 | 默认 | | 依赖方接受的来源 |
 
 登录方式的端点覆盖项与根证书文件由部署方给出：指向自定义端点即由部署方承担对该端点与其证书的信任，缺省仍是内置端点、拒回环与系统根（[ADR-authn-social-endpoints](../../../adr/adr-authn-social-endpoints.md)）。
