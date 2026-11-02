@@ -182,6 +182,7 @@
       "labelField": "名称（可选）",
       "labelPlaceholder": "例如：工作手机",
       "labelHelp": "用于在列表中区分这个方式；留空则显示方式名称。",
+      "starting": "正在开始登记…",
       "enrolled": "{{factor}} 已添加。",
       "note": {
         "totp": "确认后，这个身份验证器应用将被添加，下次登录时即可使用。",

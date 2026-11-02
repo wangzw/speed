@@ -182,6 +182,7 @@
       "labelField": "Name (optional)",
       "labelPlaceholder": "For example: Work phone",
       "labelHelp": "Helps you tell this method apart in the list; leave empty to show the method name.",
+      "starting": "Starting the setup…",
       "enrolled": "{{factor}} added.",
       "note": {
         "totp": "After you confirm, this authenticator app is added and can be used the next time you sign in.",

@@ -8,7 +8,7 @@
  * one entry for it is the login engine's `enroll` purpose. The section
  * therefore renders the factors it reads and offers the enrollment entries
  * THIS deployment carries, each of which opens a `purpose: 'enroll'` flow
- * (session.startAuthenticatedFlow) whose steps the wizard answers until the
+ * (session.startAuthenticatedFlow) whose steps the panel answers until the
  * flow settles `enrolled`. Which kinds the deployment carries is its own
  * answer (GET /api/v1/auth/methods' `mfa.factors`, read once through
  * session.listMethods), never a hard-coded set: a deployment whose assembly
@@ -18,31 +18,36 @@
  * enroll flow uses -- and an unresolved read withholds the entries (fail
  * closed) rather than guessing.
  *
- *  - Enroll. The entry opens a name form first: the enrollment step carries
- *    the label with its `kind` (`POST B/flows/authenticated
- *    {purpose:"enroll", input:{kind, label}}`), and later steps do not read
- *    it. The field starts empty and shows a neutral example as its
- *    placeholder: the name is this account page's answer to which factor a
- *    row is, not something the browser can infer. It is editable and may be
- *    submitted empty -- the server stores no name then and the row falls
- *    back to its kind. The form has no required rule. Continue starts the
- *    flow; the wizard opens inside the
+ *  - Enroll. The entry opens the method's one panel and starts the flow at
+ *    once: the panel holds the name field (empty, with a neutral example,
+ *    and editable), the sentence stating what confirming does, and the
+ *    method's body as its first step arrives -- TOTP's otpauth_uri as a QR
+ *    symbol with a manual-entry disclosure for its base32 secret beside a
+ *    six-digit code field, or a passkey's creation options driven through
+ *    the browser's WebAuthn API. One confirm control submits the step: a
+ *    passkey's registration click is also the user gesture its ceremony
+ *    needs. A step the server sends as a bare `complete` carries no input,
+ *    so the driver submits it itself (at most once per seq) instead of
+ *    asking for a second confirmation; the same auto-submission covers the
+ *    ready state a code answer reaches. The flow settles `enrolled`
+ *    without changing this session's level; the factors list is then
+ *    refetched, and a name typed in the panel -- the flow's first input
+ *    carried an empty label -- is written to the row the enrollment just
+ *    added with PATCH /api/v1/auth/factors/{id}. The panel opens inside the
  *    method's own group and replaces that group's rows, its heading naming
- *    the method being added, and each step states what confirming will do
- *    before its controls. The step's cancel sits on the left of its confirm
- *    with the ordinary action-row spacing. Each reply's next step is
- *    rendered (FlowStep) and answered. A `webauthn` step hands the factor its
- *    own JSON -- TOTP's otpauth_uri, or a passkey's creation options -- of
- *    which the wizard renders TOTP's URI as a QR symbol with a manual-entry
- *    disclosure for its base32 secret, and drives a passkey's options through
- *    the browser's WebAuthn API. The flow settles `enrolled` without changing
- *    this session's level; the factors list is then refetched.
- *  - Abandon. A wizard the reader cancels, or the section unmounting while a
- *    wizard is open, releases the flow (DELETE /flows/current) so the server
- *    drops the pending row the registration wrote instead of leaving it to the
- *    pending sweep. Each wizard instance releases at most once, a settled flow
- *    releases nothing, and a failed release is ignored rather than shown: the
- *    reader has already given the flow up.
+ *    the method being added. Its cancel sits on the left of its confirm
+ *    with the ordinary action-row spacing.
+ *  - Fail inside the panel. A refused start or answer renders its code in
+ *    the panel's own region, beside the controls that can be corrected; the
+ *    panel stays open with the typed code and name.
+ *  - Abandon. A panel the reader cancels, or the section unmounting while a
+ *    flow is open, releases the flow (DELETE /flows/current) so the server
+ *    drops the pending row the registration wrote instead of leaving it to
+ *    the pending sweep. Each panel instance releases at most once, a
+ *    settled flow releases nothing, and a failed release is ignored rather
+ *    than shown: the reader has already given the flow up. A start that
+ *    answers after the panel closed or the section unmounted is released
+ *    the same way.
  *  - Rename. A row's inline editor sends PATCH /api/v1/auth/factors/{id}
  *    with the new label. The label is metadata, so the route asks for no
  *    step-up and the section opens no gate for it; an empty value clears the
@@ -124,7 +129,12 @@ import {
   useAuthnMfaRemoveFactor,
   useAuthnMfaUpdateFactor,
 } from '@speed/api-sdk'
-import type { AuthSession, AuthnStep, StepUpReason } from '@speed/auth-core'
+import type {
+  AuthnFlowState,
+  AuthSession,
+  AuthnStep,
+  StepUpReason,
+} from '@speed/auth-core'
 import { stepUpReasonOf } from '@speed/auth-core'
 import { formatInstant } from '@speed/i18n'
 import {
@@ -142,6 +152,7 @@ import { AccountAsyncSection } from './internal/async-section.js'
 import { FlowStep } from './internal/flow-step.js'
 import type { FlowStepAnswer } from './internal/flow-step.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
+import { asFactorList } from './internal/models.js'
 import { useFactorsQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountTimeZone } from './internal/time-zone.js'
@@ -170,7 +181,6 @@ type GatedAction =
   | {
       readonly kind: 'enroll'
       readonly factorKind: string
-      readonly label: string
       readonly reason: StepUpReason
     }
   | {
@@ -179,21 +189,14 @@ type GatedAction =
       readonly reason: StepUpReason
     }
 
-/** The open enrollment wizard: the step it is parked on, its sequence, and
- * the factor kind it is enrolling -- its heading names that kind on every
- * step. */
-interface EnrollWizard {
-  readonly step: AuthnStep
-  readonly seq: number
-  readonly kind: string
-}
-
-/** The enrollment's name form: the kind the entry was clicked for and the
- * label typed so far. It is shown before the flow starts because the label
- * travels with the flow's first (`enroll`) input. */
-interface EnrollDraft {
+/** The open enrollment: the kind it adds, the name typed in its own field,
+ * and the step it is parked on. The step is null while the flow starts,
+ * and its heading names the kind on every step. */
+interface EnrollPanel {
   readonly kind: string
   readonly label: string
+  readonly step: AuthnStep | null
+  readonly seq: number
 }
 
 /** The row whose name is being edited: its identifier and the input value. */
@@ -235,9 +238,9 @@ const METHOD_HELP_KEYS: Readonly<Record<string, string>> = {
 }
 
 /** One sentence stating what confirming the enrollment step will do, one
- * per factor kind. The sentence renders on every step of that kind's
- * wizard, including a passkey's registration step, whose prompt alone does
- * not say what the confirmation does. */
+ * per factor kind. The sentence renders above that kind's step, including a
+ * passkey's registration step, whose prompt alone does not say what the
+ * confirmation does. */
 const ENROLL_NOTE_KEYS: Readonly<Record<string, string>> = {
   totp: 'mfa.enroll.note.totp',
   webauthn: 'mfa.enroll.note.webauthn',
@@ -323,9 +326,9 @@ function FactorActionsMenu({
   )
 }
 
-/** The enrollment group's result region. The name form, the wizard's steps
- * and a landed enrollment are mutually exclusive positions of one control
- * group, so they render the group's one region through this component. */
+/** The enrollment group's result region. The panel's steps and a landed
+ * enrollment are mutually exclusive positions of one control group, so they
+ * render the group's one region through this component. */
 function EnrollmentFeedback({
   outcome,
 }: {
@@ -343,10 +346,8 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
 
   // The action a won step-up re-runs, if any.
   const [gate, setGate] = useState<GatedAction | null>(null)
-  // The open enrollment's name form, if any.
-  const [enrollDraft, setEnrollDraft] = useState<EnrollDraft | null>(null)
-  // The open enrollment, if any.
-  const [wizard, setWizard] = useState<EnrollWizard | null>(null)
+  // The open enrollment panel, if any.
+  const [panel, setPanel] = useState<EnrollPanel | null>(null)
   // The enrollment's in-flight state.
   const [enrolling, setEnrolling] = useState(false)
   // The row whose removal is being confirmed.
@@ -354,13 +355,13 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   // The row whose name is being edited, if any.
   const [renameDraft, setRenameDraft] = useState<RenameDraft | null>(null)
   // The kind whose enrollment owns the group-level feedback slot, if any.
-  // It outlives the wizard and the name form, so a landed enrollment's
-  // confirmation still renders in the group that produced it.
+  // It outlives the panel, so a landed enrollment's confirmation still
+  // renders in the group that produced it.
   const [enrollKind, setEnrollKind] = useState<string | null>(null)
   // Enrollment is its own control group: its result sits below the entries
-  // or the form of the group that produced it. The row actions -- rename and
-  // removal -- are one control group below the list, so they share one scope
-  // and one region, and the later result replaces the earlier one.
+  // or the panel of the group that produced it. The row actions -- rename
+  // and removal -- are one control group below the list, so they share one
+  // scope and one region, and the later result replaces the earlier one.
   const enrollFeedback = useWriteFeedback()
   const rowFeedback = useWriteFeedback()
   // The deployment's enrollable factor kinds (GET /api/v1/auth/methods'
@@ -370,9 +371,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     readonly string[] | null
   >(null)
 
-  // Whether this wizard holds an open flow of its own to release: set when a
+  // Whether this panel holds an open flow of its own to release: set when a
   // reply parks a step, cleared when the flow settles or is abandoned. Each
-  // wizard instance releases at most once.
+  // panel instance releases at most once.
   const flowOpenRef = useRef(false)
   // The unmount release is deferred by one microtask, so a remount in the same
   // commit (StrictMode's double effect invocation) cancels it: the remounted
@@ -382,8 +383,20 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   // needs no dependency and never re-registers.
   const sessionRef = useRef(session)
   sessionRef.current = session
+  // Every open and every cancel takes a token. A start or answer that lands
+  // under a stale token belongs to a panel the reader has left, so its flow
+  // is released instead of reopening anything.
+  const panelTokenRef = useRef(0)
+  // Whether the section is still mounted; a late start under an unmounted
+  // section releases its flow. StrictMode's remount sets it back to true
+  // before the late answer runs.
+  const mountedRef = useRef(true)
+  // The factor identifiers the list held when the panel opened. The row the
+  // enrollment adds is the one the refetched list carries beyond this set,
+  // which is how a typed name finds the row it belongs to.
+  const knownIdsRef = useRef<ReadonlySet<string>>(new Set())
 
-  /** Release the open enrollment flow, at most once per wizard instance. A
+  /** Release the open enrollment flow, at most once per panel instance. A
    * failure is ignored: giving up a flow must not put an error in front of
    * the reader. */
   function releaseEnrollFlow(): void {
@@ -394,13 +407,15 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     void session.abandonFlow().catch(() => undefined)
   }
 
-  // Unmounting is a departure like the wizard's cancel: a flow this section
+  // Unmounting is a departure like the panel's cancel: a flow this section
   // opened and has not seen settle is released, so no pending factor row and
   // no stale binding linger on the server. The release waits one microtask so
   // StrictMode's double mount cancels it in the remount's setup.
   useEffect(() => {
+    mountedRef.current = true
     releasePendingRef.current = false
     return () => {
+      mountedRef.current = false
       if (!flowOpenRef.current) {
         return
       }
@@ -463,7 +478,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       ? t(`mfa.factor.kind.${kind}`)
       : t('mfa.factor.kind.other')
   }
-  /** The enrollment wizard's heading for one factor kind: the one
+  /** The enrollment panel's heading for one factor kind: the one
    * parameterized title key, with the kind's own name in its method slot. */
   function enrollTitle(kind: string): string {
     return t('mfa.enroll.title', {
@@ -482,99 +497,224 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     })
   }
 
-  /** Open the enrollment's name form for one factor kind. The name starts
-   * empty and is editable, and submitting it empty is allowed: the server
-   * then stores no name. */
-  function openEnroll(factorKind: string): void {
-    enrollFeedback.reset()
-    setEnrollKind(factorKind)
-    setEnrollDraft({ kind: factorKind, label: '' })
-  }
-
-  /** Start (or restart) an enrollment for one factor kind and label. The
-   * label travels with the flow's first input, so a retry after a won
-   * step-up sends the same one. */
-  function startEnroll(factorKind: string, label: string): Promise<void> {
-    return enrollFeedback.run(async () => {
-      setEnrollKind(factorKind)
-      setEnrolling(true)
-      try {
-        const state = await session.startAuthenticatedFlow({
-          purpose: 'enroll',
-          input: { kind: factorKind, label },
-          ...(returnPath === undefined ? {} : { return_to: returnPath }),
-        })
-        setEnrollDraft(null)
-        if ('next' in state) {
-          flowOpenRef.current = true
-          setWizard({ step: state.next, seq: state.seq, kind: factorKind })
-          return null
-        }
-        // A settled flow has spent its state, so there is nothing to release.
-        flowOpenRef.current = false
-        if (state.state === 'enrolled') {
-          setWizard(null)
-          await invalidateFactors()
-          return t('mfa.enroll.enrolled', {
-            factor: factorKindLabel(factorKind),
-            interpolation: { escapeValue: false },
-          })
-        }
-        // A settled state other than 'enrolled' is not an enroll outcome.
-        enrollFeedback.fail({ code: 'client.unknown' })
-        return null
-      } catch (error) {
-        const code = errorCodeOf(error)
-        const reason = stepUpReasonOf(code)
-        if (reason !== null) {
-          setEnrollDraft(null)
-          setGate({ kind: 'enroll', factorKind, label, reason })
-          return null
-        }
-        throw error
-      } finally {
-        setEnrolling(false)
-      }
-    })
-  }
-
-  /** Answer the open enrollment's current step. */
-  function answerEnroll(answer: FlowStepAnswer): Promise<void> {
-    if (wizard === null) {
-      return Promise.resolve()
+  /** Submit every bare `complete` step a reply leads with, so the one
+   * confirm the reader gave takes the whole flow: such a step carries no
+   * input and asks no question. A seq is submitted at most once, so a reply
+   * that keeps naming the same one is rendered for the reader instead of
+   * looping. */
+  async function advanceFlow(state: AuthnFlowState): Promise<AuthnFlowState> {
+    let current = state
+    const completed = new Set<number>()
+    while (
+      'next' in current &&
+      current.next.kind === 'complete' &&
+      !completed.has(current.seq)
+    ) {
+      completed.add(current.seq)
+      current = await session.answerFlow({
+        seq: current.seq,
+        step: 'complete',
+      })
     }
-    const kind = wizard.kind
-    return enrollFeedback.run(async () => {
-      setEnrolling(true)
-      try {
-        const state = await session.answerFlow({
-          seq: wizard.seq,
-          step: answer.step,
-          input: answer.input,
-        })
+    return current
+  }
+
+  /** The identifier of the row this enrollment added: the active row of the
+   * kind that the list did not carry before the panel opened. */
+  function addedFactorId(kind: string): string | null {
+    const list = asFactorList(
+      queryClient.getQueryData(getAuthnMfaFactorsQueryKey()),
+    )
+    const added = (list.factors ?? []).find(
+      (factor) =>
+        (factor.kind ?? '') === kind &&
+        factor.status === 'active' &&
+        factor.id !== undefined &&
+        !knownIdsRef.current.has(factor.id),
+    )
+    return added?.id ?? null
+  }
+
+  /** Finish a settled enrollment: reread the list, name the row with the
+   * name typed in the panel, and answer the confirmation sentence. The
+   * flow's first input carried no label, so the name is written to the row
+   * the enrollment added. */
+  async function finishEnrollment(
+    kind: string,
+    label: string,
+  ): Promise<string> {
+    await invalidateFactors()
+    if (label !== '') {
+      const added = addedFactorId(kind)
+      if (added === null) {
+        throw new Error('the enrolled factor is not in the refetched list')
+      }
+      await updateMutation.mutateAsync({ id: added, data: { label } })
+      await invalidateFactors()
+    }
+    return t('mfa.enroll.enrolled', {
+      factor: factorKindLabel(kind),
+      interpolation: { escapeValue: false },
+    })
+  }
+
+  /** Open one method's enrollment panel and start its flow at once, so the
+   * method's body (a QR symbol or a registration prompt) is on the same
+   * panel as the name field. */
+  function openEnroll(factorKind: string): void {
+    releaseEnrollFlow()
+    knownIdsRef.current = new Set(
+      (factors ?? []).flatMap((factor) =>
+        factor.id === undefined ? [] : [factor.id],
+      ),
+    )
+    enrollFeedback.reset()
+    setEnrollKind(null)
+    const token = ++panelTokenRef.current
+    setPanel({ kind: factorKind, label: '', step: null, seq: 0 })
+    void startEnrollFlow(factorKind, token)
+  }
+
+  /** Start the enrollment flow of one method and park its first step on the
+   * open panel. */
+  async function startEnrollFlow(
+    factorKind: string,
+    token: number,
+  ): Promise<void> {
+    setEnrolling(true)
+    try {
+      const state = await advanceFlow(
+        await session.startAuthenticatedFlow({
+          purpose: 'enroll',
+          input: { kind: factorKind, label: '' },
+          ...(returnPath === undefined ? {} : { return_to: returnPath }),
+        }),
+      )
+      if (token !== panelTokenRef.current || !mountedRef.current) {
         if ('next' in state) {
-          flowOpenRef.current = true
-          setWizard({ step: state.next, seq: state.seq, kind })
-          return null
+          void sessionRef.current.abandonFlow().catch(() => undefined)
         }
-        // A settled flow has spent its state, so there is nothing to release.
-        flowOpenRef.current = false
-        if (state.state === 'enrolled') {
-          setWizard(null)
-          await invalidateFactors()
-          return t('mfa.enroll.enrolled', {
-            factor: factorKindLabel(kind),
-            interpolation: { escapeValue: false },
-          })
+        return
+      }
+      if ('next' in state) {
+        flowOpenRef.current = true
+        setPanel((current) =>
+          current !== null && current.kind === factorKind
+            ? { ...current, step: state.next, seq: state.seq }
+            : current,
+        )
+        return
+      }
+      // A settled flow has spent its state, so there is nothing to release.
+      flowOpenRef.current = false
+      setPanel(null)
+      if (state.state === 'enrolled') {
+        setEnrollKind(factorKind)
+        try {
+          enrollFeedback.succeed(await finishEnrollment(factorKind, ''))
+        } catch (failure) {
+          enrollFeedback.fail(failure)
         }
-        // A settled state other than 'enrolled' is not an enroll outcome.
-        setWizard(null)
-        enrollFeedback.fail({ code: 'client.unknown' })
-        return null
-      } finally {
+        return
+      }
+      // A settled state other than 'enrolled' is not an enroll outcome.
+      enrollFeedback.fail({ code: 'client.unknown' })
+    } catch (failure) {
+      if (token !== panelTokenRef.current || !mountedRef.current) {
+        return
+      }
+      const reason = stepUpReasonOf(errorCodeOf(failure))
+      if (reason !== null) {
+        // The elevation gate is another door: the panel closes and the flow
+        // is started again after a won challenge.
+        setPanel(null)
+        setGate({ kind: 'enroll', factorKind, reason })
+        return
+      }
+      enrollFeedback.fail(failure)
+    } finally {
+      if (token === panelTokenRef.current) {
         setEnrolling(false)
       }
-    })
+    }
+  }
+
+  /** Answer the panel's current step. The name typed in the panel is read
+   * here, at the one confirmation, and written once the enrollment lands. */
+  async function answerEnroll(
+    current: EnrollPanel,
+    answer: FlowStepAnswer,
+  ): Promise<void> {
+    if (current.step === null) {
+      return
+    }
+    const token = panelTokenRef.current
+    const kind = current.kind
+    enrollFeedback.reset()
+    setEnrolling(true)
+    try {
+      let state: AuthnFlowState
+      try {
+        state = await advanceFlow(
+          await session.answerFlow({
+            seq: current.seq,
+            step: answer.step,
+            input: answer.input,
+          }),
+        )
+      } catch (failure) {
+        if (token !== panelTokenRef.current || !mountedRef.current) {
+          return
+        }
+        // A refused answer is correctable in the panel that asked for it.
+        enrollFeedback.fail(failure)
+        return
+      }
+      if (token !== panelTokenRef.current || !mountedRef.current) {
+        if ('next' in state) {
+          void sessionRef.current.abandonFlow().catch(() => undefined)
+        }
+        return
+      }
+      if ('next' in state) {
+        flowOpenRef.current = true
+        setPanel((open) =>
+          open !== null && open.kind === kind
+            ? { ...open, step: state.next, seq: state.seq }
+            : open,
+        )
+        return
+      }
+      // A settled flow has spent its state, so there is nothing to release.
+      flowOpenRef.current = false
+      setPanel(null)
+      setEnrollKind(kind)
+      if (state.state !== 'enrolled') {
+        // A settled state other than 'enrolled' is not an enroll outcome.
+        enrollFeedback.fail({ code: 'client.unknown' })
+        return
+      }
+      try {
+        enrollFeedback.succeed(
+          await finishEnrollment(kind, current.label.trim()),
+        )
+      } catch (failure) {
+        enrollFeedback.fail(failure)
+      }
+    } finally {
+      if (token === panelTokenRef.current) {
+        setEnrolling(false)
+      }
+    }
+  }
+
+  /** Close the panel and give its flow up. A start still in flight releases
+   * the flow it opens when its answer lands under the stale token. */
+  function cancelEnroll(): void {
+    panelTokenRef.current += 1
+    releaseEnrollFlow()
+    setPanel(null)
+    enrollFeedback.reset()
   }
 
   /** Whether a rename answer says the factor is not there, or is not the
@@ -676,7 +816,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     const action = gate
     setGate(null)
     if (action?.kind === 'enroll') {
-      void startEnroll(action.factorKind, action.label)
+      openEnroll(action.factorKind)
     } else if (action?.kind === 'remove') {
       void removeFactor(action.factorId)
     }
@@ -707,7 +847,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
             (factor) => factor.status === 'active',
           ).length
           // A pending factor is the enrollment's intermediate state, which
-          // the wizard holds; only enabled and disabled rows are listed.
+          // the panel holds; only enabled and disabled rows are listed.
           const visibleFactors = settledFactors.filter(
             (factor) => factor.status !== 'pending',
           )
@@ -771,14 +911,10 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                       ? t(`mfa.factor.kind.${kind}`)
                       : t('mfa.factor.kind.other')
                     const help = METHOD_HELP_KEYS[kind]
-                    const wizardHere =
-                      wizard !== null && wizard.kind === kind
-                    const draftHere =
-                      enrollDraft !== null && enrollDraft.kind === kind
-                    const inEnrollment = wizardHere || draftHere
-                    const headingText = inEnrollment
-                      ? enrollTitle(kind)
-                      : kindLabel
+                    const open =
+                      panel !== null && panel.kind === kind ? panel : null
+                    const headingText =
+                      open === null ? kindLabel : enrollTitle(kind)
                     return (
                       <Box
                         component="section"
@@ -804,7 +940,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                           >
                             {headingText}
                           </Typography>
-                          {inEnrollment || !enrollable ? null : (
+                          {open !== null || !enrollable ? null : (
                             <Button
                               variant="outlined"
                               size="small"
@@ -825,97 +961,90 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                             </Button>
                           )}
                         </Box>
-                        {wizardHere ? (
+                        {open !== null ? (
                           <Box sx={{ maxWidth: FORM_MAX_WIDTH }}>
-                            {/* Every step states what confirming does; a
+                            {/* The name field and the method's body share the
+                                panel: the name travels with no request of its
+                                own, and the row the enrollment adds is named
+                                once the flow settles. The field starts empty
+                                with a neutral example. */}
+                            <TextField
+                              label={t('mfa.enroll.labelField')}
+                              placeholder={t('mfa.enroll.labelPlaceholder')}
+                              value={open.label}
+                              onChange={(event) =>
+                                setPanel((current) =>
+                                  current !== null && current.kind === kind
+                                    ? {
+                                        ...current,
+                                        label: event.target.value,
+                                      }
+                                    : current,
+                                )
+                              }
+                              helperText={t('mfa.enroll.labelHelp')}
+                              disabled={enrolling}
+                              fullWidth
+                              sx={{ mt: 2 }}
+                            />
+                            {/* The step states what confirming does; a
                                 passkey's registration prompt alone does not
                                 carry that sentence. */}
                             <Typography
                               variant="body2"
                               color="text.secondary"
-                              sx={{ mt: 0.5 }}
+                              sx={{ mt: 1.5 }}
                             >
                               {t(enrollNoteKey(kind))}
                             </Typography>
-                            <FlowStep
-                              key={`${wizard.seq}-${wizard.step.kind}`}
-                              step={wizard.step}
-                              sequence={wizard.seq}
-                              busy={enrolling}
-                              answerStep="enroll"
-                              submitLabel={t('mfa.enroll.confirmLabel')}
-                              onSubmit={(answer) => void answerEnroll(answer)}
-                              secondaryAction={
-                                <ActionButton
-                                  type="button"
-                                  disabled={enrolling}
-                                  onClick={() => {
-                                    releaseEnrollFlow()
-                                    setWizard(null)
-                                    enrollFeedback.reset()
-                                  }}
-                                >
-                                  {t('mfa.enroll.cancelLabel')}
-                                </ActionButton>
-                              }
-                            />
-                            <EnrollmentFeedback
-                              outcome={enrollFeedback.outcome}
-                            />
-                          </Box>
-                        ) : draftHere ? (
-                          <Box sx={{ maxWidth: FORM_MAX_WIDTH }}>
-                            {/* The name travels with the flow's first input,
-                                so it is collected before the flow starts.
-                                The field starts empty, shows an example as
-                                its placeholder, and may be submitted empty.
-                                Cancel and confirm share one action row,
-                                cancel on the left. */}
-                            <Box
-                              component="form"
-                              onSubmit={(event) => {
-                                event.preventDefault()
-                                void startEnroll(
-                                  enrollDraft.kind,
-                                  enrollDraft.label,
-                                )
-                              }}
-                              sx={{ mt: 2 }}
-                            >
-                              <TextField
-                                label={t('mfa.enroll.labelField')}
-                                value={enrollDraft.label}
-                                onChange={(event) =>
-                                  setEnrollDraft({
-                                    kind: enrollDraft.kind,
-                                    label: event.target.value,
-                                  })
+                            {open.step === null ? (
+                              <Box sx={{ mt: 2 }}>
+                                <Typography variant="body2" color="text.secondary">
+                                  {t('mfa.enroll.starting')}
+                                </Typography>
+                                <ActionRow sx={{ mt: 1.5 }}>
+                                  <ActionButton
+                                    type="button"
+                                    disabled={enrolling}
+                                    onClick={cancelEnroll}
+                                  >
+                                    {t('mfa.enroll.cancelLabel')}
+                                  </ActionButton>
+                                  <ActionButton
+                                    type="button"
+                                    emphasis="primary"
+                                    disabled={enrolling}
+                                    onClick={() => {
+                                      const token = ++panelTokenRef.current
+                                      void startEnrollFlow(kind, token)
+                                    }}
+                                  >
+                                    {t('mfa.retry')}
+                                  </ActionButton>
+                                </ActionRow>
+                              </Box>
+                            ) : (
+                              <FlowStep
+                                key={`${open.seq}-${open.step.kind}`}
+                                step={open.step}
+                                sequence={open.seq}
+                                busy={enrolling}
+                                answerStep="enroll"
+                                submitLabel={t('mfa.enroll.confirmLabel')}
+                                onSubmit={(answer) => {
+                                  void answerEnroll(open, answer)
+                                }}
+                                secondaryAction={
+                                  <ActionButton
+                                    type="button"
+                                    disabled={enrolling}
+                                    onClick={cancelEnroll}
+                                  >
+                                    {t('mfa.enroll.cancelLabel')}
+                                  </ActionButton>
                                 }
-                                placeholder={t('mfa.enroll.labelPlaceholder')}
-                                helperText={t('mfa.enroll.labelHelp')}
-                                disabled={enrolling}
-                                fullWidth
                               />
-                              <ActionRow sx={{ mt: 2 }}>
-                                <ActionButton
-                                  type="button"
-                                  disabled={enrolling}
-                                  onClick={() => {
-                                    setEnrollDraft(null)
-                                    enrollFeedback.reset()
-                                  }}
-                                >
-                                  {t('mfa.enroll.cancelLabel')}
-                                </ActionButton>
-                                <ActionButton
-                                  type="submit"
-                                  emphasis="primary"
-                                  disabled={enrolling}
-                                >
-                                  {t('mfa.enroll.confirmLabel')}
-                                </ActionButton>
-                              </ActionRow>
-                            </Box>
+                            )}
                             <EnrollmentFeedback
                               outcome={enrollFeedback.outcome}
                             />

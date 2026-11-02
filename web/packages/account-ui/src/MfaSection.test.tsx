@@ -11,11 +11,12 @@
  * DELETE-s the factor and refetches the list; a remove refused with 401
  * step_up_required opens the step-up dialog, and a won step-up re-runs
  * exactly that removal once; a 409 (last factor) renders its code text;
- * and the TOTP enrollment walks the flow -- the `webauthn` step's
- * otpauth_uri is rendered as a QR symbol, the code is answered under
- * `step: 'enroll'`, the ready step is taken with `step: 'complete'` and
- * the settled `enrolled` refetches the factors; a refused answer keeps the
- * typed code and reports the refusal.
+ * and the TOTP enrollment starts its flow with the panel -- the
+ * `webauthn` step's otpauth_uri is rendered as a QR symbol, the code is
+ * answered under `step: 'enroll'`, a following `complete` step is taken
+ * automatically so the reader confirms once, and the settled `enrolled`
+ * refetches the factors and names the new row with the typed name; a
+ * refused answer keeps the typed code and reports the refusal in the panel.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -120,24 +121,32 @@ function stubUserAgent(ua: string): () => void {
   }
 }
 
-/**
- * Open the enrollment name step and confirm it without typing, so the flow
- * starts with an empty label. Answers the name field.
- */
-async function startEnrollWithEmptyName(
-  user: ReturnType<typeof userEvent.setup>,
-): Promise<HTMLElement> {
-  const field = await screen.findByLabelText(zhCN.mfa.enroll.labelField)
-  await user.click(
-    screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
-  )
-  return field
-}
-
 /** The accessible name of a method's action: the visible action word leads,
  * followed by the method. */
 const addNameOf = (method: string): string =>
   zhCN.mfa.addAria.replace('{{method}}', method)
+
+/**
+ * Open one method's enrollment panel. The flow starts with the panel, so the
+ * method's body arrives without a separate name step.
+ */
+async function openEnrollment(
+  user: ReturnType<typeof userEvent.setup>,
+  method: string,
+): Promise<void> {
+  await user.click(
+    await screen.findByRole('button', { name: addNameOf(method) }),
+  )
+}
+
+/** Submit the panel's one confirmation. */
+async function confirmEnrollment(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<void> {
+  await user.click(
+    await screen.findByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
+  )
+}
 
 /** The enrollment wizard's heading for one factor kind: the parameterized
  * title with the kind's own name in its method slot. */
@@ -1111,10 +1120,7 @@ describe('MfaSection', () => {
     const { rig } = mount(respond, { returnPath: '/account' })
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
-    )
-    await startEnrollWithEmptyName(user)
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
 
     await waitFor(() => {
       const start = rig.calls.find(
@@ -1122,6 +1128,7 @@ describe('MfaSection', () => {
       )
       expect(start?.body).toMatchObject({
         purpose: 'enroll',
+        input: { kind: 'totp', label: '' },
         return_to: '/account',
       })
     })
@@ -1162,28 +1169,29 @@ describe('MfaSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
-    )
-    // The wizard's heading names the factor kind the entry is enrolling.
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+    // The panel's heading names the factor kind it is enrolling.
     expect(
       screen.getByRole('heading', {
         name: enrollTitleOf(zhCN.mfa.factor.kind.totp),
       }),
     ).toBeTruthy()
-    await startEnrollWithEmptyName(user)
 
-    // Every step states what confirming will do before its controls.
-    expect(screen.getByText(zhCN.mfa.enroll.note.totp)).toBeVisible()
-
-    // The enroll start names the factor kind and the (cleared) label.
-    const start = rig.calls.find(
-      (call) => call.method === 'POST' && call.path === FLOW_START,
-    )
-    expect(start?.body).toEqual({
-      purpose: 'enroll',
-      input: { kind: 'totp', label: '' },
+    // The flow starts with the panel, carrying the kind and an empty label.
+    await waitFor(() => {
+      const start = rig.calls.find(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      )
+      expect(start?.body).toEqual({
+        purpose: 'enroll',
+        input: { kind: 'totp', label: '' },
+      })
     })
+
+    // The panel states what confirming will do before its controls, and the
+    // name field starts empty.
+    expect(screen.getByText(zhCN.mfa.enroll.note.totp)).toBeVisible()
+    expect(screen.getByLabelText(zhCN.mfa.enroll.labelField)).toHaveValue('')
 
     // The step's otpauth URI is its own scannable symbol: the step's JSON is
     // never rendered as a blob, and the URI never appears as text.
@@ -1202,16 +1210,9 @@ describe('MfaSection', () => {
       screen.getByLabelText(zhCN.flowStep.codeLabel),
       '123456',
     )
-    await user.click(
-      screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
-    )
-
-    // The ready step carries the same statement of what confirming does.
-    expect(screen.getByText(zhCN.mfa.enroll.note.totp)).toBeVisible()
-    // The ready step is taken with `step: 'complete'`.
-    await user.click(
-      await screen.findByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
-    )
+    // One confirmation takes the whole flow: the `complete` step that
+    // follows the code is submitted without another click.
+    await confirmEnrollment(user)
 
     await waitFor(() => expect(screen.getByText('My authenticator')).toBeTruthy())
     // The completed enrollment confirms itself, naming the factor kind.
@@ -1223,6 +1224,13 @@ describe('MfaSection', () => {
           zhCN.mfa.factor.kind.totp,
         ),
       ),
+    ).toBeTruthy()
+    // The panel closed and left the group's add action in place.
+    expect(screen.queryByLabelText(zhCN.flowStep.codeLabel)).toBeNull()
+    expect(
+      screen.getByRole('button', {
+        name: addNameOf(zhCN.mfa.factor.kind.totp),
+      }),
     ).toBeTruthy()
     const answers = rig.calls.filter(
       (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
@@ -1258,10 +1266,7 @@ describe('MfaSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
-    )
-    await startEnrollWithEmptyName(user)
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
     const code = await screen.findByLabelText(zhCN.flowStep.codeLabel)
     await user.type(code, '123456')
     // Typing alone issues nothing: only the confirm control answers.
@@ -1270,10 +1275,10 @@ describe('MfaSection', () => {
         (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
       ),
     ).toHaveLength(0)
-    await user.click(
-      screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
-    )
+    await confirmEnrollment(user)
 
+    // The refusal renders in the panel that asked for the code, and the
+    // panel stays open with the typed value.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.bad_request,
     )
@@ -1285,51 +1290,122 @@ describe('MfaSection', () => {
     ).toHaveLength(1)
   })
 
-  it('starts the enrollment name empty and shows an example', async () => {
-    // A recognised browser is the case that used to be pre-filled with its
-    // browser/OS summary; the name is now the reader's to give.
+  it('starts the enrollment name empty and names the added row with it', async () => {
+    // The panel opens with the flow already started, so the name travels to
+    // the row the enrollment adds rather than to the flow's first input.
     const restore = stubUserAgent(
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     )
     try {
+      let enrolled = false
+      let renamed = false
       const respond: RealResponder = (call: RealCall) => {
         if (call.method === 'GET' && call.path === METHODS_PATH) {
           return jsonResponse(200, methodsDoc(['totp']))
         }
         if (call.method === 'GET' && call.path === FACTORS_PATH) {
-          return jsonResponse(200, { factors: [] })
+          return jsonResponse(200, {
+            factors: enrolled
+              ? [
+                  factor({
+                    id: 'factor-new',
+                    kind: 'totp',
+                    label: renamed ? 'My phone' : '',
+                  }),
+                ]
+              : [],
+          })
+        }
+        if (call.method === 'POST' && call.path === FLOW_START) {
+          return jsonResponse(200, {
+            seq: 1,
+            state: 'enroll',
+            next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
+          })
+        }
+        if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+          const body = call.body as { seq: number; step: string }
+          if (body.step === 'enroll') {
+            return jsonResponse(200, {
+              seq: 2,
+              state: 'ready',
+              next: { kind: 'complete' },
+            })
+          }
+          enrolled = true
+          return jsonResponse(200, { state: 'enrolled' })
+        }
+        if (
+          call.method === 'PATCH' &&
+          call.path === '/api/v1/auth/factors/factor-new'
+        ) {
+          renamed = true
+          return jsonResponse(
+            200,
+            factor({ id: 'factor-new', kind: 'totp', label: 'My phone' }),
+          )
         }
         throw new Error(`unexpected ${call.method} ${call.path}`)
       }
       mount(respond)
       const user = userEvent.setup()
 
-      await user.click(
-        await screen.findByRole('button', {
-          name: addNameOf(zhCN.mfa.factor.kind.totp),
-        }),
-      )
-      // The name is the reader's to give: the form starts empty and shows a
-      // neutral example rather than guessing one from the browser.
-      const field = await screen.findByLabelText(zhCN.mfa.enroll.labelField)
+      await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+      await screen.findByRole('img', { name: zhCN.flowStep.totpQrLabel })
+      // The name field starts empty even for a browser the session rows can
+      // summarise; the neutral example is a placeholder, not a value.
+      const field = screen.getByLabelText(zhCN.mfa.enroll.labelField)
       expect(field).toHaveValue('')
       expect(field).toHaveAttribute(
         'placeholder',
         zhCN.mfa.enroll.labelPlaceholder,
       )
       await expectNoAxeViolations()
+
+      // The flow's first input carries no label: it was sent before the name
+      // was typed.
+      const start = rig.calls.find(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      )
+      expect(start?.body).toEqual({
+        purpose: 'enroll',
+        input: { kind: 'totp', label: '' },
+      })
+
+      await user.type(field, 'My phone')
+      await user.type(
+        screen.getByLabelText(zhCN.flowStep.codeLabel),
+        '123456',
+      )
+      await confirmEnrollment(user)
+
+      await waitFor(() => {
+        const patch = rig.calls.find(
+          (call) =>
+            call.method === 'PATCH' &&
+            call.path === '/api/v1/auth/factors/factor-new',
+        )
+        expect(patch?.body).toEqual({ label: 'My phone' })
+      })
+      // The list row the enrollment added now reads the typed name.
+      expect(await screen.findByText('My phone')).toBeTruthy()
     } finally {
       restore()
     }
   })
 
-  it('submits an empty name when the reader leaves it empty', async () => {
+  it('sends no rename when the enrollment name is left empty', async () => {
+    let enrolled = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['totp']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
-        return jsonResponse(200, { factors: [] })
+        return jsonResponse(200, {
+          factors: enrolled
+            ? [factor({ id: 'factor-new', kind: 'totp', label: '' })]
+            : [],
+        })
       }
       if (call.method === 'POST' && call.path === FLOW_START) {
         return jsonResponse(200, {
@@ -1338,29 +1414,46 @@ describe('MfaSection', () => {
           next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
         })
       }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number; step: string }
+        if (body.step === 'enroll') {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'ready',
+            next: { kind: 'complete' },
+          })
+        }
+        enrolled = true
+        return jsonResponse(200, { state: 'enrolled' })
+      }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: addNameOf(zhCN.mfa.factor.kind.totp),
-      }),
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.codeLabel),
+      '123456',
     )
-    // An empty name is not a client-side validation failure: the empty
-    // value is sent, and the server stores no name.
-    const field = await startEnrollWithEmptyName(user)
-    expect(field).toHaveValue('')
-    await waitFor(() => {
-      const start = rig.calls.find(
-        (call) => call.method === 'POST' && call.path === FLOW_START,
-      )
-      expect(start?.body).toEqual({
-        purpose: 'enroll',
-        input: { kind: 'totp', label: '' },
-      })
-    })
+    await confirmEnrollment(user)
+
+    // An empty name is the server's own empty label: no rename follows.
+    expect(
+      await screen.findByText(
+        zhCN.mfa.enroll.enrolled.replace(
+          '{{factor}}',
+          zhCN.mfa.factor.kind.totp,
+        ),
+      ),
+    ).toBeTruthy()
+    expect(
+      rig.calls.filter(
+        (call) =>
+          call.method === 'PATCH' &&
+          call.path.startsWith('/api/v1/auth/factors/'),
+      ),
+    ).toHaveLength(0)
   })
 
   it('shows each row’s name and last use in the account time zone', async () => {
@@ -1649,22 +1742,12 @@ describe('MfaSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: addNameOf(zhCN.mfa.factor.kind.totp),
-      }),
-    )
-    await startEnrollWithEmptyName(user)
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
     await user.type(
       await screen.findByLabelText(zhCN.flowStep.codeLabel),
       '123456',
     )
-    await user.click(
-      screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
-    )
-    await user.click(
-      await screen.findByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
-    )
+    await confirmEnrollment(user)
 
     const enrollText = zhCN.mfa.enroll.enrolled.replace(
       '{{factor}}',
@@ -1774,10 +1857,7 @@ describe('MfaSection', () => {
     mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.totp) }),
-    )
-    await startEnrollWithEmptyName(user)
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
 
     expect(await screen.findByLabelText(zhCN.flowStep.codeLabel)).toBeVisible()
     expect(
@@ -1847,29 +1927,21 @@ describe('MfaSection', () => {
       configurable: true,
     })
     try {
-      await user.click(
-        await screen.findByRole('button', { name: addNameOf(zhCN.mfa.factor.kind.webauthn) }),
-      )
+      await openEnrollment(user, zhCN.mfa.factor.kind.webauthn)
       // A different kind gets its own name in the heading, from the same key.
       expect(
         screen.getByRole('heading', {
           name: enrollTitleOf(zhCN.mfa.factor.kind.webauthn),
         }),
       ).toBeTruthy()
-      await startEnrollWithEmptyName(user)
       // The passkey registration step states what confirming will do; its
       // own prompt does not carry that sentence.
       expect(
         screen.getByText(zhCN.mfa.enroll.note.webauthn),
       ).toBeVisible()
-      // The registration step drives navigator.credentials.create and
-      // reports the credential under the enroll step, not a free-text field.
-      await user.click(
-        await screen.findByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
-      )
-      await user.click(
-        await screen.findByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
-      )
+      // The one confirmation is also the user gesture the creation ceremony
+      // needs; the `complete` step that follows is taken automatically.
+      await confirmEnrollment(user)
       await waitFor(() => expect(screen.getByText('My authenticator')).toBeTruthy())
     } finally {
       if (original === undefined) {
@@ -1922,22 +1994,23 @@ describe('MfaSection', () => {
     expect(unknown).toBeTruthy()
 
     await user.click(unknown)
-    // A kind this package has no wording for renders the wizard's generic
+    // A kind this package has no wording for renders the panel's generic
     // other name, still from the one parameterized title key.
     expect(
       screen.getByRole('heading', {
         name: enrollTitleOf(zhCN.mfa.factor.kind.other),
       }),
     ).toBeTruthy()
-    await startEnrollWithEmptyName(user)
-    // The unknown kind's own flow starts; the generic label never hides
-    // the deployment's vocabulary from the request.
-    const start = rig.calls.find(
-      (call) => call.method === 'POST' && call.path === FLOW_START,
-    )
-    expect(start?.body).toEqual({
-      purpose: 'enroll',
-      input: { kind: 'magic', label: '' },
+    // The unknown kind's own flow starts with the panel; the generic label
+    // never hides the deployment's vocabulary from the request.
+    await waitFor(() => {
+      const start = rig.calls.find(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      )
+      expect(start?.body).toEqual({
+        purpose: 'enroll',
+        input: { kind: 'magic', label: '' },
+      })
     })
   })
 
@@ -2016,12 +2089,7 @@ describe('MfaSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: addNameOf(zhCN.mfa.factor.kind.totp),
-      }),
-    )
-    await startEnrollWithEmptyName(user)
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
     await screen.findByRole('img', { name: zhCN.flowStep.totpQrLabel })
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.enroll.cancelLabel }),
@@ -2063,12 +2131,7 @@ describe('MfaSection', () => {
     const { rig, unmount } = mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: addNameOf(zhCN.mfa.factor.kind.totp),
-      }),
-    )
-    await startEnrollWithEmptyName(user)
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
     await screen.findByRole('img', { name: zhCN.flowStep.totpQrLabel })
 
     unmount()
@@ -2101,19 +2164,12 @@ describe('MfaSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
-    await user.click(
-      await screen.findByRole('button', {
-        name: addNameOf(zhCN.mfa.factor.kind.totp),
-      }),
-    )
-    await startEnrollWithEmptyName(user)
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
     await user.type(
       await screen.findByLabelText(zhCN.flowStep.codeLabel),
       '123456',
     )
-    await user.click(
-      screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
-    )
+    await confirmEnrollment(user)
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.bad_request,
     )
