@@ -64,7 +64,16 @@ func TestStepUpAndEnrollNeedTheProofToBeTheFlowsOwn(t *testing.T) {
 			e := newEnv(t, withSignup(SignupOpen))
 			e.s.seed(t, seed{id: "a1", status: authn.StatusActive, phone: "+8613800000001", bindings: [][2]string{{"google", "g1"}}})
 			e.s.seed(t, seed{id: "b1", status: authn.StatusActive, phone: "+8613800000002", bindings: [][2]string{{"google", "g2"}}})
-			own := map[string]authn.Proof{"account": {Account: "a1"}, "phone": phone("+8613800000001"), "external": social("google", "g1", "", false)}
+			// A login name and its password arrive as the account source: the
+			// password method resolves them to an account and names no
+			// identifier (resolve accepts only a phone identifier, and the
+			// phone has its own case).
+			own := map[string]authn.Proof{
+				"account":  {Account: "a1"},
+				"password": {Account: "a1", Methods: []authn.Method{authn.MethodPassword}},
+				"phone":    phone("+8613800000001"),
+				"external": social("google", "g1", "", false),
+			}
 			for name, p := range own {
 				if res, err := e.resolveFor(purpose, "a1", p); err != nil || res.Account != "a1" || res.Outcome != OutcomeVerified {
 					t.Errorf("%s: %+v, %v, want a1 verified", name, res, err)
@@ -72,6 +81,7 @@ func TestStepUpAndEnrollNeedTheProofToBeTheFlowsOwn(t *testing.T) {
 			}
 			foreign := map[string]authn.Proof{
 				"account":     {Account: "b1"},
+				"password":    {Account: "b1", Methods: []authn.Method{authn.MethodPassword}},
 				"phone":       phone("+8613800000002"),
 				"external":    social("google", "g2", "", false),
 				"unknown":     phone("+8613800000099"),
