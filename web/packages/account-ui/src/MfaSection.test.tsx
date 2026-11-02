@@ -1882,6 +1882,90 @@ describe('MfaSection', () => {
     ).toBeTruthy()
   })
 
+  it('walks the password channel when the removed factor is the last one', async () => {
+    let elevated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [factor({ id: 'factor-1' })] })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-1'
+      ) {
+        if (!elevated) {
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        // The last factor was excluded, so the server starts at the
+        // password and offers no factor step at all.
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'password', kind: 'password' }],
+          },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number; step: string }
+        if (body.step === 'answer') {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'ready',
+            next: { kind: 'complete' },
+          })
+        }
+        elevated = true
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    const confirm = await openRemoveConfirm(user, 'My authenticator')
+    await user.click(
+      within(confirm).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+
+    // The dialog states the consequence and asks for the password alone.
+    expect(await screen.findByText(zhCN.mfa.stepUpDeleteLastNote)).toBeTruthy()
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.field.password),
+      'secret',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    // The won step-up re-runs the removal, which now lands with the
+    // single-factor confirmation.
+    expect(
+      await screen.findByText(
+        zhCN.mfa.removedLast.replace('{{factor}}', 'My authenticator'),
+      ),
+    ).toBeTruthy()
+    expect(
+      rig.calls.filter(
+        (call) =>
+          call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-1',
+      ),
+    ).toHaveLength(2)
+  })
+
   it('clears the previous result when a new attempt starts', async () => {
     // The section's result slot is cleared when a new write attempt starts,
     // even an attempt that opens an enrollment rather than a row action.
