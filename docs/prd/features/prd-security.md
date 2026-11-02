@@ -371,5 +371,5 @@
 系统在删除一个两步验证方式时，不得把被删除的那一个作为重新验证的方式；账户还有其它方式时以其它方式重新验证，被删除的是最后一个可用方式时仅凭口令重新验证。
 
 - **验收**：账户只有一个两步验证方式时，删除它的重新验证只要求口令，口令通过后删除成功并说明账户此后只剩单因素；账户有多个方式时，删除其中一个的重新验证只提供其它方式，被删除的那个不可选；账户没有口令时仍要求重新登录。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
