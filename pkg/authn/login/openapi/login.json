@@ -1168,7 +1168,7 @@
                     "additionalProperties": {
                       "type": "string"
                     },
-                    "description": "The fields the started step takes, as name-to-value strings: the method's first step for `link` and for a step-up that starts at the first factor, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes.",
+                    "description": "The fields the started step takes, as name-to-value strings: the method's first step for `link` and for a step-up that starts at the first factor, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), and nothing for a step-up that starts at the second factor, except that a step-up may also name `exclude_factor`, one factor the flow must not offer -- the factor the caller is about to delete, which must never prove its own removal; a value naming no factor of the account filters nothing. When that exclusion leaves the account no factor at all, the flow of an account holding a password starts at the password and completes on it alone, while an account without a password is refused with 401 `insufficient_user_authentication`. At most 8 members, each value at most 512 bytes.",
                     "type": "object"
                   },
                   "method": {

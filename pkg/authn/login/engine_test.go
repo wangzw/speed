@@ -999,3 +999,114 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+// TestAStepUpOffersTheOtherFactorsWhenOneIsExcluded holds the deletion case
+// with factors to spare: the caller excludes the factor it is about to remove,
+// so the offered list carries the others and never the one leaving.
+func TestAStepUpOffersTheOtherFactorsWhenOneIsExcluded(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.mfa.outcome = authn.MFAFactor
+	r.mfa.offered = []authn.FactorRecord{
+		{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive, ActivatedAt: time.Now().Add(-time.Hour)},
+		{ID: "f2", Kind: authn.FactorTOTP, Status: authn.FactorActive, ActivatedAt: time.Now().Add(-time.Hour)},
+	}
+	r.mfa.assurance = authn.MFAResult{Assurance: authn.AssuranceMulti}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"step-up","input":{"exclude_factor":"f1"}}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("the step-up start answered %d: %s", start.Code, start.Body.String())
+	}
+	body := decode(t, start.Body.String())
+	if body["state"] != "second" {
+		t.Fatalf("the step-up state is %v, want second", body["state"])
+	}
+	factors, ok := body["next"].(map[string]any)["factors"].([]any)
+	if !ok || len(factors) != 1 {
+		t.Fatalf("the offered factors are %v, want the one not excluded", body["next"])
+	}
+	if id := factors[0].(map[string]any)["id"]; id != "f2" {
+		t.Errorf("the offered factor is %v, want f2", id)
+	}
+}
+
+// TestDeletingTheLastFactorCanProveThePassword holds the lockout case: when the
+// excluded factor is the account's only one, the step-up starts at the password,
+// and a proved password alone completes the elevation. No factor is offered,
+// because the one being removed may not prove its own removal.
+func TestDeletingTheLastFactorCanProveThePassword(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("password", nil, authn.Field{Name: "password", Kind: authn.FieldPassword, Required: true}), nil
+	}
+	m.ans = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+	}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allowWithPassword("acct1")
+	r.mfa.outcome = authn.MFAFactor
+	r.mfa.offered = []authn.FactorRecord{{
+		ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive, ActivatedAt: time.Now().Add(-time.Hour),
+	}}
+	r.mfa.assurance = authn.MFAResult{Assurance: authn.AssuranceMulti}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"step-up","input":{"exclude_factor":"f1"}}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("the step-up start answered %d: %s", start.Code, start.Body.String())
+	}
+	body := decode(t, start.Body.String())
+	if body["state"] != "first" {
+		t.Fatalf("the step-up state is %v, want first: the password is proved again", body["state"])
+	}
+	if k := body["next"].(map[string]any)["kind"]; k != "challenge" {
+		t.Fatalf("the start answered next kind %v, want the password challenge", k)
+	}
+	cookie := flowCookie(t, start)
+	seq := int(body["seq"].(float64))
+
+	answered := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"answer","input":{"password":"secret"}}`, "Cookie", cookie)
+	if answered.Code != http.StatusOK {
+		t.Fatalf("the password answer answered %d: %s", answered.Code, answered.Body.String())
+	}
+	answeredBody := decode(t, answered.Body.String())
+	if answeredBody["state"] != "ready" {
+		t.Fatalf("the flow state after the password is %v, want ready: no factor is left to offer", answeredBody["state"])
+	}
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(int(answeredBody["seq"].(float64)))+`,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the step-up completion answered %d: %s", done.Code, done.Body.String())
+	}
+	if len(r.sessions.elevated) != 1 {
+		t.Fatalf("the step-up elevated %d sessions, want one", len(r.sessions.elevated))
+	}
+}
+
+// TestDeletingTheLastFactorWithoutAPasswordStillNeedsRelogin holds the account
+// that cannot prove a password: excluding its only factor leaves no door, and
+// the start is the insufficient answer the dialog sends to re-login.
+func TestDeletingTheLastFactorWithoutAPasswordStillNeedsRelogin(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allow("acct1")
+	r.mfa.outcome = authn.MFAFactor
+	r.mfa.offered = []authn.FactorRecord{{
+		ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive, ActivatedAt: time.Now().Add(-time.Hour),
+	}}
+	r.mfa.assurance = authn.MFAResult{Assurance: authn.AssuranceMulti}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"step-up","input":{"exclude_factor":"f1"}}`)
+	if start.Code != http.StatusUnauthorized {
+		t.Fatalf("the start answered %d, want 401: %s", start.Code, start.Body.String())
+	}
+	if challenge := start.Header().Get("WWW-Authenticate"); !strings.Contains(challenge, `insufficient_user_authentication`) {
+		t.Errorf("the challenge %q does not name insufficient_user_authentication", challenge)
+	}
+}

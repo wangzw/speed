@@ -234,7 +234,7 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 	case authn.PurposeEnroll:
 		rec.State = stateEnroll
 	case authn.PurposeStepUp:
-		start, method, stepUpOffered, insufficient, serr := r.stepUpStart(c.ctx, status, id.Account(), in.Method)
+		start, method, stepUpOffered, insufficient, serr := r.stepUpStart(c.ctx, status, id.Account(), in.Method, in.Input["exclude_factor"])
 		if serr != nil {
 			r.fail(c, serr)
 			return c.result()
@@ -288,16 +288,31 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 // and no usable method to start with, is refused as insufficient, the same
 // answer as an account with factors none of which may strengthen this session.
 // A request that names the password an account cannot prove is the bad request
-// a method this deployment does not take in gets.
-func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, requirement authn.AccountID, requested string) (start, method string, offered []factorView, insufficient bool, err error) {
+// a method this deployment does not take in gets. A start may name one factor to
+// exclude from the offered list; when that leaves no factor at all, the deleting
+// caller's last factor, a password proved again completes the flow on its own.
+// An account without a password still gets the insufficient answer.
+func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, requirement authn.AccountID, requested, excluded string) (start, method string, offered []factorView, insufficient bool, err error) {
 	firstProof := authn.Proof{Methods: status.Methods}
 	outcome, factors, err := r.mfa.Require(ctx, status.Account, requirement, firstProof)
 	if err != nil {
 		return "", "", nil, false, err
 	}
 	if outcome == authn.MFAFactor {
-		usable := make([]authn.FactorRecord, 0, len(factors))
-		for _, f := range factors {
+		// The caller may exclude one factor -- the one it is about to delete.
+		// Excluding it never widens what may strengthen the session: it only
+		// removes an entry from the offered list.
+		candidates := factors
+		if excluded != "" {
+			candidates = make([]authn.FactorRecord, 0, len(factors))
+			for _, f := range factors {
+				if f.ID != excluded {
+					candidates = append(candidates, f)
+				}
+			}
+		}
+		usable := make([]authn.FactorRecord, 0, len(candidates))
+		for _, f := range candidates {
 			// A factor activated at or after the session's authentication time
 			// was registered during that login and may not strengthen it until
 			// the account proves its password again.
@@ -314,6 +329,24 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 		if len(factors) == 0 {
 			return "", "", nil, true, nil
 		}
+		// Every factor the account held was excluded: the caller is deleting
+		// the last one it could prove. A password proved again is the only
+		// door left, so the deletion can still complete; it is also the only
+		// way out when the reader lost the factor's device. An account with no
+		// password is sent to re-login instead.
+		if len(candidates) == 0 {
+			hasPassword, perr := r.accountHasPassword(ctx, status.Account)
+			if perr != nil {
+				return "", "", nil, false, perr
+			}
+			if !hasPassword {
+				return "", "", nil, true, nil
+			}
+			if _, ok := r.method(methodPassword); !ok {
+				return "", "", nil, true, nil
+			}
+			return stateFirst, methodPassword, nil, false, nil
+		}
 		// No factor may strengthen the session yet. A first factor the request
 		// names, and the deployment takes in, is what the person proves again;
 		// proving it lets the factors registered during this session strengthen
@@ -324,7 +357,7 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 				if cerr := r.checkStartMethod(ctx, status.Account, requested); cerr != nil {
 					return "", "", nil, false, cerr
 				}
-				return stateFirst, requested, factorViews(factors), false, nil
+				return stateFirst, requested, factorViews(candidates), false, nil
 			}
 		}
 		hasPassword, perr := r.accountHasPassword(ctx, status.Account)
@@ -337,7 +370,7 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 		if _, ok := r.method(methodPassword); !ok {
 			return "", "", nil, true, nil
 		}
-		return stateFirst, methodPassword, factorViews(factors), false, nil
+		return stateFirst, methodPassword, factorViews(candidates), false, nil
 	}
 	if _, ok := r.method(requested); !ok {
 		return "", "", nil, false, fmt.Errorf("%w: the step-up names a method not taken in", authn.ErrInvalidArgument)
