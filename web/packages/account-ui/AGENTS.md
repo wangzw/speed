@@ -20,8 +20,10 @@ profile's own `color_mode`: it
 reads and writes that field itself, shows the host's `effective`
 preference when the account has none, and reports every successful write
 through `onApplied` -- applying it is the host's half),
-`SessionsSection` (the live-sessions list with per-session
-and bulk revocation), `SocialBindingsSection` plus
+`SessionsSection` (the live-sessions list -- one `<li>` per session,
+two lines: the device with the current-session chip, then the address and
+last activity composed through `sessions.rowDetail` -- with per-session and
+bulk revocation), `SocialBindingsSection` plus
 `BindingCallbackHandler` (the social bindings surface and the callback
 route that completes a link flow), and `MfaSection` (the two-step
 verification surface: the factors read from `GET /api/v1/auth/factors`, their
