@@ -142,20 +142,17 @@ describe('MfaSection row overflow menu', () => {
 
 describe('MfaSection rename editor', () => {
   /**
-   * The editor is the row's in-place edit: the name field and the action
-   * row share one line, with the actions starting right after the field,
-   * so opening the editor does not push the actions onto a new line and
-   * change the list's height. jsdom lays nothing out, so the geometry is
+   * The editor is the row's in-place edit: the name field takes the
+   * editor's text-column width on its own line, and the action row closes
+   * the next line on the right. jsdom lays nothing out, so the geometry is
    * measured here.
    *
-   * Which assertions discriminate: the shared line (the action row starts
-   * one spacing token past the field's right edge, on the field's own top)
-   * fails on the full-width-field-then-actions-below layout this change
-   * replaces. The group's adjacency and order hold on both layouts -- the
-   * action row itself did not move -- so those are a regression nail for
-   * the group, not a discriminator of this fix.
+   * Which assertions discriminate: the field's full width and the action
+   * row's start below the field's bottom edge fail on the one-line layout
+   * where the field is capped and the actions sit beside it. The group's
+   * adjacency and order are a regression nail for the group.
    */
-  it('keeps the name field and its actions on one row, cancel left of save', async () => {
+  it('stacks the name field above its actions, closed on the right edge', async () => {
     await page.viewport(1100, 900)
     const rowLabel = 'Daily codes'
     const respond: RealResponder = (call: RealCall) => {
@@ -208,30 +205,34 @@ describe('MfaSection rename editor', () => {
     await document.fonts.ready
 
     const control = field.closest<HTMLElement>('.MuiFormControl-root')
+    const form = field.closest('form')
     const row = save.closest<HTMLElement>('[data-action-row]')
     expect(control).not.toBeNull()
+    expect(form).not.toBeNull()
     expect(row).not.toBeNull()
     const controlBox = (control as HTMLElement).getBoundingClientRect()
+    const formBox = (form as HTMLFormElement).getBoundingClientRect()
     const rowBox = (row as HTMLElement).getBoundingClientRect()
     const cancelBox = cancel.getBoundingClientRect()
     const saveBox = save.getBoundingClientRect()
 
-    // One line: the actions follow the field's right edge by the form's one
-    // spacing token, on the field's own top instead of under it.
+    // The field owns its line at the editor's text-column width.
     expect(
-      Math.abs(rowBox.left - controlBox.right - SPACING_UNIT),
+      Math.abs(controlBox.width - formBox.width),
     ).toBeLessThanOrEqual(TOLERANCE)
-    expect(Math.abs(rowBox.top - controlBox.top)).toBeLessThanOrEqual(TOLERANCE)
+
+    // The actions start on the next line, not beside the field.
+    expect(rowBox.top).toBeGreaterThanOrEqual(controlBox.bottom - TOLERANCE)
 
     // One group, never two ends: cancel sits left of save, the two are
-    // exactly one spacing token apart, and the row hugs them.
+    // exactly one spacing token apart, and the row closes on the form's
+    // content edge.
     expect(cancelBox.left).toBeLessThan(saveBox.left)
     expect(Math.abs(cancelBox.top - saveBox.top)).toBeLessThanOrEqual(TOLERANCE)
     expect(saveBox.left).toBeGreaterThanOrEqual(cancelBox.right)
     expect(
       Math.abs(saveBox.left - cancelBox.right - SPACING_UNIT),
     ).toBeLessThanOrEqual(TOLERANCE)
-    expect(Math.abs(cancelBox.left - rowBox.left)).toBeLessThanOrEqual(TOLERANCE)
-    expect(Math.abs(saveBox.right - rowBox.right)).toBeLessThanOrEqual(TOLERANCE)
+    expect(Math.abs(saveBox.right - formBox.right)).toBeLessThanOrEqual(TOLERANCE)
   })
 })

@@ -32,6 +32,7 @@ import { IdentifiersSection } from './IdentifiersSection.js'
 import { MfaSection } from './MfaSection.js'
 import { PasswordSection } from './PasswordSection.js'
 import { PhoneSection } from './PhoneSection.js'
+import { ProfileSection } from './ProfileSection.js'
 import { FlowStep } from './internal/flow-step.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
@@ -439,6 +440,28 @@ describe('account-ui form geometry', () => {
     expect(screen.queryByTestId('mfa-add-sms')).toBeNull()
     expectRightEdge(totpActions, smsActions)
     expect(sameTop(totpActions, smsActions)).toBe(false)
+  })
+
+  it('ends the profile save beneath its field, flush on the right', async () => {
+    await page.viewport(1100, 900)
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody())
+      }
+      return jsonResponse(404, { code: 'authn.bad_request' })
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<ProfileSection />)
+
+    const field = await screen.findByLabelText(zhCN.profile.displayName.label)
+    const submit = screen.getByRole('button', { name: zhCN.profile.save })
+    const fieldBox = field.getBoundingClientRect()
+    const submitBox = submit.getBoundingClientRect()
+    // The save sits beneath the field and closes its row on the field's
+    // right edge, like every other form in the family.
+    expect(submitBox.top).toBeGreaterThanOrEqual(fieldBox.bottom - 1)
+    expectRightEdge(submit, field)
   })
 
   it('ends the password submit flush with its fields', async () => {
