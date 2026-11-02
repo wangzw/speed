@@ -92,14 +92,6 @@ const tAuthZh = textI18n.getFixedT('zh-CN', AUTH_UI_NAMESPACE)
 const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
 const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
 const tLayoutZh = textI18n.getFixedT('zh-CN', LAYOUT_KIT_NAMESPACE)
-const tNotifications = textI18n.getFixedT(
-  'en-US',
-  NOTIFICATION_UI_NAMESPACE,
-)
-const tNotificationsZh = textI18n.getFixedT(
-  'zh-CN',
-  NOTIFICATION_UI_NAMESPACE,
-)
 const tUiKit = textI18n.getFixedT('en-US', UI_KIT_NAMESPACE)
 
 beforeEach(() => {
@@ -869,13 +861,15 @@ describe('the console area', () => {
     ).toBeNull()
 
     // The account entry carries the signed-in principal's identity; its menu
-    // carries one entry per account pane plus sign-out.
+    // carries the notification centre, one entry per account pane and
+    // sign-out.
     await user.click(screen.getByTestId('account-entry-trigger'))
     for (const name of [
+      demoEnUS.userMenu.messages,
       demoEnUS.account.sections.profile,
       demoEnUS.account.sections.security,
       demoEnUS.account.sections.sessions,
-      demoEnUS.account.sections.preferences,
+      demoEnUS.userMenu.preferences,
       demoEnUS.userMenu.signOut,
     ]) {
       expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
@@ -1147,22 +1141,18 @@ describe('the tenant navigation', () => {
 })
 
 describe('the tenant navigation icons', () => {
+  // The navigation column carries the home entry alone; the notification
+  // centre and the account settings are entries of the account menu now.
   const CASES = [
     {
       language: 'en-US',
-      labels: [
-        demoEnUS.nav.home,
-        tNotifications('inbox.title'),
-      ],
+      labels: [demoEnUS.nav.home],
       collapse: tLayout('appShell.collapseNav'),
       open: tLayout('appShell.openNav'),
     },
     {
       language: 'zh-CN',
-      labels: [
-        demoZhCN.nav.home,
-        tNotificationsZh('inbox.title'),
-      ],
+      labels: [demoZhCN.nav.home],
       collapse: tLayoutZh('appShell.collapseNav'),
       open: tLayoutZh('appShell.openNav'),
     },
@@ -1217,10 +1207,7 @@ describe('the tenant navigation icons', () => {
       screen.getByRole('button', { name: tLayout('appShell.openNav') }),
     )
 
-    for (const label of [
-      demoEnUS.nav.home,
-      tNotifications('inbox.title'),
-    ]) {
+    for (const label of [demoEnUS.nav.home]) {
       const link = screen.getByRole('link', { name: label })
       expect(link.querySelector(`.${listItemIconClasses.root} svg`)).not.toBeNull()
       const textRoot = link.querySelector(`.${listItemTextClasses.root}`)

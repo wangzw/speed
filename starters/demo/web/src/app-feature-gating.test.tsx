@@ -15,7 +15,7 @@
  * absent) fails here even though the unit suites stay green.
  */
 
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { RequestFn, SpeedClient } from '@speed/api-client'
@@ -130,8 +130,9 @@ function cardLink(title: string): HTMLElement {
 
 describe('a served document narrows the tenant area', () => {
   it('keeps the surfaces it names and hides the ones it omits', async () => {
-    // The document serves the notification centre alone. Its card, its
-    // navigation entry and the header bell survive; the console card -- a
+    // The document serves the notification centre alone. Its card and the
+    // header bell survive; the centre itself is an entry of the account menu,
+    // so the navigation column does not list it. The console card -- a
     // platform surface a member does not hold -- disappears, and the object
     // page the skeleton no longer ships contributes neither a card nor a
     // navigation entry.
@@ -147,8 +148,10 @@ describe('a served document narrows the tenant area', () => {
       cardLink(demoEnUS.home.cards.notifications.title),
     ).toHaveAttribute('href', '/notifications')
     expect(
-      screen.getByRole('link', { name: tNotifications('inbox.title') }),
-    ).toBeInTheDocument()
+      within(screen.getByRole('navigation')).queryByRole('link', {
+        name: tNotifications('inbox.title'),
+      }),
+    ).not.toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: BELL_NAME }),
     ).toBeInTheDocument()

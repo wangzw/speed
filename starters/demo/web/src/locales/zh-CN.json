@@ -184,6 +184,8 @@
   "userMenu": {
     "accountMenu": "账户菜单",
     "accountSettings": "账户设置",
+    "messages": "消息通知",
+    "preferences": "偏好设置",
     "signOut": "退出登录"
   },
   "themePreset": {

@@ -46,7 +46,18 @@ import type { TenantOption } from '@speed/tenancy-ui'
 import { themePresets } from '@speed/theme-presets'
 import type { AppThemeModePreference } from '@speed/ui-kit'
 import { useAppServices } from './app-services.js'
-import { ACCOUNT_PATH, ACCOUNT_SECTION_PATHS } from './paths.js'
+import {
+  NotificationsNavIcon,
+  PreferencesNavIcon,
+  ProfileNavIcon,
+  SecurityNavIcon,
+  SessionsNavIcon,
+} from './nav-icons.js'
+import {
+  ACCOUNT_PATH,
+  ACCOUNT_SECTION_PATHS,
+  NOTIFICATIONS_PATH,
+} from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import { selfTenantAlias } from './tenant-self.js'
 
@@ -589,13 +600,91 @@ export function UserMenu({
   )
 }
 
+/** The menu entries the account panes contribute, in the order they render.
+ * The preferences entry carries the menu's own copy rather than the account
+ * page's section label. */
+const ACCOUNT_MENU_PANES = [
+  {
+    section: 'profile',
+    key: 'account.sections.profile',
+    icon: <ProfileNavIcon size={20} />,
+  },
+  {
+    section: 'security',
+    key: 'account.sections.security',
+    icon: <SecurityNavIcon size={20} />,
+  },
+  {
+    section: 'sessions',
+    key: 'account.sections.sessions',
+    icon: <SessionsNavIcon size={20} />,
+  },
+  {
+    section: 'preferences',
+    key: 'userMenu.preferences',
+    icon: <PreferencesNavIcon size={20} />,
+  },
+] as const
+
 /**
- * The account entry at the bottom of the navigation column: the signed-in
- * user's initials and display name, opening the account panes and the
- * sign-out action upward. The collapsed rail keeps the avatar alone; the
- * accessible name still carries the account, so the visible initials stay
- * inside it (WCAG 2.5.3). The four panes are the same routes the tenant
- * navigation lists; sign-out is the session's own logout.
+ * One menu entry's glyph box: a 36px advance holding the 20px mark centred.
+ * The paper sits 9px in from the column with a 1px border, so the MenuItem's
+ * 6px leading inset starts this box on the column's own 16px icon track; its
+ * centre is then the navigation icon track's 34px and the label starts at the
+ * navigation label's 52px. Every value is an absolute pixel, so a preset with
+ * a different spacing base moves none of it.
+ */
+const accountMenuItemIconSx = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+  width: '36px',
+  color: 'text.secondary',
+} as const
+
+/** The menu entry's leading inset: 16px of navigation track less the paper's
+ * 9px margin and 1px border. */
+const accountMenuItemSx = { pl: '6px' } as const
+
+/** The sign-out glyph: a door with an outward arrow, decorative only. */
+function SignOutIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M15 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3" />
+      <path d="M10 8l-4 4 4 4" />
+      <path d="M6 12h9" />
+    </svg>
+  )
+}
+
+/**
+ * The account entry at the bottom of the navigation column: a divider above a
+ * row carrying the signed-in user's avatar, display name and disclosure
+ * chevron. The menu opens upward over the navigation column with the
+ * notification centre, the four account panes and sign-out.
+ *
+ * The row shares the navigation's own icon track in absolute pixels -- a 16px
+ * leading inset and a 36px icon box -- so the avatar starts on the navigation
+ * icons' left edge and the label starts where a navigation label starts. The
+ * divider sits 12px above the row, and the row is 12px above the column's
+ * bottom edge. These are fixed pixel values, not theme spacing steps: a preset
+ * with a different spacing base must not move the bar.
+ *
+ * The collapsed rail keeps the avatar alone; the accessible name still carries
+ * the account, so the visible initials stay inside it (WCAG 2.5.3). Sign-out is
+ * the session's own logout.
  */
 export function AccountEntry({
   narrow = false,
@@ -642,57 +731,72 @@ export function AccountEntry({
   }
 
   return (
-    <Box sx={{ width: '100%' }}>
-      <Button
-        fullWidth
-        color="inherit"
-        aria-label={triggerLabel}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        aria-controls={menuOpen ? menuId : undefined}
-        data-testid="account-entry-trigger"
-        onClick={(event) => setAnchorEl(event.currentTarget)}
-        sx={{
-          justifyContent: narrow ? 'center' : 'flex-start',
-          gap: 1,
-          px: narrow ? 0 : 1,
-          py: 0.75,
-          minWidth: 0,
-          textTransform: 'none',
-        }}
-      >
-        <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
-        {narrow ? null : (
-          <>
-            <Box
-              component="span"
-              sx={{
-                flex: '1 1 auto',
-                minWidth: 0,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                textAlign: 'left',
-                typography: 'body2',
-              }}
-            >
-              {displayName ?? t('userMenu.accountMenu')}
-            </Box>
-            <Box
-              component="svg"
-              aria-hidden="true"
-              focusable="false"
-              viewBox="0 0 24 24"
-              width={16}
-              height={16}
-              fill="currentColor"
-              sx={{ flex: '0 0 auto' }}
-            >
-              <path d="M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z" />
-            </Box>
-          </>
-        )}
-      </Button>
+    <Box data-testid="account-entry" sx={{ width: '100%' }}>
+      <Divider />
+      <Box sx={{ pt: '12px', pb: '12px' }}>
+        <Button
+          fullWidth
+          color="inherit"
+          aria-label={triggerLabel}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          aria-controls={menuOpen ? menuId : undefined}
+          data-testid="account-entry-trigger"
+          onClick={(event) => setAnchorEl(event.currentTarget)}
+          sx={{
+            justifyContent: narrow ? 'center' : 'flex-start',
+            px: narrow ? 0 : '16px',
+            py: '4px',
+            minWidth: 0,
+            textTransform: 'none',
+          }}
+        >
+          <Box
+            component="span"
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              flexShrink: 0,
+              // The navigation row's 36px ListItemIcon advance, in absolute
+              // pixels so every preset keeps the same label track.
+              width: narrow ? 'auto' : '36px',
+            }}
+          >
+            <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
+          </Box>
+          {narrow ? null : (
+            <>
+              <Box
+                component="span"
+                sx={{
+                  flex: '1 1 auto',
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  textAlign: 'left',
+                  typography: 'body2',
+                  pr: '8px',
+                }}
+              >
+                {displayName ?? t('userMenu.accountMenu')}
+              </Box>
+              <Box
+                component="svg"
+                aria-hidden="true"
+                focusable="false"
+                viewBox="0 0 24 24"
+                width={16}
+                height={16}
+                fill="currentColor"
+                sx={{ flex: '0 0 auto' }}
+              >
+                <path d="M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z" />
+              </Box>
+            </>
+          )}
+        </Button>
+      </Box>
       <Menu
         id={menuId}
         anchorEl={anchorEl}
@@ -700,27 +804,59 @@ export function AccountEntry({
         onClose={closeMenu}
         anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
         transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        // The default threshold keeps the paper 16px off the viewport edge
+        // before the paper's own 9px margin is applied, landing its border
+        // box 25px in from the column. With no threshold the anchor (the
+        // full-width trigger, flush with the column) positions the margin box
+        // at the column's edge and the 9px margin is the only inset; the
+        // right and vertical clamps still keep the paper inside the viewport.
+        marginThreshold={0}
+        slotProps={{
+          paper: {
+            // The paper keeps whatever fill the theme gives it -- glass and
+            // the other presets stay translucent -- and takes only the
+            // divider-coloured outline and the deeper shadow.
+            sx: {
+              width: 238,
+              ml: '9px',
+              border: (theme) => `1px solid ${theme.palette.divider}`,
+              boxShadow: (theme) => theme.shadows[12],
+            },
+          },
+        }}
       >
         {/* The same end attempt the header menu carries: an impersonation
             ends from wherever the account entry lives. */}
         <ImpersonationEndMenuItem divider onActivate={closeMenu} />
-        {(
-          [
-            ['profile', 'account.sections.profile'],
-            ['security', 'account.sections.security'],
-            ['sessions', 'account.sections.sessions'],
-            ['preferences', 'account.sections.preferences'],
-          ] as const
-        ).map(([section, key]) => (
+        <MenuItem
+          onClick={() => goTo(NOTIFICATIONS_PATH)}
+          sx={accountMenuItemSx}
+        >
+          <Box component="span" sx={accountMenuItemIconSx}>
+            <NotificationsNavIcon size={20} />
+          </Box>
+          {t('userMenu.messages')}
+        </MenuItem>
+        <Divider />
+        {ACCOUNT_MENU_PANES.map(({ section, key, icon }) => (
           <MenuItem
             key={section}
             onClick={() => goTo(ACCOUNT_SECTION_PATHS[section])}
+            sx={accountMenuItemSx}
           >
+            <Box component="span" sx={accountMenuItemIconSx}>
+              {icon}
+            </Box>
             {t(key)}
           </MenuItem>
         ))}
         <Divider />
-        <MenuItem onClick={signOut}>{t('userMenu.signOut')}</MenuItem>
+        <MenuItem onClick={signOut} sx={accountMenuItemSx}>
+          <Box component="span" sx={accountMenuItemIconSx}>
+            <SignOutIcon />
+          </Box>
+          {t('userMenu.signOut')}
+        </MenuItem>
       </Menu>
     </Box>
   )

@@ -82,10 +82,6 @@ const tAuth = textI18n.getFixedT('en-US', AUTH_UI_NAMESPACE)
 const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
 const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
 const tTenancy = textI18n.getFixedT('en-US', TENANCY_UI_NAMESPACE)
-const tNotifications = textI18n.getFixedT(
-  'en-US',
-  NOTIFICATION_UI_NAMESPACE,
-)
 
 /**
  * The impersonation banner's standing live region. The app mounts a second
@@ -702,8 +698,9 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
     expect(await screen.findByRole('region', { name: tAuth('impersonation.regionLabel') })).toBeInTheDocument()
 
+    await user.click(screen.getByTestId('account-entry-trigger'))
     await user.click(
-      screen.getByRole('link', { name: tNotifications('inbox.title') }),
+      screen.getByRole('menuitem', { name: demoEnUS.userMenu.messages }),
     )
 
     await waitFor(() => expect(window.location.pathname).toBe('/notifications'))
@@ -1694,8 +1691,11 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
     await waitFor(() => expect(backend.selfReads()).toBeGreaterThan(0))
 
+    await user.click(await screen.findByTestId('account-entry-trigger'))
     await user.click(
-      await screen.findByRole('link', { name: tNotifications('inbox.title') }),
+      await screen.findByRole('menuitem', {
+        name: demoEnUS.userMenu.messages,
+      }),
     )
 
     await waitFor(() => expect(window.location.pathname).toBe('/notifications'))
@@ -1914,8 +1914,11 @@ describe('the impersonation shell', () => {
       expect(restores).toBe(1)
       const statusReads = backend.statusReads()
 
+      await user.click(await screen.findByTestId('account-entry-trigger'))
       await user.click(
-        await screen.findByRole('link', { name: tNotifications('inbox.title') }),
+        await screen.findByRole('menuitem', {
+          name: demoEnUS.userMenu.messages,
+        }),
       )
       await waitFor(() =>
         expect(window.location.pathname).toBe('/notifications'),

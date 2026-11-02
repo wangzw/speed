@@ -163,6 +163,19 @@ function sends() {
   return calls.filter((call) => call.method === 'POST' && call.path === ADD_PATH)
 }
 
+/**
+ * Switches the pane through the account entry's menu, the surface the shell
+ * offers for the account settings now that the navigation column carries the
+ * home entry alone.
+ */
+async function chooseAccountSection(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+): Promise<void> {
+  await user.click(await screen.findByTestId('account-entry-trigger'))
+  await user.click(await screen.findByRole('menuitem', { name }))
+}
+
 interface RenderAccountOptions {
   /** The feature names this deployment serves. Defaults to none. */
   readonly features?: readonly string[]
@@ -333,7 +346,7 @@ describe('AccountSettingsPage', () => {
 
 /**
  * The settings layout: one pane per route, each a page of its own. The
- * group address lands on the profile pane by default, a navigation entry
+ * group address lands on the profile pane by default, an account-menu entry
  * swaps the pane, and a verification landing opens on the profile pane.
  */
 describe('AccountSettingsPage sections', () => {
@@ -366,9 +379,7 @@ describe('AccountSettingsPage sections', () => {
     expect(
       await screen.findByLabelText(accountEnUS.profile.displayName.label),
     ).toBeInTheDocument()
-    await user.click(
-      screen.getByRole('link', { name: demoEnUS.account.sections.security }),
-    )
+    await chooseAccountSection(user, demoEnUS.account.sections.security)
     await user.click(await screen.findByTestId('security-row-password'))
 
     expect(
@@ -1031,16 +1042,12 @@ describe('AccountSettingsPage block consistency', () => {
 
     expect(await refusePhoneRemoval(user)).toBeInTheDocument()
 
-    await user.click(
-      screen.getByRole('link', { name: demoEnUS.account.sections.security }),
-    )
+    await chooseAccountSection(user, demoEnUS.account.sections.security)
     await screen.findByRole('heading', {
       level: 1,
       name: demoEnUS.account.sections.security,
     })
-    await user.click(
-      screen.getByRole('link', { name: demoEnUS.account.sections.profile }),
-    )
+    await chooseAccountSection(user, demoEnUS.account.sections.profile)
     await screen.findByRole('region', {
       name: demoEnUS.account.rows.label.phone,
     })

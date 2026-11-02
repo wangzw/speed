@@ -1,9 +1,11 @@
 /**
  * The account entry's placement: by default the skeleton puts it at the
  * bottom of the navigation column and the header carries no account menu.
- * The four panes and the sign-out action are reachable from there, the
- * collapsed rail keeps the avatar alone with the account still named, and
- * the menu is fully keyboard-operated.
+ * The menu carries six entries -- the notification centre, the four account
+ * panes and sign-out -- each with its own glyph, and the navigation column
+ * itself holds the home entry alone. The collapsed rail keeps the avatar
+ * alone with the account still named, and the menu is fully
+ * keyboard-operated.
  */
 
 import { screen, waitFor, within } from '@testing-library/react'
@@ -11,6 +13,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { layoutKitResources } from '@speed/layout-kit'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
+import demoZhCN from './locales/zh-CN.json' with { type: 'json' }
 import { renderDemoApp } from './test-utils/render.js'
 import {
   authenticatedSnapshot,
@@ -18,14 +21,20 @@ import {
 } from './test-utils/session.js'
 
 const layoutEn = layoutKitResources['en-US'] as {
-  readonly appShell: { readonly collapseNav: string }
+  readonly appShell: {
+    readonly collapseNav: string
+    readonly navLabel: string
+  }
 }
 
-const sectionLabels = [
+/** The menu's six labels, in render order. */
+const menuLabels = [
+  demoEnUS.userMenu.messages,
   demoEnUS.account.sections.profile,
   demoEnUS.account.sections.security,
   demoEnUS.account.sections.sessions,
-  demoEnUS.account.sections.preferences,
+  demoEnUS.userMenu.preferences,
+  demoEnUS.userMenu.signOut,
 ]
 
 describe('the account entry in the navigation column', () => {
@@ -41,21 +50,52 @@ describe('the account entry in the navigation column', () => {
     expect(screen.queryByTestId('user-menu-trigger')).toBeNull()
   })
 
-  it('opens the four panes and the sign-out action, upward, from the keyboard', async () => {
+  it('puts a divider above the row, inset 16px on the navigation icon track', async () => {
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    const entry = await screen.findByTestId('account-entry')
+    const trigger = screen.getByTestId('account-entry-trigger')
+    // The line above the row belongs to the entry, not to the navigation.
+    const divider = entry.firstElementChild
+    expect(divider).toHaveClass('MuiDivider-root')
+    // The row's leading inset is the navigation's own 16px, and the icon
+    // box advances the label to the 52px the navigation labels start at.
+    expect(trigger).toHaveStyle({ paddingLeft: '16px' })
+    const iconBox = trigger.firstElementChild as HTMLElement
+    expect(iconBox).toHaveStyle({ width: '36px' })
+  })
+
+  it('opens the six menu entries, each with a glyph, upward', async () => {
     const user = userEvent.setup()
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
     const trigger = await screen.findByTestId('account-entry-trigger')
 
     trigger.focus()
     await user.keyboard('{Enter}')
-    for (const label of sectionLabels) {
-      expect(
-        await screen.findByRole('menuitem', { name: label }),
-      ).toBeInTheDocument()
+
+    const items = screen.getAllByRole('menuitem')
+    expect(items).toHaveLength(menuLabels.length)
+    expect(items.map((item) => item.textContent)).toEqual(menuLabels)
+    for (const item of items) {
+      expect(item.querySelector('svg')).not.toBeNull()
+      // The glyph sits centred in the navigation's 36px icon advance. The
+      // paper is 9px in with a 1px border, so the entry's own 6px leading
+      // inset starts that box on the column's 16px track.
+      const icon = item.firstElementChild as HTMLElement
+      expect(getComputedStyle(icon).width).toBe('36px')
+      expect(getComputedStyle(icon).justifyContent).toBe('center')
+      expect(getComputedStyle(item).paddingLeft).toBe('6px')
     }
-    expect(
-      screen.getByRole('menuitem', { name: demoEnUS.userMenu.signOut }),
-    ).toBeInTheDocument()
+    // One divider between Messages and the panes, one before sign-out.
+    expect(screen.getAllByRole('separator')).toHaveLength(2)
+
+    // The paper sits 9px in from the column's edge and is 238px wide, with a
+    // divider-coloured outline over the theme's deep shadow.
+    const paper = screen.getByRole('menu').parentElement as HTMLElement
+    expect(paper).toHaveStyle({ width: '238px', marginLeft: '9px' })
+    expect(getComputedStyle(paper).borderWidth).toBe('1px')
+    expect(getComputedStyle(paper).borderStyle).toBe('solid')
+    expect(getComputedStyle(paper).boxShadow).not.toBe('none')
 
     // Escape closes the menu and returns focus to the trigger.
     await user.keyboard('{Escape}')
@@ -63,6 +103,46 @@ describe('the account entry in the navigation column', () => {
       expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
     )
     expect(trigger).toHaveFocus()
+  })
+
+  it('reads the menu copy from the Chinese bundle', async () => {
+    const user = userEvent.setup()
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+      language: 'zh-CN',
+    })
+    await user.click(await screen.findByTestId('account-entry-trigger'))
+
+    expect(
+      screen.getByRole('menuitem', { name: demoZhCN.userMenu.messages }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('menuitem', { name: demoZhCN.userMenu.preferences }),
+    ).toBeInTheDocument()
+    // The changed copy is menu-specific: the home card and the account page's
+    // preference section keep their existing wording.
+    expect(demoZhCN.userMenu.messages).not.toBe(
+      demoZhCN.home.cards.notifications.title,
+    )
+    expect(demoZhCN.userMenu.preferences).not.toBe(
+      demoZhCN.account.sections.preferences,
+    )
+  })
+
+  it('keeps the navigation column to the home entry alone', async () => {
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    const nav = screen.getByRole('navigation', {
+      name: layoutEn.appShell.navLabel,
+    })
+    expect(
+      within(nav).getAllByRole('link').map((link) => link.textContent),
+    ).toEqual([demoEnUS.nav.home])
+    // The notification centre and the account settings are menu
+    // destinations now, not navigation entries.
+    expect(
+      within(nav).queryByRole('link', { name: demoEnUS.nav.account }),
+    ).not.toBeInTheDocument()
   })
 
   it('keeps only the avatar in the collapsed rail, still named by the account', async () => {

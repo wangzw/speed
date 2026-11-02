@@ -184,6 +184,8 @@
   "userMenu": {
     "accountMenu": "Account menu",
     "accountSettings": "Account settings",
+    "messages": "Messages",
+    "preferences": "Preferences",
     "signOut": "Sign out"
   },
   "themePreset": {
