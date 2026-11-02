@@ -113,6 +113,7 @@ import type { AppThemeModePreference } from '@speed/ui-kit'
 import {
   ConfirmDialog,
   errorCodeOf,
+  FORM_MAX_WIDTH,
   PageHeader,
   PageLayout,
   SectionSurfaceProvider,
@@ -614,6 +615,8 @@ export function AccountSettingsPage({
                   icon={<UserIcon />}
                   description={t('account.blockDescriptions.identity')}
                 >
+                {/* The identity rows are form fields, so they take the same
+                    reading width as the forms in the pane's other cards. */}
                 <Stack spacing={2}>
                     <AccountItem title={t('account.rows.label.username')}>
                       <TextField
@@ -627,12 +630,12 @@ export function AccountSettingsPage({
                         }
                         placeholder={t('account.rows.value.notSet')}
                         slotProps={{ input: { readOnly: true } }}
-                        sx={{ maxWidth: '18rem' }}
+                        sx={{ maxWidth: FORM_MAX_WIDTH }}
                         fullWidth
                       />
                     </AccountItem>
                     <AccountItem title={t('account.rows.label.displayName')}>
-                      <Box sx={{ maxWidth: '18rem' }}>
+                      <Box sx={{ maxWidth: FORM_MAX_WIDTH }}>
                         <ProfileSection inline />
                       </Box>
                     </AccountItem>

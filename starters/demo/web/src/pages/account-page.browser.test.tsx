@@ -46,6 +46,10 @@ const accountEnUS = accountUiResources['en-US'] as {
   }
   readonly password: { readonly current: { readonly label: string } }
   readonly preferences: { readonly timezone: { readonly label: string } }
+  readonly profile: {
+    readonly displayName: { readonly label: string }
+  }
+  readonly verification: { readonly codeLabel: string }
   readonly sessions: {
     readonly title: string
     readonly current: string
@@ -88,6 +92,15 @@ function expectSameRail(preset: string, block: string, edges: RailEdges): void {
     Math.abs(edges.title - edges.item),
     `${preset} / ${block}: title at ${edges.title}px, first item at ${edges.item}px`,
   ).toBeLessThanOrEqual(0.5)
+}
+
+/** The rendered width of a field's outlined input box, in CSS pixels. */
+function outlinedFieldWidth(field: HTMLElement): number {
+  const root = field.closest('.MuiOutlinedInput-root')
+  if (root === null) {
+    throw new Error('the field renders no outlined input box')
+  }
+  return root.getBoundingClientRect().width
 }
 
 describe('account page block rail in Chromium', () => {
@@ -136,6 +149,42 @@ describe('account page block rail in Chromium', () => {
       )
     })
   }
+})
+
+it('gives the identity row fields the contact form field width', async () => {
+  // The identity rows and the contact forms are form fields on one pane, so
+  // they share one reading width and stop at the same cap; the identity rows
+  // used to stop at half that while the forms beside them ran to 600px.
+  await page.viewport(1280, 900)
+  bindRequestFn(createBackend('data'))
+  window.history.replaceState({}, '', ACCOUNT_SECTION_PATHS.profile)
+  renderDemoApp({
+    session: createTestSession(
+      authenticatedSnapshot({
+        features: readyFeatures('authn.identifiers.email'),
+      }),
+    ),
+  })
+
+  const username = await screen.findByPlaceholderText(
+    demoEnUS.account.rows.value.notSet,
+  )
+  const displayName = await screen.findByLabelText(
+    accountEnUS.profile.displayName.label,
+  )
+  const code = await screen.findByLabelText(accountEnUS.verification.codeLabel)
+
+  const formWidth = outlinedFieldWidth(code)
+  const usernameWidth = outlinedFieldWidth(username)
+  const displayNameWidth = outlinedFieldWidth(displayName)
+  expect(
+    Math.abs(usernameWidth - formWidth),
+    `username field ${usernameWidth}px, form field ${formWidth}px`,
+  ).toBeLessThanOrEqual(0.5)
+  expect(
+    Math.abs(displayNameWidth - formWidth),
+    `display name field ${displayNameWidth}px, form field ${formWidth}px`,
+  ).toBeLessThanOrEqual(0.5)
 })
 
 it('puts the sessions bulk action on the block title row, above the list', async () => {
