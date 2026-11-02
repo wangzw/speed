@@ -746,7 +746,7 @@ export function AccountSettingsPage({
                                 size="small"
                                 variant="outlined"
                                 color={
-                                  boundPhone.proven ? 'primary' : 'default'
+                                  boundPhone.proven ? 'success' : 'default'
                                 }
                                 label={
                                   boundPhone.proven

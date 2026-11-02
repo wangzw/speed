@@ -1885,7 +1885,7 @@ export function IdentifiersSection({
               <Chip
                 size="small"
                 variant="outlined"
-                color={verified ? 'primary' : 'default'}
+                color={verified ? 'success' : 'default'}
                 label={stateLabel}
               />
             ) : null}
@@ -1997,7 +1997,7 @@ export function IdentifiersSection({
                               <Chip
                                 size="small"
                                 variant="outlined"
-                                color={verified ? 'primary' : 'default'}
+                                color={verified ? 'success' : 'default'}
                                 label={
                                   verified
                                     ? t('identifiers.verified')
