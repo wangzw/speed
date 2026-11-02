@@ -797,6 +797,15 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     panelFeedback.reset()
   }
 
+  /** Whether removing this factor leaves the account with no other active
+   * one: its deletion must not be proved by itself. */
+  function isLastActiveFactor(factorId: string): boolean {
+    const active = (factors ?? []).filter(
+      (factor) => factor.status === 'active',
+    )
+    return active.length === 1 && active[0]?.id === factorId
+  }
+
   /** Whether a rename answer says the factor is not there, or is not the
    * caller's: the two read as one code so neither says the row exists. */
   function factorIsGone(error: unknown): boolean {
@@ -824,14 +833,16 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     // same. A non-rotating removal runs bare, because wrapping it would
     // discard a genuine anonymous answer and postpone a real sign-out.
     const rotates = removed === undefined || removed.status === 'active'
+    const lastActive = rotates && isLastActiveFactor(factorId)
     return feedback.run(async () => {
       try {
         const write = () => removeMutation.mutateAsync({ id: factorId })
         const settle = async (): Promise<string> => {
           setRemoveTarget(null)
           await invalidateFactors()
-          // The confirmation names the factor row removed.
-          return t('mfa.removed', {
+          // The confirmation names the factor row removed, and says so when
+          // the account is left with a single verification method.
+          return t(lastActive ? 'mfa.removedLast' : 'mfa.removed', {
             factor: removedLabel,
             interpolation: { escapeValue: false },
           })
@@ -1350,6 +1361,14 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         onSuccess={handleStepUpSuccess}
         onCancel={() => setGate(null)}
         returnPath={returnPath}
+        excludeFactorId={
+          gate?.kind === 'remove' ? gate.factorId : undefined
+        }
+        notice={
+          gate?.kind === 'remove' && isLastActiveFactor(gate.factorId)
+            ? t('mfa.stepUpDeleteLastNote')
+            : undefined
+        }
       />
     </>
   )

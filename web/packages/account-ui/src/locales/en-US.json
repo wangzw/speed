@@ -142,6 +142,8 @@
     "actionsAria": "Actions for {{factor}}",
     "remove": "Remove",
     "removed": "{{factor}} removed.",
+    "removedLast": "{{factor}} removed. Your account now has only one verification method.",
+    "stepUpDeleteLastNote": "After this removal your account will have only one verification method left; make sure you can still use it, or register another one afterwards.",
     "rename": "Rename",
     "renamed": "{{factor}} renamed.",
     "renameLabel": "Name",

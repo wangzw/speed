@@ -142,6 +142,8 @@
     "actionsAria": "{{factor}} 的操作",
     "remove": "移除",
     "removed": "{{factor}} 已移除。",
+    "removedLast": "{{factor}} 已移除。账户此后只剩一种验证方式。",
+    "stepUpDeleteLastNote": "删除后，账户将只剩一种验证方式；请确认你仍能使用它，或随后重新登记一种。",
     "rename": "重命名",
     "renamed": "{{factor}} 的名称已更新。",
     "renameLabel": "名称",

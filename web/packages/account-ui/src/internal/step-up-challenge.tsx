@@ -163,6 +163,19 @@ export interface StepUpChallengeProps {
    * the re-login ends the session and the operation is not resumed.
    */
   readonly onRelogin?: () => void
+  /**
+   * The factor the caller is about to delete. The flow must not offer it:
+   * the factor that may be lost is never the one asked to prove its own
+   * removal. Omitted for every other gated action.
+   */
+  readonly excludeFactorId?: string
+  /**
+   * A sentence the dialog states above its controls, already translated by
+   * the caller -- the consequence of the action the challenge unlocks, such
+   * as the account being left with a single factor. Omitted, nothing is
+   * shown.
+   */
+  readonly notice?: string
 }
 
 export function StepUpChallenge({
@@ -174,6 +187,8 @@ export function StepUpChallenge({
   accountHref,
   returnPath,
   onRelogin,
+  excludeFactorId,
+  notice,
 }: StepUpChallengeProps) {
   const { t } = useAccountUiTranslation()
   const titleId = useId()
@@ -309,6 +324,8 @@ export function StepUpChallenge({
           readingSession={readingSession}
           reproveFirst={reproveFirst}
           reproofMethod={reproofMethod}
+          excludeFactorId={excludeFactorId}
+          notice={notice}
         />
       )}
     </Dialog>
@@ -334,6 +351,8 @@ function StepUpFlow({
   readingSession,
   reproveFirst,
   reproofMethod,
+  excludeFactorId,
+  notice,
 }: {
   readonly session: AuthSession
   readonly active: boolean
@@ -350,6 +369,8 @@ function StepUpFlow({
   readonly readingSession: boolean
   readonly reproveFirst: boolean
   readonly reproofMethod?: string
+  readonly excludeFactorId?: string
+  readonly notice?: string
 }): ReactElement {
   const { t } = useAccountUiTranslation()
   const { phase, step, seq, errorCode, retryAfterSeconds, human, answer } =
@@ -359,6 +380,7 @@ function StepUpFlow({
       onSuccess,
       reproveFirst ? reproofMethod : undefined,
       returnPath,
+      excludeFactorId,
     )
   // The second factor the operator chose. The verification step that
   // follows it (the code challenge) is answered under the `factor` step
@@ -451,6 +473,15 @@ function StepUpFlow({
     <>
       <DialogTitle id={titleId}>{t('mfa.stepUp.title')}</DialogTitle>
       <DialogContent>
+        {notice === undefined ? null : (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ mb: 1.5 }}
+          >
+            {notice}
+          </Typography>
+        )}
         {flowInvalid ? (
           <InlineError
             code={errorCode}

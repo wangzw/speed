@@ -603,11 +603,12 @@ describe('MfaSection', () => {
     )
 
     // The removal confirms itself, naming the factor row removed -- its own
-    // label, not just its kind.
-    expect(zhCN.mfa.removed).toContain('{{factor}}')
+    // label, not just its kind -- and says the account is left with a single
+    // verification method, because this was the only one.
+    expect(zhCN.mfa.removedLast).toContain('{{factor}}')
     expect(
       await screen.findByText(
-        zhCN.mfa.removed.replace('{{factor}}', 'My authenticator'),
+        zhCN.mfa.removedLast.replace('{{factor}}', 'My authenticator'),
       ),
     ).toBeTruthy()
     expect(
@@ -655,7 +656,7 @@ describe('MfaSection', () => {
     // on the reread.
     expect(
       await screen.findByText(
-        zhCN.mfa.removed.replace('{{factor}}', 'My authenticator'),
+        zhCN.mfa.removedLast.replace('{{factor}}', 'My authenticator'),
       ),
     ).toBeTruthy()
     expect(screen.queryByText(zhCN.errors.authn.factor_not_found)).toBeNull()
@@ -949,8 +950,19 @@ describe('MfaSection', () => {
       }),
     )
 
-    // The 401 opens the step-up dialog.
+    // The 401 opens the step-up dialog, which states the consequence of the
+    // removal: this was the account's only verification method.
     await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
+    expect(screen.getByText(zhCN.mfa.stepUpDeleteLastNote)).toBeTruthy()
+    // The flow is started with the factor being removed excluded: it must
+    // never be asked to prove its own removal.
+    const start = rig.calls.find(
+      (call) => call.method === 'POST' && call.path === FLOW_START,
+    )
+    expect(start?.body).toMatchObject({
+      purpose: 'step-up',
+      input: { exclude_factor: 'factor-1' },
+    })
     await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
@@ -961,7 +973,7 @@ describe('MfaSection', () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          zhCN.mfa.removed.replace('{{factor}}', 'My authenticator'),
+          zhCN.mfa.removedLast.replace('{{factor}}', 'My authenticator'),
         ),
       ).toBeTruthy(),
     )
@@ -1781,6 +1793,95 @@ describe('MfaSection', () => {
     await waitFor(() => expect(screen.queryByText(enrollText)).toBeNull())
   })
 
+  it('stays quiet about the single-factor consequence when another method remains', async () => {
+    let elevated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            factor({ id: 'factor-1' }),
+            factor({ id: 'factor-2', label: 'Other app' }),
+          ],
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-1'
+      ) {
+        if (!elevated) {
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        // The server excludes the factor being removed: only the other one
+        // is offered.
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-2', kind: 'totp', label: 'Other app' }],
+          },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number }
+        if (body.seq === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'second',
+            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+          })
+        }
+        elevated = true
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    const confirm = await openRemoveConfirm(user, 'My authenticator')
+    await user.click(
+      within(confirm).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+
+    // Another method remains: the dialog states no consequence and the flow
+    // excludes only the factor being removed.
+    await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
+    expect(screen.queryByText(zhCN.mfa.stepUpDeleteLastNote)).toBeNull()
+    const start = rig.calls.find(
+      (call) => call.method === 'POST' && call.path === FLOW_START,
+    )
+    expect(start?.body).toMatchObject({
+      purpose: 'step-up',
+      input: { exclude_factor: 'factor-1' },
+    })
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    // The confirmation is the ordinary one: the account keeps another way.
+    expect(
+      await screen.findByText(
+        zhCN.mfa.removed.replace('{{factor}}', 'My authenticator'),
+      ),
+    ).toBeTruthy()
+  })
+
   it('clears the previous result when a new attempt starts', async () => {
     // The section's result slot is cleared when a new write attempt starts,
     // even an attempt that opens an enrollment rather than a row action.
@@ -1819,7 +1920,7 @@ describe('MfaSection', () => {
         name: zhCN.mfa.removeConfirm.confirmLabel,
       }),
     )
-    const removeText = zhCN.mfa.removed.replace(
+    const removeText = zhCN.mfa.removedLast.replace(
       '{{factor}}',
       'My authenticator',
     )
