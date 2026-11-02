@@ -108,9 +108,9 @@ const passkeyLinkerAccount = {
 } as const
 
 /**
- * The name the second path gives its passkey. Enrolment stores a name, and the
- * step-up surface offers the account's factors by that name rather than by
- * kind, so every selection below addresses the same fixed string.
+ * The name the second path gives its passkey. The account surface lists the
+ * factor row under that name; the step-up surface names the offered factor by
+ * its kind, so its selection reads the kind's language-pack label.
  */
 const PASSKEY_FACTOR_NAME = 'Backup passkey'
 
@@ -516,8 +516,10 @@ test.describe('a passkey enrolled in this session', () => {
 
       await test.step('step 3: the proved password unlocks the passkey as the second factor, and its ceremony completes the step-up', async () => {
         const dialog = stepUpDialog(page)
+        // The passkey is the account's only factor, so the choice is named by
+        // its kind.
         const factorChoice = dialog.getByRole('button', {
-          name: PASSKEY_FACTOR_NAME,
+          name: copy('accountUi', 'mfa.factor.kind.webauthn'),
           exact: true,
         })
         await expect(factorChoice).toBeVisible({ timeout: 15_000 })

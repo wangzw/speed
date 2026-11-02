@@ -93,9 +93,10 @@ const WINDOW_MARGIN_MS = 3_000
 /** The password the account holds after the change. */
 const NEW_PASSWORD = 'e2e-Password-456'
 
-// The names this journey gives its factors. Enrolment stores a name, and the
-// sign-in and step-up surfaces offer an account's factors by that name rather
-// than by kind, so every selection below addresses the same fixed string.
+// The names this journey gives its factors. The account surface lists each
+// factor row under the name it was enrolled with; the sign-in and step-up
+// surfaces name every offered factor by its kind, so the selections there read
+// the kind's language-pack label.
 const TOTP_FACTOR_NAME = 'Work phone'
 const PASSKEY_FACTOR_NAME = 'Backup passkey'
 
@@ -252,8 +253,8 @@ async function nextTotpCode(secret: string): Promise<string> {
 
 /**
  * Complete a password sign-in's second factor with the authenticator app. The
- * factor step offers the account's active factors by their stored names;
- * choosing this journey's authenticator opens its six-digit challenge.
+ * account holds one authenticator app, so the factor step names that entry by
+ * its kind; choosing it opens the six-digit challenge.
  */
 async function completeTotpFactor(page: Page, secret: string): Promise<void> {
   // The step belongs to the password channel, which renders in its own panel.
@@ -264,7 +265,7 @@ async function completeTotpFactor(page: Page, secret: string): Promise<void> {
     exact: true,
   })
   const choice = panel.getByRole('button', {
-    name: TOTP_FACTOR_NAME,
+    name: copy('authUi', 'signInFlow.factorKind.totp'),
     exact: true,
   })
   await expect(choice).toBeVisible()
@@ -851,7 +852,8 @@ test('account-security-hardening: an account enrols two factors, ends another de
 
       // The refused write hands the pending change to the step-up dialog. The
       // dialog offers only the passkey: the authenticator app is the channel
-      // this session already proved and is therefore not offered.
+      // this session already proved and is therefore not offered. With one
+      // factor of each kind, the dialog names each entry by its kind.
       const dialog = stepUpDialog(page)
       await expect(dialog).toBeVisible({ timeout: 15_000 })
       await expect(
@@ -861,20 +863,20 @@ test('account-security-hardening: an account enrols two factors, ends another de
       ).toBeVisible()
       await expect(
         dialog.getByRole('button', {
-          name: PASSKEY_FACTOR_NAME,
+          name: copy('accountUi', 'mfa.factor.kind.webauthn'),
           exact: true,
         }),
       ).toHaveCount(1)
       await expect(
         dialog.getByRole('button', {
-          name: TOTP_FACTOR_NAME,
+          name: copy('accountUi', 'mfa.factor.kind.totp'),
           exact: true,
         }),
       ).toHaveCount(0)
 
       await dialog
         .getByRole('button', {
-          name: PASSKEY_FACTOR_NAME,
+          name: copy('accountUi', 'mfa.factor.kind.webauthn'),
           exact: true,
         })
         .click()

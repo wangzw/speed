@@ -59,9 +59,10 @@ import {
 // journey, so a slow assembly reports the harness's own diagnostics.
 test.describe.configure({ timeout: 300_000 })
 
-// The names this journey gives its factors. Enrolment stores a name, and the
-// sign-in surface offers an account's factors by that name rather than by
-// kind, so every selection below addresses the same fixed string.
+// The names this journey gives its factors. The account surface lists each
+// factor row under the name it was enrolled with; the sign-in surface names
+// every offered factor by its kind, so the selections there read the kind's
+// language-pack label.
 const TOTP_FACTOR_NAME = 'Work phone'
 const PASSKEY_FACTOR_NAME = 'Backup passkey'
 
@@ -182,7 +183,11 @@ async function nextTotpCode(secret: string): Promise<string> {
   return totpCode(secret, new Date(step * stepMs))
 }
 
-/** Complete a password sign-in's second factor with the authenticator app. */
+/**
+ * Complete a password sign-in's second factor with the authenticator app. The
+ * account holds one of them at this point, so the factor step names the entry
+ * by its kind.
+ */
 async function completeTotpFactor(page: Page, secret: string): Promise<void> {
   // The step belongs to the password channel, which renders in its own panel.
   // The enterprise entry sits on the same sign-in page and carries its own
@@ -192,7 +197,7 @@ async function completeTotpFactor(page: Page, secret: string): Promise<void> {
     exact: true,
   })
   const choice = panel.getByRole('button', {
-    name: TOTP_FACTOR_NAME,
+    name: copy('authUi', 'signInFlow.factorKind.totp'),
     exact: true,
   })
   await expect(choice).toBeVisible()
