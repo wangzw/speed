@@ -244,6 +244,35 @@ describe('MfaSection', () => {
     await expectNoAxeViolations()
   })
 
+  it('keeps the groups in strength order when only the authenticator app is enabled', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [factor({ id: 'factor-totp', kind: 'totp', status: 'active' })],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    // The passkey group has no enabled row and the authenticator app does;
+    // the position of a group is its strength, not its enabled state, so the
+    // reader does not see a group move after enabling it.
+    const passkeyGroup = await screen.findByRole('region', {
+      name: zhCN.mfa.factor.kind.webauthn,
+    })
+    const appGroup = screen.getByRole('region', {
+      name: zhCN.mfa.factor.kind.totp,
+    })
+    expect(
+      passkeyGroup.compareDocumentPosition(appGroup) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0)
+  })
+
   it('words every group\'s action as a plain add even with an enabled row', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {

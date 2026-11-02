@@ -77,10 +77,12 @@
  * The factors are grouped by kind: each assembled kind is a section whose
  * heading names it, and a group that the deployment reports as enrollable
  * carries one add action on that heading, worded "add" whether or not the
- * group already holds an enabled row. The rows a group lists are the enabled
- * and the disabled ones --
- * a pending row is the enrollment's own intermediate state and is withheld
- * -- and a disabled row carries a muted "disabled" marker. Every row shows
+ * group already holds an enabled row. The groups stand in one fixed order by
+ * strength -- passkey, authenticator app, SMS, then kinds this package does
+ * not know -- and enabling a method never moves its group. The rows a group
+ * lists are the enabled and the disabled ones -- a pending row is the
+ * enrollment's own intermediate state and is withheld -- and a disabled row
+ * carries a muted "disabled" marker. Every row shows
  * its name (the label, else the kind) and the instant it last passed a
  * verification, which says so when it has never passed one; the instant is
  * formatted with the account's timezone chain -- the stored preference, the
@@ -725,22 +727,18 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
           const allKinds = Array.from(
             new Set([...enrollEntries, ...factorKinds]),
           ).filter((kind) => kind !== '')
-          const isActive = (kind: string): boolean =>
-            visibleFactors.some(
-              (factor) =>
-                (factor.kind ?? '') === kind && factor.status === 'active',
-            )
+          // The groups keep one order, fixed by strength: passkey,
+          // authenticator app, SMS, then kinds this package does not know. The
+          // order does not follow which group is enabled. Kinds outside the
+          // known set share the last rank and keep the order they entered
+          // `allKinds`: the deployment's list first, then the factor read's
+          // oldest-first order.
           const STRENGTH_ORDER = ['webauthn', 'totp', 'sms']
           const rank = (kind: string): number => {
             const position = STRENGTH_ORDER.indexOf(kind)
             return position === -1 ? STRENGTH_ORDER.length : position
           }
-          const orderedKinds = [...allKinds].sort((a, b) => {
-            const activeDifference = Number(isActive(b)) - Number(isActive(a))
-            return activeDifference !== 0
-              ? activeDifference
-              : rank(a) - rank(b)
-          })
+          const orderedKinds = [...allKinds].sort((a, b) => rank(a) - rank(b))
           return (
             <Box>
               {enabledFactorCount === 1 && enrollEntries.length > 0 && (
@@ -755,8 +753,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
               {/* Each assembled kind is its own section: the heading names
                   the method -- or the enrollment in progress, inside that
                   method's group -- and an enrollable group carries one add
-                  action on the heading. Methods with an enabled factor come
-                  first, then the ones still to set up. */}
+                  action on the heading. The groups stand in one fixed
+                  strength order, the same whether a method is enabled or
+                  still to set up. */}
               {orderedKinds.length === 0 ? (
                 <Typography
                   variant="body2"
