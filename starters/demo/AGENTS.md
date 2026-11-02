@@ -344,7 +344,7 @@ reads none of it.
 The walkthrough: `seed`, then `serve`, then sign in as `operator` (the username
 the seed writes; the proved address is not selected as a login way) with
 `operator-dev-secret` and the current code of the fixture's TOTP seed
-(`JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP`, issuer `demo`, SHA-1, six digits, a
+(`JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP`, issuer `Speed Demo`, SHA-1, six digits, a
 thirty-second period; import it into an authenticator, or run the
 standard-library one-liner under "Exercising a write path"). The seed is a
 fixture and not a credential, and it is written through the TOTP module's

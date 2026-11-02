@@ -49,7 +49,7 @@ const reviewOperatorPhone = "+15551234567"
 
 // reviewOperatorTOTPSeed is the base32 seed the review fixture writes for the
 // operator's TOTP factor. It is fixed on purpose: a person walking the journey
-// imports it into an authenticator app (issuer demo, account the operator
+// imports it into an authenticator app (issuer Speed Demo, account the operator
 // id, SHA-1, six digits, thirty-second period) and computes the sign-in code
 // without reading the database. It is a review fixture and not a credential; a
 // deployment's factors are enrolled in the browser.
