@@ -116,13 +116,13 @@
       "description": "Something went wrong while loading your linked accounts. Please try again."
     },
     "retry": "Retry",
-    "bind": "Bind",
+    "bind": "Link",
     "status": {
       "bound": "Linked",
       "unbound": "Not linked"
     },
     "description": "Sign in with this account.",
-    "bindAriaWithProvider": "Bind {{provider}}"
+    "bindAriaWithProvider": "Link {{provider}}"
   },
   "bindingCallback": {
     "pending": "Completing the link…",
