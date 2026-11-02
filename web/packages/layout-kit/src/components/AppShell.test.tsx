@@ -1334,38 +1334,113 @@ describe('AppShell', () => {
     })
   })
 
-  describe('topbar drawer scrolling', () => {
-    it('keeps the paper as the scrolling layer and the nav as a plain content column', () => {
-      mockMatchMedia(true)
-      const { getByRole } = renderWithProviders(
+  describe('drawer column and pinned footer', () => {
+    // The footer must stick to the paper's bottom edge: in the topbar
+    // layout the fixed app bar already carries the header, the actions
+    // and the user menu, so the drawer paper's bottom edge is the account
+    // entry's only home. Every drawer paper is therefore a fixed flex
+    // column -- the paper itself never scrolls (`overflow: hidden`), the
+    // nav between the paper's chrome takes `flex: 1 1 auto` with
+    // `minHeight: 0` and is the one scrolling region, and the footer slot
+    // follows it at the bottom of the column. jsdom performs no layout,
+    // so these cases assert the declarations and the DOM chain that
+    // produce that edge; the Chromium suite ("the drawer footer sticks to
+    // the bottom") measures the edge itself.
+    const drawerPaper = (): HTMLElement => {
+      const element = document.querySelector<HTMLElement>(
+        `.${drawerClasses.paper}`,
+      )
+      if (element === null) {
+        throw new Error('expected a mounted drawer paper')
+      }
+      return element
+    }
+
+    // The paper's flex column: the named complementary landmark that
+    // carries the paper's chrome and the nav.
+    const drawerColumn = (paper: HTMLElement): HTMLElement => {
+      const column = paper.querySelector<HTMLElement>('aside')
+      if (column === null) {
+        throw new Error('expected the drawer paper column')
+      }
+      return column
+    }
+
+    const expectPinnedFooterColumn = (
+      paper: HTMLElement,
+      nav: HTMLElement,
+      footer: HTMLElement,
+    ): void => {
+      // The paper is the fixed column, not a scrolling layer. Drawer's
+      // paper rule is scoped by the Drawer root (`& .MuiDrawer-paper`),
+      // so the declaration is read through the computed style rather than
+      // from the paper's own emotion classes.
+      expect(getComputedStyle(paper).overflow).toBe('hidden')
+
+      // The nav is the column's one growing, scrolling region.
+      const navDeclarations = emittedDeclarations(nav)
+      expect(navDeclarations).toMatch(/flex:1 1 auto/)
+      expect(navDeclarations).toMatch(/min-height:0(?:px)?/)
+      expect(navDeclarations).toMatch(/overflow-y:auto/)
+
+      // The column fills the paper and stacks its children.
+      expect(drawerColumn(paper)).toHaveStyle({
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: '0px',
+      })
+
+      // The footer follows the nav directly and closes the column, so a
+      // nav that takes every free pixel leaves the footer's bottom edge on
+      // the paper's bottom edge.
+      expect(nav.nextElementSibling).toBe(footer)
+      expect(drawerColumn(paper).lastElementChild).toBe(footer)
+    }
+
+    for (const layout of ['topbar', 'sidebar'] as const) {
+      it(`keeps the ${layout} permanent paper a fixed column whose nav scrolls and whose footer sits at the bottom`, () => {
+        // In the topbar layout the footer is the account entry's only
+        // home (the app bar carries everything else); the sidebar layout
+        // builds its bottom chrome row on the same pinned column, so both
+        // must keep the footer on the paper's bottom edge.
+        mockMatchMedia(true)
+        const { getByRole, getByTestId } = renderWithProviders(
+          <AppShell
+            shellLayout={layout}
+            navItems={NAV_ITEMS}
+            navFooter={<div data-testid="nav-footer">Footer</div>}
+          >
+            content
+          </AppShell>,
+        )
+        expectPinnedFooterColumn(
+          drawerPaper(),
+          getByRole('navigation', { name: zhCN.appShell.navLabel }),
+          getByTestId('nav-footer'),
+        )
+      })
+    }
+
+    it('gives the mobile temporary drawer the same fixed column and pinned footer', async () => {
+      // Below md the temporary drawer is the only navigation surface, so
+      // its footer must stay pinned there too, not just in the permanent
+      // paper.
+      mockMatchMedia(false)
+      const user = userEvent.setup()
+      const { getByRole, getByTestId } = renderWithProviders(
         <AppShell
           navItems={NAV_ITEMS}
-          navFooter={<span>Footer</span>}
+          navFooter={<div data-testid="nav-footer">Footer</div>}
         >
           content
         </AppShell>,
       )
-
-      // The three sidebar-only declarations (flexGrow, minHeight 0,
-      // overflowY auto) are what turn the nav into the paper's single
-      // scrolling layer and pin navFooter to the bottom. The topbar layout
-      // must not carry them: its paper scrolls as a whole. Asserting the
-      // emitted declarations -- not the DOM order -- is what tells the two
-      // apart, because making the nav flexible leaves every structural
-      // assertion intact.
-      const navDeclarations = emittedDeclarations(
+      await user.click(getByRole('button', { name: zhCN.appShell.openNav }))
+      expectPinnedFooterColumn(
+        drawerPaper(),
         getByRole('navigation', { name: zhCN.appShell.navLabel }),
-      )
-      expect(navDeclarations).not.toMatch(/flex:1 1 auto/)
-      expect(navDeclarations).not.toMatch(/min-height:0/)
-      expect(navDeclarations).not.toMatch(/overflow-y:auto/)
-
-      const paper = document.querySelector<HTMLElement>(
-        `.${drawerClasses.paper}`,
-      )
-      expect(paper).not.toBeNull()
-      expect(emittedDeclarations(paper as Element)).not.toMatch(
-        /overflow:hidden/,
+        getByTestId('nav-footer'),
       )
     })
   })
@@ -1524,10 +1599,12 @@ describe('AppShell', () => {
       // since emotion's injected <style> accumulates every rule any
       // test in this file has rendered so far and never removes one on
       // unmount) -- this is the permanent Drawer's own docked-paper
-      // rule, plain box-sizing/width with no CSS min() wrapping it.
+      // rule: plain box-sizing/width with no CSS min() wrapping it, plus
+      // the fixed-column overflow that keeps the paper itself from
+      // scrolling.
       expect(emittedStyleText()).toMatch(
         new RegExp(
-          `\\.${drawerClasses.paper}\\{box-sizing:border-box;width:280px;\\}`,
+          `\\.${drawerClasses.paper}\\{box-sizing:border-box;width:280px;overflow:hidden;\\}`,
         ),
       )
     })
