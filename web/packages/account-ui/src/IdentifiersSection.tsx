@@ -385,16 +385,14 @@ function ContactActionsMenu({
           </MenuItem>
         ) : null}
         {canDefault && onSetDefault !== undefined ? (
-          // The current default is marked, not greyed: `selected` says
-          // "this is the one in force", where a disabled item left the
-          // reader guessing why it could not be chosen.
+          // The row already carries the "Default contact" chip, so a
+          // greyed item reads as "this already is the default" instead
+          // of an unexplained refusal.
           <MenuItem
-            selected={isDefault}
+            disabled={isDefault}
             onClick={() => {
               setAnchor(null)
-              if (!isDefault) {
-                onSetDefault()
-              }
+              onSetDefault()
             }}
           >
             {t('identifiers.axes.defaultContact')}

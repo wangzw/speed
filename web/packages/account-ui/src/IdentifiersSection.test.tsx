@@ -3705,7 +3705,7 @@ describe('IdentifiersSection', () => {
     )
   })
 
-  it('marks the current default contact as selected instead of disabling the item', async () => {
+  it('greys the default contact item on the address that already is the default', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -3739,10 +3739,11 @@ describe('IdentifiersSection', () => {
     const item = screen.getByRole('menuitem', {
       name: zhCN.identifiers.axes.defaultContact,
     })
-    // The current default reads as selected, not as a greyed-out control
-    // with no stated reason.
-    expect(item).toHaveClass('Mui-selected')
-    expect(item).not.toHaveAttribute('aria-disabled', 'true')
+    // The row's "Default contact" chip already states why the item cannot
+    // be chosen, so the item itself is greyed.
+    expect(item).toHaveAttribute('aria-disabled', 'true')
+    expect(item).toHaveClass('Mui-disabled')
+    expect(item).not.toHaveClass('Mui-selected')
   })
 
   it('paints the menu removal with the danger color the other removals use', async () => {
