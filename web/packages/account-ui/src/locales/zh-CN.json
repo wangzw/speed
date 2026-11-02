@@ -224,6 +224,7 @@
     }
   },
   "flowStep": {
+    "lockedIdentifierHelp": "这是你当前登录的账户。",
     "redirectNotice": "请在打开的窗口中继续以完成此步骤。",
     "continueLabel": "继续",
     "enrollTotpHelp": "用验证器应用扫描下方二维码，然后输入应用显示的 6 位验证码完成设置。",

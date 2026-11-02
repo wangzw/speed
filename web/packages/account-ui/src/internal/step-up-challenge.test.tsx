@@ -31,7 +31,7 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { AuthSession, AuthSnapshot } from '@speed/auth-core'
+import type { AuthSession, AuthSnapshot, AuthnFlowState } from '@speed/auth-core'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { isApiError } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
@@ -424,6 +424,71 @@ function refusingStartSession(
   }
 }
 
+/** A session over an authenticated snapshot that names its username, whose
+ * step-up start asks for the password and whose answer elevates. The answer
+ * requests are collected for the assertions. */
+function scriptedPasswordSession(
+  requests: { body: unknown }[] = [],
+): AuthSession {
+  const snapshot: AuthSnapshot = {
+    ...AUTHENTICATED_SNAPSHOT,
+    principal: {
+      ...AUTHENTICATED_SNAPSHOT.principal!,
+      identifiers: [
+        {
+          id: 'identifier-1',
+          kind: 'username',
+          value: 'ada',
+          proven: true,
+          contact: false,
+          default_contact: false,
+          sign_in: true,
+          verified_at: '2026-01-01T00:00:00Z',
+          verified_via: 'self',
+        },
+      ],
+    },
+  }
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: () => () => undefined,
+    isStepUpShortfall: () => false,
+    listMethods: unused,
+    discoverSso: unused,
+    register: unused,
+    startFlow: unused,
+    startAuthenticatedFlow: () =>
+      Promise.resolve({
+        seq: 1,
+        state: 'first',
+        next: {
+          kind: 'challenge',
+          fields: [
+            { name: 'identifier', kind: 'text' },
+            { name: 'password', kind: 'password', secret: true },
+          ],
+        },
+      } as AuthnFlowState),
+    answerFlow: (request) => {
+      requests.push({ body: request })
+      return Promise.resolve({
+        state: 'elevated',
+        token_type: 'Bearer',
+        access_token: 'access-2',
+        expires_in: 3600,
+      } as AuthnFlowState)
+    },
+    readFlow: unused,
+    abandonFlow: () => Promise.resolve(),
+    logout: () => Promise.resolve(),
+    restore: unused,
+    beginIdentityTransition: () => () => undefined,
+    refresh: unused,
+    retryFeatures: unused,
+    setPermissionSet: unused,
+  }
+}
+
 describe('StepUpChallenge', () => {
   it('starts the flow, drives the factor then the code, and elevates', async () => {
     const { rig, onSuccess } = mount(makeStepUpResponder())
@@ -465,6 +530,44 @@ describe('StepUpChallenge', () => {
       seq: 2,
       step: 'factor',
       input: { code: '123456', factor: 'factor-1' },
+    })
+  })
+
+  it("locks the identifier to the account's own login name", async () => {
+    // The dialog knows who is signed in: the password step shows the login
+    // name as a read-only value with the sentence that says what it is.
+    bindFactors([
+      { id: 'factor-1', kind: 'totp', status: 'active' },
+    ])
+    const requests: { body: unknown }[] = []
+    mountSession(scriptedPasswordSession(requests))
+    const user = userEvent.setup()
+
+    const identifier = await screen.findByLabelText(
+      zhCN.flowStep.field.identifier,
+    )
+    expect(identifier).toHaveValue('ada')
+    // Read-only, not disabled: it stays readable and focusable.
+    expect(identifier).toHaveAttribute('readonly')
+    expect(identifier).not.toBeDisabled()
+    expect(
+      screen.getByText(zhCN.flowStep.lockedIdentifierHelp),
+    ).toBeInTheDocument()
+
+    await user.type(
+      screen.getByLabelText(zhCN.flowStep.field.password),
+      'secret',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    await waitFor(() => expect(requests).toHaveLength(1))
+    // The answer carries the prefilled identifier, not an empty one.
+    expect(requests[0]?.body).toMatchObject({
+      seq: 1,
+      step: 'answer',
+      input: { identifier: 'ada', password: 'secret' },
     })
   })
 

@@ -176,6 +176,13 @@ export interface FlowStepProps {
    * choice list render it below the list.
    */
   readonly secondaryAction?: ReactNode
+  /**
+   * Values the step renders locked: a challenge field named here shows the
+   * value read-only with the sentence saying what it is, and the answer
+   * carries it. The step-up dialog uses this for the identifier it already
+   * knows -- the account's own login name.
+   */
+  readonly lockedFields?: Readonly<Record<string, string>>
 }
 
 export function FlowStep({
@@ -189,6 +196,7 @@ export function FlowStep({
   onRedirect,
   formId,
   secondaryAction,
+  lockedFields,
 }: FlowStepProps) {
   const { t } = useAccountUiTranslation()
   // The free-text answer of a TOTP code field, and the typed values of a
@@ -312,28 +320,39 @@ export function FlowStep({
   // challenge: one text field per requested field, submitted together.
   const handleSubmit = (event: FormEvent): void => {
     event.preventDefault()
-    onSubmit({ step: answerStep, input: { ...values } })
+    onSubmit({ step: answerStep, input: { ...values, ...lockedFields } })
   }
 
   const external = formId !== undefined
   return (
     <Box component="form" id={formId} onSubmit={handleSubmit} sx={{ mt: 2 }}>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {step.fields.map((field) => (
-          <TextField
-            key={field.name}
-            label={fieldLabel(field.name, t)}
-            type={field.secret === true ? 'password' : 'text'}
-            value={values[field.name] ?? ''}
-            onChange={(event) =>
-              setValues({ ...values, [field.name]: event.target.value })
-            }
-            disabled={busy}
-            required={field.required === true}
-            fullWidth
-            autoComplete={field.secret === true ? 'one-time-code' : 'off'}
-          />
-        ))}
+        {step.fields.map((field) => {
+          const locked = lockedFields?.[field.name]
+          return (
+            <TextField
+              key={field.name}
+              label={fieldLabel(field.name, t)}
+              type={field.secret === true ? 'password' : 'text'}
+              value={locked ?? values[field.name] ?? ''}
+              onChange={(event) =>
+                setValues({ ...values, [field.name]: event.target.value })
+              }
+              // Read-only, not disabled: the value stays readable, focusable
+              // and in the tab order, and it is what the answer carries.
+              slotProps={{ input: { readOnly: locked !== undefined } }}
+              helperText={
+                locked === undefined
+                  ? undefined
+                  : t('flowStep.lockedIdentifierHelp')
+              }
+              disabled={busy}
+              required={field.required === true}
+              fullWidth
+              autoComplete={field.secret === true ? 'one-time-code' : 'off'}
+            />
+          )
+        })}
       </Box>
       {external ? null : (
         <ActionRow sx={{ mt: 2 }}>

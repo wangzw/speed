@@ -544,6 +544,7 @@ function StepUpFlow({
                       submitLabel={t('mfa.stepUp.confirmLabel')}
                       onSubmit={handleAnswer}
                       secondaryAction={cancelButton}
+                      lockedFields={lockedFieldsOf(step, session)}
                     />
                   </>
                 ) : null}
@@ -586,6 +587,29 @@ function stepMaySend(step: AuthnStep): boolean {
 /** The factors a factor read names as active, which are the ones a step-up
  * could use. A read that has not settled yet, or one that failed, holds
  * none and leaves the decision to the flow's own refusal. */
+/** The values a challenge renders locked: the identifier a flow asks for is
+ * the account's own login name, which the dialog already knows. Only a
+ * challenge that actually carries an identifier field gets it, and only
+ * when the snapshot names a username. */
+function lockedFieldsOf(
+  step: AuthnStep,
+  session: AuthSession,
+): Readonly<Record<string, string>> | undefined {
+  if (step.kind !== 'challenge') {
+    return undefined
+  }
+  if (!step.fields.some((field) => field.name === 'identifier')) {
+    return undefined
+  }
+  const principal = session.getSnapshot().principal
+  const username = principal?.identifiers?.find(
+    (identifier) => identifier.kind === 'username',
+  )?.value
+  return username === undefined || username === ''
+    ? undefined
+    : { identifier: username }
+}
+
 function activeFactorCount(
   page:
     | { readonly factors: readonly { readonly status: string }[] }
