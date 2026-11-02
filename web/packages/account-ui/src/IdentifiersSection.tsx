@@ -1505,7 +1505,8 @@ export function IdentifiersSection({
             </Typography>
           ) : null}
           {kind === 'username' ? null : kind === 'email' ? (
-            <ActionButton
+            <Button
+              variant="outlined"
               size="small"
               disabled={
                 writeBusy ||
@@ -1555,9 +1556,10 @@ export function IdentifiersSection({
               {emailSignInRow === null
                 ? t('identifiers.action.enable')
                 : t('identifiers.action.disable')}
-            </ActionButton>
+            </Button>
           ) : signInRow?.id != null ? (
-            <ActionButton
+            <Button
+              variant="outlined"
               size="small"
               disabled={writeBusy || addBusy}
               onClick={() =>
@@ -1569,7 +1571,7 @@ export function IdentifiersSection({
               {signInRow.sign_in === true
                 ? t('identifiers.action.disable')
                 : t('identifiers.action.enable')}
-            </ActionButton>
+            </Button>
           ) : null}
         </Box>
         {kind === 'email' ? (
