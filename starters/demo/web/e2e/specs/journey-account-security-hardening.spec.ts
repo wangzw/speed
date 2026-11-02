@@ -735,16 +735,17 @@ test('account-security-hardening: an account enrols two factors, ends another de
     await test.step('step 8: the session list marks the current device and device B is revoked', async () => {
       await openAccountSection(page, 'sessions')
       const sessions = sessionsSection(page)
-      // The table carries one header row and one row per live session.
-      await expect(sessions.getByRole('row')).toHaveCount(3)
-      for (const column of ['device', 'address', 'activity', 'action'] as const) {
-        await expect(
-          sessions.getByRole('columnheader', {
-            name: copy('accountUi', `sessions.table.${column}`),
-            exact: true,
-          }),
-        ).toBeVisible()
-      }
+      // One list item per live session, no table and no header rail.
+      await expect(sessions.getByRole('listitem')).toHaveCount(2)
+      await expect(sessions.getByRole('table')).toHaveCount(0)
+      await expect(sessions.getByRole('columnheader')).toHaveCount(0)
+      // Each item's second line names its address and last activity.
+      const activityPrefix = copy('accountUi', 'sessions.rowActivity', {
+        time: '',
+      })
+      await expect(
+        sessions.getByText(activityPrefix, { exact: false }),
+      ).toHaveCount(2)
 
       // Each row names its device, its address and its last activity, and
       // exactly one row is the current session. The revoke control names the
@@ -764,7 +765,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
       await revoke.click()
       // The list converges on the server's answer: the revoked row is gone and
       // the current session remains, leaving the header and one row.
-      await expect(sessions.getByRole('row')).toHaveCount(2)
+      await expect(sessions.getByRole('listitem')).toHaveCount(1)
       await expect(
         sessions.getByText(
           copyPattern('accountUi', 'sessions.revokedOne', { device: '.+' }),
@@ -927,7 +928,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
       await expect(paneHeading(page, 'security')).toBeVisible()
       await selectAccountSection(page, 'sessions')
       // The header row and the one remaining session.
-      await expect(sessionsSection(page).getByRole('row')).toHaveCount(2)
+      await expect(sessionsSection(page).getByRole('listitem')).toHaveCount(1)
     })
 
     await test.step('result: the new password signs in and the old one is refused', async () => {

@@ -150,10 +150,10 @@ function sessionsSection(page: Page, locale: CopyLocale): Locator {
   })
 }
 
-/** The one table row carrying the current-session marker. */
+/** The one list item carrying the current-session marker. */
 function currentSessionRow(page: Page, locale: CopyLocale): Locator {
   return sessionsSection(page, locale)
-    .getByRole('row')
+    .getByRole('listitem')
     .filter({
       has: page.getByText(copy('accountUi', 'sessions.current', {}, locale), {
         exact: true,
@@ -162,12 +162,23 @@ function currentSessionRow(page: Page, locale: CopyLocale): Locator {
 }
 
 /**
- * The current row's last-activity cell. The table's four columns are device,
- * address, last active and action; the activity cell renders the absolute
- * instant in the account's stored zone and the interface's language.
+ * The current row's second line: the address and the last activity, composed
+ * into one sentence by the bundle. The instant is the account's stored zone
+ * and the interface's language.
  */
 function currentSessionActivity(page: Page, locale: CopyLocale): Locator {
-  return currentSessionRow(page, locale).getByRole('cell').nth(2)
+  // The device label may itself carry a middle dot ("Chrome · macOS"), so the
+  // second line is found by the bundle's activity label instead.
+  const prefix = copy('accountUi', 'sessions.rowActivity', { time: '' }, locale)
+  return currentSessionRow(page, locale).getByText(prefix, { exact: false })
+}
+
+/** The instant out of the composed second line, by removing the bundle's
+ * activity label. */
+function timeOfDetail(text: string, locale: CopyLocale): string {
+  const prefix = copy('accountUi', 'sessions.rowActivity', { time: '' }, locale)
+  const at = text.lastIndexOf(prefix)
+  return at < 0 ? text : text.slice(at + prefix.length)
 }
 
 /**
@@ -276,9 +287,9 @@ async function currentSessionSignedInTime(
   const activity = currentSessionActivity(page, locale)
   const text = ((await activity.textContent()) ?? '').trim()
   if (text === '') {
-    throw new Error('the activity cell read no instant')
+    throw new Error('the row detail read no instant')
   }
-  return text
+  return timeOfDetail(text, locale)
 }
 
 test('personalize-interface: the chosen language and time zone take effect and survive a reload', async ({

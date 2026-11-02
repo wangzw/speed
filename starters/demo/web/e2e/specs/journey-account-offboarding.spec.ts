@@ -413,22 +413,22 @@ test('account-offboarding: an operator disables a member and the member returns 
       // the two signed-in contexts, and exactly one of them is current.
       await openAccountSection(memberAPage, 'sessions')
       const sessions = sessionsSection(memberAPage)
-      // The table carries one header row and one row per live session.
-      await expect(sessions.getByRole('row')).toHaveCount(3)
+      // One list item per live session, no table and no header rail.
+      await expect(sessions.getByRole('listitem')).toHaveCount(2)
       await expect(
         sessions.getByText(copy('accountUi', 'sessions.current'), {
           exact: true,
         }),
       ).toHaveCount(1)
-      // Each row names its device, its address and its last activity.
-      for (const column of ['device', 'address', 'activity', 'action'] as const) {
-        await expect(
-          sessions.getByRole('columnheader', {
-            name: copy('accountUi', `sessions.table.${column}`),
-            exact: true,
-          }),
-        ).toBeVisible()
-      }
+      await expect(sessions.getByRole('table')).toHaveCount(0)
+      await expect(sessions.getByRole('columnheader')).toHaveCount(0)
+      // Each item's second line names its address and last activity.
+      const activityPrefix = copy('accountUi', 'sessions.rowActivity', {
+        time: '',
+      })
+      await expect(
+        sessions.getByText(activityPrefix, { exact: false }),
+      ).toHaveCount(2)
     })
 
     await test.step('step 1: the operator enters the console and opens the accounts page', async () => {
@@ -728,7 +728,7 @@ test('account-offboarding: an operator disables a member and the member returns 
       await selectAccountSection(memberB, 'sessions')
       const sessions = sessionsSection(memberB)
       // The header row and the one remaining session.
-      await expect(sessions.getByRole('row')).toHaveCount(2, {
+      await expect(sessions.getByRole('listitem')).toHaveCount(1, {
         timeout: 15_000,
       })
       await expect(
