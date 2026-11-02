@@ -488,7 +488,10 @@ test.describe('a passkey enrolled in this session', () => {
           }),
         ).toHaveCount(0)
 
-        await identifierField.fill(passkeyLinkerAccount.username)
+        // The identifier is the account's own login name: prefilled and
+        // read-only, so the journey reads it instead of typing it.
+        await expect(identifierField).toHaveValue(passkeyLinkerAccount.username)
+        await expect(identifierField).toHaveAttribute('readonly', '')
         await passwordField.fill(passkeyLinkerAccount.password)
         await dialog
           .getByRole('button', {
