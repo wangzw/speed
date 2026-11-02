@@ -160,7 +160,7 @@ export function featurePresence(state: FeatureState):
   | { readonly state: 'pending' }
   | { readonly state: 'failed' }
   | { readonly state: 'ready'; readonly has: (name: string) => boolean }
-export function useStepUp(session: AuthSession, active: boolean, onElevated: () => void, method?: string): StepUpState
+export function useStepUp(session: AuthSession, active: boolean, onElevated: () => void, method?: string, returnPath?: string, excludeFactorId?: string): StepUpState
 
 export function useStepUpGate<A>(
   onRetry: (action: A) => void,
