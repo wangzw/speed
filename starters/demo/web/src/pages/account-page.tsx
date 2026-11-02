@@ -549,6 +549,14 @@ export function AccountSettingsPage({
   )
   const [phoneRemoveOpen, setPhoneRemoveOpen] = useState(false)
   const [phoneRemoveError, setPhoneRemoveError] = useState<string | null>(null)
+  // The failure belongs to the profile pane's phone block. The pane's route
+  // change reuses this page instance, so leaving the block (or the pane)
+  // settles the banner instead of carrying it to the next visit.
+  useEffect(() => {
+    if (section !== 'profile') {
+      setPhoneRemoveError(null)
+    }
+  }, [section])
   // The sessions block's title-row slot: the list's bulk action is rendered
   // here instead of on a row of its own under the block heading.
   const [sessionsHeaderAction, setSessionsHeaderAction] =
@@ -582,6 +590,9 @@ export function AccountSettingsPage({
     void removePhone(id)
   })
   async function removePhone(id: string): Promise<void> {
+    // A new attempt owns the result position, so the previous attempt's
+    // failure does not stand beside this one while it runs.
+    setPhoneRemoveError(null)
     try {
       await removeIdentifier.mutateAsync({ id })
       setPhoneRemoveOpen(false)
@@ -813,7 +824,12 @@ export function AccountSettingsPage({
                       </Table>
                     )}
                     {phoneRemoveError === null ? null : (
-                      <Alert severity="error" sx={{ mt: 1 }}>
+                      <Alert
+                        severity="error"
+                        sx={{ mt: 1 }}
+                        onClose={() => setPhoneRemoveError(null)}
+                        closeText={t('account.phoneRemove.dismiss')}
+                      >
                         {t('account.phoneRemove.removeFailed')}
                       </Alert>
                     )}

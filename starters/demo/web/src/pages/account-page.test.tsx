@@ -797,6 +797,113 @@ describe('AccountSettingsPage block consistency', () => {
     expect(dialog).toHaveTextContent(demoEnUS.account.phoneRemove.removeTitle)
   })
 
+  /** The profile with one phone number, whose deletion the server refuses. */
+  function refusedPhoneDeleteBackend(): RequestFn {
+    const backend = patchedBackend({
+      identifiers: [
+        {
+          id: 'id-phone',
+          kind: 'phone',
+          value: '+14155550123',
+          proven: true,
+          contact: true,
+          default_contact: false,
+          sign_in: false,
+          verified_at: '2026-01-01T00:00:00Z',
+          verified_via: 'sms',
+        },
+      ],
+      verification: { state: 'none', email: '', since: '' },
+    })
+    return (async (path: string, requestOptions?: RequestOptions) => {
+      if (
+        path === '/api/v1/auth/identifiers/id-phone' &&
+        requestOptions?.method === 'DELETE'
+      ) {
+        throw Object.assign(new Error('refused'), {
+          status: 503,
+          code: 'authn.unavailable',
+        })
+      }
+      return backend(path, requestOptions)
+    }) as RequestFn
+  }
+
+  /** Remove the bound phone and settle the failure banner. */
+  async function refusePhoneRemoval(
+    user: ReturnType<typeof userEvent.setup>,
+  ): Promise<HTMLElement> {
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+    await user.click(
+      await within(phone).findByRole('button', {
+        name: accountEnUS.identifiers.actionsAria.replace(
+          '{{value}}',
+          '+14155550123',
+        ),
+      }),
+    )
+    await user.click(
+      screen.getByRole('menuitem', { name: demoEnUS.account.action.delete }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: demoEnUS.account.phoneRemove.removeConfirm,
+      }),
+    )
+    return screen.findByText(demoEnUS.account.phoneRemove.removeFailed)
+  }
+
+  it('offers a dismiss control on the phone-removal failure', async () => {
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: refusedPhoneDeleteBackend(),
+    })
+    const user = userEvent.setup()
+
+    expect(await refusePhoneRemoval(user)).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: demoEnUS.account.phoneRemove.dismiss,
+      }),
+    )
+    expect(
+      screen.queryByText(demoEnUS.account.phoneRemove.removeFailed),
+    ).toBeNull()
+  })
+
+  it('clears the phone-removal failure when the visitor leaves the pane', async () => {
+    // The pane's route change reuses this page instance, so the banner must
+    // be settled on leaving rather than carried back to the phone block.
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: refusedPhoneDeleteBackend(),
+    })
+    const user = userEvent.setup()
+
+    expect(await refusePhoneRemoval(user)).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('link', { name: demoEnUS.account.sections.security }),
+    )
+    await screen.findByRole('heading', {
+      level: 1,
+      name: demoEnUS.account.sections.security,
+    })
+    await user.click(
+      screen.getByRole('link', { name: demoEnUS.account.sections.profile }),
+    )
+    await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+    expect(
+      screen.queryByText(demoEnUS.account.phoneRemove.removeFailed),
+    ).toBeNull()
+  })
+
   it('gives block titles the card heading role above their row labels', async () => {
     renderAccount('?section=security', { features: ['authn.mfa'] })
     const title = await screen.findByRole('heading', {
