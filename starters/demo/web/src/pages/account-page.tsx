@@ -101,6 +101,7 @@ import {
   SessionsSection,
   StepUpDialog,
   SocialBindingsSection,
+  useSocialMethodsAvailable,
 } from '@speed/account-ui'
 import { useFeature, useStepUpGate } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
@@ -504,6 +505,14 @@ export function AccountSettingsPage({
   // accept the invitation. The remembered landing is cleared first, so a later
   // verification does not repeat the move.
   const profile = useAuthnProfileGet()
+  // The social card is a statement about the assembly, so the card itself
+  // appears only when the deployment serves a social sign-in method -- or
+  // when the account holds bound identities, which stay visible even if the
+  // discovery read fails.
+  const socialMethods = useSocialMethodsAvailable(session)
+  const showSocialCard =
+    (profile.data?.links?.length ?? 0) > 0 ||
+    (!socialMethods.pending && socialMethods.available)
   const returnTo = verifyLanding ? pendingInvitationLanding() : null
   useEffect(() => {
     if (returnTo === null || profile.data?.verification?.state !== 'verified') {
@@ -878,18 +887,20 @@ export function AccountSettingsPage({
                       <MfaSection session={session} returnPath={pathname} />
                     </AccountSection>
                   ) : null}
-                  <AccountSection
-                    title={t('account.rows.label.social')}
-                    icon={<LinkIcon />}
-                    description={t('account.security.social')}
-                  >
-                    <SocialBindingsSection
-                      session={session}
-                      returnTo={ACCOUNT_CALLBACK_PATH}
-                      onAuthorizeUrl={navigateToAuthorizationUrl}
-                      returnPath={pathname}
-                    />
-                  </AccountSection>
+                  {showSocialCard ? (
+                    <AccountSection
+                      title={t('account.rows.label.social')}
+                      icon={<LinkIcon />}
+                      description={t('account.security.social')}
+                    >
+                      <SocialBindingsSection
+                        session={session}
+                        returnTo={ACCOUNT_CALLBACK_PATH}
+                        onAuthorizeUrl={navigateToAuthorizationUrl}
+                        returnPath={pathname}
+                      />
+                    </AccountSection>
+                  ) : null}
               </>
             ) : null}
             {section === 'sessions' ? (

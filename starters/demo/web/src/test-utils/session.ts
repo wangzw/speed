@@ -114,6 +114,7 @@ function rejecting(): Promise<never> {
 /** A session whose snapshot `set` mutates and notifies; operations reject. */
 export function createTestSession(
   initial: AuthSnapshot = ANONYMOUS_SNAPSHOT,
+  methods: AuthnMethodList | (() => Promise<AuthnMethodList>) = FORM_METHODS,
 ): TestSession {
   let snapshot = initial
   const listeners = new Set<AuthSessionListener>()
@@ -134,7 +135,8 @@ export function createTestSession(
     // The sign-in surface reads the deployment's methods on mount and the
     // enterprise entry its providers; the flows themselves stay out of
     // scope for a rendering suite, so every flow operation rejects.
-    listMethods: () => Promise.resolve(FORM_METHODS),
+    listMethods: () =>
+      typeof methods === 'function' ? methods() : Promise.resolve(methods),
     discoverSso: () => Promise.resolve([]),
     register: rejecting,
     startFlow: rejecting,

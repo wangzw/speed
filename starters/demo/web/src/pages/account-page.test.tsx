@@ -31,6 +31,7 @@ import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import type { SpeedAppThemeOptions } from '@speed/product-shell/bootstrap'
 import { languageDisplayName } from '@speed/i18n'
+import type { AuthnMethodList } from '@speed/auth-core'
 import { useAppThemeMode } from '@speed/ui-kit'
 import { createBackend } from '../a11y/backends.js'
 import {
@@ -49,6 +50,19 @@ import {
   createTestSession,
   readyFeatures,
 } from '../test-utils/session.js'
+
+/** The deployment's method document with one social provider, for the
+ * cases that expect the social card. */
+const SOCIAL_METHODS: AuthnMethodList = {
+  methods: [
+    { name: 'password', kind: 'form' },
+    { name: 'google', kind: 'redirect' },
+  ],
+  signup: { enabled: false, password: { enabled: false } },
+  mfa: { factors: [] },
+  human: { required: false, provider: 'off' },
+  password_reset: { enabled: false, methods: [] },
+}
 
 const ADD_PATH = '/api/v1/auth/identifiers'
 const accountEnUS = accountUiResources['en-US'] as {
@@ -82,6 +96,9 @@ const accountEnUS = accountUiResources['en-US'] as {
   readonly preferences: {
     readonly language: { readonly label: string; readonly saved: string }
     readonly timezone: { readonly label: string; readonly saved: string }
+  }
+  readonly bindings: {
+    readonly empty: { readonly title: string }
   }
   readonly identifiers: {
     readonly verified: string
@@ -162,6 +179,9 @@ interface RenderAccountOptions {
   readonly theme?: SpeedAppThemeOptions
   /** A wrapper rendered inside the provider tree, for probes. */
   readonly wrap?: (app: ReactElement) => ReactNode
+  /** The deployment's method document, when a case needs redirect
+   * providers or a failing read. */
+  readonly methods?: AuthnMethodList | (() => Promise<AuthnMethodList>)
 }
 
 /** Renders the account page at ACCOUNT_PATH plus the landing's query. */
@@ -192,6 +212,7 @@ function renderAccount(
       authenticatedSnapshot({
         features: readyFeatures(...(options.features ?? [])),
       }),
+      options.methods,
     ),
     theme: options.theme,
     wrap: options.wrap,
@@ -359,7 +380,10 @@ describe('AccountSettingsPage sections', () => {
   })
 
   it('lists the sign-in methods as rows with one action each', async () => {
-    renderAccount('?section=security', { features: ['authn.mfa'] })
+    renderAccount('?section=security', {
+      features: ['authn.mfa'],
+      methods: SOCIAL_METHODS,
+    })
 
     for (const title of [
       demoEnUS.account.rows.label.password,
@@ -375,6 +399,87 @@ describe('AccountSettingsPage sections', () => {
     expect(screen.queryByTestId('security-row-mfa')).toBeNull()
     expect(screen.queryByTestId('security-row-social')).toBeNull()
     expect(screen.queryByTestId('security-row-identifiers')).toBeNull()
+  })
+
+  it('does not render the social card when the deployment serves no social sign-in', async () => {
+    renderAccount('?section=security', { features: ['authn.mfa'] })
+
+    // The password card proves the pane rendered; the social card is absent
+    // whole -- no title, no empty state -- because the assembly carries no
+    // redirect method and the account holds no binding.
+    expect(
+      await screen.findByText(demoEnUS.account.rows.label.password),
+    ).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        screen.queryByText(demoEnUS.account.rows.label.social),
+      ).toBeNull(),
+    )
+    expect(
+      screen.queryByText(accountEnUS.bindings.empty.title),
+    ).toBeNull()
+  })
+
+  it('keeps the social card with its unbound providers when nothing is bound', async () => {
+    renderAccount('?section=security', {
+      features: ['authn.mfa'],
+      methods: SOCIAL_METHODS,
+    })
+
+    // The card is the answer to "what could I link": with a provider and no
+    // binding it renders that provider's row, not an empty placeholder.
+    const card = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.social,
+    })
+    expect(
+      within(card).getByRole('button', { name: /google/i }),
+    ).toBeInTheDocument()
+    expect(
+      within(card).queryByText(accountEnUS.bindings.empty.title),
+    ).toBeNull()
+  })
+
+  it('keeps a bound identity visible when the discovery read fails', async () => {
+    const base = createBackend('data')
+    const backend: RequestFn = (async <T,>(
+      path: string,
+      requestOptions?: RequestOptions,
+    ): Promise<T> => {
+      const body = await base(path, requestOptions)
+      if (
+        path === '/api/v1/auth/me' &&
+        (requestOptions?.method ?? 'GET') === 'GET'
+      ) {
+        return {
+          ...(body as Record<string, unknown>),
+          links: [
+            {
+              id: 'link-1',
+              provider: 'google',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ],
+        } as T
+      }
+      return body as T
+    }) as RequestFn
+    renderAccount('?section=security', {
+      features: ['authn.mfa'],
+      backend,
+      methods: () => Promise.reject(new Error('the methods read failed')),
+    })
+
+    // The deployment's document is unreadable, but the account's own binding
+    // still renders: a failed read never hides what the user already has.
+    const card = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.social,
+    })
+    expect(
+      within(card).getByRole('button', { name: /google/i }),
+    ).toBeInTheDocument()
+    expect(
+      within(card).queryByText(accountEnUS.bindings.empty.title),
+    ).toBeNull()
   })
 
   it('shows the sign-in ways on the pane, without the contact axis', async () => {
