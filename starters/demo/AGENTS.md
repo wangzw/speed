@@ -402,7 +402,11 @@ the document has no separate file to drift from and costs the host no parsing
 dependency. The configuration files under `server/testdata/` are override
 documents over it, and they ship the development values a copy replaces so it
 starts as it stands. Every one of them is marked `DEV` in the file it appears
-in; replace them all before a deployment serves real traffic:
+in; replace them all before a deployment serves real traffic. A sample's value
+is that sample's own and does not stand for a product default: the defaults,
+the site name in the authenticator and passkey prompts included, live in
+`server/defaults.go` and the deployment template, and the samples keep whatever
+value they were written with:
 
 - **The initial operators** (`seed.accounts`) are the accounts the `seed`
   command writes. Replace every one of them before a deployment serves real

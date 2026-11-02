@@ -127,6 +127,8 @@
 | `authn.mfa.webauthn.rp-name` | 字符串 | `speed` | 默认 | | 依赖方在用户设备上显示的站点名；部署方自行设置 |
 | `authn.mfa.webauthn.origins` | 字符串列表 | `authn.gate.mount.public-url` 的来源 | 默认 | | 依赖方接受的来源 |
 
+样例与测试夹具保留各自的示例值（`testdata/` 与审查装配里的 `issuer`、`rp-name` 仍写 `demo`），它们不代表产品默认；产品默认只写在编译默认文档与部署模板里。
+
 登录方式的端点覆盖项与根证书文件由部署方给出：指向自定义端点即由部署方承担对该端点与其证书的信任，缺省仍是内置端点、拒回环与系统根（[ADR-authn-social-endpoints](../../../adr/adr-authn-social-endpoints.md)）。
 
 `authn.mfa.webauthn` 的 `Timeouts.*.Enforce` 固定为真，不做成配置项。
