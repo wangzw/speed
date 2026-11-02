@@ -95,6 +95,17 @@ export function useWriteFeedback(): WriteFeedback {
     setOutcome(null)
   }, [])
 
+  // An attempt settles after its scope left the page when the reader moved
+  // on mid-write: that settlement must not clear the result a scope on the
+  // new page just showed, so clearing follows the scope's presence.
+  const mountedRef = useRef(false)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
   useEffect(() => {
     if (page === null) {
       return undefined
@@ -103,7 +114,9 @@ export function useWriteFeedback(): WriteFeedback {
   }, [page, owner, reset])
 
   const clearSiblings = useCallback(() => {
-    page?.clearOthers(owner)
+    if (mountedRef.current) {
+      page?.clearOthers(owner)
+    }
   }, [page, owner])
 
   const succeed = useCallback(
