@@ -79,12 +79,8 @@
       "description": "加载会话时出了问题，请稍后重试。"
     },
     "retry": "重试",
-    "table": {
-      "device": "设备",
-      "address": "地址",
-      "activity": "最近活动",
-      "action": "操作"
-    }
+    "rowDetail": "{{address}} · 最近活动 {{time}}",
+    "rowActivity": "最近活动 {{time}}"
   },
   "bindings": {
     "title": "绑定的社交账号",

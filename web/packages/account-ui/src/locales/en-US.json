@@ -79,12 +79,8 @@
       "description": "Something went wrong while loading your sessions. Please try again."
     },
     "retry": "Retry",
-    "table": {
-      "device": "Device",
-      "address": "Address",
-      "activity": "Last active",
-      "action": "Action"
-    }
+    "rowDetail": "{{address}} · Last active {{time}}",
+    "rowActivity": "Last active {{time}}"
   },
   "bindings": {
     "title": "Linked social accounts",

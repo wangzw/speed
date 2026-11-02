@@ -56,11 +56,6 @@ import { formatInstant } from '@speed/i18n'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Skeleton from '@mui/material/Skeleton'
@@ -330,139 +325,117 @@ export function SessionsSection({
                 below is page-level and stays outside the list. role="list"
                 keeps the list semantics under WebKit, which strips them
                 from a list-style-none ul. */}
-            <Table
-              size="small"
+            <Box
+              component="ul"
+              role="list"
               sx={{
-                // Fixed columns keep the four rails steady: the first column
-                // shares the block's left edge, the last ends at its right
-                // edge, and no label wraps to a second line.
-                width: '100%',
-                tableLayout: 'fixed',
-                '& th, & td': {
-                  padding: '8px 0',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                },
-                '& th + th, & td + td': { paddingLeft: '16px' },
+                listStyle: 'none',
+                m: 0,
+                p: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
               }}
             >
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ width: '35%' }}>
-                    {t('sessions.table.device')}
-                  </TableCell>
-                  <TableCell sx={{ width: '20%' }}>
-                    {t('sessions.table.address')}
-                  </TableCell>
-                  <TableCell sx={{ width: '30%' }}>
-                    {t('sessions.table.activity')}
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{
-                      width: '15%',
-                      // The row action is a compact IconButton, whose own
-                      // inner inset holds its glyph 5px off the cell's
-                      // right edge. Matching that inset here ends the
-                      // header text on the glyph's right edge rather than
-                      // on the button's box, so the label sits on the
-                      // same rail as the action it names. The selector
-                      // outranks the table's shared `th, td` padding rule,
-                      // which a bare property would lose against.
-                      '&.MuiTableCell-root': { paddingRight: '5px' },
-                    }}
+              {pageSessions.map((session, index) => {
+                const id = session.id ?? null
+                const current = session.current === true
+                const revocable = id !== null && !current
+                const agent =
+                  session.user_agent != null && session.user_agent !== ''
+                    ? session.user_agent
+                    : null
+                const summary =
+                  agent !== null ? summarizeUserAgent(agent) : null
+                const deviceLabel = summary ?? t('sessions.deviceUnknown')
+                const created = parseDate(session.created_at)
+                const lastSeen = parseDate(session.last_seen_at)
+                const activity = lastSeen ?? created
+                const address = session.client_ip ?? ''
+                const time = activity === null ? '' : formatTime(activity)
+                const detail =
+                  address !== '' && time !== ''
+                    ? t('sessions.rowDetail', {
+                        address,
+                        time,
+                        interpolation: { escapeValue: false },
+                      })
+                    : time !== ''
+                      ? t('sessions.rowActivity', {
+                          time,
+                          interpolation: { escapeValue: false },
+                        })
+                      : address
+                return (
+                  <Box
+                    component="li"
+                    key={id ?? String(index)}
+                    sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}
                   >
-                    {t('sessions.table.action')}
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {pageSessions.map((session, index) => {
-                  const id = session.id ?? null
-                  const current = session.current === true
-                  const revocable = id !== null && !current
-                  const agent =
-                    session.user_agent != null && session.user_agent !== ''
-                      ? session.user_agent
-                      : null
-                  const summary =
-                    agent !== null ? summarizeUserAgent(agent) : null
-                  const deviceLabel = summary ?? t('sessions.deviceUnknown')
-                  const created = parseDate(session.created_at)
-                  const lastSeen = parseDate(session.last_seen_at)
-                  const activity = lastSeen ?? created
-                  return (
-                    <TableRow key={id ?? String(index)}>
-                      <TableCell>
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                            flexWrap: 'wrap',
-                          }}
+                    <Box sx={{ flex: '1 1 auto', minWidth: 0 }}>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <Typography
+                          variant="body1"
+                          sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}
                         >
-                          <Typography
-                            variant="body1"
-                            noWrap
-                            sx={{ fontWeight: 600 }}
-                          >
-                            {deviceLabel}
-                          </Typography>
-                          {current ? (
-                            <Chip
-                              size="small"
-                              color="primary"
-                              variant="outlined"
-                              label={t('sessions.current')}
-                            />
-                          ) : null}
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" color="text.secondary">
-                          {session.client_ip ?? ''}
+                          {deviceLabel}
                         </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" color="text.secondary">
-                          {activity === null ? '' : formatTime(activity)}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="right">
-                        {revocable ? (
-                          <IconButton
-                            aria-label={t('sessions.revokeAriaWithDevice', {
-                              device: deviceLabel,
-                              interpolation: { escapeValue: false },
-                            })}
+                        {current ? (
+                          <Chip
                             size="small"
-                            disabled={busy || revokingId === id}
-                            onClick={() => {
-                              if (id !== null) {
-                                void handleRevokeSession(id, deviceLabel)
-                              }
-                            }}
-                            sx={{ color: 'error.main' }}
-                          >
-                            {revokingId === id ? (
-                              <CircularProgress
-                                size={18}
-                                thickness={5}
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <SignOutIcon />
-                            )}
-                          </IconButton>
+                            color="primary"
+                            variant="outlined"
+                            label={t('sessions.current')}
+                          />
                         ) : null}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
+                      </Box>
+                      {detail === '' ? null : (
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ mt: 0.25, overflowWrap: 'anywhere' }}
+                        >
+                          {detail}
+                        </Typography>
+                      )}
+                    </Box>
+                    {revocable ? (
+                      <IconButton
+                        aria-label={t('sessions.revokeAriaWithDevice', {
+                          device: deviceLabel,
+                          interpolation: { escapeValue: false },
+                        })}
+                        size="small"
+                        disabled={busy || revokingId === id}
+                        onClick={() => {
+                          if (id !== null) {
+                            void handleRevokeSession(id, deviceLabel)
+                          }
+                        }}
+                        sx={{ color: 'error.main', flex: '0 0 auto' }}
+                      >
+                        {revokingId === id ? (
+                          <CircularProgress
+                            size={18}
+                            thickness={5}
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <SignOutIcon />
+                        )}
+                      </IconButton>
+                    ) : null}
+                  </Box>
+                )
+              })}
+            </Box>
             {pageCount > 1 && (
               <Box
                 sx={{

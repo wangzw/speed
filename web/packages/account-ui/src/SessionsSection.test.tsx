@@ -106,19 +106,17 @@ const SESSION_INSTANT = '2026-08-01T02:05:00.000Z'
 /** A last-active instant later than the default row's sign-in instant. */
 const SESSION_LAST_SEEN = '2026-08-03T09:12:00.000Z'
 
-/** The sessions table's body rows, its header row excluded. */
+/** The session list's rows, one item per session. */
 function bodyRows(): HTMLElement[] {
-  return within(screen.getByRole('table')).getAllByRole('row').slice(1)
+  return within(screen.getByRole('list')).getAllByRole('listitem')
 }
 
-/** A body row's cell under the column titled `title`. */
-function cellUnder(row: HTMLElement, title: string): HTMLElement {
-  const headers = within(screen.getByRole('table')).getAllByRole('columnheader')
-  const column = headers.findIndex((header) => header.textContent === title)
-  if (column < 0) {
-    throw new Error(`no column titled ${title}`)
-  }
-  return within(row).getAllByRole('cell')[column] as HTMLElement
+/** The second line of a row: the address and the last activity, as the
+ * bundle composes them. */
+function rowDetail(address: string, time: string): string {
+  return zhCN.sessions.rowDetail
+    .replace('{{address}}', address)
+    .replace('{{time}}', time)
 }
 
 /** The instant rendered in `zone` (the engine's own zone when absent). */
@@ -214,12 +212,9 @@ describe('SessionsSection', () => {
     // -- in the display zone.
     await waitFor(() => expect(bodyRows()).toHaveLength(1))
     expect(
-      within(
-        cellUnder(
-          bodyRows()[0] as HTMLElement,
-          zhCN.sessions.table.activity,
-        ),
-      ).getByText(renderedInstant(SESSION_INSTANT)),
+      within(bodyRows()[0] as HTMLElement).getByText(
+        rowDetail('198.51.100.4', renderedInstant(SESSION_INSTANT)),
+      ),
     ).toBeTruthy()
   })
 
@@ -246,16 +241,51 @@ describe('SessionsSection', () => {
     // A coalesced touch moves the row's last activity past its creation, so
     // the activity column names the later instant rather than the sign-in one.
     await waitFor(() => expect(bodyRows()).toHaveLength(1))
-    const activity = cellUnder(
-      bodyRows()[0] as HTMLElement,
-      zhCN.sessions.table.activity,
-    )
+    const row = bodyRows()[0] as HTMLElement
     expect(
-      within(activity).getByText(renderedInstant(SESSION_LAST_SEEN)),
+      within(row).getByText(
+        rowDetail('198.51.100.4', renderedInstant(SESSION_LAST_SEEN)),
+      ),
     ).toBeTruthy()
     expect(
-      within(activity).queryByText(renderedInstant(SESSION_INSTANT)),
+      within(row).queryByText(
+        rowDetail('198.51.100.4', renderedInstant(SESSION_INSTANT)),
+      ),
     ).toBeNull()
+  })
+
+  it('renders the sessions as list items, never as a table', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-2', user_agent: '', current: true }),
+            session({ id: 'session-3', user_agent: '' }),
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+
+    await waitFor(() => expect(bodyRows()).toHaveLength(2))
+    // No table, no header rail: the section is one list of sessions.
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByRole('columnheader')).toBeNull()
+    const [current, other] = bodyRows() as [HTMLElement, HTMLElement]
+    // The current session carries its chip and offers no sign-out; every
+    // other row's control names the device it signs out.
+    expect(within(current).getByText(zhCN.sessions.current)).toBeTruthy()
+    expect(within(current).queryByRole('button')).toBeNull()
+    expect(
+      within(other).getByRole('button', {
+        name: revokeAria(zhCN.sessions.deviceUnknown),
+      }),
+    ).toBeTruthy()
+    await expectNoAxeViolations()
   })
 
   it('prefers the profile timezone over the host display timezone', async () => {
@@ -283,9 +313,13 @@ describe('SessionsSection', () => {
       </DisplayTimeZoneProvider>,
     )
 
-    expect(await screen.findByText(renderedIn(storedZone))).toBeTruthy()
+    expect(
+      await screen.findByText(rowDetail('198.51.100.4', renderedIn(storedZone))),
+    ).toBeTruthy()
     // The host context did not replace the stored tier.
-    expect(screen.queryByText(renderedIn(hostZone))).toBeNull()
+    expect(
+      screen.queryByText(rowDetail('198.51.100.4', renderedIn(hostZone))),
+    ).toBeNull()
   })
 
   it('falls back to the host display timezone when the profile stores none', async () => {
@@ -310,9 +344,13 @@ describe('SessionsSection', () => {
       </DisplayTimeZoneProvider>,
     )
 
-    expect(await screen.findByText(renderedIn(hostZone))).toBeTruthy()
+    expect(
+      await screen.findByText(rowDetail('198.51.100.4', renderedIn(hostZone))),
+    ).toBeTruthy()
     // The device tier was not consulted while the host supplied a zone.
-    expect(screen.queryByText(renderedIn())).toBeNull()
+    expect(
+      screen.queryByText(rowDetail('198.51.100.4', renderedIn())),
+    ).toBeNull()
   })
 
   it('raises the row revoke control to the 44px touch-target floor under a coarse pointer', async () => {
@@ -470,7 +508,7 @@ describe('SessionsSection', () => {
     )
     expect(
       screen
-        .getByRole('table')
+        .getByRole('list')
         .compareDocumentPosition(confirmation) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
