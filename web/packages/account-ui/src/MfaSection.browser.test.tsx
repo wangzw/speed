@@ -4,8 +4,8 @@
  * The removal is reached the way a reader reaches it -- open the row's "⋯"
  * menu, choose remove, confirm -- and the case pins what the grouped
  * surface owes the reader after the write lands: the row leaves the list,
- * the group's own action word follows whether the group still has an
- * enabled row, and the success feedback names the row that went. jsdom
+ * the group's own action stays a plain add, and the success feedback names
+ * the row that went. jsdom
  * cannot tell the menu's portal and its focus order from a plain list, so
  * this interaction lives in the browser tier.
  *
@@ -87,12 +87,12 @@ describe('MfaSection row overflow menu', () => {
     const user = userEvent.setup()
 
     const method = zhCN.mfa.factor.kind.webauthn
-    // The group already holds an enabled passkey, so its action offers
-    // another device rather than a plain add.
-    const manage = await screen.findByRole('button', {
-      name: zhCN.mfa.manageAria.replace('{{method}}', method),
+    // The group already holds an enabled passkey, and its action still reads
+    // as a plain add.
+    const initialAdd = await screen.findByRole('button', {
+      name: zhCN.mfa.addAria.replace('{{method}}', method),
     })
-    expect(manage.textContent).toBe(zhCN.mfa.action.manage)
+    expect(initialAdd.textContent).toBe(zhCN.mfa.action.add)
 
     // The removal is reached through the row's overflow menu.
     await user.click(
@@ -126,8 +126,8 @@ describe('MfaSection row overflow menu', () => {
         zhCN.mfa.removed.replace('{{factor}}', ROW_NAME),
       ),
     ).toBeTruthy()
-    // No enabled passkey is left, so the group's action falls back to a
-    // plain add.
+    // No enabled passkey is left, and the group's action is the same plain
+    // add it showed before the removal.
     const add = await screen.findByRole('button', {
       name: zhCN.mfa.addAria.replace('{{method}}', method),
     })

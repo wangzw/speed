@@ -138,7 +138,6 @@
     "loading": "Loading two-step verification",
     "empty": "No two-step verification method is set up yet.",
     "singleFactor": "Only one two-step verification method is enabled. Add another one below so you can still sign in if you lose this one.",
-    "manageAria": "Add another device for {{method}}",
     "addAria": "Add {{method}}",
     "actionsAria": "Actions for {{factor}}",
     "remove": "Remove",
@@ -210,8 +209,7 @@
     "retry": "Retry",
     "action": {
       "setup": "Set up",
-      "add": "Add",
-      "manage": "Add another device"
+      "add": "Add"
     },
     "method": {
       "totp": "Use an authenticator app to get a six-digit code when asked.",

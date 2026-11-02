@@ -139,13 +139,8 @@ async function startEnrollWithEmptyName(
   return field
 }
 
-/** The accessible name of a method's action while that method already has an
- * active factor: the button says "Manage <method>" instead of "Add <method>". */
-const manageNameOf = (method: string): string =>
-  zhCN.mfa.manageAria.replace('{{method}}', method)
-
-/** The accessible name of a method's action while that method has no active
- * factor: the visible action word leads, followed by the method. */
+/** The accessible name of a method's action: the visible action word leads,
+ * followed by the method. */
 const addNameOf = (method: string): string =>
   zhCN.mfa.addAria.replace('{{method}}', method)
 
@@ -249,27 +244,34 @@ describe('MfaSection', () => {
     await expectNoAxeViolations()
   })
 
-  it('offers another device for a passkey group with an enabled row', async () => {
+  it('words every group\'s action as a plain add even with an enabled row', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        return jsonResponse(200, methodsDoc(['webauthn']))
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return jsonResponse(200, {
-          factors: [factor({ kind: 'webauthn', status: 'active' })],
+          factors: [
+            factor({ id: 'factor-totp', kind: 'totp', status: 'active' }),
+            factor({ id: 'factor-passkey', kind: 'webauthn', status: 'active' }),
+          ],
         })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mount(respond)
 
-    const button = await screen.findByRole('button', {
-      name: manageNameOf(zhCN.mfa.factor.kind.webauthn),
-    })
-    expect(button.textContent).toBe(zhCN.mfa.action.manage)
-    // The visible word still contains the add verb the accessible name
-    // leads with.
-    expect(button.textContent).toContain(zhCN.mfa.action.add)
+    // Each group already holds an enabled row; both still word their action
+    // as a plain add, and the visible word matches the accessible name.
+    for (const method of [
+      zhCN.mfa.factor.kind.totp,
+      zhCN.mfa.factor.kind.webauthn,
+    ]) {
+      const button = await screen.findByRole('button', {
+        name: addNameOf(method),
+      })
+      expect(button.textContent).toBe(zhCN.mfa.action.add)
+    }
   })
 
   it('offers the plain add action for a method with no active factor', async () => {

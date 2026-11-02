@@ -76,9 +76,9 @@
  *
  * The factors are grouped by kind: each assembled kind is a section whose
  * heading names it, and a group that the deployment reports as enrollable
- * carries one add action on that heading. A passkey group with an enabled
- * row words the action "add another device"; every other group words it
- * "add". The rows a group lists are the enabled and the disabled ones --
+ * carries one add action on that heading, worded "add" whether or not the
+ * group already holds an enabled row. The rows a group lists are the enabled
+ * and the disabled ones --
  * a pending row is the enrollment's own intermediate state and is withheld
  * -- and a disabled row carries a muted "disabled" marker. Every row shows
  * its name (the label, else the kind) and the instant it last passed a
@@ -767,9 +767,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                     const kindFactors = visibleFactors.filter(
                       (factor) => (factor.kind ?? '') === kind,
                     )
-                    const activeCount = kindFactors.filter(
-                      (factor) => factor.status === 'active',
-                    ).length
                     const enrollable = enrollEntries.includes(kind)
                     const kindLabel = KNOWN_FACTOR_KINDS.has(kind)
                       ? t(`mfa.factor.kind.${kind}`)
@@ -783,11 +780,6 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                     const headingText = inEnrollment
                       ? enrollTitle(kind)
                       : kindLabel
-                    // A passkey can be added once per device; every other
-                    // kind keeps one action word whether or not it already
-                    // has an enabled row.
-                    const addAnother =
-                      kind === 'webauthn' && activeCount > 0
                     return (
                       <Box
                         component="section"
@@ -824,22 +816,13 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                               // contains the visible label (WCAG 2.5.3)
                               // while still telling several method buttons
                               // apart.
-                              aria-label={
-                                addAnother
-                                  ? t('mfa.manageAria', {
-                                      method: kindLabel,
-                                      interpolation: { escapeValue: false },
-                                    })
-                                  : t('mfa.addAria', {
-                                      method: kindLabel,
-                                      interpolation: { escapeValue: false },
-                                    })
-                              }
+                              aria-label={t('mfa.addAria', {
+                                method: kindLabel,
+                                interpolation: { escapeValue: false },
+                              })}
                               onClick={() => openEnroll(kind)}
                             >
-                              {addAnother
-                                ? t('mfa.action.manage')
-                                : t('mfa.action.add')}
+                              {t('mfa.action.add')}
                             </Button>
                           )}
                         </Box>
