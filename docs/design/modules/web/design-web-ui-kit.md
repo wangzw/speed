@@ -76,7 +76,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 **主题层同时承载表面映射。** token 的 `surface` 段经工厂解析为 `theme.surface.<角色>`，再经 `theme.components` 落到具体槽位；样式与 `useTheme()` 读同一个值，不会不一致。解析按继承契约把缺省字段换成主题已有的槽：`page` 取 `background.default`，`container` 与 `overlay` 取 `background.paper`，边框取 `divider`（角色给出 `borderColorDark` 时，深色模式取它、浅色模式仍取 `borderColor`），`header` 取中性色阶（浅色 50、深色 900）。角色带 `opacity` 时，解析器把已解析的填充色按该 alpha 转成 `rgba(...)`，明暗两种模式各自转换；填充不是 `#RRGGBB` 时原样保留。`theme.surface` 与组件覆盖读的是同一个解析结果，不会漂移。`SurfaceTheme` 是该值的类型。类型增强声明在主题工厂模块 `theme/createAppTheme.ts`（与等宽字体栈的增强同处），不放在内部模块 `theme/surface.ts`：按产物声明编译的宿主只加载包入口 `.d.ts` 图可达的模块，增强声明落在内部模块时对该类宿主不可见，`theme.surface` 会被读成未知属性。组件覆写为：`MuiCard` 的 `variant="outlined"` 取 container；`MuiDialog`、`MuiMenu`、`MuiPopover` 的 paper、`MuiTooltip` 的 tooltip 与 temporary `MuiDrawer` 的 paper 取 overlay；permanent 与 persistent 抽屉的 paper 取 container；`MuiTableCell.head` 取 header。`MuiPaper.root` 不设覆写，`MuiTableContainer` 不设表面。主题组件表按 `Mui*` 槽深合并：触摸目标下限、表面覆写与页面基线落在同一个组件上时，各组声明都保留。
 
-**页面基线绘制 `page` 表面、文字辉光与画布。** `MuiCssBaseline` 的 body 取 `theme.surface.page.fill` 为背景色；`typography.textGlow` 给出时取同一 body 的 `textShadow`；`color.background.canvas` 给出时按活动模式取 `light` 或 `dark` 的止色，渲染为 `linear-gradient(160deg, from, to)` 与 `background-attachment: fixed`。缺省的页填充等于 `palette.background.default`，另两项缺席时不发声明，故未设置它们的宿主逐字节不变。**绘制次序：背景图在背景色之上**，不透明的画布会盖住页填充；需要页填充参与合成时画布止色自带透明度，以画布作为页面底色的预设不设 `surface.page` 填充。三项与触摸目标、焦点环、表面覆盖一起经 `mergeThemeComponents` 按槽深合并。
+**页面基线绘制 `page` 表面、文字辉光与画布。** `MuiCssBaseline` 的 body 取 `theme.surface.page.fill` 为背景色；`typography.textGlow` 给出时取同一 body 的 `textShadow`；`color.background.canvas` 给出时按活动模式取 `light` 或 `dark` 的止色，渲染为 `linear-gradient(160deg, from, to)` 与 `background-attachment: fixed`。缺省的页填充等于 `palette.background.default`，另两项缺席时不发声明，故未设置它们的宿主逐字节不变。**绘制次序：背景图在背景色之上**，不透明的画布会盖住页填充；需要页填充参与合成时画布止色自带透明度，以画布作为页面底色的预设不设 `surface.page` 填充。三项与触摸目标、焦点环、表面覆盖、分隔线一起经 `mergeThemeComponents` 按槽深合并。
 
 ### 受控组件
 
@@ -280,6 +280,12 @@ sequenceDiagram
 
 **组件表按槽深合并。** 多个来源的 `components`（触摸目标下限、表面映射与页面基线）按 `Mui*` 键、再按槽合并：变体数组拼接，同一槽上的两个回调组合为返回两份样式的回调。浅展开会让后者整体覆盖前者的 `styleOverrides`。决策见 [ADR-web-surface-system](../../../adr/adr-web-surface-system.md)。
 
+### 分隔线与菜单表面
+
+**分隔线在两种模式下都由主题画实。** MUI 的 `Divider` 根把每条边归零、再用 CSS 的 `thin` 关键字抬起一条边，背景保持透明，线条的宽度因此交给引擎的默认值。主题的 `MuiDivider` 覆写把可见的那条边从 `palette.divider` 显式给出：水平分隔线画 1px 实线的下边，垂直分隔线画 1px 实线的右边，明暗两种模式一致；方向不用的那条边归零，使一条分隔线不带出第二条淡线。带子节点的分隔线由 MUI 的 with-children 变体经 `::before`／`::after` 画线、根边框本身归零，故该变体只取 `borderColor`，几何留给 MUI。实现见 `divider.ts` 的 `dividerComponents`，与其他主题覆写一起经 `mergeThemeComponents` 按槽深合并。
+
+**菜单保留预设给出的填充，只添一条描边与一层阴影。** 菜单的纸面取 `overlay` 表面，填充由活动预设给出，半透明预设因此仍是半透明。需要可见边界的宿主在纸面上只添一条 `palette.divider` 色的 1px 描边与一层更深的阴影（取 `theme.shadows`），不改 `background`：用写死的底色覆盖纸面会让预设失效，也把菜单从主题的表面体系里切出去。
+
 ### 内容节 SectionCard
 
 **`SectionCard` 是内容容器的唯一原语。** 它渲染 `Card variant="outlined" component="section"`：`Card` 自带 `overflow: hidden`，表格贴边时由它收住圆角；`section` 使内容节成为可被辅助技术识别的区域。
@@ -462,6 +468,7 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 |---|---|---|
 | 主题工厂与分层合并（含颜色模式） | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`、`AppTheme`、`AppThemeMode` |
 | 表面解析与主题组件映射 | 已实现 | `web/packages/ui-kit/src/theme/surface.ts` `resolveSurfaceTheme`、`surfaceComponents`、`mergeThemeComponents`、`SurfaceTheme`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
+| 分隔线在明暗两种模式下画实 | 已实现 | `web/packages/ui-kit/src/theme/divider.ts` `dividerComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 浅色模式 warning、info、success 的 700 调 `main` 与白色标签 | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`；`web/packages/tokens/src/color.ts` `colorTokens.semantic` |
 | 内容节表面 `SectionCard` | 已实现 | `web/packages/ui-kit/src/components/SectionCard.tsx` `SectionCard`、`SectionCardProps` |
 | 操作行 `ActionRow` 与按钮档位 `ActionButton` | 已实现 | `web/packages/ui-kit/src/components/ActionRow.tsx` `ActionRow`、`ActionButton`、`ActionRowSize`、`ActionEmphasis`、`ActionTone` |
