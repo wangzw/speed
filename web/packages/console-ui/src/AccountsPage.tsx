@@ -875,7 +875,7 @@ export function AccountsPage({
               <Chip
                 size="small"
                 variant="outlined"
-                color="info"
+                color="primary"
                 label={t('accounts.sessions.current')}
                 sx={{ flexShrink: 0 }}
               />

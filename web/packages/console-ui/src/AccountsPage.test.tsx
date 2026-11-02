@@ -14,6 +14,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { chipClasses } from '@mui/material/Chip'
 import { zhCN as muiZhCN } from '@mui/material/locale'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { emittedStyleText } from '@speed/test-utils/emitted-css'
@@ -1929,6 +1930,13 @@ describe('AccountsPage', () => {
     // visible when that column hides. The id cell shows the prefix; the
     // complete id stays on the title and copy control.
     const marker = within(panel).getByText(zhCN.accounts.sessions.current)
+    // The marker names the session in use, so it uses the color that means
+    // "this is the one you are using", the same as the account page's chip.
+    expect(
+      marker.closest(`.${chipClasses.root}`)?.classList.contains(
+        chipClasses.colorPrimary,
+      ),
+    ).toBe(true)
     const currentRow = marker.closest('tr') as HTMLElement
     expect(currentRow).toHaveTextContent('sess-cur')
     expect(currentRow).not.toHaveTextContent('sess-oth')

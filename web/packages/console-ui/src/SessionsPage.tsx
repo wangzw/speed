@@ -170,7 +170,7 @@ export function SessionsPage() {
               <Chip
                 size="small"
                 variant="outlined"
-                color="info"
+                color="primary"
                 label={t('sessions.current')}
                 sx={{ flexShrink: 0 }}
               />
