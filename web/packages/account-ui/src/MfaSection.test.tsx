@@ -1687,6 +1687,68 @@ describe('MfaSection', () => {
     expect(enrollRegion).not.toBe(removeRegion)
   })
 
+  it('replaces a rename result with a later removal result', async () => {
+    // Rename and removal are one control group below the list: the result
+    // that settles last replaces the earlier one instead of standing beside
+    // it.
+    let renamed = false
+    let removed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        const first = factor({
+          id: 'factor-a',
+          label: renamed ? 'Alpha2' : 'Alpha',
+        })
+        return jsonResponse(200, {
+          factors: removed
+            ? [first]
+            : [first, factor({ id: 'factor-b', label: 'Beta' })],
+        })
+      }
+      if (
+        call.method === 'PATCH' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        renamed = true
+        return jsonResponse(200, factor({ id: 'factor-a', label: 'Alpha2' }))
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-b'
+      ) {
+        removed = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const field = await openRenameEditor(user, 'Alpha')
+    await user.clear(field)
+    await user.type(field, 'Alpha2')
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.renameSave }))
+
+    const renamedText = zhCN.mfa.renamed.replace('{{factor}}', 'Alpha2')
+    expect(await screen.findByText(renamedText)).toBeTruthy()
+
+    const dialog = await openRemoveConfirm(user, 'Beta')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+
+    const removedText = zhCN.mfa.removed.replace('{{factor}}', 'Beta')
+    expect(await screen.findByText(removedText)).toBeTruthy()
+    // The row actions' one region shows one result: the rename's
+    // confirmation is gone, not standing beside the removal's.
+    await waitFor(() => expect(screen.queryByText(renamedText)).toBeNull())
+  })
+
   it('renders no payload when a TOTP step carries no setup URI', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
