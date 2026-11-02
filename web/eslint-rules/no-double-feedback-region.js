@@ -16,13 +16,13 @@
  * own several control groups (a list, a detail panel, two titled sections)
  * and render one region for each. Those components are the entries in
  * `WRITE_FEEDBACK_REGION_EXEMPTIONS`; each reason states which separate
- * groups (or which mutually exclusive branches of one scope) the regions
- * serve. The workspace scan in the rule's test keeps the list exactly
- * equal to the set of multi-region components under each package's `src`
- * and the demo host's `src` (the scopes the two lint configs apply the
- * rule to: the host is part of the product, so its own config turns the
- * rule on over the same shared implementation and the same list), so a
- * new one must be registered deliberately and a stale entry is removed.
+ * control groups the regions serve. The workspace scan in the rule's test
+ * keeps the list exactly equal to the set of multi-region components under
+ * each package's `src` and the demo host's `src` (the scopes the two lint
+ * configs apply the rule to: the host is part of the product, so its own
+ * config turns the rule on over the same shared implementation and the same
+ * list), so a new one must be registered deliberately and a stale entry is
+ * removed.
  *
  * A queue of independent per-row transfers is the design's allowed
  * exception (an upload row is its own slot), and it does not trip this
@@ -51,9 +51,8 @@ const REGION_TAG_NAMES = new Set([
  * Components that legitimately render more than one region. Keyed by the
  * file (a package source as `packages/...`, a demo host source as
  * `starters/demo/web/src/...`) and the component's declaration name; the
- * reason states why the regions are separate control groups (or two
- * mutually exclusive branches of one scope). The scan test in
- * no-double-feedback-region.test.mjs holds this list to both trees.
+ * reason states which separate control groups the regions serve. The scan
+ * test in no-double-feedback-region.test.mjs holds this list to both trees.
  */
 export const WRITE_FEEDBACK_REGION_EXEMPTIONS = [
   {
@@ -85,12 +84,6 @@ export const WRITE_FEEDBACK_REGION_EXEMPTIONS = [
     component: 'SsoPage',
     reason:
       'The providers list, the provider write form and the domains section are separate control groups, each with its region under its own controls.',
-  },
-  {
-    file: 'packages/account-ui/src/ContactVerificationSection.tsx',
-    component: 'ContactVerificationSection',
-    reason:
-      'One scope rendered in two mutually exclusive branches: the add form before a code is sent, and the code step after.',
   },
   {
     file: 'packages/account-ui/src/PreferencesSection.tsx',

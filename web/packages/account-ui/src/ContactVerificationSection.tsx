@@ -471,6 +471,17 @@ export function ContactVerificationSection({
     </SectionCard>
   )
 
+  // The send and verify control group's one result region. The add form and
+  // the code step are mutually exclusive branches of that group, so they
+  // place the same element under their action row rather than splitting the
+  // group into two regions.
+  const feedbackRegion = (
+    <WriteFeedbackRegion
+      outcome={feedback.outcome}
+      sx={{ alignSelf: 'stretch', width: '100%' }}
+    />
+  )
+
   // A pending account with no target: the add-email form is the only way back
   // to a verifiable address.
   const addForm = (
@@ -519,10 +530,7 @@ export function ContactVerificationSection({
         </ActionRow>
         {/* The add form is the send group's control here: its result
             sits below the action that made it. */}
-        <WriteFeedbackRegion
-          outcome={feedback.outcome}
-          sx={{ alignSelf: 'stretch', width: '100%' }}
-        />
+        {feedbackRegion}
       </Box>
     </SectionCard>
   )
@@ -639,10 +647,7 @@ export function ContactVerificationSection({
               code verification all write into it, and it sits directly under
               the action row so the result stands next to the action that
               produced it. */}
-          <WriteFeedbackRegion
-            outcome={feedback.outcome}
-            sx={{ alignSelf: 'stretch', width: '100%' }}
-          />
+          {feedbackRegion}
           {verifyFailureBanner}
           {remainingSeconds > 0 ? (
             <Typography

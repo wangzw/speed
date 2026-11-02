@@ -132,8 +132,7 @@ file: a page component may own several control groups, each with its own
 scope and region under its own controls. Those components are registered
 in the rule's `WRITE_FEEDBACK_REGION_EXEMPTIONS`
 (`web/eslint-rules/no-double-feedback-region.js`), each entry carrying the
-reason the regions are separate groups (or two mutually exclusive branches
-of one scope):
+reason the regions are separate control groups:
 
 - `packages/console-ui/src/AccountsPage.tsx` — `AccountsPage`: the list
   result and the detail panel's action row, sessions and identifiers
@@ -141,17 +140,12 @@ of one scope):
 - `packages/console-ui/src/AccountsPage.tsx` — `AccountDetailWrites`: six
   rows (status, MFA requirement, profile patch, temporary password,
   identifier add, secret create), each with its own group.
-- `packages/account-ui/src/MfaSection.tsx` — `MfaSection`: the enrollment
-  wizard's exclusive steps plus the list's rename and remove row actions.
 - `packages/console-ui/src/PermissionsPage.tsx` — `PermissionsPage`: roles,
   grants, bindings and lookup sections.
 - `packages/console-ui/src/SmsPage.tsx` — `SmsPage`: register form, offer
   form and templates table.
 - `packages/console-ui/src/SsoPage.tsx` — `SsoPage`: providers list,
   provider write form and domains section.
-- `packages/account-ui/src/ContactVerificationSection.tsx` —
-  `ContactVerificationSection`: one scope in two mutually exclusive
-  branches (add form before a code is sent, code step after).
 - `packages/account-ui/src/PreferencesSection.tsx` — `PreferencesSection`:
   language row and time-zone row.
 - `packages/console-ui/src/ImpersonationsPage.tsx` —
