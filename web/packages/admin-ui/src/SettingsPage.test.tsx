@@ -22,7 +22,13 @@ import userEvent from '@testing-library/user-event'
 import { zhCN as muiZhCN } from '@mui/material/locale'
 import { SettingsPage } from './SettingsPage.js'
 import type { AdminSetting } from './operations.js'
+import {
+  WorkspaceAdminOperationsProvider,
+  workspaceAdminOperations,
+  type AdminTenantSetting,
+} from './workspace-operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { bindAdminRequest } from '../test-utils/request-rig.js'
 import { uiKitResources } from '@speed/ui-kit'
 import {
   containerMaxWidthOf,
@@ -1107,5 +1113,206 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
     await screen.findByDisplayValue('5')
     await expectNoAxeViolations()
+  })
+})
+
+describe('SettingsPage tenant mode', () => {
+  const TENANT = 'acme'
+
+  /** A tenant-layer row: the platform row plus the layer the server says
+   * the value came from. */
+  const tenantItem: AdminTenantSetting = {
+    ...item,
+    key: 'app.mode',
+    namespace: 'app',
+    description: 'App mode',
+    default: 'off',
+    written: 'on',
+    has_row: true,
+    value: 'on',
+    source: 'tenant',
+  }
+
+  it('reads and writes only the tenant endpoints', async () => {
+    const user = userEvent.setup()
+    const calls = bindAdminRequest((call) => {
+      if (
+        call.method === 'GET' &&
+        call.path === `/api/v1/tenants/${TENANT}/settings`
+      ) {
+        return [tenantItem]
+      }
+      if (
+        (call.method === 'PUT' || call.method === 'DELETE') &&
+        call.path === `/api/v1/tenants/${TENANT}/settings/app/mode`
+      ) {
+        return undefined
+      }
+      throw new Error(`unexpected request: ${call.method} ${call.path}`)
+    })
+    const { queryClient } = renderWithProviders(
+      <WorkspaceAdminOperationsProvider operations={workspaceAdminOperations}>
+        <SettingsPage tenant={TENANT} tenantMode />
+      </WorkspaceAdminOperationsProvider>,
+    )
+
+    const field = await screen.findByRole('textbox', { name: 'app.mode' })
+    expect(field).toHaveValue('on')
+    expect(calls).toContainEqual({
+      method: 'GET',
+      path: `/api/v1/tenants/${TENANT}/settings`,
+    })
+    // The read's key is tenant-scoped, and the platform layer's key is
+    // never built on this surface.
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData([
+          TENANT,
+          `/api/v1/tenants/${TENANT}/settings`,
+        ]),
+      ).toEqual([tenantItem]),
+    )
+    expect(
+      queryClient.getQueryData([
+        '/api/v1/system/settings',
+        { layer: 'global' },
+      ]),
+    ).toBeUndefined()
+
+    await user.clear(field)
+    await user.type(field, 'off')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.settings.saveBar.save }),
+    )
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        method: 'PUT',
+        path: `/api/v1/tenants/${TENANT}/settings/app/mode`,
+      }),
+    )
+    expect(await screen.findByText(zhCN.settings.saved)).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.settings.removeAria, { key: 'app.mode' }),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        method: 'DELETE',
+        path: `/api/v1/tenants/${TENANT}/settings/app/mode`,
+      }),
+    )
+
+    for (const call of calls) {
+      expect(call.path.startsWith(`/api/v1/tenants/${TENANT}/`)).toBe(true)
+      expect(call.path.startsWith('/api/v1/system')).toBe(false)
+    }
+  })
+
+  it('renders the layer the server reports for each row, without inferring', async () => {
+    const rows: readonly AdminTenantSetting[] = [
+      {
+        ...tenantItem,
+        key: 'app.mode',
+        value: 'on',
+        written: 'on',
+        has_row: true,
+        source: 'tenant',
+      },
+      {
+        ...tenantItem,
+        key: 'app.theme',
+        value: 'dark',
+        written: '',
+        has_row: false,
+        source: 'global',
+      },
+      {
+        ...tenantItem,
+        key: 'app.locale',
+        value: 'en',
+        written: '',
+        has_row: false,
+        source: 'default',
+      },
+    ]
+    const operations = createAdminOperations(
+      makeAdminBackend({ listTenantSettings: () => Promise.resolve(rows) }),
+    )
+    renderWithProviders(
+      <WorkspaceAdminOperationsProvider operations={operations}>
+        <SettingsPage tenant={TENANT} tenantMode />
+      </WorkspaceAdminOperationsProvider>,
+    )
+    await screen.findByDisplayValue('on')
+    expect(screen.getByText(zhCN.settings.column.source)).toBeInTheDocument()
+
+    const row = (value: string) => {
+      const input = screen.getByDisplayValue(value)
+      const tableRow = input.closest('tr')
+      if (tableRow === null) {
+        throw new Error(`no row for value ${value}`)
+      }
+      return within(tableRow)
+    }
+
+    expect(row('on').getByText(zhCN.settings.source.tenant)).toBeInTheDocument()
+    // `has_row` is false for the global row, so a page that inferred the
+    // source from the row's state would print the declared default. The
+    // server says `global`, and that is what the page must print.
+    expect(row('dark').getByText(zhCN.settings.source.global)).toBeInTheDocument()
+    expect(row('dark').queryByText(zhCN.settings.source.default)).toBeNull()
+    expect(
+      row('en').getByText(zhCN.settings.source.default),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the platform selector and reads only the platform endpoints', async () => {
+    const calls = bindAdminRequest((call) => {
+      if (call.path === '/api/v1/system/settings') {
+        return [item]
+      }
+      throw new Error(`unexpected request: ${call.method} ${call.path}`)
+    })
+    const { queryClient } = renderWithProviders(<SettingsPage />)
+
+    await screen.findByDisplayValue('5')
+    // The platform page keeps its own selector (the namespace navigation)
+    // and never grows the tenant surface's source column.
+    const nav = screen.getByRole('navigation', {
+      name: zhCN.settings.nav.label,
+    })
+    expect(within(nav).getByText(zhCN.settings.nav.all)).toBeInTheDocument()
+    expect(within(nav).getByText('mail')).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.settings.column.source)).toBeNull()
+
+    expect(calls).toContainEqual({
+      method: 'GET',
+      path: '/api/v1/system/settings',
+      query: { layer: 'global' },
+    })
+    for (const call of calls) {
+      expect(call.path.startsWith('/api/v1/tenants/')).toBe(false)
+    }
+    // The platform layer's key is distinct from every tenant-scoped key.
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData([
+          '/api/v1/system/settings',
+          { layer: 'global' },
+        ]),
+      ).toEqual([item]),
+    )
+    expect(
+      queryClient.getQueryData([
+        TENANT,
+        `/api/v1/tenants/${TENANT}/settings`,
+      ]),
+    ).toBeUndefined()
   })
 })

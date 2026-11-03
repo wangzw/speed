@@ -322,6 +322,7 @@
       "type": "Type",
       "value": "Current value",
       "state": "State",
+      "source": "Source",
       "actions": "Actions"
     },
     "nav": {
@@ -355,6 +356,11 @@
     "state": {
       "default": "Default",
       "overridden": "Overridden"
+    },
+    "source": {
+      "tenant": "Tenant",
+      "global": "Global",
+      "default": "Default"
     }
   },
   "audit": {

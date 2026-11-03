@@ -29,6 +29,12 @@
  * declares. The judgement a write lands under is layered and
  * server-side (the tenant layer in that tenant's domain, the global
  * layer on the platform); this page renders the answer and nothing else.
+ * In tenant mode the page reads and writes only the current tenant's
+ * layer, addressed by the tenant the wrapper supplies as a path segment,
+ * and renders no layer control. Its rows then also carry the layer the
+ * server resolved each value from (`tenant`, `global` or `default`); the
+ * page shows that reported value in a source column instead of inferring
+ * it from the row's state.
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. A sensitive
  * item's value arrives already masked by the server; the page renders the
@@ -109,7 +115,20 @@ import {
 } from '@speed/ui-kit'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { settingKeyRest, useAdminOperations } from './operations.js'
-import type { AdminSetting } from './operations.js'
+import type {
+  AdminOperations,
+  AdminRemoveSettingInput,
+  AdminSetSettingInput,
+  AdminSetting,
+} from './operations.js'
+import {
+  useWorkspaceAdminOperations,
+  type AdminTenantRemoveSettingInput,
+  type AdminTenantSetSettingInput,
+  type AdminTenantSettingSource,
+  type WorkspaceAdminOperations,
+} from './workspace-operations.js'
+import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 
 /** The sentinel the "all namespaces" navigation entry selects. */
 const ALL = ''
@@ -131,9 +150,151 @@ function settingState(setting: AdminSetting): SettingState {
   return setting.has_row ? 'overridden' : 'default'
 }
 
-export function SettingsPage() {
-  const { t } = useAdminUiTranslation()
+export interface SettingsPageProps {
+  /**
+   * A controlled tenant scope for the workspace surface. When given with
+   * `tenantMode`, the page reads and writes the tenant's settings layer and
+   * does not touch the platform's global layer.
+   */
+  readonly tenant?: string
+  /**
+   * Tenant mode: the workspace surface's configuration of the same page.
+   * The page reads and writes `/api/v1/tenants/{tenant}/settings` through
+   * the workspace operations bundle, with the tenant as the path segment,
+   * and never addresses `/api/v1/system/settings`.
+   */
+  readonly tenantMode?: boolean
+}
+
+/** A row the page renders: the platform row, plus the tenant surface's
+ * server-reported source layer. The platform read carries no `source`. */
+type SettingsRow = AdminSetting & {
+  readonly source?: AdminTenantSettingSource
+}
+
+/** The data operations the settings body runs, in either surface's shape. */
+interface SettingsOperations {
+  readonly useList: () => UseQueryResult<readonly SettingsRow[], unknown>
+  readonly useNamespace: (
+    namespace: string | undefined,
+  ) => UseQueryResult<readonly SettingsRow[], unknown>
+  readonly useSetSetting: () => UseMutationResult<
+    void,
+    unknown,
+    AdminSetSettingInput
+  >
+  readonly useRemoveSetting: () => UseMutationResult<
+    void,
+    unknown,
+    AdminRemoveSettingInput
+  >
+  /** Whether rows report the layer the server resolved the value from.
+   * True on the tenant surface, whose read spans the tenant layer, the
+   * global layer and the declaration; false on the platform surface,
+   * which reads one layer only. */
+  readonly showsSource: boolean
+}
+
+/** The platform surface's data operations: the global layer's reads and
+ * writes. */
+function usePlatformSettingsOperations(
+  operations: AdminOperations,
+): SettingsOperations {
+  return {
+    useList: () => operations.useSettings(undefined),
+    useNamespace: (namespace) => operations.useSettings(namespace),
+    useSetSetting: () => operations.useSetSetting(),
+    useRemoveSetting: () => operations.useRemoveSetting(),
+    showsSource: false,
+  }
+}
+
+/** Binds the tenant argument into a tenant settings write's input, so the
+ * body's write call keeps the platform surface's input shape. */
+function boundTenantSettingWrite(
+  mutation: UseMutationResult<void, unknown, AdminTenantSetSettingInput>,
+  tenant: string,
+): UseMutationResult<void, unknown, AdminSetSettingInput> {
+  return {
+    ...mutation,
+    mutate: (input, options) =>
+      mutation.mutate({ ...input, tenant }, options),
+    mutateAsync: (input, options) =>
+      mutation.mutateAsync({ ...input, tenant }, options),
+  }
+}
+
+/** Binds the tenant argument into a tenant settings remove's target. */
+function boundTenantSettingRemove(
+  mutation: UseMutationResult<void, unknown, AdminTenantRemoveSettingInput>,
+  tenant: string,
+): UseMutationResult<void, unknown, AdminRemoveSettingInput> {
+  return {
+    ...mutation,
+    mutate: (input, options) =>
+      mutation.mutate({ ...input, tenant }, options),
+    mutateAsync: (input, options) =>
+      mutation.mutateAsync({ ...input, tenant }, options),
+  }
+}
+
+/** The workspace surface's data operations: the current tenant's layer. */
+function useTenantSettingsOperations(
+  operations: WorkspaceAdminOperations,
+  tenant: string,
+): SettingsOperations {
+  return {
+    useList: () => operations.useTenantSettingsList(tenant),
+    // The "all namespaces" entry reads the whole list; a chosen namespace
+    // reads that namespace. Both hooks run every render, and the namespace
+    // read stays disabled while no namespace is chosen, so the all-entries
+    // view issues one list read rather than a malformed namespace read.
+    useNamespace: (namespace) => {
+      const list = operations.useTenantSettingsList(tenant)
+      const one = operations.useTenantSettingsRead(tenant, namespace)
+      return namespace === undefined ? list : one
+    },
+    useSetSetting: () =>
+      boundTenantSettingWrite(operations.useTenantSettingsWrite(), tenant),
+    useRemoveSetting: () =>
+      boundTenantSettingRemove(operations.useTenantSettingsRemove(), tenant),
+    showsSource: true,
+  }
+}
+
+/**
+ * The settings page. Without `tenantMode` it renders the platform surface's
+ * global layer; with it, the workspace surface's current-tenant layer.
+ */
+export function SettingsPage({
+  tenant,
+  tenantMode = false,
+}: SettingsPageProps = {}) {
+  return tenantMode ? (
+    <TenantSettingsPage tenant={tenant ?? ''} />
+  ) : (
+    <PlatformSettingsPage />
+  )
+}
+
+function PlatformSettingsPage() {
   const operations = useAdminOperations()
+  const data = usePlatformSettingsOperations(operations)
+  return <SettingsPageBody operations={data} />
+}
+
+function TenantSettingsPage({ tenant }: { readonly tenant: string }) {
+  const operations = useWorkspaceAdminOperations()
+  const data = useTenantSettingsOperations(operations, tenant)
+  return <SettingsPageBody operations={data} />
+}
+
+function SettingsPageBody({
+  operations,
+}: {
+  readonly operations: SettingsOperations
+}) {
+  const { t } = useAdminUiTranslation()
   const [selected, setSelected] = useState<string>(ALL)
   // The per-item drafts, keyed by the item's full key. An absent entry (or
   // one equal to the item's value) is unchanged.
@@ -171,9 +332,9 @@ export function SettingsPage() {
 
   // The whole declared set, read for the namespace navigation (its
   // namespaces are the grouping the page offers).
-  const allSettings = operations.useSettings(undefined)
+  const allSettings = operations.useList()
   // The selected namespace's items (the whole set for the "all" entry).
-  const settings = operations.useSettings(selected === ALL ? undefined : selected)
+  const settings = operations.useNamespace(selected === ALL ? undefined : selected)
   const setSetting = operations.useSetSetting()
   const removeSetting = operations.useRemoveSetting()
   const confirm = usePendingConfirm()
@@ -248,7 +409,7 @@ export function SettingsPage() {
     items !== undefined && items.length > 0 && !isForbidden(settings.error)
       ? items
       : undefined
-  const changedItems = (settled: readonly AdminSetting[]): readonly AdminSetting[] =>
+  const changedItems = (settled: readonly SettingsRow[]): readonly SettingsRow[] =>
     settled.filter(
       (setting) =>
         drafts[setting.key] !== undefined && drafts[setting.key] !== setting.value,
@@ -259,7 +420,7 @@ export function SettingsPage() {
   const changedRows =
     registerItems === undefined ? [] : changedItems(registerItems)
 
-  const save = (settled: readonly AdminSetting[]) => {
+  const save = (settled: readonly SettingsRow[]) => {
     const changed = changedItems(settled)
     if (changed.length === 0) {
       return
@@ -314,7 +475,7 @@ export function SettingsPage() {
     })
   }
 
-  const remove = (setting: AdminSetting) => {
+  const remove = (setting: SettingsRow) => {
     confirm.ask({
       title: t('settings.removeTitle'),
       message: t('settings.removeMessage', { key: setting.key }),
@@ -335,9 +496,29 @@ export function SettingsPage() {
     })
   }
 
+  // The tenant surface's read spans three layers, so its rows carry the
+  // layer the server resolved each value from. The cell renders that field
+  // verbatim (through the message catalogue) and derives nothing: a value
+  // that fell back to the global layer reads `global` although the tenant
+  // layer holds no row of its own.
+  const sourceColumn: DataTableColumn<SettingsRow> = {
+    id: 'source',
+    header: t('settings.column.source'),
+    cellWrap: 'nowrap',
+    cell: (setting) => (
+      <Typography variant="body2" color="text.secondary">
+        {setting.source === undefined
+          ? ''
+          : t(`settings.source.${setting.source}`)}
+      </Typography>
+    ),
+  }
+
   // The table's columns: the item's key (with its sensitive marker), its
-  // declared type, its editable value and the row's remove control.
-  const columns: DataTableColumn<AdminSetting>[] = [
+  // declared type, its editable value, the row's state and -- on the
+  // tenant surface, whose rows report it -- the layer the value came from,
+  // then the row's remove control.
+  const columns: DataTableColumn<SettingsRow>[] = [
     {
       id: 'key',
       header: t('settings.column.key'),
@@ -453,6 +634,7 @@ export function SettingsPage() {
         </Typography>
       ),
     },
+    ...(operations.showsSource ? [sourceColumn] : []),
     {
       id: 'actions',
       header: t('settings.column.actions'),

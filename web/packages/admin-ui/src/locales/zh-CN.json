@@ -322,6 +322,7 @@
       "type": "类型",
       "value": "当前值",
       "state": "状态",
+      "source": "来源",
       "actions": "操作"
     },
     "nav": {
@@ -355,6 +356,11 @@
     "state": {
       "default": "默认",
       "overridden": "已覆盖"
+    },
+    "source": {
+      "tenant": "租户",
+      "global": "全局",
+      "default": "默认值"
     }
   },
   "audit": {
