@@ -1,10 +1,12 @@
 package main
 
 // This file is the compile-time ceiling of the demo program's capability
-// set. Every platform capability the program can ever run is imported and
-// named here, in the default build, with no build tag: the import is what puts
-// a module in the available set, and naming it in capabilityModules is what
-// lets a run consider it.
+// set. A platform capability is imported in the default build, with no build
+// tag: the import is what puts a module in the available set. Naming a module
+// in capabilityModules is what lets a run consider it directly; a module this
+// list does not name can still arrive through the dependency closure of one
+// that it does. sms.budget is that case: the delivery pipeline requires its
+// store, and the import chain registers it.
 //
 // Compiling a capability in is not starting it. A module in this list is in the
 // participating set of every serve run; whether it actually runs is the

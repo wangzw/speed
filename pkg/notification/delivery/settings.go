@@ -10,11 +10,14 @@ import (
 )
 
 // The setting keys this module declares, relative to its namespace, and the full
-// paths a read goes by. The four bound an sms delivery: two windows per recipient
-// and two fan-out windows per tenant.
+// paths a read goes by. The per-recipient windows and the deployment window bound
+// both external channels: an email delivery counts them on the key-value
+// counters, while an sms attempt counts them over the shared ledger. The two
+// fan-out windows are the sms channel's own.
 const (
 	perRecipientHourlyKey   = "per-recipient-hourly"
 	perRecipientDailyKey    = "per-recipient-daily"
+	globalHourlyKey         = "global-hourly"
 	tenantDistinctHourlyKey = "tenant-distinct-hourly"
 	attemptHourlyKey        = "attempt-hourly"
 )
@@ -23,6 +26,7 @@ const (
 var (
 	perRecipientHourlyPath   = ModuleName + "." + perRecipientHourlyKey
 	perRecipientDailyPath    = ModuleName + "." + perRecipientDailyKey
+	globalHourlyPath         = ModuleName + "." + globalHourlyKey
 	tenantDistinctHourlyPath = ModuleName + "." + tenantDistinctHourlyKey
 	attemptHourlyPath        = ModuleName + "." + attemptHourlyKey
 )
@@ -48,6 +52,9 @@ const (
 	minPerRecipientDaily = 1
 	maxPerRecipientDaily = 10000
 
+	minGlobalHourly = 1
+	maxGlobalHourly = 10000000
+
 	minTenantDistinctHourly = 1
 	maxTenantDistinctHourly = 10000
 
@@ -58,13 +65,15 @@ const (
 // settingDefaults carries the declared default of each setting. The values are
 // this module's own: twenty external messages an hour and one hundred a day to
 // one recipient leave room for ordinary business notification while stopping a
-// producer that has begun to loop. Twenty different recipients an hour bound one
-// tenant's fan-out, and three hundred attempts an hour bound a producer that
-// keeps aiming at destinations whose sends fail. An operator tunes them from the
-// settings surface without a restart.
+// producer that has begun to loop, and the deployment-wide ten thousand an hour
+// bounds the carrier bill a runaway email producer can run up. Twenty different
+// recipients an hour bound one tenant's sms fan-out, and three hundred attempts
+// an hour bound a producer that keeps aiming at destinations whose sends fail.
+// An operator tunes them from the settings surface without a restart.
 type settingDefaults struct {
 	PerRecipientHourly   int `config:"per-recipient-hourly"`
 	PerRecipientDaily    int `config:"per-recipient-daily"`
+	GlobalHourly         int `config:"global-hourly"`
 	TenantDistinctHourly int `config:"tenant-distinct-hourly"`
 	AttemptHourly        int `config:"attempt-hourly"`
 }
@@ -73,6 +82,7 @@ type settingDefaults struct {
 var defaultSettings = settingDefaults{
 	PerRecipientHourly:   20,
 	PerRecipientDaily:    100,
+	GlobalHourly:         10000,
 	TenantDistinctHourly: 20,
 	AttemptHourly:        300,
 }
@@ -85,6 +95,8 @@ func perRecipientHourlyInDomain(n int) bool {
 func perRecipientDailyInDomain(n int) bool {
 	return n >= minPerRecipientDaily && n <= maxPerRecipientDaily
 }
+
+func globalHourlyInDomain(n int) bool { return n >= minGlobalHourly && n <= maxGlobalHourly }
 
 func tenantDistinctHourlyInDomain(n int) bool {
 	return n >= minTenantDistinctHourly && n <= maxTenantDistinctHourly
@@ -101,12 +113,17 @@ func settingsSchema() settings.Schema {
 		Mounts:    []settings.Mount{{Value: &defaultSettings}},
 		Items: map[string]settings.Item{
 			perRecipientHourlyKey: {
-				Description: "the most sms messages one recipient may be sent in an hour",
+				Description: "the most email or sms messages one recipient may be sent in an hour, counted per channel",
 				Domain:      settings.DomainOf("whole numbers from 1 to 1000", perRecipientHourlyInDomain),
 			},
 			perRecipientDailyKey: {
-				Description: "the most sms messages one recipient may be sent in a day",
+				Description: "the most email or sms messages one recipient may be sent in a day, counted per channel",
 				Domain:      settings.DomainOf("whole numbers from 1 to 10000", perRecipientDailyInDomain),
+			},
+			globalHourlyKey: {
+				Description: "the most email messages the whole deployment may send in an hour, " +
+					"across every recipient and tenant",
+				Domain: settings.DomainOf("whole numbers from 1 to 10000000", globalHourlyInDomain),
 			},
 			tenantDistinctHourlyKey: {
 				Description: "the most different recipients one tenant may be sent an sms message in an hour",
@@ -123,12 +140,14 @@ func settingsSchema() settings.Schema {
 
 // budgetLimits is the limits one dispatch is checked against, read once per
 // dispatch so that a change reaches the next dispatch without a restart. The
-// ceiling is the one count both sending channels share; the other four are this
-// channel's own.
+// ceiling is the one count both sending channels share. The per-recipient and
+// deployment windows bound both external channels, each channel counting its own
+// deliveries; the two fan-out windows are the sms channel's own.
 type budgetLimits struct {
 	ceilingHourly        int
 	perRecipientHourly   int
 	perRecipientDaily    int
+	globalHourly         int
 	tenantDistinctHourly int
 	attemptHourly        int
 }
@@ -159,6 +178,7 @@ func (r *settingReader) limits() budgetLimits {
 		ceilingHourly:        readTuned(r, ceilingHourlyPath, budget.DefaultCeilingHourly, ceilingHourlyInDomain),
 		perRecipientHourly:   readTuned(r, perRecipientHourlyPath, defaultSettings.PerRecipientHourly, perRecipientHourlyInDomain),
 		perRecipientDaily:    readTuned(r, perRecipientDailyPath, defaultSettings.PerRecipientDaily, perRecipientDailyInDomain),
+		globalHourly:         readTuned(r, globalHourlyPath, defaultSettings.GlobalHourly, globalHourlyInDomain),
 		tenantDistinctHourly: readTuned(r, tenantDistinctHourlyPath, defaultSettings.TenantDistinctHourly, tenantDistinctHourlyInDomain),
 		attemptHourly:        readTuned(r, attemptHourlyPath, defaultSettings.AttemptHourly, attemptHourlyInDomain),
 	}

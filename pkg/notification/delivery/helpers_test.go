@@ -672,9 +672,10 @@ type rig struct {
 	// settings is the settings store the assembly's settings module delivers, so
 	// a case can write a budget limit and hold that the pipeline reads it.
 	settings settings.Store
-	// kv is the key-value capability the assembly still delivers. The module no
-	// longer reads it; a case uses it to hold that a spent counter left there is
-	// not consulted.
+	// kv is the key-value capability the assembly delivers. It holds the email
+	// budgets; the sms budgets are counted over the shared ledger instead. A case
+	// also uses it to hold that a spent counter left there is not consulted by
+	// the sms path.
 	kv kv.KV
 	// mailSender is the mail seam stub, nil when the run did not take the email
 	// channel in.

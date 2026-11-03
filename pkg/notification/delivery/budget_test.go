@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -28,18 +29,30 @@ import (
 const (
 	perRecipientHourlySetting   = "notification.delivery.per-recipient-hourly"
 	perRecipientDailySetting    = "notification.delivery.per-recipient-daily"
+	globalHourlySetting         = "notification.delivery.global-hourly"
 	tenantDistinctHourlySetting = "notification.delivery.tenant-distinct-hourly"
 	attemptHourlySetting        = "notification.delivery.attempt-hourly"
 )
 
 // The new budgets declare the defaults the abuse redesign plans: twenty
 // different recipients an hour and three hundred attempts an hour per tenant.
+// The restored email budgets declare the values the module used before the sms
+// path moved to the shared ledger.
 func TestTheNewBudgetsDeclareThePlannedDefaults(t *testing.T) {
 	if got := defaultSettings.TenantDistinctHourly; got != 20 {
 		t.Errorf("the tenant distinct default is %d, want 20", got)
 	}
 	if got := defaultSettings.AttemptHourly; got != 300 {
 		t.Errorf("the attempt default is %d, want 300", got)
+	}
+	if got := defaultSettings.GlobalHourly; got != 10000 {
+		t.Errorf("the deployment-wide email default is %d, want 10000", got)
+	}
+	if got := defaultSettings.PerRecipientHourly; got != 20 {
+		t.Errorf("the per-recipient hourly default is %d, want 20", got)
+	}
+	if got := defaultSettings.PerRecipientDaily; got != 100 {
+		t.Errorf("the per-recipient daily default is %d, want 100", got)
 	}
 }
 
@@ -73,6 +86,7 @@ func (r *rig) liftOtherBudgets(t *testing.T, keep string) {
 	all := map[string]int{
 		perRecipientHourlySetting:   1000,
 		perRecipientDailySetting:    10000,
+		globalHourlySetting:         10000000,
 		tenantDistinctHourlySetting: 10000,
 		attemptHourlySetting:        100000,
 	}
@@ -516,8 +530,8 @@ func TestEverySMSAttemptWritesOneLedgerRow(t *testing.T) {
 }
 
 // A spent counter left in the key-value store by the old budget is not
-// consulted: the ledger is authoritative, so a dispatch the old key would have
-// refused passes.
+// consulted by the sms path: the ledger is authoritative for sms, so a dispatch
+// the old key would have refused passes.
 func TestTheOldKVCountersAreNotConsulted(t *testing.T) {
 	r := newSMSRig(t, nil)
 	ctx := r.tenantCtx("t1")
@@ -540,13 +554,14 @@ func oldRecipientSubject(tenantID, userID string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// A dispatch that resolves to no sms channel spends none of the sms budgets.
+// A dispatch that resolves to no sms channel writes no ledger row, so it spends
+// none of the sms budgets. The email budget is lifted here: it is a separate
+// path, and only the sms ledger is under test.
 func TestAnInAppOrEmailOnlyDispatchDoesNotSpendAnSMSBudget(t *testing.T) {
 	r := newRig(t, func(h *host) { h.mail = true })
 	ctx := r.tenantCtx("t1")
 	r.setChannels(notification.ChannelInApp, notification.ChannelEmail)
-	r.setBudget(t, perRecipientHourlySetting, 1)
-	r.liftOtherBudgets(t, perRecipientHourlySetting)
+	r.liftOtherBudgets(t, "")
 
 	for i := 0; i < 3; i++ {
 		if _, err := r.p.Dispatch(ctx, dispatch("u1", fmt.Sprintf("occ-%d", i), validParams())); err != nil {
@@ -633,6 +648,171 @@ func TestTheBudgetLimitsAreReadFromTheStore(t *testing.T) {
 	r.setBudget(t, perRecipientHourlySetting, 3)
 	if _, err := r.p.Dispatch(ctx, dispatchSMS("u1", "occ-3", "+15550001")); err != nil {
 		t.Fatalf("the dispatch after the limit was raised ended with %v", err)
+	}
+}
+
+// emailCounter reads one email budget counter from the key-value store and
+// reports whether it is present.
+func (r *rig) emailCounter(t *testing.T, key string) (float64, bool) {
+	t.Helper()
+	raw, present, err := r.kv.Get(r.t.Context(), key)
+	if err != nil {
+		t.Fatalf("reading the email counter %q: %v", key, err)
+	}
+	if !present {
+		return 0, false
+	}
+	value, parseErr := strconv.ParseFloat(string(raw), 64)
+	if parseErr != nil {
+		t.Fatalf("parsing the email counter %q = %q: %v", key, raw, parseErr)
+	}
+	return value, true
+}
+
+// emailRecipientHourlyKey is the fixed-window key one recipient's hourly email
+// count lands on. It is the layout the module used before the sms path moved to
+// the shared ledger. The daily and deployment keys follow the same shape.
+func emailRecipientHourlyKey(tenantID, userID string, now time.Time) string {
+	return ModuleName + ":budget:recipient-hourly:" + recipientHash(tenantID, userID) + ":" + now.Format(hourLayout)
+}
+
+func emailRecipientDailyKey(tenantID, userID string, now time.Time) string {
+	return ModuleName + ":budget:recipient-daily:" + recipientHash(tenantID, userID) + ":" + now.Format(dayLayout)
+}
+
+func emailGlobalHourlyKey(now time.Time) string {
+	return ModuleName + ":budget:global-hourly:" + now.Format(hourLayout)
+}
+
+// emailCounterAmong answers the first of the candidate keys that is present,
+// with its value. A case lists the bucket before and after the dispatch so that
+// a dispatch crossing a bucket boundary does not make the case flaky.
+func (r *rig) emailCounterAmong(t *testing.T, keys ...string) (float64, bool) {
+	t.Helper()
+	for _, key := range keys {
+		if value, present := r.emailCounter(t, key); present {
+			return value, true
+		}
+	}
+	return 0, false
+}
+
+// The email per-recipient hourly budget refuses an email delivery past the
+// limit and enqueues nothing for the refused one. Disabling the restored email
+// charge lets the refused dispatch through, which is the failure this case
+// reports.
+func TestTheEmailPerRecipientHourlyBudgetRefusesPastTheLimit(t *testing.T) {
+	r := newRig(t, func(h *host) { h.mail = true })
+	ctx := r.tenantCtx("t1")
+	r.setChannels(notification.ChannelEmail)
+	r.setBudget(t, perRecipientHourlySetting, 2)
+	r.liftOtherBudgets(t, perRecipientHourlySetting)
+
+	for i := 0; i < 2; i++ {
+		if _, err := r.p.Dispatch(ctx, dispatch("u1", fmt.Sprintf("occ-%d", i), validParams())); err != nil {
+			t.Fatalf("email dispatch %d inside the budget ended with %v", i+1, err)
+		}
+	}
+	_, err := r.p.Dispatch(ctx, dispatch("u1", "one-too-many", validParams()))
+	throttled := throttledBy(t, err)
+	if got := throttled.RetryAfter; got <= 0 || got > time.Hour {
+		t.Errorf("RetryAfter is %v, want a positive delay no longer than the hourly window", got)
+	}
+	if got := len(r.queue.enqueued()); got != 2 {
+		t.Errorf("the queue holds %d jobs, want 2: a refused email dispatch must not enqueue", got)
+	}
+}
+
+// The email deployment-wide budget refuses an email delivery once the whole
+// deployment has reached it, even when every recipient is still inside its own
+// window.
+func TestTheEmailGlobalHourlyBudgetRefusesPastTheLimit(t *testing.T) {
+	r := newRig(t, func(h *host) { h.mail = true })
+	ctx := r.tenantCtx("t1")
+	r.setChannels(notification.ChannelEmail)
+	r.liftOtherBudgets(t, globalHourlySetting)
+	r.setBudget(t, globalHourlySetting, 1)
+
+	if _, err := r.p.Dispatch(ctx, dispatch("u1", "occ-1", validParams())); err != nil {
+		t.Fatalf("the first email dispatch inside the deployment budget ended with %v", err)
+	}
+	_, err := r.p.Dispatch(ctx, dispatch("u2", "occ-2", validParams()))
+	throttledBy(t, err)
+	if got := len(r.queue.enqueued()); got != 1 {
+		t.Errorf("the queue holds %d jobs, want 1: the deployment-wide refusal must not enqueue", got)
+	}
+}
+
+// An email delivery charges the key-value counters the module used before the
+// sms path moved to the ledger: the recipient's hourly and daily windows and the
+// deployment window each hold one for the delivery. A test that stops charging
+// email finds no counter and fails here.
+func TestAnEmailDeliveryChargesTheKeyValueCounters(t *testing.T) {
+	r := newRig(t, func(h *host) { h.mail = true })
+	ctx := r.tenantCtx("t1")
+	r.setChannels(notification.ChannelEmail)
+	r.liftOtherBudgets(t, "")
+
+	before := time.Now().UTC()
+	if _, err := r.p.Dispatch(ctx, dispatch("u1", "occ-1", validParams())); err != nil {
+		t.Fatalf("the email dispatch ended with %v", err)
+	}
+	after := time.Now().UTC()
+	checks := []struct {
+		name string
+		keys []string
+	}{
+		{"recipient hourly", []string{
+			emailRecipientHourlyKey("t1", "u1", before), emailRecipientHourlyKey("t1", "u1", after),
+		}},
+		{"recipient daily", []string{
+			emailRecipientDailyKey("t1", "u1", before), emailRecipientDailyKey("t1", "u1", after),
+		}},
+		{"deployment", []string{emailGlobalHourlyKey(before), emailGlobalHourlyKey(after)}},
+	}
+	for _, check := range checks {
+		value, present := r.emailCounterAmong(t, check.keys...)
+		if !present {
+			t.Errorf("the %s email counter is absent: the delivery charged nothing", check.name)
+			continue
+		}
+		if value != 1 {
+			t.Errorf("the %s email counter is %g, want 1", check.name, value)
+		}
+	}
+}
+
+// Email and sms do not share the sms ledger: an email delivery charges its own
+// key-value counters and writes no ledger row, while an sms dispatch writes one.
+func TestAnEmailDeliveryWritesNoSMSLedgerRow(t *testing.T) {
+	r := newRig(t, func(h *host) { h.mail = true; h.sms = true })
+	ctx := r.tenantCtx("t1")
+	r.liftOtherBudgets(t, "")
+
+	r.setChannels(notification.ChannelEmail)
+	before := time.Now().UTC()
+	if _, err := r.p.Dispatch(ctx, dispatch("u1", "occ-email", validParams())); err != nil {
+		t.Fatalf("the email dispatch ended with %v", err)
+	}
+	after := time.Now().UTC()
+	if _, present := r.emailCounterAmong(t,
+		emailRecipientHourlyKey("t1", "u1", before), emailRecipientHourlyKey("t1", "u1", after),
+	); !present {
+		t.Error("the email dispatch charged no key-value counter, so the ledger assertion would prove nothing")
+	}
+	if rows := r.budgetRows("t1"); len(rows) != 0 {
+		t.Errorf("the ledger holds %+v after an email delivery, want no sms row", rows)
+	}
+	if got := r.ceilingCount(t); got != 0 {
+		t.Errorf("the shared ceiling counts %d after an email delivery, want 0", got)
+	}
+
+	r.setChannels(notification.ChannelSMS)
+	if _, err := r.p.Dispatch(ctx, dispatch("u1", "occ-sms", validParams())); err != nil {
+		t.Fatalf("the sms dispatch ended with %v", err)
+	}
+	if rows := r.budgetRows("t1"); len(rows) != 1 {
+		t.Errorf("the ledger holds %d rows after an sms dispatch, want 1", len(rows))
 	}
 }
 

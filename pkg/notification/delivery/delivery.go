@@ -31,9 +31,11 @@
 //
 // The module declares no configuration namespace and reads no input item: the
 // parameters of a delivery job are fixed by this module at enqueue time, not
-// taken from configuration. It does declare four runtime settings — two
-// per-recipient delivery budgets and two per-tenant fan-out budgets — and checks
-// them against the shared sms ledger before a dispatch is queued.
+// taken from configuration. It does declare the delivery-budget settings — the
+// per-recipient windows and the deployment window that bound both external
+// channels, and the per-tenant fan-out windows for sms — and checks them before
+// a dispatch is queued: email on the key-value counters, sms over the shared
+// ledger.
 package delivery
 
 import (
@@ -53,6 +55,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
+	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
@@ -122,18 +125,20 @@ var (
 // Module is the descriptor a host registers.
 //
 // The queue, the handler registration face, the database, the tenant roster, the
-// preferences seam, the inbox seam, the message localizer, the account store and
-// the shared sms ledger are all required and hard. A pipeline with no queue has
-// nowhere to put a dispatch, one with no registration face cannot be run, one
-// with no table has nowhere to record a send, one with no roster carries no
-// filter to scope its ledger writes by tenant, one with no preferences cannot
-// resolve a recipient's channels, one with no inbox cannot write an in-app
-// message, one with no localizer cannot render one, one with no account store
-// cannot tell whether a destination belongs to the recipient, and one with no
-// ledger cannot bound an sms attempt. The ledger and the account store are hard
-// requirements rather than absences the module works around: a delivery budget
-// that cannot count and an ownership rule that cannot read would each let a
-// message through, which is the direction the requirement forbids.
+// preferences seam, the inbox seam, the message localizer, the account store, the
+// key-value capability and the shared sms ledger are all required and hard. A
+// pipeline with no queue has nowhere to put a dispatch, one with no registration
+// face cannot be run, one with no table has nowhere to record a send, one with no
+// roster carries no filter to scope its ledger writes by tenant, one with no
+// preferences cannot resolve a recipient's channels, one with no inbox cannot
+// write an in-app message, one with no localizer cannot render one, one with no
+// account store cannot tell whether a destination belongs to the recipient, one
+// with no key-value store cannot count an email delivery's budget, and one with
+// no ledger cannot bound an sms attempt. The key-value store, the ledger and the
+// account store are hard requirements rather than absences the module works
+// around: a delivery budget that cannot count and an ownership rule that cannot
+// read would each let a message through, which is the direction the requirement
+// forbids.
 //
 // The settings store is optional: a dispatch reads its budget limits through it,
 // and an absence is a legal assembly in which every budget reads its declared
@@ -171,6 +176,7 @@ func Module() core.Module {
 			{Token: (*notification.Inbox)(nil)},
 			{Token: (*i18n.Localizer)(nil)},
 			{Token: (*authn.Accounts)(nil)},
+			{Token: (*kv.KV)(nil)},
 			{Token: (*budget.Store)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*observability.MeterProvider)(nil), Optional: true},
@@ -266,6 +272,10 @@ type pipeline struct {
 	// anyone else's, and it is a hard dependency: without it a dispatch carrying
 	// a destination cannot be checked and is refused.
 	accounts authn.Accounts
+	// counters holds the email budgets, one fixed window per key. It is the
+	// key-value capability, whose increment is atomic across replicas. The sms
+	// budgets are counted over the shared ledger instead.
+	counters kv.KV
 	// attempts is the shared sms ledger. Every sms attempt is written here, and
 	// every sms budget is a count over its rows; the authn capability reads and
 	// writes the same ledger, so the cross-channel ceiling is one count. The
@@ -330,6 +340,10 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the account store the destination rule reads: %w", ModuleName, err)
 	}
+	counters, err := core.Resolve[kv.KV](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the key-value counters the email budget is counted on: %w", ModuleName, err)
+	}
 	types, err := collectTaxonomy(reg)
 	if err != nil {
 		return nil, err
@@ -373,6 +387,7 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 		inbox:     inbox,
 		localizer: localizer,
 		accounts:  accounts,
+		counters:  counters,
 		ledger:    &ledger{handle: database.DB()},
 		taxonomy:  types,
 		seams:     channelSeams{mailer: mailer, registry: registry, sender: sender},

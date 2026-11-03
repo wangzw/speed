@@ -11,6 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
+	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
@@ -50,7 +51,8 @@ func TestTheModuleDeliversTheDispatcherExclusively(t *testing.T) {
 // The descriptor declares the dependencies the design fixes: the queue, the
 // handler registration face, the database, the tenant roster, the preferences
 // seam, the inbox seam, the localizer, the account store the destination rule
-// reads and the shared sms ledger are required; the settings store, the metric
+// reads, the key-value counters the email budget is counted on and the shared
+// sms ledger are required; the settings store, the metric
 // capability, the logging capability, the mail sender and the two sms seams are
 // optional, one per channel that sends outside this process. It declares nothing
 // else — not an entry point, which this module mounts no route on, and not an
@@ -66,6 +68,7 @@ func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 		(*notification.Inbox)(nil),
 		(*i18n.Localizer)(nil),
 		(*authn.Accounts)(nil),
+		(*kv.KV)(nil),
 		(*budget.Store)(nil),
 	}
 	for _, token := range required {
@@ -99,6 +102,28 @@ func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 	if len(m.Requires) != len(required)+len(optional) {
 		t.Errorf("the descriptor declares %d requirements, want %d: %+v",
 			len(m.Requires), len(required)+len(optional), m.Requires)
+	}
+}
+
+// TestNotificationDeliveryRequiresNoHumanProof holds the other side of the
+// proof-consumption table: a notification sms is a business message, not a
+// verification message a person asked for, so the module takes up no
+// authn.HumanVerifier and an sms dispatch reaches the carrier without a proof.
+func TestNotificationDeliveryRequiresNoHumanProof(t *testing.T) {
+	if found, _ := requirementOf(Module(), core.Token((*authn.HumanVerifier)(nil))); found {
+		t.Fatalf("the descriptor declares authn.HumanVerifier, want none: a business message carries no proof")
+	}
+	r := newSMSRig(t, nil)
+	ctx := r.tenantCtx("t1")
+
+	if _, err := r.p.Dispatch(ctx, dispatchSMS("u1", "occ-1", "+15550001")); err != nil {
+		t.Fatalf("the dispatch ended with %v", err)
+	}
+	if err := r.handleLastJob(t, ctx); err != nil {
+		t.Fatalf("the delivery ended with %v, want the sms sent without a proof", err)
+	}
+	if got := r.smsSender.sendCount(); got != 1 {
+		t.Errorf("the sms carrier was handed %d messages, want one", got)
 	}
 }
 

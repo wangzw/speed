@@ -691,9 +691,9 @@ const deployValues = {
   googleClientSecret: 'review-google-secret',
   githubClientID: 'review-github-client',
   githubClientSecret: 'review-github-secret',
-  // The deploy journey keeps the human-verification gate off, which is the
-  // entrypoint's default. The Turnstile values are rendered empty because the
-  // entrypoint writes them only in the mode that reads them.
+  // The deploy journey sets the human-verification gate off explicitly; the
+  // entrypoint defaults to pow. The Turnstile values are rendered empty because
+  // the entrypoint writes them only in the mode that reads them.
   humanverifyMode: 'off',
   turnstileSiteKey: '',
   turnstileSecretKey: '',

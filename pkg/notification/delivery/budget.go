@@ -47,30 +47,109 @@ const (
 	dimensionAttemptHourly        = "attempt-hourly"
 )
 
-// smsAttempt reports whether one dispatch will attempt the sms channel: the
-// recipient's effective channels include sms and this assembly delivered both
-// sms seams. A dispatch that resolves to in_app alone, to email alone, or to an
-// sms channel whose seam this assembly did not deliver makes no sms attempt and
-// therefore spends none of the sms budgets.
-//
-// The preference matrix is read here, at submission time, which is the one read
-// this module makes of it before the handler's own. A preference that changes
-// between the two is not reconciled: the budget was charged for what the matrix
-// said when the dispatch arrived.
-func (p *pipeline) smsAttempt(ctx context.Context, d notification.Dispatch) (bool, error) {
+// externalAttempts is which external channels one dispatch will attempt: a
+// channel is attempted when the recipient's effective channels name it and this
+// assembly delivered the seams it sends through. A dispatch that resolves to
+// in_app alone, or to an external channel whose seam this assembly did not
+// deliver, makes no external attempt and therefore spends none of the budgets.
+type externalAttempts struct {
+	email bool
+	sms   bool
+}
+
+// channelAttempts reads the recipient's effective channels once and answers
+// which external channels the dispatch will attempt. It is the one read of the
+// preference matrix this module makes before the handler's own. A preference
+// that changes between the two is not reconciled: the budget was charged for
+// what the matrix said when the dispatch arrived.
+func (p *pipeline) channelAttempts(ctx context.Context, d notification.Dispatch) (externalAttempts, error) {
 	channels, err := p.prefs.Effective(ctx, d.Recipient.UserID, d.TypeKey)
 	if err != nil {
-		return false, fmt.Errorf("%s: resolving the effective channels of %q: %w", ModuleName, d.TypeKey, err)
+		return externalAttempts{}, fmt.Errorf("%s: resolving the effective channels of %q: %w", ModuleName, d.TypeKey, err)
 	}
-	if !p.seams.smsReady() {
-		return false, nil
-	}
+	var attempts externalAttempts
 	for _, ch := range channels {
-		if ch == notification.ChannelSMS {
-			return true, nil
+		switch ch {
+		case notification.ChannelEmail:
+			if p.seams.emailReady() {
+				attempts.email = true
+			}
+		case notification.ChannelSMS:
+			if p.seams.smsReady() {
+				attempts.sms = true
+			}
 		}
 	}
-	return false, nil
+	return attempts, nil
+}
+
+// budgetKeyPrefix starts every email counter's key. The key-value store has no
+// namespace of its own, so each key carries the module name.
+const budgetKeyPrefix = ModuleName + ":budget:"
+
+// The bucket widths and key layouts of the email budgets. A budget is a fixed
+// window: one key per bucket, and a new bucket starts from zero. The layout names
+// the bucket, so two dispatches in one window land on one key.
+const (
+	hourlyBucket = time.Hour
+	dailyBucket  = 24 * time.Hour
+	hourLayout   = "2006010215"
+	dayLayout    = "20060102"
+)
+
+// emailBudgetCheck is one window an email delivery is charged against.
+type emailBudgetCheck struct {
+	key    string
+	limit  int
+	bucket time.Duration
+}
+
+// chargeEmailBudget charges one email delivery against the per-recipient windows
+// and then the deployment-wide one, in that order, and returns the first budget
+// that the charge takes over as a throttled error. The increment happens before
+// the comparison, so a refused dispatch still spends: counting only what was let
+// through would let a caller already over its limit retry without paying.
+//
+// The email budgets keep the fixed-window key-value counters the module used
+// before the sms path moved to the shared ledger. Only an email delivery is
+// charged here: an sms attempt is counted and charged over the ledger, and the
+// two channels use the same setting values but their own counters. One email
+// delivery is one carrier call and spends one unit.
+//
+// A budget that cannot be counted is an outage and not a pass: the error carries
+// authn.ErrUnavailable, so the rejection direction is to refuse rather than to
+// let an uncounted message through.
+func (p *pipeline) chargeEmailBudget(ctx context.Context, id tenant.ID, d notification.Dispatch) error {
+	limits := p.settings.limits()
+	now := time.Now().UTC()
+	recipient := recipientHash(string(id), d.Recipient.UserID)
+	checks := []emailBudgetCheck{
+		{key: budgetKeyPrefix + "recipient-hourly:" + recipient + ":" + now.Format(hourLayout), limit: limits.perRecipientHourly, bucket: hourlyBucket},
+		{key: budgetKeyPrefix + "recipient-daily:" + recipient + ":" + now.Format(dayLayout), limit: limits.perRecipientDaily, bucket: dailyBucket},
+		{key: budgetKeyPrefix + "global-hourly:" + now.Format(hourLayout), limit: limits.globalHourly, bucket: hourlyBucket},
+	}
+	for _, c := range checks {
+		count, err := p.counters.IncrByFloatWithTTL(ctx, c.key, 1, c.bucket)
+		if err != nil {
+			return fmt.Errorf("%w: %s: counting an email delivery budget: %w", authn.ErrUnavailable, ModuleName, err)
+		}
+		if count > float64(c.limit) {
+			return &authn.ThrottledError{RetryAfter: untilNextBucket(now, c.bucket)}
+		}
+	}
+	return nil
+}
+
+// untilNextBucket is how long the bucket a count fell into has left: the delay a
+// throttled rejection states, never below one second so that a client does not
+// retry in the same bucket.
+func untilNextBucket(now time.Time, bucket time.Duration) time.Duration {
+	next := now.Truncate(bucket).Add(bucket)
+	wait := next.Sub(now)
+	if wait < time.Second {
+		return time.Second
+	}
+	return wait
 }
 
 // budgetCheck is one window a dispatch is compared against.

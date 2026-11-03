@@ -21,10 +21,10 @@ type deliveryPayload struct {
 	Attempt  int64                 `json:"attempt,omitempty"`
 }
 
-// Dispatch validates, charges the sms budgets and enqueues one dispatch and
+// Dispatch validates, charges the delivery budgets and enqueues one dispatch and
 // returns its job identifier; see notification.Dispatcher.
 //
-// The operations are fixed: shape, taxonomy, encode, the sms budget, then
+// The operations are fixed: shape, taxonomy, encode, the delivery budgets, then
 // enqueue. It renders no text and writes no per-channel ledger row — the
 // per-channel work happens when the job is consumed. The tenant comes from the
 // context, and a context carrying none is refused with the tenant capability's
@@ -39,13 +39,16 @@ type deliveryPayload struct {
 // and nothing is enqueued. A dispatch that carries no destination is unaffected;
 // a channel that needs one and finds none fails there, as before.
 //
-// Only an sms attempt is budgeted, because only an sms attempt is written to the
-// shared ledger: a dispatch that resolves to in_app or email alone sends no sms
-// message and spends none of the sms budgets. When sms is among the effective
-// channels and this assembly can send it, the budgets are checked and one ledger
-// row is written before the job is queued. A spent budget answers a
+// Both external channels are budgeted before the job is queued, each on the
+// store that fits it. An email delivery is charged on the key-value counters'
+// fixed windows — per recipient hourly and daily, then deployment-wide hourly —
+// because email has no ledger of its own. An sms attempt is counted over the
+// shared SMS ledger, where the cross-channel ceiling and the channel's own
+// per-recipient and per-tenant windows live, and one ledger row is written for
+// it. A dispatch that resolves to in_app alone, or to an external channel whose
+// seam this assembly did not deliver, spends nothing. A spent budget answers a
 // *authn.ThrottledError carrying RetryAfter and nothing is enqueued. The job
-// carries the row's identifier so the consumer can refund it on a certain
+// carries the sms row's identifier so the consumer can refund it on a certain
 // failure.
 //
 // The job's idempotency key is the per-channel formula with the channel
@@ -71,12 +74,17 @@ func (p *pipeline) Dispatch(ctx context.Context, d notification.Dispatch) (jobs.
 	if err != nil {
 		return "", fmt.Errorf("%s: deriving the idempotency key of %q: %w", ModuleName, d.TypeKey, err)
 	}
-	sms, err := p.smsAttempt(ctx, d)
+	attempts, err := p.channelAttempts(ctx, d)
 	if err != nil {
 		return "", err
 	}
+	if attempts.email {
+		if err = p.chargeEmailBudget(ctx, id, d); err != nil {
+			return "", err
+		}
+	}
 	var attempt budget.ID
-	if sms {
+	if attempts.sms {
 		if attempt, err = p.chargeSMSAttempt(ctx, id, d); err != nil {
 			return "", err
 		}
