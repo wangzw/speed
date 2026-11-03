@@ -58,6 +58,7 @@
     "rbac.permission_denied": "You do not have permission to do that.",
     "settings.bad_request": "Something in what you submitted was not valid. Check the form and try again.",
     "settings.invalid_value": "That value is outside the range this setting allows.",
+    "settings.protected": "This setting is protected by the deployment and cannot be changed.",
     "sms.bad_request": "Something in what you submitted was not valid. Check the form and try again.",
     "sms.config_template": "This template is backed by a configuration and cannot be changed here.",
     "sms.conflict": "A template with that name already exists.",
