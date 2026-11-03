@@ -11,18 +11,21 @@ package main
 //   - which removals of a membership a tenant refuses (authn.MembershipGuard),
 //   - the per-tenant lock that judges a tenant's administrator floor
 //     (authz.TenantLock),
-//   - which domains the management surface may not change (authz.WriteGuard).
+//   - which domains the management surface may not change (authz.WriteGuard),
+//   - which domains' settings may not be changed through the tenant surface
+//     (authz.WriteSettings).
 //
 // The demo host answers the first five from one module because they are one
 // policy: system and every personal tenant are protected; a tenant opens with a
 // tenant-admin bound to its creator; platform administration is confined to
 // accounts that belong to system; a personal tenant refuses every membership
 // removal while an ordinary tenant keeps at least one tenant-admin; and one
-// per-tenant lock carries the floor both of those guards judge. The last is a
-// module of its own: tenant.WriteGuard and authz.WriteGuard both name their
-// method Denied, and one Go type cannot carry both. The tenancy product holds
-// one piece of state, the removal lock, because the policy module's binding
-// delete and both guards must wait on the same object.
+// per-tenant lock carries the floor both of those guards judge. The last two are
+// modules of their own: tenant.WriteGuard, authz.WriteGuard and
+// authz.WriteSettings each name their method Denied, and one Go type cannot
+// carry two methods named Denied. The tenancy product holds one piece of state,
+// the removal lock, because the policy module's binding delete and both guards
+// must wait on the same object.
 
 import (
 	"context"
@@ -50,13 +53,20 @@ const tenancyModuleName = "host.tenancy"
 // authz.WriteGuard each declare one.
 const policyWriteGuardModuleName = tenancyModuleName + ".policy-write"
 
-// init registers the two modules. The tenancy module is named on serve, which
+// settingsWriteGuardModuleName is the name of the module that delivers the
+// settings surface's write guard. It is a module of its own for the same reason:
+// authz.WriteSettings and authz.WriteGuard each declare a Denied method, and one
+// Go type cannot carry both.
+const settingsWriteGuardModuleName = tenancyModuleName + ".settings-write"
+
+// init registers the three modules. The tenancy module is named on serve, which
 // stands the management surface up, and on seed, which writes the platform
-// administrator binding that asks the membership checker. The write-guard module
-// is named on serve, where the management surface asks it.
+// administrator binding that asks the membership checker. The two write-guard
+// modules are named on serve, where the management surfaces ask them.
 func init() {
 	core.ProcessRegistry.Register(tenancyModule())
 	core.ProcessRegistry.Register(policyWriteGuardModule())
+	core.ProcessRegistry.Register(settingsWriteGuardModule())
 }
 
 // tenancyModule delivers the host's tenancy-policy seams, including the
@@ -274,6 +284,39 @@ var _ authz.WriteGuard = policyWriteGuard{}
 
 // Denied implements authz.WriteGuard.
 func (policyWriteGuard) Denied(_ context.Context, tenantID string, _ authz.WriteOp) (bool, error) {
+	return isPersonalTenantID(tenantID), nil
+}
+
+// settingsWriteGuardModule delivers authz.WriteSettings. It is a module of its
+// own because authz.WriteSettings and authz.WriteGuard both declare a Denied
+// method, and one Go type cannot implement both.
+func settingsWriteGuardModule() core.Module {
+	return core.Module{
+		Name: settingsWriteGuardModuleName,
+		Provides: []core.Provision{
+			{Token: (*authz.WriteSettings)(nil)},
+		},
+		New: func(context.Context, *core.Registry) (any, error) {
+			return settingsWriteGuard{}, nil
+		},
+	}
+}
+
+// settingsWriteGuard implements authz.WriteSettings: the tenant management
+// surface may not write the settings of a domain whose identifier starts with
+// the personal prefix. That domain's settings belong to the host that built the
+// space, and its tenant administrator governs a business tenant rather than the
+// personal workspace.
+//
+// The answer reads the identifier alone and never fails. The platform-only
+// namespaces are a separate rule the settings module holds itself, so this seam
+// only refuses the personal domain.
+type settingsWriteGuard struct{}
+
+var _ authz.WriteSettings = settingsWriteGuard{}
+
+// Denied implements authz.WriteSettings.
+func (settingsWriteGuard) Denied(_ context.Context, tenantID string) (bool, error) {
 	return isPersonalTenantID(tenantID), nil
 }
 

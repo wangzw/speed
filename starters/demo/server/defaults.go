@@ -219,12 +219,15 @@ func platformDefaultsDocument() map[string]any {
 		},
 
 		// The authorization layer: the guard enforces the API endpoint, the
-		// management routes mount on the admin endpoint, and every authenticated
-		// caller reads its own permissions from the API endpoint.
+		// platform management routes mount on the admin endpoint, the tenant
+		// management routes mount on the API endpoint where the tenant layers
+		// reach them, and every authenticated caller reads its own permissions
+		// from the API endpoint.
 		"authz": map[string]any{
-			"guard": map[string]any{"endpoints": []any{"api"}},
-			"admin": map[string]any{"endpoints": []any{"admin"}},
-			"self":  map[string]any{"endpoints": []any{"api"}},
+			"guard":       map[string]any{"endpoints": []any{"api"}},
+			"admin":       map[string]any{"endpoints": []any{"admin"}},
+			"self":        map[string]any{"endpoints": []any{"api"}},
+			"tenantadmin": map[string]any{"endpoints": []any{"api"}},
 		},
 
 		// The journal records the writes this product carries that no capability
@@ -250,8 +253,12 @@ func platformDefaultsDocument() map[string]any {
 			"address-endpoints": []any{"account"},
 		},
 
+		// The settings surfaces: the platform management routes mount on the admin
+		// endpoint, the tenant management routes on the API endpoint where the
+		// tenant layers reach them.
 		"settings": map[string]any{
-			"admin": map[string]any{"endpoints": []any{"admin"}},
+			"admin":       map[string]any{"endpoints": []any{"admin"}},
+			"tenantadmin": map[string]any{"endpoints": []any{"api"}},
 		},
 
 		// The feature document's endpoint is guarded by the authentication

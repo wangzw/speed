@@ -528,6 +528,33 @@ func TestThePolicyWriteGuardRefusesEveryPersonalDomainWrite(t *testing.T) {
 	}
 }
 
+// TestTheSettingsWriteGuardRefusesAPersonalDomainWrite holds the host's
+// protection of a personal tenant's settings: a write through the tenant
+// settings surface is refused in a domain whose identifier starts with the
+// personal prefix, and an ordinary or system domain is left alone.
+func TestTheSettingsWriteGuardRefusesAPersonalDomainWrite(t *testing.T) {
+	guard := settingsWriteGuard{}
+	ctx := context.Background()
+	for _, domain := range []string{personalIDPrefix + "acct-1", personalIDPrefix} {
+		denied, err := guard.Denied(ctx, domain)
+		if err != nil {
+			t.Fatalf("Denied(%q): %v", domain, err)
+		}
+		if !denied {
+			t.Errorf("Denied(%q) = false, want the personal domain refused", domain)
+		}
+	}
+	for _, domain := range []string{"acme", string(authz.PlatformDomain)} {
+		denied, err := guard.Denied(ctx, domain)
+		if err != nil {
+			t.Fatalf("Denied(%q): %v", domain, err)
+		}
+		if denied {
+			t.Errorf("Denied(%q) = true, want an ordinary domain allowed", domain)
+		}
+	}
+}
+
 // TestTheMembershipGuardRefusesAPersonalDomainRemoval holds the personal tenant
 // as a single-member space: a removal of any membership in it is refused, even
 // when another tenant-administrator binding would satisfy the last-admin floor.
@@ -578,10 +605,11 @@ func TestTheMembershipGuardRefusesTheLastTenantAdmin(t *testing.T) {
 	}
 }
 
-// TestTheHostModulesProvideTheTwoGuards holds the wiring: the tenancy module
-// delivers the membership guard, and a module of its own delivers the policy
-// write guard, because one Go type cannot carry both Denied methods.
-func TestTheHostModulesProvideTheTwoGuards(t *testing.T) {
+// TestTheHostModulesProvideTheGuards holds the wiring: the tenancy module
+// delivers the membership guard, and modules of their own deliver the policy
+// and settings write guards, because one Go type cannot carry more than one
+// Denied method.
+func TestTheHostModulesProvideTheGuards(t *testing.T) {
 	provides := func(module core.Module, token any) bool {
 		want := reflect.TypeOf(token)
 		for _, provision := range module.Provides {
@@ -597,9 +625,16 @@ func TestTheHostModulesProvideTheTwoGuards(t *testing.T) {
 	if !provides(policyWriteGuardModule(), (*authz.WriteGuard)(nil)) {
 		t.Error("the policy write guard module does not provide authz.WriteGuard")
 	}
+	if !provides(settingsWriteGuardModule(), (*authz.WriteSettings)(nil)) {
+		t.Error("the settings write guard module does not provide authz.WriteSettings")
+	}
 	if !strings.Contains(policyWriteGuardModuleName, tenancyModuleName) {
 		t.Errorf("the policy write guard module is named %q, want a name under %q",
 			policyWriteGuardModuleName, tenancyModuleName)
+	}
+	if !strings.Contains(settingsWriteGuardModuleName, tenancyModuleName) {
+		t.Errorf("the settings write guard module is named %q, want a name under %q",
+			settingsWriteGuardModuleName, tenancyModuleName)
 	}
 }
 

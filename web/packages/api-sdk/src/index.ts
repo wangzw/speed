@@ -1685,6 +1685,20 @@ export interface AuthzAdminGrantView {
 }
 
 /**
+ * One role binding: an account holds a role within a tenant.
+ */
+export interface AuthzTenantAdminBindingView {
+  /** The account the role is bound to. */
+  account: string;
+  /** When the binding was written, as an RFC 3339 instant in UTC. */
+  granted_at: string;
+  /** The role bound to the account. */
+  role: string;
+  /** The tenant the binding belongs to. */
+  tenant: string;
+}
+
+/**
  * One page of a tenant's invitations together with the cursor of the next page.
  */
 export interface AuthnInvitePage {
@@ -1748,6 +1762,97 @@ export interface AuthnAdminMemberWrite {
 export interface AuthnAdminMemberSSOExempt {
   /** True exempts the member; false clears the exemption. */
   sso_exempt: boolean;
+}
+
+/**
+ * One permission of the tenant-governed set.
+ */
+export interface AuthzTenantAdminPermissionView {
+  /** The permission's description, rendered in the request's language from the key the declaring module gave it. Empty when the assembly delivers no message localizer or the module gave the permission no description key. A key no catalog carries comes back as the key itself, the i18n fallback. */
+  description: string;
+  /** The permission name as the catalog declares it, for example authz.tenant.role.read. Only the authn.* permissions are the same vocabulary as authn.Action and carry its string. */
+  permission: string;
+}
+
+/**
+ * One role of a tenant as the role routes report it.
+ */
+export interface AuthzTenantAdminRoleView {
+  /** True for a builtin role: the tenant management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared. */
+  builtin: boolean;
+  /** When the role was written, as an RFC 3339 instant in UTC. */
+  created_at: string;
+  /** The i18n key of the role's description text; stored as given and not resolved by this surface. */
+  description_key: string;
+  /** The role name within the tenant. */
+  role: string;
+  /** The tenant the role belongs to. */
+  tenant: string;
+}
+
+/**
+ * The body of a role write: the role's description key only. The builtin mark is not part of the body; a member sent under that name reaches nothing.
+ */
+export interface AuthzTenantAdminRoleWrite {
+  /** The i18n key of the role's description text. It is stored as given and not resolved by this surface. */
+  description_key: string;
+  [key: string]: unknown;
+ }
+
+/**
+ * One permission grant of a role: the (resource, action) pair the policy engine matches on.
+ */
+export interface AuthzTenantAdminGrantView {
+  /** The action the grant matches on. */
+  action: string;
+  /** When the grant was written, as an RFC 3339 instant in UTC. */
+  created_at: string;
+  /** The resource the grant matches on. */
+  resource: string;
+  /** The role holding the grant. */
+  role: string;
+  /** The tenant the grant belongs to. */
+  tenant: string;
+}
+
+/**
+ * The layer the reported value comes from: "tenant" when this tenant layer holds an explicit row, "global" when it does not and the global layer does, "default" when neither does and the value is the declared default.
+ */
+export type SettingsTenantAdminSettingSource = typeof SettingsTenantAdminSettingSource[keyof typeof SettingsTenantAdminSettingSource];
+
+
+export const SettingsTenantAdminSettingSource = {
+  tenant: 'tenant',
+  global: 'global',
+  default: 'default',
+} as const;
+
+/**
+ * One declared setting item as the tenant management surface shows it. The declaration fields come from the key table; written and has_row come from that tenant layer's rows, and value and source from the resolved read. Every value-bearing field is text in the declared type's own form, so a duration reads as "5m0s" rather than as a count of nanoseconds.
+ */
+export interface SettingsTenantAdminSetting {
+  /** The declared default in the declared type's text form, empty for a sensitive item */
+  default: string;
+  /** The human-readable text the declaring module gave the item. */
+  description: string;
+  /** The declared rule over the item's values, empty when every value of the type is admitted */
+  domain: string;
+  /** Whether the tenant layer holds a row for the item. For a non-sensitive item, written is empty both when no row is held and when the row's text is empty; a sensitive item's written is the mask string whether or not a row exists. */
+  has_row: boolean;
+  /** The full setting key: the declaring module's namespace joined with the item's own segment by a dot. */
+  key: string;
+  /** The module that declared the item */
+  namespace: string;
+  /** Whether the item is a credential. A sensitive item's default is empty and its written and value carry a fixed mask string; has_row still reports whether the tenant layer holds a row. */
+  sensitive: boolean;
+  /** The layer the reported value comes from: "tenant" when this tenant layer holds an explicit row, "global" when it does not and the global layer does, "default" when neither does and the value is the declared default. */
+  source: SettingsTenantAdminSettingSource;
+  /** The declared type's name as reflection reports it, such as "string", "int", "bool" or "time.Duration"; the item's values are stored and rendered in that type's text form. */
+  type: string;
+  /** The text the item resolves to after the three-level fallback, the mask string for a sensitive item */
+  value: string;
+  /** The text the tenant layer holds, the mask string for a sensitive item */
+  written: string;
 }
 
 /**
@@ -2598,6 +2703,22 @@ export type TenantAdminTenantsSetStatusBody = {
   status: TenantAdminTenantsSetStatusBodyStatus;
 };
 
+/**
+ * The tenant's bindings.
+ */
+export type AuthzTenantadminBindingsList200 = {
+  /** Every binding of the tenant, ordered by account and then role. */
+  bindings: AuthzTenantAdminBindingView[];
+};
+
+/**
+ * The account's bindings within the tenant.
+ */
+export type AuthzTenantadminBindingsOf200 = {
+  /** Every binding the account holds within the tenant, ordered by role name. */
+  bindings: AuthzTenantAdminBindingView[];
+};
+
 export type AuthnInviteListParams = {
 /**
  * Maximum number of invitations to return. Omitted or 0 serves 100; a value above 1000 is capped at 1000. A negative or non-integer value is refused with 400.
@@ -2632,6 +2753,35 @@ limit?: number;
  * The account identifier of the last membership on the previous page, or empty for the first page.
  */
 after?: string;
+};
+
+/**
+ * The tenant-governed permissions.
+ */
+export type AuthzTenantadminPermissionsList200 = {
+  /** Every permission of the governed set, one view each, in permission-name order. */
+  permissions: AuthzTenantAdminPermissionView[];
+};
+
+/**
+ * The tenant's roles.
+ */
+export type AuthzTenantadminRolesList200 = {
+  /** Every role of the tenant, ordered by role name. */
+  roles: AuthzTenantAdminRoleView[];
+};
+
+/**
+ * The role's grants.
+ */
+export type AuthzTenantadminGrantsList200 = {
+  /** Every grant the role holds, ordered by resource and then action. */
+  grants: AuthzTenantAdminGrantView[];
+};
+
+export type SettingsTenantadminSettingsSetBody = {
+  /** The value to store, in the JSON form the item's declared type is read from: a string for a string, duration, or text-decoding item, a number for a numeric item, a boolean for a bool item. It is encoded under the declared type and then held to the item's declared domain; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. */
+  value: unknown;
 };
 
 /**
@@ -9553,6 +9703,280 @@ export const useTenantAdminTenantsSetStatus = <TError = Problem | void,
     }
 
 /**
+ * Lists every role binding of the tenant, ordered by account identifier and then role name, one view each. A tenant with no binding yields an empty list. The list is not paginated.
+ * @summary List every role binding of a tenant
+ */
+export const authzTenantadminBindingsList = (
+    tenant: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthzTenantadminBindingsList200>(
+      {url: `/api/v1/tenants/${tenant}/bindings`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthzTenantadminBindingsListQueryKey = (tenant: string,) => {
+    return [
+    `/api/v1/tenants/${tenant}/bindings`
+    ] as const;
+    }
+
+
+export const getAuthzTenantadminBindingsListQueryOptions = <TData = Awaited<ReturnType<typeof authzTenantadminBindingsList>>, TError = Problem>(tenant: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminBindingsList>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthzTenantadminBindingsListQueryKey(tenant);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzTenantadminBindingsList>>> = ({ signal }) => authzTenantadminBindingsList(tenant, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminBindingsList>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AuthzTenantadminBindingsListQueryResult = NonNullable<Awaited<ReturnType<typeof authzTenantadminBindingsList>>>
+export type AuthzTenantadminBindingsListQueryError = Problem
+
+
+/**
+ * @summary List every role binding of a tenant
+ */
+
+export function useAuthzTenantadminBindingsList<TData = Awaited<ReturnType<typeof authzTenantadminBindingsList>>, TError = Problem>(
+ tenant: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminBindingsList>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAuthzTenantadminBindingsListQueryOptions(tenant,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Lists every binding the account holds within the tenant, ordered by role name ascending, one view each. An account with no binding, or a tenant with none, yields an empty list; the account is not looked up. The list is not paginated.
+ * @summary List every binding an account holds within a tenant
+ */
+export const authzTenantadminBindingsOf = (
+    tenant: string,
+    account: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthzTenantadminBindingsOf200>(
+      {url: `/api/v1/tenants/${tenant}/bindings/${account}`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthzTenantadminBindingsOfQueryKey = (tenant: string,
+    account: string,) => {
+    return [
+    `/api/v1/tenants/${tenant}/bindings/${account}`
+    ] as const;
+    }
+
+
+export const getAuthzTenantadminBindingsOfQueryOptions = <TData = Awaited<ReturnType<typeof authzTenantadminBindingsOf>>, TError = Problem>(tenant: string,
+    account: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminBindingsOf>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthzTenantadminBindingsOfQueryKey(tenant,account);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzTenantadminBindingsOf>>> = ({ signal }) => authzTenantadminBindingsOf(tenant,account, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined && account !== null && account !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminBindingsOf>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AuthzTenantadminBindingsOfQueryResult = NonNullable<Awaited<ReturnType<typeof authzTenantadminBindingsOf>>>
+export type AuthzTenantadminBindingsOfQueryError = Problem
+
+
+/**
+ * @summary List every binding an account holds within a tenant
+ */
+
+export function useAuthzTenantadminBindingsOf<TData = Awaited<ReturnType<typeof authzTenantadminBindingsOf>>, TError = Problem>(
+ tenant: string,
+    account: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminBindingsOf>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAuthzTenantadminBindingsOfQueryOptions(tenant,account,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Removes the account's binding to the role within the tenant. An empty account is refused with a 400. platform-admin is reserved and cannot be removed here. A caller may not remove its own tenant-admin binding: that is refused with the protected code, and another tenant administrator removes it. The last tenant administrator of the tenant cannot be removed. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * @summary Remove an account's binding to a role within a tenant
+ */
+export const authzTenantadminBindingsDelete = (
+    tenant: string,
+    account: string,
+    role: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/bindings/${account}/${role}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthzTenantadminBindingsDeleteMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminBindingsDelete>>, TError,{tenant: string;account: string;role: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminBindingsDelete>>, TError,{tenant: string;account: string;role: string}, TContext> => {
+
+const mutationKey = ['authzTenantadminBindingsDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzTenantadminBindingsDelete>>, {tenant: string;account: string;role: string}> = (props) => {
+          const {tenant,account,role} = props ?? {};
+
+          return  authzTenantadminBindingsDelete(tenant,account,role,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthzTenantadminBindingsDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authzTenantadminBindingsDelete>>>
+
+    export type AuthzTenantadminBindingsDeleteMutationError = Problem
+
+    /**
+ * @summary Remove an account's binding to a role within a tenant
+ */
+export const useAuthzTenantadminBindingsDelete = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminBindingsDelete>>, TError,{tenant: string;account: string;role: string}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authzTenantadminBindingsDelete>>,
+        TError,
+        {tenant: string;account: string;role: string},
+        TContext
+      > => {
+      return useMutation(getAuthzTenantadminBindingsDeleteMutationOptions(options));
+    }
+
+/**
+ * Binds a role to an account within the tenant. The account must be an active member of the tenant, and the caller's own permissions must cover every permission the role holds. An empty account is refused with a 400. platform-admin is reserved and cannot be bound here; tenant-admin may be bound to another account, subject to the same subset rule. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * @summary Bind a role to an account within a tenant
+ */
+export const authzTenantadminBindingsPut = (
+    tenant: string,
+    account: string,
+    role: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/bindings/${account}/${role}`, method: 'PUT', signal
+    },
+      );
+    }
+
+
+
+export const getAuthzTenantadminBindingsPutMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminBindingsPut>>, TError,{tenant: string;account: string;role: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminBindingsPut>>, TError,{tenant: string;account: string;role: string}, TContext> => {
+
+const mutationKey = ['authzTenantadminBindingsPut'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzTenantadminBindingsPut>>, {tenant: string;account: string;role: string}> = (props) => {
+          const {tenant,account,role} = props ?? {};
+
+          return  authzTenantadminBindingsPut(tenant,account,role,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthzTenantadminBindingsPutMutationResult = NonNullable<Awaited<ReturnType<typeof authzTenantadminBindingsPut>>>
+
+    export type AuthzTenantadminBindingsPutMutationError = Problem
+
+    /**
+ * @summary Bind a role to an account within a tenant
+ */
+export const useAuthzTenantadminBindingsPut = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminBindingsPut>>, TError,{tenant: string;account: string;role: string}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authzTenantadminBindingsPut>>,
+        TError,
+        {tenant: string;account: string;role: string},
+        TContext
+      > => {
+      return useMutation(getAuthzTenantadminBindingsPutMutationOptions(options));
+    }
+
+/**
  * Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, revoked) and then by creation time descending with the identifier as the tie-break. The cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable cursor is refused with 400 rather than served as the first page. Expired pending invitations are still listed with status pending. A read writes no audit row.
  * @summary One page of a tenant's invitations
  */
@@ -10028,6 +10452,758 @@ export const useAuthnAdminMembersSsoExempt = <TError = Problem | void,
         TContext
       > => {
       return useMutation(getAuthnAdminMembersSsoExemptMutationOptions(options));
+    }
+
+/**
+ * Lists the governed set — the permissions a tenant administrator may hold and grant — one view each, in permission-name order. A permission outside the governed set is not listed and cannot be written through the grant routes.
+ * @summary List every permission a tenant administrator may hold and grant
+ */
+export const authzTenantadminPermissionsList = (
+    tenant: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthzTenantadminPermissionsList200>(
+      {url: `/api/v1/tenants/${tenant}/permissions`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthzTenantadminPermissionsListQueryKey = (tenant: string,) => {
+    return [
+    `/api/v1/tenants/${tenant}/permissions`
+    ] as const;
+    }
+
+
+export const getAuthzTenantadminPermissionsListQueryOptions = <TData = Awaited<ReturnType<typeof authzTenantadminPermissionsList>>, TError = Problem>(tenant: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminPermissionsList>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthzTenantadminPermissionsListQueryKey(tenant);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzTenantadminPermissionsList>>> = ({ signal }) => authzTenantadminPermissionsList(tenant, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminPermissionsList>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AuthzTenantadminPermissionsListQueryResult = NonNullable<Awaited<ReturnType<typeof authzTenantadminPermissionsList>>>
+export type AuthzTenantadminPermissionsListQueryError = Problem
+
+
+/**
+ * @summary List every permission a tenant administrator may hold and grant
+ */
+
+export function useAuthzTenantadminPermissionsList<TData = Awaited<ReturnType<typeof authzTenantadminPermissionsList>>, TError = Problem>(
+ tenant: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminPermissionsList>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAuthzTenantadminPermissionsListQueryOptions(tenant,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Lists every role stored for the tenant, one view each, ordered by role name ascending. A tenant with no role yields an empty list. The list is not paginated.
+ * @summary List a tenant's roles
+ */
+export const authzTenantadminRolesList = (
+    tenant: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthzTenantadminRolesList200>(
+      {url: `/api/v1/tenants/${tenant}/roles`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthzTenantadminRolesListQueryKey = (tenant: string,) => {
+    return [
+    `/api/v1/tenants/${tenant}/roles`
+    ] as const;
+    }
+
+
+export const getAuthzTenantadminRolesListQueryOptions = <TData = Awaited<ReturnType<typeof authzTenantadminRolesList>>, TError = Problem>(tenant: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminRolesList>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthzTenantadminRolesListQueryKey(tenant);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzTenantadminRolesList>>> = ({ signal }) => authzTenantadminRolesList(tenant, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminRolesList>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AuthzTenantadminRolesListQueryResult = NonNullable<Awaited<ReturnType<typeof authzTenantadminRolesList>>>
+export type AuthzTenantadminRolesListQueryError = Problem
+
+
+/**
+ * @summary List a tenant's roles
+ */
+
+export function useAuthzTenantadminRolesList<TData = Awaited<ReturnType<typeof authzTenantadminRolesList>>, TError = Problem>(
+ tenant: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminRolesList>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAuthzTenantadminRolesListQueryOptions(tenant,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Removes the role and, in one transaction, its permission grants and its account bindings, so no grant or binding outlives the role. platform-admin and tenant-admin are reserved: the tenant surface cannot remove either role row. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * @summary Remove a role, revoking its grants and bindings with it
+ */
+export const authzTenantadminRolesDelete = (
+    tenant: string,
+    role: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/roles/${role}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthzTenantadminRolesDeleteMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminRolesDelete>>, TError,{tenant: string;role: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminRolesDelete>>, TError,{tenant: string;role: string}, TContext> => {
+
+const mutationKey = ['authzTenantadminRolesDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzTenantadminRolesDelete>>, {tenant: string;role: string}> = (props) => {
+          const {tenant,role} = props ?? {};
+
+          return  authzTenantadminRolesDelete(tenant,role,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthzTenantadminRolesDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authzTenantadminRolesDelete>>>
+
+    export type AuthzTenantadminRolesDeleteMutationError = Problem
+
+    /**
+ * @summary Remove a role, revoking its grants and bindings with it
+ */
+export const useAuthzTenantadminRolesDelete = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminRolesDelete>>, TError,{tenant: string;role: string}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authzTenantadminRolesDelete>>,
+        TError,
+        {tenant: string;role: string},
+        TContext
+      > => {
+      return useMutation(getAuthzTenantadminRolesDeleteMutationOptions(options));
+    }
+
+/**
+ * The request carries the role's description key only. The builtin mark is not writable here. platform-admin and tenant-admin are reserved: the tenant surface cannot create, rewrite or delete either role row. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * @summary Create or rewrite a role
+ */
+export const authzTenantadminRolesPut = (
+    tenant: string,
+    role: string,
+    authzTenantAdminRoleWrite: AuthzTenantAdminRoleWrite,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/roles/${role}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: authzTenantAdminRoleWrite, signal
+    },
+      );
+    }
+
+
+
+export const getAuthzTenantadminRolesPutMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminRolesPut>>, TError,{tenant: string;role: string;data: AuthzTenantAdminRoleWrite}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminRolesPut>>, TError,{tenant: string;role: string;data: AuthzTenantAdminRoleWrite}, TContext> => {
+
+const mutationKey = ['authzTenantadminRolesPut'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzTenantadminRolesPut>>, {tenant: string;role: string;data: AuthzTenantAdminRoleWrite}> = (props) => {
+          const {tenant,role,data} = props ?? {};
+
+          return  authzTenantadminRolesPut(tenant,role,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthzTenantadminRolesPutMutationResult = NonNullable<Awaited<ReturnType<typeof authzTenantadminRolesPut>>>
+    export type AuthzTenantadminRolesPutMutationBody = AuthzTenantAdminRoleWrite
+    export type AuthzTenantadminRolesPutMutationError = Problem
+
+    /**
+ * @summary Create or rewrite a role
+ */
+export const useAuthzTenantadminRolesPut = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminRolesPut>>, TError,{tenant: string;role: string;data: AuthzTenantAdminRoleWrite}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authzTenantadminRolesPut>>,
+        TError,
+        {tenant: string;role: string;data: AuthzTenantAdminRoleWrite},
+        TContext
+      > => {
+      return useMutation(getAuthzTenantadminRolesPutMutationOptions(options));
+    }
+
+/**
+ * Lists every permission grant the role holds as the (resource, action) pairs the policy engine matches on, ordered by resource and then action. A role that holds no grant, or does not exist, yields an empty list; the role is not looked up. The list is not paginated.
+ * @summary List every permission grant a role holds
+ */
+export const authzTenantadminGrantsList = (
+    tenant: string,
+    role: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthzTenantadminGrantsList200>(
+      {url: `/api/v1/tenants/${tenant}/roles/${role}/grants`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthzTenantadminGrantsListQueryKey = (tenant: string,
+    role: string,) => {
+    return [
+    `/api/v1/tenants/${tenant}/roles/${role}/grants`
+    ] as const;
+    }
+
+
+export const getAuthzTenantadminGrantsListQueryOptions = <TData = Awaited<ReturnType<typeof authzTenantadminGrantsList>>, TError = Problem>(tenant: string,
+    role: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminGrantsList>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthzTenantadminGrantsListQueryKey(tenant,role);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzTenantadminGrantsList>>> = ({ signal }) => authzTenantadminGrantsList(tenant,role, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined && role !== null && role !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminGrantsList>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AuthzTenantadminGrantsListQueryResult = NonNullable<Awaited<ReturnType<typeof authzTenantadminGrantsList>>>
+export type AuthzTenantadminGrantsListQueryError = Problem
+
+
+/**
+ * @summary List every permission grant a role holds
+ */
+
+export function useAuthzTenantadminGrantsList<TData = Awaited<ReturnType<typeof authzTenantadminGrantsList>>, TError = Problem>(
+ tenant: string,
+    role: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authzTenantadminGrantsList>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAuthzTenantadminGrantsListQueryOptions(tenant,role,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Revokes one permission from a role. platform-admin and tenant-admin are reserved: their grants cannot be changed here. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * @summary Revoke a permission from a role
+ */
+export const authzTenantadminGrantsDelete = (
+    tenant: string,
+    role: string,
+    permission: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/roles/${role}/grants/${permission}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthzTenantadminGrantsDeleteMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminGrantsDelete>>, TError,{tenant: string;role: string;permission: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminGrantsDelete>>, TError,{tenant: string;role: string;permission: string}, TContext> => {
+
+const mutationKey = ['authzTenantadminGrantsDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzTenantadminGrantsDelete>>, {tenant: string;role: string;permission: string}> = (props) => {
+          const {tenant,role,permission} = props ?? {};
+
+          return  authzTenantadminGrantsDelete(tenant,role,permission,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthzTenantadminGrantsDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authzTenantadminGrantsDelete>>>
+
+    export type AuthzTenantadminGrantsDeleteMutationError = Problem
+
+    /**
+ * @summary Revoke a permission from a role
+ */
+export const useAuthzTenantadminGrantsDelete = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminGrantsDelete>>, TError,{tenant: string;role: string;permission: string}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authzTenantadminGrantsDelete>>,
+        TError,
+        {tenant: string;role: string;permission: string},
+        TContext
+      > => {
+      return useMutation(getAuthzTenantadminGrantsDeleteMutationOptions(options));
+    }
+
+/**
+ * Grants one permission to a role. The permission must be in the governed set and the caller must hold it; a permission outside the governed set is a 400, and one the caller does not hold is a refusal with the protected code. platform-admin and tenant-admin are reserved: their grants cannot be changed here. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * @summary Grant a governed permission to a role
+ */
+export const authzTenantadminGrantsPut = (
+    tenant: string,
+    role: string,
+    permission: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/roles/${role}/grants/${permission}`, method: 'PUT', signal
+    },
+      );
+    }
+
+
+
+export const getAuthzTenantadminGrantsPutMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminGrantsPut>>, TError,{tenant: string;role: string;permission: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminGrantsPut>>, TError,{tenant: string;role: string;permission: string}, TContext> => {
+
+const mutationKey = ['authzTenantadminGrantsPut'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzTenantadminGrantsPut>>, {tenant: string;role: string;permission: string}> = (props) => {
+          const {tenant,role,permission} = props ?? {};
+
+          return  authzTenantadminGrantsPut(tenant,role,permission,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthzTenantadminGrantsPutMutationResult = NonNullable<Awaited<ReturnType<typeof authzTenantadminGrantsPut>>>
+
+    export type AuthzTenantadminGrantsPutMutationError = Problem
+
+    /**
+ * @summary Grant a governed permission to a role
+ */
+export const useAuthzTenantadminGrantsPut = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzTenantadminGrantsPut>>, TError,{tenant: string;role: string;permission: string}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authzTenantadminGrantsPut>>,
+        TError,
+        {tenant: string;role: string;permission: string},
+        TContext
+      > => {
+      return useMutation(getAuthzTenantadminGrantsPutMutationOptions(options));
+    }
+
+/**
+ * Returns every item in the declaration listing, including keys declared by modules that do not run in this process, each with the value it resolves to on the layer of the tenant in the path. The platform-only namespaces are left out. Resolution walks the three-level fallback: the tenant row, then the global row, then the declared default; source reports which of the three the value came from. Every value-bearing field is text in the declared type's own form; for a sensitive item default is empty and written and value carry a fixed mask string. A failure to read the layer's rows or to resolve a value answers 503 rather than leaving the item out.
+ * @summary List every declared setting with its value on the tenant layer
+ */
+export const settingsTenantadminSettingsList = (
+    tenant: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<SettingsTenantAdminSetting[]>(
+      {url: `/api/v1/tenants/${tenant}/settings`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getSettingsTenantadminSettingsListQueryKey = (tenant: string,) => {
+    return [
+    `/api/v1/tenants/${tenant}/settings`
+    ] as const;
+    }
+
+
+export const getSettingsTenantadminSettingsListQueryOptions = <TData = Awaited<ReturnType<typeof settingsTenantadminSettingsList>>, TError = Problem>(tenant: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsList>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSettingsTenantadminSettingsListQueryKey(tenant);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof settingsTenantadminSettingsList>>> = ({ signal }) => settingsTenantadminSettingsList(tenant, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsList>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type SettingsTenantadminSettingsListQueryResult = NonNullable<Awaited<ReturnType<typeof settingsTenantadminSettingsList>>>
+export type SettingsTenantadminSettingsListQueryError = Problem
+
+
+/**
+ * @summary List every declared setting with its value on the tenant layer
+ */
+
+export function useSettingsTenantadminSettingsList<TData = Awaited<ReturnType<typeof settingsTenantadminSettingsList>>, TError = Problem>(
+ tenant: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsList>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getSettingsTenantadminSettingsListQueryOptions(tenant,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Returns the declared items whose namespace equals the path segment, that is the group one module declared, each carrying the same fields and resolved the same way as on the all-items route. The declaration listing is not narrowed to the modules running in this process, and the platform-only namespaces are left out. A namespace no declared item belongs to, or one whose items are all platform-only, answers 404 without a problem document.
+ * @summary List the declared settings one namespace declares on the tenant layer
+ */
+export const settingsTenantadminSettingsListNamespace = (
+    tenant: string,
+    namespace: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<SettingsTenantAdminSetting[]>(
+      {url: `/api/v1/tenants/${tenant}/settings/${namespace}`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getSettingsTenantadminSettingsListNamespaceQueryKey = (tenant: string,
+    namespace: string,) => {
+    return [
+    `/api/v1/tenants/${tenant}/settings/${namespace}`
+    ] as const;
+    }
+
+
+export const getSettingsTenantadminSettingsListNamespaceQueryOptions = <TData = Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>, TError = Problem | void>(tenant: string,
+    namespace: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSettingsTenantadminSettingsListNamespaceQueryKey(tenant,namespace);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>> = ({ signal }) => settingsTenantadminSettingsListNamespace(tenant,namespace, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined && namespace !== null && namespace !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type SettingsTenantadminSettingsListNamespaceQueryResult = NonNullable<Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>>
+export type SettingsTenantadminSettingsListNamespaceQueryError = Problem | void
+
+
+/**
+ * @summary List the declared settings one namespace declares on the tenant layer
+ */
+
+export function useSettingsTenantadminSettingsListNamespace<TData = Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>, TError = Problem | void>(
+ tenant: string,
+    namespace: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsListNamespace>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getSettingsTenantadminSettingsListNamespaceQueryOptions(tenant,namespace,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Drops the layer of the tenant in the path's explicit row for the setting named by the namespace and key path segments. The full key `<namespace>.<key>` must match a declared item and must not belong to a platform-only namespace, otherwise the answer is 404; deleting a row the layer does not hold is not an error. Once the row is gone the item resolves through the fallback again. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. A mandatory audit row is written before the change, and if it cannot be written the row is left in place and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.
+ * @summary Drop the tenant layer's explicit row for one setting
+ */
+export const settingsTenantadminSettingsRemove = (
+    tenant: string,
+    namespace: string,
+    key: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/settings/${namespace}/${key}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getSettingsTenantadminSettingsRemoveMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsRemove>>, TError,{tenant: string;namespace: string;key: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsRemove>>, TError,{tenant: string;namespace: string;key: string}, TContext> => {
+
+const mutationKey = ['settingsTenantadminSettingsRemove'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof settingsTenantadminSettingsRemove>>, {tenant: string;namespace: string;key: string}> = (props) => {
+          const {tenant,namespace,key} = props ?? {};
+
+          return  settingsTenantadminSettingsRemove(tenant,namespace,key,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SettingsTenantadminSettingsRemoveMutationResult = NonNullable<Awaited<ReturnType<typeof settingsTenantadminSettingsRemove>>>
+
+    export type SettingsTenantadminSettingsRemoveMutationError = Problem | void
+
+    /**
+ * @summary Drop the tenant layer's explicit row for one setting
+ */
+export const useSettingsTenantadminSettingsRemove = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsRemove>>, TError,{tenant: string;namespace: string;key: string}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof settingsTenantadminSettingsRemove>>,
+        TError,
+        {tenant: string;namespace: string;key: string},
+        TContext
+      > => {
+      return useMutation(getSettingsTenantadminSettingsRemoveMutationOptions(options));
+    }
+
+/**
+ * Writes one row for the setting named by the namespace and key path segments on the layer of the tenant in the path. The full key `<namespace>.<key>` must match a declared item and must not belong to a platform-only namespace, otherwise the answer is 404. The host's settings write seam is asked before anything is changed; a refusal is 403 protected and an unreadable answer is 503. The value is encoded under the item's declared type and then held to its declared domain, so a duration written as "300s" is stored as "5m0s"; a value that cannot be encoded, lies outside the domain, or exceeds the size limit answers 422. A mandatory audit row is written before the change, and if it cannot be written the setting is left untouched and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.
+ * @summary Write one setting row on the tenant layer
+ */
+export const settingsTenantadminSettingsSet = (
+    tenant: string,
+    namespace: string,
+    key: string,
+    settingsTenantadminSettingsSetBody: SettingsTenantadminSettingsSetBody,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/settings/${namespace}/${key}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: settingsTenantadminSettingsSetBody, signal
+    },
+      );
+    }
+
+
+
+export const getSettingsTenantadminSettingsSetMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsSet>>, TError,{tenant: string;namespace: string;key: string;data: SettingsTenantadminSettingsSetBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsSet>>, TError,{tenant: string;namespace: string;key: string;data: SettingsTenantadminSettingsSetBody}, TContext> => {
+
+const mutationKey = ['settingsTenantadminSettingsSet'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof settingsTenantadminSettingsSet>>, {tenant: string;namespace: string;key: string;data: SettingsTenantadminSettingsSetBody}> = (props) => {
+          const {tenant,namespace,key,data} = props ?? {};
+
+          return  settingsTenantadminSettingsSet(tenant,namespace,key,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SettingsTenantadminSettingsSetMutationResult = NonNullable<Awaited<ReturnType<typeof settingsTenantadminSettingsSet>>>
+    export type SettingsTenantadminSettingsSetMutationBody = SettingsTenantadminSettingsSetBody
+    export type SettingsTenantadminSettingsSetMutationError = Problem | void
+
+    /**
+ * @summary Write one setting row on the tenant layer
+ */
+export const useSettingsTenantadminSettingsSet = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof settingsTenantadminSettingsSet>>, TError,{tenant: string;namespace: string;key: string;data: SettingsTenantadminSettingsSetBody}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof settingsTenantadminSettingsSet>>,
+        TError,
+        {tenant: string;namespace: string;key: string;data: SettingsTenantadminSettingsSetBody},
+        TContext
+      > => {
+      return useMutation(getSettingsTenantadminSettingsSetMutationOptions(options));
     }
 
 /**

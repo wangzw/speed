@@ -23,12 +23,14 @@ export interface FeatureNameRegistry {
   'authn.mfa': true
   'authn.phone': true
   'authz.admin': true
+  'authz.tenantadmin': true
   'notification.channel.email': true
   'notification.channel.sms': true
   'notification.inbox': true
   'notification.preferences': true
   'notification.stream': true
   'settings.admin': true
+  'settings.tenantadmin': true
   'sms.admin': true
   'tenant.admin': true
 }
@@ -52,12 +54,14 @@ export const FEATURE_NAMES: readonly FeatureName[] = [
   'authn.mfa',
   'authn.phone',
   'authz.admin',
+  'authz.tenantadmin',
   'notification.channel.email',
   'notification.channel.sms',
   'notification.inbox',
   'notification.preferences',
   'notification.stream',
   'settings.admin',
+  'settings.tenantadmin',
   'sms.admin',
   'tenant.admin',
 ]

@@ -87,6 +87,7 @@ import (
 	authzguard "github.com/vislake/speed/pkg/authz/guard"
 	authzpolicy "github.com/vislake/speed/pkg/authz/policy"
 	authzself "github.com/vislake/speed/pkg/authz/self"
+	authztenantadmin "github.com/vislake/speed/pkg/authz/tenantadmin"
 	"github.com/vislake/speed/pkg/http/cors"
 	i18naccount "github.com/vislake/speed/pkg/i18n/account"
 	i18ncatalog "github.com/vislake/speed/pkg/i18n/catalog"
@@ -102,6 +103,7 @@ import (
 	"github.com/vislake/speed/pkg/ratelimit"
 	"github.com/vislake/speed/pkg/settings"
 	settingsadmin "github.com/vislake/speed/pkg/settings/admin"
+	settingstenantadmin "github.com/vislake/speed/pkg/settings/tenantadmin"
 	tenantadmin "github.com/vislake/speed/pkg/tenant/admin"
 	"github.com/vislake/speed/pkg/tenant/admission"
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
@@ -334,9 +336,11 @@ var (
 		authzguard.ModuleName,
 		authzadmin.ModuleName,
 		authzself.ModuleName,
+		authztenantadmin.ModuleName,
 		ratelimit.ModuleName,
 		settings.ModuleName,
 		settingsadmin.ModuleName,
+		settingstenantadmin.ModuleName,
 
 		// The i18n capability: the catalog engine, the entry-point wiring and the
 		// account bridge.
@@ -413,6 +417,10 @@ var (
 		// tenant.WriteGuard and authz.WriteGuard both declare a Denied method, which
 		// one Go type cannot carry twice. See tenancy.go.
 		policyWriteGuardModuleName,
+		// The settings surface's write guard: it refuses every setting write in a
+		// personal tenant's domain. It is a module of its own for the same reason,
+		// and the tenant settings module requires it. See tenancy.go.
+		settingsWriteGuardModuleName,
 
 		objectstorefs.ModuleName,
 		objectstoremeta.ModuleName,

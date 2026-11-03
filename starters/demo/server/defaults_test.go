@@ -159,6 +159,9 @@ type compiledDefaults struct {
 		Self struct {
 			Endpoints []string `config:"endpoints"`
 		} `config:"self"`
+		TenantAdmin struct {
+			Endpoints []string `config:"endpoints"`
+		} `config:"tenantadmin"`
 	} `config:"authz"`
 	Audit struct {
 		Journal struct {
@@ -177,6 +180,9 @@ type compiledDefaults struct {
 		Admin struct {
 			Endpoints []string `config:"endpoints"`
 		} `config:"admin"`
+		TenantAdmin struct {
+			Endpoints []string `config:"endpoints"`
+		} `config:"tenantadmin"`
 	} `config:"settings"`
 	Feature struct {
 		Board struct {
@@ -321,6 +327,7 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantStrings(t, "authz.guard.endpoints", doc.Authz.Guard.Endpoints, []string{"api"})
 	wantStrings(t, "authz.admin.endpoints", doc.Authz.Admin.Endpoints, []string{"admin"})
 	wantStrings(t, "authz.self.endpoints", doc.Authz.Self.Endpoints, []string{"api"})
+	wantStrings(t, "authz.tenantadmin.endpoints", doc.Authz.TenantAdmin.Endpoints, []string{"api"})
 
 	// The journal, the two limiting layers, settings, the feature document and
 	// the notification surfaces.
@@ -332,6 +339,7 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantStrings(t, "ratelimit.endpoints", doc.Ratelimit.Endpoints, []string{"api"})
 	wantStrings(t, "ratelimit.address-endpoints", doc.Ratelimit.AddressEndpoints, []string{"account"})
 	wantStrings(t, "settings.admin.endpoints", doc.Settings.Admin.Endpoints, []string{"admin"})
+	wantStrings(t, "settings.tenantadmin.endpoints", doc.Settings.TenantAdmin.Endpoints, []string{"api"})
 	wantString(t, "feature.board.endpoint", doc.Feature.Board.Endpoint, "account")
 	wantStrings(t, "notification.inbox.endpoints", doc.Notification.Inbox.Endpoints, []string{"api"})
 	wantStrings(t, "notification.stream.endpoints", doc.Notification.Stream.Endpoints, []string{"api"})
@@ -441,6 +449,21 @@ func TestABareRunStartsOnTheCompiledDefaults(t *testing.T) {
 	if issuer := tokenIssuer(t, token); issuer != "http://localhost:8081" {
 		t.Errorf("the issued token's iss = %q, want the document's public URL", issuer)
 	}
+}
+
+// TestTheCompiledDefaultsNameTheTenantManagementEndpoints holds the document
+// this binary compiles in to the two endpoint items the tenant management
+// surfaces mount on. A layered read cannot tell the document from the modules'
+// own prototype defaults, which carry the same value; this case reads the
+// document alone, where the entries are this assembly's own statement of the
+// topology.
+func TestTheCompiledDefaultsNameTheTenantManagementEndpoints(t *testing.T) {
+	var doc compiledDefaults
+	if err := json.Unmarshal(platformDefaults{}.Data(), &doc); err != nil {
+		t.Fatalf("the compiled defaults document is not JSON: %v", err)
+	}
+	wantStrings(t, "authz.tenantadmin.endpoints", doc.Authz.TenantAdmin.Endpoints, []string{"api"})
+	wantStrings(t, "settings.tenantadmin.endpoints", doc.Settings.TenantAdmin.Endpoints, []string{"api"})
 }
 
 // TestTheCompiledDefaultsNameOneListenerAndTheOpsPrefixes holds the two facts
