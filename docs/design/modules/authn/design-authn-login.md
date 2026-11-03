@@ -270,7 +270,7 @@ type Proof struct {
 
 **同形与抑制。** 不合格目标不发送消息，但走与合格目标相同的记录与验证路径：邮箱写一条码摘要为随机诱饵的记录；短信先尝试 `SMSCodes.Send`（`Deliver=false`）取得抑制的台账行与挑战行，该调用同样先过人机验证；若 `Send` 因任何发送预算、失败尝试预算、跨渠道上界或重发窗口超限返回 `ErrThrottled`，同样写一条抑制记录并答 202；若 `Send` 因证明缺失、无效、过期或重放返回 `ErrHumanVerificationRequired`，答 403 `human-verification-required`，不写记录、不发送。发送步除证明拒绝外一律答 202；验证步对抑制记录用本地随机摘要做比较与计数，不调用 `SMSCodes.Verify`，恒不通过并答同一个 401 `login-failed`；真实记录才调用 `SMSCodes.Verify`。发送预算的任何超限都抑制发送并仍答 202；只有同一 cookie 的重发间隔与登录的 `ip-limit` 答 429，二者都与账户无关。
 
-**预算与重发。** 邮箱复用 `authn.login.email-*` 的数值设置，按重置用途使用独立的计数键；按账户的预算只在合格目标上计数，超限抑制。短信复用 `authn.sms` 的按号码、按来源、按来源不同目的地、按来源确定失败与按用途的发送和失败预算，另受部署的跨渠道上界约束；`reset` 不填 `Account`，不设按账户维度。重发窗口按发往的地址或号码持有，跨渠道用途共享：一个收件箱或号码在窗口内只发一条码。邮箱的发送交给有界工作池，响应路径不等待载体；工作池满时在写记录之前答 503，合格与抑制目标走同一次容量判定。短信发送本来就在 `authn.sms` 的有界工作池里。人机凭证在发送入口、任何预算被消耗之前核验；短信路径在 `SMSCodes.Send` 内。
+**预算与重发。** 邮箱复用 `authn.login.email-*` 的数值设置，按重置用途使用独立的计数键；按账户的预算只在合格目标上计数，超限抑制。短信复用 `authn.sms` 的按号码、按来源、按来源不同目的地、按来源确定失败与按用途的发送和失败预算，另受部署的跨渠道上界约束；`reset` 不填 `Account`，不设按账户维度。重发窗口按发往的地址或号码持有，跨渠道用途共享：一个收件箱或号码在窗口内只发一条码。邮箱的发送交给有界工作池，响应路径不等待载体；工作池满时在写记录之前答 503，合格与抑制目标走同一次容量判定。短信发送本来就在 `authn.sms` 的有界工作池里。人机凭证在发送入口、任何预算被消耗之前核验；短信路径在 `SMSCodes.Send` 内。邮箱路径在重置路由上先于来源前置减负与资格判定核验并消费证明，因此一次随后被来源前置减负或同一 cookie 的重发间隔以 429 拒绝的请求，其一次性证明已经用掉；针对不合格目标的请求同样在资格判定之前用掉证明。这个次序的取舍见 [ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md)。
 
 **写入与结算。** `POST B/password-reset/complete` 在写口令之前写强制档审计 `authn.password.reset` 的 `attempted` 行；审计写不成即答 503，口令不变，记录留在 `verified`。`Passwords.Set` 的 `AdvanceValidAfter` 在同一事务里把 `valid_after` 推进到本秒之后，撤销语句随后结束该账户的 browser 与 token 会话；`Set` 成功后补一条 `success` 审计行，拒绝时补一条 `denied` 行，两条都用同一个 `action_id` 关联。`Set` 拒绝时口令不变，记录回到 `verified`；撤销失败只记 Error，口令已改，应答仍是 204。`authn.password.changed` 由 `Set` 发出，`by=reset`、`channel` 取本次渠道；`authn.session.revoked` 由撤销语句发出，`reason_class=password-change`。重置不结束发起者的 cookie 冒充会话（它属于发起者）；目标账户的 bearer（[REF-rfc6750](../../../references.md)）冒充令牌按 `valid_after` 失效，这是目标凭据变更的自然结果。`success`/`denied` 行写失败只记 Error 与指标，不改变已提交的口令；`attempted` 行是这条路径的强制留痕。
 
@@ -559,7 +559,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 4. 校验并保存 `return_to`，确定 `binding`，生成流程令牌，写入 `first` 状态的记录。kv 不可用时答 503。
 5. 带 `call-budget` 调用方法的 `Begin`，按「答复与迁移」处理它交回的 `Step`。
 
-发送短信的第一步把 `human_proof` 交给方法的 `Begin`，由方法原样转交 `SMSCodes.Send`；证明在 `authn.sms.Send` 里、在放行表、队列容量与任何发送预算之前校验并消费一次。部署不要求人机验证时整步跳过；缺少、无效、过期或已用的凭证答 403 `human-verification-required`，超过 8 KiB 的答 400 `bad-request`，校验后端或它依赖的存储不可用答 503。**拒绝发生在流程记录已经写下之后**：第 4 步写入的记录先落在 kv 里，第 5 步的 `Begin` 才调用发送；一次被拒绝的证明因此留下一条流程记录。测试钉住的是这条记录的形状与后果——它是唯一留下的键、状态停在 `first`、没有方法步、`sends` 与 `answers` 都为零、拒绝不写流程 cookie；记录的生存期由 kv 的 `authn.login.flow-ttl` 给出（没有另设清扫协程），测试不等到期。拒绝的应答是故障，流程 cookie 不随故障写出，客户端拿不到这条记录的绑定令牌，记录因此不能被任何请求绑定或答复；记录停在 `first` 且没有方法步，即使有令牌也无步可答。它不写台账、不写挑战行、不占任何发送预算、不发送，也不计一次答复（`Begin` 不是客户端答复），也不记一次登录失败指标或审计行，来源地址的粗粒度减负也因这一步没有报告发送而不计数。`POST B/flows/authenticated` 的 `step-up` 从第一因素起始时判据相同：记录先写，证明在发送入口校验，被拒绝时记录留在原处等到期。
+发送短信的第一步把 `human_proof` 交给方法的 `Begin`，由方法原样转交 `SMSCodes.Send`；证明在 `authn.sms.Send` 里、在放行表、队列容量与任何发送预算之前校验并消费一次。部署不要求人机验证时整步跳过；缺少、无效、过期或已用的凭证答 403 `human-verification-required`，超过 8 KiB 的答 400 `bad-request`，校验后端或它依赖的存储不可用答 503。**拒绝发生在流程记录已经写下之后**：第 4 步写入的记录先落在 kv 里，第 5 步的 `Begin` 才调用发送；一次被拒绝的证明因此留下一条流程记录。测试钉住的是这条记录的形状与后果——它是唯一留下的键、状态停在 `first`、没有方法步、`sends` 与 `answers` 都为零、拒绝不写流程 cookie；记录的生存期由 kv 的 `authn.login.flow-ttl` 给出（没有另设清扫协程），测试既不推进时钟，也不等到期。拒绝的应答是故障，流程 cookie 不随故障写出，客户端拿不到这条记录的绑定令牌，记录因此不能被任何请求绑定或答复；记录停在 `first` 且没有方法步，即使有令牌也无步可答。它不写台账、不写挑战行、不占任何发送预算、不发送，也不计一次答复（`Begin` 不是客户端答复），也不记一次登录失败指标或审计行，来源地址的粗粒度减负也因这一步没有报告发送而不计数。`POST B/flows/authenticated` 的 `step-up` 从第一因素起始时判据相同：记录先写，证明在发送入口校验，被拒绝时记录留在原处等到期。
 
 一个浏览器同一时刻只有一个流程 cookie，所以后开始流程的标签页会顶掉先前的流程。
 
@@ -636,7 +636,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `second` | 答复数用尽、超时 | `failed` | 401 `login-failed` | 无 |
 | `enroll` | 因素实现交出 `StepEnrolled` | `ready` | 200 | 因素标识存入记录的 `mfa.enrolled`；本次登记的因素不计入保障等级 |
 | `enroll` | 因素实现交出 `StepRefused`（确认码不符等） | `enroll`，`seq` 不变，`answers` 加一；登记中的因素与方法的步保留 | 401 `login-failed` | 可原地重试确认码 |
-| `challenge` | 选中因素的 `Challenge` 交出 `StepRefused` | `second`，`seq` 不变，`answers` 加一；因素清单保留 | 401 `login-failed` | 可改选另一因素或重试 |
+| `challenge` | 选中因素的 `Challenge` 交出 `StepRefused` | `second`，`seq` 不变，`answers` 加一；因素清单保留 | 401 `login-failed`；成因是 `ErrHumanVerificationRequired` 或 `ErrInvalidArgument` 时按 403 `human-verification-required` 或 400 答，且不计登录失败指标与审计 | 可改选另一因素或重试 |
 | `ready` | `complete` | `done` | 见「终态动作」 | 终态动作 |
 | 任意 | `answers` 达 8、过期、`DELETE flows/current`、方法被 `disabled-methods` 关 | `failed` | 401 `flow-invalid` | 无 |
 

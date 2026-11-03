@@ -297,7 +297,7 @@ stateDiagram-v2
 
 ### authn_challenges
 
-表由 `authn.sms` 拥有，迁移集随模块，`postgres/` 与 `sqlite/` 各一份同名文件。表之间与对其他模块的表都不建外键，不嵌入 `tenant.Model`；时间一律经 `internal/clock` 取、一律 `.UTC()`，SQLite 把时间存成文本并按字符串比较，非 UTC 的值会使窗口统计判错。
+表由 `authn.sms` 拥有，迁移集随模块，`postgres/` 与 `sqlite/` 各一份同名文件。迁移文件名是 `db_migrations` 的记录键，编号只决定同一模块内的应用顺序：编号在 `0005` 之后留有空号 `0006`，这个空号是有意的，不复用，也不补成连续编号。从合并前的分支状态建过的数据库，`db_migrations` 记录的是旧文件名，与当前迁移集不一致，必须重建，不能在其上继续迁移。表之间与对其他模块的表都不建外键，不嵌入 `tenant.Model`；时间一律经 `internal/clock` 取、一律 `.UTC()`，SQLite 把时间存成文本并按字符串比较，非 UTC 的值会使窗口统计判错。
 
 | 列 | 类型 | 含义 |
 |---|---|---|
@@ -605,7 +605,7 @@ flowchart TD
 | `authn.sms` 引擎：挑战状态机、共享台账行、抑制行、预算核对（含跨渠道上界） | 已实现 | `pkg/authn/sms/send.go` `Send`、`checkProof`、`checkBudgets`、`throttleCeiling`、`throttleOver`；`pkg/authn/sms/register.go` `insert`、`lock`；`pkg/authn/sms/verify.go`、`config.go`、`module.go` |
 | 来源维度：`source_mac` 的规范化与摘要、每来源小时与日预算、每来源不同目的地预算、每来源确定失败预算、来源锁、`Source` 为空的 fail-open | 已实现 | `pkg/authn/sms/send.go` `sourceMAC`、`checkBudgets`；`pkg/authn/sms/register.go` `lock`；`pkg/authn/sms/settings.go` `perSourceHourly`、`perSourceDaily`、`perSourceDistinctHourly`、`perSourceDistinctDaily`、`perSourceAttemptHourly`；`pkg/authn/sms/budget_ledger_dimensions_test.go` |
 | 尝试预算：按来源与按用途的 `OnlyRefunded` 计数，确定失败计一次、成功与抑制不计 | 已实现 | `pkg/authn/sms/send.go` `checkBudgets`；`pkg/authn/sms/settings.go` `perSourceAttemptHourly`、`globalAttemptHourly`；`pkg/authn/sms/budget_abuse_test.go` |
-| `authn_challenges` 迁移集（含 `budget_event_id`） | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql` … `0006_authn_challenges_budget_event.sql`；`migrations/sqlite/` 同名文件 |
+| `authn_challenges` 迁移集（含 `budget_event_id`） | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql` … `0007_authn_challenges_budget_event.sql`；`migrations/sqlite/` 同名文件 |
 | 发送工作池与确定失败退款：台账行与挑战行在同一次退款里标为退款，退款同时使验证码失效 | 已实现 | `pkg/authn/sms/pool.go` `deliverOne`、`refundChallenge`；`pkg/authn/sms/send.go`；`pkg/authn/sms/register.go` `refund`；`pkg/authn/sms/refund_test.go` |
 | 人机验证证明在 `Send` 内校验并消费，先于放行表、队列与预算 | 已实现 | `pkg/authn/sms/send.go` `checkProof`；`pkg/authn/sms/module.go` 取用 `authn.HumanVerifier`；`pkg/authn/sms/human_test.go` |
 | 预算利用率仪表 `authn.sms.budget.utilization` | 已实现 | `pkg/authn/sms/meters.go` `budget`、`dimensionCeiling`、`dimensionPhone`、`dimensionSource`、`dimensionSourceDistinct`、`dimensionSourceAttempt`、`dimensionGlobal`、`dimensionGlobalAttempt`、`dimensionAccount` |
