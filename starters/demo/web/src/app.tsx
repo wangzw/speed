@@ -66,6 +66,10 @@ import {
   NotificationStreamProvider,
 } from '@speed/notification-ui'
 import type { AdminRoute } from '@speed/admin-ui'
+import {
+  WorkspaceAdminProvider,
+  workspaceAdminOperations,
+} from '@speed/admin-ui'
 import { ProductShell } from '@speed/product-shell'
 import { useAppThemeMode, WriteFeedbackPageProvider } from '@speed/ui-kit'
 import {
@@ -123,6 +127,10 @@ import {
 import { ContactVerificationBanner } from './contact-verification-banner.js'
 import { CallbackErrorAlert } from './callback-error-notice.js'
 import { usePermissionRead } from './platform-permissions.js'
+import {
+  useWorkspaceAdminAdmission,
+  useWorkspaceAdminPermission,
+} from './workspace-admin.js'
 import { clearCallbackFragment, readCallbackError } from './sign-in-landing.js'
 import { DemoNavLabel } from './nav-label.js'
 import { AdminNavIcon } from './nav-icons.js'
@@ -291,11 +299,13 @@ function AppFrame({
   // one. Absent, pending or failed, no declaration matches and the path falls
   // through to the tenant area's own matching.
   const match = useMatch()
-  // The tenant the host currently acts in. The workspace admin surface acts
-  // on it, so its subtree is keyed by this id: a switch remounts it, and no
-  // page state or in-flight read from the previous tenant crosses into the
-  // new one.
-  const currentTenantId = useCurrentTenantId()
+  // The workspace surface's admission for this render (see
+  // src/workspace-admin.ts). It is computed unconditionally so the hooks it
+  // reads keep a stable order whichever area the URL selects; only the
+  // workspace branch consumes the result.
+  const workspaceAdmission = useWorkspaceAdminAdmission()
+  const navigate = useNavigate()
+  const { session } = useAppServices()
   // The host's identity-change action, handed to the admin page so a
   // settled start or end re-reads the identity the way the tenant frame's
   // banner does, plus the start seam: the page calls it before it writes, so
@@ -397,6 +407,60 @@ function AppFrame({
     )
   }
 
+  // The workspace admin partition. It renders inside the tenant frame --
+  // the tenant shell already provides the AppShell -- and its subtree is
+  // keyed by the current tenant: a switch remounts it, so the new tenant's
+  // pages start with their own state and reads and nothing of the previous
+  // tenant's survives. The tenant switch effect in TenantFrame also takes
+  // the viewer to the new tenant's home, so the remounted frame is not
+  // generally seen for a tenant the viewer may not manage; the key covers
+  // the window before that navigation runs and any in-place tenant move.
+  if (isWorkspaceAdminPath(pathname)) {
+    const hasFeature =
+      presence.state === 'ready' ? presence.has : (): boolean => false
+    const matchedLabel = match?.declaration.label
+    const breadcrumbs = [
+      { label: <DemoNavLabel labelKey="nav.home" />, href: TENANT_HOME_PATH },
+      ...(matchedLabel === undefined ? [] : [{ label: matchedLabel }]),
+    ]
+    return (
+      <TenantFrame
+        presence={presence}
+        shellLayout={shellLayout}
+        sidebarCollapsed={sidebarCollapsed}
+        onSidebarCollapsedChange={setSidebarCollapsed}
+      >
+        {workspaceAdmission.status === 'allowed' ? (
+          <WorkspaceAdminProvider
+            key={`workspace-admin:${workspaceAdmission.tenantId}`}
+            tenant={workspaceAdmission.tenantId}
+            operations={workspaceAdminOperations}
+            hasFeature={hasFeature}
+            session={session}
+            routes={workspaceAdmission.routes}
+            onNavigate={navigate}
+            breadcrumbs={breadcrumbs}
+          >
+            <WorkspaceRouteGuard target={workspaceAdmission.target}>
+              <RouteView />
+            </WorkspaceRouteGuard>
+          </WorkspaceAdminProvider>
+        ) : workspaceAdmission.status === 'pending' ? (
+          // A fact the decision needs is still unknown (the tenant, its
+          // kind, the feature document or the tenant permission read). Wait
+          // inside the tenant frame rather than admitting a surface the
+          // viewer may not have, or bouncing a viewer who does.
+          <RouteGuard status="pending" />
+        ) : (
+          // A settled fact rules the surface out -- impersonating, the
+          // system or a personal tenant, no served page, or no tenant
+          // permission for this tenant. The tenant home is the fallback.
+          <TenantHomeRedirect />
+        )}
+      </TenantFrame>
+    )
+  }
+
   return (
     <TenantFrame
       presence={presence}
@@ -404,18 +468,7 @@ function AppFrame({
       sidebarCollapsed={sidebarCollapsed}
       onSidebarCollapsedChange={setSidebarCollapsed}
     >
-      {/* The workspace admin pages act on the current tenant, so their
-          subtree remounts when the tenant moves: the new tenant's pages start
-          with their own state and reads, and nothing of the previous tenant's
-          survives the switch. Every other tenant-area page keeps its state
-          across a tenant change. */}
-      <RouteView
-        key={
-          isWorkspaceAdminPath(pathname)
-            ? `workspace-admin:${currentTenantId ?? 'none'}`
-            : undefined
-        }
-      />
+      <RouteView />
     </TenantFrame>
   )
 }
@@ -926,31 +979,51 @@ function TenantFrame({
 
   const items = useNavItems()
   const adminRoutes = presentDeclarations(adminShellRoutes, presence)
+  // The workspace admin entry: the navigation parent and the home card read
+  // this one derivation (src/workspace-admin.ts), so they never disagree
+  // about whether the surface is offered or where it starts. The parent's
+  // children are route-kit's own entries for the workspace declarations the
+  // caller may open, ordered as the declarations are.
+  const workspaceAdmission = useWorkspaceAdminAdmission()
 
   // The tenant navigation is the home entry alone. The admin's pages are
   // filtered out (the admin entry lives in the header's action slot, offered
-  // only to platform staff), and the notification centre and the account
-  // settings are destinations of the account entry at the bottom of the
-  // column, not navigation entries. The entry's href/onClick pair is
+  // only to platform staff), the workspace admin's pages are folded into the
+  // entry below rather than listed top-level, and the notification centre and
+  // the account settings are destinations of the account entry at the bottom
+  // of the column, not navigation entries. The entry's href/onClick pair is
   // route-kit's -- a plain click navigates in place while a modified or
   // new-tab click stays with the browser -- and its icon is the one its
   // declaration carries (src/routes.tsx), looked up by the entry id that
   // declaration path supplies.
-  const navItems: readonly AppShellNavItem[] = items
-    .filter((item) => !isAdminPath(item.id))
-    .filter(
-      (item) => item.id !== NOTIFICATIONS_PATH && item.id !== ACCOUNT_PATH,
-    )
-    .map(
-      (item): AppShellNavItem => ({
-        id: item.id,
-        label: item.label,
-        icon: navIconFor(item.id),
-        href: item.href,
-        selected: item.selected,
-        onClick: item.onClick,
-      }),
-    )
+  const navItems: readonly AppShellNavItem[] = [
+    ...items
+      .filter((item) => !isAdminPath(item.id))
+      .filter((item) => !isWorkspaceAdminPath(item.id))
+      .filter(
+        (item) => item.id !== NOTIFICATIONS_PATH && item.id !== ACCOUNT_PATH,
+      )
+      .map(
+        (item): AppShellNavItem => ({
+          id: item.id,
+          label: item.label,
+          icon: navIconFor(item.id),
+          href: item.href,
+          selected: item.selected,
+          onClick: item.onClick,
+        }),
+      ),
+    ...(workspaceAdmission.status === 'allowed'
+      ? [
+          {
+            id: 'workspace-admin',
+            label: <DemoNavLabel labelKey="nav.workspaceAdmin" />,
+            icon: <AdminNavIcon />,
+            children: workspaceAdmission.children,
+          } satisfies AppShellNavItem,
+        ]
+      : []),
+  ]
 
   return (
     <TenantProvider tenantId={tenantId}>
@@ -1392,6 +1465,47 @@ function TenantHomeRedirect(): null {
   useEffect(() => {
     redirect(TENANT_HOME_PATH)
   }, [redirect])
+  return null
+}
+
+/**
+ * The workspace page's route guard. It reads the permission code of the
+ * declaration the URL matched exactly and checks it against the tenant
+ * permission set scoped to the current tenant. A code the caller does not
+ * hold sends the viewer to `target`, the first workspace page it may open
+ * (the same entry the navigation parent and home card point at); no
+ * permitted page at all is a `denied` admission, handled above.
+ */
+function WorkspaceRouteGuard({
+  target,
+  children,
+}: {
+  readonly target: string
+  readonly children: ReactNode
+}): ReactElement {
+  const match = useMatch()
+  const status = useWorkspaceAdminPermission(match?.declaration.permission)
+  return (
+    <RouteGuard
+      status={status}
+      deniedFallback={<WorkspaceTargetRedirect target={target} />}
+    >
+      {children}
+    </RouteGuard>
+  )
+}
+
+/** Replaces the current history entry with the given workspace page,
+ * rendered instead of a page the current tenant's permissions do not admit. */
+function WorkspaceTargetRedirect({
+  target,
+}: {
+  readonly target: string
+}): null {
+  const redirect = useRedirect()
+  useEffect(() => {
+    redirect(target)
+  }, [redirect, target])
   return null
 }
 

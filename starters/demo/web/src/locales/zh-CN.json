@@ -8,7 +8,8 @@
   "nav": {
     "account": "账户设置",
     "home": "首页",
-    "admin": "管理后台"
+    "admin": "管理后台",
+    "workspaceAdmin": "工作区管理"
   },
   "admin": {
     "backToApp": "返回应用",
@@ -43,6 +44,10 @@
       "admin": {
         "title": "管理后台",
         "description": "平台管理：租户、账户、设置与审计等。"
+      },
+      "workspaceAdmin": {
+        "title": "工作区管理",
+        "description": "管理当前工作区的成员、邀请与企业单点登录。"
       },
       "notifications": {
         "title": "通知",

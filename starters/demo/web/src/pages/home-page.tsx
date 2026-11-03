@@ -40,6 +40,7 @@ import {
   adminShellRoutes,
   useAdminTarget,
 } from '../admin-routes.js'
+import { useWorkspaceAdminAdmission } from '../workspace-admin.js'
 import { ACCOUNT_PATH, NOTIFICATIONS_PATH } from '../paths.js'
 import { useTenantMembershipNotice } from '../tenant-membership-notice.js'
 import { ReviewNoticeControl } from '../review-notice-control.js'
@@ -67,9 +68,14 @@ type StartCard =
       readonly key: 'admin'
       readonly gate: 'admin'
     }
+  | {
+      readonly key: 'workspaceAdmin'
+      readonly gate: 'workspaceAdmin'
+    }
 
 const START_CARDS: readonly StartCard[] = [
   { key: 'account', path: ACCOUNT_PATH, gate: 'direct' },
+  { key: 'workspaceAdmin', gate: 'workspaceAdmin' },
   { key: 'admin', gate: 'admin' },
   { key: 'notifications', path: NOTIFICATIONS_PATH, gate: 'route' },
 ]
@@ -155,6 +161,9 @@ function StartCardTile({
   if (card.gate === 'admin') {
     return <AdminStartCard />
   }
+  if (card.gate === 'workspaceAdmin') {
+    return <WorkspaceAdminStartCard />
+  }
   if (card.gate === 'route') {
     return <RouteStartCard card={card} />
   }
@@ -197,6 +206,26 @@ function AdminStartCard(): ReactElement | null {
     return null
   }
   return <StartCardView card={{ key: 'admin', path: target }} />
+}
+
+/**
+ * The workspace admin card: offered exactly when the workspace surface's
+ * admission allows it -- a business tenant other than `system`, no
+ * impersonation, at least one served workspace declaration, and the
+ * tenant-domain permission set for THIS tenant holding one of its codes.
+ * It calls the same useWorkspaceAdminAdmission the navigation parent does
+ * (src/workspace-admin.ts), so the card and the parent never disagree; a
+ * pending or foreign-tenant permission read fails closed and the card stays
+ * hidden.
+ */
+function WorkspaceAdminStartCard(): ReactElement | null {
+  const admission = useWorkspaceAdminAdmission()
+  if (admission.status !== 'allowed') {
+    return null
+  }
+  return (
+    <StartCardView card={{ key: 'workspaceAdmin', path: admission.target }} />
+  )
 }
 
 /** One card as an anchor carrying its target path. */

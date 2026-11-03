@@ -8,7 +8,8 @@
   "nav": {
     "account": "Account settings",
     "home": "Home",
-    "admin": "Admin"
+    "admin": "Admin",
+    "workspaceAdmin": "Workspace admin"
   },
   "admin": {
     "backToApp": "Back to app",
@@ -43,6 +44,10 @@
       "admin": {
         "title": "Admin",
         "description": "Platform administration: tenants, accounts, settings and the audit trail."
+      },
+      "workspaceAdmin": {
+        "title": "Workspace admin",
+        "description": "Manage this workspace's members, invitations and enterprise single sign-on."
       },
       "notifications": {
         "title": "Notifications",

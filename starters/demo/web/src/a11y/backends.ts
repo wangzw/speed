@@ -29,10 +29,14 @@
  * impersonations page also fires a caller-session
  * read on mount -- GET /api/v1/auth/impersonation, the operator's own impersonation
  * status -- which is scripted here too, in data mode as a grant in force and in
- * empty mode as the bare 404 the page reads as "not impersonating". Tenant-scoped
- * pages whose read waits on a tenant selector the sweep does not drive
- * (impersonations, invitations, SSO) still answer their selectors' roster read
- * and render their selector-plus-empty state; that is a real state, not a shell.
+ * empty mode as the bare 404 the page reads as "not impersonating". The
+ * tenant-scoped pages the workspace surface mounts under the current tenant
+ * (invitations and members, SSO providers) answer populated data mode with
+ * rows whose identities the member read carries, so the sweep scans their
+ * real table state; the platform surface's selector-driven pages (the
+ * impersonations list and the tenant-addressed invitations and SSO pages at
+ * their own routes) still wait on a selector the sweep does not drive and
+ * render their selector-plus-empty state, which is a real state too.
  */
 
 import type { RequestFn } from '@speed/api-client'
@@ -44,9 +48,12 @@ import type {
   AuthnAdminAccountEnvelope,
   AuthnAdminImpersonation,
   AuthnAdminImpersonationList,
+  AuthnAdminMember,
   AuthnAdminMemberList,
+  AuthnAdminProvider,
   AuthnAdminProviderList,
   AuthnImpersonationGrantEnvelope,
+  AuthnInviteInvitation,
   AuthnInvitePage,
   AuthnInviteView,
   AuthnMfaFactorList,
@@ -56,6 +63,7 @@ import type {
   AuthzAdminGrantView,
   AuthzAdminPermissionView,
   AuthzAdminRoleView,
+  AuthzSelfPermissions200,
   NotificationInboxGetUnreadCount200,
   NotificationInboxListMessages200,
   NotificationMessage,
@@ -111,6 +119,53 @@ const ACCOUNT: AuthnAdminAccount = {
   attributes: {},
   identifiers: [],
   created_at: INSTANT,
+}
+
+/**
+ * One member of the scan tenant, carrying the account display name the
+ * member read answers: the workspace invitations page renders the name
+ * column and both identity cells from it, so data mode scans a populated
+ * member table rather than an empty shell.
+ */
+const MEMBER: AuthnAdminMember = {
+  account: ACCOUNT.id,
+  tenant: TENANT.id,
+  active: true,
+  display_name: 'Test User',
+  sso_exempt: false,
+  source: 'admin',
+}
+
+/**
+ * One pending invitation of the scan tenant. Its inviter is the same account
+ * the member read carries, so the workspace page resolves the inviter from
+ * the member read rather than the platform account read.
+ */
+const INVITATION_ROW: AuthnInviteInvitation = {
+  id: 'invite-1',
+  tenant: TENANT.id,
+  email: 'invitee@example.com',
+  invited_by: ACCOUNT.id,
+  status: 'pending',
+  created_at: INSTANT,
+  expires_at: INSTANT,
+  accepted_at: ZERO_INSTANT,
+}
+
+/** One SSO provider of the scan tenant, with no claimed domain. */
+const SSO_PROVIDER: AuthnAdminProvider = {
+  id: 'provider-1',
+  tenant: TENANT.id,
+  name: 'Example IdP',
+  protocol: 'oidc',
+  enabled: true,
+  provisioning: 'jit',
+  allow_idp_initiated: false,
+  allow_sha1: false,
+  merge_existing: false,
+  trust_idp_mfa: false,
+  version: 1,
+  domains: [],
 }
 
 const AUDIT_RECORD: AuditAdminRecord = {
@@ -279,6 +334,19 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     } satisfies TenantSelfTenantsList200,
     { tenants: [] } satisfies TenantSelfTenantsList200,
   ),
+  '/api/v1/authz/me/permissions': answer(
+    {
+      platform: [],
+      tenant: ['authn.membership.manage', 'authn.idp.manage'],
+    } satisfies AuthzSelfPermissions200,
+    // The caller's own permission sets are not page data: the same grant is
+    // answered in the empty state so the workspace pages render their empty
+    // state rather than the home fallback an empty permission set implies.
+    {
+      platform: [],
+      tenant: ['authn.membership.manage', 'authn.idp.manage'],
+    } satisfies AuthzSelfPermissions200,
+  ),
   '/api/v1/system/tenants': answer(
     { tenants: [TENANT] } satisfies TenantAdminTenantsList200,
     { tenants: [] } satisfies TenantAdminTenantsList200,
@@ -420,19 +488,19 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
   [
     /^\/api\/v1\/tenants\/[^/]+\/invitations$/,
     answer(
-      { invitations: [], next_cursor: '' } satisfies AuthnInvitePage,
+      { invitations: [INVITATION_ROW], next_cursor: '' } satisfies AuthnInvitePage,
       { invitations: [], next_cursor: '' } satisfies AuthnInvitePage,
     ),
   ],
   [
     /^\/api\/v1\/tenants\/[^/]+\/members$/,
-    answer({ members: [] } satisfies AuthnAdminMemberList, {
+    answer({ members: [MEMBER] } satisfies AuthnAdminMemberList, {
       members: [],
     } satisfies AuthnAdminMemberList),
   ],
   [
     /^\/api\/v1\/tenants\/[^/]+\/sso\/providers$/,
-    answer({ providers: [] } satisfies AuthnAdminProviderList, {
+    answer({ providers: [SSO_PROVIDER] } satisfies AuthnAdminProviderList, {
       providers: [],
     } satisfies AuthnAdminProviderList),
   ],

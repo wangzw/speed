@@ -49,6 +49,7 @@ import {
   setTenantAliases,
 } from '../chrome.js'
 import { ACCOUNT_SECTION_PATHS, ACCOUNT_SECTIONS } from '../paths.js'
+import { PlatformPermissions } from '../platform-permissions.js'
 import { createBackend } from './backends.js'
 import type { BackendMode } from './backends.js'
 import {
@@ -145,7 +146,17 @@ async function scanRoute(
   const unscripted: string[] = []
   bindRequestFn(createBackend(mode, (url) => unscripted.push(url)))
   window.history.replaceState({}, '', path)
-  const { container } = renderDemoApp({ session: staffSession(), shellLayout })
+  // The permission attach is part of the production assembly: the workspace
+  // admin pages admit only against the tenant-tagged set it publishes, so the
+  // sweep mounts it the way a real page load does.
+  const session = staffSession()
+  const { container } = renderDemoApp({
+    session,
+    shellLayout,
+    wrap: (app) => (
+      <PlatformPermissions session={session}>{app}</PlatformPermissions>
+    ),
+  })
   // A route that rendered no markup at all is a broken sweep, not an
   // accessible page: fail rather than scan an empty document.
   expect(container.innerHTML, `route ${path} [${mode}] rendered no markup`).not.toBe('')

@@ -32,7 +32,9 @@ import {
   ACCOUNT_SECTION_PATHS,
   INVITATION_PREFIX,
   PASSWORD_RESET_PATH,
+  WORKSPACE_ADMIN_PREFIX,
 } from './paths.js'
+import { workspaceAdminShellRoutes } from './workspace-admin.js'
 
 describe('the route table', () => {
   it('names the business slot, the account page and the notification center, all labelled but for the completion points beside the unlabelled callback', () => {
@@ -171,8 +173,21 @@ describe('the route table', () => {
         authCallbackRoutes.length +
         invitationRoutes.length +
         passwordResetRoutes.length +
-        adminShellRoutes.length,
+        adminShellRoutes.length +
+        workspaceAdminShellRoutes.length,
     )
+  })
+
+  it('mounts the workspace declarations under their own prefix, outside the admin prefix', () => {
+    expect(workspaceAdminShellRoutes.map((route) => route.path)).toEqual([
+      `${WORKSPACE_ADMIN_PREFIX}/invitations`,
+      `${WORKSPACE_ADMIN_PREFIX}/sso`,
+    ])
+    for (const route of workspaceAdminShellRoutes) {
+      // The two management surfaces have disjoint path spaces: the admin
+      // predicate does not claim a workspace page.
+      expect(isAdminPath(route.path)).toBe(false)
+    }
   })
 })
 

@@ -71,8 +71,9 @@ export const ROUTE_PATHS = [
  * app's route table: the business routes (the home page, the account settings'
  * group address and its profile, security, sessions and preferences panes, the
  * notification centre, the binding callback), the auth and invitation
- * landings, and the admin area under ADMIN_PREFIX, every `:param` concretized
- * to `sample` as `concretize` does.
+ * landings, the admin area under ADMIN_PREFIX, and the workspace admin area
+ * under WORKSPACE_ADMIN_PREFIX, every `:param` concretized to `sample` as
+ * `concretize` does.
  */
 export const EXPECTED_ROUTE_PATHS = [
   '/',
@@ -99,6 +100,8 @@ export const EXPECTED_ROUTE_PATHS = [
   '/admin/sms',
   '/admin/audit',
   '/admin/audit/sample',
+  '/workspace/admin/invitations',
+  '/workspace/admin/sso',
 ] as const
 
 /**

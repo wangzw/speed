@@ -30,6 +30,7 @@ import { notificationRoutes } from '@speed/notification-ui'
 import { useLocationPath, useRedirect } from '@speed/route-kit'
 import type { RouteDeclaration, RouteTable } from '@speed/route-kit'
 import { adminShellRoutes } from './admin-routes.js'
+import { workspaceAdminShellRoutes } from './workspace-admin.js'
 import { DemoNavLabel } from './nav-label.js'
 import { AccountNavIcon, HomeNavIcon, NotificationsNavIcon } from './nav-icons.js'
 import {
@@ -245,12 +246,13 @@ export const passwordResetRoutes: RouteTable = [
 ] satisfies readonly HostRouteDeclaration[]
 
 /** The product's pages: the business slot, the callback, invitation and
- * password reset routes, and the mounted admin area (the dashboard at the
- * prefix itself). */
+ * password reset routes, the mounted admin area (the dashboard at the
+ * prefix itself) and the workspace admin area under its own prefix. */
 export const routes: RouteTable = [
   ...businessRoutes,
   ...authCallbackRoutes,
   ...invitationRoutes,
   ...passwordResetRoutes,
   ...adminShellRoutes,
+  ...workspaceAdminShellRoutes,
 ]

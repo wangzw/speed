@@ -33,6 +33,7 @@ import { getNotificationInboxGetUnreadCountQueryKey } from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { tenantQueryKey } from '@speed/auth-core'
 import { setCurrentTenantId, setTenantAliases } from '../chrome.js'
+import { PlatformPermissions } from '../platform-permissions.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import { createBackend } from './backends.js'
 import {
@@ -111,7 +112,16 @@ async function scanRoute(
   const unscripted: string[] = []
   bindRequestFn(createBackend(mode, (url) => unscripted.push(url)))
   window.history.replaceState({}, '', path)
-  const { container } = renderDemoApp({ session: staffSession() })
+  // The workspace pages admit only against the tenant-tagged permission set
+  // the production assembly publishes, so mount the attach as a page load
+  // does.
+  const session = staffSession()
+  const { container } = renderDemoApp({
+    session,
+    wrap: (app) => (
+      <PlatformPermissions session={session}>{app}</PlatformPermissions>
+    ),
+  })
   expect(container.innerHTML, `route ${path} [${mode}] rendered no markup`).not.toBe('')
   await settle()
   expect(
