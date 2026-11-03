@@ -145,6 +145,42 @@ describe('the caller tenant list store', () => {
     })
   })
 
+  it('keeps the newest read when an older read fails after it settles', async () => {
+    let rejectOlder!: (error: unknown) => void
+    const older = new Promise((_resolve, reject) => {
+      rejectOlder = reject
+    })
+    let calls = 0
+    bindSelf(() => {
+      calls += 1
+      return calls === 1
+        ? older
+        : {
+            tenants: [{ id: 'acme', alias: 'acme-inc', kind: 'business' }],
+          }
+    })
+
+    const olderRead = loadSelfTenants()
+    const newerRead = loadSelfTenants()
+    await newerRead
+    expect(getSelfTenantState()).toEqual({
+      tenants: [{ id: 'acme', alias: 'acme-inc', kind: 'business' }],
+      settled: true,
+      failed: false,
+    })
+
+    // The older read fails after the newer one answered. Its failure belongs
+    // to a superseded attempt, so it must not turn the settled list into a
+    // failure the retry control would show again.
+    rejectOlder(new Error('the older read failed'))
+    await olderRead
+    expect(getSelfTenantState()).toEqual({
+      tenants: [{ id: 'acme', alias: 'acme-inc', kind: 'business' }],
+      settled: true,
+      failed: false,
+    })
+  })
+
   it('clears the rows and the settled flag', async () => {
     bindSelf(() => ({ tenants: [{ id: 'acme', alias: 'acme-inc' }] }))
     await loadSelfTenants()

@@ -56,6 +56,7 @@ import { createBackend } from './backends.js'
 import type { BackendMode } from './backends.js'
 import {
   ERROR_PLACEHOLDER_BY_PATH,
+  EXPECTED_HEADING_BY_PATH,
   EXPECTED_ROUTE_PATHS,
   MODES,
   ROUTE_PATHS,
@@ -183,6 +184,21 @@ async function scanRoute(
     // stable failure rather than a tree still being replaced.
     await screen.findByText(errorPlaceholder)
     await settle()
+  } else {
+    // A workspace route in its data or empty state must render its own page
+    // title. Without this, a silent redirect to the tenant home would scan a
+    // clean home page and pass the sweep while the route itself never
+    // rendered.
+    const expectedHeading = EXPECTED_HEADING_BY_PATH[path]
+    if (expectedHeading !== undefined) {
+      expect(
+        await screen.findByRole('heading', {
+          level: 1,
+          name: expectedHeading,
+        }),
+        `route ${path} [${mode}] did not render its page title heading`,
+      ).toBeInTheDocument()
+    }
   }
   const result = await scanPage()
   if (errorPlaceholder !== undefined) {

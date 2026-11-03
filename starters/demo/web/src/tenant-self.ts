@@ -66,6 +66,11 @@ let state: SelfTenantState = EMPTY
 // Changes whenever the list stops belonging to the account it was read for.
 // A read captures this at start and drops its answer if it moved meanwhile.
 let epoch = 0
+// The issue order of the reads. A read publishes only while it is still the
+// newest one started, so a slow failure cannot overwrite a newer success --
+// the retry on the workspace failure page starts a read per click, and the
+// last outcome to land must be the newest read's, not the slowest one's.
+let sequence = 0
 const listeners = new Set<() => void>()
 
 function publish(next: SelfTenantState): void {
@@ -116,9 +121,12 @@ export function clearSelfTenants(): void {
  */
 export async function loadSelfTenants(): Promise<SelfTenantState> {
   const started = epoch
+  const startedSequence = ++sequence
+  const applies = (): boolean =>
+    started === epoch && startedSequence === sequence
   try {
     const answer = await tenantSelfTenantsList()
-    if (started === epoch) {
+    if (applies()) {
       publish({
         tenants: answer.tenants.map(({ id, alias, kind }) => ({
           id,
@@ -130,7 +138,7 @@ export async function loadSelfTenants(): Promise<SelfTenantState> {
       })
     }
   } catch {
-    if (started === epoch) {
+    if (applies()) {
       publish({ tenants: state.tenants, settled: false, failed: true })
     }
   }

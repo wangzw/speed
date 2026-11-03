@@ -135,6 +135,27 @@ export const ERROR_PLACEHOLDER_BY_PATH: Readonly<Record<string, string>> = {
 }
 
 /**
+ * The page title heading each workspace route renders in data and empty
+ * modes. The error mode renders the admission failure instead (see
+ * ERROR_PLACEHOLDER_BY_PATH). Asserting the heading in the other two modes
+ * stops a silent redirect to the tenant home from passing the sweep: the
+ * redirect would scan a clean home page, and only the page title proves the
+ * workspace route itself rendered.
+ */
+export const EXPECTED_HEADING_BY_PATH: Readonly<Record<string, string>> = {
+  '/workspace/admin/invitations': (
+    adminUiResources['en-US'] as unknown as {
+      readonly invitations: { readonly title: string }
+    }
+  ).invitations.title,
+  '/workspace/admin/sso': (
+    adminUiResources['en-US'] as unknown as {
+      readonly sso: { readonly title: string }
+    }
+  ).sso.title,
+}
+
+/**
  * How many settle ticks a render may take before a sweep calls it hung.
  * Each tick flushes pending microtasks and one timer/animation-frame callback
  * inside act; a stable page returns after two consecutive identical ticks,

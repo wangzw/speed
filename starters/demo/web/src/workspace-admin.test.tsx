@@ -80,6 +80,8 @@ function scriptReads(options: {
   readonly tenants: readonly TenantRow[]
   /** Whether the caller tenant read refuses instead of answering. */
   readonly tenantsFailed?: boolean
+  /** Answers the caller tenant read instead of the static list or failure. */
+  readonly tenantsRead?: () => Promise<{ readonly tenants: readonly TenantRow[] }>
   readonly permissionsFor: PermissionsFor
   readonly impersonationGrant?: boolean
 }): { readonly requested: string[] } {
@@ -87,6 +89,9 @@ function scriptReads(options: {
   const request: RequestFn = <T,>(path: string): Promise<T> => {
     requested.push(path)
     if (path === SELF_TENANTS_PATH) {
+      if (options.tenantsRead !== undefined) {
+        return options.tenantsRead() as Promise<T>
+      }
       return options.tenantsFailed === true
         ? Promise.reject(new Error('tenant read refused'))
         : Promise.resolve({ tenants: options.tenants } as T)
@@ -145,6 +150,8 @@ function mountApp(options: {
   readonly path?: string
   readonly tenants: readonly TenantRow[]
   readonly tenantsFailed?: boolean
+  /** Answers the caller tenant read instead of the static list or failure. */
+  readonly tenantsRead?: () => Promise<{ readonly tenants: readonly TenantRow[] }>
   readonly permissionsFor: PermissionsFor
   readonly impersonating?: boolean
   readonly impersonationGrant?: boolean
@@ -453,6 +460,78 @@ describe('the workspace admin route admission', () => {
       screen.getByRole('button', {
         name: demoEnUS.workspace.accessFailed.retry,
       }),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the failure page when the feature document read failed', async () => {
+    mountApp({
+      path: '/workspace/admin/invitations',
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      features: { state: 'failed', error: new Error('feature read refused') },
+      permissionsFor: () => ({
+        platform: [],
+        tenant: ['authn.membership.manage'],
+      }),
+    })
+    // A failed feature document is unknown, not a denial: the workspace
+    // admission renders its retryable failure rather than redirecting a
+    // possible manager home.
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.workspace.accessFailed.title,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      demoEnUS.workspace.accessFailed.title,
+    )
+    await flushReads()
+    expect(workspaceEntry().nav).toBeNull()
+    expect(workspaceEntry().card).toBeNull()
+    expect(window.location.pathname).toBe('/workspace/admin/invitations')
+  })
+
+  it('disables the retry while its reads are in flight', async () => {
+    const user = userEvent.setup()
+    let settleRetry: (value: {
+      readonly tenants: readonly TenantRow[]
+    }) => void = () => undefined
+    let calls = 0
+    mountApp({
+      path: '/workspace/admin/invitations',
+      tenants: [],
+      tenantsRead: () => {
+        calls += 1
+        if (calls === 1) {
+          return Promise.reject(new Error('tenant read refused'))
+        }
+        return new Promise((resolve) => {
+          settleRetry = resolve
+        })
+      },
+      permissionsFor: () => ({
+        platform: [],
+        tenant: ['authn.membership.manage'],
+      }),
+    })
+    const retry = await screen.findByRole('button', {
+      name: demoEnUS.workspace.accessFailed.retry,
+    })
+
+    await user.click(retry)
+
+    // The reads the retry started are still settling: a second click would
+    // start a competing caller-tenant read, so the control is disabled.
+    expect(retry).toBeDisabled()
+
+    await act(async () => {
+      settleRetry({
+        tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      })
+    })
+    // The retry settles the admission into the page it retried for.
+    expect(
+      await screen.findByRole('heading', { name: tAdmin('invitations.title') }),
     ).toBeInTheDocument()
   })
 

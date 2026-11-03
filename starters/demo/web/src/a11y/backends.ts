@@ -332,7 +332,15 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
         { id: TENANT.id, alias: TENANT.alias, kind: 'business' },
       ],
     } satisfies TenantSelfTenantsList200,
-    { tenants: [] } satisfies TenantSelfTenantsList200,
+    // The caller's membership list is not page data: the same tenant is
+    // answered in the empty state so a tenant-scoped route settles a current
+    // tenant and renders its own empty state, instead of falling back to the
+    // tenant home (which the sweep would scan as a clean page).
+    {
+      tenants: [
+        { id: TENANT.id, alias: TENANT.alias, kind: 'business' },
+      ],
+    } satisfies TenantSelfTenantsList200,
   ),
   '/api/v1/authz/me/permissions': answer(
     {

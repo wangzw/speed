@@ -673,11 +673,21 @@ function TenantFrame({
     if (
       previous !== null &&
       previous !== tenantId &&
-      isWorkspaceAdminPath(pathname)
+      isWorkspaceAdminPath(pathname) &&
+      !(
+        // An authenticated viewer whose tenant went unknown because the
+        // feature document is still pending or failed is waiting, not
+        // switching: the workspace admission renders its pending or retryable
+        // failure view in place. Redirecting here would replace that view
+        // with the tenant home and hide the retry.
+        tenantId === null &&
+        authenticated &&
+        !featuresReady
+      )
     ) {
       navigate(TENANT_HOME_PATH)
     }
-  }, [tenantId, pathname, navigate])
+  }, [tenantId, pathname, navigate, authenticated, featuresReady])
   // The caller's own tenant list: the memberships read the root loads, and
   // the fact the current tenant settles from. A read that has not settled
   // (a failure included) is not an empty answer, so neither the settlement
@@ -1636,14 +1646,24 @@ function WorkspaceAccessFailed(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
   const read = usePermissionRead()
   const { session } = useAppServices()
+  // One retry in flight at a time: a second click while the first reads are
+  // still settling would start a competing caller-tenant read, and the page
+  // must not depend on which one happens to land last.
+  const [retrying, setRetrying] = useState(false)
   const retry = () => {
+    if (retrying) {
+      return
+    }
+    setRetrying(true)
     // The three reads the admission consumes, each of which reports its own
     // outcome to the state that rendered this page. The feature read's
     // rejection is caught here because the retry is an action, not a read the
     // page awaits: its outcome lands in the feature state either way.
-    void loadSelfTenants()
-    void session.retryFeatures().catch(() => undefined)
-    read.retry()
+    void Promise.allSettled([
+      loadSelfTenants(),
+      session.retryFeatures(),
+      Promise.resolve(read.retry()),
+    ]).finally(() => setRetrying(false))
   }
   return (
     <Box
@@ -1663,7 +1683,9 @@ function WorkspaceAccessFailed(): ReactElement {
       <Typography variant="body1">
         {t('workspace.accessFailed.description')}
       </Typography>
-      <Button onClick={retry}>{t('workspace.accessFailed.retry')}</Button>
+      <Button onClick={retry} disabled={retrying}>
+        {t('workspace.accessFailed.retry')}
+      </Button>
     </Box>
   )
 }
