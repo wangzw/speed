@@ -321,6 +321,7 @@ type Requirement struct {
 | 短信第二因素 | 是 | `authn.sms.Send` | 同上 |
 | 手机登记 | 是 | `authn.sms.Send` | 同上 |
 | 匿名短信重置 | 是 | `authn.sms.Send` | 同上 |
+| 匿名口令重置的邮箱分支 | 是 | 登录模块自己的 `checkHumanProof` | 邮件验证码不经过 `authn.sms.Send`，删掉这一次校验会使该路径无闸 |
 | 自助添加邮箱 | 是 | 自助路由自己的 `checkHumanProof` | 邮件验证码不经过 `authn.sms.Send`，删掉这一次校验会使该路径无闸 |
 | 通知投递的短信 | 否 | — | 业务消息，不是用户请求的验证消息；由投递预算与跨渠道上界约束 |
 | 模板管理 | 否 | — | 一条消息也不发送 |
@@ -328,7 +329,7 @@ type Requirement struct {
 
 上表按「是否发送用户请求的验证消息」判定，不是封闭集：新增一条发送路径时按同一判据归入，经过 `authn.sms.Send` 的由它校验，不经过的由该路径自己校验。
 
-**人机验证闸是排他的发送前接缝。** `authn.humanverify` 排他交付根包的 `HumanVerifier`：`Required` 回答本部署是否要求证明，`Provider` 与 `SiteKey` 回答机制与前端控件需要的公开标识，`Verify` 校验并消费一份证明。机制取封闭集 `off`、`pow`、`turnstile`，**`pow` 是缺省**：取用本模块而不写模式的装配要求一份自托管的工作量证明；关闭时 `Required` 为假、`Verify` 接受任何证明，一次发送都不多问，必须显式写 `off`。`pow` 由模块自带，经 `mount.Mounter` 在挂载基址下公开挂出挑战路由（缺省基址是 `POST /api/v1/auth/human/challenge`），挑战存 `kv` 并以比较并交换一次性消费；`turnstile` 把证明交 Cloudflare 的 siteverify，只接受主机名与（配置了时）action 相符的答案；站点校验以成功为假拒绝时按其错误码分档，证明本身缺失、无效、过期或已用读作无效证明，提供方自身的内部故障、部署的密钥或控件配置错误以及本包不认识的码读作提供方不可用。**证明在发送一处的入口校验并消费：** 经过 `authn.sms.Send` 的发送路径——短信登录、短信第二因素、手机登记与匿名短信重置——把 `HumanProof` 交给它，由它在放行表、队列容量与任何发送预算之前校验并消费一次，调用方不再自行校验；自助添加邮箱不经过 `authn.sms.Send`，由该路由自己校验，去掉那一次校验会使该路径无闸。缺证明、无效、过期、重放答 403 `human-verification-required`，过长的证明答 400，提供方或它的存储不可用答 503 且不发送。闸不持有发送状态、不发送消息，也不消耗任何预算；注册不发送消息，因此不问它；通知投递与模板管理不是发送验证消息的路径，不经这道闸。部署换用别的机制时自行交付 `authn.HumanVerifier` 并把本模块从命令树上撤下。键表见 [design-authn-config](design-authn-config.md)，发送路径的判定见 [design-authn-sms](design-authn-sms.md) 与 [design-authn-login](design-authn-login.md)，取舍见 [ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md)。
+**人机验证闸是排他的发送前接缝。** `authn.humanverify` 排他交付根包的 `HumanVerifier`：`Required` 回答本部署是否要求证明，`Provider` 与 `SiteKey` 回答机制与前端控件需要的公开标识，`Verify` 校验并消费一份证明。机制取封闭集 `off`、`pow`、`turnstile`，**`pow` 是缺省**：取用本模块而不写模式的装配要求一份自托管的工作量证明；关闭时 `Required` 为假、`Verify` 接受任何证明，一次发送都不多问，必须显式写 `off`。`pow` 由模块自带，经 `mount.Mounter` 在挂载基址下公开挂出挑战路由（缺省基址是 `POST /api/v1/auth/human/challenge`），挑战存 `kv` 并以比较并交换一次性消费；`turnstile` 把证明交 Cloudflare 的 siteverify，只接受主机名与（配置了时）action 相符的答案；站点校验以成功为假拒绝时按其错误码分档，证明本身缺失、无效、过期或已用读作无效证明，提供方自身的内部故障、部署的密钥或控件配置错误以及本包不认识的码读作提供方不可用。**证明在发送一处的入口校验并消费：** 经过 `authn.sms.Send` 的发送路径——短信登录、短信第二因素、手机登记与匿名短信重置——把 `HumanProof` 交给它，由它在放行表、队列容量与任何发送预算之前校验并消费一次，调用方不再自行校验；自助添加邮箱与匿名口令重置的邮箱分支不经过 `authn.sms.Send`，由各自的路由自己校验，去掉那一次校验会使该路径无闸。缺证明、无效、过期、重放答 403 `human-verification-required`，过长的证明答 400，提供方或它的存储不可用答 503 且不发送。闸不持有发送状态、不发送消息，也不消耗任何预算；注册不发送消息，因此不问它；通知投递与模板管理不是发送验证消息的路径，不经这道闸。部署换用别的机制时自行交付 `authn.HumanVerifier` 并把本模块从命令树上撤下。键表见 [design-authn-config](design-authn-config.md)，发送路径的判定见 [design-authn-sms](design-authn-sms.md) 与 [design-authn-login](design-authn-login.md)，取舍见 [ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md)。
 
 租户准入层不在本表：它是 `pkg/tenant` 下的模块 `tenant.admission`，排他交付定序锚点 `tenant.Admission` 与根包的 `ScopeGuard`，方向是它 import 本功能目录的根包（[design-tenant-admission](../tenant/design-tenant-admission.md)）。登录引擎把两块内容放在 `pkg/authn/login/internal` 下：`resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份），`selfservice` 挂账户凭据自助路由；两者不登记模块，只被登录引擎构造与调用（[design-authn-login](design-authn-login.md)）。
 
@@ -357,7 +358,7 @@ type Requirement struct {
 
 ## UML 图
 
-下图给出根包上的接缝类型与它们的关系。图中画不出的约束是：判决与身份之间的那条边只在判决为通过、且 `Principal` 通过出口检查时成立；请求链上的身份只由网关写入，注入口只在写入方名单内的包里可达（见身份一节）；`Verdict` 与 `Identity` 的字段不导出，读取经包级函数。人机验证闸不在请求的认证路径上：`authn.sms.Send` 在花费任何发送预算之前取用 `HumanVerifier`，把 `HumanProof` 交给它校验并消费；自助添加邮箱的邮件路径在自己的路由上取用同一个接缝。
+下图给出根包上的接缝类型与它们的关系。图中画不出的约束是：判决与身份之间的那条边只在判决为通过、且 `Principal` 通过出口检查时成立；请求链上的身份只由网关写入，注入口只在写入方名单内的包里可达（见身份一节）；`Verdict` 与 `Identity` 的字段不导出，读取经包级函数。人机验证闸不在请求的认证路径上：`authn.sms.Send` 在花费任何发送预算之前取用 `HumanVerifier`，把 `HumanProof` 交给它校验并消费；自助添加邮箱与匿名口令重置的邮箱路径在自己的路由上取用同一个接缝。
 
 ```mermaid
 classDiagram

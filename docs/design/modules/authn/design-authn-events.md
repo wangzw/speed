@@ -230,9 +230,9 @@
 
 指标经 `observability.MeterProvider` 报出，`Meter` 名取 `authn`。`MeterProvider` 缺席合法：缺提供者时静默跳过上报，取用得到缺提供者以外的错误则终止启动。业务指标归产生信号的模块自己上报，不进 observability 的文档。除网关的可观察计数器与预算利用率仪表外，仪器都是同步计数器与直方图，事件稀疏，不为上报在请求路径上多付代价。
 
-属性只取方式、协议、结果、因素、算法这类取值有限的维度，不含租户、账户、IdP 标识与路由。下表的属性集是封闭集合。
+属性只取方式、协议、结果、因素、算法这类取值有限的维度，不含租户、账户、IdP 标识与路由。**下表固定的是属性名，不是每个属性取值的字面全集。** 认证侧列出的取值是封闭集；`authn.sms.budget.utilization` 由通知投递以 `channel` 取 `notification` 上报时，`purpose` 取通知分类法里登记的类型键，那是一组登记的资源，随装配增减，不在这张表里逐一列出（见下文与 [design-notification-delivery](../notification/design-notification-delivery.md)）。新增属性名是破坏性变更；给已开放取值的属性新增取值是兼容变更。
 
-| 仪器名 | 单位 | 属性（闭集） |
+| 仪器名 | 单位 | 属性（属性名为闭集） |
 |---|---|---|
 | `authn.gate.conclusions`（可观察） | `{conclusion}` | `outcome`：`unspoken`、`authenticated`、`denied`、`unavailable`、`anonymous` |
 | `authn.login.completions` | `{login}` | `method`：登录方式名，闭集，SSO 只到 `oidc`、`saml`，不含提供方标识；`outcome`：`success`、`failed`、`throttled`、`refused`、`unavailable`、`expired` |
@@ -250,9 +250,11 @@
 | `authn.audit.write-failures` | `{failure}` | `mandatory`：`true`、`false` |
 | `authn.cleanup.failures` | `{failure}` | `hook`：`session`、`mfa`、`sms`、`secret`、`other`；账户停用、删除与服务密钥撤销之后钩子失败的次数 |
 
-`authn.gate.conclusions` 的 `anonymous` 是可选路由上无凭据而放行的结局；`outcome` 各取值之和包含 `anonymous`。`authn.login.completions` 按方式聚合，看不到哪个 IdP 在失败，定位到 IdP 读日志里的 `idp` 字段。
+`authn.gate.conclusions` 的 `anonymous` 是可选路由上无凭据而放行的结局；`outcome` 各取值之和包含 `anonymous`。`authn.login.completions` 按方式聚合，看不到哪个 IdP 在失败，定位到 IdP 读日志里的 `idp` 字段。**人机验证证明被拒绝的第一步不记这条仪器，也不写登录审计行**：它不是一次「凭据没对」，403 或 400 由证明闸自己的答案承载；一次拒绝因此只在发送侧留下自己的指标（若有），不在登录完成度与审计里出现（[design-authn-login](design-authn-login.md)）。
 
 `authn.sms.budget.utilization` 是认证与通知共用的一个仪器名。通知投递以 `channel` 取 `notification` 上报同一个名字，`purpose` 取通知类型键（该键来自通知分类法，是登记的资源集而非本表列出的固定取值），`dimension` 取 `recipient-hourly`、`recipient-daily`、`tenant-distinct-hourly`、`attempt-hourly` 与 `ceiling`；跨渠道上界的点仍以 `purpose` 取 `shared`、`dimension` 取 `ceiling`。通知侧的登记与判据在 [design-notification-delivery](../notification/design-notification-delivery.md)。本表列出的 `channel` 只含 `authn`，是因为本文承载认证侧的仪器；两个渠道读同一个仪表名靠 `channel` 分开。
+
+**预算耗尽的可观察信号是 `authn.sms.budget.utilization` 仪表与 `authn.sms.sends` 的 `budget-exhausted` 取值。** 仪表由认证与通知都上报，按 `channel`、`purpose`、`dimension` 给出已用比例；`budget-exhausted` 是认证侧逐次发送的拒绝。后者只覆盖认证发送：通知渠道不产生 `authn.sms.sends`，它的预算耗尽由仪表报告，这是两个信号在渠道上的分界。
 
 ### 对外接口面
 

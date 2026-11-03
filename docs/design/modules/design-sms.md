@@ -238,7 +238,7 @@ type Resolved struct {
 
 **台账只记短信，不是部署全部投递预算的唯一账。** 邮件投递的预算不在这张表上：它按收件人与按部署的固定窗口计在 `notification.delivery` 使用的键值计数器上，与短信各自计数、互不占用额度（[design-notification-delivery](notification/design-notification-delivery.md)）。键值计数器仍在邮件预算上使用；短信只使用这张台账，不读键值计数器。
 
-**一行是一次尝试，不是一次投递。** 调用方在消耗预算时、厂商答复之前写入一行，`outcome` 记写入时已知的结局，`refunded_at` 是之后才改变的状态，`suppressed` 标记调用方故意没有发送的尝试。结局是闭集 `pending`、`sent`、`uncertain`、`throttled`、`rejected`、`unroutable`，一律不在写入后改写；退款是唯一会变的状态。一次确定的失败由 `MarkRefunded` 标为退款，退款从发送计数里退出、留在尝试计数里。抑制行在写入时即带退款时刻，`Record` 拒绝一个没有退款时刻的抑制行，所以这条不变量由存储保证。
+**一行是一次尝试，不是一次投递。** 调用方在消耗预算时、厂商答复之前写入一行，`outcome` 记写入时已知的结局，`refunded_at` 是之后才改变的状态，`suppressed` 标记调用方故意没有发送的尝试。结局是闭集 `pending`、`sent`、`uncertain`、`throttled`、`rejected`、`unroutable`，一律不在写入后改写；退款是唯一会变的状态。一次确定的失败由 `MarkRefunded` 标为退款，退款从发送计数里退出、留在尝试计数里。抑制行在写入时即带退款时刻，`Record` 拒绝一个没有退款时刻的抑制行，所以这条不变量由存储保证。**退款由持有该行标识的消费者发起，台账不自动退还任何行。** 通知提交面在入队前写行、把行标识放进作业载荷；幂等键把一次派发收敛到既有作业时，后写的那一行没有任何载荷指向它，于是不会被退款，留在发送、尝试与跨渠道上界里直到窗口走完（[design-notification-delivery](notification/design-notification-delivery.md)）。
 
 **计数查询的开关相互独立。** `IncludeSuppressed`（缺省假）决定抑制行是否参与；退款开关决定计哪一种退款状态。据此得到下列计数：
 
@@ -246,11 +246,13 @@ type Resolved struct {
 - **尝试预算**（`IncludeRefunded`）：每一行，`NOT suppressed` 除非同时带 `IncludeSuppressed`；没有退款条件。
 - **确定失败**（`OnlyRefunded`）：`refunded_at IS NOT NULL`，`NOT suppressed` 除非同时带 `IncludeSuppressed`。`OnlyRefunded` 与 `IncludeRefunded` 同时出现即 `ErrInvalidQuery`，不静默取一个。
 
+**「尝试预算」在认证与通知各指一个设置，不是一个共用的判据。** 通知渠道的尝试预算取 `IncludeRefunded`：每一次尝试都计，不论载体是否接受、发送预算是否已退还，因为那里防的是陷入重试循环的生产者。认证渠道的尝试预算取 `OnlyRefunded`：只计事后退款的确定失败，因为那里计的是猜码或轮换必然失败目的地的人，一次成功不该记在攻击者名下。同一个词在认证与通知指向不同的查询形状，调用方按开关读计数，不能按名字推断。
+
 `Query` 还按渠道、用途与至多一个索引维度收窄；`Oldest` 与 `Latest` 读同一批行，分别是窗口何时让出位置与重发间隔量到哪一刻。`CountDistinctDestinations` 数不同的目的地摘要，供按来源的不同目的地预算使用。`CountCeiling` 数两个渠道自某一时刻起未退款、未抑制的行，是部署的跨渠道上界。`PruneBefore` 删除早于某一时刻的行并回答删了几行；它是方法而不是定时任务，本模块不跑 ticker。
 
-**台账不持计数器，也不持锁。** `Record` 是一条 INSERT，每个计数都是对已提交行的查询；并发记录是并发插入，没有可丢更新的共享状态。一个必须成为硬上限的预算由调用方把计数与写入放进同一个事务，并在该事务上建立台账（`New(tx)`），自己串行化维度；不共享事务的两个调用方之间是软上限。`CountCeiling` 是唯一跨渠道的计数，两个渠道在写它之前取同一把事务级咨询锁（键 `sms.budget:lock:ceiling`），SQLite 在数据库层串行化写者时不取。
+**台账不持计数器，也不持锁。** `Record` 是一条 INSERT，每个计数都是对已提交行的查询；并发记录是并发插入，没有可丢更新的共享状态。一个必须成为硬上限的预算由调用方把计数与写入放进同一个事务，并在该事务上建立台账（`New(tx)`），自己串行化维度；不共享事务的两个调用方之间是软上限。`CountCeiling` 是唯一跨渠道的计数，两个渠道在写它之前取同一把事务级咨询锁（键 `sms.budget:lock:ceiling`），SQLite 在数据库层串行化写者时不取。**这把锁是部署级的一把，代价是短信写入的吞吐。** 认证与通知的每次短信发送都在同一个键上取锁，因此两个渠道的写入彼此串行：一个通知派发的爆发会让同一时刻的认证发送排队，反之亦然。这是跨渠道上界必须先于其余每一项、且两个渠道读到同一份已提交行的代价；SQLite 在数据库层串行化写者，不另取这把锁，形成的也是同一条写入队列。
 
-**来源与目的地只存带密钥摘要。** `source_mac` 与 `destination_mac` 是调用方算好的摘要，明文号码或地址从不进入这张表，也不进本包的日志。`source_mac` 可空，空表示没有可信来源：它不占来源预算，也不匹配任何来源计数；一个存在但为空的来源是 `ErrInvalidAttempt`。`account_id` 可空，空表示这次尝试没有账户。`tenant_id` 非空，不属于任何租户的尝试写空串，租户维度不匹配它。
+**来源与目的地只存带密钥摘要。** `source_mac` 与 `destination_mac` 是调用方算好的摘要，明文号码或地址从不进入这张表，也不进本包的日志。认证侧的目的地摘要是号码的 `BlindIndex` 摘要；通知侧的目的地摘要是（租户，收件人标识）的 `BlindIndex` 摘要，同一份摘要也用作邮件计数器键。认证侧与通知侧的摘要都经数据库根密钥派生，所以不知道根密钥就无法对候选地址做离线对照。通知作业的幂等键是另一个摘要：它是 `sha256(canonicalJSON)` 的无密钥摘要，含收件人标识与派发参数，用来收敛作业而不用来隐藏目的地，不写进 `destination_mac`（[design-notification-delivery](notification/design-notification-delivery.md)）。`source_mac` 可空，空表示没有可信来源：它不占来源预算，也不匹配任何来源计数；一个存在但为空的来源是 `ErrInvalidAttempt`。`account_id` 可空，空表示这次尝试没有账户。`tenant_id` 非空，不属于任何租户的尝试写空串，租户维度不匹配它。
 
 **窗口在 `Since` 处闭。** 恰在边界写入的行在窗口内，早一个纳秒的不在；所有时间在进入数据库之前归一到 UTC，因为 SQLite 按文本比较时间。
 

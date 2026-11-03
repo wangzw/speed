@@ -133,7 +133,7 @@
 
 `authn.mfa.webauthn` 的 `Timeouts.*.Enforce` 固定为真，不做成配置项。
 
-下表是人机验证的配置项（封闭集合）。`mode` 有缺省值，因此不是必填；Turnstile（[REF-cloudflare-turnstile](../../../references.md)）的几项由 `mode` 判定，不由加载器判定：闸关闭或运行工作量证明时，它们不必给值，只有 `turnstile` 模式要求站点键、密钥与主机名齐备。缺省值由 `pkg/authn/humanverify/config.go` 的 `configDefaults` 给出，是 `pow`；评审装配在 `starters/demo/server/review/sqlite.yaml` 显式写 `off`，端到端走查夹具在 `starters/demo/web/e2e/fixtures/config.ts` 显式写 `off`，部署入口 `starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_MODE` 也以 `pow` 为缺省。
+下表是人机验证的配置项（封闭集合）。`mode` 有缺省值，因此不是必填；Turnstile（[REF-cloudflare-turnstile](../../../references.md)）的几项由 `mode` 判定，不由加载器判定：闸关闭或运行工作量证明时，它们不必给值，只有 `turnstile` 模式要求站点键、密钥与主机名齐备。缺省值由 `pkg/authn/humanverify/config.go` 的 `configDefaults` 给出，是 `pow`；评审装配在 `starters/demo/server/review/sqlite.yaml` 显式写 `off`，端到端走查夹具在 `starters/demo/web/e2e/fixtures/config.ts` 显式写 `off`，本地回路的模板 `starters/demo/server/local.yaml.example` 也显式写 `off`：`make dev` 的短信与邮件都经日志载体发送，一份证明会挡住每一次发送。部署入口 `starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_MODE` 以 `pow` 为缺省。
 
 | 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
 |---|---|---|---|---|---|

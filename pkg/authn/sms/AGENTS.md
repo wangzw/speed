@@ -157,8 +157,12 @@ compatibility break for a dashboard written against it.
   A definite failure — `ErrThrottled`, `ErrRejected` or `ErrUnroutable` — also
   refunds the attempt: the challenge row is marked `refunded_at` and spent in the
   same statement, and its ledger attempt is marked refunded, so no send budget or
-  ceiling counts the message and the undelivered code cannot pass `Verify`. An
-  uncertain outcome, and an error outside the closed set, stay counted
+  ceiling counts the message and the undelivered code cannot pass `Verify`. The
+  two refunds are separate writes and each can fail on its own: a challenge refund
+  that fails leaves the row counted and the code valid, while a ledger refund that
+  fails after the challenge was spent leaves the ceiling counting a message that
+  never left. An uncertain outcome, and an error outside the closed set, stay
+  counted
   (`refundChallenge`, `register.refund`, `budget.Store.MarkRefunded`,
   `TestACertainCarrierFailureRefundsTheSend`,
   `TestARegistryRefusalRefundsTheSend`,

@@ -22,7 +22,7 @@
 - **不认识租户。** 账户全局，登录请求不带租户名；没有按租户启停登录方式的能力，只有全局的紧急开关。租户级的认证强度策略与成员判定在请求期由 [tenant-admission](../tenant/design-tenant-admission.md) 执行，`pkg/authn` 的任何子包都不 import `pkg/tenant`。
 - **不经 `pkg/ratelimit` 限流。** 该模块的配额层落在限流阶段、排在鉴别阶段之内、无身份即放行、维度只有（租户，责任键），认证前的失败退避由 `Throttle` 承担（算法归 [authn-account](design-authn-account.md)）。
 - **不写网关自产的 401。** 网关为各端建成的挑战与「没有凭据」的 401 归 [authn-gate](design-authn-gate.md)；本模块只写自己处理器的应答。
-- **不提供登录页，不绘制人机验证控件。** 界面是宿主的前端，本模块只给 JSON 接口；人机验证的凭证由前端控件向部署选定的机制取得，短信分支把凭证转交 `SMSCodes.Send`、由它在发送入口校验，自助添加邮箱的邮件分支在本路由校验；入口层面的洪泛限流是宿主的部署责任。
+- **不提供登录页，不绘制人机验证控件。** 界面是宿主的前端，本模块只给 JSON 接口；人机验证的凭证由前端控件向部署选定的机制取得，短信分支把凭证转交 `SMSCodes.Send`、由它在发送入口校验，自助添加邮箱与匿名口令重置的邮箱分支在各自的路由校验；入口层面的洪泛限流是宿主的部署责任。
 - **不做授权判定。** 本模块的 403 只转述认证之外的策略，且只出现在 authn 自己的处理器里（[authn-admin](design-authn-admin.md)）。
 
 ## 外部接口契约
@@ -345,7 +345,7 @@ type Proof struct {
 | 全部 `LoginMethod` | 经 `ResolveAll` | 缺席合法，但没有任何方法即启动期 `ErrNoLoginMethod` |
 | `Tokens` | 可选 | `Issue` 与 `NewRefresh`；缺席时 `delivery=token` 不启用，启动诊断写一行 |
 | `SMSCodes` | 可选 | `POST B/phone` 与 `POST B/phone/verify` 经它发码与校验；匿名口令重置的短信渠道经它发送 `reset` 用途并核验挑战；缺席时不挂手机路由、不发布短信重置渠道，启动诊断写一行。短信登录方式的发码在 `authn.login.sms` 里，不经引擎 |
-| `HumanVerifier` | 可选 | 自助添加邮箱的邮件分支在发码之前经它校验并消费证明；短信分支把证明交给 `SMSCodes.Send`，不在这里校验。缺席或闸关闭时整步跳过 |
+| `HumanVerifier` | 可选 | 自助添加邮箱与匿名口令重置的邮箱分支在发码之前经它校验并消费证明；短信分支把证明交给 `SMSCodes.Send`，不在这里校验。缺席或闸关闭时整步跳过 |
 | `EmailCodeSender` | 可选 | `POST B/identifiers` 的邮箱分支经它把验证码投递到该地址；缺席时该分支答 503 `unavailable`，启动诊断写一行。验证码的产生、记录与比对在本模块的自助件里，不经它 |
 | `EmailResetCodeSender` | 可选 | 匿名口令重置的邮箱渠道经它投递重置验证码；未实现或未装配时邮箱重置渠道不发布。它的投递在有界工作池里执行，响应路径不等待 |
 | `SSOProviders` | 可选 | IdP 发起的 SAML 读提供方行的 `allow_idp_initiated` |
@@ -559,7 +559,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 4. 校验并保存 `return_to`，确定 `binding`，生成流程令牌，写入 `first` 状态的记录。kv 不可用时答 503。
 5. 带 `call-budget` 调用方法的 `Begin`，按「答复与迁移」处理它交回的 `Step`。
 
-发送短信的第一步把 `human_proof` 交给方法的 `Begin`，由方法原样转交 `SMSCodes.Send`；证明在 `authn.sms.Send` 里、在放行表、队列容量与任何发送预算之前校验并消费一次。部署不要求人机验证时整步跳过；缺少、无效、过期或已用的凭证答 403 `human-verification-required`，超过 8 KiB 的答 400 `bad-request`，校验后端或它依赖的存储不可用答 503。**拒绝发生在流程记录已经写下之后**：第 4 步写入的记录先落在 kv 里，第 5 步的 `Begin` 才调用发送；一次被拒绝的证明因此留下一条流程记录，它只存活到 `authn.login.flow-ttl` 到期（kv 的生存期，没有另设清扫协程）。拒绝的应答是故障，流程 cookie 不随故障写出，客户端拿不到这条记录的绑定令牌，记录因此不能被任何请求绑定或答复；记录停在 `first` 且没有方法步，即使有令牌也无步可答。它不写台账、不写挑战行、不占任何发送预算、不发送，也不计一次答复（`Begin` 不是客户端答复），来源地址的粗粒度减负也因这一步没有报告发送而不计数。`POST B/flows/authenticated` 的 `step-up` 从第一因素起始时判据相同：记录先写，证明在发送入口校验，被拒绝时记录留在原处等到期。
+发送短信的第一步把 `human_proof` 交给方法的 `Begin`，由方法原样转交 `SMSCodes.Send`；证明在 `authn.sms.Send` 里、在放行表、队列容量与任何发送预算之前校验并消费一次。部署不要求人机验证时整步跳过；缺少、无效、过期或已用的凭证答 403 `human-verification-required`，超过 8 KiB 的答 400 `bad-request`，校验后端或它依赖的存储不可用答 503。**拒绝发生在流程记录已经写下之后**：第 4 步写入的记录先落在 kv 里，第 5 步的 `Begin` 才调用发送；一次被拒绝的证明因此留下一条流程记录。测试钉住的是这条记录的形状与后果——它是唯一留下的键、状态停在 `first`、没有方法步、`sends` 与 `answers` 都为零、拒绝不写流程 cookie；记录的生存期由 kv 的 `authn.login.flow-ttl` 给出（没有另设清扫协程），测试不等到期。拒绝的应答是故障，流程 cookie 不随故障写出，客户端拿不到这条记录的绑定令牌，记录因此不能被任何请求绑定或答复；记录停在 `first` 且没有方法步，即使有令牌也无步可答。它不写台账、不写挑战行、不占任何发送预算、不发送，也不计一次答复（`Begin` 不是客户端答复），也不记一次登录失败指标或审计行，来源地址的粗粒度减负也因这一步没有报告发送而不计数。`POST B/flows/authenticated` 的 `step-up` 从第一因素起始时判据相同：记录先写，证明在发送入口校验，被拒绝时记录留在原处等到期。
 
 一个浏览器同一时刻只有一个流程 cookie，所以后开始流程的标签页会顶掉先前的流程。
 
@@ -617,7 +617,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | 当前状态 | 事件 | 下一状态 | 答复 | 副作用 |
 |---|---|---|---|---|
 | `first` | `submit`，方法交出 `StepPrompt`、`StepData`、`StepRedirect` | `first`，`seq` 加一，`answers` 加一，`sends` 累加 | 200 | 无 |
-| `first` | `submit`，`StepRefused` | `first`，`seq` 不变，`answers` 加一，受 8 次上限；方法的步与私有状态保留 | 401 `login-failed`；成因是 `ErrUnsupportedRegion` 或 `ErrInvalidIdentifier` 时按 400 答（`unsupported-region`、`bad-request`） | 方法自己记退避 |
+| `first` | `submit`，`StepRefused` | `first`，`seq` 不变，`answers` 加一，受 8 次上限；方法的步与私有状态保留 | 401 `login-failed`；成因是 `ErrUnsupportedRegion` 或 `ErrInvalidIdentifier` 时按 400 答（`unsupported-region`、`bad-request`）；成因是 `ErrHumanVerificationRequired` 或 `ErrInvalidArgument` 时按 403 `human-verification-required` 或 400 答，且不计登录失败指标与审计 | 方法自己记退避 |
 | `first` | `submit`，`StepThrottled` | 不变 | 429 带 `Retry-After`；`retryAfter` 为零时不带 | 无 |
 | `first` | `submit`，`StepUnavailable` | 不变 | 503 | 无 |
 | `first` | `submit`，`StepProven` | 账户解析，随后按策略判定落入 `second`、`enroll` 或 `ready`；解析判定要开户时落入 `signup`；解析失败落入 `failed` | 200 或 401 | 见「账户解析与策略判定」；落入 `signup` 时写 `pending` |

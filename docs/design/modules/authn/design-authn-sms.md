@@ -407,7 +407,7 @@ flowchart TD
 **计数的判据。** 台账查询的开关相互独立：是否计入抑制行，与退款状态。由此得到下列计数：
 
 - **发送预算**取未退款的行。带抑制开关时，抑制行按一次占用计入它瞄向的维度——它在写入时已退款，单靠退款条件会把它排除，而号码、来源与账户维度必须看见它，否则已登记与未登记号码达到超限的次数不同。
-- **尝试预算**只取事后退款的行，默认排除抑制行；一次成功到达或结局不确定的发送不计入它，一次确定失败计一次。
+- **尝试预算**只取事后退款的行，默认排除抑制行；一次成功到达或结局不确定的发送不计入它，一次确定失败计一次。这是认证侧的取法（`OnlyRefunded`）；「尝试预算」是认证与通知共用的设置名，通知渠道的同名预算取 `IncludeRefunded`，计每一次尝试，同一个名字不是一个判据（[design-sms](../design-sms.md)）。
 - **跨渠道上界**取两个渠道未退款、未抑制的行；抑制行与确定失败都不占它。
 - **重发间隔**取该号码最新一行，两个开关都打开：退款行与抑制行都算一次「请求过」，间隔不能因号码未登记而不同。
 
@@ -429,6 +429,8 @@ flowchart TD
 预算在这里是硬上限。每次发送在自己的写事务里先取跨渠道锁，再按 **用途 → 号码 → 来源 → 账户** 的固定顺序取咨询锁，取齐之后再统计各维度，未超才写台账行、作废旧行并写新挑战行；两个并发请求只要共享任一维度，就在同一把锁上串行，后一个读到前一个已提交的行。锁键为 `sms.budget:lock:ceiling`、`authn.sms:lock:global:<用途>`、`authn.sms:lock:phone:<phone_mac>`、`authn.sms:lock:source:<source_mac>` 与 `authn.sms:lock:account:<account_id>`，由数据库以 `hashtextextended` 计算，随事务提交或回滚释放；`login` 用途没有账户，不取账户锁；`Source` 为空时没有来源摘要，不取来源锁也不统计来源维度。各维度把限额在打开事务之前读出，持锁期间不读设置。这些锁是 PostgreSQL 专有的；SQLite 在数据库层串行化写者，重叠的第二个写者自行等待，没有咨询锁可拿。
 
 **多副本的一致性由「一张表、只插入」给出。** 每一个计数都是对已提交行的查询，每一次写入都是一次插入，没有可丢更新的共享计数器；两个副本并发写同一次发送，各自插一行，两个都被计到。一个必须成为硬上限的预算，由调用方把计数与写入放进同一个事务，并在该事务上建立台账（`budget.New(tx)`），自己串行化维度；跨副本时，这个串行化就是上面那把事务级咨询锁。不共享事务的两个调用方之间是软上限：两者在计数与插入之间看不到对方未提交的行。
+
+**跨渠道锁只有一把，代价是短信写入的吞吐。** 认证与通知的每次发送都在同一个键 `sms.budget:lock:ceiling` 上取锁，所以两个渠道的写入彼此串行，一个渠道的发送高峰会让另一个渠道的发送排队；这把锁也是两个渠道都必须在写行之前取到的第一把锁。这是跨渠道上界必须精确的代价，换来的是一次通知派发与一次认证发送不会同时读到上界以下、再各写一行（[design-sms](../design-sms.md)）。
 
 ### 抑制行与应答同形
 
@@ -603,7 +605,7 @@ flowchart TD
 | `authn.sms` 引擎：挑战状态机、共享台账行、抑制行、预算核对（含跨渠道上界） | 已实现 | `pkg/authn/sms/send.go` `Send`、`checkProof`、`checkBudgets`、`throttleCeiling`、`throttleOver`；`pkg/authn/sms/register.go` `insert`、`lock`；`pkg/authn/sms/verify.go`、`config.go`、`module.go` |
 | 来源维度：`source_mac` 的规范化与摘要、每来源小时与日预算、每来源不同目的地预算、每来源确定失败预算、来源锁、`Source` 为空的 fail-open | 已实现 | `pkg/authn/sms/send.go` `sourceMAC`、`checkBudgets`；`pkg/authn/sms/register.go` `lock`；`pkg/authn/sms/settings.go` `perSourceHourly`、`perSourceDaily`、`perSourceDistinctHourly`、`perSourceDistinctDaily`、`perSourceAttemptHourly`；`pkg/authn/sms/budget_ledger_dimensions_test.go` |
 | 尝试预算：按来源与按用途的 `OnlyRefunded` 计数，确定失败计一次、成功与抑制不计 | 已实现 | `pkg/authn/sms/send.go` `checkBudgets`；`pkg/authn/sms/settings.go` `perSourceAttemptHourly`、`globalAttemptHourly`；`pkg/authn/sms/budget_abuse_test.go` |
-| `authn_challenges` 迁移集（含 `budget_event_id`） | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql` … `0007_authn_challenges_budget_event.sql`；`migrations/sqlite/` 同名文件 |
+| `authn_challenges` 迁移集（含 `budget_event_id`） | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql` … `0006_authn_challenges_budget_event.sql`；`migrations/sqlite/` 同名文件 |
 | 发送工作池与确定失败退款：台账行与挑战行在同一次退款里标为退款，退款同时使验证码失效 | 已实现 | `pkg/authn/sms/pool.go` `deliverOne`、`refundChallenge`；`pkg/authn/sms/send.go`；`pkg/authn/sms/register.go` `refund`；`pkg/authn/sms/refund_test.go` |
 | 人机验证证明在 `Send` 内校验并消费，先于放行表、队列与预算 | 已实现 | `pkg/authn/sms/send.go` `checkProof`；`pkg/authn/sms/module.go` 取用 `authn.HumanVerifier`；`pkg/authn/sms/human_test.go` |
 | 预算利用率仪表 `authn.sms.budget.utilization` | 已实现 | `pkg/authn/sms/meters.go` `budget`、`dimensionCeiling`、`dimensionPhone`、`dimensionSource`、`dimensionSourceDistinct`、`dimensionSourceAttempt`、`dimensionGlobal`、`dimensionGlobalAttempt`、`dimensionAccount` |
