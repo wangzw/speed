@@ -297,7 +297,7 @@ stateDiagram-v2
 
 ### authn_challenges
 
-表由 `authn.sms` 拥有，迁移集随模块，`postgres/` 与 `sqlite/` 各一份同名文件。迁移文件名是 `db_migrations` 的记录键，编号只决定同一模块内的应用顺序：编号在 `0005` 之后留有空号 `0006`，这个空号是有意的，不复用，也不补成连续编号。从合并前的分支状态建过的数据库，`db_migrations` 记录的是旧文件名，与当前迁移集不一致，必须重建，不能在其上继续迁移。表之间与对其他模块的表都不建外键，不嵌入 `tenant.Model`；时间一律经 `internal/clock` 取、一律 `.UTC()`，SQLite 把时间存成文本并按字符串比较，非 UTC 的值会使窗口统计判错。
+表由 `authn.sms` 拥有，迁移集随模块，`postgres/` 与 `sqlite/` 各一份同名文件。`db_migrations` 的记录键是模块加文件名，编号只决定同一模块内的应用顺序：编号在 `0005` 之后留空 `0006`，这一处编号留空是有意的，不复用，也不补成连续编号。从旧文件名 `0006_authn_challenges_budget_event.sql` 仍在时建过的数据库，记录的是旧文件名，与当前迁移集不一致，必须重建，不能在其上继续迁移：PostgreSQL 的 `ADD COLUMN IF NOT EXISTS` 在列已存在时不重复加列，SQLite 的普通 `ADD COLUMN` 在列已存在时报错。表之间与对其他模块的表都不建外键，不嵌入 `tenant.Model`；时间一律经 `internal/clock` 取、一律 `.UTC()`，SQLite 把时间存成文本并按字符串比较，非 UTC 的值会使窗口统计判错。
 
 | 列 | 类型 | 含义 |
 |---|---|---|
