@@ -228,7 +228,7 @@
 
 ### 指标
 
-指标经 `observability.MeterProvider` 报出，`Meter` 名取 `authn`。`MeterProvider` 缺席合法：缺提供者时静默跳过上报，取用得到缺提供者以外的错误则终止启动。业务指标归产生信号的模块自己上报，不进 observability 的文档。除网关的可观察计数器外，仪器都是同步计数器与直方图，事件稀疏，不为上报在请求路径上多付代价。
+指标经 `observability.MeterProvider` 报出，`Meter` 名取 `authn`。`MeterProvider` 缺席合法：缺提供者时静默跳过上报，取用得到缺提供者以外的错误则终止启动。业务指标归产生信号的模块自己上报，不进 observability 的文档。除网关的可观察计数器与预算利用率仪表外，仪器都是同步计数器与直方图，事件稀疏，不为上报在请求路径上多付代价。
 
 属性只取方式、协议、结果、因素、算法这类取值有限的维度，不含租户、账户、IdP 标识与路由。下表的属性集是封闭集合。
 
@@ -244,6 +244,7 @@
 | `authn.token.operations` | `{operation}` | `operation`：`issued`、`refreshed`、`revoked`、`client-credentials`；`outcome`：`ok`、`invalid`、`reuse-detected`、`unavailable` |
 | `authn.throttle.engagements` | `{engagement}` | `scope`：`identifier`、`account`、`factor`、`phone`、`client`、`signup-username` |
 | `authn.sms.sends` | `{message}` | `outcome`：`sent`、`uncertain`、`throttled`、`rejected`、`unroutable`（当前部署无法送到这个目的地，确定失败）、`not-sendable`（模板被禁用或审核未过，未发）、`unsupported-region`、`budget-exhausted`、`suppressed`（号码未登记且注册关闭，未发）、`dropped`（队列满） |
+| `authn.sms.budget.utilization`（仪表） | `{ratio}` | `channel`：`authn`；`purpose`：`login`、`mfa`、`enroll`、`reset`、`shared`；`dimension`：`ceiling`、`phone`、`source`、`source-distinct`、`source-attempt`、`global`、`global-attempt`、`account` |
 | `authn.sso.assertions` | `{assertion}` | `protocol`：`saml`、`oidc`；`outcome`：`accepted`、`signature`、`audience`、`time`、`replay`、`in-response-to`、`issuer`、`destination`、`other` |
 | `authn.impersonation.sessions` | `{session}` | `outcome`：`started`、`denied`、`ended` |
 | `authn.audit.write-failures` | `{failure}` | `mandatory`：`true`、`false` |
