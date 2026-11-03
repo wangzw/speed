@@ -17,15 +17,17 @@ destination was registered. One row per attempt, whichever channel made it.
 
 ## Boundaries
 
-- **The ledger stores and counts; it does not decide.** No limit, window,
-  retry-after policy or response a throttled caller receives lives here. The
-  consumers own those, read their own settings and compare them to the counts
-  this package answers. A budget added here would be a second place a
+- **The ledger stores and counts; it does not decide.** No budget limit, budget
+  window, retry-after policy or response a throttled caller receives lives here.
+  The consumers own those, read their own settings and compare them to the
+  counts this package answers. A budget added here would be a second place a
   deployment's policy is written down. The one exception is the cross-channel
   hourly ceiling, `sms.ceiling-hourly`: it spans both sending channels, so
   neither consumer can own it alone, and this module declares it once under the
   shared `sms` namespace. Its value is still read by the consumers; this module
-  only states the key, its default and its domain.
+  only states the key, its default and its domain. The retention window is a
+  storage lifetime, not a budget: it is derived from the consumers' longest
+  budget window and bounds only how long a row is kept.
 - **A refund removes a row from send counts and leaves it in attempt counts.**
   That is the whole reason the two counts are separate. A message the carrier
   certainly did not take — a rejection, an unroutable destination, a throttle —
@@ -94,9 +96,12 @@ destination was registered. One row per attempt, whichever channel made it.
   take a `Query`, so the refund and suppression switches narrow them exactly as
   they narrow a count.
 - **`PruneBefore` is the retention sweep.** It deletes rows attempted strictly
-  before a cutoff and answers how many it deleted. It is a method and not a
-  scheduled job: this module runs no ticker, and wiring a daily 30-day prune is a
-  follow-up. A caller that adds the job owns its schedule and its handler.
+  before a cutoff and answers how many it deleted. The module runs the job that
+  calls it: `Start` begins a goroutine that sweeps once and then on every
+  ticker interval, and `Stop` cancels it and waits for it, so a consumer has no
+  schedule to own. The cutoff is now minus `pruneRetention`, the longest budget
+  window either consumer counts over — one day — plus an hour of margin, so a
+  row is never removed while a count can still read it.
 - **Windows are inclusive at `Since`.** A row written exactly at the boundary is
   inside the window; one a nanosecond earlier is not. Every time is normalized
   to UTC before it reaches the database, because SQLite compares a time as the

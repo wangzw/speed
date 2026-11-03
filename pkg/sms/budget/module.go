@@ -3,11 +3,13 @@ package budget
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 )
 
@@ -99,29 +101,56 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // consumer that declares a requirement on it pulls this module into its
 // closure. The module declares one setting, the cross-channel hourly ceiling,
 // which no single consumer can own because it spans both channels; every other
-// limit belongs to the consumers. It registers no lifecycle callback beyond
-// construction, because the table is written only after the database module has
-// applied the migrations this descriptor declares.
+// limit belongs to the consumers. It also owns the table's retention: Start
+// begins the sweep that removes attempts past the window, and Stop ends it, so
+// the module that declares the migration is the one that keeps the table
+// bounded.
 func Module() core.Module {
 	return core.Module{
-		Name:     ModuleName,
-		Requires: []core.Requirement{{Token: (*db.Database)(nil)}},
+		Name: ModuleName,
+		Requires: []core.Requirement{
+			{Token: (*db.Database)(nil)},
+			{Token: (*log.Logger)(nil), Optional: true},
+		},
 		Provides: []core.Provision{{Token: (*Store)(nil)}},
 		Resources: []any{
 			db.Migrations{FS: migrationsFS},
 			ceilingSchema(),
 		},
 
-		// New builds the store over the handle the database module delivered.
-		// It reads no table: this stage runs before the migrations are
-		// applied, and the first read is the first count a consumer makes
-		// after Migrate.
+		// New builds the store over the handle the database module delivered
+		// and gives it the sweep it starts in Start. It reads no table: this
+		// stage runs before the migrations are applied, and the first read is
+		// the first count a consumer makes after Migrate.
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			database, err := core.Resolve[db.Database](reg)
 			if err != nil {
 				return nil, fmt.Errorf("%s: taking up the database: %w", ModuleName, err)
 			}
-			return New(database.DB()), nil
+			product := newLedger(New(database.DB()))
+			if delivered, err := core.Resolve[log.Logger](reg); err == nil {
+				product.logger = delivered.Named(ModuleName)
+			} else if !errors.Is(err, core.ErrMissingProvider) {
+				return nil, fmt.Errorf("%s: taking up the logging capability: %w", ModuleName, err)
+			}
+			return product, nil
+		},
+
+		// Start begins the retention sweep. The table is there by now: Migrate
+		// runs before every Start.
+		Start: func(ctx context.Context, _ *core.Registry, instance any) error {
+			if product, ok := instance.(*ledger); ok && product != nil {
+				product.start(ctx)
+			}
+			return nil
+		},
+
+		// Stop ends the sweep and waits for its goroutine.
+		Stop: func(_ context.Context, _ *core.Registry, instance any) error {
+			if product, ok := instance.(*ledger); ok && product != nil {
+				return product.stop()
+			}
+			return nil
 		},
 	}
 }
