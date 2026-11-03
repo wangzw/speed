@@ -34,7 +34,7 @@
  * browser is pinned to en-US and UTC by the Playwright config.
  */
 // @journey journey-social-sign-in-and-linking.md
-// @covers REQ-account-015, REQ-account-016, REQ-account-060, REQ-account-068, REQ-signin-015, REQ-signin-017, REQ-signin-027, REQ-signin-028, REQ-signin-038, REQ-signup-047, REQ-signup-048, REQ-signup-049
+// @covers REQ-account-015, REQ-account-016, REQ-account-060, REQ-account-068, REQ-signin-015, REQ-signin-017, REQ-signin-027, REQ-signin-028, REQ-signin-038, REQ-signup-047, REQ-signup-048, REQ-signup-049, REQ-signup-053
 import type { Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'

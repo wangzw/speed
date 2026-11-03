@@ -22,10 +22,8 @@
  * leaves the field empty, and the account entry names that account after its
  * username.
  *
- * The spec does not claim the session-ending requirements that used to be
- * driven by the setup page's first-password write: setting a password there
- * rotated the session and ended the account's other sessions, but the account
- * now opens with its password and the journey performs no such write.
+ * The spec does not claim the session-ending requirements: the account opens
+ * with its password and the journey performs no such write.
  * REQ-account-023, REQ-account-026 and REQ-security-029 are covered by the
  * account-security-hardening journey instead. REQ-signin-012 and
  * REQ-signin-014 are left out for the reason the earlier walkthrough gave:
@@ -39,7 +37,7 @@
  * it rather than leaving a stale literal that still passes.
  */
 // @journey journey-sms-signup-to-password-login.md
-// @covers REQ-account-007, REQ-account-060, REQ-account-061, REQ-security-030, REQ-signin-006, REQ-signin-011, REQ-signup-012, REQ-signup-014, REQ-signup-015, REQ-signup-051, REQ-tenancy-022, REQ-tenancy-026
+// @covers REQ-account-007, REQ-account-060, REQ-account-061, REQ-security-030, REQ-signin-006, REQ-signin-011, REQ-signup-012, REQ-signup-014, REQ-signup-015, REQ-signup-051, REQ-signup-052, REQ-tenancy-022, REQ-tenancy-026
 import type { Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
@@ -311,7 +309,7 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
     })
 
     // The account is established and the session lands straight in the tenant
-    // area: no setup page and no setup notice stand between them.
+    // area.
     await expect(homeHeading(page)).toBeVisible()
 
     // The account entry is where the display name first shows: its accessible
