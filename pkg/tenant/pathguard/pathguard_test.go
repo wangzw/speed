@@ -56,6 +56,7 @@ func (*roster) List(context.Context) ([]tenant.Tenant, error)     { return nil, 
 func (*roster) Enter(context.Context, tenant.ID) (context.Context, error) {
 	return nil, errUnused
 }
+
 func (*roster) EnterRegistered(context.Context, tenant.ID) (context.Context, error) {
 	return nil, errUnused
 }
