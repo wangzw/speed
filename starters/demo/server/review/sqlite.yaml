@@ -319,13 +319,23 @@ seed:
     # REVIEW: the SMS per-source budgets, raised to their domain ceilings like
     # the email ones above so a walkthrough is not throttled. They stay inside
     # the domains authn.sms declares (1-10000 an hour and 1-100000 a day for one
-    # source address). The deployment's global hourly budgets
+    # source address). The new dimensions are raised with them: a review run
+    # reaches many different numbers from the one loopback source, so the
+    # declared default of 20 distinct destinations an hour would refuse it, and
+    # the attempt window stays above the number of sends a walkthrough that
+    # deliberately drives refusals makes. The deployment's global hourly budgets
     # (authn.sms.global-hourly-login, -mfa and -enroll) remain the effective
     # ceiling for an hour's sends, so a per-source value above them raises
     # nothing.
     - key: "authn.sms.per-source-hourly"
       value: "10000"
     - key: "authn.sms.per-source-daily"
+      value: "100000"
+    - key: "authn.sms.per-source-distinct-hourly"
+      value: "10000"
+    - key: "authn.sms.per-source-distinct-daily"
+      value: "100000"
+    - key: "authn.sms.per-source-attempt-hourly"
       value: "100000"
     # REVIEW: the address shield's numbers, widened for the review build. Every
     # request in this build comes from one loopback address, and this build is

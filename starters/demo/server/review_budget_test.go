@@ -32,6 +32,9 @@ type reviewWidenedBudget struct {
 var reviewWidenedBudgets = []reviewWidenedBudget{
 	{"authn.sms", "per-source-hourly"},
 	{"authn.sms", "per-source-daily"},
+	{"authn.sms", "per-source-distinct-hourly"},
+	{"authn.sms", "per-source-distinct-daily"},
+	{"authn.sms", "per-source-attempt-hourly"},
 	{"authn.login", "email-per-account-daily"},
 	{"authn.login", "email-per-source-hourly"},
 	{"authn.login", "email-per-source-daily"},
