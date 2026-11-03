@@ -268,6 +268,7 @@ type Requirement struct {
 以下是本文承载的、本功能目录与其他模块和宿主之间的接口面，改动它们改变每一个消费者：
 
 - 根包的 `Gate`、`Verifier`、`Accepts`、`Credential`、`Challenger`、`CookieClearer`、`ScopeGuard`、`Verdict` 的构造器、`Principal`、`Identity` 的方法集与 `Access` 的取值；`Key()` 的取值（责任键恒为实际操作者）。
+- 人机验证证明的哨兵是对外接口面：`ErrHumanVerificationRequired` 答 403 `human-verification-required`，`ErrHumanProofTooLong` 答 400 `bad-request`，`ErrUnavailable` 答 503。`ErrHumanVerificationRequired` 与 `ErrHumanProofTooLong` 是一次被拒的证明，`ErrUnavailable` 是提供方或其存储不可用，按故障处理；`ErrInvalidArgument` 不表示证明被拒。
 - 网关层在链上代表的功能标识：中间件的 `Provides` 与描述符里的交付声明同为 `(*Gate)(nil)`，别的模块据它排序，取值与它所属的阶段属于对外接口面，改动它是破坏性变更。
 - 判定接缝、成员关系的只读面、账户生命周期钩子与事件名，这些是授权功能目录依赖的面（[authz.guard](../design-authz.md) 与 `authz.policy`；见 [design-authn-admin](design-authn-admin.md)、[design-authn-events](design-authn-events.md)）。
 - 下列根包接缝接口的方法集属于对外接口面，加方法与改签名对取用它们的模块、实现了它们的宿主即是不兼容变更：`Tokens` 与 `ClaimsContributor`（[design-authn-token](design-authn-token.md)）、`SMSCodes`（[design-authn-sms](design-authn-sms.md)）、`SSOProviders`（[design-authn-sso](design-authn-sso.md)）、`Impersonation`（[design-authn-impersonation](design-authn-impersonation.md)）、`Decider`（[design-authn-admin](design-authn-admin.md)）、`HumanVerifier`（[design-authn-config](design-authn-config.md)）、`Signups`、`SignupVerification`（[design-authn-account](design-authn-account.md)）与 `EmailCodeSender`；各自的字段、取值集合与取用方式由各自的模块文档承载。

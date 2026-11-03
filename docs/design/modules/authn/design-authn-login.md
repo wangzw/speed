@@ -617,7 +617,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | 当前状态 | 事件 | 下一状态 | 答复 | 副作用 |
 |---|---|---|---|---|
 | `first` | `submit`，方法交出 `StepPrompt`、`StepData`、`StepRedirect` | `first`，`seq` 加一，`answers` 加一，`sends` 累加 | 200 | 无 |
-| `first` | `submit`，`StepRefused` | `first`，`seq` 不变，`answers` 加一，受 8 次上限；方法的步与私有状态保留 | 401 `login-failed`；成因是 `ErrUnsupportedRegion` 或 `ErrInvalidIdentifier` 时按 400 答（`unsupported-region`、`bad-request`）；成因是 `ErrHumanVerificationRequired` 或 `ErrInvalidArgument` 时按 403 `human-verification-required` 或 400 答，且不计登录失败指标与审计 | 方法自己记退避 |
+| `first` | `submit`，`StepRefused` | `first`，`seq` 不变，`answers` 加一，受 8 次上限；方法的步与私有状态保留 | 401 `login-failed`；成因是 `ErrUnsupportedRegion` 或 `ErrInvalidIdentifier` 时按 400 答（`unsupported-region`、`bad-request`）；成因是 `ErrHumanVerificationRequired` 或 `ErrHumanProofTooLong` 时按 403 `human-verification-required` 或 400 答，且不计登录失败指标与审计 | 方法自己记退避 |
 | `first` | `submit`，`StepThrottled` | 不变 | 429 带 `Retry-After`；`retryAfter` 为零时不带 | 无 |
 | `first` | `submit`，`StepUnavailable` | 不变 | 503 | 无 |
 | `first` | `submit`，`StepProven` | 账户解析，随后按策略判定落入 `second`、`enroll` 或 `ready`；解析判定要开户时落入 `signup`；解析失败落入 `failed` | 200 或 401 | 见「账户解析与策略判定」；落入 `signup` 时写 `pending` |
@@ -636,7 +636,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `second` | 答复数用尽、超时 | `failed` | 401 `login-failed` | 无 |
 | `enroll` | 因素实现交出 `StepEnrolled` | `ready` | 200 | 因素标识存入记录的 `mfa.enrolled`；本次登记的因素不计入保障等级 |
 | `enroll` | 因素实现交出 `StepRefused`（确认码不符等） | `enroll`，`seq` 不变，`answers` 加一；登记中的因素与方法的步保留 | 401 `login-failed` | 可原地重试确认码 |
-| `challenge` | 选中因素的 `Challenge` 交出 `StepRefused` | `second`，`seq` 不变，`answers` 加一；因素清单保留 | 401 `login-failed`；成因是 `ErrHumanVerificationRequired` 或 `ErrInvalidArgument` 时按 403 `human-verification-required` 或 400 答，且不计登录失败指标与审计 | 可改选另一因素或重试 |
+| `challenge` | 选中因素的 `Challenge` 交出 `StepRefused` | `second`，`seq` 不变，`answers` 加一；因素清单保留 | 401 `login-failed`；成因是 `ErrHumanVerificationRequired` 或 `ErrHumanProofTooLong` 时按 403 `human-verification-required` 或 400 答，且不计登录失败指标与审计 | 可改选另一因素或重试 |
 | `ready` | `complete` | `done` | 见「终态动作」 | 终态动作 |
 | 任意 | `answers` 达 8、过期、`DELETE flows/current`、方法被 `disabled-methods` 关 | `failed` | 401 `flow-invalid` | 无 |
 

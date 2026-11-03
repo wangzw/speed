@@ -86,7 +86,7 @@ type SMSCodes interface {
 	// 校验人机验证证明、放行表与全部预算，写台账行与挑战行，把发送交给有界工作池，
 	// 立即返回；响应时间与厂商延迟无关。
 	// 错误取自 ErrUnsupportedRegion、ErrThrottled（带 RetryAfter）、ErrUnavailable，
-	// 以及人机验证门槛的 ErrHumanVerificationRequired 与 ErrInvalidArgument。
+	// 以及人机验证门槛的 ErrHumanVerificationRequired 与 ErrHumanProofTooLong。
 	Send(ctx context.Context, in SendCode) (challengeID string, err error)
 	// 先对挑战行做条件的尝试次数加一，再比对带密钥摘要，通过则条件更新消费时间；
 	// 一切不通过的情形统一返回 ErrInvalidCredentials。
@@ -97,7 +97,7 @@ type SMSCodes interface {
 契约的内容如下：
 
 - **`Send` 的调用方责任。** `Purpose` 取自封闭集，`Phone` 已规范化，`mfa` 与 `enroll` 的 `Account` 非空；`login` 与 `reset` 不要求 `Account`。违反即调用方缺陷，`Send` 返回普通错误，不属于哨兵集。每流程发送上限由调用方在 `Send` 之前核对。`Proof` 由调用方原样交出，本模块负责校验并消费一次；调用方不自行校验，一次性证明被两个部件各校验一次时，第二次必然被拒。
-- **证明先于一切发送状态。** `Send` 在放行表、队列容量与任何预算之前核对人机验证证明：部署没有闸或闸关闭时整步跳过；证明过长以 `ErrInvalidArgument` 拒绝；缺失、无效、过期或重放以 `ErrHumanVerificationRequired` 拒绝；提供方或其存储不可用以 `ErrUnavailable` 拒绝。三者都发生在任何行被写入之前，因此不写台账、不写挑战行、不占任何预算。
+- **证明先于一切发送状态。** `Send` 在放行表、队列容量与任何预算之前核对人机验证证明：部署没有闸或闸关闭时整步跳过；证明过长以 `ErrHumanProofTooLong` 拒绝；缺失、无效、过期或重放以 `ErrHumanVerificationRequired` 拒绝；提供方或其存储不可用以 `ErrUnavailable` 拒绝。三者都发生在任何行被写入之前，因此不写台账、不写挑战行、不占任何预算。
 - **用途的可用性经可选接口报告。** 本模块可以实现可选接口 `PurposeSupport` 的 `SupportsPurpose(purpose string) bool`：对 `login`、`mfa`、`enroll` 恒为真，对 `reset` 当且仅当载体注册表声明了 `authn.code.reset` 模板时为真。调用方以它决定是否提供短信重置渠道；不实现该接口的实现在调用方看来不支持 `reset`。这条接口不改变 `SMSCodes` 的方法集。
 - **`Source` 为空即不施加来源维度。** `Source` 是调用方从请求上取得的来源地址。非空时本模块先经 `netip.ParseAddr` 规范成地址的规范文本，再经 `BlindIndex` 算摘要，只把摘要写进台账行、只按摘要计数；明文地址不写表、不写日志。为空表示调用方没有可信来源：不取来源锁、不核对来源预算，这条发送不会被计入任何来源的窗口，台账行的来源列写 NULL（fail-open）。判据是不把「解析不了来源」与「同一个来源」混为一谈——把全部无名来源压到一把键上，会让一个没配置可信代理的部署把全站算作一个来源。
 - **`Send` 对 `Deliver` 为真与为假的调用走同一条路径。** 应答只有 `challengeID` 一种形状，调用方无法从返回值、状态码或错误形态区分抑制行与真实行（耗时见「非保证」）。
@@ -525,7 +525,7 @@ flowchart TD
 |---|---|---|---|
 | `ErrUnsupportedRegion` | `Send` | 号码前缀不在放行表 | 400 `unsupported-region` |
 | `ErrHumanVerificationRequired` | `Send` | 部署要求人机验证而证明缺失、无效、过期或重放 | 403 `human-verification-required` |
-| `ErrInvalidArgument` | `Send` | 人机验证证明超过字段上限 | 400 `bad-request` |
+| `ErrHumanProofTooLong` | `Send` | 人机验证证明超过字段上限 | 400 `bad-request` |
 | `ErrThrottled`（`ThrottledError` 带 `RetryAfter`） | `Send` | 重发间隔、号码、来源、不同目的地、失败数、账户、全局或跨渠道上界之一超限 | 429 与 `Retry-After` |
 | `ErrUnavailable` | `Send`、`Verify` | 队列已满、预算读失败、台账不可用、db 不可用、人机验证提供方或其存储不可用 | 503 |
 | `ErrInvalidCredentials` | `Verify` | 码不对、已过期、已消费、已作废、尝试次数用尽、抑制行；不区分成因 | 统一 `login-failed` |

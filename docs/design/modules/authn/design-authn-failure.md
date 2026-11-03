@@ -251,6 +251,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrSignupClosed` | 首登开户关闭；自助注册开关 `authn.account.password-signup` 不是 `open` | 首登开户路径 401 `login-failed`；自助注册路由 403 `signup-closed` |
 | `ErrContactRequired` | 未验证账户（`SignupStateOf` 为 `SignupPending`：有邮箱而没有一条已证明的）调用了要求已验证邮箱的能力 | 403 `contact-required` |
 | `ErrHumanVerificationRequired` | 一次发送没有人机验证凭证，或凭证无效、过期、已用 | 403 `human-verification-required` |
+| `ErrHumanProofTooLong` | 一次发送的人机验证证明长过字段上限 | 400 `bad-request` |
 | `ErrBindingConflict`、`ErrLastFactor`、`ErrLastTenantAdmin` | 外部身份冲突；删最后一个因素；移除成员关系会让租户不再有任何租户管理员绑定 | 409 `conflict` |
 | `ErrLastLoginMethod` | 解绑最后一种登录方式，或删除标识、取消一条登录方式会留下没有任何非因素登录方式的账户，或重置因素时目标账户只剩因素这一种登录方式 | 409 `last-login-method` |
 | `ErrFactorNotEnrolled`、`ErrReplay`、`ErrFactorFlagged` | 因素未登记；TOTP 计数器或 WebAuthn 签名计数重放；WebAuthn 凭据疑似克隆 | 对外并入 `login-failed` |
