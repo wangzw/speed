@@ -362,7 +362,7 @@
 
 - **验收**：有口令账户提交错误的当前口令被拒绝且口令不变；提交正确的当前口令与合格新口令后新口令生效；没有口令的账户在新口令合格时直接生效。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`（有口令账户：错误当前口令被拒且口令不变，提交正确当前口令后新口令生效）；`starters/demo/web/e2e/specs/journey-last-login-way.spec.ts` `last-login-way: removing the last way that is not a passkey is refused`（无口令账户：不提供当前口令输入，直接设置首个口令）
 
 ### REQ-account-024
 

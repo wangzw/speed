@@ -73,7 +73,7 @@
 
 用户名不得与系统路径或系统名称冲突：内置保留字清单为 `api`、`console`、`account`、`admin`、`system`、`login`、`logout`、`signin`、`signup`、`static`、`assets`、`health`、`ready`、`metrics`、`oauth`、`callback`、`well-known`、`www`、`root`，部署可经设置 `authn.account.reserved-usernames` 追加保留字；写入用户名的每一条路径都必须拒绝保留字，保留字拒绝与用户名占用冲突（REQ-signup-008）是两种不同的结果。
 
-- **验收**：以任一内置保留字或部署追加的保留字提交用户名，在匿名口令注册、首登开户的用户名一步与账户面添加用户名三处均被拒绝：注册与首登开户不产生账户，账户面不写入该用户名；该拒绝不表现为用户名占用冲突。
+- **验收**：以任一内置保留字或部署追加的保留字提交用户名，在匿名口令注册、首登开户的开户一步与账户面添加用户名三处均被拒绝：注册与首登开户不产生账户，账户面不写入该用户名；该拒绝不表现为用户名占用冲突。
 - **状态**：已实现
 - **端到端测试**：未实现
 
@@ -167,9 +167,9 @@
 
 ### REQ-signup-012
 
-短信首登开户开放时，未登记的手机号在通过短信验证后、建立账户之前必须先取得一个合法用户名与一个合法口令，并可以选填显示名，判据按 REQ-signup-047 与 REQ-signup-051 的规定；账户建立时即持有该用户名与口令，显示名按 REQ-signup-051 取得，并完成登录。
+短信首登开户开放时，未登记的手机号在通过短信验证后、建立账户之前必须在同一步取得一个合法用户名、一个可选的显示名、一个合法口令与确认口令，判据按 REQ-signup-047 与 REQ-signup-051 的规定；账户建立时即持有该用户名与口令，显示名按 REQ-signup-051 取得，并完成登录；开户成功后的落点按 REQ-signup-052 的规定。
 
-- **验收**：未登记的手机号走完短信登录并提交合法用户名与口令后得到一个持有该用户名与口令的账户，且会话处于已登录状态；选填的显示名被保存为该账户的显示名；未提交或提交不合法用户名、或不合法口令时没有账户产生。
+- **验收**：未登记的手机号走完短信登录并提交合法用户名、可选显示名、口令与确认口令后得到一个持有该用户名与口令的账户，且会话处于已登录状态；选填的显示名被保存为该账户的显示名；未提交或提交不合法用户名、口令不符合策略或两次口令不一致时没有账户产生；落点按 REQ-signup-052 的验收判定。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
@@ -191,9 +191,9 @@
 
 ### REQ-signup-047
 
-首登开户必须在建立账户之前取得一个合法用户名：短信首登开户、社交登录首登开户与企业即时开通三条路径一律适用，用户名判据按 REQ-signup-045 与 REQ-signup-046 的规定；没有取得合法用户名时不得建立账户。**短信首登开户与社交首登开户的同一步还必须取得一个合法口令**：口令与用户名在同一次提交里给出，判据按账户的口令策略，不合格时不建账户。短信首登的这一步取用户名、口令与可选的显示名；企业即时开通的首登一步只取用户名，不取口令。显示名的取得与回退按 REQ-signup-051 的规定。
+首登开户必须在建立账户之前取得一个合法用户名：短信首登开户、社交登录首登开户与企业即时开通三条路径一律适用，用户名判据按 REQ-signup-045 与 REQ-signup-046 的规定；没有取得合法用户名时不得建立账户。**短信首登开户与社交首登开户的同一步还必须取得一个合法口令**：口令与用户名在同一次提交里给出，判据按账户的口令策略，不合格时不建账户。短信首登的这一步依次取用户名、可选的显示名、口令与确认口令；企业即时开通的首登一步只取用户名，不取口令。显示名的取得与回退按 REQ-signup-051 的规定。
 
-- **验收**：分别经短信首登、社交首登与企业即时开通发起开户，流程在建立账户之前呈现开户一步；提交合法用户名后账户持有该用户名，未提交或提交不合法用户名时没有账户产生。短信首登与社交首登的这一步同时要求口令：只填用户名、或口令不符策略时没有账户产生；两者都合法时账户建立并立即可以口令登录。短信首登的这一步同时接受可选的显示名，显示名的结果按 REQ-signup-051 的验收判定。
+- **验收**：分别经短信首登、社交首登与企业即时开通发起开户，流程在建立账户之前呈现开户一步。账户仅在用户名合法、且对短信首登与社交首登在同一提交里给出符合口令策略的口令与确认口令时建立：只提交用户名、只提交用户名与显示名、口令不符合策略或两次口令不一致时均不产生账户；用户名、口令与确认口令都合法时账户建立并立即可以口令登录；企业即时开通只提交合法用户名即建立账户。短信首登的这一步同时接受可选的显示名，显示名的结果按 REQ-signup-051 的验收判定。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`；`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`；`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`
 
@@ -351,11 +351,19 @@
 
 ### REQ-signup-039
 
-注册完成后的落点与个人租户特性是否启用无关。
+口令注册完成后的落点与个人租户特性是否启用无关；短信首登与社交首登的落点按 REQ-signup-052 的规定。
 
-- **验收**：启用与不启用个人租户的两种装配下，注册完成后的落点都是账户页的邮箱验证节。
+- **验收**：启用与不启用个人租户的两种装配下，口令注册完成后的落点都是账户页的邮箱验证节。
 - **状态**：已实现
 - **端到端测试**：未实现
+
+### REQ-signup-052
+
+短信首登开户与社交首登开户成功后，系统必须按部署是否启用个人租户特性决定落点：启用时落在租户区首页，未启用时落在账户页；从邀请链接发起的开户不得导航离开该链接的接受页，账户建立后停留在该页。
+
+- **验收**：启用个人租户的装配下，经短信首登与社交首登完成开户后页面落在租户区首页，个人空间是当前组织；未启用个人租户的装配下，两者都落在账户页；从邀请链接发起的开户完成后仍停留在该邀请的接受页，不发生导航。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`（启用个人租户的短信开户）；`starters/demo/web/src/pages/sign-in-view.test.tsx` `lands a registration completed through SMS on the account profile page`（未启用个人租户的短信开户）、`lands a registration in the tenant area when the personal tenant is in force`（启用个人租户的短信开户）；`starters/demo/web/src/pages/accept-invitation-page.test.tsx` `returns an SMS registration made on the invitation URL to its accept page`（从邀请链接发起的短信开户不导航）；`starters/demo/web/src/pages/auth-callback-page.test.tsx` `lands a viewer home when the provider detour started elsewhere`（社交开户落在租户区首页）、`returns a viewer who left an invitation link to that landing`（从邀请链接发起的社交开户回到该链接）
 
 ### REQ-signup-029
 
@@ -383,7 +391,7 @@
 
 ### REQ-signup-048
 
-社交首登开户把提供方声明为已验证的地址写成该账户的**联系方式**（默认通讯邮箱）**与登录方式**：建号时账户只有这一条邮箱地址，按 REQ-account-068 它同时被选作登录方式，因此该地址可以作口令登录名。该地址在开户页面上只读展示，持有人不编辑它。企业即时开通不写入提供方声明的地址：企业预置账户是运营者建好的，即时开通没有展示该地址的页面。两种路径下账户取自提供方的资料都只有显示名与该地址的上述处置。提供方没有给出显示名时，账户的显示名取用户名（REQ-signup-051）。
+社交首登开户把提供方声明为已验证的地址写成该账户的**联系方式**（默认通讯邮箱）**与登录方式**：建号时账户只有这一条邮箱地址，按 REQ-account-068 它同时被选作登录方式，因此该地址可以作口令登录名。该地址在开户页面上只读展示，持有人不编辑它。企业即时开通不写入提供方声明的地址：企业预置账户是运营者建好的，即时开通没有展示该地址的页面。两种路径下账户取自提供方的资料都只有显示名与该地址的上述处置。提供方没有给出显示名时，账户的显示名取用户名（REQ-signup-051）。开户成功后的落点按 REQ-signup-052 的规定。
 
 - **验收**：经社交首登新开立的账户持有提供方声明为已验证的那个地址作为联系方式，默认通讯邮箱是它，登录方式中也有它，且它可用作口令登录名；开户页面上该地址只读，无法编辑；企业即时开通新开立的账户不持有提供方声明的地址；两种路径的显示名都等于提供方给出的显示名；提供方未给出显示名时账户仍建立，显示名按 REQ-signup-051 的规定取用户名。
 - **状态**：已实现
@@ -391,11 +399,11 @@
 
 ### REQ-signup-051
 
-首登开户的显示名必须只来自一个来源：短信首登开户的开户一步必须接受当事人选填的显示名，社交首登开户与企业即时开通必须取提供方给出的显示名；任何一条首登开户路径没有给出显示名时，账户的显示名必须取用户名。
+首登开户的显示名必须只来自一个来源：短信首登开户的开户一步必须接受当事人选填的显示名，社交首登开户与企业即时开通必须取提供方给出的显示名；任何一条首登开户路径没有给出显示名时，账户的显示名必须取用户名。显示名的长度上界为 100 字符：首登开户路径对超过上界的值截断到 100 字符而不是拒绝，账户资料的显示名改名则按 REQ-account-032 拒绝超过上界的值。空值取用户名这一回退同样适用于没有给出显示名的社交首登开户与企业即时开通。
 
-- **验收**：短信首登的这一步同时呈现用户名、口令与一个可选的显示名输入；填写显示名时建立的账户持有填写的值，留空时建立的账户显示名等于本次选定的用户名；社交首登与企业即时开通在提供方给出显示名时账户持有该值，提供方未给出显示名时账户的显示名等于用户名；同一条路径不同时采用当事人填写的值与提供方的值。
+- **验收**：短信首登的这一步按用户名、可选显示名、口令与确认口令的顺序呈现；填写显示名时建立的账户持有填写的值，超过 100 字符时持有前 100 字符；留空时建立的账户显示名等于本次选定的用户名。社交首登与企业即时开通在提供方给出显示名时账户持有该值，超过 100 字符时持有前 100 字符；提供方未给出显示名时账户仍建立，显示名等于用户名。同一条路径不同时采用当事人填写的值与提供方的值。超过 100 字符的显示名在首登开户中不导致建号失败，而在账户资料改名时按 REQ-account-032 被拒绝。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`（填写显示名）、`sms-signup: a phone-code first sign-in with no display name takes the username`（留空取用户名）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`（填写显示名）、`sms-signup: a phone-code first sign-in with no display name takes the username`（留空取用户名）；`pkg/authn/login/internal/resolve/display_name_test.go` `TestAPhoneSignupDisplayNameIsMadeFitToStore`（截断到 100 字符）、`TestAFirstLoginWithoutADisplayNameIsNamedAfterItsUsername`（短信、社交与企业即时开通三条路径的回退）；`pkg/authn/login/internal/resolve/social_test.go` `TestSocialOpenSignupCreatesAnEnabledUserWithTheDeclaredAddressAsAContact`（社交提供方的显示名截断到 100 字符）；`pkg/authn/login/internal/resolve/provision_test.go` `TestProvisionerNameIsCutLikeTheProvidersOwn`（企业即时开通的显示名截断到 100 字符）；`pkg/authn/account/accounts_test.go` `TestAccountFieldsAreWrittenOnTheAccountThatIsThere`（账户改名的超界值被拒绝）
 
 ### REQ-signup-049
 

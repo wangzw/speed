@@ -13,7 +13,7 @@
 | 旅程 | 文档 |
 |---|---|
 | 口令注册到个人空间 | [口令注册到个人空间](journeys/journey-first-registration-to-personal-workspace.md) |
-| 短信首登开户到改用口令登录 | [短信首登开户到改用口令登录](journeys/journey-sms-signup-to-password-login.md) |
+| 短信首登开户到口令登录 | [短信首登开户到口令登录](journeys/journey-sms-signup-to-password-login.md) |
 | 社交登录开户 | [社交登录开户](journeys/journey-social-sign-in-and-linking.md) |
 | 为已有账户绑定社交账号 | [为已有账户绑定社交账号](journeys/journey-social-account-linking.md) |
 | 邀请一位成员进入租户 | [邀请一位成员进入租户](journeys/journey-invitation-to-tenant.md) |

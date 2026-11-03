@@ -181,7 +181,7 @@ development wiring that a copied-out project drops**:
 | `src/paths.ts` | The app's own route paths, shared by the route table and the chrome that links into them. |
 | `src/chrome.tsx` | The shared top-bar chrome: the brand, the tenant switcher and the avatar account menu. |
 | `src/admin/admin-area.tsx` | The platform admin, the second shell, over `@speed/admin-ui`. |
-| `src/pages/` | The app's pages: the starting page (the `/` card grid over the assembled capabilities), the account page, and the setup and verification landing pages a registration completes on. |
+| `src/pages/` | The app's pages: the starting page (the `/` card grid over the assembled capabilities), the account page, and the verification landing pages a registration completes on. |
 | `src/runtime-config.ts` | Reads the deployment's runtime configuration from `runtime-config.json` at the deployment root (resolved against the entry document, not the current URL): the API origin, the shell layout and the default theme preset, each falling back on its own. |
 | `src/document-metadata.ts` | Keeps the document title in step with the active language. `<html lang>` is the assembly's (the app-entry bootstrap binds it and follows every switch). |
 | `src/resources.ts`, `src/locales/` | The app's bilingual i18n bundle ("demo" namespace). |

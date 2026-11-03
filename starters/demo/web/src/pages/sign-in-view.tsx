@@ -29,13 +29,10 @@
  * application's own sign-in page. With the personal-tenant feature in force,
  * a registration that went through SMS (the only channel that opens an
  * account here) lands on the tenant area's home -- and so does an ordinary
- * SMS sign-in with a new number, which opens the account implicitly; in both
- * cases the home page decides whether to offer the one-time 「完成账户设置」
- * notice from the personal-tenant ensure answer and the profile, never from
- * this screen's mode. Without the feature there is no tenant area to land
- * in, so the registration continues on the account setup page to add a
- * username and then a password. Every other outcome leaves the viewer in the
- * app the session flip already opened.
+ * SMS sign-in with a new number, which opens the account implicitly. Without
+ * the feature there is no tenant area to land in, so the registration lands
+ * on the account page with the account it just opened. Every other outcome
+ * leaves the viewer in the app the session flip already opened.
  *
  * An invitation link is the exception: a registration or sign-in made on one
  * has to end on that link's accept page, not on the register mode's landing.

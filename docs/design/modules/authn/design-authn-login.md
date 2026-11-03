@@ -225,7 +225,7 @@ type Proof struct {
 
 完成时，`delivery=session` 设 cookie，体为 `{"state":"authenticated","session":{"id","expires_at"}}`；`delivery=token` 体为 `{"state":"authenticated","token_type":"Bearer","access_token","expires_in","refresh_token"}`。
 
-待建号的应答是 `{"state":"signup","next":{"kind":"challenge","fields":[...]}}`，字段随开户路径而定：短信首登的这一步是 `username`、`password` 与可选的 `display_name` 三个字段；企业即时开通的这一步只有 `username` 一个字段；社交首登的这一步是一个完整的开户面，含 `username` 与 `password` 两个字段，并把三件事随应答带出（都在 `next` 上，各自缺省即不出现，提交时都不回传）：`provided_method` 是发起这次登录的方法名（与发现文档的 `methods[].name` 同一词汇，例如 `wechat.mp`）；`provided_display_name` 是提供方给出的账号名；`provided_email` 是提供方声明为已验证的地址，客户端只读展示、不提供编辑。提供方没有给出其中一项时该成员缺席；其余开户路径的应答不带这三者。客户端以 `POST B/flows/answer {seq, step:"answer", input:{"username":"...", "display_name":"...", "password":"..."}}` 提交，`display_name` 只在短信首登的这一步接受且可缺省；`password` 在短信首登与社交首登的这一步都接受，企业即时开通不接受。用户名形状不合答 400 `username-invalid`，保留字答 400 `username-reserved`，已被占用答 409 `username-taken`；口令不合策略或缺失答 400 `bad-request`。这些拒绝都不建账户，流程停在待建号可重试；问题码不同，界面分别说明。拒绝不推进流程的序号：序号只随流程前进而变，拒绝只把答复计数加一，因此客户端用同一个序号原地重试即可，不必先重读流程；重试仍计入答复次数上限。
+待建号的应答是 `{"state":"signup","next":{"kind":"challenge","fields":[...]}}`，字段随开户路径而定：短信首登的这一步是 `username`、可选的 `display_name` 与 `password` 三个字段；企业即时开通的这一步只有 `username` 一个字段；社交首登的这一步是一个完整的开户面，含 `username` 与 `password` 两个字段，并把三件事随应答带出（都在 `next` 上，各自缺省即不出现，提交时都不回传）：`provided_method` 是发起这次登录的方法名（与发现文档的 `methods[].name` 同一词汇，例如 `wechat.mp`）；`provided_display_name` 是提供方给出的账号名；`provided_email` 是提供方声明为已验证的地址，客户端只读展示、不提供编辑。提供方没有给出其中一项时该成员缺席；其余开户路径的应答不带这三者。客户端以 `POST B/flows/answer {seq, step:"answer", input:{"username":"...", "display_name":"...", "password":"..."}}` 提交，`display_name` 只在短信首登的这一步接受且可缺省；`password` 在短信首登与社交首登的这一步都接受，企业即时开通不接受。用户名形状不合答 400 `username-invalid`，保留字答 400 `username-reserved`，已被占用答 409 `username-taken`；口令不合策略或缺失答 400 `bad-request`。这些拒绝都不建账户，流程停在待建号可重试；问题码不同，界面分别说明。拒绝不推进流程的序号：序号只随流程前进而变，拒绝只把答复计数加一，因此客户端用同一个序号原地重试即可，不必先重读流程；重试仍计入答复次数上限。
 
 ### 匿名注册
 
@@ -832,7 +832,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 
 ### 短信与其他方式
 
-- **短信（`sms`）**：`phone`（E.164）步与 `code` 步。号码前缀必须在放行表里，缺省为空即一律拒绝（`unsupported-region`）。发码、预算、挑战行与抑制行归 [authn-sms](design-authn-sms.md)；方法在发码前后按「短信发送的每流程上限」核对并报告条数；验证码通过时交 `StepProven`，`Proof.Identifier` 是被证明的手机，`Methods = [sms]`；已登记的手机只有被持有人选作登录方式时才完成登录，未被选中的号码按凭据失败处理，不进入开户（REQ-signin-011）；账户解析判定要开户时，引擎停在待建号收集用户名、口令与可选的显示名。**单凭短信码只算一个因素。** 发码时方法把请求的来源地址填进 `SendCode.Source`：`Begin` 取 `Start.Client.IP`，`Answer` 取 `StepInput.Client.IP`；引擎把两者都从本次请求填入，所以短信发送计入来源预算（[authn-sms](design-authn-sms.md) 的「预算维度」）。
+- **短信（`sms`）**：`phone`（E.164）步与 `code` 步。号码前缀必须在放行表里，缺省为空即一律拒绝（`unsupported-region`）。发码、预算、挑战行与抑制行归 [authn-sms](design-authn-sms.md)；方法在发码前后按「短信发送的每流程上限」核对并报告条数；验证码通过时交 `StepProven`，`Proof.Identifier` 是被证明的手机，`Methods = [sms]`；已登记的手机只有被持有人选作登录方式时才完成登录，未被选中的号码按凭据失败处理，不进入开户（REQ-signin-011）；账户解析判定要开户时，引擎停在待建号收集用户名、可选的显示名与口令。**单凭短信码只算一个因素。** 发码时方法把请求的来源地址填进 `SendCode.Source`：`Begin` 取 `Start.Client.IP`，`Answer` 取 `StepInput.Client.IP`；引擎把两者都从本次请求填入，所以短信发送计入来源预算（[authn-sms](design-authn-sms.md) 的「预算维度」）。
 - **通行密钥（`passkey`）**：WebAuthn 仪式数据放在 `FlowState.Private`，由 `StepData` 把选项交给客户端；登录断言要求用户验证（`userVerification: required`），因此 `Proof.UserVerified` 为真（[authn-mfa](design-authn-mfa.md)）。
 - **企业 OIDC 与 SAML**：提供方是库里的行，不是配置；校验与补充校验归 [authn-sso](design-authn-sso.md)。
 
@@ -850,7 +850,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 | `DELETE B/identifiers/:id` | 删本人持有的标识；标识不属本人与不存在同形，都答 400 `bad-request`；删除用户名答 409 `username-immutable`（`ErrUsernameImmutable`），删除不生效（[ADR-authn-username-permanent](../../../adr/adr-authn-username-permanent.md)）；带口令凭据的账户删除最后一个被选作登录方式的已验证邮箱时答 409 `login-identifier-required`，删除不生效，这条规则先于下一条且答案不变；删除任何标识后，账户若不再持有口令凭据、被选作登录方式的已验证手机号与外部身份中的任何一种，答 409 `last-login-method`，删除不生效，通行密钥不算，未证明或未被选中的手机号也不算，无口令账户的最后一个登录名也按此判；不撤销会话；`authn.identifier.changed` 由 [authn-account](design-authn-account.md) 在删除时发布 |
 | `DELETE B/links/:id` | 解绑外部身份；账户有因素时，IdP 声明的多因素不算；解绑后账户至少还剩一种可用登录方式（口令凭据、被选作登录方式的已验证手机号或另一绑定；未证明或未被选中的手机号不算），否则 409 `last-login-method`；成功后撤销其余会话并发 `authn.binding.changed` |
 
-**设置首个口令只在账户面进行。** 没有口令的账户经 `PUT B/password` 设第一个口令，当前口令可空；完成设置页不再存在，首个口令没有其他设置入口。
+**设置首个口令只在账户面进行。** 没有口令的账户经 `PUT B/password` 设第一个口令，当前口令可空；这是首个口令唯一的设置入口。
 
 邮箱与用户名此前只由管理员或 IdP 断言成为标识；自助添加见上表的 `POST B/identifiers` 与 `POST B/identifiers/verify`，登录方式与默认联系地址的选择见 `PUT B/identifiers/:id`，`verified_via` 的归属与验证回路见 [ADR-authn-selfservice-identifier](../../../adr/adr-authn-selfservice-identifier.md)。证明只回答所有权，不决定它是否作登录方式（REQ-account-062）。规则的判据归 [authn-account](design-authn-account.md)。
 
@@ -968,7 +968,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 | IdP 发起的 SAML 的流程创建 | 已实现 | `pkg/authn/login/callback.go` `callbackIDPInitiated`；`pkg/authn/login/flow.go` `flowProvider`（社交方法的记录取方法名、企业 SSO 的记录取 `input.provider`；`FlowState.Provider` 同源交给方法） |
 | 路由、请求与应答的形状、问题码 | 已实现 | `pkg/authn/login/routes.go`、`pkg/authn/login/respond.go`；`pkg/authn/login/answer.go`；`pkg/authn/internal/mount/problem.go` |
 | 账户凭据自助路由与手机号验证 | 已实现 | `pkg/authn/login/internal/selfservice` `Service`、`Deps`；`pkg/authn/login/routes.go` |
-| 登录标识的自助添加（用户名一步写入、邮箱经验证码证明） | 部分实现 | `pkg/authn/login/internal/selfservice/addidentifier.go` `(routes).addIdentifier`、`(routes).verifyIdentifier`；`pkg/authn/email.go` `EmailCodeSender`；`pkg/authn/login/login.go` `(*product).emailSender` |
+| 登录标识的自助添加（用户名一次写入、邮箱经验证码证明） | 部分实现 | `pkg/authn/login/internal/selfservice/addidentifier.go` `(routes).addIdentifier`、`(routes).verifyIdentifier`；`pkg/authn/email.go` `EmailCodeSender`；`pkg/authn/login/login.go` `(*product).emailSender` |
 | 标识的登录方式与默认联系地址的自助设置（`PUT B/identifiers/:id`） | 已实现 | `pkg/authn/login/internal/selfservice/identifiers.go`；`pkg/authn/account/admin.go` `AccountAdmin.SetIdentifierFlags`、`AccountAdmin.SetDefaultContact` |
 | 邮箱验证码回路的各层预算、收件箱别名归一、失败退还与地址占用判定 | 已实现 | `pkg/authn/login/internal/selfservice/addidentifier.go` `(*routes).addEmail`、`reserveEmailBudgets`、`refundEmailBudgets`、`refundEmailBudget`、`emailCertifiesNotSent`、`untilNextEmailBucket`、`emailTakenByAnother`；`pkg/authn/internal/budgetalias` `Canonical`；`pkg/authn/emailcode` `(*product).SendCode`、`(*product).CertifiesNotSent`；`pkg/authn/email.go` `ErrEmailUncertain`；`(*routes).verifyIdentifier` 的 `email-taken` 映射；设置项声明于 `pkg/authn/login/config.go`，读取于 `pkg/authn/login/internal/selfservice/settings.go` `(*counts).get`；`pkg/authn/login/internal/selfservice/emailbudget_test.go`、`emailabuse_test.go` |
 | 失败退避的流程侧、枚举防护与来源地址前置减负 | 已实现 | `pkg/authn/login/engine.go` `(*routes).recordSends`、`pkg/authn/login/start.go` `(*routes).admitSends`、`(*routes).chargeSends`、`pkg/authn/login/answer.go` `(*routes).answer` |
