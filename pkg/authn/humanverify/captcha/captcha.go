@@ -4,6 +4,13 @@
 // github.com/mojocn/base64Captcha; the slider is drawn with the standard
 // library's image operations.
 //
+// Audio is the one form a client may ask for: it is the screen-reader
+// alternative, and a request naming it gets it. The image and slider forms are
+// the server's rotation choice, drawn from crypto/rand at every issuance and
+// never from anything the request carries, so a client that names either of
+// them (or names none) is answered with whichever form the rotation drew. The
+// rotation needs no store key of its own.
+//
 // Every form keeps its challenge in the key-value store for five minutes. The
 // record holds the answer as digests keyed by a random per-challenge salt rather
 // than plain text, and the media the routes serve are stored beside it under the
@@ -155,19 +162,37 @@ type Media struct {
 	Body        []byte
 }
 
+// formRotation chooses the form of a challenge a client may not name.
+type formRotation func() (Form, error)
+
 // Provider is the self-hosted captcha verifier.
 type Provider struct {
 	store kv.KV
+	// rotate draws the form of a challenge whose form the client did not
+	// choose. Production sets randomForm; a test that needs a known form
+	// injects its own through newProviderWithRotation.
+	rotate formRotation
 }
 
 var _ authn.HumanVerifier = (*Provider)(nil)
 
-// New builds the provider over a key-value store.
+// New builds the provider over a key-value store. The rotating forms are drawn
+// from crypto/rand.
 func New(store kv.KV) (*Provider, error) {
+	return newProviderWithRotation(store, randomForm)
+}
+
+// newProviderWithRotation builds the provider with the given rotation source.
+// It is the seam the package's own tests use to pin a form; production callers
+// use New, whose rotation is random.
+func newProviderWithRotation(store kv.KV, rotate formRotation) (*Provider, error) {
 	if store == nil {
 		return nil, errors.New("captcha: a key-value store is required")
 	}
-	return &Provider{store: store}, nil
+	if rotate == nil {
+		return nil, errors.New("captcha: a form rotation is required")
+	}
+	return &Provider{store: store, rotate: rotate}, nil
 }
 
 // Required reports true: a captcha gate is a condition of sending.
@@ -181,8 +206,11 @@ func (p *Provider) SiteKey(authn.HumanScope) string { return "" }
 
 // IssueOptions is what a caller asks a challenge with.
 type IssueOptions struct {
-	// Form is the challenge form to draw. An empty value is FormImage, the
-	// default a client that names none gets.
+	// Form is the form the caller asks for. FormAudio is honoured: it is the
+	// accessibility alternative, the one form a client may choose. FormImage,
+	// FormSlider and the empty value are the server's rotation choice, so the
+	// value is not consulted and the answer carries whichever of the two the
+	// rotation drew. Any other value is ErrUnknownForm.
 	Form Form
 	// Lang is the language an audio challenge is spoken in, as a BCP 47 tag. It
 	// is read only by FormAudio; an empty value is DefaultAudioLanguage. The
@@ -195,31 +223,29 @@ type IssueOptions struct {
 	RemoteIP string
 }
 
-// Issue draws a challenge of the requested form and stores its answer and media.
-// The source's issuance counter is spent before anything is drawn, so an
-// address past its bound is refused and cannot fill the store.
+// Issue draws a challenge of the resolved form and stores its answer and media.
+// Audio is the only form the caller may choose; the rotating forms are drawn by
+// the provider. The source's issuance counter is spent before anything is
+// drawn, so an address past its bound is refused and cannot fill the store.
 func (p *Provider) Issue(ctx context.Context, opts IssueOptions) (Challenge, error) {
-	form := opts.Form
-	if form == "" {
-		form = FormImage
-	}
-	if !form.Valid() {
-		return Challenge{}, fmt.Errorf("%w: %q", ErrUnknownForm, form)
+	form, err := p.resolveForm(opts.Form)
+	if err != nil {
+		return Challenge{}, err
 	}
 	language := DefaultAudioLanguage
 	if form == FormAudio {
-		resolved, err := audioLanguage(opts.Lang)
-		if err != nil {
-			return Challenge{}, err
+		resolved, langErr := audioLanguage(opts.Lang)
+		if langErr != nil {
+			return Challenge{}, langErr
 		}
 		language = resolved
 	}
-	if err := p.countIssue(ctx, opts.RemoteIP); err != nil {
-		return Challenge{}, err
+	if countErr := p.countIssue(ctx, opts.RemoteIP); countErr != nil {
+		return Challenge{}, countErr
 	}
-	id, err := newID()
-	if err != nil {
-		return Challenge{}, fmt.Errorf("%w: captcha: drawing a challenge id: %w", authn.ErrUnavailable, err)
+	id, idErr := newID()
+	if idErr != nil {
+		return Challenge{}, fmt.Errorf("%w: captcha: drawing a challenge id: %w", authn.ErrUnavailable, idErr)
 	}
 	salt, err := newSalt()
 	if err != nil {
@@ -337,6 +363,46 @@ type record struct {
 	Form    Form     `json:"form"`
 	Salt    string   `json:"salt"`
 	Digests []string `json:"digests"`
+}
+
+// resolveForm decides the form of one challenge. Audio is the only form a
+// caller may choose, because it is the accessibility alternative; the image and
+// slider forms, and the empty value, are the server's rotation choice, so the
+// request's value is not consulted. Any other value is refused before the
+// issuance counter is spent. A rotation that answers a form outside the two it
+// rotates between is an outage rather than a challenge.
+func (p *Provider) resolveForm(requested Form) (Form, error) {
+	switch requested {
+	case FormAudio:
+		return FormAudio, nil
+	case "", FormImage, FormSlider:
+		form, err := p.rotate()
+		if err != nil {
+			return "", fmt.Errorf("%w: captcha: choosing the challenge form: %w", authn.ErrUnavailable, err)
+		}
+		switch form {
+		case FormImage, FormSlider:
+			return form, nil
+		default:
+			return "", fmt.Errorf("%w: captcha: the rotation chose %q", authn.ErrUnavailable, form)
+		}
+	default:
+		return "", fmt.Errorf("%w: %q", ErrUnknownForm, requested)
+	}
+}
+
+// randomForm draws the rotation form from crypto/rand: one random byte, even
+// image and odd slider. It reads nothing the request carries. A byte-sized
+// source divides evenly by two, so neither form is favoured.
+func randomForm() (Form, error) {
+	var raw [1]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	if raw[0]&1 == 0 {
+		return FormImage, nil
+	}
+	return FormSlider, nil
 }
 
 // drawForm builds the record and the media of one form.

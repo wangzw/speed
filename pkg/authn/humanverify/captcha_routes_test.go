@@ -67,53 +67,77 @@ func TestTheCaptchaRoutesExistOnlyInTheCaptchaMode(t *testing.T) {
 	}
 }
 
-// TestTheCaptchaChallengeRouteAnswersEachForm holds the challenge route for
-// every form: the id, the form, the lifetime and the media paths the form
-// carries. Each named path serves bytes with the format's signature.
-func TestTheCaptchaChallengeRouteAnswersEachForm(t *testing.T) {
-	cases := []struct {
-		form    captcha.Form
-		named   []string
-		unnamed []string
-	}{
-		{
-			form:    captcha.FormImage,
-			named:   []string{"image"},
-			unnamed: []string{"background", "piece", "audio"},
-		},
-		{
-			form:    captcha.FormSlider,
-			named:   []string{"background", "piece"},
-			unnamed: []string{"image", "audio"},
-		},
-		{
-			form:    captcha.FormAudio,
-			named:   []string{"audio"},
-			unnamed: []string{"image", "background", "piece"},
-		},
+// TestTheCaptchaChallengeRouteAnswersTheAudioForm holds the one form a client
+// may choose: form=audio answers the audio form, its instruction key, the
+// lifetime and only the audio media path.
+func TestTheCaptchaChallengeRouteAnswersTheAudioForm(t *testing.T) {
+	rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
+	rig.drive(t)
+
+	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost,
+		captchaChallengeFullPath+"?form=audio", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("the challenge route answered %d, want 200:\n%s", recorder.Code, recorder.Body)
 	}
-	for _, tc := range cases {
-		t.Run(string(tc.form), func(t *testing.T) {
+	answer := decodeCaptchaAnswer(t, recorder.Body.Bytes())
+	if answer.Provider != captcha.ProviderName {
+		t.Errorf("provider = %q, want %q", answer.Provider, captcha.ProviderName)
+	}
+	if answer.Form != string(captcha.FormAudio) {
+		t.Errorf("form = %q, want %q", answer.Form, captcha.FormAudio)
+	}
+	if answer.Instruction != captchaInstruction(captcha.FormAudio) {
+		t.Errorf("instruction = %q, want %q", answer.Instruction, captchaInstruction(captcha.FormAudio))
+	}
+	if answer.ExpiresIn != 300 {
+		t.Errorf("expires_in = %d, want the five-minute 300", answer.ExpiresIn)
+	}
+	if answer.AudioURL == "" {
+		t.Fatal("the audio form names no audio media")
+	}
+	for name, url := range map[string]string{
+		"image":      answer.ImageURL,
+		"background": answer.BackgroundURL,
+		"piece":      answer.PieceURL,
+	} {
+		if url != "" {
+			t.Errorf("the audio form names the %s media", name)
+		}
+	}
+	assertMedia(t, rig, answer.AudioURL, "audio")
+}
+
+// TestTheCaptchaChallengeRouteAnswersARotatedForm holds that a request naming
+// image or slider, and one naming no form, answers one of the rotating forms:
+// the form the rotation drew, its instruction key and only that form's media.
+func TestTheCaptchaChallengeRouteAnswersARotatedForm(t *testing.T) {
+	for _, requested := range []string{"", "image", "slider"} {
+		name := requested
+		if name == "" {
+			name = "absent"
+		}
+		t.Run(name, func(t *testing.T) {
 			rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
 			rig.drive(t)
 
-			recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost,
-				captchaChallengeFullPath+"?form="+string(tc.form), nil))
+			target := captchaChallengeFullPath
+			if requested != "" {
+				target += "?form=" + requested
+			}
+			recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, target, nil))
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("the challenge route answered %d, want 200:\n%s", recorder.Code, recorder.Body)
 			}
-			var answer captchaAnswer
-			if err := json.Unmarshal(recorder.Body.Bytes(), &answer); err != nil {
-				t.Fatalf("the answer is not JSON: %v\n%s", err, recorder.Body)
+			answer := decodeCaptchaAnswer(t, recorder.Body.Bytes())
+			form := captcha.Form(answer.Form)
+			if form != captcha.FormImage && form != captcha.FormSlider {
+				t.Fatalf("form=%q answered the %q form, want image or slider", requested, answer.Form)
 			}
 			if answer.Provider != captcha.ProviderName {
 				t.Errorf("provider = %q, want %q", answer.Provider, captcha.ProviderName)
 			}
-			if answer.Form != string(tc.form) {
-				t.Errorf("form = %q, want %q", answer.Form, tc.form)
-			}
-			if answer.Instruction != captchaInstruction(tc.form) {
-				t.Errorf("instruction = %q, want %q", answer.Instruction, captchaInstruction(tc.form))
+			if answer.Instruction != captchaInstruction(form) {
+				t.Errorf("instruction = %q, want %q", answer.Instruction, captchaInstruction(form))
 			}
 			if answer.ID == "" {
 				t.Error("the answer carries no id")
@@ -128,32 +152,58 @@ func TestTheCaptchaChallengeRouteAnswersEachForm(t *testing.T) {
 				"piece":      answer.PieceURL,
 				"audio":      answer.AudioURL,
 			}
-			for _, name := range tc.unnamed {
-				if urls[name] != "" {
-					t.Errorf("the %s form names the %s media", tc.form, name)
+			named := []string{"image"}
+			if form == captcha.FormSlider {
+				named = []string{"background", "piece"}
+			}
+			for media, url := range urls {
+				present := false
+				for _, candidate := range named {
+					if media == candidate {
+						present = true
+					}
+				}
+				if present && url == "" {
+					t.Fatalf("the %s form names no %s media", form, media)
+				}
+				if !present && url != "" {
+					t.Errorf("the %s form names the %s media", form, media)
 				}
 			}
-			for _, name := range tc.named {
-				if urls[name] == "" {
-					t.Fatalf("the %s form names no %s media", tc.form, name)
-				}
-				served := rig.mounter.Do(httptest.NewRequest(http.MethodGet, urls[name], nil))
-				if served.Code != http.StatusOK {
-					t.Fatalf("the %s media answered %d:\n%s", name, served.Code, served.Body)
-				}
-				body := served.Body.Bytes()
-				if name == "audio" {
-					if served.Header().Get("Content-Type") != "audio/wav" || !bytes.HasPrefix(body, []byte("RIFF")) {
-						t.Errorf("the audio media is %q without a RIFF header", served.Header().Get("Content-Type"))
-					}
-					continue
-				}
-				if served.Header().Get("Content-Type") != "image/png" ||
-					!bytes.HasPrefix(body, []byte("\x89PNG\r\n\x1a\n")) {
-					t.Errorf("the %s media is %q without a PNG header", name, served.Header().Get("Content-Type"))
-				}
+			for _, media := range named {
+				assertMedia(t, rig, urls[media], media)
 			}
 		})
+	}
+}
+
+// decodeCaptchaAnswer reads a challenge answer.
+func decodeCaptchaAnswer(t *testing.T, raw []byte) captchaAnswer {
+	t.Helper()
+	var answer captchaAnswer
+	if err := json.Unmarshal(raw, &answer); err != nil {
+		t.Fatalf("the answer is not JSON: %v\n%s", err, raw)
+	}
+	return answer
+}
+
+// assertMedia fetches one media path and holds its type and signature.
+func assertMedia(t *testing.T, rig *moduleRig, path, name string) {
+	t.Helper()
+	served := rig.mounter.Do(httptest.NewRequest(http.MethodGet, path, nil))
+	if served.Code != http.StatusOK {
+		t.Fatalf("the %s media answered %d:\n%s", name, served.Code, served.Body)
+	}
+	body := served.Body.Bytes()
+	if name == "audio" {
+		if served.Header().Get("Content-Type") != "audio/wav" || !bytes.HasPrefix(body, []byte("RIFF")) {
+			t.Errorf("the audio media is %q without a RIFF header", served.Header().Get("Content-Type"))
+		}
+		return
+	}
+	if served.Header().Get("Content-Type") != "image/png" ||
+		!bytes.HasPrefix(body, []byte("\x89PNG\r\n\x1a\n")) {
+		t.Errorf("the %s media is %q without a PNG header", name, served.Header().Get("Content-Type"))
 	}
 }
 
@@ -261,18 +311,17 @@ func TestTheCaptchaRoutesAnswerUnavailableWhenTheStoreFails(t *testing.T) {
 		rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
 		rig.drive(t)
 
+		// Audio is the form a client may choose, so the media path is known
+		// without depending on the rotation.
 		issued := rig.mounter.Do(httptest.NewRequest(http.MethodPost,
-			captchaChallengeFullPath+"?form=image", nil))
+			captchaChallengeFullPath+"?form=audio", nil))
 		if issued.Code != http.StatusOK {
 			t.Fatalf("the challenge route answered %d:\n%s", issued.Code, issued.Body)
 		}
-		var answer captchaAnswer
-		if err := json.Unmarshal(issued.Body.Bytes(), &answer); err != nil {
-			t.Fatalf("the answer is not JSON: %v", err)
-		}
+		answer := decodeCaptchaAnswer(t, issued.Body.Bytes())
 		rig.store.getErr = errStubKV
 
-		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodGet, answer.ImageURL, nil))
+		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodGet, answer.AudioURL, nil))
 		if recorder.Code != http.StatusServiceUnavailable {
 			t.Fatalf("a store fault answered %d, want 503:\n%s", recorder.Code, recorder.Body)
 		}

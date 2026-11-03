@@ -117,10 +117,12 @@ func mountCaptcha(mounter mount.Mounter, provider *captcha.Provider) {
 	mounter.Public(http.MethodGet, captchaAudioPath, captchaMedia(provider, captcha.MediaAudio))
 }
 
-// captchaChallenge answers the challenge route. The form is named by the
-// request's form query item; an empty value is the image form. The audio form's
-// language is named by the lang query item, or taken from the request's active
-// locale when the item is absent.
+// captchaChallenge answers the challenge route. Audio is the only form a client
+// may choose: form=audio is honoured, and its language is named by the lang
+// query item or taken from the request's active locale when that item is absent.
+// The image and slider forms are the server's rotation choice, so a form item
+// naming either of them, or naming no form at all, is ignored and the answer
+// carries whichever form the rotation drew. An unknown form is a bad request.
 func captchaChallenge(mounter mount.Mounter, provider *captcha.Provider) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()

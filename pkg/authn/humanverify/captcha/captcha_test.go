@@ -160,9 +160,15 @@ func decodeRecord(raw []byte) (record, error) {
 // source is the address the provider's tests issue challenges from.
 const source = "203.0.113.7"
 
-// issue draws a challenge of one form for the test source.
+// issue draws a challenge of one particular form for the test source. Audio is
+// requested the way a client requests it; the two rotating forms are pinned
+// through the provider's rotation seam, because the case is about that form's
+// look, answer or storage rather than about the rotation itself.
 func issue(t *testing.T, p *Provider, form Form) Challenge {
 	t.Helper()
+	if form != FormAudio {
+		p.rotate = func() (Form, error) { return form, nil }
+	}
 	issued, err := p.Issue(t.Context(), IssueOptions{Form: form, RemoteIP: source})
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
