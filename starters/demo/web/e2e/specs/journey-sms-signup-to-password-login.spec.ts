@@ -32,12 +32,16 @@
  * unauthenticated entry is the deployment root, which is the sign-in surface
  * itself.
  *
+ * REQ-signup-047 is claimed for its positive branch only: this walkthrough
+ * submits a legal, unused username with a password that meets the policy, and
+ * never the absent, illegal or mismatched branches.
+ *
  * Expected copy is read from the shipped en-US locale bundles through
  * helpers/i18n.ts, so a sentence that changes in the product changes here with
  * it rather than leaving a stale literal that still passes.
  */
 // @journey journey-sms-signup-to-password-login.md
-// @covers REQ-account-007, REQ-account-060, REQ-account-061, REQ-security-030, REQ-signin-006, REQ-signin-011, REQ-signup-012, REQ-signup-014, REQ-signup-015, REQ-signup-051, REQ-signup-052, REQ-tenancy-022, REQ-tenancy-026
+// @covers REQ-account-007, REQ-account-060, REQ-account-061, REQ-security-030, REQ-signin-006, REQ-signin-011, REQ-signup-012, REQ-signup-014, REQ-signup-015, REQ-signup-047, REQ-signup-051, REQ-signup-052, REQ-tenancy-022, REQ-tenancy-026
 import type { Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
