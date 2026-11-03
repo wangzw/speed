@@ -9,7 +9,10 @@
  *    first-step fields and starts that method's flow, then advances any
  *    parked step through the shared step renderer. The two known form
  *    methods (password, sms) keep their bespoke components; everything
- *    else a deployment adds is driven by its descriptor.
+ *    else a deployment adds is driven by its descriptor. A deployment that
+ *    requires a human-verification proof renders its control on that first
+ *    step, because the start may send a verification message, and the
+ *    start presents the proof the control holds.
  *  - `EnterpriseSignIn` is an `enterprise` method's email-first entry: the
  *    viewer gives an email, the session discovers the identity providers
  *    its domain maps to (`session.discoverSso`), and picking one starts
@@ -42,9 +45,11 @@ import {
   ActionButton,
   FormField,
   FormLayout,
+  HumanVerification,
   errorCodeOf,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
+import { humanGateNeedsProof, useHumanVerification } from '@speed/auth-core'
 import { useAuthUiTranslation } from './translation.js'
 import { fieldLabel, methodLabel } from './labels.js'
 import {
@@ -81,7 +86,8 @@ export interface DescriptorSignInFormProps {
   /**
    * The human-verification gate the deployment reported, when the host
    * already read the discovery document (the sign-in screen does). Omitted,
-   * the form reads it.
+   * the form reads it. A gate that requires a proof renders the control on
+   * the first step, and the start presents the proof it holds.
    */
   readonly humanGate?: AuthnHumanGate
 }
@@ -115,13 +121,35 @@ export function DescriptorSignInForm({
     },
   })
 
+  // The deployment's gate and the proof this form's first step presents.
+  // The hook is active only while that step renders: a parked step's proof
+  // belongs to the shared step renderer below, which reads its own.
+  const human = useHumanVerification(session, {
+    ...(humanGate === undefined ? {} : { gate: humanGate }),
+    enabled: driver.step === null,
+  })
+  const needsProof = humanGateNeedsProof(human.gate)
+  const proofBlocked = needsProof && human.proof === null
+
   const onSubmit: SubmitHandler<Record<string, string>> = async (values) => {
+    // A required proof that is not ready yet keeps the start from leaving:
+    // the block on this step is already showing why.
+    if (proofBlocked) {
+      return
+    }
     feedback.reset()
+    // The proof is single-use: the start spends it, so the control obtains
+    // a fresh one for the next attempt.
+    const presented = needsProof ? human.proof : null
     await driver.start({
       method,
       binding: 'cookie',
       input: values,
+      ...(presented === null ? {} : { human_proof: presented }),
     })
+    if (presented !== null) {
+      human.consume()
+    }
   }
 
   // The descriptor's own fields and a parked step are two surfaces of
@@ -165,7 +193,7 @@ export function DescriptorSignInForm({
         <ActionButton
           type="submit"
           emphasis="primary"
-          disabled={form.formState.isSubmitting}
+          disabled={form.formState.isSubmitting || proofBlocked}
         >
           {t('signInFlow.submit')}
         </ActionButton>
@@ -194,6 +222,16 @@ export function DescriptorSignInForm({
           )}
         />
       ))}
+      {needsProof ? (
+        <HumanVerification
+          gate={human.gate ?? undefined}
+          proof={human.proof}
+          status={human.status}
+          onToken={human.adoptToken}
+          onRetry={human.retry}
+          disabled={driver.busy}
+        />
+      ) : null}
       <ChannelFeedbackRegion feedback={feedback} />
     </FormLayout>
   )
