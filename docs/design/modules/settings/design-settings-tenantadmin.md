@@ -2,7 +2,7 @@
 
 ## 职责
 
-`settings.tenantadmin` 是运行期设置的租户域管理面，挂在租户作用域基路径 `/api/v1/tenants/{tenant}/settings` 下，不交付任何功能接口，只把一个租户的层上的设置读写暴露成 HTTP 路由。每条路由的动作是一次 `settings.Store` 调用：列出声明项、读该租户层解析到的值、写一行、删一行。模块自己不持数据、不持规则：声明项、类型、取值域与三级回落归设置模块，本模块只决定谁可以问、答案长什么样、哪些命名空间不向租户开放。
+`settings.tenantadmin`（尚未实现）拟为运行期设置的租户域管理面，挂在租户作用域基路径 `/api/v1/tenants/{tenant}/settings` 下，不交付任何功能接口，只把一个租户的层上的设置读写暴露成 HTTP 路由。每条路由的动作是一次 `settings.Store` 调用：列出声明项、读该租户层解析到的值、写一行、删一行。模块自己不持数据、不持规则：声明项、类型、取值域与三级回落归设置模块，本模块只决定谁可以问、答案长什么样、哪些命名空间不向租户开放。
 
 **本模块与 `settings.admin` 是同一能力的两个管理面。** `settings.admin` 服务平台员工，路径在 `/api/v1/system/settings` 下，全局层与租户层由查询串点名；本模块服务租户管理员，路径在租户可达的前缀下，作用层由路径里的租户固定，不提供全局层。两者共用 `settings.Store` 与视图形状，不共用路由、权限码或判定域。
 
@@ -13,19 +13,19 @@
 - **不认识租户名册。** 路径里的租户标识由租户层解析；本模块不校验它在不在名册、不读请求解析出的租户，也不写上下文里的租户。标识的取值域由本模块就地复述，与设置模块对同一取值域的复述同源。
 - **不接受查询串改写作用层。** `layer` 与 `tenant` 查询参数在本面上是非法输入；作用层由路径里的租户固定，没有第二条通道把一次写指到全局层或另一个租户。
 - **不提供全局层。** 全局层只经 `settings.admin`，并要平台域的 `settings.write`。
-- **不声明权限点，也不做授权判定。** 它用的 `settings.tenant.read` 与 `settings.tenant.write` 由授权能力为设置能力承载（`pkg/authz/permissions.go` 的 `PermissionTenantSettingsRead`、`PermissionTenantSettingsWrite`），本模块不另声明目录与翻译；判定经 `authz.guard` 的 handler 内 API 做出。它把路由在中间件的声明表里登记为开放，由 handler 在内部判定。
-- **不判定租户是不是个人租户。** 个人租户的拒绝由宿主的 `authz.WriteSettings` 接缝回答；本模块只把答复写成拒绝。
+- **不声明权限点，也不做授权判定。** 它拟用的 `settings.tenant.read` 与 `settings.tenant.write` 由授权能力为设置能力承载（`pkg/authz/permissions.go` 的 `PermissionTenantSettingsRead`、`PermissionTenantSettingsWrite`），本模块拟不另声明目录与翻译；判定拟经 `authz.guard` 的 handler 内 API 做出。它拟把路由在中间件的声明表里登记为开放，由 handler 在内部判定。
+- **不判定租户是不是个人租户。** 个人租户的拒绝拟由宿主的 `authz.WriteSettings`（尚未实现）接缝回答；本模块只把答复写成拒绝。
 - **不改变设置能力的立场。** `pkg/settings` 仍不做授权判定，仍不认识 HTTP；本模块是那个「宿主写出的管理命令」在租户侧的模块化形态。
 
 ## 外部接口契约
 
 ### 登记
 
-`settings.tenantadmin` 不交付任何功能接口（`Provides` 为空）。它 `Requires` 设置功能 `(*settings.Store)(nil)`、handler 内判定 `(*guard.Guard)(nil)`、审计 `(*audit.Audit)(nil)`、注册验证状态读面 `(*authn.SignupVerification)(nil)` 与设置写守卫 `(*authz.WriteSettings)(nil)`，并可选取 `log.Logger`。设置与 guard 各由唯一模块排他交付，写守卫由宿主在装配里提供；命令的闭合不把它们拉进来，宿主在命令树上写下前者、并在装配里提供后者。表态是 `StateEnabled`、永不 `StateAuto`：挂不挂这面管理面是一个命令树上的决定，不是一个配置能推出的结论。HTTP 入口点与路由声明面在 `Init` 里取用而非声明——一个挂路由而没有入口点的命令是要在接线期报出的故障，而声明面的缺席是合法的：没有 gate 时路由不带声明，受守护的端把它们当未声明处理，所以挂这面路由的命令应同时点名授权模块。
+`settings.tenantadmin`（尚未实现）不交付任何功能接口（`Provides` 为空）。它拟 `Requires` 设置功能 `(*settings.Store)(nil)`、handler 内判定 `(*guard.Guard)(nil)`、审计 `(*audit.Audit)(nil)`、注册验证状态读面 `(*authn.SignupVerification)(nil)` 与设置写守卫 `(*authz.WriteSettings)(nil)`，并可选取 `log.Logger`。设置与 guard 各由唯一模块排他交付，写守卫由宿主在装配里提供；命令的闭合不把它们拉进来，宿主在命令树上写下前者、并在装配里提供后者。表态是 `StateEnabled`、永不 `StateAuto`：挂不挂这面管理面是一个命令树上的决定，不是一个配置能推出的结论。HTTP 入口点与路由声明面在 `Init` 里取用而非声明——一个挂路由而没有入口点的命令是要在接线期报出的故障，而声明面的缺席是合法的：没有 gate 时路由不带声明，受守护的端把它们当未声明处理，所以挂这面路由的命令应同时点名授权模块。
 
-**`authz.WriteSettings` 是必需依赖。** 它不是一个可选的收紧接缝：装配这面管理面的宿主必须提供一个实现，缺席在依赖解析处以缺提供者终止启动。它只接收租户标识，个人租户的写拒绝落在宿主一侧，平台只负责在启动时要求它存在；平台专用命名空间的排除不在这里，而在本模块的封闭集合里。
+**`authz.WriteSettings`（尚未实现）拟是必需依赖。** 它不是一个可选的收紧接缝：装配这面管理面的宿主必须提供一个实现，缺席在依赖解析处以缺提供者终止启动。它只接收租户标识，个人租户的写拒绝落在宿主一侧，平台只负责在启动时要求它存在；平台专用命名空间的排除不在这里，而在本模块的封闭集合里。
 
-**本模块声明静态[特性](../../../glossary.md) `settings.tenantadmin`。** 描述符的 `Resources` 带 `feature.Spec{Name: "settings.tenantadmin"}`；这个特性在场，表示本进程挂出租户设置的管理面路由（[feature](../design-feature.md)）。`settings.tenantadmin.endpoints` 必填、不接受空清单，挂路由而没有入口点是接线期故障，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
+**本模块拟声明静态[特性](../../../glossary.md) `settings.tenantadmin`。** 描述符的 `Resources` 拟带 `feature.Spec{Name: "settings.tenantadmin"}`；这个特性在场，表示本进程挂出租户设置的管理面路由（[feature](../design-feature.md)）。`settings.tenantadmin.endpoints` 必填、不接受空清单，挂路由而没有入口点是接线期故障，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
 
 ### 路由
 
@@ -63,7 +63,7 @@
 
 **判定由本模块在 handler 内做出，不经请求中间件的声明判定。** 管理面路由在中间件的声明表里全部登记为开放，好让中间件把请求放行到 handler；handler 先读调用方的身份，再经 `RequirePermissionIn` 就这条路由的权限问一句，判定域是路径点名的那个租户。模块不给自己授予任何权限。
 
-**路径租户必须等于请求解析出的租户。** 这层前置覆盖全部 `ScopeTenants` 路由组，先于本模块的 handler 运行；路径里的 `{tenant}` 与 `tenant.FromContext` 给出的标识不是同一个租户时，以裸 404 作答。本模块不重复这层核对，也不接受一个与解析结果不一致的路径租户。
+**路径租户必须等于请求解析出的租户的别名。** 这层前置覆盖全部 `ScopeTenants` 路由组，先于本模块的 handler 运行；请求面以别名寻址，解析层把别名换成标识写进上下文，前置据该标识从名册取回别名，与路径里的 `{tenant}` 段不相等时以裸 404 作答——路径段解析不到唯一租户、或解析到另一个租户，都答这个 404。本模块不重复这层核对，也不接受一个与解析结果不一致的路径租户。
 
 **判定顺序固定，写与读在判定之后分叉。** handler 先读调用方：请求没有身份是 401，只有状态、没有 `Type`，并带与平台面、准入层同形的 realm 质询，不询问 guard 即返回。写路由随后读发起者的注册验证状态：读作未验证（`SignupPending`）答 403 `contact-required`，读取失败答 503，动作不执行；服务账户与没有任何邮箱的账户（`SignupNone`）豁免。再向 guard 要本条路由的权限：不足即由 guard 写出它自己的 403 或 503。判定之后才分叉：写解析正文、跑形状检查、查平台专用命名空间、问宿主的 `WriteSettings`、落强制档审计、调 `settings.Store`；读查平台专用命名空间、调 `settings.Store` 并应答。
 
@@ -73,15 +73,15 @@
 
 ### 视图
 
-**读的应答是 200 加一份视图，落地的写与删是 204 无正文。** 视图逐字段构造，从不把设置模块的值原样交给客户端：声明部分逐字段取自 `settings.DeclaredItem`，值部分由该租户层的行与 `Get` 的解析结果给出。设置项视图的字段：`key`、`namespace`（声明它的模块，即键的前缀段）、`type`（声明类型自己的文本形式）、`description`、`domain`（取值域的规则，没有取值域的项为空）、`sensitive`、`default`、`written`、`has_row`、`value`。时间不在此列。
+**读的应答是 200 加一份视图，落地的写与删是 204 无正文。** 视图逐字段构造，从不把设置模块的值原样交给客户端：声明部分逐字段取自 `settings.DeclaredItem`，值部分由该租户层的行与 `Get` 的解析结果给出。设置项视图的字段：`key`、`namespace`（声明它的模块，即键的前缀段）、`type`（声明类型自己的文本形式）、`description`、`domain`（取值域的规则，没有取值域的项为空）、`sensitive`、`default`、`written`、`has_row`、`value`、`source`。`source` 是当前有效值来自哪一层，取值是封闭集 `tenant`、`global` 与 `default`：租户层有显式行时为 `tenant`，否则全局层有显式行时为 `global`，否则为 `default`。时间不在此列。
 
 **敏感项的值由本模块遮蔽。** `Declared` 的列表不带敏感项的默认值，`List` 与 `Get` 却照常交出敏感项的值；本模块按 `DeclaredItem.Sensitive` 把敏感项的 `default` 置空、把 `written` 与 `value` 换成一个固定遮蔽串再交出。遮蔽只覆盖文本：`has_row` 照常报出。
 
-**列表不按本进程的装配收窄。** `Declared()` 的声明集取可用集，本进程未运行的模块声明的键照常列出；一个键可以由同一部署里的另一个进程读取。列表先去掉平台专用命名空间下的项，再按三级回落解析每个键在租户层的值；视图同时给出 `written`、`has_row` 与 `value`，三者与平台面的语义相同。列表按 `Declared` 的键字节序，不分页。
+**列表不按本进程的装配收窄。** `Declared()` 的声明集取可用集，本进程未运行的模块声明的键照常列出；一个键可以由同一部署里的另一个进程读取。列表先去掉平台专用命名空间下的项，再按三级回落解析每个键在租户层的值；视图同时给出 `written`、`has_row`、`value` 与 `source`，前三者与平台面的语义相同，`source` 由租户层与全局层各自的显式行判定：租户行在即 `tenant`，否则全局行在即 `global`，否则 `default`。列表按 `Declared` 的键字节序，不分页。
 
 ### 宿主可见面
 
-以下是宿主写进配置文件、或在命令树与网关上点名的面。
+以下是宿主写进配置文件、或在命令树与网关上点名的目标面（本模块尚未实现）。
 
 - **模块名**：`settings.tenantadmin`。宿主的命令树点模块名纳入，配置命名空间、特性名与 OpenAPI 分组取同一取值。
 - **配置命名空间与输入项**：`settings.tenantadmin` 下的 `endpoints`（字符串列表，必填，无缺省，只收具体端名、不收 `*`，取主配置源）。
@@ -93,8 +93,8 @@
 
 ### 对外接口面
 
-- 模块名 `settings.tenantadmin`、配置键 `settings.tenantadmin.endpoints`、管理面路由的路径、`layer`／`tenant` 查询参数的拒绝、每条路由询问的权限（读 `settings.tenant.read`、写 `settings.tenant.write`）与判定域（路径点名的租户），以及 `Problem.Type` 前缀 `urn:speed:settings:` 及其下的码（`bad-request`、`invalid-value`、`protected`），是本模块对宿主的接口面。写路由在发起者为未验证账户时答 403 `contact-required`，同样是接口面。改动它们是宿主可见的破坏性变更。
-- 设置项视图的字段名（`key`、`namespace`、`type`、`description`、`domain`、`sensitive`、`default`、`written`、`has_row`、`value`）与敏感项遮蔽的规则是应答形状。
+- 模块名 `settings.tenantadmin`、配置键 `settings.tenantadmin.endpoints`、管理面路由的路径、`layer`／`tenant` 查询参数的拒绝、每条路由询问的权限（读 `settings.tenant.read`、写 `settings.tenant.write`）与判定域（路径点名的租户），以及 `Problem.Type` 前缀 `urn:speed:settings:` 及其下的码（`bad-request`、`invalid-value`、`protected`），目标上是本模块对宿主的接口面。写路由在发起者为未验证账户时答 403 `contact-required`，同样是接口面。改动它们是宿主可见的破坏性变更。
+- 设置项视图的字段名（`key`、`namespace`、`type`、`description`、`domain`、`sensitive`、`default`、`written`、`has_row`、`value`、`source`）、`source` 的封闭取值 `tenant`／`global`／`default` 与敏感项遮蔽的规则是应答形状。
 - 平台专用命名空间集合是这一面的行为契约：哪些命名空间不向租户开放由它回答，新增一个平台专用命名空间是一次代码变更。
 - 特性名 `settings.tenantadmin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 本模块可替换、可撤掉，不改变调用方或设置模块的代码。
@@ -119,7 +119,7 @@
 
 ## UML 图
 
-本模块不持状态、不做判定之外的分支，它的结构是一串跨模块的调用。图固定一次写路由的操作序：路径租户核对 → 读调用方 → 读注册验证状态 → 向 guard 要权限 → 解析正文与形状检查 → 查平台专用命名空间 → 问 `WriteSettings` → 落强制档审计 → 调设置模块。图上看不出的是这些约束：判定域是**路径点名的租户**；`layer`／`tenant` 查询参数出现即 400；平台专用命名空间的读与写都答 404；个人租户由宿主的 `WriteSettings` 拒绝；审计落在动作之前、事务之外，写不进即 503 且动作不执行；每条拒绝路径不产生 `success` 审计行。
+本模块不持状态、不做判定之外的分支，它的结构是一串跨模块的调用。图固定一次写路由的操作序：路径租户核对 → 读调用方 → 读注册验证状态 → 向 guard 要权限 → 解析正文与形状检查 → 查平台专用命名空间 → 问 `WriteSettings` → 落强制档审计 → 调设置模块。图上看不出的是这些约束：判定域是**路径点名的租户**；`layer`／`tenant` 查询参数出现即 400；平台专用命名空间的读与写都答 404；个人租户由宿主的 `WriteSettings` 拒绝；guard 读不出策略时答 503，不落审计、不触 `settings.Store`；审计落在动作之前、事务之外，写不进即 503 且动作不执行；每条拒绝路径不产生 `success` 审计行。读的视图逐键给出 `source`，取值是 `tenant`、`global` 或 `default`。
 
 ```mermaid
 sequenceDiagram
@@ -131,7 +131,7 @@ sequenceDiagram
     participant S as settings.Store
 
     C->>T: PUT /api/v1/tenants/{tenant}/settings/{namespace}/{key}
-    alt 路径租户 ≠ 解析租户，或目标是平台域
+    alt 路径租户 ≠ 解析租户的别名，或目标是平台域
         T-->>C: 裸 404
     else 同一租户
         T->>H: 放行
@@ -144,8 +144,10 @@ sequenceDiagram
                 H-->>C: 403 contact-required
             else 已验证
                 H->>G: RequirePermissionIn(settings.tenant.write, 租户域)
-                alt 权限不足或 guard 故障
-                    G-->>C: 403 forbidden 或 503
+                alt 权限不足
+                    G-->>C: 403 forbidden
+                else guard 读不出策略
+                    G-->>C: 503（不落审计、不触 Store）
                 else 权限足够
                     H->>H: 解析正文、形状检查、layer/tenant 查询参数拒绝
                     alt 形状不可读或查询串改写作用层
@@ -186,7 +188,7 @@ sequenceDiagram
 
 | 概念 | 形状 | 说明 |
 |---|---|---|
-| 设置项视图 | `{key, namespace, type, description, domain, sensitive, default, written, has_row, value}` | 声明部分逐字段取自 `settings.DeclaredItem`；值部分取自该租户层的行与 `Get` 的解析结果；敏感项的值遮蔽；平台专用命名空间下的项不出现 |
+| 设置项视图 | `{key, namespace, type, description, domain, sensitive, default, written, has_row, value, source}` | 声明部分逐字段取自 `settings.DeclaredItem`；值部分取自该租户层的行与 `Get` 的解析结果；`source` 取 `tenant`、`global` 或 `default`；敏感项的值遮蔽；平台专用命名空间下的项不出现 |
 | 写正文 | `{value}` | `PUT .../settings/{namespace}/{key}` 的正文；值按设置模块的声明类型编码 |
 | 层选 | `settings.Layer` | 由路径里的租户构造：`settings.ForTenant(tenant)` |
 | 域 | `authz.Domain` | 由路径里的租户构造：`authz.Domain(tenant)` |
@@ -213,7 +215,7 @@ sequenceDiagram
 ### 写一项设置
 
 1. 路径租户核对与身份检查；写路由读注册验证状态。
-2. 形状检查：路径里的租户落在标识取值域内、`:namespace` 与 `:key` 拼出的全键已声明、正文可读、查询串没有 `layer` 或 `tenant`，否则 400；全键未声明或命名空间平台专用即 404。
+2. 形状检查：路径里的租户落在标识取值域内、正文可读、查询串没有 `layer` 或 `tenant`，否则 400；全键未声明或命名空间平台专用即 404。
 3. `WriteSettings.Denied(ctx, tenant)`：拒绝即 403 `protected`，读不出即 503，动作不执行。
 4. 落强制档审计（动作 `settings.set`，明细带键、租户与动作标识；敏感项的值不写明）。
 5. `settings.Store.Set(ctx, Write{Layer: ForTenant(tenant), Key: 全键, Value: 正文的值, Actor: 调用方的责任键 Identity.Key()})`——设置模块把值按声明类型编码、按取值域判定，再写表。
@@ -222,7 +224,7 @@ sequenceDiagram
 ### 删一项设置
 
 1. 路径租户核对与身份检查；写路由读注册验证状态。
-2. 形状检查：全键已声明、查询串没有 `layer` 或 `tenant`，否则 400；全键未声明或命名空间平台专用即 404。
+2. 形状检查：查询串没有 `layer` 或 `tenant`，否则 400；全键未声明或命名空间平台专用即 404。
 3. `WriteSettings.Denied(ctx, tenant)`：拒绝即 403 `protected`，读不出即 503。
 4. 落强制档审计（动作 `settings.delete`）。
 5. `settings.Store.Delete(ctx, ForTenant(tenant), 全键, 调用方的责任键)`；删一行不在的表行不是错误。
@@ -233,10 +235,10 @@ sequenceDiagram
 1. 路径租户核对与身份检查。
 2. 形状检查：路径里的租户落在标识取值域内、查询串没有 `layer` 或 `tenant`，否则 400。
 3. `Declared()` 取声明项（无 IO），去掉命名空间属于平台专用集合的项；`:namespace` 给定则限于键的前缀段等于它的那组，那组为空或整个落在平台专用集合里即 404。
-4. `List(ctx, ForTenant(tenant))` 取该层写下的行，按键建索引；逐项用 `Get(ForTenant(tenant), key, reflect.New(声明类型))` 取解析到的值。
+4. `List(ctx, ForTenant(tenant))` 取租户层写下的行，`List(ctx, Global())` 取全局层写下的行，两者按键建索引；逐项用 `Get(ForTenant(tenant), key, reflect.New(声明类型))` 取解析到的值，并按两个索引判定 `source`：键在租户层行里为 `tenant`，否则在全局层行里为 `global`，否则为 `default`。读全局层只为标注来源，本面不单独交出全局层的值，也不接受对它的写。
 5. 按 `DeclaredItem.Sensitive` 遮蔽敏感项的值，交出视图，200。
 
-**列举按租户层给值，不改回落规则。** `List` 报出的是该租户层显式写下的行，`Get` 按层选起点走三级回落（租户行、全局行、声明默认值）；视图因此同时给出 `written`、`has_row` 与 `value`。`written` 为空同时对应「该层无行」与「该层有一行且文本为空串」，两者由 `has_row` 区分。
+**列举按租户层给值，不改回落规则。** `List` 报出的是该租户层显式写下的行，`Get` 按层选起点走三级回落（租户行、全局行、声明默认值）；视图因此同时给出 `written`、`has_row`、`value` 与 `source`，`source` 报出 `value` 来自哪一层。`written` 为空同时对应「该层无行」与「该层有一行且文本为空串」，两者由 `has_row` 区分。
 
 ## 错误与失败语义
 
@@ -244,11 +246,11 @@ sequenceDiagram
 
 | 情形 | 表现 |
 |---|---|
-| 请求在形状上不可读（路径参数拼出的全键、正文）、租户标识越出取值域、出现 `layer` 或 `tenant` 查询参数 | 400（`Problem.Type` 为 `urn:speed:settings:bad-request`），在调设置模块之前 |
+| 请求在形状上不可读（路径参数、正文）、租户标识越出取值域、出现 `layer` 或 `tenant` 查询参数 | 400（`Problem.Type` 为 `urn:speed:settings:bad-request`），在调设置模块之前 |
 | 全键不在 `Declared()` 里 | 404，不带 `Problem.Type` |
 | 全键的命名空间在平台专用集合里，读或写 | 404，不带 `Problem.Type` |
 | `:namespace` 那组没有任何可列出的声明项 | 404，不带 `Problem.Type` |
-| 路径里的租户是平台域，或与请求解析出的租户不是同一个 | 裸 404，不带 `Problem.Type` |
+| 路径里的租户是平台域，或路径段不等于请求解析出的租户别名 | 裸 404，不带 `Problem.Type` |
 | `WriteSettings` 答复拒绝 | 403（`urn:speed:settings:protected`），动作不执行、审计行不落 |
 | 值编不成声明类型，或落在声明方给出的取值域之外 | 422（`urn:speed:settings:invalid-value`），设置模块报 `settings.ErrTypeMismatch`／`settings.ErrInvalidValue` |
 | 发起者读作未验证（`SignupPending`），而这是写路由 | 403 `contact-required`（`authn.ErrContactRequired`），动作不执行 |

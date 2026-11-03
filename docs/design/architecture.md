@@ -379,13 +379,13 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [http](modules/http/design-http.md) | 已实现 |
 | [authn](modules/authn/design-authn.md) | 部分实现 |
 | [tenant](modules/tenant/design-tenant.md) | 已实现 |
-| [authz](modules/design-authz.md) | 已实现 |
+| [authz](modules/design-authz.md) | 部分实现 |
 | [kv](modules/design-kv.md) | 已实现 |
 | [sms](modules/design-sms.md) | 已实现 |
 | [mail](modules/design-mail.md) | 已实现 |
 | [event](modules/event/design-event.md) | 已实现 |
 | [audit](modules/audit/design-audit.md) | 已实现 |
-| [settings](modules/settings/design-settings.md) | 已实现 |
+| [settings](modules/settings/design-settings.md) | 部分实现 |
 | [ratelimit](modules/design-ratelimit.md) | 已实现 |
 | [observability](modules/design-observability.md) | 已实现 |
 | [i18n](modules/design-i18n.md) | 已实现 |
@@ -396,4 +396,4 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [ops](modules/design-ops.md) | 已实现 |
 | [web](modules/web/design-web.md) | 部分实现 |
 | [webui](modules/design-webui.md) | 已实现 |
-| [starters](modules/design-starters.md) | 已实现 |
+| [starters](modules/design-starters.md) | 部分实现 |

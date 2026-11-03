@@ -1032,6 +1032,17 @@ names the fixed part of that wiring, and no configuration file repeats it:
   not the route is mounted, because they wind up a tenant an account already
   has.
 
+  The policy module requires `tenant.KindResolver`; `workspace.personal.kind`
+  (`server/personal.go`) delivers it and both are named in `baselineServe`. The
+  resolver compares a row's identifier with the caller's own derived
+  `personal-<account-id>` exactly, so the caller tenant read answers `personal`
+  for that row and `business` for every other tenant, another account's personal
+  tenant included. An assembly that names the policy module without the resolver
+  fails at dependency resolution rather than serving every row as business. The
+  host's prefix checks — the write guards, the provisioner's builtin exemption
+  and the seed's skip — all call `isPersonalTenantID`, so the prefix is spelled
+  once.
+
   The route `POST /api/v1/workspace/personal` on the `account` endpoint is the
   backfill: a caller whose own personal tenant is missing from its membership
   list asks for one. A membership in another tenant is not a refusal — every

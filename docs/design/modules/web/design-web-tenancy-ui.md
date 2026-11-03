@@ -6,7 +6,7 @@
 
 租户是请求的路由事实：服务端的解析层按端从请求头、子域或路径解析当前租户，认证不携带租户（[authn 登录](../authn/design-authn-login.md)、[tenant 准入](../tenant/design-tenant-admission.md)）。切换租户因而是一次宿主的路由变更，不是会话上的一次操作——本控件只把用户的意图报给宿主，由宿主改变它的路由并更新它交给 [auth-core](design-web-auth-core.md) 的租户上下文。
 
-**列表的来源是宿主的本人租户读取。** 宿主经平台的一条读取（`GET /api/v1/auth/me/tenants`，[tenant.self](../tenant/design-tenant.md)）取得调用方持有有效成员关系的租户，映射成 `TenantOption`：`id` 是租户标识，`name` 是别名；个人租户那一行是宿主自己的工作区文案。本控件不读这条读取，也不判定哪个租户是个人租户——个人租户是宿主的策略，平台应答不带种类（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
+**列表的来源是宿主的本人租户读取。** 宿主经平台的一条读取（`GET /api/v1/auth/me/tenants`，[tenant.self](../tenant/design-tenant.md)）取得调用方持有有效成员关系的租户，映射成 `TenantOption`：`id` 是租户标识，`name` 是别名；个人租户那一行是宿主自己的工作区文案。本控件不读这条读取，也不判定哪个租户是个人租户——个人租户是宿主的策略；平台应答携带 `kind`，宿主把它映射成工作区文案；本控件不读也不判定它（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
 
 控件的形状：
 
@@ -136,3 +136,4 @@ sequenceDiagram
 | 命名空间资源 | 已实现 | `web/packages/tenancy-ui/src/resources.ts` `TENANCY_UI_NAMESPACE`、`tenancyUiResources` |
 | 切换通知的区域在控件挂载时存在 | 已实现 | `web/packages/tenancy-ui/src/TenantSwitcher.tsx` `TenantSwitcher` |
 | 菜单页脚、播报位置与触发器呈现选项 | 已实现 | `web/packages/tenancy-ui/src/TenantSwitcher.tsx` `TenantSwitcherProps` |
+| 切换时的租户权限集清除、工作区管理面重挂载与离开管理面到租户首页（宿主侧） | 已实现 | `starters/demo/web/src/chrome.tsx` `useTenantSelection`；`starters/demo/web/src/app.tsx` `TenantFrame` |

@@ -9,16 +9,18 @@ writes the policy data, the host's seeding and reconciliation surfaces, and the
 account lifecycle cleanup — `pkg/authz/guard`, the module that implements the
 authentication capability's decision seam, `pkg/authz/admin`, the platform
 management surface, `pkg/authz/tenantadmin`, the tenant-scoped management
-surface, `pkg/authz/self`, the module that answers the caller's own permissions,
-and `pkg/authz/authztest`, the fixtures a test of this directory drives. The
+surface (not implemented yet), `pkg/authz/self`, the module that answers the
+caller's own permissions, and `pkg/authz/authztest`, the fixtures a test of this
+directory drives. The
 thin adapter the engine stores its policy through, the snapshot holder, and the
 one permission translation live under `pkg/authz/internal/`, which only this
 directory can import.
 
 The platform management surface is `authz.admin`: it mounts its routes under
 `/api/v1/system/*` and delivers nothing of its own. The tenant management surface
-is `authz.tenantadmin`: it mounts its routes under `/api/v1/tenants/{tenant}/*`,
-decides in the tenant's own policy domain, and delivers nothing of its own.
+is `authz.tenantadmin`, not implemented yet: when it exists it mounts its routes
+under `/api/v1/tenants/{tenant}/*`, decides in the tenant's own policy domain,
+and delivers nothing of its own.
 `authz.self` mounts the caller's permission read under
 `/api/v1/authz/me/permissions` and delivers nothing of its own either.
 
@@ -27,9 +29,14 @@ registered module declares. `Catalog.TenantGoverned` is the subset a tenant
 administrator may hold and grant: a permission with a tenant-scoped endpoint,
 defined by the platform as a closed set. A module marks its own governed
 permissions in `PermissionSpec.TenantGoverned`, which must be a subset of
-`PermissionSpec.Permissions`. `platform-admin` is granted `Declared`; each
-domain's `tenant-admin` is granted `TenantGoverned`. `Governed` answers whether
-one declared permission is in the governed set.
+`PermissionSpec.Permissions`. `platform-admin` exists only in the platform domain
+and is granted `Declared`; on a tenant surface it admits nothing by itself, and a
+caller needs a binding in that tenant. `tenant-admin` has two tiers: in a
+business or system tenant it is granted `TenantGoverned`; in a personal tenant it
+is granted the host's business-resource set intersected with `TenantGoverned`,
+minus the host's excluded set; it is not seeded as a builtin and is never
+converged by `Reconciler`. `Governed` answers whether one declared permission is
+in the governed set.
 
 The API is the package's godoc. Read the capability interfaces' comments
 before writing a consumer.
@@ -54,11 +61,12 @@ which takes no lock.
   name.
 - **`pkg/authz/policy` registers `authz.policy`; `pkg/authz/guard` registers
   `authz.guard`; `pkg/authz/admin` registers `authz.admin`; `pkg/authz/tenantadmin`
-  registers `authz.tenantadmin`; `pkg/authz/self` registers `authz.self`.** Each
-  registering package exports its own `ModuleName`, and that same value is its
-  configuration namespace, its static feature name and its OpenAPI tag; every
-  segment of the name is a lower-case letter, a digit or a dash. Each of them
-  carries its own `AGENTS.md` beside it, stating that package's boundaries.
+  registers `authz.tenantadmin` (not implemented yet); `pkg/authz/self` registers
+  `authz.self`.** Each registering package exports its own `ModuleName`, and that
+  same value is its configuration namespace, its static feature name and its
+  OpenAPI tag; every segment of the name is a lower-case letter, a digit or a
+  dash. Each of the packages that exists carries its own `AGENTS.md` beside it,
+  stating that package's boundaries.
 - **`pkg/authz/internal/persist`, `pkg/authz/internal/policy` and
   `pkg/authz/authztest` register no module.** The two `internal` packages are
   the directory's library units and `authztest` is a test fixture.
@@ -69,9 +77,11 @@ which takes no lock.
   items `authz.policy.load-timeout` and `authz.policy.refresh-interval`. The
   enforcement module's namespace is `authz.guard`; it declares the input items
   `authz.guard.endpoints` and `authz.guard.undeclared`. `authz.admin` declares
-  `authz.admin.endpoints`; `authz.tenantadmin` declares
-  `authz.tenantadmin.endpoints`; `authz.self` declares `authz.self.endpoints`.
-  Each endpoint list is required, names concrete endpoints and refuses `*`.
+  `authz.admin.endpoints`; `authz.self` declares `authz.self.endpoints`.
+  `authz.tenantadmin` is not implemented yet; its namespace is
+  `authz.tenantadmin`, and when implemented it will declare
+  `authz.tenantadmin.endpoints`. Each endpoint list is required, names concrete
+  endpoints and refuses `*`.
 
 ## Boundaries
 
@@ -114,16 +124,26 @@ which takes no lock.
   converges one domain's builtin `tenant-admin` to a target grant set and removes
   only the grants the caller lists as retired: it adds what the target holds and
   the role does not, removes the intersection of the role's grants with the
-  retired set, returns the counts, and leaves any other grant in place. It never
-  infers a removal from the catalog, so two replicas on different versions do not
-  delete each other's grants. Both run in one transaction, reload the snapshot
-  and publish `authz.policy.changed` after the commit, and are idempotent. The
-  host's seeding step writes the mandatory audit row before it calls
-  `ReconcileGrants`; an audit that cannot be written means no reconciliation.
+  retired set, returns the counts, and leaves any other grant in place. When the
+  target set and the retired set overlap, the target set wins and a grant listed
+  in both is kept. It never infers a removal from the catalog, so two replicas on
+  different versions do not delete each other's grants. Both methods take grants
+  as `[]Grant`: `SeedGrants` takes one set, `ReconcileGrants` takes the target and
+  the retired set. Each call runs in one transaction; a failure rolls back every
+  row of that call and a retry reconverges. After the commit the module reloads
+  the snapshot and publishes `authz.policy.changed`, and both are idempotent. The
+  error order is fixed: a role other than `tenant-admin` is `ErrReservedRole`
+  before any read, an absent `tenant-admin` is `ErrUnknownRole`, and a
+  `tenant-admin` that is not builtin is `ErrReservedRole`; all three precede any
+  convergence write. A personal tenant's `tenant-admin` is not builtin, so
+  `Reconciler` refuses it. The host's seeding step writes the mandatory audit row
+  before it calls `ReconcileGrants`; an audit that cannot be written means no
+  reconciliation.
   `authz.policy` delivers both exclusively, and neither `authz.admin` nor
-  `authz.tenantadmin` takes either up — the wall between a management surface
-  and a builtin role's grant set is the capabilities the module holds, not a
-  branch in a handler. The host's seeding step is `Reconciler`'s only caller.
+  `authz.tenantadmin` (when implemented) takes either up — the wall between a
+  management surface and a builtin role's grant set is the capabilities the
+  module holds, not a branch in a handler. The host's seeding step is
+  `Reconciler`'s only caller.
 - **The governed set is a second, closed reading of the catalog.** A module
   declares the permissions it owns in `PermissionSpec.Permissions` and the
   tenant-governed subset in `PermissionSpec.TenantGoverned`, which must be a
@@ -131,16 +151,22 @@ which takes no lock.
   `Catalog.TenantGoverned` unions the registered modules' marks; `Governed`
   answers for one permission. The platform's governed set is defined centrally
   in `policy`'s declaration, so a missed mark there removes a permission from
-  every tenant administrator. `platform-admin` is granted `Declared`; each
-  domain's `tenant-admin` is granted `TenantGoverned`. The split permission codes
+  every business or system tenant administrator. `platform-admin` exists only in
+  the platform domain and is granted `Declared`; on a tenant surface it admits
+  nothing by itself. A business or system tenant's `tenant-admin` is granted
+  `TenantGoverned`; a personal tenant's is granted the host's business-resource
+  set intersected with `TenantGoverned`, minus the host's excluded set; it is not
+  seeded as a builtin and is never converged by the `Reconciler`. The split
+  permission codes
   are `authz.role.read`/`authz.role.manage` and `settings.read`/`settings.write`
   for the platform surface, and `authz.tenant.role.read`/
   `authz.tenant.role.manage` and `settings.tenant.read`/`settings.tenant.write`
   for the tenant surface; the two pairs translate to different (object, action)
   pairs.
-- **The tenant management surface decides in the tenant domain and enforces the
-  anti-escalation rules itself.** `authz.tenantadmin` takes `Manager`, `Catalog`,
-  `SubjectPermissions`, `MembershipChecker`, `guard.Guard`, `audit.Audit` and
+- **`authz.tenantadmin` is not implemented yet.** When implemented it decides in
+  the tenant domain and enforces the anti-escalation rules itself. It takes
+  `Manager`, `Catalog`, `SubjectPermissions`, `MembershipChecker`, `guard.Guard`,
+  `audit.Audit` and
   `authn.SignupVerification`, and only `Manager` of the policy writers. It
   declares its routes open, reads the caller and the signup state itself, and
   decides with `RequirePermissionIn` in the path tenant's domain. It refuses a
@@ -161,11 +187,12 @@ which takes no lock.
   domain or target is protected, not the caller short a permission — and an
   unreadable answer a 503, and the seam can only narrow what the `Manager` would
   do. Delivering none is a legal assembly: the write routes then run without it.
-  `WriteSettings` is a separate seam, in the root package, for the settings
-  write: it takes only the tenant, its denial is the settings surface's
-  `protected` code, and `WriteOp` keeps its closed three values.
-  `settings.tenantadmin` requires it, so an assembly that mounts the tenant
-  settings surface without one fails the startup; `WriteGuard` stays optional.
+  `WriteSettings` is a separate seam planned for the root package, not
+  implemented yet, for the settings write: it will take only the tenant, its
+  denial is the settings surface's `protected` code, and `WriteOp` keeps its
+  closed three values. `settings.tenantadmin`, also not implemented yet, will
+  require it, so an assembly that mounts the tenant settings surface without one
+  fails the startup; `WriteGuard` stays optional.
   The policy
   module's own writes — the seeding and reconciliation surfaces and the host's
   `Manager.ClearAccountBindings` account-deletion path — do not consult either

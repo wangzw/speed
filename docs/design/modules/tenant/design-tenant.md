@@ -920,7 +920,7 @@ flowchart TD
 |---|---|---|
 | 解析模块、名册模块与各自的排他交付 | 已实现 | `pkg/tenant/resolve/resolve.go` `Module`、`pkg/tenant/catalog/catalog.go` `Module` |
 | 准入子包 `tenant.admission`、排他交付与定序锚点 `tenant.Admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
-| `Kind`、`KindResolver` 与本模块读取应答里的 `kind` | 未实现 | — |
+| `Kind`、`KindResolver` 与本模块读取应答里的 `kind` | 已实现 | `pkg/tenant/kind.go` `Kind`、`KindBusiness`、`KindPersonal`、`KindResolver`；`pkg/tenant/self/self.go` `Module`；`pkg/tenant/self/handler.go` `handleTenants`；`pkg/tenant/self/operations.go` 的 `Kind` 字段 |
 | 本人租户读取：模块 `tenant.self`、`GET /api/v1/auth/me/tenants`、有效成员关系与名册状态的交集、按标识升序、401 与 503 | 已实现 | `pkg/tenant/self/self.go` `Module`、`handler.go` `handleTenants`、`openapi/tenant.self.json` |
 | 名册表与它的迁移集 | 已实现 | `pkg/tenant/catalog/migrations/`；`catalog.go` `migrationsFS` |
 | 名册的读写面与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`Create`、`SetStatus`、`SetStatusByAccount`、`Delete`、`SetAlias`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot`、`disabledByOf`、`counts` |

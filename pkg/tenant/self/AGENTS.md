@@ -14,7 +14,7 @@ caller and not about one tenant.
 ## The answer
 
 ```json
-{ "tenants": [ { "id": "acme", "alias": "Acme" }, { "id": "globex", "alias": "Globex" } ] }
+{ "tenants": [ { "id": "acme", "alias": "Acme", "kind": "business" }, { "id": "personal-acct-1", "alias": "personal-acct-1", "kind": "personal" } ] }
 ```
 
 A membership enters the answer when it is itself active (`Membership.Active`) and
@@ -22,9 +22,27 @@ its roster row's status is `tenant.StatusActive`. A suspended membership, a
 disabled tenant and an identifier the roster snapshot does not carry are all left
 out. The list is ordered by identifier — `Memberships.Tenants` already lists that
 way, and the filter preserves the order rather than sorting again — and an empty
-result is `[]`, never `null`. The answer carries no kind and no status: the
-personal tenant is a host policy the roster does not record, so a host matches it
-by the identifier it derives itself.
+result is `[]`, never `null`. The answer carries no status.
+
+## The kind
+
+`kind` is the closed set `business | personal`, and it is the host's answer, not
+the roster's: the roster records no kind. This module takes an optional
+`tenant.KindResolver` and passes each answer through unchanged, asking it once
+per listed tenant.
+
+- **No resolver means every row is `business`.** That is the assembly with no
+  personal-tenant policy, where no personal tenant exists. The requirement is
+  optional at this module's descriptor.
+- **An assembly that carries a personal-tenant policy provides a resolver, and
+  its module declares the capability required**, so a command that enables the
+  policy without one fails at dependency resolution rather than serving every
+  row as business.
+- **A resolver error is a 503**, never a silent `business`: the kind is a fact,
+  and a failure to read it is not one.
+
+The closed set is written into this module's fragment as an OpenAPI `enum`, so
+the generated clients type `kind` as a union of the two values.
 
 ## Access control
 

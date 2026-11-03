@@ -18,9 +18,12 @@ The catalog carries two readings of its permissions. `Declared` is every
 permission a registered module declares; `TenantGoverned` is the subset a tenant
 administrator may hold and grant, marked by each module in
 `PermissionSpec.TenantGoverned` and defined centrally for this capability's own
-permissions. `platform-admin` is granted `Declared`; every domain's
-`tenant-admin` is granted `TenantGoverned`. `Governed` answers for one
-permission.
+permissions. `platform-admin` exists only in the platform domain and is granted
+`Declared`; on a tenant surface it admits nothing by itself. A business or system
+tenant's `tenant-admin` is granted `TenantGoverned`; a personal tenant's is
+granted the host's business-resource set intersected with `TenantGoverned`, minus
+the host's excluded set; it is not seeded as a builtin and is never converged by
+`Reconciler`. `Governed` answers for one permission.
 
 Resolving the process's permission translation belongs here as much as the
 catalog does: the two are built over the same registered modules, and a host
@@ -114,18 +117,25 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
 - **`Reconciler` is the only write that removes a builtin role's grants.** It
   is delivered exclusively beside `Seeder` and takes
   `ReconcileGrants(ctx, tenant, role, grants, retired []authz.Grant) (added,
-  removed int, err error)`. It applies to one domain's builtin `tenant-admin`: it
+  removed int, err error)`; the two capabilities share the `authz.Grant` input
+  type. It applies to one domain's builtin `tenant-admin`: it
   adds what the target set holds and the role does not, and removes the
-  intersection of the role's grants with the caller's retired set. It never
-  infers a removal from the catalog — a grant outside the target but not listed
+  intersection of the role's grants with the caller's retired set. When the
+  target set and the retired set overlap, the target set wins and a grant in both
+  is kept. It never infers a removal from the catalog — a grant outside the
+  target but not listed
   as retired stays — so replicas on different versions do not delete each
-  other's grants. Any other role, or a `tenant-admin` that is not builtin, is
-  refused with `authz.ErrReservedRole` before a row is written. The add and the
-  remove run in one transaction under the role's row lock; after the commit the
+  other's grants. The error order is fixed: a role other than `tenant-admin` is
+  `authz.ErrReservedRole` before any read, an absent `tenant-admin` is
+  `authz.ErrUnknownRole`, and a `tenant-admin` that is not builtin is
+  `authz.ErrReservedRole`; all three precede any convergence write. The add and
+  the remove run in one transaction under the role's row lock; a failure rolls
+  back every row of the call, and a retry reconverges. After the commit the
   module reloads the snapshot and publishes `authz.policy.changed` when anything
   changed, and a no-change call returns zero without either. A failure is
   retryable: add-then-remove leaves a superset on an interrupted call, which the
-  next call converges. The host's seeding step writes the mandatory audit row
+  next call converges. A personal tenant's `tenant-admin` is not builtin, so it
+  is refused. The host's seeding step writes the mandatory audit row
   before the call; an audit that cannot be written means no reconciliation. The
   seeding step is the only caller; neither management module takes it up.
 - **The builtin mark has one write, and `PutRole` is not it.** `PutRole`

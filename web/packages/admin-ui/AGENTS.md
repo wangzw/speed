@@ -3,7 +3,23 @@
 ## What this package is
 
 Two management surfaces share one set of page components, one declaration
-shape and one operations seam.
+shape and one operations seam. The platform surface is implemented; the
+workspace surface is not implemented yet.
+
+The package's pages address three kinds of endpoint, and the kinds are not
+interchangeable:
+
+- **Platform assets** under `/api/v1/system/...`, judged in the platform
+  domain: the tenant roster, accounts, sessions, impersonation records,
+  authorization, settings, SMS templates and the audit query.
+- **The platform surface's tenant-addressed pages** (invitations and
+  membership, SSO) under `/api/v1/tenants/{tenant}/...`, judged in that
+  tenant's domain. Holding `platform-admin` alone does not admit the
+  caller: the caller needs a separate binding in that tenant.
+- **The workspace surface** under `/api/v1/tenants/{tenant}/...`, judged in
+  the current tenant's domain: invitations and membership, SSO, tenant-layer
+  settings, and tenant roles and permissions, scoped to the tenant the host
+  supplies.
 
 **The platform surface** is the platform-staff admin — the second shell.
 It renders the platform's backend administration surfaces as one admin
@@ -17,11 +33,12 @@ audit query (`/api/v1/system/audit`). The admin root renders a dashboard, and
 the tenant roster and the audit query each link a row to that record's
 detail page.
 
-Those endpoints are mounted on hosts that do not resolve a tenant, so the
-platform surface has **no current-tenant switcher and no current-tenant
-query key**: it is not a page of `@speed/tenancy-ui` or
+The platform surface has **no current-tenant switcher and no
+current-tenant query key**: it is not a page of `@speed/tenancy-ui` or
 `@speed/product-shell`, and neither of those packages belongs in its
-import graph.
+import graph. The tenant its tenant-addressed invitation/membership and
+SSO pages name is an argument of the request, not the session's current
+tenant.
 
 On the platform surface, the pages whose routes carry the tenant as a path
 segment (authorization, invitations and membership, SSO) carry a **tenant
@@ -31,22 +48,32 @@ read takes the tenant as a required query argument. The selector lives in
 `src/internal/tenant-scope.tsx` and holds no query key of the
 current-tenant kind.
 
-**The workspace surface** is the tenant administrator's admin, mounted at
-`/workspace/admin` inside `@speed/product-shell`. It acts on the
+**The workspace surface** is the tenant administrator's admin, designed to
+mount at `/workspace/admin` inside `@speed/product-shell`. It acts on the
 **current tenant the host supplies** and addresses every request at
 `/api/v1/tenants/{tenant}/...`: invitations and membership, SSO providers,
-tenant-layer settings, and tenant roles and permissions. It reads nothing
-under `/api/v1/system`. It does not own or switch the current tenant: the
+tenant-layer settings, and tenant roles and permissions. The tenant
+settings view is to show each key's source layer as `tenant`, `global` or
+`default`. It reads nothing under `/api/v1/system`. It does not own or
+switch the current tenant: the
 host mounts it inside the tenant frame and hands `WorkspaceAdminProvider`
 the resolved tenant. The workspace surface renders no `AppShell` — the
 tenant frame already renders one — and imports neither `route-kit`,
 `tenancy-ui` nor `product-shell`. It is offered to holders of the
 tenant-admin permission codes, not to platform staff as such.
 
+**It is not implemented yet.** No `WorkspaceAdminProvider.tsx`,
+`WorkspaceAdminBreadcrumb.tsx`, `workspace-routes.tsx`,
+`workspace-operations.tsx` or `workspace-pages.tsx` exists in `src/`, and
+`src/index.ts` does not export `WorkspaceAdminProvider`,
+`WorkspaceAdminBreadcrumbProvider`, `workspaceAdminRoutes`,
+`WorkspaceAdminOperations` / `workspaceAdminOperations`, or the four
+workspace page wrappers. No tenant-mode page behavior exists either.
+
 The package ships one entry (`src/index.ts`, the export set in the
-README's "What ships") and no subpath. The workspace surface adds
-`workspaceAdminRoutes`, `WorkspaceAdminProvider`,
-`WorkspaceAdminBreadcrumbProvider`,
+README's "What ships") and no subpath. The designed workspace surface
+(not implemented yet) would add `workspaceAdminRoutes`,
+`WorkspaceAdminProvider`, `WorkspaceAdminBreadcrumbProvider`,
 `WorkspaceAdminOperations` / `workspaceAdminOperations`, and the four
 workspace page wrappers to that same entry. Everything under `src/internal/`
 — the error-text resolver, the `InlineError` and `WriteFeedbackRegion`
@@ -135,18 +162,19 @@ seams available. It is not a tenant shell: it must not host tenant-facing
 pages, and it carries no current-tenant affordance. `hasFeature` is
 required, as on the shell; every other prop is optional.
 
-`WorkspaceAdminProvider` is the workspace surface's counterpart and the one
-place this package accepts a current tenant. It installs the workspace
-contexts — the current tenant, the workspace operations bundle, the
-session, feature presence, the narrowed route table, the navigation
-callback and the breadcrumb — and renders no DOM, because the host has
-already rendered `@speed/product-shell`'s `AppShell`. `tenant` is a
-required prop: the package never derives the current tenant from the
-session or the URL, and it never switches it.
-`WorkspaceAdminBreadcrumbProvider` publishes the workspace breadcrumb on
-its own, for a host that composes the workspace pages without the full
-provider; a page's `PageHeader` prefers that context and falls back to its
-own platform trail otherwise.
+The designed `WorkspaceAdminProvider` (not implemented yet) is the
+workspace surface's counterpart and the one place this package would
+accept a current tenant. It installs the workspace contexts — the current
+tenant, the workspace operations bundle, the session, feature presence,
+the narrowed route table, the navigation callback, the breadcrumb and the
+protected role names — and renders no DOM, because the host has already
+rendered `@speed/product-shell`'s `AppShell`. `tenant` is a required prop:
+the package never derives the current tenant from the session or the URL,
+and it never switches it. The designed `WorkspaceAdminBreadcrumbProvider`
+(not implemented yet) publishes the workspace breadcrumb on its own, for a
+host that composes the workspace pages without the full provider; a page's
+`PageHeader` prefers that context and falls back to its own platform trail
+otherwise.
 
 `hasFeature` is a required prop: the host's synchronous answer to "does
 this process serve the named feature?", typed on the generated
@@ -169,9 +197,10 @@ a list page carries a navigation label and icon and a detail page (the
 tenant detail, the audit detail) carries neither, so it is reachable from
 a row without appearing in the navigation.
 
-`workspaceAdminRoutes` is the workspace surface's table: invitations and
-membership, SSO providers, tenant settings and tenant roles and
-permissions. Its declarations carry the tenant-domain permission codes
+The designed `workspaceAdminRoutes` (not implemented yet) is the workspace
+surface's table: invitations and membership, SSO providers, tenant settings
+and tenant roles and permissions. Its declarations carry the tenant-domain
+permission codes
 (`authn.membership.manage`, `authn.idp.manage`, `settings.tenant.read`,
 `authz.tenant.role.read`) and the tenant-scoped features they need
 (`authn.admin` + `authn.invitations`, `authn.admin` + `authn.admin.sso`,
@@ -266,15 +295,16 @@ What the pages reach through the bundle, grouped by surface:
 | `useSmsTemplates`, `useRegisterSmsTemplate`, `useOfferSmsTemplate`, `useSetSmsTemplateEnabled`, `useRemoveSmsTemplate` | `/api/v1/system/sms/templates[/submissions|/:name[/enabled]]` |
 | `useAuditRecords`, `useAuditRecord`, `exportAuditRecords` | `/api/v1/system/audit/records[/:id]`, `/api/v1/system/audit/export` |
 
-The workspace surface reads through `WorkspaceAdminOperations`, a separate
-bundle bound to the tenant-scoped generated operations:
-`/api/v1/tenants/{tenant}/invitations` and `/members`, the tenant's SSO
-providers, the tenant settings endpoints (whose query keys namespace by
-the tenant) and the tenant-admin role, permission and binding endpoints.
-It holds no platform member and never addresses `/api/v1/system`; the
-tenant is an argument of every read and write. `workspaceAdminOperations`
-is the shipped binding, and `WorkspaceAdminProvider`'s `operations` prop is
-the substitution point.
+The designed workspace surface (not implemented yet) reads through
+`WorkspaceAdminOperations`, a separate bundle bound to the tenant-scoped
+generated operations: `/api/v1/tenants/{tenant}/invitations` and
+`/members`, the tenant's SSO providers, the tenant settings endpoints
+(whose query keys namespace by the tenant) and the tenant-admin role,
+permission and binding endpoints. It holds no platform member and never
+addresses `/api/v1/system`; the tenant is an argument of every read and
+write. The designed `workspaceAdminOperations` is the intended binding,
+and `WorkspaceAdminProvider`'s `operations` prop is the substitution
+point.
 
 The view types are the generated response rows of each module's admin
 surface, named for the admin's own pages; only the write inputs stay
@@ -305,10 +335,11 @@ request body.
 - **Two surfaces, two tenant rules.** The platform surface has no
   current-tenant switcher, no current-tenant-scoped query key, no
   `useCurrentTenant`, and no import of `@speed/tenancy-ui` or
-  `@speed/product-shell`. The workspace surface is tenant-scoped and takes
-  the current tenant as the **required `tenant` prop of
-  `WorkspaceAdminProvider`**; it writes that tenant into every request
-  path, never derives it from the session or URL, and never switches it.
+  `@speed/product-shell`. The designed workspace surface (not implemented
+  yet) is tenant-scoped and is to take the current tenant as the **required
+  `tenant` prop of `WorkspaceAdminProvider`**; it writes that tenant into
+  every request path, never derives it from the session or URL, and never
+  switches it.
   Neither surface holds a tenant switcher, and neither imports
   `@speed/tenancy-ui` or `@speed/product-shell`. The tenant selector on
   the platform surface's pages whose routes carry the tenant as a **path
@@ -489,11 +520,11 @@ handoff, the 403/retry/stale split, and the region's resolver binding);
 `package.json` (the manifest contract); and `usage-example` (the README's
 composition, with the operations bundle substituted from test-utils).
 
-The workspace surface adds suites for `workspaceAdminRoutes` (paths,
-permission codes, `requires`, the tenant-mode wrappers),
-`WorkspaceAdminProvider` (the required tenant, the contexts it installs,
-and the breadcrumb context-first fallback) and `workspaceAdminOperations`
-(the tenant-scoped generated bindings).
+No workspace-surface suite exists yet. The designed suites cover
+`workspaceAdminRoutes` (paths, permission codes, `requires`, the
+tenant-mode wrappers), `WorkspaceAdminProvider` (the required tenant, the
+contexts it installs, and the breadcrumb context-first fallback) and
+`workspaceAdminOperations` (the tenant-scoped generated bindings).
 
 ## Deferrals (recorded, do not re-open silently)
 

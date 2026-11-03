@@ -179,6 +179,14 @@ before writing a scoped model.
   disabled, so the guard belongs to the management surface's operator route
   alone; `protection_test.go` scans the roster's identifiers so a check placed
   "once for every status write" fails there.
+- **`Kind` is answered, not recorded.** The roster stores no kind column and the
+  root package derives none from an identifier, a name or a permission set.
+  `KindResolver` is the host seam: the caller tenant read takes it up
+  optionally, passes `KindOf`'s answer through, and reads every tenant as
+  `KindBusiness` when it is absent. A host that carries a personal-tenant policy
+  provides a resolver and requires it in that policy's module, so the absence
+  fails at startup rather than at each list request. A resolver error is a
+  failure of the read (503), never a row silently read as business.
 - **The registration window spans the global `Init` stage, not this module's
   own callback.** It opens in `Migrate` and shuts in `Start` for that reason: a
   module registering an extractor declares no dependency on this one, so it may
