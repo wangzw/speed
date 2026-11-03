@@ -44,19 +44,28 @@
  * Expected copy is read from the shipped en-US locale bundles through
  * helpers/i18n.ts, so a sentence that changes in the product changes here with
  * it rather than leaving a stale literal that still passes.
+ *
+ * The username step also offers an optional display name, so the spec runs both
+ * branches. This walkthrough types one, and the account entry names the new
+ * account by it. A second test starts from a fresh review server and leaves the
+ * field empty, and the account entry names that account after its username.
  */
 // @journey journey-sms-signup-to-password-login.md
-// @covers REQ-account-007, REQ-account-021, REQ-account-023, REQ-account-026, REQ-security-029, REQ-security-030, REQ-signin-006, REQ-signin-011, REQ-signup-012, REQ-signup-014, REQ-signup-015, REQ-tenancy-022, REQ-tenancy-026
+// @covers REQ-account-007, REQ-account-021, REQ-account-023, REQ-account-026, REQ-security-029, REQ-security-030, REQ-signin-006, REQ-signin-011, REQ-signup-012, REQ-signup-014, REQ-signup-015, REQ-signup-051, REQ-tenancy-022, REQ-tenancy-026
 import type { BrowserContext, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
 import type { Accounts } from '../helpers/accounts'
+import { expectAccountMenuName } from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
 
 /** The number the walkthrough uses: a Chinese mobile number in E.164 form. */
 const PHONE_NATIONAL = '13800138000'
 const PHONE_E164 = '+8613800138000'
+
+/** The display name the main walkthrough types at the username step. */
+const SIGNUP_DISPLAY_NAME = 'Phone Signup Person'
 
 /** A password the review policy accepts and that matches no identifier. */
 const SETUP_PASSWORD = 'e2e-Password-123'
@@ -298,7 +307,9 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
 
       // A first login that would open an account stops at the username step:
       // nothing is written before the name the account will carry arrives.
-      await accounts.answerSignupUsername(username)
+      // The optional display name is typed beside it, so the account this
+      // walkthrough opens is named by it rather than by its username.
+      await accounts.answerSignupUsername(username, SIGNUP_DISPLAY_NAME)
 
       await expect(
         page.getByRole('heading', {
@@ -307,6 +318,14 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
           exact: true,
         }),
       ).toBeVisible()
+
+      // The account entry is where the display name first shows: its
+      // accessible name is the avatar's initials and the account's display
+      // name, so the typed name is what the new account carries.
+      await expectAccountMenuName(
+        page.getByTestId('account-entry-trigger'),
+        SIGNUP_DISPLAY_NAME,
+      )
 
       // The header switcher names the personal workspace as the current
       // organization, and its list holds that one row, disabled because it is
@@ -587,4 +606,61 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
   } finally {
     await second?.close().catch(() => undefined)
   }
+})
+
+test('sms-signup: a phone-code first sign-in with no display name takes the username', async ({
+  demo,
+}) => {
+  const { page, server, accounts } = demo
+  // Each test gets a review server of its own, so the walkthrough's phone
+  // number is unregistered here too.
+  const username = accounts.unique('smsunnamed').username
+
+  let codeAfter = 0
+  await test.step('a phone number is entered and its code requested', async () => {
+    await accounts.openSignIn()
+    await fillSmsPhone(page)
+    codeAfter = server.log.mark()
+    await requestCode(page)
+    await expect(codeField(page)).toBeVisible()
+  })
+
+  await test.step('the code opens a username step whose optional display name is left empty', async () => {
+    const { code } = await waitForVerificationCode(
+      server.log,
+      'sms',
+      PHONE_E164,
+      { after: codeAfter },
+    )
+    await submitCode(page, code)
+
+    // The step offers the display-name field, and this branch leaves it as it
+    // found it: empty.
+    const displayName = page.getByLabel(
+      copy('authUi', 'register.displayNameLabel'),
+      { exact: true },
+    )
+    await expect(displayName).toBeVisible()
+    await expect(displayName).toHaveValue('')
+
+    // Only the username is answered.
+    await accounts.answerSignupUsername(username)
+  })
+
+  await test.step('the account opens with the username as its display name', async () => {
+    await expect(
+      page.getByRole('heading', {
+        level: 1,
+        name: copy('demo', 'home.heading'),
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    // The account entry is where the account's display name first shows; with
+    // the field left empty it names the account after the chosen username.
+    await expectAccountMenuName(
+      page.getByTestId('account-entry-trigger'),
+      username,
+    )
+  })
 })

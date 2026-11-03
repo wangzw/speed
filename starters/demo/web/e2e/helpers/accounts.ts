@@ -61,8 +61,13 @@ export interface Accounts {
    * account. The server asks for the `username` field, and the sign-in family
    * renders a field name it has no wording for verbatim, so the input's
    * accessible name is the field's own name rather than a bundle string.
+   *
+   * The phone first login's step also offers an optional display name; when
+   * `displayName` is given it is typed into that field, and when it is left
+   * out the field stays empty, which the server reads as "name the account
+   * after the username".
    */
-  answerSignupUsername(username: string): Promise<void>
+  answerSignupUsername(username: string, displayName?: string): Promise<void>
   /**
    * Answer the social first login's account-opening face: the username and
    * the password with its confirmation. The face renders the provider's
@@ -252,7 +257,10 @@ export function createAccounts({
     await identifier.waitFor({ state: 'detached' })
   }
 
-  const signUpUsername = async (username: string): Promise<void> => {
+  const signUpUsername = async (
+    username: string,
+    displayName?: string,
+  ): Promise<void> => {
     // The challenge renders inside the form the flow parked on (the callback
     // page, or the SMS channel's own panel); addressing the submit inside that
     // form keeps the enterprise entry's "Continue" on the sign-in page out of
@@ -263,6 +271,15 @@ export function createAccounts({
     await field.waitFor()
     await field.fill(username)
     const form = field.locator('xpath=ancestor::form[1]')
+    if (displayName !== undefined) {
+      // The optional field is known to the family, so it carries the bundle's
+      // own label; look it up inside the same form rather than on the page.
+      await form
+        .getByLabel(copy('authUi', 'register.displayNameLabel'), {
+          exact: true,
+        })
+        .fill(displayName)
+    }
     await form
       .getByRole('button', {
         name: copy('authUi', 'signInFlow.submit'),
