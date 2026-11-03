@@ -53,8 +53,9 @@
  * the `WorkspaceAdminOperations` bundle, and the thin page wrappers that
  * hand the current tenant to the shared page components. It renders no
  * frame of its own and imports neither @speed/route-kit,
- * @speed/tenancy-ui nor @speed/product-shell. The tenant settings and
- * tenant roles/permissions wrappers are not part of this surface yet.
+ * @speed/tenancy-ui nor @speed/product-shell. The workspace surface ships
+ * the invitations and membership, SSO, tenant roles and permissions and
+ * tenant settings wrappers.
  *
  * Every built-in string renders from the bilingual admin-ui namespace
  * (ADMIN_UI_NAMESPACE + adminUiResources, which the host registers
@@ -184,7 +185,7 @@ export {
   type AdminTenantRelatedPage,
   type TenantDetailPageProps,
 } from './TenantDetailPage.js'
-export { SettingsPage } from './SettingsPage.js'
+export { SettingsPage, type SettingsPageProps } from './SettingsPage.js'
 export { AuditPage } from './AuditPage.js'
 export {
   AuditDetailPage,
@@ -214,6 +215,8 @@ export { SmsPage } from './SmsPage.js'
 export { workspaceAdminRoutes } from './workspace-routes.js'
 export {
   WorkspaceInvitationsPage,
+  WorkspacePermissionsPage,
+  WorkspaceSettingsPage,
   WorkspaceSsoPage,
 } from './workspace-pages.js'
 export {
@@ -230,6 +233,20 @@ export {
   type WorkspaceAdminBreadcrumbProviderProps,
 } from './WorkspaceAdminBreadcrumb.js'
 export {
+  WorkspaceAdminOperationsProvider,
+  useWorkspaceAdminOperations,
   workspaceAdminOperations,
+  type AdminTenantBinding,
+  type AdminTenantBindingRef,
+  type AdminTenantGrant,
+  type AdminTenantGrantRef,
+  type AdminTenantPermission,
+  type AdminTenantRemoveSettingInput,
+  type AdminTenantRole,
+  type AdminTenantRoleRef,
+  type AdminTenantSetSettingInput,
+  type AdminTenantSetting,
+  type AdminTenantWriteRoleInput,
   type WorkspaceAdminOperations,
+  type WorkspaceAdminOperationsProviderProps,
 } from './workspace-operations.js'

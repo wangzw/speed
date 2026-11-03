@@ -9,19 +9,22 @@
  * unchanged. The invitations wrapper also turns on tenant mode, so the page
  * resolves member and inviter identities from the tenant's member read and
  * drops the platform-account member write form instead of reaching the
- * platform account surface.
+ * platform account surface. The roles wrapper hands over the host's
+ * protected role names so the tenant role page renders them read-only.
  *
- * The wrappers exist for the pages whose tenant-scoped surface is
- * implemented today: invitations and membership, and SSO providers. The
- * tenant settings and tenant roles/permissions wrappers belong to the
- * batches that add their tenant-scoped endpoints and behaviour; they are
- * not exported here, and the design's table records them as not
- * implemented.
+ * The wrappers exist for the workspace pages whose tenant-scoped surface
+ * the package ships: invitations and membership, SSO providers, tenant
+ * roles and permissions, and the tenant settings layer.
  */
 
 import type { ReactElement } from 'react'
-import { useWorkspaceAdminTenant } from './WorkspaceAdminProvider.js'
+import {
+  useWorkspaceAdminProtectedRoles,
+  useWorkspaceAdminTenant,
+} from './WorkspaceAdminProvider.js'
 import { InvitationsPage } from './InvitationsPage.js'
+import { PermissionsPage } from './PermissionsPage.js'
+import { SettingsPage } from './SettingsPage.js'
 import { SsoPage } from './SsoPage.js'
 
 /** Invitations and membership, scoped to the host's current tenant. */
@@ -34,4 +37,23 @@ export function WorkspaceInvitationsPage(): ReactElement {
 export function WorkspaceSsoPage(): ReactElement {
   const tenant = useWorkspaceAdminTenant()
   return <SsoPage tenant={tenant} />
+}
+
+/** Tenant roles and permissions, scoped to the host's current tenant. */
+export function WorkspacePermissionsPage(): ReactElement {
+  const tenant = useWorkspaceAdminTenant()
+  const protectedRoles = useWorkspaceAdminProtectedRoles()
+  return (
+    <PermissionsPage
+      tenant={tenant}
+      tenantMode
+      protectedRoles={protectedRoles}
+    />
+  )
+}
+
+/** The tenant settings layer, scoped to the host's current tenant. */
+export function WorkspaceSettingsPage(): ReactElement {
+  const tenant = useWorkspaceAdminTenant()
+  return <SettingsPage tenant={tenant} tenantMode />
 }

@@ -13,14 +13,27 @@
  * no roster and holds no tenant selector. The tenant is the host's current
  * tenant, written into every request path by the page wrappers.
  *
- * The tenant settings and tenant roles/permissions declarations are absent
- * until their tenant-scoped endpoints and page behaviour exist.
+ * The roles page is held to the tenant role read code and needs the
+ * `authz.tenantadmin` feature; the settings page is held to the tenant
+ * settings read code and needs `settings.tenantadmin`. The write codes are
+ * not declaration permissions: a page renders its write controls and lets
+ * the server refuse a caller who lacks the write permission.
  */
 
 import type { AdminRoute, AdminRouteTable } from './route.js'
 import { AdminNavLabel } from './internal/nav-label.js'
-import { InvitationsIcon, SsoIcon } from './internal/icons.js'
-import { WorkspaceInvitationsPage, WorkspaceSsoPage } from './workspace-pages.js'
+import {
+  InvitationsIcon,
+  PermissionsIcon,
+  SettingsIcon,
+  SsoIcon,
+} from './internal/icons.js'
+import {
+  WorkspaceInvitationsPage,
+  WorkspacePermissionsPage,
+  WorkspaceSettingsPage,
+  WorkspaceSsoPage,
+} from './workspace-pages.js'
 
 /** The workspace surface's page declarations, in navigation order. */
 export const workspaceAdminRoutes: AdminRouteTable = [
@@ -41,5 +54,23 @@ export const workspaceAdminRoutes: AdminRouteTable = [
     icon: <SsoIcon />,
     permission: 'authn.idp.manage',
     requires: ['authn.admin', 'authn.admin.sso'],
+  },
+  {
+    id: 'workspace-roles',
+    path: '/roles',
+    view: () => <WorkspacePermissionsPage />,
+    label: <AdminNavLabel labelKey="workspace.nav.roles" />,
+    icon: <PermissionsIcon />,
+    permission: 'authz.tenant.role.read',
+    requires: ['authz.tenantadmin'],
+  },
+  {
+    id: 'workspace-settings',
+    path: '/settings',
+    view: () => <WorkspaceSettingsPage />,
+    label: <AdminNavLabel labelKey="workspace.nav.settings" />,
+    icon: <SettingsIcon />,
+    permission: 'settings.tenant.read',
+    requires: ['settings.tenantadmin'],
   },
 ] satisfies readonly AdminRoute[]

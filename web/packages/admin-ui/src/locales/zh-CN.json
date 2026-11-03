@@ -81,7 +81,9 @@
   "workspace": {
     "nav": {
       "invitations": "邀请与成员",
-      "sso": "SSO 提供方"
+      "sso": "SSO 提供方",
+      "roles": "角色与权限",
+      "settings": "设置"
     }
   },
   "common": {
@@ -501,6 +503,7 @@
     "bindings": {
       "title": "绑定",
       "accountLabel": "账户",
+      "noMembers": "该租户暂无成员",
       "roleLabel": "角色",
       "bind": "绑定",
       "loading": "正在加载绑定",

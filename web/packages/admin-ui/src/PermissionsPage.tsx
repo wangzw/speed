@@ -13,6 +13,17 @@
  * selection ahead of the URL's `tenant` parameter, and `onTenantChange`
  * reports each re-selection made through the page's own selector.
  *
+ * The page has two surfaces. The platform console reads and writes the
+ * tenant-scoped authorization endpoints under `/api/v1/system`, searches
+ * the platform account roster for the account pickers, and resolves an
+ * account's identity through the platform account read. The workspace
+ * surface (`tenantMode`) reads the tenant's governed catalog, roles,
+ * grants and bindings under `/api/v1/tenants/{tenant}`, fills its account
+ * pickers from the tenant's member read, and resolves recorded account
+ * identifiers from those same member rows -- it issues no platform request.
+ * The host's protected role names are read-only on that surface, beside
+ * the server's builtin roles.
+ *
  * The page renders the surface in five sections:
  *
  *  - the role catalog: list a tenant's roles, create or rewrite one, and
@@ -68,6 +79,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
@@ -91,10 +103,12 @@ import {
   AccountIdentity,
   accountIdentityValue,
   accountNotice,
+  TenantAccountIdentity,
   useAccountIdentity,
   type AccountIdentityValue,
 } from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
+import type { AccountSelectorProps } from './internal/account-selector.js'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useAdminDescribeRole } from './internal/describe-role.js'
@@ -115,10 +129,21 @@ import { useAdminOperations } from './operations.js'
 import type {
   AdminAccount,
   AdminBinding,
+  AdminBindingRef,
   AdminGrant,
+  AdminGrantRef,
+  AdminMember,
+  AdminOperations,
   AdminPermission,
   AdminRole,
+  AdminRoleRef,
+  AdminWriteRoleInput,
 } from './operations.js'
+import {
+  useWorkspaceAdminOperations,
+  type WorkspaceAdminOperations,
+} from './workspace-operations.js'
+import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 
 /**
  * The id of the page's own "choose a tenant first" text. The disabled
@@ -168,18 +193,23 @@ function PermissionLabel({
 
 /**
  * The unbind control of one binding row. Its accessible name names the
- * account by its readable identity when the account read answers one, and
- * by the recorded identifier otherwise, so a reader hears the same account
- * the row's cell shows.
+ * account by the readable identity the caller resolved, and by the recorded
+ * identifier otherwise, so a reader hears the same account the row's cell
+ * shows.
  */
 function UnbindButton({
   binding,
+  name,
+  identity,
   disabled,
   invalid,
   describedBy,
   onClick,
 }: {
   readonly binding: AdminBinding
+  /** The account's display name, when the surface resolved one. */
+  readonly name: string | undefined
+  readonly identity: AccountIdentityValue
   readonly disabled: boolean
   /** Whether this row is the one the scope's failure names. */
   readonly invalid: boolean
@@ -188,8 +218,6 @@ function UnbindButton({
   readonly onClick: (identity: AccountIdentityValue) => void
 }) {
   const { t } = useAdminUiTranslation()
-  const { name, identifier } = useAccountIdentity(binding.account)
-  const identity: AccountIdentityValue = { name, identifier }
   return (
     <Button
       type="button"
@@ -208,6 +236,43 @@ function UnbindButton({
     >
       {t('permissions.bindings.unbind')}
     </Button>
+  )
+}
+
+/** The platform surface's unbind control: the account identity comes from
+ * the platform account read. */
+function PlatformUnbindButton(
+  props: Omit<
+    Parameters<typeof UnbindButton>[0],
+    'name' | 'identity'
+  >,
+) {
+  const { name, identifier } = useAccountIdentity(props.binding.account)
+  return (
+    <UnbindButton
+      {...props}
+      name={name}
+      identity={{ name, identifier }}
+    />
+  )
+}
+
+/** The workspace surface's unbind control: the identity comes from the
+ * tenant's member read, so no platform account read is issued. */
+function TenantUnbindButton({
+  memberNames,
+  ...props
+}: Omit<Parameters<typeof UnbindButton>[0], 'name' | 'identity'> & {
+  readonly memberNames: ReadonlyMap<string, string>
+}) {
+  const recorded = memberNames.get(props.binding.account)
+  const name = recorded === undefined || recorded === '' ? undefined : recorded
+  return (
+    <UnbindButton
+      {...props}
+      name={name}
+      identity={{ name, identifier: undefined }}
+    />
   )
 }
 
@@ -235,16 +300,259 @@ export interface PermissionsPageProps {
   readonly defaultTenant?: string
   /** Reports each re-selection made through the page's own selector. */
   readonly onTenantChange?: (tenant: string) => void
+  /**
+   * Tenant mode: the workspace surface's configuration of the same page.
+   * The page reads and writes `/api/v1/tenants/{tenant}/...` through the
+   * workspace operations bundle, fills its account pickers from the tenant
+   * member read, and never addresses `/api/v1/system` or the platform
+   * account surface. The host's protected role names apply in this mode;
+   * the platform surface marks only the server's builtin roles read-only.
+   */
+  readonly tenantMode?: boolean
+  /**
+   * Role names the host seeded into this tenant and that the page renders
+   * as read-only (the same treatment a builtin role gets). Absent, no row
+   * is treated as protected.
+   */
+  readonly protectedRoles?: readonly string[]
 }
 
+/**
+ * The reads and writes the page body runs, in the platform and tenant
+ * surfaces' common shape. The two surfaces address different endpoints but
+ * carry the same row and input shapes, so the body is written once and the
+ * mode decides which bundle answers it.
+ */
+interface PermissionsDataOperations {
+  readonly useRoles: (
+    tenant: string,
+  ) => UseQueryResult<readonly AdminRole[], unknown>
+  readonly usePermissions: (
+    tenant: string,
+  ) => UseQueryResult<readonly AdminPermission[], unknown>
+  readonly useGrants: (
+    tenant: string,
+    role: string | undefined,
+  ) => UseQueryResult<readonly AdminGrant[], unknown>
+  readonly useBindings: (
+    tenant: string,
+  ) => UseQueryResult<readonly AdminBinding[], unknown>
+  readonly useAccountBindings: (
+    tenant: string,
+    account: string | undefined,
+  ) => UseQueryResult<readonly AdminBinding[], unknown>
+  readonly useWriteRole: () => UseMutationResult<
+    void,
+    unknown,
+    AdminWriteRoleInput
+  >
+  readonly useRemoveRole: () => UseMutationResult<void, unknown, AdminRoleRef>
+  readonly useGrantPermission: () => UseMutationResult<
+    void,
+    unknown,
+    AdminGrantRef
+  >
+  readonly useRevokePermission: () => UseMutationResult<
+    void,
+    unknown,
+    AdminGrantRef
+  >
+  readonly useBindRole: () => UseMutationResult<void, unknown, AdminBindingRef>
+  readonly useUnbindRole: () => UseMutationResult<void, unknown, AdminBindingRef>
+}
+
+/** The platform surface's operations: the console's tenant-scoped
+ * authorization endpoints under `/api/v1/system`. */
+function usePlatformPermissionsOperations(
+  operations: AdminOperations,
+): PermissionsDataOperations {
+  return {
+    useRoles: (tenant) => operations.useRoles(tenant),
+    usePermissions: () => operations.usePermissions(),
+    useGrants: (tenant, role) => operations.useGrants(tenant, role),
+    useBindings: (tenant) => operations.useBindings(tenant),
+    useAccountBindings: (tenant, account) =>
+      operations.useAccountBindings({ tenant, account }),
+    useWriteRole: () => operations.useWriteRole(),
+    useRemoveRole: () => operations.useRemoveRole(),
+    useGrantPermission: () => operations.useGrantPermission(),
+    useRevokePermission: () => operations.useRevokePermission(),
+    useBindRole: () => operations.useBindRole(),
+    useUnbindRole: () => operations.useUnbindRole(),
+  }
+}
+
+/** The workspace surface's operations: the tenant's own authorization
+ * endpoints under `/api/v1/tenants/{tenant}`. */
+function useTenantPermissionsOperations(
+  operations: WorkspaceAdminOperations,
+): PermissionsDataOperations {
+  return {
+    useRoles: (at) => operations.useTenantRoles(at),
+    usePermissions: (at) => operations.useTenantPermissions(at),
+    useGrants: (at, role) => operations.useTenantGrants(at, role),
+    useBindings: (at) => operations.useTenantBindings(at),
+    useAccountBindings: (at, account) =>
+      operations.useTenantAccountBindings(at, account),
+    useWriteRole: () => operations.useTenantWriteRole(),
+    useRemoveRole: () => operations.useTenantRemoveRole(),
+    useGrantPermission: () => operations.useTenantGrantPermission(),
+    useRevokePermission: () => operations.useTenantRevokePermission(),
+    useBindRole: () => operations.useTenantBindRole(),
+    useUnbindRole: () => operations.useTenantUnbindRole(),
+  }
+}
+
+/**
+ * One tenant member as the page's account picker holds it. The member read
+ * carries the account identifier and its display name; the remaining account
+ * fields exist only so the shared picker and the page's identity helpers can
+ * consume the row, and none of them is read.
+ */
+function memberAsAccount(member: AdminMember): AdminAccount {
+  return {
+    id: member.account,
+    display_name: member.display_name,
+    identifiers: [],
+    kind: 'user',
+    status: 'active',
+    mfa_required: false,
+    protected: false,
+    password_set: false,
+    created_at: '',
+  }
+}
+
+/** The member picker's option text: the display name beside the recorded
+ * account identifier, or the identifier alone. */
+function memberOptionLabel(member: AdminAccount): string {
+  return member.display_name === ''
+    ? member.id
+    : `${member.display_name} (${member.id})`
+}
+
+/**
+ * The workspace surface's account picker: the tenant's member list, chosen
+ * without a platform account search. The options are the members the page
+ * already reads; choosing one hands up the account the membership record
+ * names.
+ */
+function TenantMemberPicker({
+  label,
+  value,
+  onChange,
+  disabled = false,
+  members,
+}: Pick<AccountSelectorProps, 'label' | 'value' | 'onChange' | 'disabled'> & {
+  readonly members: readonly AdminMember[] | undefined
+}) {
+  const { t } = useAdminUiTranslation()
+  const options = useMemo(
+    () => (members ?? []).map(memberAsAccount),
+    [members],
+  )
+  return (
+    <Autocomplete<AdminAccount>
+      size="small"
+      value={value}
+      disabled={disabled}
+      onChange={(_event, next) => onChange(next)}
+      options={options}
+      getOptionLabel={memberOptionLabel}
+      isOptionEqualToValue={(option, current) => option.id === current.id}
+      noOptionsText={t('permissions.bindings.noMembers')}
+      clearText={t('accountSelector.clear')}
+      openText={t('accountSelector.open')}
+      closeText={t('accountSelector.close')}
+      renderInput={(params) => (
+        <TextField {...params} size="small" label={label} />
+      )}
+      sx={{ minWidth: 260 }}
+    />
+  )
+}
+
+/**
+ * The page's mode-specific composition. The platform surface talks to the
+ * console bundle; the workspace surface talks to the tenant bundle and to
+ * the tenant's own member read. The body below is shared.
+ */
 export function PermissionsPage({
   tenant: controlledTenant,
   defaultTenant,
   onTenantChange,
+  tenantMode = false,
+  protectedRoles = [],
 }: PermissionsPageProps = {}) {
+  return tenantMode ? (
+    <TenantPermissionsPage
+      tenant={controlledTenant ?? ''}
+      protectedRoles={protectedRoles}
+    />
+  ) : (
+    <PlatformPermissionsPage
+      tenant={controlledTenant}
+      defaultTenant={defaultTenant}
+      onTenantChange={onTenantChange}
+    />
+  )
+}
+
+function PlatformPermissionsPage({
+  tenant,
+  defaultTenant,
+  onTenantChange,
+}: Pick<PermissionsPageProps, 'tenant' | 'defaultTenant' | 'onTenantChange'>) {
+  const operations = useAdminOperations()
+  const data = usePlatformPermissionsOperations(operations)
+  return (
+    <PermissionsPageBody
+      operations={data}
+      tenant={tenant}
+      defaultTenant={defaultTenant}
+      onTenantChange={onTenantChange}
+    />
+  )
+}
+
+function TenantPermissionsPage({
+  tenant,
+  protectedRoles,
+}: {
+  readonly tenant: string
+  readonly protectedRoles: readonly string[]
+}) {
+  const operations = useWorkspaceAdminOperations()
+  const data = useTenantPermissionsOperations(operations)
+  // The tenant's member read feeds both the picker and the recorded
+  // account identities, so the page never reaches the platform account
+  // surface for either.
+  const members = operations.useMembers(tenant)
+  return (
+    <PermissionsPageBody
+      operations={data}
+      tenant={tenant}
+      tenantMode
+      protectedRoles={protectedRoles}
+      memberRows={members.data}
+    />
+  )
+}
+
+function PermissionsPageBody({
+  operations,
+  tenant: controlledTenant,
+  defaultTenant,
+  onTenantChange,
+  tenantMode = false,
+  protectedRoles = [],
+  memberRows,
+}: PermissionsPageProps & {
+  readonly operations: PermissionsDataOperations
+  readonly memberRows?: readonly AdminMember[]
+}) {
   const { t } = useAdminUiTranslation()
   const describeRole = useAdminDescribeRole()
-  const operations = useAdminOperations()
 
   const [innerTenant, setInnerTenant] = useState(
     () => defaultTenant ?? tenantFromLocation(),
@@ -314,13 +622,13 @@ export function PermissionsPage({
   const resolveErrorText = useAdminUiErrorText()
 
   const roles = operations.useRoles(tenant)
-  const catalog = operations.usePermissions()
+  const catalog = operations.usePermissions(tenant)
   const grants = operations.useGrants(tenant, selectedRole || undefined)
   const bindings = operations.useBindings(tenant)
-  const accountBindings = operations.useAccountBindings({
+  const accountBindings = operations.useAccountBindings(
     tenant,
-    account: lookupApplied === '' ? undefined : lookupApplied,
-  })
+    lookupApplied === '' ? undefined : lookupApplied,
+  )
 
   const writeRole = operations.useWriteRole()
   const removeRole = operations.useRemoveRole()
@@ -612,12 +920,29 @@ export function PermissionsPage({
   const codeByPair = useMemo(() => buildGrantCodeIndex(permissions), [permissions])
 
   const roleRows = roles.data
-  // A builtin role refuses every write -- role rewrite and delete, and
-  // grant/revoke -- but not the reads. The selected role therefore opens
-  // read-only: the grants it holds are visible, and every write control
-  // that would name it is withheld.
-  const selectedRoleBuiltin =
-    roleRows?.some((role) => role.role === selectedRole && role.builtin) ?? false
+  // The workspace surface resolves every recorded account identifier it
+  // shows from the tenant's own member read. A member the read has not
+  // settled or does not carry stays unresolved and renders its recorded
+  // identifier, which is what the shared identity unit does.
+  const memberNames = useMemo(() => {
+    const names = new Map<string, string>()
+    for (const member of memberRows ?? []) {
+      names.set(member.account, member.display_name)
+    }
+    return names
+  }, [memberRows])
+  // A locked role refuses every write -- role rewrite and delete, and
+  // grant/revoke -- but not the reads. A server builtin role is locked on
+  // both surfaces; in tenant mode the host's protected role names are
+  // locked the same way. The selected role therefore opens read-only: the
+  // grants it holds are visible, and every write control that would name it
+  // is withheld.
+  const roleLocked = (role: AdminRole): boolean =>
+    role.builtin || (tenantMode && protectedRoles.includes(role.role))
+  const selectedRoleLocked =
+    roleRows?.some(
+      (role) => role.role === selectedRole && roleLocked(role),
+    ) ?? false
 
   const roleColumns: DataTableColumn<AdminRole>[] = [
     {
@@ -680,7 +1005,7 @@ export function PermissionsPage({
         const errorId = `permissions-role-error-${encodeURIComponent(role.role)}`
         return (
           <Box>
-            {role.builtin ? (
+            {roleLocked(role) ? (
               <Box
                 sx={{
                   display: 'flex',
@@ -831,7 +1156,7 @@ export function PermissionsPage({
       )
     },
   }
-  const grantColumns = selectedRoleBuiltin
+  const grantColumns = selectedRoleLocked
     ? grantBaseColumns
     : [...grantBaseColumns, grantRevokeColumn]
 
@@ -868,7 +1193,15 @@ export function PermissionsPage({
         // the recorded identifier -- which the refused lookup renders in
         // full -- inside the sm floor alongside the row actions.
         contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-        cell: (binding) => <AccountIdentity account={binding.account} />,
+        cell: (binding) =>
+          tenantMode ? (
+            <TenantAccountIdentity
+              account={binding.account}
+              name={memberNames.get(binding.account)}
+            />
+          ) : (
+            <AccountIdentity account={binding.account} />
+          ),
       },
       {
         id: 'role',
@@ -890,13 +1223,24 @@ export function PermissionsPage({
           )
           return (
             <Box>
-              <UnbindButton
-                binding={binding}
-                disabled={feedback.pending}
-                invalid={failed}
-                describedBy={errorId}
-                onClick={(identity) => unbind(binding, lookup, identity)}
-              />
+              {tenantMode ? (
+                <TenantUnbindButton
+                  binding={binding}
+                  memberNames={memberNames}
+                  disabled={feedback.pending}
+                  invalid={failed}
+                  describedBy={errorId}
+                  onClick={(identity) => unbind(binding, lookup, identity)}
+                />
+              ) : (
+                <PlatformUnbindButton
+                  binding={binding}
+                  disabled={feedback.pending}
+                  invalid={failed}
+                  describedBy={errorId}
+                  onClick={(identity) => unbind(binding, lookup, identity)}
+                />
+              )}
               {failed && failureText !== null && (
                 <Typography
                   id={errorId}
@@ -1062,7 +1406,7 @@ export function PermissionsPage({
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                   {t('permissions.grants.forRole', { role: selectedRole })}
                 </Typography>
-                {selectedRoleBuiltin ? (
+                {selectedRoleLocked ? (
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     {t('permissions.grants.builtinReadOnly')}
                   </Typography>
@@ -1202,12 +1546,22 @@ export function PermissionsPage({
                 mb: 2,
               }}
             >
-              <AccountSelector
-                label={t('permissions.bindings.accountLabel')}
-                value={bindAccount}
-                onChange={changeBindAccount}
-                disabled={bindingsFeedback.pending}
-              />
+              {tenantMode ? (
+                <TenantMemberPicker
+                  label={t('permissions.bindings.accountLabel')}
+                  value={bindAccount}
+                  onChange={changeBindAccount}
+                  disabled={bindingsFeedback.pending}
+                  members={memberRows}
+                />
+              ) : (
+                <AccountSelector
+                  label={t('permissions.bindings.accountLabel')}
+                  value={bindAccount}
+                  onChange={changeBindAccount}
+                  disabled={bindingsFeedback.pending}
+                />
+              )}
               <TextField
                 size="small"
                 value={bindRoleName}
@@ -1277,12 +1631,22 @@ export function PermissionsPage({
                 mb: 2,
               }}
             >
-              <AccountSelector
-                label={t('permissions.lookup.accountLabel')}
-                value={lookupAccount}
-                onChange={setLookupAccount}
-                disabled={lookupFeedback.pending}
-              />
+              {tenantMode ? (
+                <TenantMemberPicker
+                  label={t('permissions.lookup.accountLabel')}
+                  value={lookupAccount}
+                  onChange={setLookupAccount}
+                  disabled={lookupFeedback.pending}
+                  members={memberRows}
+                />
+              ) : (
+                <AccountSelector
+                  label={t('permissions.lookup.accountLabel')}
+                  value={lookupAccount}
+                  onChange={setLookupAccount}
+                  disabled={lookupFeedback.pending}
+                />
+              )}
               <Button
                 type="button"
                 variant="outlined"

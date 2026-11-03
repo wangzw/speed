@@ -81,7 +81,9 @@
   "workspace": {
     "nav": {
       "invitations": "Invitations & members",
-      "sso": "SSO providers"
+      "sso": "SSO providers",
+      "roles": "Roles & permissions",
+      "settings": "Settings"
     }
   },
   "common": {
@@ -501,6 +503,7 @@
     "bindings": {
       "title": "Bindings",
       "accountLabel": "Account",
+      "noMembers": "The tenant has no members",
       "roleLabel": "Role",
       "bind": "Bind",
       "loading": "Loading bindings",

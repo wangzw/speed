@@ -78,23 +78,41 @@ function recordingBackend(): {
 
 const noFeatures = (): boolean => false
 
+/**
+ * The platform bundle beside the workspace bundle: the workspace pages run
+ * through the same generated operations, and the request record -- not the
+ * bundle's shape -- proves they never reach a platform asset.
+ */
+const fullWorkspaceBundle = {
+  ...adminOperations,
+  ...workspaceAdminOperations,
+}
+
 describe('workspaceAdminRoutes', () => {
   it('declares the tenant-scoped pages with tenant-domain codes and features', () => {
     expect(workspaceAdminRoutes.map((route) => route.id)).toEqual([
       'workspace-invitations',
       'workspace-sso',
+      'workspace-roles',
+      'workspace-settings',
     ])
     expect(workspaceAdminRoutes.map((route) => route.path)).toEqual([
       '/invitations',
       '/sso',
+      '/roles',
+      '/settings',
     ])
     expect(workspaceAdminRoutes.map((route) => route.permission)).toEqual([
       'authn.membership.manage',
       'authn.idp.manage',
+      'authz.tenant.role.read',
+      'settings.tenant.read',
     ])
     expect(workspaceAdminRoutes.map((route) => route.requires)).toEqual([
       ['authn.admin', 'authn.invitations'],
       ['authn.admin', 'authn.admin.sso'],
+      ['authz.tenantadmin'],
+      ['settings.tenantadmin'],
     ])
     // The workspace declarations never name the platform roster feature: the
     // surface reads no roster and holds no tenant selector.
@@ -269,7 +287,7 @@ describe('WorkspaceAdminProvider', () => {
     expect(screen.getByTestId('roles')).toHaveTextContent('tenant-admin')
     expect(screen.getByTestId('feature')).toHaveTextContent('present')
     expect(screen.getByTestId('routes')).toHaveTextContent(
-      'workspace-invitations,workspace-sso',
+      'workspace-invitations,workspace-sso,workspace-roles,workspace-settings',
     )
     // The provider adds no frame: no main landmark and no navigation of its
     // own appear around the probe.
@@ -337,6 +355,21 @@ describe('WorkspaceAdminProvider', () => {
         'useSetMemberSsoExempt',
         'useSsoProvider',
         'useSsoProviders',
+        'useTenantAccountBindings',
+        'useTenantBindRole',
+        'useTenantBindings',
+        'useTenantGrantPermission',
+        'useTenantGrants',
+        'useTenantPermissions',
+        'useTenantRemoveRole',
+        'useTenantRevokePermission',
+        'useTenantRoles',
+        'useTenantSettingsList',
+        'useTenantSettingsRead',
+        'useTenantSettingsRemove',
+        'useTenantSettingsWrite',
+        'useTenantUnbindRole',
+        'useTenantWriteRole',
         'useUpdateSsoProvider',
         'useVerifySsoDomain',
         'useWriteMember',
@@ -441,7 +474,7 @@ describe('the workspace pages address only the current tenant', () => {
     renderWithProviders(
       <WorkspaceAdminProvider
         tenant={TENANT}
-        operations={adminOperations}
+        operations={fullWorkspaceBundle}
         hasFeature={() => true}
         routes={workspaceAdminRoutes}
       >

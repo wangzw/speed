@@ -21,11 +21,14 @@ import type {
   AdminAccount,
   AdminBinding,
   AdminGrant,
+  AdminMember,
   AdminPermission,
   AdminRole,
   AdminWriteRoleInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { WorkspaceAdminProvider } from './WorkspaceAdminProvider.js'
+import { WorkspacePermissionsPage } from './workspace-pages.js'
 import { AdminDescribeRoleProvider } from './internal/describe-role.js'
 import { containerMaxWidthOf } from '../test-utils/container-visibility.js'
 import { chooseAccount } from '../test-utils/account-selector.js'
@@ -130,6 +133,55 @@ function binding(overrides: Partial<AdminBinding> = {}): AdminBinding {
     granted_at: '2026-10-15T12:00:00Z',
     ...overrides,
   }
+}
+
+/** A tenant membership as the tenant's own member read answers it. */
+function member(overrides: Partial<AdminMember> = {}): AdminMember {
+  return {
+    account: 'acc-1',
+    tenant: 'acme',
+    active: true,
+    display_name: 'Ada',
+    source: 'admin',
+    sso_exempt: false,
+    ...overrides,
+  }
+}
+
+/** The workspace bundle over a scripted backend: the tenant reads default to
+ * one role, its governed catalog and one member. */
+function tenantModeOperations(
+  overrides: Partial<AdminBackend> = {},
+): ReturnType<typeof createAdminOperations> {
+  return createAdminOperations(
+    makeAdminBackend({
+      listTenantRoles: () => Promise.resolve([role({ role: 'tenant-operator' })]),
+      listTenantPermissions: () =>
+        Promise.resolve([permission('tenant.deal.read')]),
+      listTenantGrants: () => Promise.resolve([]),
+      listTenantBindings: () => Promise.resolve([]),
+      listTenantAccountBindings: () => Promise.resolve([]),
+      listMembers: () => Promise.resolve([member()]),
+      ...overrides,
+    }),
+  )
+}
+
+/** Mounts the workspace roles page at the host's current tenant. */
+function renderTenantPermissions(
+  operations: ReturnType<typeof createAdminOperations>,
+  protectedRoles: readonly string[] = [],
+): ReturnType<typeof renderWithProviders> {
+  return renderWithProviders(
+    <WorkspaceAdminProvider
+      tenant="acme"
+      operations={operations}
+      hasFeature={() => true}
+      protectedRoles={protectedRoles}
+    >
+      <WorkspacePermissionsPage />
+    </WorkspaceAdminProvider>,
+  )
 }
 
 async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<void> {
@@ -1777,5 +1829,157 @@ describe('PermissionsPage', () => {
     await screen.findByText('editor')
     await screen.findByText('platform-admin')
     await expectNoAxeViolations()
+  })
+})
+
+describe('PermissionsPage tenant mode', () => {
+  it('reads the tenant endpoints and member read, never a platform asset', async () => {
+    const listRoles = vi.fn(() => Promise.resolve([role()]))
+    const listPermissions = vi.fn(() =>
+      Promise.resolve([permission('platform.secret.read')]),
+    )
+    const listBindings = vi.fn(() => Promise.resolve([]))
+    const listAccountBindings = vi.fn(() => Promise.resolve([]))
+    const listAccounts = vi.fn(() =>
+      Promise.resolve({ accounts: [account()], next_cursor: '' }),
+    )
+    const getAccount = vi.fn(() => Promise.resolve(account()))
+    const listTenantRoles = vi.fn(() =>
+      Promise.resolve([role({ role: 'tenant-operator' })]),
+    )
+    const listTenantPermissions = vi.fn(() =>
+      Promise.resolve([permission('tenant.deal.read')]),
+    )
+    const listMembers = vi.fn(() => Promise.resolve([member()]))
+    const operations = tenantModeOperations({
+      listRoles,
+      listPermissions,
+      listBindings,
+      listAccountBindings,
+      listAccounts,
+      getAccount,
+      listTenantRoles,
+      listTenantPermissions,
+      listTenantBindings: () => Promise.resolve([binding()]),
+      listMembers,
+    })
+    renderTenantPermissions(operations)
+
+    // The page renders the tenant's governed catalog and roles.
+    expect(await screen.findByText('tenant-operator')).toBeInTheDocument()
+    expect(await screen.findByText('tenant.deal.read')).toBeInTheDocument()
+    expect(screen.queryByText('platform.secret.read')).toBeNull()
+    // The binding's identity comes from the tenant member read, so the
+    // platform account read is never issued.
+    expect((await screen.findAllByText('Ada')).length).toBeGreaterThan(0)
+
+    // None of the platform endpoints (the `/api/v1/system` operations) or
+    // the platform account reads was called.
+    expect(listRoles).not.toHaveBeenCalled()
+    expect(listPermissions).not.toHaveBeenCalled()
+    expect(listBindings).not.toHaveBeenCalled()
+    expect(listAccountBindings).not.toHaveBeenCalled()
+    expect(listAccounts).not.toHaveBeenCalled()
+    expect(getAccount).not.toHaveBeenCalled()
+    // The tenant surface answered every read the page issued.
+    expect(listTenantRoles).toHaveBeenCalled()
+    expect(listTenantPermissions).toHaveBeenCalled()
+    expect(listMembers).toHaveBeenCalled()
+  })
+
+  it('renders the host protected roles read-only beside the builtin ones', async () => {
+    const operations = tenantModeOperations({
+      listTenantRoles: () =>
+        Promise.resolve([
+          role({ role: 'tenant-admin' }),
+          role({ role: 'editor' }),
+        ]),
+    })
+    renderTenantPermissions(operations, ['tenant-admin'])
+
+    expect(await screen.findByText('tenant-admin')).toBeInTheDocument()
+    // The protected role keeps only its read-only grants entry.
+    expect(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.viewGrantsAria, {
+          role: 'tenant-admin',
+        }),
+      }),
+    ).toBeEnabled()
+    expect(
+      screen.queryByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, {
+          role: 'tenant-admin',
+        }),
+      }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: text(zhCN.permissions.roles.removeAria, {
+          role: 'tenant-admin',
+        }),
+      }),
+    ).toBeNull()
+    expect(screen.getByText(zhCN.permissions.roles.builtinLocked)).toBeInTheDocument()
+    // An ordinary tenant role keeps its write controls, so the assertion
+    // above distinguishes the protected mark from "no role has controls".
+    expect(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
+      }),
+    ).toBeEnabled()
+    expect(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.removeAria, { role: 'editor' }),
+      }),
+    ).toBeEnabled()
+  })
+
+  it('lists the tenant members with their display names in the member picker', async () => {
+    const user = userEvent.setup()
+    const listAccounts = vi.fn(() =>
+      Promise.resolve({ accounts: [account()], next_cursor: '' }),
+    )
+    const operations = tenantModeOperations({
+      listMembers: () =>
+        Promise.resolve([
+          member(),
+          member({ account: 'acc-2', display_name: 'Grace Hopper' }),
+        ]),
+      listAccounts,
+    })
+    renderTenantPermissions(operations)
+
+    expect(await screen.findByText('tenant-operator')).toBeInTheDocument()
+    const picker = screen.getByRole('combobox', {
+      name: zhCN.permissions.bindings.accountLabel,
+    })
+    await user.click(picker)
+    expect(
+      await screen.findByRole('option', { name: 'Ada (acc-1)' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('option', { name: 'Grace Hopper (acc-2)' }),
+    ).toBeInTheDocument()
+    // Listing the members opens no platform account search.
+    expect(listAccounts).not.toHaveBeenCalled()
+  })
+
+  it('keeps the platform surface on its own selector and account picker', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz()
+    renderWithProviders(<PermissionsPage />, { operations })
+
+    // The platform surface still mounts the roster-fed tenant selector.
+    expect(screen.getByLabelText(zhCN.common.tenant)).toBeInTheDocument()
+    await pickTenant(user)
+    expect(screen.getByLabelText(zhCN.common.tenant)).toBeInTheDocument()
+    // ...and its platform account search picker, which reads only after the
+    // operator types.
+    expect(
+      screen.getByRole('combobox', {
+        name: zhCN.permissions.bindings.accountLabel,
+      }),
+    ).toBeInTheDocument()
   })
 })

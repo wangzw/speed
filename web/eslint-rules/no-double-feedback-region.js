@@ -69,7 +69,7 @@ export const WRITE_FEEDBACK_REGION_EXEMPTIONS = [
   },
   {
     file: 'packages/admin-ui/src/PermissionsPage.tsx',
-    component: 'PermissionsPage',
+    component: 'PermissionsPageBody',
     reason:
       'The roles, grants, bindings and lookup sections are four separate control groups, each with its region under its own table.',
   },
