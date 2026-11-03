@@ -10,7 +10,7 @@
  * load that failed renders the error state with a retry that refetches.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -100,6 +100,40 @@ describe('ProfileSection', () => {
         (call) => call.method === 'GET' && call.path === PROFILE_PATH,
       ).length,
     ).toBeGreaterThanOrEqual(2)
+  })
+
+  it('reports the name the server stored to the onDisplayNameSaved callback', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ display_name: 'Ada' }))
+      }
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        // The write answers with the name as stored, which may differ from
+        // the body it accepted; the callback reports that answer, not the
+        // typed value.
+        return jsonResponse(200, { display_name: 'Grace Hopper' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const onDisplayNameSaved = vi.fn()
+    const rig = makeRealClientRigWithoutSession(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <ProfileSection onDisplayNameSaved={onDisplayNameSaved} />,
+    )
+    const user = userEvent.setup()
+
+    const field = await screen.findByRole('textbox', {
+      name: zhCN.profile.displayName.label,
+    })
+    await user.clear(field)
+    await user.type(field, 'Grace')
+    await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
+
+    await waitFor(() =>
+      expect(onDisplayNameSaved).toHaveBeenCalledWith('Grace Hopper'),
+    )
+    expect(onDisplayNameSaved).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the field disabled until the refetch that follows the save settles', async () => {

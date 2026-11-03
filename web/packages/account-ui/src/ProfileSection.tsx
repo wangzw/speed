@@ -29,6 +29,13 @@
  *
  * The section takes no session: its profile read and its PATCH travel on the
  * shared access token through the generated calls.
+ *
+ * A host that keeps the display name outside the profile query -- the shell's
+ * account entry, for one -- passes onDisplayNameSaved to hear the name the
+ * write settled on. The callback runs after the PATCH succeeds and the
+ * profile query is invalidated, and receives the display name the server
+ * stored, read from the PATCH response rather than the typed value. Omitting
+ * it leaves the section's behaviour unchanged.
  */
 
 import { useState } from 'react'
@@ -60,6 +67,12 @@ interface ProfileSectionProps {
    * host places the label beside it.
    */
   readonly inline?: boolean
+  /**
+   * Called after a save settles successfully and the profile query is
+   * invalidated, with the display name the server stored (read from the PATCH
+   * response). Omitting it changes nothing.
+   */
+  readonly onDisplayNameSaved?: (name: string) => void
 }
 
 /** The pending-state placeholder, read aloud as one loading announcement. */
@@ -72,7 +85,10 @@ function ProfileSkeleton({ label }: { readonly label: string }) {
   )
 }
 
-export function ProfileSection({ inline = false }: ProfileSectionProps) {
+export function ProfileSection({
+  inline = false,
+  onDisplayNameSaved,
+}: ProfileSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useProfileQuery()
@@ -100,9 +116,14 @@ export function ProfileSection({ inline = false }: ProfileSectionProps) {
 
   function save(nextName: string): Promise<void> {
     return feedback.run(async () => {
-      await patchProfile.mutateAsync({ data: { display_name: nextName } })
+      const saved = await patchProfile.mutateAsync({
+        data: { display_name: nextName },
+      })
       setEditedName(null)
       await invalidateProfile()
+      // Report only the name the server settled on, after the refetch has
+      // been triggered, so a host tracking it never shows an unconfirmed value.
+      onDisplayNameSaved?.(saved.display_name)
       // Translated when the attempt settles; it names the changed object.
       return t('profile.saved')
     })
