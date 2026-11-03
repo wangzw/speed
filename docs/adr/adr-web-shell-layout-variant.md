@@ -6,7 +6,7 @@
 
 同一份模板服务不同客户与不同部署，外壳形态是客户之间的一类差异。地标结构、焦点顺序、固定头占位测量与抽屉的常驻/临时两态是外壳的可及性与版式保证；内容定制已由槽位承担，形态没有承载点。
 
-`AppShell` 同时被租户区与控制台区装配，形态选择落在两区共用的外壳上，不在各区的页面里。
+`AppShell` 同时被租户区与管理后台区装配，形态选择落在两区共用的外壳上，不在各区的页面里。
 
 ## 考虑过的选项
 
@@ -31,7 +31,7 @@
 采纳：**`AppShell` 提供 `shellLayout: 'topbar' | 'sidebar'`，缺省 `'topbar'`；形态在装配期选定，窄视口保留一条极简顶栏；新增形态的方式是扩大内置变体集合，不是开放区域拼装。**
 
 - 形态是 `AppShell` 的纯附加可选 prop，联合类型 `AppShellShellLayout` 是「已内置形态」的登记处。新增一种形态 = 联合成员 + 区域映射 + jsdom（[REF-jsdom](../references.md)）与真实 Chromium 用例 + 设计文档与包文档，宿主侧零改动。客户只换内容（品牌、动作、菜单）时走现有槽位，不动 `shellLayout`。
-- 装配期选定：`ProductShell` 与 `ConsoleShell` 的透传清单加入 `shellLayout`，原样转给 `AppShell`；示范宿主由运行时配置的 `shellLayout` 选定，未知值回落 `'topbar'`。
+- 装配期选定：`ProductShell` 与 `AdminShell` 的透传清单加入 `shellLayout`，原样转给 `AppShell`；示范宿主由运行时配置的 `shellLayout` 选定，未知值回落 `'topbar'`。
 - `sidebar` 形态在 `md` 及以上不渲染顶栏。抽屉纸顶部行放品牌与桌面收起开关；抽屉纸内依次为 `navHeader`、`nav`（撑满并自身滚动）、`navFooter` 与底部行；底部行放头部动作与用户菜单，贴纸底。`main` 仍是唯一滚动层。
 - 贴底的 flex 约束只作用于 `sidebar` 形态：纸 `overflow: hidden`、`nav` 取 `flex: 1 1 auto` 与 `minHeight: 0` 并自身滚动、底部行 `flexShrink: 0`。`topbar` 形态的 `navFooter` 位置不变。
 - `banner` 槽给出时仍渲染在固定头容器里、占满视口宽度、位于最上。固定头没有内容时不渲染容器与占位，判据是 `shellLayout === 'topbar' || hasBanner || !isDesktop`。切换形态或跨断点时复位固定头的测量高度。

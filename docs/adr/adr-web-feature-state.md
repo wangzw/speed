@@ -12,7 +12,7 @@
 
 - `@speed/auth-core` 持有会话快照。登录与恢复的提交都过一个世代守卫，登出抬升世代、丢弃在途结果；平台权限集 `permissionSets` 已有一套存活规则，已认证状态下的 `restore` 保留它。
 - `@speed/api-client` 在任何请求被答 401 时走静默恢复，恢复钩子是 `restore`；匿名状态下请求一个必答 401 的读面会形成循环。
-- 前端各包的界：壳 `@speed/product-shell` 不发请求、不做权限门；`@speed/route-kit` 不 import 任何同族前端包；notification-ui 不读会话，实时订阅是否打开由宿主经 `NotificationStreamProvider` 的 `enabled` 给出；console-ui 对 auth-core 的依赖只有步进认证一处；account-ui 只在要驱动会话操作时以属性接收会话。登录组件只经 `session` 属性驱动会话操作、不消费 auth-core 的钩子，这是 [ADR-web-auth-channel-discovery](adr-web-auth-channel-discovery.md) 所沿用的约束。
+- 前端各包的界：壳 `@speed/product-shell` 不发请求、不做权限门；`@speed/route-kit` 不 import 任何同族前端包；notification-ui 不读会话，实时订阅是否打开由宿主经 `NotificationStreamProvider` 的 `enabled` 给出；admin-ui 对 auth-core 的依赖只有步进认证一处；account-ui 只在要驱动会话操作时以属性接收会话。登录组件只经 `session` 属性驱动会话操作、不消费 auth-core 的钩子，这是 [ADR-web-auth-channel-discovery](adr-web-auth-channel-discovery.md) 所沿用的约束。
 
 ## 考虑过的选项
 
@@ -42,7 +42,7 @@
 
 ### 能力 UI 包内的控件直接调 `useFeature`
 
-**否决**：与既有的包界相抵——notification-ui 不读会话，console-ui 对 auth-core 的依赖只有步进认证一处，account-ui 的会话只以属性传入。特性态只在已认证会话里存在，是会话派生的读数。ADR-web-auth-channel-discovery 让登录组件只经属性驱动会话、不消费 auth-core 的钩子；能力包直接读特性钩子，会在同一族包里立起相反的形态。
+**否决**：与既有的包界相抵——notification-ui 不读会话，admin-ui 对 auth-core 的依赖只有步进认证一处，account-ui 的会话只以属性传入。特性态只在已认证会话里存在，是会话派生的读数。ADR-web-auth-channel-discovery 让登录组件只经属性驱动会话、不消费 auth-core 的钩子；能力包直接读特性钩子，会在同一族包里立起相反的形态。
 
 ### auth-core 随会话提交取回并持有特性态，宿主读它，能力 UI 包经属性或上下文组件接收
 
@@ -70,7 +70,7 @@
 - 登录与恢复要等并行读取中较慢的那一个。
 - 会话之内不重取：部署在会话期间改了装配，前端要到下次登录或整页刷新才看到。
 - `failed` 时，依赖特性的宿主读取（平台权限、租户名册）停在「未知」，既不当成特性缺席，也不当成特性在场；宿主要为这些读取多处理一个状态，并在重试成功后重跑。
-- 能力 UI 包为接收特性在场信息各多一个入参：console-ui 的特性判定与 account-ui 的邮箱添加可用性是必填属性，notification-ui 的特性在场信息由一个上下文组件给出、缺失时按全部特性缺席处理。宿主接线变多，漏接的面按特性缺席隐藏。
+- 能力 UI 包为接收特性在场信息各多一个入参：admin-ui 的特性判定与 account-ui 的邮箱添加可用性是必填属性，notification-ui 的特性在场信息由一个上下文组件给出、缺失时按全部特性缺席处理。宿主接线变多，漏接的面按特性缺席隐藏。
 - 服务端结束会话的清除路径刻意不抬升世代，特性写入因此要在世代之外再核对主体，提交检查比权限集多一条。
 
 ## 失效条件

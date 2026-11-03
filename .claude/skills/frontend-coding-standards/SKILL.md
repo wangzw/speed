@@ -173,7 +173,7 @@ Two tiers of mechanical accessibility scanning ship. Each package's suites scan
 their own components (`@speed/test-utils/axe`). Above them, the demo host's
 `starters/demo/web/src/a11y/routes.test.tsx` scans **whole routes**: it walks the
 application's route table, renders the assembled app at every path — the tenant
-shell and the console shell alike — in three data states (populated, empty,
+shell and the admin shell alike — in three data states (populated, empty,
 error), and runs axe-core over each through the harness in `src/a11y/scan.ts`. A
 product gains coverage for a new route by adding it to the route table; the sweep
 needs no change.
@@ -233,7 +233,7 @@ The form family is react-hook-form — the host owns the `useForm` instance, `Fo
 
 ## 11. Write Feedback and Refresh State
 
-The design is `docs/design/modules/web/design-web-ui-kit.md` ("写入的反馈", "异步读的状态分支") and, for a page's refresh action, `docs/design/modules/web/design-web-console-ui.md` ("页的刷新动作"); this section holds the coding rules they imply.
+The design is `docs/design/modules/web/design-web-ui-kit.md` ("写入的反馈", "异步读的状态分支") and, for a page's refresh action, `docs/design/modules/web/design-web-admin-ui.md` ("页的刷新动作"); this section holds the coding rules they imply.
 
 **Required:**
 - Report the result of every operator-initiated write through a feedback scope: one result location gets one `useWriteFeedback` instance and one `WriteFeedbackRegion`. The controls that share a result location — usually a titled section with its forms and its table row actions — are one scope, never one scope per action; the region sits directly under them. The result that settles last replaces the earlier one, so one location never shows two results. Success is rendered only by the region; never render `InlineSuccess` beside it.

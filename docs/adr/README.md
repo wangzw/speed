@@ -117,7 +117,7 @@
 | [账户自助写面归前端组件族](adr-web-account-ui-selfservice.md) |
 | [特性态由 auth-core 随会话提交持有，读取失败是独立状态，只有宿主读它](adr-web-feature-state.md) |
 | [route-kit 按宿主给出的特性在场判定收窄注册面，特性缺席的页面与未登记路径同走 `fallback`](adr-web-route-kit.md) |
-| [控制台列表页的行详情与创建改由侧边面板承载，面板是页内状态而非路由](adr-web-side-panel.md) |
+| [管理后台列表页的行详情与创建改由侧边面板承载，面板是页内状态而非路由](adr-web-side-panel.md) |
 | [写入的结果由每个反馈作用域的一个槽承载，同页至多一条结果、以最后落定的为准，成功确认为默认](adr-web-write-feedback.md) |
 | [冒充期间由应用壳在应用栏之下显示可隐藏的横幅、外壳常驻 chrome 区里的身份指示并提供结束入口，身份变更按会话边界处理依赖身份的状态](adr-web-impersonation-shell.md) |
 | [宿主可为平台命名空间补整套语言，注册期全覆盖规则不变](adr-web-host-language-sets.md) |
@@ -246,7 +246,7 @@
 | [停用期间仍属于一个租户的工作，经名册的另一个进入方法进入那个租户](adr-tenant-suspension-access.md) |
 | [装配层面的性质写成非保证，租户隔离不由框架承诺](adr-tenant-guarantees.md) |
 | [租户准入层放在 tenant 目录：成员关系、租户级强度策略与冒充范围](adr-tenant-admission.md) |
-| [租户名册的管理面由框架提供一个平台域的模块](adr-console-tenant.md) |
+| [租户名册的管理面由框架提供一个平台域的模块](adr-admin-tenant.md) |
 | [租户的停用来源记在名册行上，账户联动只撤销它自己造成的那一次](adr-tenant-suspension.md) |
 | [管理员身份由租户成员关系承载，system 是名册中的真实租户](adr-tenant-administration.md) |
 | [调用方本人的租户读取由 tenant 目录新增的只挂路由的模块承担，挂在账户端的普通面](adr-tenant-self.md) |
@@ -321,7 +321,7 @@
 | [键表经 Store.Declared 只读列出，敏感项不带默认值](adr-settings-key-listing.md) |
 | [设置项的取值域由声明方给出，写入时判定](adr-settings-domain.md) |
 | [设置的写入、删除与列举各经数据库模块的 Connection 取一条自己的连接，取连接的等待有界](adr-settings-connection.md) |
-| [运行期设置的管理面由框架提供一个按层判定的模块](adr-console-settings.md) |
+| [运行期设置的管理面由框架提供一个按层判定的模块](adr-admin-settings.md) |
 
 ## 限流
 

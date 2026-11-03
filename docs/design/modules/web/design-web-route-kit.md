@@ -9,7 +9,7 @@
 - **路由与导航独立成层。** 本包是独立包，**不被壳 import，也不 import 任何同族前端包**；一个产品要加页面，插的是本包的注册面，不动壳。它交出的导航条目是一种结构性形状（`id`、`label`、`href`、`selected` 与可选 `onClick`），壳的框架按结构接受它，因而不需要一条共享类型边。
 - **这些事由本包一处承担：** 选中态（当前 URL 命中哪一条导航项）、链接构造（由路径生成可点的链接）、深链接解析（一个深链接直接打开对应页面）、未命中回退（没有登记项匹配时渲染回退视图）、精确命中的查询（当前 URL 在有效注册面上命中哪一条声明），以及入口判定（一条路径是否在有效注册面上有声明）。
 - **链接属性与历史动作也由本包交出。** `RouteLink` 渲染可点链接并透传其余 props；`useRouteLinkProps` 交出宿主自绘锚点所需的 `href` 与点击处理器；`useNavigate` 推入历史、`useRedirect` 替换当前历史项、`useLocationPath` 交出当前 URL 的原始路径与查询串。宿主因此不直接 import react-router-dom（[REF-react-router](../../../references.md)）。
-- **壳共用同一注册面。** 租户侧装配壳 [product-shell](design-web-product-shell.md) 与平台控制台壳 [console-ui](design-web-console-ui.md) 都用这套注册面，差别只在各自的壳。
+- **壳共用同一注册面。** 租户侧装配壳 [product-shell](design-web-product-shell.md) 与平台管理后台壳 [admin-ui](design-web-admin-ui.md) 都用这套注册面，差别只在各自的壳。
 
 ### 非职责
 
@@ -145,13 +145,13 @@ function useLocationPath(): RouteLocationPath
 
 **带 `requires` 的表要求在场谓词与等待、失败视图，约束的主体是每个交出这种表的宿主。** 表里只要有一条声明带 `requires`，`presence`、`pending`、`failed` 缺任何一项，`RouteProvider` 即在装配处抛错，与缺 `fallback` 同样处理。不带 `requires` 的表不需要这几项，匹配与导航与只按注册表进行时逐项相同。
 
-**`presentDeclarations` 计算有效注册面。** 它保留不带 `requires` 的全部声明；带 `requires` 的声明只在谓词就绪、且其中每个名字的 `has` 都为真时保留，谓词缺席、读取中或读取失败时一律不保留。它是泛型的：宿主可以把它用在自己的声明类型上，例如宿主用它收窄控制台的页面声明，再交给 [console-ui](design-web-console-ui.md) 的 `ConsoleShell`，控制台侧栏与本包的导航因此读同一个集合。
+**`presentDeclarations` 计算有效注册面。** 它保留不带 `requires` 的全部声明；带 `requires` 的声明只在谓词就绪、且其中每个名字的 `has` 都为真时保留，谓词缺席、读取中或读取失败时一律不保留。它是泛型的：宿主可以把它用在自己的声明类型上，例如宿主用它收窄管理后台的页面声明，再交给 [admin-ui](design-web-admin-ui.md) 的 `AdminShell`，管理后台侧栏与本包的导航因此读同一个集合。
 
 **`useMatch` 交出精确命中，不做前缀继承。** 它交出当前 URL 在有效注册面上完整匹配的那条声明及其匹配上下文；一个落在某条导航项路径之下、自己却没有声明的路径，不因此命中那条导航项。宿主据它取该页的 `permission` 交给权限守卫。没有精确命中——未命中、特性缺席，或门控路径的谓词尚未就绪——时，`RouteView` 渲染回退、等待或失败视图，宿主不为它取权限码，判定次序因此是先存在性、后权限。
 
 **`useHasRoute` 让入口跟随目标页。** `useHasRoute(path)` 当且仅当 `path` 精确命中有效注册面上的某条声明时为真；带参数的 pattern 按路径匹配。指向某页的入口控件（首页卡片、跳转按钮）据它决定是否渲染，目标页特性缺席时入口一并消失，「这一页在不在」只写在页面声明里一处。
 
-**`RouteProvider` 缺省安装一个路由器。** 它挂载 react-router-dom 的 `BrowserRouter`：页面得到真实路径 URL，深链接由平台的 SPA 回退提供。`basename` 给出部署路径前缀（例如应用挂在 `/console/` 时传 `/console`），缺省为源站根；它不是换路由器的口子，第三方路由器是包级决定（[ADR-web-route-seam](../../../adr/adr-web-route-seam.md)）。`useNavItems` 交出的 `href` 同样带上这个前缀——新标签、复制链接或中键点击直接打开应用实际服务的 URL——而 `id` 保持声明路径，应用内导航按 `id` 交给路由器，前缀由路由器自己加，不会叠加两次。
+**`RouteProvider` 缺省安装一个路由器。** 它挂载 react-router-dom 的 `BrowserRouter`：页面得到真实路径 URL，深链接由平台的 SPA 回退提供。`basename` 给出部署路径前缀（例如应用挂在 `/admin/` 时传 `/admin`），缺省为源站根；它不是换路由器的口子，第三方路由器是包级决定（[ADR-web-route-seam](../../../adr/adr-web-route-seam.md)）。`useNavItems` 交出的 `href` 同样带上这个前缀——新标签、复制链接或中键点击直接打开应用实际服务的 URL——而 `id` 保持声明路径，应用内导航按 `id` 交给路由器，前缀由路由器自己加，不会叠加两次。
 
 **链接只在普通主键单击时接管。** `useRouteLinkProps` 与 `useNavItems` 用同一条判定：主键、无修饰键、`target` 缺失或为 `_self`、无 `download` 属性、且未被先前的处理器 `preventDefault` 的点击，在应用内导航并阻止默认行为；其余点击一概不处理，交给浏览器完成新标签、下载或默认导航。判定在包内私有：本包不 import 同族包，layout-kit 的 `isPlainPrimaryClick` 因此是另一份独立实现。两者共享同一条政策（只接管本意留在应用内的点击），但代码并不等价：本包要求 `event.button === 0`，layout-kit 也接受没有 `button` 值的事件；本包除缺失、空串与 `_self` 外的 `target` 一律不接管，layout-kit 只拒绝 `_blank`（大小写不敏感）；本包从 `event.currentTarget` 取锚点（处理器挂在链接本身），layout-kit 从 `event.target` 找最近的 `a`（处理器可挂在容器上）。改动其中一份时要同时审视另一份，但不得假定两份逐条相同。
 

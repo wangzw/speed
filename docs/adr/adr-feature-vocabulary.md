@@ -41,7 +41,7 @@
 
 ### 生成类型放进 `@speed/auth-core`
 
-**否决**：auth-core 是手写的会话包，混进契约产物；console-ui、notification-ui 为一个类型要绕道 auth-core。
+**否决**：auth-core 是手写的会话包，混进契约产物；admin-ui、notification-ui 为一个类型要绕道 auth-core。
 
 ### 把名字枚举注入合并后的 OpenAPI，由 `orval` 一并生成
 
@@ -57,7 +57,7 @@
 
 - `gen` 接受输入项 `--features`，写出 `contracts/features.json`：可用集里的全部特性声明（名字、声明模块、是否条件），按名字排序。它与 `contracts/api.json` 同源，出自同一个二进制。
 - 一个生成器由它写出 `@speed/api-sdk` 的 `src/features.ts`，经子路径 `@speed/api-sdk/features` 导出；平台包只登记所有者为平台的声明；示范宿主自己的模块可以声明特性，其项在 `contracts/features.json` 里标为应用所有，由应用内的模块增补承载。导出的形状：`FeatureName` 是一个可增补的登记接口的键类型，`FEATURE_NAMES` 是平台包登记的全部名字。api-sdk 仍是整份由契约生成、不接受手工编辑的包。
-- 前端写特性名的位置一律取 `FeatureName` 类型：auth-core 的 `useFeature`、控制台与通知页面声明的 `requires`、`ConsoleShell` 的特性判定。`route-kit` 自己的 `requires` 仍是 `string[]`。
+- 前端写特性名的位置一律取 `FeatureName` 类型：auth-core 的 `useFeature`、管理后台与通知页面声明的 `requires`、`AdminShell` 的特性判定。`route-kit` 自己的 `requires` 仍是 `string[]`。
 - 新鲜度与类型检查：Go 测试比对已提交的 `contracts/features.json` 与本二进制的声明；api-sdk 测试比对 `features.ts` 与 `contracts/features.json`；api-sdk 与 auth-core 各有一条「拼错的名字必须编译失败」的类型断言；示范测试断言路由表里每个 `requires` 都属于 `FEATURE_NAMES`。全部随 `make check` 运行。
 - 应用自己的特性名——应用的 `contracts/features.json` 里不在平台包 `FEATURE_NAMES` 中的名字——由生成器在应用内写成对登记接口的模块增补，并入同一个 `FeatureName`。
 

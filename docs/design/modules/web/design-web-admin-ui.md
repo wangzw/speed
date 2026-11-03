@@ -1,27 +1,27 @@
-# console-ui
+# admin-ui
 
 ## 职责
 
-`@speed/console-ui` 是平台员工的控制台面组件族：把后端的管理面渲染成一组由平台员工操作的页面。它对应后端的下列管理面：
+`@speed/admin-ui` 是平台员工的管理后台组件族：把后端的管理面渲染成一组由平台员工操作的页面。它对应后端的下列管理面：
 
-- **租户管理**：名册的读写，经 `/api/v1/system/tenants`（[tenant.admin](../tenant/design-tenant-admin.md)、[ADR-console-tenant](../../../adr/adr-console-tenant.md)）。
+- **租户管理**：名册的读写，经 `/api/v1/system/tenants`（[tenant.admin](../tenant/design-tenant-admin.md)、[ADR-admin-tenant](../../../adr/adr-admin-tenant.md)）。
 - **账户管理**：账户的列出、详情与写入，经 `/api/v1/system/auth/accounts`。
 - **会话管理**：按账户列出会话并撤销，经 `/api/v1/system/auth/accounts/:id/sessions` 与 `/api/v1/system/auth/sessions/:id`。
 - **冒充管理**：冒充记录的列出与终止，经 `/api/v1/system/tenants/{tenant}/impersonations`；运营者自身会话上的冒充状态读取与发起与结束，经 `/api/v1/auth/impersonation`。
 - **权限管理**：角色、授权、权限目录与账户绑定，经 `/api/v1/system`。
 - **邀请与成员**：按租户的邀请与成员，经 `/api/v1/tenants/{tenant}/invitations` 与 `/api/v1/tenants/{tenant}/members`。
 - **SSO 提供方**：按租户的提供方与域名，经 `/api/v1/tenants/{tenant}/sso/providers`。
-- **设置读写**：运行期设置的读写，经 `/api/v1/system/settings`（[settings.admin](../settings/design-settings-admin.md)、[ADR-console-settings](../../../adr/adr-console-settings.md)）。
+- **设置读写**：运行期设置的读写，经 `/api/v1/system/settings`（[settings.admin](../settings/design-settings-admin.md)、[ADR-admin-settings](../../../adr/adr-admin-settings.md)）。
 - **短信模板**：运行期短信模板的读写，经 `/api/v1/system/sms`。
 - **审计查询**：审计记录的检索与导出，经 `/api/v1/system/audit`（[audit.admin](../audit/design-audit-admin.md)、[ADR-audit-admin](../../../adr/adr-audit-admin.md)）。
 
-**控制台根（`/`）渲染仪表盘**，其指标与最近活动由名册读与审计读拼出；各管理面的列表页可链入其详情页。
+**管理后台根（`/`）渲染仪表盘**，其指标与最近活动由名册读与审计读拼出；各管理面的列表页可链入其详情页。
 
-**每个页面以 ui-kit 的 `PageHeader` 开篇**：页标题即该页的一级标题，一条从控制台到该页的面包屑，以及页头操作。页的刷新动作的位置与范围见「页的刷新动作」。标题层级因此不跳级——`AsyncSection` 的占位与各节的次级标题都渲染在它之下。
+**每个页面以 ui-kit 的 `PageHeader` 开篇**：页标题即该页的一级标题，一条从管理后台到该页的面包屑，以及页头操作。页的刷新动作的位置与范围见「页的刷新动作」。标题层级因此不跳级——`AsyncSection` 的占位与各节的次级标题都渲染在它之下。
 
 **它是平台侧的壳（第二种壳）。** 上述管理面挂在**不解析租户**的端上：名册是平台资产、审计表持有全部租户的行、设置的全局层是平台操作。故本包没有**当前租户**切换器，也就没有租户作用域的查询键——它不认识「当前租户」这个概念。
 
-**外壳骨架是 [layout-kit](design-web-layout-kit.md) 的 `AppShell`。** 控制台壳把带标签的声明派生出的平台导航交给 `AppShell` 渲染：固定顶栏、随视口变化的导航抽屉（`md` 及以上常驻、以下为临时覆盖式）与内容区都由它提供（[layout](design-web-layout.md)），本包不另造一套帧。外壳形态由宿主经 `shellLayout` 选定，缺省顶栏形态，与本包出现之前逐字节一致；侧栏形态把品牌、头部动作、用户菜单移进侧栏，本包同样不重解释。导航地标默认以本包的 `shell.navLabel` 命名，宿主可经 `navLabel` 另给名字（经 `AppShell` 的 `navLabel`），与其它外壳的导航地标可区分。两处外壳因此同一形状——侧栏不随内容滚走、窄视口是汉堡抽屉而非把导航堆在内容上方、桌面侧栏由宿主显式选择收起、内容区是页面内容的唯一滚动层。
+**外壳骨架是 [layout-kit](design-web-layout-kit.md) 的 `AppShell`。** 管理后台壳把带标签的声明派生出的平台导航交给 `AppShell` 渲染：固定顶栏、随视口变化的导航抽屉（`md` 及以上常驻、以下为临时覆盖式）与内容区都由它提供（[layout](design-web-layout.md)），本包不另造一套帧。外壳形态由宿主经 `shellLayout` 选定，缺省顶栏形态，与本包出现之前逐字节一致；侧栏形态把品牌、头部动作、用户菜单移进侧栏，本包同样不重解释。外壳的主导航标签取本包的 `shell.title`（「管理后台」），导航地标默认以本包的 `shell.navLabel`（「管理后台导航」）命名，宿主可经 `navLabel` 另给名字（经 `AppShell` 的 `navLabel`），与其它外壳的导航地标可区分。两处外壳因此同一形状——侧栏不随内容滚走、窄视口是汉堡抽屉而非把导航堆在内容上方、桌面侧栏由宿主显式选择收起、内容区是页面内容的唯一滚动层。
 
 **按租户寻址的页面持租户选择器。** 权限面、邀请与成员面、SSO 提供方面与冒充面都把租户当作**路径段参数**，但落点与判定域不同：权限面在 `/api/v1/system/tenants/:tenant/roles` 与 `/bindings` 下，邀请与成员面在 `/api/v1/tenants/{tenant}/invitations` 与 `/members` 下，SSO 提供方面在 `/api/v1/tenants/{tenant}/sso/providers` 下，冒充记录面在 `/api/v1/system/tenants/{tenant}/impersonations` 下。这些页面仍是平台员工的页面，但每条请求指名它作用到的租户；租户是请求的一个实参，不是会话的当前租户。**判定域随能力而定。** 邀请与成员面、SSO 提供方面按那个租户域判定：调用方要在该租户持有 `tenant-admin` 或相应权限，`platform-admin` 本身不放行——平台管理员要管理某个业务租户，得由该租户的管理员授予。权限面按平台域判定：调用方要在平台域持有 `authz.role.read` 或 `authz.role.manage`。冒充是平台能力，记录面与发起按平台域判定：路径或正文里的租户是被冒充记录限定的数据，不是策略域，平台管理员不必是目标租户的成员，只在目标租户持有 `tenant-admin` 的调用方不通过；被冒充账户必须是该租户的有效成员这条限制不变。页面因此持一个租户选择器（数据来自平台名册读 `GET /api/v1/system/tenants`），在其取值为空前禁用该页的租户作用域读。这四页各接受三个可选 prop：`tenant` 受控给出作用域（给出即锁定该值并隐藏选择器）、`defaultTenant` 作为初值（优先于 URL）与 `onTenantChange`（每次改选上报宿主）。三者都缺席时初值取自页面 URL 的 `tenant` 查询参数（缺省为空），故一条链接能把租户上下文带过页界；选择器仍是此后改变它的途径。这四页因此读 `tenant` 查询参数，README 写明这条。冒充页的发起表单与被冒充记录共用这一个选择：目标租户是请求的必填字段，被冒充账户必须是该租户的成员（REQ-platform-admin-024），故发起表单不另设租户输入，未选租户时提交不可用。
 
@@ -31,7 +31,7 @@
 
 - **不管理「当前租户」。** 切换当前租户是租户侧的动作，归 [tenancy-ui](design-web-tenancy-ui.md)；管理名册（开租户、改名、停用）是运维侧的动作，归本包。切换改的是宿主的路由，管理改的是名册，两者不共用控件、不共用查询键。按租户寻址的页面的租户选择器选的是**请求的实参**，不是当前租户，它与切换控件不共用状态。
 - **不做导航、不解析 URL。** 页面的路径匹配、链接构造、深链接解析与未命中回退归 `route-kit` 的收集方，特性缺席的页面落到未命中回退同样在那里发生；本包只提供页面与它们的声明，不做路径匹配。
-- **不读特性态。** 本包不取回特性文档，也不调用 auth-core 读特性态的钩子；页内控件所依赖的特性是否在场，由宿主经 `ConsoleShell` 的 `hasFeature` 给出（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）。
+- **不读特性态。** 本包不取回特性文档，也不调用 auth-core 读特性态的钩子；页内控件所依赖的特性是否在场，由宿主经 `AdminShell` 的 `hasFeature` 给出（[ADR-web-feature-state](../../../adr/adr-web-feature-state.md)）。
 - **不做判定。** 名册、账户、会话、冒充、权限、邀请与成员、SSO、设置与审计的授权判定都在服务端做出（判定域按能力：冒充与权限在平台域，邀请与成员、SSO 在那个租户的域，设置的全局层在平台域、租户层在那个租户的域），本包只渲染应答；路由级的授权是宿主的组合（经 [layout-kit](design-web-layout-kit.md) 的路由守卫与 [auth-core](design-web-auth-core.md) 的权限读数），不在本包内。
 - **不遮蔽敏感值。** 敏感设置项的值由 [settings.admin](../settings/design-settings-admin.md) 在应答里遮蔽；本包照渲染应答，不做第二处遮蔽。
 - **不持规则、不持数据。** 每条路的动作是一次生成的调用；名册的写入语义、账户的状态机、权限的取值、审计的列都在各自的模块里定义。
@@ -39,7 +39,7 @@
 
 ## 外部接口契约
 
-本包的公开面由 `web/packages/console-ui/src/index.ts` 导出：各管理面的页面声明集与页面组件、控制台壳、导航分组表（`consoleNavGroups` 与 `ConsoleNavGroup`）、以及页面读写的操作束。页面声明的形状与壳的入参如下。
+本包的公开面由 `web/packages/admin-ui/src/index.ts` 导出：各管理面的页面声明集与页面组件、管理后台壳、导航分组表（`adminNavGroups` 与 `AdminNavGroup`）、以及页面读写的操作束。页面声明的形状与壳的入参如下。
 
 ```tsx
 // 一份页面声明：形状即 route-kit 的 `RouteDeclaration`——路径 pattern、视图回调、
@@ -50,10 +50,10 @@
 // 身份（兄弟链接按它解析），`group` 指定该页归属的导航分组（见下），`icon` 是
 // 导航项的装饰性前导图标；三者都只是数据，不在 route-kit 的形状里，故带它们的
 // 声明仍可赋值给 `RouteDeclaration`。
-interface ConsoleRoute {
+interface AdminRoute {
   readonly id?: string
   readonly path: string
-  readonly view: (context: ConsoleRouteContext) => ReactNode
+  readonly view: (context: AdminRouteContext) => ReactNode
   readonly label?: ReactNode
   readonly permission?: string
   readonly requires?: readonly FeatureName[]
@@ -62,24 +62,24 @@ interface ConsoleRoute {
 }
 
 // 一个导航分组：稳定 id、已翻译标题、可选装饰图标与可选初始折叠态。图标在
-// 侧栏收起的窄栏里代替被裁剪的标题。本包导出 `consoleNavGroups`
+// 侧栏收起的窄栏里代替被裁剪的标题。本包导出 `adminNavGroups`
 // 作为缺省分组表；宿主也可传入自己的（改顺序或改标题）。
-interface ConsoleNavGroup {
+interface AdminNavGroup {
   readonly id: string
   readonly label: ReactNode
   readonly icon?: ReactNode
   readonly defaultCollapsed?: boolean
 }
 
-// 控制台壳：由带标签的声明派生平台导航，渲染宿主的路由内容。
-interface ConsoleShellProps {
-  readonly routes: readonly ConsoleRoute[]
+// 管理后台壳：由带标签的声明派生平台导航，渲染宿主的路由内容。
+interface AdminShellProps {
+  readonly routes: readonly AdminRoute[]
   // 特性判定：答一个特性名在本进程是否在场。必填；壳经包内上下文把它交给
   // 页面，页内依赖特性的控件据它渲染与否（见「特性在场的接收」）。
   readonly hasFeature: (name: FeatureName) => boolean
   // 导航分组表：给了它即按分组渲染（组按表内顺序、组内按声明顺序，
   // 无分组的声明排在组之前）；不给即维持扁平单列，现有宿主不变。
-  readonly navGroups?: readonly ConsoleNavGroup[]
+  readonly navGroups?: readonly AdminNavGroup[]
   readonly children: ReactNode
   readonly title?: ReactNode
   readonly headerActions?: AppShellNavSlot   // 横幅标题之后的宿主内容；同外壳的槽形态，可给渲染函数取窄栏状态
@@ -113,7 +113,7 @@ interface ConsoleShellProps {
   // 落地的那次由宿主在 `onImpersonationChange('started')` 落定后自行释放。
   readonly onImpersonationStarting?: () => void | (() => void)
   // 把角色的 `description_key` 连同角色本身解析成展示内容；不给时页面渲染裸键。
-  readonly describeRole?: (descriptionKey: string, role: ConsoleRole) => ReactNode
+  readonly describeRole?: (descriptionKey: string, role: AdminRole) => ReactNode
   // AppShell 的帧槽与受控 prop，原样透传：桌面侧边栏收起对、抽屉宽度、
   // 整体菜单、横幅、受控的窄视口抽屉开合、抽屉纸内的首尾内容。
   readonly sidebarCollapsed?: boolean
@@ -129,9 +129,9 @@ interface ConsoleShellProps {
   readonly sx?: SxProps<Theme>
 }
 
-// 无帧的包级上下文：ConsoleShell 安装的同一组上下文，不带 AppShell 与内容
+// 无帧的包级上下文：AdminShell 安装的同一组上下文，不带 AppShell 与内容
 // 内边距。给渲染自有平台壳（自有 chrome、对话框、侧边面板）的宿主使用。
-interface ConsoleProviderProps {
+interface AdminProviderProps {
   readonly hasFeature: (name: FeatureName) => boolean
   readonly onNavigate?: (href: string) => void
   readonly session?: AuthSession
@@ -139,32 +139,32 @@ interface ConsoleProviderProps {
   readonly accountHref?: string
   readonly onImpersonationChange?: (change: 'started' | 'ended') => void | Promise<void>
   readonly onImpersonationStarting?: () => void | (() => void)
-  readonly describeRole?: (descriptionKey: string, role: ConsoleRole) => ReactNode
+  readonly describeRole?: (descriptionKey: string, role: AdminRole) => ReactNode
   // 宿主交来的（已按特性在场收窄的）路由表；页面按声明的稳定 `id` 解析兄弟页。
-  readonly routes?: readonly ConsoleRoute[]
+  readonly routes?: readonly AdminRoute[]
   readonly children: ReactNode
 }
 ```
 
 - **框架 prop 原样透传。** `shellLayout` 是外壳形态，`sidebarCollapsed` / `onSidebarCollapsedChange` 是 `AppShell` 的桌面侧边栏收起对，`sidebarWidth`、`userMenu`、`banner`、`mobileOpen` / `onMobileOpenChange` 与 `navHeader` / `navFooter` 是帧的宽度、顶栏槽、横幅槽、受控的窄视口抽屉与抽屉纸内的首尾槽。这些 prop 被拾起后逐字转给 `AppShell`，本包不重解释、不加自己的 chrome。给出收起回调即在帧的顶栏（侧栏形态下为抽屉纸顶部行）渲染收起／展开按钮并回报每次翻转，不给即维持一直展开的常驻抽屉；收起态是宿主持有的普通值。租户侧的 [product-shell](design-web-product-shell.md) 用同一组 prop，两处外壳在这条上同形。
 
-- **无帧的 `ConsoleProvider`。** `ConsoleShell` 是「`AppShell` ＋ 本 provider ＋ 内容」的一种组合；provider 本身只安装包级上下文、不渲染任何 DOM，供渲染自有平台外壳的宿主使用（自有 chrome、对话框、侧边面板）。它安装与壳相同的上下文：导航回调、路由表、会话、账户设置页、接受链接构造器、冒充变更与冒充开始、角色描述解析、特性判定。`hasFeature` 与壳一样必填；其余 prop 缺席时上下文缺席或为空，页面维持各自的回落。它仍是平台员工的接缝，不能承载租户侧页面，也不带任何当前租户设施。
+- **无帧的 `AdminProvider`。** `AdminShell` 是「`AppShell` ＋ 本 provider ＋ 内容」的一种组合；provider 本身只安装包级上下文、不渲染任何 DOM，供渲染自有平台外壳的宿主使用（自有 chrome、对话框、侧边面板）。它安装与壳相同的上下文：导航回调、路由表、会话、账户设置页、接受链接构造器、冒充变更与冒充开始、角色描述解析、特性判定。`hasFeature` 与壳一样必填；其余 prop 缺席时上下文缺席或为空，页面维持各自的回落。它仍是平台员工的接缝，不能承载租户侧页面，也不带任何当前租户设施。
 
 - **导航选中由宿主判定。** 本包不做路径匹配，故哪条导航项是当前页由宿主的 `isSelected(path)` 给出，壳把每条带标签声明的路径交给它，取其答案作为该项的 `selected`。不给该判定即没有选中项。
 
 - **只有纯主键点击就地路由。** 导航项与页内链接都是真链接，`href` 恒在；`onNavigate` 在场的普通左键点击被 `preventDefault` 并交回调，带 Ctrl／Command／Shift／Alt 的点击、非主键点击、自身带 `target="_blank"` 或 `download` 的链接、以及已被其它处理器声明过的激活都交给浏览器，判定用 layout-kit 的 `isPlainPrimaryClick`。
 
-- **稳定 id 与兄弟链接。** 每条声明可带一个按管理面取名的稳定 `id`（本包自己的声明都带）。壳与 provider 把宿主交来的（已按特性在场收窄的）路由表经包内上下文原样发布，页面按 `id` 找到兄弟声明再取它的路径，故控制台挂在任何前缀下都能构造兄弟链接；找不到声明时不渲染该链接。链接同样叠加目标声明的 `requires`：目标页依赖的特性缺席时，链接不出现。
+- **稳定 id 与兄弟链接。** 每条声明可带一个按管理面取名的稳定 `id`（本包自己的声明都带）。壳与 provider 把宿主交来的（已按特性在场收窄的）路由表经包内上下文原样发布，页面按 `id` 找到兄弟声明再取它的路径，故管理后台挂在任何前缀下都能构造兄弟链接；找不到声明时不渲染该链接。链接同样叠加目标声明的 `requires`：目标页依赖的特性缺席时，链接不出现。
 
 - **冒充开始前的宿主钩子。** `onImpersonationStarting` 在冒充发起写入发出之前同步调用，返回的函数在该次尝试未落地时调用：被服务端拒绝、被步进门控接管、或抛出。落地的那次不在此释放——宿主持有身份相关的帧，它在 `onImpersonationChange('started')` 的落定之后自行释放，因为新身份如何接管外壳由宿主决定。
 
 - **角色描述由宿主解析。** 权限页的角色行携带 `description_key`，它指向宿主自己的资源叶；`describeRole(descriptionKey, role)` 把它解析成展示内容。不给解析器时页面渲染裸键，角色行不会因此留空。
 
-- **导航按分组表聚合。** 页面声明可带 `group`，指向本包分组表里的一个组；壳把带标签的声明按其 `group` 聚成 [layout-kit](design-web-layout-kit.md) 的 `AppShellNavGroup`（组内是导航项、标题即折叠控件），组的顺序与标题来自宿主传入的分组表，组内顺序即声明顺序。分组表经 `navGroups` prop 传入，本包另导出 `consoleNavGroups` 作为缺省：概览（仪表盘）／身份与访问（账户、会话、冒充、权限、邀请与成员、SSO）／租户（租户名册）／平台配置（设置、短信）／审计（审计）。未传分组表即维持扁平单列——十一个带标签的声明按声明顺序排成一组，现有宿主零改动；`group` 此时是数据、不起作用。无 `group` 或指向表外组的声明作为导航项排在组之前，空组（无声明指向）不渲染标题；只有一个可见条目的组同样不渲染标题，该条目作为无分组的导航项排在该组本应占据的位置——某个组此时剩几个可见条目，取决于该部署服务哪些特性。组标题经 console-ui 命名空间解析（`nav.groups.*`），与页面标签同一套翻译路径；组标题可带装饰图标，收起的窄栏以它代替被裁剪的标题。
+- **导航按分组表聚合。** 页面声明可带 `group`，指向本包分组表里的一个组；壳把带标签的声明按其 `group` 聚成 [layout-kit](design-web-layout-kit.md) 的 `AppShellNavGroup`（组内是导航项、标题即折叠控件），组的顺序与标题来自宿主传入的分组表，组内顺序即声明顺序。分组表经 `navGroups` prop 传入，本包另导出 `adminNavGroups` 作为缺省：概览（仪表盘）／身份与访问（账户、会话、冒充、权限、邀请与成员、SSO）／租户（租户名册）／平台配置（设置、短信）／审计（审计）。未传分组表即维持扁平单列——十一个带标签的声明按声明顺序排成一组，现有宿主零改动；`group` 此时是数据、不起作用。无 `group` 或指向表外组的声明作为导航项排在组之前，空组（无声明指向）不渲染标题；只有一个可见条目的组同样不渲染标题，该条目作为无分组的导航项排在该组本应占据的位置——某个组此时剩几个可见条目，取决于该部署服务哪些特性。组标题经 admin-ui 命名空间解析（`nav.groups.*`），与页面标签同一套翻译路径；组标题可带装饰图标，收起的窄栏以它代替被裁剪的标题。
 
 ### 页面声明
 
-一个管理面导出一份页面声明表，全部汇总为 `consoleRoutes`（扁平导航顺序即下表顺序；按分组渲染时组的顺序由分组表给出）。路径是相对控制台根的 pattern，`id` 是该管理面的稳定身份（兄弟链接按它解析），导航标签是一个在渲染时经 console-ui 命名空间解析的 `ConsoleNavLabel`，权限码是该页数据所持的平台权限（数据；本包不据它判定），`requires` 是该页依赖的特性名（数据；全部特性在场时该页才可渲染视图、可导航，本包不据它判定），`group` 是该页归属的导航分组（数据；见「导航按分组表聚合」），`icon` 是导航项的装饰性前导图标（数据；本包自己的管理面各带一个手绘 SVG 图标，见 `src/internal/icons.tsx`，随标签一起交给帧的 `AppShellNavItem.icon`，故收起态是[布局](design-web-layout.md)所说的图标窄栏，而不是把标签截半的文字栏；图标本身 `aria-hidden`，可及名仍是标签）。**一个管理面可含多于一条声明**：列表页携带标签与图标（进导航），详情页两者都不带（可达但不列出），由列表行链入；下表列出带标签的各页，与导航一一对应。
+一个管理面导出一份页面声明表，全部汇总为 `adminRoutes`（扁平导航顺序即下表顺序；按分组渲染时组的顺序由分组表给出）。路径是相对管理后台根的 pattern，`id` 是该管理面的稳定身份（兄弟链接按它解析），导航标签是一个在渲染时经 admin-ui 命名空间解析的 `AdminNavLabel`，权限码是该页数据所持的平台权限（数据；本包不据它判定），`requires` 是该页依赖的特性名（数据；全部特性在场时该页才可渲染视图、可导航，本包不据它判定），`group` 是该页归属的导航分组（数据；见「导航按分组表聚合」），`icon` 是导航项的装饰性前导图标（数据；本包自己的管理面各带一个手绘 SVG 图标，见 `src/internal/icons.tsx`，随标签一起交给帧的 `AppShellNavItem.icon`，故收起态是[布局](design-web-layout.md)所说的图标窄栏，而不是把标签截半的文字栏；图标本身 `aria-hidden`，可及名仍是标签）。**一个管理面可含多于一条声明**：列表页携带标签与图标（进导航），详情页两者都不带（可达但不列出），由列表行链入；下表列出带标签的各页，与导航一一对应。
 
 | 声明 | `id` | 路径 | 导航标签键 | 权限码 | 依赖的特性（`requires`） | 分组 | 导航图标 |
 |---|---|---|---|---|---|---|---|
@@ -192,20 +192,20 @@ interface ConsoleProviderProps {
 
 ### 页型的骨架
 
-控制台页按 [layout](design-web-layout.md) 的页型组装：
+管理后台页按 [layout](design-web-layout.md) 的页型组装：
 
-- **仪表盘**（`DashboardPage`）：控制台根的路由（`/`）。一组等宽的租户指标块与一组平台健康度指标块，其下是最近活动列表。指标块按自身容器取档：容器窄于 `sm` 时一列，`sm` 起两列，`md` 起租户指标四列、平台健康度两列；768px 的概览上四张租户指标因而排成 2x2。租户指标由名册读拼出——名册读返回完整的租户集，租户总数即其长度，启用、停用与已删除各自的计数即其状态分布，它们相加等于总数。平台健康度由审计查询读拼出，它是唯一跨租户的读，两个读都以 `since` 为窗口起点：一读数出窗口内的全部记录，另一读以 `action=authn.login` 只数其中的成功登录。`since` 取发起读取的时刻往前 24 小时，挂载、刷新动作、标签页重新可见与重新联网各取一次新的起点，使「近 24 小时」始终成立；起点是查询键的一部分，读以新键发出。页面持有最近一次两个读都落定的那一对数值及其落定时刻：新键的读进行中继续渲染这一对、不渲染加载占位，两个新键读都落定后才一起换成新值，使同屏两个计数取自同一个窗口；新键的读失败时继续渲染旧的一对并给出陈旧提示，失败是 403 时按「读的失败面」以权限拒绝占位替换；首次尚无落定的数值时渲染加载占位。这一条不交给查询库的占位数据承担。两个计数取自窗口化读的最新一页，故应答带下一页游标时该计数按**下界**渲染（数值后带 `+`）。最近活动取审计查询读的最新一页（`useAuditRecords` 带 `limit`），其列与优先级与审计查询页同一套。平台不声明统计端点，也不声明失败登录的读，故页面不发明契约不携带的聚合值，也不把审计表不持有的失败登录计入。平台健康度与最近活动只在特性 `audit.admin` 在场时渲染，见「特性在场的接收」。
+- **仪表盘**（`DashboardPage`）：管理后台根的路由（`/`）。一组等宽的租户指标块与一组平台健康度指标块，其下是最近活动列表。指标块按自身容器取档：容器窄于 `sm` 时一列，`sm` 起两列，`md` 起租户指标四列、平台健康度两列；768px 的概览上四张租户指标因而排成 2x2。租户指标由名册读拼出——名册读返回完整的租户集，租户总数即其长度，启用、停用与已删除各自的计数即其状态分布，它们相加等于总数。平台健康度由审计查询读拼出，它是唯一跨租户的读，两个读都以 `since` 为窗口起点：一读数出窗口内的全部记录，另一读以 `action=authn.login` 只数其中的成功登录。`since` 取发起读取的时刻往前 24 小时，挂载、刷新动作、标签页重新可见与重新联网各取一次新的起点，使「近 24 小时」始终成立；起点是查询键的一部分，读以新键发出。页面持有最近一次两个读都落定的那一对数值及其落定时刻：新键的读进行中继续渲染这一对、不渲染加载占位，两个新键读都落定后才一起换成新值，使同屏两个计数取自同一个窗口；新键的读失败时继续渲染旧的一对并给出陈旧提示，失败是 403 时按「读的失败面」以权限拒绝占位替换；首次尚无落定的数值时渲染加载占位。这一条不交给查询库的占位数据承担。两个计数取自窗口化读的最新一页，故应答带下一页游标时该计数按**下界**渲染（数值后带 `+`）。最近活动取审计查询读的最新一页（`useAuditRecords` 带 `limit`），其列与优先级与审计查询页同一套。平台不声明统计端点，也不声明失败登录的读，故页面不发明契约不携带的聚合值，也不把审计表不持有的失败登录计入。平台健康度与最近活动只在特性 `audit.admin` 在场时渲染，见「特性在场的接收」。
 - **列表页**（`TenantRosterPage`、`AccountsPage`、`SessionsPage`、`ImpersonationsPage`、`PermissionsPage`、`InvitationsPage`、`SsoPage`、`SmsPage`、`AuditPage`）：页头、工具栏或写入区、数据表、分页。行详情与创建表单在操作者需要参照列表时由侧边面板承载（`AccountsPage`），见「账户页的详情与创建面板」。**租户名册的状态列按名册的每一个状态取值渲染**，`active`、`disabled` 与 `deleted` 各一条文案，集合之外的值渲染同一条通用文案；已删除的行不渲染改名与启停控件——名册拒绝写它，摆出来的控件只能空转。停用的行在状态列里另带停用来源的文案（运营者或账户），取自视图的 `disabledBy` 字段，运营者据它判断这个租户会不会随账户恢复。
-- **详情页**（`TenantDetailPage`、`AuditDetailPage`）：标题区加主栏与固定宽侧栏。主栏承载主体与其写入，侧栏承载标识与回链。路径是列表页路径加一段 `:id`（`/tenants/:id`、`/audit/:id`），声明不带标签，故不进导航。列表页接收声明传入的该列表页匹配路径（`basePath`），据此为每行构造详情链接 `${basePath}/${id}`；详情页接收 `parentHref`（匹配路径去掉 id 段），据此回链列表页；详情声明另把匹配路径去掉最后两段得到的控制台根交给页面。租户详情页的兄弟链接按稳定 `id`（`permissions`、`invitations`、`sso`、`impersonations`）在壳发布的路由表里解析目标路径，不以字面 `/tenants` 匹配拼路径——控制台挂在任何前缀下都成立；声明缺席或目标页依赖的特性缺席时该链接不渲染，`relatedHref` 可逐条覆写目标链接。每条链接把租户放进 `tenant` 查询参数——目标页从该参数取得选择器初值。审计详情页对记录携带的空字段渲染占位符而不是只留标签：字段为空本身是记录的一部分（平台级事件没有租户、动作可以没有用途），省掉这一行会掩盖记录携带空值。
+- **详情页**（`TenantDetailPage`、`AuditDetailPage`）：标题区加主栏与固定宽侧栏。主栏承载主体与其写入，侧栏承载标识与回链。路径是列表页路径加一段 `:id`（`/tenants/:id`、`/audit/:id`），声明不带标签，故不进导航。列表页接收声明传入的该列表页匹配路径（`basePath`），据此为每行构造详情链接 `${basePath}/${id}`；详情页接收 `parentHref`（匹配路径去掉 id 段），据此回链列表页；详情声明另把匹配路径去掉最后两段得到的管理后台根交给页面。租户详情页的兄弟链接按稳定 `id`（`permissions`、`invitations`、`sso`、`impersonations`）在壳发布的路由表里解析目标路径，不以字面 `/tenants` 匹配拼路径——管理后台挂在任何前缀下都成立；声明缺席或目标页依赖的特性缺席时该链接不渲染，`relatedHref` 可逐条覆写目标链接。每条链接把租户放进 `tenant` 查询参数——目标页从该参数取得选择器初值。审计详情页对记录携带的空字段渲染占位符而不是只留标签：字段为空本身是记录的一部分（平台级事件没有租户、动作可以没有用途），省掉这一行会掩盖记录携带空值。
 - **设置页**（`SettingsPage`）：一条二级导航（按 namespace 分组，取出自全量设置读）、一张占满内容区的分页表（键／类型／当前值／状态／操作）、底部一条粘性保存条。键格在键之下另叠该行的声明：先是它的说明，再是带标签的声明默认值，与相邻的当前值分开；没有声明默认值时这一行不渲染，也不以标签配空值。每行只取自己的声明，不借用别行的说明或默认值。键行本身取主辨识列的共用上限（`primaryColumnMaxWidthSx`）并在上限内截断，完整键由复制控件承载；说明与声明默认值是散文，不套这个上限，按单元格可用宽度换行。整行按顶部对齐（`rowVerticalAlign: 'top'`），当前值输入与复制控件因此贴住键行，而不是落在多行键格的垂直中点。行的状态取自该层视图的 `has_row`：该层没有行时值走回落（标「默认」），持有行时标「已覆盖」。`written` 只用于显示，不参与判定——显式写入的空串与无行在文本上不可区分，行是否存在由 `has_row` 单独给出。只有持有行的行渲染可点的移除控件，默认行不渲染它——默认值没有可撤的覆盖行，摆一个只能空转的开关只会误导读屏与操作者；204 的幂等删除语义不变。**敏感项**：[settings.admin](../settings/design-settings-admin.md) 在应答里把敏感项的 `written` 与 `value` 换成遮蔽串，`has_row` 照常报出行是否存在，故页面按同一判据统计状态，并只对持有行的敏感项渲染移除控件；键格的「敏感」标记说明该行的值是遮蔽串。
 
-**冒充页承载两个面。** 记录面是一个按租户寻址的列表页：它列出租户的冒充记录并终止一条。运营者自身会话面读调用方自己会话上的冒充（`GET /api/v1/auth/impersonation`，无冒充时是裸 404）、以 `POST /api/v1/auth/impersonation` 发起一条、以 `DELETE /api/v1/auth/impersonation` 结束它。自身会话面作用到调用方自己的会话，不按租户寻址，故它不随租户选择器启用，其读取的键也不分租户；发起控件只在当前会话没有生效中的冒充时呈现——模块对同一会话上的第二次发起答 409。这三个操作是生成的调用方会话操作（`useAuthnImpersonationStatus`、`useAuthnImpersonationStart`、`useAuthnImpersonationEnd`），页面直接调用它们并经生成键工厂（`getAuthnImpersonationStatusQueryKey`）失效状态读，与记录面的操作束不是同一组。**状态读落定为有冒充时，记录面不渲染、其读不发出。** 记录面包括租户选择器、记录列表与终止控件，换成一条说明（冒充期间不能读取或终止冒充记录，结束冒充后在此查看），页面只剩「当前冒充」节与结束控件。记录面的判定在平台域，被冒充的账户不持平台域权限（REQ-platform-admin-108），读与终止在冒充期间必被拒，渲染成空列表加陈旧提示会被读成「没有记录」。状态读未落定或失败时记录面照常渲染；结束成功后记录面恢复并重读，不需要刷新页面。宿主给了 `onImpersonationChange` 时，发起与结束成功后页面各调用它一次，页面不等待它，它的拒绝被页面包住；发起之后宿主重读会话并把页面带离控制台（[design-starters](../design-starters.md) 的「冒充期间的壳」），记录面的收起因此只在宿主不做这些的装配里、或重读尚未落定的短暂窗口里被看到；结束之后宿主重读会话，页面留在原处，记录面恢复并重读。宿主给了 `onImpersonationStarting` 时，发起写入之前先同步调用它；这次尝试未落地（被拒、被步进门控接管或抛错）时页面调用其返回的释放函数，落地的尝试由宿主在 `onImpersonationChange('started')` 落定后自行释放。决策见 [ADR-web-impersonation-shell](../../../adr/adr-web-impersonation-shell.md)。
+**冒充页承载两个面。** 记录面是一个按租户寻址的列表页：它列出租户的冒充记录并终止一条。运营者自身会话面读调用方自己会话上的冒充（`GET /api/v1/auth/impersonation`，无冒充时是裸 404）、以 `POST /api/v1/auth/impersonation` 发起一条、以 `DELETE /api/v1/auth/impersonation` 结束它。自身会话面作用到调用方自己的会话，不按租户寻址，故它不随租户选择器启用，其读取的键也不分租户；发起控件只在当前会话没有生效中的冒充时呈现——模块对同一会话上的第二次发起答 409。这三个操作是生成的调用方会话操作（`useAuthnImpersonationStatus`、`useAuthnImpersonationStart`、`useAuthnImpersonationEnd`），页面直接调用它们并经生成键工厂（`getAuthnImpersonationStatusQueryKey`）失效状态读，与记录面的操作束不是同一组。**状态读落定为有冒充时，记录面不渲染、其读不发出。** 记录面包括租户选择器、记录列表与终止控件，换成一条说明（冒充期间不能读取或终止冒充记录，结束冒充后在此查看），页面只剩「当前冒充」节与结束控件。记录面的判定在平台域，被冒充的账户不持平台域权限（REQ-platform-admin-108），读与终止在冒充期间必被拒，渲染成空列表加陈旧提示会被读成「没有记录」。状态读未落定或失败时记录面照常渲染；结束成功后记录面恢复并重读，不需要刷新页面。宿主给了 `onImpersonationChange` 时，发起与结束成功后页面各调用它一次，页面不等待它，它的拒绝被页面包住；发起之后宿主重读会话并把页面带离管理后台（[design-starters](../design-starters.md) 的「冒充期间的壳」），记录面的收起因此只在宿主不做这些的装配里、或重读尚未落定的短暂窗口里被看到；结束之后宿主重读会话，页面留在原处，记录面恢复并重读。宿主给了 `onImpersonationStarting` 时，发起写入之前先同步调用它；这次尝试未落地（被拒、被步进门控接管或抛错）时页面调用其返回的释放函数，落地的尝试由宿主在 `onImpersonationChange('started')` 落定后自行释放。决策见 [ADR-web-impersonation-shell](../../../adr/adr-web-impersonation-shell.md)。
 
-**页内导航复用壳的接缝。** 控制台壳把它的 `onNavigate` 经内部上下文交给它渲染的页内容；页内的详情链接经该回调就地路由（不做整页重载，否则内存态会话会丢），壳未给回调时是普通链接。这条接缝与壳自身的导航项同一来源，故二者重载与否的行为一致：只有纯主键点击交回调，带修饰键、非主键与已由其它处理器声明的激活保持浏览器的行为，链接的 `href` 恒在。
+**页内导航复用壳的接缝。** 管理后台壳把它的 `onNavigate` 经内部上下文交给它渲染的页内容；页内的详情链接经该回调就地路由（不做整页重载，否则内存态会话会丢），壳未给回调时是普通链接。这条接缝与壳自身的导航项同一来源，故二者重载与否的行为一致：只有纯主键点击交回调，带修饰键、非主键与已由其它处理器声明的激活保持浏览器的行为，链接的 `href` 恒在。
 
 ### 特性在场的接收
 
-**页内依赖特性的控件经 `hasFeature` 判定。** `ConsoleShell` 的必填属性 `hasFeature` 是宿主给出的同步判定，壳经包内上下文把它交给页面，形态同壳交会话的 `ConsoleSessionProvider`。本包不认识特性态的读取中与读取失败：宿主在特性态就绪之后才渲染控制台壳（[starters](../design-starters.md)），壳拿到的判定恒有确定的答案。
+**页内依赖特性的控件经 `hasFeature` 判定。** `AdminShell` 的必填属性 `hasFeature` 是宿主给出的同步判定，壳经包内上下文把它交给页面，形态同壳交会话的 `AdminSessionProvider`。本包不认识特性态的读取中与读取失败：宿主在特性态就绪之后才渲染管理后台壳（[starters](../design-starters.md)），壳拿到的判定恒有确定的答案。
 
 **壳不按 `requires` 过滤导航。** 宿主交给 `routes` 的是已按特性在场收窄的声明（route-kit 的 `presentDeclarations` 的结果），壳照常由其中带标签的声明派生导航。
 
@@ -244,7 +244,7 @@ interface ConsoleProviderProps {
 | 依赖 | 用途 |
 |---|---|
 | `@speed/api-sdk` | 各管理面端点的生成读钩子与写 mutation；子路径 `@speed/api-sdk/features` 的特性名类型 `FeatureName`，用作 `requires` 的元素类型与 `hasFeature` 的参数类型 |
-| `@speed/auth-core` | 会话：宿主把会话交给壳，页面在特权写被答 401 步进时打开重认证对话框、重放该写；门控用 auth-core 的 `useStepUpGate`，控制台显式传入 `session.isStepUpShortfall` 作为判别。`./otpauth` 子路径解析 `otpauth://` 登记 URI 并格式化 base32 密钥供手工输入，通行密钥仪式（[REF-webauthn](../../../references.md)）经子路径 `@speed/auth-core/webauthn`。本包不读当前租户 |
+| `@speed/auth-core` | 会话：宿主把会话交给壳，页面在特权写被答 401 步进时打开重认证对话框、重放该写；门控用 auth-core 的 `useStepUpGate`，管理后台显式传入 `session.isStepUpShortfall` 作为判别。`./otpauth` 子路径解析 `otpauth://` 登记 URI 并格式化 base32 密钥供手工输入，通行密钥仪式（[REF-webauthn](../../../references.md)）经子路径 `@speed/auth-core/webauthn`。本包不读当前租户 |
 | `@speed/ui-kit` | 主题、表单、对话框、数据表与空态原语；页的刷新控件与机制（`RefreshButton`、`usePageRefresh`、`pageRefreshRead`）、按状态读失败（`httpStatusOf`）、复制控件与一次性值面板（`CopyButton`、`OneTimeValuePanel`）、认证器应用的登记面板 `TotpEnrollmentPanel` 也由它提供 |
 | `@speed/layout-kit` | 外壳骨架：`AppShell` 的两种外壳形态（顶栏 / 侧栏）、响应式导航抽屉与内容区，以及就地导航的纯点击判定 `isPlainPrimaryClick` |
 | `@speed/i18n` | 命名空间注册与文案的翻译钩子；时间渲染用 `formatInstant`（本包固定 UTC） |
@@ -253,7 +253,7 @@ interface ConsoleProviderProps {
 
 **本包不 import `route-kit` 与 `tenancy-ui`。** 页面声明即 route-kit 的 `RouteDeclaration`，收集方在应用的组合层；本包没有当前租户切换器，故租户侧的切换控件不在这里出现。按租户寻址的页面持的租户选择器由本包自造，取自平台名册读，与 tenancy-ui 的切换控件无关。壳交出的 `onNavigate` 是一个回调，由宿主接上它自己的路由器，本包与 `route-kit` 之间仍无 import 边。
 
-**共享件在下层包里只有一份。** 本包不自带刷新控件与刷新机制、HTTP 状态的结构判定、复制控件与一次性值面板、通行密钥仪式、步进门控与时间格式化的副本：这些由 ui-kit、auth-core 与 i18n 提供，本包按上表接线。本包只在包内保留管理面专用的管道（错误文案白名单、反馈区域绑定、租户选择器、账户身份单元、零时刻判定等）；`src/internal/` 只转出两样公开面——为宿主注解自己的回调而转出的纯类型导出，与壳用来把会话交给页面的 `ConsoleSessionProvider`（壳从其 `session` 属性挂载，不经壳组装页面的宿主自行挂载）。
+**共享件在下层包里只有一份。** 本包不自带刷新控件与刷新机制、HTTP 状态的结构判定、复制控件与一次性值面板、通行密钥仪式、步进门控与时间格式化的副本：这些由 ui-kit、auth-core 与 i18n 提供，本包按上表接线。本包只在包内保留管理面专用的管道（错误文案白名单、反馈区域绑定、租户选择器、账户身份单元、零时刻判定等）；`src/internal/` 只转出两样公开面——为宿主注解自己的回调而转出的纯类型导出，与壳用来把会话交给页面的 `AdminSessionProvider`（壳从其 `session` 属性挂载，不经壳组装页面的宿主自行挂载）。
 
 ## UML 图
 
@@ -261,11 +261,11 @@ interface ConsoleProviderProps {
 
 ```mermaid
 graph TD
-    pages["控制台页面\n概览 · 名册（含详情）· 审计（含详情）\n账户 · 会话 · 冒充 · 权限 · 邀请与成员 · SSO · 设置 · 短信"]
+    pages["管理后台页面\n概览 · 名册（含详情）· 审计（含详情）\n账户 · 会话 · 冒充 · 权限 · 邀请与成员 · SSO · 设置 · 短信"]
     decl["页面声明\n路径 · 视图 · 标签 · 权限 · 特性 · 稳定 id"]
     collect["应用的组合层\nroute-kit 的收集方"]
     host["宿主\n特性判定 · 路由表 · 会话 · 冒充钩子"]
-    frame["ConsoleShell / ConsoleProvider\n包级上下文"]
+    frame["AdminShell / AdminProvider\n包级上下文"]
     api["@speed/api-sdk\n生成操作"]
     platform["平台管理面\n/api/v1/system/tenants · /api/v1/system/auth\n/api/v1/system/settings · /api/v1/system/audit\n/api/v1/system/sms · /api/v1/system/permissions"]
     pages --> decl
@@ -280,11 +280,11 @@ graph TD
 
 | 概念 | 形状 | 说明 |
 |---|---|---|
-| 页面声明 | `ConsoleRoute` | 即 route-kit 的 `RouteDeclaration`：路径 pattern、视图回调、可选导航标签、可选权限码、特性名列表，外加本包自加的可选导航分组与装饰性图标 |
-| 特性判定 | `(name: FeatureName) => boolean` | 宿主经 `ConsoleShell` 的 `hasFeature` 给出，经包内上下文交给页面 |
+| 页面声明 | `AdminRoute` | 即 route-kit 的 `RouteDeclaration`：路径 pattern、视图回调、可选导航标签、可选权限码、特性名列表，外加本包自加的可选导航分组与装饰性图标 |
+| 特性判定 | `(name: FeatureName) => boolean` | 宿主经 `AdminShell` 的 `hasFeature` 给出，经包内上下文交给页面 |
 | 租户作用域选择 | 页面自身状态 | 按租户寻址的页面持有的租户 id，作为请求实参，缺省为空即禁用该页的租户作用域读 |
 | 账户选择 | `AccountSelector` 的 `value` | 页面持有的已选账户（不是 id 文本），选择器交出账户对象，页面从中取 id 作为请求实参 |
-| 命名空间 | `consoleUiResources` | 双语文案目录，叶子键集跨语言相同 |
+| 命名空间 | `adminUiResources` | 双语文案目录，叶子键集跨语言相同 |
 
 ## 核心算法与流程
 
@@ -297,7 +297,7 @@ graph TD
 
 ### 邀请的交付
 
-签发一张邀请的应答里带一枚只交出一次的接受令牌（投递归签发者，见 [authn-invite](../authn/design-authn-invite.md)）。邀请与成员页不丢弃它：签发成功后，以宿主经 `ConsoleShell` 的 `invitationLink` 交出的构造器把令牌变成接受链接并展示，供签发者经自己的渠道交给被邀请人；宿主未给构造器时展示裸令牌。链接指向的落点（形如 `/invitations/:token`）是宿主的公开路由，本包不知道它，故路径由宿主给出；构造器返回宿主相对的路径时，页面按当前 origin 解析成绝对链接供复制。
+签发一张邀请的应答里带一枚只交出一次的接受令牌（投递归签发者，见 [authn-invite](../authn/design-authn-invite.md)）。邀请与成员页不丢弃它：签发成功后，以宿主经 `AdminShell` 的 `invitationLink` 交出的构造器把令牌变成接受链接并展示，供签发者经自己的渠道交给被邀请人；宿主未给构造器时展示裸令牌。链接指向的落点（形如 `/invitations/:token`）是宿主的公开路由，本包不知道它，故路径由宿主给出；构造器返回宿主相对的路径时，页面按当前 origin 解析成绝对链接供复制。
 
 展示值旁是 [ui-kit](design-web-ui-kit.md) 的复制控件（`CopyButton`）：它把完整的展示值——构造器在场的绝对链接，构造器缺席的裸令牌——写入剪贴板，故交出去的是完整值而不是被折行折断的可视片段；复制成功后控件旁的状态区播报「已复制」，两秒后清空。运行环境不提供 Clipboard API 时点击不写入、不播报，页面不为此失败。
 
@@ -313,7 +313,7 @@ graph TD
 
 ### 读的失败面：权限拒绝与其它失败
 
-每个读经 `ConsoleAsyncSection`（ui-kit 的 `AsyncSection` 在本包内的绑定）渲染。一个 403 是权限拒绝而非加载失败——面应答了，是拒绝——故渲染权限拒绝文案（console-ui 命名空间的 `forbidden.title` 与 `forbidden.description`），且不给重试动作；任何其它失败（429、5xx、传输错误）落回可重试的失败占位，带重试；占位文案说这次请求没有完成，不说服务端没有应答，因为 429 与 5xx 是应答。判定按应答本身做出（HTTP 状态 403，或无可读信封的裸 403 经 `client.http.403`），不按路由级权限读数——服务端写出 403，页面渲染应答。
+每个读经 `AdminAsyncSection`（ui-kit 的 `AsyncSection` 在本包内的绑定）渲染。一个 403 是权限拒绝而非加载失败——面应答了，是拒绝——故渲染权限拒绝文案（admin-ui 命名空间的 `forbidden.title` 与 `forbidden.description`），且不给重试动作；任何其它失败（429、5xx、传输错误）落回可重试的失败占位，带重试；占位文案说这次请求没有完成，不说服务端没有应答，因为 429 与 5xx 是应答。判定按应答本身做出（HTTP 状态 403，或无可读信封的裸 403 经 `client.http.403`），不按路由级权限读数——服务端写出 403，页面渲染应答。
 
 ### 页的刷新动作
 
@@ -373,7 +373,7 @@ graph TD
 
 ### 内建角色只读
 
-服务端在角色行上持有内建标记（`builtin`），并对内建角色的改写、删除与授权写入答 409（`authz.ErrBuiltinRole`）：其权限集固定（REQ-platform-config-025），删除还会连同其授权与绑定一并撤销；读不受限。权限页据角色列表里的该标记，去掉内建行的「管理授权」与「删除」两个写控件，改留一个只读的「查看授权」入口（`permissions.roles.viewGrants`，可及名为 `permissions.roles.viewGrantsAria`），旁边是一句可读说明（`permissions.roles.builtinLocked`）。选中内建角色后，授权区照常列出它持有的权限，但授予表单与撤销列都不渲染，另以一句只读说明（`permissions.grants.builtinReadOnly`）表明原因。写控件换掉而不是禁用，是因为禁用的按钮不可聚焦、不进 Tab 顺序，依赖焦点或悬停的 tooltip 与 `aria-describedby` 对只用键盘的使用者不可达（它仍留在无障碍树里，读屏的浏览模式仍会读到它）；换成正文文字后，原因进入每个人的阅读顺序，也不向任何人呈现一个必然失败的控件。非内建角色不受影响。内建标记不由控制台设置：角色表单只写角色名与描述键，标记由宿主的种入步骤置上。
+服务端在角色行上持有内建标记（`builtin`），并对内建角色的改写、删除与授权写入答 409（`authz.ErrBuiltinRole`）：其权限集固定（REQ-platform-config-025），删除还会连同其授权与绑定一并撤销；读不受限。权限页据角色列表里的该标记，去掉内建行的「管理授权」与「删除」两个写控件，改留一个只读的「查看授权」入口（`permissions.roles.viewGrants`，可及名为 `permissions.roles.viewGrantsAria`），旁边是一句可读说明（`permissions.roles.builtinLocked`）。选中内建角色后，授权区照常列出它持有的权限，但授予表单与撤销列都不渲染，另以一句只读说明（`permissions.grants.builtinReadOnly`）表明原因。写控件换掉而不是禁用，是因为禁用的按钮不可聚焦、不进 Tab 顺序，依赖焦点或悬停的 tooltip 与 `aria-describedby` 对只用键盘的使用者不可达（它仍留在无障碍树里，读屏的浏览模式仍会读到它）；换成正文文字后，原因进入每个人的阅读顺序，也不向任何人呈现一个必然失败的控件。非内建角色不受影响。内建标记不由管理后台设置：角色表单只写角色名与描述键，标记由宿主的种入步骤置上。
 
 ### 与租户侧的分工
 
@@ -381,11 +381,11 @@ graph TD
 
 ### 账户页的详情与创建面板
 
-账户页的账户详情与账户创建各由一个侧边面板承载；容器取舍的判据见 [layout](design-web-layout.md)，决策见 [ADR-web-side-panel](../../../adr/adr-web-side-panel.md)。账户详情没有独立路由，控制台里也没有页面链向它。
+账户页的账户详情与账户创建各由一个侧边面板承载；容器取舍的判据见 [layout](design-web-layout.md)，决策见 [ADR-web-side-panel](../../../adr/adr-web-side-panel.md)。账户详情没有独立路由，管理后台里也没有页面链向它。
 
 **打开。** 列表行的「管理」按钮打开该行的详情面板，按钮带 `aria-haspopup="dialog"`，只负责打开：面板是模态的，打开期间行不可点击，关闭走面板自己的出口。页头操作里，刷新动作之后是「新建账户」按钮，它打开创建面板。两个面板都取 `wide` 档。创建表单不再常驻页面；面板打开与关闭期间，列表的数据、已应用的筛选与滚动位置保持不变。
 
-**详情面板的内容。** 标题是含账户 id 的 `h2`；内容是账户详情的全部既有内容——只读字段、账户级写入、因子、服务密钥、会话与按名移除标识的控件——各节标题从 `h3` 起，各读仍各自挂在 `ConsoleAsyncSection` 之后，保持各自的加载、空与可重试的错误占位。
+**详情面板的内容。** 标题是含账户 id 的 `h2`；内容是账户详情的全部既有内容——只读字段、账户级写入、因子、服务密钥、会话与按名移除标识的控件——各节标题从 `h3` 起，各读仍各自挂在 `AdminAsyncSection` 之后，保持各自的加载、空与可重试的错误占位。
 
 **所选账户的存续。** 关闭面板时页面不立刻清掉所选账户，而在面板的 `onExited` 里清；退出过渡期间面板渲染的仍是该账户的详情。面板内的各反馈作用域在面板关闭时 `reset`，下一次打开（无论哪个账户）不带上一次的反馈。
 
@@ -412,17 +412,17 @@ graph TD
 
 ### 步进验证对话框
 
-特权写被答 401 步进（会话仍成立、强度不足）时，页面打开步进对话框并记住被拒的写（[auth-core](design-web-auth-core.md) 的 `useStepUpGate`；控制台显式传入 `session.isStepUpShortfall` 作为判别，故「会话已结束的 401」不被当成步进），挑战成功后重放该写恰好一次，取消不重放。对话框在发起流程之前读一次本人已登记的因素（`GET /api/v1/auth/factors`），按读的结果分阶段：
+特权写被答 401 步进（会话仍成立、强度不足）时，页面打开步进对话框并记住被拒的写（[auth-core](design-web-auth-core.md) 的 `useStepUpGate`；管理后台显式传入 `session.isStepUpShortfall` 作为判别，故「会话已结束的 401」不被当成步进），挑战成功后重放该写恰好一次，取消不重放。对话框在发起流程之前读一次本人已登记的因素（`GET /api/v1/auth/factors`），按读的结果分阶段：
 
 - **读未落定**：渲染起手中的占位，不发起流程。
-- **读已落定且没有启用的因素**（读回的行里没有处于启用状态的）：控制台里被步进门控的写，其要求是多因素，与账户有没有因素无关（例如账户的停用与删除、因素与密钥的管理、冒充的发起）；没有因素的账户既不能经步进强化会话，重新登录与重新证明第一因素也只能得到单因素会话，都满足不了这个要求，对话框因此不区分会话是否新鲜，提示先在账户设置里添加验证方式，不发起流程。账户自助写则按账户有没有因素选要求，没有因素时要的是新鲜的第一因素，见 [account-ui](design-web-account-ui.md)。`accountHref` 给出时附一个前往账户设置的链接，缺省不渲染链接，只留文案。
-- **有启用的因素，或读失败**：发起流程。读失败不判定为没有因素，由流程自己的拒绝决定。起手被 401 `authn.insufficient_user_authentication` 拒绝（有因素，但没有能强化本会话的）时，对话框判定本部署无法完成升级，给出重新登录的出口，不渲染步骤。控制台不写续做记录，因此这条说明只陈述成因与重新登录，不承诺重新登录后回到原处并重做被拒的写；续做承诺只在 account-ui 的出口（[account-ui](design-web-account-ui.md)）。
+- **读已落定且没有启用的因素**（读回的行里没有处于启用状态的）：管理后台里被步进门控的写，其要求是多因素，与账户有没有因素无关（例如账户的停用与删除、因素与密钥的管理、冒充的发起）；没有因素的账户既不能经步进强化会话，重新登录与重新证明第一因素也只能得到单因素会话，都满足不了这个要求，对话框因此不区分会话是否新鲜，提示先在账户设置里添加验证方式，不发起流程。账户自助写则按账户有没有因素选要求，没有因素时要的是新鲜的第一因素，见 [account-ui](design-web-account-ui.md)。`accountHref` 给出时附一个前往账户设置的链接，缺省不渲染链接，只留文案。
+- **有启用的因素，或读失败**：发起流程。读失败不判定为没有因素，由流程自己的拒绝决定。起手被 401 `authn.insufficient_user_authentication` 拒绝（有因素，但没有能强化本会话的）时，对话框判定本部署无法完成升级，给出重新登录的出口，不渲染步骤。管理后台不写续做记录，因此这条说明只陈述成因与重新登录，不承诺重新登录后回到原处并重做被拒的写；续做承诺只在 account-ui 的出口（[account-ui](design-web-account-ui.md)）。
 
 被拒的码是 401 `authn.sso_required` 时，本地因素满足不了它：对话框不读因素、不起流程，点名企业单点登录并只给重新登录出口（结束会话，宿主会话门收敛到登录面）。门控仍记住那次被拒的写，取消不重放它。
 
 **就绪的确认步自动提交。** 流程落到就绪状态、下一步是 `complete` 时，这一步没有输入：`useStepUp` 自动以 `{step: 'complete'}` 提交它（同一 `seq` 只一次），对话框在此期间显示起手文案（`stepUp.starting`）；自动提交被拒时退回该步自带的确认按钮并渲染拒绝码，由用户手动重试。
 
-**前往账户设置的目的地由宿主给出。** 对话框不持有任何宿主路径：`ConsoleShell` 的 `accountHref` 经包内上下文交给对话框，形态同 `invitationLink`；链接经壳的页内导航接缝就地路由，壳未给回调时是普通链接。
+**前往账户设置的目的地由宿主给出。** 对话框不持有任何宿主路径：`AdminShell` 的 `accountHref` 经包内上下文交给对话框，形态同 `invitationLink`；链接经壳的页内导航接缝就地路由，壳未给回调时是普通链接。
 
 **本人因素的读不经操作束。** 操作束收的是管理面的读写；本人账户的因素读是运营者对自己会话的调用，与冒充页的自身会话面同类：对话框直接调用生成的 `useAuthnMfaFactors`，跑在宿主的查询客户端上，不进操作束，宿主因此无法经操作束替换它。
 
@@ -436,7 +436,7 @@ graph TD
 
 ### 写入的反馈与读的刷新
 
-本包每个有写入的页面按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织反馈（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。应用于控制台页面的条款如下。
+本包每个有写入的页面按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织反馈（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。应用于管理后台页面的条款如下。
 
 **作用域按控件组划分，页面不聚合。** 控件组的判据见 ui-kit。权限页的角色、授权、绑定、账户绑定查询各是一组，账户绑定查询表的解绑动作用它自己的作用域，区域在查询表之下，不用绑定组的作用域；其余页面同样按带标题的节划分。页面不聚合多个 mutation 的错误，也不各持错误选取函数。表格行内的动作按行是否带自己的草稿输入区分：单击型的行动作（撤销、移除）共用该表的作用域，区域在表之下，成功文案点名被操作的行；带各自草稿输入的行（租户名册的重命名与启停）每行一个作用域，区域在该行内。写入自身的效果会卸载它所在节的控件时（冒充的发起使发起表单卸载），区域放在写入之后仍存活的最近祖先里：冒充的发起与结束的区域在「当前冒充」状态节内，不在发起表单内。面板打开期间的落点见「账户页的详情与创建面板」。
 
@@ -456,15 +456,15 @@ graph TD
 
 **写入失败的文案。** 写入失败经本包白名单渲染：裸 HTTP 403 渲染权限不足文案；未被步进拦截的裸 401（会话已不再成立，或该写入不经步进闸）渲染会话已结束文案；经步进闸的写入先由 `intercept` 判定，会话仍成立的 401 打开步进对话框，不进入文案层。403 与该类 401 都不并入裸 HTTP 状态通用的 `errors.client.http` 叶子（`client.http.<status>` 经它渲染带状态码的「请稍后重试」文本）。冒充发起与管理员重置因素、重置口令被 403 `authn.factor_not_seasoned` 拒绝时，写入失败渲染一条说明：需要一个已启用满规定时长的非短信因素（认证器应用或通行密钥），刚登记的因素要等；应答不带时长，文案不写具体数字。步进对话框不拦截它，加强认证解不了这一条。403 `authn.impersonation_restricted` 在界面上几乎总是冒充发起被拒：服务端对发起者、目标、参数三组的违反不区分是哪一条（[design-authn-impersonation](../authn/design-authn-impersonation.md)），文案因此不指向单一原因，也不写「冒充期间」，而是逐类陈述对目标与当前会话的要求：目标是该租户中已启用、未受保护的成员账户，当前会话没有进行中的冒充。这条码不拆出「目标不是成员」之类的子码：拆出任何一类，应答就多告诉发起者一条关于目标账户的事实，取舍见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)。写入被 403 `authn.contact_required` 拒绝不是权限不足：发起者持有邮箱而没有一条已证明的邮箱，管理面的人类写按未验证账户拦下（REQ-platform-admin-017，见 [design-authn-admin](../authn/design-authn-admin.md)）。这条码的文案说明先到账户页的邮箱验证节证明邮箱，宿主的持续验证横幅提供前往该节的入口；步进对话框不拦截它，加强认证解不了这一条。判据与账户来源无关，管理员预置的账户在证明自己的邮箱之前同样会撞上它。租户准入层因租户要求企业 SSO 而拒绝一次写（401 `authn.sso_required`）时，邀请与成员页与 SSO 页在写入反馈区渲染已解析的文案并给出「重新登录」出口：出口结束会话，宿主的会话门收敛到登录面，运营者在那里经该租户的提供方重新登录。页面不打开步进对话框、不列出因素，因为没有本地因素能解这条拒绝；没有会话时不给该出口，因为没有可结束的会话。
 
-**冒充的状态与记录。** 冒充状态读（`GET /api/v1/auth/impersonation`）的裸 404 是已落定的「未冒充」：该 404 不作为 `error` 交给 `ConsoleAsyncSection`，既不渲染失败占位也不渲染陈旧提示，并丢弃缓存里的旧授予；冒充经本页的结束、到期、另一个标签页或另一位管理员的终止而结束，重读都落到这条规则。结束请求答裸 404（已在别处结束）同样是已落定的「已结束」，按结束成功收尾：对状态读做 `resetQueries`、落成功确认、宿主给了回调时调用 `onImpersonationChange('ended')`；这条判定只用于结束，不用于其他写入。结束成功时对状态读做 `resetQueries` 并重取；发起与终止使状态读与记录列表失效重取。状态读经 `ConsoleAsyncSection` 渲染，其余失败走本包通用的占位与陈旧提示。
+**冒充的状态与记录。** 冒充状态读（`GET /api/v1/auth/impersonation`）的裸 404 是已落定的「未冒充」：该 404 不作为 `error` 交给 `AdminAsyncSection`，既不渲染失败占位也不渲染陈旧提示，并丢弃缓存里的旧授予；冒充经本页的结束、到期、另一个标签页或另一位管理员的终止而结束，重读都落到这条规则。结束请求答裸 404（已在别处结束）同样是已落定的「已结束」，按结束成功收尾：对状态读做 `resetQueries`、落成功确认、宿主给了回调时调用 `onImpersonationChange('ended')`；这条判定只用于结束，不用于其他写入。结束成功时对状态读做 `resetQueries` 并重取；发起与终止使状态读与记录列表失效重取。状态读经 `AdminAsyncSection` 渲染，其余失败走本包通用的占位与陈旧提示。
 
 **读的失败面。**
 
-- 已有数据时的刷新失败：页面在最近一次刷新失败、数据在屏且读不在进行中时，经 `ConsoleAsyncSection` 以专门的陈旧文案（zh-CN 与 en-US 各一键，说明所示内容可能已过期）给出 ui-kit 的 `staleState`，重试发出后撤回它；页的刷新动作与各节的刷新控件在读进行中带 `aria-busy`、保持可聚焦而不置原生 `disabled`，重复激活不发出第二次读、也不排队（见「页的刷新动作」）；页面任一写入在途时该控件原生禁用，且不携带「先选择作用域」的说明。失败是权限拒绝（403）时，权限拒绝占位优先：替换缓存内容，不给 `staleState`、不给重试，`ConsoleAsyncSection` 的 403 判定不要求 `payload` 缺席。
+- 已有数据时的刷新失败：页面在最近一次刷新失败、数据在屏且读不在进行中时，经 `AdminAsyncSection` 以专门的陈旧文案（zh-CN 与 en-US 各一键，说明所示内容可能已过期）给出 ui-kit 的 `staleState`，重试发出后撤回它；页的刷新动作与各节的刷新控件在读进行中带 `aria-busy`、保持可聚焦而不置原生 `disabled`，重复激活不发出第二次读、也不排队（见「页的刷新动作」）；页面任一写入在途时该控件原生禁用，且不携带「先选择作用域」的说明。失败是权限拒绝（403）时，权限拒绝占位优先：替换缓存内容，不给 `staleState`、不给重试，`AdminAsyncSection` 的 403 判定不要求 `payload` 缺席。
 - 邀请与成员页的邀请列表读被租户准入层以 401 `authn.sso_required` 拒绝时，页面渲染已解析的文案并给出「重新登录」出口，取代可重试的占位；本地会话下重试只会得到同一个拒绝。
 - 按 id 读的详情页：404 渲染措辞为「记录不存在或暂不可用」的占位，仍带重试——服务端的「无此记录」是无类型的裸 404，与缺席副本的 404 在客户端无法区分，措辞因此不断言记录已被删除；刷新答 404 时同样以这个占位替换内容。403 渲染无权限占位且不给重试，其余失败渲染可重试占位。
 - 租户选择器读平台名册：加载中以辅助文字标明并禁用；403 时辅助文字渲染权限不足、不给重试；其余失败时辅助文字渲染失败并给重试；名册为空时辅助文字说明没有已登记租户；URL 播种的租户在加载、失败与空态下都保持显示。判定 403 与本包其余的读同一个 `isForbidden`。
-- 权限页的账户绑定查询经 `ConsoleAsyncSection` 渲染，加载、失败与空各有自己的占位。
+- 权限页的账户绑定查询经 `AdminAsyncSection` 渲染，加载、失败与空各有自己的占位。
 
 ## 错误与失败语义
 
@@ -511,88 +511,88 @@ graph TD
 
 - **设置页照列键表里的全部键，含本进程未运行模块的键。** 键表取可用集，一个键可能由另一进程读取（[settings](../settings/design-settings.md#声明的收集与键表的建立)）；本包不按特性在场或启用集过滤设置项。
 - **权限页与授予面照列权限目录里的全部码，含本进程未运行模块的码。** 目录取全部已登记模块的声明（[authz](../design-authz.md#动作到查询的翻译)），一个码可以先于装配变更授予；本包不按特性在场过滤权限码。
-- **前台静止的页面不保证反映别处刚做的改动。** 控制台不轮询、不推送，页面在重新挂载、标签页重新可见、重新联网与本页写入成功之后更新；其余时刻的最新状态靠页的刷新动作取得（见「页的刷新动作」）。
+- **前台静止的页面不保证反映别处刚做的改动。** 管理后台不轮询、不推送，页面在重新挂载、标签页重新可见、重新联网与本页写入成功之后更新；其余时刻的最新状态靠页的刷新动作取得（见「页的刷新动作」）。
 
 ## 实现状态
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 控制台壳与声明面接入 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`、`ConsoleShellProps`；`web/packages/console-ui/src/route.ts` `ConsoleRoute`、`ConsoleRouteTable` |
-| 导航按分组表聚合（壳侧） | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`、`buildNavEntries`；`web/packages/console-ui/src/route.ts` `ConsoleNavGroup`、`ConsoleRoute.group`；`web/packages/console-ui/src/nav-groups.tsx` `consoleNavGroups` |
-| 导航项图标（收起窄栏为图标栏） | 已实现 | `web/packages/console-ui/src/route.ts` `ConsoleRoute.icon`；`web/packages/console-ui/src/ConsoleShell.tsx` `navItemFor`；`web/packages/console-ui/src/routes.tsx`；`web/packages/console-ui/src/internal/icons.tsx` |
-| 桌面侧边栏收起（框架 prop 对透传） | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `sidebarCollapsed`、`onSidebarCollapsedChange` |
-| 外壳形态透传（`shellLayout`） | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`、`AppShellPassthroughProps` |
-| 控制台仪表盘（租户 KPI、平台健康度与最近活动） | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/console-ui/src/routes.tsx` `dashboardAdminRoutes` |
-| 租户管理页（PageHeader 开篇） | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/console-ui/src/routes.tsx` `tenantAdminRoutes` |
-| 名册的 `deleted` 状态文案、已删除行的只读渲染与停用来源文案 | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`、`disabledByLabel`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage`、`disabledByLabel`；测试 `TenantRosterPage.test.tsx`、`TenantDetailPage.test.tsx`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json`（`tenants.status.deleted`、`tenants.disabledBy.*`） |
-| 租户详情页（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
-| 审计详情页（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/AuditDetailPage.tsx` `AuditDetailPage` |
-| 设置页的二级导航、默认／已覆盖状态与粘性保存条 | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`、`settingState` |
-| 读的失败面（权限拒绝与其它失败分开） | 已实现 | `web/packages/console-ui/src/internal/async-section.tsx` `ConsoleAsyncSection`、`isForbidden` |
-| 读的失败占位文案不称服务端没有应答 | 已实现 | `web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json`（各读的 `*.error.description`） |
-| 页内导航接缝（详情链接就地路由） | 已实现 | `web/packages/console-ui/src/internal/navigation.tsx` `ConsoleNavigationProvider`、`ConsoleLink`；`web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell` |
-| 详情页的按 id 读 | 已实现 | `web/packages/console-ui/src/operations.tsx` `useTenant`、`useAuditRecord` |
-| 账户页（按标识前缀、显示名前缀、状态与类型筛选列出，详情、创建与全部写入） | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountCreateForm`、`AccountDetailWrites`；`web/packages/console-ui/src/routes.tsx` `accountsAdminRoutes` |
-| 账户详情的侧边面板（反馈随发起面，所选账户存续到 `onExited`） | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountDetailWrites`、`detailExited` |
-| 账户创建的侧边面板（页头打开、未保存守卫、成功文案在 `onExited` 后写入） | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountCreatePanel`、`AccountCreateForm`、`createPanelExited` |
-| 步进对话框先读本人因素，没有启用的因素时给出提示而不发起流程 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`、`activeFactorCount` |
-| 步进对话框会发送验证码的步骤出示人机验证证明 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`、`stepMaySend`；`web/packages/auth-core/src/step-up.ts` `useStepUp` |
-| 步进对话框对 429 等待期的提交禁用与倒计时 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/console-ui/src/internal/inline-error.tsx` `InlineError`；`web/packages/i18n/src/error-text.ts` `waitCountdownText`；`web/packages/auth-core/src/step-up.ts` `useStepUp` |
-| 前往账户设置的入口由宿主经 `accountHref` 给出 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShellProps.accountHref`；`web/packages/console-ui/src/internal/account-href.tsx` `ConsoleAccountHrefProvider`、`useConsoleAccountHref`；`web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge` |
-| 各页的反馈作用域与成功确认 | 已实现 | `web/packages/console-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion`、`failureTextOf`、`useFailureScroll`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm` |
-| 一次性值的展示面板（邀请链接、SSO 认领令牌含记录名与完整记录值、服务密钥） | 已实现 | `web/packages/ui-kit/src/components/OneTimeValuePanel.tsx` `OneTimeValuePanel`、`OneTimeValuePanelDetail`；`web/packages/console-ui/src/AccountsPage.tsx` `OneTimeSecretNotice`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationLinkNotice`；`web/packages/console-ui/src/SsoPage.tsx` `ClaimTokenNotice` |
-| 设置页的批量保存按一次尝试 | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
-| 创建成功后表单复位与必填为空时提交禁用 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountCreateForm`；`web/packages/console-ui/src/PermissionsPage.tsx` `saveRole`；`web/packages/console-ui/src/SsoPage.tsx` `SsoProviderWriteForm`；`web/packages/console-ui/src/SmsPage.tsx` `register`、`offer`、`registerReady`、`offerReady`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage` |
-| 确认对话框在确认点击时关闭（含权限页的角色删除） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/internal/confirm.tsx` `usePendingConfirm` |
-| 冒充状态读与结束后的呈现 | 已实现 | `web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`isNotImpersonating` |
-| 读的陈旧提示、刷新忙态与详情页 404 占位 | 已实现 | `web/packages/console-ui/src/internal/async-section.tsx` `ConsoleAsyncSection`、`refreshing`、`notFoundState`、`isNotFound`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage`；`web/packages/console-ui/src/AuditDetailPage.tsx` `AuditDetailPage`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage` |
-| 租户选择器的加载、失败与空态 | 已实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope` |
-| 步进对话框的失败面 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/console-ui/src/internal/flow-step.tsx` `FlowStep` |
-| TOTP 登记步以二维码与手动密钥渲染，URI 不作文本 | 已实现 | `web/packages/console-ui/src/internal/flow-step.tsx` `FlowStep`、`TotpEnrollStep`；`web/packages/auth-core/src/otpauth.ts` `parseOtpauth`、`formatSecretForDisplay`；`web/packages/ui-kit/src/components/TotpEnrollmentPanel.tsx` `TotpEnrollmentPanel` |
-| 通行密钥仪式失败各取自身文案（含设备已登记，通用句按登记与登录区分） | 已实现 | `web/packages/console-ui/src/internal/flow-step.tsx` `webauthnErrorKey`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
-| 写入失败的裸 403 与裸 401 文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `useConsoleUiErrorText`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
-| `authn.factor_not_seasoned` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
-| `authn.login_identifier_required` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
-| `authn.username_immutable` 的失败文案（错误文案说明用户名不可移除） | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` `errors.authn.username_immutable`；`web/packages/console-ui/src/AccountsPage.test.tsx`（用户名不可删除的拒绝渲染为自身文案） |
-| `authn.email_taken` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
-| `authn.contact_required` 的失败文案（未验证账户的管理写，指向账户页的验证节） | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/{zh-CN,en-US}.json` `errors.authn.contact_required` |
-| 写入在途时改变上下文的控件禁用 | 已实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`anyPending`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage` |
-| 详情面板内写入在途时 `busy` 与服务密钥的关闭守卫 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`（`detailBusy`、`requestDetailClose`）、`OneTimeSecretNotice` |
-| 账户身份单元区分已删除或非账户行动者与无权限 | 已实现 | `web/packages/console-ui/src/internal/account-identity.tsx` `AccountIdentity`、`useAccountIdentity` |
-| 权限页账户绑定查询的加载、失败与空占位 | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`bindingColumns` |
-| 各列表页的列优先级与宽度上限（账户、会话、邀请与成员、SSO、审计及账户详情面板里的表） | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `PRIMARY_COLUMN_MAX_WIDTH`、`LONG_TEXT_COLUMN_MAX_WIDTH`、`primaryColumnMaxWidthSx`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/console-ui/src/AuditPage.tsx` `AuditPage`；`web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/console-ui/src/internal/account-identity.tsx` `AccountIdentity`；`web/packages/console-ui/src/internal/identifier-prefix.ts` `identifierPrefix` |
-| 会话页标记调用方自己的当前会话并在确认文案里说明 | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
-| 会话页（按账户列出与撤销） | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/routes.tsx` `sessionsAdminRoutes` |
-| 冒充页（记录列出与终止；本会话冒充的状态、发起与结束） | 已实现 | `web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`StartImpersonationForm`；`web/packages/console-ui/src/routes.tsx` `impersonationsAdminRoutes` |
-| 冒充发起被拒的文案、冒充期间记录面的收起 | 已实现 | `web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json`；`web/packages/console-ui/src/operations.tsx` `useImpersonations` |
-| `onImpersonationChange` 宿主回调 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`、`onImpersonationChange`；`web/packages/console-ui/src/internal/impersonation-change.tsx` `ConsoleImpersonationChangeProvider`、`useConsoleImpersonationChange`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`StartImpersonationForm` |
-| 权限页（角色、授权、目录、绑定） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/routes.tsx` `permissionsAdminRoutes` |
-| 权限目录与授予选择器显示服务端渲染的权限说明 | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`PermissionLabel` |
-| 内建角色只读（保留查看授权入口，隐藏授予与撤销控件） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
-| 邀请与成员页（邀请读写、成员列出与移除） | 已实现 | `web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/routes.tsx` `invitationsAdminRoutes` |
-| SSO 页（创建、改动、列出、删除、元数据、域名列表与认领、验证、移除） | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm`；`web/packages/console-ui/src/routes.tsx` `ssoAdminRoutes` |
-| 设置读写页（PageHeader 开篇） | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/routes.tsx` `settingsAdminRoutes` |
-| 短信模板页（列出、登记、提交、开关、移除） | 已实现 | `web/packages/console-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/console-ui/src/routes.tsx` `smsAdminRoutes` |
-| 短信模板页的读取失败一律落到通用失败面，写入表单不收起 | 已实现 | `web/packages/console-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/console-ui/src/internal/async-section.tsx` `ConsoleAsyncSection` |
-| 审计查询页（筛选、游标分页、操作者可读身份） | 已实现 | `web/packages/console-ui/src/AuditPage.tsx` `AuditPage`；`web/packages/console-ui/src/routes.tsx` `auditAdminRoutes` |
-| 审计查询页的导出控件（按已应用的筛选下载 NDJSON 文件） | 已实现 | `web/packages/console-ui/src/AuditPage.tsx` `AuditPage`、`startExport`；`web/packages/console-ui/src/operations.tsx` `exportAuditRecords`；`web/packages/console-ui/src/internal/export-file.ts` `exportFileName`、`saveBlob`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
-| 按租户寻址页面的租户选择器 | 已实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope` |
-| 账户选择器（按显示名或登录标识检索，交出账户 id） | 已实现 | `web/packages/console-ui/src/internal/account-selector.tsx` `AccountSelector` |
-| 账户的创建、改动、状态变更、MFA 要求、口令重置、标识新增、服务密钥新建 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountCreateForm`、`AccountDetailWrites`；`web/packages/console-ui/src/operations.tsx` `useCreateAccount`、`usePatchAccount`、`useSetAccountStatus`、`useSetMFARequired`、`useResetPassword`、`useAddIdentifier`、`useCreateSecret` |
-| SSO 提供方的创建与改动、域名的认领、验证、移除与重新验证 | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoProviderWriteForm`、`ClaimTokenNotice`；`web/packages/console-ui/src/operations.tsx` `useCreateSsoProvider`、`useUpdateSsoProvider`、`useClaimSsoDomain`、`useVerifySsoDomain`、`useRemoveSsoDomain`、`useReverifySsoDomains` |
-| 成员的写入与 SSO 豁免 | 已实现 | `web/packages/console-ui/src/InvitationsPage.tsx` `MemberWriteForm`；`web/packages/console-ui/src/operations.tsx` `useWriteMember`、`useSetMemberSsoExempt` |
-| 页头、双语资源与错误码白名单 | 已实现 | `web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json`；`web/packages/console-ui/src/internal/error-text.ts` |
-| 页面声明的 `requires`（每条声明非空，元素类型 `FeatureName`） | 已实现 | `web/packages/console-ui/src/routes.tsx` `consoleRoutes`；`web/packages/console-ui/src/route.ts` `ConsoleRoute` |
-| 详情声明的权限码（`/tenants/:id` 带 `tenant.read`，`/audit/:id` 带 `audit.read`） | 已实现 | `web/packages/console-ui/src/routes.tsx` `tenantAdminRoutes`、`auditAdminRoutes` |
-| `ConsoleShell` 的 `hasFeature` 与包内特性判定上下文 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`；`web/packages/console-ui/src/internal/features.tsx` `ConsoleFeatureProvider`、`useConsoleHasFeature` |
-| 页内控件按特性在场渲染（仪表盘、审计页操作者解析、账户详情、SSO 元数据刷新、成员 SSO 豁免） | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/console-ui/src/internal/account-identity.tsx` `useAccountIdentity`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountDetailWrites`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/console-ui/src/InvitationsPage.tsx` `ssoExemption` |
-| 刷新动作的放置（选择器寻址的页在选择器行内，其余在页头）、读忙态带 `aria-busy` 而不置原生 `disabled` 且再次激活不发第二次请求 | 已实现 | `web/packages/ui-kit/src/components/RefreshButton.tsx` `RefreshButton`；`web/packages/console-ui/src/internal/selector-row.tsx` `SelectorRow`；`web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/console-ui/src/internal/account-selector.tsx` `AccountSelector` |
-| 页面寻址取值为空时刷新动作原生禁用并以 `aria-describedby` 指向选择提示（会话页、权限页、邀请页、SSO 页）；冒充页在租户为空时刷新动作保持可用 | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage` |
+| 管理后台壳与声明面接入 | 已实现 | `web/packages/admin-ui/src/AdminShell.tsx` `AdminShell`、`AdminShellProps`；`web/packages/admin-ui/src/route.ts` `AdminRoute`、`AdminRouteTable` |
+| 导航按分组表聚合（壳侧） | 已实现 | `web/packages/admin-ui/src/AdminShell.tsx` `AdminShell`、`buildNavEntries`；`web/packages/admin-ui/src/route.ts` `AdminNavGroup`、`AdminRoute.group`；`web/packages/admin-ui/src/nav-groups.tsx` `adminNavGroups` |
+| 导航项图标（收起窄栏为图标栏） | 已实现 | `web/packages/admin-ui/src/route.ts` `AdminRoute.icon`；`web/packages/admin-ui/src/AdminShell.tsx` `navItemFor`；`web/packages/admin-ui/src/routes.tsx`；`web/packages/admin-ui/src/internal/icons.tsx` |
+| 桌面侧边栏收起（框架 prop 对透传） | 已实现 | `web/packages/admin-ui/src/AdminShell.tsx` `sidebarCollapsed`、`onSidebarCollapsedChange` |
+| 外壳形态透传（`shellLayout`） | 已实现 | `web/packages/admin-ui/src/AdminShell.tsx` `AdminShell`、`AppShellPassthroughProps` |
+| 管理后台仪表盘（租户 KPI、平台健康度与最近活动） | 已实现 | `web/packages/admin-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/admin-ui/src/routes.tsx` `dashboardAdminRoutes` |
+| 租户管理页（PageHeader 开篇） | 已实现 | `web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/admin-ui/src/routes.tsx` `tenantAdminRoutes` |
+| 名册的 `deleted` 状态文案、已删除行的只读渲染与停用来源文案 | 已实现 | `web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage`、`disabledByLabel`；`web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage`、`disabledByLabel`；测试 `TenantRosterPage.test.tsx`、`TenantDetailPage.test.tsx`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json`（`tenants.status.deleted`、`tenants.disabledBy.*`） |
+| 租户详情页（主栏与侧栏） | 已实现 | `web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
+| 审计详情页（主栏与侧栏） | 已实现 | `web/packages/admin-ui/src/AuditDetailPage.tsx` `AuditDetailPage` |
+| 设置页的二级导航、默认／已覆盖状态与粘性保存条 | 已实现 | `web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage`、`settingState` |
+| 读的失败面（权限拒绝与其它失败分开） | 已实现 | `web/packages/admin-ui/src/internal/async-section.tsx` `AdminAsyncSection`、`isForbidden` |
+| 读的失败占位文案不称服务端没有应答 | 已实现 | `web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json`（各读的 `*.error.description`） |
+| 页内导航接缝（详情链接就地路由） | 已实现 | `web/packages/admin-ui/src/internal/navigation.tsx` `AdminNavigationProvider`、`AdminLink`；`web/packages/admin-ui/src/AdminShell.tsx` `AdminShell` |
+| 详情页的按 id 读 | 已实现 | `web/packages/admin-ui/src/operations.tsx` `useTenant`、`useAuditRecord` |
+| 账户页（按标识前缀、显示名前缀、状态与类型筛选列出，详情、创建与全部写入） | 已实现 | `web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountCreateForm`、`AccountDetailWrites`；`web/packages/admin-ui/src/routes.tsx` `accountsAdminRoutes` |
+| 账户详情的侧边面板（反馈随发起面，所选账户存续到 `onExited`） | 已实现 | `web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountDetailWrites`、`detailExited` |
+| 账户创建的侧边面板（页头打开、未保存守卫、成功文案在 `onExited` 后写入） | 已实现 | `web/packages/admin-ui/src/AccountsPage.tsx` `AccountCreatePanel`、`AccountCreateForm`、`createPanelExited` |
+| 步进对话框先读本人因素，没有启用的因素时给出提示而不发起流程 | 已实现 | `web/packages/admin-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`、`activeFactorCount` |
+| 步进对话框会发送验证码的步骤出示人机验证证明 | 已实现 | `web/packages/admin-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`、`stepMaySend`；`web/packages/auth-core/src/step-up.ts` `useStepUp` |
+| 步进对话框对 429 等待期的提交禁用与倒计时 | 已实现 | `web/packages/admin-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/admin-ui/src/internal/inline-error.tsx` `InlineError`；`web/packages/i18n/src/error-text.ts` `waitCountdownText`；`web/packages/auth-core/src/step-up.ts` `useStepUp` |
+| 前往账户设置的入口由宿主经 `accountHref` 给出 | 已实现 | `web/packages/admin-ui/src/AdminShell.tsx` `AdminShellProps.accountHref`；`web/packages/admin-ui/src/internal/account-href.tsx` `AdminAccountHrefProvider`、`useAdminAccountHref`；`web/packages/admin-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge` |
+| 各页的反馈作用域与成功确认 | 已实现 | `web/packages/admin-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion`、`failureTextOf`、`useFailureScroll`；`web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm` |
+| 一次性值的展示面板（邀请链接、SSO 认领令牌含记录名与完整记录值、服务密钥） | 已实现 | `web/packages/ui-kit/src/components/OneTimeValuePanel.tsx` `OneTimeValuePanel`、`OneTimeValuePanelDetail`；`web/packages/admin-ui/src/AccountsPage.tsx` `OneTimeSecretNotice`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationLinkNotice`；`web/packages/admin-ui/src/SsoPage.tsx` `ClaimTokenNotice` |
+| 设置页的批量保存按一次尝试 | 已实现 | `web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage` |
+| 创建成功后表单复位与必填为空时提交禁用 | 已实现 | `web/packages/admin-ui/src/AccountsPage.tsx` `AccountCreateForm`；`web/packages/admin-ui/src/PermissionsPage.tsx` `saveRole`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoProviderWriteForm`；`web/packages/admin-ui/src/SmsPage.tsx` `register`、`offer`、`registerReady`、`offerReady`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage` |
+| 确认对话框在确认点击时关闭（含权限页的角色删除） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/internal/confirm.tsx` `usePendingConfirm` |
+| 冒充状态读与结束后的呈现 | 已实现 | `web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`isNotImpersonating` |
+| 读的陈旧提示、刷新忙态与详情页 404 占位 | 已实现 | `web/packages/admin-ui/src/internal/async-section.tsx` `AdminAsyncSection`、`refreshing`、`notFoundState`、`isNotFound`；`web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage`；`web/packages/admin-ui/src/AuditDetailPage.tsx` `AuditDetailPage`；`web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage` |
+| 租户选择器的加载、失败与空态 | 已实现 | `web/packages/admin-ui/src/internal/tenant-scope.tsx` `TenantScope` |
+| 步进对话框的失败面 | 已实现 | `web/packages/admin-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/admin-ui/src/internal/flow-step.tsx` `FlowStep` |
+| TOTP 登记步以二维码与手动密钥渲染，URI 不作文本 | 已实现 | `web/packages/admin-ui/src/internal/flow-step.tsx` `FlowStep`、`TotpEnrollStep`；`web/packages/auth-core/src/otpauth.ts` `parseOtpauth`、`formatSecretForDisplay`；`web/packages/ui-kit/src/components/TotpEnrollmentPanel.tsx` `TotpEnrollmentPanel` |
+| 通行密钥仪式失败各取自身文案（含设备已登记，通用句按登记与登录区分） | 已实现 | `web/packages/admin-ui/src/internal/flow-step.tsx` `webauthnErrorKey`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` |
+| 写入失败的裸 403 与裸 401 文案 | 已实现 | `web/packages/admin-ui/src/internal/error-text.ts` `useAdminUiErrorText`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` |
+| `authn.factor_not_seasoned` 的失败文案 | 已实现 | `web/packages/admin-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` |
+| `authn.login_identifier_required` 的失败文案 | 已实现 | `web/packages/admin-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` |
+| `authn.username_immutable` 的失败文案（错误文案说明用户名不可移除） | 已实现 | `web/packages/admin-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` `errors.authn.username_immutable`；`web/packages/admin-ui/src/AccountsPage.test.tsx`（用户名不可删除的拒绝渲染为自身文案） |
+| `authn.email_taken` 的失败文案 | 已实现 | `web/packages/admin-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` |
+| `authn.contact_required` 的失败文案（未验证账户的管理写，指向账户页的验证节） | 已实现 | `web/packages/admin-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/admin-ui/src/locales/{zh-CN,en-US}.json` `errors.authn.contact_required` |
+| 写入在途时改变上下文的控件禁用 | 已实现 | `web/packages/admin-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`anyPending`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage` |
+| 详情面板内写入在途时 `busy` 与服务密钥的关闭守卫 | 已实现 | `web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage`（`detailBusy`、`requestDetailClose`）、`OneTimeSecretNotice` |
+| 账户身份单元区分已删除或非账户行动者与无权限 | 已实现 | `web/packages/admin-ui/src/internal/account-identity.tsx` `AccountIdentity`、`useAccountIdentity` |
+| 权限页账户绑定查询的加载、失败与空占位 | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`bindingColumns` |
+| 各列表页的列优先级与宽度上限（账户、会话、邀请与成员、SSO、审计及账户详情面板里的表） | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `PRIMARY_COLUMN_MAX_WIDTH`、`LONG_TEXT_COLUMN_MAX_WIDTH`、`primaryColumnMaxWidthSx`；`web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/admin-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/admin-ui/src/AuditPage.tsx` `AuditPage`；`web/packages/admin-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/admin-ui/src/internal/account-identity.tsx` `AccountIdentity`；`web/packages/admin-ui/src/internal/identifier-prefix.ts` `identifierPrefix` |
+| 会话页标记调用方自己的当前会话并在确认文案里说明 | 已实现 | `web/packages/admin-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` |
+| 会话页（按账户列出与撤销） | 已实现 | `web/packages/admin-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/admin-ui/src/routes.tsx` `sessionsAdminRoutes` |
+| 冒充页（记录列出与终止；本会话冒充的状态、发起与结束） | 已实现 | `web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`StartImpersonationForm`；`web/packages/admin-ui/src/routes.tsx` `impersonationsAdminRoutes` |
+| 冒充发起被拒的文案、冒充期间记录面的收起 | 已实现 | `web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/admin-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json`；`web/packages/admin-ui/src/operations.tsx` `useImpersonations` |
+| `onImpersonationChange` 宿主回调 | 已实现 | `web/packages/admin-ui/src/AdminShell.tsx` `AdminShell`、`onImpersonationChange`；`web/packages/admin-ui/src/internal/impersonation-change.tsx` `AdminImpersonationChangeProvider`、`useAdminImpersonationChange`；`web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`StartImpersonationForm` |
+| 权限页（角色、授权、目录、绑定） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/routes.tsx` `permissionsAdminRoutes` |
+| 权限目录与授予选择器显示服务端渲染的权限说明 | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`PermissionLabel` |
+| 内建角色只读（保留查看授权入口，隐藏授予与撤销控件） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` |
+| 邀请与成员页（邀请读写、成员列出与移除） | 已实现 | `web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/routes.tsx` `invitationsAdminRoutes` |
+| SSO 页（创建、改动、列出、删除、元数据、域名列表与认领、验证、移除） | 已实现 | `web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm`；`web/packages/admin-ui/src/routes.tsx` `ssoAdminRoutes` |
+| 设置读写页（PageHeader 开篇） | 已实现 | `web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/admin-ui/src/routes.tsx` `settingsAdminRoutes` |
+| 短信模板页（列出、登记、提交、开关、移除） | 已实现 | `web/packages/admin-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/admin-ui/src/routes.tsx` `smsAdminRoutes` |
+| 短信模板页的读取失败一律落到通用失败面，写入表单不收起 | 已实现 | `web/packages/admin-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/admin-ui/src/internal/async-section.tsx` `AdminAsyncSection` |
+| 审计查询页（筛选、游标分页、操作者可读身份） | 已实现 | `web/packages/admin-ui/src/AuditPage.tsx` `AuditPage`；`web/packages/admin-ui/src/routes.tsx` `auditAdminRoutes` |
+| 审计查询页的导出控件（按已应用的筛选下载 NDJSON 文件） | 已实现 | `web/packages/admin-ui/src/AuditPage.tsx` `AuditPage`、`startExport`；`web/packages/admin-ui/src/operations.tsx` `exportAuditRecords`；`web/packages/admin-ui/src/internal/export-file.ts` `exportFileName`、`saveBlob`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` |
+| 按租户寻址页面的租户选择器 | 已实现 | `web/packages/admin-ui/src/internal/tenant-scope.tsx` `TenantScope` |
+| 账户选择器（按显示名或登录标识检索，交出账户 id） | 已实现 | `web/packages/admin-ui/src/internal/account-selector.tsx` `AccountSelector` |
+| 账户的创建、改动、状态变更、MFA 要求、口令重置、标识新增、服务密钥新建 | 已实现 | `web/packages/admin-ui/src/AccountsPage.tsx` `AccountCreateForm`、`AccountDetailWrites`；`web/packages/admin-ui/src/operations.tsx` `useCreateAccount`、`usePatchAccount`、`useSetAccountStatus`、`useSetMFARequired`、`useResetPassword`、`useAddIdentifier`、`useCreateSecret` |
+| SSO 提供方的创建与改动、域名的认领、验证、移除与重新验证 | 已实现 | `web/packages/admin-ui/src/SsoPage.tsx` `SsoProviderWriteForm`、`ClaimTokenNotice`；`web/packages/admin-ui/src/operations.tsx` `useCreateSsoProvider`、`useUpdateSsoProvider`、`useClaimSsoDomain`、`useVerifySsoDomain`、`useRemoveSsoDomain`、`useReverifySsoDomains` |
+| 成员的写入与 SSO 豁免 | 已实现 | `web/packages/admin-ui/src/InvitationsPage.tsx` `MemberWriteForm`；`web/packages/admin-ui/src/operations.tsx` `useWriteMember`、`useSetMemberSsoExempt` |
+| 页头、双语资源与错误码白名单 | 已实现 | `web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json`；`web/packages/admin-ui/src/internal/error-text.ts` |
+| 页面声明的 `requires`（每条声明非空，元素类型 `FeatureName`） | 已实现 | `web/packages/admin-ui/src/routes.tsx` `adminRoutes`；`web/packages/admin-ui/src/route.ts` `AdminRoute` |
+| 详情声明的权限码（`/tenants/:id` 带 `tenant.read`，`/audit/:id` 带 `audit.read`） | 已实现 | `web/packages/admin-ui/src/routes.tsx` `tenantAdminRoutes`、`auditAdminRoutes` |
+| `AdminShell` 的 `hasFeature` 与包内特性判定上下文 | 已实现 | `web/packages/admin-ui/src/AdminShell.tsx` `AdminShell`；`web/packages/admin-ui/src/internal/features.tsx` `AdminFeatureProvider`、`useAdminHasFeature` |
+| 页内控件按特性在场渲染（仪表盘、审计页操作者解析、账户详情、SSO 元数据刷新、成员 SSO 豁免） | 已实现 | `web/packages/admin-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/admin-ui/src/internal/account-identity.tsx` `useAccountIdentity`；`web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountDetailWrites`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/admin-ui/src/InvitationsPage.tsx` `ssoExemption` |
+| 刷新动作的放置（选择器寻址的页在选择器行内，其余在页头）、读忙态带 `aria-busy` 而不置原生 `disabled` 且再次激活不发第二次请求 | 已实现 | `web/packages/ui-kit/src/components/RefreshButton.tsx` `RefreshButton`；`web/packages/admin-ui/src/internal/selector-row.tsx` `SelectorRow`；`web/packages/admin-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/admin-ui/src/internal/account-selector.tsx` `AccountSelector` |
+| 页面寻址取值为空时刷新动作原生禁用并以 `aria-describedby` 指向选择提示（会话页、权限页、邀请页、SSO 页）；冒充页在租户为空时刷新动作保持可用 | 已实现 | `web/packages/admin-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage` |
 | 刷新动作重读该页描述页面主体且此刻启用的每一个读，同键的读只重读一次（权限页、设置页、仪表盘） | 已实现 | `web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh`、`pageRefreshRead` |
-| 刷新动作先 `reset` 本页描述页面主体的反馈作用域与页面标记，作用域写入在途时原生禁用（含租户名册行作用域的刷新世代） | 已实现 | `web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh`；`web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
-| 会话页与租户详情页的写入反馈迁入反馈作用域，租户详情的重命名与启停落成功确认 | 已实现 | `web/packages/console-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
-| 权限页刷新后所选角色已不存在时清空选择并提示 | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage` |
-| 仪表盘健康度窗口起点随刷新动作、标签页重新可见与重新联网前移，旧数值保持到新值落定 | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage` |
-| SSO 页刷新动作与行内元数据刷新的可区分文字 | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/ui-kit/src/components/RefreshButton.tsx` `RefreshButton` |
-| 审计查询页与仪表盘的更新时间与刷新完成播报 | 已实现 | `web/packages/console-ui/src/internal/refresh-status.tsx` `RefreshStatus`；`web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh` |
-| 写入成功后失效它改变的每一个屏上可见的读 | 已实现 | `web/packages/console-ui/src/operations.tsx` `consoleOperations` |
+| 刷新动作先 `reset` 本页描述页面主体的反馈作用域与页面标记，作用域写入在途时原生禁用（含租户名册行作用域的刷新世代） | 已实现 | `web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh`；`web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
+| 会话页与租户详情页的写入反馈迁入反馈作用域，租户详情的重命名与启停落成功确认 | 已实现 | `web/packages/admin-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
+| 权限页刷新后所选角色已不存在时清空选择并提示 | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage` |
+| 仪表盘健康度窗口起点随刷新动作、标签页重新可见与重新联网前移，旧数值保持到新值落定 | 已实现 | `web/packages/admin-ui/src/DashboardPage.tsx` `DashboardPage` |
+| SSO 页刷新动作与行内元数据刷新的可区分文字 | 已实现 | `web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/ui-kit/src/components/RefreshButton.tsx` `RefreshButton` |
+| 审计查询页与仪表盘的更新时间与刷新完成播报 | 已实现 | `web/packages/admin-ui/src/internal/refresh-status.tsx` `RefreshStatus`；`web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh` |
+| 写入成功后失效它改变的每一个屏上可见的读 | 已实现 | `web/packages/admin-ui/src/operations.tsx` `adminOperations` |

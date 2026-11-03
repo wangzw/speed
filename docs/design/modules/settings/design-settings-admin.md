@@ -4,7 +4,7 @@
 
 `settings.admin` 是运行期设置的管理面，挂在固定基路径 `/api/v1/system/settings` 下，不交付任何功能接口，只把设置的读写暴露成路由。每条路由的动作是经 `settings.Store` 调设置模块——列出声明项、读一层的值、写一层的一行、删一层的一行——模块自己不持数据、不持规则：声明项、类型、取值域与三级回落归设置模块，本模块只决定谁可以问、答案长什么样。
 
-**本模块是设置能力不为它提供的那个管理面。** 设置能力交付的是接缝与实现，不是 HTTP 路由；它的立场是写面的调用点是宿主自己的代码或它写出的管理命令，写入面的访问控制由宿主负责（[design-settings](design-settings.md)）。一个想要管理面的宿主把本模块写进命令树，不必自己手写同一组路由、同一套按层判定与同一条审计前置。本模块正是那个「管理命令」的模块化形态，不改变设置能力的立场——`pkg/settings` 仍不做授权判定，判定归授权（[ADR-console-settings](../../../adr/adr-console-settings.md)、[ADR-settings-scope](../../../adr/adr-settings-scope.md)）。
+**本模块是设置能力不为它提供的那个管理面。** 设置能力交付的是接缝与实现，不是 HTTP 路由；它的立场是写面的调用点是宿主自己的代码或它写出的管理命令，写入面的访问控制由宿主负责（[design-settings](design-settings.md)）。一个想要管理面的宿主把本模块写进命令树，不必自己手写同一组路由、同一套按层判定与同一条审计前置。本模块正是那个「管理命令」的模块化形态，不改变设置能力的立场——`pkg/settings` 仍不做授权判定，判定归授权（[ADR-admin-settings](../../../adr/adr-admin-settings.md)、[ADR-settings-scope](../../../adr/adr-settings-scope.md)）。
 
 路由挂在配置 `settings.admin.endpoints` 列出的端上，基路径不做可配置。每条路由按设置项的键寻址——命名空间与键——路径里不出现任何不透明的行标识。
 

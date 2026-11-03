@@ -19,7 +19,7 @@
 
 **按层。** `tokens` 与 `theme-presets` 处于底层，`i18n` 同层独立，其上依次是 `ui-kit`、`layout-kit`、能力 UI 包、`product-shell`。判据是依赖方向：一个包的依赖只指向同族中比它低的层，同层的两个包互不依赖。证据是各包 `package.json` 的依赖声明与 `src/index.ts` 的公开面——`theme-presets` 只以类型依赖取 `tokens`，`ui-kit` 取 `tokens`，`layout-kit` 取 `ui-kit` 与 `i18n`，`auth-ui` 与 `account-ui` 同层而互不 import（`web/packages/account-ui/src/index.ts` 的包文档写明同一层的包从不互相 import；两个包各自只在内部保有 provider 标签回退词表，不共享类型）。
 
-**按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户面、`console-ui` 对租户与设置与审计三个管理面、`notification-ui` 对通知的收件箱、偏好与推送三个面。判据是每个能力 UI 包都是某个后端能力在浏览器里的面。证据是各包 `src/index.ts` 的包文档——`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
+**按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户面、`admin-ui` 对租户与设置与审计三个管理面、`notification-ui` 对通知的收件箱、偏好与推送三个面。判据是每个能力 UI 包都是某个后端能力在浏览器里的面。证据是各包 `src/index.ts` 的包文档——`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
 
 **按契约边界。** `api-sdk` 是唯一与后端耦合的包，且是从后端契约生成的产物：orval（[REF-orval](../../../references.md)）从 `contracts/api.json` 生成操作面，特性名生成器从 `contracts/features.json` 生成特性名类型（[api-sdk](design-web-api-sdk.md)）；`api-client` 是契约无关的手写传输运行时。判据是包与后端契约的耦合程度。证据是 `web/packages/api-sdk/src/runtime.ts` 的包文档（生成面保持与 fetch、axios、tenant 无关，[REF-axios](../../../references.md)）与 `web/orval.config.ts` 的 mutator 指向（生成面经该接缝转发给宿主绑定的请求函数）。
 
@@ -82,7 +82,7 @@ interface SpeedAppDefinition {
 
 ### 运行期的 API origin 注入
 
-`bootstrapSpeedApp` 的 `baseUrl` 缺省是 `window.location.origin`，即假设前后端同源。跨域部署要在运行期注入：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它、把其中的 API origin 作为 `baseUrl` 传给 `bootstrapSpeedApp`；文件不存在、不可读或没有 origin 时回落到同源（[ADR-web-runtime-config](../../../adr/adr-web-runtime-config.md)）。这份文件按**入口文档所在源下的根路径**解析，不按当前 URL 解析：深链接（如控制台页的 `/console/tenants`）因而仍取到根下的文件，而不是它自己目录下的同名文件。该解析不依赖已解析的 origin，故不陷入「取配置本身需要配置」的循环；它也不随部署拓扑变化，故同一份产物在合一拓扑与分离拓扑下共用。这份文件由部署方写出，不反映后端装配；后端服务哪些面由特性文档回答（见「特性门控」）。
+`bootstrapSpeedApp` 的 `baseUrl` 缺省是 `window.location.origin`，即假设前后端同源。跨域部署要在运行期注入：产物在入口文档旁带一份 `runtime-config.json`，应用入口取它、把其中的 API origin 作为 `baseUrl` 传给 `bootstrapSpeedApp`；文件不存在、不可读或没有 origin 时回落到同源（[ADR-web-runtime-config](../../../adr/adr-web-runtime-config.md)）。这份文件按**入口文档所在源下的根路径**解析，不按当前 URL 解析：深链接（如管理后台页的 `/admin/tenants`）因而仍取到根下的文件，而不是它自己目录下的同名文件。该解析不依赖已解析的 origin，故不陷入「取配置本身需要配置」的循环；它也不随部署拓扑变化，故同一份产物在合一拓扑与分离拓扑下共用。这份文件由部署方写出，不反映后端装配；后端服务哪些面由特性文档回答（见「特性门控」）。
 
 **是否配置 CORS（[REF-whatwg-fetch](../../../references.md)）由部署拓扑决定。** 合一拓扑是单端口同源：产物与 API 由同一个进程在同一个源答出，浏览器不发跨域请求，部署面里因而没有 CORS 这一环——demo 骨架即此拓扑。分离拓扑把前端交静态主机、后端只做 API，两者异源，跨域请求才出现，CORS 在此时进入部署面。跨域部署是受支持的形态，但它不是 demo 骨架的形态。
 
@@ -136,7 +136,7 @@ interface SpeedAppDefinition {
 | `tenancy-ui` | 租户切换控件 | `ui-kit`、`i18n` |
 | `product-shell` | 组装壳与装配入口 | `layout-kit`、`auth-ui`、`auth-core`、`i18n`（主出口的直接依赖；`./bootstrap` 出口另直接取 `api-client`、`api-sdk`、`ui-kit`） |
 | `route-kit` | 路由与导航独立层、声明式注册面、按特性在场收窄注册面 | 无 |
-| `console-ui` | 控制台面组件族，第二种壳 | `ui-kit`、`layout-kit`、`i18n`、`auth-core`、`api-sdk` |
+| `admin-ui` | 管理后台组件族，第二种壳 | `ui-kit`、`layout-kit`、`i18n`、`auth-core`、`api-sdk` |
 | `notification-ui` | 站内通知面：未读铃铛、收件箱与已读、偏好矩阵、实时订阅与声明式入口 | `ui-kit`、`i18n`、`auth-core`、`api-sdk`、`api-client` |
 
 **`api-sdk` 是唯一 import 后端契约的包**，它只依赖 `api-client` 的请求函数类型，本身不 import 任何 UI 包。**`api-client` 不依赖任何同族包**，也不认识 tenant。**能力 UI 包之间同层不互依赖**：`auth-ui` 与 `account-ui` 各自只在内部保有 provider 标签回退词表，不共享类型。**`route-kit` 与 `product-shell` 都不 import 对方**，两者由应用的组合层分别消费。
@@ -180,11 +180,11 @@ graph TD
     account-ui --> api-sdk
     tenancy-ui --> i18n
     tenancy-ui --> ui-kit
-    console-ui --> ui-kit
-    console-ui --> layout-kit
-    console-ui --> auth-core
-    console-ui --> api-sdk
-    console-ui --> i18n
+    admin-ui --> ui-kit
+    admin-ui --> layout-kit
+    admin-ui --> auth-core
+    admin-ui --> api-sdk
+    admin-ui --> i18n
     notification-ui --> ui-kit
     notification-ui --> i18n
     notification-ui --> auth-core
@@ -256,7 +256,7 @@ jsdom（[REF-jsdom](../../../references.md)）不求值媒体查询与容器查�
 
 **新增一个业务页面。** 业务模块导出它的路由声明，经声明式注册面接入（见核心算法与流程）；不动壳。页面依赖的后端面不属于「不经特性门控的后端模块」时，声明以 `requires` 列出所需特性。
 
-**新增一个控制台面。** 控制台面挂在不解析租户的端上，是第二种壳：没有租户切换器，也就没有租户作用域的查询键。它复用声明式注册面，用另一套壳。
+**新增一个管理后台。** 管理后台挂在不解析租户的端上，是第二种壳：没有租户切换器，也就没有租户作用域的查询键。它复用声明式注册面，用另一套壳。
 
 **新增一个应用。** 应用在自己的 `main` 模块里写一份 `SpeedAppDefinition` 交给装配入口，并跑应用自己的第二级契约生成。
 
@@ -264,7 +264,7 @@ jsdom（[REF-jsdom](../../../references.md)）不求值媒体查询与容器查�
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 浏览器层的版面与可聚焦性用例 | 已实现 | `web/vitest.browser.config.ts`；`web/test-utils/src/browser-setup.ts`；`web/packages/layout-kit/src/components/AppShell.browser.test.tsx`；`web/packages/ui-kit/src/components/DataTable.browser.test.tsx`；`web/packages/console-ui/src/*.browser.test.tsx`；`./Makefile` `web-browser`；`.github/workflows/browser.yml` |
+| 浏览器层的版面与可聚焦性用例 | 已实现 | `web/vitest.browser.config.ts`；`web/test-utils/src/browser-setup.ts`；`web/packages/layout-kit/src/components/AppShell.browser.test.tsx`；`web/packages/ui-kit/src/components/DataTable.browser.test.tsx`；`web/packages/admin-ui/src/*.browser.test.tsx`；`./Makefile` `web-browser`；`.github/workflows/browser.yml` |
 | 设计令牌 | 已实现 | `web/packages/tokens/src/index.ts` `defaultTokens`、`deepMerge` |
 | 主题预设 | 已实现 | `web/packages/theme-presets/src/index.ts` `themePresets`、`ThemePreset` |
 | 平台 i18n 层 | 已实现 | `web/packages/i18n/src/index.ts` `createI18n`、`registerNamespace` |
@@ -279,8 +279,8 @@ jsdom（[REF-jsdom](../../../references.md)）不求值媒体查询与容器查�
 | 租户切换控件 | 已实现 | `web/packages/tenancy-ui/src/index.ts` `TenantSwitcher`、`TenantOption`、`TenantSwitcherProps`；`web/packages/tenancy-ui/src/resources.ts` `TENANCY_UI_NAMESPACE`、`tenancyUiResources` |
 | 组装壳与装配入口 | 已实现 | `web/packages/product-shell/src/index.ts` `ProductShell`；`web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp` |
 | 路由与导航独立层 | 已实现 | `web/packages/route-kit/src/index.ts` `RouteProvider`、`RouteView`、`RouteLink`、`useNavItems`、`useNavigate` |
-| 控制台面组件族 | 已实现 | `web/packages/console-ui/src/index.ts` `ConsoleShell`、`TenantRosterPage`、`SettingsPage`、`AuditPage` |
+| 管理后台组件族 | 已实现 | `web/packages/admin-ui/src/index.ts` `AdminShell`、`TenantRosterPage`、`SettingsPage`、`AuditPage` |
 | 站内通知面组件族 | 已实现 | `web/packages/notification-ui/src/index.ts` `NotificationBell`、`NotificationInbox`、`NotificationPreferences`、`NotificationCenter`、`NotificationStreamProvider`、`notificationRoutes` |
-| 声明式注册面 | 已实现 | `web/packages/route-kit/src/types.ts` `RouteDeclaration`、`RouteTable`；`web/packages/console-ui/src/route.ts` `ConsoleRoute` |
+| 声明式注册面 | 已实现 | `web/packages/route-kit/src/types.ts` `RouteDeclaration`、`RouteTable`；`web/packages/admin-ui/src/route.ts` `AdminRoute` |
 | 租户作用域的查询键工厂与逐出助手 | 已实现 | `web/packages/auth-core/src/query-key.ts` `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries` |
 | 运行期的 API origin 注入 | 已实现 | `starters/demo/web/src/runtime-config.ts` `loadRuntimeConfig`；`starters/demo/web/src/main.tsx` `bootstrapDemoApp` |

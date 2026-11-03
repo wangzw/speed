@@ -2,16 +2,16 @@
 
 ## 职责
 
-本设计持有 web 前端在布局与各宽度下的共同约定：控制台外壳的区域划分与滚动职责、断点标度、外壳级与组件级两种响应手段的分工、窄视口下各区域的降级次序。它约束各前端包渲染出的结构如何随可用宽度变化，自身不交付可调用的符号。
+本设计持有 web 前端在布局与各宽度下的共同约定：管理后台外壳的区域划分与滚动职责、断点标度、外壳级与组件级两种响应手段的分工、窄视口下各区域的降级次序。它约束各前端包渲染出的结构如何随可用宽度变化，自身不交付可调用的符号。
 
-各包与它的关系固定：外壳骨架是 `layout-kit` 的 `AppShell`，组件级响应落在 `ui-kit` 的组件，控制台页由 `console-ui` 组装，断点取值来自 `tokens`。
+各包与它的关系固定：外壳骨架是 `layout-kit` 的 `AppShell`，组件级响应落在 `ui-kit` 的组件，管理后台页由 `admin-ui` 组装，断点取值来自 `tokens`。
 
 ### 非职责
 
 - **不持有设计取值。** 断点的数值、间距基数、圆角与配色归 [tokens](design-web-tokens.md)；本设计声明断点标度是哪一套、谁在什么条件下取用，不定义数值。
-- **不实现外壳与组件。** 外壳归 [layout-kit](design-web-layout-kit.md)，组件族归 [ui-kit](design-web-ui-kit.md)，控制台页归 [console-ui](design-web-console-ui.md)。本设计只约束它们的布局与响应手段。
+- **不实现外壳与组件。** 外壳归 [layout-kit](design-web-layout-kit.md)，组件族归 [ui-kit](design-web-ui-kit.md)，管理后台页归 [admin-ui](design-web-admin-ui.md)。本设计只约束它们的布局与响应手段。
 - **不做导航与路径匹配。** 归 [route-kit](design-web-route-kit.md)。
-- **不组织业务页面。** 哪些页进控制台由各能力 UI 包经声明式注册面声明，不在本设计内。
+- **不组织业务页面。** 哪些页进管理后台由各能力 UI 包经声明式注册面声明，不在本设计内。
 
 ## 外部接口契约
 
@@ -19,7 +19,7 @@
 
 ### 外壳形态
 
-控制台外壳有两种形态，装配期由宿主经 `AppShell` 的 `shellLayout` 选定：**顶栏形态**（`'topbar'`，缺省）与**侧栏形态**（`'sidebar'`）。两种形态共用同一套地标职责、抽屉两态与滚动分工，差别只在 chrome 落在哪块区域。
+管理后台外壳有两种形态，装配期由宿主经 `AppShell` 的 `shellLayout` 选定：**顶栏形态**（`'topbar'`，缺省）与**侧栏形态**（`'sidebar'`）。两种形态共用同一套地标职责、抽屉两态与滚动分工，差别只在 chrome 落在哪块区域。
 
 顶栏形态：
 
@@ -58,24 +58,24 @@
 
 ### 内容区的宽度
 
-内容区里的页型占满内容区：表格页、详情页、设置页与仪表盘的宽度即信息量。控制台没有受限宽的内容区容器：成块的表单放进侧边面板，宽度取面板的宽度档（见「次级任务的容器」）；内联写入区的控件随所在的节排布。
+内容区里的页型占满内容区：表格页、详情页、设置页与仪表盘的宽度即信息量。管理后台没有受限宽的内容区容器：成块的表单放进侧边面板，宽度取面板的宽度档（见「次级任务的容器」）；内联写入区的控件随所在的节排布。
 
 ### 内容表面
 
-控制台页的每个内容块落在 `SectionCard` 的容器表面上：列表页的表格节、详情页的每一节、设置页的每一节、仪表盘的图表区与活动列表。页面底取 `page` 表面（`background.default`），内容块取 `container` 表面（白底、1px 描边、`shape.borderRadius` 圆角）。
+管理后台页的每个内容块落在 `SectionCard` 的容器表面上：列表页的表格节、详情页的每一节、设置页的每一节、仪表盘的图表区与活动列表。页面底取 `page` 表面（`background.default`），内容块取 `container` 表面（白底、1px 描边、`shape.borderRadius` 圆角）。
 
 - **标题层级。** 页面的 `h1` 是 `PageHeader`；内容节的标题由 `SectionCard` 渲染为 `h2`，节内再分的块为 `h3`，依次向下。
 - **表格节贴边。** 表格所在的内容节用 `flushContent`，表格到达卡片的边缘，圆角由卡片裁切收住；表头底色取 `header` 表面。
 - **浮层不叠卡片。** 对话框、菜单、工具提示与临时抽屉取 `overlay` 表面；侧边面板本身是浮层表面，面板内不叠 `SectionCard`，用标题与分隔线分节。
 - **节内不叠第二个表面。** 仪表盘的指标块（`DashboardPage` 的 `KpiCard`）与起始页的能力卡（`HomePage` 的 `StartCardView`）是节内的描边内嵌块：取卡片表面的描边色（`surface.container.borderColor`）与 `shape.borderRadius` 圆角，不另起一层容器表面。两层半透明表面叠加会在玻璃主题里叠加不透明度，内层因此接近不透明，与外围卡片脱节。
 - **常驻侧栏是 chrome，不是卡片。** 它取 `container` 表面：整列、无圆角、只在与内容相邻的一侧留描边，与顶栏的“只在下沿分隔”同构。
-- **表面不引入宽度上限。** `SectionCard` 占满所在的内容列；控制台仍没有受限宽的内容区容器（见「内容区的宽度」）。
+- **表面不引入宽度上限。** `SectionCard` 占满所在的内容列；管理后台仍没有受限宽的内容区容器（见「内容区的宽度」）。
 
 表面取值与组件映射见 [ui-kit](design-web-ui-kit.md)，决策见 [ADR-web-surface-system](../../../adr/adr-web-surface-system.md)。
 
 ### 页型的骨架
 
-控制台页的骨架有下列几种，都以页头开篇（页头见 [console-ui](design-web-console-ui.md)）：
+管理后台页的骨架有下列几种，都以页头开篇（页头见 [admin-ui](design-web-admin-ui.md)）：
 
 - **列表页**：页头、工具栏、表格、分页。工具栏在行被选中时整条切换为批量操作条。
 - **详情页**：标题区、标签页，其下分主栏与侧栏——主栏承载主体，侧栏（固定宽）承载元信息。
@@ -84,7 +84,7 @@
 
 ### 次级任务的容器
 
-控制台页内的次级任务按下列性质选容器：任务是否需要立即决策，任务是否有自己的地址；其余留在页内的任务再按操作者是否需要参照背后的页面分流。
+管理后台页内的次级任务按下列性质选容器：任务是否需要立即决策，任务是否有自己的地址；其余留在页内的任务再按操作者是否需要参照背后的页面分流。
 
 - **对话框**（ui-kit 的 `ConfirmDialog`，以及各包自带的流程对话框，如步进验证）：需要立即决策、内容限于一段说明与一个确认或一步验证的任务，例如确认移除、确认丢弃、步进验证。
 - **侧边面板**（ui-kit 的 `SidePanel`）：任务需要比对话框更多的空间，且操作者在其间仍需参照背后的页面，例如查看列表行的详情、填写字段超出一两行的创建表单。
@@ -109,7 +109,7 @@
 - **组件级响应走容器。** 会随可用宽度改变自身排布的组件——数据表、表单、卡片网格——按**所在容器**的宽度响应，不按视口。容器上下文由组件自建：组件在自身根节点声明 `container-type: inline-size`。
 - **一次一行的组件用内在换行。** 有些行的排布既不需要断点，也不需要容器上下文：固定 `flex-basis` 配 `flex-wrap`，换行点自然跟随所在容器的可用宽度。页头的标题与动作行、`SectionCard` 的标题块是这个形态——它是「组件级响应」的免查询形态：判据与容器查询相同（按自身可用宽度重排），只是不必声明容器上下文。仪表盘的指标行不是这一形态：它的列数按档位切换，属于下面的卡片网格。
 - **指针能力走能力查询。** 依赖悬停的交互（悬停展开、悬停显出的操作）只在指针设备上启用；触摸设备上这些操作常显。触摸设备上**所有可点击目标**不小于 44×44——不分是否依赖悬停；下限由主题层对基础控件统一给出，各包继承，不逐处指定。判据是 `hover` 与 `pointer` 媒体查询，不是视口宽度——带键盘的平板与触屏笔记本都是宽视口下的触摸设备。
-- **页面骨架按视口取档。** 详情页的主栏与侧栏、设置页的二级导航与内容并列，都是**页型骨架**：它们占满内容区，内容区的宽度由视口与外壳状态（侧栏是否常驻）决定，宿主不会把它们放进任意窄容器。因此它们按视口断点取档（`console-ui` 的 `DetailLayout`、`SettingsPage`），是「组件级响应走容器」的例外。
+- **页面骨架按视口取档。** 详情页的主栏与侧栏、设置页的二级导航与内容并列，都是**页型骨架**：它们占满内容区，内容区的宽度由视口与外壳状态（侧栏是否常驻）决定，宿主不会把它们放进任意窄容器。因此它们按视口断点取档（`admin-ui` 的 `DetailLayout`、`SettingsPage`），是「组件级响应走容器」的例外。
 
 外壳级、组件级与内在换行三条的判据是**一个区域的变化由视口决定，还是由它被放进多宽的容器决定**；内在换行只是组件级里不需要声明容器上下文的那一种写法。外壳的整体形态占满视口，故由视口决定；一个组件既可能占满内容区、也可能被放进窄侧栏，只有按容器响应才能在两种处境下各自正确。
 
@@ -120,7 +120,7 @@
 - **侧栏**：从常驻变为覆盖式抽屉。
 - **数据表**：先隐藏低优先级列，仍放不下时在容器内横向滚动兜底。短值列与标识符列按列声明不折行，单元格因此不会被拆行压扁；内容撑不住容器宽度时，滚动兜底才实际发生。行操作列与主辨识列（名称、标题）不设优先级、永不隐藏（REQ-presentation-022）。优先级阈值所在的每个断点档（`sm`、`md`、`lg`），在该档的下限宽度下可见列的不可断宽度之和不得超过该档下限，使滚动兜底出现之前主辨识列与行操作总是同屏，不被横向滚动分开；容器窄于 `sm` 时只剩不设优先级的列，放不下由横向滚动兜底，不适用这条。某一档放不下时按次序处理：先降低该档新增列中最不重要的列的优先级；再给主辨识列与长文本列设按容器档位取值的宽度上限，超出的内容截断，完整值经悬停或详情可得；已是 `low` 的列才移出列表。一档里只剩不设优先级的列、降优先级无从下手时（例如 `sm` 档只剩名称、状态与操作），只有宽度上限这一种办法，不移列。主辨识列的宽度上限在 `md` 以下取 160px、`md` 起取 200px，各页不各自另定；上限约束整个单元格内容，带完整值复制控件的列把控件计入（[ui-kit](design-web-ui-kit.md) 的 `contentMaxWidth`）。主辨识格在标识之下另叠散文副行时（设置页的键与其说明、声明默认值），上限只管标识行与复制控件，副行按单元格可用宽度换行，不压进主辨识上限。主辨识列之外的长文本列（审计的对象与操作者、对象存储的内容类型）取 160px，不随档位增大，使一张表里多个长文本列的合计不随容器变宽而超出该档下限。
 - **表单**：由多列收为单列。
-- **卡片网格**：在窄档位收为单列、在更高档位展开为多列；档位取网格所在容器的宽度，不取视口。控制台仪表盘的指标块（`DashboardPage` 的 `KpiRow`）是这一形态：容器窄于 `sm` 时一列，`sm` 起两列，`md` 起租户指标四列、平台健康度两列。768px 的概览因此把四张租户指标排成 2x2。
+- **卡片网格**：在窄档位收为单列、在更高档位展开为多列；档位取网格所在容器的宽度，不取视口。管理后台仪表盘的指标块（`DashboardPage` 的 `KpiRow`）是这一形态：容器窄于 `sm` 时一列，`sm` 起两列，`md` 起租户指标四列、平台健康度两列。768px 的概览因此把四张租户指标排成 2x2。
 - **侧边面板**：从定宽收为占满视口宽度，档位取视口的 `sm`。
 
 ## 依赖
@@ -130,7 +130,7 @@
 | [tokens](design-web-tokens.md) | 断点标度的取值 |
 | [layout-kit](design-web-layout-kit.md) | 外壳的区域划分与视口两态 |
 | [ui-kit](design-web-ui-kit.md) | 组件级响应的承载组件与主题 |
-| [console-ui](design-web-console-ui.md) | 控制台页的组装 |
+| [admin-ui](design-web-admin-ui.md) | 管理后台页的组装 |
 
 ## UML 图
 
@@ -138,7 +138,7 @@
 
 ```mermaid
 graph TD
-    shell["控制台外壳"]
+    shell["管理后台外壳"]
     topbarForm["顶栏形态（缺省）"]
     sidebarForm["侧栏形态"]
     topbar["顶栏（banner 地标）"]
@@ -190,8 +190,8 @@ graph TD
 - **新增一种外壳形态。** 形态是闭合的枚举，不是自由插槽：新增一种形态 = 在 `AppShellShellLayout` 上加一个成员、在 `AppShell` 里给出该形态的区域映射、补 jsdom（[REF-jsdom](../../../references.md)）与真实浏览器的用例、更新本设计与 [layout-kit](design-web-layout-kit.md)；宿主的调用面不变。
 - **只换内容不换结构。** 客户换品牌、头部动作或用户菜单时走现有槽位，不动 `shellLayout`。
 - **新增一个组件。** 若它会随可用宽度改变自身排布，按容器响应：在自身根节点声明 `container-type: inline-size`，并按自身的宽度取档重排。
-- **新增一个控制台页。** 页内的排布沿用本设计的区域与降级约定；页的组织归该页所属的能力 UI 包。
-- **新增一个控制台内容块。** 它落在 `SectionCard` 上，标题从 `h2` 起；不手写描边 `Paper` 或裸 `section` 作为表面。
+- **新增一个管理后台页。** 页内的排布沿用本设计的区域与降级约定；页的组织归该页所属的能力 UI 包。
+- **新增一个管理后台内容块。** 它落在 `SectionCard` 上，标题从 `h2` 起；不手写描边 `Paper` 或裸 `section` 作为表面。
 
 ## 实现状态
 
@@ -202,21 +202,21 @@ graph TD
 | 外壳的视口两态（常驻侧栏 / 覆盖式抽屉） | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShell` |
 | 桌面侧栏的收起 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `sidebarCollapsed` |
 | 侧栏的扁平导航项与选中态 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShellNavItem` |
-| 侧栏的分组与二级嵌套 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShellNavGroup`、`AppShellNavItem.children`；`web/packages/console-ui/src/nav-groups.tsx` `consoleNavGroups` |
+| 侧栏的分组与二级嵌套 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShellNavGroup`、`AppShellNavItem.children`；`web/packages/admin-ui/src/nav-groups.tsx` `adminNavGroups` |
 | 断点标度等于所装 MUI 主题默认 | 已实现 | `web/packages/tokens/src/breakpoints.ts` `breakpointTokens` |
-| 内容区的宽度（页型占满内容区） | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout` |
-| 控制台内容块落在 SectionCard 容器表面 | 已实现 | `web/packages/ui-kit/src/components/SectionCard.tsx` `SectionCard`；`web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage`；`web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage` |
-| 列表页骨架 | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
-| 详情页骨架（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
-| 设置页骨架（二级导航与表） | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
-| 仪表盘骨架 | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage` |
-| 数据表各断点档的可见列宽度之和不超过该档下限 | 已实现 | `web/packages/console-ui/test-utils/browser-overflow.ts` `TIER_FLOORS`、`expectNoHorizontalOverflow`（把每张表的容器钉到各档下限，断言该档可见列不溢出）；`web/packages/ui-kit/src/components/DataTable.tsx` `PRIMARY_COLUMN_MAX_WIDTH`、`LONG_TEXT_COLUMN_MAX_WIDTH`、`primaryColumnMaxWidthSx`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`（角色名与权限码取主辨识上限，角色说明取长文本上限，目录的权限码上限只约束标识行） |
+| 内容区的宽度（页型占满内容区） | 已实现 | `web/packages/admin-ui/src/internal/layout.tsx` `DetailLayout` |
+| 管理后台内容块落在 SectionCard 容器表面 | 已实现 | `web/packages/ui-kit/src/components/SectionCard.tsx` `SectionCard`；`web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage`；`web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/admin-ui/src/DashboardPage.tsx` `DashboardPage` |
+| 列表页骨架 | 已实现 | `web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
+| 详情页骨架（主栏与侧栏） | 已实现 | `web/packages/admin-ui/src/internal/layout.tsx` `DetailLayout`；`web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
+| 设置页骨架（二级导航与表） | 已实现 | `web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage` |
+| 仪表盘骨架 | 已实现 | `web/packages/admin-ui/src/DashboardPage.tsx` `DashboardPage` |
+| 数据表各断点档的可见列宽度之和不超过该档下限 | 已实现 | `web/packages/admin-ui/test-utils/browser-overflow.ts` `TIER_FLOORS`、`expectNoHorizontalOverflow`（把每张表的容器钉到各档下限，断言该档可见列不溢出）；`web/packages/ui-kit/src/components/DataTable.tsx` `PRIMARY_COLUMN_MAX_WIDTH`、`LONG_TEXT_COLUMN_MAX_WIDTH`、`primaryColumnMaxWidthSx`；`web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`（角色名与权限码取主辨识上限，角色说明取长文本上限，目录的权限码上限只约束标识行） |
 | 数据表的列优先级降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
 | 数据表超宽的容器内滚动兜底 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable` |
 | 侧边面板的层级与视口宽度档 | 已实现 | `web/packages/ui-kit/src/components/SidePanel.tsx` `SidePanel` |
-| 卡片网格的多列收为单列 | 已实现 | `starters/demo/web/src/pages/home-page.tsx` `HomePage`；`web/packages/console-ui/src/DashboardPage.tsx` `KpiRow` |
+| 卡片网格的多列收为单列 | 已实现 | `starters/demo/web/src/pages/home-page.tsx` `HomePage`；`web/packages/admin-ui/src/DashboardPage.tsx` `KpiRow` |
 | 数据表按列的折行策略 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnCellWrapSx` |
-| 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage`；`web/packages/console-ui/src/DashboardPage.tsx` `KpiRow` |
-| 窄视口逐档降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`（收起为仅图标的窄栏）；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage`；`web/packages/console-ui/src/DashboardPage.tsx` `KpiRow` |
+| 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage`；`web/packages/admin-ui/src/DashboardPage.tsx` `KpiRow` |
+| 窄视口逐档降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`（收起为仅图标的窄栏）；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage`；`web/packages/admin-ui/src/DashboardPage.tsx` `KpiRow` |
 | 收起窄栏不小于 44px | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `COLLAPSED_SIDEBAR_MIN_WIDTH`、`collapsedSidebarWidth` |
 | 指针能力查询 | 已实现 | `web/packages/ui-kit/src/internal/pointer.ts`；`web/packages/ui-kit/src/theme/touch-floor.ts` `touchFloorComponents`（基础控件的主题级下限，各包继承）；`web/packages/ui-kit/src/touch-target.ts` `touchTargetSx`（主题覆盖不到的裸控件兜底） |
