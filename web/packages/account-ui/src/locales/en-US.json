@@ -136,7 +136,6 @@
     "singleFactor": "Only one two-step verification method is enabled. Add another one below so you can still sign in if you lose this one.",
     "addAria": "Add {{method}}",
     "replaceAria": "Replace authenticator app",
-    "actionsAria": "Actions for {{factor}}",
     "remove": "Remove",
     "removed": "{{factor}} removed.",
     "removedLast": "{{factor}} removed. Your account now has only one verification method.",
@@ -482,7 +481,6 @@
       "usernameNone": "No username is set.",
       "loginAs": "Sign in with the {{kind}} {{value}}."
     },
-    "actionsAria": "Actions for {{value}}",
     "addEmail": {
       "title": "Add an email address"
     }

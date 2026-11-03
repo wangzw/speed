@@ -352,21 +352,17 @@ async function deletePhone(page: Page): Promise<void> {
 }
 
 /**
- * Open the passkey row's trailing menu and pick its remove item. The row's
- * action trigger carries the row's name, which is the factor kind while the
- * credential is unnamed; the menu itself is portalled outside the card.
+ * Remove the account's passkey row. The row carries its removal as a direct
+ * action beside its name; the group scopes the click to the passkey row so no
+ * other kind's action can answer it.
  */
 async function passkeyRemove(page: Page): Promise<void> {
-  await mfaSection(page)
-    .getByRole('button', {
-      name: copy('accountUi', 'mfa.actionsAria', {
-        factor: copy('accountUi', 'mfa.factor.kind.webauthn'),
-      }),
-      exact: true,
-    })
-    .click()
-  await page
-    .getByRole('menuitem', { name: copy('accountUi', 'mfa.remove') })
+  const passkeyGroup = mfaSection(page).getByRole('region', {
+    name: copy('accountUi', 'mfa.factor.kind.webauthn'),
+    exact: true,
+  })
+  await passkeyGroup
+    .getByRole('button', { name: copy('accountUi', 'mfa.remove'), exact: true })
     .click()
 }
 
@@ -617,8 +613,8 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       ).toBeVisible()
 
       // The passkey registered during the sign-in is the account's one active
-      // factor: its group holds that one row, the row's menu names it, and the
-      // group's action reads as a plain add.
+      // factor: its group holds that one row, the row's own actions sit beside
+      // it, and the group's action reads as a plain add.
       const passkeyGroup = mfaSection(page).getByRole('region', {
         name: copy('accountUi', 'mfa.factor.kind.webauthn'),
         exact: true,
@@ -626,9 +622,13 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
       await expect(passkeyGroup.getByRole('listitem')).toHaveCount(1)
       await expect(
         passkeyGroup.getByRole('button', {
-          name: copy('accountUi', 'mfa.actionsAria', {
-            factor: copy('accountUi', 'mfa.factor.kind.webauthn'),
-          }),
+          name: copy('accountUi', 'mfa.rename'),
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(
+        passkeyGroup.getByRole('button', {
+          name: copy('accountUi', 'mfa.remove'),
           exact: true,
         }),
       ).toBeVisible()

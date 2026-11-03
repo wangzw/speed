@@ -136,7 +136,6 @@
     "singleFactor": "当前只启用了一种两步验证方式。请在下方再添加一种，以便丢失这一种后仍能登录。",
     "addAria": "添加{{method}}",
     "replaceAria": "更换验证器应用",
-    "actionsAria": "{{factor}} 的操作",
     "remove": "移除",
     "removed": "{{factor}} 已移除。",
     "removedLast": "{{factor}} 已移除。账户此后只剩一种验证方式。",
@@ -482,7 +481,6 @@
       "usernameNone": "尚未设置用户名。",
       "loginAs": "使用{{kind}} {{value}} 登录。"
     },
-    "actionsAria": "{{value}} 的操作",
     "addEmail": {
       "title": "添加邮箱"
     }

@@ -461,10 +461,9 @@ describe('MfaSection', () => {
     ])
     expect(disabled[0]?.closest('[data-action-row]')).toBeNull()
     expect(
-      screen.queryByRole('button', {
-        name: zhCN.mfa.actionsAria.replace('{{factor}}', 'Disabled row'),
-      }),
-    ).toBeNull()
+      disabled.some((button) => button.hasAttribute('aria-haspopup')),
+    ).toBe(false)
+    expect(screen.queryByRole('menuitem')).toBeNull()
   })
 
   it('offers only the enrollment entries the deployment reports', async () => {
@@ -2584,10 +2583,8 @@ describe('MfaSection', () => {
     expect((remove as HTMLElement).closest('[data-action-row]')).toBeNull()
     // Neither an overflow trigger nor a menu item remains.
     expect(
-      screen.queryByRole('button', {
-        name: zhCN.mfa.actionsAria.replace('{{factor}}', 'Old key'),
-      }),
-    ).toBeNull()
+      actions.some((button) => button.hasAttribute('aria-haspopup')),
+    ).toBe(false)
     expect(screen.queryByRole('menuitem')).toBeNull()
 
     await user.click(remove as HTMLElement)

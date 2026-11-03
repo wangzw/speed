@@ -110,7 +110,6 @@ const accountEnUS = accountUiResources['en-US'] as {
       readonly phone: string
     }
     readonly add: { readonly open: string }
-    readonly actionsAria: string
     readonly axes: {
       readonly signIn: string
       readonly defaultContact: string
@@ -945,13 +944,10 @@ describe('AccountSettingsPage block consistency', () => {
     expect(within(phone).getByRole('table')).toContainElement(remove)
     // No menu trigger remains on the row.
     expect(
-      within(phone).queryByRole('button', {
-        name: accountEnUS.identifiers.actionsAria.replace(
-          '{{value}}',
-          '+14155550123',
-        ),
-      }),
-    ).toBeNull()
+      within(phone)
+        .queryAllByRole('button')
+        .some((button) => button.hasAttribute('aria-haspopup')),
+    ).toBe(false)
     const user = userEvent.setup()
     await user.click(remove)
     const dialog = await screen.findByRole('dialog')

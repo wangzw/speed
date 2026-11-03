@@ -54,7 +54,6 @@ const accountEnUS = accountUiResources['en-US'] as {
     }
   }
   readonly mfa: {
-    readonly actionsAria: string
     readonly rename: string
     readonly renameLabel: string
     readonly enroll: {
@@ -278,16 +277,19 @@ describe('account form action rows in Chromium', () => {
       expect(screen.getByTestId('mfa-add-webauthn')).toBeTruthy(),
     )
 
-    // The named factor row's menu opens the rename editor.
+    // The named factor row's direct rename action opens the editor in place.
+    const factorRow = screen
+      .getAllByRole('listitem')
+      .find((item) => within(item).queryByText(FACTOR_LABEL) !== null)
+    expect(factorRow, 'no factor row reads as the named factor').toBeTruthy()
     await user.click(
-      screen.getByRole('button', {
-        name: accountEnUS.mfa.actionsAria.replace('{{factor}}', FACTOR_LABEL),
+      within(factorRow as HTMLElement).getByRole('button', {
+        name: accountEnUS.mfa.rename,
       }),
     )
-    await user.click(
-      await screen.findByRole('menuitem', { name: accountEnUS.mfa.rename }),
-    )
-    await screen.findByLabelText(accountEnUS.mfa.renameLabel)
+    const renameField = await screen.findByLabelText(accountEnUS.mfa.renameLabel)
     expectEveryFormPlaced()
+    await user.clear(renameField)
+    await user.type(renameField, 'Renamed authenticator')
   })
 })

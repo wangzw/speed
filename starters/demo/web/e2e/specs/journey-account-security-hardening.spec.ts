@@ -395,7 +395,8 @@ test('account-security-hardening: an account enrols two factors, ends another de
         ),
       ).toBeVisible()
       // The username is fixed: its group states the rule and carries no row
-      // action menu (a removable row would carry its trailing overflow menu).
+      // action (a removable row would carry its own verify and remove
+      // actions).
       await expect(
         identifiers.getByText(
           copy('accountUi', 'identifiers.usernamePermanent'),
@@ -403,11 +404,12 @@ test('account-security-hardening: an account enrols two factors, ends another de
         ),
       ).toBeVisible()
       await expect(
-        identifiers.getByRole('button', {
-          name: copy('accountUi', 'identifiers.actionsAria', {
-            value: account.username,
-          }),
-        }),
+        identifiers
+          .getByRole('group', {
+            name: copy('accountUi', 'identifiers.kind.username'),
+            exact: true,
+          })
+          .getByRole('button'),
       ).toHaveCount(0)
       // The email group lists the proved addresses only, and the one on this
       // account is the selected choice.

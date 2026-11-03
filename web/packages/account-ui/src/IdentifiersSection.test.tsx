@@ -407,13 +407,8 @@ describe('IdentifiersSection', () => {
     expect(rowAction('only@x.test', zhCN.identifiers.remove)).toBeNull()
     // The row carries no overflow trigger and no menu item.
     expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.actionsAria.replace(
-          '{{value}}',
-          'only@x.test',
-        ),
-      }),
-    ).toBeNull()
+      actions.some((button) => button.hasAttribute('aria-haspopup')),
+    ).toBe(false)
     expect(screen.queryByRole('menuitem')).toBeNull()
   })
 
@@ -4086,13 +4081,8 @@ describe('IdentifiersSection', () => {
     expect((remove as HTMLElement).closest('[data-action-row]')).toBeNull()
     // Neither an overflow trigger nor a menu item remains.
     expect(
-      screen.queryByRole('button', {
-        name: zhCN.identifiers.actionsAria.replace(
-          '{{value}}',
-          '+14155550123',
-        ),
-      }),
-    ).toBeNull()
+      actions.some((button) => button.hasAttribute('aria-haspopup')),
+    ).toBe(false)
     expect(screen.queryByRole('menuitem')).toBeNull()
 
     await user.click(remove as HTMLElement)
