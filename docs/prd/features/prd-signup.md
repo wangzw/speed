@@ -191,9 +191,9 @@
 
 ### REQ-signup-047
 
-首登开户必须在建立账户之前取得一个合法用户名：短信首登开户、社交登录首登开户与企业即时开通三条路径一律适用，用户名判据按 REQ-signup-045 与 REQ-signup-046 的规定；没有取得合法用户名时不得建立账户。**社交首登开户的同一步还必须取得一个合法口令**：口令与用户名在同一次提交里给出，判据按账户的口令策略，不合格时不建账户。短信与企业即时开通的首登一步只取用户名。
+首登开户必须在建立账户之前取得一个合法用户名：短信首登开户、社交登录首登开户与企业即时开通三条路径一律适用，用户名判据按 REQ-signup-045 与 REQ-signup-046 的规定；没有取得合法用户名时不得建立账户。**社交首登开户的同一步还必须取得一个合法口令**：口令与用户名在同一次提交里给出，判据按账户的口令策略，不合格时不建账户。短信首登的这一步取用户名与可选的显示名；企业即时开通的首登一步只取用户名。显示名的取得与回退按 REQ-signup-051 的规定。
 
-- **验收**：分别经短信首登、社交首登与企业即时开通发起开户，流程在建立账户之前呈现用户名一步；提交合法用户名后账户持有该用户名，未提交或提交不合法用户名时没有账户产生。社交首登的这一步同时要求口令：只填用户名、或口令不符策略时没有账户产生；两者都合法时账户建立并立即可以口令登录。
+- **验收**：分别经短信首登、社交首登与企业即时开通发起开户，流程在建立账户之前呈现用户名一步；提交合法用户名后账户持有该用户名，未提交或提交不合法用户名时没有账户产生。社交首登的这一步同时要求口令：只填用户名、或口令不符策略时没有账户产生；两者都合法时账户建立并立即可以口令登录。短信首登的这一步同时接受可选的显示名，显示名的结果按 REQ-signup-051 的验收判定。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`；`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`；`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`
 
@@ -383,11 +383,19 @@
 
 ### REQ-signup-048
 
-社交首登开户把提供方声明为已验证的地址写成该账户的**联系方式**（默认通讯邮箱）**与登录方式**：建号时账户只有这一条邮箱地址，按 REQ-account-068 它同时被选作登录方式，因此该地址可以作口令登录名。该地址在开户页面上只读展示，持有人不编辑它。企业即时开通不写入提供方声明的地址：企业预置账户是运营者建好的，即时开通没有展示该地址的页面。两种路径下账户取自提供方的资料都只有显示名与该地址的上述处置。
+社交首登开户把提供方声明为已验证的地址写成该账户的**联系方式**（默认通讯邮箱）**与登录方式**：建号时账户只有这一条邮箱地址，按 REQ-account-068 它同时被选作登录方式，因此该地址可以作口令登录名。该地址在开户页面上只读展示，持有人不编辑它。企业即时开通不写入提供方声明的地址：企业预置账户是运营者建好的，即时开通没有展示该地址的页面。两种路径下账户取自提供方的资料都只有显示名与该地址的上述处置。提供方没有给出显示名时的回退按 REQ-signup-051 的规定。
 
-- **验收**：经社交首登新开立的账户持有提供方声明为已验证的那个地址作为联系方式，默认通讯邮箱是它，登录方式中也有它，且它可用作口令登录名；开户页面上该地址只读，无法编辑；企业即时开通新开立的账户不持有提供方声明的地址；两种路径的显示名都等于提供方给出的显示名，提供方未给出显示名时账户仍建立。
+- **验收**：经社交首登新开立的账户持有提供方声明为已验证的那个地址作为联系方式，默认通讯邮箱是它，登录方式中也有它，且它可用作口令登录名；开户页面上该地址只读，无法编辑；企业即时开通新开立的账户不持有提供方声明的地址；两种路径的显示名都等于提供方给出的显示名；提供方未给出显示名时账户仍建立，显示名按 REQ-signup-051 的规定取用户名。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`
+
+### REQ-signup-051
+
+首登开户的显示名必须只来自一个来源：短信首登开户的用户名一步必须接受当事人选填的显示名，社交首登开户与企业即时开通必须取提供方给出的显示名；任何一条首登开户路径没有给出显示名时，账户的显示名必须取用户名。
+
+- **验收**：短信首登的这一步同时呈现用户名与一个可选的显示名输入；填写显示名时建立的账户持有填写的值，留空时建立的账户显示名等于本次选定的用户名；社交首登与企业即时开通在提供方给出显示名时账户持有该值，提供方未给出显示名时账户的显示名等于用户名。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`（填写显示名）、`sms-signup: a phone-code first sign-in with no display name takes the username`（留空取用户名）
 
 ### REQ-signup-049
 
