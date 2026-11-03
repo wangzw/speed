@@ -10,6 +10,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/settings"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // The setting keys this module declares, relative to its namespace, and the
@@ -185,13 +186,6 @@ var defaults = options{
 	PerAccountHourly: 20,
 }
 
-// defaultCeilingHourly is what this module reads the cross-channel ceiling as
-// when the settings store is absent or holds a value outside the domain. The
-// ledger module declares the setting and this value; the reader keeps its own
-// copy because an assembly with no settings store still has to answer, and the
-// relaxation comparison needs the declared default for a key that held no row.
-const defaultCeilingHourly = 5000
-
 // The domains of the settings. Each is the one statement of its range.
 func codeLengthInDomain(n int) bool { return n >= minCodeLength && n <= maxCodeLength }
 
@@ -230,9 +224,11 @@ func perAccountHourlyInDomain(n int) bool {
 	return n >= minPerAccountHourly && n <= maxPerAccountHourly
 }
 
-// ceilingHourlyInDomain holds the cross-channel ceiling to the same range as a
-// purpose's deployment-wide budget: it is a count of sends in an hour.
-func ceilingHourlyInDomain(n int) bool { return globalHourlyInDomain(n) }
+// ceilingHourlyInDomain holds the cross-channel ceiling to the domain the ledger
+// module declares for it: a count of sends in an hour.
+func ceilingHourlyInDomain(n int) bool {
+	return n >= budget.MinCeilingHourly && n <= budget.MaxCeilingHourly
+}
 
 // allowedPrefixesTextInDomain reports whether a JSON array of strings is a legal
 // value of the allowed-prefixes setting: the text parses as an array of strings.
@@ -462,7 +458,7 @@ func (r *reader) perAccountHourly() int {
 // It is read before every send, so a value outside its domain falls back to the
 // declared default rather than to no ceiling.
 func (r *reader) ceilingHourly() int {
-	return readTuned(r, ceilingHourlyPath, defaultCeilingHourly, ceilingHourlyInDomain)
+	return readTuned(r, ceilingHourlyPath, budget.DefaultCeilingHourly, ceilingHourlyInDomain)
 }
 
 // globalHourly reads the global hourly budget of one purpose. The purpose is one

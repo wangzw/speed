@@ -43,6 +43,17 @@ func TestTheNewBudgetsDeclareThePlannedDefaults(t *testing.T) {
 	}
 }
 
+// TestTheCeilingFallbackIsTheLedgerDefault holds this reader's fallback to the
+// ledger module's one statement of the ceiling's default, so a literal here
+// cannot drift from the declared value.
+func TestTheCeilingFallbackIsTheLedgerDefault(t *testing.T) {
+	r := newSettingReader(nil, nil)
+	if got := r.limits().ceilingHourly; got != budget.DefaultCeilingHourly {
+		t.Errorf("the ceiling fallback is %d, want budget.DefaultCeilingHourly = %d",
+			got, budget.DefaultCeilingHourly)
+	}
+}
+
 // setBudget writes one delivery-budget limit on the global layer.
 func (r *rig) setBudget(t *testing.T, key string, value int) {
 	t.Helper()

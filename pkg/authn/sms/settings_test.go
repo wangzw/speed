@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // TestTheSettingsReadAsTheirDeclaredDefaultWithoutAStore holds the legal
@@ -202,6 +203,21 @@ func TestTheCeilingIsReadByFullKey(t *testing.T) {
 	}
 	if got, ok := declaredNumber(ceilingHourlyPath); !ok || got != 5000 {
 		t.Errorf("the relaxation comparison reads the ceiling default as %d (present %v), want 5000", got, ok)
+	}
+}
+
+// TestTheCeilingFallbackIsTheLedgerDefault holds this reader's fallback to the
+// ledger module's one statement of the ceiling's default, so a literal here
+// cannot drift from the declared value.
+func TestTheCeilingFallbackIsTheLedgerDefault(t *testing.T) {
+	r := newReader(nil, (&logBuffer{}).logger())
+	if got := r.ceilingHourly(); got != budget.DefaultCeilingHourly {
+		t.Errorf("the ceiling fallback is %d, want budget.DefaultCeilingHourly = %d",
+			got, budget.DefaultCeilingHourly)
+	}
+	if got, ok := declaredNumber(ceilingHourlyPath); !ok || got != int64(budget.DefaultCeilingHourly) {
+		t.Errorf("the relaxation comparison reads the ceiling default as %d (present %v), want %d",
+			got, ok, budget.DefaultCeilingHourly)
 	}
 }
 

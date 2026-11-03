@@ -9,6 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/settings"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // The directions a setting is moved in that relax a check. A larger budget, a
@@ -206,7 +207,7 @@ func declaredNumber(key string) (int64, bool) {
 	case perAccountHourlyPath:
 		return int64(defaults.PerAccountHourly), true
 	case ceilingHourlyPath:
-		return int64(defaultCeilingHourly), true
+		return int64(budget.DefaultCeilingHourly), true
 	}
 	return 0, false
 }

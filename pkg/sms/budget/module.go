@@ -24,16 +24,25 @@ const (
 	ceilingHourlyItem = "ceiling-hourly"
 )
 
-// The bounds of the ceiling's domain. It is a count of sends in an hour, so its
-// floor is one: a zero would turn a security bound off.
+// The ceiling's declared default and the bounds of its domain. Both sending
+// channels read the one statement, so a deployment with no settings store
+// answers the same number whichever channel consults it.
+//
+// It is a count of sends in an hour, so its floor is one: a zero would turn a
+// security bound off.
 const (
-	minCeilingHourly = 1
-	maxCeilingHourly = 1000000
+	// DefaultCeilingHourly is the deployment default of the cross-channel hourly
+	// ceiling: the most SMS messages sent in an hour across both channels.
+	DefaultCeilingHourly = 5000
+	// MinCeilingHourly is the lowest ceiling the domain admits.
+	MinCeilingHourly = 1
+	// MaxCeilingHourly is the highest ceiling the domain admits.
+	MaxCeilingHourly = 1000000
 )
 
 // ceilingDefaultValues is the ceiling the deployment starts from. The settings
 // module reads the default off this prototype and never returns a value into it.
-var ceilingDefaultValues = ceilingDefaults{CeilingHourly: 5000}
+var ceilingDefaultValues = ceilingDefaults{CeilingHourly: DefaultCeilingHourly}
 
 // ceilingDefaults is the carrier struct the settings module reads the ceiling's
 // declared default from.
@@ -43,7 +52,7 @@ type ceilingDefaults struct {
 
 // ceilingHourlyInDomain holds the ceiling to its range: whole numbers of sends
 // from one to a million in an hour.
-func ceilingHourlyInDomain(n int) bool { return n >= minCeilingHourly && n <= maxCeilingHourly }
+func ceilingHourlyInDomain(n int) bool { return n >= MinCeilingHourly && n <= MaxCeilingHourly }
 
 // ceilingSchema declares the one setting this module owns. The ceiling spans
 // both sending channels, so it is stated once here, under the shared sms

@@ -104,3 +104,28 @@ func TestTheModuleDeclaresTheCrossChannelCeiling(t *testing.T) {
 		}
 	}
 }
+
+// TestTheExportedCeilingConstantsAreTheDeclaredOnes holds the one statement both
+// sending channels read: the deployment default and the domain bounds are
+// exported so a consumer's fallback and domain check cannot drift from the
+// declaration.
+func TestTheExportedCeilingConstantsAreTheDeclaredOnes(t *testing.T) {
+	if DefaultCeilingHourly != 5000 {
+		t.Errorf("DefaultCeilingHourly = %d, want 5000", DefaultCeilingHourly)
+	}
+	if MinCeilingHourly != 1 {
+		t.Errorf("MinCeilingHourly = %d, want 1", MinCeilingHourly)
+	}
+	if MaxCeilingHourly != 1000000 {
+		t.Errorf("MaxCeilingHourly = %d, want 1000000", MaxCeilingHourly)
+	}
+	if ceilingDefaultValues.CeilingHourly != DefaultCeilingHourly {
+		t.Errorf("the declared default is %d, want the exported constant %d",
+			ceilingDefaultValues.CeilingHourly, DefaultCeilingHourly)
+	}
+	for _, n := range []int{MinCeilingHourly, MaxCeilingHourly} {
+		if !ceilingHourlyInDomain(n) {
+			t.Errorf("the ceiling domain refuses its bound %d", n)
+		}
+	}
+}

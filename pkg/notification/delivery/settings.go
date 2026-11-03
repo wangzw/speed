@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/vislake/speed/pkg/settings"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // The setting keys this module declares, relative to its namespace, and the full
@@ -32,16 +33,9 @@ var (
 // ceiling would only add a second bill.
 const ceilingHourlyPath = "sms.ceiling-hourly"
 
-// The ceiling's domain and declared default. They are the ledger module's, read
-// here so a deployment that has not tuned the ceiling reads the same number
-// whichever channel consults it.
-const (
-	minCeilingHourly     = 1
-	maxCeilingHourly     = 1000000
-	defaultCeilingHourly = 5000
-)
-
-func ceilingHourlyInDomain(n int) bool { return n >= minCeilingHourly && n <= maxCeilingHourly }
+func ceilingHourlyInDomain(n int) bool {
+	return n >= budget.MinCeilingHourly && n <= budget.MaxCeilingHourly
+}
 
 // The bounds of the setting domains. The floor is one and not zero: a budget is
 // a security bound, and a zero would turn it off. An operator who wants a limit
@@ -162,7 +156,7 @@ func newSettingReader(store settings.Store, logger *slog.Logger) *settingReader 
 // limits reads every budget the dispatch check needs.
 func (r *settingReader) limits() budgetLimits {
 	return budgetLimits{
-		ceilingHourly:        readTuned(r, ceilingHourlyPath, defaultCeilingHourly, ceilingHourlyInDomain),
+		ceilingHourly:        readTuned(r, ceilingHourlyPath, budget.DefaultCeilingHourly, ceilingHourlyInDomain),
 		perRecipientHourly:   readTuned(r, perRecipientHourlyPath, defaultSettings.PerRecipientHourly, perRecipientHourlyInDomain),
 		perRecipientDaily:    readTuned(r, perRecipientDailyPath, defaultSettings.PerRecipientDaily, perRecipientDailyInDomain),
 		tenantDistinctHourly: readTuned(r, tenantDistinctHourlyPath, defaultSettings.TenantDistinctHourly, tenantDistinctHourlyInDomain),

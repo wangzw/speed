@@ -454,7 +454,7 @@ func declaredValue(key string) (any, bool) {
 	case perAccountHourlyPath:
 		return defaults.PerAccountHourly, true
 	case ceilingHourlyPath:
-		return defaultCeilingHourly, true
+		return budget.DefaultCeilingHourly, true
 	}
 	return nil, false
 }
