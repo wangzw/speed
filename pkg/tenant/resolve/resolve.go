@@ -33,6 +33,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
+	"github.com/vislake/speed/pkg/tenant/pathguard"
 )
 
 // ModuleName is this module's name in the registry. A host writes it into the
@@ -65,10 +66,20 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// The capability is delivered exclusively. Two resolving layers on one endpoint
-// would each decide the same request, and which of them wrote the identifier
+// The module delivers three capabilities. The resolving layer is delivered as
+// tenant.Resolution, exclusively: two resolving layers on one endpoint would
+// each decide the same request, and which of them wrote the identifier
 // downstream reads is not something either could answer — so the pair is
-// deliberately unrepresentable, and a second one fails the startup instead.
+// deliberately unrepresentable, and a second one fails the startup instead. The
+// same product delivers speedhttp.RouteGuard, the path-tenant identity guard a
+// mounting module wraps a tenant-scoped group's routes with, and
+// speedhttp.TenantAdminRouteGuard, the same rule plus the platform-domain
+// refusal the tenant management surfaces add. They are two capabilities because
+// the refusal is not the shared rule: the members, invitations and SSO groups
+// manage the system tenant and are addressed by the platform domain
+// legitimately. Both are here because this module already holds the roster the
+// guard resolves the path segment through, so a mounting module never takes the
+// tenant directory into its own closure.
 //
 // The roster capability is a construction-time dependency, and here that
 // declaration carries an ordering that is not decoration. The roster loads its
@@ -91,7 +102,11 @@ func Module() core.Module {
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
-		Provides:  []core.Provision{{Token: (*tenant.Resolution)(nil), Exclusive: true}},
+		Provides: []core.Provision{
+			{Token: (*tenant.Resolution)(nil), Exclusive: true},
+			{Token: (*speedhttp.RouteGuard)(nil), Exclusive: true},
+			{Token: (*speedhttp.TenantAdminRouteGuard)(nil), Exclusive: true},
+		},
 		Resources: []any{schema()},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
@@ -198,6 +213,13 @@ type resolver struct {
 	guarded  []string
 	logger   *slog.Logger
 }
+
+// The resolver delivers both route guards. The assertion is what keeps the
+// descriptor's two Provisions and the methods one value has to carry together.
+var (
+	_ speedhttp.RouteGuard            = (*resolver)(nil)
+	_ speedhttp.TenantAdminRouteGuard = (*resolver)(nil)
+)
 
 func newResolver(set settings, roster tenant.Catalog) *resolver {
 	return &resolver{
@@ -332,6 +354,34 @@ func (r *resolver) middlewareFor() speedhttp.Middleware {
 		After:    []core.Token{(*authn.Gate)(nil)},
 		Handler:  r.handle,
 	}
+}
+
+// Guard implements speedhttp.RouteGuard: it wraps one route of a tenant-scoped
+// group so that the tenant its path names is the tenant the request resolved to.
+//
+// The guard is delivered as a capability rather than registered as an endpoint
+// layer because the routes that need it share an endpoint with platform routes
+// that name a tenant as data and must not be held to this rule. The mounting
+// module applies it to the routes of a ScopeTenants group only: pkg/authn/mount
+// does so for the members, invitations and SSO groups, and the tenant
+// administration modules do so for their own routes. Delivering it from this
+// module keeps the roster where resolution already reads it, so a mounting
+// module never takes the tenant directory into its own closure.
+func (r *resolver) Guard(next gin.HandlerFunc) gin.HandlerFunc {
+	return pathguard.New(r.roster).Guard(next)
+}
+
+// GuardTenantAdmin implements speedhttp.TenantAdminRouteGuard: it wraps one
+// route of a tenant management surface with the identity rule and the refusal
+// of the platform domain.
+//
+// The refusal is not part of the shared rule because the members, invitations
+// and SSO groups manage the system tenant itself and are addressed by the
+// platform domain legitimately. Only the tenant administration modules — the
+// authz and settings tenant surfaces — act on a tenant, which the platform
+// domain is not, so only they apply this capability.
+func (r *resolver) GuardTenantAdmin(next gin.HandlerFunc) gin.HandlerFunc {
+	return pathguard.NewTenantAdmin(r.roster).GuardTenantAdmin(next)
 }
 
 // handle is the layer. A request that resolves goes on to the layers inside

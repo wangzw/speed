@@ -110,6 +110,43 @@ func (g standInGate) Impersonable(endpoint, method, path string) {
 	g.ledger.addAccess(accessCall{"Impersonable", endpoint, method, path})
 }
 
+// passthroughGuard is the pkg/http RouteGuard a case supplies when the point is
+// that a tenant-scoped group mounts at all: it checks nothing, and the guard's
+// own rule is held by the tenant capability's tests.
+type passthroughGuard struct{}
+
+func (passthroughGuard) Guard(next gin.HandlerFunc) gin.HandlerFunc { return next }
+
+// scopedGuard records which of the two route-guard seams the mounter used. The
+// mounter applies the shared identity guard to every tenant-scoped group; the
+// tenant administration modules apply the stricter guard themselves, so a
+// non-zero admin count here would mean the mounter narrowed the shared rule.
+type scopedGuard struct {
+	mu     sync.Mutex
+	shared int
+	admin  int
+}
+
+func (g *scopedGuard) Guard(next gin.HandlerFunc) gin.HandlerFunc {
+	g.mu.Lock()
+	g.shared++
+	g.mu.Unlock()
+	return next
+}
+
+func (g *scopedGuard) GuardTenantAdmin(next gin.HandlerFunc) gin.HandlerFunc {
+	g.mu.Lock()
+	g.admin++
+	g.mu.Unlock()
+	return next
+}
+
+func (g *scopedGuard) counts() (shared, admin int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.shared, g.admin
+}
+
 // standIn is a module that declares the capability token names and nothing
 // else, for an instance a case supplies to it.
 func standIn(name string, token core.Token) core.Module {
@@ -149,6 +186,10 @@ type stack struct {
 	// gate is the gateway of the host's own that is supplied. With
 	// realGateModule false it is delivered by a module of its own.
 	gate authn.Gate
+	// routeGuard, when set, is delivered as the pkg/http RouteGuard capability. A
+	// case that mounts a tenant-scoped group supplies one: the mounter refuses a
+	// tenant-scoped registration without it.
+	routeGuard speedhttp.RouteGuard
 	// register runs in the Init of a module that requires the capability.
 	register func(mount.Mounter)
 	// logs, when set, is where the logging capability's records go.
@@ -189,6 +230,11 @@ func (s stack) drive(t *testing.T, action func(ctx context.Context, reg *core.Re
 		reg.Register(standIn("stand-in.router", (*speedhttp.Router)(nil)))
 		reg.Supply(s.router, "stand-in.router")
 		names = append(names, "stand-in.router")
+	}
+	if s.routeGuard != nil {
+		reg.Register(standIn("stand-in.route-guard", (*speedhttp.RouteGuard)(nil)))
+		reg.Supply(s.routeGuard, "stand-in.route-guard")
+		names = append(names, "stand-in.route-guard")
 	}
 	if s.register != nil {
 		m := registrant(s.register)

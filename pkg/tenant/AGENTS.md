@@ -215,6 +215,22 @@ before writing a scoped model.
   point's own 404 or 405, and one that carries none is refused by this layer
   before the entry point could tell the two apart. A branch on `c.FullPath()`
   would let those requests reach the layers inside with no tenant.
+- **A tenant-scoped route's path tenant is held to the resolved tenant by a
+  route-level guard, not an endpoint layer.** `pkg/tenant/pathguard` resolves the
+  `tenant` path segment through the roster — alias and identifier, refusing a
+  segment that names none or two — and compares identifiers, so a renamed alias
+  and the identifier both address the same tenant. `resolve.Module` delivers it
+  as the `pkg/http` `RouteGuard` capability; `pkg/authn/mount` applies it to every
+  `ScopeTenants` registration and refuses one when no guard is delivered. The
+  members, invitations and SSO groups manage the system tenant itself and are
+  addressed by the platform domain legitimately, so the shared guard does not
+  refuse it. `resolve.Module` also delivers `pathguard.NewTenantAdmin` as the
+  stricter `TenantAdminRouteGuard` capability — the same identity rule plus the
+  refusal of the platform domain — and the two tenant management modules,
+  `authz.tenantadmin` and `settings.tenantadmin`, wrap their own routes with it.
+  A platform route that names a tenant as its data is not wrapped, even on the
+  same endpoint. `pathguard/pathguard_test.go`, `resolve/path_test.go` and the
+  mounter's scope tests hold the rule.
 - **The layer recovers the panic of its own work and not the handler's.** An
   extractor registered through the seam runs inside `admit`, which recovers and
   answers 500 under this module's name; `handle` calls `c.Next` outside it, so a

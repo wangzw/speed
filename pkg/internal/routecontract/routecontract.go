@@ -186,7 +186,7 @@ func Check(t *testing.T, c Case) {
 
 	router := NewRouter(c.Endpoints...)
 	modules := append([]core.Module{c.Module}, c.Stubs...)
-	modules = append(modules, router.Module(), quietLoggingModule())
+	modules = append(modules, router.Module(), quietLoggingModule(), pathTenantModule())
 
 	document := c.Config
 	if document == nil {
@@ -547,4 +547,20 @@ func (noRedaction) AddPattern(string, log.Matcher) {}
 
 func quietLoggingModule() core.Module {
 	return StandIn("stand-in.logging", quietLogging{}, (*log.Logger)(nil))
+}
+
+// pathTenantStandIn is both pkg/http route guards, wrapping nothing. The check
+// compares declarations with registrations, so what a guard would decide is not
+// its subject; the mounter refuses a tenant-scoped registration and the tenant
+// management modules refuse their own mount when no guard is delivered, so both
+// capabilities have to be here.
+type pathTenantStandIn struct{}
+
+func (pathTenantStandIn) Guard(next gin.HandlerFunc) gin.HandlerFunc { return next }
+
+func (pathTenantStandIn) GuardTenantAdmin(next gin.HandlerFunc) gin.HandlerFunc { return next }
+
+func pathTenantModule() core.Module {
+	return StandIn("stand-in.path-tenant", pathTenantStandIn{},
+		(*speedhttp.RouteGuard)(nil), (*speedhttp.TenantAdminRouteGuard)(nil))
 }

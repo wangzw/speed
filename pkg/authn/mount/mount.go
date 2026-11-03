@@ -79,6 +79,11 @@ type wiring struct {
 	// endpoints is the endpoint of each scope that may be mounted, by scope.
 	endpoints map[speedhttp.Scope]wiredEndpoint
 	gate      authn.Gate
+	// routeGuard is the path-tenant guard every tenant-scoped group is wrapped
+	// with, nil when the assembly delivers none. It is the pkg/http RouteGuard
+	// capability, delivered by the tenant capability's resolving module; this
+	// module never names the tenant directory itself.
+	routeGuard speedhttp.RouteGuard
 }
 
 // wiredEndpoint is one scope's mount point: the name the gateway is told and
@@ -193,7 +198,9 @@ func newProduct(set settings) (*product, error) {
 }
 
 // wire runs in Init: it settles the endpoint of each scope, takes up the two
-// registration surfaces and writes the startup diagnostic.
+// registration surfaces, takes up the path-tenant guard the tenant capability
+// delivers under the pkg/http RouteGuard capability, and writes the startup
+// diagnostic.
 //
 // The default endpoint is judged for the one thing only this module can say,
 // that there is one: the key empty and the entry point declaring anything but
@@ -205,6 +212,11 @@ func newProduct(set settings) (*product, error) {
 // rather than landing on an endpoint no tenant layer guards. That each endpoint
 // is guarded, and that the tenant layers cover the tenant scope's endpoint and
 // no other, are the gateway's to judge in Start, on the same names.
+//
+// The path-tenant guard is taken up rather than declared as a requirement
+// because a single-tenant assembly legitimately has none: it never mounts a
+// tenant-scoped route, and register refuses one if it tries. With no guard the
+// module still mounts the ordinary and platform surfaces.
 func (p *product) wire(reg *core.Registry) error {
 	router, err := core.Resolve[speedhttp.Router](reg)
 	if err != nil {
@@ -253,7 +265,19 @@ func (p *product) wire(reg *core.Registry) error {
 		return fmt.Errorf("%staking up the gateway to register the routes' access levels on: %w",
 			diagnosticPrefix, err)
 	}
-	p.wired.Store(&wiring{defaultName: defaultName, endpoints: wired, gate: gate})
+	// The path-tenant guard is delivered by the tenant capability's resolving
+	// module under the pkg/http RouteGuard capability. It is taken up here rather
+	// than declared as a requirement because a single-tenant assembly legitimately
+	// has none: it never mounts a tenant-scoped route, and register refuses one if
+	// it tries.
+	routeGuard, err := core.Resolve[speedhttp.RouteGuard](reg)
+	if err != nil {
+		if !errors.Is(err, core.ErrMissingProvider) {
+			return fmt.Errorf("%staking up the path-tenant guard: %w", diagnosticPrefix, err)
+		}
+		routeGuard = nil
+	}
+	p.wired.Store(&wiring{defaultName: defaultName, endpoints: wired, gate: gate, routeGuard: routeGuard})
 
 	logger := log.Default()
 	delivered, err := core.Resolve[log.Logger](reg)

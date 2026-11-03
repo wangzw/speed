@@ -151,6 +151,17 @@ counterpart of `Problem` (the value a handler fills in).
 The API is the package's godoc, plus the runnable examples in `example_test.go`.
 Read `Middleware`'s field comments before adding a seat to a layer.
 
+`RouteGuard` is the route-level counterpart of `Middleware`: a mounting module
+wraps the routes of one group with it when the group's address has to agree with
+a fact the entry point does not know, and the module that knows the fact
+delivers it as a capability. `TenantAdminRouteGuard` is the second capability
+for the tenant management surfaces, whose rule is the same identity check plus a
+refusal of the platform domain; it is separate because the tenant-scoped groups
+that manage the system tenant itself must not refuse it. The tenant capability
+delivers both this way; the mounter applies `RouteGuard` to tenant-scoped groups
+only, so a platform route that names a tenant as its data is not wrapped, and
+the two tenant management modules apply `TenantAdminRouteGuard` themselves.
+
 ## Boundaries
 
 - **The root package adds no dependency of its own to gin's and config's.**

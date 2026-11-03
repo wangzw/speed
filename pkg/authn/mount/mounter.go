@@ -104,7 +104,22 @@ func (p *product) register(call string, lvl level, methods []string, rel string,
 	p.checkCall(call, methods, rel, h, base)
 
 	path := base + rel
-	chain := mount.Wrap(p.csrf, endpoint.name, h)
+	// A tenant-scoped route is addressed by a tenant segment that has to name the
+	// tenant the request resolved to. The guard that checks it is applied here, to
+	// every route of the group, so a group cannot be mounted without it: the
+	// mounting module never names the tenant directory, and the registration is
+	// the one place the scope and the routes are both in hand.
+	handler := h
+	if scope == speedhttp.ScopeTenants {
+		if w.routeGuard == nil {
+			panic(fmt.Sprintf("%s: %s(%s, %q) was registered for the scope %q, which is "+
+				"addressed by a tenant segment and must be held to the tenant the request resolved "+
+				"to, and no module delivers the path-tenant guard. Write the tenant resolving "+
+				"module's name into this command", ModuleName, call, strings.Join(methods, ", "), rel, scope))
+		}
+		handler = w.routeGuard.Guard(h)
+	}
+	chain := mount.Wrap(p.csrf, endpoint.name, handler)
 	if callback {
 		registering(call, strings.Join(methods, ", "), path, func() { mount.AllowCallback(p.csrf, methods, path) })
 	}
