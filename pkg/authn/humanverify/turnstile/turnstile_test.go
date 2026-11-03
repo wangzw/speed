@@ -113,7 +113,7 @@ func TestAValidProofPasses(t *testing.T) {
 	srv, pool, calls := siteverify(t, answer{http.StatusOK, accepted})
 	p := providerFor(t, srv, pool, nil)
 
-	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken, RemoteIP: testRemoteIP})
+	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken, RemoteIP: testRemoteIP}, authn.HumanScopeOther)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestAFalseSuccessIsRefusedAsAMissingProof(t *testing.T) {
 	ctx := speedlog.WithLogger(t.Context(),
 		slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
-	err := p.Verify(ctx, authn.HumanProof{Token: testToken})
+	err := p.Verify(ctx, authn.HumanProof{Token: testToken}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 		t.Fatalf("a false success resolved with %v, want ErrHumanVerificationRequired", err)
 	}
@@ -171,7 +171,7 @@ func TestProofRefusalsAreHumanVerificationRequired(t *testing.T) {
 			srv, pool, _ := siteverify(t, answer{http.StatusOK, `{"success":false,"error-codes":["` + code + `"]}`})
 			p := providerFor(t, srv, pool, nil)
 
-			err := p.Verify(t.Context(), authn.HumanProof{Token: testToken})
+			err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther)
 			if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 				t.Fatalf("%s resolved with %v, want ErrHumanVerificationRequired", code, err)
 			}
@@ -203,7 +203,7 @@ func TestProviderFaultsAreUnavailable(t *testing.T) {
 			ctx := speedlog.WithLogger(t.Context(),
 				slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
-			err := p.Verify(ctx, authn.HumanProof{Token: testToken, RemoteIP: testRemoteIP})
+			err := p.Verify(ctx, authn.HumanProof{Token: testToken, RemoteIP: testRemoteIP}, authn.HumanScopeOther)
 			if !errors.Is(err, authn.ErrUnavailable) {
 				t.Fatalf("%s resolved with %v, want ErrUnavailable", code, err)
 			}
@@ -229,7 +229,7 @@ func TestAHostnameMismatchIsUnavailable(t *testing.T) {
 	})
 	p := providerFor(t, srv, pool, nil)
 
-	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken})
+	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("a hostname mismatch resolved with %v, want ErrUnavailable", err)
 	}
@@ -246,7 +246,7 @@ func TestAnActionMismatchIsUnavailable(t *testing.T) {
 	})
 	p := providerFor(t, srv, pool, nil)
 
-	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken})
+	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("an action mismatch resolved with %v, want ErrUnavailable", err)
 	}
@@ -264,7 +264,7 @@ func TestAnUnnamedActionIsNotChecked(t *testing.T) {
 	})
 	p := providerFor(t, srv, pool, func(o *Options) { o.Action = "" })
 
-	if err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}); err != nil {
+	if err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther); err != nil {
 		t.Fatalf("Verify with no expected action: %v", err)
 	}
 }
@@ -275,7 +275,7 @@ func TestANonSuccessStatusIsUnavailable(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{http.StatusInternalServerError, `{"success":true}`})
 	p := providerFor(t, srv, pool, nil)
 
-	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken})
+	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("a 500 resolved with %v, want ErrUnavailable", err)
 	}
@@ -290,7 +290,7 @@ func TestABrokenBodyIsUnavailable(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{http.StatusOK, `{"success":`})
 	p := providerFor(t, srv, pool, nil)
 
-	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken})
+	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("a broken body resolved with %v, want ErrUnavailable", err)
 	}
@@ -305,10 +305,10 @@ func TestAReusedTokenIsRefused(t *testing.T) {
 	)
 	p := providerFor(t, srv, pool, nil)
 
-	if err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}); err != nil {
+	if err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther); err != nil {
 		t.Fatalf("first Verify: %v", err)
 	}
-	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken})
+	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 		t.Fatalf("a reused token resolved with %v, want ErrHumanVerificationRequired", err)
 	}
@@ -323,7 +323,7 @@ func TestAnEmptyProofIsRefused(t *testing.T) {
 	srv, pool, calls := siteverify(t, answer{http.StatusOK, accepted})
 	p := providerFor(t, srv, pool, nil)
 
-	err := p.Verify(t.Context(), authn.HumanProof{})
+	err := p.Verify(t.Context(), authn.HumanProof{}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 		t.Fatalf("an empty proof resolved with %v, want ErrHumanVerificationRequired", err)
 	}
@@ -337,7 +337,7 @@ func TestAnOverlongProofIsHumanProofTooLong(t *testing.T) {
 	srv, pool, calls := siteverify(t, answer{http.StatusOK, accepted})
 	p := providerFor(t, srv, pool, nil)
 
-	err := p.Verify(t.Context(), authn.HumanProof{Token: strings.Repeat("x", maxTokenLen+1)})
+	err := p.Verify(t.Context(), authn.HumanProof{Token: strings.Repeat("x", maxTokenLen+1)}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrHumanProofTooLong) {
 		t.Fatalf("an over-long proof resolved with %v, want ErrHumanProofTooLong", err)
 	}
@@ -351,14 +351,14 @@ func TestTheProviderReportsItsNameSiteKeyAndRequirement(t *testing.T) {
 	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
 	p := providerFor(t, srv, pool, nil)
 
-	if p.Provider() != ProviderName {
-		t.Errorf("Provider = %q, want %q", p.Provider(), ProviderName)
+	if p.Provider(authn.HumanScopeOther) != ProviderName {
+		t.Errorf("Provider = %q, want %q", p.Provider(authn.HumanScopeOther), ProviderName)
 	}
-	if !p.Required() {
+	if !p.Required(authn.HumanScopeOther) {
 		t.Error("Required = false, want true")
 	}
-	if p.SiteKey() != testSiteKey {
-		t.Errorf("SiteKey = %q, want %q", p.SiteKey(), testSiteKey)
+	if p.SiteKey(authn.HumanScopeOther) != testSiteKey {
+		t.Errorf("SiteKey = %q, want %q", p.SiteKey(authn.HumanScopeOther), testSiteKey)
 	}
 }
 
@@ -368,7 +368,7 @@ func TestAnUnreachableProviderIsUnavailable(t *testing.T) {
 	srv.Close()
 	p := providerFor(t, srv, pool, nil)
 
-	err := p.Verify(context.Background(), authn.HumanProof{Token: testToken})
+	err := p.Verify(context.Background(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("an unreachable provider resolved with %v, want ErrUnavailable", err)
 	}

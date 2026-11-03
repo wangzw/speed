@@ -149,14 +149,15 @@ func New(o Options) (*Provider, error) {
 	}, nil
 }
 
-// Required reports true: this gate is a condition of sending.
-func (p *Provider) Required() bool { return true }
+// Required reports true for every scope: this gate is a condition of sending
+// wherever it is configured.
+func (p *Provider) Required(authn.HumanScope) bool { return true }
 
-// Provider reports the mechanism name.
-func (p *Provider) Provider() string { return ProviderName }
+// Provider reports the mechanism name for every scope.
+func (p *Provider) Provider(authn.HumanScope) string { return ProviderName }
 
 // SiteKey reports the public widget key a client-side widget is rendered with.
-func (p *Provider) SiteKey() string { return p.siteKey }
+func (p *Provider) SiteKey(authn.HumanScope) string { return p.siteKey }
 
 // Verify posts the proof to siteverify and judges the answer.
 //
@@ -167,7 +168,7 @@ func (p *Provider) SiteKey() string { return p.siteKey }
 // hostname or action, or refused for a provider-side reason (its own internal
 // error, a key or widget misconfiguration, a code this package does not know)
 // is an outage: the proof was not judged, so nothing is sent.
-func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof) error {
+func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, _ authn.HumanScope) error {
 	if proof.Token == "" {
 		return fmt.Errorf("%w: turnstile: no proof was presented", authn.ErrHumanVerificationRequired)
 	}

@@ -63,13 +63,26 @@ type AuthnLoginPasswordReset struct {
 	Methods []string `json:"methods" required:"true" description:"The channels the reset may be sent through: email and sms, sorted, leaving out a channel that is not assembled, whose template is missing or that a disabled method turned off"`
 }
 
-// AuthnLoginHuman is the human-verification gate the deployment runs.
+// AuthnLoginHuman is the human-verification gate the deployment runs, one entry
+// per surface. A deployment may run a different mechanism on each: the phone
+// surface guards the sends that reach a phone number, and the other surface
+// guards every send that does not.
 type AuthnLoginHuman struct {
-	_ struct{} `description:"The human-verification gate a deployment puts in front of every send of a verification message: whether a proof is required, the mechanism that checks it, and the public identifier a client-side widget needs. A deployment that takes no gate in reports the off mechanism and requires nothing."`
+	_ struct{} `description:"The human-verification gate a deployment puts in front of every send of a verification message, reported once per surface. A deployment may run a different mechanism on each: the phone surface guards the four SMS sends, and the other surface guards every send that does not address a phone number. A deployment that takes no gate in reports the off mechanism on both surfaces."`
 
-	Required bool   `json:"required" required:"true" description:"Whether every send of a verification message must first present a valid, single-use proof"`
-	Provider string "json:\"provider\" required:\"true\" description:\"The mechanism that checks a proof: `off` when no gate is configured, `pow` for the self-hosted proof of work, or `turnstile`\""
-	SiteKey  string "json:\"site_key,omitempty\" description:\"The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off` and `pow`\""
+	Phone AuthnLoginHumanGate `json:"phone" required:"true" description:"The gate on a send that delivers a message to a phone number: login, second factor, enrollment and anonymous reset by SMS."`
+	Other AuthnLoginHumanGate `json:"other" required:"true" description:"The gate on every send that does not address a phone number: an email reset code and a self-service email addition."`
+}
+
+// AuthnLoginHumanGate is one surface's human-verification gate: whether a proof
+// is required, the mechanism that checks it, and the public identifier a
+// client-side widget needs.
+type AuthnLoginHumanGate struct {
+	_ struct{} `description:"The human-verification gate one surface runs: whether a proof is required, the mechanism that checks it, and the public identifier a client-side widget needs. A surface that takes no gate in reports the off mechanism and requires nothing."`
+
+	Required bool   "json:\"required\" required:\"true\" description:\"Whether every send on this surface must first present a valid, single-use proof\""
+	Provider string "json:\"provider\" required:\"true\" description:\"The mechanism that checks a proof on this surface: `off` when no gate is configured, `pow` for the self-hosted proof of work, `captcha` for the self-hosted captcha, or `turnstile` for Cloudflare's widget\""
+	SiteKey  string "json:\"site_key,omitempty\" description:\"The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`\""
 }
 
 // AuthnMethodDescriptor is one login method as the discovery document reports
@@ -249,6 +262,7 @@ type (
 	passwordSignupView   = AuthnLoginSignupPassword
 	mfaView              = AuthnLoginMFA
 	humanView            = AuthnLoginHuman
+	humanSurfaceView     = AuthnLoginHumanGate
 	registrationReply    = AuthnLoginRegistration
 	verificationView     = AuthnLoginRegistrationContact
 	passwordResetView    = AuthnLoginPasswordReset
@@ -269,7 +283,7 @@ type startInput struct {
 	// input because an input value is capped at 512 bytes and a Turnstile token
 	// can exceed that. It is read only when this request would send a message and
 	// the deployment requires a proof; otherwise it is ignored.
-	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
+	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
 // startAuthenticatedInput is the body of POST flows/authenticated.
@@ -284,7 +298,7 @@ type startAuthenticatedInput struct {
 	Input    map[string]string "json:\"input\" description:\"The fields the started step takes, as name-to-value strings: the method's first step for `link` and for a step-up that starts at the first factor, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), except that a kind an account may hold only once -- the authenticator app -- takes no name, and a label sent for it is that same 400 bad-request, and nothing for a step-up that starts at the second factor, except that a step-up may also name `exclude_factor`, one factor the flow must not offer -- the factor the caller is about to delete, which must never prove its own removal; a value naming no factor of the account filters nothing. When that exclusion leaves the account no factor at all, the flow of an account holding a password starts at the password and completes on it alone, while an account without a password is refused with 401 `insufficient_user_authentication`. At most 8 members, each value at most 512 bytes.\""
 	// HumanProof is the proof the deployment's human-verification gate checks
 	// before a verification message is sent; see startInput.HumanProof.
-	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
+	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
 // registerInput is the body of POST register.
@@ -305,7 +319,7 @@ type passwordResetStartInput struct {
 
 	Channel    string `json:"channel" required:"true" enum:"email,sms" description:"The channel to prove the holder of: email proves an address verified by an emailed code, sms proves a phone number verified by a code sent to it."`
 	Identifier string `json:"identifier" required:"true" description:"The address or E.164 phone number the code is sent to. An address is trimmed and lowercased first; a malformed value is a 400 bad-request."`
-	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
+	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
 // passwordResetVerifyInput is the body of POST password-reset/verify.
@@ -344,7 +358,7 @@ type answerInput struct {
 	Input map[string]string "json:\"input\" description:\"The fields the step takes, as name-to-value strings. At most 8 members, each value at most 8 KiB; a second-factor step reads `factor` to choose the factor and then the values that factor asks for, an enrollment step reads `kind`, and `complete` reads nothing.\""
 	// HumanProof is the proof the deployment's human-verification gate checks
 	// before a verification message is sent; see startInput.HumanProof.
-	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
+	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
 // callbackInput is the path of a provider callback: the provider segment the

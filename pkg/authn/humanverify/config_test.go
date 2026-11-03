@@ -54,40 +54,82 @@ func turnstileSection() map[string]any {
 	}
 }
 
-// The gate runs the self-hosted proof of work without a configuration file,
-// which is the product's default.
-func TestTheModeDefaultsToPoW(t *testing.T) {
+// The default deployment runs the proof of work on the other surface and the
+// self-hosted captcha on the phone surface. Both need no credential, so a
+// deployment that states nothing gates every send without reaching a third
+// party.
+func TestTheDefaultMechanismsArePoWOnTheOtherSurfaceAndCaptchaOnThePhoneSurface(t *testing.T) {
 	cfg, err := readBody(t, body(t, nil))
 	if err != nil {
 		t.Fatalf("resolving an empty section: %v", err)
 	}
-	if cfg.Mode != ModePoW {
-		t.Errorf("the default mode is %q, want %q", cfg.Mode, ModePoW)
+	if cfg.other.mode != ModePoW {
+		t.Errorf("the other surface's default mode is %q, want %q", cfg.other.mode, ModePoW)
+	}
+	if cfg.phone.mode != ModeCaptcha {
+		t.Errorf("the phone surface's default mode is %q, want %q", cfg.phone.mode, ModeCaptcha)
 	}
 }
 
-// Every mode in the closed set resolves and survives the decode.
+// Every mode in the closed set resolves on either surface, independently of the
+// other surface's default.
 func TestEveryModeInTheClosedSetResolves(t *testing.T) {
-	for _, mode := range []string{ModeOff, ModePoW} {
-		t.Run(mode, func(t *testing.T) {
-			cfg, err := readBody(t, body(t, map[string]any{"mode": mode}))
-			if err != nil {
-				t.Fatalf("resolving mode %q: %v", mode, err)
+	for _, item := range []string{modeItem, phoneModeItem} {
+		t.Run(item, func(t *testing.T) {
+			for _, mode := range []string{ModeOff, ModePoW, ModeCaptcha} {
+				t.Run(mode, func(t *testing.T) {
+					cfg, err := readBody(t, body(t, map[string]any{item: mode}))
+					if err != nil {
+						t.Fatalf("resolving %s = %q: %v", item, mode, err)
+					}
+					got := cfg.other.mode
+					if item == phoneModeItem {
+						got = cfg.phone.mode
+					}
+					if got != mode {
+						t.Errorf("the resolved mode is %q, want %q", got, mode)
+					}
+				})
 			}
-			if cfg.Mode != mode {
-				t.Errorf("the resolved mode is %q, want %q", cfg.Mode, mode)
-			}
+			t.Run(ModeTurnstile, func(t *testing.T) {
+				section := turnstileSection()
+				if item == phoneModeItem {
+					section = map[string]any{
+						"phone-mode": ModeTurnstile,
+						"site-key":   "1x00000000000000000000AA",
+						"secret-key": "turnstile-secret-2f7a91c4",
+						"hostname":   "login.example.com",
+					}
+				}
+				cfg, err := readBody(t, body(t, section))
+				if err != nil {
+					t.Fatalf("resolving %s = %q: %v", item, ModeTurnstile, err)
+				}
+				got := cfg.other.mode
+				if item == phoneModeItem {
+					got = cfg.phone.mode
+				}
+				if got != ModeTurnstile {
+					t.Errorf("the resolved mode is %q, want %q", got, ModeTurnstile)
+				}
+			})
 		})
 	}
-	t.Run(ModeTurnstile, func(t *testing.T) {
-		cfg, err := readBody(t, body(t, turnstileSection()))
-		if err != nil {
-			t.Fatalf("resolving mode %q: %v", ModeTurnstile, err)
-		}
-		if cfg.Mode != ModeTurnstile {
-			t.Errorf("the resolved mode is %q, want %q", cfg.Mode, ModeTurnstile)
-		}
-	})
+}
+
+// The two surfaces are chosen independently: turning the phone surface off does
+// not turn the other surface off.
+func TestTheSurfacesResolveIndependently(t *testing.T) {
+	cfg, err := readBody(t, body(t, map[string]any{
+		modeItem:      ModeOff,
+		phoneModeItem: ModePoW,
+	}))
+	if err != nil {
+		t.Fatalf("resolving two different modes: %v", err)
+	}
+	if cfg.other.mode != ModeOff || cfg.phone.mode != ModePoW {
+		t.Errorf("modes are other %q and phone %q, want off and pow", cfg.other.mode, cfg.phone.mode)
+	}
 }
 
 // A Turnstile section carries the endpoint and timeout defaults without naming
@@ -97,11 +139,11 @@ func TestTurnstileDefaultsTheVerifyEndpointAndTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolving a Turnstile section: %v", err)
 	}
-	if cfg.verifyURL != turnstile.DefaultVerifyURL {
-		t.Errorf("verify URL = %q, want %q", cfg.verifyURL, turnstile.DefaultVerifyURL)
+	if cfg.other.verifyURL != turnstile.DefaultVerifyURL {
+		t.Errorf("verify URL = %q, want %q", cfg.other.verifyURL, turnstile.DefaultVerifyURL)
 	}
-	if cfg.timeout != turnstile.DefaultTimeout {
-		t.Errorf("timeout = %s, want %s", cfg.timeout, turnstile.DefaultTimeout)
+	if cfg.other.timeout != turnstile.DefaultTimeout {
+		t.Errorf("timeout = %s, want %s", cfg.other.timeout, turnstile.DefaultTimeout)
 	}
 }
 
@@ -121,6 +163,43 @@ func TestTurnstileNeedsItsSiteKeySecretAndHostname(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The Turnstile credential rule holds per surface: the phone surface selecting
+// the mechanism without its site key, secret or hostname stops the startup
+// naming the item, exactly as the other surface's selection does. The surfaces
+// share the one credential set, so a phone-only selection is held to all three.
+func TestTurnstileOnThePhoneSurfaceNeedsItsCredentials(t *testing.T) {
+	for _, item := range []string{siteKeyItem, secretKeyItem, hostnameItem} {
+		t.Run(item, func(t *testing.T) {
+			section := turnstileSection()
+			delete(section, modeItem)
+			section[phoneModeItem] = ModeTurnstile
+			delete(section, item)
+			_, err := readBody(t, body(t, section))
+			if !errors.Is(err, authn.ErrInvalidConfig) {
+				t.Fatalf("a phone-surface Turnstile section without %s resolved with %v, want ErrInvalidConfig", item, err)
+			}
+			if !strings.Contains(err.Error(), ConfigNamespace+"."+item) {
+				t.Errorf("the failure %q does not name %s.%s", err, ConfigNamespace, item)
+			}
+		})
+	}
+	t.Run("complete", func(t *testing.T) {
+		section := turnstileSection()
+		delete(section, modeItem)
+		section[phoneModeItem] = ModeTurnstile
+		cfg, err := readBody(t, body(t, section))
+		if err != nil {
+			t.Fatalf("resolving a complete phone-surface Turnstile section: %v", err)
+		}
+		if cfg.phone.mode != ModeTurnstile {
+			t.Errorf("the phone surface's mode is %q, want %q", cfg.phone.mode, ModeTurnstile)
+		}
+		if cfg.other.mode != ModePoW {
+			t.Errorf("the other surface's mode is %q, want its default %q", cfg.other.mode, ModePoW)
+		}
+	})
 }
 
 // The siteverify endpoint is an https URL: the restricted egress client speaks
@@ -168,20 +247,24 @@ func TestAProofOfWorkModeNeedsNoneOfTheTurnstileItems(t *testing.T) {
 	}
 }
 
-// A mode outside the closed set is refused, and the failure names the key to
-// correct rather than silently running the gate off.
+// A mode outside the closed set is refused on either surface, and the failure
+// names the key to correct rather than silently running the gate off.
 func TestAnUnknownModeIsRefusedNamingTheKey(t *testing.T) {
-	for _, mode := range []string{"captcha", "PoW", "turnstile ", "none"} {
-		t.Run(mode, func(t *testing.T) {
-			_, err := readBody(t, body(t, map[string]any{"mode": mode}))
-			if !errors.Is(err, authn.ErrInvalidConfig) {
-				t.Fatalf("mode %q resolved with %v, want ErrInvalidConfig", mode, err)
-			}
-			if !strings.Contains(err.Error(), ConfigNamespace+"."+modeItem) {
-				t.Errorf("the failure %q does not name %s.%s", err, ConfigNamespace, modeItem)
-			}
-			if !strings.Contains(err.Error(), mode) {
-				t.Errorf("the failure %q does not name the value %q", err, mode)
+	for _, item := range []string{modeItem, phoneModeItem} {
+		t.Run(item, func(t *testing.T) {
+			for _, mode := range []string{"none", "PoW", "captcha ", "bogus"} {
+				t.Run(mode, func(t *testing.T) {
+					_, err := readBody(t, body(t, map[string]any{item: mode}))
+					if !errors.Is(err, authn.ErrInvalidConfig) {
+						t.Fatalf("mode %q resolved with %v, want ErrInvalidConfig", mode, err)
+					}
+					if !strings.Contains(err.Error(), ConfigNamespace+"."+item) {
+						t.Errorf("the failure %q does not name %s.%s", err, ConfigNamespace, item)
+					}
+					if !strings.Contains(err.Error(), mode) {
+						t.Errorf("the failure %q does not name the value %q", err, mode)
+					}
+				})
 			}
 		})
 	}
@@ -199,7 +282,7 @@ func TestTheSchemaDeclaresTheItemsUnderTheNamespace(t *testing.T) {
 		t.Errorf("the schema namespace is %q, want %q", s.Namespace, ConfigNamespace)
 	}
 	for _, item := range []string{
-		modeItem, siteKeyItem, secretKeyItem, verifyURLItem, hostnameItem,
+		modeItem, phoneModeItem, siteKeyItem, secretKeyItem, verifyURLItem, hostnameItem,
 		actionItem, timeoutItem,
 	} {
 		if _, ok := s.Items[item]; !ok {

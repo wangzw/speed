@@ -1,12 +1,33 @@
 package login
 
 import (
+	"context"
 	"net/http"
 	"reflect"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
 )
+
+// scopedHuman answers a different gate on each surface, so a case can tell the
+// two entries of the methods document apart.
+type scopedHuman map[authn.HumanScope]authn.HumanVerifier
+
+func (h scopedHuman) verifier(scope authn.HumanScope) authn.HumanVerifier {
+	if v, ok := h[scope]; ok {
+		return v
+	}
+	return &fakeHuman{provider: "off"}
+}
+
+func (h scopedHuman) Required(scope authn.HumanScope) bool { return h.verifier(scope).Required(scope) }
+func (h scopedHuman) Provider(scope authn.HumanScope) string {
+	return h.verifier(scope).Provider(scope)
+}
+func (h scopedHuman) SiteKey(scope authn.HumanScope) string { return h.verifier(scope).SiteKey(scope) }
+func (h scopedHuman) Verify(ctx context.Context, p authn.HumanProof, scope authn.HumanScope) error {
+	return h.verifier(scope).Verify(ctx, p, scope)
+}
 
 // signupStore is a settings store whose registration switch is open and whose
 // other declared switch, the disabled methods, names none.
@@ -83,6 +104,67 @@ func TestTheMethodsListingPublishesMethodDescriptors(t *testing.T) {
 	}
 	if got := body["mfa"].(map[string]any)["factors"].([]any); !reflect.DeepEqual(got, []any{"sms", "totp", "webauthn"}) {
 		t.Errorf("mfa.factors = %v, want [sms totp webauthn]", got)
+	}
+}
+
+// TestTheMethodsListingReportsTheHumanGatePerScope holds that the discovery
+// document reports the gate once per surface: the phone surface guards the SMS
+// sends and the other surface guards every send that does not address a phone
+// number, and a deployment may run a different mechanism on each.
+func TestTheMethodsListingReportsTheHumanGatePerScope(t *testing.T) {
+	r := newRigMethods(t, &fakeMethod{name: "password"})
+	r.p.settings = newReader(signupStore(), r.p.logger)
+	r.p.human = scopedHuman{
+		authn.HumanScopePhone: &fakeHuman{required: true, provider: "captcha"},
+		authn.HumanScopeOther: &fakeHuman{required: true, provider: "pow"},
+	}
+
+	body := decode(t, r.send(http.MethodGet, "/api/v1/auth/methods", "").Body.String())
+	human, ok := body["human"].(map[string]any)
+	if !ok {
+		t.Fatalf("human = %v, want an object with a phone and an other surface", body["human"])
+	}
+
+	phone, ok := human["phone"].(map[string]any)
+	if !ok {
+		t.Fatalf("human.phone = %v, want the phone surface's gate", human["phone"])
+	}
+	if phone["required"] != true || phone["provider"] != "captcha" {
+		t.Errorf("human.phone = %v, want a required captcha", phone)
+	}
+	if v, present := phone["site_key"]; present {
+		t.Errorf("human.phone carries site_key = %v, want it absent: a captcha has no widget key", v)
+	}
+
+	other, ok := human["other"].(map[string]any)
+	if !ok {
+		t.Fatalf("human.other = %v, want the other surface's gate", human["other"])
+	}
+	if other["required"] != true || other["provider"] != "pow" {
+		t.Errorf("human.other = %v, want a required proof of work", other)
+	}
+}
+
+// TestTheMethodsListingReportsNoGateAsOffOnEverySurface holds that no seam and
+// the off mechanism read the same: every surface names off and requires
+// nothing, because in both cases a caller presents no proof.
+func TestTheMethodsListingReportsNoGateAsOffOnEverySurface(t *testing.T) {
+	r := newRigMethods(t, &fakeMethod{name: "password"})
+	r.p.settings = newReader(signupStore(), r.p.logger)
+
+	body := decode(t, r.send(http.MethodGet, "/api/v1/auth/methods", "").Body.String())
+	human, ok := body["human"].(map[string]any)
+	if !ok {
+		t.Fatalf("human = %v, want an object with a phone and an other surface", body["human"])
+	}
+	for _, scope := range []string{"phone", "other"} {
+		surface, ok := human[scope].(map[string]any)
+		if !ok {
+			t.Fatalf("human.%s = %v, want the surface's gate", scope, human[scope])
+		}
+		if surface["required"] != false || surface["provider"] != "off" {
+			t.Errorf("human.%s = %v, want the off mechanism requiring nothing", scope, surface)
+		}
 	}
 }
 

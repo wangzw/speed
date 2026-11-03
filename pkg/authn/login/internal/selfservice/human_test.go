@@ -16,29 +16,64 @@ import (
 // address.
 type fakeHuman struct {
 	required bool
-	provider string
-	siteKey  string
-	accept   map[string]bool
-	err      error
-	calls    []authn.HumanProof
+	// byScope, when set, answers Required per scope instead of the single
+	// required flag, so a case can gate one surface and leave the other off.
+	byScope        map[authn.HumanScope]bool
+	provider       string
+	siteKey        string
+	accept         map[string]bool
+	err            error
+	calls          []authn.HumanProof
+	requiredScopes []authn.HumanScope
+	verifyScopes   []authn.HumanScope
 }
 
-func (h *fakeHuman) Required() bool   { return h.required }
-func (h *fakeHuman) Provider() string { return h.provider }
-func (h *fakeHuman) SiteKey() string  { return h.siteKey }
+func (h *fakeHuman) Required(scope authn.HumanScope) bool {
+	h.requiredScopes = append(h.requiredScopes, scope)
+	if h.byScope != nil {
+		return h.byScope[scope]
+	}
+	return h.required
+}
+func (h *fakeHuman) Provider(authn.HumanScope) string { return h.provider }
+func (h *fakeHuman) SiteKey(authn.HumanScope) string  { return h.siteKey }
 
-func (h *fakeHuman) Verify(_ context.Context, p authn.HumanProof) error {
+func (h *fakeHuman) Verify(_ context.Context, p authn.HumanProof, scope authn.HumanScope) error {
 	h.calls = append(h.calls, p)
+	h.verifyScopes = append(h.verifyScopes, scope)
 	if h.err != nil {
 		return h.err
 	}
-	if !h.required {
+	if !h.required && h.byScope == nil {
 		return nil
 	}
 	if p.Token == "" || !h.accept[p.Token] {
 		return fmt.Errorf("%w: the proof is missing or not valid", authn.ErrHumanVerificationRequired)
 	}
 	return nil
+}
+
+// askedScopes is every scope the gate was asked about, through Required and
+// Verify alike.
+func (h *fakeHuman) askedScopes() []authn.HumanScope {
+	scopes := make([]authn.HumanScope, 0, len(h.requiredScopes)+len(h.verifyScopes))
+	scopes = append(scopes, h.requiredScopes...)
+	scopes = append(scopes, h.verifyScopes...)
+	return scopes
+}
+
+// assertOnlyScope holds that every question the gate was asked named want.
+func assertOnlyScope(t *testing.T, human *fakeHuman, want authn.HumanScope) {
+	t.Helper()
+	scopes := human.askedScopes()
+	if len(scopes) == 0 {
+		t.Fatalf("the gate was asked about no scope, want at least %q", want)
+	}
+	for _, got := range scopes {
+		if got != want {
+			t.Errorf("the gate was asked about scope %q, want only %q", got, want)
+		}
+	}
 }
 
 // requiredHuman is a gate that requires a proof and accepts proof-1.
@@ -265,5 +300,74 @@ func TestAnEmailAddHumanFailureMapsToItsAnswer(t *testing.T) {
 				t.Errorf("the store holds %v, want nothing", keys)
 			}
 		})
+	}
+}
+
+// TestAnEmailAddAsksTheOtherScopeAndOnlyTheOtherScope holds the surface adding
+// an email is gated on. The code goes to an email address, not a phone number,
+// so it is held to the other surface: a deployment that gates only the other
+// surface refuses a proofless add, and one that gates only the phone surface
+// lets it through without ever asking the gate about that phone surface.
+func TestAnEmailAddAsksTheOtherScopeAndOnlyTheOtherScope(t *testing.T) {
+	t.Run("the other surface gates the email add", func(t *testing.T) {
+		human := &fakeHuman{
+			byScope:  map[authn.HumanScope]bool{authn.HumanScopeOther: true},
+			provider: "pow",
+			accept:   map[string]bool{},
+		}
+		h := withHuman(t, human, func(c *config) { c.email = true })
+
+		rec := h.post("/identifiers", `{"kind":"email","value":"ada@example.org"}`)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("an email add gated only on the other surface answered %d, want 403: %s", rec.Code, rec.Body.String())
+		}
+		if got := problemType(t, rec); got != mount.CodeHumanVerificationRequired {
+			t.Errorf("the refusal code = %q, want %q", got, mount.CodeHumanVerificationRequired)
+		}
+		assertOnlyScope(t, human, authn.HumanScopeOther)
+		if len(h.email.sent) != 0 {
+			t.Errorf("the email channel was handed %d messages, want none", len(h.email.sent))
+		}
+	})
+
+	t.Run("the phone surface does not gate the email add", func(t *testing.T) {
+		human := &fakeHuman{
+			byScope:  map[authn.HumanScope]bool{authn.HumanScopePhone: true},
+			provider: "captcha",
+			accept:   map[string]bool{},
+		}
+		h := withHuman(t, human, func(c *config) { c.email = true })
+
+		rec := h.post("/identifiers", `{"kind":"email","value":"ada@example.org"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("an email add gated only on the phone surface answered %d, want 200: %s", rec.Code, rec.Body.String())
+		}
+		assertOnlyScope(t, human, authn.HumanScopeOther)
+		if len(h.email.sent) != 1 {
+			t.Errorf("the email channel was handed %d messages, want one", len(h.email.sent))
+		}
+	})
+}
+
+// TestThePhoneAddLeavesTheProofToTheSender holds that the phone route does not
+// ask the gate itself: the proof travels to SMSCodes.Send, where the phone
+// surface's check consumes it. Asking the gate here as well would consume a
+// single-use proof twice.
+func TestThePhoneAddLeavesTheProofToTheSender(t *testing.T) {
+	human := &fakeHuman{required: true, provider: "captcha", accept: map[string]bool{"proof-1": true}}
+	h := withHuman(t, human)
+
+	rec := h.post("/phone", `{"phone":"+8613800000000","human_proof":"proof-1"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a phone add answered %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if len(h.sms.sent) != 1 {
+		t.Fatalf("the SMS channel was handed %d messages, want one", len(h.sms.sent))
+	}
+	if got := h.sms.sent[0].Proof; got != "proof-1" {
+		t.Errorf("the code engine was handed proof %q, want the request's proof-1", got)
+	}
+	if scopes := human.askedScopes(); len(scopes) != 0 {
+		t.Errorf("the route asked the gate about %v, want not asked: the sender checks the proof", scopes)
 	}
 }

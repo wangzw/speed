@@ -72,7 +72,7 @@ func TestAVerificationFailureNeverRepeatsTheTurnstileSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	err = provider.Verify(t.Context(), authn.HumanProof{Token: token})
+	err = provider.Verify(t.Context(), authn.HumanProof{Token: token}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("a 500 resolved with %v, want ErrUnavailable", err)
 	}

@@ -2,19 +2,23 @@
 // capability: the object a send asks, before it spends a budget, whether the
 // request came from a person.
 //
-// A deployment chooses the mechanism with this module's mode: off, a self-hosted
-// proof of work, or Cloudflare Turnstile. The gate runs the self-hosted proof of
-// work by default, and the seam is delivered exclusively, so a command names
-// this module or supplies its own authn.HumanVerifier; two exclusive providers in
-// one run fail the startup.
+// A deployment chooses one mechanism per surface with this module's mode and
+// phone-mode: off, a self-hosted proof of work, a self-hosted captcha, or
+// Cloudflare Turnstile. The other surface runs the proof of work and the phone
+// surface runs the captcha by default, and the seam is delivered exclusively, so
+// a command names this module or supplies its own authn.HumanVerifier; two
+// exclusive providers in one run fail the startup.
 //
 // The module holds no send state and sends nothing. A send checks the seam
 // before it spends anything, and the token's single-use property belongs to the
-// provider behind the seam. The off mode accepts every proof, the proof-of-work
-// mode issues a challenge on POST /api/v1/auth/human/challenge and spends it
-// when the proof is accepted, and the turnstile mode posts the proof to
-// Cloudflare's siteverify endpoint and accepts it once the answer names the
-// deployment's hostname and, when configured, its action.
+// provider behind the seam. The off mechanism accepts every proof. The
+// proof-of-work mechanism issues a challenge on POST
+// /api/v1/auth/human/challenge and spends it when the proof is accepted. The
+// captcha mechanism issues a challenge on POST
+// /api/v1/auth/human/captcha/challenge and serves its image, background, piece
+// and audio on the routes under that path. The turnstile mechanism posts the
+// proof to Cloudflare's siteverify endpoint and accepts it once the answer names
+// the deployment's hostname and, when configured, its action.
 package humanverify
 
 import (
@@ -124,8 +128,12 @@ func Module() core.Module {
 			if err != nil {
 				return nil, err
 			}
-			if cfg.Mode == ModeTurnstile {
-				if registerErr := registerSecret(reg, cfg.secretKey); registerErr != nil {
+			if cfg.usesTurnstile() {
+				secret := cfg.other.secretKey
+				if cfg.phone.mode == ModeTurnstile {
+					secret = cfg.phone.secretKey
+				}
+				if registerErr := registerSecret(reg, secret); registerErr != nil {
 					return nil, registerErr
 				}
 			}
@@ -137,38 +145,47 @@ func Module() core.Module {
 		},
 
 		Init: func(_ context.Context, reg *core.Registry, instance any) error {
-			provider, ok := instance.(*pow.Provider)
-			if !ok {
+			gate, ok := instance.(*gate)
+			if !ok || (gate.pow == nil && gate.captcha == nil) {
 				return nil
 			}
 			mounter, err := core.Resolve[mount.Mounter](reg)
 			if err != nil {
-				return fmt.Errorf("%w: %s.%s is %q, and the challenge route is mounted through the "+
-					"authentication capability's route mounter, which this run did not deliver. Name the "+
-					"route mounter on the command, or run the gate off: %w",
-					authn.ErrInvalidConfig, ConfigNamespace, modeItem, ModePoW, err)
+				return fmt.Errorf("%w: the mechanisms named by %s.%s and %s.%s serve a challenge route "+
+					"through the authentication capability's route mounter, which this run did not "+
+					"deliver. Name the route mounter on the command, or run the gate off: %w",
+					authn.ErrInvalidConfig, ConfigNamespace, modeItem, ConfigNamespace, phoneModeItem, err)
 			}
-			mountChallenge(mounter, provider)
+			if gate.pow != nil {
+				mountChallenge(mounter, gate.pow)
+			}
+			if gate.captcha != nil {
+				mountCaptcha(mounter, gate.captcha)
+			}
 			return nil
 		},
 	}
 }
 
-// dependencies takes up what the resolved mode needs. The off and turnstile
+// dependencies takes up what the resolved modes need. The off and turnstile
 // gates need nothing, so a run that carries neither the store nor the mounter
-// still starts with the gate off.
+// still starts with both surfaces off. The settings store is taken up only when
+// a surface runs the proof of work, which is the one mechanism that reads it.
 func dependencies(cfg resolved, reg *core.Registry) (deps, error) {
-	if cfg.Mode != ModePoW {
-		return deps{}, nil
+	var taken deps
+	if cfg.needsStore() {
+		store, err := core.Resolve[kv.KV](reg)
+		if err != nil {
+			return deps{}, fmt.Errorf("%w: the mechanisms named by %s.%s and %s.%s keep their "+
+				"challenges in the key-value store, which this run did not deliver. Name a key-value "+
+				"backend on the command, or run those surfaces without a self-hosted mechanism: %w",
+				authn.ErrInvalidConfig, ConfigNamespace, modeItem, ConfigNamespace, phoneModeItem, err)
+		}
+		taken.store = store
 	}
-	store, err := core.Resolve[kv.KV](reg)
-	if err != nil {
-		return deps{}, fmt.Errorf("%w: %s.%s is %q, and the proof-of-work mechanism keeps its "+
-			"challenges in the key-value store, which this run did not deliver. Name a key-value "+
-			"backend on the command, or run the gate off: %w",
-			authn.ErrInvalidConfig, ConfigNamespace, modeItem, cfg.Mode, err)
+	if !cfg.usesPoW() {
+		return taken, nil
 	}
-	taken := deps{store: store}
 	settingsStore, err := core.Resolve[settings.Store](reg)
 	switch {
 	case err == nil:

@@ -16,9 +16,13 @@ const (
 	fragmentVersion = "1.0.0"
 )
 
-// challengePath is the route as the fragment writes it: relative to the
-// module's API root, so the absolute path is /api/v1/auth/human/challenge.
-const challengePath = "/auth/human/challenge"
+// The routes as the fragment writes them: relative to the module's API root,
+// so the absolute paths are /api/v1/auth/human/challenge and
+// /api/v1/auth/human/captcha/challenge.
+const (
+	challengePath        = "/auth/human/challenge"
+	captchaChallengePath = "/auth/human/captcha/challenge"
+)
 
 // typePrefix starts the Problem.Type of every failure this module's handler
 // writes, the code following it being one of mount's closed table.
@@ -68,8 +72,50 @@ var challengeOperation = speedhttp.NewReplyOperation[struct{}](
 	speedhttp.Public(),
 )
 
+// captchaChallengeInput is the challenge route's input: the form the caller
+// wants drawn. An empty value is the image form.
+type captchaChallengeInput struct {
+	Form string `query:"form" enum:"image,slider,audio" description:"The challenge form to draw: image (the default when the item is absent or empty), slider, or audio. Any other value is a 400 bad-request."`
+}
+
+// captchaChallengeOperation declares the public route that issues a self-hosted
+// captcha challenge. Its handler builds the answer because the success body
+// carries the media paths the mounter resolves from its configured base, which
+// the declaration cannot compute.
+var captchaChallengeOperation = speedhttp.NewReplyOperation[captchaChallengeInput](
+	"authn.humanverify.captchaChallenge",
+	http.MethodPost,
+	captchaChallengePath,
+	"Obtain a captcha challenge",
+	"Issues one human-verification challenge for the self-hosted captcha mechanism. "+
+		"The request names the form with the `form` query item: `image` draws digits and "+
+		"answers the media path of the picture, `slider` draws a background and a piece to "+
+		"slide over it, and `audio` draws a spoken reading of digits as the accessible "+
+		"alternative. The answer names the challenge id, the form, the instruction key a "+
+		"client words for that form, and the media paths the form carries. A proof is the "+
+		"challenge id and the answer joined by a dot; it is single-use and spends the "+
+		"challenge whether the answer matched or not. A key-value store that cannot answer "+
+		"is answered 503.",
+	nil,
+	[]speedhttp.Response{
+		{
+			Status:      http.StatusOK,
+			Description: "A captcha challenge, its form, its instruction key and its media paths",
+			Body:        &speedhttp.Body{MediaType: "application/json", Structure: reflect.TypeOf(CaptchaChallengeResponse{})},
+		},
+		speedhttp.ProblemResponseOf(http.StatusBadRequest,
+			"The form is not one this provider draws",
+			typePrefix+mount.CodeBadRequest),
+		speedhttp.ProblemResponseOf(http.StatusServiceUnavailable,
+			"The challenge could not be issued because the key-value store was unavailable",
+			typePrefix+mount.CodeUnavailable),
+	},
+	speedhttp.Public(),
+)
+
 // operations is this module's declaration of the API it serves. The fragment is
 // generated from it; the route is mounted from the same declaration.
 var operations = speedhttp.Operations{
 	challengeOperation,
+	captchaChallengeOperation,
 }

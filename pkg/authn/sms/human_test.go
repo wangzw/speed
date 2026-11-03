@@ -20,12 +20,17 @@ import (
 type fakeHuman struct {
 	mu       sync.Mutex
 	required bool
-	provider string
-	siteKey  string
-	accept   map[string]bool
-	used     map[string]bool
-	calls    []authn.HumanProof
-	err      error
+	// byScope, when set, answers Required per scope instead of the single
+	// required flag, so a case can gate one surface and leave the other off.
+	byScope        map[authn.HumanScope]bool
+	provider       string
+	siteKey        string
+	accept         map[string]bool
+	used           map[string]bool
+	calls          []authn.HumanProof
+	requiredScopes []authn.HumanScope
+	verifyScopes   []authn.HumanScope
+	err            error
 }
 
 func newRequiredHuman() *fakeHuman {
@@ -37,18 +42,27 @@ func newRequiredHuman() *fakeHuman {
 	}
 }
 
-func (h *fakeHuman) Required() bool   { return h.required }
-func (h *fakeHuman) Provider() string { return h.provider }
-func (h *fakeHuman) SiteKey() string  { return h.siteKey }
+func (h *fakeHuman) Required(scope authn.HumanScope) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.requiredScopes = append(h.requiredScopes, scope)
+	if h.byScope != nil {
+		return h.byScope[scope]
+	}
+	return h.required
+}
+func (h *fakeHuman) Provider(authn.HumanScope) string { return h.provider }
+func (h *fakeHuman) SiteKey(authn.HumanScope) string  { return h.siteKey }
 
-func (h *fakeHuman) Verify(_ context.Context, p authn.HumanProof) error {
+func (h *fakeHuman) Verify(_ context.Context, p authn.HumanProof, scope authn.HumanScope) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.calls = append(h.calls, p)
+	h.verifyScopes = append(h.verifyScopes, scope)
 	if h.err != nil {
 		return h.err
 	}
-	if !h.required {
+	if !h.required && h.byScope == nil {
 		return nil
 	}
 	if p.Token == "" || !h.accept[p.Token] || h.used[p.Token] {
@@ -71,6 +85,33 @@ func (h *fakeHuman) last() (authn.HumanProof, bool) {
 		return authn.HumanProof{}, false
 	}
 	return h.calls[len(h.calls)-1], true
+}
+
+// askedScopes is every scope the gate was asked about, through Required and
+// Verify alike, in the order the send asked.
+func (h *fakeHuman) askedScopes() []authn.HumanScope {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	scopes := make([]authn.HumanScope, 0, len(h.requiredScopes)+len(h.verifyScopes))
+	scopes = append(scopes, h.requiredScopes...)
+	scopes = append(scopes, h.verifyScopes...)
+	return scopes
+}
+
+// assertOnlyScope holds that every question the gate was asked named want: a
+// send that asks the wrong surface is asking a different gate, and a send that
+// asks both is held to a gate it does not send on.
+func assertOnlyScope(t *testing.T, human *fakeHuman, want authn.HumanScope) {
+	t.Helper()
+	scopes := human.askedScopes()
+	if len(scopes) == 0 {
+		t.Fatalf("the gate was asked about no scope, want at least %q", want)
+	}
+	for _, got := range scopes {
+		if got != want {
+			t.Errorf("the gate was asked about scope %q, want only %q", got, want)
+		}
+	}
 }
 
 // TestSendRefusesAMissingProofBeforeAnyBudget holds the gate's order: a send
@@ -215,4 +256,70 @@ func TestSendCarriesAGateOutageAsTheProviderSaid(t *testing.T) {
 	if n := r.rowCount(); n != 0 {
 		t.Errorf("the challenge table holds %d rows, want none", n)
 	}
+}
+
+// TestSendAsksThePhoneScopeAndOnlyThePhoneScope holds the surface a send is
+// gated on. Every SMS purpose reaches a phone number, so each is held to the
+// phone surface: a deployment that gates only the phone surface refuses a
+// proofless send, and one that gates only the other surface lets it through
+// without ever asking the gate about that other surface.
+func TestSendAsksThePhoneScopeAndOnlyThePhoneScope(t *testing.T) {
+	purposes := []string{
+		authn.SMSPurposeLogin,
+		authn.SMSPurposeMFA,
+		authn.SMSPurposeEnroll,
+		authn.SMSPurposeReset,
+	}
+	for _, purpose := range purposes {
+		t.Run(purpose+" is gated on the phone surface", func(t *testing.T) {
+			r := newRigSQLite(t)
+			r.allow()
+			human := &fakeHuman{
+				byScope:  map[authn.HumanScope]bool{authn.HumanScopePhone: true},
+				provider: "captcha",
+				accept:   map[string]bool{},
+				used:     map[string]bool{},
+			}
+			r.p.human = human
+
+			_, err := r.p.Send(context.Background(), sendFor(purpose))
+			if !errors.Is(err, authn.ErrHumanVerificationRequired) {
+				t.Fatalf("a %s send gated only on the phone surface resolved with %v, want ErrHumanVerificationRequired", purpose, err)
+			}
+			assertOnlyScope(t, human, authn.HumanScopePhone)
+			if n := r.rowCount(); n != 0 {
+				t.Errorf("the challenge table holds %d rows, want none", n)
+			}
+		})
+
+		t.Run(purpose+" is not gated on the other surface", func(t *testing.T) {
+			r := newRigSQLite(t)
+			r.allow()
+			human := &fakeHuman{
+				byScope:  map[authn.HumanScope]bool{authn.HumanScopeOther: true},
+				provider: "pow",
+				accept:   map[string]bool{},
+				used:     map[string]bool{},
+			}
+			r.p.human = human
+
+			if _, err := r.p.Send(context.Background(), sendFor(purpose)); err != nil {
+				t.Fatalf("a %s send gated only on the other surface resolved with %v, want a send", purpose, err)
+			}
+			assertOnlyScope(t, human, authn.HumanScopePhone)
+			if n := r.rowCount(); n != 1 {
+				t.Errorf("the challenge table holds %d rows, want one", n)
+			}
+		})
+	}
+}
+
+// sendFor is a delivering send of one purpose, with the account the purposes
+// that count against one require.
+func sendFor(purpose string) authn.SendCode {
+	in := authn.SendCode{Purpose: purpose, Phone: phone, Deliver: true}
+	if purpose == authn.SMSPurposeMFA || purpose == authn.SMSPurposeEnroll {
+		in.Account = acct
+	}
+	return in
 }

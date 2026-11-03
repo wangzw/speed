@@ -96,27 +96,29 @@ func driveVerifier(t *testing.T, document string) authn.HumanVerifier {
 	return newRig(t, document).drive(t)
 }
 
-// sectionFor is the configuration a case runs a mode on: the credentials the
-// Turnstile provider needs, and the mode alone for the mechanisms that need
-// none.
+// sectionFor is the configuration a case runs one mechanism on both surfaces:
+// the credentials Turnstile needs, and the mode alone for the mechanisms that
+// need none.
 func sectionFor(mode string) map[string]any {
 	if mode == ModeTurnstile {
-		return turnstileSection()
+		section := turnstileSection()
+		section[phoneModeItem] = ModeTurnstile
+		return section
 	}
-	return map[string]any{"mode": mode}
+	return map[string]any{modeItem: mode, phoneModeItem: mode}
 }
 
 // The off gate requires nothing and accepts any proof, an empty one included,
 // so a deployment that leaves it off behaves as though the gate were absent.
 func TestTheOffProviderRequiresNothingAndAcceptsAnyProof(t *testing.T) {
-	v := driveVerifier(t, body(t, map[string]any{"mode": ModeOff}))
-	if got := v.Provider(); got != ModeOff {
+	v := driveVerifier(t, body(t, sectionFor(ModeOff)))
+	if got := v.Provider(authn.HumanScopeOther); got != ModeOff {
 		t.Errorf("the verifier reports %q, want %q", got, ModeOff)
 	}
-	if v.Required() {
+	if v.Required(authn.HumanScopeOther) {
 		t.Error("the off gate requires a proof")
 	}
-	if got := v.SiteKey(); got != "" {
+	if got := v.SiteKey(authn.HumanScopeOther); got != "" {
 		t.Errorf("the off gate has the site key %q, want none", got)
 	}
 	for _, proof := range []authn.HumanProof{
@@ -124,7 +126,7 @@ func TestTheOffProviderRequiresNothingAndAcceptsAnyProof(t *testing.T) {
 		{Token: "any token at all"},
 		{Token: "a token", RemoteIP: "203.0.113.7"},
 	} {
-		if err := v.Verify(t.Context(), proof); err != nil {
+		if err := v.Verify(t.Context(), proof, authn.HumanScopeOther); err != nil {
 			t.Errorf("the off gate refused %+v with %v, want acceptance", proof, err)
 		}
 	}
@@ -133,14 +135,14 @@ func TestTheOffProviderRequiresNothingAndAcceptsAnyProof(t *testing.T) {
 // Every mode is a provider that reports its own name, and every mode but off
 // makes a proof a condition of sending.
 func TestEveryModeBuildsAProviderThatReportsIt(t *testing.T) {
-	for _, mode := range []string{ModeOff, ModePoW, ModeTurnstile} {
+	for _, mode := range []string{ModeOff, ModePoW, ModeCaptcha, ModeTurnstile} {
 		t.Run(mode, func(t *testing.T) {
 			v := driveVerifier(t, body(t, sectionFor(mode)))
-			if got := v.Provider(); got != mode {
+			if got := v.Provider(authn.HumanScopeOther); got != mode {
 				t.Errorf("the verifier reports %q, want %q", got, mode)
 			}
-			if want := mode != ModeOff; v.Required() != want {
-				t.Errorf("Required = %v for mode %q, want %v", v.Required(), mode, want)
+			if want := mode != ModeOff; v.Required(authn.HumanScopeOther) != want {
+				t.Errorf("Required = %v for mode %q, want %v", v.Required(authn.HumanScopeOther), mode, want)
 			}
 		})
 	}
@@ -150,18 +152,190 @@ func TestEveryModeBuildsAProviderThatReportsIt(t *testing.T) {
 // widget with, so the surface can answer with it.
 func TestTurnstileReportsItsSiteKey(t *testing.T) {
 	v := driveVerifier(t, body(t, turnstileSection()))
-	if got, want := v.SiteKey(), "1x00000000000000000000AA"; got != want {
+	if got, want := v.SiteKey(authn.HumanScopeOther), "1x00000000000000000000AA"; got != want {
 		t.Errorf("SiteKey = %q, want %q", got, want)
 	}
+}
+
+// A deployment can run a different mechanism on each surface, and every answer
+// is the answer of the surface named.
+func TestEachSurfaceAnswersItsOwnMechanism(t *testing.T) {
+	v := driveVerifier(t, body(t, map[string]any{
+		modeItem:      ModePoW,
+		phoneModeItem: ModeCaptcha,
+	}))
+	if got := v.Provider(authn.HumanScopeOther); got != ModePoW {
+		t.Errorf("the other surface reports %q, want %q", got, ModePoW)
+	}
+	if got := v.Provider(authn.HumanScopePhone); got != ModeCaptcha {
+		t.Errorf("the phone surface reports %q, want %q", got, ModeCaptcha)
+	}
+	for _, scope := range []authn.HumanScope{authn.HumanScopeOther, authn.HumanScopePhone} {
+		if !v.Required(scope) {
+			t.Errorf("the %q surface requires no proof, want one", scope)
+		}
+		if got := v.SiteKey(scope); got != "" {
+			t.Errorf("the %q surface has the site key %q, want none", scope, got)
+		}
+	}
+}
+
+// The site key is the selected surface's: a Turnstile surface reports the key a
+// client renders its widget with, and a self-hosted surface on the other side
+// reports none, whichever surface each mechanism runs on.
+func TestSiteKeyIsPerSurface(t *testing.T) {
+	const siteKey = "1x00000000000000000000AA"
+	v := driveVerifier(t, body(t, map[string]any{
+		modeItem:      ModeTurnstile,
+		phoneModeItem: ModeCaptcha,
+		siteKeyItem:   siteKey,
+		secretKeyItem: "turnstile-secret-2f7a91c4",
+		hostnameItem:  "login.example.com",
+	}))
+	if got := v.SiteKey(authn.HumanScopeOther); got != siteKey {
+		t.Errorf("the other surface's site key is %q, want %q", got, siteKey)
+	}
+	if got := v.SiteKey(authn.HumanScopePhone); got != "" {
+		t.Errorf("the phone surface's site key is %q, want none: it runs the captcha", got)
+	}
+}
+
+// Turning one surface off disables that surface alone: the other surface keeps
+// requiring its proof, and a proof presented for the off surface is accepted
+// while the same proof fails on the surface that requires one. This is the
+// composed verifier routing Verify by scope, not only its descriptive answers.
+func TestOffDisablesOnlyItsSurface(t *testing.T) {
+	cases := []struct {
+		name       string
+		section    map[string]any
+		offScope   authn.HumanScope
+		gatedScope authn.HumanScope
+		gatedMode  string
+	}{
+		{
+			name:       "the other surface off",
+			section:    map[string]any{modeItem: ModeOff, phoneModeItem: ModeCaptcha},
+			offScope:   authn.HumanScopeOther,
+			gatedScope: authn.HumanScopePhone,
+			gatedMode:  ModeCaptcha,
+		},
+		{
+			name:       "the phone surface off",
+			section:    map[string]any{modeItem: ModePoW, phoneModeItem: ModeOff},
+			offScope:   authn.HumanScopePhone,
+			gatedScope: authn.HumanScopeOther,
+			gatedMode:  ModePoW,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v := driveVerifier(t, body(t, tc.section))
+			if v.Required(tc.offScope) {
+				t.Errorf("the %q surface requires a proof, want the gate off", tc.offScope)
+			}
+			if got := v.Provider(tc.offScope); got != ModeOff {
+				t.Errorf("the %q surface reports %q, want %q", tc.offScope, got, ModeOff)
+			}
+			if !v.Required(tc.gatedScope) {
+				t.Errorf("the %q surface requires no proof, want one", tc.gatedScope)
+			}
+			if got := v.Provider(tc.gatedScope); got != tc.gatedMode {
+				t.Errorf("the %q surface reports %q, want %q", tc.gatedScope, got, tc.gatedMode)
+			}
+			if err := v.Verify(t.Context(), authn.HumanProof{}, tc.offScope); err != nil {
+				t.Errorf("the off surface refused an empty proof with %v, want acceptance", err)
+			}
+			if err := v.Verify(t.Context(), authn.HumanProof{}, tc.gatedScope); !errors.Is(err, authn.ErrHumanVerificationRequired) {
+				t.Errorf("the gated surface answered an empty proof with %v, want ErrHumanVerificationRequired", err)
+			}
+		})
+	}
+}
+
+// The captcha mechanism needs the store its challenges and media live in, and
+// the mounter that serves them: a command that selects it without either fails
+// the startup rather than serving a challenge a client cannot fetch.
+func TestCaptchaWithoutItsDependenciesFailsTheStartup(t *testing.T) {
+	t.Run("store", func(t *testing.T) {
+		reader := configtest.Reader(t, body(t, sectionFor(ModeCaptcha)), Module())
+		reg := core.New()
+		reg.Register(config.Module())
+		reg.Register(Module())
+		reg.Supply(reader, config.ModuleName)
+
+		err := reg.Drive(t.Context(), core.Drive{
+			Depth:        core.StageNew,
+			Participants: []string{ModuleName, config.ModuleName},
+		})
+		if !errors.Is(err, authn.ErrInvalidConfig) {
+			t.Fatalf("a captcha mode without a store resolved with %v, want ErrInvalidConfig", err)
+		}
+	})
+	t.Run("mounter", func(t *testing.T) {
+		reader := configtest.Reader(t, body(t, sectionFor(ModeCaptcha)), Module())
+		reg := core.New()
+		reg.Register(config.Module())
+		reg.Register(Module())
+		reg.Register(standIn(kvStandIn, (*kv.KV)(nil)))
+		reg.Supply(newStubKV(), kvStandIn)
+		reg.Supply(reader, config.ModuleName)
+
+		err := reg.Drive(t.Context(), core.Drive{
+			Depth:        core.StageInit,
+			Participants: []string{ModuleName, config.ModuleName, kvStandIn},
+		})
+		if !errors.Is(err, authn.ErrInvalidConfig) {
+			t.Fatalf("a captcha mode without a mounter resolved with %v, want ErrInvalidConfig", err)
+		}
+	})
+}
+
+// A phone surface that runs the captcha while the other surface is off still
+// needs the store and the mounter: the requirement follows the selected
+// mechanism, not whether both surfaces run one.
+func TestThePhoneSurfaceAloneStillNeedsItsDependencies(t *testing.T) {
+	section := map[string]any{modeItem: ModeOff, phoneModeItem: ModeCaptcha}
+	t.Run("store", func(t *testing.T) {
+		reader := configtest.Reader(t, body(t, section), Module())
+		reg := core.New()
+		reg.Register(config.Module())
+		reg.Register(Module())
+		reg.Supply(reader, config.ModuleName)
+
+		err := reg.Drive(t.Context(), core.Drive{
+			Depth:        core.StageNew,
+			Participants: []string{ModuleName, config.ModuleName},
+		})
+		if !errors.Is(err, authn.ErrInvalidConfig) {
+			t.Fatalf("a phone-surface captcha without a store resolved with %v, want ErrInvalidConfig", err)
+		}
+	})
+	t.Run("mounter", func(t *testing.T) {
+		reader := configtest.Reader(t, body(t, section), Module())
+		reg := core.New()
+		reg.Register(config.Module())
+		reg.Register(Module())
+		reg.Register(standIn(kvStandIn, (*kv.KV)(nil)))
+		reg.Supply(newStubKV(), kvStandIn)
+		reg.Supply(reader, config.ModuleName)
+
+		err := reg.Drive(t.Context(), core.Drive{
+			Depth:        core.StageInit,
+			Participants: []string{ModuleName, config.ModuleName, kvStandIn},
+		})
+		if !errors.Is(err, authn.ErrInvalidConfig) {
+			t.Fatalf("a phone-surface captcha without a mounter resolved with %v, want ErrInvalidConfig", err)
+		}
+	})
 }
 
 // A gate that requires a proof refuses a request that presents none, whatever
 // the mechanism, and that refusal is the 403 answer rather than an outage.
 func TestAVerifyingModeRefusesAnEmptyProof(t *testing.T) {
-	for _, mode := range []string{ModePoW, ModeTurnstile} {
+	for _, mode := range []string{ModePoW, ModeCaptcha, ModeTurnstile} {
 		t.Run(mode, func(t *testing.T) {
 			v := driveVerifier(t, body(t, sectionFor(mode)))
-			err := v.Verify(t.Context(), authn.HumanProof{})
+			err := v.Verify(t.Context(), authn.HumanProof{}, authn.HumanScopeOther)
 			if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 				t.Fatalf("an empty proof resolved with %v, want ErrHumanVerificationRequired", err)
 			}
@@ -205,7 +379,7 @@ func TestTurnstileWithoutTheSecretKeyFailsNamingIt(t *testing.T) {
 // 403 refusal, not the outage the unbuilt mechanism answers.
 func TestProofOfWorkRefusesAnInvalidProofAsAProofFailure(t *testing.T) {
 	v := driveVerifier(t, body(t, map[string]any{"mode": ModePoW}))
-	err := v.Verify(t.Context(), authn.HumanProof{Token: "not a challenge and a nonce"})
+	err := v.Verify(t.Context(), authn.HumanProof{Token: "not a challenge and a nonce"}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 		t.Fatalf("an invalid proof resolved with %v, want ErrHumanVerificationRequired", err)
 	}
@@ -217,7 +391,7 @@ func TestProofOfWorkRefusesAnInvalidProofAsAProofFailure(t *testing.T) {
 // Prepare states enabled for every mode in the closed set: the mode decides what
 // the verifier requires, not whether the module runs.
 func TestPrepareStatesEnabledForEveryMode(t *testing.T) {
-	for _, mode := range []string{ModeOff, ModePoW, ModeTurnstile} {
+	for _, mode := range []string{ModeOff, ModePoW, ModeCaptcha, ModeTurnstile} {
 		t.Run(mode, func(t *testing.T) {
 			reg := registryWithReader(t, body(t, sectionFor(mode)))
 			got, err := Module().Prepare(t.Context(), reg)
@@ -234,7 +408,7 @@ func TestPrepareStatesEnabledForEveryMode(t *testing.T) {
 // A mode outside the closed set stops the startup in Prepare, where a
 // configuration defect belongs, and names the key to correct.
 func TestPrepareRefusesAnUnknownModeNamingTheKey(t *testing.T) {
-	reg := registryWithReader(t, body(t, map[string]any{"mode": "captcha"}))
+	reg := registryWithReader(t, body(t, map[string]any{"mode": "bogus"}))
 	_, err := Module().Prepare(t.Context(), reg)
 	if !errors.Is(err, authn.ErrInvalidConfig) {
 		t.Fatalf("Prepare accepted an unknown mode: %v", err)

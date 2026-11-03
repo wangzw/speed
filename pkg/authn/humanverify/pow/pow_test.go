@@ -310,10 +310,10 @@ func TestACorrectNonceIsAcceptedOnce(t *testing.T) {
 	c := mustIssue(t, p, "203.0.113.7")
 	proof := authn.HumanProof{Token: c.Challenge + "." + solve(t, c.Challenge, c.Difficulty), RemoteIP: "203.0.113.7"}
 
-	if err := p.Verify(t.Context(), proof); err != nil {
+	if err := p.Verify(t.Context(), proof, authn.HumanScopeOther); err != nil {
 		t.Fatalf("the first presentation resolved with %v, want acceptance", err)
 	}
-	err := p.Verify(t.Context(), proof)
+	err := p.Verify(t.Context(), proof, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 		t.Fatalf("the second presentation resolved with %v, want ErrHumanVerificationRequired", err)
 	}
@@ -335,7 +335,7 @@ func TestOneProofCannotPassTwiceConcurrently(t *testing.T) {
 		wait.Add(1)
 		go func(i int) {
 			defer wait.Done()
-			errs[i] = p.Verify(ctx, proof)
+			errs[i] = p.Verify(ctx, proof, authn.HumanScopeOther)
 		}(i)
 	}
 	wait.Wait()
@@ -363,7 +363,7 @@ func TestAShortProofIsRefused(t *testing.T) {
 	c := mustIssue(t, p, "203.0.113.7")
 	proof := authn.HumanProof{Token: c.Challenge + "." + insufficient(t, c.Challenge, c.Difficulty)}
 
-	err := p.Verify(t.Context(), proof)
+	err := p.Verify(t.Context(), proof, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 		t.Fatalf("a short proof resolved with %v, want ErrHumanVerificationRequired", err)
 	}
@@ -380,7 +380,7 @@ func TestAnExpiredChallengeIsRefused(t *testing.T) {
 	proof := authn.HumanProof{Token: c.Challenge + "." + solve(t, c.Challenge, c.Difficulty)}
 
 	clock.advance(time.Minute + time.Second)
-	err := p.Verify(t.Context(), proof)
+	err := p.Verify(t.Context(), proof, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 		t.Fatalf("an expired challenge resolved with %v, want ErrHumanVerificationRequired", err)
 	}
@@ -393,7 +393,7 @@ func TestAKVFaultAnswersUnavailable(t *testing.T) {
 		p, store, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
 		c := mustIssue(t, p, "203.0.113.7")
 		store.getErr = errKV
-		err := p.Verify(t.Context(), authn.HumanProof{Token: c.Challenge + "." + solve(t, c.Challenge, c.Difficulty)})
+		err := p.Verify(t.Context(), authn.HumanProof{Token: c.Challenge + "." + solve(t, c.Challenge, c.Difficulty)}, authn.HumanScopeOther)
 		if !errors.Is(err, authn.ErrUnavailable) {
 			t.Fatalf("a store fault resolved with %v, want ErrUnavailable", err)
 		}
@@ -406,7 +406,7 @@ func TestAKVFaultAnswersUnavailable(t *testing.T) {
 		p, store, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
 		c := mustIssue(t, p, "203.0.113.7")
 		store.casErr = errKV
-		err := p.Verify(t.Context(), authn.HumanProof{Token: c.Challenge + "." + solve(t, c.Challenge, c.Difficulty)})
+		err := p.Verify(t.Context(), authn.HumanProof{Token: c.Challenge + "." + solve(t, c.Challenge, c.Difficulty)}, authn.HumanScopeOther)
 		if !errors.Is(err, authn.ErrUnavailable) {
 			t.Fatalf("a spend fault resolved with %v, want ErrUnavailable", err)
 		}
@@ -434,7 +434,7 @@ func TestAKVFaultAnswersUnavailable(t *testing.T) {
 // an invalid proof and not an outage.
 func TestAnOverLongProofIsRefusedAsHumanProofTooLong(t *testing.T) {
 	p, _, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
-	err := p.Verify(t.Context(), authn.HumanProof{Token: strings.Repeat("a", maxProofLen+1)})
+	err := p.Verify(t.Context(), authn.HumanProof{Token: strings.Repeat("a", maxProofLen+1)}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrHumanProofTooLong) {
 		t.Fatalf("an over-long proof resolved with %v, want ErrHumanProofTooLong", err)
 	}
@@ -456,7 +456,7 @@ func TestAMalformedProofIsRefused(t *testing.T) {
 		"abc.-1",
 	} {
 		t.Run(token, func(t *testing.T) {
-			if err := p.Verify(t.Context(), authn.HumanProof{Token: token}); !errors.Is(err, authn.ErrHumanVerificationRequired) {
+			if err := p.Verify(t.Context(), authn.HumanProof{Token: token}, authn.HumanScopeOther); !errors.Is(err, authn.ErrHumanVerificationRequired) {
 				t.Fatalf("%q resolved with %v, want ErrHumanVerificationRequired", token, err)
 			}
 		})
@@ -474,7 +474,7 @@ func TestTheStoredDifficultyDecidesTheThreshold(t *testing.T) {
 		if err := store.Set(t.Context(), key, []byte("23"), time.Minute); err != nil {
 			t.Fatalf("overwriting the stored difficulty: %v", err)
 		}
-		err := p.Verify(t.Context(), authn.HumanProof{Token: c.Challenge + "." + insufficient(t, c.Challenge, c.Difficulty)})
+		err := p.Verify(t.Context(), authn.HumanProof{Token: c.Challenge + "." + insufficient(t, c.Challenge, c.Difficulty)}, authn.HumanScopeOther)
 		if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 			t.Fatalf("a stored difficulty outside the domain resolved with %v, want ErrHumanVerificationRequired", err)
 		}
@@ -488,7 +488,7 @@ func TestTheStoredDifficultyDecidesTheThreshold(t *testing.T) {
 			t.Fatalf("overwriting the stored difficulty: %v", err)
 		}
 		proof := c.Challenge + "." + solveBetween(t, c.Challenge, 16, 18)
-		err := p.Verify(t.Context(), authn.HumanProof{Token: proof})
+		err := p.Verify(t.Context(), authn.HumanProof{Token: proof}, authn.HumanScopeOther)
 		if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 			t.Fatalf("a proof below the stored difficulty resolved with %v, want ErrHumanVerificationRequired", err)
 		}
@@ -543,13 +543,13 @@ func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
 // TestTheProviderAnswersTheSeamContract pins the three constant answers.
 func TestTheProviderAnswersTheSeamContract(t *testing.T) {
 	p, _, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
-	if !p.Required() {
+	if !p.Required(authn.HumanScopeOther) {
 		t.Error("Required is false, want true")
 	}
-	if got := p.Provider(); got != ProviderName {
+	if got := p.Provider(authn.HumanScopeOther); got != ProviderName {
 		t.Errorf("Provider = %q, want %q", got, ProviderName)
 	}
-	if got := p.SiteKey(); got != "" {
+	if got := p.SiteKey(authn.HumanScopeOther); got != "" {
 		t.Errorf("SiteKey = %q, want none", got)
 	}
 }

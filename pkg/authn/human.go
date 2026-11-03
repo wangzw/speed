@@ -4,6 +4,23 @@ import (
 	"context"
 )
 
+// HumanScope names the surface a human-verification check belongs to. A
+// deployment may run a different mechanism on each surface: the phone surface
+// guards the four SMS sends (login, second factor, enrollment and anonymous
+// reset), which reach a phone number and cost a carrier message, while the
+// other surface guards the non-phone sends such as an email reset code and a
+// self-service email addition.
+type HumanScope string
+
+const (
+	// HumanScopePhone is the surface of a send that delivers a message to a
+	// phone number.
+	HumanScopePhone HumanScope = "phone"
+	// HumanScopeOther is the surface of every send that does not address a
+	// phone number.
+	HumanScopeOther HumanScope = "other"
+)
+
 // HumanProof is what a caller presents to a human-verification check: the token
 // the client obtained from the deployment's verifier, and the address the request
 // came from. A provider may check the token against the address, which is why the
@@ -28,11 +45,18 @@ type HumanProof struct {
 // caller's: a deployment that leaves the gate off sends without asking for a
 // proof, and one that turns a mechanism on requires one.
 //
+// Every answer is per scope. A deployment may run one mechanism on the phone
+// surface and another on the other surface, so Required, Provider, SiteKey and
+// Verify each take the scope of the send being checked and answer for that
+// surface alone. A caller names the scope it is sending on; a surface that asks
+// the wrong one is asking about a different gate.
+//
 // The seam answers three questions about the deployment and checks one proof.
-// Required says whether a proof is a condition of sending at all; Provider names
-// the mechanism, which is a constant of the provider's code; SiteKey is the
-// public identifier a client-side widget needs, empty when the mechanism needs
-// none or the gate is off; and Verify checks the proof the caller presented.
+// Required says whether a proof is a condition of sending on that scope at all;
+// Provider names the mechanism the scope runs, which is a constant of the
+// provider's code; SiteKey is the public identifier a client-side widget needs,
+// empty when the mechanism needs none or the gate is off; and Verify checks the
+// proof the caller presented for that scope.
 //
 // A proof is single-use. Verify consumes the token it accepts: a token that was
 // accepted once is refused when it is presented again, whether the second
@@ -54,24 +78,25 @@ type HumanProof struct {
 // a credential, and a leaked one is a proof somebody else can present.
 type HumanVerifier interface {
 	// Required reports whether this deployment makes a proof a condition of
-	// every send. It is false when the gate is off, and then Verify accepts any
-	// proof, an empty one included.
-	Required() bool
+	// every send on scope. It is false when the gate is off for that scope, and
+	// then Verify accepts any proof, an empty one included.
+	Required(scope HumanScope) bool
 
-	// Provider names the mechanism this verifier is, as a constant of the
+	// Provider names the mechanism this scope runs, as a constant of the
 	// provider's code. A surface reports it so an operator can tell which
 	// mechanism a deployment runs.
-	Provider() string
+	Provider(scope HumanScope) string
 
 	// SiteKey returns the public identifier a client-side widget needs to obtain
-	// a proof from this provider. It is empty when the mechanism needs none — a
-	// self-hosted proof of work does not — and when the gate is off.
-	SiteKey() string
+	// a proof from the mechanism on scope. It is empty when the mechanism needs
+	// none — a self-hosted proof of work and a self-hosted captcha do — and when
+	// the gate is off.
+	SiteKey(scope HumanScope) string
 
-	// Verify checks that p is a valid, unused proof and consumes it. An empty
-	// Token is a caller that presented nothing and is refused with
-	// ErrHumanVerificationRequired; a provider that requires no proof is never
+	// Verify checks that p is a valid, unused proof for scope and consumes it. An
+	// empty Token is a caller that presented nothing and is refused with
+	// ErrHumanVerificationRequired; a scope whose gate requires no proof is never
 	// asked, and accepts one anyway. The failures are the three the interface
 	// comment names.
-	Verify(ctx context.Context, p HumanProof) error
+	Verify(ctx context.Context, p HumanProof, scope HumanScope) error
 }

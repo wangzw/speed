@@ -73,10 +73,12 @@ func TestASecondExclusiveVerifierFailsTheResolution(t *testing.T) {
 // otherVerifier is a stand-in carrying the other exclusive claim.
 type otherVerifier struct{}
 
-func (otherVerifier) Required() bool                                 { return true }
-func (otherVerifier) Provider() string                               { return "other" }
-func (otherVerifier) SiteKey() string                                { return "" }
-func (otherVerifier) Verify(context.Context, authn.HumanProof) error { return nil }
+func (otherVerifier) Required(authn.HumanScope) bool   { return true }
+func (otherVerifier) Provider(authn.HumanScope) string { return "other" }
+func (otherVerifier) SiteKey(authn.HumanScope) string  { return "" }
+func (otherVerifier) Verify(context.Context, authn.HumanProof, authn.HumanScope) error {
+	return nil
+}
 
 // The logging capability's stand-in, with which the Turnstile secret is
 // registered as a redaction rule.
@@ -112,6 +114,9 @@ func TestTheTurnstileSecretIsRegisteredAsARedactionRule(t *testing.T) {
 	const secret = "turnstile-secret-2f7a91c4"
 	section := turnstileSection()
 	section["secret-key"] = secret
+	// This case delivers no key-value store, so the phone surface is off; the
+	// Turnstile secret is what the case is about.
+	section[phoneModeItem] = ModeOff
 
 	recorder := newRecordingLogger()
 	reg := core.New()
@@ -144,7 +149,7 @@ func TestTheTurnstileSecretIsRegisteredAsARedactionRule(t *testing.T) {
 // nothing to register the secret with.
 func TestTurnstileStartsWithNoLoggingCapability(t *testing.T) {
 	v := driveVerifier(t, body(t, turnstileSection()))
-	if v.Provider() != ModeTurnstile {
-		t.Errorf("the verifier reports %q, want %q", v.Provider(), ModeTurnstile)
+	if v.Provider(authn.HumanScopeOther) != ModeTurnstile {
+		t.Errorf("the verifier reports %q, want %q", v.Provider(authn.HumanScopeOther), ModeTurnstile)
 	}
 }

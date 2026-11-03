@@ -115,10 +115,10 @@ var seamSignatures = map[string][]string{
 		"SendResetCode(ctx context.Context, to, code string, ttl time.Duration, locale string) error",
 	},
 	"HumanVerifier": {
-		"Required() bool",
-		"Provider() string",
-		"SiteKey() string",
-		"Verify(ctx context.Context, p HumanProof) error",
+		"Required(scope HumanScope) bool",
+		"Provider(scope HumanScope) string",
+		"SiteKey(scope HumanScope) string",
+		"Verify(ctx context.Context, p HumanProof, scope HumanScope) error",
 	},
 	"Sessions": {
 		"Create(ctx context.Context, in NewSession) (Issued, error)",

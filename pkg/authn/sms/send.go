@@ -188,13 +188,13 @@ func resolveOutcome(err error) string {
 // ErrHumanProofTooLong, and a provider or store that cannot answer is
 // ErrUnavailable. None of them has spent any budget.
 func (p *product) checkProof(ctx context.Context, in authn.SendCode) error {
-	if p.human == nil || !p.human.Required() {
+	if p.human == nil || !p.human.Required(authn.HumanScopePhone) {
 		return nil
 	}
 	if len(in.Proof) > mount.HumanProofMaxBytes {
 		return fmt.Errorf("%w: the human-verification proof is over its limit", authn.ErrHumanProofTooLong)
 	}
-	return p.human.Verify(ctx, authn.HumanProof{Token: in.Proof, RemoteIP: in.Source})
+	return p.human.Verify(ctx, authn.HumanProof{Token: in.Proof, RemoteIP: in.Source}, authn.HumanScopePhone)
 }
 
 // checkSendCode holds the input to the caller's contract. The purpose is one of

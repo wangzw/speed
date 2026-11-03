@@ -4,8 +4,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
+	"github.com/vislake/speed/pkg/authn/humanverify/captcha"
 	"github.com/vislake/speed/pkg/authn/humanverify/pow"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -64,4 +69,121 @@ func mountRel(declared string) string {
 		panic(ModuleName + ": " + err.Error())
 	}
 	return rel
+}
+
+// The captcha media routes, relative to the capability's ordinary base. The
+// challenge route is declared in operations.go; the media routes serve the
+// objects it names by id.
+const (
+	captchaImagePath      = "/human/captcha/image/:id"
+	captchaBackgroundPath = "/human/captcha/background/:id"
+	captchaPiecePath      = "/human/captcha/piece/:id"
+	captchaAudioPath      = "/human/captcha/audio/:id"
+)
+
+// CaptchaChallengeResponse is the answer of the captcha challenge route: the id
+// a proof names, the form the challenge takes, the instruction a client shows
+// for that form, and the paths of the media it fetches. Only the media of the
+// chosen form are named.
+//
+// Instruction is a stable key rather than a sentence: the text a person reads is
+// the client's language resource, not this module's.
+type CaptchaChallengeResponse struct {
+	_ struct{} `description:"A captcha challenge: its id, the form it takes, the instruction key a client words for that form, the media paths the form carries and how long it stays valid."`
+
+	Provider      string `json:"provider" required:"true" description:"The mechanism that issued the challenge: the constant captcha."`
+	Form          string `json:"form" required:"true" enum:"image,slider,audio" description:"The challenge form: image for a picture of digits, slider for a background and a piece to slide over it, audio for a spoken reading of digits."`
+	Instruction   string `json:"instruction" required:"true" description:"A stable key naming the instruction a client shows for the form. The text itself is the client's language resource."`
+	ID            string `json:"id" required:"true" description:"The challenge id a proof names, base64url without padding."`
+	ImageURL      string `json:"image_url,omitempty" description:"The path of the digit picture of an image challenge."`
+	BackgroundURL string `json:"background_url,omitempty" description:"The path of the background of a slider challenge."`
+	PieceURL      string `json:"piece_url,omitempty" description:"The path of the piece a slider challenge slides over its background."`
+	AudioURL      string `json:"audio_url,omitempty" description:"The path of the spoken digits of an audio challenge."`
+	ExpiresIn     int    `json:"expires_in" required:"true" description:"How long the challenge stays valid, in whole seconds. A proof that names an expired challenge is refused."`
+}
+
+// mountCaptcha registers the captcha routes on the route mounter. The challenge
+// route is public, like the proof-of-work challenge route, because a client
+// obtains a proof before it has any identity to send. The media routes are
+// public for the same reason and are addressed by the unguessable id the
+// challenge route hands out.
+func mountCaptcha(mounter mount.Mounter, provider *captcha.Provider) {
+	mount.Declared(mounter, captchaChallengeOperation, mountRel(captchaChallengeOperation.Path),
+		captchaChallenge(mounter, provider))
+	mounter.Public(http.MethodGet, captchaImagePath, captchaMedia(provider, captcha.MediaImage))
+	mounter.Public(http.MethodGet, captchaBackgroundPath, captchaMedia(provider, captcha.MediaBackground))
+	mounter.Public(http.MethodGet, captchaPiecePath, captchaMedia(provider, captcha.MediaPiece))
+	mounter.Public(http.MethodGet, captchaAudioPath, captchaMedia(provider, captcha.MediaAudio))
+}
+
+// captchaChallenge answers the challenge route. The form is named by the
+// request's form query item; an empty value is the image form.
+func captchaChallenge(mounter mount.Mounter, provider *captcha.Provider) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		issued, err := provider.Issue(c.Request.Context(), captcha.Form(c.Query("form")))
+		switch {
+		case errors.Is(err, captcha.ErrUnknownForm):
+			mount.Fail(c, mount.CodeBadRequest)
+			return
+		case err != nil:
+			mount.Unavailable(c)
+			return
+		}
+
+		base := mounter.BaseIn("")
+		answer := CaptchaChallengeResponse{
+			Provider:    captcha.ProviderName,
+			Form:        string(issued.Form),
+			Instruction: captchaInstruction(issued.Form),
+			ID:          issued.ID,
+			ExpiresIn:   int((issued.ExpiresIn + time.Second - 1) / time.Second),
+		}
+		switch issued.Form {
+		case captcha.FormImage:
+			answer.ImageURL = mediaPath(base, captchaImagePath, issued.ID)
+		case captcha.FormSlider:
+			answer.BackgroundURL = mediaPath(base, captchaBackgroundPath, issued.ID)
+			answer.PieceURL = mediaPath(base, captchaPiecePath, issued.ID)
+		case captcha.FormAudio:
+			answer.AudioURL = mediaPath(base, captchaAudioPath, issued.ID)
+		}
+		c.JSON(http.StatusOK, answer)
+	}
+}
+
+// captchaMedia serves one media object of a challenge. An id this provider did
+// not draw, or one whose challenge has expired or been spent, is answered 404;
+// a store that cannot answer is the outage 503.
+func captchaMedia(provider *captcha.Provider, kind captcha.MediaKind) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		media, err := provider.Media(c.Request.Context(), c.Param("id"), kind)
+		switch {
+		case errors.Is(err, captcha.ErrChallengeNotFound):
+			speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusNotFound})
+			return
+		case err != nil:
+			mount.Unavailable(c)
+			return
+		}
+		c.Data(http.StatusOK, media.ContentType, media.Body)
+	}
+}
+
+// captchaInstruction is the stable key of the instruction a client shows for a
+// form. The text itself belongs to the client's language resources.
+func captchaInstruction(form captcha.Form) string {
+	switch form {
+	case captcha.FormSlider:
+		return "slide-the-piece"
+	case captcha.FormAudio:
+		return "type-the-digits-you-hear"
+	default:
+		return "type-the-digits"
+	}
+}
+
+// mediaPath writes the path one challenge's media is served at, on the base the
+// mounter joined the route to.
+func mediaPath(base, route, id string) string {
+	return base + strings.Replace(route, ":id", url.PathEscape(id), 1)
 }

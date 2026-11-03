@@ -20,9 +20,9 @@ const challengeFullPath = "/api/v1/auth/human/challenge"
 
 // TestTheChallengeRouteExistsOnlyInTheProofOfWorkMode holds the mode condition:
 // the route a client obtains a challenge from is present when the deployment
-// runs the proof of work, and absent in the other two modes.
+// runs the proof of work, and absent in the other modes.
 func TestTheChallengeRouteExistsOnlyInTheProofOfWorkMode(t *testing.T) {
-	for _, mode := range []string{ModeOff, ModePoW, ModeTurnstile} {
+	for _, mode := range []string{ModeOff, ModePoW, ModeCaptcha, ModeTurnstile} {
 		t.Run(mode, func(t *testing.T) {
 			rig := newRig(t, body(t, sectionFor(mode)))
 			rig.drive(t)
@@ -51,7 +51,7 @@ type challengeAnswer struct {
 // hands out is one the delivered verifier accepts, which is what makes the
 // answer a usable challenge rather than a document of the right shape.
 func TestTheChallengeRouteAnswersTheDeclaredShape(t *testing.T) {
-	rig := newRig(t, body(t, map[string]any{"mode": ModePoW}))
+	rig := newRig(t, body(t, sectionFor(ModePoW)))
 	verifier := rig.drive(t)
 
 	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, challengeFullPath, nil))
@@ -79,10 +79,10 @@ func TestTheChallengeRouteAnswersTheDeclaredShape(t *testing.T) {
 	}
 
 	proof := authn.HumanProof{Token: answer.Challenge + "." + solveChallenge(t, answer.Challenge, answer.Difficulty)}
-	if err := verifier.Verify(t.Context(), proof); err != nil {
+	if err := verifier.Verify(t.Context(), proof, authn.HumanScopeOther); err != nil {
 		t.Fatalf("the issued challenge was refused: %v", err)
 	}
-	if err := verifier.Verify(t.Context(), proof); err == nil {
+	if err := verifier.Verify(t.Context(), proof, authn.HumanScopeOther); err == nil {
 		t.Fatal("the issued challenge was accepted twice")
 	}
 }
@@ -90,7 +90,7 @@ func TestTheChallengeRouteAnswersTheDeclaredShape(t *testing.T) {
 // TestTheChallengeRouteAnswersUnavailableWhenTheStoreFails holds the outage
 // answer: a store that cannot count or store answers 503 and issues nothing.
 func TestTheChallengeRouteAnswersUnavailableWhenTheStoreFails(t *testing.T) {
-	rig := newRig(t, body(t, map[string]any{"mode": ModePoW}))
+	rig := newRig(t, body(t, sectionFor(ModePoW)))
 	rig.drive(t)
 	rig.store.incErr = errStubKV
 
@@ -113,7 +113,7 @@ func TestTheChallengeRouteAnswersUnavailableWhenTheStoreFails(t *testing.T) {
 // bound: one source that asks for more challenges than its window allows is
 // answered 429.
 func TestTheChallengeRouteAnswersThrottledAtTheIssuanceCap(t *testing.T) {
-	rig := newRig(t, body(t, map[string]any{"mode": ModePoW}))
+	rig := newRig(t, body(t, sectionFor(ModePoW)))
 	rig.drive(t)
 
 	for i := 0; i < 10; i++ {

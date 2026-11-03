@@ -112,14 +112,16 @@ func New(store kv.KV, reader SettingReader) (*Provider, error) {
 	return &Provider{store: store, settings: reader}, nil
 }
 
-// Required reports true: a proof-of-work gate is a condition of sending.
-func (p *Provider) Required() bool { return true }
+// Required reports true for every scope: a proof-of-work gate is a condition of
+// sending wherever it is configured.
+func (p *Provider) Required(authn.HumanScope) bool { return true }
 
-// Provider reports the mechanism name.
-func (p *Provider) Provider() string { return ProviderName }
+// Provider reports the mechanism name for every scope.
+func (p *Provider) Provider(authn.HumanScope) string { return ProviderName }
 
-// SiteKey is empty: a self-hosted proof of work needs no widget key.
-func (p *Provider) SiteKey() string { return "" }
+// SiteKey is empty for every scope: a self-hosted proof of work needs no widget
+// key.
+func (p *Provider) SiteKey(authn.HumanScope) string { return "" }
 
 // Issue returns a fresh challenge. The source's issuance counter is spent
 // first, so an address that has asked for as many challenges as the window
@@ -148,7 +150,7 @@ func (p *Provider) Issue(ctx context.Context, remoteIP string) (Challenge, error
 // The challenge is spent with a compare-and-swap that requires the value that
 // was just read, which is what makes two concurrent presentations of one proof
 // unable to both pass.
-func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof) error {
+func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, _ authn.HumanScope) error {
 	if proof.Token == "" {
 		return fmt.Errorf("%w: no proof was presented", authn.ErrHumanVerificationRequired)
 	}

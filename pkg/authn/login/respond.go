@@ -236,15 +236,28 @@ func (r *routes) methods(ctx context.Context, _ struct{}, meta *speedhttp.Meta) 
 	return c.result()
 }
 
-// humanGate reports the human-verification gate this deployment runs. No seam
-// and the off mechanism both read as the off mechanism: a caller needs one
-// answer whether the deployment has no gate or has the gate turned off, because
-// in both cases it presents no proof.
+// humanGate reports the human-verification gate this deployment runs, one entry
+// per surface. No seam and the off mechanism both read as the off mechanism on
+// every surface: a caller needs one answer whether the deployment has no gate or
+// has the gate turned off, because in both cases it presents no proof.
 func (r *routes) humanGate() humanView {
 	if r.human == nil {
-		return humanView{Provider: humanProviderOff}
+		off := humanSurfaceView{Provider: humanProviderOff}
+		return humanView{Phone: off, Other: off}
 	}
-	return humanView{Required: r.human.Required(), Provider: r.human.Provider(), SiteKey: r.human.SiteKey()}
+	return humanView{
+		Phone: humanSurfaceGate(r.human, authn.HumanScopePhone),
+		Other: humanSurfaceGate(r.human, authn.HumanScopeOther),
+	}
+}
+
+// humanSurfaceGate projects one surface's answer from the gate.
+func humanSurfaceGate(h authn.HumanVerifier, scope authn.HumanScope) humanSurfaceView {
+	return humanSurfaceView{
+		Required: h.Required(scope),
+		Provider: h.Provider(scope),
+		SiteKey:  h.SiteKey(scope),
+	}
 }
 
 // descriptorView copies a method's descriptor into the wire shape. opensAccount

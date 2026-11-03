@@ -48,14 +48,15 @@ compatibility break for a dashboard written against it.
   `New` holds the registry's declaration to the three required templates,
   naming the missing one. The all-empty stand-down does not cover a
   half-configured deployment.
-- **The phone entry points' human-verification proof is checked here, once.**
-  `SendCode.Proof` is the proof the caller presented; `Send` asks the
-  deployment's gate before the allowed-prefix table, the queue and every budget,
-  so a refused proof spends nothing and reveals nothing about the number. An
-  assembly with no gate, and a gate that requires nothing, skips the check
-  entirely. The proof is single-use, so this is the one place it is consumed:
-  the email code branch sends over the mail channel and keeps its own check,
-  because it has no code engine to hand the proof to. A missing, invalid,
+- **The phone entry points' human-verification proof is checked here, once, on
+  the phone surface.** `SendCode.Proof` is the proof the caller presented;
+  `Send` asks the deployment's gate on `authn.HumanScopePhone` before the
+  allowed-prefix table, the queue and every budget, so a refused proof spends
+  nothing and reveals nothing about the number. An assembly with no gate, and a
+  gate that requires nothing on the phone surface, skips the check entirely.
+  The proof is single-use, so this is the one place it is consumed:
+  the email code branch sends over the mail channel and keeps its own check on
+  the other surface, because it has no code engine to hand the proof to. A missing, invalid,
   expired or already used proof is `authn.ErrHumanVerificationRequired`; a proof
   over the field's bound is `authn.ErrInvalidArgument`; a provider, or a store
   behind it, that cannot answer is `authn.ErrUnavailable`. None of the three has

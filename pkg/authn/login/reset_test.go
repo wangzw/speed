@@ -992,11 +992,11 @@ type onceHuman struct {
 	calls  int
 }
 
-func (h *onceHuman) Required() bool   { return true }
-func (h *onceHuman) Provider() string { return "pow" }
-func (h *onceHuman) SiteKey() string  { return "" }
+func (h *onceHuman) Required(authn.HumanScope) bool   { return true }
+func (h *onceHuman) Provider(authn.HumanScope) string { return "pow" }
+func (h *onceHuman) SiteKey(authn.HumanScope) string  { return "" }
 
-func (h *onceHuman) Verify(_ context.Context, p authn.HumanProof) error {
+func (h *onceHuman) Verify(_ context.Context, p authn.HumanProof, _ authn.HumanScope) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.calls++
@@ -1126,7 +1126,7 @@ func TestTheSMSResetBranchConsumesTheProofExactlyOnce(t *testing.T) {
 	human := &onceHuman{accept: map[string]bool{"proof-1": true}}
 	r.p.human = human
 	r.sms.verify = func(in authn.SendCode) error {
-		return human.Verify(context.Background(), authn.HumanProof{Token: in.Proof, RemoteIP: in.Source})
+		return human.Verify(context.Background(), authn.HumanProof{Token: in.Proof, RemoteIP: in.Source}, authn.HumanScopePhone)
 	}
 
 	rec := r.startReset(`{"channel":"sms","identifier":"+8613800000000","human_proof":"proof-1"}`)
@@ -1141,5 +1141,86 @@ func TestTheSMSResetBranchConsumesTheProofExactlyOnce(t *testing.T) {
 	}
 	if got := human.callCount(); got != 1 {
 		t.Errorf("the proof was consumed %d times, want exactly once", got)
+	}
+}
+
+// TestAnEmailResetAsksTheOtherScopeAndOnlyTheOtherScope holds the surface the
+// email branch is gated on. An email reset addresses no phone number, so it is
+// held to the other surface: a deployment that gates only the other surface
+// refuses a proofless reset, and one that gates only the phone surface lets it
+// through without ever asking the gate about that phone surface.
+func TestAnEmailResetAsksTheOtherScopeAndOnlyTheOtherScope(t *testing.T) {
+	t.Run("the other surface gates the email branch", func(t *testing.T) {
+		r := newResetRig(t)
+		r.seedResetAccount("acct-ok", authn.IdentifierEmail, "ok@example.com", authn.VerifiedViaEmailCode)
+		human := &fakeHuman{
+			byScope:  map[authn.HumanScope]bool{authn.HumanScopeOther: true},
+			provider: "pow",
+			accept:   map[string]bool{},
+		}
+		r.p.human = human
+
+		rec := r.startReset(`{"channel":"email","identifier":"ok@example.com"}`)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("an email reset gated only on the other surface answered %d, want 403: %s", rec.Code, rec.Body.String())
+		}
+		if got := resetProblemCode(t, rec); got != "human-verification-required" {
+			t.Errorf("the refusal code = %q, want human-verification-required", got)
+		}
+		assertOnlyScope(t, human, authn.HumanScopeOther)
+		if got := r.email.count(); got != 0 {
+			t.Errorf("the email channel was handed %d messages, want none", got)
+		}
+	})
+
+	t.Run("the phone surface does not gate the email branch", func(t *testing.T) {
+		r := newResetRig(t)
+		r.seedResetAccount("acct-ok", authn.IdentifierEmail, "ok@example.com", authn.VerifiedViaEmailCode)
+		human := &fakeHuman{
+			byScope:  map[authn.HumanScope]bool{authn.HumanScopePhone: true},
+			provider: "captcha",
+			accept:   map[string]bool{},
+		}
+		r.p.human = human
+
+		rec := r.startReset(`{"channel":"email","identifier":"ok@example.com"}`)
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("an email reset gated only on the phone surface answered %d, want 202: %s", rec.Code, rec.Body.String())
+		}
+		r.email.waitTo(t, "ok@example.com")
+		assertOnlyScope(t, human, authn.HumanScopeOther)
+		if got := r.email.count(); got != 1 {
+			t.Errorf("the email channel was handed %d messages, want one", got)
+		}
+	})
+}
+
+// TestTheSMSResetBranchLeavesTheProofToTheSender holds that the SMS branch does
+// not ask the gate itself: the proof travels to SMSCodes.Send, where the phone
+// surface's check consumes it. Asking the gate here as well would consume a
+// single-use proof twice; the route therefore reaches the sender with the proof
+// unread.
+func TestTheSMSResetBranchLeavesTheProofToTheSender(t *testing.T) {
+	r := newResetRig(t)
+	r.seedResetAccount("acct-phone", authn.IdentifierPhone, "+8613800000000", authn.VerifiedViaSMSCode)
+	human := &fakeHuman{
+		required: true,
+		provider: "captcha",
+		accept:   map[string]bool{"proof-1": true},
+	}
+	r.p.human = human
+
+	rec := r.startReset(`{"channel":"sms","identifier":"+8613800000000","human_proof":"proof-1"}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("an SMS reset answered %d, want 202: %s", rec.Code, rec.Body.String())
+	}
+	if got := len(r.sms.sends); got != 1 {
+		t.Fatalf("the SMS channel was handed %d sends, want one", got)
+	}
+	if got := r.sms.lastSend().Proof; got != "proof-1" {
+		t.Errorf("the code engine was handed proof %q, want the request's proof-1", got)
+	}
+	if scopes := human.askedScopes(); len(scopes) != 0 {
+		t.Errorf("the route asked the gate about %v, want not asked: the sender checks the proof", scopes)
 	}
 }

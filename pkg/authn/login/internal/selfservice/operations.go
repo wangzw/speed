@@ -65,7 +65,7 @@ type startPhoneInput struct {
 	Phone string "json:\"phone\" description:\"The number in international E.164 form: a leading `+`, a non-zero country digit, then 6 to 14 more digits. The value is not parsed, completed or reformatted, so a national-format number is a 400 bad-request.\""
 	// HumanProof is the proof the deployment's human-verification gate checks
 	// before the code is sent; see the engine's startInput.
-	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification code: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
+	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification code: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
 // verifyPhoneInput is the body of POST /phone/verify.
@@ -84,7 +84,7 @@ type addIdentifierInput struct {
 	// HumanProof is the proof the deployment's human-verification gate checks
 	// before an email code is sent. The username branch sends nothing and ignores
 	// it.
-	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification code to an email address: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none or the kind is username. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
+	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification code to an email address: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none or the kind is username. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
 // verifyIdentifierInput is the body of POST /identifiers/verify.

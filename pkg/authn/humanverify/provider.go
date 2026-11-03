@@ -5,70 +5,141 @@ import (
 	"fmt"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/humanverify/captcha"
 	"github.com/vislake/speed/pkg/authn/humanverify/pow"
 	"github.com/vislake/speed/pkg/authn/humanverify/turnstile"
 	"github.com/vislake/speed/pkg/kv"
 )
 
-// deps is what a mechanism constructor needs. The off gate needs nothing; the
-// proof-of-work provider needs the store its challenges live in and the settings
-// reader its parameters come from. A mode that does not use a part leaves it
-// nil.
+// deps is what the mechanism constructors need. The off gate needs nothing; the
+// self-hosted mechanisms need the store their challenges live in, and the
+// proof-of-work provider also reads its parameters from settings. A mode that
+// does not use a part leaves it nil.
 type deps struct {
 	store    kv.KV
 	settings pow.SettingReader
 }
 
-// newProvider builds the verifier for a resolved mode. The mode was held to the
-// closed set by resolve, and the default case repeats that judgement for a
-// caller that built resolved by hand.
-func newProvider(cfg resolved, d deps) (authn.HumanVerifier, error) {
-	switch cfg.Mode {
-	case ModeOff:
-		return offVerifier{}, nil
-	case ModePoW:
-		if d.store == nil {
-			return nil, fmt.Errorf("%w: %s.%s is %q, and the proof-of-work mechanism keeps its "+
-				"challenges in the key-value store, which this run did not deliver. Name a key-value "+
-				"backend on the command, or run the gate off",
-				authn.ErrInvalidConfig, ConfigNamespace, modeItem, cfg.Mode)
-		}
-		return pow.New(d.store, d.settings)
-	case ModeTurnstile:
-		provider, err := turnstile.New(turnstile.Options{
-			SiteKey:   cfg.siteKey,
-			Secret:    cfg.secretKey,
-			VerifyURL: cfg.verifyURL,
-			Hostname:  cfg.hostname,
-			Action:    cfg.action,
-			Timeout:   cfg.timeout,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("%w: %s: %w", authn.ErrInvalidConfig, ModuleName, err)
-		}
-		return provider, nil
-	default:
-		return nil, fmt.Errorf("%w: %s.%s is %q, and it has to be %q, %q or %q",
-			authn.ErrInvalidConfig, ConfigNamespace, modeItem, cfg.Mode, ModeOff, ModePoW, ModeTurnstile)
-	}
+// gate is the verifier a deployment's two surfaces add up to. Each surface runs
+// its own mechanism, and every answer is the answer of the surface the caller
+// names. The self-hosted mechanisms are held here too, because their challenge
+// routes are mounted once for the run rather than once per surface.
+type gate struct {
+	other authn.HumanVerifier
+	phone authn.HumanVerifier
+
+	pow     *pow.Provider
+	captcha *captcha.Provider
 }
 
-// offVerifier is the gate a deployment leaves off. It requires nothing and
-// accepts every proof, so a caller never has to ask whether it should present
-// one: the answer is the same either way.
+var _ authn.HumanVerifier = (*gate)(nil)
+
+// forScope is the verifier of one surface. An unknown scope is the other
+// surface, the gate a caller that did not name a surface gets.
+func (g *gate) forScope(scope authn.HumanScope) authn.HumanVerifier {
+	if scope == authn.HumanScopePhone && g.phone != nil {
+		return g.phone
+	}
+	if g.other == nil {
+		return offVerifier{}
+	}
+	return g.other
+}
+
+// Required reports the surface's answer.
+func (g *gate) Required(scope authn.HumanScope) bool { return g.forScope(scope).Required(scope) }
+
+// Provider names the surface's mechanism.
+func (g *gate) Provider(scope authn.HumanScope) string { return g.forScope(scope).Provider(scope) }
+
+// SiteKey reports the surface's public widget key.
+func (g *gate) SiteKey(scope authn.HumanScope) string { return g.forScope(scope).SiteKey(scope) }
+
+// Verify checks a proof against the surface's mechanism.
+func (g *gate) Verify(ctx context.Context, proof authn.HumanProof, scope authn.HumanScope) error {
+	return g.forScope(scope).Verify(ctx, proof, scope)
+}
+
+// newProvider builds the verifier for the resolved configuration. Each surface's
+// mode was held to the closed set by resolve; the default case repeats that
+// judgement for a caller that built resolved by hand. The self-hosted
+// mechanisms are built once and shared, so a deployment that runs the same one
+// on both surfaces serves one challenge route.
+func newProvider(cfg resolved, d deps) (*gate, error) {
+	var (
+		powProvider     *pow.Provider
+		captchaProvider *captcha.Provider
+	)
+	build := func(s surface) (authn.HumanVerifier, error) {
+		switch s.mode {
+		case ModeOff:
+			return offVerifier{}, nil
+		case ModePoW:
+			if powProvider == nil {
+				provider, err := pow.New(d.store, d.settings)
+				if err != nil {
+					return nil, fmt.Errorf("%w: %s: %w", authn.ErrInvalidConfig, ModuleName, err)
+				}
+				powProvider = provider
+			}
+			return powProvider, nil
+		case ModeCaptcha:
+			if captchaProvider == nil {
+				provider, err := captcha.New(d.store)
+				if err != nil {
+					return nil, fmt.Errorf("%w: %s: %w", authn.ErrInvalidConfig, ModuleName, err)
+				}
+				captchaProvider = provider
+			}
+			return captchaProvider, nil
+		case ModeTurnstile:
+			provider, err := turnstile.New(turnstile.Options{
+				SiteKey:   s.siteKey,
+				Secret:    s.secretKey,
+				VerifyURL: s.verifyURL,
+				Hostname:  s.hostname,
+				Action:    s.action,
+				Timeout:   s.timeout,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("%w: %s: %w", authn.ErrInvalidConfig, ModuleName, err)
+			}
+			return provider, nil
+		default:
+			return nil, fmt.Errorf("%w: %s.%s or %s.%s is %q, and it has to be %q, %q, %q or %q",
+				authn.ErrInvalidConfig, ConfigNamespace, modeItem, ConfigNamespace, phoneModeItem,
+				s.mode, ModeOff, ModePoW, ModeCaptcha, ModeTurnstile)
+		}
+	}
+
+	other, err := build(cfg.other)
+	if err != nil {
+		return nil, err
+	}
+	phone, err := build(cfg.phone)
+	if err != nil {
+		return nil, err
+	}
+	return &gate{other: other, phone: phone, pow: powProvider, captcha: captchaProvider}, nil
+}
+
+// offVerifier is the gate a surface leaves off. It requires nothing and accepts
+// every proof, so a caller never has to ask whether it should present one: the
+// answer is the same either way.
 type offVerifier struct{}
 
 var _ authn.HumanVerifier = offVerifier{}
 
-// Required reports false: an off gate is not a condition of sending.
-func (offVerifier) Required() bool { return false }
+// Required reports false for every scope: an off gate is not a condition of
+// sending.
+func (offVerifier) Required(authn.HumanScope) bool { return false }
 
 // Provider reports the mode the deployment chose.
-func (offVerifier) Provider() string { return ModeOff }
+func (offVerifier) Provider(authn.HumanScope) string { return ModeOff }
 
 // SiteKey is empty: an off gate has no widget to key.
-func (offVerifier) SiteKey() string { return "" }
+func (offVerifier) SiteKey(authn.HumanScope) string { return "" }
 
 // Verify accepts any proof. The check is not skipped as a failure; off means
 // there is nothing to check.
-func (offVerifier) Verify(context.Context, authn.HumanProof) error { return nil }
+func (offVerifier) Verify(context.Context, authn.HumanProof, authn.HumanScope) error { return nil }
