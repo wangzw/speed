@@ -539,6 +539,14 @@ export interface AuthSession {
    * them after every login rather than reuse lists fetched under an
    * earlier commit. */
   setPermissionSet(domain: AuthDomain, perms: readonly string[] | null): void
+  /** Replaces the authenticated principal's display name locally, without
+   * a request: the snapshot's `principal.display_name` becomes `name` and
+   * subscribers are notified. It is a local mirror for a name the host
+   * has already written server-side, not a profile write: the rest of
+   * the principal, the permission sets and the session generation are
+   * untouched. While no principal is authenticated it is a no-op --
+   * nothing changes and no one is notified. */
+  setDisplayName(name: string): void
 }
 
 /**
@@ -2059,6 +2067,21 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
           domain === 'tenant'
             ? { tenant: copy, system: current.system }
             : { tenant: current.tenant, system: copy },
+      }
+      notify()
+    },
+
+    setDisplayName(name: string): void {
+      // A local mirror only: no request, no permission-set write and no
+      // generation bump -- a session commit in flight still applies over
+      // this snapshot. While no principal is authenticated there is
+      // nothing to name, so the call changes nothing at all.
+      if (snapshot.state !== 'authenticated' || snapshot.principal === null) {
+        return
+      }
+      snapshot = {
+        ...snapshot,
+        principal: { ...snapshot.principal, display_name: name },
       }
       notify()
     },

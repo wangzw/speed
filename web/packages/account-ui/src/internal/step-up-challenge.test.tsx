@@ -421,6 +421,7 @@ function refusingStartSession(
     refresh: unused,
     retryFeatures: unused,
     setPermissionSet: unused,
+    setDisplayName: unused,
   }
 }
 
@@ -486,6 +487,7 @@ function scriptedPasswordSession(
     refresh: unused,
     retryFeatures: unused,
     setPermissionSet: unused,
+    setDisplayName: unused,
   }
 }
 

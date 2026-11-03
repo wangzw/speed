@@ -1398,6 +1398,81 @@ describe('host-attached permission sets', () => {
   })
 })
 
+describe('local display-name update', () => {
+  it('replaces the principal display name locally and notifies subscribers', async () => {
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () => sessionView({ authenticated: true }),
+      [PROFILE_GET]: () => principal({ display_name: 'Ada' }),
+    })
+    await expect(harness.session.restore()).resolves.toBe(true)
+    const callsBefore = harness.calls.length
+    const seen = snapshotLog(harness.session)
+
+    harness.session.setDisplayName('Ada Lovelace')
+
+    const snapshot = harness.session.getSnapshot()
+    expect(snapshot).toMatchObject({
+      state: 'authenticated',
+      principal: { account_id: 'user-1', display_name: 'Ada Lovelace' },
+    })
+    // The rest of the principal stands: only the display name moved.
+    expect(snapshot.principal?.identifiers).toEqual([])
+    expect(snapshot.principal?.locale).toBe('en-US')
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.principal?.display_name).toBe('Ada Lovelace')
+    // Local: the call issues no request.
+    expect(harness.calls).toHaveLength(callsBefore)
+  })
+
+  it('changes nothing and notifies no one while anonymous', () => {
+    const harness = makeHarness()
+    const before = harness.session.getSnapshot()
+    const seen = snapshotLog(harness.session)
+
+    harness.session.setDisplayName('Ada Lovelace')
+
+    expect(harness.session.getSnapshot()).toBe(before)
+    expect(seen).toHaveLength(0)
+    expect(harness.calls).toHaveLength(0)
+  })
+
+  it('leaves the permission sets and the session generation untouched', async () => {
+    let releaseRead!: () => void
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve
+    })
+    let gated = false
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () =>
+        gated
+          ? readGate.then(() => sessionView({ authenticated: true }))
+          : sessionView({ authenticated: true }),
+      [PROFILE_GET]: () =>
+        principal({
+          display_name: gated ? 'Ada Lovelace' : 'Ada',
+        }),
+    })
+    await expect(harness.session.restore()).resolves.toBe(true)
+    harness.session.setPermissionSet('tenant', ['notes:read'])
+    harness.session.setPermissionSet('system', ['users:manage'])
+    const permissionSets = harness.session.getSnapshot().permissionSets
+
+    // A restore already in flight captured the generation at entry: if the
+    // local update bumped it, the read's answer would be dropped and the
+    // restore would resolve false.
+    gated = true
+    const restoring = harness.session.restore()
+    harness.session.setDisplayName('Ada Lovelace')
+    releaseRead()
+    await expect(restoring).resolves.toBe(true)
+
+    const snapshot = harness.session.getSnapshot()
+    expect(snapshot.state).toBe('authenticated')
+    expect(snapshot.principal?.display_name).toBe('Ada Lovelace')
+    expect(snapshot.permissionSets).toEqual(permissionSets)
+  })
+})
+
 describe('response guards reject a contract-violating 2xx', () => {
   it.each([
     ['a non-object body', 'nope'],

@@ -122,5 +122,6 @@ export function createStepUpSession(
     refresh: unused,
     retryFeatures: () => Promise.resolve(),
     setPermissionSet: unused,
+    setDisplayName: unused,
   }
 }

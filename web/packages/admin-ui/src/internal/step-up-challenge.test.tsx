@@ -110,6 +110,7 @@ function flowSession(): {
     refresh: () => Promise.resolve(false),
     retryFeatures: () => Promise.resolve(),
     setPermissionSet: () => undefined,
+    setDisplayName: () => undefined,
   }
   return { session, answers }
 }

@@ -62,6 +62,7 @@ function session(
     refresh: unused,
     retryFeatures: unused,
     setPermissionSet: unused,
+    setDisplayName: unused,
   }
 }
 
