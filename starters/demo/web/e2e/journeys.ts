@@ -162,6 +162,7 @@ export const journeys: readonly JourneyEntry[] = [
       'REQ-signin-027',
       'REQ-signin-028',
       'REQ-signup-018',
+      'REQ-signup-053',
       'REQ-tenancy-009',
       'REQ-tenancy-022',
       'REQ-tenancy-023',
