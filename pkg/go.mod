@@ -26,6 +26,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/minio/minio-go/v7 v7.3.0
+	github.com/mojocn/base64Captcha v1.3.8
 	github.com/nats-io/nats.go v1.54.0
 	github.com/pquerna/otp v1.5.0
 	github.com/redis/go-redis/v9 v9.22.0
@@ -104,6 +105,7 @@ require (
 	github.com/goccy/go-json v0.11.2 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
@@ -154,6 +156,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/arch v0.31.0 // indirect
+	golang.org/x/image v0.23.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
