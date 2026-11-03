@@ -371,7 +371,7 @@
 
 - **验收**：经社交提供方或企业提供方完成开户后页面落在租户区首页；企业即时开通建立的账户与社交开户落在同一处；从邀请链接发起的回调完成后回到该邀请的路径。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`（社交首登开户落在租户区首页）；`starters/demo/web/src/pages/auth-callback-page.test.tsx` `lands a viewer home when the provider detour started elsewhere`（社交开户与企业即时开通落在租户区首页）、`returns a viewer who left an invitation link to that landing`（从邀请链接发起的回调回到该链接）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`（社交首登开户落在租户区首页）；`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`（企业即时开通开户落在租户区首页）；`starters/demo/web/src/pages/auth-callback-page.test.tsx` `lands a viewer home when the provider detour started elsewhere`（回调落在租户区首页）、`returns a viewer who left an invitation link to that landing`（从邀请链接发起的回调回到该链接）
 
 ### REQ-signup-029
 

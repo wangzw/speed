@@ -65,7 +65,7 @@ flowchart TD
 - 平台运营：`REQ-platform-admin-013`
 - 平台设置与授权：`REQ-platform-config-017`、`REQ-platform-config-018`、`REQ-platform-config-019`、`REQ-platform-config-020`、`REQ-platform-config-021`、`REQ-platform-config-038`
 - 登录：`REQ-signin-001`、`REQ-signin-003`、`REQ-signin-004`、`REQ-signin-017`、`REQ-signin-020`、`REQ-signin-021`、`REQ-signin-022`、`REQ-signin-023`、`REQ-signin-027`、`REQ-signin-028`
-- 自助注册：`REQ-signup-018`、`REQ-signup-048`、`REQ-signup-049`
+- 自助注册：`REQ-signup-018`、`REQ-signup-048`、`REQ-signup-049`、`REQ-signup-053`
 - 用户名：`REQ-signup-045`、`REQ-signup-046`、`REQ-signup-047`、`REQ-account-060`
 - 账户自助：`REQ-account-067`
 - 账户安全：`REQ-security-029`
