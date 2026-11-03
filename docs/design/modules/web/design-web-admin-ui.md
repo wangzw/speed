@@ -253,12 +253,12 @@ export function WorkspaceSettingsPage(): ReactElement
 |---|---|---|---|---|---|
 | 邀请与成员 | `workspace-invitations` | `/invitations` | `workspace.nav.invitations` | `authn.membership.manage` | `authn.admin`、`authn.invitations` |
 | SSO 提供方 | `workspace-sso` | `/sso` | `workspace.nav.sso` | `authn.idp.manage` | `authn.admin`、`authn.admin.sso` |
-| 角色与权限 | `workspace-roles` | `/roles` | `workspace.nav.roles` | `authz.tenant.role.read` | `authz.tenantadmin` |
+| 角色与权限 | `workspace-roles` | `/roles` | `workspace.nav.roles` | `authz.tenant.role.read` | `authz.tenantadmin`、`authn.admin` |
 | 设置 | `workspace-settings` | `/settings` | `workspace.nav.settings` | `settings.tenant.read` | `settings.tenantadmin` |
 
 **工作区声明用租户域的那一套权限码。** 邀请与 SSO 用 `authn.membership.manage` 与 `authn.idp.manage`；设置用 `settings.tenant.read`，角色与权限用 `authz.tenant.role.read`。写码不进声明：`settings.tenant.write` 与 `authz.tenant.role.manage` 由服务端在每次写上判定，页面照常渲染写控件（平台管理面同样只把读码列进声明）。两套码分属平台域与租户域，不互相替代。
 
-**`requires` 只列该页依赖的租户作用域特性。** 邀请与成员、SSO 的读写由 `authn.admin` 与 `authn.invitations`、`authn.admin.sso` 服务；设置由 `settings.tenantadmin` 服务，角色与权限由 `authz.tenantadmin` 服务。工作区声明不列 `tenant.admin`：那是平台名册的特性，工作区管理面不读名册、也不持租户选择器。
+**`requires` 只列该页依赖的租户作用域特性。** 邀请与成员、SSO 的读写由 `authn.admin` 与 `authn.invitations`、`authn.admin.sso` 服务；设置由 `settings.tenantadmin` 服务，角色与权限由 `authz.tenantadmin` 与 `authn.admin` 服务：该页的成员选择器经成员端点读该租户的成员，成员读由 `authn.admin` 带来。工作区声明不列 `tenant.admin`：那是平台名册的特性，工作区管理面不读名册、也不持租户选择器。
 
 ### 租户模式的页面行为
 
@@ -266,8 +266,8 @@ export function WorkspaceSettingsPage(): ReactElement
 
 - **邀请与成员。** 当前租户受控给出，租户选择器不渲染；成员写入表单以其账户字段经平台账户检索，故在租户模式下不渲染，页面因此不发出任何 `/api/v1/system` 读。成员读逐行携带 `display_name`；邀请人的身份从该租户的成员读解析，不再经平台账户读。成员表的姓名列取成员记录的 `display_name`，账户列直接显示记录的账户标识、不解析。只有成员读无法解析的邀请人（读尚未落定、被拒，或应答不含该账户）按记录的标识渲染并标注身份未解析。签发、撤销邀请，移除成员与切换 SSO 豁免沿用既有控件与反馈。
 - **SSO 提供方。** 当前租户受控给出，选择器不渲染；页面的读写全部落在该租户的提供方上。
-- **设置。** 当前租户受控给出，层选不渲染；页面只读写 `/api/v1/tenants/{tenant}/settings`，从不读写 `/api/v1/system/settings`。全局层只在平台管理面出现。读携带该租户层解析到的值，每行另带来源层 `source`，取值是 `tenant`、`global` 与 `default`：租户层持有该键时为 `tenant`，租户层没有而全局层持有时为 `global`，两层都没有时为 `default`。页面把来源层渲染成单独一列，逐字显示读的 `source`，不按行的状态推断——全局层持有时 `has_row` 为假，按状态推断会把来源读成默认值；平台设置面的读不带 `source`，故不渲染这一列。行的状态与移除控件仍按 `has_row` 判定，它报的是租户层是否持有该行，故来源为 `global` 或 `default` 的行没有可撤的覆盖行、不渲染移除控件。读写的查询键以当前租户为最外层段，与平台管理面的设置读不共用键，切租户即换键，离任租户的缓存由宿主逐出。命名空间导航仍由全量读的命名空间分组；平台专用命名空间由服务端在租户面上排除，页面照列读回的项，不补也不推断。
-- **角色与权限。** 当前租户受控给出，租户选择器不渲染。角色、授予、绑定与账户绑定查询都读 `/api/v1/tenants/{tenant}/...`；权限目录读是 `GET /api/v1/tenants/{tenant}/permissions`，服务端只交出该租户管理员可授予的治理集，平台管理面读的则是完整的 `Catalog.Declared`。绑定与绑定查询的账户选择器换成成员选择器：选项取自该租户的成员读（`GET /api/v1/tenants/{tenant}/members`），不再经平台账户检索。绑定表的账户列由成员读的 `display_name` 解析；读尚未落定、被拒或应答不含该账户时渲染记录的账户标识并标注身份未解析，与邀请与成员页同一来源，不发平台账户读。宿主经 `WorkspaceAdminProvider` 的 `protectedRoles` 属性交出该租户里不可改动、不可删除的角色名（宿主种入的 `tenant-admin` 等），包装页把它交给页面，页面把那些行渲染为只读，不渲染授予与删除控件，方式同平台管理面处理 `builtin` 角色；服务端标记的 `builtin` 角色在两面同样只读。授权表与权限目录仍按同一套完整权限码对照，页面的写控件照常渲染，由服务端判定。
+- **设置。** 当前租户受控给出，层选不渲染；页面只读写 `/api/v1/tenants/{tenant}/settings`，从不读写 `/api/v1/system/settings`。全局层只在平台管理面出现。读携带该租户层解析到的值，每行另带来源层 `source`，取值是 `tenant`、`global` 与 `default`：租户层持有该键时为 `tenant`，租户层没有而全局层持有时为 `global`，两层都没有时为 `default`。页面把来源层渲染成单独一列，由服务端给出的 `source` 值选定显示文案（`tenant`、`global` 与 `default` 各一条本地化文案），不从行的状态推断——全局层持有时 `has_row` 为假，按状态推断会把来源读成默认值；平台设置面的读不带 `source`，故不渲染这一列。行的状态与移除控件仍按 `has_row` 判定，它报的是租户层是否持有该行，故来源为 `global` 或 `default` 的行没有可撤的覆盖行、不渲染移除控件。读写的查询键以当前租户为最外层段，与平台管理面的设置读不共用键，切租户即换键，离任租户的缓存由宿主逐出。命名空间导航仍由全量读的命名空间分组；平台专用命名空间由服务端在租户面上排除，页面照列读回的项，不补也不推断。
+- **角色与权限。** 当前租户受控给出，租户选择器不渲染。角色、授予、绑定与账户绑定查询都读 `/api/v1/tenants/{tenant}/...`；权限目录读是 `GET /api/v1/tenants/{tenant}/permissions`，服务端只交出该租户管理员可授予的治理集，平台管理面读的则是完整的 `Catalog.Declared`。绑定与绑定查询的账户选择器换成成员选择器：它自己读该租户的成员（`GET /api/v1/tenants/{tenant}/members`），不再经平台账户检索；操作者的输入经成员路由的 `query` 在服务端收窄，一次只持一页并按游标翻页（游标是上一页最后一行的账户标识，路由不报下一页游标，选择器因此多读一行作为还有下一页的证据），暂停后再发起下一次检索。选项只含已启用（`active`）的成员：绑定要求成员启用，列出一名已停用的成员只会引来一次被拒的写。选择器自持读的进行与失败：读尚未落定时以加载态代替空态，读失败时渲染该次读的失败文案与重试，两者都不显示为空名单。绑定表的账户列由选择器读过的成员页解析，按租户累积，翻过一页后该成员的绑定行仍有名字；没有任何读带到的账户渲染记录的账户标识并标注身份未解析，与邀请与成员页同一来源，不发平台账户读。切租户时清空所选角色与账户草稿，它们命名的是离任租户的对象。宿主经 `WorkspaceAdminProvider` 的 `protectedRoles` 属性交出该租户里不可改动、不可删除的角色名（宿主种入的 `tenant-admin` 等），包装页把它交给页面，页面把那些行渲染为只读，不渲染授予与删除控件，方式同平台管理面处理 `builtin` 角色；服务端标记的 `builtin` 角色在两面同样只读。授权表与权限目录仍按同一套完整权限码对照，页面的写控件照常渲染，由服务端判定。
 
 ### 平台管理面的页面声明
 
@@ -619,7 +619,7 @@ graph TD
 | 无身份 | 401，由服务端写出，宿主转入登录面 |
 | 权限不足 | 403，由服务端写出；页面渲染权限拒绝文案且不给重试（重试只会再被拒一次）；路由级守卫由宿主组合 |
 | 工作区管理面的写被 403 `authz.protected` 拒绝（受保护的域，或调用方删除自己的租户管理员绑定） | 渲染受保护文案 `errors.authz.protected`，不渲染为权限不足；文案不区分原因——受保护的域与调用方删除自己的租户管理员绑定这两类拒绝共用同一条文案，界面不指明是哪一种 |
-| 工作区管理面的设置写被 403 `settings.protected` 拒绝（宿主拒绝该租户的设置写） | 渲染受保护文案，不渲染为权限不足；该拒绝说明租户的设置写受宿主保护，不是调用方少一个权限。平台错误目录已登记该码的两种语言文案；本包的错误文案白名单尚未收录 `settings.protected`，页面此刻落通用失败文案 |
+| 工作区管理面的设置写被 403 `settings.protected` 拒绝（宿主拒绝该租户的设置写） | 渲染受保护文案 `errors.settings.protected`，不渲染为权限不足；该拒绝说明租户的设置写受宿主保护，不是调用方少一个权限 |
 | 工作区管理面无当前租户（宿主未给出 `tenant`） | 包装页不发出缺租户的请求；宿主在租户落定之后才渲染它 |
 | 工作区管理面的页面缺少该页权限码，或收窄后没有可进入页面 | 转到第一条可进入的工作区管理页；一条也没有时转到当前租户首页 |
 | 冒充中、个人租户或系统租户，而工作区管理面被直接访问 | 转到当前租户首页 |
@@ -654,7 +654,7 @@ graph TD
 | 详情面板展示着未关闭的服务密钥时收到关闭请求 | 先经 `ConfirmDialog` 确认放弃，取消则面板保持 |
 | 写入在途时操作租户选择器或其它改变上下文的选择器 | 选择器在它牵动的作用域 `pending` 时禁用 |
 
-平台错误命名空间的 zh-CN 与 en-US 语言包各有一条 `errors.authz.protected` 文案，也各有一条 `errors.settings.protected` 文案；本包的 `ERROR_TEXT_CODES` 收录了前者，尚未收录 `settings.protected`，工作区设置页的该拒绝因此落通用失败文案。
+平台错误命名空间的 zh-CN 与 en-US 语言包各有一条 `errors.authz.protected` 文案，也各有一条 `errors.settings.protected` 文案；本包的 `ERROR_TEXT_CODES` 两者都收录，工作区设置页的该拒绝渲染它自己的文案。
 
 页面的特性缺席不经本包的失败面：那样的页面命中后由宿主的路由层渲染回退视图，与未登记路径的 404 相同。特性在场的页面读取仍答 404 或入口文档，都出自同一个源背后副本装配不一致，后者发生在缺席副本的配置没有认领该路径时，见 [feature](../design-feature.md) 的非保证；两者都落到上表的可重试占位。
 
@@ -752,6 +752,6 @@ graph TD
 | 工作区操作束（`workspace-operations.tsx` 的 `WorkspaceAdminOperations`、`workspaceAdminOperations`）及其发布上下文 | 已实现 | `web/packages/admin-ui/src/workspace-operations.tsx` `WorkspaceAdminOperations`、`workspaceAdminOperations`、`WorkspaceAdminOperationsProvider`、`useWorkspaceAdminOperations` |
 | 邀请与成员、SSO 的租户模式页面行为 | 已实现 | `web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`、`tenantMode`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage` |
 | 设置页的租户模式（只读写租户层、来源层列） | 已实现 | `web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage`、`SettingsPageProps`、`sourceColumn`；`web/packages/admin-ui/src/workspace-pages.tsx` `WorkspaceSettingsPage` |
-| 权限页的租户模式（治理目录、成员选择器、受保护角色只读） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`PermissionsPageProps`、`TenantPermissionsPage`、`roleLocked`、`TenantUnbindButton`；`web/packages/admin-ui/src/internal/account-identity.tsx` `TenantAccountIdentity`；`web/packages/admin-ui/src/workspace-pages.tsx` `WorkspacePermissionsPage` |
-| 工作区设置页的 `settings.protected` 失败文案 | 未实现 | — |
+| 权限页的租户模式（治理目录、成员选择器、受保护角色只读） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`PermissionsPageProps`、`TenantPermissionsPage`、`TenantMemberPicker`、`roleLocked`、`TenantUnbindButton`；`web/packages/admin-ui/src/internal/account-identity.tsx` `TenantAccountIdentity`；`web/packages/admin-ui/src/workspace-pages.tsx` `WorkspacePermissionsPage` |
+| 工作区设置页的 `settings.protected` 失败文案 | 已实现 | `web/packages/admin-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json`（`errors.settings.protected`）；测试 `web/packages/admin-ui/src/internal/error-text.test.ts` |
 | 工作区管理面的入口派生 | 已实现 | `starters/demo/web/src/workspace-admin.ts` `useWorkspaceAdminAdmission`、`useWorkspaceAdminPermission` |

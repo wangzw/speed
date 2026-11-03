@@ -491,12 +491,11 @@ request body.
   reachable code, so a refusal renders its own text rather than the
   generic fallback. A new write surface extends the whitelist with the
   codes it can meet. The tenant settings write can be answered with 403
-  `settings.protected`: the shared platform error catalog carries its two
-  languages, but this package's whitelist and bundle do not yet, so that
-  refusal currently renders the generic fallback. An address an account
-  create or identifier add collides with is the 409 `authn.email_taken`,
-  whose text names the address as already registered and asks for
-  another -- an actionable refusal, not a restated status.
+  `settings.protected`; the whitelist carries that code and both bundles
+  carry its leaf, so the refusal renders its own text. An address an
+  account create or identifier add collides with is the 409
+  `authn.email_taken`, whose text names the address as already registered
+  and asks for another -- an actionable refusal, not a restated status.
 - **Each page opens with ui-kit's `PageHeader`.** The page title is the
   level-one heading and a breadcrumb trail runs from the admin to the
   page. On the workspace surface the trail comes from
