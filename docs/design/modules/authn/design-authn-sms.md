@@ -9,7 +9,7 @@
 - **`SMSCodes`**：由 `authn.sms` 排他交付，挑战状态机的唯一入口。验证码明文从不离开本模块：不写库、不写日志、不进事件与指标，只存在于入队项与交给发送方的调用参数里。
 - **发送**：经顶层发送能力 `pkg/sms` 的 `Registry` 与 `Sender` 把每条挑战发出去。本模块不认识厂商，只按自己所需的模板键构造一条 `sms.Message` 交给注册表解出 `sms.Resolved`，再把解出的形状交给载体；模板声明、厂商编号与参数次序归 `pkg/sms`（[design-sms](../design-sms.md)、[ADR-sms-capability](../../../adr/adr-sms-capability.md)）。
 - **发送预算**：每条发送在放行表、队列容量与全部预算通过之后，往共享台账写一行尝试；预算的计数由 `sms.budget` 交付的 `budget.Store` 回答，本模块只读这些计数并与自己的设置比较。台账与跨渠道上界归 [design-sms](../design-sms.md) 的台账模块，本模块不持有那张表。
-- **账户清理**：`authn.sms` 实现 `AccountLifecycle`，账户删除之后抹除该账户的挑战行，并按周期清扫过了预算统计窗口的挑战行。
+- **账户清理**：`authn.sms` 实现 `AccountLifecycle`，账户删除之后抹除该账户的挑战行，并按周期清扫已过有效期并超过清扫余量的挑战行。
 
 ### 非职责
 
@@ -512,8 +512,8 @@ flowchart TD
 - **`AccountDeleted`**：删除该账户的挑战行（`account_id` 非空的 `mfa`、`enroll` 行）；`login` 行不带账户，由清扫回收，号码本身不在表里留存。台账行不按账户删除：它是计数的历史，不承载可用来认证的状态；账户删除不使一次已经发生的发送从窗口里消失。幂等：没有行可删时返回 `nil`。
 - **`ServiceSecretRevoked`**：与短信无关，返回 `nil`。
 - **事件补偿。** `event.Bus` 在场时，本模块在 `Init` 里订阅 `authn.account.deleted`，按 `Event.ID` 去重，处理函数幂等，重做 `AccountDeleted` 的清理。钩子失败计入 `authn.cleanup.failures`（`hook` 取 `sms`）。钩子是同步的清理，事件是补偿，两者都不是正确性的底线：校验后端每次建立身份时另行核对账户状态与 `valid_after`，残留的挑战行不能单独换出身份（[ADR-authn-account-lifecycle](../../../adr/adr-authn-account-lifecycle.md)）。
-- **挑战行清扫。** 本模块是 `authn_challenges` 的持有者，在 `Start` 起一个有界协程，每 10 分钟一轮，删除 `expires_at` 早于当前时刻 25 小时的行。行在写入时取 `expires_at`，它与 `created_at` 的差就是该行的有效期（至多 10 分钟），远小于 25 小时相对最长一日窗口（24 小时）的一小时余量，所以窗口内的行不会被提前清走。清扫走 `expires_at` 上的索引。一轮以一批至多 1000 行为单位连续删到不足一批为止；每个副本都跑，条件删除互不冲突；`Stop` 以自带的 5 秒为界等它退出。全部清扫表见 [design-authn-account](design-authn-account.md)。
-- **台账清扫不由本模块承担。** `sms.budget` 提供按时间删除行的 `PruneBefore`，但不运行定时任务；接上每日清除 30 天以前的行是宿主的装配工作，没有它时台账一直增长。本模块不清自己写入的那些行，它们与通知渠道的行在同一个保留窗口里。
+- **挑战行清扫。** 本模块是 `authn_challenges` 的持有者，在 `Start` 起一个有界协程，每 10 分钟一轮，删除 `expires_at` 早于当前时刻 25 小时的行，即过期超过清扫余量的行。挑战行只承载校验状态：预算计数不读这张表，全部窗口由共享台账 `sms_budget_events` 回答，所以保留期按有效期加余量给出，不跟随任何预算窗口。清扫走 `expires_at` 上的索引。一轮以一批至多 1000 行为单位连续删到不足一批为止；每个副本都跑，条件删除互不冲突；`Stop` 以自带的 5 秒为界等它退出。全部清扫表见 [design-authn-account](design-authn-account.md)。
+- **台账清扫不由本模块承担。** `sms.budget` 持有那张表，也在自己的 `Start` 起、`Stop` 停的保留清扫里调用 `PruneBefore`，按最长预算窗口加余量的保留窗口删除旧行（见 [design-sms](../design-sms.md)）。本模块不清自己写入的那些行，它们与通知渠道的行在同一个保留窗口里。
 
 ## 错误与失败语义
 

@@ -935,7 +935,7 @@ flowchart TD
 | `authn_accounts`（未验证的自助注册账户） | `authn.account` | `signup_state = 1`、`signup_verified_at IS NULL`、没有任何 `Proves` 为真的邮箱、`COALESCE(last_login_at, created_at)` 早于 `now - unverified-ttl`；删除自己的事务里重判同一组条件，状态已变则跳过，删除连带清掉标识、凭据与联系方式预留，被删预留的地址释放给其他账户。`signup_state = 0` 与 `2` 的账户不在此列 | `authn.account.unverified-sweep-interval` |
 | `authn_idp_domains`（未验证的声明） | `authn.sso` | `verified_at` 为空且 `created_at` 早于 7 天 | 1 小时 |
 | `authn_saml_assertions` | `authn.sso` | `not_on_or_after < now` | 10 分钟 |
-| `authn_challenges` | `authn.sms` | `created_at < now - 25 小时`（预算统计窗口最长一天，留一小时余量） | 10 分钟 |
+| `authn_challenges` | `authn.sms` | `expires_at < now - 25 小时`（清扫余量；预算计数不读这张表） | 10 分钟 |
 | `authn_refresh_tokens` | `authn.token` | 所属会话已不存在、已撤销、已过绝对期限，或 `idle_expires_at < now` | 1 小时 |
 | `authn_sessions` | `authn.session` | 到期并过保留期 | 10 分钟 |
 | `authn_factors`（待确认行） | `authn.mfa` | `status = 0` 且超过 `pending-ttl` | 1 小时 |

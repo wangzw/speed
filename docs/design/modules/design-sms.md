@@ -234,7 +234,7 @@ type Resolved struct {
 
 ### 台账模块 sms.budget
 
-`sms.budget` 持有共享的短信尝试台账，交付 `(*budget.Store)(nil)`。它是**非排他**交付：一个进程恰好有一个台账，每个发送能力读同一个；声明了对它的 `Requires` 的消费方把本模块拉进依赖闭包。它 `Requires` `(*db.Database)(nil)`，带自己的迁移树与 `sms_budget_events` 表。它声明一个设置，`sms.ceiling-hourly`，挂在共享的 `sms` 命名空间下；除此不声明任何上限。
+`sms.budget` 持有共享的短信尝试台账，交付 `(*budget.Store)(nil)`。它是**非排他**交付：一个进程恰好有一个台账，每个发送能力读同一个；声明了对它的 `Requires` 的消费方把本模块拉进依赖闭包。它 `Requires` `(*db.Database)(nil)`，可选 `Requires` `(*log.Logger)(nil)` 用于清扫失败时的告警；带自己的迁移树与 `sms_budget_events` 表，并在 `Start` 起、`Stop` 停的保留清扫里按窗口删除旧行。它声明一个设置，`sms.ceiling-hourly`，挂在共享的 `sms` 命名空间下；除此不声明任何上限。
 
 **台账只记短信，不是部署全部投递预算的唯一账。** 邮件投递的预算不在这张表上：它按收件人与按部署的固定窗口计在 `notification.delivery` 使用的键值计数器上，与短信各自计数、互不占用额度（[design-notification-delivery](notification/design-notification-delivery.md)）。键值计数器仍在邮件预算上使用；短信只使用这张台账，不读键值计数器。
 
@@ -248,7 +248,7 @@ type Resolved struct {
 
 **「尝试预算」在认证与通知各指一个设置，不是一个共用的判据。** 通知渠道的尝试预算取 `IncludeRefunded`：每一次尝试都计，不论载体是否接受、发送预算是否已退还，因为那里防的是陷入重试循环的生产者。认证渠道的尝试预算取 `OnlyRefunded`：只计事后退款的确定失败，因为那里计的是猜码或轮换必然失败目的地的人，一次成功不该记在攻击者名下。同一个词在认证与通知指向不同的查询形状，调用方按开关读计数，不能按名字推断。
 
-`Query` 还按渠道、用途与至多一个索引维度收窄；`Oldest` 与 `Latest` 读同一批行，分别是窗口何时让出位置与重发间隔量到哪一刻。`CountDistinctDestinations` 数不同的目的地摘要，供按来源的不同目的地预算使用。`CountCeiling` 数两个渠道自某一时刻起未退款、未抑制的行，是部署的跨渠道上界。`PruneBefore` 删除早于某一时刻的行并回答删了几行；它是方法而不是定时任务，本模块不跑 ticker。
+`Query` 还按渠道、用途与至多一个索引维度收窄；`Oldest` 与 `Latest` 读同一批行，分别是窗口何时让出位置与重发间隔量到哪一刻。`CountDistinctDestinations` 数不同的目的地摘要，供按来源的不同目的地预算使用。`CountCeiling` 数两个渠道自某一时刻起未退款、未抑制的行，是部署的跨渠道上界。`PruneBefore` 删除早于某一时刻的行并回答删了几行。本模块自己按保留窗口调用它：`Start` 起一条 goroutine，先把超出窗口的行清一次，此后每隔 `pruneEvery` 清一次；`Stop` 取消它并等它结束。截止时刻是当前时刻减去 `pruneRetention`，即消费方最长的预算窗口（一天）再加一小时余量，所以计数还读得到的行不会被提前删除。
 
 **台账不持计数器，也不持锁。** `Record` 是一条 INSERT，每个计数都是对已提交行的查询；并发记录是并发插入，没有可丢更新的共享状态。一个必须成为硬上限的预算由调用方把计数与写入放进同一个事务，并在该事务上建立台账（`New(tx)`），自己串行化维度；不共享事务的两个调用方之间是软上限。`CountCeiling` 是唯一跨渠道的计数，两个渠道在写它之前取同一把事务级咨询锁（键 `sms.budget:lock:ceiling`），SQLite 在数据库层串行化写者时不取。**这把锁是部署级的一把，代价是短信写入的吞吐。** 认证与通知的每次短信发送都在同一个键上取锁，因此两个渠道的写入彼此串行：一个通知派发的爆发会让同一时刻的认证发送排队，反之亦然。这是跨渠道上界必须先于其余每一项、且两个渠道读到同一份已提交行的代价；SQLite 在数据库层串行化写者，不另取这把锁，形成的也是同一条写入队列。
 
@@ -670,7 +670,7 @@ type Spec[C any] struct {
 | 归类助手（精确码表加缺省 `ErrUncertain`） | 已实现 | `pkg/sms/classify.go` |
 | 去重表 | 已实现 | `pkg/internal/dedupe` |
 | 模板注册表 `sms.registry`（来源与可变权限、运行期状态、载体维度与迁移 0002、旧行收养与所有权标记、后台轮询） | 已实现 | `pkg/sms/registry/registry.go` `Module`、`ModuleName`；`pkg/sms/registry/store.go` `registryStore`、`Resolve`、`Declared`、`List`、`Register`、`Offer`、`SetEnabled`、`Remove`、`upsert`；`pkg/sms/registry/snapshot.go` `snapshot`、`loadSnapshot`；`pkg/sms/registry/poll.go` `startPoll`、`pollOnce`、`pollTemplate`；`pkg/sms/registry/config.go` `schema`、`readSettings`；`pkg/sms/registry/migrations` |
-| 共享台账 `sms.budget`（`sms_budget_events`、计数查询、退款、跨渠道上界、`PruneBefore`） | 已实现 | `pkg/sms/budget/budget.go` `Attempt`、`Query`、`Outcome`、`Dimension`；`pkg/sms/budget/store.go` `Store`、`New`、`Record`、`MarkRefunded`、`Count`、`CountDistinctDestinations`、`Oldest`、`Latest`、`CountCeiling`、`PruneBefore`；`pkg/sms/budget/module.go` `Module`、`DefaultCeilingHourly`、`ceilingSchema`；`pkg/sms/budget/migrations` |
+| 共享台账 `sms.budget`（`sms_budget_events`、计数查询、退款、跨渠道上界、`PruneBefore` 与保留清扫） | 已实现 | `pkg/sms/budget/budget.go` `Attempt`、`Query`、`Outcome`、`Dimension`；`pkg/sms/budget/store.go` `Store`、`New`、`Record`、`MarkRefunded`、`Count`、`CountDistinctDestinations`、`Oldest`、`Latest`、`CountCeiling`、`PruneBefore`；`pkg/sms/budget/prune.go` `ledger`、`newLedger`、`start`、`stop`、`prune`；`pkg/sms/budget/module.go` `Module`、`DefaultCeilingHourly`、`ceilingSchema`；`pkg/sms/budget/migrations` |
 | 管理面 `sms.admin`（模板与载体路由、判定、审计、回绝映射） | 已实现 | `pkg/sms/admin/admin.go` `Module`、`ModuleName`、`wire`；`pkg/sms/admin/routes.go` `routes`、`mount`、`declareOpen`；`pkg/sms/admin/templates.go` `handleTemplateList`、`handleTemplateRegister`、`handleTemplateOffer`、`handleTemplateSetEnabled`、`handleTemplateRemove`；`pkg/sms/admin/carrier.go` `handleCarrier`；`pkg/sms/admin/permissions.go` `PermissionTemplateRead`、`PermissionTemplateManage`、`permissionSpec`、`translationSpec`；`pkg/sms/admin/audit.go`、`pkg/sms/admin/pipeline.go` `require`、`answer`；`pkg/sms/admin/views.go` `templateView`、`carrierView` |
 | 管理面 `sms.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/sms/admin/operations.go`；`pkg/sms/admin/openapi_generated_test.go`；片段 `pkg/sms/admin/openapi/sms.admin.json` |
 | 静态特性 `sms.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/sms/admin/admin.go` `Module`；`pkg/sms/admin/feature_test.go` `TestTheModuleDeclaresTheSMSAdminFeature` |
