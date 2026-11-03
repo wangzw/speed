@@ -511,7 +511,7 @@ describe('the sign-in surface', () => {
     window.history.replaceState({}, '', ACCOUNT_PATH)
     const harness = makeHarness({
       // The deployment serves workspace.personal: the register mode's
-      // landing is the tenant home rather than the setup page.
+      // landing is the tenant home rather than the account page.
       [FEATURES_GET]: () => ({ features: ['workspace.personal'] }),
       [LOGIN_METHODS]: () =>
         methodList(

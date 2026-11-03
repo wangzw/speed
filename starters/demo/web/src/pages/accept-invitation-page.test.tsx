@@ -533,7 +533,7 @@ describe('the invitation landing', () => {
     // invitation declaration is not matched and the tenant shell's own
     // sign-in surface renders at this URL. That surface is not embedded in
     // the landing page, so its register mode would take the just-opened
-    // account to the tenant home (or the setup page) and drop the invitation
+    // account to the tenant home (or the account page) and drop the invitation
     // -- the case the forced feature document used to hide. The registration
     // has to leave the URL in place so the declaration matches once the login
     // commit brings the document with it.

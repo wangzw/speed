@@ -1176,7 +1176,7 @@ function SessionGate({
   if (snapshot.state !== 'authenticated') {
     // The admin URL is the viewer's destination: a registration completed
     // here stays on it instead of being taken to the tenant home or the
-    // setup page (the register mode's landing belongs to the app's own
+    // account page (the register mode's landing belongs to the app's own
     // sign-in page).
     return <SignInView keepLanding />
   }
