@@ -20,9 +20,12 @@
  * surface (`tenantMode`) reads the tenant's governed catalog, roles,
  * grants and bindings under `/api/v1/tenants/{tenant}`, fills its account
  * pickers from the tenant's member read, and resolves recorded account
- * identifiers from those same member rows -- it issues no platform request.
- * The host's protected role names are read-only on that surface, beside
- * the server's builtin roles.
+ * identifiers from the member rows those pickers have read -- it issues no
+ * platform request. A picker searches the member read server-side and pages
+ * it by cursor; it offers active memberships alone and reports its own
+ * pending and failed reads, so neither reads as an empty roster. The host's
+ * protected role names are read-only on that surface, beside the server's
+ * builtin roles.
  *
  * The page renders the surface in five sections:
  *
@@ -150,6 +153,19 @@ import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
  * refresh is described by it, so the explanation has one copy on the page.
  */
 const TENANT_HINT_ID = 'permissions-tenant-hint'
+
+/**
+ * The member picker's page size. The membership read's cursor is the
+ * account identifier of the previous page's last row, and the read answers
+ * no next cursor, so the picker asks for one row beyond its size: an answer
+ * longer than the page size is the evidence another page follows.
+ */
+const MEMBER_PAGE_SIZE = 100
+const MEMBER_READ_LIMIT = MEMBER_PAGE_SIZE + 1
+/** The pause between the last keystroke and the member read it triggers. */
+const MEMBER_SEARCH_DEBOUNCE_MS = 250
+/** No member names resolved yet, for a tenant no picker has read. */
+const EMPTY_MEMBER_NAMES: ReadonlyMap<string, string> = new Map()
 
 /**
  * One permission's code with its server-rendered description beneath it.
@@ -405,9 +421,11 @@ function useTenantPermissionsOperations(
 
 /**
  * One tenant member as the page's account picker holds it. The member read
- * carries the account identifier and its display name; the remaining account
- * fields exist only so the shared picker and the page's identity helpers can
- * consume the row, and none of them is read.
+ * carries the account identifier, its display name and whether the
+ * membership is in force; the remaining account fields exist only so the
+ * shared picker and the page's identity helpers can consume the row, and
+ * none of them is read. A suspended membership reads as a disabled
+ * account, which is what the read says about it.
  */
 function memberAsAccount(member: AdminMember): AdminAccount {
   return {
@@ -415,7 +433,7 @@ function memberAsAccount(member: AdminMember): AdminAccount {
     display_name: member.display_name,
     identifiers: [],
     kind: 'user',
-    status: 'active',
+    status: member.active ? 'active' : 'disabled',
     mfa_required: false,
     protected: false,
     password_set: false,
@@ -431,44 +449,207 @@ function memberOptionLabel(member: AdminAccount): string {
     : `${member.display_name} (${member.id})`
 }
 
+/** The member picker's cursor frame, tagged with the tenant it was read
+ * for. A frame for another tenant derives as the first page synchronously,
+ * so the first read after a switch carries no cursor. */
+interface MemberCursorFrame {
+  readonly tenant: string
+  readonly cursors: readonly string[]
+  readonly page: number
+}
+
+function firstMemberPage(tenant: string): MemberCursorFrame {
+  return { tenant, cursors: [''], page: 0 }
+}
+
 /**
- * The workspace surface's account picker: the tenant's member list, chosen
- * without a platform account search. The options are the members the page
- * already reads; choosing one hands up the account the membership record
- * names.
+ * The workspace surface's account picker: the tenant's member list, read
+ * without a platform account search.
+ *
+ * The picker owns its read, so its search and its paging are its own. The
+ * operator's text narrows the read through the member route's `query`
+ * (server-side); one page is kept at a time with the cursor stack the route
+ * documents -- it answers no next cursor, so the picker reads one row beyond
+ * the page size and takes that extra row as the next cursor's evidence.
+ * Suspended memberships are left out of the options: a binding requires an
+ * active member, so offering one would only invite a refused write. The
+ * read's progress and its failure are the picker's own, so a pending or
+ * refused member read never looks like an empty roster.
  */
 function TenantMemberPicker({
+  tenant,
   label,
   value,
   onChange,
   disabled = false,
-  members,
+  onMembersRead,
 }: Pick<AccountSelectorProps, 'label' | 'value' | 'onChange' | 'disabled'> & {
-  readonly members: readonly AdminMember[] | undefined
+  readonly tenant: string
+  /** Reports every page the picker reads, so the page can name the accounts
+   * its binding tables show. */
+  readonly onMembersRead: (members: readonly AdminMember[]) => void
 }) {
   const { t } = useAdminUiTranslation()
-  const options = useMemo(
-    () => (members ?? []).map(memberAsAccount),
-    [members],
+  const operations = useWorkspaceAdminOperations()
+  const [input, setInput] = useState('')
+  const [query, setQuery] = useState('')
+  const [cursorState, setCursorState] = useState<MemberCursorFrame>(() =>
+    firstMemberPage(tenant),
   )
+  const frame =
+    cursorState.tenant === tenant ? cursorState : firstMemberPage(tenant)
+  const cursor = frame.cursors[frame.page] ?? ''
+  const members = operations.useMembers(tenant, {
+    limit: MEMBER_READ_LIMIT,
+    ...(query === '' ? {} : { query }),
+    ...(cursor === '' ? {} : { after: cursor }),
+  })
+
+  // A chosen account fills the box with its label, which names the selection
+  // rather than a search. The search text is lifted after the operator
+  // pauses; a new search starts at the first page.
+  const selectedLabel = value === null ? '' : memberOptionLabel(value)
+  const previousValue = useRef(value)
+  useEffect(() => {
+    if (value === null && previousValue.current !== null) {
+      setInput('')
+    }
+    previousValue.current = value
+  }, [value])
+  useEffect(() => {
+    const trimmed = input.trim()
+    const timer = setTimeout(() => {
+      setQuery(trimmed === '' || trimmed === selectedLabel ? '' : trimmed)
+    }, MEMBER_SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [input, selectedLabel])
+  useEffect(() => {
+    setCursorState(firstMemberPage(tenant))
+  }, [query, tenant])
+  // A controlled tenant change keeps the picker mounted; its box and its
+  // search must not carry the old tenant's text into the new one.
+  const previousTenant = useRef(tenant)
+  useEffect(() => {
+    if (previousTenant.current === tenant) {
+      return
+    }
+    previousTenant.current = tenant
+    setInput('')
+    setQuery('')
+  }, [tenant])
+
+  const rows = members.data
+  const hasNext = (rows?.length ?? 0) > MEMBER_PAGE_SIZE
+  const pageRows = useMemo(
+    () => (rows === undefined ? undefined : rows.slice(0, MEMBER_PAGE_SIZE)),
+    [rows],
+  )
+  const options = useMemo(
+    () => (pageRows ?? []).filter((member) => member.active).map(memberAsAccount),
+    [pageRows],
+  )
+  const nextCursor = pageRows?.at(-1)?.account ?? ''
+  const loading = members.isPending && rows === undefined
+  const failed = members.isError
+  const nextPage = () => {
+    if (!hasNext || nextCursor === '') {
+      return
+    }
+    setCursorState((previous) => {
+      const current =
+        previous.tenant === tenant ? previous : firstMemberPage(tenant)
+      const cursors = [...current.cursors]
+      cursors[current.page + 1] = nextCursor
+      return { tenant, cursors, page: current.page + 1 }
+    })
+  }
+  const previousPage = () => {
+    setCursorState((previous) => {
+      const current =
+        previous.tenant === tenant ? previous : firstMemberPage(tenant)
+      return current.page === 0
+        ? current
+        : { ...current, page: current.page - 1 }
+    })
+  }
+  useEffect(() => {
+    if (rows !== undefined) {
+      onMembersRead(rows)
+    }
+  }, [rows, onMembersRead])
+
   return (
-    <Autocomplete<AdminAccount>
-      size="small"
-      value={value}
-      disabled={disabled}
-      onChange={(_event, next) => onChange(next)}
-      options={options}
-      getOptionLabel={memberOptionLabel}
-      isOptionEqualToValue={(option, current) => option.id === current.id}
-      noOptionsText={t('permissions.bindings.noMembers')}
-      clearText={t('accountSelector.clear')}
-      openText={t('accountSelector.open')}
-      closeText={t('accountSelector.close')}
-      renderInput={(params) => (
-        <TextField {...params} size="small" label={label} />
+    <Box>
+      <Autocomplete<AdminAccount>
+        size="small"
+        value={value}
+        disabled={disabled || loading}
+        onChange={(_event, next) => onChange(next)}
+        inputValue={input}
+        onInputChange={(_event, nextValue) => setInput(nextValue)}
+        options={options}
+        loading={members.isFetching}
+        // The route already narrowed the page; filtering it again would
+        // hide rows the operator's text matched by an identifier.
+        filterOptions={(candidates) => candidates}
+        getOptionLabel={memberOptionLabel}
+        isOptionEqualToValue={(option, current) => option.id === current.id}
+        noOptionsText={
+          failed
+            ? t('permissions.bindings.membersFailed')
+            : t('permissions.bindings.noMembers')
+        }
+        loadingText={t('permissions.bindings.loading')}
+        clearText={t('accountSelector.clear')}
+        openText={t('accountSelector.open')}
+        closeText={t('accountSelector.close')}
+        renderInput={(params) => (
+          <TextField {...params} size="small" label={label} />
+        )}
+        sx={{ minWidth: 260 }}
+      />
+      {failed && (
+        <Box
+          sx={{ display: 'flex', alignItems: 'center', columnGap: 1, mt: 0.5 }}
+        >
+          <Typography variant="caption" color="error">
+            {t('permissions.bindings.membersFailed')}
+          </Typography>
+          <Button
+            type="button"
+            size="small"
+            variant="outlined"
+            onClick={() => {
+              void members.refetch()
+            }}
+          >
+            {t('permissions.bindings.retry')}
+          </Button>
+        </Box>
       )}
-      sx={{ minWidth: 260 }}
-    />
+      {!failed && (frame.page > 0 || hasNext) && (
+        <Box sx={{ display: 'flex', columnGap: 1, mt: 0.5 }}>
+          <Button
+            type="button"
+            size="small"
+            variant="outlined"
+            disabled={frame.page === 0 || members.isFetching}
+            onClick={previousPage}
+          >
+            {t('permissions.bindings.membersPrevious')}
+          </Button>
+          <Button
+            type="button"
+            size="small"
+            variant="outlined"
+            disabled={!hasNext || members.isFetching}
+            onClick={nextPage}
+          >
+            {t('permissions.bindings.membersNext')}
+          </Button>
+        </Box>
+      )}
+    </Box>
   )
 }
 
@@ -524,17 +705,15 @@ function TenantPermissionsPage({
 }) {
   const operations = useWorkspaceAdminOperations()
   const data = useTenantPermissionsOperations(operations)
-  // The tenant's member read feeds both the picker and the recorded
-  // account identities, so the page never reaches the platform account
-  // surface for either.
-  const members = operations.useMembers(tenant)
+  // The member pickers own their reads and report every page they settle,
+  // so the page resolves the accounts its binding tables show without a
+  // read of its own and never reaches the platform account surface.
   return (
     <PermissionsPageBody
       operations={data}
       tenant={tenant}
       tenantMode
       protectedRoles={protectedRoles}
-      memberRows={members.data}
     />
   )
 }
@@ -546,10 +725,8 @@ function PermissionsPageBody({
   onTenantChange,
   tenantMode = false,
   protectedRoles = [],
-  memberRows,
 }: PermissionsPageProps & {
   readonly operations: PermissionsDataOperations
-  readonly memberRows?: readonly AdminMember[]
 }) {
   const { t } = useAdminUiTranslation()
   const describeRole = useAdminDescribeRole()
@@ -678,9 +855,16 @@ function PermissionsPageBody({
   ])
   // A controlled tenant arrives as a prop, so the reset cannot wait for the
   // page's own selector: any change of the argument every write names
-  // clears the slots and the row markers.
+  // clears the slots and the row markers. The selection and the drafts name
+  // accounts and a role from the tenant being left, so they are cleared
+  // with them; otherwise a selection made under one tenant would stand
+  // against the next one's reads.
   useEffect(() => {
     resetPageFeedback()
+    setSelectedRole('')
+    setBindAccount(null)
+    setLookupAccount(null)
+    setLookupApplied('')
   }, [tenant, resetPageFeedback])
 
   // The refresh action re-reads every read describing the page body that is
@@ -921,28 +1105,46 @@ function PermissionsPageBody({
 
   const roleRows = roles.data
   // The workspace surface resolves every recorded account identifier it
-  // shows from the tenant's own member read. A member the read has not
-  // settled or does not carry stays unresolved and renders its recorded
-  // identifier, which is what the shared identity unit does.
-  const memberNames = useMemo(() => {
-    const names = new Map<string, string>()
-    for (const member of memberRows ?? []) {
-      names.set(member.account, member.display_name)
-    }
-    return names
-  }, [memberRows])
+  // shows from the tenant's own member read. The pickers report each page
+  // they settle, and the names accumulate per tenant, so paging past a
+  // member leaves its binding rows named. A member no read has carried
+  // stays unresolved and renders its recorded identifier, which is what the
+  // shared identity unit does.
+  const [memberNamesByTenant, setMemberNamesByTenant] = useState<
+    Readonly<Record<string, ReadonlyMap<string, string>>>
+  >({})
+  const rememberMembers = useCallback(
+    (members: readonly AdminMember[]) => {
+      setMemberNamesByTenant((previous) => {
+        const current = previous[tenant] ?? EMPTY_MEMBER_NAMES
+        let next: Map<string, string> | null = null
+        for (const member of members) {
+          if (current.get(member.account) === member.display_name) {
+            continue
+          }
+          next ??= new Map(current)
+          next.set(member.account, member.display_name)
+        }
+        return next === null ? previous : { ...previous, [tenant]: next }
+      })
+    },
+    [tenant],
+  )
+  const memberNames = memberNamesByTenant[tenant] ?? EMPTY_MEMBER_NAMES
   // A locked role refuses every write -- role rewrite and delete, and
   // grant/revoke -- but not the reads. A server builtin role is locked on
   // both surfaces; in tenant mode the host's protected role names are
   // locked the same way. The selected role therefore opens read-only: the
   // grants it holds are visible, and every write control that would name it
   // is withheld.
+  const roleProtected = (role: AdminRole): boolean =>
+    !role.builtin && tenantMode && protectedRoles.includes(role.role)
   const roleLocked = (role: AdminRole): boolean =>
-    role.builtin || (tenantMode && protectedRoles.includes(role.role))
+    role.builtin || roleProtected(role)
+  const selectedRoleRow = roleRows?.find((role) => role.role === selectedRole)
   const selectedRoleLocked =
-    roleRows?.some(
-      (role) => role.role === selectedRole && roleLocked(role),
-    ) ?? false
+    selectedRoleRow === undefined ? false : roleLocked(selectedRoleRow)
+  const selectedRoleBuiltin = selectedRoleRow?.builtin ?? false
 
   const roleColumns: DataTableColumn<AdminRole>[] = [
     {
@@ -1028,7 +1230,9 @@ function PermissionsPageBody({
                   {t('permissions.roles.viewGrants')}
                 </Button>
                 <Typography variant="body2" color="text.secondary">
-                  {t('permissions.roles.builtinLocked')}
+                  {role.builtin
+                    ? t('permissions.roles.builtinLocked')
+                    : t('permissions.roles.protectedReadOnly')}
                 </Typography>
               </Box>
             ) : (
@@ -1408,7 +1612,9 @@ function PermissionsPageBody({
                 </Typography>
                 {selectedRoleLocked ? (
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    {t('permissions.grants.builtinReadOnly')}
+                    {selectedRoleBuiltin
+                      ? t('permissions.grants.builtinReadOnly')
+                      : t('permissions.grants.protectedReadOnly')}
                   </Typography>
                 ) : (
                   <Box
@@ -1548,11 +1754,12 @@ function PermissionsPageBody({
             >
               {tenantMode ? (
                 <TenantMemberPicker
+                  tenant={tenant}
                   label={t('permissions.bindings.accountLabel')}
                   value={bindAccount}
                   onChange={changeBindAccount}
                   disabled={bindingsFeedback.pending}
-                  members={memberRows}
+                  onMembersRead={rememberMembers}
                 />
               ) : (
                 <AccountSelector
@@ -1633,11 +1840,12 @@ function PermissionsPageBody({
             >
               {tenantMode ? (
                 <TenantMemberPicker
+                  tenant={tenant}
                   label={t('permissions.lookup.accountLabel')}
                   value={lookupAccount}
                   onChange={setLookupAccount}
                   disabled={lookupFeedback.pending}
-                  members={memberRows}
+                  onMembersRead={rememberMembers}
                 />
               ) : (
                 <AccountSelector

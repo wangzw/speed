@@ -441,6 +441,7 @@
       "builtinYes": "Yes",
       "builtinNo": "No",
       "builtinLocked": "A built-in role cannot be changed or deleted",
+      "protectedReadOnly": "This role is protected by the deployment and is read-only: it cannot be changed, deleted, or have its grants altered.",
       "create": {
         "roleLabel": "Role name",
         "descriptionLabel": "Description (message key)",
@@ -464,6 +465,7 @@
       "pickRole": "Select a role above to manage its grants.",
       "forRole": "Grants of role \"{{role}}\"",
       "builtinReadOnly": "This role is built-in; its grants are read-only and cannot be granted or revoked.",
+      "protectedReadOnly": "This role is protected by the deployment; its grants are read-only and cannot be granted or revoked.",
       "permissionLabel": "Permission",
       "add": "Grant",
       "loading": "Loading grants",
@@ -504,7 +506,10 @@
     "bindings": {
       "title": "Bindings",
       "accountLabel": "Account",
-      "noMembers": "The tenant has no members",
+      "noMembers": "No matching members",
+      "membersFailed": "The tenant's members could not be read.",
+      "membersNext": "More members",
+      "membersPrevious": "Previous members",
       "roleLabel": "Role",
       "bind": "Bind",
       "loading": "Loading bindings",

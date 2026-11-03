@@ -14,7 +14,9 @@
  * tenant, written into every request path by the page wrappers.
  *
  * The roles page is held to the tenant role read code and needs the
- * `authz.tenantadmin` feature; the settings page is held to the tenant
+ * `authz.tenantadmin` and `authn.admin` features: its account pickers read
+ * the tenant's members through the membership endpoints, which the
+ * `authn.admin` feature brings. The settings page is held to the tenant
  * settings read code and needs `settings.tenantadmin`. The write codes are
  * not declaration permissions: a page renders its write controls and lets
  * the server refuse a caller who lacks the write permission.
@@ -62,7 +64,7 @@ export const workspaceAdminRoutes: AdminRouteTable = [
     label: <AdminNavLabel labelKey="workspace.nav.roles" />,
     icon: <PermissionsIcon />,
     permission: 'authz.tenant.role.read',
-    requires: ['authz.tenantadmin'],
+    requires: ['authz.tenantadmin', 'authn.admin'],
   },
   {
     id: 'workspace-settings',

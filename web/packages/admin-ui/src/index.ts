@@ -246,6 +246,7 @@ export {
   type AdminTenantRoleRef,
   type AdminTenantSetSettingInput,
   type AdminTenantSetting,
+  type AdminTenantSettingSource,
   type AdminTenantWriteRoleInput,
   type WorkspaceAdminOperations,
   type WorkspaceAdminOperationsProviderProps,

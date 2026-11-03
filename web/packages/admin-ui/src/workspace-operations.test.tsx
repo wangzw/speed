@@ -336,7 +336,9 @@ describe('the workspace declarations for roles and settings', () => {
       (route) => route.id === 'workspace-roles',
     )
     expect(roles?.permission).toBe('authz.tenant.role.read')
-    expect(roles?.requires).toEqual(['authz.tenantadmin'])
+    // The role page's account pickers read the tenant's members through the
+    // membership endpoints, so the page needs that feature as well.
+    expect(roles?.requires).toEqual(['authz.tenantadmin', 'authn.admin'])
     const settings = workspaceAdminRoutes.find(
       (route) => route.id === 'workspace-settings',
     )

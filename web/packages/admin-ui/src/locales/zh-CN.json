@@ -441,6 +441,7 @@
       "builtinYes": "是",
       "builtinNo": "否",
       "builtinLocked": "内建角色不可修改或删除",
+      "protectedReadOnly": "该角色由部署方保护，为只读：不能修改、删除或变更授权。",
       "create": {
         "roleLabel": "角色名",
         "descriptionLabel": "描述（文案键）",
@@ -464,6 +465,7 @@
       "pickRole": "请在上方选择一个角色以管理其授权。",
       "forRole": "角色「{{role}}」的授权",
       "builtinReadOnly": "该角色为内建角色，授权为只读：不能授予，也不能撤销。",
+      "protectedReadOnly": "该角色由部署方保护，授权为只读：不能授予，也不能撤销。",
       "permissionLabel": "权限",
       "add": "授予",
       "loading": "正在加载授权",
@@ -504,7 +506,10 @@
     "bindings": {
       "title": "绑定",
       "accountLabel": "账户",
-      "noMembers": "该租户暂无成员",
+      "noMembers": "没有匹配的成员",
+      "membersFailed": "未能读取租户成员。",
+      "membersNext": "更多成员",
+      "membersPrevious": "上一批成员",
       "roleLabel": "角色",
       "bind": "绑定",
       "loading": "正在加载绑定",

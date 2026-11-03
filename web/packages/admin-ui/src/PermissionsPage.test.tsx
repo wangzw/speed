@@ -1920,7 +1920,22 @@ describe('PermissionsPage tenant mode', () => {
         }),
       }),
     ).toBeNull()
-    expect(screen.getByText(zhCN.permissions.roles.builtinLocked)).toBeInTheDocument()
+    // The protected role is not a builtin one, so its row says so and
+    // carries the protected read-only copy rather than the builtin lock
+    // text.
+    const protectedRow = screen.getByText('tenant-admin').closest('tr')
+    if (protectedRow === null) {
+      throw new Error('no tenant-admin row')
+    }
+    expect(
+      within(protectedRow).getByText(zhCN.permissions.roles.builtinNo),
+    ).toBeInTheDocument()
+    expect(
+      within(protectedRow).getByText(zhCN.permissions.roles.protectedReadOnly),
+    ).toBeInTheDocument()
+    expect(
+      within(protectedRow).queryByText(zhCN.permissions.roles.builtinLocked),
+    ).toBeNull()
     // An ordinary tenant role keeps its write controls, so the assertion
     // above distinguishes the protected mark from "no role has controls".
     expect(

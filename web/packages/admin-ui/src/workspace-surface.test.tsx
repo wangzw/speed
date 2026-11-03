@@ -111,7 +111,7 @@ describe('workspaceAdminRoutes', () => {
     expect(workspaceAdminRoutes.map((route) => route.requires)).toEqual([
       ['authn.admin', 'authn.invitations'],
       ['authn.admin', 'authn.admin.sso'],
-      ['authz.tenantadmin'],
+      ['authz.tenantadmin', 'authn.admin'],
       ['settings.tenantadmin'],
     ])
     // The workspace declarations never name the platform roster feature: the
