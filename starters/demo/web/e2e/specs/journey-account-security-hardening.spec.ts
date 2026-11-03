@@ -1,8 +1,10 @@
 /**
  * The account-security-hardening journey -- an ordinary account enrols an
  * authenticator and a passkey, signs in with the second factor, signs a second
- * device in, revokes that device's session, and changes the password through a
- * step-up.
+ * device in, and changes the password through a step-up while both devices are
+ * signed in, so the change itself is what ends the other device's session. The
+ * owner then signs the second device back in with the new password and revokes
+ * that session, which is the single-session revoke action.
  *
  * THE PASSKEY IS A BROWSER-DEVICE FIXTURE. The journey's second factor of a
  * kind different from the login's channel is a passkey. Chromium's virtual
@@ -50,8 +52,10 @@
  * session's authentication is the authenticator app, the channel the session
  * already proved, so its exclusion cannot be told apart from the channel rule;
  * only the other clause, that a method enabled before the session on a
- * different channel is offered, is driven. One wrong-current-password check is
- * not driven either.
+ * different channel is offered, is driven. The wrong-current-password clause
+ * is driven by a refused first write. The no-current-password clause belongs
+ * to the enterprise just-in-time first login, whose account starts without a
+ * password; the last-login-way journey drives it.
  *
  * Expected copy is read from the shipped en-US bundles through
  * helpers/i18n.ts.
@@ -92,6 +96,9 @@ const WINDOW_MARGIN_MS = 3_000
 
 /** The password the account holds after the change. */
 const NEW_PASSWORD = 'e2e-Password-456'
+
+/** A current password the account does not hold, for the refused first write. */
+const WRONG_CURRENT_PASSWORD = 'e2e-Wrong-000'
 
 // The names this journey gives its factors. The account surface lists each
 // factor row under the name it was enrolled with; the sign-in and step-up
@@ -200,6 +207,51 @@ function sessionEndedHeading(page: Page): Locator {
     name: copy('authUi', 'sessionEnded.title'),
     exact: true,
   })
+}
+
+/**
+ * Wait until an ended session's device renders the session-ended surface.
+ *
+ * The live notification stream may end the frame before the next request, so
+ * until the surface appears this drives the next request a person would make
+ * -- open the account page from the header -- and retries, because a click may
+ * land while the shell is swapping identities. The assertion is on the
+ * rendered ended surface, not on the click.
+ */
+async function expectSessionEnded(page: Page): Promise<void> {
+  const ended = sessionEndedHeading(page)
+  await expect(async () => {
+    if (await ended.isVisible()) {
+      return
+    }
+    const trigger = page.getByTestId('account-entry-trigger')
+    if ((await trigger.count()) > 0) {
+      await trigger.click({ timeout: 1_000 }).catch(() => undefined)
+      await page
+        .getByRole('menuitem', {
+          name: copy('demo', 'account.sections.profile'),
+          exact: true,
+        })
+        .click({ timeout: 1_000 })
+        .catch(() => undefined)
+    } else {
+      // No header left to click: the next request is the reload.
+      await page.reload().catch(() => undefined)
+    }
+    if (!(await ended.isVisible())) {
+      throw new Error(
+        'the ended device still shows an authenticated surface after a request',
+      )
+    }
+  }).toPass({ timeout: 15_000, intervals: [500] })
+  await expect(ended).toBeVisible()
+  await expect(
+    page.getByRole('button', {
+      name: copy('authUi', 'sessionEnded.signInAction'),
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(homeHeading(page)).toHaveCount(0)
 }
 
 /** The sign-in surface's password fields and submit control. */
@@ -348,7 +400,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
   let deviceBPage: Page | undefined
   let authenticator: VirtualAuthenticator | undefined
   // When device A completed its second-factor sign-in at step 6; the password
-  // change at step 10 must come after this session's freshness window.
+  // change at step 9 must come after this session's freshness window.
   let step6AuthenticatedAt = 0
 
   try {
@@ -716,6 +768,53 @@ test('account-security-hardening: an account enrols two factors, ends another de
       step6AuthenticatedAt = Date.now()
     })
 
+    await test.step('step 6b: a wrong current password is refused and leaves the password unchanged', async () => {
+      // The session was just proved, so the write is judged by the current
+      // password rather than intercepted by the freshness step-up.
+      await openAccountSection(page, 'security')
+      await expandAccountRows(page)
+      const password = passwordSection(page)
+      await password
+        .getByRole('textbox', {
+          name: copy('accountUi', 'password.current.label'),
+          exact: true,
+        })
+        .fill(WRONG_CURRENT_PASSWORD)
+      await password
+        .getByRole('textbox', {
+          name: copy('accountUi', 'password.new.label'),
+          exact: true,
+        })
+        .fill(NEW_PASSWORD)
+      await password
+        .getByRole('textbox', {
+          name: copy('accountUi', 'password.confirm.label'),
+          exact: true,
+        })
+        .fill(NEW_PASSWORD)
+      await password
+        .getByRole('button', {
+          name: copy('accountUi', 'password.submit'),
+          exact: true,
+        })
+        .click()
+
+      // The section's own sentence reports the refusal, and the success notice
+      // never appears. The later change submits the original password as the
+      // current one and succeeds, which is the proof the refused write left the
+      // password unchanged.
+      await expect(
+        password.getByText(copy('accountUi', 'password.currentRejected'), {
+          exact: true,
+        }),
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(
+        page.getByText(copy('accountUi', 'password.changed'), {
+          exact: true,
+        }),
+      ).toHaveCount(0)
+    })
+
     await test.step('step 7: device B signs in with the same account and both devices stay signed in', async () => {
       const options = {
         locale: 'en-US',
@@ -730,11 +829,12 @@ test('account-security-hardening: an account enrols two factors, ends another de
         password: account.password,
       })
       await completeTotpFactor(deviceBPage, secret)
-      // Device A's session survives the second sign-in.
-      await expect(homeHeading(page)).toBeVisible()
+      // Device A's session survives the second sign-in; it is still on the
+      // account security pane where the refused write left it.
+      await expect(paneHeading(page, 'security')).toBeVisible()
     })
 
-    await test.step('step 8: the session list marks the current device and device B is revoked', async () => {
+    await test.step('step 8: the session list marks the current device and shows both sessions', async () => {
       await openAccountSection(page, 'sessions')
       const sessions = sessionsSection(page)
       // One list item per live session, no table and no header rail.
@@ -752,27 +852,16 @@ test('account-security-hardening: an account enrols two factors, ends another de
       // Each row names its device, its address and its last activity, and
       // exactly one row is the current session. The revoke control names the
       // device it ends, so its presence on the other row is the device
-      // summary's rendered proof.
-      const revoke = sessions.getByRole('button', {
-        name: copyPattern('accountUi', 'sessions.revokeAriaWithDevice', {
-          device: '.+',
-        }),
-      })
-      await expect(revoke).toHaveCount(1)
+      // summary's rendered proof. The revoke is deferred: device B stays
+      // signed in through the password change, which is what shows the change
+      // ends the other sessions.
       await expect(
-        sessions.getByText(copy('accountUi', 'sessions.current'), {
-          exact: true,
+        sessions.getByRole('button', {
+          name: copyPattern('accountUi', 'sessions.revokeAriaWithDevice', {
+            device: '.+',
+          }),
         }),
       ).toHaveCount(1)
-      await revoke.click()
-      // The list converges on the server's answer: the revoked row is gone and
-      // the current session remains, leaving the header and one row.
-      await expect(sessions.getByRole('listitem')).toHaveCount(1)
-      await expect(
-        sessions.getByText(
-          copyPattern('accountUi', 'sessions.revokedOne', { device: '.+' }),
-        ),
-      ).toBeVisible()
       await expect(
         sessions.getByText(copy('accountUi', 'sessions.current'), {
           exact: true,
@@ -780,54 +869,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
       ).toHaveCount(1)
     })
 
-    await test.step("step 9: device B's next request lands on the session-ended surface", async () => {
-      if (deviceBPage === undefined) {
-        throw new Error('device B was never opened')
-      }
-      const deviceB = deviceBPage
-      const ended = sessionEndedHeading(deviceB)
-      // The revocation may also end the frame through the live notification
-      // stream before this point. Until the ended surface appears, drive the
-      // next request the step describes -- open the account page from the
-      // header -- and retry the attempt, because a click may land while the
-      // shell is swapping identities. The assertion is on the rendered ended
-      // surface, not on the click.
-      await expect(async () => {
-        if (await ended.isVisible()) {
-          return
-        }
-        const trigger = deviceB
-          .getByTestId('account-entry-trigger')
-        if ((await trigger.count()) > 0) {
-          await trigger.click({ timeout: 1_000 }).catch(() => undefined)
-          await deviceB
-            .getByRole('menuitem', {
-              name: copy('demo', 'account.sections.profile'),
-              exact: true,
-            })
-            .click({ timeout: 1_000 })
-            .catch(() => undefined)
-        } else {
-          // No header left to click: the next request is the reload.
-          await deviceB.reload().catch(() => undefined)
-        }
-        if (!(await ended.isVisible())) {
-          throw new Error(
-            'the revoked device still shows an authenticated surface after a request',
-          )
-        }
-      }).toPass({ timeout: 15_000, intervals: [500] })
-      await expect(ended).toBeVisible()
-      await expect(
-        deviceB.getByRole('button', {
-          name: copy('authUi', 'sessionEnded.signInAction'),
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(homeHeading(deviceB)).toHaveCount(0)
-    })
-
-    await test.step('step 10: the password change is refused for freshness and the step-up replays it after the passkey', async () => {
+    await test.step('step 9: the password change is refused for freshness and the step-up replays it after the passkey', async () => {
       // The session's multi-factor proof has to be older than the lowered
       // freshness window. This wait spans that backend window; it is not a
       // reaction to a render state.
@@ -932,13 +974,24 @@ test('account-security-hardening: an account enrols two factors, ends another de
       await expect(sessionsSection(page).getByRole('listitem')).toHaveCount(1)
     })
 
-    await test.step('result: the new password signs in and the old one is refused', async () => {
-      if (deviceBPage === undefined || deviceBContext === undefined) {
+    await test.step("step 10: the password change ends device B's session while device A stays signed in", async () => {
+      if (deviceBPage === undefined) {
         throw new Error('device B was never opened')
       }
+      // Device B was signed in when the password changed, and no separate
+      // revoke has happened, so the change is what ends it.
+      await expectSessionEnded(deviceBPage)
+      // Device A keeps its rotated session, and the list still holds only it.
+      await expect(paneHeading(page, 'sessions')).toBeVisible()
+      await expect(sessionsSection(page).getByRole('listitem')).toHaveCount(1)
+    })
 
-      // Device B was revoked, so it signs in afresh with the new password and
-      // its second factor; that proves the password change took effect.
+    await test.step('step 11: device B signs in with the new password and device A revokes that session', async () => {
+      if (deviceBPage === undefined) {
+        throw new Error('device B was never opened')
+      }
+      // Signing back in with the new password and the second factor proves the
+      // change took effect; the session it opens is the one the owner revokes.
       const deviceB = createAccounts({ page: deviceBPage, server })
       await deviceB.signIn({
         identifier: account.username,
@@ -946,6 +999,40 @@ test('account-security-hardening: an account enrols two factors, ends another de
       })
       await completeTotpFactor(deviceBPage, secret)
 
+      // A fresh read of the list converges on the new session.
+      await openAccountSection(page, 'sessions')
+      const sessions = sessionsSection(page)
+      await expect(sessions.getByRole('listitem')).toHaveCount(2)
+      const revoke = sessions.getByRole('button', {
+        name: copyPattern('accountUi', 'sessions.revokeAriaWithDevice', {
+          device: '.+',
+        }),
+      })
+      await expect(revoke).toHaveCount(1)
+      await expect(
+        sessions.getByText(copy('accountUi', 'sessions.current'), {
+          exact: true,
+        }),
+      ).toHaveCount(1)
+      await revoke.click()
+      // The list converges on the server's answer: the revoked row is gone and
+      // the current session remains, leaving the header and one row.
+      await expect(sessions.getByRole('listitem')).toHaveCount(1)
+      await expect(
+        sessions.getByText(
+          copyPattern('accountUi', 'sessions.revokedOne', { device: '.+' }),
+        ),
+      ).toBeVisible()
+      await expect(
+        sessions.getByText(copy('accountUi', 'sessions.current'), {
+          exact: true,
+        }),
+      ).toHaveCount(1)
+
+      await expectSessionEnded(deviceBPage)
+    })
+
+    await test.step('result: the old password is refused', async () => {
       // A device with no session is refused the old password.
       const options = {
         locale: 'en-US',

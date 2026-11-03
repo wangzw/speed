@@ -61,7 +61,7 @@
  * helpers/i18n.ts.
  */
 // @journey journey-last-login-way.md
-// @covers REQ-security-040, REQ-security-013, REQ-account-061, REQ-account-067, REQ-signup-018, REQ-signin-022
+// @covers REQ-security-040, REQ-security-013, REQ-account-023, REQ-account-061, REQ-account-067, REQ-signup-018, REQ-signin-022
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
