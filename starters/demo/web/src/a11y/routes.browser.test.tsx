@@ -167,10 +167,10 @@ describe('route-level Label in Name in Chromium', () => {
     await expectLabelInName('route /account [data, sidebar]')
   })
 
-  it('scans a console route in the sidebar shell form', async () => {
+  it('scans an admin route in the sidebar shell form', async () => {
     const unscripted: string[] = []
     bindRequestFn(createBackend('data', (url) => unscripted.push(url)))
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     const { container } = renderDemoApp({
       session: staffSession(),
       shellLayout: 'sidebar',
@@ -178,7 +178,7 @@ describe('route-level Label in Name in Chromium', () => {
     expect(container.innerHTML).not.toBe('')
     await settle()
     expect(unscripted).toEqual([])
-    await expectLabelInName('route /console/tenants [data, sidebar]')
+    await expectLabelInName('route /admin/tenants [data, sidebar]')
   })
 
   it('scans the anonymous sign-in surface', async () => {
@@ -198,7 +198,7 @@ describe('route-level Label in Name in Chromium', () => {
     renderDemoApp({ session: staffSession() })
     await settle()
     const user = userEvent.setup()
-    await user.click(screen.getByTestId('user-menu-trigger'))
+    await user.click(screen.getByTestId('account-entry-trigger'))
     const menu = await screen.findByRole('menu')
     // The menu items are the controls whose visible text must be inside their
     // accessible name; the page behind the open menu is aria-hidden, so the

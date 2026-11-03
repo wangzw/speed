@@ -66,14 +66,16 @@ const accountEnUS = accountUiResources['en-US'] as {
   readonly flowStep: { readonly codeLabel: string }
 }
 
-/** The factor label the populated backend answers. */
+/** The factor label the rename editor works on. Only a kind that may be
+ * held more than once carries a name of its own; the single authenticator
+ * entry reads as its kind. */
 const FACTOR_LABEL = 'Authenticator'
 
-/** The one method document that makes the enrollment entry reachable. */
+/** The one method documents that make both enrollment entries reachable. */
 const ENROLL_METHODS: AuthnMethodList = {
   methods: [{ name: 'password', kind: 'form' }],
   signup: { enabled: false, password: { enabled: false } },
-  mfa: { factors: ['totp'] },
+  mfa: { factors: ['totp', 'webauthn'] },
   human: { required: false, provider: 'off' },
   password_reset: { enabled: false, methods: [] },
 }
@@ -220,7 +222,26 @@ describe('account form action rows in Chromium', () => {
 
   it('places every form submit on the security pane, rename editor included', async () => {
     await page.viewport(1280, 900)
-    bindRequestFn(createBackend('data'))
+    // The shared fixture holds the single authenticator entry, which takes
+    // no name and so has no rename editor. A labelled passkey stands beside
+    // it for the editor case; every other read stays the canned dataset.
+    const base = createBackend('data')
+    bindRequestFn(<T,>(url: string): Promise<T> => {
+      if (url === '/api/v1/auth/factors') {
+        return Promise.resolve({
+          factors: [
+            {
+              id: 'factor-2',
+              kind: 'webauthn',
+              label: FACTOR_LABEL,
+              status: 'active',
+              created_at: '',
+            },
+          ],
+        } as T)
+      }
+      return base<T>(url)
+    })
     window.history.replaceState({}, '', '/account/security')
     renderDemoApp({ session: enrollmentSession() })
     await settle()
@@ -231,26 +252,33 @@ describe('account form action rows in Chromium', () => {
     await screen.findByLabelText(accountEnUS.password.current.label)
     expectEveryFormPlaced()
 
-    // The enrollment name form starts the wizard.
+    // The authenticator entry has no name form: its add action starts the
+    // wizard, whose first flow step is the form it opens.
     await user.click(screen.getByTestId('mfa-add-totp'))
-    await screen.findByLabelText(accountEnUS.mfa.enroll.labelField)
-    expectEveryFormPlaced()
-
-    // The wizard's first flow step is a form of its own.
-    await user.click(
-      screen.getByRole('button', { name: accountEnUS.mfa.enroll.confirmLabel }),
-    )
     await screen.findByLabelText(accountEnUS.flowStep.codeLabel)
     expectEveryFormPlaced()
 
-    // Closing the wizard restores the factor row, whose menu opens the
-    // rename editor.
+    // Closing the wizard restores the factor rows.
     await user.click(
       screen.getByRole('button', { name: accountEnUS.mfa.enroll.cancelLabel }),
     )
     await waitFor(() =>
       expect(screen.getByTestId('mfa-add-totp')).toBeTruthy(),
     )
+
+    // A kind that may be held several times opens its name form first; the
+    // wizard starts from that form's own submit.
+    await user.click(screen.getByTestId('mfa-add-webauthn'))
+    await screen.findByLabelText(accountEnUS.mfa.enroll.labelField)
+    expectEveryFormPlaced()
+    await user.click(
+      screen.getByRole('button', { name: accountEnUS.mfa.enroll.cancelLabel }),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('mfa-add-webauthn')).toBeTruthy(),
+    )
+
+    // The named factor row's menu opens the rename editor.
     await user.click(
       screen.getByRole('button', {
         name: accountEnUS.mfa.actionsAria.replace('{{factor}}', FACTOR_LABEL),
