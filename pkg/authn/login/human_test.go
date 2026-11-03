@@ -229,6 +229,42 @@ func TestARejectedStartLeavesNoContinuableFlowAndChargesNothing(t *testing.T) {
 	}
 }
 
+// TestAProoflessFirstStepIsNotReportedAsAFailedLogin holds the observation
+// side of the refusal: a proof the gate refuses is not a credential that did not
+// hold, so the first step is answered 403 human-verification-required and
+// records neither a failed login outcome nor a login audit row. A refusal for
+// any other cause still counts as a failed login, which the completions
+// instrument's own case pins.
+func TestAProoflessFirstStepIsNotReportedAsAFailedLogin(t *testing.T) {
+	reader, mp := newTestMetrics(t)
+	m := phoneMethod()
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepRefused(fmt.Errorf("authn.login.sms: %w", authn.ErrHumanVerificationRequired)), nil
+	}
+	r := newRig(t, m)
+	sink := &auditing{}
+	r.p.audit = sink
+	var err error
+	if r.p.meters, err = newMeters(mp); err != nil {
+		t.Fatalf("creating the instrument: %v", err)
+	}
+
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows",
+		`{"method":"sms","input":{"phone":"+8613800000000"}}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("a first step the gate refused answered %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	if got := humanType(t, rec.Body.String()); got != "human-verification-required" {
+		t.Errorf("the refusal code = %q, want human-verification-required", got)
+	}
+	if pairs := loginMetricPairs(t, reader); len(pairs) != 0 {
+		t.Errorf("a proof refusal was counted as a login outcome: %v", pairs)
+	}
+	if rows := sink.rows(); len(rows) != 0 {
+		t.Errorf("a proof refusal wrote %d login audit rows, want none: %v", len(rows), rows)
+	}
+}
+
 // TestAStartWithNoProofReachesTheMethod holds the other direction: the engine
 // no longer refuses a send for want of a proof. The code engine makes that
 // decision, and the method is called with an empty proof so the code engine can

@@ -307,6 +307,16 @@ func (r *routes) addEmail(c *call, who caller, raw, proof string) {
 	ttl := r.durations.get(c.ctx, keyEmailCodeTTL, defaultEmailCodeTTL, minEmailCodeTTL, maxEmailCodeTTL)
 	resend := r.durations.get(c.ctx, keyEmailResendInterval, defaultEmailResendInterval, minEmailResendInterval, maxEmailResendInterval)
 
+	// The gate is checked here, and not in the phone routes, because this code
+	// goes out over the email channel rather than through the SMS code engine
+	// that checks and consumes a proof for every send. It runs before the
+	// address's occupancy is read, so a caller that does not pass the gate cannot
+	// use the answer to learn whether an address is in use, and before the resend
+	// window, so a refused proof spends no window and no budget.
+	if !r.checkHumanProof(c, proof) {
+		return
+	}
+
 	held, err := r.emailTakenByAnother(c.ctx, email, who.account)
 	if err != nil {
 		logWarn(c.ctx, "whether an email address is already taken cannot be read", err)
@@ -315,15 +325,6 @@ func (r *routes) addEmail(c *call, who caller, raw, proof string) {
 	}
 	if held {
 		c.fail(mount.CodeEmailTaken)
-		return
-	}
-	// The gate is checked here, and not in the phone routes, because this code
-	// goes out over the email channel rather than through the SMS code engine
-	// that checks and consumes a proof for every send. It runs after the address
-	// is known to be free and before the resend window, so a refused proof spends
-	// no window and no budget, and a taken address is answered as taken without
-	// asking for one.
-	if !r.checkHumanProof(c, proof) {
 		return
 	}
 

@@ -199,10 +199,14 @@ func (p *product) deliverOne(ctx context.Context, r sms.Resolved) {
 // names no row.
 //
 // The challenge's row in the shared ledger is refunded too, so a message that
-// certainly did not leave stops spending the cross-channel ceiling. A refund
-// that cannot be written leaves the row counted and the code valid; the send has
-// already failed, so the outcome is unchanged and the failure is recorded on its
-// own line.
+// certainly did not leave stops spending the cross-channel ceiling. The two
+// writes are separate, and each can fail on its own. A challenge refund that
+// cannot be written leaves the challenge row counted and the code valid, so the
+// send budgets keep charging it. A challenge refund that succeeds while the
+// ledger refund cannot leaves the challenge spent — the code cannot pass — but
+// the ledger row counted, so the cross-channel ceiling keeps charging a message
+// that never left. Each failure is written on its own line; the send has already
+// failed, so the caller's outcome is unchanged either way.
 func (p *product) refundChallenge(ctx context.Context, id string) {
 	if id == "" {
 		return

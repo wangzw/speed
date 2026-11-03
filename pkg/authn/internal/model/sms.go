@@ -13,8 +13,8 @@ type SendCode struct {
 	Purpose string    // one of the SMSPurpose constants
 	Phone   string    // E.164, already normalized
 	Account AccountID // required for mfa and enroll; empty for login and reset, which are not counted by it
-	Locale  string    // zh-CN or en-US, set by the caller; empty reads zh-CN
-	Deliver bool      // false: write a suppressed row and count it against every budget but the deployment-wide one, enqueue and send nothing
+	Locale  string    // the caller's preferred message language, resolved at send time against the module default and the template's locales; empty falls through to the default
+	Deliver bool      // false: write a suppressed row and a refunded attempt — no send budget, ceiling share or attempt budget is spent, the destination, source and account dimensions still count it, and nothing is queued or sent
 	// Source is the request's client address. There is no source budget and no
 	// source lock when it is empty: an empty source means the caller has no
 	// trustworthy origin, and the budget is fail-open rather than counting every

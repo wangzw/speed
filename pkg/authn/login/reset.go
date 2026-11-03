@@ -514,11 +514,12 @@ func resetSeconds(d time.Duration) int {
 }
 
 // passwordResetStart runs POST password-reset. The order is the one the surface
-// fixes: the switch and the channel, then the identifier shape, then the
-// source-address pre-throttle, then the record and the same-cookie resend
-// interval, then eligibility, then the channel's own budgets and send. The SMS
-// channel's human-verification proof travels with the send and is checked there,
-// before any budget; the email channel does not ask for one.
+// fixes: the switch and the channel, then the identifier shape, then the email
+// channel's human proof, then the source-address pre-throttle, then the record
+// and the same-cookie resend interval, then eligibility, then the channel's own
+// budgets and send. The SMS channel's human-verification proof travels with the
+// send and is checked there, before any budget; the email code does not pass
+// through that sender, so its branch checks the proof here.
 //
 // A target that is not eligible and a target the budgets suppress follow the same
 // path as an eligible one: they get the same record shape, the same 202 and the
@@ -541,6 +542,13 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 	normalized, ok := normalizeResetIdentifier(channel, in.Identifier)
 	if !ok {
 		c.fail(mount.CodeBadRequest)
+		return c.result()
+	}
+	// The email branch sends outside the SMS code engine, so it holds the proof
+	// here, before the source-address pre-throttle and before any record is
+	// written. The SMS branch passes its proof to SMSCodes.Send and must not
+	// check it a second time: the proof is single-use.
+	if channel == resetChannelEmail && !r.checkHumanProof(c, in.HumanProof) {
 		return c.result()
 	}
 	if !r.admitSends(c) {

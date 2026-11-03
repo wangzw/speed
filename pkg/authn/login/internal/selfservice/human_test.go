@@ -95,10 +95,10 @@ func TestAStartPhoneRefusalByTheCodeEngineIsAForbidden(t *testing.T) {
 
 // TestAddEmailWithoutAProofIsRefusedAndSendsNothing holds the email branch: the
 // code goes out over the email channel, not the SMS code engine, so the route
-// itself must hold it to the human-verification gate. The address is checked for
-// being free first, then the gate refuses the request before the resend window is
-// claimed or a code is drawn. A refused proof therefore spends no window, so the
-// same request succeeds once a proof is presented.
+// itself must hold it to the human-verification gate. The gate runs before the
+// address's occupancy is read and before the resend window is claimed or a code
+// is drawn. A refused proof therefore spends no window, so the same request
+// succeeds once a proof is presented.
 func TestAddEmailWithoutAProofIsRefusedAndSendsNothing(t *testing.T) {
 	human := requiredHuman()
 	h := withHuman(t, human, func(c *config) { c.email = true })
@@ -132,6 +132,39 @@ func TestAddEmailWithoutAProofIsRefusedAndSendsNothing(t *testing.T) {
 	}
 	if len(human.calls) != 2 {
 		t.Errorf("the gate was asked %d times, want twice: the refusal and the accepted send", len(human.calls))
+	}
+}
+
+// TestAddEmailChecksTheProofBeforeTheOccupancy holds the order: a request that
+// does not pass the gate answers the human-verification refusal even when the
+// address belongs to another account, so a signed-in account cannot probe which
+// addresses are in use without a proof. The occupancy read is not reached, and a
+// caller that does present a proof still learns email-taken.
+func TestAddEmailChecksTheProofBeforeTheOccupancy(t *testing.T) {
+	human := requiredHuman()
+	h := withHuman(t, human, func(c *config) { c.email = true })
+	h.accounts.lookup["taken@example.com"] = "someone-else"
+
+	rec := h.post("/identifiers", addBody("email", "taken@example.com"))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("a taken address with no proof answered %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	if got := problemType(t, rec); got != mount.CodeHumanVerificationRequired {
+		t.Errorf("the refusal code = %q, want %q", got, mount.CodeHumanVerificationRequired)
+	}
+	if len(h.accounts.looked) != 0 {
+		t.Errorf("the occupancy read was asked for %v before the gate passed, want not read", h.accounts.looked)
+	}
+	if len(h.email.sent) != 0 {
+		t.Errorf("the email channel was handed %d messages, want none", len(h.email.sent))
+	}
+
+	taken := h.post("/identifiers", `{"kind":"email","value":"taken@example.com","human_proof":"proof-1"}`)
+	if taken.Code != http.StatusConflict {
+		t.Fatalf("a taken address with a valid proof answered %d, want 409: %s", taken.Code, taken.Body.String())
+	}
+	if got := problemType(t, taken); got != "email-taken" {
+		t.Errorf("the refusal code = %q, want email-taken", got)
 	}
 }
 

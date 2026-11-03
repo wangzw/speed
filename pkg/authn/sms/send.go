@@ -205,8 +205,8 @@ func (p *product) checkProof(ctx context.Context, in authn.SendCode) error {
 // of the checks below is a defect of the caller.
 func checkSendCode(in authn.SendCode) error {
 	if !validPurpose(in.Purpose) {
-		return fmt.Errorf("%w: the purpose %q is not one of %s, %s and %s",
-			errCallerDefect, in.Purpose, purposeLogin, purposeMFA, purposeEnroll)
+		return fmt.Errorf("%w: the purpose %q is not one of %s, %s, %s and %s",
+			errCallerDefect, in.Purpose, purposeLogin, purposeMFA, purposeEnroll, purposeReset)
 	}
 	if in.Phone == "" {
 		return fmt.Errorf("%w: the phone number is empty", errCallerDefect)

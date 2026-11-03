@@ -135,7 +135,9 @@ func (f *fakeResetEmail) count() int {
 }
 
 // fakeResetSMS is the SMS code capability. It records every send, including a
-// suppressed one, answers with one fixed code and counts the verifications.
+// suppressed one, answers with one fixed code and counts the verifications. A
+// case may arm verify to model the real sender's own proof check at the send
+// entry.
 type fakeResetSMS struct {
 	mu        sync.Mutex
 	sends     []authn.SendCode
@@ -145,6 +147,7 @@ type fakeResetSMS struct {
 	verifyErr error
 	verifies  int
 	support   bool
+	verify    func(authn.SendCode) error
 }
 
 func newFakeResetSMS() *fakeResetSMS {
@@ -155,9 +158,15 @@ func (s *fakeResetSMS) Send(_ context.Context, in authn.SendCode) (string, error
 	s.mu.Lock()
 	s.sends = append(s.sends, in)
 	err := s.sendErr
+	verify := s.verify
 	s.mu.Unlock()
 	if err != nil {
 		return "", err
+	}
+	if verify != nil {
+		if err := verify(in); err != nil {
+			return "", err
+		}
 	}
 	return s.challenge, nil
 }
@@ -971,5 +980,113 @@ func TestResetKeepsTheSecondFactor(t *testing.T) {
 	next := decode(t, rec.Body.String())["next"].(map[string]any)
 	if next["kind"] != "factor" {
 		t.Errorf("a login after the reset answered next %v, want factor", next)
+	}
+}
+
+// onceHuman is a human-verification gate that accepts each token once, as a
+// single-use mechanism does: a second Verify of the same token is refused. It
+// records every call, so a case can see how many times a proof was consumed.
+type onceHuman struct {
+	mu     sync.Mutex
+	accept map[string]bool
+	calls  int
+}
+
+func (h *onceHuman) Required() bool   { return true }
+func (h *onceHuman) Provider() string { return "pow" }
+func (h *onceHuman) SiteKey() string  { return "" }
+
+func (h *onceHuman) Verify(_ context.Context, p authn.HumanProof) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.calls++
+	if p.Token == "" || !h.accept[p.Token] {
+		return fmt.Errorf("%w: the proof is missing or not valid", authn.ErrHumanVerificationRequired)
+	}
+	delete(h.accept, p.Token)
+	return nil
+}
+
+func (h *onceHuman) callCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.calls
+}
+
+// TestAnEmailResetWithoutAProofIsRefusedAndWritesNothing holds the email
+// channel's human-verification gate. The anonymous reset email is sent without a
+// session, so a missing proof is answered 403 and writes no record, spends no
+// budget and sends nothing.
+func TestAnEmailResetWithoutAProofIsRefusedAndWritesNothing(t *testing.T) {
+	r := newResetRig(t)
+	r.seedResetAccount("acct-ok", authn.IdentifierEmail, "ok@example.com", authn.VerifiedViaEmailCode)
+	r.p.human = requiredHuman()
+
+	rec := r.startReset(`{"channel":"email","identifier":"ok@example.com"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("an email reset with no proof answered %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	if got := resetProblemCode(t, rec); got != "human-verification-required" {
+		t.Errorf("the refusal code = %q, want human-verification-required", got)
+	}
+	for _, key := range r.kv.keys() {
+		if strings.HasPrefix(key, resetKeyPrefix) {
+			t.Errorf("the refused reset wrote the record %q, want none", key)
+		}
+	}
+	if got := r.email.count(); got != 0 {
+		t.Errorf("the email channel was handed %d messages, want none", got)
+	}
+}
+
+// TestAnEmailResetWithAValidProofSendsOnce holds the accepted path: the gate is
+// asked once, with the request's proof, and exactly one message is sent.
+func TestAnEmailResetWithAValidProofSendsOnce(t *testing.T) {
+	r := newResetRig(t)
+	r.seedResetAccount("acct-ok", authn.IdentifierEmail, "ok@example.com", authn.VerifiedViaEmailCode)
+	human := requiredHuman()
+	r.p.human = human
+
+	rec := r.startReset(`{"channel":"email","identifier":"ok@example.com","human_proof":"proof-1"}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("an email reset with a valid proof answered %d, want 202: %s", rec.Code, rec.Body.String())
+	}
+	r.email.waitTo(t, "ok@example.com")
+	if got := r.email.count(); got != 1 {
+		t.Errorf("the email channel was handed %d messages, want one", got)
+	}
+	if len(human.calls) != 1 {
+		t.Fatalf("the gate was asked %d times, want once", len(human.calls))
+	}
+	if got := human.calls[0].Token; got != "proof-1" {
+		t.Errorf("the gate was handed proof %q, want the request's proof-1", got)
+	}
+}
+
+// TestTheSMSResetBranchConsumesTheProofExactlyOnce holds the other channel: the
+// route passes the proof to SMSCodes.Send, which is the one place it is checked
+// and consumed. A route-side check would consume the single-use proof before the
+// sender saw it, which the once-only gate turns into a refusal.
+func TestTheSMSResetBranchConsumesTheProofExactlyOnce(t *testing.T) {
+	r := newResetRig(t)
+	r.seedResetAccount("acct-phone", authn.IdentifierPhone, "+8613800000000", authn.VerifiedViaSMSCode)
+	human := &onceHuman{accept: map[string]bool{"proof-1": true}}
+	r.p.human = human
+	r.sms.verify = func(in authn.SendCode) error {
+		return human.Verify(context.Background(), authn.HumanProof{Token: in.Proof, RemoteIP: in.Source})
+	}
+
+	rec := r.startReset(`{"channel":"sms","identifier":"+8613800000000","human_proof":"proof-1"}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("an SMS reset answered %d, want 202: %s", rec.Code, rec.Body.String())
+	}
+	if got := len(r.sms.sends); got != 1 {
+		t.Fatalf("the SMS channel was handed %d sends, want one", got)
+	}
+	if got := r.sms.lastSend().Proof; got != "proof-1" {
+		t.Errorf("the code engine was handed proof %q, want the request's proof-1", got)
+	}
+	if got := human.callCount(); got != 1 {
+		t.Errorf("the proof was consumed %d times, want exactly once", got)
 	}
 }
