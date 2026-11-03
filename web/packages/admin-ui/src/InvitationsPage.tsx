@@ -59,7 +59,7 @@
  * form's exemption checkbox render only where `authn.admin.sso` is present.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -122,6 +122,16 @@ import type {
  * refresh is described by it, so the explanation has one copy on the page.
  */
 const TENANT_HINT_ID = 'invitations-tenant-hint'
+
+/**
+ * The member table's page size. The membership read's cursor is the account
+ * identifier of the previous page's last row, and the read answers no next
+ * cursor: a page holding this many rows is what says another page may follow.
+ */
+const MEMBER_PAGE_SIZE = 100
+
+/** No member names resolved yet, for a tenant the page has read no page of. */
+const EMPTY_MEMBER_NAMES: ReadonlyMap<string, string> = new Map()
 
 /** The invitation just issued, with the tenant it was issued under. */
 type IssuedInvitation = AdminIssuedInvitation & { readonly tenant: string }
@@ -204,6 +214,13 @@ export function InvitationsPage({
   const tenantControlled = controlledTenant !== undefined
   const [email, setEmail] = useState('')
   const [expiresAt, setExpiresAt] = useState('')
+  // The member table pages by cursor: the cursors this page has collected,
+  // the index it is on, and the account identifier of the page's last row as
+  // the cursor of the next. The membership read answers no next cursor, so a
+  // full page is what says another page may follow.
+  const [memberCursors, setMemberCursors] = useState<readonly string[]>([''])
+  const [memberPage, setMemberPage] = useState(0)
+  const memberCursor = memberCursors[memberPage] ?? ''
   // The invitation just issued, held with the tenant it was issued under so
   // its acceptance token -- handed out once -- can be shown as the invitee's
   // link rather than dropped, and named for that tenant.
@@ -211,20 +228,39 @@ export function InvitationsPage({
   const confirm = usePendingConfirm()
 
   const invitations = operations.useInvitations(tenant)
-  const members = operations.useMembers(tenant)
+  const members = operations.useMembers(tenant, {
+    limit: MEMBER_PAGE_SIZE,
+    ...(memberCursor === '' ? {} : { after: memberCursor }),
+  })
   const memberRows = members.data
-  // Tenant mode resolves an account's identity from the member read's own
-  // rows. An account the read has not settled on, was refused, or does not
-  // carry is unresolved -- rendered by its recorded identifier with the
-  // unresolved note -- rather than looked up through the platform account
-  // read whose access the workspace surface does not have.
-  const memberDisplayNames = useMemo(() => {
-    const names = new Map<string, string>()
-    for (const row of memberRows ?? []) {
-      names.set(row.account, row.display_name)
+  // Tenant mode resolves an account's identity from the member rows this
+  // page has read. An account the read has not settled on, was refused, or
+  // does not carry is unresolved -- rendered by its recorded identifier with
+  // the unresolved note -- rather than looked up through the platform account
+  // read whose access the workspace surface does not have. Names accumulate
+  // across the member pages the operator visits, so an inviter resolved on an
+  // earlier page stays named after paging past it.
+  const [memberNamesByTenant, setMemberNamesByTenant] = useState<
+    Readonly<Record<string, ReadonlyMap<string, string>>>
+  >({})
+  const memberDisplayNames = memberNamesByTenant[tenant] ?? EMPTY_MEMBER_NAMES
+  useEffect(() => {
+    if (memberRows === undefined) {
+      return
     }
-    return names
-  }, [memberRows])
+    setMemberNamesByTenant((previous) => {
+      const current = previous[tenant] ?? EMPTY_MEMBER_NAMES
+      const next = new Map(current)
+      let changed = false
+      for (const row of memberRows) {
+        if (next.get(row.account) !== row.display_name) {
+          next.set(row.account, row.display_name)
+          changed = true
+        }
+      }
+      return changed ? { ...previous, [tenant]: next } : previous
+    })
+  }, [memberRows, tenant])
   const issueInvitation = operations.useIssueInvitation()
   const revokeInvitation = operations.useRevokeInvitation()
   const removeMember = operations.useRemoveMember()
@@ -267,6 +303,13 @@ export function InvitationsPage({
   useEffect(() => {
     resetPageFeedback()
   }, [tenant, resetPageFeedback])
+  // A new tenant is a new member list: the cursor stack belongs to the tenant
+  // it was read for. The refresh action keeps the current page, so this reset
+  // follows the tenant alone.
+  useEffect(() => {
+    setMemberCursors([''])
+    setMemberPage(0)
+  }, [tenant])
   const changeTenant = (next: string) => {
     setInnerTenant(next)
     onTenantChange?.(next)
@@ -548,12 +591,14 @@ export function InvitationsPage({
       cellWrap: 'nowrap',
       cellFullValue: (member) => member.account,
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
+      // The account column is the membership record's own account identifier,
+      // which is the fact the display name column beside it does not carry.
+      // The workspace surface has no platform account read, so tenant mode
+      // renders the recorded identifier; the platform surface resolves the
+      // identity it records through the account read.
       cell: (member) =>
         tenantMode ? (
-          <TenantAccountIdentity
-            account={member.account}
-            name={member.display_name}
-          />
+          <Typography variant="body2">{member.account}</Typography>
         ) : (
           <AccountIdentity account={member.account} />
         ),
@@ -613,6 +658,26 @@ export function InvitationsPage({
   const invitationRows = invitations.data?.invitations
   const invitationsPending = invitations.isPending && invitationRows === undefined
   const membersPending = members.isPending && memberRows === undefined
+  // The membership read carries no next cursor: a page that filled the page
+  // size is the evidence another may follow. The next page is read by the
+  // last row's account identifier, the cursor the route documents.
+  const memberHasNext = (memberRows?.length ?? 0) === MEMBER_PAGE_SIZE
+  const memberNextCursor =
+    memberRows === undefined ? '' : (memberRows.at(-1)?.account ?? '')
+  const nextMemberPage = () => {
+    if (!memberHasNext || memberNextCursor === '') {
+      return
+    }
+    setMemberCursors((previous) => {
+      const grown = [...previous]
+      grown[memberPage + 1] = memberNextCursor
+      return grown
+    })
+    setMemberPage((current) => current + 1)
+  }
+  const previousMemberPage = () => {
+    setMemberPage((current) => Math.max(0, current - 1))
+  }
 
   // The value the issued block hands over: the host's absolute acceptance
   // link when it supplies a builder, the bare token otherwise.
@@ -811,6 +876,36 @@ export function InvitationsPage({
                 />
               )}
             </AdminAsyncSection>
+            {memberRows !== undefined &&
+              (memberPage > 0 || memberHasNext) && (
+                <Box
+                  sx={{
+                    mt: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    columnGap: 2,
+                  }}
+                >
+                  <Button
+                    type="button"
+                    variant="outlined"
+                    size="small"
+                    disabled={memberPage === 0 || membersFeedback.pending}
+                    onClick={previousMemberPage}
+                  >
+                    {t('members.prevPage')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outlined"
+                    size="small"
+                    disabled={!memberHasNext || membersFeedback.pending}
+                    onClick={nextMemberPage}
+                  >
+                    {t('members.nextPage')}
+                  </Button>
+                </Box>
+              )}
             <Box ref={membersRegionRef}>
               <WriteFeedbackRegion
                 outcome={membersFeedback.outcome}

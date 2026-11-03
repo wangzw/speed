@@ -17,6 +17,7 @@ import type {
   AdminAccount,
   AdminInvitation,
   AdminMember,
+  AdminOperations,
   AdminSetMemberSSOExemptInput,
   AdminWriteMemberInput,
 } from './operations.js'
@@ -333,7 +334,7 @@ describe('InvitationsPage', () => {
       expect(screen.queryByText(zhCN.invitations.needTenant.title)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
       expect(listInvitations).toHaveBeenCalledWith('acme')
-      expect(listMembers).toHaveBeenCalledWith('acme')
+      expect(listMembers).toHaveBeenCalledWith('acme', { limit: 100 })
     } finally {
       window.history.replaceState({}, '', '/')
     }
@@ -440,6 +441,86 @@ describe('InvitationsPage', () => {
       zhCN.common.accountUnresolved,
     )
     expect(identifier).toHaveTextContent('acc-1')
+  })
+
+  it('tenant mode names the account column by its recorded identifier', async () => {
+    const operations = withTenant({
+      listMembers: () =>
+        Promise.resolve([
+          member({ account: 'acc-1', display_name: 'Ada Lovelace' }),
+        ]),
+      getAccount: () => Promise.reject(new Error('forbidden')),
+    })
+    renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
+      operations,
+    })
+
+    const memberSection = section(zhCN.members.title)
+    const nameCells = await within(memberSection).findAllByText('Ada Lovelace')
+    const displayNameHeader = within(memberSection).getByRole('columnheader', {
+      name: zhCN.members.column.displayName,
+    })
+    const accountHeader = within(memberSection).getByRole('columnheader', {
+      name: zhCN.members.column.account,
+    })
+    const nameCell = nameCells.find(
+      (cell) =>
+        cell.closest('td')?.cellIndex ===
+        (displayNameHeader as HTMLTableCellElement).cellIndex,
+    )
+    expect(nameCell).not.toBeUndefined()
+    const row = nameCell!.closest('tr')
+    expect(row).not.toBeNull()
+    const accountCell = row!.children[
+      (accountHeader as HTMLTableCellElement).cellIndex
+    ]
+    // The display name column carries the name; the account column carries
+    // the record's own account identifier rather than repeating the name.
+    expect(accountCell).toHaveTextContent('acc-1')
+  })
+
+  it('pages the workspace member table through every member', async () => {
+    const user = userEvent.setup()
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
+      member({
+        account: `acc-${String(index).padStart(3, '0')}`,
+        display_name: `Member ${index}`,
+      }),
+    )
+    const listMembers = vi.fn(
+      (
+        _tenant: string,
+        params?: Parameters<AdminOperations['useMembers']>[1],
+      ) =>
+        Promise.resolve(
+          params?.after === undefined
+            ? firstPage
+            : [member({ account: 'acc-100', display_name: 'Last Member' })],
+        ),
+    )
+    const operations = withTenant({ listMembers })
+    renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
+      operations,
+    })
+
+    const memberSection = section(zhCN.members.title)
+    expect(
+      (await within(memberSection).findAllByText('Member 0')).length,
+    ).toBeGreaterThan(0)
+    // A full page is the evidence another may follow; the next page is read
+    // by the last row's account identifier, the cursor the route documents.
+    await user.click(
+      within(memberSection).getByRole('button', {
+        name: zhCN.members.nextPage,
+      }),
+    )
+    expect(
+      await within(memberSection).findByText('Last Member'),
+    ).toBeInTheDocument()
+    expect(listMembers).toHaveBeenLastCalledWith('acme', {
+      limit: 100,
+      after: 'acc-099',
+    })
   })
 
   it('leaves the name cell empty when the account has no display name', async () => {
@@ -1767,7 +1848,7 @@ describe('InvitationsPage', () => {
       await vi.waitFor(() => {
         expect(listInvitations).toHaveBeenCalledWith('acme')
       })
-      expect(listMembers).toHaveBeenCalledWith('acme')
+      expect(listMembers).toHaveBeenCalledWith('acme', { limit: 100 })
       expect(screen.queryByLabelText(zhCN.common.tenant)).toBeNull()
     } finally {
       window.history.replaceState({}, '', '/')

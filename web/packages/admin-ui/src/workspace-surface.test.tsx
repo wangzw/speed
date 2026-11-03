@@ -13,6 +13,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import {
   WorkspaceAdminBreadcrumbProvider,
   useWorkspaceAdminBreadcrumbs,
@@ -36,6 +37,7 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { bindAdminRequest } from '../test-utils/request-rig.js'
 import {
   createAdminOperations,
+  issuedInvitationFixture,
   makeAdminBackend,
 } from '../test-utils/operations.js'
 import type { AdminBackend } from '../test-utils/operations.js'
@@ -174,6 +176,57 @@ describe('the workspace page wrappers', () => {
     )
     await waitFor(() => expect(readTenants).toEqual([TENANT]))
     expect(rosterReads()).toBe(0)
+  })
+
+  it('renders the acceptance link and copy control for a workspace invitation', async () => {
+    const user = userEvent.setup()
+    const backend = makeAdminBackend({
+      issueInvitation: () =>
+        Promise.resolve(
+          issuedInvitationFixture({
+            invitation: {
+              ...issuedInvitationFixture().invitation,
+              email: 'new@example.com',
+            },
+          }),
+        ),
+    })
+    renderWithProviders(
+      <WorkspaceAdminProvider
+        tenant={TENANT}
+        operations={createAdminOperations(backend)}
+        hasFeature={noFeatures}
+        routes={workspaceAdminRoutes}
+        invitationLink={(token) => `/invitations/${token}`}
+      >
+        <WorkspaceInvitationsPage />
+      </WorkspaceAdminProvider>,
+    )
+    await user.type(
+      await screen.findByLabelText(zhCN.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+    // The one-time token reaches the operator as the host's acceptance link,
+    // with the copy control the platform console's page renders.
+    expect(
+      await screen.findByText(
+        zhCN.invitations.issued.link.replace(
+          '{{email}}',
+          'new@example.com',
+        ),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        `${window.location.origin}/invitations/spd_inv_test_token`,
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.invitations.issued.copyLink }),
+    ).toBeInTheDocument()
   })
 })
 

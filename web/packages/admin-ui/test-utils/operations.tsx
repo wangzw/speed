@@ -168,7 +168,10 @@ export interface AdminBackend {
     input: AdminIssueInvitationInput,
   ) => Promise<AdminIssuedInvitation>
   revokeInvitation: (input: AdminInvitationRef) => Promise<void>
-  listMembers: (tenant: string) => Promise<readonly AdminMember[]>
+  listMembers: (
+    tenant: string,
+    params?: Parameters<AdminOperations['useMembers']>[1],
+  ) => Promise<readonly AdminMember[]>
   removeMember: (input: AdminMemberRef) => Promise<void>
   writeMember: (input: AdminWriteMemberInput) => Promise<void>
   setMemberSsoExempt: (input: AdminSetMemberSSOExemptInput) => Promise<void>
@@ -832,10 +835,10 @@ export function createAdminOperations(
       })
     },
 
-    useMembers: (tenant: string) =>
+    useMembers: (tenant, params) =>
       useQuery({
-        queryKey: membersKey(tenant),
-        queryFn: () => backend.listMembers(tenant),
+        queryKey: [...membersKey(tenant), params ?? null],
+        queryFn: () => backend.listMembers(tenant, params),
         enabled: tenant !== '',
       }),
     useRemoveMember: () => {

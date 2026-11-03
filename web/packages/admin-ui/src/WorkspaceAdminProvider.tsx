@@ -7,8 +7,9 @@
  * This provider installs only what the shared page components need: the
  * current tenant, the tenant-scoped operations bundle, the session, the
  * feature answer, the narrowed workspace route table, the in-place
- * navigation callback, the workspace breadcrumb and the protected role
- * names. It renders no DOM, imports neither `@speed/product-shell` nor
+ * navigation callback, the workspace breadcrumb, the invitation-link
+ * builder and the protected role names. It renders no DOM, imports neither
+ * `@speed/product-shell` nor
  * `@speed/tenancy-ui`, and never derives or switches the current tenant:
  * `tenant` is the host's fact, handed in as a required prop.
  *
@@ -27,6 +28,7 @@ import { AdminOperationsProvider } from './operations.js'
 import { AdminFeatureProvider } from './internal/features.js'
 import { AdminNavigationProvider } from './internal/navigation.js'
 import { AdminRouteTableProvider } from './internal/route-table.js'
+import { AdminInvitationLinkProvider } from './internal/invitation-link.js'
 import { AdminSessionProvider } from './internal/session.js'
 import { WorkspaceAdminBreadcrumbProvider } from './WorkspaceAdminBreadcrumb.js'
 import type { WorkspaceAdminOperations } from './workspace-operations.js'
@@ -93,6 +95,12 @@ export interface WorkspaceAdminProviderProps {
   /** The trail from the workspace home to the page. Supplying it mounts the
    * workspace breadcrumb provider around the children. */
   readonly breadcrumbs?: readonly PageHeaderBreadcrumb[]
+  /**
+   * Builds the acceptance link for an issued invitation's token, the same
+   * seam the platform console's `AdminProvider` carries. Absent, the
+   * invitation page shows the bare token instead.
+   */
+  readonly invitationLink?: (token: string) => string
   /** Role names the tenant role page renders as read-only. Absent, no row
    * is treated as protected. */
   readonly protectedRoles?: readonly string[]
@@ -111,6 +119,7 @@ export function WorkspaceAdminProvider({
   routes,
   onNavigate,
   breadcrumbs,
+  invitationLink,
   protectedRoles,
   children,
 }: WorkspaceAdminProviderProps) {
@@ -128,9 +137,11 @@ export function WorkspaceAdminProvider({
         <AdminNavigationProvider onNavigate={onNavigate}>
           <AdminRouteTableProvider routes={routes}>
             <AdminSessionProvider session={session ?? null}>
-              <AdminFeatureProvider hasFeature={hasFeature}>
-                {children}
-              </AdminFeatureProvider>
+              <AdminInvitationLinkProvider invitationLink={invitationLink}>
+                <AdminFeatureProvider hasFeature={hasFeature}>
+                  {children}
+                </AdminFeatureProvider>
+              </AdminInvitationLinkProvider>
             </AdminSessionProvider>
           </AdminRouteTableProvider>
         </AdminNavigationProvider>

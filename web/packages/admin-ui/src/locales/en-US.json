@@ -961,6 +961,8 @@
   "members": {
     "title": "Members",
     "loading": "Loading members",
+    "prevPage": "Previous",
+    "nextPage": "Next",
     "empty": {
       "title": "No members",
       "description": "This tenant has no member yet."
