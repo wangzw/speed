@@ -117,6 +117,7 @@ export {
 export type {
   HumanCaptchaChallenge,
   HumanCaptchaForm,
+  HumanCaptchaRequestForm,
   HumanScope,
   HumanVerification,
   HumanVerificationStatus,

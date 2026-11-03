@@ -20,9 +20,11 @@
  *    image form shows the picture and an answer field, the slider form
  *    shows the background and piece behind a native range input so it is
  *    keyboard operable, and the audio form plays the spoken digits for a
- *    screen-reader user. All three share one refresh control, one submit
- *    that yields `<challenge id>.<answer>`, and one retry after a failed
- *    issue.
+ *    screen-reader user. The server chooses between the image and slider
+ *    forms, so the block offers only the audio accessibility alternative
+ *    as a switch; a refresh keeps the selected mode. All three share one
+ *    submit that yields `<challenge id>.<answer>` and one retry after a
+ *    failed issue.
  *
  * The gate is the discovery document's `human` member (`{phone, other}`),
  * so a host passes it unmodified; `scope` names the surface this block
@@ -64,6 +66,10 @@ export type HumanVerificationStatus = 'idle' | 'working' | 'ready' | 'failed'
 /** The form a self-hosted captcha challenge takes. */
 export type HumanCaptchaForm = 'image' | 'slider' | 'audio'
 
+/** The form the block may ask the host for: only the audio accessibility
+ * alternative. The image and slider forms are the server's choice. */
+export type HumanCaptchaRequestForm = 'audio'
+
 /** One issued self-hosted captcha challenge, as the host read it. */
 export interface HumanCaptchaChallenge {
   readonly id: string
@@ -93,8 +99,9 @@ export interface HumanVerificationProps {
   readonly onToken: (token: string | null) => void
   /** Asked for another attempt after a failure. */
   readonly onRetry?: () => void
-  /** Asked for a fresh captcha challenge, in `form` when given. */
-  readonly onRefreshCaptcha?: (form?: HumanCaptchaForm) => void
+  /** Asked for a fresh captcha challenge: the server's choice when no form
+   * is given, or the audio accessibility alternative. */
+  readonly onRefreshCaptcha?: (form?: HumanCaptchaRequestForm) => void
   /** Disables the widget or form while the surrounding send is in flight. */
   readonly disabled?: boolean
 }
@@ -479,7 +486,7 @@ function CaptchaForm({
   readonly challenge: HumanCaptchaChallenge
   readonly disabled: boolean
   readonly onToken: (token: string | null) => void
-  readonly onRefresh?: (form?: HumanCaptchaForm) => void
+  readonly onRefresh?: (form?: HumanCaptchaRequestForm) => void
 }) {
   const { t } = useUiKitTranslation()
   const answerId = `human-verification-${scope}-${useId()}`
@@ -561,30 +568,10 @@ function CaptchaForm({
         </>
       )}
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        {/* Every form the viewer is not looking at has a visible control:
-            the three forms are equal alternatives, so the screen must be
-            able to obtain any of them, not only switch between the image
-            and the audio. */}
-        {challenge.form !== 'image' ? (
-          <Button
-            type="button"
-            size="small"
-            disabled={disabled}
-            onClick={() => onRefresh?.('image')}
-          >
-            {t('humanVerification.captcha.useImage')}
-          </Button>
-        ) : null}
-        {challenge.form !== 'slider' ? (
-          <Button
-            type="button"
-            size="small"
-            disabled={disabled}
-            onClick={() => onRefresh?.('slider')}
-          >
-            {t('humanVerification.captcha.useSlider')}
-          </Button>
-        ) : null}
+        {/* The image and slider forms are the server's choice; only the
+            audio accessibility alternative is a form the client may ask
+            for. A refresh keeps the selection: no form unless audio is
+            the alternative in use. */}
         {challenge.form !== 'audio' ? (
           <Button
             type="button"
@@ -599,7 +586,7 @@ function CaptchaForm({
           type="button"
           size="small"
           disabled={disabled}
-          onClick={() => onRefresh?.(challenge.form)}
+          onClick={() => onRefresh?.()}
         >
           {t('humanVerification.captcha.refresh')}
         </Button>
@@ -627,7 +614,7 @@ function CaptchaBlock({
   readonly status: HumanVerificationStatus
   readonly onToken: (token: string | null) => void
   readonly onRetry?: () => void
-  readonly onRefresh?: (form?: HumanCaptchaForm) => void
+  readonly onRefresh?: (form?: HumanCaptchaRequestForm) => void
   readonly disabled: boolean
 }) {
   const { t } = useUiKitTranslation()

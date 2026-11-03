@@ -15,12 +15,14 @@
  *    consumes it after every send and the control obtains a fresh one.
  *  - `turnstile` -- a third-party widget. Its token is obtained by the
  *    widget the ui-kit block renders; this module only stores it.
- *  - `captcha` -- the self-hosted captcha. The client asks
- *    `POST /api/v1/auth/human/captcha/challenge` for a challenge of the
- *    form it renders, the block obtains the answer from the viewer, and
- *    the proof is the challenge id and that answer joined by a dot. The
- *    challenge is single-use and good for one attempt, so a consumed proof
- *    is replaced with a fresh challenge.
+ *  - `captcha` -- the self-hosted captcha. The default request carries no
+ *    form: the server chooses between the image and slider forms and the
+ *    client renders whichever it answers. Only the audio accessibility
+ *    alternative is selectable, and that request names `form=audio`. The
+ *    block obtains the answer from the viewer, and the proof is the
+ *    challenge id and that answer joined by a dot. The challenge is
+ *    single-use and good for one attempt, so a consumed proof is replaced
+ *    with a fresh challenge in the same selection.
  *
  * `useHumanVerification` owns the discovery read, the proof state and the
  * captcha challenge, so every surface obtains its gate the same way. A
@@ -57,6 +59,11 @@ export type HumanVerificationStatus = 'idle' | 'working' | 'ready' | 'failed'
  * slider puzzle, or the audio alternative for screen-reader users. */
 export type HumanCaptchaForm = 'image' | 'slider' | 'audio'
 
+/** The form the client may ask the server for. The image and slider forms
+ * are the server's choice; only the audio accessibility alternative is
+ * selectable. */
+export type HumanCaptchaRequestForm = 'audio'
+
 /** One issued self-hosted captcha challenge, as the challenge route
  * answered it: the id a proof names, the form, the instruction key the
  * block words, and the media paths the form carries. */
@@ -87,9 +94,10 @@ export interface HumanVerification {
   /** Give up the current proof after presenting it, so the control obtains
    * a fresh one for the next send. */
   consume(): void
-  /** Ask for a fresh captcha challenge in the given form (the current
-   * one's form when omitted), after a refresh or an audio switch. */
-  refreshCaptcha(form?: HumanCaptchaForm): void
+  /** Ask for a fresh captcha challenge: the server's choice of the image
+   * or slider form when no form is named, or the audio accessibility
+   * alternative. The selection persists across a consumed challenge. */
+  refreshCaptcha(form?: HumanCaptchaRequestForm): void
 }
 
 /** The gate one surface runs, or null when the document is not readable. */
@@ -280,10 +288,11 @@ async function solveChallenge(
  * A `pow` gate solves one challenge as soon as the gate is known, and
  * again after every consumed proof, so the surface always shows either a
  * ready proof or the work in progress. A `captcha` gate obtains one
- * challenge and replaces it after every consumed proof, so the block
- * always has a challenge to render or a reason it could not. A
- * `turnstile` gate waits for the widget to yield a token through
- * `adoptToken`. The off gate does nothing.
+ * challenge -- the server's choice of form unless the screen selected the
+ * audio alternative -- and replaces it after every consumed proof in the
+ * same selection, so the block always has a challenge to render or a
+ * reason it could not. A `turnstile` gate waits for the widget to yield a
+ * token through `adoptToken`. The off gate does nothing.
  *
  * A change of scope selects the other surface's gate: the proof and any
  * challenge belong to the surface that issued them, so both are dropped
@@ -312,7 +321,9 @@ export function useHumanVerification(
   const injectedRef = useRef(options.gate)
   injectedRef.current = options.gate
   const injectedKey = gateKey(options.gate)
-  const lastCaptchaForm = useRef<HumanCaptchaForm>('image')
+  // The form the screen asked for, or undefined for the server's choice
+  // between the image and slider forms. Only audio is selectable.
+  const lastCaptchaForm = useRef<HumanCaptchaRequestForm | undefined>(undefined)
 
   // A change of scope selects the other member of the same document. The
   // proof and the challenge belong to the surface that issued them, so
@@ -407,14 +418,18 @@ export function useHumanVerification(
   }, [])
 
   const requestCaptcha = useCallback(
-    async (form: HumanCaptchaForm): Promise<void> => {
+    async (form?: HumanCaptchaRequestForm): Promise<void> => {
       lastCaptchaForm.current = form
       const generation = generationRef.current
       setProof(null)
       setCaptcha(null)
       setStatus('working')
       try {
-        const answer = await authnHumanverifyCaptchaChallenge({ form })
+        // A default request carries no form: the server chooses between the
+        // image and slider forms.
+        const answer = await authnHumanverifyCaptchaChallenge(
+          form === undefined ? undefined : { form },
+        )
         if (generationRef.current !== generation) {
           return
         }
@@ -480,7 +495,7 @@ export function useHumanVerification(
   }, [])
 
   const refreshCaptcha = useCallback(
-    (form?: HumanCaptchaForm): void => {
+    (form?: HumanCaptchaRequestForm): void => {
       void requestCaptcha(form ?? lastCaptchaForm.current)
     },
     [requestCaptcha],

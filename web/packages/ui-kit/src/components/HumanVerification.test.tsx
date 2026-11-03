@@ -5,10 +5,11 @@
  * Pins the mechanisms -- off renders nothing, Turnstile renders the
  * provider widget and reports its token (and resets once the host
  * consumes it), proof of work shows the work and offers a retry, and the
- * self-hosted captcha renders the image, slider and audio forms and
- * reports the answer it collected -- plus the per-surface selection and
- * the accessibility of the states a viewer waits on. Text expectations
- * read the bundle values, never inline language.
+ * self-hosted captcha renders the image, slider and audio forms, reports
+ * the answer it collected and offers only the audio alternative as a form
+ * switch -- plus the per-surface selection and the accessibility of the
+ * states a viewer waits on. Text expectations read the bundle values,
+ * never inline language.
  */
 
 import { useState } from 'react'
@@ -254,6 +255,9 @@ describe('HumanVerification', () => {
     expect(
       screen.getByAltText(CAPTCHA_COPY.instruction.typeTheDigits),
     ).toHaveAttribute('src', '/api/v1/auth/human/captcha/image/1')
+    expect(
+      screen.getByRole('button', { name: CAPTCHA_COPY.useAudio }),
+    ).toBeInTheDocument()
     const answer = screen.getByLabelText(CAPTCHA_COPY.answerLabel)
     await userEvent.setup().type(answer, '12345')
     await userEvent
@@ -262,7 +266,7 @@ describe('HumanVerification', () => {
     expect(onToken).toHaveBeenCalledWith('challenge-1.12345')
   })
 
-  it('switches to the audio challenge and back through the shared refresh', async () => {
+  it('switches to the audio challenge and refreshes in the selected mode', async () => {
     const onRefresh = vi.fn()
     renderWithProviders(
       <HumanVerification
@@ -280,46 +284,61 @@ describe('HumanVerification', () => {
     await userEvent
       .setup()
       .click(screen.getByRole('button', { name: CAPTCHA_COPY.refresh }))
-    expect(onRefresh).toHaveBeenLastCalledWith('image')
+    // A refresh re-requests the selected mode: the host names no form
+    // unless the audio alternative is the one on screen.
+    expect(onRefresh).toHaveBeenLastCalledWith()
   })
 
-  it('offers a control that requests the slider form', async () => {
-    const onRefresh = vi.fn()
-    renderWithProviders(
-      <HumanVerification
-        scope="phone"
-        gate={gateSet({ required: true, provider: 'captcha' })}
-        captcha={captcha('image')}
-        onToken={() => {}}
-        onRefreshCaptcha={onRefresh}
-      />,
-    )
-    await userEvent
-      .setup()
-      .click(screen.getByRole('button', { name: CAPTCHA_COPY.useSlider }))
-    expect(onRefresh).toHaveBeenLastCalledWith('slider')
-  })
-
-  it('offers a control that requests the image form from audio and slider', async () => {
-    // From every form the viewer can reach the other two: the block is the
-    // only way a screen obtains a challenge of another form.
-    for (const form of ['audio', 'slider'] as const) {
-      const onRefresh = vi.fn()
+  it('offers no control that asks for the image or slider form', () => {
+    for (const form of ['image', 'slider'] as const) {
       const { unmount } = renderWithProviders(
         <HumanVerification
           scope="phone"
           gate={gateSet({ required: true, provider: 'captcha' })}
           captcha={captcha(form)}
           onToken={() => {}}
-          onRefreshCaptcha={onRefresh}
+          onRefreshCaptcha={() => {}}
         />,
       )
-      await userEvent
-        .setup()
-        .click(screen.getByRole('button', { name: CAPTCHA_COPY.useImage }))
-      expect(onRefresh).toHaveBeenLastCalledWith('image')
+      // The server chooses between the image and slider forms; the client
+      // cannot force either one.
+      expect(
+        screen.queryByRole('button', { name: CAPTCHA_COPY.useImage }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: CAPTCHA_COPY.useSlider }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: CAPTCHA_COPY.useAudio }),
+      ).toBeInTheDocument()
       unmount()
     }
+  })
+
+  it('offers no form switch once the audio alternative is shown', () => {
+    renderWithProviders(
+      <HumanVerification
+        scope="phone"
+        gate={gateSet({ required: true, provider: 'captcha' })}
+        captcha={captcha('audio')}
+        onToken={() => {}}
+        onRefreshCaptcha={() => {}}
+      />,
+    )
+    // The audio alternative is the only switch the block offers, so with
+    // audio on screen none is shown; the refresh control remains.
+    expect(
+      screen.queryByRole('button', { name: CAPTCHA_COPY.useAudio }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: CAPTCHA_COPY.useImage }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: CAPTCHA_COPY.useSlider }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: CAPTCHA_COPY.refresh }),
+    ).toBeInTheDocument()
   })
 
   it('renders the audio challenge with a readable label and submits its answer', async () => {
@@ -348,9 +367,15 @@ describe('HumanVerification', () => {
       .setup()
       .click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
     expect(onToken).toHaveBeenCalledWith('challenge-1.67890')
-    expect(
-      screen.getByRole('button', { name: CAPTCHA_COPY.useImage }),
-    ).toBeInTheDocument()
+    // The audio alternative is where the switches end: no image or slider
+    // control is offered, and the audio switch itself is gone.
+    for (const name of [
+      CAPTCHA_COPY.useImage,
+      CAPTCHA_COPY.useSlider,
+      CAPTCHA_COPY.useAudio,
+    ]) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    }
   })
 
   it('renders the slider behind a native range input and submits its offset', async () => {
@@ -387,6 +412,17 @@ describe('HumanVerification', () => {
       .setup()
       .click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
     expect(onToken).toHaveBeenCalledWith('challenge-1.140')
+    // The slider was the server's choice: the client offers no control to
+    // ask for it, only the audio accessibility alternative.
+    expect(
+      screen.queryByRole('button', { name: CAPTCHA_COPY.useSlider }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: CAPTCHA_COPY.useImage }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: CAPTCHA_COPY.useAudio }),
+    ).toBeInTheDocument()
   })
 
   it('shows the verified state once the host holds the captcha proof', () => {

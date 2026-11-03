@@ -250,31 +250,33 @@ describe('useHumanVerification', () => {
     ).toHaveLength(0)
   })
 
-  it('obtains a captcha challenge for the selected surface', async () => {
+  it('renders the challenge the server chose when the request names no form', async () => {
     const harness = makeHarness({
       [LOGIN_METHODS]: () =>
         methodList([], {
           humanPhoneProvider: 'captcha',
           humanPhoneRequired: true,
         }),
-      [CAPTCHA_CHALLENGE]: () => captchaChallenge(),
+      [CAPTCHA_CHALLENGE]: () => captchaChallenge({ form: 'slider' }),
     })
     const { result } = renderHook(() =>
       useHumanVerification(harness.session, { scope: 'phone' }),
     )
     await waitFor(() => expect(result.current.captcha).not.toBeNull())
-    expect(result.current.captcha?.form).toBe('image')
+    // The default request carries no form: the server picks between the
+    // image and slider forms, and the client renders whichever it answered.
+    expect(result.current.captcha?.form).toBe('slider')
     expect(result.current.status).toBe('ready')
     expect(result.current.proof).toBeNull()
     const requests = harness.calls.filter(
       (call) => call.path === '/api/v1/auth/human/captcha/challenge',
     )
     expect(requests).toHaveLength(1)
-    expect(requests[0]?.options?.query).toEqual({ form: 'image' })
+    expect(requests[0]?.options?.query).toBeUndefined()
   })
 
-  it('asks for the form a refresh names and replaces a consumed challenge', async () => {
-    const forms: string[] = []
+  it('asks for audio when selected and keeps it across refresh and a consumed challenge', async () => {
+    const forms: (string | undefined)[] = []
     const harness = makeHarness({
       [LOGIN_METHODS]: () =>
         methodList([], {
@@ -282,23 +284,22 @@ describe('useHumanVerification', () => {
           humanPhoneRequired: true,
         }),
       [CAPTCHA_CHALLENGE]: ({ options }) => {
-        const form = (options?.query?.form ?? 'image') as
-          | 'image'
-          | 'slider'
-          | 'audio'
+        const form = options?.query?.form as 'audio' | undefined
         forms.push(form)
-        return captchaChallenge({ form })
+        return captchaChallenge({ form: form ?? 'image' })
       },
     })
     const { result } = renderHook(() =>
       useHumanVerification(harness.session, { scope: 'phone' }),
     )
     await waitFor(() => expect(result.current.captcha?.form).toBe('image'))
+    expect(forms).toEqual([undefined])
+
     act(() => {
       result.current.refreshCaptcha('audio')
     })
     await waitFor(() => expect(result.current.captcha?.form).toBe('audio'))
-    expect(forms).toEqual(['image', 'audio'])
+    expect(forms).toEqual([undefined, 'audio'])
 
     act(() => {
       result.current.adoptToken(`${result.current.captcha!.id}.12345`)
@@ -308,8 +309,7 @@ describe('useHumanVerification', () => {
       result.current.consume()
     })
     await waitFor(() => expect(result.current.captcha).not.toBeNull())
-    expect(forms).toHaveLength(3)
-    expect(forms[2]).toBe('audio')
+    expect(forms).toEqual([undefined, 'audio', 'audio'])
   })
 
   it('offers a retry when the captcha challenge cannot be issued', async () => {

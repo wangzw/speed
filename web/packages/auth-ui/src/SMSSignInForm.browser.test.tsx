@@ -169,8 +169,7 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
     )
   })
 
-  it('requests the slider form from the screen, solves it by keyboard and sends', async () => {
-    const requested: string[] = []
+  it('renders the slider the server chose, solves it by keyboard and sends', async () => {
     const harness = makeHarness({
       [LOGIN_METHODS]: () =>
         methodList(['sms'], {
@@ -179,14 +178,8 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
           humanOtherProvider: 'off',
           humanOtherRequired: false,
         }),
-      [CAPTCHA_CHALLENGE]: ({ options }) => {
-        const form = (options?.query?.form ?? 'image') as
-          | 'image'
-          | 'slider'
-          | 'audio'
-        requested.push(form)
-        return form === 'slider' ? sliderChallenge() : captchaChallenge({ form })
-      },
+      // The request names no form; the server answers the slider form.
+      [CAPTCHA_CHALLENGE]: () => sliderChallenge(),
       [LOGIN_START]: () => codeChallenge(),
     })
     renderWithProviders(
@@ -194,21 +187,10 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
         <SMSSignInForm session={harness.session} />
       </PhoneCountryDefaultProvider>,
     )
-    // The block starts on the image form; its visible control is the only
-    // way a screen obtains the slider challenge.
-    await waitFor(() => expect(requested).toEqual(['image']))
-    await userEvent
-      .setup()
-      .click(screen.getByRole('button', { name: CAPTCHA_COPY.useSlider }))
-    // Assert the request, not merely the control that replaces it: the
-    // challenge route must be asked for `form=slider`, so a screen that
-    // swapped in a slider control without asking for that form could not
-    // pass on the control's appearance alone.
-    await waitFor(() =>
-      expect(
-        captchaRequests(harness).map((call) => call.options?.query?.form),
-      ).toEqual(['image', 'slider']),
-    )
+    // The client cannot force the slider: the challenge request carries no
+    // `form`, and the block renders the form the server answered with.
+    await waitFor(() => expect(captchaRequests(harness)).toHaveLength(1))
+    expect(captchaRequests(harness)[0]?.options?.query).toBeUndefined()
     const range = (await screen.findByLabelText(
       CAPTCHA_COPY.sliderLabel,
     )) as HTMLInputElement
@@ -232,6 +214,66 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
     expect(sends(harness)[0]?.options?.body).toMatchObject({
       method: 'sms',
       human_proof: 'Y2FwdGNoYS1jaGFsbGVuZ2U.272',
+    })
+  })
+
+  it('switches to the audio alternative, requests form=audio and sends', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () =>
+        methodList(['sms'], {
+          humanPhoneProvider: 'captcha',
+          humanPhoneRequired: true,
+          humanOtherProvider: 'off',
+          humanOtherRequired: false,
+        }),
+      [CAPTCHA_CHALLENGE]: ({ options }) =>
+        captchaChallenge({
+          form: options?.query?.form === 'audio' ? 'audio' : 'image',
+        }),
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    const { container } = renderWithProviders(
+      <PhoneCountryDefaultProvider country="CN">
+        <SMSSignInForm session={harness.session} />
+      </PhoneCountryDefaultProvider>,
+    )
+    // The default request carries no form, so the server answered the
+    // visual challenge.
+    await screen.findByAltText(CAPTCHA_COPY.instruction.typeTheDigits)
+    expect(captchaRequests(harness)[0]?.options?.query).toBeUndefined()
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: CAPTCHA_COPY.useAudio }))
+    // The audio switch is the one form the client names, and it names it.
+    await waitFor(() =>
+      expect(
+        captchaRequests(harness).map((call) => call.options?.query?.form),
+      ).toEqual([undefined, 'audio']),
+    )
+    await waitFor(() =>
+      expect(container.querySelector('audio')).toHaveAttribute(
+        'src',
+        '/api/v1/auth/human/captcha/audio/1',
+      ),
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(CAPTCHA_COPY.answerLabel),
+      '65432',
+    )
+    await user.click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
+    await waitFor(() =>
+      expect(
+        screen.getByText(uiKitZhCN.humanVerification.verified),
+      ).toBeInTheDocument(),
+    )
+    const send = await fillPhone()
+    await waitFor(() => expect(send).toBeEnabled())
+    await user.click(send)
+    await waitFor(() => expect(sends(harness)).toHaveLength(1))
+    expect(sends(harness)[0]?.options?.body).toMatchObject({
+      method: 'sms',
+      human_proof: 'Y2FwdGNoYS1jaGFsbGVuZ2U.65432',
     })
   })
 })
