@@ -17,10 +17,12 @@ capability's `Sender` and `Registry` as requirements, each delivered exclusively
 by its provider: a command tree names one of each, and two at once fail in
 resolution. It also requires the shared SMS ledger, `pkg/sms/budget`, the one
 table both sending channels write and count from; the store it delivers is bound
-to each send's transaction when the budgets are read. The registry holds the
-templates in force and decides which one a message goes out under; a carrier
-module (one of `sms.aliyun`, `sms.tencent`, or a third party's, under `pkg/sms`)
-constructs, calls and classifies, and is handed only what the registry resolved.
+to each send's transaction when the budgets are read. The ledger declares the
+cross-channel ceiling `sms.ceiling-hourly`, and this module reads it by the full
+key instead of declaring a copy. The registry holds the templates in force and
+decides which one a message goes out under; a carrier module (one of
+`sms.aliyun`, `sms.tencent`, or a third party's, under `pkg/sms`) constructs,
+calls and classifies, and is handed only what the registry resolved.
 
 The API is the package's godoc. Read `Send`'s and `Verify`'s comments before
 changing either.
@@ -46,6 +48,23 @@ compatibility break for a dashboard written against it.
   `New` holds the registry's declaration to the three required templates,
   naming the missing one. The all-empty stand-down does not cover a
   half-configured deployment.
+- **The phone entry points' human-verification proof is checked here, once.**
+  `SendCode.Proof` is the proof the caller presented; `Send` asks the
+  deployment's gate before the allowed-prefix table, the queue and every budget,
+  so a refused proof spends nothing and reveals nothing about the number. An
+  assembly with no gate, and a gate that requires nothing, skips the check
+  entirely. The proof is single-use, so this is the one place it is consumed:
+  the email code branch sends over the mail channel and keeps its own check,
+  because it has no code engine to hand the proof to. A missing, invalid,
+  expired or already used proof is `authn.ErrHumanVerificationRequired`; a proof
+  over the field's bound is `authn.ErrInvalidArgument`; a provider, or a store
+  behind it, that cannot answer is `authn.ErrUnavailable`. None of the three has
+  spent a budget. The check is `checkProof` (`send.go`), held by
+  `TestSendRefusesAMissingProofBeforeAnyBudget`,
+  `TestSendConsumesTheProofOnceAndSendsOnce`,
+  `TestSendWithoutAGateSendsWithoutAProof`,
+  `TestSendRefusesAnOverLongProofBeforeTheProviderIsAsked` and
+  `TestSendCarriesAGateOutageAsTheProviderSaid`.
 - **The plaintext code never leaves the module.** It is written to no table, no
   log, no event and no metric, and lives only in the queued message and the call
   to the carrier. The row holds `code_mac`, the keyed digest of the challenge

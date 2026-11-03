@@ -4,6 +4,8 @@
 
 本能力交付**按模板发出一条短信**：一个**模板注册表**持有在力的模板集，把调用方的一条消息解成载体直接可用的形状；一个**载体**把已解出的形状按厂商格式发出去。调用方先向注册表 `Resolve`，再把结果交给载体的 `Send`。
 
+本能力之下另有一个**共享台账**模块 `sms.budget`：它不发送、不认识模板，只记录每一次短信尝试并回答预算计数。认证与通知两个渠道写同一张表、读同一批计数，部署的跨渠道上界也由它声明。台账与发送方、注册表并列，是本能力交付的第三个接缝（[design-authn-sms](authn/design-authn-sms.md)、[design-notification-delivery](notification/design-notification-delivery.md)）。
+
 模板是**一等声明**，由注册表持有，不在载体一侧。模板有两族形态：**厂商模板编号**（载体按编号发送，编号来自厂商的逐模板审核，或来自厂商侧创建的内容资源）与**本地渲染正文**（注册表按声明把参数填进正文，载体把渲染结果作为正文发出）。一个语言可以同时声明两族，实际走哪一族由载体的能力声明决定。载体不认识模板，只按解出的形状构造请求。
 
 载体**排他交付**：一个进程里恰好一个载体生效，多于一个表态启用即启动失败。载体由一个值交付发送与模板管理的接缝（`Sender` 与 `Provider`），并回答自己的能力声明（`Provider.Model`）。根包是接口包与工厂，不登记模块；实现子包绑定各自的厂商 SDK 并登记模块（[ADR-sms-capability](../../adr/adr-sms-capability.md)）。
@@ -11,7 +13,7 @@
 ### 非职责
 
 - **不排队，不做工作池。** 发送是一次同步调用，`Send` 在厂商调用返回后才返回。异步投递、有界队列、队列满时的丢弃与重试策略归调用方：认证把发送交给自己的有界工作池，字段与队列容量都在认证一侧。
-- **不持预算，不限流，不计尝试次数。** 本能力不认识「这条短信该不该发」。发送预算、重发间隔、每号码与每账户的上限、放行前缀都在调用方，本能力对每个 `Send` 都尝试发出去。
+- **不决定一条短信该不该发，不限流。** 发送方与注册表不认识预算。台账模块记录尝试并回答计数，但不决定上限：窗口、上限与超限后的应答在认证与通知两个调用方，台账只声明跨渠道上界这一个两个调用方共有的键。发送方对每个 `Send` 都尝试发出去。
 - **不持挑战状态，不生成也不校验验证码。** 验证码的生成、存放、比对与一次性消费归调用方；本能力不认识「验证码」这个概念，参数对它是不透明值。
 - **不重试。** 厂商的发送接口不幂等，超时之后调用方无从知道短信是否已发出，重试会重复投递并重复计费。载体在超时、网络错误与上下文结束时把结果归入 `ErrUncertain`，从不自行重发。是否重发归调用方；重试次数不是本能力的配置项。
 - **不管理登记。** 载体声明这个部署可用的发送身份（签名、发送方 ID、长号码、短号码、免费号码、号码池、消息服务）与这些身份覆盖的国家，但不登记、不跟踪、不声称任何身份在某个国家的登记或审核状态。美国 10DLC（[REF-us-a2p-10dlc](../../references.md)）的品牌与活动、印度 DLT（[REF-trai-tcccpr](../../references.md)）、免费号码验证、短号码租用、逐国家发送方 ID 的申请都在厂商门户与合同里完成，本能力不读取也不缓存它们的状态（[ADR-sms-registration-out-of-scope](../../adr/adr-sms-registration-out-of-scope.md)）。
@@ -194,6 +196,7 @@ type Resolved struct {
 |---|---|---|---|
 | `pkg/sms` | 不登记 | `Sender`、`Provider`、`Registry` 接口与 `Message`、`Receipt`、`Resolved`、`CarrierModel`、模板声明与工厂 | — |
 | `pkg/sms/registry` | `sms.registry` | `Registry` | 排他 |
+| `pkg/sms/budget` | `sms.budget` | `Store` | — |
 | `pkg/sms/admin` | `sms.admin` | 不交付功能接口，只挂管理面路由 | — |
 | `pkg/sms/aliyun` | `sms.aliyun` | `Sender` + `Provider`（一个 `Product` 值） | 排他 |
 | `pkg/sms/tencent` | `sms.tencent` | `Sender` + `Provider`（一个 `Product` 值） | 排他 |
@@ -229,6 +232,31 @@ type Resolved struct {
 
 **`Offer` 的厂商侧动作按载体能力分流。** 载体按厂商编号发送（`Content.TemplateCode` 为真）时，`Offer` 在厂商侧创建内容资源或取得审核通过的编号，并返回该编号；载体只按正文发送（`Content.TemplateCode` 为假）时，`Offer` 只在本地记录正文，不调厂商，`Retire` 是空操作。`Review.PerTemplate` 为假时 `Approval` 答 `ApprovalNotRequired`；为真时按厂商逐语言读取，行为与今天一致。一个不存在的编号、缺权限或配额不足导致的厂商回绝归 `ErrUnroutable`。
 
+### 台账模块 sms.budget
+
+`sms.budget` 持有共享的短信尝试台账，交付 `(*budget.Store)(nil)`。它是**非排他**交付：一个进程恰好有一个台账，每个发送能力读同一个；声明了对它的 `Requires` 的消费方把本模块拉进依赖闭包。它 `Requires` `(*db.Database)(nil)`，带自己的迁移树与 `sms_budget_events` 表。它声明一个设置，`sms.ceiling-hourly`，挂在共享的 `sms` 命名空间下；除此不声明任何上限。
+
+**台账只记短信，不是部署全部投递预算的唯一账。** 邮件投递的预算不在这张表上：它按收件人与按部署的固定窗口计在 `notification.delivery` 使用的键值计数器上，与短信各自计数、互不占用额度（[design-notification-delivery](notification/design-notification-delivery.md)）。键值计数器仍在邮件预算上使用；短信只使用这张台账，不读键值计数器。
+
+**一行是一次尝试，不是一次投递。** 调用方在消耗预算时、厂商答复之前写入一行，`outcome` 记写入时已知的结局，`refunded_at` 是之后才改变的状态，`suppressed` 标记调用方故意没有发送的尝试。结局是闭集 `pending`、`sent`、`uncertain`、`throttled`、`rejected`、`unroutable`，一律不在写入后改写；退款是唯一会变的状态。一次确定的失败由 `MarkRefunded` 标为退款，退款从发送计数里退出、留在尝试计数里。抑制行在写入时即带退款时刻，`Record` 拒绝一个没有退款时刻的抑制行，所以这条不变量由存储保证。
+
+**计数查询的开关相互独立。** `IncludeSuppressed`（缺省假）决定抑制行是否参与；退款开关决定计哪一种退款状态。据此得到下列计数：
+
+- **发送预算**（两个退款开关都关）：`refunded_at IS NULL AND NOT suppressed`；带 `IncludeSuppressed` 时改成 `(refunded_at IS NULL OR suppressed)`，抑制行按一次占用计入它瞄向的维度。
+- **尝试预算**（`IncludeRefunded`）：每一行，`NOT suppressed` 除非同时带 `IncludeSuppressed`；没有退款条件。
+- **确定失败**（`OnlyRefunded`）：`refunded_at IS NOT NULL`，`NOT suppressed` 除非同时带 `IncludeSuppressed`。`OnlyRefunded` 与 `IncludeRefunded` 同时出现即 `ErrInvalidQuery`，不静默取一个。
+
+`Query` 还按渠道、用途与至多一个索引维度收窄；`Oldest` 与 `Latest` 读同一批行，分别是窗口何时让出位置与重发间隔量到哪一刻。`CountDistinctDestinations` 数不同的目的地摘要，供按来源的不同目的地预算使用。`CountCeiling` 数两个渠道自某一时刻起未退款、未抑制的行，是部署的跨渠道上界。`PruneBefore` 删除早于某一时刻的行并回答删了几行；它是方法而不是定时任务，本模块不跑 ticker。
+
+**台账不持计数器，也不持锁。** `Record` 是一条 INSERT，每个计数都是对已提交行的查询；并发记录是并发插入，没有可丢更新的共享状态。一个必须成为硬上限的预算由调用方把计数与写入放进同一个事务，并在该事务上建立台账（`New(tx)`），自己串行化维度；不共享事务的两个调用方之间是软上限。`CountCeiling` 是唯一跨渠道的计数，两个渠道在写它之前取同一把事务级咨询锁（键 `sms.budget:lock:ceiling`），SQLite 在数据库层串行化写者时不取。
+
+**来源与目的地只存带密钥摘要。** `source_mac` 与 `destination_mac` 是调用方算好的摘要，明文号码或地址从不进入这张表，也不进本包的日志。`source_mac` 可空，空表示没有可信来源：它不占来源预算，也不匹配任何来源计数；一个存在但为空的来源是 `ErrInvalidAttempt`。`account_id` 可空，空表示这次尝试没有账户。`tenant_id` 非空，不属于任何租户的尝试写空串，租户维度不匹配它。
+
+**窗口在 `Since` 处闭。** 恰在边界写入的行在窗口内，早一个纳秒的不在；所有时间在进入数据库之前归一到 UTC，因为 SQLite 按文本比较时间。
+
+**迁移与索引。** `0001` 建表并建 `(channel, attempted_at)`、`(source_mac, attempted_at)`、`(destination_mac, attempted_at)` 与 `(tenant_id, attempted_at)` 上的索引；`0002` 加 `suppressed` 列与 `(account_id, attempted_at)`。每种计数形状有自己的索引；新增一个没有索引的列为维度的计数是一次迁移，不是一次查询改动。
+
+
 ### 管理面模块 sms.admin
 
 `sms.admin` 是挂在固定基路径 `/api/v1/system/sms` 下的管理面模块，不交付任何功能接口，只把模板集与载体声明暴露成 HTTP 路由；每条模板路由的动作是经 `sms.Registry` 调注册表，载体路由的动作是读 `sms.Provider.Model()`，模块自己不持数据、不持规则——注册表拥有「一条模板是什么、哪些在力、厂商答了什么」，载体拥有「它能发什么」，本模块只决定谁可以问、答案长什么样。路由挂在配置 `sms.admin.endpoints` 列出的端上，基路径不做可配置。每条模板路由按自然键——模板名——寻址，路径里不出现任何不透明的行标识。
@@ -262,11 +290,12 @@ type Resolved struct {
 
 以下是宿主写进配置文件、或在命令树与网关上点名的面。
 
-- **模块名**：`sms.registry`、`sms.admin`、`sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
+- **模块名**：`sms.registry`、`sms.budget`、`sms.admin`、`sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
 - **配置命名空间与输入项**：`sms.registry` 下的 `templates`（容器叶子，`map[string]sms.TemplateSpec`，取主配置源）与 `poll-interval`（时长，缺省 `1m`，取主配置源与环境变量）；`sms.admin` 下的 `endpoints`（字符串列表，无缺省；缺席时管理面自行关闭，点名后必须非空、只收具体端名、不收 `*`，取主配置源）；每个载体自己的命名空间下的凭据、`region`、`endpoint`、`configuration-set-name`、`identities` 与 `default-identity`（见「配置与设置的划分」）。
+- **设置项**：`sms.budget` 在共享的 `sms` 命名空间下声明 `ceiling-hourly`（整数，缺省 `5000`，取值域 1 到 1000000），认证与通知两个渠道读同一个键与同一个缺省。
 - **管理端点**：`sms.admin.endpoints` 列出的端，`/api/v1/system/sms/*` 下的模板读写路由与载体路由（路由见「管理面模块」一节）。
 
-**配置与设置的划分。** 启动期需要、改动要重启的取值是配置；运行期可改、不需要重启的取值是设置（[ADR-config-scope](../../adr/adr-config-scope.md)）。凭据、`region`、`endpoint`、`configuration-set-name`、`identities`、`default-identity`、模板集、`poll-interval` 与 `sms.admin.endpoints` 都是配置。唯一的设置项是 `sms.registry.sending-enabled`（布尔，缺省 `true`），每次 `Resolve` 都读一次：置为 `false` 时 `Resolve` 答 `ErrNotSendable`，运维不必重启即可停止发送。重试次数不是配置项：载体从不重试，一次 `Send` 对应一次厂商调用。
+**配置与设置的划分。** 启动期需要、改动要重启的取值是配置；运行期可改、不需要重启的取值是设置（[ADR-config-scope](../../adr/adr-config-scope.md)）。凭据、`region`、`endpoint`、`configuration-set-name`、`identities`、`default-identity`、模板集、`poll-interval` 与 `sms.admin.endpoints` 都是配置。设置项是 `sms.registry.sending-enabled`（布尔，缺省 `true`）与 `sms.ceiling-hourly`（整数，缺省 `5000`）：`sending-enabled` 每次 `Resolve` 都读一次，置为 `false` 时 `Resolve` 答 `ErrNotSendable`，运维不必重启即可停止发送；`ceiling-hourly` 是跨渠道的发送上界，由两个消费方每次发送时读取，改动不需要重启。重试次数不是配置项：载体从不重试，一次 `Send` 对应一次厂商调用。
 
 `templates` 的形状是嵌套的：键是逻辑模板名，值是用途、有序参数名表、语言到编号的映射、语言到正文的映射与厂商登记标识。命名空间按 `.` 分段在配置数据里嵌套，所以 `sms.registry.templates` 写成：
 
@@ -295,7 +324,7 @@ sms:
 - `Sender`、`Provider`、`Registry`、`Product`、`Message`、`Receipt`、`Resolved`、`Template`、`TemplateSpec`、`Declaration`、`Submission`、`Approval`、`ApprovalState`、`CarrierModel`、`Identity`、`IdentityKind`、`ContentSupport`、`ReviewSupport`、`Source`、`Kind`、`Record` 的字段与方法集，以及本能力的全部哨兵，是本能力对调用方的接口面。加方法、改签名或改字段名对实现了接缝的载体、注册表与取用它们的调用方都是不兼容变更。
 - `Message` 的字段语义：`To` 是 E.164（[REF-itu-t-e164](../../references.md)）、`Template` 是调用方定义的逻辑名、`Params` 的键是模板声明的参数名、`Locale` 非空且对 `pkg/sms` 不透明、`Originator` 为空表示缺省身份、`ValidFor` 为零表示厂商缺省、`DedupeID` 使载体至多对同一标识调厂商一次。`Resolved` 的字段语义：`Kind` 是模板用途、`Code` 是厂商编号、`Body` 是本地渲染后的正文、`Ordered` 按模板声明的次序铺开、`Params` 是键值表、`Attributes` 是厂商登记标识。
 - **模板声明的形状属于接口面**：`TemplateSpec` 的字段名与容器成形态（`params` 是列表，`codes`、`bodies`、`attributes` 是映射）是宿主写在配置文件里、也写在管理面 `Register` 正文里的东西，改它们使旧写法成为未知键或坏正文。
-- **宿主可见面**：模块名 `sms.registry`、`sms.admin`、`sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`，配置键 `sms.registry.templates`、`sms.registry.poll-interval`、`sms.admin.endpoints` 与各载体自己的输入项，设置项 `sms.registry.sending-enabled`，管理面路由的路径与每条路由询问的权限（读 `sms.template.read`、写 `sms.template.manage`），以及权限常量 `sms.template.read`、`sms.template.manage` 与 `Problem.Type` 前缀 `urn:speed:sms:` 及其下的码（`bad-request`、`conflict`、`config-template`）。改动它们是宿主可见的破坏性变更。
+- **宿主可见面**：模块名 `sms.registry`、`sms.budget`、`sms.admin`、`sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`，配置键 `sms.registry.templates`、`sms.registry.poll-interval`、`sms.admin.endpoints` 与各载体自己的输入项，设置项 `sms.registry.sending-enabled` 与 `sms.ceiling-hourly`，管理面路由的路径与每条路由询问的权限（读 `sms.template.read`、写 `sms.template.manage`），以及权限常量 `sms.template.read`、`sms.template.manage` 与 `Problem.Type` 前缀 `urn:speed:sms:` 及其下的码（`bad-request`、`conflict`、`config-template`）。改动它们是宿主可见的破坏性变更。
 - 特性名 `sms.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 单个载体叶子包、注册表模块、管理面模块各自可替换、可撤掉，不改变调用方的代码。
 
@@ -323,8 +352,9 @@ sms:
 | `pkg/core` | `pkg/sms`：登记描述符、交付功能；`sms.registry`/`sms.admin`：模块描述符与 `Resolve` |
 | `pkg/config` | 声明各自模块的输入项 |
 | `pkg/log` | 可选：载体工厂在 `New` 里登记凭据的脱敏匹配器；注册表与管理面记诊断 |
-| `pkg/db` | `sms.registry`：`sms_templates` 表与迁移 |
-| `pkg/event` | `sms.registry`（可选）：变更事件，加速多副本收敛 |
+| `pkg/db` | `sms.registry`：`sms_templates` 表与迁移；`sms.budget`：`sms_budget_events` 表与迁移 |
+| `pkg/settings` | `sms.budget`：声明 `sms.ceiling-hourly` |
+| `pkg/event` | `sms.registry`（可选）：变更事件，加速多副本收敛；`sms.budget` 不订阅事件 |
 | `pkg/authz`、`pkg/authz/guard`、`pkg/audit`、`pkg/authn`、`pkg/http` | `sms.admin`：网关身份、handler 内判定、审计、问题应答 |
 | `pkg/feature` 根包 | `sms.admin`：声明静态特性（`feature.Spec`）；根包只依赖标准库 |
 | 各厂商 SDK | 只被对应的载体叶子包 import |
@@ -340,7 +370,7 @@ sms:
 
 ## UML 图
 
-本能力的结构是多条接缝、一份模板声明、一个载体能力声明与多个实现的关系。图里的约束不在图中：载体之间是**互斥**的，注册表本身也是**排他**的——图上看不出这一点，因为排他性由描述符声明、由消解阶段裁定，不是类型之间的关系。声明自洽由 `NewDeclaration` 保证，声明的覆盖由消费方在 `New` 核对，两者都不在类型的形状里。注册表与载体彼此不 import：注册表只经 `Provider` 接缝触达厂商。
+本能力的结构是多条接缝、一份模板声明、一个载体能力声明、一张共享台账与多个实现的关系。图里的约束不在图中：载体之间是**互斥**的，注册表本身也是**排他**的，台账则是**非排他**的——图上看不出这一点，因为排他与非排他由描述符声明、由消解阶段裁定，不是类型之间的关系。声明自洽由 `NewDeclaration` 保证，声明的覆盖由消费方在 `New` 核对，两者都不在类型的形状里。注册表与载体彼此不 import：注册表只经 `Provider` 接缝触达厂商；台账不 import 任何发送方或注册表，认证与通知两个消费方只经 `Store` 取用它。
 
 ```mermaid
 classDiagram
@@ -370,6 +400,17 @@ classDiagram
     class Product {
         <<interface>>
     }
+    class Store {
+        <<interface>>
+        +Record(ctx, a) ID
+        +MarkRefunded(ctx, id, at) error
+        +Count(ctx, q) int64
+        +CountDistinctDestinations(ctx, q) int64
+        +Oldest(ctx, q) time
+        +Latest(ctx, q) time
+        +CountCeiling(ctx, since) int64
+        +PruneBefore(ctx, before) int64
+    }
     class Message
     class Receipt
     class Resolved
@@ -384,6 +425,7 @@ classDiagram
     class ContentSupport
     class ReviewSupport
     class registryStore
+    class sqlLedger
     class aliyunProduct
     class tencentProduct
     class awsProduct
@@ -395,6 +437,7 @@ classDiagram
     CarrierModel *-- ReviewSupport
     CarrierModel *-- Identity
     registryStore ..|> Registry
+    sqlLedger ..|> Store
     aliyunProduct ..|> Product
     tencentProduct ..|> Product
     awsProduct ..|> Product
@@ -413,7 +456,7 @@ classDiagram
     Declaration ..> Template
 ```
 
-**每个载体各自登记为一个模块**（模块名 `sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`），注册表登记为 `sms.registry`。根包是接口包与工厂，不登记模块。
+**每个载体各自登记为一个模块**（模块名 `sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`），注册表登记为 `sms.registry`，台账登记为 `sms.budget`。根包是接口包与工厂，不登记模块。
 
 ## 核心数据结构
 
@@ -443,6 +486,24 @@ classDiagram
 **迁移 0002 补上载体维度。** SQLite 与 PostgreSQL 各自的 0002 迁移加 `carrier TEXT NOT NULL DEFAULT ''`、`kind TEXT NOT NULL DEFAULT 'notification'`、`bodies TEXT NOT NULL DEFAULT '{}'`、`attributes TEXT NOT NULL DEFAULT '{}'` 四列，并把主键改为 `(carrier, name)`。旧行的 `carrier` 为空串。
 
 **旧行由第一个启动的载体收养，所有权标记阻止接管。** 本进程第一次对着数据库启动时，若存在 `carrier = ''` 的旧行，它在一个事务里把这些行改写成自己的载体名，并写下一行所有权标记。标记只记一个载体名；此后一个不同的载体对着同一数据库启动即失败，而不是静默接管这些旧行。同一载体再次启动时标记与旧行都已就位，无事发生。
+
+**台账的存储形态是 `sms_budget_events` 表。** 一行是一次短信尝试，两个渠道都写这张表。
+
+| 列 | 类型 | 含义 |
+|---|---|---|
+| `id` | 自增大整数，主键 | 尝试标识，`Record` 返回它，退款按它点名 |
+| `channel` | 文本，非空 | 闭集 `authn` / `notification`，由检查约束强制 |
+| `purpose` | 文本，非空 | 认证用途或通知类型键；开放字符串，台账不排名 |
+| `source_mac` | 文本，可空 | 来源身份的带密钥摘要；空表示没有可信来源，不占来源预算 |
+| `destination_mac` | 文本，非空 | 目的地的带密钥摘要，号码或收件人 |
+| `tenant_id` | 文本，非空，缺省空串 | 通知的租户；认证侧写空串，租户计数不匹配它 |
+| `account_id` | 文本，可空 | 认证的 `mfa`/`enroll` 与通知的收件人；`login`、`reset` 为 NULL |
+| `attempted_at` | 时间戳，非空 | 预算被占用的时刻，UTC |
+| `outcome` | 文本，非空 | 写入时已知的结局，闭集 `pending`、`sent`、`uncertain`、`throttled`、`rejected`、`unroutable` |
+| `refunded_at` | 时间戳，可空 | 确定没有发出的时刻；之后改变的状态只有它 |
+| `suppressed` | 布尔，非空，缺省假 | 调用方故意没有发送的尝试；写入时即带退款时刻 |
+
+索引覆盖计数形状：`(channel, attempted_at)`、`(source_mac, attempted_at)`、`(destination_mac, attempted_at)`、`(tenant_id, attempted_at)` 与 `(account_id, attempted_at)`。前四条在迁移 `0001`，`suppressed` 列与账户索引在 `0002`。
 
 ## 核心算法与流程
 
@@ -607,6 +668,7 @@ type Spec[C any] struct {
 | 归类助手（精确码表加缺省 `ErrUncertain`） | 已实现 | `pkg/sms/classify.go` |
 | 去重表 | 已实现 | `pkg/internal/dedupe` |
 | 模板注册表 `sms.registry`（来源与可变权限、运行期状态、载体维度与迁移 0002、旧行收养与所有权标记、后台轮询） | 已实现 | `pkg/sms/registry/registry.go` `Module`、`ModuleName`；`pkg/sms/registry/store.go` `registryStore`、`Resolve`、`Declared`、`List`、`Register`、`Offer`、`SetEnabled`、`Remove`、`upsert`；`pkg/sms/registry/snapshot.go` `snapshot`、`loadSnapshot`；`pkg/sms/registry/poll.go` `startPoll`、`pollOnce`、`pollTemplate`；`pkg/sms/registry/config.go` `schema`、`readSettings`；`pkg/sms/registry/migrations` |
+| 共享台账 `sms.budget`（`sms_budget_events`、计数查询、退款、跨渠道上界、`PruneBefore`） | 已实现 | `pkg/sms/budget/budget.go` `Attempt`、`Query`、`Outcome`、`Dimension`；`pkg/sms/budget/store.go` `Store`、`New`、`Record`、`MarkRefunded`、`Count`、`CountDistinctDestinations`、`Oldest`、`Latest`、`CountCeiling`、`PruneBefore`；`pkg/sms/budget/module.go` `Module`、`DefaultCeilingHourly`、`ceilingSchema`；`pkg/sms/budget/migrations` |
 | 管理面 `sms.admin`（模板与载体路由、判定、审计、回绝映射） | 已实现 | `pkg/sms/admin/admin.go` `Module`、`ModuleName`、`wire`；`pkg/sms/admin/routes.go` `routes`、`mount`、`declareOpen`；`pkg/sms/admin/templates.go` `handleTemplateList`、`handleTemplateRegister`、`handleTemplateOffer`、`handleTemplateSetEnabled`、`handleTemplateRemove`；`pkg/sms/admin/carrier.go` `handleCarrier`；`pkg/sms/admin/permissions.go` `PermissionTemplateRead`、`PermissionTemplateManage`、`permissionSpec`、`translationSpec`；`pkg/sms/admin/audit.go`、`pkg/sms/admin/pipeline.go` `require`、`answer`；`pkg/sms/admin/views.go` `templateView`、`carrierView` |
 | 管理面 `sms.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/sms/admin/operations.go`；`pkg/sms/admin/openapi_generated_test.go`；片段 `pkg/sms/admin/openapi/sms.admin.json` |
 | 静态特性 `sms.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/sms/admin/admin.go` `Module`；`pkg/sms/admin/feature_test.go` `TestTheModuleDeclaresTheSMSAdminFeature` |

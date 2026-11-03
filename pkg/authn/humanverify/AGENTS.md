@@ -3,8 +3,8 @@
 The human-verification gate of the authentication capability, registered as
 `authn.humanverify`. It delivers `authn.HumanVerifier` exclusively, so a command
 names this module or supplies a verifier of its own; two exclusive providers in
-one run fail the startup. The gate is off by default, and a deployment chooses
-the mechanism with the `mode` item.
+one run fail the startup. The gate runs the self-hosted proof of work by
+default, and a deployment chooses the mechanism with the `mode` item.
 
 A send asks the seam before it spends a send budget, so a request the proof
 refuses costs no budget, and a message is sent only after the proof has been
@@ -21,14 +21,13 @@ with `authn.ErrInvalidConfig` naming `authn.humanverify.mode`:
 
 | Mode | What it is | `Required()` | Proof check |
 |---|---|---|---|
-| `off` (default) | the gate is open | false | accepts every proof |
-| `pow` | the self-hosted proof of work | true | `pkg/authn/humanverify/pow` |
+| `off` | the gate is open | false | accepts every proof |
+| `pow` (default) | the self-hosted proof of work | true | `pkg/authn/humanverify/pow` |
 | `turnstile` | Cloudflare Turnstile | true | `pkg/authn/humanverify/turnstile` |
 
 The `off` gate accepts every proof, an empty one included, and reports an empty
-site key. It is the mode an assembly runs when it takes the module in and leaves
-the item out. It needs no key-value store, no settings store and no route
-mounter.
+site key. A deployment states it to run no gate; it needs no key-value store, no
+settings store and no route mounter.
 
 The `turnstile` mode needs a site key, a secret key and the expected hostname.
 A command that names the mode without any of them fails the startup with
@@ -36,9 +35,10 @@ A command that names the mode without any of them fails the startup with
 Cloudflare's siteverify endpoint and judges the answer; see below.
 
 The `pow` mode needs the key-value store its challenges live in and the route
-mounter that serves the challenge route. A command that names the mode without
-either fails the startup with `authn.ErrInvalidConfig` naming what is absent, in
-`New` for the store and in `Init` for the mounter.
+mounter that serves the challenge route; it is the mode an assembly runs when it
+takes the module in and leaves the item out. A command that names the mode
+without either fails the startup with `authn.ErrInvalidConfig` naming what is
+absent, in `New` for the store and in `Init` for the mounter.
 
 ## Cloudflare Turnstile
 
@@ -120,8 +120,9 @@ decimal digits.
 
 Input items under the module's own namespace:
 
-- `mode` — `off`, `pow` or `turnstile`; `off` when absent. A section that omits
-  it runs the gate off; a section that misspells it stops the startup.
+- `mode` — `off`, `pow` or `turnstile`; `pow` when absent. A section that omits
+  it runs the self-hosted proof of work; a section that misspells it stops the
+  startup.
 
 **Unconfigured and half-configured are different answers, and the mode decides
 which.** A section that names no mode, or names `off` or `pow`, is a configured

@@ -45,15 +45,23 @@ carriers: each binds its own vendor SDK and registers one module. `registry` is
 the template-registry module — it holds the templates in force and delivers
 `Registry`. `admin` is the management HTTP surface; it delivers no capability,
 every template route being a call on `Registry` and the carrier route a read of
-`Provider.Model`.
+`Provider.Model`. `budget` is the shared attempt ledger both sending channels
+write and count from: it owns the `sms_budget_events` table, stores and counts
+attempts, and declares the cross-channel hourly ceiling `sms.ceiling-hourly`
+once. It decides no limit; the consumers read their own settings and compare
+them to its counts.
 
 ## Boundaries
 
-- **The capability is sending and template management, and nothing else.** No
-  queue, no worker pool, no budgets, no throttling accounting, no challenge
-  state, no code generation or verification, and no retry. Each of those belongs
-  to a consumer: the authentication module owns the queue, the budgets and the
-  challenge row, and hands this capability one message at a time. A carrier
+- **The capability the root package defines is sending and template management,
+  and nothing else.** No queue, no worker pool, no budget decision, no throttling
+  accounting for a particular limit, no challenge state, no code generation or
+  verification, and no retry. Each of those belongs to a consumer: the
+  authentication module owns the queue, the challenge row and every limit it
+  enforces, and hands this capability one message at a time; the notification
+  delivery module owns every limit it enforces. Both record their attempts in
+  the `budget` subpackage's ledger, which stores and counts but declares no limit
+  except the one cross-channel ceiling neither consumer can own alone. A carrier
   answers every `Send` synchronously after one vendor call; a carrier that
   retries is the shape to reject, because the vendor send call is not idempotent
   and a timeout leaves the caller unable to tell whether the message was
@@ -104,7 +112,9 @@ every template route being a call on `Registry` and the carrier route a read of
   `pkg/config`, `pkg/core`, `pkg/internal/literal` and `pkg/log` — neither
   `pkg/db` nor any `pkg/authn`. `deps_test.go` holds the root package's non-test
   dependency face to no vendor SDK and no `pkg/authn`, and pins the carrier SDK
-  versions, so the capability stands alone beside `pkg/kv` and `pkg/event`.
+  versions, so the capability stands alone beside `pkg/kv` and `pkg/event`. The
+  `budget` subpackage is the one that takes `pkg/db`, for the migration set it
+  owns, and `pkg/settings`, for the ceiling it declares.
 - **A carrier registers its secrets before it takes its logger.** `Spec.Secrets`
   returns the credential strings to register as literal redaction matchers, and
   the factory registers them through `pkg/internal/literal` before it hands the

@@ -259,7 +259,7 @@ type Requirement struct {
 | 浏览器应用：口令加 TOTP（[REF-rfc6238](../../../references.md)） | `authn.gate`、`authn.mount`、`authn.account`、`authn.session`、`authn.login`、`authn.login.password`、`authn.mfa`、`authn.mfa.totp`，另加 `tenant.resolve` 与 `tenant.admission` |
 | 加 API 令牌与服务账户 | 再加 `authn.token` |
 | 企业 SSO | 再加 `authn.sso` 与 `authn.sso.oidc` 或 `authn.sso.saml` |
-| 短信登录与短信因素 | 再加 `authn.sms`、`sms.aliyun`（或 `sms.tencent`）、`authn.login.sms`、`authn.mfa.sms` |
+| 短信登录与短信因素 | 再加 `authn.sms`、`sms.budget`、`sms.aliyun`（或 `sms.tencent`）、`authn.login.sms`、`authn.mfa.sms` |
 | 社交登录、通行密钥 | 再加 `authn.login.google` 等、`authn.mfa.webauthn` |
 | 冒充与管理面 | 再加 `authn.impersonation`、`authn.admin`；宿主交付 `Decider` 与审计的实现；`tenant.admission` 是 `authn.impersonation` 的必需依赖，`authn.mfa` 也必须在场 |
 
@@ -278,7 +278,7 @@ type Requirement struct {
 
 ### 模块清单
 
-下表是本功能目录登记的全部模块。“Requires”列写必需的排他功能与 `db.Database`，网关一行另写它对 `log.Logger` 的 `Optional` 声明；“取用”列是 `Init` 里 `core.Resolve` 或 `core.ResolveAll` 的对象，标 ○ 的取用缺席合法，缺席时对应的子功能不启用，并在启动诊断里写一行，不是到 `Init` 才报缺失。日志功能与指标功能的可选取用除网关一行外不在表里逐行列出：持有秘密配置值的模块为在 `New` 里登记字面量脱敏而对 `log.Logger` 写 `Optional`（例举：`authn.sso` 与两个协议模块、两个微信登录方式、`authn.humanverify`，这些行的“Requires”列因此不是完整的声明），产生指标的模块在 `Init` 里取 `observability.MeterProvider`，逐项见各模块文档的依赖表；“表”列写该模块拥有的表，表归声明它的模块。`authn.mount` 与挂路由的模块经内部接口 `mount.Mounter` 协作，它在 `pkg/authn/internal/mount`，只在 authn 树内可见。
+下表是本功能目录登记的全部模块。“Requires”列写必需的排他功能、`db.Database` 与少数必需的共享交付（`authn.sms` 对 `budget.Store`），网关一行另写它对 `log.Logger` 的 `Optional` 声明；“取用”列是 `Init` 里 `core.Resolve` 或 `core.ResolveAll` 的对象，标 ○ 的取用缺席合法，缺席时对应的子功能不启用，并在启动诊断里写一行，不是到 `Init` 才报缺失。日志功能与指标功能的可选取用除网关一行外不在表里逐行列出：持有秘密配置值的模块为在 `New` 里登记字面量脱敏而对 `log.Logger` 写 `Optional`（例举：`authn.sso` 与两个协议模块、两个微信登录方式、`authn.humanverify`，这些行的“Requires”列因此不是完整的声明），产生指标的模块在 `Init` 里取 `observability.MeterProvider`，逐项见各模块文档的依赖表；“表”列写该模块拥有的表，表归声明它的模块。`authn.mount` 与挂路由的模块经内部接口 `mount.Mounter` 协作，它在 `pkg/authn/internal/mount`，只在 authn 树内可见。
 
 | 包 | 模块名 | 交付 | 排他 | Requires | 取用 | 表 |
 |---|---|---|---|---|---|---|
@@ -295,12 +295,12 @@ type Requirement struct {
 | `authn/login/google`、`authn/login/github` | `authn.login.google`、`authn.login.github` | `LoginMethod` | 否 | 无 | 无 | 无 |
 | `authn/login/wechatweb` | `authn.login.wechat-web` | `LoginMethod`（名 `wechat.web`） | 否 | 无 | 无 | 无 |
 | `authn/login/wechatmp` | `authn.login.wechat-mp` | `LoginMethod`（名 `wechat.mp`） | 否 | 无 | 无 | 无 |
-| `authn/humanverify` | `authn.humanverify` | `HumanVerifier` | 是 | 无 | `kv.KV` ○（`pow` 的挑战与一次性消费）、`settings.Store` ○（`pow` 的两项设置）、`mount.Mounter` ○（`pow` 的挑战路由）、`log.Logger` ○（登记 Turnstile 密钥的字面量脱敏规则，[REF-cloudflare-turnstile](../../../references.md)） | 无 |
+| `authn/humanverify` | `authn.humanverify` | `HumanVerifier` | 是 | 无 | `kv.KV`（`pow` 模式必需，`off`/`turnstile` 可缺席）、`mount.Mounter`（`pow` 模式必需，`off`/`turnstile` 可缺席）、`settings.Store` ○（`pow` 的两项设置）、`log.Logger` ○（登记 Turnstile 密钥的字面量脱敏规则，[REF-cloudflare-turnstile](../../../references.md)） | 无 |
 | `authn/mfa` | `authn.mfa` | `MFA`；`AccountLifecycle` | 是 | `db.Database`、`mount.Mounter`、`Accounts`、`AccountAdmin`、`Throttle` | 全部 `Factor`、`Sessions` ○（重置时撤销会话；缺席则只停因素）、`settings.Store` ○、`audit.Audit` ○、`event.Bus` ○ | `authn_factors` |
 | `authn/mfa/totp` | `authn.mfa.totp` | `Factor` | 否 | `db.Database`、`MFA`、`Accounts` | 无 | `authn_totp_secrets` |
 | `authn/mfa/sms` | `authn.mfa.sms` | `Factor` | 否 | `SMSCodes`、`Accounts` | 无 | 无 |
 | `authn/mfa/webauthn` | `authn.mfa.webauthn` | `Factor`、`LoginMethod`（通行密钥） | 否 | `db.Database`、`MFA`、`Accounts` | 无 | `authn_webauthn_users`、`authn_webauthn_credentials` |
-| `authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | 是 | `db.Database`、`sms.Registry`、`sms.Sender` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | `authn_challenges` |
+| `authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | 是 | `db.Database`、`sms.Registry`、`sms.Sender`、`budget.Store`；`HumanVerifier`（○） | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○、`log.Logger` ○、`observability.MeterProvider` ○ | `authn_challenges` |
 | `authn/sso` | `authn.sso` | `SSOProviders` | 是 | `db.Database`、`mount.Mounter` | `settings.Store` ○、`event.Bus` ○ | `authn_idps`、`authn_idp_domains`、`authn_saml_assertions` |
 | `authn/sso/saml` | `authn.sso.saml` | `LoginMethod`、`SSOMetadataRefresher` | 否 | `SSOProviders`、`mount.Mounter` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | 无 |
 | `authn/sso/oidc` | `authn.sso.oidc` | `LoginMethod` | 否 | `SSOProviders` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | 无 |
@@ -313,7 +313,22 @@ type Requirement struct {
 
 `authn/guard` 与 `authn/authntest` 不登记模块：`guard.Require` 返回加强认证的 gin 处理器，`authntest` 是测试构造口。
 
-**人机验证闸是排他的发送前接缝。** `authn.humanverify` 排他交付根包的 `HumanVerifier`：`Required` 回答本部署是否要求证明，`Provider` 与 `SiteKey` 回答机制与前端控件需要的公开标识，`Verify` 校验并消费一份证明。机制取封闭集 `off`、`pow`、`turnstile`，`off` 是缺省：关闭时 `Required` 为假、`Verify` 接受任何证明，一次发送都不多问。`pow` 由模块自带，经 `mount.Mounter` 在挂载基址下公开挂出挑战路由（缺省基址是 `POST /api/v1/auth/human/challenge`），挑战存 `kv` 并以比较并交换一次性消费；`turnstile` 把证明交 Cloudflare 的 siteverify，只接受主机名与（配置了时）action 相符的答案；站点校验以成功为假拒绝时按其错误码分档，证明本身缺失、无效、过期或已用读作无效证明，提供方自身的内部故障、部署的密钥或控件配置错误以及本包不认识的码读作提供方不可用。发送方在花费任何发送预算之前问这道闸：登录短信、短信第二因素、添加手机与自助添加邮箱的发送路径各自检查，缺证明、无效、过期、重放答 403 `human-verification-required`，过长的证明答 400，提供方或它的存储不可用答 503 且不发送。闸不持有发送状态、不发送消息，也不消耗任何预算；注册不发送消息，因此不问它。部署换用别的机制时自行交付 `authn.HumanVerifier` 并把本模块从命令树上撤下。键表见 [design-authn-config](design-authn-config.md)，发送路径的判定见 [design-authn-login](design-authn-login.md)，取舍见 [ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md)。
+**证明的消费方。** 下表按「是否发送用户请求的验证消息」列出当前路径。
+
+| 路径 | 校验证明 | 校验处 | 判据 |
+|---|---|---|---|
+| 短信登录 | 是 | `authn.sms.Send` | 用户请求的验证消息，经发送入口 |
+| 短信第二因素 | 是 | `authn.sms.Send` | 同上 |
+| 手机登记 | 是 | `authn.sms.Send` | 同上 |
+| 匿名短信重置 | 是 | `authn.sms.Send` | 同上 |
+| 自助添加邮箱 | 是 | 自助路由自己的 `checkHumanProof` | 邮件验证码不经过 `authn.sms.Send`，删掉这一次校验会使该路径无闸 |
+| 通知投递的短信 | 否 | — | 业务消息，不是用户请求的验证消息；由投递预算与跨渠道上界约束 |
+| 模板管理 | 否 | — | 一条消息也不发送 |
+| 注册 | 否 | — | 不发送消息 |
+
+上表按「是否发送用户请求的验证消息」判定，不是封闭集：新增一条发送路径时按同一判据归入，经过 `authn.sms.Send` 的由它校验，不经过的由该路径自己校验。
+
+**人机验证闸是排他的发送前接缝。** `authn.humanverify` 排他交付根包的 `HumanVerifier`：`Required` 回答本部署是否要求证明，`Provider` 与 `SiteKey` 回答机制与前端控件需要的公开标识，`Verify` 校验并消费一份证明。机制取封闭集 `off`、`pow`、`turnstile`，**`pow` 是缺省**：取用本模块而不写模式的装配要求一份自托管的工作量证明；关闭时 `Required` 为假、`Verify` 接受任何证明，一次发送都不多问，必须显式写 `off`。`pow` 由模块自带，经 `mount.Mounter` 在挂载基址下公开挂出挑战路由（缺省基址是 `POST /api/v1/auth/human/challenge`），挑战存 `kv` 并以比较并交换一次性消费；`turnstile` 把证明交 Cloudflare 的 siteverify，只接受主机名与（配置了时）action 相符的答案；站点校验以成功为假拒绝时按其错误码分档，证明本身缺失、无效、过期或已用读作无效证明，提供方自身的内部故障、部署的密钥或控件配置错误以及本包不认识的码读作提供方不可用。**证明在发送一处的入口校验并消费：** 经过 `authn.sms.Send` 的发送路径——短信登录、短信第二因素、手机登记与匿名短信重置——把 `HumanProof` 交给它，由它在放行表、队列容量与任何发送预算之前校验并消费一次，调用方不再自行校验；自助添加邮箱不经过 `authn.sms.Send`，由该路由自己校验，去掉那一次校验会使该路径无闸。缺证明、无效、过期、重放答 403 `human-verification-required`，过长的证明答 400，提供方或它的存储不可用答 503 且不发送。闸不持有发送状态、不发送消息，也不消耗任何预算；注册不发送消息，因此不问它；通知投递与模板管理不是发送验证消息的路径，不经这道闸。部署换用别的机制时自行交付 `authn.HumanVerifier` 并把本模块从命令树上撤下。键表见 [design-authn-config](design-authn-config.md)，发送路径的判定见 [design-authn-sms](design-authn-sms.md) 与 [design-authn-login](design-authn-login.md)，取舍见 [ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md)。
 
 租户准入层不在本表：它是 `pkg/tenant` 下的模块 `tenant.admission`，排他交付定序锚点 `tenant.Admission` 与根包的 `ScopeGuard`，方向是它 import 本功能目录的根包（[design-tenant-admission](../tenant/design-tenant-admission.md)）。登录引擎把两块内容放在 `pkg/authn/login/internal` 下：`resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份），`selfservice` 挂账户凭据自助路由；两者不登记模块，只被登录引擎构造与调用（[design-authn-login](design-authn-login.md)）。
 
@@ -342,7 +357,7 @@ type Requirement struct {
 
 ## UML 图
 
-下图给出根包上的接缝类型与它们的关系。图中画不出的约束是：判决与身份之间的那条边只在判决为通过、且 `Principal` 通过出口检查时成立；请求链上的身份只由网关写入，注入口只在写入方名单内的包里可达（见身份一节）；`Verdict` 与 `Identity` 的字段不导出，读取经包级函数。人机验证闸不在请求的认证路径上：发送路径在花费任何发送预算之前取用 `HumanVerifier`，把 `HumanProof` 交给它校验并消费。
+下图给出根包上的接缝类型与它们的关系。图中画不出的约束是：判决与身份之间的那条边只在判决为通过、且 `Principal` 通过出口检查时成立；请求链上的身份只由网关写入，注入口只在写入方名单内的包里可达（见身份一节）；`Verdict` 与 `Identity` 的字段不导出，读取经包级函数。人机验证闸不在请求的认证路径上：`authn.sms.Send` 在花费任何发送预算之前取用 `HumanVerifier`，把 `HumanProof` 交给它校验并消费；自助添加邮箱的邮件路径在自己的路由上取用同一个接缝。
 
 ```mermaid
 classDiagram
@@ -448,6 +463,9 @@ flowchart LR
     imp[authn/impersonation] --> R
     admin[authn/admin] --> R
     smsc[authn/sms] --> R
+    smsc --> budgetmod[pkg/sms/budget]
+    budgetmod --> db
+    budgetmod --> settings
     mountmod[authn/mount] --> R
     leaf[login 叶子 mfa 叶子 sso/oidc sms 厂商叶子] --> R
     guard[authn/guard] --> R
@@ -573,7 +591,8 @@ type SessionID string // 登录会话的公开标识（UUIDv7 文本），不是
 | 注册验证状态与联系方式预留 | db | 不会丢；未验证账户的门控、邮箱验证的目标与地址占用以它为准 |
 | 登录会话、刷新令牌、冒充记录 | db | 不会丢；撤销必须可靠，且要按账户列出与批量撤销 |
 | 失败退避计数（标识、账户、因素、号码、客户端） | db（`authn_throttles`） | 计数归零等于放宽暴力破解的上限 |
-| 短信验证码、尝试次数、发送预算 | db（`authn_challenges`） | 同上 |
+| 短信验证码、尝试次数 | db（`authn_challenges`） | 同上 |
+| 短信发送预算、跨渠道上界与失败尝试 | db（`sms_budget_events`，归 `sms.budget`） | 计数消失等于放宽发送与失败尝试的上限；两个渠道共数同一批行 |
 | SAML 断言标识去重集 | db（唯一约束） | 丢了就能在有效期内重放断言 |
 | IdP 配置、域声明 | db（密钥列加密） | 权威配置 |
 | 登录流程记录（OAuth 的 `state`、PKCE 校验串、`nonce`；SAML 的请求标识；WebAuthn 仪式数据，[REF-rfc6749](../../../references.md)、[REF-rfc7636](../../../references.md)、[REF-webauthn](../../../references.md)） | kv，有界有效期 | 流程失败，用户重来；方向是拒绝 |

@@ -252,6 +252,8 @@
 
 `authn.gate.conclusions` 的 `anonymous` 是可选路由上无凭据而放行的结局；`outcome` 各取值之和包含 `anonymous`。`authn.login.completions` 按方式聚合，看不到哪个 IdP 在失败，定位到 IdP 读日志里的 `idp` 字段。
 
+`authn.sms.budget.utilization` 是认证与通知共用的一个仪器名。通知投递以 `channel` 取 `notification` 上报同一个名字，`purpose` 取通知类型键（该键来自通知分类法，是登记的资源集而非本表列出的固定取值），`dimension` 取 `recipient-hourly`、`recipient-daily`、`tenant-distinct-hourly`、`attempt-hourly` 与 `ceiling`；跨渠道上界的点仍以 `purpose` 取 `shared`、`dimension` 取 `ceiling`。通知侧的登记与判据在 [design-notification-delivery](../notification/design-notification-delivery.md)。本表列出的 `channel` 只含 `authn`，是因为本文承载认证侧的仪器；两个渠道读同一个仪表名靠 `channel` 分开。
+
 ### 对外接口面
 
 - 本文登记的事件类型名与载荷字段名、审计动作名与明细键名、日志字段名、仪器名与属性名，对宿主可见；改名或改变含义按宿主可见面的破坏性变更处理。

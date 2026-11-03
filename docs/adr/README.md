@@ -156,7 +156,7 @@
 | [口令登录方式不可被关闭](adr-authn-password-method-required.md) |
 | [邮箱地址的占用由联系方式预留的唯一约束原子仲裁，未验证预占被接受](adr-authn-contact-claim.md) |
 | [回跳失败时把用户代理落回产品，机器码经 URL 片段携带](adr-authn-callback-failure-landing.md) |
-| [人机验证是缺省关闭的发送前闸，机制由部署选定](adr-authn-human-verification.md) |
+| [人机验证是缺省开启为工作量证明的发送前闸，机制由部署选定](adr-authn-human-verification.md) |
 | [成员关系删除的清理是同步接缝，事件只作崩溃窗口补偿](adr-authn-membership-cleanup.md) |
 
 ## 邀请
@@ -184,7 +184,7 @@
 |---|
 | [登录引擎：方法只交出事实，流程记录放 kv，比较并交换由引擎做](adr-authn-login-flow.md) |
 | [登录方式的发现：渠道来源是后端发现端点，方法自带描述符](adr-authn-login-method-discovery.md) |
-| [短信验证码：挑战状态机归 SMSCodes，发送归顶层能力 sms.Sender](adr-authn-sms.md) |
+| [短信验证码：挑战状态机归 SMSCodes，发送归顶层能力 sms.Sender，预算归共享台账](adr-authn-sms.md) |
 | [微信登录自写薄客户端，网站应用与公众号拆成两个模块](adr-authn-wechat.md) |
 | [社交与企业 OIDC 的校验桥：go-oidc 加 x/oauth2，state、PKCE、nonce 自做](adr-authn-oauth-flow.md) |
 | [社交登录提供方的端点与出站信任作为部署配置，缺省不变](adr-authn-social-endpoints.md) |
@@ -386,7 +386,7 @@
 | [通知能力做站内信收件箱、渠道偏好矩阵、类型分类法登记面、出站投递流水线与实时推送，同意台账刻意后置且不声明权限点](adr-notification-scope.md) |
 | [通知类型是发出它的业务模块的资源声明，通知模块是消费点，取材域取可用集](adr-notification-taxonomy.md) |
 | [渠道是封闭的平台词汇，可用性由装配决定，接缝缺席时跳过而不失败](adr-notification-channels.md) |
-| [出站投递经持久队列异步进行，逐渠道一个去重键，notification_sends 是幂等与结果账](adr-notification-delivery.md) |
+| [出站投递经持久队列异步进行，逐渠道一个去重键，notification_sends 是幂等与结果账，短信预算与认证共用台账，邮件预算留在键值计数器](adr-notification-delivery.md) |
 | [实时推送每副本一个 Hub，行先提交、事件后发，Hub 只值延迟](adr-notification-stream.md) |
 | [通知偏好路由按端名清单挂载，不挂在入口模块声明的每一个端上](adr-notification-endpoints.md) |
 

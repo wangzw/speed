@@ -22,7 +22,7 @@
 - **不认识租户。** 账户全局，登录请求不带租户名；没有按租户启停登录方式的能力，只有全局的紧急开关。租户级的认证强度策略与成员判定在请求期由 [tenant-admission](../tenant/design-tenant-admission.md) 执行，`pkg/authn` 的任何子包都不 import `pkg/tenant`。
 - **不经 `pkg/ratelimit` 限流。** 该模块的配额层落在限流阶段、排在鉴别阶段之内、无身份即放行、维度只有（租户，责任键），认证前的失败退避由 `Throttle` 承担（算法归 [authn-account](design-authn-account.md)）。
 - **不写网关自产的 401。** 网关为各端建成的挑战与「没有凭据」的 401 归 [authn-gate](design-authn-gate.md)；本模块只写自己处理器的应答。
-- **不提供登录页，不绘制人机验证控件。** 界面是宿主的前端，本模块只给 JSON 接口；人机验证的凭证由前端控件向部署选定的机制取得，本模块只校验它并据此放行发送，入口层面的洪泛限流是宿主的部署责任。
+- **不提供登录页，不绘制人机验证控件。** 界面是宿主的前端，本模块只给 JSON 接口；人机验证的凭证由前端控件向部署选定的机制取得，短信分支把凭证转交 `SMSCodes.Send`、由它在发送入口校验，自助添加邮箱的邮件分支在本路由校验；入口层面的洪泛限流是宿主的部署责任。
 - **不做授权判定。** 本模块的 403 只转述认证之外的策略，且只出现在 authn 自己的处理器里（[authn-admin](design-authn-admin.md)）。
 
 ## 外部接口契约
@@ -153,7 +153,7 @@ type Proof struct {
 - 不自己开户、并入或建会话；不碰 HTTP、gin（[REF-gin](../../../references.md)）、会话与令牌；不自己读写流程记录，比较并交换归引擎。
 - 失败时不得因标识存不存在而在耗时与错误形态上有差别。
 - `Name()` 全局唯一。
-- 发送短信的方法在每次调用 `SMSCodes.Send` 之前核对 `Start.SendsLeft` 或 `FlowState.SendsLeft`，并按「短信发送的每流程上限」报告已发条数。
+- 发送短信的方法在每次调用 `SMSCodes.Send` 之前核对 `Start.SendsLeft` 或 `FlowState.SendsLeft`，并按「短信发送的每流程上限」报告已发条数；人机验证的证明原样交给 `SMSCodes.Send`，方法不自行校验，否则一次性证明会被消费两次。
 - panic 由引擎 `recover`，按该方法故障收口为 503，记 Error 与调用栈；一个方法的缺陷不波及其他方法。
 
 方法不依赖 HTTP 与存储，所以可以脱离二者单测：测试直接构造 `Start`、`FlowState`、`StepInput`，断言回答的种类。
@@ -256,21 +256,21 @@ type Proof struct {
 
 **渠道与资格。** 请求带 `channel`（`email` 或 `sms`）与对应的标识。`email` 只接受 `VerifiedVia = email-code` 的邮箱标识，`sms` 只接受 `VerifiedVia = sms-code` 的手机标识；IdP 断言、邀请、管理员断言、`self` 与未证明预留都不作重置依据。是否被选作登录方式或作默认联系地址不影响这项资格：重置只看该值已被验证码证明的所有权（REQ-security-020、REQ-security-041）。账户必须是启用的用户账户并持有口令凭据；没有口令的账户不借这条路径设置首个口令，停用与删除的账户不合格。任一项不成立时不发送消息，走与合格目标相同的应答与验证路径。
 
-**渠道由用户选择。** 同一个账户同时具备已证明邮箱与已证明手机时两种渠道都可走，只有一种时只有那一种可走。邮箱经根包可选的 `EmailResetCodeSender` 投递，短信经 `SMSCodes.Send` 的 `reset` 用途发送，模板是 `authn.code.reset`。每个渠道的发送都先核验人机验证门槛，再核验预算。
+**渠道由用户选择。** 同一个账户同时具备已证明邮箱与已证明手机时两种渠道都可走，只有一种时只有那一种可走。邮箱经根包可选的 `EmailResetCodeSender` 投递，短信经 `SMSCodes.Send` 的 `reset` 用途发送，模板是 `authn.code.reset`。人机验证的证明由发送入口校验：邮箱渠道在自己的路由上、发码之前校验并消费；短信渠道把证明交给 `SMSCodes.Send`，由它在任何发送预算之前校验并消费。证明被拒绝的请求答 403 `human-verification-required` 或 400，不按「已受理」的同形应答处理；预算超限则一律抑制发送并仍答 202。
 
 **绑定与状态。** 重置有独立的绑定 cookie（`__Host-authn-reset`，`Secure`、`HttpOnly`、`SameSite=Strict`、`Path=/`；允许不安全传输时用不带 `__Host-` 的名字且不设 `Secure`，[REF-rfc6265bis](../../../references.md)）与独立的 KV 记录，键是 cookie 令牌的 SHA-256。记录保存账户标识与标识行标识（不合格目标为空）、渠道、规范化标识的带密钥摘要、真实或抑制的标记、码的摘要（邮箱为发码时的码摘要；真实短信在验证前是挑战标识，通过后改记该码的本地摘要，使同一个码可以按成功再答一次；抑制记录为本地随机摘要）、状态、每码尝试计数、已发送条数、码过期时刻与记录期限，不保存邮箱或手机原文；记录期限严格长于码过期时刻，因此码过期答 `401 login-failed`、记录过期答 `401 flow-invalid` 都可达。状态是 `sent`、`verified`、`processing`、`failed`；`processing` 是写口令期间的内部态，`GET current` 对它答 `401 flow-invalid`；写入成功即删除记录，没有 `done`。每次迁移是比较并交换，并发败者按 `flow-invalid` 拒绝。记录过期、被删除、绑定不符或状态不符都读作 `401 flow-invalid`，唯一的例外是 `verify` 在 `failed` 上仍答 `401 login-failed`，与错码同形。每条记录只属于请求它的 cookie，另一个 cookie 不能兑现它的码；不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时，各自得到自己的记录，发送被通道的重发窗口抑制并答 202。`expires_in` 在 `sent` 取该渠道的码有效期（短信 `authn.sms.code-ttl`、邮箱 `authn.login.email-code-ttl`），在 `verified` 取 `authn.login.password-reset-ticket-ttl`；验证通过时同时把绑定 cookie 的 `Max-Age` 刷新到票据期限。
 
 | 路由 | 行为 |
 |---|---|
-| `POST B/password-reset` | 体 `{channel, identifier, human_proof?}`。规范化标识、判定资格、预留预算、发送或写抑制记录，应答 `202 {state:"sent", expires_in, resend_after}`；合格与不合格目标的应答体、响应头与 cookie 逐字相同。同一 cookie 的存活 `sent` 记录、渠道与标识摘要都相同时视为重发：未到重发间隔答 429；短信渠道的已发送条数达到 `authn.sms.per-flow-sends` 后抑制发送并仍答 202。不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时抑制发送并仍答 202。 |
+| `POST B/password-reset` | 体 `{channel, identifier, human_proof?}`。规范化标识、判定资格、预留预算、发送或写抑制记录，应答 `202 {state:"sent", expires_in, resend_after}`；合格与不合格目标的应答体、响应头与 cookie 逐字相同。证明缺失、无效、过期或重放，或长过字段上限时答 403 `human-verification-required` 或 400 `bad-request`，不写记录、不发送，也不按 202 处理。同一 cookie 的存活 `sent` 记录、渠道与标识摘要都相同时视为重发：未到重发间隔答 429；短信渠道的已发送条数达到 `authn.sms.per-flow-sends` 后抑制发送并仍答 202。不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时抑制发送并仍答 202。 |
 | `GET B/password-reset/current` | 读绑定记录：`sent` 答 `{state:"sent", expires_in, resend_after}`，`verified` 答 `{state:"verified", expires_in}`；不答账户、标识或码；`processing` 与其他不符状态答 `401 flow-invalid`。 |
 | `DELETE B/password-reset/current` | 删除记录并清 cookie；幂等，没有绑定、没有记录或开关已关闭都答 204，依赖不可用答 503；它不发送、不改账户。 |
 | `POST B/password-reset/verify` | 体 `{code}`。真实短信经 `SMSCodes.Verify` 核验，真实邮箱比对带盐摘要；抑制记录比对记录里的本地诱饵摘要，不调用 `SMSCodes.Verify`；每码尝试由本记录自己的原子计数约束。通过后 `sent` 换成 `verified`，应答 `{state:"verified", expires_in}`。已 `verified` 的记录收到同一个码时按成功答同样的体（幂等：一次应答丢失不该把已证明的码变成失效流程）。错码、码过期、已用、抑制路径与记录自己的尝试用尽同答 `401 login-failed`；尝试用尽后记录转 `failed`，后续答复仍答 `401 login-failed`，与错码同形。 |
 | `POST B/password-reset/complete` | 体 `{new_password}`，只在 `verified` 上接受。先重读开关与该渠道的可用性，关闭时答 403 `password-reset-closed`；再重核资格（账户仍启用、仍有凭据、标识仍属该账户且仍由同一证明渠道证明），再写强制档审计 `authn.password.reset` 的 `attempted` 行，再 `Passwords.Set`（`By=reset`、`Channel` 取本次渠道、`MustChange=false`、`RequireActive`、`RequireExisting`、`RequireIdentifier` 取记录里的标识行、`AdvanceValidAfter`），成功后撤销该账户全部 browser 与 token 会话，删除记录并清 cookie，应答 204。不建立会话、不签发令牌。口令策略拒绝答 400 `bad-request`，记录留在 `verified`，可用另一个口令重试；账户不再合格答 403 `password-reset-unavailable`。 |
 
-**同形与抑制。** 不合格目标不发送消息，但走与合格目标相同的记录与验证路径：邮箱写一条码摘要为随机诱饵的记录，短信先尝试 `SMSCodes.Send`（`Deliver=false`）取得抑制挑战行；若 `Send` 因任何发送预算或重发窗口超限返回 `ErrThrottled`，同样写一条抑制记录并答 202。发送步一律答 202；验证步对抑制记录用本地随机摘要做比较与计数，不调用 `SMSCodes.Verify`，恒不通过并答同一个 401 `login-failed`；真实记录才调用 `SMSCodes.Verify`。发送预算的任何超限都抑制发送并仍答 202；只有同一 cookie 的重发间隔与登录的 `ip-limit` 答 429，二者都与账户无关。
+**同形与抑制。** 不合格目标不发送消息，但走与合格目标相同的记录与验证路径：邮箱写一条码摘要为随机诱饵的记录；短信先尝试 `SMSCodes.Send`（`Deliver=false`）取得抑制的台账行与挑战行，该调用同样先过人机验证；若 `Send` 因任何发送预算、失败尝试预算、跨渠道上界或重发窗口超限返回 `ErrThrottled`，同样写一条抑制记录并答 202；若 `Send` 因证明缺失、无效、过期或重放返回 `ErrHumanVerificationRequired`，答 403 `human-verification-required`，不写记录、不发送。发送步除证明拒绝外一律答 202；验证步对抑制记录用本地随机摘要做比较与计数，不调用 `SMSCodes.Verify`，恒不通过并答同一个 401 `login-failed`；真实记录才调用 `SMSCodes.Verify`。发送预算的任何超限都抑制发送并仍答 202；只有同一 cookie 的重发间隔与登录的 `ip-limit` 答 429，二者都与账户无关。
 
-**预算与重发。** 邮箱复用 `authn.login.email-*` 的数值设置，按重置用途使用独立的计数键；按账户的预算只在合格目标上计数，超限抑制。短信复用 `authn.sms` 的按号码与按来源预算，另加 `authn.sms.global-hourly-reset` 的全局小时预算；`reset` 不填 `Account`，不设按账户维度。重发窗口按发往的地址或号码持有，跨渠道用途共享：一个收件箱或号码在窗口内只发一条码。邮箱的发送交给有界工作池，响应路径不等待载体；工作池满时在写记录之前答 503，合格与抑制目标走同一次容量判定。短信发送本来就在 `authn.sms` 的有界工作池里。人机凭证在任何预算被消耗之前核验。
+**预算与重发。** 邮箱复用 `authn.login.email-*` 的数值设置，按重置用途使用独立的计数键；按账户的预算只在合格目标上计数，超限抑制。短信复用 `authn.sms` 的按号码、按来源、按来源不同目的地、按来源确定失败与按用途的发送和失败预算，另受部署的跨渠道上界约束；`reset` 不填 `Account`，不设按账户维度。重发窗口按发往的地址或号码持有，跨渠道用途共享：一个收件箱或号码在窗口内只发一条码。邮箱的发送交给有界工作池，响应路径不等待载体；工作池满时在写记录之前答 503，合格与抑制目标走同一次容量判定。短信发送本来就在 `authn.sms` 的有界工作池里。人机凭证在发送入口、任何预算被消耗之前核验；短信路径在 `SMSCodes.Send` 内。
 
 **写入与结算。** `POST B/password-reset/complete` 在写口令之前写强制档审计 `authn.password.reset` 的 `attempted` 行；审计写不成即答 503，口令不变，记录留在 `verified`。`Passwords.Set` 的 `AdvanceValidAfter` 在同一事务里把 `valid_after` 推进到本秒之后，撤销语句随后结束该账户的 browser 与 token 会话；`Set` 成功后补一条 `success` 审计行，拒绝时补一条 `denied` 行，两条都用同一个 `action_id` 关联。`Set` 拒绝时口令不变，记录回到 `verified`；撤销失败只记 Error，口令已改，应答仍是 204。`authn.password.changed` 由 `Set` 发出，`by=reset`、`channel` 取本次渠道；`authn.session.revoked` 由撤销语句发出，`reason_class=password-change`。重置不结束发起者的 cookie 冒充会话（它属于发起者）；目标账户的 bearer（[REF-rfc6750](../../../references.md)）冒充令牌按 `valid_after` 失效，这是目标凭据变更的自然结果。`success`/`denied` 行写失败只记 Error 与指标，不改变已提交的口令；`attempted` 行是这条路径的强制留痕。
 
@@ -345,6 +345,7 @@ type Proof struct {
 | 全部 `LoginMethod` | 经 `ResolveAll` | 缺席合法，但没有任何方法即启动期 `ErrNoLoginMethod` |
 | `Tokens` | 可选 | `Issue` 与 `NewRefresh`；缺席时 `delivery=token` 不启用，启动诊断写一行 |
 | `SMSCodes` | 可选 | `POST B/phone` 与 `POST B/phone/verify` 经它发码与校验；匿名口令重置的短信渠道经它发送 `reset` 用途并核验挑战；缺席时不挂手机路由、不发布短信重置渠道，启动诊断写一行。短信登录方式的发码在 `authn.login.sms` 里，不经引擎 |
+| `HumanVerifier` | 可选 | 自助添加邮箱的邮件分支在发码之前经它校验并消费证明；短信分支把证明交给 `SMSCodes.Send`，不在这里校验。缺席或闸关闭时整步跳过 |
 | `EmailCodeSender` | 可选 | `POST B/identifiers` 的邮箱分支经它把验证码投递到该地址；缺席时该分支答 503 `unavailable`，启动诊断写一行。验证码的产生、记录与比对在本模块的自助件里，不经它 |
 | `EmailResetCodeSender` | 可选 | 匿名口令重置的邮箱渠道经它投递重置验证码；未实现或未装配时邮箱重置渠道不发布。它的投递在有界工作池里执行，响应路径不等待 |
 | `SSOProviders` | 可选 | IdP 发起的 SAML 读提供方行的 `allow_idp_initiated` |
@@ -558,7 +559,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 4. 校验并保存 `return_to`，确定 `binding`，生成流程令牌，写入 `first` 状态的记录。kv 不可用时答 503。
 5. 带 `call-budget` 调用方法的 `Begin`，按「答复与迁移」处理它交回的 `Step`。
 
-发送短信的第一步先过人机验证：`input` 带着方法描述符声明的 `phone` 字段且该字段非空时，引擎在写流程记录之前校验 `human_proof`。部署不要求人机验证时整步跳过；缺少、无效、过期或已用的凭证答 403 `human-verification-required`，超过 8 KiB 的答 400 `bad-request`，校验后端或它依赖的存储不可用答 503。三者都不写记录、不调用方法、不发送，也不消耗任何发送预算。
+发送短信的第一步把 `human_proof` 交给方法的 `Begin`，由方法原样转交 `SMSCodes.Send`；证明在 `authn.sms.Send` 里、在放行表、队列容量与任何发送预算之前校验并消费一次。部署不要求人机验证时整步跳过；缺少、无效、过期或已用的凭证答 403 `human-verification-required`，超过 8 KiB 的答 400 `bad-request`，校验后端或它依赖的存储不可用答 503。**拒绝发生在流程记录已经写下之后**：第 4 步写入的记录先落在 kv 里，第 5 步的 `Begin` 才调用发送；一次被拒绝的证明因此留下一条流程记录，它只存活到 `authn.login.flow-ttl` 到期（kv 的生存期，没有另设清扫协程）。拒绝的应答是故障，流程 cookie 不随故障写出，客户端拿不到这条记录的绑定令牌，记录因此不能被任何请求绑定或答复；记录停在 `first` 且没有方法步，即使有令牌也无步可答。它不写台账、不写挑战行、不占任何发送预算、不发送，也不计一次答复（`Begin` 不是客户端答复），来源地址的粗粒度减负也因这一步没有报告发送而不计数。`POST B/flows/authenticated` 的 `step-up` 从第一因素起始时判据相同：记录先写，证明在发送入口校验，被拒绝时记录留在原处等到期。
 
 一个浏览器同一时刻只有一个流程 cookie，所以后开始流程的标签页会顶掉先前的流程。
 
@@ -574,7 +575,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 6. 写记录：`account` 与 `session` 取身份的账户与会话，`delivery` 取会话的种类（`browser` 种为 `session`，`token` 种为 `token`），`binding` 与 `return_to` 取自请求，`answers` 与 `sends` 从零起。
 7. 按起始状态做第一次调用，按「答复与迁移」处理回答：`first` 以 `Start{Purpose, Account, Fields, SendsLeft}` 调方法的 `Begin`；`enroll` 以 `Fields` 调 `MFA.Enroll`；`second` 不调用，应答 `next.kind = factor`，清单即记录里的 `mfa.offered`。
 
-`step-up` 从第一因素起始时，`method` 声明的 `phone` 字段非空同样在写记录之前校验 `human_proof`，判据与拒绝形状同「开始流程」。
+`step-up` 从第一因素起始时，发送短信的那一步同样把 `human_proof` 交给 `SMSCodes.Send` 校验；记录在第 6 步已经写下，拒绝的判据与拒绝形状同「开始流程」，留下一条等到期的记录。
 
 下表是各目的在起始阶段的取值，目的取值是封闭集：
 
@@ -607,7 +608,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 `POST B/flows/answer` 先校验绑定，读出记录，再核对：`seq` 等于记录的 `seq`，否则 `ErrStepOutOfOrder`；`step` 与记录状态相容，`answer` 在 `first` 或 `signup`，`factor` 只在 `second`，`enroll` 只在 `enroll`，`complete` 只在 `ready`；`answers` 未达 8。`seq`、`step` 与 `answers` 任一不符都应答 `flow-invalid`。`step=answer` 在 `first` 交给方法的 `Answer`，在 `signup` 由引擎按用户名处理；`step=factor` 与 `step=enroll` 交给 `MFA`，具体字段由因素决定（[authn-mfa](design-authn-mfa.md)）；`step=complete` 由引擎执行终态动作。
 
-答复带着第一因素方法描述符声明的 `phone` 字段且该字段非空时，引擎在进入这一步之前校验 `human_proof`；`step=factor` 选中的因素种类是 `sms` 时，在启动该因素挑战之前校验。两者都在任何发送预算之前，判据与拒绝形状同「开始流程」。
+答复里的 `human_proof` 由引擎原样交给方法与因素；引擎自己不校验。`step=answer` 的短信方法把证明交给 `SMSCodes.Send`，`step=factor` 选中的因素种类是 `sms` 时由 `authn.mfa.sms` 把证明交给同一个 `Send`，两者都在发送入口、任何发送预算之前校验并消费。一次被拒绝的证明交 `StepRefused`，`submit` 类的一步保留流程记录（只计一次答复，记录等到期），对外的 403 或 400 与「开始流程」同形。
 
 迁移是读出旧字节、改完后 `CompareAndSwap(旧, 新)`。交换落空说明被并发改动，当前请求按流程失效拒绝，不重试。每个方法的 `StepRefused` 只对 `submit` 类的一步保留流程，对 `callback` 类的一步作废流程：授权码与断言一次性，重来要重新开始。
 
@@ -844,7 +845,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 |---|---|
 | `PUT B/password` | 改口令；请求体的当前口令可空（经提供方开户的账户没有口令），经 `SetPasswordOptions.Current` 交给 `Passwords.Set`，由账户模块校验当前口令与策略、失败即 `ErrPasswordPolicy`（400）或 `ErrInvalidCredentials`（401），本路由不单独计数退避；成功后处理器调 `Sessions.Rotate` 与 `Sessions.RevokeAccount(except = 当前会话)`；账户没有可作登录名的标识（没有用户名也没有被选作登录方式的已验证邮箱）时 409 `login-identifier-required` |
 | `POST B/phone`、`POST B/phone/verify` | 添加或更换手机，经短信验证新号码（`verified_via = sms-code`）；通过后是已验证的手机标识，不自动选作登录方式；是否作登录方式经 `PUT B/identifiers/:id` 选择（REQ-account-014）；两步本身都不要求新鲜认证，验证不轮换当前会话也不结束其他会话，但新号码取代已启用短信因素的发码目标时，证明要求新鲜认证；服务端状态与步骤见「手机号验证」 |
-| `POST B/identifiers` | 添加本人登录标识，体 `{kind, value}`：`kind` 取 `username` 或 `email`，手机走 `POST B/phone`。用户名是登录名，无所有权可证，一步写入，要求新鲜认证，`verified_via = self`；邮箱先经 `EmailCodeSender` 发码并在 kv 写一条按会话的待验证记录，应答 `{state: "pending", expires_in, resend_after}`（用户名成功应答 `{state: "added"}`）；没有 `EmailCodeSender` 时邮箱分支答 503 `unavailable`；发码之前读 `Accounts.Lookup` 与 `SignupVerification.PendingAccountByContact`，地址已被**其他**账户持有或留有未证明预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算，读失败答 503。账户自己已经持有的地址不在此列：它是一次重发到该地址的证明请求，发码照常，兑现后由账户模块就地证明那一行。对同一收件箱的预算形式（局部部分从第一个 `+` 起的后缀在所有域丢弃，`gmail.com` 与 `googlemail.com` 另外去掉局部部分的点并归一为同一个域，[REF-gmail-dots](../../../references.md)）、间隔内的重发答 429 `throttled`（窗口按收件箱持有，跨会话与账户共享，一个收件箱在一次窗口内只发一条码）；用户名的成功写入撤销其余会话；邮箱分支要求身份与登录会话，本身不要求新鲜认证，也不轮换会话，其证明的后果见 `POST B/identifiers/verify`。`verified_via` 由写标识的这一步定，非管理员自陈，见 [ADR-authn-selfservice-identifier](../../../adr/adr-authn-selfservice-identifier.md)。邮箱验证通过后是已验证的邮箱记录，它从登记起就是联系方式、`contact` 为真，`sign_in` 为假；账户此前没有默认联系地址时它成为默认联系地址，是否选作登录方式经 `PUT B/identifiers/:id` 选择（REQ-account-061、REQ-account-062、REQ-account-063、REQ-account-064） |
+| `POST B/identifiers` | 添加本人登录标识，体 `{kind, value}`：`kind` 取 `username` 或 `email`，手机走 `POST B/phone`。用户名是登录名，无所有权可证，一步写入，要求新鲜认证，`verified_via = self`；邮箱先经 `EmailCodeSender` 发码并在 kv 写一条按会话的待验证记录，应答 `{state: "pending", expires_in, resend_after}`（用户名成功应答 `{state: "added"}`）；没有 `EmailCodeSender` 时邮箱分支答 503 `unavailable`；发码之前先由本路由校验并消费人机验证证明（邮件验证码不经过 `authn.sms.Send`，这条路径自己校验），再读 `Accounts.Lookup` 与 `SignupVerification.PendingAccountByContact`，地址已被**其他**账户持有或留有未证明预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算，读失败答 503。账户自己已经持有的地址不在此列：它是一次重发到该地址的证明请求，发码照常，兑现后由账户模块就地证明那一行。对同一收件箱的预算形式（局部部分从第一个 `+` 起的后缀在所有域丢弃，`gmail.com` 与 `googlemail.com` 另外去掉局部部分的点并归一为同一个域，[REF-gmail-dots](../../../references.md)）、间隔内的重发答 429 `throttled`（窗口按收件箱持有，跨会话与账户共享，一个收件箱在一次窗口内只发一条码）；用户名的成功写入撤销其余会话；邮箱分支要求身份与登录会话，本身不要求新鲜认证，也不轮换会话，其证明的后果见 `POST B/identifiers/verify`。`verified_via` 由写标识的这一步定，非管理员自陈，见 [ADR-authn-selfservice-identifier](../../../adr/adr-authn-selfservice-identifier.md)。邮箱验证通过后是已验证的邮箱记录，它从登记起就是联系方式、`contact` 为真，`sign_in` 为假；账户此前没有默认联系地址时它成为默认联系地址，是否选作登录方式经 `PUT B/identifiers/:id` 选择（REQ-account-061、REQ-account-062、REQ-account-063、REQ-account-064） |
 | `POST B/identifiers/verify` | 提交自助邮箱验证码，体 `{code}`：读会话的待验证记录，比对码；不符计数、用尽五次即废、记录过期靠键的生存期；通过才以 `verified_via = email-code` 调 `AccountAdmin.AddIdentifier` 证明该地址、删记录；证明本身不要求新鲜认证，也不轮换当前会话或撤销其他会话，但若这条邮箱将成为账户的默认联系地址或唯一邮箱地址（因而自动登录方式），证明要求新鲜认证。写标识是权威的占用判定：账户自己已经持有的同值邮箱标识由 `AddIdentifier` 就地提升为已证明（幂等，不新增第二行），所以对注册时留下的未证明地址或管理员预置的地址兑现验证码会成功；地址在发码之后被**别的**账户取得时 `ErrContactTaken` 答 409 `email-taken`，`ErrAccountExists` 只在绕过预留表的重复行上出现，同样答 409；没有待验证记录（或记录不属于本账户）与错码同答 401 `login-failed`。验证不改变登录方式上的选择；账户此前没有默认联系地址时它成为默认联系地址（REQ-account-062、REQ-account-063） |
 | `PUT B/identifiers/:id` | 设置本人一条邮箱或手机的登录方式与默认联系地址，体 `{contact, sign_in, default_contact}`，字段可省略：`contact` 对登记的邮箱与手机恒为真，写成假答 400 `bad-request`，写成真不改变任何事实；`sign_in` 为真要求该标识已证明；`default_contact` 只接受已证明的邮箱，为真时把它设为默认联系地址并清除同一账户此前的选择。未证明的 `sign_in`、不属于本人的标识或不是邮箱的默认选择答 400 `bad-request`；`sign_in` 置假会留下没有登录方式的账户时答 409 `last-login-method`，带口令凭据的账户因此失去最后一个被选作登录方式的已验证邮箱时答 409 `login-identifier-required`，两种情况都不生效。改动 `sign_in` 或 `default_contact` 要求新鲜认证并过 CSRF；写 `contact` 不要求新鲜认证，只过 CSRF。 |
 | `DELETE B/identifiers/:id` | 删本人持有的标识；标识不属本人与不存在同形，都答 400 `bad-request`；删除用户名答 409 `username-immutable`（`ErrUsernameImmutable`），删除不生效（[ADR-authn-username-permanent](../../../adr/adr-authn-username-permanent.md)）；带口令凭据的账户删除最后一个被选作登录方式的已验证邮箱时答 409 `login-identifier-required`，删除不生效，这条规则先于下一条且答案不变；删除任何标识后，账户若不再持有口令凭据、被选作登录方式的已验证手机号与外部身份中的任何一种，答 409 `last-login-method`，删除不生效，通行密钥不算，未证明或未被选中的手机号也不算，无口令账户的最后一个登录名也按此判；不撤销会话；`authn.identifier.changed` 由 [authn-account](design-authn-account.md) 在删除时发布 |
@@ -864,7 +865,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 
 手机号验证不是流程，没有流程记录；验证码与号码的对应关系放在 kv 里，键是 `authn:phone:<发起会话标识的 SHA-256 十六进制>`，一个会话同一时刻至多一条，值是 `{account, phone, challenge_id}`，有效期不长于挑战行的有效期（[authn-sms](design-authn-sms.md)）。客户端不提交挑战标识与号码之外的凭据，也无从选择验证哪个号码。
 
-- **`POST B/phone {phone}`**：规范化号码；`SMSCodes.Send(Purpose = enroll, Account = 身份的账户, Deliver = true)`；写记录，覆盖该会话先前的记录；应答 `{expires_in, resend_after}`，不含挑战标识。这条路由不经流程记录，`SendCode.Locale` 取 `smsLocale(ctx)`（`i18n.FromContext` 定下的语言，取不到时为空串），由短信模块解析到载体声明的语言、落不到时用配置的默认语言。号码已被别的账户占用时同样应答并发码，占用情况不外露，冲突在 `verify` 写入标识时以 `ErrAccountExists` 为准。
+- **`POST B/phone {phone}`**：规范化号码；`SMSCodes.Send(Purpose = enroll, Account = 身份的账户, Deliver = true, Source = 请求来源, Proof = human_proof)`；写记录，覆盖该会话先前的记录；应答 `{expires_in, resend_after}`，不含挑战标识。证明由 `SMSCodes.Send` 在放行表、队列容量与任何发送预算之前校验并消费，缺失或无效答 403 `human-verification-required`、过长的答 400、提供方不可用答 503，三者都不发码、不写记录、不占预算。这条路由不经流程记录，`SendCode.Locale` 取 `smsLocale(ctx)`（`i18n.FromContext` 定下的语言，取不到时为空串），由短信模块解析到载体声明的语言、落不到时用配置的默认语言。号码已被别的账户占用时同样应答并发码，占用情况不外露，冲突在 `verify` 写入标识时以 `ErrAccountExists` 为准。
 - **`POST B/phone/verify {code}`**：读取该会话的记录，账户与身份不一致或记录不存在为 401 `flow-invalid`；先 `Throttle.Check(ScopePhone, 号码摘要)`，再 `SMSCodes.Verify(challenge_id, code)`，被拒 `Throttle.Fail`，通过 `Throttle.Succeed`；通过后以记录里的号码调 `AccountAdmin.AddIdentifier(账户, IdentifierPhone, 号码, sms-code)`（账户已有手机标识时即更换，规则归 [authn-account](design-authn-account.md)），删除记录；证明本身不要求新鲜认证，不轮换当前会话，也不撤销其他会话，但账户有已启用的短信因素、且新号码将取代它发码的目标时，证明要求新鲜认证。通过后手机是已验证标识，不自动选作登录方式（REQ-account-014）。
 - **kv 不可用**：`POST B/phone` 与 `POST B/phone/verify` 都答 503，不发码、不校验。记录丢失只使验证失败，用户重发。
 

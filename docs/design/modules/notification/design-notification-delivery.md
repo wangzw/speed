@@ -4,9 +4,9 @@
 
 本模块交付**出站投递流水线**：一条投递意图（`notification.Dispatch`）经校验后进入一条持久作业队列，由本模块登记的作业处理器消费；处理器再校验一次，按收件人解析有效渠道，逐渠道把消息送到对应接缝，并把每个渠道的终态记进本模块自己的账（`notification_sends`）。
 
-提交面 `Dispatcher.Dispatch` 校验、判定目的地归属、计投递预算并入队——**不发送、不渲染、不写本模块的表**；消费过半程的是 `jobs.Handler`：它从队列取到作业、再跑一遍校验（worker 可能见到校验方从未见过的载荷：作业由别的提交方写入、或那一行被改动过）、对带目的地的载荷再判一次归属，按收件人解析有效渠道，逐渠道发送，落账。渠道的可用性由装配决定，接缝缺席时该渠道跳过、记一条 `skipped`，不当作失败。
+提交面 `Dispatcher.Dispatch` 校验、判定目的地归属、在有效渠道含外部渠道时计对应的邮件或短信预算、把投递入队——**不发送、不渲染、不写本模块的表**，但会写一行共享台账。消费过半程的是 `jobs.Handler`：它从队列取到作业、再跑一遍校验（worker 可能见到校验方从未见过的载荷：作业由别的提交方写入、或那一行被改动过）、对带目的地的载荷再判一次归属，按收件人解析有效渠道，逐渠道发送，落账；一条短信在确定没有离开进程时退还提交面记下的那一行。渠道的可用性由装配决定，接缝缺席时该渠道跳过、记一条 `skipped`，不当作失败。
 
-本模块排他交付提交面 `notification.Dispatcher`，并在 `Init` 里向 `jobs.Handlers` 登记自己的处理器。它经 [notification.preferences](design-notification-preferences.md) 的 `Effective` 读有效集，经 [notification.inbox](design-notification-inbox.md) 写站内信，经 `mail.Sender` 发邮件、经 `sms.Registry` 与 `sms.Sender` 发短信，经 `authn.Accounts` 读收件人的标识符并判定派发携带的目的地是否属于收件人。邮件与短信渠道在本进程能否兑现，本模块以[条件特性](../../../glossary.md)经 `feature.Board` 的 `Post` 报告（见「渠道的条件特性」）。
+本模块排他交付提交面 `notification.Dispatcher`，并在 `Init` 里向 `jobs.Handlers` 登记自己的处理器。它经 [notification.preferences](design-notification-preferences.md) 的 `Effective` 读有效集，经 [notification.inbox](design-notification-inbox.md) 写站内信，经 `mail.Sender` 发邮件、经 `sms.Registry` 与 `sms.Sender` 发短信，经 `authn.Accounts` 读收件人的标识符并判定派发携带的目的地是否属于收件人，经 `kv.KV` 计邮件的固定窗口预算，经 `budget.Store` 记录短信尝试并读共享台账的计数与跨渠道上界。邮件与短信渠道在本进程能否兑现，本模块以[条件特性](../../../glossary.md)经 `feature.Board` 的 `Post` 报告（见「渠道的条件特性」）。
 
 ### 非职责
 
@@ -15,6 +15,7 @@
 - **不拥有账户与标识符。** 收件人的标识符与目的地所属账户经 `authn.Accounts` 只读取得；本模块不写账户表、不产出标识符，也不为收件人推导一个目的地。
 - **不拥有作业队列的执行。** 认领、租约、退避、多副本分摊归 [jobs](../jobs/design-jobs.md) 的队列模块；本模块只登记处理器、只用提交面。
 - **不做站内信的实时推送。** 一条新收件箱行推给已连接的客户端归 [notification.stream](design-notification-stream.md) 的 SSE Hub。
+- **不拥有短信预算台账。** `sms_budget_events` 归 `sms.budget`，本模块只经 `budget.Store` 写一行尝试、读计数与跨渠道上界；窗口、上限与超限后的应答由本模块自己的设置与 `sms.ceiling-hourly` 给出。邮件不写这张台账，它的固定窗口预算计在 `kv.KV` 的计数器上。
 - **不重试厂商。** 邮件与短信的载体都不重发；本模块对一次 `ErrUncertain` 不盲目重发（见错误与失败语义）。
 - **不声明权限点。** 提交面是代码接缝，读谁可提交由宿主侧的授权决定（[ADR-notification-scope](../../../adr/adr-notification-scope.md)）。
 - **不管外部联系人的同意台账。** 该台账刻意后置（见 [notification](design-notification.md) 的范围一节）。
@@ -25,9 +26,9 @@
 
 | 登记单元 | 模块名 | 交付 | 构造期依赖 |
 |---|---|---|---|
-| `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*authn.Accounts)(nil)`、`(*kv.KV)(nil)`；可选 `(*settings.Store)(nil)`、`(*log.Logger)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
+| `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*authn.Accounts)(nil)`、`(*budget.Store)(nil)`；可选 `(*settings.Store)(nil)`、`(*observability.MeterProvider)(nil)`、`(*log.Logger)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
 
-`kv.KV` 承载投递预算的计数器，是硬依赖：没有它就无法在入队前计数，而不计数的预算会放行每一条投递，方向与要求相反。`authn.Accounts` 是目的地归属规则的读取面，同样是硬依赖：没有它就无法判定派发携带的目的地是否属于收件人，而判不了归属就放行任意地址，方向与要求相反。`settings.Store` 列为可选依赖，使 settings 模块先于本模块初始化、快照已加载；缺席时每个预算各读自己的声明默认值，是合法装配。可选依赖的缺席都不使本模块启动失败：`log.Logger` 缺席则外部发送记在进程默认 logger 上；`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见「渠道的条件特性」）。**提交面 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。
+`budget.Store` 是共享短信台账，是硬依赖：没有它就无法在入队前核对并占用短信预算，而不能计数的预算会放行每一条短信，方向与要求相反。`kv.KV` 是邮件固定窗口计数器的存储，同样是硬依赖：没有它就无法在入队前核对并占用邮件预算，而不能计数的预算会放行每一封邮件，方向与要求相反。`authn.Accounts` 是目的地归属规则的读取面，同样是硬依赖：没有它就无法判定派发携带的目的地是否属于收件人，而判不了归属就放行任意地址，方向与要求相反。`settings.Store` 列为可选依赖，使 settings 模块先于本模块初始化、快照已加载；缺席时每个预算各读自己的声明默认值，是合法装配。可选依赖的缺席都不使本模块启动失败：`log.Logger` 缺席则外部发送记在进程默认 logger 上；`observability.MeterProvider` 缺席则预算利用率仪表不上报；`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见「渠道的条件特性」）。**提交面 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery](../../../adr/adr-notification-delivery.md)）。
 
 ### 交付的功能
 
@@ -38,7 +39,7 @@ type Dispatcher interface {
 }
 ```
 
-`Dispatcher.Dispatch` 是业务模块投递一条通知的唯一入口。它依次做**形状校验**（`TypeKey` 非空、`Recipient.Class` 为 `user`、`Recipient.UserID` 非空、`Locale` 非空；`external` 在闭集里但本轮无生产者，一律 `ErrInvalidRequest`）、**分类法校验**（`TypeKey` 在分类法里，`Params` 的键不越过该类型的 `RecipientVisibleParams` 白名单）、**目的地归属校验**（派发在参数里带了外部渠道的目的地时，经 `authn.Accounts` 核对它是否属于收件人，见「外部渠道的目的地与归属校验」）、**投递预算**（按收件人解析一次有效渠道，判定这条投递是否会有外部发送；有则按每个外部渠道计一次，见「投递预算」）与**入队**（构造一条作业写进队列，返回作业标识）。它为判定预算读一次有效渠道，不渲染文本、不写本模块的表。租户取自 `ctx`（`tenant.FromContext`），无租户即以租户的错误拒绝，与该队列自己的判据同形（[jobs](../jobs/design-jobs.md)）。
+`Dispatcher.Dispatch` 是业务模块投递一条通知的唯一入口。它依次做**形状校验**（`TypeKey` 非空、`Recipient.Class` 为 `user`、`Recipient.UserID` 非空、`Locale` 非空；`external` 在闭集里但本轮无生产者，一律 `ErrInvalidRequest`）、**分类法校验**（`TypeKey` 在分类法里，`Params` 的键不越过该类型的 `RecipientVisibleParams` 白名单）、**目的地归属校验**（派发在参数里带了外部渠道的目的地时，经 `authn.Accounts` 核对它是否属于收件人，见「外部渠道的目的地与归属校验」）、**投递预算**（按收件人解析一次有效渠道；有效集含 `email` 且本装配能发邮件时计邮件预算，含 `sms` 且本装配能发短信时计短信预算，见「投递预算」）与**入队**（构造一条作业写进队列，返回作业标识；作业载荷带这次短信尝试的台账行标识）。它为判定预算读一次有效渠道，不渲染文本、不写 `notification_sends`，只在短信预算被计时写一行共享台账（邮件预算写键值计数器）。租户取自 `ctx`（`tenant.FromContext`），无租户即以租户的错误拒绝，与该队列自己的判据同形（[jobs](../jobs/design-jobs.md)）。
 
 **入队幂等。** 作业的幂等键取租户、`TypeKey`、收件人类别与收件人标识、`Locale`、`OccurrenceID` 与 `Params` 的组合——即逐渠道去重键去掉渠道维度：同一租户、同一类型、同一收件人、同一语言的同一逻辑事件的重发（同一个 `OccurrenceID`、同一批参数）收敛成一条作业，`Dispatcher.Dispatch` 的重复调用返回同一条作业的标识而不新增一条。
 
@@ -47,11 +48,11 @@ type Dispatcher interface {
 一次投递从业务模块的一次调用到每个渠道的一次终态，走这些步：
 
 1. 业务模块经 `core.Resolve[notification.Dispatcher](reg)` 取到提交面，调 `Dispatcher.Dispatch(ctx, d)`。
-2. `Dispatch` 校验、在派发带目的地时核对归属、按有效渠道计投递预算并把**这条投递入队为一条作业**（见交付的功能与「投递预算」）；逐渠道展开发生在消费端。
+2. `Dispatch` 校验、在派发带目的地时核对归属、在有效集含外部渠道时计对应预算（邮件记键值计数器，短信写一行共享台账），再把**这条投递入队为一条作业**（见交付的功能与「投递预算」）；逐渠道展开发生在消费端，载荷带这次尝试的台账行标识。
 3. `jobs.db` 认领这条作业，`tenant.Catalog.Enter` 进入它的租户，把作业交给本模块登记的处理器。
 4. 处理器解码载荷，**再跑一遍第 2 步的形状与分类法校验，并对带目的地的载荷再判一次归属**——作业可能来自别的提交方，也可能那一行被改动过，处理器不假设提交方校验过。
 5. 处理器按收件人经 `notification.Preferences.Effective` 解析有效渠道。
-6. 逐渠道发送：`in_app` 渲染后写收件箱；`email` 渲染后经 `mail.Sender` 发；`sms` 字符串化参数后经 `sms.Registry` 解模板、`sms.Sender` 发。
+6. 逐渠道发送：`in_app` 渲染后写收件箱；`email` 渲染后经 `mail.Sender` 发；`sms` 字符串化参数后经 `sms.Registry` 解模板、`sms.Sender` 发。一条短信在确定没有离开进程时退还提交面记下的台账行。
 7. 每个渠道的终态写一行 `notification_sends`；一个渠道的终态失败既不饿死其他渠道，也不被它们的成功掩盖——全部渠道都走完，各渠道的错误用 `errors.Join` 收口后返回。
 8. 处理器返回的合并错误使作业按 [jobs](../jobs/design-jobs.md) 的退避重试；已经成功落账的渠道由去重键在重试里跳过（见「去重键与幂等落账」）。
 
@@ -60,7 +61,7 @@ sequenceDiagram
     participant P as 业务模块
     participant D as notification.Dispatcher
     participant A as authn.Accounts
-    participant K as kv 计数器
+    participant B as sms.budget 台账
     participant Q as jobs 队列
     participant H as 本模块的处理器
     participant R as notification.Preferences
@@ -73,9 +74,11 @@ sequenceDiagram
     A-->>D: 收件人的标识符、目的地所属账户
     D->>R: Effective(recipient, typeKey)
     R-->>D: 有效渠道集合
-    D->>K: 外部渠道数大于零时，逐窗口计数
-    K-->>D: 计数或超限
-    D->>Q: Enqueue（幂等键含租户、类型、收件人、语言与 OccurrenceID）
+    alt 有效集含 sms 且本装配能发
+        D->>B: 事务：取上界锁，核对上界与各窗口预算，Record(尝试行)
+        B-->>D: 计数、超限或尝试行标识
+    end
+    D->>Q: Enqueue（幂等键含租户、类型、收件人、语言与 OccurrenceID；载荷带尝试行标识）
     Q-->>H: 认领并进入租户，交作业
     H->>H: 再跑一遍校验
     H->>R: Effective(recipient, typeKey)
@@ -85,10 +88,13 @@ sequenceDiagram
         S-->>H: 结果或错误
         H->>L: 按去重键落一行
     end
+    opt sms 确定没有发出
+        H->>B: MarkRefunded(尝试行)
+    end
     H-->>Q: 合并错误（errors.Join）或成功
 ```
 
-图里画不出的约束：第 4 步的校验与第 2 步的形状与分类法部分是同一个例程，处理器不因提交方校验过就跳过它；**目的地归属在提交端与消费端各核对一次**，处理器对带 `to` 的载荷再读一次账户；第 6 步的渠道是否可发由装配决定，接缝缺席的渠道在第 7 步落 `skipped` 而不是错；`Effective` 只经偏好模块取，本模块不读偏好表。
+图里画不出的约束：第 4 步的校验与第 2 步的形状与分类法部分是同一个例程，处理器不因提交方校验过就跳过它；**目的地归属在提交端与消费端各核对一次**，处理器对带 `to` 的载荷再读一次账户；第 6 步的渠道是否可发由装配决定，接缝缺席的渠道在第 7 步落 `skipped` 而不是错；`Effective` 只经偏好模块取，本模块不读偏好表；邮件与短信预算都只在提交面计一次，消费者只退还短信那一行、不再计。
 
 ### 渠道可用性由装配决定
 
@@ -150,8 +156,10 @@ idempotency_key = hex(sha256(canonicalJSON{
 | `pkg/jobs` | 提交面 `Queue`（入队）与登记面 `Handlers`（登记处理器） |
 | `pkg/db` | `notification_sends` 表与迁移 |
 | `pkg/tenant` | 租户上下文、`tenant.Model`、语句的租户过滤 |
-| `pkg/kv` | 投递预算的计数器：按窗口原子累加，键的过期时间即桶宽 |
+| `pkg/sms/budget` | 共享短信台账：写入一次尝试、退款、读各窗口计数与跨渠道上界 |
+| `pkg/kv` | 邮件的固定窗口计数器：`kv.KV` 是必需依赖 |
 | `pkg/settings` | 预算上限的声明与读取；`settings.Store` 是可选依赖，缺席时读声明默认值 |
+| `pkg/observability` | 可选：预算利用率仪表的 meter provider；缺席时不上报 |
 | `pkg/authn` | 用其 `ThrottledError`（读作 `ErrThrottled`，携带 `RetryAfter`）与 `ErrUnavailable` 表达可重试的拒绝；并经 `Accounts` 的 `Identifiers` 与 `Lookup` 读收件人的标识符、判定派发携带的目的地是否属于收件人。不使用其身份或任何实现 |
 | `pkg/notification` | 根包的类型、哨兵与接缝（`Dispatcher`、`Dispatch`、`Preferences`、`Inbox`、`Channel`） |
 | `pkg/mail` | 可选：`email` 渠道的发送接缝 `mail.Sender`（`Send`、`Message`、`Receipt` 与哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`）。本模块只引用这条接缝，不设计它的内部 |
@@ -160,15 +168,15 @@ idempotency_key = hex(sha256(canonicalJSON{
 | `pkg/log` | 可选：外部发送的记录写在装配的日志能力上（`log.Logger`）；缺席时退回进程默认 logger |
 | `pkg/feature` 根包 | 声明渠道的条件特性（`feature.Spec`）；`Init` 经 `core.Resolve` 可选取用 `feature.Board` 报告，不列入构造期依赖。根包只依赖标准库 |
 
-**偏好、收件箱与渲染都在构造期依赖表里。** 本模块在 `New` 里用 `core.Resolve[notification.Preferences](reg)` 取偏好接缝、`core.Resolve[notification.Inbox](reg)` 取收件箱接缝、`core.Resolve[i18n.Localizer](reg)` 取渲染接缝，三者都是必需依赖，列在「登记单元与名字」的依赖列里。
+**偏好、收件箱、渲染、计数器与台账都在构造期依赖表里。** 本模块在 `New` 里用 `core.Resolve[notification.Preferences](reg)` 取偏好接缝、`core.Resolve[notification.Inbox](reg)` 取收件箱接缝、`core.Resolve[i18n.Localizer](reg)` 取渲染接缝、`core.Resolve[kv.KV](reg)` 取邮件预算的计数器、`core.Resolve[budget.Store](reg)` 取共享短信台账；这些依赖都是必需依赖，列在「登记单元与名字」的依赖列里。
 
-**依赖方向。** 本模块 import `pkg/jobs`、`pkg/db`、`pkg/tenant`、`pkg/i18n`、`pkg/log`、`pkg/kv`、`pkg/settings`、`pkg/feature` 根包、`pkg/notification` 根包，并经 `pkg/authn` 根包取投递预算可重试拒绝的 `ThrottledError` 与 `ErrUnavailable`，以及目的地归属校验的 `Accounts`；也可选 import `pkg/mail` 与 `pkg/sms` 的根包，不 import 通知能力目录内的其他实现子包，不 import 认证能力目录内的任何实现子包（归属校验只经 `pkg/authn` 根包的 `Accounts` 接口），也不 import `pkg/authz`。它不 import 任何厂商 SDK：`mail` 与 `sms` 的载体叶子绑定各自的库，本模块只经它们的接口包触达。这些依赖都在本模块之前构造、之后停止。
+**依赖方向。** 本模块 import `pkg/jobs`、`pkg/db`、`pkg/tenant`、`pkg/i18n`、`pkg/log`、`pkg/kv`、`pkg/sms/budget`、`pkg/settings`、`pkg/observability` 根包、`pkg/feature` 根包、`pkg/notification` 根包，并经 `pkg/authn` 根包取投递预算可重试拒绝的 `ThrottledError` 与 `ErrUnavailable`，以及目的地归属校验的 `Accounts`；也可选 import `pkg/mail` 与 `pkg/sms` 的根包，不 import 通知能力目录内的其他实现子包，不 import 认证能力目录内的任何实现子包（归属校验只经 `pkg/authn` 根包的 `Accounts` 接口），也不 import `pkg/authz`。它不 import 任何厂商 SDK：`mail` 与 `sms` 的载体叶子绑定各自的库，本模块只经它们的接口包触达。这些依赖都在本模块之前构造、之后停止。
 
-**本模块不声明配置命名空间，不读任何输入项；它声明 settings。** 一次发送的作业参数（超时、重试次数、优先级）在入队时由本模块给出确定取值，不来自配置。运行期可调的只有「投递预算」一节的各上限，它们挂在 settings 的 `notification.delivery` 命名空间下。
+**本模块不声明配置命名空间，不读任何输入项；它声明 settings。** 一次发送的作业参数（超时、重试次数、优先级）在入队时由本模块给出确定取值，不来自配置。运行期可调的只有「投递预算」一节的各上限，它们挂在 settings 的 `notification.delivery` 命名空间下；跨渠道上界 `sms.ceiling-hourly` 由 `sms.budget` 在 `sms` 命名空间下声明，本模块只读。
 
 ## UML 图
 
-本模块的结构是一条提交接缝、一条消费路径、渠道接缝与投递预算的关系。图里的约束不在图中：提交面排他交付，一个进程里至多一条流水线；偏好、收件箱与键值计数器是**必需**依赖，渠道接缝与 settings 存储都是**可选**的，渠道接缝缺席只让对应渠道跳过并让对应的条件特性不报告，settings 存储缺席只让各预算读声明默认值；`feature.Board` 不是构造期依赖，只在 `Init` 取用，取不到即不报告。
+本模块的结构是一条提交接缝、一条消费路径、渠道接缝与投递预算的关系。图里的约束不在图中：提交面排他交付，一个进程里至多一条流水线；偏好、收件箱、账户存储、键值计数器与共享短信台账是**必需**依赖，渠道接缝、settings 存储与指标能力都是**可选**的，渠道接缝缺席只让对应渠道跳过并让对应的条件特性不报告，settings 存储缺席只让各预算读声明默认值，指标能力缺席只让预算利用率不上报；`feature.Board` 不是构造期依赖，只在 `Init` 取用，取不到即不报告。
 
 ```mermaid
 classDiagram
@@ -204,6 +212,15 @@ classDiagram
         <<interface>>
         +Post(module, name)
     }
+    class BudgetStore {
+        <<interface>>
+        +Record(ctx, a) ID
+        +MarkRefunded(ctx, id, at) error
+        +Count(ctx, q) int64
+        +CountDistinctDestinations(ctx, q) int64
+        +Oldest(ctx, q) time
+        +CountCeiling(ctx, since) int64
+    }
     class KV {
         <<interface>>
         +IncrByFloatWithTTL(ctx, key, delta, ttl) float64, error
@@ -213,7 +230,9 @@ classDiagram
         -taxonomy taxonomy
         -seams channelSeams
         -counters kv.KV
+        -attempts budget.Store
         -settings settingReader
+        -meters meters
     }
     Dispatcher <|.. pipeline : 实现
     pipeline ..|> Handler : 登记
@@ -222,11 +241,12 @@ classDiagram
     pipeline ..> MailSender : email
     pipeline ..> SMSRegistry : sms 解模板
     pipeline ..> SMSSender : sms 发送
-    pipeline ..> KV : 投递预算计数
+    pipeline ..> KV : 邮件预算计数
+    pipeline ..> BudgetStore : 短信预算与退款
     pipeline ..> Board : Init 报告渠道特性
 ```
 
-`pipeline` 同时实现 `Dispatcher` 并登记为一个 `jobs.Handler`；`channelSeams` 按本次装配在场的接缝决定哪些渠道可发，也决定 `Init` 向 `Board` 报告哪些渠道特性。
+`pipeline` 同时实现 `Dispatcher` 并登记为一个 `jobs.Handler`；`channelSeams` 按本次装配在场的接缝决定哪些渠道可发，也决定 `Init` 向 `Board` 报告哪些渠道特性。`counters` 是邮件预算的键值计数器，`attempts` 是共享短信台账，两个渠道各记各的账；`meters` 在装配没有指标能力时为空集，记录变成空操作。
 
 ## 核心数据结构
 
@@ -248,7 +268,9 @@ classDiagram
 
 唯一索引 `(tenant_id, idempotency_key)`：一个去重键至多一行，落账因此幂等。`status` 的闭集里 `skipped` 表示渠道本次不可用（接缝缺席），`failed` 表示渠道可用而发送终态失败，`succeeded` 表示外部载体受理了这条消息——**受理不等于送达**，带异步回执的载体只给消息标识，最终投递状态不在本模块的账上；站内信的 `succeeded` 表示那行已写进收件箱。
 
-**载荷**存进作业的行（`jobs` 表的 `payload` 列），是 `Dispatch` 的序列化形态；本模块的解码是入队编码的逆，一个解不出的载荷按校验失败处置。
+**载荷**存进作业的行（`jobs` 表的 `payload` 列），是 `Dispatch` 的序列化形态，外加这次短信尝试在共享台账里的行标识（没有短信尝试时为零）；本模块的解码是入队编码的逆，一个解不出的载荷按校验失败处置。
+
+**共享台账里的通知行**归 `sms.budget`，其形状见 [design-sms](../design-sms.md)。本模块写入的一行取渠道 `notification`、用途 `TypeKey`、目的地摘要 `sha256(tenant_id + "\x00" + user_id)`、`tenant_id` 取上下文租户、`account_id` 取收件人标识、`attempted_at` 取提交时刻、`outcome` 写 `pending`、来源列为 NULL、`suppressed` 为假。退款只写 `refunded_at`，不改 `outcome`。
 
 ## 核心算法与流程
 
@@ -258,29 +280,40 @@ classDiagram
 
 ### 投递预算
 
-一条投递在**入队之前**对两类预算计数：每个收件人的小时窗口与日窗口，以及整个部署的小时窗口。预算是**固定的时间桶**：每个桶一个计数器键，键随桶名更替，新桶从零开始。计数做在键值能力的计数器上，键的过期时间即桶宽。
+**两个外部渠道都被预算，各记各的账。** 一条投递在有效集里含 `email`、且 `mail.Sender` 在场时，在**入队之前**按收件人小时、收件人每日与部署小时三个固定窗口在 `kv.KV` 的计数器上计一次邮件预算；在有效集里含 `sms`、且本装配的 `sms.Registry` 与 `sms.Sender` 都在场时，在**入队之前**核对短信预算并写一行共享台账。解析结果只有 `in_app`，或对应接缝缺席时，这条消息不产生该渠道的发送，不花该渠道的预算。两个渠道的每收件人小时与每日窗口共用同一对设置值，其余窗口各归各的：邮件的部署小时窗口计在键值计数器上，短信的每租户窗口与跨渠道上界计在共享台账上；两边各用各的计数器，互不占用对方的额度。计在有效渠道之后，使收件人关掉外部渠道、或本装配没有该渠道时，一条投递不替收件人耗掉额度。
 
-**计在有效渠道之后。** 计预算前先按 `Preferences.Effective` 解析收件人的有效渠道，只数本次装配真正能发的外部渠道。解析结果里只有 `in_app`、或外部渠道的接缝缺席时，这条消息不出进程，不花任何预算；收件人关掉外部渠道时同样不花。计在有效渠道之前会让收件人自己的关闭动作消耗其预算，也让一个不产生外部发送的调用方替收件人耗掉额度。
+**邮件的固定窗口。** 邮件预算的键是 `notification.delivery:budget:recipient-hourly:<摘要>:<小时>`、`...:recipient-daily:<摘要>:<日>` 与 `...:global-hourly:<小时>`，桶宽即键的过期时间，摘要与短信收件人摘要同一算法。一次邮件投递先加一再比较，被拒绝的投递仍然花掉额度；窗口达到上限即以 `*authn.ThrottledError` 拒绝，`RetryAfter` 是当前桶剩余时间（不少于一秒），不入队。计数器写失败时以携带 `authn.ErrUnavailable` 的错误拒绝，也不入队。三个窗口按收件人小时、收件人每日、部署小时的顺序检查，前一个满了不再计后一个。
 
-**单位是外部渠道，不是派发。** 一次投递按它会尝试的每个外部渠道计一个单位：同时走 `email` 与 `sms` 的一次投递计两个。预算约束的是厂商调用，单位随之。
+**一行尝试、一条上界。** 台账是 `sms.budget` 的 `sms_budget_events`，与认证共用。通知写入的一行取：渠道 `notification`，用途 `TypeKey`，目的地摘要 `sha256(tenant_id + "\x00" + user_id)`，`tenant_id` 取上下文里的租户，`account_id` 取收件人标识，`outcome` 在提交时写 `pending`。通知侧的尝试没有可信来源，来源列写 NULL，也不计来源维度；通知侧不产生抑制行。部署的跨渠道小时上界 `sms.ceiling-hourly` 由台账模块在 `sms` 命名空间下声明，通知与认证读同一个键与同一个缺省。
 
-**顺序与拒绝。** 先查收件人小时窗口，再查日窗口，最后查部署窗口；任一处计数超过上限即以 `*authn.ThrottledError` 拒绝，携带的 `RetryAfter` 是当前桶剩余的时间（不少于一秒），且不写入任何作业。计数发生在比较之前，被拒的派发同样耗掉一个单位：只数放行的量会让已经超限的调用方在不付费的情况下重试。某一窗口拒绝后，其后的窗口不再计数，因此收件人被拒不会连带花掉部署窗口。
+**短信的顺序与拒绝。** 在一个事务里先取跨渠道锁，再查跨渠道上界，然后依次查每收件人小时、每收件人每日、每租户不同目的地小时与每租户尝试小时；任一窗口达到上限即以 `*authn.ThrottledError` 拒绝，携带的 `RetryAfter` 是该窗口里最旧一行离开的时刻（不少于一秒），不写台账行、不入队。某一窗口拒绝后，其后的窗口不再计。**每租户不同目的地的窗口达到上限时，一个已经在该小时窗口里的目的地仍放行**：它不增加新的目的地，按收件人与按租户的其余窗口继续约束它；这条判据只在提交面用一次每收件人小时的计数确认该目的地已经出现。
 
-**上限来自 settings，每次派发读取。** 这些键挂在 `notification.delivery` 命名空间下，值分别是一个窗口内允许的外部消息数：
+**短信计数的判据。** 每收件人小时、每收件人每日与每租户不同目的地的窗口取发送预算：只计未退款的行，退款后这一行退出计数，一个确定没有发出的短信因此把额度还回来。每租户尝试窗口取尝试预算：计每一次尝试，退款与否都计。认证侧的尝试预算只计确定失败的行，因为那里计数的是猜码的人，成功的一次不该记在攻击者名下；通知侧相反，调用方本身就是生产者，尝试预算防的正是一个陷入重试循环的生产者——它可能每一次都被载体接受，也可能每一次都确定失败并退还发送预算，只计确定失败便会让这条重试风暴在尝试窗口里消失。因此通知的尝试预算计每一次尝试，不论载体是否接受、发送预算是否已退还。跨渠道上界只计两个渠道未退款、未抑制的行。通知侧没有抑制行，所以抑制开关在这三个窗口上不改变结果。
+
+**上限来自 settings，每次派发读取。** 这些键挂在 `notification.delivery` 命名空间下；跨渠道上界挂在 `sms` 命名空间下，由台账模块声明。
 
 | 键 | 默认 | 取值域 | 约束 |
 |---|---|---|---|
-| `per-recipient-hourly` | 20 | 1–1000 | 一个收件人一小时内的外部消息数 |
-| `per-recipient-daily` | 100 | 1–10000 | 一个收件人一天内的外部消息数 |
-| `global-hourly` | 10000 | 1–10000000 | 整个部署一小时内的外部消息数，跨收件人与租户 |
+| `notification.delivery.per-recipient-hourly` | 20 | 1–1000 | 一个收件人一小时内该渠道的邮件或短信数，按渠道分别计 |
+| `notification.delivery.per-recipient-daily` | 100 | 1–10000 | 一个收件人一日内该渠道的邮件或短信数，按渠道分别计 |
+| `notification.delivery.global-hourly` | 10000 | 1–10000000 | 整个部署一小时内的邮件数 |
+| `notification.delivery.tenant-distinct-hourly` | 20 | 1–10000 | 一个租户一小时内发往的不同短信收件人数 |
+| `notification.delivery.attempt-hourly` | 300 | 1–100000 | 一个租户一小时内提交的短信尝试数，退款与否都计 |
+| `sms.ceiling-hourly` | 5000 | 1–1000000 | 两个渠道合计一小时内的短信发送数 |
 
 取值域的下界是一：预算是安全边界，零关掉它就等于没有约束；要放宽的部署给一个大到不会被达到的数。一次读取失败或读到域外的值，该键回落到声明默认值并记一条 Error，回落的方向仍是一个上界。
 
-**键的范围。** 收件人窗口按（租户，收件人标识）的摘要计数：收件人标识的文本可以带分隔符，两个租户也可以对同一个标识用不同账户。部署窗口不带租户，是部署范围的：一个租户的失控生产会耗尽全体，这是全局预算的定义。
+**键的范围。** 收件人窗口按（租户，收件人标识）的摘要计数：收件人标识的文本可以带分隔符，两个租户也可以对同一个标识用不同账户。租户窗口与尝试窗口按台账的 `tenant_id` 计数；跨渠道上界不带租户，是部署范围的：一个租户的失控生产会耗尽全体，这是部署上界的定义。邮件的部署小时窗口按计数器键计数，同样不带租户，是部署范围的。
 
-**计数不可用即拒绝。** 计数器写失败时 `Dispatch` 以携带 `authn.ErrUnavailable` 的错误拒绝，不入队：一个计不了数的预算不能让消息通过。计数器的原子性由键值后端给出；多副本部署需装配共享状态的后端。
+**计数或写入不可用即拒绝。** 键值计数器写失败，或台账读失败、写失败时，`Dispatch` 以携带 `authn.ErrUnavailable` 的错误拒绝，不入队：一个计不了数的预算不能让消息通过。台账的写入是插入，计数是对已提交行的查询；多副本部署下两个副本写同一次派发时各插一行，两个都被计到。
 
 **计在去重之前。** 预算按一次 `Dispatch` 调用计数，而非按一个逻辑事件：队列的幂等键在入队时才告诉两侧是否收敛，而预算已在此前计入。能调用提交面的调用方本就可以改 `OccurrenceID` 造出不同作业，因此约束是预算本身，去重不承担这个职责。
+
+**先占后发，确定未发就退还。** 提交面在入队之前写台账行，载荷带这一行的标识；载荷编码失败或入队失败即退还该行。消费者在接缝缺席、本站拒绝（缺模板、参数或目的地、模板解不出）以及载体确定未收下（限流、拒绝、送不到）时退还该行；结果不确定与闭集之外的错误保留，因为消息可能已经发出。退还只把行从发送窗口里退出，它仍留在尝试窗口里。
+
+**邮件计在键值计数器上，短信计在共享台账上。** 邮件与短信都受按收件人与部署的预算约束，但分记在两个存储上：邮件用 `kv.KV` 的固定窗口计数器，包括部署范围的 `notification.delivery.global-hourly`；短信用共享台账。两条路径各记各的账，不做双写：一条邮件投递不写台账，一条短信尝试不写键值计数器。短信的跨渠道上界由 `sms.ceiling-hourly` 给出，其余短信窗口按上表给出；邮件的键与默认值与上表一致。
+
+**预算利用率仪表。** 每次比较一个短信窗口或跨渠道上界之前，本模块把「已用 / 上限」记到仪表 `authn.sms.budget.utilization`，属性 `channel` 取 `notification`，`purpose` 取通知类型键、跨渠道上界取 `shared`，`dimension` 取 `recipient-hourly`、`recipient-daily`、`tenant-distinct-hourly`、`attempt-hourly` 或 `ceiling`。邮件预算在键值计数器上计数，不上报这个仪表。上限为零或负不记；装配没有指标能力时记什么都不做。它与认证侧的仪表同名，靠 `channel` 区分两个发送能力；属性集在 [design-authn-events](../authn/design-authn-events.md) 登记，本模块不另立一份。
 
 ### 消费与发送
 
@@ -290,15 +323,15 @@ classDiagram
 
 - **`in_app`**：渲染 `notification.Message`，经 `Inbox.Write` 写一行，落 `succeeded`。
 - **`email`**：`mail.Sender` 缺席即落 `skipped`；在场则取派发参数里的目的地、渲染主题与正文（纯文本与 HTML），经 `mail.Sender.Send` 发一次，回执即落 `succeeded`（受理，不是送达）、错误即落 `failed`，厂商回执标识落 `provider_receipt_id`。
-- **`sms`**：`sms.Registry` 或 `sms.Sender` 缺席即落 `skipped`；在场则取派发参数里的目的地、字符串化参数（见下），经 `sms.Registry.Resolve` 解出模板，再经 `sms.Sender.Send` 发一次，回执即落 `succeeded`（受理，不是送达）、错误即落 `failed`，厂商回执标识落 `provider_receipt_id`。
+- **`sms`**：`sms.Registry` 或 `sms.Sender` 缺席即落 `skipped`，并退还提交面记下的台账行；在场则取派发参数里的目的地、字符串化参数（见下），经 `sms.Registry.Resolve` 解出模板，再经 `sms.Sender.Send` 发一次，回执即落 `succeeded`（受理，不是送达）、错误即落 `failed`，厂商回执标识落 `provider_receipt_id`。一条确定没有离开进程的短信——接缝缺席、本站拒绝（缺目的地、参数为空、模板解不出）、载体限流、拒绝或送不到——退还提交面记下的那一行，发送窗口不再计它；结果不确定与闭集之外的错误保留，因为消息可能已经发出。
 
-**每个渠道发送前先按去重键查账**：命中 `succeeded` 或 `skipped` 行即用那一行的结果、不重复发送；命中 `failed` 行即这一次重新发送（见「去重键与幂等落账」）。
+**每个渠道发送前先按去重键查账**：命中 `succeeded` 或 `skipped` 行即用那一行的结果、不重复发送；命中 `failed` 行即这一次重新发送（见「去重键与幂等落账」）。短信的台账行只在这一次消费里退还；一条作业被重试时，提交面不会为它再写一行，所以一次真正发出的短信只占一次发送窗口。
 
 ### 外部渠道的目的地与归属校验
 
 **外部渠道的目的地从派发参数 `to` 取。** 收件人是一个账户标识；目的地由调用方在 `Dispatch.Params` 里以参数名 `to` 给出：`sms` 取 E.164（[REF-itu-t-e164](../../../references.md)）号码，`email` 取 RFC 5322（[REF-rfc5322](../../../references.md)）地址。它是调用方给出的参数之一，本模块不从账户推出它，缺它也使不了别的来源。
 
-**派发携带的目的地必须属于收件人。** 提交时，`Dispatch.Params` 带 `to` 的派发由 `Dispatch` 经 `authn.Accounts` 读收件人自己的标识符，并核对目的地是否属于同一个收件人。核对按收件人持有的每一种可投递标识符种类（`email` 与 `phone`）进行：把 `to` 交给账户存储的 `Lookup`，由存储用它自己的归一化形式比较，本模块不另写一套归一化；用户名是登录用的账户把手，不是可投递的地址，不参与核对。目的地属于收件人时，归属校验通过，派发继续走投递预算与入队。收件人没有任何可投递标识符、目的地属于另一个账户、目的地不属于任何账户，三者都拒为 `ErrInvalidRequest`，且不入队。收件人指名不到一个存活账户时，它没有标识符可以拥有目的地，同样拒绝；读账户存储失败是一个错误，不是放行。同一份核对在消费端再执行一次：处理器在解析有效渠道之前，对带 `to` 的载荷调用同一个判定。提交面是信任边界——生产者只能经它选目的地——但队列是一条持久化行，worker 可能见到提交方从未写过的载荷、或一行被改动过的载荷；目的地是发送唯一不能出错的字段，账户存储又已是硬依赖，所以消费端再判一次，使改过的载荷也不能把消息发往任意地址。两处都 fail-closed：读账户失败即拒绝。
+**派发携带的目的地必须属于收件人。** 提交时，`Dispatch.Params` 带 `to` 的派发由 `Dispatch` 经 `authn.Accounts` 读收件人自己的标识符，并核对目的地是否属于同一个收件人。核对按收件人持有的每一种可投递标识符种类（`email` 与 `phone`）进行：把 `to` 交给账户存储的 `Lookup`，由存储用它自己的归一化形式比较，本模块不另写一套归一化；用户名是登录用的账户把手，不是可投递的地址，不参与核对。目的地属于收件人时，归属校验通过，派发继续走短信预算与入队。收件人没有任何可投递标识符、目的地属于另一个账户、目的地不属于任何账户，三者都拒为 `ErrInvalidRequest`，且不入队。收件人指名不到一个存活账户时，它没有标识符可以拥有目的地，同样拒绝；读账户存储失败是一个错误，不是放行。同一份核对在消费端再执行一次：处理器在解析有效渠道之前，对带 `to` 的载荷调用同一个判定。提交面是信任边界——生产者只能经它选目的地——但队列是一条持久化行，worker 可能见到提交方从未写过的载荷、或一行被改动过的载荷；目的地是发送唯一不能出错的字段，账户存储又已是硬依赖，所以消费端再判一次，使改过的载荷也不能把消息发往任意地址。两处都 fail-closed：读账户失败即拒绝。
 
 **不覆盖：**
 
@@ -332,7 +365,7 @@ classDiagram
 | 阶段 | 行为 |
 |---|---|
 | `Prepare` | 无动作 |
-| `New` | 取用队列与登记面、数据库、租户名册、偏好接缝、收件箱接缝、渲染接缝、键值计数器与在场的渠道接缝；取可选 `settings.Store` 与可选 `log.Logger`，后者以模块名绑定；收齐并校验分类法 |
+| `New` | 取用队列与登记面、数据库、租户名册、偏好接缝、收件箱接缝、渲染接缝、账户存储、键值计数器、共享短信台账与在场的渠道接缝；取可选 `settings.Store`、可选 `observability.MeterProvider` 与可选 `log.Logger`，后者以模块名绑定；收齐并校验分类法 |
 | `Migrate` | 数据库模块施加本模块声明的迁移集，建立 `notification_sends` 表 |
 | `Init` | 向 `jobs.Handlers` 登记处理器（`Type()` 返回本模块的作业类型名）；取得到 `feature.Board` 时按 `channelSeams` 报告渠道的条件特性。实例不是本模块的产物时，登记与报告都不做 |
 | `Start`、`Serve` | 无动作，消费由队列驱动 |
@@ -351,8 +384,12 @@ classDiagram
 | `Params` 带白名单外的键 | `ErrParamsNotAllowed`，不入队 |
 | 派发携带的目的地不属于收件人（属于另一账户、不属于任何账户、收件人没有可投递标识符、指名不到存活账户） | `ErrInvalidRequest`；提交面不入队，处理器拒绝那条载荷、不发送 |
 | 读收件人的标识符或查目的地所属账户失败 | 返回该读取错误；提交面不入队、处理器不发送，判不了归属即拒绝 |
-| 收件人或部署窗口的投递预算已耗尽 | `Dispatcher.Dispatch` 返回 `*authn.ThrottledError`，`RetryAfter` 为当前桶剩余的时间；不入队 |
-| 投递预算的计数器写失败 | 返回携带 `authn.ErrUnavailable` 的错误；不入队，计不了数即拒绝 |
+| 某一邮件窗口已耗尽 | `Dispatcher.Dispatch` 返回 `*authn.ThrottledError`，`RetryAfter` 为当前固定桶剩余的时间（不少于一秒）；不入队 |
+| 邮件预算的键值计数器读失败或写失败 | 返回携带 `authn.ErrUnavailable` 的错误；不入队，计不了数即拒绝 |
+| 跨渠道上界或某一短信窗口已耗尽 | `Dispatcher.Dispatch` 返回 `*authn.ThrottledError`，`RetryAfter` 为该窗口最旧一行离开的时刻（不少于一秒）；不写台账行、不入队 |
+| 共享台账读失败或写失败 | 返回携带 `authn.ErrUnavailable` 的错误；不写台账行、不入队，计不了数即拒绝 |
+| 短信在消费时确定没有离开进程（接缝缺席、本站拒绝、载体限流、拒绝或送不到） | 该渠道落 `skipped` 或 `failed`，提交面记下的台账行标为退款；发送窗口不再计它，尝试窗口仍计它 |
+| 短信结果不确定或错误在哨兵之外 | 该渠道落 `failed`，台账行保留不退款，因为消息可能已经发出 |
 | 一个 `TypeSpec` 声明不自洽、或两个模块声明同一个键 | `ErrInvalidConfig`，`New` 阶段终止启动 |
 | 有效集里出现闭集之外的渠道 | 不可能：类型的 `DefaultChannels` 含未知渠道在分类法收齐处即拒，存储行由 PUT 按闭集校验 |
 | 渠道的接缝不在本次装配里 | 该渠道落 `skipped`，不是错误，不进 `errors.Join` |
@@ -374,6 +411,9 @@ classDiagram
 - **不保证渠道之间的次序。** 有效集里的渠道在本模块的循环里依次处理，但各渠道的厂商调用独立，先后与时延都不保证。
 - **不保证渲染目录覆盖。** 一条通知的类型键在 i18n 目录里没有对应条目时，渲染回落到引擎的默认文案（键本身）；本模块不校验覆盖面。
 - **不保证作业不被重复消费。** 队列的投递至少一次；本模块靠去重键使重复消费不重复投递，但一个尚未落账就崩溃的渠道在重试里会再发一次。
+- **短信预算按一次 `Dispatch` 计，不按一个逻辑事件计。** 重复入队的同一次逻辑事件在入队前各自占一次预算；能调用提交面的调用方本就可以改 `OccurrenceID` 造出不同作业，约束是预算本身。
+- **短信预算在提交时占用，不按实际发送计。** 一次投递在入队时就写一行台账；作业在队列里等待期间，这一行已计入发送窗口与跨渠道上界。作业最终确定没有发出时提交面或消费者退还它，但退还之前它占着额度。
+- **一条作业被重试时不重复计预算。** 提交面只写一次台账行；消费者退款也只针对这一行。重试里再次发送的短信不再占一次发送窗口，这是「一次派发一次尝试」的直接结果，不是遗漏。
 - **不保证一次投递的结果对提交方可见。** `Dispatcher.Dispatch` 只返回入队结果，一条通知的逐渠道终态写在 `notification_sends` 里，提交方不收到回调。
 - **宿主为本模块预置实例时，渠道特性不报告。** 预置的实例不是本模块的产物，生命周期回调不处理它，`Init` 不报告任何渠道特性；特性文档里邮件与短信渠道的特性都缺席，不论预置的实例实际能发哪些渠道，方向是失败即关（[feature](../design-feature.md)）。
 - **渠道特性只反映报告它的那个进程的装配。** 本模块只向同一进程里的 `feature.Board` 报告，特性文档由运行 `feature.board` 的进程发布；投递作业却由认领它的那个进程里的本模块消费，实际发送按那个进程的接缝进行。发布进程与消费进程装配的渠道接缝不同，特性文档就与实际投递不符：特性在场而消费进程缺接缝，该渠道落 `skipped`；特性缺席而消费进程有接缝，该渠道照常按偏好发送，前端却按缺席处理它。本模块装进发布特性文档的进程之外的进程时，各进程须装配同样的渠道接缝。
@@ -381,7 +421,7 @@ classDiagram
 ## 并发与事务边界
 
 - **提交面可被多个协程并发调用。** `Dispatcher.Dispatch` 不持可变共享状态；分类法在 `New` 之后只读，入队由队列的提交面自行串行。重复的入队由幂等键收敛。
-- **投递预算的计数由键值后端保证原子。** 每次 `Dispatch` 对每个窗口键各做一次原子自增，同一窗口内并发到达的派发由后端串行累加。计数与入队不在一个事务里：计数在入队之前，一次计数完成而入队失败的调用方耗掉了一个单位。
+- **短信预算的计数与写入在同一个事务里，由共享台账串行。** 提交面在计跨渠道上界与各发送窗口、写台账行时取 `sms.budget:lock:ceiling`，认证侧在同一个键上取同一把事务级咨询锁；两个渠道因此不会同时读到上界以下、再各写一行。SQLite 在数据库层串行化写者，不取这把锁。计数与入队不在一个事务里：台账行在入队之前写，一次写入完成而入队失败的调用方退还该行。
 - **一条作业由一个处理器消费。** 队列的认领保证一条作业在一个副本上被一个处理器处理；处理器可被队列并发调用于不同作业，各作业的发送互不共享可写状态。
 - **一次渠道落账在一个事务里。** 落账是先按去重键查、无则写一行，这两步在同一事务里，以唯一索引收口：两个并发的同一键写入只留一行。
 - **本模块不发起跨表事务。** 它只写自己的 `notification_sends` 表；收件箱行经 `notification.Inbox` 在收件箱自己的事务里写，投递账与收件箱行不同成不同败——投递账是「发没发」的账，收件箱行是「收件人看得见什么」的账，两者各管各的。
@@ -398,8 +438,10 @@ classDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 提交面 `Dispatcher` 与作业类型 | 已实现 | `pkg/notification/notification.go` `Dispatcher`；`pkg/notification/delivery/delivery.go` `Module`、`ModuleName`、`JobType` |
-| `Dispatch`（形状校验、分类法校验、目的地归属校验、投递预算、入队） | 已实现 | `pkg/notification/delivery/dispatch.go` `Dispatch`、`decodeDispatch`；`pkg/notification/delivery/taxonomy.go` `collectTaxonomy`、`validate` |
-| 投递预算（收件人小时与日窗口、部署小时窗口） | 已实现 | `pkg/notification/delivery/budget.go` `externalDeliveries`、`chargeBudgets`、`untilNextBucket`；`pkg/notification/delivery/settings.go` `settingsSchema`、`settingReader`、`defaultSettings` |
+| `Dispatch`（形状校验、分类法校验、目的地归属校验、投递预算、入队） | 已实现 | `pkg/notification/delivery/dispatch.go` `Dispatch`、`decodeDispatch`、`channelAttempts`、`chargeEmailBudget`、`chargeSMSAttempt`；`pkg/notification/delivery/taxonomy.go` `collectTaxonomy`、`validate` |
+| 邮件预算（键值计数器上的收件人小时、收件人每日与部署小时固定窗口） | 已实现 | `pkg/notification/delivery/budget.go` `chargeEmailBudget`、`untilNextBucket`；`pkg/notification/delivery/settings.go` `settingsSchema`、`settingReader`、`defaultSettings` |
+| 短信预算（共享台账行、跨渠道上界、每收件人小时与日、每租户不同目的地小时、每租户尝试小时、确定未发退款） | 已实现 | `pkg/notification/delivery/budget.go` `chargeSMSAttempt`、`takeCeilingLock`、`throttleCeiling`、`countBudget`、`retryAfter`、`refundAttempt`、`definitiveFailure`、`recipientHash`；`pkg/notification/delivery/handler.go` `sendSMS`；`pkg/notification/delivery/settings.go` `settingsSchema`、`settingReader`、`defaultSettings` |
+| 预算利用率仪表 `authn.sms.budget.utilization`（`channel` 取 `notification`） | 已实现 | `pkg/notification/delivery/meters.go` `observeBudget`、`newMeters` |
 | 处理器与逐渠道发送 | 已实现 | `pkg/notification/delivery/handler.go` `Type`、`Handle`、`deliver`、`send`、`sendInApp`、`sendEmail`、`sendSMS` |
 | 渠道可用性判定与 `skipped` | 已实现 | `pkg/notification/delivery/delivery.go` `channelSeams`、`emailReady`、`smsReady`；`pkg/notification/delivery/handler.go` `sendEmail`、`sendSMS` |
 | 去重键与 `notification_sends` 幂等落账 | 已实现 | `pkg/notification/delivery/keys.go` `channelKey`、`dispatchKey`、`deriveKey`；`pkg/notification/delivery/store.go` `ledger`、`lookup`、`record` |

@@ -104,8 +104,8 @@ destination was registered. One row per attempt, whichever channel made it.
 - **The module declares the shared ceiling and no other setting.** The
   consumers own every other setting and read them; this package's module
   delivers `Store`, the migration set and the `sms.ceiling-hourly` declaration. A
-  consumer that takes `Store` in its `Requires` pulls `sms.budget` into the
-  build's dependency closure, because the provision is non-exclusive.
+  consumer that takes `Store` in its `Requires` pulls `sms.budget` into the run's
+  dependency closure, because the provision is non-exclusive.
 
 The five indexes are the five count shapes: `(channel, attempted_at)`,
 `(source_mac, attempted_at)`, `(destination_mac, attempted_at)`,

@@ -3,8 +3,9 @@
 The notification capability's outbound delivery pipeline. One delivery intent
 goes in, is validated, and is enqueued as one durable job; when the job is
 consumed the intent is validated again, a carried destination is held to the
-recipient once more, the recipient's effective channels are resolved, and every
-channel is rendered, sent through its seam and recorded as one ledger row.
+recipient once more, the recipient's effective channels are resolved, and each
+channel is rendered, sent through its seam and recorded as one row in the send
+ledger.
 
 The descriptor declares the conditional features `notification.channel.email` and
 `notification.channel.sms`. `Init` posts each from the same seam judgement the
@@ -26,23 +27,28 @@ The dependencies the descriptor requires, non-optionally, are:
 | `(*jobs.Queue)(nil)` | `Dispatcher.Dispatch` enqueues through it. |
 | `(*jobs.Handlers)(nil)` | the handler is registered through it. |
 | `(*db.Database)(nil)` | the `notification_sends` table lives in it. |
-| `(*tenant.Catalog)(nil)` | it delivers the statement filter that scopes, fills and checks the tenant column of every ledger statement. |
+| `(*tenant.Catalog)(nil)` | it delivers the statement filter that scopes, fills and checks the tenant column of every send-ledger statement. |
 | `(*notification.Preferences)(nil)` | `Effective` answers a recipient's channels. |
 | `(*notification.Inbox)(nil)` | the in-app channel writes through it. |
 | `(*i18n.Localizer)(nil)` | the message text is rendered through it. |
 | `(*authn.Accounts)(nil)` | the recipient's identifiers are read through it, and the account a destination belongs to is looked up through it. |
-| `(*kv.KV)(nil)` | the delivery budgets are counted on its counters. |
+| `(*kv.KV)(nil)` | the fixed-window counters the email budgets are charged on. |
+| `(*budget.Store)(nil)` | the shared SMS attempt ledger: every sms attempt is written to it, and every sms budget is a count over its rows. |
 
-The optional dependencies are `(*settings.Store)(nil)`, `(*log.Logger)(nil)`,
-`(*mail.Sender)(nil)`, `(*sms.Registry)(nil)` and `(*sms.Sender)(nil)`. No absence
-fails the startup: a channel is available exactly when the seams it sends through
-are present — email on the mail sender, sms only when **both** its seams are
-there — and a missing seam records a `skipped` row rather than a failure. A
-missing settings store leaves each budget at its declared default. The logging
-capability is taken up in `New` and named after the module; without it the module
-keeps the process default logger, as it did before the capability was declared.
-The key-value counters are required and not optional: a budget that cannot count
-would let every dispatch through, which is the direction the requirement forbids.
+The optional dependencies are `(*settings.Store)(nil)`,
+`(*observability.MeterProvider)(nil)`, `(*log.Logger)(nil)`,
+`(*mail.Sender)(nil)`, `(*sms.Registry)(nil)` and `(*sms.Sender)(nil)`. No
+absence fails the startup: a channel is available exactly when the seams it
+sends through are present — email on the mail sender, sms only when **both** its
+seams are there — and a missing seam records a `skipped` row rather than a
+failure. A missing settings store leaves each budget at its declared default. A
+missing metric capability only removes the utilization gauge's report; it
+changes what is observed, never what is refused. The logging capability is taken
+up in `New` and named after the module; without it the module keeps the process
+default logger, as it did before the capability was declared. The key-value
+capability and the shared SMS ledger are required and not optional: a delivery
+budget that cannot count would let the message through, which is the direction
+the requirement forbids — the key-value counters for email, the ledger for sms.
 The account store is required for the same reason: a destination that cannot be
 held against the recipient's own identifiers would be let through.
 
@@ -50,8 +56,8 @@ The descriptor declares no route and no bus. It names no HTTP entry point — th
 module mounts no route, so declaring one would only carry `pkg/http` into a host's
 closure — and no event bus: the in-app row is announced by the module that wrote
 it, so this module publishes nothing on a bus and has none to reach. Its remaining
-resources are the ledger migration, the message catalog, the two channel features
-and the delivery-budget settings schema.
+resources are the send ledger's migration, the message catalog, the two channel
+features and the delivery-budget settings schema.
 
 ## Email
 
@@ -84,10 +90,10 @@ the delivery budgets and enqueues.** It runs the shape checks (a non-empty
 non-empty `Locale`), then the taxonomy checks (the type is declared, and the
 parameters do not exceed the type's `RecipientVisibleParams` whitelist), then the
 destination ownership rule when the parameters carry a `to`, resolves the
-recipient's effective channels to decide whether an external send will happen,
-charges the delivery budgets for that, and enqueues one job. It renders no text
-and writes no ledger. The tenant comes from the context; a context with none is
-refused with the tenant capability's own error. A spent budget is a
+recipient's effective channels to decide which external attempts will happen,
+charges the email and sms budgets for those, and enqueues one job. It renders no text and
+writes no per-channel ledger row. The tenant comes from the context; a context
+with none is refused with the tenant capability's own error. A spent budget is a
 `*authn.ThrottledError` carrying `RetryAfter`, and nothing is enqueued.
 
 **The handler consumes the job.** `jobs.db` claims it, enters its tenant and
@@ -96,7 +102,9 @@ decodes the payload, runs the same validation again — a worker can meet a
 payload the submitter never wrote, or a row that has since been changed — holds
 a carried destination against the recipient's identifiers once more, resolves
 the recipient's effective channels through `Preferences.Effective`, and walks
-them. A channel that fails does not starve the others and is not hidden by their
+them. The job carries the identifier of the charged sms attempt, and the sms
+channel refunds that row when the message certainly did not leave the process. A
+channel that fails does not starve the others and is not hidden by their
 successes: every channel is walked and their errors are joined into what the
 handler returns, which is what makes the job retry.
 
@@ -107,35 +115,65 @@ announced twice would push twice to a connected client.
 
 ## Delivery budgets
 
-An external delivery is bounded by fixed-window budgets, charged in
-`Dispatch` **before** the job is queued:
+An external delivery is bounded, checked in `Dispatch` **before** the job is
+queued. Each channel is counted on the store that fits it: an email delivery
+charges fixed-window counters on `kv.KV`, and an sms attempt is counted over the
+shared SMS attempt ledger, where its row is written in the same transaction that
+takes the counts, under the cross-channel advisory lock the authentication path
+also takes.
 
 | Setting (under `notification.delivery`) | Default | Domain | Bounds |
 |---|---|---|---|
-| `per-recipient-hourly` | 20 | 1–1000 | external messages to one recipient in an hour |
-| `per-recipient-daily` | 100 | 1–10000 | external messages to one recipient in a day |
-| `global-hourly` | 10000 | 1–10000000 | external messages across the deployment in an hour |
+| `per-recipient-hourly` | 20 | 1–1000 | email or sms messages to one recipient in an hour, counted per channel |
+| `per-recipient-daily` | 100 | 1–10000 | email or sms messages to one recipient in a day, counted per channel |
+| `global-hourly` | 10000 | 1–10000000 | email messages across the deployment in an hour |
+| `tenant-distinct-hourly` | 20 | 1–10000 | different recipients one tenant is sent an sms message in an hour |
+| `attempt-hourly` | 300 | 1–100000 | sms attempts one tenant makes in an hour, accepted or not |
 
-The counters live in `kv.KV`, one key per window bucket, and the key's expiry is
-the bucket width. The per-recipient keys are a digest of the tenant and the
-recipient identifier; the deployment key carries no tenant. The limits are read
-from settings on every dispatch, so an operator's change reaches the next one
-without a restart; a failed or out-of-domain read falls back to the declared
-default and writes one `Error` line.
+The cross-channel ceiling is `sms.ceiling-hourly` (default 5000, domain 1 to
+1000000), declared by the `pkg/sms/budget` module because it spans both sending
+channels; this module reads it by its full key and declares no copy of its own.
 
-The budget is charged **after** the recipient's effective channels are resolved,
-and only for the external channels this assembly can actually send on. A
-dispatch whose effective set is `in_app` alone, whose external seam is absent, or
-whose recipient turned the external channels off spends nothing: it produces no
-external message. One delivery spends one unit per external channel it will
-attempt. The increment happens before the comparison, so a refused dispatch
-still spends. A window that is over answers `*authn.ThrottledError` with
-`RetryAfter` set to the rest of the bucket (at least one second) and enqueues
-nothing; windows are checked per-recipient hourly, per-recipient daily, then
-global, and a `Dispatch` that fails the first check does not spend the later
-ones. A counter that cannot be written answers an error carrying
-`authn.ErrUnavailable`, and nothing is enqueued: a budget that cannot count does
-not pass.
+A dispatch whose effective channels are in_app alone, or whose external seam
+this assembly did not deliver, spends nothing: it produces no external message.
+The per-recipient and deployment windows are read from settings on every
+dispatch, so an operator's change reaches the next one without a restart; a
+failed or out-of-domain read falls back to the declared default and writes one
+`Error` line. Each channel counts its own deliveries, so the shared limit values
+do not merge the two counters; one email delivery spends one unit, and one sms
+attempt spends its own unit of the ledger.
+
+The email checks run in order — per recipient hourly, per recipient daily, then
+deployment hourly — on keys whose bucket width is their expiry, and the
+increment happens before the comparison so a refused dispatch still spends. The
+sms checks run in order — the shared ceiling, per recipient hourly, per
+recipient daily, per tenant distinct destination hourly, then per tenant attempt
+hourly — and a dispatch that fails one does not read the later ones. The
+distinct-destination budget bounds the different recipients a tenant reaches,
+not the messages it sends: a destination already inside the window adds no new
+one, so a repeat is admitted and the per-recipient budgets still bound it. An
+over window answers `*authn.ThrottledError` and enqueues nothing: the email
+windows set `RetryAfter` to the rest of the fixed bucket, and the sms windows to
+the moment the oldest counted row leaves the sliding window, each at least one
+second. A counter or ledger that cannot be read or written answers an error
+carrying `authn.ErrUnavailable`, and nothing is enqueued: a budget that cannot
+count does not pass.
+
+A refund frees a send budget and keeps an attempt budget. A skipped channel, a
+local refusal before the carrier is reached, and a definitive carrier failure — a
+throttle, a rejection or an unroutable destination — mark the charged attempt
+refunded, so it leaves the per-recipient and tenant-distinct budgets and the
+cross-channel ceiling while it stays in the tenant attempt budget. An uncertain
+outcome is not refunded: the message may have gone out, so it keeps counting.
+
+The attempt budget is deliberately asymmetric with the authentication path's.
+Authentication counts only determinate failures, because there the count names the
+account guessing codes and a success should not be charged to the attacker.
+Notification counts every attempt, because here the caller is the producer: a
+producer caught in a retry loop is what the bound exists for, and such a storm's
+attempts may each be accepted by the carrier or each fail definitely and refund
+their send budget. Counting only determinate failures would let the storm vanish
+from the attempt window.
 
 The budget is charged per `Dispatch` call, not per distinct logical event: the
 queue's idempotency key settles convergence only at enqueue time, after the
@@ -188,7 +226,7 @@ drops the `channel` dimension, so two dispatches of one logical event — same
 tenant, type, recipient, language, occurrence and parameters — converge into one
 job through the queue's own `(tenant_id, idempotency_key)` uniqueness.
 
-## The ledger and at-least-once delivery
+## The send ledger and at-least-once delivery
 
 `notification_sends` is this module's own table; no other module reads or writes
 it, and its columns are an operations view of what each channel's send ended
@@ -263,8 +301,8 @@ package, and callers tell them apart with `errors.Is`:
 
 A spent delivery budget is not one of those sentinels: it is the platform's
 retryable rejection, `*authn.ThrottledError`, which reads as `authn.ErrThrottled`
-and carries `RetryAfter`. A counter that could not be written answers an error
-that reads as `authn.ErrUnavailable`. Both refusals enqueue nothing.
+and carries `RetryAfter`. A ledger that cannot be read or written answers an
+error that reads as `authn.ErrUnavailable`. Both refusals enqueue nothing.
 
 A channel whose seam is absent is **not** an error: it records `skipped` and does
 not enter the joined error.
@@ -320,7 +358,9 @@ absence of the recipient, the body and the parameter values.
 None. The module declares no configuration namespace and reads no input item: the
 parameters of a delivery job (priority, timeout, retry budget) are fixed by this
 module at enqueue time. The only runtime parameters are the delivery-budget
-settings, under the module's own `notification.delivery` namespace.
+settings under the module's own `notification.delivery` namespace, and the shared
+cross-channel ceiling `sms.ceiling-hourly` that the `pkg/sms/budget` module
+declares and this module reads.
 
 ## Routes and permissions
 
@@ -352,9 +392,13 @@ outside the module it prints zero issues without loading the packages.
 ## Boundaries
 
 - **Every external delivery is bounded before it is queued.** `Dispatch` charges
-  the per-recipient and deployment budgets on the key-value counters and refuses
-  a spent one with the platform's throttled error and a retry time. A dispatch
-  that resolves to no external channel in this assembly spends nothing.
+  an email delivery's per-recipient hourly and daily windows and the
+  deployment-wide hourly window on the key-value counters, and an sms attempt's
+  shared cross-channel ceiling and per-recipient, per-tenant
+  distinct-destination and per-tenant attempt budgets over the shared SMS
+  ledger, refusing a spent one with the platform's throttled error and a retry
+  time. A dispatch that resolves to no external attempt in this assembly spends
+  nothing; an in-app send spends no budget.
 
 - **A dispatch's destination must be the recipient's own.** `Dispatch` holds a
   carried `to` against the recipient's identifiers through `authn.Accounts` and

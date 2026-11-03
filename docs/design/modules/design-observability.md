@@ -429,6 +429,12 @@ type Config struct {
 
 上游采集库在响应体大小、路由属性、方法与作用域名上的行为见[非保证](#非保证)的「请求计量与服务端跨度的行为是上游采集库的，本模块不修补」一条。
 
+### 业务指标与运维面
+
+**业务指标不在本模块的目录里。** 每一类信号由产生它的能力自行上报；本模块只提供 meter provider 与请求计量，不持有第二份仪表或属性清单。[design-authn-events](authn/design-authn-events.md) 与 [design-notification-delivery](notification/design-notification-delivery.md) 各自登记它的仪表，`authn.sms.budget.utilization` 是其中两个能力共用的一个：`pkg/authn/sms` 与 `pkg/notification/delivery` 以同一个名字上报，属性 `channel` 取 `authn` 或 `notification`，`purpose` 与 `dimension` 标出是哪一条预算。它的值是已用量与上限之比，所以同一个阈值对每个窗口都成立。
+
+**本模块不提供仪表盘、查询面或告警规则。** 指标只经配置的导出后端推出，消费端自己决定看哪些点、在哪里画图。一个部署若要为短信预算告警，读 `authn.sms.budget.utilization` 并自建规则；建议的告警线是 `0.8`，即一个窗口用到上限的八成时告警。没有随仓库交付的仪表盘是这条信号的既有形态，不是本模块的缺口：它产生信号，不消费信号。
+
 ### 关停时的刷出
 
 `Stop` 无动作。`Close` 以 `shutdown-timeout` 为上界依次关停追踪 provider 与指标 provider：关停一个 provider 会先把批处理器与读数器里的在途数据刷出——读数器在关停时做最后一次收集并导出——再释放 provider 自己的资源。两个 provider 都关停之后，`Close` 逐个释放收到的导出器，释放另有自己的上界，见**导出器的释放有自己的上界**一段。追踪 provider 的关停超出上界，则 `Close` 不再等待，剩余记录丢失：`Close` 以超时错误返回，驱动因此以失败结束，宿主看得到这一次停机没有在上界内完成，但丢了哪些记录没有信号。指标 provider 逐个关停它的读数器，各读数器共用刷出的那份上下文。读数器轮到时上下文尚未过期，就在关停里同步做末次导出，等到那次导出返回为止，不因上界到期而返回；导出的成败已被转发包装吸收，它随后返回成功。读数器轮到时上下文已经过期——追踪 provider 或排在前面的读数器用满了上界——它不做末次导出，以超时错误返回，`Close` 随之失败（见**`Close` 开始之后，导出也受 `shutdown-timeout` 约束**一段）。
