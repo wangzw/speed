@@ -1,63 +1,55 @@
 /**
  * The SMS first sign-in journey: an unregistered phone number signs in with a
- * code from the review log. A first login asks for the username every account is
- * opened with before it creates the account, so the account exists with that
- * username and the verified phone and lands in a personal workspace. A second
- * device signs in to the same account with a code of its own, so the account
- * holds two active sessions. On the first device the one-time setup notice opens
- * the setup page, where a password is set without a current one; that write
- * completes setup and ends the account's other sessions, so the second device's
- * next request is answered as an ended session. The first device then signs out
- * and signs back in with the username and password, reaching the same personal
- * workspace with no setup notice.
+ * code from the review log. A first login asks for the account it is about to
+ * open -- a username, an optional display name, and a password with its
+ * confirmation -- before it creates anything, so the account exists with that
+ * username, password, display name and verified phone and lands in a personal
+ * workspace. The account holds two ways to sign in from the start: the phone
+ * and the username with the password chosen at the step. Signing out and
+ * signing back in with the username and password reaches the same personal
+ * workspace.
  *
  * Everything is driven through the rendered product with mouse and keyboard:
- * channel tabs, the country/number control, headings, labels, buttons, list
- * rows, chips, links and the standing notices. The single non-UI read is the
- * SMS verification code from the review process log (fixtures/log.ts): the
- * review carrier reaches no vendor, so the process log is where a person
- * running the review reads it. Each device reads its own code, through its own
- * log cursor.
+ * channel tabs, the country/number control, headings, labels, buttons, the
+ * account entry and the standing cards. The single non-UI read is the SMS
+ * verification code from the review process log (fixtures/log.ts): the review
+ * carrier reaches no vendor, so the process log is where a person running the
+ * review reads it.
  *
- * The two devices request codes for the same number. The review assembly's
- * configuration lowers the SMS resend interval to the floor its setting accepts
- * (as it does the email one), so the second device can ask for its code within
- * the same walkthrough; the request is still refused until that window has
- * passed, and the spec presses the send control again until the product's own
- * "Code sent" notice appears. That is the backend's window observed through the
- * send's outcome, never a fixed sleep.
+ * The username step also offers an optional display name, so the spec runs
+ * both branches. This walkthrough types one, and the account entry names the
+ * new account by it. A second test starts from a fresh review server and
+ * leaves the field empty, and the account entry names that account after its
+ * username.
  *
- * Setting the first password rotates this device's session and revokes the
- * account's other sessions, which is the one write this spec observes ending
- * the second device. REQ-signin-012 and REQ-signin-014 are left out of
- * `@covers`: the spec only sends to an allowed prefix and never observes a
- * refused region or compares two numbers, so those claims would be wider than
- * what the assertions exercise. REQ-signin-030 (an unauthenticated visit to a
- * protected page renders the sign-in surface and continues in place after
- * sign-in) is left out for the same reason: the spec's only unauthenticated
- * entry is the deployment root, which is the sign-in surface itself, and after
- * a session ends it asserts the ended-session surface, not an in-place
- * continuation. A product that rendered an error page for a protected route, or
- * that stopped at the sign-in surface after signing in, would leave every
- * observation here unchanged.
+ * The spec does not claim the session-ending requirements that used to be
+ * driven by the setup page's first-password write: setting a password there
+ * rotated the session and ended the account's other sessions, but the account
+ * now opens with its password and the journey performs no such write.
+ * REQ-account-023, REQ-account-026 and REQ-security-029 are covered by the
+ * account-security-hardening journey instead. REQ-signin-012 and
+ * REQ-signin-014 are left out for the reason the earlier walkthrough gave:
+ * the spec only sends to an allowed prefix and never observes a refused region
+ * or compares two numbers. REQ-signin-030 is left out because the spec's only
+ * unauthenticated entry is the deployment root, which is the sign-in surface
+ * itself.
  *
  * Expected copy is read from the shipped en-US locale bundles through
  * helpers/i18n.ts, so a sentence that changes in the product changes here with
  * it rather than leaving a stale literal that still passes.
- *
- * The username step also offers an optional display name, so the spec runs both
- * branches. This walkthrough types one, and the account entry names the new
- * account by it. A second test starts from a fresh review server and leaves the
- * field empty, and the account entry names that account after its username.
  */
 // @journey journey-sms-signup-to-password-login.md
-// @covers REQ-account-007, REQ-account-021, REQ-account-023, REQ-account-026, REQ-security-029, REQ-security-030, REQ-signin-006, REQ-signin-011, REQ-signup-012, REQ-signup-014, REQ-signup-015, REQ-signup-051, REQ-tenancy-022, REQ-tenancy-026
-import type { BrowserContext, Page } from '@playwright/test'
+// @covers REQ-account-007, REQ-account-060, REQ-account-061, REQ-security-030, REQ-signin-006, REQ-signin-011, REQ-signup-012, REQ-signup-014, REQ-signup-015, REQ-signup-051, REQ-tenancy-022, REQ-tenancy-026
+import type { Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
 import type { Accounts } from '../helpers/accounts'
 import { expectAccountMenuName } from '../helpers/account-menu'
+import {
+  expandAccountRows,
+  openAccountSection,
+} from '../helpers/account-sections'
 import { copy } from '../helpers/i18n'
 
 /** The number the walkthrough uses: a Chinese mobile number in E.164 form. */
@@ -68,7 +60,7 @@ const PHONE_E164 = '+8613800138000'
 const SIGNUP_DISPLAY_NAME = 'Phone Signup Person'
 
 /** A password the review policy accepts and that matches no identifier. */
-const SETUP_PASSWORD = 'e2e-Password-123'
+const SIGNUP_PASSWORD = 'e2e-Password-123'
 
 /** The SMS channel's tab. */
 function smsTab(page: Page) {
@@ -110,6 +102,47 @@ function sentNotice(page: Page) {
   )
 }
 
+/** The product's sign-in surface heading. */
+function signInHeading(page: Page): Locator {
+  return page.getByRole('heading', {
+    level: 1,
+    name: copy('demo', 'signIn.heading'),
+    exact: true,
+  })
+}
+
+/** The tenant area's home heading, the rendered proof of a landed session. */
+function homeHeading(page: Page): Locator {
+  return page.getByRole('heading', {
+    level: 1,
+    name: copy('demo', 'home.heading'),
+    exact: true,
+  })
+}
+
+/** One account section card, named by its own h2 title. */
+function section(page: Page, title: string): Locator {
+  return page.getByRole('region', { name: title, exact: true })
+}
+
+/** The security pane's sign-in-ways card. */
+function identifiersSection(page: Page): Locator {
+  return section(page, copy('demo', 'account.rows.label.loginWays'))
+}
+
+/** The profile pane's phone card, where the bound number is listed. */
+function phoneCard(page: Page): Locator {
+  return section(page, copy('demo', 'account.rows.label.phone'))
+}
+
+/** The tenant switcher's trigger, showing the current organization's name. */
+function switcher(page: Page): Locator {
+  return page.getByRole('button', {
+    name: copy('demo', 'workspace.personal'),
+    exact: true,
+  })
+}
+
 /**
  * Switch the sign-in surface to the SMS channel and fill the phone control:
  * the country is picked by its calling code, then the local number is typed.
@@ -137,50 +170,6 @@ async function requestCode(page: Page): Promise<void> {
   await expect(sentNotice(page)).toBeVisible()
 }
 
-/**
- * Request a code, pressing the send control again until the product answers
- * with its sent notice.
- *
- * The first device's code has already been requested for this number, so the
- * second device's request lands inside the SMS resend window and the server
- * refuses it. A person would press Send code again; this repeats that until the
- * product's own notice appears, which is the window passing, never a fixed
- * delay. The retries add no challenge rows (a refused send is refused before
- * one is written), so they do not spend a budget.
- *
- * The retry stop condition is the surface's own state transition, not the
- * notice alone: once an accepted send replaces the phone step with the code
- * step, the send control is gone, so a later attempt must not click a detached
- * node. Each attempt first checks whether the code step or the notice has
- * already arrived and stops; otherwise it clicks the send control and waits the
- * tier's uniform five seconds for the notice. A refusal leaves the phone step
- * in place with no notice, which is what the next attempt retries.
- */
-async function requestCodeThroughResendWindow(page: Page): Promise<void> {
-  const send = page.getByRole('button', {
-    name: copy('authUi', 'smsSignIn.sendCode'),
-    exact: true,
-  })
-  const step = codeField(page)
-  await expect(async () => {
-    // A successful send has already moved the surface on; stop rather than
-    // click the control it unmounted.
-    if (await step.isVisible()) {
-      return
-    }
-    if (!(await send.isVisible())) {
-      // The control vanished between polls: the transition is under way, so
-      // let the state assertion after the loop observe it.
-      return
-    }
-    await send.click()
-    await expect(sentNotice(page)).toBeVisible({ timeout: 5_000 })
-  }).toPass({ timeout: 60_000, intervals: [4_000] })
-  // A resolved retry means an accepted send; the code step is the visible
-  // consequence of it.
-  await expect(step).toBeVisible()
-}
-
 /** Answer the code step with the given code and submit the login. */
 async function submitCode(page: Page, code: string): Promise<void> {
   await codeField(page).fill(code)
@@ -204,37 +193,57 @@ async function signOutToSignIn(
       exact: true,
     })
     .click()
+  await expect(signInHeading(page)).toBeVisible()
+}
+
+/**
+ * Assert the account page lists the phone as a contact and both the phone and
+ * the username as ways to sign in, and that no email address is chosen.
+ */
+async function expectBothWaysToSignIn(
+  page: Page,
+  username: string,
+): Promise<void> {
+  // The phone stays a contact: the profile pane's phone card lists it as a
+  // verified number.
+  await openAccountSection(page, 'profile')
+  await expandAccountRows(page)
+  const phone = phoneCard(page)
+  await expect(phone.getByText(PHONE_E164, { exact: true })).toBeVisible()
   await expect(
-    page.getByRole('heading', {
-      level: 1,
-      name: copy('demo', 'signIn.heading'),
+    phone.getByText(copy('accountUi', 'identifiers.verified'), {
       exact: true,
     }),
   ).toBeVisible()
-}
 
-/** The setup page's sign-in-identifiers section. */
-function identifiersSection(page: Page) {
-  return page.getByRole('region', {
-    name: copy('accountUi', 'identifiers.title'),
-    exact: true,
-  })
-}
-
-/** The setup page's password section. */
-function passwordSection(page: Page) {
-  return page.getByRole('region', {
-    name: copy('accountUi', 'password.title'),
-    exact: true,
-  })
-}
-
-/** The tenant switcher's trigger, showing the current organization's name. */
-function switcher(page: Page) {
-  return page.getByRole('button', {
-    name: copy('demo', 'workspace.personal'),
-    exact: true,
-  })
+  // The security pane's sign-in ways name the phone and the username, and the
+  // email group states that no address was chosen.
+  await openAccountSection(page, 'security')
+  await expandAccountRows(page)
+  const identifiers = identifiersSection(page)
+  await expect(
+    identifiers.getByText(
+      copy('accountUi', 'identifiers.usage.loginAs', {
+        kind: copy('accountUi', 'identifiers.kind.phone'),
+        value: PHONE_E164,
+      }),
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await expect(
+    identifiers.getByText(
+      copy('accountUi', 'identifiers.usage.loginAs', {
+        kind: copy('accountUi', 'identifiers.kind.username'),
+        value: username,
+      }),
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await expect(
+    identifiers.getByText(copy('accountUi', 'identifiers.usage.emailNone'), {
+      exact: true,
+    }),
+  ).toBeVisible()
 }
 
 test('sms-signup: a phone-code first sign-in becomes a username-and-password login', async ({
@@ -244,368 +253,115 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
   // The username the first login chooses and later signs in with.
   const username = accounts.unique('smsuser').username
 
-  // The second device: a browser context of its own, hence its own cookie jar
-  // and its own session. It is opened at the review origin with the same
-  // language and clock the config pins and the running page's viewport, so the
-  // two devices share every pin a context created by hand must repeat; it is
-  // closed with the server so its notification stream does not hold shutdown
-  // open.
-  const browser = page.context().browser()
-  if (browser === null) {
-    throw new Error('the demo page is not attached to a browser')
-  }
-  let second: BrowserContext | undefined
-  server.beforeStop(async () => {
-    await second?.close().catch(() => undefined)
+  await test.step('the sign-in surface offers the SMS channel with the account-opening sentence', async () => {
+    await accounts.openSignIn()
+    await expect(signInHeading(page)).toBeVisible()
+    // The sentence names a phone number, so it belongs under the SMS channel:
+    // it appears once that channel is the one on screen. It says the number's
+    // first sign-in creates an account.
+    await smsTab(page).click()
+    await expect(countryField(page)).toBeVisible()
+    await expect(
+      page.getByText(copy('authUi', 'mode.signInAccountHint'), {
+        exact: true,
+      }),
+    ).toBeVisible()
   })
 
-  try {
-    second = await browser.newContext({
-      locale: 'en-US',
-      timezoneId: 'UTC',
-      viewport: page.viewportSize(),
-    })
-    const other = await second.newPage()
+  let codeAfter = 0
+  await test.step('a country and number are chosen and the code is sent', async () => {
+    await fillSmsPhone(page)
+    codeAfter = server.log.mark()
+    await requestCode(page)
+    await expect(codeField(page)).toBeVisible()
+  })
 
-    await test.step('the sign-in surface offers the SMS channel with the account-opening sentence', async () => {
-      await accounts.openSignIn()
-      await expect(
-        page.getByRole('heading', {
-          level: 1,
-          name: copy('demo', 'signIn.heading'),
-          exact: true,
-        }),
-      ).toBeVisible()
-      // The sentence names a phone number, so it belongs under the SMS
-      // channel: it appears once that channel is the one on screen. It says
-      // the number's first sign-in creates an account.
-      await smsTab(page).click()
-      await expect(countryField(page)).toBeVisible()
-      await expect(
-        page.getByText(copy('authUi', 'mode.signInAccountHint'), {
-          exact: true,
-        }),
-      ).toBeVisible()
-    })
+  await test.step('the code asks for a username, an optional display name and a password, then the account opens', async () => {
+    const { code } = await waitForVerificationCode(
+      server.log,
+      'sms',
+      PHONE_E164,
+      { after: codeAfter },
+    )
+    await submitCode(page, code)
 
-    let firstCodeAfter = 0
-    await test.step('a country and number are chosen and the code is sent', async () => {
-      await fillSmsPhone(page)
-      firstCodeAfter = server.log.mark()
-      await requestCode(page)
-      await expect(codeField(page)).toBeVisible()
-    })
-
-    await test.step('the code asks for a username, then the account opens in the personal workspace', async () => {
-      const { code } = await waitForVerificationCode(
-        server.log,
-        'sms',
-        PHONE_E164,
-        { after: firstCodeAfter },
-      )
-      await submitCode(page, code)
-
-      // A first login that would open an account stops at the username step:
-      // nothing is written before the name the account will carry arrives.
-      // The optional display name is typed beside it, so the account this
-      // walkthrough opens is named by it rather than by its username.
-      await accounts.answerSignupUsername(username, SIGNUP_DISPLAY_NAME)
-
-      await expect(
-        page.getByRole('heading', {
-          level: 1,
-          name: copy('demo', 'home.heading'),
-          exact: true,
-        }),
-      ).toBeVisible()
-
-      // The account entry is where the display name first shows: its
-      // accessible name is the avatar's initials and the account's display
-      // name, so the typed name is what the new account carries.
-      await expectAccountMenuName(
-        page.getByTestId('account-entry-trigger'),
-        SIGNUP_DISPLAY_NAME,
-      )
-
-      // The header switcher names the personal workspace as the current
-      // organization, and its list holds that one row, disabled because it is
-      // the current one.
-      const trigger = switcher(page)
-      await expect(trigger).toBeEnabled()
-      await trigger.click()
-      const rows = page.getByRole('menuitem')
-      await expect(rows).toHaveCount(1)
-      await expect(rows.first()).toHaveAccessibleName(
-        copy('demo', 'workspace.personal'),
-      )
-      await expect(rows.first()).toBeDisabled()
-      await page.keyboard.press('Escape')
-
-      // The one-time setup notice: a close control and the way to the setup
-      // page.
-      await expect(
-        page.getByText(copy('demo', 'home.setupNotice.title'), {
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(
-        page.getByRole('link', {
-          name: copy('demo', 'home.setupNotice.action'),
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(
-        page.getByRole('button', {
-          name: copy('demo', 'home.setupNotice.dismiss'),
-          exact: true,
-        }),
-      ).toBeVisible()
-    })
-
-    await test.step('the other device signs in with the same number and its own code', async () => {
-      await other.goto(`${server.url}/`)
-      await expect(
-        other.getByRole('heading', {
-          level: 1,
-          name: copy('demo', 'signIn.heading'),
-          exact: true,
-        }),
-      ).toBeVisible()
-      await fillSmsPhone(other)
-
-      // The second device's code is requested only after the first one, and
-      // its cursor keeps the first device's code from answering this read.
-      const secondCodeAfter = server.log.mark()
-      await requestCodeThroughResendWindow(other)
-      const { code } = await waitForVerificationCode(
-        server.log,
-        'sms',
-        PHONE_E164,
-        { after: secondCodeAfter },
-      )
-      await submitCode(other, code)
-
-      await expect(
-        other.getByRole('heading', {
-          level: 1,
-          name: copy('demo', 'home.heading'),
-          exact: true,
-        }),
-      ).toBeVisible()
-    })
-
-    await test.step('the setup page lists the verified phone and the chosen username, and offers the password form', async () => {
-      await page
-        .getByRole('link', {
-          name: copy('demo', 'home.setupNotice.action'),
-          exact: true,
-        })
-        .click()
-      await expect(
-        page.getByRole('heading', {
-          level: 1,
-          name: copy('demo', 'accountSetup.title'),
-          exact: true,
-        }),
-      ).toBeVisible()
-
-      // One row: the verified phone, a contact because registering it is what
-      // makes it one. The sign-in ways list no rows of its own: the phone is
-      // named by the group's sentence and the username by its own.
-      const identifiers = identifiersSection(page)
-      await expect(identifiers.getByRole('listitem')).toHaveCount(1)
-      const signInWays = identifiers.getByRole('region', {
-        name: copy('accountUi', 'identifiers.groups.signIn'),
+    // The account-opening step asks for the username, the optional display
+    // name and the password with its confirmation. Everything is answered in
+    // one submission; the account exists only after it.
+    const displayName = page.getByLabel(
+      copy('authUi', 'register.displayNameLabel'),
+      { exact: true },
+    )
+    await expect(displayName).toBeVisible()
+    await expect(
+      page.getByLabel(copy('authUi', 'passwordSignIn.passwordLabel'), {
         exact: true,
-      })
-      const contacts = identifiers.getByRole('region', {
-        name: copy('accountUi', 'identifiers.groups.contact'),
+      }),
+    ).toBeVisible()
+    await expect(
+      page.getByLabel(copy('authUi', 'register.confirmPasswordLabel'), {
         exact: true,
-      })
+      }),
+    ).toBeVisible()
 
-      await expect(
-        signInWays.getByText(
-          copy('accountUi', 'identifiers.usage.loginAs', {
-            kind: copy('accountUi', 'identifiers.kind.phone'),
-            value: PHONE_E164,
-          }),
-          { exact: true },
-        ),
-      ).toBeVisible()
-
-      // The same number is a contact too, one row in that list.
-      const contactPhoneRow = contacts
-        .getByRole('listitem')
-        .filter({ hasText: PHONE_E164 })
-      await expect(contactPhoneRow).toBeVisible()
-      await expect(
-        contactPhoneRow.getByText(copy('accountUi', 'identifiers.verified'), {
-          exact: true,
-        }),
-      ).toBeVisible()
-
-      // The username is a sign-in way, named by its own sentence; it proves no
-      // ownership, so it never appears among the contacts.
-      await expect(
-        signInWays.getByText(
-          copy('accountUi', 'identifiers.usage.loginAs', {
-            kind: copy('accountUi', 'identifiers.kind.username'),
-            value: username,
-          }),
-          { exact: true },
-        ),
-      ).toBeVisible()
-      await expect(contacts.getByText(username, { exact: true })).toHaveCount(0)
-
-      // The username is a login name, so the password form is offered without
-      // a page reload or a further identifier write.
-      await expect(
-        passwordSection(page).getByRole('textbox', {
-          name: copy('accountUi', 'password.new.label'),
-          exact: true,
-        }),
-      ).toBeVisible()
+    await accounts.answerPhoneSignup({
+      username,
+      password: SIGNUP_PASSWORD,
+      displayName: SIGNUP_DISPLAY_NAME,
     })
 
-    await test.step('a new password is set without a current one, and setup completes', async () => {
-      const password = passwordSection(page)
-      // The account holds no password yet, so no current password is asked
-      // for.
-      await expect(
-        password.getByRole('textbox', {
-          name: copy('accountUi', 'password.current.label'),
-          exact: true,
-        }),
-      ).toHaveCount(0)
-      await password
-        .getByRole('textbox', {
-          name: copy('accountUi', 'password.new.label'),
-          exact: true,
-        })
-        .fill(SETUP_PASSWORD)
-      await password
-        .getByRole('textbox', {
-          name: copy('accountUi', 'password.confirm.label'),
-          exact: true,
-        })
-        .fill(SETUP_PASSWORD)
-      await password
-        .getByRole('button', {
-          name: copy('accountUi', 'password.submitFirst'),
-          exact: true,
-        })
-        .click()
+    // The account is established and the session lands straight in the tenant
+    // area: no setup page and no setup notice stand between them.
+    await expect(homeHeading(page)).toBeVisible()
 
-      // The password write rotates this session's credential and ends the
-      // account's other sessions. The other device is still showing the tenant
-      // area, so its next request is what discovers the end: opening the
-      // account settings asks the server, which answers as an ended session and
-      // swaps the shell for the sign-in-again screen.
-      //
-      // The account menu trigger is addressed by its own stable identifier,
-      // not by its accessible name (which is the display name when the account
-      // has one) and not by its position among the bar's other menus.
-      await other
-        .getByTestId('account-entry-trigger')
-        .click()
-      await other
-        .getByRole('menuitem', {
-          name: copy('demo', 'account.sections.profile'),
-          exact: true,
-        })
-        .click()
-      await expect(
-        other.getByRole('heading', {
-          name: copy('authUi', 'sessionEnded.title'),
-          exact: true,
-        }),
-      ).toBeVisible()
+    // The account entry is where the display name first shows: its accessible
+    // name is the avatar's initials and the account's display name, so the
+    // typed name is what the new account carries.
+    await expectAccountMenuName(
+      page.getByTestId('account-entry-trigger'),
+      SIGNUP_DISPLAY_NAME,
+    )
 
-      // The confirmation names the first password and the sign-out of the
-      // other devices, and the page states setup is complete with the way
-      // home.
-      await expect(
-        page.getByText(copy('accountUi', 'password.changedFirst'), {
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(
-        page.getByRole('heading', {
-          level: 1,
-          name: copy('demo', 'accountSetup.completeTitle'),
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(
-        page.getByText(copy('demo', 'accountSetup.complete'), {
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(
-        page.getByRole('link', {
-          name: copy('demo', 'accountSetup.home'),
-          exact: true,
-        }),
-      ).toBeVisible()
+    // The header switcher names the personal workspace as the current
+    // organization, and its list holds that one row, disabled because it is
+    // the current one.
+    const trigger = switcher(page)
+    await expect(trigger).toBeEnabled()
+    await trigger.click()
+    const rows = page.getByRole('menuitem')
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toHaveAccessibleName(
+      copy('demo', 'workspace.personal'),
+    )
+    await expect(rows.first()).toBeDisabled()
+    await page.keyboard.press('Escape')
+  })
+
+  await test.step('the account lists the phone as a contact and both the phone and the username as sign-in ways', async () => {
+    await expectBothWaysToSignIn(page, username)
+  })
+
+  await test.step('the account signs out from this device', async () => {
+    await signOutToSignIn(page, accounts)
+  })
+
+  await test.step('the username and password sign in to the same personal workspace', async () => {
+    await accounts.signIn({
+      identifier: username,
+      password: SIGNUP_PASSWORD,
     })
+    await expect(homeHeading(page)).toBeVisible()
 
-    await test.step('the home page no longer offers setup', async () => {
-      await page
-        .getByRole('link', {
-          name: copy('demo', 'accountSetup.home'),
-          exact: true,
-        })
-        .click()
-      await expect(
-        page.getByRole('heading', {
-          level: 1,
-          name: copy('demo', 'home.heading'),
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(
-        page.getByText(copy('demo', 'home.setupNotice.title'), {
-          exact: true,
-        }),
-      ).toHaveCount(0)
-    })
-
-    await test.step('the account signs out from this device', async () => {
-      await signOutToSignIn(page, accounts)
-    })
-
-    await test.step('the username and password sign in to the same personal workspace', async () => {
-      await accounts.signIn({
-        identifier: username,
-        password: SETUP_PASSWORD,
-      })
-      await expect(
-        page.getByRole('heading', {
-          level: 1,
-          name: copy('demo', 'home.heading'),
-          exact: true,
-        }),
-      ).toBeVisible()
-
-      // The password sign-in reaches the account's one personal workspace,
-      // and the setup notice does not return.
-      const trigger = switcher(page)
-      await expect(trigger).toBeEnabled()
-      await expect(
-        page.getByText(copy('demo', 'home.setupNotice.title'), {
-          exact: true,
-        }),
-      ).toHaveCount(0)
-      await trigger.click()
-      await expect(page.getByRole('menuitem')).toHaveCount(1)
-      await expect(page.getByRole('menuitem').first()).toHaveAccessibleName(
-        copy('demo', 'workspace.personal'),
-      )
-      await page.keyboard.press('Escape')
-    })
-  } finally {
-    await second?.close().catch(() => undefined)
-  }
+    // The password sign-in reaches the account's one personal workspace.
+    const trigger = switcher(page)
+    await expect(trigger).toBeEnabled()
+    await trigger.click()
+    await expect(page.getByRole('menuitem')).toHaveCount(1)
+    await expect(page.getByRole('menuitem').first()).toHaveAccessibleName(
+      copy('demo', 'workspace.personal'),
+    )
+    await page.keyboard.press('Escape')
+  })
 })
 
 test('sms-signup: a phone-code first sign-in with no display name takes the username', async ({
@@ -625,7 +381,7 @@ test('sms-signup: a phone-code first sign-in with no display name takes the user
     await expect(codeField(page)).toBeVisible()
   })
 
-  await test.step('the code opens a username step whose optional display name is left empty', async () => {
+  await test.step('the account-opening step offers the optional display name, and it is left empty', async () => {
     const { code } = await waitForVerificationCode(
       server.log,
       'sms',
@@ -643,18 +399,14 @@ test('sms-signup: a phone-code first sign-in with no display name takes the user
     await expect(displayName).toBeVisible()
     await expect(displayName).toHaveValue('')
 
-    // Only the username is answered.
-    await accounts.answerSignupUsername(username)
+    await accounts.answerPhoneSignup({
+      username,
+      password: SIGNUP_PASSWORD,
+    })
   })
 
   await test.step('the account opens with the username as its display name', async () => {
-    await expect(
-      page.getByRole('heading', {
-        level: 1,
-        name: copy('demo', 'home.heading'),
-        exact: true,
-      }),
-    ).toBeVisible()
+    await expect(homeHeading(page)).toBeVisible()
 
     // The account entry is where the account's display name first shows; with
     // the field left empty it names the account after the chosen username.

@@ -57,17 +57,27 @@ export interface Accounts {
     readonly password: string
   }): Promise<void>
   /**
-   * Answer the username step a first login parks at before it opens an
-   * account. The server asks for the `username` field, and the sign-in family
-   * renders a field name it has no wording for verbatim, so the input's
-   * accessible name is the field's own name rather than a bundle string.
-   *
-   * The phone first login's step also offers an optional display name; when
-   * `displayName` is given it is typed into that field, and when it is left
-   * out the field stays empty, which the server reads as "name the account
-   * after the username".
+   * Answer the username step an enterprise just-in-time first login parks at
+   * before it opens an account. The server asks for the `username` field, and
+   * the sign-in family renders a field name it has no wording for verbatim, so
+   * the input's accessible name is the field's own name rather than a bundle
+   * string. That step asks for the username alone: the account signs in through
+   * the provider, so no password is collected there.
    */
-  answerSignupUsername(username: string, displayName?: string): Promise<void>
+  answerSignupUsername(username: string): Promise<void>
+  /**
+   * Answer the phone first login's account-opening face: the username, the
+   * optional display name and the password with its confirmation. The phone
+   * code proved the number; the account is opened with what is answered here,
+   * so a submission carrying no password creates nothing. The display name is
+   * typed only when `displayName` is given; left out, the field stays empty and
+   * the server names the account after the username.
+   */
+  answerPhoneSignup(input: {
+    readonly username: string
+    readonly password: string
+    readonly displayName?: string
+  }): Promise<void>
   /**
    * Answer the social first login's account-opening face: the username and
    * the password with its confirmation. The face renders the provider's
@@ -257,10 +267,7 @@ export function createAccounts({
     await identifier.waitFor({ state: 'detached' })
   }
 
-  const signUpUsername = async (
-    username: string,
-    displayName?: string,
-  ): Promise<void> => {
+  const signUpUsername = async (username: string): Promise<void> => {
     // The challenge renders inside the form the flow parked on (the callback
     // page, or the SMS channel's own panel); addressing the submit inside that
     // form keeps the enterprise entry's "Continue" on the sign-in page out of
@@ -271,18 +278,49 @@ export function createAccounts({
     await field.waitFor()
     await field.fill(username)
     const form = field.locator('xpath=ancestor::form[1]')
-    if (displayName !== undefined) {
+    await form
+      .getByRole('button', {
+        name: copy('authUi', 'signInFlow.submit'),
+        exact: true,
+      })
+      .click()
+    await field.waitFor({ state: 'detached' })
+  }
+
+  const signUpPhone = async (input: {
+    readonly username: string
+    readonly password: string
+    readonly displayName?: string
+  }): Promise<void> => {
+    // The phone step renders in the SMS channel's own panel, so every lookup is
+    // scoped to the form the username input belongs to; the sign-in page's
+    // password form carries a field with the same label.
+    const field = page.locator(`input[name="${SIGNUP_USERNAME_FIELD}"]`)
+    await field.waitFor()
+    const form = field.locator('xpath=ancestor::form[1]')
+    await field.fill(input.username)
+    if (input.displayName !== undefined) {
       // The optional field is known to the family, so it carries the bundle's
-      // own label; look it up inside the same form rather than on the page.
+      // own label.
       await form
         .getByLabel(copy('authUi', 'register.displayNameLabel'), {
           exact: true,
         })
-        .fill(displayName)
+        .fill(input.displayName)
     }
     await form
+      .getByLabel(copy('authUi', 'passwordSignIn.passwordLabel'), {
+        exact: true,
+      })
+      .fill(input.password)
+    await form
+      .getByLabel(copy('authUi', 'register.confirmPasswordLabel'), {
+        exact: true,
+      })
+      .fill(input.password)
+    await form
       .getByRole('button', {
-        name: copy('authUi', 'signInFlow.submit'),
+        name: copy('authUi', 'signInFlow.signupAccountSubmit'),
         exact: true,
       })
       .click()
@@ -355,6 +393,7 @@ export function createAccounts({
     },
     signIn,
     answerSignupUsername: signUpUsername,
+    answerPhoneSignup: signUpPhone,
     answerSocialSignup: signUpSocial,
     signOut,
     unique(prefix: string): PasswordAccount {

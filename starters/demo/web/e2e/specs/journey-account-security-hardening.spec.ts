@@ -57,7 +57,7 @@
  * helpers/i18n.ts.
  */
 // @journey journey-account-security-hardening.md
-// @covers REQ-account-007, REQ-security-001, REQ-security-003, REQ-security-008, REQ-security-013, REQ-security-014, REQ-security-022, REQ-security-023, REQ-security-025, REQ-security-030, REQ-signin-006
+// @covers REQ-account-007, REQ-account-023, REQ-account-026, REQ-security-001, REQ-security-003, REQ-security-008, REQ-security-013, REQ-security-014, REQ-security-022, REQ-security-023, REQ-security-025, REQ-security-029, REQ-security-030, REQ-signin-006
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { createAccounts, type Accounts } from '../helpers/accounts'
