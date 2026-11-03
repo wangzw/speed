@@ -35,6 +35,7 @@ const MEMBERS: readonly AdminMember[] = [
     account: 'account-identifier-with-a-long-value-0001',
     tenant: 'acme',
     active: true,
+    display_name: 'Member With A Long Display Name',
     sso_exempt: false,
     source: 'direct',
   },

@@ -78,6 +78,12 @@
       "audit": "审计"
     }
   },
+  "workspace": {
+    "nav": {
+      "invitations": "邀请与成员",
+      "sso": "SSO 提供方"
+    }
+  },
   "common": {
     "refresh": "刷新",
     "updatedAt": "更新于 {{time}}",
@@ -965,6 +971,7 @@
     },
     "retry": "重试",
     "column": {
+      "displayName": "显示名",
       "account": "账户",
       "active": "在册",
       "ssoExempt": "SSO 豁免",

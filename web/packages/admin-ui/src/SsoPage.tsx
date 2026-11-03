@@ -98,6 +98,7 @@ import {
   WriteFeedbackRegion,
 } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
+import { useWorkspaceAdminBreadcrumbs } from './WorkspaceAdminBreadcrumb.js'
 import type { AdminSsoProvider } from './operations.js'
 
 /**
@@ -148,6 +149,7 @@ export function SsoPage({
   const operations = useAdminOperations()
   const session = useAdminSession()
   const hasFeature = useAdminHasFeature()
+  const workspaceBreadcrumbs = useWorkspaceAdminBreadcrumbs()
   // A provider's metadata refresh is a separate capability of the SSO
   // surface; without it the row keeps its other actions.
   const metadataRefresh = hasFeature('authn.admin.sso.metadata')
@@ -502,7 +504,12 @@ export function SsoPage({
     <Box>
       <PageHeader
         title={t('sso.title')}
-        breadcrumbs={[{ label: t('shell.title') }, { label: t('sso.title') }]}
+        breadcrumbs={
+          workspaceBreadcrumbs ?? [
+            { label: t('shell.title') },
+            { label: t('sso.title') },
+          ]
+        }
         sx={{ mb: 2 }}
       />
 

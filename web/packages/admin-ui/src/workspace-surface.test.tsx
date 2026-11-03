@@ -1,0 +1,435 @@
+/**
+ * The workspace administration surface's exports: its declarations, the
+ * frameless provider and breadcrumb context, and the page wrappers.
+ *
+ * The wrapper cases pin the tenant contract: the wrapper takes the current
+ * tenant from the provider and hands it to the shared page as a controlled
+ * tenant, so the page issues its reads at that tenant and does not mount
+ * the roster-fed tenant selector. The provider cases pin that it renders
+ * no frame of its own while publishing the workspace contexts the pages
+ * read, and that the breadcrumb context is preferred only where it is
+ * installed.
+ */
+
+import { describe, expect, it } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import {
+  WorkspaceAdminBreadcrumbProvider,
+  useWorkspaceAdminBreadcrumbs,
+} from './WorkspaceAdminBreadcrumb.js'
+import {
+  WorkspaceAdminProvider,
+  useWorkspaceAdminContext,
+  useWorkspaceAdminProtectedRoles,
+  useWorkspaceAdminTenant,
+} from './WorkspaceAdminProvider.js'
+import { useAdminHasFeature } from './internal/features.js'
+import { useAdminRouteTable } from './internal/route-table.js'
+import { workspaceAdminRoutes } from './workspace-routes.js'
+import {
+  WorkspaceInvitationsPage,
+  WorkspaceSsoPage,
+} from './workspace-pages.js'
+import { workspaceAdminOperations } from './workspace-operations.js'
+import { adminOperations } from './operations.js'
+import { renderWithProviders } from '../test-utils/render.js'
+import { bindAdminRequest } from '../test-utils/request-rig.js'
+import {
+  createAdminOperations,
+  makeAdminBackend,
+} from '../test-utils/operations.js'
+import type { AdminBackend } from '../test-utils/operations.js'
+import zhCN from './locales/zh-CN.json' with { type: 'json' }
+
+const TENANT = 'acme'
+
+/** A backend that records the tenant each tenant-scoped read was called
+ * with, and records no platform read at all. */
+function recordingBackend(): {
+  readonly backend: AdminBackend
+  readonly readTenants: readonly string[]
+  readonly rosterReads: () => number
+} {
+  const readTenants: string[] = []
+  let rosterReads = 0
+  const base = makeAdminBackend()
+  const backend = makeAdminBackend({
+    listTenants: () => {
+      rosterReads += 1
+      return Promise.resolve([])
+    },
+    listInvitations: (tenant) => {
+      readTenants.push(tenant)
+      return base.listInvitations(tenant)
+    },
+    listMembers: (tenant) => {
+      readTenants.push(tenant)
+      return base.listMembers(tenant)
+    },
+    listSsoProviders: (tenant) => {
+      readTenants.push(tenant)
+      return base.listSsoProviders(tenant)
+    },
+  })
+  return { backend, readTenants, rosterReads: () => rosterReads }
+}
+
+const noFeatures = (): boolean => false
+
+describe('workspaceAdminRoutes', () => {
+  it('declares the tenant-scoped pages with tenant-domain codes and features', () => {
+    expect(workspaceAdminRoutes.map((route) => route.id)).toEqual([
+      'workspace-invitations',
+      'workspace-sso',
+    ])
+    expect(workspaceAdminRoutes.map((route) => route.path)).toEqual([
+      '/invitations',
+      '/sso',
+    ])
+    expect(workspaceAdminRoutes.map((route) => route.permission)).toEqual([
+      'authn.membership.manage',
+      'authn.idp.manage',
+    ])
+    expect(workspaceAdminRoutes.map((route) => route.requires)).toEqual([
+      ['authn.admin', 'authn.invitations'],
+      ['authn.admin', 'authn.admin.sso'],
+    ])
+    // The workspace declarations never name the platform roster feature: the
+    // surface reads no roster and holds no tenant selector.
+    for (const route of workspaceAdminRoutes) {
+      expect(route.requires).not.toContain('tenant.admin')
+    }
+  })
+})
+
+describe('the workspace page wrappers', () => {
+  it('scopes the invitations page to the provided tenant without a selector', async () => {
+    const { backend, readTenants, rosterReads } = recordingBackend()
+    renderWithProviders(
+      <WorkspaceAdminProvider
+        tenant={TENANT}
+        operations={createAdminOperations(backend)}
+        hasFeature={noFeatures}
+        routes={workspaceAdminRoutes}
+      >
+        <WorkspaceInvitationsPage />
+      </WorkspaceAdminProvider>,
+    )
+    await waitFor(() => expect(readTenants).toEqual([TENANT, TENANT]))
+    // The controlled tenant means the page never reads the platform roster
+    // for a selector; every read names the current tenant.
+    expect(rosterReads()).toBe(0)
+  })
+
+  it('prefers the workspace trail over the platform trail on the page header', async () => {
+    const { backend } = recordingBackend()
+    renderWithProviders(
+      <WorkspaceAdminProvider
+        tenant={TENANT}
+        operations={createAdminOperations(backend)}
+        hasFeature={noFeatures}
+        routes={workspaceAdminRoutes}
+        breadcrumbs={[
+          { label: 'Workspace home' },
+          { label: 'Invitations' },
+        ]}
+      >
+        <WorkspaceInvitationsPage />
+      </WorkspaceAdminProvider>,
+    )
+    // The workspace trail is the one the page header renders ...
+    expect(await screen.findByText('Workspace home')).toBeInTheDocument()
+    // ... and the platform console's own trail is not.
+    expect(screen.queryByText(zhCN.shell.title)).toBeNull()
+  })
+
+  it('prefers the workspace trail over the platform trail on the SSO header', async () => {
+    const { backend } = recordingBackend()
+    renderWithProviders(
+      <WorkspaceAdminProvider
+        tenant={TENANT}
+        operations={createAdminOperations(backend)}
+        hasFeature={() => true}
+        routes={workspaceAdminRoutes}
+        breadcrumbs={[{ label: 'Workspace home' }, { label: 'SSO' }]}
+      >
+        <WorkspaceSsoPage />
+      </WorkspaceAdminProvider>,
+    )
+    expect(await screen.findByText('Workspace home')).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.shell.title)).toBeNull()
+  })
+
+  it('scopes the SSO page to the provided tenant without a selector', async () => {
+    const { backend, readTenants, rosterReads } = recordingBackend()
+    renderWithProviders(
+      <WorkspaceAdminProvider
+        tenant={TENANT}
+        operations={createAdminOperations(backend)}
+        hasFeature={() => true}
+        routes={workspaceAdminRoutes}
+      >
+        <WorkspaceSsoPage />
+      </WorkspaceAdminProvider>,
+    )
+    await waitFor(() => expect(readTenants).toEqual([TENANT]))
+    expect(rosterReads()).toBe(0)
+  })
+})
+
+describe('WorkspaceAdminProvider', () => {
+  it('publishes the workspace contexts and renders no frame of its own', () => {
+    const { backend } = recordingBackend()
+    function Probe() {
+      const { tenant } = useWorkspaceAdminContext()
+      const tenantFromHook = useWorkspaceAdminTenant()
+      const protectedRoles = useWorkspaceAdminProtectedRoles()
+      const hasFeature = useAdminHasFeature()
+      const routes = useAdminRouteTable()
+      return (
+        <div>
+          <span data-testid="tenant">{tenant}</span>
+          <span data-testid="tenant-hook">{tenantFromHook}</span>
+          <span data-testid="roles">{protectedRoles.join(',')}</span>
+          <span data-testid="feature">
+            {hasFeature('authn.admin') ? 'present' : 'absent'}
+          </span>
+          <span data-testid="routes">
+            {routes.map((route) => route.id).join(',')}
+          </span>
+        </div>
+      )
+    }
+    const { container } = renderWithProviders(
+      <WorkspaceAdminProvider
+        tenant={TENANT}
+        operations={createAdminOperations(backend)}
+        hasFeature={(name) => name === 'authn.admin'}
+        routes={workspaceAdminRoutes}
+        protectedRoles={['tenant-admin']}
+      >
+        <Probe />
+      </WorkspaceAdminProvider>,
+    )
+    expect(screen.getByTestId('tenant')).toHaveTextContent(TENANT)
+    expect(screen.getByTestId('tenant-hook')).toHaveTextContent(TENANT)
+    expect(screen.getByTestId('roles')).toHaveTextContent('tenant-admin')
+    expect(screen.getByTestId('feature')).toHaveTextContent('present')
+    expect(screen.getByTestId('routes')).toHaveTextContent(
+      'workspace-invitations,workspace-sso',
+    )
+    // The provider adds no frame: no main landmark and no navigation of its
+    // own appear around the probe.
+    expect(container.querySelector('main')).toBeNull()
+    expect(container.querySelector('nav')).toBeNull()
+  })
+
+  it('throws outside the provider rather than issuing a request with no tenant', () => {
+    function Bare(): null {
+      useWorkspaceAdminContext()
+      return null
+    }
+    // React logs the render error; the assertion is the throw itself.
+    expect(() => render(<Bare />)).toThrow(/WorkspaceAdminProvider/)
+  })
+
+  it('publishes the workspace breadcrumb trail only where it is installed', () => {
+    const { backend } = recordingBackend()
+    function Trail() {
+      const breadcrumbs = useWorkspaceAdminBreadcrumbs()
+      return (
+        <span data-testid="trail">
+          {breadcrumbs === undefined
+            ? 'none'
+            : breadcrumbs.map((crumb) => String(crumb.label)).join('>')}
+        </span>
+      )
+    }
+    const { unmount } = renderWithProviders(
+      <WorkspaceAdminProvider
+        tenant={TENANT}
+        operations={createAdminOperations(backend)}
+        hasFeature={noFeatures}
+        breadcrumbs={[{ label: 'Workspace' }, { label: 'Invitations' }]}
+      >
+        <Trail />
+      </WorkspaceAdminProvider>,
+    )
+    expect(screen.getByTestId('trail')).toHaveTextContent(
+      'Workspace>Invitations',
+    )
+    unmount()
+    renderWithProviders(
+      <WorkspaceAdminBreadcrumbProvider breadcrumbs={[{ label: 'Only' }]}>
+        <Trail />
+      </WorkspaceAdminBreadcrumbProvider>,
+    )
+    expect(screen.getByTestId('trail')).toHaveTextContent('Only')
+  })
+
+  it('ships a tenant-scoped operations bundle with no platform member', () => {
+    expect(Object.keys(workspaceAdminOperations).sort()).toEqual(
+      [
+        'useClaimSsoDomain',
+        'useCreateSsoProvider',
+        'useDeleteSsoProvider',
+        'useInvitations',
+        'useIssueInvitation',
+        'useMembers',
+        'useRefreshSsoMetadata',
+        'useRemoveMember',
+        'useRemoveSsoDomain',
+        'useReverifySsoDomains',
+        'useRevokeInvitation',
+        'useSetMemberSsoExempt',
+        'useSsoProvider',
+        'useSsoProviders',
+        'useUpdateSsoProvider',
+        'useVerifySsoDomain',
+        'useWriteMember',
+      ].sort(),
+    )
+    // No platform roster member rides along.
+    expect(workspaceAdminOperations).not.toHaveProperty('useTenants')
+  })
+})
+
+/**
+ * The workspace pages through the shipped generated bundle, with a request
+ * seam that records every URL the render issued. The assertion is the
+ * surface's defining promise: a workspace page never reaches a platform
+ * asset, and every tenant-addressed read names the current tenant. The full
+ * `adminOperations` bundle is mounted deliberately -- the page must not
+ * issue the platform account reads that bundle carries, so the request
+ * record, not the bundle's shape, is what proves the scoping.
+ */
+describe('the workspace pages address only the current tenant', () => {
+  interface Recorded {
+    readonly paths: readonly string[]
+  }
+
+  const ACCOUNT = {
+    id: 'acc-1',
+    kind: 'user',
+    status: 'active',
+    display_name: 'Ada Lovelace',
+    mfa_required: false,
+    protected: false,
+    password_set: true,
+    attributes: {},
+    identifiers: [],
+    created_at: '2026-01-01T00:00:00Z',
+  }
+  const MEMBER = {
+    account: 'acc-1',
+    tenant: TENANT,
+    active: true,
+    display_name: 'Ada Lovelace',
+    sso_exempt: false,
+    source: 'admin',
+  }
+  const INVITATION = {
+    id: 'invite-1',
+    tenant: TENANT,
+    email: 'invitee@example.com',
+    invited_by: 'acc-1',
+    status: 'pending',
+    created_at: '2026-01-01T00:00:00Z',
+    expires_at: '2027-01-01T00:00:00Z',
+    accepted_at: '0001-01-01T00:00:00Z',
+  }
+  const PROVIDER = {
+    id: 'provider-1',
+    tenant: TENANT,
+    name: 'Example IdP',
+    protocol: 'oidc',
+    enabled: true,
+    provisioning: 'jit',
+    allow_idp_initiated: false,
+    allow_sha1: false,
+    merge_existing: false,
+    trust_idp_mfa: false,
+    version: 1,
+    domains: [],
+  }
+
+  /**
+   * Binds a request seam that answers every read either surface may issue.
+   * The platform account reads are answered on purpose: a page that regresses
+   * to them renders rather than failing to mount, so the recorded URLs show
+   * the platform path instead of hiding it behind a crash.
+   */
+  function recordRequests(): Recorded {
+    const paths: string[] = []
+    bindAdminRequest((call) => {
+      paths.push(call.path)
+      if (call.path === `/api/v1/tenants/${TENANT}/invitations`) {
+        return { invitations: [INVITATION], next_cursor: '' }
+      }
+      if (call.path === `/api/v1/tenants/${TENANT}/members`) {
+        return { members: [MEMBER] }
+      }
+      if (call.path === `/api/v1/tenants/${TENANT}/sso/providers`) {
+        return { providers: [PROVIDER] }
+      }
+      if (call.path === '/api/v1/system/auth/accounts') {
+        return { accounts: [ACCOUNT], next_cursor: '' }
+      }
+      if (call.path.startsWith('/api/v1/system/auth/accounts/')) {
+        return { account: ACCOUNT }
+      }
+      throw new Error(`unexpected request: ${call.path}`)
+    })
+    return { paths }
+  }
+
+  function renderPage(page: 'invitations' | 'sso'): Recorded {
+    const recorded = recordRequests()
+    renderWithProviders(
+      <WorkspaceAdminProvider
+        tenant={TENANT}
+        operations={adminOperations}
+        hasFeature={() => true}
+        routes={workspaceAdminRoutes}
+      >
+        {page === 'invitations' ? (
+          <WorkspaceInvitationsPage />
+        ) : (
+          <WorkspaceSsoPage />
+        )}
+      </WorkspaceAdminProvider>,
+    )
+    return recorded
+  }
+
+  it('reads the invitations and members of the current tenant, never a platform account', async () => {
+    const { paths } = renderPage('invitations')
+    // The member read's display name is the identity, so a resolved row is
+    // proof the member read settled. It appears in the name column and in
+    // each identity cell that resolves the same account.
+    expect((await screen.findAllByText('Ada Lovelace')).length).toBeGreaterThan(0)
+    // The recorded set is exactly the tenant's two reads: the member write
+    // form's platform account list is not mounted, and the identities cost
+    // no platform account read.
+    expect([...paths].sort()).toEqual([
+      `/api/v1/tenants/${TENANT}/invitations`,
+      `/api/v1/tenants/${TENANT}/members`,
+    ])
+    // The surface's defining promise: no platform asset is read.
+    expect(paths.filter((path) => path.startsWith('/api/v1/system'))).toEqual([])
+    // Every tenant-addressed read names the tenant the host supplied.
+    for (const path of paths) {
+      expect(path.startsWith(`/api/v1/tenants/${TENANT}/`)).toBe(true)
+    }
+  })
+
+  it('reads the SSO providers of the current tenant, never a platform asset', async () => {
+    const { paths } = renderPage('sso')
+    expect((await screen.findAllByText('Example IdP')).length).toBeGreaterThan(0)
+    expect(paths).toEqual([`/api/v1/tenants/${TENANT}/sso/providers`])
+    expect(paths.filter((path) => path.startsWith('/api/v1/system'))).toEqual([])
+    for (const path of paths) {
+      expect(path.startsWith(`/api/v1/tenants/${TENANT}/`)).toBe(true)
+    }
+  })
+})

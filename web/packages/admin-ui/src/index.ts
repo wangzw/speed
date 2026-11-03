@@ -43,6 +43,19 @@
  * /api/v1/system/sms and /api/v1/system/audit operations reach the pages; see
  * operations.tsx for its members and their generated bindings.
  *
+ * The same package also ships the workspace administration surface: the
+ * tenant-scoped half, mounted under a host-chosen prefix (the demo uses
+ * /workspace/admin) inside @speed/product-shell. It contributes the
+ * `workspaceAdminRoutes` declarations, the frameless
+ * `WorkspaceAdminProvider` (current tenant, tenant-scoped operations,
+ * session, feature presence, route table, navigation callback, breadcrumb
+ * and protected roles), the standalone `WorkspaceAdminBreadcrumbProvider`,
+ * the `WorkspaceAdminOperations` bundle, and the thin page wrappers that
+ * hand the current tenant to the shared page components. It renders no
+ * frame of its own and imports neither @speed/route-kit,
+ * @speed/tenancy-ui nor @speed/product-shell. The tenant settings and
+ * tenant roles/permissions wrappers are not part of this surface yet.
+ *
  * Every built-in string renders from the bilingual admin-ui namespace
  * (ADMIN_UI_NAMESPACE + adminUiResources, which the host registers
  * alongside ui-kit's); the dialogs and empty/error states render through
@@ -198,3 +211,25 @@ export {
 } from './InvitationsPage.js'
 export { SsoPage, type SsoPageProps } from './SsoPage.js'
 export { SmsPage } from './SmsPage.js'
+export { workspaceAdminRoutes } from './workspace-routes.js'
+export {
+  WorkspaceInvitationsPage,
+  WorkspaceSsoPage,
+} from './workspace-pages.js'
+export {
+  WorkspaceAdminProvider,
+  useWorkspaceAdminContext,
+  useWorkspaceAdminProtectedRoles,
+  useWorkspaceAdminTenant,
+  type WorkspaceAdminContextValue,
+  type WorkspaceAdminProviderProps,
+} from './WorkspaceAdminProvider.js'
+export {
+  WorkspaceAdminBreadcrumbProvider,
+  useWorkspaceAdminBreadcrumbs,
+  type WorkspaceAdminBreadcrumbProviderProps,
+} from './WorkspaceAdminBreadcrumb.js'
+export {
+  workspaceAdminOperations,
+  type WorkspaceAdminOperations,
+} from './workspace-operations.js'

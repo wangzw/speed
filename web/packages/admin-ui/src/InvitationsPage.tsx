@@ -8,14 +8,19 @@
  *
  *  - the tenant's invitations: list them (address, status, inviter,
  *    expiry), invite an address, and revoke a pending invitation;
- *  - the tenant's members: list them (account, active, SSO exemption,
- *    source) and remove a membership.
+ *  - the tenant's members: list them (display name, account, active, SSO
+ *    exemption, source) and remove a membership.
  *
- * The inviter and the member account render through the shared account
- * identity unit: the readable display name where the account read answers,
- * the recorded identifier with an unresolved note where it is refused. The
- * table columns keep the recorded identifier as their full value, so the
- * copy and hover channel stays the value the record carries.
+ * On the platform surface the inviter and the member account render through
+ * the shared account identity unit: the readable display name where the
+ * account read answers, the recorded identifier with an unresolved note
+ * where it is refused. On the workspace surface (`tenantMode`) both resolve
+ * from the tenant's own member read instead -- the inviter through the
+ * member row carrying that account, the member through its own row's
+ * `display_name` -- so the page issues no platform account read, and the
+ * member write form (whose account field searches the platform roster) is
+ * not rendered. The table columns keep the recorded identifier as their full
+ * value, so the copy and hover channel stays the value the record carries.
  *
  * Inviting an address mints an invitation the invitee accepts through the
  * tenant-facing invite surface; the console issues and revokes, it does
@@ -54,7 +59,7 @@
  * form's exemption checkbox render only where `authn.admin.sso` is present.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -78,9 +83,11 @@ import {
   AccountIdentity,
   accountIdentityValue,
   accountNotice,
+  TenantAccountIdentity,
   useAccountIdentity,
   type AccountIdentityValue,
 } from './internal/account-identity.js'
+import { useWorkspaceAdminBreadcrumbs } from './WorkspaceAdminBreadcrumb.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
@@ -163,18 +170,29 @@ export interface InvitationsPageProps {
   readonly defaultTenant?: string
   /** Reports each re-selection made through the page's own selector. */
   readonly onTenantChange?: (tenant: string) => void
+  /**
+   * Tenant mode: the workspace surface's configuration of the same page.
+   * The member write form is not rendered -- its account field searches the
+   * platform account roster -- and the inviter and member identities resolve
+   * from the tenant's own member read (`display_name`) instead of the
+   * platform account read. The page therefore issues no `/api/v1/system`
+   * request. The tenant is still the controlled prop the wrapper supplies.
+   */
+  readonly tenantMode?: boolean
 }
 
 export function InvitationsPage({
   tenant: controlledTenant,
   defaultTenant,
   onTenantChange,
+  tenantMode = false,
 }: InvitationsPageProps = {}) {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useAdminOperations()
   const session = useAdminSession()
   const invitationLink = useAdminInvitationLink()
   const hasFeature = useAdminHasFeature()
+  const workspaceBreadcrumbs = useWorkspaceAdminBreadcrumbs()
   // The member table's exemption column, toggle and the write form's
   // checkbox exist only where the SSO surface does.
   const ssoExemption = hasFeature('authn.admin.sso')
@@ -194,6 +212,19 @@ export function InvitationsPage({
 
   const invitations = operations.useInvitations(tenant)
   const members = operations.useMembers(tenant)
+  const memberRows = members.data
+  // Tenant mode resolves an account's identity from the member read's own
+  // rows. An account the read has not settled on, was refused, or does not
+  // carry is unresolved -- rendered by its recorded identifier with the
+  // unresolved note -- rather than looked up through the platform account
+  // read whose access the workspace surface does not have.
+  const memberDisplayNames = useMemo(() => {
+    const names = new Map<string, string>()
+    for (const row of memberRows ?? []) {
+      names.set(row.account, row.display_name)
+    }
+    return names
+  }, [memberRows])
   const issueInvitation = operations.useIssueInvitation()
   const revokeInvitation = operations.useRevokeInvitation()
   const removeMember = operations.useRemoveMember()
@@ -436,9 +467,15 @@ export function InvitationsPage({
       cellWrap: 'nowrap',
       cellFullValue: (invitation) => invitation.invited_by,
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
-      cell: (invitation) => (
-        <AccountIdentity account={invitation.invited_by} />
-      ),
+      cell: (invitation) =>
+        tenantMode ? (
+          <TenantAccountIdentity
+            account={invitation.invited_by}
+            name={memberDisplayNames.get(invitation.invited_by)}
+          />
+        ) : (
+          <AccountIdentity account={invitation.invited_by} />
+        ),
     },
     {
       id: 'expires',
@@ -492,12 +529,34 @@ export function InvitationsPage({
 
   const memberColumns: DataTableColumn<AdminMember>[] = [
     {
+      id: 'displayName',
+      header: t('members.column.displayName'),
+      cellWrap: 'nowrap',
+      cellFullValue: (member) =>
+        member.display_name === '' ? undefined : member.display_name,
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
+      // The member read carries the account's display name, so the name is the
+      // row's primary identity even where the account read is refused. An
+      // account with no display name leaves this cell empty: the account model
+      // defines no fallback for the name, and the identifier column beside it
+      // still names the row.
+      cell: (member) => member.display_name,
+    },
+    {
       id: 'account',
       header: t('members.column.account'),
       cellWrap: 'nowrap',
       cellFullValue: (member) => member.account,
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      cell: (member) => <AccountIdentity account={member.account} />,
+      cell: (member) =>
+        tenantMode ? (
+          <TenantAccountIdentity
+            account={member.account}
+            name={member.display_name}
+          />
+        ) : (
+          <AccountIdentity account={member.account} />
+        ),
     },
     {
       id: 'active',
@@ -543,6 +602,7 @@ export function InvitationsPage({
           failureText={memberFailureText}
           pending={membersFeedback.pending}
           ssoExemption={ssoExemption}
+          tenantMode={tenantMode}
           onRemove={requestRemoveMember}
           onToggleSsoExempt={toggleSsoExempt}
         />
@@ -551,7 +611,6 @@ export function InvitationsPage({
   ]
 
   const invitationRows = invitations.data?.invitations
-  const memberRows = members.data
   const invitationsPending = invitations.isPending && invitationRows === undefined
   const membersPending = members.isPending && memberRows === undefined
 
@@ -568,10 +627,12 @@ export function InvitationsPage({
     <Box>
       <PageHeader
         title={t('invitations.title')}
-        breadcrumbs={[
-          { label: t('shell.title') },
-          { label: t('invitations.title') },
-        ]}
+        breadcrumbs={
+          workspaceBreadcrumbs ?? [
+            { label: t('shell.title') },
+            { label: t('invitations.title') },
+          ]
+        }
         sx={{ mb: 2 }}
       />
 
@@ -711,11 +772,13 @@ export function InvitationsPage({
           </SectionCard>
 
           <SectionCard title={t('members.title')} sx={{ mb: 3 }}>
-            <MemberWriteForm
-              tenant={tenant}
-              feedback={membersFeedback}
-              ssoExemption={ssoExemption}
-            />
+            {!tenantMode && (
+              <MemberWriteForm
+                tenant={tenant}
+                feedback={membersFeedback}
+                ssoExemption={ssoExemption}
+              />
+            )}
             <AdminAsyncSection
               pending={membersPending}
               payload={memberRows}
@@ -763,29 +826,16 @@ export function InvitationsPage({
   )
 }
 
-/**
- * The member row's own actions. The account's readable identity comes from
- * the same account read the row's identity cell renders (one cached read
- * per account), so a landed write names the account the way the row shows
- * it: display name and first login identifier in the four shared shapes, a
- * neutral sentence when neither resolves. The recorded identifier is never
- * a fallback.
- */
-function MemberRowActions({
-  member,
-  failed,
-  failureText,
-  pending,
-  ssoExemption,
-  onRemove,
-  onToggleSsoExempt,
-}: {
+interface MemberRowActionsProps {
   readonly member: AdminMember
   readonly failed: 'remove' | 'sso' | null
   readonly failureText: string | null
   readonly pending: boolean
   /** Whether the SSO surface is present, so the toggle exists. */
   readonly ssoExemption: boolean
+  /** Whether the row is on the workspace surface, which resolves the
+   * identity from the member read rather than the platform account read. */
+  readonly tenantMode: boolean
   readonly onRemove: (
     member: AdminMember,
     identity: AccountIdentityValue,
@@ -794,10 +844,46 @@ function MemberRowActions({
     member: AdminMember,
     identity: AccountIdentityValue,
   ) => void
-}) {
+}
+
+/**
+ * The member row's own actions. A landed write names the account the way the
+ * row shows it: the platform surface reads the identity through the account
+ * read the row's cell renders, and the workspace surface uses the member
+ * read's own display name -- never the recorded identifier as a fallback.
+ */
+function MemberRowActions(props: MemberRowActionsProps) {
+  return props.tenantMode ? (
+    <MemberActionsBody {...props} identity={memberRowIdentity(props.member)} />
+  ) : (
+    <PlatformMemberActions {...props} />
+  )
+}
+
+function PlatformMemberActions(props: MemberRowActionsProps) {
+  const { name, identifier } = useAccountIdentity(props.member.account)
+  return <MemberActionsBody {...props} identity={{ name, identifier }} />
+}
+
+/** The workspace surface's identity: the member read's own display name. */
+function memberRowIdentity(member: AdminMember): AccountIdentityValue {
+  return {
+    name: member.display_name === '' ? undefined : member.display_name,
+    identifier: undefined,
+  }
+}
+
+function MemberActionsBody({
+  member,
+  failed,
+  failureText,
+  pending,
+  ssoExemption,
+  onRemove,
+  onToggleSsoExempt,
+  identity,
+}: MemberRowActionsProps & { readonly identity: AccountIdentityValue }) {
   const { t } = useAdminUiTranslation()
-  const { name, identifier } = useAccountIdentity(member.account)
-  const identity: AccountIdentityValue = { name, identifier }
   const errorId = `member-error-${encodeURIComponent(member.account)}`
   const ssoFailed = failed === 'sso'
   const removeFailed = failed === 'remove'

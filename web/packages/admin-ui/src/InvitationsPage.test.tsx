@@ -113,6 +113,7 @@ function member(overrides: Partial<AdminMember> = {}): AdminMember {
     account: 'acc-1',
     tenant: 'acme',
     active: true,
+    display_name: '',
     sso_exempt: false,
     source: 'direct',
     ...overrides,
@@ -414,6 +415,119 @@ describe('InvitationsPage', () => {
     expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
 
+  it('shows the member read display name beside the recorded account identifier', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant({
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Ada Lovelace' })]),
+      // The workspace face has no platform account read; the member read's
+      // display name is the identity even when the lookup is refused.
+      getAccount: () => Promise.reject(new Error('forbidden')),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+
+    const memberSection = section(zhCN.members.title)
+    expect(
+      within(memberSection).getByRole('columnheader', {
+        name: zhCN.members.column.displayName,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      await within(memberSection).findByText('Ada Lovelace'),
+    ).toBeInTheDocument()
+    const identifier = await within(memberSection).findByTitle(
+      zhCN.common.accountUnresolved,
+    )
+    expect(identifier).toHaveTextContent('acc-1')
+  })
+
+  it('leaves the name cell empty when the account has no display name', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant({
+      listMembers: () => Promise.resolve([member()]),
+      getAccount: () => Promise.reject(new Error('forbidden')),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+
+    const memberSection = section(zhCN.members.title)
+    const nameHeader = within(memberSection).getByRole('columnheader', {
+      name: zhCN.members.column.displayName,
+    })
+    const row = memberSection.querySelector('tbody tr')
+    expect(row).not.toBeNull()
+    const nameCell = row!.children[
+      (nameHeader as HTMLTableCellElement).cellIndex
+    ]
+    expect(nameCell).toBeDefined()
+    expect(nameCell!.textContent).toBe('')
+    // The identifier column still names the row.
+    expect(
+      await within(memberSection).findByTitle(zhCN.common.accountUnresolved),
+    ).toHaveTextContent('acc-1')
+  })
+
+  it('tenant mode drops the platform account picker and resolves identities from members', async () => {
+    const getAccount = vi.fn(() => Promise.reject(new Error('forbidden')))
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({
+          invitations: [invitation({ invited_by: 'acc-1' })],
+          next_cursor: '',
+        }),
+      listMembers: () =>
+        Promise.resolve([
+          member({ account: 'acc-1', display_name: 'Ada Lovelace' }),
+        ]),
+      getAccount,
+    })
+    renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
+      operations,
+    })
+
+    // The member row and the invitation's inviter both resolve to the one
+    // display name the member read carries.
+    const memberSection = section(zhCN.members.title)
+    expect(
+      (await within(memberSection).findAllByText('Ada Lovelace')).length,
+    ).toBeGreaterThan(0)
+    const invitationSection = section(zhCN.invitations.section.title)
+    expect(
+      (await within(invitationSection).findAllByText('Ada Lovelace')).length,
+    ).toBeGreaterThan(0)
+    // The member write form searches the platform account roster, so tenant
+    // mode does not render it.
+    expect(screen.queryByLabelText(zhCN.members.write.accountLabel)).toBeNull()
+    // Nothing resolved through the platform account read.
+    expect(getAccount).not.toHaveBeenCalled()
+  })
+
+  it('tenant mode marks an account the member read cannot resolve', async () => {
+    const getAccount = vi.fn(() => Promise.reject(new Error('forbidden')))
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({
+          invitations: [invitation({ invited_by: 'ghost-1' })],
+          next_cursor: '',
+        }),
+      listMembers: () =>
+        Promise.resolve([member({ account: 'acc-1', display_name: 'Ada' })]),
+      getAccount,
+    })
+    renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
+      operations,
+    })
+
+    const invitationSection = section(zhCN.invitations.section.title)
+    // The recorded identifier stays, annotated as unresolved -- never a
+    // platform lookup as the fallback.
+    expect(
+      await within(invitationSection).findByTitle(zhCN.common.accountUnresolved),
+    ).toHaveTextContent('ghost-1')
+    expect(getAccount).not.toHaveBeenCalled()
+  })
+
   it('reads a repeated account once across rows', async () => {
     const user = userEvent.setup()
     const getAccount = vi.fn(() =>
@@ -507,6 +621,7 @@ describe('InvitationsPage', () => {
     // The members table has the same shape: account primary, active high,
     // source medium, SSO exemption low.
     const memberSection = section(zhCN.members.title)
+    expect(columnVisibility(header(memberSection, zhCN.members.column.displayName))).toBeNull()
     expect(columnVisibility(header(memberSection, zhCN.members.column.account))).toBeNull()
     expect(columnVisibility(header(memberSection, zhCN.members.column.active))).toEqual({
       hiddenAt: 0,

@@ -154,6 +154,42 @@ export function useAccountIdentity(account: string | undefined): {
   }
 }
 
+/**
+ * One account identifier rendered from the identity its own tenant-scoped
+ * record carries, for the workspace surface: the member read answers each
+ * row's `display_name`, so the identity never needs the platform account
+ * read that `AccountIdentity` issues. A name the record carries renders
+ * as-is; an absent or empty one -- the read has not settled, was refused, or
+ * the record's account has no display name -- renders the recorded
+ * identifier with the same unresolved note, because the identifier alone is
+ * not a resolved identity.
+ */
+export function TenantAccountIdentity({
+  account,
+  name,
+}: {
+  readonly account: string
+  readonly name: string | undefined
+}) {
+  const { t } = useAdminUiTranslation()
+  if (name !== undefined && name !== '') {
+    return <>{name}</>
+  }
+  return (
+    <Typography
+      component="span"
+      variant="body2"
+      sx={{ fontStyle: 'italic' }}
+      title={t('common.accountUnresolved')}
+    >
+      {account}
+      <Box component="span" sx={visuallyHiddenSx}>
+        {` (${t('common.accountUnresolved')})`}
+      </Box>
+    </Typography>
+  )
+}
+
 export function AccountIdentity({ account }: { readonly account: string }) {
   const { t } = useAdminUiTranslation()
   const { name, refused, missing, gated } = useAccountIdentity(account)
