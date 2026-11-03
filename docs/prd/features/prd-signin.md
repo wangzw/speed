@@ -138,7 +138,7 @@
 
 - **验收**：装配对应方式后，选择该方式得到提供方的授权地址；在提供方完成授权并回跳后，无后续步骤的登录直接完成并回到发起页。
 - **状态**：已实现
-- **端到端测试**：未实现。既有用例 `starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` 的 `social-sign-in: a first Google sign-in opens an account with the provider-verified email` 仍断言新账户带提供方已证明的邮箱，且只驱动 Google 跳转；GitHub 与微信未在浏览器层驱动。
+- **端到端测试**：未实现。既有用例 `starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` 的 `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact` 仍断言新账户带提供方已证明的邮箱，且只驱动 Google 跳转；GitHub 与微信未在浏览器层驱动。
 
 ### REQ-signin-016
 
@@ -250,7 +250,7 @@
 
 - **验收**：会话交付、无后续步骤的回跳应答为重定向到发起页，且同一次应答设置会话凭据。
 - **状态**：已实现
-- **端到端测试**：未实现。既有用例 `starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` 的 `social-sign-in: a first Google sign-in opens an account with the provider-verified email` 仍断言旧行为。
+- **端到端测试**：未实现。既有用例 `starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` 的 `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact` 仍断言旧行为。
 ### REQ-signin-028
 
 跳转类登录被拒且回跳本身是顶层导航时，系统必须把用户送回一个产品内页面，并在该页面显示这次拒绝对应的文案。
