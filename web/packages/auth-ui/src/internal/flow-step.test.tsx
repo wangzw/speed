@@ -525,7 +525,37 @@ describe('FlowStepFields social account-opening face', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('keeps the username-only face for SMS and enterprise signup', () => {
+  it('requires the password before the account can be opened', async () => {
+    const onAnswer = vi.fn()
+    renderFace({ method: 'google', onAnswer })
+
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.signInFlow.usernameLabel),
+      'ada',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.signupAccountSubmit }),
+    )
+
+    expect(onAnswer).not.toHaveBeenCalled()
+    expect(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+    ).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('renders no display-name field on the social face', () => {
+    // The provider supplies the person's name; the social face asks for the
+    // username and the password alone, so the optional phone-only field does
+    // not leak into it.
+    renderFace({ method: 'google', displayName: 'Ada Lovelace' })
+
+    expect(
+      screen.queryByLabelText(zhCN.register.displayNameLabel),
+    ).toBeNull()
+  })
+
+  it('keeps the username-only face for enterprise signup', () => {
     renderWithProviders(
       <FlowStepFields
         step={challengeStep([
@@ -561,21 +591,22 @@ describe('FlowStepFields social account-opening face', () => {
   })
 })
 
-describe('FlowStepFields SMS signup step', () => {
-  // The SMS first login asks for a username and, when the deployment offers
-  // it, an optional display name. The face renders the step's fields in the
-  // server's order.
-  const smsFields: AuthnField[] = [
+describe('FlowStepFields phone signup step', () => {
+  // A phone first login opens the account with a username, an optional
+  // display name and a password; the face renders them in the server's order
+  // and adds the confirmation right after the password.
+  const phoneFields: AuthnField[] = [
     { name: 'username', kind: 'text', required: true },
     { name: 'display_name', kind: 'text' },
+    { name: 'password', kind: 'password', secret: true, required: true },
   ]
 
-  function renderSmsSignup(
+  function renderPhoneSignup(
     onAnswer: (input: Record<string, string>) => void = vi.fn(),
   ) {
     return renderWithProviders(
       <FlowStepFields
-        step={challengeStep(smsFields)}
+        step={challengeStep(phoneFields)}
         busy={false}
         onAnswer={onAnswer}
         onUnsupported={vi.fn()}
@@ -595,13 +626,23 @@ describe('FlowStepFields SMS signup step', () => {
         displayName,
       )
     }
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+      'correct-horse',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.register.confirmPasswordLabel),
+      'correct-horse',
+    )
     await user.click(
-      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      screen.getByRole('button', {
+        name: zhCN.signInFlow.signupAccountSubmit,
+      }),
     )
   }
 
   it('renders the optional display-name field the server offers', () => {
-    renderSmsSignup()
+    renderPhoneSignup()
 
     const username = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
     const displayName = screen.getByLabelText(zhCN.register.displayNameLabel)
@@ -609,35 +650,73 @@ describe('FlowStepFields SMS signup step', () => {
     // Optional means no required marker, so leaving it empty is allowed.
     expect(displayName).not.toBeRequired()
     expect(displayName).toHaveAccessibleDescription(
-      zhCN.register.displayNameHelp,
+      zhCN.signInFlow.signupDisplayNameHelp,
     )
+    // The name is the person's, so the browser's own name autofill may fill
+    // it; the account's display name is capped at the server's limit.
+    expect(displayName).toHaveAttribute('autocomplete', 'name')
+    expect(displayName).toHaveAttribute('maxlength', '100')
     expect(
       username.compareDocumentPosition(displayName) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
   })
 
+  it('orders the phone step username, display name, password, confirmation', () => {
+    renderPhoneSignup()
+
+    const username = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
+    const displayName = screen.getByLabelText(zhCN.register.displayNameLabel)
+    const password = screen.getByLabelText(zhCN.passwordSignIn.passwordLabel)
+    const confirm = screen.getByLabelText(zhCN.register.confirmPasswordLabel)
+    for (const [before, after] of [
+      [username, displayName],
+      [displayName, password],
+      [password, confirm],
+    ] as const) {
+      expect(
+        before.compareDocumentPosition(after) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    }
+  })
+
   it('sends a filled display name with the signup answer', async () => {
     const onAnswer = vi.fn()
-    renderSmsSignup(onAnswer)
+    renderPhoneSignup(onAnswer)
 
     await fillAndSubmit('Ada Lovelace')
 
     expect(onAnswer).toHaveBeenCalledWith({
       username: 'ada',
       display_name: 'Ada Lovelace',
+      password: 'correct-horse',
     })
   })
 
-  it('completes when the optional display name is left empty', async () => {
+  it('omits the optional display name when it is left empty', async () => {
     const onAnswer = vi.fn()
-    renderSmsSignup(onAnswer)
+    renderPhoneSignup(onAnswer)
 
     await fillAndSubmit()
 
+    // An optional field left blank is absent from the answer, so the server
+    // reads no name and falls back to the username.
     expect(onAnswer).toHaveBeenCalledWith({
       username: 'ada',
-      display_name: '',
+      password: 'correct-horse',
+    })
+  })
+
+  it('omits an optional display name that is only whitespace', async () => {
+    const onAnswer = vi.fn()
+    renderPhoneSignup(onAnswer)
+
+    await fillAndSubmit('   ')
+
+    expect(onAnswer).toHaveBeenCalledWith({
+      username: 'ada',
+      password: 'correct-horse',
     })
   })
 })

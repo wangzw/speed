@@ -76,6 +76,7 @@
     "usernameHelper": "3 to 64 characters: letters, digits, dot, dash or underscore. The first character must be a letter or a digit.",
     "signupTitle": "Choose a username",
     "signupDescription": "This is your sign-in name on this site. You can change it or add other sign-in methods after the account is created.",
+    "signupDisplayNameHelp": "Optional; your username is used if you leave it empty.",
     "signupAccountInstruction": "Set a username and password.",
     "signupEmailSource": "Provided by {{provider}} and can't be changed.",
     "signupEmailImmutable": "This address can't be changed.",

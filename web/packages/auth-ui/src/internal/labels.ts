@@ -54,7 +54,7 @@ const FIELD_LABEL_KEYS: Readonly<Record<string, string>> = {
 /** The bundle keys of the explanatory text under a known field. */
 const FIELD_HELP_KEYS: Readonly<Record<string, string>> = {
   username: 'signInFlow.usernameHelper',
-  display_name: 'register.displayNameHelp',
+  display_name: 'signInFlow.signupDisplayNameHelp',
 }
 
 /** A translator bound to the auth-ui namespace. */

@@ -169,6 +169,27 @@ const USERNAME_FIELD = 'username'
 /** The field a social signup step asks for beside the username. */
 const PASSWORD_FIELD = 'password'
 
+/** The optional field a phone signup step asks for beside the username. */
+const DISPLAY_NAME_FIELD = 'display_name'
+
+/** The server's cap on a display name's length. */
+const DISPLAY_NAME_MAX_LENGTH = 100
+
+/** The browser autofill hint for a field: the display name is the person's
+ * own name, a code is a one-time code, and no other field is filled in by
+ * the browser. */
+function fieldAutoComplete(field: AuthnField): string {
+  if (field.name === DISPLAY_NAME_FIELD) {
+    return 'name'
+  }
+  return field.kind === 'code' ? 'one-time-code' : 'off'
+}
+
+/** The input's length cap, for the one field the server sizes. */
+function fieldMaxLength(field: AuthnField): number | undefined {
+  return field.name === DISPLAY_NAME_FIELD ? DISPLAY_NAME_MAX_LENGTH : undefined
+}
+
 /** Whether the step asks for a password, which is what makes it the full
  * account-opening face (social first signup) rather than the
  * username-only one (SMS and enterprise just-in-time signup). */
@@ -930,7 +951,16 @@ function ChallengeFields({
     }
   }, [errorText])
   const onSubmit: SubmitHandler<Record<string, string>> = (values) => {
-    onAnswer(values)
+    // An optional field left blank is absent from the answer: the step did
+    // not require it, and the server reads an omitted field as no value.
+    const answer: Record<string, string> = {}
+    for (const field of fields) {
+      const value = values[field.name] ?? ''
+      if (field.required === true || value.trim() !== '') {
+        answer[field.name] = value
+      }
+    }
+    onAnswer(answer)
   }
   return (
     <FormLayout
@@ -957,7 +987,8 @@ function ChallengeFields({
                 label={fieldLabel(field)}
                 type={field.kind === 'password' || field.secret === true ? 'password' : 'text'}
                 inputMode={field.kind === 'code' ? 'numeric' : undefined}
-                autoComplete={field.kind === 'code' ? 'one-time-code' : 'off'}
+                autoComplete={fieldAutoComplete(field)}
+                slotProps={{ htmlInput: { maxLength: fieldMaxLength(field) } }}
                 fullWidth
                 error={invalid || refused}
                 helperText={formError ?? refusal ?? fieldHelp(field) ?? undefined}
@@ -999,7 +1030,8 @@ interface SignupAccountFieldsProps {
 const CONFIRM_PASSWORD_FIELD = 'confirmPassword'
 
 /** The account form's values: every field the step asks for, plus the
- * client-side confirmation. */
+ * client-side confirmation. The optional display name, when the step asks
+ * for it, travels under its wire name (`display_name`). */
 type SignupAccountValues = Record<string, string>
 
 /**
@@ -1101,7 +1133,7 @@ function SignupAccountFields({
       // An optional field left blank is absent from the answer: the step
       // did not require it, and the server reads an omitted field as no
       // value.
-      if (field.required === true || value !== '') {
+      if (field.required === true || value.trim() !== '') {
         answer[field.name] = value
       }
     }
@@ -1116,7 +1148,7 @@ function SignupAccountFields({
     if (field.name === PASSWORD_FIELD) {
       return 'new-password'
     }
-    return field.kind === 'code' ? 'one-time-code' : 'off'
+    return fieldAutoComplete(field)
   }
   return (
     <Box
@@ -1189,6 +1221,7 @@ function SignupAccountFields({
                       field.kind === 'code' ? 'numeric' : undefined
                     }
                     autoComplete={autoCompleteOf(field)}
+                    slotProps={{ htmlInput: { maxLength: fieldMaxLength(field) } }}
                     fullWidth
                     error={invalid || refused}
                     helperText={
