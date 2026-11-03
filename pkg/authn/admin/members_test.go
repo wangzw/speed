@@ -56,6 +56,33 @@ func TestTheMemberViewCarriesTheAccountDisplayName(t *testing.T) {
 	}
 }
 
+// TestTheMemberListRefusesANonUTF8Query holds that the query parameter is
+// text: a byte sequence that is not valid UTF-8 is a 400 and the membership
+// read is never made, rather than a filter the read hands to the database,
+// which rejects it and answers an outage instead of the shape error the caller
+// caused.
+func TestTheMemberListRefusesANonUTF8Query(t *testing.T) {
+	r := newRig(t)
+	for _, q := range []string{"?query=%BF", "?query=caf%C3", "?query=%FF%FE"} {
+		rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members"+q, nil, fresh()...)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", q, rec.Code)
+		}
+	}
+	if r.members.listCalls != 0 {
+		t.Errorf("the member read ran %d time(s) on a non-UTF-8 query, want no read", r.members.listCalls)
+	}
+
+	// A query that is valid UTF-8 text reaches the read as written.
+	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members?query=Ada", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a valid query: status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if got := r.members.lastQuery.Query; got != "Ada" {
+		t.Errorf("the membership read received query %q, want %q", got, "Ada")
+	}
+}
+
 // TestTheMemberListHandsTheQueryToTheMembershipRead holds that the list route
 // parses its optional query parameter and hands it to the membership read. The
 // member picker of the workspace surface drives this read.
