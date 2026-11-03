@@ -5,12 +5,16 @@
 // library's image operations.
 //
 // Every form keeps its challenge in the key-value store for five minutes. The
-// record holds the answer as digests rather than plain text, and the media the
-// routes serve are stored beside it under the same expiry. Verification reads
-// the record, compares the answer in constant time, spends the record with a
-// compare-and-swap so two presentations of one proof cannot both pass, and then
-// deletes the record and the media. A wrong answer spends the record too: a
-// challenge is good for one attempt.
+// record holds the answer as digests keyed by a random per-challenge salt rather
+// than plain text, and the media the routes serve are stored beside it under the
+// same expiry. Verification reads the record, compares the answer in constant
+// time, spends the record with a compare-and-swap so two presentations of one
+// proof cannot both pass, and then deletes the record and the media. A wrong
+// answer spends the record too: a challenge is good for one attempt.
+//
+// Issuance is bounded per source: each request spends one slot of the source's
+// counter over a rolling minute, and a source past its bound is refused before a
+// challenge is drawn or stored.
 //
 // The proof is the challenge id and the answer joined by a dot. The id is
 // base64url without padding and the answer is digits, or a decimal offset for
@@ -20,6 +24,7 @@ package captcha
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -82,11 +87,21 @@ const (
 // caller cannot choose a key.
 const (
 	keyPrefix      = "authn:human:captcha:"
+	issueKeyPrefix = "authn:human:captcha:issue:"
 	challengeTTL   = 5 * time.Minute
 	idBytes        = 16
+	saltBytes      = 16
 	maxProofLen    = 512
 	maxAnswerBytes = 64
+	// issueLimit is how many challenges one source may hold in issueWindow. It
+	// is small on purpose: an anonymous caller is the reason the counter exists,
+	// and a challenge that lapses is served by a new request once the window
+	// rolls.
+	issueLimit = 10
 )
+
+// issueWindow is the rolling window the per-source issuance counter covers.
+const issueWindow = time.Minute
 
 // spentMarker is what a challenge key holds after the challenge was spent. It
 // is not a record, so a second presentation is refused before any answer is
@@ -95,21 +110,32 @@ var spentMarker = []byte("spent")
 
 // The parameter choices of the library-backed forms.
 const (
-	digitHeight   = 60
-	digitWidth    = 240
-	digitLength   = 5
-	audioLength   = 5
-	audioLanguage = "en"
+	digitHeight = 60
+	digitWidth  = 240
+	digitLength = 5
+	audioLength = 5
 )
 
-// Errors a caller maps onto its own answers. ErrUnknownForm is a bad request;
-// ErrChallengeNotFound is an unknown, expired or already spent challenge, and a
-// media route answers it with a 404.
+// DefaultAudioLanguage is the language an audio challenge is spoken in when the
+// request names none the provider pronounces.
+const DefaultAudioLanguage = "en"
+
+// Errors a caller maps onto its own answers. ErrUnknownForm and
+// ErrUnknownAudioLanguage are bad requests; ErrChallengeNotFound is an unknown,
+// expired or already spent challenge, and a media route answers it with a 404;
+// ErrIssuanceLimited is the retryable 429 of a source past its issuance bound.
 var (
 	// ErrUnknownForm reports a form this provider does not draw.
 	ErrUnknownForm = errors.New("captcha: unknown challenge form")
+	// ErrUnknownAudioLanguage reports a language the library pronounces no
+	// digits in.
+	ErrUnknownAudioLanguage = errors.New("captcha: the library pronounces no digits in this language")
 	// ErrChallengeNotFound reports that no challenge is stored under the id.
 	ErrChallengeNotFound = errors.New("captcha: the challenge is missing or expired")
+	// ErrIssuanceLimited reports that one source has asked for as many
+	// challenges as it may hold in the current window. It is not an outage:
+	// retrying later works, and the answer is a 429.
+	ErrIssuanceLimited = errors.New("captcha: too many challenges were issued to this source")
 )
 
 // Challenge is what Issue answers: the id a proof names, the form it takes and
@@ -150,21 +176,54 @@ func (p *Provider) Provider(authn.HumanScope) string { return ProviderName }
 // SiteKey is empty: a self-hosted captcha needs no widget key.
 func (p *Provider) SiteKey(authn.HumanScope) string { return "" }
 
+// IssueOptions is what a caller asks a challenge with.
+type IssueOptions struct {
+	// Form is the challenge form to draw. An empty value is FormImage, the
+	// default a client that names none gets.
+	Form Form
+	// Lang is the language an audio challenge is spoken in, as a BCP 47 tag. It
+	// is read only by FormAudio; an empty value is DefaultAudioLanguage. The
+	// library pronounces English, Japanese, Russian and Chinese, so a tag whose
+	// primary subtag is none of those is ErrUnknownAudioLanguage.
+	Lang string
+	// RemoteIP is the source the issuance counter is spent for. It is hashed
+	// before it reaches the store, because the key is a value the store and its
+	// diagnostics may carry.
+	RemoteIP string
+}
+
 // Issue draws a challenge of the requested form and stores its answer and media.
-// An empty form is FormImage, the default a client that names none gets.
-func (p *Provider) Issue(ctx context.Context, form Form) (Challenge, error) {
+// The source's issuance counter is spent before anything is drawn, so an
+// address past its bound is refused and cannot fill the store.
+func (p *Provider) Issue(ctx context.Context, opts IssueOptions) (Challenge, error) {
+	form := opts.Form
 	if form == "" {
 		form = FormImage
 	}
 	if !form.Valid() {
 		return Challenge{}, fmt.Errorf("%w: %q", ErrUnknownForm, form)
 	}
+	language := DefaultAudioLanguage
+	if form == FormAudio {
+		resolved, err := audioLanguage(opts.Lang)
+		if err != nil {
+			return Challenge{}, err
+		}
+		language = resolved
+	}
+	if err := p.countIssue(ctx, opts.RemoteIP); err != nil {
+		return Challenge{}, err
+	}
 	id, err := newID()
 	if err != nil {
 		return Challenge{}, fmt.Errorf("%w: captcha: drawing a challenge id: %w", authn.ErrUnavailable, err)
 	}
+	salt, err := newSalt()
+	if err != nil {
+		return Challenge{}, fmt.Errorf("%w: captcha: drawing a challenge salt: %w", authn.ErrUnavailable, err)
+	}
 
-	rec, media, err := drawForm(form)
+	rec, media, err := drawForm(form, salt, language)
 	if err != nil {
 		return Challenge{}, err
 	}
@@ -237,9 +296,10 @@ func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, _ authn.H
 	}
 
 	var rec record
-	if decodeErr := json.Unmarshal(stored, &rec); decodeErr != nil || !rec.Form.Valid() {
+	if decodeErr := json.Unmarshal(stored, &rec); decodeErr != nil || !rec.Form.Valid() || rec.Salt == "" {
 		// A record this package cannot read is spent rather than left for a
-		// second attempt.
+		// second attempt. A record with no salt is not one this provider drew,
+		// and its digests cannot be checked.
 		_, _ = p.store.CompareAndSwap(ctx, key, stored, spentMarker)
 		p.discard(ctx, key)
 		return fmt.Errorf("%w: captcha: the challenge is not usable", authn.ErrHumanVerificationRequired)
@@ -247,7 +307,7 @@ func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, _ authn.H
 
 	matched := false
 	if value, ok := normalizeAnswer(rec.Form, answer); ok {
-		matched = matches(rec.Digests, digest(value))
+		matched = matches(rec.Digests, digest(rec.Salt, value))
 	}
 
 	spent, err := p.store.CompareAndSwap(ctx, key, stored, spentMarker)
@@ -264,30 +324,34 @@ func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, _ authn.H
 	return nil
 }
 
-// record is what a challenge key holds: the form the challenge takes and the
-// digests of the answers it accepts. An answer is never stored as text, and the
-// slider stores one digest per offset within its tolerance.
+// record is what a challenge key holds: the form the challenge takes, the random
+// salt its digests are keyed by, and the digests of the answers it accepts. An
+// answer is never stored as text, and the slider stores one digest per offset
+// within its tolerance. The salt is drawn per challenge and stored beside the
+// digests, so a digest copied out of the record without its salt cannot be
+// reversed over a five-digit answer space.
 type record struct {
 	Form    Form     `json:"form"`
+	Salt    string   `json:"salt"`
 	Digests []string `json:"digests"`
 }
 
 // drawForm builds the record and the media of one form.
-func drawForm(form Form) (record, map[MediaKind]Media, error) {
+func drawForm(form Form, salt, language string) (record, map[MediaKind]Media, error) {
 	switch form {
 	case FormImage:
-		return drawDigits()
+		return drawDigits(salt)
 	case FormAudio:
-		return drawAudio()
+		return drawAudio(salt, language)
 	case FormSlider:
-		return drawSlider()
+		return drawSlider(salt)
 	default:
 		return record{}, nil, fmt.Errorf("%w: %q", ErrUnknownForm, form)
 	}
 }
 
 // drawDigits draws the image form with the library's digit driver.
-func drawDigits() (record, map[MediaKind]Media, error) {
+func drawDigits(salt string) (record, map[MediaKind]Media, error) {
 	driver := libcaptcha.NewDriverDigit(digitHeight, digitWidth, digitLength, 0.7, 80)
 	_, question, answer := driver.GenerateIdQuestionAnswer()
 	item, err := driver.DrawCaptcha(question)
@@ -298,13 +362,14 @@ func drawDigits() (record, map[MediaKind]Media, error) {
 	if err != nil {
 		return record{}, nil, fmt.Errorf("%w: captcha: encoding the image: %w", authn.ErrUnavailable, err)
 	}
-	return record{Form: FormImage, Digests: []string{digest(answer)}},
+	return record{Form: FormImage, Salt: salt, Digests: []string{digest(salt, answer)}},
 		map[MediaKind]Media{MediaImage: {ContentType: "image/png", Body: body}}, nil
 }
 
-// drawAudio draws the audio form with the library's audio driver.
-func drawAudio() (record, map[MediaKind]Media, error) {
-	driver := libcaptcha.NewDriverAudio(audioLength, audioLanguage)
+// drawAudio draws the audio form with the library's audio driver in the
+// resolved language.
+func drawAudio(salt, language string) (record, map[MediaKind]Media, error) {
+	driver := libcaptcha.NewDriverAudio(audioLength, language)
 	_, question, answer := driver.GenerateIdQuestionAnswer()
 	item, err := driver.DrawCaptcha(question)
 	if err != nil {
@@ -314,18 +379,18 @@ func drawAudio() (record, map[MediaKind]Media, error) {
 	if err != nil {
 		return record{}, nil, fmt.Errorf("%w: captcha: encoding the audio: %w", authn.ErrUnavailable, err)
 	}
-	return record{Form: FormAudio, Digests: []string{digest(answer)}},
+	return record{Form: FormAudio, Salt: salt, Digests: []string{digest(salt, answer)}},
 		map[MediaKind]Media{MediaAudio: {ContentType: "audio/wav", Body: body}}, nil
 }
 
 // drawSlider draws the slider form with the standard library's image
 // operations.
-func drawSlider() (record, map[MediaKind]Media, error) {
-	images, err := newSlider()
+func drawSlider(salt string) (record, map[MediaKind]Media, error) {
+	images, err := newSlider(salt)
 	if err != nil {
 		return record{}, nil, fmt.Errorf("%w: captcha: drawing the slider: %w", authn.ErrUnavailable, err)
 	}
-	return record{Form: FormSlider, Digests: images.digests},
+	return record{Form: FormSlider, Salt: salt, Digests: images.digests},
 		map[MediaKind]Media{
 			MediaBackground: {ContentType: "image/png", Body: images.background},
 			MediaPiece:      {ContentType: "image/png", Body: images.piece},
@@ -389,11 +454,67 @@ func matches(digests []string, value string) bool {
 	return found == 1
 }
 
-// digest is the lowercase hexadecimal SHA-256 of value. The record keeps this
-// rather than the answer, so a leaked record does not hand over the answer.
-func digest(value string) string {
-	sum := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(sum[:])
+// digest is the lowercase hexadecimal HMAC-SHA-256 of value under the
+// challenge's random salt. The record keeps this rather than the answer, so a
+// digest copied out of the record without the salt is not the bare SHA-256 of a
+// five-digit answer and cannot be reversed by enumeration. The record carries
+// the salt beside the digest; holding the whole record is what an enumerator
+// needs, which is why the salt alone is not treated as a secret.
+func digest(salt, value string) string {
+	mac := hmac.New(sha256.New, []byte(salt))
+	mac.Write([]byte(value))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// newSalt draws the random salt a challenge's digests are keyed by.
+func newSalt() (string, error) {
+	raw := make([]byte, saltBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+// AudioLanguage maps a BCP 47 language tag to the digit-reading language the
+// library pronounces, reporting whether it pronounces that language. Only the
+// primary subtag matters, so "zh-CN" is Chinese and "en-US" is English. The
+// library carries English, Japanese, Russian and Chinese sounds.
+func AudioLanguage(tag string) (string, bool) {
+	primary := strings.ToLower(strings.TrimSpace(tag))
+	if i := strings.IndexAny(primary, "-_"); i >= 0 {
+		primary = primary[:i]
+	}
+	switch primary {
+	case "en", "ja", "ru", "zh":
+		return primary, true
+	default:
+		return "", false
+	}
+}
+
+// audioLanguage resolves the language an audio challenge is spoken in. An empty
+// value is the default; anything else has to be one the library pronounces.
+func audioLanguage(lang string) (string, error) {
+	if lang == "" {
+		return DefaultAudioLanguage, nil
+	}
+	code, ok := AudioLanguage(lang)
+	if !ok {
+		return "", fmt.Errorf("%w: %q", ErrUnknownAudioLanguage, lang)
+	}
+	return code, nil
+}
+
+// countIssue spends one slot of the source's issuance window.
+func (p *Provider) countIssue(ctx context.Context, remoteIP string) error {
+	issued, err := p.store.IncrByFloatWithTTL(ctx, issueKey(remoteIP), 1, issueWindow)
+	if err != nil {
+		return fmt.Errorf("%w: captcha: counting the challenges issued to a source: %w", authn.ErrUnavailable, err)
+	}
+	if issued > issueLimit {
+		return ErrIssuanceLimited
+	}
+	return nil
 }
 
 // newID draws a challenge id: sixteen random bytes, base64url without padding.
@@ -434,6 +555,13 @@ func contentType(kind MediaKind) string {
 
 // challengeKey is where one challenge record is stored.
 func challengeKey(id string) string { return keyPrefix + id + ":challenge" }
+
+// issueKey is one source's issuance counter. The source is hashed because the
+// key is a value the store and its diagnostics may carry.
+func issueKey(remoteIP string) string {
+	sum := sha256.Sum256([]byte(remoteIP))
+	return issueKeyPrefix + hex.EncodeToString(sum[:])
+}
 
 // mediaKey is where one media object of a challenge is stored.
 func mediaKey(id string, kind MediaKind) string {

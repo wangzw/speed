@@ -14,6 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/humanverify/pow"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/i18n"
 )
 
 // mountChallenge registers the public challenge route on the route mounter the
@@ -117,13 +118,33 @@ func mountCaptcha(mounter mount.Mounter, provider *captcha.Provider) {
 }
 
 // captchaChallenge answers the challenge route. The form is named by the
-// request's form query item; an empty value is the image form.
+// request's form query item; an empty value is the image form. The audio form's
+// language is named by the lang query item, or taken from the request's active
+// locale when the item is absent.
 func captchaChallenge(mounter mount.Mounter, provider *captcha.Provider) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		issued, err := provider.Issue(c.Request.Context(), captcha.Form(c.Query("form")))
+		ctx := c.Request.Context()
+		form := captcha.Form(c.Query("form"))
+		language := captcha.DefaultAudioLanguage
+		if form == captcha.FormAudio {
+			var ok bool
+			language, ok = audioLanguage(c)
+			if !ok {
+				mount.Fail(c, mount.CodeBadRequest)
+				return
+			}
+		}
+		issued, err := provider.Issue(ctx, captcha.IssueOptions{
+			Form:     form,
+			Lang:     language,
+			RemoteIP: c.ClientIP(),
+		})
 		switch {
-		case errors.Is(err, captcha.ErrUnknownForm):
+		case errors.Is(err, captcha.ErrUnknownForm), errors.Is(err, captcha.ErrUnknownAudioLanguage):
 			mount.Fail(c, mount.CodeBadRequest)
+			return
+		case errors.Is(err, captcha.ErrIssuanceLimited):
+			mount.Throttled(c, 0)
 			return
 		case err != nil:
 			mount.Unavailable(c)
@@ -149,6 +170,22 @@ func captchaChallenge(mounter mount.Mounter, provider *captcha.Provider) gin.Han
 		}
 		c.JSON(http.StatusOK, answer)
 	}
+}
+
+// audioLanguage resolves the language an audio challenge is spoken in. A
+// request that names one has to name a language the library pronounces; absent,
+// the request's active locale decides, and a locale outside the library's set
+// falls back to English.
+func audioLanguage(c *gin.Context) (string, bool) {
+	if requested := c.Query("lang"); requested != "" {
+		return captcha.AudioLanguage(requested)
+	}
+	if locale, ok := i18n.FromContext(c.Request.Context()); ok {
+		if language, ok := captcha.AudioLanguage(string(locale)); ok {
+			return language, true
+		}
+	}
+	return captcha.DefaultAudioLanguage, true
 }
 
 // captchaMedia serves one media object of a challenge. An id this provider did

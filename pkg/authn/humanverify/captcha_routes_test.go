@@ -7,7 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/authn/humanverify/captcha"
+	"github.com/vislake/speed/pkg/i18n"
 )
 
 // The captcha routes as the mounter mounts them on its default base.
@@ -170,6 +173,48 @@ func TestTheCaptchaMediaRoutesRefuseUnknownIDs(t *testing.T) {
 	}
 }
 
+// TestTheCaptchaChallengeRouteAnswersThrottledAtTheIssuanceCap holds the
+// per-source bound at the route: one source that asks for more challenges than
+// its window allows is answered 429.
+func TestTheCaptchaChallengeRouteAnswersThrottledAtTheIssuanceCap(t *testing.T) {
+	rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
+	rig.drive(t)
+
+	for i := 0; i < 10; i++ {
+		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath, nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("request %d answered %d, want 200:\n%s", i+1, recorder.Code, recorder.Body)
+		}
+	}
+	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath, nil))
+	if recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("the request past the cap answered %d, want 429:\n%s", recorder.Code, recorder.Body)
+	}
+	var problem struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("the answer is not JSON: %v\n%s", err, recorder.Body)
+	}
+	if problem.Type != "urn:speed:authn:throttled" {
+		t.Errorf("the problem type is %q, want urn:speed:authn:throttled", problem.Type)
+	}
+}
+
+// TestTheCaptchaChallengeRouteRefusesAnUnsupportedAudioLanguage holds that an
+// audio language the provider cannot pronounce is a bad request rather than
+// silently drawn in English.
+func TestTheCaptchaChallengeRouteRefusesAnUnsupportedAudioLanguage(t *testing.T) {
+	rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
+	rig.drive(t)
+
+	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost,
+		captchaChallengeFullPath+"?form=audio&lang=klingon", nil))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("an unsupported audio language answered %d, want 400:\n%s", recorder.Code, recorder.Body)
+	}
+}
+
 // TestTheCaptchaChallengeRouteRefusesAnUnknownForm holds the closed set of
 // forms at the route: an unknown one is the 400 of a bad request.
 func TestTheCaptchaChallengeRouteRefusesAnUnknownForm(t *testing.T) {
@@ -225,4 +270,43 @@ func TestTheCaptchaRoutesAnswerUnavailableWhenTheStoreFails(t *testing.T) {
 			t.Fatalf("a store fault answered %d, want 503:\n%s", recorder.Code, recorder.Body)
 		}
 	})
+}
+
+// TestAudioLanguageFollowsTheActiveLocale holds how an audio challenge's
+// language is chosen: an explicit lang item wins, an absent one follows the
+// request's negotiated locale, and a locale the library does not pronounce
+// falls back to English rather than refusing the accessible form. An explicit
+// item naming an unpronounced language is refused.
+func TestAudioLanguageFollowsTheActiveLocale(t *testing.T) {
+	cases := []struct {
+		name   string
+		lang   string
+		locale i18n.Locale
+		want   string
+		ok     bool
+	}{
+		{name: "explicit item", lang: "zh-CN", want: "zh", ok: true},
+		{name: "active locale", locale: "zh-CN", want: "zh", ok: true},
+		{name: "other active locale", locale: "en-US", want: "en", ok: true},
+		{name: "unsupported locale falls back", locale: "fr-FR", want: "en", ok: true},
+		{name: "unsupported explicit item", lang: "klingon", ok: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			target := captchaChallengeFullPath + "?form=audio"
+			if tc.lang != "" {
+				target += "&lang=" + tc.lang
+			}
+			request := httptest.NewRequest(http.MethodPost, target, nil)
+			if tc.locale != "" {
+				request = request.WithContext(i18n.WithLocale(request.Context(), tc.locale))
+			}
+			context, _ := gin.CreateTestContext(httptest.NewRecorder())
+			context.Request = request
+			got, ok := audioLanguage(context)
+			if ok != tc.ok || got != tc.want {
+				t.Errorf("audioLanguage = %q, %v; want %q, %v", got, ok, tc.want, tc.ok)
+			}
+		})
+	}
 }

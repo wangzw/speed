@@ -73,9 +73,11 @@ var challengeOperation = speedhttp.NewReplyOperation[struct{}](
 )
 
 // captchaChallengeInput is the challenge route's input: the form the caller
-// wants drawn. An empty value is the image form.
+// wants drawn and, for the audio form, the language its digits are spoken in.
+// An empty form is the image form.
 type captchaChallengeInput struct {
 	Form string `query:"form" enum:"image,slider,audio" description:"The challenge form to draw: image (the default when the item is absent or empty), slider, or audio. Any other value is a 400 bad-request."`
+	Lang string `query:"lang" description:"The language the audio form's digits are spoken in, as a BCP 47 tag. The provider pronounces English, Japanese, Russian and Chinese; a tag naming another language is a 400. Absent or empty uses the request's active locale, falling back to English for a locale the provider does not pronounce. Ignored by the non-audio forms."`
 }
 
 // captchaChallengeOperation declares the public route that issues a self-hosted
@@ -91,11 +93,14 @@ var captchaChallengeOperation = speedhttp.NewReplyOperation[captchaChallengeInpu
 		"The request names the form with the `form` query item: `image` draws digits and "+
 		"answers the media path of the picture, `slider` draws a background and a piece to "+
 		"slide over it, and `audio` draws a spoken reading of digits as the accessible "+
-		"alternative. The answer names the challenge id, the form, the instruction key a "+
-		"client words for that form, and the media paths the form carries. A proof is the "+
-		"challenge id and the answer joined by a dot; it is single-use and spends the "+
-		"challenge whether the answer matched or not. A key-value store that cannot answer "+
-		"is answered 503.",
+		"alternative. The `lang` query item names the language an audio challenge is spoken "+
+		"in; the provider pronounces English, Japanese, Russian and Chinese, an unsupported "+
+		"language is a 400, and an absent item uses the request's active locale. The answer "+
+		"names the challenge id, the form, the instruction key a client words for that form, "+
+		"and the media paths the form carries. A proof is the challenge id and the answer "+
+		"joined by a dot; it is single-use and spends the challenge whether the answer "+
+		"matched or not. A source that asks for more challenges than its window allows is "+
+		"answered 429, and a key-value store that cannot answer is answered 503.",
 	nil,
 	[]speedhttp.Response{
 		{
@@ -104,8 +109,11 @@ var captchaChallengeOperation = speedhttp.NewReplyOperation[captchaChallengeInpu
 			Body:        &speedhttp.Body{MediaType: "application/json", Structure: reflect.TypeOf(CaptchaChallengeResponse{})},
 		},
 		speedhttp.ProblemResponseOf(http.StatusBadRequest,
-			"The form is not one this provider draws",
+			"The form or audio language is not one this provider draws",
 			typePrefix+mount.CodeBadRequest),
+		speedhttp.ProblemResponseOf(http.StatusTooManyRequests,
+			"This source has asked for as many challenges as its window allows; retry later",
+			typePrefix+mount.CodeThrottled),
 		speedhttp.ProblemResponseOf(http.StatusServiceUnavailable,
 			"The challenge could not be issued because the key-value store was unavailable",
 			typePrefix+mount.CodeUnavailable),

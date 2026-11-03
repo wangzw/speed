@@ -49,7 +49,10 @@ type HumanProof struct {
 // surface and another on the other surface, so Required, Provider, SiteKey and
 // Verify each take the scope of the send being checked and answer for that
 // surface alone. A caller names the scope it is sending on; a surface that asks
-// the wrong one is asking about a different gate.
+// the wrong one is asking about a different gate. Only HumanScopePhone and
+// HumanScopeOther are scopes: an implementation handed anything else answers as
+// the phone surface, the higher-risk one, rather than letting a caller that
+// names no surface reach an off gate.
 //
 // The seam answers three questions about the deployment and checks one proof.
 // Required says whether a proof is a condition of sending on that scope at all;

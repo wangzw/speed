@@ -317,11 +317,13 @@ var (
 		invite.ModuleName,
 		profile.ModuleName,
 		sso.ModuleName,
-		// The human-verification gate. Its mode is left to the configuration, whose
-		// default is the self-hosted proof of work, so the challenge route is
-		// mounted. A deployment that wants no gate sets authn.humanverify.mode to
-		// off; one that wants Turnstile sets it and supplies the site key, secret
-		// and expected hostname.
+		// The human-verification gate. Its mechanisms are left to the
+		// configuration, whose defaults are the self-hosted proof of work on the
+		// other surface and the self-hosted captcha on the phone surface, so both
+		// challenge routes are mounted. A deployment that wants no gate sets both
+		// authn.humanverify.mode and authn.humanverify.phone-mode to off; one that
+		// wants Turnstile sets the mode of the surface it chooses and supplies the
+		// site key, secret and expected hostname.
 		humanverify.ModuleName,
 
 		// Tenancy, the journal, the authorization layer, the limiter and settings.

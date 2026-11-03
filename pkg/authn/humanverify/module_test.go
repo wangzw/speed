@@ -329,6 +329,26 @@ func TestThePhoneSurfaceAloneStillNeedsItsDependencies(t *testing.T) {
 	})
 }
 
+// A deployment that writes only mode=off still runs the phone surface's default
+// captcha, so it still needs the store that captcha keeps its challenges in.
+// This is the migration trap for a deployment that knew only the former single
+// mode: turning the other surface off alone does not turn the phone surface off.
+func TestTheOtherSurfaceOffAloneStillNeedsThePhoneCaptchaStore(t *testing.T) {
+	reader := configtest.Reader(t, body(t, map[string]any{modeItem: ModeOff}), Module())
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Register(Module())
+	reg.Supply(reader, config.ModuleName)
+
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageNew,
+		Participants: []string{ModuleName, config.ModuleName},
+	})
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("mode=off alone without a store resolved with %v, want ErrInvalidConfig", err)
+	}
+}
+
 // A gate that requires a proof refuses a request that presents none, whatever
 // the mechanism, and that refusal is the 403 answer rather than an outage.
 func TestAVerifyingModeRefusesAnEmptyProof(t *testing.T) {
@@ -455,6 +475,26 @@ func TestProofOfWorkWithoutARouteMounterFailsTheStartup(t *testing.T) {
 	})
 	if !errors.Is(err, authn.ErrInvalidConfig) {
 		t.Fatalf("a proof-of-work mode without a mounter resolved with %v, want ErrInvalidConfig", err)
+	}
+}
+
+// An unknown scope is answered by the phone surface: a caller that names no
+// surface must not fall through to an off gate on the other surface.
+func TestAnUnknownScopeIsAnsweredByThePhoneSurface(t *testing.T) {
+	const unknown authn.HumanScope = "no-such-surface"
+	v := driveVerifier(t, body(t, map[string]any{
+		modeItem:      ModeOff,
+		phoneModeItem: ModeCaptcha,
+	}))
+	if !v.Required(unknown) {
+		t.Error("Required(unknown) is false while the phone surface is gated; the unknown scope fell through to the off surface")
+	}
+	if got := v.Provider(unknown); got != ModeCaptcha {
+		t.Errorf("Provider(unknown) = %q, want the phone surface's %q", got, ModeCaptcha)
+	}
+	err := v.Verify(t.Context(), authn.HumanProof{}, unknown)
+	if !errors.Is(err, authn.ErrHumanVerificationRequired) {
+		t.Errorf("Verify(unknown) with no proof = %v, want ErrHumanVerificationRequired", err)
 	}
 }
 

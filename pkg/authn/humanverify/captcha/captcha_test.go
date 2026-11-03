@@ -83,8 +83,16 @@ func (s *store) IncrByFloat(context.Context, string, float64) (float64, error) {
 	return 0, errors.New("not used")
 }
 
-func (s *store) IncrByFloatWithTTL(context.Context, string, float64, time.Duration) (float64, error) {
-	return 0, errors.New("not used")
+func (s *store) IncrByFloatWithTTL(_ context.Context, key string, delta float64, _ time.Duration) (float64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var current float64
+	if v, ok := s.live(key); ok {
+		current, _ = strconv.ParseFloat(string(v.body), 64)
+	}
+	current += delta
+	s.values[key] = value{body: []byte(strconv.FormatFloat(current, 'g', -1, 64))}
+	return current, nil
 }
 
 func (s *store) CompareAndSwap(_ context.Context, key string, old, newVal []byte) (bool, error) {
@@ -149,6 +157,19 @@ func decodeRecord(raw []byte) (record, error) {
 	return rec, nil
 }
 
+// source is the address the provider's tests issue challenges from.
+const source = "203.0.113.7"
+
+// issue draws a challenge of one form for the test source.
+func issue(t *testing.T, p *Provider, form Form) Challenge {
+	t.Helper()
+	issued, err := p.Issue(t.Context(), IssueOptions{Form: form, RemoteIP: source})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	return issued
+}
+
 // solveDigits recovers the answer of an image or audio challenge by trying the
 // five-digit space against the stored digest. The answer space is small; the
 // one-time deletion is what keeps that from being a way in.
@@ -160,7 +181,7 @@ func solveDigits(t *testing.T, s *store, id string) string {
 	}
 	for i := 0; i < 100000; i++ {
 		candidate := fmt.Sprintf("%05d", i)
-		if digest(candidate) == rec.Digests[0] {
+		if digest(rec.Salt, candidate) == rec.Digests[0] {
 			return candidate
 		}
 	}
@@ -183,7 +204,7 @@ func sliderRange(t *testing.T, s *store, id string) (min, max int) {
 	rec := readRecord(t, s, id)
 	min, max = -1, -1
 	for offset := 0; offset <= sliderWidth-pieceSize; offset++ {
-		if matches(rec.Digests, digest(strconv.Itoa(offset))) {
+		if matches(rec.Digests, digest(rec.Salt, strconv.Itoa(offset))) {
 			if min < 0 {
 				min = offset
 			}
@@ -218,10 +239,7 @@ func TestAGeneratedChallengeVerifiesExactlyOnce(t *testing.T) {
 	for _, form := range []Form{FormImage, FormSlider, FormAudio} {
 		t.Run(string(form), func(t *testing.T) {
 			p, s := newProvider(t)
-			issued, err := p.Issue(t.Context(), form)
-			if err != nil {
-				t.Fatalf("Issue: %v", err)
-			}
+			issued := issue(t, p, form)
 			answer := answerOf(t, s, issued)
 			if err := p.Verify(t.Context(), proof(issued.ID, answer), authn.HumanScopePhone); err != nil {
 				t.Fatalf("the drawn answer was refused: %v", err)
@@ -236,10 +254,7 @@ func TestAGeneratedChallengeVerifiesExactlyOnce(t *testing.T) {
 // TestAnExpiredChallengeIsRefused holds the five-minute lifetime.
 func TestAnExpiredChallengeIsRefused(t *testing.T) {
 	p, s := newProvider(t)
-	issued, err := p.Issue(t.Context(), FormImage)
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	issued := issue(t, p, FormImage)
 	answer := solveDigits(t, s, issued.ID)
 	s.advance(challengeTTL + time.Second)
 	if err := p.Verify(t.Context(), proof(issued.ID, answer), authn.HumanScopePhone); !errors.Is(err, authn.ErrHumanVerificationRequired) {
@@ -251,10 +266,7 @@ func TestAnExpiredChallengeIsRefused(t *testing.T) {
 // attempt: the correct answer no longer works once a wrong one was presented.
 func TestAWrongAnswerSpendsTheChallenge(t *testing.T) {
 	p, s := newProvider(t)
-	issued, err := p.Issue(t.Context(), FormImage)
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	issued := issue(t, p, FormImage)
 	answer := solveDigits(t, s, issued.ID)
 	wrong := answer + "0"
 	if err := p.Verify(t.Context(), proof(issued.ID, wrong), authn.HumanScopePhone); !errors.Is(err, authn.ErrHumanVerificationRequired) {
@@ -276,18 +288,12 @@ func TestEachFormAcceptsItsAnswerAndRefusesAnother(t *testing.T) {
 		t.Run(string(form), func(t *testing.T) {
 			p, s := newProvider(t)
 
-			right, err := p.Issue(t.Context(), form)
-			if err != nil {
-				t.Fatalf("Issue: %v", err)
-			}
+			right := issue(t, p, form)
 			if verifyErr := p.Verify(t.Context(), proof(right.ID, answerOf(t, s, right)), authn.HumanScopePhone); verifyErr != nil {
 				t.Fatalf("the right answer was refused: %v", verifyErr)
 			}
 
-			failed, err := p.Issue(t.Context(), form)
-			if err != nil {
-				t.Fatalf("Issue: %v", err)
-			}
+			failed := issue(t, p, form)
 			if verifyErr := p.Verify(t.Context(), proof(failed.ID, wrongAnswerOf(t, s, failed)), authn.HumanScopePhone); !errors.Is(verifyErr, authn.ErrHumanVerificationRequired) {
 				t.Fatalf("the wrong answer resolved with %v, want ErrHumanVerificationRequired", verifyErr)
 			}
@@ -299,19 +305,13 @@ func TestEachFormAcceptsItsAnswerAndRefusesAnother(t *testing.T) {
 // allows a client that lands near, but not on, the cut position.
 func TestTheSliderAcceptsAnOffsetWithinItsTolerance(t *testing.T) {
 	p, s := newProvider(t)
-	issued, err := p.Issue(t.Context(), FormSlider)
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	issued := issue(t, p, FormSlider)
 	_, max := sliderRange(t, s, issued.ID)
 	if verifyErr := p.Verify(t.Context(), proof(issued.ID, strconv.Itoa(max)), authn.HumanScopePhone); verifyErr != nil {
 		t.Fatalf("the last accepted offset was refused: %v", verifyErr)
 	}
 
-	failed, err := p.Issue(t.Context(), FormSlider)
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	failed := issue(t, p, FormSlider)
 	outside := outsideSlider(t, s, failed.ID)
 	if verifyErr := p.Verify(t.Context(), proof(failed.ID, strconv.Itoa(outside)), authn.HumanScopePhone); !errors.Is(verifyErr, authn.ErrHumanVerificationRequired) {
 		t.Fatalf("an offset outside the tolerance resolved with %v, want ErrHumanVerificationRequired", verifyErr)
@@ -361,10 +361,7 @@ func TestMediaIsStoredForEachForm(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(string(tc.form), func(t *testing.T) {
 			p, _ := newProvider(t)
-			issued, err := p.Issue(t.Context(), tc.form)
-			if err != nil {
-				t.Fatalf("Issue: %v", err)
-			}
+			issued := issue(t, p, tc.form)
 			for _, kind := range tc.present {
 				media, err := p.Media(t.Context(), issued.ID, kind)
 				if err != nil {
@@ -405,16 +402,15 @@ func TestMediaRefusesUnknownIDs(t *testing.T) {
 }
 
 // TestTheRecordDoesNotCarryTheAnswerInPlainText holds the protection on the
-// stored answer: the record carries digests, not the solution.
+// stored answer: the record carries a salted digest, not the solution and not
+// the answer's bare SHA-256.
 func TestTheRecordDoesNotCarryTheAnswerInPlainText(t *testing.T) {
 	for _, form := range []Form{FormImage, FormAudio} {
 		t.Run(string(form), func(t *testing.T) {
 			p, s := newProvider(t)
-			issued, err := p.Issue(t.Context(), form)
-			if err != nil {
-				t.Fatalf("Issue: %v", err)
-			}
+			issued := issue(t, p, form)
 			answer := solveDigits(t, s, issued.ID)
+			rec := readRecord(t, s, issued.ID)
 			raw, present, err := s.Get(t.Context(), challengeKey(issued.ID))
 			if err != nil || !present {
 				t.Fatalf("reading the record: present %v, err %v", present, err)
@@ -422,9 +418,12 @@ func TestTheRecordDoesNotCarryTheAnswerInPlainText(t *testing.T) {
 			if bytes.Contains(raw, []byte(answer)) {
 				t.Errorf("the record carries the answer %q in plain text: %s", answer, raw)
 			}
+			if !bytes.Contains(raw, []byte(digest(rec.Salt, answer))) {
+				t.Errorf("the record does not carry the salted digest of the answer: %s", raw)
+			}
 			sum := sha256.Sum256([]byte(answer))
-			if !bytes.Contains(raw, []byte(hex.EncodeToString(sum[:]))) {
-				t.Errorf("the record does not carry the answer's digest: %s", raw)
+			if bytes.Contains(raw, []byte(hex.EncodeToString(sum[:]))) {
+				t.Errorf("the record carries the unsalted SHA-256 of the answer: %s", raw)
 			}
 		})
 	}
@@ -446,7 +445,7 @@ func TestAProofOverTheLimitIsRefused(t *testing.T) {
 // TestAnUnknownFormIsRefused holds the closed set of forms.
 func TestAnUnknownFormIsRefused(t *testing.T) {
 	p, _ := newProvider(t)
-	if _, err := p.Issue(t.Context(), Form("puzzle")); !errors.Is(err, ErrUnknownForm) {
+	if _, err := p.Issue(t.Context(), IssueOptions{Form: Form("puzzle"), RemoteIP: source}); !errors.Is(err, ErrUnknownForm) {
 		t.Fatalf("Issue with an unknown form resolved with %v, want ErrUnknownForm", err)
 	}
 }
@@ -463,10 +462,7 @@ func TestTwoProvidersShareOneChallenge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	issued, err := first.Issue(t.Context(), FormImage)
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	issued := issue(t, first, FormImage)
 	answer := solveDigits(t, s, issued.ID)
 	if err := second.Verify(t.Context(), proof(issued.ID, answer), authn.HumanScopePhone); err != nil {
 		t.Fatalf("a second provider refused a shared challenge: %v", err)
@@ -477,10 +473,7 @@ func TestTwoProvidersShareOneChallenge(t *testing.T) {
 // several presentations of one correct proof at once, exactly one is accepted.
 func TestOneProofCannotBeSpentTwiceConcurrently(t *testing.T) {
 	p, s := newProvider(t)
-	issued, err := p.Issue(t.Context(), FormImage)
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
+	issued := issue(t, p, FormImage)
 	presented := proof(issued.ID, solveDigits(t, s, issued.ID))
 
 	const callers = 8
@@ -503,6 +496,114 @@ func TestOneProofCannotBeSpentTwiceConcurrently(t *testing.T) {
 	}
 	if accepted != 1 {
 		t.Errorf("%d presentations were accepted, want exactly one", accepted)
+	}
+}
+
+// TestTheIssuanceCapBoundsOneSource holds the anti-fill bound: one source may
+// hold a limited number of challenges at a time, and a source that asks for
+// more is refused while another source is not affected.
+func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
+	p, _ := newProvider(t)
+	for i := 0; i < issueLimit; i++ {
+		if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: source}); err != nil {
+			t.Fatalf("Issue %d: %v", i+1, err)
+		}
+	}
+	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: source}); !errors.Is(err, ErrIssuanceLimited) {
+		t.Fatalf("the cap resolved with %v, want ErrIssuanceLimited", err)
+	}
+	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: "203.0.113.8"}); err != nil {
+		t.Fatalf("another source was refused with the first source's cap: %v", err)
+	}
+}
+
+// TestTheStoredDigestIsSalted holds that the stored digest is not the bare
+// SHA-256 of the answer: a leaked digest alone must not let an offline
+// enumerator reverse a five-digit answer.
+func TestTheStoredDigestIsSalted(t *testing.T) {
+	p, s := newProvider(t)
+	issued := issue(t, p, FormImage)
+	answer := solveDigits(t, s, issued.ID)
+	raw, present, err := s.Get(t.Context(), challengeKey(issued.ID))
+	if err != nil || !present {
+		t.Fatalf("reading the record: present %v, err %v", present, err)
+	}
+	sum := sha256.Sum256([]byte(answer))
+	if bytes.Contains(raw, []byte(hex.EncodeToString(sum[:]))) {
+		t.Errorf("the record carries the unsalted SHA-256 of the answer: %s", raw)
+	}
+}
+
+// TestTheSaltIsDrawnPerChallenge holds that two challenges do not share a salt,
+// so one digest table does not answer for another challenge.
+func TestTheSaltIsDrawnPerChallenge(t *testing.T) {
+	p, s := newProvider(t)
+	first := issue(t, p, FormImage)
+	second := issue(t, p, FormImage)
+	firstRecord := readRecord(t, s, first.ID)
+	secondRecord := readRecord(t, s, second.ID)
+	if firstRecord.Salt == "" || secondRecord.Salt == "" {
+		t.Fatalf("a challenge record carries no salt: %q and %q", firstRecord.Salt, secondRecord.Salt)
+	}
+	if firstRecord.Salt == secondRecord.Salt {
+		t.Errorf("two challenges share the salt %q", firstRecord.Salt)
+	}
+	if digest(firstRecord.Salt, "12345") == digest(secondRecord.Salt, "12345") {
+		t.Error("one answer digest is the same under two challenges' salts")
+	}
+}
+
+// TestARecordWithoutItsSaltIsRefused holds that a record this provider did not
+// draw, which carries no salt, is not usable rather than checked unsalted.
+func TestARecordWithoutItsSaltIsRefused(t *testing.T) {
+	p, s := newProvider(t)
+	issued := issue(t, p, FormImage)
+	answer := solveDigits(t, s, issued.ID)
+	rec := readRecord(t, s, issued.ID)
+	rec.Salt = ""
+	raw, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatalf("encoding the record: %v", err)
+	}
+	if err := s.Set(t.Context(), challengeKey(issued.ID), raw, challengeTTL); err != nil {
+		t.Fatalf("rewriting the record: %v", err)
+	}
+	if err := p.Verify(t.Context(), proof(issued.ID, answer), authn.HumanScopePhone); !errors.Is(err, authn.ErrHumanVerificationRequired) {
+		t.Fatalf("a record with no salt resolved with %v, want ErrHumanVerificationRequired", err)
+	}
+}
+
+// TestAnUnsupportedAudioLanguageIsRefused holds that the provider does not
+// silently draw an unsupported language in English.
+func TestAnUnsupportedAudioLanguageIsRefused(t *testing.T) {
+	p, _ := newProvider(t)
+	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormAudio, Lang: "klingon", RemoteIP: source}); !errors.Is(err, ErrUnknownAudioLanguage) {
+		t.Fatalf("an unsupported audio language resolved with %v, want ErrUnknownAudioLanguage", err)
+	}
+}
+
+// TestASupportedAudioLanguageIsAccepted holds that the primary subtag of a BCP
+// 47 tag selects the language the library pronounces.
+func TestASupportedAudioLanguageIsAccepted(t *testing.T) {
+	for _, tc := range []struct {
+		tag  string
+		want string
+	}{
+		{"zh-CN", "zh"},
+		{"en-US", "en"},
+		{"ja", "ja"},
+		{"ru_RU", "ru"},
+	} {
+		t.Run(tc.tag, func(t *testing.T) {
+			got, ok := AudioLanguage(tc.tag)
+			if !ok || got != tc.want {
+				t.Errorf("AudioLanguage(%q) = %q, %v; want %q, true", tc.tag, got, ok, tc.want)
+			}
+		})
+	}
+	p, _ := newProvider(t)
+	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormAudio, Lang: "zh-CN", RemoteIP: source}); err != nil {
+		t.Fatalf("Issue in Chinese: %v", err)
 	}
 }
 

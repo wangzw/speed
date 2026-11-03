@@ -132,6 +132,46 @@ func TestTheSurfacesResolveIndependently(t *testing.T) {
 	}
 }
 
+// Turning the other surface off leaves the phone surface on its default captcha.
+// The two modes are independent, so a deployment that writes only mode=off is
+// still gated on the phone surface and still needs the store and the route
+// mounter the captcha runs on. This is the migration a deployment that only
+// knew the former single mode must follow to turn the whole gate off.
+func TestTurningTheOtherSurfaceOffLeavesThePhoneSurfaceOnCaptcha(t *testing.T) {
+	cfg, err := readBody(t, body(t, map[string]any{modeItem: ModeOff}))
+	if err != nil {
+		t.Fatalf("resolving mode=off alone: %v", err)
+	}
+	if cfg.other.mode != ModeOff {
+		t.Errorf("the other surface's mode is %q, want %q", cfg.other.mode, ModeOff)
+	}
+	if cfg.phone.mode != ModeCaptcha {
+		t.Errorf("the phone surface's mode is %q, want its default %q", cfg.phone.mode, ModeCaptcha)
+	}
+	if !cfg.needsStore() {
+		t.Error("the phone surface's captcha needs no store, so the defaulted mechanism was not resolved")
+	}
+}
+
+// Selecting Turnstile on the other surface leaves the phone surface on its
+// default captcha, so the deployment still needs the key-value store and the
+// route mounter even though Turnstile itself needs neither.
+func TestTurnstileOnTheOtherSurfaceLeavesThePhoneSurfaceOnCaptcha(t *testing.T) {
+	cfg, err := readBody(t, body(t, turnstileSection()))
+	if err != nil {
+		t.Fatalf("resolving a Turnstile section: %v", err)
+	}
+	if cfg.other.mode != ModeTurnstile {
+		t.Errorf("the other surface's mode is %q, want %q", cfg.other.mode, ModeTurnstile)
+	}
+	if cfg.phone.mode != ModeCaptcha {
+		t.Errorf("the phone surface's mode is %q, want its default %q", cfg.phone.mode, ModeCaptcha)
+	}
+	if !cfg.needsStore() {
+		t.Error("the phone surface's captcha needs no store, so the defaulted mechanism was not resolved")
+	}
+}
+
 // A Turnstile section carries the endpoint and timeout defaults without naming
 // them, so a deployment supplies only what identifies it.
 func TestTurnstileDefaultsTheVerifyEndpointAndTimeout(t *testing.T) {

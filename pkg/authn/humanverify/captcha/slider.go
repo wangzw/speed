@@ -26,14 +26,14 @@ const (
 type sliderImages struct {
 	background []byte
 	piece      []byte
-	// digests are the accepted offsets, one digest each, so the cut position
-	// itself is not stored.
+	// digests are the accepted offsets, one digest each keyed by the
+	// challenge's salt, so the cut position itself is not stored.
 	digests []string
 }
 
 // newSlider draws a background, cuts a piece out of it and records the digests
-// of the offsets that count as the right answer.
-func newSlider() (sliderImages, error) {
+// of the offsets that count as the right answer, keyed by the challenge's salt.
+func newSlider(salt string) (sliderImages, error) {
 	background, err := drawBackground()
 	if err != nil {
 		return sliderImages{}, err
@@ -63,7 +63,7 @@ func newSlider() (sliderImages, error) {
 		if offset < 0 || offset > sliderWidth-pieceSize {
 			continue
 		}
-		digests = append(digests, digest(strconv.Itoa(offset)))
+		digests = append(digests, digest(salt, strconv.Itoa(offset)))
 	}
 	return sliderImages{background: backgroundPNG, piece: piecePNG, digests: digests}, nil
 }
