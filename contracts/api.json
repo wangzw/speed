@@ -545,7 +545,7 @@
                     "type": "string"
                   },
                   "human_proof": {
-                    "description": "The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
+                    "description": "The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
                     "type": "string"
                   },
                   "input": {
@@ -711,7 +711,7 @@
                 "description": "One answer to the bound flow: which step is being answered, the step number to echo, and the fields the step takes.",
                 "properties": {
                   "human_proof": {
-                    "description": "The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
+                    "description": "The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
                     "type": "string"
                   },
                   "input": {
@@ -881,7 +881,7 @@
                     "type": "string"
                   },
                   "human_proof": {
-                    "description": "The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
+                    "description": "The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
                     "type": "string"
                   },
                   "input": {
@@ -1173,6 +1173,65 @@
         "x-endpoint": "account"
       }
     },
+    "/api/v1/auth/human/captcha/challenge": {
+      "post": {
+        "description": "Issues one human-verification challenge for the self-hosted captcha mechanism. The request names the form with the `form` query item: `image` draws digits and answers the media path of the picture, `slider` draws a background and a piece to slide over it, and `audio` draws a spoken reading of digits as the accessible alternative. The answer names the challenge id, the form, the instruction key a client words for that form, and the media paths the form carries. A proof is the challenge id and the answer joined by a dot; it is single-use and spends the challenge whether the answer matched or not. A key-value store that cannot answer is answered 503.",
+        "operationId": "authn.humanverify.captchaChallenge",
+        "parameters": [
+          {
+            "description": "The challenge form to draw: image (the default when the item is absent or empty), slider, or audio. Any other value is a 400 bad-request.",
+            "in": "query",
+            "name": "form",
+            "schema": {
+              "enum": [
+                "image",
+                "slider",
+                "audio"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptchaChallengeResponse"
+                }
+              }
+            },
+            "description": "A captcha challenge, its form, its instruction key and its media paths"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The form is not one this provider draws"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The challenge could not be issued because the key-value store was unavailable"
+          }
+        },
+        "security": [],
+        "summary": "Obtain a captcha challenge",
+        "tags": [
+          "authn.humanverify"
+        ],
+        "x-endpoint": "account"
+      }
+    },
     "/api/v1/auth/human/challenge": {
       "post": {
         "description": "Issues one human-verification challenge for the proof-of-work mechanism. The client solves the challenge by finding a nonce whose SHA-256 hash, over the decoded challenge followed by the nonce in big-endian, carries at least `difficulty` leading zero bits, then presents `challenge.nonce` as the proof to the send it wants to make. A proof is single-use: the challenge is spent when it is accepted. A source that asks for more challenges than its window allows is answered 429, and a key-value store that cannot answer is answered 503.",
@@ -1229,7 +1288,7 @@
                 "description": "The login identifier to add — a username or an email address — and the human-verification proof the email branch may require.",
                 "properties": {
                   "human_proof": {
-                    "description": "The human-verification proof the deployment may require before it sends a verification code to an email address: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none or the kind is username. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
+                    "description": "The human-verification proof the deployment may require before it sends a verification code to an email address: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none or the kind is username. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
                     "type": "string"
                   },
                   "kind": {
@@ -2850,7 +2909,7 @@
                     "type": "string"
                   },
                   "human_proof": {
-                    "description": "The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
+                    "description": "The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
                     "type": "string"
                   },
                   "identifier": {
@@ -3277,7 +3336,7 @@
                 "description": "The phone number to send a verification code to, and the human-verification proof the deployment may require.",
                 "properties": {
                   "human_proof": {
-                    "description": "The human-verification proof the deployment may require before it sends a verification code: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
+                    "description": "The human-verification proof the deployment may require before it sends a verification code: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
                     "type": "string"
                   },
                   "phone": {
@@ -15014,18 +15073,36 @@
         "type": "object"
       },
       "AuthnLoginHuman": {
-        "description": "The human-verification gate a deployment puts in front of every send of a verification message: whether a proof is required, the mechanism that checks it, and the public identifier a client-side widget needs. A deployment that takes no gate in reports the off mechanism and requires nothing.",
+        "description": "The human-verification gate a deployment puts in front of every send of a verification message, reported once per surface. A deployment may run a different mechanism on each: the phone surface guards the four SMS sends, and the other surface guards every send that does not address a phone number. A deployment that takes no gate in reports the off mechanism on both surfaces.",
+        "properties": {
+          "other": {
+            "$ref": "#/components/schemas/AuthnLoginHumanGate",
+            "description": "The gate on every send that does not address a phone number: an email reset code and a self-service email addition."
+          },
+          "phone": {
+            "$ref": "#/components/schemas/AuthnLoginHumanGate",
+            "description": "The gate on a send that delivers a message to a phone number: login, second factor, enrollment and anonymous reset by SMS."
+          }
+        },
+        "required": [
+          "phone",
+          "other"
+        ],
+        "type": "object"
+      },
+      "AuthnLoginHumanGate": {
+        "description": "The human-verification gate one surface runs: whether a proof is required, the mechanism that checks it, and the public identifier a client-side widget needs. A surface that takes no gate in reports the off mechanism and requires nothing.",
         "properties": {
           "provider": {
-            "description": "The mechanism that checks a proof: `off` when no gate is configured, `pow` for the self-hosted proof of work, or `turnstile`",
+            "description": "The mechanism that checks a proof on this surface: `off` when no gate is configured, `pow` for the self-hosted proof of work, `captcha` for the self-hosted captcha, or `turnstile` for Cloudflare's widget",
             "type": "string"
           },
           "required": {
-            "description": "Whether every send of a verification message must first present a valid, single-use proof",
+            "description": "Whether every send on this surface must first present a valid, single-use proof",
             "type": "boolean"
           },
           "site_key": {
-            "description": "The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off` and `pow`",
+            "description": "The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`",
             "type": "string"
           }
         },
@@ -16270,6 +16347,60 @@
         },
         "required": [
           "description_key"
+        ],
+        "type": "object"
+      },
+      "CaptchaChallengeResponse": {
+        "description": "A captcha challenge: its id, the form it takes, the instruction key a client words for that form, the media paths the form carries and how long it stays valid.",
+        "properties": {
+          "audio_url": {
+            "description": "The path of the spoken digits of an audio challenge.",
+            "type": "string"
+          },
+          "background_url": {
+            "description": "The path of the background of a slider challenge.",
+            "type": "string"
+          },
+          "expires_in": {
+            "description": "How long the challenge stays valid, in whole seconds. A proof that names an expired challenge is refused.",
+            "type": "integer"
+          },
+          "form": {
+            "description": "The challenge form: image for a picture of digits, slider for a background and a piece to slide over it, audio for a spoken reading of digits.",
+            "enum": [
+              "image",
+              "slider",
+              "audio"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "description": "The challenge id a proof names, base64url without padding.",
+            "type": "string"
+          },
+          "image_url": {
+            "description": "The path of the digit picture of an image challenge.",
+            "type": "string"
+          },
+          "instruction": {
+            "description": "A stable key naming the instruction a client shows for the form. The text itself is the client's language resource.",
+            "type": "string"
+          },
+          "piece_url": {
+            "description": "The path of the piece a slider challenge slides over its background.",
+            "type": "string"
+          },
+          "provider": {
+            "description": "The mechanism that issued the challenge: the constant captcha.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "form",
+          "instruction",
+          "id",
+          "expires_in"
         ],
         "type": "object"
       },

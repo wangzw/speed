@@ -237,6 +237,42 @@ export interface AuthnLoginActionResult {
 export type AuthnLoginAnswer = AuthnLoginFlow | AuthnLoginSession | AuthnLoginToken | AuthnLoginActionResult;
 
 /**
+ * The challenge form: image for a picture of digits, slider for a background and a piece to slide over it, audio for a spoken reading of digits.
+ */
+export type CaptchaChallengeResponseForm = typeof CaptchaChallengeResponseForm[keyof typeof CaptchaChallengeResponseForm];
+
+
+export const CaptchaChallengeResponseForm = {
+  image: 'image',
+  slider: 'slider',
+  audio: 'audio',
+} as const;
+
+/**
+ * A captcha challenge: its id, the form it takes, the instruction key a client words for that form, the media paths the form carries and how long it stays valid.
+ */
+export interface CaptchaChallengeResponse {
+  /** The path of the spoken digits of an audio challenge. */
+  audio_url?: string;
+  /** The path of the background of a slider challenge. */
+  background_url?: string;
+  /** How long the challenge stays valid, in whole seconds. A proof that names an expired challenge is refused. */
+  expires_in: number;
+  /** The challenge form: image for a picture of digits, slider for a background and a piece to slide over it, audio for a spoken reading of digits. */
+  form: CaptchaChallengeResponseForm;
+  /** The challenge id a proof names, base64url without padding. */
+  id: string;
+  /** The path of the digit picture of an image challenge. */
+  image_url?: string;
+  /** A stable key naming the instruction a client shows for the form. The text itself is the client's language resource. */
+  instruction: string;
+  /** The path of the piece a slider challenge slides over its background. */
+  piece_url?: string;
+  /** The mechanism that issued the challenge: the constant captcha. */
+  provider: string;
+}
+
+/**
  * A proof-of-work challenge, the work it takes to solve, and how long it stays valid.
  */
 export interface ChallengeResponse {
@@ -515,15 +551,25 @@ export interface AuthnProfilePatch {
 }
 
 /**
- * The human-verification gate a deployment puts in front of every send of a verification message: whether a proof is required, the mechanism that checks it, and the public identifier a client-side widget needs. A deployment that takes no gate in reports the off mechanism and requires nothing.
+ * The human-verification gate one surface runs: whether a proof is required, the mechanism that checks it, and the public identifier a client-side widget needs. A surface that takes no gate in reports the off mechanism and requires nothing.
+ */
+export interface AuthnLoginHumanGate {
+  /** The mechanism that checks a proof on this surface: `off` when no gate is configured, `pow` for the self-hosted proof of work, `captcha` for the self-hosted captcha, or `turnstile` for Cloudflare's widget */
+  provider: string;
+  /** Whether every send on this surface must first present a valid, single-use proof */
+  required: boolean;
+  /** The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha` */
+  site_key?: string;
+}
+
+/**
+ * The human-verification gate a deployment puts in front of every send of a verification message, reported once per surface. A deployment may run a different mechanism on each: the phone surface guards the four SMS sends, and the other surface guards every send that does not address a phone number. A deployment that takes no gate in reports the off mechanism on both surfaces.
  */
 export interface AuthnLoginHuman {
-  /** The mechanism that checks a proof: `off` when no gate is configured, `pow` for the self-hosted proof of work, or `turnstile` */
-  provider: string;
-  /** Whether every send of a verification message must first present a valid, single-use proof */
-  required: boolean;
-  /** The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off` and `pow` */
-  site_key?: string;
+  /** The gate on every send that does not address a phone number: an email reset code and a self-service email addition. */
+  other: AuthnLoginHumanGate;
+  /** The gate on a send that delivers a message to a phone number: login, second factor, enrollment and anonymous reset by SMS. */
+  phone: AuthnLoginHumanGate;
 }
 
 /**
@@ -2029,7 +2075,7 @@ export type AuthnLoginStartBody = {
   binding?: string;
   /** How a completed login is delivered: `session` (the default) sets the session cookie and answers the session view; `token` answers an access and refresh token pair. `token` must be enabled by the deployment and requires the token capability, otherwise the request is a 400 bad-request. */
   delivery?: string;
-  /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
+  /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
   human_proof?: string;
   /** The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request. */
   input?: AuthnLoginStartBodyInput;
@@ -2050,7 +2096,7 @@ export type AuthnLoginAnswerBodyInput = {[key: string]: string};
  * One answer to the bound flow: which step is being answered, the step number to echo, and the fields the step takes.
  */
 export type AuthnLoginAnswerBody = {
-  /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
+  /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
   human_proof?: string;
   /** The fields the step takes, as name-to-value strings. At most 8 members, each value at most 8 KiB; a second-factor step reads `factor` to choose the factor and then the values that factor asks for, an enrollment step reads `kind`, and `complete` reads nothing. */
   input?: AuthnLoginAnswerBodyInput;
@@ -2073,7 +2119,7 @@ export type AuthnLoginStartAuthenticatedBody = {
   binding?: string;
   /** Accepted but not read: the delivery mode follows the kind of the request's session. It is accepted so that a client may send this route the same start body it sends to `POST /auth/flows`. */
   delivery?: string;
-  /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
+  /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
   human_proof?: string;
   /** The fields the started step takes, as name-to-value strings: the method's first step for `link` and for a step-up that starts at the first factor, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), except that a kind an account may hold only once -- the authenticator app -- takes no name, and a label sent for it is that same 400 bad-request, and nothing for a step-up that starts at the second factor, except that a step-up may also name `exclude_factor`, one factor the flow must not offer -- the factor the caller is about to delete, which must never prove its own removal; a value naming no factor of the account filters nothing. When that exclusion leaves the account no factor at all, the flow of an account holding a password starts at the password and completes on it alone, while an account without a password is refused with 401 `insufficient_user_authentication`. At most 8 members, each value at most 512 bytes. */
   input?: AuthnLoginStartAuthenticatedBodyInput;
@@ -2085,11 +2131,27 @@ export type AuthnLoginStartAuthenticatedBody = {
   return_to?: string;
 };
 
+export type AuthnHumanverifyCaptchaChallengeParams = {
+/**
+ * The challenge form to draw: image (the default when the item is absent or empty), slider, or audio. Any other value is a 400 bad-request.
+ */
+form?: AuthnHumanverifyCaptchaChallengeForm;
+};
+
+export type AuthnHumanverifyCaptchaChallengeForm = typeof AuthnHumanverifyCaptchaChallengeForm[keyof typeof AuthnHumanverifyCaptchaChallengeForm];
+
+
+export const AuthnHumanverifyCaptchaChallengeForm = {
+  image: 'image',
+  slider: 'slider',
+  audio: 'audio',
+} as const;
+
 /**
  * The login identifier to add — a username or an email address — and the human-verification proof the email branch may require.
  */
 export type AuthnLoginAddIdentifierBody = {
-  /** The human-verification proof the deployment may require before it sends a verification code to an email address: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none or the kind is username. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
+  /** The human-verification proof the deployment may require before it sends a verification code to an email address: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none or the kind is username. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
   human_proof?: string;
   /** The identifier kind to add: username or email; a phone is added through /auth/phone */
   kind: string;
@@ -2219,7 +2281,7 @@ export const AuthnLoginPasswordResetStartBodyChannel = {
 export type AuthnLoginPasswordResetStartBody = {
   /** The channel to prove the holder of: email proves an address verified by an emailed code, sms proves a phone number verified by a code sent to it. */
   channel: AuthnLoginPasswordResetStartBodyChannel;
-  /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
+  /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
   human_proof?: string;
   /** The address or E.164 phone number the code is sent to. An address is trimmed and lowercased first; a malformed value is a 400 bad-request. */
   identifier: string;
@@ -2245,7 +2307,7 @@ export type AuthnLoginPasswordResetVerifyBody = {
  * The phone number to send a verification code to, and the human-verification proof the deployment may require.
  */
 export type AuthnLoginStartPhoneBody = {
-  /** The human-verification proof the deployment may require before it sends a verification code: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
+  /** The human-verification proof the deployment may require before it sends a verification code: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
   human_proof?: string;
   /** The number in international E.164 form: a leading `+`, a non-zero country digit, then 6 to 14 more digits. The value is not parsed, completed or reformatted, so a national-format number is a 400 bad-request. */
   phone?: string;
@@ -3443,6 +3505,70 @@ export function useAuthnLoginCurrent<TData = Awaited<ReturnType<typeof authnLogi
 
 
 
+
+/**
+ * Issues one human-verification challenge for the self-hosted captcha mechanism. The request names the form with the `form` query item: `image` draws digits and answers the media path of the picture, `slider` draws a background and a piece to slide over it, and `audio` draws a spoken reading of digits as the accessible alternative. The answer names the challenge id, the form, the instruction key a client words for that form, and the media paths the form carries. A proof is the challenge id and the answer joined by a dot; it is single-use and spends the challenge whether the answer matched or not. A key-value store that cannot answer is answered 503.
+ * @summary Obtain a captcha challenge
+ */
+export const authnHumanverifyCaptchaChallenge = (
+    params?: AuthnHumanverifyCaptchaChallengeParams,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<CaptchaChallengeResponse>(
+      {url: `/api/v1/auth/human/captcha/challenge`, method: 'POST',
+        params, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnHumanverifyCaptchaChallengeMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>, TError,{params?: AuthnHumanverifyCaptchaChallengeParams}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>, TError,{params?: AuthnHumanverifyCaptchaChallengeParams}, TContext> => {
+
+const mutationKey = ['authnHumanverifyCaptchaChallenge'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>, {params?: AuthnHumanverifyCaptchaChallengeParams}> = (props) => {
+          const {params} = props ?? {};
+
+          return  authnHumanverifyCaptchaChallenge(params,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnHumanverifyCaptchaChallengeMutationResult = NonNullable<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>>
+
+    export type AuthnHumanverifyCaptchaChallengeMutationError = Problem
+
+    /**
+ * @summary Obtain a captcha challenge
+ */
+export const useAuthnHumanverifyCaptchaChallenge = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>, TError,{params?: AuthnHumanverifyCaptchaChallengeParams}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>,
+        TError,
+        {params?: AuthnHumanverifyCaptchaChallengeParams},
+        TContext
+      > => {
+      return useMutation(getAuthnHumanverifyCaptchaChallengeMutationOptions(options));
+    }
 
 /**
  * Issues one human-verification challenge for the proof-of-work mechanism. The client solves the challenge by finding a nonce whose SHA-256 hash, over the decoded challenge followed by the nonce in big-endian, carries at least `difficulty` leading zero bits, then presents `challenge.nonce` as the proof to the send it wants to make. A proof is single-use: the challenge is spent when it is accepted. A source that asks for more challenges than its window allows is answered 429, and a key-value store that cannot answer is answered 503.
