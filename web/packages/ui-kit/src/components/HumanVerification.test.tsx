@@ -283,6 +283,45 @@ describe('HumanVerification', () => {
     expect(onRefresh).toHaveBeenLastCalledWith('image')
   })
 
+  it('offers a control that requests the slider form', async () => {
+    const onRefresh = vi.fn()
+    renderWithProviders(
+      <HumanVerification
+        scope="phone"
+        gate={gateSet({ required: true, provider: 'captcha' })}
+        captcha={captcha('image')}
+        onToken={() => {}}
+        onRefreshCaptcha={onRefresh}
+      />,
+    )
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: CAPTCHA_COPY.useSlider }))
+    expect(onRefresh).toHaveBeenLastCalledWith('slider')
+  })
+
+  it('offers a control that requests the image form from audio and slider', async () => {
+    // From every form the viewer can reach the other two: the block is the
+    // only way a screen obtains a challenge of another form.
+    for (const form of ['audio', 'slider'] as const) {
+      const onRefresh = vi.fn()
+      const { unmount } = renderWithProviders(
+        <HumanVerification
+          scope="phone"
+          gate={gateSet({ required: true, provider: 'captcha' })}
+          captcha={captcha(form)}
+          onToken={() => {}}
+          onRefreshCaptcha={onRefresh}
+        />,
+      )
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: CAPTCHA_COPY.useImage }))
+      expect(onRefresh).toHaveBeenLastCalledWith('image')
+      unmount()
+    }
+  })
+
   it('renders the audio challenge with a readable label and submits its answer', async () => {
     const onToken = vi.fn()
     const { container } = renderWithProviders(

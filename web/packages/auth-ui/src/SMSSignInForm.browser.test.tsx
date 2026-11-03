@@ -13,6 +13,9 @@
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+// The provider-backed keyboard performs the browser's own default action
+// (the DOM-simulating user-event does not move a native range).
+import { userEvent as browserUserEvent } from 'vitest/browser'
 import {
   CAPTCHA_CHALLENGE,
   LOGIN_METHODS,
@@ -32,6 +35,22 @@ const CN_NATIONAL = '13800000001'
 const CN_E164 = '+8613800000001'
 
 const CAPTCHA_COPY = uiKitZhCN.humanVerification.captcha
+
+/** An inline SVG image of the given natural size. */
+function svg(width: number, height: number): string {
+  return `data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#246"/></svg>`,
+  )}`
+}
+
+/** The slider challenge the harness answers for a slider request. */
+function sliderChallenge() {
+  return captchaChallenge({
+    form: 'slider',
+    background_url: svg(320, 160),
+    piece_url: svg(48, 48),
+  })
+}
 
 /** The server's code challenge for the sms method. */
 function codeChallenge() {
@@ -141,5 +160,62 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
         screen.getByAltText(CAPTCHA_COPY.instruction.typeTheDigits),
       ).toHaveAttribute('src', '/api/v1/auth/human/captcha/image/2'),
     )
+  })
+
+  it('requests the slider form from the screen, solves it by keyboard and sends', async () => {
+    const requested: string[] = []
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () =>
+        methodList(['sms'], {
+          humanPhoneProvider: 'captcha',
+          humanPhoneRequired: true,
+          humanOtherProvider: 'off',
+          humanOtherRequired: false,
+        }),
+      [CAPTCHA_CHALLENGE]: ({ options }) => {
+        const form = (options?.query?.form ?? 'image') as
+          | 'image'
+          | 'slider'
+          | 'audio'
+        requested.push(form)
+        return form === 'slider' ? sliderChallenge() : captchaChallenge({ form })
+      },
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(
+      <PhoneCountryDefaultProvider country="CN">
+        <SMSSignInForm session={harness.session} />
+      </PhoneCountryDefaultProvider>,
+    )
+    // The block starts on the image form; its visible control is the only
+    // way a screen obtains the slider challenge.
+    await waitFor(() => expect(requested).toEqual(['image']))
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: CAPTCHA_COPY.useSlider }))
+    const range = (await screen.findByLabelText(
+      CAPTCHA_COPY.sliderLabel,
+    )) as HTMLInputElement
+    // The decoded images give the range the piece's travel (320 - 48).
+    await waitFor(() => expect(range.max).toBe('272'))
+    range.focus()
+    await browserUserEvent.keyboard('{End}')
+    expect(range.value).toBe('272')
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
+    await waitFor(() =>
+      expect(
+        screen.getByText(uiKitZhCN.humanVerification.verified),
+      ).toBeInTheDocument(),
+    )
+    const send = await fillPhone()
+    await waitFor(() => expect(send).toBeEnabled())
+    await userEvent.setup().click(send)
+    await waitFor(() => expect(sends(harness)).toHaveLength(1))
+    expect(sends(harness)[0]?.options?.body).toMatchObject({
+      method: 'sms',
+      human_proof: 'Y2FwdGNoYS1jaGFsbGVuZ2U.272',
+    })
   })
 })

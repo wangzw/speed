@@ -328,8 +328,10 @@ interface ImageSize {
 /** The slider form: the background with the piece over the gap it was cut
  * from, moved by a native range input. The range value is the piece's
  * offset in the background's own pixels, which is the answer the server
- * compares, so the control stays correct at any display size the browser
- * renders the natural-size background at. */
+ * compares. The background scales down with the container, so the piece
+ * and its offset are drawn at the same scale: the position the viewer
+ * aligns maps back to the natural-width offset the server compares,
+ * within its tolerance, at any rendered width. */
 function CaptchaSlider({
   challenge,
   disabled,
@@ -344,6 +346,34 @@ function CaptchaSlider({
   const [background, setBackground] = useState<ImageSize | null>(null)
   const [piece, setPiece] = useState<ImageSize | null>(null)
   const [offset, setOffset] = useState(0)
+  // The background's rendered width, measured after layout and whenever
+  // the container resizes. jsdom has no layout and no ResizeObserver, so
+  // the unit tier sees the natural width and the browser tier proves the
+  // scaling.
+  const frameRef = useRef<HTMLDivElement | null>(null)
+  const [renderedWidth, setRenderedWidth] = useState<number | null>(null)
+  useEffect(() => {
+    const frame = frameRef.current
+    if (frame === null) {
+      return undefined
+    }
+    const measure = (): void => {
+      setRenderedWidth(frame.getBoundingClientRect().width)
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') {
+      return undefined
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(frame)
+    return () => observer.disconnect()
+  }, [background])
+  // The rendered width against the background's natural width. Until the
+  // image loads (or where no layout exists) the natural size is drawn.
+  const scale =
+    background !== null && renderedWidth !== null && renderedWidth > 0
+      ? renderedWidth / background.width
+      : 1
   const maxOffset =
     background !== null && piece !== null
       ? Math.max(0, background.width - piece.width)
@@ -360,6 +390,7 @@ function CaptchaSlider({
         {instruction}
       </Typography>
       <Box
+        ref={frameRef}
         sx={{
           position: 'relative',
           width: background?.width ?? 320,
@@ -393,9 +424,10 @@ function CaptchaSlider({
           }
           sx={{
             position: 'absolute',
-            left: offset,
-            top: pieceTop,
-            width: piece?.width ?? undefined,
+            left: offset * scale,
+            top: pieceTop * scale,
+            width: piece === null ? undefined : piece.width * scale,
+            height: piece === null ? undefined : piece.height * scale,
             filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5))',
           }}
         />
@@ -529,7 +561,11 @@ function CaptchaForm({
         </>
       )}
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        {challenge.form === 'audio' ? (
+        {/* Every form the viewer is not looking at has a visible control:
+            the three forms are equal alternatives, so the screen must be
+            able to obtain any of them, not only switch between the image
+            and the audio. */}
+        {challenge.form !== 'image' ? (
           <Button
             type="button"
             size="small"
@@ -538,7 +574,18 @@ function CaptchaForm({
           >
             {t('humanVerification.captcha.useImage')}
           </Button>
-        ) : (
+        ) : null}
+        {challenge.form !== 'slider' ? (
+          <Button
+            type="button"
+            size="small"
+            disabled={disabled}
+            onClick={() => onRefresh?.('slider')}
+          >
+            {t('humanVerification.captcha.useSlider')}
+          </Button>
+        ) : null}
+        {challenge.form !== 'audio' ? (
           <Button
             type="button"
             size="small"
@@ -547,7 +594,7 @@ function CaptchaForm({
           >
             {t('humanVerification.captcha.useAudio')}
           </Button>
-        )}
+        ) : null}
         <Button
           type="button"
           size="small"

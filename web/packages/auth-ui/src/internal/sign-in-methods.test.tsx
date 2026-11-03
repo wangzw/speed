@@ -11,14 +11,18 @@
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { EnterpriseSignIn } from './sign-in-methods.js'
+import { DescriptorSignInForm, EnterpriseSignIn } from './sign-in-methods.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import {
+  CAPTCHA_CHALLENGE,
   SSO_DISCOVER,
+  captchaChallenge,
   makeHarness,
   ssoProviders,
 } from '@speed/test-utils/session-harness'
+import type { AuthnHumanGate } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
+import uiKitZhCN from '../../../ui-kit/src/locales/zh-CN.json' with { type: 'json' }
 
 const MAIL = 'nobody@example.com'
 
@@ -93,5 +97,74 @@ describe('EnterpriseSignIn discovery notices', () => {
       screen.getByRole('button', { name: zhCN.enterprise.editEmail }),
     )
     await waitFor(() => expect(notice.textContent).toBe(''))
+  })
+})
+
+/** A gate whose phone surface runs the captcha and whose other surface is
+ * off. */
+const PHONE_CAPTCHA: AuthnHumanGate = {
+  phone: { required: true, provider: 'captcha' },
+  other: { required: false, provider: 'off' },
+}
+
+/** A gate whose other surface runs the captcha and whose phone surface is
+ * off. */
+const OTHER_CAPTCHA: AuthnHumanGate = {
+  phone: { required: false, provider: 'off' },
+  other: { required: true, provider: 'captcha' },
+}
+
+describe('DescriptorSignInForm human-verification surface', () => {
+  it('derives the phone surface from a phone field', async () => {
+    const harness = makeHarness({
+      [CAPTCHA_CHALLENGE]: () => captchaChallenge(),
+    })
+    renderWithProviders(
+      <DescriptorSignInForm
+        session={harness.session}
+        method="sms-code"
+        fields={[{ name: 'phone', kind: 'phone', required: true }]}
+        humanGate={PHONE_CAPTCHA}
+      />,
+    )
+    // The form's first step sends SMS, so the phone surface's captcha is
+    // what it must present.
+    await screen.findByLabelText(uiKitZhCN.humanVerification.captcha.answerLabel)
+    expect(
+      harness.calls.filter(
+        (call) => call.path === '/api/v1/auth/human/captcha/challenge',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('keeps the other surface for a form that does not name a phone', async () => {
+    const harness = makeHarness({
+      [CAPTCHA_CHALLENGE]: () => captchaChallenge(),
+    })
+    renderWithProviders(
+      <DescriptorSignInForm
+        session={harness.session}
+        method="email-code"
+        fields={[{ name: 'email', kind: 'text', required: true }]}
+        humanGate={OTHER_CAPTCHA}
+      />,
+    )
+    await screen.findByLabelText(uiKitZhCN.humanVerification.captcha.answerLabel)
+  })
+
+  it('carries a send surface the host names', async () => {
+    const harness = makeHarness({
+      [CAPTCHA_CHALLENGE]: () => captchaChallenge(),
+    })
+    renderWithProviders(
+      <DescriptorSignInForm
+        session={harness.session}
+        method="one-time-code"
+        fields={[{ name: 'identifier', kind: 'text', required: true }]}
+        humanGate={PHONE_CAPTCHA}
+        humanScope="phone"
+      />,
+    )
+    await screen.findByLabelText(uiKitZhCN.humanVerification.captcha.answerLabel)
   })
 })

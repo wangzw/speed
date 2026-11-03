@@ -14,7 +14,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 // The provider-backed keyboard performs the browser's own default action
 // (the DOM-simulating user-event does not move a native range).
-import { userEvent as browserUserEvent } from 'vitest/browser'
+import { page, userEvent as browserUserEvent } from 'vitest/browser'
 import { renderWithProviders } from '../../test-utils/render.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import {
@@ -71,6 +71,53 @@ describe('HumanVerification slider in Chromium', () => {
     expect(range.value).toBe('1')
     await browserUserEvent.keyboard('{End}')
     expect(range.value).toBe('272')
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
+    expect(onToken).toHaveBeenCalledWith('challenge-1.272')
+  })
+
+  it('keeps the piece aligned at a narrow rendered width', async () => {
+    // The background scales down with the container while the piece and
+    // its offset were drawn for the 320px natural width. A narrow viewport
+    // must scale both, so the position the viewer aligns is the offset the
+    // server compares.
+    await page.viewport(240, 800)
+    const onToken = vi.fn()
+    const { container } = renderWithProviders(
+      <HumanVerification
+        scope="phone"
+        gate={{ phone: CAPTCHA_GATE, other: CAPTCHA_GATE }}
+        captcha={CHALLENGE}
+        onToken={onToken}
+        onRefreshCaptcha={() => {}}
+      />,
+    )
+    const images = container.querySelectorAll('img')
+    expect(images).toHaveLength(2)
+    const background = images[0] as HTMLImageElement
+    const piece = images[1] as HTMLImageElement
+    const range = screen.getByLabelText(
+      CAPTCHA_COPY.sliderLabel,
+    ) as HTMLInputElement
+    await waitFor(() => expect(range.max).toBe('272'))
+    await waitFor(() =>
+      expect(background.getBoundingClientRect().width).toBeLessThan(320),
+    )
+    range.focus()
+    await browserUserEvent.keyboard('{End}')
+    expect(range.value).toBe('272')
+
+    const backgroundRect = background.getBoundingClientRect()
+    const pieceRect = piece.getBoundingClientRect()
+    const scale = backgroundRect.width / 320
+    // The piece is drawn at its natural size scaled by the rendered width:
+    // the piece's visual width and its left edge map back to the same
+    // natural coordinates the server compares.
+    expect(pieceRect.width).toBeCloseTo(48 * scale, 0)
+    const naturalOffset = (pieceRect.left - backgroundRect.left) / scale
+    expect(Math.abs(naturalOffset - 272)).toBeLessThanOrEqual(4)
+
     await userEvent
       .setup()
       .click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))

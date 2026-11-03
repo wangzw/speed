@@ -51,6 +51,7 @@
       "refresh": "New challenge",
       "useAudio": "Use an audio challenge",
       "useImage": "Use an image challenge",
+      "useSlider": "Use a slider challenge",
       "audioLabel": "Audio verification",
       "sliderLabel": "Drag the slider to line the piece up with the gap",
       "instruction": {

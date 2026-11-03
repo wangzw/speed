@@ -50,6 +50,7 @@ import {
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { humanGateNeedsProof, useHumanVerification } from '@speed/auth-core'
+import type { HumanScope } from '@speed/auth-core'
 import { useAuthUiTranslation } from './translation.js'
 import { fieldLabel, methodLabel } from './labels.js'
 import {
@@ -90,6 +91,13 @@ export interface DescriptorSignInFormProps {
    * the first step, and the start presents the proof it holds.
    */
   readonly humanGate?: AuthnHumanGate
+  /**
+   * The send surface the method's first step runs: `phone` when the start
+   * may deliver a message to a phone number, `other` when it sends nothing
+   * that reaches one. Omitted, the descriptor's fields decide: a `phone`
+   * field is an SMS send, every other field is the other surface.
+   */
+  readonly humanScope?: HumanScope
 }
 
 export function DescriptorSignInForm({
@@ -99,6 +107,7 @@ export function DescriptorSignInForm({
   onSignedIn,
   beforeStart,
   humanGate,
+  humanScope,
 }: DescriptorSignInFormProps) {
   const { t } = useAuthUiTranslation()
   const defaults: Record<string, string> = {}
@@ -124,14 +133,19 @@ export function DescriptorSignInForm({
   // The deployment's gate and the proof this form's first step presents.
   // The hook is active only while that step renders: a parked step's proof
   // belongs to the shared step renderer below, which reads its own.
-  // A descriptor-only method's first step is not an SMS send, so it runs
-  // the other surface's mechanism.
+  // The first step's surface follows the descriptor: a method whose first
+  // step asks for a phone number sends SMS, so it must satisfy the phone
+  // surface's mechanism; anything else runs the other surface's. A host
+  // that knows better names the surface itself.
+  const sendScope: HumanScope =
+    humanScope ??
+    (fields.some((field) => field.kind === 'phone') ? 'phone' : 'other')
   const human = useHumanVerification(session, {
-    scope: 'other',
+    scope: sendScope,
     ...(humanGate === undefined ? {} : { gate: humanGate }),
     enabled: driver.step === null,
   })
-  const needsProof = humanGateNeedsProof(human.gate, 'other')
+  const needsProof = humanGateNeedsProof(human.gate, sendScope)
   const proofBlocked = needsProof && human.proof === null
 
   const onSubmit: SubmitHandler<Record<string, string>> = async (values) => {
@@ -227,7 +241,7 @@ export function DescriptorSignInForm({
       ))}
       {needsProof ? (
         <HumanVerification
-          scope="other"
+          scope={sendScope}
           gate={human.gate ?? undefined}
           proof={human.proof}
           status={human.status}

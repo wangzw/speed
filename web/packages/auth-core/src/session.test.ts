@@ -281,6 +281,24 @@ describe('list methods', () => {
     })
   })
 
+  it('reads an older flat human gate as the same gate on both surfaces', async () => {
+    // Before the gate was reported per surface, the document carried one
+    // flat object. A client newer than its server must keep working
+    // against that answer: the one gate applies to both surfaces.
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+        human: { required: true, provider: 'turnstile', site_key: 'site-flat' },
+      }),
+    })
+    expect((await harness.session.listMethods()).human).toEqual({
+      phone: { required: true, provider: 'turnstile', site_key: 'site-flat' },
+      other: { required: true, provider: 'turnstile', site_key: 'site-flat' },
+    })
+  })
+
   it('refuses a methods 2xx whose human gate is not a document', async () => {
     const harness = makeHarness({
       [LOGIN_METHODS]: () => ({

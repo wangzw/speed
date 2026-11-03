@@ -1120,12 +1120,27 @@ function parseHumanSurfaceGate(
 /** Validates the human-verification gate of a methods answer. The member
  * is optional on the wire for the reason the off fallback exists; when it
  * is present, both surfaces are required, because a deployment reports
- * the mechanism each one runs. */
+ * the mechanism each one runs.
+ *
+ * An older server reported one flat gate for the whole deployment
+ * (`{required, provider, site_key}`). A client newer than its server must
+ * keep working against that answer, so the flat gate is read as the same
+ * mechanism on both surfaces rather than refused as a missing `phone`
+ * member. */
 function parseHumanGate(value: unknown): AuthnHumanGate {
   if (value === undefined) {
     return humanGateOff()
   }
   const human = asObject(value, 'methods human is not a document')
+  if (
+    human.phone === undefined &&
+    human.other === undefined &&
+    typeof human.required === 'boolean' &&
+    typeof human.provider === 'string'
+  ) {
+    const gate = parseHumanSurfaceGate(human, 'gate')
+    return { phone: gate, other: gate }
+  }
   return {
     phone: parseHumanSurfaceGate(human.phone, 'phone'),
     other: parseHumanSurfaceGate(human.other, 'other'),
