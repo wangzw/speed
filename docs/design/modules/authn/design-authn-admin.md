@@ -415,6 +415,7 @@ flowchart TD
 
 ### 非保证
 
+- **成员列表的显示名逐行读取。** `GET Bt/:tenant/members` 的每一行带账户显示名，而 `Accounts` 只提供单条 `Get`，没有读取账户本身的批量接口（`IdentifiersMany` 只取标识）。`handleMemberList` 因此对返回的每名成员各读一次账户：含 N 名成员的一页最多发 N 次账户读。后续工作是为 `Accounts` 增加按账户标识集合读取的批量接口，并在该路由上整页一次取回显示名；该接口落地之前，这一页的账户读次数随页大小线性增长。
 - **成员删除的串行化以共享数据库为界。** `DELETE Bt/:tenant/members/:account` 先取该租户的成员删除锁，再问 `MembershipGuard`，并把它与删除的提交一起持在锁里，所以同一租户上两次并发删除不会都通过检查后各自提交。这把锁是宿主的 `authz.TenantLock`，与 `authz.Manager.DeleteBinding` 取的是同一个对象；宿主不装配时用授权模块的进程内默认实现，只串行本进程。替换成数据库级锁（PostgreSQL 会话锁）后，共享同一个数据库的各副本一起串行。**不共享数据库的副本之间不保证串行**，两个副本可能各自通过检查——这是装配级的非保证，本模块与守卫都无从知道另一台副本连的是哪个库。数据库锁每个持有中的删除占一条池化连接，删除事务再占一条，N 个并发删除至少要 2N+1 条连接；进程内默认不额外占连接（见 [tenant](../tenant/design-tenant.md) 的串行化一节与 [ADR-authn-membership-cleanup](../../../adr/adr-authn-membership-cleanup.md)）。锁取不到时删除答 503，绝不按放行处理。
 - **`Decider` 的实现质量由宿主承担。** authn 保证它收到的输入，不保证它的判定；一个对 `authn.tenant.access` 一律返回 `true` 的实现，使每个租户对所有已认证的非成员敞开。准入层缓存判定结果，策略撤销在缓存期内不生效，期限由设置承载，见 [tenant.admission](../tenant/design-tenant-admission.md)。
 - **Go 接口的直接调用不经 `Decider`。** 宿主命令里的运维操作，其强度完全取决于宿主命令自己的访问控制。

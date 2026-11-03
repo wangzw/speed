@@ -56,6 +56,7 @@ flowchart TD
 
 - **提供方采用即时开通**：员工首次登录时，系统要求先填写一个用户名；用户名合法且可用时，系统建立持有该用户名、只带提供方显示名的账户，并把成员关系挂到该账户；提供方声明的地址不写入账户。用户名不合法、是保留字或已被占用时，界面在原地指出，账户不建立。提供方声明的地址命中现有账户已登记的邮箱地址时，登录报告需先绑定，不进入该账户，也不另开账户；当事人以自己的登录方式登录后，在账户面的登录方式中显式绑定该提供方。
 - **按域发现不到提供方**：该域没有已验证的提供方，或提供方已停用；页面提示该邮箱未配置登录途径，并提供换一个邮箱的入口。停用的提供方在重新启用后重新参与发现。
+- **提供方被停用**：停用的提供方仍出现在 SSO 提供方页的列表中，并标记为未启用；它不参与按邮箱域的登录发现，重新启用后重新参与。
 - **断言的邮箱域不属于该租户已验证的域**：登录失败，员工不能经该提供方进入该租户。
 - **预置开户没有对应的预建账户**：登录失败，系统不为这次登录新建账户。
 - **域已被另一个提供方验证**：为当前提供方声明或验证这个域被拒绝，两个提供方的域验证状态都不改变。运营者要接入该域，须先删除原先验证它的提供方；删除会连同它名下的全部邮箱域声明一并移除。
@@ -63,7 +64,7 @@ flowchart TD
 ## 覆盖的需求
 
 - 平台运营：`REQ-platform-admin-013`
-- 平台设置与授权：`REQ-platform-config-017`、`REQ-platform-config-018`、`REQ-platform-config-019`、`REQ-platform-config-020`、`REQ-platform-config-021`、`REQ-platform-config-038`
+- 平台设置与授权：`REQ-platform-config-017`、`REQ-platform-config-018`、`REQ-platform-config-019`、`REQ-platform-config-020`、`REQ-platform-config-021`、`REQ-platform-config-038`、`REQ-platform-config-048`
 - 登录：`REQ-signin-001`、`REQ-signin-003`、`REQ-signin-004`、`REQ-signin-017`、`REQ-signin-020`、`REQ-signin-021`、`REQ-signin-022`、`REQ-signin-023`、`REQ-signin-027`、`REQ-signin-028`
 - 自助注册：`REQ-signup-018`、`REQ-signup-048`、`REQ-signup-049`、`REQ-signup-053`
 - 用户名：`REQ-signup-045`、`REQ-signup-046`、`REQ-signup-047`、`REQ-account-060`

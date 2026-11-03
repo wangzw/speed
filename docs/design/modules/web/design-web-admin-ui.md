@@ -206,23 +206,19 @@ function WorkspaceAdminBreadcrumbProvider(
 // 工作区操作束：租户作用域的读钩子与写 mutation，经生成的租户管理面操作绑定。
 interface WorkspaceAdminOperations {
   // 邀请与成员、SSO 提供方：/api/v1/tenants/{tenant}/...
-  // 设置：租户层的读写，键按租户分段。
-  // 角色与权限：受治理的权限目录、角色、授予与绑定。
 }
 
 export const workspaceAdminOperations: WorkspaceAdminOperations
 
-// 四个轻量包装页：把下面的页面组件按租户模式组合，作为 workspaceAdminRoutes 的视图。
+// 两个轻量包装页：把下面的页面组件按租户模式组合，作为 workspaceAdminRoutes 的视图。
 export function WorkspaceInvitationsPage(): ReactElement
 export function WorkspaceSsoPage(): ReactElement
-export function WorkspaceSettingsPage(): ReactElement
-export function WorkspacePermissionsPage(): ReactElement
 ```
 
 - **`WorkspaceAdminProvider` 只安装上下文，不渲染外壳。** 宿主已用 `ProductShell` 渲染了租户侧的壳，工作区管理面因此不另造一帧：provider 把当前租户、操作束、会话、特性判定、导航回调、路由表、面包屑与受保护角色交给包装页，本身不渲染 DOM。它不 import `product-shell` 与 `tenancy-ui`；当前租户是一个属性，不是它从会话或路由推导的值。
 - **面包屑上下文优先。** 包装页经 `WorkspaceAdminBreadcrumbProvider` 发布工作区管理面的面包屑（工作区首页到该页）；共用的页面组件在 `PageHeader` 上优先取这个上下文，没有它时渲染自己的平台管理面面包屑。页面组件因此不需要为面包屑新增属性，两个面的面包屑也不会互相泄漏。`WorkspaceAdminProvider` 在给出 `breadcrumbs` 时挂载同一个提供者；渲染自有外壳、只用页面组件的宿主单独挂载它，形态同 `AdminSessionProvider`。
-- **包装页是薄组合。** 四个包装页读 provider 的上下文，把当前租户作为受控租户交给底下的页面，并按租户模式配置页面（见「租户模式的页面行为」）。它们不复制页面逻辑：邀请与成员、SSO、设置、角色与权限的读写都在既有页面里。
-- **工作区操作束是租户作用域的（尚未实现）。** `WorkspaceAdminOperations` 拟以 `/api/v1/tenants/{tenant}/...` 的生成操作为底，成员按能力分组：邀请指向 `authn.invitations`，成员与 SSO 指向 `authn.admin` 的租户作用域端点；设置指向 [settings.tenantadmin](../settings/design-settings-tenantadmin.md)（尚未实现）；角色与权限指向 [authz.tenantadmin](../design-authz.md)（尚未实现；目录读是 `GET /api/v1/tenants/{tenant}/permissions`，只列治理集）。它拟不持有平台操作，也不接受 `/api/v1/system` 的路径。`workspaceAdminOperations` 拟是出厂绑定；宿主可改挂自己的。
+- **包装页是薄组合。** 两个包装页读 provider 的上下文，把当前租户作为受控租户交给底下的页面，并按租户模式配置页面（见「租户模式的页面行为」）。它们不复制页面逻辑：邀请与成员、SSO 的读写都在既有页面里。设置与角色权限的包装页等 `settings.tenantadmin` 与 `authz.tenantadmin` 实现后再加入。
+- **工作区操作束是租户作用域的。** `WorkspaceAdminOperations` 以 `/api/v1/tenants/{tenant}/...` 的生成操作为底，成员按能力分组：邀请指向 `authn.invitations`，成员与 SSO 指向 `authn.admin` 的租户作用域端点。它不持有平台操作，也不接受 `/api/v1/system` 的路径。`workspaceAdminOperations` 是出厂绑定；宿主可改挂自己的。设置与角色权限的操作等 [settings.tenantadmin](../settings/design-settings-tenantadmin.md) 与 [authz.tenantadmin](../design-authz.md) 实现后再加入。
 
 ### 工作区管理面的页面声明
 
@@ -232,23 +228,21 @@ export function WorkspacePermissionsPage(): ReactElement
 |---|---|---|---|---|---|
 | 邀请与成员 | `workspace-invitations` | `/invitations` | `workspace.nav.invitations` | `authn.membership.manage` | `authn.admin`、`authn.invitations` |
 | SSO 提供方 | `workspace-sso` | `/sso` | `workspace.nav.sso` | `authn.idp.manage` | `authn.admin`、`authn.admin.sso` |
-| 设置 | `workspace-settings` | `/settings` | `workspace.nav.settings` | `settings.tenant.read` | `settings.tenantadmin` |
-| 角色与权限 | `workspace-permissions` | `/permissions` | `workspace.nav.permissions` | `authz.tenant.role.read` | `authz.tenantadmin` |
 
-表中最后两行依赖的 `settings.tenantadmin` 与 `authz.tenantadmin` 特性尚未实现，随未实现的工作区管理面一起落地。
+设置与角色权限的声明等 `settings.tenantadmin` 与 `authz.tenantadmin` 实现后再加入；它们的权限码与租户模式行为见下。
 
-**工作区声明用租户域的那一套权限码（尚未实现）。** 设置的目标权限码是 `settings.tenant.read` 与 `settings.tenant.write`，角色与权限的是 `authz.tenant.role.read` 与 `authz.tenant.role.manage`；邀请与 SSO 沿用 `authn.membership.manage` 与 `authn.idp.manage`。平台管理面沿用 `settings.read`／`settings.write` 与 `authz.role.read`／`authz.role.manage`；两套码分属平台域与租户域，不互相替代。
+**工作区声明用租户域的那一套权限码。** 邀请与 SSO 用 `authn.membership.manage` 与 `authn.idp.manage`；设置的目标权限码是 `settings.tenant.read` 与 `settings.tenant.write`，角色与权限的是 `authz.tenant.role.read` 与 `authz.tenant.role.manage`，随各自的声明一起加入。平台管理面沿用 `settings.read`／`settings.write` 与 `authz.role.read`／`authz.role.manage`；两套码分属平台域与租户域，不互相替代。
 
 **`requires` 只列该页依赖的租户作用域特性。** 邀请与成员、SSO 的读写由 `authn.admin` 与 `authn.invitations`、`authn.admin.sso` 服务；设置与角色权限目标上各由 `settings.tenantadmin`（尚未实现）与 `authz.tenantadmin`（尚未实现）服务。工作区声明不列 `tenant.admin`：那是平台名册的特性，工作区管理面不读名册、也不持租户选择器。
 
 ### 租户模式的页面行为
 
-包装页把同一组页面按租户模式渲染。租户模式改变数据的来源与选择器，不改变页面布局、写入反馈与刷新动作。
+两个包装页把同一组页面按租户模式渲染。租户模式改变数据的来源与选择器，不改变页面布局、写入反馈与刷新动作。设置与角色权限的租户模式在其模块实现后按下列条目执行。
 
 - **邀请与成员。** 当前租户受控给出，租户选择器不渲染；成员写入表单以其账户字段经平台账户检索，故在租户模式下不渲染，页面因此不发出任何 `/api/v1/system` 读。成员读逐行携带 `display_name`；邀请人与成员的账户身份从该租户的成员读解析，不再经平台账户读。只有该读无法解析的账户（读尚未落定、被拒，或应答不含该账户）按记录的标识渲染并标注身份未解析。签发、撤销邀请，移除成员与切换 SSO 豁免沿用既有控件与反馈。
 - **SSO 提供方。** 当前租户受控给出，选择器不渲染；页面的读写全部落在该租户的提供方上。
-- **设置。** 页面只读写租户层，层选不渲染；读写的查询键按当前租户分段，与平台管理面的设置读不共用键，切租户即换键，离任租户的缓存由宿主逐出。全局层只在平台管理面出现。每行显示该键的来源层，取值是 `tenant`、`global` 与 `default`：租户层持有该键时为 `tenant`，租户层没有而全局层持有时为 `global`，两层都没有时为 `default`；来源层取自设置的读，页面不自行推断。
-- **角色与权限。** 授予选择器与本页权限目录读受治理的目录（服务端只交出该租户管理员可授予的权限码），平台管理面读的则是完整的 `Catalog.Declared`。绑定与绑定查询的账户选择器换成成员选择器，从该租户的成员读取账户，不再经平台账户检索。宿主经 `WorkspaceAdminProvider` 的 `protectedRoles` 属性交出该租户里不可改动、不可删除的角色名（宿主种入的 `tenant-admin` 等），包装页把它交给页面，页面据此把那些行渲染为只读，不渲染授予与删除控件，方式同平台管理面处理 `builtin` 角色。授权表与权限目录仍按同一套完整权限码对照。
+- **设置（待 `settings.tenantadmin` 实现）。** 页面只读写租户层，层选不渲染；读写的查询键按当前租户分段，与平台管理面的设置读不共用键，切租户即换键，离任租户的缓存由宿主逐出。全局层只在平台管理面出现。每行显示该键的来源层，取值是 `tenant`、`global` 与 `default`：租户层持有该键时为 `tenant`，租户层没有而全局层持有时为 `global`，两层都没有时为 `default`；来源层取自设置的读，页面不自行推断。
+- **角色与权限（待 `authz.tenantadmin` 实现）。** 授予选择器与本页权限目录读受治理的目录（服务端只交出该租户管理员可授予的权限码），平台管理面读的则是完整的 `Catalog.Declared`。绑定与绑定查询的账户选择器换成成员选择器，从该租户的成员读取账户，不再经平台账户检索。宿主经 `WorkspaceAdminProvider` 的 `protectedRoles` 属性交出该租户里不可改动、不可删除的角色名（宿主种入的 `tenant-admin` 等），包装页把它交给页面，页面据此把那些行渲染为只读，不渲染授予与删除控件，方式同平台管理面处理 `builtin` 角色。授权表与权限目录仍按同一套完整权限码对照。
 
 ### 平台管理面的页面声明
 
@@ -299,7 +293,7 @@ export function WorkspacePermissionsPage(): ReactElement
 
 下表列出页内按特性门控的控件，是穷举的；表外的控件不受特性门控。
 
-**门控的实现形态是按特性挂载子组件。** 一个受控面由页面在特性在场时挂载、缺席时不挂载：子组件携带的读随组件一并不存在，故特性缺席的控件既不渲染，也不发出本应属于它的请求。门控因此不改变公开面——不新增「是否启用」选项，也不改变既有 prop 的含义。身份解析受 `authn.admin` 门控时，记录值照常渲染并标注身份未解析，不落入 404 的「已删除」分支；工作区管理面的邀请人与成员身份由成员读携带的 `display_name` 解析，不受这条门控。
+**门控的实现形态是按特性挂载子组件。** 一个受控面由页面在特性在场时挂载、缺席时不挂载：子组件携带的读随组件一并不存在，故特性缺席的控件既不渲染，也不发出本应属于它的请求。门控因此不改变公开面——不新增「是否启用」选项，也不改变既有 prop 的含义。身份解析受 `authn.admin` 门控时，记录值照常渲染并标注身份未解析，不落入 404 的「已删除」分支；工作区管理面的邀请人身份由成员读携带的 `display_name` 解析，不受这条门控；成员表的账户列直接显示成员记录里的账户标识。
 
 | 页面与控件 | 特性 | 特性缺席时 |
 |---|---|---|
@@ -317,7 +311,7 @@ export function WorkspacePermissionsPage(): ReactElement
 | 邀请与成员页成员表的 SSO 豁免列与切换控件 | `authn.admin.sso` | 不渲染 |
 | 邀请与成员页成员写入表单的 SSO 豁免复选框 | `authn.admin.sso` | 不渲染，写入请求不带 `sso_exempt` |
 
-口令重置随因素组门控：它的路由挂在因素组的挂载分支之内（[authn-admin](../authn/design-authn-admin.md)）。工作区管理面的邀请人与成员身份不在上表：成员读逐行携带 `display_name`，页面据它解析；只有该读无法解析的账户回落到记录值并标注身份未解析。
+口令重置随因素组门控：它的路由挂在因素组的挂载分支之内（[authn-admin](../authn/design-authn-admin.md)）。工作区管理面的邀请人身份不在上表：成员读逐行携带 `display_name`，页面据它解析；只有该读无法解析的账户回落到记录值并标注身份未解析。成员表的账户列不解析：它直接显示成员记录里的账户标识。
 
 **特性缺席与无权限的处置不对称。** 特性缺席的控件不渲染，那个面在本进程不存在；特性在场而调用者无权限的写入控件照常渲染，授权由服务端判定（[architecture](../../architecture.md#特性与前端定制)）。
 
@@ -345,7 +339,7 @@ export function WorkspacePermissionsPage(): ReactElement
 
 ## UML 图
 
-两个面共用一张声明形状，打向三类后端端点；页面声明由应用的组合层收齐，特性判定、当前租户、路由表与会话由宿主交给壳或工作区 provider、经包级上下文交给页面。图里画不到的约束：平台资产在 `/api/v1/system` 下、按平台域判定，平台管理面的邀请与成员、SSO 两页按租户寻址、在那个租户的域判定，壳里没有当前租户切换器；工作区管理面挂在 `ProductShell` 之内，当前租户由宿主属性给出、写进每条请求的路径；两个面的判定都在服务端做出，本包只渲染应答；声明形状即 route-kit 的 `RouteDeclaration`，但本包不 import `route-kit`；`requires` 由收集方据特性在场收窄，本包不据它判定。
+两个面共用一张声明形状，打向三类后端端点；页面声明由应用的组合层收齐，特性判定、当前租户、路由表与会话由宿主交给壳或工作区 provider、经包级上下文交给页面。图里画不到的约束：平台资产在 `/api/v1/system` 下、按平台域判定，平台管理面的邀请与成员、SSO 两页按租户寻址、在那个租户的域判定，壳里没有当前租户切换器；工作区管理面挂在 `ProductShell` 之内，当前租户由宿主属性给出、写进每条请求的路径，工作区的包装页只有邀请与成员、SSO 两个，设置与角色权限的包装页尚未实现；两个面的判定都在服务端做出，本包只渲染应答；声明形状即 route-kit 的 `RouteDeclaration`，但本包不 import `route-kit`；`requires` 由收集方据特性在场收窄，本包不据它判定。
 
 ```mermaid
 graph TD
@@ -355,7 +349,7 @@ graph TD
     pframe["AdminShell / AdminProvider\n平台管理面上下文（无当前租户）"]
     ppages["平台页面\n概览 · 名册 · 账户 · 会话 · 冒充 · 权限\n邀请与成员 · SSO · 设置 · 短信 · 审计"]
     wframe["WorkspaceAdminProvider\n工作区管理面上下文（当前租户 · 面包屑）"]
-    wpages["工作区包装页\n邀请与成员 · SSO · 设置 · 角色与权限"]
+    wpages["工作区包装页\n邀请与成员 · SSO"]
     papi["平台资产\n/api/v1/system/..."]
     tapi["按租户寻址端点\n/api/v1/tenants/{tenant}/..."]
     ppages --> decl
@@ -380,7 +374,7 @@ graph TD
 | 租户作用域选择 | 页面自身状态 | 按租户寻址的页面持有的租户 id，作为请求实参，缺省为空即禁用该页的租户作用域读 |
 | 账户选择 | `AccountSelector` 的 `value` | 页面持有的已选账户（不是 id 文本），选择器交出账户对象，页面从中取 id 作为请求实参 |
 | 工作区上下文 | `WorkspaceAdminProviderProps` | 当前租户、工作区操作束、会话、特性判定、路由表、面包屑与受保护角色；只安装上下文，不渲染 DOM |
-| 工作区操作束 | `WorkspaceAdminOperations` | 租户作用域的读钩子与写 mutation：邀请与成员、SSO、设置、角色权限，全部落在 `/api/v1/tenants/{tenant}/...` |
+| 工作区操作束 | `WorkspaceAdminOperations` | 租户作用域的读钩子与写 mutation：邀请与成员、SSO，全部落在 `/api/v1/tenants/{tenant}/...` |
 | 面包屑 | `PageHeaderBreadcrumb` | 工作区管理面的面包屑上下文值；页头优先渲染它，缺席时回落到页面自己的平台面包屑 |
 | 受保护角色 | `protectedRoles` | 宿主经 `WorkspaceAdminProvider` 给出的、租户模式下不可改动、不可删除的角色名；页面据此把那些行渲染为只读 |
 | 命名空间 | `adminUiResources` | 双语文案目录，叶子键集跨语言相同 |
@@ -413,7 +407,7 @@ graph TD
 
 ### 租户作用域的设置与权限
 
-工作区设置页（尚未实现）只拟读写当前租户的层：端点拟由 [settings.tenantadmin](../settings/design-settings-tenantadmin.md)（尚未实现）按路径里的租户限定，没有层选；它的命名空间导航与状态判定沿用平台设置页的同一套规则，查询键按当前租户分段且与平台管理面的设置读不共用。工作区角色与权限页的目录读是 `GET /api/v1/tenants/{tenant}/permissions`，只交出 `Catalog.TenantGoverned()` 报出的治理集，授予只在集合内进行；目录与授权表仍按同一套完整权限码对照，页面的写控件照常渲染，由服务端判定。治理集是 `authz.tenant.role.read`、`authz.tenant.role.manage`、`settings.tenant.read`、`settings.tenant.write`、`authn.membership.manage` 与 `authn.idp.manage`。
+工作区设置页（尚未实现）只拟读写当前租户的层：端点拟由 [settings.tenantadmin](../settings/design-settings-tenantadmin.md)（尚未实现）按路径里的租户限定，没有层选；它的命名空间导航与状态判定沿用平台设置页的同一套规则，查询键按当前租户分段且与平台管理面的设置读不共用。工作区角色与权限页（尚未实现）的目录读是 `GET /api/v1/tenants/{tenant}/permissions`，只交出 `Catalog.TenantGoverned()` 报出的治理集，授予只在集合内进行；目录与授权表仍按同一套完整权限码对照，页面的写控件照常渲染，由服务端判定。治理集是 `authz.tenant.role.read`、`authz.tenant.role.manage`、`settings.tenant.read`、`settings.tenant.write`、`authn.membership.manage` 与 `authn.idp.manage`。
 
 ### 邀请的交付
 
@@ -459,9 +453,11 @@ graph TD
 
 两张审计记录表——审计查询页与仪表盘的最近活动——共用同一套列与优先级。结果列必须留在所有仍显示优先级列的宽度上：窄到 768px 的概览上，失败的记录与成功的记录仍要能分辨，而排查恰恰先看失败，故结果取最高优先级（容器 ≥600px 起显示，`sm` 档）；时间与动作不带优先级、永不隐藏。对象（记录所作用的路径）最先让位，容器低于 `lg`（1200px）即隐藏：动作已说明发生了什么，路径可由记录的详情页取得。操作者其次，`md`（≥900px）起显示。这一裁定对两张表同时生效：审计查询页在 13/14 寸笔记本上（容器宽 1184px，低于 `lg` 的 1200px）同样隐藏对象列，保留操作者与结果；这是共用声明带来的连带变更，不是审计查询页单独的选择。判定宽度取自表格自身的容器（`container-type: inline-size`），不取自视口。
 
-**各列表页的列优先级与宽度上限**服从 [layout](design-web-layout.md) 的数据表规则。标识符列（账户与会话的 `id`）只显示前 8 个字符、设 `low`，完整值经 `cellFullValue` 给出（悬停标题与复制控件）；主辨识列不设优先级，取主辨识列的宽度上限；状态列设 `high`。逐页：账户页以显示名为主辨识列，状态 `high`，类型、MFA 与标识 `low`；会话页以创建时间为主辨识列，状态 `high`，保障等级 `medium`，种类、最近使用、到期与标识 `low`，`lg` 档放不下时按种类、到期的次序移出列；邀请页以邮箱为主辨识列，状态 `high`，邀请人 `medium`，到期 `low`；成员表以显示名为主辨识列，账户列沿用账户身份单元，状态 `high`，来源 `medium`，SSO 豁免 `low`；显示名列与账户列都不随宽度隐藏；SSO 页以名称为主辨识列，协议与启用 `medium`，版本 `low`，行操作的可见文案取短形式（刷新元数据、重新验证、删除），完整含义与提供方名称由可及名给出；元数据刷新的可见文字不取单字「刷新」，使它与页的刷新动作可区分（见「页的刷新动作」）；三个操作与主辨识列仍须在 `sm` 档同屏，行内文字加长后须在浏览器层实测该档不换行、不撑破容器，放不下时调整列宽或操作形态，不退回单字「刷新」；审计表的优先级不变（见上），动作为主辨识列，取主辨识列的内容宽度上限，对象与操作者为长文本列，各取 160px（文本与复制控件合计），完整值已由 `cellFullValue` 给出。会话页的「当前会话」标记显示在主辨识列（创建时间）里，不放在会随优先级隐藏的标识列里，使撤销自己当前会话的提示在任一档都可见。账户详情面板里的表（服务密钥、会话、因素）按面板内容自身的容器宽度适用同一规则。
+**各列表页的列优先级与宽度上限**服从 [layout](design-web-layout.md) 的数据表规则。标识符列（账户与会话的 `id`）只显示前 8 个字符、设 `low`，完整值经 `cellFullValue` 给出（悬停标题与复制控件）；主辨识列不设优先级，取主辨识列的宽度上限；状态列设 `high`。逐页：账户页以显示名为主辨识列，状态 `high`，类型、MFA 与标识 `low`；会话页以创建时间为主辨识列，状态 `high`，保障等级 `medium`，种类、最近使用、到期与标识 `low`，`lg` 档放不下时按种类、到期的次序移出列；邀请页以邮箱为主辨识列，状态 `high`，邀请人 `medium`，到期 `low`；成员表以显示名为主辨识列；平台模式的账户列沿用账户身份单元，工作区模式的账户列显示成员记录里的账户标识（`member.account`）；状态 `high`，来源 `medium`，SSO 豁免 `low`；显示名列与账户列都不随宽度隐藏；SSO 页以名称为主辨识列，协议与启用 `medium`，版本 `low`，行操作的可见文案取短形式（刷新元数据、重新验证、删除），完整含义与提供方名称由可及名给出；元数据刷新的可见文字不取单字「刷新」，使它与页的刷新动作可区分（见「页的刷新动作」）；三个操作与主辨识列仍须在 `sm` 档同屏，行内文字加长后须在浏览器层实测该档不换行、不撑破容器，放不下时调整列宽或操作形态，不退回单字「刷新」；审计表的优先级不变（见上），动作为主辨识列，取主辨识列的内容宽度上限，对象与操作者为长文本列，各取 160px（文本与复制控件合计），完整值已由 `cellFullValue` 给出。会话页的「当前会话」标记显示在主辨识列（创建时间）里，不放在会随优先级隐藏的标识列里，使撤销自己当前会话的提示在任一档都可见。账户详情面板里的表（服务密钥、会话、因素）按面板内容自身的容器宽度适用同一规则。
 
-**账户身份单元**把一处记录的账户标识解析成可读身份，页面展示另一条记录所携带的账户标识处都经它渲染：审计查询页与仪表盘最近活动的操作者列、审计详情页的操作者、平台管理面的邀请与成员页的邀请人与成员账户、冒充记录页与当前冒充面板的操作者与被冒充账户、权限页绑定表及其账户查询结果的账户列。特性 `authn.admin` 在场时，它经 `GET /api/v1/system/auth/accounts/:id` 读账户的显示名；特性缺席时不发这条读，见「特性在场的接收」。该读受 `authn.account.read` 把守，页面自身的权限（`audit.read`、`authz.role.read` 等）不含它，因此只持页面权限的查看者的解析会被拒；该格此时渲染记录值并标注身份未解析，而不是把它当作已解析（或系统）的账户。读按账户标识缓存：同一账户的多行与重渲染共用一次读。绑定表的解绑控件以同一个解析结果命名账户：解析到显示名时用显示名，否则用记录值。会点名账户的成功文案按同一套四形命名：解析到显示名时用显示名，账户视图携带登录标识时并在其后插入首个登录标识；解析不到显示名但携带登录标识时只以该标识点名；两者皆无（解析未完成、被拒、回答 404 或特性缺席）时改用不点名的中性句式，任何路径都不插入记录标识。文案是 `succeed` 时刻的译文快照，所以解析在调用 `succeed` 之前完成，不阻塞确认；成员移除、成员写入、SSO 豁免的切换、账户的各项写入、权限绑定与解绑、冒充的发起、结束与终止这类点名账户或成员的文案都属此列；邀请的签发与撤销点名的是被邀请人的邮箱，不是账户，不经此单元。工作区管理面的邀请人与成员账户也不经这个单元：租户模式由成员读携带的 `display_name` 解析，只有该读无法解析的账户回落到记录值并标注身份未解析。会点名账户的确认对话框插入解析到的显示名，账户视图携带登录标识时并在其后插入首个登录标识；解析不到显示名但携带登录标识时，只以该标识点名；解析未完成、被拒、回答 404 或特性缺席时不插入记录标识，改用不点名的中性句式（账户视图携带登录标识，见 [design-authn-admin](../authn/design-authn-admin.md)；记录标识是操作者无法与名册对应的机器值）。
+**成员表按游标分页。** 成员读接受 `limit` 与 `after`，只答一页，应答不带下一页游标。页面按固定页大小读取，以本页行数达到页大小为还有下一页的证据，以本页最后一行的账户标识作为下一页的 `after`；上一页回到页面已经过的游标。切换租户清空游标栈，刷新保留当前页。工作区模式按已读过的页累积账户显示名，因此翻过一页之后，该页成员作为邀请人时仍以显示名命名。
+
+**账户身份单元**把一处记录的账户标识解析成可读身份，页面展示另一条记录所携带的账户标识处都经它渲染：审计查询页与仪表盘最近活动的操作者列、审计详情页的操作者、平台管理面的邀请与成员页的邀请人与成员账户、冒充记录页与当前冒充面板的操作者与被冒充账户、权限页绑定表及其账户查询结果的账户列。特性 `authn.admin` 在场时，它经 `GET /api/v1/system/auth/accounts/:id` 读账户的显示名；特性缺席时不发这条读，见「特性在场的接收」。该读受 `authn.account.read` 把守，页面自身的权限（`audit.read`、`authz.role.read` 等）不含它，因此只持页面权限的查看者的解析会被拒；该格此时渲染记录值并标注身份未解析，而不是把它当作已解析（或系统）的账户。读按账户标识缓存：同一账户的多行与重渲染共用一次读。绑定表的解绑控件以同一个解析结果命名账户：解析到显示名时用显示名，否则用记录值。会点名账户的成功文案按同一套四形命名：解析到显示名时用显示名，账户视图携带登录标识时并在其后插入首个登录标识；解析不到显示名但携带登录标识时只以该标识点名；两者皆无（解析未完成、被拒、回答 404 或特性缺席）时改用不点名的中性句式，任何路径都不插入记录标识。文案是 `succeed` 时刻的译文快照，所以解析在调用 `succeed` 之前完成，不阻塞确认；成员移除、成员写入、SSO 豁免的切换、账户的各项写入、权限绑定与解绑、冒充的发起、结束与终止这类点名账户或成员的文案都属此列；邀请的签发与撤销点名的是被邀请人的邮箱，不是账户，不经此单元。工作区管理面的邀请人不经这个单元：租户模式由成员读携带的 `display_name` 解析，只有该读无法解析的账户回落到记录值并标注身份未解析；成员表的账户列直接渲染成员记录里的账户标识，不解析。会点名账户的确认对话框插入解析到的显示名，账户视图携带登录标识时并在其后插入首个登录标识；解析不到显示名但携带登录标识时，只以该标识点名；解析未完成、被拒、回答 404 或特性缺席时不插入记录标识，改用不点名的中性句式（账户视图携带登录标识，见 [design-authn-admin](../authn/design-authn-admin.md)；记录标识是操作者无法与名册对应的机器值）。
 
 ### 审计记录的导出
 
@@ -594,7 +590,7 @@ graph TD
 |---|---|
 | 无身份 | 401，由服务端写出，宿主转入登录面 |
 | 权限不足 | 403，由服务端写出；页面渲染权限拒绝文案且不给重试（重试只会再被拒一次）；路由级守卫由宿主组合 |
-| 工作区管理面的写被 403 `authz.protected` 拒绝（受保护的域，或调用方删除自己的租户管理员绑定） | 渲染受保护文案 `errors.authz.protected`，不渲染为权限不足；该拒绝说明这个域受保护，或这条绑定只能由另一位租户管理员删除，不是调用方少一个权限 |
+| 工作区管理面的写被 403 `authz.protected` 拒绝（受保护的域，或调用方删除自己的租户管理员绑定） | 渲染受保护文案 `errors.authz.protected`，不渲染为权限不足；文案不区分原因——受保护的域与调用方删除自己的租户管理员绑定这两类拒绝共用同一条文案，界面不指明是哪一种 |
 | 工作区管理面的设置写被 403 `settings.protected` 拒绝（宿主拒绝该租户的设置写） | 渲染受保护文案，不渲染为权限不足；该拒绝说明租户的设置写受宿主保护，不是调用方少一个权限。这条文案尚未登记为 `errors.settings.protected`，它随未实现的工作区设置页落地 |
 | 工作区管理面无当前租户（宿主未给出 `tenant`） | 包装页不发出缺租户的请求；宿主在租户落定之后才渲染它 |
 | 工作区管理面的页面缺少该页权限码，或收窄后没有可进入页面 | 转到第一条可进入的工作区管理页；一条也没有时转到当前租户首页 |
@@ -723,8 +719,9 @@ graph TD
 | SSO 页刷新动作与行内元数据刷新的可区分文字 | 已实现 | `web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/ui-kit/src/components/RefreshButton.tsx` `RefreshButton` |
 | 审计查询页与仪表盘的更新时间与刷新完成播报 | 已实现 | `web/packages/admin-ui/src/internal/refresh-status.tsx` `RefreshStatus`；`web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh` |
 | 写入成功后失效它改变的每一个屏上可见的读 | 已实现 | `web/packages/admin-ui/src/operations.tsx` `adminOperations` |
-| 工作区管理面的声明表 `workspaceAdminRoutes`（邀请与成员、SSO）与两个包装页（`workspace-routes.tsx`、`workspace-pages.tsx`） | 部分实现 | `web/packages/admin-ui/src/workspace-routes.tsx` `workspaceAdminRoutes`；`web/packages/admin-ui/src/workspace-pages.tsx` `WorkspaceInvitationsPage`、`WorkspaceSsoPage` |
+| 工作区管理面的声明表 `workspaceAdminRoutes`（邀请与成员、SSO）与两个包装页（`workspace-routes.tsx`、`workspace-pages.tsx`） | 已实现 | `web/packages/admin-ui/src/workspace-routes.tsx` `workspaceAdminRoutes`；`web/packages/admin-ui/src/workspace-pages.tsx` `WorkspaceInvitationsPage`、`WorkspaceSsoPage` |
 | 工作区管理面的上下文与面包屑提供者（`WorkspaceAdminProvider.tsx` 的 `WorkspaceAdminProvider`、`WorkspaceAdminBreadcrumb.tsx` 的 `WorkspaceAdminBreadcrumbProvider`） | 已实现 | `web/packages/admin-ui/src/WorkspaceAdminProvider.tsx` `WorkspaceAdminProvider`、`useWorkspaceAdminTenant`、`useWorkspaceAdminProtectedRoles`；`web/packages/admin-ui/src/WorkspaceAdminBreadcrumb.tsx` `WorkspaceAdminBreadcrumbProvider`、`useWorkspaceAdminBreadcrumbs` |
-| 工作区操作束（`workspace-operations.tsx` 的 `WorkspaceAdminOperations`、`workspaceAdminOperations`） | 部分实现 | `web/packages/admin-ui/src/workspace-operations.tsx` `WorkspaceAdminOperations`、`workspaceAdminOperations` |
-| 租户模式的页面行为（邀请、SSO、设置、角色权限） | 部分实现 | `web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`、`tenantMode`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage` |
+| 工作区操作束（`workspace-operations.tsx` 的 `WorkspaceAdminOperations`、`workspaceAdminOperations`） | 已实现 | `web/packages/admin-ui/src/workspace-operations.tsx` `WorkspaceAdminOperations`、`workspaceAdminOperations` |
+| 邀请与成员、SSO 的租户模式页面行为 | 已实现 | `web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`、`tenantMode`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage` |
+| 工作区设置页与角色权限页及其租户模式行为 | 未实现 | — |
 | 工作区管理面的入口派生 | 已实现 | `starters/demo/web/src/workspace-admin.ts` `useWorkspaceAdminAdmission`、`useWorkspaceAdminPermission` |

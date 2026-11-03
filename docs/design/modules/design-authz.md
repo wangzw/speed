@@ -404,7 +404,7 @@ const (
 
 **授出的权限先经目录与翻译，再写。** 一条授予落到 `authz_grants` 的是（资源，动作）对，不是权限本身；目录不持有的权限在 `Manager` 被调用之前就是 400。写入的（资源，动作）由与中间件、`Decider` 共用的那份翻译给出（[动作到查询的翻译](#动作到查询的翻译)）。
 
-**回绝映射是封闭的、fail-closed 的。** 400（`Problem.Type` 为 `urn:speed:authz:bad-request`）：请求在形状上不可读（路径参数或正文）、授予一条目录不持有的权限、写里的角色未知（`ErrUnknownRole`）、租户不符（`ErrTenantMismatch`）、绑定里的账户不是平台租户的有效成员（`ErrPlatformMembershipRequired`）、绑定写里的空账户。409（`Problem.Type` 为 `urn:speed:authz:conflict`）：写试图删除或改动内建角色（`ErrBuiltinRole`），或删除某域最后一条租户管理员绑定（`ErrLastTenantAdmin`）。403 有两条：强制层的策略拒绝（一条受守路由需要权限而引擎匹配为假，或一条未声明路由在 `undeclared=closed` 下被拒）是 `urn:speed:authz:forbidden`，宿主 `WriteGuard` 答复拒绝是 `urn:speed:authz:protected`——域受保护，不是权限不足才是原因。503：`Manager` 或存储的其余失败、读不出的写守卫，以及没落地的强制档审计；503 不带 `Problem.Type`，它说的是一个依赖答不了而不是一个许可结论，成因只进日志。
+**回绝映射是封闭的、fail-closed 的。** 400（`Problem.Type` 为 `urn:speed:authz:bad-request`）：请求在形状上不可读（路径参数或正文）、授予一条目录不持有的权限、写里的角色未知（`ErrUnknownRole`）、租户不符（`ErrTenantMismatch`）、绑定里的账户不是平台租户的有效成员（`ErrPlatformMembershipRequired`）、绑定写里的空账户。409（`Problem.Type` 为 `urn:speed:authz:conflict`）：写试图删除或改动内建角色（`ErrBuiltinRole`），或删除某域最后一条租户管理员绑定（`ErrLastTenantAdmin`）。403 分两种 `Problem.Type`：强制层的策略拒绝（一条受守路由需要权限而引擎匹配为假，或一条未声明路由在 `undeclared=closed` 下被拒）是 `urn:speed:authz:forbidden`；`urn:speed:authz:protected` 覆盖调用方删除自己在某域 `tenant-admin` 的绑定与宿主 `WriteGuard` 的答复拒绝——前者说明这条绑定只能由另一位租户管理员删除，后者说明域受保护，两者都不是权限不足。503：`Manager` 或存储的其余失败、读不出的写守卫，以及没落地的强制档审计；503 不带 `Problem.Type`，它说的是一个依赖答不了而不是一个许可结论，成因只进日志。
 
 **管理面以静态[特性](../../glossary.md) `authz.admin` 声明。** `authz.admin` 描述符的 `Resources` 带 `feature.Spec{Name: "authz.admin"}`；这个特性在场，表示本进程挂出上表的管理面路由（[feature](design-feature.md)）。端清单必填、不接受空清单，没有入口模块即 `ErrNoRouter`，所以模块进入启用集、进程有路由器时这组路由无条件挂出，这个面不再随配置或装配变化，声明为静态特性符合架构不变量 18（[architecture](../architecture.md#架构不变量)）。
 
@@ -450,15 +450,15 @@ const (
 
 #### 治理权限与权限矩阵
 
-**平台管理员保持全量，且只在平台域放行。** `platform-admin` 的授权集是 `Catalog.Declared()` 的全部权限，不因治理集收窄；它的判定只发生在平台域，在租户作用域不因这个角色本身放行，调用方要在该租户另有绑定。**租户管理员的授权集分两层。** 业务租户与 `system` 域的 `tenant-admin` 取 `Catalog.TenantGoverned()` 的全量；个人租户的 `tenant-admin` 取 `(personalBusinessPermissions ∩ Catalog.TenantGoverned()) − personalExcludedPermissions`，不置 `builtin`，也不经 `Reconciler` 收敛。平台员工的能力来自 `platform-admin`，`system` 的新成员要成为平台管理员仍需平台域的绑定。**普通成员没有内置授权**：它在一个租户里能做什么由该域里绑定给它的角色给出，而租户面只能把治理集的子集写进域内角色，因此普通成员最多持有治理集。域内自定义角色由平台面写入时可以收到任何已声明权限，但平台码只在平台域判定，不使持有者通过平台面。
+**平台管理员保持全量，且只在平台域放行。** `platform-admin` 的授权集是 `Catalog.Declared()` 的全部权限，不因治理集收窄；它的判定只发生在平台域，在租户作用域不因这个角色本身放行，调用方要在该租户另有绑定。**租户管理员的授权集分两层。** 业务租户与 `system` 域的 `tenant-admin` 取 `Catalog.TenantGoverned()` 的全量；个人租户的 `tenant-admin` 取 `(personalBusinessPermissions ∩ Catalog.TenantGoverned()) − personalExcludedPermissions`，不置 `builtin`，也不经 `Reconciler` 收敛。平台员工的能力来自 `platform-admin`，`system` 的新成员要成为平台管理员仍需平台域的绑定。**普通成员没有内建授权**：它在一个租户里能做什么由该域里绑定给它的角色给出，而租户面只能把治理集的子集写进域内角色，因此普通成员最多持有治理集。域内自定义角色由平台面写入时可以收到任何已声明权限，但平台码只在平台域判定，不使持有者通过平台面。
 
 | 角色 | 存在的域 | 授权集 | 平台面 | 租户面 |
 |---|---|---|---|---|
 | `platform-admin` | 只在平台域 `system` | `Catalog.Declared()` 全量 | 可用 | 不因本角色放行；调用方要在该租户另有绑定 |
 | `tenant-admin`（业务租户） | 业务租户各一份 | `Catalog.TenantGoverned()` 全量；置 `builtin`，经 `Reconciler` 收敛 | 不可用 | 可用 |
 | `tenant-admin`（`system`） | `system` | `Catalog.TenantGoverned()` 全量；置 `builtin`，经 `Reconciler` 收敛 | 不因本角色放行；它的角色与绑定经平台域的管理面读写 | 不可用；`system` 是平台域，租户面路径答裸 404 |
-| `tenant-admin`（个人租户） | 个人租户一份 | `(personalBusinessPermissions ∩ Catalog.TenantGoverned()) − personalExcludedPermissions`；不置 `builtin`，不经 `Reconciler` 收敛 | 不可用 | 不可用；个人租户的写由宿主 `WriteGuard` 拒绝，单人空间 |
-| 普通成员 | 被绑定的租户域 | 无内置；由域内角色绑定给出 | 不可用 | 只到治理集 |
+| `tenant-admin`（个人租户） | 个人租户一份 | `(personalBusinessPermissions ∩ Catalog.TenantGoverned()) − personalExcludedPermissions`；不置 `builtin`，不经 `Reconciler` 收敛 | 不可用 | 不可用；个人租户不能经租户面管理，单人空间：策略写由宿主 `WriteGuard` 拒绝，成员、邀请与 SSO 的管理权限被允许集排除，设置写待 `WriteSettings`（尚未实现） |
+| 普通成员 | 被绑定的租户域 | 无内建；由域内角色绑定给出 | 不可用 | 只到治理集 |
 | 域内自定义角色 | 一个租户域 | 租户面写入治理集的子集；平台面可写任何已声明权限 | 平台码不因租户域绑定而生效 | 由其绑定者持有 |
 
 **平台面与租户面两列说的是角色能在那一面上做什么。** 租户面只在业务租户上成立：`system` 是平台域，租户面路径答裸 404；个人租户是单人空间，它的策略写由宿主 `WriteGuard` 拒绝。角色在 `system` 域与个人租户里照样存在并持有上表的授权集，只是都不经租户面管理。
@@ -481,7 +481,7 @@ const (
 | 不能把平台域当归宿 | 路径段须等于解析出的租户别名；路径或解析出的租户是 `PlatformDomain` 时拒绝 | 裸 404 |
 | 跨租户隔离 | 路径租户 == 解析租户别名的共同前置 | 裸 404 |
 
-**在业务租户的租户面绑定 `tenant-admin` 是允许的。** 一个租户管理员可以给另一个账户绑定 `tenant-admin`，使该域保持至少一名管理员；这条写仍受子集规则约束（该域的 `tenant-admin` 持有治理集全集，调用方自己持有治理集时子集成立）、最后一条规则与删除自己的规则约束。**`system` 域的 `tenant-admin` 绑定只经平台管理面写入**：租户面拒绝平台域（路径或解析出的租户是 `PlatformDomain` 时答裸 404），平台管理员在 `authz.admin` 里按平台域的 `authz.role.manage` 绑定它。个人租户不在其列：它的策略写由宿主 `WriteGuard` 拒绝，而且它是单成员空间。角色行与授予的写入口则是无条件保护：业务租户与 `system` 域的 `tenant-admin` 授权集只由宿主的收敛能力改写，个人租户的则由宿主经 `Seeder` 与 `Manager` 维护。
+**在业务租户的租户面绑定 `tenant-admin` 是允许的。** 一个租户管理员可以给另一个账户绑定 `tenant-admin`，使该域保持至少一名管理员；这条写仍受子集规则约束（该域的 `tenant-admin` 持有治理集全集，调用方自己持有治理集时子集成立）、最后一条规则与删除自己的规则约束。**`system` 域的 `tenant-admin` 绑定经平台管理面或宿主种入写入**：租户面拒绝平台域（路径或解析出的租户是 `PlatformDomain` 时答裸 404），平台管理员在 `authz.admin` 里按平台域的 `authz.role.manage` 绑定它，宿主的 `seed` 把预置平台管理员的 `system` 域绑定在种入步骤里写入。个人租户不在其列：它的策略写由宿主 `WriteGuard` 拒绝，而且它是单成员空间。角色行与授予的写入口则是无条件保护：业务租户与 `system` 域的 `tenant-admin` 授权集只由宿主的收敛能力改写，个人租户的则由宿主经 `Seeder` 与 `Manager` 维护。
 
 **回绝映射是封闭的、fail-closed 的。** 400（`urn:speed:authz:bad-request`）：请求在形状上不可读、写里的角色未知（`ErrUnknownRole`）、租户不符（`ErrTenantMismatch`）、授予一条不在治理集里的权限、绑定里的账户不是该租户的有效成员（`MembershipChecker` 答复假，不是可绑定的目标）。409（`urn:speed:authz:conflict`）：写试图删除或改动内建角色（`ErrBuiltinRole`），或删除某域最后一条 `tenant-admin` 绑定（`ErrLastTenantAdmin`）。403（`urn:speed:authz:protected`）：调用方试图授予自己没有的权限、绑定高于自己的角色、把 `platform-admin` 写进租户域（`ErrReservedRole`）、删除自己的 `tenant-admin` 绑定，以及宿主 `WriteGuard` 的拒绝。404（无 `Problem.Type`）：路径段与解析出的租户别名不是同一个，或目标是平台域。503：`Manager`、存储、审计、`SubjectPermissions`、`MembershipChecker` 的其余失败；503 不带 `Problem.Type`，成因只进日志。强制层的策略拒绝仍是 `urn:speed:authz:forbidden`，由 guard 自己写出。
 
@@ -940,7 +940,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 **平台管理员的绑定要求成员关系。** `Manager.PutBinding` 在平台域写 `PlatformAdminRole` 之前，经宿主提供的 `MembershipChecker` 核对被绑定账户是 `system` 租户的有效成员；检查器缺席时该写入以 `ErrMissingMembershipChecker` 拒绝，检查器答复不是成员时以 `ErrPlatformMembershipRequired` 拒绝，两者都不按放行处理。`MembershipChecker` 是根包的接口，由宿主经 `authz.policy` 的取用装配，实现通常读 `authn.Memberships`——本模块不 import 认证。检查器是宿主的回答：它可以对本部署自己配置的主体答真，静态凭据表（`static.*`）的主体没有成员关系行，而配置主体与写下绑定的正是同一个部署。
 
-**租户管理员至少保留一个。** `Manager.DeleteBinding` 删除 `TenantAdminRole` 的绑定时，若那是该域的最后一条，以 `ErrLastTenantAdmin` 拒绝。`authz.admin` 的绑定删除路由另拒绝调用方删除自己在某域 `TenantAdminRole` 的绑定：一个租户管理员不能取消自己的管理员权限，要离开由另一个管理员移除。
+**租户管理员至少保留一个。** `Manager.DeleteBinding` 删除 `TenantAdminRole` 的绑定时，若那是该域的最后一条，以 `ErrLastTenantAdmin` 拒绝。`authz.admin` 的绑定删除路由另拒绝调用方删除自己在某域 `TenantAdminRole` 的绑定，以 403 `urn:speed:authz:protected` 作答：一个租户管理员不能取消自己的管理员权限，要离开由另一个管理员移除。
 
 **判底的两条路径共用一把按租户的锁。** 根包定义 `TenantLock`；`Manager.DeleteBinding` 在数租户管理员绑定之前取它，提交之后释放，`authn.MembershipGuard.CheckMembershipRemoval` 所在的成员关系删除路径取的是同一个对象——本模块的守卫 `Lock` 直接委托给这个 `TenantLock`，宿主自己的守卫必须接同一个对象，两个各锁各的等于没锁。装配没有提供它时，本模块用进程内按租户的默认实现（`authz.InProcessTenantLock`）：单实例无需配置即正确。多副本的正确性由宿主改提供数据库级锁承担——PostgreSQL 上是会话级 advisory lock，SQLite 仍是进程内（[ADR-authn-membership-cleanup](../../adr/adr-authn-membership-cleanup.md)）。锁不可重入：账户删除的收尾与成员关系删除的级联走**不取锁的清理路径**——`Manager.ClearAccountBindings`，或模块内部同等的直接删除（平台域级联即后者）；不得经 `DeleteBinding`，那会重入自己已持有的锁而死锁。每个持有中的数据库锁占一条池化连接，删除事务再占一条，N 个并发管理员删除因此至少要 2N+1 条连接，不足时取锁等待并以 503 结束；进程内默认不额外占连接。这是装配级的非保证，写在 [tenant](tenant/design-tenant.md) 的串行化一节。
 
