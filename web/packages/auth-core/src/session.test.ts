@@ -299,6 +299,39 @@ describe('list methods', () => {
     })
   })
 
+  it('refuses a per-surface human gate that carries only the phone surface', async () => {
+    // The per-surface shape is `{phone, other}`: a deployment reports the
+    // mechanism each of the two surfaces runs. A document that carries
+    // only one member is not the older flat shape (which carries neither)
+    // and is not a complete per-surface gate, so it is a protocol error
+    // rather than the missing surface being read as off.
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+        human: {
+          phone: { required: true, provider: 'pow' },
+        },
+      }),
+    })
+    await expectProtocolViolation(harness.session.listMethods(), harness)
+  })
+
+  it('refuses a per-surface human gate that carries only the other surface', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+        human: {
+          other: { required: true, provider: 'pow' },
+        },
+      }),
+    })
+    await expectProtocolViolation(harness.session.listMethods(), harness)
+  })
+
   it('refuses a methods 2xx whose human gate is not a document', async () => {
     const harness = makeHarness({
       [LOGIN_METHODS]: () => ({

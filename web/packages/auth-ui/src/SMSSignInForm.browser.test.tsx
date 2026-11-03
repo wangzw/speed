@@ -69,6 +69,13 @@ function sends(harness: ReturnType<typeof makeHarness>) {
   return harness.calls.filter((call) => call.path === '/api/v1/auth/flows')
 }
 
+/** The captcha challenge requests the block has made, in order. */
+function captchaRequests(harness: ReturnType<typeof makeHarness>) {
+  return harness.calls.filter(
+    (call) => call.path === '/api/v1/auth/human/captcha/challenge',
+  )
+}
+
 /** Fill the phone step and return the send control. */
 async function fillPhone(): Promise<HTMLElement> {
   const user = userEvent.setup()
@@ -193,6 +200,15 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
     await userEvent
       .setup()
       .click(screen.getByRole('button', { name: CAPTCHA_COPY.useSlider }))
+    // Assert the request, not merely the control that replaces it: the
+    // challenge route must be asked for `form=slider`, so a screen that
+    // swapped in a slider control without asking for that form could not
+    // pass on the control's appearance alone.
+    await waitFor(() =>
+      expect(
+        captchaRequests(harness).map((call) => call.options?.query?.form),
+      ).toEqual(['image', 'slider']),
+    )
     const range = (await screen.findByLabelText(
       CAPTCHA_COPY.sliderLabel,
     )) as HTMLInputElement

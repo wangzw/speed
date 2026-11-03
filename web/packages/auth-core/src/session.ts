@@ -1122,11 +1122,14 @@ function parseHumanSurfaceGate(
  * is present, both surfaces are required, because a deployment reports
  * the mechanism each one runs.
  *
- * An older server reported one flat gate for the whole deployment
+ * Compatibility for older servers only: before the gate was reported per
+ * surface, an older server sent one flat gate for the whole deployment
  * (`{required, provider, site_key}`). A client newer than its server must
  * keep working against that answer, so the flat gate is read as the same
  * mechanism on both surfaces rather than refused as a missing `phone`
- * member. */
+ * member. That branch matches only the flat shape (neither `phone` nor
+ * `other`); a per-surface object that carries one of them alone is not
+ * the older answer and stays a protocol error. */
 function parseHumanGate(value: unknown): AuthnHumanGate {
   if (value === undefined) {
     return humanGateOff()

@@ -97,6 +97,11 @@ describe('HumanVerification slider in Chromium', () => {
     expect(images).toHaveLength(2)
     const background = images[0] as HTMLImageElement
     const piece = images[1] as HTMLImageElement
+    // Both media are the challenge's own: the piece is drawn from the same
+    // challenge document as the background, so the pair the viewer aligns
+    // (and the server compares) is never a stand-in fitted by the test.
+    expect(background.getAttribute('src')).toBe(CHALLENGE.background_url)
+    expect(piece.getAttribute('src')).toBe(CHALLENGE.piece_url)
     const range = screen.getByLabelText(
       CAPTCHA_COPY.sliderLabel,
     ) as HTMLInputElement
@@ -116,11 +121,22 @@ describe('HumanVerification slider in Chromium', () => {
     // natural coordinates the server compares.
     expect(pieceRect.width).toBeCloseTo(48 * scale, 0)
     const naturalOffset = (pieceRect.left - backgroundRect.left) / scale
+    // The server accepts an offset within 4px of the cut
+    // (pkg/authn/humanverify/captcha/slider.go's sliderTolerance). The
+    // position the viewer aligned maps back to a natural offset there, so
+    // the submitted value lands inside the band the server accepts.
     expect(Math.abs(naturalOffset - 272)).toBeLessThanOrEqual(4)
 
     await userEvent
       .setup()
       .click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
     expect(onToken).toHaveBeenCalledWith('challenge-1.272')
+    // A real cutout cannot be asserted from this side: the cut position is
+    // the server's secret, absent from the challenge document, and these
+    // images are inline SVGs the test supplies rather than pixels drawn by
+    // the server. The server's own suite (captcha/slider.go's tolerance
+    // cases) proves the piece is cut from the background; this case proves
+    // the client maps the rendered position back to the natural offset the
+    // server compares.
   })
 })
