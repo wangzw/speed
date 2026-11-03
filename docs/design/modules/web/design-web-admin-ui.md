@@ -570,7 +570,7 @@ graph TD
 
 **本人因素的读不经操作束。** 操作束收的是管理面的读写；本人账户的因素读是运营者对自己会话的调用，与冒充页的自身会话区同类：对话框直接调用生成的 `useAuthnMfaFactors`，跑在宿主的查询客户端上，不进操作束，宿主因此无法经操作束替换它。
 
-**会发送验证码的步骤先出示证明。** 部署要求人机验证时，选中短信第二因素或按短信方式复证第一因素（提交手机号）的答复会发送验证码；对话框在这样的步骤上方渲染 ui-kit 的 `HumanVerification` 块，答复带 `human_proof`。门槛与证明由 `useStepUp` 经 `StepUpState.human` 提供，证明出示后消耗，答复不发验证码时不取证明。
+**会发送验证码的步骤先出示证明。** 部署要求人机验证时，选中短信第二因素或按短信方式复证第一因素（提交手机号）的答复会发送验证码；对话框在这样的步骤上方渲染 ui-kit 的 `HumanVerification` 块，答复带 `human_proof`。门槛、当前步骤所属的面与证明由 `useStepUp` 经 `StepUpState.human` 与 `StepUpState.humanScope` 提供，短信发送取手机号面，证明出示后消耗，答复不发验证码时不取证明。
 
 **步进对话框的失败情形。** 回答的错误码按本包白名单解析，白名单含步进回答路径会收到的认证码（`authn.login_failed`、`authn.flow_invalid`、`authn.throttled`、`authn.unavailable`、`authn.human_verification_required`）与限流层答 429 时的问题码 `ratelimit.throttled`，验证码输错渲染该码的文本而不是通用兜底。429 带 `Retry-After` 时，失败横幅（`role="alert"`）只渲染该码无秒数的静态句，播报一次；剩余秒数渲染在横幅之外的一条非 live 行（`aria-live="off"`），随 `retryAfterSeconds` 每秒更新，读屏不会整句重念。对话框在该时长内禁用这一步的提交（取消仍可用），倒计时到点后恢复可提交，非 live 行随之消失，横幅仍是该码的静态句。起手失败（既不是 401 步进不足，也不是会话仍成立时的 400）与回答被 `authn.flow_invalid` 拒绝（流程已过期、已被消费、已无可答复）同样处理：对话框不渲染描述正文（`stepUp.description`）与步骤表单，渲染该码的失败横幅、重新起手的动作与取消；重新起手是对话框本地的，由它重新驱动 `useStepUp`，不改 auth-core。通行密钥仪式的失败与服务端的失败横幅互斥，同一时刻只渲染一条（[ui-kit](design-web-ui-kit.md) 的「写入的反馈」）。步进对话框自带区域，失败横幅在模态之内。
 

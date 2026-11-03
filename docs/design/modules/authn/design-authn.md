@@ -296,7 +296,7 @@ type Requirement struct {
 | `authn/login/google`、`authn/login/github` | `authn.login.google`、`authn.login.github` | `LoginMethod` | 否 | 无 | 无 | 无 |
 | `authn/login/wechatweb` | `authn.login.wechat-web` | `LoginMethod`（名 `wechat.web`） | 否 | 无 | 无 | 无 |
 | `authn/login/wechatmp` | `authn.login.wechat-mp` | `LoginMethod`（名 `wechat.mp`） | 否 | 无 | 无 | 无 |
-| `authn/humanverify` | `authn.humanverify` | `HumanVerifier` | 是 | 无 | `kv.KV`（`pow` 模式必需，`off`/`turnstile` 可缺席）、`mount.Mounter`（`pow` 模式必需，`off`/`turnstile` 可缺席）、`settings.Store` ○（`pow` 的两项设置）、`log.Logger` ○（登记 Turnstile 密钥的字面量脱敏规则，[REF-cloudflare-turnstile](../../../references.md)） | 无 |
+| `authn/humanverify` | `authn.humanverify` | `HumanVerifier` | 是 | 无 | `kv.KV`（`pow`/`captcha` 模式必需，`off`/`turnstile` 可缺席）、`mount.Mounter`（`pow`/`captcha` 模式必需，`off`/`turnstile` 可缺席）、`settings.Store` ○（`pow` 的两项设置）、`log.Logger` ○（登记 Turnstile 密钥的字面量脱敏规则，[REF-cloudflare-turnstile](../../../references.md)） | 无 |
 | `authn/mfa` | `authn.mfa` | `MFA`；`AccountLifecycle` | 是 | `db.Database`、`mount.Mounter`、`Accounts`、`AccountAdmin`、`Throttle` | 全部 `Factor`、`Sessions` ○（重置时撤销会话；缺席则只停因素）、`settings.Store` ○、`audit.Audit` ○、`event.Bus` ○ | `authn_factors` |
 | `authn/mfa/totp` | `authn.mfa.totp` | `Factor` | 否 | `db.Database`、`MFA`、`Accounts` | 无 | `authn_totp_secrets` |
 | `authn/mfa/sms` | `authn.mfa.sms` | `Factor` | 否 | `SMSCodes`、`Accounts` | 无 | 无 |
@@ -330,7 +330,7 @@ type Requirement struct {
 
 上表按「是否发送用户请求的验证消息」判定，不是封闭集：新增一条发送路径时按同一判据归入，经过 `authn.sms.Send` 的由它校验，不经过的由该路径自己校验。
 
-**人机验证闸是排他的发送前接口。** `authn.humanverify` 排他交付根包的 `HumanVerifier`：`Required` 回答本部署是否要求证明，`Provider` 与 `SiteKey` 回答机制与前端控件需要的公开标识，`Verify` 校验并消费一份证明。机制取封闭集 `off`、`pow`、`turnstile`，**`pow` 是缺省**：取用本模块而不写模式的装配要求一份自托管的工作量证明；关闭时 `Required` 为假、`Verify` 接受任何证明，一次发送都不多问，必须显式写 `off`。`pow` 由模块自带，经 `mount.Mounter` 在挂载基址下公开挂出挑战路由（缺省基址是 `POST /api/v1/auth/human/challenge`），挑战存 `kv` 并以比较并交换一次性消费；`turnstile` 把证明交 Cloudflare 的 siteverify，只接受主机名与 action（配置了时）相符的答案；站点校验以成功为假拒绝时按其错误码分档，证明本身缺失、无效、过期或已用视为无效证明，提供方自身的内部故障、部署的密钥或控件配置错误以及本包不认识的码视为提供方不可用。**证明在发送一处的入口校验并消费：** 经过 `authn.sms.Send` 的发送路径——短信登录、短信第二因素、手机登记与匿名短信重置——把 `HumanProof` 交给它，由它在放行表、队列容量与任何发送预算之前校验并消费一次，调用方不再自行校验；自助添加邮箱与匿名口令重置的邮箱分支不经过 `authn.sms.Send`，由各自的路由自己校验，去掉那一次校验会使该路径无闸。缺证明、无效、过期、重放答 403 `human-verification-required`，过长的证明答 400，提供方或它的存储不可用答 503 且不发送。闸不持有发送状态、不发送消息，也不消耗任何预算；注册不发送消息，因此不问它；通知投递与模板管理不是发送验证消息的路径，不经这道闸。部署换用别的机制时自行交付 `authn.HumanVerifier` 并把本模块从命令树上撤下。键表见 [design-authn-config](design-authn-config.md)，发送路径的判定见 [design-authn-sms](design-authn-sms.md) 与 [design-authn-login](design-authn-login.md)，取舍见 [ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md)。
+**人机验证闸是排他的发送前接口，按发送面各选机制。** `authn.humanverify` 排他交付根包的 `HumanVerifier`：`Required`、`Provider`、`SiteKey` 与 `Verify` 都以 `HumanScope` 为参数，各自只回答该发送面的问题。发送面取封闭集 `phone`（短信登录、短信第二因素、手机登记与匿名短信重置）与 `other`（不落地到手机号的发送，如匿名口令重置的邮箱分支与自助添加邮箱）。机制取封闭集 `off`、`pow`、`captcha`、`turnstile`；**手机号面由 `authn.humanverify.phone-mode` 选择、缺省 `captcha`，其余面由 `authn.humanverify.mode` 选择、缺省 `pow`**。两个自托管机制都在进程内：`pow` 不收集数据；`captcha`（[REF-base64captcha](../../../references.md)）生成数字图片、滑块拼图与音频三种形式，把挑战存 `kv`、带有效期、以比较并交换一次性消费。两者经 `mount.Mounter` 在挂载基址下公开挂出路由——`pow` 的是 `POST /api/v1/auth/human/challenge`；`captcha` 的是 `POST /api/v1/auth/human/captcha/challenge`（`form` 查询项取 `image`、`slider` 或 `audio`，缺省 `image`），应答给出挑战标识、形式、客户端措辞用的说明键与这一形式取用的 media 路径，media 由同一基址下按挑战标识寻址的 `GET /api/v1/auth/human/captcha/image/:id`、`GET /api/v1/auth/human/captcha/background/:id`、`GET /api/v1/auth/human/captcha/piece/:id` 与 `GET /api/v1/auth/human/captcha/audio/:id` 提供。`captcha` 的证明是挑战标识与答案以点连接（`id.answer`）：数字图片与音频的答案是数字串，滑块的答案是十进制偏移量；挑战及其 media 同存 `kv`、共享五分钟有效期，答案以摘要存放，比较并交换一次性消费，错答同样消费。`turnstile` 把证明交 Cloudflare 的 siteverify，只接受主机名与（配置了时）action 相符的答案；站点校验以成功为假拒绝时按其错误码分档，证明本身缺失、无效、过期或已用视为无效证明，提供方自身的内部故障、部署的密钥或控件配置错误以及本包不认识的码视为提供方不可用。**缺省即设闸；Turnstile 只在显式选择时生效，某个面选它而缺站点键、密钥或主机名即启动失败，不退回其它机制。** 关闭一个面时该面 `Required` 为假、`Verify` 接受任何证明，必须显式写 `off`。**证明在发送一处的入口校验并消费：** 经过 `authn.sms.Send` 的发送路径把 `HumanProof` 交给它，由它在放行表、队列容量与任何发送预算之前以 `phone` 面校验并消费一次，调用方不再自行校验；自助添加邮箱与匿名口令重置的邮箱分支不经过 `authn.sms.Send`，以 `other` 面由各自的路由自己校验，去掉那一次校验会使该路径无闸。缺证明、无效、过期、重放答 403 `human-verification-required`，过长的证明答 400，提供方或它的存储不可用答 503 且不发送。闸不持有发送状态、不发送消息，也不消耗任何预算；注册不发送消息，因此不问它；通知投递与模板管理不是发送验证消息的路径，不经这道闸。部署换用别的机制时自行交付 `authn.HumanVerifier` 并把本模块从命令树上撤下。`/auth/methods` 的描述符按 `phone` 与 `other` 两个面分别报告是否要求证明、机制名与控件需要的公开标识。键表见 [design-authn-config](design-authn-config.md)，发送路径的判定见 [design-authn-sms](design-authn-sms.md) 与 [design-authn-login](design-authn-login.md)，取舍见 [ADR-authn-human-verification](../../../adr/adr-authn-human-verification.md)。
 
 租户准入层不在本表：它是 `pkg/tenant` 下的模块 `tenant.admission`，排他交付定序锚点 `tenant.Admission` 与根包的 `ScopeGuard`，方向是它 import 本功能目录的根包（[design-tenant-admission](../tenant/design-tenant-admission.md)）。登录引擎把两块内容放在 `pkg/authn/login/internal` 下：`resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份），`selfservice` 挂账户凭据自助路由；两者不登记模块，只被登录引擎构造与调用（[design-authn-login](design-authn-login.md)）。
 
@@ -359,7 +359,7 @@ type Requirement struct {
 
 ## UML 图
 
-下图给出根包上的接口类型与它们的关系。图中画不出的约束是：判决与身份之间的那条边只在判决为通过、且 `Principal` 通过出口检查时成立；请求链上的身份只由网关写入，注入口只在写入方名单内的包里可达（见身份一节）；`Verdict` 与 `Identity` 的字段不导出，读取经包级函数。人机验证闸不在请求的认证路径上：`authn.sms.Send` 在花费任何发送预算之前取用 `HumanVerifier`，把 `HumanProof` 交给它校验并消费；自助添加邮箱与匿名口令重置的邮箱路径在自己的路由上取用同一个接口。
+下图给出根包上的接口类型与它们的关系。图中画不出的约束是：判决与身份之间的那条边只在判决为通过、且 `Principal` 通过出口检查时成立；请求链上的身份只由网关写入，注入口只在写入方名单内的包里可达（见身份一节）；`Verdict` 与 `Identity` 的字段不导出，读取经包级函数。人机验证闸不在请求的认证路径上：`authn.sms.Send` 在花费任何发送预算之前取用 `HumanVerifier`，把 `HumanProof` 交给它以 `phone` 面校验并消费；自助添加邮箱与匿名口令重置的邮箱路径在自己的路由上以 `other` 面取用同一个接口。
 
 ```mermaid
 classDiagram
@@ -412,15 +412,21 @@ classDiagram
     class gateway
     class HumanVerifier {
         <<interface>>
-        +Required() bool
-        +Provider() string
-        +SiteKey() string
-        +Verify(ctx, p HumanProof) error
+        +Required(scope) bool
+        +Provider(scope) string
+        +SiteKey(scope) string
+        +Verify(ctx, p HumanProof, scope) error
+    }
+    class HumanScope {
+        <<enumeration>>
+        phone
+        other
     }
     class HumanProof {
         +Token string
         +RemoteIP string
     }
+    HumanVerifier ..> HumanScope : 按面回答
     Gate <|.. gateway : 实现
     Verifier --> Accepts : 声明
     Verifier --> Verdict : 作出
@@ -476,10 +482,13 @@ flowchart LR
     emailcode --> i18n[pkg/i18n]
     humanverify[authn/humanverify] --> R
     humanverify --> powmod[authn/humanverify/pow]
+    humanverify --> captchamod[authn/humanverify/captcha]
     humanverify --> turnstile[authn/humanverify/turnstile]
     powmod --> R
+    captchamod --> R
     turnstile --> R
     powmod --> kv
+    captchamod --> kv
     powmod -.可选.-> settings
     turnstile --> egress
     humanverify --> mount
@@ -751,7 +760,7 @@ type Provisioner interface {
 | 登录引擎 `authn.login` 与全部登录方式 | 部分实现 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/password/password.go`、`pkg/authn/login/sms/sms.go`、`pkg/authn/login/google/google.go`、`pkg/authn/login/github/github.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go` 各自的 `Module` |
 | 多因素编排 `authn.mfa` 与全部因素 | 部分实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/totp`、`pkg/authn/mfa/sms`、`pkg/authn/mfa/webauthn` |
 | 短信验证码 `authn.sms` | 部分实现 | `pkg/authn/sms` 的 `Module` |
-| 人机验证 `authn.humanverify` 与 `pow`、`turnstile` 两个机制 | 已实现 | `pkg/authn/humanverify/module.go` `Module`；`pkg/authn/humanverify/provider.go` `newProvider`；`pkg/authn/humanverify/pow/pow.go` `(*Provider).Issue`、`Verify`；`pkg/authn/humanverify/turnstile/turnstile.go` `(*Provider).Verify` |
+| 人机验证 `authn.humanverify` 与 `pow`、`captcha`、`turnstile` 三个机制 | 已实现 | `pkg/authn/humanverify/module.go` `Module`；`pkg/authn/humanverify/provider.go` `newProvider`、`(*gate).forScope`；`pkg/authn/humanverify/pow/pow.go` `(*Provider).Issue`、`Verify`；`pkg/authn/humanverify/captcha/captcha.go` `(*Provider).Issue`、`Media`、`Verify`；`pkg/authn/humanverify/turnstile/turnstile.go` `(*Provider).Verify` |
 | 企业 SSO `authn.sso` 与 SAML、企业 OIDC | 已实现 | `pkg/authn/sso/module.go` `Module`；`pkg/authn/sso/saml/saml.go`、`pkg/authn/sso/oidc/oidc.go` 各自的 `Module` |
 | 冒充 `authn.impersonation` | 已实现 | `pkg/authn/impersonation/impersonation.go` `Module` |
 | 判定接口与管理面 `authn.admin` | 已实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action`；`pkg/authn/admin/admin.go` `Module` |

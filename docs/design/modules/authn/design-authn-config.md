@@ -133,15 +133,16 @@
 
 `authn.mfa.webauthn` 的 `Timeouts.*.Enforce` 固定为真，不做成配置项。
 
-下表是人机验证的配置项（封闭集合）。`mode` 有缺省值，因此不是必填；Turnstile（[REF-cloudflare-turnstile](../../../references.md)）的几项由 `mode` 判定，不由加载器判定：闸关闭或运行工作量证明时，它们不必给值，只有 `turnstile` 模式要求站点键、密钥与主机名齐备。缺省值由 `pkg/authn/humanverify/config.go` 的 `configDefaults` 给出，是 `pow`；评审装配在 `starters/demo/server/review/sqlite.yaml` 显式写 `off`，端到端走查夹具在 `starters/demo/web/e2e/fixtures/config.ts` 显式写 `off`，本地回路的模板 `starters/demo/server/local.yaml.example` 也显式写 `off`：`make dev` 的短信与邮件都经日志载体发送，一份证明会挡住每一次发送。部署入口 `starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_MODE` 以 `pow` 为缺省。
+下表是人机验证的配置项（封闭集合）。两个发送面各选一种机制：手机号面由 `authn.humanverify.phone-mode` 选择，缺省自托管验证码；其余面由 `authn.humanverify.mode` 选择，缺省自托管工作量证明。两个键都有缺省值，因此都不是必填。Turnstile（[REF-cloudflare-turnstile](../../../references.md)）的几项由选中 Turnstile 的面判定，不由加载器判定：两个面都关闭或运行自托管机制时，它们不必给值；任一面选 `turnstile` 时要求站点键、密钥与主机名齐备，缺任一项即 `ErrInvalidConfig`，不退回其它机制。缺省值由 `pkg/authn/humanverify/config.go` 的 `configDefaults` 给出；评审装配在 `starters/demo/server/review/sqlite.yaml` 显式把两个面写成 `off`，端到端走查夹具在 `starters/demo/web/e2e/fixtures/config.ts` 同样把两个面写成 `off`，本地回路的模板 `starters/demo/server/local.yaml.example` 也显式写两个面 `off`：`make dev` 的短信与邮件都经日志载体发送，一份证明会挡住每一次发送。部署入口 `starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_PHONE_MODE` 以 `captcha` 为缺省、`DEMO_HUMANVERIFY_MODE` 以 `pow` 为缺省。
 
 | 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
 |---|---|---|---|---|---|
-| `authn.humanverify.mode` | 字符串 | `pow` | 默认 | | 发送要满足的机制：`off`、`pow` 或 `turnstile`；不在集合内即 `ErrInvalidConfig`。缺省是自托管的工作量证明；评审装配与端到端装配显式写 `off` |
-| `authn.humanverify.site-key` | 字符串 | 空 | 默认 | | Turnstile 控件的前端公开标识；`turnstile` 模式必填 |
-| `authn.humanverify.secret-key` | 字符串 | 空 | 默认 | 敏 | 认证 siteverify 调用的密钥；`turnstile` 模式必填，登记为日志的字面量脱敏规则 |
+| `authn.humanverify.mode` | 字符串 | `pow` | 默认 | | 其余面（不落地到手机号的发送）要满足的机制：`off`、`pow`、`captcha` 或 `turnstile`；不在集合内即 `ErrInvalidConfig`。缺省是自托管的工作量证明；评审装配与端到端装配显式写 `off` |
+| `authn.humanverify.phone-mode` | 字符串 | `captcha` | 默认 | | 手机号面（短信登录、第二因素、手机登记与匿名短信重置）要满足的机制：`off`、`pow`、`captcha` 或 `turnstile`；不在集合内即 `ErrInvalidConfig`。缺省是自托管验证码；评审装配与端到端装配显式写 `off` |
+| `authn.humanverify.site-key` | 字符串 | 空 | 默认 | | Turnstile 控件的前端公开标识；任一面选 `turnstile` 时必填 |
+| `authn.humanverify.secret-key` | 字符串 | 空 | 默认 | 敏 | 认证 siteverify 调用的密钥；任一面选 `turnstile` 时必填，登记为日志的字面量脱敏规则 |
 | `authn.humanverify.verify-url` | 字符串 | `https://challenges.cloudflare.com/turnstile/v0/siteverify` | 默认 | | siteverify 端点；须是带主机的绝对 https URL |
-| `authn.humanverify.hostname` | 字符串 | 空 | 默认 | | 控件必须运行的主机名；`turnstile` 模式必填 |
+| `authn.humanverify.hostname` | 字符串 | 空 | 默认 | | 控件必须运行的主机名；任一面选 `turnstile` 时必填 |
 | `authn.humanverify.action` | 字符串 | 空 | 默认 | | 控件渲染时使用的 action；空接受任意 |
 | `authn.humanverify.timeout` | `time.Duration` | `10s` | 默认 | | 一次校验的总时限，取值 1s 到 30s |
 
@@ -521,12 +522,12 @@ flowchart TD
 | 签名与验证密钥文件可读、解析成功、算法一致、RSA 至少 2048 位、`kid` 不重复 | `ErrInvalidKey` |
 | 每个口令表条目可解析且主体名合法；表非空 | `ErrInvalidClaim`；条目读不了时同时包住 `static.ErrMalformedHash` |
 | `authn.login.wechat-web` 与 `authn.login.wechat-mp` 各自的凭据只给一半（两项都空时方法自行关闭，不算失败）；`authn.mfa.webauthn.rp-id` 等于基址主机或其父域；短信模板覆盖本模块所需的（模板，语言，参数）组合（在 `New` 核对载体声明）；SAML 的 `sign_requests` 有 SP 密钥；`authn.account.password-memory-budget-mib` 不低于 `m` 取值域上限的两倍 | `ErrInvalidConfig` |
-| `authn.humanverify.mode` 不在 `off`、`pow`、`turnstile` 内；`turnstile` 模式下 `site-key`、`secret-key`、`hostname` 为空，`verify-url` 不是带主机的绝对 https URL，或 `timeout` 不在 1s 到 30s；`pow` 模式下运行没有交付键值存储或路由挂载口 | `ErrInvalidConfig` |
+| `authn.humanverify.mode` 或 `authn.humanverify.phone-mode` 不在 `off`、`pow`、`captcha`、`turnstile` 内；任一面选 `turnstile` 而 `site-key`、`secret-key`、`hostname` 为空，`verify-url` 不是带主机的绝对 https URL，或 `timeout` 不在 1s 到 30s；任一面选 `pow` 或 `captcha` 而运行没有交付键值存储或路由挂载口 | `ErrInvalidConfig` |
 | 纳入 `authn.login` 而没有任何 `LoginMethod`；纳入 `authn.mfa` 而没有任何 `Factor`，却设了 `global-required` 或库里已有账户登记了某个种类而该种类没有实现 | `ErrNoLoginMethod`、`ErrNoFactor` |
 | 带表模块的迁移已施加（`Start` 里探测自己的表） | `ErrNotMigrated` |
 | `Requires` 里的排他功能齐备（在构造之前） | `core.ErrMissingProvider` |
 
-阶段：`authn.gate.mount.public-url` 与 `authn.gate.mount.bases` 的每一项由需要它们的模块在自己的 `Prepare` 里判；`mount.endpoints` 的每一项是否被网关所守，以及各作用域与租户两层的覆盖关系，由网关在 `Start` 里核对；`authn.mount` 在 `Init` 里定下 `default`（无端可挑即 `ErrRoutesUnconfigured`），并在登记时拒绝落在未配置租户端上的租户作用域路由；加密列往返与迁移探测在 `Start` 里做，因为 `New` 里表还没建。人机验证的机制与 Turnstile 的必填项在 `Prepare` 判，`pow` 所需的键值存储在 `New` 判、路由挂载口在 `Init` 判。
+阶段：`authn.gate.mount.public-url` 与 `authn.gate.mount.bases` 的每一项由需要它们的模块在自己的 `Prepare` 里判；`mount.endpoints` 的每一项是否被网关所守，以及各作用域与租户两层的覆盖关系，由网关在 `Start` 里核对；`authn.mount` 在 `Init` 里定下 `default`（无端可挑即 `ErrRoutesUnconfigured`），并在登记时拒绝落在未配置租户端上的租户作用域路由；加密列往返与迁移探测在 `Start` 里做，因为 `New` 里表还没建。人机验证的两个面各自的机制与 Turnstile 的必填项在 `Prepare` 判，`pow` 或 `captcha` 所需的键值存储在 `New` 判、路由挂载口在 `Init` 判。
 
 ### 加密列往返自检
 
@@ -619,7 +620,7 @@ flowchart TD
 | 网关的配置项 | 已实现 | `pkg/authn/gate/config.go` `schema`、`moduleConfig`、`(moduleConfig).resolve` |
 | 口令表后端的配置项与设置 | 已实现 | `pkg/authn/static/config.go` `schema`、`settingsSchema`、`(moduleConfig).resolve` |
 | 账户、会话、令牌、登录方式、多因素、短信、SSO 与租户准入的配置项 | 已实现 | `pkg/authn/account/config.go` `schema`、`settingsSchema`；`pkg/authn/session/config.go`；`pkg/authn/token/config.go` `schema`、`(moduleConfig).resolve`；`pkg/authn/mfa/settings.go` `settingsSchema`、`pkg/authn/mfa/totp/config.go`、`pkg/authn/mfa/webauthn/config.go`；`pkg/authn/login/config.go`；`pkg/authn/login/google/config.go`、`pkg/authn/login/github/config.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go`；`pkg/authn/mount/config.go`；`pkg/authn/sms/config.go`；`pkg/authn/sso/config.go`、`pkg/authn/sso/saml/config.go`；`pkg/tenant/admission/config.go` |
-| 人机验证的配置项与证明机制的设置项 | 已实现 | `pkg/authn/humanverify/config.go` `schema`、`(moduleConfig).resolve`、`resolveTurnstile`；`pkg/authn/humanverify/pow/settings.go` `Schema`、`difficulty`、`challengeTTL` |
+| 人机验证的配置项与证明机制的设置项 | 已实现 | `pkg/authn/humanverify/config.go` `schema`、`(moduleConfig).resolve`、`resolveSurface`、`resolveTurnstile`；`pkg/authn/humanverify/pow/settings.go` `Schema`、`difficulty`、`challengeTTL` |
 | 其余设置项的声明与取值域 | 部分实现 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingsSchema`；`pkg/authn/mfa/settings.go`；`pkg/authn/login/config.go`；`pkg/authn/sms/settings.go` `settingsSchema`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `settingsSchema`；`pkg/authn/sso/config.go` `settingsSchema`；`pkg/authn/impersonation/settings.go` `settingsSchema`；`pkg/authn/humanverify/pow/settings.go` `Schema` |
 | `authn.account.reserved-usernames` 的设置项与内置清单 | 已实现 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/account/reserved.go` |
 | 设置缺席的降级与读取出错的方向 | 已实现 | `pkg/authn/account/relax.go`、`pkg/authn/account/params.go`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingReader`、`readSetting`；`pkg/authn/mfa/settings.go`；`pkg/authn/sms/settings.go`；`pkg/tenant/admission/config.go`；`pkg/authn/sso/config.go`；`pkg/authn/impersonation/settings.go` `readTuned`、`report`；`pkg/authn/login/sms/sms.go` `signupOpen`、`reportFault`、`clearFault` |
