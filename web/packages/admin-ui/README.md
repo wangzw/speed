@@ -5,8 +5,8 @@ renders two surfaces over one set of page components, one declaration
 shape and one operations seam. The platform surface is the platform-staff
 console; the workspace surface is the tenant-scoped half, mounted inside
 the tenant shell. The workspace surface ships its context provider, route
-declarations and the invitations/membership and SSO page wrappers today;
-tenant-layer settings and tenant roles/permissions are not part of it yet.
+declarations, operations bundle and the invitations/membership, SSO,
+tenant roles/permissions and tenant settings page wrappers.
 
 ## The three endpoint kinds
 
@@ -73,31 +73,37 @@ label -- reachable from a list row, not listed in the navigation.
 **The workspace surface** is the tenant administrator's admin, mounted at
 `/workspace/admin` inside `@speed/product-shell`. It acts on the current
 tenant the host supplies and addresses every request at
-`/api/v1/tenants/{tenant}/...`: invitations and membership, and SSO
-providers today; tenant-layer settings and tenant roles and permissions
-are later batches. It reads nothing under `/api/v1/system`, holds no
-tenant selector, and renders no `AppShell`; `WorkspaceAdminProvider`
-installs only the workspace contexts, because the tenant frame already
-renders the shell.
+`/api/v1/tenants/{tenant}/...`: invitations and membership, SSO providers,
+tenant roles and permissions, and the tenant settings layer. It reads
+nothing under `/api/v1/system`, holds no tenant selector, and renders no
+`AppShell`; `WorkspaceAdminProvider` installs only the workspace contexts,
+because the tenant frame already renders the shell.
 
 **What ships today.** The package exports `WorkspaceAdminProvider` (and
 its tenant/protected-role hooks), `WorkspaceAdminBreadcrumbProvider` (and
 its read hook), `workspaceAdminRoutes`, `WorkspaceAdminOperations` /
-`workspaceAdminOperations`, and the `WorkspaceInvitationsPage` and
-`WorkspaceSsoPage` wrappers. **What does not:** the
-`WorkspaceSettingsPage` and `WorkspacePermissionsPage` wrappers, their
-declarations, and the tenant-mode behaviour of the settings and
-roles/permissions pages; those arrive with the tenant-scoped endpoints
-they need. The invitations wrapper runs the shared page in tenant mode:
-the member write form's platform account search is not rendered, the
-inviter identity resolves from the members read's `display_name`, the
-member table takes `display_name` for its name column and shows the
-recorded account identifier in its account column without resolving it,
-and an inviter that read cannot resolve renders its recorded identifier
-with the unresolved note. The shared pages prefer the workspace breadcrumb
-context on their `PageHeader` and fall back to their own platform trail
-otherwise. The `WorkspaceAdminOperations` bundle carries the tenant-scoped
-invitation, membership and SSO members only and no platform account read.
+`workspaceAdminOperations` with their publishing context
+(`WorkspaceAdminOperationsProvider`, `useWorkspaceAdminOperations`), and
+the `WorkspaceInvitationsPage`, `WorkspaceSsoPage`,
+`WorkspacePermissionsPage` and `WorkspaceSettingsPage` wrappers. The
+invitations wrapper runs the shared page in tenant mode: the member write
+form's platform account search is not rendered, the inviter identity
+resolves from the members read's `display_name`, the member table takes
+`display_name` for its name column and shows the recorded account
+identifier in its account column without resolving it, and an inviter
+that read cannot resolve renders its recorded identifier with the
+unresolved note. The roles wrapper runs the shared permissions page in
+tenant mode: the governed permission catalog, the tenant roles, grants
+and bindings, the member picker that replaces the platform account search,
+the member-read identity for binding rows, and the host's `protectedRoles`
+rendered read-only beside the server's builtin roles. The settings wrapper
+runs the shared settings page in tenant mode: only the tenant layer, with
+the server-reported source column. The shared pages prefer the workspace
+breadcrumb context on their `PageHeader` and fall back to their own
+platform trail otherwise. The `WorkspaceAdminOperations` bundle carries
+the tenant-scoped invitation, membership and SSO members, the tenant
+settings members and the tenant roles/grants/bindings members; no member
+addresses a platform asset or the platform account read.
 
 Each page opens with `@speed/ui-kit`'s `PageHeader`: the page title as the
 level-one heading and a breadcrumb trail from the admin to the page. The
@@ -244,21 +250,23 @@ feature-gated control without importing the host's session package.
 | `PermissionsPage.tsx` | `PermissionsPage`, `PermissionsPageProps` |
 | `InvitationsPage.tsx` | `InvitationsPage`, `InvitationsPageProps` |
 | `SsoPage.tsx` | `SsoPage`, `SsoPageProps` |
-| `SettingsPage.tsx` | `SettingsPage` |
+| `SettingsPage.tsx` | `SettingsPage`, `SettingsPageProps` |
 | `SmsPage.tsx` | `SmsPage` |
 | `AuditPage.tsx` | `AuditPage` |
 | `AuditDetailPage.tsx` | `AuditDetailPage`, `AuditDetailPageProps` |
 | `resources.ts` | `ADMIN_UI_NAMESPACE`, `adminUiResources` |
 | `WorkspaceAdminProvider.tsx` | `WorkspaceAdminProvider`, `WorkspaceAdminProviderProps`, `WorkspaceAdminContextValue`, `useWorkspaceAdminContext`, `useWorkspaceAdminTenant`, `useWorkspaceAdminProtectedRoles` |
 | `WorkspaceAdminBreadcrumb.tsx` | `WorkspaceAdminBreadcrumbProvider`, `WorkspaceAdminBreadcrumbProviderProps`, `useWorkspaceAdminBreadcrumbs` |
-| `workspace-operations.tsx` | `WorkspaceAdminOperations`, `workspaceAdminOperations` |
+| `workspace-operations.tsx` | `WorkspaceAdminOperations`, `workspaceAdminOperations`, `WorkspaceAdminOperationsProvider`, `WorkspaceAdminOperationsProviderProps`, `useWorkspaceAdminOperations`, `AdminTenantSetting`, `AdminTenantSettingSource`, `AdminTenantRole`, `AdminTenantPermission`, `AdminTenantGrant`, `AdminTenantBinding`, `AdminTenantSetSettingInput`, `AdminTenantRemoveSettingInput`, `AdminTenantWriteRoleInput`, `AdminTenantRoleRef`, `AdminTenantGrantRef`, `AdminTenantBindingRef` |
 | `workspace-routes.tsx` | `workspaceAdminRoutes` |
-| `workspace-pages.tsx` | `WorkspaceInvitationsPage`, `WorkspaceSsoPage` |
+| `workspace-pages.tsx` | `WorkspaceInvitationsPage`, `WorkspaceSsoPage`, `WorkspacePermissionsPage`, `WorkspaceSettingsPage` |
 
-The workspace-surface rows that name settings and permissions (the
-`WorkspaceSettingsPage` and `WorkspacePermissionsPage` wrappers and their
-declarations) are absent until the tenant-scoped endpoints and page
-behaviour exist.
+The workspace surface's wrappers, declarations and tenant-mode behaviour
+all ship: the settings page reads and writes only the tenant layer and
+renders the server-reported source column; the roles page reads the
+governed catalog and fills its account pickers and recorded identities
+from the tenant's member read. The shared platform pages are unchanged
+when the tenant-mode options are absent.
 
 Everything else (`src/internal/`) is shared plumbing -- the error-text
 resolver, the `InlineError` and `WriteFeedbackRegion` bindings, the
@@ -414,8 +422,14 @@ The contract: `tenant` is required; the provider never derives or
 switches the current tenant. The workspace surface reads nothing under
 `/api/v1/system` and holds no tenant selector. `invitationLink` is the
 same acceptance-link builder the platform shell takes; absent, the
-invitation page shows the bare token. The wrappers that ship compose the
-existing pages in tenant mode:
+invitation page shows the bare token. `protectedRoles` names the roles
+the host seeded into the tenant that the roles page renders read-only
+beside the server's builtin ones; absent, no role is treated as
+protected. The provider publishes the operations bundle through
+`WorkspaceAdminOperationsProvider`, so a page reads it with
+`useWorkspaceAdminOperations`; the shipped `workspaceAdminOperations`
+answers with none mounted. The wrappers that ship compose the existing
+pages in tenant mode:
 
 - the invitations page is given the current tenant and runs in tenant
   mode: the member write form's platform account search is not rendered,
@@ -423,10 +437,19 @@ existing pages in tenant mode:
   the member table's name column takes `display_name` while its account
   column shows the recorded account identifier without resolving it, and
   the page issues no `/api/v1/system` request;
-- the SSO page is locked to the current tenant.
+- the SSO page is locked to the current tenant;
+- the permissions page is given the current tenant, `tenantMode` and the
+  host's `protectedRoles`: it reads the governed permission catalog,
+  roles, grants and bindings under `/api/v1/tenants/{tenant}`, fills its
+  two account pickers from the tenant's member read instead of the
+  platform account search, resolves binding-row identities from that same
+  member read, and renders the host's protected roles read-only;
+- the settings page is given the current tenant and `tenantMode`: it
+  reads and writes only `/api/v1/tenants/{tenant}/settings`, renders no
+  layer control, and shows the server-reported source layer
+  (`tenant`, `global`, `default`) in its own column.
 
-The settings and roles/permissions wrappers, their declarations and their
-tenant-mode behaviour are not part of this surface yet.
+None of the four wrappers issues an `/api/v1/system` request.
 
 The navigation parent and the home card are the host's composition: the
 host derives them from the narrowed `workspaceAdminRoutes` and hides them

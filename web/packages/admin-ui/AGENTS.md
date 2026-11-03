@@ -6,8 +6,8 @@ Two management surfaces share one set of page components, one declaration
 shape and one operations seam. The platform surface is the platform-staff
 console; the workspace surface is the tenant-scoped half. The workspace
 surface ships its context provider, route declarations, operation bundle
-and the invitations/membership and SSO page wrappers; its tenant settings
-and tenant roles/permissions parts are not implemented yet.
+and the invitations/membership, SSO, tenant roles/permissions and tenant
+settings page wrappers.
 
 The package's pages address three kinds of endpoint, and the kinds are not
 interchangeable:
@@ -54,37 +54,44 @@ current-tenant kind.
 **The workspace surface** is the tenant administrator's admin, mounted at
 `/workspace/admin` inside `@speed/product-shell`. It acts on the
 **current tenant the host supplies** and addresses every request at
-`/api/v1/tenants/{tenant}/...`: invitations and membership, and SSO
-providers today; tenant-layer settings and tenant roles and permissions
-are later batches. It reads nothing under `/api/v1/system`. It does not
-own or switch the current tenant: the host mounts it inside the tenant
-frame and hands `WorkspaceAdminProvider` the resolved tenant. The
-workspace surface renders no `AppShell` — the tenant frame already
-renders one — and imports neither `route-kit`, `tenancy-ui` nor
-`product-shell`. It is offered to holders of the tenant-domain permission
-codes, not to platform staff as such.
+`/api/v1/tenants/{tenant}/...`: invitations and membership, SSO
+providers, tenant roles and permissions, and the tenant settings layer.
+It reads nothing under `/api/v1/system`. It does not own or switch the
+current tenant: the host mounts it inside the tenant frame and hands
+`WorkspaceAdminProvider` the resolved tenant. The workspace surface
+renders no `AppShell` — the tenant frame already renders one — and
+imports neither `route-kit`, `tenancy-ui` nor `product-shell`. It is
+offered to holders of the tenant-domain permission codes, not to platform
+staff as such.
 
 **What ships today.** `WorkspaceAdminProvider.tsx` (the provider, its
 props and the tenant/protected-role hooks), `WorkspaceAdminBreadcrumb.tsx`
 (the breadcrumb provider and its read hook), `workspace-routes.tsx`
 (`workspaceAdminRoutes`), `workspace-operations.tsx`
-(`WorkspaceAdminOperations`, `workspaceAdminOperations`) and
-`workspace-pages.tsx` (`WorkspaceInvitationsPage`, `WorkspaceSsoPage`)
-exist in `src/`, and `src/index.ts` exports them. **What does not:** the
-`WorkspaceSettingsPage` and `WorkspacePermissionsPage` wrappers, their
-declarations, and the tenant-mode behaviour of the settings and
-roles/permissions pages. The invitations wrapper runs the shared page in
-tenant mode: the member write form (whose account field searches the
+(`WorkspaceAdminOperations`, `workspaceAdminOperations`,
+`WorkspaceAdminOperationsProvider`, `useWorkspaceAdminOperations`) and
+`workspace-pages.tsx` (`WorkspaceInvitationsPage`, `WorkspaceSsoPage`,
+`WorkspacePermissionsPage`, `WorkspaceSettingsPage`) exist in `src/`, and
+`src/index.ts` exports them. The invitations wrapper runs the shared page
+in tenant mode: the member write form (whose account field searches the
 platform roster) is not rendered, the inviter identity resolves from the
 members read's `display_name` rather than a platform account read, the
 member table's name column takes `display_name` while its account column
 shows the recorded account identifier without resolving it, and an
 inviter that read cannot resolve renders its recorded identifier with the
-unresolved note. The shared pages prefer the workspace
-breadcrumb context on their `PageHeader` and fall back to their own
-platform trail otherwise, so neither surface leaks the other's trail.
-`WorkspaceAdminOperations` carries the tenant-scoped invitation,
-membership and SSO members only and no platform account read.
+unresolved note. The roles wrapper runs the shared permissions page in
+tenant mode: the governed permission catalog, the tenant roles, grants
+and bindings, the tenant member picker in place of the platform account
+search, member-read identities for binding rows, and the host's
+`protectedRoles` read-only beside the server's builtin roles. The settings
+wrapper runs the shared settings page in tenant mode: only the tenant
+layer, with the server-reported source column and no layer control. The
+shared pages prefer the workspace breadcrumb context on their
+`PageHeader` and fall back to their own platform trail otherwise, so
+neither surface leaks the other's trail. `WorkspaceAdminOperations`
+carries the tenant-scoped invitation, membership and SSO members, the
+tenant settings members and the tenant roles/grants/bindings members; no
+member addresses a platform asset or the platform account read.
 
 The package ships one entry (`src/index.ts`, the export set in the
 README's "What ships") and no subpath. The workspace surface's exports
@@ -209,19 +216,21 @@ a list page carries a navigation label and icon and a detail page (the
 tenant detail, the audit detail) carries neither, so it is reachable from
 a row without appearing in the navigation.
 
-The `workspaceAdminRoutes` table currently declares invitations and
-membership, and SSO providers. Its declarations carry the tenant-domain
-permission codes (`authn.membership.manage`, `authn.idp.manage`) and the
-tenant-scoped features they need (`authn.admin` + `authn.invitations`,
-`authn.admin` + `authn.admin.sso`). They never name `tenant.admin`: the
-workspace surface reads no roster and holds no tenant selector. The
-settings (`settings.tenant.read`, `settings.tenantadmin`) and roles
-(`authz.tenant.role.read`, `authz.tenantadmin`) declarations are absent
-until those endpoints and page behaviours exist. A declaration carries an
-optional stable `id` (the sibling-link address) — this package's own
-declarations all carry one, a host's may omit it — a path pattern, a
-view, an optional navigation label, an optional decorative icon, the
-permission code the page's data is held to (`tenant.read`,
+The `workspaceAdminRoutes` table declares invitations and membership, SSO
+providers, tenant roles and permissions, and the tenant settings layer.
+Its declarations carry the tenant-domain permission codes
+(`authn.membership.manage`, `authn.idp.manage`,
+`authz.tenant.role.read`, `settings.tenant.read`) and the tenant-scoped
+features they need (`authn.admin` + `authn.invitations`, `authn.admin` +
+`authn.admin.sso`, `authz.tenantadmin`, `settings.tenantadmin`). They never
+name `tenant.admin`: the workspace surface reads no roster and holds no
+tenant selector. The write codes (`settings.tenant.write`,
+`authz.tenant.role.manage`) are not declaration permissions: a page
+renders its write controls and lets the server refuse. A declaration
+carries an optional stable `id` (the sibling-link address) — this
+package's own declarations all carry one, a host's may omit it — a path
+pattern, a view, an optional navigation label, an optional decorative
+icon, the permission code the page's data is held to (`tenant.read`,
 `authn.account.read`, `authn.session.read`,
 `authn.impersonation.read`, `authz.role.read`, `authn.membership.manage`,
 `authn.idp.manage`, `settings.read`, `sms.template.read`, `audit.read`)
@@ -306,14 +315,27 @@ What the pages reach through the bundle, grouped by surface:
 | `useSmsTemplates`, `useRegisterSmsTemplate`, `useOfferSmsTemplate`, `useSetSmsTemplateEnabled`, `useRemoveSmsTemplate` | `/api/v1/system/sms/templates[/submissions|/:name[/enabled]]` |
 | `useAuditRecords`, `useAuditRecord`, `exportAuditRecords` | `/api/v1/system/audit/records[/:id]`, `/api/v1/system/audit/export` |
 
-The workspace surface reads through `WorkspaceAdminOperations`, a
-narrower bundle picked from the same tenant-scoped generated operations:
-`/api/v1/tenants/{tenant}/invitations` and `/members`, and the tenant's
-SSO providers. The tenant settings and tenant role/permission members
-join it with their batches. It holds no platform member and never
+The workspace surface reads through `WorkspaceAdminOperations`:
+`/api/v1/tenants/{tenant}/invitations` and `/members`, the tenant's SSO
+providers, the tenant settings members
+(`useTenantSettingsList`, `useTenantSettingsRead`,
+`useTenantSettingsWrite`, `useTenantSettingsRemove`) and the tenant
+authorization members (`useTenantRoles`, `useTenantPermissions`,
+`useTenantGrants`, `useTenantBindings`, `useTenantAccountBindings`,
+`useTenantWriteRole`, `useTenantRemoveRole`, `useTenantGrantPermission`,
+`useTenantRevokePermission`, `useTenantBindRole`, `useTenantUnbindRole`).
+The invitation, membership and SSO members are picked from the console
+bundle's generated bindings; the settings and authorization members are
+the tenant management modules' own generated operations, which the
+console bundle does not carry. It holds no platform member and never
 addresses `/api/v1/system`; the tenant is an argument of every read and
-write. `workspaceAdminOperations` is the shipped binding, and
-`WorkspaceAdminProvider`'s `operations` prop is the substitution point.
+write. Its read keys take the tenant id as the outermost segment
+(`tenantQueryKey` over the generated bare key), and its writes invalidate
+through the same factory. `workspaceAdminOperations` is the shipped
+binding, `WorkspaceAdminProvider`'s `operations` prop is the substitution
+point, and the provider publishes the bundle through
+`WorkspaceAdminOperationsProvider`; a page reads it with
+`useWorkspaceAdminOperations`.
 
 The view types are the generated response rows of each module's admin
 surface, named for the admin's own pages; only the write inputs stay
@@ -468,10 +490,13 @@ request body.
   underscore); the whitelist carries one leaf per language for each
   reachable code, so a refusal renders its own text rather than the
   generic fallback. A new write surface extends the whitelist with the
-  codes it can meet. An address an account create or identifier add
-  collides with is the 409 `authn.email_taken`, whose text names the
-  address as already registered and asks for another -- an actionable
-  refusal, not a restated status.
+  codes it can meet. The tenant settings write can be answered with 403
+  `settings.protected`: the shared platform error catalog carries its two
+  languages, but this package's whitelist and bundle do not yet, so that
+  refusal currently renders the generic fallback. An address an account
+  create or identifier add collides with is the 409 `authn.email_taken`,
+  whose text names the address as already registered and asks for
+  another -- an actionable refusal, not a restated status.
 - **Each page opens with ui-kit's `PageHeader`.** The page title is the
   level-one heading and a breadcrumb trail runs from the admin to the
   page. On the workspace surface the trail comes from
@@ -532,17 +557,21 @@ The workspace-surface suite (`workspace-surface.test.tsx`) covers
 `workspaceAdminRoutes` (paths, permission codes, `requires`),
 `WorkspaceAdminProvider` (the required tenant, the contexts it installs,
 the no-DOM contract and the breadcrumb context), `workspaceAdminOperations`
-(the tenant-scoped pick), the two wrappers (the tenant reaches every
-tenant-scoped read and the roster is never read), and the request record
-of a full render over the shipped generated bundle: every URL the
-invitations and SSO pages issue is recorded, none may target
-`/api/v1/system`, and every tenant-addressed read carries the current
-tenant. The invitations suite additionally covers tenant mode: the member
-write form absent, the inviter identity resolved from the members read,
-the member account column showing the recorded identifier, and an
-inviter that read cannot resolve left marked. The settings and
-roles/permissions wrappers and their declarations are not implemented, so
-no suite covers them yet.
+(the tenant-scoped members, including the tenant settings and
+authorization ones), the wrapper exports, and the request record
+of a full render of the invitations and SSO wrappers over the shipped
+generated bundle: every URL those pages issue is recorded, none may target
+`/api/v1/system`, every tenant-addressed read carries the current tenant,
+and the platform roster is never read. The invitations
+suite additionally covers tenant mode: the member write form absent, the
+inviter identity resolved from the members read, the member account
+column showing the recorded identifier, and an inviter that read cannot
+resolve left marked. The settings suite covers tenant mode: only the
+tenant endpoints are read and written, the query key is tenant-prefixed,
+and each row's source column prints the server-reported layer. The
+permissions suite covers tenant mode: the governed catalog, the member
+picker, member-read binding identities, and the host's protected roles
+read-only beside the builtin ones.
 
 ## Deferrals (recorded, do not re-open silently)
 
