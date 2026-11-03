@@ -1063,12 +1063,15 @@ names the fixed part of that wiring, and no configuration file repeats it:
   frame when an authenticated, non-impersonating viewer's own personal tenant is
   absent from its settled membership list and the feature is served, regardless
   of the account's verification state or its other memberships. A registration
-  completed through SMS or a social provider lands on `/` (the tenant home) when
-  the personal-tenant feature is served and on `/account` otherwise; from an
-  invitation link the registration stays on that link's accept page instead of
-  navigating. A password registration lands on `/account?verify=1` in either
-  case, and the verification notice is rendered by the account surface
-  independently of the backfill.
+  completed through SMS lands on `/` (the tenant home) when the
+  personal-tenant feature is served and on `/account` otherwise. A registration
+  completed through a social or enterprise provider always lands on `/` (the
+  tenant home), whether or not the feature is served. A password registration
+  lands on `/account?verify=1` in either case. From an invitation link, an SMS
+  registration stays on that link's accept page instead of navigating, and a
+  social or enterprise callback returns to that invitation path. The
+  verification notice is rendered by the account surface independently of the
+  backfill.
 - **The tenancy policy seams** are the host's answers to what the tenant and
   authorization capabilities leave open (`server/tenancy.go`, named in
   `baselineServe` and in the `seed` command). The module provides

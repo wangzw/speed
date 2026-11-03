@@ -63,6 +63,7 @@ flowchart TD
 - `REQ-signup-012`
 - `REQ-signup-014`
 - `REQ-signup-015`
+- `REQ-signup-047`
 - `REQ-signup-051`
 - `REQ-signup-052`
 - `REQ-signin-006`

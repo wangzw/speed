@@ -142,9 +142,9 @@
 
 ### REQ-signin-016
 
-社交方式为未知外部身份开户必须受开户开关控制；开户开关开启时，必须在建立账户之前取得一个合法用户名与一个合法口令，判据按 REQ-signup-047 的规定；开户成功后的落点按 REQ-signup-052 的规定。
+社交方式为未知外部身份开户必须受开户开关控制；开户开关开启时，必须在建立账户之前取得一个合法用户名与一个合法口令，判据按 REQ-signup-047 的规定；开户成功后的落点按 REQ-signup-053 的规定。
 
-- **验收**：开户开关关闭且该外部身份没有任何绑定时，登录以统一的登录失败结束且不建立账户；开关开启时先取得合法用户名与口令，再建立启用的账户并完成登录；未取得合法用户名、或口令不符策略时不建立账户；落点按 REQ-signup-052 的验收判定。
+- **验收**：开户开关关闭且该外部身份没有任何绑定时，登录以统一的登录失败结束且不建立账户；开关开启时先取得合法用户名与口令，再建立启用的账户并完成登录；未取得合法用户名、或口令不符策略时不建立账户；落点按 REQ-signup-053 的验收判定。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`
 

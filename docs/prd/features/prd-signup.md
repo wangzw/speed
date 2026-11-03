@@ -351,7 +351,7 @@
 
 ### REQ-signup-039
 
-口令注册完成后的落点与个人租户特性是否启用无关；短信首登与社交首登的落点按 REQ-signup-052 的规定。
+口令注册完成后的落点与个人租户特性是否启用无关；短信首登的落点按 REQ-signup-052 的规定，社交首登与企业即时开通的落点按 REQ-signup-053 的规定。
 
 - **验收**：启用与不启用个人租户的两种装配下，口令注册完成后的落点都是账户页的邮箱验证节。
 - **状态**：已实现
@@ -359,11 +359,19 @@
 
 ### REQ-signup-052
 
-短信首登开户与社交首登开户成功后，系统必须按部署是否启用个人租户特性决定落点：启用时落在租户区首页，未启用时落在账户页；从邀请链接发起的开户不得导航离开该链接的接受页，账户建立后停留在该页。
+短信首登开户成功后，系统必须按部署是否启用个人租户特性决定落点：启用时落在租户区首页，未启用时落在账户页；从邀请链接发起的短信首登开户不得导航离开该链接的接受页，账户建立后停留在该页。
 
-- **验收**：启用个人租户的装配下，经短信首登与社交首登完成开户后页面落在租户区首页，个人空间是当前组织；未启用个人租户的装配下，两者都落在账户页；从邀请链接发起的开户完成后仍停留在该邀请的接受页，不发生导航。
+- **验收**：启用个人租户的装配下，经短信首登完成开户后页面落在租户区首页，个人空间是当前组织；未启用个人租户的装配下，落在账户页；从邀请链接发起的短信首登开户完成后仍停留在该邀请的接受页，不发生导航。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`（启用个人租户的短信开户）；`starters/demo/web/src/pages/sign-in-view.test.tsx` `lands a registration completed through SMS on the account profile page`（未启用个人租户的短信开户）、`lands a registration in the tenant area when the personal tenant is in force`（启用个人租户的短信开户）；`starters/demo/web/src/pages/accept-invitation-page.test.tsx` `returns an SMS registration made on the invitation URL to its accept page`（从邀请链接发起的短信开户不导航）；`starters/demo/web/src/pages/auth-callback-page.test.tsx` `lands a viewer home when the provider detour started elsewhere`（社交开户落在租户区首页）、`returns a viewer who left an invitation link to that landing`（从邀请链接发起的社交开户回到该链接）
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`（启用个人租户的短信开户）；`starters/demo/web/src/pages/sign-in-view.test.tsx` `lands a registration completed through SMS on the account profile page`（未启用个人租户的短信开户）、`lands a registration in the tenant area when the personal tenant is in force`（启用个人租户的短信开户）；`starters/demo/web/src/pages/accept-invitation-page.test.tsx` `returns an SMS registration made on the invitation URL to its accept page`（从邀请链接发起的短信开户不导航）
+
+### REQ-signup-053
+
+社交首登开户与企业即时开通经提供方回调完成后，系统必须把当事人落在租户区首页；从邀请链接发起的回调必须回到该邀请的路径，不落在租户区首页。
+
+- **验收**：经社交提供方或企业提供方完成开户后页面落在租户区首页；企业即时开通建立的账户与社交开户落在同一处；从邀请链接发起的回调完成后回到该邀请的路径。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`（社交首登开户落在租户区首页）；`starters/demo/web/src/pages/auth-callback-page.test.tsx` `lands a viewer home when the provider detour started elsewhere`（社交开户与企业即时开通落在租户区首页）、`returns a viewer who left an invitation link to that landing`（从邀请链接发起的回调回到该链接）
 
 ### REQ-signup-029
 
@@ -391,7 +399,7 @@
 
 ### REQ-signup-048
 
-社交首登开户把提供方声明为已验证的地址写成该账户的**联系方式**（默认通讯邮箱）**与登录方式**：建号时账户只有这一条邮箱地址，按 REQ-account-068 它同时被选作登录方式，因此该地址可以作口令登录名。该地址在开户页面上只读展示，持有人不编辑它。企业即时开通不写入提供方声明的地址：企业预置账户是运营者建好的，即时开通没有展示该地址的页面。两种路径下账户取自提供方的资料都只有显示名与该地址的上述处置。提供方没有给出显示名时，账户的显示名取用户名（REQ-signup-051）。开户成功后的落点按 REQ-signup-052 的规定。
+社交首登开户把提供方声明为已验证的地址写成该账户的**联系方式**（默认通讯邮箱）**与登录方式**：建号时账户只有这一条邮箱地址，按 REQ-account-068 它同时被选作登录方式，因此该地址可以作口令登录名。该地址在开户页面上只读展示，持有人不编辑它。企业即时开通不写入提供方声明的地址：企业预置账户是运营者建好的，即时开通没有展示该地址的页面。两种路径下账户取自提供方的资料都只有显示名与该地址的上述处置。提供方没有给出显示名时，账户的显示名取用户名（REQ-signup-051）。开户成功后的落点按 REQ-signup-053 的规定。
 
 - **验收**：经社交首登新开立的账户持有提供方声明为已验证的那个地址作为联系方式，默认通讯邮箱是它，登录方式中也有它，且它可用作口令登录名；开户页面上该地址只读，无法编辑；企业即时开通新开立的账户不持有提供方声明的地址；两种路径的显示名都等于提供方给出的显示名；提供方未给出显示名时账户仍建立，显示名按 REQ-signup-051 的规定取用户名。
 - **状态**：已实现
