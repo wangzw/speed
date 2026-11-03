@@ -1,0 +1,90 @@
+# The template for the local development primary config source. Copy it to
+# local.yaml, which the repository's .env selects through DEMO_CONFIG and which
+# is git-ignored, then fill the social credentials.
+#
+# It is an override document over the platform defaults compiled into the
+# binary (defaults.go): everything it does not state comes from there. Tests
+# pass --config, which overrides DEMO_CONFIG, so nothing here reaches a test
+# run.
+
+# Social sign-in. To offer a provider, uncomment the `login:` line together
+# with that provider's two lines and fill them. While they stay commented out
+# the method stands itself down; an item that is present but empty counts as
+# given, so fill both or neither. Register these redirect URIs with each
+# provider:
+#   http://localhost:8080/api/v1/auth/callback/google
+#   http://localhost:8080/api/v1/auth/callback/github
+authn:
+  # login:
+  #   google:
+  #     client-id: "..."
+  #     client-secret: "..."
+  #   github:
+  #     client-id: "..."
+  #     client-secret: "..."
+
+  # The browser reaches the vite dev server at http://localhost:8080, which
+  # proxies the API namespaces to the backend at 127.0.0.1:8081. The
+  # origin-bound features — token issuer, OAuth redirect target, WebAuthn —
+  # follow this value, so open the app at http://localhost:8080 and keep the
+  # host spelling `localhost`: a session set for one host is not sent to the
+  # other.
+  gate:
+    mount:
+      public-url: "http://localhost:8080"
+  mfa:
+    webauthn:
+      origins: ["http://localhost:8080"]
+
+# The SMS family with the log carrier: every message, verification code
+# included, is written to the process output instead of reaching a vendor. The
+# template set is a container leaf that only the primary config source may
+# carry, which is why it lives here rather than in .env. The registry declares
+# the three templates the authentication module requires (login, second factor,
+# enrollment) and the optional reset one, whose presence publishes the SMS
+# channel of the anonymous password reset. Each code is a label the log carrier
+# writes, not a vendor identifier. Read a code from the process output: search
+# for "log sms: a verification code was sent" and read its verification_code
+# field (the attribute is not named "code" because that name is a registered
+# sensitive key of the process and the logging layer masks the value).
+sms:
+  carrier: log
+  registry:
+    templates:
+      authn.code.login:
+        kind: verification
+        params: ["code", "ttl_minutes"]
+        codes:
+          en-US: "demo-login"
+          zh-CN: "demo-login-zh"
+      authn.code.mfa:
+        kind: verification
+        params: ["code", "ttl_minutes"]
+        codes:
+          en-US: "demo-mfa"
+          zh-CN: "demo-mfa-zh"
+      authn.code.enroll:
+        kind: verification
+        params: ["code", "ttl_minutes"]
+        codes:
+          en-US: "demo-enroll"
+          zh-CN: "demo-enroll-zh"
+      authn.code.reset:
+        kind: verification
+        params: ["code", "ttl_minutes"]
+        codes:
+          en-US: "demo-reset"
+          zh-CN: "demo-reset-zh"
+
+# The seed settings. `make dev` runs `sqlite seed` before every serve. The
+# allowed-prefixes setting defaults to the empty table, which admits no number
+# at all; signup defaults to closed, which lets a code reach only a number an
+# account already holds.
+seed:
+  settings:
+    - key: "authn.mfa.sensitive-min-age"
+      value: "1h"
+    - key: "authn.sms.allowed-prefixes"
+      value: '["+1","+86"]'
+    - key: "authn.account.signup"
+      value: "open"

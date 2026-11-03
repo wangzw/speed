@@ -728,12 +728,21 @@ capabilities in their own configuration, so their runs keep their own feature
 sets.
 
 **The anonymous password reset is open on this deployment too.**
-`seed.settings` sets `authn.login.password-reset` to `open`, and the image's
-`authn.emailcode` provides the reset seam over the same SMTP carrier, so the
-sign-in surface offers the forgot-password entry and `/password-reset` offers
-the email channel. The image assembles no SMS family, so the reset page offers
-email alone; a deployment that adds the SMS modules and declares the optional
-`authn.code.reset` template gets the SMS channel beside it.
+`seed.settings` sets `authn.login.password-reset` to `open`; the image's
+`authn.emailcode` provides the email channel over the same SMTP carrier, and
+the SMS family below provides the SMS channel through the declared
+`authn.code.reset` template, so `/password-reset` offers both.
+
+**Phone sign-in runs on the log SMS carrier.** `sms.carrier` is `log` in the
+rendered configuration, so the deployment holds no vendor account and every
+verification code is written to the process output: a person signing in by
+phone reads it from `flyctl logs` (search for `log sms: a verification code
+was sent` and read `verification_code`). `seed.settings` opens
+`authn.account.signup`, so a first login through a number opens an account,
+and `authn.sms.allowed-prefixes` defaults to the empty table, which admits no
+number at all — the template names `["+1","+86"]`, so a number outside that
+list is refused with `unsupported-region`. Add a prefix before offering the
+deployment to another region.
 
 **Google and GitHub sign-in are on the same deployment.** Each application's
 identifier and secret come from its own Fly secret; the entrypoint requires all

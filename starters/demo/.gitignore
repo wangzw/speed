@@ -9,6 +9,11 @@
 # development artifact, never source. See server/.air.toml.
 /server/tmp/
 
+# The local development configuration the repository's .env selects through
+# DEMO_CONFIG. It carries the social credentials once they are filled, so it
+# stays out of the tree; server/local.yaml.example is the tracked template.
+/server/local.yaml
+
 # The frontend's build outputs, which no checkout commits: the installed
 # dependency tree and the built bundle. Everything a build writes under
 # server/dist is ignored, so building the frontend leaves the working tree

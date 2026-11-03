@@ -140,6 +140,44 @@ mail:
     password: "__SMTP_PASSWORD__"
     from: "__SMTP_FROM__"
 
+# The SMS sending family. The carrier is the log carrier: this deployment holds
+# no vendor account, so every message -- a verification code included -- is
+# written to the process output, where `flyctl logs` reads it. The registry
+# declares the templates the authentication module sends under: the three
+# required names (login, second factor, enrollment) and the optional reset one,
+# whose presence is what publishes the SMS channel of the anonymous password
+# reset. Each code is a label the log carrier writes, not a vendor identifier,
+# and both interface languages are declared so a flow sends under the language
+# the browser announced.
+sms:
+  carrier: log
+  registry:
+    templates:
+      authn.code.login:
+        kind: verification
+        params: ["code", "ttl_minutes"]
+        codes:
+          en-US: "demo-login"
+          zh-CN: "demo-login-zh"
+      authn.code.mfa:
+        kind: verification
+        params: ["code", "ttl_minutes"]
+        codes:
+          en-US: "demo-mfa"
+          zh-CN: "demo-mfa-zh"
+      authn.code.enroll:
+        kind: verification
+        params: ["code", "ttl_minutes"]
+        codes:
+          en-US: "demo-enroll"
+          zh-CN: "demo-enroll-zh"
+      authn.code.reset:
+        kind: verification
+        params: ["code", "ttl_minutes"]
+        codes:
+          en-US: "demo-reset"
+          zh-CN: "demo-reset-zh"
+
 # The host's own personal-tenant policy. On for this deployment: self-service
 # registration is open, so an account that proves its email address gets a
 # personal tenant instead of landing in an area it cannot enter. The seeded
@@ -179,18 +217,26 @@ seed:
     # is usable immediately and proves its email address afterwards.
     - key: "authn.account.password-signup"
       value: "open"
-    # A first social login opens an account too. The account carries only the
-    # provider's display name: the address the provider reports is not written,
-    # and an address that matches one an account already holds answers
+    # A first social or phone login opens an account too. The account carries
+    # only the provider's display name: the address the provider reports is not
+    # written, and an address that matches one an account already holds answers
     # link-required instead of entering or opening an account. With this switch
     # closed, only an account that already holds the binding could sign in with
-    # Google or GitHub.
+    # Google, GitHub or a phone number.
     - key: "authn.account.signup"
       value: "open"
-    # The anonymous password reset is open, through the email channel this
+    # The E.164 prefixes the SMS method may send to. The declared default is the
+    # empty table, which admits no number at all, so this list is what makes the
+    # phone sign-in reachable; a number outside it is refused with
+    # unsupported-region. Add a prefix before offering the deployment to a
+    # region it does not name.
+    - key: "authn.sms.allowed-prefixes"
+      value: '["+1","+86"]'
+    # The anonymous password reset is open on both channels: the email one this
     # deployment's mail carrier delivers (authn.emailcode provides the reset
-    # seam beside the verification one). The image assembles no SMS family, so
-    # the reset page offers email alone. The declared default is closed.
+    # seam beside the verification one), and the SMS one the family above
+    # carries through the declared authn.code.reset template. The declared
+    # default is closed.
     - key: "authn.login.password-reset"
       value: "open"
 

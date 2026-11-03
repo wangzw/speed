@@ -4,6 +4,7 @@ package main
 // the capabilities read.
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn/humanverify"
@@ -156,5 +157,63 @@ func TestTheDeployTemplateCarriesTheHumanVerificationSection(t *testing.T) {
 	if got != want {
 		t.Errorf("%s resolved to %+v, want %+v; the template's placeholders are not where the module "+
 			"reads them", humanverify.ConfigNamespace, got, want)
+	}
+}
+
+// smsSection is the part of the deployment template's SMS section these cases
+// read. The template entry names every member of the module's template spec,
+// because pkg/config decodes a container element whole and refuses a member no
+// field answers for.
+type smsSection struct {
+	Carrier  string `config:"carrier"`
+	Registry struct {
+		Templates map[string]struct {
+			Kind       string            `config:"kind"`
+			Params     []string          `config:"params"`
+			Codes      map[string]string `config:"codes"`
+			Bodies     map[string]string `config:"bodies"`
+			Attributes map[string]string `config:"attributes"`
+		} `config:"templates"`
+	} `config:"registry"`
+}
+
+// TestTheDeployTemplateCarriesTheSMSCarrier holds the deployment template to
+// the SMS family the phone sign-in runs on: the log carrier, so no vendor
+// account is needed, and every template the authentication module requires
+// plus the optional reset one. The template is rendered the way
+// deploy/entrypoint.sh renders it and loaded through the same pkg/config entry
+// point the binary uses, so a deployment that runs the template carries the
+// carrier and templates this case asserts.
+func TestTheDeployTemplateCarriesTheSMSCarrier(t *testing.T) {
+	locator := writeConfigFile(t, renderDeployTemplate(t))
+	var got smsSection
+	readEffective(t, "deploy/fly.yaml.tmpl", locator, "sms", &got)
+
+	if got.Carrier != "log" {
+		t.Errorf("sms.carrier = %q, want the log carrier", got.Carrier)
+	}
+	for _, name := range []string{
+		"authn.code.login",
+		"authn.code.mfa",
+		"authn.code.enroll",
+		"authn.code.reset",
+	} {
+		spec, ok := got.Registry.Templates[name]
+		if !ok {
+			t.Errorf("sms.registry.templates carries no %q; the authentication module refuses a "+
+				"registry that leaves a required template uncovered", name)
+			continue
+		}
+		if spec.Kind != "verification" {
+			t.Errorf("sms.registry.templates[%q].kind = %q, want verification", name, spec.Kind)
+		}
+		if want := []string{"code", "ttl_minutes"}; !slices.Equal(spec.Params, want) {
+			t.Errorf("sms.registry.templates[%q].params = %v, want %v", name, spec.Params, want)
+		}
+		for _, language := range []string{"en-US", "zh-CN"} {
+			if spec.Codes[language] == "" {
+				t.Errorf("sms.registry.templates[%q] carries no %s code", name, language)
+			}
+		}
 	}
 }
