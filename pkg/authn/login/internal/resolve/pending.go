@@ -83,19 +83,18 @@ func (p Pending) Clone() Pending {
 }
 
 // Create opens the account a pending signup carries, with the username its
-// person chose, the password a social first login also asked for, and the display
-// name a phone first login may have carried. It is the pending step's only write:
-// the account and its username identifier are written in one transaction, and the
-// binding, the proved phone or the membership is written beside it by the same
-// rules the immediate first-login paths follow.
+// person chose, the password a social or phone first login also asked for, and
+// the display name a phone first login may have carried. It is the pending
+// step's only write: the account and its username identifier are written in one
+// transaction, and the binding, the proved phone or the membership is written
+// beside it by the same rules the immediate first-login paths follow.
 //
 // A username that is empty or does not normalize is authn.ErrInvalidIdentifier,
 // one the system keeps for itself is authn.ErrUsernameReserved, and one another
 // account holds is authn.ErrAccountExists. A password the account store's policy
-// refuses, including the absence of the one a social first login must carry, is
-// authn.ErrPasswordPolicy. None of them writes anything. An absent display name
-// is allowed; the account store names the account after the username in its
-// place.
+// refuses, including the absence of the one a social or phone first login must
+// carry, is authn.ErrPasswordPolicy. None of them writes anything. An absent
+// display name is allowed; the account is named after the username in its place.
 func (r *Resolver) Create(ctx context.Context, p Pending, username, password, name string) (Result, error) {
 	switch p.Source {
 	case SourceSocial, SourcePhone, SourceEnterprise:
@@ -119,7 +118,7 @@ func (r *Resolver) Create(ctx context.Context, p Pending, username, password, na
 	}
 	switch p.Source {
 	case SourcePhone:
-		return r.createPhone(ctx, p, username, name)
+		return r.createPhone(ctx, p, username, password, name)
 	case SourceEnterprise:
 		return r.createEnterprise(ctx, p, username)
 	}
@@ -135,7 +134,7 @@ func pendingSocial(ext *authn.External, aliases []authn.ExternalLink, email stri
 		Via:         viaSignup,
 		External:    externalOf(ext),
 		Aliases:     cloneLinks(aliases),
-		DisplayName: displayName(ext.DisplayName),
+		DisplayName: displayNameOrDefault(ext.DisplayName, ""),
 		Attributes:  cloneAttributes(ext.Attributes),
 	}
 	if email != "" {
@@ -165,7 +164,7 @@ func pendingEnterprise(prov authn.SSOProvider, ext *authn.External, aliases []au
 		Aliases:     cloneLinks(aliases),
 		Provider:    prov.ID,
 		Tenant:      prov.Tenant,
-		DisplayName: displayName(ext.DisplayName),
+		DisplayName: displayNameOrDefault(ext.DisplayName, ""),
 		Attributes:  cloneAttributes(ext.Attributes),
 	}}
 }

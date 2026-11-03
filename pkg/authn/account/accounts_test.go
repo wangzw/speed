@@ -213,20 +213,33 @@ func TestCreateRefusesWhatItAdmitsNot(t *testing.T) {
 	}
 }
 
-// TestASignupAccountNeedsAPassword holds the guard a social first login leans
-// on directly on the account module: an account opened through signup with no
-// phone number and no password is refused, because the provider alone would be
-// its only way in, while the same creation carrying a password opens it.
-func TestASignupAccountNeedsAPassword(t *testing.T) {
+// TestASignupAccountNeedsAPasswordWhicheverPathOpensIt holds the guard every
+// signup creation leans on directly on the account module: an account opened
+// through signup is refused without a password even when it carries the phone an
+// SMS first login proved, because the password is what the signup step now
+// collects, while a just-in-time creation, which is not a signup, may open an
+// account without one.
+func TestASignupAccountNeedsAPasswordWhicheverPathOpensIt(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
-		if _, err := h.p.Create(ctx, authn.CreateAccount{
-			Kind: authn.KindUser, Username: "newbie", Via: "signup",
-		}); !errors.Is(err, authn.ErrPasswordPolicy) {
-			t.Fatalf("a signup account with no phone and no password gave %v, want ErrPasswordPolicy", err)
-		}
-		if n := h.count(tableAccounts, ""); n != 0 {
-			t.Fatalf("the refused signup left %d account row(s)", n)
+		phone := authn.Verification{Via: authn.VerifiedViaSMSCode}
+		for name, in := range map[string]authn.CreateAccount{
+			"social signup without a password": {
+				Kind: authn.KindUser, Username: "newbie", Via: "signup",
+			},
+			"phone signup without a password": {
+				Kind: authn.KindUser, Username: "newbie", Phone: "+8613800000009",
+				PhoneVerifiedVia: phone, Via: "signup",
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				if _, err := h.p.Create(ctx, in); !errors.Is(err, authn.ErrPasswordPolicy) {
+					t.Fatalf("a signup account with no password gave %v, want ErrPasswordPolicy", err)
+				}
+				if n := h.count(tableAccounts, ""); n != 0 {
+					t.Fatalf("the refused signup left %d account row(s)", n)
+				}
+			})
 		}
 
 		opened, err := h.p.Create(ctx, authn.CreateAccount{
@@ -237,6 +250,16 @@ func TestASignupAccountNeedsAPassword(t *testing.T) {
 		}
 		if id, lerr := h.p.Lookup(ctx, authn.IdentifierUsername, "newbie"); lerr != nil || id != opened.ID {
 			t.Errorf("the username reads back as %q, %v, want %q", id, lerr, opened.ID)
+		}
+
+		jit, err := h.p.Create(ctx, authn.CreateAccount{
+			Kind: authn.KindUser, Username: "jitperson", Via: "jit",
+		})
+		if err != nil {
+			t.Fatalf("a just-in-time account without a password gave %v, want an account", err)
+		}
+		if id, lerr := h.p.Lookup(ctx, authn.IdentifierUsername, "jitperson"); lerr != nil || id != jit.ID {
+			t.Errorf("the just-in-time username reads back as %q, %v, want %q", id, lerr, jit.ID)
 		}
 	})
 }

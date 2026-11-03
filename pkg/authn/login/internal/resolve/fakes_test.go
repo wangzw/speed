@@ -551,14 +551,15 @@ func newEnv(t *testing.T, opts ...option) *env {
 // account with, standing in for the username the pending-signup step collects.
 const testUsername = "ann"
 
-// testPassword is the password the social first login of these cases opens its
-// account with, standing in for the one its step collects.
+// testPassword is the password the social and phone first logins of these cases
+// open their accounts with, standing in for the one their step collects.
 const testPassword = "correct horse battery staple"
 
 // passwordOf is the password the engine hands Create for a pending signup: the
-// social step's own, and none for the paths that take none.
+// social and phone steps' own, and none for the enterprise path, which takes
+// none.
 func passwordOf(p Pending) string {
-	if p.Source == SourceSocial {
+	if p.Source == SourceSocial || p.Source == SourcePhone {
 		return testPassword
 	}
 	return ""

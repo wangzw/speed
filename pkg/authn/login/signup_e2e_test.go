@@ -45,12 +45,14 @@ func (h *harness) answerUsername(seq int, username string) reply {
 	})
 }
 
-// answerUsernameAndDisplayName sends one username answer carrying the optional
-// display name a phone signup asks for beside it.
-func (h *harness) answerUsernameAndDisplayName(seq int, username, displayName string) reply {
+// answerPhoneSignup sends one phone signup answer carrying the username, the
+// optional display name and the password the step asks for.
+func (h *harness) answerPhoneSignup(seq int, username, displayName, password string) reply {
 	h.t.Helper()
 	return h.post("/api/v1/auth/flows/answer", map[string]any{
-		"seq": seq, "step": "answer", "input": map[string]string{"username": username, "display_name": displayName},
+		"seq": seq, "step": "answer", "input": map[string]string{
+			"username": username, "display_name": displayName, "password": password,
+		},
 	})
 }
 
@@ -238,7 +240,7 @@ func TestASMSFirstLoginStopsAtTheUsernameStepAndItsPhoneSignsIn(t *testing.T) {
 			t.Error("the phone is held before the username arrived")
 		}
 
-		opened := h.answerUsername(seq, "phoneowner")
+		opened := h.answerPhoneSignup(seq, "phoneowner", "", phonePassword)
 		if opened.status != http.StatusOK {
 			t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
 		}
@@ -463,6 +465,10 @@ func jitRegisterModule() core.Module {
 // socialPassword is the password the social first-login cases open an account
 // with: long enough for the policy's default length and unlike their usernames.
 const socialPassword = "ann-password-1"
+
+// phonePassword is the password the phone first-login cases open an account
+// with: long enough for the policy's default length and unlike their usernames.
+const phonePassword = "phone-password-1"
 
 // unverifiedSocialMethod is a stand-in social provider whose declared address
 // the provider says it did not verify.
@@ -779,11 +785,90 @@ func TestASocialSignupWithAPasswordAgainstThePolicyOpensNothing(t *testing.T) {
 	})
 }
 
-// TestTheSMSAndEnterpriseSignupStepsTakeNoPassword holds that the password
-// belongs to the social step only: neither the SMS nor the enterprise step asks
-// for one, the SMS step asks for an optional display name beside the username,
-// and neither account takes the provider's declared address.
-func TestTheSMSAndEnterpriseSignupStepsTakeNoPassword(t *testing.T) {
+// TestAPhoneSignupWithoutAPasswordOpensNothing holds that the password is part
+// of the phone step too: a submission carrying the username and a display name
+// but no password is 400 bad-request, opens no account and leaves the flow at
+// the step, and the same step number answers again with a password.
+func TestAPhoneSignupWithoutAPasswordOpensNothing(t *testing.T) {
+	const number = "+8613800000002"
+	assembleWith(t, []core.Module{smsSignupModule()}, func(h *harness) {
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+		start := h.post("/api/v1/auth/flows", map[string]any{"method": "sms-signup"})
+		if start.status != http.StatusOK {
+			t.Fatalf("POST flows answered %d: %s", start.status, start.body)
+		}
+		_, seq, _ := signupStep(t, start)
+		refused := h.post("/api/v1/auth/flows/answer", map[string]any{
+			"seq": seq, "step": "answer", "input": map[string]string{
+				"username": "phoneowner", "display_name": "Phone Person",
+			},
+		})
+		if refused.status != http.StatusBadRequest || refused.json(t)["type"] != "urn:speed:authn:bad-request" {
+			t.Fatalf("a username without a password answered %d %s, want 400 bad-request", refused.status, refused.body)
+		}
+		if _, err := h.accounts.Lookup(h.ctx, authn.IdentifierUsername, "phoneowner"); err == nil {
+			t.Error("a username without a password opened an account")
+		}
+		if _, err := h.accounts.Lookup(h.ctx, authn.IdentifierPhone, number); err == nil {
+			t.Error("a username without a password wrote the proved phone")
+		}
+
+		state, seq2, _ := signupStep(t, h.get("/api/v1/auth/flows/current"))
+		if state != "signup" || seq2 != seq {
+			t.Fatalf("the flow after the refusal = %s at %d, want signup at %d", state, seq2, seq)
+		}
+
+		if opened := h.answerPhoneSignup(seq, "phoneowner", "Phone Person", phonePassword); opened.status != http.StatusOK {
+			t.Fatalf("the retry with a password answered %d: %s", opened.status, opened.body)
+		}
+	})
+}
+
+// TestAPhoneSignupWithAPasswordAgainstThePolicyOpensNothing holds that the
+// account store's policy governs the password the phone step takes: a short one
+// is 400 bad-request, opens no account and leaves the flow retryable.
+func TestAPhoneSignupWithAPasswordAgainstThePolicyOpensNothing(t *testing.T) {
+	const number = "+8613800000002"
+	assembleWith(t, []core.Module{smsSignupModule()}, func(h *harness) {
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+		start := h.post("/api/v1/auth/flows", map[string]any{"method": "sms-signup"})
+		if start.status != http.StatusOK {
+			t.Fatalf("POST flows answered %d: %s", start.status, start.body)
+		}
+		_, seq, _ := signupStep(t, start)
+		refused := h.answerPhoneSignup(seq, "newbie", "", "short")
+		if refused.status != http.StatusBadRequest || refused.json(t)["type"] != "urn:speed:authn:bad-request" {
+			t.Fatalf("a password against the policy answered %d %s, want 400 bad-request", refused.status, refused.body)
+		}
+		if _, err := h.accounts.Lookup(h.ctx, authn.IdentifierUsername, "newbie"); err == nil {
+			t.Error("a password against the policy opened an account")
+		}
+		if _, err := h.accounts.Lookup(h.ctx, authn.IdentifierPhone, number); err == nil {
+			t.Error("a password against the policy wrote the proved phone")
+		}
+
+		state, seq2, _ := signupStep(t, h.get("/api/v1/auth/flows/current"))
+		if state != "signup" || seq2 != seq {
+			t.Fatalf("the flow after the refusal = %s at %d, want signup at %d", state, seq2, seq)
+		}
+
+		if opened := h.answerPhoneSignup(seq, "newbie", "", phonePassword); opened.status != http.StatusOK {
+			t.Fatalf("the retry with a legal password answered %d: %s", opened.status, opened.body)
+		}
+		if done := h.loginFlow("newbie", phonePassword); done.status != http.StatusOK {
+			t.Fatalf("a password login with the collected password answered %d: %s", done.status, done.body)
+		}
+	})
+}
+
+// TestTheSMSAndEnterpriseSignupStepsAskForTheirOwnFields holds that each first
+// login asks for the fields its account needs: the SMS step asks for the
+// username, an optional display name and a secret password, the enterprise step
+// asks for the username alone, and neither account takes the provider's declared
+// address.
+func TestTheSMSAndEnterpriseSignupStepsAskForTheirOwnFields(t *testing.T) {
 	t.Run("sms", func(t *testing.T) {
 		const number = "+8613800000002"
 		assembleWith(t, []core.Module{smsSignupModule()}, func(h *harness) {
@@ -797,10 +882,10 @@ func TestTheSMSAndEnterpriseSignupStepsTakeNoPassword(t *testing.T) {
 			if state != "signup" || next["kind"] != "challenge" {
 				t.Fatalf("the first SMS login = %s %v, want the signup challenge", state, next)
 			}
-			checkSignupFields(t, next, "username", "display_name")
+			checkSignupFields(t, next, "username", "display_name", "password")
 			checkNoProvidedIdentity(t, next)
 
-			if opened := h.answerUsername(seq, "phoneowner"); opened.status != http.StatusOK {
+			if opened := h.answerPhoneSignup(seq, "phoneowner", "", phonePassword); opened.status != http.StatusOK {
 				t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
 			}
 			id, err := h.accounts.Lookup(h.ctx, authn.IdentifierPhone, number)
@@ -849,8 +934,8 @@ func TestTheSMSAndEnterpriseSignupStepsTakeNoPassword(t *testing.T) {
 }
 
 // TestAPhoneSignupWithoutADisplayNameTakesTheUsername holds the fallback of a
-// just-in-time signup whose step carried no display name: the phone's account is
-// named after the username its person chose.
+// phone signup whose step carried no display name: the account is named after
+// the username its person chose.
 func TestAPhoneSignupWithoutADisplayNameTakesTheUsername(t *testing.T) {
 	const number = "+8613800000002"
 	assembleWith(t, []core.Module{smsSignupModule()}, func(h *harness) {
@@ -861,9 +946,9 @@ func TestAPhoneSignupWithoutADisplayNameTakesTheUsername(t *testing.T) {
 			t.Fatalf("POST flows answered %d: %s", start.status, start.body)
 		}
 		_, seq, next := signupStep(t, start)
-		checkSignupFields(t, next, "username", "display_name")
+		checkSignupFields(t, next, "username", "display_name", "password")
 
-		if opened := h.answerUsername(seq, "phoneowner"); opened.status != http.StatusOK {
+		if opened := h.answerPhoneSignup(seq, "phoneowner", "", phonePassword); opened.status != http.StatusOK {
 			t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
 		}
 		account := h.checkPhoneSignupAccount(t, number)
@@ -885,9 +970,9 @@ func TestAPhoneSignupTakesTheDisplayNameItIsGiven(t *testing.T) {
 			t.Fatalf("POST flows answered %d: %s", start.status, start.body)
 		}
 		_, seq, next := signupStep(t, start)
-		checkSignupFields(t, next, "username", "display_name")
+		checkSignupFields(t, next, "username", "display_name", "password")
 
-		if opened := h.answerUsernameAndDisplayName(seq, "phonenamed", "Phone Person"); opened.status != http.StatusOK {
+		if opened := h.answerPhoneSignup(seq, "phonenamed", "Phone Person", phonePassword); opened.status != http.StatusOK {
 			t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
 		}
 		account := h.checkPhoneSignupAccount(t, number)

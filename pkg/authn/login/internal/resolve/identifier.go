@@ -74,20 +74,21 @@ func (r *Resolver) phoneChosen(ctx context.Context, id authn.AccountID, value st
 	}), nil
 }
 
-// createPhone opens the account a pending phone signup describes. The phone's
-// uniqueness is the arbiter of a race: the login that lost it reads the account
-// that won, whose number is already chosen as a sign-in way because that is how
-// it was written. The display name is the one the signup step carried, made fit
-// to store; an absent one leaves the account store to name the account after the
-// username.
-func (r *Resolver) createPhone(ctx context.Context, p Pending, username, name string) (Result, error) {
+// createPhone opens the account a pending phone signup describes, with the
+// password the signup step collected. The phone's uniqueness is the arbiter of a
+// race: the login that lost it reads the account that won, whose number is
+// already chosen as a sign-in way because that is how it was written. The display
+// name is the one the signup step carried; the common provision layer makes it
+// fit to store and falls back to the username when it was left empty.
+func (r *Resolver) createPhone(ctx context.Context, p Pending, username, password, name string) (Result, error) {
 	in, err := r.provision(ctx, authn.CreateAccount{
 		Kind:                authn.KindUser,
-		DisplayName:         displayName(name),
+		DisplayName:         name,
 		Username:            username,
 		UsernameVerifiedVia: authn.Verification{Via: authn.VerifiedViaSelf},
 		Phone:               p.Phone,
 		PhoneVerifiedVia:    authn.Verification{Via: authn.VerifiedViaSMSCode},
+		Password:            password,
 		Via:                 p.Via,
 	}, p.Via)
 	if err != nil {

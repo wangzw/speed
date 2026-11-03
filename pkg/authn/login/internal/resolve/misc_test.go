@@ -109,18 +109,21 @@ func TestACreateFailureIsPassedOn(t *testing.T) {
 
 func TestDisplayNameIsCutToHundredCharactersNotBytes(t *testing.T) {
 	long := strings.Repeat("名", 150)
-	got := displayName(long)
+	got := displayNameOrDefault(long, "")
 	if utf8.RuneCountInString(got) != 100 || !utf8.ValidString(got) {
 		t.Errorf("got %d characters, valid=%v, want 100 whole characters", utf8.RuneCountInString(got), utf8.ValidString(got))
 	}
-	if got := displayName(strings.Repeat("a", 100)); len(got) != 100 {
+	if got := displayNameOrDefault(strings.Repeat("a", 100), ""); len(got) != 100 {
 		t.Errorf("a name of exactly 100 characters came out %d long", len(got))
 	}
-	if got := displayName("  Ann\x00 \u202eLee\n "); strings.ContainsAny(got, "\x00\n") || strings.HasPrefix(got, " ") {
+	if got := displayNameOrDefault("  Ann\x00 \u202eLee\n ", ""); strings.ContainsAny(got, "\x00\n") || strings.HasPrefix(got, " ") {
 		t.Errorf("got %q, want control characters and the ends trimmed", got)
 	}
-	if got := displayName("a\xffb"); got != "ab" {
-		t.Errorf("displayName of an invalid byte = %q, want %q: the byte is dropped, not replaced", got, "ab")
+	if got := displayNameOrDefault("a\xffb", ""); got != "ab" {
+		t.Errorf("displayNameOrDefault of an invalid byte = %q, want %q: the byte is dropped, not replaced", got, "ab")
+	}
+	if got := displayNameOrDefault(" \x00\n ", "ann"); got != "ann" {
+		t.Errorf("displayNameOrDefault of a name that empties out = %q, want the username %q", got, "ann")
 	}
 }
 

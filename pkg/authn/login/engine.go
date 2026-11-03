@@ -364,24 +364,29 @@ func (r *routes) beginSignup(c *call, token, echo string, rec record, raw []byte
 // legal, free username opens the account the pending facts describe and the flow
 // carries on to the policy; a username that cannot be used is 400 bad-request,
 // one another account holds is 409 username-taken, and a password the policy
-// refuses, or the absence of one at the social step, is 400 bad-request. Each of
-// those refusals leaves the flow at signup to be retried, and none of them writes
-// an account. An address the pending signup declared verified that another
-// account took between the resolution and the write is 401 link-required, naming
-// the masked address: it is the refusal an address that was registered all along
-// gives, and the flow is spent.
+// refuses, or the absence of one at the social or phone step, is 400
+// bad-request. Each of those refusals leaves the flow at signup to be retried,
+// and none of them writes an account. An address the pending signup declared
+// verified that another account took between the resolution and the write is 401
+// link-required, naming the masked address: it is the refusal an address that was
+// registered all along gives, and the flow is spent.
 func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw []byte, fields map[string]string) {
 	if rec.Pending == nil || rec.Proof == nil {
 		c.unauthorized(mount.CodeFlowInvalid)
 		return
 	}
-	// The password belongs to the social step alone: no other first login takes
-	// one, so whatever a caller sends there is not read.
-	password := ""
-	if rec.Pending.Source == resolve.SourceSocial {
+	// Each source reads the fields its step asked for: a social first login
+	// carries the password, a phone first login carries the password and the
+	// optional display name, and an enterprise one neither.
+	var password, displayName string
+	switch rec.Pending.Source {
+	case resolve.SourceSocial:
 		password = fields[fieldPassword]
+	case resolve.SourcePhone:
+		password = fields[fieldPassword]
+		displayName = fields[fieldDisplayName]
 	}
-	res, err := r.resolver.Create(c.ctx, *rec.Pending, fields[fieldUsername], password, fields[fieldDisplayName])
+	res, err := r.resolver.Create(c.ctx, *rec.Pending, fields[fieldUsername], password, displayName)
 	switch {
 	case errors.Is(err, authn.ErrUsernameReserved):
 		rec.Answers++

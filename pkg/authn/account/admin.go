@@ -378,12 +378,12 @@ func usernameRequired(kind authn.AccountKind) bool {
 // is the empty string when the account has none.
 func (p *product) newCredential(ctx context.Context, in authn.CreateAccount, plan creation) (string, error) {
 	if in.Password == "" && in.PasswordHash == "" {
-		// A social first login opens its account with a password its person
-		// chose; without one the account would be reachable through the provider
-		// alone. The SMS first login, the only other signup path, is not asked
-		// for one and is told apart by the phone it proved.
-		if plan.via == bySignup && in.Phone == "" {
-			return "", fmt.Errorf("%w: a social first login opens its account with a password", authn.ErrPasswordPolicy)
+		// Every signup opens its account with a password its person chose,
+		// whether the provider or the proved phone is how they got there;
+		// without one that would be the account's only way in. A just-in-time,
+		// administrative or imported creation may have none.
+		if plan.via == bySignup {
+			return "", fmt.Errorf("%w: a signup opens its account with a password", authn.ErrPasswordPolicy)
 		}
 		return "", nil
 	}

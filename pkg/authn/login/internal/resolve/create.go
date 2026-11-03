@@ -21,22 +21,26 @@ const (
 	viaSignup = "signup"
 )
 
-// displayName is a provider's name for a person made fit to store: invalid UTF-8
-// and control characters dropped, the ends trimmed, and cut to displayNameMax
-// characters. It decides nothing.
-func displayName(s string) string {
-	s = strings.ToValidUTF8(s, "")
-	s = strings.Map(func(r rune) rune {
+// displayNameOrDefault is a name made fit to store: invalid UTF-8 and control
+// characters dropped, the ends trimmed, and cut to displayNameMax characters. A
+// name that empties out falls back to the username the creation carries. It
+// decides nothing.
+func displayNameOrDefault(name, username string) string {
+	name = strings.ToValidUTF8(name, "")
+	name = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return -1
 		}
 		return r
-	}, s)
-	s = strings.TrimSpace(s)
-	if runes := []rune(s); len(runes) > displayNameMax {
-		s = string(runes[:displayNameMax])
+	}, name)
+	name = strings.TrimSpace(name)
+	if runes := []rune(name); len(runes) > displayNameMax {
+		name = string(runes[:displayNameMax])
 	}
-	return s
+	if name == "" {
+		return username
+	}
+	return name
 }
 
 // provision gives the host's Provisioner the account that is about to be created
@@ -44,20 +48,22 @@ func displayName(s string) string {
 // returned is dropped: the account is created from what the resolver decided.
 // A refusal is authn.ErrProvisionRefused; any other failure is a fault of the
 // seam, which refuses the login in the same way and reads as an unavailable
-// dependency.
+// dependency. The display name is made fit to store after the hook has had its
+// say, whichever source decided the account, and falls back to the username when
+// nothing is left.
 func (r *Resolver) provision(ctx context.Context, in authn.CreateAccount, via string) (authn.CreateAccount, error) {
-	if r.provisioner == nil {
-		return in, nil
+	if r.provisioner != nil {
+		out, err := r.provisioner.Provision(ctx, in.Clone(), via)
+		switch {
+		case errors.Is(err, authn.ErrProvisionRefused):
+			return in, fmt.Errorf("resolve: %w", authn.ErrProvisionRefused)
+		case err != nil:
+			return in, &seamFault{seam: "the provisioner", cause: err}
+		}
+		in.DisplayName = out.DisplayName
+		in.Attributes = maps.Clone(out.Attributes)
 	}
-	out, err := r.provisioner.Provision(ctx, in.Clone(), via)
-	switch {
-	case errors.Is(err, authn.ErrProvisionRefused):
-		return in, fmt.Errorf("resolve: %w", authn.ErrProvisionRefused)
-	case err != nil:
-		return in, &seamFault{seam: "the provisioner", cause: err}
-	}
-	in.DisplayName = displayName(out.DisplayName)
-	in.Attributes = maps.Clone(out.Attributes)
+	in.DisplayName = displayNameOrDefault(in.DisplayName, in.Username)
 	return in, nil
 }
 

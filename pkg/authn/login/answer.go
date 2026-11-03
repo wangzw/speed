@@ -19,9 +19,9 @@ const fieldUsername = "username"
 // enterprise account takes its display name from the provider.
 const fieldDisplayName = "display_name"
 
-// fieldPassword is the input key a social first login carries beside the
-// username. It is the password the account is opened with, and no other first
-// login reads it.
+// fieldPassword is the input key a social or phone first login carries beside
+// the username. It is the password the account is opened with, and enterprise
+// just-in-time first login alone neither asks for one nor reads it.
 const fieldPassword = "password"
 
 // fieldFactor and fieldCode are the input keys a second-factor step carries.
