@@ -5,18 +5,31 @@ may do a thing on a resource. The interface package a consumer of a permission
 imports; `pkg/authz/policy` — the module that owns the policy tables and their
 migrations, the thin store the engine reads and writes through, the permission
 catalog, the engine snapshot the decisions read, the manager that reads and
-writes the policy data, and the account lifecycle cleanup — `pkg/authz/guard`,
-the module that implements the authentication capability's decision seam,
-`pkg/authz/self`, the module that answers the caller's own permissions, and
-`pkg/authz/authztest`, the fixtures a test of this directory drives. The thin
-adapter the engine stores its policy through, the snapshot holder, and the one
-permission translation live under `pkg/authz/internal/`, which only this
+writes the policy data, the host's seeding and reconciliation surfaces, and the
+account lifecycle cleanup — `pkg/authz/guard`, the module that implements the
+authentication capability's decision seam, `pkg/authz/admin`, the platform
+management surface, `pkg/authz/tenantadmin`, the tenant-scoped management
+surface, `pkg/authz/self`, the module that answers the caller's own permissions,
+and `pkg/authz/authztest`, the fixtures a test of this directory drives. The
+thin adapter the engine stores its policy through, the snapshot holder, and the
+one permission translation live under `pkg/authz/internal/`, which only this
 directory can import.
 
-The management surface's routes are this directory's third module,
-`authz.admin`: it mounts them under `/api/v1/system/*` and delivers nothing of
-its own. `authz.self` mounts the caller's permission read under
+The platform management surface is `authz.admin`: it mounts its routes under
+`/api/v1/system/*` and delivers nothing of its own. The tenant management surface
+is `authz.tenantadmin`: it mounts its routes under `/api/v1/tenants/{tenant}/*`,
+decides in the tenant's own policy domain, and delivers nothing of its own.
+`authz.self` mounts the caller's permission read under
 `/api/v1/authz/me/permissions` and delivers nothing of its own either.
+
+The permission set has two readings. `Catalog.Declared` is every permission any
+registered module declares. `Catalog.TenantGoverned` is the subset a tenant
+administrator may hold and grant: a permission with a tenant-scoped endpoint,
+defined by the platform as a closed set. A module marks its own governed
+permissions in `PermissionSpec.TenantGoverned`, which must be a subset of
+`PermissionSpec.Permissions`. `platform-admin` is granted `Declared`; each
+domain's `tenant-admin` is granted `TenantGoverned`. `Governed` answers whether
+one declared permission is in the governed set.
 
 The API is the package's godoc. Read the capability interfaces' comments
 before writing a consumer.
@@ -40,12 +53,12 @@ which takes no lock.
   available set of every binary that touches any of them and occupy a module
   name.
 - **`pkg/authz/policy` registers `authz.policy`; `pkg/authz/guard` registers
-  `authz.guard`; `pkg/authz/admin` registers `authz.admin`; `pkg/authz/self`
-  registers `authz.self`.** Each registering package exports its own
-  `ModuleName`, and that same value is its configuration and settings namespace;
-  every segment of the name is a lower-case letter, a digit or a dash. Each of
-  them carries its own `AGENTS.md` beside it, stating that package's
-  boundaries.
+  `authz.guard`; `pkg/authz/admin` registers `authz.admin`; `pkg/authz/tenantadmin`
+  registers `authz.tenantadmin`; `pkg/authz/self` registers `authz.self`.** Each
+  registering package exports its own `ModuleName`, and that same value is its
+  configuration namespace, its static feature name and its OpenAPI tag; every
+  segment of the name is a lower-case letter, a digit or a dash. Each of them
+  carries its own `AGENTS.md` beside it, stating that package's boundaries.
 - **`pkg/authz/internal/persist`, `pkg/authz/internal/policy` and
   `pkg/authz/authztest` register no module.** The two `internal` packages are
   the directory's library units and `authztest` is a test fixture.
@@ -54,11 +67,11 @@ which takes no lock.
   may be a leaf of another's interior; `authz` itself is no module's leaf name.
 - **What the namespaces hold today.** `authz.policy` declares the configuration
   items `authz.policy.load-timeout` and `authz.policy.refresh-interval`. The
-  enforcement module's namespace is
-  `authz.guard`; it declares no input item yet, and the endpoint list and the
-  undeclared-route default arrive with its middleware. `authz.self` declares the
-  input item `authz.self.endpoints`, the endpoints the permission read is mounted
-  on.
+  enforcement module's namespace is `authz.guard`; it declares the input items
+  `authz.guard.endpoints` and `authz.guard.undeclared`. `authz.admin` declares
+  `authz.admin.endpoints`; `authz.tenantadmin` declares
+  `authz.tenantadmin.endpoints`; `authz.self` declares `authz.self.endpoints`.
+  Each endpoint list is required, names concrete endpoints and refuses `*`.
 
 ## Boundaries
 
@@ -95,23 +108,68 @@ which takes no lock.
   landed between its read and its write. A module that builds its own session
   around the adapter, or that writes policy rows without it, is the shape to
   reject.
-- **The seeding write is a capability of its own.** `Manager` refuses every
-  write on a builtin role; `Seeder` adds grants to one and never removes,
-  rewrites or deletes a grant. `authz.policy` delivers both exclusively, and
-  `authz.admin` takes up `Manager` alone — so the wall between the management
-  surface and a builtin role's grant set is the capability the module holds,
-  not a branch in a handler. A management route would reach `SeedGrants` only
-  if the module were given a `Seeder`, and its descriptor names none.
-- **The management surface's write guard is a host seam, not a capability.**
+- **The seeding writes are capabilities of their own.** `Manager` refuses every
+  write on a builtin role. `Seeder` adds grants to one and never removes,
+  rewrites or deletes a grant; it is the only add-only path. `Reconciler`
+  converges one domain's builtin `tenant-admin` to a target grant set and removes
+  only the grants the caller lists as retired: it adds what the target holds and
+  the role does not, removes the intersection of the role's grants with the
+  retired set, returns the counts, and leaves any other grant in place. It never
+  infers a removal from the catalog, so two replicas on different versions do not
+  delete each other's grants. Both run in one transaction, reload the snapshot
+  and publish `authz.policy.changed` after the commit, and are idempotent. The
+  host's seeding step writes the mandatory audit row before it calls
+  `ReconcileGrants`; an audit that cannot be written means no reconciliation.
+  `authz.policy` delivers both exclusively, and neither `authz.admin` nor
+  `authz.tenantadmin` takes either up — the wall between a management surface
+  and a builtin role's grant set is the capabilities the module holds, not a
+  branch in a handler. The host's seeding step is `Reconciler`'s only caller.
+- **The governed set is a second, closed reading of the catalog.** A module
+  declares the permissions it owns in `PermissionSpec.Permissions` and the
+  tenant-governed subset in `PermissionSpec.TenantGoverned`, which must be a
+  subset of the first or the startup fails with `ErrUnknownPermission`.
+  `Catalog.TenantGoverned` unions the registered modules' marks; `Governed`
+  answers for one permission. The platform's governed set is defined centrally
+  in `policy`'s declaration, so a missed mark there removes a permission from
+  every tenant administrator. `platform-admin` is granted `Declared`; each
+  domain's `tenant-admin` is granted `TenantGoverned`. The split permission codes
+  are `authz.role.read`/`authz.role.manage` and `settings.read`/`settings.write`
+  for the platform surface, and `authz.tenant.role.read`/
+  `authz.tenant.role.manage` and `settings.tenant.read`/`settings.tenant.write`
+  for the tenant surface; the two pairs translate to different (object, action)
+  pairs.
+- **The tenant management surface decides in the tenant domain and enforces the
+  anti-escalation rules itself.** `authz.tenantadmin` takes `Manager`, `Catalog`,
+  `SubjectPermissions`, `MembershipChecker`, `guard.Guard`, `audit.Audit` and
+  `authn.SignupVerification`, and only `Manager` of the policy writers. It
+  declares its routes open, reads the caller and the signup state itself, and
+  decides with `RequirePermissionIn` in the path tenant's domain. It refuses a
+  `platform-admin` role or grant, refuses to create, rewrite or delete the
+  `tenant-admin` role row and its grants, refuses a grant outside
+  `TenantGoverned` or outside the caller's own held set, refuses a binding to a
+  role carrying more than the caller holds, and refuses the platform domain and
+  a path tenant that differs from the resolved tenant. Binding `tenant-admin`
+  itself is allowed, subject to the subset, last-administrator and
+  no-self-removal rules. The host mounts a path-tenant-equals-resolved-tenant
+  middleware on every `ScopeTenants` route group; the module assumes it and does
+  not re-implement it.
+- **The management surfaces' write guards are host seams, not capabilities.**
   `authz.WriteGuard` and its closed `WriteOp` set live in the root package
-  because the host implements it and `authz.admin` takes it up. The module asks
-  it after a write's shape checks and before the mandatory audit and the
-  `Manager`; a denial is a 403 with the `protected` code — the domain is
-  protected, not the caller short a permission — and an unreadable answer a 503,
-  and the seam can only narrow what the `Manager` would do. Delivering none is a legal assembly:
-  the write routes then run without it. The policy module's own writes — the
-  seeding surface and the host's `Manager.ClearAccountBindings` account-deletion
-  path — do not consult it.
+  because the host implements it and both management surfaces take it up. A
+  module asks it after shape checks and anti-escalation and before the mandatory
+  audit and the `Manager`; a denial is a 403 with the `protected` code — the
+  domain or target is protected, not the caller short a permission — and an
+  unreadable answer a 503, and the seam can only narrow what the `Manager` would
+  do. Delivering none is a legal assembly: the write routes then run without it.
+  `WriteSettings` is a separate seam, in the root package, for the settings
+  write: it takes only the tenant, its denial is the settings surface's
+  `protected` code, and `WriteOp` keeps its closed three values.
+  `settings.tenantadmin` requires it, so an assembly that mounts the tenant
+  settings surface without one fails the startup; `WriteGuard` stays optional.
+  The policy
+  module's own writes — the seeding and reconciliation surfaces and the host's
+  `Manager.ClearAccountBindings` account-deletion path — do not consult either
+  seam.
 - **The translation is this capability's rows unioned with every module's
   declared rows, and a permission no row covers is refused.** `internal/translation`
   carries the rows for this capability's own permissions, and a module that
@@ -148,7 +206,11 @@ which takes no lock.
   registers, so a host module that declares a permission with no row is not held
   here; the gate's `verify` holds it at startup instead, failing the process once
   the Init window closes when a declared route names a permission the catalog or
-  the translation cannot express.
+  the translation cannot express. The same guard holds a module's
+  `TenantGoverned` to its own `Permissions`, and holds the platform codes —
+  `authz.role.*` and `settings.*` — and the tenant codes —
+  `authz.tenant.role.*` and `settings.tenant.*` — to their own translation
+  pairs.
 - **The sentinel set in the root package is closed over what this directory
   judges for itself.** A new class of failure is a decision, not an addition.
   Errors that pass through from an external library — Casbin's matcher errors,

@@ -1,6 +1,6 @@
 # starters/demo — 需求文档
 
-这套文档规定 starters/demo 对使用者的行为义务。demo 是本仓库可运行、可拷走的 SaaS 骨架，把 `pkg/` 的模块装配成一个可部署给终端用户的程序；文档从系统外部描述它必须做到什么，覆盖登录与注册、账户与安全、租户与成员、平台运营、通知、界面偏好、部署运维。
+这套文档规定 starters/demo 对使用者的行为义务。demo 是本仓库可运行、可拷走的 SaaS 骨架，把 `pkg/` 的模块装配成一个可部署给终端用户的程序；文档从系统外部描述它必须做到什么，覆盖登录与注册、账户与安全、租户与成员、租户管理、平台运营、通知、界面偏好、部署运维。
 
 ## 索引
 
@@ -25,6 +25,7 @@
 | 短信验证码重置口令 | [短信验证码重置口令](journeys/journey-password-reset-sms.md) |
 | 成员在租户里收发通知 | [成员在租户里收发通知](journeys/journey-member-workspace.md) |
 | 开通一个租户并让首位成员进入 | [开通一个租户并让首位成员进入](journeys/journey-operator-onboards-tenant.md) |
+| 租户管理员接管一个业务租户的日常管理 | [租户管理员接管一个业务租户的日常管理](journeys/journey-tenant-admin.md) |
 | 为租户接入企业身份提供方 | [为租户接入企业身份提供方](journeys/journey-enterprise-sso-onboarding.md) |
 | 租户要求单点登录时的重新认证 | [租户要求单点登录时的重新认证](journeys/journey-tenant-sso-required.md) |
 | 冒充一位成员排障后结束冒充 | [冒充一位成员排障后结束冒充](journeys/journey-impersonation-for-support.md) |
@@ -44,6 +45,7 @@
 | 账户安全 | [账户安全](features/prd-security.md) |
 | 账户自助 | [账户自助](features/prd-account.md) |
 | 组织与成员 | [组织与成员](features/prd-tenancy.md) |
+| 租户管理 | [租户管理](features/prd-tenant-admin.md) |
 | 平台运营 | [平台运营](features/prd-platform-admin.md) |
 | 平台设置与授权 | [平台设置与授权](features/prd-platform-config.md) |
 | 通知 | [通知](features/prd-notifications.md) |

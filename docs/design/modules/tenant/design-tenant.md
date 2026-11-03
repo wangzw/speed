@@ -24,7 +24,7 @@
 - **不做授权判定，从不写 403。** 本模块回答"这条请求、这条语句属于哪个租户"，准入层另回答"这个账户是不是这个租户的成员"；"这个租户或这个调用方能不能做这件事"归授权，它另立（[ADR-authn-scope](../../../adr/adr-authn-scope.md)）。准入层的拒绝应答由 [design-tenant-admission](design-tenant-admission.md) 规定，本模块不写 403。
 - **不认定凭据，不读 `Authorization`；身份由认证写进上下文。** 解析层与名册不读身份；本人租户读取只读上下文里的身份，不认定它、不改写它。认定是认证模块的事，本模块不改动 `Identity`。身份与租户的对照只发生在准入层：它读认证写进上下文的身份与解析层写进上下文的租户，不改写其中任何一个（[ADR-tenant-resolution](../../../adr/adr-tenant-resolution.md)、[design-tenant-admission](design-tenant-admission.md)）。
 - **不自造成员关系或租户状态。** 成员关系的事实归认证的 `Memberships`，租户的状态与别名归名册；本人租户读取只做交集，不缓存、不写、不判定准入。
-- **不认识个人租户。** 本人租户读取的应答没有种类字段：个人租户是宿主的策略（[ADR-starters-personal-tenant](../../../adr/adr-starters-personal-tenant.md)），名册不记它，本模块也不为它另立概念。
+- **不记录个人租户，也不自己判定种类。** 个人租户是宿主的策略（[ADR-starters-personal-tenant](../../../adr/adr-starters-personal-tenant.md)），名册不记它。本人租户读取的应答带一个 `kind`，取值是平台定义的闭集 `business` 与 `personal`；这个值由宿主经可选的 `KindResolver` 给出，本模块只传递它，不按标识前缀、名称或权限集自行推导。
 - **不读受租户约束模型的数据。** 本人租户读取读的是成员关系这张全局语义的表与名册快照；受约束模型的语句仍要求上下文里有一个租户。
 - **不承载运行期可变的参数。** 判据见 [ADR-config-scope](../../../adr/adr-config-scope.md)：数据库可用之前被需要，或塑造启动结构、改变要重启；取法与端点清单在其列，租户的增删不在。
 - **不管理租户内的账户、成员关系、角色与组织结构。** 账户全局、可属多个租户，账户与成员关系归认证（成员关系是认证的一张表，准入层只读它，见 [design-authn-account](../authn/design-authn-account.md)），角色归授权；一个租户的存在，与它内部有哪些成员，是两件事（[ADR-tenant-scope](../../../adr/adr-tenant-scope.md)）。
@@ -63,7 +63,7 @@
 | 解析子包 | `tenant.resolve` | 排他地交付解析功能 |
 | 名册子包 | `tenant.catalog` | 排他地交付名册功能 |
 | 准入子包 | `tenant.admission` | 排他地交付准入层的定序锚点与 `authn.ScopeGuard`，全文见 [design-tenant-admission](design-tenant-admission.md) |
-| 本人租户读取子包 | `tenant.self` | 只挂调用方本人的租户读取路由，不交付功能 |
+| 本人租户读取子包 | `tenant.self` | 只挂调用方本人的租户读取路由，不交付功能；经可选的 `KindResolver` 把宿主的租户种类放进应答 |
 | 根包 | 不登记 | 只有接口、数据类型、模型约定、取值域判据与准入层的定序锚点 `Admission` |
 
 每个登记模块的包导出自己的 `ModuleName` 常量，配置命名空间取同一个取值。名字的每一段只用小写字母、数字与短横线：`Namespace` 按 `.` 切段后适用配置键的字符集规则，违反它会从环境变量名那一头破坏分层（见 [config](../design-config.md)）。
@@ -158,6 +158,23 @@ const (
     // DisabledByAccount 是账户状态联动造成的停用，账户恢复时随之撤销。
     DisabledByAccount
 )
+
+// Kind 是一个租户的种类。取值是一个封闭集合，由平台定义；取值由宿主给出，
+// 本模块不记录它，也不从标识或名册字段推导它。
+type Kind string
+
+const (
+    // KindBusiness 是零值：业务租户，也是没有种类信息来源时的答案。
+    KindBusiness Kind = "business"
+    // KindPersonal 是个人租户：账户本人的单人空间。
+    KindPersonal Kind = "personal"
+)
+
+// KindResolver 回答一个租户的种类。宿主实现它；本模块只把答案放进本人租户
+// 读取的应答。答案是只读事实，不参与准入或授权判定。
+type KindResolver interface {
+    KindOf(ctx context.Context, id ID) (Kind, error)
+}
 
 // FromContext 取出本次请求的租户标识。没有租户时第二个返回值为假。
 func FromContext(ctx context.Context) (ID, bool)
@@ -410,6 +427,7 @@ func CrossTenant(ctx context.Context) context.Context
 - **不要在需要租户的端点上漏写解析模块。** 那样的端点上上下文里没有租户，受约束模型的语句一律拒绝——fail-closed，当场可见。
 - **把账户状态联动到租户时用 `SetStatusByAccount`，运营者的动作才用 `SetStatus`。** 宿主的一条账户联动若写成 `SetStatus`，那次停用被记成运营者造成的，账户恢复从此不会撤销它；运营者的启用若写成 `SetStatusByAccount`，它的效果与一次账户恢复相同。这条判据名册判不出来——`SetStatus` 与 `SetStatusByAccount` 都收一个 `Status`，来源由调用点选定（[ADR-tenant-suspension](../../../adr/adr-tenant-suspension.md)）。
 - **账户删除之后要收尾的宿主，在 `AccountDeleted` 钩子里调 `Delete`。** 删除是终态、只写名册那一行，受约束表里的数据与它无关；钩子在账户事务提交之后同步调用，失败按 `ErrCleanupIncomplete` 重试（[ADR-authn-account-restoration](../../../adr/adr-authn-account-restoration.md)）。
+- **启用个人租户功能的装配提供 `tenant.KindResolver`，并把它交给 `tenant.self`。** 解析器可选取用：没有个人租户功能的装配可以不给，每一项因此读作 `business`。个人租户功能的模块在自己的描述符里把 `(*tenant.KindResolver)(nil)` 声明为必需依赖，所以一个启用了该功能却没有提供解析器的命令在依赖解析处终止启动——这条检查发生在启动，不发生在列表请求。**宿主把派生个人租户标识的判定收口到一个函数**，解析器与两处按前缀拒绝的写保护都用它，不各自维护一份前缀判断。
 - **挂本人租户读取的命令点名 `tenant.self`、配 `tenant.self.endpoints`，并把这些端纳入认证网关所守的端。** 成员关系与名册各由别的模块排他交付，宿主把 `authn.account` 与 `tenant.catalog` 的模块名一并写进这条命令，依赖闭包不替它挑。端上若另有授权中间件，命令一并纳入 `authz.guard`：路由在它的声明面上登记为开放，没有声明面的装配把它按未声明处置（与 [authz](../design-authz.md) 的调用方自身权限读取同一条）。端必须是认领 `/api/v1/auth` 的账户端；它不得出现在 `tenant.resolve.endpoints` 里——账户端的请求不带租户名，解析层在受守护的端上要求请求面带着它（见非保证）。不点名时这条路由不存在。**启用个人租户的宿主必须同时纳入 `tenant.self`**：示范的个人租户 ensure 以这份清单为空为触发，没有这条读取就无从知道账户有没有成员关系（[starters](../design-starters.md)）。
 
 ### 调用方本人的租户读取
@@ -422,7 +440,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 **这条路由不解析租户。** 它回答的是调用方本人，不是某个租户；它挂在账户端上，请求上没有租户名。路由在路由声明面上登记为开放，让授权中间件放行到 handler；认证准入是网关的：端上的请求没有凭据时在 handler 之前即被拒。handler 自己在没有身份时写出与其他已认证面相同的 401：只有状态、没有 `Problem.Type`，挑战为 `Bearer`（[REF-rfc6750](../../../references.md)）与 `Cookie`，realm 取该端的端名（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
 
-**应答。** 200 加 `tenants` 数组，每项是 `id` 与 `alias`，按标识升序，空结果写 `[]` 而不是 `null`。应答不带租户种类、不带状态、不带展示名；名册没有展示名，别名是请求面出现的那个名字，从不翻译。
+**应答。** 200 加 `tenants` 数组，每项是 `id`、`alias` 与 `kind`，按标识升序，空结果写 `[]` 而不是 `null`。`kind` 的取值是 `business` 或 `personal`，是平台定义的闭集；它由宿主经 `KindResolver` 给出，名册不记录它。**这个闭集在 OpenAPI 片段里以 enum 写出，生成的 SDK 把 `kind` 生成为 `'business' | 'personal'` 的联合类型**；前端按值分支，不按标识前缀猜种类。应答不带状态、不带展示名；名册没有展示名，别名是请求面出现的那个名字，从不翻译。
 
 **一条成员关系进入应答，当且仅当它是有效的。** 成员关系自身的 `Active` 为真，且名册快照里那个租户的状态是 `StatusActive`。两次读都不要求上下文里有租户：`Memberships.Tenants` 按账户列跨租户读，名册快照不经过隔离插件。
 
@@ -433,7 +451,9 @@ func CrossTenant(ctx context.Context) context.Context
 
 **列表里包含当前租户，由准入层保证。** 一条经解析层与准入层到达的请求，其租户在解析时在册、其成员关系由准入层读作有效，因而这个租户在列表里；唯一的例外是名册快照在这两次读之间刷新掉了那个租户。读取不替当前租户补行。装配里没有准入层、或调用方经决策接缝进入一个自己不是成员的租户时（平台员工），当前租户可能不在列表里；切换器此时显示它自己的无当前租户状态，宿主要不要补那一行由宿主装配规定（见 [starters](../design-starters.md)）。
 
-**应答不带种类，个人租户的文案归宿主。** 个人租户是一条宿主策略，名册不记录它，本模块也不认识它（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。宿主按它派生的个人租户标识与应答里的 `id` 逐字相等来判定；标识前缀是宿主与它自己的服务端之间的约定，不经过平台。
+**种类由宿主给出，个人租户的文案仍归宿主。** 个人租户是一条宿主策略，名册不记录它，本模块也不认识它（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。宿主实现 `KindResolver`，按它自己的约定回答每个租户的种类；本模块把答案原样放进应答，不校验它与名册、成员关系或权限集是否一致。**解析器缺席时每一项都是 `business`**：这适用于没有个人租户功能的装配，那里确实没有个人租户。**装配启用了个人租户功能时解析器是必需的**：该功能的模块在自己的描述符里声明对 `KindResolver` 的构造期依赖，缺席在依赖解析处以缺提供者终止启动——fail-closed 的点是启动拒绝，不是每一条列表请求各自失败。请求期解析器的读取失败是 503，不把该行读作 `business`：种类是一个事实，故障不是。
+
+**宿主把个人租户的派生收敛到一处。** 个人租户的标识由宿主从一个账户标识确定性派生；`KindResolver` 的比较、按标识前缀拒绝写与拒绝删除的写保护、种子跳过个人租户的路径都调用同一个宿主函数，不各自裸用前缀判断。平台只收到租户标识与 `kind`，不定义派生规则，也没有第二、第三个前缀来源。
 
 **冒充中的请求到得了这条路由，应答只有授予的那一个租户。** 路由登记为可冒充：账户端不在准入层所守的端里，不登记时网关在 handler 之前拒绝，宿主在整页重载后就没有任何来源命名当前租户（名册属平台管理面，冒充期间读不到）。handler 自己按身份的 `Scope()` 收窄应答，被冒充账户在其他租户的成员关系超出冒充授予的那一个租户，仍不交给冒充者；授予的那个租户标识与别名本来就由冒充状态读与横幅陈述，这里只是把它的别名再给宿主。没有范围的冒充身份（网关的出口检查不会放行，只有直接调用 handler 才可能）应答空列表，不回落成全量。租户切换器在冒充期间本来也不挂（[tenancy-ui](../web/design-web-tenancy-ui.md)）。
 
@@ -447,7 +467,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 `Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`IsIdentifier`、`Status`、`DisabledBy`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的接口面。`WriteGuard`、`WriteOp` 与它的两个取值同样在这个面上：宿主据它决定哪些租户拒绝停用与删除。`Provisioner` 的签名同样在面上：宿主据它把租户与首任管理员一次建立。`Catalog` 里 `Delete` 与 `SetStatusByAccount` 的加入、`Status` 多出的取值与 `Tenant` 多出的字段同样是接口面的扩展。`Status` 与 `DisabledBy` 的字符串形式（`active`、`disabled`、`deleted` 与 `operator`、`account`）是管理面视图的取值来源，同样在接口面上。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值属于对外接口面，改动它是破坏性变更。约定里那一列的名字 `tenant_id`、它的非空约束与它在主键里的位置同样在这个面上：迁移文件由声明方写，改名或改键都是一次全库迁移。准入层的定序锚点 `Admission` 与它交付的守卫见 [design-tenant-admission](design-tenant-admission.md) 的对外接口面。
 
-**本人租户读取的路由与应答同样在对外接口面上**：路径 `GET /api/v1/auth/me/tenants`、应答成员 `tenants`、每项的 `id` 与 `alias`、按标识升序与 `[]` 的空结果写法，以及"要求已认证、不要求权限、登记为可冒充且冒充身份的应答收窄到授予租户"这三条；前端与生成的客户端据这些取值分支。配置键 `tenant.self.endpoints` 与它的必填、只收具体端名同样在接口面上，改动它们是宿主可见的破坏性变更。
+**本人租户读取的路由与应答同样在对外接口面上**：路径 `GET /api/v1/auth/me/tenants`、应答成员 `tenants`、每项的 `id`、`alias` 与 `kind`、`kind` 的闭集取值 `business` 与 `personal`、按标识升序与 `[]` 的空结果写法，以及"要求已认证、不要求权限、登记为可冒充且冒充身份的应答收窄到授予租户"这三条；前端与生成的客户端据这些取值分支。`Kind` 与 `KindResolver` 的签名同样在接口面上：宿主据它给出种类，改动它改变每一个启用个人租户的装配。配置键 `tenant.self.endpoints` 与它的必填、只收具体端名同样在接口面上，改动它们是宿主可见的破坏性变更。
 
 **标识的取值域也在对外接口面内**：非空，且不含空白与控制字符，根包的 `IsIdentifier` 是本模块对这一条的唯一陈述，名册的字段判定（`pkg/tenant/catalog/roster.go` 的 `checkField`）也走它——空值在那次调用之前先判一档，只为挑出两种文本，取值域本身仍只有 `IsIdentifier` 一条陈述。按租户取值的模块各自复述这条判据——设置模块的 `ForTenant` 即一处——而不以 import 本模块的方式取用它（[settings](../settings/design-settings.md) 记有那条依赖为何不存在）。两处是否仍是同一条，由消费方自己的测试包 `pkg/settings/settings_test.go` 的 `TestForTenantAgreesWithTheTenantIdentifierDomain` 拿同一张标识形状表逐形状驱动双方守住。
 
@@ -575,7 +595,7 @@ sequenceDiagram
 
 认证层的收口与豁免、可选认证的匹配不在本图内，它们归认证网关（见 [authn-gate](../authn/design-authn-gate.md) 的请求期判定）。成员准入排在解析层之后、审计与限流之内，判定归准入层，同样不在本图内（见 [design-tenant-admission](design-tenant-admission.md)）。解析层自身 panic 时由它自己 recover 并经 `Fail` 收口 500——这一档要归到解析层名下就得在这里接住，入口模块的兜底层接住 panic 后写出的同样是 500，而不区分崩的是哪一层（见 [http](../http/design-http.md)）；这条路径不经过名册，图中不画。
 
-本人租户读取跨两个模块取事实，因而另画一张时序图。图里画不出的约束：读取不写任何东西，租户状态与别名取自快照而不是表；暂停的成员关系与不在册的租户被滤掉；应答不带种类；冒充身份的应答在进入名册查找前只剩下授予租户那一条。
+本人租户读取跨两个模块取事实，另经可选的种类解析取第三个，因而另画一张时序图。图里画不出的约束：读取不写任何东西，租户状态与别名取自快照而不是表；暂停的成员关系与不在册的租户被滤掉；`kind` 由宿主解析器给出，解析器缺席时每一项是 `business`；冒充身份的应答在进入名册查找前只剩下授予租户那一条。
 
 ```mermaid
 sequenceDiagram
@@ -583,6 +603,7 @@ sequenceDiagram
     participant S as tenant.self
     participant M as authn.Memberships
     participant R as 名册快照
+    participant K as KindResolver
 
     C->>S: GET /api/v1/auth/me/tenants
     S->>S: 从上下文取身份，没有即 401
@@ -595,6 +616,12 @@ sequenceDiagram
         loop 每条启用的成员关系
             S->>R: Get(租户标识)
             R-->>S: 别名、状态
+            S->>K: KindOf(标识)
+            alt 解析器在场
+                K-->>S: business 或 personal
+            else 解析器缺席
+                S->>S: business
+            end
         end
         S-->>C: 状态为在册的那些，按标识
     end
@@ -893,6 +920,7 @@ flowchart TD
 |---|---|---|
 | 解析模块、名册模块与各自的排他交付 | 已实现 | `pkg/tenant/resolve/resolve.go` `Module`、`pkg/tenant/catalog/catalog.go` `Module` |
 | 准入子包 `tenant.admission`、排他交付与定序锚点 `tenant.Admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
+| `Kind`、`KindResolver` 与本模块读取应答里的 `kind` | 未实现 | — |
 | 本人租户读取：模块 `tenant.self`、`GET /api/v1/auth/me/tenants`、有效成员关系与名册状态的交集、按标识升序、401 与 503 | 已实现 | `pkg/tenant/self/self.go` `Module`、`handler.go` `handleTenants`、`openapi/tenant.self.json` |
 | 名册表与它的迁移集 | 已实现 | `pkg/tenant/catalog/migrations/`；`catalog.go` `migrationsFS` |
 | 名册的读写面与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`Create`、`SetStatus`、`SetStatusByAccount`、`Delete`、`SetAlias`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot`、`disabledByOf`、`counts` |

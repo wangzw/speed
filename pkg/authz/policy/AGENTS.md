@@ -3,15 +3,24 @@
 The authorization policy module `authz.policy`. It owns the policy tables and
 their migrations, the thin store the engine reads and writes through, the
 Casbin engine snapshot the decisions read, the permission catalog with the
-translation beside it, the management surface over the policy data, and the
-account lifecycle cleanup. It delivers `authz.Enforcer`,
-`authz.SubjectPermissions`, `authz.Catalog`, `authz.Manager` and
-`authz.Seeder`, each exclusively, and implements `authn.AccountLifecycle`,
-`authn.MembershipLifecycle` and the last-administrator `authn.MembershipGuard`
-(a host may add guards beside it; every guard is asked and any refusal refuses).
-`SubjectPermissions.Held` reads the same snapshot a decision reads and maps each
-held (object, action) pair back through the catalog's reverse lookup; a pair no
-declared permission translates to is left out of the answer.
+translation beside it, the platform and host seeding surfaces over the policy
+data, and the account lifecycle cleanup. It delivers `authz.Enforcer`,
+`authz.SubjectPermissions`, `authz.Catalog`, `authz.Manager`, `authz.Seeder` and
+`authz.Reconciler`, each exclusively, and implements
+`authn.AccountLifecycle`, `authn.MembershipLifecycle` and the last-administrator
+`authn.MembershipGuard` (a host may add guards beside it; every guard is asked
+and any refusal refuses). `SubjectPermissions.Held` reads the same snapshot a
+decision reads and maps each held (object, action) pair back through the
+catalog's reverse lookup; a pair no declared permission translates to is left
+out of the answer.
+
+The catalog carries two readings of its permissions. `Declared` is every
+permission a registered module declares; `TenantGoverned` is the subset a tenant
+administrator may hold and grant, marked by each module in
+`PermissionSpec.TenantGoverned` and defined centrally for this capability's own
+permissions. `platform-admin` is granted `Declared`; every domain's
+`tenant-admin` is granted `TenantGoverned`. `Governed` answers for one
+permission.
 
 Resolving the process's permission translation belongs here as much as the
 catalog does: the two are built over the same registered modules, and a host
@@ -91,17 +100,34 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   `authz.ErrTenantMismatch`, and a binding that names no account is refused too.
   A builtin role may still be bound — that is how the platform operations'
   roles are handed to an account.
-- **`Seeder` is the one write that grows a builtin role's grant set.** It is
+- **`Seeder` grows a builtin role's grant set and never shrinks it.** It is
   delivered exclusively beside `Manager` and takes
   `SeedGrants(ctx, tenant, role, grants []authz.Grant)`: it adds the
   (resource, action) pairs the role does not hold, including on a builtin
   role, and reports how many it added. A held grant is no work, no error and no
   count, so a repeated seed over an unchanged set writes nothing, reloads
   nothing and publishes nothing. It never removes, rewrites or re-timestamps a
-  grant, which is what leaves the role's existing grants fixed. An absent role
-  is `authz.ErrUnknownRole`, an empty tenant `authz.ErrTenantMismatch`, and the
-  role check and the inserts run in one transaction with the role's row lock,
-  the same serialisation the `Manager` writes take.
+  grant. An absent role is `authz.ErrUnknownRole`, an empty tenant
+  `authz.ErrTenantMismatch`, and the role check and the inserts run in one
+  transaction with the role's row lock, the same serialisation the `Manager`
+  writes take.
+- **`Reconciler` is the only write that removes a builtin role's grants.** It
+  is delivered exclusively beside `Seeder` and takes
+  `ReconcileGrants(ctx, tenant, role, grants, retired []authz.Grant) (added,
+  removed int, err error)`. It applies to one domain's builtin `tenant-admin`: it
+  adds what the target set holds and the role does not, and removes the
+  intersection of the role's grants with the caller's retired set. It never
+  infers a removal from the catalog — a grant outside the target but not listed
+  as retired stays — so replicas on different versions do not delete each
+  other's grants. Any other role, or a `tenant-admin` that is not builtin, is
+  refused with `authz.ErrReservedRole` before a row is written. The add and the
+  remove run in one transaction under the role's row lock; after the commit the
+  module reloads the snapshot and publishes `authz.policy.changed` when anything
+  changed, and a no-change call returns zero without either. A failure is
+  retryable: add-then-remove leaves a superset on an interrupted call, which the
+  next call converges. The host's seeding step writes the mandatory audit row
+  before the call; an audit that cannot be written means no reconciliation. The
+  seeding step is the only caller; neither management module takes it up.
 - **The builtin mark has one write, and `PutRole` is not it.** `PutRole`
   refuses a record carrying `builtin` with `authz.ErrBuiltinRole`, whether it
   would create or rewrite the role: a role created with the mark would be
@@ -184,8 +210,10 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   with no roster checks no platform-domain conflict, one with no bus relies on
   the configured refresh interval, and one with no logger writes through the
   process default. The database is the one hard dependency; the engine, the
-  subject-permission read, the catalog and the manager are delivered
-  exclusively, so a second provider of any of them fails the startup.
+  subject-permission read, the catalog, the manager, the seeder and the
+  reconciler are delivered exclusively, so a second provider of any of them
+  fails the startup. The seeder and the reconciler are taken up by the host's
+  seeding step and by no management module.
 - **A secret, a credential and a policy value reach no log line and no error
   text.** An account key and a tenant may be logged; a grant's rules and a
   binding's role reach no log. A refusal names the row that failed and never

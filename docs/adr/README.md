@@ -128,6 +128,7 @@
 | [主题预设是纯数据的 token 覆写，效果由 ui-kit 映射，预设不承载组件覆盖](adr-web-theme-presets.md) |
 | [颜色模式偏好跟随账户，系统偏好由主题 provider 解析](adr-web-color-mode-preference.md) |
 | [语言选项按基础语言命名，同基础语言多变体时保留地区名](adr-web-language-display-name.md) |
+| [管理面分两档：平台管理面在 /admin，工作区管理面在 /workspace/admin 的租户外壳内](adr-tenant-admin-surface.md) |
 
 ## 认证
 
@@ -263,7 +264,8 @@
 | [打包：根包只放接口与常量，策略、强制点、管理面各为一个叶子模块](adr-authz-packaging.md) |
 | [策略常驻进程内不可变快照，事件失效、周期重载兜底](adr-authz-cache.md) |
 | [反转旧树「不用 Casbin」的结论：被否的是默认存储，不是引擎](adr-authz-reversal.md) |
-| [种入面：独立于 Manager 的 Seeder 能力](adr-authz-seeding.md) |
+| [种入面：独立于 Manager 的 Seeder 与 Reconciler 能力](adr-authz-seeding.md) |
+| [租户域的管理端点：治理权限元数据、租户管理员允许集与防提权](adr-authz-tenant-management.md) |
 | [主体持有的权限由策略模块读出，并经一条自身路由回答](adr-authz-subject-permissions.md) |
 
 ## 键值

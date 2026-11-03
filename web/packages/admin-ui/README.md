@@ -1,12 +1,16 @@
 # @speed/admin-ui
 
-The platform-staff admin of a frontend built on speed: the second
-shell. Where `@speed/product-shell` is the tenant-facing front door,
-this is the admin platform operators use -- and the difference is the
-point. The administration surfaces it renders are mounted on endpoints
-that do not resolve a tenant, so the admin has **no current-tenant
-switcher and no current-tenant query key**. It is not, and cannot be, a
-page of `@speed/tenancy-ui` or `@speed/product-shell`.
+The management surfaces of a frontend built on speed. One package
+renders two surfaces over one set of page components, one declaration
+shape and one operations seam.
+
+**The platform surface** is the platform-staff admin: the second shell.
+Where `@speed/product-shell` is the tenant-facing front door, this is
+the admin platform operators use. The administration surfaces it renders
+are mounted on endpoints that do not resolve a tenant, so the platform
+surface has **no current-tenant switcher and no current-tenant query
+key**. It is not, and cannot be, a page of `@speed/tenancy-ui` or
+`@speed/product-shell`.
 
 It renders the platform's backend administration surfaces as one admin
 frame, the admin root being a dashboard:
@@ -42,6 +46,15 @@ frame, the admin root being a dashboard:
 The tenant detail and audit detail pages are declared without a navigation
 label -- reachable from a list row, not listed in the navigation.
 
+**The workspace surface** is the tenant administrator's admin, mounted at
+`/workspace/admin` inside `@speed/product-shell`. It acts on the current
+tenant the host supplies and addresses every request at
+`/api/v1/tenants/{tenant}/...`: invitations and membership, SSO
+providers, tenant-layer settings, and tenant roles and permissions. It
+reads nothing under `/api/v1/system`, holds no tenant selector, and
+renders no `AppShell`; `WorkspaceAdminProvider` installs only the
+workspace contexts, because the tenant frame already renders the shell.
+
 Each page opens with `@speed/ui-kit`'s `PageHeader`: the page title as the
 level-one heading and a breadcrumb trail from the admin to the page. The
 refresh action that re-reads the page's data sits in the header on pages
@@ -50,12 +63,12 @@ selector (the sessions page's account, or the tenant-addressed pages'
 tenant) puts it in the selector's row, immediately to the selector's
 right.
 
-The pages whose routes carry the tenant as a path segment (authorization,
-invitations and membership, SSO), and the impersonation page (whose read
-takes the tenant as a required query argument), carry a tenant selector
-fed by the platform roster read. The tenant it names is an argument of the
-request, not the session's current tenant: the admin still has no
-current-tenant concept.
+On the platform surface, the pages whose routes carry the tenant as a
+path segment (authorization, invitations and membership, SSO), and the
+impersonation page (whose read takes the tenant as a required query
+argument), carry a tenant selector fed by the platform roster read. The
+tenant it names is an argument of the request, not the session's current
+tenant: the platform surface still has no current-tenant concept.
 
 Like the tenant-facing shell, the admin reuses the declarative
 registration seam: each page is a declaration collected by the
@@ -125,7 +138,9 @@ area -- while keeping the admin pages' seams available. It remains a
 platform-staff surface: it must not host tenant-facing pages, and it
 carries no current-tenant affordance. `hasFeature` is required here too;
 every other prop is optional and its absence leaves the documented
-fallback in force.
+fallback in force. The tenant side's counterpart is
+`WorkspaceAdminProvider`, which takes the current tenant as a required
+prop and renders no DOM; see "The workspace surface" below.
 
 The pages whose routes carry the tenant as a path segment (authorization,
 invitations and membership, SSO) and the impersonation page read the
@@ -190,6 +205,11 @@ feature-gated control without importing the host's session package.
 | `AuditPage.tsx` | `AuditPage` |
 | `AuditDetailPage.tsx` | `AuditDetailPage`, `AuditDetailPageProps` |
 | `resources.ts` | `ADMIN_UI_NAMESPACE`, `adminUiResources` |
+| `WorkspaceAdminProvider.tsx` | `WorkspaceAdminProvider`, `WorkspaceAdminProviderProps` |
+| `WorkspaceAdminBreadcrumb.tsx` | `WorkspaceAdminBreadcrumbProvider`, `WorkspaceAdminBreadcrumbProviderProps` |
+| `workspace-operations.tsx` | `WorkspaceAdminOperations`, `workspaceAdminOperations` |
+| `workspace-routes.tsx` | `workspaceAdminRoutes` |
+| `workspace-pages.tsx` | `WorkspaceInvitationsPage`, `WorkspaceSsoPage`, `WorkspaceSettingsPage`, `WorkspacePermissionsPage` |
 
 Everything else (`src/internal/`) is shared plumbing -- the error-text
 resolver, the `InlineError` and `WriteFeedbackRegion` bindings, the
@@ -315,13 +335,64 @@ change. The provider is an override: a host that wants different wiring,
 or a suite that scripts a backend, mounts its own bundle and the pages
 read that instead.
 
+## The workspace surface
+
+The workspace surface reuses the same pages and declarations, composed
+for the current tenant. Mount `WorkspaceAdminProvider` inside
+`@speed/product-shell`'s content area:
+
+```tsx
+import {
+  WorkspaceAdminProvider,
+  workspaceAdminOperations,
+  workspaceAdminRoutes,
+} from '@speed/admin-ui'
+
+<WorkspaceAdminProvider
+  tenant={currentTenantId}
+  operations={workspaceAdminOperations}
+  hasFeature={hasFeature}
+  routes={presentDeclarations(workspaceAdminRoutes, presence)}
+  session={session}
+  onNavigate={navigate}
+>
+  <RouteView />
+</WorkspaceAdminProvider>
+```
+
+`tenant` is required: the provider never derives or switches the current
+tenant. The workspace surface reads nothing under `/api/v1/system` and
+holds no tenant selector. Its four page wrappers compose the existing
+pages in tenant mode:
+
+- the invitations page hides the platform account picker, resolves
+  identities from the tenant members read, and issues no
+  `/api/v1/system` request;
+- the SSO page is locked to the current tenant;
+- the settings page reads and writes only the tenant layer, with
+  tenant-scoped query keys kept apart from the platform settings reads;
+- the roles and permissions page reads the server's governed catalog,
+  uses the tenant member picker, and treats the names in `protectedRoles`
+  as read-only.
+
+The navigation parent and the home card are the host's composition: the
+host derives them from the narrowed `workspaceAdminRoutes` and hides them
+while impersonating, in the system tenant and in a personal tenant. The
+workspace page wrappers publish the breadcrumb through
+`WorkspaceAdminBreadcrumbProvider`; the shared pages prefer that context
+and fall back to their platform trail otherwise.
+
 ## What this admin does not do
 
-- **No current tenant.** It has no current-tenant switcher and uses no
-  current-tenant query key: its endpoints do not resolve a tenant.
-  Switching the current tenant is `@speed/tenancy-ui`'s. A tenant-named
-  selector on the pages whose routes carry the tenant as a path segment
-  names an argument of the request, not the session's current tenant.
+- **No current-tenant ownership.** The platform surface has no
+  current-tenant switcher and uses no current-tenant query key: its
+  endpoints do not resolve a tenant. The workspace surface takes the
+  current tenant as the required `tenant` prop of `WorkspaceAdminProvider`
+  and writes it into every request path, but never derives or switches
+  it. Switching the current tenant is `@speed/tenancy-ui`'s. A tenant-named
+  selector on the platform surface's pages whose routes carry the tenant
+  as a path segment names an argument of the request, not the session's
+  current tenant.
 - **No routing.** It exports page declarations and never matches a URL or
   decides navigation selection; collecting the declarations and rendering
   them is the application's route layer's. It does link from a known path:

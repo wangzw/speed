@@ -2,8 +2,12 @@
 
 ## What this package is
 
-The platform-staff admin — the second shell. It renders the platform's
-backend administration surfaces as one admin frame: the tenant roster
+Two management surfaces share one set of page components, one declaration
+shape and one operations seam.
+
+**The platform surface** is the platform-staff admin — the second shell.
+It renders the platform's backend administration surfaces as one admin
+frame: the tenant roster
 (`/api/v1/system/tenants`), the account, session and impersonation surfaces
 (`/api/v1/system/auth`), the authorization surface (`/api/v1/system`), the
 invitation and membership surface (`/api/v1/tenants/:tenant/...`),
@@ -14,20 +18,37 @@ the tenant roster and the audit query each link a row to that record's
 detail page.
 
 Those endpoints are mounted on hosts that do not resolve a tenant, so the
-admin has **no current-tenant switcher and no current-tenant query
-key**: it is not a page of `@speed/tenancy-ui` or `@speed/product-shell`,
-and neither of those packages belongs in its import graph.
+platform surface has **no current-tenant switcher and no current-tenant
+query key**: it is not a page of `@speed/tenancy-ui` or
+`@speed/product-shell`, and neither of those packages belongs in its
+import graph.
 
-The pages whose routes carry the tenant as a path segment (authorization,
-invitations and membership, SSO) carry a **tenant selector** — an argument
-of the request, fed by the roster read, not the session's current tenant.
-The impersonation page carries one too: its list read takes the tenant as
-a required query argument. The selector lives in
+On the platform surface, the pages whose routes carry the tenant as a path
+segment (authorization, invitations and membership, SSO) carry a **tenant
+selector** — an argument of the request, fed by the roster read, not the
+session's current tenant. The impersonation page carries one too: its list
+read takes the tenant as a required query argument. The selector lives in
 `src/internal/tenant-scope.tsx` and holds no query key of the
 current-tenant kind.
 
+**The workspace surface** is the tenant administrator's admin, mounted at
+`/workspace/admin` inside `@speed/product-shell`. It acts on the
+**current tenant the host supplies** and addresses every request at
+`/api/v1/tenants/{tenant}/...`: invitations and membership, SSO providers,
+tenant-layer settings, and tenant roles and permissions. It reads nothing
+under `/api/v1/system`. It does not own or switch the current tenant: the
+host mounts it inside the tenant frame and hands `WorkspaceAdminProvider`
+the resolved tenant. The workspace surface renders no `AppShell` — the
+tenant frame already renders one — and imports neither `route-kit`,
+`tenancy-ui` nor `product-shell`. It is offered to holders of the
+tenant-admin permission codes, not to platform staff as such.
+
 The package ships one entry (`src/index.ts`, the export set in the
-README's "What ships") and no subpath. Everything under `src/internal/`
+README's "What ships") and no subpath. The workspace surface adds
+`workspaceAdminRoutes`, `WorkspaceAdminProvider`,
+`WorkspaceAdminBreadcrumbProvider`,
+`WorkspaceAdminOperations` / `workspaceAdminOperations`, and the four
+workspace page wrappers to that same entry. Everything under `src/internal/`
 — the error-text resolver, the `InlineError` and `WriteFeedbackRegion`
 bindings, the translation hook, the tenant selector and the zero-instant
 sentinel — is family plumbing and is deliberately not exported, except
@@ -63,8 +84,10 @@ desktop sidebar-collapse pair (`sidebarCollapsed` /
 callback renders the collapse toggle and reports each flip, so a host
 that holds the collapse state gives the operator the same host-controlled
 collapse here that the tenant shell carries. The frame carries no
-current-tenant affordances; that absence is the difference between the two
-shells, not the chrome.
+current-tenant affordances: the platform surface's shell never holds one,
+and the workspace surface takes its tenant from `WorkspaceAdminProvider`
+rather than from the frame. The difference between the two surfaces is
+the scope they address, not the chrome.
 
 The shell does no routing. It never matches a URL, never builds a link
 from a path and never decides which navigation entry is selected: the
@@ -112,6 +135,19 @@ seams available. It is not a tenant shell: it must not host tenant-facing
 pages, and it carries no current-tenant affordance. `hasFeature` is
 required, as on the shell; every other prop is optional.
 
+`WorkspaceAdminProvider` is the workspace surface's counterpart and the one
+place this package accepts a current tenant. It installs the workspace
+contexts — the current tenant, the workspace operations bundle, the
+session, feature presence, the narrowed route table, the navigation
+callback and the breadcrumb — and renders no DOM, because the host has
+already rendered `@speed/product-shell`'s `AppShell`. `tenant` is a
+required prop: the package never derives the current tenant from the
+session or the URL, and it never switches it.
+`WorkspaceAdminBreadcrumbProvider` publishes the workspace breadcrumb on
+its own, for a host that composes the workspace pages without the full
+provider; a page's `PageHeader` prefers that context and falls back to its
+own platform trail otherwise.
+
 `hasFeature` is a required prop: the host's synchronous answer to "does
 this process serve the named feature?", typed on the generated
 `FeatureName`. The shell publishes it to the routed pages through the
@@ -131,7 +167,17 @@ declarative registration seam (`dashboardAdminRoutes`,
 `adminRoutes`). A capability may contribute more than one declaration:
 a list page carries a navigation label and icon and a detail page (the
 tenant detail, the audit detail) carries neither, so it is reachable from
-a row without appearing in the navigation. A declaration carries an
+a row without appearing in the navigation.
+
+`workspaceAdminRoutes` is the workspace surface's table: invitations and
+membership, SSO providers, tenant settings and tenant roles and
+permissions. Its declarations carry the tenant-domain permission codes
+(`authn.membership.manage`, `authn.idp.manage`, `settings.tenant.read`,
+`authz.tenant.role.read`) and the tenant-scoped features they need
+(`authn.admin` + `authn.invitations`, `authn.admin` + `authn.admin.sso`,
+`settings.tenantadmin`, `authz.tenantadmin`). They never name
+`tenant.admin`: the workspace surface reads no roster and holds no tenant
+selector. A declaration carries an
 optional stable `id` (the sibling-link address) — this package's own
 declarations all carry one, a host's may omit it — a path pattern, a
 view, an optional navigation label, an optional decorative icon, the
@@ -220,6 +266,16 @@ What the pages reach through the bundle, grouped by surface:
 | `useSmsTemplates`, `useRegisterSmsTemplate`, `useOfferSmsTemplate`, `useSetSmsTemplateEnabled`, `useRemoveSmsTemplate` | `/api/v1/system/sms/templates[/submissions|/:name[/enabled]]` |
 | `useAuditRecords`, `useAuditRecord`, `exportAuditRecords` | `/api/v1/system/audit/records[/:id]`, `/api/v1/system/audit/export` |
 
+The workspace surface reads through `WorkspaceAdminOperations`, a separate
+bundle bound to the tenant-scoped generated operations:
+`/api/v1/tenants/{tenant}/invitations` and `/members`, the tenant's SSO
+providers, the tenant settings endpoints (whose query keys namespace by
+the tenant) and the tenant-admin role, permission and binding endpoints.
+It holds no platform member and never addresses `/api/v1/system`; the
+tenant is an argument of every read and write. `workspaceAdminOperations`
+is the shipped binding, and `WorkspaceAdminProvider`'s `operations` prop is
+the substitution point.
+
 The view types are the generated response rows of each module's admin
 surface, named for the admin's own pages; only the write inputs stay
 hand-written, because they carry route parameters beside the body.
@@ -246,20 +302,27 @@ request body.
 
 ## Non-negotiable rules
 
-- **No current tenant.** No current-tenant switcher, no
-  current-tenant-scoped query key, no `useCurrentTenant`, no import of
-  `@speed/tenancy-ui`, and no current-tenant reading. The admin is the
-  platform side; the tenant side is a different shell. The tenant selector
-  on the pages whose routes carry the tenant as a **path segment** is not
-  this: it names an argument of the request and is fed by the roster read.
-  A change that wants to read "the current tenant" here is scope drift.
-  The admin DOES depend on `@speed/auth-core` for the session, the
+- **Two surfaces, two tenant rules.** The platform surface has no
+  current-tenant switcher, no current-tenant-scoped query key, no
+  `useCurrentTenant`, and no import of `@speed/tenancy-ui` or
+  `@speed/product-shell`. The workspace surface is tenant-scoped and takes
+  the current tenant as the **required `tenant` prop of
+  `WorkspaceAdminProvider`**; it writes that tenant into every request
+  path, never derives it from the session or URL, and never switches it.
+  Neither surface holds a tenant switcher, and neither imports
+  `@speed/tenancy-ui` or `@speed/product-shell`. The tenant selector on
+  the platform surface's pages whose routes carry the tenant as a **path
+  segment** names an argument of the request and is fed by the roster
+  read; it is not the current tenant. A change that wants the package to
+  derive, own or switch the current tenant is scope drift; a change that
+  wants the platform surface to read it is scope drift too.
+  Both surfaces depend on `@speed/auth-core` for the session, the
   step-up gate and the WebAuthn ceremony (the `@speed/auth-core/webauthn`
-  subpath). The session is the `session` prop of `AdminShell`,
-  published to the pages through `AdminSessionProvider`, with
-  `session.isStepUpShortfall` as the gate's discriminator and
-  `session.logout` for the challenge's re-login when this deployment
-  cannot raise the session; the gate itself is auth-core's
+  subpath). The session is the `session` prop of `AdminShell` (and of
+  `WorkspaceAdminProvider`), published to the pages through
+  `AdminSessionProvider`, with `session.isStepUpShortfall` as the gate's
+  discriminator and `session.logout` for the challenge's re-login when
+  this deployment cannot raise the session; the gate itself is auth-core's
   `useStepUpGate`, and the flow-step renderer runs the ceremony through
   the subpath. That is session and ceremony, not a tenant read;
   `useCurrentTenant` stays unused.
@@ -372,7 +435,10 @@ request body.
   refusal, not a restated status.
 - **Each page opens with ui-kit's `PageHeader`.** The page title is the
   level-one heading and a breadcrumb trail runs from the admin to the
-  page. The refresh action that re-reads the page's data (its `refetch`)
+  page. On the workspace surface the trail comes from
+  `WorkspaceAdminBreadcrumbProvider` and runs from the workspace home to
+  the page; without that context the page renders its platform trail. The
+  refresh action that re-reads the page's data (its `refetch`)
   sits in the header, except on a page whose body is addressed by a
   selector (the sessions page's account, and the tenant-addressed pages'
   tenant): there it sits in the selector's own row, immediately to the
@@ -422,6 +488,12 @@ identifier rule, the zero-instant sentinel, the export name and download
 handoff, the 403/retry/stale split, and the region's resolver binding);
 `package.json` (the manifest contract); and `usage-example` (the README's
 composition, with the operations bundle substituted from test-utils).
+
+The workspace surface adds suites for `workspaceAdminRoutes` (paths,
+permission codes, `requires`, the tenant-mode wrappers),
+`WorkspaceAdminProvider` (the required tenant, the contexts it installs,
+and the breadcrumb context-first fallback) and `workspaceAdminOperations`
+(the tenant-scoped generated bindings).
 
 ## Deferrals (recorded, do not re-open silently)
 
