@@ -59,7 +59,7 @@ func (p *product) handleTenants(ctx context.Context, _ struct{}) (tenantsBody, e
 	impersonating := id.Impersonating()
 	memberships, err := p.memberships.Tenants(ctx, id.Account())
 	if err != nil {
-		return tenantsBody{}, p.unavailable(err)
+		return tenantsBody{}, p.unavailable(err, "the caller's tenants could not be read")
 	}
 	// out is non-nil whatever the memberships hold, so an empty answer
 	// serialises as [] and never null.
@@ -73,12 +73,19 @@ func (p *product) handleTenants(ctx context.Context, _ struct{}) (tenantsBody, e
 		}
 		found, ok, err := p.catalog.Get(ctx, tenant.ID(membership.Tenant))
 		if err != nil {
-			return tenantsBody{}, p.unavailable(err)
+			return tenantsBody{}, p.unavailable(err, "the caller's tenants could not be read")
 		}
 		if !ok || found.Status != tenant.StatusActive {
 			continue
 		}
-		out = append(out, tenantSelfTenant{ID: string(found.ID), Alias: found.Alias})
+		kind := tenant.KindBusiness
+		if p.kind != nil {
+			kind, err = p.kind.KindOf(ctx, found.ID)
+			if err != nil {
+				return tenantsBody{}, p.unavailable(err, "a tenant's kind could not be read")
+			}
+		}
+		out = append(out, tenantSelfTenant{ID: string(found.ID), Alias: found.Alias, Kind: string(kind)})
 	}
 	return tenantsBody{Tenants: out}, nil
 }
@@ -86,8 +93,8 @@ func (p *product) handleTenants(ctx context.Context, _ struct{}) (tenantsBody, e
 // unavailable records a read that could not answer and returns the 503 the
 // caller answers with. The cause goes to the log and never to the response: the
 // answer says a dependency could not answer, not what it holds.
-func (p *product) unavailable(err error) error {
-	p.logger.Error(ModuleName+": the caller's tenants could not be read", "error", err)
+func (p *product) unavailable(err error, what string) error {
+	p.logger.Error(ModuleName+": "+what, "error", err)
 	return speedhttp.Fault{Status: http.StatusServiceUnavailable}
 }
 

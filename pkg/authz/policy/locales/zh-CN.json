@@ -18,6 +18,10 @@
   "authz.permission.authn-tenant-access": "进入非成员租户",
   "authz.permission.authz-role-manage": "管理角色",
   "authz.permission.authz-role-read": "读取角色",
+  "authz.permission.authz-tenant-role-manage": "管理本租户的角色、授权与绑定",
+  "authz.permission.authz-tenant-role-read": "读取本租户的角色与权限",
   "authz.permission.settings-read": "读取设置",
+  "authz.permission.settings-tenant-read": "读取本租户的设置",
+  "authz.permission.settings-tenant-write": "修改本租户的设置",
   "authz.permission.settings-write": "写入设置"
 }

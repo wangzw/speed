@@ -42,7 +42,8 @@ var (
 	// ErrBuiltinRole reports an attempt to delete a builtin role or to change
 	// its permissions through Manager. The fix is to give the subject another
 	// role: a builtin role's permissions are fixed against every write except
-	// Seeder.SeedGrants, which only adds.
+	// Seeder.SeedGrants, which only adds, and Reconciler.ReconcileGrants, which
+	// only the host's seeding step holds.
 	ErrBuiltinRole = errors.New("authz: a builtin role cannot be changed or deleted")
 
 	// ErrTenantMismatch reports a policy row whose tenant is not the tenant the
@@ -59,7 +60,9 @@ var (
 	// ErrReservedRole reports a role reserved to one domain used in another: the
 	// platform administrator role exists only in the platform domain, so a role
 	// or a binding carrying it elsewhere is refused. Tenant administrators are
-	// TenantAdminRole, which every domain holds.
+	// TenantAdminRole, which every domain holds. Reconciler reports it for a
+	// target other than TenantAdminRole and for a TenantAdminRole that is not
+	// builtin: only a builtin tenant administrator's grant set is converged.
 	ErrReservedRole = errors.New("authz: a role reserved to the platform domain was used in another domain")
 
 	// ErrLastTenantAdmin reports a delete that would leave a domain with no

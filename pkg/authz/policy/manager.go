@@ -208,9 +208,10 @@ func (p *product) PutRole(ctx context.Context, r authz.RoleRecord) error {
 // MarkRoleBuiltin freezes an existing role against the management surface: it
 // sets the builtin mark, after which this manager and the management surface
 // refuse to rewrite or delete the role and to change its grants. SeedGrants is
-// the one write that still adds grants to it. It is the only write that sets
-// the mark; PutRole refuses a record carrying it, because a builtin role
-// created that way would be frozen before the grants that give it meaning.
+// the one write that still adds grants to it and ReconcileGrants the one write
+// that converges its grant set. It is the only write that sets the mark; PutRole
+// refuses a record carrying it, because a builtin role created that way would be
+// frozen before the grants that give it meaning.
 //
 // The caller is the host writing the policy data it owns: the demo seed marks
 // the administrator role once its grants are in place, and the mark keeps that
@@ -352,9 +353,10 @@ func (p *product) DeleteGrant(ctx context.Context, g authz.GrantRecord) error {
 // a concurrent delete of the role and this seed serialise: the delete cannot
 // remove the role between the check and the rows written against it. A grant is
 // never removed, rewritten or re-timestamped here; the set only grows, which is
-// what leaves a builtin role's existing grants fixed. An absent role is
-// ErrUnknownRole, an empty tenant ErrTenantMismatch, and a seed that adds
-// nothing writes nothing and publishes nothing.
+// what leaves a builtin role's existing grants fixed against this path.
+// ReconcileGrants is the separate path that removes a grant the caller retires.
+// An absent role is ErrUnknownRole, an empty tenant ErrTenantMismatch, and a
+// seed that adds nothing writes nothing and publishes nothing.
 func (p *product) SeedGrants(ctx context.Context, tenant string, role authz.Role, grants []authz.Grant) (int, error) {
 	if err := requireTenant(tenant); err != nil {
 		return 0, err

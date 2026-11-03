@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -25,6 +26,9 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/config"
+	jsonformat "github.com/vislake/speed/pkg/config/format/json"
+	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -622,16 +626,24 @@ func (s *fakeSeeder) SeedGrants(_ context.Context, tenantID string, role authz.R
 	return added, nil
 }
 
-// fakeCatalog is the authz.Catalog the unit cases use. The tenant-admin allowlist is
-// empty, so no permission is ever translated into a grant; the two methods
-// exist because the seam requires them, and they answer that nothing is
-// declared and nothing maps.
+// fakeCatalog is the authz.Catalog the unit cases use. Declared answers nothing
+// and ObjectAction maps nothing; the governed set is what a case gives it, so a
+// case can tell the allowlist's intersection from its exclusion.
 type fakeCatalog struct {
 	authz.Catalog
+	governed []authz.Permission
 }
 
 func (fakeCatalog) Declared() []authz.Permission {
 	return nil
+}
+
+func (c fakeCatalog) TenantGoverned() []authz.Permission {
+	return slices.Clone(c.governed)
+}
+
+func (c fakeCatalog) Governed(permission authz.Permission) bool {
+	return slices.Contains(c.governed, permission)
 }
 
 func (fakeCatalog) ObjectAction(authz.Permission) (string, string, bool) {
@@ -2044,13 +2056,22 @@ func TestTheEnsureReadsBackAnExistingPersonalTenant(t *testing.T) {
 // tenant-kind difference the host declares: a personal tenant's tenant-admin
 // keeps the business-resource face and loses membership and identity-provider
 // management, which would let a single-person space add accounts or manage SSO.
+// The allowlist is derived as (business ∩ TenantGoverned) − excluded, so a
+// business permission the platform does not let a tenant administrator govern
+// does not join it either.
 func TestThePersonalTenantAdminAllowlistExcludesManagement(t *testing.T) {
-	business := []authz.Permission{
+	catalog := fakeCatalog{governed: []authz.Permission{
 		"crm.deal.read",
 		authz.PermissionMembershipManage,
 		authz.PermissionIDPManage,
+	}}
+	business := []authz.Permission{
+		"crm.deal.read",
+		"crm.deal.manage",
+		authz.PermissionMembershipManage,
+		authz.PermissionIDPManage,
 	}
-	got := personalAllowlist(business)
+	got := personalAllowlist(catalog, business)
 	want := []authz.Permission{"crm.deal.read"}
 	if !slices.Equal(got, want) {
 		t.Errorf("the allowlist = %v, want %v", got, want)
@@ -2059,9 +2080,12 @@ func TestThePersonalTenantAdminAllowlistExcludesManagement(t *testing.T) {
 		if !slices.Contains(personalExcludedPermissions, excluded) {
 			t.Errorf("the exclusion set does not hold %q", excluded)
 		}
-		if slices.Contains(personalTenantAdminPermissions(), excluded) {
+		if slices.Contains(personalTenantAdminPermissions(catalog), excluded) {
 			t.Errorf("the host allowlist holds the excluded permission %q", excluded)
 		}
+	}
+	if slices.Contains(personalTenantAdminPermissions(catalog), authz.Permission("crm.deal.manage")) {
+		t.Error("the host allowlist holds a business permission outside the governed set")
 	}
 }
 
@@ -2108,5 +2132,114 @@ func TestEnsureMigratesTheLegacyOwnerRole(t *testing.T) {
 	}
 	if held := seeder.grants.held(string(id), legacy); len(held) != 0 {
 		t.Errorf("the legacy role's grants survived: %v", held)
+	}
+}
+
+// TestTheKindResolverNamesOnlyTheCallersOwnSpace holds the resolver's rule:
+// the row whose identifier the caller's account derives is personal, and every
+// other tenant is business -- another account's personal tenant included, so
+// the switcher never labels someone else's space as the caller's.
+func TestTheKindResolverNamesOnlyTheCallersOwnSpace(t *testing.T) {
+	ctx := authntest.Context(t, t.Context(), authntest.WithAccount(unitAccount))
+
+	if kind, err := (personalKindResolver{}).KindOf(ctx, personalTenantID(unitAccount)); err != nil {
+		t.Fatalf("answering for the caller's own space: %v", err)
+	} else if kind != tenant.KindPersonal {
+		t.Errorf("the caller's own space is %q, want personal", kind)
+	}
+
+	for _, id := range []tenant.ID{
+		personalTenantID("another-account"),
+		"acme",
+	} {
+		if kind, err := (personalKindResolver{}).KindOf(ctx, id); err != nil {
+			t.Fatalf("answering for %q: %v", id, err)
+		} else if kind != tenant.KindBusiness {
+			t.Errorf("the tenant %q is %q, want business", id, kind)
+		}
+	}
+}
+
+// TestTheKindResolverWithoutAnIdentityAnswersBusiness holds the defensive
+// case: the read refuses a request with no identity before it asks, so a
+// resolver reached without one answers the zero kind rather than failing.
+func TestTheKindResolverWithoutAnIdentityAnswersBusiness(t *testing.T) {
+	kind, err := (personalKindResolver{}).KindOf(t.Context(), personalTenantID(unitAccount))
+	if err != nil {
+		t.Fatalf("answering without an identity: %v", err)
+	}
+	if kind != tenant.KindBusiness {
+		t.Errorf("kind without an identity is %q, want business", kind)
+	}
+}
+
+// personalConfigReader builds the real configuration loader over a primary
+// source holding body, with the personal module registered so its section is
+// known.
+func personalConfigReader(t *testing.T, body string) config.Reader {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("writing the primary config source: %v", err)
+	}
+	reg := core.New()
+	reg.Register(jsonformat.Module())
+	reg.Register(filesource.Module())
+	reg.Register(core.Module{
+		Name:      "host",
+		Resources: []any{config.HostIdentity{Prefix: "SPEEDPERSONALTEST", DefaultLocator: "file://" + path}},
+	})
+	reg.Register(personalModule())
+	reader, err := config.Load(t.Context(), reg, nil)
+	if err != nil {
+		t.Fatalf("loading the configuration: %v", err)
+	}
+	return reader
+}
+
+// standInCapability is a module delivering instance for token and nothing
+// else, so a case can satisfy one requirement without writing a descriptor.
+func standInCapability(name string, instance any, token core.Token) core.Module {
+	return core.Module{
+		Name:     name,
+		Provides: []core.Provision{{Token: token}},
+		New: func(context.Context, *core.Registry) (any, error) {
+			return instance, nil
+		},
+	}
+}
+
+// TestThePersonalFeatureWithoutAKindResolverFailsTheStartup holds the
+// fail-closed point the design names: the policy module requires the kind
+// resolver, so an assembly that names it without a provider stops at
+// dependency resolution rather than serving every tenant as business.
+func TestThePersonalFeatureWithoutAKindResolverFailsTheStartup(t *testing.T) {
+	reader := personalConfigReader(t, `{"workspace.personal":{"enabled":true}}`)
+
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Register(personalModule())
+	standIns := []core.Module{
+		standInCapability("test.catalog", &struct{ tenant.Catalog }{}, (*tenant.Catalog)(nil)),
+		standInCapability("test.memberships", &struct{ authn.Memberships }{}, (*authn.Memberships)(nil)),
+		standInCapability("test.membership-cleanup", &struct{ authn.MembershipCleanup }{}, (*authn.MembershipCleanup)(nil)),
+		standInCapability("test.manager", &struct{ authz.Manager }{}, (*authz.Manager)(nil)),
+		standInCapability("test.seeder", &struct{ authz.Seeder }{}, (*authz.Seeder)(nil)),
+		standInCapability("test.authz-catalog", &struct{ authz.Catalog }{}, (*authz.Catalog)(nil)),
+		standInCapability("test.audit", &struct{ audit.Audit }{}, (*audit.Audit)(nil)),
+	}
+	names := []string{config.ModuleName, personalModuleName}
+	for _, module := range standIns {
+		reg.Register(module)
+		names = append(names, module.Name)
+	}
+	reg.Supply(reader, config.ModuleName)
+
+	err := reg.Drive(t.Context(), core.Drive{Depth: core.StageNew, Participants: names})
+	if !errors.Is(err, core.ErrMissingProvider) {
+		t.Fatalf("the startup without a kind resolver ended with %v, want ErrMissingProvider", err)
+	}
+	if !strings.Contains(err.Error(), "KindResolver") {
+		t.Errorf("the failure does not name the missing capability: %v", err)
 	}
 }

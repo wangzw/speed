@@ -32,10 +32,14 @@ func TestPermissionConstantsHoldTheirPublishedValues(t *testing.T) {
 		{"PermissionTenantAccess", PermissionTenantAccess, "authn.tenant.access"},
 		{"PermissionRoleRead", PermissionRoleRead, "authz.role.read"},
 		{"PermissionRoleManage", PermissionRoleManage, "authz.role.manage"},
+		{"PermissionTenantRoleRead", PermissionTenantRoleRead, "authz.tenant.role.read"},
+		{"PermissionTenantRoleManage", PermissionTenantRoleManage, "authz.tenant.role.manage"},
 		{"PermissionAuditRead", PermissionAuditRead, "audit.read"},
 		{"PermissionAuditExport", PermissionAuditExport, "audit.export"},
 		{"PermissionSettingsRead", PermissionSettingsRead, "settings.read"},
 		{"PermissionSettingsWrite", PermissionSettingsWrite, "settings.write"},
+		{"PermissionTenantSettingsRead", PermissionTenantSettingsRead, "settings.tenant.read"},
+		{"PermissionTenantSettingsWrite", PermissionTenantSettingsWrite, "settings.tenant.write"},
 	}
 	for _, c := range permissions {
 		if string(c.got) != c.want {

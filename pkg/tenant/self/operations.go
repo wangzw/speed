@@ -18,13 +18,15 @@ const (
 // mounting resolves the same declaration, so the path is written once.
 const pathTenantsFragment = "/auth/me/tenants"
 
-// tenantSelfTenant is one entry of the answer: the tenant's identifier and the
-// alias the request surface addresses it by. It carries no kind — the personal
-// tenant is a host policy the roster does not record — and no status, because a
-// row reaches the answer only when its tenant is served.
+// tenantSelfTenant is one entry of the answer: the tenant's identifier, the
+// alias the request surface addresses it by, and its kind. The kind is the
+// host's answer, passed through from tenant.KindResolver; the roster records no
+// kind and this module derives none. There is no status, because a row reaches
+// the answer only when its tenant is served.
 type tenantSelfTenant = struct {
 	ID    string `json:"id" required:"true" description:"The tenant's immutable identifier."`
 	Alias string `json:"alias" required:"true" description:"The tenant's alias, the name the request surface addresses it by."`
+	Kind  string `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the identifier."`
 }
 
 // tenantsBody is the 200 answer: the tenants the caller holds an active
@@ -43,12 +45,13 @@ var tenantsOperation = speedhttp.NewOperation[struct{}, tenantsBody](
 	http.MethodGet,
 	pathTenantsFragment,
 	"List the tenants the caller holds an active membership in",
-	"Answers the tenants the calling account holds an active membership in, with each tenant's identifier "+
-		"and alias. A membership that is suspended is left out, as is a tenant whose roster state is not "+
-		"active and an identifier the roster does not carry. The list is ordered by identifier and is empty "+
-		"rather than absent when the caller holds none. The route resolves no tenant and requires no "+
-		"permission: every authenticated caller reads its own memberships. A membership or roster read that "+
-		"cannot answer is a 503, never an empty list.",
+	"Answers the tenants the calling account holds an active membership in, with each tenant's identifier, "+
+		"alias and kind. The kind is business or personal, a closed set the host's resolver supplies; an "+
+		"assembly without a resolver reads every tenant as business. A membership that is suspended is left "+
+		"out, as is a tenant whose roster state is not active and an identifier the roster does not carry. "+
+		"The list is ordered by identifier and is empty rather than absent when the caller holds none. The "+
+		"route resolves no tenant and requires no permission: every authenticated caller reads its own "+
+		"memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.",
 	nil,
 	[]speedhttp.Response{
 		{

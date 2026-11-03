@@ -56,10 +56,21 @@ func newProductOver(t *testing.T) *product {
 		dialect:     db.SQLite,
 		text:        authz.ModelText,
 		loadTimeout: 5 * time.Second,
-		catalog:     buildCatalog(reg),
+		catalog:     mustBuildCatalog(t, reg),
 		logger:      log.Default(),
 		tenantLock:  authz.NewInProcessTenantLock(),
 	}
+}
+
+// mustBuildCatalog builds the catalog from a registry and fails the case on a
+// declaration the catalog refuses.
+func mustBuildCatalog(t *testing.T, reg *core.Registry) *catalog {
+	t.Helper()
+	c, err := buildCatalog(reg)
+	if err != nil {
+		t.Fatalf("building the catalog: %v", err)
+	}
+	return c
 }
 
 // wireProduct supplies the given optional capabilities to a registry and wires

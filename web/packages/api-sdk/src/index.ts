@@ -2057,11 +2057,24 @@ export type AuthnProfilePatchBody = {
   time_zone?: string;
 };
 
+/**
+ * The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the identifier.
+ */
+export type TenantSelfTenantsList200TenantsItemKind = typeof TenantSelfTenantsList200TenantsItemKind[keyof typeof TenantSelfTenantsList200TenantsItemKind];
+
+
+export const TenantSelfTenantsList200TenantsItemKind = {
+  business: 'business',
+  personal: 'personal',
+} as const;
+
 export type TenantSelfTenantsList200TenantsItem = {
   /** The tenant's alias, the name the request surface addresses it by. */
   alias: string;
   /** The tenant's immutable identifier. */
   id: string;
+  /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the identifier. */
+  kind: TenantSelfTenantsList200TenantsItemKind;
 };
 
 /**
@@ -4263,7 +4276,7 @@ export const useAuthnProfilePatch = <TError = Problem,
     }
 
 /**
- * Answers the tenants the calling account holds an active membership in, with each tenant's identifier and alias. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership or roster read that cannot answer is a 503, never an empty list.
+ * Answers the tenants the calling account holds an active membership in, with each tenant's identifier, alias and kind. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.
  * @summary List the tenants the caller holds an active membership in
  */
 export const tenantSelfTenantsList = (

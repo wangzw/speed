@@ -52,6 +52,22 @@ func (s *stubCatalog) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool,
 	return row, ok, nil
 }
 
+// stubKindResolver is the host's kind answer keyed by identifier, recording
+// every lookup. An identifier the map does not carry reads as the zero kind.
+type stubKindResolver struct {
+	kinds map[tenant.ID]tenant.Kind
+	err   error
+	asked []tenant.ID
+}
+
+func (s *stubKindResolver) KindOf(_ context.Context, id tenant.ID) (tenant.Kind, error) {
+	s.asked = append(s.asked, id)
+	if s.err != nil {
+		return "", s.err
+	}
+	return s.kinds[id], nil
+}
+
 // newRig builds the module over the stub reads, with one endpoint configured.
 func newRig(memberships authn.Memberships, catalog tenant.Catalog) *product {
 	return &product{
@@ -60,6 +76,13 @@ func newRig(memberships authn.Memberships, catalog tenant.Catalog) *product {
 		logger:      log.Default(),
 		cfg:         resolved{endpoints: []string{"account"}},
 	}
+}
+
+// newRigWithKind is newRig over a host kind resolver.
+func newRigWithKind(memberships authn.Memberships, catalog tenant.Catalog, kind tenant.KindResolver) *product {
+	p := newRig(memberships, catalog)
+	p.kind = kind
+	return p
 }
 
 // serve calls one handler over a real *gin.Context carrying ctx.
@@ -126,6 +149,83 @@ func TestTheReadListsActiveMembershipsOfActiveTenants(t *testing.T) {
 	}
 	if body.Tenants[1].ID != "globex" || body.Tenants[1].Alias != "Globex" {
 		t.Errorf("the second tenant is %+v, want globex/Globex", body.Tenants[1])
+	}
+}
+
+// TestTheKindComesFromTheResolver holds the host seam: each row's kind is the
+// resolver's answer for that tenant, passed through unchanged, and the resolver
+// is asked once per listed tenant.
+func TestTheKindComesFromTheResolver(t *testing.T) {
+	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
+		"acct-bob": {
+			{Account: "acct-bob", Tenant: "acme", Active: true},
+			{Account: "acct-bob", Tenant: "personal-acct-bob", Active: true},
+		},
+	}}
+	catalog := &stubCatalog{rows: map[tenant.ID]tenant.Tenant{
+		"acme":              activeTenant("acme", "Acme"),
+		"personal-acct-bob": activeTenant("personal-acct-bob", "personal-acct-bob"),
+	}}
+	kind := &stubKindResolver{kinds: map[tenant.ID]tenant.Kind{
+		"acme":              tenant.KindBusiness,
+		"personal-acct-bob": tenant.KindPersonal,
+	}}
+	p := newRigWithKind(memberships, catalog, kind)
+	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
+
+	body := decode(t, serve(t, tenantsOperation.Handle(p.handleTenants), ctx))
+	if len(body.Tenants) != 2 {
+		t.Fatalf("tenants = %v, want both", body.Tenants)
+	}
+	if body.Tenants[0].Kind != string(tenant.KindBusiness) {
+		t.Errorf("acme's kind is %q, want business", body.Tenants[0].Kind)
+	}
+	if body.Tenants[1].Kind != string(tenant.KindPersonal) {
+		t.Errorf("the personal tenant's kind is %q, want personal", body.Tenants[1].Kind)
+	}
+	if len(kind.asked) != 2 {
+		t.Errorf("the resolver was asked %v, want once per listed tenant", kind.asked)
+	}
+}
+
+// TestNoResolverReadsEveryTenantAsBusiness holds the assembly with no
+// personal-tenant policy: no resolver means every row is business, not an
+// error and not an absent field.
+func TestNoResolverReadsEveryTenantAsBusiness(t *testing.T) {
+	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
+		"acct-bob": {{Account: "acct-bob", Tenant: "acme", Active: true}},
+	}}
+	catalog := &stubCatalog{rows: map[tenant.ID]tenant.Tenant{
+		"acme": activeTenant("acme", "Acme"),
+	}}
+	p := newRig(memberships, catalog)
+	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
+
+	body := decode(t, serve(t, tenantsOperation.Handle(p.handleTenants), ctx))
+	if len(body.Tenants) != 1 || body.Tenants[0].Kind != string(tenant.KindBusiness) {
+		t.Errorf("tenants = %+v, want one row read as business", body.Tenants)
+	}
+}
+
+// TestAKindReadFailureIsA503 holds a resolver outage apart from a business
+// answer: a failure is a 503, never a row silently read as business.
+func TestAKindReadFailureIsA503(t *testing.T) {
+	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
+		"acct-bob": {{Account: "acct-bob", Tenant: "acme", Active: true}},
+	}}
+	catalog := &stubCatalog{rows: map[tenant.ID]tenant.Tenant{
+		"acme": activeTenant("acme", "Acme"),
+	}}
+	kind := &stubKindResolver{err: errors.New("the kind store is down")}
+	p := newRigWithKind(memberships, catalog, kind)
+	ctx := authntest.Context(t, t.Context(), authntest.WithAccount("acct-bob"))
+
+	w := serve(t, tenantsOperation.Handle(p.handleTenants), ctx)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("an unreadable kind answered %d: %s", w.Code, w.Body.String())
+	}
+	if body := w.Body.String(); strings.Contains(body, "the kind store is down") {
+		t.Errorf("the answer carries the cause: %s", body)
 	}
 }
 

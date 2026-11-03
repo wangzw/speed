@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	authnaccount "github.com/vislake/speed/pkg/authn/account"
 	"github.com/vislake/speed/pkg/authz"
@@ -71,13 +72,23 @@ const platformAdminDescriptionKey = "authz.role.platformAdmin"
 // tenantAdminRole is every tenant's own highest role. Each tenant domain has
 // one, the platform domain included: the system tenant's copy is its own tenant
 // administration beside the platform administrator role. The seed writes it
-// with every declared permission and marks it builtin, because it is the role
+// with the governed permissions and marks it builtin, because it is the role
 // the creator of a tenant holds and a tenant without it has no administrator.
+// Its grant set is converged on every run, so a role seeded before the governed
+// split loses the platform-only grants it used to hold.
 const tenantAdminRole = authz.TenantAdminRole
 
 // tenantAdminDescriptionKey is the description key written with every tenant's
 // tenant-admin role. It travels in the API answer wherever a role is listed.
 const tenantAdminDescriptionKey = "authz.role.tenantAdmin"
+
+// The audit vocabulary of a tenant-admin grant convergence. The action names
+// the seed's own step rather than a permission, and the outcome is a closed
+// success value: a convergence a caller cannot write the row for does not run.
+const (
+	seedReconcileAction  = "seed.authz.tenant-admin.reconcile"
+	seedReconcileOutcome = "success"
+)
 
 // seedInput carries the seed command's inputs.
 type seedInput struct {
@@ -294,7 +305,7 @@ func checkTenants(in seedInput) error {
 			return fmt.Errorf("seed: the tenant %q is the system tenant, which the command registers "+
 				"itself and must not be listed under seed.%s", name, tenantsItem)
 		}
-		if strings.HasPrefix(name, personalIDPrefix) {
+		if isPersonalTenantID(name) {
 			return fmt.Errorf("seed: the tenant %q carries the personal prefix; seed.%s lists the "+
 				"deployment's business tenants, and personal tenants are built from account creation",
 				name, tenantsItem)
@@ -553,7 +564,15 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	if err != nil {
 		return err
 	}
+	reconciler, err := core.Resolve[authz.Reconciler](reg)
+	if err != nil {
+		return err
+	}
 	catalog, err := core.Resolve[authz.Catalog](reg)
+	if err != nil {
+		return err
+	}
+	auditor, err := core.Resolve[audit.Audit](reg)
 	if err != nil {
 		return err
 	}
@@ -653,11 +672,12 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	// Membership and bindings are reconciled later, only for the administrators
 	// seed.tenants declares. The roles are written before the bindings, which name
 	// a role that has to exist in that domain.
-	if err := seedAdministration(ctx, manager, seeder, catalog,
-		string(authz.PlatformDomain), platformAdminRole, platformAdminDescriptionKey); err != nil {
+	if err := seedAdministration(ctx, manager, seeder,
+		string(authz.PlatformDomain), platformAdminRole, platformAdminDescriptionKey,
+		declaredGrants(catalog)); err != nil {
 		return err
 	}
-	if err := seedRosterAdministration(ctx, roster, manager, seeder, catalog); err != nil {
+	if err := seedRosterAdministration(ctx, roster, manager, seeder, reconciler, auditor, catalog); err != nil {
 		return err
 	}
 
@@ -1098,12 +1118,17 @@ func seedLoginName(identifier string) (authn.IdentifierKind, string, error) {
 }
 
 // seedAdministration writes what administration is made of in one domain for
-// one role: the role, every declared permission on it, and the builtin mark that
-// keeps the management surface off both. Each is written only when it is not
-// already there. The caller runs it once per (domain, role) pair — the platform
-// domain carries both administration roles, and each business tenant carries its
-// tenant-admin role — because a role and its grants are per-domain rows and one
-// domain's do not answer for another's.
+// one role: the role, the grants the caller names for it, and the builtin mark
+// that keeps the management surface off both. Each is written only when it is
+// not already there. The caller runs it once per (domain, role) pair — the
+// platform domain carries both administration roles, and each business tenant
+// carries its tenant-admin role — because a role and its grants are per-domain
+// rows and one domain's do not answer for another's.
+//
+// The grants are the caller's choice because the two administration roles hold
+// different sets: platform-admin takes every declared permission, while
+// tenant-admin takes the governed set. That routing is the caller's and is not
+// inferred here.
 //
 // The order is load-bearing: the role is created not builtin, the grants are
 // written, and only then is the mark set. A role created with the mark would be
@@ -1120,54 +1145,92 @@ func seedLoginName(identifier string) (authn.IdentifierKind, string, error) {
 // It names no account, because neither does: the role and its grants belong to
 // the domain, so one write serves every administrator the configuration names.
 func seedAdministration(ctx context.Context, manager authz.Manager, seeder authz.Seeder,
-	catalog authz.Catalog, domain string, role authz.Role, descriptionKey string,
+	domain string, role authz.Role, descriptionKey string, grants []authz.Grant,
 ) error {
 	now := time.Now().UTC()
 	if err := seedRole(ctx, manager, domain, role, descriptionKey, now); err != nil {
 		return err
 	}
-	if err := seedGrants(ctx, seeder, catalog, domain, role); err != nil {
+	if err := seedGrants(ctx, seeder, domain, role, grants); err != nil {
 		return err
 	}
-	if strings.HasPrefix(domain, personalIDPrefix) {
+	if isPersonalTenantID(domain) {
 		fmt.Printf("skipped: builtin mark on %s/%s (personal domain)\n", domain, role)
 		return nil
 	}
 	return markRoleBuiltin(ctx, manager, domain, role)
 }
 
-// seedRosterAdministration writes the tenant-admin role, every declared
-// permission on it, and the builtin mark for every non-personal tenant the
-// roster holds. It reads the roster rather than the configuration because the
-// seed repairs a tenant it did not register: one another replica opened between
-// runs, or one an earlier deployment left with a role neither granted nor
-// frozen. A tenant dropped from seed.tenants stays registered, so its
-// administration is still repaired.
+// seedRosterAdministration writes the tenant-admin role, the governed grants,
+// and the builtin mark for every non-personal tenant the roster holds, then
+// converges each role's grant set to the governed set. It reads the roster
+// rather than the configuration because the seed repairs a tenant it did not
+// register: one another replica opened between runs, or one an earlier
+// deployment left with a role neither granted nor frozen. A tenant dropped from
+// seed.tenants stays registered, so its administration is still repaired.
+//
+// The convergence is what takes a role seeded before the governed split from
+// the full declared set down to the governed one. It removes only the grants
+// this version lists as retired — the declared permissions that are no longer
+// governed — and does nothing on a fresh role the seeding step already filled
+// with the governed set.
 //
 // A personal-prefixed domain is the host's personal space and is skipped
-// entirely: its tenant-admin holds the host's allowlist rather than every
-// declared permission, and the builtin mark would refuse the host's own grant
-// revocation. The role and grants are per domain, so this names no account;
-// membership and bindings stay limited to the administrators seed.tenants
-// declares, because the configuration says nothing about who administers a
-// tenant it does not list.
+// entirely: its tenant-admin holds the host's allowlist rather than the governed
+// set, and the builtin mark would refuse the host's own grant revocation. The
+// role and grants are per domain, so this names no account; membership and
+// bindings stay limited to the administrators seed.tenants declares, because
+// the configuration says nothing about who administers a tenant it does not
+// list.
 func seedRosterAdministration(ctx context.Context, roster tenant.Catalog, manager authz.Manager,
-	seeder authz.Seeder, catalog authz.Catalog,
+	seeder authz.Seeder, reconciler authz.Reconciler, auditor audit.Audit, catalog authz.Catalog,
 ) error {
 	tenants, err := roster.List(ctx)
 	if err != nil {
 		return fmt.Errorf("seed: listing the roster's tenants: %w", err)
 	}
+	target := governedGrants(catalog)
+	retired := retiredTenantAdminGrants(catalog)
 	for _, t := range tenants {
 		id := string(t.ID)
-		if strings.HasPrefix(id, personalIDPrefix) {
+		if isPersonalTenantID(id) {
 			fmt.Printf("skipped: builtin mark on %s/%s (personal domain)\n", id, tenantAdminRole)
 			continue
 		}
-		if err := seedAdministration(ctx, manager, seeder, catalog, id, tenantAdminRole,
-			tenantAdminDescriptionKey); err != nil {
+		if err := seedAdministration(ctx, manager, seeder, id, tenantAdminRole,
+			tenantAdminDescriptionKey, target); err != nil {
 			return err
 		}
+		if err := reconcileTenantAdminGrants(ctx, auditor, reconciler, id, target, retired); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reconcileTenantAdminGrants writes the mandatory audit row of a convergence and
+// then asks the host's reconciler to bring the tenant-admin role to target,
+// removing the grants listed in retired. A row that does not land stops the
+// convergence: the write that changes a builtin role's grant set is never
+// carried out without its record.
+func reconcileTenantAdminGrants(ctx context.Context, auditor audit.Audit, reconciler authz.Reconciler,
+	tenantID string, target, retired []authz.Grant,
+) error {
+	entry := audit.Entry{
+		Action:  seedReconcileAction,
+		Object:  tenantID,
+		Outcome: seedReconcileOutcome,
+	}
+	if err := auditor.Record(ctx, entry); err != nil {
+		return fmt.Errorf("seed: writing the audit row of the tenant-admin convergence of %s: %w", tenantID, err)
+	}
+	added, removed, err := reconciler.ReconcileGrants(ctx, tenantID, tenantAdminRole, target, retired)
+	if err != nil {
+		return fmt.Errorf("seed: converging the tenant-admin grants of %s: %w", tenantID, err)
+	}
+	if added > 0 || removed > 0 {
+		fmt.Printf("reconciled: %d grant(s) added and %d removed on %s/%s\n",
+			added, removed, tenantID, tenantAdminRole)
 	}
 	return nil
 }
@@ -1238,26 +1301,22 @@ func markRoleBuiltin(ctx context.Context, manager authz.Manager, domain string, 
 	return nil
 }
 
-// seedGrants gives one administration role every permission the process declares
-// and the translation has a row for, adding the ones the role does not already
-// hold.
+// seedGrants gives one administration role the grants the caller names, adding
+// the ones the role does not already hold.
 //
-// The translation is what turns a permission into the (resource, action) pair
-// the grant table holds, and this command reads it off the catalog the policy
-// module delivers — which is why the policy module is the one it takes in. A
-// declared permission with no row is one no route can be held to, and there is
-// nothing to grant for it.
+// The grants come from the caller because the two administration roles hold
+// different sets: platform-admin takes every declared permission and tenant-admin
+// the governed set. This step only writes; the convergence that removes grants
+// the governed split retired runs separately, after the mark.
 //
 // The write goes through the seeding surface, not the manager's grant write:
 // once the role carries the builtin mark the manager refuses the latter, and a
 // re-run over a role whose declared set has grown has to add the new grants.
 // The seeding write adds only and never removes, and reports how many it added,
 // which is what makes a second run write nothing.
-func seedGrants(ctx context.Context, seeder authz.Seeder, catalog authz.Catalog,
-	domain string, role authz.Role,
+func seedGrants(ctx context.Context, seeder authz.Seeder,
+	domain string, role authz.Role, grants []authz.Grant,
 ) error {
-	grants := declaredGrants(catalog)
-	untranslatable := len(catalog.Declared()) - len(grants)
 	added, err := seeder.SeedGrants(ctx, domain, role, grants)
 	if err != nil {
 		return fmt.Errorf("seed: granting the declared permissions to %s/%s: %w",
@@ -1270,8 +1329,7 @@ func seedGrants(ctx context.Context, seeder authz.Seeder, catalog authz.Catalog,
 		// Nothing was grantable at all, which is the state of a role holding
 		// nothing: saying "all present" here would report the opposite of what
 		// the operator is about to get.
-		fmt.Printf("seeded: no grant on %s/%s: all %d declared permission(s) translate to no pair\n",
-			domain, role, untranslatable)
+		fmt.Printf("seeded: no grant on %s/%s: the set translates to no pair\n", domain, role)
 	default:
 		fmt.Printf("skipped: grants on %s/%s (all present)\n", domain, role)
 	}

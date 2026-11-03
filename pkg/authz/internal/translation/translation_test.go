@@ -91,10 +91,14 @@ func TestTheBuiltinSetIsTheWholeClosedSet(t *testing.T) {
 		authz.PermissionImpersonationRevoke: {"impersonation", "revoke"},
 		authz.PermissionRoleRead:            {"role", "read"},
 		authz.PermissionRoleManage:          {"role", "manage"},
+		authz.PermissionTenantRoleRead:      {"tenant_role", "read"},
+		authz.PermissionTenantRoleManage:    {"tenant_role", "manage"},
 		authz.PermissionAuditRead:           {"audit", "read"},
 		authz.PermissionAuditExport:         {"audit", "export"},
 		authz.PermissionSettingsRead:        {"settings", "read"},
 		authz.PermissionSettingsWrite:       {"settings", "write"},
+		authz.PermissionTenantSettingsRead:  {"tenant_settings", "read"},
+		authz.PermissionTenantSettingsWrite: {"tenant_settings", "write"},
 	}
 	for p, want := range want {
 		object, action, ok := Lookup(p)

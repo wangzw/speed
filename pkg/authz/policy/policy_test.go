@@ -54,7 +54,7 @@ func newFixture(t *testing.T) *fixture {
 		dialect:     db.SQLite,
 		text:        authz.ModelText,
 		loadTimeout: 5 * time.Second,
-		catalog:     buildCatalog(reg),
+		catalog:     mustBuildCatalog(t, reg),
 		logger:      log.Default(),
 		tenantLock:  authz.NewInProcessTenantLock(),
 	}
@@ -349,7 +349,7 @@ func TestCatalogUnionsTheDeclaredSpecs(t *testing.T) {
 		spec(authz.PermissionAuditRead, authz.PermissionSettingsWrite),
 	}})
 
-	c := buildCatalog(reg)
+	c := mustBuildCatalog(t, reg)
 
 	declared := c.Declared()
 	if len(declared) != 3 {

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vislake/speed/pkg/tenant"
 	tenantself "github.com/vislake/speed/pkg/tenant/self"
 )
 
@@ -101,7 +102,8 @@ func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 	}
 	var answer struct {
 		Tenants []struct {
-			ID string `json:"id"`
+			ID   string `json:"id"`
+			Kind string `json:"kind"`
 		} `json:"tenants"`
 	}
 	if err := json.Unmarshal(read.body, &answer); err != nil {
@@ -110,5 +112,11 @@ func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 	if len(answer.Tenants) != 1 || !strings.HasPrefix(answer.Tenants[0].ID, personalIDPrefix) {
 		t.Errorf("the seeded account answered %d tenant(s), want its one personal tenant:\n%s",
 			len(answer.Tenants), read.body)
+	}
+	// The host's resolver names the caller's own space personal; the platform
+	// read passes that answer through.
+	if len(answer.Tenants) == 1 && answer.Tenants[0].Kind != string(tenant.KindPersonal) {
+		t.Errorf("the personal tenant's kind is %q, want personal:\n%s",
+			answer.Tenants[0].Kind, read.body)
 	}
 }

@@ -57,6 +57,14 @@ type Catalog interface {
 	// Declared returns every declared permission. The result is a copy: a
 	// caller sorting or trimming it does not disturb what the next caller sees.
 	Declared() []Permission
+	// TenantGoverned returns the governed set: every declared permission a
+	// module marked TenantGoverned, in permission-name order. It is a copy for
+	// the same reason Declared is. The platform administrator's grant set is not
+	// narrowed by it; a tenant administrator's grant set is exactly it.
+	TenantGoverned() []Permission
+	// Governed reports whether a declared permission belongs to the governed set.
+	// An undeclared permission answers false.
+	Governed(p Permission) bool
 	// Has reports whether p is a declared permission.
 	Has(p Permission) bool
 	// ObjectAction returns the (object, action) pair a permission translates to,
@@ -122,14 +130,15 @@ type Manager interface {
 	// MarkRoleBuiltin sets the builtin mark on an existing role. It is the
 	// only write that sets the mark: after it, the management surface cannot
 	// rewrite or delete the role and cannot change its grants; Seeder is the
-	// one write that still adds grants. An absent role is ErrUnknownRole; an
+	// one write that still adds grants and Reconciler the one write that
+	// converges the role's grant set. An absent role is ErrUnknownRole; an
 	// already-builtin role is no work.
 	MarkRoleBuiltin(ctx context.Context, tenant string, role Role) error
 	// DeleteRole removes a role. A builtin role cannot be deleted.
 	DeleteRole(ctx context.Context, tenant string, role Role) error
 	// PutGrant creates a grant on a role that exists in the tenant and is not
 	// builtin. A builtin role's grants are changed only by the host's seeding
-	// surface, Seeder.
+	// and reconciling surfaces, Seeder and Reconciler.
 	PutGrant(ctx context.Context, g GrantRecord) error
 	// DeleteGrant removes a grant. A builtin role's grants are refused.
 	DeleteGrant(ctx context.Context, g GrantRecord) error
@@ -220,8 +229,9 @@ const (
 // delete and rewrite paths, and the host's bootstrap keeps the role complete.
 //
 // A seed adds grants and never removes, rewrites or deletes one. A builtin
-// role's existing grants are therefore fixed against every path, and a host
-// that needs to revoke one gives the account another role instead.
+// role's existing grants are therefore fixed against every path except
+// Reconciler.ReconcileGrants, which converges a builtin tenant-admin's grant set
+// to a target and removes only the permissions the caller lists as retired.
 type Seeder interface {
 	// SeedGrants adds grants to a role that exists in the tenant, whether or
 	// not it is builtin. A grant the role already holds is no work and no
@@ -230,4 +240,36 @@ type Seeder interface {
 	// many it considered. An absent role is ErrUnknownRole and an empty tenant
 	// is ErrTenantMismatch.
 	SeedGrants(ctx context.Context, tenant string, role Role, grants []Grant) (int, error)
+}
+
+// Reconciler is the host's converging surface over the policy data: it brings a
+// builtin tenant-admin role's grant set to a target set and removes from it
+// only the permissions the caller lists as retired. The policy subpackage
+// delivers it exclusively, beside Seeder.
+//
+// It is a capability of its own and not a method on Manager for the same reason
+// Seeder is: both management surfaces take Manager up and neither may reach a
+// builtin role's grant set. It applies to TenantAdminRole only and never to
+// PlatformAdminRole; the platform administrator's full declared set is not
+// narrowed by the governed set.
+//
+// The write is one transaction: the missing grants are added, then the held
+// grants named in retired are removed, then the snapshot is reloaded and
+// authz.policy.changed is published. A revised permission that leaves the
+// governed set without being listed in retired stays: during a rolling
+// deployment another replica may still declare it, and deleting by set
+// difference would let replicas erase each other's grants.
+//
+// The caller writes the mandatory audit row before it calls; a row that does not
+// land means the convergence does not run. A ReconcileGrants call is retryable
+// and idempotent: a target set the role already holds writes nothing and
+// publishes nothing.
+type Reconciler interface {
+	// ReconcileGrants converges the role's grants to grants, and removes the
+	// grants named in retired that it currently holds. It returns how many rows
+	// this call added and removed. A role other than TenantAdminRole, or a
+	// TenantAdminRole that is not builtin, is ErrReservedRole before any row is
+	// written; an absent role is ErrUnknownRole and an empty tenant
+	// ErrTenantMismatch.
+	ReconcileGrants(ctx context.Context, tenant string, role Role, grants, retired []Grant) (added, removed int, err error)
 }

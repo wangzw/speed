@@ -107,17 +107,23 @@ func TestTheWriteGuardProtectsTheSystemTenantAndPersonalTenants(t *testing.T) {
 }
 
 // TestTheProvisionerWritesTheTenantAdminAndTheCreatorBinding holds that
-// Provision leaves the domain with its tenant-admin role, the declared grants,
+// Provision leaves the domain with its tenant-admin role, the governed grants,
 // the roster row and the creator's membership and binding.
 func TestTheProvisionerWritesTheTenantAdminAndTheCreatorBinding(t *testing.T) {
 	roster := newFakeRoster()
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
 	seeder := newFakeSeeder(grants)
-	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
-		"crm.deal.read":  {"deal", "read"},
-		"crm.deal.write": {"deal", "write"},
-	}}
+	catalog := fixedCatalog{
+		pairs: map[authz.Permission][2]string{
+			"crm.deal.read":  {"deal", "read"},
+			"crm.deal.write": {"deal", "write"},
+		},
+		governed: map[authz.Permission]bool{
+			"crm.deal.read":  true,
+			"crm.deal.write": true,
+		},
+	}
 	product := tenancyProductOf(roster, newFakeMemberships(), manager, seeder, catalog)
 
 	record := tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
@@ -133,7 +139,7 @@ func TestTheProvisionerWritesTheTenantAdminAndTheCreatorBinding(t *testing.T) {
 	}
 	held := grants.held("acme", authz.TenantAdminRole)
 	if len(held) != 2 {
-		t.Errorf("the tenant-admin holds %d grant(s), want the two declared pairs", len(held))
+		t.Errorf("the tenant-admin holds %d grant(s), want the two governed pairs", len(held))
 	}
 	bindings, _ := manager.BindingsOf(context.Background(), "acme", "acct-1")
 	if len(bindings) != 1 || bindings[0].Role != authz.TenantAdminRole {

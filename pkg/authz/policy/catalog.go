@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/vislake/speed/pkg/authz"
@@ -48,17 +50,33 @@ func declaredPermissions() authz.PermissionSpec {
 		authz.PermissionTenantAccess,
 		authz.PermissionRoleRead,
 		authz.PermissionRoleManage,
+		authz.PermissionTenantRoleRead,
+		authz.PermissionTenantRoleManage,
 		authz.PermissionAuditRead,
 		authz.PermissionAuditExport,
 		authz.PermissionSettingsRead,
 		authz.PermissionSettingsWrite,
+		authz.PermissionTenantSettingsRead,
+		authz.PermissionTenantSettingsWrite,
 	}
 	keys := make(map[authz.Permission]string, len(list))
 	replacer := strings.NewReplacer(".", "-", ":", "-")
 	for _, p := range list {
 		keys[p] = descriptionPrefix + replacer.Replace(string(p))
 	}
-	return authz.PermissionSpec{Permissions: list, DescriptionKeys: keys}
+	// The governed set: the permissions with a tenant-scoped endpoint that a
+	// tenant administrator may hold and grant. It is closed, and the others this
+	// capability declares stay platform-only. A permission added later joins it
+	// only by being listed here.
+	governed := []authz.Permission{
+		authz.PermissionTenantRoleRead,
+		authz.PermissionTenantRoleManage,
+		authz.PermissionTenantSettingsRead,
+		authz.PermissionTenantSettingsWrite,
+		authz.PermissionMembershipManage,
+		authz.PermissionIDPManage,
+	}
+	return authz.PermissionSpec{Permissions: list, TenantGoverned: governed, DescriptionKeys: keys}
 }
 
 // catalog is the permission catalog: the set of permissions the registered
@@ -67,6 +85,11 @@ type catalog struct {
 	declared []authz.Permission
 	set      map[authz.Permission]bool
 	keys     map[authz.Permission]string
+	// governed is the governed set in permission-name order, and governedSet is
+	// its membership test. A governed permission is always declared: buildCatalog
+	// refuses a module that marks one governed without listing it.
+	governed    []authz.Permission
+	governedSet map[authz.Permission]bool
 	// reverse maps an (object, action) pair back to the permission it
 	// translates to. The engine matches the pair and never sees the permission,
 	// so a set of held pairs is only a set of permission names through this
@@ -82,14 +105,23 @@ type catalog struct {
 // is refused at startup rather than carrying a permission that matches no
 // grant. The union may name the same permission twice across modules, which is
 // one permission declared by two of them and is kept once.
-func buildCatalog(reg *core.Registry) *catalog {
+//
+// A module's TenantGoverned must be a subset of its own Permissions. One that
+// marks a permission governed without declaring it is refused with
+// ErrUnknownPermission: the governed set is the tenant administrator's whole
+// grant set, and a permission nothing declares could never be granted or
+// translated.
+func buildCatalog(reg *core.Registry) (*catalog, error) {
 	specs := core.Resources[authz.PermissionSpec](reg)
 	c := &catalog{
-		set:  make(map[authz.Permission]bool),
-		keys: make(map[authz.Permission]string),
+		set:         make(map[authz.Permission]bool),
+		keys:        make(map[authz.Permission]string),
+		governedSet: make(map[authz.Permission]bool),
 	}
 	for _, resource := range specs {
+		declaredHere := make(map[authz.Permission]bool, len(resource.Value.Permissions))
 		for _, p := range resource.Value.Permissions {
+			declaredHere[p] = true
 			if !c.set[p] {
 				c.set[p] = true
 				c.declared = append(c.declared, p)
@@ -98,9 +130,20 @@ func buildCatalog(reg *core.Registry) *catalog {
 				c.keys[p] = key
 			}
 		}
+		for _, p := range resource.Value.TenantGoverned {
+			if !declaredHere[p] {
+				return nil, fmt.Errorf("%w: %s marks %q governed without listing it in its Permissions",
+					authz.ErrUnknownPermission, resource.Module, p)
+			}
+			if !c.governedSet[p] {
+				c.governedSet[p] = true
+				c.governed = append(c.governed, p)
+			}
+		}
 	}
+	slices.Sort(c.governed)
 	c.indexReverse()
-	return c
+	return c, nil
 }
 
 // indexReverse rebuilds the pair-to-permission map from the process's
@@ -139,6 +182,18 @@ func (c *catalog) Declared() []authz.Permission {
 
 // Has reports whether p is declared.
 func (c *catalog) Has(p authz.Permission) bool { return c.set[p] }
+
+// TenantGoverned returns the governed set in permission-name order. The slice
+// is a copy: a caller sorting or trimming it does not disturb what the next
+// caller sees.
+func (c *catalog) TenantGoverned() []authz.Permission {
+	out := make([]authz.Permission, len(c.governed))
+	copy(out, c.governed)
+	return out
+}
+
+// Governed reports whether p is a declared permission in the governed set.
+func (c *catalog) Governed(p authz.Permission) bool { return c.governedSet[p] && c.set[p] }
 
 // ObjectAction returns the (object, action) pair a permission translates to.
 //

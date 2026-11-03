@@ -200,11 +200,13 @@ func (g *stubWriteGuard) fail(err error) {
 // records every Has query, so a case can hold that the grant route checked the
 // catalog before it called the manager.
 type stubCatalog struct {
-	mu    sync.Mutex
-	perms []authz.Permission
-	set   map[authz.Permission]bool
-	keys  map[authz.Permission]string
-	has   []authz.Permission
+	mu          sync.Mutex
+	perms       []authz.Permission
+	set         map[authz.Permission]bool
+	keys        map[authz.Permission]string
+	governed    []authz.Permission
+	governedSet map[authz.Permission]bool
+	has         []authz.Permission
 }
 
 func newStubCatalog(perms ...authz.Permission) *stubCatalog {
@@ -213,9 +215,10 @@ func newStubCatalog(perms ...authz.Permission) *stubCatalog {
 		set[p] = true
 	}
 	return &stubCatalog{
-		perms: append([]authz.Permission(nil), perms...),
-		set:   set,
-		keys:  make(map[authz.Permission]string),
+		perms:       append([]authz.Permission(nil), perms...),
+		set:         set,
+		keys:        make(map[authz.Permission]string),
+		governedSet: make(map[authz.Permission]bool),
 	}
 }
 
@@ -231,6 +234,20 @@ func (c *stubCatalog) Declared() []authz.Permission {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]authz.Permission(nil), c.perms...)
+}
+
+// TenantGoverned implements authz.Catalog.
+func (c *stubCatalog) TenantGoverned() []authz.Permission {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]authz.Permission(nil), c.governed...)
+}
+
+// Governed implements authz.Catalog.
+func (c *stubCatalog) Governed(p authz.Permission) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.governedSet[p] && c.set[p]
 }
 
 func (c *stubCatalog) Has(p authz.Permission) bool {

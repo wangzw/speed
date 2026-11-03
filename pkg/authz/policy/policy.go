@@ -3,10 +3,10 @@
 // permission catalog, the policy snapshot the enforcement path reads, the
 // management surface over the policy data, and the account lifecycle cleanup.
 //
-// It delivers the enforcement engine, the subject-permission read, the catalog
-// and the manager, each exclusively, and implements the authentication
-// capability's account lifecycle hook, membership lifecycle hook and membership
-// guard. The Casbin engine and the database it reads live here and nowhere else,
+// It delivers the enforcement engine, the subject-permission read, the catalog,
+// the manager, the seeding surface and the converging surface, each exclusively,
+// and implements the authentication capability's account lifecycle hook,
+// membership lifecycle hook and membership guard. The Casbin engine and the database it reads live here and nowhere else,
 // so a host that only guards routes carries no policy store.
 package policy
 
@@ -69,13 +69,13 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// It delivers the engine, the subject-permission read, the catalog, the manager
-// and the seeding surface, each exclusively: two engines would be two snapshots
-// a decision could land in with nothing to choose between them, two
-// subject-permission reads two answers to what one subject holds, two catalogs
-// two answers to whether a permission is declared, and two managers or two
-// seeders two writers of one table. A second provider of any of them fails the
-// startup.
+// It delivers the engine, the subject-permission read, the catalog, the manager,
+// the seeding surface and the converging surface, each exclusively: two engines
+// would be two snapshots a decision could land in with nothing to choose between
+// them, two subject-permission reads two answers to what one subject holds, two
+// catalogs two answers to whether a permission is declared, two managers, two
+// seeders or two reconcilers two writers of one table. A second provider of any
+// of them fails the startup.
 //
 // The database is the one hard dependency: the policy lives in its own tables
 // and there is no engine without it. The roster, the membership checker, the
@@ -101,6 +101,7 @@ func Module() core.Module {
 			{Token: (*authz.Catalog)(nil), Exclusive: true},
 			{Token: (*authz.Manager)(nil), Exclusive: true},
 			{Token: (*authz.Seeder)(nil), Exclusive: true},
+			{Token: (*authz.Reconciler)(nil), Exclusive: true},
 			{Token: (*authn.AccountLifecycle)(nil)},
 			{Token: (*authn.MembershipLifecycle)(nil)},
 			{Token: (*authn.MembershipGuard)(nil)},
@@ -137,13 +138,17 @@ func Module() core.Module {
 			if err != nil {
 				return nil, fmt.Errorf("%s: taking up the database: %w", ModuleName, err)
 			}
+			catalog, err := buildCatalog(reg)
+			if err != nil {
+				return nil, fmt.Errorf("%s: building the permission catalog: %w", ModuleName, err)
+			}
 			return &product{
 				handle:          database.DB(),
 				dialect:         database.Dialect(),
 				text:            authz.ModelText,
 				loadTimeout:     cfg.loadTimeout,
 				refreshInterval: cfg.refreshInterval,
-				catalog:         buildCatalog(reg),
+				catalog:         catalog,
 				logger:          log.Default(),
 				tenantLock:      authz.NewInProcessTenantLock(),
 			}, nil
@@ -188,14 +193,15 @@ var (
 	_ authz.Catalog             = (*product)(nil)
 	_ authz.Manager             = (*product)(nil)
 	_ authz.Seeder              = (*product)(nil)
+	_ authz.Reconciler          = (*product)(nil)
 	_ authn.AccountLifecycle    = (*product)(nil)
 	_ authn.MembershipLifecycle = (*product)(nil)
 	_ authn.MembershipGuard     = (*product)(nil)
 )
 
 // product is this module's product and the implementation of the enforcement
-// engine, the catalog, the manager, the seeding surface and the account
-// lifecycle hook.
+// engine, the catalog, the manager, the seeding surface, the converging surface
+// and the account lifecycle hook.
 type product struct {
 	handle      *gorm.DB
 	dialect     db.Dialect
@@ -389,6 +395,12 @@ func (p *product) Held(ctx context.Context, domain authz.Domain, subject string)
 
 // Declared implements authz.Catalog.
 func (p *product) Declared() []authz.Permission { return p.catalog.Declared() }
+
+// TenantGoverned implements authz.Catalog.
+func (p *product) TenantGoverned() []authz.Permission { return p.catalog.TenantGoverned() }
+
+// Governed implements authz.Catalog.
+func (p *product) Governed(perm authz.Permission) bool { return p.catalog.Governed(perm) }
 
 // Has implements authz.Catalog.
 func (p *product) Has(perm authz.Permission) bool { return p.catalog.Has(perm) }

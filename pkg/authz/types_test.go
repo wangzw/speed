@@ -83,7 +83,11 @@ func TestTheSharedTypesHoldTheirFields(t *testing.T) {
 		{
 			"PermissionSpec",
 			structFields(t, PermissionSpec{}),
-			[]string{"Permissions []authz.Permission", "DescriptionKeys map[authz.Permission]string"},
+			[]string{
+				"Permissions []authz.Permission",
+				"TenantGoverned []authz.Permission",
+				"DescriptionKeys map[authz.Permission]string",
+			},
 		},
 		{
 			"Binding",
@@ -135,8 +139,10 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 			[]string{
 				"Declared func() []authz.Permission",
 				"DescriptionKey func(authz.Permission) (string, bool)",
+				"Governed func(authz.Permission) bool",
 				"Has func(authz.Permission) bool",
 				"ObjectAction func(authz.Permission) (string, string, bool)",
+				"TenantGoverned func() []authz.Permission",
 			},
 		},
 		{
@@ -181,6 +187,13 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 			interfaceMethods(t, (*Seeder)(nil)),
 			[]string{
 				"SeedGrants func(context.Context, string, authz.Role, []authz.Grant) (int, error)",
+			},
+		},
+		{
+			"Reconciler",
+			interfaceMethods(t, (*Reconciler)(nil)),
+			[]string{
+				"ReconcileGrants func(context.Context, string, authz.Role, []authz.Grant, []authz.Grant) (int, int, error)",
 			},
 		},
 		{

@@ -116,10 +116,13 @@ func (e *Enforcer) Allowed(_ context.Context, q authz.Query) (bool, error) {
 }
 
 // Catalog is a stand-in authz.Catalog over a fixed set of permissions. Its set
-// is settled at construction and never changes, so it needs no lock.
+// is settled at construction and never changes, so it needs no lock. The
+// governed set is empty until DeclareGoverned lists members.
 type Catalog struct {
-	perms []authz.Permission
-	set   map[authz.Permission]bool
+	perms       []authz.Permission
+	set         map[authz.Permission]bool
+	governed    []authz.Permission
+	governedSet map[authz.Permission]bool
 }
 
 // NewCatalog returns a Catalog declaring exactly perms.
@@ -128,13 +131,36 @@ func NewCatalog(perms ...authz.Permission) *Catalog {
 	for _, p := range perms {
 		set[p] = true
 	}
-	return &Catalog{perms: slices.Clone(perms), set: set}
+	return &Catalog{perms: slices.Clone(perms), set: set, governedSet: map[authz.Permission]bool{}}
+}
+
+// DeclareGoverned puts the permissions among perms that were declared into the
+// governed set, in permission-name order. A permission not declared is ignored:
+// the real catalog refuses a module that marks one governed without declaring
+// it, and the stand-in cannot hold a governed permission it does not declare.
+func (c *Catalog) DeclareGoverned(perms ...authz.Permission) {
+	c.governed = nil
+	c.governedSet = make(map[authz.Permission]bool, len(perms))
+	for _, p := range perms {
+		if !c.set[p] || c.governedSet[p] {
+			continue
+		}
+		c.governedSet[p] = true
+		c.governed = append(c.governed, p)
+	}
+	slices.Sort(c.governed)
 }
 
 // Declared implements authz.Catalog. The slice is a copy, as the interface
 // requires: a caller sorting or trimming it does not disturb what the next
 // caller sees.
 func (c *Catalog) Declared() []authz.Permission { return slices.Clone(c.perms) }
+
+// TenantGoverned implements authz.Catalog. The slice is a copy.
+func (c *Catalog) TenantGoverned() []authz.Permission { return slices.Clone(c.governed) }
+
+// Governed implements authz.Catalog.
+func (c *Catalog) Governed(p authz.Permission) bool { return c.governedSet[p] && c.set[p] }
 
 // Has implements authz.Catalog.
 func (c *Catalog) Has(p authz.Permission) bool { return c.set[p] }

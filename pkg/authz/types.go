@@ -36,10 +36,16 @@ type Role string
 type Domain string
 
 // PermissionSpec is what one module declares about the permissions it owns: the
-// list of them, and the i18n key of the description shown for each. A module
-// hands one of these to the policy subpackage's catalog.
+// list of them, which of those a tenant administrator may govern, and the i18n
+// key of the description shown for each. A module hands one of these to the
+// policy subpackage's catalog.
+//
+// TenantGoverned must be a subset of Permissions: a permission marked governed
+// and not declared is a startup ErrUnknownPermission. A declared permission not
+// in the subset is platform-only — no tenant administrator receives it.
 type PermissionSpec struct {
 	Permissions     []Permission
+	TenantGoverned  []Permission
 	DescriptionKeys map[Permission]string
 }
 
@@ -95,7 +101,7 @@ type Binding struct {
 // marks a role the management surface may not delete or rewrite and whose
 // grants it may not change; it is set only by Manager.MarkRoleBuiltin and read
 // back as it stands. A builtin role's grants are extended only by
-// Seeder.SeedGrants.
+// Seeder.SeedGrants and converged only by Reconciler.ReconcileGrants.
 type RoleRecord struct {
 	Tenant         string
 	Role           Role
@@ -114,10 +120,11 @@ type GrantRecord struct {
 	CreatedAt time.Time
 }
 
-// Grant is one permission grant a seeding step adds to a role: the (resource,
-// action) pair the role holds. It is the input shape of Seeder.SeedGrants,
-// which names the tenant and the role once for the whole set; a stored row is
-// a GrantRecord, which also carries the row's tenant, role and creation time.
+// Grant is one permission grant a seeding step adds or removes from a role: the
+// (resource, action) pair the role holds. It is the input shape of
+// Seeder.SeedGrants and of Reconciler.ReconcileGrants, each of which names the
+// tenant and the role once for the whole set; a stored row is a GrantRecord,
+// which also carries the row's tenant, role and creation time.
 type Grant struct {
 	Resource string
 	Action   string

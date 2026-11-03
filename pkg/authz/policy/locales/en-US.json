@@ -18,6 +18,10 @@
   "authz.permission.authn-tenant-access": "Enter a tenant the caller is not a member of",
   "authz.permission.authz-role-manage": "Manage roles",
   "authz.permission.authz-role-read": "Read roles",
+  "authz.permission.authz-tenant-role-manage": "Manage the tenant's roles, grants and bindings",
+  "authz.permission.authz-tenant-role-read": "Read the tenant's roles and permissions",
   "authz.permission.settings-read": "Read settings",
+  "authz.permission.settings-tenant-read": "Read the tenant's settings",
+  "authz.permission.settings-tenant-write": "Write the tenant's settings",
   "authz.permission.settings-write": "Write settings"
 }

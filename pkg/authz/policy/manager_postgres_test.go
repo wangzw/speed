@@ -41,7 +41,7 @@ func newPostgresFixture(t *testing.T) *fixture {
 		dialect:     db.Postgres,
 		text:        authz.ModelText,
 		loadTimeout: 5 * time.Second,
-		catalog:     buildCatalog(reg),
+		catalog:     mustBuildCatalog(t, reg),
 		logger:      log.Default(),
 		tenantLock:  authz.NewInProcessTenantLock(),
 	}

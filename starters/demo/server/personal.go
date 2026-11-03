@@ -43,6 +43,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -87,6 +88,68 @@ const personalEndpoint = "account"
 // carries no personal data.
 const personalIDPrefix = "personal-"
 
+// isPersonalTenantID reports whether a tenant identifier names a personal
+// tenant, which this host recognises by the prefix of the identifier it
+// derives.
+//
+// It is the one place the prefix is compared. The write guards that refuse a
+// personal domain, the provisioner's builtin exemption and the seed's skip all
+// call it, so the host has one statement of what a personal identifier is
+// rather than several that can drift apart. The kind resolver derives the
+// caller's own identifier with personalTenantID -- the same prefix -- and
+// compares it exactly.
+func isPersonalTenantID(id string) bool {
+	return strings.HasPrefix(id, personalIDPrefix)
+}
+
+// personalKindResolver answers tenant.KindResolver for this host: the calling
+// account's own personal tenant is personal, and every other tenant is
+// business. It is the seam that lets the caller tenant read carry a kind
+// without the roster recording one.
+//
+// The answer compares the row's identifier with the one the caller's account
+// derives, EXACTLY. A prefix test would mark another account's personal tenant
+// personal too, and that row can appear in the caller's membership list; the
+// identity comes off the request context, which the read already settled.
+type personalKindResolver struct{}
+
+var _ tenant.KindResolver = personalKindResolver{}
+
+// KindOf implements tenant.KindResolver.
+func (personalKindResolver) KindOf(ctx context.Context, id tenant.ID) (tenant.Kind, error) {
+	identity, ok := authn.FromContext(ctx)
+	if !ok {
+		return tenant.KindBusiness, nil
+	}
+	if id == personalTenantID(identity.Account()) {
+		return tenant.KindPersonal, nil
+	}
+	return tenant.KindBusiness, nil
+}
+
+// personalKindModuleName names the module that delivers the host's tenant kind
+// resolver.
+//
+// It is a module of its own because the personal-tenant policy module requires
+// the resolver and a module cannot provide what it requires. Being separate also
+// keeps the fail-closed check where the design puts it: an assembly that names
+// the policy module without this one ends at dependency resolution, before any
+// request.
+const personalKindModuleName = "workspace.personal.kind"
+
+// personalKindModule delivers tenant.KindResolver.
+func personalKindModule() core.Module {
+	return core.Module{
+		Name: personalKindModuleName,
+		Provides: []core.Provision{
+			{Token: (*tenant.KindResolver)(nil)},
+		},
+		New: func(context.Context, *core.Registry) (any, error) {
+			return personalKindResolver{}, nil
+		},
+	}
+}
+
 // personalTenantAdminRole is the role the ensure writes in the personal tenant.
 // It is every tenant's own highest role, and the account that owns the personal
 // tenant is its first and only holder.
@@ -100,7 +163,9 @@ const legacyPersonalOwnerRole = authz.Role("owner")
 // personalBusinessPermissions is the host-declared set of business-resource
 // permissions a personal tenant's tenant-admin may hold. The set is written out
 // in code and not derived from the process catalog, so a permission a module
-// declares later does not join the role on its own. It is empty in this
+// declares later does not join the role on its own. It is intersected with the
+// governed set, so a business permission the platform does not let a tenant
+// administrator govern does not join the role either. It is empty in this
 // skeleton: the notification surface declares no permission point, and the
 // object store no longer declares one — its terminal-user API is gone, and bytes
 // are reached through a minted URL the business backend asks for. A product that
@@ -119,17 +184,28 @@ var personalExcludedPermissions = []authz.Permission{
 }
 
 // personalTenantAdminPermissions is the allowlist the ensure converges the
-// tenant-admin role's grants to: the host-declared business resources less the
+// tenant-admin role's grants to: the host-declared business resources, kept only
+// where the platform lets a tenant administrator govern them, less the
 // management actions a personal tenant must not have.
-func personalTenantAdminPermissions() []authz.Permission {
-	return personalAllowlist(personalBusinessPermissions)
+func personalTenantAdminPermissions(catalog authz.Catalog) []authz.Permission {
+	return personalAllowlist(catalog, personalBusinessPermissions)
 }
 
-// personalAllowlist removes the excluded management permissions from a
-// business-resource set.
-func personalAllowlist(business []authz.Permission) []authz.Permission {
+// personalAllowlist derives the personal tenant-admin allowlist from the
+// business-resource set: (business ∩ TenantGoverned) − excluded. The governed
+// intersection is what keeps a permission the platform marks platform-only out
+// of a personal tenant, and the exclusion removes the management actions a
+// single-person space must not have.
+func personalAllowlist(catalog authz.Catalog, business []authz.Permission) []authz.Permission {
+	governed := make(map[authz.Permission]bool, len(catalog.TenantGoverned()))
+	for _, permission := range catalog.TenantGoverned() {
+		governed[permission] = true
+	}
 	out := make([]authz.Permission, 0, len(business))
 	for _, permission := range business {
+		if !governed[permission] {
+			continue
+		}
 		if slices.Contains(personalExcludedPermissions, permission) {
 			continue
 		}
@@ -264,8 +340,13 @@ var personalEnsureOperation = speedhttp.NewOperation[struct{}, WorkspacePersonal
 var personalOperations = speedhttp.Operations{personalEnsureOperation}
 
 // init registers this module. The import is the wiring, as for every host
-// module; the serve command's Include list is what puts it in a run.
-func init() { core.ProcessRegistry.Register(personalModule()) }
+// module; the serve command's Include list is what puts it in a run. The kind
+// resolver is registered beside it so the assembly that names the policy module
+// can name its provider too.
+func init() {
+	core.ProcessRegistry.Register(personalModule())
+	core.ProcessRegistry.Register(personalKindModule())
+}
 
 // personalModule is the descriptor of this host's personal-tenant policy.
 //
@@ -286,6 +367,11 @@ func init() { core.ProcessRegistry.Register(personalModule()) }
 // process that stopped between the account's commit and the hooks leaves nothing
 // for good: the staging outbox delivers the event after the restart.
 //
+// It requires tenant.KindResolver: the caller tenant read tells a personal row
+// from a business one by that answer, and an assembly that carries this policy
+// without a resolver fails at dependency resolution rather than serving every
+// tenant as business. personalKindModule delivers it.
+//
 // The descriptor declares its OpenAPI fragment on the account endpoint: the
 // contract belongs to the application's own second-level generation, not to a
 // pkg/ package.
@@ -300,6 +386,11 @@ func personalModule() core.Module {
 			{Token: (*authz.Seeder)(nil)},
 			{Token: (*authz.Catalog)(nil)},
 			{Token: (*audit.Audit)(nil)},
+			// The caller tenant read carries this host's kind answer, and a
+			// command that enables the personal-tenant policy without a resolver
+			// must not start: the failure belongs at dependency resolution, not
+			// at each list request.
+			{Token: (*tenant.KindResolver)(nil)},
 			{Token: (*speedhttp.Router)(nil), Optional: true},
 			{Token: (*feature.Board)(nil), Optional: true},
 			{Token: (*authn.Gate)(nil), Optional: true},
@@ -900,9 +991,9 @@ func (p *personalProduct) convergeTenantAdminGrants(ctx context.Context, tenantI
 	if err != nil {
 		return fmt.Errorf("reading the tenant-admin role's grants: %w", err)
 	}
-	allowed := make(map[authz.Grant]struct{}, len(personalTenantAdminPermissions()))
-	grants := make([]authz.Grant, 0, len(personalTenantAdminPermissions()))
-	for _, permission := range personalTenantAdminPermissions() {
+	allowed := make(map[authz.Grant]struct{}, len(personalTenantAdminPermissions(p.catalog)))
+	grants := make([]authz.Grant, 0, len(personalTenantAdminPermissions(p.catalog)))
+	for _, permission := range personalTenantAdminPermissions(p.catalog) {
 		object, action, ok := p.catalog.ObjectAction(permission)
 		if !ok {
 			// The allowlist names a permission the process translation has no

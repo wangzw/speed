@@ -97,8 +97,11 @@ func init() { core.ProcessRegistry.Register(Module()) }
 //
 // The membership read and the roster are required. Each is delivered
 // exclusively by another module, so the closure of a command that takes this
-// one in does not pull either provider in: the host writes them down. The logger
-// is optional, taken up so that it is initialised first.
+// one in does not pull either provider in: the host writes them down. The kind
+// resolver is optional: an assembly with no personal-tenant policy supplies
+// none, and every tenant then reads as business, while an assembly that carries
+// that policy provides one through its own module. The logger is optional,
+// taken up so that it is initialised first.
 //
 // The HTTP entry point and the route-declaration surface are taken up in Init
 // rather than declared: a command that mounts a route and has no entry point is
@@ -116,6 +119,7 @@ func Module() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*authn.Memberships)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
+			{Token: (*tenant.KindResolver)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
@@ -168,6 +172,10 @@ func productOf(instance any) (*product, bool) {
 type product struct {
 	memberships authn.Memberships
 	catalog     tenant.Catalog
+	// kind answers one tenant's kind, nil when the assembly supplies no
+	// resolver. A nil resolver reads every tenant as tenant.KindBusiness: an
+	// assembly without a personal-tenant policy has no personal tenant.
+	kind tenant.KindResolver
 
 	// gate is the route-declaration surface, nil when the assembly delivers
 	// none. When it is there, Init declares the route open on it so that a
@@ -202,9 +210,14 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, err
 	}
+	kind, _, err := optional[tenant.KindResolver](reg, "the tenant kind resolver")
+	if err != nil {
+		return nil, err
+	}
 	return &product{
 		memberships: memberships,
 		catalog:     catalog,
+		kind:        kind,
 		logger:      log.Default(),
 		cfg:         cfg,
 	}, nil

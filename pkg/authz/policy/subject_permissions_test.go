@@ -89,6 +89,51 @@ func TestHeldAnswersTheProductPermissions(t *testing.T) {
 	}
 }
 
+// TestTheTenantAdminAnswerCarriesNoPlatformCode holds the governed split at the
+// subject-permissions read: a tenant-admin role seeded with the governed set and
+// bound in a tenant domain answers exactly that set, with no platform-only code
+// in it.
+func TestTheTenantAdminAnswerCarriesNoPlatformCode(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	const tenant = "acme"
+	role := authz.TenantAdminRole
+	if err := f.PutRole(ctx, authz.RoleRecord{Tenant: tenant, Role: role, DescriptionKey: "k"}); err != nil {
+		t.Fatalf("PutRole: %v", err)
+	}
+	grants := make([]authz.Grant, 0, len(f.catalog.TenantGoverned()))
+	for _, permission := range f.catalog.TenantGoverned() {
+		object, action, ok := f.catalog.ObjectAction(permission)
+		if !ok {
+			t.Fatalf("the governed permission %q has no translation row", permission)
+		}
+		grants = append(grants, authz.Grant{Resource: object, Action: action})
+	}
+	if _, err := f.SeedGrants(ctx, tenant, role, grants); err != nil {
+		t.Fatalf("SeedGrants: %v", err)
+	}
+	if err := f.MarkRoleBuiltin(ctx, tenant, role); err != nil {
+		t.Fatalf("MarkRoleBuiltin: %v", err)
+	}
+	if err := f.PutBinding(ctx, authz.Binding{Tenant: tenant, Account: "alice", Role: role}); err != nil {
+		t.Fatalf("PutBinding: %v", err)
+	}
+
+	held, err := f.Held(ctx, authz.Domain(tenant), "alice")
+	if err != nil {
+		t.Fatalf("Held: %v", err)
+	}
+	want := f.catalog.TenantGoverned()
+	if !slices.Equal(held, want) {
+		t.Errorf("Held = %v, want the governed set %v", held, want)
+	}
+	for _, permission := range held {
+		if !f.catalog.Governed(permission) {
+			t.Errorf("the tenant-admin answer carries the platform-only permission %q", permission)
+		}
+	}
+}
+
 // A read whose snapshot was never loaded is unavailable rather than an empty
 // permission set.
 func TestHeldReportsAnUnloadedSnapshotAsUnavailable(t *testing.T) {

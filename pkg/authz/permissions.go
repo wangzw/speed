@@ -43,6 +43,18 @@ const (
 	PermissionRoleManage Permission = "authz.role.manage"
 )
 
+// The permissions of the tenant administration surface: the tenant-scoped role,
+// grant and binding routes read and write, and the tenant settings route reads
+// and writes. They carry their own codes, translated to their own (object,
+// action) pairs, so a platform permission and a tenant permission are granted
+// and decided apart: holding one does not pass the other's decision.
+const (
+	PermissionTenantRoleRead      Permission = "authz.tenant.role.read"
+	PermissionTenantRoleManage    Permission = "authz.tenant.role.manage"
+	PermissionTenantSettingsRead  Permission = "settings.tenant.read"
+	PermissionTenantSettingsWrite Permission = "settings.tenant.write"
+)
+
 // The permissions this capability carries for the audit and settings
 // capabilities: their search and export, and their write surface.
 const (

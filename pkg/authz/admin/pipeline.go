@@ -307,13 +307,15 @@ func (p *product) requireWriteAllowed(ctx context.Context, tenant string, op aut
 // an account that is not a platform member are 400s because the request named
 // something that is not there, crossed a tenant, or asked for a binding the
 // membership check refuses; a builtin role and the last tenant administrator are
-// 409s because the target exists but cannot be changed or left ungoverned; and
-// any other failure of the manager or its store is a 503 whose cause stays in
-// the log and never reaches the caller. ErrUnknownPermission is not mapped here:
-// it is the startup sentinel for a route declaration naming a permission the
-// catalog does not hold, and no manager write path returns it — a grant naming
-// an undeclared permission is refused by the catalog check before the manager is
-// reached.
+// 409s because the target exists but cannot be changed or left ungoverned; a
+// reserved role written outside its domain is a 403 with the protected code,
+// the class the design gives that refusal — the target may not be placed there
+// rather than the caller lacking a permission — and any other failure of the
+// manager or its store is a 503 whose cause stays in the log and never reaches
+// the caller. ErrUnknownPermission is not mapped here: it is the startup
+// sentinel for a route declaration naming a permission the catalog does not
+// hold, and no manager write path returns it — a grant naming an undeclared
+// permission is refused by the catalog check before the manager is reached.
 func (p *product) failureOf(op string, err error) error {
 	switch {
 	case errors.Is(err, authz.ErrUnknownRole), errors.Is(err, authz.ErrTenantMismatch),
@@ -321,6 +323,8 @@ func (p *product) failureOf(op string, err error) error {
 		return badRequest()
 	case errors.Is(err, authz.ErrBuiltinRole), errors.Is(err, authz.ErrLastTenantAdmin):
 		return conflict()
+	case errors.Is(err, authz.ErrReservedRole):
+		return speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + protectedCode}
 	default:
 		p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
 		return speedhttp.Fault{Status: http.StatusServiceUnavailable}

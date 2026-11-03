@@ -72,6 +72,26 @@ func TestBindingAnUnknownRoleIsRefused(t *testing.T) {
 	}
 }
 
+// TestBindingTheReservedRoleOutsideThePlatformDomainIsProtected holds that the
+// platform administrator role written in another domain is a 403 with the
+// protected code, not a 503: the role exists but may not be placed there, and a
+// dependency outage is a different answer.
+func TestBindingTheReservedRoleOutsideThePlatformDomainIsProtected(t *testing.T) {
+	r := newRig(t)
+	r.manager.fail(authz.ErrReservedRole)
+
+	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
+		"/api/v1/system/tenants/t1/bindings/acct-1/platform-admin",
+		params("tenant", "t1", "account", "acct-1", "role", "platform-admin"), nil)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("binding the reserved role outside the platform domain answered %d, want 403", w.Code)
+	}
+	if p := decodeProblem(t, w.Body.String()); p.Type != "urn:speed:authz:protected" {
+		t.Fatalf("the 403's type = %q, want urn:speed:authz:protected", p.Type)
+	}
+}
+
 // TestBindingWithAnEmptyAccountIsRefused holds that the module refuses an empty
 // account on shape, after the decision and before the manager is called: a
 // binding addresses an account, and a request that names none is a 400 rather

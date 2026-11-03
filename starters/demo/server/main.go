@@ -391,8 +391,10 @@ var (
 		// The host's own personal-tenant policy: off by configuration in the
 		// baseline, on in the review assembly. When on it mounts
 		// POST /api/v1/workspace/personal on the account endpoint and declares the
-		// conditional feature workspace.personal. See personal.go.
+		// conditional feature workspace.personal. It requires the kind resolver,
+		// which the module beside it delivers. See personal.go.
 		personalModuleName,
+		personalKindModuleName,
 
 		// The host's own seed guard: a deployment listening off loopback must not
 		// run on the compiled demonstration seed, so it refuses at Prepare before
@@ -616,7 +618,7 @@ func addStack(root *config.Command, s stack) {
 	seed := node.Sub(seedCommand)
 	seed.Include(seedGuardModuleName, seedModuleName, authnaccount.ModuleName, authzpolicy.ModuleName,
 		tenantcatalog.ModuleName, settings.ModuleName, outboxrelay.ModuleName, s.event, log.ModuleName,
-		tenancyModuleName, auditjournal.ModuleName, personalModuleName)
+		tenancyModuleName, auditjournal.ModuleName, personalModuleName, personalKindModuleName)
 	seed.Do(core.StageStart, seedDatabase)
 
 	// gen merges the fragments the modules declare into one document and writes

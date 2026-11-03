@@ -137,10 +137,39 @@ func (s *grantSeeder) SeedGrants(_ context.Context, tenant string, role authz.Ro
 	return s.added, s.err
 }
 
+// recordingReconciler is a stand-in authz.Reconciler. It records every call and
+// answers the counts the case fixes, so a case can hold what the seed handed the
+// convergence surface without a policy store.
+type recordingReconciler struct {
+	authz.Reconciler
+	calls   []reconcileCall
+	added   int
+	removed int
+	err     error
+}
+
+// reconcileCall is one recorded convergence request.
+type reconcileCall struct {
+	tenant  string
+	role    authz.Role
+	grants  []authz.Grant
+	retired []authz.Grant
+}
+
+func (r *recordingReconciler) ReconcileGrants(_ context.Context, tenant string, role authz.Role,
+	grants, retired []authz.Grant,
+) (int, int, error) {
+	r.calls = append(r.calls, reconcileCall{
+		tenant: tenant, role: role, grants: slices.Clone(grants), retired: slices.Clone(retired),
+	})
+	return r.added, r.removed, r.err
+}
+
 // fixedCatalog is a catalog holding the permissions it is given, each with the
-// (resource, action) pair it translates to.
+// (resource, action) pair it translates to, and the governed subset it is given.
 type fixedCatalog struct {
-	pairs map[authz.Permission][2]string
+	pairs    map[authz.Permission][2]string
+	governed map[authz.Permission]bool
 }
 
 func (c fixedCatalog) Declared() []authz.Permission {
@@ -149,6 +178,23 @@ func (c fixedCatalog) Declared() []authz.Permission {
 		out = append(out, permission)
 	}
 	return out
+}
+
+func (c fixedCatalog) TenantGoverned() []authz.Permission {
+	out := make([]authz.Permission, 0, len(c.governed))
+	for permission := range c.governed {
+		if _, declared := c.pairs[permission]; declared {
+			out = append(out, permission)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+func (c fixedCatalog) Governed(permission authz.Permission) bool {
+	_, governed := c.governed[permission]
+	_, declared := c.pairs[permission]
+	return governed && declared
 }
 
 func (c fixedCatalog) Has(permission authz.Permission) bool {
@@ -182,7 +228,7 @@ func TestSeedGrantsSeedsEveryDeclaredPermission(t *testing.T) {
 		"crm.deal.read":  {"deal", "read"},
 		"crm.deal.write": {"deal", "write"},
 	}}
-	if err := seedGrants(t.Context(), seeder, catalog, "system", platformAdminRole); err != nil {
+	if err := seedGrants(t.Context(), seeder, "system", platformAdminRole, declaredGrants(catalog)); err != nil {
 		t.Fatalf("seedGrants: %v", err)
 	}
 	if seeder.tenant != "system" || seeder.role != platformAdminRole {
@@ -213,7 +259,7 @@ func TestSeedReportsASeedingFailure(t *testing.T) {
 	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
 		"crm.deal.read": {"deal", "read"},
 	}}
-	err := seedGrants(t.Context(), seeder, catalog, "system", platformAdminRole)
+	err := seedGrants(t.Context(), seeder, "system", platformAdminRole, declaredGrants(catalog))
 	if !errors.Is(err, refusal) {
 		t.Fatalf("seedGrants error = %v, want it to wrap the seeding failure", err)
 	}
@@ -224,6 +270,83 @@ func TestSeedReportsASeedingFailure(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("seedGrants error = %q, want it to contain %q", err, want)
 		}
+	}
+}
+
+// TestTheAdministrationRolesTakeDifferentGrantSets holds the seeding split:
+// platform-admin takes every declared pair, tenant-admin takes the governed set
+// exactly, and the version's retired set is the declared permissions that are
+// not governed.
+func TestTheAdministrationRolesTakeDifferentGrantSets(t *testing.T) {
+	catalog := fixedCatalog{
+		pairs: map[authz.Permission][2]string{
+			"crm.deal.read":      {"deal", "read"},
+			"crm.deal.write":     {"deal", "write"},
+			"authn.account.read": {"account", "read"},
+		},
+		governed: map[authz.Permission]bool{"crm.deal.read": true},
+	}
+
+	declaredWant := []authz.Grant{
+		{Resource: "account", Action: "read"},
+		{Resource: "deal", Action: "read"},
+		{Resource: "deal", Action: "write"},
+	}
+	if got := declaredGrants(catalog); !slices.Equal(got, declaredWant) {
+		t.Errorf("the platform administrator's grants = %+v, want the full declared set %+v", got, declaredWant)
+	}
+	governedWant := []authz.Grant{{Resource: "deal", Action: "read"}}
+	if got := governedGrants(catalog); !slices.Equal(got, governedWant) {
+		t.Errorf("the tenant administrator's grants = %+v, want the governed set %+v", got, governedWant)
+	}
+	retiredWant := []authz.Grant{
+		{Resource: "account", Action: "read"},
+		{Resource: "deal", Action: "write"},
+	}
+	if got := retiredTenantAdminGrants(catalog); !slices.Equal(got, retiredWant) {
+		t.Errorf("the retired tenant-admin grants = %+v, want the declared-but-not-governed set %+v", got, retiredWant)
+	}
+}
+
+// TestTheSeedDoesNotConvergeWhenTheAuditRowFails holds the mandatory row: a
+// convergence whose audit row cannot be written does not run, so a builtin
+// role's grant set is never changed without its record.
+func TestTheSeedDoesNotConvergeWhenTheAuditRowFails(t *testing.T) {
+	reconciler := &recordingReconciler{}
+	auditor := newRecordedAudit()
+	auditor.err = errors.New("the audit table is unavailable")
+
+	err := reconcileTenantAdminGrants(t.Context(), auditor, reconciler, "acme", nil, nil)
+	if err == nil {
+		t.Fatal("the convergence ran although its audit row could not be written")
+	}
+	if len(reconciler.calls) != 0 {
+		t.Errorf("the reconciler was called %+v without its audit row", reconciler.calls)
+	}
+}
+
+// TestTheSeedRecordsTheConvergenceBeforeAsking holds the order the caller owes
+// the reconciler: the success row is written first, then the convergence is
+// asked for the tenant and role it names.
+func TestTheSeedRecordsTheConvergenceBeforeAsking(t *testing.T) {
+	reconciler := &recordingReconciler{}
+	auditor := newRecordedAudit()
+	target := []authz.Grant{{Resource: "deal", Action: "read"}}
+
+	if err := reconcileTenantAdminGrants(t.Context(), auditor, reconciler, "acme", target, nil); err != nil {
+		t.Fatalf("reconcileTenantAdminGrants: %v", err)
+	}
+	rows := auditor.rows()
+	if len(rows) != 1 || rows[0].Action != seedReconcileAction ||
+		rows[0].Object != "acme" || rows[0].Outcome != seedReconcileOutcome {
+		t.Fatalf("the audit rows = %+v, want one success row for the convergence of acme", rows)
+	}
+	if len(reconciler.calls) != 1 {
+		t.Fatalf("the reconciler was called %d time(s), want once", len(reconciler.calls))
+	}
+	call := reconciler.calls[0]
+	if call.tenant != "acme" || call.role != tenantAdminRole || !slices.Equal(call.grants, target) {
+		t.Errorf("the reconciler got %+v, want the acme tenant-admin target %+v", call, target)
 	}
 }
 
@@ -1098,10 +1221,13 @@ func TestSeedFailsOnASystemAliasConflict(t *testing.T) {
 func TestSeedBindsTheTenantAdministratorsInTheDeclaredOrder(t *testing.T) {
 	t.Parallel()
 	manager := &orderManager{}
-	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{"crm.deal.read": {"deal", "read"}}}
+	catalog := fixedCatalog{
+		pairs:    map[authz.Permission][2]string{"crm.deal.read": {"deal", "read"}},
+		governed: map[authz.Permission]bool{"crm.deal.read": true},
+	}
 	seeder := &orderSeeder{manager: manager}
-	if err := seedAdministration(t.Context(), manager, seeder, catalog,
-		"acme", tenantAdminRole, tenantAdminDescriptionKey); err != nil {
+	if err := seedAdministration(t.Context(), manager, seeder,
+		"acme", tenantAdminRole, tenantAdminDescriptionKey, governedGrants(catalog)); err != nil {
 		t.Fatalf("seedAdministration: %v", err)
 	}
 	for _, id := range []authn.AccountID{"acct-1", "acct-2"} {
@@ -1123,14 +1249,20 @@ func TestSeedMarksADeclaredTenantsExistingRoleBuiltin(t *testing.T) {
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
 	manager.roles["acme"] = []authz.RoleRecord{{Tenant: "acme", Role: tenantAdminRole}}
-	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
-		"crm.deal.read":  {"deal", "read"},
-		"crm.deal.write": {"deal", "write"},
-	}}
+	catalog := fixedCatalog{
+		pairs: map[authz.Permission][2]string{
+			"crm.deal.read":  {"deal", "read"},
+			"crm.deal.write": {"deal", "write"},
+		},
+		governed: map[authz.Permission]bool{
+			"crm.deal.read":  true,
+			"crm.deal.write": true,
+		},
+	}
 	seeder := newFakeSeeder(grants)
 
-	if err := seedAdministration(t.Context(), manager, seeder, catalog,
-		"acme", tenantAdminRole, tenantAdminDescriptionKey); err != nil {
+	if err := seedAdministration(t.Context(), manager, seeder,
+		"acme", tenantAdminRole, tenantAdminDescriptionKey, governedGrants(catalog)); err != nil {
 		t.Fatalf("seedAdministration: %v", err)
 	}
 	if manager.markBuiltinCalls != 1 {
@@ -1202,12 +1334,14 @@ func TestSeedRepairsEveryNonPersonalTenantInTheRoster(t *testing.T) {
 		}
 		manager.roles[id] = []authz.RoleRecord{{Tenant: id, Role: tenantAdminRole}}
 	}
-	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
-		"crm.deal.read": {"deal", "read"},
-	}}
+	catalog := fixedCatalog{
+		pairs:    map[authz.Permission][2]string{"crm.deal.read": {"deal", "read"}},
+		governed: map[authz.Permission]bool{"crm.deal.read": true},
+	}
 	seeder := newFakeSeeder(grants)
 
-	if err := seedRosterAdministration(t.Context(), roster, manager, seeder, catalog); err != nil {
+	if err := seedRosterAdministration(t.Context(), roster, manager, seeder,
+		&recordingReconciler{}, newRecordedAudit(), catalog); err != nil {
 		t.Fatalf("seedRosterAdministration: %v", err)
 	}
 	for _, id := range domains[:2] {
@@ -1246,13 +1380,14 @@ func TestSeedLeavesAPersonalDomainsRoleUnfrozen(t *testing.T) {
 	domain := personalIDPrefix + "acct-1"
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
-	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
-		"crm.deal.read": {"deal", "read"},
-	}}
+	catalog := fixedCatalog{
+		pairs:    map[authz.Permission][2]string{"crm.deal.read": {"deal", "read"}},
+		governed: map[authz.Permission]bool{"crm.deal.read": true},
+	}
 	seeder := newFakeSeeder(grants)
 
-	if err := seedAdministration(t.Context(), manager, seeder, catalog,
-		domain, tenantAdminRole, tenantAdminDescriptionKey); err != nil {
+	if err := seedAdministration(t.Context(), manager, seeder,
+		domain, tenantAdminRole, tenantAdminDescriptionKey, governedGrants(catalog)); err != nil {
 		t.Fatalf("seedAdministration: %v", err)
 	}
 	if manager.markBuiltinCalls != 0 {

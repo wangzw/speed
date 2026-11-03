@@ -193,7 +193,7 @@ func (p *tenancyProduct) IsMember(ctx context.Context, tenantID, account string)
 // memberships: the rule is that a domain keeps an administrator binding, and a
 // suspended member's binding still exists.
 func (p *tenancyProduct) CheckMembershipRemoval(ctx context.Context, id authn.AccountID, tenantID string) error {
-	if strings.HasPrefix(tenantID, personalIDPrefix) {
+	if isPersonalTenantID(tenantID) {
 		return fmt.Errorf("%w: the personal tenant %q is a single-member space",
 			authn.ErrLastTenantAdmin, tenantID)
 	}
@@ -242,7 +242,7 @@ func (p *tenancyProduct) Denied(_ context.Context, id tenant.ID, op tenant.Write
 // recognises by the prefix of the identifier it derives.
 func protectedTenant(id tenant.ID) bool {
 	return string(id) == string(authz.PlatformDomain) ||
-		strings.HasPrefix(string(id), personalIDPrefix)
+		isPersonalTenantID(string(id))
 }
 
 // policyWriteGuardModule delivers authz.WriteGuard. It is a module of its own
@@ -274,11 +274,11 @@ var _ authz.WriteGuard = policyWriteGuard{}
 
 // Denied implements authz.WriteGuard.
 func (policyWriteGuard) Denied(_ context.Context, tenantID string, _ authz.WriteOp) (bool, error) {
-	return strings.HasPrefix(tenantID, personalIDPrefix), nil
+	return isPersonalTenantID(tenantID), nil
 }
 
 // Provision implements tenant.Provisioner: it writes the tenant domain's
-// tenant-admin role, every declared permission on it, the roster row, marks the
+// tenant-admin role, the governed permissions on it, the roster row, marks the
 // role builtin, and then writes the creator's membership and the creator's
 // binding. The roster row precedes the administrator rows so a failure after it
 // leaves a tenant the seed can repair, and the builtin mark precedes them so a
@@ -332,10 +332,10 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 		}
 		return fmt.Errorf("%s: writing the tenant's tenant-admin role: %w", tenancyModuleName, err)
 	}
-	grants := declaredGrants(p.catalog)
+	grants := governedGrants(p.catalog)
 	if _, err := p.seeder.SeedGrants(ctx, tenantID, role, grants); err != nil {
 		p.removeProvision(ctx, tenantID)
-		return fmt.Errorf("%s: granting the declared permissions to the tenant-admin role: %w", tenancyModuleName, err)
+		return fmt.Errorf("%s: granting the governed permissions to the tenant-admin role: %w", tenancyModuleName, err)
 	}
 	if err := p.roster.Create(ctx, t); err != nil {
 		// ErrTenantExists means another replica registered the identifier
@@ -358,7 +358,7 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 	// as a personal domain in every other seam, and the personal tenant's
 	// tenant-admin is not builtin because the host revokes grants outside the
 	// allowlist through the manager. Leave that role unfrozen for the same reason.
-	if !strings.HasPrefix(tenantID, personalIDPrefix) {
+	if !isPersonalTenantID(tenantID) {
 		if err := p.markTenantAdminBuiltin(ctx, tenantID, role); err != nil {
 			return fmt.Errorf("%s: marking the tenant-admin role builtin: %w", tenancyModuleName, err)
 		}
@@ -427,11 +427,47 @@ func (p *tenancyProduct) removeProvision(ctx context.Context, tenantID string) {
 
 // declaredGrants is the (resource, action) pair every declared permission the
 // process translation carries. A declared permission with no translation row
-// is one no route can be held to, so there is nothing to grant for it.
+// is one no route can be held to, so there is nothing to grant for it. The
+// platform administrator's grant set is this one.
 func declaredGrants(catalog authz.Catalog) []authz.Grant {
-	declared := catalog.Declared()
-	grants := make([]authz.Grant, 0, len(declared))
-	for _, permission := range declared {
+	return grantsFor(catalog, catalog.Declared())
+}
+
+// governedGrants is declaredGrants over the governed set: the permissions a
+// tenant administrator may hold. Every tenant's tenant-admin role holds this
+// set, the system tenant's included; platform staff power comes from
+// platform-admin's full declared set instead.
+func governedGrants(catalog authz.Catalog) []authz.Grant {
+	return grantsFor(catalog, catalog.TenantGoverned())
+}
+
+// retiredTenantAdminGrants is the set this version withdraws from every
+// tenant-admin role: the declared permissions that are not governed. Before the
+// governed split, the role was seeded with the full declared set, so those
+// platform-only permissions are the ones the convergence removes on an existing
+// database. The list is explicit here rather than inferred by the reconciler,
+// which removes only what its caller names.
+func retiredTenantAdminGrants(catalog authz.Catalog) []authz.Grant {
+	governed := make(map[authz.Permission]bool, len(catalog.TenantGoverned()))
+	for _, permission := range catalog.TenantGoverned() {
+		governed[permission] = true
+	}
+	retired := make([]authz.Permission, 0)
+	for _, permission := range catalog.Declared() {
+		if !governed[permission] {
+			retired = append(retired, permission)
+		}
+	}
+	return grantsFor(catalog, retired)
+}
+
+// grantsFor translates permissions to the (resource, action) pairs the grant
+// table holds, in resource then action order. A permission the process
+// translation has no row for is one no route can be held to, so nothing is
+// granted for it.
+func grantsFor(catalog authz.Catalog, permissions []authz.Permission) []authz.Grant {
+	grants := make([]authz.Grant, 0, len(permissions))
+	for _, permission := range permissions {
 		object, action, ok := catalog.ObjectAction(permission)
 		if !ok {
 			continue
