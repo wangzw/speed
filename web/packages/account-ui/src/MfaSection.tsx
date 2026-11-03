@@ -105,9 +105,9 @@
  * verification, which says so when it has never passed one; the instant is
  * formatted with the account's timezone chain -- the stored preference, the
  * host's display-timezone context, the device zone, then UTC -- the same
- * chain every other surface uses. A row ends in an overflow menu holding
- * rename and removal, the same menu the identifiers surface uses; a disabled
- * row offers removal alone.
+ * chain every other surface uses. A row ends in its own actions -- rename
+ * and removal when the row can be renamed, removal alone otherwise -- the
+ * same direct row actions the identifiers surface uses.
  *
  * Both gated entries share one dialog: the pending action is remembered
  * so a success re-runs exactly that action and a cancel re-runs nothing.
@@ -130,8 +130,6 @@ import { useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Menu from '@mui/material/Menu'
-import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -287,76 +285,42 @@ function enrollNoteKey(kind: string): string {
   return ENROLL_NOTE_KEYS[kind] ?? 'mfa.enroll.note.other'
 }
 
-/** One factor row's overflow menu: rename it and remove it. A disabled
- * factor offers removal alone. The trigger carries the row's own accessible
- * name, and the menu is the identifiers surface's overflow menu shape. */
-function FactorActionsMenu({
-  factorName,
+/** One factor row's actions: rename it and remove it, in that order. A
+ * disabled factor offers removal alone. A row with one action renders that
+ * action alone; a row with several renders one small action row. */
+function FactorActions({
   canRename,
   disabled,
   onRename,
   onRemove,
 }: {
-  readonly factorName: string
   readonly canRename: boolean
   readonly disabled: boolean
   readonly onRename: () => void
   readonly onRemove: () => void
 }) {
   const { t } = useAccountUiTranslation()
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
-  return (
-    <>
-      <Button
-        variant="outlined"
+  if (!canRename) {
+    return (
+      <ActionButton
         size="small"
+        tone="danger"
         disabled={disabled}
-        aria-label={t('mfa.actionsAria', {
-          factor: factorName,
-          interpolation: { escapeValue: false },
-        })}
-        onClick={(event) => setAnchor(event.currentTarget)}
+        onClick={onRemove}
       >
-        <Box
-          component="svg"
-          aria-hidden="true"
-          focusable="false"
-          viewBox="0 0 24 24"
-          width={18}
-          height={18}
-          fill="currentColor"
-        >
-          <circle cx="5" cy="12" r="1.8" />
-          <circle cx="12" cy="12" r="1.8" />
-          <circle cx="19" cy="12" r="1.8" />
-        </Box>
-      </Button>
-      <Menu
-        anchorEl={anchor}
-        open={anchor !== null}
-        onClose={() => setAnchor(null)}
-      >
-        {canRename ? (
-          <MenuItem
-            onClick={() => {
-              setAnchor(null)
-              onRename()
-            }}
-          >
-            {t('mfa.rename')}
-          </MenuItem>
-        ) : null}
-        <MenuItem
-          sx={{ color: 'error.main' }}
-          onClick={() => {
-            setAnchor(null)
-            onRemove()
-          }}
-        >
-          {t('mfa.remove')}
-        </MenuItem>
-      </Menu>
-    </>
+        {t('mfa.remove')}
+      </ActionButton>
+    )
+  }
+  return (
+    <ActionRow size="small">
+      <ActionButton disabled={disabled} onClick={onRename}>
+        {t('mfa.rename')}
+      </ActionButton>
+      <ActionButton tone="danger" disabled={disabled} onClick={onRemove}>
+        {t('mfa.remove')}
+      </ActionButton>
+    </ActionRow>
   )
 }
 
@@ -1327,8 +1291,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                           )}
                                       </Box>
                                       {id !== null ? (
-                                        <FactorActionsMenu
-                                          factorName={displayName}
+                                        <FactorActions
                                           canRename={
                                             !disabled && takesName(kind)
                                           }

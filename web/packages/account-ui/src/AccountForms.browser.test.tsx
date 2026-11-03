@@ -368,13 +368,12 @@ describe('account-ui form geometry', () => {
     )
     const user = userEvent.setup()
 
+    const contactRow = (await screen.findByText('ada@x.test')).closest('tr')
+    expect(contactRow).not.toBeNull()
     await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.identifiers.actionsAria.replace('{{value}}', 'ada@x.test'),
+      within(contactRow as HTMLElement).getByRole('button', {
+        name: zhCN.identifiers.verify,
       }),
-    )
-    await user.click(
-      screen.getByRole('menuitem', { name: zhCN.identifiers.verify }),
     )
     const submit = await screen.findByRole('button', {
       name: zhCN.identifiers.add.submitEmail,
@@ -411,22 +410,28 @@ describe('account-ui form geometry', () => {
     renderWithProviders(<MfaSection session={rig.session} />)
     const user = userEvent.setup()
 
-    const actionsName = (factorLabel: string): string =>
-      zhCN.mfa.actionsAria.replace('{{factor}}', factorLabel)
     // The single authenticator entry is named by its kind; a passkey or a
     // phone number is named by the label its holder gave it.
-    const totpActions = await screen.findByRole('button', {
-      name: actionsName(zhCN.mfa.factor.kind.totp),
-    })
-    const smsActions = screen.getByRole('button', {
-      name: actionsName('Phone'),
-    })
-    // One group offers an add action and the other does not, but both row
-    // menus sit on the same right edge.
+    const factorRow = (name: string): HTMLElement => {
+      const row = screen
+        .getAllByRole('listitem')
+        .find((item) => within(item).queryByText(name, { exact: true }) !== null)
+      if (row === undefined) {
+        throw new Error(`no factor row reads as ${name}`)
+      }
+      return row
+    }
+    const removeIn = (name: string): HTMLElement =>
+      within(factorRow(name)).getByRole('button', { name: zhCN.mfa.remove })
+    await screen.findAllByText(zhCN.mfa.factor.kind.totp)
+    const totpRemove = removeIn(zhCN.mfa.factor.kind.totp)
+    const smsRemove = removeIn('Phone')
+    // One group offers an add action and the other does not, but both rows'
+    // removal actions sit on the same right edge.
     expect(screen.getByTestId('mfa-add-totp')).toBeTruthy()
     expect(screen.queryByTestId('mfa-add-sms')).toBeNull()
-    expectRightEdge(totpActions, smsActions)
-    expect(sameTop(totpActions, smsActions)).toBe(false)
+    expectRightEdge(totpRemove, smsRemove)
+    expect(sameTop(totpRemove, smsRemove)).toBe(false)
   })
 
   it('ends the profile save beneath its field, flush on the right', async () => {

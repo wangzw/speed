@@ -1,8 +1,8 @@
 /**
  * The factor row's overflow menu, driven in a real Chromium.
  *
- * The removal is reached the way a reader reaches it -- open the row's "⋯"
- * menu, choose remove, confirm -- and the case pins what the grouped
+ * The removal is reached the way a reader reaches it -- choose the row's
+ * own remove action, confirm -- and the case pins what the grouped
  * surface owes the reader after the write lands: the row leaves the list,
  * the group's own action stays a plain add, and the success feedback names
  * the row that went. jsdom
@@ -94,14 +94,13 @@ describe('MfaSection row overflow menu', () => {
     })
     expect(initialAdd.textContent).toBe(zhCN.mfa.action.add)
 
-    // The removal is reached through the row's overflow menu.
+    // The removal is reached through the row's own remove action.
+    const row = (await screen.findByText(ROW_NAME, { exact: true })).closest('li')
+    expect(row).not.toBeNull()
     await user.click(
-      screen.getByRole('button', {
-        name: zhCN.mfa.actionsAria.replace('{{factor}}', ROW_NAME),
+      within(row as HTMLElement).getByRole('button', {
+        name: zhCN.mfa.remove,
       }),
-    )
-    await user.click(
-      await screen.findByRole('menuitem', { name: zhCN.mfa.remove }),
     )
 
     const dialog = await screen.findByRole('dialog')
@@ -189,13 +188,14 @@ describe('MfaSection rename editor', () => {
     renderWithProviders(<MfaSection session={rig.session} />)
     const user = userEvent.setup()
 
+    const factorRowElement = (
+      await screen.findByText(rowLabel, { exact: true })
+    ).closest('li')
+    expect(factorRowElement).not.toBeNull()
     await user.click(
-      await screen.findByRole('button', {
-        name: zhCN.mfa.actionsAria.replace('{{factor}}', rowLabel),
+      within(factorRowElement as HTMLElement).getByRole('button', {
+        name: zhCN.mfa.rename,
       }),
-    )
-    await user.click(
-      await screen.findByRole('menuitem', { name: zhCN.mfa.rename }),
     )
 
     const field = await screen.findByLabelText(zhCN.mfa.renameLabel)

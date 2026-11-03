@@ -530,10 +530,21 @@ describe('AccountSettingsPage sections', () => {
     renderAccount('?section=profile')
 
     // The contact axis lists the address in its own table, carrying the
-    // default-contact position only the contact side offers.
+    // default-contact position only the contact side offers. The row's chip
+    // states the position; the row offers no set-default action for one it
+    // already holds.
+    const row = (await screen.findByText('user@example.com')).closest('tr')
+    expect(row).not.toBeNull()
     expect(
-      await screen.findByText(accountEnUS.identifiers.axes.defaultContact),
+      within(row as HTMLElement).getByText(
+        accountEnUS.identifiers.axes.defaultContact,
+      ),
     ).toBeInTheDocument()
+    expect(
+      within(row as HTMLElement).queryByRole('button', {
+        name: accountEnUS.identifiers.axes.defaultContact,
+      }),
+    ).toBeNull()
     expect(
       screen.queryByText(accountEnUS.identifiers.axes.signIn),
     ).toBeNull()
@@ -902,7 +913,7 @@ describe('AccountSettingsPage block consistency', () => {
     )
   })
 
-  it('keeps the phone removal behind the number row\'s trailing menu and its confirm', async () => {
+  it('removes the phone through the row\'s direct delete button and its confirm', async () => {
     const backend = patchedBackend({
       identifiers: [
         {
@@ -926,31 +937,40 @@ describe('AccountSettingsPage block consistency', () => {
     const phone = await screen.findByRole('region', {
       name: demoEnUS.account.rows.label.phone,
     })
-    // The number's actions are one overflow menu button on the row, the
-    // same form the email card's contact rows carry -- not an inline
-    // delete button.
-    const actions = await within(phone).findByRole('button', {
-      name: accountEnUS.identifiers.actionsAria.replace(
-        '{{value}}',
-        '+14155550123',
-      ),
+    // The number's action is the delete button itself, on the row, not an
+    // overflow menu trigger hiding it.
+    const remove = await within(phone).findByRole('button', {
+      name: demoEnUS.account.action.delete,
     })
-    expect(within(phone).getByRole('table')).toContainElement(actions)
-    // The row carries no separate inline delete button beside the menu.
+    expect(within(phone).getByRole('table')).toContainElement(remove)
+    // No menu trigger remains on the row.
     expect(
       within(phone).queryByRole('button', {
-        name: demoEnUS.account.action.delete,
+        name: accountEnUS.identifiers.actionsAria.replace(
+          '{{value}}',
+          '+14155550123',
+        ),
       }),
     ).toBeNull()
     const user = userEvent.setup()
-    await user.click(actions)
-    await user.click(
-      screen.getByRole('menuitem', {
-        name: demoEnUS.account.action.delete,
-      }),
-    )
+    await user.click(remove)
     const dialog = await screen.findByRole('dialog')
     expect(dialog).toHaveTextContent(demoEnUS.account.phoneRemove.removeTitle)
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: demoEnUS.account.phoneRemove.removeConfirm,
+      }),
+    )
+    // The same confirm drives the same protected delete.
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (call) =>
+            call.method === 'DELETE' &&
+            call.path === '/api/v1/auth/identifiers/id-phone',
+        ),
+      ).toBe(true),
+    )
   })
 
   /** The profile with one phone number, whose deletion the server refuses. */
@@ -994,14 +1014,8 @@ describe('AccountSettingsPage block consistency', () => {
     })
     await user.click(
       await within(phone).findByRole('button', {
-        name: accountEnUS.identifiers.actionsAria.replace(
-          '{{value}}',
-          '+14155550123',
-        ),
+        name: demoEnUS.account.action.delete,
       }),
-    )
-    await user.click(
-      screen.getByRole('menuitem', { name: demoEnUS.account.action.delete }),
     )
     const dialog = await screen.findByRole('dialog')
     await user.click(

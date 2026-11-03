@@ -334,23 +334,15 @@ function phoneSignInSentence(page: Page): Locator {
 
 /**
  * Remove the bound phone number from the profile pane's phone card. The card
- * owns the number's lifecycle: the row's trailing menu holds the delete
- * action, which opens the confirmation, and a refused removal renders the
- * card's failure sentence beside it.
+ * owns the number's lifecycle: the row's own delete button opens the
+ * confirmation, and a refused removal renders the card's failure sentence
+ * beside it.
  */
 async function deletePhone(page: Page): Promise<void> {
   await openAccountSection(page, 'profile')
   await expandAccountRows(page)
   await phoneCard(page)
-    .getByRole('button', {
-      name: copy('accountUi', 'identifiers.actionsAria', {
-        value: PHONE_E164,
-      }),
-      exact: true,
-    })
-    .click()
-  await page
-    .getByRole('menuitem', { name: copy('demo', 'account.action.delete') })
+    .getByRole('button', { name: copy('demo', 'account.action.delete') })
     .click()
   await confirmDialog(
     page,

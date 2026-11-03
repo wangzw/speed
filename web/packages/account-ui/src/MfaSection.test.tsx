@@ -168,41 +168,55 @@ const abandonCalls = (calls: readonly RealCall[]): RealCall[] =>
   calls.filter(
     (call) => call.method === 'DELETE' && call.path === FLOW_CURRENT,
   )
-/** The accessible name of one row's overflow-menu trigger. */
-const actionsNameOf = (factor: string): string =>
-  zhCN.mfa.actionsAria.replace('{{factor}}', factor)
-
-/** Opens one factor row's overflow menu. */
-async function openRowMenu(
-  user: ReturnType<typeof userEvent.setup>,
-  factor: string,
-): Promise<void> {
-  await user.click(
-    await screen.findByRole('button', { name: actionsNameOf(factor) }),
-  )
+/** The factor row that reads as `name`: a passkey or phone by its label, the
+ * authenticator entry by its kind. */
+function factorRow(name: string): HTMLElement {
+  const row = screen
+    .getAllByRole('listitem')
+    .find((item) => within(item).queryByText(name, { exact: true }) !== null)
+  if (row === undefined) {
+    throw new Error(`no factor row reads as ${name}`)
+  }
+  return row
 }
 
-/** Opens the danger confirm for one row through its overflow menu. */
+/** The action buttons one factor row renders, in display order. */
+function rowActions(name: string): HTMLElement[] {
+  return within(factorRow(name)).queryAllByRole('button')
+}
+
+/** The row's action button named `action`, or null. */
+function rowAction(name: string, action: string): HTMLElement | null {
+  return within(factorRow(name)).queryByRole('button', { name: action })
+}
+
+/** Clicks one of a factor row's inline action buttons. */
+async function clickRowAction(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+  action: string,
+): Promise<void> {
+  // The rows arrive with the factors read; wait for one before choosing its
+  // action.
+  await waitFor(() => expect(factorRow(name)).toBeTruthy())
+  await user.click(within(factorRow(name)).getByRole('button', { name: action }))
+}
+
+/** Opens the danger confirm for one row from its inline remove action. */
 async function openRemoveConfirm(
   user: ReturnType<typeof userEvent.setup>,
   factor: string,
 ): Promise<HTMLElement> {
-  await openRowMenu(user, factor)
-  await user.click(
-    await screen.findByRole('menuitem', { name: zhCN.mfa.remove }),
-  )
+  await clickRowAction(user, factor, zhCN.mfa.remove)
   return screen.findByRole('dialog')
 }
 
-/** Opens one row's inline rename editor through its overflow menu. */
+/** Opens one row's inline rename editor from its inline rename action. */
 async function openRenameEditor(
   user: ReturnType<typeof userEvent.setup>,
   factor: string,
 ): Promise<HTMLElement> {
-  await openRowMenu(user, factor)
-  await user.click(
-    await screen.findByRole('menuitem', { name: zhCN.mfa.rename }),
-  )
+  await clickRowAction(user, factor, zhCN.mfa.rename)
   return screen.findByLabelText(zhCN.mfa.renameLabel)
 }
 
@@ -407,7 +421,7 @@ describe('MfaSection', () => {
     expect(screen.queryByText(zhCN.mfa.factor.status.disabled, { selector: '.MuiChip-label' })).toBeNull()
   })
 
-  it('offers rename and remove in an enabled row\'s menu, and only remove on a disabled row', async () => {
+  it('renders rename and remove inline on an enabled row, and only remove on a disabled row', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['webauthn']))
@@ -427,29 +441,30 @@ describe('MfaSection', () => {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mount(respond)
-    const user = userEvent.setup()
 
-    await openRowMenu(user, 'Active row')
+    await screen.findAllByText('Active row')
+    // An enabled row renders rename then removal inline, in one action row.
+    const active = rowActions('Active row')
+    expect(active.map((button) => button.textContent?.trim())).toEqual([
+      zhCN.mfa.rename,
+      zhCN.mfa.remove,
+    ])
     expect(
-      screen.getByRole('menuitem', { name: zhCN.mfa.rename }),
-    ).toBeTruthy()
-    expect(
-      screen.getByRole('menuitem', { name: zhCN.mfa.remove }),
-    ).toBeTruthy()
-    await user.keyboard('{Escape}')
-    await waitFor(() =>
-      expect(
-        screen.queryByRole('menuitem', { name: zhCN.mfa.rename }),
-      ).toBeNull(),
-    )
+      active.every((button) => button.closest('[data-action-row]') !== null),
+    ).toBe(true)
+    expect(screen.queryByRole('menuitem')).toBeNull()
 
-    await openRowMenu(user, 'Disabled row')
+    // A disabled row offers removal alone: one plain button, no trigger.
+    const disabled = rowActions('Disabled row')
+    expect(disabled.map((button) => button.textContent?.trim())).toEqual([
+      zhCN.mfa.remove,
+    ])
+    expect(disabled[0]?.closest('[data-action-row]')).toBeNull()
     expect(
-      screen.queryByRole('menuitem', { name: zhCN.mfa.rename }),
+      screen.queryByRole('button', {
+        name: zhCN.mfa.actionsAria.replace('{{factor}}', 'Disabled row'),
+      }),
     ).toBeNull()
-    expect(
-      screen.getByRole('menuitem', { name: zhCN.mfa.remove }),
-    ).toBeTruthy()
   })
 
   it('offers only the enrollment entries the deployment reports', async () => {
@@ -1697,10 +1712,9 @@ describe('MfaSection', () => {
     const user = userEvent.setup()
 
     // Two factors of the same kind are told apart by their own names, not
-    // by the kind they share: each row carries its own menu trigger.
-    expect(
-      await screen.findByRole('button', { name: actionsNameOf('Phone app') }),
-    ).toBeTruthy()
+    // by the kind they share: each row carries its own remove action.
+    await screen.findByText('Phone app')
+    expect(rowAction('Phone app', zhCN.mfa.remove)).toBeTruthy()
     const dialog = await openRemoveConfirm(user, 'Tablet app')
     await user.click(
       within(dialog).getByRole('button', {
@@ -2286,10 +2300,10 @@ describe('MfaSection', () => {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mount(respond)
-    const remove = await screen.findByRole('button', {
-      name: actionsNameOf('My authenticator'),
-    })
-    expect(hasCoarsePointerTouchTarget(remove)).toBe(true)
+    await screen.findByText('My authenticator')
+    const remove = rowAction('My authenticator', zhCN.mfa.remove)
+    expect(remove).not.toBeNull()
+    expect(hasCoarsePointerTouchTarget(remove as HTMLElement)).toBe(true)
   })
 
   it('keeps the factor rows and marks them stale when a refresh fails', async () => {
@@ -2343,7 +2357,6 @@ describe('MfaSection', () => {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     mount(respond)
-    const user = userEvent.setup()
 
     // The single authenticator entry reads as its kind, not as the name
     // the list carries; the heading shows the same word.
@@ -2362,25 +2375,18 @@ describe('MfaSection', () => {
       }),
     ).toBeNull()
 
-    // The authenticator row's menu has no rename; the passkey's does.
-    await openRowMenu(user, zhCN.mfa.factor.kind.totp)
+    // The authenticator row offers removal alone; the passkey's row offers
+    // rename then removal.
     expect(
-      screen.queryByRole('menuitem', { name: zhCN.mfa.rename }),
-    ).toBeNull()
+      rowActions(zhCN.mfa.factor.kind.totp).map((button) =>
+        button.textContent?.trim(),
+      ),
+    ).toEqual([zhCN.mfa.remove])
+    expect(rowAction('Work key', zhCN.mfa.rename)).toBeTruthy()
     expect(
-      screen.getByRole('menuitem', { name: zhCN.mfa.remove }),
-    ).toBeTruthy()
-    await user.keyboard('{Escape}')
-    await waitFor(() =>
-      expect(
-        screen.queryByRole('menuitem', { name: zhCN.mfa.remove }),
-      ).toBeNull(),
-    )
-
-    await openRowMenu(user, 'Work key')
-    expect(
-      screen.getByRole('menuitem', { name: zhCN.mfa.rename }),
-    ).toBeTruthy()
+      rowActions('Work key').map((button) => button.textContent?.trim()),
+    ).toEqual([zhCN.mfa.rename, zhCN.mfa.remove])
+    expect(screen.queryByRole('menuitem')).toBeNull()
   })
 
   it('asks for a name only on the passkey panel', async () => {
@@ -2538,5 +2544,71 @@ describe('MfaSection', () => {
       screen.getByRole('button', { name: zhCN.mfa.enroll.cancelLabel }),
     )
     await waitFor(() => expect(abandonCalls(rig.calls)).toHaveLength(1))
+  })
+
+  it('renders a row with one action as a plain danger button that opens its confirm', async () => {
+    let removed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: removed
+            ? []
+            : [passkey({ id: 'factor-9', status: 'disabled', label: 'Old key' })],
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-9'
+      ) {
+        removed = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await screen.findByText('Old key')
+    // A disabled row offers removal alone: one action, rendered as its own
+    // small button rather than behind an overflow trigger or in an action row.
+    const actions = rowActions('Old key')
+    expect(actions.map((button) => button.textContent?.trim())).toEqual([
+      zhCN.mfa.remove,
+    ])
+    const remove = rowAction('Old key', zhCN.mfa.remove)
+    expect(remove).not.toBeNull()
+    expect(remove).toHaveClass('MuiButton-colorError')
+    expect((remove as HTMLElement).closest('[data-action-row]')).toBeNull()
+    // Neither an overflow trigger nor a menu item remains.
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.mfa.actionsAria.replace('{{factor}}', 'Old key'),
+      }),
+    ).toBeNull()
+    expect(screen.queryByRole('menuitem')).toBeNull()
+
+    await user.click(remove as HTMLElement)
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent(zhCN.mfa.removeConfirm.title)
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+    await waitFor(() =>
+      expect(
+        rig.calls.filter(
+          (call) =>
+            call.method === 'DELETE' &&
+            call.path === '/api/v1/auth/factors/factor-9',
+        ),
+      ).toHaveLength(1),
+    )
+    await waitFor(() =>
+      expect(screen.queryByText('Old key')).toBeNull(),
+    )
   })
 })

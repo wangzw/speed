@@ -51,8 +51,8 @@
  * it shows: the contact axis's own table carries the default-contact choice
  * and the row actions on each address, and the sign-in axis renders the kind
  * groups alone, without the merged view's sign-in ways heading. The merged
- * view's contact list keeps the default-contact radio on the row and moves
- * verification and removal into the same trailing menu the table uses. The
+ * view's contact list keeps the default-contact radio on the row and renders
+ * verification and removal as the same row actions the table uses. The
  * control reads every row of its kind in both views; the login-ways page
  * keeps no per-address rows of its own.
  *
@@ -74,10 +74,10 @@
  * record, in the contacts list (the list that record's state makes
  * canonical), so one address never offers two controls for one position.
  *
- * A row whose identifier carries an id has a remove item in the row's
- * trailing overflow menu, sitting behind the ui-kit danger ConfirmDialog --
- * removing an identifier is irreversible (it is re-established only by
- * walking the route that proves it again). The removal is DELETE
+ * A row whose identifier carries an id has a remove action beside its other
+ * row actions, sitting behind the ui-kit danger ConfirmDialog -- removing an
+ * identifier is irreversible (it is re-established only by walking the route
+ * that proves it again). The removal is DELETE
  * /api/v1/auth/identifiers/{id}
  * (authn.login.removeIdentifier). The account module refuses to remove the
  * account's last way to log in with a 409, whose code text renders above
@@ -96,9 +96,9 @@
  * authority on the last way in; the note states the one case the profile can
  * reveal.
  *
- * An unverified email row carries a verify item in the same trailing menu as
- * its remove item (the remove item is withheld while the row is the password
- * account's only login name; the verify item is not). The action proves the
+ * An unverified email row carries a verify action beside its remove action
+ * (the removal is withheld while the row is the password account's only login
+ * name; the verification is not). The action proves the
  * address the row already shows: POST /api/v1/auth/identifiers re-sends a code
  * to that same
  * address -- the route accepts the account's own address as a re-add of its
@@ -210,7 +210,6 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import FormControlLabel from '@mui/material/FormControlLabel'
-import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Radio from '@mui/material/Radio'
 import Table from '@mui/material/Table'
@@ -310,10 +309,9 @@ export interface IdentifiersSectionProps {
   readonly openAddSignal?: number
 }
 
-interface ContactActionsMenuProps {
-  readonly value: string
+interface ContactActionsProps {
   readonly canVerify: boolean
-  /** Set while this row's verification flow is already open, so its item
+  /** Set while this row's verification flow is already open, so its action
    * cannot start the same flow again. */
   readonly verifyDisabled?: boolean
   readonly canDefault?: boolean
@@ -325,11 +323,23 @@ interface ContactActionsMenuProps {
   readonly onRemove: () => void
 }
 
-/** One contact row's overflow menu: verify it, make it the default, or
- * remove it. A contacts-table row offers the default item; a merged-view
- * row does not, because its radio already carries that choice. */
-function ContactActionsMenu({
-  value,
+/** One action of a row, with the state its own control carries. */
+interface RowAction {
+  readonly key: string
+  readonly label: string
+  readonly disabled: boolean
+  readonly tone?: 'danger'
+  readonly onClick: () => void
+}
+
+/** One contact row's actions in their fixed order: verify it, make it the
+ * default, remove it. A contacts-table row offers the default action only
+ * while it is not already the default -- the row's chip already states that
+ * position -- and a merged-view row does not, because its radio already
+ * carries that choice. A row with one action renders that action alone; a row
+ * with several renders one small action row; a row with none renders
+ * nothing. */
+function ContactActions({
   canVerify,
   verifyDisabled = false,
   canDefault = false,
@@ -339,85 +349,69 @@ function ContactActionsMenu({
   onVerify,
   onSetDefault,
   onRemove,
-}: ContactActionsMenuProps): ReactElement {
+}: ContactActionsProps): ReactElement | null {
   const { t } = useAccountUiTranslation()
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
-  return (
-    <>
-      <Button
-        variant="outlined"
+  const actions: RowAction[] = []
+  if (canVerify) {
+    actions.push({
+      key: 'verify',
+      label: t('identifiers.verify'),
+      disabled: disabled || verifyDisabled,
+      onClick: onVerify,
+    })
+  }
+  if (canDefault && onSetDefault !== undefined && !isDefault) {
+    // The row already carries the "Default contact" chip when it is the
+    // default, so the action would repeat that position without offering
+    // anything: it is absent rather than rendered disabled.
+    actions.push({
+      key: 'defaultContact',
+      label: t('identifiers.axes.defaultContact'),
+      disabled,
+      onClick: onSetDefault,
+    })
+  }
+  if (canRemove) {
+    actions.push({
+      key: 'remove',
+      label: t('identifiers.remove'),
+      disabled,
+      tone: 'danger',
+      onClick: onRemove,
+    })
+  }
+  if (actions.length === 0) {
+    return null
+  }
+  if (actions.length === 1) {
+    const action = actions[0]
+    if (action === undefined) {
+      return null
+    }
+    return (
+      <ActionButton
         size="small"
-        disabled={disabled}
-        aria-label={t('identifiers.actionsAria', {
-          value,
-          interpolation: { escapeValue: false },
-        })}
-        onClick={(event) => setAnchor(event.currentTarget)}
+        tone={action.tone}
+        disabled={action.disabled}
+        onClick={action.onClick}
       >
-        <Box
-          component="svg"
-          aria-hidden="true"
-          focusable="false"
-          viewBox="0 0 24 24"
-          width={18}
-          height={18}
-          fill="currentColor"
+        {action.label}
+      </ActionButton>
+    )
+  }
+  return (
+    <ActionRow size="small">
+      {actions.map((action) => (
+        <ActionButton
+          key={action.key}
+          tone={action.tone}
+          disabled={action.disabled}
+          onClick={action.onClick}
         >
-          <circle cx="5" cy="12" r="1.8" />
-          <circle cx="12" cy="12" r="1.8" />
-          <circle cx="19" cy="12" r="1.8" />
-        </Box>
-      </Button>
-      <Menu
-        anchorEl={anchor}
-        open={anchor !== null}
-        onClose={() => setAnchor(null)}
-      >
-        {canVerify ? (
-          <MenuItem
-            disabled={verifyDisabled}
-            onClick={() => {
-              setAnchor(null)
-              if (!verifyDisabled) {
-                onVerify()
-              }
-            }}
-          >
-            {t('identifiers.verify')}
-          </MenuItem>
-        ) : null}
-        {canDefault && onSetDefault !== undefined ? (
-          // The row already carries the "Default contact" chip, so a
-          // greyed item reads as "this already is the default" instead
-          // of an unexplained refusal.
-          <MenuItem
-            disabled={isDefault}
-            onClick={() => {
-              setAnchor(null)
-              // Defensive only: MUI does not dispatch a click on a disabled
-              // item, so this guard changes no observable behaviour; it keeps
-              // the handler honest without relying on that internal detail.
-              if (!isDefault) {
-                onSetDefault()
-              }
-            }}
-          >
-            {t('identifiers.axes.defaultContact')}
-          </MenuItem>
-        ) : null}
-        {canRemove ? (
-          <MenuItem
-            sx={{ color: 'error.main' }}
-            onClick={() => {
-              setAnchor(null)
-              onRemove()
-            }}
-          >
-            {t('identifiers.remove')}
-          </MenuItem>
-        ) : null}
-      </Menu>
-    </>
+          {action.label}
+        </ActionButton>
+      ))}
+    </ActionRow>
   )
 }
 
@@ -1821,8 +1815,8 @@ export function IdentifiersSection({
    * default-contact choice, verification and removal) render once per
    * record, so one address never offers the same action twice: the
    * default-contact radio stands below the row, and verification and
-   * removal sit in the row's trailing overflow menu. Whether an email or
-   * phone signs in is a group decision, so no row carries a switch for it.
+   * removal sit as the row's own actions. Whether an email or phone signs in
+   * is a group decision, so no row carries a switch for it.
    */
   function renderContactRow(
     identifier: AuthnProfileIdentifier,
@@ -1908,8 +1902,7 @@ export function IdentifiersSection({
               />
             ) : null}
             {showActionsMenu ? (
-              <ContactActionsMenu
-                value={value}
+              <ContactActions
                 canVerify={canVerifyRow}
                 verifyDisabled={addBusy || rowFlowOpen}
                 canRemove={canRemoveRow}
@@ -2033,8 +2026,7 @@ export function IdentifiersSection({
                           </TableCell>
                           <TableCell align="right">
                             {id !== null ? (
-                              <ContactActionsMenu
-                                value={row.value ?? ''}
+                              <ContactActions
                                 canVerify={
                                   kind === 'email' &&
                                   !verified &&
