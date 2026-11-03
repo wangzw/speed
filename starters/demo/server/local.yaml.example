@@ -36,12 +36,16 @@ authn:
     webauthn:
       origins: ["http://localhost:8080"]
 
-  # The human-verification gate is off. The declared default is the proof of
-  # work, and `make dev` sends its SMS and email codes through log carriers, so
-  # a proof would sit in front of every send. Stating it here keeps the local
-  # path off whatever that default becomes.
+  # The human-verification gate is off on both surfaces. The declared defaults
+  # are the proof of work on the non-phone surface and the captcha on the phone
+  # surface, and `make dev` sends its SMS and email codes through log carriers,
+  # so a challenge would sit in front of every send. Stating both here keeps the
+  # local path off whatever those defaults become. The phone surface guards the
+  # SMS sends; the other surface guards every send that does not address a phone
+  # number.
   humanverify:
     mode: off
+    phone-mode: off
 
 # The SMS family with the log carrier: every message, verification code
 # included, is written to the process output instead of reaching a vendor. The

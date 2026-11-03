@@ -13,8 +13,8 @@ import "testing"
 // module's challenge route is absent and its removal is vacuous. See
 // differential_exemptions_default_test.go for the baseline build's table.
 var mayLeaveRouteCountUnchanged = map[string]string{
-	"authn.humanverify": "its challenge route is mounted only when authn.humanverify.mode is pow; " +
-		"the review configuration states the mode as off, so this removal is vacuous",
+	"authn.humanverify": "its challenge route is mounted only when a surface runs pow or captcha; " +
+		"the review configuration states both surfaces off, so this removal is vacuous",
 }
 
 // TestReviewRouteCountExemptionsAreTrueForItsConfiguration holds each review

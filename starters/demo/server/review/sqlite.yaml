@@ -120,14 +120,18 @@ authn:
       rp-name: demo
       origins:
         - "http://localhost:8080"
-  # REVIEW: the human-verification gate stays off. The review build sends SMS
-  # and email codes through carriers that write to the log, and the end-to-end
-  # tier drives those sends; a proof requirement would put a challenge in front
-  # of every one of them. The declared default is the proof of work; the mode is
-  # stated here so this assembly stays off whatever that default becomes, without
-  # a matching change to this file.
+  # REVIEW: the human-verification gate stays off on both surfaces. The review
+  # build sends SMS and email codes through carriers that write to the log, and
+  # the end-to-end tier drives those sends; a proof requirement would put a
+  # challenge in front of every one of them. The declared defaults are the proof
+  # of work on the non-phone surface and the captcha on the phone surface; both
+  # modes are stated here so this assembly stays off whatever those defaults
+  # become, without a matching change to this file. The phone surface guards the
+  # SMS sends and the other surface every send that does not address a phone
+  # number.
   humanverify:
     mode: off
+    phone-mode: off
 
 # The SMS sending family. sms.registry holds the templates the SMS module sends
 # its codes under; the login, second-factor and enrollment names and the

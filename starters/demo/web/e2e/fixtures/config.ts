@@ -691,10 +691,12 @@ const deployValues = {
   googleClientSecret: 'review-google-secret',
   githubClientID: 'review-github-client',
   githubClientSecret: 'review-github-secret',
-  // The deploy journey sets the human-verification gate off explicitly; the
-  // entrypoint defaults to pow. The Turnstile values are rendered empty because
-  // the entrypoint writes them only in the mode that reads them.
+  // The deploy journey sets both human-verification surfaces off explicitly;
+  // the entrypoint defaults the non-phone surface to pow and the phone surface
+  // to captcha. The Turnstile values are rendered empty because the entrypoint
+  // writes them only when a selected surface is turnstile.
   humanverifyMode: 'off',
+  humanverifyPhoneMode: 'off',
   turnstileSiteKey: '',
   turnstileSecretKey: '',
 } as const
@@ -794,6 +796,7 @@ export async function writeDeployConfig(
     ['__GITHUB_CLIENT_ID__', deployValues.githubClientID, 1],
     ['__GITHUB_CLIENT_SECRET__', deployValues.githubClientSecret, 1],
     ['__HUMANVERIFY_MODE__', deployValues.humanverifyMode, 1],
+    ['__HUMANVERIFY_PHONE_MODE__', deployValues.humanverifyPhoneMode, 1],
     ['__TURNSTILE_SITE_KEY__', deployValues.turnstileSiteKey, 1],
     ['__TURNSTILE_SECRET_KEY__', deployValues.turnstileSecretKey, 1],
   ]

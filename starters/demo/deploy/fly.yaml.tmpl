@@ -114,17 +114,27 @@ authn:
       rp-name: Speed Demo
       origins:
         - "__PUBLIC_ORIGIN__"
-  # The human-verification gate. It runs the self-hosted proof of work unless
-  # the deployment names a mode. The proof-of-work mode needs nothing rendered
-  # here; the turnstile mode needs the widget's public site key and the secret
-  # that authenticates siteverify, which the entrypoint requires only when that
-  # mode is chosen. To run Turnstile, set DEMO_HUMANVERIFY_MODE=turnstile and
-  # supply DEMO_TURNSTILE_SITE_KEY and DEMO_TURNSTILE_SECRET_KEY; set
-  # DEMO_HUMANVERIFY_MODE=off to run no gate at all. The hostname the widget
-  # must have run on is this deployment's own public domain, so it takes the
-  # same placeholder the WebAuthn relying party does.
+  # The human-verification gate has two surfaces, each with a mode of its own.
+  # The phone surface guards the SMS sends (login, second factor, enrollment and
+  # the anonymous reset's SMS channel); the other surface guards every send that
+  # does not address a phone number. The demo defaults the phone surface to the
+  # self-hosted captcha and the other surface to the self-hosted proof of work,
+  # so it sends without a Cloudflare account and renders no credential here.
+  # Both self-hosted mechanisms need nothing but the mode.
+  #
+  # Turnstile is the production option. To run it on either surface, set
+  # DEMO_HUMANVERIFY_MODE (the other surface) or DEMO_HUMANVERIFY_PHONE_MODE (the
+  # phone surface) to turnstile and supply the widget's public site key and the
+  # secret that authenticates siteverify: DEMO_TURNSTILE_SITE_KEY and
+  # DEMO_TURNSTILE_SECRET_KEY. The entrypoint requires the two credentials only
+  # when a selected surface is turnstile. The hostname the widget must have run
+  # on is always this deployment's own public domain, so it takes the same
+  # placeholder the WebAuthn relying party does. Set a surface's mode to off to
+  # run no gate there; a deployment that only wants Turnstile can leave the
+  # surface it does not use off.
   humanverify:
     mode: "__HUMANVERIFY_MODE__"
+    phone-mode: "__HUMANVERIFY_PHONE_MODE__"
     site-key: "__TURNSTILE_SITE_KEY__"
     secret-key: "__TURNSTILE_SECRET_KEY__"
     hostname: "__PUBLIC_DOMAIN__"

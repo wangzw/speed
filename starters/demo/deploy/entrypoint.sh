@@ -132,31 +132,42 @@ check_scalar DEMO_GOOGLE_CLIENT_SECRET "$DEMO_GOOGLE_CLIENT_SECRET"
 check_scalar DEMO_GITHUB_CLIENT_ID "$DEMO_GITHUB_CLIENT_ID"
 check_scalar DEMO_GITHUB_CLIENT_SECRET "$DEMO_GITHUB_CLIENT_SECRET"
 
-# The human-verification gate runs the self-hosted proof of work unless the
-# deployment names a mode. The proof-of-work mode is self-hosted and needs
-# nothing rendered but the mode; the turnstile mode needs the widget's site key
-# and the secret that authenticates siteverify, so both are required only when
-# that mode is chosen. A deployment that leaves the gate on the proof of work,
-# or off, carries no Turnstile credential, and the expected hostname is always
-# this deployment's own public domain.
+# The human-verification gate has two surfaces with a mode of their own. The
+# phone surface guards the four sends that address a phone number: SMS login,
+# the SMS second factor, phone enrollment and the SMS channel of the anonymous
+# password reset. The other surface guards every send that does not address a
+# phone number, such as an email reset code. The phone surface runs the
+# self-hosted captcha and the other surface the self-hosted proof of work unless
+# the deployment names a mode: both mechanisms are self-hosted and need nothing
+# rendered but the mode, so the demo reaches no third party. The turnstile mode
+# on either surface needs the widget's site key and the secret that
+# authenticates siteverify, so both are required only when a selected surface
+# is turnstile. A deployment that runs both surfaces off or on a self-hosted
+# mechanism carries no Turnstile credential, and the expected hostname is
+# always this deployment's own public domain.
 humanverify_mode=${DEMO_HUMANVERIFY_MODE:-pow}
-# The Turnstile values are rendered only in the mode that reads them, so a gate
-# that runs off or on the self-hosted proof carries no credential in the
+humanverify_phone_mode=${DEMO_HUMANVERIFY_PHONE_MODE:-captcha}
+case $humanverify_mode in
+    off | pow | captcha | turnstile) ;;
+    *) die "DEMO_HUMANVERIFY_MODE must be off, pow, captcha or turnstile" ;;
+esac
+case $humanverify_phone_mode in
+    off | pow | captcha | turnstile) ;;
+    *) die "DEMO_HUMANVERIFY_PHONE_MODE must be off, pow, captcha or turnstile" ;;
+esac
+# The Turnstile values are rendered only when a surface reads them, so a gate
+# that runs off or on a self-hosted mechanism carries no credential in the
 # rendered configuration even when one is present in the environment.
 turnstile_site_key=
 turnstile_secret_key=
-case $humanverify_mode in
-    off | pow) ;;
-    turnstile)
-        require DEMO_TURNSTILE_SITE_KEY "${DEMO_TURNSTILE_SITE_KEY:-}"
-        require DEMO_TURNSTILE_SECRET_KEY "${DEMO_TURNSTILE_SECRET_KEY:-}"
-        check_scalar DEMO_TURNSTILE_SITE_KEY "$DEMO_TURNSTILE_SITE_KEY"
-        check_scalar DEMO_TURNSTILE_SECRET_KEY "$DEMO_TURNSTILE_SECRET_KEY"
-        turnstile_site_key=$DEMO_TURNSTILE_SITE_KEY
-        turnstile_secret_key=$DEMO_TURNSTILE_SECRET_KEY
-        ;;
-    *) die "DEMO_HUMANVERIFY_MODE must be off, pow or turnstile" ;;
-esac
+if [ "$humanverify_mode" = turnstile ] || [ "$humanverify_phone_mode" = turnstile ]; then
+    require DEMO_TURNSTILE_SITE_KEY "${DEMO_TURNSTILE_SITE_KEY:-}"
+    require DEMO_TURNSTILE_SECRET_KEY "${DEMO_TURNSTILE_SECRET_KEY:-}"
+    check_scalar DEMO_TURNSTILE_SITE_KEY "$DEMO_TURNSTILE_SITE_KEY"
+    check_scalar DEMO_TURNSTILE_SECRET_KEY "$DEMO_TURNSTILE_SECRET_KEY"
+    turnstile_site_key=$DEMO_TURNSTILE_SITE_KEY
+    turnstile_secret_key=$DEMO_TURNSTILE_SECRET_KEY
+fi
 
 mkdir -p /data/var /data/objects
 
@@ -179,6 +190,7 @@ awk -v origin="$public_origin" \
     -v github_id="$DEMO_GITHUB_CLIENT_ID" \
     -v github_secret="$DEMO_GITHUB_CLIENT_SECRET" \
     -v humanverify_mode="$humanverify_mode" \
+    -v humanverify_phone_mode="$humanverify_phone_mode" \
     -v turnstile_site_key="$turnstile_site_key" \
     -v turnstile_secret_key="$turnstile_secret_key" '
     function replace(line, needle, repl,   out, i) {
@@ -208,6 +220,7 @@ awk -v origin="$public_origin" \
         line = replace(line, "__GITHUB_CLIENT_ID__", github_id)
         line = replace(line, "__GITHUB_CLIENT_SECRET__", github_secret)
         line = replace(line, "__HUMANVERIFY_MODE__", humanverify_mode)
+        line = replace(line, "__HUMANVERIFY_PHONE_MODE__", humanverify_phone_mode)
         line = replace(line, "__TURNSTILE_SITE_KEY__", turnstile_site_key)
         line = replace(line, "__TURNSTILE_SECRET_KEY__", turnstile_secret_key)
         print line
@@ -226,7 +239,7 @@ chmod 0600 "$config"
 unset DEMO_OPERATOR_USERNAME DEMO_OPERATOR_EMAIL DEMO_OPERATOR_PASSWORD DEMO_DB_ENCRYPTION_KEY DEMO_PUBLIC_URL \
     DEMO_SMTP_HOST DEMO_SMTP_PORT DEMO_SMTP_TLS DEMO_SMTP_USERNAME DEMO_SMTP_PASSWORD DEMO_SMTP_FROM \
     DEMO_GOOGLE_CLIENT_ID DEMO_GOOGLE_CLIENT_SECRET DEMO_GITHUB_CLIENT_ID DEMO_GITHUB_CLIENT_SECRET \
-    DEMO_HUMANVERIFY_MODE DEMO_TURNSTILE_SITE_KEY DEMO_TURNSTILE_SECRET_KEY
+    DEMO_HUMANVERIFY_MODE DEMO_HUMANVERIFY_PHONE_MODE DEMO_TURNSTILE_SITE_KEY DEMO_TURNSTILE_SECRET_KEY
 
 su-exec demo /usr/local/bin/demo --config file:///data/config.yaml sqlite seed
 exec su-exec demo /usr/local/bin/demo --config file:///data/config.yaml sqlite serve
