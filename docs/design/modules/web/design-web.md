@@ -298,7 +298,7 @@ jsdom（[REF-jsdom](../../../references.md)）不求值媒体查询与容器查�
 | 组装壳与装配入口 | 已实现 | `web/packages/product-shell/src/index.ts` `ProductShell`；`web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp` |
 | 路由与导航独立层 | 已实现 | `web/packages/route-kit/src/index.ts` `RouteProvider`、`RouteView`、`RouteLink`、`useNavItems`、`useNavigate` |
 | 平台管理面组件族 | 已实现 | `web/packages/admin-ui/src/index.ts` `AdminShell`、`TenantRosterPage`、`SettingsPage`、`AuditPage` |
-| 工作区管理面组件族 | 未实现 | — |
+| 工作区管理面组件族 | 部分实现 | `web/packages/admin-ui/src/WorkspaceAdminProvider.tsx`、`WorkspaceAdminBreadcrumb.tsx`、`workspace-routes.tsx`、`workspace-operations.tsx`、`workspace-pages.tsx`；`starters/demo/web/src/workspace-admin.ts` |
 | 站内通知面组件族 | 已实现 | `web/packages/notification-ui/src/index.ts` `NotificationBell`、`NotificationInbox`、`NotificationPreferences`、`NotificationCenter`、`NotificationStreamProvider`、`notificationRoutes` |
 | 声明式注册面 | 已实现 | `web/packages/route-kit/src/types.ts` `RouteDeclaration`、`RouteTable`；`web/packages/admin-ui/src/route.ts` `AdminRoute` |
 | 租户作用域的查询键工厂与逐出助手 | 已实现 | `web/packages/auth-core/src/query-key.ts` `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries` |

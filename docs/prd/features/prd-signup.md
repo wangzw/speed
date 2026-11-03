@@ -377,7 +377,7 @@
 
 启用个人租户的部署中，没有任何其他成员关系的账户必须得到一个个人租户。
 
-- **验收**：在启用个人租户的部署中，没有任何成员关系的账户得到一个个人租户，并持有其所有者角色；邮箱是否已证明不影响这一结果。
+- **验收**：在启用个人租户的部署中，没有任何成员关系的账户得到一个个人租户，并持有其非内建 `tenant-admin` 角色；邮箱是否已证明不影响这一结果。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 

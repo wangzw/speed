@@ -202,7 +202,7 @@ type Memberships interface {
 	IsMember(ctx context.Context, id AccountID, tenant string) (bool, error)
 	Membership(ctx context.Context, tenant string, id AccountID) (Membership, bool, error)
 	Tenants(ctx context.Context, id AccountID) ([]Membership, error)
-	Members(ctx context.Context, tenant string, page Page) ([]Membership, error)
+	Members(ctx context.Context, tenant string, query MemberQuery) ([]Membership, error)
 	Put(ctx context.Context, m Membership) error
 	Remove(ctx context.Context, id AccountID, tenant string) error
 }
@@ -212,7 +212,7 @@ type Memberships interface {
 |---|---|
 | 读法 | 查不到与已暂停都读作非成员（`Active` 的零值是暂停）。口令表主体没有成员关系行，`IsMember` 对它恒为假。 |
 | `Tenants` | 跨租户列出账户的全部成员关系，按租户标识升序；按 `authn_memberships_account` 索引走。 |
-| `Members` | 按租户分页，`Limit` 缺省 100、上限 1000。 |
+| `Members` | 按租户分页，`Limit` 缺省 100、上限 1000。`MemberQuery.Query` 非空时收窄到账户显示名的字节前缀，或登录标识值在查询串小写后的前缀；两类匹配都不改变按账户标识升序的分页与游标。 |
 | `Put` | 幂等：新增、暂停、恢复。账户不存在（含墓碑）返回 `ErrAccountNotFound`：表间没有外键，由本方法核对。 |
 | `Remove` | 删除一条成员关系。删除之前先取每个可选 `MembershipGuard` 的租户删除锁（多个守卫接同一个 `authz.TenantLock` 对象时只取一次），再问每一个守卫，任何一个拒绝即拒绝：会让租户不再有任何租户管理员绑定时以 `ErrLastTenantAdmin` 拒绝，宿主守卫按它自己的政策拒绝，都不删行；没有行可删时不问，锁仍先取再放。锁取不到以 `ErrUnavailable` 返回，守卫不问、行不删。事务提交之后同步调用全部 `MembershipLifecycle.MembershipRemoved`，失败返回 `ErrCleanupIncomplete`（删除已生效，重试同一调用幂等地补完）。账户删除不走本方法，因而不问守卫，也不调成员关系生命周期钩子（见下）。 |
 | 实现 | 每条语句显式写 `tenant_id`；`authn_memberships` 由 `Memberships` 的实现独占，`authz.policy` 与准入层经接口读，不直接读表。 |
