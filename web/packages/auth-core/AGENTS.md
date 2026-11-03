@@ -294,7 +294,7 @@ hooks (`attachSession`, `useAuthState`, `usePermission`, `useFeature`,
 `useCurrentTenant`); and the
 tenant-scoped query-key convention (`tenantQueryKey`,
 `useTenantQueryKey`, `TenantQueryKey`, `evictTenantQueries`); and the
-human-verification client (`useHumanVerification(session, options?)`,
+human-verification client (`useHumanVerification(session, options)`,
 its `HumanVerification` / `HumanVerificationStatus` /
 `UseHumanVerificationOptions` / `HumanScope` / `HumanCaptchaChallenge` /
 `HumanCaptchaForm` types, `humanGateNeedsProof`, `humanSurfaceGate`,

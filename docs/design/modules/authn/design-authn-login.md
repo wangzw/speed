@@ -22,7 +22,7 @@
 - **不认识租户。** 账户全局，登录请求不带租户名；没有按租户启停登录方式的能力，只有全局的紧急开关。租户级的认证强度策略与成员判定在请求期由 [tenant-admission](../tenant/design-tenant-admission.md) 执行，`pkg/authn` 的任何子包都不 import `pkg/tenant`。
 - **不经 `pkg/ratelimit` 限流。** 该模块的配额层落在限流阶段、排在鉴别阶段之内、无身份即放行、维度只有（租户，责任键），认证前的失败退避由 `Throttle` 承担（算法归 [authn-account](design-authn-account.md)）。
 - **不写网关自产的 401。** 网关为各端建成的挑战与「没有凭据」的 401 归 [authn-gate](design-authn-gate.md)；本模块只写自己处理器的应答。
-- **不提供登录页，不绘制人机验证控件。** 界面是宿主的前端，本模块只给 JSON 接口；人机验证的凭证由前端按发送面向部署选定的机制取得，短信分支把凭证转交 `SMSCodes.Send`、由它以手机号面在发送入口校验，自助添加邮箱与匿名口令重置的邮箱分支在各自的路由以其余面校验；入口层面的洪泛限流是宿主的部署责任。
+- **不提供登录页，不绘制人机验证控件。** 界面是宿主的前端，本模块只给 JSON 接口；人机验证的凭证由前端按发送面向部署选定的机制取得，短信分支把凭证转交 `SMSCodes.Send`、由它以手机号面在发送入口校验，自助添加邮箱与匿名口令重置的邮箱分支在各自的路由以 other surface 校验；入口层面的洪泛限流是宿主的部署责任。
 - **不做授权判定。** 本模块的 403 只转述认证之外的策略，且只出现在 authn 自己的处理器里（[authn-admin](design-authn-admin.md)）。
 
 ## 外部接口契约
@@ -256,7 +256,7 @@ type Proof struct {
 
 **渠道与资格。** 请求带 `channel`（`email` 或 `sms`）与对应的标识。`email` 只接受 `VerifiedVia = email-code` 的邮箱标识，`sms` 只接受 `VerifiedVia = sms-code` 的手机标识；IdP 断言、邀请、管理员断言、`self` 与未证明预留都不作重置依据。是否被选作登录方式或作默认联系地址不影响这项资格：重置只看该值已被验证码证明的所有权（REQ-security-020、REQ-security-041）。账户必须是启用的用户账户并持有口令凭据；没有口令的账户不借这条路径设置首个口令，停用与删除的账户不合格。任一项不成立时不发送消息，走与合格目标相同的应答与验证路径。
 
-**渠道由用户选择。** 同一个账户同时具备已证明邮箱与已证明手机时两种渠道都可走，只有一种时只有那一种可走。邮箱经根包可选的 `EmailResetCodeSender` 投递，短信经 `SMSCodes.Send` 的 `reset` 用途发送，模板是 `authn.code.reset`。人机验证的证明由发送入口按发送面校验：邮箱渠道在自己的路由上、发码之前以其余面校验并消费；短信渠道把证明交给 `SMSCodes.Send`，由它以手机号面在任何发送预算之前校验并消费。证明被拒绝的请求答 403 `human-verification-required` 或 400，不按「已受理」的相同应答处理；预算超限则一律抑制发送并仍答 202。
+**渠道由用户选择。** 同一个账户同时具备已证明邮箱与已证明手机时两种渠道都可走，只有一种时只有那一种可走。邮箱经根包可选的 `EmailResetCodeSender` 投递，短信经 `SMSCodes.Send` 的 `reset` 用途发送，模板是 `authn.code.reset`。人机验证的证明由发送入口按发送面校验：邮箱渠道在自己的路由上、发码之前以 other surface 校验并消费；短信渠道把证明交给 `SMSCodes.Send`，由它以手机号面在任何发送预算之前校验并消费。证明被拒绝的请求答 403 `human-verification-required` 或 400，不按「已受理」的相同应答处理；预算超限则一律抑制发送并仍答 202。
 
 **绑定与状态。** 重置有独立的绑定 cookie（`__Host-authn-reset`，`Secure`、`HttpOnly`、`SameSite=Strict`、`Path=/`；允许不安全传输时用不带 `__Host-` 的名字且不设 `Secure`，[REF-rfc6265bis](../../../references.md)）与独立的 KV 记录，键是 cookie 令牌的 SHA-256。记录保存账户标识与标识行标识（不合格目标为空）、渠道、规范化标识的带密钥摘要、真实或抑制的标记、码的摘要（邮箱为发码时的码摘要；真实短信在验证前是挑战标识，通过后改记该码的本地摘要，使同一个码可以按成功再答一次；抑制记录为本地随机摘要）、状态、每码尝试计数、已发送条数、码过期时刻与记录期限，不保存邮箱或手机原文；记录期限严格长于码过期时刻，因此码过期答 `401 login-failed`、记录过期答 `401 flow-invalid` 都可达。状态是 `sent`、`verified`、`processing`、`failed`；`processing` 是写口令期间的内部态，`GET current` 对它答 `401 flow-invalid`；写入成功即删除记录，没有 `done`。每次迁移是比较并交换，并发败者按 `flow-invalid` 拒绝。记录过期、被删除、绑定不符或状态不符都视为 `401 flow-invalid`，唯一的例外是 `verify` 在 `failed` 上仍答 `401 login-failed`，与错码的应答一致。每条记录只属于请求它的 cookie，另一个 cookie 不能兑现它的码；不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时，各自得到自己的记录，发送被通道的重发窗口抑制并答 202。`expires_in` 在 `sent` 取该渠道的码有效期（短信 `authn.sms.code-ttl`、邮箱 `authn.login.email-code-ttl`），在 `verified` 取 `authn.login.password-reset-ticket-ttl`；验证通过时同时把绑定 cookie 的 `Max-Age` 刷新到票据期限。
 

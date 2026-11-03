@@ -71,10 +71,18 @@ fetches them as images or audio, never through the API client.
 - `GET /api/v1/auth/human/captcha/audio/:id` — the audio reading.
 
 A challenge and its media stay in the key-value store for five minutes. The
-record holds the answer as SHA-256 digests rather than text; the slider records
-one digest per offset within its tolerance. The proof is the challenge id and
-the answer joined by a dot, `id.answer`; the id is base64url without padding and
-the answer is digits, or a decimal offset for the slider.
+record holds the answer as HMAC-SHA-256 digests keyed by a random per-challenge
+salt rather than text; the salt is stored beside the digests, so a digest copied
+out of the record without its salt cannot be enumerated over the five-digit
+answer space. The slider records one digest per offset within its tolerance. The
+proof is the challenge id and the answer joined by a dot, `id.answer`; the id is
+base64url without padding and the answer is digits, or a decimal offset for the
+slider.
+
+A per-source issuance counter at `authn:human:captcha:issue:<sha256(address) hex>`
+bounds how many challenges one address holds in a rolling minute — ten — so an
+anonymous caller cannot fill the store. The route answers 429 when the bound is
+reached. A store that cannot answer is `authn.ErrUnavailable`, answered 503.
 
 `Verify` reads the record, compares the answer in constant time, spends the
 record with a compare-and-swap so two presentations of one proof cannot both
@@ -88,8 +96,15 @@ The media are written before the record, so a challenge becomes usable only once
 everything its client fetches is in place. A failed write removes what the call
 already stored.
 
-The audio form is the screen-reader alternative. It has the same single-use and
-lifetime semantics as the other two forms.
+The audio form is the screen-reader alternative. The request chooses the
+digit-reading language with the `lang` query item as a BCP 47 tag; the library
+pronounces English, Japanese, Russian and Chinese only, a tag naming another
+language is a 400, and an absent item uses the request's active locale, falling
+back to English for a locale outside that set. That fallback is a residual
+accessibility gap: the audio alternative still exists, but a viewer whose
+language the library does not pronounce hears English digits. It is recorded
+here rather than presented as a fully localised alternative. It has the same
+single-use and lifetime semantics as the other two forms.
 
 ## Cloudflare Turnstile
 
@@ -155,7 +170,8 @@ decimal digits.
 - **Every answer is per surface.** `Required`, `Provider`, `SiteKey` and
   `Verify` take a `HumanScope` (`phone` or `other`) and answer for that surface
   alone. A deployment may run a different mechanism on each. An unknown scope
-  answers as the other surface.
+  answers as the phone surface, so a caller that names none cannot reach an off
+  gate on the other surface.
 - **A proof is single-use.** A token accepted once is refused when it is
   presented again, whether the second presentation follows at once or later.
   The provider behind the seam owns the consumed record.
@@ -214,8 +230,9 @@ issuing challenges over a settings fault.
   sent, and which entry points ask for a proof on which surface, belong to the
   senders. This module answers one question about one proof.
 - **The gate adds no budget of its own.** It is checked before the send
-  budgets, so a refusal costs none of them, and it consumes no counter. The
-  per-source issuance counter bounds challenge issuance, not sends.
+  budgets, so a refusal costs none of them, and it consumes no counter. Each
+  self-hosted mechanism's per-source issuance counter bounds challenge issuance,
+  not sends.
 - **A deployment that wants another mechanism supplies the seam itself.** The
   module claims the seam exclusively, so its own implementation and a bundled
   one cannot both stand; the host leaves this module out of the command.

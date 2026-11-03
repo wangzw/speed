@@ -157,7 +157,7 @@
 | [口令登录方式不可被关闭](adr-authn-password-method-required.md) |
 | [邮箱地址的占用由联系方式预留的唯一约束原子仲裁，未验证预占被接受](adr-authn-contact-claim.md) |
 | [回跳失败时把用户代理落回产品，机器码经 URL 片段携带](adr-authn-callback-failure-landing.md) |
-| [人机验证按发送面选择机制：手机号面缺省自托管验证码，其余面缺省工作量证明](adr-authn-human-verification.md) |
+| [人机验证按发送面选择机制：手机号面缺省自托管验证码，other surface 缺省工作量证明](adr-authn-human-verification.md) |
 | [成员关系删除的清理是同步接口，事件只作崩溃窗口补偿](adr-authn-membership-cleanup.md) |
 
 ## 邀请

@@ -95,7 +95,7 @@ interface PasswordResetScreenProps {
   readonly onBackToSignIn?: () => void
 }
 
-`session` 用于 `useHumanVerification` 取得人机证明；短信渠道取手机号面，邮箱渠道取其余面。屏幕把证明交给 `requestReset`。重置操作携带 `__Host-authn-reset` cookie，宿主绑定生成的 SDK 操作时保持同源凭据。`channels` 由宿主从发现文档的 `password_reset.methods` 映射，屏幕不自己读发现文档。
+`session` 用于 `useHumanVerification` 取得人机证明；短信渠道取手机号面，邮箱渠道取 other surface。屏幕把证明交给 `requestReset`。重置操作携带 `__Host-authn-reset` cookie，宿主绑定生成的 SDK 操作时保持同源凭据。`channels` 由宿主从发现文档的 `password_reset.methods` 映射，屏幕不自己读发现文档。
 
 // 四组渠道与两个宿主内容位。
 type SignInGroup = 'form' | 'redirect' | 'enterprise' | 'webauthn'
@@ -399,7 +399,7 @@ sequenceDiagram
 
 `SMSSignInForm` 先以手机号起一条 `method: 'sms'` 的流程，把两步收在同一个表单里：`challenge` 步发出通知用 `role="status"` 报出接收号码；重发以同一号码再起一条流程（发码是方法 `Begin` 的职责，同一条流程内没有重发这一步）；改号退回第一步。一次新的发送（首发送、重发或改号）把验证码字段清空，使对着上一码输入的旧值不能搭上新一码。手机号步用 ui-kit 的两段式控件（`PhoneNumberField`）：国家/地区选择器与本地号码，提交前组装成 E.164。选择器初始取宿主给出的手机号缺省国家/地区（ui-kit 的 `PhoneCountryDefaultProvider`），缺席时取浏览器语言所指的国家/地区（zh-CN → +86，en-US → +1），按国家名、ISO 码或国际区号搜索；粘贴的完整国际号码会自行切换选择器并填入本地部分。号码按所选国家/地区在本地校验，位数不足等失败带出区号（「该号码在 +86 下位数不完整」）、不发起请求；服务端自己的拒绝文案只留给它能判断的失败（地区不支持、发送策略拒绝）。未登记的手机号且首登开户开放时，验证码通过后流程停在开户一步（用户名、可选的显示名、口令与确认口令），由同一个表单的步进渲染器渲染；提交合法用户名与口令才建账户并完成登录，任一项被拒时步骤原地保留，改正后重试。
 
-部署要求人机验证时，会发送验证码的步骤上方渲染 ui-kit 的 `HumanVerification` 块并交出 `human_proof`；块按发送面选择机制，短信发送取手机号面，描述符表单的首步取其余面。短信渠道自己的手机号步与验证码步是其中一处：首次发送、重发与停在第二因素时选择短信都带证明，每次发送之后消耗当前证明并取一份新的，证明未就绪时发送控件禁用。短信渠道以外的渠道表单把流程停下的步骤交给共享的 `HumanGatedFlowStep`：步骤可能发送时（选中短信第二因素，或挑战声明了手机号且提交了它）渲染同一个块，由 `answerSends` 判定这一次答复是否发送，发送时把证明交给 `useFlowDriver` 的 `answer`；口令登录与注册、社交回跳、描述符表单与通行密钥因此都覆盖。`SignInScreen` 把已读到的发现文档的 `human` 经 `humanGate` 交给表单，单独挂载的表单自行读一次方法文档（[auth-core](design-web-auth-core.md) 的「人机验证证明」）。服务端对缺失、无效、过期或再次出示的证明答 403 `human-verification-required`，表单经错误白名单渲染本节文案；过长的证明答 400，提供方或存储不可用答 503。
+部署要求人机验证时，会发送验证码的步骤上方渲染 ui-kit 的 `HumanVerification` 块并交出 `human_proof`；块按发送面选择机制，短信发送取手机号面，描述符表单的首步按字段取面：首步字段含 `phone`（开始会向手机号发送消息）时取手机号面，其余取 other surface，宿主也可经 `humanScope` 指定。短信渠道自己的手机号步与验证码步是其中一处：首次发送、重发与停在第二因素时选择短信都带证明，每次发送之后消耗当前证明并取一份新的，证明未就绪时发送控件禁用。短信渠道以外的渠道表单把流程停下的步骤交给共享的 `HumanGatedFlowStep`：步骤可能发送时（选中短信第二因素，或挑战声明了手机号且提交了它）渲染同一个块，由 `answerSends` 判定这一次答复是否发送，发送时把证明交给 `useFlowDriver` 的 `answer`；口令登录与注册、社交回跳、描述符表单与通行密钥因此都覆盖。`SignInScreen` 把已读到的发现文档的 `human` 经 `humanGate` 交给表单，单独挂载的表单自行读一次方法文档（[auth-core](design-web-auth-core.md) 的「人机验证证明」）。服务端对缺失、无效、过期或再次出示的证明答 403 `human-verification-required`，表单经错误白名单渲染本节文案；过长的证明答 400，提供方或存储不可用答 503。
 
 ### 社交登录与回调
 
