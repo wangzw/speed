@@ -279,6 +279,9 @@ func TestRemovingTheCallersOwnTenantAdministratorBindingIsRefused(t *testing.T) 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("removing the caller's own tenant-admin binding answered %d, want 403", w.Code)
 	}
+	if p := decodeProblem(t, w.Body.String()); p.Type != "urn:speed:authz:protected" {
+		t.Fatalf("the 403's type = %q, want urn:speed:authz:protected", p.Type)
+	}
 	if got := r.manager.recorded(); len(got) != 0 {
 		t.Fatalf("the manager was called %+v for a refused self-removal", got)
 	}

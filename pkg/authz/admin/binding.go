@@ -97,7 +97,7 @@ func (p *product) handleBindingDelete(ctx context.Context, in bindingInput) (str
 	}
 	role := authz.Role(in.Role)
 	if role == authz.TenantAdminRole && removingOwnBinding(ctx, in.Account) {
-		return struct{}{}, speedhttp.Fault{Status: http.StatusForbidden}
+		return struct{}{}, speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + protectedCode}
 	}
 	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteBinding); err != nil {
 		return struct{}{}, err
