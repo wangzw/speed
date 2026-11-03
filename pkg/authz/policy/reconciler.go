@@ -38,8 +38,8 @@ import (
 func (p *product) ReconcileGrants(ctx context.Context, tenant string, role authz.Role,
 	grants, retired []authz.Grant,
 ) (added, removed int, err error) {
-	if err := requireTenant(tenant); err != nil {
-		return 0, 0, err
+	if tenantErr := requireTenant(tenant); tenantErr != nil {
+		return 0, 0, tenantErr
 	}
 	if role != authz.TenantAdminRole {
 		return 0, 0, fmt.Errorf("%w: grant convergence acts on %q only, not %q",
