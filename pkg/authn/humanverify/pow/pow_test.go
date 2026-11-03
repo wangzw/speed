@@ -429,14 +429,14 @@ func TestAKVFaultAnswersUnavailable(t *testing.T) {
 	})
 }
 
-// TestAnOverLongProofIsRefusedAsInvalidArgument holds the 400 of the seam's
+// TestAnOverLongProofIsRefusedAsHumanProofTooLong holds the 400 of the seam's
 // three failures: a proof longer than the provider admits is a bad request, not
 // an invalid proof and not an outage.
-func TestAnOverLongProofIsRefusedAsInvalidArgument(t *testing.T) {
+func TestAnOverLongProofIsRefusedAsHumanProofTooLong(t *testing.T) {
 	p, _, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
 	err := p.Verify(t.Context(), authn.HumanProof{Token: strings.Repeat("a", maxProofLen+1)})
-	if !errors.Is(err, authn.ErrInvalidArgument) {
-		t.Fatalf("an over-long proof resolved with %v, want ErrInvalidArgument", err)
+	if !errors.Is(err, authn.ErrHumanProofTooLong) {
+		t.Fatalf("an over-long proof resolved with %v, want ErrHumanProofTooLong", err)
 	}
 	if errors.Is(err, authn.ErrHumanVerificationRequired) || errors.Is(err, authn.ErrUnavailable) {
 		t.Errorf("an over-long proof reads as another failure: %v", err)

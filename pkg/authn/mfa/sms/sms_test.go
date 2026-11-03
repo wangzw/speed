@@ -464,7 +464,7 @@ func TestChallengeRefusesWhenTheCodeEngineRefusesTheProof(t *testing.T) {
 		err  error
 	}{
 		{"a missing or invalid proof", authn.ErrHumanVerificationRequired},
-		{"an over-long proof", authn.ErrInvalidArgument},
+		{"an over-long proof", authn.ErrHumanProofTooLong},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRig()

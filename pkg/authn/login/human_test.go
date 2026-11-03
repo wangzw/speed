@@ -267,13 +267,48 @@ func TestAProoflessFirstStepIsNotReportedAsAFailedLogin(t *testing.T) {
 	}
 }
 
+// TestAFirstStepRefusedForAnArgumentIsReportedAsAFailedLogin holds the other
+// direction of the narrowed predicate: ErrInvalidArgument is an ordinary
+// argument refusal, not a proof refusal, so a method that answers with it keeps
+// the 400 its cause maps to and is still counted and audited as a failed login.
+func TestAFirstStepRefusedForAnArgumentIsReportedAsAFailedLogin(t *testing.T) {
+	reader, mp := newTestMetrics(t)
+	m := phoneMethod()
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepRefused(fmt.Errorf("authn.login.sms: %w", authn.ErrInvalidArgument)), nil
+	}
+	r := newRig(t, m)
+	sink := &auditing{}
+	r.p.audit = sink
+	var err error
+	if r.p.meters, err = newMeters(mp); err != nil {
+		t.Fatalf("creating the instrument: %v", err)
+	}
+
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows",
+		`{"method":"sms","input":{"phone":"+8613800000000"}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a first step refused for an argument answered %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	if got := humanType(t, rec.Body.String()); got != "bad-request" {
+		t.Errorf("the refusal code = %q, want bad-request", got)
+	}
+	if pairs := loginMetricPairs(t, reader); len(pairs) != 1 || pairs["sms/failed"] != 1 {
+		t.Errorf("the failed login's metric pairs = %v, want one sms/failed", pairs)
+	}
+	if rows := sink.rows(); len(rows) != 1 {
+		t.Errorf("the failed login wrote %d audit rows, want one: %v", len(rows), rows)
+	}
+}
+
 // TestAFactorChallengeProofRefusalIsNotReportedAsAFailedLogin holds the second
 // factor's observation side. Choosing a factor starts its challenge, and an SMS
 // factor checks the proof at the send entry: a missing or invalid proof is
-// ErrHumanVerificationRequired and an over-long one is ErrInvalidArgument. Both
+// ErrHumanVerificationRequired and an over-long one is ErrHumanProofTooLong. Both
 // keep their own 403 or 400 and record neither a failed login outcome nor a
 // login audit row; reporting the refusal first would count a proof the gate
-// never accepted as a credential that did not hold.
+// never accepted as a credential that did not hold. The challenge is started
+// once in each case.
 func TestAFactorChallengeProofRefusalIsNotReportedAsAFailedLogin(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -282,7 +317,7 @@ func TestAFactorChallengeProofRefusalIsNotReportedAsAFailedLogin(t *testing.T) {
 		code   string
 	}{
 		{"missing proof", authn.ErrHumanVerificationRequired, http.StatusForbidden, "human-verification-required"},
-		{"over-long proof", authn.ErrInvalidArgument, http.StatusBadRequest, "bad-request"},
+		{"over-long proof", authn.ErrHumanProofTooLong, http.StatusBadRequest, "bad-request"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -327,7 +362,61 @@ func TestAFactorChallengeProofRefusalIsNotReportedAsAFailedLogin(t *testing.T) {
 			if rows := sink.rows(); len(rows) != 0 {
 				t.Errorf("a proof refusal wrote %d login audit rows, want none: %v", len(rows), rows)
 			}
+			if r.mfa.challenges != 1 {
+				t.Errorf("the factor challenge was started %d times, want once", r.mfa.challenges)
+			}
 		})
+	}
+}
+
+// TestAFactorChallengeNonProofRefusalIsReportedAsAFailedLogin holds the other
+// side of the narrowed predicate: a factor challenge refused for a credential
+// that did not hold is a failed login, answered 401 login-failed, counted once
+// as password/failed and audited once. The challenge is started once.
+func TestAFactorChallengeNonProofRefusalIsReportedAsAFailedLogin(t *testing.T) {
+	reader, mp := newTestMetrics(t)
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+	}
+	r := newRig(t, m)
+	r.allow("acct1")
+	r.mfa.outcome = authn.MFAFactor
+	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorSMS, Label: "Phone"}}
+	r.mfa.challenge = func(string) authn.Step {
+		return authn.StepRefused(fmt.Errorf("authn.mfa.sms: %w", authn.ErrInvalidCredentials))
+	}
+	sink := &auditing{}
+	r.p.audit = sink
+	var err error
+	if r.p.meters, err = newMeters(mp); err != nil {
+		t.Fatalf("creating the instrument: %v", err)
+	}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("the start answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	seq := int(decode(t, start.Body.String())["seq"].(float64))
+
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		fmt.Sprintf(`{"seq":%d,"step":"factor","input":{"factor":"f1"}}`, seq),
+		"Cookie", cookie)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("the refused challenge answered %d, want 401: %s", rec.Code, rec.Body.String())
+	}
+	if got := humanType(t, rec.Body.String()); got != "login-failed" {
+		t.Errorf("the refusal code = %q, want login-failed", got)
+	}
+	if pairs := loginMetricPairs(t, reader); len(pairs) != 1 || pairs["password/failed"] != 1 {
+		t.Errorf("the failed login's metric pairs = %v, want one password/failed", pairs)
+	}
+	if rows := sink.rows(); len(rows) != 1 {
+		t.Errorf("the failed login wrote %d audit rows, want one: %v", len(rows), rows)
+	}
+	if r.mfa.challenges != 1 {
+		t.Errorf("the factor challenge was started %d times, want once", r.mfa.challenges)
 	}
 }
 

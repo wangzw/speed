@@ -183,7 +183,7 @@ func (r *routes) fail(c *call, err error) {
 	case authn.IsUsernameShape(err):
 		c.fail(mount.CodeUsernameInvalid)
 	case errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidIdentifier),
-		errors.Is(err, authn.ErrInvalidArgument):
+		errors.Is(err, authn.ErrInvalidArgument), errors.Is(err, authn.ErrHumanProofTooLong):
 		c.fail(mount.CodeBadRequest)
 	case errors.Is(err, authn.ErrUsernameReserved):
 		c.fail(mount.CodeUsernameReserved)

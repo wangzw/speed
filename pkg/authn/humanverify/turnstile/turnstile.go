@@ -172,7 +172,7 @@ func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof) error {
 		return fmt.Errorf("%w: turnstile: no proof was presented", authn.ErrHumanVerificationRequired)
 	}
 	if len(proof.Token) > maxTokenLen {
-		return fmt.Errorf("%w: the proof is longer than %d bytes", authn.ErrInvalidArgument, maxTokenLen)
+		return fmt.Errorf("%w: the proof is longer than %d bytes", authn.ErrHumanProofTooLong, maxTokenLen)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, p.timeout)

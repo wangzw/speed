@@ -184,15 +184,15 @@ func resolveOutcome(err error) string {
 // skipped entirely: the send goes on as it did before. A proof over the field's
 // bound is a bad request before the provider is asked. The provider's own
 // failures are carried out as they are: a missing, invalid, expired or used
-// proof is ErrHumanVerificationRequired, an over-long proof the provider admits
-// is ErrInvalidArgument, and a provider or store that cannot answer is
+// proof is ErrHumanVerificationRequired, an over-long proof is
+// ErrHumanProofTooLong, and a provider or store that cannot answer is
 // ErrUnavailable. None of them has spent any budget.
 func (p *product) checkProof(ctx context.Context, in authn.SendCode) error {
 	if p.human == nil || !p.human.Required() {
 		return nil
 	}
 	if len(in.Proof) > mount.HumanProofMaxBytes {
-		return fmt.Errorf("%w: the human-verification proof is over its limit", authn.ErrInvalidArgument)
+		return fmt.Errorf("%w: the human-verification proof is over its limit", authn.ErrHumanProofTooLong)
 	}
 	return p.human.Verify(ctx, authn.HumanProof{Token: in.Proof, RemoteIP: in.Source})
 }

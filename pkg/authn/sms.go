@@ -15,7 +15,10 @@ type SMSCodes interface {
 	// row, hands the sending to a bounded worker pool and returns at once, so the
 	// time it takes does not depend on the carrier. The errors are
 	// ErrUnsupportedRegion, ErrThrottled with its RetryAfter when a budget is spent
-	// and ErrUnavailable when a dependency cannot answer. Deliver true and false
+	// and ErrUnavailable when a dependency cannot answer. A proof the deployment's
+	// gate refuses is ErrHumanVerificationRequired for a missing, invalid, expired
+	// or already used one, and ErrHumanProofTooLong for one over the field's
+	// bound; both are returned before any budget is spent. Deliver true and false
 	// take one path and give one shape of answer, so the caller cannot tell a
 	// suppressed row from a real one by the result.
 	//

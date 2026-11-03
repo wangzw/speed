@@ -161,7 +161,7 @@ func (f *factor) Challenge(ctx context.Context, fl authn.FlowState, rec authn.Fa
 	case err == nil:
 	case errors.Is(err, authn.ErrThrottled):
 		return authn.StepThrottled(throttledWait(err)), nil
-	case errors.Is(err, authn.ErrHumanVerificationRequired), errors.Is(err, authn.ErrInvalidArgument):
+	case errors.Is(err, authn.ErrHumanVerificationRequired), errors.Is(err, authn.ErrHumanProofTooLong):
 		// The deployment requires a proof and this send presented none, an
 		// invalid one, or one over its limit. The code engine checked it before
 		// spending any budget; the engine answers the 403 or 400 rather than a

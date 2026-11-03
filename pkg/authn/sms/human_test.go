@@ -187,8 +187,8 @@ func TestSendRefusesAnOverLongProofBeforeTheProviderIsAsked(t *testing.T) {
 		Deliver: true,
 		Proof:   strings.Repeat("x", mount.HumanProofMaxBytes+1),
 	})
-	if !errors.Is(err, authn.ErrInvalidArgument) {
-		t.Fatalf("an over-long proof resolved with %v, want ErrInvalidArgument", err)
+	if !errors.Is(err, authn.ErrHumanProofTooLong) {
+		t.Fatalf("an over-long proof resolved with %v, want ErrHumanProofTooLong", err)
 	}
 	if human.count() != 0 {
 		t.Errorf("the provider was asked %d times, want none for a proof over the field's bound", human.count())

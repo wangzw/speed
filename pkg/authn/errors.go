@@ -296,9 +296,17 @@ var (
 	// Outwardly it is a 403 with a problem code that names human verification,
 	// which tells the client to obtain a fresh proof. It is distinct from
 	// ErrUnavailable, the 503 of a verifier or of the store that keeps its tokens
-	// when either cannot be reached; an over-long proof is a 400 and is
-	// ErrInvalidArgument. No send happens under any of the three.
+	// when either cannot be reached, and from ErrHumanProofTooLong, the 400 of a
+	// proof longer than the surface admits. No send happens under any of them.
 	ErrHumanVerificationRequired = errors.New("authn: a valid human-verification proof is required")
+
+	// ErrHumanProofTooLong reports a send whose human-verification proof is
+	// longer than the surface admits. Outwardly it is a 400 bad-request, the
+	// answer an oversized field always had, and no send happens. It is distinct
+	// from ErrHumanVerificationRequired, which names a missing, invalid, expired
+	// or already used proof, and from ErrInvalidArgument, which names an
+	// unrelated value outside a call's domain.
+	ErrHumanProofTooLong = errors.New("authn: the human-verification proof is too long")
 )
 
 // Failures of sessions, flows and second factors.

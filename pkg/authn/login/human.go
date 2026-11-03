@@ -1,9 +1,21 @@
 package login
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
+
+// isHumanProofRejection reports whether err is the human-verification gate
+// refusing the proof a request presented, rather than a credential that did not
+// hold: ErrHumanVerificationRequired for a missing, invalid, expired or already
+// used proof, and ErrHumanProofTooLong for one over the field's bound. Each
+// keeps its own 403 or 400 and neither is a failed login.
+func isHumanProofRejection(err error) bool {
+	return errors.Is(err, authn.ErrHumanVerificationRequired) || errors.Is(err, authn.ErrHumanProofTooLong)
+}
 
 // checkHumanProof holds the anonymous password reset's email branch to the
 // deployment's human-verification gate. The SMS branch hands its proof to
@@ -24,7 +36,7 @@ func (r *routes) checkHumanProof(c *call, proof string) bool {
 		return true
 	}
 	if len(proof) > mount.HumanProofMaxBytes {
-		c.fail(mount.CodeBadRequest)
+		r.fail(c, fmt.Errorf("%w: the human-verification proof is over its limit", authn.ErrHumanProofTooLong))
 		return false
 	}
 	if err := r.human.Verify(c.ctx, authn.HumanProof{Token: proof, RemoteIP: c.clientIP}); err != nil {

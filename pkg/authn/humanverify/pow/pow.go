@@ -153,7 +153,7 @@ func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof) error {
 		return fmt.Errorf("%w: no proof was presented", authn.ErrHumanVerificationRequired)
 	}
 	if len(proof.Token) > maxProofLen {
-		return fmt.Errorf("%w: the proof is longer than %d bytes", authn.ErrInvalidArgument, maxProofLen)
+		return fmt.Errorf("%w: the proof is longer than %d bytes", authn.ErrHumanProofTooLong, maxProofLen)
 	}
 	challenge, nonce, ok := splitProof(proof.Token)
 	if !ok {

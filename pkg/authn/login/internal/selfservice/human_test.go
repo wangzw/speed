@@ -245,7 +245,7 @@ func TestAnEmailAddHumanFailureMapsToItsAnswer(t *testing.T) {
 		typ  string
 	}{
 		{"a provider that cannot answer", authn.ErrUnavailable, http.StatusServiceUnavailable, mount.CodeUnavailable},
-		{"a proof the provider refuses as too long", authn.ErrInvalidArgument, http.StatusBadRequest, mount.CodeBadRequest},
+		{"a proof the provider refuses as too long", authn.ErrHumanProofTooLong, http.StatusBadRequest, mount.CodeBadRequest},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

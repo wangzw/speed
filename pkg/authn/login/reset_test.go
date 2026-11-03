@@ -1039,6 +1039,38 @@ func TestAnEmailResetWithoutAProofIsRefusedAndWritesNothing(t *testing.T) {
 	}
 }
 
+// TestAnEmailResetAtTheSourceLimitWithoutAProofIsRefusedNotThrottled holds the
+// order the email branch fixes against a spent source allowance: the proof is
+// checked before the source-address pre-throttle, so a source already at its
+// limit sees the gate's 403 rather than a 429. Nothing is sent and no reset
+// record is written.
+func TestAnEmailResetAtTheSourceLimitWithoutAProofIsRefusedNotThrottled(t *testing.T) {
+	r := newResetRig(t)
+	r.seedResetAccount("acct-ok", authn.IdentifierEmail, "ok@example.com", authn.VerifiedViaEmailCode)
+	r.p.human = requiredHuman()
+	r.settings.set(ipLimitPath, 1)
+	bucket := "authn:ip:192.0.2.1:" + r.p.clock.Now().Format("200601021504")
+	if err := r.kv.Set(context.Background(), bucket, []byte("1"), time.Minute); err != nil {
+		t.Fatalf("pre-loading the source bucket: %v", err)
+	}
+
+	rec := r.startReset(`{"channel":"email","identifier":"ok@example.com"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("an email reset with no proof at the source limit answered %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	if got := resetProblemCode(t, rec); got != "human-verification-required" {
+		t.Errorf("the refusal code = %q, want human-verification-required", got)
+	}
+	if got := r.email.count(); got != 0 {
+		t.Errorf("the email channel was handed %d messages, want none", got)
+	}
+	for _, key := range r.kv.keys() {
+		if strings.HasPrefix(key, resetKeyPrefix) {
+			t.Errorf("the refused reset wrote the record %q, want none", key)
+		}
+	}
+}
+
 // TestAnEmailResetToAnUnknownAddressWithoutAProofSpendsNothing holds the order
 // the email branch fixes: the proof is checked before the eligibility lookup and
 // before any record or source budget. An address no account holds therefore gets

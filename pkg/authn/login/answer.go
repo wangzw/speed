@@ -218,7 +218,7 @@ func (r *routes) challengeFactor(c *call, token, echo string, rec record, raw []
 		// not hold: it keeps its own 403 or 400, which is why the proof moved
 		// into the code engine but its answer did not. Recognised before the
 		// report, so a proof the gate never accepted is not a failed login.
-		if cause := step.CauseOf(got); authn.IsHumanProofRejection(cause) {
+		if cause := step.CauseOf(got); isHumanProofRejection(cause) {
 			r.fail(c, cause)
 			return
 		}

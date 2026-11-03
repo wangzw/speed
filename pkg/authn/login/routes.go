@@ -228,7 +228,7 @@ func (r *routes) fail(c *call, err error) {
 	case authn.IsUsernameShape(err):
 		c.fail(mount.CodeUsernameInvalid)
 	case errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidArgument),
-		errors.Is(err, authn.ErrInvalidIdentifier):
+		errors.Is(err, authn.ErrInvalidIdentifier), errors.Is(err, authn.ErrHumanProofTooLong):
 		c.fail(mount.CodeBadRequest)
 	case errors.Is(err, authn.ErrUsernameReserved):
 		c.fail(mount.CodeUsernameReserved)
@@ -266,9 +266,12 @@ func (r *routes) refusedStep(c *call, cause error) {
 		// The code engine refused the proof before spending any budget. It is
 		// not a credential that did not hold, so it keeps the gate's own answer.
 		c.forbidden(mount.CodeHumanVerificationRequired)
+	case errors.Is(cause, authn.ErrHumanProofTooLong):
+		// The proof is over the field's bound, which is the bad request the
+		// field's limit always was.
+		c.fail(mount.CodeBadRequest)
 	case errors.Is(cause, authn.ErrInvalidArgument):
-		// A proof over the engine's bound reaches the engine as this argument
-		// error, and is the bad request the field's limit always was.
+		// A method's own argument error reaches the engine as a bad request.
 		c.fail(mount.CodeBadRequest)
 	default:
 		c.unauthorized(mount.CodeLoginFailed)

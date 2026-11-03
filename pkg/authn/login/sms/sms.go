@@ -312,7 +312,7 @@ func (m *method) phone(ctx context.Context, fields map[string]string, sendsLeft 
 		return promptCode(writeState(phone, challenge)).WithSends(1)
 	case errors.As(err, &throttled):
 		return authn.StepThrottled(throttled.RetryAfter)
-	case errors.Is(err, authn.ErrHumanVerificationRequired), errors.Is(err, authn.ErrInvalidArgument):
+	case errors.Is(err, authn.ErrHumanVerificationRequired), errors.Is(err, authn.ErrHumanProofTooLong):
 		// The deployment requires a proof and this send presented none, an
 		// invalid one, or one over its limit. The code engine checked it before
 		// spending any budget; the cause reaches the engine's answer, which is

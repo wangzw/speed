@@ -333,13 +333,13 @@ func TestAnEmptyProofIsRefused(t *testing.T) {
 }
 
 // An over-long proof is a malformed request (400), refused before any call.
-func TestAnOverlongProofIsInvalidArgument(t *testing.T) {
+func TestAnOverlongProofIsHumanProofTooLong(t *testing.T) {
 	srv, pool, calls := siteverify(t, answer{http.StatusOK, accepted})
 	p := providerFor(t, srv, pool, nil)
 
 	err := p.Verify(t.Context(), authn.HumanProof{Token: strings.Repeat("x", maxTokenLen+1)})
-	if !errors.Is(err, authn.ErrInvalidArgument) {
-		t.Fatalf("an over-long proof resolved with %v, want ErrInvalidArgument", err)
+	if !errors.Is(err, authn.ErrHumanProofTooLong) {
+		t.Fatalf("an over-long proof resolved with %v, want ErrHumanProofTooLong", err)
 	}
 	if len(calls()) != 0 {
 		t.Errorf("an over-long proof still reached the provider")
