@@ -17,6 +17,12 @@
  * for the current tenant: a pending read, a failed one, and a set read for
  * the tenant the viewer just left all fail closed rather than pairing the
  * new tenant with the previous tenant's permissions.
+ *
+ * A failure is told apart from both a wait and a denial. A read in flight is
+ * `pending`; a read that failed is `failed` and gets a retryable page, so a
+ * possible manager is not sent home; only a settled answer -- not a member,
+ * the system or a personal tenant, impersonating, or a known permission set
+ * without the code -- is `denied`.
  */
 
 import { useAuthState, useFeatureState, featurePresence } from '@speed/auth-core'
@@ -60,12 +66,19 @@ export interface WorkspaceAdminEntry {
 
 /**
  * The admission outcome: `pending` while a fact the decision needs is still
- * unknown (the tenant, its kind, the feature document, the tenant
- * permission read), `denied` when a settled fact rules the surface out, and
- * `allowed` only when every condition holds.
+ * in flight (the tenant, its kind, the feature document, the tenant
+ * permission read), `failed` when one of those reads failed (the answer is
+ * unknown, not a denial), `denied` when a settled fact rules the surface
+ * out, and `allowed` only when every condition holds.
+ *
+ * A failure is not a conclusion about the caller: a refused caller-tenants or
+ * permission read says nothing about membership or permissions, so it must
+ * not take a viewer who may manage the tenant to the tenant home. The
+ * `failed` state is the retryable surface the host renders instead.
  */
 export type WorkspaceAdminAdmission =
   | { readonly status: 'pending' }
+  | { readonly status: 'failed' }
   | { readonly status: 'denied' }
   | ({ readonly status: 'allowed' } & WorkspaceAdminEntry)
 
@@ -93,7 +106,8 @@ export function useWorkspaceAdminPermission(
  *
  * Hooks are called unconditionally; the returned status carries the
  * decision. Callers render the entry (navigation parent, home card) only on
- * `allowed`, wait on `pending`, and send the viewer home on `denied`.
+ * `allowed`, wait on `pending`, show a retryable failure on `failed`, and
+ * send the viewer home on `denied`.
  */
 export function useWorkspaceAdminAdmission(): WorkspaceAdminAdmission {
   const snapshot = useAuthState()
@@ -110,10 +124,18 @@ export function useWorkspaceAdminAdmission(): WorkspaceAdminAdmission {
     return { status: 'denied' }
   }
   if (presence.state !== 'ready') {
-    return { status: 'pending' }
+    // A failed feature document is a failed read, not an absent capability:
+    // the surface cannot decide, and only a retry can.
+    return presence.state === 'failed'
+      ? { status: 'failed' }
+      : { status: 'pending' }
   }
   if (tenantId === null) {
-    return { status: 'pending' }
+    // No tenant is settled. A failed caller-tenants read is why: the read
+    // that supplies the settlement never answered, so this is a retryable
+    // failure, not a wait. A settled list may still be about to settle the
+    // tenant in the same commit, which is the pending case.
+    return self.failed ? { status: 'failed' } : { status: 'pending' }
   }
   if (tenantId === 'system') {
     return { status: 'denied' }
@@ -125,6 +147,13 @@ export function useWorkspaceAdminAdmission(): WorkspaceAdminAdmission {
   const row = self.tenants.find((tenant) => tenant.id === tenantId)
   const kind = row?.kind ?? getRecordedTenantKind(tenantId)
   if (kind === null) {
+    // An unknown kind after a failed caller-tenants read is a fault, not a
+    // "not a member": the read never answered, so the admission retries
+    // rather than sending a possible manager to the tenant home. A settled
+    // list that does not carry the tenant is the membership denial.
+    if (self.failed) {
+      return { status: 'failed' }
+    }
     return { status: self.settled ? 'denied' : 'pending' }
   }
   if (kind !== 'business') {
@@ -137,12 +166,19 @@ export function useWorkspaceAdminAdmission(): WorkspaceAdminAdmission {
   // The tagged read pairs a set with the tenant it was read for. A read
   // issued for another tenant is not an answer for this one: the switch
   // clears and re-reads, so that window stays pending rather than admitting
-  // the new tenant with the old tenant's set.
+  // the new tenant with the old tenant's set. A failure tagged with another
+  // tenant is likewise not this tenant's failure -- the re-read is in flight.
   if (read.tenantId !== tenantId) {
-    return { status: read.failed ? 'denied' : 'pending' }
+    return { status: 'pending' }
+  }
+  if (read.failed) {
+    // The permission read failed for this tenant: the set is unknown, not
+    // empty. A retryable failure replaces the bare-denied redirect that
+    // would send a viewer who may hold the permission to the tenant home.
+    return { status: 'failed' }
   }
   if (read.perms === null) {
-    return { status: read.failed ? 'denied' : 'pending' }
+    return { status: 'pending' }
   }
   const permissions = read.perms.tenant
   if (permissions === null || permissions.length === 0) {

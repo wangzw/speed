@@ -197,6 +197,11 @@
       "title": "无法准备你的工作区",
       "description": "准备工作区时出了问题，请稍后重试。",
       "retry": "重试"
+    },
+    "accessFailed": {
+      "title": "无法核实工作区访问权限",
+      "description": "打开这个工作区所需的信息没能加载，请重试。",
+      "retry": "重试"
     }
   },
   "notFound": {

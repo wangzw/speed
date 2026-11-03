@@ -78,6 +78,8 @@ type PermissionsFor = (
  * path asked for. */
 function scriptReads(options: {
   readonly tenants: readonly TenantRow[]
+  /** Whether the caller tenant read refuses instead of answering. */
+  readonly tenantsFailed?: boolean
   readonly permissionsFor: PermissionsFor
   readonly impersonationGrant?: boolean
 }): { readonly requested: string[] } {
@@ -85,7 +87,9 @@ function scriptReads(options: {
   const request: RequestFn = <T,>(path: string): Promise<T> => {
     requested.push(path)
     if (path === SELF_TENANTS_PATH) {
-      return Promise.resolve({ tenants: options.tenants } as T)
+      return options.tenantsFailed === true
+        ? Promise.reject(new Error('tenant read refused'))
+        : Promise.resolve({ tenants: options.tenants } as T)
     }
     if (path === PERMISSIONS_PATH) {
       return Promise.resolve(
@@ -140,19 +144,29 @@ async function flushReads(): Promise<void> {
 function mountApp(options: {
   readonly path?: string
   readonly tenants: readonly TenantRow[]
+  readonly tenantsFailed?: boolean
   readonly permissionsFor: PermissionsFor
   readonly impersonating?: boolean
   readonly impersonationGrant?: boolean
+  /** Mount the app with no session, as a fresh visitor would arrive. */
+  readonly anonymous?: boolean
+  /** The feature document to mount; the workspace surface's features by default. */
+  readonly features?: ReturnType<typeof authenticatedSnapshot>['features']
 }): { readonly requested: string[]; readonly session: TestSession } {
   const target = options.path ?? '/'
   window.history.replaceState({}, '', target)
   const { requested } = scriptReads(options)
-  const snapshot = authenticatedSnapshot({ features: WORKSPACE_FEATURES })
-  const session = createTestSession(
-    options.impersonating === true
-      ? { ...snapshot, impersonating: true }
-      : snapshot,
-  )
+  const snapshot = authenticatedSnapshot({
+    features: options.features ?? WORKSPACE_FEATURES,
+  })
+  const session =
+    options.anonymous === true
+      ? createTestSession()
+      : createTestSession(
+          options.impersonating === true
+            ? { ...snapshot, impersonating: true }
+            : snapshot,
+        )
   renderDemoApp({
     session,
     wrap: (app) => (
@@ -381,5 +395,235 @@ describe('the workspace admin route admission', () => {
     expect(
       await screen.findByLabelText(tAdmin('invitations.issue.emailLabel')),
     ).toHaveValue('')
+  })
+
+  it('renders a retryable failure page with a heading when the caller tenant read fails', async () => {
+    const user = userEvent.setup()
+    const { requested } = mountApp({
+      path: '/workspace/admin/invitations',
+      tenants: [],
+      tenantsFailed: true,
+      permissionsFor: () => ({ platform: [], tenant: [] }),
+    })
+    // A failed read is not a pending one: the surface must not spin forever.
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.workspace.accessFailed.title,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).toBeNull()
+    expect(
+      screen.getByRole('button', {
+        name: demoEnUS.workspace.accessFailed.retry,
+      }),
+    ).toBeInTheDocument()
+
+    // The retry re-issues the read that failed rather than leaving the page
+    // stuck on a failure the viewer cannot clear.
+    const before = requested.filter((path) => path === SELF_TENANTS_PATH).length
+    await user.click(
+      screen.getByRole('button', {
+        name: demoEnUS.workspace.accessFailed.retry,
+      }),
+    )
+    await waitFor(() =>
+      expect(
+        requested.filter((path) => path === SELF_TENANTS_PATH).length,
+      ).toBeGreaterThan(before),
+    )
+  })
+
+  it('renders the failure page when the permission read fails instead of sending the viewer home', async () => {
+    mountApp({
+      path: '/workspace/admin/invitations',
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      permissionsFor: () => Promise.reject(new Error('permission read refused')),
+    })
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.workspace.accessFailed.title,
+      }),
+    ).toBeInTheDocument()
+    // The denied redirect is reserved for a known empty set: an unknown one
+    // stays on the workspace URL with a retry.
+    expect(window.location.pathname).toBe('/workspace/admin/invitations')
+    expect(
+      screen.getByRole('button', {
+        name: demoEnUS.workspace.accessFailed.retry,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('still sends a personal tenant direct visit to the tenant home', async () => {
+    setCurrentTenantId('personal-account-1')
+    setTenantAliases(new Map([['personal-account-1', 'personal-account-1']]))
+    mountApp({
+      path: '/workspace/admin/invitations',
+      tenants: [
+        {
+          id: 'personal-account-1',
+          alias: 'personal-account-1',
+          kind: 'personal',
+        },
+      ],
+      permissionsFor: () => ({ platform: [], tenant: [] }),
+    })
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(
+      screen.queryByRole('heading', { name: tAdmin('invitations.title') }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('heading', {
+        name: demoEnUS.workspace.accessFailed.title,
+      }),
+    ).toBeNull()
+  })
+
+  it('still sends the system tenant direct visit to the tenant home', async () => {
+    setCurrentTenantId('system')
+    setTenantAliases(new Map([['system', 'system']]))
+    mountApp({
+      path: '/workspace/admin/invitations',
+      tenants: [],
+      permissionsFor: () => ({ platform: [], tenant: [] }),
+    })
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(
+      screen.queryByRole('heading', { name: tAdmin('invitations.title') }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('heading', {
+        name: demoEnUS.workspace.accessFailed.title,
+      }),
+    ).toBeNull()
+  })
+
+  it('still sends an impersonating viewer direct visit to the tenant home', async () => {
+    mountApp({
+      path: '/workspace/admin/invitations',
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      permissionsFor: () => ({
+        platform: [],
+        tenant: ['authn.membership.manage'],
+      }),
+      impersonating: true,
+      impersonationGrant: true,
+    })
+    await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(
+      screen.queryByRole('heading', { name: tAdmin('invitations.title') }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('heading', {
+        name: demoEnUS.workspace.accessFailed.title,
+      }),
+    ).toBeNull()
+  })
+
+  it('still denies an anonymous direct visit', async () => {
+    mountApp({
+      path: '/workspace/admin/invitations',
+      tenants: [],
+      permissionsFor: () => ({ platform: [], tenant: [] }),
+      anonymous: true,
+    })
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(
+      await screen.findByRole('heading', { name: demoEnUS.signIn.heading }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: tAdmin('invitations.title') }),
+    ).toBeNull()
+  })
+
+  it('denies an ordinary member with no workspace permission', async () => {
+    mountApp({
+      path: '/workspace/admin/invitations',
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      // A known, empty tenant permission set: a member, not a fault.
+      permissionsFor: () => ({ platform: [], tenant: [] }),
+    })
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    await flushReads()
+    expect(workspaceEntry().nav).toBeNull()
+    expect(
+      screen.queryByRole('heading', { name: tAdmin('invitations.title') }),
+    ).toBeNull()
+  })
+
+  it('denies the surface when no workspace declaration is served', async () => {
+    mountApp({
+      path: '/workspace/admin/invitations',
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      // The feature document is ready but serves none of the workspace
+      // declarations: narrowing leaves no page to admit.
+      features: readyFeatures(),
+      permissionsFor: () => ({
+        platform: [],
+        tenant: ['authn.membership.manage'],
+      }),
+    })
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(workspaceEntry().nav).toBeNull()
+    expect(
+      screen.queryByRole('heading', { name: tAdmin('invitations.title') }),
+    ).toBeNull()
+  })
+
+  it('does not admit the page while the feature document is not ready', async () => {
+    mountApp({
+      path: '/workspace/admin/invitations',
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      features: { state: 'pending' },
+      permissionsFor: () => ({
+        platform: [],
+        tenant: ['authn.membership.manage'],
+      }),
+    })
+    await flushReads()
+    // An unsettled feature document admits nothing: no entry, no page.
+    expect(workspaceEntry().nav).toBeNull()
+    expect(
+      screen.queryByRole('heading', { name: tAdmin('invitations.title') }),
+    ).toBeNull()
+  })
+
+  it('serves the workspace SSO page without reading any platform asset', async () => {
+    const { requested } = mountApp({
+      path: '/workspace/admin/sso',
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      permissionsFor: () => ({ platform: [], tenant: ['authn.idp.manage'] }),
+    })
+    expect(
+      await screen.findByRole('heading', { name: tAdmin('sso.title') }),
+    ).toBeInTheDocument()
+    expect(requested).toContain('/api/v1/tenants/acme/sso/providers')
+    expect(requested.some((path) => path.startsWith('/api/v1/system'))).toBe(
+      false,
+    )
+  })
+
+  it('routes the workspace breadcrumb Home in place', async () => {
+    const user = userEvent.setup()
+    mountApp({
+      path: '/workspace/admin/invitations',
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      permissionsFor: () => ({
+        platform: [],
+        tenant: ['authn.membership.manage'],
+      }),
+    })
+    await screen.findByRole('heading', { name: tAdmin('invitations.title') })
+    // The crumb is the one in the page header's breadcrumb landmark, not the
+    // navigation entry that shares its label.
+    const trail = within(
+      screen.getByRole('navigation', { name: 'Breadcrumb' }),
+    )
+    await user.click(trail.getByRole('link', { name: demoEnUS.nav.home }))
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(await screen.findByText(demoEnUS.home.heading)).toBeInTheDocument()
   })
 })

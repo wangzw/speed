@@ -32,7 +32,8 @@ import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { getNotificationInboxGetUnreadCountQueryKey } from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { tenantQueryKey } from '@speed/auth-core'
-import { setCurrentTenantId, setTenantAliases } from '../chrome.js'
+import { setCurrentTenantId, setTenantAlias, setTenantAliases } from '../chrome.js'
+import { clearSelfTenants } from '../tenant-self.js'
 import { PlatformPermissions } from '../platform-permissions.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import { createBackend } from './backends.js'
@@ -131,10 +132,11 @@ async function scanRoute(
   const errorPlaceholder =
     mode === 'error' ? ERROR_PLACEHOLDER_BY_PATH[path] : undefined
   if (errorPlaceholder !== undefined) {
-    expect(
-      screen.queryByText(errorPlaceholder),
-      `route ${path} [${mode}] has not reached its error state`,
-    ).not.toBeNull()
+    // As in the jsdom sweep: settle() can return on a wait view that is
+    // momentarily stable while the workspace admission's reads are still
+    // failing, so wait for the route's own error copy before scanning.
+    await screen.findByText(errorPlaceholder)
+    await settle()
   }
   await expectLabelInName(`route ${path} [${mode}]`)
 }
@@ -145,8 +147,13 @@ beforeEach(async () => {
   // two shells to compose as they do in the jsdom sweep.
   await page.viewport(1280, 900)
   window.history.replaceState({}, '', '/')
+  // The host's cells are module-level and survive a case: clear the caller
+  // tenant rows and re-record the scan tenant's kind before every route, so a
+  // route's state does not depend on which mode ran before it.
+  clearSelfTenants()
   setCurrentTenantId(SCAN_TENANT_ID)
   setTenantAliases(new Map([[SCAN_TENANT_ID, SCAN_TENANT_ID]]))
+  setTenantAlias(SCAN_TENANT_ID, SCAN_TENANT_ID, 'business')
 })
 
 afterEach(() => {

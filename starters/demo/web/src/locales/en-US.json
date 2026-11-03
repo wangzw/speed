@@ -197,6 +197,11 @@
       "title": "Could not prepare your workspace",
       "description": "Something went wrong while preparing your workspace. Please try again.",
       "retry": "Try again"
+    },
+    "accessFailed": {
+      "title": "Could not check workspace access",
+      "description": "We could not load what we need to open this workspace. Please try again.",
+      "retry": "Try again"
     }
   },
   "notFound": {

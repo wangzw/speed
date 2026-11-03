@@ -46,8 +46,10 @@ import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from '../test-utils/render.js'
 import {
   setCurrentTenantId,
+  setTenantAlias,
   setTenantAliases,
 } from '../chrome.js'
+import { clearSelfTenants } from '../tenant-self.js'
 import { ACCOUNT_SECTION_PATHS, ACCOUNT_SECTIONS } from '../paths.js'
 import { PlatformPermissions } from '../platform-permissions.js'
 import { createBackend } from './backends.js'
@@ -173,14 +175,14 @@ async function scanRoute(
     `route ${path} [${mode}] issued read(s) the scripted backend does not answer`,
   ).toEqual([])
   if (errorPlaceholder !== undefined) {
-    // The route's own error copy must be on screen before the scan: settle()
-    // returns once the tree stops changing, and a tree that never reached its
-    // error state would otherwise be scanned as if it were settled.
-    expect(
-      screen.queryByText(errorPlaceholder),
-      `route ${path} [${mode}] has not reached its error state: ` +
-        'settle() returned while the read was still pending',
-    ).not.toBeNull()
+    // The route's own error copy must be on screen before the scan. A page
+    // reaches its error state asynchronously: settle() can return on a wait
+    // view that is momentarily stable while a later read is still failing
+    // (the workspace surface's admission reads settle in a later batch).
+    // Wait for the copy itself, then settle again so the scan reads the
+    // stable failure rather than a tree still being replaced.
+    await screen.findByText(errorPlaceholder)
+    await settle()
   }
   const result = await scanPage()
   if (errorPlaceholder !== undefined) {
@@ -221,8 +223,15 @@ let warnSpy: MockInstance
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
+  // The host's cells are module-level and survive a case: clear the caller
+  // tenant rows and re-record the scan tenant's kind before every route, so a
+  // route's state does not depend on which mode or route ran before it. The
+  // workspace admission reads that recorded kind, and the empty backend's
+  // caller-tenant answer lists no rows.
+  clearSelfTenants()
   setCurrentTenantId(SCAN_TENANT_ID)
   setTenantAliases(new Map([[SCAN_TENANT_ID, SCAN_TENANT_ID]]))
+  setTenantAlias(SCAN_TENANT_ID, SCAN_TENANT_ID, 'business')
   missingKeys.length = 0
   const original = console.warn
   warnSpy = vi.spyOn(console, 'warn').mockImplementation((message, ...rest) => {

@@ -13,6 +13,7 @@
 import { act } from '@testing-library/react'
 import { accountUiResources } from '@speed/account-ui'
 import { adminUiResources } from '@speed/admin-ui'
+import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { routes } from '../routes.js'
 import {
   authenticatedSnapshot,
@@ -125,6 +126,12 @@ export const ERROR_PLACEHOLDER_BY_PATH: Readonly<Record<string, string>> = {
       readonly audit: { readonly error: { readonly title: string } }
     }
   ).audit.error.title,
+  // The workspace surface's admission failure: its caller-tenants and
+  // permission reads both refuse in error mode, and the page renders the
+  // retryable failure (with its level-one heading) rather than a spinner.
+  // Asserting the copy here makes the sweep prove it scanned that state.
+  '/workspace/admin/invitations': demoEnUS.workspace.accessFailed.title,
+  '/workspace/admin/sso': demoEnUS.workspace.accessFailed.title,
 }
 
 /**

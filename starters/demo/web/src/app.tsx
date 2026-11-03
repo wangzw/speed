@@ -54,7 +54,7 @@ import type { AuthSnapshot } from '@speed/auth-core'
 import { ACCOUNT_UI_NAMESPACE } from '@speed/account-ui'
 import { ImpersonationNoticeProvider } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
-import { RouteGuard } from '@speed/layout-kit'
+import { isPlainPrimaryClick, RouteGuard } from '@speed/layout-kit'
 import type {
   AppShellNavItem,
   AppShellShellLayout,
@@ -84,7 +84,7 @@ import {
   useRouteLinkProps,
 } from '@speed/route-kit'
 import type { RouteContext, RoutePresence } from '@speed/route-kit'
-import type { ReactElement, ReactNode } from 'react'
+import type { MouseEvent, ReactElement, ReactNode } from 'react'
 import { contactVerificationPending } from './contact-verification.js'
 import {
   tenantAdminTenantsList,
@@ -144,6 +144,7 @@ import {
 import { SignInView } from './pages/sign-in-view.js'
 import {
   ACCOUNT_PATH,
+  invitationPath,
   isAccountLevelPath,
   isWorkspaceAdminPath,
   PASSWORD_RESET_PATH,
@@ -420,7 +421,20 @@ function AppFrame({
       presence.state === 'ready' ? presence.has : (): boolean => false
     const matchedLabel = match?.declaration.label
     const breadcrumbs = [
-      { label: <DemoNavLabel labelKey="nav.home" />, href: TENANT_HOME_PATH },
+      {
+        label: <DemoNavLabel labelKey="nav.home" />,
+        href: TENANT_HOME_PATH,
+        // The crumb keeps its href for a modifier or new-tab click; a plain
+        // primary click is the host's to route in place, like every other
+        // in-app link. Without this the click would reload the document.
+        onClick: (event: MouseEvent<HTMLAnchorElement>) => {
+          if (!isPlainPrimaryClick(event)) {
+            return
+          }
+          event.preventDefault()
+          navigate(TENANT_HOME_PATH)
+        },
+      },
       ...(matchedLabel === undefined ? [] : [{ label: matchedLabel }]),
     ]
     return (
@@ -440,17 +454,23 @@ function AppFrame({
             routes={workspaceAdmission.routes}
             onNavigate={navigate}
             breadcrumbs={breadcrumbs}
+            invitationLink={invitationPath}
           >
             <WorkspaceRouteGuard target={workspaceAdmission.target}>
               <RouteView />
             </WorkspaceRouteGuard>
           </WorkspaceAdminProvider>
         ) : workspaceAdmission.status === 'pending' ? (
-          // A fact the decision needs is still unknown (the tenant, its
+          // A fact the decision needs is still in flight (the tenant, its
           // kind, the feature document or the tenant permission read). Wait
           // inside the tenant frame rather than admitting a surface the
           // viewer may not have, or bouncing a viewer who does.
           <RouteGuard status="pending" />
+        ) : workspaceAdmission.status === 'failed' ? (
+          // A read the decision needs failed: the answer is unknown, not a
+          // denial. The retryable page replaces the redirect, so a viewer
+          // who may manage the tenant is not sent home as if they could not.
+          <WorkspaceAccessFailed />
         ) : (
           // A settled fact rules the surface out -- impersonating, the
           // system or a personal tenant, no served page, or no tenant
@@ -1595,6 +1615,55 @@ function AdminAccessFailed({
     >
       <Typography variant="body1">{t('admin.accessFailed')}</Typography>
       <Button onClick={onRetry}>{t('admin.accessRetry')}</Button>
+    </Box>
+  )
+}
+
+/**
+ * The workspace surface's retryable failure, rendered inside the tenant
+ * frame. A read the admission depends on -- the caller tenant list, the
+ * feature document, or the tenant permission read -- failed, so the answer is
+ * unknown and neither the surface nor the tenant-home redirect is supported.
+ * Its shape follows AdminAccessFailed (one explanation, one retry), with the
+ * level-one heading the tenant frame's main landmark needs and the failed
+ * admin page deliberately omits (it renders without a frame).
+ *
+ * The retry re-issues every read the admission consumes: the caller tenant
+ * list, the feature document and the tenant permission set. Absent any one
+ * of them, the admission would simply settle back into this state.
+ */
+function WorkspaceAccessFailed(): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  const read = usePermissionRead()
+  const { session } = useAppServices()
+  const retry = () => {
+    // The three reads the admission consumes, each of which reports its own
+    // outcome to the state that rendered this page. The feature read's
+    // rejection is caught here because the retry is an action, not a read the
+    // page awaits: its outcome lands in the feature state either way.
+    void loadSelfTenants()
+    void session.retryFeatures().catch(() => undefined)
+    read.retry()
+  }
+  return (
+    <Box
+      component="section"
+      role="alert"
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: 2,
+        maxWidth: 640,
+      }}
+    >
+      <Typography component="h1" variant="h5">
+        {t('workspace.accessFailed.title')}
+      </Typography>
+      <Typography variant="body1">
+        {t('workspace.accessFailed.description')}
+      </Typography>
+      <Button onClick={retry}>{t('workspace.accessFailed.retry')}</Button>
     </Box>
   )
 }
