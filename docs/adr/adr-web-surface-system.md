@@ -36,7 +36,7 @@ token 树只有两级背景（`background.default` 与 `background.paper`），�
 **两处对 MUI 的自愿偏离：**
 
 - **表格不按官方示例再包一层 `TableContainer component={Paper}`。** 表面由外层 `SectionCard` 承担，表格自身不再绘制第二层表面。同一层叠两个表面会让表头底色与卡片底色成为两个来源，换风格时无法一起移动。
-- **焦点环写在文档化的 `styleOverrides` 槽里，不使用未文档化的 `theme.focusVisible`。** 焦点环以 `&.Mui-focusVisible` 下的 `outline` 与 `outlineOffset` 落在基础控件的覆写里，颜色取 `palette.primary.main`。该写法只依赖 MUI 文档列出的主题组件面；代价是新增的基础控件要各自获得这段覆写才参与统一焦点环。
+- **焦点环写在文档化的 `styleOverrides` 槽里，不使用未文档化的 `theme.focusVisible`。** 焦点环以 `&.Mui-focusVisible` 下的 `outline` 与 `outlineOffset` 落在基础控件的覆写里，颜色取 `palette.primary.main`。该写法只依赖 MUI 文档列出的主题组件接口；代价是新增的基础控件要各自获得这段覆写才参与统一焦点环。
 
 ## 后果
 
@@ -52,6 +52,6 @@ token 树只有两级背景（`background.default` 与 `background.paper`），�
 
 ## 失效条件
 
-- MUI 提供一等公民的表面角色或 `theme.surface` 约定：以 MUI 的公开面替换本包的模块扩充。
+- MUI 提供一等公民的表面角色或 `theme.surface` 约定：以 MUI 的公开接口替换本包的模块扩充。
 - 一次整体换风格仍需要改页面代码而不只是覆写 token：分层未成立，重新评估。
 - 出现四个角色覆盖不了的表面，或角色之间的继承关系无法用「缺省即继承」表达：重新裁定角色集。

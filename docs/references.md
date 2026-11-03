@@ -8,7 +8,7 @@
 
 | 编号 | 名称 | 是什么 | 地址 | 版本 |
 |---|---|---|---|---|
-| REF-bcp47 | BCP 47: Tags for Identifying Languages | IETF 最佳当前实践（RFC 5646 与 RFC 4647），定义语言标签的语法与匹配 | <https://www.rfc-editor.org/info/bcp47/> | — |
+| REF-bcp47 | BCP 47: Tags for Identifying Languages | IETF 当前最佳实践（RFC 5646 与 RFC 4647），定义语言标签的语法与匹配 | <https://www.rfc-editor.org/info/bcp47/> | — |
 | REF-fips-140-3 | FIPS 140-3: Security Requirements for Cryptographic Modules | 美国联邦信息处理标准，规定密码模块的安全要求 | <https://csrc.nist.gov/pubs/fips/140-3/final> | 140-3 |
 | REF-iana-http-authschemes | IANA Hypertext Transfer Protocol (HTTP) Authentication Scheme Registry | IANA 登记表，列出已登记的 HTTP 认证方案名 | <https://www.iana.org/assignments/http-authschemes/> | — |
 | REF-iana-ipv4-special-registry | IANA IPv4 Special-Purpose Address Registry | IANA 登记表，列出 IPv4 特殊用途地址块及其可路由、可全局到达等属性 | <https://www.iana.org/assignments/iana-ipv4-special-registry/> | 2026-10-11 |
@@ -73,7 +73,7 @@
 | REF-rfc9562 | RFC 9562: Universally Unique IDentifiers (UUIDs) | IETF 标准，定义 UUID 的格式与各版本，含按时间排序的第 7 版 | <https://www.rfc-editor.org/info/rfc9562/> | — |
 | REF-rfc9602 | RFC 9602: Segment Routing over IPv6 (SRv6) Segment Identifiers in the IPv6 Addressing Architecture | IETF 信息性规范，为 SRv6 段标识分配 `5f00::/16` 地址块 | <https://www.rfc-editor.org/info/rfc9602/> | — |
 | REF-rfc9637 | RFC 9637: Expanding the IPv6 Documentation Space | IETF 信息性规范，新增 IPv6 文档用地址块 `3fff::/20` | <https://www.rfc-editor.org/info/rfc9637/> | — |
-| REF-rfc9700 | RFC 9700: Best Current Practice for OAuth 2.0 Security | IETF 最佳当前实践，汇总 OAuth 2.0 的安全威胁与对策 | <https://www.rfc-editor.org/info/rfc9700/> | — |
+| REF-rfc9700 | RFC 9700: Best Current Practice for OAuth 2.0 Security | IETF 当前最佳实践，汇总 OAuth 2.0 的安全威胁与对策 | <https://www.rfc-editor.org/info/rfc9700/> | — |
 | REF-rfc9780 | RFC 9780: Bidirectional Forwarding Detection (BFD) for Multipoint Networks over Point-to-Multipoint MPLS Label Switched Paths (LSPs) | IETF 标准，定义点到多点 MPLS 上的 BFD，并登记 IPv6 特殊用途地址块 `100:0:0:1::/64` | <https://www.rfc-editor.org/info/rfc9780/> | — |
 | REF-saml2 | Security Assertion Markup Language (SAML) V2.0 | OASIS 标准，定义 SAML 断言、协议、绑定与元数据 | <https://docs.oasis-open.org/security/saml/v2.0/> | 2.0 |
 | REF-trai-tcccpr | TRAI Telecom Commercial Communications Customer Preference Regulations, 2018 | 印度电信管理局的商业通信法规，要求发送方实体与短信模板在 DLT 平台登记 | <https://www.trai.gov.in/tcccpr> | 2018 |
@@ -113,7 +113,7 @@
 | REF-eslint | ESLint | JavaScript 与 TypeScript 的静态检查工具，支持自定义规则 | <https://eslint.org/> | — |
 | REF-fiber | Fiber | Go 语言建立在 fasthttp 之上的 HTTP Web 框架 | <https://github.com/gofiber/fiber> | — |
 | REF-fosite | fosite | Ory 的 Go 语言 OAuth 2.0 与 OpenID Connect 服务端框架 | <https://github.com/ory/fosite> | — |
-| REF-gcp-compute-metadata | cloud.google.com/go/compute/metadata | Google Cloud Go 客户端库中读取计算实例元数据服务的模块 | <https://pkg.go.dev/cloud.google.com/go/compute/metadata> | — |
+| REF-gcp-compute-metadata | cloud.google.com/go/compute/metadata | Google Cloud Go 客户端库中从计算实例元数据服务读取的模块 | <https://pkg.go.dev/cloud.google.com/go/compute/metadata> | — |
 | REF-genproto | go-genproto | Google API 的 protobuf 定义生成的 Go 包，已拆分为 `googleapis/*` 等子模块 | <https://github.com/googleapis/go-genproto> | — |
 | REF-gin | Gin | Go 语言的 HTTP Web 框架，提供路由、中间件、请求绑定与渲染 | <https://github.com/gin-gonic/gin> | v1 |
 | REF-gin-contrib-cors | gin-contrib/cors | Gin 的跨源资源共享（CORS）中间件 | <https://github.com/gin-contrib/cors> | v1 |
@@ -126,13 +126,13 @@
 | REF-go-jose | go-jose | Go 语言的 JOSE 实现，覆盖 JWS、JWE、JWK 与 JWT | <https://github.com/go-jose/go-jose> | v4 |
 | REF-go-mail | go-mail | Go 语言的邮件组装与 SMTP 发送库 | <https://github.com/wneessen/go-mail> | v0 |
 | REF-go-oauth2 | go-oauth2/oauth2 | Go 语言的 OAuth 2.0 服务端库 | <https://github.com/go-oauth2/oauth2> | — |
-| REF-go-oidc | go-oidc | Go 语言的 OpenID Connect 依赖方库，提供提供方发现与 ID 令牌校验 | <https://github.com/coreos/go-oidc> | v3 |
+| REF-go-oidc | go-oidc | Go 语言的 OpenID Connect 依赖方库，含提供方发现与 ID 令牌校验 | <https://github.com/coreos/go-oidc> | v3 |
 | REF-go-playground-validator | go-playground/validator | Go 语言的结构体与字段校验库 | <https://github.com/go-playground/validator> | v10 |
 | REF-go-redis | go-redis | Redis 的 Go 客户端 | <https://github.com/redis/go-redis> | v9 |
 | REF-go-webauthn | go-webauthn/webauthn | Go 语言的 WebAuthn 依赖方库，处理凭据登记与断言仪式 | <https://github.com/go-webauthn/webauthn> | v0 |
 | REF-golang-jwt | golang-jwt/jwt | Go 语言的 JWT 解析与签发库 | <https://github.com/golang-jwt/jwt> | v5 |
 | REF-golang-x-crypto | golang.org/x/crypto | Go 项目在标准库之外维护的密码学库，含 Argon2 | <https://pkg.go.dev/golang.org/x/crypto> | — |
-| REF-golang-x-oauth2 | golang.org/x/oauth2 | Go 项目在标准库之外维护的 OAuth 2.0 客户端库，含 PKCE 助手与 Google 子包 | <https://pkg.go.dev/golang.org/x/oauth2> | — |
+| REF-golang-x-oauth2 | golang.org/x/oauth2 | Go 项目在标准库之外维护的 OAuth 2.0 客户端库，含 PKCE 辅助函数与 Google 子包 | <https://pkg.go.dev/golang.org/x/oauth2> | — |
 | REF-golang-x-text | golang.org/x/text | Go 项目在标准库之外维护的文本处理库，含语言标签匹配、消息目录与 Unicode 规范化 | <https://pkg.go.dev/golang.org/x/text> | — |
 | REF-golang-x-time | golang.org/x/time | Go 项目在标准库之外维护的时间相关库，含令牌桶限流器 `rate` | <https://pkg.go.dev/golang.org/x/time> | — |
 | REF-google-uuid | google/uuid | Go 语言的 UUID 生成与解析库 | <https://github.com/google/uuid> | v1 |
@@ -145,7 +145,7 @@
 | REF-hashicorp-cap | cap | HashiCorp 的 Go 认证库，提供 OIDC、JWT 与 LDAP 的认证流程 | <https://github.com/hashicorp/cap> | — |
 | REF-i18next | i18next | JavaScript 的国际化框架，提供翻译、命名空间与复数处理 | <https://www.i18next.com/> | v26 |
 | REF-icu | ICU（International Components for Unicode） | Unicode 联盟维护的国际化库与区域数据，为各 JavaScript 引擎的 `Intl` 提供格式化与显示名称 | <https://icu.unicode.org/> | — |
-| REF-jsdom | jsdom | 以 JavaScript 实现的 DOM 与 HTML 标准，供 Node.js 中无浏览器运行 | <https://github.com/jsdom/jsdom> | — |
+| REF-jsdom | jsdom | 以 JavaScript 实现的 DOM 与 HTML 标准，供在 Node.js 中无浏览器运行 | <https://github.com/jsdom/jsdom> | — |
 | REF-keycloak | Keycloak | 开源的身份与访问管理服务，支持 OIDC 与 SAML | <https://www.keycloak.org/> | — |
 | REF-kong-gateway | Kong Gateway | 开源的 API 网关，以按阶段运行、带静态优先级的插件处理请求 | <https://github.com/Kong/kong> | — |
 | REF-kubernetes | Kubernetes | 开源的容器编排系统，含 ConfigMap 与 Secret 的配置挂载 | <https://kubernetes.io/> | — |
@@ -200,7 +200,7 @@
 | REF-fly-io | Fly.io | 应用部署平台，含 Machines、卷、机密、Fly Proxy 与 `Fly-Client-IP` 头 | <https://docs.fly.io/> | — |
 | REF-github-oauth-apps | GitHub: Authorizing OAuth apps | GitHub OAuth 应用的授权码流程文档 | <https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps> | — |
 | REF-github-rest-users | GitHub REST API: Users | GitHub REST API 的用户端点文档，含 `/user` 与 `/user/emails` | <https://docs.github.com/en/rest/users> | — |
-| REF-gmail-dots | Gmail: Dots don't matter in Gmail addresses | Gmail 帮助文档，说明地址局部部分的点号不区分收件箱 | <https://support.google.com/mail/answer/7436150> | — |
+| REF-gmail-dots | Gmail: Dots don't matter in Gmail addresses | Gmail 帮助文档，说明地址局部部分的点号不影响收件箱 | <https://support.google.com/mail/answer/7436150> | — |
 | REF-google-openid-connect | Google Identity: OpenID Connect | Google 账号作为 OpenID Connect 提供方的接入文档，含 ID 令牌声明与 `hd` 托管域参数 | <https://developers.google.com/identity/openid-connect/openid-connect> | — |
 | REF-google-workspace-change-user-email | Overview: Changing a Directory user's name or email address | Google Workspace 管理员帮助文档，说明管理员修改目录用户的姓名或主邮箱地址 | <https://knowledge.workspace.google.com/admin/users/overview-changing-a-directory-users-name-or-email-address> | — |
 | REF-pkg-go-dev | pkg.go.dev | Go 项目的包与模块发现站点，列出各模块的文档、版本与导入它的包 | <https://pkg.go.dev/> | 2026-10-10 |

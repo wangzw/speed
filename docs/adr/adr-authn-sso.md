@@ -6,7 +6,7 @@
 
 **IdP 的配置是运行期才出现、数量不定、带秘密的数据。** 每个租户有自己的 IdP，租户管理员在运行期创建、修改与删除；OIDC 的 `client_secret` 属于它。设置的键必须在启动前静态声明，类型封闭、没有容器，值明文落库，读取接口照常交出敏感项（settings）；配置的容器叶子只能来自主配置源，整体替换，键不进清单（config）。两者都不是为这种数据设计的。
 
-**回调到达时没有租户上下文。** 校验后端在租户解析之前运行，看不到租户（[ADR-tenant-ordering](adr-tenant-ordering.md)）。IdP 把浏览器送回回调地址时，处理器要知道这次登录属于哪一个 IdP，而请求面上没有租户可读。租户插件对「没有租户上下文的受约束语句」直接拒绝，IdP 表要在没有租户上下文的路径上被读取。
+**回调到达时没有租户上下文。** 校验后端在租户解析之前运行，看不到租户（[ADR-tenant-ordering](adr-tenant-ordering.md)）。IdP 把浏览器送回回调地址时，处理器要知道这次登录属于哪一个 IdP，而请求中没有租户可读。租户插件对「没有租户上下文的受约束语句」直接拒绝，IdP 表要在没有租户上下文的路径上被读取。
 
 **URL 来自租户管理员的输入。** OIDC 的发现文档（[REF-openid-connect-discovery](../references.md)）与 JWKS（[REF-rfc7517](../references.md)）、SAML 的元数据都由服务端按管理员给出的地址发起请求。租户管理员不是平台运营方，这些请求是服务端请求伪造的入口。
 
@@ -17,13 +17,13 @@
 - gosaml2（[REF-gosaml2](../references.md)）的 `RetrieveAssertionInfo` 只取第一条断言，不检查 `InResponseTo`，`IdentityProviderIssuer` 为空时跳过颁发者比较，`Destination` 为空时跳过目的地比较。
 - 断言条件不满足时，库不返回错误，只在 `WarningInfo` 里置位；没有受众限制的断言库放行。
 - 库的时间比较没有容差字段。
-- goxmldsig（[REF-goxmldsig](../references.md)）的 `ValidationContext` 只有证书库、标识属性与时钟这几个字段，没有拒绝签名算法的开关，验签面接受 SHA-1。
-- gosaml2 没有 IdP 元数据的解析助手，没有断言标识的去重。
+- goxmldsig（[REF-goxmldsig](../references.md)）的 `ValidationContext` 只有证书库、标识属性与时钟这几个字段，没有拒绝签名算法的开关，验签接受 SHA-1。
+- gosaml2 没有 IdP 元数据的解析辅助函数，没有断言标识的去重。
 - 签名包装类缺陷在 crewjam/saml（[REF-crewjam-saml](../references.md)）、gosaml2 与 goxmldsig 的历史记录里都出现过：被验签的元素与被使用的元素不是同一个。goxmldsig 在 v1.6.0 之前存在同一 `SignedInfo` 含多个引用时的签名绕过（CVE-2026-33487，[REF-cve-2026-33487](../references.md)），crewjam/saml 默认解析到的 goxmldsig 版本落在受影响范围内。
 
 **IdP 侧的状态变化不会通知 speed。** 员工在 IdP 被停用后，speed 的会话不会因此终止，登出与停用都没有回传通道，除非另做单点登出。
 
-模块边界与取用方式见 [ADR-authn-packaging](adr-authn-packaging.md)，状态放置的判据见 [ADR-authn-state-placement](adr-authn-state-placement.md)，登录引擎对方法接缝的约定见 [ADR-authn-login-flow](adr-authn-login-flow.md)。
+模块边界与取用方式见 [ADR-authn-packaging](adr-authn-packaging.md)，状态放置的判据见 [ADR-authn-state-placement](adr-authn-state-placement.md)，登录引擎对方法接口的约定见 [ADR-authn-login-flow](adr-authn-login-flow.md)。
 
 ## 考虑过的选项
 
@@ -34,7 +34,7 @@
 **否决**：
 
 - 设置的值明文落库，读取接口交出敏感项，`client_secret` 因此不能放进去；设置项有大小上限，且全部设置载入每个副本的内存。
-- 设置没有逐项的类型校验，也就没有针对 IdP 形状的写入校验、变更事件与敏感标记；整张 IdP 表被压成一个字符串项，改一个租户的 IdP 要整体读写。
+- 设置没有逐项的类型校验，也就没有针对 IdP 结构的写入校验、变更事件与敏感标记；整张 IdP 表被压成一个字符串项，改一个租户的 IdP 要整体读写。
 - 配置只来自主配置源、整体替换，改一个租户的 IdP 要重启进程；租户管理员无从在运行期自助维护。
 
 ### IdP 表内嵌租户模型
@@ -56,7 +56,7 @@
 **否决**：
 
 - 默认解析到带 CVE-2026-33487 的 goxmldsig v1.4.0，调用方要在自己的 `go.mod` 里抬高版本，并持续满足这条约束；库不自带这条保证。
-- 验签后丢弃 `Validate` 返回的元素，后续仍从原元素解析，被验与被用不是同一个元素，正是签名包装类缺陷的根源。gosaml2 用验过签返回的元素解码。
+- 验签后丢弃 `Validate` 返回的元素，后续仍从原元素解析，被验签的元素与被使用的元素不是同一个元素，正是签名包装类缺陷的根源。gosaml2 用验过签返回的元素解码。
 - 没有接收 IdP 登出请求的实现。
 - 容差是包级变量（`MaxIssueDelay`、`MaxClockSkew`、`Clock`），不能按 IdP 设置。
 - 它的优点，IdP 元数据解析、`InResponseTo` 与 Artifact 绑定，补在 gosaml2 上并不比修补 crewjam/saml 的缺陷更难；Artifact 绑定没有需求。
@@ -83,13 +83,13 @@ SAML 交给独立部署的身份代理（Dex，[REF-dex](../references.md)、Key
 
 SP 的私钥与证书成为按租户的数据，附带生成与轮换流程。
 
-**否决**：一组 PEM（[REF-rfc7468](../references.md)）文件变成按租户的数据与轮换流程，范围随之扩大。默认不请求加密断言，签名 AuthnRequest 本就是可选，SP 私钥只在 IdP 要求时才用到。需要时可在 IdP 记录上加可选的密钥覆盖，不改变接缝。
+**否决**：一组 PEM（[REF-rfc7468](../references.md)）文件变成按租户的数据与轮换流程，范围随之扩大。默认不请求加密断言，签名 AuthnRequest 本就是可选，SP 私钥只在 IdP 要求时才用到。需要时可在 IdP 记录上加可选的密钥覆盖，不改变扩展点。
 
 ### 把断言重放行加进 SSOProviders 的方法集，或另立一个根包能力接口
 
 `SSOProviders` 增加一个写入断言标识的方法，或把它拆成一个独立的根包接口、在 `authn.sso` 与 `authn.sso.saml` 之间传递。
 
-**否决**：`SSOProviders` 的方法集是对宿主与协议模块的对外接口面（authn-sso）；把一条只为 SAML 服务、只为内部去重而存在的写入塞进它，会让每个自写实现的提供方登记都被迫交付一个与登记职责无关的方法。另立一个根包接口则要在根包里新增一个只被一个协议模块用到的能力。做法是：写入由持有表的 `authn.sso` 交付一个 `RememberAssertion`，`authn.sso.saml` 在构造期把它取到的 `SSOProviders` 值断言到这个扩展形状上，断不上即构造失败（fail-closed）；公开方法集不变，这个扩展是登记方必须额外满足的形状。
+**否决**：`SSOProviders` 的方法集是对宿主与协议模块的对外接口（authn-sso）；把一条只为 SAML 服务、只为内部去重而存在的写入塞进它，会让每个自写实现的提供方登记都被迫交付一个与登记职责无关的方法。另立一个根包接口则要在根包里新增一个只被一个协议模块用到的能力。做法是：写入由持有表的 `authn.sso` 交付一个 `RememberAssertion`，`authn.sso.saml` 在构造期把它取到的 `SSOProviders` 值断言到这个扩展接口上，断不上即构造失败（fail-closed）；公开方法集不变，这个扩展是登记方必须额外满足的接口。
 
 ### authn 在后台自动刷新 IdP 元数据与周期性复验域
 
@@ -106,8 +106,8 @@ SP 的私钥与证书成为按租户的数据，附带生成与轮换流程。
 
 **否决**：
 
-- SLO 没有需求，表面积大于收益；gosaml2 的登出请求校验在 v0.11.0 之前曾接受未签名的请求（GHSA-pcgw-qcv5-h8ch，[REF-ghsa-pcgw-qcv5-h8ch](../references.md)）。会话的绝对期限给出上界。
-- IdP 发起的断言没有可比对的流程，没有 `InResponseTo`，登录 CSRF（攻击者把自己的断言投给受害者的浏览器）无解。能收窄的只有断言的新鲜度、标识唯一、受众与接收者，残余风险无解，所以缺省关闭。
+- SLO 没有需求，涉及的范围大于收益；gosaml2 的登出请求校验在 v0.11.0 之前曾接受未签名的请求（GHSA-pcgw-qcv5-h8ch，[REF-ghsa-pcgw-qcv5-h8ch](../references.md)）。会话的绝对期限给出上界。
+- IdP 发起的断言没有可比对的流程，没有 `InResponseTo`，登录 CSRF（攻击者把自己的断言投给受害者的浏览器）无解。能收窄的只有断言的新鲜度、标识唯一性、受众与接收者，残余风险无解，所以缺省关闭。
 
 ### 出站目的地用黑名单，在解析阶段检查
 
@@ -154,7 +154,7 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 
 判据：**运行期才出现、数量不定、带秘密的配置是数据，进 authn 自己的表；键在启动前可静态声明的有限开关才是设置。** 按租户的 IdP 落在 `authn_idps` 与 `authn_idp_domains`，不进设置，也不进配置。租户级策略开关，即要求 MFA 与要求 SSO，是静态键，属于 `tenant.admission`（[ADR-tenant-admission](adr-tenant-admission.md)）。
 
-- 提供方标识是不透明的 UUID，出现在回调路径与 SP 元数据地址里。租户由提供方行得出，不由请求面得出，校验后端因此不需要看到租户，[ADR-tenant-ordering](adr-tenant-ordering.md) 的失效条件不被触发。
+- 提供方标识是不透明的 UUID，出现在回调路径与 SP 元数据地址里。租户由提供方行得出，不由请求得出，校验后端因此不需要看到租户，[ADR-tenant-ordering](adr-tenant-ordering.md) 的失效条件不被触发。
 - OIDC 的 `client_secret` 存在 `authn_idps` 的加密列里，读取接口与日志里不出现它，应答只带「是否已设置」。IdP 的签名证书是公钥，不加密。SAML 的 SP 私钥与证书是整个部署共用的一组文件，不属于 IdP 行。秘密的存放规则见 [ADR-authn-settings-and-secrets](adr-authn-settings-and-secrets.md)。
 - 提供方行带 `version`，变更使各副本缓存的 `Provider` 与 `ServiceProvider` 失效。提供方行的读写接口、表结构与 `config` 的校验规则见 authn-sso。
 
@@ -166,11 +166,11 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 
 ### SAML 的补充校验
 
-判据：**库不检查、对空值默认放行、或只置位不报错的项，由 authn 在库调用的前后补上；补充校验的任一失败都拒绝，对外统一为 `login-failed`，成因只进日志与指标。** 背景一节列出的缺口是例举，不是封闭集；补充校验的条目、判定顺序与错误映射见 authn-sso。
+判据：**库不检查、对空值默认放行或只置位不报错的项，由 authn 在库调用的前后补上；补充校验的任一失败都拒绝，对外统一为 `login-failed`，成因只进日志与指标。** 背景一节列出的缺口是例举，不是封闭集；补充校验的条目、判定顺序与错误映射见 authn-sso。
 
 - 被验签的元素与被使用的元素必须是同一个：验签与取用基于一次解析，使用验过签返回的元素。
 - 时间条件严格判、不设容差，部署要求各副本与 IdP 时间同步。
-- 断言标识的去重放在 db 的唯一约束上，不放 kv：这类丢失会放宽校验的状态的判据见 [ADR-authn-state-placement](adr-authn-state-placement.md)。写这一行的是持有表的 `authn.sso`，它向 `authn.sso.saml` 交付一个 `RememberAssertion`，方法与登记之间以构造期要求的扩展形状相接，公开的 `SSOProviders` 方法集不变。
+- 断言标识的去重放在 db 的唯一约束上，不放 kv：这类丢失会放宽校验的状态的判据见 [ADR-authn-state-placement](adr-authn-state-placement.md)。写这一行的是持有表的 `authn.sso`，它向 `authn.sso.saml` 交付一个 `RememberAssertion`，方法与登记之间以构造期要求的扩展接口相接，公开的 `SSOProviders` 方法集不变。
 
 ### 域发现与域所有权
 
@@ -201,7 +201,7 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 - 租户管理员可以在运行期自助维护 IdP，改一个租户的 IdP 不需要重启进程，也不影响别的租户。
 - 回调处理器不依赖租户解析，校验后端的既有约束保持不变。
 - 域所有权证明使租户管理员无法声明他人的域；已验证域全局唯一使同一个域至多属于一个 IdP。
-- 库的每一处默认放行都有对应的补充校验，签名包装类缺陷的根源，即被验与被用不同，由单次解析验签消除。
+- 库的每一处默认放行都有对应的补充校验，签名包装类缺陷的根源，即被验签的元素与被使用的元素不同，由单次解析验签消除。
 - 外部输入决定的出站请求只有一个出口，目的地判断不会因某条调用路径漏注入而缺席。
 
 **接受的代价：**
@@ -217,7 +217,7 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 - 受限出站客户端是自写的安全部件，要有专门测试，覆盖私有地址、DNS 重绑定与重定向；每个 IdP 在进程内缓存一个库实例，租户很多时内存随之增长。
 - 特殊用途段表是登记表在某一时点的复刻，不自动更新：登记表之后新增的不可全球访问的整块，只要落在 IPv4 的全局单播或 IPv6 的 `2000::/3` 之内，不进表就不被拒。守住表的是逐段的测试向量，与登记表的一致靠改表时逐条对照，包内不保留登记表的副本。
 - SHA-1 预扫描靠扫描 XML 文本，可能误拒，要有测试向量守住。
-- 写入 `authn_idps` 的 `config` 要在写入时校验形状并拒绝未知键，校验规则随协议增长而增长。
+- 写入 `authn_idps` 的 `config` 要在写入时校验结构并拒绝未知键，校验规则随协议增长而增长。
 
 ## 失效条件
 
@@ -231,6 +231,6 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 
 若认证获得「先解析、后校验」的分段形态，使校验后端能在判决之前读到租户，则提供方标识放进回调路径所绕开的约束不再存在，路径形态要按 [ADR-tenant-ordering](adr-tenant-ordering.md) 的失效条件重新比较。
 
-若需求出现 SLO、按租户子域名的回调、或按租户的 SP 密钥，则对应的否决理由不再成立，这些项分别要在新的记录里重新裁定。
+若需求出现 SLO、按租户子域名的回调或按租户的 SP 密钥，则对应的否决理由不再成立，这些项分别要在新的记录里重新裁定。
 
 若 goxmldsig 或 gosaml2 再次披露签名校验层面的缺陷，且补充校验无法单独封堵，则「在 gosaml2 之上补校验」的路线要与前置身份代理一并重新比较。

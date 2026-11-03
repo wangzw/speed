@@ -18,7 +18,7 @@
 - **不设附件体积上限。** 附件以 `io.Reader` 交出，读取由厂商库在发送时完成，本模块不度量、不截断、不拒绝大附件。
 - **不认识租户，不读请求上下文。** 本模块不 import 任何上层功能目录，也不 import `pkg/tenant` 或 `pkg/authn`。
 - **不落任何存储。** 本模块不写库、不写事件，除排他性去重的一项进程内有界记录外不持状态（见 `Message.DedupeID`）。
-- **不透传任意头。** 接口点名的字段（发件人、收件人三类、回复地址、主题、两份正文、附件）要么被每个载体忠实交付、要么被拒绝；一个接口没有点名的头没有传出的通道（见[非保证](#非保证)）。
+- **不透传任意头。** 接口点名的字段（发件人、收件人三类、回复地址、主题、两份正文、附件）要么被每个载体忠实交付，要么被拒绝；一个接口没有点名的头没有传出的通道（见[非保证](#非保证)）。
 
 ## 外部接口契约
 
@@ -33,7 +33,7 @@ type Sender interface {
 
 type Message struct {
     From        string       // 可选；空值取载体配置的缺省发件人
-    To          []string     // 每个条目是 RFC 5322 地址：裸 addr-spec 或 "显示名 <addr>"
+    To          []string     // 每个条目是 RFC 5322 地址：裸 addr-spec 或「显示名 <addr>」
     Cc          []string
     Bcc         []string     // 只作信封收件人，不写进任何头
     ReplyTo     []string
@@ -67,11 +67,11 @@ type Receipt struct{ ProviderID string }
 | 每个附件的 `ContentType` 不含控制字符（制表符除外） | 含控制字符 |
 | 每个附件的 `Data` 非 nil | `Data` 为 nil |
 
-「至少一个收件人」按 `To`、`Cc`、`Bcc` 三项之并计，只有密送的邮件合法；空的 `From` 与空的 `Subject` 合法。
+「至少一个收件人」按 `To`、`Cc`、`Bcc` 三项合并计算，只有密送的邮件合法；空的 `From` 与空的 `Subject` 合法。
 
 `Subject`、`Name` 与 `ContentType` 的值都会成为头行，所以三者按同一条规则判：不含控制字符，制表符除外——它是头值里合法的空白。
 
-这条规则不按某个载体库的行为定，因为那正是不一的地方：有的库把值照原样写进头行，一个回车或换行就写出了头块；有的改写它，交付出调用方没写过的东西；有的把它编码成另一种形式。`Validate` 判的是消息而不是载体，所以它在这里拒绝，不把这件事交给接缝后面的某一家库。
+这条规则不按某个载体库的行为定，因为那正是不一致的地方：有的库把值照原样写进头行，一个回车或换行就写出了头块；有的改写它，交出调用方没写过的东西；有的把它编码成另一种形式。`Validate` 判的是消息而不是载体，所以它在这里拒绝，不把这件事交给扩展点后面的某一家库。
 
 ### 发送契约
 
@@ -84,11 +84,11 @@ type Receipt struct{ ProviderID string }
 
 `Message.Validate` 判出的拒绝与「发件人不在载体配置的允许集里」都是调用方缺陷，都在厂商被触达之前判出，都是 `ErrRejected`。
 
-### 对外接口面
+### 对外接口
 
-- `Sender`、`Message`、`Attachment`、`Receipt` 的字段与方法集，以及哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`，是本模块对调用方的接口面。加方法、改签名或改字段名对实现了 `Sender` 的载体与取用它的调用方都是不兼容变更。
+- `Sender`、`Message`、`Attachment`、`Receipt` 的字段与方法集，以及哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`，是本模块对调用方的接口。加方法、改签名或改字段名对实现了 `Sender` 的载体与取用它的调用方都是不兼容变更。
 - `Message` 的字段语义：`To`、`Cc`、`Bcc`、`ReplyTo` 的每个条目是 RFC 5322 地址；`Bcc` 的条目只作信封收件人、不被写进头；`Text` 与 `HTML` 是调用方渲染好的正文；`DedupeID` 使载体至多对同一标识调厂商一次。
-- **正文的形态属于接口面**：`Text` 与 `HTML` 是两份可替代的正文，两份同时在时以纯文本在前、HTML 在后铺成一份 multipart/alternative，附件在场时再在外层铺成 multipart/mixed。
+- **正文的形态属于接口**：`Text` 与 `HTML` 是两份可替代的正文，两份同时在时以纯文本在前、HTML 在后的次序铺成一份 multipart/alternative，附件在场时再在外层铺成 multipart/mixed。
 - 单个载体叶子包可替换、可撤掉，不改变调用方的代码。
 
 ### 哨兵错误
@@ -96,7 +96,7 @@ type Receipt struct{ ProviderID string }
 | 哨兵 | 含义 |
 |---|---|
 | `ErrThrottled` | 厂商限流（暂态失败） |
-| `ErrRejected` | 厂商拒绝（永久失败）；或调用方的消息或发件人不合载体所要求的 |
+| `ErrRejected` | 厂商拒绝（永久失败）；或调用方的消息或发件人不符合载体的要求 |
 | `ErrUncertain` | 发送后超时，不知是否送达；不得盲目重发 |
 | `ErrInvalidConfig` | 配置里的值跑不起来：载体的配置自洽校验失败 |
 
@@ -113,15 +113,15 @@ type Receipt struct{ ProviderID string }
 | `pkg/internal/dedupe` | 与短信的载体共用的有界去重表 |
 | SMTP 库 `github.com/wneessen/go-mail`（[REF-go-mail](../../references.md)） | 只被 SMTP 载体叶子包 `pkg/mail/smtp` import |
 
-**本模块不 import 任何上层功能目录，也不 import `pkg/authn`。** 判据是发送无关用途：`pkg/mail` 位于依赖图的底层之一，与 `pkg/kv`、`pkg/event`、`pkg/sms` 同级，任何要发通知的模块都能单独引入它（[ADR-mail-capability](../../adr/adr-mail-capability.md)）。
+**本模块不 import 任何上层功能目录，也不 import `pkg/authn`。** 判据是发送与用途无关：`pkg/mail` 位于依赖图的底层之一，与 `pkg/kv`、`pkg/event`、`pkg/sms` 同级，任何要发通知的模块都能单独引入它（[ADR-mail-capability](../../adr/adr-mail-capability.md)）。
 
-**根包不 import 任何厂商库。** SMTP 库落在绑定它的载体叶子包 `pkg/mail/smtp` 里，只有 import 该子包的宿主的 `go.mod` 才背负它。这一条没有编译期强制（同一 `pkg` 模块内每个客户端都在一份依赖清单里），顶上它的是 `pkg/mail/deps_test.go` 的守卫：根包的传递闭包只含 `pkg/config`、`pkg/core`、`pkg/internal/literal`、`pkg/log`，不含任何厂商库，也不含 `pkg/authn` 或其他功能目录。SMTP 库在 `pkg/go.mod` 里精确钉版 `v0.8.1`，同样由该守卫守住。
+**根包不 import 任何厂商库。** SMTP 库落在绑定它的载体叶子包 `pkg/mail/smtp` 里，只有 import 该子包的宿主的 `go.mod` 才背负它。这一条没有编译期强制（同一 `pkg` 模块内每个客户端都在一份依赖清单里），顶上它的是 `pkg/mail/deps_test.go` 的守卫：根包的传递闭包只含 `pkg/config`、`pkg/core`、`pkg/internal/literal`、`pkg/log`，不含任何厂商库，也不含 `pkg/authn` 或其他功能目录。SMTP 库在 `pkg/go.mod` 里精确固定版本 `v0.8.1`，同样由该守卫守住。
 
 **`pkg/internal/literal` 与 `pkg/internal/dedupe` 是共享单元。** 两个能力的根包工厂都在 `New` 里 import `literal`，替自己的载体登记凭据的字面量脱敏匹配器；两个能力的载体也都持一张 `dedupe.Table`。`pkg/sms` 下的包不能 import `pkg/mail` 的 `internal` 包，所以这两个单元落在 `pkg/internal/` 下（[ADR-shared-backend-unit](../../adr/adr-shared-backend-unit.md)）。它们不登记模块，不交付功能，不参与生命周期。本模块的载体只经工厂取用它们，见「工厂的构造次序」。
 
 ## UML 图
 
-本模块的结构是一条接口、一条消息形状与一个实现的关系。图里的约束不在图中：载体是**互斥**的，而不是可用的一种选择——图上看不出这一点，因为排他性由描述符声明、由消解阶段裁定，不是类型之间的关系。消息的校验由 `Message.Validate` 在调用方一侧判形，载体对发件人另有一道按自己配置的允许集的核对，两者都不在类型的形状里。
+本模块的结构是一个接口、一个消息结构与一个实现的关系。图里的约束不在图中：载体是**互斥**的，而不是可用的一种选择——图上看不出这一点，因为排他性由描述符声明、由消解阶段裁定，不是类型之间的关系。消息的校验由 `Message.Validate` 在调用方一侧判形，载体对发件人另有一道按自己配置的允许集的核对，两者都不在类型的结构里。
 
 ```mermaid
 classDiagram
@@ -140,7 +140,7 @@ classDiagram
     Message --> Attachment
 ```
 
-**SMTP 载体各自登记为一个模块**，模块名 `mail.smtp`。根包是接口包与工厂，不登记模块。
+**SMTP 载体登记为一个模块**，模块名 `mail.smtp`。根包是接口包与工厂，不登记模块。
 
 ## 核心数据结构
 
@@ -190,7 +190,7 @@ type Spec[C any] struct {
 
 | 阶段 | 行为 |
 |---|---|
-| `Prepare` | 读 `mail.carrier` 并核对其中的名字在已编入的载体里；按选择项决定关闭、启用或保底，再 `Decode` 自己那份配置并调 `Stance` |
+| `Prepare` | 读 `mail.carrier` 并核对其中名字是否在已编入的载体里；按选择项决定关闭、启用或保底，再 `Decode` 自己那份配置并调 `Stance` |
 | `New` | `Decode` 配置 → 调 `Secrets` 并经 `literal.Register` 登记字面量脱敏匹配器 → 把已构造的 logger 注入上下文 → 调 `Open` 建立载体 |
 
 ### 载体的选择与保底
@@ -212,9 +212,9 @@ type Spec[C any] struct {
 
 **次序固定：先登记脱敏字面量，再绑定任何带属性的 logger，最后 `Open`。** 日志脱敏规则只对它注册之后写出的记录起作用，所以凭据的登记必须发生在载体把任何属性绑到 logger 之前（[ADR-log-secret-redaction](../../adr/adr-log-secret-redaction.md)）。`Secrets` 钩子把「凭据先登记」这一步收进工厂，载体因此不 import `literal`，只交出凭据字符串。
 
-**工厂在装配期校验 `Spec`。** 一份缺模块名、缺配置命名空间、缺配置原型、缺表态或缺打开函数的 `Spec` 让 `NewModule` panic：载体在 `init` 里填这份 `Spec`，缺陷因此在本仓库自己的代码里，在任何 import 它的宿主的第一次运行上确定性地现形，不留给宿主处理。
+**工厂在装配期校验 `Spec`。** 一份缺模块名、缺配置命名空间、缺配置原型、缺表态或缺打开函数的 `Spec` 让 `NewModule` panic：载体在 `init` 里填这份 `Spec`，缺陷因此在本仓库自己的代码里，在任何 import 它的宿主的第一次运行时确定性地现形，不留给宿主处理。
 
-**载体自洽落在 `Prepare`。** 载体在 `Stance` 里判自己那份配置（例如连接姿态在封闭集内、用户名与口令同给、发件人能判形），不满足即 `ErrInvalidConfig`。`Prepare` 早于 `New`、早于服务，所以漏配在启动期被点名，不拖到第一次发送。
+**载体自洽落在 `Prepare`。** 载体在 `Stance` 里判自己那份配置（例如连接姿态在封闭集内、用户名与口令一并给出、发件人能判形），不满足即 `ErrInvalidConfig`。`Prepare` 早于 `New`、早于服务，所以漏配在启动期被点名，不拖到第一次发送。
 
 ### 厂商适配
 
@@ -251,15 +251,15 @@ SMTP 事务同样不幂等：重复一次会投递并计费第二封，所以适
 
 以下是本模块**不能自行确立**的前提：它们依赖本模块之外的事实，所以写作假设，对应的测试失败即视为该前提不成立。列在此处的原因是这个，而不是它们未经核实——有几条已被构建检查逐次核实。
 
-- **回复码的分类。** 假设中继所答的每个 4xx 都是暂态失败（限流）、每个 5xx 都是永久失败（拒绝），按其类别定义。适配层测试用假服务器驱动真实客户端，断言在 `RCPT TO` 与 `DATA` 之后答 4xx 归 `ErrThrottled`、答 5xx 归 `ErrRejected`，库自身抛出的无码失败、连接中断、拨号被拒、超时与已结束的上下文都归 `ErrUncertain`；类别表的边界与表外取值的缺省由归类助手自己的用例断言。
-- **假服务器与真实中继同形。** 假设真实 SMTP 中继在传输层的行为落在假服务器覆盖的协议子集内（问候、`EHLO`/`STARTTLS`、`AUTH`、`MAIL FROM`/`RCPT TO`/`DATA`、点填充与 `CRLF-dot-CRLF` 终结符）。适配层测试以假服务器为独立对端；真实中继在这一子集之外的偏差不在测试覆盖内。
+- **回复码的分类。** 假设中继所答的每个 4xx 都是暂态失败（限流），每个 5xx 都是永久失败（拒绝），按其类别定义。适配层测试用假服务器驱动真实客户端，断言在 `RCPT TO` 与 `DATA` 之后答 4xx 归 `ErrThrottled`、答 5xx 归 `ErrRejected`，库自身抛出的无码失败、连接中断、拨号被拒、超时与已结束的上下文都归 `ErrUncertain`；类别表的边界与表外取值的缺省由归类辅助函数自己的用例断言。
+- **假服务器与真实中继一致。** 假设真实 SMTP 中继在传输层的行为落在假服务器覆盖的协议子集内（问候、`EHLO`/`STARTTLS`、`AUTH`、`MAIL FROM`/`RCPT TO`/`DATA`、点填充与 `CRLF-dot-CRLF` 终结符）。适配层测试以假服务器为独立对端；真实中继在这一子集之外的偏差不在测试覆盖内。
 - **编译兼容。** 假设 SMTP 库与同一个 `pkg` 模块内其余实现所绑的库编译兼容。构建检查把全部模块一起编译，这一条因此每次 `make check` 都被核实；本模块无法自行确立它，这是它列在这里的原因。
 
 ### 非保证
 
 以下各类性质本模块声明为不保证。
 
-- **不保证一个 `Message` 值能被发送两次。** 附件的 `Data` 是一个 `io.Reader`，`Send` 把它读到结尾；`DedupeID` 命中时不再读一次这个读取器，所以重试用一个新的 `DedupeID` 时要重建读取器，否则发出去的是一份空附件、且没有错误可看。这一条是「附件以 `io.Reader` 交出」这一决定的代价。
+- **不保证一个 `Message` 值能被发送两次。** 附件的 `Data` 是一个 `io.Reader`，`Send` 把它读到结尾；`DedupeID` 命中时不再读一次这个读取器，所以重试用一个新的 `DedupeID` 时要重建读取器，否则发出去的是一份空附件，且没有错误可看。这一条是「附件以 `io.Reader` 交出」这一决定的代价。
 - **不保证厂商专有接口可达。** 载体集合只有 SMTP；SMTP 之外的厂商专有接口（例如只存在于某家 OpenAPI 的功能）没有通道。
 - **不设头字段的长度上界。** 主题、附件名与附件媒体类型的长度都不度量。载体库按空白把长值折成多行，所以带空白的取值会散成几个短行；不带空白的取值则成为一整条长行，可能超出 SMTP 的 998 字节行限，怎么处置由中继决定。要控制它的长度是调用方的事。
 - **不保证附件名按原样到达收件人。** 载体库对文件名做校验，把控制字符与 `/ : < > ? \\ |` 一类字符换成下划线，非 ASCII 的名字另编成编码字。本模块拒绝的是调用方缺陷信号（控制字符），不代为规定库把它写成什么。
@@ -290,9 +290,9 @@ SMTP 事务同样不幂等：重复一次会投递并计费第二封，所以适
 |---|---|---|
 | 接口、消息与工厂 | 已实现 | `pkg/mail/mail.go` `Sender`、`Message`、`Attachment`、`Receipt`；`pkg/mail/module.go` `Spec`、`NewModule` |
 | 消息校验 | 已实现 | `pkg/mail/validate.go` `Message.Validate` |
-| 归类助手（精确码表加缺省 `ErrUncertain`） | 已实现 | `pkg/mail/classify.go` `Classify`、`Unsettled`、`NoStatus` |
+| 归类辅助函数（精确码表加缺省 `ErrUncertain`） | 已实现 | `pkg/mail/classify.go` `Classify`、`Unsettled`、`NoStatus` |
 | SMTP 载体 `mail.smtp` | 已实现 | `pkg/mail/smtp/smtp.go` `Module`；`pkg/mail/smtp/config.go`、`pkg/mail/smtp/assemble.go`、`pkg/mail/smtp/classify.go` |
 | 日志载体 `mail.log` | 已实现 | `pkg/mail/log/log.go` `Module`、`Sender` |
 | 载体选择 `mail.carrier` 与保底 | 已实现 | `pkg/mail/selection.go` `SelectionSchema`、`ReadSelection`、`CarrierNames`、`OffBySelection` |
 | 去重表 | 已实现 | `pkg/internal/dedupe` |
-| 根包依赖守卫与库封边、钉版 | 已实现 | `pkg/mail/deps_test.go` |
+| 根包依赖守卫与库封边、固定版本 | 已实现 | `pkg/mail/deps_test.go` |

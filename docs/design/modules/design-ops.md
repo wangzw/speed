@@ -2,7 +2,7 @@
 
 ## 职责
 
-`ops` 是进程的运行面：把探针路由与一份合并后的 API 规格挂到配置点名的端点上。它不交付任何功能——描述符里没有 `Provides`，它成为一个模块靠的是生命周期回调与它自己声明的 `speedhttp.Spec` 资源。
+`ops` 是进程的运行期：把探针路由与一份合并后的 API 规格挂到配置点名的端点上。它不交付任何功能——描述符里没有 `Provides`，它成为一个模块靠的是生命周期回调与它自己声明的 `speedhttp.Spec` 资源。
 
 路由是 `GET /health`、`GET /ready`、`GET /openapi.json`：`/health` 答进程存活，`/ready` 答进程可否服务，`/openapi.json` 答这个二进制提供哪些 API。它们挂在**不设防的端**上——探针不带凭据、不指名租户，因而不经过认证、租户解析或授权层，本模块也不在 handler 内判定权限。
 
@@ -11,7 +11,7 @@
 ### 非职责
 
 - **不交付任何功能。** 本模块不 `Provides` 任何接口，别的模块取不到它交出的东西；它只登记一段生命周期与一份资源声明。
-- **不做业务健康检查。** `/ready` 报告的是进程层可服务——各端点在接受请求、数据库应答——不表示任何租户、任何业务已就绪，也不读业务状态。
+- **不做业务健康检查。** `/ready` 报告的是进程层可服务——各端点在接受请求，数据库应答——不表示任何租户、任何业务已就绪，也不读业务状态。
 - **不设防，不判定权限。** 与 [sms](design-sms.md) 的管理面相反，本模块的路由挂在探针端上，不做 handler 内判定：这里无对象可判——探针不带身份、不指名租户。
 - **不校验片段与模块实际登记的路由是否一致。** 两者是各自维护的事实，允许漂移，不一致不产生任何失败信号，与 `pkg/http` 的 `validateSpec` 同口径（见 [http](http/design-http.md)）。
 - **不重算合并结果。** 片段是静态声明，随二进制固定，`Init` 合并一次后不再重算，不订阅任何变更。
@@ -20,10 +20,10 @@
 
 ### 交付的功能
 
-本模块不 `Provides` 任何功能。它登记为一个模块，靠的是描述符里的名称与各阶段回调，以及它自己声明的 `speedhttp.Spec` 资源；描述符的形状由 [core](design-core.md) 定义。
+本模块不 `Provides` 任何功能。它登记为一个模块，靠的是描述符里的名称与各阶段回调，以及它自己声明的 `speedhttp.Spec` 资源；描述符的结构由 [core](design-core.md) 定义。
 
 ```go
-// 描述符形状。
+// 描述符的结构。
 core.Module{
     Name: "ops",
     Requires: []core.Requirement{
@@ -44,9 +44,9 @@ core.Module{
 
 **`Requires` 约束的主体是把本模块纳入命令的每个宿主。** `(*speedhttp.Router)(nil)` 必需：本模块挂路由、读端名都经它。[http](http/design-http.md) 排他交付 `Router`，纳入本模块因而也把 `http` 拉进装配。`(*log.Logger)(nil)` 与 `(*db.Database)(nil)` 可选：有数据库时就绪探针一并探它一次，没有数据库时 `/ready` 只报各端可服务。
 
-**`Resources` 里是本模块自己的 `Spec`。** `Document` 是本模块以 `//go:embed` 读进来的 `openapi/ops.json`；它是本模块对外的声明面，供别的读取方按类型收集——`pkg/http` 交出的片段、别的消费者读到的输入，都在同一份可用集里。
+**`Resources` 里是本模块自己的 `Spec`。** `Document` 是本模块以 `//go:embed` 读进来的 `openapi/ops.json`；它是本模块对外的声明接口，供别的读取方按类型收集——`pkg/http` 交出的片段、别的使用方读到的输入，都在同一份可用集里。
 
-**这份声明里的 `Endpoint` 是缺省端，不是配置点名的那个。** 资源是 `init` 期的静态声明，那一刻配置还没读，**声明里写不进一个当时还不存在的值**——这条约束来自 [core](design-core.md) 的资源模型，不是本模块的选择。配置点名的端在 `Init` 里取到：本模块在那时把**自己这份片段**的 `Endpoint` 改写成配置端，再交给 `Merge`，使合并文档把本模块三条 operation 的 `x-endpoint` 标成它真正服务的端。**声明资源上的那个字段因此停在缺省值**，读它的一方（例如一个只遍历资源、不跑生命周期的消费者）看到的是 `ops`。本模块自身的 `Requires` 与构造都不依赖它，运行时行为不受影响。
+**这份声明里的 `Endpoint` 是缺省端，不是配置点名的那个。** 资源是 `init` 期的静态声明，那一刻配置还没读，**声明里写不进一个当时还不存在的值**——这条约束来自 [core](design-core.md) 的资源模型，不是本模块的选择。配置点名的端在 `Init` 里取到：本模块在那时把**自己这份片段**的 `Endpoint` 改写成配置端，再交给 `Merge`，使合并文档把本模块三条 operation 的 `x-endpoint` 标成它真正服务的端。**声明资源上的那个字段因此停在缺省值**，读它的一方（例如一个只遍历资源、不跑生命周期的使用方）看到的是 `ops`。本模块自身的 `Requires` 与构造都不依赖它，运行时行为不受影响。
 
 ### 导出包 `pkg/ops/openapi`
 
@@ -63,7 +63,7 @@ func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error)
 
 **片段里的 path 是相对写法**：合并时按声明它的 `Spec.Prefix`、`Spec.Version` 与 `Spec.Scope` 拼成完整路径，冲突也按拼出的路径判定（[ADR-http-spec-path](../../adr/adr-http-spec-path.md)、[ADR-http-api-path-scopes](../../adr/adr-http-api-path-scopes.md)）。本模块自己的片段三者皆空，三条探针路由因而保持根路径。
 
-`pkg/ops/openapi` **不登记模块**：它没有生命周期、不交付功能、不声明资源。它是这一能力目录下供两个调用方共用的实现，也是本能力唯一需要被模块之外调用的面。
+`pkg/ops/openapi` **不登记模块**：它没有生命周期、不交付功能、不声明资源。它是这一能力目录下供两个调用方共用的实现，也是本能力唯一需要被模块之外调用的部分。
 
 ### 路由
 
@@ -75,14 +75,14 @@ func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error)
 
 路由挂在配置点名的端上，该端由宿主装配为不设防。`/health` 不读任何东西，只答进程存活。`/ready` 检查本进程声明的每个端点都在接受请求，并在有数据库时探它一次；任一失败在应答里逐项点名，好让探针的日志说得出是哪一半塌了。`/openapi.json` 答合并后的文档。
 
-### 宿主可见面
+### 宿主可见的接口
 
 - **模块名**：`ops`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
-- **配置命名空间与输入项**：`ops` 下的 `endpoint`（字符串，缺省 `ops`，取主配置源）——本模块挂路由、并写进自己 `Spec` 的端名；`title` 与 `version`（字符串，取主配置源）——写进合并文档 `info` 的标题与版本，与各片段的模块无关，`version` 缺省为空串；`description`（字符串）与 `servers`（字符串列表）——写进合并文档的 `info.description` 与顶层 `servers`，空值不写出。
+- **配置命名空间与输入项**：`ops` 下的 `endpoint`（字符串，缺省 `ops`，取主配置源）——本模块挂路由并写进自己 `Spec` 的端名；`title` 与 `version`（字符串，取主配置源）——写进合并文档 `info` 的标题与版本，与各片段的模块无关，`version` 缺省为空串；`description`（字符串）与 `servers`（字符串列表）——写进合并文档的 `info.description` 与顶层 `servers`，空值不写出。
 - **探针端点**：`ops.endpoint` 点名的端上的 `/health`、`/ready`、`/openapi.json`。
-- **合并文档的形状**：顶层 `openapi`、`info`（标题、版本与描述取自 `ops.title`、`ops.version` 与 `ops.description`）、`servers`（取自 `ops.servers`）、`paths`、`components`、`tags`（每个声明了片段的模块一条，按名字排序），以及扩展键 `x-fragments`（逐份片段的来源：模块与端）。每个 operation 带三个由合并写出的成员：`x-endpoint`（这条 operation 服务在哪个端上）、`tags`（声明它的模块名）与 `security`（它的访问级别；片段没写的一律补成受保护），`components.securitySchemes` 则由合并统一写出 `bearerAuth` 与 `sessionCookie` 两个载体。
+- **合并文档的结构**：顶层 `openapi`、`info`（标题、版本与描述取自 `ops.title`、`ops.version` 与 `ops.description`）、`servers`（取自 `ops.servers`）、`paths`、`components`、`tags`（每个声明了片段的模块一条，按名字排序），以及扩展键 `x-fragments`（逐份片段的来源：模块与端）。每个 operation 带三个由合并写出的成员：`x-endpoint`（这条 operation 服务在哪个端上）、`tags`（声明它的模块名）与 `security`（它的访问级别；片段没写的一律补成受保护），`components.securitySchemes` 则由合并统一写出 `bearerAuth` 与 `sessionCookie` 两个载体。
 
-### 对外接口面
+### 对外接口
 
 - 模块名 `ops`、配置键 `ops.endpoint`、`ops.title`、`ops.version`、`ops.description`、`ops.servers`、路由的方法与路径、合并文档的扩展键 `x-fragments` 与 `x-endpoint`、operation 上的 `tags` 与 `security`、`components.securitySchemes` 的两个名字，是宿主与网关写下来、读进去的东西，改动它们是宿主可见的破坏性变更。
 - `Spec.Endpoint` 的语义：它是声明模块写下的端名，一个未被声明的端不是错误——资源是静态声明，`http` 只保存它（见 [http](http/design-http.md)）。
@@ -90,7 +90,7 @@ func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error)
 ### 非保证
 
 - **合并结果在一次运行内不变。** 片段是静态声明，随二进制固定；`Init` 合并一次后不再重算，一次请求读到的就是那一份。
-- **`/ready` 不表示任何业务已就绪。** 它报告进程层可服务：各端在接受请求、数据库应答。业务健康不在它的判据里。
+- **`/ready` 不表示任何业务已就绪。** 它报告进程层可服务：各端在接受请求，数据库应答。业务健康不在它的判据里。
 - **不检测片段与实际登记路由的漂移。** 一份片段声明了一条没有登记的路由，或一条登记的路由没有片段，都不报错。
 
 ## 依赖
@@ -106,7 +106,7 @@ func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error)
 
 ## UML 图
 
-本模块的结构是「一段没有交付物的描述符，读一组片段、产出一份文档」的关系。图里的形状看不出下列约束：本模块不 `Provides` 任何功能，图上只看得到它声明了一份 `Spec`；合并的取材域是可用集，冲突在 `Init` 期判、失败即启动失败，都不在类型的形状里。这些由「核心算法与流程」的正文承载。
+本模块的结构是「一段没有交付物的描述符，读一组片段、产出一份文档」的关系。图里的形态看不出下列约束：本模块不 `Provides` 任何功能，图上只看得到它声明了一份 `Spec`；合并的取材域是可用集，冲突在 `Init` 期判、失败即启动失败，都不在类型的结构里。这些由「核心算法与流程」的正文承载。
 
 ```mermaid
 classDiagram

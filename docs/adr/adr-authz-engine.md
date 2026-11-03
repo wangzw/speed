@@ -8,9 +8,9 @@
 
 判定采用的模型已定：角色到权限，权限按（资源，动作）声明，租户即策略域（[ADR-authz-model](adr-authz-model.md)）。判定链是 `subject → bindings → role → permissions` 加一次精确匹配。策略数据由宿主写，判定语言不开放给宿主改写。
 
-本仓的既有做法是把成熟库桥接进来而不重复发明，例如：命令行与配置的解析委托给成熟库（[ADR-config-parsing](adr-config-parsing.md)），入口模块的登记面锚定 gin（[REF-gin](../references.md)）（[ADR-http-surface](adr-http-surface.md)），遥测模块装配上游 SDK 的 provider（[ADR-observability-library](adr-observability-library.md)）。匹配求值与模型解析属于同一类可桥接的能力。
+本仓的既有做法是把成熟库桥接进来而不重复发明，例如：命令行与配置的解析委托给成熟库（[ADR-config-parsing](adr-config-parsing.md)），入口模块的登记接口锚定 gin（[REF-gin](../references.md)）（[ADR-http-surface](adr-http-surface.md)），遥测模块装配上游 SDK 的 provider（[ADR-observability-library](adr-observability-library.md)）。匹配求值与模型解析属于同一类可桥接的能力。
 
-早期实现自研了一套判定引擎，其适用范围止于 `resource:action` 的精确匹配加一次物化路径前缀判断。Casbin（[REF-casbin](../references.md)）提供可插拔的模型文本、ABAC 谓词与 RESTful matcher：这些能力在本模型里用不上，但其中「判定语言可由一份策略模型表达」是宿主可能需要用到的扩展面。
+早期实现自研了一套判定引擎，其适用范围止于 `resource:action` 的精确匹配加一次物化路径前缀判断。Casbin（[REF-casbin](../references.md)）提供可插拔的模型文本、ABAC 谓词与 RESTful matcher：这些能力在本模型里用不上，但其中「判定语言可由一份策略模型表达」是宿主可能需要用到的扩展点。
 
 ## 考虑过的选项
 
@@ -18,7 +18,7 @@
 
 自研一台只做精确匹配的判定引擎，主体、绑定、角色与权限各求值一遍，不引入第三方策略库。
 
-**否决**：判定语言随自写被固化成本模块的代码形态，宿主要表达更复杂的匹配（属性谓词、RESTful 资源模板、通配）在自写引擎上没有扩展面，只能改本模块或另写一台；旧实现自研范围本身就是这条判断的证据——它的适用面止于精确匹配加前缀，一旦越过就要把 Casbin 已经提供的模型求值重新实现一遍。
+**否决**：自写会把判定语言固化成本模块的代码形态，宿主要表达更复杂的匹配（属性谓词、RESTful 资源模板、通配）在自写引擎上没有扩展点，只能改本模块或另写一台；旧实现自研范围本身就是这条判断的证据——它的适用范围止于精确匹配加前缀，一旦越过就要把 Casbin 已经提供的模型求值重新实现一遍。
 
 ### 独立授权服务
 
@@ -42,19 +42,19 @@
 
 - **引擎与版本。** 判定经 Casbin v3 的强制器求值，版本在依赖里钉死。选型依据是许可（Apache-2.0）与直接依赖数量：v3.11.0 的直接依赖是 `bmatcuk/doublestar/v4`（[REF-doublestar](../references.md)）、`casbin/govaluate`（[REF-casbin-govaluate](../references.md)）、`google/uuid`（[REF-google-uuid](../references.md)）。
 - **模型文本固定在代码里。** 模型定义是根包的一个常量 `ModelText`，经 `model.NewModelFromString` 装载，不读文件、不接受宿主提供。可插拔的模型文本不在本模块的承诺里。
-- **策略数据与判定语言分离。** 宿主经本模块的管理接口写角色、授权与绑定这些策略行，不能改模型文本；判定语言属于设计对外接口面（[ADR-authz-reversal](adr-authz-reversal.md)）。
+- **策略数据与判定语言分离。** 宿主经本模块的管理接口写角色、授权与绑定这些策略行，不能改模型文本；判定语言属于设计对外接口（[ADR-authz-reversal](adr-authz-reversal.md)）。
 - **策略的持久化不在本记录。** 引擎经策略存储接口装卸策略，其落点见 [ADR-authz-store](adr-authz-store.md)。
 
 ## 后果
 
-判定是一次进程内的模型求值：受保护请求的判定不新增跨进程调用，判定的失败面收在本进程内的引擎与策略装载（[ADR-authz-cache](adr-authz-cache.md)）。
+判定是一次进程内的模型求值：受保护请求的判定不新增跨进程调用，判定的失败点收在本进程内的引擎与策略装载（[ADR-authz-cache](adr-authz-cache.md)）。
 
 策略的持久化与模型的求值各有承担方：本模块据固定的模型文本调用引擎，引擎据存储接口读写策略。
 
 **接受的代价：**
 
-- **Casbin 的可插拔模型、ABAC 谓词与 RESTful matcher 在本模型里用不上。** 模型文本固定，判定链只是精确匹配；引入 Casbin 换来的是成熟的模型解析与匹配求值，代价是背负一个其较大部分能力用不到的第三方库。这条是采纳引擎时明确接受的代价（[ADR-authz-reversal](adr-authz-reversal.md) 把它记为对旧树价值判断那条理由的如实接受）。
-- **宿主的判定语言扩展面为零。** 需要自定义模型（属性谓词、资源层级、通配权限）的宿主在本模块之外没有扩展点，只能另立引擎或改本模块。
+- **Casbin 的可插拔模型、ABAC 谓词与 RESTful matcher 在本模型里用不上。** 模型文本固定，判定链只是精确匹配；引入 Casbin 换来的是成熟的模型解析与匹配求值，代价是背负一个较大部分能力都用不上的第三方库。这条是采纳引擎时明确接受的代价（[ADR-authz-reversal](adr-authz-reversal.md) 把它记为对旧树价值判断那条理由的如实接受）。
+- **宿主的判定语言扩展点为零。** 需要自定义模型（属性谓词、资源层级、通配权限）的宿主在本模块之外没有扩展点，只能另立引擎或改本模块。
 - **判定行为由上游库决定。** 匹配语义与错误处置随 Casbin 的版本演进；升级 Casbin 是可能改变判定行为的改动，绕不开要重跑判定的回归。
 - **一项新的第三方依赖进入依赖闭包。** 只有 import 策略模块的装配背负 Casbin 及其直接依赖；强制点、管理面与读取权限常量的代码经根包共享接口，不背负它（[ADR-authz-packaging](adr-authz-packaging.md)）。
 

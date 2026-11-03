@@ -2,7 +2,7 @@
 
 ## 职责
 
-`pkg/authn` 功能目录各模块产生的可观察事实经事件、审计、日志、指标这几条通路离开认证。本文固定这些通路上认证名下的全部名字与形状：事件类型与载荷、审计动作与档位、日志字段与级别、指标仪器与属性。每个信号由产生它的模块在自己的代码里发出；本文不对应单独的包，不登记模块。取舍见 [ADR-authn-events-and-audit](../../../adr/adr-authn-events-and-audit.md)，身份的两个维度见 [ADR-authn-identity](../../../adr/adr-authn-identity.md)，冒充的审计先于动作见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)。
+`pkg/authn` 功能目录各模块产生的可观察事实经事件、审计、日志、指标这几条通路离开认证。本文固定这些通路上认证名下的全部名字与结构：事件类型与载荷、审计动作与档位、日志字段与级别、指标仪器与属性。每个信号由产生它的模块在自己的代码里发出；本文不对应单独的包，不登记模块。取舍见 [ADR-authn-events-and-audit](../../../adr/adr-authn-events-and-audit.md)，身份的两个维度见 [ADR-authn-identity](../../../adr/adr-authn-identity.md)，冒充的审计先于动作见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)。
 
 本文承载下列事项（封闭集合，不在其内的事项归非职责一节点名的文档）：
 
@@ -14,11 +14,11 @@
 ### 非职责
 
 - **不实现通路本身。** 事件总线与发件箱、审计的写入与脱敏、日志的脱敏层、指标的提供者归 [design-event](../event/design-event.md)、[design-outbox](../event/design-event-outbox.md)、[design-audit](../audit/design-audit.md)、[design-log](../design-log.md)、[design-observability](../design-observability.md)；本文只写认证在这些通路上的用法与承诺。
-- **不承载日志脱敏的登记内容。** 键名、值形状与字面量的登记全集，以及永不记录项的例举，归 [design-authn-gate](design-authn-gate.md) 的脱敏规则一节；本文只写永不记录的判据。
+- **不承载日志脱敏的登记内容。** 键名、值格式与字面量的登记全集，以及永不记录项的例举，归 [design-authn-gate](design-authn-gate.md) 的脱敏规则一节；本文只写永不记录的判据。
 - **不承载配置键与设置键，包括放宽开关。** 归 [design-authn-config](design-authn-config.md)。
 - **不承载哨兵错误与依赖不可用时各条路径的方向。** 归 [design-authn-failure](design-authn-failure.md)；本文只写各通路自身的失败方向。
 - **不承载 `tenant.admission.decisions` 的属性与取值。** 该仪器归 tenant 目录，见 [design-tenant-admission](../tenant/design-tenant-admission.md)。
-- **不规定事件、审计行与指标的消费方如何处理。** 授权、审计、宿主、看板的行为归它们自己；本文固定它们可以引用的名字、载荷与取值，以及投递语义的缺口。
+- **不规定事件、审计行与指标的使用方如何处理。** 授权、审计、宿主、看板的行为归它们自己；本文固定它们可以引用的名字、载荷与取值，以及投递语义的缺口。
 - **不规定审计表的结构与审计的敏感键闭集。** 归 [design-audit](../audit/design-audit.md)；认证的明细键名不依赖那个闭集。
 - **不承载威胁与对策。** 归 [design-authn-threats](design-authn-threats.md)。
 
@@ -45,9 +45,9 @@
 - JSON 标签小写下划线，顶层字段全是标量。
 - 载荷的顶层字段只放标识、枚举与时刻。不放秘密、自由文本（理由、显示名）、邮箱、手机号与登录标识。判据：载荷的每个顶层字段都会被审计写进明细，所以放进去的值在审计明细里出现时必须无害。
 - 时刻用 RFC 3339（[REF-rfc3339](../../../references.md)）字符串；数字经传输后成为 `json.Number`，超过 2^53 会被舍入。
-- 事件订阅者拿到的上下文不带租户；需要租户的订阅方按 `Event.TenantID` 经 `Catalog.Enter` 进入。
+- 事件订阅方拿到的上下文不带租户；需要租户的订阅方按 `Event.TenantID` 经 `Catalog.Enter` 进入。
 
-**投递路径。** 下表「发件箱」列为「是」的类型，在 `outbox.Outbox` 在场时于写入的同一事务里暂存，由中继在提交之后发布，至少一次，同一个 `Event.ID`；发件箱缺席则在提交之后 `Bus.Publish`，尽力而为；发件箱与总线都不在场则不发布。「发件箱」列为「否」的类型一律在提交之后 `Bus.Publish`。发布失败只记 Warn，从不令业务操作失败。发件箱缺席时启动诊断写一行 Warn，点明经发件箱发出的那些类型在该装配里按尽力而为发出；总线也缺席时同一行注明不发布。发件箱在场则用，不构成硬依赖。
+**投递路径。** 下表「发件箱」列为「是」的类型，在 `outbox.Outbox` 在场时于写入的同一事务里暂存，由中继在提交之后发布，至少一次，同一个 `Event.ID`；发件箱缺席则在提交之后 `Bus.Publish`，尽力而为；发件箱与总线都不在场则不发布。「发件箱」列为「否」的类型一律在提交之后 `Bus.Publish`。发布失败只记 Warn，从不令业务操作失败。发件箱缺席时启动诊断写一行 Warn，点明经发件箱发出的那些类型在该装配里以尽力而为的方式发出；总线也缺席时同一行注明不发布。发件箱在场则用，不构成硬依赖。
 
 | 类型 | 载荷顶层字段 | `TenantID` | 发件箱 |
 |---|---|---|---|
@@ -95,20 +95,20 @@
 | `self` | 账户持有人自己发起：登出、自助变更之后撤销其余会话 |
 | `password-change` | 口令变更之后撤销其余会话 |
 | `factor-reset` | 管理员重置因素之后撤销会话 |
-| `refresh-reuse` | 刷新令牌重用检测命中，整族会话撤销 |
+| `refresh-reuse` | 刷新令牌重用检测命中，整组会话撤销 |
 | `expired` | 到期 |
 | `account-disabled` | 账户被停用 |
 | `account-deleted` | 账户被删除 |
 | `evicted` | 超出每账户会话上限，最久未使用的会话被撤销 |
 | `throttled` | 失败退避开始：一个键越过自由次数而进入等待；只出现在退避那一行日志，不进事件载荷与审计明细 |
 
-`throttled` 是退避那一行日志专有的类别。根包给出两个判定把它与其余取值分开：`ValidReasonClass` 对闭集全部取值为真（含 `throttled`），供日志与「是不是一个类别名」的核对用；`ValidPayloadReasonClass` 排除 `throttled`，写事件载荷与审计明细的模块用后者，把 `throttled` 挡在载荷与明细之外。
+`throttled` 是退避那一行日志专有的类别。根包给出两个判定把它与其余取值分开：`ValidReasonClass` 对闭集全部取值为真（含 `throttled`），供日志与核对「是不是一个类别名」使用；`ValidPayloadReasonClass` 排除 `throttled`，写事件载荷与审计明细的模块用后者，把 `throttled` 挡在载荷与明细之外。
 
 **authn 自己订阅的事件**是下表（封闭集合）。订阅全在 `Init` 里登记，类型静态，处理函数幂等，只做丢本地缓存与账户清理的补偿。
 
 | 订阅方 | 订阅的类型 | 处理 |
 |---|---|---|
-| 交付 `Verifier` 的校验后端 | `authn.session.revoked`、`authn.account.status-changed`、`authn.account.deleted` | 清账户快照缓存；会话状态缓存归 `authn.session` 自己的订阅，本后端经 `Sessions` 接缝读、不另持一份 |
+| 交付 `Verifier` 的校验后端 | `authn.session.revoked`、`authn.account.status-changed`、`authn.account.deleted` | 清账户快照缓存；会话状态缓存归 `authn.session` 自己的订阅，本后端经 `Sessions` 接口读，不另持一份 |
 | 询问冒充记录是否有效的校验后端 | `authn.impersonation.ended` | 清冒充记录缓存 |
 | `authn.session`、`authn.mfa` | `authn.account.status-changed`、`authn.account.deleted` | 发件箱在场时重做各自的账户清理，补偿同步钩子的失败 |
 | `authn.sms` | `authn.account.deleted` | 发件箱在场时重做账户清理；短信的 `AccountDisabled` 与 `AccountEnabled` 都是空操作，不订阅状态变更 |
@@ -116,16 +116,16 @@
 | `tenant.admission` | `authn.membership.changed` | 清成员关系缓存；处理见 [design-tenant-admission](../tenant/design-tenant-admission.md) |
 | 持有可在运行期改动的安全设置的模块（`authn.sms` 在其中） | `settings.changed` | 取值改到更宽松时写 Warn 并记尽力档审计 |
 
-上表之外的订阅方由各自文档承载，授权、审计与宿主是例举，判据是以事件为输入而不在上表之内的消费方。审计只订阅 `audit.journal` 配置里点名的类型；可观测性不订阅总线（[ADR-observability-events](../../../adr/adr-observability-events.md)）。「发件箱」列为「是」的类型在发件箱在场时经中继发布，到达订阅方的上下文是中继的，不带发布方的身份：审计订阅这些类型得到的行没有主体，也没有 `on_behalf_of`、`impersonation_scope` 与 `session`（规则见 [design-audit](../audit/design-audit.md) 的非保证）。
+上表之外的订阅方由各自文档承载，授权、审计与宿主是例举，判据是以事件为输入而不在上表之内的使用方。审计只订阅 `audit.journal` 配置里点名的类型；可观测性不订阅总线（[ADR-observability-events](../../../adr/adr-observability-events.md)）。「发件箱」列为「是」的类型在发件箱在场时经中继发布，到达订阅方的上下文是中继的，不带发布方的身份：审计订阅这些类型得到的行没有主体，也没有 `on_behalf_of`、`impersonation_scope` 与 `session`（规则见 [design-audit](../audit/design-audit.md) 的非保证）。
 
 ### 审计
 
-认证经 `audit.Audit.Record` 的接缝级通路写入，不是语句级也不是请求级。登录与 SSO 回调发生在没有身份的豁免路由上，请求级采集的 `actor` 为空，所以登录类动作由认证自己记。请求级与语句级采集沿用，不由认证配置。`Entry.Purpose` 装冒充理由。
+认证经 `audit.Audit.Record` 的接口级通路写入，不是语句级也不是请求级。登录与 SSO 回调发生在没有身份的豁免路由上，请求级采集的 `actor` 为空，所以登录类动作由认证自己记。请求级与语句级采集沿用，不由认证配置。`Entry.Purpose` 装冒充理由。
 
 **`actor` 与生效账户。** 审计同时记实际操作者与生效账户：
 
 - `actor` 列恒取实际操作者的责任键 `Key()`。
-- 冒充时，生效账户进 `Detail` 的 `on_behalf_of`，冒充范围进 `impersonation_scope`，会话进 `session`。这些键只由 `audit/journal` 在冒充行上写入，覆盖、剥掉与不改动调用方映射的规则只在 [design-audit](../audit/design-audit.md) 的审计行的补全一节。认证自己的接缝级行因此不得写这些名字，记会话标识用 `sid`。审计表的结构不变。
+- 冒充时，生效账户进 `Detail` 的 `on_behalf_of`，冒充范围进 `impersonation_scope`，会话进 `session`。这些键只由 `audit/journal` 在冒充行上写入，覆盖、剥掉与不改动调用方映射的规则只在 [design-audit](../audit/design-audit.md) 的审计行的补全一节。认证自己的接口级行因此不得写这些名字，记会话标识用 `sid`。审计表的结构不变。
 - 已认证路由上，`Record` 取上下文里的身份。登录引擎记登录审计行时用新认定的身份派生上下文（`internal/identity` 的 `With`，只在 authn 树内可见，登录引擎在 [design-authn](design-authn.md) 的写入方名单里，由依赖测试断言；派生的上下文只用于这一次 `Record`、不流回请求链），使 `actor` 是登录的账户而不是空串。
 - 登录失败时 `actor` 为空；本实现不写 `identifier_mac`，同一标识的多次失败目前不经审计关联。
 - 匿名注册没有身份：成功时以新账户标识作 `actor`，与登录引擎同一做法，派生的上下文只交给这一次 `Record`；失败时 `actor` 为空。注册的审计行不带邮箱明文与验证码。
@@ -161,11 +161,11 @@
 
 **`authn.signup` 的明细只带 `method=password`。** 注册不把邮箱、用户名或验证码写进明细：邮箱是个人信息，验证码是凭据；本实现不写 `identifier_mac`，同一地址的多次尝试目前不经审计关联。
 
-**`authn.session.revoke` 的适用面是「撤销本身即那次动作」的路径**：管理员撤销他人的会话，以及自助面的登出与撤销会话。账户级动作（改口令、重置因素、停用账户、自助改凭据）与超限淘汰都会让会话结束，但那是它们的**副作用**而不是它们宣告的事实——它们各自写自己的动作行，不另写本动作。一次批量撤销命中多个对象时，准许行与失败行都逐对象各写一行。
+**`authn.session.revoke` 的适用范围是「撤销本身即那次动作」的路径**：管理员撤销他人的会话，以及自助侧的登出与撤销会话。账户级动作（改口令、重置因素、停用账户、自助改凭据）与超限淘汰都会让会话结束，但那是它们的**副作用**而不是它们宣告的事实——它们各自写自己的动作行，不另写本动作。一次批量撤销命中多个对象时，准许行与失败行都逐对象各写一行。
 
-**强制档的适用面。** 强制档对 HTTP 管理面、冒充与匿名口令重置成立：`authn.admin` 与 `authn.impersonation` 把 `audit.Audit` 当必需依赖，装配里没有审计即启动失败；登录模块的重置面在审计缺席时不发布，成功路径在写口令之前写强制档行，写不成即拒绝。经 Go 接口的直接调用（宿主自己的命令）不受强制档约束，没有审计的装配里只写 Warn。
+**强制档的适用范围。** 强制档对 HTTP 管理面、冒充与匿名口令重置成立：`authn.admin` 与 `authn.impersonation` 把 `audit.Audit` 当必需依赖，装配里没有审计即启动失败；登录模块的重置接口在审计缺席时不发布，成功路径在写口令之前写强制档行，写不成即拒绝。经 Go 接口的直接调用（宿主自己的命令）不受强制档约束，没有审计的装配里只写 Warn。
 
-**语句级采集。** 语句级审计行对认证自己的表照常产生，只记表、动作与受影响行数，不记值，经模型路径的写才有；登录路径上的 `Touch`、`Throttle` 与计数推进走原生 SQL，不留行。这些行没有业务语义，业务语义由接缝级的行给出。
+**语句级采集。** 语句级审计行对认证自己的表照常产生，只记表、动作与受影响行数，不记值，经模型路径的写才有；登录路径上的 `Touch`、`Throttle` 与计数推进走原生 SQL，不留行。这些行没有业务语义，业务语义由接口级的行给出。
 
 ### 日志
 
@@ -198,7 +198,7 @@
 
 方向由设置项的语义给出，新增放宽项时按同一判据补列：先判它是否归入放宽开关表，归入的用 `relax`；取值有强弱次序而无数值次序的算法选择用 `downgrade`；其余按值的机械移动选一个。
 
-**网关的收口行、取凭据的拒绝行与启动诊断行**另写下表的字段。下表是网关日志字段的封闭集合，按对外接口面对待，网关新增字段先登记在这里；字段的值只含形状、计数、名字与成因文本，从不含凭据、令牌或口令。
+**网关的收口行、取凭据的拒绝行与启动诊断行**另写下表的字段。下表是网关日志字段的封闭集合，按对外接口对待，网关新增字段先登记在这里；字段的值只含格式、计数、名字与成因文本，从不含凭据、令牌或口令。
 
 | 字段 | 出现在 | 值 |
 |---|---|---|
@@ -208,18 +208,18 @@
 | `attributed_to` | 收口行 | 这条结局记在谁名下：后端名，网关自产的拒绝为 `authn.gate` |
 | `cause` | 收口行、装配与启动检查的警告行 | 失败成因的文本；冒充范围拒绝取 `impersonation-scope` |
 | `reason`、`backend` | 出口检查拒绝行（`backend` 另见 cookie 前缀警告行） | 出口检查拒绝的项（不带后端交出的值）与相关的后端名 |
-| `scheme_length`、`scheme_separated`、`headers`、`cookie_name` | 取凭据的拒绝行与 cookie 前缀警告行 | 只记形状：scheme 的长度与是否带分隔、`Authorization` 头的个数、cookie 名 |
+| `scheme_length`、`scheme_separated`、`headers`、`cookie_name` | 取凭据的拒绝行与 cookie 前缀警告行 | 只记格式：scheme 的长度与是否带分隔、`Authorization` 头的个数、cookie 名 |
 | `endpoints`、`schemes`、`cookies`、`accounts`、`impersonation`、`sso`、`configured`、`key` | 启动诊断 | `endpoints` 是展开后的受守端名清单，或冒充身份可到达的端名清单；各后端认领的 scheme、cookie 名与账户前缀，冒充与 SSO 的能力声明；`configured` 是配置读到的 `endpoints` 值，缺省时就是缺省值 `*`，不区分「键没写」与「显式写 `*`」；被核对的配置键名 |
 | `exemptions`、`optional_routes`、`impersonable_routes`，以及各端名 | 启动诊断（冻结的登记表） | 某类登记在各端上开出的路由，写成「方法 路径」，逗号连接；端名是入口模块声明的端名，原样作字段名，一类登记在某端上为空时该端不写；整类登记为空时只写标题字段，值是没有登记的说明 |
-| `panic`、`stack` | 网关自身 panic 的 Error 行 | recover 得到的值与调用栈；两者是排障信息，不在对外接口面之内 |
+| `panic`、`stack` | 网关自身 panic 的 Error 行 | recover 得到的值与调用栈；两者是排障信息，不在对外接口之内 |
 
-**级别**按谁有事要做定。判据：问题在调用方，记 Info；问题要运维去查，记 Warn；问题是缺陷，记 Error。下表的条目是例举，不是封闭集。
+**级别**按谁有事要做来定。判据：问题在调用方，记 Info；问题要运维去查，记 Warn；问题是缺陷，记 Error。下表的条目是例举，不是封闭集。
 
 | 级别 | 例举 |
 |---|---|
 | Info | 登录失败、退避、验证码错、跨源检查不过、令牌过期、`link-required`、冒充被拒、`anonymous` 放行 |
 | Warn | db 或 kv 不可用、短信发送方故障、IdP 断言验签失败或时间不符、刷新宽限命中、断言重放、克隆告警、放宽项在用、事件发布失败 |
-| Error | 零值判决、证明形状不合、后端与网关 panic、强制档审计写失败、SAML（[REF-saml2](../../../references.md)）校验里库返回成功而补充校验失败 |
+| Error | 零值判决、证明格式不合、后端与网关 panic、强制档审计写失败、SAML（[REF-saml2](../../../references.md)）校验里库返回成功而补充校验失败 |
 
 **永不记录**的判据：凡持有它即可冒用或重放认证过程的值，以及用户提交的原文。记录的是类别、标识与结果。例举与登记规则见 [design-authn-gate](design-authn-gate.md) 的脱敏规则一节。
 
@@ -252,13 +252,13 @@
 
 `authn.gate.conclusions` 的 `anonymous` 是可选路由上无凭据而放行的结局；`outcome` 各取值之和包含 `anonymous`。`authn.login.completions` 按方式聚合，看不到哪个 IdP 在失败，定位到 IdP 读日志里的 `idp` 字段。**人机验证证明被拒绝的第一步不记这条仪器，也不写登录审计行**：它不是一次「凭据没对」，403 或 400 由证明闸自己的答案承载；一次拒绝因此只在发送侧留下自己的指标（若有），不在登录完成度与审计里出现（[design-authn-login](design-authn-login.md)）。
 
-`authn.sms.budget.utilization` 是认证与通知共用的一个仪器名。通知投递以 `channel` 取 `notification` 上报同一个名字，`purpose` 取通知类型键（该键来自通知分类法，是登记的资源集而非本表列出的固定取值），`dimension` 取 `recipient-hourly`、`recipient-daily`、`tenant-distinct-hourly`、`attempt-hourly` 与 `ceiling`；跨渠道上界的点仍以 `purpose` 取 `shared`、`dimension` 取 `ceiling`。通知侧的登记与判据在 [design-notification-delivery](../notification/design-notification-delivery.md)。本表列出的 `channel` 只含 `authn`，是因为本文承载认证侧的仪器；两个渠道读同一个仪表名靠 `channel` 分开。
+`authn.sms.budget.utilization` 是认证与通知共用的一个仪器名。通知投递以 `channel` 取 `notification` 上报同一个名字，`purpose` 取通知类型键（该键来自通知分类法，是登记的资源集而非本表列出的固定取值），`dimension` 取 `recipient-hourly`、`recipient-daily`、`tenant-distinct-hourly`、`attempt-hourly` 与 `ceiling`；跨渠道上界的点仍以 `purpose` 取 `shared`、`dimension` 取 `ceiling`。通知侧的登记与判据在 [design-notification-delivery](../notification/design-notification-delivery.md)。本表列出的 `channel` 只含 `authn`，是因为本文承载认证侧的仪器；两个渠道靠 `channel` 分开读同一个仪表名。
 
 **预算耗尽的可观察信号是 `authn.sms.budget.utilization` 仪表与 `authn.sms.sends` 的 `budget-exhausted` 取值。** 仪表由认证与通知都上报，按 `channel`、`purpose`、`dimension` 给出已用比例；`budget-exhausted` 是认证侧逐次发送的拒绝。后者只覆盖认证发送：通知渠道不产生 `authn.sms.sends`，它的预算耗尽由仪表报告，这是两个信号在渠道上的分界。
 
-### 对外接口面
+### 对外接口
 
-- 本文登记的事件类型名与载荷字段名、审计动作名与明细键名、日志字段名、仪器名与属性名，对宿主可见；改名或改变含义按宿主可见面的破坏性变更处理。
+- 本文登记的事件类型名与载荷字段名、审计动作名与明细键名、日志字段名、仪器名与属性名，对宿主可见；改名或改变含义按宿主可见接口的破坏性变更处理。
 - 本文登记的各取值集（事件载荷字段的取值、`reason_class`、审计结果、指标属性的取值）新增取值是兼容的，改名、删除或改变既有取值的含义是破坏性变更；事件载荷新增字段是兼容的，删除字段是破坏性变更。订阅方、看板与告警规则必须容忍未知取值与未知字段。
 
 ## 依赖
@@ -324,7 +324,7 @@ sequenceDiagram
 
 ## 核心数据结构
 
-事件载荷是根包 `pkg/authn` 导出的具名结构体，每个事件类型一个。形状固定为：顶层字段、标量类型、小写下划线 JSON 标签。下面以 `authn.account.status-changed` 为例，其余类型按事件表的字段列同形。
+事件载荷是根包 `pkg/authn` 导出的具名结构体，每个事件类型一个。结构固定为：顶层字段、标量类型、小写下划线 JSON 标签。下面以 `authn.account.status-changed` 为例，其余类型与事件表的字段列一致。
 
 ```go
 // 载荷：字段全是顶层标量，只放标识、枚举与时刻
@@ -364,15 +364,15 @@ audit.Entry{
 
 冒充开始的动作标识 `grant_id` 在判定通过之后、审计写入之前生成；其余强制档动作的 `action_id` 同样在审计写入之前生成。
 
-**一次动作命中多个对象时，准许行与失败行都逐对象各写一行。** 批量撤销一个账户的会话是这种动作：它在动作之前把将被结束的那一组会话逐个读出，为每个会话写一行准许行，这些行共用同一个动作标识；动作失败时逐会话补写失败行，仍带那个标识。读出那一组用的条件与结束它们用的条件相同，所以行不会漏掉被结束的会话。读与写仍是两次操作：自助面在同一条语句里完成，管理面读在前、写在后，两者之间与动作和审计之间一样没有原子性——那之间新建的会话会被结束而不占一行。准许行逐对象写，其中一行写失败与动作失败一样留下没有收口的行；核实动作是否发生读动作自己的表。
+**一次动作命中多个对象时，准许行与失败行都逐对象各写一行。** 批量撤销一个账户的会话是这种动作：它在动作之前把将被结束的那一组会话逐个读出，为每个会话写一行准许行，这些行共用同一个动作标识；动作失败时逐会话补写失败行，仍带那个标识。读出那一组用的条件与结束它们用的条件相同，所以行不会漏掉被结束的会话。读与写仍是两次操作：自助侧在同一条语句里完成，管理面读在前、写在后，两者之间与动作和审计之间一样没有原子性——那之间新建的会话会被结束而不占一行。准许行逐对象写，其中一行写失败与动作失败一样留下没有收口的行；核实动作是否发生读动作自己的表。
 
 ### 尽力档
 
-尽力档的审计不阻塞动作。写失败只记 Error 日志并让 `authn.audit.write-failures`（`mandatory` 为 `false`）加一，动作的结果不变。冒充的结束总是允许：审计写失败不阻止结束，因为结束是向安全的方向的动作。
+尽力档的审计不阻塞动作。写失败只记 Error 日志并让 `authn.audit.write-failures`（`mandatory` 为 `false`）加一，动作的结果不变。冒充的结束总是允许：审计写失败不阻止结束，因为结束是朝安全方向的动作。
 
 ### `Start` 之前
 
-`audit.Audit.Record` 在审计模块 `Start` 之前返回 `ErrNotAccepting`。`Start` 之前发生的动作只有启动引导，不走审计，改写一行启动诊断。
+`audit.Audit.Record` 在审计模块 `Start` 之前返回 `ErrNotAccepting`。`Start` 之前发生的动作只有启动引导，不走审计，改写成一行启动诊断。
 
 ### 订阅方的处理约束
 
@@ -386,7 +386,7 @@ audit.Entry{
 |---|---|---|
 | 语句级审计行不带列值，只带表、动作与受影响行数 | 认证的哪些表可以经模型路径写；含加密列的模型可以经模型路径写 | 含加密列的模型经模型路径写入，断言审计行里不出现秘密字节 |
 | 审计把事件载荷的顶层字段原样写进明细，脱敏键名只比对扁平键 | 载荷只放标识、枚举与时刻 | 对每个载荷结构体反射检查：顶层字段全是标量，字段名不在审计敏感闭集与禁用名之内 |
-| 接缝级 `Record` 在调用方事务里调用会在单写者引擎上等锁而失败 | 审计与动作不在同一事务里 | SQLite 文件库（默认 `IMMEDIATE` 事务）上冒充开始必须成功且审计行存在 |
+| 接口级 `Record` 在调用方事务里调用会在单写者引擎上等锁而失败 | 审计与动作不在同一事务里 | SQLite 文件库（默认 `IMMEDIATE` 事务）上冒充开始必须成功且审计行存在 |
 
 不依赖未核实行为的纪律也各由测试守住：每个模块的错误路径输出里不含配置里的哨兵值；认证写出的每个审计明细键属于键名的封闭集合；每个仪器的属性键与取值属于指标表的闭集。
 
@@ -428,8 +428,8 @@ audit.Entry{
 ## 扩展点
 
 - **宿主订阅事件。** 宿主订阅事件表里的类型，按 `Event.ID` 去重，必须容忍未知取值与字段；宿主表里引用账户标识的行由宿主订阅 `authn.account.deleted` 清理。
-- **宿主选择审计的采集范围。** `audit.journal` 的配置点名要订阅的事件类型与要记的请求项；认证的接缝级审计不受这份配置约束。
-- **宿主的看板与告警引用本文登记的仪器名与属性名**，依据对外接口面。
+- **宿主选择审计的采集范围。** `audit.journal` 的配置点名要订阅的事件类型与要记的请求项；认证的接口级审计不受这份配置约束。
+- **宿主的看板与告警引用本文登记的仪器名与属性名**，依据对外接口。
 
 ## 实现状态
 
@@ -440,9 +440,9 @@ audit.Entry{
 | 事件类型常量与载荷结构体 | 已实现 | `pkg/authn/events.go` `EventAccountStatusChanged`、`AccountStatusChanged`、`ReasonAdmin`、`ValidReasonClass`、`ValidPayloadReasonClass` |
 | 事件的发布：经发件箱与经总线的路径、缺席时的启动诊断 | 已实现 | `pkg/authn/account/events.go`；`pkg/authn/session/lifecycle.go`；`pkg/authn/mfa/manage.go`；`pkg/authn/login/engine.go`；`pkg/authn/token/refresh.go` `revokeFamily`；`pkg/authn/events.go` |
 | authn 自己的事件订阅与幂等补偿 | 已实现 | `pkg/authn/session/lifecycle.go`；`pkg/authn/mfa/manage.go`；`pkg/tenant/admission/admission.go`；`pkg/authn/token/subscribe.go` |
-| 接缝级审计：强制档与尽力档、动作表、明细键名、`actor` 取法 | 已实现 | `pkg/authn/account/events.go`；`pkg/authn/login/engine.go`、`pkg/authn/login/identity.go` `auditLogin`、`auditBindingLink`；`pkg/authn/mfa/manage.go`；`pkg/authn/session/routes.go`；`pkg/authn/token/refresh.go` `revokeFamily`；`pkg/tenant/admission/decide.go`；`pkg/authn/sso/saml/reject.go` `actionSSOReject`、`pkg/authn/sso/oidc/method.go`；`pkg/authn/impersonation/signal.go` `writeAudit` |
+| 接口级审计：强制档与尽力档、动作表、明细键名、`actor` 取法 | 已实现 | `pkg/authn/account/events.go`；`pkg/authn/login/engine.go`、`pkg/authn/login/identity.go` `auditLogin`、`auditBindingLink`；`pkg/authn/mfa/manage.go`；`pkg/authn/session/routes.go`；`pkg/authn/token/refresh.go` `revokeFamily`；`pkg/tenant/admission/decide.go`；`pkg/authn/sso/saml/reject.go` `actionSSOReject`、`pkg/authn/sso/oidc/method.go`；`pkg/authn/impersonation/signal.go` `writeAudit` |
 | `authn.settings.relaxed` 的订阅与审计 | 已实现 | `pkg/authn/account/relax.go`；`pkg/authn/{sms,session,token,static,login,mfa,sso,impersonation}/relax.go`；`pkg/tenant/admission/relax.go` |
-| 记录接缝 `audit.Audit.Record` 及其错误 `ErrNotAccepting`、`ErrWriteFailed` | 已实现 | `pkg/audit/audit.go` `Audit`、`Entry`、`ErrNotAccepting`、`ErrWriteFailed` |
+| 记录接口 `audit.Audit.Record` 及其错误 `ErrNotAccepting`、`ErrWriteFailed` | 已实现 | `pkg/audit/audit.go` `Audit`、`Entry`、`ErrNotAccepting`、`ErrWriteFailed` |
 | 登录引擎的派生上下文（`internal/identity` 的 `With` 供一次 `Record` 使用） | 已实现 | `pkg/authn/login/engine.go`；`pkg/authn/internal/identity/identity.go` `With` |
 | 日志请求关联字段 | 已实现 | `pkg/authn/gate/serve.go` `identityAttrs` |
 | 日志级别按谁有事要做：网关的收口 | 已实现 | `pkg/authn/gate/serve.go` `conclude`、`gatewayRefusal`、`outage` |

@@ -2,14 +2,14 @@
 
 ## 背景
 
-Google（[REF-google-openid-connect](../references.md)）与 GitHub（[REF-github-oauth-apps](../references.md)）两个登录方式把提供方地址写死在代码里：Google 的 issuer 是 `https://accounts.google.com`，GitHub 的授权、令牌与 API 端点取自 `x/oauth2`（[REF-golang-x-oauth2](../references.md)）的 `endpoints.GitHub` 与 `https://api.github.com`；两者的受限出站客户端一律拒绝回环地址并用系统根证书。这个形状堵住两件事：
+Google（[REF-google-openid-connect](../references.md)）与 GitHub（[REF-github-oauth-apps](../references.md)）两个登录方式把提供方地址写死在代码里：Google 的 issuer 是 `https://accounts.google.com`，GitHub 的授权、令牌与 API 端点取自 `x/oauth2`（[REF-golang-x-oauth2](../references.md)）的 `endpoints.GitHub` 与 `https://api.github.com`；两者的受限出站客户端一律拒绝回环地址并用系统根证书。这个结构堵住两件事：
 
 - 自动化端到端测试无法走完一次真实的社交登录回跳，因为没有回调能到达本地提供方。
 - 指向 GitHub Enterprise 或自建 OIDC（[REF-openid-connect-core](../references.md)）提供方的部署没有配置入口，只能改代码。
 
 约束：
 
-- 缺省行为必须与当前逐字相同：回环仍拒绝，系统根仍是 TLS 信任来源，公网 https 仍是唯一可到达的出站形状。
+- 缺省行为必须与当前逐字相同：回环仍拒绝，系统根仍是 TLS 信任来源，公网 https 仍是唯一可到达的出站结构。
 - 企业 SSO 已有按租户登记 IdP 的路径（[ADR-authn-sso](adr-authn-sso.md)），社交方式不属于它，不引入第二套 IdP 表。
 - 受限出站客户端的规则（只许 https、不跟随重定向、连接时判目的地址）不变。
 
@@ -31,11 +31,11 @@ Google（[REF-google-openid-connect](../references.md)）与 GitHub（[REF-githu
 
 Google 接受 issuer 覆盖，GitHub 接受授权、令牌与 API 基址覆盖；两者各接受回环开关与追加到系统根的 PEM（[REF-rfc7468](../references.md)）文件。
 
-**采纳** — 见决策。
+**采纳**——见决策。
 
 ## 决策
 
-Adopt：Google 与 GitHub 各自接受一组可选的提供方覆盖项与出站信任项，缺省值就是当前的常量、端点表与系统根；受限出站客户端接受回环开关与根证书文件。
+采纳：Google 与 GitHub 各自接受一组可选的提供方覆盖项与出站信任项，缺省值就是当前的常量、端点表与系统根；受限出站客户端接受回环开关与根证书文件。
 
 - **缺省不变。** issuer、授权端点、令牌端点与 API 基址为空时取当前值；回环开关缺省关；根证书文件缺省为空即只用系统根，配置后追加到系统根。
 - **校验只增不减。** 显式 issuer 必须是 https，回环主机的 http issuer 仅在该方法的回环开关为真时接受；GitHub 的端点覆盖必须是绝对 https 地址；根证书文件在启动时读取，读不到或没有证书即启动失败。缺省路径上的校验与当前一致。
@@ -56,7 +56,7 @@ Adopt：Google 与 GitHub 各自接受一组可选的提供方覆盖项与出站
 ## 后果
 
 - 端到端测试可以用一个本地 TLS 身份提供方走完真实回跳；部署可以把 Google 或 GitHub 指向自建提供方或 GitHub Enterprise。
-- 配置面增加一组可选的提供方覆盖项与出站信任项，缺省值与当前相同。
+- 配置增加一组可选的提供方覆盖项与出站信任项，缺省值与当前相同。
 - 根证书文件追加到系统根，而不是替换：配置它的部署只需把提供方证书链需要的、系统根没有的根放进该文件，系统根继续被信任。这与企业 SSO 的信任根语义一致——额外根是追加，系统根保留。
 
 **接受的代价：**

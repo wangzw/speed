@@ -2,19 +2,19 @@
 
 ## 背景
 
-模块的路由挂在各自的顶层命名空间下：认证与账户面在 `/auth`、授权管理面在 `/authz`、租户、设置、短信与审计管理面在 `/tenant`、`/settings`、`/sms`、`/audit`，特性文档在 `/features`，个人租户入口在 `/workspace`；通知则挂在 `/api/v1/notifications`。两类路径都符合端点的认领表，但对外契约 `contracts/api.json` 的根路径不统一：调用方要为每项能力分别记住它是否有前缀，生成的客户端也只能照抄两种形状。
+模块的路由挂在各自的顶层命名空间下：认证与账户接口在 `/auth`，授权管理面在 `/authz`，租户、设置、短信与审计管理面在 `/tenant`、`/settings`、`/sms`、`/audit`，特性文档在 `/features`，个人租户入口在 `/workspace`；通知则挂在 `/api/v1/notifications`。两类路径都符合端点的认领表，但对外契约 `contracts/api.json` 的根路径不统一：调用方要为每项能力分别记住它是否有前缀，生成的客户端也只能照抄两种形式。
 
 `v1` 段没有版本策略支撑。平台不对路径版本化作任何承诺，也没有第二版的路由或迁移规则；带 `v1` 的路径因此读起来像一项不存在的保证，而不带的路径又不带这一段相同的含义。
 
-路由路径是宿主可见面，外部系统按路径登记：企业 IdP 的回调地址、SAML（[REF-saml2](../references.md)）服务提供方元数据地址与 JWKS（[REF-rfc7517](../references.md)）地址都以路由路径拼出，改动它们要求部署方同步更新外部登记。
+路由路径是宿主可见的接口，外部系统按路径登记：企业 IdP 的回调地址、SAML（[REF-saml2](../references.md)）服务提供方元数据地址与 JWKS（[REF-rfc7517](../references.md)）地址都以路由路径拼出，改动它们要求部署方同步更新外部登记。
 
 ## 考虑过的选项
 
 ### 保持两种根路径，并在设计文档里写成文约定
 
-对外契约维持现状，文档写明业务资源在 `/api/v1` 下、平台能力在顶层命名空间。
+对外契约维持现状，文档写明业务资源在 `/api/v1` 下，平台能力在顶层命名空间。
 
-**否决**：调用方仍需按能力区分两类根路径，生成物与文档的示例因此保留两种形状；`v1` 在没有版本策略时仍被读成一项承诺。
+**否决**：调用方仍需按能力区分两类根路径，生成物与文档的示例因此保留两种形式；`v1` 在没有版本策略时仍被读成一项承诺。
 
 ### 业务资源留在 `/api` 下，去掉 `v1` 段
 
@@ -24,18 +24,18 @@
 
 ### 全部收进 `/api/v1`
 
-每项能力的路由改为 `/api/v1/...`。业务端点认领 `/api`，账户端与管理端点在同一监听上按各自的命名空间认领子树，最长的认领胜出。
+每项能力的路由改为 `/api/v1/...`。业务端点认领 `/api`，账户端点与管理端点在同一监听上按各自的命名空间认领子树，最长的认领胜出。
 
 **采纳**，见「决策」。
 
 ## 决策
 
-采纳：**模块挂载的每条 HTTP API 路径以 `/api/v1` 为根。** 普通面直接在 `/api/v1/<能力>` 下；管理面另带作用域段，平台管理是 `/api/v1/system/<能力>`，租户管理是 `/api/v1/tenants/{tenant}/<能力>`（[ADR-http-api-path-scopes](adr-http-api-path-scopes.md)）。ops 探针（`/health`、`/ready` 与 `/openapi.json`）留在 `ops` 监听的根上：它们是进程探针与 API 文档读取，不是对资源的操作。
+采纳：**模块挂载的每条 HTTP API 路径以 `/api/v1` 为根。** 普通接口直接在 `/api/v1/<能力>` 下；管理面另带作用域段，平台管理是 `/api/v1/system/<能力>`，租户管理是 `/api/v1/tenants/{tenant}/<能力>`（[ADR-http-api-path-scopes](adr-http-api-path-scopes.md)）。ops 探针（`/health`、`/ready` 与 `/openapi.json`）留在 `ops` 监听的根上：它们是进程探针与 API 文档读取，不是对资源的操作。
 
 ## 后果
 
 - 生成的契约、各模块的内嵌 OpenAPI（[REF-openapi](../references.md)）片段、宿主的端点认领表与前端开发代理清单都按同一套根路径书写。
-- 认证的普通面挂载基路径缺省值改为 `/api/v1/auth`；显式配置了 `authn.gate.mount.bases.default` 的宿主保留自己的取值。认证的管理面路由按作用域挂在各自的基路径下（`authn.gate.mount.bases.system` 与 `.tenants`），缺省分别为 `/api/v1/system` 与 `/api/v1/tenants`。
+- 认证的普通接口挂载基路径缺省值改为 `/api/v1/auth`；显式配置了 `authn.gate.mount.bases.default` 的宿主保留自己的取值。认证的管理面路由按作用域挂在各自的基路径下（`authn.gate.mount.bases.system` 与 `.tenants`），缺省分别为 `/api/v1/system` 与 `/api/v1/tenants`。
 - 前端页面路径不受影响：页面表全部落在 `web` 端点的 `/` 兜底认领之下，与 `/api` 命名空间不相交。
 
 **付出的代价：**

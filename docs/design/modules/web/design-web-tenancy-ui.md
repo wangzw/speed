@@ -6,19 +6,19 @@
 
 租户是请求的路由事实：服务端的解析层按端从请求头、子域或路径解析当前租户，认证不携带租户（[authn 登录](../authn/design-authn-login.md)、[tenant 准入](../tenant/design-tenant-admission.md)）。切换租户因而是一次宿主的路由变更，不是会话上的一次操作——本控件只把用户的意图报给宿主，由宿主改变它的路由并更新它交给 [auth-core](design-web-auth-core.md) 的租户上下文。
 
-**列表的来源是宿主的本人租户读取。** 宿主经平台的一条读取（`GET /api/v1/auth/me/tenants`，[tenant.self](../tenant/design-tenant.md)）取得调用方持有有效成员关系的租户，映射成 `TenantOption`：`id` 是租户标识，`name` 是别名；个人租户那一行是宿主自己的工作区文案。本控件不读这条读取，也不判定哪个租户是个人租户——个人租户是宿主的策略；平台应答携带 `kind`，宿主把它映射成工作区文案；本控件不读也不判定它（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
+**列表的来源是宿主的本人租户读取接口。** 宿主经平台的一个读取接口（`GET /api/v1/auth/me/tenants`，[tenant.self](../tenant/design-tenant.md)）取得调用方持有有效成员关系的租户，映射成 `TenantOption`：`id` 是租户标识，`name` 是别名；个人租户那一行是宿主自己的工作区文案。本控件不调用这个读取接口，也不判定哪个租户是个人租户——个人租户是宿主的策略；平台应答携带 `kind`，宿主把它映射成工作区文案；本控件不读也不判定它（[ADR-tenant-self](../../../adr/adr-tenant-self.md)）。
 
-控件的形状：
+控件的结构：
 
 - **触发器显示当前租户。** 标签是租户列表里与 `currentTenantId` 相配那一行的名字——宿主数据，原样渲染，从不翻译。没有相配的行，或 `currentTenantId` 为空时，触发器禁用并显示 `tenantSwitcher.noCurrentTenant` 文案。
 - **打开列表列出全部租户，当前那一行禁用**，它的点击守卫在任何回调之前返回，故合成点击也改不动。
 - **选中另一行调 `onSelect(id)`。** 用户的选择报给宿主，由宿主把路由切到那个租户、更新租户上下文并逐出离任租户的查询缓存。
-- **一次选择安静地宣布。** 提交给宿主之后，一条 `role="status"` 区域报出已切换到的新租户（`tenantSwitcher.switchedTo`）。该区域从控件挂载起存在，`announcement` 决定确认文本是否在触发器旁绘制。
+- **一次选择安静地播报。** 提交给宿主之后，一个 `role="status"` 区域报出已切换到的新租户（`tenantSwitcher.switchedTo`）。该区域从控件挂载起存在，`announcement` 决定确认文本是否在触发器旁绘制。
 - **宿主条目可以跟在列表后面。** `menuFooter` 在租户行之后、同一菜单内的分隔线下方渲染宿主条目；它收到的 `close` 关闭菜单，供跳转前调用。
 
 ### 非职责
 
-- **不管理租户。** 开租户、改名、停用、授成员是运维面的动作，归 [admin-ui](design-web-admin-ui.md)（[tenant.admin](../tenant/design-tenant-admin.md)）；本控件只把当前租户的选择报给宿主。
+- **不管理租户。** 开租户、改名、停用、授成员是运维侧的动作，归 [admin-ui](design-web-admin-ui.md)（[tenant.admin](../tenant/design-tenant-admin.md)）；本控件只把当前租户的选择报给宿主。
 - **不拥有当前租户。** 当前租户是宿主的事实（`currentTenantId` 属性，由宿主的路由得出），不在本控件内推导。控件存在的意义是把用户的选择报出去。
 - **不做切换。** 本控件不认识会话、不发请求、不导航；它调一次 `onSelect`，实际的路由变更、上下文更新与缓存逐出都在宿主。
 - **不认识租户列表的来源。** 列表由宿主给出、原样渲染；哪个用户可切哪些租户是宿主的数据，经它自己的生成操作取。
@@ -27,7 +27,7 @@
 
 ## 外部接口契约
 
-`web/packages/tenancy-ui/src/index.ts` 是公开面：`TenantSwitcher`、`TenantSwitcherProps`、`TenantOption`，以及命名为 `TENANCY_UI_NAMESPACE`、`tenancyUiResources` 的资源对。`web/packages/tenancy-ui/src/internal/` 下的翻译钩子是族内管线，不外导。
+`web/packages/tenancy-ui/src/index.ts` 是公开接口：`TenantSwitcher`、`TenantSwitcherProps`、`TenantOption`，以及命名为 `TENANCY_UI_NAMESPACE`、`tenancyUiResources` 的资源对。`web/packages/tenancy-ui/src/internal/` 下的翻译钩子是组内管线，不外导。
 
 ```tsx
 interface TenantOption {
@@ -51,13 +51,13 @@ interface TenantSwitcherProps {
 **`menuFooter`、`announcement`、`triggerProps`、`compact` 是可选属性，缺省时行为不变。**
 
 - `menuFooter(close)` 在租户行之后、同一菜单内的分隔线下方渲染宿主条目。`close` 关闭菜单；需要跳转的宿主条目在跳转前调用它。未提供时菜单只有租户行。
-- `announcement` 选择切换确认的位置：`inline`（缺省）在触发器旁绘制确认文本，`visually-hidden` 始终裁切、只留在无障碍树中播报。两种取值都从挂载起就渲染同一条 `role="status"` 区域。
+- `announcement` 选择切换确认的位置：`inline`（缺省）在触发器旁绘制确认文本，`visually-hidden` 始终裁切、只留在无障碍树中播报。两种取值都从挂载起就渲染同一个 `role="status"` 区域。
 - `triggerProps` 只携带呈现属性——`variant`、`size`、`sx`、`startIcon`——展开到触发器按钮上，使控件的外观与宿主自己的 chrome 一致。未提供时触发器是继承环境文字颜色的描边按钮。
-- `compact` 把触发器收成仅图标形态，供放不下租户名的窄 chrome（收起侧栏的图标窄栏）使用：可及名仍是文字触发器会显示的那个租户名，`triggerProps.startIcon` 给出时作图标，否则用包内字形；MUI（[REF-mui](../../../references.md)）按钮的 64px 最小宽与两侧内边距在形态内取消。列表、当前租户行的禁用与切换播报不变。
+- `compact` 把触发器收成仅图标形态，供放不下租户名的窄 chrome（收起侧栏的图标窄栏）使用：可及名仍是文字触发器会显示的那个租户名，`triggerProps.startIcon` 给出时作图标，否则用包内字形；MUI（[REF-mui](../../../references.md)）按钮的 64px 最小宽度与两侧内边距在形态内取消。列表、当前租户行的禁用与切换播报不变。
 
-**`onSelect` 在用户选一个非当前租户时触发一次，携带选中的租户标识。** 宿主在那里把路由切过去、更新租户上下文、重取数据并逐出上一租户的查询缓存；回调抛出不是选择失败，本包把它包住，既不当错误渲染，也不让它逃成未处理的拒绝。
+**`onSelect` 在用户选一个非当前租户时触发一次，携带选中的租户标识。** 宿主在那里把路由切过去、更新租户上下文、重取数据并逐出上一租户的查询缓存；回调抛出不是选择失败，本包把它包住，既不当错误渲染，也不让它变成未处理的拒绝。
 
-**对外接口面。** 公开面是上述导出集；控件受控、只调 `onSelect`、不消费 auth-core 的钩子、不发请求；触发器与列表项渲染宿主文本，内建文案只覆盖控件自己的状态。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
+**对外接口。** 公开接口是上述导出集；控件受控、只调 `onSelect`、不使用 auth-core 的钩子、不发请求；触发器与列表项渲染宿主文本，内建文案只覆盖控件自己的状态。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
 
 ## 依赖
 
@@ -86,7 +86,7 @@ sequenceDiagram
 
 ## 核心数据结构
 
-| 概念 | 形状 | 说明 |
+| 概念 | 结构 | 说明 |
 |---|---|---|
 | 可切换租户 | `TenantOption` | `id`（`onSelect` 携带的稳定标识）与 `name`（触发器与列表显示的名字） |
 | 命名空间 | `tenancyUiResources` | `zh-CN` 与 `en-US` 两份目录，叶子键集相同 |
@@ -97,7 +97,7 @@ sequenceDiagram
 
 1. 用户在列表里点一个非当前租户的行；行的点击守卫先确认它不是当前租户，再把菜单关掉、调 `onSelect(id)`。
 2. 宿主接手：把路由切到那个租户，更新它交给 `TenantProvider` 的租户标识，并用切换之前读到的离任租户 id 逐出该租户的查询子树。
-3. 控件报出已切换的租户（`role="status"`）。该区域在控件挂载时就已存在、内容为空，选择时才填入文本，使第一次选择也被播报；`announcement` 为 `visually-hidden` 时该区域始终裁切、只留在无障碍树中。控件挂在宿主的 `userMenu` 槽，运行期只依赖 `@speed/i18n`、`@speed/ui-kit`（仅取共享的裁切配方 `visuallyHiddenSx`）与 MUI，区域是本包自己的，遵守与 `InlineSuccess` 同一条先挂空区域、再填文本的做法；租户切换是宿主回调，不是写入，不在 `useWriteFeedback` 的作用域之内。
+3. 控件报出已切换的租户（`role="status"`）。该区域在控件挂载时就已存在、内容为空，选择时才填入文本，使第一次选择也被播报；`announcement` 为 `visually-hidden` 时该区域始终裁切、只留在无障碍树中。控件挂在宿主的 `userMenu` 槽，运行期只依赖 `@speed/i18n`、`@speed/ui-kit`（仅取共享的裁切配方 `visuallyHiddenSx`）与 MUI，区域是本包自己的，遵守与 `InlineSuccess` 同一套先挂空区域、再填文本的做法；租户切换是宿主回调，不是写入，不在 `useWriteFeedback` 的作用域之内。
 
 ### 当前租户收敛
 
@@ -109,13 +109,13 @@ sequenceDiagram
 
 1. 把租户域的权限集置回未知，并按新租户重读；读回之前，工作区管理面的入口与页面按未知处置，不按旧租户的权限渲染。
 2. 以新的租户标识重挂载工作区管理面的子树。页面的本地状态随卸载丢弃，租户作用域的查询键换到新租户。
-3. 切换时如果页面在 `/workspace/admin` 之下，把页面带到新租户的租户区首页，不留在管理面：新租户不一定授予同一组管理权限，停在旧页面只会渲染一处无权限面。
+3. 切换时如果页面在 `/workspace/admin` 之下，把页面带到新租户的租户区首页，不留在管理面：新租户不一定授予同一组管理权限，停在旧页面只会渲染一个无权限页面。
 
 当前租户从未知落定为某个租户不是切换，这三条不执行。
 
 ## 错误与失败语义
 
-**内建文案只覆盖控件自己的状态。** 切换本身由宿主执行，其失败（无成员资格、令牌校验失败、路由不可达）是宿主在其路由与数据层处置的，不在本控件的失败面。列表读取的失败同样是宿主的失败面：控件只按 `tenants` 与 `currentTenantId` 渲染，不区分列表是刚刚读过、沿用上一份，还是此刻只能给出这些。
+**内建文案只覆盖控件自己的状态。** 切换本身由宿主执行，其失败（无成员资格、令牌校验失败、路由不可达）是宿主在其路由与数据层处置的，不在本控件的失败范围。列表读取的失败同样是宿主的失败范围：控件只按 `tenants` 与 `currentTenantId` 渲染，不区分列表是刚刚读过、沿用上一份，还是此刻只能给出这些。
 
 | 情形 | 表现 |
 |---|---|

@@ -7,7 +7,7 @@
 约束来自已有的决定：
 
 - 登录流程记录存 kv，状态迁移由引擎做比较并交换，授权码至多换一次；这部分的存放位置与原子性判据已定，桥只提供记录里要存的内容（[ADR-authn-login-flow](adr-authn-login-flow.md)、[ADR-authn-state-placement](adr-authn-state-placement.md)）。丢失这类记录只会让流程失败，不会放宽任何校验。
-- 根包只放接口与数据类型，第三方库落在叶子包里，库的类型不出现在根包的接口面上（[ADR-authn-packaging](adr-authn-packaging.md)、[ADR-module-layout](adr-module-layout.md)）。
+- 根包只放接口与数据类型，第三方库落在叶子包里，库的类型不出现在根包的接口上（[ADR-authn-packaging](adr-authn-packaging.md)、[ADR-module-layout](adr-module-layout.md)）。
 - 所有出站请求走受限的出站客户端，因为目的地址来自外部输入（[ADR-authn-sso](adr-authn-sso.md)）。
 
 候选库对授权码流程各环节的责任归属不同。下表按各库已发布版本的源码核对；「调用方」指 speed 一侧的代码。
@@ -28,11 +28,11 @@ go-oidc 另有会静默放过校验的缺口：`UserInfo` 取回的 `sub` 不与
 
 ### 采用 goth 的整套回调处理
 
-goth 以进程级全局的 provider 注册表、gorilla 会话 cookie 与路由辅助一体提供登录回调，下含 Google、GitHub、通用 OIDC 与微信的 provider。
+goth 以进程级全局的 provider 注册表、gorilla 会话 cookie 与路由辅助函数一体提供登录回调，下含 Google、GitHub、通用 OIDC 与微信的 provider。
 
 **否决**：
 
-- 它的状态保存与回调处理绑在自己的 cookie 与路由辅助上，而桥的状态落在 kv 的流程记录里、provider 要按租户动态装配；绕开这些之后只剩 provider 层可用，这一层的校验不足：OIDC provider 自行解码 ID 令牌，只比对 `aud`、`iss`、`exp`，不验签、不核 `nonce`、不发 PKCE；`state` 可由发起方在请求里指定，授权地址里的 `state` 为空时回跳不比对。
+- 它的状态保存与回调处理绑在自己的 cookie 与路由辅助函数上，而桥的状态落在 kv 的流程记录里、provider 要按租户动态装配；绕开这些之后只剩 provider 层可用，这一层的校验不足：OIDC provider 自行解码 ID 令牌，只比对 `aud`、`iss`、`exp`，不验签、不核 `nonce`、不发 PKCE；`state` 可由发起方在请求里指定，授权地址里的 `state` 为空时回跳不比对。
 - Google provider 不是 OIDC 流程：走 userinfo 接口，访问令牌放在查询串里，响应里没有邮箱是否已验证的字段，`hd` 只在原始数据里。
 - 对 `pkg/go.mod` 增加的模块数倍于首选方案（首选只增加 go-oidc、go-jose/v4，[REF-go-jose](../references.md)、x/oauth2），其中包含与登录无关的路由库。
 
@@ -53,8 +53,8 @@ cap 的 `Request` 对象持有 `state`、`nonce` 与 PKCE 校验串，`Exchange`
 
 - 许可证是 MPL-2.0，文件级弱 copyleft；其余候选均为 Apache-2.0、BSD-3-Clause 或 MIT。
 - 同时带入 go-jose 的 v3 与 v4，内嵌的 go-oidc 版本落后于独立可得的版本，升级节奏由 cap 的发版决定；依赖是候选里最多的，含 `testify`（[REF-testify](../references.md)）等来自非测试文件的测试库。
-- `Request` 对象仍要由调用方在两次请求之间保存，里面是 PKCE 校验串与 `nonce` 这类秘密，保存位置、过期与一次性消费照旧要自己做；库只接走比对。
-- 放进库里的收益只是少写 `state`、`nonce`、PKCE 的比较；保存、过期与一次性消费照旧自做，收益不抵上述许可证与依赖面的代价。
+- `Request` 对象仍要由调用方在两次请求之间保存，里面是 PKCE 校验串与 `nonce` 这类秘密，保存位置、过期与一次性消费照旧要自己做；库只接手比对。
+- 放进库里的收益只是少写 `state`、`nonce`、PKCE 的比较；保存、过期与一次性消费照旧自做，收益不抵上述许可证与依赖范围的代价。
 
 ### Google 走 x/oauth2 的 google 子包加 userinfo
 
@@ -64,23 +64,23 @@ Google 不作为 OIDC 对待：用 `x/oauth2/google` 的端点与默认凭据支
 
 - 这条路径不验证 ID 令牌，`iss`、`aud`、`exp`、`nonce` 都不在校验之内，邮箱是否已验证、`hd` 也得不到 ID 令牌那样带签名的声明。
 - 子包会把 `compute/metadata`（[REF-gcp-compute-metadata](../references.md)）一个模块带进依赖图；只 import `x/oauth2` 根包与 go-oidc 时没有它。
-- Google 与企业 OIDC 的校验路径因此分叉成两套，同一类缺陷要在两处测。
+- Google 与企业 OIDC 的校验路径因此分成两套，同一类缺陷要在两处测。
 
 ### GitHub 引入 go-github
 
 用 go-github（[REF-go-github](../references.md)）读 `/user`（[REF-github-rest-users](../references.md)）与 `/user/emails`。
 
-**否决**：桥只读 `/user` 取数字 `id`、读 `/user/emails` 取邮箱列表，自写是几十行代码；go-github 覆盖整个 GitHub API，为这两个只读调用引入它，依赖面与升级面都覆盖了桥用不到的部分，其依赖足迹也未核实。
+**否决**：桥只读 `/user` 取数字 `id`、读 `/user/emails` 取邮箱列表，自写是几十行代码；go-github 覆盖整个 GitHub API，为这两个只读调用引入它，依赖范围与升级范围都覆盖了桥用不到的部分，其依赖足迹也未核实。
 
 ### go-oidc 加 x/oauth2，校验材料自做
 
-go-oidc 做发现与 ID 令牌校验，x/oauth2 做授权地址、换码与 PKCE 助手；库不做的环节由 speed 在桥里补齐。
+go-oidc 做发现与 ID 令牌校验，x/oauth2 做授权地址、换码与 PKCE 辅助函数；库不做的环节由 speed 在桥里补齐。
 
 **采纳**，见决策。
 
 ## 决策
 
-采纳：社交与企业 OIDC 的校验桥以 go-oidc 验证 ID 令牌、x/oauth2 构造授权地址与换取授权码并提供 PKCE 助手为骨架；库不做的环节由 speed 自己生成、保存、校验与注入。Google 与企业 OIDC 共用同一条 OIDC 路径；GitHub 在同一座桥上走 OAuth 2.0 分支。
+采纳：社交与企业 OIDC 的校验桥以 go-oidc 验证 ID 令牌、x/oauth2 构造授权地址与换取授权码并提供 PKCE 辅助函数为骨架；库不做的环节由 speed 自己生成、保存、校验与注入。Google 与企业 OIDC 共用同一条 OIDC 路径；GitHub 在同一座桥上走 OAuth 2.0 分支。
 
 ```mermaid
 flowchart LR
@@ -126,14 +126,14 @@ flowchart LR
 
 ## 后果
 
-校验链上的每一环都有归属：库做的与自己做的在上图与决策里分别列出，没有靠「库应该会做」成立的环节。依赖面小：对 `pkg/go.mod` 只增加 go-oidc、go-jose/v4 与 x/oauth2，许可证为 Apache-2.0 与 BSD-3-Clause，go-jose/v4 与 JWT（[REF-rfc7519](../references.md)）访问令牌共用。`state` 与 PKCE 校验串落在 kv 的流程记录里，不绑 cookie 加密方式，多副本与按租户装配的 IdP 不受影响。Google 与企业 OIDC 一条路径，同一类缺陷只在一处修、一处测。
+校验链上的每一环都有归属：库做的与自己做的在上图与决策里分别列出，没有靠「库应该会做」成立的环节。依赖范围小：对 `pkg/go.mod` 只增加 go-oidc、go-jose/v4 与 x/oauth2，许可证为 Apache-2.0 与 BSD-3-Clause，go-jose/v4 与 JWT（[REF-rfc7519](../references.md)）访问令牌共用。`state` 与 PKCE 校验串落在 kv 的流程记录里，不绑 cookie 加密方式，多副本与按租户装配的 IdP 不受影响。Google 与企业 OIDC 一条路径，同一类缺陷只在一处修、一处测。
 
 **接受的代价：**
 
-- 每一项自做的校验都需要负向测试，缺任何一项都是静默放过，库不会报错。例举的负向用例（非封闭集）：`state` 缺失、被改动、重放；`nonce` 缺失或不符；`azp` 不符；`iss` 不符或回跳 `iss` 与提供方不符；回跳路径与流程记录里的提供方不一致；`hd` 不符；GitHub 的邮箱只有 `primary` 而未 `verified`、或只有 `/user` 里的公开邮箱；未经注入客户端的出站调用。
+- 每一项自做的校验都需要负向测试，缺任何一项都是静默放过，库不会报错。例举的负向用例（非封闭集）：`state` 缺失、被改动、重放；`nonce` 缺失或不符；`azp` 不符；`iss` 不符或回跳 `iss` 与提供方不符；回跳路径与流程记录里的提供方不一致；`hd` 不符；GitHub 的邮箱只有 `primary` 而未 `verified`，或只有 `/user` 里的公开邮箱；未经注入客户端的出站调用。
 - 选择 cap 可以得到的「比对做进库里」被放弃：`state`、PKCE、`nonce` 的生成、保存、一次性消费与过期全由 speed 维护，库升级不会自动带来这部分的修正。
 - go-oidc 每次构造 `Provider` 都发一次发现请求且不缓存，提供方对象的缓存与失效由 speed 承担；密钥集随提供方对象存活，轮换靠库在 `kid` 未命中时重取。
-- GitHub 的 `/user` 与 `/user/emails` 读取由 speed 维护：响应形状、分页与限流行为的变化要自己跟进，go-github 不再兜底。
+- GitHub 的 `/user` 与 `/user/emails` 读取由 speed 维护：响应结构、分页与限流行为的变化要自己跟进，go-github 不再兜底。
 - Google 是否要求或接受 PKCE 未核实，桥照常发 S256；该假设见失效条件。
 - 微信那一支的 CSRF 防线比其他提供方少一层，该代价由它自己的记录承担。
 

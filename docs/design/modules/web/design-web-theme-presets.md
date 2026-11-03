@@ -37,10 +37,10 @@ export const asciiThemePreset: ThemePreset
 export const themePresets: readonly ThemePreset[]
 ```
 
-- **每个预设是「相对默认树的差异」。** `tokens` 的形状与 `@speed/tokens` 的 `TokensOverride` 相同，只是类型层排除了 `breakpoints` 与 `zIndex`：预设改这两段不是风格问题，是破坏布局与层序契约，因此在编译期拒绝。随包预设由测试守住这条限制。
+- **每个预设是「相对默认树的差异」。** `tokens` 的结构与 `@speed/tokens` 的 `TokensOverride` 相同，只是类型层排除了 `breakpoints` 与 `zIndex`：预设改这两段不是风格问题，而是破坏布局与层序契约，因此在编译期拒绝。随包预设由测试守住这条限制。
 - **`themePresets` 是随包货架。** 第一项是 `defaultThemePreset`，其后依次是 `classic`、`modern`、`compact`、`glass`、`ascii`。宿主可以直接把它交给主题 provider，也可以只取其中几项或自行提供预设。
 - **预设是冻结的共享数据。** 随包预设经深度冻结，读方不能就地改写；`themePresets` 本身也是冻结数组。
-- **包不携带显示名。** 一个预设的展示名称不属于它的数据；宿主按 `id` 从自己的语言资源取文案。
+- **包不携带显示名。** 一个预设的显示名不属于它的数据；宿主按 `id` 从自己的语言资源取文案。
 - **预设的 id 在货架内唯一。** 主题 provider 按 id 建索引，重复 id 时后项覆盖前项，前项在索引中不可达。
 
 随包风格的判别性取值：
@@ -51,10 +51,10 @@ export const themePresets: readonly ThemePreset[]
 | `classic` | 圆角 4；行高 1.15 / 1.4 / 1.6；主色更深（`#1D4ED8`）；分隔线与阴影更硬 |
 | `modern` | 圆角 14；行高 1.35 / 1.65 / 1.9；主色更亮（`#4F46E5`）；阴影更柔更大 |
 | `compact` | 字号阶整体缩小；行高 1.15 / 1.35 / 1.5；间距基数 `spacing.unit` 为 6 |
-| `glass` | 圆角 24；`container`/`overlay` 半透明（不写填充，按模式继承纸色）加背景模糊与饱和；`header` 填充透明且不加模糊，表头随卡片本身玻璃、由分隔线区分；画布渐变的明暗两套止色；raised 表面的描边也分两套（浅色深描边、深色白描边）；浅色 error 主色加深以保证文字对比度 |
+| `glass` | 圆角 24；`container`/`overlay` 半透明（不写填充，按模式继承纸色）加背景模糊与饱和；`header` 填充透明且不加模糊，表头随卡片本身呈玻璃效果、由分隔线区分；画布渐变的明暗两套止色；raised 表面的描边也分两套（浅色深描边、深色白描边）；浅色 error 主色加深以保证文字对比度 |
 | `ascii` | 全站等宽字体栈（末尾补 CJK 回退）；圆角 0；近黑表面配硬绿描边；绿/琥珀语义色；阴影全为 `none`；正文辉光 |
 
-**对外接口面。** `ThemePreset`、`ThemePresetTokens`、`defaultThemePreset`、`classicThemePreset`、`modernThemePreset`、`compactThemePreset`、`glassThemePreset`、`asciiThemePreset` 与 `themePresets` 的类型与形状，是宿主与 [ui-kit](design-web-ui-kit.md) 据以编写的接口面。新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名是不兼容变更。随包预设的 `id` 是宿主的语言资源键与设备存储值，改名同样是不兼容变更。
+**对外接口。** `ThemePreset`、`ThemePresetTokens`、`defaultThemePreset`、`classicThemePreset`、`modernThemePreset`、`compactThemePreset`、`glassThemePreset`、`asciiThemePreset` 与 `themePresets` 的类型与结构，是宿主与 [ui-kit](design-web-ui-kit.md) 据以编写的接口。新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名是不兼容变更。随包预设的 `id` 是宿主的语言资源键与设备存储值，改名同样是不兼容变更。
 
 ## 依赖
 
@@ -66,7 +66,7 @@ export const themePresets: readonly ThemePreset[]
 
 ## UML 图
 
-图给出预设的形状与随包条目。图里画不出的约束：`tokens` 在类型层不含 `breakpoints` 与 `zIndex`；随包预设深度冻结；预设不携带显示名，合并次序与切换归主题 provider。
+图给出预设的结构与随包条目。图里画不出的约束：`tokens` 在类型层不含 `breakpoints` 与 `zIndex`；随包预设深度冻结；预设不携带显示名，合并次序与切换归主题 provider。
 
 ```mermaid
 classDiagram
@@ -115,7 +115,7 @@ classDiagram
 
 ### 半透明与画布的合成
 
-`glass` 一类预设经 `surface.*.opacity` 与 `color.background.canvas` 表达半透明。预设不写 `fill`：主题适配器先按活动模式解析出继承的纸色（浅色为白、深色为深色纸面），再乘 alpha，因此同一份 `opacity` 在明暗两种模式下都与该模式的文字色保持对比度；写死白色填充会在深色画布上合成出中灰，令深色模式的浅色文字跌破 4.5:1。画布按模式取对应的止色，绘制在页填充之上。三处字段的形状与绘制次序见 [tokens](design-web-tokens.md)；映射归 [ui-kit](design-web-ui-kit.md)。
+`glass` 一类预设经 `surface.*.opacity` 与 `color.background.canvas` 表达半透明。预设不写 `fill`：主题适配器先按活动模式解析出继承的纸色（浅色为白、深色为深色纸面），再乘 alpha，因此同一份 `opacity` 在明暗两种模式下都与该模式的文字色保持对比度；写死白色填充会在深色画布上合成出中灰，令深色模式的浅色文字跌破 4.5:1。画布按模式取对应的止色，绘制在页填充之上。三个字段的结构与绘制次序见 [tokens](design-web-tokens.md)；映射归 [ui-kit](design-web-ui-kit.md)。
 
 ## 错误与失败语义
 
@@ -123,14 +123,14 @@ classDiagram
 |---|---|
 | 预设声明 `breakpoints` 或 `zIndex` | 类型检查报错，预设不能编译 |
 | 货架内两个预设同 id | 后项覆盖前项；前项在 provider 的索引中不可达 |
-| 活动预设 id 不在货架里 | 由 provider 回落到第一项，不抛错（见 [ui-kit](design-web-ui-kit.md)） |
+| 活动预设 id 不在货架里 | 由 provider 回退到第一项，不抛错（见 [ui-kit](design-web-ui-kit.md)） |
 | 预设的 `tokens` 为空 | 合法；等于默认树 |
 
 本包是纯数据，自身不抛错、不做运行期校验、无降级与重试面。
 
 ## 扩展点
 
-- **新增一套风格。** 写一份 `ThemePreset` 数据交给装配，不需要改平台包；随包预置只是开箱用的起点。
+- **新增一套风格。** 写一份 `ThemePreset` 数据交给装配，不需要改平台包；随包预设只是开箱用的起点。
 - **只取一部分。** 宿主可以把 `themePresets` 的子集交给 provider，或提供一个完全自有的货架。
 - **预设的呈现。** 宿主按 `id` 从自己的语言资源取显示名，经 [account-ui](design-web-account-ui.md) 的 `AppearanceSection` 呈现选择。
 
@@ -138,7 +138,7 @@ classDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 预设形状与可写段（排除 `breakpoints`/`zIndex`） | 已实现 | `web/packages/theme-presets/src/index.ts` `ThemePreset`、`ThemePresetTokens` |
+| 预设结构与可写段（排除 `breakpoints`/`zIndex`） | 已实现 | `web/packages/theme-presets/src/index.ts` `ThemePreset`、`ThemePresetTokens` |
 | 基线预设 | 已实现 | `web/packages/theme-presets/src/index.ts` `defaultThemePreset` |
 | 随包风格 | 已实现 | `web/packages/theme-presets/src/index.ts` `classicThemePreset`、`modernThemePreset`、`compactThemePreset`、`glassThemePreset`、`asciiThemePreset` |
 | 随包货架与冻结 | 已实现 | `web/packages/theme-presets/src/index.ts` `themePresets`、`createPreset` |

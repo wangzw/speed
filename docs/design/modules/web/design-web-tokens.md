@@ -2,9 +2,9 @@
 
 ## 职责
 
-把平台的设计取值——语义配色、表面语义、字体栈与字号、间距基数、圆角、断点、层级、阴影——作为**纯数据**交付：一棵默认 token 树 `defaultTokens`，加唯一一个不修改入参的覆写方式 `deepMerge`。消费方在这棵树上叠加自己的差异层，得到一份新的 token 树，交给 `ui-kit` 的主题工厂建成 MUI（[REF-mui](../../../references.md)）主题。
+把平台的设计取值——语义配色、表面语义、字体栈与字号、间距基数、圆角、断点、层级、阴影——作为**纯数据**交付：一棵默认 token 树 `defaultTokens`，加唯一一个不修改入参的覆写方式 `deepMerge`。使用方在这棵树上叠加自己的差异层，得到一份新的 token 树，交给 `ui-kit` 的主题工厂建成 MUI（[REF-mui](../../../references.md)）主题。
 
-运行时面**刻意只有这两个符号**，其余导出全是类型：token 作者与主题适配器因此拿到完整的编译期形状，而不为此背任何运行时代价。
+运行时**刻意只有这两个符号**，其余导出全是类型：token 作者与主题适配器因此拿到完整的编译期结构，而不为此背任何运行时代价。
 
 白标分层由调用方用 `deepMerge` 的多层入参表达：`deepMerge(defaultTokens, projectTokens, tenantOverrides)`，靠后的层覆盖靠前的层。本包只定义「一棵树加一个合并」，**层数与层名由调用方决定**（内置默认、项目、租户），分层这一事实不在这里固化。
 
@@ -13,7 +13,7 @@
 - **不成主题，不出样式表。** 本包不 import React，不做 CSS-in-JS，不产出 MUI 主题对象。token 如何变成 MUI 主题——阴影数组的插值、中性色阶到 `palette.grey` 的映射、字号到排版角色的指派——是 `ui-kit` 主题工厂的适配决策，见 [ui-kit](design-web-ui-kit.md)。本包不预先替它做这类导出。
 - **不认识租户、项目、品牌。** 分层的名字、层数、每一层由谁提供，都在调用方；本包只提供合并机制。
 - **不含运行期依赖，也不含宿主可见文本。** 本包不登记语言资源，不渲染任何文案，因而不参与前端的语言协商。
-- **不产出布局与组件。** 断点是取值，不是排版行为；把断点用成响应式规则是消费方的事。
+- **不产出布局与组件。** 断点是取值，不是排版行为；把断点用成响应式规则是使用方的事。
 
 ## 外部接口契约
 
@@ -40,19 +40,19 @@ export type DeepPartial<T>     // 递归可选；数组与函数是叶子
 
 **`defaultTokens` 的契约**：装配时深度冻结。不可变性由运行期强制，而不只由类型声明：经 `defaultTokens` 本身，或经一次合并结果中与它按标识共享的分支写值，在严格模式下抛错，而不会静默污染每一层覆写都从它出发的那棵树。`SpeedTokens` 的每个字段都是 `readonly`。
 
-**覆写形状错误是编译期错误**：`TokensOverride` 由 `SpeedTokens` 派生，未知的段、错误的取值种类、用对象覆写字符串都在类型检查时报出，由测试里的 `@ts-expect-error` 行钉住。
+**覆写结构错误是编译期错误**：`TokensOverride` 由 `SpeedTokens` 派生，未知的段、错误的取值种类、用对象覆写字符串都在类型检查时报出，由测试里的 `@ts-expect-error` 行钉住。
 
 ### MUI 对齐口径是承诺
 
 `breakpoints.values`、`zIndex.values` 与间距基数**有意等于 MUI 主题的默认值**，并由测试对着**安装的 MUI 主题本身**钉住（测试经仅开发期的 `@mui/material` 依赖 import MUI 的真 `createTheme`，与本包出不出运行期依赖无关）。`shape.borderRadius` 是记录在案的例外：token 出 8，MUI 默认为 4，这一偏离本身被钉住，MUI 的默认一旦收敛到该值测试即失败。参照物从不是树内抄下的期望值——抄来的期望只能与它抄自的 token 一致。
 
-### 对外接口面
+### 对外接口
 
-`defaultTokens`、`deepMerge`、`SpeedTokens` 及其各段类型的字段名与形状，以及 MUI 对齐口径，是消费方（`ui-kit` 主题工厂、取用原始取值的应用）据以编写的接口面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。MUI 大版本升级若改了默认值，本包的对齐测试指名要重新裁定哪一条，而不是放宽测试。
+`defaultTokens`、`deepMerge`、`SpeedTokens` 及其各段类型的字段名与结构，以及 MUI 对齐口径，是使用方（`ui-kit` 主题工厂、取用原始取值的应用）据以编写的接口。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。MUI 大版本升级若改了默认值，本包的对齐测试指名要重新裁定哪一条，而不是放宽测试。
 
 ## 依赖
 
-本包**零运行期依赖**：任何加进来的依赖都会落进每个消费项目的产物，因此合并行为若需要一个新的助手，在本包内写（小而测得），而不是引入一个库。
+本包**零运行期依赖**：任何加进来的依赖都会落进每个使用方的产物，因此合并行为若需要一个新的辅助函数，在本包内写（小而测得），而不是引入一个库。
 
 仅开发期依赖 `@mui/material`，只用于让对齐测试对着 MUI 安装版本的真默认值比较；本包不发布它，也不在源码里 import 它。
 
@@ -60,7 +60,7 @@ export type DeepPartial<T>     // 递归可选；数组与函数是叶子
 
 ## UML 图
 
-图给出 `SpeedTokens` 的段划分与运行时符号的位置。图里画不出的约束：每个段字段都是 `readonly`，装配后的整棵树深度冻结；`SurfaceRoleTokens` 的每个字段可选，缺省表示继承既有槽（见核心数据结构）；`opacity` 只作用于已解析的 `#RRGGBB` 填充，其它 CSS 颜色原样保留；`typography.textGlow` 与 `color.background.canvas` 同样缺席即无声明；`DeepPartial` 把数组与函数当叶子（整体替换，不逐项合并），token 树不含数组与函数，但助手是泛型的因而必须如此；`deepMerge` 的层数是变参，图上的入参只是当次调用。
+图给出 `SpeedTokens` 的段划分与运行时符号的位置。图里画不出的约束：每个段字段都是 `readonly`，装配后的整棵树深度冻结；`SurfaceRoleTokens` 的每个字段可选，缺省表示继承既有槽（见核心数据结构）；`opacity` 只作用于已解析的 `#RRGGBB` 填充，其它 CSS 颜色原样保留；`typography.textGlow` 与 `color.background.canvas` 同样缺席即无声明；`DeepPartial` 把数组与函数当叶子（整体替换，不逐项合并），token 树不含数组与函数，但辅助函数是泛型的因而必须如此；`deepMerge` 的层数是变参，图上的入参只是当次调用。
 
 ```mermaid
 classDiagram
@@ -115,14 +115,14 @@ classDiagram
 | 概念 | 类型 | 说明 |
 |---|---|---|
 | token 树 | `SpeedTokens` | `color`、`typography`、`spacing`、`shape`、`breakpoints`、`zIndex`、`shadows`、`surface`；每个字段 `readonly` |
-| 覆写形状 | `TokensOverride` | `DeepPartial<SpeedTokens>`，一次覆写能写到的最深形状 |
+| 覆写结构 | `TokensOverride` | `DeepPartial<SpeedTokens>`，一次覆写能写到的最深结构 |
 | 递归可选 | `DeepPartial<T>` | 对象递归可选；数组与函数是叶子，覆写整体替换 |
 | 默认树 | `defaultTokens` | 由各段装配成的单棵树，装配时深度冻结 |
-| 合并助手 | `deepMerge` | 基加若干覆写层，纯函数，见外部接口契约 |
+| 合并辅助函数 | `deepMerge` | 基加若干覆写层，纯函数，见外部接口契约 |
 
-**各段的取值形状**（摘要，详细字段在代码与各段模块）：
+**各段的取值结构**（摘要，详细字段在代码与各段模块）：
 
-| 段 | 形状 |
+| 段 | 结构 |
 |---|---|
 | `color` | `semantic` 为若干语义角色，每个角色带 `main`/`light`/`dark`/`contrastText`：`main` 是浅色表面上的色调、`light` 是给深色表面的色调、`dark` 是最深的一档、`contrastText` 是落在 `main` 上的文字色；`neutral` 为数值色阶；`text`/`background`/`divider`；`background.canvas` 可选，按明暗两模式各给一对渐变止色 `{from, to}` |
 | `typography` | `fontFamily.sans`/`mono`（拉丁优先、附 CJK 回退）、`fontSize` 命名步、`fontWeight` 命名权重、`lineHeight`、`letterSpacing`；可选 `textGlow`（正文 `text-shadow` 值） |
@@ -145,7 +145,7 @@ classDiagram
 
 `color.background.canvas` 与 `typography.textGlow` 是另外两处纯附加的设计取值，都由主题适配器映射到页面的 body 上。
 
-- **画布按模式各带一套止色。** `canvas` 是 `{ light: { from, to }, dark: { from, to } }`，浅色模式取 `light`、深色取 `dark`，映射为 `linear-gradient(160deg, from, to)` 与 `background-attachment: fixed`。两套色标是必需形状：一套色标无法同时在明暗两种页面上保持可读。缺席即不渲染渐变。
+- **画布按模式各带一套止色。** `canvas` 是 `{ light: { from, to }, dark: { from, to } }`，浅色模式取 `light`、深色取 `dark`，映射为 `linear-gradient(160deg, from, to)` 与 `background-attachment: fixed`。两套色标是必需的结构：一套色标无法同时在明暗两种页面上保持可读。缺席即不渲染渐变。
 - **绘制次序：背景图在背景色之上。** 不透明的画布会盖住 `surface.page.fill`；需要页填充参与合成时，画布止色要自带透明度。以画布作为页面底色的预设不设 `surface.page` 填充。
 - **`textGlow` 是正文的 `text-shadow` 值。** 它放在排版段，因为它是文字的取值而不是表面的取值；沿用 `surface.backdropFilter` 允许一个 CSS 值的先例，它是设计取值而非组件覆盖。缺席即无辉光。
 
@@ -170,8 +170,8 @@ classDiagram
 
 | 情形 | 表现 |
 |---|---|
-| 通过 `defaultTokens`，或通过一次合并结果中共享自它的分支写值 | 严格模式下抛 `TypeError`（冻结对象写入失败），不静默改到默认树 |
-| 覆写形状错误（未知段、错误取值种类、用对象覆写字符串） | 编译期错误，不发散到运行期 |
+| 通过 `defaultTokens`，或通过一次合并结果中与它共享的分支写值 | 严格模式下抛 `TypeError`（冻结对象写入失败），不静默改到默认树 |
+| 覆写结构错误（未知段、错误取值种类、用对象覆写字符串） | 编译期错误，不发散到运行期 |
 | 覆写值为 `undefined` | 跳过该键，不抹空白 |
 | 覆写键为 `__proto__` 等恶意键 | 落为不可枚举的自有数据属性，深合并但不改原型，也不被拷贝带走 |
 
@@ -183,14 +183,14 @@ classDiagram
 
 - 在 `types.ts` 的 `SpeedTokens` 上加一个 `readonly` 字段，并在段模块里给出该段的接口与默认值。
 - 在 `defaultTokens` 的装配里并入该段，使冻结覆盖到它。
-- `DeepPartial` 的机械随 `SpeedTokens` 一起生长——覆写类型由树派生，段一旦加入即自动覆盖，无需另写。
-- 该段若镜像某个 MUI 默认值，走 README 的对齐表加一行，并加一条对着 MUI 安装版本钉住的测试。
+- `DeepPartial` 的机制随 `SpeedTokens` 一起生长——覆写类型由树派生，段一旦加入即自动覆盖，无需另写。
+- 该段若镜像某个 MUI 默认值，在 README 的对齐表里加一行，并加一条对着 MUI 安装版本钉住的测试。
 
-**`surface` 段对上述条件的落实：** 它在 `SpeedTokens` 上是一个 `readonly` 字段，形状与默认值在 `surface.ts`，经 `defaultTokens` 的装配受深度冻结，`TokensOverride` 由树派生而自动覆盖四个角色。该段不对应 MUI 的某个默认值，故不在对齐表上加行，MUI 对齐口径的测试不涉及它。
+**`surface` 段对上述条件的落实：** 它在 `SpeedTokens` 上是一个 `readonly` 字段，结构与默认值在 `surface.ts`，经 `defaultTokens` 的装配受深度冻结，`TokensOverride` 由树派生而自动覆盖四个角色。该段不对应 MUI 的某个默认值，故不在对齐表上加行，MUI 对齐口径的测试不涉及它。
 
-**三处纯附加字段同样走准入条件。** `SurfaceRoleTokens.opacity`、`TypographyTokens.textGlow` 与 `ColorTokens['background'].canvas` 都是可选字段：默认值不出现，`defaultTokens` 的精确相等断言与深度冻结不受影响；三者的主题映射归 [ui-kit](design-web-ui-kit.md)，本包只定义取值形状。
+**三个纯附加字段同样走准入条件。** `SurfaceRoleTokens.opacity`、`TypographyTokens.textGlow` 与 `ColorTokens['background'].canvas` 都是可选字段：默认值不出现，`defaultTokens` 的精确相等断言与深度冻结不受影响；三者的主题映射归 [ui-kit](design-web-ui-kit.md)，本包只定义取值结构。
 
-**新增一个表面角色是段形状的变更。** 角色集是闭合的语义集；新增角色要在 `SurfaceTokens` 上加字段，并在 [ui-kit](design-web-ui-kit.md) 的主题解析与组件映射里给它落点，按不兼容变更处理。
+**新增一个表面角色是段结构的变更。** 角色集是闭合的语义集；新增角色要在 `SurfaceTokens` 上加字段，并在 [ui-kit](design-web-ui-kit.md) 的主题解析与组件映射里给它落点，按不兼容变更处理。
 
 ## 实现状态
 
@@ -199,7 +199,7 @@ classDiagram
 | token 树类型、覆写类型与递归可选 | 已实现 | `web/packages/tokens/src/types.ts` `SpeedTokens`、`TokensOverride`、`DeepPartial` |
 | 各段取值与默认值 | 已实现 | `web/packages/tokens/src/color.ts`、`typography.ts`、`spacing.ts`、`shape.ts`、`breakpoints.ts`、`z-index.ts`、`shadows.ts`、`surface.ts` |
 | 表面段四个角色与缺省继承契约 | 已实现 | `web/packages/tokens/src/surface.ts` `surfaceTokens`、`SurfaceRoleTokens`、`SurfaceTokens`；`web/packages/tokens/src/defaultTokens.ts` `defaultTokens` |
-| 表面填充的 `opacity`、正文的 `textGlow` 与页面画布 `canvas` 三处纯附加字段 | 已实现 | `web/packages/tokens/src/surface.ts` `SurfaceRoleTokens.opacity`；`web/packages/tokens/src/typography.ts` `TypographyTokens.textGlow`；`web/packages/tokens/src/color.ts` `CanvasTokens`、`ColorTokens.background.canvas` |
+| 表面填充的 `opacity`、正文的 `textGlow` 与页面画布 `canvas` 三个纯附加字段 | 已实现 | `web/packages/tokens/src/surface.ts` `SurfaceRoleTokens.opacity`；`web/packages/tokens/src/typography.ts` `TypographyTokens.textGlow`；`web/packages/tokens/src/color.ts` `CanvasTokens`、`ColorTokens.background.canvas` |
 | 默认树装配与深度冻结 | 已实现 | `web/packages/tokens/src/defaultTokens.ts` `defaultTokens`、`deepFreeze` |
-| 合并助手与写时复制、恶意键处置 | 已实现 | `web/packages/tokens/src/merge.ts` `deepMerge` |
+| 合并辅助函数与写时复制、恶意键处置 | 已实现 | `web/packages/tokens/src/merge.ts` `deepMerge` |
 | MUI 对齐口径的钉住测试 | 已实现 | `web/packages/tokens/src/index.test.ts`、`defaultTokens.test.ts`、`merge.test.ts` |

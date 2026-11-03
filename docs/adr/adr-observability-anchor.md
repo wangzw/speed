@@ -2,9 +2,9 @@
 
 ## 背景
 
-中间件的先后由阶段给出，同一阶段之内按功能标识建图：一层用 `Provides` 声明它在链上代表什么，同阶段的别的层用 `After` 或 `Before` 指向那个标识（[ADR-http-stages](adr-http-stages.md)）。`pkg/http` 的登记面把一层的名字与它声称代表的功能分开。`http.Middleware` 的 `Name` 字段只用于诊断，写在 panic 文本与启动时列出的链里；指向功能的是同一结构上的 `Provides`，其元素是 `core.Token`（`pkg/core/module.go`）。登记面拿不到登记方的身份——`http.Endpoint` 不带它——因此 `pkg/http` 不校验 `Provides` 与登记方描述符里交付面的一致性，一层可以声称代表一个它所属模块并不交付的功能（见 `http` 设计文档的中间件一节）。
+中间件的先后由阶段给出，同一阶段之内按功能标识建图：一层用 `Provides` 声明它在链上代表什么，同阶段的别的层用 `After` 或 `Before` 指向那个标识（[ADR-http-stages](adr-http-stages.md)）。`pkg/http` 的登记接口把一层的名字与它声称代表的功能分开。`http.Middleware` 的 `Name` 字段只用于诊断，写在 panic 文本与启动时列出的链里；指向功能的是同一结构上的 `Provides`，其元素是 `core.Token`（`pkg/core/module.go`）。登记接口拿不到登记方的身份——`http.Endpoint` 不带它——因此 `pkg/http` 不校验 `Provides` 与登记方描述符里交付内容的一致性，一层可以声称代表一个它所属模块并不交付的功能（见 `http` 设计文档的中间件一节）。
 
-入口模块的 panic 兜底由它内建，落在观测阶段之内、排在观测阶段的登记层之内（见 `http` 设计文档的兜底层一节、[ADR-http-recovery](adr-http-recovery.md)）。它之内的层抛出的 panic 才到它；观测阶段本身的层抛出的 panic 越过它，抵达协议层。
+入口模块的 panic 兜底由它内建，落在观测阶段之内、排在该阶段的登记层之内（见 `http` 设计文档的兜底层一节、[ADR-http-recovery](adr-http-recovery.md)）。它之内的层抛出的 panic 才到它；观测阶段本身的层抛出的 panic 越过它，抵达协议层。
 
 采集层由上游 gin（[REF-gin](../references.md)）采集库的中间件与本模块的守护层组成（[ADR-observability-request-layer](adr-observability-request-layer.md)）。上游采集库不接住 panic，穿过它的 panic 不进计量，接住它的一层因而必须位于它之内。
 
@@ -20,7 +20,7 @@
 
 采纳它意味着 `Provides` 留空。
 
-**否决**：声明为空会让任何别的层的 `After` 或 `Before` 都指不到本层，那些约束随之被丢掉。丢掉一条约束不失败，只在启动诊断里记一行 Info（`pkg/http/assemble.go` 的 `reportRemarks`），与本模块缺席、或没有在这个端上登记采集层时合法装配记下的那一行同形——声明方以为自己有位置保证，而这一点在启动期看不出区别。
+**否决**：声明为空会让任何别的层的 `After` 或 `Before` 都指不到本层，那些约束随之被丢掉。丢掉一条约束不失败，只在启动诊断里记一行 Info（`pkg/http/assemble.go` 的 `reportRemarks`），与本模块缺席、或没有在这个端上登记采集层时合法装配记下的那一行相同——声明方以为自己有位置保证，而这一点在启动期看不出区别。
 
 ### 依赖入口模块的兜底层接住 panic，本层不捕获
 
@@ -36,7 +36,7 @@
 
 ### 采集层的锚点取本模块交付的功能，采集层自带记录后重抛
 
-**采纳** — 见决策。
+**采纳**——见决策。
 
 ## 决策
 
@@ -48,5 +48,5 @@
 
 **接受的代价：**
 
-- **上游重命名或换版会静默打散链上约束。** 本模块的功能标识是上游 SDK 类型的别名，上游把它们改名或换版时，指向本层功能的 `After` 或 `Before` 落不到任何一层，表现只是启动诊断里的一行 Info，与本模块缺席时合法装配记下的那一行同形；框架无法核对某一层声称代表的功能是否真由某个模块交付，这一处对不上没有别的拦截点。撞上它的是写出这类约束的第三方模块：位置保证在一次依赖升级后消失，而启动不失败。
-- **守护层按 `After` 放置，不按相邻放置。** 别的层可以被放在外层与守护层之间，那样的层里抛出的 panic 不被守护层接住（[ADR-observability-request-layer](adr-observability-request-layer.md)）。
+- **上游重命名或换版会静默打散链上约束。** 本模块的功能标识是上游 SDK 类型的别名，上游把它们改名或换版时，指向本层功能的 `After` 或 `Before` 落不到任何一层，表现只是启动诊断里的一行 Info，与本模块缺席时合法装配记下的那一行相同；框架无法核对某一层声称代表的功能是否真由某个模块交付，这一处对不上没有别的拦截点。撞上它的是写出这类约束的第三方模块：位置保证在一次依赖升级后消失，而启动不失败。
+- **守护层按 `After` 放置，不按相邻放置。** 别的层可以放在外层与守护层之间，那样的层里抛出的 panic 不被守护层接住（[ADR-observability-request-layer](adr-observability-request-layer.md)）。

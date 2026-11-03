@@ -5,15 +5,15 @@
 本包是平台第一个渲染 DOM 的包。它交付：
 
 - **主题工厂**：`createAppTheme` 把合并后的 `@speed/tokens` token 树映射成一个 MUI v9（[REF-mui](../../../references.md)）主题，并承载触摸设备上所有可点击目标的 44×44 下限、表面映射与页面基线（组件级 `styleOverrides`，见下文主题工厂一节）；`AppThemeProvider` 把主题、MUI 本地化联动、颜色模式、可选的主题预设层与全局重置组成一个运行期。
-- **受控组件**：`PageLayout`、`PageHeader`、`SectionCard`、`ActionRow`（连同 `ActionButton`）、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`PhoneNumberField`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`、`TotpQrCode`、`TotpEnrollmentPanel`，外加跨表面的状态原语（`errorCodeOf`、`httpStatusOf`、`useWriteFeedback`、`visuallyHiddenSx`、`touchTargetSx`）、电话号码的两部分组装助手（`toE164`、`validatePhoneNumber`、`defaultPhoneCountry` 等）、邮箱地址规则（`parseEmailAddress`、`EMAIL_ADDRESS_MAX_BYTES`）、刷新动作的一对（`RefreshButton` 与 `usePageRefresh`／`pageRefreshRead`）、一次值交接的一对（`CopyButton`、`OneTimeValuePanel`）与两个显示偏好上下文（`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`）。除 TOTP 登记的一对外，每个组件自带的文案来自 `ui-kit` 命名空间；`TotpQrCode` 与 `TotpEnrollmentPanel` 的全部文案与可及名由调用方经 props 传入。
+- **受控组件**：`PageLayout`、`PageHeader`、`SectionCard`、`ActionRow`（连同 `ActionButton`）、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`PhoneNumberField`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`、`TotpQrCode`、`TotpEnrollmentPanel`，外加跨表面的状态原语（`errorCodeOf`、`httpStatusOf`、`useWriteFeedback`、`visuallyHiddenSx`、`touchTargetSx`）、电话号码的两部分组装辅助函数（`toE164`、`validatePhoneNumber`、`defaultPhoneCountry` 等）、邮箱地址规则（`parseEmailAddress`、`EMAIL_ADDRESS_MAX_BYTES`）、刷新动作的一对（`RefreshButton` 与 `usePageRefresh`／`pageRefreshRead`）、一次值交接的一对（`CopyButton`、`OneTimeValuePanel`）与两个显示偏好上下文（`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`）。除 TOTP 登记的一对外，每个组件自带的文案来自 `ui-kit` 命名空间；`TotpQrCode` 与 `TotpEnrollmentPanel` 的全部文案与可及名由调用方经 props 传入。
 
-**受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不自带传输取数、从不改数据、从不持业务状态——同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。交互局部状态只出现在必须能证明它只在交互内存在的组件里，例如 `ConfirmDialog` 的双次确认待命（弹窗一关即复位）与 `PhoneNumberField` 的国际号码草稿和触碰标记；`SidePanel` 不持有任何状态，打开、忙碌与内容都由宿主经 props 给出；`useWriteFeedback` 的状态属于调用它的宿主组件，ui-kit 的组件仍不持有业务状态与写入结果。唯一的读接缝是刷新动作的一对：`usePageRefresh` 调用宿主交来的查询句柄的 `refetch`，只按结构读取句柄，本包不 import 查询客户端、api-client 或任何传输；`CopyButton` 读剪贴板 API 在浏览器本地，不经网络。两个显示偏好 provider 只转交宿主的取值，自身不持状态、不做校验。TOTP 登记的一对同样只收宿主解析好的值与文案：它不解析 `otpauth://`、不读命名空间、不做网络或存储副作用；手动入口的展开是唯一交互局部状态，随组件卸载复位。
+**受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不自带传输取数、从不改数据、从不持业务状态——同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。交互局部状态只出现在必须能证明它只在交互内存在的组件里，例如 `ConfirmDialog` 的双次确认待命（弹窗一关即复位）与 `PhoneNumberField` 的国际号码草稿和触碰标记；`SidePanel` 不持有任何状态，打开、忙碌与内容都由宿主经 props 给出；`useWriteFeedback` 的状态属于调用它的宿主组件，ui-kit 的组件仍不持有业务状态与写入结果。唯一的读接口是刷新动作的一对：`usePageRefresh` 调用宿主交来的查询句柄的 `refetch`，只按结构读取句柄，本包不 import 查询客户端、api-client 或任何传输；`CopyButton` 读剪贴板 API 在浏览器本地，不经网络。两个显示偏好 provider 只转交宿主的取值，自身不持状态、不做校验。TOTP 登记的一对同样只收宿主解析好的值与文案：它不解析 `otpauth://`、不读命名空间、不做网络或存储副作用；手动入口的展开是唯一交互局部状态，随组件卸载复位。
 
-`FileUploader` 不是这条契约的例外：队列由宿主持有的 `rows` 渲染，每次选取、取消、重试、移除都经回调上报；一次上传进行中是宿主状态、跑在宿主自己的传输代码里，组件从不持有一个 File 超过收到它的事件处理器。
+`FileUploader` 不是这条契约的例外：队列由宿主持有的 `rows` 渲染，每次选取、取消、重试、移除都经回调上报；一次上传进行中是宿主状态、跑在宿主自己的传输代码里，组件从不把一个 File 持有到收到它的事件处理器之后。
 
 ### 非职责
 
-- **不复刻 MUI 的 chrome。** MUI 的控件已渲染标签、帮助文本与 aria 接线；表单家族所谓的「统一错误显示」是渲染状态契约加 `FormLayout` 的间距骨架，不是第二套标签/错误渲染器。MUI v9 缺失的控件在它的原语上搭，不分叉它。
+- **不复刻 MUI 的 chrome。** MUI 的控件已渲染标签、帮助文本与 aria 接线；表单家族所谓的「统一错误显示」是渲染状态契约加 `FormLayout` 的间距骨架，不是第二套标签/错误渲染器。MUI v9 缺失的控件在它的原语上搭，不另立分支。
 - **不认识业务、租户与权限。** 组件是受控且 props 驱动的，使它们能在一个不同的认证方案下照常工作。
 - **不注册命名空间，不渲染 `I18nextProvider`。** 命名空间注册与 provider 树在宿主启动处；本包只消费已注册的 `ui-kit` 命名空间。包内除 test-utils 外不 import `registerNamespace`。
 - **不定义传输。** `FileUploader` 不认识 URL、signal 或 body；取数与传输是宿主的代码，且后端调用只经生成的 api-sdk。`usePageRefresh` 只调用宿主持有的读句柄的 `refetch`，不 import 查询客户端或 api-client，也不自行发出请求。
@@ -52,7 +52,7 @@ export interface AppThemeProviderProps {
   readonly tenantOverrides?: TokensOverride
   readonly defaultMode?: AppThemeModePreference
   readonly presets?: readonly ThemePreset[]     // 可切换的预设货架；缺席或为空即不叠预设层
-  readonly defaultPreset?: string               // 起始预设 id；不在货架里时回落第一项
+  readonly defaultPreset?: string               // 起始预设 id；不在货架里时回退第一项
   readonly children?: ReactNode
 }
 export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
@@ -62,11 +62,11 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 **活动预设是 provider 的局部状态，与颜色模式正交。** `presets` 缺席或为空时不叠任何预设层，`useAppThemePreset` 报 `'default'`；`defaultPreset` 不在货架里时取 `presets[0].id`，不抛错——部署配置写错不该白屏。`setPreset` 只接受货架里的 id，未知 id 忽略。与 `useAppThemeMode` 同样，没有 provider 时 `useAppThemePreset` 抛错，不做静默 no-op。切换预设即重建主题，子树随之重渲染。`@speed/theme-presets` 对本包是类型依赖：只 `import type { ThemePreset }`，预设数据不进运行时。
 
-**等宽字体走模块扩充。** MUI 的排版面没有等宽槽，而 token 树有 `typography.fontFamily.mono`；工厂经 `declare module '@mui/material/styles'` 给它加一个 `fontFamilyMono` 槽并总是填入合并后的取值（主题选项里该字段可选，宿主自行组合主题时不强制）。取值方式与 `fontFamily` 相同，含 `sx` 回调。
+**等宽字体走模块扩充。** MUI 的排版没有等宽槽，而 token 树有 `typography.fontFamily.mono`；工厂经 `declare module '@mui/material/styles'` 给它加一个 `fontFamilyMono` 槽并总是填入合并后的取值（主题选项里该字段可选，宿主自行组合主题时不强制）。取值方式与 `fontFamily` 相同，含 `sx` 回调。
 
 **颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景与文本改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板。六个语义角色同守这条纪律：`main` 是浅色表面上的色调，`light` 是给深色表面的色调，故 `'dark'` 时每个角色的 `main` 取它的 `light` 色调、`contrastText` 取中性色阶的深端（900），使填充控件的标签在该底色上仍可读（对比度判据由测试钉住）。浅色模式下六个角色统一用 token 的 `contrastText`（白色）；warning、info、success 的 `main` 因此取各自的 700 调，使同一个值既作填充底色、又作提示与状态文案的文字色时都满足 4.5:1（[ADR-web-light-contrast](../../../adr/adr-web-light-contrast.md)）。MUI 的悬停填充读角色的 `dark` 槽，token 的最深一档在该标签下不足 4.5:1，故 `'dark'` 时的 `dark` 取 `light` 向白色混入 20% 的色调，既保留悬停步进又守住标签对比度。只覆写 `main` 不会作用于深色模式：给品牌换色需同时给出 `light`。缺省即原行为，未传该入参的宿主逐字节不受影响。
 
-**偏好与已解析模式是两层。** `createAppTheme` 只接受已解析的 `AppThemeMode`；`'system'` 归 provider 解析——它在偏好为 `'system'` 期间读 `prefers-color-scheme: dark` 并订阅其变化，把结果作为 `mode` 交给工厂。引擎没有 `matchMedia`、构造或读取抛错、以及服务端渲染的快照，都解析为 `'light'`。偏好与模式是两份状态，主题预设与它们正交：改偏好只换 `mode`，改预设只换 token 层。
+**偏好与已解析模式是两层。** `createAppTheme` 只接受已解析的 `AppThemeMode`；`'system'` 归 provider 解析——它在偏好为 `'system'` 期间读 `prefers-color-scheme: dark` 并订阅其变化，把结果作为 `mode` 交给工厂。引擎没有 `matchMedia`，构造或读取抛错，以及服务端渲染的快照，都解析为 `'light'`。偏好与模式是两份状态，主题预设与它们正交：改偏好只换 `mode`，改预设只换 token 层。
 
 **返回的主题无本地化，是有意的**：MUI 的内建文本随语言变化，故本地化合并发生在渲染期——`AppThemeProvider` 把活动语言的 MUI 本地化并到基础主题上，或宿主自行 `createTheme(appTheme.theme, muiLocaleFor(i18n.language))`。
 
@@ -74,13 +74,13 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 **主题层承载触摸目标下限。** 粗指针（`pointer: coarse`）下，基础控件的最小宽高为 44×44：`Button`、`IconButton`、`Checkbox`、`Radio`、`Switch`、`ListItemButton` 各有一项，`ButtonBase` 一项覆盖其余以它为根的控件（`Tab`、`MenuItem`、`ToggleButton`、`CardActionArea`、`TableSortLabel` 等）；`InputBase` 的根与输入槽同时取下限，使字段的视觉框与真正接收点击的输入元素都达标；可点击的 `Chip` 按 `MuiChip-clickable` 类取下限，非交互的状态标签保持紧凑。各包由此继承下限，不依赖逐处指定。所有下限声明都嵌在 `@media (pointer: coarse)` 内，细指针下不产生任何声明，桌面观感不变。`Link` 在粗指针下同时改为居中的 `inline-flex` 盒，因为 `min-height` 对非替换行内盒不生效。主题管不到的裸元素——裸 `<a>`、宿主自有的可点元素——由 `touchTargetSx` 兜底（见核心数据结构）。
 
-**主题层同时承载表面映射。** token 的 `surface` 段经工厂解析为 `theme.surface.<角色>`，再经 `theme.components` 落到具体槽位；样式与 `useTheme()` 读同一个值，不会不一致。解析按继承契约把缺省字段换成主题已有的槽：`page` 取 `background.default`，`container` 与 `overlay` 取 `background.paper`，边框取 `divider`（角色给出 `borderColorDark` 时，深色模式取它、浅色模式仍取 `borderColor`），`header` 取中性色阶（浅色 50、深色 900）。角色带 `opacity` 时，解析器把已解析的填充色按该 alpha 转成 `rgba(...)`，明暗两种模式各自转换；填充不是 `#RRGGBB` 时原样保留。`theme.surface` 与组件覆盖读的是同一个解析结果，不会漂移。`SurfaceTheme` 是该值的类型。类型增强声明在主题工厂模块 `theme/createAppTheme.ts`（与等宽字体栈的增强同处），不放在内部模块 `theme/surface.ts`：按产物声明编译的宿主只加载包入口 `.d.ts` 图可达的模块，增强声明落在内部模块时对该类宿主不可见，`theme.surface` 会被读成未知属性。组件覆写为：`MuiCard` 的 `variant="outlined"` 取 container；`MuiDialog`、`MuiMenu`、`MuiPopover` 的 paper、`MuiTooltip` 的 tooltip 与 temporary `MuiDrawer` 的 paper 取 overlay；permanent 与 persistent 抽屉的 paper 取 container；`MuiTableCell.head` 取 header。`MuiPaper.root` 不设覆写，`MuiTableContainer` 不设表面。主题组件表按 `Mui*` 槽深合并：触摸目标下限、表面覆写与页面基线落在同一个组件上时，各组声明都保留。
+**主题层同时承载表面映射。** token 的 `surface` 段经工厂解析为 `theme.surface.<角色>`，再经 `theme.components` 落到具体槽位；样式与 `useTheme()` 读同一个值，不会不一致。解析按继承契约把缺省字段换成主题已有的槽：`page` 取 `background.default`，`container` 与 `overlay` 取 `background.paper`，边框取 `divider`（角色给出 `borderColorDark` 时，深色模式取它、浅色模式仍取 `borderColor`），`header` 取中性色阶（浅色 50、深色 900）。角色带 `opacity` 时，解析器把已解析的填充色按该 alpha 转成 `rgba(...)`，明暗两种模式各自转换；填充不是 `#RRGGBB` 时原样保留。`theme.surface` 与组件覆写读的是同一个解析结果，不会漂移。`SurfaceTheme` 是该值的类型。类型增强声明在主题工厂模块 `theme/createAppTheme.ts`（与等宽字体栈的增强同处），不放在内部模块 `theme/surface.ts`：按产物声明编译的宿主只加载包入口 `.d.ts` 图可达的模块，增强声明落在内部模块时对该类宿主不可见，`theme.surface` 会被读成未知属性。组件覆写为：`MuiCard` 的 `variant="outlined"` 取 container；`MuiDialog`、`MuiMenu`、`MuiPopover` 的 paper、`MuiTooltip` 的 tooltip 与 temporary `MuiDrawer` 的 paper 取 overlay；permanent 与 persistent 抽屉的 paper 取 container；`MuiTableCell.head` 取 header。`MuiPaper.root` 不设覆写，`MuiTableContainer` 不设表面。主题组件表按 `Mui*` 槽深合并：触摸目标下限、表面覆写与页面基线落在同一个组件上时，各组声明都保留。
 
-**页面基线绘制 `page` 表面、文字辉光与画布。** `MuiCssBaseline` 的 body 取 `theme.surface.page.fill` 为背景色；`typography.textGlow` 给出时取同一 body 的 `textShadow`；`color.background.canvas` 给出时按活动模式取 `light` 或 `dark` 的止色，渲染为 `linear-gradient(160deg, from, to)` 与 `background-attachment: fixed`。缺省的页填充等于 `palette.background.default`，另两项缺席时不发声明，故未设置它们的宿主逐字节不变。**绘制次序：背景图在背景色之上**，不透明的画布会盖住页填充；需要页填充参与合成时画布止色自带透明度，以画布作为页面底色的预设不设 `surface.page` 填充。三项与触摸目标、焦点环、表面覆盖、分隔线一起经 `mergeThemeComponents` 按槽深合并。
+**页面基线绘制 `page` 表面、文字辉光与画布。** `MuiCssBaseline` 的 body 取 `theme.surface.page.fill` 为背景色；`typography.textGlow` 给出时取同一 body 的 `textShadow`；`color.background.canvas` 给出时按活动模式取 `light` 或 `dark` 的止色，渲染为 `linear-gradient(160deg, from, to)` 与 `background-attachment: fixed`。缺省的页填充等于 `palette.background.default`，另两项缺席时不发声明，故未设置它们的宿主逐字节不变。**绘制次序：背景图在背景色之上**，不透明的画布会盖住页填充；需要页填充参与合成时画布止色自带透明度，以画布作为页面底色的预设不设 `surface.page` 填充。三项与触摸目标、焦点环、表面覆写、分隔线一起经 `mergeThemeComponents` 按槽深合并。
 
 ### 受控组件
 
-每个组件都是 props 进、回调出；下表给出各自的输入与上报面，详细契约在类型与 README。
+每个组件都是 props 进、回调出；下表给出各自的输入与上报，详细契约在类型与 README。
 
 | 组件 | 输入 | 上报 |
 |---|---|---|
@@ -144,7 +144,7 @@ export interface WriteFeedbackRegionProps {
 export function WriteFeedbackRegion(props: WriteFeedbackRegionProps): JSX.Element
 ```
 
-`run` 是一次尝试的标准形态：先 `reset`，把在途计数加一（`pending` 为真），再等待 `attempt`；`attempt` 以字符串落定即以该串调用 `succeed`，以 `null` 落定则不碰槽位（提权门控接管的写，见「写入的反馈」；槽位在本次尝试自己的 `reset` 之后为空，之后由重叠的尝试或 `succeed`、`fail` 填入的结果照旧保留），抛出则调用 `fail`；最后把在途计数减一。`run` 自身从不抛出。`succeed`、`fail` 与 `reset` 供不能表达为单个 promise 的流程使用，例如登录的逐步答复。`useWriteFeedback` 不取数、不认识 react-query（[REF-tanstack-query](../../../references.md)），状态属于调用它的宿主组件，各回调在组件存续期内引用稳定。宿主可用 `WriteFeedbackPageProvider` 提供页面级协调：作用域挂载时向它登记自己的清除回调，任一作用域写入时由它清空同页其余作用域的槽（见「写入的反馈」的「单槽」）。一次失败的槽还带上该次拒绝声明的等待（`retryAfterSecondsOf` 从错误的 `retryAfterMs` 读整秒），随 `resolve` 的第二个入参交给包的解析器，由它在自己的文案里说出「多久之后再试」。`WriteFeedbackRegion` 把槽渲染为 `InlineSuccess`（成功文案，始终挂载）与 `InlineError`（失败码，失败时才挂载），自己没有文案：成功文案由宿主翻译，失败文本经 `resolve` 取自各包自己的命名空间。各包把 `resolve` 绑定进自己的 `internal/` 包装，与 `InlineError` 的包装同形，调用点只传槽。区域的根容器默认带一个间距单位的上边距，成功与失败两部分共用它，调用方的 `sx` 在其后应用；调用点不单独渲染 `InlineSuccess`。使用条款见「写入的反馈」。
+`run` 是一次尝试的标准形态：先 `reset`，把在途计数加一（`pending` 为真），再等待 `attempt`；`attempt` 以字符串落定即以该串调用 `succeed`，以 `null` 落定则不碰槽位（提权门控接管的写，见「写入的反馈」；槽位在本次尝试自己的 `reset` 之后为空，之后由重叠的尝试或 `succeed`、`fail` 填入的结果照旧保留），抛出则调用 `fail`；最后把在途计数减一。`run` 自身从不抛出。`succeed`、`fail` 与 `reset` 供不能表达为单个 promise 的流程使用，例如登录的逐步答复。`useWriteFeedback` 不取数、不认识 react-query（[REF-tanstack-query](../../../references.md)），状态属于调用它的宿主组件，各回调在组件存续期内引用稳定。宿主可用 `WriteFeedbackPageProvider` 提供页面级协调：作用域挂载时向它登记自己的清除回调，任一作用域写入时由它清空同页其余作用域的槽（见「写入的反馈」的「单槽」）。一次失败的槽还带上该次拒绝声明的等待（`retryAfterSecondsOf` 从错误的 `retryAfterMs` 读整秒），随 `resolve` 的第二个入参交给包的解析器，由它在自己的文案里说出「多久之后再试」。`WriteFeedbackRegion` 把槽渲染为 `InlineSuccess`（成功文案，始终挂载）与 `InlineError`（失败码，失败时才挂载），自己没有文案：成功文案由宿主翻译，失败文本经 `resolve` 取自各包自己的命名空间。各包把 `resolve` 绑定进自己的 `internal/` 包装，与 `InlineError` 的包装一致，调用点只传槽。区域的根容器默认带一个间距单位的上边距，成功与失败两部分共用它，调用方的 `sx` 在其后应用；调用点不单独渲染 `InlineSuccess`。使用条款见「写入的反馈」。
 
 ### 表单校验桥
 
@@ -166,13 +166,13 @@ export const uiKitResources: Readonly<Record<string, ResourceBundle>>
 
 `UI_KIT_NAMESPACE` 是裸名 `ui-kit` 命名空间，宿主在启动处在 i18n 实例上注册一次：`registerNamespace(i18n, UI_KIT_NAMESPACE, uiKitResources)`。**除 TOTP 登记的一对外，每个组件自己渲染的每一条面向用户的字符串都在这里**，zh-CN 与 en-US 键集一致，由注册期校验与工作区的 `no-literal-text` 规则共同守住。组件按各自前缀取键（`pageHeader.*`、`emptyState.*`、`confirmDialog.*`、`sidePanel.*`、`form.*`、`phoneNumber.*`、`dataTable.*`、`fileUploader.*`），经一个绑定到该命名空间的 hook 取文本，因而措辞随活动语言切换、无组件重挂。`TotpQrCode` 与 `TotpEnrollmentPanel` 不取任何键：它们的句子、标签与可及名全部由调用方经 props 传入，命名空间里没有登记件的条目，因为认证器词汇与 `otpauth://` 解析归登记它的表面。
 
-**宿主内容与命名空间默认是两回事**：`EmptyState` 与 `ConfirmDialog` 出命名空间默认的标题与文本，可被 props 覆写；列头与单元格渲染器完全是宿主的翻译面；`PageHeader` 的可见内容（标题、描述、面包屑标签、动作）也是宿主内容，它唯一的自建字符串是面包屑导航地的可及名与折叠展开按钮的标签。**没有组件对宿主给的字符串调用 `t()`。** 宿主改写整套措辞的办法是在启动处注册自己的一对同键 bundle 到 `UI_KIT_NAMESPACE`，而不是改组件里的文本。
+**宿主内容与命名空间默认是两回事**：`EmptyState` 与 `ConfirmDialog` 出命名空间默认的标题与文本，可被 props 覆写；列头与单元格渲染器完全由宿主翻译；`PageHeader` 的可见内容（标题、描述、面包屑标签、动作）也是宿主内容，它唯一的自建字符串是面包屑导航的可及名与折叠展开按钮的标签。**没有组件对宿主给的字符串调用 `t()`。** 宿主改写整套措辞的办法是在启动处注册自己的一对同键 bundle 到 `UI_KIT_NAMESPACE`，而不是改组件里的文本。
 
-### 对外接口面
+### 对外接口
 
 `parseEmailAddress` 把 authn 账户模块的邮箱规范化规则（`NormalizeIdentifier` 的 email 分支）表述在客户端：去空白、可打印 ASCII（0x21 到 0x7e）、恰好一个 `@` 且两侧非空、不超过 254 字节；返回去空白后的地址，不合格返回 `null`。它不改大小写——服务端折叠大小写，而折叠用户正在编辑的值会改掉他们的输入。
 
-`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口面。基线导出之外的接缝：`WriteFeedbackPageProvider`、`useWriteFeedbackPageCoordination` 及其类型 `WriteFeedbackPageCoordination`、`ActionRow`／`ActionButton` 及其 `ActionRowSize`、`ActionEmphasis`、`ActionTone`、`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`OneTimeValuePanelDetail`（`details` 的元素：标签、值与其复制控件的文案）、`TotpQrCode`、`TotpEnrollmentPanel`、`TotpEnrollmentParameter`、`TotpEnrollmentSecret`、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`parseEmailAddress`／`EMAIL_ADDRESS_MAX_BYTES`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`ConfirmDialog.children`／`confirmDisabled`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。公开面的一次改动要与代码、测试、README 与 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有消费方逐字节不受影响。
+`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口。基线导出之外的接口：`WriteFeedbackPageProvider`、`useWriteFeedbackPageCoordination` 及其类型 `WriteFeedbackPageCoordination`、`ActionRow`／`ActionButton` 及其 `ActionRowSize`、`ActionEmphasis`、`ActionTone`、`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`OneTimeValuePanelDetail`（`details` 的元素：标签、值与其复制控件的文案）、`TotpQrCode`、`TotpEnrollmentPanel`、`TotpEnrollmentParameter`、`TotpEnrollmentSecret`、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`parseEmailAddress`／`EMAIL_ADDRESS_MAX_BYTES`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`ConfirmDialog.children`／`confirmDisabled`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有那些在要求 `T` 的地方用到它的使用方无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的使用方仍编译，故可能破坏使用方、是不兼容变更。公开接口的一次改动要与代码、测试、README 以及 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有使用方逐字节不受影响。
 
 ## 依赖
 
@@ -185,7 +185,7 @@ export const uiKitResources: Readonly<Record<string, ResourceBundle>>
 | `zod` | peer（必需，^4） | 表单校验桥 `zodFormResolver` 的 schema 类型；schema 由宿主构造，树里只能有一份 zod |
 | `@speed/tokens`、`@speed/i18n` | 依赖 | 本包映射的 token 树，与全部组件据以渲染的 i18n 实例与绑定 |
 | `@speed/theme-presets` | 依赖（仅类型） | `ThemePreset` 类型；运行时只 `import type`，预设数据不进本包产物。依赖仍写进 `package.json`，构建的 filter 链与 `@speed/tokens` 同处理 |
-| `libphonenumber-js`（[REF-libphonenumber-js](../../../references.md)） | 依赖 | `PhoneNumberField` 与号码助手的逐国家/地区数据：国际区号、随输入分组、号段校验。取它的 `mobile` 元数据集（约 100 KB 原文 / 25 KB gzip 的元数据，另加解析与格式化代码）。选 `mobile` 是因为它带有手机号段模式，长度合法但号段不可能的号码会被拒绝而不是发往短信通道。本包 `sideEffects: false`，不使用该控件的构建会把依赖摇掉 |
+| `libphonenumber-js`（[REF-libphonenumber-js](../../../references.md)） | 依赖 | `PhoneNumberField` 与号码辅助函数的逐国家/地区数据：国际区号、随输入分组、号段校验。取它的 `mobile` 元数据集（约 100 KB 原文 / 25 KB gzip 的元数据，另加解析与格式化代码）。选 `mobile` 是因为它带有手机号段模式，长度合法但号段不可能的号码会被拒绝而不是发往短信通道。本包 `sideEffects: false`，不使用该控件的构建会把依赖摇掉 |
 | `qrcode-generator`（[REF-qrcode-generator](../../../references.md)） | 依赖 | `TotpQrCode` 把调用方的 `otpauth://` 地址编成模块矩阵。本包 `sideEffects: false`，不使用登记一对的构建会把它摇掉 |
 
 框架相邻的 peer 一律是 peer：新加一个框架相邻依赖要在同一提交里给出「单份拷贝」的论证。
@@ -241,7 +241,7 @@ sequenceDiagram
 
 ### token 到 MUI 主题的映射
 
-`createAppTheme` 把合并树映射到 MUI 的 `createTheme` 面：
+`createAppTheme` 把合并树映射到 MUI 的 `createTheme` 入参：
 
 | token 段 | MUI 主题槽 | 适配决策 |
 |---|---|---|
@@ -261,7 +261,7 @@ sequenceDiagram
 | `color.background.canvas` | `MuiCssBaseline` 的 body `backgroundImage` | 按活动模式取 `light` 或 `dark` 的止色，渲染为 `linear-gradient(160deg, from, to)` 与 `backgroundAttachment: fixed`；缺席不发声明 |
 | 触摸目标下限 | `theme.components.*.styleOverrides` | 粗指针下基础控件与可点击 `Chip` 的最小宽高为 44×44；细指针下不产生任何声明 |
 
-阴影斜坡是把 token 的高度槽铺成 MUI 的 25 项数组的确定性做法：`ELEVATION_SLOTS` 按升序，逐高度推进到不高于当前高度的最近槽。MUI 9 接受任意长度的数组，25 项是有意为之，使消费方像对任何原生 MUI 主题一样按下标取 `theme.shadows`。
+阴影斜坡是把 token 的高度槽铺成 MUI 的 25 项数组的确定性做法：`ELEVATION_SLOTS` 按升序，逐高度推进到不高于当前高度的最近槽。MUI 9 接受任意长度的数组，25 项是有意为之，使使用方像对任何原生 MUI 主题一样按下标取 `theme.shadows`。
 
 ### 表面到 theme.components 的映射
 
@@ -274,7 +274,7 @@ sequenceDiagram
 | header | `MuiTableCell.head` |
 | page | `MuiCssBaseline` 的 body `backgroundColor`，取 `theme.surface.page.fill`；缺省等于 `palette.background.default` |
 
-**`MuiCard` 走 `variants` 而不是 `styleOverrides`。** Card 只有 `root` 一个槽，`styleOverrides.outlined` 不会被解析；`props: { variant: 'outlined' }` 的变体是主题组件面里能按 variant 附着样式的写法。圆角不在这里设置：Paper 的根样式读取 `shape.borderRadius`。
+**`MuiCard` 走 `variants` 而不是 `styleOverrides`。** Card 只有 `root` 一个槽，`styleOverrides.outlined` 不会被解析；`props: { variant: 'outlined' }` 的变体是主题组件表里能按 variant 附着样式的写法。圆角不在这里设置：Paper 的根样式读取 `shape.borderRadius`。
 
 **两处不设覆写。** `MuiPaper.root` 不设：MUI 深色模式经 `backgroundImage` 给 elevation Paper 叠一层提亮，清掉它会让 Dialog 与 Menu 在深色下失去层次。`MuiTableContainer` 不设：内容节的表面由 `SectionCard` 承担，表格不再叠第二层表面。
 
@@ -282,7 +282,7 @@ sequenceDiagram
 
 ### 分隔线与菜单表面
 
-**分隔线在两种模式下都由主题画实。** MUI 的 `Divider` 根把每条边归零、再用 CSS 的 `thin` 关键字抬起一条边，背景保持透明，线条的宽度因此交给引擎的默认值。主题的 `MuiDivider` 覆写把可见的那条边显式给出：水平分隔线画 1px 实线的下边，垂直分隔线画 1px 实线的右边，明暗两种模式一致；方向不用的那条边归零，使一条分隔线不带出第二条淡线。颜色按模式取。浅色模式取 `palette.divider`。深色模式下该 token（中性色阶 700）与纸面（中性色阶 800）只差一档，1px 画出来读作没有线，故取 `alpha(palette.text.primary, 0.16)` 的墨色薄层：它相对深色纸面的对比度不低于 1.5:1，同时保持半透明，预设的半透明表面（玻璃预设一类）因此透得出来，不会被一条不透明的线压平。颜色读 palette 而非写死，宿主覆写 `text.primary` 时这条线随之移动。带子节点的分隔线由 MUI 的 with-children 变体经 `::before`／`::after` 画线、根边框本身归零，故该变体只取同一 `borderColor`，几何留给 MUI。实现见 `divider.ts` 的 `dividerComponents` 与 `DARK_RULE_ALPHA`，与其他主题覆写一起经 `mergeThemeComponents` 按槽深合并。
+**分隔线在两种模式下都由主题画实。** MUI 的 `Divider` 根把每条边归零、再用 CSS 的 `thin` 关键字抬起一条边，背景保持透明，线条的宽度因此交给引擎的默认值。主题的 `MuiDivider` 覆写把可见的那条边显式给出：水平分隔线画 1px 实线的下边，垂直分隔线画 1px 实线的右边，明暗两种模式一致；方向不用的那条边归零，使一条分隔线不带出第二条淡线。颜色按模式取。浅色模式取 `palette.divider`。深色模式下该 token（中性色阶 700）与纸面（中性色阶 800）只差一档，1px 画出来如同没有线，故取 `alpha(palette.text.primary, 0.16)` 的墨色薄层：它相对深色纸面的对比度不低于 1.5:1，同时保持半透明，预设的半透明表面（玻璃预设一类）因此透得出来，不会被一条不透明的线压平。颜色读 palette 而非写死，宿主覆写 `text.primary` 时这条线随之移动。带子节点的分隔线由 MUI 的 with-children 变体经 `::before`／`::after` 画线、根边框本身归零，故该变体只取同一 `borderColor`，几何留给 MUI。实现见 `divider.ts` 的 `dividerComponents` 与 `DARK_RULE_ALPHA`，与其他主题覆写一起经 `mergeThemeComponents` 按槽深合并。
 
 **菜单保留预设给出的填充，只添一条描边与一层阴影。** 菜单的纸面取 `overlay` 表面，填充由活动预设给出，半透明预设因此仍是半透明。需要可见边界的宿主在纸面上只添一条 `palette.divider` 色的 1px 描边与一层更深的阴影（取 `theme.shadows`），不改 `background`：用写死的底色覆盖纸面会让预设失效，也把菜单从主题的表面体系里切出去。
 
@@ -327,19 +327,19 @@ sequenceDiagram
 
 ### 语言与本地化的联动
 
-provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，并在 effect 里既重取实例的实时语言、又订阅 `languageChanged`。恢复路径是必要的：子组件的 effect 先于父组件运行，一个在自身挂载 effect 里切换语言的子组件会在本监听器存在之前发事件；换上一个新实例不会为它创建时的语言发事件——两者都由「监听器每次（重）挂时重采纳实例的实时语言」找回。合并本地化经一个落到 en-US MUI 本地化的兜底完成，因为 `createI18n` 的受支持集由宿主选择，可能超出本包携带的 MUI 映射，而渲染路径不能抛错。
+provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，并在 effect 里既重取实例的实时语言，又订阅 `languageChanged`。恢复路径是必要的：子组件的 effect 先于父组件运行，一个在自身挂载 effect 里切换语言的子组件会在本监听器存在之前发事件；换上一个新实例不会为它创建时的语言发事件——两者都由「监听器每次（重）挂时重采纳实例的实时语言」找回。合并本地化经一个落到 en-US MUI 本地化的兜底完成，因为 `createI18n` 的受支持集由宿主选择，可能超出本包携带的 MUI 映射，而渲染路径不能抛错。
 
 ### 表单的校验错误文本
 
-`FormField` 把 react-hook-form 的 `Controller` 折成一段状态：`render` 收到绑定字段与解析后的错误文本。`required` 是便捷开关，注入 `form.required` 规则（除非 `rules` 已带一条）并把自身暴露到渲染状态供宿主打星号。错误消息的解析规则只有一条：**是 `ui-kit` 命名空间的键则渲染其当前语言译文，否则原样渲染**——本包只拥有一个命名空间，只在该命名空间里解析键，从不猜另一个命名空间的码。`REQUIRED_ERROR_KEY` 是给自建规则的宿主用的导出键。
+`FormField` 把 react-hook-form 的 `Controller` 折成一段状态：`render` 收到绑定字段与解析后的错误文本。`required` 是便捷开关，注入 `form.required` 规则（除非 `rules` 已带一条）并把自身带进渲染状态供宿主打星号。错误消息的解析规则只有一条：**是 `ui-kit` 命名空间的键则渲染其当前语言译文，否则原样渲染**——本包只拥有一个命名空间，只在该命名空间里解析键，从不猜另一个命名空间的码。`REQUIRED_ERROR_KEY` 是给自建规则的宿主用的导出键。
 
 ### 表格的受控与列优先级
 
 `DataTable` 的 `rows` 契约是「宿主此刻想显示的行的集合」——组件从不重排或重切，因为隐式二次排序会打乱宿主刚取到的服务端分页，切片会藏起分页标签仍在计数的行。排序与过滤因此只是状态回显加回调。选择经 `onSelectionChange` 开启，表头复选框只切换当前渲染的行。进行中的加载只在 `rows` 为空时显示一行状态，从不中途清空内容。
 
-**列优先级是可加的可选重排**：一列的 `priority` 在容器窄于该档宽度时隐藏它，档位取自 token 的共享断点标度——`low` 在较高档之上才显示、最先被丢弃，`high` 在最低档之上即显示、最后被丢弃；未设优先级的列永不隐藏，使未设任何优先级的宿主逐字节不受影响。隐藏是纯 CSS（单元格上一个容器查询键控的 `display`），不是 JS 布局判定。表格始终包在 MUI 的 `TableContainer` 里，其默认为包装器给 `overflow-x: auto`，是超出宽度的水平滚动兜底。
+**列优先级是可加的可选重排**：一列的 `priority` 在容器窄于该档宽度时隐藏它，档位取自 token 的共享断点标度——`low` 在较高档之上才显示、最先被丢弃，`high` 在最低档之上即显示、最后被丢弃；未设优先级的列永不隐藏，使未设任何优先级的宿主逐字节不受影响。隐藏是纯 CSS（单元格上一个容器查询键控的 `display`），不是 JS 布局判定。表格始终包在 MUI 的 `TableContainer` 里，其默认包装器给出 `overflow-x: auto`，是超出宽度的水平滚动兜底。
 
-**行操作列的钉住是可加的可选开关**：整表给 `pinLastColumn` 时，表格最后一列（宿主放行操作列的位置）的表头与每一行单元格取 `position: sticky` 与 `right: 0`，主列横向滚动时贴住容器右缘；单元格取不透明的表面色，滚动到其下的内容不透过，起始缘以一条细分隔线标出边界。未给该开关的宿主逐字节不受影响，表格本就放得下时钉子也不起作用；管理后台账户页在窄视口开启它，使「管理」与「删除」在主列滚动时仍可达。
+**行操作列的钉住是可加的可选开关**：整表给 `pinLastColumn` 时，表格最后一列（宿主放行操作列的位置）的表头与每一行单元格取 `position: sticky` 与 `right: 0`，主列横向滚动时贴住容器右缘；单元格取不透明的表面色，滚动到其下的内容不透过，起始缘以一条细分隔线标出边界。未给该开关的宿主逐字节不受影响，表格本就放得下时钉住也不起作用；管理后台账户页在窄视口开启它，使「管理」与「删除」在主列滚动时仍可达。
 
 ### 单元格的折行策略
 
@@ -347,7 +347,7 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 ### 单元格的完整值
 
-`DataTableColumn.cellFullValue` 是逐列的选择性声明，供单元格内容可能被截断或只显示一部分的列（标识符、键、码）：它返回一行的完整值，表格把它渲染成单元格的 `title`（悬停可得），并在单元格内容旁放一个可聚焦的复制控件（键盘与触摸可用，复制经实时区域播报），完整文本因此不依赖容器的滚动位置才可达。单元格里显示的内容仍由 `cell` 决定，可以是完整值的缩写。未声明的列逐字节不受影响；对某一行返回 `undefined` 时，该行既没有 `title` 也没有复制控件。标识符列通常同时声明 `cellWrap: 'nowrap'`。`DataTableColumn.contentMaxWidth` 是逐列的选择性声明，取数值，或取 `{ belowMd, fromMd }` 的命名对，包内转成容器查询，调用方不接触容器查询的写法：它约束整个单元格内容，即文本与完整值的复制控件合计，文本在上限内截断，复制控件不被截断也不额外超出；只约束文本会让带复制控件的列总是比声明的上限宽出一个控件的宽度。未声明的列逐字节不受影响。共用的上限值由本包导出：主辨识列的 `PRIMARY_COLUMN_MAX_WIDTH`（`{ belowMd: 160, fromMd: 200 }`）与其余长文本列的 `LONG_TEXT_COLUMN_MAX_WIDTH`（160），各页不内联数字，也不再另导出派生常量。`DataTable` 的 `rowVerticalAlign` 是整行的纵向对齐开关：缺省保持 MUI 的居中；取 `'top'` 时整行单元格顶对齐，`cellFullValue` 的复制控件也对齐到单元格内容的顶部而不是垂直中点，供主格在标识之下另叠多行散文的表使用（设置页的键与其说明、声明默认值）。
+`DataTableColumn.cellFullValue` 是逐列的选择性声明，供单元格内容可能被截断或只显示一部分的列（标识符、键、码）：它返回一行的完整值，表格把它渲染成单元格的 `title`（悬停可得），并在单元格内容旁放一个可聚焦的复制控件（键盘与触摸可用，复制经实时区域播报），完整文本因此不依赖容器的滚动位置才可达。单元格里显示的内容仍由 `cell` 决定，可以是完整值的缩写。未声明的列逐字节不受影响；对某一行返回 `undefined` 时，该行既没有 `title` 也没有复制控件。标识符列通常同时声明 `cellWrap: 'nowrap'`。`DataTableColumn.contentMaxWidth` 是逐列的选择性声明，取数值，或取 `{ belowMd, fromMd }` 的命名对，包内转成容器查询，调用方不接触容器查询的写法：它约束整个单元格内容，即文本与完整值的复制控件合计，文本在上限内截断，复制控件不被截断也不额外超出；只约束文本会让带复制控件的列总是比声明的上限宽出一个控件的宽度。未声明的列逐字节不受影响。共用的上限值由本包导出：主辨识列的 `PRIMARY_COLUMN_MAX_WIDTH`（`{ belowMd: 160, fromMd: 200 }`）与其余长文本列的 `LONG_TEXT_COLUMN_MAX_WIDTH`（160），各页不内联数字，也不再另导出派生常量。`DataTable` 的 `rowVerticalAlign` 是整行的纵向对齐开关：缺省保持 MUI 的居中；取 `'top'` 时整行单元格顶对齐，`cellFullValue` 的复制控件也对齐到单元格内容的顶部而不是垂直中点，供主格在标识之下另叠多行说明文字的表使用（设置页的键与其说明、声明默认值）。
 
 ### 双次确认与锁定窗口
 
@@ -361,7 +361,7 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 **版式。** 纸张占满视口高度，头部（标题、描述、关闭按钮）固定，内容区是面板内唯一的滚动层，内边距取主题间距。可选的 `actions` 页脚位于滚动层之下、同样固定，渲染为一条靠右的操作行（`medium` 档），使任务自身的提交与取消在正文滚动时始终可达。`size` 的 `medium` 取固定宽度 36rem，`wide` 取 52rem；视口在 `sm` 及以上取该宽度，`sm` 以下占满视口宽度。层级取 `theme.zIndex.modal`。内容区宽度是面板宽度减去内边距：两列版式的 `FormLayout` 在 `medium` 内容区内低于它两列起算的容器宽度（`sm`），收为一列；在 `wide` 内容区内高于它，保持两列。
 
-**关闭。** 关闭按钮、Escape 与遮罩点击三条路径都只调用 `onClose`，组件从不自行把 `open` 置假；宿主可以在 `onClose` 里拒绝关闭，例如有未保存内容时先请求确认。`busy` 为真时关闭按钮禁用，Escape 与遮罩点击不上报，与 `ConfirmDialog` 的 `confirmLoading` 同形。`onExited` 在退出过渡结束时调用一次：此时背后的页面已恢复对辅助技术可见，面板仍在文档中，内容在紧随其后的渲染提交里卸载。
+**关闭。** 关闭按钮、Escape 与遮罩点击三条路径都只调用 `onClose`，组件从不自行把 `open` 置假；宿主可以在 `onClose` 里拒绝关闭，例如有未保存内容时先请求确认。`busy` 为真时关闭按钮禁用，Escape 与遮罩点击不上报，与 `ConfirmDialog` 的 `confirmLoading` 一致。`onExited` 在退出过渡结束时调用一次：此时背后的页面已恢复对辅助技术可见，面板仍在文档中，内容在紧随其后的渲染提交里卸载。
 
 **内容的存续。** 面板关闭后内容卸载；退出过渡期间渲染宿主此刻传入的子节点，宿主在发出关闭的同一次状态批里清掉内容，面板就带着空白滑出，因此需要内容保留到退出结束的宿主在 `onExited` 里清理。面板内的局部状态随卸载丢失，需要跨关闭保留的状态（表单的字段值）由宿主持有。
 
@@ -369,27 +369,27 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 ### 上传队列的 settle 播报
 
-`FileUploader` 在把 `rows` 与上一次提交比对后决定播报：一行离开 `uploading` 进入已结算状态、或一行被追加时已是结算态（其传输整段跑在宿主代码里、从未渲染过 `uploading` 提交），就在一个礼貌的实时区域里播报一次，按渲染时的活动语言渲染。宿主挂载时种下的行、以 `uploading` 追加的行、只有进度变化的行、以及宿主把 `failed` 直接治愈成 `succeeded` 的行都保持安静。重复路径仍可闻：一次重试（`failed` 回到 `uploading`）先清空区域；一次结算的播报文本与在座文本相同（同名行再次同样结局）时先清空、下一 tick 再播报——实时区域只在文本变化时发声。播报的目标行必须是当前 `rows` 仍携带的行；宿主更新行集合可能落在挂起的再播报与其 0ms 定时器之间，故再播报在触发时重按最新已提交的 `rows` 校验目标行仍在且仍是被播报的结算态，否则保持沉默。进度分数在渲染时折叠进 `[0, 1]`（缺失为不确定条，NaN 与非有限值折算）。
+`FileUploader` 在把 `rows` 与上一次提交比对后决定播报：一行离开 `uploading` 进入已结算状态、或一行被追加时已是结算态（其传输整段跑在宿主代码里、从未渲染过 `uploading` 提交），就在一个礼貌的实时区域里播报一次，按渲染时的活动语言渲染。宿主挂载时种下的行、以 `uploading` 追加的行、只有进度变化的行、以及宿主把 `failed` 直接变为 `succeeded` 的行都保持安静。重复路径仍可闻：一次重试（`failed` 回到 `uploading`）先清空区域；一次结算的播报文本与当前文本相同（同名行再次同样结局）时先清空、下一 tick 再播报——实时区域只在文本变化时发声。播报的目标行必须是当前 `rows` 仍携带的行；宿主更新行集合可能落在挂起的再播报与其 0ms 定时器之间，故再播报在触发时重按最新已提交的 `rows` 校验目标行仍在且仍是被播报的结算态，否则保持沉默。进度分数在渲染时折叠进 `[0, 1]`（缺失为不确定条，NaN 与非有限值折算）。
 
 ### 异步读的状态分支
 
 `AsyncSection` 拥有一个异步读的状态映射，使各表面不各自漂移：`pending` 渲染加载播报；已结算的 `payload` 为 `undefined` 渲染可重试的错误占位；`empty` 载荷渲染空占位（对不可能为空的表面可省）；否则内容回调以收窄后的载荷渲染。`ListSkeleton` 是列表读的进行中占位：它拥有播报契约（一个带可及名与 `aria-busy` 的 `role="status"` 区域）与行信封，行的长相由调用方给。
 
-**读的刷新失败保留旧数据并标明。** 已有数据时的刷新失败不清空内容。刷新有两类来源：操作者点击的刷新，与自动重读——页面重新挂载、标签页由隐藏变为可见（查询客户端的聚焦重读只监听可见性变化）、重新联网与写入后的失效再取。`staleState` 由调用方在最近一次刷新失败、数据仍在屏且读不在进行中时给出，其余时候不给；组件自身不观察失败，与其余状态由调用方预先推导同形。`payload` 已结算（含空载荷）且 `staleState` 给出时，内容或空占位照常渲染，并在其上渲染一条 `role="alert"` 提示与重试动作：提示的严重度是 warning，与内容之间隔两个间距单位，`staleState.description` 为空串时仍渲染提示与重试动作。重试一发出，调用方撤回 `staleState`，提示在读进行中卸载；再次失败时提示重新挂载，使 `role="alert"` 再次被播报。`staleState.description` 是调用方的文案，须说明所示内容可能已过期。提示撤销时若焦点在提示内（键盘激活重试，或提示在屏期间发生自动重读），焦点交给留在屏上的已结算内容容器（可编程聚焦，不进入 Tab 序列），不回落到文档正文；已经移到别处的焦点不被抢回。`staleState` 只用于不使旧数据失去意义的失败：权限被撤（403）这类失败由调用方以对应占位替换内容，不经 `staleState`。`staleState` 缺省不渲染，行为不变。
+**读的刷新失败保留旧数据并标明。** 已有数据时的刷新失败不清空内容。刷新有两类来源：操作者点击的刷新，与自动重读——页面重新挂载、标签页由隐藏变为可见（查询客户端的聚焦重读只监听可见性变化）、重新联网与写入后的失效再取。`staleState` 由调用方在最近一次刷新失败、数据仍在屏且读不在进行中时给出，其余时候不给；组件自身不观察失败，与其余由调用方预先推导的状态一致。`payload` 已结算（含空载荷）且 `staleState` 给出时，内容或空占位照常渲染，并在其上渲染一条 `role="alert"` 提示与重试动作：提示的严重度是 warning，与内容之间隔两个间距单位，`staleState.description` 为空串时仍渲染提示与重试动作。重试一发出，调用方撤回 `staleState`，提示在读进行中卸载；再次失败时提示重新挂载，使 `role="alert"` 再次被播报。`staleState.description` 是调用方的文案，须说明所示内容可能已过期。提示撤销时若焦点在提示内（键盘激活重试，或提示在屏期间发生自动重读），焦点交给留在屏上的已结算内容容器（可编程聚焦，不进入 Tab 序列），不回退到文档正文；已经移到别处的焦点不被抢回。`staleState` 只用于不使旧数据失去意义的失败：权限被撤（403）这类失败由调用方以对应占位替换内容，不经 `staleState`。`staleState` 缺省不渲染，行为不变。
 
-**拒绝由调用方判定，经 `refusedState` 交给本组件。** `refusedState` 与 `staleState` 同形都是调用方预先推导的状态标记，取值是 `{title, description}`（无权限 `EmptyState` 的文案）；非 pending 时它替换内容、空占位与错误分支，且不提供重试——拒绝之后的重试只会再被拒绝。ui-kit 不读 403、不认识任何权限语义：判定与文案都属于调用方，缺省时各分支逐字节不变。
+**拒绝由调用方判定，经 `refusedState` 交给本组件。** `refusedState` 与 `staleState` 结构相同，都是调用方预先推导的状态标记，取值是 `{title, description}`（无权限 `EmptyState` 的文案）；非 pending 时它替换内容、空占位与错误分支，且不提供重试——拒绝之后的重试只会再被拒绝。ui-kit 不读 403、不认识任何权限语义：判定与文案都属于调用方，缺省时各分支逐字节不变。
 
 **刷新控件在读进行中带 `aria-busy`，不置原生 `disabled`。** 被刷新重读的读有任一在进行中时，控件保持原生可聚焦并报告忙态（`RefreshButton` 自带指示器），再次激活不发第二次请求、也不排队。原生禁用只用于另外两种理由：其一，页面任一反馈作用域有写入在途（重读会与写入竞争）；其二，页面的寻址取值为空、没有可重读的读，此时控件以 `aria-describedby` 指向页面原有的选择提示，使禁用原因可被感知。把读进行中渲染成原生禁用会让聚焦的控件失去焦点、焦点落回文档，键盘用户按下 Enter 后要从页首重新 Tab，故不是该状态的表现。`staleState` 缺省不渲染，行为不变。
 
 ### 刷新动作
 
-页面不轮询、不推送，刷新动作是对账手段：标签页一直停在前台、数据在别处被改动时，操作者用它立即重读。控件与机制成对：`RefreshButton` 是控件，`usePageRefresh` 是机制，两者只依赖 React、MUI 与本包自己的文案接缝（`RefreshButton` 经 `src/internal/translation.ts` 读本包命名空间），不 import 查询客户端、api-client 或传输。
+页面不轮询、不推送，刷新动作是对账手段：标签页一直停在前台、数据在别处被改动时，操作者用它立即重读。控件与机制成对：`RefreshButton` 是控件，`usePageRefresh` 是机制，两者只依赖 React、MUI 与本包自己的文案接口（`RefreshButton` 经 `src/internal/translation.ts` 读本包命名空间），不 import 查询客户端、api-client 或传输。
 
-**机制只重读宿主交来的读。** 页面把描述页面主体的每一个读经 `pageRefreshRead(key, handle, options?)` 交给机制；句柄按结构读取（`isEnabled`、`isFetching`、`status`、`dataUpdatedAt`、`isPlaceholderData`、`refetch`），本包不 import 查询客户端、api-client 或传输。刷新先调用调用方的 `reset`（上下文变化：旧的写入结果会被读成描述另一个上下文），再重读此刻启用的每个读；禁用的读跳过（重读会发出缺实参的请求），解析到同一查询键的读只重读一次并通知该键的每个落定回调。`keyDriven` 标记由页面移动键来重读的读：它参与播报判定，但不发出旧键的 `refetch`。`options.enabled` 覆盖读自身的启用状态（页面知道某个读不在主体上时）。
+**机制只重读宿主交来的读。** 页面把描述页面主体的每一个读都经 `pageRefreshRead(key, handle, options?)` 交给机制；句柄按结构读取（`isEnabled`、`isFetching`、`status`、`dataUpdatedAt`、`isPlaceholderData`、`refetch`），本包不 import 查询客户端、api-client 或传输。刷新先执行调用方的 `reset`（上下文变化：旧的写入结果会被读成描述另一个上下文），再重读此刻启用的每个读；禁用的读跳过（重读会发出缺实参的请求），解析到同一查询键的读只重读一次并通知该键的每个落定回调。`keyDriven` 标记由页面更换键来重读的读：它参与播报判定，但不发出旧键的 `refetch`。`options.enabled` 覆盖读自身的启用状态（页面知道某个读不在主体上时）。
 
-**更新时间与完成播报。** `updatedAt` 取参与读中最近一次成功落定的最旧时刻：换键后仍以旧值在屏的读沿用换键前的时刻，特性缺席或从未落定的读不计，没有任何读落定时不渲染。每次点击把 `announcements` 归零，使相同文本再次填入也构成变化；被本次刷新重读的每个读都在不早于点击时刻成功落定后，计数加一；任一失败或一次被拒绝的重读抑制播报。自动重读不播报，也不 `reset`——它重读的可能正是刚落定的那次写入。
+**更新时间与完成播报。** `updatedAt` 取参与读中最近一次成功落定的最旧时刻：换键后仍以旧值在屏的读沿用换键前的时刻，属性缺席或从未落定的读不计，没有任何读落定时不渲染。每次点击把 `announcements` 归零，使相同文本再次填入也构成变化；被本次刷新重读的每个读都在不早于点击时刻成功落定后，计数加一；任一失败或一次被拒绝的重读抑制播报。自动重读不播报，也不 `reset`——它重读的可能正是刚落定的那次写入。
 
-**控件把三种状态分开。** 读忙态是 `aria-busy` 加可聚焦（见「异步读的状态分支」）；写入在途是原生禁用且不带说明；寻址取值为空是原生禁用并带页面自己的选择提示。可见文字由调用方传入本包既有译文键（`admin-ui` 为 `common.refresh`、objectstore 为 `page.refresh`），本包只在调用方未传时用 `refreshButton.label`；`ariaLabel` 供重读对象比页面更具体的场合，且必须以可见文字起头。
+**控件把三种状态分开。** 读忙态是 `aria-busy` 加可聚焦（见「异步读的状态分支」）；写入在途是原生禁用且不带说明；寻址取值为空是原生禁用并带页面自己的选择提示。可见文字由调用方传入本包既有译文键（`admin-ui` 为 `common.refresh`、objectstore 为 `page.refresh`），本包只在调用方未传时用 `refreshButton.label`；`ariaLabel` 供重读对象比页面更具体的场合使用，且必须以可见文字起头。
 
 admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 `internal/refresh-button.tsx` 与 `internal/use-page-refresh.ts` 的内部副本。
 
@@ -397,25 +397,25 @@ admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 
 
 **`CopyButton` 承载剪贴板动作，`OneTimeValuePanel` 只负责呈现。** `CopyButton` 把 `value` 写入本机剪贴板并在礼貌实时区域里播报；没有 `visibleLabel` 时是 `DataTable` 在 `cellFullValue` 旁渲染的图标控件，给出 `visibleLabel` 时是小的描边文字按钮。`label`／`copiedLabel` 缺省取 `copyButton.*` 文案；`pinned` 供 `contentMaxWidth` 上限内的单元格，控件拒绝收缩。无剪贴板 API（非安全上下文）或被拒绝的写入都保持安静，不让页面失败。`OneTimeValuePanel` 是一次性值（邀请链接、令牌）的展示：调用方持有值与生命周期，组件不持状态，取 `message`、`value`、`copyLabel`、可选 `details`（每条带标签、值与自己复制控件的详情）、`closeLabel`、`closeAriaLabel` 与 `onClose`；整块是一个 `role="status"` 区域，值用主题的 `fontFamilyMono` 渲染，不可断的值随处断行，复制由内部控件自行播报。
 
-**两个显示偏好上下文只转交、不校验。** `DisplayTimeZoneProvider` 携带 IANA 时区名（[REF-iana-tz](../../../references.md)）或 `undefined`（纯校验器在 `@speed/i18n`，本包不重复实现），`useDisplayTimeZone` 在缺席时返回 `undefined`，由各渲染面套自己的兜底（设备时区、已存偏好）。`PhoneCountryDefaultProvider` 携带首选 ISO alpha-2（[REF-iso3166](../../../references.md)）国家码或 `undefined`，`usePhoneCountryDefault` 有值时返回它、否则回落到既有的 `defaultPhoneCountry()`。两者的缺省都是 `undefined`，未挂 provider 的树逐字节不变。
+**两个显示偏好上下文只转交、不校验。** `DisplayTimeZoneProvider` 携带 IANA 时区名（[REF-iana-tz](../../../references.md)）或 `undefined`（纯校验器在 `@speed/i18n`，本包不重复实现），`useDisplayTimeZone` 在缺席时返回 `undefined`，由各渲染方套自己的兜底（设备时区、已存偏好）。`PhoneCountryDefaultProvider` 携带首选 ISO alpha-2（[REF-iso3166](../../../references.md)）国家码或 `undefined`，`usePhoneCountryDefault` 有值时返回它、否则回退到既有的 `defaultPhoneCountry()`。两者的缺省都是 `undefined`，未挂 provider 的树逐字节不变。
 
 ### 写入的反馈
 
 一次写入的结果落在一个**反馈作用域**里：作用域是一个 `useWriteFeedback` 实例加一个 `WriteFeedbackRegion`，区域紧贴发起写入的控件组之下。**一个结果位置只有一个槽**：共用同一个结果位置的写控件属于同一个控件组，也只有一个作用域，不按动作各开一个。**控件组**是共用同一个结果位置的一组写控件，通常是页面上一个带标题的节，含它的表单与表内行内动作；一张表及其行内动作是一组。这条说明是判据，各包按自己的页面应用它，具体划分在各包的设计文档里。下列条款绑定每一个以反馈作用域报告写入结果的界面，各 UI 包以自己的错误码解析器与文案使用它们（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。
 
-**单槽，后落定的结果替换前一条。** 作用域持有至多一个结果。`reset` 清空槽位，不取消在途的尝试；`succeed(message)` 与 `fail(error)` 各自替换槽位，后落定的结果因此替换先落定的那条，同一结果位置不会同时出现两条结果，成功与失败也不会同时出现在一个作用域里。**宿主挂了 `WriteFeedbackPageProvider` 时，同页至多一条结果**：任一作用域的 `run` 开始、`succeed` 或 `fail` 落定先清空同页其它作用域的槽，以最后落定者为准；`reset` 只清自己，取消或上下文变化不清掉别组的确认。provider 只做协调，不持有槽、不渲染界面；没有 provider 时各作用域的槽互不影响，库的独立使用保持单作用域语义。`pending` 在任一在途尝试落定之前为真。每次新的写尝试以 `reset` 开头，包括被客户端校验拒绝、没有发出请求的提交，使上一次的服务端失败不与本次的字段错误并存。上下文变化也调用 `reset`，判据是变化之后旧结果会被读成描述另一个上下文，例如租户或所选对象改变、翻页、操作者点击的刷新与离开该节；自动重读不是上下文变化，不调用 `reset`。结果不自动消失：本接缝不设计时器，槽里的结果保留到下一次尝试的 `reset` 或上下文变化，`WriteFeedbackRegion` 与 `useWriteFeedback` 都不加自动清除。`fail` 经 `errorCodeOf` 把任意抛出值折成码，文本由区域的 `resolve` 解析，不取 API 的 `message`。成功文案是调用 `succeed` 时刻的译文快照，不随之后的语言切换更新，语言切换也不是 `reset` 的触发；失败码经 `resolve` 随活动语言重新渲染。写入本身会切换语言的动作（偏好节的语言写入）在切换落定之后才调用 `succeed`，使确认文案取自新语言。
+**单槽，后落定的结果替换前一条。** 作用域持有至多一个结果。`reset` 清空槽位，不取消在途的尝试；`succeed(message)` 与 `fail(error)` 各自替换槽位，后落定的结果因此替换先落定的那条，同一结果位置不会同时出现两条结果，成功与失败也不会同时出现在一个作用域里。**宿主挂了 `WriteFeedbackPageProvider` 时，同页至多一条结果**：任一作用域的 `run` 开始、`succeed` 或 `fail` 落定先清空同页其它作用域的槽，以最后落定者为准；`reset` 只清自己，取消或上下文变化不清掉别组的确认。provider 只做协调，不持有槽、不渲染界面；没有 provider 时各作用域的槽互不影响，库的独立使用保持单作用域语义。`pending` 在任一在途尝试落定之前为真。每次新的写尝试以 `reset` 开头，包括被客户端校验拒绝、没有发出请求的提交，使上一次的服务端失败不与本次的字段错误并存。上下文变化也调用 `reset`，判据是变化之后旧结果会被读成描述另一个上下文，例如租户或所选对象改变、翻页、操作者点击的刷新与离开该节；自动重读不是上下文变化，不调用 `reset`。结果不自动消失：本接口不设置计时器，槽里的结果保留到下一次尝试的 `reset` 或上下文变化，`WriteFeedbackRegion` 与 `useWriteFeedback` 都不加自动清除。`fail` 经 `errorCodeOf` 把任意抛出值折成码，文本由区域的 `resolve` 解析，不取 API 的 `message`。成功文案是调用 `succeed` 时刻的译文快照，不随之后的语言切换更新，语言切换也不是 `reset` 的触发；失败码经 `resolve` 随活动语言重新渲染。写入本身会切换语言的动作（偏好节的语言写入）在切换落定之后才调用 `succeed`，使确认文案取自新语言。
 
 **写入在途时，改变其作用域上下文的控件禁用。** 在途尝试落定时照常替换槽位，不因 `reset` 被丢弃；改变某作用域上下文的控件（租户选择器、所选对象的选择器、翻页与刷新）因此在该作用域 `pending` 时禁用，使 `reset` 之后不会有先前上下文发起的尝试落定。
 
-**发起控件在写入进行中禁用并标忙。** 禁用即原生 `disabled`，不响应再次点击；标忙即 MUI `Button` 的 `loading`，与 `ConfirmDialog` 的 `confirmLoading` 同形；写入落定后恢复可用。写入由对话框确认发起时，对话框关闭后焦点回到触发控件，该控件随即进入禁用，焦点落回 `body`；结果由区域播报，不强制把焦点移回。
+**发起控件在写入进行中禁用并标忙。** 禁用即原生 `disabled`，不响应再次点击；标忙即 MUI `Button` 的 `loading`，与 `ConfirmDialog` 的 `confirmLoading` 一致；写入落定后恢复可用。写入由对话框确认发起时，对话框关闭后焦点回到触发控件，该控件随即进入禁用，焦点落回 `body`；结果由区域播报，不强制把焦点移回。
 
 **一个动作是一次尝试。** 一个动作含多次请求（批量保存）时，以一次 `run` 结算：`attempt` 内等待全部请求落定（`mutateAsync` 配 `Promise.allSettled`），不用逐次 `mutate` 的回调，因为同一个 mutation 观察者的逐次回调只对最后发起的请求触发，它的 `isPending` 也只反映那一次。有失败时以提交顺序中第一个失败项的码抛出，失败项的草稿保留，成功项的草稿清掉。重叠的动作各自 `await` 一次调用，在途状态取自作用域的 `pending`，不共用一个观察者的逐次回调、`isPending` 与 `variables`。
 
 **被 401 步进不足拒绝的写由提权门控接管。** 这样的拒绝不是整次尝试的失败：`attempt` 把它交给门控后以 `null` 落定，不碰槽位、不调用 `fail`；挑战成功后的重放是一次新的 `run`；取消步进不留任何结果。
 
-**成功确认是默认。** 每个由操作者发起、落定且无一失败的动作都落一条成功文案，由宿主翻译，并点明被改动的对象：表单级与批量写入点明种类（「设置已保存」），行内动作、矩阵单元与逐项写入进一步点明那一行或那一项。含多次请求的动作只在整个动作完成时落一条；部分落地的批量以失败结算，不为已落地的各项另落成功文案，操作者靠保留草稿的失败项与待保存计数得知尚未落地的部分；多步流程的中间答复不单独确认，确认落在流程完成处。结果本身是一次性值的动作（只交出一次的令牌、服务密钥）另有展示面板，面板不替代成功文案：它由宿主组件自持，渲染在同一控件组之下、与区域并列，不经槽，因此不受 `reset`、`succeed`、`fail` 影响；它是单个 `role="status"` 的 live region，带一个显式关闭的按钮，可及名含它所属的租户、提供方、域名或账户的显示名；保留到操作者显式关闭或离开页面；同一控件组再次发放时，新值替换旧值。
+**成功确认是默认。** 每个由操作者发起、落定且无一失败的动作都落一条成功文案，由宿主翻译，并点明被改动的对象：表单级与批量写入点明种类（「设置已保存」），行内动作、矩阵单元与逐项写入进一步点明那一行或那一项。含多次请求的动作只在整个动作完成时落一条；部分落地的批量以失败结算，不为已落地的各项另落成功文案，操作者靠保留草稿的失败项与待保存计数得知尚未落地的部分；多步流程的中间答复不单独确认，确认落在流程完成处。结果本身是一次性值的动作（只交出一次的令牌、服务密钥）另有展示面板，面板不替代成功文案：它由宿主组件自持，渲染在同一控件组之下、与区域并列，不经槽，因此不受 `reset`、`succeed`、`fail` 影响；它是单个 `role="status"` 的实时区域，带一个显式关闭的按钮，可及名含它所属的租户、提供方、域名或账户的显示名；保留到操作者显式关闭或离开页面；同一控件组再次发放时，新值替换旧值。
 
-**队列式界面每项自成一个槽。** 一组并发、互相独立的逐项传输（`FileUploader` 的各行）不占用页面的反馈作用域：行的状态与错误是该行的结果，重试把行回到进行中即该行的 `reset`，失败文本取自错误码，结算播报点名文件；一次选取 N 个文件是 N 次尝试。
+**队列式界面每项自成一个槽。** 一组并发、互相独立的逐项传输（`FileUploader` 的各行）不占用页面的反馈作用域：行的状态与错误是该行的结果，重试把行改回进行中即该行的 `reset`，失败文本取自错误码，结算播报点名文件；一次选取 N 个文件是 N 次尝试。
 
 **一个反馈作用域同一时刻至多渲染一条整次尝试的失败横幅。** 区域里的失败横幅出现时，同一作用域内其它来源的失败横幅先被清掉，反之亦然；浏览器端通行密钥仪式（[REF-webauthn](../../../references.md)）的失败是这种来源的一例——它是客户端原因，文本取自本包 bundle 的键而非 API 码，不进槽。任一次尝试开始与任一次 `succeed` 都清掉该来源的横幅。
 
@@ -430,14 +430,14 @@ admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 
 | 校验错误消息不是 `ui-kit` 键（宿主本地化文本或宿主码） | 原样渲染，不猜别的命名空间 |
 | 整次尝试失败经 `InlineError` 渲染 | 非空码渲染一个 `role="alert"` 的错误横幅，`null` 不渲染；`detail` 给出的补充内容渲染在同一横幅内，随横幅一次性播报 |
 | 整次尝试成功经 `InlineSuccess` 渲染 | 始终挂载一个 `role="status"` 区域；`null` 时裁剪静默，非空时填文播报 |
-| `errorCodeOf` 收到非 ApiError 形状的抛出，含读取 `.code` 即抛出的值 | 坍缩到一个没有解析器会列出的码（`client.unknown`），由解析器渲染其未知兜底——操作只要抛了错就总有一个码可显示 |
+| `errorCodeOf` 收到非 ApiError 结构的抛出，含读取 `.code` 即抛出的值 | 折叠到一个没有解析器会列出的码（`client.unknown`），由解析器渲染其未知兜底——操作只要抛了错就总有一个码可显示 |
 | 活动语言超出 MUI 映射表 | provider 落到 en-US MUI 本地化，不抛错；应用自身译文仍按活动语言渲染 |
 | `muiLocaleFor` 被直呼且标签未知 | 抛错（直呼者要主题装配期的响亮失败） |
 | `SidePanel` 的 `busy` 为真时收到关闭请求（按钮、Escape、遮罩点击） | 不调用 `onClose` |
 | `SidePanel` 关闭时打开它的元素已不在文档中（例如面板内移除了列表中的那一行） | 焦点落回 `body`；宿主在 `onExited` 里自行落点 |
 | 同一反馈作用域内两次尝试几乎同时落定 | 后落定者占槽，先落定者的结果被替换 |
 | `reset` 时作用域仍有尝试在途（改变上下文的控件未按规则禁用的宿主） | 在途尝试落定时照常替换槽位，不被丢弃 |
-| `fail` 收到非 ApiError 形状的抛出 | 经 `errorCodeOf` 坍缩到 `client.unknown`，区域经 `resolve` 渲染其未知兜底 |
+| `fail` 收到非 ApiError 结构的抛出 | 经 `errorCodeOf` 折叠到 `client.unknown`，区域经 `resolve` 渲染其未知兜底 |
 | 写入被 401 步进不足拒绝，`attempt` 交给门控后以 `null` 落定 | 不碰槽位、不调用 `fail`（槽位在本次尝试自己的 `reset` 之后为空）；重放是一次新的 `run` |
 | `succeed` 或 `run` 以空串落定 | 槽位存该空串，成功区域渲染一条没有文字的横幅；调用方须传非空文案 |
 | 语言切换时槽里是成功文案 | 文案保持调用 `succeed` 时的译文；失败码随活动语言重新渲染 |
@@ -447,20 +447,20 @@ admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 
 | `AsyncSection` 的陈旧提示卸载时焦点在提示内 | 焦点交给留在屏上的已结算内容容器，不落到文档正文；焦点已在别处时不抢回 |
 | `AsyncSection` 非 pending、`refusedState` 给出 | 无权限占位替换内容、空占位与错误分支，不提供重试 |
 | `httpStatusOf` 同时读到数字 `status` 与 `client.http.<n>` 码 | 取数字 `status`（应答自身的字段优先） |
-| `httpStatusOf` 两种形状都没有，或读取即抛出 | 返回 `null`，从不抛出 |
+| `httpStatusOf` 两种结构都没有，或读取即抛出 | 返回 `null`，从不抛出 |
 | `CopyButton` 在无剪贴板 API 的上下文或被拒绝的写入 | 保持安静，不渲染播报，不让页面失败 |
 | `OneTimeValuePanel` 关闭 | 只调用 `onClose`；值的去留是调用方的状态 |
 
-命名空间键集在工作区 `no-literal-text` 规则与注册期校验下守住；组件内不出现语言字面量。本包无降级、无重试面。
+命名空间键集在工作区 `no-literal-text` 规则与注册期校验下守住；组件内不出现语言字面量。本包无降级、无重试接口。
 
 ## 扩展点
 
 - **新增一个组件。** 它自带的所有面向用户的字符串进 `ui-kit` 命名空间的双语文案，且在同一提交内给两门语言各加一键、结构一致；组件经绑定到该命名空间的 hook 取文本，不硬编码。组件若像 TOTP 登记的一对那样完全由调用方给文案，则命名空间不增键，契约在类型与 README 里说明。
 - **宿主改写措辞。** 在启动处向 `UI_KIT_NAMESPACE` 注册自己的一对同键 bundle（结构一致、措辞自定），`uiKitResources` 只是发布的默认。
-- **表单错误解析的可插层。** `zodFormResolver` 提供的 zod → `react-hook-form` 解析桥就是这一档；校验错误契约是它接入的接缝：解析层可以产出任意消息，表单家族照契约渲染。宿主也可以自行实现该接缝（例如从生成类型派生自己的 schema）。
-- **改表面风格。** 覆写 token 的 `surface` 角色（`fill`、`opacity`、`backdropFilter`、`borderColor` 等），不改页面与组件；一种新风格是 token 取值，不是组件的新 prop 或主题工厂的新参数。成品风格以 `@speed/theme-presets` 的 `ThemePreset` 数据交给 provider，本包只负责把它合进项目层之前并映射成主题。
+- **表单错误解析的可插层。** `zodFormResolver` 提供的 zod → `react-hook-form` 解析桥就是这一档；校验错误契约是它接入的扩展点：解析层可以产出任意消息，表单家族照契约渲染。宿主也可以自行实现该扩展点（例如从生成类型派生自己的 schema）。
+- **改表面风格。** 覆写 token 的 `surface` 角色（`fill`、`opacity`、`backdropFilter`、`borderColor` 等），不改页面与组件；一种新风格是 token 取值，不是组件的新 prop 或主题工厂的新参数。成品风格以 `@speed/theme-presets` 的 `ThemePreset` 数据交给 provider，本包只负责把它并到项目层之前、再映射成主题。
 - **新增一个内容节。** 它落在 `SectionCard` 上，标题层级从 `h2` 起；不手写 `Paper` 或裸 `section` 表面。
-- **可加性的默认等于原行为。** 面向已有消费方新加一个行为时，把新行为的缺省设成原行为（`FormLayout.columns` 缺省单列、`DataTableColumn.priority` 缺省常显），使未传该 prop 的宿主逐字节不受影响。
+- **可加性的默认等于原行为。** 面向已有使用方新加一个行为时，把新行为的缺省设成原行为（`FormLayout.columns` 缺省单列、`DataTableColumn.priority` 缺省常显），使未传该 prop 的宿主逐字节不受影响。
 
 ## 实现状态
 
@@ -487,8 +487,8 @@ admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 
 | `AsyncSection` 的 `staleState` | 已实现 | `web/packages/ui-kit/src/components/AsyncSection.tsx` `AsyncSection`、`AsyncSectionStaleState` |
 | 表单家族与校验错误契约 | 已实现 | `web/packages/ui-kit/src/components/FormField.tsx` `FormField`、`REQUIRED_ERROR_KEY`；`web/packages/ui-kit/src/components/FormLayout.tsx` `FormLayout`；`web/packages/ui-kit/src/internal/validation-error.ts` `resolveValidationError` |
 | 表单校验的 zod 解析桥 | 已实现 | `web/packages/ui-kit/src/zod-form-resolver.ts` `zodFormResolver`、`INVALID_ERROR_KEY` |
-| `PhoneNumberField` 与电话号码助手 | 已实现 | `web/packages/ui-kit/src/components/PhoneNumberField.tsx` `PhoneNumberField`；`web/packages/ui-kit/src/phone-number.ts` `toE164`、`validatePhoneNumber`、`defaultPhoneCountry` |
-| 邮箱地址规则助手（服务端规则的客户端表述） | 已实现 | `web/packages/ui-kit/src/email-address.ts` `parseEmailAddress`、`EMAIL_ADDRESS_MAX_BYTES` |
+| `PhoneNumberField` 与电话号码辅助函数 | 已实现 | `web/packages/ui-kit/src/components/PhoneNumberField.tsx` `PhoneNumberField`；`web/packages/ui-kit/src/phone-number.ts` `toE164`、`validatePhoneNumber`、`defaultPhoneCountry` |
+| 邮箱地址规则辅助函数（服务端规则的客户端表述） | 已实现 | `web/packages/ui-kit/src/email-address.ts` `parseEmailAddress`、`EMAIL_ADDRESS_MAX_BYTES` |
 | 数据表与列优先级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`、`columnVisibilitySx` |
 | 数据表的内容宽度上限 `contentMaxWidth`（约束文本与复制控件合计） | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTableColumn` 的 `contentMaxWidth`、`PRIMARY_COLUMN_MAX_WIDTH`、`LONG_TEXT_COLUMN_MAX_WIDTH` |
 | 数据表的完整值访问器 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTableColumn` 的 `cellFullValue` |

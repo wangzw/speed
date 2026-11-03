@@ -2,11 +2,11 @@
 
 ## 职责
 
-本能力交付**对象的字节存取、元数据生命周期与直连地址**：一份字节连同它的元数据被存下来，此后按标识读回、列举与删除，并可为业务前端铸出一条读写该字节的地址。字节的物理存放归一条**字节接缝** `Store`，元数据、生命周期状态机与内容路由归一个**排他的模块** `objectstore.metadata`，它持有 `objects` 表与 `object_grants` 表，排他交付生命周期的接缝 `Objects`。
+本能力交付**对象的字节存取、元数据生命周期与直连地址**：一份字节连同它的元数据存下来，此后按标识读回、列举与删除，并可为业务前端铸出一条读写该字节的地址。字节的物理存放归一个**字节接口** `Store`，元数据、生命周期状态机与内容路由归一个**排他的模块** `objectstore.metadata`，它持有 `objects` 表与 `object_grants` 表，排他交付生命周期的接口 `Objects`。
 
 本能力是给**业务后端**用的能力，不是给终端用户用的功能。业务后端在进程内经 `objectstore.Objects` 声明、上传、完成、取址、列举与删除；业务前端**从不**调用对象存储自己的结构化 API，只用一条直连地址读写字节（例如 `<img src>`）。一条直连地址在交给某个终端用户之前是否被允许，是**业务后端**的判断：本能力不拥有通用对象权限，只校验租户与对象状态。
 
-一个对象经**声明**（落一行 `pending`，带上尺寸与内容类型的声明，开一个上传窗口）→ **上传**（字节经 `Store` 以内部键存下，状态转 `uploaded`；字节可以由业务后端经 `Upload` 送入，也可以由前端按直连写地址直传）→ **完成**（`Stat` 核对字节，状态转 `completed`）落地。字节与元数据分开存放：元数据在数据库里，字节在后端接缝背后，两者各自由持有它的一方负责。
+一个对象经**声明**（落一行 `pending`，带上尺寸与内容类型的声明，开一个上传窗口）→ **上传**（字节经 `Store` 以内部键存下，状态转 `uploaded`；字节可以由业务后端经 `Upload` 送入，也可以由前端按直连写地址直传）→ **完成**（`Stat` 核对字节，状态转 `completed`）落地。字节与元数据分开存放：元数据在数据库里，字节在后端接口背后，两者各自由持有它的一方负责。
 
 **字节与键是本模块自己的事。** 一份字节在后端里以一个**内部键**定位：键是**随机不透明串**，由本模块生成，不含租户标识与对象标识，**不出现在任何结构化应答、错误文本与日志**里。调用方拿到的是对象标识 `id`，不是键；`Store` 是字节进出的唯一通道，元数据模块不 import 任何后端 SDK。
 
@@ -16,7 +16,7 @@
 
 **`Store` 的每个实现都排他交付**：一个进程里恰好一个生效，多于一个表态启用即启动失败（照 `pkg/sms` 的载体形态）。`fs` 落在本地目录，`s3` 落在 S3（[REF-amazon-s3](../../references.md)）兼容的对象存储；`s3` 另交付可选能力 `DirectURL`，`fs` 不交付。不装 `s3` 的装配不背那个 SDK（[architecture](../architecture.md) 不变量 11）。根包是接口包与公共类型，不登记模块（[ADR-objectstore-packaging](../../adr/adr-objectstore-packaging.md)）。
 
-**HTTP 面只有内容路由**：`metadata` 只挂 `/content`（GET/HEAD/PUT），且只在装配的字节后端不交付 `DirectURL` 时挂出（见「内容路由」与「装配契约」）。业务前端没有别的对象存储接口可调。
+**HTTP 接口只有内容路由**：`metadata` 只挂 `/content`（GET/HEAD/PUT），且只在装配的字节后端不交付 `DirectURL` 时挂出（见「内容路由」与「装配契约」）。业务前端没有别的对象存储接口可调。
 
 ### 非职责
 
@@ -26,7 +26,7 @@
 - **不解释对象的内容与用途。** `Object.MIME` 是不透明值，`Declaration.Name` 是调用方给的标签，本模块只把它规整后存下、不读它的含义；本模块不知道一份字节是票据、头像还是日志归档。
 - **不认识内部键之外的存储布局。** 键的语法是本模块的私有约定；`fs` 与 `s3` 各自把它映射到自己的后端拼写（相对路径、对象键），映射细节不进接口，也不出现在任何应答里。
 - **不写审计行。** 本模块在根包声明审计动作的类型名常量，由宿主在不可逆的迁移点显式把事件发上总线（见「审计动作」）；本模块只声明动作的名字，不写审计行，也不点审计模块为依赖。
-- **不提供供终端用户调用的对象 CRUD 面。** 本模块挂出的路由只有内容路由，它服务签名地址，不进 OpenAPI（[REF-openapi](../../references.md)）；声明、列举与删除都只在进程内经 `Objects` 调用。
+- **不提供供终端用户调用的对象 CRUD 接口。** 本模块挂出的路由只有内容路由，它服务签名地址，不进 OpenAPI（[REF-openapi](../../references.md)）；声明、列举与删除都只在进程内经 `Objects` 调用。
 - **不排队、不重试。** 一次上传与一次读取都是同步调用，`Store` 的方法在后端调用返回后才返回；后端不可达即那次调用失败，是否重试归调用方。
 - **不保证多副本下的字节可见性。** `fs` 的字节只在本进程能到达的目录里；多副本共享一份字节要用 `s3`（见「后端适配」与「错误与失败语义」的非保证）。
 
@@ -35,8 +35,8 @@
 ### 交付的功能
 
 ```go
-// Store 是字节存取的接缝：对象的字节经它进出。内部键由交付 Objects 的模块生成，
-// 本接缝不承诺它的语法，实现只按自身后端把它映射到位。
+// Store 是字节存取的接口：对象的字节经它进出。内部键由交付 Objects 的模块生成，
+// 本接口不承诺它的语法，实现只按自身后端把它映射到位。
 type Store interface {
     // Name 报告实现名，供诊断。
     Name() string
@@ -128,7 +128,7 @@ type Object struct {
     // 租户列由内嵌的 tenant.Model 提供。
 }
 
-// Objects 是元数据与生命周期的接缝，由 metadata 模块排他交付。
+// Objects 是元数据与生命周期的接口，由 metadata 模块排他交付。
 type Objects interface {
     Create(ctx context.Context, d Declaration) (Object, error)
     Upload(ctx context.Context, id string, r io.Reader, size int64) error
@@ -161,12 +161,12 @@ type ListQuery struct {
 }
 
 var (
-    ErrObjectNotFound   error // 本租户看不见的对象：未知 id、他人租户、已删除，一律同形，不泄露存在性
+    ErrObjectNotFound   error // 本租户看不见的对象：未知 id、他人租户、已删除，一律相同，不泄露存在性
     ErrStateConflict    error // 当前状态不允许这个动作
     ErrContentMissing   error // 后端在这个键下没有字节：行说完成而字节不在，或字节从未到达
-    ErrStoreUnavailable error // 字节接缝缺席或后端不可达
+    ErrStoreUnavailable error // 字节接口缺席或后端不可达
     ErrInvalidConfig    error // 配置跑不起来
-    ErrInvalidRequest   error // 请求形状不可读；Complete 发现的字节长度不符也用它表达
+    ErrInvalidRequest   error // 请求格式不合法；Complete 发现的字节长度不符也用它表达
     ErrURLUnavailable   error // 本进程铸不出地址：装配的后端不铸址，且本进程不服务内容路由
 )
 ```
@@ -180,7 +180,7 @@ var (
 - `Create` 校验 `Declaration`（`Size` 大于零、`ContentType` 非空、`ChecksumSHA256` 为空或 64 位十六进制），生成对象标识与随机内部键，落一行 `pending`，写 `name`、`declared_size`、`declared_type`、`declared_checksum` 与 `upload_expires_at = now + upload-window`，返回该对象。`Name` 不参与校验，按下文「名字的规整」存入。校验不过即 `ErrInvalidRequest`，不落行。
 - `Upload` 取该行，要求状态为 `pending` 或 `uploaded`、上传窗口未关、`size` 参数等于 `declared_size`；字节经 `Store.Put(内部键, r, size)` 存下，同时以流式读出实际字节数与 SHA-256；声明了校验和而不符即拒绝；写 `size`、`checksum_sha256`、`mime`（取 `declared_type`），状态转 `uploaded`。前置不符答 `ErrStateConflict`（状态不符或窗口已关）或 `ErrInvalidRequest`（字节数与声明不符），均在写字节之前拦下。
 - `Complete` 接受 `pending` 与 `uploaded`：先经 `Store.Stat(内部键)` 核对后端持有的字节数，不符即 `ErrInvalidRequest` 并尽力删掉字节、行保持原状态；字节不在后端即 `ErrContentMissing`；核对通过后条件 UPDATE 转 `completed`，写观测尺寸、`mime` 与按 `object-ttl` 算出的 `expires_at`。`completed` 原样返回该行、不改状态，也不再 `Stat`；`deleted` 与未知 id 答 `ErrObjectNotFound`。
-- `Get` 返回该对象；`deleted` 与不存在同形，答 `ErrObjectNotFound`。
+- `Get` 返回该对象；`deleted` 与不存在相同，答 `ErrObjectNotFound`。
 - `OpenContent` 只对 `completed` 开放（`pending`／`uploaded` 答 `ErrStateConflict`，`deleted` 答 `ErrObjectNotFound`），经 `Store.Open(内部键)` 返回字节的只读流，读取方负责关闭它；`Store` 里找不到该行的字节即 `ErrContentMissing`。
 - `URL` 为一个对象铸一条直连地址：装配了 `DirectURL` 的后端直接给出预签名地址，本地目录后端给出本进程内容路由上的一条带令牌地址（见「直连地址的铸造」）。读地址要求状态 `completed` 且未过期；写地址要求 `pending` 或 `uploaded` 且上传窗口未关；状态不符答 `ErrStateConflict`，对象不可见答 `ErrObjectNotFound`，本进程铸不出地址答 `ErrURLUnavailable`。
 - `List` 返回本租户**未删除**的对象，按 `(created_at, id)` 升序，取 `Limit` 行，游标见「列表的键集游标」。
@@ -191,13 +191,13 @@ var (
 | 包 | 模块名 | 交付 | 排他 |
 |---|---|---|---|
 | `pkg/objectstore` | 不登记 | `Store`、`DirectURL`、`Objects` 接口与 `Blob`、`URLAccess`、`URLRequest`、`IssuedURL`、`PresignParams`、`State`、`Object`、`Declaration`、`ListQuery` 公共类型、审计动作类型名常量、工厂与哨兵 | — |
-| `pkg/objectstore/metadata` | `objectstore.metadata` | `Objects`（元数据与生命周期面）、直连地址的铸造、内容路由与 `object_grants` 表 | 排他 |
+| `pkg/objectstore/metadata` | `objectstore.metadata` | `Objects`（元数据与生命周期接口）、直连地址的铸造、内容路由与 `object_grants` 表 | 排他 |
 | `pkg/objectstore/fs` | `objectstore.fs` | `Store`（本地目录后端） | 排他 |
 | `pkg/objectstore/s3` | `objectstore.s3` | `Store` 与 `DirectURL`（S3 兼容后端） | 排他 |
 
 模块名照顶层能力：裸名 `objectstore`，叶子 `objectstore.<名>`，配置命名空间取同一取值（对照 `sms`/`sms.registry`、`kv`/`kv.redis`）。每个登记模块的包导出自己的 `ModuleName` 常量。
 
-**`DirectURL` 是可声明的可选能力，不是 `Store` 的必选方法，也不是裸类型断言。** 一个后端在它的 `Spec` 里把 `Direct` 置真，工厂便把 `DirectURL` 与 `Store` 一并声明为交付；实例仍是 `Open` 返回的同一个值，同时实现两个接缝（与 `pkg/sms`、`pkg/authz/policy`、`pkg/audit/journal` 的「一模块一实例多 token」同形），`core.assertDelivered` 在构造时逐一校验。
+**`DirectURL` 是可声明的可选能力，不是 `Store` 的必选方法，也不是裸类型断言。** 一个后端在它的 `Spec` 里把 `Direct` 置真，工厂便把 `DirectURL` 与 `Store` 一并声明为交付；实例仍是 `Open` 返回的同一个值，同时实现两个接口（与 `pkg/sms`、`pkg/authz/policy`、`pkg/audit/journal` 的「一模块一实例多 token」一致），`core.assertDelivered` 在构造时逐一校验。
 
 **`fs` 不 import 任何对象存储 SDK，也不认识 URL。** 它的依赖只有标准库与根包，因此一个只用本地目录的装配不背任何 SDK；它不 import `pkg/http`、不持有任何密钥、不交付 `DirectURL`。**`s3` 绑它自己的 SDK**（`github.com/minio/minio-go/v7` v7.3.0 及其 `pkg/credentials` 子包，[REF-minio-go](../../references.md)），SDK 只被 `pkg/objectstore/s3` 这一个实现子包 import，不进根包、不进 `fs`，也不进 `metadata`。
 
@@ -219,7 +219,7 @@ const (
 
 ### 内容路由
 
-内容路由是本进程为本地目录后端发出的直连地址所服务的面：一条地址就是 `/content` 加查询串里的一个令牌。
+内容路由是本进程为本地目录后端发出的直连地址所服务的接口：一条地址就是 `/content` 加查询串里的一个令牌。
 
 | 方法 路径 | 处理器 | 用途 |
 |---|---|---|
@@ -235,9 +235,9 @@ const (
 
 **内容路由不进 OpenAPI。** 它服务签名地址，不是客户端 API；发布进契约只会生成让调用方自己造 URL 的 SDK 操作。
 
-### 宿主可见面
+### 宿主可见的接口
 
-以下是宿主写进配置文件或设置存储、或在命令树上点名的面。
+以下是宿主写进配置文件或设置存储、或在命令树上点名的接口。
 
 - **模块名**：`objectstore.metadata`、`objectstore.fs`、`objectstore.s3`。宿主的命令树点模块名纳入，配置与设置的命名空间取同一取值；`fs` 与 `s3` 二选一纳入（都排他）。
 - **配置命名空间与输入项**：`objectstore.metadata` 下的 `content-endpoints`（字符串列表，只收具体端名、不收 `*`、不重复；有路由器且装配的后端不交付 `DirectURL` 时必填，空清单即 `Init` 启动失败；后端交付 `DirectURL` 时不被读取）、`public-url`（字符串，铸造地址时拼在前面的外部源，无尾斜杠，空则产出根相对地址）、`sweep-interval`（时长，缺省 `1m`，`≤0` 即关闭清扫，取主配置源）；`objectstore.fs` 下的 `root`（字符串，必填，本地目录，取主配置源）；`objectstore.s3` 下的 `endpoint`、`region`、`bucket`、`access-key`、`secret-key`、`use-path-style`（布尔）。
@@ -268,11 +268,11 @@ http:
 
 `Init` 写一条启动诊断：挂了哪些端点，或「后端直接铸址，内容路由未挂载」。
 
-### 对外接口面
+### 对外接口
 
-- `Store`、`DirectURL`、`Objects`、`Blob`、`PresignParams`、`URLAccess`、`URLRequest`、`IssuedURL`、`State`、`Object`、`Declaration`、`ListQuery` 的字段与方法集，以及本能力的全部哨兵，是与调用方之间的接口面。加方法、改签名或改字段名对实现了接缝的后端、对取用它们的调用方都是不兼容变更；`Store` 的 `Stat` 是新增的必需方法，本仓之外的自定义实现编译期即失败。
+- `Store`、`DirectURL`、`Objects`、`Blob`、`PresignParams`、`URLAccess`、`URLRequest`、`IssuedURL`、`State`、`Object`、`Declaration`、`ListQuery` 的字段与方法集，以及本能力的全部哨兵，是与调用方之间的接口。加方法、改签名或改字段名对实现了接口的后端、对取用它们的调用方都是不兼容变更；`Store` 的 `Stat` 是新增的必需方法，本仓之外的自定义实现编译期即失败。
 - `Object` 的字段语义：`ID` 是对象标识、`Key` 是内部键、`State` 取 `pending`／`uploaded`／`completed`／`deleted` 之一、`Size` 与 `Checksum` 是上传后记录的实际值（`s3` 直连上传的 `Checksum` 为空串）、`MIME` 是内容类型、`ExpiresAt` 可空。
-- **内部键从不经 API 暴露。** `Object.Key` 是模块的内部字段（导出，但不进任何对外面）：它不进任何外部可见面，不进错误文本，日志里也不记它（日志以对象标识或该键的截断摘要指认对象）。改键的语法是内部变更，不影响调用方。`Store` 的 `key` 参数同样是内部键，接口不规定它的语法，实现只按自身后端把它映射到位。
+- **内部键从不经 API 暴露。** `Object.Key` 是模块的内部字段（导出，但不进任何对外接口）：它不进任何外部可见的接口，不进错误文本，日志里也不记它（日志以对象标识或该键的截断摘要指认对象）。改键的语法是内部变更，不影响调用方。`Store` 的 `key` 参数同样是内部键，接口不规定它的语法，实现只按自身后端把它映射到位。
 - **一条直连地址是一个不透明值。** 调用方只能把 `IssuedURL.URL` 与 `IssuedURL.Method` 整体交给客户端，不得解析、拼接或改写地址的内部结构；`s3` 的地址在路径里带对象键，`fs` 的地址在查询串里带令牌，两处都是本能力自己的约定。
 - 单个 `Store` 实现、`metadata` 模块各自可替换、可撤掉，不改变调用方的代码。
 
@@ -280,12 +280,12 @@ http:
 
 | 哨兵 | 定义处 | 含义 |
 |---|---|---|
-| `ErrObjectNotFound` | `pkg/objectstore` | 本租户看不见的对象：未知 id、他人租户、已删除，一律同形，不泄露存在性 |
+| `ErrObjectNotFound` | `pkg/objectstore` | 本租户看不见的对象：未知 id、他人租户、已删除，一律相同，不泄露存在性 |
 | `ErrStateConflict` | `pkg/objectstore` | 当前状态不允许这个动作：未上传就取读址、已完成就取写址、上传窗口已关 |
 | `ErrContentMissing` | `pkg/objectstore` | 后端在该键下没有字节：行说完成而字节不在，或 `Complete` 与 `Stat` 遇到字节从未到达 |
-| `ErrStoreUnavailable` | `pkg/objectstore` | 字节接缝缺席或后端不可达 |
+| `ErrStoreUnavailable` | `pkg/objectstore` | 字节接口缺席或后端不可达 |
 | `ErrInvalidConfig` | `pkg/objectstore` | 配置跑不起来：输入项缺失、取值不可用，或模块与自身性质不符 |
-| `ErrInvalidRequest` | `pkg/objectstore` | 请求形状不可读：`Declaration` 的形状不合法、一次上传的字节数与声明不符，或 `Complete` 发现的字节长度不符 |
+| `ErrInvalidRequest` | `pkg/objectstore` | 请求格式不合法：`Declaration` 的格式不合法、一次上传的字节数与声明不符，或 `Complete` 发现的字节长度不符 |
 | `ErrURLUnavailable` | `pkg/objectstore` | 装配铸不出地址：装配的后端不铸址，且本进程不服务内容路由 |
 
 调用方以 `errors.Is` 判别，包裹一律用 `%w`。一次字节操作失败若带后端自家的错误，`metadata` 把它连同 `ErrStoreUnavailable` 一并收口成 503。错误文本不携带内部键与令牌，也不复述凭据。
@@ -301,7 +301,7 @@ http:
 | `pkg/tenant` | `objectstore.metadata`：租户上下文、内嵌的 `tenant.Model`、语句过滤插件与 `Enter` |
 | `pkg/log` | `objectstore.s3` 直接 import；工厂取可选 `log.Logger`、以模块名绑定后交给 `Open`，实现持有它并记录每一次出站调用；工厂在 `New` 里登记各后端凭据的字面量脱敏匹配器；`metadata` 记诊断 |
 | `pkg/internal/literal` | 构造并登记字面量匹配器（各后端的凭据） |
-| `pkg/http` | `objectstore.metadata`：可选，入口模块的端点与路由面，挂内容路由 |
+| `pkg/http` | `objectstore.metadata`：可选，入口模块的端点与路由接口，挂内容路由 |
 | `github.com/gin-gonic/gin`（[REF-gin](../../references.md)） | `objectstore.metadata`：处理器签名 |
 | S3 SDK | 只被 `pkg/objectstore/s3` import |
 
@@ -313,7 +313,7 @@ http:
 
 ## UML 图
 
-本能力的结构是一条字节接缝、一条可选的直连能力与一条生命周期接缝，以及它们各自的实现。图里的约束不在图中：`fs` 与 `s3` 之间是**互斥**的，`metadata` 排他交付 `Objects`——图上看不出这一点，因为排他性由描述符声明、由消解阶段裁定，不是类型之间的关系。`metadata` **不 import 任何后端实现子包**，只经根包的 `Store` 与 `DirectURL` 接缝触达字节；`DirectURL` 缺席时由 `metadata` 自己的内容路由发地址。
+本能力的结构是一个字节接口、一项可选的直连能力与一个生命周期接口，以及它们各自的实现。图里的约束不在图中：`fs` 与 `s3` 之间是**互斥**的，`metadata` 排他交付 `Objects`——图上看不出这一点，因为排他性由描述符声明、由消解阶段裁定，不是类型之间的关系。`metadata` **不 import 任何后端实现子包**，只经根包的 `Store` 与 `DirectURL` 接口触达字节；`DirectURL` 缺席时由 `metadata` 自己的内容路由发地址。
 
 ```mermaid
 classDiagram
@@ -394,7 +394,7 @@ classDiagram
     s3Store ..|> Store
     s3Store ..|> DirectURL
     metadataImpl ..|> Objects
-    metadataImpl ..> Store : 字节经接缝以内部键存取
+    metadataImpl ..> Store : 字节经接口以内部键存取
     metadataImpl ..> DirectURL : 可选；缺席时由内容路由发地址
     DirectURL ..> PresignParams
     DirectURL ..> IssuedURL
@@ -443,9 +443,9 @@ stateDiagram-v2
 
 本模块在 `objects` 表上建索引：`(tenant_id, created_at)` 服务 `List` 的键集游标；`upload_expires_at` 与 `expires_at` 各一条服务过期清扫。
 
-**内部键是两段随机十六进制：`<8 hex>/<32 hex>`，128 位随机。** 它只由 `metadata` 生成、只交给字节接缝，受 `checkSegment`／`keyMaxLen` 的可映射检查约束。键不含租户标识与对象标识，一条外泄的预签名地址因此不携带任何内部标识；既有行的旧键保持有效，两种键 `fs` 的路径映射与 `s3` 的对象键都能处理，无需回填。
+**内部键是两段随机十六进制：`<8 hex>/<32 hex>`，128 位随机。** 它只由 `metadata` 生成、只交给字节接口，受 `checkSegment`／`keyMaxLen` 的可映射检查约束。键不含租户标识与对象标识，一条外泄的预签名地址因此不携带任何内部标识；既有行的旧键保持有效，两种键 `fs` 的路径映射与 `s3` 的对象键都能处理，无需回填。
 
-**`object_grants` 表**，一行一条内容路由的令牌授权，租户作用域，内嵌 `tenant.Model`。模型的主键一部分是 `token_hash`，跨租户按 `token_hash` 查走该列上的唯一索引。
+**`object_grants` 表**，一行一条内容路由的令牌授权，租户作用域，内嵌 `tenant.Model`。模型的主键一部分是 `token_hash`，跨租户按 `token_hash` 查询走该列上的唯一索引。
 
 | 列 | 含义 |
 |---|---|
@@ -458,7 +458,7 @@ stateDiagram-v2
 
 另有 `expires_at` 上的索引服务清扫。**令牌是 `crypto/rand` 的 32 字节，`base64.RawURLEncoding` 编码为 43 个字符；库里只存它的 SHA-256 小写十六进制，明文令牌从不落库。** 不签名，只存行：没有密钥，因此没有首启造钥、没有轮换、没有多副本共享密钥，也没有「换密钥作废在途地址」这件事。
 
-**首次读表不得早于 `Init`。** `New` 早于 `Migrate`，`New` 里这些表还不存在，本模块因此不在 `New` 读表；路由在 `Init` 里只登记、不读表。第一次读表落在 `Start`：清扫的第一次 pass。清扫被关掉（`sweep-interval ≤ 0`）时，第一次读表是 `Serve` 阶段的第一条请求。
+**首次读表不得早于 `Init`。** `New` 早于 `Migrate`，`New` 里这些表还不存在，本模块因此不在 `New` 读表；路由在 `Init` 里只登记、不读表。第一次读表落在 `Start`：清扫的第一次 pass。清扫关闭（`sweep-interval ≤ 0`）时，第一次读表是 `Serve` 阶段的第一条请求。
 
 **名字在入口规整一次。** `Create` 把声明的 `Name` 规整后写入 `name`，之后的每个读取方拿到的都是同一个值。存入的值满足：合法 UTF-8；不含 Unicode 类别（[REF-unicode-uax44](../../references.md)）为 Cc、Cf、Zl、Zp 的字符（控制字符、格式字符含方向控制与零宽字符、行分隔符与段分隔符），这些字符被丢弃；不含 `/` 与 `\`，它们被替换为 `_`；首尾无空白；至多 255 字节且不在字符中间截断，截断之后再去一次首尾空白；不是只由 `.` 组成，那样的名字存为空串。省略、空串与规整后为空同义，都存为空串。规整不去掉引号与分号，不检查扩展名，不保留末尾的扩展名。`name` 没有观测值一侧，`Object` 交出的就是存入的值；既有行的 `name` 为空串。
 
@@ -480,7 +480,7 @@ stateDiagram-v2
 
 ### 直连地址的铸造
 
-`URL()` 的输入是对象标识与 `URLRequest`，输出是一条 `IssuedURL`。读址与写址共用同一条路径，只在状态判定与地址来源上分叉：
+`URL()` 的输入是对象标识与 `URLRequest`，输出是一条 `IssuedURL`。读址与写址共用同一条路径，只在状态判定与地址来源上不同：
 
 1. `Access` 只接受 `read`／`write`，否则 `ErrInvalidRequest`；`Expiry < 0` 同理。
 2. 按租户取行；未知、他人租户、已删除 → `ErrObjectNotFound`。
@@ -530,13 +530,13 @@ blob.Size != row.DeclaredSize
 
 ### 过期清扫的 ticker
 
-`metadata` 模块在 `Start` 起一个 ticker、`Stop` 停，间隔取 `objectstore.metadata.sweep-interval`，**`≤0` 即关闭**（与既有各模块自起的 ticker 同形：间隔 `≤0` 关掉、失败只 `Warn`、各自持有停机制约）。每 tick 跑一次清扫 pass：
+`metadata` 模块在 `Start` 起一个 ticker、`Stop` 停，间隔取 `objectstore.metadata.sweep-interval`，**`≤0` 即关闭**（与既有各模块自起的 ticker 一致：间隔 `≤0` 关掉，失败只 `Warn`，各自持有停机制约）。每 tick 跑一次清扫 pass：
 
 - `pending` 且 `upload_expires_at < now`：窗口已关。**不能假定后端没有字节**——一次 `Put` 成功而置行失败的上传会让字节暂留在后端——所以先经 `Store.Delete(内部键)` 删字节（`Delete` 幂等），再把行置 `deleted` 墓碑。
 - `completed` 且 `expires_at` 非空且 `< now`：先经 `Store.Delete(内部键)` 删字节（`Delete` 幂等），再把行置 `deleted` 墓碑。
 - 删掉 `expires_at < now` 的授权行。正确性不依赖这一条（每次使用都比对到期），它只负责让表不无限增长。
 
-一条 pass 的读与写都在数据库自己的事务里，`Store.Delete` 在数据库事务之外发出（后端不在数据库事务里）。删除字节失败只记 `Warn`、行不动，下一个 pass 重试。时间判定取**数据库的时钟**。同一行上的两次清扫、清扫与并发的 `Delete` 之间以行的状态为条件（`WHERE id = ? AND state <> 'deleted'`），因此幂等。清扫与授权行查找是跨租户的读，二者都不接受请求方指定的租户。
+一次 pass 的读与写都在数据库自己的事务里，`Store.Delete` 在数据库事务之外发出（后端不在数据库事务里）。删除字节失败只记 `Warn`、行不动，下一个 pass 重试。时间判定取**数据库的时钟**。同一行上的两次清扫、清扫与并发的 `Delete` 之间以行的状态为条件（`WHERE id = ? AND state <> 'deleted'`），因此幂等。清扫与授权行查找是跨租户的读，二者都不接受请求方指定的租户。
 
 ### 工厂的构造次序
 
@@ -551,7 +551,7 @@ type Spec[C any] struct {
     Stance          func(cfg *C) (core.Enablement, error)
     Secrets         func(cfg *C) []string      // 凭据：登记为日志的字面量脱敏匹配器
     Open            func(ctx context.Context, cfg *C, logger *slog.Logger) (Store, error)
-    // Direct 表示 Open 返回的值也实现 DirectURL。工厂据此把这条能力与字节接缝
+    // Direct 表示 Open 返回的值也实现 DirectURL。工厂据此把这条能力与字节接口
     // 一并声明，装配能解析到它，交付校验也覆盖它。
     Direct bool
 }
@@ -606,7 +606,7 @@ type Spec[C any] struct {
 
 **`Open` 之后的正文读取失败另有记录。** `Open` 的成功记录在对象头到手时写出，正文尚未读取；返回的流在读取出错时写一条同 `key_hash` 的 `read` 失败记录，`EOF` 不算失败。一条断掉的流只写一条这样的记录，无论读取方把同一个错误报多少次。`read` 记录的 `duration_ms` 是这次正文读取自身的耗时：从第一次读取——SDK 由它发出请求——算到失败发生，`Open` 的调用（另有自己的记录）与交回流之后的等待都不计入。
 
-**流式交付的失败另有一行。** `metadata` 把 `OpenContent` 的字节流或内容路由的读应答写给 HTTP 调用方时，`io.Copy` 失败写一条 `Error`，带对象标识与成因；这一行不涉内部键，与后端的出站调用记录相互独立。
+**流式交付的失败另有一行。** `metadata` 把 `OpenContent` 的字节流或内容路由的读应答写给 HTTP 调用方时，`io.Copy` 失败写一条 `Error`，带对象标识与成因；这一行不涉及内部键，与后端的出站调用记录相互独立。
 
 **上下文在调用发出之前已结束时不写记录**：没有请求离开进程，`Put`、`Open`、`Stat`、`PresignRead`、`PresignWrite` 与 `Delete` 直接交回上下文的错误。
 
@@ -614,14 +614,14 @@ type Spec[C any] struct {
 
 | 情形 | 表现 |
 |---|---|
-| `Declaration` 形状不合法 | `ErrInvalidRequest`，不落行 |
+| `Declaration` 格式不合法 | `ErrInvalidRequest`，不落行 |
 | 一次上传的字节数不等于声明的 `declared_size`（进程内或直传） | `ErrInvalidRequest`，不写字节、不推进状态；直传路径尽力删掉已写的字节 |
 | 声明的校验和与流式算出的 SHA-256 不符（字节经过进程的路径） | `ErrInvalidRequest` 语义，尽力删字节，状态不推进 |
 | 上传窗口已过，或对象状态不允许该操作 | `ErrStateConflict`，未写字节前拦下 |
-| 点名了本租户看不见的对象（未知 id、他人租户、已删除） | `ErrObjectNotFound`，一律同形 |
-| 对一个已删除的行调用除 `Delete` 之外的任何操作 | `ErrObjectNotFound`，与未知 id 同形；`Delete` 对已删除的行幂等成功 |
+| 点名了本租户看不见的对象（未知 id、他人租户、已删除） | `ErrObjectNotFound`，一律相同 |
+| 对一个已删除的行调用除 `Delete` 之外的任何操作 | `ErrObjectNotFound`，与未知 id 相同；`Delete` 对已删除的行幂等成功 |
 | 行已完成、字节却不在后端；或 `Complete` 时字节从未到达 | `ErrContentMissing` |
-| 字节接缝缺席或后端不可达、一次字节操作失败 | `ErrStoreUnavailable`（后端自家的错误原样包裹其中）；`metadata` 收口成 503 |
+| 字节接口缺席或后端不可达、一次字节操作失败 | `ErrStoreUnavailable`（后端自家的错误原样包裹其中）；`metadata` 收口成 503 |
 | 装配的后端不铸址，且本进程不服务内容路由 | `ErrURLUnavailable` |
 | `URL()` 的读址请求落在非 `completed` 的对象上，或写址请求落在 `completed` 的对象上 | `ErrStateConflict` |
 | `URL()` 的读址请求遇到剩余寿命不足 1 秒 | `ErrObjectNotFound` |
@@ -646,7 +646,7 @@ type Spec[C any] struct {
 | 预签名失败 | `ErrURLUnavailable` | `ErrURLUnavailable` |
 | 写授权行失败 | `ErrStoreUnavailable` | `ErrStoreUnavailable` |
 
-**本模块不重试、不降级。** 后端不可达即那次调用失败，不回落到本地、不返回上一份字节；是否重试归调用方。
+**本模块不重试、不降级。** 后端不可达即那次调用失败，不回退到本地、不返回上一份字节；是否重试归调用方。
 
 ### 非保证
 
@@ -679,7 +679,7 @@ type Spec[C any] struct {
 
 - 必须排他交付：`Provides` 里声明 `(*Store)(nil)`，`Exclusive: true`。
 - 必须挂在 `objectstore.<后端>` 专属的配置命名空间下，声明自己的输入项；不得占用 `objectstore.metadata` 的命名空间。
-- 必须实现 `Store` 的 `Name`、`Put`、`Open`、`Stat`、`Delete`，按内部键存取字节；`Stat` 对没有字节的键答一个包裹 `ErrContentMissing` 的错误；实现不得解释键的语法超出自身后端映射所需的部分，也不得把键留进任何对外输出。
+- 必须实现 `Store` 的 `Name`、`Put`、`Open`、`Stat`、`Delete`，按内部键存取字节；`Stat` 对没有字节的键答一个包裹 `ErrContentMissing` 的错误；实现不得解释键的语法中超出自身后端映射所需的部分，也不得把键留进任何对外输出。
 - 必须把后端自己的错误原样外传，不发明本能力的哨兵；字节的完整性交由 `metadata` 侧记下的 `size`、`checksum_sha256` 与 `Complete` 的 `Stat` 承载。
 - 承载凭据的实现必须经 `Secrets` 钩子交出凭据，使其先于任何 logger 绑定被登记为日志的字面量脱敏匹配器；不承载凭据的实现交回空。
 - 承载出站请求的实现必须为每一次调用写一条记录，成功与失败各一条，字段含操作、目标、内部键的截断摘要、耗时与 `outcome`，失败另带成因与对端状态；内部键本身、对象的字节、凭据与返回的地址不进记录。只访问本地目录的实现没有出站调用，没有可记的调用。
@@ -692,10 +692,10 @@ type Spec[C any] struct {
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接缝与根包类型（`Store` 的 `Stat`、`Blob`、`DirectURL`、`PresignParams`、`URLAccess`、`URLRequest`、`IssuedURL`、`Objects.URL`、审计动作常量） | 已实现 | `pkg/objectstore/objectstore.go` `Store`、`Blob`、`DirectURL`、`PresignParams`、`URLAccess`、`URLRequest`、`IssuedURL`、`Objects`、`EventObjectCreated`、`EventObjectCompleted`、`EventObjectDeleted` |
+| 接口与根包类型（`Store` 的 `Stat`、`Blob`、`DirectURL`、`PresignParams`、`URLAccess`、`URLRequest`、`IssuedURL`、`Objects.URL`、审计动作常量） | 已实现 | `pkg/objectstore/objectstore.go` `Store`、`Blob`、`DirectURL`、`PresignParams`、`URLAccess`、`URLRequest`、`IssuedURL`、`Objects`、`EventObjectCreated`、`EventObjectCompleted`、`EventObjectDeleted` |
 | 工厂与 `Spec.Direct` | 已实现 | `pkg/objectstore/module.go` `Spec`、`NewModule` |
 | 哨兵错误 | 已实现 | `pkg/objectstore/objectstore.go` `ErrObjectNotFound`、`ErrStateConflict`、`ErrContentMissing`、`ErrStoreUnavailable`、`ErrInvalidConfig`、`ErrInvalidRequest`、`ErrURLUnavailable` |
-| 元数据与生命周期面 `objectstore.metadata`（`objects` 表与迁移、上传、完成、列举、删除、过期清扫） | 已实现 | `pkg/objectstore/metadata/metadata.go` `Module`、`ModuleName`；`pkg/objectstore/metadata/store.go` `Create`、`Upload`、`Complete`、`Get`、`OpenContent`、`List`、`Delete`；`pkg/objectstore/metadata/objects.go` `internalKey`、`encodeCursor`、`decodeCursor`；`pkg/objectstore/metadata/sweep.go` `startSweep`、`sweepOnce` |
+| 元数据与生命周期接口 `objectstore.metadata`（`objects` 表与迁移、上传、完成、列举、删除、过期清扫） | 已实现 | `pkg/objectstore/metadata/metadata.go` `Module`、`ModuleName`；`pkg/objectstore/metadata/store.go` `Create`、`Upload`、`Complete`、`Get`、`OpenContent`、`List`、`Delete`；`pkg/objectstore/metadata/objects.go` `internalKey`、`encodeCursor`、`decodeCursor`；`pkg/objectstore/metadata/sweep.go` `startSweep`、`sweepOnce` |
 | 直连地址的铸造与授权表 | 已实现 | `pkg/objectstore/metadata/store.go` `URL`；`pkg/objectstore/metadata/grants.go` `grant`、`mintToken`；`pkg/objectstore/metadata/migrations/postgres/0003_object_grants.sql`、`pkg/objectstore/metadata/migrations/sqlite/0003_object_grants.sql` |
 | 内容路由（`/content` 的 GET/HEAD/PUT，令牌在查询串） | 已实现 | `pkg/objectstore/metadata/content.go` `contentURL`、`storeUpload`；`pkg/objectstore/metadata/content_handlers.go` `serveRead`、`serveWrite` |
 | 配置与设置（`content-endpoints`、`public-url`、`url-ttl`） | 已实现 | `pkg/objectstore/metadata/config.go`；`pkg/objectstore/metadata/settings.go` `urlTTL`、`settingsSchema` |

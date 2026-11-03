@@ -4,13 +4,13 @@
 
 前端在路由声明的 `requires` 与宿主的门控代码里写特性名。应答里出现前端不认识的名字可以忽略，集合成员查询本来向前兼容；反过来不行：前端写了一个后端永远不会发布的名字，运行期与「特性缺席」无法区分，表现为永久的 404。
 
-特性文档只发布名字，渲染知识归前端（[ADR-feature-document](adr-feature-document.md)）。登录发现记录否决「名字数组加前端映射」的理由，是前后端各自维护同一套视图、缓慢漂移（[ADR-authn-login-method-discovery](adr-authn-login-method-discovery.md)、[ADR-web-auth-channel-discovery](adr-web-auth-channel-discovery.md)）；这份漂移在特性名上必须由机械手段挡住，并且要在编译期挡住。
+特性文档只发布名字，渲染知识归前端（[ADR-feature-document](adr-feature-document.md)）。登录发现记录否决「名字数组加前端映射」的理由，是前后端各自维护同一套视图，缓慢漂移（[ADR-authn-login-method-discovery](adr-authn-login-method-discovery.md)、[ADR-web-auth-channel-discovery](adr-web-auth-channel-discovery.md)）；这份漂移在特性名上必须由机械手段挡住，并且要在编译期挡住。
 
 约束：
 
 - 声明模块经 `feature.Board` 的 `Post` 报告的名字若不是它声明的条件特性，发布者在 Start 让启动失败；任何一次可能的应答因此都是可用集声明的子集；一份按可用集写出的静态名字清单覆盖全部可能的应答。
 - 示范的 `gen` 从同一个二进制的 import 闭包写出 `contracts/api.json`；`@speed/api-sdk` 由 `orval`（[REF-orval](../references.md)）从它生成，是前端唯一与后端契约耦合的包。
-- `@speed/route-kit` 不 import 任何同族前端包。
+- `@speed/route-kit` 不 import 任何同类前端包。
 - 宿主可以有自己的应用模块，它们也可能声明特性。
 
 ## 考虑过的选项
@@ -56,7 +56,7 @@
 采纳：
 
 - `gen` 接受输入项 `--features`，写出 `contracts/features.json`：可用集里的全部特性声明（名字、声明模块、是否条件），按名字排序。它与 `contracts/api.json` 同源，出自同一个二进制。
-- 一个生成器由它写出 `@speed/api-sdk` 的 `src/features.ts`，经子路径 `@speed/api-sdk/features` 导出；平台包只登记所有者为平台的声明；示范宿主自己的模块可以声明特性，其项在 `contracts/features.json` 里标为应用所有，由应用内的模块增补承载。导出的形状：`FeatureName` 是一个可增补的登记接口的键类型，`FEATURE_NAMES` 是平台包登记的全部名字。api-sdk 仍是整份由契约生成、不接受手工编辑的包。
+- 由一个生成器从它写出 `@speed/api-sdk` 的 `src/features.ts`，经子路径 `@speed/api-sdk/features` 导出；平台包只登记所有者为平台的声明；示范宿主自己的模块可以声明特性，其项在 `contracts/features.json` 里标为应用所有，由应用内的模块增补承载。导出的结构：`FeatureName` 是一个可增补的登记接口的键类型，`FEATURE_NAMES` 是平台包登记的全部名字。api-sdk 仍是整份由契约生成、不接受手工编辑的包。
 - 前端写特性名的位置一律取 `FeatureName` 类型：auth-core 的 `useFeature`、管理后台与通知页面声明的 `requires`、`AdminShell` 的特性判定。`route-kit` 自己的 `requires` 仍是 `string[]`。
 - 新鲜度与类型检查：Go 测试比对已提交的 `contracts/features.json` 与本二进制的声明；api-sdk 测试比对 `features.ts` 与 `contracts/features.json`；api-sdk 与 auth-core 各有一条「拼错的名字必须编译失败」的类型断言；示范测试断言路由表里每个 `requires` 都属于 `FEATURE_NAMES`。全部随 `make check` 运行。
 - 应用自己的特性名——应用的 `contracts/features.json` 里不在平台包 `FEATURE_NAMES` 中的名字——由生成器在应用内写成对登记接口的模块增补，并入同一个 `FeatureName`。
@@ -78,4 +78,4 @@
 ## 失效条件
 
 - 一份前端产物常态性地对接多个 import 闭包不同的二进制，单份生成类型不再能代表全部可能的应答，要换成合并多份清单或在运行期校验。
-- 应用级特性名在运行期才能确定、无法经模块增补写进类型，类型落点要重审。
+- 应用级特性名在运行期才能确定，无法经模块增补写进类型，类型落点要重审。

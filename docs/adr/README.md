@@ -2,7 +2,7 @@
 
 本目录记录 speed 的架构决策：每条记录说明当时面临的约束、考虑过的选项、采纳的结论以及为此付出的代价。
 
-记录只陈述当前生效的决策，修订原地进行：决策变了就改写记录本身，不另立新记录，也不保留旧版本。修订不留下痕迹——没有日期、没有变更说明；被替换的旧决策只作为「考虑过的选项」里的一个落选项存在。
+记录只陈述当前生效的决策，修订原地进行：决策变了就改写记录本身，不另立新记录，也不保留旧版本。修订不留下痕迹——没有日期、没有变更说明；被替换的旧决策只作为「考虑过的选项」里的一个落选的选项存在。
 
 引用形式为 `ADR-<slug>`，slug 命名决策本身。同一主题可以有多条决策，每条有能区分的 slug，并在下表中归到同一个主题之下。
 
@@ -14,13 +14,13 @@
 | [模块以 init 隐式注册到进程级注册表](adr-module-registration.md) |
 | [模块之间按接口类型取用，依赖不满足即启动失败](adr-dependency-resolution.md) |
 | [功能以类型化空指针指代](adr-capability-token.md) |
-| [模块以统一的资源声明对外暴露元数据](adr-module-resources.md) |
+| [模块以统一的资源声明对外提供元数据](adr-module-resources.md) |
 | [接口包暴露它所封装的第三方库](adr-module-packaging.md) |
 | [资源声明的取材域由消费点裁定，判据是声明所述之物的生命周期](adr-module-resource-scope.md) |
 | [两个实现子包共用一份第三方客户端构造与测试夹具](adr-shared-backend-unit.md) |
 | [一个 Go module 承载全部功能，功能按包划分](adr-module-layout.md) |
 | [预置实例是已登记模块的实例，归属按实例认出或由模块名指定](adr-supplied-instance.md) |
-| [宿主助手只抽第二个宿主真实复用的那一项进 pkg](adr-shared-helper-scope.md) |
+| [宿主辅助函数只抽第二个宿主真实复用的那一项进 pkg](adr-shared-helper-scope.md) |
 
 ## 生命周期
 
@@ -49,10 +49,10 @@
 
 | 记录 |
 |---|
-| [日志以标准库 slog 为调用面](adr-log-api.md) |
+| [日志以标准库 slog 为调用接口](adr-log-api.md) |
 | [上下文字段由产生方绑定到 logger，经 context 传递](adr-log-context.md) |
 | [脱敏机制内置于日志根包且不可关闭，规则由登记提供](adr-log-redaction.md) |
-| [持有秘密配置值的模块在构造期登记该值为日志的字面量匹配器，为此可取一次可选的日志功能](adr-log-secret-redaction.md) |
+| [持有秘密配置值的模块在构造期登记该值为日志的字面量匹配器，为此可以取用一次可选的日志功能](adr-log-secret-redaction.md) |
 
 ## 数据库
 
@@ -71,8 +71,8 @@
 
 | 记录 |
 |---|
-| [入口模块的登记面锚定 gin](adr-http-surface.md) |
-| [路由经登记面绑定，Spec 只承载元数据](adr-http-routing.md) |
+| [入口模块的登记接口锚定 gin](adr-http-surface.md) |
+| [路由经登记接口绑定，Spec 只承载元数据](adr-http-routing.md) |
 | [一个入口模块承载多个具名端点](adr-http-endpoints.md) |
 | [把监听与端点拆成两层](adr-http-listener-endpoint-split.md) |
 | [监听按端点在配置里认领的前缀为请求选端，已登记的路由只用于核对归属](adr-http-dispatch.md) |
@@ -81,26 +81,26 @@
 | [operation 声明同时生成 OpenAPI 片段并绑定 handler](adr-http-openapi-generation.md) |
 | [错误应答按公共集加覆盖声明，Fault 可返回也可 panic](adr-http-failure-responses.md) |
 | [operation 声明覆盖完整的 HTTP 输入与应答形态](adr-http-request-response-kinds.md) |
-| [管理面路径以作用域段开头，普通面不带段](adr-http-api-path-scopes.md) |
+| [管理面路径以作用域段开头，普通路由不带段](adr-http-api-path-scopes.md) |
 | [契约文档承载分组、鉴权与顶层元数据，访问级别由 operation 声明](adr-http-contract-metadata.md) |
 | [Stop 关闭监听器并等在途请求排空结束](adr-http-shutdown.md) |
 | [请求路径的 panic 兜底由入口模块内建，每端唯一](adr-http-recovery.md) |
-| [入口模块定义默认的错误响应形状，并经可选接缝接受定制](adr-http-errors.md) |
-| [入口模块的登记面列出已声明的端名，`*` 保留为端名](adr-http-enumeration.md) |
+| [入口模块定义默认的错误响应结构，并经可选接口接受定制](adr-http-errors.md) |
+| [入口模块的登记接口列出已声明的端名，`*` 保留为端名](adr-http-enumeration.md) |
 | [跨源请求层桥接上游库，作为独立子包登记在防护阶段的最外侧](adr-http-cors.md) |
 | [中间件的定位由固定的一组阶段给出，阶段内以约束与整数 Order 取舍](adr-http-stages.md) |
 | [请求体上限是入口模块内建的一层，落在防护阶段之内](adr-http-body-limit.md) |
 | [每请求一条访问记录由入口模块内建，位于全部模块层之外](adr-http-access-log.md) |
 | [ops 读取 http.Spec：取可用集、不做减法、冲突即启动失败](adr-ops-spec-reader.md) |
-| [入口模块交付请求体绑定入口，宿主的 handler 错误体统一到它的 RFC 9457 形状](adr-http-bind-and-error-shape.md) |
+| [入口模块交付请求体绑定入口，宿主的 handler 错误体统一到它的 RFC 9457 结构](adr-http-bind-and-error-shape.md) |
 | [可信代理设置以模块级默认下发，端点可覆盖](adr-http-proxy-trust-defaults.md) |
 
 ## 特性
 
 | 记录 |
 |---|
-| [特性文档发布本进程服务的特性名，名字由服务该面的模块声明，只对已认证调用者可读](adr-feature-document.md) |
-| [存在性进特性文档、取值与形状归拥有它的模块，条件特性由声明模块在 Init 中于决定该面的判定处报告](adr-feature-ownership.md) |
+| [特性文档发布本进程服务的特性名，名字由服务该接口的模块声明，只对已认证调用者可读](adr-feature-document.md) |
+| [存在性进特性文档，取值与结构归拥有它的模块，条件特性由声明模块在 Init 中于决定该接口的判定处报告](adr-feature-ownership.md) |
 | [特性名由二进制写出的 `contracts/features.json` 生成为 api-sdk 里的类型，前后端各有新鲜度测试](adr-feature-vocabulary.md) |
 
 ## 前端
@@ -111,17 +111,17 @@
 | [前端一次构建产出两件制品](adr-web-two-build-artifacts.md) |
 | [API origin 在运行期注入，不在构建期烘焙](adr-web-runtime-config.md) |
 | [路由与导航独立成包，壳不做导航](adr-web-route-seam.md) |
-| [租户作用域的 query key 由框架提供工厂与逐出助手](adr-web-tenant-query-key.md) |
+| [租户作用域的 query key 由框架提供工厂与逐出辅助函数](adr-web-tenant-query-key.md) |
 | [现有前端原地复用，旧树不保留](adr-web-reuse.md) |
 | [前端登录渠道的来源是后端发现端点，前端不写死集合](adr-web-auth-channel-discovery.md) |
-| [账户自助写面归前端组件族](adr-web-account-ui-selfservice.md) |
+| [账户自助写归前端的一组组件](adr-web-account-ui-selfservice.md) |
 | [特性态由 auth-core 随会话提交持有，读取失败是独立状态，只有宿主读它](adr-web-feature-state.md) |
-| [route-kit 按宿主给出的特性在场判定收窄注册面，特性缺席的页面与未登记路径同走 `fallback`](adr-web-route-kit.md) |
+| [route-kit 按宿主给出的特性在场判定收窄注册接口，特性缺席的页面与未登记路径同走 `fallback`](adr-web-route-kit.md) |
 | [管理后台列表页的行详情与创建改由侧边面板承载，面板是页内状态而非路由](adr-web-side-panel.md) |
 | [写入的结果由每个反馈作用域的一个槽承载，同页至多一条结果、以最后落定的为准，成功确认为默认](adr-web-write-feedback.md) |
 | [冒充期间由应用壳在应用栏之下显示可隐藏的横幅、外壳常驻 chrome 区里的身份指示并提供结束入口，身份变更按会话边界处理依赖身份的状态](adr-web-impersonation-shell.md) |
 | [宿主可为平台命名空间补整套语言，注册期全覆盖规则不变](adr-web-host-language-sets.md) |
-| [认证复用接缝的归属](adr-web-auth-seams.md) |
+| [认证复用扩展点的归属](adr-web-auth-seams.md) |
 | [界面表面由语义角色 token、主题映射与 SectionCard 原语共同承担](adr-web-surface-system.md) |
 | [浅色模式的 warning、info 与 success 取 700 调，使 main 同时满足文字与填充两种读法](adr-web-light-contrast.md) |
 | [应用外壳的形态在装配期选定并由一组内置变体表达，不交给宿主自由拼装](adr-web-shell-layout-variant.md) |
@@ -145,10 +145,10 @@
 | [状态按丢失的方向放置：丢失会放宽校验的进 db，丢失只会让流程失败的进 kv](adr-authn-state-placement.md) |
 | [失败语义：依赖不可用时拒绝，有界放宽逐项列出](adr-authn-failure.md) |
 | [装配层面的性质写成非保证，不为它们改动别的模块](adr-authn-guarantees.md) |
-| [判定接缝 Decider：管理面与冒充缺席即全拒，自助范围不过接缝](adr-authn-decision-seam.md) |
+| [判定接口 Decider：管理面与冒充缺席即全拒，自助范围不过判定接口](adr-authn-decision-seam.md) |
 | [配置与设置的分界、放宽开关、秘密的存放](adr-authn-settings-and-secrets.md) |
 | [事件、审计、日志与指标的契约：事件是提示，审计分强制与尽力，日志与指标不带高基数值](adr-authn-events-and-audit.md) |
-| [用户档案的自服务面与管理面分立](adr-authn-selfservice-profile.md) |
+| [用户档案的自助功能与管理面分立](adr-authn-selfservice-profile.md) |
 | [登录标识的自助添加：用户名直接写，邮箱经验证码证明所有权](adr-authn-selfservice-identifier.md) |
 | [自助注册即建号，账户的邮箱只有已验证与未验证两种状态](adr-authn-signup.md) |
 | [每个用户账户在建号之前取得用户名，用户名须 URL 安全并排除保留用户名](adr-authn-username-required.md) |
@@ -158,7 +158,7 @@
 | [邮箱地址的占用由联系方式预留的唯一约束原子仲裁，未验证预占被接受](adr-authn-contact-claim.md) |
 | [回跳失败时把用户代理落回产品，机器码经 URL 片段携带](adr-authn-callback-failure-landing.md) |
 | [人机验证是缺省开启为工作量证明的发送前闸，机制由部署选定](adr-authn-human-verification.md) |
-| [成员关系删除的清理是同步接缝，事件只作崩溃窗口补偿](adr-authn-membership-cleanup.md) |
+| [成员关系删除的清理是同步接口，事件只作崩溃窗口补偿](adr-authn-membership-cleanup.md) |
 
 ## 邀请
 
@@ -189,14 +189,14 @@
 | [微信登录自写薄客户端，网站应用与公众号拆成两个模块](adr-authn-wechat.md) |
 | [社交与企业 OIDC 的校验桥：go-oidc 加 x/oauth2，state、PKCE、nonce 自做](adr-authn-oauth-flow.md) |
 | [社交登录提供方的端点与出站信任作为部署配置，缺省不变](adr-authn-social-endpoints.md) |
-| [多因素：因素是并立的接缝，编排与保障等级只在 authn.mfa 一处合成](adr-authn-mfa.md) |
+| [多因素：因素是并立的接口，编排与保障等级只在 authn.mfa 一处合成](adr-authn-mfa.md) |
 | [没有恢复码时的找回途径与接受的代价](adr-authn-mfa-recovery.md) |
 
 ## 短信
 
 | 记录 |
 |---|
-| [短信能力由发送接缝、模板注册表与管理面组成，载体不感知模板](adr-sms-capability.md) |
+| [短信能力由发送接口、模板注册表与管理面组成，载体不感知模板](adr-sms-capability.md) |
 | [逐模板的厂商审核是载体的能力，不是能力的普遍不变量](adr-sms-template-review-is-carrier-capability.md) |
 | [发送身份的登记在带外完成，一个进程只挂一个载体且不做跨厂商路由](adr-sms-registration-out-of-scope.md) |
 | [Twilio 载体绑定官方 SDK，不自写 HTTP 客户端](adr-sms-twilio-sdk.md) |
@@ -234,23 +234,23 @@
 |---|
 | [租户解析、租户名册与数据隔离同属一个功能目录，设置与授权另立](adr-tenant-scope.md) |
 | [根包不登记模块，解析与名册各登记一个模块并各自排他交付](adr-tenant-packaging.md) |
-| [租户标识由请求面解析得到，取法由配置选定，不从认证身份派生](adr-tenant-resolution.md) |
+| [租户标识由请求侧解析得到，取法由配置选定，不从认证身份派生](adr-tenant-resolution.md) |
 | [租户解析以认证为锚点排在认证之内，未认证的请求不进入解析层](adr-tenant-ordering.md) |
-| [租户列存不可变标识，请求面出现的名字是名册上的可改别名](adr-tenant-identifier.md) |
+| [租户列存不可变标识，请求侧出现的名字是名册上的可改别名](adr-tenant-identifier.md) |
 | [租户名册由本模块自带表承载，状态是一个封闭集合，停用不删数据](adr-tenant-directory.md) |
 | [名册自己的语句经数据库模块的 Connection 取交付连接，取不到、表不在与其余失败分开作答](adr-tenant-directory-connection.md) |
 | [已删除的租户是名册上的终态行，标识与别名不再复用](adr-tenant-deletion.md) |
 | [隔离落在共享表加租户列，过滤经 GORM 插件，模型按约定声明自己受约束](adr-tenant-isolation.md) |
 | [条件里以表名限定各列的整键元组按上下文填租户那一半，多对多关联的连接表按所连模型写进它的租户列判定](adr-tenant-isolation-joins.md) |
 | [上下文无租户时受约束模型的语句拒绝执行，跨租户必须在调用点字面写出](adr-tenant-scoping.md) |
-| [不经请求面的路径经名册进入单个租户，标识的写入仍只在本功能目录](adr-tenant-scoping-jobs.md) |
+| [不经请求侧的路径经名册进入单个租户，标识的写入仍只在本功能目录](adr-tenant-scoping-jobs.md) |
 | [停用期间仍属于一个租户的工作，经名册的另一个进入方法进入那个租户](adr-tenant-suspension-access.md) |
 | [装配层面的性质写成非保证，租户隔离不由框架承诺](adr-tenant-guarantees.md) |
 | [租户准入层放在 tenant 目录：成员关系、租户级强度策略与冒充范围](adr-tenant-admission.md) |
 | [租户名册的管理面由框架提供一个平台域的模块](adr-admin-tenant.md) |
 | [租户的停用来源记在名册行上，账户联动只撤销它自己造成的那一次](adr-tenant-suspension.md) |
 | [管理员身份由租户成员关系承载，system 是名册中的真实租户](adr-tenant-administration.md) |
-| [调用方本人的租户读取由 tenant 目录新增的只挂路由的模块承担，挂在账户端的普通面](adr-tenant-self.md) |
+| [调用方本人的租户读取由 tenant 目录新增的只挂路由的模块承担，挂在账户端的普通接口](adr-tenant-self.md) |
 
 ## 授权
 
@@ -259,12 +259,12 @@
 | [判定引擎桥接 Casbin v3，模型文本固定在代码里](adr-authz-engine.md) |
 | [权限模型：角色到权限，权限按（资源，动作），租户即策略域](adr-authz-model.md) |
 | [策略存储：自写薄适配器加真实租户列，取代 Casbin 的默认存储](adr-authz-store.md) |
-| [承接 Decider 接缝：Decision 形状不变，资源属性在模块内合成](adr-authz-decision-seam.md) |
+| [承接 Decider 接口：Decision 结构不变，资源属性在模块内合成](adr-authz-decision-seam.md) |
 | [强制点：端点级中间件加路由声明，未声明默认拒绝](adr-authz-enforcement.md) |
 | [打包：根包只放接口与常量，策略、强制点、管理面各为一个叶子模块](adr-authz-packaging.md) |
 | [策略常驻进程内不可变快照，事件失效、周期重载兜底](adr-authz-cache.md) |
 | [反转旧树「不用 Casbin」的结论：被否的是默认存储，不是引擎](adr-authz-reversal.md) |
-| [种入面：独立于 Manager 的 Seeder 与 Reconciler 能力](adr-authz-seeding.md) |
+| [种入接口：独立于 Manager 的 Seeder 与 Reconciler 能力](adr-authz-seeding.md) |
 | [租户域的管理端点：治理权限元数据、租户管理员允许集与防提权](adr-authz-tenant-management.md) |
 | [主体持有的权限由策略模块读出，并经一条自身路由回答](adr-authz-subject-permissions.md) |
 
@@ -281,7 +281,7 @@
 |---|
 | [事件载荷结构化读取，总线内置租户标识](adr-event-scope.md) |
 | [投递承诺取所有实现都能满足的下界](adr-event-delivery.md) |
-| [事件携带发布时赋予的标识，作为消费方去重的键](adr-event-identity.md) |
+| [事件携带发布时赋予的标识，作为使用方去重的键](adr-event-identity.md) |
 | [分发层为每个订阅者记一个跨度，事件跨进程携带追踪上下文](adr-event-tracing.md) |
 
 ## 事务发件箱
@@ -297,25 +297,25 @@
 | 记录 |
 |---|
 | [审计交付捕获，不交付查询、自证与归责判定](adr-audit-scope.md) |
-| [捕获面由语句、事件、请求与记录接缝构成](adr-audit-capture.md) |
+| [捕获由语句、事件、请求与记录接口构成](adr-audit-capture.md) |
 | [捕获的覆盖面由配置点名，审计不推断也不通配](adr-audit-reach.md) |
 | [审计自持一张表，不经事件总线中转、不做多后端](adr-audit-sink.md) |
-| [语句级的记录跟着那条语句成败，请求级与事件级按 fail-open 处置，接缝返回错误](adr-audit-failure.md) |
+| [语句级的记录跟着那条语句成败，请求级与事件级按 fail-open 处置，记录接口返回错误](adr-audit-failure.md) |
 | [审计的敏感键名取一个闭集，与日志共用一份登记](adr-audit-redaction.md) |
 | [一个登记单元承载各条捕获通路](adr-audit-packaging.md) |
 | [链上锚点用审计自己的接口类型，锚定方 import 接口包](adr-audit-anchor.md) |
 | [审计的存在与覆盖面是装配的结果，不是框架的承诺](adr-audit-guarantees.md) |
-| [审计记录的导出由检索面的一条路由承载，判定复用检索权限](adr-audit-export.md) |
+| [审计记录的导出由检索接口的一条路由承载，判定复用检索权限](adr-audit-export.md) |
 | [事件级审计行按事件标识去重，由表上的唯一约束裁定](adr-audit-replicas.md) |
-| [审计表的租户列、行键与唯一写入方属于对外接口面](adr-audit-table-contract.md) |
+| [审计表的租户列、行键与唯一写入方属于对外接口](adr-audit-table-contract.md) |
 | [冒充的明细键只由审计模块写入，非冒充行上的同名键被剥掉](adr-audit-impersonation.md) |
-| [审计的检索面由一个独立的 audit.admin 模块承载](adr-audit-admin.md) |
+| [审计的检索接口由一个独立的 audit.admin 模块承载](adr-audit-admin.md) |
 
 ## 设置
 
 | 记录 |
 |---|
-| [设置以一个模块交付读写面，租户标识以字符串表达](adr-settings-scope.md) |
+| [设置以一个模块交付读写接口，租户标识以字符串表达](adr-settings-scope.md) |
 | [设置项由模块声明，读取与写入按声明校验](adr-settings-declaration.md) |
 | [设置的层由显式的层选指代，零值不是一个层](adr-settings-layer.md) |
 | [设置的生效靠内存快照，事件广播加速、周期刷新兜底](adr-settings-propagation.md) |
@@ -365,7 +365,7 @@
 | [请求的语言按 context、账户偏好、默认三级解析，两层中间件分居观测与鉴别阶段](adr-i18n-locale-resolution.md) |
 | [各模块以内嵌资源声明消息目录，装配期再并入一个可配置的覆盖目录](adr-i18n-catalogs.md) |
 | [渲染责任随载荷形态划分，复合消息由后端渲染、类型化的值交给客户端](adr-i18n-rendering-ownership.md) |
-| [错误响应只承载成品文本，形状接缝不带语言](adr-i18n-error-rendering.md) |
+| [错误响应只承载成品文本，结构扩展点不带语言](adr-i18n-error-rendering.md) |
 | [语言与时区偏好存账户属性集，不改 authn 表结构](adr-i18n-preferences-storage.md) |
 | [默认语言是配置项 i18n.default-locale，i18n 与 authn 取同一个](adr-i18n-default-locale.md) |
 | [受支持语言集由目录派生，默认语言是配置而非常量](adr-i18n-language-set.md) |
@@ -376,7 +376,7 @@
 | 记录 |
 |---|
 | [作业能力只承载必须跨副本收敛的触发，进程内循环归各模块自己的 ticker](adr-jobs-scope.md) |
-| [作业能力根包是接口包，队列与登记面由 jobs.db 排他交付，调度器单列一个模块](adr-jobs-packaging.md) |
+| [作业能力根包是接口包，队列与登记接口由 jobs.db 排他交付，调度器单列一个模块](adr-jobs-packaging.md) |
 | [多副本靠有时限的认领分摊一张作业表，至少一次、不选主、只做数据库后端](adr-jobs-claim.md) |
 | [周期调度靠窗口幂等键收敛，声明按租户经名册展开，取材域取参与集](adr-jobs-schedule.md) |
 | [作业进入终态时发事件，发布义务记在作业行自己身上，事件总线因此是可选依赖](adr-jobs-terminal-event.md) |
@@ -385,9 +385,9 @@
 
 | 记录 |
 |---|
-| [通知能力做站内信收件箱、渠道偏好矩阵、类型分类法登记面、出站投递流水线与实时推送，同意台账刻意后置且不声明权限点](adr-notification-scope.md) |
+| [通知能力做站内信收件箱、渠道偏好矩阵、类型分类法登记接口、出站投递流水线与实时推送，同意台账刻意后置且不声明权限点](adr-notification-scope.md) |
 | [通知类型是发出它的业务模块的资源声明，通知模块是消费点，取材域取可用集](adr-notification-taxonomy.md) |
-| [渠道是封闭的平台词汇，可用性由装配决定，接缝缺席时跳过而不失败](adr-notification-channels.md) |
+| [渠道是封闭的平台词汇，可用性由装配决定，接口缺席时跳过而不失败](adr-notification-channels.md) |
 | [出站投递经持久队列异步进行，逐渠道一个去重键，notification_sends 是幂等与结果账，短信预算与认证共用台账，邮件预算留在键值计数器](adr-notification-delivery.md) |
 | [实时推送每副本一个 Hub，行先提交、事件后发，Hub 只值延迟](adr-notification-stream.md) |
 | [通知偏好路由按端名清单挂载，不挂在入口模块声明的每一个端上](adr-notification-endpoints.md) |
@@ -396,8 +396,8 @@
 
 | 记录 |
 |---|
-| [对象存储本轮交付核心面、字节接缝与 `fs`/`s3` 后端，复验净化与缩略图派生后置](adr-objectstore-scope.md) |
-| [对象存储的字节接缝由根包声明，元数据面与 `fs`/`s3` 后端各为一个排他模块](adr-objectstore-packaging.md) |
+| [对象存储本轮交付核心功能、字节存储接口与 `fs`/`s3` 后端，复验净化与缩略图派生后置](adr-objectstore-scope.md) |
+| [对象存储的字节存储接口由根包声明，元数据接口与 `fs`/`s3` 后端各为一个排他模块](adr-objectstore-packaging.md) |
 | [对象以声明、上传、完成三步写入，内部键从不经 API 暴露](adr-objectstore-lifecycle.md) |
 | [对象存储记下调用方给的名字，入口规整一次后回显](adr-objectstore-object-name.md) |
 | [业务前端经直连地址读写对象字节，铸址归元数据面，后端把能否铸址声明为可选能力](adr-objectstore-direct-access.md) |
@@ -407,7 +407,7 @@
 | 记录 |
 |---|
 | [用顶层 starters/ 提供可运行的示范骨架](adr-starters-skeleton.md) |
-| [每个账户创建即拥有一个人租户，个人租户是单人的受保护租户](adr-starters-personal-tenant.md) |
+| [每个账户创建即拥有一个个人租户，个人租户是单人的受保护租户](adr-starters-personal-tenant.md) |
 
 ## 测试
 

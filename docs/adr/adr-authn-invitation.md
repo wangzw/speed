@@ -4,9 +4,9 @@
 
 成员关系已经声明邀请这一个来源：`Membership.Source` 的取值域是 `admin`、`jit:<提供方标识>`、`invite`、`import`（`pkg/authn/internal/model/directory.go` `Membership.Source`），而没有任何地方生成 `invite`。一条成员授予由管理员发起、经被邀请人接受后才成立（REQ-tenancy-011、REQ-tenancy-017）；这条路径没有落点。
 
-账户写面接不住它。`AccountAdmin.Create` 要求地址「已经过验证」，且它的模型里没有可放待验证行的行（`pkg/authn/account.go` `AccountAdmin`、`pkg/authn/internal/model/directory.go` `CreateAccount`）：一个账户要么已经成立，要么不存在，没有「已记下、等某人来认领」的中间态。
+账户写入接口接不住它。`AccountAdmin.Create` 要求地址「已经过验证」，且它的模型里没有可放待验证行的行（`pkg/authn/account.go` `AccountAdmin`、`pkg/authn/internal/model/directory.go` `CreateAccount`）：一个账户要么已经成立，要么不存在，没有「已记下、等某人来认领」的中间态。
 
-接受面没有身份。被邀请人尚不是任何租户的成员，通常也没有任何账户；签发的管理员则是一个已认证、已授权的身份。邀请的两端因此分处不同的信任级。
+接受一侧没有身份。被邀请人尚不是任何租户的成员，通常也没有任何账户；签发的管理员则是一个已认证、已授权的身份。邀请的两端因此分处不同的信任级。
 
 投递不在认证目录内。认证功能目录不含邮件通道，所以邀请的链接由签发者或宿主送出，本能力不发送。
 
@@ -24,23 +24,23 @@
 
 **否决**：署名令牌的密钥集是身份令牌的密钥集，其公钥经 JWKS 公开；一个署名邀请因此可被任何持有公钥者验签，而撤销一条邀请仍要落库改状态——验签省不掉那次查库，签名却引入一条密钥依赖，并把「邀请」这一用途塞进身份令牌的密钥。邀请的凭据只在签发它的那一处有效，不需要一个可离线验证的全局签名。
 
-### 自持一张表与一枚不透明令牌，管理面与接受面分处两个信任级
+### 自持一张表与一枚不透明令牌，管理面与接受一侧分处两个信任级
 
-一条邀请是 `authn_invitations` 里的一行，带自己的状态与期限；接受令牌是 256 位随机串，只以 SHA-256 落表。签发、列表与撤销是一次管理动作：发起者是已认证的管理员，判定经根包的判定接缝，动作取成员关系管理的同一个（`authn.membership.manage`）；接受没有身份，凭令牌兑现。自持的状态使两者分处两个信任级、不经同一套判定。
+一条邀请是 `authn_invitations` 里的一行，带自己的状态与期限；接受令牌是 256 位随机串，只以 SHA-256 落表。签发、列表与撤销是一次管理动作：发起者是已认证的管理员，判定经根包的判定接口，动作与成员关系管理取同一个（`authn.membership.manage`）；接受没有身份，凭令牌兑现。自持的状态使两者分处两个信任级、不经同一套判定。
 
 **采纳**，见决策。
 
 ## 决策
 
-邀请以一张自持状态与期限的表 `authn_invitations` 成立，接受凭一枚只以摘要留存的不透明一次性令牌兑现；待接受态不落账户表。管理面的签发、列表与撤销与 account 面的接受分处两个信任级；接受落下的成员行，`Membership.Source` 取 `invite`。
+邀请以一张自持状态与期限的表 `authn_invitations` 成立，接受凭一枚只以摘要留存的不透明一次性令牌兑现；待接受态不落账户表。管理面的签发、列表与撤销，与账户一侧的接受分处两个信任级；接受落下的成员行，`Membership.Source` 取 `invite`。
 
-接缝 `Invites` 与它的值类型、哨兵定义在 `pkg/authn/invite`，不随根包里其余认证接缝放进 `pkg/authn`：根包已以 `Issued` 命名会话签发的结果，邀请签发的结果占不住同一个名字；`pkg/authn/invite` 与根包同属一个 Go module，取用者的依赖闭包不因此变化。
+接口 `Invites` 与它的值类型、哨兵定义在 `pkg/authn/invite`，不随根包里其余认证接口放进 `pkg/authn`：根包已以 `Issued` 命名会话签发的结果，邀请签发的结果占不住同一个名字；`pkg/authn/invite` 与根包同属一个 Go module，取用者的依赖闭包不因此变化。
 
 ## 后果
 
 - 邀请的状态机与期限由本能力持有，与账户的生命周期解耦；`AccountAdmin.Create` 的验证前提不被绕过，账户表不新增行态。
 - 接受是一枚随机令牌的摘要查找，加一次条件写；撤销是改状态，无需密钥轮换。
-- `Membership.Source` 的 `invite` 取值自此有生成方；`authn.membership.changed` 事件随带该来源。
+- `Membership.Source` 的 `invite` 取值自此有生成方；`authn.membership.changed` 事件携带该来源。
 
 **接受的代价：**
 

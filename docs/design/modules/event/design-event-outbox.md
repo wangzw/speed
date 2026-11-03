@@ -6,7 +6,7 @@
 
 它补上[事件总线](design-event.md)不做的那一件事。总线的一次发布独立于调用方的事务：写入提交之后发布失败，写入留下而事件丢失；提交之前发布，宣告的写入可能随后回滚。经本模块暂存的事件与写入同成同败，发布跟在提交之后。
 
-本功能位于事件功能目录之内，自成一项功能：接口包 `pkg/event/outbox` 声明功能接口与哨兵错误，不登记模块；实现子包 `pkg/event/outbox/relay` 登记模块 `event.outbox.relay`，排他地交付该功能（[ADR-outbox-packaging](../../../adr/adr-outbox-packaging.md)）。下文的"本模块"指这个实现。
+本功能位于事件功能目录之内，自成一项功能：接口包 `pkg/event/outbox` 声明功能接口与哨兵错误，不登记模块；实现子包 `pkg/event/outbox/relay` 登记模块 `event.outbox.relay`，排他地交付该功能（[ADR-outbox-packaging](../../../adr/adr-outbox-packaging.md)）。下文的「本模块」指这个实现。
 
 ### 非职责
 
@@ -51,9 +51,9 @@ var ErrOtherDatabase error // 事务不在交付的连接池上
 | 交付句柄本身，或由它派生、不在事务中的会话 | `ErrNoTransaction`，什么都不写 |
 | `Open` 自建的连接、宿主自建的句柄、别的装配的句柄上的事务 | `ErrOtherDatabase`，什么都不写 |
 
-**是否在事务中，按 GORM 自己的判断**：会话的连接是一个可提交的事务。**是不是交付的库，按事务所从出的连接池判断**，而不是按它连到哪个库：`Open` 自建到同一个库上的连接也拒绝。拒绝不在事务中的会话，挡住的是这样一种误用——在事务闭包里把开事务用的那个句柄交了进来：那一行会立即自行提交，事件从此与写入无关，而这正是本功能要消除的失效形态。
+**是否在事务中，按 GORM 自己的判断**：会话的连接是一个可提交的事务。**是不是交付的库，按事务出自的连接池判断**，而不是按它连到哪个库：`Open` 自建到同一个库上的连接也拒绝。拒绝不在事务中的会话，挡住的是这样一种误用——在事务闭包里把开事务用的那个句柄交了进来：那一行会立即自行提交，事件从此与写入无关，而这正是本功能要消除的失效形态。
 
-**标识与载荷在暂存时定下。** `ID` 为空时，`Stage` 以 `event.NewID` 的形式赋予一个；非空时原样携带。每个订阅者收到的都是这个标识，重发时也不变；要把它与自己的写入记在一起的调用方先设好它。载荷在暂存时序列化，不可序列化的载荷与 `Publish` 一样被拒绝。
+**标识与载荷在暂存时定下。** `ID` 为空时，`Stage` 用 `event.NewID` 生成一个；非空时原样携带。每个订阅者收到的都是这个标识，重发时也不变；要把它与自己的写入记在一起的调用方先设好它。载荷在暂存时序列化，不可序列化的载荷与 `Publish` 一样被拒绝。
 
 **追踪上下文也在暂存时定下。** 实现子包 `pkg/event/outbox/relay` 经本模块内部的 `pkg/event/internal/tracing` 取用遥测模块的传播器（`observability.Propagator()`），`Stage` 用它从 `tx` 的上下文取出当时的跨度上下文，写进 `evt` 的行；中继发布时把它还原到事件上，`Publish` 因而不改动它。订阅者的跨度以那次写入所在跨度为父，不是以中继的跨度为父——宣告与写入挂在同一条追踪上，即使发布晚于提交若干秒（[ADR-event-tracing](../../../adr/adr-event-tracing.md)）。
 
@@ -65,7 +65,7 @@ var ErrOtherDatabase error // 事务不在交付的连接池上
 - **发布跟在提交之后。** 订阅者得知这件事时，写入已经对别的连接可见。
 - **时机。** 暂存它的那个副本上，中继在暂存之后先等 10 毫秒读表，此后间隔逐次翻倍，直到达到 1 秒；其余副本每秒读一次。一次暂存只让下一次读表提前，从不推后已经排定的那一次，本副本上的暂存再密集，读表也照这个节律进行。总线拒收期间没有上界。
 - **同一个事件可能被发布不止一次。** 总线接受之后、删除那一行之前中继中断，删除那一行失败，或认领到期被另一个中继接管，都让它再被发布一次；每一次带着同一个标识。
-- **订阅者收到的载荷是传输的形状**：解码出来的结构，每个数保留为十进制文本（`json.Number`），在任何一种总线实现下都如此，进程内实现也不例外；整数无论多大都精确（见 [event](design-event.md) 的载荷的读取）。
+- **订阅者收到的载荷是传输的结构**：解码出来的结构，每个数保留为十进制文本（`json.Number`），在任何一种总线实现下都如此，进程内实现也不例外；整数无论多大都精确（见 [event](design-event.md) 的载荷的读取）。
 - **订阅者的调用上下文不是发布方的。** 进程内总线在中继的协程与上下文上调用订阅者：那个上下文带着本模块 `Start` 阶段收到的上下文里的值，不带发布方的请求上下文，也不带租户，每次发布至多 1 分钟。订阅方照 [event](design-event.md) 的规矩按事件的 `TenantID` 进入租户。
 - **订阅者的跨度以暂存方的跨度为父。** 追踪上下文在暂存时定下（见交付的功能），中继发布时的事件带着它；订阅者的跨度因而挂在写入所在的跨度之下，不是挂在中继协程所在的跨度下（[ADR-event-tracing](../../../adr/adr-event-tracing.md)）。
 
@@ -76,11 +76,11 @@ var ErrOtherDatabase error // 事务不在交付的连接池上
 - **服务角色要有这张表的读写权限。** PostgreSQL 上是对 `event_staged` 的 `SELECT`、`INSERT`、`UPDATE`、`DELETE` 与序列 `event_staged_id_seq` 的 `USAGE`。
 - **暂存的事件只由到达 `Start` 的命令里的中继发布。** 一条停在 `Start` 之前的命令暂存的事件，留在表里等下一个运行着中继的进程。
 
-### 对外接口面
+### 对外接口
 
-- `Outbox`、`ErrNoTransaction` 与 `ErrOtherDatabase` 是本模块与其他模块之间的接口面，发布语义同属接口面。
-- `*gorm.DB` 出现在接口面上，GORM 的不兼容升级直达暂存方，与数据库功能相同（[ADR-module-packaging](../../../adr/adr-module-packaging.md)）。
-- 表 `event_staged` 属于本模块，宿主不读写它；它的列供运维查看积压与拒收的原因，不在对外接口面内。
+- `Outbox`、`ErrNoTransaction` 与 `ErrOtherDatabase` 是本模块与其他模块之间的接口，发布语义同属接口。
+- `*gorm.DB` 出现在接口上，GORM 的不兼容升级直达暂存方，与数据库功能相同（[ADR-module-packaging](../../../adr/adr-module-packaging.md)）。
+- 表 `event_staged` 属于本模块，宿主不读写它；它的列供运维查看积压与拒收的原因，不在对外接口内。
 
 ## 依赖
 
@@ -88,14 +88,14 @@ var ErrOtherDatabase error // 事务不在交付的连接池上
 |---|---|
 | `pkg/db` | 交付的库（表所在之处）、迁移集资源、方言 |
 | `pkg/event` | 总线功能、事件类型、标识的形式 |
-| `pkg/event/internal/dispatch` | 标识的赋予、载荷解码成传输形状，与各总线实现共用一处 |
-| `pkg/log` | 可选依赖。中继要报告的事——总线拒收、读表失败——写进装配的日志；装配里没有日志功能时，写日志模块的进程默认记录器 |
-| `pkg/event/internal/tracing` | 本模块触及遥测类型的唯一之处：实现子包从它取传播器，span 也经它起 |
+| `pkg/event/internal/dispatch` | 标识的赋予、载荷解码成传输结构，与各总线实现共用一处 |
+| `pkg/log` | 可选依赖。中继要报告的事——总线拒收、读表失败——写进装配的日志；装配里没有日志功能时，写进日志模块的进程默认记录器 |
+| `pkg/event/internal/tracing` | 本模块触及遥测类型的唯一之处：实现子包从它取传播器，跨度也经它起 |
 | `pkg/observability` | 传播器与 tracer provider 的来源（`observability.Propagator()`）：经 `pkg/event/internal/tracing` 取用，实现子包在 `Stage` 里用传播器把写入事务所在跨度的追踪上下文写进暂存行 |
 | `pkg/core` | 注册描述符、交付功能 |
-| GORM | 接口面上的 `*gorm.DB` |
+| GORM | 接口上的 `*gorm.DB` |
 
-**接口包只 import 事件根包与 GORM**，`pkg/event/outbox` 的依赖面检查 `TestTheInterfacePackageCostsTheEventPackageAndGORMAlone` 守着这条：暂存方本来就经数据库功能写库、经总线发布，两者它都已承受；驱动与总线的客户端属于宿主登记的实现，不经接口包进入暂存方。**事件根包不 import 本模块**，它被每一个发布方 import，GORM 因此不进不暂存事件的发布方的闭包。
+**接口包只 import 事件根包与 GORM**，`pkg/event/outbox` 的依赖关系检查 `TestTheInterfacePackageCostsTheEventPackageAndGORMAlone` 守着这条：暂存方本来就经数据库功能写库、经总线发布，两者它都已承受；驱动与总线的客户端属于宿主登记的实现，不经接口包进入暂存方。**事件根包不 import 本模块**，它被每一个发布方 import，GORM 因此不进那些不暂存事件的发布方的闭包。
 
 方向满足架构不变量：实现子包 import 数据库与事件两个功能目录的根包，以及事件目录自己的内部单元，不 import 任何别的实现子包；两个依赖都在它之前构造、在它之后停止。
 

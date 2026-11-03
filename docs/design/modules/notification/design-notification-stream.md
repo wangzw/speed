@@ -2,18 +2,18 @@
 
 ## 职责
 
-本模块交付**站内信实时推送**：把“收件箱刚写入一行”这件事推给已经连着的客户端，使它不必轮询。它是 `notification.inbox.created` 的订阅者，把事件按（租户，收件人）投给在该作用域上订阅的连接。
+本模块交付**站内信实时推送**：把「收件箱刚写入一行」这件事推给已经连着的客户端，使它不必轮询。它是 `notification.inbox.created` 的订阅者，把事件按（租户，收件人）投给在该作用域上订阅的连接。
 
-**行先提交、事件后发。** 收件箱先把行落库并提交，之后才发 `notification.inbox.created`（[ADR-notification-stream](../../../adr/adr-notification-stream.md)）。由此推出一条：一次送不到任何人的通告什么都不丢——没有客户端连着、事件在总线上丢失、本副本的 Hub 为空，都只把这次推送的延迟变成“客户端下一次回读”，那一行已经在表里。
+**行先提交、事件后发。** 收件箱先把行落库并提交，之后才发 `notification.inbox.created`（[ADR-notification-stream](../../../adr/adr-notification-stream.md)）。由此推出一条：一次送不到任何人的通告什么都不丢——没有客户端连着、事件在总线上丢失、本副本的 Hub 为空，都只把这次推送的延迟变成「客户端下一次回读」，那一行已经在表里。
 
-Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一的价值是延迟**：行已经提交，事件只说“去读那一行”；Hub 不存储、不保证送达、不跨副本。本模块只做一件事——把事件尽快交给此刻正连着的客户端；其余由客户端回读[收件箱](design-notification-inbox.md)承担。
+Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一的价值是延迟**：行已经提交，事件只说「去读那一行」；Hub 不存储、不保证送达、不跨副本。本模块只做一件事——把事件尽快交给此刻正连着的客户端；其余由客户端回读[收件箱](design-notification-inbox.md)承担。
 
-本模块的实现子包 `pkg/notification/stream` 登记模块 `notification.stream`，不交付功能接口，只把 `GET /stream` 挂在入口模块的登记面上。
+本模块的实现子包 `pkg/notification/stream` 登记模块 `notification.stream`，不交付功能接口，只把 `GET /stream` 挂在入口模块的登记接口上。
 
 ### 非职责
 
-- **不存储、不读数据库。** 消息内容在[收件箱](design-notification-inbox.md)的表里；连接收到的是“有一行了”的提示，客户端要内容就回读取件箱的 HTTP 面。
-- **不跨副本。** 一台副本上写入的消息，推不到连在另一台副本上的客户端；本模块没有跨副本的 hub，也没有 Redis Pub/Sub 一类的接缝（[ADR-notification-stream](../../../adr/adr-notification-stream.md)）。
+- **不存储、不读数据库。** 消息内容在[收件箱](design-notification-inbox.md)的表里；连接收到的是「有一行了」的提示，客户端要内容就回读取件箱的 HTTP 接口。
+- **不跨副本。** 一台副本上写入的消息，推不到连在另一台副本上的客户端；本模块没有跨副本的 hub，也没有 Redis Pub/Sub 一类的扩展点（[ADR-notification-stream](../../../adr/adr-notification-stream.md)）。
 - **不保证送达、不保证顺序。** 客户端断开期间、慢消费者丢帧期间、事件在总线上丢失的期间，帧都可能没有到达；到达的先后也不构成业务顺序。需要确定内容的客户端回读那一行。
 - **不做已读、不做计数。** 标记已读与未读计数是[收件箱](design-notification-inbox.md)的路由。
 - **不判定谁能连。** 本模块不声明权限点，谁可以连 `GET /stream` 由宿主侧的授权决定。
@@ -46,7 +46,7 @@ Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一�
 
 ### 路由
 
-`GET /stream` 由本模块在 `Init` 里挂在入口模块的登记面上，端取自配置项 `notification.stream.endpoints` 点名的那些端，基路径 `/api/v1/notifications`（全路径 `/api/v1/notifications/stream`）。它是一条**长连接**路由，应答是一次流式的 `text/event-stream`。下表是它的判定顺序（封闭集）。
+`GET /stream` 由本模块在 `Init` 里挂在入口模块的登记接口上，端取自配置项 `notification.stream.endpoints` 点名的那些端，基路径 `/api/v1/notifications`（全路径 `/api/v1/notifications/stream`）。它是一条**长连接**路由，应答是流式的 `text/event-stream`。下表是它的判定顺序（封闭集）。
 
 | 步骤 | 行为 |
 |---|---|
@@ -61,12 +61,12 @@ Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一�
 
 **事件帧的格式**：`event: message\n`、`data: {…}\n`、一个空行结尾，即 `event: message\ndata: {…}\n\n`。`data:` 冒号之后是一个 JSON 对象，字段就是订阅到的事件载荷（`message_id`、`tenant_id`、`recipient_user_id`、`type_key`）。`event:` 名固定为 `message`。客户端据 `message_id` 回读取件箱取内容。
 
-### 对外接口面
+### 对外接口
 
-- **事件帧的形状属于接口面**：`event: message` 这一行，`data:` 里 JSON 载荷的字段名，以及结尾的空行。改它们使已连接的客户端解析失效。
-- **宿主可见面**：模块名 `notification.stream`，配置键 `notification.stream.endpoints`，路由 `GET /api/v1/notifications/stream`。改动它们是宿主可见的破坏性变更。
+- **事件帧的格式属于接口**：`event: message` 这一行，`data:` 里 JSON 载荷的字段名，以及结尾的空行。改它们使已连接的客户端解析失效。
+- **宿主可见的接口**：模块名 `notification.stream`，配置键 `notification.stream.endpoints`，路由 `GET /api/v1/notifications/stream`。改动它们是宿主可见的破坏性变更。
 - 特性名 `notification.stream`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
-- 本模块不交付功能接口，因而不在功能标识面上；一个进程里恰好一个 `notification.stream`。
+- 本模块不交付功能接口，因而不在功能标识之列；一个进程里恰好一个 `notification.stream`。
 
 ## 依赖
 
@@ -75,7 +75,7 @@ Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一�
 | `pkg/core` | 登记描述符 |
 | `pkg/config` | 声明输入项 |
 | `pkg/event` | 订阅 `notification.inbox.created` |
-| `pkg/http` | 可选：把自己挂到入口模块的登记面上；沿 `Unwrap` 取 `http.Flusher` |
+| `pkg/http` | 可选：把自己挂到入口模块的登记接口上；沿 `Unwrap` 取 `http.Flusher` |
 | `pkg/tenant` | 路由从请求上下文取租户（`tenant.FromContext`），作为订阅作用域的一半 |
 | `pkg/authn` | 从请求上下文取调用方身份，作为订阅作用域的收件人 |
 | `pkg/feature` 根包 | 声明静态特性（`feature.Spec`）；根包只依赖标准库 |
@@ -127,7 +127,7 @@ classDiagram
 
 ## 核心数据结构
 
-**Hub** 在内存里持有本副本的全部连接，按（租户，收件人）索引：一个作用域对应一组连接，一个连接属于恰好一个作用域。Hub 的读（`Publish` 找命中的连接）与写（`Subscribe` 增、`Close` 减）都可用并发调用，增删在一把写锁下进行，`Publish` 在锁下取到命中的连接集合后即可施发。
+**Hub** 在内存里持有本副本的全部连接，按（租户，收件人）索引：一个作用域对应一组连接，一个连接属于恰好一个作用域。Hub 的读（`Publish` 找命中的连接）与写（`Subscribe` 增、`Close` 减）都可用并发调用，增删在一把写锁下进行，`Publish` 在锁下取到命中的连接集合后即可发送。
 
 **连接（connection）** 承载一条已建立的流：
 
@@ -173,7 +173,7 @@ classDiagram
 | 沿 `Unwrap()` 找不到 `http.Flusher` | 500；该写出者上流式应答无法刷新 |
 | 客户端断开 | 路由向 Hub 注销该连接并返回，不报错 |
 | 慢消费者缓冲满 | 该连接自己的一个帧被丢弃，`Publish` 不阻塞、不报错 |
-| 事件缺 `tenant_id` 或 `recipient_user_id` | 该事件归不入任何作用域，被丢弃 |
+| 事件缺 `tenant_id` 或 `recipient_user_id` | 该事件无法归入任何作用域，被丢弃 |
 | 装配里没有事件功能 | 构造期即失败（必需依赖缺失） |
 | 路由能力在场而 `notification.stream.endpoints` 为空 | 终止启动，以完整路径点名这一项 |
 | 装配里没有入口模块 | 端名清单不被读取，空清单合法；本模块仍构造，但不挂路由，`/stream` 不对外提供 |
@@ -183,10 +183,10 @@ classDiagram
 
 ## 并发与事务边界
 
-- **Hub 可被并发读写。** `Subscribe`、`Publish` 与 `Close` 都可在不同协程上同时调用；增删连接在一把写锁下进行，`Publish` 在取到命中集合后施发，不在发送期间持有会被读端拉长的锁。
+- **Hub 可被并发读写。** `Subscribe`、`Publish` 与 `Close` 都可在不同协程上同时调用；增删连接在一把写锁下进行，`Publish` 在取到命中集合后发送，不在发送期间持有会被读端拉长的锁。
 - **`Publish` 永不阻塞、永不报错。** 对每个命中连接只做一次非阻塞发送；缓冲满即丢本连接自己的帧。发布方协程的进度与客户端的读写速度无关。
-- **每个连接一个深度 64 的缓冲。** 缓冲隔离了连接之间：一个客户端的读写速度只决定自己丢多少帧，不改变其他连接收到的帧。
-- **消息 channel 永不 close。** `Close` 只置该连接 per-connection 的 `done` 并把它从 Hub 注销，从不关闭 `ch`。理由是与 `close` 竞争的发送正是会把并发 Hub 打 panic 的那种竞争：`Publish` 在一个连接上做发送，`Close` 在另一个协程上关闭同一个 channel，两者之间没有可以同时排除发送与关闭的锁——发送端要么持锁发送（把慢客户端拖住整个 Hub），要么不持锁（与关闭竞争）。让 channel 永不关闭、由读端 select `done` 退出，这条竞争因而不存在：一次迟到的发送要么落进仍然存在的缓冲（读端已走，帧被回收），要么被非阻塞分支丢弃，都不 panic。
+- **每个连接一个深度 64 的缓冲。** 缓冲把连接彼此隔离：一个客户端的读写速度只决定自己丢多少帧，不改变其他连接收到的帧。
+- **消息 channel 永不 close。** `Close` 只置该连接自己的 `done` 并把它从 Hub 注销，从不关闭 `ch`。理由是与 `close` 竞争的发送正是会让并发 Hub 触发 panic 的那种竞争：`Publish` 在一个连接上做发送，`Close` 在另一个协程上关闭同一个 channel，两者之间没有可以同时排除发送与关闭的锁——发送端要么持锁发送（把慢客户端拖住整个 Hub），要么不持锁（与关闭竞争）。让 channel 永不关闭、由读端 select `done` 退出，这条竞争因而不存在：一次迟到的发送要么落进仍然存在的缓冲（读端已走，帧被回收），要么被非阻塞分支丢弃，都不 panic。
 - **匹配在缓冲之前做。** 事件的（租户，收件人）先于任何入缓冲尝试被比对，不匹配的连接不占一次发送尝试。
 - **本模块不涉及事务。** 它不读也不写数据库，没有事务边界；它唯一的跨协程状态是 Hub，由上面的锁与 `done` 收口。
 

@@ -2,17 +2,17 @@
 
 ## 职责
 
-- **对授权的承诺。** `pkg/authn` 不 import 授权功能目录（[authz](../design-authz.md)）；authn 交给授权的全部东西是根包里的接口、值类型与事件，`authz.guard` 与 `authz.policy` import 根包并交付其中的接缝，方向与 `tenant/resolve` import `pkg/authn` 同形（[ADR-authn-scope](../../../adr/adr-authn-scope.md)）。本文的承诺表是这些东西的清单，账户标识对授权的要求在其后单列。
-- **判定接缝。** 定义根包接口 `Decider`、值类型 `Decision`、动作常量 `Action`，以及冒充范围守卫 `ScopeGuard`。管理面动作、冒充的开始与读写、非成员进入租户，都经 `Decider` 判定（[ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)）。
+- **对授权的承诺。** `pkg/authn` 不 import 授权功能目录（[authz](../design-authz.md)）；authn 交给授权的全部东西是根包里的接口、值类型与事件，`authz.guard` 与 `authz.policy` import 根包并交付其中的接口，方向与 `tenant/resolve` import `pkg/authn` 一致（[ADR-authn-scope](../../../adr/adr-authn-scope.md)）。本文的承诺表是这些东西的清单，账户标识对授权的要求在其后单列。
+- **判定接口。** 定义根包接口 `Decider`、值类型 `Decision`、动作常量 `Action`，以及冒充范围守卫 `ScopeGuard`。管理面动作、冒充的开始与读写、非成员进入租户，都经 `Decider` 判定（[ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)）。
 - **管理面模块 `authn.admin`。** 挂 `B/*` 与 `Bt/:tenant/*` 下的全部管理路由（冒充记录在 `B/tenants/:tenant/impersonations`）；每条路由的处理顺序固定为注册验证状态的门控、`Decider`、发起者强度核验、强制审计、写、事件。门控只拦发起者为未验证账户的人类写，见「注册验证状态的门控」。按路由组声明[特性](../../../glossary.md)：恒挂的组是静态特性，随能力挂出的组是条件特性，在挂该组的同一处判定里经 `feature.Board` 的 `Post` 报告。
 - **`Decision` 的填法。** 路径里不带租户的租户级动作，`authn.admin` 在调用 `Decider` 之前自己解析对象的归属并填入 `Decision`。
-- **自助范围的判据。** 账户对自己的会话、因素、口令、标识与外部关联的读写不过接缝；判据在本文给出，自助路由由 `authn.login`、`authn.session`、`authn.mfa` 各自挂。
+- **自助范围的判据。** 账户对自己的会话、因素、口令、标识与外部关联的读写不经过 `Decider`；判据在本文给出，自助路由由 `authn.login`、`authn.session`、`authn.mfa` 各自挂。
 - **403 的收窄。** 本文给出 authn 哪些位置可以写 403，以及网关与租户准入层写什么；判据与被否决的写法在 [ADR-authn-scope](../../../adr/adr-authn-scope.md)。
 
 ### 非职责
 
-- **不做授权判定，不含角色、权限、组。** 角色按（账户，租户）绑定、归 `authz.policy`；`authz.policy` 按生效账户实时查自己的绑定。本模块只回答「谁」与「是不是成员」。
-- **不实现 `Decider`，不内置放行名单。** 实现由宿主或 `authz.guard` 交付；口令表主体能否通过由接缝判定，接缝能看到 `Identity.Account().IsStatic()`。
+- **不做授权判定，不含角色、权限、组。** 角色按（账户，租户）绑定，归 `authz.policy`；`authz.policy` 按生效账户实时查自己的绑定。本模块只回答「谁」与「是不是成员」。
+- **不实现 `Decider`，不内置放行名单。** 实现由宿主或 `authz.guard` 交付；口令表主体能否通过由 `Decider` 判定，`Decider` 能看到 `Identity.Account().IsStatic()`。
 - **不实现租户准入层。** 成员核对、租户级认证强度与冒充的租户范围在 [tenant.admission](../tenant/design-tenant-admission.md)；本模块只定义它询问的 `Decider` 动作 `authn.tenant.access` 与它交付的 `ScopeGuard`。
 - **不持有账户、会话、因素、服务密钥、IdP、冒充记录的数据与规则。** 管理路由只调用对应能力的根包接口，规则与哨兵在各能力的模块里（[authn-account](design-authn-account.md)、[authn-session](design-authn-session.md)、[authn-mfa](design-authn-mfa.md)、[authn-sso](design-authn-sso.md)、[authn-impersonation](design-authn-impersonation.md)）。
 - **不挂自助路由。** 自助路由在 [authn-login](design-authn-login.md)、[authn-session](design-authn-session.md)、[authn-mfa](design-authn-mfa.md) 里。
@@ -29,20 +29,20 @@
 
 | 项 | 承诺 | 载体 |
 |---|---|---|
-| 依赖方向 | `pkg/authn` 不 import 授权功能目录；所有接缝是根包里的接口，`authz.guard` 与 `authz.policy` import 根包并交付它们 | 本文 |
-| 身份字段 | 读取面的字段集见载体文档；不含角色，不含租户（冒充范围 `Scope` 除外） | [authn](design-authn.md) |
+| 依赖方向 | `pkg/authn` 不 import 授权功能目录；所有接口都定义在根包里，`authz.guard` 与 `authz.policy` import 根包并交付它们 | 本文 |
+| 身份字段 | 读取接口的字段集见载体文档；不含角色，不含租户（冒充范围 `Scope` 除外） | [authn](design-authn.md) |
 | 访问级别 | `authz.guard` 经 `authn.AccessFromContext` 得知本请求命中的路由登记为 `Open`、`Optional` 还是 `Required`，以及网关有没有对它作过决定；约定用法见下节 | [authn](design-authn.md)、[authn-gate](design-authn-gate.md) |
 | 账户标识的性质 | 不可变、全局唯一、形态由 `ParseAccountID` 判定；全部要求见下节 | 本文、[authn-account](design-authn-account.md) |
-| 成员关系 | `Memberships` 的只读面，零值读作非成员；成员关系与账户的变更事件供 `authz.policy` 清理角色绑定与缓存，事件清单、投递路径与去重要求见载体文档 | [authn-account](design-authn-account.md)、[authn-events](design-authn-events.md) |
+| 成员关系 | `Memberships` 的只读接口，零值视为非成员；成员关系与账户的变更事件供 `authz.policy` 清理角色绑定与缓存，事件清单、投递路径与去重要求见载体文档 | [authn-account](design-authn-account.md)、[authn-events](design-authn-events.md) |
 | 角色绑定 | 角色按（账户，租户）绑定，由 `authz.policy` 的 `authz_bindings` 承载 | [design-authz](../design-authz.md) |
-| 会话撤销 | `Sessions.Status` 是撤销的权威面；事件 `authn.session.revoked` 是缓存失效的提示，不是权威 | [authn-session](design-authn-session.md) |
+| 会话撤销 | `Sessions.Status` 是撤销的权威依据；事件 `authn.session.revoked` 是缓存失效的提示，不是权威 | [authn-session](design-authn-session.md) |
 | 链上次序 | `authz.guard` 声明授权阶段，阶段内用 `After` 指向准入层的功能标识，位于租户准入层之内；跨阶段的位置由阶段顺序给出，次序与锚点的完整表在载体文档 | [authn](design-authn.md)、[tenant.admission](../tenant/design-tenant-admission.md) |
 | 加强认证 | `authz.guard` 需要某条路由要求新鲜的多因素时，挂 `guard.Require(authn.Requirement{...})` | [authn-mfa](design-authn-mfa.md) |
 | 令牌 | 访问令牌不带角色；`ClaimsContributor` 是宿主显式选择追加声明的口子 | [authn-token](design-authn-token.md) |
 | 平台范围与准入放行 | `Decision.Tenant` 为空表示平台范围，只用于账户级动作；租户级动作的 `Decision.Tenant` 一律由 `authn.admin` 解析后填，`Decider` 永远不会收到租户为空的租户级动作；非成员的请求在准入层经 `authn.tenant.access` 询问 `Decider`，缺省拒绝，`authz.guard` 据此落地跨租户的平台级角色，不必改准入层与 authn | 本文 |
 | 冒充范围 | `Identity.Scope()`、`ScopeGuard.Covers`、网关对冒充身份的范围规则 | [authn-impersonation](design-authn-impersonation.md)、[authn-gate](design-authn-gate.md) |
-| 管理面与冒充接缝 | `Decider`、`Decision`、`Action` | 本文 |
-| 判定接缝的实现 | `Decider` 由 `authz.guard` 实现 | [design-authz](../design-authz.md) |
+| 管理面与冒充接口 | `Decider`、`Decision`、`Action` | 本文 |
+| 判定接口的实现 | `Decider` 由 `authz.guard` 实现 | [design-authz](../design-authz.md) |
 | 状态码来源 | 网关从不写 403；准入层写 404 与 401；authn 的路由处理器只在封闭集内转述策略拒绝时写 403 | 本文「403 的收窄」 |
 | 测试 | `authntest.Context` 构造带指定身份与访问级别的上下文 | [authn](design-authn.md) |
 
@@ -55,12 +55,12 @@
 | 不可变 | 标识一经分配永不重新分配。账户删除留墓碑，同一邮箱再注册得到新标识，所以授权里残留的旧标识指向的是已无个人数据的墓碑，不会指到新人。 |
 | 全局唯一与形态 | 形态由 `ParseAccountID` 判定：1 到 64 字节、字符集 `[A-Za-z0-9._-]`、大小写敏感。授权不得解释标识的内部结构。 |
 | 口令表主体 | 标识形如 `static.<名>`，`AccountID.IsStatic()` 为真；没有成员关系。授权对它们要有自己的规则：给角色或不给。 |
-| 不建外键 | 授权不建指向 authn 表的外键，因为跨模块外键依赖迁移先后。清理靠订阅事件，并可用 `Accounts.Get` 对账，墓碑读作不存在。 |
+| 不建外键 | 授权不建指向 authn 表的外键，因为跨模块外键依赖迁移先后。清理靠订阅事件，并可用 `Accounts.Get` 对账，墓碑视为不存在。 |
 | 租户标识与成员关系 | 租户标识是 `tenant.ID` 的字符串形式；成员关系回答「这个账户是不是这个租户的成员」，角色绑定在授权，没有绑定即没有权限。 |
-| 成员关系状态的零值 | 零值是暂停。授权应把「查不到」与「已暂停」都读作非成员。 |
-| 按生效账户解析 | 角色绑定按生效账户 `Account()` 解析。冒充时管理员因此得到被冒充者在 `Scope()` 租户内的权限，限制冒充的范围是 `Decider` 在冒充开始时的事。授权对 `Scope()` 非空而请求不在该租户内的请求默认拒绝；准入层已答 404，授权再拒一次是纵深。 |
+| 成员关系状态的零值 | 零值是暂停。授权应把「查不到」与「已暂停」都视为非成员。 |
+| 按生效账户解析 | 角色绑定按生效账户 `Account()` 解析。冒充时管理员因此得到被冒充者在 `Scope()` 租户内的权限，限制冒充的范围是 `Decider` 在冒充开始时的事。授权对 `Scope()` 非空且请求不在该租户内的情形默认拒绝；准入层已答 404，授权再拒一次是纵深。 |
 | `idp.` 前缀的属性 | 属性集里 `idp.` 前缀的值来自外部 IdP 的声明。授权可以读，把它们当强授权依据之前应自己判断信任程度。 |
-| `Access` 的约定用法 | `AccessOpen` 放行，公开路由由 authn 已声明；`AccessOptional` 且无身份，按授权自己的匿名规则判；`AccessRequired` 而无身份，或 `AccessUnknown`，说明该端不在网关所守之列或网关缺席，授权拒绝。认证缺席时的失败方向取拒绝。 |
+| `Access` 的约定用法 | `AccessOpen` 放行，公开路由已由 authn 声明；`AccessOptional` 且无身份，按授权自己的匿名规则判；`AccessRequired` 而无身份，或 `AccessUnknown`，说明该端不在网关所守之列或网关缺席，授权拒绝。认证缺席时的失败方向取拒绝。 |
 
 ### `Decider`、`Decision`、`Action`
 
@@ -133,15 +133,15 @@ type ScopeGuard interface {
 }
 ```
 
-`ScopeGuard` 是根包接口，由 `tenant.admission` 排他交付；`authn.impersonation` 把它当必需依赖，网关把它当可选依赖。它使网关与 `authn.impersonation` 在不 import `pkg/tenant` 的前提下知道冒充身份能被放进哪些端。`Covers(endpoint)` 报出准入层的 `endpoints` 里是否有该端；它只说准入层守哪些端，不核对宿主有没有在那些端上开租户解析的豁免。网关在 `Start` 里按作用域核对：平台域与普通面的挂载端上 `Covers` 为真即 `ErrInvalidConfig`，租户管理作用域的挂载端上 `Covers` 为假即 `ErrInvalidConfig`（见 [authn-gate](design-authn-gate.md)）。
+`ScopeGuard` 是根包接口，由 `tenant.admission` 排他交付；`authn.impersonation` 把它当必需依赖，网关把它当可选依赖。它使网关与 `authn.impersonation` 在不 import `pkg/tenant` 的前提下知道冒充身份能被放进哪些端。`Covers(endpoint)` 报出准入层的 `endpoints` 里是否有该端；它只说准入层守哪些端，不核对宿主有没有在那些端上开租户解析的豁免。网关在 `Start` 里按作用域核对：平台域与普通路由的挂载端上 `Covers` 为真即 `ErrInvalidConfig`，租户管理作用域的挂载端上 `Covers` 为假即 `ErrInvalidConfig`（见 [authn-gate](design-authn-gate.md)）。
 
 ### 管理面模块 `authn.admin`
 
-`authn.admin` 是 `pkg/authn/admin` 里注册的独立模块，不交付任何功能接口，只经 `mount.Mounter` 挂 `B/*` 与 `Bt/:tenant/*`；`B` 是 `system` 作用域的基路径，`Bt` 是 `tenants` 作用域的基路径，二者都由 [authn-gate](design-authn-gate.md) 声明。冒充记录的路由也在 `B` 下，路径是 `B/tenants/:tenant/impersonations`：路径带租户，但判定在平台域，租户是被记录限定的数据，不是请求的域。路由的访问级别全部是 `Required`。判定域为该租户的管理路由登记为可冒充，判定域为平台域的不登记：冒充身份的能力取自被冒充账户，而它从不持有平台域权限（[design-authn-impersonation](design-authn-impersonation.md)）。这些路由的判定在 handler 内经 `Decider` 做出；宿主把它们挂在受授权守卫的端上时（租户管理作用域在示范里挂在 `api`），守卫的缺省关闭会先拒，宿主须在守卫的声明面上把这组路由登记为开放。平台管理作用域在示范里挂在 `admin` 端，该端不在授权守卫之列，冒充记录的路由因此无须登记为开放。路由的作用域按判定域划分，不由路径里有没有租户决定：`B` 下的账户、服务密钥与冒充记录在平台域判定，`Bt/:tenant/*` 下的成员、邀请与 SSO 提供方在该租户的策略域判定（[ADR-http-api-path-scopes](../../../adr/adr-http-api-path-scopes.md)）。
+`authn.admin` 是 `pkg/authn/admin` 里注册的独立模块，不交付任何功能接口，只经 `mount.Mounter` 挂 `B/*` 与 `Bt/:tenant/*`；`B` 是 `system` 作用域的基路径，`Bt` 是 `tenants` 作用域的基路径，二者都由 [authn-gate](design-authn-gate.md) 声明。冒充记录的路由也在 `B` 下，路径是 `B/tenants/:tenant/impersonations`：路径带租户，但判定在平台域，租户是被记录限定的数据，不是请求的域。路由的访问级别全部是 `Required`。判定域为该租户的管理路由登记为可冒充，判定域为平台域的不登记：冒充身份的能力取自被冒充账户，而它从不持有平台域权限（[design-authn-impersonation](design-authn-impersonation.md)）。这些路由的判定在 handler 内经 `Decider` 做出；宿主把它们挂在受授权守卫的端上时（租户管理作用域在示范里挂在 `api`），守卫的缺省关闭会先拒，宿主须在守卫的声明接口上把这组路由登记为开放。平台管理作用域在示范里挂在 `admin` 端，该端不在授权守卫之列，冒充记录的路由因此无须登记为开放。路由的作用域按判定域划分，不由路径里有没有租户决定：`B` 下的账户、服务密钥与冒充记录在平台域判定，`Bt/:tenant/*` 下的成员、邀请与 SSO 提供方在该租户的策略域判定（[ADR-http-api-path-scopes](../../../adr/adr-http-api-path-scopes.md)）。
 
 - **不纳入就没有管理路由。** 宿主不点名 `authn.admin` 时没有 `B/*` 或 `Bt/:tenant/*` 下的任何路由；`AccountAdmin`、`Memberships`、`Sessions`、`SSOProviders` 的 Go 接口照常可用。
 - **缺审计则启动失败。** `audit.Audit` 是必需依赖，漏纳入在任何实例构造之前以 `core.ErrMissingProvider` 失败，不留到第一次写操作才发现。
-- **每组路由随对应能力在场才挂。** 能力缺席时该组路由不存在，路由引擎对它按未命中处理；缺接缝的组不挂出，不做成挂出而全拒，理由与被否决的写法在 [ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)。启动诊断写出挂了哪几组。
+- **每组路由随对应能力在场才挂。** 能力缺席时该组路由不存在，路由引擎对它按未命中处理；缺接口的组不挂出，不做成挂出而全拒，理由与被否决的写法在 [ADR-authn-decision-seam](../../../adr/adr-authn-decision-seam.md)。启动诊断写出挂了哪几组。
 
 下表是路由组的全集（封闭集），只写组名、挂出条件与该组对应的[特性](../../../glossary.md)；每条路由属于哪一组，由下节路由表的「组」列给出。新增路由归入其能力所在的组，或新增一组。
 
@@ -152,7 +152,7 @@ type ScopeGuard interface {
 | 会话 | `Sessions` 在场 | `authn.admin.sessions`（条件） |
 | 因素与口令 | `MFA` 在场（这些路由要核对 `MFA.Seasoned`）；其中管理员重置口令的路由还要 `Passwords` 在场 | `authn.admin.factors`（条件） |
 | 服务密钥 | `Tokens` 在场 | `authn.admin.secrets`（条件） |
-| SSO 提供方 | `SSOProviders` 在场，且交付的注册另答域读扩展形状（`Domains`／`DomainsMany`） | `authn.admin.sso`（条件） |
+| SSO 提供方 | `SSOProviders` 在场，且交付的注册另答域读扩展接口（`Domains`／`DomainsMany`） | `authn.admin.sso`（条件） |
 | 元数据刷新 | 至少一个 `SSOMetadataRefresher` 在场，且 SSO 提供方组已挂 | `authn.admin.sso.metadata`（条件） |
 | 冒充记录 | `Impersonation` 在场，且交付了单条读取（`Get`） | `authn.admin.impersonations`（条件） |
 
@@ -171,8 +171,8 @@ type ScopeGuard interface {
 |---|---|---|---|
 | 账户 | `GET\|POST B/accounts` | `account.read`、`account.create` | 列表键集分页（`Accounts.List`），可按状态、种类、标识前缀、显示名前缀过滤，标识前缀精确到一种标识类型；列表的查询参数是封闭集，出现集合外的参数即 400，已接受的过滤给空值即不过滤（显示名前缀按字节前缀、大小写敏感，不是合法 UTF-8 即 400）；创建的**用户**账户必须带一个合法用户名；没有用户名的请求在写入之前 400，不留下无法以口令登录的账户；邮箱已被别的账户预留或持有答 409 `email-taken`；服务账户以服务密钥登录，不受这条要求；创建服务账户另要 `client.manage`；强制审计 |
 | 账户 | `GET\|PATCH\|DELETE B/accounts/:id` | `account.read`、`account.update`、`account.delete` | `PATCH` 改显示名、属性与 `protected`（`SetDisplayName`、`SetAttributes`、`SetProtected`）；删除要新鲜的本地多因素；强制审计 |
-| 因素与口令 | `POST B/accounts/:id/password` | `account.update` | 管理员提交临时口令，是请求体，从不回显、不进日志与审计，缺省置 `must_change`；发起者新鲜的本地多因素且 `MFA.Seasoned`；强制审计；成功后撤销该账户的全部会话 |
-| 账户 | `POST B/accounts/:id/identifiers`、`DELETE B/accounts/:id/identifiers/:identifier` | `account.update` | 添加用户名（登录名）与管理员断言的邮箱；邮箱是新的或尚未证明时 `verified_via` 写 `admin`，已有证明的同值行保留原证明；管理员断言的邮箱登记为联系方式，不使它成为登录方式，也不在证明之前作默认联系地址；归属读作未证明直到本人以证明渠道证明，登录方式仍由持有人另选；邮箱已被别的账户预留或持有答 409 `email-taken`；删除用户名答 409 `username-immutable`（`ErrUsernameImmutable`），删除不生效，这条规则先于下一条；删除带口令凭据账户的最后一个被选作登录方式的已验证邮箱答 409 `login-identifier-required`；删除任何标识后账户若不再持有口令凭据、被选作登录方式的已验证手机号与外部身份中的任何一种，答 409 `last-login-method`（`ErrLastLoginMethod`），通行密钥不算，未验证的手机号也不算；强制审计 |
+| 因素与口令 | `POST B/accounts/:id/password` | `account.update` | 管理员提交临时口令，放在请求体里，从不回显、不进日志与审计，缺省置 `must_change`；发起者新鲜的本地多因素且 `MFA.Seasoned`；强制审计；成功后撤销该账户的全部会话 |
+| 账户 | `POST B/accounts/:id/identifiers`、`DELETE B/accounts/:id/identifiers/:identifier` | `account.update` | 添加用户名（登录名）与管理员断言的邮箱；邮箱是新的或尚未证明时 `verified_via` 写 `admin`，已有证明的同值行保留原证明；管理员断言的邮箱登记为联系方式，不使它成为登录方式，也不在证明之前作默认联系地址；归属视为未证明直到本人以证明渠道证明，登录方式仍由持有人另选；邮箱已被别的账户预留或持有答 409 `email-taken`；删除用户名答 409 `username-immutable`（`ErrUsernameImmutable`），删除不生效，这条规则先于下一条；删除带口令凭据账户的最后一个被选作登录方式的已验证邮箱答 409 `login-identifier-required`；删除任何标识后账户若不再持有口令凭据、被选作登录方式的已验证手机号与外部身份中的任何一种，答 409 `last-login-method`（`ErrLastLoginMethod`），通行密钥不算，未验证的手机号也不算；强制审计 |
 | 账户 | `POST B/accounts/:id/status` | `account.disable` | 新鲜的本地多因素；强制审计；停用后同步清理会话（`AccountLifecycle`），清理失败 503，重试幂等 |
 | 会话 | `GET B/accounts/:id/sessions`、`POST B/accounts/:id/revoke-sessions`、`DELETE B/sessions/:id` | `session.read`、`session.revoke` | `GET B/accounts/:id/sessions` 的每一行带 `current` 标记：该行是调用方自己的会话时为真，取自调用方身份的会话标识，其余为假，与自助路由 `GET B/sessions` 的同名标记同义；`DELETE B/sessions/:id` 先 `Sessions.Get` 解析会话所属账户，`Decision.Target` 填会话标识、`TargetAccount` 填账户；强制审计 |
 | 因素与口令 | `GET B/accounts/:id/factors`、`POST B/accounts/:id/mfa-required`、`POST B/accounts/:id/mfa-reset` | `account.read`、`account.update`、`mfa.reset` | 清单只交回种类、标签、状态；重置要新鲜的本地非短信多因素与 `MFA.Seasoned`；重置前核对目标账户持有口令凭据、被选作登录方式的已验证手机号与外部身份中的至少一种（`AccountAdmin.HasLoginWayOtherThanPasskey`），一种都没有（只剩因素，例如只有通行密钥，或只有未被选作登录方式的手机号）答 409 `last-login-method`（`ErrLastLoginMethod`），不调 `MFA.Reset`，补一条 `failed` 审计行；强制审计 |
@@ -180,13 +180,13 @@ type ScopeGuard interface {
 | 成员关系 | `GET Bt/:tenant/members`、`PUT\|DELETE Bt/:tenant/members/:account`、`PUT Bt/:tenant/members/:account/sso-exempt` | `membership.manage` | `Decision.Tenant` 取路径里的租户标识，不是别名，所以 `authn.admin` 不依赖租户名册；强制审计。`DELETE` 先取该租户的成员删除锁，再问每个 `MembershipGuard`，把检查与删除的提交一起持在锁里：若会让该租户不再有任何租户管理员绑定，答 409 `conflict`（`ErrLastTenantAdmin`），成员关系不删；锁取不到答 503，删除不执行 |
 | SSO 提供方 | `GET\|POST Bt/:tenant/sso/providers`、`GET\|PUT\|DELETE Bt/:tenant/sso/providers/:id`、`POST\|DELETE Bt/:tenant/sso/providers/:id/domains[/:domain]`、`POST Bt/:tenant/sso/providers/:id/domains/:domain/verify`、`POST Bt/:tenant/sso/providers/:id/reverify-domains` | `idp.manage` | `Decision.Tenant` 取 `SSOProviders.Tenant(id)`；路径带租户的路由核对路径、请求体与已存记录的租户一致，不一致 400，`PUT` 时租户不可变；加密列从不回显；IdP 发起登录开启时应答带警告；强制审计 |
 | 元数据刷新 | `POST Bt/:tenant/sso/providers/:id/metadata/refresh` | `idp.manage` | `Decision` 的填法同 SSO 提供方组；经 `SSOMetadataRefresher` 按 `Protocol` 分派；强制审计 |
-| 冒充记录 | `GET B/tenants/:tenant/impersonations`、`DELETE B/tenants/:tenant/impersonations/:id` | `impersonation.read`、`impersonation.revoke` | `GET` 的租户取路径段，`Decision.Tenant` 取它，并作为 `GrantQuery.Tenant` 传给 `Impersonation.List`；`DELETE` 先经单条读取 `Get`（依赖表登记的扩展形状）按标识读记录（含已结束的），记录不存在 404，`Decision.Tenant` 取记录的租户，`Target` 与 `TargetAccount` 取记录的目标；两个动作都在平台域判定，`Decision.Tenant` 是记录被限定的数据，不是策略域；已结束的记录经 `Decider` 放行后 `Revoke` 无操作，应答与首次撤销相同；这一组的审计是尽力档：撤销是向安全方向的动作，审计由 `Impersonation.Revoke` 自己写，写失败只记 Error，不阻止撤销，处理器不另写强制档审计，也不补 `failed` 行 |
+| 冒充记录 | `GET B/tenants/:tenant/impersonations`、`DELETE B/tenants/:tenant/impersonations/:id` | `impersonation.read`、`impersonation.revoke` | `GET` 的租户取路径段，`Decision.Tenant` 取它，并作为 `GrantQuery.Tenant` 传给 `Impersonation.List`；`DELETE` 先经单条读取 `Get`（依赖表登记的扩展接口）按标识读记录（含已结束的），记录不存在 404，`Decision.Tenant` 取记录的租户，`Target` 与 `TargetAccount` 取记录的目标；两个动作都在平台域判定，`Decision.Tenant` 是记录被限定的数据，不是策略域；已结束的记录经 `Decider` 放行后 `Revoke` 无操作，应答与首次撤销相同；这一组的审计是尽力档：撤销是向安全方向的动作，审计由 `Impersonation.Revoke` 自己写，写失败只记 Error，不阻止撤销，处理器不另写强制档审计，也不补 `failed` 行 |
 
 **成员视图携带账户显示名。** `GET Bt/:tenant/members` 的每一行带 `display_name`：成员账户的显示名，账户没有时为空串，不另造回退。`authn.admin` 按页逐个读账户（`Accounts` 没有批量读），账户在页读与名字读之间被删除时该行给空串。列表的 `query` 查询参数按账户显示名的字节前缀或登录标识（查询串小写后）的前缀收窄本页，供成员选择器按输入检索；缺席或空串即不过滤，不是合法 UTF-8 即 400。
 
-**提供方视图携带邮箱域。** `GET Bt/:tenant/sso/providers` 的每一行、`GET Bt/:tenant/sso/providers/:id`，以及创建、更新与元数据刷新应答里的提供方视图都带 `domains`：一个数组，没有声明时为空数组、永不为 null；每个元素只有 `domain`（规范化后的邮箱域）与 `verified`（该域是否已验证），按 `domain` 升序。只有已验证的域参与按邮箱域的登录发现，未验证的声明也列出来，供运营者看到自己声明过什么。列表读经扩展形状的 `DomainsMany` 一次取回整页的域，不是每行一次；单条读取与写入应答经 `Domains` 读该提供方。这一组依赖交付的 `SSOProviders` 另答域读扩展形状，断不上时整组不挂，`authn.admin.sso` 也随之不报告，与冒充记录组同一条规则。
+**提供方视图携带邮箱域。** `GET Bt/:tenant/sso/providers` 的每一行、`GET Bt/:tenant/sso/providers/:id`，以及创建、更新与元数据刷新应答里的提供方视图都带 `domains`：一个数组，没有声明时为空数组、永不为 null；每个元素只有 `domain`（规范化后的邮箱域）与 `verified`（该域是否已验证），按 `domain` 升序。只有已验证的域参与按邮箱域的登录发现，未验证的声明也列出来，供运营者看到自己声明过什么。列表读经扩展接口的 `DomainsMany` 一次取回整页的域，不是每行一次；单条读取与写入应答经 `Domains` 读该提供方。这一组依赖交付的 `SSOProviders` 另答域读扩展接口，断不上时整组不挂，`authn.admin.sso` 也随之不报告，与冒充记录组同一条规则。
 
-**账户行携带标识。** `GET B/accounts` 的每一行、`GET B/accounts/:id`，以及创建、改名与状态切换应答里的账户视图都带 `identifiers`：一个数组，没有标识时为空数组、永不为 null；每个元素只有三个字段——`kind`（`username`、`email`、`phone`）、`value`（模块存储的规范化值）与 `proven`（该标识的归属是否被证明）。视图只报标识与归属，不报登录方式的选择；一条邮箱或手机被选作登录方式与成为默认联系地址是账户自己的事实，读自账户的联系方式与登录方式（[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)）。`proven` 取自标识的已验证方式：`sms-code`、`email-code`、`invite` 与 `idp:<provider>` 是证明，读真；`admin`、`import-unverified` 与 `self` 只是断言，读假。视图不暴露标识自身的标识、验证时刻与验证方式。顺序固定：按 `kind` 以 `username`、`email`、`phone` 排列，同一 `kind` 内按 `value` 升序，因此首元素就是用来称呼该账户的标识。列表读为一页账户一次取回全部标识（`Accounts.IdentifiersMany`），整页因此只有一次标识读，不是每行一次；单条读取仍用 `Accounts.Identifiers`。墓碑不读：删除会抹除账户的标识，`Accounts.IdentifiersMany` 对墓碑不给条目（单条读对它答 `authn.ErrAccountNotFound`），故账户状态为已删除时视图直接给出空数组。列表是一页快照：某行在页读与标识读之间被删除时，批量读不给该账户条目，该行仍以空数组呈现，整页不因此答 503；单条读取点名一个账户，同样情形答 404。
+**账户行携带标识。** `GET B/accounts` 的每一行、`GET B/accounts/:id`，以及创建、改名与状态切换应答里的账户视图都带 `identifiers`：一个数组，没有标识时为空数组、永不为 null；每个元素只有三个字段——`kind`（`username`、`email`、`phone`）、`value`（模块存储的规范化值）与 `proven`（该标识的归属是否被证明）。视图只报标识与归属，不报登录方式的选择；一条邮箱或手机被选作登录方式与成为默认联系地址是账户自己的事实，读自账户的联系方式与登录方式（[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)）。`proven` 取自标识的已验证方式：`sms-code`、`email-code`、`invite` 与 `idp:<provider>` 是证明，视为真；`admin`、`import-unverified` 与 `self` 只是断言，视为假。视图不暴露标识自身的标识、验证时刻与验证方式。顺序固定：按 `kind` 以 `username`、`email`、`phone` 排列，同一 `kind` 内按 `value` 升序，因此首元素就是用来称呼该账户的标识。列表读为一页账户一次取回全部标识（`Accounts.IdentifiersMany`），整页因此只有一次标识读，不是每行一次；单条读取仍用 `Accounts.Identifiers`。墓碑不读：删除会抹除账户的标识，`Accounts.IdentifiersMany` 对墓碑不给条目（单条读对它答 `authn.ErrAccountNotFound`），故账户状态为已删除时视图直接给出空数组。列表是一页快照：某行在页读与标识读之间被删除时，批量读不给该账户条目，该行仍以空数组呈现，整页不因此答 503；单条读取点名一个账户，同样情形答 404。
 
 ### 自助范围
 
@@ -199,22 +199,22 @@ type ScopeGuard interface {
 
 ### 注册验证状态的门控
 
-注册验证状态是账户上的独立事实，判定二值：账户持有至少一条已证明归属的邮箱标识即已验证；持有邮箱而没有一条已证明的即未验证；一条邮箱也没有即不适用本规则。它不是账户状态，账户状态仍只有启用、停用、删除；未验证账户是启用账户，会话照常建立，管理面的列表、读取与过滤照常看得见它。判定从标识与联系方式预留现算（`SignupVerification.SignupStateOf`），与账户怎么创建无关：管理员预置的账户、导入的账户与自助注册的账户读同一套状态。`signup_state` 列只记账户怎么来，`0` 的账户一样可能读作未验证。
+注册验证状态是账户上的独立事实，判定二值：账户持有至少一条已证明归属的邮箱标识即已验证；持有邮箱而没有一条已证明的即未验证；一条邮箱也没有即不适用本规则。它不是账户状态，账户状态仍只有启用、停用、删除；未验证账户是启用账户，会话照常建立，管理面的列表、读取与过滤照常看得见它。判定从标识与联系方式预留现算（`SignupVerification.SignupStateOf`），与账户怎么创建无关：管理员预置的账户、导入的账户与自助注册的账户读同一套状态。`signup_state` 列只记账户怎么来，`0` 的账户一样可能视为未验证。
 
-- **判据与应答。** 发起者是用户账户且状态读作未验证（`SignupPending`）时，管理面的人类写答 403 `contact-required`（`ErrContactRequired`）；冒充发起按同一判据拒绝，它的路由在 `authn.impersonation`。读路由不受影响。
-- **豁免。** 服务账户（`AccountKind` 为 `service`）与没有任何邮箱的账户（`SignupNone`）不受门控约束。管理员预置与导入写出的账户不豁免：它们带着邮箱而未证明时照样被拦，直到本人经账户页的验证节证明该地址。社交登录与企业即时开通新开立的账户不写入提供方声明的地址（REQ-signup-048），没有邮箱时读作 `SignupNone`，不受这条门控约束。
+- **判据与应答。** 发起者是用户账户且状态视为未验证（`SignupPending`）时，管理面的人类写答 403 `contact-required`（`ErrContactRequired`）；冒充发起按同一判据拒绝，它的路由在 `authn.impersonation`。读路由不受影响。
+- **豁免。** 服务账户（`AccountKind` 为 `service`）与没有任何邮箱的账户（`SignupNone`）不受门控约束。管理员预置与导入写出的账户不豁免：它们带着邮箱而未证明时照样被拦，直到本人经账户页的验证节证明该地址。社交登录与企业即时开通新开立的账户不写入提供方声明的地址（REQ-signup-048），没有邮箱时视为 `SignupNone`，不受这条门控约束。
 - **位置。** 门控在身份确定之后、`Decider` 与强度核验之前；它只收紧不放行。被拦下的请求既不询问 `Decider`，也不询问强度，也不写强制档审计。状态经 `SignupVerification.SignupStateOf` 读当前值，读失败答 503，不按放行处理。
 - **与冒充的关系。** 冒充发起要求发起者是有会话的用户账户，未验证账户的发起被同一条判据拒；`authn.impersonation` 在它的结构性限制里、强度类条件与 `Decider` 之前答同一个 403 `contact-required`（[design-authn-impersonation](design-authn-impersonation.md)）。被冒充的目标账户的验证状态不参与判定。
 
-门控的状态由 `authn.account` 持有，本文只写管理面这一侧的判定位置与应答；其余面的门控由各能力的文档承载。
+门控的状态由 `authn.account` 持有，本文只写管理面这一侧的判定位置与应答；其余部分的门控由各能力的文档承载。
 
-### 对外接口面
+### 对外接口
 
-- `Decider`、`Decision`、`ScopeGuard` 的签名，以及 `Decision` 各字段的填法（见「`Decision` 的填法」），属于对外接口面。
+- `Decider`、`Decision`、`ScopeGuard` 的签名，以及 `Decision` 各字段的填法（见「`Decision` 的填法」），属于对外接口。
 - 动作常量的值：新增常量是兼容的；删除、改名或改变既有常量的值是破坏性变更。
-- 「`Decider` 永远不会收到租户为空的租户级动作」是接口面的行为语义。
-- 路由路径与其询问的动作属于对外接口面；路由集随装配变化，不在其中。
-- 声明的特性名与各名所指的路由组：前端经生成的特性名类型引用它们，改名、撤去或改变所指的组是宿主可见的破坏性变更；哪些名字在特性文档里随装配变化，不在接口面内。
+- 「`Decider` 永远不会收到租户为空的租户级动作」是接口的行为语义。
+- 路由路径与其询问的动作属于对外接口；路由集随装配变化，不在其中。
+- 声明的特性名与各名所指的路由组：前端经生成的特性名类型引用它们，改名、撤去或改变所指的组是宿主可见的破坏性变更；哪些名字在特性文档里随装配变化，不在接口内。
 - 403 的位置集合是封闭集，新增一种要有新的决定。
 
 ## 依赖
@@ -234,7 +234,7 @@ type ScopeGuard interface {
 | `Tokens` | 可选 | 服务密钥组路由。 |
 | `SSOProviders` | 可选 | SSO 提供方组路由；取提供方所属租户。 |
 | 全部 `SSOMetadataRefresher` | `ResolveAll` | 元数据刷新路由；按 `Protocol` 分派。 |
-| `Impersonation` 及单条读取 `Get` | 可选 | 冒充记录组路由。`List`、`Revoke` 来自公开的 `Impersonation` 接口；`Get` 是记录组为解析记录的租户与目标所需的扩展形状，不在公开接口里（见 [design-authn-impersonation](design-authn-impersonation.md)）；缺 `Get` 时整组不挂，不做成挂出而全拒。 |
+| `Impersonation` 及单条读取 `Get` | 可选 | 冒充记录组路由。`List`、`Revoke` 来自公开的 `Impersonation` 接口；`Get` 是记录组为解析记录的租户与目标所需的扩展接口，不在公开接口里（见 [design-authn-impersonation](design-authn-impersonation.md)）；缺 `Get` 时整组不挂，不做成挂出而全拒。 |
 | `feature.Board` | 可选，`Init` 经 `core.Resolve` 取用，不列入 `Requires` | 报告条件分组的特性名；缺席时不报告，路由照挂。 |
 
 **方向核对。** `authn.admin` 位于认证功能目录内，不 import `pkg/tenant`、授权功能目录、宿主与 `pkg/feature/board`，也不 import 认证功能目录里别的实现子包。`pkg/feature` 根包只依赖标准库，为声明特性 import 它不扩大本模块的闭包（[feature](../design-feature.md)）。`Decider` 与 `ScopeGuard` 都是根包接口：`authz.guard` 与 `tenant.admission` import 根包交付它们，反向没有依赖。
@@ -243,9 +243,9 @@ type ScopeGuard interface {
 
 ## UML 图
 
-### 接缝的类型关系
+### 接口的类型关系
 
-下图固定谁定义接缝、谁取用、谁交付。`Decider` 与 `ScopeGuard` 都定义在根包；取用方只依赖根包，交付方在 authn 目录之外。
+下图固定谁定义接口、谁取用、谁交付。`Decider` 与 `ScopeGuard` 都定义在根包；取用方只依赖根包，交付方在 authn 目录之外。
 
 ```mermaid
 classDiagram
@@ -300,7 +300,7 @@ classDiagram
 
 ### 处理器的判定顺序
 
-每条管理路由的处理器共用同一个判定顺序，任一步不满足即终止。写操作与读操作在「写操作」一步分叉。
+每条管理路由的处理器共用同一个判定顺序，任一步不满足即终止。写操作与读操作在「写操作」一步分支。
 
 ```mermaid
 flowchart TD
@@ -308,7 +308,7 @@ flowchart TD
     B -- 是 --> R1["403 impersonation-restricted"]
     B -- 否 --> C{"Decider 在场?"}
     C -- 否 --> R2["403 forbidden"]
-    C -- 是 --> D{"路径与请求体形状合法<br/>租户一致?"}
+    C -- 是 --> D{"路径与请求体格式合法<br/>租户一致?"}
     D -- 否 --> R3["400"]
     D -- 是 --> E["解析对象归属<br/>填 Tenant 与 TargetAccount"]
     E --> F{"对象存在?"}
@@ -321,7 +321,7 @@ flowchart TD
     G -- "true" --> H{"发起者满足强度要求?"}
     H -- 否 --> R6["401 insufficient_user_authentication"]
     H -- 是 --> I{"写操作?"}
-    I -- 否 --> J["读取并应答<br/>读不写接缝级审计"]
+    I -- 否 --> J["读取并应答<br/>读不写接口级审计"]
     I -- 是 --> K{"强制审计写入<br/>事务之外、动作之前<br/>撤销冒充记录除外"}
     K -- 写失败 --> R7["503 动作不执行"]
     K -- 写成功 --> L["调用能力接口执行写"]
@@ -334,11 +334,11 @@ flowchart TD
 - **冒充检查在最前，只针对判定域为平台域的动作。** 网关因这些路由没有登记 `Impersonable` 而对冒充身份答 401；处理器自己仍检查 `Actor` 的冒充状态，答 403 `impersonation-restricted`，不询问 `Decider`。判定域为该租户的管理路由登记为可冒充，冒充身份按生效账户的权限判定。
 - **`Decider` 缺席先于任何查询。** 缺提供者时答 403 `forbidden`，不解析对象，使默认部署不泄露对象是否存在。
 - **归属解析先于 `Decide`。** `Decision` 要带归属，所以解析必须在询问之前（见「`Decision` 的填法」）。
-- **注册验证状态的门控在身份确定之后、`Decide` 与强度核验之前。** 发起者读作未验证（`SignupPending`：有邮箱而没有一条已证明的）时，管理面人类写答 403 `contact-required`，不询问 `Decider`、不询问强度、不写审计；门控只收紧不放行。读路由、服务账户与没有邮箱的账户不受影响。冒充发起的路由在 `authn.impersonation`，按同一判据拒绝（见「注册验证状态的门控」）。
+- **注册验证状态的门控在身份确定之后、`Decide` 与强度核验之前。** 发起者视为未验证（`SignupPending`：有邮箱而没有一条已证明的）时，管理面人类写答 403 `contact-required`，不询问 `Decider`、不询问强度、不写审计；门控只收紧不放行。读路由、服务账户与没有邮箱的账户不受影响。冒充发起的路由在 `authn.impersonation`，按同一判据拒绝（见「注册验证状态的门控」）。
 - **强度核验在 `Decide` 之后、审计之前。** 强度要求按路由表的「额外要求」列，核验失败答 401 加强认证挑战，不写审计，不执行动作。
-- **强制审计在事务之外、动作之前。** 管理面路由里只有撤销冒充记录不适用：它的审计是尽力档，由 `Impersonation.Revoke` 自己写，处理器跳过强制审计与补行（路由表）。接缝级的审计写入另占一条连接、不加入调用方的事务；在调用方事务开着时调用它，SQLite 上等调用方占着的写锁，单连接库上等调用方占着的那条连接，等待超时后 `Record` 以 `ErrWriteFailed` 失败，强制档因此永远写不成功。处理器因此不在任何事务里调用 `audit.Record`，事务内只暂存发件箱事件，不调 `Bus.Publish`。
+- **强制审计在事务之外、动作之前。** 管理面路由里只有撤销冒充记录不适用：它的审计是尽力档，由 `Impersonation.Revoke` 自己写，处理器跳过强制审计与补行（路由表）。接口级的审计写入另占一条连接、不加入调用方的事务；在调用方事务开着时调用它，SQLite 上等调用方占着的写锁，单连接库上等调用方占着的那条连接，等待超时后 `Record` 以 `ErrWriteFailed` 失败，强制档因此永远写不成功。处理器因此不在任何事务里调用 `audit.Record`，事务内只暂存发件箱事件，不调 `Bus.Publish`。
 - **写失败逐对象补一条 `failed` 行。** 审计与动作不在同一事务里，动作失败时审计里留一条已写而未生效的行，随后为每个已写出的对象补一条 `outcome=failed` 的行，用动作标识关联。
-- **读路由不写接缝级审计。** 审计动作表是封闭集且不含任何读动作，读由请求级采集记录（[design-authn-events](design-authn-events.md)），所以 `authn.admin` 的读路由只读、不应答审计，也不补 `failed` 行。
+- **读路由不写接口级审计。** 审计动作表是封闭集且不含任何读动作，读由请求级采集记录（[design-authn-events](design-authn-events.md)），所以 `authn.admin` 的读路由只读、不写审计，也不补 `failed` 行。
 - **事件由能力接口发出。** 写成功后的事件在能力接口自己的事务与发布路径里，`authn.admin` 不重复发布。
 
 审计的动作名、明细键与档位见 [authn-events](design-authn-events.md)。
@@ -373,7 +373,7 @@ flowchart TD
 
 初始账户、初始成员关系、初始 IdP 在没有任何管理员时的来源如下（封闭集），都不是内置名单：
 
-- 宿主在自己的命令里用 `AccountAdmin` 与 `Memberships` 的 Go 接口创建，与「账户从哪里来是宿主的事」同形。
+- 宿主在自己的命令里用 `AccountAdmin` 与 `Memberships` 的 Go 接口创建，与「账户从哪里来是宿主的事」一致。
 - 宿主实现一个只含判定逻辑的 `Decider`，先放行某个口令表主体，例如上文的 `opsOnly`。
 
 默认部署开箱即不可被远程管理，这是有意的。
@@ -403,7 +403,7 @@ flowchart TD
 | 租户在路径、请求体与已存记录之间不一致 | 400，不询问 `Decider` | 拒 |
 | 对象不存在（`ErrAccountNotFound`、`ErrSessionNotFound` 及对应的提供方、冒充记录） | 404 | 拒 |
 | 删除标识的请求指向用户名 | 409 `username-immutable`（`ErrUsernameImmutable`），删除不生效，先于最后登录名规则（[ADR-authn-username-permanent](../../../adr/adr-authn-username-permanent.md)） | 拒 |
-| 发起者读作未验证（`SignupPending`），而这是管理面人类写 | 403 `contact-required`（`ErrContactRequired`） | 拒 |
+| 发起者视为未验证（`SignupPending`），而这是管理面人类写 | 403 `contact-required`（`ErrContactRequired`） | 拒 |
 | 读取发起者的注册验证状态失败 | 503 `urn:speed:authn:unavailable`（`ErrUnavailable`），动作不执行 | 拒 |
 | 发起者的强度不足 | 401 `insufficient_user_authentication`（[REF-rfc9470](../../../references.md)）（`ErrStepUpRequired`） | 拒 |
 | 管理员重置因素与重置口令时，发起者名下没有启用已满 `sensitive-min-age` 的非短信因素（`Seasoned` 为假），在强度判定通过之后判定 | 403 `factor-not-seasoned`（`ErrFactorNotSeasoned`） | 拒 |
@@ -437,11 +437,11 @@ flowchart TD
 | 租户一致性 | 路径、请求体与已存租户不一致时 400，且 `Decider` 的调用计数为零。 |
 | 缺席即全拒 | 没有任何 `Decider` 的装配里，逐条管理路由回 403，冒充被拒，非成员请求回 404。 |
 | 缺审计 | 纳入 `authn.admin` 而没有 `audit.Audit` 的装配，在构造之前以 `core.ErrMissingProvider` 失败。 |
-| 强制审计先于动作 | 审计接缝返回 `ErrWriteFailed` 时，每条强制档路由回 503，且能力接口的写调用计数为零。 |
-| 撤销冒充记录的审计档 | 审计接缝返回 `ErrWriteFailed` 时，`DELETE B/tenants/:tenant/impersonations/:id` 仍撤销成功，只记 Error；已结束的记录再撤销得到相同应答；记录不存在回 404；`GET B/tenants/:tenant/impersonations` 缺 `tenant` 回 400，`Decider` 的调用计数为零。 |
+| 强制审计先于动作 | 审计接口返回 `ErrWriteFailed` 时，每条强制档路由回 503，且能力接口的写调用计数为零。 |
+| 撤销冒充记录的审计档 | 审计接口返回 `ErrWriteFailed` 时，`DELETE B/tenants/:tenant/impersonations/:id` 仍撤销成功，只记 Error；已结束的记录再撤销得到相同应答；记录不存在回 404；`GET B/tenants/:tenant/impersonations` 缺 `tenant` 回 400，`Decider` 的调用计数为零。 |
 | 强制审计不在调用方事务里 | 处理器全程不开事务，`audit.Record` 在能力接口的写之前调用；SQLite 文件库（单写者）上管理写操作成功且审计行存在——处理器若把审计与写包进一条事务，该库上会因写锁自等而失败。 |
 | 平台域管理面在冒充中拒绝 | 冒充身份直达平台域管理路由的处理器时回 403 `impersonation-restricted`，`Decider` 的调用计数为零；判定域为该租户的管理路由按其权限判定。 |
-| 注册验证状态的门控 | 表驱动：发起者读作 `SignupPending` 时，每条管理写路由与冒充发起回 403 `contact-required`，`Decider` 与强度询问的调用计数为零，能力接口的写调用计数为零，审计写入计数为零；同一发起者的读路由照常成功；服务账户与读作 `SignupNone`（没有任何邮箱）的发起者不受影响，读作 `SignupVerified` 的发起者也不受影响；管理员预置的账户（`signup_state=0`）带着未证明邮箱时同样被拦；状态读取返回错误时回 503 且动作不执行。 |
+| 注册验证状态的门控 | 表驱动：发起者视为 `SignupPending` 时，每条管理写路由与冒充发起回 403 `contact-required`，`Decider` 与强度询问的调用计数为零，能力接口的写调用计数为零，审计写入计数为零；同一发起者的读路由照常成功；服务账户与视为 `SignupNone`（没有任何邮箱）的发起者不受影响，视为 `SignupVerified` 的发起者也不受影响；管理员预置的账户（`signup_state=0`）带着未证明邮箱时同样被拦；状态读取返回错误时回 503 且动作不执行。 |
 | 路由组随能力挂 | 逐个去掉 `Sessions`、`MFA`、`Tokens`、`SSOProviders`、`SSOMetadataRefresher`、`Impersonation`，对应组的路由是路由引擎的未命中，其余组不受影响；启动诊断列出实际挂出的组。 |
 | 特性与路由组同源 | 用真实的 `feature.board` 驱动到 `Start`，表驱动逐组断言：功能在场，当且仅当报告该组的特性名，当且仅当该组路由已登记；`authn.admin` 在每一种组合下都在特性文档里。 |
 | 缺席不放行 | `Decide` 返回 error 回 503，panic 同样回 503，两种情形下能力接口的写调用计数都为零。 |
@@ -478,6 +478,6 @@ flowchart TD
 | 守住性质的测试与装配测试 | 部分实现 | `pkg/authn/admin/admin_test.go` `TestDecisionFill`、`TestNoDeciderDeniesEveryRoute`、`TestTheMandatoryAuditLandsBeforeTheWrite`、`TestAStrengthShortfallIsAStepUp`、`TestTheImpersonationRecordGroup`；`pkg/authn/admin/assembly_test.go` `TestARealRegistryMountsTheManagementRoutes` |
 | 注册验证状态的门控 | 已实现 | `pkg/authn/admin/pipeline.go` `(*product).gateSignup`；`pkg/authn/admin/account.go`、`factor.go`、`membership.go`、`session.go`、`secret.go`、`sso.go`、`impersonation.go` 的各写处理器；`pkg/authn/admin/admin.go` `Module`、`product.verification` |
 | 根包的 import 白名单与网关闭包的禁止表 | 已实现 | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |
-| `authn.admin` 子包的 import 方向：不 import `pkg/tenant`、授权功能目录、宿主与别的实现子包 | 已实现 | `pkg/authn/admin` 的 import 清单；`pkg/authn/deps_test.go` `tenantViolations` 规则（本目录每个包都不达 `pkg/tenant`） |
+| `authn.admin` 子包的 import 方向：不 import `pkg/tenant`、授权功能目录、宿主与别的实现子包 | 已实现 | `pkg/authn/admin` 的 import 清单；`pkg/authn/deps_test.go` `tenantViolations` 规则（本目录每个包都不依赖 `pkg/tenant`） |
 | operation 声明与 OpenAPI（[REF-openapi](../../../references.md)）片段生成 | 已实现 | `pkg/authn/admin/operations.go`；`pkg/authn/admin/openapi_generated_test.go`；片段 `pkg/authn/admin/openapi/admin.json` |
 | 静态特性 `authn.admin` 与各条件分组特性的声明、在挂载分支里的报告 | 已实现 | `pkg/authn/admin/admin.go` `Module`、`featureAdmin`、`featureSessions`、`featureFactors`、`featureServiceKeys`、`featureSSO`、`featureSSOMetadata`、`featureImpersonations`、`postFeature`；`pkg/authn/admin/routes.go` `mountRoutes`、`mountAccountRoutes`；`pkg/authn/admin/feature_test.go` `TestAGroupIsPresentExactlyWhenItIsNamedAndMounted`、`TestEveryDeclaredNameIsSpecified` |
