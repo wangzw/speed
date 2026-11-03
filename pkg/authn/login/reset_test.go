@@ -1039,6 +1039,27 @@ func TestAnEmailResetWithoutAProofIsRefusedAndWritesNothing(t *testing.T) {
 	}
 }
 
+// TestAnEmailResetToAnUnknownAddressWithoutAProofSpendsNothing holds the order
+// the email branch fixes: the proof is checked before the eligibility lookup and
+// before any record or source budget. An address no account holds therefore gets
+// the same 403 a known address gets, and leaves no reset record and no charged
+// source bucket behind.
+func TestAnEmailResetToAnUnknownAddressWithoutAProofSpendsNothing(t *testing.T) {
+	r := newResetRig(t)
+	r.p.human = requiredHuman()
+
+	rec := r.startReset(`{"channel":"email","identifier":"nobody@example.com"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("an unknown address with no proof answered %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	if got := resetProblemCode(t, rec); got != "human-verification-required" {
+		t.Errorf("the refusal code = %q, want human-verification-required", got)
+	}
+	if keys := r.kv.keys(); len(keys) != 0 {
+		t.Errorf("the refused reset charged %d store keys, want none: %v", len(keys), keys)
+	}
+}
+
 // TestAnEmailResetWithAValidProofSendsOnce holds the accepted path: the gate is
 // asked once, with the request's proof, and exactly one message is sent.
 func TestAnEmailResetWithAValidProofSendsOnce(t *testing.T) {

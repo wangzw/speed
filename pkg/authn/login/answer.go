@@ -2,7 +2,6 @@ package login
 
 import (
 	"context"
-	"errors"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
@@ -215,15 +214,15 @@ func (r *routes) challengeFactor(c *call, token, echo string, rec record, raw []
 		if !r.swap(c, token, raw, rec) {
 			return
 		}
-		r.reportLogin(c.ctx, rec, outcomeFailed)
 		// A send the human-verification gate refused is not a factor that did
 		// not hold: it keeps its own 403 or 400, which is why the proof moved
-		// into the code engine but its answer did not.
-		if cause := step.CauseOf(got); errors.Is(cause, authn.ErrHumanVerificationRequired) ||
-			errors.Is(cause, authn.ErrInvalidArgument) {
+		// into the code engine but its answer did not. Recognised before the
+		// report, so a proof the gate never accepted is not a failed login.
+		if cause := step.CauseOf(got); authn.IsHumanProofRejection(cause) {
 			r.fail(c, cause)
 			return
 		}
+		r.reportLogin(c.ctx, rec, outcomeFailed)
 		c.unauthorized(mount.CodeLoginFailed)
 	case step.KindThrottled:
 		r.reportLogin(c.ctx, rec, outcomeThrottled)

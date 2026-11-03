@@ -503,6 +503,7 @@ var exportedSurface = []string{
 	"func FreshFirstFactor",
 	"func FreshLocalMulti",
 	"func FromContext",
+	"func IsHumanProofRejection",
 	"func ParseAccountID",
 	"func StepData",
 	"func StepEnrolled",

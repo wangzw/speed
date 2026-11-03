@@ -177,7 +177,9 @@ func TestTheEngineForwardsAFactorChallengeProofWithoutCheckingIt(t *testing.T) {
 // send count stays zero; a Begin is not a client answer, so its answer count
 // stays zero; the record has no method step, so even a binding token would reach
 // no step the method can walk; and the refusal drops the flow cookie, so the
-// client never holds the token that record is keyed by.
+// client never holds the token that record is keyed by. The record's lifetime is
+// the flow TTL, but this case does not advance the clock and does not wait for
+// expiry: it holds the record's shape and its zero counts only.
 func TestARejectedStartLeavesNoContinuableFlowAndChargesNothing(t *testing.T) {
 	begins := 0
 	m := phoneMethod()
@@ -262,6 +264,70 @@ func TestAProoflessFirstStepIsNotReportedAsAFailedLogin(t *testing.T) {
 	}
 	if rows := sink.rows(); len(rows) != 0 {
 		t.Errorf("a proof refusal wrote %d login audit rows, want none: %v", len(rows), rows)
+	}
+}
+
+// TestAFactorChallengeProofRefusalIsNotReportedAsAFailedLogin holds the second
+// factor's observation side. Choosing a factor starts its challenge, and an SMS
+// factor checks the proof at the send entry: a missing or invalid proof is
+// ErrHumanVerificationRequired and an over-long one is ErrInvalidArgument. Both
+// keep their own 403 or 400 and record neither a failed login outcome nor a
+// login audit row; reporting the refusal first would count a proof the gate
+// never accepted as a credential that did not hold.
+func TestAFactorChallengeProofRefusalIsNotReportedAsAFailedLogin(t *testing.T) {
+	cases := []struct {
+		name   string
+		cause  error
+		status int
+		code   string
+	}{
+		{"missing proof", authn.ErrHumanVerificationRequired, http.StatusForbidden, "human-verification-required"},
+		{"over-long proof", authn.ErrInvalidArgument, http.StatusBadRequest, "bad-request"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reader, mp := newTestMetrics(t)
+			m := &fakeMethod{name: "password"}
+			m.begin = func(authn.Start) (authn.Step, error) {
+				return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+			}
+			r := newRig(t, m)
+			r.allow("acct1")
+			r.mfa.outcome = authn.MFAFactor
+			r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorSMS, Label: "Phone"}}
+			r.mfa.challenge = func(string) authn.Step {
+				return authn.StepRefused(fmt.Errorf("authn.mfa.sms: %w", tc.cause))
+			}
+			sink := &auditing{}
+			r.p.audit = sink
+			var err error
+			if r.p.meters, err = newMeters(mp); err != nil {
+				t.Fatalf("creating the instrument: %v", err)
+			}
+
+			start := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`)
+			if start.Code != http.StatusOK {
+				t.Fatalf("the start answered %d: %s", start.Code, start.Body.String())
+			}
+			cookie := flowCookie(t, start)
+			seq := int(decode(t, start.Body.String())["seq"].(float64))
+
+			rec := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+				fmt.Sprintf(`{"seq":%d,"step":"factor","input":{"factor":"f1"}}`, seq),
+				"Cookie", cookie)
+			if rec.Code != tc.status {
+				t.Fatalf("the refused challenge answered %d, want %d: %s", rec.Code, tc.status, rec.Body.String())
+			}
+			if got := humanType(t, rec.Body.String()); got != tc.code {
+				t.Errorf("the refusal code = %q, want %q", got, tc.code)
+			}
+			if pairs := loginMetricPairs(t, reader); len(pairs) != 0 {
+				t.Errorf("a proof refusal was counted as a login outcome: %v", pairs)
+			}
+			if rows := sink.rows(); len(rows) != 0 {
+				t.Errorf("a proof refusal wrote %d login audit rows, want none: %v", len(rows), rows)
+			}
+		})
 	}
 }
 

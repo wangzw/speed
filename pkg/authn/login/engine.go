@@ -250,8 +250,7 @@ func (r *routes) migrateFirst(c *call, token, echo string, rec record, raw []byt
 		// A proof the gate refused, or one over the field's bound, is not a
 		// credential that did not hold: it keeps its own 403 or 400 and is not
 		// reported as a failed login.
-		if cause := step.CauseOf(got); !errors.Is(cause, authn.ErrHumanVerificationRequired) &&
-			!errors.Is(cause, authn.ErrInvalidArgument) {
+		if cause := step.CauseOf(got); !authn.IsHumanProofRejection(cause) {
 			r.reportLogin(c.ctx, rec, outcomeFailed)
 		}
 		r.refusedStep(c, step.CauseOf(got))

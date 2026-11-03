@@ -1,6 +1,9 @@
 package authn
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // HumanProof is what a caller presents to a human-verification check: the token
 // the client obtained from the deployment's verifier, and the address the request
@@ -72,4 +75,14 @@ type HumanVerifier interface {
 	// asked, and accepts one anyway. The failures are the three the interface
 	// comment names.
 	Verify(ctx context.Context, p HumanProof) error
+}
+
+// IsHumanProofRejection reports whether err is a human-verification gate
+// refusing the proof a request presented: ErrHumanVerificationRequired for a
+// missing, invalid, expired or already used proof, and ErrInvalidArgument for a
+// proof longer than the provider admits. Both keep their own 403 or 400 and are
+// not a credential that did not hold, so a login surface answers them without
+// reporting a failed login.
+func IsHumanProofRejection(err error) bool {
+	return errors.Is(err, ErrHumanVerificationRequired) || errors.Is(err, ErrInvalidArgument)
 }
