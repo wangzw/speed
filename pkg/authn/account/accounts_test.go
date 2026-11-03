@@ -1322,6 +1322,35 @@ func TestTouchLeavesNoAuditRowOfItsOwn(t *testing.T) {
 	})
 }
 
+// TestCreateNamesAnAccountWithoutADisplayNameAfterItsUsername holds the one
+// fallback every creation takes: an explicit name wins, and a creation that
+// named none is named after the username it was given.
+func TestCreateNamesAnAccountWithoutADisplayNameAfterItsUsername(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		username    string
+		displayName string
+		want        string
+	}{
+		{"explicit", "named-user", "Ann", "Ann"},
+		{"absent", "fallback-user", "", "fallback-user"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			forEachDialect(t, func(t *testing.T, h *harness) {
+				created, err := h.p.Create(context.Background(), authn.CreateAccount{
+					Kind: authn.KindUser, Username: c.username, DisplayName: c.displayName, Via: "admin",
+				})
+				if err != nil {
+					t.Fatalf("creating: %v", err)
+				}
+				if created.DisplayName != c.want {
+					t.Errorf("display name = %q, want %q", created.DisplayName, c.want)
+				}
+			})
+		})
+	}
+}
+
 // plain admits text of exactly its bound and refuses one byte past it, which is
 // the inclusive upper bound each of its call sites passes.
 func TestPlainAdmitsExactlyTheBound(t *testing.T) {

@@ -83,18 +83,20 @@ func (p Pending) Clone() Pending {
 }
 
 // Create opens the account a pending signup carries, with the username its
-// person chose and, for a social first login, the password it also asked for.
-// It is the pending step's only write: the account and its username identifier
-// are written in one transaction, and the binding, the proved phone or the
-// membership is written beside it by the same rules the immediate first-login
-// paths follow.
+// person chose, the password a social first login also asked for, and the display
+// name a phone first login may have carried. It is the pending step's only write:
+// the account and its username identifier are written in one transaction, and the
+// binding, the proved phone or the membership is written beside it by the same
+// rules the immediate first-login paths follow.
 //
 // A username that is empty or does not normalize is authn.ErrInvalidIdentifier,
 // one the system keeps for itself is authn.ErrUsernameReserved, and one another
 // account holds is authn.ErrAccountExists. A password the account store's policy
 // refuses, including the absence of the one a social first login must carry, is
-// authn.ErrPasswordPolicy. None of them writes anything.
-func (r *Resolver) Create(ctx context.Context, p Pending, username, password string) (Result, error) {
+// authn.ErrPasswordPolicy. None of them writes anything. An absent display name
+// is allowed; the account store names the account after the username in its
+// place.
+func (r *Resolver) Create(ctx context.Context, p Pending, username, password, name string) (Result, error) {
 	switch p.Source {
 	case SourceSocial, SourcePhone, SourceEnterprise:
 	default:
@@ -117,7 +119,7 @@ func (r *Resolver) Create(ctx context.Context, p Pending, username, password str
 	}
 	switch p.Source {
 	case SourcePhone:
-		return r.createPhone(ctx, p, username)
+		return r.createPhone(ctx, p, username, name)
 	case SourceEnterprise:
 		return r.createEnterprise(ctx, p, username)
 	}

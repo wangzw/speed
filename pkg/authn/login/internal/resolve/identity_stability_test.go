@@ -206,7 +206,7 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			if resolveErr != nil || res.Pending == nil {
 				return res, resolveErr
 			}
-			return r.Create(ctx, *res.Pending, username, passwordOf(*res.Pending))
+			return r.Create(ctx, *res.Pending, username, passwordOf(*res.Pending), "")
 		}
 
 		// One: password self-registration.

@@ -14,6 +14,11 @@ import (
 // account with.
 const fieldUsername = "username"
 
+// fieldDisplayName is the input key a phone first login may carry beside the
+// username. It is optional, and no other first login reads it: a social or
+// enterprise account takes its display name from the provider.
+const fieldDisplayName = "display_name"
+
 // fieldPassword is the input key a social first login carries beside the
 // username. It is the password the account is opened with, and no other first
 // login reads it.

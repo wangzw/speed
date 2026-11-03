@@ -90,7 +90,7 @@ func TestAnUnwindSurvivesTheLogInsCancelledContext(t *testing.T) {
 	ctx, cancel := contextWithCancelOnLink(e)
 	defer cancel()
 	e.s.failLink = authn.ErrUnavailable
-	_, err = e.r.Create(ctx, *pending.Pending, testUsername, passwordOf(*pending.Pending))
+	_, err = e.r.Create(ctx, *pending.Pending, testUsername, passwordOf(*pending.Pending), "")
 	if err == nil {
 		t.Fatal("want a failure")
 	}

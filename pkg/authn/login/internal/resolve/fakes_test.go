@@ -579,7 +579,7 @@ func (e *env) resolveAs(username string, p authn.Proof) (Result, error) {
 	if err != nil || res.Pending == nil {
 		return res, err
 	}
-	return e.r.Create(context.Background(), *res.Pending, username, passwordOf(*res.Pending))
+	return e.r.Create(context.Background(), *res.Pending, username, passwordOf(*res.Pending), "")
 }
 
 // pending resolves a first login without opening the account, which is what the

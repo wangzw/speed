@@ -1287,3 +1287,16 @@ func TestTheUnverifiedSweepCanBeTurnedOff(t *testing.T) {
 		}
 	})
 }
+
+// TestRegisterNamesAnAccountWithoutADisplayNameAfterItsUsername holds the
+// fallback of the password-registration path: a registration that named no
+// display name is named after the username it chose.
+func TestRegisterNamesAnAccountWithoutADisplayNameAfterItsUsername(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		h.openSelfRegistration()
+		account := h.mustRegister("nameless-register", "nameless@example.com", "password123")
+		if account.DisplayName != "nameless-register" {
+			t.Errorf("display name = %q, want the username %q", account.DisplayName, "nameless-register")
+		}
+	})
+}

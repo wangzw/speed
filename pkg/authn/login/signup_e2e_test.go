@@ -45,6 +45,15 @@ func (h *harness) answerUsername(seq int, username string) reply {
 	})
 }
 
+// answerUsernameAndDisplayName sends one username answer carrying the optional
+// display name a phone signup asks for beside it.
+func (h *harness) answerUsernameAndDisplayName(seq int, username, displayName string) reply {
+	h.t.Helper()
+	return h.post("/api/v1/auth/flows/answer", map[string]any{
+		"seq": seq, "step": "answer", "input": map[string]string{"username": username, "display_name": displayName},
+	})
+}
+
 // TestARefusedUsernameKeepsTheAnswerPosition holds the retry the step invites:
 // a refusal leaves the answer position where it was, so the same step number
 // answers again and the legal name opens the account. A refusal that moved the
@@ -380,6 +389,40 @@ func jitMethodModule() core.Module {
 	}
 }
 
+// noNameJitMethod is a stand-in enterprise OIDC method whose identity carries no
+// display name, so the account it opens has to fall back to the username.
+type noNameJitMethod struct{}
+
+func (noNameJitMethod) Name() string { return "oidc-signup-noname" }
+
+func (noNameJitMethod) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{
+		Name: "oidc-signup-noname", Kind: authn.MethodKindEnterprise, Protocol: authn.MethodProtocolOIDC, OpensAccount: true,
+	}
+}
+
+func (noNameJitMethod) Begin(context.Context, authn.Start) (authn.Step, error) {
+	return authn.StepProven(authn.Proof{
+		Provider: "0b8f0d3e-6f3a-4b3e-9c1e-2a4c5d6e7f80",
+		External: &authn.External{
+			Provider: "oidc:0b8f0d3e-6f3a-4b3e-9c1e-2a4c5d6e7f80", Subject: "u2", Email: "jit2@acme.com", Tenant: "acme",
+		},
+		Methods: []authn.Method{authn.MethodOIDC},
+	}), nil
+}
+
+func (noNameJitMethod) Answer(context.Context, authn.FlowState, authn.StepInput) (authn.Step, error) {
+	return authn.Step{}, fmt.Errorf("the stand-in enterprise method has no answer step")
+}
+
+func noNameJitMethodModule() core.Module {
+	return core.Module{
+		Name:     "stand-in.oidc-signup-noname",
+		Provides: []core.Provision{{Token: (*authn.LoginMethod)(nil)}},
+		New:      func(context.Context, *core.Registry) (any, error) { return noNameJitMethod{}, nil },
+	}
+}
+
 // jitProviderID is the stand-in enterprise provider's identifier. It is UUID
 // text, the shape a session records a provider in.
 const jitProviderID = "0b8f0d3e-6f3a-4b3e-9c1e-2a4c5d6e7f80"
@@ -447,6 +490,27 @@ func unverifiedSocialModule() core.Module {
 	}
 }
 
+// noNameSocialMethod is a stand-in social provider that gave no name for the
+// person, so the account its first login opens has to fall back to the username.
+type noNameSocialMethod struct{ socialMethod }
+
+func (noNameSocialMethod) Begin(context.Context, authn.Start) (authn.Step, error) {
+	return authn.StepProven(authn.Proof{
+		External: &authn.External{Provider: "google", Subject: "g2"},
+		Methods:  []authn.Method{authn.MethodOIDC},
+	}), nil
+}
+
+func noNameSocialModule() core.Module {
+	return core.Module{
+		Name:     "stand-in.google-noname",
+		Provides: []core.Provision{{Token: (*authn.LoginMethod)(nil)}},
+		New: func(context.Context, *core.Registry) (any, error) {
+			return noNameSocialMethod{}, nil
+		},
+	}
+}
+
 // TestAnEmptyUsernameOnTheSignupStepIsItsOwnRefusal holds that a blank name is
 // the username field's failure rather than the body's: the client that posts an
 // empty name gets 400 username-invalid, and nothing is written.
@@ -475,8 +539,8 @@ func (h *harness) answerSignup(seq int, username, password string) reply {
 }
 
 // checkSignupFields checks the fields of a pending-signup challenge in order:
-// the username is a required text input, and the password, when asked for, is a
-// required secret one.
+// the username is a required text input, the display name is an optional text
+// one, and the password, when asked for, is a required secret one.
 func checkSignupFields(t *testing.T, next map[string]any, names ...string) {
 	t.Helper()
 	raw, _ := next["fields"].([]any)
@@ -485,13 +549,15 @@ func checkSignupFields(t *testing.T, next map[string]any, names ...string) {
 	}
 	for i, name := range names {
 		field, _ := raw[i].(map[string]any)
-		if field["name"] != name || field["required"] != true {
-			t.Errorf("field %d = %v, want a required %q", i, raw[i], name)
+		required, _ := field["required"].(bool)
+		wantRequired := name != "display_name"
+		if field["name"] != name || required != wantRequired {
+			t.Errorf("field %d = %v, want %q with required=%v", i, raw[i], name, wantRequired)
 		}
 		switch name {
-		case "username":
+		case "username", "display_name":
 			if field["kind"] != "text" {
-				t.Errorf("the username field = %v, want text", field)
+				t.Errorf("the %s field = %v, want text", name, field)
 			}
 		case "password":
 			if field["kind"] != "password" || field["secret"] != true {
@@ -713,11 +779,11 @@ func TestASocialSignupWithAPasswordAgainstThePolicyOpensNothing(t *testing.T) {
 	})
 }
 
-// TestTheSMSAndEnterpriseSignupStepsAskForTheUsernameAlone holds that the
-// password belongs to the social step only: the SMS and enterprise steps ask
-// for the username by itself, and neither account takes the provider's declared
-// address.
-func TestTheSMSAndEnterpriseSignupStepsAskForTheUsernameAlone(t *testing.T) {
+// TestTheSMSAndEnterpriseSignupStepsTakeNoPassword holds that the password
+// belongs to the social step only: neither the SMS nor the enterprise step asks
+// for one, the SMS step asks for an optional display name beside the username,
+// and neither account takes the provider's declared address.
+func TestTheSMSAndEnterpriseSignupStepsTakeNoPassword(t *testing.T) {
 	t.Run("sms", func(t *testing.T) {
 		const number = "+8613800000002"
 		assembleWith(t, []core.Module{smsSignupModule()}, func(h *harness) {
@@ -731,7 +797,7 @@ func TestTheSMSAndEnterpriseSignupStepsAskForTheUsernameAlone(t *testing.T) {
 			if state != "signup" || next["kind"] != "challenge" {
 				t.Fatalf("the first SMS login = %s %v, want the signup challenge", state, next)
 			}
-			checkSignupFields(t, next, "username")
+			checkSignupFields(t, next, "username", "display_name")
 			checkNoProvidedIdentity(t, next)
 
 			if opened := h.answerUsername(seq, "phoneowner"); opened.status != http.StatusOK {
@@ -777,6 +843,179 @@ func TestTheSMSAndEnterpriseSignupStepsAskForTheUsernameAlone(t *testing.T) {
 				return i.Kind == authn.IdentifierEmail
 			}) {
 				t.Errorf("identifiers = %+v, want no email address: an enterprise just-in-time account does not write one", held)
+			}
+		})
+	})
+}
+
+// TestAPhoneSignupWithoutADisplayNameTakesTheUsername holds the fallback of a
+// just-in-time signup whose step carried no display name: the phone's account is
+// named after the username its person chose.
+func TestAPhoneSignupWithoutADisplayNameTakesTheUsername(t *testing.T) {
+	const number = "+8613800000002"
+	assembleWith(t, []core.Module{smsSignupModule()}, func(h *harness) {
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+		start := h.post("/api/v1/auth/flows", map[string]any{"method": "sms-signup"})
+		if start.status != http.StatusOK {
+			t.Fatalf("POST flows answered %d: %s", start.status, start.body)
+		}
+		_, seq, next := signupStep(t, start)
+		checkSignupFields(t, next, "username", "display_name")
+
+		if opened := h.answerUsername(seq, "phoneowner"); opened.status != http.StatusOK {
+			t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
+		}
+		account := h.checkPhoneSignupAccount(t, number)
+		if account.DisplayName != "phoneowner" {
+			t.Errorf("display name = %q, want the username %q", account.DisplayName, "phoneowner")
+		}
+	})
+}
+
+// TestAPhoneSignupTakesTheDisplayNameItIsGiven holds that the optional field a
+// phone signup asks for is what names the account when it is filled in.
+func TestAPhoneSignupTakesTheDisplayNameItIsGiven(t *testing.T) {
+	const number = "+8613800000002"
+	assembleWith(t, []core.Module{smsSignupModule()}, func(h *harness) {
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+		start := h.post("/api/v1/auth/flows", map[string]any{"method": "sms-signup"})
+		if start.status != http.StatusOK {
+			t.Fatalf("POST flows answered %d: %s", start.status, start.body)
+		}
+		_, seq, next := signupStep(t, start)
+		checkSignupFields(t, next, "username", "display_name")
+
+		if opened := h.answerUsernameAndDisplayName(seq, "phonenamed", "Phone Person"); opened.status != http.StatusOK {
+			t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
+		}
+		account := h.checkPhoneSignupAccount(t, number)
+		if account.DisplayName != "Phone Person" {
+			t.Errorf("display name = %q, want the submitted %q", account.DisplayName, "Phone Person")
+		}
+	})
+}
+
+// checkPhoneSignupAccount reads the account a phone signup opened.
+func (h *harness) checkPhoneSignupAccount(t *testing.T, number string) authn.Account {
+	t.Helper()
+	id, err := h.accounts.Lookup(h.ctx, authn.IdentifierPhone, number)
+	if err != nil {
+		t.Fatalf("the phone's account: %v", err)
+	}
+	account, err := h.accounts.Get(h.ctx, id)
+	if err != nil {
+		t.Fatalf("reading the phone's account: %v", err)
+	}
+	return account
+}
+
+// TestEnterpriseJITSignupNamesTheAccountFromTheProviderOrTheUsername holds the
+// two names an enterprise just-in-time account may take: the provider's name
+// when it gave one, and the username when it did not.
+func TestEnterpriseJITSignupNamesTheAccountFromTheProviderOrTheUsername(t *testing.T) {
+	t.Run("provider name", func(t *testing.T) {
+		assembleWith(t, []core.Module{jitMethodModule(), jitRegisterModule()}, func(h *harness) {
+			writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+			start := h.post("/api/v1/auth/flows", map[string]any{
+				"method": "oidc-signup", "input": map[string]string{"provider": jitProviderID},
+			})
+			if start.status != http.StatusOK {
+				t.Fatalf("POST flows answered %d: %s", start.status, start.body)
+			}
+			_, seq, _ := signupStep(t, start)
+			if opened := h.answerUsername(seq, "jitperson"); opened.status != http.StatusOK {
+				t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
+			}
+			id, err := h.accounts.ByExternal(h.ctx, "oidc:"+jitProviderID, "u1")
+			if err != nil {
+				t.Fatalf("the identity of the opened account: %v", err)
+			}
+			account, err := h.accounts.Get(h.ctx, id)
+			if err != nil {
+				t.Fatalf("reading the opened account: %v", err)
+			}
+			if account.DisplayName != "Jit Person" {
+				t.Errorf("display name = %q, want the provider's %q", account.DisplayName, "Jit Person")
+			}
+		})
+	})
+
+	t.Run("no provider name", func(t *testing.T) {
+		assembleWith(t, []core.Module{noNameJitMethodModule(), jitRegisterModule()}, func(h *harness) {
+			writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+			start := h.post("/api/v1/auth/flows", map[string]any{
+				"method": "oidc-signup-noname", "input": map[string]string{"provider": jitProviderID},
+			})
+			if start.status != http.StatusOK {
+				t.Fatalf("POST flows answered %d: %s", start.status, start.body)
+			}
+			_, seq, _ := signupStep(t, start)
+			if opened := h.answerUsername(seq, "jitperson"); opened.status != http.StatusOK {
+				t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
+			}
+			id, err := h.accounts.ByExternal(h.ctx, "oidc:"+jitProviderID, "u2")
+			if err != nil {
+				t.Fatalf("the identity of the opened account: %v", err)
+			}
+			account, err := h.accounts.Get(h.ctx, id)
+			if err != nil {
+				t.Fatalf("reading the opened account: %v", err)
+			}
+			if account.DisplayName != "jitperson" {
+				t.Errorf("display name = %q, want the username %q", account.DisplayName, "jitperson")
+			}
+		})
+	})
+}
+
+// TestSocialJITSignupNamesTheAccountFromTheProviderOrTheUsername holds the two
+// names a social first login's account may take: the provider's name when it
+// gave one, and the username when it did not.
+func TestSocialJITSignupNamesTheAccountFromTheProviderOrTheUsername(t *testing.T) {
+	t.Run("provider name", func(t *testing.T) {
+		assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
+			writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+			_, seq, _ := signupStep(t, h.startSocialSignup())
+			if opened := h.answerSignup(seq, "socialperson", socialPassword); opened.status != http.StatusOK {
+				t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
+			}
+			id, err := h.accounts.ByExternal(h.ctx, "google", "g1")
+			if err != nil {
+				t.Fatalf("the identity of the opened account: %v", err)
+			}
+			account, err := h.accounts.Get(h.ctx, id)
+			if err != nil {
+				t.Fatalf("reading the opened account: %v", err)
+			}
+			if account.DisplayName != "Ann" {
+				t.Errorf("display name = %q, want the provider's %q", account.DisplayName, "Ann")
+			}
+		})
+	})
+
+	t.Run("no provider name", func(t *testing.T) {
+		assembleWith(t, []core.Module{noNameSocialModule()}, func(h *harness) {
+			writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+			_, seq, _ := signupStep(t, h.startSocialSignup())
+			if opened := h.answerSignup(seq, "socialperson", socialPassword); opened.status != http.StatusOK {
+				t.Fatalf("the username answer answered %d: %s", opened.status, opened.body)
+			}
+			id, err := h.accounts.ByExternal(h.ctx, "google", "g2")
+			if err != nil {
+				t.Fatalf("the identity of the opened account: %v", err)
+			}
+			account, err := h.accounts.Get(h.ctx, id)
+			if err != nil {
+				t.Fatalf("reading the opened account: %v", err)
+			}
+			if account.DisplayName != "socialperson" {
+				t.Errorf("display name = %q, want the username %q", account.DisplayName, "socialperson")
 			}
 		})
 	})

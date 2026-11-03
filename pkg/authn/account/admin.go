@@ -62,6 +62,15 @@ func checkDisplayName(name string) error {
 	return nil
 }
 
+// displayNameOrDefault is the display name an account carries: the one its
+// creation named, or its username when it named none.
+func displayNameOrDefault(name, username string) string {
+	if name != "" {
+		return name
+	}
+	return username
+}
+
 // plain reports whether s is valid text of at most max bytes with no control
 // character.
 func plain(s string, max int) bool {
@@ -94,7 +103,8 @@ func eventVia(via string) (string, error) {
 //
 // A user account is created with a username, whichever path creates it and
 // import included. A service account is exempt because a service secret, not a
-// username, is how it signs in. A username is normalized and held to the reserved
+// username, is how it signs in. An account created without a display name is
+// named after that username. A username is normalized and held to the reserved
 // set whichever path writes it, import included. A missing or unusable one
 // creates nothing. A username is always a login way.
 //
@@ -197,7 +207,16 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		return plan, err
 	}
 	plan.via = via
-	if err = checkDisplayName(in.DisplayName); err != nil {
+	// The username is normalized once here, so that it can also name the
+	// account when the creation named no display name.
+	username := in.Username
+	if username != "" {
+		if username, err = NormalizeIdentifier(authn.IdentifierUsername, username); err != nil {
+			return plan, err
+		}
+	}
+	name := displayNameOrDefault(in.DisplayName, username)
+	if err = checkDisplayName(name); err != nil {
 		return plan, err
 	}
 	if err = model.CheckAccountAttributes(in.Attributes); err != nil {
@@ -230,14 +249,14 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 	now := p.at()
 	plan.row = accountRow{
 		ID: id.String(), Kind: string(kind), Status: statusActive, SignupState: signupNone,
-		DisplayName: in.DisplayName, Attributes: attrs, MFARequired: in.MFARequired,
+		DisplayName: name, Attributes: attrs, MFARequired: in.MFARequired,
 		ValidAfter: now, CreatedAt: now, UpdatedAt: now,
 	}
 
 	// A user account is opened with a username, whichever path opens it. A
 	// service account signs in with a service secret instead. An account that
 	// names no username is refused here rather than left with no login name.
-	if usernameRequired(kind) && in.Username == "" {
+	if usernameRequired(kind) && username == "" {
 		// An absent username is a shape failure of the field, not a malformed
 		// body: the answer names the username, the same as a badly formed one.
 		return plan, authn.UsernameShape(fmt.Errorf("%w: a user account is created with a username", authn.ErrInvalidIdentifier))
@@ -266,7 +285,7 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		})
 		return nil
 	}
-	if in.Username != "" {
+	if username != "" {
 		// The way the username came about is the caller's to state, since a host
 		// importing users and a first login land here too; the zero value means
 		// an administrator wrote it. Create never writes a self-registered
@@ -280,7 +299,7 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		if err != nil {
 			return plan, err
 		}
-		if err = add(authn.IdentifierUsername, in.Username, verified,
+		if err = add(authn.IdentifierUsername, username, verified,
 			authn.IdentifierFlags{SignIn: true}, false); err != nil {
 			return plan, err
 		}

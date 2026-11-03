@@ -135,13 +135,16 @@ func signupStep(pending *resolve.Pending, method string) stepView {
 	return view
 }
 
-// signupFields is what the pending-signup step asks for: the username, not
-// secret, and, at a social first login alone, the password the account is opened
-// with.
+// signupFields is what the pending-signup step asks for: the username and, at a
+// phone first login alone, an optional display name, plus, at a social first
+// login alone, the password the account is opened with.
 func signupFields(source resolve.Source) []fieldView {
 	fields := []fieldView{{Name: fieldUsername, Kind: string(authn.FieldText), Required: true}}
-	if source == resolve.SourceSocial {
+	switch source {
+	case resolve.SourceSocial:
 		fields = append(fields, fieldView{Name: fieldPassword, Kind: string(authn.FieldPassword), Required: true, Secret: true})
+	case resolve.SourcePhone:
+		fields = append(fields, fieldView{Name: fieldDisplayName, Kind: string(authn.FieldText)})
 	}
 	return fields
 }

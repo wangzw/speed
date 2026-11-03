@@ -26,7 +26,8 @@ const (
 // closed. The username and the email address are normalized first and the
 // password is held to the policy; all of that happens before the back-off, and
 // the back-off is read before the uniqueness check, so a request that cannot
-// succeed costs no derivation. A username that is taken is authn.ErrAccountExists
+// succeed costs no derivation. A registration that names no display name is named
+// after the username it chose. A username that is taken is authn.ErrAccountExists
 // and counts one failure against the signup-username back-off; a concurrent
 // registration that loses the username's unique constraint counts one as well.
 // The email address is not checked before the write: the reservation row's unique
@@ -58,7 +59,8 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 	if err != nil {
 		return authn.Account{}, err
 	}
-	if err = checkDisplayName(in.DisplayName); err != nil {
+	name := displayNameOrDefault(in.DisplayName, username)
+	if err = checkDisplayName(name); err != nil {
 		return authn.Account{}, err
 	}
 	attributes, err := signupAttributes(in)
@@ -107,7 +109,7 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 		}
 		row = accountRow{
 			ID: id, Kind: string(authn.KindUser), Status: statusActive, SignupState: signupPending,
-			DisplayName: in.DisplayName, Attributes: attributes,
+			DisplayName: name, Attributes: attributes,
 			ValidAfter: now, CreatedAt: now, UpdatedAt: now,
 		}
 		if idErr = tx.Create(&row).Error; idErr != nil {

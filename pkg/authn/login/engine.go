@@ -381,7 +381,7 @@ func (r *routes) applySignupAnswer(c *call, token, echo string, rec record, raw 
 	if rec.Pending.Source == resolve.SourceSocial {
 		password = fields[fieldPassword]
 	}
-	res, err := r.resolver.Create(c.ctx, *rec.Pending, fields[fieldUsername], password)
+	res, err := r.resolver.Create(c.ctx, *rec.Pending, fields[fieldUsername], password, fields[fieldDisplayName])
 	switch {
 	case errors.Is(err, authn.ErrUsernameReserved):
 		rec.Answers++
