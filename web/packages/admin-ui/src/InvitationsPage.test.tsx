@@ -894,14 +894,18 @@ describe('InvitationsPage', () => {
     expect(invitedByWrapper).toHaveStyle({ maxWidth: '160px' })
     expect(containerMaxWidthOf(invitedByWrapper)).toEqual(new Map())
 
-    // The members table has the same shape: account primary, active high,
-    // source medium, SSO exemption low.
+    // The members table keeps the display name as the always-visible primary
+    // identity; the account identifier beside it survives from sm, active
+    // yields at that tier, source stays from md, SSO exemption from lg.
     const memberSection = section(zhCN.members.title)
     expect(columnVisibility(header(memberSection, zhCN.members.column.displayName))).toBeNull()
-    expect(columnVisibility(header(memberSection, zhCN.members.column.account))).toBeNull()
-    expect(columnVisibility(header(memberSection, zhCN.members.column.active))).toEqual({
+    expect(columnVisibility(header(memberSection, zhCN.members.column.account))).toEqual({
       hiddenAt: 0,
       visibleFrom: 600,
+    })
+    expect(columnVisibility(header(memberSection, zhCN.members.column.active))).toEqual({
+      hiddenAt: 0,
+      visibleFrom: 900,
     })
     expect(columnVisibility(header(memberSection, zhCN.members.column.source))).toEqual({
       hiddenAt: 0,

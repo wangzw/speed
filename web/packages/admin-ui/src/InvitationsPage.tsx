@@ -613,6 +613,11 @@ export function InvitationsPage({
     {
       id: 'account',
       header: t('members.column.account'),
+      // The display name beside it is the page's primary identity, so the
+      // recorded account identifier is the secondary one: it sheds below the
+      // sm floor, where the primary cell and the row actions stay on screen,
+      // and remains visible at every tier floor from sm up.
+      priority: 'high',
       cellWrap: 'nowrap',
       cellFullValue: (member) => member.account,
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
@@ -631,7 +636,10 @@ export function InvitationsPage({
     {
       id: 'active',
       header: t('members.column.active'),
-      priority: 'high',
+      // The least important of the columns sm first shows: the name, the
+      // account and the row actions fit the sm floor together, so the status
+      // yields at that tier and returns from md up.
+      priority: 'medium',
       cellWrap: 'nowrap',
       cell: (member) =>
         member.active ? t('members.activeYes') : t('members.activeNo'),
