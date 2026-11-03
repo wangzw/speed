@@ -656,7 +656,20 @@ export function AccountSettingsPage({
                     </AccountItem>
                     <AccountItem title={t('account.rows.label.displayName')}>
                       <Box sx={{ maxWidth: FORM_MAX_WIDTH }}>
-                        <ProfileSection inline />
+                        {/* The shell's account entry reads the display name
+                            from the session snapshot, not from the profile
+                            query, so a saved name reaches it only when the
+                            host mirrors it here. The section reports the name
+                            the server stored; the seam updates the snapshot
+                            locally and notifies every principal consumer
+                            (the account entry, the header menu, the
+                            impersonation banner). */}
+                        <ProfileSection
+                          inline
+                          onDisplayNameSaved={(savedName) =>
+                            session.setDisplayName(savedName)
+                          }
+                        />
                       </Box>
                     </AccountItem>
                 </Stack>

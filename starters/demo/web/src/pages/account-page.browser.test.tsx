@@ -28,6 +28,7 @@ import { accountUiResources } from '@speed/account-ui'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { chipClasses } from '@mui/material/Chip'
+import { avatarInitials } from '@speed/layout-kit'
 import { themePresets } from '@speed/theme-presets'
 import { createBackend } from '../a11y/backends.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
@@ -185,6 +186,90 @@ it('gives the identity row fields the contact form field width', async () => {
     Math.abs(displayNameWidth - formWidth),
     `display name field ${displayNameWidth}px, form field ${formWidth}px`,
   ).toBeLessThanOrEqual(0.5)
+})
+
+/**
+ * The profile the scripted request function answers with. Only the display
+ * name moves between reads; every other field is the constant shape the
+ * account page reads.
+ */
+function profileWith(displayName: string) {
+  return {
+    account_id: 'account-1',
+    kind: 'user',
+    display_name: displayName,
+    mfa_required: false,
+    password_set: true,
+    created_at: '2026-01-01T00:00:00Z',
+    attributes: {},
+    color_mode: '',
+    locale: 'en-US',
+    time_zone: 'UTC',
+    identifiers: [],
+    links: [],
+    verification: { state: 'none', email: '', since: '' },
+  }
+}
+
+it('propagates a saved display name to the sidebar account entry', async () => {
+  // The account entry reads the display name from the session snapshot, not
+  // from the profile query. A save that only refetches the profile would
+  // leave the entry on the old name, so this case drives the inline field's
+  // blur commit and waits for the session notification to reach the entry.
+  await page.viewport(1280, 900)
+  const fallback = createBackend('data')
+  let storedName = 'Test User'
+  const request = (async (
+    path: string,
+    requestOptions?: RequestOptions,
+  ) => {
+    if (path === '/api/v1/auth/me') {
+      if (requestOptions?.method === 'PATCH') {
+        const body = requestOptions.body as { display_name?: string }
+        if (body.display_name !== undefined) {
+          storedName = body.display_name
+        }
+        return {
+          attributes: {},
+          color_mode: '',
+          display_name: storedName,
+          locale: 'en-US',
+          time_zone: 'UTC',
+        }
+      }
+      return profileWith(storedName)
+    }
+    return fallback(path, requestOptions)
+  }) as RequestFn
+  bindRequestFn(request)
+  window.history.replaceState({}, '', ACCOUNT_SECTION_PATHS.profile)
+  renderDemoApp({
+    session: createTestSession(
+      authenticatedSnapshot({
+        features: readyFeatures('authn.identifiers.email'),
+      }),
+    ),
+  })
+
+  const trigger = await screen.findByTestId('account-entry-trigger')
+  expect(trigger).toHaveTextContent('Test User')
+
+  const savedName = 'Ada Lovelace'
+  const savedInitials = avatarInitials(savedName)
+  const user = userEvent.setup()
+  const field = await screen.findByRole('textbox', {
+    name: accountEnUS.profile.displayName.label,
+  })
+  await user.clear(field)
+  await user.type(field, savedName)
+  // The inline field commits on blur.
+  await user.tab()
+
+  await waitFor(() => expect(trigger).toHaveTextContent(savedName))
+  expect(trigger).not.toHaveTextContent('Test User')
+  // The visible initials and the display name both feed the accessible name
+  // (WCAG 2.5.3), so the new identity reaches both surfaces.
+  expect(trigger).toHaveAccessibleName(`${savedInitials} ${savedName}`)
 })
 
 it('puts the sessions bulk action on the block title row, above the list', async () => {

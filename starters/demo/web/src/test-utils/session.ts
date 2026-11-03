@@ -156,5 +156,20 @@ export function createTestSession(
     // snapshot's permission lists directly, so attaching is a no-op rather
     // than a rejection the host would have to catch.
     setPermissionSet: () => undefined,
+    // The local mirror a host uses after a profile write: replace the
+    // authenticated principal's display name and notify, exactly as the
+    // real session does. Anonymous snapshots have no principal to name.
+    setDisplayName: (name) => {
+      if (snapshot.state !== 'authenticated' || snapshot.principal === null) {
+        return
+      }
+      snapshot = {
+        ...snapshot,
+        principal: { ...snapshot.principal, display_name: name },
+      }
+      for (const listener of listeners) {
+        listener(snapshot)
+      }
+    },
   }
 }
