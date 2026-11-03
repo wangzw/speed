@@ -47,8 +47,8 @@ flowchart TD
 
 ## 覆盖的需求
 
-- 账户自助：`REQ-account-007`、`REQ-account-061`
-- 账户安全：`REQ-security-001`、`REQ-security-002`、`REQ-security-003`、`REQ-security-005`、`REQ-security-008`、`REQ-security-009`、`REQ-security-013`、`REQ-security-014`、`REQ-security-015`、`REQ-security-017`、`REQ-security-022`、`REQ-security-023`、`REQ-security-025`、`REQ-security-030`
+- 账户自助：`REQ-account-007`、`REQ-account-023`、`REQ-account-026`、`REQ-account-061`
+- 账户安全：`REQ-security-001`、`REQ-security-002`、`REQ-security-003`、`REQ-security-005`、`REQ-security-008`、`REQ-security-009`、`REQ-security-013`、`REQ-security-014`、`REQ-security-015`、`REQ-security-017`、`REQ-security-022`、`REQ-security-023`、`REQ-security-025`、`REQ-security-029`、`REQ-security-030`
 - 登录：`REQ-signin-006`
 
 ## 端到端测试

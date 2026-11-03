@@ -353,9 +353,9 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 
 - `subject` 是绑定键的主体，绑定键永远是（提供方，主体）：`oidc:<提供方标识>` 或 `saml:<提供方标识>` 加主体，不用邮箱。
 - `email` 只在匹配预置账户与判断社交登录、企业即时开通是否需先绑定时读取，不写入账户：新开立的账户不带提供方声明的地址（REQ-signup-048；[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)）。映射缺邮箱不是错误，只是没有可匹配的线索，开户照常进行。
-- `display_name` 只在首登开户时写入。
+- `display_name` 只在首登开户时写入：取提供方给出的名字，去掉无效文本与控制字符、去首尾空白并截断到 100 个字符；没有给出时账户以用户名作显示名（REQ-signup-051）。
 - `attr.<名>` 经根包的界限校验后写进该次登录会话的载荷，键加 `idp.` 前缀，值在 UTF-8 字符边界截断到 128 字节（分项上限，见 [design-authn-gate](design-authn-gate.md#出口检查)）；随该会话终结，不写入账户。
-- `provisioning` 为 `jit` 时，开户只取提供方的显示名与（提供方，主体）绑定，不要求 `email` 映射：没有声明地址只是没有可匹配的现有账户，开户照常进行。`ErrNotProvisioned` 只用于 `preprovisioned` 的提供方匹配不到预置账户。用户名不是提供方断言的事实、不在属性映射里，它在建户之前由登录引擎向用户取得，没有合法用户名不建户（REQ-signup-047）。
+- `provisioning` 为 `jit` 时，开户只取提供方的显示名与（提供方，主体）绑定，不要求 `email` 映射：没有声明地址只是没有可匹配的现有账户，开户照常进行。`ErrNotProvisioned` 只用于 `preprovisioned` 的提供方匹配不到预置账户。用户名不是提供方断言的事实、不在属性映射里，它在建户之前由登录引擎向用户取得，没有合法用户名不建户（REQ-signup-047）。即时开通建出的账户不设口令：口令既不在属性映射里，也不在即时开通的开户一步取得；需要口令登录时由持有人在账户面设置首个口令。
 
 ### 进程内缓存
 

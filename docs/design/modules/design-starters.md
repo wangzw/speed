@@ -92,7 +92,7 @@ starters/demo/
 
 **一个二进制因此既能跑裸基线，也能跑完整配置的部署。** 同一份 `capabilityModules` 在默认构建、Fly 镜像与审查构建里相同；三者运行起来能力集不同，差别只来自配置与审查构建的测试控制，不来自二进制。
 
-**口令注册在基线上关闭。** 注册路由 `POST /api/v1/auth/register` 归 `authn.login`，基线装配纳入该模块，但设置项 `authn.account.password-signup` 保持缺省的 `closed`；`authn.emailcode`、`mail.smtp` 与短信通道虽已编入并点名，基线配置不给它们凭据，它们自行关闭，因此没有可用的验证通道。开放注册会产生永远无法验证的账户。此时调用注册路由答 403 `signup-closed`，发现面不出现注册入口。开放它需要装配邮箱验证通道，见「注册与完成设置」；Fly 部署不是这条基线，它用上面的 `fly` 装配开放注册。
+**口令注册在基线上关闭。** 注册路由 `POST /api/v1/auth/register` 归 `authn.login`，基线装配纳入该模块，但设置项 `authn.account.password-signup` 保持缺省的 `closed`；`authn.emailcode`、`mail.smtp` 与短信通道虽已编入并点名，基线配置不给它们凭据，它们自行关闭，因此没有可用的验证通道。开放注册会产生永远无法验证的账户。此时调用注册路由答 403 `signup-closed`，发现面不出现注册入口。开放它需要装配邮箱验证通道，见「注册与开户落点」；Fly 部署不是这条基线，它用上面的 `fly` 装配开放注册。
 
 **WebAuthn（[REF-webauthn](../../references.md)）（`authn.mfa.webauthn`）也在基线里，是判据放行、示范仍须点名的那一项。** 它的依赖方绑定在部署被访问的来源上——那是 `testdata/` 承载的一个配置项，不是外部凭据也不是栈外服务——所以它一启动不依赖任何外部物，过得了判据（`AGENTS.md` 因此把它从「被排除」一栏移到基线）。点名它是因为平台管理面要能演示自身：步进要求一个与本会话已证明过的认证方式不相交的因素种类，只有 TOTP（[REF-rfc6238](../../references.md)）一种时，以 TOTP 登录的会话没有因素可用来升级，步进起点因此被拒；TOTP 并上 WebAuthn，让步进有第二种因素种类可点。示范自带的前端实现 WebAuthn 仪式：`@speed/auth-ui`、`@speed/account-ui` 与 `@speed/admin-ui` 都经 `@speed/auth-core/webauthn` 子路径驱动同一仪式，把 passkey 的创建或请求选项解码后交给浏览器，再把返回的凭据按后端解的 JSON 形状序列化成答复。登记与升级因此都能在界面上走完，不需要界面之外的客户端（`AGENTS.md` 详述）。
 
@@ -192,7 +192,6 @@ starters/demo/
 |---|---|---|
 | `/` | 无 | 示范 |
 | `/account` | 无 | 示范 |
-| `/account/setup` | 无 | 示范 |
 | `/notifications` | `notification.inbox` | notification-ui 的 `notificationRoutes`（[notification-ui](web/design-web-notification-ui.md)） |
 | `/invitations/:token` | `authn.invitations` | 示范 |
 | `/sign-in/callback`、`/account/callback` | 无 | 示范 |
@@ -326,7 +325,7 @@ flowchart TD
 
 - 清单为空就是没有可进入的租户，那是一个应答而不是一次失败。当前租户因此没有可显示的租户，租户区里取租户数据的面（通知面）在路由点名了一个租户时把准入层的裸 404 渲染为「无法访问当前组织」，说明它可能不存在、或账户还不是该组织的成员，并指引联系管理员发送邀请；不渲染成服务没有应答，也不给重试（REQ-tenancy-025；[notification-ui](web/design-web-notification-ui.md)）。
 - 清单读不到时当前租户保持未知，租户作用域的读保持禁用：读的失败——5xx、网络、超时，以及部署没有纳入 `tenant.self` 时这条读答的 404——一律不当作空清单，也不回落到占位清单；页面的失败与重试沿用该读自己的呈现，已落定的上一份清单留在原处。一次失败不是内容为空的清单，也不是补齐个人租户的判据。
-- 账户级的页面（账户设置、注册后的完成设置页、验证邮箱页）不取租户数据，照常可用；补齐个人租户失败时，失败占位只替换取租户数据的页面，不替换它们。
+- 账户级的页面（账户设置、验证邮箱页）不取租户数据，照常可用；补齐个人租户失败时，失败占位只替换取租户数据的页面，不替换它们。
 - 进入租户的途径是邀请链接与管理员授予的成员关系；个人租户由账户创建时的钩子建立（见「个人租户」），示范不提供一般的租户自助创建。
 
 ### 个人租户
@@ -359,7 +358,7 @@ flowchart TD
 - **本人租户读取的时机与失败。** 已认证时读一次，冒充期间也读：服务端把应答收窄到授予的租户，清单因此成为整页重载后命名当前租户的唯一来源（见「冒充期间的壳」）。身份变更（`applyIdentityChange`）、补齐个人租户后与邀请受理成功后重读；会话结束时连同当前租户与别名缓存一起清空。切换租户不重读：清单只取决于身份，不取决于当前租户。读失败且已有落定的清单时保留它；没有落定的清单时当前租户保持未知、租户作用域的读保持禁用，选择器按它的属性渲染（见「租户清单为空或读不到时」）。
 - **切换租户逐出离任租户的缓存。** 租户是请求的路由事实，不是会话操作：选择器只把选中的租户标识报告一次，宿主随即改自己的路由与租户上下文。每个租户作用域的读都按租户标识分键（auth-core 的 `tenantQueryKey`），所以宿主在切换时用切换之前读到的离任租户标识调 `evictTenantQueries`，把该租户的整棵子树逐出；新租户的标识不逐出任何东西。当前租户未知（`null`）到某个租户的落定不是切换，不逐出。
 - **页头的颜色模式与租户切换确认。** 两个页头都不提供颜色模式切换：租户区的 `headerActions` 只留通知铃与管理后台入口，管理后台的同一槽只留返回应用。颜色模式在账户偏好页选：`ColorModeSection` 读写账户的 `color_mode`，写入成功后宿主把偏好交给 `AppThemeProvider` 并更新设备键 `demo-web.color-mode`；启动时该键是首屏值、缺省为 `system`，账户值非空时以账户值为准（[ADR-web-color-mode-preference](../../adr/adr-web-color-mode-preference.md)）。租户切换的确认文本始终以 `announcement="visually-hidden"` 传入：`role="status"` 区域仍在、切换后仍播报，页头不绘制确认文本。
-- **注册完成后的落点与一次性提示。** 口令注册成功并自动登录后落在账户页的验证节 `/account?verify=1`，与个人租户是否启用无关。注册模式下经短信渠道登录成功后，启用个人租户时落在租户区首页，未启用时落在 `/account/setup`。首页顶部的「完成账户设置」提示（可关闭，链接到 `/account/setup`）由 `GET /api/v1/auth/me` 显示账户设置未完成（没有可作登录名的标识或没有口令）触发，提示出现之后仍按账户当前资料实时判定，设置完成即消失，而不由登录屏的注册模式触发，所以直接以新号码走普通短信登录而隐式开户的账户同样得到这条提示。登录完成应答不带「新开户」的事实，平台契约不为它加字段。验证提示与这条一次性提示分开：它由 `verification.state` 为 `pending` 触发，持续到邮箱验证完成，不随会话内关闭而消失。
+- **注册完成后的落点。** 口令注册成功并自动登录后落在账户页的验证节 `/account?verify=1`，与个人租户是否启用无关。注册模式下经短信或社交渠道登录成功后一律落在租户区首页。开户一步已经取得用户名与口令（短信与社交首登），或只取得用户名（企业即时开通）；开户后没有完成设置页，也没有完成设置提示，账户的登录方式、口令与联系方式由账户页呈现和修改。
 
 ### 冒充期间的壳
 
@@ -373,16 +372,15 @@ flowchart TD
 - **身份变更窗口里的中间态。** 通则：由写入的结果直接得出的陈述跟随写入，依赖重读到的事实的陈述跟随重读。冒充的结束落定（含裸 404）之后、快照翻转之前，宿主把横幅的 `impersonation` 置为 `null`，不等快照：用户点了结束并成功，横幅就不该再说「正在冒充」。组件不变，`null` 时它只留 live region，「冒充已结束」在这里立即可闻，结束控件随横幅一起撤下，应用栏的身份指示与账户菜单里的结束项在同一时刻撤下，都不会再被点出一次无谓的 404。置空持续到重读读到 `impersonating` 为假，或有界重读用尽而快照仍为真；重读与「到期」同一间隔与上界，因为各副本对记录有效性的缓存使显式结束之后的重读同样可能晚一个 `check-ttl`。后一种情形放开置空，横幅回到由快照驱动，它的结束控件把裸 404 当成兑现并再次触发身份变更，由此收敛。开始冒充没有对应的置空：横幅需要重读之后的主体与状态读，开始落定到重读落定之间宿主保持原样。当前租户、平台权限集与主体这些依赖重读的事实在窗口内按未知渲染，不另造过渡态。
 - **开始冒充时覆盖轮换窗口：暂停宿主的读，并打开会话的身份过渡窗口。** 开始冒充是唯一轮换会话令牌的身份变更，写入落定时仍在途的、带旧令牌的请求会被拒绝。宿主把这段处理的入口接在 admin-ui 的 `onImpersonationStarting` 接缝上：冒充页在发出开始写入之前同步调用它，写入被拒、被步进拦截或抛出时调用它返回的放行；写入落定的情形由身份变更动作落定后放行，宿主卸载时也放行，真实离线的客户端放行后仍保持离线——每条路径只放行一次。接到调用时宿主先调会话的 `beginIdentityTransition()`（[auth-core](web/design-web-auth-core.md) 的「外部接口契约」的「会话」），再取消全部在途查询，并把新查询的发出暂停（查询客户端的在线管理器）；放行时一并关闭该窗口。窗口保证即使某个读绕过了取消与暂停（effect 里的直接读、取消未及落地的 401、会话自己的读），它在旧 cookie 下读到的「无人登录」也不会把本地会话翻成匿名——静默恢复丢弃那个应答，原请求保留自己的 401；放行之后的下一次读落定新身份。暂停落在调用之后的一个任务，因为页面在同一轮里紧接着发出开始写入，立即暂停会把这条写入本身停住（缺省网络模式下写入同样排队等待在线），而它正是要放行的那条——暂停要挡的是写入之后才会发出的读。范围只含经查询客户端发出的读，不含 effect 里的直接读、会话自己的读与实时订阅的重连。结束冒充不轮换令牌，不暂停读，也不打开窗口。
 
-### 注册与完成设置
+### 注册与开户落点
 
 决策见 [ADR-authn-signup](../../adr/adr-authn-signup.md)。登录页是 auth-ui 的 `SignInScreen`，注册入口由它按发现文档给出：`signup.enabled` 为真，且 `signup.password.enabled` 为真或至少一个可见方法带 `opens_account` 时显示（[auth-ui](web/design-web-auth-ui.md)）；示范不自造注册入口，也不在文案里断言注册可用。重定向类与企业类方法的授权地址由登录页在当前窗口导航，流程的 `return_to` 是 `/sign-in/callback`，提供方的一次往返因此落回示范自己的回调页。
 
 - **口令注册成功后落在账户页的验证节（REQ-signup-028）。** 注册表单提交用户名、邮箱与口令（邮箱必填，确认口令只在客户端比较）；注册不建立会话，前端随后以同一凭据起一次口令登录。`SignInView` 的 `onSignedIn` 收到 `mode: 'register'`、`channel: 'password'` 时导航到 `/account?verify=1`；自动登录被拒时退回登录表单并预填用户名，账户已经建成。这个落点只在登录屏是应用登录页本身时生效，嵌入邀请接受页、管理后台会话门的登录屏登录之后留在原地址。注册屏位于邀请链接上时（匿名访客在邀请路径上看到的是租户区的登录面，见「前端的组合次序」），`SignInView` 在导航前把该邀请路径记进本标签页的会话存储；账户页在 `?verify=1` 落地、档案读作 `verified` 时清掉记录并回到该路径，邀请仍可受理。邀请令牌是链接的持有凭据，只存在会话存储里，不进 URL 查询、请求、日志或任何服务端记录。其它位置的口令注册没有可回的目标，验证完成后停在账户页。
-- **账户页的验证节与持续验证提示。** `/account` 自身没有页面：它落地为重定向，带着来访者的查询跳到档案分页 `/account/profile`（`?section=` 指定其它分页时跳该分页），档案分页因此承载 account-ui 的 `ContactVerificationSection`，受会话门保护；`?verify=1` 落地时给它传 `autoSend`：未验证且有目标邮箱时自动发送一次验证码；`?change=email` 落地即展开更换表单，不自动发送；普通访问不传 `autoSend`，只在用户点击时发送。`verification.state` 是账户注册验证状态的读面，不是 `signup_state` 列的投影：`none` 是没有邮箱、`pending` 是有邮箱而没有一条已证明的、`verified` 是已有一条证明。判定与账户来源无关，所以管理员预置的 operator 带着未证明邮箱时同样读 `pending`。`TenantFrame` 在应用栏之下另挂一条持续验证提示（`role=region`，不是 live region），读 `GET /api/v1/auth/me` 的 `verification.state`：`pending` 时显示目标邮箱、去验证与更换邮箱，验证完成后消失；它不随会话内关闭而消失，与个人租户的一次性提示分开。「去验证」落在 `/account?verify=1`，从验证码一步开始；「更换邮箱」落在 `/account?change=email`，账户页据此让验证节直接展开更换邮箱表单。宿主用独立的 `contactVerificationPending` 判据（`verification.state === 'pending'`）决定是否显示，不并进 `setupIncomplete`——验证状态与注册入口无关，管理员预置的账户也在其中。
+- **账户页的验证节与持续验证提示。** `/account` 自身没有页面：它落地为重定向，带着来访者的查询跳到档案分页 `/account/profile`（`?section=` 指定其它分页时跳该分页），档案分页因此承载 account-ui 的 `ContactVerificationSection`，受会话门保护；`?verify=1` 落地时给它传 `autoSend`：未验证且有目标邮箱时自动发送一次验证码；`?change=email` 落地即展开更换表单，不自动发送；普通访问不传 `autoSend`，只在用户点击时发送。`verification.state` 是账户注册验证状态的读面，不是 `signup_state` 列的投影：`none` 是没有邮箱、`pending` 是有邮箱而没有一条已证明的、`verified` 是已有一条证明。判定与账户来源无关，所以管理员预置的 operator 带着未证明邮箱时同样读 `pending`。`TenantFrame` 在应用栏之下另挂一条持续验证提示（`role=region`，不是 live region），读 `GET /api/v1/auth/me` 的 `verification.state`：`pending` 时显示目标邮箱、去验证与更换邮箱，验证完成后消失；它不随会话内关闭而消失。「去验证」落在 `/account?verify=1`，从验证码一步开始；「更换邮箱」落在 `/account?change=email`，账户页据此让验证节直接展开更换邮箱表单。宿主用独立的 `contactVerificationPending` 判据（`verification.state === 'pending'`）决定是否显示；验证状态与注册入口无关，管理员预置的账户也在其中。
 - **未验证账户与个人租户。** `verification.state` 为 `pending` 时账户创建之后同样建立个人租户（见「个人租户」），同时在应用栏之下显示持续验证提示；验证状态只限制账户在空间内可用的能力，不决定空间是否存在。验证通过后提示消失，租户与别名不变。未启用个人租户时，账户落在租户区首页，不建户。
 - **邮箱解除限制，手机不解除（REQ-signup-026）。** 邮箱验证走标识节的自助回路（`POST /api/v1/auth/identifiers` 与 `/verify`）；手机验证走手机节的两步。手机是登录方式与额外安全因素，验证手机不解除注册限制——只有邮箱被证明才把注册验证状态转为已验证。
-- **短信与社交开户的落点，以及邀请链接的例外。** 注册模式下经短信渠道登录成功（`mode: 'register'`、`channel: 'sms'`）按个人租户是否启用决定去租户区首页或完成设置页；这个落点只在登录屏是应用登录页本身时生效。登录屏位于邀请链接上时（匿名访客在邀请路径上看到的是租户区的登录面，见「前端的组合次序」），短信注册与短信登录都不导航，留在原地址，等登录提交把特性文档带进来后由邀请声明接管并渲染接受页。重定向与企业方法要替换整个文档去做一次往返：出发前把邀请路径记进本标签页的会话存储（令牌不进 URL 查询），`AuthCallbackPage` 收到成功回调时清掉记录并回到该路径，其它出发地的回调仍落租户区首页。这些渠道由 `authn.account.signup` 控制，与口令注册的开关相互独立。
-- **完成设置页由 account-ui 的两个节组成，用户名先于口令。** `IdentifiersSection` 添加用户名；`PasswordSection` 只在账户已有用户名、或已有一条账户持有并选作登录方式的已验证邮箱之后可用，在此之前渲染说明：口令登录要有登录名，请先添加用户名。账户已经有登录名与口令时，页面陈述账户设置已完成并给出回到首页的链接。页面带一个回到首页的「稍后设置」链接；跳过不撤销已建的账户，账户仍可经短信登录。
+- **短信与社交开户的落点，以及邀请链接的例外。** 注册模式下经短信或社交渠道登录成功一律落在租户区首页；这个落点只在登录屏是应用登录页本身时生效。登录屏位于邀请链接上时（匿名访客在邀请路径上看到的是租户区的登录面，见「前端的组合次序」），短信注册与短信登录都不导航，留在原地址，等登录提交把特性文档带进来后由邀请声明接管并渲染接受页。重定向与企业方法要替换整个文档去做一次往返：出发前把邀请路径记进本标签页的会话存储（令牌不进 URL 查询），`AuthCallbackPage` 收到成功回调时清掉记录并回到该路径，其它出发地的回调仍落租户区首页。这些渠道由 `authn.account.signup` 控制，与口令注册的开关相互独立。
 - **注册建立账户，不建立业务租户的成员关系。** 开户不建任何业务租户的成员关系（[authn-account](authn/design-authn-account.md) 的「首登开户」），账户创建之后的 `AccountCreated` 钩子在启用个人租户时为它建好个人租户（见「个人租户」）；示范不提供一般的租户自助创建，加入一个业务租户仍由管理员或邀请授予。
 - **注册的可用性随装配。** 口令注册需要设置项 `authn.account.password-signup` 为 `open`，并装配邮箱验证通道（`authn.emailcode` 与一个 `pkg/mail.Sender`）；短信开户另需 `authn.account.signup` 为 `open` 与可用的短信载体。基线的装配与种子设置里这些都不具备，示范的登录页因此没有注册入口，装配了它们的部署才有。
 
@@ -402,7 +400,7 @@ flowchart TD
 | 本人有效租户的读取（`TenantFrame`） | 已认证时读一次（冒充期间也读，服务端收窄到授予租户），身份变更、补齐个人租户后与邀请受理成功后重读；不受特性门控；任何失败（含部署没有纳入 `tenant.self` 时答的 404）沿用该读自己的失败呈现，当前租户保持未知，不回落到占位清单 |
 | 管理后台区的当前租户落定（`AdminAreaGate`） | 已认证且当前租户未定时读名册，落定其中第一个启用且不是个人租户的行，供两域权限集的读取带上租户名；读被拒、失败或名册没有这样的行时当前租户保持未知（冒充身份例外：改取本人租户读取的第一项，即授予租户），区域照常按平台权限集判定 |
 | 个人租户的补齐（`TenantFrame`） | 特性 `workspace.personal` 在场、已认证、非冒充、本人租户清单里没有自己的个人租户时调用一次补齐路由；失败按该读自己的失败呈现重试；注册验证状态不是判据 |
-| 注册模式下短信登录之后的落点（`SignInView`） | 特性 `workspace.personal` 在场去租户区首页，缺席去完成设置页；登录屏在邀请链接上时留在原地址，等特性文档可读后由邀请声明接管 |
+| 注册模式下短信或社交登录之后的落点（`SignInView`） | 一律去租户区首页；登录屏在邀请链接上时留在原地址，等特性文档可读后由邀请声明接管 |
 | 短信登录的落点（`SignInView`） | 不导航：会话翻转后当前地址自行渲染（租户区首页，或邀请声明命中的接受页） |
 | 口令注册之后的落点（`SignInView`） | 一律去 `/account?verify=1` 的账户页验证节，与个人租户特性无关；注册屏在邀请链接上时该邀请路径记入本标签页的会话存储，验证完成后账户页回到它 |
 | 重定向与企业方法的回调落点（`AuthCallbackPage`） | 从邀请链接出发的往返成功后回到该邀请路径（记录在本标签页会话存储，读走即清）；其它出发地落租户区首页 |
@@ -481,7 +479,6 @@ flowchart TD
 | 冒充期间不挂租户选择器 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame` |
 | 横幅在应用栏之下、横幅的隐藏与复位、应用栏的身份指示、账户菜单的结束项 | 已实现 | `starters/demo/web/src/impersonation.tsx` `useImpersonationNoticeState`、`ImpersonationBannerSlot`、`ImpersonationChip`；`starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/chrome.tsx` `UserMenu` |
 | 冒充期间的壳（横幅挂载、身份变更动作、当前租户、实时订阅重建、到期的有界重读、开始冒充时的读暂停） | 已实现 | `starters/demo/web/src/impersonation.tsx` `IdentityChangeProvider`、`useImpersonationStatus`、`ImpersonationBannerSlot`；`starters/demo/web/src/app.tsx` `TenantFrame`、`AdminEntry`、`useAdminTenantSettle`；`starters/demo/web/src/admin-routes.ts` `useAdminTarget`；`starters/demo/web/src/platform-permissions.tsx` `usePlatformPermissions` |
-| 注册模式下短信登录之后的完成设置页（用户名、口令） | 已实现 | `starters/demo/web/src/pages/account-setup-page.tsx` `AccountSetupPage`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | 审查装配的日志邮件 `mail.log` 与开放口令注册的走查链 | 已实现 | `pkg/mail/log/log.go` `Module`、`Sender`、`VerificationCode`；`starters/demo/server/capabilities.go` `capabilityModules`；`starters/demo/server/review/sqlite.yaml`（`authn.account.password-signup`、`authn.login.email-*` 与 `authn.sms.per-source-*` 的预算设置）；`starters/demo/server/review_budget_test.go` `TestReviewWidensTheSendBudgets`；`starters/demo/server/review_signup_test.go` `TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant`、`TestReviewBaselineHasNoRegistrationEntry` |
 | 口令注册成功落地 `/account?verify=1` 的档案分页验证节与持续验证提示 | 已实现 | `starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/contact-verification-banner.tsx` `ContactVerificationBanner` |
 | 首次进入 `/account?verify=1` 自动发送一次验证码，更换邮箱落地不发送 | 已实现 | `starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection` |
@@ -503,13 +500,13 @@ flowchart TD
 | 个人租户端点的 operation 声明与 `personal-openapi.json` 生成 | 已实现 | `starters/demo/server/personal.go`；`starters/demo/server/openapi_generated_test.go`；片段 `starters/demo/server/personal-openapi.json` |
 | 个人租户 `tenant-admin` 的权限取宿主声明的允许集（不含成员管理），补齐把授予收敛到允许集；该角色不置 `builtin`，业务租户的则置 | 已实现 | `starters/demo/server/personal.go` `personalBusinessPermissions`、`personalExcludedPermissions`、`personalTenantAdminPermissions`、`convergeTenantAdminGrants`、`legacyPersonalOwnerRole`（不调 `MarkRoleBuiltin`）；`starters/demo/server/seed.go` `seedAdministration`；`starters/demo/server/personal_test.go` `TestThePersonalTenantAdminAllowlistExcludesManagement`、`TestEnsureMigratesTheLegacyOwnerRole`、`TestThePersonalTenantAdminRoleIsNotBuiltin`、`TestThePersonalTenantAdminRoleIsNotBuiltinThroughTheAPI` |
 | 补齐不覆盖运营者的决定，读回前追平名册快照，已有个人租户的账户读回它，拒绝服务账户与静态凭据主体，别名冲突答 409 | 已实现 | `starters/demo/server/personal.go` `ensure`、`registeredTenant`、`createTenant`、`handleEnsure`；`starters/demo/server/personal_test.go` `TestTheBackfillCreatesBesideAnotherMembership`、`TestEnsureReadsBackThePersonalTenantBesideAnotherMembership`、`TestTheEnsureAnswersADependencyFailure503WithoutTheCause` |
-| 补齐失败占位只替换取租户数据的页面，一次性提示按账户当前资料实时判定，注册落点只在应用登录页生效 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/personal-tenant-notice.tsx` `PersonalTenantNoticeProvider`；`starters/demo/web/src/pages/home-page.tsx` `HomePage`；`starters/demo/web/src/app-personal-tenant.test.tsx` |
+| 补齐失败占位只替换取租户数据的页面，注册落点只在应用登录页生效 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | 本人租户读取 `GET /api/v1/auth/me/tenants` 进入 `serve` 的模块与配置，驱动租户选择器的列表、当前租户落定与租户作用域请求的别名来源；冒充身份可读且应答收窄到授予租户，冒充期间整页重载后当前租户仍可命名 | 已实现 | `pkg/tenant/self` `self.go`、`routes.go`、`handler.go`；`starters/demo/server/main.go` `baselineServe`；`starters/demo/server/defaults.go` `tenant.self`；`starters/demo/web/src/tenant-self.ts`、`starters/demo/web/src/app.tsx` `TenantFrame`；`web/packages/api-sdk/src/index.ts`、`starters/demo/web/src/app-api/index.ts` |
 | 租户选择器的工作区文案按派生的标识逐字相等判定 | 已实现 | `starters/demo/web/src/chrome.tsx` `TenantMenu`；`starters/demo/web/src/tenant-self.ts` `personalTenantId` |
 | 颜色模式入口在账户偏好页，账户值为权威、设备镜像只做首屏；两个页头不提供颜色模式按钮 | 已实现 | `starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`starters/demo/web/src/app.tsx` `ColorModeSync`；`starters/demo/web/src/chrome.tsx` `readStoredColorModePreference`、`persistColorModePreference`、`initialColorModePreference`；`starters/demo/web/src/main.tsx` `demoThemeOptions` |
 | 租户切换的确认文本只播报、不在页头绘制 | 已实现 | `starters/demo/web/src/chrome.tsx` `TenantMenu` |
 | 邀请受理成功后以应答的租户标识为当前租户，别名经本人租户读取解析，解析不到时仍落到租户区首页但不写当前租户 | 已实现 | `starters/demo/web/src/pages/accept-invitation-page.tsx` `AcceptInvitationPage`；`starters/demo/web/src/tenant-self.ts` `loadSelfTenants` |
-| 启用个人租户时注册完成后落在租户区首页，完成设置的提示按账户当前资料实时判定 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
+| 启用个人租户时注册完成后落在租户区首页 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | 登录页文案不断言装配 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | `backend` 监听上各端的认领前缀（平台默认文档给出的固定命名空间表） | 已实现 | `starters/demo/server/defaults.go` `http.endpoints`；`starters/demo/server/claims_test.go` `claimsFromFile`、`readEffective`（经 `config.Load` 读文件与默认文档合并后的生效配置） |
 | 后端前缀清单 `backend-prefixes.json` 与由它生成的开发代理 | 已实现 | `starters/demo/web/backend-prefixes.json`；`starters/demo/web/src/backend-prefixes.ts` `backendProxyRules`；`starters/demo/web/vite.config.ts` |

@@ -268,7 +268,7 @@
 
 - **验收**：改口令、新增登录方式、登记两步验证方式、绑定或解绑外部身份这几种操作中任一成功后，该账户在其他设备上的会话在下一次请求被拒绝，当前设备保持登录；登记并验证一条邮箱或手机成功后，账户在其他设备上的会话保持有效。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
 ### REQ-security-033
 

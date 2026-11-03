@@ -6,7 +6,7 @@
 
 ## 范围
 
-本人资料的读取与显示名修改，语言与时区偏好，联系方式与登录方式的列出、添加与删除，用户名是否可用的判定与新开立账户的用户名要求，邮箱与手机的添加、验证与更换，邮箱验证状态与验证节，改口令，社交账号的绑定与解绑，完成设置页，首页的一次性完成设置提示与应用栏之下的持续验证提示。
+本人资料的读取与显示名修改，语言与时区偏好，联系方式与登录方式的列出、添加与删除，用户名是否可用的判定与新开立账户的用户名要求，邮箱与手机的添加、验证与更换，邮箱验证状态与验证节，改口令，社交账号的绑定与解绑，应用栏之下的持续验证提示。
 
 ### 不在范围内
 
@@ -356,77 +356,13 @@
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
-### REQ-account-021
-
-系统必须在账户刚获得个人租户且没有口令时，于首页显示一次性的「完成账户设置」提示，提示含进入完成设置页的链接与关闭控件。
-
-- **验收**：刚获得个人租户且没有口令的账户，在首页看到该提示，提示中有进入完成设置页的链接与关闭控件；账户本次并未新获得个人租户时不出现提示。
-- **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
-
-### REQ-account-055
-
-设置完成后，系统必须按账户当前资料撤下已在首页显示的一次性提示，账户无需重新登录。
-
-- **验收**：看到提示后设置口令，提示消失且无需重新登录；在账户设置页完成设置后返回首页，提示同样不再出现。
-- **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
-
-### REQ-account-056
-
-一次性提示的关闭必须只在本次身份会话内生效；同一身份会话内离开并返回首页不再显示，换身份后重新按触发判据判定。
-
-- **验收**：关闭提示后在页面之间往返均不再出现；在同一浏览器切换到另一个账户的身份会话后，触发判据满足时提示重新出现。
-- **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
-
-### REQ-account-057
-
-一次性提示不得由注册动作本身触发；触发判据是账户刚获得个人租户且没有口令，与账户是否经登录面的注册入口到达无关。
-
-- **验收**：不经注册入口、以新号码走普通短信登录而新开立的账户，在个人租户刚创建且没有口令时同样看到提示。
-- **状态**：已实现
-- **端到端测试**：未实现
-
-### REQ-account-022
-
-系统必须提供完成设置页，并要求没有用户名且没有登录名的账户先添加用户名，再设置口令。
-
-- **验收**：没有用户名且仅有手机标识的账户，在页面先看到添加用户名，添加后出现口令表单。
-- **状态**：已实现
-- **端到端测试**：未实现
-
-### REQ-account-050
-
-账户没有用户名、也没有可作登录名的标识时，完成设置页必须不显示口令表单，并说明需要先添加用户名。
-
-- **验收**：没有用户名且只有手机标识的账户在完成设置页看不到口令表单，看到需要先添加用户名的说明。
-- **状态**：已实现
-- **端到端测试**：未实现
-
-### REQ-account-051
-
-账户已有登录名与口令时，完成设置页必须陈述设置已完成并给出回到首页的入口。
-
-- **验收**：账户按当前缺失项完成设置（缺少口令的设置口令，没有用户名的补上用户名）后，页面变为完成态并给出回到首页的链接。
-- **状态**：已实现
-- **端到端测试**：未实现
-
-### REQ-account-052
-
-完成设置页必须提供稍后设置的出口；跳过不撤销账户。
-
-- **验收**：点击「稍后设置」离开后账户仍可用短信登录。
-- **状态**：已实现
-- **端到端测试**：未实现
-
 ### REQ-account-023
 
 系统必须在账户已有口令时要求提交正确的当前口令才能修改；没有口令的账户不要求当前口令。
 
 - **验收**：有口令账户提交错误的当前口令被拒绝且口令不变；提交正确的当前口令与合格新口令后新口令生效；没有口令的账户在新口令合格时直接生效。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
 ### REQ-account-024
 
@@ -450,7 +386,7 @@
 
 - **验收**：设备 A 改口令后仍可继续使用，设备 B 的下一次请求被要求重新登录；会话列表中不再出现设备 B 的会话。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
 ### REQ-account-027
 
