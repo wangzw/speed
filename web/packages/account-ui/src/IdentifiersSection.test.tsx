@@ -1384,7 +1384,7 @@ describe('IdentifiersSection', () => {
       }
       if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
         // An existing username is the expected 409 of the one write the
-        // setup page's add face exists for.
+        // account page's add face exists for.
         return errorResponse(409, 'authn.username_taken')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
