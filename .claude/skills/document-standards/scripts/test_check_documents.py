@@ -38,7 +38,12 @@ CLAUDE_MD = """# Project
 - language: en
 """
 
-GLOSSARY = "# Glossary\n\nComponent — an implementation of a module interface.\n"
+GLOSSARY = """# Glossary
+
+| Term | Definition |
+|---|---|
+| Component | an implementation of a module interface |
+"""
 
 REFERENCES = """# References
 
@@ -650,7 +655,12 @@ class AdrTreeTests(CheckerCase):
 
 ZH_FILES = {
     "CLAUDE.md": CLAUDE_MD.replace("language: en", "language: zh-CN"),
-    "docs/glossary.md": "# 术语表\n\n组件 — 模块接口的一个实现。\n",
+    "docs/glossary.md": """# 术语表
+
+| 术语 | 英文 | 定义 |
+|---|---|---|
+| 组件 | Component | 模块接口的一个实现 |
+""",
     "docs/references.md": """# 外部引用
 
 | 编号 | 名称 | 说明 | 来源 | 版本 |
@@ -850,6 +860,185 @@ classDiagram
                          .replace("(adr-core-scope.md) |", "(adr-core-scope.md) | 2026-01-02 |")},
                         "date or status column", base=ZH_FILES)
 
+    def test_local_glossary_with_both_terms_passes(self):
+        glossary = """## 术语表
+
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 注册 | registration | 本模块 | 把组件放入注册表 |
+
+"""
+        self.assert_green({"docs/design/modules/design-core.md":
+                           ZH_FILES["docs/design/modules/design-core.md"].replace(
+                               "## 外部接口契约", glossary + "## 外部接口契约")},
+                          base=ZH_FILES)
+
+    def test_local_glossary_entry_without_an_english_counterpart(self):
+        glossary = """## 术语表
+
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 注册 |  | 本模块 | 把组件放入注册表 |
+
+"""
+        self.assert_red({"docs/design/modules/design-core.md":
+                         ZH_FILES["docs/design/modules/design-core.md"].replace(
+                             "## 外部接口契约", glossary + "## 外部接口契约")},
+                        "carries no English counterpart", base=ZH_FILES)
+
+    def test_local_glossary_counterpart_must_be_english(self):
+        glossary = """## 术语表
+
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 注册 | 注册操作 | 本模块 | 把组件放入注册表 |
+
+"""
+        self.assert_red({"docs/design/modules/design-core.md":
+                         ZH_FILES["docs/design/modules/design-core.md"].replace(
+                             "## 外部接口契约", glossary + "## 外部接口契约")},
+                        "the counterpart is English", base=ZH_FILES)
+
+    def test_local_glossary_without_the_english_column(self):
+        glossary = """## 术语表
+
+| 术语 | 适用范围 | 定义 |
+|---|---|---|
+| 注册 | 本模块 | 把组件放入注册表 |
+
+"""
+        self.assert_red({"docs/design/modules/design-core.md":
+                         ZH_FILES["docs/design/modules/design-core.md"].replace(
+                             "## 外部接口契约", glossary + "## 外部接口契约")},
+                        "glossary columns are not the standard's", base=ZH_FILES)
+
+    def test_local_glossary_without_a_scope(self):
+        glossary = """## 术语表
+
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 注册 | registration |  | 把组件放入注册表 |
+
+"""
+        self.assert_red({"docs/design/modules/design-core.md":
+                         ZH_FILES["docs/design/modules/design-core.md"].replace(
+                             "## 外部接口契约", glossary + "## 外部接口契约")},
+                        "states no scope", base=ZH_FILES)
+
+    def test_project_glossary_entry_without_an_english_counterpart(self):
+        self.assert_red({"docs/glossary.md":
+                         "# 术语表\n\n| 术语 | 英文 | 定义 |\n|---|---|---|\n"
+                         "| 组件 |  | 模块接口的一个实现 |\n"},
+                        "carries no English counterpart", base=ZH_FILES)
+
+    def test_project_glossary_without_the_english_column(self):
+        self.assert_red({"docs/glossary.md":
+                         "# 术语表\n\n| 术语 | 定义 |\n|---|---|\n"
+                         "| 组件 | 模块接口的一个实现 |\n"},
+                        "glossary columns are not the standard's", base=ZH_FILES)
+
+    def test_project_glossary_definition_list_is_refused(self):
+        self.assert_red({"docs/glossary.md":
+                         "# 术语表\n\n组件 — 模块接口的一个实现。\n"},
+                        "holds no entry table", base=ZH_FILES)
+
+    def test_local_glossary_definition_list_is_refused(self):
+        glossary = """## 术语表
+
+注册 — 把组件放入注册表。
+
+"""
+        self.assert_red({"docs/design/modules/design-core.md":
+                         ZH_FILES["docs/design/modules/design-core.md"].replace(
+                             "## 外部接口契约", glossary + "## 外部接口契约")},
+                        "holds no glossary table", base=ZH_FILES)
+
+    def test_local_glossary_columns_out_of_order(self):
+        glossary = """## 术语表
+
+| 英文 | 术语 | 适用范围 | 定义 |
+|---|---|---|---|
+| registration | 注册 | 本模块 | 把组件放入注册表 |
+
+"""
+        self.assert_red({"docs/design/modules/design-core.md":
+                         ZH_FILES["docs/design/modules/design-core.md"].replace(
+                             "## 外部接口契约", glossary + "## 外部接口契约")},
+                        "glossary columns are not the standard's", base=ZH_FILES)
+
+    def test_local_glossary_row_with_the_wrong_cell_count(self):
+        glossary = """## 术语表
+
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 注册 | registration | 本模块 |
+
+"""
+        self.assert_red({"docs/design/modules/design-core.md":
+                         ZH_FILES["docs/design/modules/design-core.md"].replace(
+                             "## 外部接口契约", glossary + "## 外部接口契约")},
+                        "has 3 cells", base=ZH_FILES)
+
+    def test_local_glossary_row_without_a_term(self):
+        glossary = """## 术语表
+
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+|  | registration | 本模块 | 把组件放入注册表 |
+
+"""
+        self.assert_red({"docs/design/modules/design-core.md":
+                         ZH_FILES["docs/design/modules/design-core.md"].replace(
+                             "## 外部接口契约", glossary + "## 外部接口契约")},
+                        "has no term", base=ZH_FILES)
+
+    def test_local_glossary_row_without_a_definition(self):
+        glossary = """## 术语表
+
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 注册 | registration | 本模块 |  |
+
+"""
+        self.assert_red({"docs/design/modules/design-core.md":
+                         ZH_FILES["docs/design/modules/design-core.md"].replace(
+                             "## 外部接口契约", glossary + "## 外部接口契约")},
+                        "has no definition", base=ZH_FILES)
+
+    def test_local_glossary_counterpart_without_a_word(self):
+        glossary = """## 术语表
+
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 注册 | 123 | 本模块 | 把组件放入注册表 |
+
+"""
+        self.assert_red({"docs/design/modules/design-core.md":
+                         ZH_FILES["docs/design/modules/design-core.md"].replace(
+                             "## 外部接口契约", glossary + "## 外部接口契约")},
+                        "gives no English word", base=ZH_FILES)
+
+    def test_local_glossary_escaped_pipe_stays_in_its_cell(self):
+        glossary = """## 术语表
+
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 管道符 | pipe | 本模块 | 表示 a \\| b 中的竖线 |
+
+"""
+        self.assert_green({"docs/design/modules/design-core.md":
+                           ZH_FILES["docs/design/modules/design-core.md"].replace(
+                               "## 外部接口契约", glossary + "## 外部接口契约")},
+                          base=ZH_FILES)
+
+    def test_project_glossary_hint_follows_the_document_language(self):
+        self.assertIn("Term | Definition",
+                      self.run_on({"docs/glossary.md":
+                                   "# Glossary\n\nA component.\n"}, base=BASELINE)[1])
+        self.assertIn("术语 | 英文 | 定义",
+                      self.run_on({"docs/glossary.md":
+                                   "# 术语表\n\n组件。\n"}, base=ZH_FILES)[1])
+
 
 PRD_FILES = dict(BASELINE)
 PRD_FILES["CLAUDE.md"] = CLAUDE_MD.replace("- design: docs/design",
@@ -959,6 +1148,18 @@ class RequirementsTreeTests(CheckerCase):
                                "## Functional Requirements",
                                glossary + "## Functional Requirements")},
                           base=PRD_FILES)
+
+    def test_capability_glossary_is_checked(self):
+        glossary = """## Glossary
+
+A signature is the detached bytes the verifier checks.
+
+"""
+        self.assert_red({"docs/prd/features/prd-signing.md":
+                         PRD_FILES["docs/prd/features/prd-signing.md"].replace(
+                             "## Functional Requirements",
+                             glossary + "## Functional Requirements")},
+                        "holds no glossary table", base=PRD_FILES)
 
     def test_requirement_id_slug_mismatch(self):
         self.assert_red({"docs/prd/features/prd-signing.md":

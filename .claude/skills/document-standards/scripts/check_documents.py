@@ -40,7 +40,9 @@ WHAT IS CHECKED
     * every mermaid block has a diagram type and a non-empty body
     * a section holding a diagram carries prose as well
     * headings are written in the document's configured language
-    * the configured glossary file exists
+    * the configured glossary file exists and is an entry table in the
+      standard's column order, every entry carrying an English
+      counterpart when the documentation is not written in English
 
   Project references (SKILL.md section 2):
     * the configured references file exists, and is shaped like every
@@ -216,6 +218,23 @@ SUBINDEX_SECTIONS = [
     ("index", INDEX_SECTION, True),
     ("status", names("Implementation Status", "实现状态"), True),
 ]
+
+# Glossary columns, by header name, in the fixed order the standard requires.
+# A local glossary adds the scope column; an English-language document omits
+# the counterpart column, because its term column is that form.
+GLOSSARY_COLUMNS = {
+    "term": frozenset({"term", "术语"}),
+    "english": frozenset({"english", "english term", "英文", "英文术语", "英文对照"}),
+    "scope": frozenset({"scope", "适用范围", "作用域"}),
+    "definition": frozenset({"definition", "meaning", "定义", "含义"}),
+}
+GLOSSARY_COLUMN_NAMES = {
+    "term": names("Term", "术语"),
+    "english": names("English", "英文"),
+    "scope": names("Scope", "适用范围"),
+    "definition": names("Definition", "定义"),
+}
+CJK_RE = re.compile(r"[㐀-䶿一-鿿]")
 
 # Status vocabularies.
 DESIGN_STATUS = {
@@ -720,6 +739,141 @@ def check_common(rel_path: str, text: str) -> list[Finding]:
     return found
 
 
+# --- glossary ------------------------------------------------------------
+
+def glossary_columns(language: str, local: bool) -> list[str]:
+    columns = ["term"]
+    if language != "en":
+        columns.append("english")
+    if local:
+        columns.append("scope")
+    columns.append("definition")
+    return columns
+
+
+def glossary_header_key(cell: str) -> str | None:
+    text = cell.strip("*` ").casefold()
+    for key, aliases in GLOSSARY_COLUMNS.items():
+        if text in aliases:
+            return key
+    return None
+
+
+def glossary_column_hint(language: str, local: bool) -> str:
+    """The table shape a finding asks for, in the document's language."""
+    return " | ".join(canonical(GLOSSARY_COLUMN_NAMES[key], language)
+                      for key in glossary_columns(language, local))
+
+
+def table_row_cells(raw: str) -> list[str]:
+    """Cells of one table row. GFM's escaped pipe (\\|) is a literal pipe
+    inside its cell, not a delimiter."""
+    text = raw.strip().strip("|")
+    cells: list[str] = []
+    current: list[str] = []
+    i = 0
+    while i < len(text):
+        if text[i] == "\\" and i + 1 < len(text) and text[i + 1] == "|":
+            current.append("|")
+            i += 2
+            continue
+        if text[i] == "|":
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(text[i])
+        i += 1
+    cells.append("".join(current).strip())
+    return cells
+
+
+def glossary_table_findings(rel: str, block, local: bool,
+                            language: str) -> list[Finding]:
+    """One glossary table against the fixed column order, and every entry
+    against the English-counterpart requirement. The counterpart is what
+    keeps one term from becoming two words in translation, so a row that
+    leaves it out is the defect the glossary exists to prevent."""
+    (header_line, header), body = block
+    expected = glossary_columns(language, local)
+    actual = [glossary_header_key(cell) for cell in header]
+    if actual != expected:
+        return [Finding(rel, header_line,
+                        f"glossary columns are not the standard's; write "
+                        f"{glossary_column_hint(language, local)}")]
+    found: list[Finding] = []
+    index = {key: position for position, key in enumerate(expected)}
+    for n, raw, _, _ in body:
+        cells = table_row_cells(raw)
+        if len(cells) != len(expected):
+            found.append(Finding(rel, n,
+                                 f"glossary entry has {len(cells)} cells; the table "
+                                 f"declares {len(expected)} columns"))
+            continue
+        term = cells[index["term"]].strip("*` ")
+        if not term:
+            found.append(Finding(rel, n, "glossary entry has no term"))
+        if not cells[index["definition"]].strip("*` "):
+            found.append(Finding(rel, n, f"glossary entry {term!r} has no definition"))
+        if local and not cells[index["scope"]].strip("*` "):
+            found.append(Finding(rel, n,
+                                 f"glossary entry {term!r} states no scope; a local "
+                                 f"glossary entry says where its meaning applies"))
+        if "english" not in index:
+            continue
+        counterpart = cells[index["english"]].strip("*` ")
+        if not counterpart:
+            found.append(Finding(rel, n,
+                                 f"glossary entry {term!r} carries no English "
+                                 f"counterpart; it is what keeps the term the same "
+                                 f"in translation and findable in the code"))
+        elif CJK_RE.search(counterpart):
+            found.append(Finding(rel, n,
+                                 f"glossary entry {term!r} gives {counterpart!r} as its "
+                                 f"English counterpart; the counterpart is English"))
+        elif not re.search(r"[A-Za-z]", counterpart):
+            found.append(Finding(rel, n,
+                                 f"glossary entry {term!r} gives no English word as "
+                                 f"its counterpart"))
+    return found
+
+
+def check_local_glossary(rel: str, text: str, language: str,
+                         table: list) -> list[Finding]:
+    """A document's optional Glossary section: when present, it is an entry
+    table in the standard's column order."""
+    found: list[Finding] = []
+    for section in parse_sections(text):
+        if section.level != 2:
+            continue
+        key, _ = match_section(section.title, table, language)
+        if key != "glossary":
+            continue
+        blocks = table_blocks(section.lines)
+        if not blocks:
+            found.append(Finding(rel, section.line,
+                                 f"section {section.title!r} holds no glossary table; "
+                                 f"every entry is a row of "
+                                 f"{glossary_column_hint(language, True)}"))
+            continue
+        for block in blocks:
+            found += glossary_table_findings(rel, block, True, language)
+    return found
+
+
+def check_project_glossary(rel: str, text: str, language: str) -> list[Finding]:
+    """The project glossary's entry table. It carries no scope column --
+    every term in it holds project-wide by definition."""
+    blocks = table_blocks(scan_lines(text))
+    if not blocks:
+        return [Finding(rel, 0,
+                        "the project glossary holds no entry table; every entry is a "
+                        f"row of {glossary_column_hint(language, False)}")]
+    found: list[Finding] = []
+    for block in blocks:
+        found += glossary_table_findings(rel, block, False, language)
+    return found
+
+
 def check_heading_language(rel_path: str, text: str, language: str,
                            table: list) -> list[Finding]:
     found = []
@@ -970,6 +1124,7 @@ def check_module_document(rel: str, text: str, language: str) -> list[Finding]:
     found: list[Finding] = []
     found += check_heading_language(rel, text, language, MODULE_SECTIONS)
     found += check_section_order(rel, text, language, MODULE_SECTIONS)
+    found += check_local_glossary(rel, text, language, MODULE_SECTIONS)
     found += check_design_status(rel, parse_sections(text), language, roll_up=False)
     responsibilities = [s for s in parse_sections(text) if s.level == 3
                         and normalize_heading(s.title)
@@ -1372,6 +1527,7 @@ def check_requirements_tree(tree: str, root: str, language: str) -> list[Finding
                 found.append(Finding(rel, 0, f"slug {slug!r} is not lowercase kebab-case ASCII"))
             found += check_heading_language(rel, text, language, FEATURE_SECTIONS)
             found += check_section_order(rel, text, language, FEATURE_SECTIONS)
+            found += check_local_glossary(rel, text, language, FEATURE_SECTIONS)
             found += check_requirement_entries(rel, text, language, slug)
         elif parent == journeys:
             if not name.startswith("journey-"):
@@ -1542,6 +1698,10 @@ def main(argv: list[str] | None = None) -> int:
         found.append(Finding(config["glossary"], 0,
                              "the configured glossary does not exist; the project has "
                              "exactly one, shared by every document type"))
+    else:
+        rel_glossary = os.path.relpath(glossary, root)
+        found += check_project_glossary(rel_glossary,
+                                        strip_comments(read(glossary)), language)
     found += check_references(root, config, trees, language)
     for path, message in sorted(UNDECODABLE.items()):
         found.append(Finding(os.path.relpath(path, root), 0, message))

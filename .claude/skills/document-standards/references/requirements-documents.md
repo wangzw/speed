@@ -89,7 +89,7 @@ The order below is fixed. It is an ordering rule, not a completeness rule: which
 1. **Problem statement** — what has to be solved, and for whom.
 2. **Scope** — and, explicitly, what is out of scope.
 3. **Actors** — who interacts with the system, and with what authority. These are system participants, **not marketing personas**.
-4. **Glossary** — optional, and rare. The terms this document gives a meaning of its own, each stated with the scope it applies to. A term that holds project-wide belongs to the project glossary instead, never to both.
+4. **Glossary** — optional, and rare. The terms this document gives a meaning of its own, each stated with the scope it applies to and with its English counterpart. A term that holds project-wide belongs to the project glossary instead, never to both.
 5. **Functional requirements** — mandatory.
 6. **Non-functional requirements** — quantified, and sourced (section 7).
 7. **Data requirements** — what data exists conceptually, its retention, its privacy classification. **Not a schema.**

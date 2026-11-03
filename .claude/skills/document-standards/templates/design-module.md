@@ -25,12 +25,17 @@ Optional, and rare. Delete unless this document gives a word a meaning of
 its own that the reader would not arrive at unaided. A term that holds
 project-wide belongs to the project glossary, never to both; a term
 registered here states the scope it applies to.
+
+Every entry carries the term's English counterpart -- the word the English
+documentation and the code's identifiers reuse. It is what keeps one term
+from becoming two words in translation. A document written in English
+omits the English column.
 -->
 ## Glossary
 
-| Term | Scope | Definition |
-|---|---|---|
-| <term> | <where this meaning applies> | <what it means there> |
+| Term | English | Scope | Definition |
+|---|---|---|---|
+| <term> | <the word the documentation and the code use> | <where this meaning applies> | <what it means there> |
 
 ## External Interface Contract
 

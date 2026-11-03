@@ -75,7 +75,7 @@ Template: `templates/design-architecture.md`.
 Fixed section order, so modules can be read against each other and checked mechanically:
 
 1. **Responsibilities** — and, explicitly, **non-responsibilities**. Writing down what the module does not own is the cheapest available defence against scope creep.
-2. **Glossary** — optional, and rare. The terms this document gives a meaning of its own, each stated with the scope it applies to. A term that holds project-wide belongs to the project glossary instead, never to both.
+2. **Glossary** — optional, and rare. The terms this document gives a meaning of its own, each stated with the scope it applies to and with its English counterpart. A term that holds project-wide belongs to the project glossary instead, never to both.
 3. **External interface contract** — what other modules may call, and what stability is promised. This is the most valuable part of a module document.
 4. **Dependencies** — what it depends on, and whether the direction satisfies the architecture invariants. A public external component the citation rule in `SKILL.md` catches is cited here, at its first mention, so that nothing the module embeds reads as something it built.
 5. **UML diagrams** — structure and call relationships, selected per section 5.

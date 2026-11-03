@@ -71,8 +71,10 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 - **A term whose meaning is bounded by a context does not go into the project glossary.** A word defined by one module, one document or one subsystem means something else, or nothing, elsewhere — and the project glossary is read from everywhere. Registering it there makes the contextual meaning look global, which is the more expensive mistake: it licenses the term's use in documents its definition was never meant to reach.
 - **Where a context genuinely needs its terms registered, it registers them itself** — the optional glossary section each document type's standard places in its fixed order, or a glossary file beside the documents of that scope — and the local glossary states the scope it applies to. **DO NOT** create one per documentation tree as a matter of course: a glossary that exists because the layout suggested one, rather than because a context needed it, is what drifts apart from the project glossary.
 - **A local glossary never redefines, narrows or restates a project term.** Two definitions of one term is a defect regardless of which is right. A term that outgrows its context moves up — it enters the project glossary and leaves the local one; a project term never moves down.
-- An entry carries the term, its definition, and its counterpart in the source language when the document language differs from it.
-- **Once a term is registered, its wording is uniform throughout the scope that registered it** — the whole documentation for a project term, the owning context for a local one. Synonym drift is a defect.
+- **Every entry carries the term and its English counterpart** — the one English word or phrase that the English documentation, the public interface and the code's identifiers all use. It is a fixed name, not a translation of the definition. It is required in every document not written in English: the counterpart is what lets a Chinese document and its English version be matched entry by entry, and what lets a reader find the concept in the code. Without it the translation picks its own word, which is the drift the glossary exists to prevent.
+- **A glossary is a table, in a fixed column order**: `Term | English | Scope | Definition` for a local glossary, `Term | English | Definition` for the project glossary. **A document written in English omits the English column**, because its term column is that form. A definition list is not a glossary under this standard: the entry that loses its counterpart is the one nobody notices, and only a column can be checked.
+- **The counterpart is reused verbatim**, like the term itself: a second English rendering of one term is synonym drift one language over.
+- **Once a term is registered, its wording is uniform throughout the scope that registered it** — the whole documentation for a project term, the owning context for a local one. Synonym drift is a defect, in either language.
 - **Uniformity binds every document.** An ADR is revised in place like every other document, so a term rename reaches it too; no record keeps an outdated wording.
 
 **External sources.**
@@ -119,17 +121,19 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 
 ## 4. Templates
 
-`templates/` holds the starting point for each document type. They carry the mandatory section order; delete the sections that do not apply rather than leaving them empty.
+`templates/` holds the starting point for each document type. They carry the mandatory section order; delete the sections that do not apply rather than leaving them empty. `templates/glossary.md` and `templates/references.md` are the starting points for the two files every document type shares.
 
 ## 5. Mechanical Check
 
 `scripts/check_documents.py` checks the structural half of this standard: section
 presence and order, file naming, index coverage, status vocabulary, diagram
-bodies, the process metadata a document never carries, and whether every
-`REF-<slug>` citation resolves to an entry of the project references file that
-is itself cited. It reads the paths and the language from the `## Documentation` block of
-section 1, skips a declared tree that does not exist, and treats a configuration under
-which no tree exists, or a value that is not a single path, as a usage error (exit 2).
+bodies, glossary columns and every entry's English counterpart, the process
+metadata a document never carries, and whether every `REF-<slug>` citation
+resolves to an entry of the project references file that is itself cited.
+It reads the paths and the language from the `## Documentation` block of
+section 1, skips a declared tree that does not exist, and treats a
+configuration under which no tree exists, or a value that is not a single
+path, as a usage error (exit 2).
 
 **Running it is mandatory, not advisory.** After creating or editing any document
 under the configured paths, run it from the repository root and leave it at exit 0.
@@ -167,6 +171,7 @@ Each document type's standard adds its own checklist on top of this one.
 
 - [ ] Path and language resolved from `CLAUDE.md`, not assumed
 - [ ] One language throughout; every mixed-in term is universally recognized, registered in the glossary covering its scope, or the name of a registered source
+- [ ] Every glossary entry carries the term's English counterpart, and its scope where the glossary is local; in an English document the English column is omitted
 - [ ] Every sentence the attribution or traceability test catches cites its source by `REF-<slug>` at first use, and every cited source is registered in the project references file
 - [ ] No first person, no second person, no subjective modifiers, no restating transitions
 - [ ] No counts of structures, no positional references to enumerated items
