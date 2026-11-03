@@ -9,17 +9,18 @@ writes the policy data, the host's seeding and reconciliation surfaces, and the
 account lifecycle cleanup — `pkg/authz/guard`, the module that implements the
 authentication capability's decision seam, `pkg/authz/admin`, the platform
 management surface, `pkg/authz/tenantadmin`, the tenant-scoped management
-surface (not implemented yet), `pkg/authz/self`, the module that answers the
-caller's own permissions, and `pkg/authz/authztest`, the fixtures a test of this
-directory drives. The
+surface (a skeleton that mounts no route yet), `pkg/authz/self`, the module that
+answers the caller's own permissions, and `pkg/authz/authztest`, the fixtures a
+test of this directory drives. The
 thin adapter the engine stores its policy through, the snapshot holder, and the
 one permission translation live under `pkg/authz/internal/`, which only this
 directory can import.
 
 The platform management surface is `authz.admin`: it mounts its routes under
 `/api/v1/system/*` and delivers nothing of its own. The tenant management surface
-is `authz.tenantadmin`, not implemented yet: when it exists it mounts its routes
-under `/api/v1/tenants/{tenant}/*`, decides in the tenant's own policy domain,
+is `authz.tenantadmin`, a skeleton that mounts no route yet: when its handlers
+land it mounts its routes under `/api/v1/tenants/{tenant}/*`, decides in the
+tenant's own policy domain,
 and delivers nothing of its own.
 `authz.self` mounts the caller's permission read under
 `/api/v1/authz/me/permissions` and delivers nothing of its own either.
@@ -61,7 +62,7 @@ which takes no lock.
   name.
 - **`pkg/authz/policy` registers `authz.policy`; `pkg/authz/guard` registers
   `authz.guard`; `pkg/authz/admin` registers `authz.admin`; `pkg/authz/tenantadmin`
-  registers `authz.tenantadmin` (not implemented yet); `pkg/authz/self` registers
+  registers `authz.tenantadmin` (a skeleton that mounts no route yet); `pkg/authz/self` registers
   `authz.self`.** Each registering package exports its own `ModuleName`, and that
   same value is its configuration namespace, its static feature name and its
   OpenAPI tag; every segment of the name is a lower-case letter, a digit or a
@@ -78,10 +79,11 @@ which takes no lock.
   enforcement module's namespace is `authz.guard`; it declares the input items
   `authz.guard.endpoints` and `authz.guard.undeclared`. `authz.admin` declares
   `authz.admin.endpoints`; `authz.self` declares `authz.self.endpoints`.
-  `authz.tenantadmin` is not implemented yet; its namespace is
-  `authz.tenantadmin`, and when implemented it will declare
-  `authz.tenantadmin.endpoints`. Each endpoint list is required, names concrete
-  endpoints and refuses `*`.
+  `authz.tenantadmin` is a skeleton that mounts no route yet; its namespace is
+  `authz.tenantadmin`, its endpoint list declares
+  `authz.tenantadmin.endpoints` and defaults to `["api"]`. Each list names
+  concrete endpoints and refuses `*`; the tenant management module's default
+  supplies its list, and the others are declared required.
 
 ## Boundaries
 
@@ -163,8 +165,9 @@ which takes no lock.
   `authz.tenant.role.manage` and `settings.tenant.read`/`settings.tenant.write`
   for the tenant surface; the two pairs translate to different (object, action)
   pairs.
-- **`authz.tenantadmin` is not implemented yet.** When implemented it decides in
-  the tenant domain and enforces the anti-escalation rules itself. It takes
+- **`authz.tenantadmin` is a skeleton that mounts no route yet.** When its
+  handlers land it decides in the tenant domain and enforces the anti-escalation
+  rules itself. It takes
   `Manager`, `Catalog`, `SubjectPermissions`, `MembershipChecker`, `guard.Guard`,
   `audit.Audit` and
   `authn.SignupVerification`, and only `Manager` of the policy writers. It
@@ -187,12 +190,13 @@ which takes no lock.
   domain or target is protected, not the caller short a permission — and an
   unreadable answer a 503, and the seam can only narrow what the `Manager` would
   do. Delivering none is a legal assembly: the write routes then run without it.
-  `WriteSettings` is a separate seam planned for the root package, not
-  implemented yet, for the settings write: it will take only the tenant, its
-  denial is the settings surface's `protected` code, and `WriteOp` keeps its
-  closed three values. `settings.tenantadmin`, also not implemented yet, will
-  require it, so an assembly that mounts the tenant settings surface without one
-  fails the startup; `WriteGuard` stays optional.
+  `WriteSettings` is a separate seam in the root package for the settings write:
+  it takes only the tenant, its denial is the settings surface's `protected`
+  code, and `WriteOp` keeps its closed three values. The host implements it and
+  refuses a write to a personal tenant; an answer that cannot be read is a 503
+  and never a permit. `settings.tenantadmin` requires it, so an assembly that
+  mounts the tenant settings surface without one fails the startup; `WriteGuard`
+  stays optional.
   The policy
   module's own writes — the seeding and reconciliation surfaces and the host's
   `Manager.ClearAccountBindings` account-deletion path — do not consult either

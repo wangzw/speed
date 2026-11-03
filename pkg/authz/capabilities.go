@@ -215,6 +215,33 @@ const (
 	WriteBinding
 )
 
+// WriteSettings reports whether a tenant's settings reject a management write.
+//
+// The capability knows which tenants are personal no more than it knows which
+// accounts are their members, so the answer is a host seam. The tenant settings
+// management surface asks it before a settings write; a write the guard refuses
+// is not carried out. The answer only narrows: it cannot make a write the
+// settings surface would refuse succeed.
+//
+// It is separate from WriteGuard. That one protects the policy data — a role, a
+// grant, a binding — and its WriteOp set stays the closed triple; a setting is
+// not policy data and borrows no WriteOp. A host implements this one and refuses
+// a write to a personal tenant, which is the host's policy and not a fact this
+// capability can read. Which namespaces are platform-only is a different rule,
+// held by the settings management surface itself and not here.
+//
+// The seam is optional in general but required by an assembly that mounts the
+// tenant settings surface: such an assembly supplies an implementation, and an
+// absent one ends the startup rather than leaving the personal-tenant refusal to
+// be decided at run time. A surface asks it after the route's shape checks and
+// before the mandatory audit and the store.
+type WriteSettings interface {
+	// Denied reports whether the tenant rejects the settings write. An error
+	// means the answer could not be read, and a caller treats it as a refusal
+	// to proceed rather than as a pass.
+	Denied(ctx context.Context, tenant string) (bool, error)
+}
+
 // Seeder is the host's seeding surface over the policy data: it adds the grants
 // a role is declared to hold, and it is the one write that reaches a builtin
 // role's grant set. The policy subpackage delivers it exclusively, beside

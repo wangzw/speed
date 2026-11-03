@@ -165,6 +165,11 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 			[]string{"Denied func(context.Context, string, authz.WriteOp) (bool, error)"},
 		},
 		{
+			"WriteSettings",
+			interfaceMethods(t, (*WriteSettings)(nil)),
+			[]string{"Denied func(context.Context, string) (bool, error)"},
+		},
+		{
 			"Manager",
 			interfaceMethods(t, (*Manager)(nil)),
 			[]string{
