@@ -136,7 +136,9 @@ func TestAddEmailWithoutAProofIsRefusedAndSendsNothing(t *testing.T) {
 }
 
 // TestAnEmailAddWithAValidProofAsksTheGateOnce holds the accepted path on its
-// own: exactly one code is sent and the gate is asked exactly once.
+// own: exactly one code is sent and the gate is asked exactly once. The email
+// code goes out over the email channel, so the proof never reaches the SMS
+// sender: a second check there would consume a single-use proof again.
 func TestAnEmailAddWithAValidProofAsksTheGateOnce(t *testing.T) {
 	human := requiredHuman()
 	h := withHuman(t, human, func(c *config) { c.email = true })
@@ -156,6 +158,9 @@ func TestAnEmailAddWithAValidProofAsksTheGateOnce(t *testing.T) {
 	}
 	if got := human.calls[0].Token; got != "proof-1" {
 		t.Errorf("the gate was handed proof %q, want the request's proof-1", got)
+	}
+	if len(h.sms.sent) != 0 {
+		t.Errorf("the SMS sender was handed %d messages, want none: the email branch has no code engine", len(h.sms.sent))
 	}
 }
 

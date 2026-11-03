@@ -169,6 +169,66 @@ func TestTheEngineForwardsAFactorChallengeProofWithoutCheckingIt(t *testing.T) {
 	}
 }
 
+// TestARejectedStartLeavesNoContinuableFlowAndChargesNothing holds the record
+// the start writes before the method runs. The start route stores the flow at
+// the first state and only then calls the method's Begin, so a gate refusal
+// answers 403 after a record exists. That record must not be a second charge and
+// must not be a way to continue: the method reports no send, so the record's
+// send count stays zero; a Begin is not a client answer, so its answer count
+// stays zero; the record has no method step, so even a binding token would reach
+// no step the method can walk; and the refusal drops the flow cookie, so the
+// client never holds the token that record is keyed by.
+func TestARejectedStartLeavesNoContinuableFlowAndChargesNothing(t *testing.T) {
+	begins := 0
+	m := phoneMethod()
+	m.begin = func(authn.Start) (authn.Step, error) {
+		begins++
+		// What the SMS method answers when the code engine refuses the proof:
+		// the gate's sentinel, refused before anything was sent.
+		return authn.StepRefused(fmt.Errorf("authn.login.sms: %w", authn.ErrHumanVerificationRequired)), nil
+	}
+	r := newRig(t, m)
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows",
+		`{"method":"sms","input":{"phone":"+8613800000000"}}`)
+	if start.Code != http.StatusForbidden {
+		t.Fatalf("a start the gate refused answered %d, want 403: %s", start.Code, start.Body.String())
+	}
+	if begins != 1 {
+		t.Fatalf("the method's Begin ran %d times, want once", begins)
+	}
+
+	// The refusal sets no flow cookie: the record's token never reaches the
+	// client, so the record is not a flow anything can be bound to.
+	for _, c := range start.Result().Cookies() {
+		if strings.Contains(c.Name, "authn-flow") {
+			t.Errorf("the refused start handed the client the flow cookie %q, want none", c.Name)
+		}
+	}
+	keys := r.kv.keys()
+	if len(keys) != 1 {
+		t.Fatalf("the refused start left %d store keys, want exactly one flow record: %v", len(keys), keys)
+	}
+	raw, present, err := r.kv.Get(t.Context(), keys[0])
+	if err != nil || !present {
+		t.Fatalf("reading the refused start's record: present=%v err=%v", present, err)
+	}
+	held, err := decodeRecord(raw)
+	if err != nil {
+		t.Fatalf("decoding the refused start's record: %v", err)
+	}
+	if held.State != stateFirst || held.MethodStep != "" {
+		t.Errorf("the refused start left state %q step %q, want the first state with no method step",
+			held.State, held.MethodStep)
+	}
+	if held.Sends != 0 {
+		t.Errorf("the refused start's record counts %d sends, want none: the proof was refused before any send", held.Sends)
+	}
+	if held.Answers != 0 {
+		t.Errorf("the refused start's record counts %d answers, want none: a Begin is not a client answer", held.Answers)
+	}
+}
+
 // TestAStartWithNoProofReachesTheMethod holds the other direction: the engine
 // no longer refuses a send for want of a proof. The code engine makes that
 // decision, and the method is called with an empty proof so the code engine can

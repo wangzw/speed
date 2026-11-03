@@ -7,9 +7,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // fakeHuman is the human-verification gate a case scripts. It records every
@@ -75,7 +77,8 @@ func (h *fakeHuman) last() (authn.HumanProof, bool) {
 // the deployment requires a proof for, presenting none, is refused with the
 // gate's own error before the prefix table, the challenge row and every budget.
 // The number's row count is what the budgets read, so a zero row count is a
-// budget nothing spent.
+// budget nothing spent. The shared ledger holds no attempt either, so the
+// refusal spends neither an attempt budget nor a send budget.
 func TestSendRefusesAMissingProofBeforeAnyBudget(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -94,6 +97,16 @@ func TestSendRefusesAMissingProofBeforeAnyBudget(t *testing.T) {
 	}
 	if n := r.sender.count(); n != 0 {
 		t.Errorf("the carrier was handed %d messages, want none", n)
+	}
+	// IncludeRefunded and IncludeSuppressed together read every row the ledger
+	// could hold, so a zero here is the absence of any attempt at all.
+	all := budget.Query{
+		Since:             r.clock.read().Add(-time.Hour),
+		IncludeRefunded:   true,
+		IncludeSuppressed: true,
+	}
+	if n := r.ledgerCount(all); n != 0 {
+		t.Errorf("the shared ledger holds %d attempts, want none: a refused proof writes no row", n)
 	}
 }
 
