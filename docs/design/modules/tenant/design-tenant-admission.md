@@ -34,10 +34,10 @@
 
 以下术语的含义限于本文与租户准入的决策记录。
 
-| 术语 | 适用范围 | 定义 |
-|---|---|---|
-| 所守的端 | 本文 | `tenant.admission.endpoints` 列出的端点：准入层在这些端上登记了中间件。`ScopeGuard.Covers` 对这些端回答真。 |
-| 有效保障等级 | 本文 | 准入层在比对 `tenant.admission.require-mfa` 时使用的等级，由身份的 `Assurance()` 与 `AssuranceFromIDP()` 导出；规则见「有效保障等级」一节。 |
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 所守的端 | guarded endpoint | 本文与租户准入的决策记录 | `tenant.admission.endpoints` 列出的端点：准入层在这些端上登记了中间件。`ScopeGuard.Covers` 对这些端回答真。 |
+| 有效保障等级 | effective assurance | 本文与租户准入的决策记录 | 准入层在比对 `tenant.admission.require-mfa` 时使用的等级，由身份的 `Assurance()` 与 `AssuranceFromIDP()` 导出；规则见「有效保障等级」一节。 |
 
 ## 外部接口契约
 

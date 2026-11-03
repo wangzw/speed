@@ -24,10 +24,10 @@
 
 以下术语的含义限于本文档；其他前端文档提到它们时写 `RoutePresence`、`presentDeclarations` 或链到本文档。
 
-| 术语 | 英文 | 定义 |
-|---|---|---|
-| 在场谓词 | presence predicate | 宿主经 `RouteProvider` 的 `presence` 给出的 `RoutePresence`：读取中、读取失败，或就绪并带一个按特性名答该特性是否在场的函数 `has`。 |
-| 有效注册面 | effective registration surface | 路由表中可渲染视图、可进导航的那部分声明：不带 `requires` 的全部声明，加上在场谓词就绪、且 `requires` 中特性全部在场的声明。它是 `presentDeclarations` 的结果。 |
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 在场谓词 | presence predicate | 本文档 | 宿主经 `RouteProvider` 的 `presence` 给出的 `RoutePresence`：读取中、读取失败，或就绪并带一个按特性名答该特性是否在场的函数 `has`。 |
+| 有效注册面 | effective registration surface | 本文档 | 路由表中可渲染视图、可进导航的那部分声明：不带 `requires` 的全部声明，加上在场谓词就绪、且 `requires` 中特性全部在场的声明。它是 `presentDeclarations` 的结果。 |
 
 ## 外部接口契约
 

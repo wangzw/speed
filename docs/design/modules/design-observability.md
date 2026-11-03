@@ -30,16 +30,16 @@
 
 以下术语的含义限于本模块。
 
-| 术语 | 英文 | 定义 |
-|---|---|---|
-| 装配器 | assembler | 构造两个 provider、收取导出器、登记采集层的那个模块（`observability.otel`）。 |
-| 导出后端 | export backend | 交付一个导出器的模块，把信号交给一种目的地（`observability.otlp`、`observability.stdout`）。 |
-| 导出器 | exporter | 上游 SDK 的导出接口的一个实现，由导出后端在 `New` 中构造并交出。 |
-| 采集层 | instrumentation layer | 装配器登记到端点上的中间件层的合称，由外层与守护层构成：跨度与计量由上游采集库产出，守护层补上它没有的日志关联字段与端名。 |
-| 外层 | outer layer | 采集层中位于外侧的那一层：上游采集库的中间件；在链上代表追踪与指标两个功能。 |
-| 守护层 | guard layer | 采集层中位于外层之内的那一层：把跨度的标识绑进日志上下文，给跨度写端名；不代表任何功能。 |
-| 上游采集库 | upstream gin instrumentation | `go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin`（[REF-opentelemetry-go-contrib](../../references.md)）：为 gin 提供服务端跨度与请求计量的中间件，外层以它为基座。 |
-| 转发包装 | forwarding wrapper | 装配器套在导出器外的装饰器：除关闭之外逐方法转发到内层，并在导出失败时写日志行。 |
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 装配器 | assembler | 本模块 | 构造两个 provider、收取导出器、登记采集层的那个模块（`observability.otel`）。 |
+| 导出后端 | export backend | 本模块 | 交付一个导出器的模块，把信号交给一种目的地（`observability.otlp`、`observability.stdout`）。 |
+| 导出器 | exporter | 本模块 | 上游 SDK 的导出接口的一个实现，由导出后端在 `New` 中构造并交出。 |
+| 采集层 | instrumentation layer | 本模块 | 装配器登记到端点上的中间件层的合称，由外层与守护层构成：跨度与计量由上游采集库产出，守护层补上它没有的日志关联字段与端名。 |
+| 外层 | outer layer | 本模块 | 采集层中位于外侧的那一层：上游采集库的中间件；在链上代表追踪与指标两个功能。 |
+| 守护层 | guard layer | 本模块 | 采集层中位于外层之内的那一层：把跨度的标识绑进日志上下文，给跨度写端名；不代表任何功能。 |
+| 上游采集库 | upstream gin instrumentation | 本模块 | `go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin`（[REF-opentelemetry-go-contrib](../../references.md)）：为 gin 提供服务端跨度与请求计量的中间件，外层以它为基座。 |
+| 转发包装 | forwarding wrapper | 本模块 | 装配器套在导出器外的装饰器：除关闭之外逐方法转发到内层，并在导出失败时写日志行。 |
 
 ## 外部接口契约
 

@@ -80,26 +80,26 @@
 
 以下术语的含义限于 authn 模块的设计文档（本文档与各 `design-authn-*` 文档），以及引用这些事实的 web 与 starters 设计文档；它们不进项目术语表。术语「授权」不属此列：它在项目范围内含义一致，定义见[项目术语表](../../../glossary.md)，本表不重复。
 
-| 术语 | 英文 | 定义 |
-|---|---|---|
-| 账户 | account | 全局的认证主体，由不可变、不复用的账户标识 `AccountID` 指称；可属于多个租户。口令表中的主体取形如 `static.<名>` 的账户标识，没有账户记录，也没有成员关系。 |
-| 成员关系 | membership | 账户与租户之间的一行关系，带状态，状态的零值是暂停。它回答“这个账户是不是这个租户的成员”，不含角色；角色归 `authz.policy`。 |
-| 登录会话 | login session | 数据库里的服务端记录，加 cookie 或令牌作载体，是唯一的撤销面。始终带“登录”二字，与 GORM 的数据库会话分开。 |
-| 访问令牌 | access token | 携带身份事实、短期有效的 JWT（[REF-rfc7519](../../../references.md)）。与 `core.Token` 区分：`core.Token` 在本功能目录的文档里一律写作功能标识。 |
-| 刷新令牌 | refresh token | 不透明、挂在登录会话上、只用于换新访问令牌的凭据。 |
-| 认证方式 | method | 一次认证用到的方式，取值是封闭集 `Method`。 |
-| 保障等级 | assurance | 由已证明的因素种类得出的有序等级 `Assurance`，只在多因素编排一处合成。 |
-| 因素 | factor | 第二因素：一个种类的二次验证实现，由多因素编排统一调度。第一因素由登录方式承担。 |
-| 登录方式 | login method | 第一因素的一种实现，多步，状态在流程记录里。 |
-| 校验后端 | verification backend | 交付 `Verifier` 的一个模块：把一条凭据变成判决，按 `Authorization` scheme 或 cookie 名整条认领，并声明自己可交出的账户命名空间。 |
-| 实际操作者 | actor | 身份上真正动手的账户：不冒充时与生效账户相同，冒充时是发起冒充的管理员。与 db、settings 文档里泛指“执行变更的一方”的“操作者”不是同一个词义。 |
-| 责任键 | accountability key | `Identity.Key()` 的取值，恒为 `string(Actor())`；限流、审计与设置的 `actor` 参数按它归责。授权不取它：判定主体是生效账户 `Identity.Account()`。 |
-| 冒充 | impersonation | 管理员在限定的租户内、有期限、被审计地以另一个账户的身份行事；身份上 `Actor()` 不等于 `Account()`。 |
-| 访问级别 | access | 网关对一次请求命中的路由登记的归类：`Open`、`Optional`、`Required`，以及网关没有作过决定的 `Unknown`。 |
-| 注册验证状态 | signup state | 账户的邮箱验证状态，二值：持有至少一条已证明归属的邮箱标识即已验证，持有邮箱而没有一条已证明的即未验证，没有邮箱则不适用本规则。`SignupVerification.SignupStateOf` 从标识与联系方式预留现算，与账户的创建路径无关；`signup_state` 列只记账户怎么来（`0` 非自助注册、`1` 自助注册、`2` 曾证明过），不参与判定。它是账户上的独立事实，与账户状态是两件事，不进入会话、身份或访问令牌。 |
-| 联系方式预留 | contact claim | `authn_pending_contacts` 的一行：账户对一个邮箱地址的预留，`(kind, value)` 全局唯一。`verified_at` 为空是注册写下的未证明预留，非空是账户已持有该地址；这张表只仲裁地址的占用，不承载联系方式、登录方式与默认联系地址。注册以插入预留原子仲裁占用；它不是登录名，也不参与任何账户查找。 |
-| 未验证账户 | unverified account | 持有邮箱而没有已证明邮箱的账户，即 `SignupStateOf` 读作 `SignupPending` 的账户；管理员预置、导入与自助注册写出的账户都按同一判据算。它可以登录，但依赖已验证邮箱的能力被拒；邮箱被证明之后不再是未验证账户。没有邮箱的账户不是未验证账户，不受这条限制。 |
-| 判定接缝 | decision seam | 根包接口 `Decider`：回答某个发起者能否做认证范围内的某件事；缺席即全拒，由宿主或 `authz.guard` 实现。 |
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 账户 | account | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 全局的认证主体，由不可变、不复用的账户标识 `AccountID` 指称；可属于多个租户。口令表中的主体取形如 `static.<名>` 的账户标识，没有账户记录，也没有成员关系。 |
+| 成员关系 | membership | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 账户与租户之间的一行关系，带状态，状态的零值是暂停。它回答“这个账户是不是这个租户的成员”，不含角色；角色归 `authz.policy`。 |
+| 登录会话 | login session | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 数据库里的服务端记录，加 cookie 或令牌作载体，是唯一的撤销面。始终带“登录”二字，与 GORM 的数据库会话分开。 |
+| 访问令牌 | access token | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 携带身份事实、短期有效的 JWT（[REF-rfc7519](../../../references.md)）。与 `core.Token` 区分：`core.Token` 在本功能目录的文档里一律写作功能标识。 |
+| 刷新令牌 | refresh token | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 不透明、挂在登录会话上、只用于换新访问令牌的凭据。 |
+| 认证方式 | method | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 一次认证用到的方式，取值是封闭集 `Method`。 |
+| 保障等级 | assurance | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 由已证明的因素种类得出的有序等级 `Assurance`，只在多因素编排一处合成。 |
+| 因素 | factor | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 第二因素：一个种类的二次验证实现，由多因素编排统一调度。第一因素由登录方式承担。 |
+| 登录方式 | login method | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 第一因素的一种实现，多步，状态在流程记录里。 |
+| 校验后端 | verification backend | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 交付 `Verifier` 的一个模块：把一条凭据变成判决，按 `Authorization` scheme 或 cookie 名整条认领，并声明自己可交出的账户命名空间。 |
+| 实际操作者 | actor | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 身份上真正动手的账户：不冒充时与生效账户相同，冒充时是发起冒充的管理员。与 db、settings 文档里泛指“执行变更的一方”的“操作者”不是同一个词义。 |
+| 责任键 | accountability key | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | `Identity.Key()` 的取值，恒为 `string(Actor())`；限流、审计与设置的 `actor` 参数按它归责。授权不取它：判定主体是生效账户 `Identity.Account()`。 |
+| 冒充 | impersonation | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 管理员在限定的租户内、有期限、被审计地以另一个账户的身份行事；身份上 `Actor()` 不等于 `Account()`。 |
+| 访问级别 | access | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 网关对一次请求命中的路由登记的归类：`Open`、`Optional`、`Required`，以及网关没有作过决定的 `Unknown`。 |
+| 注册验证状态 | signup state | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 账户的邮箱验证状态，二值：持有至少一条已证明归属的邮箱标识即已验证，持有邮箱而没有一条已证明的即未验证，没有邮箱则不适用本规则。`SignupVerification.SignupStateOf` 从标识与联系方式预留现算，与账户的创建路径无关；`signup_state` 列只记账户怎么来（`0` 非自助注册、`1` 自助注册、`2` 曾证明过），不参与判定。它是账户上的独立事实，与账户状态是两件事，不进入会话、身份或访问令牌。 |
+| 联系方式预留 | contact claim | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | `authn_pending_contacts` 的一行：账户对一个邮箱地址的预留，`(kind, value)` 全局唯一。`verified_at` 为空是注册写下的未证明预留，非空是账户已持有该地址；这张表只仲裁地址的占用，不承载联系方式、登录方式与默认联系地址。注册以插入预留原子仲裁占用；它不是登录名，也不参与任何账户查找。 |
+| 未验证账户 | unverified account | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 持有邮箱而没有已证明邮箱的账户，即 `SignupStateOf` 读作 `SignupPending` 的账户；管理员预置、导入与自助注册写出的账户都按同一判据算。它可以登录，但依赖已验证邮箱的能力被拒；邮箱被证明之后不再是未验证账户。没有邮箱的账户不是未验证账户，不受这条限制。 |
+| 判定接缝 | decision seam | authn 模块的设计文档及引用其事实的 web、starters 设计文档 | 根包接口 `Decider`：回答某个发起者能否做认证范围内的某件事；缺席即全拒，由宿主或 `authz.guard` 实现。 |
 
 ## 外部接口契约
 

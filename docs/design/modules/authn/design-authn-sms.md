@@ -28,12 +28,12 @@
 
 下列术语的含义限于本文档、[design-sms](../design-sms.md) 与 [ADR-authn-sms](../../../adr/adr-authn-sms.md)，以及它所指向的认证主题决策记录。
 
-| 术语 | 适用范围 | 定义 |
-|---|---|---|
-| 挑战 | 本文档与 ADR-authn-sms | 一次短信验证码的发放记录，落在表 `authn_challenges` 的一行：号码与验证码都只以带密钥摘要留存，附尝试次数与期限。它与校验后端在拒绝响应里发出的质询（`WWW-Authenticate`、`Challenger`）无关。 |
-| 抑制行 | 本文档与 ADR-authn-sms | 调用方传 `Deliver = false` 时写入的挑战行与台账行：号码未登记且注册关闭时写入，不入队、不发送，但与真实行走同一条计数路径，计入号码、来源与账户维度，不计入全局、尝试与跨渠道上界，对外应答与「已发送」同形。 |
-| 预算台账 | 本文档、design-sms 与 ADR-authn-sms | `sms.budget` 持有的 `sms_budget_events` 表，一行是一次短信尝试，认证与通知两个渠道都往这里写，全部预算与跨渠道上界都由它的行数回答。 |
-| 确定失败 | 本文档与 ADR-authn-sms | 能证明消息没有离开本模块或没有进入厂商管线的失败：载体答 `ErrThrottled`、`ErrRejected` 或 `ErrUnroutable`，注册表拒绝构建消息，或入队失败。确定失败的台账行标为退款，发送预算不再计它，尝试预算计它。 |
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 挑战 | challenge | 本文档与 ADR-authn-sms | 一次短信验证码的发放记录，落在表 `authn_challenges` 的一行：号码与验证码都只以带密钥摘要留存，附尝试次数与期限。它与校验后端在拒绝响应里发出的质询（`WWW-Authenticate`、`Challenger`）无关。 |
+| 抑制行 | suppressed row | 本文档与 ADR-authn-sms | 调用方传 `Deliver = false` 时写入的挑战行与台账行：号码未登记且注册关闭时写入，不入队、不发送，但与真实行走同一条计数路径，计入号码、来源与账户维度，不计入全局、尝试与跨渠道上界，对外应答与「已发送」同形。 |
+| 预算台账 | budget ledger | 本文档、design-sms 与 ADR-authn-sms | `sms.budget` 持有的 `sms_budget_events` 表，一行是一次短信尝试，认证与通知两个渠道都往这里写，全部预算与跨渠道上界都由它的行数回答。 |
+| 确定失败 | certain failure | 本文档与 ADR-authn-sms | 能证明消息没有离开本模块或没有进入厂商管线的失败：载体答 `ErrThrottled`、`ErrRejected` 或 `ErrUnroutable`，注册表拒绝构建消息，或入队失败。确定失败的台账行标为退款，发送预算不再计它，尝试预算计它。 |
 
 ## 外部接口契约
 
