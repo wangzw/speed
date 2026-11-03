@@ -53,7 +53,7 @@ function runRule(valid, invalid) {
 
 const SOCIAL_BINDINGS_FILE =
   'packages/account-ui/src/SocialBindingsSection.tsx'
-const ACCOUNTS_PAGE_FILE = 'packages/console-ui/src/AccountsPage.tsx'
+const ACCOUNTS_PAGE_FILE = 'packages/admin-ui/src/AccountsPage.tsx'
 const HOST_CONTROL_FILE =
   'starters/demo/web/src/review-notice-control.tsx'
 

@@ -1,5 +1,5 @@
 /**
- * The demo host's SMS page: the console package's template page with the review
+ * The demo host's SMS page: the admin package's template page with the review
  * build's verdict control beside it.
  *
  * The template page itself is the platform package's; this wrapper is the host's
@@ -9,10 +9,10 @@
  */
 
 import type { ReactElement } from 'react'
-import { SmsPage } from '@speed/console-ui'
+import { SmsPage } from '@speed/admin-ui'
 import { ReviewSmsControl } from './review-sms-control.js'
 
-/** The console SMS route's view in the demo host. */
+/** The admin SMS route's view in the demo host. */
 export function ReviewSmsPage(): ReactElement {
   return (
     <>

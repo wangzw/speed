@@ -3,7 +3,7 @@
  * with the account and password the seed wrote, and the account's email
  * identifier is on record but unproved. The standing notice under the app bar
  * names the address, offers the verify and change entries and carries no close
- * control. The operator enters the console, opens the settings page and finds
+ * control. The operator enters the admin, opens the settings page and finds
  * the declared items grouped by namespace, each with its key, type, current
  * value and, where this deployment has written no row, the "Default" state.
  *
@@ -37,7 +37,7 @@
  * Three claims in the journey document are narrower here than the document
  * states, and the reasons:
  *
- *  - The console sidebar's "Platform configuration" group heading does not
+ *  - The admin sidebar's "Platform configuration" group heading does not
  *    render in the review assembly: that group has two declarations, the
  *    settings page and the SMS-template page, and the review binary serves no
  *    `sms.admin` feature, so the group folds to its one served entry. The spec
@@ -69,7 +69,7 @@
  *
  * REQ-signin-006 (a username and a password sign in), REQ-account-010
  * (a correct code proves the held address in place), 015/016/017/019/020,
- * REQ-platform-admin-001 (staff see the console entry and the home card),
+ * REQ-platform-admin-001 (staff see the admin entry and the home card),
  * 017 (a write from an unproved account is refused with the verification
  * guidance), 029 (audit filters apply on submit) and 031 (the detail's full
  * field set), and REQ-platform-config-001/003 are the ids the assertions can
@@ -144,10 +144,10 @@ function identifiersSection(page: Page): Locator {
   })
 }
 
-/** The console's navigation landmark (the platform navigation). */
-function consoleNav(page: Page): Locator {
+/** The admin's navigation landmark (the platform navigation). */
+function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'shell.navLabel'),
+    name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
 }
@@ -155,7 +155,7 @@ function consoleNav(page: Page): Locator {
 /** The settings page's namespace navigation. */
 function namespaceNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'settings.nav.label'),
+    name: copy('adminUi', 'settings.nav.label'),
     exact: true,
   })
 }
@@ -249,54 +249,54 @@ test('operator-first-run: the operator proves the email and lands the first sett
     await expect(banner.getByRole('button')).toHaveCount(0)
   })
 
-  await test.step('the console opens from the header entry, and the settings page lists the declared items', async () => {
-    // The home console card and the header entry are two derivations of the
+  await test.step('the admin opens from the header entry, and the settings page lists the declared items', async () => {
+    // The home admin card and the header entry are two derivations of the
     // same target; the step drives the header one and checks they agree.
-    const consoleEntry = page
+    const adminEntry = page
       .getByRole('banner')
       .getByRole('link', {
-        name: copy('demo', 'nav.console'),
+        name: copy('demo', 'nav.admin'),
         exact: true,
       })
-    const consoleCard = page
+    const adminCard = page
       .getByRole('heading', {
         level: 2,
-        name: copy('demo', 'home.cards.console.title'),
+        name: copy('demo', 'home.cards.admin.title'),
         exact: true,
       })
       .locator('xpath=ancestor::a[1]')
-    await expect(consoleEntry).toBeVisible()
-    await expect(consoleCard).toBeVisible()
-    const entryHref = await consoleEntry.getAttribute('href')
+    await expect(adminEntry).toBeVisible()
+    await expect(adminCard).toBeVisible()
+    const entryHref = await adminEntry.getAttribute('href')
     expect(entryHref).not.toBeNull()
-    await expect(consoleCard).toHaveAttribute('href', entryHref ?? '')
+    await expect(adminCard).toHaveAttribute('href', entryHref ?? '')
 
-    await consoleEntry.click()
+    await adminEntry.click()
 
-    // The console navigation is grouped: the identity group holds six served
+    // The admin navigation is grouped: the identity group holds six served
     // pages, so its heading renders as a disclosure control. (The platform
     // group holds only the settings page in this assembly, so it folds to the
     // entry itself -- see the file header.)
-    const nav = consoleNav(page)
+    const nav = adminNav(page)
     await expect(
       nav.getByRole('button', {
-        name: copy('consoleUi', 'nav.groups.identity'),
+        name: copy('adminUi', 'nav.groups.identity'),
         exact: true,
       }),
     ).toBeVisible()
 
     // The journey's platform-configuration group: the settings page is opened
-    // from the console navigation.
+    // from the admin navigation.
     await nav
       .getByRole('link', {
-        name: copy('consoleUi', 'settings.title'),
+        name: copy('adminUi', 'settings.title'),
         exact: true,
       })
       .click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'settings.title'),
+        name: copy('adminUi', 'settings.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -306,7 +306,7 @@ test('operator-first-run: the operator proves the email and lands the first sett
     // namespace's key.
     await expect(
       namespaceNav(page).getByRole('button', {
-        name: copy('consoleUi', 'settings.nav.all'),
+        name: copy('adminUi', 'settings.nav.all'),
         exact: true,
       }),
     ).toBeVisible()
@@ -331,14 +331,14 @@ test('operator-first-run: the operator proves the email and lands the first sett
     const declaredValue = await valueField(page).inputValue()
     await expect(
       row.getByText(
-        copy('consoleUi', 'settings.field.defaultValue', {
+        copy('adminUi', 'settings.field.defaultValue', {
           value: declaredValue,
         }),
         { exact: true },
       ),
     ).toBeVisible()
     await expect(
-      row.getByText(copy('consoleUi', 'settings.state.default'), {
+      row.getByText(copy('adminUi', 'settings.state.default'), {
         exact: true,
       }),
     ).toBeVisible()
@@ -351,7 +351,7 @@ test('operator-first-run: the operator proves the email and lands the first sett
     await valueField(page).fill(NEW_VALUE)
     await page
       .getByRole('button', {
-        name: copy('consoleUi', 'settings.saveBar.save'),
+        name: copy('adminUi', 'settings.saveBar.save'),
         exact: true,
       })
       .click()
@@ -359,7 +359,7 @@ test('operator-first-run: the operator proves the email and lands the first sett
     // The refusal renders the code's own text -- not the server's message --
     // in the one feedback region under the table, and the row's field carries
     // the same message through its accessible description.
-    const refusal = copy('consoleUi', 'errors.authn.contact_required')
+    const refusal = copy('adminUi', 'errors.authn.contact_required')
     await expect(page.getByRole('alert').filter({ hasText: refusal }))
       .toBeVisible()
     await expect(valueField(page)).toHaveAccessibleDescription(refusal)
@@ -370,13 +370,13 @@ test('operator-first-run: the operator proves the email and lands the first sett
     // is unchanged.
     await expect(valueField(page)).toHaveValue(NEW_VALUE)
     await expect(
-      row.getByText(copy('consoleUi', 'settings.state.default'), {
+      row.getByText(copy('adminUi', 'settings.state.default'), {
         exact: true,
       }),
     ).toBeVisible()
     await expect(
       row.getByText(
-        copy('consoleUi', 'settings.field.defaultValue', {
+        copy('adminUi', 'settings.field.defaultValue', {
           value: declaredValue,
         }),
         { exact: true },
@@ -386,11 +386,11 @@ test('operator-first-run: the operator proves the email and lands the first sett
 
   await test.step('the verify entry sends a code and holds the resend control', async () => {
     // Back to the tenant area, where the standing notice is still there: it is
-    // not a one-page notice, and the round trip through the console must not
+    // not a one-page notice, and the round trip through the admin must not
     // clear it.
     await page
       .getByRole('link', {
-        name: copy('demo', 'console.backToApp'),
+        name: copy('demo', 'admin.backToApp'),
         exact: true,
       })
       .click()
@@ -503,19 +503,19 @@ test('operator-first-run: the operator proves the email and lands the first sett
   })
 
   await test.step('the same write now lands and the item reads overridden', async () => {
-    // Re-enter the console and the settings page; the page is a fresh mount, so
+    // Re-enter the admin and the settings page; the page is a fresh mount, so
     // the item starts again from the declaration.
     await page
       .getByRole('banner')
       .getByRole('link', {
-        name: copy('demo', 'nav.console'),
+        name: copy('demo', 'nav.admin'),
         exact: true,
       })
       .click()
-    const nav = consoleNav(page)
+    const nav = adminNav(page)
     await nav
       .getByRole('link', {
-        name: copy('consoleUi', 'settings.title'),
+        name: copy('adminUi', 'settings.title'),
         exact: true,
       })
       .click()
@@ -529,7 +529,7 @@ test('operator-first-run: the operator proves the email and lands the first sett
     await valueField(page).fill(NEW_VALUE)
     await page
       .getByRole('button', {
-        name: copy('consoleUi', 'settings.saveBar.save'),
+        name: copy('adminUi', 'settings.saveBar.save'),
         exact: true,
       })
       .click()
@@ -537,15 +537,15 @@ test('operator-first-run: the operator proves the email and lands the first sett
     // The one feedback region now carries the success confirmation, the row
     // re-reads as overridden with the written value, and the earlier failure's
     // text is not beside it.
-    const saved = copy('consoleUi', 'settings.saved')
+    const saved = copy('adminUi', 'settings.saved')
     await expect(page.getByText(saved, { exact: true })).toBeVisible()
     await expect(
-      page.getByText(copy('consoleUi', 'errors.authn.contact_required'), {
+      page.getByText(copy('adminUi', 'errors.authn.contact_required'), {
         exact: true,
       }),
     ).toHaveCount(0)
     await expect(
-      row.getByText(copy('consoleUi', 'settings.state.overridden'), {
+      row.getByText(copy('adminUi', 'settings.state.overridden'), {
         exact: true,
       }),
     ).toBeVisible()
@@ -560,7 +560,7 @@ test('operator-first-run: the operator proves the email and lands the first sett
     // the write is stored, not local draft state.
     await page
       .getByRole('button', {
-        name: copy('consoleUi', 'common.refresh'),
+        name: copy('adminUi', 'common.refresh'),
         exact: true,
       })
       .click()
@@ -571,23 +571,23 @@ test('operator-first-run: the operator proves the email and lands the first sett
       })
       .toBe(NEW_VALUE)
     await expect(
-      row.getByText(copy('consoleUi', 'settings.state.overridden'), {
+      row.getByText(copy('adminUi', 'settings.state.overridden'), {
         exact: true,
       }),
     ).toBeVisible()
   })
 
   await test.step('the audit trail records the write, and its detail shows the fields', async () => {
-    await consoleNav(page)
+    await adminNav(page)
       .getByRole('link', {
-        name: copy('consoleUi', 'audit.title'),
+        name: copy('adminUi', 'audit.title'),
         exact: true,
       })
       .click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'audit.title'),
+        name: copy('adminUi', 'audit.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -608,16 +608,16 @@ test('operator-first-run: the operator proves the email and lands the first sett
     // Typing the filters is not applying them: the unfiltered list still holds
     // more than the one record.
     await page
-      .getByLabel(copy('consoleUi', 'audit.filters.action'), { exact: true })
+      .getByLabel(copy('adminUi', 'audit.filters.action'), { exact: true })
       .fill('settings.set')
     await page
-      .getByLabel(copy('consoleUi', 'audit.filters.outcome'), { exact: true })
+      .getByLabel(copy('adminUi', 'audit.filters.outcome'), { exact: true })
       .fill(outcome)
     expect(await table.locator('tbody tr').count()).toBeGreaterThan(1)
 
     await page
       .getByRole('button', {
-        name: copy('consoleUi', 'audit.filters.apply'),
+        name: copy('adminUi', 'audit.filters.apply'),
         exact: true,
       })
       .click()
@@ -633,7 +633,7 @@ test('operator-first-run: the operator proves the email and lands the first sett
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'auditDetail.title'),
+        name: copy('adminUi', 'auditDetail.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -648,46 +648,46 @@ test('operator-first-run: the operator proves the email and lands the first sett
       'auditDetail.field.outcome',
       'auditDetail.field.purpose',
     ]) {
-      await expect(term(page, copy('consoleUi', field))).toBeVisible()
+      await expect(term(page, copy('adminUi', field))).toBeVisible()
     }
     await expect(
       page.getByRole('heading', {
         level: 3,
-        name: copy('consoleUi', 'auditDetail.detailTitle'),
+        name: copy('adminUi', 'auditDetail.detailTitle'),
         exact: true,
       }),
     ).toBeVisible()
 
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.action')),
+      fieldValue(page, copy('adminUi', 'auditDetail.field.action')),
     ).toHaveText('settings.set')
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.object')),
+      fieldValue(page, copy('adminUi', 'auditDetail.field.object')),
     ).toHaveText(SETTING_KEY)
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.outcome')),
+      fieldValue(page, copy('adminUi', 'auditDetail.field.outcome')),
     ).toHaveText(outcome)
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.actor')),
+      fieldValue(page, copy('adminUi', 'auditDetail.field.actor')),
     ).toHaveText(OPERATOR.displayName)
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.tenant')),
-    ).toHaveText(copy('consoleUi', 'common.emptyValue'))
+      fieldValue(page, copy('adminUi', 'auditDetail.field.tenant')),
+    ).toHaveText(copy('adminUi', 'common.emptyValue'))
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.purpose')),
-    ).toHaveText(copy('consoleUi', 'common.emptyValue'))
+      fieldValue(page, copy('adminUi', 'auditDetail.field.purpose')),
+    ).toHaveText(copy('adminUi', 'common.emptyValue'))
 
     // The detail carries its way back to the query.
     await page
       .getByRole('link', {
-        name: copy('consoleUi', 'auditDetail.back'),
+        name: copy('adminUi', 'auditDetail.back'),
         exact: true,
       })
       .click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'audit.title'),
+        name: copy('adminUi', 'audit.title'),
         exact: true,
       }),
     ).toBeVisible()

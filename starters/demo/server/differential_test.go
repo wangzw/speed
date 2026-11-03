@@ -145,7 +145,7 @@ var probeMethods = []string{
 
 // outsideClaims are paths no claim of the table covers, besides the root.
 var outsideClaims = []string{
-	"/", "/console/tenants", "/zz.json", "/.well-known/zz",
+	"/", "/admin/tenants", "/zz.json", "/.well-known/zz",
 	"/assets/zz.js", "//api/zz", "/API/zz", "/apix",
 }
 

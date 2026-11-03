@@ -21,7 +21,7 @@
  * response interfaces (@speed/api-sdk), so a drifting shape fails typecheck
  * rather than rendering a broken page the sweep would scan as a false sample.
  *
- * The endpoint set is the reads the routes fire on mount: the console pages'
+ * The endpoint set is the reads the routes fire on mount: the admin pages'
  * administration reads (the roster, the audit query, the accounts list, the
  * permissions catalog, the settings and SMS surfaces) and the tenant area's
  * (the profile, sessions and factors the account page mounts, the object list,

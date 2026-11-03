@@ -644,7 +644,7 @@ missing-factor explanation renders it as a plain link; when omitted, the
 dialog renders text alone and never navigates. The dialog pairs with
 `useStepUpGate` from `@speed/auth-core` (arm a refused action, open the
 dialog, and `succeed` replays it once). The dialog is a host seam only:
-`@speed/console-ui` keeps its own copy and must not import it (a
+`@speed/admin-ui` keeps its own copy and must not import it (a
 same-layer edge); `@speed/auth-ui` has no step-up dialog.
 
 ## Text and i18n

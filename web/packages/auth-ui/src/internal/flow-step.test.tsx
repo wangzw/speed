@@ -8,7 +8,7 @@
  * a kind offered once reads as its kind name alone, while a repeated kind
  * distinguishes its entries by name ("Kind · Name") and an unnamed entry
  * from the second on by ordinal ("Kind (2)"). That last rule is the one
- * the three flow-step copies share: account-ui and console-ui render the
+ * the three flow-step copies share: account-ui and admin-ui render the
  * same labels, so this suite is the auth-ui side of the registered sync
  * obligation.
  *

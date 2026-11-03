@@ -630,11 +630,11 @@ describe('the sign-in surface', () => {
     )
   })
 
-  it('stays on the console path when a registration completes in its session gate', async () => {
-    // The console area's session gate embeds this surface, so the console URL
+  it('stays on the admin path when a registration completes in its session gate', async () => {
+    // The admin area's session gate embeds this surface, so the admin URL
     // is the viewer's destination; the register mode's landing belongs to the
     // application's own sign-in page.
-    window.history.replaceState({}, '', '/console')
+    window.history.replaceState({}, '', '/admin')
     const harness = makeHarness({
       [FEATURES_GET]: () => ({
         features: ['tenant.admin', 'workspace.personal'],
@@ -693,7 +693,7 @@ describe('the sign-in surface', () => {
         }),
       ).toBeNull(),
     )
-    expect(window.location.pathname).toBe('/console')
+    expect(window.location.pathname).toBe('/admin')
   })
 
   it('offers the setup notice to a new phone opened by a plain SMS sign-in', async () => {

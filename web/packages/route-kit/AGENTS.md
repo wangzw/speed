@@ -158,8 +158,8 @@ composition changes, this file changes with it.
 ## Consumers
 
 `starters/demo/web` is this package's in-tree consumer: it composes the
-business slot and the console area's declarations into one `RouteTable` and
-installs it with `RouteProvider`. `console-ui` -- the second shell -- mirrors
+business slot and the admin area's declarations into one `RouteTable` and
+installs it with `RouteProvider`. `admin-ui` -- the second shell -- mirrors
 the declaration, context and table shapes structurally and imports nothing
 from here, so the two packages share the registration surface without a type
 edge between them.

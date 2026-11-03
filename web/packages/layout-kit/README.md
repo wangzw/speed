@@ -9,7 +9,7 @@ semantics live here. `RouteGuard` in particular takes its
 allow/deny/pending decision as a plain `status` value, never a
 callback it invokes and never a concrete authentication or routing
 import, so `product-shell` (the tenant-facing shell) and the
-platform-staff console `@speed/console-ui` both build their frame on
+platform-staff admin `@speed/admin-ui` both build their frame on
 this exact package while `RouteGuard` is composed host-side. Every built-in string renders from the
 bilingual `layout-kit` namespace registered through `@speed/i18n`, the
 same discipline `ui-kit` established, and the workspace's
@@ -247,7 +247,7 @@ onClick={(event) => {
 }}
 ```
 
-`@speed/console-ui` consumes this function. `@speed/route-kit` keeps a
+`@speed/admin-ui` consumes this function. `@speed/route-kit` keeps a
 private variant by design -- it is independent of every sibling package and
 must not import this one -- and that variant is deliberately stricter:
 `button` must be exactly `0` (an absent value is rejected rather than read
@@ -405,8 +405,8 @@ package -- see the AGENTS.md non-negotiable rules.
   the AGENTS.md non-negotiable rules). The prop shape needs no change
   for any authorization source: a host only computes a
   `RouteGuardStatus` and passes it in.
-- **`admin-shell`**: the platform-staff console ships as
-  `@speed/console-ui`, which builds its frame on `AppShell` (see
+- **`admin-shell`**: the platform-staff admin ships as
+  `@speed/admin-ui`, which builds its frame on `AppShell` (see
   AGENTS.md); this package ships only the
   shared chrome the shells assemble.
   `product-shell`, the tenant-facing consumer, composes `AppShell`

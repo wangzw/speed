@@ -35,7 +35,7 @@
  *
  * StepUpDialog is the dialog account-ui's own surfaces use, exported for
  * a host that needs the same re-verification surface. It is deliberately
- * not importable from the same-layer @speed/auth-ui and @speed/console-ui
+ * not importable from the same-layer @speed/auth-ui and @speed/admin-ui
  * packages (the latter keeps its own copy); see ADR-web-auth-seams.
  */
 

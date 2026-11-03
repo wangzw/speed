@@ -168,10 +168,10 @@ function homeHeading(page: Page): Locator {
   })
 }
 
-/** The console's platform navigation. */
-function consoleNav(page: Page): Locator {
+/** The admin's platform navigation. */
+function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'shell.navLabel'),
+    name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
 }
@@ -179,7 +179,7 @@ function consoleNav(page: Page): Locator {
 /** The settings page's namespace navigation. */
 function namespaceNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'settings.nav.label'),
+    name: copy('adminUi', 'settings.nav.label'),
     exact: true,
   })
 }
@@ -197,7 +197,7 @@ function valueField(page: Page): Locator {
 /** The save bar's one button. */
 function saveButton(page: Page): Locator {
   return page.getByRole('button', {
-    name: copy('consoleUi', 'settings.saveBar.save'),
+    name: copy('adminUi', 'settings.saveBar.save'),
     exact: true,
   })
 }
@@ -205,28 +205,28 @@ function saveButton(page: Page): Locator {
 /** The save bar's pending-item count for a one-item batch. */
 function pendingCount(page: Page): Locator {
   return page.getByText(
-    copy('consoleUi', 'settings.saveBar.pending', { count: 1 }),
+    copy('adminUi', 'settings.saveBar.pending', { count: 1 }),
     { exact: true },
   )
 }
 
 /** The audit page's action filter. */
 function actionFilter(page: Page): Locator {
-  return page.getByLabel(copy('consoleUi', 'audit.filters.action'), {
+  return page.getByLabel(copy('adminUi', 'audit.filters.action'), {
     exact: true,
   })
 }
 
 /** The audit page's lower time bound. */
 function sinceFilter(page: Page): Locator {
-  return page.getByLabel(copy('consoleUi', 'audit.filters.since'), {
+  return page.getByLabel(copy('adminUi', 'audit.filters.since'), {
     exact: true,
   })
 }
 
 /** The audit page's upper time bound. */
 function untilFilter(page: Page): Locator {
-  return page.getByLabel(copy('consoleUi', 'audit.filters.until'), {
+  return page.getByLabel(copy('adminUi', 'audit.filters.until'), {
     exact: true,
   })
 }
@@ -234,7 +234,7 @@ function untilFilter(page: Page): Locator {
 /** The audit page's apply button. */
 function applyButton(page: Page): Locator {
   return page.getByRole('button', {
-    name: copy('consoleUi', 'audit.filters.apply'),
+    name: copy('adminUi', 'audit.filters.apply'),
     exact: true,
   })
 }
@@ -242,7 +242,7 @@ function applyButton(page: Page): Locator {
 /** The audit page's next-page button. */
 function nextPageButton(page: Page): Locator {
   return page.getByRole('button', {
-    name: copy('consoleUi', 'audit.nextPage'),
+    name: copy('adminUi', 'audit.nextPage'),
     exact: true,
   })
 }
@@ -250,7 +250,7 @@ function nextPageButton(page: Page): Locator {
 /** The audit page's previous-page button. */
 function previousPageButton(page: Page): Locator {
   return page.getByRole('button', {
-    name: copy('consoleUi', 'audit.prevPage'),
+    name: copy('adminUi', 'audit.prevPage'),
     exact: true,
   })
 }
@@ -258,7 +258,7 @@ function previousPageButton(page: Page): Locator {
 /** The audit page's export control. */
 function exportButton(page: Page): Locator {
   return page.getByRole('button', {
-    name: copy('consoleUi', 'audit.export.label'),
+    name: copy('adminUi', 'audit.export.label'),
     exact: true,
   })
 }
@@ -342,10 +342,10 @@ async function auditColumnIndexes(
   let actor = -1
   for (let index = 0; index < count; index += 1) {
     const label = (await headers.nth(index).innerText()).trim()
-    if (label === copy('consoleUi', 'audit.column.time')) {
+    if (label === copy('adminUi', 'audit.column.time')) {
       time = index
     }
-    if (label === copy('consoleUi', 'audit.column.actor')) {
+    if (label === copy('adminUi', 'audit.column.actor')) {
       actor = index
     }
   }
@@ -672,7 +672,7 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
     ).toBeVisible()
     await expect(verificationBanner(page, OPERATOR.identifier)).toHaveCount(0)
 
-    // Reach the console through the home page's own entries, as a person
+    // Reach the admin through the home page's own entries, as a person
     // does.
     await page
       .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
@@ -680,25 +680,25 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
     await expect(homeHeading(page)).toBeVisible()
     await page
       .getByRole('banner')
-      .getByRole('link', { name: copy('demo', 'nav.console'), exact: true })
+      .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
       .click()
-    await expect(consoleNav(page)).toBeVisible()
+    await expect(adminNav(page)).toBeVisible()
 
     // Open the audit page once to read the size its list read asks for. The
     // listener is attached first; it observes the request and nothing else.
     // This is a harness read of the product's own number, not a journey step.
     page.on('request', observeAuditList)
     try {
-      await consoleNav(page)
+      await adminNav(page)
         .getByRole('link', {
-          name: copy('consoleUi', 'audit.title'),
+          name: copy('adminUi', 'audit.title'),
           exact: true,
         })
         .click()
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'audit.title'),
+          name: copy('adminUi', 'audit.title'),
           exact: true,
         }),
       ).toBeVisible()
@@ -716,16 +716,16 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
     }
 
     // The settings page is the journey's first surface.
-    await consoleNav(page)
+    await adminNav(page)
       .getByRole('link', {
-        name: copy('consoleUi', 'settings.title'),
+        name: copy('adminUi', 'settings.title'),
         exact: true,
       })
       .click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'settings.title'),
+        name: copy('adminUi', 'settings.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -798,11 +798,11 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
     // The last save's own confirmation and a server re-read show the value is
     // stored rather than local draft state.
     await expect(
-      page.getByText(copy('consoleUi', 'settings.saved'), { exact: true }),
+      page.getByText(copy('adminUi', 'settings.saved'), { exact: true }),
     ).toBeVisible()
     await page
       .getByRole('button', {
-        name: copy('consoleUi', 'common.refresh'),
+        name: copy('adminUi', 'common.refresh'),
         exact: true,
       })
       .click()
@@ -818,7 +818,7 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
     if (lastSavedValue === undefined) {
       throw new Error('the step-1 saves never ran')
     }
-    const invalidCopy = copy('consoleUi', 'errors.settings.invalid_value')
+    const invalidCopy = copy('adminUi', 'errors.settings.invalid_value')
 
     await valueField(page).fill(INVALID_VALUE)
     await expect(pendingCount(page)).toBeVisible()
@@ -868,16 +868,16 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
     const until = minuteValue(new Date(Date.now() + MINUTE_MS))
     const day = 24 * 60 * MINUTE_MS
 
-    await consoleNav(page)
+    await adminNav(page)
       .getByRole('link', {
-        name: copy('consoleUi', 'audit.title'),
+        name: copy('adminUi', 'audit.title'),
         exact: true,
       })
       .click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'audit.title'),
+        name: copy('adminUi', 'audit.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -894,7 +894,7 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
     await expect(
       page.getByRole('heading', {
         level: 2,
-        name: copy('consoleUi', 'audit.empty.title'),
+        name: copy('adminUi', 'audit.empty.title'),
         exact: true,
       }),
     ).toBeVisible({ timeout: 15_000 })

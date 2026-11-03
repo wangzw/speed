@@ -56,31 +56,31 @@ const REGION_TAG_NAMES = new Set([
  */
 export const WRITE_FEEDBACK_REGION_EXEMPTIONS = [
   {
-    file: 'packages/console-ui/src/AccountsPage.tsx',
+    file: 'packages/admin-ui/src/AccountsPage.tsx',
     component: 'AccountsPage',
     reason:
       "The list result (row deletes and the create panel's confirmation) and the detail panel's action row, sessions section and identifiers section are separate control groups, each with its region under its own controls.",
   },
   {
-    file: 'packages/console-ui/src/AccountsPage.tsx',
+    file: 'packages/admin-ui/src/AccountsPage.tsx',
     component: 'AccountDetailWrites',
     reason:
       'The status, MFA requirement, profile patch, temporary password, identifier add and secret create rows are six control groups, each with its own scope and its region under its own row.',
   },
   {
-    file: 'packages/console-ui/src/PermissionsPage.tsx',
+    file: 'packages/admin-ui/src/PermissionsPage.tsx',
     component: 'PermissionsPage',
     reason:
       'The roles, grants, bindings and lookup sections are four separate control groups, each with its region under its own table.',
   },
   {
-    file: 'packages/console-ui/src/SmsPage.tsx',
+    file: 'packages/admin-ui/src/SmsPage.tsx',
     component: 'SmsPage',
     reason:
       'The register form, the offer form and the templates table are separate control groups, each with its region under its own controls.',
   },
   {
-    file: 'packages/console-ui/src/SsoPage.tsx',
+    file: 'packages/admin-ui/src/SsoPage.tsx',
     component: 'SsoPage',
     reason:
       'The providers list, the provider write form and the domains section are separate control groups, each with its region under its own controls.',
@@ -92,13 +92,13 @@ export const WRITE_FEEDBACK_REGION_EXEMPTIONS = [
       'The language row and the time-zone row are separate control groups, each with its own scope and region.',
   },
   {
-    file: 'packages/console-ui/src/ImpersonationsPage.tsx',
+    file: 'packages/admin-ui/src/ImpersonationsPage.tsx',
     component: 'ImpersonationsPage',
     reason:
       "The start form and the records table with its row actions are separate control groups; the start form's region stays mounted when its form unmounts.",
   },
   {
-    file: 'packages/console-ui/src/InvitationsPage.tsx',
+    file: 'packages/admin-ui/src/InvitationsPage.tsx',
     component: 'InvitationsPage',
     reason:
       'The invitations table and the members table are separate control groups, each with its region under its own table.',

@@ -8,12 +8,12 @@
   "nav": {
     "account": "账户设置",
     "home": "首页",
-    "console": "控制台"
+    "admin": "管理后台"
   },
-  "console": {
+  "admin": {
     "backToApp": "返回应用",
-    "accessPending": "正在检查控制台访问权限",
-    "accessFailed": "无法核实控制台访问权限",
+    "accessPending": "正在检查管理后台访问权限",
+    "accessFailed": "无法核实管理后台访问权限",
     "accessRetry": "重试"
   },
   "route": {
@@ -45,8 +45,8 @@
         "title": "账户设置",
         "description": "个人资料、密码、登录标识、偏好、活跃会话与两步验证。"
       },
-      "console": {
-        "title": "控制台",
+      "admin": {
+        "title": "管理后台",
         "description": "平台管理：租户、账户、设置与审计等。"
       },
       "notifications": {

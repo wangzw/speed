@@ -1,5 +1,5 @@
 /**
- * J13 -- an operator onboards a tenant from the console: register it, rename
+ * J13 -- an operator onboards a tenant from the admin: register it, rename
  * it, invite its first member, and see the member land in it.
  *
  * The operator is the seeded platform administrator. The review seed writes its
@@ -44,7 +44,7 @@
  * REQ-tenancy-006 (the roster's read decided in the platform domain) is not
  * driven: this journey only reads it as a platform administrator, and the
  * refusal branch needs a caller authorized inside a tenant but not in the
- * platform domain, which the console cannot present. REQ-tenancy-012 (a second
+ * platform domain, which the admin cannot present. REQ-tenancy-012 (a second
  * issue for the same address voids the first) is not a step of this journey.
  * REQ-tenancy-017's unrelated-session clause, REQ-tenancy-018 (an address with
  * no account) and REQ-tenancy-019 (an unproved reservation) are alternate
@@ -79,7 +79,7 @@ import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
 import { copy } from '../helpers/i18n'
 
-// The console tables carry low-priority columns and the console sidebar takes
+// The admin tables carry low-priority columns and the admin sidebar takes
 // part of the width, so the desktop viewport has to be wide enough for the
 // container to render every column this journey reads.
 test.use({ seedInvitee: true, viewport: { width: 1920, height: 1080 } })
@@ -143,7 +143,7 @@ function escapeRegExp(text: string): string {
 /**
  * The bind write's success notice.
  *
- * The console names an account in a success notice by its display name and
+ * The admin names an account in a success notice by its display name and
  * first login identifier and never by the opaque account id, so the expected
  * sentence is the bundle's `bound` filled with the reference the same bundle's
  * `common.accountReference.nameWithIdentifier` renders. The seeded operator
@@ -152,9 +152,9 @@ function escapeRegExp(text: string): string {
  * would fail this assertion.
  */
 function boundNotice(): string {
-  return copy('consoleUi', 'permissions.bindings.bound', {
+  return copy('adminUi', 'permissions.bindings.bound', {
     role: ROLE,
-    account: copy('consoleUi', 'common.accountReference.nameWithIdentifier', {
+    account: copy('adminUi', 'common.accountReference.nameWithIdentifier', {
       name: OPERATOR.displayName,
       identifier: OPERATOR.username,
     }),
@@ -181,42 +181,42 @@ function verificationSection(page: Page): Locator {
   })
 }
 
-/** The header's console entry (a link, while the operator may reach it). */
-function consoleEntry(page: Page): Locator {
+/** The header's admin entry (a link, while the operator may reach it). */
+function adminEntry(page: Page): Locator {
   return page.getByRole('banner').getByRole('link', {
-    name: copy('demo', 'nav.console'),
+    name: copy('demo', 'nav.admin'),
     exact: true,
   })
 }
 
-/** The home page's console card, the link the card's heading sits in. */
-function consoleCard(page: Page): Locator {
+/** The home page's admin card, the link the card's heading sits in. */
+function adminCard(page: Page): Locator {
   return page
     .getByRole('heading', {
       level: 2,
-      name: copy('demo', 'home.cards.console.title'),
+      name: copy('demo', 'home.cards.admin.title'),
       exact: true,
     })
     .locator('xpath=ancestor::a[1]')
 }
 
-/** The console's navigation landmark. */
-function consoleNav(page: Page): Locator {
+/** The admin's navigation landmark. */
+function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'shell.navLabel'),
+    name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
 }
 
-/** One console navigation link by its page title. */
-function consoleLink(page: Page, label: string): Locator {
-  return consoleNav(page).getByRole('link', { name: label, exact: true })
+/** One admin navigation link by its page title. */
+function adminLink(page: Page, label: string): Locator {
+  return adminNav(page).getByRole('link', { name: label, exact: true })
 }
 
-/** The tenant selector of a tenant-addressed console page. */
+/** The tenant selector of a tenant-addressed admin page. */
 function tenantSelector(page: Page): Locator {
   return page.getByRole('combobox', {
-    name: copy('consoleUi', 'common.tenant'),
+    name: copy('adminUi', 'common.tenant'),
     exact: true,
   })
 }
@@ -224,7 +224,7 @@ function tenantSelector(page: Page): Locator {
 /** The roster's create form, as the section named by its title. */
 function createSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'tenants.create.title'),
+    name: copy('adminUi', 'tenants.create.title'),
     exact: true,
   })
 }
@@ -266,7 +266,7 @@ function rosterAlias(row: Locator, alias: string): Locator {
 /** The tenant detail page's summary section. */
 function summarySection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'tenantDetail.summary'),
+    name: copy('adminUi', 'tenantDetail.summary'),
     exact: true,
   })
 }
@@ -284,7 +284,7 @@ function permissionsSection(page: Page, title: string): Locator {
 /** The invitation section of the invitations-and-members page. */
 function invitationSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'invitations.section.title'),
+    name: copy('adminUi', 'invitations.section.title'),
     exact: true,
   })
 }
@@ -292,7 +292,7 @@ function invitationSection(page: Page): Locator {
 /** The member section of the invitations-and-members page. */
 function memberSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'members.title'),
+    name: copy('adminUi', 'members.title'),
     exact: true,
   })
 }
@@ -308,7 +308,7 @@ function invitationRow(page: Page): Locator {
 /** The one-time panel that hands out the issued invitation's acceptance link. */
 function invitationLinkPanel(page: Page, email: string): Locator {
   return page.getByRole('status').filter({
-    hasText: copy('consoleUi', 'invitations.issued.link', { email }),
+    hasText: copy('adminUi', 'invitations.issued.link', { email }),
   })
 }
 
@@ -381,9 +381,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(banner).toHaveCount(0)
     })
 
-    await test.step('step 1: the operator enters the console from the header entry and sees the grouped navigation', async () => {
+    await test.step('step 1: the operator enters the admin from the header entry and sees the grouped navigation', async () => {
       // The account page the verification landed on is inside the tenant
-      // shell; the start page is where the console entry and card are read.
+      // shell; the start page is where the admin entry and card are read.
       await page
         .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
         .click()
@@ -396,14 +396,14 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
 
       // REQ-platform-admin-001's operator facet: both derivations of the
-      // console destination are offered to platform staff.
-      await expect(consoleEntry(page)).toBeVisible()
-      await expect(consoleCard(page)).toBeVisible()
-      await consoleEntry(page).click()
-      const nav = consoleNav(page)
+      // admin destination are offered to platform staff.
+      await expect(adminEntry(page)).toBeVisible()
+      await expect(adminCard(page)).toBeVisible()
+      await adminEntry(page).click()
+      const nav = adminNav(page)
       await expect(nav).toBeVisible()
 
-      // REQ-platform-admin-006: the console groups its pages by capability
+      // REQ-platform-admin-006: the admin groups its pages by capability
       // domain. This deployment serves a single page in the overview, tenant
       // and audit sections, and the shell renders a single-entry group as that
       // entry rather than a heading over one link; the multi-entry identity
@@ -411,26 +411,26 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // the group table's order.
       await expect(
         nav.getByRole('button', {
-          name: copy('consoleUi', 'nav.groups.identity'),
+          name: copy('adminUi', 'nav.groups.identity'),
           exact: true,
         }),
       ).toBeVisible()
       for (const label of [
-        copy('consoleUi', 'dashboard.title'),
-        copy('consoleUi', 'tenants.title'),
-        copy('consoleUi', 'settings.title'),
-        copy('consoleUi', 'audit.title'),
+        copy('adminUi', 'dashboard.title'),
+        copy('adminUi', 'tenants.title'),
+        copy('adminUi', 'settings.title'),
+        copy('adminUi', 'audit.title'),
       ]) {
-        await expect(consoleLink(page, label)).toBeVisible()
+        await expect(adminLink(page, label)).toBeVisible()
       }
     })
 
     await test.step('step 2: the operator opens the tenant roster and reads the seeded tenant row', async () => {
-      await consoleLink(page, copy('consoleUi', 'tenants.title')).click()
+      await adminLink(page, copy('adminUi', 'tenants.title')).click()
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'tenants.title'),
+          name: copy('adminUi', 'tenants.title'),
           exact: true,
         }),
       ).toBeVisible()
@@ -448,7 +448,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(rosterIdentifier(seeded, SEEDED_TENANT)).toBeVisible()
       await expect(rosterAlias(seeded, SEEDED_TENANT)).toBeVisible()
       await expect(
-        seeded.getByText(copy('consoleUi', 'tenants.status.active'), {
+        seeded.getByText(copy('adminUi', 'tenants.status.active'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -457,18 +457,18 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
     await test.step('step 3: the operator registers a new tenant, and the roster grows by one active row', async () => {
       const form = createSection(page)
       const idField = form.getByLabel(
-        copy('consoleUi', 'tenants.create.idLabel'),
+        copy('adminUi', 'tenants.create.idLabel'),
         { exact: true },
       )
       const aliasField = form.getByLabel(
-        copy('consoleUi', 'tenants.create.aliasLabel'),
+        copy('adminUi', 'tenants.create.aliasLabel'),
         { exact: true },
       )
       const submit = form.getByRole('button', {
-        name: copy('consoleUi', 'tenants.create.submit'),
+        name: copy('adminUi', 'tenants.create.submit'),
         exact: true,
       })
-      const conflict = copy('consoleUi', 'errors.tenant.conflict')
+      const conflict = copy('adminUi', 'errors.tenant.conflict')
       const rows = rosterTable(page).locator('tbody tr')
       // The roster read has settled by this step; its current length is the
       // baseline both collision branches must leave untouched.
@@ -497,7 +497,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await submit.click()
       await expect(
         page.getByText(
-          copy('consoleUi', 'tenants.created', { id: TENANT_ID }),
+          copy('adminUi', 'tenants.created', { id: TENANT_ID }),
           { exact: true },
         ),
       ).toBeVisible()
@@ -508,7 +508,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(rosterIdentifier(created, TENANT_ID)).toBeVisible()
       await expect(rosterAlias(created, TENANT_ID)).toBeVisible()
       await expect(
-        created.getByText(copy('consoleUi', 'tenants.status.active'), {
+        created.getByText(copy('adminUi', 'tenants.status.active'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -528,7 +528,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'tenantDetail.title', { id: TENANT_ID }),
+          name: copy('adminUi', 'tenantDetail.title', { id: TENANT_ID }),
           exact: true,
         }),
       ).toBeVisible()
@@ -537,15 +537,15 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(summaryValue(page, 0)).toHaveText(TENANT_ID)
       await expect(summaryValue(page, 1)).toHaveText(TENANT_ID)
       await expect(summaryValue(page, 2)).toHaveText(
-        copy('consoleUi', 'tenants.status.active'),
+        copy('adminUi', 'tenants.status.active'),
       )
 
       const renameField = page.getByLabel(
-        copy('consoleUi', 'tenantDetail.actions.renameLabel'),
+        copy('adminUi', 'tenantDetail.actions.renameLabel'),
         { exact: true },
       )
       const renameSubmit = page.getByRole('button', {
-        name: copy('consoleUi', 'tenantDetail.actions.renameSubmit'),
+        name: copy('adminUi', 'tenantDetail.actions.renameSubmit'),
         exact: true,
       })
 
@@ -554,7 +554,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await renameField.fill(SEEDED_TENANT)
       await renameSubmit.click()
       await expect(
-        page.getByText(copy('consoleUi', 'errors.tenant.conflict'), {
+        page.getByText(copy('adminUi', 'errors.tenant.conflict'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -566,20 +566,20 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await renameSubmit.click()
       await expect(
         page.getByText(
-          copy('consoleUi', 'tenantDetail.actions.renamed', { id: TENANT_ID }),
+          copy('adminUi', 'tenantDetail.actions.renamed', { id: TENANT_ID }),
           { exact: true },
         ),
       ).toBeVisible()
       await expect(summaryValue(page, 0)).toHaveText(TENANT_ID)
       await expect(summaryValue(page, 1)).toHaveText(TENANT_ALIAS)
       await expect(summaryValue(page, 2)).toHaveText(
-        copy('consoleUi', 'tenants.status.active'),
+        copy('adminUi', 'tenants.status.active'),
       )
 
       // The roster re-reads too: the same row now shows the new alias.
       await page
         .getByRole('link', {
-          name: copy('consoleUi', 'tenantDetail.back'),
+          name: copy('adminUi', 'tenantDetail.back'),
           exact: true,
         })
         .click()
@@ -595,11 +595,11 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // in the tenant, grants it the membership-management permission and
       // binds the operator to it. The tenant-addressed page decides in the
       // tenant's own domain, which the created binding exercises.
-      await consoleLink(page, copy('consoleUi', 'permissions.title')).click()
+      await adminLink(page, copy('adminUi', 'permissions.title')).click()
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'permissions.title'),
+          name: copy('adminUi', 'permissions.title'),
           exact: true,
         }),
       ).toBeVisible()
@@ -610,22 +610,22 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // The role catalog, then the role.
       const roles = permissionsSection(
         page,
-        copy('consoleUi', 'permissions.roles.title'),
+        copy('adminUi', 'permissions.roles.title'),
       )
       const roleField = roles.getByLabel(
-        copy('consoleUi', 'permissions.roles.create.roleLabel'),
+        copy('adminUi', 'permissions.roles.create.roleLabel'),
         { exact: true },
       )
       await roleField.fill(ROLE)
       await roles
         .getByRole('button', {
-          name: copy('consoleUi', 'permissions.roles.create.submit'),
+          name: copy('adminUi', 'permissions.roles.create.submit'),
           exact: true,
         })
         .click()
       await expect(
         page.getByText(
-          copy('consoleUi', 'permissions.roles.saved', { role: ROLE }),
+          copy('adminUi', 'permissions.roles.saved', { role: ROLE }),
           { exact: true },
         ),
       ).toBeVisible()
@@ -638,7 +638,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // Its grants: select the role, then grant the membership permission.
       await roleRow
         .getByRole('button', {
-          name: copy('consoleUi', 'permissions.roles.manageGrantsAria', {
+          name: copy('adminUi', 'permissions.roles.manageGrantsAria', {
             role: ROLE,
           }),
           exact: true,
@@ -646,18 +646,18 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .click()
       const grants = permissionsSection(
         page,
-        copy('consoleUi', 'permissions.grants.title'),
+        copy('adminUi', 'permissions.grants.title'),
       )
       await expect(
         grants.getByText(
-          copy('consoleUi', 'permissions.grants.forRole', { role: ROLE }),
+          copy('adminUi', 'permissions.grants.forRole', { role: ROLE }),
           { exact: true },
         ),
       ).toBeVisible()
 
       await grants
         .getByRole('combobox', {
-          name: copy('consoleUi', 'permissions.grants.permissionLabel'),
+          name: copy('adminUi', 'permissions.grants.permissionLabel'),
           exact: true,
         })
         .click()
@@ -666,13 +666,13 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .click()
       await grants
         .getByRole('button', {
-          name: copy('consoleUi', 'permissions.grants.add'),
+          name: copy('adminUi', 'permissions.grants.add'),
           exact: true,
         })
         .click()
       await expect(
         page.getByText(
-          copy('consoleUi', 'permissions.grants.granted', {
+          copy('adminUi', 'permissions.grants.granted', {
             permission: PERMISSION,
             role: ROLE,
           }),
@@ -686,10 +686,10 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // The binding: the operator's own account holds the role in the tenant.
       const bindings = permissionsSection(
         page,
-        copy('consoleUi', 'permissions.bindings.title'),
+        copy('adminUi', 'permissions.bindings.title'),
       )
       const accountField = bindings.getByRole('combobox', {
-        name: copy('consoleUi', 'permissions.bindings.accountLabel'),
+        name: copy('adminUi', 'permissions.bindings.accountLabel'),
         exact: true,
       })
       await accountField.click()
@@ -698,13 +698,13 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .getByRole('option', { name: new RegExp(OPERATOR.displayName) })
         .click()
       await bindings
-        .getByLabel(copy('consoleUi', 'permissions.bindings.roleLabel'), {
+        .getByLabel(copy('adminUi', 'permissions.bindings.roleLabel'), {
           exact: true,
         })
         .fill(ROLE)
       await bindings
         .getByRole('button', {
-          name: copy('consoleUi', 'permissions.bindings.bind'),
+          name: copy('adminUi', 'permissions.bindings.bind'),
           exact: true,
         })
         .click()
@@ -730,11 +730,11 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // The document's step offers the detail page's related link or the
       // navigation; this spec takes the navigation branch, which is the one
       // that can observe the page before a tenant is chosen.
-      await consoleLink(page, copy('consoleUi', 'invitations.title')).click()
+      await adminLink(page, copy('adminUi', 'invitations.title')).click()
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'invitations.title'),
+          name: copy('adminUi', 'invitations.title'),
           exact: true,
         }),
       ).toBeVisible()
@@ -742,7 +742,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // Before a tenant is chosen the page lists no tenant's data.
       await expect(
         page.getByRole('heading', {
-          name: copy('consoleUi', 'invitations.needTenant.title'),
+          name: copy('adminUi', 'invitations.needTenant.title'),
           exact: true,
         }),
       ).toBeVisible()
@@ -757,7 +757,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(
         invitationSection(page)
           .getByRole('heading', {
-            name: copy('consoleUi', 'invitations.empty.title'),
+            name: copy('adminUi', 'invitations.empty.title'),
             exact: true,
           }),
       ).toBeVisible()
@@ -767,7 +767,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .filter({ hasText: OPERATOR.displayName })
       await expect(creator).toHaveCount(1)
       await expect(
-        creator.getByText(copy('consoleUi', 'members.source.admin'), {
+        creator.getByText(copy('adminUi', 'members.source.admin'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -775,25 +775,25 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
 
     await test.step('step 6: the operator issues an invitation and the one-time panel hands out the link', async () => {
       await page
-        .getByLabel(copy('consoleUi', 'invitations.issue.emailLabel'), {
+        .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
           exact: true,
         })
         .fill(reviewInvitee.identifier)
       await page
-        .getByLabel(copy('consoleUi', 'invitations.issue.expiresLabel'), {
+        .getByLabel(copy('adminUi', 'invitations.issue.expiresLabel'), {
           exact: true,
         })
         .fill(EXPIRY_INPUT)
       await page
         .getByRole('button', {
-          name: copy('consoleUi', 'invitations.issue.submit'),
+          name: copy('adminUi', 'invitations.issue.submit'),
           exact: true,
         })
         .click()
 
       await expect(
         page.getByText(
-          copy('consoleUi', 'invitations.issued.confirm', {
+          copy('adminUi', 'invitations.issued.confirm', {
             email: reviewInvitee.identifier,
           }),
           { exact: true },
@@ -805,10 +805,10 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // instant the operator typed, not the configured default.
       const table = invitationSection(page).getByRole('table')
       for (const header of [
-        copy('consoleUi', 'invitations.column.email'),
-        copy('consoleUi', 'invitations.column.status'),
-        copy('consoleUi', 'invitations.column.invitedBy'),
-        copy('consoleUi', 'invitations.column.expires'),
+        copy('adminUi', 'invitations.column.email'),
+        copy('adminUi', 'invitations.column.status'),
+        copy('adminUi', 'invitations.column.invitedBy'),
+        copy('adminUi', 'invitations.column.expires'),
       ]) {
         await expect(
           table.getByRole('columnheader', { name: header, exact: true }),
@@ -820,7 +820,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         row.getByText(reviewInvitee.identifier, { exact: true }),
       ).toBeVisible()
       await expect(
-        row.getByText(copy('consoleUi', 'invitations.status.pending'), {
+        row.getByText(copy('adminUi', 'invitations.status.pending'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -835,7 +835,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(panel).toBeVisible()
       await expect(
         panel.getByText(
-          copy('consoleUi', 'invitations.issued.link', {
+          copy('adminUi', 'invitations.issued.link', {
             email: reviewInvitee.identifier,
           }),
           { exact: true },
@@ -843,7 +843,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
       await expect(
         panel.getByRole('button', {
-          name: copy('consoleUi', 'invitations.issued.copyLink'),
+          name: copy('adminUi', 'invitations.issued.copyLink'),
           exact: true,
         }),
       ).toBeVisible()
@@ -856,7 +856,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
 
       await panel
         .getByRole('button', {
-          name: copy('consoleUi', 'invitations.issued.closeAria', {
+          name: copy('adminUi', 'invitations.issued.closeAria', {
             tenant: TENANT_ID,
             email: reviewInvitee.identifier,
           }),
@@ -1038,16 +1038,16 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // invitation-to-tenant spec documents the same divergence.
       //
       // REQ-platform-admin-001's member facet: a plain member is offered
-      // neither the header's console entry nor the start page's console card.
+      // neither the header's admin entry nor the start page's admin card.
       await expect(
         invitee
           .getByRole('banner')
-          .getByRole('link', { name: copy('demo', 'nav.console'), exact: true }),
+          .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true }),
       ).toHaveCount(0)
       await expect(
         invitee.getByRole('heading', {
           level: 2,
-          name: copy('demo', 'home.cards.console.title'),
+          name: copy('demo', 'home.cards.admin.title'),
           exact: true,
         }),
       ).toHaveCount(0)
@@ -1057,13 +1057,13 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'invitations.title'),
+          name: copy('adminUi', 'invitations.title'),
           exact: true,
         }),
       ).toBeVisible()
       await page
         .getByRole('button', {
-          name: copy('consoleUi', 'common.refresh'),
+          name: copy('adminUi', 'common.refresh'),
           exact: true,
         })
         .click()
@@ -1071,7 +1071,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // The invitation's terminal state is now the accepted one.
       await expect(
         invitationRow(page).getByText(
-          copy('consoleUi', 'invitations.status.accepted'),
+          copy('adminUi', 'invitations.status.accepted'),
           { exact: true },
         ),
       ).toBeVisible({ timeout: 15_000 })
@@ -1087,12 +1087,12 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .filter({ hasText: reviewInvitee.displayName })
       await expect(invited).toHaveCount(1)
       await expect(
-        invited.getByText(copy('consoleUi', 'members.source.invite'), {
+        invited.getByText(copy('adminUi', 'members.source.invite'), {
           exact: true,
         }),
       ).toBeVisible()
       await expect(
-        invited.getByText(copy('consoleUi', 'members.activeYes'), {
+        invited.getByText(copy('adminUi', 'members.activeYes'), {
           exact: true,
         }),
       ).toBeVisible()

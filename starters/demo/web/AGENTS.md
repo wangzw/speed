@@ -105,8 +105,8 @@ program beside this directory embeds with `go:embed` and serves through
   One build output serves every deployment topology and white-label style.
   Each field is read on its own -- a malformed value never drops the others
   -- and an unknown value is ignored. The layout rides down through
-  `DemoApp` to both `ProductShell` and `ConsoleShell`, so the tenant area
-  and the console present the same arrangement; the preset seeds the theme
+  `DemoApp` to both `ProductShell` and `AdminShell`, so the tenant area
+  and the admin present the same arrangement; the preset seeds the theme
   provider's `defaultPreset`, and a device-stored choice wins over it at
   boot.
 - **The app reaches the API at one origin, which must be a gateway.** The demo's
@@ -115,29 +115,29 @@ program beside this directory embeds with `go:embed` and serves through
   sign in; a deployment fronts the bundle and those endpoints behind one origin
   (as `pnpm dev` proxies in development). See README "One origin for the API".
 - **The two shells live in disjoint path spaces.** The tenant area renders
-  `@speed/product-shell`; the console area renders `@speed/console-ui` under
-  `CONSOLE_PREFIX`. `src/app.tsx` picks the shell from the route table's
-  selected entry, so a console page carries a label.
-- **The console has a host entry and a host route guard.** The tenant
-  navigation is the labelled entries outside the console path space; the console
+  `@speed/product-shell`; the admin area renders `@speed/admin-ui` under
+  `ADMIN_PREFIX`. `src/app.tsx` picks the shell from the route table's
+  selected entry, so an admin page carries a label.
+- **The admin has a host entry and a host route guard.** The tenant
+  navigation is the labelled entries outside the admin path space; the admin
   entry is not among them -- it rides the tenant frame's `headerActions` slot
-  (`src/app.tsx`'s `ConsoleEntry`) and appears only to a principal holding a
+  (`src/app.tsx`'s `AdminEntry`) and appears only to a principal holding a
   platform permission, so an ordinary member is offered no way in. The
   principal's permission sets are attached by the assembly
   (`src/platform-permissions.tsx`, from the caller's own permission read at
-  `GET /api/v1/authz/me/permissions`; see README "Sessions and the console"). `/console` itself redirects to the
-  console's first page (`src/routes.tsx`). The console area -- and only it, since
+  `GET /api/v1/authz/me/permissions`; see README "Sessions and the admin"). `/admin` itself redirects to the
+  admin's first page (`src/routes.tsx`). The admin area -- and only it, since
   the tenant area is gated by the shell -- carries a `RouteGuard` over the
-  matched page's permission code, composed host-side, so reaching `/console`
+  matched page's permission code, composed host-side, so reaching `/admin`
   directly is turned away there.
-- **The console routes in place and offers an exit.** The console frame hands
-  its navigation entries to the app's router through console-ui's `onNavigate`
-  seam (`src/console/console-area.tsx`), and its frame chrome carries an exit back to
+- **The admin routes in place and offers an exit.** The admin frame hands
+  its navigation entries to the app's router through admin-ui's `onNavigate`
+  seam (`src/admin/admin-area.tsx`), and its frame chrome carries an exit back to
   the tenant area beside the sign-out action. Both push a history entry instead
-  of reloading the page, so neither the console pages nor the exit are a
+  of reloading the page, so neither the admin pages nor the exit are a
   navigation dead end.
 - **The app composes its own chrome.** `src/chrome.tsx` holds the shared top-bar
-  pieces the tenant frame and the console frame render: the brand, the tenant
+  pieces the tenant frame and the admin frame render: the brand, the tenant
   switcher over the caller tenant list (`TenantMenu`), and the avatar account
   menu (the notification centre, the account panes and sign out). Neither
   frame carries a color-mode toggle: the choice is the account page's
@@ -150,10 +150,10 @@ program beside this directory embeds with `go:embed` and serves through
   `AccountEntry` at the bottom of the navigation column through AppShell's
   `navFooter` slot and no header avatar menu; `'header'` renders the
   `UserMenu` in the `userMenu` slot and no column row; `'both'` renders both.
-  The console frame follows the same `ACCOUNT_ENTRY` constant (default
+  The admin frame follows the same `ACCOUNT_ENTRY` constant (default
   `'sidebar'`: a row at the bottom of the column, no header avatar menu;
   `'header'`: the header menu only; `'both'`: both), and it renders the
-  actions but not the switcher (the console resolves no tenant). Entry-point actions in that chrome are always outlined; plain text
+  actions but not the switcher (the admin resolves no tenant). Entry-point actions in that chrome are always outlined; plain text
   is reserved for labels that are not clickable. The slot composition is identical in both `shellLayout` forms:
   AppShell moves the same slots into its drawer paper in the sidebar form, so
   `src/chrome.tsx` never branches on the layout. `src/paths.ts` holds the
@@ -216,7 +216,7 @@ program beside this directory embeds with `go:embed` and serves through
   account already holds a binding (an existing binding stays visible even
   when that read fails), and the binding-callback route is mounted beside
   the pane for a product that configures a provider.
-  `src/main.tsx` registers the extra namespaces (console-ui, account-ui,
+  `src/main.tsx` registers the extra namespaces (admin-ui, account-ui,
   tenancy-ui, notification-ui, demo) beside the four the assembly registers
   automatically.
 - **Registration verification lives on the profile pane, behind a banner.**
@@ -252,7 +252,7 @@ program beside this directory embeds with `go:embed` and serves through
   screen's unavailable notice. `SignInScreen` carries the forgot-password
   entry only while that member is enabled, and only the application's own
   sign-in page binds `onForgotPassword`: the invitation landing and the
-  console gate own their landing and leave the entry out, because navigating
+  admin gate own their landing and leave the entry out, because navigating
   away would drop the token or the path the viewer arrived with.
 
 - **A page reload keeps the viewer signed in.** The session is delivered as
@@ -264,7 +264,7 @@ program beside this directory embeds with `go:embed` and serves through
   product-shell, whose session-ended branch renders the end screen with its own
   "sign in again" action for a session that turned anonymous after having been
   authenticated (only a never-authenticated visitor meets the sign-in surface);
-  the console area carries its own session gate, which sends any anonymous
+  the admin area carries its own session gate, which sends any anonymous
   viewer -- including one whose authenticated session just ended -- straight to
   the sign-in surface. Either way a request that dies with its session never
   leaves a view stuck loading. Nothing persists a credential to storage; the
@@ -289,7 +289,7 @@ tests grow heavier should set its own `testTimeout`).
 
 `test:a11y` is the route-level accessibility sweep (`src/a11y/`): it walks the
 route table and renders the assembled app at every route in the tenant and
-console shells, in three data states, scanning each with axe-core and failing on
+admin shells, in three data states, scanning each with axe-core and failing on
 `serious`/`critical` findings **plus any page-structure violation** — a missing
 h1, a missing main landmark, a landmark-containment break or a heading-order
 break (`src/a11y/scan.ts`'s `PAGE_STRUCTURE_RULES`; those rules carry only axe's
@@ -335,7 +335,7 @@ Checks the jsdom gate cannot make, recorded so they are not read as
   so axe's `color-contrast` is indeterminate for every node. The gate excludes
   it from its rule set (`src/a11y/scan.ts`'s `UNSWEEPABLE_RULES`); before the
   exclusion the named undecidable nodes were the AppBar brand text at `/` and a
-  breadcrumb link at `/console/audit/sample [error]`, both chrome text over an
+  breadcrumb link at `/admin/audit/sample [error]`, both chrome text over an
   emotion-styled background jsdom cannot resolve. Contrast there is a
   browser-side / manual check.
 - **Label in Name (WCAG 2.5.3)** and **ARIA required children (WCAG 1.3.1)**.

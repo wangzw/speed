@@ -95,7 +95,7 @@ web/
                                              sessions, sign-in history, social bindings and
                                              step-up-gated two-factor setup over the
                                              generated authn operations
-    console-ui/         @speed/console-ui  -- the platform-staff console, the second shell:
+    admin-ui/         @speed/admin-ui  -- the platform-staff admin, the second shell:
                                              the tenant roster, settings and audit
                                              administration surfaces as one frame with three
                                              pages, each a path/view/label/permission
@@ -185,10 +185,10 @@ itself, a table container does not overflow its own width), focus order
 `scrollable-region-focusable` rule finds nothing). Its first batch covers
 the shell's offset and spacer across three viewport classes and three
 banner heights, the skip link, the impersonation banner's live region,
-the data table's per-column content cap, and every console list page's
+the data table's per-column content cap, and every admin list page's
 horizontal containment at the sm/md/lg floor widths with fixed data. The
 two shells' header band invariant runs as the full matrix: ProductShell and
-ConsoleShell, each at 375px and 430px in en-US and zh-CN, plus the md
+AdminShell, each at 375px and 430px in en-US and zh-CN, plus the md
 single row, with every rendered header control asserted reachable and
 clickable.
 

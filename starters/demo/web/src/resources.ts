@@ -5,7 +5,7 @@
  * slot page, the fallback page -- resolves from this namespace. The packages
  * the app composes ship their own bundles; the app-entry assembly registers
  * the four family namespaces automatically, and the app adds this one beside
- * the console-ui namespace its console area renders from
+ * the admin-ui namespace its admin area renders from
  * (src/main.tsx's namespaces list).
  *
  * Both language files carry the same leaf key set (registration enforces it),

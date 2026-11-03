@@ -12,8 +12,8 @@
  * member of the tenant, not an administrator. The spec signs in with the
  * password and an authenticator code computed from the review seed's fixed
  * base32 secret (helpers/totp.ts, the same secret a person imports into an
- * authenticator app), enters the console, opens the impersonation page and
- * reads the target account's identifier from the console's own accounts list.
+ * authenticator app), enters the admin, opens the impersonation page and
+ * reads the target account's identifier from the admin's own accounts list.
  *
  * THE FRESHNESS WAIT, AND WHY IT IS NOT A SLEEP. The start requires a local
  * multi-factor authentication no older than authn.impersonation.max-auth-age;
@@ -24,11 +24,11 @@
  * refused with the restricted-target/parameter text (the freshness check, the
  * target check and then the parameter check are the server's order); once the
  * window has passed the same submission is refused for authentication strength
- * and the console opens its step-up dialog. The spec repeats that submission
+ * and the admin opens its step-up dialog. The spec repeats that submission
  * until the dialog appears -- a state transition of the rendered product, never
  * a fixed delay. The long reason is discarded: the dialog is cancelled, the
  * reason is corrected, and the start is submitted again, stepped up with SMS,
- * and replayed by the console's own gate.
+ * and replayed by the admin's own gate.
  *
  * The first submission is not assumed to land inside the window. The probe
  * classifies the product's answer instead: the restricted text is the
@@ -66,7 +66,7 @@
  *    cases are not driven.
  *  - REQ-platform-admin-084: only the explicit end reason is observed.
  *  - REQ-platform-admin-109: the spec observes that the initiator's platform
- *    permissions do not apply during the impersonation (the console is
+ *    permissions do not apply during the impersonation (the admin is
  *    unreachable); the target-holds-a-permission positive case is not driven.
  *  - REQ-platform-admin-110: the end audit row's actor, target account, tenant
  *    and session are asserted; the "same action after the end carries no such
@@ -98,7 +98,7 @@ import { copy, copyPattern } from '../helpers/i18n'
 import { totpCode } from '../helpers/totp'
 
 // The impersonation factors change how the seeded operator signs in, so only
-// this journey's server turns them on. The console tables carry low-priority
+// this journey's server turns them on. The admin tables carry low-priority
 // columns (the impersonation record's tenant, the settings-style type columns),
 // so the desktop viewport is wide enough for every column this journey reads.
 test.use({ seedImpersonation: true, viewport: { width: 1920, height: 1080 } })
@@ -157,27 +157,27 @@ function homeHeading(page: Page): Locator {
   })
 }
 
-/** The header's console entry (a link, while the operator may reach it). */
-function consoleEntry(page: Page): Locator {
+/** The header's admin entry (a link, while the operator may reach it). */
+function adminEntry(page: Page): Locator {
   return page.getByRole('banner').getByRole('link', {
-    name: copy('demo', 'nav.console'),
+    name: copy('demo', 'nav.admin'),
     exact: true,
   })
 }
 
-/** The home page's console card, which must agree with the entry's visibility. */
-function consoleCard(page: Page): Locator {
+/** The home page's admin card, which must agree with the entry's visibility. */
+function adminCard(page: Page): Locator {
   return page.getByRole('heading', {
     level: 2,
-    name: copy('demo', 'home.cards.console.title'),
+    name: copy('demo', 'home.cards.admin.title'),
     exact: true,
   })
 }
 
-/** The console's navigation landmark. */
-function consoleNav(page: Page): Locator {
+/** The admin's navigation landmark. */
+function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'shell.navLabel'),
+    name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
 }
@@ -201,15 +201,15 @@ function preferencesMatrix(page: Page): Locator {
 /** The step-up dialog. */
 function stepUpDialog(page: Page): Locator {
   return page.getByRole('dialog', {
-    name: copy('consoleUi', 'stepUp.title'),
+    name: copy('adminUi', 'stepUp.title'),
     exact: true,
   })
 }
 
-/** The tenant selector of a tenant-addressed console page. */
+/** The tenant selector of a tenant-addressed admin page. */
 function tenantSelector(page: Page): Locator {
   return page.getByRole('combobox', {
-    name: copy('consoleUi', 'common.tenant'),
+    name: copy('adminUi', 'common.tenant'),
     exact: true,
   })
 }
@@ -217,30 +217,30 @@ function tenantSelector(page: Page): Locator {
 /** The impersonation page's start form controls. */
 function targetField(page: Page): Locator {
   return page.getByRole('textbox', {
-    name: copy('consoleUi', 'impersonations.start.accountLabel'),
+    name: copy('adminUi', 'impersonations.start.accountLabel'),
     exact: true,
   })
 }
 function reasonField(page: Page): Locator {
   return page.getByRole('textbox', {
-    name: copy('consoleUi', 'impersonations.start.reasonLabel'),
+    name: copy('adminUi', 'impersonations.start.reasonLabel'),
     exact: true,
   })
 }
 function ttlField(page: Page): Locator {
   return page.getByRole('textbox', {
-    name: copy('consoleUi', 'impersonations.start.ttlLabel'),
+    name: copy('adminUi', 'impersonations.start.ttlLabel'),
     exact: true,
   })
 }
 function startButton(page: Page): Locator {
   return page.getByRole('button', {
-    name: copy('consoleUi', 'impersonations.start.submit'),
+    name: copy('adminUi', 'impersonations.start.submit'),
     exact: true,
   })
 }
 
-/** The console's account list and one row's full account identifier.
+/** The admin's account list and one row's full account identifier.
  *
  * The list's identifier column renders only a short prefix, but each row's
  * manage control carries the whole identifier in its accessible name
@@ -251,7 +251,7 @@ function accountRow(page: Page, displayName: string): Locator {
 }
 
 async function accountIdOf(page: Page, displayName: string): Promise<string> {
-  const managePrefix = copy('consoleUi', 'accounts.manageAria', {
+  const managePrefix = copy('adminUi', 'accounts.manageAria', {
     id: '__ACCOUNT_ID__',
   }).split('__ACCOUNT_ID__')[0] ?? ''
   const row = accountRow(page, displayName)
@@ -292,7 +292,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
   demo,
 }) => {
   // The freshness window is a real backend minute, and the journey around it
-  // (two-factor sign-in, console navigation, the impersonation, the end, the
+  // (two-factor sign-in, admin navigation, the impersonation, the end, the
   // record and the audit reads) does not fit the tier's default bound.
   test.setTimeout(180_000)
 
@@ -340,23 +340,23 @@ test('impersonation-for-support: the operator acts as a member and the record an
 
     // The operator is platform staff: the header entry and the home card both
     // exist before any impersonation.
-    await expect(consoleEntry(page)).toBeVisible()
-    await expect(consoleCard(page)).toBeVisible()
+    await expect(adminEntry(page)).toBeVisible()
+    await expect(adminCard(page)).toBeVisible()
   })
 
   await test.step('step 1: the operator opens the impersonation page and it reports no impersonation', async () => {
-    await consoleEntry(page).click()
-    await expect(consoleNav(page)).toBeVisible()
-    await consoleNav(page)
+    await adminEntry(page).click()
+    await expect(adminNav(page)).toBeVisible()
+    await adminNav(page)
       .getByRole('link', {
-        name: copy('consoleUi', 'impersonations.title'),
+        name: copy('adminUi', 'impersonations.title'),
         exact: true,
       })
       .click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'impersonations.title'),
+        name: copy('adminUi', 'impersonations.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -364,18 +364,18 @@ test('impersonation-for-support: the operator acts as a member and the record an
     // The current-impersonation section is a settled "none": no failure
     // placeholder, no retry control and no stale marker beside it.
     await expect(
-      page.getByText(copy('consoleUi', 'impersonations.current.none'), {
+      page.getByText(copy('adminUi', 'impersonations.current.none'), {
         exact: true,
       }),
     ).toBeVisible()
     await expect(
-      page.getByText(copy('consoleUi', 'impersonations.current.error.title'), {
+      page.getByText(copy('adminUi', 'impersonations.current.error.title'), {
         exact: true,
       }),
     ).toHaveCount(0)
     await expect(
       page.getByRole('button', {
-        name: copy('consoleUi', 'impersonations.retry'),
+        name: copy('adminUi', 'impersonations.retry'),
         exact: true,
       }),
     ).toHaveCount(0)
@@ -383,12 +383,12 @@ test('impersonation-for-support: the operator acts as a member and the record an
     // The start area explains its factor-age precondition and, with no tenant
     // chosen, says so and keeps the submit unavailable.
     await expect(
-      page.getByText(copy('consoleUi', 'impersonations.start.precondition'), {
+      page.getByText(copy('adminUi', 'impersonations.start.precondition'), {
         exact: true,
       }),
     ).toBeVisible()
     await expect(
-      page.getByText(copy('consoleUi', 'impersonations.start.tenantHint'), {
+      page.getByText(copy('adminUi', 'impersonations.start.tenantHint'), {
         exact: true,
       }),
     ).toBeVisible()
@@ -397,19 +397,19 @@ test('impersonation-for-support: the operator acts as a member and the record an
 
   await test.step('step 2: the target organization and account are chosen, and the start is submitted', async () => {
     // The start form takes the target's account identifier, so the operator
-    // looks it up the way the console exposes it: the accounts page's own
+    // looks it up the way the admin exposes it: the accounts page's own
     // rows. The operator's identifier is read from the same list for the
     // audit filter later.
-    await consoleNav(page)
+    await adminNav(page)
       .getByRole('link', {
-        name: copy('consoleUi', 'accounts.title'),
+        name: copy('adminUi', 'accounts.title'),
         exact: true,
       })
       .click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'accounts.title'),
+        name: copy('adminUi', 'accounts.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -417,16 +417,16 @@ test('impersonation-for-support: the operator acts as a member and the record an
     targetAccountId = await accountIdOf(page, TARGET.displayName)
     expect(targetAccountId).not.toBe(operatorAccountId)
 
-    await consoleNav(page)
+    await adminNav(page)
       .getByRole('link', {
-        name: copy('consoleUi', 'impersonations.title'),
+        name: copy('adminUi', 'impersonations.title'),
         exact: true,
       })
       .click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'impersonations.title'),
+        name: copy('adminUi', 'impersonations.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -452,7 +452,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
     await startButton(page).click()
 
     const restricted = page.getByText(
-      copy('consoleUi', 'errors.authn.impersonation_restricted'),
+      copy('adminUi', 'errors.authn.impersonation_restricted'),
       { exact: true },
     )
     const dialog = stepUpDialog(page)
@@ -521,7 +521,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
     // afresh below.
     await dialog
       .getByRole('button', {
-        name: copy('consoleUi', 'common.cancel'),
+        name: copy('adminUi', 'common.cancel'),
         exact: true,
       })
       .click()
@@ -529,7 +529,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
   })
 
   await test.step('step 3: the start is refused for freshness and the step-up replays it after SMS', async () => {
-    // The console hands the refused start to its elevation gate. The flow
+    // The admin hands the refused start to its elevation gate. The flow
     // offers a factor kind the signing-in session has not proved: the operator
     // authenticated with the authenticator, so the SMS factor is the one on
     // offer.
@@ -550,7 +550,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
     const beforeSmsCode = server.log.mark()
     await dialog
       .getByRole('button', {
-        name: copy('consoleUi', 'stepUp.factorKind.sms'),
+        name: copy('adminUi', 'stepUp.factorKind.sms'),
         exact: true,
       })
       .click()
@@ -573,11 +573,11 @@ test('impersonation-for-support: the operator acts as a member and the record an
     )
     await codeField.fill(code)
     const verify = dialog.getByRole('button', {
-      name: copy('consoleUi', 'stepUp.submit'),
+      name: copy('adminUi', 'stepUp.submit'),
       exact: true,
     })
     await verify.click()
-    // The code answer settles the challenge step; the console's step-up
+    // The code answer settles the challenge step; the admin's step-up
     // driver answers the flow's ready confirmation on its own, so the dialog
     // closes without a second click on the same control.
     await expect(codeField).toHaveCount(0)
@@ -639,17 +639,17 @@ test('impersonation-for-support: the operator acts as a member and the record an
     ).toBeVisible()
     await page.keyboard.press('Escape')
 
-    // The console entry, its home card and the tenant switcher are gone.
-    await expect(consoleEntry(page)).toHaveCount(0)
-    await expect(consoleCard(page)).toHaveCount(0)
+    // The admin entry, its home card and the tenant switcher are gone.
+    await expect(adminEntry(page)).toHaveCount(0)
+    await expect(adminCard(page)).toHaveCount(0)
     await expect(
       page
         .getByRole('banner')
         .getByRole('button', { name: TENANT, exact: true }),
     ).toHaveCount(0)
 
-    // A console path entered by a full document load is silently brought back
-    // to the tenant home: the console area is decided by the effective
+    // A admin path entered by a full document load is silently brought back
+    // to the tenant home: the admin area is decided by the effective
     // account's platform permission set, and a target never holds one. The
     // banner remains the operator's explanation. The load also
     // keeps the grant's tenant named -- the host reads the impersonated
@@ -657,12 +657,12 @@ test('impersonation-for-support: the operator acts as a member and the record an
     // so the tenant-scoped surfaces the next steps read keep working across a
     // reload.
     await page.goto(
-      new URL('/console/impersonations?tenant=acme', page.url()).toString(),
+      new URL('/admin/impersonations?tenant=acme', page.url()).toString(),
     )
     await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
     expect(new URL(page.url()).pathname).toBe('/')
     await expect(banner(page)).toBeVisible()
-    await expect(consoleNav(page)).toHaveCount(0)
+    await expect(adminNav(page)).toHaveCount(0)
   })
 
   await test.step('step 5: the notification inbox opens under the impersonated identity', async () => {
@@ -750,7 +750,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
     ).toBeVisible()
 
     // The header indicator goes, the account menu names the operator again,
-    // and the console entry and the tenant switcher come back.
+    // and the admin entry and the tenant switcher come back.
     await expect(
       page.getByRole('banner').getByText(
         copy('authUi', 'impersonation.impersonating'),
@@ -761,7 +761,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
       page.getByTestId('account-entry-trigger'),
       OPERATOR.displayName,
     )
-    await expect(consoleEntry(page)).toBeVisible({ timeout: 10_000 })
+    await expect(adminEntry(page)).toBeVisible({ timeout: 10_000 })
     // The switcher returns over the tenant the operator's own membership
     // list settles (the system tenant); the grant's tenant was never the
     // operator's own.
@@ -781,18 +781,18 @@ test('impersonation-for-support: the operator acts as a member and the record an
   })
 
   await test.step('step 7: the impersonation record and the audit trail carry the start and the end', async () => {
-    await consoleEntry(page).click()
-    await expect(consoleNav(page)).toBeVisible()
-    await consoleNav(page)
+    await adminEntry(page).click()
+    await expect(adminNav(page)).toBeVisible()
+    await adminNav(page)
       .getByRole('link', {
-        name: copy('consoleUi', 'impersonations.title'),
+        name: copy('adminUi', 'impersonations.title'),
         exact: true,
       })
       .click()
 
     // The current section is again a settled "none", not the finished grant.
     await expect(
-      page.getByText(copy('consoleUi', 'impersonations.current.none'), {
+      page.getByText(copy('adminUi', 'impersonations.current.none'), {
         exact: true,
       }),
     ).toBeVisible()
@@ -815,8 +815,8 @@ test('impersonation-for-support: the operator acts as a member and the record an
     await expect(record.getByText(TENANT, { exact: true })).toBeVisible()
     await expect(
       record.getByText(
-        copy('consoleUi', 'impersonations.ended', {
-          reason: copy('consoleUi', 'impersonations.endReason.explicit'),
+        copy('adminUi', 'impersonations.ended', {
+          reason: copy('adminUi', 'impersonations.endReason.explicit'),
         }),
         { exact: true },
       ),
@@ -826,22 +826,22 @@ test('impersonation-for-support: the operator acts as a member and the record an
     await expect(cells.nth(4)).toHaveText(/\d/u)
     await expect(
       record.getByRole('button', {
-        name: copy('consoleUi', 'impersonations.terminate'),
+        name: copy('adminUi', 'impersonations.terminate'),
         exact: true,
       }),
     ).toBeDisabled()
 
     // The audit trail: the end row is found by action, outcome and actor.
-    await consoleNav(page)
+    await adminNav(page)
       .getByRole('link', {
-        name: copy('consoleUi', 'audit.title'),
+        name: copy('adminUi', 'audit.title'),
         exact: true,
       })
       .click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'audit.title'),
+        name: copy('adminUi', 'audit.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -849,19 +849,19 @@ test('impersonation-for-support: the operator acts as a member and the record an
     const auditTable = page.getByRole('table')
     await expect(auditTable.locator('tbody tr').first()).toBeVisible()
     await page
-      .getByLabel(copy('consoleUi', 'audit.filters.action'), { exact: true })
+      .getByLabel(copy('adminUi', 'audit.filters.action'), { exact: true })
       .fill(ACTION_END)
     await page
-      .getByLabel(copy('consoleUi', 'audit.filters.outcome'), { exact: true })
+      .getByLabel(copy('adminUi', 'audit.filters.outcome'), { exact: true })
       .fill('success')
     await page
-      .getByLabel(copy('consoleUi', 'audit.filters.actor'), { exact: true })
+      .getByLabel(copy('adminUi', 'audit.filters.actor'), { exact: true })
       .fill(operatorAccountId)
     // Typing alone applies nothing: the unfiltered list still holds records.
     expect(await auditTable.locator('tbody tr').count()).toBeGreaterThan(1)
     await page
       .getByRole('button', {
-        name: copy('consoleUi', 'audit.filters.apply'),
+        name: copy('adminUi', 'audit.filters.apply'),
         exact: true,
       })
       .click()
@@ -873,7 +873,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'auditDetail.title'),
+        name: copy('adminUi', 'auditDetail.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -881,20 +881,20 @@ test('impersonation-for-support: the operator acts as a member and the record an
     // The end row names the operator as the actor, the target account as the
     // object, the grant's tenant, and carries the session in its detail.
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.action')),
+      fieldValue(page, copy('adminUi', 'auditDetail.field.action')),
     ).toHaveText(ACTION_END)
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.outcome')),
+      fieldValue(page, copy('adminUi', 'auditDetail.field.outcome')),
     ).toHaveText('success')
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.actor')),
+      fieldValue(page, copy('adminUi', 'auditDetail.field.actor')),
     ).toHaveText(OPERATOR.displayName)
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.object')),
+      fieldValue(page, copy('adminUi', 'auditDetail.field.object')),
     ).toHaveText(targetAccountId)
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.purpose')),
-    ).toHaveText(copy('consoleUi', 'common.emptyValue'))
+      fieldValue(page, copy('adminUi', 'auditDetail.field.purpose')),
+    ).toHaveText(copy('adminUi', 'common.emptyValue'))
 
     // The detail section carries the impersonation's own keys: the grant, the
     // tenant it was confined to, and the session it ran on.
@@ -911,29 +911,29 @@ test('impersonation-for-support: the operator acts as a member and the record an
     // outcome, by the same actor.
     await page
       .getByRole('link', {
-        name: copy('consoleUi', 'auditDetail.back'),
+        name: copy('adminUi', 'auditDetail.back'),
         exact: true,
       })
       .click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'audit.title'),
+        name: copy('adminUi', 'audit.title'),
         exact: true,
       }),
     ).toBeVisible()
     await page
-      .getByLabel(copy('consoleUi', 'audit.filters.action'), { exact: true })
+      .getByLabel(copy('adminUi', 'audit.filters.action'), { exact: true })
       .fill(ACTION_START)
     await page
-      .getByLabel(copy('consoleUi', 'audit.filters.outcome'), { exact: true })
+      .getByLabel(copy('adminUi', 'audit.filters.outcome'), { exact: true })
       .fill('granted')
     await page
-      .getByLabel(copy('consoleUi', 'audit.filters.actor'), { exact: true })
+      .getByLabel(copy('adminUi', 'audit.filters.actor'), { exact: true })
       .fill(operatorAccountId)
     await page
       .getByRole('button', {
-        name: copy('consoleUi', 'audit.filters.apply'),
+        name: copy('adminUi', 'audit.filters.apply'),
         exact: true,
       })
       .click()
@@ -957,18 +957,18 @@ test('impersonation-for-support: the operator acts as a member and the record an
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'auditDetail.title'),
+        name: copy('adminUi', 'auditDetail.title'),
         exact: true,
       }),
     ).toBeVisible()
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.action')),
+      fieldValue(page, copy('adminUi', 'auditDetail.field.action')),
     ).toHaveText(ACTION_START)
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.outcome')),
+      fieldValue(page, copy('adminUi', 'auditDetail.field.outcome')),
     ).toHaveText('granted')
     await expect(
-      fieldValue(page, copy('consoleUi', 'auditDetail.field.purpose')),
+      fieldValue(page, copy('adminUi', 'auditDetail.field.purpose')),
     ).toHaveText(REASON)
     await expect(fieldValue(page, 'grant_id')).toHaveText(endGrantId)
     await expect(term(page, 'ttl_seconds')).toBeVisible()

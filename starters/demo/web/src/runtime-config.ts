@@ -31,8 +31,8 @@ export const RUNTIME_CONFIG_FILE = 'runtime-config.json'
  * The absolute URL the config is read from: the file at the deployment root,
  * under the entry document's own origin. It is resolved against the document
  * base with a root-absolute path, NOT left for fetch to resolve against the
- * current URL: a deep link such as /console/tenants would otherwise shift the
- * read to /console/runtime-config.json. The read still never needs an
+ * current URL: a deep link such as /admin/tenants would otherwise shift the
+ * read to /admin/runtime-config.json. The read still never needs an
  * already-resolved API origin (the whole point of reading a file rather than
  * asking the API), so the same-origin and cross-origin shapes both hold.
  */

@@ -35,8 +35,8 @@
  * binary's seed command. Every seeded tenant names at least one administrator,
  * and an administrator is a member of the tenant it administers, so globex
  * names the platform operator -- the account the seed already carries and the
- * one that drives the console. The employee's memberships themselves are
- * product writes: the spec adds them through the console's member page, never
+ * one that drives the admin. The employee's memberships themselves are
+ * product writes: the spec adds them through the admin's member page, never
  * through this file.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -137,9 +137,9 @@ export interface ReviewConfigInput {
    * journey alone. The provider and the DNS stub the journey needs come from
    * `ssoProvider`; this input contributes the account and the administrator
    * binding, never a database row written around the product. The tenant's SSO
-   * requirement is not seeded: the journey enables it through the console's
-   * settings surface once its administrator's console session is established,
-   * because the console's own permission read is judged by the admission layer
+   * requirement is not seeded: the journey enables it through the admin's
+   * settings surface once its administrator's admin session is established,
+   * because the admin's own permission read is judged by the admission layer
    * and a requirement already on would keep the page from being opened.
    */
   readonly tenantSSO?: boolean
@@ -249,7 +249,7 @@ export const tenantSSOTenant = 'globex'
  * the local-first-factor session it starts from. The display name deliberately
  * differs from the provider's `name` claim, so an account opened from the
  * provider's claims would show the claim and fail the same-account assertion.
- * The account is also a platform administrator because this host's console --
+ * The account is also a platform administrator because this host's admin --
  * where the invitations-and-members page lives -- is platform-staff-only; the
  * tenant-administrator binding in `tenantSSOTenant` is what the journey's
  * invitations exercise.
@@ -300,7 +300,7 @@ function seedInviteeAccount(): string {
 
 /**
  * The tenant-SSO administrator's `seed.accounts` entry. It joins the operator's
- * list, and it is marked `platform-admin` because the console is platform-staff
+ * list, and it is marked `platform-admin` because the admin is platform-staff
  * only; the tenant-admin binding comes from the tenant entry below.
  */
 function seedTenantSSOAdminAccount(): string {
@@ -469,7 +469,7 @@ export async function writeReviewConfig(
     // start state: the seed registers it with the platform operator as its
     // administrator, exactly as it does for the template's own tenant. The
     // employee's membership in either organization is written through the
-    // console by the spec, so nothing here manufactures the employee's
+    // admin by the spec, so nothing here manufactures the employee's
     // membership.
     //
     // The tenant-SSO journey's second tenant has a different shape: its
@@ -477,7 +477,7 @@ export async function writeReviewConfig(
     // surface to register the provider, and the enterprise fixture's own user,
     // whom the provider's pre-provisioned match lands on, so the session keeps
     // the same account and administrator binding across the re-login. The
-    // console's settings surface switches the tenant's SSO requirement on once
+    // admin's settings surface switches the tenant's SSO requirement on once
     // the administrator's session is established; the seed writes neither
     // layer's row. The provider and invitation routes are tenant-resolved on
     // the API endpoint, and the admission layer judges a request in the
@@ -591,7 +591,7 @@ export async function writeReviewConfig(
   // outside acme: the requirement is a target inside the tenant and an initiator
   // who is not a member and holds no permission there. Every other server names
   // the operator acme's second administrator instead, which is the tenant-domain
-  // grant their tenant-addressed console pages decide on. An administrator is a
+  // grant their tenant-addressed admin pages decide on. An administrator is a
   // member of the tenant it administers; the template keeps its own single
   // administrator, the impersonation target.
   if (input.seedImpersonation !== true) {

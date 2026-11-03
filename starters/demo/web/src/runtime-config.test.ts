@@ -148,10 +148,10 @@ describe('loadRuntimeConfig', () => {
   })
 
   it('reads the file at the root even under a deep-link path', async () => {
-    // A deep link such as /console/tenants must not shift the read under
+    // A deep link such as /admin/tenants must not shift the read under
     // its own directory: a bare relative fetch would resolve to
-    // /console/runtime-config.json here and miss the file.
-    window.history.replaceState({}, '', '/console/tenants')
+    // /admin/runtime-config.json here and miss the file.
+    window.history.replaceState({}, '', '/admin/tenants')
     const fetchMock = stubFetch({ ok: true, json: async () => ({}) })
 
     await loadRuntimeConfig()

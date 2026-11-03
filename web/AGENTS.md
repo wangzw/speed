@@ -75,11 +75,11 @@ this file adds what is specific to the npm side.
 ## Cross-package duplication kept in lockstep
 
 The flow-step renderer (`src/internal/flow-step.*`) exists once in each of
-`auth-ui`, `account-ui` and `console-ui`. The copies are deliberate -- the
+`auth-ui`, `account-ui` and `admin-ui`. The copies are deliberate -- the
 renderer owns UI and each package owns its own step vocabulary -- and they
 carry a sync obligation: a change to how a step renders lands in all three
 copies in the same change. A source-level parity suite in
-`packages/console-ui` (`src/internal/flow-step-parity.test.ts`) reads the
+`packages/admin-ui` (`src/internal/flow-step-parity.test.ts`) reads the
 three files and fails when they disagree on the rendered step kinds, the
 answer properties they report, the render primitives they use, or the
 WebAuthn seam they drive, naming the copy that drifted. The same suite
@@ -134,24 +134,24 @@ in the rule's `WRITE_FEEDBACK_REGION_EXEMPTIONS`
 (`web/eslint-rules/no-double-feedback-region.js`), each entry carrying the
 reason the regions are separate control groups:
 
-- `packages/console-ui/src/AccountsPage.tsx` — `AccountsPage`: the list
+- `packages/admin-ui/src/AccountsPage.tsx` — `AccountsPage`: the list
   result and the detail panel's action row, sessions and identifiers
   sections.
-- `packages/console-ui/src/AccountsPage.tsx` — `AccountDetailWrites`: six
+- `packages/admin-ui/src/AccountsPage.tsx` — `AccountDetailWrites`: six
   rows (status, MFA requirement, profile patch, temporary password,
   identifier add, secret create), each with its own group.
-- `packages/console-ui/src/PermissionsPage.tsx` — `PermissionsPage`: roles,
+- `packages/admin-ui/src/PermissionsPage.tsx` — `PermissionsPage`: roles,
   grants, bindings and lookup sections.
-- `packages/console-ui/src/SmsPage.tsx` — `SmsPage`: register form, offer
+- `packages/admin-ui/src/SmsPage.tsx` — `SmsPage`: register form, offer
   form and templates table.
-- `packages/console-ui/src/SsoPage.tsx` — `SsoPage`: providers list,
+- `packages/admin-ui/src/SsoPage.tsx` — `SsoPage`: providers list,
   provider write form and domains section.
 - `packages/account-ui/src/PreferencesSection.tsx` — `PreferencesSection`:
   language row and time-zone row.
-- `packages/console-ui/src/ImpersonationsPage.tsx` —
+- `packages/admin-ui/src/ImpersonationsPage.tsx` —
   `ImpersonationsPage`: start form and the records table with its row
   actions.
-- `packages/console-ui/src/InvitationsPage.tsx` — `InvitationsPage`:
+- `packages/admin-ui/src/InvitationsPage.tsx` — `InvitationsPage`:
   invitations table and members table.
 
 Adding a multi-region component means adding an entry with a reason; the

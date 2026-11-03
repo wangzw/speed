@@ -20,9 +20,9 @@
  *  - Browser side: one sign-in, driven with clicks and keys only. An anonymous
  *    viewer opens the protected account path and meets the sign-in surface; the
  *    seeded operator signs in with the username and password the seed wrote and
- *    the same path resumes with its content. The header console entry and the
- *    home console card appear; the account page shows the profile, the sign-in
- *    identifier and the standing, non-dismissible email notice; the console
+ *    the same path resumes with its content. The header admin entry and the
+ *    home admin card appear; the account page shows the profile, the sign-in
+ *    identifier and the standing, non-dismissible email notice; the admin
  *    shows its grouped navigation and the roster-derived overview; and a
  *    management write from the still-unproved operator is refused with the
  *    guidance to verify the address on the account page.
@@ -44,7 +44,7 @@
  *    local harness.
  *  - Seed's ordering, idempotency and operator-overwrite protections
  *    (REQ-deployment-009, 010, 011) need a second seed run and a settings write
- *    through the console. This operator is unverified, so its write is refused
+ *    through the admin. This operator is unverified, so its write is refused
  *    before any value changes; the restart half of the journey is not driven.
  *  - Seed's alternate failure paths (REQ-deployment-013, 014) are not on this
  *    journey's main line.
@@ -78,8 +78,8 @@
  *    identifier. The hash-only credential form is not driven.
  *  - REQ-deployment-008 is claimed for the one active tenant the seed registers:
  *    the overview's roster-derived total and active counts report it.
- *  - REQ-platform-admin-001 is claimed for the operator's side: the console
- *    entry and the home console card appear and name the same target. The
+ *  - REQ-platform-admin-001 is claimed for the operator's side: the admin
+ *    entry and the home admin card appear and name the same target. The
  *    ordinary-member and impersonating-session cases are not driven.
  *  - REQ-platform-admin-006 is claimed narrowly: the identity group renders as
  *    a disclosure control and the tenants page is reachable from it. The
@@ -196,28 +196,28 @@ function signInHeading(page: Page): Locator {
   })
 }
 
-/** The header entry that opens the console. */
-function consoleEntry(page: Page): Locator {
+/** The header entry that opens the admin. */
+function adminEntry(page: Page): Locator {
   return page
     .getByRole('banner')
-    .getByRole('link', { name: copy('demo', 'nav.console'), exact: true })
+    .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
 }
 
-/** The home page's console card, as the link that carries it. */
-function consoleCard(page: Page): Locator {
+/** The home page's admin card, as the link that carries it. */
+function adminCard(page: Page): Locator {
   return page
     .getByRole('heading', {
       level: 2,
-      name: copy('demo', 'home.cards.console.title'),
+      name: copy('demo', 'home.cards.admin.title'),
       exact: true,
     })
     .locator('xpath=ancestor::a[1]')
 }
 
-/** The console's navigation landmark (the platform navigation). */
-function consoleNav(page: Page): Locator {
+/** The admin's navigation landmark (the platform navigation). */
+function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'shell.navLabel'),
+    name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
 }
@@ -225,7 +225,7 @@ function consoleNav(page: Page): Locator {
 /** The settings page's namespace navigation. */
 function namespaceNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'settings.nav.label'),
+    name: copy('adminUi', 'settings.nav.label'),
     exact: true,
   })
 }
@@ -251,7 +251,7 @@ function valueField(page: Page): Locator {
 
 /**
  * One overview KPI's value. The label is one paragraph and the count the next
- * sibling, and both sit inside the console's main landmark; scoping there keeps
+ * sibling, and both sit inside the admin's main landmark; scoping there keeps
  * the navigation's own "Tenants" group out of the answer.
  */
 function kpiValue(page: Page, label: string): Locator {
@@ -369,12 +369,12 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
       }),
     ).toBeVisible()
 
-    // The sign-in surface is not the console: the console's navigation is
+    // The sign-in surface is not the admin: the admin's navigation is
     // absent while the viewer is anonymous.
-    await expect(consoleNav(page)).toHaveCount(0)
+    await expect(adminNav(page)).toHaveCount(0)
   })
 
-  await test.step('step 7: the seeded operator signs in, the path resumes, and the console entries appear', async () => {
+  await test.step('step 7: the seeded operator signs in, the path resumes, and the admin entries appear', async () => {
     const identifier = page.getByRole('textbox', {
       name: copy('authUi', 'passwordSignIn.identifierLabel'),
       exact: true,
@@ -404,7 +404,7 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     await expandAccountRows(page)
     await expect(profileHeading(page)).toBeVisible()
 
-    // The tenant home carries both console entries, and they name one target.
+    // The tenant home carries both admin entries, and they name one target.
     await page
       .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
       .click()
@@ -415,8 +415,8 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
         exact: true,
       }),
     ).toBeVisible()
-    const entry = consoleEntry(page)
-    const card = consoleCard(page)
+    const entry = adminEntry(page)
+    const card = adminCard(page)
     await expect(entry).toBeVisible()
     await expect(card).toBeVisible()
     const entryHref = await entry.getAttribute('href')
@@ -489,19 +489,19 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
         }),
     ).toHaveCount(0)
 
-    // Enter the console and attempt a settings write.
-    await consoleEntry(page).click()
-    await expect(consoleNav(page)).toBeVisible()
-    await consoleNav(page)
+    // Enter the admin and attempt a settings write.
+    await adminEntry(page).click()
+    await expect(adminNav(page)).toBeVisible()
+    await adminNav(page)
       .getByRole('link', {
-        name: copy('consoleUi', 'settings.title'),
+        name: copy('adminUi', 'settings.title'),
         exact: true,
       })
       .click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'settings.title'),
+        name: copy('adminUi', 'settings.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -513,7 +513,7 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     const row = settingRow(page)
     await expect(row.getByText(SETTING_TYPE, { exact: true })).toBeVisible()
     await expect(
-      row.getByText(copy('consoleUi', 'settings.state.default'), {
+      row.getByText(copy('adminUi', 'settings.state.default'), {
         exact: true,
       }),
     ).toBeVisible()
@@ -521,7 +521,7 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     await valueField(page).fill(NEW_VALUE)
     await page
       .getByRole('button', {
-        name: copy('consoleUi', 'settings.saveBar.save'),
+        name: copy('adminUi', 'settings.saveBar.save'),
         exact: true,
       })
       .click()
@@ -529,23 +529,23 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     // The refusal renders the code's own text -- the guidance to verify the
     // address on the account page -- and the draft stays in the field. The
     // item did not move off the declaration.
-    const refusal = copy('consoleUi', 'errors.authn.contact_required')
+    const refusal = copy('adminUi', 'errors.authn.contact_required')
     await expect(page.getByRole('alert').filter({ hasText: refusal }))
       .toBeVisible()
     await expect(valueField(page)).toHaveAccessibleDescription(refusal)
     await expect(valueField(page)).toHaveAttribute('aria-invalid', 'true')
     await expect(valueField(page)).toHaveValue(NEW_VALUE)
     await expect(
-      row.getByText(copy('consoleUi', 'settings.state.default'), {
+      row.getByText(copy('adminUi', 'settings.state.default'), {
         exact: true,
       }),
     ).toBeVisible()
   })
 
-  await test.step('step 9: the console shows its grouped navigation and the roster-derived overview', async () => {
+  await test.step('step 9: the admin shows its grouped navigation and the roster-derived overview', async () => {
     // Back to the app, then in through the header entry the journey names.
     await page
-      .getByRole('link', { name: copy('demo', 'console.backToApp'), exact: true })
+      .getByRole('link', { name: copy('demo', 'admin.backToApp'), exact: true })
       .click()
     await expect(
       page.getByRole('heading', {
@@ -554,28 +554,28 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
         exact: true,
       }),
     ).toBeVisible()
-    await consoleEntry(page).click()
+    await adminEntry(page).click()
 
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'dashboard.title'),
+        name: copy('adminUi', 'dashboard.title'),
         exact: true,
       }),
     ).toBeVisible()
 
     // The navigation is grouped: the multi-entry identity group renders as a
     // disclosure control, and the served pages are reachable from it.
-    const nav = consoleNav(page)
+    const nav = adminNav(page)
     await expect(
       nav.getByRole('button', {
-        name: copy('consoleUi', 'nav.groups.identity'),
+        name: copy('adminUi', 'nav.groups.identity'),
         exact: true,
       }),
     ).toBeVisible()
     await expect(
       nav.getByRole('link', {
-        name: copy('consoleUi', 'tenants.title'),
+        name: copy('adminUi', 'tenants.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -585,16 +585,16 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     // seeded operator its own space, so two active tenants stand in the roster
     // and nothing is disabled or deleted.
     await expect(
-      kpiValue(page, copy('consoleUi', 'dashboard.kpi.tenants')),
+      kpiValue(page, copy('adminUi', 'dashboard.kpi.tenants')),
     ).toHaveText('2')
     await expect(
-      kpiValue(page, copy('consoleUi', 'dashboard.kpi.active')),
+      kpiValue(page, copy('adminUi', 'dashboard.kpi.active')),
     ).toHaveText('2')
     await expect(
-      kpiValue(page, copy('consoleUi', 'dashboard.kpi.disabled')),
+      kpiValue(page, copy('adminUi', 'dashboard.kpi.disabled')),
     ).toHaveText('0')
     await expect(
-      kpiValue(page, copy('consoleUi', 'dashboard.kpi.deleted')),
+      kpiValue(page, copy('adminUi', 'dashboard.kpi.deleted')),
     ).toHaveText('0')
   })
 

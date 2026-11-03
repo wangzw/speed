@@ -12,7 +12,7 @@
  *
  * The pre-provisioned journey's seven steps, all through the rendered product:
  *
- *   1. The operator opens the console's SSO page and selects the target tenant.
+ *   1. The operator opens the admin's SSO page and selects the target tenant.
  *   2. The operator registers a provider: protocol OIDC, a name, pre-provisioned
  *      provisioning, enabled, the provider's issuer/client/claims configuration
  *      and its client secret. The list shows the provider under that tenant, the
@@ -22,7 +22,7 @@
  *      publish, each with a copy control. The claimed domain is listed as
  *      unverified, turns verified after its record is published, and then
  *      takes part in discovery.
- *   4. The operator creates the employee's account in the console (a display
+ *   4. The operator creates the employee's account in the admin (a display
  *      name, the username the account is created with, and the work address as
  *      its login identifier, asserted by the administrator) and adds it to the
  *      target tenant as a member.
@@ -40,7 +40,7 @@
  *   - The operator's own email address is proved through the review mail
  *     carrier's verification code, which fixtures/log.ts reads from the process
  *     log (the sanctioned verification-code read). The journey's precondition is
- *     an operator whose address is proved, and the console's human writes are
+ *     an operator whose address is proved, and the admin's human writes are
  *     gated on it.
  *   - The DNS publication is a FIXTURE ACTION. The product renders the
  *     record name and the value to publish; the spec copies that value at
@@ -54,7 +54,7 @@
  *
  * The employee already belongs to the template's seeded organization (`acme`);
  * the target tenant is the second organization the enterprise fixtures seed
- * (`globex`). Both memberships are written through the console's member page in
+ * (`globex`). Both memberships are written through the admin's member page in
  * step 4. Without a second membership the switcher would hold only the target
  * tenant, and step 7's switch could not be driven at all.
  *
@@ -173,30 +173,30 @@ function verificationSection(page: Page): Locator {
   })
 }
 
-/** The header's console entry (a link, while the operator may reach it). */
-function consoleEntry(page: Page): Locator {
+/** The header's admin entry (a link, while the operator may reach it). */
+function adminEntry(page: Page): Locator {
   return page
     .getByRole('banner')
-    .getByRole('link', { name: copy('demo', 'nav.console'), exact: true })
+    .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
 }
 
-/** The console's navigation landmark. */
-function consoleNav(page: Page): Locator {
+/** The admin's navigation landmark. */
+function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'shell.navLabel'),
+    name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
 }
 
-/** One console navigation link by its page title. */
-function consoleLink(page: Page, label: string): Locator {
-  return consoleNav(page).getByRole('link', { name: label, exact: true })
+/** One admin navigation link by its page title. */
+function adminLink(page: Page, label: string): Locator {
+  return adminNav(page).getByRole('link', { name: label, exact: true })
 }
 
-/** The tenant selector of a tenant-addressed console page. */
+/** The tenant selector of a tenant-addressed admin page. */
 function tenantSelector(page: Page): Locator {
   return page.getByRole('combobox', {
-    name: copy('consoleUi', 'common.tenant'),
+    name: copy('adminUi', 'common.tenant'),
     exact: true,
   })
 }
@@ -204,7 +204,7 @@ function tenantSelector(page: Page): Locator {
 /** The SSO page's provider write section. */
 function providerSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'sso.provider.title'),
+    name: copy('adminUi', 'sso.provider.title'),
     exact: true,
   })
 }
@@ -212,7 +212,7 @@ function providerSection(page: Page): Locator {
 /** The SSO page's domain section. */
 function domainSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'sso.domains.title'),
+    name: copy('adminUi', 'sso.domains.title'),
     exact: true,
   })
 }
@@ -228,7 +228,7 @@ function providerRow(page: Page, name: string): Locator {
 /** The invitations page's member section. */
 function memberSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'members.title'),
+    name: copy('adminUi', 'members.title'),
     exact: true,
   })
 }
@@ -295,7 +295,7 @@ function employeeOption(page: Page): Locator {
 
 /**
  * The shared precondition of both onboarding journeys: sign the operator in
- * and prove the account's own address, which the console's human writes are
+ * and prove the account's own address, which the admin's human writes are
  * gated on.
  */
 async function proveOperatorAddress({
@@ -355,7 +355,7 @@ async function proveOperatorAddress({
 }
 
 /**
- * Register one enabled OIDC provider through the console's provider form,
+ * Register one enabled OIDC provider through the admin's provider form,
  * naming the local fixture's issuer, client and claim mapping. The provider
  * belongs to the tenant the page is switched to.
  */
@@ -367,19 +367,19 @@ async function registerOIDCProvider(
 ): Promise<void> {
   const form = providerSection(page)
   const protocol = form.getByLabel(
-    copy('consoleUi', 'sso.provider.protocolLabel'),
+    copy('adminUi', 'sso.provider.protocolLabel'),
     { exact: true },
   )
   const nameField = form.getByLabel(
-    copy('consoleUi', 'sso.provider.nameLabel'),
+    copy('adminUi', 'sso.provider.nameLabel'),
     { exact: true },
   )
   const provisioningField = form.getByLabel(
-    copy('consoleUi', 'sso.provider.provisioningLabel'),
+    copy('adminUi', 'sso.provider.provisioningLabel'),
     { exact: true },
   )
   const create = form.getByRole('button', {
-    name: copy('consoleUi', 'sso.provider.createSubmit'),
+    name: copy('adminUi', 'sso.provider.createSubmit'),
     exact: true,
   })
 
@@ -392,13 +392,13 @@ async function registerOIDCProvider(
   // states it.
   await form
     .getByRole('combobox', {
-      name: copy('consoleUi', 'sso.provider.enabledLabel'),
+      name: copy('adminUi', 'sso.provider.enabledLabel'),
       exact: true,
     })
     .click()
   await page
     .getByRole('option', {
-      name: copy('consoleUi', 'sso.provider.tri.true'),
+      name: copy('adminUi', 'sso.provider.tri.true'),
       exact: true,
     })
     .click()
@@ -406,7 +406,7 @@ async function registerOIDCProvider(
   // The provider configuration names the local issuer, its client identifier
   // and the claim mapping that finds the user's address and display name.
   await form
-    .getByLabel(copy('consoleUi', 'sso.provider.configLabel'), {
+    .getByLabel(copy('adminUi', 'sso.provider.configLabel'), {
       exact: true,
     })
     .fill(
@@ -417,7 +417,7 @@ async function registerOIDCProvider(
       }),
     )
   await form
-    .getByLabel(copy('consoleUi', 'sso.provider.clientSecretLabel'), {
+    .getByLabel(copy('adminUi', 'sso.provider.clientSecretLabel'), {
       exact: true,
     })
     .fill(enterpriseIdentityProviderClient.secret)
@@ -426,7 +426,7 @@ async function registerOIDCProvider(
   // The write confirms the created provider by name, the form returns to its
   // initial state, and the list carries the provider under this tenant.
   await expect(
-    page.getByText(copy('consoleUi', 'sso.provider.created', { name }), {
+    page.getByText(copy('adminUi', 'sso.provider.created', { name }), {
       exact: true,
     }),
   ).toBeVisible()
@@ -437,7 +437,7 @@ async function registerOIDCProvider(
   await expect(row.getByText(name, { exact: true })).toBeVisible()
   await expect(row.getByText('oidc', { exact: true })).toBeVisible()
   await expect(
-    row.getByText(copy('consoleUi', 'sso.enabledYes'), { exact: true }),
+    row.getByText(copy('adminUi', 'sso.enabledYes'), { exact: true }),
   ).toBeVisible()
 
   // REQ-platform-config-017: the provider belongs to the selected tenant.
@@ -446,7 +446,7 @@ async function registerOIDCProvider(
   await selectTenant(page, EXISTING_TENANT)
   await expect(
     page.getByRole('heading', {
-      name: copy('consoleUi', 'sso.empty.title'),
+      name: copy('adminUi', 'sso.empty.title'),
       exact: true,
     }),
   ).toBeVisible()
@@ -467,24 +467,24 @@ async function claimAndVerifyDomain(
   const domains = domainSection(page)
   await domains
     .getByRole('combobox', {
-      name: copy('consoleUi', 'sso.domains.providerLabel'),
+      name: copy('adminUi', 'sso.domains.providerLabel'),
       exact: true,
     })
     .click()
   await page.getByRole('option', { name: providerName, exact: true }).click()
   await domains
-    .getByLabel(copy('consoleUi', 'sso.domains.domainLabel'), { exact: true })
+    .getByLabel(copy('adminUi', 'sso.domains.domainLabel'), { exact: true })
     .fill(enterpriseIdentityProviderDomain)
   await domains
     .getByRole('button', {
-      name: copy('consoleUi', 'sso.domains.claim'),
+      name: copy('adminUi', 'sso.domains.claim'),
       exact: true,
     })
     .click()
 
   await expect(
     page.getByText(
-      copy('consoleUi', 'sso.domains.claimed', {
+      copy('adminUi', 'sso.domains.claimed', {
         domain: enterpriseIdentityProviderDomain,
         name: providerName,
       }),
@@ -497,7 +497,7 @@ async function claimAndVerifyDomain(
   // control. The panel is the page's own state, rendered outside the write
   // scope.
   const panel = page.getByRole('status').filter({
-    hasText: copy('consoleUi', 'sso.domains.claimToken'),
+    hasText: copy('adminUi', 'sso.domains.claimToken'),
   })
   await expect(panel).toBeVisible()
   for (const detailLabel of [
@@ -505,7 +505,7 @@ async function claimAndVerifyDomain(
     'sso.domains.claimRecordValue',
   ]) {
     await expect(
-      panel.getByText(copy('consoleUi', detailLabel), { exact: true }),
+      panel.getByText(copy('adminUi', detailLabel), { exact: true }),
     ).toBeVisible()
   }
   for (const copyLabel of [
@@ -515,7 +515,7 @@ async function claimAndVerifyDomain(
   ]) {
     await expect(
       panel.getByRole('button', {
-        name: copy('consoleUi', copyLabel),
+        name: copy('adminUi', copyLabel),
         exact: true,
       }),
     ).toBeVisible()
@@ -556,12 +556,12 @@ async function claimAndVerifyDomain(
     domainRow.getByText(enterpriseIdentityProviderDomain, { exact: true }),
   ).toBeVisible()
   await expect(
-    domainRow.getByText(copy('consoleUi', 'sso.domains.state.unverified'), {
+    domainRow.getByText(copy('adminUi', 'sso.domains.state.unverified'), {
       exact: true,
     }),
   ).toBeVisible()
   const verifyButton = domainRow.getByRole('button', {
-    name: copy('consoleUi', 'sso.domains.verifyAria', {
+    name: copy('adminUi', 'sso.domains.verifyAria', {
       domain: enterpriseIdentityProviderDomain,
     }),
     exact: true,
@@ -573,7 +573,7 @@ async function claimAndVerifyDomain(
   // longer unverified, and its verification action is gone.
   await expect(
     page.getByText(
-      copy('consoleUi', 'sso.domains.verified', {
+      copy('adminUi', 'sso.domains.verified', {
         domain: enterpriseIdentityProviderDomain,
         name: providerName,
       }),
@@ -581,12 +581,12 @@ async function claimAndVerifyDomain(
     ),
   ).toBeVisible()
   await expect(
-    domainRow.getByText(copy('consoleUi', 'sso.domains.state.verified'), {
+    domainRow.getByText(copy('adminUi', 'sso.domains.state.verified'), {
       exact: true,
     }),
   ).toBeVisible()
   await expect(
-    domainRow.getByText(copy('consoleUi', 'sso.domains.state.unverified'), {
+    domainRow.getByText(copy('adminUi', 'sso.domains.state.unverified'), {
       exact: true,
     }),
   ).toHaveCount(0)
@@ -596,7 +596,7 @@ async function claimAndVerifyDomain(
   // it handed over.
   await panel
     .getByRole('button', {
-      name: copy('consoleUi', 'sso.domains.claimTokenCloseAria', {
+      name: copy('adminUi', 'sso.domains.claimTokenCloseAria', {
         tenant: TARGET_TENANT,
         name: providerName,
         domain: enterpriseIdentityProviderDomain,
@@ -632,23 +632,23 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
   await test.step("precondition: the operator signs in and proves the account's own address", () =>
     proveOperatorAddress(demo))
 
-  await test.step('step 1: the operator opens the console SSO page and selects the target tenant', async () => {
+  await test.step('step 1: the operator opens the admin SSO page and selects the target tenant', async () => {
     // The account page the verification landed on is inside the tenant shell;
-    // the start page is where the console entry is read.
+    // the start page is where the admin entry is read.
     await page
       .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
       .click()
     await expect(homeHeading(page)).toBeVisible()
 
-    await expect(consoleEntry(page)).toBeVisible()
-    await consoleEntry(page).click()
-    await expect(consoleNav(page)).toBeVisible()
-    await consoleLink(page, copy('consoleUi', 'sso.title')).click()
+    await expect(adminEntry(page)).toBeVisible()
+    await adminEntry(page).click()
+    await expect(adminNav(page)).toBeVisible()
+    await adminLink(page, copy('adminUi', 'sso.title')).click()
 
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'sso.title'),
+        name: copy('adminUi', 'sso.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -657,7 +657,7 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     // provider list.
     await expect(
       page.getByRole('heading', {
-        name: copy('consoleUi', 'sso.needTenant.title'),
+        name: copy('adminUi', 'sso.needTenant.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -665,7 +665,7 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     await selectTenant(page, TARGET_TENANT)
     await expect(
       page.getByRole('heading', {
-        name: copy('consoleUi', 'sso.empty.title'),
+        name: copy('adminUi', 'sso.empty.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -678,50 +678,50 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     claimAndVerifyDomain(page, stub, PROVIDER_NAME))
 
   await test.step('step 4: the operator creates the employee account and adds it to the tenant', async () => {
-    await consoleLink(page, copy('consoleUi', 'accounts.title')).click()
+    await adminLink(page, copy('adminUi', 'accounts.title')).click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'accounts.title'),
+        name: copy('adminUi', 'accounts.title'),
         exact: true,
       }),
     ).toBeVisible()
 
     await page
       .getByRole('button', {
-        name: copy('consoleUi', 'accounts.create.title'),
+        name: copy('adminUi', 'accounts.create.title'),
         exact: true,
       })
       .click()
     const dialog = page.getByRole('dialog', {
-      name: copy('consoleUi', 'accounts.create.title'),
+      name: copy('adminUi', 'accounts.create.title'),
       exact: true,
     })
     await expect(dialog).toBeVisible()
 
     const submit = dialog.getByRole('button', {
-      name: copy('consoleUi', 'accounts.create.submit'),
+      name: copy('adminUi', 'accounts.create.submit'),
       exact: true,
     })
     // REQ-platform-admin-013: a user account needs a display name and a
     // username before it can be created; the work address is its passed
     // identifier, not a substitute for either.
     await dialog
-      .getByLabel(copy('consoleUi', 'accounts.create.displayNameLabel'), {
+      .getByLabel(copy('adminUi', 'accounts.create.displayNameLabel'), {
         exact: true,
       })
       .fill(EMPLOYEE_DISPLAY_NAME)
     await expect(submit).toBeDisabled()
 
     await dialog
-      .getByLabel(copy('consoleUi', 'accounts.create.usernameLabel'), {
+      .getByLabel(copy('adminUi', 'accounts.create.usernameLabel'), {
         exact: true,
       })
       .fill(EMPLOYEE_USERNAME)
     await expect(submit).toBeEnabled()
 
     await dialog
-      .getByLabel(copy('consoleUi', 'accounts.create.emailLabel'), {
+      .getByLabel(copy('adminUi', 'accounts.create.emailLabel'), {
         exact: true,
       })
       .fill(EMPLOYEE_EMAIL)
@@ -730,13 +730,13 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     // of ownership.
     await dialog
       .getByRole('combobox', {
-        name: copy('consoleUi', 'accounts.create.emailViaLabel'),
+        name: copy('adminUi', 'accounts.create.emailViaLabel'),
         exact: true,
       })
       .click()
     await page
       .getByRole('option', {
-        name: copy('consoleUi', 'accounts.create.via.admin'),
+        name: copy('adminUi', 'accounts.create.via.admin'),
         exact: true,
       })
       .click()
@@ -756,11 +756,11 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     ).toBeVisible()
 
     const writeMembership = async (tenant: string): Promise<void> => {
-      await consoleLink(page, copy('consoleUi', 'invitations.title')).click()
+      await adminLink(page, copy('adminUi', 'invitations.title')).click()
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'invitations.title'),
+          name: copy('adminUi', 'invitations.title'),
           exact: true,
         }),
       ).toBeVisible()
@@ -768,7 +768,7 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
 
       const members = memberSection(page)
       const account = members.getByRole('combobox', {
-        name: copy('consoleUi', 'members.write.accountLabel'),
+        name: copy('adminUi', 'members.write.accountLabel'),
         exact: true,
       })
       await account.fill(EMPLOYEE_EMAIL)
@@ -776,7 +776,7 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
       await employeeOption(page).click()
       await members
         .getByRole('button', {
-          name: copy('consoleUi', 'members.write.submit'),
+          name: copy('adminUi', 'members.write.submit'),
           exact: true,
         })
         .click()
@@ -787,7 +787,7 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
         .filter({ hasText: EMPLOYEE_DISPLAY_NAME })
       await expect(row).toHaveCount(1)
       await expect(
-        row.getByText(copy('consoleUi', 'members.activeYes'), {
+        row.getByText(copy('adminUi', 'members.activeYes'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -804,13 +804,13 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
   })
 
   await test.step('step 5: the employee uses the enterprise entry and sees the organization for the address', async () => {
-    // The operator leaves the console for the tenant area first: signing out
-    // from the console lands on the plain sign-in surface, while the tenant
+    // The operator leaves the admin for the tenant area first: signing out
+    // from the admin lands on the plain sign-in surface, while the tenant
     // frame's session-ended surface is what the account helper waits for.
     await page
       .getByRole('banner')
       .getByRole('link', {
-        name: copy('demo', 'console.backToApp'),
+        name: copy('demo', 'admin.backToApp'),
         exact: true,
       })
       .click()
@@ -946,7 +946,7 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
  * The employee has no prepared account, so the first login cannot match one.
  * The flow parks at the username step before any account exists, the answer
  * opens the account with that username, and the account joins the tenant the
- * provider serves. Nothing seeds the account or its membership; the console
+ * provider serves. Nothing seeds the account or its membership; the admin
  * writes only the provider and its domain, and the sign-in is the only thing
  * that creates the account.
  */
@@ -970,20 +970,20 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
   await test.step("precondition: the operator signs in and proves the account's own address", () =>
     proveOperatorAddress(demo))
 
-  await test.step('step 1: the operator opens the console SSO page and selects the target tenant', async () => {
+  await test.step('step 1: the operator opens the admin SSO page and selects the target tenant', async () => {
     await page
       .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
       .click()
     await expect(homeHeading(page)).toBeVisible()
 
-    await expect(consoleEntry(page)).toBeVisible()
-    await consoleEntry(page).click()
-    await expect(consoleNav(page)).toBeVisible()
-    await consoleLink(page, copy('consoleUi', 'sso.title')).click()
+    await expect(adminEntry(page)).toBeVisible()
+    await adminEntry(page).click()
+    await expect(adminNav(page)).toBeVisible()
+    await adminLink(page, copy('adminUi', 'sso.title')).click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'sso.title'),
+        name: copy('adminUi', 'sso.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -991,7 +991,7 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
     await selectTenant(page, TARGET_TENANT)
     await expect(
       page.getByRole('heading', {
-        name: copy('consoleUi', 'sso.empty.title'),
+        name: copy('adminUi', 'sso.empty.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -1004,12 +1004,12 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
     claimAndVerifyDomain(page, stub, JIT_PROVIDER_NAME))
 
   await test.step('step 4: the employee signs in with the work email and is asked for a username', async () => {
-    // The operator leaves the console for the tenant area first: signing out
-    // from the console lands on the plain sign-in surface.
+    // The operator leaves the admin for the tenant area first: signing out
+    // from the admin lands on the plain sign-in surface.
     await page
       .getByRole('banner')
       .getByRole('link', {
-        name: copy('demo', 'console.backToApp'),
+        name: copy('demo', 'admin.backToApp'),
         exact: true,
       })
       .click()

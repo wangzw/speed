@@ -45,7 +45,7 @@
  * contrast result there is neither trustworthy nor actionable -- the rule is
  * indeterminate for every node, never a violation or a pass. (The named nodes
  * measured in this gate were the AppBar brand text at `/` and a breadcrumb
- * link at `/console/audit/sample [error]`, both chrome text over an
+ * link at `/admin/audit/sample [error]`, both chrome text over an
  * emotion-styled background jsdom cannot resolve.) Contrast is a
  * browser-side / manual check, never mechanically decidable here.
  * axe's page-context checks (page-has-heading-one, landmark-one-main) probe
@@ -160,7 +160,7 @@ export const PAGE_STRUCTURE_RULES = [
  * selects, and the `rules` disable is ignored -- so the rule must be dropped
  * from the selected set instead (see `gateRuleIds`). Measured before this
  * exclusion, the two named nodes were the AppBar brand text (`/` anonymous)
- * and a breadcrumb/back link (`.MuiLink-underlineHover`, `/console/audit/sample
+ * and a breadcrumb/back link (`.MuiLink-underlineHover`, `/admin/audit/sample
  * [error]`) -- both chrome text over an emotion-styled background jsdom cannot
  * compute. Color contrast is a browser-side / manual check (see the class
  * header), never mechanically decidable here; a regression in it cannot be

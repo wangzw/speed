@@ -14,7 +14,7 @@
  * What remains here is the app's variation:
  *
  *  - The namespaces its views render beyond the family's automatic four: the
- *    console-ui area's and the app's own bundle.
+ *    admin-ui area's and the app's own bundle.
  *
  *  - The services provider that hands the assembled session and client down to
  *    the views (src/app-services.tsx).
@@ -29,7 +29,7 @@
  */
 
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
-import { CONSOLE_UI_NAMESPACE, consoleUiResources } from '@speed/console-ui'
+import { ADMIN_UI_NAMESPACE, adminUiResources } from '@speed/admin-ui'
 import {
   NOTIFICATION_UI_NAMESPACE,
   notificationUiResources,
@@ -87,7 +87,7 @@ export async function bootstrapDemoApp(
   const theme = demoThemeOptions(runtime.themePreset)
   const bootstrap = bootstrapSpeedApp(container, {
     namespaces: [
-      { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
+      { namespace: ADMIN_UI_NAMESPACE, resources: adminUiResources },
       { namespace: ACCOUNT_UI_NAMESPACE, resources: accountUiResources },
       { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
       {
@@ -100,7 +100,7 @@ export async function bootstrapDemoApp(
       (services, children) => (
         <AppServicesProvider services={services}>
           {/* Attaches the caller's platform permission set once signed in, so
-              the shell can gate the console on it (src/app.tsx). */}
+              the shell can gate the admin on it (src/app.tsx). */}
           <PlatformPermissions session={services.session}>
             {children}
           </PlatformPermissions>

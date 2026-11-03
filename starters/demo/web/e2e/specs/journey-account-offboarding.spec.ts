@@ -71,7 +71,7 @@ import { copy } from '../helpers/i18n'
 import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 import { totpCode } from '../helpers/totp'
 
-// The operator needs its two seeded factors and a proved address; the console
+// The operator needs its two seeded factors and a proved address; the admin
 // tables carry low-priority columns, so the viewport is wide enough for the
 // status column and the row controls.
 test.use({ seedImpersonation: true, viewport: { width: 1920, height: 1080 } })
@@ -106,23 +106,23 @@ const WRONG_PASSWORD = 'not-the-member-password'
 /** The account settings' first pane, which is the protected page the member was on. */
 const ACCOUNT_PROFILE_PATH = '/account/profile'
 
-/** The header's console entry (a link, while the operator may reach it). */
-function consoleEntry(page: Page): Locator {
+/** The header's admin entry (a link, while the operator may reach it). */
+function adminEntry(page: Page): Locator {
   return page.getByRole('banner').getByRole('link', {
-    name: copy('demo', 'nav.console'),
+    name: copy('demo', 'nav.admin'),
     exact: true,
   })
 }
 
-/** The console's navigation landmark. */
-function consoleNav(page: Page): Locator {
+/** The admin's navigation landmark. */
+function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'shell.navLabel'),
+    name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
 }
 
-/** The accounts table of the console page. */
+/** The accounts table of the admin page. */
 function accountsTable(page: Page): Locator {
   return page.getByRole('table', {
     name: copy('uiKit', 'dataTable.ariaLabel'),
@@ -140,7 +140,7 @@ function memberRow(page: Page): Locator {
 /** The manage-control label prefix of an account row. */
 function managePrefix(): string {
   return (
-    copy('consoleUi', 'accounts.manageAria', { id: '__ACCOUNT_ID__' }).split(
+    copy('adminUi', 'accounts.manageAria', { id: '__ACCOUNT_ID__' }).split(
       '__ACCOUNT_ID__',
     )[0] ?? ''
   )
@@ -164,13 +164,13 @@ async function accountIdOf(row: Locator): Promise<string> {
 
 /** The detail panel's accessible name for one account. */
 function detailTitle(id: string): string {
-  return copy('consoleUi', 'accounts.detail.title', { id })
+  return copy('adminUi', 'accounts.detail.title', { id })
 }
 
 /**
  * The settled status write's success notice.
  *
- * The console names an account in a success notice by its display name and
+ * The admin names an account in a success notice by its display name and
  * first login identifier and never by the opaque account id, so the expected
  * sentence is the bundle's `statusSaved` filled with the reference the same
  * bundle's `common.accountReference.nameWithIdentifier` renders. The seeded
@@ -179,8 +179,8 @@ function detailTitle(id: string): string {
  * would fail this assertion.
  */
 function statusSavedNotice(): string {
-  return copy('consoleUi', 'accounts.statusSaved', {
-    account: copy('consoleUi', 'common.accountReference.nameWithIdentifier', {
+  return copy('adminUi', 'accounts.statusSaved', {
+    account: copy('adminUi', 'common.accountReference.nameWithIdentifier', {
       name: MEMBER.displayName,
       identifier: MEMBER.identifier,
     }),
@@ -190,7 +190,7 @@ function statusSavedNotice(): string {
 /** The detail panel's status line for one status label. */
 function statusLine(panel: Locator, status: string): Locator {
   return panel.getByText(
-    copy('consoleUi', 'accounts.detail.statusLine', { value: status }),
+    copy('adminUi', 'accounts.detail.statusLine', { value: status }),
     { exact: true },
   )
 }
@@ -198,7 +198,7 @@ function statusLine(panel: Locator, status: string): Locator {
 /** The status filter's select on the accounts page. */
 function statusFilter(page: Page): Locator {
   return page.getByRole('combobox', {
-    name: copy('consoleUi', 'accounts.filter.status'),
+    name: copy('adminUi', 'accounts.filter.status'),
     exact: true,
   })
 }
@@ -206,7 +206,7 @@ function statusFilter(page: Page): Locator {
 /** The identifier-kind select on the accounts page. */
 function identifierKind(page: Page): Locator {
   return page.getByRole('combobox', {
-    name: copy('consoleUi', 'accounts.identifierKindLabel'),
+    name: copy('adminUi', 'accounts.identifierKindLabel'),
     exact: true,
   })
 }
@@ -214,7 +214,7 @@ function identifierKind(page: Page): Locator {
 /** The login-identifier prefix field on the accounts page. */
 function identifierPrefixField(page: Page): Locator {
   return page.getByRole('textbox', {
-    name: copy('consoleUi', 'accounts.identifierLabel'),
+    name: copy('adminUi', 'accounts.identifierLabel'),
     exact: true,
   })
 }
@@ -222,7 +222,7 @@ function identifierPrefixField(page: Page): Locator {
 /** The accounts page's search control. */
 function searchButton(page: Page): Locator {
   return page.getByRole('button', {
-    name: copy('consoleUi', 'accounts.search'),
+    name: copy('adminUi', 'accounts.search'),
     exact: true,
   })
 }
@@ -230,7 +230,7 @@ function searchButton(page: Page): Locator {
 /** The accounts page's empty state, shown when the applied filter matches none. */
 function emptyState(page: Page): Locator {
   return page.getByRole('heading', {
-    name: copy('consoleUi', 'accounts.empty.title'),
+    name: copy('adminUi', 'accounts.empty.title'),
     exact: true,
   })
 }
@@ -431,20 +431,20 @@ test('account-offboarding: an operator disables a member and the member returns 
       ).toHaveCount(2)
     })
 
-    await test.step('step 1: the operator enters the console and opens the accounts page', async () => {
-      await expect(consoleEntry(page)).toBeVisible()
-      await consoleEntry(page).click()
-      await expect(consoleNav(page)).toBeVisible()
-      await consoleNav(page)
+    await test.step('step 1: the operator enters the admin and opens the accounts page', async () => {
+      await expect(adminEntry(page)).toBeVisible()
+      await adminEntry(page).click()
+      await expect(adminNav(page)).toBeVisible()
+      await adminNav(page)
         .getByRole('link', {
-          name: copy('consoleUi', 'accounts.title'),
+          name: copy('adminUi', 'accounts.title'),
           exact: true,
         })
         .click()
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'accounts.title'),
+          name: copy('adminUi', 'accounts.title'),
           exact: true,
         }),
       ).toBeVisible()
@@ -457,7 +457,7 @@ test('account-offboarding: an operator disables a member and the member returns 
       await identifierKind(page).click()
       await page
         .getByRole('option', {
-          name: copy('consoleUi', 'accounts.identifierKind.username'),
+          name: copy('adminUi', 'accounts.identifierKind.username'),
           exact: true,
         })
         .click()
@@ -465,7 +465,7 @@ test('account-offboarding: an operator disables a member and the member returns 
       await statusFilter(page).click()
       await page
         .getByRole('option', {
-          name: copy('consoleUi', 'accounts.status.active'),
+          name: copy('adminUi', 'accounts.status.active'),
           exact: true,
         })
         .click()
@@ -478,7 +478,7 @@ test('account-offboarding: an operator disables a member and the member returns 
       const row = memberRow(page)
       await expect(row).toHaveCount(1)
       await expect(
-        row.getByText(copy('consoleUi', 'accounts.status.active'), {
+        row.getByText(copy('adminUi', 'accounts.status.active'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -488,7 +488,7 @@ test('account-offboarding: an operator disables a member and the member returns 
       const dialog = page.getByRole('dialog', { name: detailTitle(memberId) })
       await expect(dialog).toBeVisible()
       await expect(
-        statusLine(dialog, copy('consoleUi', 'accounts.status.active')),
+        statusLine(dialog, copy('adminUi', 'accounts.status.active')),
       ).toBeVisible()
     })
 
@@ -496,19 +496,19 @@ test('account-offboarding: an operator disables a member and the member returns 
       const dialog = page.getByRole('dialog', { name: detailTitle(memberId) })
       await dialog
         .getByRole('combobox', {
-          name: copy('consoleUi', 'accounts.status.label'),
+          name: copy('adminUi', 'accounts.status.label'),
           exact: true,
         })
         .click()
       await page
         .getByRole('option', {
-          name: copy('consoleUi', 'accounts.status.disabled'),
+          name: copy('adminUi', 'accounts.status.disabled'),
           exact: true,
         })
         .click()
       await dialog
         .getByRole('button', {
-          name: copy('consoleUi', 'accounts.status.submit'),
+          name: copy('adminUi', 'accounts.status.submit'),
           exact: true,
         })
         .click()
@@ -520,7 +520,7 @@ test('account-offboarding: an operator disables a member and the member returns 
         dialog.getByText(statusSavedNotice(), { exact: true }),
       ).toBeVisible()
       await expect(
-        statusLine(dialog, copy('consoleUi', 'accounts.status.disabled')),
+        statusLine(dialog, copy('adminUi', 'accounts.status.disabled')),
       ).toBeVisible()
 
       await dialog
@@ -537,7 +537,7 @@ test('account-offboarding: an operator disables a member and the member returns 
       await statusFilter(page).click()
       await page
         .getByRole('option', {
-          name: copy('consoleUi', 'accounts.status.disabled'),
+          name: copy('adminUi', 'accounts.status.disabled'),
           exact: true,
         })
         .click()
@@ -545,7 +545,7 @@ test('account-offboarding: an operator disables a member and the member returns 
       const row = memberRow(page)
       await expect(row).toHaveCount(1)
       await expect(
-        row.getByText(copy('consoleUi', 'accounts.status.disabled'), {
+        row.getByText(copy('adminUi', 'accounts.status.disabled'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -652,23 +652,23 @@ test('account-offboarding: an operator disables a member and the member returns 
       const dialog = page.getByRole('dialog', { name: detailTitle(memberId) })
       await expect(dialog).toBeVisible()
       await expect(
-        statusLine(dialog, copy('consoleUi', 'accounts.status.disabled')),
+        statusLine(dialog, copy('adminUi', 'accounts.status.disabled')),
       ).toBeVisible()
       await dialog
         .getByRole('combobox', {
-          name: copy('consoleUi', 'accounts.status.label'),
+          name: copy('adminUi', 'accounts.status.label'),
           exact: true,
         })
         .click()
       await page
         .getByRole('option', {
-          name: copy('consoleUi', 'accounts.status.active'),
+          name: copy('adminUi', 'accounts.status.active'),
           exact: true,
         })
         .click()
       await dialog
         .getByRole('button', {
-          name: copy('consoleUi', 'accounts.status.submit'),
+          name: copy('adminUi', 'accounts.status.submit'),
           exact: true,
         })
         .click()
@@ -676,7 +676,7 @@ test('account-offboarding: an operator disables a member and the member returns 
         dialog.getByText(statusSavedNotice(), { exact: true }),
       ).toBeVisible()
       await expect(
-        statusLine(dialog, copy('consoleUi', 'accounts.status.active')),
+        statusLine(dialog, copy('adminUi', 'accounts.status.active')),
       ).toBeVisible()
       await dialog
         .getByRole('button', {
@@ -692,14 +692,14 @@ test('account-offboarding: an operator disables a member and the member returns 
       await statusFilter(page).click()
       await page
         .getByRole('option', {
-          name: copy('consoleUi', 'accounts.status.active'),
+          name: copy('adminUi', 'accounts.status.active'),
           exact: true,
         })
         .click()
       await searchButton(page).click()
       await expect(memberRow(page)).toHaveCount(1)
       await expect(
-        memberRow(page).getByText(copy('consoleUi', 'accounts.status.active'), {
+        memberRow(page).getByText(copy('adminUi', 'accounts.status.active'), {
           exact: true,
         }),
       ).toBeVisible()

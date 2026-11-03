@@ -1,12 +1,12 @@
 /**
  * Hand-authored icons for the tenant area's navigation entries.
  *
- * The same drawing convention as console-ui's navigation icons: 24px-grid
+ * The same drawing convention as admin-ui's navigation icons: 24px-grid
  * strokes in currentColor, no icon-font or MUI icons dependency, every
  * icon decorative (the entry's label is its accessible name). The tenant
  * navigation needs them because the collapsed sidebar rail shows an
  * entry's icon instead of its clipped label; without one, a collapsed
- * tenant navigation would show cut-off text ("Acco…") where the console
+ * tenant navigation would show cut-off text ("Acco…") where the admin
  * shows icons.
  *
  * Each icon is attached to its route declaration (src/routes.tsx), which is
@@ -83,8 +83,8 @@ export function AccountNavIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** The console entry: four panels, the administration surfaces' own mark. */
-export function ConsoleNavIcon({ size = 24 }: IconProps) {
+/** The admin entry: four panels, the administration surfaces' own mark. */
+export function AdminNavIcon({ size = 24 }: IconProps) {
   return (
     <svg
       aria-hidden="true"

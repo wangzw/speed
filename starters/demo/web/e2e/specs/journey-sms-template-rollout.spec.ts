@@ -1,7 +1,7 @@
 /**
  * J -- an operator rolls out one SMS template and turns it off again.
  *
- * The platform operator opens the console's SMS page, reads the configuration
+ * The platform operator opens the admin's SMS page, reads the configuration
  * templates as read-only, registers a runtime template with a vendor code for
  * each of two languages, and observes both languages start pending on a carrier
  * that reviews each template. The review-only control settles the English code
@@ -16,7 +16,7 @@
  *
  * Everything the person does is a mouse or keyboard action on the rendered
  * product: the account controls that prove the email and phone the dispatch
- * needs, the console navigation, the register and enable/disable controls, the
+ * needs, the admin navigation, the register and enable/disable controls, the
  * review-only verdict control, the tenant switcher and the notice control. Two
  * reads are not UI, and each is the harness's own:
  *
@@ -133,25 +133,25 @@ function phoneSection(page: Page): Locator {
   })
 }
 
-/** The header's console entry (a link while the operator may reach it). */
-function consoleEntry(page: Page): Locator {
+/** The header's admin entry (a link while the operator may reach it). */
+function adminEntry(page: Page): Locator {
   return page
     .getByRole('banner')
-    .getByRole('link', { name: copy('demo', 'nav.console'), exact: true })
+    .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
 }
 
-/** The console's navigation landmark. */
-function consoleNav(page: Page): Locator {
+/** The admin's navigation landmark. */
+function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'shell.navLabel'),
+    name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
 }
 
-/** The console frame's link back to the tenant area. */
+/** The admin frame's link back to the tenant area. */
 function backToApp(page: Page): Locator {
   return page.getByRole('link', {
-    name: copy('demo', 'console.backToApp'),
+    name: copy('demo', 'admin.backToApp'),
     exact: true,
   })
 }
@@ -159,7 +159,7 @@ function backToApp(page: Page): Locator {
 /** The SMS page's page header. */
 function smsHeading(page: Page): Locator {
   return page.getByRole('heading', {
-    name: copy('consoleUi', 'sms.title'),
+    name: copy('adminUi', 'sms.title'),
     exact: true,
   })
 }
@@ -167,7 +167,7 @@ function smsHeading(page: Page): Locator {
 /** The SMS page's register section. */
 function registerSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'sms.register.title'),
+    name: copy('adminUi', 'sms.register.title'),
     exact: true,
   })
 }
@@ -183,7 +183,7 @@ function verdictControl(page: Page): Locator {
 /** The page-header refresh control. */
 function refreshButton(page: Page): Locator {
   return page.getByRole('button', {
-    name: copy('consoleUi', 'common.refresh'),
+    name: copy('adminUi', 'common.refresh'),
     exact: true,
   })
 }
@@ -231,20 +231,20 @@ async function switchToTenant(page: Page): Promise<void> {
   ).toBeVisible()
 }
 
-/** Open the console from the tenant area and its SMS page from the navigation. */
+/** Open the admin from the tenant area and its SMS page from the navigation. */
 async function openSmsPage(page: Page): Promise<void> {
-  await expect(consoleEntry(page)).toBeVisible()
-  await consoleEntry(page).click()
-  await expect(consoleNav(page)).toBeVisible()
-  await consoleNav(page)
-    .getByRole('link', { name: copy('consoleUi', 'sms.title'), exact: true })
+  await expect(adminEntry(page)).toBeVisible()
+  await adminEntry(page).click()
+  await expect(adminNav(page)).toBeVisible()
+  await adminNav(page)
+    .getByRole('link', { name: copy('adminUi', 'sms.title'), exact: true })
     .click()
   await expect(smsHeading(page)).toBeVisible()
 }
 
 /** One row's approval text for a language, as the page renders it. */
 function approvalText(locale: string, stateKey: string): string {
-  return `${locale}: ${copy('consoleUi', `sms.approval.${stateKey}`)}`
+  return `${locale}: ${copy('adminUi', `sms.approval.${stateKey}`)}`
 }
 
 /**
@@ -431,16 +431,16 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     const configRow = templateRow(page, CONFIG_TEMPLATE)
     await expect(configRow).toHaveCount(1)
     await expect(configRow).toContainText(
-      copy('consoleUi', 'sms.source.config'),
+      copy('adminUi', 'sms.source.config'),
     )
     for (const state of ['pending', 'approved', 'rejected', 'withdrawn']) {
       await expect(configRow).not.toContainText(
-        copy('consoleUi', `sms.approval.${state}`),
+        copy('adminUi', `sms.approval.${state}`),
       )
     }
     await configRow
       .getByRole('button', {
-        name: copy('consoleUi', 'sms.disableAria', { name: CONFIG_TEMPLATE }),
+        name: copy('adminUi', 'sms.disableAria', { name: CONFIG_TEMPLATE }),
         exact: true,
       })
       .click()
@@ -448,13 +448,13 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     // server's stored message.
     await expect(
       page
-        .getByText(copy('consoleUi', 'errors.sms.config_template'), {
+        .getByText(copy('adminUi', 'errors.sms.config_template'), {
           exact: true,
         })
         .first(),
     ).toBeVisible()
     await expect(configRow).toContainText(
-      copy('consoleUi', 'sms.source.config'),
+      copy('adminUi', 'sms.source.config'),
     )
   })
 
@@ -462,30 +462,30 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     const register = registerSection(page)
     await register
       .getByRole('textbox', {
-        name: copy('consoleUi', 'sms.register.nameLabel'),
+        name: copy('adminUi', 'sms.register.nameLabel'),
         exact: true,
       })
       .fill(TEMPLATE)
     await register
       .getByRole('textbox', {
-        name: copy('consoleUi', 'sms.register.paramsLabel'),
+        name: copy('adminUi', 'sms.register.paramsLabel'),
         exact: true,
       })
       .fill('to')
     await register
       .getByRole('textbox', {
-        name: copy('consoleUi', 'sms.register.codesLabel'),
+        name: copy('adminUi', 'sms.register.codesLabel'),
         exact: true,
       })
       .fill(`${EN_LOCALE}:${EN_CODE}, ${ZH_LOCALE}:${ZH_CODE}`)
     await register
       .getByRole('button', {
-        name: copy('consoleUi', 'sms.register.submit'),
+        name: copy('adminUi', 'sms.register.submit'),
         exact: true,
       })
       .click()
     await expect(
-      page.getByText(copy('consoleUi', 'sms.registered', { name: TEMPLATE }), {
+      page.getByText(copy('adminUi', 'sms.registered', { name: TEMPLATE }), {
         exact: true,
       }),
     ).toBeVisible()
@@ -493,8 +493,8 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     await refreshUntil(page, TEMPLATE, approvalText(EN_LOCALE, 'pending'))
     const row = templateRow(page, TEMPLATE)
     await expect(row).toHaveCount(1)
-    await expect(row).toContainText(copy('consoleUi', 'sms.source.runtime'))
-    await expect(row).toContainText(copy('consoleUi', 'sms.enabledYes'))
+    await expect(row).toContainText(copy('adminUi', 'sms.source.runtime'))
+    await expect(row).toContainText(copy('adminUi', 'sms.enabledYes'))
     await expect(row).toContainText(approvalText(EN_LOCALE, 'pending'))
     await expect(row).toContainText(approvalText(ZH_LOCALE, 'pending'))
   })
@@ -503,18 +503,18 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     const row = templateRow(page, TEMPLATE)
     await row
       .getByRole('button', {
-        name: copy('consoleUi', 'sms.disableAria', { name: TEMPLATE }),
+        name: copy('adminUi', 'sms.disableAria', { name: TEMPLATE }),
         exact: true,
       })
       .click()
     await expect(
       page.getByText(
-        copy('consoleUi', 'sms.disabledToast', { name: TEMPLATE }),
+        copy('adminUi', 'sms.disabledToast', { name: TEMPLATE }),
         { exact: true },
       ),
     ).toBeVisible()
-    await refreshUntil(page, TEMPLATE, copy('consoleUi', 'sms.enabledNo'))
-    await expect(row).toContainText(copy('consoleUi', 'sms.enabledNo'))
+    await refreshUntil(page, TEMPLATE, copy('adminUi', 'sms.enabledNo'))
+    await expect(row).toContainText(copy('adminUi', 'sms.enabledNo'))
     await expect(row).toContainText(approvalText(EN_LOCALE, 'pending'))
     await expect(row).toContainText(approvalText(ZH_LOCALE, 'pending'))
   })
@@ -563,24 +563,24 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     await expect(row).toContainText(approvalText(ZH_LOCALE, 'pending'))
     // The template is still disabled: the verdict changed the review state and
     // nothing else.
-    await expect(row).toContainText(copy('consoleUi', 'sms.enabledNo'))
+    await expect(row).toContainText(copy('adminUi', 'sms.enabledNo'))
   })
 
   await test.step('enabling the template sends and leaves the review states unchanged', async () => {
     const row = templateRow(page, TEMPLATE)
     await row
       .getByRole('button', {
-        name: copy('consoleUi', 'sms.enableAria', { name: TEMPLATE }),
+        name: copy('adminUi', 'sms.enableAria', { name: TEMPLATE }),
         exact: true,
       })
       .click()
     await expect(
-      page.getByText(copy('consoleUi', 'sms.enabledToast', { name: TEMPLATE }), {
+      page.getByText(copy('adminUi', 'sms.enabledToast', { name: TEMPLATE }), {
         exact: true,
       }),
     ).toBeVisible()
-    await refreshUntil(page, TEMPLATE, copy('consoleUi', 'sms.enabledYes'))
-    await expect(row).toContainText(copy('consoleUi', 'sms.enabledYes'))
+    await refreshUntil(page, TEMPLATE, copy('adminUi', 'sms.enabledYes'))
+    await expect(row).toContainText(copy('adminUi', 'sms.enabledYes'))
     await expect(row).toContainText(approvalText(EN_LOCALE, 'approved'))
     await expect(row).toContainText(approvalText(ZH_LOCALE, 'pending'))
   })
@@ -644,18 +644,18 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     const row = templateRow(page, TEMPLATE)
     await row
       .getByRole('button', {
-        name: copy('consoleUi', 'sms.disableAria', { name: TEMPLATE }),
+        name: copy('adminUi', 'sms.disableAria', { name: TEMPLATE }),
         exact: true,
       })
       .click()
     await expect(
       page.getByText(
-        copy('consoleUi', 'sms.disabledToast', { name: TEMPLATE }),
+        copy('adminUi', 'sms.disabledToast', { name: TEMPLATE }),
         { exact: true },
       ),
     ).toBeVisible()
-    await refreshUntil(page, TEMPLATE, copy('consoleUi', 'sms.enabledNo'))
-    await expect(row).toContainText(copy('consoleUi', 'sms.enabledNo'))
+    await refreshUntil(page, TEMPLATE, copy('adminUi', 'sms.enabledNo'))
+    await expect(row).toContainText(copy('adminUi', 'sms.enabledNo'))
     await expect(row).toContainText(approvalText(EN_LOCALE, 'approved'))
     await expect(row).toContainText(approvalText(ZH_LOCALE, 'pending'))
 

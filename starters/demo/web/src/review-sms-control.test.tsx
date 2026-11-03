@@ -4,7 +4,7 @@
  * Three things are held here. The gating is run-time: the control is offered
  * exactly while the feature document carries its review-only name, which only
  * the review assembly declares, so a baseline deployment shows nothing. The
- * control sits beside the console package's SMS page, not in it. The click
+ * control sits beside the admin package's SMS page, not in it. The click
  * posts one verdict to the review-only route and reports the outcome through the
  * write-feedback region, with the copy read from the app's locale bundle rather
  * than a literal.
@@ -15,7 +15,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { RequestOptions } from '@speed/api-client'
-import { CONSOLE_UI_NAMESPACE } from '@speed/console-ui'
+import { ADMIN_UI_NAMESPACE } from '@speed/admin-ui'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { REVIEW_SMS_VERDICT_PATH } from './app-api/review-sms.js'
 import { renderDemoApp } from './test-utils/render.js'
@@ -28,10 +28,10 @@ import {
 const CODE = 'review-notice-en'
 
 beforeEach(() => {
-  window.history.replaceState({}, '', '/console/sms')
+  window.history.replaceState({}, '', '/admin/sms')
 })
 
-/** An authenticated session with the SMS console permission and the given
+/** An authenticated session with the SMS admin permission and the given
  * feature document. */
 function sessionWith(...names: string[]) {
   return createTestSession(
@@ -92,9 +92,9 @@ describe('the review-only SMS verdict control', () => {
     const { i18n } = renderDemoApp({ session: sessionWith('sms.admin') })
 
     // The page itself renders, so the absence below is the control's gate rather
-    // than a page that never mounted. The page's title is the console package's
+    // than a page that never mounted. The page's title is the admin package's
     // copy, resolved through the same instance the tree renders with.
-    const smsTitle = i18n.t('sms.title', { ns: CONSOLE_UI_NAMESPACE })
+    const smsTitle = i18n.t('sms.title', { ns: ADMIN_UI_NAMESPACE })
     expect(
       await screen.findByRole('heading', { name: smsTitle }),
     ).toBeInTheDocument()

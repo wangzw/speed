@@ -4,7 +4,7 @@
  * It shows the platform's assembled capabilities as a card grid rather than
  * developer copy. Each card is an anchor carrying its target path and, on a
  * plain click, routing there without a reload. A card that declares a platform
- * permission -- the console card, held to the same code the header entry uses
+ * permission -- the admin card, held to the same code the header entry uses
  * -- is offered only to a principal that holds it and stays hidden while the
  * permission set is unknown. The member-facing cards (account,
  * notifications) declare no permission and are offered to every signed-in
@@ -23,7 +23,7 @@ import {
 } from '../test-utils/session.js'
 import {
   ACCOUNT_PATH,
-  CONSOLE_PREFIX,
+  ADMIN_PREFIX,
   NOTIFICATIONS_PATH,
 } from '../paths.js'
 
@@ -63,14 +63,14 @@ describe('the start page', () => {
     expect(screen.getByText(demoEnUS.home.intro)).toBeInTheDocument()
 
     // One card per capability, each an anchor carrying the route it opens --
-    // the console card included, since the administrator holds its code.
+    // the admin card included, since the administrator holds its code.
     expect(cardFor(demoEnUS.home.cards.account.title)).toHaveAttribute(
       'href',
       ACCOUNT_PATH,
     )
-    expect(cardFor(demoEnUS.home.cards.console.title)).toHaveAttribute(
+    expect(cardFor(demoEnUS.home.cards.admin.title)).toHaveAttribute(
       'href',
-      CONSOLE_PREFIX,
+      ADMIN_PREFIX,
     )
     expect(cardFor(demoEnUS.home.cards.notifications.title)).toHaveAttribute(
       'href',
@@ -78,15 +78,15 @@ describe('the start page', () => {
     )
   })
 
-  it('hides the console card from a member, keeping the member-facing cards', () => {
+  it('hides the admin card from a member, keeping the member-facing cards', () => {
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot({ system: [] })),
     })
 
-    // The member's platform set is known and holds nothing, so the console
+    // The member's platform set is known and holds nothing, so the admin
     // card -- and the information its title and description carry -- is not
     // rendered.
-    expect(hasCard(demoEnUS.home.cards.console.title)).toBe(false)
+    expect(hasCard(demoEnUS.home.cards.admin.title)).toBe(false)
     // The member-facing cards declare no permission and are unaffected: each
     // is still offered, with its target path.
     expect(cardFor(demoEnUS.home.cards.account.title)).toHaveAttribute(
@@ -99,9 +99,9 @@ describe('the start page', () => {
     )
   })
 
-  it('hides the console card from an impersonating identity whose effective set is empty', () => {
+  it('hides the admin card from an impersonating identity whose effective set is empty', () => {
     // The effective account is the impersonated one, and a real target holds no
-    // platform permission, so the console card is absent -- through the
+    // platform permission, so the admin card is absent -- through the
     // permission criterion itself, not through the impersonation flag.
     renderDemoApp({
       session: createTestSession({
@@ -110,7 +110,7 @@ describe('the start page', () => {
       }),
     })
 
-    expect(hasCard(demoEnUS.home.cards.console.title)).toBe(false)
+    expect(hasCard(demoEnUS.home.cards.admin.title)).toBe(false)
     expect(cardFor(demoEnUS.home.cards.account.title)).toHaveAttribute(
       'href',
       ACCOUNT_PATH,
@@ -121,8 +121,8 @@ describe('the start page', () => {
     )
   })
 
-  it('hides the console card from an impersonating identity even when its set holds a platform permission', () => {
-    // The impersonation is the identity fact that closes the console, decided
+  it('hides the admin card from an impersonating identity even when its set holds a platform permission', () => {
+    // The impersonation is the identity fact that closes the admin, decided
     // before the permission set is consulted: a target that held a platform
     // permission still gets no way in, and the header entry follows the same
     // derivation.
@@ -133,10 +133,10 @@ describe('the start page', () => {
       }),
     })
 
-    expect(hasCard(demoEnUS.home.cards.console.title)).toBe(false)
+    expect(hasCard(demoEnUS.home.cards.admin.title)).toBe(false)
   })
 
-  it('keeps the console card hidden while the platform permission set is unknown', () => {
+  it('keeps the admin card hidden while the platform permission set is unknown', () => {
     // An authenticated session whose platform set is still unknown (null): the
     // state before the host has read the caller's platform permissions. The
     // gate fails closed, so the card is absent -- a member never sees it for
@@ -145,18 +145,18 @@ describe('the start page', () => {
       session: createTestSession(authenticatedSnapshot()),
     })
 
-    expect(hasCard(demoEnUS.home.cards.console.title)).toBe(false)
+    expect(hasCard(demoEnUS.home.cards.admin.title)).toBe(false)
     expect(hasCard(demoEnUS.home.cards.account.title)).toBe(true)
   })
 
-  it('reveals the console card once the platform permission set lands', async () => {
+  it('reveals the admin card once the platform permission set lands', async () => {
     // The attach-then-appear transition the host drives through
     // setPermissionSet: the set flips from unknown (null) to a known one
     // holding the card's code, and the card appears where it was hidden.
     const session = createTestSession(authenticatedSnapshot())
     renderDemoApp({ session })
 
-    expect(hasCard(demoEnUS.home.cards.console.title)).toBe(false)
+    expect(hasCard(demoEnUS.home.cards.admin.title)).toBe(false)
 
     act(() => {
       session.set(authenticatedSnapshot({ system: ['tenant.read'] }))
@@ -165,7 +165,7 @@ describe('the start page', () => {
     expect(
       await screen.findByRole('heading', {
         level: 2,
-        name: demoEnUS.home.cards.console.title,
+        name: demoEnUS.home.cards.admin.title,
       }),
     ).toBeInTheDocument()
   })

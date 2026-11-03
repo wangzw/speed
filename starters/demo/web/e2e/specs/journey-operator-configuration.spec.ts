@@ -6,7 +6,7 @@
  * The platform administrator's email is proved first (the account page's
  * verification section, whose code comes from the review process log -- the
  * one non-UI read this spec makes), because a settings write from an
- * unproved account is refused. The operator then enters the console, opens
+ * unproved account is refused. The operator then enters the admin, opens
  * the settings page, narrows it to the setting's namespace and finds the
  * password-signup switch: current value "open", state "Overridden" (the
  * review assembly's seed wrote the global row). The operator types "closed"
@@ -115,10 +115,10 @@ function verificationSection(page: Page): Locator {
   })
 }
 
-/** The console's navigation landmark (the platform navigation). */
-function consoleNav(page: Page): Locator {
+/** The admin's navigation landmark (the platform navigation). */
+function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'shell.navLabel'),
+    name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
 }
@@ -126,7 +126,7 @@ function consoleNav(page: Page): Locator {
 /** The settings page's namespace navigation. */
 function namespaceNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'settings.nav.label'),
+    name: copy('adminUi', 'settings.nav.label'),
     exact: true,
   })
 }
@@ -219,7 +219,7 @@ function passwordFormParts(page: Page): readonly Locator[] {
 /** The save bar's one button. */
 function saveButton(page: Page): Locator {
   return page.getByRole('button', {
-    name: copy('consoleUi', 'settings.saveBar.save'),
+    name: copy('adminUi', 'settings.saveBar.save'),
     exact: true,
   })
 }
@@ -308,7 +308,7 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       await expect(verificationBanner(page, OPERATOR.identifier)).toHaveCount(0)
     })
 
-    await test.step('step 1: the console settings page lists the declared items grouped by namespace', async () => {
+    await test.step('step 1: the admin settings page lists the declared items grouped by namespace', async () => {
       // The account page the verification landed on is inside the tenant
       // shell, whose main navigation carries the Home entry: step 1 of the
       // document starts on the home page.
@@ -323,37 +323,37 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
         }),
       ).toBeVisible()
 
-      // The home console card and the header entry are two derivations of the
+      // The home admin card and the header entry are two derivations of the
       // same target; the step drives the header one and checks they agree.
-      const consoleEntry = page
+      const adminEntry = page
         .getByRole('banner')
-        .getByRole('link', { name: copy('demo', 'nav.console'), exact: true })
-      const consoleCard = page
+        .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
+      const adminCard = page
         .getByRole('heading', {
           level: 2,
-          name: copy('demo', 'home.cards.console.title'),
+          name: copy('demo', 'home.cards.admin.title'),
           exact: true,
         })
         .locator('xpath=ancestor::a[1]')
-      await expect(consoleEntry).toBeVisible()
-      await expect(consoleCard).toBeVisible()
-      const entryHref = await consoleEntry.getAttribute('href')
+      await expect(adminEntry).toBeVisible()
+      await expect(adminCard).toBeVisible()
+      const entryHref = await adminEntry.getAttribute('href')
       expect(entryHref).not.toBeNull()
-      await expect(consoleCard).toHaveAttribute('href', entryHref ?? '')
+      await expect(adminCard).toHaveAttribute('href', entryHref ?? '')
 
-      await consoleEntry.click()
+      await adminEntry.click()
 
-      // The settings page is opened from the console navigation.
-      await consoleNav(page)
+      // The settings page is opened from the admin navigation.
+      await adminNav(page)
         .getByRole('link', {
-          name: copy('consoleUi', 'settings.title'),
+          name: copy('adminUi', 'settings.title'),
           exact: true,
         })
         .click()
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'settings.title'),
+          name: copy('adminUi', 'settings.title'),
           exact: true,
         }),
       ).toBeVisible()
@@ -363,7 +363,7 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       // namespace's key.
       await expect(
         namespaceNav(page).getByRole('button', {
-          name: copy('consoleUi', 'settings.nav.all'),
+          name: copy('adminUi', 'settings.nav.all'),
           exact: true,
         }),
       ).toBeVisible()
@@ -386,7 +386,7 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       await expect(row.getByText(SETTING_TYPE, { exact: true })).toBeVisible()
       await expect(valueField(page)).toHaveValue(OPEN)
       await expect(
-        row.getByText(copy('consoleUi', 'settings.state.overridden'), {
+        row.getByText(copy('adminUi', 'settings.state.overridden'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -403,10 +403,10 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       // confirmation, and the row re-reads as overridden with the written
       // value.
       await expect(
-        page.getByText(copy('consoleUi', 'settings.saved'), { exact: true }),
+        page.getByText(copy('adminUi', 'settings.saved'), { exact: true }),
       ).toBeVisible()
       await expect(
-        row.getByText(copy('consoleUi', 'settings.state.overridden'), {
+        row.getByText(copy('adminUi', 'settings.state.overridden'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -421,7 +421,7 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       // value: the write is stored, not local draft state.
       await page
         .getByRole('button', {
-          name: copy('consoleUi', 'common.refresh'),
+          name: copy('adminUi', 'common.refresh'),
           exact: true,
         })
         .click()
@@ -432,7 +432,7 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
         })
         .toBe(CLOSED)
       await expect(
-        row.getByText(copy('consoleUi', 'settings.state.overridden'), {
+        row.getByText(copy('adminUi', 'settings.state.overridden'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -489,10 +489,10 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       await saveButton(page).click()
 
       await expect(
-        page.getByText(copy('consoleUi', 'settings.saved'), { exact: true }),
+        page.getByText(copy('adminUi', 'settings.saved'), { exact: true }),
       ).toBeVisible()
       await expect(
-        row.getByText(copy('consoleUi', 'settings.state.overridden'), {
+        row.getByText(copy('adminUi', 'settings.state.overridden'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -542,16 +542,16 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       const since = datetimeBound(firstSaveAt, 0)
       const until = datetimeBound(new Date(), 60_000)
 
-      await consoleNav(page)
+      await adminNav(page)
         .getByRole('link', {
-          name: copy('consoleUi', 'audit.title'),
+          name: copy('adminUi', 'audit.title'),
           exact: true,
         })
         .click()
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'audit.title'),
+          name: copy('adminUi', 'audit.title'),
           exact: true,
         }),
       ).toBeVisible()
@@ -564,7 +564,7 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       // Typing into the filter is not applying it: the unfiltered list still
       // holds a record whose action is not this journey's write.
       await page
-        .getByLabel(copy('consoleUi', 'audit.filters.action'), { exact: true })
+        .getByLabel(copy('adminUi', 'audit.filters.action'), { exact: true })
         .fill('settings.set')
       const otherAction = table
         .locator('tbody tr')
@@ -576,35 +576,35 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       // would not show.
       const day = 24 * 60 * 60 * 1000
       await page
-        .getByLabel(copy('consoleUi', 'audit.filters.since'), { exact: true })
+        .getByLabel(copy('adminUi', 'audit.filters.since'), { exact: true })
         .fill(datetimeBound(new Date(), day))
       await page
-        .getByLabel(copy('consoleUi', 'audit.filters.until'), { exact: true })
+        .getByLabel(copy('adminUi', 'audit.filters.until'), { exact: true })
         .fill(datetimeBound(new Date(), day + 60_000))
       await page
         .getByRole('button', {
-          name: copy('consoleUi', 'audit.filters.apply'),
+          name: copy('adminUi', 'audit.filters.apply'),
           exact: true,
         })
         .click()
       await expect(
         page.getByRole('heading', {
           level: 2,
-          name: copy('consoleUi', 'audit.empty.title'),
+          name: copy('adminUi', 'audit.empty.title'),
           exact: true,
         }),
       ).toBeVisible()
 
       // Now the window that covers both saves.
       await page
-        .getByLabel(copy('consoleUi', 'audit.filters.since'), { exact: true })
+        .getByLabel(copy('adminUi', 'audit.filters.since'), { exact: true })
         .fill(since)
       await page
-        .getByLabel(copy('consoleUi', 'audit.filters.until'), { exact: true })
+        .getByLabel(copy('adminUi', 'audit.filters.until'), { exact: true })
         .fill(until)
       await page
         .getByRole('button', {
-          name: copy('consoleUi', 'audit.filters.apply'),
+          name: copy('adminUi', 'audit.filters.apply'),
           exact: true,
         })
         .click()
@@ -637,7 +637,7 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'auditDetail.title'),
+          name: copy('adminUi', 'auditDetail.title'),
           exact: true,
         }),
       ).toBeVisible()
@@ -655,12 +655,12 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
         'auditDetail.field.outcome',
         'auditDetail.field.purpose',
       ]) {
-        await expect(term(page, copy('consoleUi', field))).toBeVisible()
+        await expect(term(page, copy('adminUi', field))).toBeVisible()
       }
       await expect(
         page.getByRole('heading', {
           level: 3,
-          name: copy('consoleUi', 'auditDetail.detailTitle'),
+          name: copy('adminUi', 'auditDetail.detailTitle'),
           exact: true,
         }),
       ).toBeVisible()
@@ -669,30 +669,30 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       // outcome and the operator; the platform-level record has no tenant and
       // the write states no purpose, so those rows stand in as the placeholder.
       await expect(
-        fieldValue(page, copy('consoleUi', 'auditDetail.field.action')),
+        fieldValue(page, copy('adminUi', 'auditDetail.field.action')),
       ).toHaveText('settings.set')
       await expect(
-        fieldValue(page, copy('consoleUi', 'auditDetail.field.object')),
+        fieldValue(page, copy('adminUi', 'auditDetail.field.object')),
       ).toHaveText(SETTING_KEY)
       await expect(
-        fieldValue(page, copy('consoleUi', 'auditDetail.field.outcome')),
+        fieldValue(page, copy('adminUi', 'auditDetail.field.outcome')),
       ).toHaveText('success')
       await expect(
-        fieldValue(page, copy('consoleUi', 'auditDetail.field.actor')),
+        fieldValue(page, copy('adminUi', 'auditDetail.field.actor')),
       ).toHaveText(OPERATOR.displayName)
       await expect(
-        fieldValue(page, copy('consoleUi', 'auditDetail.field.tenant')),
-      ).toHaveText(copy('consoleUi', 'common.emptyValue'))
+        fieldValue(page, copy('adminUi', 'auditDetail.field.tenant')),
+      ).toHaveText(copy('adminUi', 'common.emptyValue'))
       await expect(
-        fieldValue(page, copy('consoleUi', 'auditDetail.field.purpose')),
-      ).toHaveText(copy('consoleUi', 'common.emptyValue'))
+        fieldValue(page, copy('adminUi', 'auditDetail.field.purpose')),
+      ).toHaveText(copy('adminUi', 'common.emptyValue'))
 
       // The detail section records the setting key and the layer it was
       // written on, and carries no value: neither of the two values the
       // journey wrote appears, and no "value" key is listed.
       const detailHeading = page.getByRole('heading', {
         level: 3,
-        name: copy('consoleUi', 'auditDetail.detailTitle'),
+        name: copy('adminUi', 'auditDetail.detailTitle'),
         exact: true,
       })
       const detailList = detailHeading.locator('xpath=following-sibling::dl[1]')
@@ -702,10 +702,10 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       await expect(detailList.getByText('global', { exact: true })).toBeVisible()
       await expect(
         fieldValue(page, 'tenant'),
-      ).toHaveText(copy('consoleUi', 'common.emptyValue'))
+      ).toHaveText(copy('adminUi', 'common.emptyValue'))
       await expect(
         fieldValue(page, 'action_id'),
-      ).not.toHaveText(copy('consoleUi', 'common.emptyValue'))
+      ).not.toHaveText(copy('adminUi', 'common.emptyValue'))
       await expect(detailList.getByText(OPEN, { exact: true })).toHaveCount(0)
       await expect(detailList.getByText(CLOSED, { exact: true })).toHaveCount(0)
       await expect(page.locator('dt', { hasText: /^value$/ })).toHaveCount(0)
@@ -713,14 +713,14 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       // The detail carries its way back to the query.
       await page
         .getByRole('link', {
-          name: copy('consoleUi', 'auditDetail.back'),
+          name: copy('adminUi', 'auditDetail.back'),
           exact: true,
         })
         .click()
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'audit.title'),
+          name: copy('adminUi', 'audit.title'),
           exact: true,
         }),
       ).toBeVisible()

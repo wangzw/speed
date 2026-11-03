@@ -112,8 +112,8 @@ export default defineConfig({
               test: /[\\/]web[\\/]packages[\\/](api-client|api-sdk|auth-core|i18n|route-kit|tokens)[\\/]src[\\/]/,
             },
             {
-              name: 'speed-console',
-              test: /[\\/]web[\\/]packages[\\/]console-ui[\\/]src[\\/]/,
+              name: 'speed-admin',
+              test: /[\\/]web[\\/]packages[\\/]admin-ui[\\/]src[\\/]/,
             },
             {
               name: 'speed-ui',

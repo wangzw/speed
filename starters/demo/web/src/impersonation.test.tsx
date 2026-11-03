@@ -1,6 +1,6 @@
 /**
  * The impersonation shell in the demo host: the identity-change action, the
- * banner in the tenant frame, the console's permission-set criterion during an
+ * banner in the tenant frame, the admin's permission-set criterion during an
  * impersonation, the status read's bare-404 rule, the expiry timer, and the read
  * cutover a start write opens (its in-flight reads cancelled, new ones held
  * until the identity change settles, and the session's identity-transition
@@ -24,9 +24,9 @@ import { getAuthnImpersonationStatusQueryKey } from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { AUTH_UI_NAMESPACE } from '@speed/auth-ui'
 import {
-  CONSOLE_UI_NAMESPACE,
-  consoleUiResources,
-} from '@speed/console-ui'
+  ADMIN_UI_NAMESPACE,
+  adminUiResources,
+} from '@speed/admin-ui'
 import { LAYOUT_KIT_NAMESPACE, avatarInitials } from '@speed/layout-kit'
 import {
   NOTIFICATION_UI_NAMESPACE,
@@ -70,7 +70,7 @@ const textI18n = createSpeedI18n({
   urlParameterName: null,
   navigatorLanguages: [],
   namespaces: [
-    { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
+    { namespace: ADMIN_UI_NAMESPACE, resources: adminUiResources },
     { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
     {
       namespace: NOTIFICATION_UI_NAMESPACE,
@@ -79,7 +79,7 @@ const textI18n = createSpeedI18n({
   ],
 })
 const tAuth = textI18n.getFixedT('en-US', AUTH_UI_NAMESPACE)
-const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
+const tAdmin = textI18n.getFixedT('en-US', ADMIN_UI_NAMESPACE)
 const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
 const tTenancy = textI18n.getFixedT('en-US', TENANCY_UI_NAMESPACE)
 
@@ -139,7 +139,7 @@ function operatorSnapshot(): AuthSnapshot {
 
 /**
  * The impersonated identity. Its effective account is the target, which holds
- * no platform permission: that empty platform set is what keeps the console
+ * no platform permission: that empty platform set is what keeps the admin
  * out, exactly as the permission criterion keeps an ordinary member out.
  */
 function targetSnapshot(): AuthSnapshot {
@@ -375,7 +375,7 @@ function makeBackend(options: {
   readonly status404AfterExpiry?: boolean
   /** Holds the status read open, once the start write has been issued, until
    * the suite resolves it: the window in which the remounted tenant frame
-   * has no grant yet. Reads before the start answer normally (the console
+   * has no grant yet. Reads before the start answer normally (the admin
    * page's own status surface needs its settled "not impersonating"). */
   readonly statusGateAfterStart?: Promise<void>
   /** The tenant id the start write grants; defaults to the fixture's. */
@@ -623,8 +623,8 @@ beforeEach(() => {
 })
 
 describe('the impersonation shell', () => {
-  it('lands a start on the tenant home with the banner, the status read and no console entry', async () => {
-    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+  it('lands a start on the tenant home with the banner, the status read and no admin entry', async () => {
+    window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
     const backend = makeBackend()
     let phase: 'operator' | 'target' = 'operator'
     const request: RequestFn = <T,>(
@@ -645,10 +645,10 @@ describe('the impersonation shell', () => {
 
     renderDemoApp({ session })
 
-    // The console page is reachable and the start form waits for its fields.
-    await screen.findByText(tConsole('impersonations.current.none'))
-    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
-    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
+    // The admin page is reachable and the start form waits for its fields.
+    await screen.findByText(tAdmin('impersonations.current.none'))
+    await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
+    await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
 
     // The start settled; the host's action re-read the session and moved the
     // operator to the tenant home.
@@ -677,12 +677,12 @@ describe('the impersonation shell', () => {
       expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
     )
 
-    // The impersonated account holds no platform permission, so the console
+    // The impersonated account holds no platform permission, so the admin
     // is offered on the effective account's set, not on the impersonation
     // flag: the header entry is absent for the same reason the ordinary
     // member's is.
     expect(
-      screen.queryByRole('link', { name: demoEnUS.nav.console }),
+      screen.queryByRole('link', { name: demoEnUS.nav.admin }),
     ).not.toBeInTheDocument()
   })
 
@@ -976,10 +976,10 @@ describe('the impersonation shell', () => {
       screen.getByText(tAuth('impersonation.ended')),
     ).toBeInTheDocument()
 
-    // The operator's own identity is back: the console entry returns, and
+    // The operator's own identity is back: the admin entry returns, and
     // the identity-keyed roster read re-ran.
     expect(
-      await screen.findByRole('link', { name: demoEnUS.nav.console }),
+      await screen.findByRole('link', { name: demoEnUS.nav.admin }),
     ).toBeInTheDocument()
     await waitFor(() => expect(backend.rosterReads()).toBeGreaterThan(rosterBefore))
 
@@ -1031,7 +1031,7 @@ describe('the impersonation shell', () => {
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
     await waitFor(() => expect(banner()).toBeNull())
-    await screen.findByRole('link', { name: demoEnUS.nav.console })
+    await screen.findByRole('link', { name: demoEnUS.nav.admin })
 
     // A later impersonation in the same mount renders its banner: the
     // withheld state belongs to the finished interval.
@@ -1127,12 +1127,12 @@ describe('the impersonation shell', () => {
     )
   })
 
-  it('shows no finished impersonation while the console page\'s status read is pending', async () => {
+  it('shows no finished impersonation while the admin page\'s status read is pending', async () => {
     window.history.replaceState({}, '', '/')
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
     })
-    // Once the console page mounts, its status read is held open: the cached
+    // Once the admin page mounts, its status read is held open: the cached
     // answer is all the page has to render while it waits.
     const statusGate = deferred()
     let holdStatus = false
@@ -1168,30 +1168,30 @@ describe('the impersonation shell', () => {
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
     await waitFor(() => expect(banner()).toBeNull())
-    await screen.findByRole('link', { name: demoEnUS.nav.console })
+    await screen.findByRole('link', { name: demoEnUS.nav.admin })
 
     holdStatus = true
     act(() => {
-      window.history.pushState({}, '', '/console/impersonations?tenant=acme')
+      window.history.pushState({}, '', '/admin/impersonations?tenant=acme')
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
 
     expect(
-      await screen.findByText(tConsole('impersonations.current.title')),
+      await screen.findByText(tAdmin('impersonations.current.title')),
     ).toBeInTheDocument()
     // The finished grant is not rendered as current while the read is out:
     // the interval's cache entry was evicted when its read was disabled.
     expect(
-      screen.getByText(tConsole('impersonations.current.loading')),
+      screen.getByText(tAdmin('impersonations.current.loading')),
     ).toBeInTheDocument()
     expect(
-      screen.queryByText(tConsole('impersonations.current.target'), {
+      screen.queryByText(tAdmin('impersonations.current.target'), {
         exact: false,
       }),
     ).toBeNull()
     expect(
       screen.queryByRole('button', {
-        name: tConsole('impersonations.current.end'),
+        name: tAdmin('impersonations.current.end'),
       }),
     ).toBeNull()
   })
@@ -1291,10 +1291,10 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     // The host re-read the session, and the operator's own state returned:
-    // the banner is gone and the console entry is offered again.
+    // the banner is gone and the admin entry is offered again.
     await waitFor(() => expect(banner()).toBeNull())
     expect(
-      await screen.findByRole('link', { name: demoEnUS.nav.console }),
+      await screen.findByRole('link', { name: demoEnUS.nav.admin }),
     ).toBeInTheDocument()
     expect(window.location.pathname).toBe('/')
   })
@@ -1382,7 +1382,7 @@ describe('the impersonation shell', () => {
     await waitFor(() => expect(banner()).toBeNull())
     expect(backend.deletes()).toBe(1)
     expect(
-      await screen.findByRole('link', { name: demoEnUS.nav.console }),
+      await screen.findByRole('link', { name: demoEnUS.nav.admin }),
     ).toBeInTheDocument()
   })
 
@@ -1545,7 +1545,7 @@ describe('the impersonation shell', () => {
   it('cancels the read in flight and holds new reads until a delayed start settles', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
-      window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+      window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
       // The write's round trip is slow, and the record read stays open: one
       // read is in flight at the moment the start is issued.
       const post = deferred()
@@ -1577,13 +1577,13 @@ describe('the impersonation shell', () => {
 
       // The start form waits on a settled "not impersonating" answer, and the
       // record read is in flight.
-      await screen.findByText(tConsole('impersonations.current.none'))
+      await screen.findByText(tAdmin('impersonations.current.none'))
       await waitFor(() => expect(backend.recordReads()).toBe(1))
-      await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
+      await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
 
       // The write is issued: the record read in flight is cancelled at that
       // moment, and the client's queries are paused.
-      await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
+      await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
       await waitFor(() => expect(backend.postReads()).toBe(1))
       await waitFor(() => expect(backend.recordsAborted()).toBe(true))
       expect(onlineManager.isOnline()).toBe(false)
@@ -1627,7 +1627,7 @@ describe('the impersonation shell', () => {
   })
 
   it('releases the hold when the start is refused: no identity change follows', async () => {
-    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
     const backend = makeBackend({ startRefused: true })
     bindRequestFn(backend.fn)
     const user = userEvent.setup()
@@ -1635,9 +1635,9 @@ describe('the impersonation shell', () => {
 
     renderDemoApp({ session: transitions.session })
 
-    await screen.findByText(tConsole('impersonations.current.none'))
-    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
-    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
+    await screen.findByText(tAdmin('impersonations.current.none'))
+    await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
+    await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
     await waitFor(() => expect(backend.postReads()).toBe(1))
 
     // The write changed no identity, so the session's identity-transition
@@ -1648,7 +1648,7 @@ describe('the impersonation shell', () => {
     expect(transitions.opens()).toBe(1)
     expect(transitions.releases()).toBe(1)
     const readsBefore = backend.reads()
-    await user.click(screen.getByRole('button', { name: tConsole('common.refresh') }))
+    await user.click(screen.getByRole('button', { name: tAdmin('common.refresh') }))
     await waitFor(() => expect(backend.reads()).toBeGreaterThan(readsBefore))
     expect(transitions.opens()).toBe(1)
     expect(transitions.releases()).toBe(1)
@@ -1936,13 +1936,13 @@ describe('the impersonation shell', () => {
     }
   })
 
-  it('keeps an impersonating identity out of the console even with a non-empty platform set', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+  it('keeps an impersonating identity out of the admin even with a non-empty platform set', async () => {
+    window.history.replaceState({}, '', '/admin/tenants')
     const backend = makeBackend()
     bindRequestFn(backend.fn)
     // The effective account holds a platform permission. A real target never
     // does, but the identity fact decides before the set is consulted: the
-    // impersonation alone closes the console.
+    // impersonation alone closes the admin.
     const impersonated = {
       ...authenticatedSnapshot({ system: ['tenant.read'] }),
       impersonating: true,
@@ -1952,16 +1952,16 @@ describe('the impersonation shell', () => {
     })
 
     // The impersonation redirects before the permission set is read, so the
-    // non-empty set neither keeps the console nor shows it in passing.
+    // non-empty set neither keeps the admin nor shows it in passing.
     await waitFor(() => expect(window.location.pathname).toBe('/'))
     expect(
-      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
+      screen.queryByRole('navigation', { name: tAdmin('shell.navLabel') }),
     ).toBeNull()
-    expect(screen.queryByText(demoEnUS.console.accessFailed)).toBeNull()
+    expect(screen.queryByText(demoEnUS.admin.accessFailed)).toBeNull()
   })
 
   it('sends an impersonating identity with an empty platform set to the tenant home', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     const backend = makeBackend()
     bindRequestFn(backend.fn)
     const impersonated = {
@@ -1973,19 +1973,19 @@ describe('the impersonation shell', () => {
     })
 
     // The same permission criterion that turns an ordinary member away: the
-    // set is known and empty, so the console path space is left behind. The
+    // set is known and empty, so the admin path space is left behind. The
     // redirect does not mention the impersonation; the tenant frame's banner
     // is the visitor's explanation.
     await waitFor(() => expect(window.location.pathname).toBe('/'))
   })
 
-  it('settles the console tenant from the caller list when the roster is refused', async () => {
-    // A full document load of a console path while impersonating: the roster
-    // is a platform management read and is refused, so the console area must
+  it('settles the admin tenant from the caller list when the roster is refused', async () => {
+    // A full document load of an admin path while impersonating: the roster
+    // is a platform management read and is refused, so the admin area must
     // name the tenant from the caller tenant list (narrowed to the grant) to
     // let the effective account's platform set be read at all. With the set
     // read as empty, the area redirects; without the read it waits forever.
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     // A full load starts with no current tenant and no alias cache.
     setCurrentTenantId(null)
     setTenantAliases(new Map())
@@ -2039,7 +2039,7 @@ describe('the impersonation shell', () => {
     })
     expect(
       screen.queryByRole('progressbar', {
-        name: demoEnUS.console.accessPending,
+        name: demoEnUS.admin.accessPending,
       }),
     ).toBeNull()
   })
@@ -2118,7 +2118,7 @@ describe('the impersonation shell', () => {
     // refused read leaves the set unknown instead of attaching an empty one.
     await waitFor(() => expect(attached).toEqual([null]))
     expect(
-      screen.queryByRole('link', { name: demoEnUS.nav.console }),
+      screen.queryByRole('link', { name: demoEnUS.nav.admin }),
     ).toBeNull()
 
     await user.click(
@@ -2138,12 +2138,12 @@ describe('the impersonation shell', () => {
     // answers.
     expect(attached).toEqual([null, null, null, ['tenant.read']])
     expect(
-      await screen.findByRole('link', { name: demoEnUS.nav.console }),
+      await screen.findByRole('link', { name: demoEnUS.nav.admin }),
     ).toBeInTheDocument()
   })
 
   it('keeps the settled permission set when the start\'s session re-read hangs', async () => {
-    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
     const backend = makeBackend()
     const request: RequestFn = <T,>(
       path: string,
@@ -2184,22 +2184,22 @@ describe('the impersonation shell', () => {
       ),
     })
 
-    await screen.findByText(tConsole('impersonations.current.none'))
-    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
-    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
+    await screen.findByText(tAdmin('impersonations.current.none'))
+    await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
+    await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
 
     // The write settled and the identity change is waiting on the session
-    // re-read. The console must keep rendering: its permission set was not
+    // re-read. The admin must keep rendering: its permission set was not
     // cleared ahead of the re-read.
     await waitFor(() => expect(gated.pendingRestores()).toBe(1))
-    expect(window.location.pathname).toBe('/console/impersonations')
+    expect(window.location.pathname).toBe('/admin/impersonations')
     expect(
       screen.queryByRole('progressbar', {
-        name: demoEnUS.console.accessPending,
+        name: demoEnUS.admin.accessPending,
       }),
     ).toBeNull()
     expect(
-      screen.getByText(tConsole('impersonations.current.title')),
+      screen.getByText(tAdmin('impersonations.current.title')),
     ).toBeInTheDocument()
 
     await gated.releaseRestore()
@@ -2207,7 +2207,7 @@ describe('the impersonation shell', () => {
   })
 
   it('keeps the settled permission set when the start\'s session re-read is refused', async () => {
-    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
     const backend = makeBackend()
     const request: RequestFn = <T,>(
       path: string,
@@ -2251,20 +2251,20 @@ describe('the impersonation shell', () => {
       ),
     })
 
-    await screen.findByText(tConsole('impersonations.current.none'))
-    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
-    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
+    await screen.findByText(tAdmin('impersonations.current.none'))
+    await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
+    await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
     await waitFor(() => expect(backend.postReads()).toBe(1))
 
-    // The re-read was refused, and the identity did not change; the console
+    // The re-read was refused, and the identity did not change; the admin
     // keeps the set it had rather than waiting on an unknown one forever.
     // The refusal has to be decided first: until then the identity change is
     // still pending, and a pending change leaves the set untouched too.
     await waitFor(() => expect(restoreOutcomes).toEqual(['rejected']))
-    expect(window.location.pathname).toBe('/console/impersonations')
+    expect(window.location.pathname).toBe('/admin/impersonations')
     expect(
       screen.queryByRole('progressbar', {
-        name: demoEnUS.console.accessPending,
+        name: demoEnUS.admin.accessPending,
       }),
     ).toBeNull()
     expect(session.getSnapshot().permissionSets.system).toEqual([
@@ -2274,7 +2274,7 @@ describe('the impersonation shell', () => {
   })
 
   it('keeps the settled permission set when an end changes no identity', async () => {
-    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
     // Another tab started the impersonation: the server's status read has a
     // grant while this tab's session still names the operator.
     const backend = makeBackend({
@@ -2326,10 +2326,10 @@ describe('the impersonation shell', () => {
       ),
     })
 
-    // The console's own status surface settles the grant; the end control
+    // The admin's own status surface settles the grant; the end control
     // belongs to it.
     const end = await screen.findByRole('button', {
-      name: tConsole('impersonations.current.end'),
+      name: tAdmin('impersonations.current.end'),
     })
     await user.click(end)
     await waitFor(() => expect(backend.deletes()).toBe(1))
@@ -2339,10 +2339,10 @@ describe('the impersonation shell', () => {
     // re-read's own outcome is what settles the change: until it answers,
     // the change is pending and the set is untouched for that reason too.
     await waitFor(() => expect(restoreOutcomes).toEqual(['settled']))
-    expect(window.location.pathname).toBe('/console/impersonations')
+    expect(window.location.pathname).toBe('/admin/impersonations')
     expect(
       screen.queryByRole('progressbar', {
-        name: demoEnUS.console.accessPending,
+        name: demoEnUS.admin.accessPending,
       }),
     ).toBeNull()
     expect(session.getSnapshot().permissionSets.system).toEqual([
@@ -2354,9 +2354,9 @@ describe('the impersonation shell', () => {
   it('starts a newly mounted frame from an unknown tenant during an impersonation', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
-      window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+      window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
       // The operator's tenant is what the module-level cell holds while the
-      // console has the frame unmounted.
+      // admin has the frame unmounted.
       setCurrentTenantId('acme')
       setTenantAliases(
         new Map([
@@ -2391,11 +2391,11 @@ describe('the impersonation shell', () => {
 
       const renderResult = renderDemoApp({ session, api: client })
 
-      await screen.findByText(tConsole('impersonations.current.none'))
-      await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
+      await screen.findByText(tAdmin('impersonations.current.none'))
+      await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
       const tenantBefore = backend.tenantReads()
       const openedBefore = opened.length
-      await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
+      await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
 
       // The frame remounted while the status read is still held: the grant's
       // tenant is not known, so no tenant-scoped read and no stream may run
@@ -2459,7 +2459,7 @@ describe('the impersonation shell', () => {
   })
 
   it('starts without a blanking window: the banner appears when the re-read settles', async () => {
-    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+    window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
     const backend = makeBackend()
     let phase: 'operator' | 'target' = 'operator'
     const request: RequestFn = <T,>(
@@ -2480,9 +2480,9 @@ describe('the impersonation shell', () => {
 
     renderDemoApp({ session })
 
-    await screen.findByText(tConsole('impersonations.current.none'))
-    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
-    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
+    await screen.findByText(tAdmin('impersonations.current.none'))
+    await user.type(screen.getByLabelText(tAdmin('impersonations.start.accountLabel')), 'acc-1')
+    await user.click(screen.getByRole('button', { name: tAdmin('impersonations.start.submit') }))
 
     // A start announces itself through the re-read: the banner appears with
     // the impersonated identity and no end confirmation precedes it.
@@ -2778,13 +2778,13 @@ describe('the impersonation shell', () => {
 })
 
 /**
- * The console under an impersonation: the impersonation is the identity fact
+ * The admin under an impersonation: the impersonation is the identity fact
  * that closes it, decided before any permission set is consulted. Whatever
  * the masked account's permission read answers -- refused, an empty document,
- * or even a non-empty one -- the console entry is hidden and every console
+ * or even a non-empty one -- the admin entry is hidden and every admin
  * path lands on the tenant home, with no retryable failure view.
  */
-describe('the console under an impersonation', () => {
+describe('the admin under an impersonation', () => {
   /** A session whose permission attach lands in the snapshot the gates read. */
   function attachable(base: ReturnType<typeof createTestSession>): AuthSession {
     return {
@@ -2826,9 +2826,9 @@ describe('the console under an impersonation', () => {
       (): Promise<unknown> => Promise.resolve({ platform: [], tenant: [] }),
     ],
   ])(
-    'keeps a console URL unreachable under %s, with no failure view',
+    'keeps an admin URL unreachable under %s, with no failure view',
     async (_label, answer) => {
-      window.history.replaceState({}, '', '/console/tenants')
+      window.history.replaceState({}, '', '/admin/tenants')
       bindWithPermissions(answer)
       // The target's platform set is unknown at entry: the read under test is
       // the only thing that could turn it into a decision, so the redirect can
@@ -2847,12 +2847,12 @@ describe('the console under an impersonation', () => {
       })
 
       // The identity fact redirects before the read is consulted: the viewer
-      // lands on the tenant home, without the console chrome and without the
+      // lands on the tenant home, without the admin chrome and without the
       // retryable failure its refused read would otherwise show.
       await waitFor(() => expect(window.location.pathname).toBe('/'))
-      expect(screen.queryByText(demoEnUS.console.accessFailed)).toBeNull()
+      expect(screen.queryByText(demoEnUS.admin.accessFailed)).toBeNull()
       expect(
-        screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
+        screen.queryByRole('navigation', { name: tAdmin('shell.navLabel') }),
       ).toBeNull()
       expect(
         await screen.findByRole('region', {
@@ -2862,7 +2862,7 @@ describe('the console under an impersonation', () => {
     },
   )
 
-  it('hides the entry and keeps an in-app console move home even for a non-empty read', async () => {
+  it('hides the entry and keeps an in-app admin move home even for a non-empty read', async () => {
     // The entry's hiding is the identity fact too: a target read that
     // answered a platform set must not offer the way in.
     window.history.replaceState({}, '', '/')
@@ -2881,22 +2881,22 @@ describe('the console under an impersonation', () => {
       name: tAuth('impersonation.regionLabel'),
     })
     expect(
-      screen.queryByRole('link', { name: demoEnUS.nav.console }),
+      screen.queryByRole('link', { name: demoEnUS.nav.admin }),
     ).toBeNull()
 
     act(() => {
-      window.history.pushState({}, '', '/console/tenants')
+      window.history.pushState({}, '', '/admin/tenants')
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
     await waitFor(() => expect(window.location.pathname).toBe('/'))
-    expect(screen.queryByText(demoEnUS.console.accessFailed)).toBeNull()
+    expect(screen.queryByText(demoEnUS.admin.accessFailed)).toBeNull()
     expect(
-      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
+      screen.queryByRole('navigation', { name: tAdmin('shell.navLabel') }),
     ).toBeNull()
   })
 
-  it('lets the console back in once the impersonation ends', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+  it('lets the admin back in once the impersonation ends', async () => {
+    window.history.replaceState({}, '', '/admin/tenants')
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
     })
@@ -2914,11 +2914,11 @@ describe('the console under an impersonation', () => {
     )
     await waitFor(() => expect(banner()).toBeNull())
 
-    const entry = await screen.findByRole('link', { name: demoEnUS.nav.console })
+    const entry = await screen.findByRole('link', { name: demoEnUS.nav.admin })
     await user.click(entry)
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
   })

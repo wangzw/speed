@@ -5,14 +5,14 @@
  * carries no business domain, so there is no data to render -- what the page
  * shows instead is the platform already assembled around it: one card per
  * capability that works out of the box (the account settings, the platform
- * console, the notification centre), each a real destination into the app.
+ * admin, the notification centre), each a real destination into the app.
  *
  * A card is offered only while its destination exists: the account card
  * always, the notification card when the route layer leaves its
- * declaration in force (useHasRoute), and the console card only to platform
- * staff while at least one console page is served -- pointing at the first such
+ * declaration in force (useHasRoute), and the admin card only to platform
+ * staff while at least one admin page is served -- pointing at the first such
  * page the principal may open, the same derivation the header entry uses
- * (src/console-routes.ts's firstConsoleTarget). The gates fail closed: a
+ * (src/admin-routes.ts's firstAdminTarget). The gates fail closed: a
  * permission set or feature document the host has not settled reads as "not
  * offered", so a card stays hidden until the fact it depends on is known.
  *
@@ -40,9 +40,9 @@ import { PageLayout, SectionCard } from '@speed/ui-kit'
 import { setupIncomplete } from '../account-setup.js'
 import { useAuthnProfileGet } from '../app-api/index.js'
 import {
-  consoleShellRoutes,
-  useConsoleTarget,
-} from '../console-routes.js'
+  adminShellRoutes,
+  useAdminTarget,
+} from '../admin-routes.js'
 import { usePersonalTenantNotice } from '../personal-tenant-notice.js'
 import {
   ACCOUNT_PATH,
@@ -56,7 +56,7 @@ import { DEMO_NAMESPACE } from '../resources.js'
 /**
  * One capability the start page offers: the demo-namespace key pair that
  * names it, the path it opens, and how its offer is decided -- always, by the
- * route layer's presence answer for that path, or by the console's own
+ * route layer's presence answer for that path, or by the admin's own
  * permission-and-feature derivation.
  */
 type StartCard =
@@ -72,13 +72,13 @@ type StartCard =
       readonly gate: 'direct' | 'route'
     }
   | {
-      readonly key: 'console'
-      readonly gate: 'console'
+      readonly key: 'admin'
+      readonly gate: 'admin'
     }
 
 const START_CARDS: readonly StartCard[] = [
   { key: 'account', path: ACCOUNT_PATH, gate: 'direct' },
-  { key: 'console', gate: 'console' },
+  { key: 'admin', gate: 'admin' },
   { key: 'notifications', path: NOTIFICATIONS_PATH, gate: 'route' },
 ]
 
@@ -198,8 +198,8 @@ function StartCardTile({
 }: {
   readonly card: StartCard
 }): ReactElement | null {
-  if (card.gate === 'console') {
-    return <ConsoleStartCard />
+  if (card.gate === 'admin') {
+    return <AdminStartCard />
   }
   if (card.gate === 'route') {
     return <RouteStartCard card={card} />
@@ -225,24 +225,24 @@ function RouteStartCard({
 }
 
 /**
- * The console card: offered only to a principal holding a platform permission,
- * while at least one console declaration is in force, and pointing at the
- * first console page the principal may open. It calls the same
- * useConsoleTarget the header's console entry does (src/app.tsx), so card and
- * entry never disagree about where the console is or whether it is offered at
+ * The admin card: offered only to a principal holding a platform permission,
+ * while at least one admin declaration is in force, and pointing at the
+ * first admin page the principal may open. It calls the same
+ * useAdminTarget the header's admin entry does (src/app.tsx), so card and
+ * entry never disagree about where the admin is or whether it is offered at
  * all -- including during an impersonation, when neither offers it. While the
  * feature document or the permission set is unsettled the card is hidden (both
  * answers fail closed).
  */
-function ConsoleStartCard(): ReactElement | null {
+function AdminStartCard(): ReactElement | null {
   const presence = featurePresence(useFeatureState())
-  const target = useConsoleTarget(
-    presentDeclarations(consoleShellRoutes, presence),
+  const target = useAdminTarget(
+    presentDeclarations(adminShellRoutes, presence),
   )
   if (target === null) {
     return null
   }
-  return <StartCardView card={{ key: 'console', path: target }} />
+  return <StartCardView card={{ key: 'admin', path: target }} />
 }
 
 /** One card as an anchor carrying its target path. */

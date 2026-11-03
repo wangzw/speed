@@ -1,6 +1,6 @@
 /**
  * Attaches the signed-in caller's own permission sets, so the shell can gate
- * the console on them (src/app.tsx's ConsoleEntry and ConsoleAreaGate).
+ * the admin on them (src/app.tsx's AdminEntry and AdminAreaGate).
  *
  * The platform publishes the caller's held permissions at
  * GET /api/v1/authz/me/permissions: `platform` is the set the caller holds in
@@ -14,8 +14,8 @@
  * The read waits for the feature document to be `ready` and for the current
  * tenant to be settled: while the feature state is `pending` or `failed`, or
  * the host has not decided the current tenant yet, both sets stay unknown
- * (null), so the console area shows its frameless wait or failure rather than
- * misreading the caller as a member. That gating is what keeps the console
+ * (null), so the admin area shows its frameless wait or failure rather than
+ * misreading the caller as a member. That gating is what keeps the admin
  * area's "feature state first, then permission set" order meaningful -- a
  * failed feature read never looks like an empty permission set.
  *
@@ -26,7 +26,7 @@
  * request on a known refusal -- a console error at every sign-in -- and attach
  * the fail-closed empty set to a caller whose sets were never actually asked
  * for. The tenant is a host fact settled outside the session (src/app.tsx's
- * tenant frame, or the console area's own settle), and the read follows it.
+ * tenant frame, or the admin area's own settle), and the read follows it.
  *
  * Once the document is ready the read is (re)issued whenever the effective
  * identity changes -- an authenticated transition, a re-login as another
@@ -42,7 +42,7 @@
  * old tenant's set attached. A re-read first resets both sets to unknown
  * immediately before issuing its read; the reset belongs to the read, not to
  * the identity-change action, so a read that hangs or is refused does not
- * leave the console waiting on a set the action cleared.
+ * leave the admin waiting on a set the action cleared.
  *
  * A read that is refused or fails attaches the empty set to both domains --
  * fail-closed, so a caller whose permissions are unknown is offered no platform
@@ -98,7 +98,7 @@ const PermissionReadContext = createContext<PermissionReadState>(
 
 /**
  * The last permission read's failure, for a surface that must not read an
- * unknown set as an empty one: the console area renders its wait or a retry
+ * unknown set as an empty one: the admin area renders its wait or a retry
  * from it. A tree without the provider (a unit test mounting one surface)
  * reads no failure and retries nothing.
  */
@@ -144,7 +144,7 @@ export function PlatformPermissions({
  * tenant being settled, not on any one feature: the permission read is scoped
  * to the caller, so it belongs to no optional capability. While the document
  * is `pending` or `failed`, or the current tenant is undecided, both sets stay
- * unknown (null) -- neither "absent" nor "present" -- and the console area
+ * unknown (null) -- neither "absent" nor "present" -- and the admin area
  * shows its frameless wait/failure rather than misreading the operator as a
  * member. The guarded route answers 404 to a request without a tenant name, so
  * an undecided tenant is a request that would be refused before any handler;
@@ -157,7 +157,7 @@ export function PlatformPermissions({
  * first resets both sets to unknown, immediately before issuing its read.
  *
  * A failed read is not an empty set. A transport or server failure leaves both
- * sets unknown and reports the failure, and the console area shows its wait or
+ * sets unknown and reports the failure, and the admin area shows its wait or
  * its retry instead of reading "no permissions" into a fault. Only an answered
  * document attaches a set -- an answer whose domains are both empty is a known
  * empty set, distinct from a failure.
@@ -196,7 +196,7 @@ function usePlatformPermissions(
     // Resetting to unknown belongs to this read, not to the identity-change
     // action that prompted it: the sets must go unknown immediately before a
     // new read is issued, so a restore() that hangs or is refused leaves the
-    // console waiting on an unknown set rather than a stale one.
+    // admin waiting on an unknown set rather than a stale one.
     session.setPermissionSet(PLATFORM_DOMAIN, null)
     session.setPermissionSet(TENANT_DOMAIN, null)
     onFailure(false)

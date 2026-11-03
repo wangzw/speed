@@ -8,12 +8,12 @@
   "nav": {
     "account": "Account settings",
     "home": "Home",
-    "console": "Admin"
+    "admin": "Admin"
   },
-  "console": {
+  "admin": {
     "backToApp": "Back to app",
-    "accessPending": "Checking console access",
-    "accessFailed": "Could not check console access",
+    "accessPending": "Checking admin access",
+    "accessFailed": "Could not check admin access",
     "accessRetry": "Try again"
   },
   "route": {
@@ -45,8 +45,8 @@
         "title": "Account settings",
         "description": "Your profile, password, sign-in identifiers, preferences, active sessions and two-step verification."
       },
-      "console": {
-        "title": "Console",
+      "admin": {
+        "title": "Admin",
         "description": "Platform administration: tenants, accounts, settings and the audit trail."
       },
       "notifications": {

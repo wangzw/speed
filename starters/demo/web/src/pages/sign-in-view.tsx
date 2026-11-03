@@ -10,7 +10,7 @@
  * the host's title says what the surface is asking for. The channels it
  * offers come from the deployment's discovery document, so the skeleton
  * renders whatever login methods the running deployment enables. The tenant
- * shell's sign-in slot, its console area's session gate, and the
+ * shell's sign-in slot, its admin area's session gate, and the
  * invitation-acceptance route all reuse this one surface, so an anonymous
  * viewer meets the same sign-in (and register) entry wherever the app gates
  * them.
@@ -53,9 +53,9 @@
  * back to it.
  *
  * A surface that embeds this view inside a flow of its own passes
- * `keepLanding`: the invitation landing and the console area's session gate
+ * `keepLanding`: the invitation landing and the admin area's session gate
  * sign the viewer in place, so a registration completed there leaves the
- * invitation token in the URL or the console path the viewer asked for. The
+ * invitation token in the URL or the admin path the viewer asked for. The
  * session flip itself re-renders those surfaces; navigating away would lose
  * what the URL carried.
  */
@@ -112,7 +112,7 @@ export function SignInView({
   /**
    * Whether the surface embedding this view owns the landing: true leaves
    * the viewer at the current URL after a registration, so the embedding
-   * page (the invitation landing, the console session gate) re-renders onto
+   * page (the invitation landing, the admin session gate) re-renders onto
    * its own content instead of the app navigating away. The application's
    * own sign-in page leaves it false and lands by the register mode.
    */
@@ -159,7 +159,7 @@ export function SignInView({
     if (keepLanding) {
       // The embedding page's URL is the destination: the session flip
       // re-renders it (the invitation landing onto its accept screen, the
-      // console gate onto the console) and no navigation may take it away.
+      // admin gate onto the admin) and no navigation may take it away.
       return
     }
     if (context.channel === 'password') {
@@ -230,7 +230,7 @@ export function SignInView({
           onInitialErrorDismiss={dismiss}
           // The password channel's "forgot password" entry navigates to the
           // anonymous reset page. A surface that owns its own landing (an
-          // invitation link, the console gate) leaves it out: navigating away
+          // invitation link, the admin gate) leaves it out: navigating away
           // would drop the token or the path the viewer arrived with.
           onForgotPassword={
             keepLanding ? undefined : () => navigate(PASSWORD_RESET_PATH)

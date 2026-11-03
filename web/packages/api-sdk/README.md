@@ -166,13 +166,13 @@ this surface at runtime.
   `bindRequestFn` -- the same seam a host's real client binds.
   `@speed/account-ui` is the second in-workspace compile consumer and
   the first to render generated hooks into a component tree, and
-  `@speed/console-ui` consumes the generated admin operations. The
+  `@speed/admin-ui` consumes the generated admin operations. The
   merged document is covered by the same
   regeneration-and-comparison step.
 - **Runtime consumption.** `starters/demo/web` binds this surface at
   runtime: its app-entry assembly (`@speed/product-shell/bootstrap`'s
   `bootstrapSpeedApp`) binds one real `@speed/api-client` client through
-  this package's `bindRequestFn` seam, and the app's console area drives
+  this package's `bindRequestFn` seam, and the app's admin area drives
   the generated operations through the composed tree. Release-time
   packaging of the published SDK (generated from the merged `api.json`,
   versioned alongside the doc site) is not shipped -- release-machinery

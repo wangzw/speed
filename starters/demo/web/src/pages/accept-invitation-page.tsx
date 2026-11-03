@@ -1,12 +1,12 @@
 /**
  * The accept-invitation page: the host route an invitee's link lands on.
  *
- * An administrator issues an invitation from the console, which hands the
+ * An administrator issues an invitation from the admin, which hands the
  * invitee a link to /invitations/:token. This page is that link's landing.
  * The accept surface is public and the token is the whole credential: the
  * membership lands on the invited address's account, not on whoever happens
  * to be signed in (pkg/authn/invite binds it by the invited address). The
- * host nevertheless gates the landing on a session the way the console area
+ * host nevertheless gates the landing on a session the way the admin area
  * does -- an anonymous viewer meets the host's sign-in / register surface
  * (and re-renders onto the accept screen the moment the session flips), so
  * the invitee arrives with an identity of their own -- but that gate is a

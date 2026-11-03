@@ -1,5 +1,5 @@
 /**
- * The header console entry's surface in a real browser.
+ * The header admin entry's surface in a real browser.
  *
  * The entry is an action, not a label: its full form wears the outlined
  * action pill, and the collapsed rail keeps the icon-only button. jsdom
@@ -20,7 +20,7 @@ import {
   createTestSession,
 } from './test-utils/session.js'
 
-describe('the console entry surface', () => {
+describe('the admin entry surface', () => {
   it('is the outlined action pill, and the collapsed rail keeps the icon form', async () => {
     await page.viewport(1100, 900)
     const session = createTestSession(
@@ -30,7 +30,7 @@ describe('the console entry surface', () => {
     const user = userEvent.setup()
 
     const entry = await screen.findByRole('link', {
-      name: demoEnUS.nav.console,
+      name: demoEnUS.nav.admin,
     })
     // The entry still links, and its full form is the outlined pill.
     expect(entry).toHaveClass('MuiButton-outlined')
@@ -44,7 +44,7 @@ describe('the console entry surface', () => {
 
     await waitFor(() => {
       const links = screen.queryAllByRole('link', {
-        name: demoEnUS.nav.console,
+        name: demoEnUS.nav.admin,
       })
       expect(links).toHaveLength(1)
       expect(links[0]).not.toHaveClass('MuiButton-outlined')

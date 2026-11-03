@@ -25,7 +25,7 @@ import type { RequestFn, SpeedClient } from '@speed/api-client'
 import { attachSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
-import { CONSOLE_UI_NAMESPACE, consoleUiResources } from '@speed/console-ui'
+import { ADMIN_UI_NAMESPACE, adminUiResources } from '@speed/admin-ui'
 import type { I18nInstance } from '@speed/i18n'
 import {
   NOTIFICATION_UI_NAMESPACE,
@@ -104,7 +104,7 @@ export function createHarnessClient(): SpeedClient {
 /** The app bundles the production assembly registers beyond the framework
  * four (src/main.tsx names the same list). */
 const APP_NAMESPACES = [
-  { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
+  { namespace: ADMIN_UI_NAMESPACE, resources: adminUiResources },
   { namespace: ACCOUNT_UI_NAMESPACE, resources: accountUiResources },
   { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
   { namespace: NOTIFICATION_UI_NAMESPACE, resources: notificationUiResources },

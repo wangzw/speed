@@ -29,7 +29,7 @@ export type CopyBundle =
   | 'layoutKit'
   | 'notificationUi'
   | 'uiKit'
-  | 'consoleUi'
+  | 'adminUi'
   | 'reviewNotice'
 
 /** The languages the deployment ships bundles for. */
@@ -45,7 +45,7 @@ const BUNDLES: Record<CopyBundle, string> = {
   layoutKit: '../../../../../web/packages/layout-kit/src/locales',
   notificationUi: '../../../../../web/packages/notification-ui/src/locales',
   uiKit: '../../../../../web/packages/ui-kit/src/locales',
-  consoleUi: '../../../../../web/packages/console-ui/src/locales',
+  adminUi: '../../../../../web/packages/admin-ui/src/locales',
   // The review assembly's notification catalog. The delivery pipeline renders
   // an in-app message from "<type_key>.<channel>.<part>" in the module's own
   // catalog, and the review build is where a type exists, so its text is a

@@ -180,7 +180,7 @@ plumbing and deliberately not exported.
   directly. Some control groups are not action rows and keep their own
   layout: `EmptyState.action` (a centred retry) and inline control
   clusters that sit beside text in a data or title row and carry one
-  class of secondary action (console-ui's SSO domain row's
+  class of secondary action (admin-ui's SSO domain row's
   verify/remove pair, the demo account page's single add control on a
   settings title row, and the SMS sign-in code step's resend/edit pair).
   Neither kind uses an automatic margin: the text before the cluster

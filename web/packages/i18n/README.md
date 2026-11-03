@@ -75,7 +75,7 @@ await switchLanguage(i18n, 'en-US') // persists the canonical choice
 `switchLanguage` writes the choice to storage first and then switches the
 instance; persistence is best-effort by design. A storage write failure
 (quota, disabled storage, embedded contexts) never fails or aborts the
-switch -- it is reported by a `[speed-i18n]` console warning and the
+switch -- it is reported by a `[speed-i18n]` admin warning and the
 instance still switches, so the promise resolves exactly when the language
 changed and a rejection always means the switch did not happen. Reads are
 protected the same way: a throwing storage read at creation falls back to
@@ -220,13 +220,13 @@ package does not ship, overlays the exported bundle before registering it:
 
 ```ts
 import { overlayResources, registerNamespace } from '@speed/i18n'
-import { consoleUiResources } from '@speed/console-ui'
+import { adminUiResources } from '@speed/admin-ui'
 
-const resources = overlayResources(consoleUiResources, {
+const resources = overlayResources(adminUiResources, {
   'en-US': { common: { refresh: 'Reload' } },
   'fr-FR': frResources, // a whole language the package does not carry
 })
-registerNamespace(i18n, 'console-ui', resources)
+registerNamespace(i18n, 'admin-ui', resources)
 ```
 
 A partial overlay for a language the package ships is deep-merged leaf by
@@ -292,7 +292,7 @@ installed. A key missing in the loaded language therefore:
   language;
 - fires the handler with structured details
   (`MissingKeyDetails`: languages, namespace, key) -- the package's
-  default handler warns visibly (`[speed-i18n]` prefixed console warning),
+  default handler warns visibly (`[speed-i18n]` prefixed admin warning),
   or the host supplies `onMissingKey` at creation.
 
 The registration-time parity and coverage checks are the companion
@@ -466,7 +466,7 @@ the path and the compatibility rule; supplying a platform-error language
 the bundle already ships, or one outside the supported set, names the
 language and says which operation fits. Storage is deliberately
 best-effort, by design: a failing write warns
-(`[speed-i18n]` console warning) without failing the switch, and a failing
+(`[speed-i18n]` admin warning) without failing the switch, and a failing
 read at creation silently means "no stored choice". The missing-key
 handler is the other non-throwing surface (a production lookup must
 degrade visibly, not crash). The display helpers never throw either: a

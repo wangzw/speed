@@ -184,7 +184,7 @@ describe('PlatformPermissions', () => {
 
   it('attaches an answered empty document as a known empty set', async () => {
     // Both domains empty is a read answer, not a failure: a member's known
-    // empty set is what the console gate turns into the home redirect.
+    // empty set is what the admin gate turns into the home redirect.
     setCurrentTenantId('acme')
     const requested = bindPermissionsAnswer({ platform: [], tenant: [] })
 

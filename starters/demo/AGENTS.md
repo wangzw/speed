@@ -10,7 +10,7 @@ It is a starting point, not an evaluation host. The modules under `pkg/` deliver
 the seams; this program shows one way to put them together. It ships no business
 domain: `server/modules/` is the empty slot a product's own modules land in.
 Because it seeds no business data, several surfaces open empty in the browser:
-the object store, the console dashboard beyond the tenant counts it reads from
+the object store, the admin dashboard beyond the tenant counts it reads from
 the platform's own roster, the notification inbox (the baseline runs no
 notification type and dispatches nothing; the review build turns the fixture's
 switch on, see "The review build's notification fixture" below), and the
@@ -57,7 +57,7 @@ the step-up start is refused. TOTP beside WebAuthn gives the step-up a factor
 kind to offer, and WebAuthn is the one the bundled deployment carries.
 
 The bundled frontend carries the passkey step to completion: `@speed/auth-ui`,
-`@speed/account-ui` and `@speed/console-ui` each drive the browser's WebAuthn
+`@speed/account-ui` and `@speed/admin-ui` each drive the browser's WebAuthn
 ceremony (`navigator.credentials.create`/`get`) from the step's own options and
 report the credential it returns. Enrolling the passkey and completing the
 step-up both work on the bundled UI (see "Re-authentication and impersonation on
@@ -188,7 +188,7 @@ review assembly does.
 `server/review_sms_control.go` is the review-only control over the review
 carrier's per-template review. It mounts
 `POST /api/v1/system/sms/review/verdicts`, moves one vendor code's verdict, and
-declares the static feature `review.sms.control`. The console's SMS page renders
+declares the static feature `review.sms.control`. The admin's SMS page renders
 the host's verdict control only while the feature is served, so a baseline
 deployment carries neither the route nor the control.
 
@@ -348,7 +348,7 @@ the seed writes; the proved address is not selected as a login way) with
 thirty-second period; import it into an authenticator, or run the
 standard-library one-liner under "Exercising a write path"). The seed is a
 fixture and not a credential, and it is written through the TOTP module's
-encrypted register. Wait out the one-minute freshness window, open the console's
+encrypted register. Wait out the one-minute freshness window, open the admin's
 impersonation page, pick the `acme` tenant and the `member` target, and submit.
 The start is refused for freshness and opens the step-up; complete it with the
 SMS code from the `log sms:` log line, and the start is replayed. The step-up
@@ -524,7 +524,7 @@ system tenant, registers the business tenants `seed.tenants` names with their
 administrators, writes the memberships `seed.members` names, and writes the
 runtime settings `seed.settings` names. At least one account must carry
 `platform-admin: true`: the command refuses the account list otherwise and
-names `seed.accounts`, because a console with no platform administrator has no
+names `seed.accounts`, because a admin with no platform administrator has no
 path back. An account marked `platform-admin` becomes a member of the system
 tenant and holds `platform-admin` in the platform domain (the system tenant's
 domain) plus `tenant-admin` in the system domain; a business tenant never holds
@@ -565,7 +565,7 @@ the allowlist with the manager.
 
 `seed` writes no second factor in a baseline build, and none in a review build either unless the deployment sets `seed.impersonation`: that switch seeds the impersonation journey's two judged methods on the platform administrator, one aged past `authn.mfa.sensitive-min-age`, and it changes how that administrator signs in afterwards. The public `pkg/authn`
 surface hands a host a registration step it does not let that host read, so a
-baseline seed cannot finish an enrollment; the console's step-up gate therefore
+baseline seed cannot finish an enrollment; the admin's step-up gate therefore
 refuses every write until an operator adds a factor in account settings and
 signs in again, completing that factor at login, and `seed` says so on its way
 out. The alternative — writing the factor's sealed row directly — would bind
@@ -1183,7 +1183,7 @@ write the operator tried -- an account-status or factor write, or an impersonati
 start.
 
 Both halves of the WebAuthn ceremony are in the bundled frontend. `@speed/auth-ui`,
-`@speed/account-ui` and `@speed/console-ui` each drive the browser's WebAuthn
+`@speed/account-ui` and `@speed/admin-ui` each drive the browser's WebAuthn
 ceremony (`navigator.credentials.create` for a registration, `navigator.credentials.get`
 for an assertion) from the step's own public-key options and report the credential
 it returns: the enrollment wizard registers a passkey, and the step-up dialog
@@ -1306,7 +1306,7 @@ Under every stack:
   permission writes exactly that grant. The one existing role it corrects is the
   administration roles' `builtin` mark: a role an earlier seed wrote without it
   is marked once its grants are in place, because that mark is what keeps the
-  role off the console's delete control. Nothing else is touched, and an account,
+  role off the admin's delete control. Nothing else is touched, and an account,
   a tenant, an administrator or a membership the configuration no longer names
   is neither disabled, demoted nor deleted. It drives to `StageStart`, past the
   migrations, so a database that was never migrated is one it can seed in a

@@ -51,7 +51,7 @@
 // The entry document and every other file are served with no-cache, so a
 // browser revalidates them. A path the bundle does not carry is answered by the
 // entry document when it names a client-side route, a path with no file
-// extension like /console/tenants, and as a 404 when it names a static
+// extension like /admin/tenants, and as a 404 when it names a static
 // resource: a file under the content-addressed subtree, a path whose final
 // segment carries a file extension like /runtime-config.json, or a path under a
 // configured resource prefix — /.well-known by default — where an

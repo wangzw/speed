@@ -1,16 +1,16 @@
 /**
  * The app composition: the tenant shell's anonymous and authenticated branches,
- * the host's console entry, and the console area's session gate and route
+ * the host's admin entry, and the admin area's session gate and route
  * guard.
  *
  * The tenant shell fail-closes to the host's sign-in surface -- the host's
  * chrome around auth-ui's password channel, the only channel the skeleton
- * offers. Once authenticated the frame appears with the host's console entry,
- * which lands the viewer in the console area. The console area carries the same
- * session gate (an anonymous viewer meets the sign-in surface, never a console
+ * offers. Once authenticated the frame appears with the host's admin entry,
+ * which lands the viewer in the admin area. The admin area carries the same
+ * session gate (an anonymous viewer meets the sign-in surface, never an admin
  * whose requests cannot answer) and a route guard over each page's permission
  * code. Its three tiers read the one platform permission set: the entry
- * targets the first console page whose code the principal holds, the area gate
+ * targets the first admin page whose code the principal holds, the area gate
  * on any non-empty set, and each page's guard on its own code. A staff viewer
  * whose set holds a permission other than the dashboard's reads the three
  * apart.
@@ -29,9 +29,9 @@ import type { RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { AUTH_UI_NAMESPACE } from '@speed/auth-ui'
 import {
-  CONSOLE_UI_NAMESPACE,
-  consoleUiResources,
-} from '@speed/console-ui'
+  ADMIN_UI_NAMESPACE,
+  adminUiResources,
+} from '@speed/admin-ui'
 import { LAYOUT_KIT_NAMESPACE } from '@speed/layout-kit'
 import {
   NOTIFICATION_UI_NAMESPACE,
@@ -81,7 +81,7 @@ const textI18n = createSpeedI18n({
   urlParameterName: null,
   navigatorLanguages: [],
   namespaces: [
-    { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
+    { namespace: ADMIN_UI_NAMESPACE, resources: adminUiResources },
     { namespace: ACCOUNT_UI_NAMESPACE, resources: accountUiResources },
     { namespace: NOTIFICATION_UI_NAMESPACE, resources: notificationUiResources },
   ],
@@ -89,7 +89,7 @@ const textI18n = createSpeedI18n({
 const tAuth = textI18n.getFixedT('en-US', AUTH_UI_NAMESPACE)
 const tAccount = textI18n.getFixedT('en-US', ACCOUNT_UI_NAMESPACE)
 const tAuthZh = textI18n.getFixedT('zh-CN', AUTH_UI_NAMESPACE)
-const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
+const tAdmin = textI18n.getFixedT('en-US', ADMIN_UI_NAMESPACE)
 const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
 const tLayoutZh = textI18n.getFixedT('zh-CN', LAYOUT_KIT_NAMESPACE)
 const tUiKit = textI18n.getFixedT('en-US', UI_KIT_NAMESPACE)
@@ -206,7 +206,7 @@ describe('the app at the root path', () => {
 })
 
 describe('the tenant shell with a session', () => {
-  it('offers a platform administrator a header console entry that lands in the console', async () => {
+  it('offers a platform administrator a header admin entry that lands in the admin', async () => {
     const user = userEvent.setup()
     renderDemoApp({
       session: createTestSession(
@@ -215,38 +215,38 @@ describe('the tenant shell with a session', () => {
     })
 
     // The entry is not a navigation item: the sidebar carries no way into the
-    // console.
+    // admin.
     const nav = screen.getByRole('navigation')
     expect(
-      within(nav).queryByRole('link', { name: demoEnUS.nav.console }),
+      within(nav).queryByRole('link', { name: demoEnUS.nav.admin }),
     ).not.toBeInTheDocument()
 
-    // It rides the header instead. A plain click routes in place to the console
-    // prefix, which renders the console's dashboard: the console frame's own
+    // It rides the header instead. A plain click routes in place to the admin
+    // prefix, which renders the admin's dashboard: the admin frame's own
     // navigation appears.
-    const entry = screen.getByRole('link', { name: demoEnUS.nav.console })
+    const entry = screen.getByRole('link', { name: demoEnUS.nav.admin })
     await user.click(entry)
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
   })
 
-  it('offers an ordinary member no console entry anywhere', () => {
+  it('offers an ordinary member no admin entry anywhere', () => {
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot({ system: [] })),
     })
 
     // The member's platform permission set is known and does not hold the
-    // entry's code, so neither the sidebar nor the header carries a console
-    // entry: there is no way into the console to be found.
+    // entry's code, so neither the sidebar nor the header carries an admin
+    // entry: there is no way into the admin to be found.
     expect(
-      screen.queryByRole('link', { name: demoEnUS.nav.console }),
+      screen.queryByRole('link', { name: demoEnUS.nav.admin }),
     ).not.toBeInTheDocument()
   })
 
-  it('keeps the console entry hidden while the platform permission set is unknown', async () => {
+  it('keeps the admin entry hidden while the platform permission set is unknown', async () => {
     // An authenticated session whose platform set is still unknown (null): the
     // state the host leaves the session in before it has read the caller's
     // platform permissions. usePermission fails closed on an unknown set, so
@@ -261,12 +261,12 @@ describe('the tenant shell with a session', () => {
     expect(banner).not.toBeNull()
     expect(
       within(banner as HTMLElement).queryByRole('link', {
-        name: demoEnUS.nav.console,
+        name: demoEnUS.nav.admin,
       }),
     ).not.toBeInTheDocument()
   })
 
-  it('reveals the console entry once the platform permission set lands', async () => {
+  it('reveals the admin entry once the platform permission set lands', async () => {
     // The attach-then-appear transition the host drives through
     // setPermissionSet: the set flips from unknown (null) to a known one
     // holding the entry's code, and the entry appears where it was hidden.
@@ -277,21 +277,21 @@ describe('the tenant shell with a session', () => {
     const banner = brand.closest('header') as HTMLElement
 
     expect(
-      within(banner).queryByRole('link', { name: demoEnUS.nav.console }),
+      within(banner).queryByRole('link', { name: demoEnUS.nav.admin }),
     ).not.toBeInTheDocument()
 
     act(() => {
       session.set(authenticatedSnapshot({ system: ['tenant.read'] }))
     })
     expect(
-      await within(banner).findByRole('link', { name: demoEnUS.nav.console }),
+      await within(banner).findByRole('link', { name: demoEnUS.nav.admin }),
     ).toBeInTheDocument()
   })
 })
 
-describe('the console area', () => {
+describe('the admin area', () => {
   it('gates a request-less viewer to the sign-in surface and follows a session that ends', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     // The session holds a platform permission, so the area gate admits the
     // frame; the point under test is the session gate around it.
     const session = createTestSession(
@@ -299,15 +299,15 @@ describe('the console area', () => {
     )
     renderDemoApp({ session })
 
-    // The frame is up at the console path while the session is authenticated.
+    // The frame is up at the admin path while the session is authenticated.
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
 
     // The session turns anonymous (a sign-out or a refused refresh -- the same
-    // flip): the console area meets the sign-in surface, never a console page
+    // flip): the admin area meets the sign-in surface, never an admin page
     // stuck loading.
     act(() => {
       session.set(ANONYMOUS_SNAPSHOT)
@@ -319,24 +319,24 @@ describe('the console area', () => {
       }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
+      screen.queryByRole('navigation', { name: tAdmin('shell.navLabel') }),
     ).not.toBeInTheDocument()
   })
 
-  it('renders an anonymous viewer at a console path the sign-in surface, not the console', () => {
-    window.history.replaceState({}, '', '/console/tenants')
+  it('renders an anonymous viewer at an admin path the sign-in surface, not the admin', () => {
+    window.history.replaceState({}, '', '/admin/tenants')
     renderDemoApp()
 
     expect(
       screen.getByRole('heading', { level: 1, name: demoEnUS.signIn.heading }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
+      screen.queryByRole('navigation', { name: tAdmin('shell.navLabel') }),
     ).not.toBeInTheDocument()
   })
 
   it('admits a page whose permission the principal holds', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     renderDemoApp({
       session: createTestSession(
         authenticatedSnapshot({ system: ['tenant.read'] }),
@@ -346,13 +346,13 @@ describe('the console area', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: tConsole('tenants.title'),
+        name: tAdmin('tenants.title'),
       }),
     ).toBeInTheDocument()
   })
 
-  it('settles a tenant for a console URL loaded directly, so the permission read answers', async () => {
-    // A console URL loaded directly (a reload, a bookmark) mounts no tenant
+  it('settles a tenant for an admin URL loaded directly, so the permission read answers', async () => {
+    // An admin URL loaded directly (a reload, a bookmark) mounts no tenant
     // frame, and the caller's permission read sits on the guarded API
     // endpoint: without a tenant name the read is refused 404 before any
     // handler runs, and the area gate would turn a platform administrator
@@ -360,7 +360,7 @@ describe('the console area', () => {
     // read; no platform roster read is spent, because that read needs the
     // permission this settle exists to let the read answer.
     setCurrentTenantId(null)
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     const requested: string[] = []
     const tenantAtRead: (string | null)[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
@@ -401,7 +401,7 @@ describe('the console area', () => {
 
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     // The read the area gate settled on carried the default the caller list
@@ -413,12 +413,12 @@ describe('the console area', () => {
 
   it('settles the caller list when the deployment serves no roster', async () => {
     // A deployment without tenant.admin has no roster to name a default
-    // tenant. The console area must still settle the caller's own list, or the
+    // tenant. The admin area must still settle the caller's own list, or the
     // guarded permission read never carries a tenant name and a staff operator
-    // on a console deep link waits forever.
+    // on an admin deep link waits forever.
     setCurrentTenantId(null)
     setTenantAliases(new Map())
-    window.history.replaceState({}, '', '/console/settings')
+    window.history.replaceState({}, '', '/admin/settings')
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
       requested.push(path)
@@ -461,7 +461,7 @@ describe('the console area', () => {
 
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     // The roster is not part of this assembly, so no read is spent on it.
@@ -470,32 +470,32 @@ describe('the console area', () => {
     clearSelfTenants()
   })
 
-  it('turns a member who reaches a console page directly out of the console entirely', async () => {
+  it('turns a member who reaches an admin page directly out of the admin entirely', async () => {
     // The member never gets the entry (the test above), but hiding the entry is
-    // not gating: a typed URL reaches the console path space anyway. The area
+    // not gating: a typed URL reaches the admin path space anyway. The area
     // gate -- not the hidden entry -- is what turns it away, and it does so
-    // before the shell renders: the console's menu names are themselves
+    // before the shell renders: the admin's menu names are themselves
     // information a member must not receive.
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot({ system: [] })),
     })
 
-    // No console frame at all -- neither its navigation landmark nor any of
-    // its page links -- and no no-permission surface inside a console shell: the
+    // No admin frame at all -- neither its navigation landmark nor any of
+    // its page links -- and no no-permission surface inside an admin shell: the
     // content is not swapped for a denial, the whole area is withheld.
     expect(
-      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
+      screen.queryByRole('navigation', { name: tAdmin('shell.navLabel') }),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('link', { name: tConsole('tenants.title') }),
+      screen.queryByRole('link', { name: tAdmin('tenants.title') }),
     ).not.toBeInTheDocument()
     expect(
       screen.queryByText(tUiKit('emptyState.noPermission.title')),
     ).not.toBeInTheDocument()
 
     // The viewer lands in the tenant area instead: the redirect left the
-    // console path space for a shell the member may use.
+    // admin path space for a shell the member may use.
     expect(
       await screen.findByRole('heading', {
         level: 1,
@@ -505,8 +505,8 @@ describe('the console area', () => {
     expect(window.location.pathname).toBe('/')
   })
 
-  it('turns a member away from every console path, not only the one typed', async () => {
-    for (const path of ['/console', '/console/audit']) {
+  it('turns a member away from every admin path, not only the one typed', async () => {
+    for (const path of ['/admin', '/admin/audit']) {
       window.history.replaceState({}, '', path)
       const { unmount } = renderDemoApp({
         session: createTestSession(authenticatedSnapshot({ system: [] })),
@@ -518,29 +518,29 @@ describe('the console area', () => {
         }),
       ).toBeInTheDocument()
       expect(
-        screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
+        screen.queryByRole('navigation', { name: tAdmin('shell.navLabel') }),
       ).not.toBeInTheDocument()
       unmount()
     }
   })
 
-  it('shows no console to a viewer whose platform permission set is still unknown', async () => {
+  it('shows no admin to a viewer whose platform permission set is still unknown', async () => {
     // An authenticated session whose platform set is unknown (null): the state
     // the host leaves the session in before it has read the caller's platform
-    // permissions. The area gate fails closed -- it neither renders the console
+    // permissions. The area gate fails closed -- it neither renders the admin
     // shell (which a member must never see) nor redirects (which would bounce a
     // staff member still loading) -- so the viewer meets the shell-less
     // placeholder until the set lands.
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
     expect(
       await screen.findByRole('progressbar', {
-        name: demoEnUS.console.accessPending,
+        name: demoEnUS.admin.accessPending,
       }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
+      screen.queryByRole('navigation', { name: tAdmin('shell.navLabel') }),
     ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('heading', {
@@ -550,15 +550,15 @@ describe('the console area', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('turns a member who loads a console URL directly out of the console, without a roster read', async () => {
-    // A member's caller tenant list names their tenant, so the console area
+  it('turns a member who loads an admin URL directly out of the admin, without a roster read', async () => {
+    // A member's caller tenant list names their tenant, so the admin area
     // settles it and reads the platform permission set. The ANSWERED document
     // is empty -- a known empty set, unlike a failed read -- and the area gate
     // redirects: no roster read is spent, because the roster needs tenant.read
     // and the member holds nothing.
     setCurrentTenantId(null)
     setTenantAliases(new Map())
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
       requested.push(path)
@@ -590,7 +590,7 @@ describe('the console area', () => {
       ),
     })
 
-    // The empty platform set redirects the member home; no console chrome is
+    // The empty platform set redirects the member home; no admin chrome is
     // ever rendered.
     expect(
       await screen.findByRole('heading', {
@@ -605,15 +605,15 @@ describe('the console area', () => {
     clearSelfTenants()
   })
 
-  it('lands an invited member’s console load back in their own tenant', async () => {
-    // A member carrying a fresh invitation membership loads a console URL
+  it('lands an invited member’s admin load back in their own tenant', async () => {
+    // A member carrying a fresh invitation membership loads an admin URL
     // directly: the caller list settles the invited tenant, the platform set
     // is empty, and the redirect lands in the tenant area with that tenant
     // current. No roster read is spent on the way.
     const INVITED = 'invited-tenant'
     setCurrentTenantId(null)
     setTenantAliases(new Map())
-    window.history.replaceState({}, '', '/console')
+    window.history.replaceState({}, '', '/admin')
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
       requested.push(path)
@@ -652,15 +652,15 @@ describe('the console area', () => {
     clearSelfTenants()
   })
 
-  it('keeps a staff member whose only membership is personal in the console', async () => {
+  it('keeps a staff member whose only membership is personal in the admin', async () => {
     // A platform staff member belongs to no business tenant: the caller list
-    // holds only their personal space. The console area settles that row, the
+    // holds only their personal space. The admin area settles that row, the
     // guarded permission read carries it, and the non-empty platform set
-    // grants the console. The roster decides nothing here.
+    // grants the admin. The roster decides nothing here.
     const PERSONAL = 'personal-account-1'
     setCurrentTenantId(null)
     setTenantAliases(new Map())
-    window.history.replaceState({}, '', '/console/settings')
+    window.history.replaceState({}, '', '/admin/settings')
     const tenantAtRead: (string | null)[] = []
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
@@ -699,7 +699,7 @@ describe('the console area', () => {
 
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     expect(tenantAtRead).toEqual([PERSONAL])
@@ -713,8 +713,8 @@ describe('the console area', () => {
     // personal tenant's ensure refuses a pending account and the roster is
     // staff-only, so the platform permission set is never read and the area
     // would wait forever. The verification page is the one place that lifts
-    // the state, so the console URL lands there instead of on the wait.
-    window.history.replaceState({}, '', '/console/tenants')
+    // the state, so the admin URL lands there instead of on the wait.
+    window.history.replaceState({}, '', '/admin/tenants')
     bindRequestFn(<T,>(path: string): Promise<T> => {
       if (path === '/api/v1/auth/me') {
         return Promise.resolve({
@@ -731,7 +731,7 @@ describe('the console area', () => {
     expect(window.location.search).toBe('?verify=1')
     expect(
       screen.queryByRole('progressbar', {
-        name: demoEnUS.console.accessPending,
+        name: demoEnUS.admin.accessPending,
       }),
     ).not.toBeInTheDocument()
 
@@ -742,39 +742,39 @@ describe('the console area', () => {
     )
   })
 
-  it('admits the console once a staff platform set lands', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+  it('admits the admin once a staff platform set lands', async () => {
+    window.history.replaceState({}, '', '/admin/tenants')
     const staff = createTestSession(authenticatedSnapshot())
     renderDemoApp({ session: staff })
 
-    // Unknown set: the shell-less placeholder, no console.
+    // Unknown set: the shell-less placeholder, no admin.
     expect(
       await screen.findByRole('progressbar', {
-        name: demoEnUS.console.accessPending,
+        name: demoEnUS.admin.accessPending,
       }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
+      screen.queryByRole('navigation', { name: tAdmin('shell.navLabel') }),
     ).not.toBeInTheDocument()
 
-    // A platform permission lands: the area admits the console frame.
+    // A platform permission lands: the area admits the admin frame.
     act(() => {
       staff.set(authenticatedSnapshot({ system: ['tenant.read'] }))
     })
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
   })
 
   it('redirects a member out once their empty set lands, never showing the shell', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     const member = createTestSession(authenticatedSnapshot())
     renderDemoApp({ session: member })
     expect(
       await screen.findByRole('progressbar', {
-        name: demoEnUS.console.accessPending,
+        name: demoEnUS.admin.accessPending,
       }),
     ).toBeInTheDocument()
 
@@ -789,12 +789,12 @@ describe('the console area', () => {
     ).toBeInTheDocument()
     expect(window.location.pathname).toBe('/')
     expect(
-      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
+      screen.queryByRole('navigation', { name: tAdmin('shell.navLabel') }),
     ).not.toBeInTheDocument()
   })
 
-  it('moves between console pages without reloading, keeping the session', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+  it('moves between admin pages without reloading, keeping the session', async () => {
+    window.history.replaceState({}, '', '/admin/tenants')
     const user = userEvent.setup()
     renderDemoApp({
       session: createTestSession(
@@ -804,33 +804,33 @@ describe('the console area', () => {
       ),
     })
 
-    // The roster page is up inside the console frame.
+    // The roster page is up inside the admin frame.
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: tConsole('tenants.title'),
+        name: tAdmin('tenants.title'),
       }),
     ).toBeInTheDocument()
 
-    // Activate another page from the console's own navigation.
+    // Activate another page from the admin's own navigation.
     const nav = screen.getByRole('navigation', {
-      name: tConsole('shell.navLabel'),
+      name: tAdmin('shell.navLabel'),
     })
     await user.click(
-      within(nav).getByRole('link', { name: tConsole('settings.title') }),
+      within(nav).getByRole('link', { name: tAdmin('settings.title') }),
     )
 
-    // The settings page renders in place: the console frame -- and the session
+    // The settings page renders in place: the admin frame -- and the session
     // behind it -- survived, so the click did not reload the page and sign the
     // operator out to the sign-in surface.
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: tConsole('settings.title'),
+        name: tAdmin('settings.title'),
       }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('navigation', { name: tConsole('shell.navLabel') }),
+      screen.getByRole('navigation', { name: tAdmin('shell.navLabel') }),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('heading', {
@@ -841,13 +841,13 @@ describe('the console area', () => {
   })
 
   it('renders the same brand in its top bar and the account entry in the nav drawer', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     const user = userEvent.setup()
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot({ system: ['tenant.read'] })),
     })
 
-    // The console frame is a different shell (no tenant switcher), but its
+    // The admin frame is a different shell (no tenant switcher), but its
     // banner is the same chrome the tenant frame carries: the brand in the
     // header's own type. The account entry follows ACCOUNT_ENTRY's default,
     // so it is the row at the bottom of the navigation column and the header
@@ -876,20 +876,20 @@ describe('the console area', () => {
     }
   })
 
-  it('collapses the console sidebar from the header control', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+  it('collapses the admin sidebar from the header control', async () => {
+    window.history.replaceState({}, '', '/admin/tenants')
     const user = userEvent.setup()
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot({ system: ['tenant.read'] })),
     })
 
-    // The console frame carries the same host-controlled collapse the tenant
+    // The admin frame carries the same host-controlled collapse the tenant
     // frame does: the toggle is present, and collapsing narrows the permanent
     // drawer to the icon-only rail -- the platform navigation stays mounted
     // (named) rather than disappearing.
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     await user.click(
@@ -899,24 +899,24 @@ describe('the console area', () => {
       screen.getByRole('button', { name: tLayout('appShell.expandNav') }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('navigation', { name: tConsole('shell.navLabel') }),
+      screen.getByRole('navigation', { name: tAdmin('shell.navLabel') }),
     ).toBeInTheDocument()
   })
 
-  it('keeps the sidebar collapse across the console/tenant switch', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+  it('keeps the sidebar collapse across the admin/tenant switch', async () => {
+    window.history.replaceState({}, '', '/admin/tenants')
     const user = userEvent.setup()
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot({ system: ['tenant.read'] })),
     })
 
-    // Collapse in the console area.
+    // Collapse in the admin area.
     await user.click(
       screen.getByRole('button', { name: tLayout('appShell.collapseNav') }),
     )
-    // Leave for the tenant area through the console banner's exit link: the
+    // Leave for the tenant area through the admin banner's exit link: the
     // sidebar is collapsed to the rail, so the exit link is the way back.
-    await user.click(screen.getByRole('link', { name: demoEnUS.console.backToApp }))
+    await user.click(screen.getByRole('link', { name: demoEnUS.admin.backToApp }))
     // The tenant frame comes up already collapsed: one host-held state feeds
     // both areas, so the operator's collapse survives the switch rather than
     // resetting to open.
@@ -927,48 +927,48 @@ describe('the console area', () => {
 })
 
 describe('a staff viewer whose platform permission is not the dashboard code', () => {
-  // The three tiers of the console gate read the one platform permission set:
-  // the header entry targets the first console page whose code the principal
+  // The three tiers of the admin gate read the one platform permission set:
+  // the header entry targets the first admin page whose code the principal
   // holds, the area gate admits any non-empty set, and each page's route guard
   // reads its own code. A principal whose platform set holds a permission
   // other than the dashboard's pins the three apart -- the set is non-empty
   // (so the area admits it) and some page's code is held (so the entry appears)
   // while the dashboard's own code is not (so the entry cannot point at the
-  // console root).
+  // admin root).
 
   /** A session whose platform set holds exactly these codes. */
   const staff = (...codes: readonly string[]) =>
     createTestSession(authenticatedSnapshot({ system: [...codes] }))
 
-  it('offers an entry that targets the first console page whose code they hold', async () => {
+  it('offers an entry that targets the first admin page whose code they hold', async () => {
     window.history.replaceState({}, '', '/')
     renderDemoApp({ session: staff('audit.read') })
 
     // The dashboard's code (tenant.read) is unheld, so the entry cannot point
-    // at the console root; the audit page is the first labelled declaration
+    // at the admin root; the audit page is the first labelled declaration
     // whose code the principal holds, and the entry targets it.
     const brand = await screen.findByText(demoEnUS.app.title)
     const banner = brand.closest('header') as HTMLElement
     expect(
-      within(banner).getByRole('link', { name: demoEnUS.nav.console }),
-    ).toHaveAttribute('href', '/console/audit')
+      within(banner).getByRole('link', { name: demoEnUS.nav.admin }),
+    ).toHaveAttribute('href', '/admin/audit')
   })
 
-  it('admits the console area, which keys on holding any platform permission', async () => {
-    // A platform permission that no console entry or page carries: the set is
+  it('admits the admin area, which keys on holding any platform permission', async () => {
+    // A platform permission that no admin entry or page carries: the set is
     // non-empty, so the area gate admits the staff viewer, while every page's
     // own code stays unheld. A gate narrowed to any one code -- tenant.read or
     // a page's -- would bounce this viewer to the tenant home instead, so the
     // frame's presence is what tells the criteria apart.
-    window.history.replaceState({}, '', '/console/audit')
+    window.history.replaceState({}, '', '/admin/audit')
     renderDemoApp({ session: staff('tenant.write') })
 
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
-    expect(window.location.pathname).toBe('/console/audit')
+    expect(window.location.pathname).toBe('/admin/audit')
     // The page's own code is unheld, so the route guard hides the page content
     // inside the frame the area gate admitted.
     expect(
@@ -977,7 +977,7 @@ describe('a staff viewer whose platform permission is not the dashboard code', (
   })
 
   it('admits the page whose own code the principal holds', async () => {
-    window.history.replaceState({}, '', '/console/audit')
+    window.history.replaceState({}, '', '/admin/audit')
     renderDemoApp({ session: staff('audit.read') })
 
     // The area gate admits (any platform permission) and the audit page's own
@@ -985,29 +985,29 @@ describe('a staff viewer whose platform permission is not the dashboard code', (
     // tiers agree on a staff viewer who holds the page's code.
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: tConsole('audit.title'),
+        name: tAdmin('audit.title'),
       }),
     ).toBeInTheDocument()
   })
 
   it('turns them away from a page whose own code they lack, the frame intact', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     renderDemoApp({ session: staff('audit.read') })
 
     // The area admits them (any platform permission), but the roster page's
     // code (tenant.read) is unheld, so the route guard denies that page in
-    // place: the console frame stays -- this is the innermost tier, not a
+    // place: the admin frame stays -- this is the innermost tier, not a
     // whole-area denial -- and the page's own heading is replaced by the
     // no-permission surface.
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     expect(
@@ -1016,7 +1016,7 @@ describe('a staff viewer whose platform permission is not the dashboard code', (
     expect(
       screen.queryByRole('heading', {
         level: 1,
-        name: tConsole('tenants.title'),
+        name: tAdmin('tenants.title'),
       }),
     ).not.toBeInTheDocument()
   })
@@ -1027,12 +1027,12 @@ describe('a staff viewer whose platform permission is not the dashboard code', (
     // URL below the roster's path is held to the roster's tenant.read. A
     // viewer without it meets the no-permission surface inside the frame,
     // never the detail page.
-    window.history.replaceState({}, '', '/console/tenants/xyz')
+    window.history.replaceState({}, '', '/admin/tenants/xyz')
     renderDemoApp({ session: staff('audit.read') })
 
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     expect(
@@ -1237,8 +1237,8 @@ describe('the not-found fallback', () => {
   })
 
   it('explains the dead link in the user terms and offers a way home', async () => {
-    window.history.replaceState({}, '', '/console/definitely-not-a-page')
-    // A platform permission admits the console frame; the path itself
+    window.history.replaceState({}, '', '/admin/definitely-not-a-page')
+    // A platform permission admits the admin frame; the path itself
     // declares no page, so the frame renders the not-found fallback.
     renderDemoApp({
       session: createTestSession(authenticatedSnapshot({ system: ['tenant.read'] })),
@@ -1260,14 +1260,14 @@ describe('the not-found fallback', () => {
       screen.getByText(
         demoEnUS.notFound.path.replace(
           '{{path}}',
-          '/console/definitely-not-a-page',
+          '/admin/definitely-not-a-page',
         ),
       ),
     ).toBeInTheDocument()
   })
 
   it('shows the requested address verbatim, with no HTML entities', async () => {
-    const path = '/console/a&b'
+    const path = '/admin/a&b'
     window.history.replaceState({}, '', path)
     const { container } = renderDemoApp({
       session: createTestSession(authenticatedSnapshot({ system: ['tenant.read'] })),
@@ -1486,12 +1486,12 @@ describe('the sidebar shell layout', () => {
     ).toBeTruthy()
   })
 
-  it('carries the same side column into the console area', async () => {
-    // The console is the app's second shell. Its area receives the layout
-    // from AppFrame and forwards it to ConsoleShell; dropping either hop
-    // leaves /console on the top-bar form while the tenant area is a
+  it('carries the same side column into the admin area', async () => {
+    // The admin is the app's second shell. Its area receives the layout
+    // from AppFrame and forwards it to AdminShell; dropping either hop
+    // leaves /admin on the top-bar form while the tenant area is a
     // sidebar, which only a full-route render can catch.
-    window.history.replaceState({}, '', '/console/tenants')
+    window.history.replaceState({}, '', '/admin/tenants')
     renderDemoApp({
       session: createTestSession(
         authenticatedSnapshot({ system: ['tenant.read'] }),
@@ -1500,7 +1500,7 @@ describe('the sidebar shell layout', () => {
     })
 
     const nav = await screen.findByRole('navigation', {
-      name: tConsole('shell.navLabel'),
+      name: tAdmin('shell.navLabel'),
     })
     const brand = screen.getByText(demoEnUS.app.title)
     // No app bar in the sidebar form. The routed page renders its own
@@ -1574,8 +1574,8 @@ describe('an unread callback fragment', () => {
     ).toBeNull()
   })
 
-  it('leaves the notice to the console area when it consumes the fragment', async () => {
-    window.history.replaceState({}, '', `/console/tenants#${LOGIN_FAILED}`)
+  it('leaves the notice to the admin area when it consumes the fragment', async () => {
+    window.history.replaceState({}, '', `/admin/tenants#${LOGIN_FAILED}`)
     bindRequestFn(createBackend('data'))
     renderDemoApp({
       session: createTestSession(
@@ -1583,10 +1583,10 @@ describe('an unread callback fragment', () => {
       ),
     })
 
-    // The console area reads the fragment the page it hosts started, and
+    // The admin area reads the fragment the page it hosts started, and
     // words it above the page; no tenant-frame notice exists on this path.
     expect(
-      await screen.findByText(tConsole('errors.authn.login_failed')),
+      await screen.findByText(tAdmin('errors.authn.login_failed')),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: dismissLabel }),
@@ -1595,12 +1595,12 @@ describe('an unread callback fragment', () => {
 })
 
 /**
- * The console area's reads: an unknown value is never a conclusion. A failed
+ * The admin area's reads: an unknown value is never a conclusion. A failed
  * permission read or profile read leaves the decision unknown and offers a
  * retry; only an ANSWERED document (an empty permission pair included) or a
  * READ pending verification state decides.
  */
-describe('a failed console access read', () => {
+describe('a failed admin access read', () => {
   /** The attach the production assembly uses, over a session whose sets the
    * gate reads. */
   function attachedSession(base: ReturnType<typeof createTestSession>) {
@@ -1620,7 +1620,7 @@ describe('a failed console access read', () => {
     setCurrentTenantId(null)
     setTenantAliases(new Map())
     clearSelfTenants()
-    window.history.replaceState({}, '', '/console/settings')
+    window.history.replaceState({}, '', '/admin/settings')
     const backend = createBackend('data')
     let failing = true
     let permissionReads = 0
@@ -1655,9 +1655,9 @@ describe('a failed console access read', () => {
     // The failure is not an empty set: the area shows the failure and a
     // retry, and does not redirect the staff member out as a member.
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      demoEnUS.console.accessFailed,
+      demoEnUS.admin.accessFailed,
     )
-    expect(window.location.pathname).toBe('/console/settings')
+    expect(window.location.pathname).toBe('/admin/settings')
     expect(
       screen.queryByRole('heading', {
         level: 1,
@@ -1670,11 +1670,11 @@ describe('a failed console access read', () => {
     failing = false
     await userEvent
       .setup()
-      .click(screen.getByRole('button', { name: demoEnUS.console.accessRetry }))
+      .click(screen.getByRole('button', { name: demoEnUS.admin.accessRetry }))
 
     expect(
       await screen.findByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     expect(permissionReads).toBeGreaterThanOrEqual(2)
@@ -1688,7 +1688,7 @@ describe('a failed console access read', () => {
     setCurrentTenantId(null)
     setTenantAliases(new Map())
     clearSelfTenants()
-    window.history.replaceState({}, '', '/console/settings')
+    window.history.replaceState({}, '', '/admin/settings')
     const backend = createBackend('data')
     const pendingProfile = {
       identifiers: [],
@@ -1709,14 +1709,14 @@ describe('a failed console access read', () => {
     })
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      demoEnUS.console.accessFailed,
+      demoEnUS.admin.accessFailed,
     )
-    expect(window.location.pathname).toBe('/console/settings')
+    expect(window.location.pathname).toBe('/admin/settings')
 
     profileFailing = false
     await userEvent
       .setup()
-      .click(screen.getByRole('button', { name: demoEnUS.console.accessRetry }))
+      .click(screen.getByRole('button', { name: demoEnUS.admin.accessRetry }))
 
     // The retried read answers a pending verification state: the unproved
     // account is the case the verification page exists for.

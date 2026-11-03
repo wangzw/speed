@@ -8,7 +8,7 @@
  * entries by name ("Kind · Name") and an unnamed entry from the second on
  * by ordinal ("Kind (2)"), and an unknown kind shows the kind as given; an
  * enrollment kind follows the same known/unknown rule. The
- * package keeps its vocabulary locally (auth-ui and console-ui keep their
+ * package keeps its vocabulary locally (auth-ui and admin-ui keep their
  * own copies), so this suite is the account-ui side of the registered
  * sync obligation. The ceremony cases pin the assertion step starting its
  * ceremony on arrival (also under StrictMode's double mount, where the

@@ -117,7 +117,7 @@ remembering to run it.
   from the organization they already belong to into the tenant the provider
   serves, and the seed writes the operator's platform-administrator role into
   both. The employee's memberships are still product writes through the
-  console's member page. Every other spec keeps the block's empty defaults —
+  admin's member page. Every other spec keeps the block's empty defaults —
   the system resolver and the system roots, which is what a deployment keeps —
   and the template's single seeded tenant. This opt-in is separate from
   `socialIdentityProvider`.
@@ -183,7 +183,7 @@ header names the ids it covers off-browser, and only these may be so covered:
 - the backend origin's login discovery document, whose entry set is the
   requirement's own subject (REQ-signin-001, assembled entry set only).
 
-Everything else in that journey -- sign-in, the account page, the console, the
+Everything else in that journey -- sign-in, the account page, the admin, the
 refused write -- is still driven in the browser with clicks and keys. The
 allowance is not a licence to substitute a fixture for product behaviour: a
 fixture may read what the deployment itself produces, and may not answer a

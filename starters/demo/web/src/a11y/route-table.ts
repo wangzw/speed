@@ -12,7 +12,7 @@
 
 import { act } from '@testing-library/react'
 import { accountUiResources } from '@speed/account-ui'
-import { consoleUiResources } from '@speed/console-ui'
+import { adminUiResources } from '@speed/admin-ui'
 import { routes } from '../routes.js'
 import {
   authenticatedSnapshot,
@@ -23,12 +23,12 @@ import type { BackendMode } from './backends.js'
 export type { BackendMode }
 
 /**
- * Every platform permission code a console page's route guard checks, so the
- * staff session passes every guard and each console page renders inside the
+ * Every platform permission code an admin page's route guard checks, so the
+ * staff session passes every guard and each admin page renders inside the
  * frame rather than the no-permission surface. The set is drawn from the
- * console-ui declarations' own permission codes.
+ * admin-ui declarations' own permission codes.
  */
-export const CONSOLE_PERMISSION_CODES = [
+export const ADMIN_PERMISSION_CODES = [
   'tenant.read',
   'authn.account.read',
   'authn.session.read',
@@ -41,10 +41,10 @@ export const CONSOLE_PERMISSION_CODES = [
   'audit.read',
 ] as const
 
-/** A platform-staff session holding every console permission code. */
+/** A platform-staff session holding every admin permission code. */
 export function staffSession() {
   return createTestSession(
-    authenticatedSnapshot({ system: [...CONSOLE_PERMISSION_CODES] }),
+    authenticatedSnapshot({ system: [...ADMIN_PERMISSION_CODES] }),
   )
 }
 
@@ -71,7 +71,7 @@ export const ROUTE_PATHS = [
  * app's route table: the business routes (the home page, the account settings'
  * group address and its profile, security, sessions and preferences panes, the
  * setup landing, the notification centre, the binding callback), the auth and
- * invitation landings, and the console area under CONSOLE_PREFIX, every
+ * invitation landings, and the admin area under ADMIN_PREFIX, every
  * `:param` concretized to `sample` as `concretize` does.
  */
 export const EXPECTED_ROUTE_PATHS = [
@@ -87,19 +87,19 @@ export const EXPECTED_ROUTE_PATHS = [
   '/sign-in/callback',
   '/invitations/sample',
   '/password-reset',
-  '/console',
-  '/console/tenants',
-  '/console/tenants/sample',
-  '/console/accounts',
-  '/console/sessions',
-  '/console/impersonations',
-  '/console/permissions',
-  '/console/invitations',
-  '/console/sso',
-  '/console/settings',
-  '/console/sms',
-  '/console/audit',
-  '/console/audit/sample',
+  '/admin',
+  '/admin/tenants',
+  '/admin/tenants/sample',
+  '/admin/accounts',
+  '/admin/sessions',
+  '/admin/impersonations',
+  '/admin/permissions',
+  '/admin/invitations',
+  '/admin/sso',
+  '/admin/settings',
+  '/admin/sms',
+  '/admin/audit',
+  '/admin/audit/sample',
 ] as const
 
 /**
@@ -118,8 +118,8 @@ export const ERROR_PLACEHOLDER_BY_PATH: Readonly<Record<string, string>> = {
       readonly profile: { readonly error: { readonly title: string } }
     }
   ).profile.error.title,
-  '/console/audit': (
-    consoleUiResources['en-US'] as unknown as {
+  '/admin/audit': (
+    adminUiResources['en-US'] as unknown as {
       readonly audit: { readonly error: { readonly title: string } }
     }
   ).audit.error.title,

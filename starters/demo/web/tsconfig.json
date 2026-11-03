@@ -34,7 +34,7 @@
       "@speed/auth-ui": ["../../../web/packages/auth-ui/src/index.ts"],
       "@speed/tenancy-ui": ["../../../web/packages/tenancy-ui/src/index.ts"],
       "@speed/account-ui": ["../../../web/packages/account-ui/src/index.ts"],
-      "@speed/console-ui": ["../../../web/packages/console-ui/src/index.ts"],
+      "@speed/admin-ui": ["../../../web/packages/admin-ui/src/index.ts"],
       "@speed/notification-ui": ["../../../web/packages/notification-ui/src/index.ts"],
       "@speed/product-shell/bootstrap": ["../../../web/packages/product-shell/src/bootstrap.tsx"],
       "@speed/product-shell": ["../../../web/packages/product-shell/src/index.ts"],

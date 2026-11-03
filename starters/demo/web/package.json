@@ -23,7 +23,7 @@
     "@speed/api-sdk": "^0.0.1",
     "@speed/auth-core": "^0.0.1",
     "@speed/auth-ui": "^0.0.1",
-    "@speed/console-ui": "^0.0.1",
+    "@speed/admin-ui": "^0.0.1",
     "@speed/i18n": "^0.0.1",
     "@speed/layout-kit": "^0.0.1",
     "@speed/notification-ui": "^0.0.1",

@@ -18,7 +18,7 @@ and props-driven, carry no
 business or tenant semantics, and — the property that matters most for
 this package — carry no opinion about *how* a host authenticates or
 authorizes a user. `product-shell` (the tenant-facing shell) and the
-platform-staff console `@speed/console-ui` are the shipped consumers,
+platform-staff admin `@speed/admin-ui` are the shipped consumers,
 both building their frame on this package's `AppShell` while `RouteGuard`
 is composed host-side; that only stays true if nothing here ever imports
 a concrete one. `AppShell` names its navigation landmark from the
@@ -41,7 +41,7 @@ rule. The public surface is `src/index.ts`; everything under
   package: an `auth-core` or router import here, however small, would
   force every consumer shell onto one authorization mechanism
   and defeat the reason this package exists as a separate layer from
-  `product-shell`/`console-ui`. If a change looks like it needs one,
+  `product-shell`/`admin-ui`. If a change looks like it needs one,
   stop and push the decision back onto the host's `status` computation
   instead.
 - **No dependency on `auth-core`, `api-client`, `api-sdk`, or any
@@ -88,7 +88,7 @@ rule. The public surface is `src/index.ts`; everything under
   head at `md` and up. Those rows, not the scrolling behavior, are what
   `shellLayout === 'sidebar'` conditions.
 - **`isPlainPrimaryClick` is shared by convention, not by dependency.**
-  `@speed/console-ui` consumes it; `@speed/route-kit` keeps a
+  `@speed/admin-ui` consumes it; `@speed/route-kit` keeps a
   private variant because that package is independent of
   every sibling package and must not import this one. The variant is
   deliberately stricter: `button` must be exactly `0` (this function
@@ -265,8 +265,8 @@ at all (see the Storybook deferral below).
 - **`auth-core` wiring**: no auth package is imported here by design
   (see the non-negotiable rules); the Quick start's `status` stub is
   deliberate, and the host-injected `status` value is the only wire.
-- **`admin-shell`**: the platform-staff console ships as
-  `@speed/console-ui`, which builds its frame on `AppShell` (the frame
+- **`admin-shell`**: the platform-staff admin ships as
+  `@speed/admin-ui`, which builds its frame on `AppShell` (the frame
   `product-shell` uses) and leaves `RouteGuard` to hosts.
   `product-shell` composes `AppShell` as its authenticated
   frame while leaving `RouteGuard` to hosts -- its gated-journey suite

@@ -12,7 +12,7 @@
  *      `authn.sso_required` copy and a re-login action sits under it. No local
  *      step-up dialog opens and no local factor is listed, because no local
  *      factor can satisfy the tenant's requirement.
- *   3. The administrator takes the re-login action; the console's session gate
+ *   3. The administrator takes the re-login action; the admin's session gate
  *      returns to the sign-in surface.
  *   4. The administrator signs in through the tenant's enterprise entry: the
  *      work address, the organization the verified domain discovers, and the
@@ -27,7 +27,7 @@
  *   - The platform operator's own e-mail address, and the administrator's, are
  *     proved through the review mail carrier's verification code, which
  *     fixtures/log.ts reads from the process log (the sanctioned
- *     verification-code read). Both console writes and the invitation write are
+ *     verification-code read). Both admin writes and the invitation write are
  *     gated on a proved address, so the journey starts from that state.
  *   - The DNS publication is a FIXTURE ACTION. The product renders the record
  *     value to publish; the spec copies it into the running DNS stub with the
@@ -36,27 +36,27 @@
  *
  * The journey's precondition -- the tenant has an enabled, pre-provisioned
  * enterprise provider with a verified e-mail domain -- is reached through the
- * rendered console the way the operator reaches it: the platform operator
+ * rendered admin the way the operator reaches it: the platform operator
  * registers the provider and claims and verifies the domain. The provider and
  * invitation routes are tenant-resolved on the API endpoint, and the admission
  * layer judges a request in the organization the request surface announces, not
- * the one a console page's own selector names. A platform administrator's
+ * the one a admin page's own selector names. A platform administrator's
  * tenant area settles the roster's staff default, so the operator's setup writes
  * are judged there while the page addresses the tenant the provider belongs to;
  * the journey then moves the tenant area to that tenant.
  *
- * The requirement itself is switched on through the console's settings surface
- * after the administrator's session and console area are established, rather
- * than seeded before the server starts. The console's own permission read is a
+ * The requirement itself is switched on through the admin's settings surface
+ * after the administrator's session and admin area are established, rather
+ * than seeded before the server starts. The admin's own permission read is a
  * request the admission layer judges, so a requirement already on would refuse
- * that read and keep the console area from being entered at all; switching it
+ * that read and keep the admin area from being entered at all; switching it
  * on while the page is open is also the operational sequence in which a
  * signed-in member first meets the requirement. The setting's global row is the
  * value the tenant falls back to, and the settings page writes that layer.
  *
  * The administrator is also a platform administrator because this host's
- * console is platform-staff only, and the invitations-and-members page lives in
- * the console. The tenant administrator binding -- not the platform role -- is
+ * admin is platform-staff only, and the invitations-and-members page lives in
+ * the admin. The tenant administrator binding -- not the platform role -- is
  * what the invitation writes exercise: the tenant's own permission domain
  * decides them.
  *
@@ -143,30 +143,30 @@ function verificationSection(page: Page): Locator {
   })
 }
 
-/** The header's console entry (a link, while the operator may reach it). */
-function consoleEntry(page: Page): Locator {
+/** The header's admin entry (a link, while the operator may reach it). */
+function adminEntry(page: Page): Locator {
   return page
     .getByRole('banner')
-    .getByRole('link', { name: copy('demo', 'nav.console'), exact: true })
+    .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true })
 }
 
-/** The console's navigation landmark. */
-function consoleNav(page: Page): Locator {
+/** The admin's navigation landmark. */
+function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'shell.navLabel'),
+    name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
 }
 
-/** One console navigation link by its page title. */
-function consoleLink(page: Page, label: string): Locator {
-  return consoleNav(page).getByRole('link', { name: label, exact: true })
+/** One admin navigation link by its page title. */
+function adminLink(page: Page, label: string): Locator {
+  return adminNav(page).getByRole('link', { name: label, exact: true })
 }
 
-/** The tenant selector of a tenant-addressed console page. */
+/** The tenant selector of a tenant-addressed admin page. */
 function tenantSelector(page: Page): Locator {
   return page.getByRole('combobox', {
-    name: copy('consoleUi', 'common.tenant'),
+    name: copy('adminUi', 'common.tenant'),
     exact: true,
   })
 }
@@ -181,7 +181,7 @@ async function selectTenant(page: Page, tenant: string): Promise<void> {
  * The organization the tenant area announces for a platform administrator
  * before the journey switches it: the roster's staff default, the first
  * active business tenant. The administrator the journey signs in as is
- * platform staff because this host's console is platform-staff only, so the
+ * platform staff because this host's admin is platform-staff only, so the
  * tenant area settles this organization rather than one of their own
  * memberships.
  */
@@ -202,7 +202,7 @@ function tenantMenuItem(page: Page, alias: string): Locator {
 /**
  * Move the tenant area to one organization.
  *
- * The requests the console's tenant-addressed pages issue carry the tenant
+ * The requests the admin's tenant-addressed pages issue carry the tenant
  * area's current organization on the request surface, and the admission layer
  * decides the request in that organization's domain, not in the one the page's
  * own selector names. The journey therefore has to switch the tenant area
@@ -231,37 +231,37 @@ async function switchToTenant(page: Page, tenant: string): Promise<void> {
   await expect(tenantSwitcher(page, tenant)).toBeVisible()
 }
 
-/** Open the console from the tenant area. */
+/** Open the admin from the tenant area. */
 async function openConsole(page: Page): Promise<void> {
-  await expect(consoleEntry(page)).toBeVisible()
-  await consoleEntry(page).click()
-  await expect(consoleNav(page)).toBeVisible()
+  await expect(adminEntry(page)).toBeVisible()
+  await adminEntry(page).click()
+  await expect(adminNav(page)).toBeVisible()
 }
 
 /**
- * Switch the tenant's SSO requirement on through the console's settings
+ * Switch the tenant's SSO requirement on through the admin's settings
  * surface.
  *
  * The setting's global row is the value the tenant falls back to, and the
  * settings page writes the global layer. The requirement is switched on here,
- * after the administrator's console session is established, because the
- * console's own permission read is a request the admission layer judges: with
- * the requirement already on, the read is refused and the console area cannot
+ * after the administrator's admin session is established, because the
+ * admin's own permission read is a request the admission layer judges: with
+ * the requirement already on, the read is refused and the admin area cannot
  * be entered at all. Switching it on while the page is open is also the
  * operational sequence in which a signed-in member first meets the requirement.
  */
 async function enableTenantSSORequirement(page: Page): Promise<void> {
-  await consoleLink(page, copy('consoleUi', 'settings.title')).click()
+  await adminLink(page, copy('adminUi', 'settings.title')).click()
   await expect(
     page.getByRole('heading', {
       level: 1,
-      name: copy('consoleUi', 'settings.title'),
+      name: copy('adminUi', 'settings.title'),
       exact: true,
     }),
   ).toBeVisible()
 
   const namespaceNav = page.getByRole('navigation', {
-    name: copy('consoleUi', 'settings.nav.label'),
+    name: copy('adminUi', 'settings.nav.label'),
     exact: true,
   })
   await namespaceNav
@@ -276,12 +276,12 @@ async function enableTenantSSORequirement(page: Page): Promise<void> {
   await field.fill('true')
   await page
     .getByRole('button', {
-      name: copy('consoleUi', 'settings.saveBar.save'),
+      name: copy('adminUi', 'settings.saveBar.save'),
       exact: true,
     })
     .click()
   await expect(
-    page.getByText(copy('consoleUi', 'settings.saved'), { exact: true }),
+    page.getByText(copy('adminUi', 'settings.saved'), { exact: true }),
   ).toBeVisible()
 }
 
@@ -291,7 +291,7 @@ const REQUIRE_SSO_KEY = 'tenant.admission.require-sso'
 /** The SSO page's provider write section. */
 function providerSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'sso.provider.title'),
+    name: copy('adminUi', 'sso.provider.title'),
     exact: true,
   })
 }
@@ -307,7 +307,7 @@ function providerRow(page: Page): Locator {
 /** The SSO page's domain section. */
 function domainSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'sso.domains.title'),
+    name: copy('adminUi', 'sso.domains.title'),
     exact: true,
   })
 }
@@ -315,7 +315,7 @@ function domainSection(page: Page): Locator {
 /** The invitations page's invitation section. */
 function invitationSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'invitations.section.title'),
+    name: copy('adminUi', 'invitations.section.title'),
     exact: true,
   })
 }
@@ -323,7 +323,7 @@ function invitationSection(page: Page): Locator {
 /** The invitations page's member section. */
 function memberSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'members.title'),
+    name: copy('adminUi', 'members.title'),
     exact: true,
   })
 }
@@ -372,32 +372,32 @@ async function proveEmail(
   await expect(banner).toHaveCount(0)
 }
 
-/** Leave the console for the tenant area, where the sign-out menu lives. */
+/** Leave the admin for the tenant area, where the sign-out menu lives. */
 async function leaveConsole(page: Page): Promise<void> {
   await page
     .getByRole('banner')
     .getByRole('link', {
-      name: copy('demo', 'console.backToApp'),
+      name: copy('demo', 'admin.backToApp'),
       exact: true,
     })
     .click()
   await expect(homeHeading(page)).toBeVisible()
 }
 
-/** Open the console's invitations-and-members page from the tenant area. */
+/** Open the admin's invitations-and-members page from the tenant area. */
 async function openInvitations(page: Page): Promise<void> {
   await page
     .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
     .click()
   await expect(homeHeading(page)).toBeVisible()
-  await expect(consoleEntry(page)).toBeVisible()
-  await consoleEntry(page).click()
-  await expect(consoleNav(page)).toBeVisible()
-  await consoleLink(page, copy('consoleUi', 'invitations.title')).click()
+  await expect(adminEntry(page)).toBeVisible()
+  await adminEntry(page).click()
+  await expect(adminNav(page)).toBeVisible()
+  await adminLink(page, copy('adminUi', 'invitations.title')).click()
   await expect(
     page.getByRole('heading', {
       level: 1,
-      name: copy('consoleUi', 'invitations.title'),
+      name: copy('adminUi', 'invitations.title'),
       exact: true,
     }),
   ).toBeVisible()
@@ -410,15 +410,15 @@ async function registerProvider(
 ): Promise<void> {
   const form = providerSection(page)
   await form
-    .getByLabel(copy('consoleUi', 'sso.provider.protocolLabel'), {
+    .getByLabel(copy('adminUi', 'sso.provider.protocolLabel'), {
       exact: true,
     })
     .fill('oidc')
   await form
-    .getByLabel(copy('consoleUi', 'sso.provider.nameLabel'), { exact: true })
+    .getByLabel(copy('adminUi', 'sso.provider.nameLabel'), { exact: true })
     .fill(PROVIDER_NAME)
   await form
-    .getByLabel(copy('consoleUi', 'sso.provider.provisioningLabel'), {
+    .getByLabel(copy('adminUi', 'sso.provider.provisioningLabel'), {
       exact: true,
     })
     .fill('preprovisioned')
@@ -428,19 +428,19 @@ async function registerProvider(
   // states it.
   await form
     .getByRole('combobox', {
-      name: copy('consoleUi', 'sso.provider.enabledLabel'),
+      name: copy('adminUi', 'sso.provider.enabledLabel'),
       exact: true,
     })
     .click()
   await page
     .getByRole('option', {
-      name: copy('consoleUi', 'sso.provider.tri.true'),
+      name: copy('adminUi', 'sso.provider.tri.true'),
       exact: true,
     })
     .click()
 
   await form
-    .getByLabel(copy('consoleUi', 'sso.provider.configLabel'), { exact: true })
+    .getByLabel(copy('adminUi', 'sso.provider.configLabel'), { exact: true })
     .fill(
       JSON.stringify({
         issuer: provider.issuer,
@@ -449,20 +449,20 @@ async function registerProvider(
       }),
     )
   await form
-    .getByLabel(copy('consoleUi', 'sso.provider.clientSecretLabel'), {
+    .getByLabel(copy('adminUi', 'sso.provider.clientSecretLabel'), {
       exact: true,
     })
     .fill(enterpriseIdentityProviderClient.secret)
   await form
     .getByRole('button', {
-      name: copy('consoleUi', 'sso.provider.createSubmit'),
+      name: copy('adminUi', 'sso.provider.createSubmit'),
       exact: true,
     })
     .click()
 
   await expect(
     page.getByText(
-      copy('consoleUi', 'sso.provider.created', { name: PROVIDER_NAME }),
+      copy('adminUi', 'sso.provider.created', { name: PROVIDER_NAME }),
       { exact: true },
     ),
   ).toBeVisible()
@@ -474,24 +474,24 @@ async function claimAndVerifyDomain(page: Page, stub: DNSStub): Promise<void> {
   const domains = domainSection(page)
   await domains
     .getByRole('combobox', {
-      name: copy('consoleUi', 'sso.domains.providerLabel'),
+      name: copy('adminUi', 'sso.domains.providerLabel'),
       exact: true,
     })
     .click()
   await page.getByRole('option', { name: PROVIDER_NAME, exact: true }).click()
   await domains
-    .getByLabel(copy('consoleUi', 'sso.domains.domainLabel'), { exact: true })
+    .getByLabel(copy('adminUi', 'sso.domains.domainLabel'), { exact: true })
     .fill(enterpriseIdentityProviderDomain)
   await domains
     .getByRole('button', {
-      name: copy('consoleUi', 'sso.domains.claim'),
+      name: copy('adminUi', 'sso.domains.claim'),
       exact: true,
     })
     .click()
 
   await expect(
     page.getByText(
-      copy('consoleUi', 'sso.domains.claimed', {
+      copy('adminUi', 'sso.domains.claimed', {
         domain: enterpriseIdentityProviderDomain,
         name: PROVIDER_NAME,
       }),
@@ -502,7 +502,7 @@ async function claimAndVerifyDomain(page: Page, stub: DNSStub): Promise<void> {
   // The one-time panel hands the record value over complete; publishing it is
   // the operator's act at the domain's DNS, performed through the stub.
   const panel = page.getByRole('status').filter({
-    hasText: copy('consoleUi', 'sso.domains.claimToken'),
+    hasText: copy('adminUi', 'sso.domains.claimToken'),
   })
   await expect(panel).toBeVisible()
   const recordValue = panel.getByText(/^speed-authn=[0-9a-f]{64}$/)
@@ -516,7 +516,7 @@ async function claimAndVerifyDomain(page: Page, stub: DNSStub): Promise<void> {
   await expect(domainRow).toHaveCount(1)
   await domainRow
     .getByRole('button', {
-      name: copy('consoleUi', 'sso.domains.verifyAria', {
+      name: copy('adminUi', 'sso.domains.verifyAria', {
         domain: enterpriseIdentityProviderDomain,
       }),
       exact: true,
@@ -524,7 +524,7 @@ async function claimAndVerifyDomain(page: Page, stub: DNSStub): Promise<void> {
     .click()
   await expect(
     page.getByText(
-      copy('consoleUi', 'sso.domains.verified', {
+      copy('adminUi', 'sso.domains.verified', {
         domain: enterpriseIdentityProviderDomain,
         name: PROVIDER_NAME,
       }),
@@ -532,14 +532,14 @@ async function claimAndVerifyDomain(page: Page, stub: DNSStub): Promise<void> {
     ),
   ).toBeVisible()
   await expect(
-    domainRow.getByText(copy('consoleUi', 'sso.domains.state.verified'), {
+    domainRow.getByText(copy('adminUi', 'sso.domains.state.verified'), {
       exact: true,
     }),
   ).toBeVisible()
 
   await panel
     .getByRole('button', {
-      name: copy('consoleUi', 'sso.domains.claimTokenCloseAria', {
+      name: copy('adminUi', 'sso.domains.claimTokenCloseAria', {
         tenant: TENANT,
         name: PROVIDER_NAME,
         domain: enterpriseIdentityProviderDomain,
@@ -550,7 +550,7 @@ async function claimAndVerifyDomain(page: Page, stub: DNSStub): Promise<void> {
   await expect(panel).toHaveCount(0)
 }
 
-// The console's invitation table and the SSO page carry low-priority columns;
+// The admin's invitation table and the SSO page carry low-priority columns;
 // the sidebar takes part of the width, so the viewport is wide enough for the
 // container to render every column this journey reads.
 test.use({ tenantSSO: true, viewport: { width: 1920, height: 1080 } })
@@ -573,7 +573,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
   }
 
   await test.step('precondition: the operator registers the tenant provider and verifies its e-mail domain', async () => {
-    // The operator's own address must be proved before the console's human
+    // The operator's own address must be proved before the admin's human
     // writes answer; it is the review seed's administrator assertion until
     // then.
     await accounts.signIn({
@@ -586,14 +586,14 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
       .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
       .click()
     await expect(homeHeading(page)).toBeVisible()
-    await expect(consoleEntry(page)).toBeVisible()
-    await consoleEntry(page).click()
-    await expect(consoleNav(page)).toBeVisible()
-    await consoleLink(page, copy('consoleUi', 'sso.title')).click()
+    await expect(adminEntry(page)).toBeVisible()
+    await adminEntry(page).click()
+    await expect(adminNav(page)).toBeVisible()
+    await adminLink(page, copy('adminUi', 'sso.title')).click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'sso.title'),
+        name: copy('adminUi', 'sso.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -601,7 +601,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     await selectTenant(page, TENANT)
     await expect(
       page.getByRole('heading', {
-        name: copy('consoleUi', 'sso.empty.title'),
+        name: copy('adminUi', 'sso.empty.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -612,7 +612,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
 
   await test.step('precondition: the tenant administrator signs in with the local first factor and proves the work address', async () => {
     // The tenant frame's sign-out surface is what the account helper waits
-    // for; the console's own session gate would show the sign-in form instead.
+    // for; the admin's own session gate would show the sign-in form instead.
     await leaveConsole(page)
     await accounts.signOut()
 
@@ -626,26 +626,26 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     // surface announces, and the tenant area settles the roster's staff
     // default for a platform administrator. The journey's administrator
     // exercises the tenant's own domain, so the tenant area moves to it
-    // before any console page is opened.
+    // before any admin page is opened.
     await switchToTenant(page, TENANT)
   })
 
   await test.step('precondition: the tenant requirement is switched on after the administrator is signed in', async () => {
     // The operator and the administrator are one account in this host: the
-    // console that carries the invitations page is platform-staff only. The
-    // requirement is switched on through that console's settings surface once
-    // the administrator's session and console area are established, which is
+    // admin that carries the invitations page is platform-staff only. The
+    // requirement is switched on through that admin's settings surface once
+    // the administrator's session and admin area are established, which is
     // the sequence in which a signed-in member first meets the requirement.
     await openConsole(page)
     await enableTenantSSORequirement(page)
   })
 
   await test.step('step 1: the tenant administrator submits an invitation', async () => {
-    await consoleLink(page, copy('consoleUi', 'invitations.title')).click()
+    await adminLink(page, copy('adminUi', 'invitations.title')).click()
     await expect(
       page.getByRole('heading', {
         level: 1,
-        name: copy('consoleUi', 'invitations.title'),
+        name: copy('adminUi', 'invitations.title'),
         exact: true,
       }),
     ).toBeVisible()
@@ -653,13 +653,13 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
 
     const section = invitationSection(page)
     await section
-      .getByLabel(copy('consoleUi', 'invitations.issue.emailLabel'), {
+      .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
         exact: true,
       })
       .fill(INVITEE_EMAIL)
     await section
       .getByRole('button', {
-        name: copy('consoleUi', 'invitations.issue.submit'),
+        name: copy('adminUi', 'invitations.issue.submit'),
         exact: true,
       })
       .click()
@@ -671,7 +671,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     // the assertion is that the page renders it, not how many surfaces do.
     await expect(
       section
-        .getByText(copy('consoleUi', 'errors.authn.sso_required'), {
+        .getByText(copy('adminUi', 'errors.authn.sso_required'), {
           exact: true,
         })
         .first(),
@@ -683,7 +683,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     await expect(
       section
         .getByRole('button', {
-          name: copy('consoleUi', 'stepUp.relogin'),
+          name: copy('adminUi', 'stepUp.relogin'),
           exact: true,
         })
         .first(),
@@ -691,7 +691,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     await expect(page.getByRole('dialog')).toHaveCount(0)
     await expect(
       page.getByRole('button', {
-        name: copy('consoleUi', 'stepUp.submit'),
+        name: copy('adminUi', 'stepUp.submit'),
         exact: true,
       }),
     ).toHaveCount(0)
@@ -700,7 +700,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
       'stepUp.factorKind.webauthn',
       'stepUp.factorKind.sms',
     ]) {
-      await expect(page.getByText(copy('consoleUi', factor), { exact: true }))
+      await expect(page.getByText(copy('adminUi', factor), { exact: true }))
         .toHaveCount(0)
     }
   })
@@ -711,7 +711,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     // provider. Either control is the documented action.
     await invitationSection(page)
       .getByRole('button', {
-        name: copy('consoleUi', 'stepUp.relogin'),
+        name: copy('adminUi', 'stepUp.relogin'),
         exact: true,
       })
       .first()
@@ -766,13 +766,13 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
 
     const section = invitationSection(page)
     await section
-      .getByLabel(copy('consoleUi', 'invitations.issue.emailLabel'), {
+      .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
         exact: true,
       })
       .fill(INVITEE_EMAIL)
     await section
       .getByRole('button', {
-        name: copy('consoleUi', 'invitations.issue.submit'),
+        name: copy('adminUi', 'invitations.issue.submit'),
         exact: true,
       })
       .click()
@@ -781,7 +781,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     // the same one a direct submit renders.
     await expect(
       section.getByText(
-        copy('consoleUi', 'invitations.issued.confirm', {
+        copy('adminUi', 'invitations.issued.confirm', {
           email: INVITEE_EMAIL,
         }),
         { exact: true },
@@ -792,7 +792,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     // over its acceptance link, and the list carries the pending row.
     await expect(
       page.getByRole('status').filter({
-        hasText: copy('consoleUi', 'invitations.issued.link', {
+        hasText: copy('adminUi', 'invitations.issued.link', {
           email: INVITEE_EMAIL,
         }),
       }),
@@ -803,7 +803,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
       .filter({ hasText: INVITEE_EMAIL })
     await expect(row).toHaveCount(1)
     await expect(
-      row.getByText(copy('consoleUi', 'invitations.status.pending'), {
+      row.getByText(copy('adminUi', 'invitations.status.pending'), {
         exact: true,
       }),
     ).toBeVisible()

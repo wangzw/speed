@@ -2,7 +2,7 @@
  * The notification surface's route-declaration types -- the structural
  * mirror of @speed/route-kit's registration surface.
  *
- * Like @speed/console-ui, this package reuses the declarative
+ * Like @speed/admin-ui, this package reuses the declarative
  * registration seam: the notification surface exports one declaration --
  * a path pattern, a view callback and an optional navigation label --
  * and the application's composition layer collects it and hands it to the

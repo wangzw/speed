@@ -4,7 +4,7 @@
  * It walks the application's own route table -- the copied product's `routes`,
  * so a page added there is scanned without this file changing -- and renders
  * the assembled app at each route's path, sweeping the tenant shell and the
- * console shell alike. Every route is swept in the three states a page reaches
+ * admin shell alike. Every route is swept in the three states a page reaches
  * (the scripted backends in ./backends.ts): populated, empty and error. Each
  * render is scanned by ./scan.ts and judged by impact:
  *
@@ -202,7 +202,7 @@ const MISSING_KEY_WARNING = '[speed-i18n] missing translation key'
 /**
  * The missing-key warnings the current case emitted. Every other warning --
  * the sweep's own advisory findings included -- passes through to the real
- * console; only the missing-key channel is captured, and afterEach fails the
+ * admin; only the missing-key channel is captured, and afterEach fails the
  * case when it caught anything.
  */
 const missingKeys: string[] = []
@@ -298,11 +298,11 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
     })
   }
 
-  it('scans a console route in the sidebar shell form', async () => {
-    // The console is the second shell; it takes the same layout through a
+  it('scans an admin route in the sidebar shell form', async () => {
+    // The admin is the second shell; it takes the same layout through a
     // different frame, and its grouped navigation is the shape the tenant
     // frame does not render.
-    await scanSidebarRoute('/console/tenants')
+    await scanSidebarRoute('/admin/tenants')
   })
 
   it('scans the anonymous sign-in surface at the tenant root', async () => {

@@ -9,7 +9,7 @@
  * account with an unproved email makes. The spec therefore reaches the
  * journey's precondition the way a person does: the standing verification
  * notice, the code from the review process log (the one non-UI read this spec
- * makes), and the verify action. The operator then enters the console, opens
+ * makes), and the verify action. The operator then enters the admin, opens
  * the invitation-and-members page, selects the seeded tenant and finds the
  * tenant's existing member.
  *
@@ -41,20 +41,20 @@
  * driven by this spec.
  *
  * STEP 10's IN-APP HALF IS NOT REACHABLE FROM THE TENANT AREA. The document
- * asks for in-app navigation from the tenant area to a console path quietly
+ * asks for in-app navigation from the tenant area to a admin path quietly
  * landing back on the tenant home. The tenant area offers a plain member no
- * console destination at all: the header entry and the start page's console
+ * admin destination at all: the header entry and the start page's admin
  * card are hidden by REQ-platform-admin-001, and the navigation lists no
- * console path. There is therefore no rendered control this step could click.
+ * admin path. There is therefore no rendered control this step could click.
  * The spec drives the branch the document states for a full-page load instead:
- * a URL navigation to the console root and to a console subpath leaves the
- * page on the "checking console access" wait, renders no console content, and
+ * a URL navigation to the admin root and to a admin subpath leaves the
+ * page on the "checking admin access" wait, renders no admin content, and
  * does not fall back to the tenant home. REQ-platform-admin-036 is left out of
  * `@covers` for that reason: its in-app clause cannot be exercised here, and
  * the id as a whole would claim it.
  *
  * `@covers` is narrower than the document's list in other ways too.
- * REQ-platform-admin-002 (an anonymous viewer on a console path) is not driven:
+ * REQ-platform-admin-002 (an anonymous viewer on a admin path) is not driven:
  * this journey's anonymous surface is the invitation link. REQ-tenancy-017 (the
  * membership binds to the invited address even when another account accepts),
  * REQ-tenancy-018 (an address with no account gets one from the accept form)
@@ -65,7 +65,7 @@
  * REQ-platform-admin-032 is claimed narrowly: the issue carries an expiry and
  * both the list and the accept summary render that instant, but the
  * blank-expiry default is not driven. REQ-tenancy-008 is claimed narrowly too:
- * the console's member table lists the tenant's members, while its paging and
+ * the admin's member table lists the tenant's members, while its paging and
  * ascending order are not exercised by this spec.
  *
  * Expected copy is read from the shipped en-US bundles through
@@ -81,8 +81,8 @@ import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
 import { copy } from '../helpers/i18n'
 
-// The console's invitation table has a low-priority expiry column, and the
-// console sidebar takes part of the width, so the desktop viewport has to be
+// The admin's invitation table has a low-priority expiry column, and the
+// admin sidebar takes part of the width, so the desktop viewport has to be
 // wide enough for the container to render every column this journey reads.
 test.use({ seedInvitee: true, viewport: { width: 1920, height: 1080 } })
 
@@ -151,37 +151,37 @@ function verificationSection(page: Page): Locator {
   })
 }
 
-/** The header's console entry (a link, while the operator may reach it). */
-function consoleEntry(page: Page): Locator {
+/** The header's admin entry (a link, while the operator may reach it). */
+function adminEntry(page: Page): Locator {
   return page.getByRole('banner').getByRole('link', {
-    name: copy('demo', 'nav.console'),
+    name: copy('demo', 'nav.admin'),
     exact: true,
   })
 }
 
-/** The home page's console card. */
-function consoleCard(page: Page): Locator {
+/** The home page's admin card. */
+function adminCard(page: Page): Locator {
   return page
     .getByRole('heading', {
       level: 2,
-      name: copy('demo', 'home.cards.console.title'),
+      name: copy('demo', 'home.cards.admin.title'),
       exact: true,
     })
     .locator('xpath=ancestor::a[1]')
 }
 
-/** The console's navigation landmark. */
-function consoleNav(page: Page): Locator {
+/** The admin's navigation landmark. */
+function adminNav(page: Page): Locator {
   return page.getByRole('navigation', {
-    name: copy('consoleUi', 'shell.navLabel'),
+    name: copy('adminUi', 'shell.navLabel'),
     exact: true,
   })
 }
 
-/** The tenant selector of a tenant-addressed console page. */
+/** The tenant selector of a tenant-addressed admin page. */
 function tenantSelector(page: Page): Locator {
   return page.getByRole('combobox', {
-    name: copy('consoleUi', 'common.tenant'),
+    name: copy('adminUi', 'common.tenant'),
     exact: true,
   })
 }
@@ -189,7 +189,7 @@ function tenantSelector(page: Page): Locator {
 /** The invitation section of the invitations-and-members page. */
 function invitationSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'invitations.section.title'),
+    name: copy('adminUi', 'invitations.section.title'),
     exact: true,
   })
 }
@@ -197,7 +197,7 @@ function invitationSection(page: Page): Locator {
 /** The member section of the invitations-and-members page. */
 function memberSection(page: Page): Locator {
   return page.getByRole('region', {
-    name: copy('consoleUi', 'members.title'),
+    name: copy('adminUi', 'members.title'),
     exact: true,
   })
 }
@@ -213,7 +213,7 @@ function invitationRow(page: Page): Locator {
 /** The one-time panel that hands out the issued invitation's acceptance link. */
 function invitationLinkPanel(page: Page, email: string): Locator {
   return page.getByRole('status').filter({
-    hasText: copy('consoleUi', 'invitations.issued.link', { email }),
+    hasText: copy('adminUi', 'invitations.issued.link', { email }),
   })
 }
 
@@ -283,7 +283,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
 
     await test.step('step 1: the operator opens the invitation-and-members page and selects the tenant', async () => {
       // The account page the verification landed on is inside the tenant
-      // shell; the start page is where the console entry and card are read.
+      // shell; the start page is where the admin entry and card are read.
       await page
         .getByRole('link', { name: copy('demo', 'nav.home'), exact: true })
         .click()
@@ -296,22 +296,22 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       ).toBeVisible()
 
       // REQ-platform-admin-001's operator facet: both derivations of the
-      // console destination are offered to platform staff.
-      await expect(consoleEntry(page)).toBeVisible()
-      await expect(consoleCard(page)).toBeVisible()
-      await consoleEntry(page).click()
-      await expect(consoleNav(page)).toBeVisible()
+      // admin destination are offered to platform staff.
+      await expect(adminEntry(page)).toBeVisible()
+      await expect(adminCard(page)).toBeVisible()
+      await adminEntry(page).click()
+      await expect(adminNav(page)).toBeVisible()
 
-      await consoleNav(page)
+      await adminNav(page)
         .getByRole('link', {
-          name: copy('consoleUi', 'invitations.title'),
+          name: copy('adminUi', 'invitations.title'),
           exact: true,
         })
         .click()
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'invitations.title'),
+          name: copy('adminUi', 'invitations.title'),
           exact: true,
         }),
       ).toBeVisible()
@@ -327,7 +327,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       // source is read inside that row.
       await expect(
         page.getByRole('heading', {
-          name: copy('consoleUi', 'invitations.empty.title'),
+          name: copy('adminUi', 'invitations.empty.title'),
           exact: true,
         }),
       ).toBeVisible()
@@ -340,7 +340,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         existing.getByText(EXISTING_MEMBER, { exact: true }),
       ).toBeVisible()
       await expect(
-        existing.getByText(copy('consoleUi', 'members.source.admin'), {
+        existing.getByText(copy('adminUi', 'members.source.admin'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -348,25 +348,25 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
 
     await test.step('step 2: the operator invites the address with an expiry and sees the confirmation', async () => {
       await page
-        .getByLabel(copy('consoleUi', 'invitations.issue.emailLabel'), {
+        .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
           exact: true,
         })
         .fill(reviewInvitee.identifier)
       await page
-        .getByLabel(copy('consoleUi', 'invitations.issue.expiresLabel'), {
+        .getByLabel(copy('adminUi', 'invitations.issue.expiresLabel'), {
           exact: true,
         })
         .fill(EXPIRY_INPUT)
       await page
         .getByRole('button', {
-          name: copy('consoleUi', 'invitations.issue.submit'),
+          name: copy('adminUi', 'invitations.issue.submit'),
           exact: true,
         })
         .click()
 
       await expect(
         page.getByText(
-          copy('consoleUi', 'invitations.issued.confirm', {
+          copy('adminUi', 'invitations.issued.confirm', {
             email: reviewInvitee.identifier,
           }),
           { exact: true },
@@ -379,7 +379,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       await expect(panel).toBeVisible()
       await expect(
         panel.getByText(
-          copy('consoleUi', 'invitations.issued.link', {
+          copy('adminUi', 'invitations.issued.link', {
             email: reviewInvitee.identifier,
           }),
           { exact: true },
@@ -390,7 +390,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       // passes on.
       await expect(
         panel.getByRole('button', {
-          name: copy('consoleUi', 'invitations.issued.copyLink'),
+          name: copy('adminUi', 'invitations.issued.copyLink'),
           exact: true,
         }),
       ).toBeVisible()
@@ -407,7 +407,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       // Step 3's lifetime rule: the panel stays until the operator closes it,
       // and after the close the page offers the link no more.
       const close = panel.getByRole('button', {
-        name: copy('consoleUi', 'invitations.issued.closeAria', {
+        name: copy('adminUi', 'invitations.issued.closeAria', {
           tenant: TENANT,
           email: reviewInvitee.identifier,
         }),
@@ -427,10 +427,10 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
 
       // The list's columns are the four the journey names, beside the actions.
       for (const header of [
-        copy('consoleUi', 'invitations.column.email'),
-        copy('consoleUi', 'invitations.column.status'),
-        copy('consoleUi', 'invitations.column.invitedBy'),
-        copy('consoleUi', 'invitations.column.expires'),
+        copy('adminUi', 'invitations.column.email'),
+        copy('adminUi', 'invitations.column.status'),
+        copy('adminUi', 'invitations.column.invitedBy'),
+        copy('adminUi', 'invitations.column.expires'),
       ]) {
         await expect(
           table.getByRole('columnheader', { name: header, exact: true }),
@@ -443,7 +443,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         row.getByText(reviewInvitee.identifier, { exact: true }),
       ).toBeVisible()
       await expect(
-        row.getByText(copy('consoleUi', 'invitations.status.pending'), {
+        row.getByText(copy('adminUi', 'invitations.status.pending'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -603,7 +603,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       ).toBeHidden()
     })
 
-    await test.step('step 9: a member has no console entry, and a full-page console load turns back home', async () => {
+    await test.step('step 9: a member has no admin entry, and a full-page admin load turns back home', async () => {
       if (inviteePage === undefined) {
         throw new Error('the invitee page was never opened')
       }
@@ -616,21 +616,21 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       await expect(
         invitee
           .getByRole('banner')
-          .getByRole('link', { name: copy('demo', 'nav.console'), exact: true }),
+          .getByRole('link', { name: copy('demo', 'nav.admin'), exact: true }),
       ).toHaveCount(0)
       await expect(
         invitee.getByRole('heading', {
           level: 2,
-          name: copy('demo', 'home.cards.console.title'),
+          name: copy('demo', 'home.cards.admin.title'),
           exact: true,
         }),
       ).toHaveCount(0)
 
       // The full-page-load branch: the member's own tenant list settles the
       // tenant, the platform permission set reads as a known empty set, and the
-      // console area turns the viewer back to the tenant home. Nothing of the
-      // console renders, and no request is spent being refused.
-      for (const path of ['/console', '/console/settings']) {
+      // admin area turns the viewer back to the tenant home. Nothing of the
+      // admin renders, and no request is spent being refused.
+      for (const path of ['/admin', '/admin/settings']) {
         await invitee.goto(`${server.url}${path}`)
         await expect(
           invitee.getByRole('heading', {
@@ -641,13 +641,13 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         ).toBeVisible({ timeout: 15_000 })
         await expect(
           invitee.getByRole('navigation', {
-            name: copy('consoleUi', 'shell.navLabel'),
+            name: copy('adminUi', 'shell.navLabel'),
             exact: true,
           }),
         ).toHaveCount(0)
         await expect(
           invitee.getByRole('progressbar', {
-            name: copy('demo', 'console.accessPending'),
+            name: copy('demo', 'admin.accessPending'),
             exact: true,
           }),
         ).toHaveCount(0)
@@ -697,13 +697,13 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       await expect(
         page.getByRole('heading', {
           level: 1,
-          name: copy('consoleUi', 'invitations.title'),
+          name: copy('adminUi', 'invitations.title'),
           exact: true,
         }),
       ).toBeVisible()
       await page
         .getByRole('button', {
-          name: copy('consoleUi', 'common.refresh'),
+          name: copy('adminUi', 'common.refresh'),
           exact: true,
         })
         .click()
@@ -711,7 +711,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       // The invitation's terminal state is now the accepted one.
       await expect(
         invitationRow(page).getByText(
-          copy('consoleUi', 'invitations.status.accepted'),
+          copy('adminUi', 'invitations.status.accepted'),
           { exact: true },
         ),
       ).toBeVisible({ timeout: 15_000 })
@@ -727,12 +727,12 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         .filter({ hasText: reviewInvitee.displayName })
       await expect(invited).toHaveCount(1)
       await expect(
-        invited.getByText(copy('consoleUi', 'members.source.invite'), {
+        invited.getByText(copy('adminUi', 'members.source.invite'), {
           exact: true,
         }),
       ).toBeVisible()
       await expect(
-        invited.getByText(copy('consoleUi', 'members.activeYes'), {
+        invited.getByText(copy('adminUi', 'members.activeYes'), {
           exact: true,
         }),
       ).toBeVisible()

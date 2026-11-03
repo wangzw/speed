@@ -384,7 +384,7 @@ func TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint(t *testing.T) {
 	}
 
 	// A path under no endpoint's claim goes to the fallback, the web bundle.
-	for _, path := range []string{"/console/tenants", "/"} {
+	for _, path := range []string{"/admin/tenants", "/"} {
 		web, err := getResponse(context.Background(), addr, path)
 		if err != nil {
 			t.Fatalf("the request for %q failed: %v", path, err)

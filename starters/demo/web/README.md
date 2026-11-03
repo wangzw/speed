@@ -2,7 +2,7 @@
 
 The frontend application of the demo skeleton: the browser application a
 copied-out product grows from. It composes the platform's `@speed/*` packages
-into one program -- the session, the tenant-facing shell, the platform console
+into one program -- the session, the tenant-facing shell, the platform admin
 and the routing between them -- and builds into `../server/dist`, which the Go
 program in the sibling directory embeds with `go:embed` and serves through
 `pkg/webui`.
@@ -176,11 +176,11 @@ development wiring that a copied-out project drops**:
 |---|---|
 | `index.html` | The entry document; mounts `src/main.tsx`'s bootstrap into `#root`. |
 | `src/main.tsx` | `bootstrapDemoApp`: reads the runtime API origin, then hands the app's declarative definition to `@speed/product-shell/bootstrap`'s `bootstrapSpeedApp`. |
-| `src/app.tsx` | `DemoApp`: the route provider around the shell switch -- the tenant shell or the console area, chosen by the URL. |
-| `src/routes.tsx` | The route table: the business slot plus the mounted console area. |
+| `src/app.tsx` | `DemoApp`: the route provider around the shell switch -- the tenant shell or the admin area, chosen by the URL. |
+| `src/routes.tsx` | The route table: the business slot plus the mounted admin area. |
 | `src/paths.ts` | The app's own route paths, shared by the route table and the chrome that links into them. |
 | `src/chrome.tsx` | The shared top-bar chrome: the brand, the tenant switcher and the avatar account menu. |
-| `src/console/console-area.tsx` | The platform console, the second shell, over `@speed/console-ui`. |
+| `src/admin/admin-area.tsx` | The platform admin, the second shell, over `@speed/admin-ui`. |
 | `src/pages/` | The app's pages: the starting page (the `/` card grid over the assembled capabilities), the account page, and the setup and verification landing pages a registration completes on. |
 | `src/runtime-config.ts` | Reads the deployment's runtime configuration from `runtime-config.json` at the deployment root (resolved against the entry document, not the current URL): the API origin, the shell layout and the default theme preset, each falling back on its own. |
 | `src/document-metadata.ts` | Keeps the document title in step with the active language. `<html lang>` is the assembly's (the app-entry bootstrap binds it and follows every switch). |
@@ -217,7 +217,7 @@ others intact, so a typo in `apiOrigin` cannot silently drop the chosen
 layout or preset. An unknown value is ignored. To change the shell form
 of a deployment, set `shellLayout` to the other value -- nothing else in
 the app changes; the value rides down to both frames (`ProductShell` and
-`ConsoleShell`), so the tenant area and the console render the same
+`AdminShell`), so the tenant area and the admin render the same
 arrangement. The app's dev server and a reverse-proxied deployment use
 the same-origin shape above when `apiOrigin` is absent.
 
@@ -283,7 +283,7 @@ differently (a subdomain label, a path segment) repoints the server
 configuration and leaves this wiring alone -- the transport still announces the
 same value, and the copy decides where the server reads it.
 
-### Sessions and the console
+### Sessions and the admin
 
 The session is delivered as the server's httpOnly cookie: the login flow is
 started with `delivery: 'session'`, the server sets its cookie on the same
@@ -295,16 +295,16 @@ Both shells branch on the same session snapshot: a session that genuinely ends
 than a view that never settles. Nothing persists a credential to storage; the
 cookie is the browser's, not a script's.
 
-The tenant frame's `headerActions` slot carries a console entry pointing at
-`/console`, which
-redirects to the console's first page. It sits with the notification bell
+The tenant frame's `headerActions` slot carries an admin entry pointing at
+`/admin`, which
+redirects to the admin's first page. It sits with the notification bell
 -- in the top bar in the
 default shell form, in the drawer paper's bottom row in the `sidebar`
 form -- not in the navigation, and appears only to a principal that holds a platform
-permission, so an ordinary member is offered no way in. The console area itself
+permission, so an ordinary member is offered no way in. The admin area itself
 gates each page on its permission code (composed host-side) and shows a "no
 access" state for a code the session is known to lack, so a member who reaches
-`/console` directly is turned away there.
+`/admin` directly is turned away there.
 
 The entry's visibility turns on the caller's permission sets, which the host
 attaches (`src/platform-permissions.tsx`, wired into the assembly in
@@ -325,7 +325,7 @@ tenant the request resolved to (empty when the request resolved no tenant or
 the member holds nothing there). A read that fails or is refused attaches the
 empty set to both domains (fail-closed), and a feature document that is not
 ready leaves both sets unknown
-so the console shows its wait or failure instead of misreading the member.
+so the admin shows its wait or failure instead of misreading the member.
 
 ### The account page and the app chrome
 
@@ -354,11 +354,11 @@ The shell chrome carries the tenant switcher (over the caller tenant list from
 the `tenant.self` read) and an avatar account menu (profile / account settings /
 sign out), all from `src/chrome.tsx`; AppShell places them in the top bar or, in
 the `sidebar` form, in the drawer paper's top and bottom rows. The tenant
-switcher does not appear in the console frame (the console resolves no tenant).
+switcher does not appear in the admin frame (the admin resolves no tenant).
 
 Neither the interface language nor the color mode has a header control: both are
 set on the account page. The appearance preset selector is that page's appearance
-section too, so the three appearance choices sit together, and the console reaches
+section too, so the three appearance choices sit together, and the admin reaches
 the same page through its account menu.
 
 The color-mode preference is stored on the account (the profile's `color_mode`,
@@ -376,7 +376,7 @@ tenant's reads never see the previous one's data.
 
 The tenant area's landing (`/`) is the skeleton's front door, not a business
 surface: `src/pages/home-page.tsx` renders the platform's assembled
-capabilities as a card grid -- the account settings, the platform console and
+capabilities as a card grid -- the account settings, the platform admin and
 the notification centre -- each a real route the app already serves. A
 product replaces the cards with its own surfaces.
 
@@ -468,8 +468,8 @@ verification state; the notice is independent of it.
   `orval.config.ts` reads). The platform package's `features.ts` and generated
   surface are the package library's outputs; a copy-out project installs the
   published package instead of regenerating them.
-- Keep the console area only if the product has a platform-staff face; drop it
-  and its `@speed/console-ui` dependency otherwise.
+- Keep the admin area only if the product has a platform-staff face; drop it
+  and its `@speed/admin-ui` dependency otherwise.
 
 ## Checks
 

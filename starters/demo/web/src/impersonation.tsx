@@ -17,7 +17,7 @@
  * set and the current tenant; it bumps an identity generation the tenant
  * frame uses to re-register the notification stream. The permission set's
  * read resets it to unknown immediately before issuing its own read, so a
- * re-read that hangs or is refused never leaves the console waiting on a
+ * re-read that hangs or is refused never leaves the admin waiting on a
  * set this action cleared. A start then sends the viewer to the tenant-area
  * home; an end navigates nowhere, because the page is already a tenant page.
  * The action's identity is stable for the frame's whole lifetime: the
@@ -25,7 +25,7 @@
  * restart the timer on every navigation.
  *
  * The action never rejects. Its callers are settled writes (the banner's
- * end, the console page's start/end callback) and the expiry timer; a
+ * end, the admin page's start/end callback) and the expiry timer; a
  * failure here must not overturn a write the server already accepted.
  *
  * The status read is enabled only while the snapshot says an impersonation
@@ -74,8 +74,8 @@
  * issued under the cookie the server has just replaced, and a read answered
  * 401 in that window runs the transport's silent restore with the stale
  * cookie -- which reads "no session" and turns the local session anonymous.
- * The console page reports that moment through the shell's
- * `onImpersonationStarting` seam (console-ui calls the host's hook
+ * The admin page reports that moment through the shell's
+ * `onImpersonationStarting` seam (admin-ui calls the host's hook
  * synchronously before it writes); this provider uses it, not the settled
  * write, to cover the window. Three things close over it: the session's
  * identity-transition guard is opened before the write goes out and closed
@@ -101,7 +101,7 @@ import {
   useImpersonationNotice,
 } from '@speed/auth-ui'
 import type { ImpersonationBannerState } from '@speed/auth-ui'
-import type { ConsoleImpersonationStarting } from '@speed/console-ui'
+import type { AdminImpersonationStarting } from '@speed/admin-ui'
 import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
 import { httpStatusOf, useWriteFeedback } from '@speed/ui-kit'
@@ -163,9 +163,9 @@ interface IdentityChangeContextValue {
   /** Bumped after each identity change, for hosts that re-register
    * identity-scoped subscriptions. */
   readonly generation: number
-  /** The console shell's start seam: holds reads while a start write is in
+  /** The admin shell's start seam: holds reads while a start write is in
    * flight and returns the release for a write that does not land. */
-  readonly onImpersonationStarting: ConsoleImpersonationStarting
+  readonly onImpersonationStarting: AdminImpersonationStarting
 }
 
 const IdentityChangeContext =
@@ -174,7 +174,7 @@ const IdentityChangeContext =
 /**
  * Mounts the identity-change action over the router: it holds the query
  * cache eviction, the session re-read and the navigation a start needs, so
- * both the tenant frame and the console page report to one action.
+ * both the tenant frame and the admin page report to one action.
  */
 export function IdentityChangeProvider({
   children,
@@ -205,7 +205,7 @@ export function IdentityChangeProvider({
    * write that does not land: it opens the session's identity-transition
    * guard (an anonymous answer read under the outgoing cookie is discarded,
    * not committed), cancels the reads in flight and holds new ones. This is
-   * the console shell's `onImpersonationStarting` hook: console-ui calls it
+   * the admin shell's `onImpersonationStarting` hook: admin-ui calls it
    * synchronously before issuing the start write, and calls the returned
    * release when that write is refused, blocked by step-up or throws. A
    * write that lands releases through applyIdentityChange's own finally

@@ -1,6 +1,6 @@
 /**
- * The route table's shape: the business slot at the root, the console area
- * mounted under its prefix, and the console-area predicate the shell switch
+ * The route table's shape: the business slot at the root, the admin area
+ * mounted under its prefix, and the admin-area predicate the shell switch
  * reads.
  */
 
@@ -18,11 +18,11 @@ import {
   AUTH_CALLBACK_PATH,
   authCallbackRoutes,
   businessRoutes,
-  CONSOLE_LANDING_PATH,
-  CONSOLE_PREFIX,
-  consoleShellRoutes,
+  ADMIN_LANDING_PATH,
+  ADMIN_PREFIX,
+  adminShellRoutes,
   invitationRoutes,
-  isConsolePath,
+  isAdminPath,
   navIconFor,
   NOTIFICATIONS_PATH,
   passwordResetRoutes,
@@ -85,39 +85,39 @@ describe('the route table', () => {
     }
   })
 
-  it('mounts every console page under the console prefix', () => {
-    expect(consoleShellRoutes.map((route) => route.path)).toEqual([
-      CONSOLE_PREFIX,
-      `${CONSOLE_PREFIX}/tenants`,
-      `${CONSOLE_PREFIX}/tenants/:id`,
-      `${CONSOLE_PREFIX}/accounts`,
-      `${CONSOLE_PREFIX}/sessions`,
-      `${CONSOLE_PREFIX}/impersonations`,
-      `${CONSOLE_PREFIX}/permissions`,
-      `${CONSOLE_PREFIX}/invitations`,
-      `${CONSOLE_PREFIX}/sso`,
-      `${CONSOLE_PREFIX}/settings`,
-      `${CONSOLE_PREFIX}/sms`,
-      `${CONSOLE_PREFIX}/audit`,
-      `${CONSOLE_PREFIX}/audit/:id`,
+  it('mounts every admin page under the admin prefix', () => {
+    expect(adminShellRoutes.map((route) => route.path)).toEqual([
+      ADMIN_PREFIX,
+      `${ADMIN_PREFIX}/tenants`,
+      `${ADMIN_PREFIX}/tenants/:id`,
+      `${ADMIN_PREFIX}/accounts`,
+      `${ADMIN_PREFIX}/sessions`,
+      `${ADMIN_PREFIX}/impersonations`,
+      `${ADMIN_PREFIX}/permissions`,
+      `${ADMIN_PREFIX}/invitations`,
+      `${ADMIN_PREFIX}/sso`,
+      `${ADMIN_PREFIX}/settings`,
+      `${ADMIN_PREFIX}/sms`,
+      `${ADMIN_PREFIX}/audit`,
+      `${ADMIN_PREFIX}/audit/:id`,
     ])
-    // Every labelled console page carries a permission code; the detail
+    // Every labelled admin page carries a permission code; the detail
     // routes are unlabelled (reached from a row, not the navigation) and
     // inherit the guard of the list they belong to.
-    for (const route of consoleShellRoutes) {
+    for (const route of adminShellRoutes) {
       if (route.label !== undefined) {
         expect(route.permission, route.path).toBeTruthy()
       }
     }
   })
 
-  it('renders the dashboard at the console prefix itself, labelled', () => {
-    const landing = routes.find((route) => route.path === CONSOLE_PREFIX)
+  it('renders the dashboard at the admin prefix itself, labelled', () => {
+    const landing = routes.find((route) => route.path === ADMIN_PREFIX)
     expect(landing).toBeDefined()
-    // The console root is the dashboard, a labelled page (it adds the
-    // console's own first navigation entry).
+    // The admin root is the dashboard, a labelled page (it adds the
+    // admin's own first navigation entry).
     expect(landing?.label).toBeDefined()
-    expect(CONSOLE_LANDING_PATH).toBe(CONSOLE_PREFIX)
+    expect(ADMIN_LANDING_PATH).toBe(ADMIN_PREFIX)
   })
 
   it('mounts the auth callback route at its own path, unlabelled', () => {
@@ -161,7 +161,7 @@ describe('the route table', () => {
       }
     }
     // The table must actually exercise the vocabulary: the notification
-    // surface and every console page are gated.
+    // surface and every admin page are gated.
     expect(gated).toBeGreaterThan(0)
     expect(
       businessRoutes.find((route) => route.path === NOTIFICATIONS_PATH)
@@ -169,27 +169,27 @@ describe('the route table', () => {
     ).toContain('notification.inbox')
   })
 
-  it('combines the business slot, the callback, invitation and reset routes and the console pages', () => {
+  it('combines the business slot, the callback, invitation and reset routes and the admin pages', () => {
     expect(routes).toHaveLength(
       businessRoutes.length +
         authCallbackRoutes.length +
         invitationRoutes.length +
         passwordResetRoutes.length +
-        consoleShellRoutes.length,
+        adminShellRoutes.length,
     )
   })
 })
 
-describe('isConsolePath', () => {
-  it('recognizes the console prefix and its descendants', () => {
-    expect(isConsolePath(CONSOLE_PREFIX)).toBe(true)
-    expect(isConsolePath(`${CONSOLE_PREFIX}/tenants`)).toBe(true)
+describe('isAdminPath', () => {
+  it('recognizes the admin prefix and its descendants', () => {
+    expect(isAdminPath(ADMIN_PREFIX)).toBe(true)
+    expect(isAdminPath(`${ADMIN_PREFIX}/tenants`)).toBe(true)
   })
 
   it('rejects the tenant paths and a prefix look-alike', () => {
-    expect(isConsolePath('/')).toBe(false)
-    expect(isConsolePath('/tenants')).toBe(false)
-    expect(isConsolePath(`${CONSOLE_PREFIX}x`)).toBe(false)
+    expect(isAdminPath('/')).toBe(false)
+    expect(isAdminPath('/tenants')).toBe(false)
+    expect(isAdminPath(`${ADMIN_PREFIX}x`)).toBe(false)
   })
 })
 
@@ -209,7 +209,7 @@ const PAGE_PATHS = [...new Set(routes.map((route) => route.path))]
 
 /** The path prefixes the pages mount under, beside the route table's paths. */
 const PAGE_PREFIXES = [
-  CONSOLE_PREFIX,
+  ADMIN_PREFIX,
   INVITATION_PREFIX,
   ACCOUNT_CALLBACK_PATH,
   AUTH_CALLBACK_PATH,

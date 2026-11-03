@@ -102,11 +102,11 @@ fails that package's typecheck.
 
 `starters/demo/web` binds this surface at runtime: its app-entry assembly
 (`@speed/product-shell/bootstrap`'s `bootstrapSpeedApp`) binds one real
-`@speed/api-client` client through `bindRequestFn`, and the app's console
+`@speed/api-client` client through `bindRequestFn`, and the app's admin
 area drives the generated operations over it. The package still ships no
 browser-tier suite of its own: its unit tests bind a fake request function
 and never touch a network, and the in-workspace consumers
-(`@speed/auth-core`, `@speed/account-ui`, `@speed/console-ui`) reach the
+(`@speed/auth-core`, `@speed/account-ui`, `@speed/admin-ui`) reach the
 generated surface at compile time. Tenant query-key namespacing stays a
 consumer-shell discipline by contract.
 

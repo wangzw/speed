@@ -6,7 +6,7 @@
  *
  * The code resolves through the namespace of the surface that renders the
  * notice -- the account surface's vocabulary for the tenant area, the
- * console's for the console area -- and a code outside that namespace falls
+ * admin's for the admin area -- and a code outside that namespace falls
  * back to its generic unknown text rather than to a raw key. The notice is
  * dismissible and one-shot: it stands until closed, and the fragment it came
  * from is cleared by the reader, so a reload does not repeat it.

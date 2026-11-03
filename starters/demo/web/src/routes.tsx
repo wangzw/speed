@@ -8,17 +8,17 @@
  *    own pages, each a path / view / optional label / optional navigation
  *    icon / optional permission declaration.
  *
- *  - The console area. @speed/console-ui declares the platform administration
- *    surfaces -- the dashboard at the console root, the tenant roster and one
+ *  - The admin area. @speed/admin-ui declares the platform administration
+ *    surfaces -- the dashboard at the admin root, the tenant roster and one
  *    tenant's detail, the audit query and one record's detail, settings and
- *    the rest -- and the app mounts them under CONSOLE_PREFIX so the two
+ *    the rest -- and the app mounts them under ADMIN_PREFIX so the two
  *    shells' pages live in disjoint path spaces. The dashboard sits at the
- *    prefix itself, so the console root renders the dashboard rather than
+ *    prefix itself, so the admin root renders the dashboard rather than
  *    redirecting to a page below it.
  *
  * One table, two shells: the app chooses the shell by which area the current
  * URL selects (src/app.tsx), while RouteView renders the matched declaration
- * for either. The console-ui declarations are structurally route-kit's
+ * for either. The admin-ui declarations are structurally route-kit's
  * RouteDeclaration -- the two packages share the shape without an import edge
  * between them -- so they drop straight into the table.
  */
@@ -29,7 +29,7 @@ import type { FeatureName } from '@speed/api-sdk/features'
 import { notificationRoutes } from '@speed/notification-ui'
 import { useLocationPath, useRedirect } from '@speed/route-kit'
 import type { RouteDeclaration, RouteTable } from '@speed/route-kit'
-import { consoleShellRoutes } from './console-routes.js'
+import { adminShellRoutes } from './admin-routes.js'
 import { DemoNavLabel } from './nav-label.js'
 import { AccountNavIcon, HomeNavIcon, NotificationsNavIcon } from './nav-icons.js'
 import {
@@ -61,19 +61,19 @@ export {
   ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
   AUTH_CALLBACK_PATH,
-  CONSOLE_PREFIX,
+  ADMIN_PREFIX,
   NOTIFICATIONS_PATH,
   PASSWORD_RESET_PATH,
 } from './paths.js'
-// The console area's prefixed declarations and the prefix test live in
-// src/console-routes.ts, shared with the start page (which must not import
+// The admin area's prefixed declarations and the prefix test live in
+// src/admin-routes.ts, shared with the start page (which must not import
 // this module back). Re-exported here so the table stays the single route
 // import site.
 export {
-  CONSOLE_LANDING_PATH,
-  consoleShellRoutes,
-  isConsolePath,
-} from './console-routes.js'
+  ADMIN_LANDING_PATH,
+  adminShellRoutes,
+  isAdminPath,
+} from './admin-routes.js'
 
 /**
  * The invitation landing's declaration path. The app renders its page outside
@@ -167,7 +167,7 @@ export const businessRoutes: readonly HostRouteDeclaration[] = [
     path: ACCOUNT_SETUP_PATH,
     view: () => <AccountSetupPage />,
   },
-  // The notification surface: the same declarative seam as the console's
+  // The notification surface: the same declarative seam as the admin's
   // pages -- notification-ui exports a structurally route-kit declaration,
   // so it drops straight into the table, with the host's icon added beside
   // the package's own path and label.
@@ -253,12 +253,12 @@ export const passwordResetRoutes: RouteTable = [
 ] satisfies readonly HostRouteDeclaration[]
 
 /** The product's pages: the business slot, the callback, invitation and
- * password reset routes, and the mounted console area (the dashboard at the
+ * password reset routes, and the mounted admin area (the dashboard at the
  * prefix itself). */
 export const routes: RouteTable = [
   ...businessRoutes,
   ...authCallbackRoutes,
   ...invitationRoutes,
   ...passwordResetRoutes,
-  ...consoleShellRoutes,
+  ...adminShellRoutes,
 ]

@@ -1,0 +1,1166 @@
+{
+  "throttle": {
+    "retryAfter": "尝试次数过多，请在 {{seconds}} 秒后重试。",
+    "retryAfterLong": "尝试次数过多，请在约 {{minutes}} 分钟后重试。",
+    "countdown": "请在 {{seconds}} 秒后重试。",
+    "countdownLong": "请在约 {{minutes}} 分钟后重试。"
+  },
+  "errors": {
+    "authn": {
+      "session_not_found": "会话不存在，请重新登录。",
+      "session_revoked": "会话已被撤销，请重新登录。",
+      "token_expired": "登录已过期，请重新登录。",
+      "refresh_token_invalid": "登录状态已失效，请重新登录。",
+      "refresh_token_reused": "检测到异常活动，请重新登录。",
+      "bad_request": "提交的内容有误，请检查表单后重试。",
+      "unsupported_region": "此操作不支持该地区。",
+      "conflict": "该改动与账户的当前状态冲突。",
+      "email_taken": "该邮箱已注册到另一账户，请换一个邮箱地址。",
+      "login_identifier_required": "账号需要至少一个登录名（用户名或邮箱地址）。",
+      "last_login_method": "这是该账号最后一种可用的登录方式。请先为它设置密码或添加其他登录方式，再移除这一项。",
+      "username_immutable": "用户名不可更改或删除。",
+      "contact_required": "请先在账户验证页验证邮箱地址，再继续此操作。",
+      "forbidden": "你没有执行此操作的权限。",
+      "impersonation_restricted": "无法执行此操作：目标账户必须是该租户中已启用且未受保护的成员，并且你当前不能处于冒充其他账户的状态。",
+      "factor_not_seasoned": "此操作需要一个已启用满规定时长的非短信验证方式（认证器应用或通行密钥）。刚添加的验证方式需要先等待一段时间。",
+      "login_failed": "验证未通过，邮箱、手机号、密码或验证码不正确。",
+      "flow_invalid": "验证流程已失效，请重新开始。",
+      "throttled": "尝试次数过多，请稍后再试。",
+      "unavailable": "服务暂时不可用，请稍后重试。",
+      "human_verification_required": "请先完成人机验证，然后重试。",
+      "sso_required": "本次操作要求通过企业单点登录重新认证，请重新登录。"
+    },
+    "authz": {
+      "bad_request": "提交的内容有误，请检查表单后重试。",
+      "conflict": "该改动与现有角色或绑定冲突。",
+      "forbidden": "你没有执行此操作的权限。",
+      "protected": "这个域受保护，不能在这里管理它的角色、授予和绑定。"
+    },
+    "audit": {
+      "bad_request": "提交的内容有误，请检查表单后重试。"
+    },
+    "client": {
+      "network": "网络连接不可用，请检查网络后重试。",
+      "timeout": "这次操作耗时过长，请稍后重试。",
+      "protocol": "服务暂时出了问题，请稍后重试。",
+      "http": "服务返回错误（{{status}}），请稍后重试。",
+      "httpForbidden": "你没有执行此操作的权限。",
+      "httpUnauthorized": "会话已结束，请重新登录。"
+    },
+    "ratelimit": {
+      "throttled": "尝试次数过多，请稍后再试。"
+    },
+    "tenant": {
+      "bad_request": "提交的内容有误，请检查表单后重试。",
+      "conflict": "该标识或别名已被其他租户占用。"
+    },
+    "settings": {
+      "bad_request": "提交的内容有误，请检查表单后重试。",
+      "invalid_value": "该值超出了此设置允许的范围。"
+    },
+    "sms": {
+      "bad_request": "提交的内容有误，请检查表单后重试。",
+      "conflict": "同名模板已存在。",
+      "config_template": "该模板由配置提供，无法在此修改。"
+    },
+    "unknown": "出了点问题，请稍后重试。"
+  },
+  "shell": {
+    "navLabel": "管理后台导航",
+    "title": "管理后台"
+  },
+  "nav": {
+    "groups": {
+      "overview": "概览",
+      "identity": "身份与访问",
+      "tenants": "租户",
+      "platform": "平台配置",
+      "audit": "审计"
+    }
+  },
+  "common": {
+    "refresh": "刷新",
+    "updatedAt": "更新于 {{time}}",
+    "refreshed": "数据已刷新",
+    "cancel": "取消",
+    "confirm": "确认",
+    "tenant": "租户",
+    "tenantNone": "未选择",
+    "tenantLoading": "正在加载租户…",
+    "tenantForbidden": "你没有查看租户列表的权限。",
+    "tenantLoadFailed": "租户名册加载失败。",
+    "tenantRetry": "重试",
+    "tenantEmpty": "尚未登记任何租户。",
+    "emptyValue": "—",
+    "accountUnresolved": "身份无法显示（需要查看账户的权限）",
+    "accountMissing": "非账户或已删除",
+    "accountReference": {
+      "name": "「{{name}}」",
+      "identifier": "「{{identifier}}」",
+      "nameWithIdentifier": "「{{name}}」（{{identifier}}）"
+    }
+  },
+  "detail": {
+    "notFound": {
+      "title": "记录不存在或暂不可用",
+      "description": "该记录不存在，或当前无法读取，请重试确认。"
+    }
+  },
+  "stepUp": {
+    "title": "需要重新验证",
+    "ssoTitle": "需要企业单点登录",
+    "ssoRequired": "本次操作要求通过企业单点登录重新认证，请重新登录。",
+    "description": "该操作要求更强或更新的身份验证，请先完成一次验证。",
+    "starting": "正在开始验证…",
+    "submit": "验证",
+    "factorKind": {
+      "totp": "身份验证器应用",
+      "webauthn": "通行密钥",
+      "sms": "短信"
+    },
+    "factorOptionNamed": "{{kind}} · {{name}}",
+    "factorOptionOrdinal": "{{kind}}（{{position}}）",
+    "cannotElevate": "这次会话无法用你已登记的验证方式完成这次确认：这些方式可能是在本次登录之后才登记的，或本站没有能进一步加强本次登录的验证方式。请重新登录一次。",
+    "relogin": "重新登录",
+    "codeLabel": "6 位验证码",
+    "enrollTotpHelp": "用验证器应用扫描下方二维码，然后输入应用显示的 6 位验证码完成设置。",
+    "totpQrLabel": "用验证器应用扫描二维码",
+    "totpManualToggle": "无法扫描？手动输入",
+    "totpSecretLabel": "设置密钥",
+    "totpCopyLabel": "复制设置密钥",
+    "totpCopiedLabel": "设置密钥已复制",
+    "totpCopyVisibleLabel": "复制",
+    "totpAlgorithm": "算法",
+    "totpDigits": "位数",
+    "totpPeriod": "周期（秒）",
+    "passkeyPrompt": "在你的设备上使用通行密钥确认身份。",
+    "passkeyRegisterPrompt": "用你的设备登记通行密钥。",
+    "passkeyWaiting": "正在等待你的设备…",
+    "passkeyCancel": "取消",
+    "passkeyRetry": "重试",
+    "passkeyUnsupported": "此浏览器无法使用通行密钥登录，请改用其他方式。",
+    "passkeyCancelled": "通行密钥提示已取消，请重试。",
+    "passkeyAlreadyRegistered": "此设备已登记过通行密钥，请换一台设备，或改用验证器应用。",
+    "passkeyFailedRegister": "通行密钥登记未完成，请重试。",
+    "passkeyFailedSignIn": "通行密钥登录未完成，请重试。",
+    "redirectNotice": "该验证需要跳转到外部页面，本对话框不会自动跳转。",
+    "noFactor": "此账户尚未配置两步验证，请先在账户设置中添加验证方式。",
+    "goToAccount": "前往账户设置",
+    "restart": "重新开始验证"
+  },
+  "tenants": {
+    "title": "租户",
+    "loading": "正在加载租户",
+    "empty": {
+      "title": "暂无租户",
+      "description": "尚未登记任何租户。"
+    },
+    "error": {
+      "title": "租户加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "column": {
+      "id": "标识",
+      "alias": "别名",
+      "status": "状态",
+      "actions": "操作"
+    },
+    "status": {
+      "active": "已启用",
+      "disabled": "已停用",
+      "deleted": "已删除",
+      "other": "未知"
+    },
+    "disabledBy": {
+      "operator": "由运营者停用",
+      "account": "由账户状态停用"
+    },
+    "create": {
+      "title": "登记租户",
+      "idLabel": "标识",
+      "aliasLabel": "别名",
+      "submit": "登记"
+    },
+    "rename": {
+      "label": "新别名",
+      "submit": "改名",
+      "ariaWithId": "租户 {{id}} 的新别名",
+      "submitAria": "为租户 {{id}} 改名"
+    },
+    "enable": "启用",
+    "disable": "停用",
+    "enableAria": "启用租户 {{id}}",
+    "disableAria": "停用租户 {{id}}",
+    "created": "租户「{{id}}」已登记",
+    "renamed": "租户「{{id}}」的别名已更新",
+    "enabledToast": "租户「{{id}}」已启用",
+    "disabledToast": "租户「{{id}}」已停用",
+    "identifierHelper": "不能包含空格"
+  },
+  "forbidden": {
+    "title": "权限不足",
+    "description": "你没有查看该内容的权限。"
+  },
+  "stale": {
+    "description": "这里显示的信息可能已过期，重试即可更新。"
+  },
+  "dashboard": {
+    "title": "概览",
+    "loading": "正在加载概览",
+    "error": {
+      "title": "概览加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "kpi": {
+      "tenants": "租户总数",
+      "active": "已启用",
+      "disabled": "已停用",
+      "deleted": "已删除"
+    },
+    "health": {
+      "title": "平台健康度",
+      "loading": "正在加载平台健康度",
+      "error": {
+        "title": "平台健康度加载失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      },
+      "logins": "近 24 小时登录（成功）",
+      "activity": "近 24 小时审计活动",
+      "note": "计数只统计近 24 小时内最新的一批记录；数字后带「+」表示还有更多记录未计入。"
+    },
+    "recent": {
+      "title": "最近活动",
+      "loading": "正在加载最近活动",
+      "empty": {
+        "title": "暂无活动",
+        "description": "尚无审计记录。"
+      },
+      "error": {
+        "title": "最近活动加载失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      },
+      "column": {
+        "time": "时间",
+        "action": "动作",
+        "object": "对象",
+        "actor": "操作者",
+        "outcome": "结果"
+      }
+    }
+  },
+  "tenantDetail": {
+    "title": "租户「{{id}}」",
+    "back": "返回名册",
+    "loading": "正在加载租户",
+    "error": {
+      "title": "租户加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "summary": "概要",
+    "field": {
+      "id": "标识",
+      "alias": "别名",
+      "status": "状态",
+      "disabledBy": "停用来源"
+    },
+    "actions": {
+      "title": "操作",
+      "renameLabel": "新别名",
+      "renameSubmit": "改名",
+      "enable": "启用",
+      "disable": "停用",
+      "renamed": "租户「{{id}}」的别名已更新",
+      "enabled": "租户「{{id}}」已启用",
+      "disabled": "租户「{{id}}」已停用"
+    },
+    "related": {
+      "title": "相关页面",
+      "permissions": "权限与角色",
+      "invitations": "邀请与成员",
+      "sso": "SSO 提供方",
+      "impersonations": "冒充记录"
+    }
+  },
+  "auditDetail": {
+    "title": "审计记录",
+    "crumb": "记录「{{id}}」",
+    "back": "返回审计查询",
+    "loading": "正在加载审计记录",
+    "error": {
+      "title": "审计记录加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "summary": "记录",
+    "detailTitle": "详情",
+    "field": {
+      "id": "标识",
+      "tenant": "租户",
+      "occurredAt": "时间",
+      "actor": "操作者",
+      "source": "来源",
+      "action": "动作",
+      "object": "对象",
+      "outcome": "结果",
+      "purpose": "用途",
+      "detail": "明细"
+    }
+  },
+  "settings": {
+    "title": "设置",
+    "column": {
+      "key": "键",
+      "type": "类型",
+      "value": "当前值",
+      "state": "状态",
+      "actions": "操作"
+    },
+    "nav": {
+      "label": "命名空间导航",
+      "all": "全部命名空间"
+    },
+    "loading": "正在加载设置",
+    "empty": {
+      "title": "暂无设置",
+      "description": "当前选择下没有可查看的设置项。"
+    },
+    "error": {
+      "title": "设置加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "field": {
+      "sensitive": "敏感值已遮蔽",
+      "defaultValue": "默认值：{{value}}"
+    },
+    "saveBar": {
+      "save": "保存改动",
+      "pending": "{{count}} 项待保存"
+    },
+    "remove": "移除",
+    "removeTitle": "移除设置项",
+    "removeMessage": "移除设置项「{{key}}」的当前取值。",
+    "removeAria": "移除设置项 {{key}}",
+    "saved": "设置已保存",
+    "removed": "设置项「{{key}}」已移除",
+    "state": {
+      "default": "默认",
+      "overridden": "已覆盖"
+    }
+  },
+  "audit": {
+    "title": "审计记录",
+    "loading": "正在加载审计记录",
+    "empty": {
+      "title": "暂无审计记录",
+      "description": "没有匹配该查询的记录。"
+    },
+    "error": {
+      "title": "审计记录加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "export": {
+      "label": "导出",
+      "busy": "正在导出…",
+      "note": "导出包含匹配当前筛选条件的全部记录，不限于当前页。"
+    },
+    "column": {
+      "time": "时间",
+      "actor": "操作者",
+      "action": "动作",
+      "object": "对象",
+      "outcome": "结果"
+    },
+    "filters": {
+      "label": "审计筛选",
+      "since": "起始时间",
+      "until": "结束时间",
+      "action": "动作筛选",
+      "outcome": "结果筛选",
+      "actor": "操作者筛选",
+      "valuePlaceholder": "以逗号或空格分隔",
+      "apply": "应用",
+      "reset": "重置"
+    },
+    "prevPage": "上一页",
+    "nextPage": "下一页"
+  },
+  "accountSelector": {
+    "hint": "输入显示名或登录标识以搜索账户",
+    "empty": "没有匹配的账户",
+    "failed": "账户搜索失败",
+    "searching": "正在搜索账户",
+    "narrow": "匹配的账户较多，输入更多字符以缩小搜索范围",
+    "clear": "清除",
+    "open": "展开",
+    "close": "收起"
+  },
+  "permissions": {
+    "title": "权限",
+    "needTenant": {
+      "title": "请选择租户",
+      "description": "角色、授权与绑定都属于某个租户，请先选择一个租户。"
+    },
+    "roles": {
+      "title": "角色",
+      "loading": "正在加载角色",
+      "empty": {
+        "title": "暂无角色",
+        "description": "该租户尚未定义任何角色。"
+      },
+      "error": {
+        "title": "角色加载失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      },
+      "retry": "重试",
+      "column": {
+        "role": "角色",
+        "builtin": "内建",
+        "description": "描述（文案键）",
+        "actions": "操作"
+      },
+      "builtinYes": "是",
+      "builtinNo": "否",
+      "builtinLocked": "内建角色不可修改或删除",
+      "create": {
+        "roleLabel": "角色名",
+        "descriptionLabel": "描述（文案键）",
+        "submit": "保存角色"
+      },
+      "viewGrants": "查看授权",
+      "viewGrantsAria": "查看授权（角色 {{role}}）",
+      "manageGrants": "管理授权",
+      "manageGrantsAria": "管理授权（角色 {{role}}）",
+      "remove": "删除",
+      "removeAria": "删除角色 {{role}}",
+      "removeTitle": "删除角色",
+      "removeMessage": "删除角色「{{role}}」会一并撤销其全部授权与绑定。",
+      "removeConfirm": "删除",
+      "saved": "角色「{{role}}」已保存",
+      "removed": "角色「{{role}}」已删除",
+      "selectionCleared": "所选角色已不存在，选择已清除。"
+    },
+    "grants": {
+      "title": "授权",
+      "pickRole": "请在上方选择一个角色以管理其授权。",
+      "forRole": "角色「{{role}}」的授权",
+      "builtinReadOnly": "该角色为内建角色，授权为只读：不能授予，也不能撤销。",
+      "permissionLabel": "权限",
+      "add": "授予",
+      "loading": "正在加载授权",
+      "empty": {
+        "title": "暂无授权",
+        "description": "该角色尚未被授予任何权限。"
+      },
+      "error": {
+        "title": "授权加载失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      },
+      "retry": "重试",
+      "column": {
+        "permission": "权限",
+        "actions": "操作"
+      },
+      "revoke": "撤销",
+      "revokeAria": "撤销授权 {{permission}}",
+      "granted": "已向角色「{{role}}」授予权限 {{permission}}",
+      "revoked": "已从角色「{{role}}」撤销权限 {{permission}}"
+    },
+    "catalog": {
+      "title": "权限目录",
+      "loading": "正在加载权限目录",
+      "empty": {
+        "title": "暂无权限",
+        "description": "平台未声明任何权限。"
+      },
+      "error": {
+        "title": "权限目录加载失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      },
+      "retry": "重试",
+      "column": {
+        "permission": "权限"
+      }
+    },
+    "bindings": {
+      "title": "绑定",
+      "accountLabel": "账户",
+      "roleLabel": "角色",
+      "bind": "绑定",
+      "loading": "正在加载绑定",
+      "empty": {
+        "title": "暂无绑定",
+        "description": "该租户尚无任何账户绑定角色。"
+      },
+      "error": {
+        "title": "绑定加载失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      },
+      "retry": "重试",
+      "column": {
+        "account": "账户",
+        "role": "角色",
+        "actions": "操作"
+      },
+      "unbind": "解绑",
+      "unbindAria": "解绑账户 {{account}} 的角色 {{role}}",
+      "bound": "已将角色「{{role}}」绑定到账户{{account}}",
+      "boundUnnamed": "已为该账户绑定角色「{{role}}」",
+      "unbound": "已解除账户{{account}}的角色「{{role}}」绑定",
+      "unboundUnnamed": "已解除该账户的角色「{{role}}」绑定"
+    },
+    "lookup": {
+      "title": "查询账户的绑定",
+      "accountLabel": "账户标识",
+      "apply": "查询",
+      "loading": "正在加载该账户的绑定",
+      "error": {
+        "title": "该账户的绑定加载失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      },
+      "retry": "重试",
+      "empty": {
+        "title": "暂无绑定",
+        "description": "该账户在此租户下没有持有任何角色。"
+      }
+    }
+  },
+  "accounts": {
+    "title": "账户",
+    "identifierLabel": "登录标识",
+    "identifierKindLabel": "标识类型",
+    "identifiersMore": "+{{count}}",
+    "displayNamePrefixLabel": "显示名前缀",
+    "identifierKind": {
+      "username": "用户名",
+      "email": "邮箱",
+      "phone": "手机号"
+    },
+    "search": "查询",
+    "filter": {
+      "status": "状态筛选",
+      "kind": "类型筛选",
+      "all": "全部"
+    },
+    "loading": "正在加载账户",
+    "empty": {
+      "title": "暂无账户",
+      "description": "没有匹配该查询的账户。"
+    },
+    "error": {
+      "title": "账户加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "column": {
+      "id": "标识",
+      "kind": "类型",
+      "displayName": "显示名",
+      "status": "状态",
+      "mfa": "强制 MFA",
+      "actions": "操作"
+    },
+    "mfaYes": "是",
+    "mfaNo": "否",
+    "manage": "管理",
+    "delete": "删除",
+    "manageAria": "管理账户 {{id}}",
+    "deleteAria": "删除账户 {{id}}",
+    "deleteTitle": "删除账户",
+    "deleteMessage": "删除账户「{{name}}」会一并移除其全部登录标识、密钥与会话。",
+    "deleteMessageWithIdentifier": "删除账户「{{name}}」（{{identifier}}）会一并移除其全部登录标识、密钥与会话。",
+    "deleteMessageByIdentifier": "删除账户「{{identifier}}」会一并移除其全部登录标识、密钥与会话。",
+    "deleteMessageUnnamed": "删除该账户会一并移除其全部登录标识、密钥与会话。",
+    "created": "账户{{account}}已创建",
+    "createdUnnamed": "已创建一个账户",
+    "deleted": "账户{{account}}已删除",
+    "deletedUnnamed": "已删除一个账户",
+    "mfaReset": "账户{{account}}的认证因子已重置",
+    "mfaResetUnnamed": "该账户的认证因子已重置",
+    "sessionsRevoked": "账户{{account}}的会话已全部撤销",
+    "sessionsRevokedUnnamed": "该账户的会话已全部撤销",
+    "identifierRemoved": "账户{{account}}的登录标识「{{loginIdentifier}}」已移除",
+    "identifierRemovedUnnamed": "该账户的登录标识「{{loginIdentifier}}」已移除",
+    "secretRevoked": "账户{{account}}的服务密钥「{{label}}」已撤销",
+    "secretRevokedUnnamed": "该账户的服务密钥「{{label}}」已撤销",
+    "sessionRevoked": "账户{{account}}的会话「{{session}}」已撤销",
+    "sessionRevokedUnnamed": "该账户的会话「{{session}}」已撤销",
+    "statusSaved": "账户{{account}}的状态已保存",
+    "statusSavedUnnamed": "该账户的状态已保存",
+    "mfaSaved": "账户{{account}}的 MFA 要求已保存",
+    "mfaSavedUnnamed": "该账户的 MFA 要求已保存",
+    "patchSaved": "账户{{account}}的资料已保存",
+    "patchSavedUnnamed": "该账户的资料已保存",
+    "passwordReset": "账户{{account}}的密码已重置",
+    "passwordResetUnnamed": "该账户的密码已重置",
+    "identifierAdded": "账户{{account}}已添加登录标识「{{loginIdentifier}}」",
+    "identifierAddedUnnamed": "已为该账户添加登录标识「{{loginIdentifier}}」",
+    "secretCreated": "账户{{account}}已创建服务密钥「{{label}}」",
+    "secretCreatedUnnamed": "已为该账户创建服务密钥「{{label}}」",
+    "status": {
+      "label": "状态",
+      "submit": "保存状态",
+      "active": "已启用",
+      "disabled": "已停用",
+      "deleted": "已删除",
+      "other": "未知"
+    },
+    "mfa": {
+      "label": "MFA 要求",
+      "required": "必须",
+      "notRequired": "不要求",
+      "submit": "保存要求"
+    },
+    "create": {
+      "title": "新建账户",
+      "kindLabel": "账户类型",
+      "kind": {
+        "user": "用户",
+        "service": "服务"
+      },
+      "displayNameLabel": "显示名",
+      "usernameLabel": "用户名",
+      "emailLabel": "邮箱",
+      "emailViaLabel": "邮箱验证方式",
+      "phoneLabel": "手机号",
+      "phoneViaLabel": "手机号验证方式",
+      "passwordLabel": "密码",
+      "mfaLabel": "强制 MFA",
+      "attributesLabel": "属性（JSON）",
+      "attributesHelper": "一个字符串取值的 JSON 对象，或留空",
+      "via": {
+        "none": "未声明",
+        "admin": "管理员断言",
+        "importUnverified": "导入，未验证"
+      },
+      "submit": "新建",
+      "usernameTaken": "该用户名已被占用，请换一个。",
+      "usernameReserved": "该用户名是系统保留的名称，请换一个。",
+      "usernameInvalid": "该用户名不符合规则，请按提示修改。",
+      "discardTitle": "放弃未保存的更改",
+      "discardMessage": "关闭面板会丢弃已填写的内容。",
+      "discardConfirm": "放弃"
+    },
+    "writes": {
+      "title": "账户操作"
+    },
+    "patch": {
+      "displayNameLabel": "新显示名",
+      "attributesLabel": "新属性（JSON）",
+      "attributesHelper": "一个字符串取值的 JSON 对象，或留空",
+      "protectedLabel": "受保护",
+      "protected": {
+        "unchanged": "保持不变",
+        "true": "受保护",
+        "false": "不受保护"
+      },
+      "submit": "保存改动"
+    },
+    "password": {
+      "label": "临时密码",
+      "submit": "重置密码"
+    },
+    "addIdentifier": {
+      "kindLabel": "新增标识类型",
+      "valueLabel": "取值",
+      "submit": "新增标识"
+    },
+    "createSecret": {
+      "labelLabel": "标签",
+      "expiresLabel": "过期时间",
+      "expiresHelper": "具体时间，如 2027-01-31T09:00:00Z；留空表示不过期",
+      "submit": "新建密钥",
+      "handedOver": "服务密钥「{{label}}」（仅显示这一次）：",
+      "copy": "复制服务密钥",
+      "close": "关闭",
+      "closeAria": "关闭账户「{{name}}」（{{id}}）的服务密钥「{{label}}」显示",
+      "discardTitle": "放弃未关闭的服务密钥",
+      "discardMessage": "关闭账户详情会丢弃这份只显示一次的密钥。",
+      "discardConfirm": "放弃"
+    },
+    "detail": {
+      "title": "账户「{{id}}」",
+      "displayNameLine": "显示名：{{value}}",
+      "statusLine": "状态：{{value}}",
+      "kindLine": "类型：{{value}}",
+      "loading": "正在加载账户详情",
+      "retry": "重试",
+      "error": {
+        "title": "账户详情加载失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      }
+    },
+    "resetMFA": "重置 MFA",
+    "resetMFATitle": "重置 MFA",
+    "resetMFAMessage": "移除该账户已注册的全部认证因子。",
+    "revokeSessions": "撤销全部会话",
+    "revokeSessionsTitle": "撤销全部会话",
+    "revokeSessionsMessage": "撤销该账户当前的全部会话。",
+    "revokeSessionsMessageCurrent": "撤销该账户当前的全部会话。其中包括你当前的会话，撤销后你也会退出登录。",
+    "factors": {
+      "title": "已注册因子",
+      "loading": "正在加载因子",
+      "retry": "重试",
+      "error": {
+        "title": "因子加载失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      },
+      "empty": {
+        "title": "暂无因子",
+        "description": "该账户尚未注册任何认证因子。"
+      },
+      "column": {
+        "kind": "类型",
+        "label": "标签",
+        "status": "状态"
+      },
+      "kind": {
+        "totp": "验证器应用",
+        "sms": "短信",
+        "webauthn": "通行密钥"
+      },
+      "status": {
+        "pending": "待确认",
+        "active": "已启用",
+        "disabled": "已停用"
+      }
+    },
+    "secrets": {
+      "title": "服务密钥",
+      "loading": "正在加载服务密钥",
+      "retry": "重试",
+      "error": {
+        "title": "服务密钥加载失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      },
+      "empty": {
+        "title": "暂无服务密钥",
+        "description": "该账户没有服务密钥。"
+      },
+      "column": {
+        "label": "标签",
+        "expires": "过期时间",
+        "state": "状态",
+        "actions": "操作"
+      },
+      "revoked": "已撤销",
+      "active": "有效",
+      "revoke": "撤销",
+      "revokeAria": "撤销密钥 {{label}}",
+      "revokeTitle": "撤销服务密钥",
+      "revokeMessage": "撤销服务密钥「{{label}}」。"
+    },
+    "sessions": {
+      "title": "会话",
+      "loading": "正在加载会话",
+      "retry": "重试",
+      "error": {
+        "title": "会话加载失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      },
+      "empty": {
+        "title": "暂无会话",
+        "description": "该账户没有会话。"
+      },
+      "column": {
+        "id": "标识",
+        "created": "创建时间",
+        "state": "状态",
+        "actions": "操作"
+      },
+      "revoked": "已撤销",
+      "active": "有效",
+      "revoke": "撤销",
+      "revokeAria": "撤销会话 {{id}}",
+      "revokeTitle": "撤销会话",
+      "revokeMessage": "撤销会话「{{id}}」。",
+      "revokeMessageCurrent": "撤销会话「{{id}}」。这是你当前的会话，撤销后你也会退出登录。",
+      "current": "当前会话"
+    },
+    "removeIdentifier": {
+      "label": "移除登录标识",
+      "submit": "移除",
+      "confirmTitle": "移除登录标识",
+      "confirmMessage": "从该账户移除登录标识「{{identifier}}」。用户名不可移除。"
+    }
+  },
+  "sessions": {
+    "title": "会话",
+    "accountLabel": "账户",
+    "needAccount": {
+      "title": "请指定账户",
+      "description": "会话按账户列出，请搜索并选择要列出的账户。"
+    },
+    "loading": "正在加载会话",
+    "empty": {
+      "title": "暂无会话",
+      "description": "该账户没有会话。"
+    },
+    "error": {
+      "title": "会话加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "column": {
+      "id": "标识",
+      "kind": "类型",
+      "assurance": "保证级别",
+      "created": "创建时间",
+      "lastSeen": "最近活动",
+      "expires": "过期时间",
+      "state": "状态",
+      "actions": "操作"
+    },
+    "assurance": {
+      "none": "无",
+      "single": "单因子",
+      "multi": "多因子"
+    },
+    "revoked": "已撤销",
+    "active": "有效",
+    "revoke": "撤销",
+    "revokeAriaWithId": "撤销会话 {{id}}",
+    "revokeTitle": "撤销会话",
+    "revokeMessage": "撤销会话「{{id}}」。",
+    "revokeMessageCurrent": "撤销会话「{{id}}」。这是你当前的会话，撤销后你也会退出登录。",
+    "current": "当前会话",
+    "revokedNotice": "会话已撤销"
+  },
+  "impersonations": {
+    "title": "冒充",
+    "needTenant": {
+      "title": "请选择租户",
+      "description": "冒充记录属于某个租户，请先选择一个租户。"
+    },
+    "loading": "正在加载冒充记录",
+    "empty": {
+      "title": "暂无冒充记录",
+      "description": "当前没有冒充记录。"
+    },
+    "error": {
+      "title": "冒充记录加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "column": {
+      "actor": "操作者",
+      "target": "被冒充账户",
+      "tenant": "租户",
+      "started": "开始时间",
+      "ends": "结束时间",
+      "state": "状态",
+      "actions": "操作"
+    },
+    "inForce": "生效中",
+    "ended": "已结束（{{reason}}）",
+    "endReason": {
+      "explicit": "主动",
+      "revoked": "被撤销",
+      "expired": "已到期",
+      "sessionEnded": "会话结束",
+      "actorDisabled": "操作者停用",
+      "targetDisabled": "目标账户停用",
+      "membershipRemoved": "成员关系移除",
+      "startFailed": "发起失败"
+    },
+    "terminate": "终止",
+    "terminated": "已终止对账户{{account}}的冒充。",
+    "terminatedUnnamed": "已终止对该账户的冒充。",
+    "recordsUnavailable": "冒充期间无法查看冒充记录，也不能终止冒充；结束冒充后可在此查看。",
+    "current": {
+      "title": "当前冒充",
+      "loading": "正在读取冒充状态",
+      "none": "当前未冒充任何账户。",
+      "target": "被冒充账户：",
+      "tenant": "租户：{{tenant}}",
+      "ends": "结束时间：{{ends}}",
+      "end": "结束冒充",
+      "started": "已开始冒充账户{{account}}。",
+      "startedUnnamed": "已开始冒充该账户。",
+      "ended": "已结束冒充账户{{account}}。",
+      "endedUnnamed": "已结束冒充该账户。",
+      "error": {
+        "title": "冒充状态读取失败",
+        "description": "内容没有加载出来，请稍后重试。"
+      }
+    },
+    "start": {
+      "title": "发起冒充",
+      "precondition": "开始冒充前，你本人的账户必须已启用短信以外的第二因素，且启用至今已满本系统要求的时长。刚添加的第二因素不算，重新登录也不会缩短这段等待。",
+      "accountLabel": "目标账户",
+      "tenantHint": "请先选择一个租户；被冒充账户必须属于该租户。",
+      "reasonLabel": "理由",
+      "ttlLabel": "有效期（秒）",
+      "submit": "发起冒充"
+    }
+  },
+  "invitations": {
+    "title": "邀请与成员",
+    "needTenant": {
+      "title": "请选择租户",
+      "description": "邀请与成员都属于某个租户，请先选择一个租户。"
+    },
+    "section": {
+      "title": "邀请"
+    },
+    "issue": {
+      "emailLabel": "邮箱地址",
+      "expiresLabel": "过期时间",
+      "expiresHelper": "按你的本地时区选择；留空则使用默认有效期。",
+      "submit": "发出邀请"
+    },
+    "loading": "正在加载邀请",
+    "empty": {
+      "title": "暂无邀请",
+      "description": "该租户尚无邀请。"
+    },
+    "error": {
+      "title": "邀请加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "column": {
+      "email": "邮箱",
+      "status": "状态",
+      "invitedBy": "邀请人",
+      "expires": "过期时间",
+      "actions": "操作"
+    },
+    "status": {
+      "pending": "待接受",
+      "accepted": "已接受",
+      "revoked": "已撤销",
+      "other": "未知"
+    },
+    "revoke": "撤销",
+    "revokeTitle": "撤销邀请",
+    "revokeMessage": "撤销发给「{{email}}」的邀请。",
+    "revoked": "已撤销发给「{{email}}」的邀请",
+    "issued": {
+      "confirm": "已向「{{email}}」发出邀请",
+      "link": "把这条接受链接交给「{{email}}」：",
+      "token": "「{{email}}」的接受令牌（链接由接入本平台的应用生成）：",
+      "copy": "复制",
+      "copyLink": "复制接受链接",
+      "copyToken": "复制接受令牌",
+      "copied": "已复制",
+      "close": "关闭",
+      "closeAria": "关闭租户「{{tenant}}」发给「{{email}}」的接受链接面板"
+    }
+  },
+  "members": {
+    "title": "成员",
+    "loading": "正在加载成员",
+    "empty": {
+      "title": "暂无成员",
+      "description": "该租户尚无成员。"
+    },
+    "error": {
+      "title": "成员加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "column": {
+      "account": "账户",
+      "active": "在册",
+      "ssoExempt": "SSO 豁免",
+      "source": "来源",
+      "actions": "操作"
+    },
+    "source": {
+      "admin": "管理员添加",
+      "invite": "邀请",
+      "jit": "首次登录时开通（{{provider}}）"
+    },
+    "activeYes": "是",
+    "activeNo": "否",
+    "ssoExemptYes": "是",
+    "ssoExemptNo": "否",
+    "ssoExemptSet": "豁免 SSO",
+    "ssoExemptClear": "取消 SSO 豁免",
+    "write": {
+      "accountLabel": "账户",
+      "sourceLabel": "来源",
+      "activeLabel": "在册",
+      "ssoExemptLabel": "SSO 豁免",
+      "submit": "保存成员关系",
+      "saved": "账户{{account}}的成员关系已保存",
+      "savedUnnamed": "该账户的成员关系已保存"
+    },
+    "remove": "移除",
+    "removeTitle": "移除成员",
+    "removeMessage": "从该租户移除成员「{{name}}」。",
+    "removeMessageWithIdentifier": "从该租户移除成员「{{name}}」（{{identifier}}）。",
+    "removeMessageByIdentifier": "从该租户移除成员「{{identifier}}」。",
+    "removeMessageUnnamed": "从该租户移除该成员。",
+    "removed": "已移除成员{{account}}",
+    "removedUnnamed": "已移除该成员",
+    "ssoExemptSaved": "已为成员{{account}}设置 SSO 豁免",
+    "ssoExemptSavedUnnamed": "已为该成员设置 SSO 豁免",
+    "ssoExemptCleared": "已清除成员{{account}}的 SSO 豁免",
+    "ssoExemptClearedUnnamed": "已清除该成员的 SSO 豁免"
+  },
+  "sso": {
+    "title": "SSO 提供方",
+    "needTenant": {
+      "title": "请选择租户",
+      "description": "SSO 提供方属于某个租户，请先选择一个租户。"
+    },
+    "loading": "正在加载提供方",
+    "empty": {
+      "title": "暂无提供方",
+      "description": "该租户尚未注册 SSO 提供方。"
+    },
+    "error": {
+      "title": "提供方加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "column": {
+      "name": "名称",
+      "protocol": "协议",
+      "enabled": "已启用",
+      "version": "版本",
+      "actions": "操作"
+    },
+    "enabledYes": "是",
+    "enabledNo": "否",
+    "refreshProviderListAria": "刷新提供方列表",
+    "refreshMetadata": "刷新元数据",
+    "refreshMetadataAria": "刷新元数据（{{name}}）",
+    "reverifyDomains": "重新验证",
+    "reverifyDomainsAria": "重新验证域名（{{name}}）",
+    "delete": "删除",
+    "deleteAria": "删除提供方 {{name}}",
+    "deleteTitle": "删除 SSO 提供方",
+    "deleteMessage": "删除提供方「{{name}}」及其全部域名。",
+    "deleted": "已删除提供方「{{name}}」",
+    "refreshMetadataSaved": "已刷新提供方「{{name}}」的元数据",
+    "reverifyDomainsSaved": "已重新验证提供方「{{name}}」的域名",
+    "domains": {
+      "title": "域名",
+      "note": "下方列出已声明的邮箱域及其验证状态。只有已验证的域参与按邮箱域的登录发现。",
+      "providerLabel": "提供方",
+      "chooseProvider": "选择提供方以查看其已声明的域名。",
+      "listLabel": "已声明的域名",
+      "empty": "该提供方尚未声明任何域名。",
+      "domainLabel": "新域名",
+      "state": {
+        "verified": "已验证",
+        "unverified": "未验证"
+      },
+      "verify": "验证",
+      "verifyAria": "验证域名 {{domain}}",
+      "claim": "认领",
+      "claimToken": "发布这条 DNS TXT 记录，然后验证该域名。",
+      "claimTokenCopy": "复制验证令牌",
+      "claimRecordName": "记录名",
+      "claimRecordNameCopy": "复制记录名",
+      "claimRecordValue": "记录值",
+      "claimRecordValueCopy": "复制记录值",
+      "claimed": "已为提供方「{{name}}」认领域名「{{domain}}」",
+      "verified": "已验证提供方「{{name}}」的域名「{{domain}}」",
+      "removed": "已从提供方「{{name}}」移除域名「{{domain}}」",
+      "claimTokenClose": "关闭",
+      "claimTokenCloseAria": "关闭租户「{{tenant}}」中提供方「{{name}}」域名「{{domain}}」的认领令牌面板",
+      "remove": "移除",
+      "removeAria": "移除域名 {{domain}}",
+      "removeTitle": "移除域名",
+      "removeMessage": "从该提供方移除域名「{{domain}}」。"
+    },
+    "provider": {
+      "title": "提供方设置",
+      "editLabel": "选择提供方",
+      "newOption": "新建提供方",
+      "protocolLabel": "协议",
+      "nameLabel": "名称",
+      "provisioningLabel": "开通方式",
+      "enabledLabel": "已启用",
+      "trustIdpMfaLabel": "信任 IdP 的 MFA",
+      "allowIdpInitiatedLabel": "允许 IdP 发起",
+      "allowSha1Label": "允许 SHA-1",
+      "mergeExistingLabel": "合并既有账户",
+      "configLabel": "配置（JSON）",
+      "configHelper": "一个 JSON 对象，或留空",
+      "clientSecretLabel": "客户端密钥",
+      "createSubmit": "新建提供方",
+      "updateSubmit": "保存提供方",
+      "created": "已创建提供方「{{name}}」",
+      "updated": "已保存提供方「{{name}}」",
+      "tri": {
+        "unchanged": "保持不变",
+        "true": "是",
+        "false": "否"
+      }
+    }
+  },
+  "sms": {
+    "title": "短信模板",
+    "carrierNote": "仅在配置了短信服务商时才能使用短信管理；未配置时本页无法加载。",
+    "loading": "正在加载短信模板",
+    "empty": {
+      "title": "暂无模板",
+      "description": "尚无短信模板。"
+    },
+    "error": {
+      "title": "短信模板加载失败",
+      "description": "内容没有加载出来，请稍后重试。"
+    },
+    "retry": "重试",
+    "column": {
+      "name": "名称",
+      "source": "来源",
+      "locales": "语言",
+      "approvals": "审核状态",
+      "enabled": "可发送",
+      "actions": "操作"
+    },
+    "source": {
+      "config": "配置",
+      "runtime": "运行期"
+    },
+    "approval": {
+      "pending": "待审核",
+      "approved": "已通过",
+      "rejected": "已拒绝",
+      "withdrawn": "已撤回"
+    },
+    "enabledYes": "是",
+    "enabledNo": "否",
+    "enable": "启用",
+    "disable": "停用",
+    "enableAria": "启用模板 {{name}}",
+    "disableAria": "停用模板 {{name}}",
+    "remove": "移除",
+    "removeAria": "移除模板 {{name}}",
+    "removeTitle": "移除模板",
+    "removeMessage": "移除短信模板「{{name}}」。",
+    "removed": "模板「{{name}}」已移除",
+    "enabledToast": "模板「{{name}}」已启用发送",
+    "disabledToast": "模板「{{name}}」已停用发送",
+    "registered": "模板「{{name}}」已登记",
+    "offered": "模板「{{name}}」已提交审核",
+    "register": {
+      "title": "登记模板",
+      "nameLabel": "名称",
+      "paramsLabel": "参数",
+      "codesLabel": "厂商编码",
+      "codesPlaceholder": "语言:编码，以逗号分隔",
+      "submit": "登记"
+    },
+    "offer": {
+      "title": "提交审核",
+      "nameLabel": "名称",
+      "kindLabel": "类型",
+      "localeLabel": "语言",
+      "paramsLabel": "参数",
+      "remarkLabel": "备注",
+      "contentLabel": "内容",
+      "submit": "提交"
+    }
+  }
+}

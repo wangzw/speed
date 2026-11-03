@@ -2,7 +2,7 @@
  * The feature-gating chain, end to end.
  *
  * The unit suites prove their own pieces: route-kit narrows a table against a
- * synthetic predicate, auth-core holds the feature state, the console shell
+ * synthetic predicate, auth-core holds the feature state, the admin shell
  * publishes the host's answer. This suite joins them, because the behaviour
  * the design promises is the join: the server's document (read by the
  * generated `featureBoardList` through an auth-core session) decides which
@@ -31,7 +31,7 @@ import {
   PROFILE_GET,
 } from './test-utils/session-harness.js'
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
-import { CONSOLE_UI_NAMESPACE, consoleUiResources } from '@speed/console-ui'
+import { ADMIN_UI_NAMESPACE, adminUiResources } from '@speed/admin-ui'
 import { LAYOUT_KIT_NAMESPACE } from '@speed/layout-kit'
 import {
   NOTIFICATION_UI_NAMESPACE,
@@ -61,12 +61,12 @@ const textI18n = createSpeedI18n({
   urlParameterName: null,
   navigatorLanguages: [],
   namespaces: [
-    { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
+    { namespace: ADMIN_UI_NAMESPACE, resources: adminUiResources },
     { namespace: ACCOUNT_UI_NAMESPACE, resources: accountUiResources },
     { namespace: NOTIFICATION_UI_NAMESPACE, resources: notificationUiResources },
   ],
 })
-const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
+const tAdmin = textI18n.getFixedT('en-US', ADMIN_UI_NAMESPACE)
 const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
 const tNotifications = textI18n.getFixedT(
   'en-US',
@@ -132,7 +132,7 @@ describe('a served document narrows the tenant area', () => {
   it('keeps the surfaces it names and hides the ones it omits', async () => {
     // The document serves the notification centre alone. Its card and the
     // header bell survive; the centre itself is an entry of the account menu,
-    // so the navigation column does not list it. The console card -- a
+    // so the navigation column does not list it. The admin card -- a
     // platform surface a member does not hold -- disappears, and the object
     // page the skeleton no longer ships contributes neither a card nor a
     // navigation entry.
@@ -157,7 +157,7 @@ describe('a served document narrows the tenant area', () => {
     ).toBeInTheDocument()
 
     expect(
-      cardHeading(demoEnUS.home.cards.console.title),
+      cardHeading(demoEnUS.home.cards.admin.title),
     ).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/objects"]')).toBeNull()
   })
@@ -234,10 +234,10 @@ describe('a served document narrows the tenant area', () => {
     expect(
       screen.getByRole('button', { name: BELL_NAME }),
     ).toBeInTheDocument()
-    // The document leaves the console surfaces out: a member gets no console
+    // The document leaves the admin surfaces out: a member gets no admin
     // card, and the removed object page has no link to it.
     expect(
-      cardHeading(demoEnUS.home.cards.console.title),
+      cardHeading(demoEnUS.home.cards.admin.title),
     ).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/objects"]')).toBeNull()
   })
@@ -300,9 +300,9 @@ describe('a failed or pending document is not an empty one', () => {
   })
 })
 
-describe('the console area follows the path, not the feature document', () => {
-  it('renders the frameless failure view for a console deep link when the read failed', async () => {
-    window.history.replaceState({}, '', '/console/tenants')
+describe('the admin area follows the path, not the feature document', () => {
+  it('renders the frameless failure view for an admin deep link when the read failed', async () => {
+    window.history.replaceState({}, '', '/admin/tenants')
     renderDemoApp({
       session: sessionWith(
         { state: 'failed', error: new Error('unavailable') },
@@ -310,7 +310,7 @@ describe('the console area follows the path, not the feature document', () => {
       ),
     })
 
-    // The console's own failed view, with no tenant frame around it: the
+    // The admin's own failed view, with no tenant frame around it: the
     // region is a fact of the URL prefix, so a deep link never falls into the
     // tenant shell (whose navigation and bell are absent here).
     expect(await screen.findByText(demoEnUS.route.failed)).toBeInTheDocument()
@@ -323,8 +323,8 @@ describe('the console area follows the path, not the feature document', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('renders the frameless wait view for a console deep link while a retry is in flight', async () => {
-    window.history.replaceState({}, '', '/console')
+  it('renders the frameless wait view for an admin deep link while a retry is in flight', async () => {
+    window.history.replaceState({}, '', '/admin')
     renderDemoApp({
       session: sessionWith({ state: 'pending' }, { system: ['tenant.read'] }),
     })
@@ -335,11 +335,11 @@ describe('the console area follows the path, not the feature document', () => {
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
   })
 
-  it('falls back to the tenant area when no console page is served', async () => {
-    // A ready document that serves none of the console pages' features: the
-    // console declarations narrow to nothing, so the URL is the tenant area's
+  it('falls back to the tenant area when no admin page is served', async () => {
+    // A ready document that serves none of the admin pages' features: the
+    // admin declarations narrow to nothing, so the URL is the tenant area's
     // and the gated declaration renders the same 404 an unregistered path does.
-    window.history.replaceState({}, '', '/console/settings')
+    window.history.replaceState({}, '', '/admin/settings')
     renderDemoApp({
       session: sessionWith(readyFeatures('notification.inbox'), {
         system: ['settings.read'],
@@ -354,7 +354,7 @@ describe('the console area follows the path, not the feature document', () => {
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('navigation', {
-        name: tConsole('shell.navLabel'),
+        name: tAdmin('shell.navLabel'),
       }),
     ).not.toBeInTheDocument()
     // The tenant frame did render: the area decision fell back, it did not
@@ -365,23 +365,23 @@ describe('the console area follows the path, not the feature document', () => {
   })
 })
 
-describe('a console page whose feature is absent is not reachable', () => {
-  // The SMS page is gated on sms.admin (console-ui's smsAdminRoutes). The
+describe('an admin page whose feature is absent is not reachable', () => {
+  // The SMS page is gated on sms.admin (admin-ui's smsAdminRoutes). The
   // baseline binary imports that module for the API contract but names it on
   // no command, so the deployment's own document omits it while serving every
-  // other console page. These two cases pin the consequence: the page is not
+  // other admin page. These two cases pin the consequence: the page is not
   // reachable at all, rather than reachable and merely empty.
 
-  it('renders the not-found fallback at /console/sms and never mounts the page', async () => {
-    window.history.replaceState({}, '', '/console/sms')
-    // The console area is up (settings.admin is served), but sms.admin is not:
+  it('renders the not-found fallback at /admin/sms and never mounts the page', async () => {
+    window.history.replaceState({}, '', '/admin/sms')
+    // The admin area is up (settings.admin is served), but sms.admin is not:
     // the route guard withholds the declaration, so the URL renders the same
     // fallback an unregistered path gets.
     renderDemoApp({
       session: sessionWith(
         readyFeatures('tenant.admin', 'settings.admin'),
-        // The dashboard declaration owns the console prefix, so it is the
-        // entry selected at /console/sms; holding its code lets the page
+        // The dashboard declaration owns the admin prefix, so it is the
+        // entry selected at /admin/sms; holding its code lets the page
         // guard settle and the route fallback show.
         { system: ['tenant.read'] },
       ),
@@ -397,17 +397,17 @@ describe('a console page whose feature is absent is not reachable', () => {
     // in the document. An excerpt of the page showing here would mean the
     // absent-feature route was reachable.
     expect(
-      screen.queryByRole('heading', { level: 1, name: tConsole('sms.title') }),
+      screen.queryByRole('heading', { level: 1, name: tAdmin('sms.title') }),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: tConsole('sms.register.submit') }),
+      screen.queryByRole('button', { name: tAdmin('sms.register.submit') }),
     ).not.toBeInTheDocument()
   })
 
-  it('renders the SMS page at /console/sms when the document serves sms.admin', async () => {
+  it('renders the SMS page at /admin/sms when the document serves sms.admin', async () => {
     // The positive half: the absent case above cannot pass by hiding the page
     // always.
-    window.history.replaceState({}, '', '/console/sms')
+    window.history.replaceState({}, '', '/admin/sms')
     renderDemoApp({
       session: sessionWith(
         readyFeatures('sms.admin', 'settings.admin', 'tenant.admin'),
@@ -418,17 +418,17 @@ describe('a console page whose feature is absent is not reachable', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: tConsole('sms.title'),
+        name: tAdmin('sms.title'),
       }),
     ).toBeInTheDocument()
   })
 })
 
-describe('the console entry and home card follow the served declarations', () => {
-  it('targets the first served console page whose permission the principal holds', async () => {
+describe('the admin entry and home card follow the served declarations', () => {
+  it('targets the first served admin page whose permission the principal holds', async () => {
     // tenant.admin is not served, so the dashboard and roster are out; the
     // settings page remains and its code is held, so both the header entry and
-    // the home card point at it instead of the console root (which would 404).
+    // the home card point at it instead of the admin root (which would 404).
     renderDemoApp({
       session: sessionWith(readyFeatures('settings.admin'), {
         system: ['settings.read'],
@@ -436,15 +436,15 @@ describe('the console entry and home card follow the served declarations', () =>
     })
 
     expect(
-      await screen.findByRole('link', { name: demoEnUS.nav.console }),
-    ).toHaveAttribute('href', '/console/settings')
-    expect(cardLink(demoEnUS.home.cards.console.title)).toHaveAttribute(
+      await screen.findByRole('link', { name: demoEnUS.nav.admin }),
+    ).toHaveAttribute('href', '/admin/settings')
+    expect(cardLink(demoEnUS.home.cards.admin.title)).toHaveAttribute(
       'href',
-      '/console/settings',
+      '/admin/settings',
     )
   })
 
-  it('hides both when the document serves no console page', async () => {
+  it('hides both when the document serves no admin page', async () => {
     renderDemoApp({
       session: sessionWith(readyFeatures('notification.inbox'), {
         system: ['settings.read'],
@@ -458,9 +458,9 @@ describe('the console entry and home card follow the served declarations', () =>
       }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('link', { name: demoEnUS.nav.console }),
+      screen.queryByRole('link', { name: demoEnUS.nav.admin }),
     ).not.toBeInTheDocument()
-    expect(cardHeading(demoEnUS.home.cards.console.title)).not.toBeInTheDocument()
+    expect(cardHeading(demoEnUS.home.cards.admin.title)).not.toBeInTheDocument()
   })
 })
 

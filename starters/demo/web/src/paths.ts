@@ -2,7 +2,7 @@
  * The app's own route paths, in one place.
  *
  * The route table (src/routes.tsx) decides which pages live where; the
- * chrome (src/chrome.tsx) links into the account page and the console, and
+ * chrome (src/chrome.tsx) links into the account page and the admin, and
  * the start page (src/pages/home-page.tsx) links into every capability.
  * Keeping the path strings here lets them all read the same constant instead
  * of each spelling the URL, and keeps a module the route table imports from
@@ -13,8 +13,8 @@
 
 import { notificationRoutes } from '@speed/notification-ui'
 
-/** The path prefix the platform console's pages mount under. */
-export const CONSOLE_PREFIX = '/console'
+/** The path prefix the platform admin's pages mount under. */
+export const ADMIN_PREFIX = '/admin'
 
 /** The route a social or enterprise provider's round trip lands on. The
  * app renders its page outside the tenant shell (src/app.tsx).

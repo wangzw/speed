@@ -296,9 +296,9 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
    `human`), consuming it; an enrollment sends nothing (the SMS factor
    binds a phone the account has already proved) and presents none. The step renderer
    (`src/internal/flow-step.tsx`) is one of three copies (`auth-ui`,
-   `account-ui`, `console-ui`) kept in lockstep by hand: a change to how a
+   `account-ui`, `admin-ui`) kept in lockstep by hand: a change to how a
    step renders lands in all three in the same change. The workspace's
-   source-level parity suite (`console-ui`'s
+   source-level parity suite (`admin-ui`'s
    `src/internal/flow-step-parity.test.ts`) reads the three files, compares
    the rendered step kinds, the answer properties, the render primitives
    and the WebAuthn seam, and names the copy that drifts. It also requires
@@ -394,7 +394,7 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
    descriptor that declares none matches by its name); a value no
    descriptor claims falls back to the package's closed vocabulary.
    `StepUpDialog` is exported for the
-   host only — `@speed/console-ui` and `@speed/auth-ui` must not import
+   host only — `@speed/admin-ui` and `@speed/auth-ui` must not import
    it (the former keeps its own copy).
 8. **The README's quick start is executed, not aspirational.**
    `src/usage-example.test.tsx` compiles and runs the documented

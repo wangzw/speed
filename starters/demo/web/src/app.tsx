@@ -8,24 +8,24 @@
  * frames over one table:
  *
  *  - The tenant area renders `TenantFrame` (ProductShell, the three-branch view
- *    machine, with the nav derived from every non-console entry and the host's
- *    console entry -- offered only to platform staff -- in the header's action
+ *    machine, with the nav derived from every non-admin entry and the host's
+ *    admin entry -- offered only to platform staff -- in the header's action
  *    slot, plus the auth-ui sign-in surface and sign-out action in the host
  *    slots). The shell renders the nav and content only while the session is
  *    authenticated; a fresh visitor meets the sign-in surface, and one whose
  *    session ends meets the ended screen. The routed page sits in a padded
  *    content region so it does not butt against the chrome.
  *
- *  - The console area renders @speed/console-ui's frame instead, with no tenant
+ *  - The admin area renders @speed/admin-ui's frame instead, with no tenant
  *    frame around it. The area is chosen by the path prefix alone: a URL under
- *    CONSOLE_PREFIX enters the console area whatever the feature document says,
- *    so a deep link or refresh renders the console's own pending/failed views
+ *    ADMIN_PREFIX enters the admin area whatever the feature document says,
+ *    so a deep link or refresh renders the admin's own pending/failed views
  *    rather than the tenant frame. It carries the same session gate the tenant
- *    shell does (the console frame is not ProductShell), a feature-state gate
+ *    shell does (the admin frame is not ProductShell), a feature-state gate
  *    (pending and failed render frameless), an area gate over the platform
  *    permission set (a viewer who holds no platform permission never enters the
  *    shell), and a host-composed route guard over each page's permission code.
- *    When no console declaration is left in force the URL falls through to the
+ *    When no admin declaration is left in force the URL falls through to the
  *    tenant area, where it is a 404 like any other unregistered path.
  *
  * A URL no declaration matches renders the fallback page inside the tenant area.
@@ -65,7 +65,7 @@ import {
   NotificationPresenceProvider,
   NotificationStreamProvider,
 } from '@speed/notification-ui'
-import type { ConsoleRoute } from '@speed/console-ui'
+import type { AdminRoute } from '@speed/admin-ui'
 import { ProductShell } from '@speed/product-shell'
 import { useAppThemeMode, WriteFeedbackPageProvider } from '@speed/ui-kit'
 import {
@@ -108,12 +108,12 @@ import {
 } from './chrome.js'
 import type { DemoTenant } from './chrome.js'
 import { ACCOUNT_ENTRY } from './account-entry.js'
-import { ConsoleArea } from './console/console-area.js'
+import { AdminArea } from './admin/admin-area.js'
 import {
-  consoleShellRoutes,
-  isConsolePath,
-  useConsoleTarget,
-} from './console-routes.js'
+  adminShellRoutes,
+  isAdminPath,
+  useAdminTarget,
+} from './admin-routes.js'
 import {
   IdentityChangeProvider,
   ImpersonationBannerSlot,
@@ -127,7 +127,7 @@ import { CallbackErrorAlert } from './callback-error-notice.js'
 import { usePermissionRead } from './platform-permissions.js'
 import { clearCallbackFragment, readCallbackError } from './sign-in-landing.js'
 import { DemoNavLabel } from './nav-label.js'
-import { ConsoleNavIcon } from './nav-icons.js'
+import { AdminNavIcon } from './nav-icons.js'
 import { PersonalTenantNoticeProvider } from './personal-tenant-notice.js'
 import { TenantMembershipNoticeHost } from './tenant-membership-notice.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
@@ -160,9 +160,9 @@ import {
   routes,
 } from './routes.js'
 
-/** The platform-staff permission domain the console routes' codes resolve in:
+/** The platform-staff permission domain the admin routes' codes resolve in:
  * auth-core names 'system' the tenant-independent platform-staff set. */
-const CONSOLE_PERMISSION_DOMAIN = 'system'
+const ADMIN_PERMISSION_DOMAIN = 'system'
 
 /**
  * The tenant the host settles when it has none: the first listed membership
@@ -199,7 +199,7 @@ function tenantNameable(tenantId: string, self: SelfTenantState): boolean {
 }
 
 /** The app view root: routing installed once, over the shell switch. The
- * route table is gated (the notification, object and console declarations
+ * route table is gated (the notification, object and admin declarations
  * carry `requires`), so the host hands the route layer its feature-presence
  * answer -- derived from the session's feature state -- plus the views a
  * gated path renders while that answer is pending or failed. The deployment's
@@ -221,7 +221,7 @@ export function DemoApp({
   // A session that ends leaves no identity for the host's current tenant or
   // its alias map to belong to. Clear both module-level cells here, in the
   // always-mounted root, so the clearing does not depend on which frame is
-  // mounted: the console area's session gate unmounts TenantFrame, and a
+  // mounted: the admin area's session gate unmounts TenantFrame, and a
   // viewer who signs in again from there would otherwise inherit the ended
   // account's tenant -- under a personal tenant, another account's tenant --
   // for the window before the roster or the ensure settles. TenantFrame
@@ -234,7 +234,7 @@ export function DemoApp({
   }, [authenticated])
   // The caller tenant list belongs to an identity, not to the page. Read it
   // once per acting account here in the always-mounted root -- not in the
-  // tenant frame, which the console area and the sign-in surface do not mount
+  // tenant frame, which the admin area and the sign-in surface do not mount
   // -- after forgetting the previous account's rows. It is read while
   // impersonating too: the answer is narrowed to the grant's tenant on the
   // server, and it is the alias source the tenant area has after a full page
@@ -253,7 +253,7 @@ export function DemoApp({
   return (
     // The page's one feedback result: every write-feedback scope below
     // this point clears its siblings' slots when it starts or settles a
-    // write, so the sign-in surface, the account panes, the console pages
+    // write, so the sign-in surface, the account panes, the admin pages
     // and the impersonation banner never show two results at once.
     <WriteFeedbackPageProvider>
       <RouteProvider
@@ -281,7 +281,7 @@ export function DemoApp({
   )
 }
 
-/** Renders the area the current URL lands in: the console or the tenant shell. */
+/** Renders the area the current URL lands in: the admin or the tenant shell. */
 function AppFrame({
   presence,
   shellLayout,
@@ -295,7 +295,7 @@ function AppFrame({
   // one. Absent, pending or failed, no declaration matches and the path falls
   // through to the tenant area's own matching.
   const match = useMatch()
-  // The host's identity-change action, handed to the console page so a
+  // The host's identity-change action, handed to the admin page so a
   // settled start or end re-reads the identity the way the tenant frame's
   // banner does, plus the start seam: the page calls it before it writes, so
   // reads are held and the session's identity-transition guard is open
@@ -303,7 +303,7 @@ function AppFrame({
   const { applyIdentityChange, onImpersonationStarting } = useIdentityChange()
   // The desktop sidebar's collapse state, host-held and shared by both areas:
   // each frame renders the toggle (the collapse props are supplied) and reports
-  // each flip here, so the collapse carries across the tenant/console switch.
+  // each flip here, so the collapse carries across the tenant/admin switch.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   // The invitation landing renders outside both shells: an invitee arrives
@@ -344,27 +344,27 @@ function AppFrame({
     return <RouteView />
   }
 
-  if (isConsolePath(pathname)) {
-    // The console declarations the presence predicate left in force. Pending
+  if (isAdminPath(pathname)) {
+    // The admin declarations the presence predicate left in force. Pending
     // or failed leaves the set empty (fail-closed); a ready document may still
-    // leave nothing when no console page's feature is served.
-    const consoleRoutes = presentDeclarations(consoleShellRoutes, presence)
-    // The console shell's own synchronous feature answer for the pages'
+    // leave nothing when no admin page's feature is served.
+    const adminRoutes = presentDeclarations(adminShellRoutes, presence)
+    // The admin shell's own synchronous feature answer for the pages'
     // in-page controls.
     const hasFeature =
       presence.state === 'ready' ? presence.has : (): boolean => false
     return (
       <SessionGate>
-        {/* The console area is decided by the effective account's platform
-            permission set (ConsoleAreaGate). An impersonating identity is the
+        {/* The admin area is decided by the effective account's platform
+            permission set (AdminAreaGate). An impersonating identity is the
             target account, which never holds a platform permission, so the area
             turns it away through the same criterion that turns an ordinary
             member away; no separate impersonation gate runs. The explanation
             belongs to the tenant frame's banner, not to this redirect. */}
-        <ConsoleFeatureGate presence={presence}>
-          <ConsoleAreaGate>
-            {consoleRoutes.length === 0 ? (
-              // No console page is served: the URL is the tenant area's,
+        <AdminFeatureGate presence={presence}>
+          <AdminAreaGate>
+            {adminRoutes.length === 0 ? (
+              // No admin page is served: the URL is the tenant area's,
               // where the gated declarations render the same 404 an
               // unregistered path does.
               <TenantFrame
@@ -376,8 +376,8 @@ function AppFrame({
                 <RouteView />
               </TenantFrame>
             ) : (
-              <ConsoleArea
-                routes={consoleRoutes}
+              <AdminArea
+                routes={adminRoutes}
                 hasFeature={hasFeature}
                 shellLayout={shellLayout}
                 onImpersonationChange={applyIdentityChange}
@@ -385,13 +385,13 @@ function AppFrame({
                 sidebarCollapsed={sidebarCollapsed}
                 onSidebarCollapsedChange={setSidebarCollapsed}
               >
-                <ConsoleRouteGuard>
+                <AdminRouteGuard>
                   <RouteView />
-                </ConsoleRouteGuard>
-              </ConsoleArea>
+                </AdminRouteGuard>
+              </AdminArea>
             )}
-          </ConsoleAreaGate>
-        </ConsoleFeatureGate>
+          </AdminAreaGate>
+        </AdminFeatureGate>
       </SessionGate>
     )
   }
@@ -533,7 +533,7 @@ function TenantFrame({
   const notice = useImpersonationNoticeState(grant)
   // A refused redirect round trip that no landing surface consumed. The
   // surfaces that can consume the fragment (the sign-in surface, the binding
-  // callback, the account and console pages) read and clear it in their own
+  // callback, the account and admin pages) read and clear it in their own
   // mount effects, and those run before this frame's: whatever is still here
   // was not consumed, and dropping it would swallow the reason. It is shown
   // once and cleared, so a reload does not repeat it.
@@ -568,7 +568,7 @@ function TenantFrame({
   // request announces no alias and is refused 404.
   // A frame mounting during an impersonation starts unknown too: the
   // module-level cell still holds the operator's tenant from before the
-  // console took over, and a first frame carrying it would issue one read
+  // admin took over, and a first frame carrying it would issue one read
   // (and open one stream) under the impersonated session and the operator's
   // alias before the status read settles the grant's tenant.
   const [tenantId, setTenantId] = useTenantSelection(
@@ -585,7 +585,7 @@ function TenantFrame({
   // unknown until the host has read it, and an unknown set is not a
   // permission -- the read waits for the answer.
   const canReadRoster = usePermission(
-    CONSOLE_PERMISSION_DOMAIN,
+    ADMIN_PERMISSION_DOMAIN,
     'tenant.read',
   )
   // Whether this identity's profile still shows setup incomplete. The home
@@ -896,10 +896,10 @@ function TenantFrame({
     principalId === '' ? null : personalTenantId(principalId)
 
   const items = useNavItems()
-  const consoleRoutes = presentDeclarations(consoleShellRoutes, presence)
+  const adminRoutes = presentDeclarations(adminShellRoutes, presence)
 
-  // The tenant navigation is the home entry alone. The console's pages are
-  // filtered out (the console entry lives in the header's action slot, offered
+  // The tenant navigation is the home entry alone. The admin's pages are
+  // filtered out (the admin entry lives in the header's action slot, offered
   // only to platform staff), and the notification centre and the account
   // settings are destinations of the account entry at the bottom of the
   // column, not navigation entries. The entry's href/onClick pair is
@@ -908,7 +908,7 @@ function TenantFrame({
   // declaration carries (src/routes.tsx), looked up by the entry id that
   // declaration path supplies.
   const navItems: readonly AppShellNavItem[] = items
-    .filter((item) => !isConsolePath(item.id))
+    .filter((item) => !isAdminPath(item.id))
     .filter(
       (item) => item.id !== NOTIFICATIONS_PATH && item.id !== ACCOUNT_PATH,
     )
@@ -982,11 +982,11 @@ function TenantFrame({
           }
           // The notification bell rides the header actions slot beside the
           // shared chrome; it opens the notification surface. It lives only
-          // in the tenant area (the console resolves no tenant, so its bell
+          // in the tenant area (the admin resolves no tenant, so its bell
           // would have nothing to read) and only when notification.inbox is
           // served: a deployment without it has no destination for the bell.
-          // The console entry sits at the same end of the bar, nearest the
-          // account controls, and shows only to platform staff (ConsoleEntry
+          // The admin entry sits at the same end of the bar, nearest the
+          // account controls, and shows only to platform staff (AdminEntry
           // gates itself).
           headerActions={(rail) => (
             <>
@@ -995,7 +995,7 @@ function TenantFrame({
                   onClick={() => navigate(NOTIFICATIONS_PATH)}
                 />
               ) : null}
-              <ConsoleEntry routes={consoleRoutes} narrow={rail.narrow} />
+              <AdminEntry routes={adminRoutes} narrow={rail.narrow} />
             </>
           )}
           sidebarCollapsed={sidebarCollapsed}
@@ -1092,11 +1092,11 @@ function TenantFrame({
 }
 
 /**
- * The header's console entry: a link into the first console page the principal
+ * The header's admin entry: a link into the first admin page the principal
  * may open, shown only to a principal that holds a platform permission and
- * only while at least one console declaration is in force.
+ * only while at least one admin declaration is in force.
  *
- * The target comes from useConsoleTarget (src/console-routes.ts): the first
+ * The target comes from useAdminTarget (src/admin-routes.ts): the first
  * labelled declaration, in table order, with no permission code or one the
  * effective account's platform permission set holds. An impersonating identity
  * gets the effective account's answer, which for a real target is null because
@@ -1104,41 +1104,41 @@ function TenantFrame({
  * the host attaches it once the caller's platform permissions have been read,
  * and useAuthState reads null until then -- so the entry is hidden until the set
  * lands, which is the safe direction: a member never sees the entry for the
- * moment before the set arrives. The start page's console card calls the same
+ * moment before the set arrives. The start page's admin card calls the same
  * hook, so the two never disagree.
  *
  * It routes in place (the same seam every other entry uses), so entering the
- * console does not reload the page and sign the operator out, and it keeps its
- * href so a middle-click or a copied URL still reaches the console.
+ * admin does not reload the page and sign the operator out, and it keeps its
+ * href so a middle-click or a copied URL still reaches the admin.
  */
-function ConsoleEntry({
+function AdminEntry({
   routes,
   narrow = false,
 }: {
-  /** The console declarations the presence predicate left in force. */
-  readonly routes: readonly ConsoleRoute[]
+  /** The admin declarations the presence predicate left in force. */
+  readonly routes: readonly AdminRoute[]
   /** Whether the entry renders in the collapsed sidebar rail, where only an
    * icon fits; the accessible name stays the entry's label. */
   readonly narrow?: boolean
 }): ReactElement | null {
-  // The console entry follows the effective account's platform set alone; an
+  // The admin entry follows the effective account's platform set alone; an
   // impersonating identity gets the same derivation as any other viewer.
-  const target = useConsoleTarget(routes)
+  const target = useAdminTarget(routes)
   if (target === null) {
     return null
   }
   // The link itself renders in its own component: the href/onClick pair is a
   // hook call, and hooks cannot follow the null branch above.
-  return <ConsoleEntryLink target={target} narrow={narrow} />
+  return <AdminEntryLink target={target} narrow={narrow} />
 }
 
-/** The console entry's anchor, with route-kit's basename-aware href and its
+/** The admin entry's anchor, with route-kit's basename-aware href and its
  * plain-click-navigates / modified-click-stays-with-the-browser handler. */
-function ConsoleEntryLink({
+function AdminEntryLink({
   target,
   narrow,
 }: {
-  /** The console page the entry points at (a route, not yet a served URL). */
+  /** The admin page the entry points at (a route, not yet a served URL). */
   readonly target: string
   /** Icon form for the collapsed rail. */
   readonly narrow: boolean
@@ -1149,11 +1149,11 @@ function ConsoleEntryLink({
     return (
       <IconButton
         color="inherit"
-        aria-label={t('nav.console')}
+        aria-label={t('nav.admin')}
         href={href}
         onClick={onClick}
       >
-        <ConsoleNavIcon size={20} />
+        <AdminNavIcon size={20} />
       </IconButton>
     )
   }
@@ -1168,17 +1168,17 @@ function ConsoleEntryLink({
       href={href}
       onClick={onClick}
     >
-      <DemoNavLabel labelKey="nav.console" />
+      <DemoNavLabel labelKey="nav.admin" />
     </Button>
   )
 }
 
 /**
- * The console area's session gate. The tenant area is gated by ProductShell
- * itself, but the console renders its own frame, so it needs the same branch:
+ * The admin area's session gate. The tenant area is gated by ProductShell
+ * itself, but the admin renders its own frame, so it needs the same branch:
  * an anonymous viewer -- a fresh visitor, or one whose authenticated session
  * turned anonymous mid-use (the same snapshot flip) -- meets the host's
- * sign-in surface instead of a console whose requests can never answer.
+ * sign-in surface instead of an admin whose requests can never answer.
  */
 function SessionGate({
   children,
@@ -1187,7 +1187,7 @@ function SessionGate({
 }): ReactElement {
   const snapshot = useAuthState()
   if (snapshot.state !== 'authenticated') {
-    // The console URL is the viewer's destination: a registration completed
+    // The admin URL is the viewer's destination: a registration completed
     // here stays on it instead of being taken to the tenant home or the
     // setup page (the register mode's landing belongs to the app's own
     // sign-in page).
@@ -1197,14 +1197,14 @@ function SessionGate({
 }
 
 /**
- * The console area's feature-state gate, frameless: while the document is
- * pending (a retry is in flight) or failed, the console renders the same
+ * The admin area's feature-state gate, frameless: while the document is
+ * pending (a retry is in flight) or failed, the admin renders the same
  * waiting/failure view the route layer would, with no shell around it. It runs
  * before the permission gate: a failed read keeps the platform permission set
  * unknown, and an operator whose read failed must see a retry, never a
  * redirect that reads as "not staff".
  */
-function ConsoleFeatureGate({
+function AdminFeatureGate({
   presence,
   children,
 }: {
@@ -1221,13 +1221,13 @@ function ConsoleFeatureGate({
 }
 
 /**
- * Settles a current tenant for the console area when none is settled.
+ * Settles a current tenant for the admin area when none is settled.
  *
  * The caller's permission read (src/platform-permissions.tsx) sits on the API
  * endpoint, which the tenant resolver guards: a request that names no tenant
  * is refused 404 before any handler runs. The tenant frame settles the current
- * tenant for the tenant area, but an operator who reaches a console URL
- * directly -- a reload of a console page, a bookmark -- mounts no tenant
+ * tenant for the tenant area, but an operator who reaches an admin URL
+ * directly -- a reload of an admin page, a bookmark -- mounts no tenant
  * frame, and without a name the permission read is refused, the platform set
  * attaches as the fail-closed empty one, and the area gate turns the operator
  * away.
@@ -1243,7 +1243,7 @@ function ConsoleFeatureGate({
  * list that settles empty leaves the area on its access wait, and a list read
  * that fails is a fault, not a membership test.
  */
-function useConsoleTenantSettle(authenticated: boolean): void {
+function useAdminTenantSettle(authenticated: boolean): void {
   const tenantId = useCurrentTenantId()
   const selfState = useSelfTenantState()
   useEffect(() => {
@@ -1259,35 +1259,35 @@ function useConsoleTenantSettle(authenticated: boolean): void {
 }
 
 /**
- * The console area's access gate: the whole area is the platform-staff face,
- * so a principal who holds no platform permission never enters it. The console
+ * The admin area's access gate: the whole area is the platform-staff face,
+ * so a principal who holds no platform permission never enters it. The admin
  * frame -- its navigation, its banner -- is not rendered at all, rather than
  * rendered with its content swapped for a no-permission surface: the menu names
  * are themselves information a non-staff viewer must not receive.
  *
- * It settles the area tier of the console gate, between the header entry
- * (ConsoleEntry, which hides the way in) and each page's own code (the route
+ * It settles the area tier of the admin gate, between the header entry
+ * (AdminEntry, which hides the way in) and each page's own code (the route
  * guard below, which turns a staff viewer away from a page they lack). The
  * decision is drawn from the platform permission set (auth-core's 'system'
  * domain), read here before the shell renders so a denied viewer never sees
  * even its chrome. The snapshot's `impersonating` fact is decided first,
  * before any permission read is consulted: the impersonation alone closes
- * the console, whatever the target's permission read answers. The outcomes:
+ * the admin, whatever the target's permission read answers. The outcomes:
  *
  *  - impersonating: the signed-in identity is acting as someone else. The
  *    area renders nothing and redirects to the tenant home, with no roster
  *    read and no dependence on the permission set -- a refused target read
  *    never turns into a retryable failure the impersonator cannot resolve.
  *  - granted: the set is known and holds at least one platform permission --
- *    the principal is platform staff, and the console renders.
+ *    the principal is platform staff, and the admin renders.
  *  - denied: the set is known and empty -- an ordinary member. The area renders
- *    nothing and redirects to the tenant home, so the console's path space (and
+ *    nothing and redirects to the tenant home, so the admin's path space (and
  *    the names within it) is left behind for a shell the viewer may use.
  *  - pending: the set is unknown (null) -- the host has not yet attached the
  *    caller's platform permissions. This is the fail-closed direction: an
- *    unknown set shows neither the console nor an immediate redirect, only a
+ *    unknown set shows neither the admin nor an immediate redirect, only a
  *    shell-less placeholder, and the area settles once the set lands. Rendering
- *    the console on an unknown set would show the shell to a member for the
+ *    the admin on an unknown set would show the shell to a member for the
  *    window before their empty set is attached, which is the only moment the
  *    set is null for a signed-in viewer.
  *  - failed: a read the decision depends on (the permission set, or the
@@ -1295,26 +1295,26 @@ function useConsoleTenantSettle(authenticated: boolean): void {
  *    failed. The unknown value is not read as a conclusion: the area shows a
  *    shell-less failure with a retry, never the member redirect.
  */
-function ConsoleAreaGate({
+function AdminAreaGate({
   children,
 }: {
   readonly children: ReactNode
 }): ReactElement | null {
   const snapshot = useAuthState()
-  useConsoleTenantSettle(snapshot.state === 'authenticated')
+  useAdminTenantSettle(snapshot.state === 'authenticated')
   const permissionRead = usePermissionRead()
   // An account whose address is still unproved never settles a tenant: the
   // personal tenant's ensure refuses a pending account and the roster is a
   // staff-only read, so the permission set below is never read and the area
   // would wait forever. The verification page is the one place that lifts the
-  // state, so a pending viewer who reaches the console is sent there instead.
+  // state, so a pending viewer who reaches the admin is sent there instead.
   // Only a READ state counts: a failed profile read leaves the verification
   // state unknown, and answering "not pending" to a failure is the same
   // mistake as reading a failed permission read as an empty set.
   const profile = useAuthnProfileGet({
     query: { enabled: snapshot.state === 'authenticated' },
   })
-  // The impersonation is the identity fact that closes the console: it is
+  // The impersonation is the identity fact that closes the admin: it is
   // decided before the permission set is consulted, so a target's permission
   // read -- refused, empty or even non-empty -- cannot turn this into the
   // access wait, the member redirect reached by a read, or the retryable
@@ -1322,7 +1322,7 @@ function ConsoleAreaGate({
   if (snapshot.impersonating) {
     return <TenantHomeRedirect />
   }
-  const status = consoleAreaStatus(snapshot)
+  const status = adminAreaStatus(snapshot)
   if (status === 'granted') {
     return <>{children}</>
   }
@@ -1341,7 +1341,7 @@ function ConsoleAreaGate({
     // the failure supports. The failure view retries the reads instead of
     // redirecting.
     return (
-      <ConsoleAccessFailed
+      <AdminAccessFailed
         onRetry={() => {
           permissionRead.retry()
           void profile.refetch()
@@ -1349,14 +1349,14 @@ function ConsoleAreaGate({
       />
     )
   }
-  return <ConsoleAccessPending />
+  return <AdminAccessPending />
 }
 
 /**
  * Replaces the current history entry with the tenant home, rendered instead
  * of a surface the current identity may not use. It navigates from an effect
  * (route-kit's useRedirect), which is where the router wants a render-driven
- * move, and renders nothing: the gates that mount it render no console chrome
+ * move, and renders nothing: the gates that mount it render no admin chrome
  * on the way.
  */
 function TenantHomeRedirect(): null {
@@ -1389,7 +1389,7 @@ function ContactVerificationRedirect(): null {
  * agree on the demo's principals, which hold everything or nothing.) An
  * unknown set is pending, never granted.
  */
-function consoleAreaStatus(
+function adminAreaStatus(
   snapshot: AuthSnapshot,
 ): 'granted' | 'denied' | 'pending' {
   if (snapshot.state !== 'authenticated') {
@@ -1397,7 +1397,7 @@ function consoleAreaStatus(
     // fail-closed and never shows the shell.
     return 'pending'
   }
-  const set = snapshot.permissionSets[CONSOLE_PERMISSION_DOMAIN]
+  const set = snapshot.permissionSets[ADMIN_PERMISSION_DOMAIN]
   if (set === null) {
     return 'pending'
   }
@@ -1406,11 +1406,11 @@ function consoleAreaStatus(
 
 /**
  * The shell-less placeholder the area gate shows while the platform permission
- * set is unknown: no console chrome, so nothing of the console reaches the
+ * set is unknown: no admin chrome, so nothing of the admin reaches the
  * viewer before the gate has settled. The label names the wait for assistive
  * technology.
  */
-function ConsoleAccessPending(): ReactElement {
+function AdminAccessPending(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
   return (
     <Box
@@ -1421,7 +1421,7 @@ function ConsoleAccessPending(): ReactElement {
         paddingY: 6,
       }}
     >
-      <CircularProgress aria-label={t('console.accessPending')} />
+      <CircularProgress aria-label={t('admin.accessPending')} />
     </Box>
   )
 }
@@ -1429,11 +1429,11 @@ function ConsoleAccessPending(): ReactElement {
 /**
  * The shell-less failure the area gate shows when one of its reads failed: the
  * platform permission set or the profile's verification fact is unknown, so
- * neither the console nor a redirect is supported. It is not the "no
+ * neither the admin nor a redirect is supported. It is not the "no
  * permission" face -- a failure says nothing about who the caller is -- and
  * its retry re-issues the reads.
  */
-function ConsoleAccessFailed({
+function AdminAccessFailed({
   onRetry,
 }: {
   readonly onRetry: () => void
@@ -1451,8 +1451,8 @@ function ConsoleAccessFailed({
         p: 3,
       }}
     >
-      <Typography variant="body1">{t('console.accessFailed')}</Typography>
-      <Button onClick={onRetry}>{t('console.accessRetry')}</Button>
+      <Typography variant="body1">{t('admin.accessFailed')}</Typography>
+      <Button onClick={onRetry}>{t('admin.accessRetry')}</Button>
     </Box>
   )
 }
@@ -1532,39 +1532,39 @@ function RoutePresenceFailed(): ReactElement {
 }
 
 /**
- * The console's page-level gate, composed the host way: layout-kit's
+ * The admin's page-level gate, composed the host way: layout-kit's
  * RouteGuard fed a status the host derives from the matched page's permission
- * code (the console declarations carry tenant.read / settings.read /
+ * code (the admin declarations carry tenant.read / settings.read /
  * audit.read). A code held, or a page with no code, is allowed; a code the
  * principal is known not to hold is denied. This is the innermost tier of the
- * console gate -- the header entry (ConsoleEntry) hides the way in, the area
- * gate (ConsoleAreaGate) turns a non-staff viewer away before the shell
+ * admin gate -- the header entry (AdminEntry) hides the way in, the area
+ * gate (AdminAreaGate) turns a non-staff viewer away before the shell
  * renders, and this guard settles each page's own code within the area. It
  * runs only inside the area, where the platform set is already known, so its
  * status is a plain set lookup: a staff viewer who lacks one page's code meets
- * the no-permission surface in place of that page, the rest of the console
+ * the no-permission surface in place of that page, the rest of the admin
  * frame intact.
  */
-function ConsoleRouteGuard({
+function AdminRouteGuard({
   children,
 }: {
   readonly children: ReactNode
 }): ReactElement {
   const snapshot = useAuthState()
   const items = useNavItems()
-  const selected = items.find((item) => item.selected && isConsolePath(item.id))
-  const permission = consoleShellRoutes.find(
+  const selected = items.find((item) => item.selected && isAdminPath(item.id))
+  const permission = adminShellRoutes.find(
     (route) => route.path === selected?.id,
   )?.permission
   return (
-    <RouteGuard status={consoleGuardStatus(snapshot, permission)}>
+    <RouteGuard status={adminGuardStatus(snapshot, permission)}>
       {children}
     </RouteGuard>
   )
 }
 
-/** The RouteGuard status for one console page under the current session. */
-function consoleGuardStatus(
+/** The RouteGuard status for one admin page under the current session. */
+function adminGuardStatus(
   snapshot: AuthSnapshot,
   permission: string | undefined,
 ): RouteGuardStatus {
@@ -1576,7 +1576,7 @@ function consoleGuardStatus(
     // guard only ever settles once authenticated; pending is fail-closed.
     return 'pending'
   }
-  const set = snapshot.permissionSets[CONSOLE_PERMISSION_DOMAIN]
+  const set = snapshot.permissionSets[ADMIN_PERMISSION_DOMAIN]
   if (set === null) {
     // The area gate renders this guard only once the platform set is known;
     // an unknown set is fail-closed here too rather than passing the page.

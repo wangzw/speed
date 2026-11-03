@@ -72,9 +72,9 @@ account-resolution outcome where the deployment enables that.
   a passkey ceremony) render through the shared step renderer
   (`src/internal/flow-step.tsx`) and the shared stepping driver
   (`src/internal/use-flow-driver.ts`). The renderer is one of three copies
-  (`auth-ui`, `account-ui`, `console-ui`) kept in lockstep by hand: a
+  (`auth-ui`, `account-ui`, `admin-ui`) kept in lockstep by hand: a
   change to how a step renders lands in all three in the same change. The
-  workspace's source-level parity suite (`console-ui`'s
+  workspace's source-level parity suite (`admin-ui`'s
   `src/internal/flow-step-parity.test.ts`) reads the three files, compares
   the rendered step kinds, the answer properties, the render primitives
   and the WebAuthn seam, and names the copy that drifts. It also requires
