@@ -202,6 +202,22 @@ function memberSection(page: Page): Locator {
   })
 }
 
+/**
+ * The index of the column headed `header` in a table. The header copy comes
+ * from the shipped bundle, so a renamed column fails here rather than matching
+ * a stale literal.
+ */
+async function columnIndex(table: Locator, header: string): Promise<number> {
+  const headers = table.locator('thead th')
+  const count = await headers.count()
+  for (let index = 0; index < count; index += 1) {
+    if ((await headers.nth(index).innerText()).trim() === header) {
+      return index
+    }
+  }
+  throw new Error(`the table has no column headed ${header}`)
+}
+
 /** The invitation list's row for the invited address. */
 function invitationRow(page: Page): Locator {
   return invitationSection(page)
@@ -332,18 +348,31 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         }),
       ).toBeVisible()
       const members = memberSection(page).getByRole('table')
+      const nameColumn = await columnIndex(
+        members,
+        copy('adminUi', 'members.column.displayName'),
+      )
+      const accountColumn = await columnIndex(
+        members,
+        copy('adminUi', 'members.column.account'),
+      )
+      const sourceColumn = await columnIndex(
+        members,
+        copy('adminUi', 'members.column.source'),
+      )
       const existing = members
         .locator('tbody tr')
         .filter({ hasText: EXISTING_MEMBER })
       await expect(existing).toHaveCount(1)
-      await expect(
-        existing.getByText(EXISTING_MEMBER, { exact: true }),
-      ).toBeVisible()
-      await expect(
-        existing.getByText(copy('adminUi', 'members.source.admin'), {
-          exact: true,
-        }),
-      ).toBeVisible()
+      // The member read supplies the name, and the account identifier keeps its
+      // own column beside it.
+      await expect(existing.locator('td').nth(nameColumn)).toHaveText(
+        EXISTING_MEMBER,
+      )
+      await expect(existing.locator('td').nth(accountColumn)).not.toBeEmpty()
+      await expect(existing.locator('td').nth(sourceColumn)).toHaveText(
+        copy('adminUi', 'members.source.admin'),
+      )
     })
 
     await test.step('step 2: the operator invites the address with an expiry and sees the confirmation', async () => {
@@ -722,20 +751,31 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       // administrator -- are still there, so the table holds three rows.
       const members = memberSection(page).getByRole('table')
       await expect(members.locator('tbody tr')).toHaveCount(3)
+      const nameColumn = await columnIndex(
+        members,
+        copy('adminUi', 'members.column.displayName'),
+      )
+      const sourceColumn = await columnIndex(
+        members,
+        copy('adminUi', 'members.column.source'),
+      )
+      const activeColumn = await columnIndex(
+        members,
+        copy('adminUi', 'members.column.active'),
+      )
       const invited = members
         .locator('tbody tr')
         .filter({ hasText: reviewInvitee.displayName })
       await expect(invited).toHaveCount(1)
-      await expect(
-        invited.getByText(copy('adminUi', 'members.source.invite'), {
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(
-        invited.getByText(copy('adminUi', 'members.activeYes'), {
-          exact: true,
-        }),
-      ).toBeVisible()
+      await expect(invited.locator('td').nth(nameColumn)).toHaveText(
+        reviewInvitee.displayName,
+      )
+      await expect(invited.locator('td').nth(sourceColumn)).toHaveText(
+        copy('adminUi', 'members.source.invite'),
+      )
+      await expect(invited.locator('td').nth(activeColumn)).toHaveText(
+        copy('adminUi', 'members.activeYes'),
+      )
     })
   } finally {
     // The invitee context holds its own cookie session; closing it keeps a
