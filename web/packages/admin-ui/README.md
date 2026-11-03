@@ -89,10 +89,12 @@ its read hook), `workspaceAdminRoutes`, `WorkspaceAdminOperations` /
 declarations, and the tenant-mode behaviour of the settings and
 roles/permissions pages; those arrive with the tenant-scoped endpoints
 they need. The invitations wrapper runs the shared page in tenant mode:
-the member write form's platform account search is not rendered, member
-and inviter identities resolve from the members read's `display_name`, and
-an account that read cannot resolve renders its recorded identifier with
-the unresolved note. The shared pages prefer the workspace breadcrumb
+the member write form's platform account search is not rendered, the
+inviter identity resolves from the members read's `display_name`, the
+member table takes `display_name` for its name column and shows the
+recorded account identifier in its account column without resolving it,
+and an inviter that read cannot resolve renders its recorded identifier
+with the unresolved note. The shared pages prefer the workspace breadcrumb
 context on their `PageHeader` and fall back to their own platform trail
 otherwise. The `WorkspaceAdminOperations` bundle carries the tenant-scoped
 invitation, membership and SSO members only and no platform account read.
@@ -402,6 +404,7 @@ import {
   routes={presentDeclarations(workspaceAdminRoutes, presence)}
   session={session}
   onNavigate={navigate}
+  invitationLink={(token) => `/invitations/${token}`}
 >
   <RouteView />
 </WorkspaceAdminProvider>
@@ -409,13 +412,17 @@ import {
 
 The contract: `tenant` is required; the provider never derives or
 switches the current tenant. The workspace surface reads nothing under
-`/api/v1/system` and holds no tenant selector. The wrappers that ship
-compose the existing pages in tenant mode:
+`/api/v1/system` and holds no tenant selector. `invitationLink` is the
+same acceptance-link builder the platform shell takes; absent, the
+invitation page shows the bare token. The wrappers that ship compose the
+existing pages in tenant mode:
 
 - the invitations page is given the current tenant and runs in tenant
   mode: the member write form's platform account search is not rendered,
-  inviter and member identities resolve from the members read's
-  `display_name`, and the page issues no `/api/v1/system` request;
+  the inviter identity resolves from the members read's `display_name`,
+  the member table's name column takes `display_name` while its account
+  column shows the recorded account identifier without resolving it, and
+  the page issues no `/api/v1/system` request;
 - the SSO page is locked to the current tenant.
 
 The settings and roles/permissions wrappers, their declarations and their

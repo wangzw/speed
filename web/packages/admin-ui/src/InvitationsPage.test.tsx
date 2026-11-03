@@ -334,7 +334,7 @@ describe('InvitationsPage', () => {
       expect(screen.queryByText(zhCN.invitations.needTenant.title)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
       expect(listInvitations).toHaveBeenCalledWith('acme')
-      expect(listMembers).toHaveBeenCalledWith('acme', { limit: 100 })
+      expect(listMembers).toHaveBeenCalledWith('acme', { limit: 101 })
     } finally {
       window.history.replaceState({}, '', '/')
     }
@@ -481,7 +481,9 @@ describe('InvitationsPage', () => {
 
   it('pages the workspace member table through every member', async () => {
     const user = userEvent.setup()
-    const firstPage = Array.from({ length: 100 }, (_, index) =>
+    // One row beyond the page size is the probe that says another page
+    // follows; the table itself shows the first 100.
+    const firstPage = Array.from({ length: 101 }, (_, index) =>
       member({
         account: `acc-${String(index).padStart(3, '0')}`,
         display_name: `Member ${index}`,
@@ -495,7 +497,7 @@ describe('InvitationsPage', () => {
         Promise.resolve(
           params?.after === undefined
             ? firstPage
-            : [member({ account: 'acc-100', display_name: 'Last Member' })],
+            : [member({ account: 'acc-101', display_name: 'Last Member' })],
         ),
     )
     const operations = withTenant({ listMembers })
@@ -507,8 +509,11 @@ describe('InvitationsPage', () => {
     expect(
       (await within(memberSection).findAllByText('Member 0')).length,
     ).toBeGreaterThan(0)
-    // A full page is the evidence another may follow; the next page is read
-    // by the last row's account identifier, the cursor the route documents.
+    // The probe row is not rendered as a member of the page on screen.
+    expect(within(memberSection).queryByText('Member 100')).toBeNull()
+    // An over-full page is the evidence another may follow; the next page is
+    // read by the last rendered row's account identifier, the cursor the
+    // route documents.
     await user.click(
       within(memberSection).getByRole('button', {
         name: zhCN.members.nextPage,
@@ -518,9 +523,199 @@ describe('InvitationsPage', () => {
       await within(memberSection).findByText('Last Member'),
     ).toBeInTheDocument()
     expect(listMembers).toHaveBeenLastCalledWith('acme', {
-      limit: 100,
+      limit: 101,
       after: 'acc-099',
     })
+  })
+
+  it('treats an exact page as the last page without an empty next page', async () => {
+    // Exactly one page of members: the read answers the page size, one row
+    // short of the probe, so no next page follows and no empty page is read.
+    const page = Array.from({ length: 100 }, (_, index) =>
+      member({
+        account: `acc-${String(index).padStart(3, '0')}`,
+        display_name: `Member ${index}`,
+      }),
+    )
+    const listMembers = vi.fn(() => Promise.resolve(page))
+    const operations = withTenant({ listMembers })
+    renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
+      operations,
+    })
+
+    const memberSection = section(zhCN.members.title)
+    expect(
+      await within(memberSection).findByText('Member 0'),
+    ).toBeInTheDocument()
+    // A full page is not evidence of another page: an exact multiple ends
+    // here, and the table never reads past its last row into an empty page
+    // whose empty state would wrongly say the tenant has no members.
+    expect(
+      within(memberSection).queryByRole('button', {
+        name: zhCN.members.nextPage,
+      }),
+    ).toBeNull()
+    expect(
+      within(memberSection).queryByText(zhCN.members.empty.title),
+    ).toBeNull()
+    expect(listMembers).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns to the first page with an empty cursor on the previous action', async () => {
+    const user = userEvent.setup()
+    const firstPage = Array.from({ length: 101 }, (_, index) =>
+      member({
+        account: `acc-${String(index).padStart(3, '0')}`,
+        display_name: `Member ${index}`,
+      }),
+    )
+    const listMembers = vi.fn(
+      (
+        _tenant: string,
+        params?: Parameters<AdminOperations['useMembers']>[1],
+      ) =>
+        Promise.resolve(
+          params?.after === undefined
+            ? firstPage
+            : [member({ account: 'acc-100', display_name: 'Member 100' })],
+        ),
+    )
+    const operations = withTenant({ listMembers })
+    renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
+      operations,
+    })
+
+    const memberSection = section(zhCN.members.title)
+    await within(memberSection).findByText('Member 0')
+    await user.click(
+      within(memberSection).getByRole('button', {
+        name: zhCN.members.nextPage,
+      }),
+    )
+    expect(
+      await within(memberSection).findByText('Member 100'),
+    ).toBeInTheDocument()
+
+    await user.click(
+      within(memberSection).getByRole('button', {
+        name: zhCN.members.prevPage,
+      }),
+    )
+    expect(
+      await within(memberSection).findByText('Member 0'),
+    ).toBeInTheDocument()
+    // The first page is read again by no cursor at all, not by the cursor the
+    // second page left on the stack.
+    await vi.waitFor(() =>
+      expect(listMembers).toHaveBeenLastCalledWith('acme', { limit: 101 }),
+    )
+  })
+
+  it('starts a switched tenant with no member cursor', async () => {
+    const user = userEvent.setup()
+    const globex = { id: 'globex', alias: 'Globex', status: 'active' as const }
+    const firstPage = Array.from({ length: 101 }, (_, index) =>
+      member({
+        account: `acc-${String(index).padStart(3, '0')}`,
+        display_name: `Member ${index}`,
+      }),
+    )
+    const listMembers = vi.fn(
+      (
+        tenant: string,
+        params?: Parameters<AdminOperations['useMembers']>[1],
+      ) =>
+        Promise.resolve(
+          tenant === 'globex'
+            ? []
+            : params?.after === undefined
+              ? firstPage
+              : [member({ account: 'acc-100', display_name: 'Member 100' })],
+        ),
+    )
+    const operations = withTenant({
+      listTenants: () => Promise.resolve([TENANT, globex]),
+      listMembers,
+    })
+    renderWithProviders(<InvitationsPage defaultTenant="acme" />, {
+      operations,
+    })
+
+    const memberSection = section(zhCN.members.title)
+    await within(memberSection).findByText('Member 0')
+    await user.click(
+      within(memberSection).getByRole('button', {
+        name: zhCN.members.nextPage,
+      }),
+    )
+    expect(
+      await within(memberSection).findByText('Member 100'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText(zhCN.common.tenant))
+    await user.click(await screen.findByRole('option', { name: 'Globex' }))
+
+    // The new tenant's first read carries no cursor: the stack belonged to the
+    // tenant the viewer left, and no frame may hand its cursor to the new one.
+    await vi.waitFor(() => {
+      expect(
+        listMembers.mock.calls.some(([tenant]) => tenant === 'globex'),
+      ).toBe(true)
+    })
+    for (const [tenant, params] of listMembers.mock.calls) {
+      if (tenant === 'globex') {
+        expect(params).toEqual({ limit: 101 })
+      }
+    }
+  })
+
+  it('keeps a first-page member name as an inviter after paging to the second page', async () => {
+    const user = userEvent.setup()
+    const firstPage = Array.from({ length: 101 }, (_, index) =>
+      member({
+        account: `acc-${String(index).padStart(3, '0')}`,
+        display_name: `Member ${index}`,
+      }),
+    )
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({
+          invitations: [invitation({ invited_by: 'acc-099' })],
+          next_cursor: '',
+        }),
+      listMembers: (
+        _tenant: string,
+        params?: Parameters<AdminOperations['useMembers']>[1],
+      ) =>
+        Promise.resolve(
+          params?.after === undefined
+            ? firstPage
+            : [member({ account: 'acc-100', display_name: 'Next Page Member' })],
+        ),
+    })
+    renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
+      operations,
+    })
+
+    const memberSection = section(zhCN.members.title)
+    await within(memberSection).findByText('Member 0')
+    const invitationSection = section(zhCN.invitations.section.title)
+    expect(
+      await within(invitationSection).findByText('Member 99'),
+    ).toBeInTheDocument()
+
+    await user.click(
+      within(memberSection).getByRole('button', {
+        name: zhCN.members.nextPage,
+      }),
+    )
+    expect(
+      await within(memberSection).findByText('Next Page Member'),
+    ).toBeInTheDocument()
+    // The member who invited is not on the page now shown, but the name the
+    // read resolved on page one still names the inviter.
+    expect(within(memberSection).queryByText('Member 99')).toBeNull()
+    expect(within(invitationSection).getByText('Member 99')).toBeInTheDocument()
   })
 
   it('leaves the name cell empty when the account has no display name', async () => {
@@ -1848,7 +2043,7 @@ describe('InvitationsPage', () => {
       await vi.waitFor(() => {
         expect(listInvitations).toHaveBeenCalledWith('acme')
       })
-      expect(listMembers).toHaveBeenCalledWith('acme', { limit: 100 })
+      expect(listMembers).toHaveBeenCalledWith('acme', { limit: 101 })
       expect(screen.queryByLabelText(zhCN.common.tenant)).toBeNull()
     } finally {
       window.history.replaceState({}, '', '/')

@@ -75,10 +75,12 @@ exist in `src/`, and `src/index.ts` exports them. **What does not:** the
 declarations, and the tenant-mode behaviour of the settings and
 roles/permissions pages. The invitations wrapper runs the shared page in
 tenant mode: the member write form (whose account field searches the
-platform roster) is not rendered, member and inviter identities resolve
-from the members read's `display_name` rather than a platform account
-read, and an account that read cannot resolve renders its recorded
-identifier with the unresolved note. The shared pages prefer the workspace
+platform roster) is not rendered, the inviter identity resolves from the
+members read's `display_name` rather than a platform account read, the
+member table's name column takes `display_name` while its account column
+shows the recorded account identifier without resolving it, and an
+inviter that read cannot resolve renders its recorded identifier with the
+unresolved note. The shared pages prefer the workspace
 breadcrumb context on their `PageHeader` and fall back to their own
 platform trail otherwise, so neither surface leaks the other's trail.
 `WorkspaceAdminOperations` carries the tenant-scoped invitation,
@@ -536,8 +538,9 @@ of a full render over the shipped generated bundle: every URL the
 invitations and SSO pages issue is recorded, none may target
 `/api/v1/system`, and every tenant-addressed read carries the current
 tenant. The invitations suite additionally covers tenant mode: the member
-write form absent, identities resolved from the members read, and an
-account that read cannot resolve left marked. The settings and
+write form absent, the inviter identity resolved from the members read,
+the member account column showing the recorded identifier, and an
+inviter that read cannot resolve left marked. The settings and
 roles/permissions wrappers and their declarations are not implemented, so
 no suite covers them yet.
 
@@ -557,3 +560,12 @@ no suite covers them yet.
   unresolved rather than readable identities.
 - **Storybook.** No preview harness exists; the components are covered by
   jsdom tests + axe, and color-contrast is verified nowhere.
+- **Generated-client freshness gate.** The generated client is committed:
+  `web/packages/api-sdk/src/index.ts` for the platform surface and the
+  demo's `src/app-api/index.ts` for the app's own surface. No check
+  regenerates either from the OpenAPI contract and diffs the result, so a
+  contract change that lands without a matching `api:gen` leaves this
+  package bound to a stale shape and only a test that happens to touch the
+  changed endpoint notices. A follow-up should add the
+  regenerate-and-diff step to the frontend gate; it is not implemented in
+  this batch.

@@ -59,7 +59,7 @@
  * form's exemption checkbox render only where `authn.admin.sso` is present.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -126,9 +126,13 @@ const TENANT_HINT_ID = 'invitations-tenant-hint'
 /**
  * The member table's page size. The membership read's cursor is the account
  * identifier of the previous page's last row, and the read answers no next
- * cursor: a page holding this many rows is what says another page may follow.
+ * cursor, so the page asks for one row beyond its size: an answer longer than
+ * the page size is the evidence another page follows, and a tenant whose
+ * member count is an exact multiple ends on a full last page rather than on an
+ * empty one.
  */
 const MEMBER_PAGE_SIZE = 100
+const MEMBER_READ_LIMIT = MEMBER_PAGE_SIZE + 1
 
 /** No member names resolved yet, for a tenant the page has read no page of. */
 const EMPTY_MEMBER_NAMES: ReadonlyMap<string, string> = new Map()
@@ -216,11 +220,20 @@ export function InvitationsPage({
   const [expiresAt, setExpiresAt] = useState('')
   // The member table pages by cursor: the cursors this page has collected,
   // the index it is on, and the account identifier of the page's last row as
-  // the cursor of the next. The membership read answers no next cursor, so a
-  // full page is what says another page may follow.
-  const [memberCursors, setMemberCursors] = useState<readonly string[]>([''])
-  const [memberPage, setMemberPage] = useState(0)
-  const memberCursor = memberCursors[memberPage] ?? ''
+  // the cursor of the next. The stack is tagged with the tenant it was read
+  // for, and a frame for another tenant derives as empty synchronously, so the
+  // first read after a switch carries no cursor even before the reset lands.
+  const [memberCursorState, setMemberCursorState] = useState<{
+    readonly tenant: string
+    readonly cursors: readonly string[]
+    readonly page: number
+  }>(() => ({ tenant, cursors: [''], page: 0 }))
+  const memberCursorFrame =
+    memberCursorState.tenant === tenant
+      ? memberCursorState
+      : { tenant, cursors: [''], page: 0 }
+  const memberPage = memberCursorFrame.page
+  const memberCursor = memberCursorFrame.cursors[memberPage] ?? ''
   // The invitation just issued, held with the tenant it was issued under so
   // its acceptance token -- handed out once -- can be shown as the invitee's
   // link rather than dropped, and named for that tenant.
@@ -229,10 +242,20 @@ export function InvitationsPage({
 
   const invitations = operations.useInvitations(tenant)
   const members = operations.useMembers(tenant, {
-    limit: MEMBER_PAGE_SIZE,
+    limit: MEMBER_READ_LIMIT,
     ...(memberCursor === '' ? {} : { after: memberCursor }),
   })
-  const memberRows = members.data
+  const memberReadRows = members.data
+  // The row beyond the page size is the probe only: the table shows the page
+  // the operator asked for, never the row that proves another page exists.
+  const memberRows = useMemo(
+    () =>
+      memberReadRows === undefined ||
+      memberReadRows.length <= MEMBER_PAGE_SIZE
+        ? memberReadRows
+        : memberReadRows.slice(0, MEMBER_PAGE_SIZE),
+    [memberReadRows],
+  )
   // Tenant mode resolves an account's identity from the member rows this
   // page has read. An account the read has not settled on, was refused, or
   // does not carry is unresolved -- rendered by its recorded identifier with
@@ -303,12 +326,14 @@ export function InvitationsPage({
   useEffect(() => {
     resetPageFeedback()
   }, [tenant, resetPageFeedback])
-  // A new tenant is a new member list: the cursor stack belongs to the tenant
-  // it was read for. The refresh action keeps the current page, so this reset
-  // follows the tenant alone.
+  // The cursor stack carries its tenant, so a switch already frames the first
+  // read as empty; this reset then drops the previous tenant's stack after the
+  // commit. Both matter: the derivation keeps the first post-switch read from
+  // carrying the old cursor, and the reset keeps a later switch back from
+  // resuming a page the operator left long ago. The refresh action keeps the
+  // current page, so the reset follows the tenant alone.
   useEffect(() => {
-    setMemberCursors([''])
-    setMemberPage(0)
+    setMemberCursorState({ tenant, cursors: [''], page: 0 })
   }, [tenant])
   const changeTenant = (next: string) => {
     setInnerTenant(next)
@@ -658,25 +683,37 @@ export function InvitationsPage({
   const invitationRows = invitations.data?.invitations
   const invitationsPending = invitations.isPending && invitationRows === undefined
   const membersPending = members.isPending && memberRows === undefined
-  // The membership read carries no next cursor: a page that filled the page
-  // size is the evidence another may follow. The next page is read by the
-  // last row's account identifier, the cursor the route documents.
-  const memberHasNext = (memberRows?.length ?? 0) === MEMBER_PAGE_SIZE
+  // The membership read carries no next cursor: the page asks for one row
+  // beyond its size, so an over-full answer is the evidence another page may
+  // follow. The next page is read by the last row's account identifier, the
+  // cursor the route documents.
+  const memberHasNext = (memberReadRows?.length ?? 0) > MEMBER_PAGE_SIZE
   const memberNextCursor =
     memberRows === undefined ? '' : (memberRows.at(-1)?.account ?? '')
   const nextMemberPage = () => {
     if (!memberHasNext || memberNextCursor === '') {
       return
     }
-    setMemberCursors((previous) => {
-      const grown = [...previous]
-      grown[memberPage + 1] = memberNextCursor
-      return grown
+    setMemberCursorState((previous) => {
+      const current =
+        previous.tenant === tenant
+          ? previous
+          : { tenant, cursors: [''], page: 0 }
+      const grown = [...current.cursors]
+      grown[current.page + 1] = memberNextCursor
+      return { tenant, cursors: grown, page: current.page + 1 }
     })
-    setMemberPage((current) => current + 1)
   }
   const previousMemberPage = () => {
-    setMemberPage((current) => Math.max(0, current - 1))
+    setMemberCursorState((previous) => {
+      const current =
+        previous.tenant === tenant
+          ? previous
+          : { tenant, cursors: [''], page: 0 }
+      return current.page === 0
+        ? current
+        : { ...current, page: current.page - 1 }
+    })
   }
 
   // The value the issued block hands over: the host's absolute acceptance
