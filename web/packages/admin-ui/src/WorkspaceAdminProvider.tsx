@@ -31,6 +31,7 @@ import { AdminRouteTableProvider } from './internal/route-table.js'
 import { AdminInvitationLinkProvider } from './internal/invitation-link.js'
 import { AdminSessionProvider } from './internal/session.js'
 import { WorkspaceAdminBreadcrumbProvider } from './WorkspaceAdminBreadcrumb.js'
+import { WorkspaceAdminOperationsProvider } from './workspace-operations.js'
 import type { WorkspaceAdminOperations } from './workspace-operations.js'
 
 /** The workspace facts the wrapper pages read. */
@@ -124,27 +125,32 @@ export function WorkspaceAdminProvider({
   children,
 }: WorkspaceAdminProviderProps) {
   // The operations context is declared in the console bundle's type, but
-  // the workspace bundle is deliberately narrower: the pages under this
-  // provider only call the tenant-scoped members it carries. The cast is
-  // the one place the two shapes meet; it is not a promise that a platform
-  // page can render here (the package README states it cannot).
-  const scopedOperations = operations as AdminOperations
+  // the workspace bundle is deliberately narrower in the platform members
+  // and wider in the tenant ones: the shared pages under this provider
+  // call only members the workspace bundle carries, and the tenant-mode
+  // settings and permissions pages read the workspace operations context
+  // instead. The cast is the one place the two shapes meet; it is not a
+  // promise that a platform page can render here (the package README
+  // states it cannot).
+  const scopedOperations = operations as unknown as AdminOperations
   const content = (
     <WorkspaceAdminContext.Provider
       value={{ tenant, protectedRoles: protectedRoles ?? [] }}
     >
       <AdminOperationsProvider operations={scopedOperations}>
-        <AdminNavigationProvider onNavigate={onNavigate}>
-          <AdminRouteTableProvider routes={routes}>
-            <AdminSessionProvider session={session ?? null}>
-              <AdminInvitationLinkProvider invitationLink={invitationLink}>
-                <AdminFeatureProvider hasFeature={hasFeature}>
-                  {children}
-                </AdminFeatureProvider>
-              </AdminInvitationLinkProvider>
-            </AdminSessionProvider>
-          </AdminRouteTableProvider>
-        </AdminNavigationProvider>
+        <WorkspaceAdminOperationsProvider operations={operations}>
+          <AdminNavigationProvider onNavigate={onNavigate}>
+            <AdminRouteTableProvider routes={routes}>
+              <AdminSessionProvider session={session ?? null}>
+                <AdminInvitationLinkProvider invitationLink={invitationLink}>
+                  <AdminFeatureProvider hasFeature={hasFeature}>
+                    {children}
+                  </AdminFeatureProvider>
+                </AdminInvitationLinkProvider>
+              </AdminSessionProvider>
+            </AdminRouteTableProvider>
+          </AdminNavigationProvider>
+        </WorkspaceAdminOperationsProvider>
       </AdminOperationsProvider>
     </WorkspaceAdminContext.Provider>
   )

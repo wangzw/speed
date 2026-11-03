@@ -97,6 +97,21 @@ import type {
   AdminTenantQuery,
   AdminWriteRoleInput,
 } from '../src/operations.js'
+import type {
+  AdminTenantBinding,
+  AdminTenantBindingRef,
+  AdminTenantGrant,
+  AdminTenantGrantRef,
+  AdminTenantPermission,
+  AdminTenantRemoveSettingInput,
+  AdminTenantRole,
+  AdminTenantRoleRef,
+  AdminTenantSetSettingInput,
+  AdminTenantSetting,
+  AdminTenantWriteRoleInput,
+  WorkspaceAdminOperations,
+} from '../src/workspace-operations.js'
+import { tenantQueryKey } from '@speed/auth-core'
 
 /** The scripted backend the operations bundle calls, grouped by surface. */
 export interface AdminBackend {
@@ -187,6 +202,34 @@ export interface AdminBackend {
   createSsoProvider: (input: AdminCreateSsoProviderInput) => Promise<AdminSsoProvider>
   updateSsoProvider: (input: AdminWriteSsoProviderInput) => Promise<AdminSsoProvider>
   claimSsoDomain: (input: AdminClaimSsoDomainInput) => Promise<AdminSsoVerifyToken>
+
+  // Tenant management surfaces (the workspace bundle's own members).
+  listTenantSettings: (tenant: string) => Promise<readonly AdminTenantSetting[]>
+  listTenantSettingNamespace: (
+    tenant: string,
+    namespace: string,
+  ) => Promise<readonly AdminTenantSetting[]>
+  writeTenantSetting: (input: AdminTenantSetSettingInput) => Promise<void>
+  removeTenantSetting: (input: AdminTenantRemoveSettingInput) => Promise<void>
+  listTenantRoles: (tenant: string) => Promise<readonly AdminTenantRole[]>
+  writeTenantRole: (input: AdminTenantWriteRoleInput) => Promise<void>
+  removeTenantRole: (input: AdminTenantRoleRef) => Promise<void>
+  listTenantPermissions: (
+    tenant: string,
+  ) => Promise<readonly AdminTenantPermission[]>
+  listTenantGrants: (
+    tenant: string,
+    role: string,
+  ) => Promise<readonly AdminTenantGrant[]>
+  grantTenantPermission: (input: AdminTenantGrantRef) => Promise<void>
+  revokeTenantPermission: (input: AdminTenantGrantRef) => Promise<void>
+  listTenantBindings: (tenant: string) => Promise<readonly AdminTenantBinding[]>
+  listTenantAccountBindings: (
+    tenant: string,
+    account: string,
+  ) => Promise<readonly AdminTenantBinding[]>
+  bindTenantRole: (input: AdminTenantBindingRef) => Promise<void>
+  unbindTenantRole: (input: AdminTenantBindingRef) => Promise<void>
 
   // SMS template surface.
   listSmsTemplates: () => Promise<AdminSmsTemplatePage>
@@ -281,6 +324,22 @@ export function makeAdminBackend(
     createSsoProvider: () => Promise.resolve(providerFixture()),
     updateSsoProvider: () => Promise.resolve(providerFixture()),
     claimSsoDomain: () => Promise.resolve({ verify_token: 'token' }),
+
+    listTenantSettings: () => Promise.resolve([]),
+    listTenantSettingNamespace: () => Promise.resolve([]),
+    writeTenantSetting: () => Promise.resolve(),
+    removeTenantSetting: () => Promise.resolve(),
+    listTenantRoles: () => Promise.resolve([]),
+    writeTenantRole: () => Promise.resolve(),
+    removeTenantRole: () => Promise.resolve(),
+    listTenantPermissions: () => Promise.resolve([]),
+    listTenantGrants: () => Promise.resolve([]),
+    grantTenantPermission: () => Promise.resolve(),
+    revokeTenantPermission: () => Promise.resolve(),
+    listTenantBindings: () => Promise.resolve([]),
+    listTenantAccountBindings: () => Promise.resolve([]),
+    bindTenantRole: () => Promise.resolve(),
+    unbindTenantRole: () => Promise.resolve(),
 
     listSmsTemplates: () => Promise.resolve({ templates: [], next_cursor: '' }),
     registerSmsTemplate: () => Promise.resolve(),
@@ -433,15 +492,44 @@ function ssoProviderKey(id: string) {
 }
 const SMS_TEMPLATES_KEY = ['console-test', 'sms-templates'] as const
 
+/** The workspace bundle's tenant-scoped keys: auth-core's tenant prefix
+ * over the surface's own name, so a switch cannot reuse another tenant's
+ * rows. */
+function tenantSettingsKey(tenant: string) {
+  return tenantQueryKey(tenant, 'console-test', 'tenant-settings')
+}
+function tenantSettingNamespaceKey(tenant: string, namespace: string) {
+  return tenantQueryKey(tenant, 'console-test', 'tenant-settings', namespace)
+}
+function tenantRolesKey(tenant: string) {
+  return tenantQueryKey(tenant, 'console-test', 'tenant-roles')
+}
+function tenantPermissionsKey(tenant: string) {
+  return tenantQueryKey(tenant, 'console-test', 'tenant-permissions')
+}
+function tenantGrantsKey(tenant: string, role: string) {
+  return tenantQueryKey(tenant, 'console-test', 'tenant-grants', role)
+}
+function tenantBindingsKey(tenant: string) {
+  return tenantQueryKey(tenant, 'console-test', 'tenant-bindings')
+}
+function tenantAccountBindingsKey(tenant: string, account: string) {
+  return tenantQueryKey(tenant, 'console-test', 'tenant-bindings', account)
+}
+
 /**
  * Builds a AdminOperations whose hooks run real react-query queries and
  * mutations over the given backend. Call it in the test body and pass the
  * result to renderWithProviders; keep the returned object stable across a
  * render (a module-level const or a value captured before render).
+ *
+ * The result also carries the workspace bundle's tenant-scoped settings and
+ * role members, so it is assignable to `WorkspaceAdminOperations` and a
+ * workspace page test gets those surfaces from the same scripted backend.
  */
 export function createAdminOperations(
   backend: AdminBackend,
-): AdminOperations {
+): AdminOperations & WorkspaceAdminOperations {
   return {
     useTenants: () =>
       useQuery({ queryKey: TENANTS_KEY, queryFn: () => backend.listTenants() }),
@@ -975,6 +1063,172 @@ export function createAdminOperations(
           void client.invalidateQueries({ queryKey: ssoProviderKey(input.id) })
           void client.invalidateQueries({
             queryKey: ssoProvidersKey(input.tenant),
+          })
+        },
+      })
+    },
+
+    useTenantSettingsList: (tenant) =>
+      useQuery({
+        queryKey: tenantSettingsKey(tenant),
+        queryFn: () => backend.listTenantSettings(tenant),
+        enabled: tenant !== '',
+      }),
+    useTenantSettingsRead: (tenant, namespace) => {
+      const list = useQuery({
+        queryKey: tenantSettingsKey(tenant),
+        queryFn: () => backend.listTenantSettings(tenant),
+        enabled: tenant !== '',
+      })
+      const one = useQuery({
+        queryKey: tenantSettingNamespaceKey(tenant, namespace ?? ''),
+        queryFn: () =>
+          backend.listTenantSettingNamespace(tenant, namespace ?? ''),
+        enabled: tenant !== '' && namespace !== undefined && namespace !== '',
+      })
+      return namespace === undefined ? list : one
+    },
+    useTenantSettingsWrite: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminTenantSetSettingInput) =>
+          backend.writeTenantSetting(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: tenantSettingsKey(input.tenant),
+          })
+          void client.invalidateQueries({
+            queryKey: tenantSettingNamespaceKey(input.tenant, input.namespace),
+          })
+        },
+      })
+    },
+    useTenantSettingsRemove: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminTenantRemoveSettingInput) =>
+          backend.removeTenantSetting(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: tenantSettingsKey(input.tenant),
+          })
+          void client.invalidateQueries({
+            queryKey: tenantSettingNamespaceKey(input.tenant, input.namespace),
+          })
+        },
+      })
+    },
+    useTenantRoles: (tenant) =>
+      useQuery({
+        queryKey: tenantRolesKey(tenant),
+        queryFn: () => backend.listTenantRoles(tenant),
+        enabled: tenant !== '',
+      }),
+    useTenantPermissions: (tenant) =>
+      useQuery({
+        queryKey: tenantPermissionsKey(tenant),
+        queryFn: () => backend.listTenantPermissions(tenant),
+        enabled: tenant !== '',
+      }),
+    useTenantGrants: (tenant, role) =>
+      useQuery({
+        queryKey: tenantGrantsKey(tenant, role ?? ''),
+        queryFn: () => backend.listTenantGrants(tenant, role ?? ''),
+        enabled: tenant !== '' && role !== undefined && role !== '',
+      }),
+    useTenantBindings: (tenant) =>
+      useQuery({
+        queryKey: tenantBindingsKey(tenant),
+        queryFn: () => backend.listTenantBindings(tenant),
+        enabled: tenant !== '',
+      }),
+    useTenantAccountBindings: (tenant, account) =>
+      useQuery({
+        queryKey: tenantAccountBindingsKey(tenant, account ?? ''),
+        queryFn: () =>
+          backend.listTenantAccountBindings(tenant, account ?? ''),
+        enabled: tenant !== '' && account !== undefined && account !== '',
+      }),
+    useTenantWriteRole: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminTenantWriteRoleInput) =>
+          backend.writeTenantRole(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: tenantRolesKey(input.tenant),
+          })
+        },
+      })
+    },
+    useTenantRemoveRole: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminTenantRoleRef) =>
+          backend.removeTenantRole(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: tenantRolesKey(input.tenant),
+          })
+          void client.invalidateQueries({
+            queryKey: tenantBindingsKey(input.tenant),
+          })
+          void client.invalidateQueries({
+            queryKey: tenantGrantsKey(input.tenant, input.role),
+          })
+        },
+      })
+    },
+    useTenantGrantPermission: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminTenantGrantRef) =>
+          backend.grantTenantPermission(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: tenantGrantsKey(input.tenant, input.role),
+          })
+        },
+      })
+    },
+    useTenantRevokePermission: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminTenantGrantRef) =>
+          backend.revokeTenantPermission(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: tenantGrantsKey(input.tenant, input.role),
+          })
+        },
+      })
+    },
+    useTenantBindRole: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminTenantBindingRef) =>
+          backend.bindTenantRole(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: tenantBindingsKey(input.tenant),
+          })
+          void client.invalidateQueries({
+            queryKey: tenantAccountBindingsKey(input.tenant, input.account),
+          })
+        },
+      })
+    },
+    useTenantUnbindRole: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: AdminTenantBindingRef) =>
+          backend.unbindTenantRole(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: tenantBindingsKey(input.tenant),
+          })
+          void client.invalidateQueries({
+            queryKey: tenantAccountBindingsKey(input.tenant, input.account),
           })
         },
       })
