@@ -16,6 +16,22 @@ import { notificationRoutes } from '@speed/notification-ui'
 /** The path prefix the platform admin's pages mount under. */
 export const ADMIN_PREFIX = '/admin'
 
+/**
+ * The path prefix the workspace admin's pages mount under: the tenant-scoped
+ * management surface, which renders inside the tenant shell and acts on the
+ * current tenant rather than on platform assets. It sits outside ADMIN_PREFIX
+ * so the two management surfaces have disjoint path spaces.
+ */
+export const WORKSPACE_ADMIN_PREFIX = '/workspace/admin'
+
+/** Whether a declared path belongs to the workspace admin area. */
+export function isWorkspaceAdminPath(pathname: string): boolean {
+  return (
+    pathname === WORKSPACE_ADMIN_PREFIX ||
+    pathname.startsWith(`${WORKSPACE_ADMIN_PREFIX}/`)
+  )
+}
+
 /** The route a social or enterprise provider's round trip lands on. The
  * app renders its page outside the tenant shell (src/app.tsx).
  *

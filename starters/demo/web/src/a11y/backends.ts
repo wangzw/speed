@@ -274,7 +274,7 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
   '/api/v1/auth/me/tenants': answer(
     {
       tenants: [
-        { id: TENANT.id, alias: TENANT.alias },
+        { id: TENANT.id, alias: TENANT.alias, kind: 'business' },
       ],
     } satisfies TenantSelfTenantsList200,
     { tenants: [] } satisfies TenantSelfTenantsList200,

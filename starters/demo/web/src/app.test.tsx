@@ -667,7 +667,7 @@ describe('the admin area', () => {
       requested.push(path)
       if (path === '/api/v1/auth/me/tenants') {
         return Promise.resolve({
-          tenants: [{ id: PERSONAL, alias: PERSONAL }],
+          tenants: [{ id: PERSONAL, alias: PERSONAL, kind: 'personal' }],
         } as T)
       }
       if (path === '/api/v1/authz/me/permissions') {
@@ -923,6 +923,36 @@ describe('the admin area', () => {
     expect(
       screen.getByRole('button', { name: tLayout('appShell.expandNav') }),
     ).toBeInTheDocument()
+  })
+})
+
+describe('the workspace admin path', () => {
+  it("takes the viewer to the new tenant's home when a switch happens there", async () => {
+    const user = userEvent.setup()
+    // The workspace admin surface acts on the current tenant and renders
+    // inside the tenant shell, so the switcher is available there.
+    window.history.replaceState({}, '', '/workspace/admin')
+    bindRequestFn(<T,>(path: string): Promise<T> => {
+      if (path === '/api/v1/auth/me/tenants') {
+        return Promise.resolve({
+          tenants: [
+            { id: 'acme', alias: 'acme', kind: 'business' },
+            { id: 'globex', alias: 'globex', kind: 'business' },
+          ],
+        } as T)
+      }
+      return Promise.reject(new Error(`unexpected request: ${path}`))
+    })
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    await user.click(await screen.findByRole('button', { name: 'acme' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'globex' }))
+
+    // The new tenant does not necessarily grant the old page's permissions,
+    // so the host leaves the management surface for the tenant home rather
+    // than staying on a page the new tenant may not offer.
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(getCurrentTenantId()).toBe('globex')
   })
 })
 

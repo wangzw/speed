@@ -22,6 +22,7 @@ import { getCurrentTenantId, setCurrentTenantId } from './chrome.js'
 import {
   PlatformPermissions,
   usePermissionRead,
+  useTenantPermissionSet,
 } from './platform-permissions.js'
 import {
   authenticatedSnapshot,
@@ -77,17 +78,40 @@ function bindPermissionsAnswer(answer: {
 }
 
 /** A consumer of the read's outcome, so a case can observe the failure the
- * surfaces see and drive the retry. */
+ * surfaces see, the tenant the settled sets are tagged with, and drive the
+ * retry. */
 function ReadProbe(): ReactElement {
   const read = usePermissionRead()
+  const tenantSet = useTenantPermissionSet()
   return (
     <div>
       <span data-testid="read">{read.failed ? 'failed' : 'ok'}</span>
+      <span data-testid="tenant">{read.tenantId ?? 'none'}</span>
+      <span data-testid="perms">
+        {read.perms === null ? 'unknown' : JSON.stringify(read.perms)}
+      </span>
+      <span data-testid="pending">{read.pending ? 'pending' : 'idle'}</span>
+      <span data-testid="tenant-set">
+        {tenantSet === null ? 'unknown' : tenantSet.join(',')}
+      </span>
       <button type="button" onClick={read.retry}>
         retry
       </button>
     </div>
   )
+}
+
+/** A promise a case settles when it chooses, so it can move the tenant while
+ * a read is in flight. */
+function deferred<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+} {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
 }
 
 /** Mounts the attach with the probe beside its content. */
@@ -155,12 +179,18 @@ describe('PlatformPermissions', () => {
     mountWithProbe(session)
 
     // The read reset both sets to unknown and then failed: no empty set is
-    // attached, and the failure is what the surfaces see.
+    // attached, and the failure is what the surfaces see. The tagged state
+    // keeps the sets unknown too -- a failure is not an empty answer -- and
+    // names the tenant the failed attempt was for.
     await waitFor(() => expect(screen.getByTestId('read')).toHaveTextContent('failed'))
     expect(attached).toEqual([
       { domain: 'system', perms: null },
       { domain: 'tenant', perms: null },
     ])
+    expect(screen.getByTestId('perms')).toHaveTextContent('unknown')
+    expect(screen.getByTestId('tenant-set')).toHaveTextContent('unknown')
+    expect(screen.getByTestId('tenant')).toHaveTextContent('acme')
+    expect(screen.getByTestId('pending')).toHaveTextContent('idle')
 
     // The retry issues the read again; its answer attaches the sets and
     // clears the failure.
@@ -404,5 +434,119 @@ describe('PlatformPermissions', () => {
       ]),
     )
     expect(requested).toEqual([PERMISSIONS_PATH, PERMISSIONS_PATH])
+  })
+
+  it('tags the settled sets with the tenant they were read for', async () => {
+    setCurrentTenantId('acme')
+    bindRequestFn(<T,>(path: string): Promise<T> => {
+      if (path !== PERMISSIONS_PATH) {
+        return Promise.reject(new Error(`unexpected request: ${path}`))
+      }
+      return Promise.resolve({
+        platform: ['audit.read'],
+        tenant: ['acme:read'],
+      } as T)
+    })
+
+    const { session } = recordingSession()
+    attachSession(session)
+    mountWithProbe(session)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('tenant-set')).toHaveTextContent('acme:read'),
+    )
+    // The state names the tenant its sets belong to, so a consumer can tell a
+    // current answer from one read for another tenant.
+    expect(screen.getByTestId('tenant')).toHaveTextContent('acme')
+    expect(screen.getByTestId('perms')).toHaveTextContent('acme:read')
+    expect(screen.getByTestId('pending')).toHaveTextContent('idle')
+  })
+
+  it("never tags the new tenant with the previous tenant's set", async () => {
+    setCurrentTenantId('acme')
+    const answers: Array<
+      ReturnType<typeof deferred<{ platform: string[]; tenant: string[] }>>
+    > = []
+    bindRequestFn(<T,>(path: string): Promise<T> => {
+      if (path !== PERMISSIONS_PATH) {
+        return Promise.reject(new Error(`unexpected request: ${path}`))
+      }
+      const answer = deferred<{ platform: string[]; tenant: string[] }>()
+      answers.push(answer)
+      return answer.promise as Promise<T>
+    })
+
+    const { session } = recordingSession()
+    attachSession(session)
+    mountWithProbe(session)
+
+    await waitFor(() => expect(answers).toHaveLength(1))
+    act(() =>
+      answers[0]?.resolve({ platform: ['audit.read'], tenant: ['acme:read'] }),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('tenant-set')).toHaveTextContent('acme:read'),
+    )
+
+    // Switch while the new read is in flight: the tag names the new tenant and
+    // the sets are unknown until that tenant's answer lands. No frame carries
+    // globex with acme's set.
+    act(() => setCurrentTenantId('globex'))
+    expect(screen.getByTestId('tenant')).toHaveTextContent('globex')
+    expect(screen.getByTestId('tenant-set')).toHaveTextContent('unknown')
+    expect(screen.getByTestId('pending')).toHaveTextContent('pending')
+
+    await waitFor(() => expect(answers).toHaveLength(2))
+    act(() =>
+      answers[1]?.resolve({ platform: ['audit.read'], tenant: ['globex:read'] }),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('tenant-set')).toHaveTextContent('globex:read'),
+    )
+  })
+
+  it('discards a slow answer for the tenant the viewer has left', async () => {
+    setCurrentTenantId('acme')
+    const answers: Array<
+      ReturnType<typeof deferred<{ platform: string[]; tenant: string[] }>>
+    > = []
+    bindRequestFn(<T,>(path: string): Promise<T> => {
+      if (path !== PERMISSIONS_PATH) {
+        return Promise.reject(new Error(`unexpected request: ${path}`))
+      }
+      const answer = deferred<{ platform: string[]; tenant: string[] }>()
+      answers.push(answer)
+      return answer.promise as Promise<T>
+    })
+
+    const { session, attached } = recordingSession()
+    attachSession(session)
+    mountWithProbe(session)
+
+    await waitFor(() => expect(answers).toHaveLength(1))
+    // Move the tenant with the first read still in flight.
+    act(() => setCurrentTenantId('globex'))
+    await waitFor(() => expect(answers).toHaveLength(2))
+
+    // The answer for acme lands late: neither the session nor the tagged
+    // state may take it.
+    act(() =>
+      answers[0]?.resolve({ platform: ['audit.read'], tenant: ['acme:read'] }),
+    )
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(attached).not.toContainEqual({
+      domain: 'tenant',
+      perms: ['acme:read'],
+    })
+    expect(screen.getByTestId('tenant-set')).toHaveTextContent('unknown')
+
+    act(() =>
+      answers[1]?.resolve({ platform: ['audit.read'], tenant: ['globex:read'] }),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('tenant-set')).toHaveTextContent('globex:read'),
+    )
   })
 })

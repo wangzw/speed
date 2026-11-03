@@ -16,7 +16,8 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { tenantQueryKey } from '@speed/auth-core'
+import { attachSession, tenantQueryKey, useAuthState } from '@speed/auth-core'
+import type { AuthDomain } from '@speed/auth-core'
 import {
   createQueryClient,
   createSpeedI18n,
@@ -29,10 +30,12 @@ import {
   COLOR_MODE_STORAGE_KEY,
   getCurrentTenantAlias,
   getCurrentTenantId,
+  getRecordedTenantKind,
   initialColorModePreference,
   persistColorModePreference,
   readStoredColorModePreference,
   setCurrentTenantId,
+  setTenantAlias,
   setTenantAliases,
   tenantAlias,
   TenantMenu,
@@ -41,7 +44,8 @@ import {
 import type { DemoTenant } from './chrome.js'
 import { DEMO_NAMESPACE, demoResources } from './resources.js'
 import { createHarnessClient } from './test-utils/render.js'
-import { createTestSession } from './test-utils/session.js'
+import { authenticatedSnapshot, createTestSession } from './test-utils/session.js'
+import type { TestSession } from './test-utils/session.js'
 
 afterEach(() => {
   setTenantAliases(new Map())
@@ -86,6 +90,18 @@ describe('the tenant alias layer', () => {
     expect(getCurrentTenantId()).toBeNull()
     expect(getCurrentTenantAlias()).toBeNull()
   })
+
+  it('records an operation answer’s kind and keeps it across a roster read', () => {
+    // The personal backfill answers the tenant, its alias and its kind; the
+    // label of a row the caller tenant read has not listed yet comes from this
+    // record. A later roster read carries aliases only, and must not drop it.
+    setTenantAlias('personal-account-1', 'personal-account-1', 'personal')
+    expect(getRecordedTenantKind('personal-account-1')).toBe('personal')
+
+    setTenantAliases(new Map([['personal-account-1', 'renamed']]))
+    expect(getRecordedTenantKind('personal-account-1')).toBe('personal')
+    expect(getRecordedTenantKind('unknown')).toBeNull()
+  })
 })
 
 /** A browser-storage stand-in: the jsdom environment's own localStorage is
@@ -108,8 +124,8 @@ function installStorageDouble(): Map<string, string> {
 
 /** Two tenants, as a host with a membership source would offer them. */
 const TWO_TENANTS: readonly DemoTenant[] = [
-  { id: 'acme', alias: 'acme', name: 'Acme Inc.' },
-  { id: 'globex', alias: 'globex', name: 'Globex Corp.' },
+  { id: 'acme', alias: 'acme', name: 'Acme Inc.', kind: 'business' },
+  { id: 'globex', alias: 'globex', name: 'Globex Corp.', kind: 'business' },
 ]
 
 /** The tenant switcher over the host's own selection state, the way the
@@ -120,7 +136,6 @@ function TenantSwitchHarness(): ReactElement {
     <TenantMenu
       tenants={TWO_TENANTS}
       tenantId={tenantId}
-      personalTenantId={null}
       onTenantSelect={setTenantId}
     />
   )
@@ -201,6 +216,105 @@ describe('the tenant switch', () => {
     expect(style.position).toBe('absolute')
     expect(parseFloat(style.width)).toBeLessThanOrEqual(1)
     expect(parseFloat(style.height)).toBeLessThanOrEqual(1)
+  })
+})
+
+describe('the tenant switch permission reset', () => {
+  afterEach(() => {
+    setCurrentTenantId(null)
+    // Detach the session this suite attached, so a later case does not read
+    // it through auth-core's hooks.
+    attachSession(createTestSession())
+  })
+
+  it('clears the tenant set synchronously, so no frame pairs the new tenant with it', async () => {
+    const base = createTestSession(
+      authenticatedSnapshot({ tenant: ['acme:read'], system: ['audit.read'] }),
+    )
+    const writes: { domain: AuthDomain; perms: readonly string[] | null }[] = []
+    const session: TestSession = {
+      ...base,
+      setPermissionSet: (domain, perms) => {
+        writes.push({ domain, perms })
+        const current = base.getSnapshot()
+        base.set({
+          ...current,
+          permissionSets: { ...current.permissionSets, [domain]: perms },
+        })
+      },
+    }
+    attachSession(session)
+
+    const i18n = createSpeedI18n({
+      supportedLanguages: ['zh-CN', 'en-US'],
+      defaultLanguage: 'en-US',
+      storage: null,
+      urlParameterName: null,
+      navigatorLanguages: [],
+      namespaces: [
+        { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
+        { namespace: DEMO_NAMESPACE, resources: demoResources },
+      ],
+    })
+    const queryClient = createQueryClient()
+    const services: SpeedAppServices = {
+      session,
+      api: createHarnessClient(),
+      queryClient,
+    }
+    // Every render's pair of (current tenant, tenant permission set), so the
+    // case can assert no frame carries the new tenant with the old set.
+    const pairings: string[] = []
+    // The session's tenant set read synchronously after select returns, before
+    // React has committed the new tenant.
+    const setAtSelect: (readonly string[] | null)[] = []
+
+    function Harness() {
+      const [tenantIdState, select] = useTenantSelection('acme')
+      const snapshot = useAuthState()
+      const current = getCurrentTenantId()
+      const set = snapshot.permissionSets.tenant
+      pairings.push(
+        `${current ?? 'none'}|${set === null ? 'unknown' : set.join(',')}`,
+      )
+      return (
+        <div>
+          <span data-testid="tenant">{tenantIdState ?? 'none'}</span>
+          <button
+            type="button"
+            onClick={() => {
+              select('globex')
+              // The reset belongs to the tenant-change entry: it must already
+              // be applied when select returns.
+              setAtSelect.push(session.getSnapshot().permissionSets.tenant)
+            }}
+          >
+            switch
+          </button>
+        </div>
+      )
+    }
+
+    const user = userEvent.setup()
+    render(
+      <SpeedAppProviders i18n={i18n} queryClient={queryClient}>
+        <AppServicesProvider services={services}>
+          <Harness />
+        </AppServicesProvider>
+      </SpeedAppProviders>,
+    )
+
+    expect(screen.getByTestId('tenant')).toHaveTextContent('acme')
+    await user.click(screen.getByRole('button', { name: 'switch' }))
+
+    // select cleared the tenant domain before announcing the new tenant.
+    expect(setAtSelect).toEqual([null])
+    expect(writes).toContainEqual({ domain: 'tenant', perms: null })
+    // The frame after the switch reads the set as unknown, and no render ever
+    // paired globex with acme's set.
+    expect(pairings).not.toContain('globex|acme:read')
+    expect(pairings).toContain('globex|unknown')
+    expect(screen.getByTestId('tenant')).toHaveTextContent('globex')
   })
 })
 

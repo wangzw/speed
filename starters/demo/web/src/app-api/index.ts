@@ -1992,7 +1992,7 @@ export type AuthnLoginAnswerBody = {
 };
 
 /**
- * The fields the started step takes, as name-to-value strings: the method's first step for `link` and for a step-up that starts at the first factor, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes.
+ * The fields the started step takes, as name-to-value strings: the method's first step for `link` and for a step-up that starts at the first factor, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), except that a kind an account may hold only once -- the authenticator app -- takes no name, and a label sent for it is that same 400 bad-request, and nothing for a step-up that starts at the second factor, except that a step-up may also name `exclude_factor`, one factor the flow must not offer -- the factor the caller is about to delete, which must never prove its own removal; a value naming no factor of the account filters nothing. When that exclusion leaves the account no factor at all, the flow of an account holding a password starts at the password and completes on it alone, while an account without a password is refused with 401 `insufficient_user_authentication`. At most 8 members, each value at most 512 bytes.
  */
 export type AuthnLoginStartAuthenticatedBodyInput = {[key: string]: string};
 
@@ -2006,9 +2006,9 @@ export type AuthnLoginStartAuthenticatedBody = {
   delivery?: string;
   /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
   human_proof?: string;
-  /** The fields the started step takes, as name-to-value strings: the method's first step for `link` and for a step-up that starts at the first factor, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes. */
+  /** The fields the started step takes, as name-to-value strings: the method's first step for `link` and for a step-up that starts at the first factor, the enrollment step for `enroll` where `kind` names the factor kind and an optional `label` names the factor (at most 64 characters after trimming surrounding whitespace, without control characters; a value outside that domain is a 400 bad-request), except that a kind an account may hold only once -- the authenticator app -- takes no name, and a label sent for it is that same 400 bad-request, and nothing for a step-up that starts at the second factor, except that a step-up may also name `exclude_factor`, one factor the flow must not offer -- the factor the caller is about to delete, which must never prove its own removal; a value naming no factor of the account filters nothing. When that exclusion leaves the account no factor at all, the flow of an account holding a password starts at the password and completes on it alone, while an account without a password is refused with 401 `insufficient_user_authentication`. At most 8 members, each value at most 512 bytes. */
   input?: AuthnLoginStartAuthenticatedBodyInput;
-  /** The method to run for `link`, and for a `step-up` of an account that holds no factor. For an enrollment it is not read, and for a step-up the engine starts at the second factor when the session may use a factor the account registered before it authenticated. A step-up whose account holds factors registered during this session re-proves the account's password and then offers those factors; the member is not read for that step, and an account with no password is refused with 401 insufficient_user_authentication. A name the deployment does not take in is a 400 bad-request. */
+  /** The method to run for `link` and for a `step-up` of an account that holds no factor. For an enrollment it is not read. A step-up starts at the second factor when the session may use a factor the account registered before it authenticated. When every factor was registered during this session, the flow starts at the first factor this names, or at the password when it names none or names one the deployment does not take in, and offers those factors as the second step. Naming `password` there for an account that cannot prove one is a 400 bad-request, as is any name the deployment does not take in for a step-up of an account that holds no factor; an account with no password and no named method is refused with 401 insufficient_user_authentication. */
   method?: string;
   /** Required, and one of `link`, `step-up` or `enroll`: bind an external identity, strengthen the current session, or register a factor. Any other value, including an empty one, is a 400 bad-request. */
   purpose?: string;
@@ -2095,11 +2095,24 @@ export type AuthnProfilePatchBody = {
   time_zone?: string;
 };
 
+/**
+ * The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the identifier.
+ */
+export type TenantSelfTenantsList200TenantsItemKind = typeof TenantSelfTenantsList200TenantsItemKind[keyof typeof TenantSelfTenantsList200TenantsItemKind];
+
+
+export const TenantSelfTenantsList200TenantsItemKind = {
+  business: 'business',
+  personal: 'personal',
+} as const;
+
 export type TenantSelfTenantsList200TenantsItem = {
   /** The tenant's alias, the name the request surface addresses it by. */
   alias: string;
   /** The tenant's immutable identifier. */
   id: string;
+  /** The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. The value is a closed set; a client branches on it rather than on the identifier. */
+  kind: TenantSelfTenantsList200TenantsItemKind;
 };
 
 /**
@@ -3164,7 +3177,7 @@ export const useAuthnLoginAnswer = <TError = Problem,
     }
 
 /**
- * Starts a `link`, `step-up` or `enroll` flow on the identity the gateway authenticated and advances it to its first step. The flow is bound to the effective account and the caller's session: an impersonating identity starts it for the impersonated account and proves its own factors. A link and an enrollment require the fresh authentication the effective account's factors call for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and answer 401 insufficient_user_authentication with `WWW-Authenticate` when it does not hold. A step-up whose account holds at least one factor usable for this session starts at the second factor and answers the offered factors without calling the method; an account that holds factors but none usable for this session — because each was activated at or after the session authenticated — is refused with 401 insufficient_user_authentication, and an account with no factor starts at the first factor with the method named in the body. The delivery mode is not read from the body: it follows the kind of the request's session.
+ * Starts a `link`, `step-up` or `enroll` flow on the identity the gateway authenticated and advances it to its first step. The flow is bound to the effective account and the caller's session: an impersonating identity starts it for the impersonated account and proves its own factors. A link and an enrollment require the fresh authentication the effective account's factors call for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and answer 401 insufficient_user_authentication with `WWW-Authenticate` when it does not hold. A step-up whose account holds at least one factor usable for this session starts at the second factor and answers the offered factors without calling the method. An account whose factors were all activated at or after the session authenticated starts at a first factor the body names, or at its password when the body names none or names one this deployment does not take in, and offers those factors as the second step; naming a password the account cannot prove is a 400 bad-request, and an account with no first factor to prove again is refused with 401 insufficient_user_authentication. An account with no factor starts at the first factor the body names. The delivery mode is not read from the body: it follows the kind of the request's session.
  * @summary Start a flow on the identity already signed in
  */
 export const authnLoginStartAuthenticated = (
@@ -4469,7 +4482,7 @@ export const useAuthnProfilePatch = <TError = Problem,
     }
 
 /**
- * Answers the tenants the calling account holds an active membership in, with each tenant's identifier and alias. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership or roster read that cannot answer is a 503, never an empty list.
+ * Answers the tenants the calling account holds an active membership in, with each tenant's identifier, alias and kind. The kind is business or personal, a closed set the host's resolver supplies; an assembly without a resolver reads every tenant as business. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership, roster or kind read that cannot answer is a 503, never an empty list.
  * @summary List the tenants the caller holds an active membership in
  */
 export const tenantSelfTenantsList = (

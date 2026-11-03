@@ -124,18 +124,21 @@ describe('the announced tenant, once the roster is read', () => {
     })
   })
 
-  it('settles the caller list first row that is not personal, whatever the roster holds', async () => {
+  it('settles the caller list first row whose kind is not personal, whatever the roster holds', async () => {
     // The roster is ordered by identifier, so its first row can be a tenant
-    // the caller has nothing to do with. The settle never consults it: a
-    // personal row is skipped, and the list's first business row wins even
-    // when the roster names another tenant first.
+    // the caller has nothing to do with. The settle never consults it: a row
+    // the read answers as personal is skipped, and the list's first business
+    // row wins even when the roster names another tenant first. Another
+    // account's personal tenant is a business row to the read (the host's
+    // resolver compares the caller's own derived identifier exactly), so the
+    // settle may choose it; a prefix test would skip it and choose later.
     const request: RequestFn = async <T>(path: string): Promise<T> => {
       if (path === '/api/v1/auth/me/tenants') {
         return {
           tenants: [
-            { id: 'personal-other', alias: 'personal-other' },
-            { id: 'accept-tenant', alias: 'accept-tenant' },
-            { id: 'zzz', alias: 'zzz' },
+            { id: 'personal-account-2', alias: 'personal-account-2', kind: 'business' },
+            { id: 'my-space', alias: 'my-space', kind: 'personal' },
+            { id: 'zzz', alias: 'zzz', kind: 'business' },
           ],
         } as T
       }
@@ -155,9 +158,9 @@ describe('the announced tenant, once the roster is read', () => {
     })
 
     await waitFor(() => {
-      expect(getCurrentTenantId()).toBe('accept-tenant')
+      expect(getCurrentTenantId()).toBe('personal-account-2')
     })
-    expect(getCurrentTenantAlias()).toBe('accept-tenant')
+    expect(getCurrentTenantAlias()).toBe('personal-account-2')
   })
 })
 

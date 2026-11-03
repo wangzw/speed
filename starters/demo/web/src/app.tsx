@@ -92,6 +92,7 @@ import {
   AppBrand,
   getCurrentTenantId,
   getRecordedTenantAlias,
+  getRecordedTenantKind,
   persistColorModePreference,
   setCurrentTenantId,
   setTenantAlias,
@@ -136,13 +137,13 @@ import { SignInView } from './pages/sign-in-view.js'
 import {
   ACCOUNT_PATH,
   isAccountLevelPath,
+  isWorkspaceAdminPath,
   PASSWORD_RESET_PATH,
 } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import {
   clearSelfTenants,
   loadSelfTenants,
-  PERSONAL_TENANT_ID_PREFIX,
   personalTenantId,
   selfTenantAlias,
   useSelfTenantState,
@@ -162,19 +163,18 @@ const ADMIN_PERMISSION_DOMAIN = 'system'
 
 /**
  * The tenant the host settles when it has none: the first listed membership
- * that is not someone's personal tenant, else the first listed one. The
- * caller tenant read carries no kind, so the server's identifier prefix tells
- * the personal tenants apart: one belongs to a single account and is a poor
- * default when the account also belongs to a business tenant. The chosen row
- * is nameable from the list itself. Null when the list is empty.
+ * whose kind is not `personal`, else the first listed one. The caller tenant
+ * read answers each row's kind from the host's resolver, so the default
+ * branches on that value rather than on the identifier: the account's personal
+ * space is a single-person space and a poor default when the account also
+ * belongs to a business tenant. The chosen row is nameable from the list
+ * itself. Null when the list is empty.
  */
 function defaultSelfTenantId(
-  tenants: readonly { readonly id: string }[],
+  tenants: readonly { readonly id: string; readonly kind: string }[],
 ): string | null {
   return (
-    tenants.find(
-      (tenant) => !tenant.id.startsWith(PERSONAL_TENANT_ID_PREFIX),
-    )?.id ??
+    tenants.find((tenant) => tenant.kind !== 'personal')?.id ??
     tenants[0]?.id ??
     null
   )
@@ -291,6 +291,11 @@ function AppFrame({
   // one. Absent, pending or failed, no declaration matches and the path falls
   // through to the tenant area's own matching.
   const match = useMatch()
+  // The tenant the host currently acts in. The workspace admin surface acts
+  // on it, so its subtree is keyed by this id: a switch remounts it, and no
+  // page state or in-flight read from the previous tenant crosses into the
+  // new one.
+  const currentTenantId = useCurrentTenantId()
   // The host's identity-change action, handed to the admin page so a
   // settled start or end re-reads the identity the way the tenant frame's
   // banner does, plus the start seam: the page calls it before it writes, so
@@ -399,7 +404,18 @@ function AppFrame({
       sidebarCollapsed={sidebarCollapsed}
       onSidebarCollapsedChange={setSidebarCollapsed}
     >
-      <RouteView />
+      {/* The workspace admin pages act on the current tenant, so their
+          subtree remounts when the tenant moves: the new tenant's pages start
+          with their own state and reads, and nothing of the previous tenant's
+          survives the switch. Every other tenant-area page keeps its state
+          across a tenant change. */}
+      <RouteView
+        key={
+          isWorkspaceAdminPath(pathname)
+            ? `workspace-admin:${currentTenantId ?? 'none'}`
+            : undefined
+        }
+      />
     </TenantFrame>
   )
 }
@@ -570,6 +586,25 @@ function TenantFrame({
   const [tenantId, setTenantId] = useTenantSelection(
     impersonating ? null : getCurrentTenantId(),
   )
+  // A switch made while the viewer is inside the workspace admin area takes
+  // them to the new tenant's home. The new tenant does not necessarily grant
+  // the same administrative permissions, so staying on the page the previous
+  // tenant offered would render its surface against the new tenant; the home
+  // is where the new tenant's entry decides afresh whether that surface is
+  // offered at all. The first settlement (null to a tenant) and the null
+  // that follows a session end are not switches.
+  const previousTenantForSwitch = useRef<string | null>(tenantId)
+  useEffect(() => {
+    const previous = previousTenantForSwitch.current
+    previousTenantForSwitch.current = tenantId
+    if (
+      previous !== null &&
+      previous !== tenantId &&
+      isWorkspaceAdminPath(pathname)
+    ) {
+      navigate(TENANT_HOME_PATH)
+    }
+  }, [tenantId, pathname, navigate])
   // The caller's own tenant list: the memberships read the root loads, and
   // the fact the current tenant settles from. A read that has not settled
   // (a failure included) is not an empty answer, so neither the settlement
@@ -826,7 +861,7 @@ function TenantFrame({
           return
         }
         setPersonalBackfilled(answer.tenant.id)
-        setTenantAlias(answer.tenant.id, answer.tenant.alias)
+        setTenantAlias(answer.tenant.id, answer.tenant.alias, answer.tenant.kind)
         // Read the cell, not this render's state: the settlement effect above
         // runs earlier in the same commit and writes it synchronously, so a
         // tenant it just settled (the roster's staff default, for one) is
@@ -872,15 +907,22 @@ function TenantFrame({
     id: tenant.id,
     alias: tenant.alias,
     name: tenant.alias,
+    kind: tenant.kind,
   }))
   if (tenantId !== null && !menuTenants.some((row) => row.id === tenantId)) {
     const alias = getRecordedTenantAlias(tenantId)
     if (alias !== null) {
-      menuTenants.push({ id: tenantId, alias, name: alias })
+      // The kind an operation's answer recorded (the personal backfill's, for
+      // one) lets the switcher label a row the caller tenant read does not
+      // list yet; a row with none renders its alias.
+      menuTenants.push({
+        id: tenantId,
+        alias,
+        name: alias,
+        kind: getRecordedTenantKind(tenantId) ?? undefined,
+      })
     }
   }
-  const callerPersonalTenantId =
-    principalId === '' ? null : personalTenantId(principalId)
 
   const items = useNavItems()
   const adminRoutes = presentDeclarations(adminShellRoutes, presence)
@@ -1025,7 +1067,6 @@ function TenantFrame({
                 <TenantMenu
                   tenants={menuTenants}
                   tenantId={tenantId}
-                  personalTenantId={callerPersonalTenantId}
                   onTenantSelect={setTenantId}
                   compact={rail.narrow}
                 />

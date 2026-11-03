@@ -3,13 +3,13 @@
  * list and the announcement's alias source.
  *
  * Two layers are held here. The module store is the one place the list lives:
- * a successful read replaces it, a failed one keeps the rows already on hand
- * and marks the list unsettled so a failure is never read as an empty answer,
- * and an identity change or a sign-out clears it. The switcher renders every
- * row of that list, labels only the row whose identifier EXACTLY equals the
- * account's derived personal identifier with the personal-workspace copy (a
- * prefix test would mislabel another account's personal tenant), and leaves
- * the current row unselectable.
+ * a successful read replaces it, carrying each row's host-answered `kind`, a
+ * failed one keeps the rows already on hand and marks the list unsettled so a
+ * failure is never read as an empty answer, and an identity change or a
+ * sign-out clears it. The switcher renders every row of that list, labels a row
+ * whose `kind` is `personal` with the personal-workspace copy, and leaves the
+ * current row unselectable. Another account's personal tenant comes back as
+ * `business`, so it renders its alias.
  */
 
 import { render, screen } from '@testing-library/react'
@@ -77,17 +77,19 @@ describe('the caller tenant list store', () => {
   it('replaces the list and marks it settled on a successful read', async () => {
     bindSelf(() => ({
       tenants: [
-        { id: 'acme', alias: 'acme-inc' },
-        { id: 'globex', alias: 'globex' },
+        { id: 'acme', alias: 'acme-inc', kind: 'business' },
+        { id: 'personal-account-1', alias: 'my-space', kind: 'personal' },
       ],
     }))
 
     await loadSelfTenants()
 
+    // The read's kind is carried through unchanged; the switcher and the
+    // default settlement branch on it.
     expect(getSelfTenantState()).toEqual({
       tenants: [
-        { id: 'acme', alias: 'acme-inc' },
-        { id: 'globex', alias: 'globex' },
+        { id: 'acme', alias: 'acme-inc', kind: 'business' },
+        { id: 'personal-account-1', alias: 'my-space', kind: 'personal' },
       ],
       settled: true,
       failed: false,
@@ -95,7 +97,9 @@ describe('the caller tenant list store', () => {
   })
 
   it('keeps the settled rows and marks the list unsettled when a read fails', async () => {
-    bindSelf(() => ({ tenants: [{ id: 'acme', alias: 'acme-inc' }] }))
+    bindSelf(() => ({
+      tenants: [{ id: 'acme', alias: 'acme-inc', kind: 'business' }],
+    }))
     await loadSelfTenants()
 
     bindSelf(() => {
@@ -107,7 +111,7 @@ describe('the caller tenant list store', () => {
     // the unsettled flag is what keeps the personal-tenant ensure from reading
     // this failure as "no memberships".
     expect(getSelfTenantState()).toEqual({
-      tenants: [{ id: 'acme', alias: 'acme-inc' }],
+      tenants: [{ id: 'acme', alias: 'acme-inc', kind: 'business' }],
       settled: false,
       failed: true,
     })
@@ -171,19 +175,27 @@ describe('the derived personal tenant identifier', () => {
   })
 })
 
-/** Two tenants as the host offers them, plus two personal tenants: the
- * caller's own and another account's. */
+/** The rows the host offers: the caller's own space, another account's
+ * personal tenant, and a business tenant. The read answers `kind` per row, and
+ * the host's resolver marks only the caller's own space personal; another
+ * account's personal tenant comes back as business and renders its alias. The
+ * caller's own row carries an identifier no derivation would produce, so a
+ * label driven by the identifier rather than by `kind` fails here. */
 const OFFERED: readonly DemoTenant[] = [
-  { id: 'personal-account-1', alias: 'my-space', name: 'my-space' },
-  { id: 'personal-account-2', alias: 'other-space', name: 'other-space' },
-  { id: 'acme', alias: 'acme', name: 'acme' },
+  { id: 'my-space', alias: 'my-space', name: 'my-space', kind: 'personal' },
+  {
+    id: 'personal-account-2',
+    alias: 'other-space',
+    name: 'other-space',
+    kind: 'business',
+  },
+  { id: 'acme', alias: 'acme', name: 'acme', kind: 'business' },
 ]
 
 /** Renders the tenant switcher under the production stack. */
 function renderTenantMenu(props: {
   readonly tenants: readonly DemoTenant[]
   readonly tenantId: string | null
-  readonly personalTenantId: string | null
 }): void {
   const i18n = createSpeedI18n({
     supportedLanguages: ['zh-CN', 'en-US'],
@@ -206,7 +218,6 @@ function renderTenantMenu(props: {
     <TenantMenu
       tenants={props.tenants}
       tenantId={props.tenantId}
-      personalTenantId={props.personalTenantId}
       onTenantSelect={() => undefined}
     />
   )
@@ -218,20 +229,19 @@ function renderTenantMenu(props: {
 }
 
 describe('the tenant switcher over the self list', () => {
-  it('keeps every row and labels only the exact derived personal row', async () => {
+  it('keeps every row and labels the row the read answers as personal', async () => {
     const user = userEvent.setup()
     renderTenantMenu({
       tenants: OFFERED,
       tenantId: 'acme',
-      personalTenantId: personalTenantId('account-1'),
     })
 
     await user.click(screen.getByRole('button', { name: 'acme' }))
     const items = await screen.findAllByRole('menuitem')
 
-    // Every tenant the account holds a membership in is offered, with the
-    // caller's own personal row carrying the personal-workspace copy and the
-    // other account's personal row carrying its alias.
+    // Every tenant the account holds a membership in is offered. The row the
+    // read answers as personal carries the personal-workspace copy; another
+    // account's personal tenant came back as business, so it keeps its alias.
     expect(items.map((item) => item.textContent)).toEqual([
       demoEnUS.workspace.personal,
       'other-space',
@@ -244,7 +254,6 @@ describe('the tenant switcher over the self list', () => {
     renderTenantMenu({
       tenants: OFFERED,
       tenantId: 'acme',
-      personalTenantId: personalTenantId('account-1'),
     })
 
     await user.click(screen.getByRole('button', { name: 'acme' }))

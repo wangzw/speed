@@ -60,7 +60,13 @@ type RosterAnswer =
  * function answers per call, so a case can change the list after the ensure. */
 type SelfAnswer =
   | 'failure'
-  | { readonly tenants: readonly { readonly id: string; readonly alias: string }[] }
+  | {
+      readonly tenants: readonly {
+        readonly id: string
+        readonly alias: string
+        readonly kind?: 'business' | 'personal'
+      }[]
+    }
 
 /** A profile the session's GET /api/v1/auth/me answers: no login name and no
  * password -- the setup-incomplete state the notice is about. */
@@ -312,8 +318,8 @@ describe('the tenant frame and the personal tenant', () => {
       // Ordered by identifier: the personal row is deliberately not first.
       self: {
         tenants: [
-          { id: 'aaa', alias: 'aaa' },
-          { id: PERSONAL_ID, alias: PERSONAL_ID },
+          { id: 'aaa', alias: 'aaa', kind: 'business' },
+          { id: PERSONAL_ID, alias: PERSONAL_ID, kind: 'personal' },
         ],
       },
     })
@@ -352,7 +358,15 @@ describe('the tenant frame and the personal tenant', () => {
       if ((call.method ?? 'GET') === 'GET' && path === SELF_PATH) {
         selfCalls.push(SELF_PATH)
         return created
-          ? { tenants: [{ id: PERSONAL_ID, alias: PERSONAL_ID }] }
+          ? {
+              tenants: [
+                {
+                  id: PERSONAL_ID,
+                  alias: PERSONAL_ID,
+                  kind: 'personal',
+                },
+              ],
+            }
           : { tenants: [] }
       }
       if ((call.method ?? 'GET') === 'GET' && path === ROSTER_PATH) {

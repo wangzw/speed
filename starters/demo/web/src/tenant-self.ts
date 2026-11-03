@@ -4,11 +4,12 @@
  * switcher's rows and as the alias source for tenant-scoped requests.
  *
  * Two facts are held apart. `tenants` is the list itself, ordered by
- * identifier as the read answers it. `settled` says whether the LAST read
- * produced a real answer: a failure is not an empty list, so it leaves the
- * rows already on hand in place and clears the flag. The personal-tenant
- * trigger reads exactly that distinction -- it may only ask the server for a
- * space when the list settled empty, never when the read failed.
+ * identifier as the read answers it, each row carrying its host-answered
+ * `kind`. `settled` says whether the LAST read produced a real answer: a
+ * failure is not an empty list, so it leaves the rows already on hand in
+ * place and clears the flag. The personal-tenant trigger reads exactly that
+ * distinction -- it may only ask the server for a space when the list settled
+ * empty, never when the read failed.
  *
  * The list belongs to an identity, not to the page: a sign-out clears it, and
  * the always-mounted root clears and re-reads it whenever the acting account
@@ -30,7 +31,16 @@ export interface SelfTenant {
   readonly id: string
   /** The name the request surface addresses the tenant by. */
   readonly alias: string
+  /** The tenant's kind, as the host's resolver answered it through the read.
+   * The set is closed: `business` or `personal`. The switcher labels and the
+   * default settlement branch on this value, never on the identifier. */
+  readonly kind: SelfTenantKind
 }
+
+/** The two kinds the caller tenant read answers. The vocabulary is the
+ * platform's closed set; the generated client types this field as the same
+ * union. */
+export type SelfTenantKind = 'business' | 'personal'
 
 /** The list, whether the last read settled as an answer, and whether it
  * failed. */
@@ -110,7 +120,11 @@ export async function loadSelfTenants(): Promise<SelfTenantState> {
     const answer = await tenantSelfTenantsList()
     if (started === epoch) {
       publish({
-        tenants: answer.tenants.map(({ id, alias }) => ({ id, alias })),
+        tenants: answer.tenants.map(({ id, alias, kind }) => ({
+          id,
+          alias,
+          kind,
+        })),
         settled: true,
         failed: false,
       })
@@ -130,18 +144,21 @@ export function selfTenantAlias(tenantId: string): string | null {
 
 /**
  * The server's personal-tenant identifier prefix (starters/demo/server's
- * personalIDPrefix). The roster records no tenant kind, so the host recognises
- * a personal tenant by this prefix; the two spellings must stay in sync by
- * hand.
+ * personalIDPrefix). It is no longer how a tenant's kind is recognised: the
+ * read carries `kind`, and labels and the default settlement branch on that.
+ * The prefix survives only for the derived identifier below, which the
+ * personal-tenant ensure compares against the list to decide whether the
+ * caller's own space is still missing.
  */
 export const PERSONAL_TENANT_ID_PREFIX = 'personal-'
 
 /**
  * The identifier the host's personal-tenant server derives for an account:
- * the fixed prefix plus the account identifier. The roster records no tenant
- * kind, so the host recognises its own personal tenant by this identifier,
- * compared EXACTLY: another account's personal tenant also begins with the
- * prefix and must not be labelled as the caller's.
+ * the fixed prefix plus the account identifier. The list's `kind` says which
+ * rows are personal, so this value is used for exactly one thing: the ensure
+ * trigger compares it EXACTLY against the list to tell whether the caller's
+ * own space is missing. Another account's personal tenant starts with the same
+ * prefix but is not the caller's, so a prefix test would suppress the ensure.
  */
 export function personalTenantId(accountId: string): string {
   return `${PERSONAL_TENANT_ID_PREFIX}${accountId}`
