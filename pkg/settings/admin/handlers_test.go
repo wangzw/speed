@@ -27,9 +27,9 @@ func TestTheLayerChoosesTheDomainAndThePermission(t *testing.T) {
 		domain authz.Domain
 	}{
 		{"read global", http.MethodGet, "/api/v1/system/settings?layer=global", nil, authz.PermissionSettingsRead, authz.PlatformDomain},
-		{"read tenant", http.MethodGet, "/api/v1/system/settings?layer=tenant&tenant=acme", nil, authz.PermissionSettingsRead, authz.Domain("acme")},
+		{"read tenant", http.MethodGet, "/api/v1/system/settings?layer=tenant&tenant=acme", nil, authz.PermissionTenantSettingsRead, authz.Domain("acme")},
 		{"write global", http.MethodPut, "/api/v1/system/settings/app/mode?layer=global", map[string]any{"value": "on"}, authz.PermissionSettingsWrite, authz.PlatformDomain},
-		{"write tenant", http.MethodPut, "/api/v1/system/settings/app/mode?layer=tenant&tenant=acme", map[string]any{"value": "on"}, authz.PermissionSettingsWrite, authz.Domain("acme")},
+		{"write tenant", http.MethodPut, "/api/v1/system/settings/app/mode?layer=tenant&tenant=acme", map[string]any{"value": "on"}, authz.PermissionTenantSettingsWrite, authz.Domain("acme")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

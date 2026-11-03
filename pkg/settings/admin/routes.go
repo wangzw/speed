@@ -44,6 +44,16 @@ func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 // shortfall with the guard's own answer, all before the entry point binds the
 // request and before any settings call.
 //
+// The permission follows the layer. The global layer is a platform operation and
+// is decided on the global codes — settings.read for a read, settings.write for a
+// write — in the platform domain. A tenant layer is decided on that tenant's own
+// codes — settings.tenant.read or settings.tenant.write — in that tenant's
+// domain. The two sets are decided apart: a holder of only the global codes
+// cannot reach a tenant layer, and a tenant administrator holding only the tenant
+// codes cannot reach the global one. The global code is the route's own, and the
+// tenant code stands beside it so each route states both rather than deriving one
+// from the other.
+//
 // The write decision is derived from the method rather than passed in: a route
 // that is not a read is a write, so a write route added to the set cannot be
 // left ungated by a caller that forgot the flag. The method is the one fact the
@@ -54,7 +64,7 @@ func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 // receives no request: the realm is bound per endpoint at the mount, and the
 // guard's refusals are written through it. The handler then reads the settled
 // layer from its bound input, which the wrapper has already validated.
-func (p *product) guardRoute(method string, perm authz.Permission, handler gin.HandlerFunc) gin.HandlerFunc {
+func (p *product) guardRoute(method string, globalPerm, tenantPerm authz.Permission, handler gin.HandlerFunc) gin.HandlerFunc {
 	write := method != http.MethodGet
 	return func(c *gin.Context) {
 		id, ok := p.caller(c)
@@ -68,6 +78,10 @@ func (p *product) guardRoute(method string, perm authz.Permission, handler gin.H
 		if !ok {
 			return
 		}
+		perm := globalPerm
+		if sel.name == layerTenant {
+			perm = tenantPerm
+		}
 		if !p.require(c, perm, sel.domain) {
 			return
 		}
@@ -75,15 +89,16 @@ func (p *product) guardRoute(method string, perm authz.Permission, handler gin.H
 	}
 }
 
-// route is one management route: the method and path it answers, the permission
-// the layer's domain is asked for, and the handler that serves it, the decision
-// already bound into the handler's wrapper. The path is absolute, resolved from
-// the declaration against the module's API root once here so the mounting and
-// the declaration share one source.
+// route is one management route: the method and path it answers, the permissions
+// the two layers' domains are asked for, and the handler that serves it, the
+// decision already bound into the handler's wrapper. The path is absolute,
+// resolved from the declaration against the module's API root once here so the
+// mounting and the declaration share one source.
 type route struct {
 	method  string
 	path    string
 	perm    authz.Permission
+	tenant  authz.Permission
 	handler gin.HandlerFunc
 }
 
@@ -95,24 +110,28 @@ type route struct {
 func (p *product) routes() []route {
 	routes := []route{
 		{
-			http.MethodGet, adminSpec.ResolvePath(pathSettings), authz.PermissionSettingsRead,
+			http.MethodGet, adminSpec.ResolvePath(pathSettings),
+			authz.PermissionSettingsRead, authz.PermissionTenantSettingsRead,
 			listOperation.Handle(p.handleList),
 		},
 		{
-			http.MethodGet, adminSpec.ResolvePath(pathNamespace), authz.PermissionSettingsRead,
+			http.MethodGet, adminSpec.ResolvePath(pathNamespace),
+			authz.PermissionSettingsRead, authz.PermissionTenantSettingsRead,
 			namespaceOperation.Handle(p.handleListNamespace),
 		},
 		{
-			http.MethodPut, adminSpec.ResolvePath(pathNamespaceKey), authz.PermissionSettingsWrite,
+			http.MethodPut, adminSpec.ResolvePath(pathNamespaceKey),
+			authz.PermissionSettingsWrite, authz.PermissionTenantSettingsWrite,
 			setOperation.Handle(p.handleSet),
 		},
 		{
-			http.MethodDelete, adminSpec.ResolvePath(pathNamespaceKey), authz.PermissionSettingsWrite,
+			http.MethodDelete, adminSpec.ResolvePath(pathNamespaceKey),
+			authz.PermissionSettingsWrite, authz.PermissionTenantSettingsWrite,
 			removeOperation.Handle(p.handleRemove),
 		},
 	}
 	for i := range routes {
-		routes[i].handler = p.guardRoute(routes[i].method, routes[i].perm, routes[i].handler)
+		routes[i].handler = p.guardRoute(routes[i].method, routes[i].perm, routes[i].tenant, routes[i].handler)
 	}
 	return routes
 }

@@ -166,7 +166,7 @@
                 }
               }
             },
-            "description": "The caller holds no settings.read in the layer's domain"
+            "description": "The caller holds no settings.tenant.read on a tenant layer, or no settings.read on the global layer, in that layer's domain"
           },
           "503": {
             "content": {
@@ -268,7 +268,7 @@
                 }
               }
             },
-            "description": "The caller holds no settings.read in the layer's domain"
+            "description": "The caller holds no settings.tenant.read on a tenant layer, or no settings.read on the global layer, in that layer's domain"
           },
           "404": {
             "description": "No declared item belongs to the namespace"
@@ -372,7 +372,7 @@
                 }
               }
             },
-            "description": "The caller holds no settings.write in the layer's domain, or the caller has not proved an email address (contact-required)"
+            "description": "The caller holds no settings.tenant.write on a tenant layer, or no settings.write on the global layer, in that layer's domain, or the caller has not proved an email address (contact-required)"
           },
           "404": {
             "description": "The full key has no declaration"
@@ -494,7 +494,7 @@
                 }
               }
             },
-            "description": "The caller holds no settings.write in the layer's domain, or the caller has not proved an email address (contact-required)"
+            "description": "The caller holds no settings.tenant.write on a tenant layer, or no settings.write on the global layer, in that layer's domain, or the caller has not proved an email address (contact-required)"
           },
           "404": {
             "description": "The full key has no declaration"

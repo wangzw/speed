@@ -12,11 +12,13 @@
 // middleware lets a request through and the route's own authorization step makes
 // the decision: it reads the caller from the request, settles the layer and the
 // policy domain from the query string, asks the handler-internal authz.guard API
-// for settings.read on a read or settings.write on a write, and answers a
-// shortfall before the declared handler runs. The domain follows the layer: a
-// global read or write is decided in the platform domain, a tenant's in that
-// tenant's own, so the two are two decisions and a caller authorized in one
-// tenant cannot reach the global layer. A read that is allowed ends there; a
+// for settings.read or settings.tenant.read on a read and settings.write or
+// settings.tenant.write on a write, and answers a shortfall before the declared
+// handler runs. The domain and the code both follow the layer: a global read or
+// write is decided in the platform domain on the global codes, a tenant's in
+// that tenant's own on that tenant's codes, so the two are two decisions and a
+// caller authorized in one tenant cannot reach the global layer, nor a holder of
+// only the global codes reach a tenant's. A read that is allowed ends there; a
 // write lands a mandatory audit row outside any transaction and before the
 // action, calls the settings module, and maps a refusal to its answer.
 //
