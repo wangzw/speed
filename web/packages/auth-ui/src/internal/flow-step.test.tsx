@@ -561,6 +561,140 @@ describe('FlowStepFields social account-opening face', () => {
   })
 })
 
+describe('FlowStepFields SMS signup step', () => {
+  // The SMS first login asks for a username and, when the deployment offers
+  // it, an optional display name. The face renders the step's fields in the
+  // server's order.
+  const smsFields: AuthnField[] = [
+    { name: 'username', kind: 'text', required: true },
+    { name: 'display_name', kind: 'text' },
+  ]
+
+  function renderSmsSignup(
+    onAnswer: (input: Record<string, string>) => void = vi.fn(),
+  ) {
+    return renderWithProviders(
+      <FlowStepFields
+        step={challengeStep(smsFields)}
+        busy={false}
+        onAnswer={onAnswer}
+        onUnsupported={vi.fn()}
+      />,
+    )
+  }
+
+  async function fillAndSubmit(displayName?: string) {
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.signInFlow.usernameLabel),
+      'ada',
+    )
+    if (displayName !== undefined) {
+      await user.type(
+        screen.getByLabelText(zhCN.register.displayNameLabel),
+        displayName,
+      )
+    }
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+  }
+
+  it('renders the optional display-name field the server offers', () => {
+    renderSmsSignup()
+
+    const username = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
+    const displayName = screen.getByLabelText(zhCN.register.displayNameLabel)
+
+    // Optional means no required marker, so leaving it empty is allowed.
+    expect(displayName).not.toBeRequired()
+    expect(displayName).toHaveAccessibleDescription(
+      zhCN.register.displayNameHelp,
+    )
+    expect(
+      username.compareDocumentPosition(displayName) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('sends a filled display name with the signup answer', async () => {
+    const onAnswer = vi.fn()
+    renderSmsSignup(onAnswer)
+
+    await fillAndSubmit('Ada Lovelace')
+
+    expect(onAnswer).toHaveBeenCalledWith({
+      username: 'ada',
+      display_name: 'Ada Lovelace',
+    })
+  })
+
+  it('completes when the optional display name is left empty', async () => {
+    const onAnswer = vi.fn()
+    renderSmsSignup(onAnswer)
+
+    await fillAndSubmit()
+
+    expect(onAnswer).toHaveBeenCalledWith({
+      username: 'ada',
+      display_name: '',
+    })
+  })
+})
+
+describe('FlowStepFields password account-opening face', () => {
+  // The password face renders its fields from the step too: a deployment
+  // that asks for a display name beside the password gets the input, not
+  // only the fixed username/password/confirmation set.
+  const accountFields: AuthnField[] = [
+    { name: 'username', kind: 'text', required: true },
+    { name: 'display_name', kind: 'text' },
+    { name: 'password', kind: 'password', secret: true, required: true },
+  ]
+
+  it('renders and sends a display name the server asks for beside the password', async () => {
+    const onAnswer = vi.fn()
+    renderWithProviders(
+      <FlowStepFields
+        step={challengeStep(accountFields)}
+        busy={false}
+        onAnswer={onAnswer}
+        onUnsupported={vi.fn()}
+      />,
+    )
+    const user = userEvent.setup()
+
+    const displayName = screen.getByLabelText(zhCN.register.displayNameLabel)
+    const password = screen.getByLabelText(zhCN.passwordSignIn.passwordLabel)
+    expect(
+      displayName.compareDocumentPosition(password) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    await user.type(
+      screen.getByLabelText(zhCN.signInFlow.usernameLabel),
+      'ada',
+    )
+    await user.type(displayName, 'Ada Lovelace')
+    await user.type(password, 'correct-horse')
+    await user.type(
+      screen.getByLabelText(zhCN.register.confirmPasswordLabel),
+      'correct-horse',
+    )
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.signInFlow.signupAccountSubmit,
+      }),
+    )
+
+    expect(onAnswer).toHaveBeenCalledWith({
+      username: 'ada',
+      display_name: 'Ada Lovelace',
+      password: 'correct-horse',
+    })
+  })
+})
+
 describe('FlowStepFields labels', () => {
   it('translates known factor kinds and shows an unknown kind as given', () => {
     render({

@@ -47,12 +47,14 @@ const FIELD_LABEL_KEYS: Readonly<Record<string, string>> = {
   phone: 'smsSignIn.phoneLabel',
   code: 'smsSignIn.codeLabel',
   username: 'signInFlow.usernameLabel',
+  display_name: 'register.displayNameLabel',
   email: 'register.emailLabel',
 }
 
 /** The bundle keys of the explanatory text under a known field. */
 const FIELD_HELP_KEYS: Readonly<Record<string, string>> = {
   username: 'signInFlow.usernameHelper',
+  display_name: 'register.displayNameHelp',
 }
 
 /** A translator bound to the auth-ui namespace. */

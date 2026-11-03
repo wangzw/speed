@@ -47,20 +47,25 @@
  *
  * The step a first login parks at before it opens an account is the same
  * challenge renderer with its own faces, chosen by what the step asks for.
- * A step that asks for a username alone (SMS and enterprise just-in-time
+ * A step that asks for no password (SMS and enterprise just-in-time
  * signup) renders a title, a sentence saying what the login name is for,
- * the field and its rule help. A step that also asks for a password
- * (social first signup) is the whole account-opening face and carries no
- * title of its own -- the card's heading already says this is a sign-in --
- * just a centred narrative in two sentences: who the account being opened
- * belongs to (the method and the provider's name for the person, the name
- * emphasised, each part omitted when the step carries none) and what is
- * still missing, then a divider, then the form. The provider's shared
+ * the fields it asks for and their rule help. A step that also asks for a password (a
+ * first login that opens the account with one) is the whole account-opening
+ * face and carries no title of its own -- the card's heading already says
+ * this is a sign-in -- just a centred narrative in two sentences: who the
+ * account being opened belongs to (the method and the provider's name for
+ * the person, the name emphasised, each part omitted when the step carries
+ * none) and what is still missing, then a divider, then the form. The form
+ * renders the fields the server sends in its own order -- the username with
+ * its rule help, an optional display name, the password with its
+ * confirmation right after it -- instead of a fixed set: a deployment that
+ * collects another field gets it drawn with the same vocabulary, and the
+ * answer carries only what the step asked for. The provider's shared
  * address is a read-only block under the username: wrapped text, not a
- * one-line input, so a long address stays whole; the username, the
- * read-only address, the password and its confirmation follow in that
- * order. The identity facts are display-only and never submitted; the
- * confirmation is compared locally and never travels.
+ * one-line input, so a long address stays whole. The identity facts are
+ * display-only and never submitted; the confirmation is compared locally
+ * and never travels, and an optional field left blank is omitted from the
+ * answer.
  *
  * A refusal of a still-parked signup step is the field's, never the
  * whole-attempt banner: the three name refusals (taken, reserved, a shape
@@ -79,7 +84,7 @@
  * leaves the current one unspent.
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react'
 import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
@@ -989,17 +994,25 @@ interface SignupAccountFieldsProps {
   readonly onAnswer: (input: Record<string, string>) => void
 }
 
-interface SignupAccountValues {
-  username: string
-  password: string
-  confirmPassword: string
-}
+/** The confirmation input's own name. It is compared here and never sent,
+ * so it is not one of the step's fields. */
+const CONFIRM_PASSWORD_FIELD = 'confirmPassword'
+
+/** The account form's values: every field the step asks for, plus the
+ * client-side confirmation. */
+type SignupAccountValues = Record<string, string>
 
 /**
- * The social first-signup face: a centred narrative in two sentences (whose
- * account this is, then what is still missing), a divider, then the form --
- * the username with its rule help, the provider's shared address as a
- * read-only block, the password and its confirmation, and the submit row.
+ * The password account-opening face: a centred narrative in two sentences
+ * (whose account this is, then what is still missing), a divider, then the
+ * form, and the submit row.
+ *
+ * The form is the step's field list, in the server's order: each field
+ * renders with the family's label and help, a password field is followed by
+ * its confirmation, and the provider's shared address, when the step carries
+ * one, is a read-only block under the username. A deployment that collects
+ * an optional display name therefore gets that input without this component
+ * naming it.
  *
  * The face carries no title of its own: the host renders it inside the
  * sign-in card, whose heading already says this is a sign-in.
@@ -1013,9 +1026,10 @@ interface SignupAccountValues {
  * en-US, where the name ends the sentence). No method name leaves the
  * whole sentence out; no shared address leaves the block out; every other
  * part keeps its place. The confirmation is compared here and never
- * travels; every other rule -- the name's shape, uniqueness and reserved
- * names, and the password policy -- is the server's, and a refusal it
- * answers lands under the field it names.
+ * travels, and an optional field left blank is omitted from the answer;
+ * every other rule -- the name's shape, uniqueness and reserved names, and
+ * the password policy -- is the server's, and a refusal it answers lands
+ * under the field it names.
  */
 function SignupAccountFields({
   fields,
@@ -1031,19 +1045,12 @@ function SignupAccountFields({
 }: SignupAccountFieldsProps) {
   const { t } = useAuthUiTranslation()
   const form = useForm<SignupAccountValues>({
-    defaultValues: { username: '', password: '', confirmPassword: '' },
+    defaultValues: Object.fromEntries([
+      ...fields.map((field) => [field.name, '']),
+      [CONFIRM_PASSWORD_FIELD, ''],
+    ]),
   })
-  const usernameField = fields.find((field) => field.name === USERNAME_FIELD) ?? {
-    name: USERNAME_FIELD,
-    kind: 'text',
-  }
-  const passwordField = fields.find((field) => field.name === PASSWORD_FIELD) ?? {
-    name: PASSWORD_FIELD,
-    kind: 'password',
-  }
-  const usernameInput = useRef<HTMLInputElement>(null)
-  const passwordInput = useRef<HTMLInputElement>(null)
-  const confirmInput = useRef<HTMLInputElement>(null)
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const refusedName = refusal?.name ?? null
   const refusedText = refusal?.text ?? null
   // The face has no discovery document, so the method's own name is resolved
@@ -1083,14 +1090,33 @@ function SignupAccountFields({
   // A refusal under a field is the attempt's outcome: move focus there so a
   // viewer who submitted from the button lands on the value to change.
   useEffect(() => {
-    if (refusedName === USERNAME_FIELD) {
-      usernameInput.current?.focus()
-    } else if (refusedName === PASSWORD_FIELD) {
-      passwordInput.current?.focus()
+    if (refusedName !== null) {
+      inputRefs.current[refusedName]?.focus()
     }
   }, [refusedName, refusedText])
   const onSubmit: SubmitHandler<SignupAccountValues> = (values) => {
-    onAnswer({ username: values.username, password: values.password })
+    const answer: Record<string, string> = {}
+    for (const field of fields) {
+      const value = values[field.name] ?? ''
+      // An optional field left blank is absent from the answer: the step
+      // did not require it, and the server reads an omitted field as no
+      // value.
+      if (field.required === true || value !== '') {
+        answer[field.name] = value
+      }
+    }
+    onAnswer(answer)
+  }
+  // The face opens a new account, so its username and password carry the
+  // new-account hints rather than the sign-in pair.
+  const autoCompleteOf = (field: AuthnField): string => {
+    if (field.name === USERNAME_FIELD) {
+      return 'username'
+    }
+    if (field.name === PASSWORD_FIELD) {
+      return 'new-password'
+    }
+    return field.kind === 'code' ? 'one-time-code' : 'off'
   }
   return (
     <Box
@@ -1140,79 +1166,78 @@ function SignupAccountFields({
           </ActionButton>
         }
       >
-        <FormField
-          name="username"
-          required
-          render={({ field, invalid, errorText }) => (
-            <TextField
-              {...field}
-              inputRef={refusedName === USERNAME_FIELD ? usernameInput : undefined}
-              label={fieldLabel(usernameField)}
-              autoComplete="username"
-              fullWidth
-              error={invalid || refusedName === USERNAME_FIELD}
-              helperText={
-                errorText ??
-                (refusedName === USERNAME_FIELD ? refusedText : null) ??
-                fieldHelp(usernameField) ??
-                undefined
-              }
-            />
-          )}
-        />
-        {providedEmail === null ? null : (
-          <SignupProvidedEmail
-            label={emailLabel}
-            value={providedEmail}
-            helper={
-              methodName === null
-                ? t('signInFlow.signupEmailImmutable')
-                : t('signInFlow.signupEmailSource', { provider: methodName })
-            }
-          />
-        )}
-        <FormField
-          name="password"
-          required
-          render={({ field, invalid, errorText }) => (
-            <TextField
-              {...field}
-              inputRef={refusedName === PASSWORD_FIELD ? passwordInput : undefined}
-              label={fieldLabel(passwordField)}
-              type="password"
-              autoComplete="new-password"
-              fullWidth
-              error={invalid || refusedName === PASSWORD_FIELD}
-              helperText={
-                errorText ??
-                (refusedName === PASSWORD_FIELD ? refusedText : null) ??
-                fieldHelp(passwordField) ??
-                undefined
-              }
-            />
-          )}
-        />
-        <FormField
-          name="confirmPassword"
-          required
-          rules={{
-            validate: (value) =>
-              value === form.getValues('password') ||
-              t('signInFlow.signupPasswordMismatch'),
-          }}
-          render={({ field, invalid, errorText }) => (
-            <TextField
-              {...field}
-              inputRef={confirmInput}
-              label={t('register.confirmPasswordLabel')}
-              type="password"
-              autoComplete="new-password"
-              fullWidth
-              error={invalid}
-              helperText={errorText ?? undefined}
-            />
-          )}
-        />
+        {fields.map((field) => {
+          const refused = refusedName === field.name
+          return (
+            <Fragment key={field.name}>
+              <FormField
+                name={field.name}
+                required={field.required === true}
+                render={({ field: bound, invalid, errorText }) => (
+                  <TextField
+                    {...bound}
+                    inputRef={(element) => {
+                      inputRefs.current[field.name] = element
+                    }}
+                    label={fieldLabel(field)}
+                    type={
+                      field.kind === 'password' || field.secret === true
+                        ? 'password'
+                        : 'text'
+                    }
+                    inputMode={
+                      field.kind === 'code' ? 'numeric' : undefined
+                    }
+                    autoComplete={autoCompleteOf(field)}
+                    fullWidth
+                    error={invalid || refused}
+                    helperText={
+                      errorText ??
+                      (refused ? refusedText : null) ??
+                      fieldHelp(field) ??
+                      undefined
+                    }
+                  />
+                )}
+              />
+              {field.name === USERNAME_FIELD && providedEmail !== null ? (
+                <SignupProvidedEmail
+                  label={emailLabel}
+                  value={providedEmail}
+                  helper={
+                    methodName === null
+                      ? t('signInFlow.signupEmailImmutable')
+                      : t('signInFlow.signupEmailSource', {
+                          provider: methodName,
+                        })
+                  }
+                />
+              ) : null}
+              {field.name === PASSWORD_FIELD ? (
+                <FormField
+                  name={CONFIRM_PASSWORD_FIELD}
+                  required
+                  rules={{
+                    validate: (value) =>
+                      value === form.getValues(PASSWORD_FIELD) ||
+                      t('signInFlow.signupPasswordMismatch'),
+                  }}
+                  render={({ field: bound, invalid, errorText }) => (
+                    <TextField
+                      {...bound}
+                      label={t('register.confirmPasswordLabel')}
+                      type="password"
+                      autoComplete="new-password"
+                      fullWidth
+                      error={invalid}
+                      helperText={errorText ?? undefined}
+                    />
+                  )}
+                />
+              ) : null}
+            </Fragment>
+          )
+        })}
       </FormLayout>
     </Box>
   )
