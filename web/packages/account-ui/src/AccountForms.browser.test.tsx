@@ -413,8 +413,10 @@ describe('account-ui form geometry', () => {
 
     const actionsName = (factorLabel: string): string =>
       zhCN.mfa.actionsAria.replace('{{factor}}', factorLabel)
+    // The single authenticator entry is named by its kind; a passkey or a
+    // phone number is named by the label its holder gave it.
     const totpActions = await screen.findByRole('button', {
-      name: actionsName('App'),
+      name: actionsName(zhCN.mfa.factor.kind.totp),
     })
     const smsActions = screen.getByRole('button', {
       name: actionsName('Phone'),

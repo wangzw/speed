@@ -121,9 +121,11 @@ describe('MfaSection row overflow menu', () => {
         ),
       ).toBeNull()
     })
+    // No enabled passkey is left, so this removal leaves the account with one
+    // verification method and the confirmation says so.
     expect(
       await screen.findByText(
-        zhCN.mfa.removed.replace('{{factor}}', ROW_NAME),
+        zhCN.mfa.removedLast.replace('{{factor}}', ROW_NAME),
       ),
     ).toBeTruthy()
     // No enabled passkey is left, and the group's action is the same plain
@@ -163,7 +165,7 @@ describe('MfaSection rename editor', () => {
         return jsonResponse(200, {
           methods: [],
           signup: { enabled: false, password: { enabled: false } },
-          mfa: { factors: ['totp'] },
+          mfa: { factors: ['webauthn'] },
           human: { required: false, provider: 'off' },
         })
       }
@@ -171,8 +173,8 @@ describe('MfaSection rename editor', () => {
         return jsonResponse(200, {
           factors: [
             {
-              id: 'f-totp',
-              kind: 'totp',
+              id: 'f-passkey',
+              kind: 'webauthn',
               label: rowLabel,
               status: 'active',
               created_at: '',

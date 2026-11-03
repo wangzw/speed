@@ -1,14 +1,10 @@
 /**
- * SessionsSection in a real browser: the action column's header text must
- * end on the same vertical line as the row action's glyph. jsdom lays
- * nothing out, so only Chromium can see the two edges; the case asks a
- * Range over the header's text for its right edge and compares it with
- * the sign-out icon's rendered box, both from getBoundingClientRect.
- *
- * The icon button carries its own inner inset (a compact MUI IconButton
- * pads its glyph), so a header whose cell ends where the button ends
- * leaves the header text a few pixels to the right of the glyph it
- * labels. The cell's right padding accounts for that inset.
+ * SessionsSection in a real browser: every row's sign-out action closes on
+ * one right rail. The rows are a list, not a table, so there is no header
+ * cell to line up with; what a reader sees is the action column of the
+ * rows -- a short device name and a long one -- ending on the same vertical
+ * line, and that line is the list's own content edge. jsdom lays nothing
+ * out, so only Chromium can tell the rail from a per-row shrink-wrap.
  */
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
@@ -22,30 +18,39 @@ import {
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { SessionsSection } from './SessionsSection.js'
+import { summarizeUserAgent } from './internal/ua-summary.js'
 
 const SESSIONS_PATH = '/api/v1/auth/sessions'
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** One live session the account can sign out: a row with its action, and
- * the profile read the timezone chain issues beside the list. */
+/** A desktop browser and a command-line client: two device names of very
+ * different lengths, so a per-row shrink-wrapped action column would put
+ * their glyphs on different lines. */
+const DESKTOP_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+const CLI_UA = 'curl/8.4.0'
+
+/** One live session the account can sign out, with its own device name. */
+function session(id: string, userAgent: string) {
+  return {
+    id,
+    kind: 'browser',
+    created_at: '2026-08-01T02:05:00.000Z',
+    last_seen_at: '2026-08-01T02:05:00.000Z',
+    expires_at: '2026-09-01T02:05:00.000Z',
+    client_ip: '198.51.100.4',
+    user_agent: userAgent,
+    current: false,
+  }
+}
+
 const responder: RealResponder = (call: RealCall) => {
   if (call.path === PROFILE_PATH) {
     return jsonResponse(200, { time_zone: '' })
   }
   if (call.method === 'GET' && call.path === SESSIONS_PATH) {
     return jsonResponse(200, {
-      sessions: [
-        {
-          id: 'session-2',
-          kind: 'browser',
-          created_at: '2026-08-01T02:05:00.000Z',
-          last_seen_at: '2026-08-01T02:05:00.000Z',
-          expires_at: '2026-09-01T02:05:00.000Z',
-          client_ip: '198.51.100.4',
-          user_agent: '',
-          current: false,
-        },
-      ],
+      sessions: [session('session-2', DESKTOP_UA), session('session-3', CLI_UA)],
     })
   }
   return jsonResponse(404, { code: 'client.not_found' })
@@ -56,37 +61,53 @@ function revokeAria(device: string): string {
   return zhCN.sessions.revokeAriaWithDevice.replace('{{device}}', device)
 }
 
-describe('SessionsSection action column alignment in Chromium', () => {
-  it("ends the header text on the row action glyph's right edge", async () => {
+/** The device label a row renders for one raw User-Agent. */
+function deviceOf(userAgent: string): string {
+  const label = summarizeUserAgent(userAgent)
+  if (label === null) {
+    throw new Error(`no device label for ${userAgent}`)
+  }
+  return label
+}
+
+describe('SessionsSection action rail in Chromium', () => {
+  it('ends every row action on the list content edge', async () => {
     await page.viewport(900, 900)
     const rig = makeRealClientRigWithoutSession(responder)
     rig.store.set('access-1')
     renderWithProviders(<SessionsSection />)
 
-    const header = await screen.findByRole('columnheader', {
-      name: zhCN.sessions.table.action,
+    const first = await screen.findByRole('button', {
+      name: revokeAria(deviceOf(DESKTOP_UA)),
     })
-    const revoke = await screen.findByRole('button', {
-      name: revokeAria(zhCN.sessions.deviceUnknown),
+    const second = await screen.findByRole('button', {
+      name: revokeAria(deviceOf(CLI_UA)),
     })
-    const glyph = revoke.querySelector('svg')
-    expect(glyph).not.toBeNull()
+    const firstGlyph = first.querySelector('svg')
+    const secondGlyph = second.querySelector('svg')
+    expect(firstGlyph).not.toBeNull()
+    expect(secondGlyph).not.toBeNull()
     await document.fonts.ready
 
-    // The header's text is the cell's only content, so a Range over it
-    // answers where the right-aligned text itself ends -- not where the
-    // cell's padding box ends, which is what the cell's own rect would
-    // report.
-    const range = document.createRange()
-    range.selectNodeContents(header)
-    const headerTextRight = range.getBoundingClientRect().right
-    const glyphRight = (glyph as SVGSVGElement).getBoundingClientRect().right
-
-    // Only subpixel jitter is allowed: the two edges are placed by the
-    // same layout pass, so a real gap reads as whole pixels.
+    // One right rail: the two glyphs end on the same vertical line however
+    // long their rows' device names are.
+    const firstRight =
+      (firstGlyph as SVGSVGElement).getBoundingClientRect().right
+    const secondRight =
+      (secondGlyph as SVGSVGElement).getBoundingClientRect().right
     expect(
-      Math.abs(headerTextRight - glyphRight),
-      `header=${headerTextRight} glyph=${glyphRight}`,
+      Math.abs(firstRight - secondRight),
+      `desktop=${firstRight} cli=${secondRight}`,
+    ).toBeLessThanOrEqual(0.5)
+
+    // And that rail is the list's content edge: the action closes its row
+    // flush with the list, not a shrink-wrapped island inside it.
+    const list = screen.getByRole('list')
+    const listRight = list.getBoundingClientRect().right
+    const buttonRight = first.getBoundingClientRect().right
+    expect(
+      Math.abs(buttonRight - listRight),
+      `button=${buttonRight} list=${listRight}`,
     ).toBeLessThanOrEqual(0.5)
   })
 })
