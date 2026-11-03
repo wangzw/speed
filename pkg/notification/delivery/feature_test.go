@@ -25,6 +25,7 @@ import (
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/sms"
+	"github.com/vislake/speed/pkg/sms/budget"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -49,7 +50,8 @@ type (
 	featureSMSSender   struct{ sms.Sender }
 )
 
-func (featureDatabase) DB() *gorm.DB { return nil }
+func (featureDatabase) DB() *gorm.DB        { return nil }
+func (featureDatabase) Dialect() db.Dialect { return db.SQLite }
 
 type featureHandlers struct{}
 
@@ -147,6 +149,7 @@ func driveWithBoard(t *testing.T, on seams, supplied bool) []string {
 	register(standIn("stand-in.queue", featureQueue{}, (*jobs.Queue)(nil)))
 	register(standIn("stand-in.handlers", featureHandlers{}, (*jobs.Handlers)(nil)))
 	register(standIn("stand-in.database", featureDatabase{}, (*db.Database)(nil)))
+	register(standIn("stand-in.budget", stubBudgetStore{}, (*budget.Store)(nil)))
 	register(standIn("stand-in.roster", featureRoster{}, (*tenant.Catalog)(nil)))
 	register(standIn("stand-in.prefs", featurePrefs{}, (*notification.Preferences)(nil)))
 	register(standIn("stand-in.inbox", featureInbox{}, (*notification.Inbox)(nil)))

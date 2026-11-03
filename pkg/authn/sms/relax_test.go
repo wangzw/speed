@@ -89,6 +89,22 @@ func TestAWidenedSourceBudgetIsReported(t *testing.T) {
 	}
 }
 
+// TestARelaxedCeilingIsReported holds the shared ceiling among the watched
+// settings now that its declaration lives in the ledger module: the reader keeps
+// the declared default, so a first write above it is audited and one below it is
+// not.
+func TestARelaxedCeilingIsReported(t *testing.T) {
+	r := newRigSQLite(t)
+	r.deliverChange(settings.Change{Key: ceilingHourlyPath, Old: "", New: "10000"})
+	if got := len(r.audit.entries()); got != 1 {
+		t.Fatalf("the audit holds %d rows, want 1: raising the shared ceiling is a relaxation", got)
+	}
+	r.deliverChange(settings.Change{Key: ceilingHourlyPath, Old: "", New: "1000"})
+	if got := len(r.audit.entries()); got != 1 {
+		t.Errorf("a first write below the declared ceiling default was reported as a relaxation")
+	}
+}
+
 // TestAnUnwatchedOrSensitiveChangeIsIgnored holds the filter: a key this module
 // does not watch and a change whose value was withheld are both dropped.
 func TestAnUnwatchedOrSensitiveChangeIsIgnored(t *testing.T) {

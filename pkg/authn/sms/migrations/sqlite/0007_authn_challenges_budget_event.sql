@@ -1,0 +1,14 @@
+-- The shared ledger row one challenge attempt was written to. The ledger owns
+-- every attempt row and the challenge table keeps only the code state machine,
+-- but the refund paths locate an attempt by the challenge identifier the caller
+-- holds, so the link is stored here: a certain failure refunds the challenge row
+-- and the ledger row named by this column in one go.
+--
+-- The column is nullable and its null is meaningful: a row written before the
+-- ledger was in force, or by a caller that did not go through it, names no
+-- ledger attempt, and its refund changes the challenge row alone.
+--
+-- SQLite has no ADD COLUMN IF NOT EXISTS. A migration is applied once and
+-- recorded, so the plain ADD COLUMN is what a fresh database and an upgrade both
+-- run exactly once.
+ALTER TABLE authn_challenges ADD COLUMN budget_event_id INTEGER NULL;

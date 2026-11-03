@@ -23,13 +23,16 @@ import (
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
+	"github.com/vislake/speed/pkg/kv"
 	kvmemory "github.com/vislake/speed/pkg/kv/memory"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/notification/preferences"
+	"github.com/vislake/speed/pkg/observability"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
+	"github.com/vislake/speed/pkg/sms/budget"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
@@ -553,6 +556,9 @@ type host struct {
 	// capability, so a case can read what the module writes without going
 	// through a configured destination.
 	logger log.Logger
+	// meter delivers the metric capability when set, so a case can read the
+	// utilization gauge the module reports.
+	meter observability.MeterProvider
 }
 
 // drive loads the configuration the way a host loads it, drives a registry to
@@ -585,7 +591,7 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 	if h.withPreferences {
 		consumer = preferences.Module()
 	}
-	modules := []core.Module{sqlite.Module(), log.Module(), catalog.Module(), kvmemory.Module(), consumer}
+	modules := []core.Module{sqlite.Module(), log.Module(), catalog.Module(), kvmemory.Module(), budget.Module(), consumer}
 	for name, spec := range specs {
 		modules = append(modules, declareType(name, spec))
 	}
@@ -666,6 +672,10 @@ type rig struct {
 	// settings is the settings store the assembly's settings module delivers, so
 	// a case can write a budget limit and hold that the pipeline reads it.
 	settings settings.Store
+	// kv is the key-value capability the assembly still delivers. The module no
+	// longer reads it; a case uses it to hold that a spent counter left there is
+	// not consulted.
+	kv kv.KV
 	// mailSender is the mail seam stub, nil when the run did not take the email
 	// channel in.
 	mailSender *stubMailSender
@@ -719,7 +729,7 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 	accounts.bind("u1", authn.IdentifierPhone, "+15550001")
 	accounts.bind("u2", authn.IdentifierEmail, "u2@example.test")
 
-	modules := []core.Module{sqlite.Module(), log.Module(), catalog.Module(), kvmemory.Module(), settings.Module(), Module()}
+	modules := []core.Module{sqlite.Module(), log.Module(), catalog.Module(), kvmemory.Module(), settings.Module(), budget.Module(), Module()}
 	for name, spec := range h.specs {
 		modules = append(modules, declareType(name, spec))
 	}
@@ -731,6 +741,9 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 		standIn("stand-in.bus", bus, (*event.Bus)(nil)),
 		standIn("stand-in.accounts", accounts, (*authn.Accounts)(nil)),
 	)
+	if h.meter != nil {
+		modules = append(modules, standIn("stand-in.meter", h.meter, (*observability.MeterProvider)(nil)))
+	}
 	var mailSender *stubMailSender
 	if h.mail {
 		mailSender = &stubMailSender{}
@@ -821,6 +834,10 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 				if err != nil {
 					return err
 				}
+				counters, err := core.Resolve[kv.KV](reg)
+				if err != nil {
+					return err
+				}
 				dispatcher, err := core.Resolve[notification.Dispatcher](reg)
 				if err != nil {
 					return err
@@ -829,7 +846,7 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 				if !ok {
 					return fmt.Errorf("the delivered dispatcher is a %T, not this module's product", dispatcher)
 				}
-				r.db, r.catalog, r.settings, r.p = database, cam, store, p
+				r.db, r.catalog, r.settings, r.kv, r.p = database, cam, store, counters, p
 				delivered <- struct{}{}
 				<-release
 				return nil
@@ -933,15 +950,116 @@ func dispatch(userID, occurrence string, params map[string]any) notification.Dis
 	}
 }
 
-// jobOf wraps a dispatch in a delivery job the handler consumes.
+// jobOf wraps a dispatch in a delivery job the handler consumes. It carries no
+// charged sms attempt, which is the shape a job built by a caller that did not
+// go through Dispatch has.
 func jobOf(t *testing.T, d notification.Dispatch) *jobs.Job {
 	t.Helper()
-	payload, err := json.Marshal(d)
+	payload, err := json.Marshal(deliveryPayload{Dispatch: d})
 	if err != nil {
 		t.Fatalf("encoding the dispatch: %v", err)
 	}
 	return &jobs.Job{ID: "job", Type: JobType, Payload: payload}
 }
+
+// budgetRow is one row read back from the shared sms ledger.
+type budgetRow struct {
+	channel     string
+	purpose     string
+	destination string
+	tenant      string
+	outcome     string
+	refunded    bool
+	attemptedAt time.Time
+}
+
+// budgetRows reads the shared ledger's rows for a tenant, past every filter,
+// ordered by attempt. Reading raw SQL is deliberate: it holds what actually
+// landed rather than what a scoped read would report.
+func (r *rig) budgetRows(tenantID string) []budgetRow {
+	r.t.Helper()
+	var found []struct {
+		Channel        string     `gorm:"column:channel"`
+		Purpose        string     `gorm:"column:purpose"`
+		DestinationMAC string     `gorm:"column:destination_mac"`
+		TenantID       string     `gorm:"column:tenant_id"`
+		Outcome        string     `gorm:"column:outcome"`
+		RefundedAt     *time.Time `gorm:"column:refunded_at"`
+		AttemptedAt    time.Time  `gorm:"column:attempted_at"`
+	}
+	err := r.db.DB().WithContext(r.t.Context()).Raw(
+		"SELECT channel, purpose, destination_mac, tenant_id, outcome, refunded_at, attempted_at "+
+			"FROM sms_budget_events WHERE tenant_id = ? ORDER BY attempted_at", tenantID).Scan(&found).Error
+	if err != nil {
+		r.t.Fatalf("reading the sms budget rows: %v", err)
+	}
+	out := make([]budgetRow, 0, len(found))
+	for _, row := range found {
+		out = append(out, budgetRow{
+			channel: row.Channel, purpose: row.Purpose, destination: row.DestinationMAC,
+			tenant: row.TenantID, outcome: row.Outcome, refunded: row.RefundedAt != nil,
+			attemptedAt: row.AttemptedAt,
+		})
+	}
+	return out
+}
+
+// seedLedger writes one attempt straight into the shared ledger, the way the
+// other sending channel or an earlier dispatch would have, and answers its
+// identifier. A case uses it to fill the cross-channel ceiling without a send.
+func (r *rig) seedLedger(t *testing.T, a budget.Attempt) budget.ID {
+	t.Helper()
+	if a.AttemptedAt.IsZero() {
+		a.AttemptedAt = time.Now().UTC()
+	}
+	id, err := budget.New(r.db.DB()).Record(context.Background(), a)
+	if err != nil {
+		r.t.Fatalf("seeding the shared ledger: %v", err)
+	}
+	return id
+}
+
+// refundLedger marks one seeded attempt refunded, the way a definitive failure
+// does.
+func (r *rig) refundLedger(t *testing.T, id budget.ID) {
+	t.Helper()
+	if err := budget.New(r.db.DB()).MarkRefunded(context.Background(), id, time.Now().UTC()); err != nil {
+		r.t.Fatalf("refunding a seeded attempt: %v", err)
+	}
+}
+
+// ceilingCount reads the cross-channel ceiling over the last hour, which is the
+// same window a dispatch is checked against.
+func (r *rig) ceilingCount(t *testing.T) int64 {
+	t.Helper()
+	n, err := budget.New(r.db.DB()).CountCeiling(context.Background(), time.Now().UTC().Add(-time.Hour))
+	if err != nil {
+		r.t.Fatalf("counting the shared ceiling: %v", err)
+	}
+	return n
+}
+
+// stubBudgetStore is a stand-in ledger with every window empty. A case uses it
+// where the assembly cannot carry the real ledger; a test that inspects rows
+// drives the real one through newRig.
+type stubBudgetStore struct{}
+
+func (stubBudgetStore) Record(context.Context, budget.Attempt) (budget.ID, error) { return 1, nil }
+func (stubBudgetStore) MarkRefunded(context.Context, budget.ID, time.Time) error  { return nil }
+func (stubBudgetStore) Count(context.Context, budget.Query) (int64, error)        { return 0, nil }
+func (stubBudgetStore) CountDistinctDestinations(context.Context, budget.Query) (int64, error) {
+	return 0, nil
+}
+
+func (stubBudgetStore) Oldest(context.Context, budget.Query) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
+func (stubBudgetStore) Latest(context.Context, budget.Query) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+func (stubBudgetStore) CountCeiling(context.Context, time.Time) (int64, error) { return 0, nil }
+func (stubBudgetStore) PruneBefore(context.Context, time.Time) (int64, error)  { return 0, nil }
 
 // stubRegistry and stubSender are the sms seams a case drives when it turns the
 // sms channel on. The registry resolves every message to a code and the sender
@@ -999,4 +1117,12 @@ func (s *stubSender) failWith(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sendErr = err
+}
+
+// sendCount is how many times a case reached the sms carrier, including the
+// calls that failed.
+func (s *stubSender) sendCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sends
 }

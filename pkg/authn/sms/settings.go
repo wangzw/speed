@@ -42,6 +42,12 @@ const (
 	perAccountHourlyKey = "per-account-hourly"
 )
 
+// ceilingHourlyPath is the cross-channel emergency ceiling's full key. The
+// setting is declared by the shared SMS ledger module under the shared sms
+// namespace, because both sending channels spend it; this module reads it by the
+// full key instead of declaring it a second time.
+const ceilingHourlyPath = "sms.ceiling-hourly"
+
 // The full paths the reads and the relaxation watch go by.
 var (
 	allowedPrefixesPath = ModuleName + "." + allowedPrefixesKey
@@ -179,6 +185,13 @@ var defaults = options{
 	PerAccountHourly: 20,
 }
 
+// defaultCeilingHourly is what this module reads the cross-channel ceiling as
+// when the settings store is absent or holds a value outside the domain. The
+// ledger module declares the setting and this value; the reader keeps its own
+// copy because an assembly with no settings store still has to answer, and the
+// relaxation comparison needs the declared default for a key that held no row.
+const defaultCeilingHourly = 5000
+
 // The domains of the settings. Each is the one statement of its range.
 func codeLengthInDomain(n int) bool { return n >= minCodeLength && n <= maxCodeLength }
 
@@ -216,6 +229,10 @@ func perFlowSendsInDomain(n int) bool { return n >= minPerFlowSends && n <= maxP
 func perAccountHourlyInDomain(n int) bool {
 	return n >= minPerAccountHourly && n <= maxPerAccountHourly
 }
+
+// ceilingHourlyInDomain holds the cross-channel ceiling to the same range as a
+// purpose's deployment-wide budget: it is a count of sends in an hour.
+func ceilingHourlyInDomain(n int) bool { return globalHourlyInDomain(n) }
 
 // allowedPrefixesTextInDomain reports whether a JSON array of strings is a legal
 // value of the allowed-prefixes setting: the text parses as an array of strings.
@@ -438,6 +455,14 @@ func (r *reader) perSourceAttemptHourly() int {
 
 func (r *reader) perAccountHourly() int {
 	return readTuned(r, perAccountHourlyPath, defaults.PerAccountHourly, perAccountHourlyInDomain)
+}
+
+// ceilingHourly reads the deployment's cross-channel emergency ceiling by its
+// full key. The ledger module declares the setting; this module only reads it.
+// It is read before every send, so a value outside its domain falls back to the
+// declared default rather than to no ceiling.
+func (r *reader) ceilingHourly() int {
+	return readTuned(r, ceilingHourlyPath, defaultCeilingHourly, ceilingHourlyInDomain)
 }
 
 // globalHourly reads the global hourly budget of one purpose. The purpose is one

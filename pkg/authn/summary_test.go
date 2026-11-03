@@ -35,7 +35,7 @@ var auditDetailKeys = []string{
 // instrument table.
 var metricAttributeKeys = []string{
 	"outcome", "method", "factor", "scope", "operation", "channel", "protocol",
-	"algorithm", "hook", "mandatory",
+	"algorithm", "hook", "mandatory", "purpose", "dimension",
 }
 
 // metricInstruments is the design's instrument names, Meter authn. The
@@ -45,6 +45,7 @@ var metricInstruments = []string{
 	"authn.password.derive.duration", "authn.password.reset.operations", "authn.mfa.verifications",
 	"authn.session.operations",
 	"authn.token.operations", "authn.throttle.engagements", "authn.sms.sends",
+	"authn.sms.budget.utilization",
 	"authn.sso.assertions", "authn.impersonation.sessions", "authn.audit.write-failures",
 	"authn.cleanup.failures",
 }
@@ -67,11 +68,13 @@ var metricAttributeValues = map[string][]string{
 	"factor":    {"totp", "sms", "webauthn"},
 	"scope":     {"identifier", "account", "factor", "phone", "client", "signup-username"},
 	"operation": {"created", "elevated", "revoked", "revoked-all", "purged", "issued", "refreshed", "client-credentials", "send", "verify", "complete"},
-	"channel":   {"email", "sms"},
+	"channel":   {"email", "sms", "authn"},
 	"protocol":  {"saml", "oidc"},
 	"algorithm": {"argon2id", "pbkdf2-sha256"},
 	"hook":      {"session", "mfa", "sms", "secret", "other"},
 	"mandatory": {"true", "false"},
+	"purpose":   {"login", "mfa", "enroll", "reset", "shared"},
+	"dimension": {"ceiling", "phone", "source", "source-distinct", "source-attempt", "global", "global-attempt", "account"},
 }
 
 // The roots the case reads. The audit and attribute scans take the authn tree

@@ -320,11 +320,12 @@ func fullStart() Start {
 	return Start{
 		Purpose: PurposeStepUp, Account: "a", Fields: map[string]string{"k": "v"},
 		Client: ClientInfo{IP: "192.0.2.1", UserAgent: "ua"}, SendsLeft: 3, Locale: "en-US",
+		Proof: "start-proof",
 	}
 }
 
 func fullFlowState() FlowState {
-	return FlowState{ID: "f", Purpose: PurposeLogin, Step: "s", Provider: "p", Account: "a", Session: "s", Private: []byte{1, 2}, SendsLeft: 2, Locale: "zh-CN", Source: "192.0.2.1"}
+	return FlowState{ID: "f", Purpose: PurposeLogin, Step: "s", Provider: "p", Account: "a", Session: "s", Private: []byte{1, 2}, SendsLeft: 2, Locale: "zh-CN", Source: "192.0.2.1", Proof: "flow-proof"}
 }
 
 func fullStepInput() StepInput {
@@ -431,7 +432,8 @@ func TestCloneSharesNothingWithTheOriginal(t *testing.T) {
 
 	// Writing through the original after the copy leaves the copy alone, for
 	// each shape of field once: a map, a slice of values, a slice of bytes, a
-	// pointer, and url.Values, a map of slices.
+	// pointer, url.Values (a map of slices), and the proof string that the
+	// flow fixtures carry.
 	a := fullAccount()
 	ac := a.Clone()
 	a.Attributes["k"] = "changed"
@@ -447,8 +449,18 @@ func TestCloneSharesNothingWithTheOriginal(t *testing.T) {
 	fs := fullFlowState()
 	fc := fs.Clone()
 	fs.Private[0] = 99
+	fs.Proof = "changed"
 	if fc.Private[0] != 1 {
 		t.Error("a write into the original's bytes reached the copy of a FlowState")
+	}
+	if fc.Proof != "flow-proof" {
+		t.Error("a write into the original's proof reached the copy of a FlowState")
+	}
+	st := fullStart()
+	stc := st.Clone()
+	st.Proof = "changed"
+	if stc.Proof != "start-proof" {
+		t.Error("a write into the original's proof reached the copy of a Start")
 	}
 	q := fullQuery()
 	qc := q.Clone()

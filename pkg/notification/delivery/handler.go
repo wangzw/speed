@@ -13,6 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/sms"
+	"github.com/vislake/speed/pkg/sms/budget"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -52,7 +53,7 @@ func (p *pipeline) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn)
 	if !ok {
 		return jobs.Result{}, fmt.Errorf("%s: %w", ModuleName, tenant.ErrNoTenantInContext)
 	}
-	d, err := decodeDispatch(job.Payload)
+	d, attempt, err := decodeDispatch(job.Payload)
 	if err != nil {
 		return jobs.Result{}, fmt.Errorf("%s: %w", ModuleName, err)
 	}
@@ -67,9 +68,13 @@ func (p *pipeline) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn)
 	if err != nil {
 		return jobs.Result{}, fmt.Errorf("%s: resolving the effective channels of %q: %w", ModuleName, d.TypeKey, err)
 	}
+	// A charged sms attempt is refunded by the sms channel itself when the
+	// message certainly did not leave the process. A recipient whose effective
+	// channels no longer name sms keeps the charge: the charge was made against
+	// the matrix the submission read, and the row then counts conservatively.
 	var failures []error
 	for _, ch := range channels {
-		if err := p.deliver(ctx, id, d, spec, ch); err != nil {
+		if err := p.deliver(ctx, id, d, spec, ch, attempt); err != nil {
 			failures = append(failures, err)
 		}
 	}
@@ -82,8 +87,10 @@ func (p *pipeline) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn)
 // deliver settles one channel. It derives the channel's idempotency key, reads
 // the ledger and skips a channel that is already settled — one that sent, or one
 // whose seam was absent — then sends and records the result. A channel that
-// failed before is attempted again, which is what a retry of the job is for.
-func (p *pipeline) deliver(ctx context.Context, id tenant.ID, d notification.Dispatch, spec notification.TypeSpec, ch notification.Channel) error {
+// failed before is attempted again, which is what a retry of the job is for. The
+// charged sms attempt rides along so the sms channel can refund it when the
+// message certainly did not leave the process.
+func (p *pipeline) deliver(ctx context.Context, id tenant.ID, d notification.Dispatch, spec notification.TypeSpec, ch notification.Channel, attempt budget.ID) error {
 	key, err := channelKey(id, d, ch)
 	if err != nil {
 		return fmt.Errorf("%s: deriving the idempotency key of the %s channel: %w", ModuleName, ch, err)
@@ -99,7 +106,7 @@ func (p *pipeline) deliver(ctx context.Context, id tenant.ID, d notification.Dis
 		return nil
 	}
 	started := time.Now()
-	row, sendErr := p.send(ctx, d, spec, ch, key)
+	row, sendErr := p.send(ctx, d, spec, ch, key, attempt)
 	row.DurationMS = time.Since(started).Milliseconds()
 	row.UpdatedAt = nowMS()
 	if err := p.ledger.record(ctx, row); err != nil {
@@ -111,7 +118,7 @@ func (p *pipeline) deliver(ctx context.Context, id tenant.ID, d notification.Dis
 // send runs one channel's attempt and builds its ledger row. The row carries the
 // channel's terminal status; the error is what the handler joins so the job
 // retries, and it is nil for a success and for a skip.
-func (p *pipeline) send(ctx context.Context, d notification.Dispatch, spec notification.TypeSpec, ch notification.Channel, key string) (sendRow, error) {
+func (p *pipeline) send(ctx context.Context, d notification.Dispatch, spec notification.TypeSpec, ch notification.Channel, key string, attempt budget.ID) (sendRow, error) {
 	now := nowMS()
 	row := sendRow{
 		ID:              uuid.NewString(),
@@ -129,7 +136,7 @@ func (p *pipeline) send(ctx context.Context, d notification.Dispatch, spec notif
 	case notification.ChannelEmail:
 		return p.sendEmail(ctx, d, spec, row)
 	case notification.ChannelSMS:
-		return p.sendSMS(ctx, d, spec, row)
+		return p.sendSMS(ctx, d, spec, row, attempt)
 	default:
 		row.Status = statusFailed
 		row.Error = textPtr(fmt.Sprintf("the channel %q is not one this module sends on", ch))
@@ -195,29 +202,34 @@ func (p *pipeline) sendEmail(ctx context.Context, d notification.Dispatch, spec 
 // skips the channel; a parameter that cannot be stringified, a missing
 // destination and a type that declares no template are this module's own
 // failures, recorded with this module's own reason and never reaching the
-// vendor.
+// vendor. Every path that certainly leaves the message unsent refunds the
+// charged attempt, so the send budget is given back while the attempt budget
+// keeps counting it: a skipped channel, a local refusal and a carrier's throttle,
+// rejection or unroutable answer. An uncertain outcome and an error outside the
+// carrier's sentinels keep the budget, because the message may have gone out.
 //
 // A receipt is acceptance, not delivery: a carrier whose receipts are
 // asynchronous answers a send with the vendor's message identifier alone, so the
 // ledger's succeeded says the vendor took the message, not that the recipient
 // received it. The final state arrives through the vendor's own channel, which
 // this module does not follow.
-func (p *pipeline) sendSMS(ctx context.Context, d notification.Dispatch, spec notification.TypeSpec, row sendRow) (sendRow, error) {
+func (p *pipeline) sendSMS(ctx context.Context, d notification.Dispatch, spec notification.TypeSpec, row sendRow, attempt budget.ID) (sendRow, error) {
 	if !p.seams.smsReady() {
 		row.Status = statusSkipped
+		p.refundAttempt(ctx, attempt)
 		return row, nil
 	}
 	template, err := p.smsTemplate(ctx, d, spec)
 	if err != nil {
-		return p.localFailure(ctx, row, "notification.delivery.sms-template", err)
+		return p.localSMSFailure(ctx, row, attempt, "notification.delivery.sms-template", err)
 	}
 	params, err := stringifyParams(d.Params)
 	if err != nil {
-		return p.localFailure(ctx, row, "notification.delivery.sms-params", err)
+		return p.localSMSFailure(ctx, row, attempt, "notification.delivery.sms-params", err)
 	}
 	to, err := destination(d.Params)
 	if err != nil {
-		return p.localFailure(ctx, row, "notification.delivery.sms-destination", err)
+		return p.localSMSFailure(ctx, row, attempt, "notification.delivery.sms-destination", err)
 	}
 	resolved, err := p.seams.registry.Resolve(sms.Message{
 		To:       to,
@@ -229,6 +241,7 @@ func (p *pipeline) sendSMS(ctx context.Context, d notification.Dispatch, spec no
 	if err != nil {
 		row.Status = statusFailed
 		row.Error = textPtr(err.Error())
+		p.refundAttempt(ctx, attempt)
 		return row, fmt.Errorf("%s: resolving the sms template %q: %w", ModuleName, template, err)
 	}
 	started := time.Now()
@@ -237,6 +250,9 @@ func (p *pipeline) sendSMS(ctx context.Context, d notification.Dispatch, spec no
 	if err != nil {
 		row.Status = statusFailed
 		row.Error = textPtr(err.Error())
+		if definitiveFailure(err) {
+			p.refundAttempt(ctx, attempt)
+		}
 		p.reportSendFailure(notification.ChannelSMS, d.TypeKey, err, elapsed)
 		return row, fmt.Errorf("%s: sending the sms message of %q: %w", ModuleName, d.TypeKey, err)
 	}
@@ -244,6 +260,17 @@ func (p *pipeline) sendSMS(ctx context.Context, d notification.Dispatch, spec no
 	row.ProviderReceiptID = textPtr(receipt.ProviderID)
 	p.reportSent(notification.ChannelSMS, d.TypeKey, receipt.ProviderID, elapsed)
 	return row, nil
+}
+
+// localSMSFailure records one of this module's own refusals as a failed sms
+// channel and refunds the charged attempt: nothing reached the carrier, so the
+// send budget is given back. The reason written into the ledger is rendered from
+// this module's own catalog, so the producer of the failure renders its text;
+// the returned error is the cause itself, which is what the handler joins.
+func (p *pipeline) localSMSFailure(ctx context.Context, row sendRow, attempt budget.ID, key string, cause error) (sendRow, error) {
+	row, err := p.localFailure(ctx, row, key, cause)
+	p.refundAttempt(ctx, attempt)
+	return row, err
 }
 
 // localFailure records one of this module's own refusals as a failed channel.

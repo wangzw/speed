@@ -30,6 +30,7 @@ func (r *rig) liftBudgets() {
 	r.store.set(globalAttemptEnrollPath, 1000000)
 	r.store.set(globalAttemptResetPath, 1000000)
 	r.store.set(perAccountHourlyPath, 1000)
+	r.store.set(ceilingHourlyPath, 1000000)
 }
 
 // loginTo sends a delivered login code for number.

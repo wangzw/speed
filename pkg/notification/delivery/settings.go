@@ -9,20 +9,39 @@ import (
 )
 
 // The setting keys this module declares, relative to its namespace, and the full
-// paths a read goes by. The three bound an external delivery: two windows per
-// recipient and one window across the deployment.
+// paths a read goes by. The four bound an sms delivery: two windows per recipient
+// and two fan-out windows per tenant.
 const (
-	perRecipientHourlyKey = "per-recipient-hourly"
-	perRecipientDailyKey  = "per-recipient-daily"
-	globalHourlyKey       = "global-hourly"
+	perRecipientHourlyKey   = "per-recipient-hourly"
+	perRecipientDailyKey    = "per-recipient-daily"
+	tenantDistinctHourlyKey = "tenant-distinct-hourly"
+	attemptHourlyKey        = "attempt-hourly"
 )
 
 // The full paths the reads go by.
 var (
-	perRecipientHourlyPath = ModuleName + "." + perRecipientHourlyKey
-	perRecipientDailyPath  = ModuleName + "." + perRecipientDailyKey
-	globalHourlyPath       = ModuleName + "." + globalHourlyKey
+	perRecipientHourlyPath   = ModuleName + "." + perRecipientHourlyKey
+	perRecipientDailyPath    = ModuleName + "." + perRecipientDailyKey
+	tenantDistinctHourlyPath = ModuleName + "." + tenantDistinctHourlyKey
+	attemptHourlyPath        = ModuleName + "." + attemptHourlyKey
 )
+
+// ceilingHourlyPath is the cross-channel ceiling the ledger module declares
+// under the shared sms namespace. This module reads it and declares no copy of
+// its own: the count spans both sending channels, so a second, notification-only
+// ceiling would only add a second bill.
+const ceilingHourlyPath = "sms.ceiling-hourly"
+
+// The ceiling's domain and declared default. They are the ledger module's, read
+// here so a deployment that has not tuned the ceiling reads the same number
+// whichever channel consults it.
+const (
+	minCeilingHourly     = 1
+	maxCeilingHourly     = 1000000
+	defaultCeilingHourly = 5000
+)
+
+func ceilingHourlyInDomain(n int) bool { return n >= minCeilingHourly && n <= maxCeilingHourly }
 
 // The bounds of the setting domains. The floor is one and not zero: a budget is
 // a security bound, and a zero would turn it off. An operator who wants a limit
@@ -35,27 +54,33 @@ const (
 	minPerRecipientDaily = 1
 	maxPerRecipientDaily = 10000
 
-	minGlobalHourly = 1
-	maxGlobalHourly = 10000000
+	minTenantDistinctHourly = 1
+	maxTenantDistinctHourly = 10000
+
+	minAttemptHourly = 1
+	maxAttemptHourly = 100000
 )
 
 // settingDefaults carries the declared default of each setting. The values are
 // this module's own: twenty external messages an hour and one hundred a day to
 // one recipient leave room for ordinary business notification while stopping a
-// producer that has begun to loop, and the deployment-wide ten thousand an hour
-// bounds the carrier bill a runaway producer can run up. An operator tunes them
-// from the settings surface without a restart.
+// producer that has begun to loop. Twenty different recipients an hour bound one
+// tenant's fan-out, and three hundred attempts an hour bound a producer that
+// keeps aiming at destinations whose sends fail. An operator tunes them from the
+// settings surface without a restart.
 type settingDefaults struct {
-	PerRecipientHourly int `config:"per-recipient-hourly"`
-	PerRecipientDaily  int `config:"per-recipient-daily"`
-	GlobalHourly       int `config:"global-hourly"`
+	PerRecipientHourly   int `config:"per-recipient-hourly"`
+	PerRecipientDaily    int `config:"per-recipient-daily"`
+	TenantDistinctHourly int `config:"tenant-distinct-hourly"`
+	AttemptHourly        int `config:"attempt-hourly"`
 }
 
 // defaultSettings is what this module is worth without a settings row.
 var defaultSettings = settingDefaults{
-	PerRecipientHourly: 20,
-	PerRecipientDaily:  100,
-	GlobalHourly:       10000,
+	PerRecipientHourly:   20,
+	PerRecipientDaily:    100,
+	TenantDistinctHourly: 20,
+	AttemptHourly:        300,
 }
 
 // The domains of the settings.
@@ -67,7 +92,11 @@ func perRecipientDailyInDomain(n int) bool {
 	return n >= minPerRecipientDaily && n <= maxPerRecipientDaily
 }
 
-func globalHourlyInDomain(n int) bool { return n >= minGlobalHourly && n <= maxGlobalHourly }
+func tenantDistinctHourlyInDomain(n int) bool {
+	return n >= minTenantDistinctHourly && n <= maxTenantDistinctHourly
+}
+
+func attemptHourlyInDomain(n int) bool { return n >= minAttemptHourly && n <= maxAttemptHourly }
 
 // settingsSchema declares this module's delivery budgets. The namespace is the
 // module's own name, as it is for every registering module, so an operator
@@ -78,28 +107,36 @@ func settingsSchema() settings.Schema {
 		Mounts:    []settings.Mount{{Value: &defaultSettings}},
 		Items: map[string]settings.Item{
 			perRecipientHourlyKey: {
-				Description: "the most external messages one recipient may be sent in an hour",
+				Description: "the most sms messages one recipient may be sent in an hour",
 				Domain:      settings.DomainOf("whole numbers from 1 to 1000", perRecipientHourlyInDomain),
 			},
 			perRecipientDailyKey: {
-				Description: "the most external messages one recipient may be sent in a day",
+				Description: "the most sms messages one recipient may be sent in a day",
 				Domain:      settings.DomainOf("whole numbers from 1 to 10000", perRecipientDailyInDomain),
 			},
-			globalHourlyKey: {
-				Description: "the most external messages the whole deployment may send in an hour, " +
-					"across every recipient and tenant",
-				Domain: settings.DomainOf("whole numbers from 1 to 10000000", globalHourlyInDomain),
+			tenantDistinctHourlyKey: {
+				Description: "the most different recipients one tenant may be sent an sms message in an hour",
+				Domain:      settings.DomainOf("whole numbers from 1 to 10000", tenantDistinctHourlyInDomain),
+			},
+			attemptHourlyKey: {
+				Description: "the most sms send attempts one tenant may make in an hour, counted whether " +
+					"or not the carrier accepted the message",
+				Domain: settings.DomainOf("whole numbers from 1 to 100000", attemptHourlyInDomain),
 			},
 		},
 	}
 }
 
-// budgetLimits is the three limits one dispatch is checked against, read once
-// per dispatch so that a change reaches the next dispatch without a restart.
+// budgetLimits is the limits one dispatch is checked against, read once per
+// dispatch so that a change reaches the next dispatch without a restart. The
+// ceiling is the one count both sending channels share; the other four are this
+// channel's own.
 type budgetLimits struct {
-	perRecipientHourly int
-	perRecipientDaily  int
-	globalHourly       int
+	ceilingHourly        int
+	perRecipientHourly   int
+	perRecipientDaily    int
+	tenantDistinctHourly int
+	attemptHourly        int
 }
 
 // settingReader reads the delivery budgets. The store is nil when the assembly
@@ -125,9 +162,11 @@ func newSettingReader(store settings.Store, logger *slog.Logger) *settingReader 
 // limits reads every budget the dispatch check needs.
 func (r *settingReader) limits() budgetLimits {
 	return budgetLimits{
-		perRecipientHourly: readTuned(r, perRecipientHourlyPath, defaultSettings.PerRecipientHourly, perRecipientHourlyInDomain),
-		perRecipientDaily:  readTuned(r, perRecipientDailyPath, defaultSettings.PerRecipientDaily, perRecipientDailyInDomain),
-		globalHourly:       readTuned(r, globalHourlyPath, defaultSettings.GlobalHourly, globalHourlyInDomain),
+		ceilingHourly:        readTuned(r, ceilingHourlyPath, defaultCeilingHourly, ceilingHourlyInDomain),
+		perRecipientHourly:   readTuned(r, perRecipientHourlyPath, defaultSettings.PerRecipientHourly, perRecipientHourlyInDomain),
+		perRecipientDaily:    readTuned(r, perRecipientDailyPath, defaultSettings.PerRecipientDaily, perRecipientDailyInDomain),
+		tenantDistinctHourly: readTuned(r, tenantDistinctHourlyPath, defaultSettings.TenantDistinctHourly, tenantDistinctHourlyInDomain),
+		attemptHourly:        readTuned(r, attemptHourlyPath, defaultSettings.AttemptHourly, attemptHourlyInDomain),
 	}
 }
 

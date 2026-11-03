@@ -14,6 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/sms"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // errCallerDefect is what a Send whose input breaks the caller's contract is
@@ -29,15 +30,15 @@ var errPoolFull = errors.New("the sending queue is full")
 // than as budget-exhausted, which a dashboard would read as a policy refusal.
 var errBudgetReadFailed = errors.New("a budget could not be read")
 
-// Send checks the allowed table and every budget, writes the challenge row,
-// hands the sending to the bounded worker pool and returns at once. A send that
-// certainly did not leave — a registry that will not build the message, or a
-// queue that filled before the enqueue — refunds the row, so a message the user
-// never received does not spend the budget. A suppressed request — a number that
-// is not registered while signup is closed — takes the same path and the same
-// lock order as a real one, and differs in two ways the answer hides: its row is
-// marked suppressed, so it does not spend the deployment-wide budget, and
-// nothing is enqueued.
+// Send checks the allowed table and every budget, writes the challenge row and
+// one attempt in the shared ledger, hands the sending to the bounded worker pool
+// and returns at once. A send that certainly did not leave — a registry that will
+// not build the message, or a queue that filled before the enqueue — refunds the
+// row, so a message the user never received does not spend the budget. A
+// suppressed request — a number that is not registered while signup is closed —
+// takes the same path and the same lock order as a real one, and differs in two
+// ways the answer hides: its row is marked suppressed, so it does not spend the
+// deployment-wide budget, and nothing is enqueued.
 func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 	if err := checkSendCode(in); err != nil {
 		return "", err
@@ -73,10 +74,11 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 	id := event.NewID()
 	ttl := p.settings.codeTTL()
 	sourceMAC := p.sourceMAC(in.Source)
+	phoneMAC := p.database.BlindIndex(in.Phone)
 	row := challengeRow{
 		ID:          id,
 		Purpose:     in.Purpose,
-		PhoneMAC:    p.database.BlindIndex(in.Phone),
+		PhoneMAC:    phoneMAC,
 		SourceMAC:   sourceMAC,
 		AccountID:   accountOf(in),
 		Suppressed:  !in.Deliver,
@@ -85,11 +87,32 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 		CreatedAt:   now,
 		ExpiresAt:   now.Add(ttl),
 	}
+	// The shared ledger records the attempt before the carrier is asked. A
+	// suppressed request never reaches the carrier, so its row is marked
+	// suppressed and written already refunded: it spends no send budget, no
+	// share of the ceiling and no attempt budget, but the number, source and
+	// account dimensions still count it, so the point of refusal does not tell a
+	// registered number from an unregistered one. An attempt a budget refuses
+	// writes no row at all, because the refusal rolls the transaction back.
+	attempt := budget.Attempt{
+		Channel:        budget.ChannelAuthn,
+		Purpose:        in.Purpose,
+		SourceMAC:      sourceMAC,
+		DestinationMAC: phoneMAC,
+		AccountID:      accountOf(in),
+		AttemptedAt:    now,
+		Outcome:        budget.OutcomePending,
+		Suppressed:     !in.Deliver,
+	}
+	if !in.Deliver {
+		refunded := now
+		attempt.RefundedAt = &refunded
+	}
 	// The budget check runs inside the write transaction, after the locks the
 	// ordered set takes, and the row is written only while those locks are held.
 	// A refusal rolled back the transaction, so it wrote nothing.
-	if err = p.register.insert(ctx, row, func(tx *gorm.DB) error {
-		return p.checkBudgets(tx, in, sourceMAC, limits, now)
+	if _, err = p.register.insert(ctx, row, &attempt, func(tx *gorm.DB) error {
+		return p.checkBudgets(ctx, tx, in, sourceMAC, limits, now)
 	}); err != nil {
 		if isBudgetRefusal(err) {
 			// A budget that could not be read is an outage, not a spent budget,
@@ -235,38 +258,6 @@ func (p *product) sourceMAC(source string) *string {
 	return &mac
 }
 
-// budgetSource is where the send budgets read their counts. Today the challenge
-// table answers every method; the shared cross-channel ledger lands behind this
-// same surface, so the budget check keeps its call sites and only the
-// implementation behind them changes.
-type budgetSource interface {
-	lastCreatedForPhone(q *gorm.DB, phoneMAC string) (time.Time, bool, error)
-
-	countPhoneSince(q *gorm.DB, phoneMAC string, since time.Time) (int64, error)
-	oldestPhoneSince(q *gorm.DB, phoneMAC string, since time.Time) (time.Time, bool, error)
-
-	countSourceSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error)
-	oldestSourceSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error)
-
-	countSourceDistinctSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error)
-	oldestSourceDistinctSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error)
-
-	countSourceAttemptsSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error)
-	oldestSourceAttemptsSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error)
-
-	countRealPurposeSince(q *gorm.DB, purpose string, since time.Time) (int64, error)
-	oldestRealPurposeSince(q *gorm.DB, purpose string, since time.Time) (time.Time, bool, error)
-
-	countPurposeAttemptsSince(q *gorm.DB, purpose string, since time.Time) (int64, error)
-	oldestPurposeAttemptsSince(q *gorm.DB, purpose string, since time.Time) (time.Time, bool, error)
-
-	countAccountSince(q *gorm.DB, account string, since time.Time) (int64, error)
-	oldestAccountSince(q *gorm.DB, account string, since time.Time) (time.Time, bool, error)
-}
-
-// The challenge table is the budget source until the shared ledger arrives.
-var _ budgetSource = (*register)(nil)
-
 // budgetLimits is every limit the budget check compares against, read once
 // before the write transaction opens. Reading them first is what keeps a
 // settings read out of the span in which an advisory lock is held.
@@ -282,6 +273,9 @@ type budgetLimits struct {
 	globalHourly            int
 	globalAttemptHourly     int
 	perAccountHourly        int
+	// ceilingHourly is the shared cross-channel ceiling, the first budget every
+	// send is held to.
+	ceilingHourly int
 }
 
 // readBudgetLimits reads every setting the budget check needs, including the
@@ -299,7 +293,20 @@ func (p *product) readBudgetLimits(purpose string) budgetLimits {
 		globalHourly:            p.settings.globalHourly(purpose),
 		globalAttemptHourly:     p.settings.globalAttemptHourly(purpose),
 		perAccountHourly:        p.settings.perAccountHourly(),
+		ceilingHourly:           p.settings.ceilingHourly(),
 	}
+}
+
+// budgetCheck is one budget a send is held to: the ledger query that reads it,
+// the limit it is compared against, the metric dimension it reports under and the
+// window it slides over. distinct counts different destinations rather than
+// rows, which is the shape the per-source diversity budget needs.
+type budgetCheck struct {
+	query     budget.Query
+	limit     int
+	dimension string
+	window    time.Duration
+	distinct  bool
 }
 
 // isBudgetRefusal reports whether a send error came from the budget check and
@@ -312,32 +319,60 @@ func isBudgetRefusal(err error) bool {
 }
 
 // checkBudgets applies the budgets in order against the transaction the send
-// holds its locks in, and returns the first that is over, or nil. Running on the
-// transaction is what makes the cap hard: every count includes what a concurrent
-// send of a shared dimension has committed, and the row guarded by the same
-// transaction is written only while the ordered locks are held. The number,
-// source and account budgets count suppressed rows too, so a window's rows reach
-// the limit at the same count whether the numbers are registered or not. The
-// global budget is the exception: it counts only unsuppressed rows, so anonymous
-// requests for numbers nobody registered cannot exhaust the deployment, while the
-// dimensions that stay asymmetric keep that fact unobservable. The source
-// dimension runs only when the send carries a source; an empty source is
-// fail-open and takes no source lock. The send dimensions leave out refunded
-// rows: a message the carrier certainly did not take gives its spend back, while
-// an uncertain outcome stays counted. The distinct-destination dimension is one
-// of those send dimensions: it counts the different numbers a source sent to in
-// the window, and a refund removes a destination from it. The attempt dimensions
-// are the exception, and count the other way: they count only a row a certain
-// failure refunded, so a destination or carrier that always fails is what spends
-// the attempt budget, while a send that goes out does not. The per-source
-// attempt dimension counts suppressed rows like the source's other dimensions;
-// the deployment-wide attempt dimension counts only unsuppressed rows, like the
-// deployment-wide send budget.
-func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string, limits budgetLimits, now time.Time) error {
+// holds its locks in, and returns the first that is over, or nil. Every count is
+// read from the shared ledger through a store bound to that transaction, so the
+// cap is hard: a count includes what a concurrent send of a shared dimension has
+// committed, and the row guarded by the same transaction is written only while
+// the ordered locks are held. The number, source, account and
+// distinct-destination budgets count suppressed rows too, so a window's rows
+// reach the limit at the same count whether the numbers are registered or not.
+// The global budget is the exception: it counts only unsuppressed rows, so
+// anonymous requests for numbers nobody registered cannot exhaust the
+// deployment, while the dimensions that stay asymmetric keep that fact
+// unobservable. The source dimension runs only when the send carries a source;
+// an empty source is fail-open and takes no source lock. The send dimensions
+// leave out refunded rows: a message the carrier certainly did not take gives its
+// spend back, while an uncertain outcome stays counted. The distinct-destination
+// dimension is one of those send dimensions: it counts the different numbers a
+// source sent to in the window, and a refund removes a destination from it. The
+// attempt dimensions are the exception, and count the other way: they count only
+// a row a certain failure refunded and never a suppressed one, so a destination
+// or carrier that always fails is what spends the attempt budget, while a send
+// that goes out does not. The deployment-wide attempt dimension keeps the global
+// budget's asymmetry for the same reason.
+//
+// The shared cross-channel ceiling is consulted before every one of them. It is
+// the one count the authentication and notification channels share, read from
+// the ledger rather than from this module's challenge table, and an attempt a
+// certain failure refunded does not spend it.
+//
+// The resend interval is checked before the dimensions. It is not a budget
+// dimension but its own limit, measured from the newest attempt to the number:
+// every attempt counts, refunded or suppressed, because the interval is about
+// how often a code was asked for and must not differ between a registered and
+// an unregistered number.
+func (p *product) checkBudgets(ctx context.Context, tx *gorm.DB, in authn.SendCode, sourceMAC *string, limits budgetLimits, now time.Time) error {
 	phoneMAC := p.database.BlindIndex(in.Phone)
+	ledger := budget.New(tx)
+
+	hourlySince := now.Add(-time.Hour)
+	dailySince := now.Add(-24 * time.Hour)
+
+	if limit := limits.ceilingHourly; limit > 0 {
+		if err := p.throttleCeiling(ctx, ledger, limit, hourlySince, now); err != nil {
+			return err
+		}
+	}
 
 	if interval := limits.resendInterval; interval > 0 {
-		last, ok, err := p.budgets.lastCreatedForPhone(tx, phoneMAC)
+		last, ok, err := ledger.Latest(ctx, budget.Query{
+			Channel:           budget.ChannelAuthn,
+			Dimension:         budget.DimensionDestination,
+			Value:             phoneMAC,
+			Since:             now.Add(-interval),
+			IncludeRefunded:   true,
+			IncludeSuppressed: true,
+		})
 		if err != nil {
 			return p.budgetReadFailed(err)
 		}
@@ -348,67 +383,51 @@ func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string
 		}
 	}
 
-	hourlySince := now.Add(-time.Hour)
-	dailySince := now.Add(-24 * time.Hour)
-
-	if err := p.throttleOver(
-		func() (int64, error) { return p.budgets.countPhoneSince(tx, phoneMAC, hourlySince) },
-		func() (time.Time, bool, error) { return p.budgets.oldestPhoneSince(tx, phoneMAC, hourlySince) },
-		limits.perPhoneHourly, time.Hour, now); err != nil {
-		return err
+	// The number's two windows. A suppressed row counts: the number budget is
+	// what keeps the point of refusal from telling a registered number from an
+	// unregistered one.
+	phone := budget.Query{
+		Channel:           budget.ChannelAuthn,
+		Dimension:         budget.DimensionDestination,
+		Value:             phoneMAC,
+		Since:             hourlySince,
+		IncludeSuppressed: true,
 	}
-	if err := p.throttleOver(
-		func() (int64, error) { return p.budgets.countPhoneSince(tx, phoneMAC, dailySince) },
-		func() (time.Time, bool, error) { return p.budgets.oldestPhoneSince(tx, phoneMAC, dailySince) },
-		limits.perPhoneDaily, 24*time.Hour, now); err != nil {
-		return err
+	phoneDaily := phone
+	phoneDaily.Since = dailySince
+
+	checks := []budgetCheck{
+		{query: phone, limit: limits.perPhoneHourly, dimension: dimensionPhone, window: time.Hour},
+		{query: phoneDaily, limit: limits.perPhoneDaily, dimension: dimensionPhone, window: 24 * time.Hour},
 	}
 
-	// The source dimension is applied only when the caller gave a source. An
-	// empty source is fail-open: no source lock is taken and no source budget is
-	// counted, so a deployment that cannot resolve the client's address does not
-	// put every send under one key.
 	if sourceMAC != nil {
-		if err := p.throttleOver(
-			func() (int64, error) { return p.budgets.countSourceSince(tx, *sourceMAC, hourlySince) },
-			func() (time.Time, bool, error) { return p.budgets.oldestSourceSince(tx, *sourceMAC, hourlySince) },
-			limits.perSourceHourly, time.Hour, now); err != nil {
-			return err
+		source := budget.Query{
+			Channel:           budget.ChannelAuthn,
+			Dimension:         budget.DimensionSource,
+			Value:             *sourceMAC,
+			Since:             hourlySince,
+			IncludeSuppressed: true,
 		}
-		if err := p.throttleOver(
-			func() (int64, error) { return p.budgets.countSourceSince(tx, *sourceMAC, dailySince) },
-			func() (time.Time, bool, error) { return p.budgets.oldestSourceSince(tx, *sourceMAC, dailySince) },
-			limits.perSourceDaily, 24*time.Hour, now); err != nil {
-			return err
+		sourceDaily := source
+		sourceDaily.Since = dailySince
+		// The attempt dimension counts determinate failures and never a
+		// suppressed row, which is what keeps a source from cycling destinations
+		// that always fail without spending a diversity budget.
+		sourceAttempts := budget.Query{
+			Channel:      budget.ChannelAuthn,
+			Dimension:    budget.DimensionSource,
+			Value:        *sourceMAC,
+			Since:        hourlySince,
+			OnlyRefunded: true,
 		}
-		// The distinct-destination dimension leaves out refunded rows like the raw
-		// source count: a destination the carrier certainly did not take did not
-		// spend the diversity budget. The attempt dimension below counts those rows,
-		// which is what keeps a source from cycling destinations that always fail.
-		if err := p.throttleOver(
-			func() (int64, error) { return p.budgets.countSourceDistinctSince(tx, *sourceMAC, hourlySince) },
-			func() (time.Time, bool, error) {
-				return p.budgets.oldestSourceDistinctSince(tx, *sourceMAC, hourlySince)
-			},
-			limits.perSourceDistinctHourly, time.Hour, now); err != nil {
-			return err
-		}
-		if err := p.throttleOver(
-			func() (int64, error) { return p.budgets.countSourceDistinctSince(tx, *sourceMAC, dailySince) },
-			func() (time.Time, bool, error) {
-				return p.budgets.oldestSourceDistinctSince(tx, *sourceMAC, dailySince)
-			},
-			limits.perSourceDistinctDaily, 24*time.Hour, now); err != nil {
-			return err
-		}
-		if err := p.throttleOver(
-			func() (int64, error) { return p.budgets.countSourceAttemptsSince(tx, *sourceMAC, hourlySince) },
-			func() (time.Time, bool, error) {
-				return p.budgets.oldestSourceAttemptsSince(tx, *sourceMAC, hourlySince)
-			},
-			limits.perSourceAttemptHourly, time.Hour, now); err != nil {
-			return err
-		}
+		checks = append(checks,
+			budgetCheck{query: source, limit: limits.perSourceHourly, dimension: dimensionSource, window: time.Hour},
+			budgetCheck{query: sourceDaily, limit: limits.perSourceDaily, dimension: dimensionSource, window: 24 * time.Hour},
+			budgetCheck{query: source, limit: limits.perSourceDistinctHourly, dimension: dimensionSourceDistinct, window: time.Hour, distinct: true},
+			budgetCheck{query: sourceDaily, limit: limits.perSourceDistinctDaily, dimension: dimensionSourceDistinct, window: 24 * time.Hour, distinct: true},
+			budgetCheck{query: sourceAttempts, limit: limits.perSourceAttemptHourly, dimension: dimensionSourceAttempt, window: time.Hour},
+		)
 	}
 
 	// The global budget is per purpose: anonymous login traffic cannot exhaust
@@ -419,12 +438,16 @@ func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string
 	// unregistered number is a phone-enumeration oracle. A spent global budget
 	// answers the same throttled error and Retry-After as the other dimensions.
 	if limit := limits.globalHourly; limit > 0 {
-		if err := p.throttleOver(
-			func() (int64, error) { return p.budgets.countRealPurposeSince(tx, in.Purpose, hourlySince) },
-			func() (time.Time, bool, error) { return p.budgets.oldestRealPurposeSince(tx, in.Purpose, hourlySince) },
-			limit, time.Hour, now); err != nil {
-			return err
-		}
+		checks = append(checks, budgetCheck{
+			query: budget.Query{
+				Channel: budget.ChannelAuthn,
+				Purpose: in.Purpose,
+				Since:   hourlySince,
+			},
+			limit:     limit,
+			dimension: dimensionGlobal,
+			window:    time.Hour,
+		})
 	}
 
 	// The deployment-wide attempt budget of the purpose counts the unsuppressed
@@ -434,54 +457,101 @@ func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string
 	// exhaust it. The source and account dimensions still count suppressed rows,
 	// so refusal does not tell a registered number from an unregistered one.
 	if limit := limits.globalAttemptHourly; limit > 0 {
-		if err := p.throttleOver(
-			func() (int64, error) { return p.budgets.countPurposeAttemptsSince(tx, in.Purpose, hourlySince) },
-			func() (time.Time, bool, error) {
-				return p.budgets.oldestPurposeAttemptsSince(tx, in.Purpose, hourlySince)
+		checks = append(checks, budgetCheck{
+			query: budget.Query{
+				Channel:      budget.ChannelAuthn,
+				Purpose:      in.Purpose,
+				Since:        hourlySince,
+				OnlyRefunded: true,
 			},
-			limit, time.Hour, now); err != nil {
-			return err
-		}
+			limit:     limit,
+			dimension: dimensionGlobalAttempt,
+			window:    time.Hour,
+		})
 	}
 
 	// The account budget is only for mfa and enroll: a login by phone and an
 	// anonymous reset have no account the number was derived from, so counting
 	// one would tell a registered number from an unregistered one.
 	if in.Purpose == purposeMFA || in.Purpose == purposeEnroll {
-		account := string(in.Account)
-		if err := p.throttleOver(
-			func() (int64, error) { return p.budgets.countAccountSince(tx, account, hourlySince) },
-			func() (time.Time, bool, error) { return p.budgets.oldestAccountSince(tx, account, hourlySince) },
-			limits.perAccountHourly, time.Hour, now); err != nil {
+		checks = append(checks, budgetCheck{
+			query: budget.Query{
+				Channel:           budget.ChannelAuthn,
+				Dimension:         budget.DimensionAccount,
+				Value:             string(in.Account),
+				Since:             hourlySince,
+				IncludeSuppressed: true,
+			},
+			limit:     limits.perAccountHourly,
+			dimension: dimensionAccount,
+			window:    time.Hour,
+		})
+	}
+
+	for _, check := range checks {
+		if err := p.throttleOver(ctx, ledger, in.Purpose, check, now); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// throttleOver reads a count for a window and returns a throttled error when the
-// count has reached the limit, with a retry after the moment the oldest counting
-// row leaves the window. A failed read is an outage and not a pass. Both readers
-// run on the send's transaction, the one its budget locks are held in.
-func (p *product) throttleOver(
-	count func() (int64, error),
-	oldest func() (time.Time, bool, error),
-	limit int,
-	window time.Duration,
-	now time.Time,
-) error {
-	n, err := count()
+// throttleCeiling applies the cross-channel ceiling, the first budget every send
+// is held to. It counts the ledger's non-refunded attempts over both channels;
+// the ledger's oldest such attempt is when the window frees a slot, and the
+// refusal carries that moment as its retry. A ledger that cannot be read is an
+// outage and not a pass.
+func (p *product) throttleCeiling(ctx context.Context, ledger budget.Store, limit int, since, now time.Time) error {
+	n, err := ledger.CountCeiling(ctx, since)
 	if err != nil {
 		return p.budgetReadFailed(err)
 	}
+	p.meters.budget(ctx, purposeShared, dimensionCeiling, n, limit)
 	if n < int64(limit) {
 		return nil
 	}
-	retry := window
-	if t, ok, err := oldest(); err != nil {
+	retry := time.Hour
+	oldest, ok, err := ledger.Oldest(ctx, budget.Query{Since: since})
+	if err != nil {
+		return p.budgetReadFailed(err)
+	}
+	if ok {
+		if remaining := oldest.Add(time.Hour).Sub(now); remaining > 0 {
+			retry = remaining
+		} else {
+			retry = time.Second
+		}
+	}
+	return &authn.ThrottledError{RetryAfter: retry}
+}
+
+// throttleOver reads one budget from the ledger and returns a throttled error
+// when the count has reached the limit, with a retry after the moment the oldest
+// counting row leaves the window. A failed read is an outage and not a pass. The
+// ledger is bound to the send's transaction, the one its budget locks are held
+// in, so the count and the row the send is about to write are one decision. The
+// count is reported to the utilization gauge before it is compared, so the share
+// in use is visible whether or not the send is refused.
+func (p *product) throttleOver(ctx context.Context, ledger budget.Store, purpose string, check budgetCheck, now time.Time) error {
+	var n int64
+	var err error
+	if check.distinct {
+		n, err = ledger.CountDistinctDestinations(ctx, check.query)
+	} else {
+		n, err = ledger.Count(ctx, check.query)
+	}
+	if err != nil {
+		return p.budgetReadFailed(err)
+	}
+	p.meters.budget(ctx, purpose, check.dimension, n, check.limit)
+	if n < int64(check.limit) {
+		return nil
+	}
+	retry := check.window
+	if oldest, ok, err := ledger.Oldest(ctx, check.query); err != nil {
 		return p.budgetReadFailed(err)
 	} else if ok {
-		if remaining := t.Add(window).Sub(now); remaining > 0 {
+		if remaining := oldest.Add(check.window).Sub(now); remaining > 0 {
 			retry = remaining
 		} else {
 			retry = time.Second

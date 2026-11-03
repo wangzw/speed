@@ -50,6 +50,8 @@ var relaxing = map[string]string{
 
 	perFlowSendsPath:     dirIncrease,
 	perAccountHourlyPath: dirIncrease,
+
+	ceilingHourlyPath: dirIncrease,
 }
 
 // The name and outcome of the audit record of a setting moved to a more
@@ -203,6 +205,8 @@ func declaredNumber(key string) (int64, bool) {
 		return int64(defaults.PerFlowSends), true
 	case perAccountHourlyPath:
 		return int64(defaults.PerAccountHourly), true
+	case ceilingHourlyPath:
+		return int64(defaultCeilingHourly), true
 	}
 	return 0, false
 }

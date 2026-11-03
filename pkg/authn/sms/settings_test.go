@@ -187,6 +187,24 @@ func TestTheSettingsSchemaDeclaresEveryKeyUnderTheModuleNamespace(t *testing.T) 
 	}
 }
 
+// TestTheCeilingIsReadByFullKey holds the cross-channel ceiling's path and the
+// reader's fallback: the setting is declared by the shared SMS ledger module, and
+// this module reads it by the full key. The reader answers the declared default
+// when no store is assembled, and the relaxation comparison reads the same value
+// for a key that held no row.
+func TestTheCeilingIsReadByFullKey(t *testing.T) {
+	if ceilingHourlyPath != "sms.ceiling-hourly" {
+		t.Errorf("the ceiling's path = %q, want sms.ceiling-hourly", ceilingHourlyPath)
+	}
+	r := newReader(nil, (&logBuffer{}).logger())
+	if got := r.ceilingHourly(); got != 5000 {
+		t.Errorf("ceiling-hourly default = %d, want 5000", got)
+	}
+	if got, ok := declaredNumber(ceilingHourlyPath); !ok || got != 5000 {
+		t.Errorf("the relaxation comparison reads the ceiling default as %d (present %v), want 5000", got, ok)
+	}
+}
+
 // TestTheNewBudgetDefaultsAreWhatSettingsReport holds the values the redesign
 // adds: the distinct-destination and attempt dimensions read their declared
 // defaults when no store is assembled.

@@ -7,17 +7,28 @@ import (
 
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/notification"
+	"github.com/vislake/speed/pkg/sms/budget"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// Dispatch validates, charges the delivery budgets and enqueues one dispatch and
+// deliveryPayload is the job payload: the dispatch and, when an sms attempt was
+// charged, the ledger row that charge wrote. The consumer refunds the row when
+// the message certainly did not leave the process. The field is omitted when the
+// dispatch makes no sms attempt, so an in-app or email-only job carries no
+// ledger identifier at all.
+type deliveryPayload struct {
+	Dispatch notification.Dispatch `json:"dispatch"`
+	Attempt  int64                 `json:"attempt,omitempty"`
+}
+
+// Dispatch validates, charges the sms budgets and enqueues one dispatch and
 // returns its job identifier; see notification.Dispatcher.
 //
-// The operations are fixed: shape, taxonomy, encode, the delivery budget, then
-// enqueue. It renders no text and writes no ledger — the per-channel work
-// happens when the job is consumed. The tenant comes from the context, and a
-// context carrying none is refused with the tenant capability's own error
-// before anything is written.
+// The operations are fixed: shape, taxonomy, encode, the sms budget, then
+// enqueue. It renders no text and writes no per-channel ledger row — the
+// per-channel work happens when the job is consumed. The tenant comes from the
+// context, and a context carrying none is refused with the tenant capability's
+// own error before anything is written.
 //
 // A dispatch that carries an external destination must carry the recipient's
 // own: after the shape and taxonomy checks, and before a budget is charged, the
@@ -28,15 +39,14 @@ import (
 // and nothing is enqueued. A dispatch that carries no destination is unaffected;
 // a channel that needs one and finds none fails there, as before.
 //
-// The delivery budget is charged before the job is queued, so a producer that
-// has begun to loop cannot fill the queue: once a window is spent, the dispatch
-// is answered with a *authn.ThrottledError carrying Retry-After and nothing is
-// enqueued. It is charged after the recipient's effective channels are resolved,
-// because a message that goes nowhere outside the process — in_app alone, or an
-// external channel this assembly cannot send on — must not spend a budget that
-// exists to bound external sends. One delivery spends one unit per external
-// channel it will attempt; the counters live in the key-value capability, one
-// fixed window per bucket, and the limits are read from settings on every call.
+// Only an sms attempt is budgeted, because only an sms attempt is written to the
+// shared ledger: a dispatch that resolves to in_app or email alone sends no sms
+// message and spends none of the sms budgets. When sms is among the effective
+// channels and this assembly can send it, the budgets are checked and one ledger
+// row is written before the job is queued. A spent budget answers a
+// *authn.ThrottledError carrying RetryAfter and nothing is enqueued. The job
+// carries the row's identifier so the consumer can refund it on a certain
+// failure.
 //
 // The job's idempotency key is the per-channel formula with the channel
 // dimension dropped, so two dispatches of one logical event — same tenant, type,
@@ -57,22 +67,24 @@ func (p *pipeline) Dispatch(ctx context.Context, d notification.Dispatch) (jobs.
 	if err := p.checkDestination(ctx, d); err != nil {
 		return "", err
 	}
-	payload, err := json.Marshal(d)
-	if err != nil {
-		return "", fmt.Errorf("%s: encoding the dispatch of %q: %w", ModuleName, d.TypeKey, err)
-	}
 	key, err := dispatchKey(id, d)
 	if err != nil {
 		return "", fmt.Errorf("%s: deriving the idempotency key of %q: %w", ModuleName, d.TypeKey, err)
 	}
-	deliveries, err := p.externalDeliveries(ctx, d)
+	sms, err := p.smsAttempt(ctx, d)
 	if err != nil {
 		return "", err
 	}
-	if deliveries > 0 {
-		if err = p.chargeBudgets(ctx, id, d, deliveries); err != nil {
+	var attempt budget.ID
+	if sms {
+		if attempt, err = p.chargeSMSAttempt(ctx, id, d); err != nil {
 			return "", err
 		}
+	}
+	payload, err := json.Marshal(deliveryPayload{Dispatch: d, Attempt: int64(attempt)})
+	if err != nil {
+		p.refundAttempt(ctx, attempt)
+		return "", fmt.Errorf("%s: encoding the dispatch of %q: %w", ModuleName, d.TypeKey, err)
 	}
 	jobID, err := p.queue.Enqueue(ctx, jobs.Task{
 		Type:           JobType,
@@ -84,20 +96,21 @@ func (p *pipeline) Dispatch(ctx context.Context, d notification.Dispatch) (jobs.
 		jobs.WithMaxRetries(jobMaxRetries),
 	)
 	if err != nil {
+		p.refundAttempt(ctx, attempt)
 		return "", fmt.Errorf("%s: enqueuing the delivery of %q: %w", ModuleName, d.TypeKey, err)
 	}
 	return jobID, nil
 }
 
-// decodeDispatch reads a dispatch back out of a delivery job's payload. It is
-// the inverse of the encoding Dispatch writes; a payload it cannot read is
-// answered with notification.ErrInvalidRequest, which the handler treats as a
-// validation failure.
-func decodeDispatch(payload []byte) (notification.Dispatch, error) {
-	var d notification.Dispatch
-	if err := json.Unmarshal(payload, &d); err != nil {
-		return notification.Dispatch{}, fmt.Errorf("%w: the delivery job's payload cannot be read: %w",
+// decodeDispatch reads a dispatch and its charged attempt identifier back out of
+// a delivery job's payload. It is the inverse of the encoding Dispatch writes; a
+// payload it cannot read is answered with notification.ErrInvalidRequest, which
+// the handler treats as a validation failure.
+func decodeDispatch(payload []byte) (notification.Dispatch, budget.ID, error) {
+	var p deliveryPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return notification.Dispatch{}, 0, fmt.Errorf("%w: the delivery job's payload cannot be read: %w",
 			notification.ErrInvalidRequest, err)
 	}
-	return d, nil
+	return p.Dispatch, budget.ID(p.Attempt), nil
 }

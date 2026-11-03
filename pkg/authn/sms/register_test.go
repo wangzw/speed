@@ -51,10 +51,10 @@ func TestAResendLeavesASpentRowsConsumedAtUnchanged(t *testing.T) {
 		t.Fatal("the spent row has no consumed_at to hold")
 	}
 
-	if err := r.p.register.insert(context.Background(), challengeRow{
+	if _, err := r.p.register.insert(context.Background(), challengeRow{
 		ID: "fresh", Purpose: purposeLogin, PhoneMAC: phoneMac, CodeMAC: "mac-new",
 		MaxAttempts: 5, CreatedAt: r.clock.read(), ExpiresAt: r.clock.read().Add(5 * time.Minute),
-	}, nil); err != nil {
+	}, nil, nil); err != nil {
 		t.Fatalf("the resend insert: %v", err)
 	}
 

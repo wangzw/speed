@@ -15,16 +15,19 @@ and `reset` send without an account: a reset row fills no account and neither
 purpose counts against the per-account budget. The module takes the top-level `pkg/sms`
 capability's `Sender` and `Registry` as requirements, each delivered exclusively
 by its provider: a command tree names one of each, and two at once fail in
-resolution. The registry holds the templates in force and decides which one a
-message goes out under; a carrier module (one of `sms.aliyun`, `sms.tencent`, or
-a third party's, under `pkg/sms`) constructs, calls and classifies, and is handed
-only what the registry resolved.
+resolution. It also requires the shared SMS ledger, `pkg/sms/budget`, the one
+table both sending channels write and count from; the store it delivers is bound
+to each send's transaction when the budgets are read. The registry holds the
+templates in force and decides which one a message goes out under; a carrier
+module (one of `sms.aliyun`, `sms.tencent`, or a third party's, under `pkg/sms`)
+constructs, calls and classifies, and is handed only what the registry resolved.
 
 The API is the package's godoc. Read `Send`'s and `Verify`'s comments before
 changing either.
 
 The names the module reports under are a closed set — the `authn.sms.sends`
-instrument and its `outcome` set, the `authn.audit.write-failures` counter, and
+instrument and its `outcome` set, the `authn.sms.budget.utilization` gauge and
+its purpose and dimension sets, the `authn.audit.write-failures` counter, and
 the `settings.changed` subscription — so a name or an attribute value is a
 compatibility break for a dashboard written against it.
 
@@ -60,13 +63,18 @@ compatibility break for a dashboard written against it.
   for the exact code it was written for (`Send`, `Verify`,
   `TestASuppressedSendTakesTheSamePathAndQueuesNothing`,
   `TestARegisteredAndASuppressedNumberTakeTheSameCountingPath`,
-  `TestVerifyNeverPassesASuppressedRow`). The phone, source and account budgets
-  are across purposes and include suppressed, consumed and voided rows. Every
-  budget leaves out a refunded row: a message the carrier certainly did not take
-  gives its spend back, and apart from a refund only the sweep takes a row out of
-  a window (`TestARefundedRowCountsAgainstNoBudget`,
-  `TestASuppressedRowKeepsItsCountingRule`). The deployment-wide budget counts
-  only unsuppressed rows, so anonymous requests for numbers nobody registered
+  `TestVerifyNeverPassesASuppressedRow`). Every budget counts the shared ledger's
+  rows, not the challenge table's. The phone, source, account and
+  distinct-destination dimensions are across purposes and include suppressed
+  rows; a suppressed attempt is refunded at write time, so it spends no send,
+  attempt or ceiling budget while those dimensions still count it. The send
+  dimensions leave out a row a certain failure refunded: a message the carrier
+  certainly did not take gives its spend back, and apart from a refund only the
+  ledger's retention sweep takes a row out of a window
+  (`TestARefundedRowCountsAgainstNoBudget`,
+  `TestASuppressedRowKeepsItsCountingRule`,
+  `TestASuppressedLedgerRowSpendsOnlyTheAntiEnumerationDimensions`). The
+  deployment-wide budget counts only unsuppressed rows, so anonymous requests for numbers nobody registered
   cannot exhaust it; the other dimensions keep counting suppressed rows, because
   a refusal that arrived at a different count for an unregistered number would be
   a phone-enumeration oracle (`TestTheGlobalBudgetCountsOnlyRealSends`,
@@ -81,14 +89,15 @@ compatibility break for a dashboard written against it.
   `TestAResetSendFillsNoAccountAndSkipsTheAccountBudget`).
 - **The budget is a hard cap, read under the send's own lock order.** `Send` reads
   every limit before it opens the write transaction, then the transaction takes
-  transaction-scoped advisory locks in the fixed order global purpose → number →
-  source → account, re-reads every count, and writes the row only under those
-  locks; a refusal rolls the transaction back and writes nothing (`Send`,
-  `checkBudgets`, `register.insert`, `register.lock`,
+  transaction-scoped advisory locks in the fixed order shared ceiling → global
+  purpose → number → source → account, re-reads every count from the ledger
+  through a store bound to that transaction, and writes the ledger attempt and
+  the challenge row only under those locks; a refusal rolls the transaction back
+  and writes nothing (`Send`, `checkBudgets`, `register.insert`, `register.lock`,
   `TestTheBudgetIsCheckedUnderTheSendsOwnLocks`,
   `TestConcurrentSendsDoNotOverrunTheBudget`). The keys are
-  `authn.sms:lock:global:<purpose>`, `authn.sms:lock:phone:<phone_mac>`,
-  `authn.sms:lock:source:<source_mac>` and
+  `sms.budget:lock:ceiling`, `authn.sms:lock:global:<purpose>`,
+  `authn.sms:lock:phone:<phone_mac>`, `authn.sms:lock:source:<source_mac>` and
   `authn.sms:lock:account:<account_id>`, hashed by `hashtextextended`; the login
   purpose has no account and takes no account lock, and a send with no source
   takes no source lock. SQLite takes no advisory lock because it serializes
@@ -99,8 +108,7 @@ compatibility break for a dashboard written against it.
   `db.Database.BlindIndex`; the row stores `source_mac` and the budget counts it across
   purposes for an hour and a rolling day, against `per-source-hourly` and
   `per-source-daily`. The plaintext address is never written and never logged
-  (`sourceMAC`, `checkBudgets`, `countSourceSince`,
-  `TestThePerSourceHourlyBudgetThrottles`,
+  (`sourceMAC`, `checkBudgets`, `TestThePerSourceHourlyBudgetThrottles`,
   `TestTheSourceAddressIsNormalisedBeforeCounting`,
   `TestTheSourceIsKeptOnlyAsADigest`). An empty source is fail-open: no source
   lock, no source budget and a NULL `source_mac`, because putting every
@@ -128,10 +136,11 @@ compatibility break for a dashboard written against it.
   outcome: the message is not defective, but this deployment cannot carry it to
   that destination, so it is never read as an unknown outcome and never retried.
   A definite failure — `ErrThrottled`, `ErrRejected` or `ErrUnroutable` — also
-  refunds the challenge row: the row is marked `refunded_at` and spent in the
-  same statement, so no budget counts the send and the undelivered code cannot
-  pass `Verify`. An uncertain outcome, and an error outside the closed set, stay
-  counted (`refundChallenge`, `register.refund`,
+  refunds the attempt: the challenge row is marked `refunded_at` and spent in the
+  same statement, and its ledger attempt is marked refunded, so no send budget or
+  ceiling counts the message and the undelivered code cannot pass `Verify`. An
+  uncertain outcome, and an error outside the closed set, stay counted
+  (`refundChallenge`, `register.refund`, `budget.Store.MarkRefunded`,
   `TestACertainCarrierFailureRefundsTheSend`,
   `TestARegistryRefusalRefundsTheSend`,
   `TestADropAfterTheRowIsWrittenRefundsTheSend`,

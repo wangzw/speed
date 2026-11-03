@@ -8,6 +8,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // TestSendVerifyAndVoidWorkOnEveryDialect holds the native SQL on both engines:
@@ -28,32 +29,36 @@ func TestSendVerifyAndVoidWorkOnEveryDialect(t *testing.T) {
 }
 
 // TestTheDeploymentBudgetCountsOnlyRealRowsOnEveryDialect holds the global
-// dimension's predicate on both engines: SQLite stores suppressed as an integer
-// and PostgreSQL as a boolean, so the bound false has to select the real row and
-// leave the suppressed one out on each.
+// dimension's predicate on both engines: the ledger stores suppressed as an
+// integer on SQLite and a boolean on PostgreSQL, so the predicate has to select
+// the real row and leave the suppressed one out on each. A suppressed send is
+// written through Send, which is the path that writes both the challenge and the
+// ledger row, and the real sends that follow show the suppressed one spent
+// nothing of the purpose's budget.
 func TestTheDeploymentBudgetCountsOnlyRealRowsOnEveryDialect(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, database db.Database, _ string) {
 		r := newRig(t, database, newSender())
 		r.allow()
-		now := r.clock.read()
-		r.insert("real", purposeLogin, r.database.BlindIndex(phone), nil, false, "mac",
-			0, 5, now, now.Add(5*time.Minute), nil)
-		r.insert("suppressed", purposeLogin, r.database.BlindIndex("+8613800138001"), nil, true, "mac",
-			0, 5, now.Add(-time.Minute), now.Add(4*time.Minute), nil)
+		r.liftBudgets()
+		r.store.set(resendIntervalPath, 30*time.Second)
+		r.store.set(globalLoginPath, 1)
 
-		n, err := r.p.register.countRealPurposeSince(r.h, purposeLogin, now.Add(-time.Hour))
-		if err != nil {
-			t.Fatalf("counting the real rows: %v", err)
+		if _, err := r.p.Send(context.Background(), authn.SendCode{
+			Purpose: authn.SMSPurposeLogin, Phone: phone, Deliver: false,
+		}); err != nil {
+			t.Fatalf("the suppressed send: %v", err)
 		}
-		if n != 1 {
-			t.Errorf("the deployment budget counts %d rows, want 1: the suppressed row is left out", n)
+		r.clock.advance(31 * time.Second)
+		if _, err := r.p.Send(context.Background(), authn.SendCode{
+			Purpose: authn.SMSPurposeLogin, Phone: "+8613800138001", Deliver: true,
+		}); err != nil {
+			t.Fatalf("the first real send returned %v, want success: the suppressed row spent the global budget", err)
 		}
-		oldest, ok, err := r.p.register.oldestRealPurposeSince(r.h, purposeLogin, now.Add(-time.Hour))
-		if err != nil {
-			t.Fatalf("reading the oldest real row: %v", err)
-		}
-		if !ok || !oldest.Equal(now) {
-			t.Errorf("the oldest real row is %v (present %v), want %v", oldest, ok, now)
+		r.clock.advance(31 * time.Second)
+		if _, err := r.p.Send(context.Background(), authn.SendCode{
+			Purpose: authn.SMSPurposeLogin, Phone: "+8613800138002", Deliver: true,
+		}); !errors.Is(err, authn.ErrThrottled) {
+			t.Fatalf("the second real send returned %v, want ErrThrottled: the first real send did not spend the budget", err)
 		}
 	})
 }
@@ -80,20 +85,21 @@ func TestTheWindowCountingHoldsInAnotherLocalZone(t *testing.T) {
 	if _, sendErr := r.sendLogin(); sendErr != nil {
 		t.Fatalf("Send: %v", sendErr)
 	}
-	n, err := r.p.register.countPhoneSince(r.h, phoneMac, r.clock.read().Add(-time.Hour))
-	if err != nil {
-		t.Fatalf("counting the window: %v", err)
+	window := func() int64 {
+		return r.ledgerCount(budget.Query{
+			Channel:           budget.ChannelAuthn,
+			Dimension:         budget.DimensionDestination,
+			Value:             phoneMac,
+			Since:             r.clock.read().Add(-time.Hour),
+			IncludeSuppressed: true,
+		})
 	}
-	if n != 1 {
+	if n := window(); n != 1 {
 		t.Errorf("a send made in another local zone counts as %d rows within the hour, want 1", n)
 	}
 	// A row older than the hour is outside the window.
 	r.clock.advance(2 * time.Hour)
-	n, err = r.p.register.countPhoneSince(r.h, phoneMac, r.clock.read().Add(-time.Hour))
-	if err != nil {
-		t.Fatalf("counting the window: %v", err)
-	}
-	if n != 0 {
+	if n := window(); n != 0 {
 		t.Errorf("a row two hours old counts as %d rows within the hour, want 0", n)
 	}
 }

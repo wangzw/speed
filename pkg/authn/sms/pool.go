@@ -198,15 +198,26 @@ func (p *product) deliverOne(ctx context.Context, r sms.Resolved) {
 // the message, and a queue that filled before the enqueue. An empty identifier
 // names no row.
 //
-// A refund that cannot be written leaves the row counted and the code valid;
-// the send has already failed, so the outcome is unchanged and the failure is
-// recorded on its own line.
+// The challenge's row in the shared ledger is refunded too, so a message that
+// certainly did not leave stops spending the cross-channel ceiling. A refund
+// that cannot be written leaves the row counted and the code valid; the send has
+// already failed, so the outcome is unchanged and the failure is recorded on its
+// own line.
 func (p *product) refundChallenge(ctx context.Context, id string) {
 	if id == "" {
 		return
 	}
-	if err := p.register.refund(ctx, id, p.clock.Now()); err != nil {
+	now := p.clock.Now()
+	eventID, err := p.register.refund(ctx, id, now)
+	if err != nil {
 		p.logger.WarnContext(ctx, ModuleName+": a challenge could not be refunded and stays counted",
+			slog.String("cause", err.Error()))
+	}
+	if eventID == 0 || p.ledger == nil {
+		return
+	}
+	if err := p.ledger.MarkRefunded(ctx, eventID, now); err != nil {
+		p.logger.WarnContext(ctx, ModuleName+": a ledger attempt could not be refunded and stays counted",
 			slog.String("cause", err.Error()))
 	}
 }

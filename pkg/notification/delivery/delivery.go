@@ -31,9 +31,9 @@
 //
 // The module declares no configuration namespace and reads no input item: the
 // parameters of a delivery job are fixed by this module at enqueue time, not
-// taken from configuration. It does declare three runtime settings — the two
-// per-recipient delivery budgets and the deployment-wide one — and charges them
-// against the key-value counters before a dispatch is queued.
+// taken from configuration. It does declare four runtime settings — two
+// per-recipient delivery budgets and two per-tenant fan-out budgets — and checks
+// them against the shared sms ledger before a dispatch is queued.
 package delivery
 
 import (
@@ -45,18 +45,21 @@ import (
 	"log/slog"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
-	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
+	"github.com/vislake/speed/pkg/observability"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
+	"github.com/vislake/speed/pkg/sms/budget"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -120,14 +123,14 @@ var (
 //
 // The queue, the handler registration face, the database, the tenant roster, the
 // preferences seam, the inbox seam, the message localizer, the account store and
-// the key-value counters are all required and hard. A pipeline with no queue has
+// the shared sms ledger are all required and hard. A pipeline with no queue has
 // nowhere to put a dispatch, one with no registration face cannot be run, one
 // with no table has nowhere to record a send, one with no roster carries no
 // filter to scope its ledger writes by tenant, one with no preferences cannot
 // resolve a recipient's channels, one with no inbox cannot write an in-app
 // message, one with no localizer cannot render one, one with no account store
 // cannot tell whether a destination belongs to the recipient, and one with no
-// counters cannot bound a dispatch. The counters and the account store are hard
+// ledger cannot bound an sms attempt. The ledger and the account store are hard
 // requirements rather than absences the module works around: a delivery budget
 // that cannot count and an ownership rule that cannot read would each let a
 // message through, which is the direction the requirement forbids.
@@ -136,6 +139,10 @@ var (
 // and an absence is a legal assembly in which every budget reads its declared
 // default. Declaring it also orders this module after settings, so the snapshot a
 // dispatch reads has been loaded.
+//
+// The metric capability is optional too: an assembly without one reports no
+// utilization, and a dispatch then only compares the counts. Its absence changes
+// what is observed, never what is refused.
 //
 // The mail sender, the sms registry and the sms sender are optional, and none of
 // their absences fails the startup: a channel is available exactly when the seams
@@ -164,8 +171,9 @@ func Module() core.Module {
 			{Token: (*notification.Inbox)(nil)},
 			{Token: (*i18n.Localizer)(nil)},
 			{Token: (*authn.Accounts)(nil)},
-			{Token: (*kv.KV)(nil)},
+			{Token: (*budget.Store)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
+			{Token: (*observability.MeterProvider)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 			{Token: (*mail.Sender)(nil), Optional: true},
 			{Token: (*sms.Registry)(nil), Optional: true},
@@ -258,11 +266,26 @@ type pipeline struct {
 	// anyone else's, and it is a hard dependency: without it a dispatch carrying
 	// a destination cannot be checked and is refused.
 	accounts authn.Accounts
-	// counters holds the delivery budgets, one fixed window per key. It is the
-	// key-value capability, whose increment is atomic across replicas.
-	counters kv.KV
+	// attempts is the shared sms ledger. Every sms attempt is written here, and
+	// every sms budget is a count over its rows; the authn capability reads and
+	// writes the same ledger, so the cross-channel ceiling is one count. The
+	// refunds run over this store's own handle; the counts and the attempt row of
+	// one charge run over a transaction (see newLedger).
+	attempts budget.Store
+	// newLedger builds the ledger over a transaction, so the counts a dispatch is
+	// compared against and the attempt row it writes are one commitment. It is a
+	// field rather than a bare budget.New so a case can hold the outage direction
+	// — a ledger that cannot be counted must refuse, not pass.
+	newLedger func(*gorm.DB) budget.Store
+	// dialect decides whether the send takes the transaction-scoped advisory lock
+	// the authentication channel also takes. SQLite serialises writers itself, so
+	// there is no lock to take there.
+	dialect db.Dialect
 	// settings reads the budget limits on every dispatch.
 	settings *settingReader
+	// meters reports each budget's utilization. Its instruments are nil when the
+	// assembly delivered no metric capability, and a report is then a no-op.
+	meters *meters
 	// logger is where the external-send lines are written. It is the assembly's
 	// logging capability named after this module, or the process default logger
 	// when the assembly delivered none; it is never taken from the handler's
@@ -327,13 +350,21 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 	if err != nil {
 		return nil, err
 	}
-	counters, err := core.Resolve[kv.KV](reg)
+	attempts, err := core.Resolve[budget.Store](reg)
 	if err != nil {
-		return nil, fmt.Errorf("%s: taking up the key-value counters: %w", ModuleName, err)
+		return nil, fmt.Errorf("%s: taking up the shared sms ledger: %w", ModuleName, err)
 	}
 	store, err := optional[settings.Store](reg, "the settings store")
 	if err != nil {
 		return nil, err
+	}
+	provider, err := optional[observability.MeterProvider](reg, "the metric capability")
+	if err != nil {
+		return nil, err
+	}
+	meters, err := newMeters(provider)
+	if err != nil {
+		return nil, fmt.Errorf("%s: creating the metric instruments: %w", ModuleName, err)
 	}
 	return &pipeline{
 		queue:     queue,
@@ -345,8 +376,11 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 		ledger:    &ledger{handle: database.DB()},
 		taxonomy:  types,
 		seams:     channelSeams{mailer: mailer, registry: registry, sender: sender},
-		counters:  counters,
+		attempts:  attempts,
+		newLedger: budget.New,
+		dialect:   database.Dialect(),
 		settings:  newSettingReader(store, logger),
+		meters:    meters,
 		logger:    logger,
 	}, nil
 }

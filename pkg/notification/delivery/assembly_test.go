@@ -11,12 +11,13 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
-	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
+	"github.com/vislake/speed/pkg/observability"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
+	"github.com/vislake/speed/pkg/sms/budget"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -49,10 +50,11 @@ func TestTheModuleDeliversTheDispatcherExclusively(t *testing.T) {
 // The descriptor declares the dependencies the design fixes: the queue, the
 // handler registration face, the database, the tenant roster, the preferences
 // seam, the inbox seam, the localizer, the account store the destination rule
-// reads and the budget counters are required; the logging capability, the mail
-// sender and the two sms seams are optional, one per channel that sends outside
-// this process. It declares nothing else — not an entry point, which this module
-// mounts no route on, and not an event bus, which it publishes nothing on.
+// reads and the shared sms ledger are required; the settings store, the metric
+// capability, the logging capability, the mail sender and the two sms seams are
+// optional, one per channel that sends outside this process. It declares nothing
+// else — not an entry point, which this module mounts no route on, and not an
+// event bus, which it publishes nothing on.
 func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 	m := Module()
 	required := []core.Token{
@@ -64,7 +66,7 @@ func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 		(*notification.Inbox)(nil),
 		(*i18n.Localizer)(nil),
 		(*authn.Accounts)(nil),
-		(*kv.KV)(nil),
+		(*budget.Store)(nil),
 	}
 	for _, token := range required {
 		found, optional := requirementOf(m, token)
@@ -78,6 +80,7 @@ func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 	}
 	optional := []core.Token{
 		(*settings.Store)(nil),
+		(*observability.MeterProvider)(nil),
 		(*log.Logger)(nil),
 		(*mail.Sender)(nil),
 		(*sms.Registry)(nil),

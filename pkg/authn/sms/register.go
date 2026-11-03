@@ -10,6 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // sweepBatch is how many expired rows one statement of the sweep removes.
@@ -48,13 +49,20 @@ func (g *register) session(ctx context.Context) *gorm.DB { return g.handle.WithC
 // being empty and the row not being past its time, so a row another request
 // already consumed or that has expired is left as it is.
 //
+// The shared ledger's attempt row is written in the same transaction, after the
+// guard and before the challenge row: a send that a budget refused writes
+// neither, and a send that is admitted is counted by the cross-channel ceiling
+// from the moment it commits. The returned identifier is the ledger row's, which
+// the refund paths mark refunded when the message certainly did not leave.
+//
 // The void, the write and, when guard is set, the guard run in one transaction
 // under lock: the guard is where the budget check lives, so the counts it reads
 // and the row it guards are serialized against every send that shares a
 // dimension. A guard error rolls the transaction back, so a refused send writes
 // no row.
-func (g *register) insert(ctx context.Context, row challengeRow, guard func(*gorm.DB) error) error {
-	return g.session(ctx).Transaction(func(tx *gorm.DB) error {
+func (g *register) insert(ctx context.Context, row challengeRow, attempt *budget.Attempt, guard func(*gorm.DB) error) (budget.ID, error) {
+	var eventID budget.ID
+	err := g.session(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := g.lock(tx, row); err != nil {
 			return err
 		}
@@ -62,6 +70,13 @@ func (g *register) insert(ctx context.Context, row challengeRow, guard func(*gor
 			if err := guard(tx); err != nil {
 				return err
 			}
+		}
+		if attempt != nil {
+			id, err := budget.New(tx).Record(ctx, *attempt)
+			if err != nil {
+				return err
+			}
+			eventID = id
 		}
 		if err := tx.Exec("UPDATE "+challengeTable+" SET consumed_at = ? "+
 			"WHERE phone_mac = ? AND purpose = ? AND consumed_at IS NULL AND expires_at > ?",
@@ -76,24 +91,36 @@ func (g *register) insert(ctx context.Context, row challengeRow, guard func(*gor
 		if row.SourceMAC != nil {
 			source = *row.SourceMAC
 		}
+		var event any
+		if eventID > 0 {
+			event = int64(eventID)
+		}
 		if err := tx.Exec("INSERT INTO "+challengeTable+
-			" (id, purpose, phone_mac, source_mac, account_id, suppressed, code_mac, attempts, max_attempts, created_at, expires_at) "+
-			"VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+			" (id, purpose, phone_mac, source_mac, account_id, suppressed, code_mac, attempts, max_attempts, created_at, expires_at, budget_event_id) "+
+			"VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
 			row.ID, row.Purpose, row.PhoneMAC, source, account, row.Suppressed, row.CodeMAC,
-			row.MaxAttempts, clock.UTC(row.CreatedAt), clock.UTC(row.ExpiresAt)).Error; err != nil {
+			row.MaxAttempts, clock.UTC(row.CreatedAt), clock.UTC(row.ExpiresAt), event).Error; err != nil {
 			return fmt.Errorf("writing a challenge: %w", err)
 		}
 		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+	return eventID, nil
 }
 
 // lock takes the ordered set of transaction-scoped advisory locks a send is
-// serialized under: the global budget of its purpose, then the number, then the
-// source address when the send carries one, then the account. Every send takes
-// them in this order, so two sends that share any key cannot deadlock, and
-// holding all of them is what lets the budget check and the write be one
-// decision. The keys are namespaced strings hashed by the database itself; the
-// locks are released when the transaction commits or rolls back.
+// serialized under: the shared cross-channel ceiling first, then the global
+// budget of its purpose, then the number, then the source address when the send
+// carries one, then the account. Every send takes them in this order, so two
+// sends that share any key cannot deadlock, and holding all of them is what lets
+// the budget check and the write be one decision. The ceiling key is the one
+// lock both sending channels share; it is a single deployment-wide key, so the
+// authentication channel's concurrent sends are serialized against each other
+// and against any other sender that takes the same key. The keys are namespaced
+// strings hashed by the database itself; the locks are released when the
+// transaction commits or rolls back.
 //
 // A hash collision between two different keys only over-serializes unrelated
 // sends, which is safe; it never lets two sends of one key run at once. The locks
@@ -104,6 +131,7 @@ func (g *register) lock(tx *gorm.DB, row challengeRow) error {
 		return nil
 	}
 	keys := []string{
+		"sms.budget:lock:ceiling",
 		"authn.sms:lock:global:" + row.Purpose,
 		"authn.sms:lock:phone:" + row.PhoneMAC,
 	}
@@ -175,256 +203,28 @@ func (g *register) consume(ctx context.Context, id string, now time.Time) (bool,
 // request already consumed keeps its own consumption time. A row that is no
 // longer there — swept, or erased with its account — changes nothing and is not
 // an error.
-func (g *register) refund(ctx context.Context, id string, now time.Time) error {
+//
+// It answers the challenge's ledger attempt identifier, which the caller marks
+// refunded on the shared ledger so the cross-channel ceiling stops counting a
+// message that certainly did not leave. A row written before the ledger was in
+// force carries none, which reads as the zero identifier.
+func (g *register) refund(ctx context.Context, id string, now time.Time) (budget.ID, error) {
+	var out []struct{ BudgetEventID *int64 }
+	if err := g.session(ctx).Table(challengeTable).Select("budget_event_id").
+		Where("id = ?", id).Limit(1).Scan(&out).Error; err != nil {
+		return 0, fmt.Errorf("reading a challenge's ledger attempt: %w", err)
+	}
+	var eventID budget.ID
+	if len(out) > 0 && out[0].BudgetEventID != nil {
+		eventID = budget.ID(*out[0].BudgetEventID)
+	}
 	res := g.session(ctx).Exec("UPDATE "+challengeTable+
 		" SET refunded_at = ?, consumed_at = COALESCE(consumed_at, ?) WHERE id = ?",
 		clock.UTC(now), clock.UTC(now), id)
 	if res.Error != nil {
-		return fmt.Errorf("refunding a challenge: %w", res.Error)
+		return eventID, fmt.Errorf("refunding a challenge: %w", res.Error)
 	}
-	return nil
-}
-
-// lastCreatedForPhone reads the most recent row's created_at for the number, of
-// any purpose, which the resend interval is measured from. It reads through the
-// handle it is given, so the budget check can read on the send's own
-// transaction.
-func (g *register) lastCreatedForPhone(q *gorm.DB, phoneMAC string) (time.Time, bool, error) {
-	var out []struct{ CreatedAt time.Time }
-	err := q.Table(challengeTable).Select("created_at").
-		Where("phone_mac = ?", phoneMAC).Order("created_at DESC").Limit(1).Scan(&out).Error
-	if err != nil {
-		return time.Time{}, false, fmt.Errorf("reading the last send to a number: %w", err)
-	}
-	if len(out) == 0 {
-		return time.Time{}, false, nil
-	}
-	return clock.UTC(out[0].CreatedAt), true, nil
-}
-
-// countPhoneSince counts the rows for the number created after since, of any
-// purpose. A refunded row is left out: its message certainly did not reach the
-// carrier, so it did not spend the number's budget.
-func (g *register) countPhoneSince(q *gorm.DB, phoneMAC string, since time.Time) (int64, error) {
-	var n int64
-	err := q.Table(challengeTable).
-		Where("phone_mac = ? AND refunded_at IS NULL AND created_at > ?", phoneMAC, clock.UTC(since)).Count(&n).Error
-	if err != nil {
-		return 0, fmt.Errorf("counting the sends to a number: %w", err)
-	}
-	return n, nil
-}
-
-// oldestPhoneSince reads the created_at of the oldest counted row for the number
-// after since, which is when the counting window frees a slot. A refunded row is
-// left out, as it is by the count.
-func (g *register) oldestPhoneSince(q *gorm.DB, phoneMAC string, since time.Time) (time.Time, bool, error) {
-	var out []struct{ CreatedAt time.Time }
-	err := q.Table(challengeTable).Select("created_at").
-		Where("phone_mac = ? AND refunded_at IS NULL AND created_at > ?", phoneMAC, clock.UTC(since)).
-		Order("created_at ASC").Limit(1).Scan(&out).Error
-	if err != nil {
-		return time.Time{}, false, fmt.Errorf("reading the oldest send to a number: %w", err)
-	}
-	if len(out) == 0 {
-		return time.Time{}, false, nil
-	}
-	return clock.UTC(out[0].CreatedAt), true, nil
-}
-
-// countSourceSince counts the rows from one source address created after since,
-// of any purpose. Rows with no source address are not counted: an empty source
-// is not a source, and putting them all under one key would make the budget
-// fail-closed on a deployment that cannot resolve an address. A refunded row is
-// left out, because its message certainly did not reach the carrier.
-func (g *register) countSourceSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error) {
-	var n int64
-	err := q.Table(challengeTable).
-		Where("source_mac = ? AND refunded_at IS NULL AND created_at > ?", sourceMAC, clock.UTC(since)).Count(&n).Error
-	if err != nil {
-		return 0, fmt.Errorf("counting the sends from a source: %w", err)
-	}
-	return n, nil
-}
-
-// oldestSourceSince reads the created_at of the oldest counted row from the
-// source after since, which is when the counting window frees a slot.
-func (g *register) oldestSourceSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error) {
-	var out []struct{ CreatedAt time.Time }
-	err := q.Table(challengeTable).Select("created_at").
-		Where("source_mac = ? AND refunded_at IS NULL AND created_at > ?", sourceMAC, clock.UTC(since)).
-		Order("created_at ASC").Limit(1).Scan(&out).Error
-	if err != nil {
-		return time.Time{}, false, fmt.Errorf("reading the oldest send from a source: %w", err)
-	}
-	if len(out) == 0 {
-		return time.Time{}, false, nil
-	}
-	return clock.UTC(out[0].CreatedAt), true, nil
-}
-
-// countSourceDistinctSince counts the different numbers one source address sent
-// to after since, of any purpose. It reads the same rows the raw source count
-// reads and leaves out the same refunded ones: a message the carrier certainly
-// did not take did not spend the source's distinct-destination budget either.
-// Suppressed rows are counted, so the point of refusal does not tell a
-// registered number from an unregistered one.
-func (g *register) countSourceDistinctSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error) {
-	var n int64
-	err := q.Table(challengeTable).
-		Select("COUNT(DISTINCT phone_mac)").
-		Where("source_mac = ? AND refunded_at IS NULL AND created_at > ?", sourceMAC, clock.UTC(since)).
-		Scan(&n).Error
-	if err != nil {
-		return 0, fmt.Errorf("counting the distinct numbers of a source: %w", err)
-	}
-	return n, nil
-}
-
-// oldestSourceDistinctSince reads the created_at of the oldest counted row of
-// the source after since, which is the earliest point at which the
-// distinct-destination count can fall. A destination leaves the window only when
-// its oldest counted row does, so this is a safe lower bound on the retry.
-func (g *register) oldestSourceDistinctSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error) {
-	var out []struct{ CreatedAt time.Time }
-	err := q.Table(challengeTable).Select("created_at").
-		Where("source_mac = ? AND refunded_at IS NULL AND created_at > ?", sourceMAC, clock.UTC(since)).
-		Order("created_at ASC").Limit(1).Scan(&out).Error
-	if err != nil {
-		return time.Time{}, false, fmt.Errorf("reading the oldest distinct-number send of a source: %w", err)
-	}
-	if len(out) == 0 {
-		return time.Time{}, false, nil
-	}
-	return clock.UTC(out[0].CreatedAt), true, nil
-}
-
-// countSourceAttemptsSince counts the failed rows from one source address
-// created after since, of any purpose: a row a certain failure refunded, whether
-// that failure was the carrier's or one that stopped the send before it. A send
-// that went out, or whose outcome is uncertain, is not counted, so successful
-// traffic spends the source's send budgets and never its attempt budget.
-// Suppressed rows are counted when they were refunded, like the source's other
-// dimensions.
-func (g *register) countSourceAttemptsSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error) {
-	var n int64
-	err := q.Table(challengeTable).
-		Where("source_mac = ? AND refunded_at IS NOT NULL AND created_at > ?", sourceMAC, clock.UTC(since)).Count(&n).Error
-	if err != nil {
-		return 0, fmt.Errorf("counting the failed attempts of a source: %w", err)
-	}
-	return n, nil
-}
-
-// oldestSourceAttemptsSince reads the created_at of the oldest failed attempt of
-// the source after since, which is when the window frees a slot.
-func (g *register) oldestSourceAttemptsSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error) {
-	var out []struct{ CreatedAt time.Time }
-	err := q.Table(challengeTable).Select("created_at").
-		Where("source_mac = ? AND refunded_at IS NOT NULL AND created_at > ?", sourceMAC, clock.UTC(since)).
-		Order("created_at ASC").Limit(1).Scan(&out).Error
-	if err != nil {
-		return time.Time{}, false, fmt.Errorf("reading the oldest attempt of a source: %w", err)
-	}
-	if len(out) == 0 {
-		return time.Time{}, false, nil
-	}
-	return clock.UTC(out[0].CreatedAt), true, nil
-}
-
-// countPurposeAttemptsSince counts the failed rows of one purpose created after
-// since that are not suppressed: a row a certain failure refunded. The
-// deployment-wide attempt budget keeps the global send budget's asymmetry: a
-// suppressed row reached no carrier, so anonymous requests for numbers nobody
-// registered cannot exhaust it. A send that went out, or whose outcome is
-// uncertain, is not counted; the failure is what the dimension is for.
-func (g *register) countPurposeAttemptsSince(q *gorm.DB, purpose string, since time.Time) (int64, error) {
-	var n int64
-	err := q.Table(challengeTable).
-		Where("purpose = ? AND suppressed = ? AND refunded_at IS NOT NULL AND created_at > ?", purpose, false, clock.UTC(since)).Count(&n).Error
-	if err != nil {
-		return 0, fmt.Errorf("counting the failed attempts of a purpose: %w", err)
-	}
-	return n, nil
-}
-
-// oldestPurposeAttemptsSince reads the created_at of the oldest counted failed
-// attempt of the purpose after since.
-func (g *register) oldestPurposeAttemptsSince(q *gorm.DB, purpose string, since time.Time) (time.Time, bool, error) {
-	var out []struct{ CreatedAt time.Time }
-	err := q.Table(challengeTable).Select("created_at").
-		Where("purpose = ? AND suppressed = ? AND refunded_at IS NOT NULL AND created_at > ?", purpose, false, clock.UTC(since)).
-		Order("created_at ASC").Limit(1).Scan(&out).Error
-	if err != nil {
-		return time.Time{}, false, fmt.Errorf("reading the oldest attempt of a purpose: %w", err)
-	}
-	if len(out) == 0 {
-		return time.Time{}, false, nil
-	}
-	return clock.UTC(out[0].CreatedAt), true, nil
-}
-
-// countRealPurposeSince counts the rows of one purpose created after since that
-// are not suppressed. Only the deployment-wide budget reads it: a suppressed row
-// is a request for a number nobody registered, and letting it spend the global
-// budget would let anonymous traffic exhaust the deployment without sending
-// anything. A refunded row is left out too, for the same reason the other
-// dimensions leave it out. The per-number, per-source and per-account dimensions
-// still count suppressed rows, so the point at which a caller is refused does not
-// say whether the number is registered.
-func (g *register) countRealPurposeSince(q *gorm.DB, purpose string, since time.Time) (int64, error) {
-	var n int64
-	err := q.Table(challengeTable).
-		Where("purpose = ? AND suppressed = ? AND refunded_at IS NULL AND created_at > ?", purpose, false, clock.UTC(since)).Count(&n).Error
-	if err != nil {
-		return 0, fmt.Errorf("counting the sends of a purpose: %w", err)
-	}
-	return n, nil
-}
-
-// oldestRealPurposeSince reads the created_at of the oldest counted,
-// unsuppressed row of the purpose after since, which is when the deployment-wide
-// window frees a slot.
-func (g *register) oldestRealPurposeSince(q *gorm.DB, purpose string, since time.Time) (time.Time, bool, error) {
-	var out []struct{ CreatedAt time.Time }
-	err := q.Table(challengeTable).Select("created_at").
-		Where("purpose = ? AND suppressed = ? AND refunded_at IS NULL AND created_at > ?", purpose, false, clock.UTC(since)).
-		Order("created_at ASC").Limit(1).Scan(&out).Error
-	if err != nil {
-		return time.Time{}, false, fmt.Errorf("reading the oldest send of a purpose: %w", err)
-	}
-	if len(out) == 0 {
-		return time.Time{}, false, nil
-	}
-	return clock.UTC(out[0].CreatedAt), true, nil
-}
-
-// countAccountSince counts the rows for the account created after since,
-// leaving out the refunded ones.
-func (g *register) countAccountSince(q *gorm.DB, account string, since time.Time) (int64, error) {
-	var n int64
-	err := q.Table(challengeTable).
-		Where("account_id = ? AND refunded_at IS NULL AND created_at > ?", account, clock.UTC(since)).Count(&n).Error
-	if err != nil {
-		return 0, fmt.Errorf("counting the sends to an account: %w", err)
-	}
-	return n, nil
-}
-
-// oldestAccountSince reads the created_at of the oldest counted row for the
-// account after since.
-func (g *register) oldestAccountSince(q *gorm.DB, account string, since time.Time) (time.Time, bool, error) {
-	var out []struct{ CreatedAt time.Time }
-	err := q.Table(challengeTable).Select("created_at").
-		Where("account_id = ? AND refunded_at IS NULL AND created_at > ?", account, clock.UTC(since)).
-		Order("created_at ASC").Limit(1).Scan(&out).Error
-	if err != nil {
-		return time.Time{}, false, fmt.Errorf("reading the oldest send to an account: %w", err)
-	}
-	if len(out) == 0 {
-		return time.Time{}, false, nil
-	}
-	return clock.UTC(out[0].CreatedAt), true, nil
+	return eventID, nil
 }
 
 // deleteAccount removes the account's mfa and enroll rows and returns how many

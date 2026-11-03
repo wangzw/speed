@@ -1,7 +1,8 @@
 // Package sms is the SMS module of the authentication capability: the whole
 // state machine of a verification code, whatever its purpose. It writes the
-// challenge row, spends the budgets, counts the attempts, consumes the code and
-// hands the sending to a carrier through the sending seam.
+// challenge row and one attempt in the shared SMS ledger, spends the budgets,
+// counts the attempts, consumes the code and hands the sending to a carrier
+// through the sending seam.
 //
 // A purpose is one of the closed set login, mfa, enroll and reset: the first
 // factor of a login, the second factor, the proof of a number during enrollment,
@@ -57,6 +58,7 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // ModuleName is this module's name in the registry. A host writes it into the
@@ -102,12 +104,12 @@ var (
 
 // Module is the descriptor a host registers.
 //
-// The database, the template registry and the sending seam are required, and
-// each is delivered exclusively by another module, so the closure of a command
-// that names this one does not pull them in: the host writes them down. The
-// registry and the sending seam are functional, exclusive requirements: a
-// command that names no provider delivering one fails in resolution, and two at
-// once conflict. The registry is taken up before the sending seam, because this
+// The database, the template registry, the sending seam and the shared SMS
+// ledger are required, and each is delivered exclusively by another module
+// except the ledger, which is the one both sending channels share. The registry
+// and the sending seam are functional, exclusive requirements: a command that
+// names no provider delivering one fails in resolution, and two at once
+// conflict. The registry is taken up before the sending seam, because this
 // module checks its templates against what the registry declares and hands the
 // carrier only what the registry resolved.
 //
@@ -127,6 +129,7 @@ func Module() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*sms.Registry)(nil)},
 			{Token: (*sms.Sender)(nil)},
+			{Token: (*budget.Store)(nil)},
 			{Token: (*authn.HumanVerifier)(nil), Optional: true},
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
@@ -238,12 +241,13 @@ type product struct {
 	resetSupported bool
 
 	register *register
-	// budgets is where the send budgets read their counts. It is the challenge
-	// table today; the shared cross-channel ledger replaces it behind the same
-	// surface without changing the call sites in checkBudgets.
-	budgets budgetSource
-	pool    *pool
-	meters  *meters
+	// ledger is the shared SMS ledger. Every provider-bound attempt is written
+	// here before the carrier is asked, and its refund is written when the send
+	// certainly did not leave. Every send budget and the cross-channel ceiling
+	// read their counts here, through a store bound to the send's transaction.
+	ledger budget.Store
+	pool   *pool
+	meters *meters
 
 	// What Init takes up. They are read-only after Init.
 	settings *reader
@@ -288,6 +292,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the sending seam: %w", diagnosticPrefix, ModuleName, err)
 	}
+	ledger, err := core.Resolve[budget.Store](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s%s: taking up the shared SMS ledger: %w", diagnosticPrefix, ModuleName, err)
+	}
 	// The default language is the shared i18n item, so a run reads one statement
 	// of it whatever engine is assembled; an assembly with no i18n engine keeps
 	// the fallback.
@@ -303,13 +311,13 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err := checkSender(declared, defaultLocale); err != nil {
 		return nil, fmt.Errorf("%s%s: %w", diagnosticPrefix, ModuleName, err)
 	}
-	return build(database, registry, sender, cfg, defaultLocale, templateLocales(declared)), nil
+	return build(database, registry, sender, ledger, cfg, defaultLocale, templateLocales(declared)), nil
 }
 
 // build assembles a product from its parts. The optional parts start absent and
 // the logger starts as the process's, so that a product that has not been through
 // Init is still one that does not panic.
-func build(database db.Database, registry sms.Registry, sender sms.Sender, cfg resolved, defaultLocale string, localesByTemplate map[string][]string) *product {
+func build(database db.Database, registry sms.Registry, sender sms.Sender, ledger budget.Store, cfg resolved, defaultLocale string, localesByTemplate map[string][]string) *product {
 	logger := log.Default()
 	// templateLocales writes an entry for the reset template only when the
 	// carrier declared it, so its presence is the support answer.
@@ -324,7 +332,7 @@ func build(database db.Database, registry sms.Registry, sender sms.Sender, cfg r
 		localesByTemplate: localesByTemplate,
 		resetSupported:    resetSupported,
 		register:          register,
-		budgets:           register,
+		ledger:            ledger,
 		pool:              newPool(cfg.Workers, cfg.QueueSize),
 		meters:            &meters{},
 		settings:          newReader(nil, logger),

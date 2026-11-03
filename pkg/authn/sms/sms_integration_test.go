@@ -114,10 +114,11 @@ func TestOverlappingResendsOfOneNumberSerialize(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- r.p.register.insert(context.Background(), challengeRow{
+		_, err := r.p.register.insert(context.Background(), challengeRow{
 			ID: "B", Purpose: purposeLogin, PhoneMAC: phoneMac, CodeMAC: "mac-b",
 			MaxAttempts: 5, CreatedAt: now, ExpiresAt: now.Add(5 * time.Minute),
-		}, nil)
+		}, nil, nil)
+		done <- err
 	}()
 
 	// B must wait for A's transaction: while A holds the lock, B's backend is

@@ -26,6 +26,7 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // base is the instant the cases that need a fixed time start from.
@@ -452,6 +453,8 @@ func declaredValue(key string) (any, bool) {
 		return defaults.PerFlowSends, true
 	case perAccountHourlyPath:
 		return defaults.PerAccountHourly, true
+	case ceilingHourlyPath:
+		return defaultCeilingHourly, true
 	}
 	return nil, false
 }
@@ -462,6 +465,7 @@ type rig struct {
 	p        *product
 	h        *gorm.DB
 	database db.Database
+	ledger   budget.Store
 	registry *fakeRegistry
 	sender   *fakeSender
 	bus      *recordingBus
@@ -489,9 +493,10 @@ func newRig(t *testing.T, database db.Database, sender *fakeSender) *rig {
 func newRigOver(t *testing.T, database db.Database, registry *fakeRegistry, sender *fakeSender, defaultLocale string) *rig {
 	t.Helper()
 	cfg := resolved{Workers: 1, QueueSize: 64}
-	p := build(database, registry, sender, cfg, defaultLocale, templateLocales(registry.Declared()))
+	ledger := budget.New(database.DB())
+	p := build(database, registry, sender, ledger, cfg, defaultLocale, templateLocales(registry.Declared()))
 	r := &rig{
-		t: t, p: p, h: database.DB(), database: database, registry: registry, sender: sender,
+		t: t, p: p, h: database.DB(), database: database, ledger: ledger, registry: registry, sender: sender,
 		bus: newBus(), audit: &recordingAudit{}, store: newStore(),
 		logs: &logBuffer{}, clock: newClock(base),
 	}
@@ -698,7 +703,9 @@ var dialects = []dialect{{
 	},
 }}
 
-// applyMigrations builds the module's table from the files it ships.
+// applyMigrations builds the module's table from the files it ships, and the
+// shared ledger's table from the migration set the budget module declares, so a
+// case counts against the schemas a deployment gets rather than copies of them.
 func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 	t.Helper()
 	entries, err := fs.ReadDir(migrationsFS, dialect)
@@ -716,6 +723,59 @@ func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 			}
 		}
 	}
+	applyLedgerMigrations(t, h, dialect)
+}
+
+// applyLedgerMigrations builds the shared ledger's table from the migration set
+// budget.Module declares. The ledger keeps its own files unexported, so the
+// descriptor's db.Migrations resource is the way a case reaches the same schema
+// a deployment runs.
+func applyLedgerMigrations(t *testing.T, h *gorm.DB, dialect string) {
+	t.Helper()
+	for _, resource := range budget.Module().Resources {
+		migrations, ok := resource.(db.Migrations)
+		if !ok {
+			continue
+		}
+		entries, err := fs.ReadDir(migrations.FS, dialect)
+		if err != nil {
+			t.Fatalf("listing the ledger's %s migrations: %v", dialect, err)
+		}
+		for _, entry := range entries {
+			body, err := fs.ReadFile(migrations.FS, dialect+"/"+entry.Name())
+			if err != nil {
+				t.Fatalf("reading the ledger's %s: %v", entry.Name(), err)
+			}
+			for _, statement := range splitLedgerStatements(string(body)) {
+				if err := h.Exec(statement).Error; err != nil {
+					t.Fatalf("applying the ledger's %s: %v", entry.Name(), err)
+				}
+			}
+		}
+	}
+}
+
+// splitLedgerStatements removes whole-line comments before splitting on the
+// semicolons that end statements. A ledger comment can carry a semicolon of its
+// own ("then; refunded_at"), and splitting before the comment is gone would turn
+// half a sentence into a statement.
+func splitLedgerStatements(sql string) []string {
+	var body strings.Builder
+	for _, line := range strings.Split(sql, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		body.WriteString(line)
+		body.WriteByte('\n')
+	}
+	var out []string
+	for _, part := range strings.Split(body.String(), ";") {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
 }
 
 // splitStatements splits a migration on the semicolons that end statements,

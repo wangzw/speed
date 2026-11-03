@@ -12,6 +12,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/sms"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // TestAnAllowedSendWritesARowAndQueuesAMessage holds the happy path: the allowed
@@ -234,11 +235,13 @@ func TestARegisteredAndASuppressedNumberTakeTheSameCountingPath(t *testing.T) {
 		t.Fatalf("the table holds %d rows, want 2 (one per send, whatever the registration)", got)
 	}
 	phoneMac := r.database.BlindIndex(phone)
-	n, err := r.p.register.countPhoneSince(r.h, phoneMac, r.clock.read().Add(-time.Hour))
-	if err != nil {
-		t.Fatalf("counting the phone budget: %v", err)
-	}
-	if n != 2 {
+	if n := r.ledgerCount(budget.Query{
+		Channel:           budget.ChannelAuthn,
+		Dimension:         budget.DimensionDestination,
+		Value:             phoneMac,
+		Since:             r.clock.read().Add(-time.Hour),
+		IncludeSuppressed: true,
+	}); n != 2 {
 		t.Errorf("the phone budget counts %d sends, want 2: the two paths must agree", n)
 	}
 	// The one difference the caller may observe is off the answer: the registered

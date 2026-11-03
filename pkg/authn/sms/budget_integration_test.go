@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // integrationSource is the client address the source-dimension cases send from.
@@ -25,25 +26,23 @@ func budgetLockKey(dimension, value string) string {
 	return "authn.sms:lock:" + dimension + ":" + value
 }
 
-// insertCountRow writes a challenge row in the transaction it is given, so a
-// case can hold a count row uncommitted while another send runs. Time is written
-// in UTC, as the module writes it. sourceMac is the row's source dimension, nil
-// for a row with no source.
-func insertCountRow(t *testing.T, tx *gorm.DB, id, purpose, phoneMac string, account, sourceMac *string, created time.Time) {
+// insertCountRow writes one shared-ledger attempt in the transaction it is
+// given, so a case can hold a count row uncommitted while another send runs. The
+// row is a non-refunded, unsuppressed authentication attempt, the shape every
+// send budget counts. sourceMac is the row's source dimension, nil for a row
+// with no source.
+func insertCountRow(t *testing.T, tx *gorm.DB, purpose, phoneMac string, account, sourceMac *string, created time.Time) {
 	t.Helper()
-	var accountVal any
-	if account != nil {
-		accountVal = *account
-	}
-	var sourceVal any
-	if sourceMac != nil {
-		sourceVal = *sourceMac
-	}
-	if err := tx.Exec("INSERT INTO "+challengeTable+
-		" (id, purpose, phone_mac, source_mac, account_id, suppressed, code_mac, attempts, max_attempts, created_at, expires_at) "+
-		"VALUES (?, ?, ?, ?, ?, ?, ?, 0, 5, ?, ?)",
-		id, purpose, phoneMac, sourceVal, accountVal, false, "mac", created.UTC(), created.Add(5*time.Minute).UTC()).Error; err != nil {
-		t.Fatalf("inserting a count row: %v", err)
+	if _, err := budget.New(tx).Record(context.Background(), budget.Attempt{
+		Channel:        budget.ChannelAuthn,
+		Purpose:        purpose,
+		SourceMAC:      sourceMac,
+		DestinationMAC: phoneMac,
+		AccountID:      account,
+		AttemptedAt:    created,
+		Outcome:        budget.OutcomeSent,
+	}); err != nil {
+		t.Fatalf("recording a count row: %v", err)
 	}
 }
 
@@ -99,7 +98,7 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 			name: "phone",
 			key:  func(r *rig) string { return budgetLockKey("phone", r.database.BlindIndex(phone)) },
 			row: func(r *rig, tx *gorm.DB) {
-				insertCountRow(t, tx, "count-phone", purposeLogin, r.database.BlindIndex(phone), nil, nil, r.clock.read().Add(-31*time.Second))
+				insertCountRow(t, tx, purposeLogin, r.database.BlindIndex(phone), nil, nil, r.clock.read().Add(-31*time.Second))
 			},
 			tune: func(r *rig) { r.store.set(perPhoneHourlyPath, 1) },
 			send: func(r *rig) error {
@@ -114,7 +113,7 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 			// this case pins the second window to the same lock as the first.
 			key: func(r *rig) string { return budgetLockKey("phone", r.database.BlindIndex(phone)) },
 			row: func(r *rig, tx *gorm.DB) {
-				insertCountRow(t, tx, "count-phone-daily", purposeLogin, r.database.BlindIndex(phone), nil, nil, r.clock.read().Add(-31*time.Second))
+				insertCountRow(t, tx, purposeLogin, r.database.BlindIndex(phone), nil, nil, r.clock.read().Add(-31*time.Second))
 			},
 			tune: func(r *rig) { r.store.set(perPhoneDailyPath, 1) },
 			send: func(r *rig) error {
@@ -131,7 +130,7 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 				// Another number of the same account: the account dimension is the
 				// one this case exercises, and the send's own number stays empty.
 				account := string(acct)
-				insertCountRow(t, tx, "count-account", authn.SMSPurposeMFA,
+				insertCountRow(t, tx, authn.SMSPurposeMFA,
 					r.database.BlindIndex("+8613800138002"), &account, nil, r.clock.read().Add(-31*time.Second))
 			},
 			tune: func(r *rig) { r.store.set(perAccountHourlyPath, 1) },
@@ -147,7 +146,7 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 			name: "global",
 			key:  func(*rig) string { return budgetLockKey("global", purposeLogin) },
 			row: func(r *rig, tx *gorm.DB) {
-				insertCountRow(t, tx, "count-global", purposeLogin,
+				insertCountRow(t, tx, purposeLogin,
 					r.database.BlindIndex("+8613800138002"), nil, nil, r.clock.read().Add(-31*time.Second))
 			},
 			tune: func(r *rig) { r.store.set(globalLoginPath, 1) },
@@ -165,7 +164,7 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 				// Another number from the same source: the source dimension is the
 				// one this case exercises, and the send's own number stays empty.
 				sourceMac := r.database.BlindIndex(integrationSource)
-				insertCountRow(t, tx, "count-source", purposeLogin,
+				insertCountRow(t, tx, purposeLogin,
 					r.database.BlindIndex("+8613800138002"), nil, &sourceMac, r.clock.read().Add(-31*time.Second))
 			},
 			tune: func(r *rig) { r.store.set(perSourceHourlyPath, 1) },
@@ -184,7 +183,7 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 			key: func(r *rig) string { return budgetLockKey("source", r.database.BlindIndex(integrationSource)) },
 			row: func(r *rig, tx *gorm.DB) {
 				sourceMac := r.database.BlindIndex(integrationSource)
-				insertCountRow(t, tx, "count-source-daily", purposeLogin,
+				insertCountRow(t, tx, purposeLogin,
 					r.database.BlindIndex("+8613800138002"), nil, &sourceMac, r.clock.read().Add(-31*time.Second))
 			},
 			tune: func(r *rig) { r.store.set(perSourceDailyPath, 1) },
@@ -248,8 +247,8 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 			case <-time.After(lockWaitBudget):
 				t.Fatalf("the send was still blocked %s after the %s lock was released", lockWaitBudget, c.name)
 			}
-			if n := r.rowCount(); n != 1 {
-				t.Errorf("the table holds %d rows, want 1 (the count row alone): a refused send writes none", n)
+			if n := r.rowCount(); n != 0 {
+				t.Errorf("the challenge table holds %d rows, want 0: a refused send writes none", n)
 			}
 		})
 	}

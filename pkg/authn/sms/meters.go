@@ -5,6 +5,8 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // The names this module reports under. The metric name and its attribute are
@@ -13,9 +15,31 @@ const (
 	meterName         = "authn"
 	sendsName         = "authn.sms.sends"
 	auditFailuresName = "authn.audit.write-failures"
+	utilizationName   = "authn.sms.budget.utilization"
 
 	outcomeAttribute   = "outcome"
 	mandatoryAttribute = "mandatory"
+	channelAttribute   = "channel"
+	purposeAttribute   = "purpose"
+	dimensionAttribute = "dimension"
+)
+
+// The dimension values the utilization gauge reports. They are a closed set: a
+// data point names one budget, and the shared ceiling is the one dimension both
+// channels spend.
+const (
+	dimensionCeiling        = "ceiling"
+	dimensionPhone          = "phone"
+	dimensionSource         = "source"
+	dimensionSourceDistinct = "source-distinct"
+	dimensionSourceAttempt  = "source-attempt"
+	dimensionGlobal         = "global"
+	dimensionGlobalAttempt  = "global-attempt"
+	dimensionAccount        = "account"
+
+	// purposeShared is the purpose label of the shared ceiling, which is not any
+	// one purpose's budget.
+	purposeShared = "shared"
 )
 
 // The outcomes of a send, as the counter's outcome attribute takes them. The set
@@ -40,6 +64,26 @@ const (
 type meters struct {
 	sends         metric.Int64Counter
 	auditFailures metric.Int64Counter
+	utilization   metric.Float64Gauge
+}
+
+// budget records how much of one budget is in use, as a share of its limit. The
+// purpose names the sending purpose and the dimension names the budget; the
+// shared ceiling reports under purposeShared so it is not summed with a
+// purpose's own budgets. The channel attribute is always authn here and
+// notification on the other capability's same-named gauge, so an operator reads
+// one instrument for both sending channels. A zero or negative limit is not a
+// budget and records nothing, and a missing instrument is the legal assembly
+// with no metrics.
+func (m *meters) budget(ctx context.Context, purpose, dimension string, used int64, limit int) {
+	if m == nil || m.utilization == nil || limit <= 0 {
+		return
+	}
+	m.utilization.Record(ctx, float64(used)/float64(limit),
+		metric.WithAttributes(
+			attribute.String(channelAttribute, string(budget.ChannelAuthn)),
+			attribute.String(purposeAttribute, purpose),
+			attribute.String(dimensionAttribute, dimension)))
 }
 
 // sent records one send under the outcome it ended as.
@@ -72,5 +116,11 @@ func newMeters(provider metric.MeterProvider) (*meters, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &meters{sends: sends, auditFailures: failures}, nil
+	utilization, err := meter.Float64Gauge(utilizationName,
+		metric.WithUnit("{ratio}"),
+		metric.WithDescription("The share of an SMS budget a sending channel has consumed, by purpose and window"))
+	if err != nil {
+		return nil, err
+	}
+	return &meters{sends: sends, auditFailures: failures, utilization: utilization}, nil
 }

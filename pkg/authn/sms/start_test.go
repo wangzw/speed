@@ -11,6 +11,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/internal/dbtest"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // TestStartRefusesWithoutARootKey holds the self-check: with the table there but
@@ -21,7 +22,7 @@ func TestStartRefusesWithoutARootKey(t *testing.T) {
 	handle := database.DB().Session(&gorm.Session{Logger: logger.Discard})
 	applyMigrations(t, handle, sqliteDialect)
 
-	p := build(database, newRegistry(), newSender(), resolved{Workers: 1, QueueSize: 4}, testDefaultLocale,
+	p := build(database, newRegistry(), newSender(), budget.New(database.DB()), resolved{Workers: 1, QueueSize: 4}, testDefaultLocale,
 		templateLocales(newRegistry().Declared()))
 	err := p.start(context.Background())
 	if !errors.Is(err, authn.ErrNoEncryptionKey) {
@@ -33,7 +34,7 @@ func TestStartRefusesWithoutARootKey(t *testing.T) {
 // there ends the startup with ErrNotMigrated before the key is even checked.
 func TestStartRefusesWhenTheTableIsMissing(t *testing.T) {
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "sms.db"), nil)
-	p := build(database, newRegistry(), newSender(), resolved{Workers: 1, QueueSize: 4}, testDefaultLocale,
+	p := build(database, newRegistry(), newSender(), budget.New(database.DB()), resolved{Workers: 1, QueueSize: 4}, testDefaultLocale,
 		templateLocales(newRegistry().Declared()))
 	err := p.start(context.Background())
 	if !errors.Is(err, authn.ErrNotMigrated) {

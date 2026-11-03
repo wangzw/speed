@@ -19,6 +19,7 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
+	"github.com/vislake/speed/pkg/sms/budget"
 )
 
 // The stand-in modules an assembly drives: the capabilities another module
@@ -107,6 +108,13 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	reg.Register(standIn(dbModule, database, true, (*db.Database)(nil)))
 	names = append(names, dbModule)
 
+	// The shared ledger is a required, non-exclusive provider: one process has
+	// one ledger and both sending channels read it. The real descriptor is
+	// registered, so the case proves the requirement resolves against the
+	// module a deployment uses rather than a stand-in.
+	reg.Register(budget.Module())
+	names = append(names, budget.ModuleName)
+
 	if a.registry != nil {
 		reg.Register(standIn(registryModule, a.registry, true, (*sms.Registry)(nil)))
 		names = append(names, registryModule)
@@ -157,7 +165,7 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 			required = append(required, r.Token)
 		}
 	}
-	want := []core.Token{(*db.Database)(nil), (*sms.Registry)(nil), (*sms.Sender)(nil)}
+	want := []core.Token{(*db.Database)(nil), (*sms.Registry)(nil), (*sms.Sender)(nil), (*budget.Store)(nil)}
 	if len(required) != len(want) {
 		t.Fatalf("Requires = %+v, want %v", m.Requires, want)
 	}
