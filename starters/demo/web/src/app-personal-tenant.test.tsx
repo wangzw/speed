@@ -12,7 +12,6 @@
  */
 
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
@@ -25,7 +24,6 @@ import {
   setCurrentTenantId,
   setTenantAliases,
 } from './chrome.js'
-import { ACCOUNT_SETUP_PATH } from './paths.js'
 import { clearSelfTenants } from './tenant-self.js'
 import { renderDemoApp } from './test-utils/render.js'
 import {
@@ -99,27 +97,6 @@ const PENDING_PROFILE: AuthnProfileProfile = {
   ...INCOMPLETE_PROFILE,
   password_set: true,
   verification: { state: 'pending', email: 'ada@x.test', since: '' },
-}
-
-/** The profile of an account that completed setup: a username and a
- * password. */
-const COMPLETE_PROFILE: AuthnProfileProfile = {
-  ...INCOMPLETE_PROFILE,
-  password_set: true,
-  identifiers: [
-    ...INCOMPLETE_PROFILE.identifiers,
-    {
-      id: 'identifier-username',
-      kind: 'username',
-      value: 'test-user',
-      proven: false,
-      contact: false,
-      default_contact: false,
-      sign_in: true,
-      verified_at: '',
-      verified_via: 'self',
-    },
-  ],
 }
 
 /** A scripted request function: the roster read answers as the case asks,
@@ -216,13 +193,6 @@ function script(options: {
     }
     throw new Error(`unexpected ${call.method ?? 'GET'} ${path}`)
   })
-}
-
-/** Moves the app to a path through the browser history, the way a link
- * outside React (or a typed URL) does: the router listens for popstate. */
-function navigateTo(pathname: string): void {
-  window.history.pushState({}, '', pathname)
-  window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
 /** The authenticated snapshot with a principal whose setup state the case
@@ -415,50 +385,6 @@ describe('the tenant frame and the personal tenant', () => {
     await waitFor(() => expect(selfCalls.length).toBeGreaterThanOrEqual(2))
     expect(
       await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
-    ).toBeInTheDocument()
-  })
-
-  it('offers the setup notice from an incomplete profile even when the backfill created nothing', async () => {
-    // The account already held its personal tenant, so the backfill answer is
-    // created: false. The profile is deliberately left incomplete: the notice
-    // is driven by setup incomplete alone, so it still appears.
-    script({ roster: 'refused', ensureCreated: false })
-    const snapshot = authenticatedSnapshot({
-      features: readyFeatures(...PERSONAL_FEATURES),
-    })
-    if (snapshot.principal === null) {
-      throw new Error('the authenticated snapshot carries no principal')
-    }
-    renderDemoApp({
-      session: createTestSession({
-        ...snapshot,
-        principal: {
-          ...snapshot.principal,
-          password_set: false,
-          identifiers: [
-            {
-              id: 'identifier-phone',
-              kind: 'phone',
-              value: '+14155550123',
-              proven: true,
-              contact: false,
-              default_contact: false,
-              sign_in: true,
-              verified_at: '2026-01-01T00:00:00Z',
-              verified_via: 'sms-code',
-            },
-          ],
-        },
-      }),
-    })
-
-    // The backfill settled (the switcher labels the personal tenant), and the
-    // home page offers the setup notice from the profile alone.
-    expect(
-      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
-    ).toBeInTheDocument()
-    expect(
-      await screen.findByText(demoEnUS.home.setupNotice.title),
     ).toBeInTheDocument()
   })
 
@@ -695,73 +621,6 @@ describe('the tenant frame and the personal tenant', () => {
     await waitFor(() => expect(getCurrentTenantId()).toBe(PERSONAL_ID))
   })
 
-  it('offers no notice when a new tenant already has a complete account', async () => {
-    const calls: string[] = []
-    script({
-      roster: 'refused',
-      ensureCreated: true,
-      profile: () => COMPLETE_PROFILE,
-      calls,
-    })
-    renderDemoApp({
-      session: createTestSession(snapshotWithProfile(true)),
-    })
-
-    // The ensure created the tenant, but the account already holds the
-    // username and password the notice would ask it to add: the eligibility
-    // condition is false and the home page shows no notice. The frame still
-    // reads the profile once -- the verification banner needs its state --
-    // and the shared query dedupes that with anything else reading it.
-    expect(
-      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
-    ).toBeInTheDocument()
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
-    expect(
-      calls.filter((call) => call === 'GET /api/v1/auth/me'),
-    ).toHaveLength(1)
-    expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
-  })
-
-  it('keeps the account-level pages rendering while the ensure keeps failing', async () => {
-    // The account setup page reads no tenant data, so a sustained ensure
-    // failure must not replace it with the tenant failure view: that is
-    // where a new account adds the username and password.
-    window.history.replaceState({}, '', ACCOUNT_SETUP_PATH)
-    const ensureCalls: string[] = []
-    const ensureOutcomes: ('settled' | 'rejected')[] = []
-    script({
-      roster: 'refused',
-      ensure: 'unavailable',
-      ensureCalls,
-      ensureOutcomes,
-      profile: () => INCOMPLETE_PROFILE,
-    })
-    renderDemoApp({
-      session: createTestSession(snapshotWithProfile(false)),
-    })
-
-    expect(
-      await screen.findByRole('heading', {
-        level: 1,
-        name: demoEnUS.accountSetup.title,
-      }),
-    ).toBeInTheDocument()
-    // The rejection, not the request's issue, is what makes the failure state
-    // real: wait until the answer was decided before judging the page.
-    await waitFor(() => expect(ensureCalls).toHaveLength(1))
-    await waitFor(() => expect(ensureOutcomes).toEqual(['rejected']))
-    expect(screen.queryByText(demoEnUS.workspace.failure.title)).toBeNull()
-    expect(
-      screen.getByRole('heading', {
-        level: 1,
-        name: demoEnUS.accountSetup.title,
-      }),
-    ).toBeInTheDocument()
-    expect(getCurrentTenantId()).toBeNull()
-  })
-
   it('keeps the account page rendering while the ensure keeps failing', async () => {
     window.history.replaceState({}, '', '/account')
     const ensureCalls: string[] = []
@@ -806,133 +665,6 @@ describe('the tenant frame and the personal tenant', () => {
     expect(
       await screen.findByText(demoEnUS.workspace.failure.title),
     ).toBeInTheDocument()
-  })
-
-  it('keeps the notice dismissed across navigation', async () => {
-    window.history.replaceState({}, '', '/')
-    script({
-      roster: 'refused',
-      ensureCreated: true,
-      profile: () => INCOMPLETE_PROFILE,
-    })
-    renderDemoApp({
-      session: createTestSession(snapshotWithProfile(false)),
-    })
-
-    expect(
-      await screen.findByText(demoEnUS.home.setupNotice.title),
-    ).toBeInTheDocument()
-    fireEvent.click(
-      screen.getByRole('button', { name: demoEnUS.home.setupNotice.dismiss }),
-    )
-    expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
-
-    // Leave the home page and come back: the dismissal belongs to the
-    // identity's session, so the notice stays away.
-    act(() => navigateTo(ACCOUNT_SETUP_PATH))
-    expect(
-      await screen.findByRole('heading', {
-        level: 1,
-        name: demoEnUS.accountSetup.title,
-      }),
-    ).toBeInTheDocument()
-    act(() => navigateTo('/'))
-    expect(
-      await screen.findByRole('heading', {
-        level: 1,
-        name: demoEnUS.home.heading,
-      }),
-    ).toBeInTheDocument()
-    expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
-  })
-
-  it('resets the notice when the identity changes', async () => {
-    let identities = 0
-    script({
-      roster: 'refused',
-      // The server derives the identifier per account; the second identity's
-      // own space is a different identifier, and the switcher must label it as
-      // personal (not another account's row).
-      ensureTenantId: () =>
-        identities++ === 0 ? PERSONAL_ID : 'personal-account-2',
-      profile: () => INCOMPLETE_PROFILE,
-    })
-    const session = createTestSession(snapshotWithProfile(false))
-    renderDemoApp({ session })
-
-    expect(
-      await screen.findByText(demoEnUS.home.setupNotice.title),
-    ).toBeInTheDocument()
-    // Dismiss it for the first identity's session.
-    fireEvent.click(
-      screen.getByRole('button', { name: demoEnUS.home.setupNotice.dismiss }),
-    )
-    await waitFor(() =>
-      expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull(),
-    )
-
-    act(() => session.set(ANONYMOUS_SNAPSHOT))
-    // The home page is gone with the session; the reset runs while the shell
-    // renders its ended state.
-    await waitFor(() =>
-      expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull(),
-    )
-
-    act(() =>
-      session.set({
-        ...snapshotWithProfile(false),
-        principal: {
-          ...(snapshotWithProfile(false).principal ?? {}),
-          account_id: 'account-2',
-        },
-      }),
-    )
-    // The second identity's profile is incomplete, so its notice is offered
-    // again: the first identity's dismissal belongs to that identity alone.
-    expect(
-      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
-    ).toBeInTheDocument()
-    expect(
-      await screen.findByText(demoEnUS.home.setupNotice.title),
-    ).toBeInTheDocument()
-  })
-
-  it('hides the notice once setup is completed on another page', async () => {
-    let complete = false
-    script({
-      roster: 'refused',
-      ensureCreated: true,
-      profile: () => (complete ? COMPLETE_PROFILE : INCOMPLETE_PROFILE),
-    })
-    const user = userEvent.setup()
-    renderDemoApp({
-      session: createTestSession(snapshotWithProfile(false)),
-    })
-
-    expect(
-      await screen.findByText(demoEnUS.home.setupNotice.title),
-    ).toBeInTheDocument()
-
-    // The account follows the notice to the setup page and completes it
-    // there; coming back, the home page reads the current profile and the
-    // notice is gone.
-    complete = true
-    await user.click(
-      screen.getByRole('link', { name: demoEnUS.home.setupNotice.action }),
-    )
-    expect(
-      await screen.findByText(demoEnUS.accountSetup.complete),
-    ).toBeInTheDocument()
-    await user.click(
-      screen.getByRole('link', { name: demoEnUS.accountSetup.home }),
-    )
-    expect(
-      await screen.findByRole('heading', {
-        level: 1,
-        name: demoEnUS.home.heading,
-      }),
-    ).toBeInTheDocument()
-    expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
   })
 
   it('clears the current tenant and the aliases when the session turns anonymous', async () => {

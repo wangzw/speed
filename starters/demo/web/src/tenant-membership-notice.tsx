@@ -6,9 +6,8 @@
  * home inside the tenant frame. The confirmation the journey asks for has to
  * outlive that route change, so the state lives above both: the app view root
  * (src/app.tsx) mounts the provider, the landing announces through it when an
- * acceptance lands, and the home page reads and dismisses it. The shape mirrors
- * the personal-tenant notice's in-memory, dismissible one
- * (src/personal-tenant-notice.tsx); it is not a write-feedback slot, because the
+ * acceptance lands, and the home page reads and dismisses it. It is held in
+ * memory and dismissible; it is not a write-feedback slot, because the
  * write settled on a page that no longer exists by the time the confirmation
  * is rendered.
  *

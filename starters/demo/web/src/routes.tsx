@@ -36,8 +36,8 @@ import {
   AccountBindingCallbackPage,
   AccountSettingsPage,
 } from './pages/account-page.js'
-import { AccountSetupPage } from './pages/account-setup-page.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
+
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import { HomePage } from './pages/home-page.js'
 import { TENANT_HOME_PATH } from './pages/not-found-page.js'
@@ -47,7 +47,6 @@ import {
   ACCOUNT_PATH,
   ACCOUNT_SECTION_PATHS,
   ACCOUNT_SECTIONS,
-  ACCOUNT_SETUP_PATH,
   AUTH_CALLBACK_PATH,
   INVITATION_PREFIX,
   PASSWORD_RESET_PATH,
@@ -59,7 +58,6 @@ import {
 export {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
-  ACCOUNT_SETUP_PATH,
   AUTH_CALLBACK_PATH,
   ADMIN_PREFIX,
   NOTIFICATIONS_PATH,
@@ -160,12 +158,6 @@ export const businessRoutes: readonly HostRouteDeclaration[] = [
   {
     path: ACCOUNT_SECTION_PATHS.preferences,
     view: () => <AccountSettingsPage section="preferences" />,
-  },
-  // Unlabelled: a registration's completion point, not a destination in the
-  // navigation (reached from the sign-in surface's completion, or by URL).
-  {
-    path: ACCOUNT_SETUP_PATH,
-    view: () => <AccountSetupPage />,
   },
   // The notification surface: the same declarative seam as the admin's
   // pages -- notification-ui exports a structurally route-kit declaration,

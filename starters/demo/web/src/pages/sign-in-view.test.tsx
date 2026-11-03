@@ -7,8 +7,8 @@
  * current window to it, returning to the app's callback route.
  *
  * It also carries the host half of registration: a registration that
- * completes through SMS lands on the account setup page, because the account
- * exists but has no login name or password yet.
+ * completes through SMS lands in the tenant area when the personal tenant is
+ * served, and on the account settings page otherwise.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -35,7 +35,6 @@ import { pendingInvitationLanding } from '../invitation-return.js'
 import {
   ACCOUNT_PATH,
   ACCOUNT_SECTION_PATHS,
-  ACCOUNT_SETUP_PATH,
   INVITATION_PREFIX,
   PASSWORD_RESET_PATH,
 } from '../paths.js'
@@ -127,11 +126,8 @@ const authResetEn = authUiResources['en-US'] as unknown as {
 const REGISTER_PATH = '/api/v1/auth/register'
 const REGISTER = `POST ${REGISTER_PATH}`
 
-/** The account-ui explanation the setup page renders while the account has
- * no login name (PasswordSection owns that copy now), and the verification
- * section a password registration lands on. */
+/** The verification section a password registration lands on. */
 const accountEn = accountUiResources['en-US'] as unknown as {
-  readonly password: { readonly loginNameRequired: string }
   readonly verification: {
     readonly codeLabel: string
     readonly verify: string
@@ -290,7 +286,7 @@ describe('the sign-in surface', () => {
     expect(pendingInvitationLanding()).toBe(landing)
   })
 
-  it('lands a registration completed through SMS on the account setup page', async () => {
+  it('lands a registration completed through SMS on the account profile page', async () => {
     const harness = makeHarness({
       [LOGIN_METHODS]: () =>
         methodList(
@@ -340,14 +336,18 @@ describe('the sign-in surface', () => {
       within(form).getByRole('button', { name: authEn.smsSignIn.submit }),
     )
 
-    // The screen reported register + sms, so the host moved the just-opened
-    // account onto the setup page. Its profile lists no login name, so the
-    // password section explains what to add first.
+    // The screen reported register + sms, and the deployment serves no
+    // personal tenant, so the host moved the just-opened account to the
+    // account settings page, whose group address redirects to the profile
+    // pane.
     await waitFor(() =>
-      expect(window.location.pathname).toBe(ACCOUNT_SETUP_PATH),
+      expect(window.location.pathname).toBe(ACCOUNT_SECTION_PATHS.profile),
     )
     expect(
-      await screen.findByText(accountEn.password.loginNameRequired),
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.account.sections.profile,
+      }),
     ).toBeInTheDocument()
   })
 
@@ -559,20 +559,17 @@ describe('the sign-in surface', () => {
       within(form).getByRole('button', { name: authEn.smsSignIn.submit }),
     )
 
-    // The registration landed on the tenant home rather than the setup page.
-    // Whether the home page offers the setup notice is a question the ensure
-    // answer and the profile settle, not the register mode -- the case below
-    // drives it through an ordinary sign-in.
+    // The registration landed on the tenant home.
     await waitFor(() => expect(window.location.pathname).toBe('/'))
     expect(
       await screen.findByRole('heading', { level: 1, name: demoEnUS.home.heading }),
     ).toBeInTheDocument()
   })
 
-  it('lands a registration on the setup page when the feature document failed', async () => {
-    // A failed feature read is neither "personal tenant served" nor "absent":
-    // the register mode must fall back to the setup page, and the setup page
-    // still renders because it needs no feature.
+  it('lands a registration on the account page when the feature document failed', async () => {
+    // A failed feature read is neither "personal tenant served" nor "absent",
+    // so the register mode falls back to the account settings page, whose
+    // group address continues on the profile pane.
     const harness = makeHarness({
       [FEATURES_GET]: () => {
         throw Object.assign(new Error('the feature read failed'), {
@@ -626,7 +623,7 @@ describe('the sign-in surface', () => {
     )
 
     await waitFor(() =>
-      expect(window.location.pathname).toBe(ACCOUNT_SETUP_PATH),
+      expect(window.location.pathname).toBe(ACCOUNT_SECTION_PATHS.profile),
     )
   })
 
@@ -694,101 +691,6 @@ describe('the sign-in surface', () => {
       ).toBeNull(),
     )
     expect(window.location.pathname).toBe('/admin')
-  })
-
-  it('offers the setup notice to a new phone opened by a plain SMS sign-in', async () => {
-    // No register entry is clicked: this is the ordinary sign-in form. The
-    // deployment's SMS method opens an account for a number it does not know,
-    // so the completion creates the account implicitly. The ensure answer is
-    // what says the personal tenant was just created, and GET /api/v1/auth/me shows
-    // no login name and no password -- the two facts the notice is made of.
-    const harness = makeHarness({
-      [FEATURES_GET]: () => ({
-        features: ['tenant.admin', 'workspace.personal'],
-      }),
-      [LOGIN_METHODS]: () =>
-        methodList(
-          [{ name: 'sms', kind: 'form', opens_account: true }],
-          { signup: true },
-        ),
-      [LOGIN_START]: () =>
-        openFlow({
-          seq: 1,
-          state: 'first',
-          next: {
-            kind: 'challenge',
-            fields: [
-              { name: 'code', kind: 'code', required: true, secret: true },
-            ],
-          },
-        }),
-      [LOGIN_ANSWER]: (call) =>
-        (call.options?.body as { step?: string }).step === 'complete'
-          ? authenticatedCompletion()
-          : completeFlow(2),
-      [PROFILE_GET]: () =>
-        principal({
-          password_set: false,
-          identifiers: [
-            {
-              id: 'identifier-phone',
-              kind: 'phone',
-              value: '+14155550123',
-              proven: true,
-              contact: false,
-              default_contact: false,
-              sign_in: true,
-              verified_at: '2026-01-01T00:00:00Z',
-              verified_via: 'sms-code',
-            },
-          ],
-        }),
-      // An ordinary member cannot read the tenant roster; the frame's failed
-      // read leaves no current tenant. The caller tenant list is the
-      // membership fact, and it answers empty: the account has no membership
-      // yet, which is what lets the ensure run.
-      'GET /api/v1/system/tenants': () => {
-        throw Object.assign(new Error('the roster read was refused'), {
-          status: 403,
-        })
-      },
-      'GET /api/v1/auth/me/tenants': () => ({ tenants: [] }),
-      'POST /api/v1/workspace/personal': () => ({
-        tenant: {
-          id: 'personal-account-1',
-          alias: 'personal-account-1',
-          kind: 'personal',
-        },
-        created: true,
-      }),
-    })
-    renderDemoApp({ session: harness.session })
-
-    const user = userEvent.setup()
-    await user.type(
-      await screen.findByLabelText(authEn.smsSignIn.phoneLabel),
-      '+14155550123',
-    )
-    await user.click(
-      screen.getByRole('button', { name: authEn.smsSignIn.sendCode }),
-    )
-    await user.type(
-      await screen.findByLabelText(authEn.smsSignIn.codeLabel),
-      '123456',
-    )
-    const form = screen
-      .getByLabelText(authEn.smsSignIn.codeLabel)
-      .closest('form') as HTMLFormElement
-    await user.click(
-      within(form).getByRole('button', { name: authEn.smsSignIn.submit }),
-    )
-
-    expect(
-      await screen.findByText(demoEnUS.home.setupNotice.title),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('link', { name: demoEnUS.home.setupNotice.action }),
-    ).toHaveAttribute('href', ACCOUNT_SETUP_PATH)
   })
 
   it('lands a refused callback with the refusal and its masked address', async () => {

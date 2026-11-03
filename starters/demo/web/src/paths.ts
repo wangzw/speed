@@ -62,13 +62,6 @@ export const ACCOUNT_SECTION_PATHS: Record<AccountSection, string> = {
 }
 
 /**
- * The account setup page: where a registration completed through the
- * sign-in surface continues, adding a username and then a password. It is
- * a completion point, not a navigation destination.
- */
-export const ACCOUNT_SETUP_PATH = '/account/setup'
-
-/**
  * The notification centre's path, taken from the declaration the surface
  * mounts from (@speed/notification-ui) -- the one source the route table, the
  * header bell and the start page all read, so the three never drift.
@@ -84,16 +77,14 @@ export const ACCOUNT_CALLBACK_PATH = '/account/callback'
 /**
  * The account-level pages: the routes that read no tenant data, so they
  * stay usable whatever the tenant context's state. The account settings
- * page, where registration now completes and the email verification runs, and
- * the setup page a registration completes on are the ones the design names;
- * the binding callback is the same family (it completes a write of the
- * account's own), and the tenant frame renders all three inside the tenant
- * area.
+ * page, where the email verification runs and a first password is set, is
+ * the one the design names; the binding callback is the same family (it
+ * completes a write of the account's own), and the tenant frame renders both
+ * inside the tenant area.
  */
 const ACCOUNT_LEVEL_PATHS: ReadonlySet<string> = new Set([
   ACCOUNT_PATH,
   ...Object.values(ACCOUNT_SECTION_PATHS),
-  ACCOUNT_SETUP_PATH,
   ACCOUNT_CALLBACK_PATH,
 ])
 

@@ -35,11 +35,6 @@
       "title": "你已成为该租户的成员。",
       "dismiss": "关闭加入成员确认"
     },
-    "setupNotice": {
-      "title": "完成账户设置。",
-      "action": "去完成账户设置",
-      "dismiss": "关闭账户设置提示"
-    },
     "cards": {
       "account": {
         "title": "账户设置",
@@ -163,15 +158,6 @@
       "removeFailed": "删除失败，请稍后重试。",
       "dismiss": "关闭"
     }
-  },
-  "accountSetup": {
-    "title": "完成账户设置",
-    "description": "添加用户名和密码，下次登录就不必再接收短信验证码。",
-    "completeTitle": "账户设置已完成",
-    "complete": "账户设置已完成，你可以用用户名和密码登录。",
-    "completeWithEmail": "账户设置已完成，你可以用邮箱和密码登录。",
-    "home": "回到首页",
-    "later": "稍后设置"
   },
   "verificationBanner": {
     "region": "邮箱验证",

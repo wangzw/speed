@@ -81,10 +81,7 @@ import {
 } from '@speed/route-kit'
 import type { RouteContext, RoutePresence } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
-import {
-  contactVerificationPending,
-  setupIncomplete,
-} from './account-setup.js'
+import { contactVerificationPending } from './contact-verification.js'
 import {
   tenantAdminTenantsList,
   useAuthnProfileGet,
@@ -128,7 +125,6 @@ import { usePermissionRead } from './platform-permissions.js'
 import { clearCallbackFragment, readCallbackError } from './sign-in-landing.js'
 import { DemoNavLabel } from './nav-label.js'
 import { AdminNavIcon } from './nav-icons.js'
-import { PersonalTenantNoticeProvider } from './personal-tenant-notice.js'
 import { TenantMembershipNoticeHost } from './tenant-membership-notice.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
@@ -588,15 +584,6 @@ function TenantFrame({
     ADMIN_PERMISSION_DOMAIN,
     'tenant.read',
   )
-  // Whether this identity's profile still shows setup incomplete. The home
-  // page offers the one-time 「完成账户设置」 notice from this fact alone
-  // (src/personal-tenant-notice.tsx): an account opened by a registration or by
-  // an ordinary SMS sign-in with a new number reaches it the same way, and
-  // finishing setup makes it disappear.
-  const personalSetupEligible =
-    snapshot.state === 'authenticated' &&
-    snapshot.principal !== null &&
-    setupIncomplete(snapshot.principal)
   // Whether the current tenant is a SETTLED context rather than an unknown
   // one. A tenant-scoped surface that opens a connection (the notification
   // stream) waits for this: a new account would otherwise open the stream
@@ -1055,35 +1042,35 @@ function TenantFrame({
           )}
           signIn={<SignInView />}
         >
-          <PersonalTenantNoticeProvider
+          {/* The notification surface's feature-presence facts: the
+              preference matrix and the optional delivery channels. They
+              wrap the routed pages, where the notification surface reads
+              them; an absent fact hides its surface (fail closed).
+              The key is the identity (principal) and the generation its
+              change bumps: mounting a new identity starts this subtree
+              fresh, so state a page held for the previous identity is not
+              carried into the next one. */}
+          <NotificationPresenceProvider
             key={`${principalId}:${generation}`}
-            eligible={personalSetupEligible}
+            preferences={notificationPreferencesServed}
+            channels={notificationChannels}
           >
-            {/* The notification surface's feature-presence facts: the
-                preference matrix and the optional delivery channels. They
-                wrap the routed pages, where the notification surface reads
-                them; an absent fact hides its surface (fail closed). */}
-            <NotificationPresenceProvider
-              preferences={notificationPreferencesServed}
-              channels={notificationChannels}
-            >
-              <Box sx={{ p: 3 }}>
-                {/* The retryable failure replaces only the pages that read
-                    tenant data. The account-level pages (the account settings
-                    page, the setup page, the binding callback) read none, so
-                    they keep rendering while the ensure retries -- otherwise a
-                    sustained failure would lock a new account out of adding a
-                    username, setting a password, or revoking a session. */}
-                {personalFailure && tenantId === null && !accountLevel ? (
-                  <TenantProvisionFailure
-                    onRetry={() => setPersonalRetry((current) => current + 1)}
-                  />
-                ) : (
-                  children
-                )}
-              </Box>
-            </NotificationPresenceProvider>
-          </PersonalTenantNoticeProvider>
+            <Box sx={{ p: 3 }}>
+              {/* The retryable failure replaces only the pages that read
+                  tenant data. The account-level pages (the account settings
+                  page and the binding callback) read none, so they keep
+                  rendering while the ensure retries -- otherwise a sustained
+                  failure would lock a new account out of adding a username,
+                  setting a password, or revoking a session. */}
+              {personalFailure && tenantId === null && !accountLevel ? (
+                <TenantProvisionFailure
+                  onRetry={() => setPersonalRetry((current) => current + 1)}
+                />
+              ) : (
+                children
+              )}
+            </Box>
+          </NotificationPresenceProvider>
         </ProductShell>
         </ImpersonationNoticeProvider>
       </NotificationStreamProvider>

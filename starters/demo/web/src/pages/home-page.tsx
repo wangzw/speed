@@ -27,7 +27,6 @@ import type { ReactElement } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import CardActionArea from '@mui/material/CardActionArea'
-import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import { featurePresence, useFeature, useFeatureState } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
@@ -37,18 +36,11 @@ import {
   useRouteLinkProps,
 } from '@speed/route-kit'
 import { PageLayout, SectionCard } from '@speed/ui-kit'
-import { setupIncomplete } from '../account-setup.js'
-import { useAuthnProfileGet } from '../app-api/index.js'
 import {
   adminShellRoutes,
   useAdminTarget,
 } from '../admin-routes.js'
-import { usePersonalTenantNotice } from '../personal-tenant-notice.js'
-import {
-  ACCOUNT_PATH,
-  ACCOUNT_SETUP_PATH,
-  NOTIFICATIONS_PATH,
-} from '../paths.js'
+import { ACCOUNT_PATH, NOTIFICATIONS_PATH } from '../paths.js'
 import { useTenantMembershipNotice } from '../tenant-membership-notice.js'
 import { ReviewNoticeControl } from '../review-notice-control.js'
 import { DEMO_NAMESPACE } from '../resources.js'
@@ -85,15 +77,6 @@ const START_CARDS: readonly StartCard[] = [
 /** The app's starting page: the platform's capabilities as a card grid. */
 export function HomePage(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const setupLink = useRouteLinkProps(ACCOUNT_SETUP_PATH)
-  // The frame's ensure answer is the trigger: the account just received its
-  // personal tenant and its GET /api/v1/auth/me shows setup incomplete
-  // (src/personal-tenant-notice.tsx). The sign-in screen's registration mode
-  // is not -- an ordinary SMS sign-in with a new number opens the account
-  // implicitly and gets the same notice. Dismissing it is remembered for the
-  // identity's session, so leaving and returning to the page does not bring
-  // it back.
-  const setupNotice = usePersonalTenantNotice()
   // The acceptance confirmation the invitation landing announced on its way
   // here (src/tenant-membership-notice.tsx). It is a one-shot notice: the
   // viewer dismisses it, and the dismissal lasts for the identity's session.
@@ -110,17 +93,6 @@ export function HomePage(): ReactElement {
       confirmation.current?.focus()
     }
   }, [membershipNotice.visible])
-  // Once the notice has appeared, the account's CURRENT profile decides
-  // whether it still applies: completing setup makes it disappear, whichever
-  // page the account finished on. The read runs only while the notice is
-  // eligible, so an account that is not being offered it issues no request;
-  // the setup page invalidates this same cache entry after each write.
-  const profile = useAuthnProfileGet({
-    query: { enabled: setupNotice.visible },
-  })
-  const setupStillIncomplete =
-    profile.data === undefined || setupIncomplete(profile.data)
-  const showSetupNotice = setupNotice.visible && setupStillIncomplete
   // The review build's notice control is offered only while the process
   // declares its review-only feature. A baseline deployment never does, so the
   // control is absent there; the gate fails closed while the feature document
@@ -144,24 +116,6 @@ export function HomePage(): ReactElement {
           <Typography variant="body2">
             {t('home.membershipNotice.title')}
           </Typography>
-        </Alert>
-      ) : null}
-      {showSetupNotice ? (
-        <Alert
-          severity="info"
-          onClose={setupNotice.dismiss}
-          closeText={t('home.setupNotice.dismiss')}
-        >
-          <Typography variant="body2">
-            {t('home.setupNotice.title')}
-          </Typography>
-          <Link
-            href={setupLink.href}
-            onClick={setupLink.onClick}
-            underline="hover"
-          >
-            {t('home.setupNotice.action')}
-          </Link>
         </Alert>
       ) : null}
       <SectionCard>

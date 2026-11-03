@@ -237,10 +237,8 @@ program beside this directory embeds with `go:embed` and serves through
   `pending` with a target address; the change landing starts the section in the
   change-address form and sends nothing, even after the form is closed. It is a
   `region`, not a live region, and it has no close control: it stays until the
-  address is proved. It is separate from the once-only "finish account setup"
-  notice -- the two predicates are `contactVerificationPending` and
-  `setupIncomplete` in `src/account-setup.ts`, and a password registration is
-  setup-complete while verification is still pending.
+  address is proved. Its predicate is `contactVerificationPending` in
+  `src/contact-verification.ts`.
 - **The anonymous password reset has its own page and entry.**
   `/password-reset` (`src/pages/password-reset-page.tsx`) renders
   auth-ui's `PasswordResetScreen` outside both shells: the viewer arrives

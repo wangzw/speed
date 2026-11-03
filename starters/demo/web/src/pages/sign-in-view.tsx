@@ -78,7 +78,6 @@ import {
 } from '../invitation-return.js'
 import {
   ACCOUNT_PATH,
-  ACCOUNT_SETUP_PATH,
   AUTH_CALLBACK_PATH,
   PASSWORD_RESET_PATH,
 } from '../paths.js'
@@ -138,14 +137,11 @@ export function SignInView({
   const initialErrorEmail = landing?.email
   // A registration completed through SMS: the register mode decides where
   // the just-opened account lands. With the personal tenant in force it
-  // lands in the tenant area; the home page decides on its own whether the
-  // account still needs the setup notice, from the personal-tenant ensure
-  // answer and the profile -- not from this callback, so an implicit
-  // opening through an ordinary SMS sign-in gets the same treatment.
-  // Without the personal tenant there is no tenant area to land in, so the
-  // registration continues on the setup page. Everything else -- an
-  // ordinary sign-in, any other channel -- enters the app as the session
-  // flip already does.
+  // lands in the tenant area; without one there is no tenant area to land
+  // in, so it lands on the account settings page, which continues on its
+  // profile pane (a first password is set from the security pane).
+  // Everything else -- an ordinary sign-in, any other channel -- enters the
+  // app as the session flip already does.
   //
   // The feature is read from the session snapshot at completion time, not
   // from a render hook: the flow's completion commits the authenticated
@@ -192,7 +188,7 @@ export function SignInView({
       navigate(TENANT_HOME_PATH)
       return
     }
-    navigate(ACCOUNT_SETUP_PATH)
+    navigate(ACCOUNT_PATH)
   }
   return (
     <Box

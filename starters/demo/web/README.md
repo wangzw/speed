@@ -400,12 +400,10 @@ target address and linking to the verify landing; its "verify" action goes to
 `/account?verify=1` and its "change address" action to
 `/account?change=email`, which the group address carries onto the profile pane,
 where the section starts in the change form. The notice is a `region`, has no
-close control, and stays until the address is proved. It is separate from the
-once-only "finish account setup" notice: the predicates are
-`contactVerificationPending` and `setupIncomplete` in `src/account-setup.ts`,
-and a password registration is setup-complete while verification is still
-pending. The frame calls the personal-tenant ensure regardless of the
-verification state; the notice is independent of it.
+close control, and stays until the address is proved. Its predicate is
+`contactVerificationPending` in `src/contact-verification.ts`. The frame
+calls the personal-tenant ensure regardless of the verification state; the
+notice is independent of it.
 
 ## What to change when you copy this out
 

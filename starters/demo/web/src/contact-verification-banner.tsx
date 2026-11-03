@@ -11,9 +11,7 @@
  * sends one code on arrival, the change link carries `?change=email` so the
  * section starts in the change-address form. The notice
  * is a region, not a live region, and it carries no close control: it stays
- * until the address is proved, independent of the once-only "finish account
- * setup" notice (password setup can be complete while email verification is
- * still pending).
+ * until the address is proved.
  *
  * The read is the same profile query the account surfaces make, so a
  * successful verification (which invalidates it) also clears this notice.
@@ -29,7 +27,7 @@ import { useAuthState } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import { useRouteLinkProps } from '@speed/route-kit'
 import type { ReactElement } from 'react'
-import { contactVerificationPending } from './account-setup.js'
+import { contactVerificationPending } from './contact-verification.js'
 import { useAuthnProfileGet } from './app-api/index.js'
 import { ACCOUNT_PATH } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'

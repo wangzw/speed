@@ -35,11 +35,6 @@
       "title": "You are now a member of the tenant.",
       "dismiss": "Dismiss membership confirmation"
     },
-    "setupNotice": {
-      "title": "Finish setting up your account.",
-      "action": "Finish account setup",
-      "dismiss": "Dismiss account setup notice"
-    },
     "cards": {
       "account": {
         "title": "Account settings",
@@ -163,15 +158,6 @@
       "removeFailed": "The number could not be deleted. Try again.",
       "dismiss": "Dismiss"
     }
-  },
-  "accountSetup": {
-    "title": "Finish setting up your account",
-    "description": "Add a username and a password so you can sign in without a text message next time.",
-    "completeTitle": "Account setup is complete",
-    "complete": "Your account setup is complete. You can sign in with your username and password.",
-    "completeWithEmail": "Your account setup is complete. You can sign in with your email address and password.",
-    "home": "Go to the home page",
-    "later": "Set up later"
   },
   "verificationBanner": {
     "region": "Email verification",
