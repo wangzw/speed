@@ -51,8 +51,8 @@ type HumanProof struct {
 // surface alone. A caller names the scope it is sending on; a surface that asks
 // the wrong one is asking about a different gate. Only HumanScopePhone and
 // HumanScopeOther are scopes: an implementation handed anything else answers as
-// the phone surface, the higher-risk one, rather than letting a caller that
-// names no surface reach an off gate.
+// the phone surface when that surface is gated, otherwise as the gated other
+// surface, so it answers as off only when both surfaces are off.
 //
 // The seam answers three questions about the deployment and checks one proof.
 // Required says whether a proof is a condition of sending on that scope at all;

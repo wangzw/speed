@@ -64,11 +64,13 @@ const (
 	// issueLimit is how many challenges one source may hold in issueWindow.
 	// It is small on purpose: an anonymous caller is the reason the counter
 	// exists, and a challenge that lapses is served by a new request once the
-	// window rolls.
+	// window expires.
 	issueLimit = 10
 )
 
-// issueWindow is the rolling window the per-source issuance counter covers.
+// issueWindow is the fixed window the per-source issuance counter covers: the
+// counter starts with the first challenge of a window and expires a minute
+// later, so sustained traffic does not slide it forward.
 const issueWindow = time.Minute
 
 // spentMarker is what a challenge key holds after the proof that named it was

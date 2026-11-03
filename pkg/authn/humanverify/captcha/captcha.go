@@ -13,8 +13,8 @@
 // answer spends the record too: a challenge is good for one attempt.
 //
 // Issuance is bounded per source: each request spends one slot of the source's
-// counter over a rolling minute, and a source past its bound is refused before a
-// challenge is drawn or stored.
+// counter over a one-minute fixed window, and a source past its bound is refused
+// before a challenge is drawn or stored.
 //
 // The proof is the challenge id and the answer joined by a dot. The id is
 // base64url without padding and the answer is digits, or a decimal offset for
@@ -93,15 +93,18 @@ const (
 	saltBytes      = 16
 	maxProofLen    = 512
 	maxAnswerBytes = 64
-	// issueLimit is how many challenges one source may hold in issueWindow. It
+	// issueLimit is how many challenges one source may hold in IssueWindow. It
 	// is small on purpose: an anonymous caller is the reason the counter exists,
 	// and a challenge that lapses is served by a new request once the window
-	// rolls.
+	// expires.
 	issueLimit = 10
 )
 
-// issueWindow is the rolling window the per-source issuance counter covers.
-const issueWindow = time.Minute
+// IssueWindow is the fixed window the per-source issuance counter covers: the
+// counter starts with the first challenge of a window and expires a minute
+// later, so sustained traffic does not slide it forward. It is also the longest
+// wait a route states when it refuses a source past the bound.
+const IssueWindow = time.Minute
 
 // spentMarker is what a challenge key holds after the challenge was spent. It
 // is not a record, so a second presentation is refused before any answer is
@@ -507,7 +510,7 @@ func audioLanguage(lang string) (string, error) {
 
 // countIssue spends one slot of the source's issuance window.
 func (p *Provider) countIssue(ctx context.Context, remoteIP string) error {
-	issued, err := p.store.IncrByFloatWithTTL(ctx, issueKey(remoteIP), 1, issueWindow)
+	issued, err := p.store.IncrByFloatWithTTL(ctx, issueKey(remoteIP), 1, IssueWindow)
 	if err != nil {
 		return fmt.Errorf("%w: captcha: counting the challenges issued to a source: %w", authn.ErrUnavailable, err)
 	}

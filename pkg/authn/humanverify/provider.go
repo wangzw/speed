@@ -34,9 +34,9 @@ type gate struct {
 
 var _ authn.HumanVerifier = (*gate)(nil)
 
-// forScope is the verifier of one surface. An unknown scope is answered by the
-// phone surface, the one that guards the paid sends, so a caller that names no
-// surface cannot fall through to an off gate on the other surface.
+// forScope is the verifier of one surface. An unknown scope answers as the
+// phone surface when that surface is gated, otherwise as the gated other
+// surface; it resolves to off only when both surfaces are off.
 func (g *gate) forScope(scope authn.HumanScope) authn.HumanVerifier {
 	switch scope {
 	case authn.HumanScopeOther:
@@ -87,7 +87,7 @@ func newProvider(cfg resolved, d deps) (*gate, error) {
 	build := func(s surface) (authn.HumanVerifier, error) {
 		switch s.mode {
 		case ModeOff:
-			return offVerifier{}, nil
+			return nil, nil
 		case ModePoW:
 			if powProvider == nil {
 				provider, err := pow.New(d.store, d.settings)

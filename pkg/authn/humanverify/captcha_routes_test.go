@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -189,6 +191,11 @@ func TestTheCaptchaChallengeRouteAnswersThrottledAtTheIssuanceCap(t *testing.T) 
 	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath, nil))
 	if recorder.Code != http.StatusTooManyRequests {
 		t.Fatalf("the request past the cap answered %d, want 429:\n%s", recorder.Code, recorder.Body)
+	}
+	// The refusal states the window's upper bound, so a client that waits that
+	// long is not throttled again by the back half of the same window.
+	if got, want := recorder.Header().Get("Retry-After"), strconv.Itoa(int(captcha.IssueWindow/time.Second)); got != want {
+		t.Errorf("Retry-After = %q, want the issuance window's %q", got, want)
 	}
 	var problem struct {
 		Type string `json:"type"`

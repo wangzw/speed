@@ -144,7 +144,7 @@ func captchaChallenge(mounter mount.Mounter, provider *captcha.Provider) gin.Han
 			mount.Fail(c, mount.CodeBadRequest)
 			return
 		case errors.Is(err, captcha.ErrIssuanceLimited):
-			mount.Throttled(c, 0)
+			mount.Throttled(c, captcha.IssueWindow)
 			return
 		case err != nil:
 			mount.Unavailable(c)

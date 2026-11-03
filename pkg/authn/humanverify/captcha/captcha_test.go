@@ -499,21 +499,65 @@ func TestOneProofCannotBeSpentTwiceConcurrently(t *testing.T) {
 	}
 }
 
-// TestTheIssuanceCapBoundsOneSource holds the anti-fill bound: one source may
-// hold a limited number of challenges at a time, and a source that asks for
-// more is refused while another source is not affected.
+// TestTheIssuanceCapBoundsOneSource holds the anti-fill bound for every form:
+// one source may hold a limited number of challenges at a time whatever form it
+// asks for, and a source that asks for more is refused while another source is
+// not affected.
 func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
-	p, _ := newProvider(t)
-	for i := 0; i < issueLimit; i++ {
-		if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: source}); err != nil {
-			t.Fatalf("Issue %d: %v", i+1, err)
-		}
+	for _, form := range []Form{FormImage, FormSlider, FormAudio} {
+		t.Run(string(form), func(t *testing.T) {
+			p, _ := newProvider(t)
+			opts := IssueOptions{Form: form, RemoteIP: source}
+			for i := 0; i < issueLimit; i++ {
+				if _, err := p.Issue(t.Context(), opts); err != nil {
+					t.Fatalf("Issue %d: %v", i+1, err)
+				}
+			}
+			if _, err := p.Issue(t.Context(), opts); !errors.Is(err, ErrIssuanceLimited) {
+				t.Fatalf("the cap resolved with %v, want ErrIssuanceLimited", err)
+			}
+			if _, err := p.Issue(t.Context(), IssueOptions{Form: form, RemoteIP: "203.0.113.8"}); err != nil {
+				t.Fatalf("another source was refused with the first source's cap: %v", err)
+			}
+		})
 	}
-	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: source}); !errors.Is(err, ErrIssuanceLimited) {
-		t.Fatalf("the cap resolved with %v, want ErrIssuanceLimited", err)
+}
+
+// TestAMalformedIssueDoesNotSpendTheCap pins validate-then-count: a request that
+// cannot be drawn is refused before the source's issuance counter is spent, so
+// it neither consumes a slot nor brings the cap closer.
+func TestAMalformedIssueDoesNotSpendTheCap(t *testing.T) {
+	cases := []struct {
+		name    string
+		opts    IssueOptions
+		wantErr error
+	}{
+		{
+			name:    "unknown form",
+			opts:    IssueOptions{Form: Form("puzzle"), RemoteIP: source},
+			wantErr: ErrUnknownForm,
+		},
+		{
+			name:    "unknown audio language",
+			opts:    IssueOptions{Form: FormAudio, Lang: "klingon", RemoteIP: source},
+			wantErr: ErrUnknownAudioLanguage,
+		},
 	}
-	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: "203.0.113.8"}); err != nil {
-		t.Fatalf("another source was refused with the first source's cap: %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p, _ := newProvider(t)
+			if _, err := p.Issue(t.Context(), tc.opts); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("the malformed request resolved with %v, want %v", err, tc.wantErr)
+			}
+			for i := 0; i < issueLimit; i++ {
+				if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: source}); err != nil {
+					t.Fatalf("Issue %d after a malformed request: %v", i+1, err)
+				}
+			}
+			if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: source}); !errors.Is(err, ErrIssuanceLimited) {
+				t.Fatalf("the cap resolved with %v, want ErrIssuanceLimited", err)
+			}
+		})
 	}
 }
 

@@ -478,23 +478,59 @@ func TestProofOfWorkWithoutARouteMounterFailsTheStartup(t *testing.T) {
 	}
 }
 
-// An unknown scope is answered by the phone surface: a caller that names no
-// surface must not fall through to an off gate on the other surface.
-func TestAnUnknownScopeIsAnsweredByThePhoneSurface(t *testing.T) {
+// An unknown scope answers as the phone surface when that surface is gated,
+// otherwise as the gated other surface; an all-off pair answers as off.
+func TestAnUnknownScopeAnswersAsTheGatedSurface(t *testing.T) {
 	const unknown authn.HumanScope = "no-such-surface"
-	v := driveVerifier(t, body(t, map[string]any{
-		modeItem:      ModeOff,
-		phoneModeItem: ModeCaptcha,
-	}))
-	if !v.Required(unknown) {
-		t.Error("Required(unknown) is false while the phone surface is gated; the unknown scope fell through to the off surface")
+	cases := []struct {
+		name      string
+		document  map[string]any
+		required  bool
+		provider  string
+		verifyErr bool
+	}{
+		{
+			name:      "phone gated, other off",
+			document:  map[string]any{modeItem: ModeOff, phoneModeItem: ModeCaptcha},
+			required:  true,
+			provider:  ModeCaptcha,
+			verifyErr: true,
+		},
+		{
+			name:      "phone off, other gated",
+			document:  map[string]any{modeItem: ModePoW, phoneModeItem: ModeOff},
+			required:  true,
+			provider:  ModePoW,
+			verifyErr: true,
+		},
+		{
+			name:      "both off",
+			document:  map[string]any{modeItem: ModeOff, phoneModeItem: ModeOff},
+			required:  false,
+			provider:  ModeOff,
+			verifyErr: false,
+		},
 	}
-	if got := v.Provider(unknown); got != ModeCaptcha {
-		t.Errorf("Provider(unknown) = %q, want the phone surface's %q", got, ModeCaptcha)
-	}
-	err := v.Verify(t.Context(), authn.HumanProof{}, unknown)
-	if !errors.Is(err, authn.ErrHumanVerificationRequired) {
-		t.Errorf("Verify(unknown) with no proof = %v, want ErrHumanVerificationRequired", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v := driveVerifier(t, body(t, tc.document))
+			if got := v.Required(unknown); got != tc.required {
+				t.Errorf("Required(unknown) = %v, want %v", got, tc.required)
+			}
+			if got := v.Provider(unknown); got != tc.provider {
+				t.Errorf("Provider(unknown) = %q, want %q", got, tc.provider)
+			}
+			err := v.Verify(t.Context(), authn.HumanProof{}, unknown)
+			if tc.verifyErr {
+				if !errors.Is(err, authn.ErrHumanVerificationRequired) {
+					t.Errorf("Verify(unknown) with no proof = %v, want ErrHumanVerificationRequired", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Verify(unknown) with no proof = %v, want nil", err)
+			}
+		})
 	}
 }
 
