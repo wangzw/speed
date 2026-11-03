@@ -72,6 +72,7 @@ export interface AuthSession {
   beginIdentityTransition(): () => void
   refresh(): Promise<boolean>
   setPermissionSet(domain: AuthDomain, perms: readonly string[] | null): void
+  setDisplayName(name: string): void
   retryFeatures(): Promise<void>
 }
 ```
@@ -85,6 +86,7 @@ export interface AuthSession {
 - **`discoverSso` 读一个邮箱域映射的企业提供方。** 它转发 `POST /api/v1/auth/sso/discover`，交回 `{id, name, protocol}` 列表；应答恒同形同长，无匹配时为空列表，故「无匹配」是一次成功的空读而非错误。企业提供方清单不多进发现文档：它按域发现，不泄露账户存在性（[authn-sso](../authn/design-authn-sso.md)）。
 - **`logout` 结束会话。** 它调 `POST /api/v1/auth/logout`（服务端撤销请求带来的会话并清 cookie），清本地令牌与主体、抬升世代、转匿名。
 - **`setPermissionSet` 存防御性副本。** 传入的数组事后被改动不影响快照；`null` 清空该域。列表由宿主从它自己的来源取得——`GET /api/v1/auth/me` 的主体不带权限；宿主应在每次登录与主体变更后重取并重附，而不是复用更早提交下取的列表。**平台发布调用方自身持有的权限读**（`GET /api/v1/authz/me/permissions`，[design-authz](../design-authz.md)）：应答按平台域与请求解析到的租户域各交一份权限名，宿主按登录、主体变更与当前租户变更重取（租户域那一份是在请求解析到的租户里持有的集合），并分别以 `setPermissionSet('system', …)` 与 `setPermissionSet('tenant', …)` 附上；本包的接缝不变。
+- **`setDisplayName` 把显示名同步成本地镜像，不发请求。** 已认证时它把快照的 `principal.display_name` 换成传入的名字并通知订阅者，主体的其余字段、两域权限表、特性态与 `impersonating` 都不动；它不校验名字、不写服务端，也不抬升世代。传入的名字是宿主已经写到服务端的结果，本接缝只把它同步进当前会话，供每个读主体的消费者更新——外壳的账户入口读的就是这个字段。匿名时它是空操作：快照引用不变，也不通知任何订阅者。一次在途的会话提交照常按自己捕获的世代落地，落定后以服务端读到的主体覆盖这次本地写入。
 - **`retryFeatures()` 是特性态读取失败后的显式重试。** 它只在已认证时生效，规则见「特性态」。
 
 ### 生成的响应模型与解析守卫
@@ -283,7 +285,7 @@ export function evictTenantQueries(
 
 **`evictTenantQueries` 逐出离任租户的整棵子树**：按 `tenantQueryKey(tenantId)` 得到的键前缀移除。调用时机是宿主完成一次租户切换之后，用切换之前读到的离任租户 id——不用新租户 id，它什么都不命名。
 
-**对外接口面。** `createAuthSession`、`AuthSession`、`AuthSnapshot`、`AuthSessionListener`、`AuthDomain`、`AuthPermissionSets`、`OperationSupersededError`、`isOperationSuperseded`、`AuthnFlowState`、`AuthnStep`、`AuthnPrincipal`、`AuthnMethodList`、`AuthnMethodDescriptor`、`AuthnSsoProvider`、`AuthnLoginRegistration`、`PasswordResetChannel`、`TenantProvider`、`FeatureState`、`featurePresence`、`StepUpState`、`StepUpPhase`、`AuthnFlowAnswer`、`useStepUpGate`、`StepUpGate`、`isTenantAdmissionRefusal` 与各 hook（`attachSession`、`useAuthState`、`usePermission`、`useCurrentTenant`、`useFeature`、`useFeatureState`、`useStepUp`）的名称与签名，以及本项的 `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries`，是主入口的宿主可见面。`./webauthn` 子路径的 `runWebauthn`、`webauthnStepOf`、`WebauthnError`、`WebauthnStep`、`WebauthnFailure` 是同一层的另一处宿主可见面，只经该子路径取用。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。`AuthSnapshot` 新增必选字段 `impersonating`：宿主构造的快照字面量与会话替身必须补上它，按本条是不兼容变更。`AuthSession` 新增方法 `beginIdentityTransition(): () => void`：宿主自行构造的会话替身必须补上它，同样是源码不兼容变更；不打开窗口的宿主返回一个空释放即可。`AuthSession` 还新增 `register(request: AuthnLoginRegisterBody): Promise<AuthnLoginRegistration>`，生成模型 `AuthnLoginRegistration` 随本包再导出：宿主自行构造的会话替身必须补上 `register`，同属源码不兼容变更；注册不改变会话快照，替身转发给真实会话或返回一次成功应答即可。
+**对外接口面。** `createAuthSession`、`AuthSession`、`AuthSnapshot`、`AuthSessionListener`、`AuthDomain`、`AuthPermissionSets`、`OperationSupersededError`、`isOperationSuperseded`、`AuthnFlowState`、`AuthnStep`、`AuthnPrincipal`、`AuthnMethodList`、`AuthnMethodDescriptor`、`AuthnSsoProvider`、`AuthnLoginRegistration`、`PasswordResetChannel`、`TenantProvider`、`FeatureState`、`featurePresence`、`StepUpState`、`StepUpPhase`、`AuthnFlowAnswer`、`useStepUpGate`、`StepUpGate`、`isTenantAdmissionRefusal` 与各 hook（`attachSession`、`useAuthState`、`usePermission`、`useCurrentTenant`、`useFeature`、`useFeatureState`、`useStepUp`）的名称与签名，以及本项的 `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries`，是主入口的宿主可见面。`./webauthn` 子路径的 `runWebauthn`、`webauthnStepOf`、`WebauthnError`、`WebauthnStep`、`WebauthnFailure` 是同一层的另一处宿主可见面，只经该子路径取用。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。`AuthSnapshot` 新增必选字段 `impersonating`：宿主构造的快照字面量与会话替身必须补上它，按本条是不兼容变更。`AuthSession` 新增方法 `beginIdentityTransition(): () => void`：宿主自行构造的会话替身必须补上它，同样是源码不兼容变更；不打开窗口的宿主返回一个空释放即可。`AuthSession` 还新增 `register(request: AuthnLoginRegisterBody): Promise<AuthnLoginRegistration>`，生成模型 `AuthnLoginRegistration` 随本包再导出：宿主自行构造的会话替身必须补上 `register`，同属源码不兼容变更；注册不改变会话快照，替身转发给真实会话或返回一次成功应答即可。`AuthSession` 还新增 `setDisplayName(name: string): void`：宿主自行构造的会话替身必须补上它，同属源码不兼容变更；不镜像主体显示的替身实现一个空方法即可。
 
 ## 依赖
 
@@ -434,6 +436,7 @@ stateDiagram-v2
 - **两种本地清空非对称。** 只有登出在清空后抬升；恢复与刷新侧的清空不抬升。
 - **订阅者被隔离。** 一个监听者抛错被吞掉：一个订阅者（宿主回调或测试观察者）不得冻结其他监听者，也不得损坏那次提交（通知若逃逸，会把一次本应 resolve 已提交快照的登录改判为以监听者的错误拒绝）。抛错的那个监听者是宿主的缺陷，它听到的提交仍然成立。
 - **`setPermissionSet` 存副本。** 存储的是防御性副本，不是调用方数组的别名。
+- **主体的本地显示名更新不参与世代守卫。** `setDisplayName` 不发请求、不抬升世代；在途的恢复或登录提交照常按自己捕获的世代落地，落定后以服务端读到的主体覆盖这次本地写入。
 - **特性写入在世代之外再核对主体。** 登录提交的特性读取与主体读取过同一个世代检查；登录提交之外的特性写入（`retryFeatures()` 的落定）还要核对快照仍为已认证、账户未换，因为恢复与刷新侧的本地清空不抬升世代。
 - **`retryFeatures()` 单飞。** 并发调用共享一次在途读取。
 
@@ -454,6 +457,7 @@ stateDiagram-v2
 | 生成响应模型的解析守卫（含特性文档的 `parseFeatureDocument`） | 已实现 | `web/packages/auth-core/src/session.ts` `parseFlowState`、`parseStep`、`parsePrincipal`、`parseSessionView`、`parseIssuedTokens`、`parseMethodList`、`parseMethodDescriptor`、`parseSsoProviders`、`parseFeatureDocument` |
 | 会话 hook 与通知桥（含 `useFeature`、`useFeatureState` 与 `featurePresence`） | 已实现 | `web/packages/auth-core/src/hooks.ts` `attachSession`、`useAuthState`、`usePermission`、`useFeature`、`useFeatureState`、`featurePresence` |
 | 快照的 `impersonating` 字段与 `restore()` 对它的写入 | 已实现 | `web/packages/auth-core/src/session.ts` `AuthSnapshot`、`restore` |
+| 主体的本地显示名更新 | 已实现 | `web/packages/auth-core/src/session.ts` `AuthSession.setDisplayName` |
 | 身份过渡窗口（`beginIdentityTransition()`）与其期间无人登录应答的丢弃 | 已实现 | `web/packages/auth-core/src/session.ts` `beginIdentityTransition`、`restore` |
 | 步进认证的 hook | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp` |
 | `useStepUp` 对就绪 `complete` 步的自动提交 | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp` |

@@ -4,7 +4,7 @@
 
 `@speed/account-ui` 是一个 speed 前端已登录一方的账户管理组件族：一组节（section）组成宿主的账户页。账户自助写面归本包的理由见 [ADR-web-account-ui-selfservice](../../../adr/adr-web-account-ui-selfservice.md)。它交付下列面：
 
-- `ProfileSection`：账户显示名的编辑，读 `GET /api/v1/auth/me` 取存下的值、写 `PATCH /api/v1/auth/me` 提交单字段的修改，走账户档案的自写面（[authn-profile](../authn/design-authn-profile.md)）。
+- `ProfileSection`：账户显示名的编辑，读 `GET /api/v1/auth/me` 取存下的值、写 `PATCH /api/v1/auth/me` 提交单字段的修改，走账户档案的自写面（[authn-profile](../authn/design-authn-profile.md)）。它不接会话；宿主需要把存下的显示名同步进当前会话时，经可选属性 `onDisplayNameSaved` 收到服务端落定的名字，再转给 [auth-core](design-web-auth-core.md) 会话的本地镜像（见「档案节交回存下的显示名」）。
 - `PasswordSection`：改口令，走登录自助面的 `PUT /api/v1/auth/password`（[authn 登录](../authn/design-authn-login.md)）。账户 `password_set` 为假（经提供方开户、无口令）时不显示当前口令字段，只给新口令两项；确认口令是客户端自己的校验，不上线。账户没有可作登录名的标识（没有用户名，也没有已选作登录方式的邮箱）时，`PUT /api/v1/auth/password` 答 409 `login-identifier-required`，口令节渲染这条码的文本，说明账户需要至少一个登录名（REQ-account-012、REQ-signin-006）。
 - `PhoneSection`：添加或更换手机号的两步——`POST /api/v1/auth/phone` 发送验证码、`POST /api/v1/auth/phone/verify` 提交它；第二步只带验证码，号码是服务端按会话存下的（[authn 登录](../authn/design-authn-login.md)）。号码经 ui-kit 的共享两段式控件（`PhoneNumberField`：国家/地区选择器加本地号码）录入，提交前组装为 E.164（[REF-itu-t-e164](../../../references.md)）并按国家/地区本地校验；它与 `SMSSignInForm` 用同一控件与同一套规则，两处不会各自漂移。手机与邮箱一样，登记即作为联系方式：验证只证明账户对该号码的归属，不把它选作登录方式，也不使它成为默认联系地址（REQ-account-061、REQ-account-062）；被持有人选作登录方式后，该号码才可用于短信登录（REQ-account-064、REQ-signin-011）。它同时是额外安全因素，验证手机不解除注册验证的限制（REQ-signup-026）。
 - `IdentifiersSection`：账户的登录方式与联系方式分组呈现、联系方式逐条删除、选择与自助添加。邮箱与手机各带归属状态与联系方式标记，登录方式与默认联系地址的选择规则见「联系方式与登录方式的呈现与选择」；每条已登记的邮箱与手机都在联系方式组，未作登录方式的值只出现在联系方式组，不由任一开关决定它是否为联系方式。标识读自 `GET /api/v1/auth/me` 的 `identifiers` 字段（规格无独立的清单路由），删除走 `DELETE /api/v1/auth/identifiers/{id}`。添加面走登录自助的 `POST /api/v1/auth/identifiers`（体 `{kind, value}`，`kind` 取 `username` 或 `email`）：用户名一步写入；邮箱先发验证码、再经 `POST /api/v1/auth/identifiers/verify` 提交码，通过才写标识（[authn 登录](../authn/design-authn-login.md)）。每条标识的 `proven` 表示它是否已证明归属：`email-code`、`sms-code`、`invite` 与 `idp:<provider>` 为真，`admin`、`import-unverified` 与 `self` 为假；`verified_at` 不参与这个判断。用户名是登录名、没有归属可验证，故登录方式组里的用户名以说明句呈现、不渲染归属 chip；联系方式组里邮箱与手机行的 chip 是二值的，只看 `proven`：为真读「已验证」，为假读「未验证」，不按 `verified_via` 细分来源，也没有第三态。经管理员或导入写下的地址就是一条其持有人尚未证明的地址，它与自助注册写下的地址受同一条限制、拦下同一批能力；界面不为「账户可用」另造一个标签。未验证的邮箱在联系方式组的行在行尾的省略号菜单里另给「验证」项：它把验证码发到该行已经显示的地址，兑现后由账户模块就地证明这一行，重取的列表把 chip 翻成「已验证」；地址在这条流程里不可编辑，换地址走添加面或验证节。该动作在档案的 `verification.state` 为 `pending` 时不渲染——验证节与宿主的横幅已经在同一条待验证记录上发码，两个并发请求会互相覆盖——没有邮件通道的部署也不渲染它。删除动作与验证动作互不牵连：联系方式行的删除可以被「最后登录名」的规则扣下，验证不受这条规则影响。手机在联系方式行上的 chip 同样二值，手机的行级验证走手机回路，不在标识节里。带口令（`password_set`）的账户经用户名或已选作登录方式的邮箱登录：档案里的用户名与选作登录方式的邮箱合计恰好一条时，该邮箱在联系方式组里的行在行尾的省略号菜单里不提供移除项，改为说明「先添加另一个登录名再删除」；用户名在登录方式组以说明句陈述它是固定登录名、不能更改或删除（`identifiers.usernamePermanent`），不渲染移除动作；选作登录方式的手机与已绑定的外部身份是别的登录方式，不计入这个豁免，也不因此保留删除按钮（REQ-account-044、REQ-security-040）。服务端仍是最后登录方式的判定者。`verification.state` 为 `pending` 时，添加面不提供邮箱一项——未验证的地址由 `ContactVerificationSection` 管理（`pending` 必有目标地址，由该节显示与发码），避免同一账户出现两个待验证目标；用户名与手机选项照常。`emailAvailable` 表示添加面是否提供邮箱一项（缺省提供）；`offerUsername` 表示添加面是否提供用户名一项（缺省提供），与「档案已列出用户名」求交。添加面在 `kind=email` 时先按服务端规则本地校验（去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节），不合格在该字段显示 `identifiers.add.invalidEmail` 且不发请求，提交的是去空白后的值；服务端仍答 400 `authn.bad_request` 且 kind 为 email 时同样落在该字段，而不是通用横幅；服务端答 409 `authn.email_taken` 时也落在该字段（`identifiers.add.emailTaken`），预留的插入是原子的，被拒的是地址这一个值。验证码一步在地址于发码之后被别的账户取得时同样答 `authn.email_taken`，添加面退回值字段并显示同一条文案，不停在无法完成的验证码一步。用户名的 400 走通用文案：服务端的用户名规则还拒绝本面不复述的形状（静态凭据前缀、UUID 形状、保留字）。首登开户在建号前取得用户名不改变本面：没有用户名的账户（只可能来自绕过写入面的写入）仍在此补写。取消添加清空失败横幅、字段错误、成功提示与已发码状态。
@@ -29,7 +29,7 @@
 - **不交付登录历史节。** 登录历史没有自助端点，只有管理员面（[authn-admin](../authn/design-authn-admin.md) 的审计读）；普通账户看不到自己的登录历史，故本包不交付这一节。
 - **不交付恢复码。** 认证的因素面不提供恢复码（[authn-mfa](../authn/design-authn-mfa.md)），故本包不交付恢复码的显示或重生成。
 - **不拥有查询客户端。** 每次读经 `@speed/api-sdk` 的生成 react-query（[REF-tanstack-query](../../../references.md)）钩子，跑在宿主拥有的 QueryClient 上；本包从不自造 QueryClient，也不手写查询键，失效一律用导出的查询键构造器。
-- **不读存储、不 attach 会话、不导航、不直接触网。** 会话只在一条生在流程之上、由本包节驱动的会话操作存在时以属性传入——绑定添加区起一条 `purpose: 'link'` 流程（`session.startAuthenticatedFlow`），两步验证挑战与安全类自助写的提权门控各起一条 `purpose: 'step-up'` 流程（同）。`ProfileSection` 与 `PreferencesSection` 的写不要求新鲜认证，不接会话属性。没有会话操作要驱动的节不接会话属性（会话列表节就不接）。
+- **不读存储、不 attach 会话、不导航、不直接触网。** 会话只在一条生在流程之上、由本包节驱动的会话操作存在时以属性传入——绑定添加区起一条 `purpose: 'link'` 流程（`session.startAuthenticatedFlow`），两步验证挑战与安全类自助写的提权门控各起一条 `purpose: 'step-up'` 流程（同）。`ProfileSection` 与 `PreferencesSection` 的写不要求新鲜认证，不接会话属性。`ProfileSection` 只经可选回调把服务端存下的显示名交回宿主，不写会话；把该值同步进会话是宿主的接线。没有会话操作要驱动的节不接会话属性（会话列表节就不接）。
 - **不发明规格没有的操作。** 认证的因素面只提供列出、改名与删除（`GET /api/v1/auth/factors`、`PATCH /api/v1/auth/factors/{id}`、`DELETE /api/v1/auth/factors/{id}`），登记的入口是流程；故 `MfaSection` 的状态经读发现，登记走流程，不声明一个不存在的启用端点。
 - **不 import `@speed/auth-ui`。** 同层包互不 import。社交渠道是部署的登录方法名，取自已发现文档；本包不再持有宿主传入的渠道表，也不外导渠道配置类型。已绑定行上的提供方取值按方法描述符的 `binding_providers` 解析：取值等于其中一项或以一项为命名空间前缀即归到该方法，描述符没有该项时按方法名匹配；仍匹配不到时回落到本包自己的封闭词表（五个社交名、企业 SSO 族前缀与通用「其它」）。
 - **不做服务端判定的替代。** 权限、租户隔离与账户归属都由服务端判定；本包只渲染应答。
@@ -119,7 +119,7 @@ interface MfaSectionProps {
 }
 ```
 
-自助写节的 `session` 属性按用途分两类。`PasswordSection` 与 `IdentifiersSection` 取它驱动提权门控的对话框：一次写被答 401 `authn.insufficient_user_authentication` 时开一条 `purpose: 'step-up'` 流程（`session.startAuthenticatedFlow`），成功后重跑那次被拒的写恰好一次。提权只服务于改口令、添加用户名、选作或取消登录方式、设置默认联系地址与删除标识。`PhoneSection` 与 `ContactVerificationSection` 的写本身不要求新鲜认证，本包不为它们开提权门控——它们取 `session` 是为了发送验证码前的人机验证块（`useHumanVerification`），`IdentifiersSection` 的邮箱发送也从同一属性取得证明；验证的后果改变账户据以证明或找回自己的事实时（一条将成为默认联系地址或唯一邮箱地址的邮箱、一个将取代已启用短信因素目标的新手机号），服务端答提权 401，本节按普通失败渲染。替换调用方凭据的写另用同一个会话操作开身份切换窗口、在写后的失效与重读结算之后释放（见「轮换点上的身份切换窗口」）。`ProfileSection` 与 `PreferencesSection` 的写不要求新鲜认证，不接会话属性，也不改凭据、不打开这一窗口；它们的读与写本身是走共享访问令牌的生成调用，不经会话操作。
+自助写节的 `session` 属性按用途分两类。`PasswordSection` 与 `IdentifiersSection` 取它驱动提权门控的对话框：一次写被答 401 `authn.insufficient_user_authentication` 时开一条 `purpose: 'step-up'` 流程（`session.startAuthenticatedFlow`），成功后重跑那次被拒的写恰好一次。提权只服务于改口令、添加用户名、选作或取消登录方式、设置默认联系地址与删除标识。`PhoneSection` 与 `ContactVerificationSection` 的写本身不要求新鲜认证，本包不为它们开提权门控——它们取 `session` 是为了发送验证码前的人机验证块（`useHumanVerification`），`IdentifiersSection` 的邮箱发送也从同一属性取得证明；验证的后果改变账户据以证明或找回自己的事实时（一条将成为默认联系地址或唯一邮箱地址的邮箱、一个将取代已启用短信因素目标的新手机号），服务端答提权 401，本节按普通失败渲染。替换调用方凭据的写另用同一个会话操作开身份切换窗口、在写后的失效与重读结算之后释放（见「轮换点上的身份切换窗口」）。`ProfileSection` 与 `PreferencesSection` 的写不要求新鲜认证，不接会话属性，也不改凭据、不打开这一窗口；它们的读与写本身是走共享访问令牌的生成调用，不经会话操作。`ProfileSection` 另经可选属性 `onDisplayNameSaved` 把写落定的显示名交回宿主，宿主把它转给会话的 `setDisplayName`；本节既不 import 也不调用会话。
 
 `SocialBindingsSection` 的 `session` 属性经 `session.listMethods`（`GET /api/v1/auth/methods`）读部署的发现文档：添加区只渲染 `kind=redirect` 且未绑定的方法，名称取描述符的 `label`（缺省用方法名），并为点击起一条 `purpose: 'link'` 的流程（`session.startAuthenticatedFlow`），`returnTo` 作为该流程请求的顶层 `return_to` 发出，`returnPath` 是站内相对路径时另以 `return` 查询参数附在其后，指明绑定从哪个账户页起手；分离源部署传受信源下的绝对 URL，服务端接受路径或该 URL。方法是否已绑定、以及已绑定行的提供方取值归到哪个方法，都经同一份描述符的 `binding_providers` 解析：取值等于其中一项或以一项为前缀即归到该方法，描述符缺少该项时按方法名匹配；该方法就此与任一已绑定取值匹配上时，添加区不再提供该渠道。`MfaSection` 的 `session` 属性为登记起一条 `purpose: 'enroll'` 的流程、为挑战起一条 `purpose: 'step-up'` 的流程，并经 `session.listMethods`（`GET /api/v1/auth/methods`）读本部署装配的因素以决定提供哪些登记入口——读因子清单、删因子与解绑的读写本身是走共享访问令牌的生成调用；删已启用因素与解绑另用同一属性开身份切换窗口（见「轮换点上的身份切换窗口」）。`SessionsSection` 不接会话属性，只接一个可选的 `renderHeaderAction` 渲染槽：它显示谁的会话、谁有权撤销，来自调用方绑定的客户端与它的访问令牌。该槽收到「退出其他设备」控件并返回代其渲染的节点，宿主借此把动作放进自己的块标题动作区（演示宿主以 portal 渲染进标题槽）；不传时本节在列表上方自行渲染该动作，纯表面上即独立一行。槽只在动作确实会渲染时——列表已结算且另有一条可撤销会话——被调用。
 
@@ -290,6 +290,10 @@ sequenceDiagram
 - **读的失败占位由各节自带，刷新失败由各节标明。** 每个以读为首的节在自己的读失败时渲染占位与重试；会话列表节读档案只为取显示时区，档案读失败时不渲染占位，回落到设备时区。已有数据时的读刷新失败（含写入后的失效再取）经 `AsyncSection` 的 `staleState` 标明：旧内容保留，其上渲染陈旧提示与重试，例如撤销之后重读失败时，旧行留在陈旧提示之下。
 - **错误白名单组合 `SESSION_LIFECYCLE_ERROR_CODES`。** 本包的白名单在自己的可达码与 `CLIENT_TRANSPORT_ERROR_CODES` 之外组合该族（[i18n](design-web-i18n.md) 的「扩展点」），每个码在 zh-CN 与 en-US 的 `errors.*` 下各有一条叶子，使会话在途中失效时到达的这类码渲染各自的文案，而不是 `errors.unknown`。
 
+### 档案节交回存下的显示名
+
+`ProfileSection` 的可选属性 `onDisplayNameSaved` 在 `PATCH /api/v1/auth/me` 成功、档案读已失效之后调用一次，收到的是该应答里服务端存下的 `display_name`，而不是用户键入的值：被服务端规整或改写的写入不会把未确认的值交给宿主。属性缺省时本节的行为不变。本节不接会话，也不判断谁消费这个值；宿主把它交给会话的本地镜像（[auth-core](design-web-auth-core.md) 的 `setDisplayName`），外壳的账户入口等读主体的消费者随会话通知一起更新。回调不改变本节的反馈文案与失效次序。
+
 ### 状态胶囊的选色判据
 
 账户页的每个状态胶囊按所表示的状态选色，判据只有以下三条：
@@ -366,6 +370,7 @@ sequenceDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 档案显示名节 | 已实现 | `web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection` |
+| 档案节经可选回调交回服务端存下的显示名 | 已实现 | `web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection` |
 | 口令节 | 已实现 | `web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection` |
 | `login-identifier-required` 的文本覆盖设口令与删除最后一个登录名两种语义 | 已实现 | `web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `errors.authn.login_identifier_required` |
 | 手机号节 | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection` |
