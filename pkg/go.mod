@@ -20,7 +20,7 @@ require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/go-sqlite v1.21.2
 	github.com/glebarez/sqlite v1.11.0
-	github.com/go-jose/go-jose/v4 v4.1.5
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/google/uuid v1.6.0
