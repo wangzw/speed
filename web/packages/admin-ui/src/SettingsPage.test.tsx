@@ -1315,4 +1315,63 @@ describe('SettingsPage tenant mode', () => {
       ]),
     ).toBeUndefined()
   })
+
+  it('renders the permission placeholder with no retry when the tenant read is refused with 403', async () => {
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenantSettings: () =>
+          Promise.reject({ status: 403, code: 'client.http.403' }),
+      }),
+    )
+    renderWithProviders(
+      <WorkspaceAdminOperationsProvider operations={operations}>
+        <SettingsPage tenant={TENANT} tenantMode />
+      </WorkspaceAdminOperationsProvider>,
+    )
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: zhCN.settings.retry })).toBeNull()
+  })
+
+  it('renders the retryable error placeholder when the tenant read fails with 5xx', async () => {
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenantSettings: () =>
+          Promise.reject({ status: 503, code: 'client.http.503' }),
+      }),
+    )
+    renderWithProviders(
+      <WorkspaceAdminOperationsProvider operations={operations}>
+        <SettingsPage tenant={TENANT} tenantMode />
+      </WorkspaceAdminOperationsProvider>,
+    )
+    expect(await screen.findByText(zhCN.settings.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.settings.error.description)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.settings.retry })).toBeInTheDocument()
+  })
+
+  it('renders the protected-setting refusal with its own copy', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenantSettings: () => Promise.resolve([tenantItem]),
+        writeTenantSetting: () =>
+          Promise.reject({ code: 'settings.protected' }),
+      }),
+    )
+    renderWithProviders(
+      <WorkspaceAdminOperationsProvider operations={operations}>
+        <SettingsPage tenant={TENANT} tenantMode />
+      </WorkspaceAdminOperationsProvider>,
+    )
+    const field = await screen.findByRole('textbox', { name: 'app.mode' })
+    await user.clear(field)
+    await user.type(field, 'off')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.settings.saveBar.save }),
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.settings.protected,
+    )
+  })
 })

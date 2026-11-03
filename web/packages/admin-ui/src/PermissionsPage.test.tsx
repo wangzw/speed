@@ -1980,6 +1980,216 @@ describe('PermissionsPage tenant mode', () => {
     expect(listAccounts).not.toHaveBeenCalled()
   })
 
+  it('searches the tenant members through the read query', async () => {
+    const user = userEvent.setup()
+    const calls: (Parameters<AdminBackend['listMembers']>[1])[] = []
+    const operations = tenantModeOperations({
+      listMembers: (_tenant, params) => {
+        calls.push(params)
+        return Promise.resolve([member()])
+      },
+    })
+    renderTenantPermissions(operations)
+    await screen.findByText('tenant-operator')
+
+    const picker = screen.getByRole('combobox', {
+      name: zhCN.permissions.bindings.accountLabel,
+    })
+    await user.type(picker, 'ada')
+    await waitFor(() =>
+      expect(calls.some((params) => params?.query === 'ada')).toBe(true),
+    )
+    // Every read is paged and asks for the probe row that proves another
+    // page follows.
+    expect(calls.every((params) => params?.limit === 101)).toBe(true)
+  })
+
+  it('disables the member picker while its read is pending', async () => {
+    const operations = tenantModeOperations({
+      listMembers: () => new Promise<readonly AdminMember[]>(() => undefined),
+    })
+    renderTenantPermissions(operations)
+    await screen.findByText('tenant-operator')
+
+    expect(
+      screen.getByRole('combobox', {
+        name: zhCN.permissions.bindings.accountLabel,
+      }),
+    ).toBeDisabled()
+  })
+
+  it('reports a refused member read with its own message and a retry', async () => {
+    const operations = tenantModeOperations({
+      listMembers: () =>
+        Promise.reject({ status: 403, code: 'client.http.403' }),
+    })
+    renderTenantPermissions(operations)
+    await screen.findByText('tenant-operator')
+
+    expect(
+      (await screen.findAllByText(zhCN.permissions.bindings.membersFailed))
+        .length,
+    ).toBeGreaterThan(0)
+    expect(
+      screen.getAllByRole('button', {
+        name: zhCN.permissions.bindings.retry,
+      }).length,
+    ).toBeGreaterThan(0)
+  })
+
+  it('offers active memberships only', async () => {
+    const user = userEvent.setup()
+    const operations = tenantModeOperations({
+      listMembers: () =>
+        Promise.resolve([
+          member(),
+          member({
+            account: 'acc-suspended',
+            display_name: 'Suspended Member',
+            active: false,
+          }),
+        ]),
+    })
+    renderTenantPermissions(operations)
+    await screen.findByText('tenant-operator')
+
+    const picker = screen.getByRole('combobox', {
+      name: zhCN.permissions.bindings.accountLabel,
+    })
+    await user.click(picker)
+    expect(
+      await screen.findByRole('option', { name: 'Ada (acc-1)' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('option', {
+        name: 'Suspended Member (acc-suspended)',
+      }),
+    ).toBeNull()
+  })
+
+  it('pages the member picker past the first page with the last row as cursor', async () => {
+    const user = userEvent.setup()
+    const firstPage = Array.from({ length: 101 }, (_value, index) =>
+      member({
+        account: `acc-${String(index + 1).padStart(3, '0')}`,
+        display_name: `Member ${index + 1}`,
+      }),
+    )
+    const secondPageMember = member({
+      account: 'acc-extra',
+      display_name: 'Second Page Member',
+    })
+    const afterValues: (string | undefined)[] = []
+    const operations = tenantModeOperations({
+      listMembers: (_tenant, params) => {
+        afterValues.push(params?.after)
+        if (params?.after === undefined) {
+          return Promise.resolve(firstPage)
+        }
+        return Promise.resolve([...firstPage.slice(100), secondPageMember])
+      },
+    })
+    renderTenantPermissions(operations)
+    await screen.findByText('tenant-operator')
+
+    const bindings = section(zhCN.permissions.bindings.title)
+    await user.click(
+      within(bindings).getByRole('button', {
+        name: zhCN.permissions.bindings.membersNext,
+      }),
+    )
+    await waitFor(() =>
+      expect(afterValues).toContain(firstPage[99]?.account),
+    )
+
+    const picker = within(bindings).getByRole('combobox', {
+      name: zhCN.permissions.bindings.accountLabel,
+    })
+    await user.click(picker)
+    expect(
+      await screen.findByRole('option', {
+        name: 'Second Page Member (acc-extra)',
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('clears the role and account selections when the controlled tenant changes', async () => {
+    const user = userEvent.setup()
+    const operations = tenantModeOperations()
+    function TenantSwitch() {
+      const [tenant, setTenant] = useState('acme')
+      return (
+        <WorkspaceAdminProvider
+          tenant={tenant}
+          operations={operations}
+          hasFeature={() => true}
+        >
+          <button type="button" onClick={() => setTenant('globex')}>
+            switch tenant
+          </button>
+          <WorkspacePermissionsPage />
+        </WorkspaceAdminProvider>
+      )
+    }
+    renderWithProviders(<TenantSwitch />)
+
+    // Select the tenant role.
+    await user.click(
+      await screen.findByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, {
+          role: 'tenant-operator',
+        }),
+      }),
+    )
+    expect(screen.queryByText(zhCN.permissions.grants.pickRole)).toBeNull()
+
+    // Choose the account both the binding and the lookup name.
+    await user.click(
+      screen.getByRole('combobox', {
+        name: zhCN.permissions.bindings.accountLabel,
+      }),
+    )
+    await user.click(await screen.findByRole('option', { name: 'Ada (acc-1)' }))
+    await user.click(
+      screen.getByRole('combobox', {
+        name: zhCN.permissions.lookup.accountLabel,
+      }),
+    )
+    await user.click(await screen.findByRole('option', { name: 'Ada (acc-1)' }))
+    await user.click(
+      screen.getByRole('button', { name: zhCN.permissions.lookup.apply }),
+    )
+    const lookupSection = section(zhCN.permissions.lookup.title)
+    expect(
+      await within(lookupSection).findByText(
+        zhCN.permissions.lookup.empty.title,
+      ),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'switch tenant' }))
+
+    // The role selection, both chosen accounts and the applied lookup
+    // belong to the tenant being left.
+    expect(
+      await screen.findByText(zhCN.permissions.grants.pickRole),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('combobox', {
+        name: zhCN.permissions.bindings.accountLabel,
+      }),
+    ).toHaveValue('')
+    expect(
+      screen.getByRole('combobox', {
+        name: zhCN.permissions.lookup.accountLabel,
+      }),
+    ).toHaveValue('')
+    expect(
+      within(section(zhCN.permissions.lookup.title)).queryByText(
+        zhCN.permissions.lookup.empty.title,
+      ),
+    ).toBeNull()
+  })
+
   it('keeps the platform surface on its own selector and account picker', async () => {
     const user = userEvent.setup()
     const operations = withAuthz()
@@ -1996,5 +2206,42 @@ describe('PermissionsPage tenant mode', () => {
         name: zhCN.permissions.bindings.accountLabel,
       }),
     ).toBeInTheDocument()
+  })
+
+  it('renders the permission placeholder when the tenant roles read is refused with 403', async () => {
+    const operations = tenantModeOperations({
+      listTenantRoles: () =>
+        Promise.reject({ status: 403, code: 'client.http.403' }),
+    })
+    renderTenantPermissions(operations)
+    expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.permissions.roles.retry }),
+    ).toBeNull()
+  })
+
+  it('renders the retryable error placeholder when the tenant roles read fails with 5xx', async () => {
+    const operations = tenantModeOperations({
+      listTenantRoles: () =>
+        Promise.reject({ status: 503, code: 'client.http.503' }),
+    })
+    renderTenantPermissions(operations)
+    expect(
+      await screen.findByText(zhCN.permissions.roles.error.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.permissions.roles.error.description),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.permissions.roles.retry }),
+    ).toBeInTheDocument()
+  })
+
+  it('has no axe violations in tenant mode', async () => {
+    const operations = tenantModeOperations()
+    renderTenantPermissions(operations)
+    await screen.findByText('tenant-operator')
+    await screen.findByText('tenant.deal.read')
+    await expectNoAxeViolations()
   })
 })
