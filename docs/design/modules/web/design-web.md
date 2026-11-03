@@ -19,7 +19,7 @@
 
 **按层。** `tokens` 与 `theme-presets` 处于底层，`i18n` 同层独立，其上依次是 `ui-kit`、`layout-kit`、能力 UI 包、`product-shell`。判据是依赖方向：一个包的依赖只指向同族中比它低的层，同层的两个包互不依赖。证据是各包 `package.json` 的依赖声明与 `src/index.ts` 的公开面——`theme-presets` 只以类型依赖取 `tokens`，`ui-kit` 取 `tokens`，`layout-kit` 取 `ui-kit` 与 `i18n`，`auth-ui` 与 `account-ui` 同层而互不 import（`web/packages/account-ui/src/index.ts` 的包文档写明同一层的包从不互相 import；两个包各自只在内部保有 provider 标签回退词表，不共享类型）。
 
-**按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户面、`admin-ui` 对租户与设置与审计三个管理面、`notification-ui` 对通知的收件箱、偏好与推送三个面。判据是每个能力 UI 包都是某个后端能力在浏览器里的面。证据是各包 `src/index.ts` 的包文档——`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
+**按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户面、`admin-ui` 对平台的管理面、`notification-ui` 对通知的收件箱、偏好与推送三个面。判据是每个能力 UI 包都是某个后端能力在浏览器里的面。证据是各包 `src/index.ts` 的包文档——`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
 
 **按契约边界。** `api-sdk` 是唯一与后端耦合的包，且是从后端契约生成的产物：orval（[REF-orval](../../../references.md)）从 `contracts/api.json` 生成操作面，特性名生成器从 `contracts/features.json` 生成特性名类型（[api-sdk](design-web-api-sdk.md)）；`api-client` 是契约无关的手写传输运行时。判据是包与后端契约的耦合程度。证据是 `web/packages/api-sdk/src/runtime.ts` 的包文档（生成面保持与 fetch、axios、tenant 无关，[REF-axios](../../../references.md)）与 `web/orval.config.ts` 的 mutator 指向（生成面经该接缝转发给宿主绑定的请求函数）。
 

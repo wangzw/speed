@@ -21,7 +21,7 @@
 | [account-ui](design-web-account-ui.md) | 账户管理组件族：自助写（显示名、口令、手机、登录标识）、偏好、会话、社交绑定、两步验证 |
 | [tenancy-ui](design-web-tenancy-ui.md) | 租户切换控件 |
 | [product-shell](design-web-product-shell.md) | 租户侧装配壳与装配入口 `bootstrapSpeedApp` |
-| [admin-ui](design-web-admin-ui.md) | 平台侧管理后台组件族：租户、设置与审计三个管理面 |
+| [admin-ui](design-web-admin-ui.md) | 平台侧管理后台组件族：平台的管理面 |
 | [notification-ui](design-web-notification-ui.md) | 站内通知面：未读铃铛、收件箱与已读、偏好矩阵、实时订阅与声明式入口 |
 
 ## 实现状态
