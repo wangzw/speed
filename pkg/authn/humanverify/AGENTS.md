@@ -80,9 +80,16 @@ base64url without padding and the answer is digits, or a decimal offset for the
 slider.
 
 A per-source issuance counter at `authn:human:captcha:issue:<sha256(address) hex>`
-bounds how many challenges one address holds in a rolling minute — ten — so an
+bounds how many challenges one address holds in a one-minute fixed window — ten — so an
 anonymous caller cannot fill the store. The route answers 429 when the bound is
 reached. A store that cannot answer is `authn.ErrUnavailable`, answered 503.
+
+The bound is per source only: there is no global issuance ceiling, so a set of
+source addresses can still make the process draw challenges, and the image,
+slider and audio rendering plus the store writes are the work that costs. The
+bound on total work is the deployment's request-rate limit, which has to cover
+the endpoint the challenge routes mount on; this module adds no global cap of
+its own.
 
 `Verify` reads the record, compares the answer in constant time, spends the
 record with a compare-and-swap so two presentations of one proof cannot both
@@ -157,7 +164,7 @@ the difficulty as its value and the challenge's lifetime as its expiry. A
 missing, expired, spent or unparsable entry is `authn.ErrHumanVerificationRequired`.
 
 A per-source issuance counter at `authn:human:pow:issue:<sha256(address) hex>`
-bounds how many challenges one address holds in a rolling minute — ten — so an
+bounds how many challenges one address holds in a one-minute fixed window — ten — so an
 anonymous caller cannot fill the store. The route answers 429 when the bound is
 reached. A store that cannot answer is `authn.ErrUnavailable`, answered 503.
 
@@ -170,8 +177,8 @@ decimal digits.
 - **Every answer is per surface.** `Required`, `Provider`, `SiteKey` and
   `Verify` take a `HumanScope` (`phone` or `other`) and answer for that surface
   alone. A deployment may run a different mechanism on each. An unknown scope
-  answers as the phone surface, so a caller that names none cannot reach an off
-  gate on the other surface.
+  answers as the phone surface when that surface is gated, otherwise as the
+  gated other surface; it resolves to off only when both surfaces are off.
 - **A proof is single-use.** A token accepted once is refused when it is
   presented again, whether the second presentation follows at once or later.
   The provider behind the seam owns the consumed record.

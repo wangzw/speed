@@ -98,7 +98,7 @@
 | REF-aws-sdk-go-v2 | AWS SDK for Go v2 | Amazon Web Services 官方的 Go SDK | <https://github.com/aws/aws-sdk-go-v2> | — |
 | REF-axe-core | axe-core | Deque Systems 维护的开源网页无障碍检查引擎，按规则检测页面的无障碍违规 | <https://github.com/dequelabs/axe-core> | v4 |
 | REF-axios | Axios | JavaScript 的 HTTP 客户端库 | <https://axios.rest/> | — |
-| REF-base64captcha | base64Captcha | Go 语言的自托管验证码库，生成数字图片与音频验证码 | <https://github.com/mojocn/base64Captcha> | v1.3.8 |
+| REF-base64captcha | base64Captcha | Go 语言的自托管人机验证码库，生成数字图片与音频人机验证码 | <https://github.com/mojocn/base64Captcha> | v1.3.8 |
 | REF-casbin | Apache Casbin | 访问控制库，以模型文本与策略数据求值 ACL、RBAC、ABAC 等授权模型 | <https://github.com/apache/casbin> | v3 |
 | REF-casbin-gorm-adapter | Casbin GORM Adapter | Casbin 的策略存储适配器，经 GORM 把策略存进关系数据库 | <https://github.com/apache/casbin-gorm-adapter> | — |
 | REF-casbin-govaluate | casbin/govaluate | Go 语言的表达式求值库 | <https://github.com/apache/casbin-govaluate> | — |

@@ -244,7 +244,7 @@ export type AuthnHumanSurfaceGate = AuthnLoginHumanGate
 ```
 
 - **门槛按面取自发现文档的 `human`。** `AuthnHumanGate` 是生成模型 `AuthnLoginHuman`，两面的门槛各是 `AuthnHumanSurfaceGate`（生成模型 `AuthnLoginHumanGate`）：`required` 表示该面的每次发送是否必须先交证明，`provider` 是 `off`、`pow`、`captcha` 或 `turnstile`，`site_key` 是 Turnstile（[REF-cloudflare-turnstile](../../../references.md)）控件渲染用的公开标识，`off`、`pow` 与 `captcha` 不带。`humanSurfaceGate` 按面取出门槛；文档省略 `human` 时两面都视为 `{required: false, provider: 'off'}`，比服务端新的客户端因此不会拒绝旧服务端的应答；旧服务端给出平铺的 `required`、`provider` 与 `site_key` 时，同一份门槛映射到两面；`human` 在场时两面的 `required` 与 `provider` 必填，`site_key` 出现时必须是字符串。宿主已经把文档读到手时经 `options.gate` 传入，hook 不再读一次。
-- **`scope` 选择面。** 手机号面覆盖四条短信发送（登录、第二因素、手机登记与匿名短信重置），other surface 覆盖不落地到手机号的发送（匿名重置的邮箱分支与自助添加邮箱）。一次发送命名自己所在的面；`scope` 改变时证明与挑战都属于原面，一并丢弃并由新面取得自己的，发现文档已经读到则不重读。
+- **`scope` 选择面。** 手机号面覆盖四条短信发送（登录、第二因素、手机登记与匿名短信重置），其余面覆盖不落地到手机号的发送（匿名重置的邮箱分支与自助添加邮箱）。一次发送命名自己所在的面；`scope` 改变时证明与挑战都属于原面，一并丢弃并由新面取得自己的，发现文档已经读到则不重读。
 - **`pow` 在 Worker 中求解。** `requestPowProof` 读 `POST /api/v1/auth/human/challenge`，校验应答的 `provider: 'pow'`、`algorithm: 'sha256'`、挑战与难度，再找满足难度的 nonce；证明是 `challenge.nonce`，与提供方 `Verify` 的解析结构一致。求解默认在 Web Worker 中运行（`src/pow.ts` 的紧凑 SHA-256，难度来自挑战）；平台没有 `Worker`、Worker 构造失败或加载失败时在调用线程求解。`powProofFromChallenge` 是不经 Worker 的同步入口，`solvePowChallenge` 是纯求解器。
 - **`captcha` 由本包取挑战。** hook 读 `POST /api/v1/auth/human/captcha/challenge`（`form` 取上次刷新或切换音频时的形式，缺省 `image`），经 `parseCaptchaChallenge` 校验应答：`provider` 为 `captcha`、`form` 已知、`id`、`instruction` 与整数的 `expires_in` 非空，且对应形式带 media 路径。挑战存进状态并经 `captcha` 交给块渲染，证明是 `<挑战标识>.<答案>`；`refreshCaptcha` 换取新挑战。
 - **`turnstile` 的 token 由控件交出。** 本包只经 `adoptToken` 存下 ui-kit 控件交来的 token，或在其过期、失败时清空；token 的取得与重置于本包无涉。

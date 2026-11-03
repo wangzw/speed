@@ -133,14 +133,14 @@
 
 `authn.mfa.webauthn` 的 `Timeouts.*.Enforce` 固定为真，不做成配置项。
 
-下表是人机验证的配置项（封闭集合）。两个发送面各选一种机制：手机号面由 `authn.humanverify.phone-mode` 选择，缺省自托管验证码；other surface 由 `authn.humanverify.mode` 选择，缺省自托管工作量证明。两个键都有缺省值，因此都不是必填。Turnstile（[REF-cloudflare-turnstile](../../../references.md)）的几项由选中 Turnstile 的面判定，不由加载器判定：两个面都关闭或运行自托管机制时，它们不必给值；任一面选 `turnstile` 时要求站点键、密钥与主机名齐备，缺任一项即 `ErrInvalidConfig`，不退回其它机制。缺省值由 `pkg/authn/humanverify/config.go` 的 `configDefaults` 给出；评审装配在 `starters/demo/server/review/sqlite.yaml` 显式把两个面写成 `off`，端到端走查夹具在 `starters/demo/web/e2e/fixtures/config.ts` 同样把两个面写成 `off`，本地回路的模板 `starters/demo/server/local.yaml.example` 也显式写两个面 `off`：`make dev` 的短信与邮件都经日志载体发送，一份证明会挡住每一次发送。部署入口 `starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_PHONE_MODE` 以 `captcha` 为缺省、`DEMO_HUMANVERIFY_MODE` 以 `pow` 为缺省。
+下表是人机验证的配置项（封闭集合）。两个发送面各选一种机制：手机号面由 `authn.humanverify.phone-mode` 选择，缺省自托管人机验证码；其余面由 `authn.humanverify.mode` 选择，缺省自托管工作量证明。两个键都有缺省值，因此都不是必填。Turnstile（[REF-cloudflare-turnstile](../../../references.md)）的几项由选中 Turnstile 的面判定，不由加载器判定：两个面都关闭或运行自托管机制时，它们不必给值；任一面选 `turnstile` 时要求站点键、密钥与主机名齐备，缺任一项即 `ErrInvalidConfig`，不退回其它机制。缺省值由 `pkg/authn/humanverify/config.go` 的 `configDefaults` 给出；评审装配在 `starters/demo/server/review/sqlite.yaml` 显式把两个面写成 `off`，端到端走查夹具在 `starters/demo/web/e2e/fixtures/config.ts` 同样把两个面写成 `off`，本地回路的模板 `starters/demo/server/local.yaml.example` 也显式写两个面 `off`：`make dev` 的短信与邮件都经日志载体发送，一份证明会挡住每一次发送。部署入口 `starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_PHONE_MODE` 以 `captcha` 为缺省、`DEMO_HUMANVERIFY_MODE` 以 `pow` 为缺省。
 
-**既有配置的迁移。** `authn.humanverify.mode` 只选择 other surface；手机号面由新增的 `authn.humanverify.phone-mode` 选择，不写时取 `captcha`。只写过 `mode` 的配置因此按下列方式迁移：`mode` 为 `off` 只关闭 other surface，要两个面都不设闸须同时写 `phone-mode: off`；`mode` 为 `turnstile` 的配置仍因手机号面缺省 `captcha` 而要求键值存储与路由挂载口，除非把 `phone-mode` 也写成 `off` 或 `turnstile`，或补齐这两项依赖；`mode` 省略时 other surface 运行 `pow`、手机号面运行 `captcha`。迁移是宿主可见的变更：升级后两个面都要求证明，且机制与从前不同。
+**既有配置的迁移。** `authn.humanverify.mode` 只选择其余面；手机号面由新增的 `authn.humanverify.phone-mode` 选择，不写时取 `captcha`。只写过 `mode` 的配置因此按下列方式迁移：`mode` 为 `off` 只关闭其余面，要两个面都不设闸须同时写 `phone-mode: off`；`mode` 为 `turnstile` 的配置仍因手机号面缺省 `captcha` 而要求键值存储与路由挂载口，除非把 `phone-mode` 也写成 `off` 或 `turnstile`，或补齐这两项依赖；`mode` 省略时其余面运行 `pow`、手机号面运行 `captcha`。迁移是宿主可见的变更：升级后两个面都要求证明，且机制与从前不同。
 
 | 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
 |---|---|---|---|---|---|
-| `authn.humanverify.mode` | 字符串 | `pow` | 默认 | | other surface（不落地到手机号的发送）要满足的机制：`off`、`pow`、`captcha` 或 `turnstile`；不在集合内即 `ErrInvalidConfig`。缺省是自托管的工作量证明；评审装配与端到端装配显式写 `off` |
-| `authn.humanverify.phone-mode` | 字符串 | `captcha` | 默认 | | 手机号面（短信登录、第二因素、手机登记与匿名短信重置）要满足的机制：`off`、`pow`、`captcha` 或 `turnstile`；不在集合内即 `ErrInvalidConfig`。缺省是自托管验证码；评审装配与端到端装配显式写 `off` |
+| `authn.humanverify.mode` | 字符串 | `pow` | 默认 | |其余面（不落地到手机号的发送）要满足的机制：`off`、`pow`、`captcha` 或 `turnstile`；不在集合内即 `ErrInvalidConfig`。缺省是自托管的工作量证明；评审装配与端到端装配显式写 `off` |
+| `authn.humanverify.phone-mode` | 字符串 | `captcha` | 默认 | | 手机号面（短信登录、第二因素、手机登记与匿名短信重置）要满足的机制：`off`、`pow`、`captcha` 或 `turnstile`；不在集合内即 `ErrInvalidConfig`。缺省是自托管人机验证码；评审装配与端到端装配显式写 `off` |
 | `authn.humanverify.site-key` | 字符串 | 空 | 默认 | | Turnstile 控件的前端公开标识；任一面选 `turnstile` 时必填 |
 | `authn.humanverify.secret-key` | 字符串 | 空 | 默认 | 敏 | 认证 siteverify 调用的密钥；任一面选 `turnstile` 时必填，登记为日志的字面量脱敏规则 |
 | `authn.humanverify.verify-url` | 字符串 | `https://challenges.cloudflare.com/turnstile/v0/siteverify` | 默认 | | siteverify 端点；须是带主机的绝对 https URL |
