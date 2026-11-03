@@ -56,7 +56,8 @@
     },
     "settings": {
       "bad_request": "提交的内容有误，请检查表单后重试。",
-      "invalid_value": "该值超出了此设置允许的范围。"
+      "invalid_value": "该值超出了此设置允许的范围。",
+      "protected": "该设置由部署方保护，无法修改。"
     },
     "sms": {
       "bad_request": "提交的内容有误，请检查表单后重试。",

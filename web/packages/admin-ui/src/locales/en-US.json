@@ -56,7 +56,8 @@
     },
     "settings": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",
-      "invalid_value": "That value is outside the range this setting allows."
+      "invalid_value": "That value is outside the range this setting allows.",
+      "protected": "This setting is protected by the deployment and cannot be changed."
     },
     "sms": {
       "bad_request": "Something in what you submitted was not valid. Check the form and try again.",

@@ -123,10 +123,13 @@ export const ERROR_TEXT_CODES = [
   'ratelimit.throttled',
   // audit admin: the 400 a malformed query is answered with.
   'audit.bad_request',
-  // settings admin: a 400 shape refusal and the 422 a write whose value
-  // is outside the declared item's domain is answered with.
+  // settings admin: a 400 shape refusal, the 422 a write whose value
+  // is outside the declared item's domain is answered with, and the 403
+  // the host's settings write seam answers a write into a protected item
+  // with.
   'settings.bad_request',
   'settings.invalid_value',
+  'settings.protected',
   // sms admin: a 400 shape refusal, the 409 a name collision is answered
   // with, and the 409 a name backed by a configuration template is
   // answered with.

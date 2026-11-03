@@ -155,6 +155,27 @@ describe('admin-ui error text', () => {
     )
   })
 
+  it('renders the protected settings refusal with its own copy', () => {
+    // The tenant settings write seam refuses a protected item with a 403
+    // settings.protected. Without its own leaf the workspace settings page
+    // falls back to the generic failure copy, which says nothing about the
+    // deployment having protected the item.
+    for (const language of ['zh-CN', 'en-US']) {
+      const i18n = createAdminUiI18n(language)
+      const { result } = renderHook(() => useAdminUiErrorText(), {
+        wrapper: ({ children }: { readonly children: ReactNode }) =>
+          createElement(I18nextProvider, { i18n }, children),
+      })
+      const bundle = adminUiResources[language] as {
+        errors: { unknown: string; settings: { protected: string } }
+      }
+      const text = result.current('settings.protected')
+      expect(text, language).toBe(bundle.errors.settings.protected)
+      expect(text, language).not.toBe(bundle.errors.unknown)
+      expect(text, language).not.toContain('settings.protected')
+    }
+  })
+
   it('resolves every module refusal a write can be answered with to its own text', () => {
     // The api-client derives a module code from a refusal's RFC 9457
     // problem `type` (urn:speed:<module>:<code>), so a console write the
