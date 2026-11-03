@@ -133,7 +133,8 @@ type SMSCodes interface {
 
 ### 对外接口面
 
-- `SMSCodes`、`SendCode` 的字段与方法集，以及用途与模板键这两个封闭集，是本模块对使用方的接口面。`SendCode.Proof` 是新增字段，交出不填即「请求没有出示证明」；`SendCode.Locale` 的取值不是封闭集：它是一个 BCP 47（[REF-bcp47](../../../references.md)）标签，由本模块解析到该消息所用模板声明的语言；`SendCode.Source` 是来源地址的原文，不是封闭集，其空值有「不施加来源维度」的语义，是本模块与使用方的契约。模板键（`authn.code.login`、`authn.code.mfa`、`authn.code.enroll`、`authn.code.reset`）是配置文件里出现的取值，是本模块与载体的配置接口面。增删封闭集的成员会同时改变使用方与载体看到的面，两者一并复核。`authn.code.reset` 是可选成员：它的缺席只关闭短信重置渠道，不使启动失败。
+- `SMSCodes`、`SendCode` 的字段与方法集，以及用途与模板键这两个封闭集，是本模块对使用方的接口面。`SendCode.Locale` 的取值不是封闭集：它是一个 BCP 47（[REF-bcp47](../../../references.md)）标签，由本模块解析到该消息所用模板声明的语言；`SendCode.Source` 是来源地址的原文，不是封闭集，其空值有「不施加来源维度」的语义，是本模块与使用方的契约。模板键（`authn.code.login`、`authn.code.mfa`、`authn.code.enroll`、`authn.code.reset`）是配置文件里出现的取值，是本模块与载体的配置接口面。增删封闭集的成员会同时改变使用方与载体看到的面，两者一并复核。`authn.code.reset` 是可选成员：它的缺席只关闭短信重置渠道，不使启动失败。
+- **`SendCode` 的宿主可见变化。** `authn.SendCode` 是 `pkg/authn/internal/model` 的导出结构体 `SendCode` 的别名，所以 `SendCode` 的字段集属于导出面；`Proof` 是新增字段，加入它改变的是导出的 `model.SendCode`，实现或消费 `SendCode` 的宿主必须携带证明，空值读作「请求没有出示证明」。
 - 挑战表的列与索引是本模块私有的存储形状，不在对外接口面内：其他模块不读 `authn_challenges`，只经 `SMSCodes` 与 `AccountLifecycle` 交互。台账的表归 `sms.budget`，本模块只经 `budget.Store` 写入与计数。
 - 单个载体叶子包可替换、可撤掉，不改变 `SMSCodes` 的行为。
 
