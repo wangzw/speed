@@ -205,6 +205,15 @@ type Attempt struct {
 // refused rather than having one silently win. OnlyRefunded with
 // IncludeSuppressed is legal and counts every refunded row, suppressed ones
 // included; that is the one way to count a suppressed row as a refund.
+//
+// The two consumers both call a budget "attempt", but select different shapes
+// over these switches. The notification channel's attempt budget is the
+// IncludeRefunded shape: every attempt a tenant makes, accepted or not. The
+// authentication channel's attempt budgets — the per-source attempt window and
+// the per-purpose deployment attempt windows — use OnlyRefunded, because there
+// the budget is about a caller cycling destinations or codes that certainly
+// fail. The shared word is a setting name, not a shared predicate; a caller
+// reads this list rather than the name.
 type Query struct {
 	Channel           Channel
 	Purpose           string

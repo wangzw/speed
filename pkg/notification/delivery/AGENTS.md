@@ -52,6 +52,13 @@ the requirement forbids — the key-value counters for email, the ledger for sms
 The account store is required for the same reason: a destination that cannot be
 held against the recipient's own identifiers would be let through.
 
+The database's root key is required as well, although only `db.Database` names
+it. Every external delivery folds the recipient into a keyed digest through
+`Database.BlindIndex` — the ledger's `destination_mac` and the email counter
+keys — so a database assembled without the key has no digest to compute. `Start`
+fails with `authn.ErrNoEncryptionKey` rather than writing an unkeyed digest
+anyone could reverse, the same refusal the authentication SMS module makes.
+
 The descriptor declares no route and no bus. It names no HTTP entry point — this
 module mounts no route, so declaring one would only carry `pkg/http` into a host's
 closure — and no event bus: the in-app row is announced by the module that wrote

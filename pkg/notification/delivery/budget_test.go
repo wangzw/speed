@@ -400,7 +400,7 @@ func TestTheCeilingFollowsTheLedgerPredicates(t *testing.T) {
 	r.setBudget(t, ceilingSetting, 10)
 	r.liftOtherBudgets(t, "")
 
-	recipient := recipientHash("t1", "u1")
+	recipient := r.p.recipientHash("t1", "u1")
 	attempts := budget.Query{
 		Channel: budget.ChannelNotification, Dimension: budget.DimensionDestination,
 		Value: recipient, Since: time.Now().UTC().Add(-time.Hour), IncludeRefunded: true,
@@ -517,6 +517,12 @@ func TestEverySMSAttemptWritesOneLedgerRow(t *testing.T) {
 	}
 	if row.destination == "" {
 		t.Error("the row carries no recipient digest")
+	}
+	// The destination is a keyed digest under the database root key, the same
+	// blind index the authentication channel hashes its destinations through. A
+	// plain digest would be equal to sha256(tenant || NUL || user) instead.
+	if want := r.db.BlindIndex("t1\x00" + "u1"); row.destination != want {
+		t.Errorf("the row's recipient digest is %q, want the database blind index %q", row.destination, want)
 	}
 	if row.outcome != string(budget.OutcomePending) {
 		t.Errorf("the row's outcome is %q, want %q", row.outcome, budget.OutcomePending)
@@ -672,12 +678,12 @@ func (r *rig) emailCounter(t *testing.T, key string) (float64, bool) {
 // emailRecipientHourlyKey is the fixed-window key one recipient's hourly email
 // count lands on. It is the layout the module used before the sms path moved to
 // the shared ledger. The daily and deployment keys follow the same shape.
-func emailRecipientHourlyKey(tenantID, userID string, now time.Time) string {
-	return ModuleName + ":budget:recipient-hourly:" + recipientHash(tenantID, userID) + ":" + now.Format(hourLayout)
+func (r *rig) emailRecipientHourlyKey(tenantID, userID string, now time.Time) string {
+	return ModuleName + ":budget:recipient-hourly:" + r.p.recipientHash(tenantID, userID) + ":" + now.Format(hourLayout)
 }
 
-func emailRecipientDailyKey(tenantID, userID string, now time.Time) string {
-	return ModuleName + ":budget:recipient-daily:" + recipientHash(tenantID, userID) + ":" + now.Format(dayLayout)
+func (r *rig) emailRecipientDailyKey(tenantID, userID string, now time.Time) string {
+	return ModuleName + ":budget:recipient-daily:" + r.p.recipientHash(tenantID, userID) + ":" + now.Format(dayLayout)
 }
 
 func emailGlobalHourlyKey(now time.Time) string {
@@ -763,10 +769,10 @@ func TestAnEmailDeliveryChargesTheKeyValueCounters(t *testing.T) {
 		keys []string
 	}{
 		{"recipient hourly", []string{
-			emailRecipientHourlyKey("t1", "u1", before), emailRecipientHourlyKey("t1", "u1", after),
+			r.emailRecipientHourlyKey("t1", "u1", before), r.emailRecipientHourlyKey("t1", "u1", after),
 		}},
 		{"recipient daily", []string{
-			emailRecipientDailyKey("t1", "u1", before), emailRecipientDailyKey("t1", "u1", after),
+			r.emailRecipientDailyKey("t1", "u1", before), r.emailRecipientDailyKey("t1", "u1", after),
 		}},
 		{"deployment", []string{emailGlobalHourlyKey(before), emailGlobalHourlyKey(after)}},
 	}
@@ -796,7 +802,7 @@ func TestAnEmailDeliveryWritesNoSMSLedgerRow(t *testing.T) {
 	}
 	after := time.Now().UTC()
 	if _, present := r.emailCounterAmong(t,
-		emailRecipientHourlyKey("t1", "u1", before), emailRecipientHourlyKey("t1", "u1", after),
+		r.emailRecipientHourlyKey("t1", "u1", before), r.emailRecipientHourlyKey("t1", "u1", after),
 	); !present {
 		t.Error("the email dispatch charged no key-value counter, so the ledger assertion would prove nothing")
 	}

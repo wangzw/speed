@@ -145,6 +145,11 @@ var (
 // default. Declaring it also orders this module after settings, so the snapshot a
 // dispatch reads has been loaded.
 //
+// The database must carry a root key. A recipient is folded into a keyed digest
+// through Database.BlindIndex for the shared ledger's destination column and for
+// the email counter keys, and Start refuses a database without the key rather
+// than writing an unkeyed digest.
+//
 // The metric capability is optional too: an assembly without one reports no
 // utilization, and a dispatch then only compares the counts. Its absence changes
 // what is observed, never what is refused.
@@ -219,7 +224,13 @@ func Module() core.Module {
 			return nil
 		},
 
-		Start: func(context.Context, *core.Registry, any) error { return nil },
+		Start: func(_ context.Context, _ *core.Registry, instance any) error {
+			p, ok := productOf(instance)
+			if !ok {
+				return nil
+			}
+			return p.checkEncryptionKey()
+		},
 		Stop:  func(context.Context, *core.Registry, any) error { return nil },
 		Close: func(context.Context, *core.Registry, any) error { return nil },
 	}
@@ -291,6 +302,11 @@ type pipeline struct {
 	// the authentication channel also takes. SQLite serialises writers itself, so
 	// there is no lock to take there.
 	dialect db.Dialect
+	// blindIndex is the database's keyed digest, the same blind index the
+	// authentication channel hashes its destinations through. A recipient's
+	// ledger row and email counter keys are computed through it, so the ledger's
+	// destination column holds a keyed digest and never a plain one.
+	blindIndex func(string) string
 	// settings reads the budget limits on every dispatch.
 	settings *settingReader
 	// meters reports each budget's utilization. Its instruments are nil when the
@@ -381,22 +397,23 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 		return nil, fmt.Errorf("%s: creating the metric instruments: %w", ModuleName, err)
 	}
 	return &pipeline{
-		queue:     queue,
-		handlers:  handlers,
-		prefs:     prefs,
-		inbox:     inbox,
-		localizer: localizer,
-		accounts:  accounts,
-		counters:  counters,
-		ledger:    &ledger{handle: database.DB()},
-		taxonomy:  types,
-		seams:     channelSeams{mailer: mailer, registry: registry, sender: sender},
-		attempts:  attempts,
-		newLedger: budget.New,
-		dialect:   database.Dialect(),
-		settings:  newSettingReader(store, logger),
-		meters:    meters,
-		logger:    logger,
+		queue:      queue,
+		handlers:   handlers,
+		prefs:      prefs,
+		inbox:      inbox,
+		localizer:  localizer,
+		accounts:   accounts,
+		counters:   counters,
+		ledger:     &ledger{handle: database.DB()},
+		taxonomy:   types,
+		seams:      channelSeams{mailer: mailer, registry: registry, sender: sender},
+		attempts:   attempts,
+		newLedger:  budget.New,
+		dialect:    database.Dialect(),
+		blindIndex: database.BlindIndex,
+		settings:   newSettingReader(store, logger),
+		meters:     meters,
+		logger:     logger,
 	}, nil
 }
 
@@ -441,6 +458,30 @@ func optional[T any](reg *core.Registry, what string) (T, error) {
 func (p *pipeline) register() error {
 	if err := p.handlers.Register(p); err != nil {
 		return fmt.Errorf("%s: registering the delivery handler: %w", ModuleName, err)
+	}
+	return nil
+}
+
+// checkEncryptionKey proves the database carries a root key before any dispatch
+// is served. The recipient digest on an attempt row and in an email counter key
+// is computed through the blind index, which panics on a database assembled
+// without a key rather than writing an unkeyed digest anybody could reverse. The
+// self-check is a recover around one digest, the same way the authentication SMS
+// module refuses to start without the key.
+func (p *pipeline) checkEncryptionKey() error {
+	var missing bool
+	func() {
+		defer func() {
+			if recover() != nil {
+				missing = true
+			}
+		}()
+		p.blindIndex(ModuleName)
+	}()
+	if missing {
+		return fmt.Errorf("%w: %s hashes a recipient's ledger rows and email counters under the "+
+			"database root key, and this database has none. Configure a root key, or leave this "+
+			"module out of the command", authn.ErrNoEncryptionKey, ModuleName)
 	}
 	return nil
 }

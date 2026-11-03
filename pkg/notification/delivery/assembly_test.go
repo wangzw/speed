@@ -210,3 +210,12 @@ func TestAMissingRequiredSeamFailsResolution(t *testing.T) {
 		})
 	}
 }
+
+// The recipient digest is the database's blind index, so a database assembled
+// without a root key ends the startup with ErrNoEncryptionKey rather than
+// writing an unkeyed digest anybody could reverse.
+func TestStartRefusesWithoutARootKey(t *testing.T) {
+	if err := (host{noEncryptionKey: true}).drive(t, nil); !errors.Is(err, authn.ErrNoEncryptionKey) {
+		t.Fatalf("the drive ended with %v, want ErrNoEncryptionKey", err)
+	}
+}

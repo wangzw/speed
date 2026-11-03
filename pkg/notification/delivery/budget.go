@@ -2,8 +2,6 @@ package delivery
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -122,7 +120,7 @@ type emailBudgetCheck struct {
 func (p *pipeline) chargeEmailBudget(ctx context.Context, id tenant.ID, d notification.Dispatch) error {
 	limits := p.settings.limits()
 	now := time.Now().UTC()
-	recipient := recipientHash(string(id), d.Recipient.UserID)
+	recipient := p.recipientHash(string(id), d.Recipient.UserID)
 	checks := []emailBudgetCheck{
 		{key: budgetKeyPrefix + "recipient-hourly:" + recipient + ":" + now.Format(hourLayout), limit: limits.perRecipientHourly, bucket: hourlyBucket},
 		{key: budgetKeyPrefix + "recipient-daily:" + recipient + ":" + now.Format(dayLayout), limit: limits.perRecipientDaily, bucket: dailyBucket},
@@ -189,7 +187,7 @@ type budgetCheck struct {
 func (p *pipeline) chargeSMSAttempt(ctx context.Context, id tenant.ID, d notification.Dispatch) (budget.ID, error) {
 	limits := p.settings.limits()
 	now := time.Now().UTC()
-	recipient := recipientHash(string(id), d.Recipient.UserID)
+	recipient := p.recipientHash(string(id), d.Recipient.UserID)
 
 	hourly := budget.Query{
 		Channel:   budget.ChannelNotification,
@@ -379,12 +377,13 @@ func definitiveFailure(err error) bool {
 	}
 }
 
-// recipientHash is the digest one recipient's ledger rows are written under. It
-// folds the tenant and the recipient identifier into a fixed-length digest: the
-// identifier's own text can carry the separator a plain concatenation would use,
-// and two tenants may use the same identifier for different accounts. The
-// plaintext is never written to the ledger.
-func recipientHash(tenantID, userID string) string {
-	sum := sha256.Sum256([]byte(tenantID + "\x00" + userID))
-	return hex.EncodeToString(sum[:])
+// recipientHash is the digest one recipient's ledger rows and email counters are
+// written under. It folds the tenant and the recipient identifier into a
+// fixed-length digest: the identifier's own text can carry the separator a plain
+// concatenation would use, and two tenants may use the same identifier for
+// different accounts. It is the database's blind index over that folded text, so
+// the digest is keyed under the same root key the authentication channel uses and
+// the plaintext is never written to the ledger.
+func (p *pipeline) recipientHash(tenantID, userID string) string {
+	return p.blindIndex(tenantID + "\x00" + userID)
 }

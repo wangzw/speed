@@ -37,6 +37,10 @@ import (
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
+// testEncryptionKey is the root key every case assembles the database under, so
+// that the blind index the recipient digest is computed through is usable.
+const testEncryptionKey = "delivery-test-root-key-0123456789"
+
 // The stubs implement the seams the module takes up, so a stub and an interface
 // cannot drift apart without failing the build.
 var (
@@ -548,6 +552,9 @@ type host struct {
 	sms bool
 	// noInbox and noLocalizer drop a required seam, which fails resolution.
 	noInbox, noLocalizer bool
+	// noEncryptionKey assembles the database without a root key, so a case can
+	// hold the startup refusal the recipient digest depends on.
+	noEncryptionKey bool
 	// withPreferences drives the taxonomy's other consumption point —
 	// notification.preferences — instead of this module, over the same
 	// declarations, so a case can hold both points to one criterion.
@@ -568,8 +575,12 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 	t.Helper()
 	dir := t.TempDir()
 	dsn := filepath.Join(dir, "notification.db")
+	dbSection := map[string]any{"dsn": dsn}
+	if !h.noEncryptionKey {
+		dbSection["encryption-key"] = testEncryptionKey
+	}
 	document := map[string]any{
-		"db": map[string]any{"sqlite": map[string]any{"dsn": dsn}},
+		"db": map[string]any{"sqlite": dbSection},
 		"log": map[string]any{"outputs": []any{
 			map[string]any{"to": "file", "format": "json", "path": filepath.Join(dir, "log.json")},
 		}},
@@ -704,7 +715,9 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 	dir := t.TempDir()
 	dsn := filepath.Join(dir, "notification.db")
 	document := map[string]any{
-		"db": map[string]any{"sqlite": map[string]any{"dsn": dsn}},
+		"db": map[string]any{"sqlite": map[string]any{
+			"dsn": dsn, "encryption-key": testEncryptionKey,
+		}},
 		"log": map[string]any{"outputs": []any{
 			map[string]any{"to": "file", "format": "json", "path": filepath.Join(dir, "log.json")},
 		}},

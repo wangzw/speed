@@ -50,8 +50,9 @@ type (
 	featureSMSSender   struct{ sms.Sender }
 )
 
-func (featureDatabase) DB() *gorm.DB        { return nil }
-func (featureDatabase) Dialect() db.Dialect { return db.SQLite }
+func (featureDatabase) DB() *gorm.DB             { return nil }
+func (featureDatabase) Dialect() db.Dialect      { return db.SQLite }
+func (featureDatabase) BlindIndex(string) string { return "" }
 
 type featureHandlers struct{}
 
