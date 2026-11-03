@@ -31,12 +31,15 @@
  * status -- which is scripted here too, in data mode as a grant in force and in
  * empty mode as the bare 404 the page reads as "not impersonating". The
  * tenant-scoped pages the workspace surface mounts under the current tenant
- * (invitations and members, SSO providers) answer populated data mode with
- * rows whose identities the member read carries, so the sweep scans their
- * real table state; the platform surface's selector-driven pages (the
- * impersonations list and the tenant-addressed invitations and SSO pages at
- * their own routes) still wait on a selector the sweep does not drive and
- * render their selector-plus-empty state, which is a real state too.
+ * (invitations and members, SSO providers), the tenant roles and permissions
+ * page (roles, the governed permission catalog, a role's grants and the
+ * tenant's bindings) and the tenant settings page (the declared set on the
+ * tenant layer) answer populated data mode with rows of the scan tenant, so
+ * the sweep scans their real table state; the platform surface's
+ * selector-driven pages (the impersonations list and the tenant-addressed
+ * invitations and SSO pages at their own routes) still wait on a selector the
+ * sweep does not drive and render their selector-plus-empty state, which is a
+ * real state too.
  */
 
 import type { RequestFn } from '@speed/api-client'
@@ -64,11 +67,21 @@ import type {
   AuthzAdminPermissionView,
   AuthzAdminRoleView,
   AuthzSelfPermissions200,
+  AuthzTenantAdminBindingView,
+  AuthzTenantAdminGrantView,
+  AuthzTenantAdminPermissionView,
+  AuthzTenantAdminRoleView,
+  AuthzTenantadminBindingsList200,
+  AuthzTenantadminBindingsOf200,
+  AuthzTenantadminGrantsList200,
+  AuthzTenantadminPermissionsList200,
+  AuthzTenantadminRolesList200,
   NotificationInboxGetUnreadCount200,
   NotificationInboxListMessages200,
   NotificationMessage,
   NotificationType,
   SettingsAdminSetting,
+  SettingsTenantAdminSetting,
   SmsAdminTemplatesList200,
   TenantAdminTenant,
   TenantAdminTenantsGet200,
@@ -192,6 +205,57 @@ const SETTING: SettingsAdminSetting = {
   written: 'value',
   has_row: true,
   value: 'value',
+}
+
+/**
+ * One row of each tenant-scoped administration read the workspace roles and
+ * settings pages issue: a role, a governed permission, a grant held by that
+ * role, a binding of that role to the scan account, and a tenant-layer
+ * setting. They carry the scan tenant, so data mode renders the pages'
+ * populated state rather than an empty shell.
+ */
+const TENANT_ROLE: AuthzTenantAdminRoleView = {
+  builtin: false,
+  created_at: INSTANT,
+  description_key: 'role.support',
+  role: 'support',
+  tenant: TENANT.id,
+}
+
+const TENANT_PERMISSION: AuthzTenantAdminPermissionView = {
+  description: 'Read the tenant settings',
+  permission: 'settings.tenant.read',
+}
+
+const TENANT_GRANT: AuthzTenantAdminGrantView = {
+  action: 'read',
+  created_at: INSTANT,
+  resource: 'tenant.settings',
+  role: TENANT_ROLE.role,
+  tenant: TENANT.id,
+}
+
+const TENANT_BINDING: AuthzTenantAdminBindingView = {
+  account: ACCOUNT.id,
+  granted_at: INSTANT,
+  role: TENANT_ROLE.role,
+  tenant: TENANT.id,
+}
+
+/** One declared setting as the tenant layer reports it: the scan tenant holds
+ * an explicit row, so the page marks it overridden. */
+const TENANT_SETTING: SettingsTenantAdminSetting = {
+  key: 'example.key',
+  namespace: 'example',
+  type: 'string',
+  description: 'An example setting',
+  domain: '',
+  sensitive: false,
+  default: 'value',
+  written: 'value',
+  has_row: true,
+  value: 'value',
+  source: 'tenant',
 }
 
 const SMS_TEMPLATE: SmsAdminTemplatesList200['templates'][number] = {
@@ -345,14 +409,24 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
   '/api/v1/authz/me/permissions': answer(
     {
       platform: [],
-      tenant: ['authn.membership.manage', 'authn.idp.manage'],
+      tenant: [
+        'authn.membership.manage',
+        'authn.idp.manage',
+        'authz.tenant.role.read',
+        'settings.tenant.read',
+      ],
     } satisfies AuthzSelfPermissions200,
     // The caller's own permission sets are not page data: the same grant is
     // answered in the empty state so the workspace pages render their empty
     // state rather than the home fallback an empty permission set implies.
     {
       platform: [],
-      tenant: ['authn.membership.manage', 'authn.idp.manage'],
+      tenant: [
+        'authn.membership.manage',
+        'authn.idp.manage',
+        'authz.tenant.role.read',
+        'settings.tenant.read',
+      ],
     } satisfies AuthzSelfPermissions200,
   ),
   '/api/v1/system/tenants': answer(
@@ -511,6 +585,60 @@ export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
     answer({ providers: [SSO_PROVIDER] } satisfies AuthnAdminProviderList, {
       providers: [],
     } satisfies AuthnAdminProviderList),
+  ],
+  // The workspace roles page's four tenant-scoped reads: the roles, the
+  // governed permission catalog, the selected role's grants and the tenant's
+  // bindings. The grants read stays disabled until a role is chosen, so its
+  // answer is reached only by the table's own invariant.
+  [
+    /^\/api\/v1\/tenants\/[^/]+\/roles$/,
+    answer({ roles: [TENANT_ROLE] } satisfies AuthzTenantadminRolesList200, {
+      roles: [],
+    } satisfies AuthzTenantadminRolesList200),
+  ],
+  [
+    /^\/api\/v1\/tenants\/[^/]+\/permissions$/,
+    answer(
+      { permissions: [TENANT_PERMISSION] } satisfies AuthzTenantadminPermissionsList200,
+      { permissions: [] } satisfies AuthzTenantadminPermissionsList200,
+    ),
+  ],
+  [
+    /^\/api\/v1\/tenants\/[^/]+\/roles\/[^/]+\/grants$/,
+    answer({ grants: [TENANT_GRANT] } satisfies AuthzTenantadminGrantsList200, {
+      grants: [],
+    } satisfies AuthzTenantadminGrantsList200),
+  ],
+  [
+    /^\/api\/v1\/tenants\/[^/]+\/bindings$/,
+    answer(
+      { bindings: [TENANT_BINDING] } satisfies AuthzTenantadminBindingsList200,
+      { bindings: [] } satisfies AuthzTenantadminBindingsList200,
+    ),
+  ],
+  [
+    /^\/api\/v1\/tenants\/[^/]+\/bindings\/[^/]+$/,
+    answer(
+      { bindings: [TENANT_BINDING] } satisfies AuthzTenantadminBindingsOf200,
+      { bindings: [] } satisfies AuthzTenantadminBindingsOf200,
+    ),
+  ],
+  // The workspace settings page reads the tenant layer's whole declared set;
+  // the namespace read stays disabled while the "all namespaces" entry is
+  // chosen, so only the table invariant reaches its answer.
+  [
+    /^\/api\/v1\/tenants\/[^/]+\/settings$/,
+    answer(
+      [TENANT_SETTING] satisfies SettingsTenantAdminSetting[],
+      [] satisfies SettingsTenantAdminSetting[],
+    ),
+  ],
+  [
+    /^\/api\/v1\/tenants\/[^/]+\/settings\/[^/]+$/,
+    answer(
+      [TENANT_SETTING] satisfies SettingsTenantAdminSetting[],
+      [] satisfies SettingsTenantAdminSetting[],
+    ),
   ],
   [
     /^\/api\/v1\/system\/tenants\/[^/]+\/roles\/[^/]+\/grants$/,

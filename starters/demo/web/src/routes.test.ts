@@ -182,6 +182,8 @@ describe('the route table', () => {
     expect(workspaceAdminShellRoutes.map((route) => route.path)).toEqual([
       `${WORKSPACE_ADMIN_PREFIX}/invitations`,
       `${WORKSPACE_ADMIN_PREFIX}/sso`,
+      `${WORKSPACE_ADMIN_PREFIX}/roles`,
+      `${WORKSPACE_ADMIN_PREFIX}/settings`,
     ])
     for (const route of workspaceAdminShellRoutes) {
       // The two management surfaces have disjoint path spaces: the admin

@@ -57,6 +57,8 @@ const WORKSPACE_FEATURES = readyFeatures(
   'authn.admin',
   'authn.invitations',
   'authn.admin.sso',
+  'authz.tenantadmin',
+  'settings.tenantadmin',
 )
 
 interface TenantRow {
@@ -129,6 +131,25 @@ function scriptReads(options: {
     }
     if (path.endsWith('/sso/providers')) {
       return Promise.resolve({ providers: [], next_cursor: '' } as T)
+    }
+    // The workspace roles page's tenant-scoped reads. The grants read stays
+    // disabled until a role is selected, but it answers here too so a case
+    // that drives the selection needs no second script.
+    if (path.endsWith('/grants')) {
+      return Promise.resolve({ grants: [] } as T)
+    }
+    if (path.endsWith('/roles')) {
+      return Promise.resolve({ roles: [] } as T)
+    }
+    if (path.endsWith('/permissions')) {
+      return Promise.resolve({ permissions: [] } as T)
+    }
+    if (path.endsWith('/bindings')) {
+      return Promise.resolve({ bindings: [] } as T)
+    }
+    // The workspace settings page's tenant-layer read.
+    if (path.endsWith('/settings')) {
+      return Promise.resolve([] as T)
     }
     return Promise.reject(new Error(`unexpected request: ${path}`))
   }
@@ -683,6 +704,70 @@ describe('the workspace admin route admission', () => {
     expect(requested.some((path) => path.startsWith('/api/v1/system'))).toBe(
       false,
     )
+  })
+
+  it('serves the workspace roles page from the tenant namespace only', async () => {
+    const { requested } = mountApp({
+      path: '/workspace/admin/roles',
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      permissionsFor: () => ({
+        platform: [],
+        tenant: ['authz.tenant.role.read'],
+      }),
+    })
+    expect(
+      await screen.findByRole('heading', { name: tAdmin('permissions.title') }),
+    ).toBeInTheDocument()
+    // Every read names the current tenant.
+    expect(requested).toContain('/api/v1/tenants/acme/roles')
+    expect(requested).toContain('/api/v1/tenants/acme/permissions')
+    expect(requested).toContain('/api/v1/tenants/acme/bindings')
+    // The page never reaches a platform asset.
+    expect(requested.some((path) => path.startsWith('/api/v1/system'))).toBe(
+      false,
+    )
+  })
+
+  it('serves the workspace settings page from the tenant namespace only', async () => {
+    const { requested } = mountApp({
+      path: '/workspace/admin/settings',
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      permissionsFor: () => ({
+        platform: [],
+        tenant: ['settings.tenant.read'],
+      }),
+    })
+    expect(
+      await screen.findByRole('heading', { name: tAdmin('settings.title') }),
+    ).toBeInTheDocument()
+    expect(requested).toContain('/api/v1/tenants/acme/settings')
+    // Neither the platform settings read nor any other platform asset is
+    // issued by the tenant settings page.
+    expect(requested).not.toContain('/api/v1/system/settings')
+    expect(requested.some((path) => path.startsWith('/api/v1/system'))).toBe(
+      false,
+    )
+  })
+
+  it('sends a viewer without the roles code to the first page they may open', async () => {
+    const { requested } = mountApp({
+      path: '/workspace/admin/roles',
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      // Settings is openable and roles is not: the page guard redirects to
+      // the admission's first enterable declaration.
+      permissionsFor: () => ({
+        platform: [],
+        tenant: ['settings.tenant.read'],
+      }),
+    })
+    await waitFor(() =>
+      expect(window.location.pathname).toBe('/workspace/admin/settings'),
+    )
+    expect(
+      await screen.findByRole('heading', { name: tAdmin('settings.title') }),
+    ).toBeInTheDocument()
+    // The denied page's reads were never issued.
+    expect(requested).not.toContain('/api/v1/tenants/acme/roles')
   })
 
   it('routes the workspace breadcrumb Home in place', async () => {

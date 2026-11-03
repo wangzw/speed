@@ -103,6 +103,8 @@ export const EXPECTED_ROUTE_PATHS = [
   '/admin/audit/sample',
   '/workspace/admin/invitations',
   '/workspace/admin/sso',
+  '/workspace/admin/roles',
+  '/workspace/admin/settings',
 ] as const
 
 /**
@@ -132,6 +134,8 @@ export const ERROR_PLACEHOLDER_BY_PATH: Readonly<Record<string, string>> = {
   // Asserting the copy here makes the sweep prove it scanned that state.
   '/workspace/admin/invitations': demoEnUS.workspace.accessFailed.title,
   '/workspace/admin/sso': demoEnUS.workspace.accessFailed.title,
+  '/workspace/admin/roles': demoEnUS.workspace.accessFailed.title,
+  '/workspace/admin/settings': demoEnUS.workspace.accessFailed.title,
 }
 
 /**
@@ -153,6 +157,18 @@ export const EXPECTED_HEADING_BY_PATH: Readonly<Record<string, string>> = {
       readonly sso: { readonly title: string }
     }
   ).sso.title,
+  // The roles and settings wrappers render the package pages' own level-one
+  // titles (the workspace navigation labels sit beside them in the page).
+  '/workspace/admin/roles': (
+    adminUiResources['en-US'] as unknown as {
+      readonly permissions: { readonly title: string }
+    }
+  ).permissions.title,
+  '/workspace/admin/settings': (
+    adminUiResources['en-US'] as unknown as {
+      readonly settings: { readonly title: string }
+    }
+  ).settings.title,
 }
 
 /**
