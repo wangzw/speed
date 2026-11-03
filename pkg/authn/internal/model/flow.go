@@ -32,6 +32,11 @@ type Start struct {
 	Client    ClientInfo        // for logs and audit; no ground for a judgement or a binding
 	SendsLeft int               // how many SMS sends the flow may still make
 	Locale    string            // zh-CN or en-US, the engine's mapping of the request's Accept-Language; empty reads zh-CN
+	// Proof is the human-verification proof the request that started or
+	// answered the flow presented. The engine passes it through unread; a
+	// method that sends a code hands it to the code engine, which checks and
+	// consumes it once.
+	Proof string
 }
 
 // Clone returns a copy that shares no map with s.
@@ -57,6 +62,11 @@ type FlowState struct {
 	// trustworthy origin for this call, and the code engine applies no source
 	// budget for it.
 	Source string
+	// Proof is the human-verification proof the current request presented,
+	// filled by the engine where it starts a factor challenge and on a first
+	// factor's answer. The method hands it to the code engine, which checks and
+	// consumes it once; the engine itself never checks it.
+	Proof string
 }
 
 // Clone returns a copy that shares no slice with f.

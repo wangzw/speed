@@ -3,9 +3,10 @@
 // request came from a person.
 //
 // A deployment chooses the mechanism with this module's mode: off, a self-hosted
-// proof of work, or Cloudflare Turnstile. The gate is off by default, and the
-// seam is delivered exclusively, so a command names this module or supplies its
-// own authn.HumanVerifier; two exclusive providers in one run fail the startup.
+// proof of work, or Cloudflare Turnstile. The gate runs the self-hosted proof of
+// work by default, and the seam is delivered exclusively, so a command names
+// this module or supplies its own authn.HumanVerifier; two exclusive providers in
+// one run fail the startup.
 //
 // The module holds no send state and sends nothing. A send checks the seam
 // before it spends anything, and the token's single-use property belongs to the
@@ -84,7 +85,8 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // mode registers its secret as a literal redaction rule when a logging
 // capability is present.
 //
-// Prepare states StateEnabled in every mode, including the default off: a mode
+// Prepare states StateEnabled in every mode, including the default proof of
+// work: a mode
 // the configuration refused stops the startup there, and a command that takes
 // this module in gets a verifier that states whether it requires a proof. The
 // mode alone decides the answer, so the module has no stand-down of its own.

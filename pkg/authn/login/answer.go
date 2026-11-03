@@ -2,6 +2,7 @@ package login
 
 import (
 	"context"
+	"errors"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
@@ -85,14 +86,6 @@ func (r *routes) answer(ctx context.Context, in answerInput, meta *speedhttp.Met
 		r.fail(c, err)
 		return c.result()
 	}
-	// A submission that carries the phone a first-factor method declares may
-	// send a code, so the gate is checked before the step switch. A second
-	// factor's own send is checked where its challenge starts.
-	if r.methodSubmissionCarriesPhone(rec.Method, in.Input) {
-		if !r.checkHumanProof(c, in.HumanProof) {
-			return c.result()
-		}
-	}
 	// The source-address allowance is checked before any step can reach a
 	// method, so an answer from a source already at its limit sends nothing.
 	if !r.admitSends(c) {
@@ -104,7 +97,7 @@ func (r *routes) answer(ctx context.Context, in answerInput, meta *speedhttp.Met
 		if rec.State == stateSignup {
 			r.applySignupAnswer(c, token, echo, rec, raw, in.Input)
 		} else {
-			r.applyFirstSubmit(c, token, echo, rec, raw, in.Input)
+			r.applyFirstSubmit(c, token, echo, rec, raw, in.Input, in.HumanProof)
 		}
 	case stepFactor:
 		r.applyFactor(c, token, echo, rec, raw, in.Input, in.HumanProof)
@@ -179,16 +172,13 @@ func (r *routes) applyFactor(c *call, token, echo string, rec record, raw []byte
 // FlowState.Source: the factor has no request of its own, so the address comes
 // from this request and is the send's source when the factor sends a code.
 func (r *routes) challengeFactor(c *call, token, echo string, rec record, raw []byte, factorID, proof string) {
-	// Choosing an SMS factor sends a code to the account's proven phone, so the
-	// gate is checked before the factor is asked and before any send budget is
-	// spent. The kind comes from the offered factor, never from its name.
-	if factorKindOf(rec.MFA.Offered, factorID) == string(authn.FactorSMS) {
-		if !r.checkHumanProof(c, proof) {
-			return
-		}
-	}
 	f := r.flowState(rec, token)
 	f.Source = c.clientIP
+	// The proof travels to the factor and, from there, to the code engine, which
+	// checks and consumes it once before any send budget is spent. The engine
+	// never checks it itself: a second check would consume a single-use proof
+	// twice.
+	f.Proof = proof
 	got, ok := r.invoke(c.ctx, "factor", func(cctx context.Context) (authn.Step, error) {
 		return r.mfa.Challenge(cctx, f, factorID)
 	})
@@ -226,6 +216,14 @@ func (r *routes) challengeFactor(c *call, token, echo string, rec record, raw []
 			return
 		}
 		r.reportLogin(c.ctx, rec, outcomeFailed)
+		// A send the human-verification gate refused is not a factor that did
+		// not hold: it keeps its own 403 or 400, which is why the proof moved
+		// into the code engine but its answer did not.
+		if cause := step.CauseOf(got); errors.Is(cause, authn.ErrHumanVerificationRequired) ||
+			errors.Is(cause, authn.ErrInvalidArgument) {
+			r.fail(c, cause)
+			return
+		}
 		c.unauthorized(mount.CodeLoginFailed)
 	case step.KindThrottled:
 		r.reportLogin(c.ctx, rec, outcomeThrottled)

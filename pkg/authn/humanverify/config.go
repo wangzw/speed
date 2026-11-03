@@ -26,8 +26,9 @@ const (
 	timeoutItem   = "timeout"
 )
 
-// The closed set of modes. Off is the default: a deployment that takes the
-// module in without configuring it keeps sending without a proof.
+// The closed set of modes. The proof of work is the default: a deployment that
+// takes the module in without configuring it gates every send on a proof it
+// checks itself, and a deployment that wants no gate states Off.
 const (
 	// ModeOff leaves the gate open: Required reports false and every proof,
 	// an empty one included, is accepted.
@@ -60,12 +61,13 @@ type moduleConfig struct {
 	Timeout time.Duration `config:"timeout"`
 }
 
-// configDefaults is what the module is worth without a configuration file. Only
-// the Turnstile endpoint and its timeout have a value: there is no default
-// credential and no default hostname, because a proof accepted for a hostname
-// nobody chose is not a check.
+// configDefaults is what the module is worth without a configuration file. The
+// gate runs the self-hosted proof of work, which needs no credential and no
+// hostname; only the Turnstile endpoint and its timeout have a value, and a
+// deployment that turns Turnstile on supplies its own site key, secret and
+// hostname.
 var configDefaults = moduleConfig{
-	Mode:      ModeOff,
+	Mode:      ModePoW,
 	VerifyURL: turnstile.DefaultVerifyURL,
 	Timeout:   turnstile.DefaultTimeout,
 }
@@ -143,9 +145,9 @@ func (c moduleConfig) resolveTurnstile() (resolved, error) {
 }
 
 // schema declares this module's input items. The mode carries a default, so it
-// is not required: a section that leaves it out runs the gate off. The Turnstile
-// items are judged by the mode, not by the loader, because a gate that runs off
-// or on the proof of work needs none of them.
+// is not required: a section that leaves it out runs the proof of work. The
+// Turnstile items are judged by the mode, not by the loader, because a gate that
+// runs off or on the proof of work needs none of them.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,

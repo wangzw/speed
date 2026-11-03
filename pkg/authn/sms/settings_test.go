@@ -117,6 +117,9 @@ func TestEverySettingDomainAdmitsItsBoundsAndRefusesTheNeighbours(t *testing.T) 
 		{"per-phone-daily", 1, 200, perPhoneDailyInDomain},
 		{"per-source-hourly", 1, 10000, perSourceHourlyInDomain},
 		{"per-source-daily", 1, 100000, perSourceDailyInDomain},
+		{"per-source-distinct-hourly", 1, 10000, perSourceDistinctHourlyInDomain},
+		{"per-source-distinct-daily", 1, 100000, perSourceDistinctDailyInDomain},
+		{"per-source-attempt-hourly", 1, 100000, perSourceAttemptHourlyInDomain},
 		{"global-hourly", 1, 1000000, globalHourlyInDomain},
 		{"per-flow-sends", 1, 10, perFlowSendsInDomain},
 		{"per-account-hourly", 1, 60, perAccountHourlyInDomain},
@@ -169,7 +172,9 @@ func TestTheSettingsSchemaDeclaresEveryKeyUnderTheModuleNamespace(t *testing.T) 
 	want := []string{
 		allowedPrefixesKey, codeLengthKey, codeTTLKey, codeAttemptsKey, resendIntervalKey,
 		perPhoneHourlyKey, perPhoneDailyKey, perSourceHourlyKey, perSourceDailyKey,
+		perSourceDistinctHourlyKey, perSourceDistinctDailyKey, perSourceAttemptHourlyKey,
 		globalLoginKey, globalMFAKey, globalEnrollKey, globalResetKey,
+		globalAttemptLoginKey, globalAttemptMFAKey, globalAttemptEnrollKey, globalAttemptResetKey,
 		perFlowSendsKey, perAccountHourlyKey,
 	}
 	for _, key := range want {
@@ -179,5 +184,50 @@ func TestTheSettingsSchemaDeclaresEveryKeyUnderTheModuleNamespace(t *testing.T) 
 	}
 	if len(s.Items) != len(want) {
 		t.Errorf("the settings schema declares %d items, want %d", len(s.Items), len(want))
+	}
+}
+
+// TestTheNewBudgetDefaultsAreWhatSettingsReport holds the values the redesign
+// adds: the distinct-destination and attempt dimensions read their declared
+// defaults when no store is assembled.
+func TestTheNewBudgetDefaultsAreWhatSettingsReport(t *testing.T) {
+	r := newReader(nil, (&logBuffer{}).logger())
+	if got := r.perSourceDistinctHourly(); got != 20 {
+		t.Errorf("per-source-distinct-hourly = %d, want 20", got)
+	}
+	if got := r.perSourceDistinctDaily(); got != 60 {
+		t.Errorf("per-source-distinct-daily = %d, want 60", got)
+	}
+	if got := r.perSourceAttemptHourly(); got != 60 {
+		t.Errorf("per-source-attempt-hourly = %d, want 60", got)
+	}
+	for purpose, want := range map[string]int{
+		authn.SMSPurposeLogin:  750,
+		authn.SMSPurposeMFA:    450,
+		authn.SMSPurposeEnroll: 150,
+		authn.SMSPurposeReset:  300,
+	} {
+		if got := r.globalAttemptHourly(purpose); got != want {
+			t.Errorf("global-attempt-hourly-%s = %d, want %d", purpose, got, want)
+		}
+	}
+}
+
+// TestTheNewBudgetKeysMatchTheReaderPaths holds the literal paths the behaviour
+// cases write against the paths the reader reads, so the two spellings cannot
+// drift apart.
+func TestTheNewBudgetKeysMatchTheReaderPaths(t *testing.T) {
+	cases := map[string]string{
+		perSourceAttemptHourlyPathLiteral:  perSourceAttemptHourlyPath,
+		perSourceDistinctHourlyPathLiteral: perSourceDistinctHourlyPath,
+		globalAttemptLoginPathLiteral:      globalAttemptLoginPath,
+		globalAttemptMFAPathLiteral:        globalAttemptMFAPath,
+		globalAttemptEnrollPathLiteral:     globalAttemptEnrollPath,
+		globalAttemptResetPathLiteral:      globalAttemptResetPath,
+	}
+	for literal, path := range cases {
+		if literal != path {
+			t.Errorf("the literal path %q does not match the reader path %q", literal, path)
+		}
 	}
 }

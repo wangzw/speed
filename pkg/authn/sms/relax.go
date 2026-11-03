@@ -25,19 +25,29 @@ const (
 // direction it relaxes in. A setting absent from the table relaxes nothing and
 // is not watched.
 var relaxing = map[string]string{
-	allowedPrefixesPath:  dirAddMember,
-	codeLengthPath:       dirDecrease,
-	codeTTLPath:          dirIncrease,
-	codeAttemptsPath:     dirIncrease,
-	resendIntervalPath:   dirDecrease,
-	perPhoneHourlyPath:   dirIncrease,
-	perPhoneDailyPath:    dirIncrease,
-	perSourceHourlyPath:  dirIncrease,
-	perSourceDailyPath:   dirIncrease,
-	globalLoginPath:      dirIncrease,
-	globalMFAPath:        dirIncrease,
-	globalEnrollPath:     dirIncrease,
-	globalResetPath:      dirIncrease,
+	allowedPrefixesPath: dirAddMember,
+	codeLengthPath:      dirDecrease,
+	codeTTLPath:         dirIncrease,
+	codeAttemptsPath:    dirIncrease,
+	resendIntervalPath:  dirDecrease,
+	perPhoneHourlyPath:  dirIncrease,
+	perPhoneDailyPath:   dirIncrease,
+	perSourceHourlyPath: dirIncrease,
+	perSourceDailyPath:  dirIncrease,
+
+	perSourceDistinctHourlyPath: dirIncrease,
+	perSourceDistinctDailyPath:  dirIncrease,
+	perSourceAttemptHourlyPath:  dirIncrease,
+
+	globalLoginPath:         dirIncrease,
+	globalMFAPath:           dirIncrease,
+	globalEnrollPath:        dirIncrease,
+	globalResetPath:         dirIncrease,
+	globalAttemptLoginPath:  dirIncrease,
+	globalAttemptMFAPath:    dirIncrease,
+	globalAttemptEnrollPath: dirIncrease,
+	globalAttemptResetPath:  dirIncrease,
+
 	perFlowSendsPath:     dirIncrease,
 	perAccountHourlyPath: dirIncrease,
 }
@@ -167,6 +177,12 @@ func declaredNumber(key string) (int64, bool) {
 		return int64(defaults.PerSourceHourly), true
 	case perSourceDailyPath:
 		return int64(defaults.PerSourceDaily), true
+	case perSourceDistinctHourlyPath:
+		return int64(defaults.PerSourceDistinctHourly), true
+	case perSourceDistinctDailyPath:
+		return int64(defaults.PerSourceDistinctDaily), true
+	case perSourceAttemptHourlyPath:
+		return int64(defaults.PerSourceAttemptHourly), true
 	case globalLoginPath:
 		return int64(defaults.GlobalLogin), true
 	case globalMFAPath:
@@ -175,6 +191,14 @@ func declaredNumber(key string) (int64, bool) {
 		return int64(defaults.GlobalEnroll), true
 	case globalResetPath:
 		return int64(defaults.GlobalReset), true
+	case globalAttemptLoginPath:
+		return int64(defaults.GlobalAttemptLogin), true
+	case globalAttemptMFAPath:
+		return int64(defaults.GlobalAttemptMFA), true
+	case globalAttemptEnrollPath:
+		return int64(defaults.GlobalAttemptEnroll), true
+	case globalAttemptResetPath:
+		return int64(defaults.GlobalAttemptReset), true
 	case perFlowSendsPath:
 		return int64(defaults.PerFlowSends), true
 	case perAccountHourlyPath:

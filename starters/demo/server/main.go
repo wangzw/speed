@@ -315,11 +315,11 @@ var (
 		invite.ModuleName,
 		profile.ModuleName,
 		sso.ModuleName,
-		// The human-verification gate. It runs with its mode off here, which is the
-		// product default: a send asks the seam nothing, and the challenge route the
-		// proof-of-work mode would serve is absent. A deployment turns it on by
-		// setting authn.humanverify.mode and, for the turnstile mode, its site key,
-		// secret and expected hostname.
+		// The human-verification gate. Its mode is left to the configuration, whose
+		// default is the self-hosted proof of work, so the challenge route is
+		// mounted. A deployment that wants no gate sets authn.humanverify.mode to
+		// off; one that wants Turnstile sets it and supplies the site key, secret
+		// and expected hostname.
 		humanverify.ModuleName,
 
 		// Tenancy, the journal, the authorization layer, the limiter and settings.

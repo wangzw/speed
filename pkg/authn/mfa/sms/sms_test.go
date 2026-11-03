@@ -29,6 +29,7 @@ type sendCall struct {
 	locale  string
 	deliver bool
 	source  string
+	proof   string
 }
 
 // verifyCall is one call to the code engine's Verify.
@@ -51,7 +52,7 @@ type fakeCodes struct {
 func (c *fakeCodes) Send(_ context.Context, in authn.SendCode) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.sends = append(c.sends, sendCall{in.Purpose, in.Phone, in.Account, in.Locale, in.Deliver, in.Source})
+	c.sends = append(c.sends, sendCall{in.Purpose, in.Phone, in.Account, in.Locale, in.Deliver, in.Source, in.Proof})
 	if c.sendErr != nil {
 		return "", c.sendErr
 	}
@@ -432,5 +433,53 @@ func TestTheChallengeMarkRoundTripsAndRejectsAnythingElse(t *testing.T) {
 		if _, ok := readChallenge(bad); ok {
 			t.Errorf("readChallenge accepted %q, want it refused", bad)
 		}
+	}
+}
+
+// TestChallengeForwardsTheProofToTheCodeEngine holds the factor's side of the
+// gate: the proof the engine put in FlowState reaches the code engine unchanged.
+func TestChallengeForwardsTheProofToTheCodeEngine(t *testing.T) {
+	r := newRig()
+	fl := flow(3, "en-US", nil)
+	fl.Proof = "proof-1"
+
+	if _, err := r.f.Challenge(t.Context(), fl, record()); err != nil {
+		t.Fatalf("Challenge: %v", err)
+	}
+	sent, ok := r.cs.lastSend()
+	if !ok {
+		t.Fatal("the code engine was handed no send")
+	}
+	if sent.proof != "proof-1" {
+		t.Errorf("the code engine was handed proof %q, want the flow's proof-1", sent.proof)
+	}
+}
+
+// TestChallengeRefusesWhenTheCodeEngineRefusesTheProof holds the factor's answer
+// to the gate's two refusals: a refused step, which the engine answers with the
+// gate's own 403 or 400.
+func TestChallengeRefusesWhenTheCodeEngineRefusesTheProof(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"a missing or invalid proof", authn.ErrHumanVerificationRequired},
+		{"an over-long proof", authn.ErrInvalidArgument},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig()
+			r.cs.sendErr = tc.err
+
+			got, err := r.f.Challenge(t.Context(), flow(1, "", nil), record())
+			if err != nil {
+				t.Fatalf("Challenge: %v", err)
+			}
+			if step.KindOf(got) != step.KindRefused {
+				t.Fatalf("Challenge answered %s, want a refusal", step.KindOf(got))
+			}
+			if !errors.Is(step.CauseOf(got), tc.err) {
+				t.Errorf("the refusal cause = %v, want it to carry %v", step.CauseOf(got), tc.err)
+			}
+		})
 	}
 }

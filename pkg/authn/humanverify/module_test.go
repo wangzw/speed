@@ -109,7 +109,7 @@ func sectionFor(mode string) map[string]any {
 // The off gate requires nothing and accepts any proof, an empty one included,
 // so a deployment that leaves it off behaves as though the gate were absent.
 func TestTheOffProviderRequiresNothingAndAcceptsAnyProof(t *testing.T) {
-	v := driveVerifier(t, body(t, nil))
+	v := driveVerifier(t, body(t, map[string]any{"mode": ModeOff}))
 	if got := v.Provider(); got != ModeOff {
 		t.Errorf("the verifier reports %q, want %q", got, ModeOff)
 	}

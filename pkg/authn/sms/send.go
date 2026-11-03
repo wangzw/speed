@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/sms"
 )
@@ -39,6 +40,14 @@ var errBudgetReadFailed = errors.New("a budget could not be read")
 // nothing is enqueued.
 func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 	if err := checkSendCode(in); err != nil {
+		return "", err
+	}
+	// The human-verification gate runs before the allowed-prefix table, the
+	// queue and every budget, so a refused proof spends nothing and tells the
+	// caller nothing about the number. The proof is checked here and nowhere on
+	// the caller's side: it is single-use, and a second check would consume it
+	// twice.
+	if err := p.checkProof(ctx, in); err != nil {
 		return "", err
 	}
 	now := p.clock.Now()
@@ -147,6 +156,24 @@ func resolveOutcome(err error) string {
 	return outcomeRejected
 }
 
+// checkProof holds a send to the deployment's human-verification gate, if it
+// has one. A gate that requires nothing, and an assembly with no gate, are
+// skipped entirely: the send goes on as it did before. A proof over the field's
+// bound is a bad request before the provider is asked. The provider's own
+// failures are carried out as they are: a missing, invalid, expired or used
+// proof is ErrHumanVerificationRequired, an over-long proof the provider admits
+// is ErrInvalidArgument, and a provider or store that cannot answer is
+// ErrUnavailable. None of them has spent any budget.
+func (p *product) checkProof(ctx context.Context, in authn.SendCode) error {
+	if p.human == nil || !p.human.Required() {
+		return nil
+	}
+	if len(in.Proof) > mount.HumanProofMaxBytes {
+		return fmt.Errorf("%w: the human-verification proof is over its limit", authn.ErrInvalidArgument)
+	}
+	return p.human.Verify(ctx, authn.HumanProof{Token: in.Proof, RemoteIP: in.Source})
+}
+
 // checkSendCode holds the input to the caller's contract. The purpose is one of
 // the closed set, the phone is a normalized number, and the account is set for
 // the purposes that count against one. The locale is not held to a set here: it
@@ -208,30 +235,70 @@ func (p *product) sourceMAC(source string) *string {
 	return &mac
 }
 
+// budgetSource is where the send budgets read their counts. Today the challenge
+// table answers every method; the shared cross-channel ledger lands behind this
+// same surface, so the budget check keeps its call sites and only the
+// implementation behind them changes.
+type budgetSource interface {
+	lastCreatedForPhone(q *gorm.DB, phoneMAC string) (time.Time, bool, error)
+
+	countPhoneSince(q *gorm.DB, phoneMAC string, since time.Time) (int64, error)
+	oldestPhoneSince(q *gorm.DB, phoneMAC string, since time.Time) (time.Time, bool, error)
+
+	countSourceSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error)
+	oldestSourceSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error)
+
+	countSourceDistinctSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error)
+	oldestSourceDistinctSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error)
+
+	countSourceAttemptsSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error)
+	oldestSourceAttemptsSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error)
+
+	countRealPurposeSince(q *gorm.DB, purpose string, since time.Time) (int64, error)
+	oldestRealPurposeSince(q *gorm.DB, purpose string, since time.Time) (time.Time, bool, error)
+
+	countPurposeAttemptsSince(q *gorm.DB, purpose string, since time.Time) (int64, error)
+	oldestPurposeAttemptsSince(q *gorm.DB, purpose string, since time.Time) (time.Time, bool, error)
+
+	countAccountSince(q *gorm.DB, account string, since time.Time) (int64, error)
+	oldestAccountSince(q *gorm.DB, account string, since time.Time) (time.Time, bool, error)
+}
+
+// The challenge table is the budget source until the shared ledger arrives.
+var _ budgetSource = (*register)(nil)
+
 // budgetLimits is every limit the budget check compares against, read once
 // before the write transaction opens. Reading them first is what keeps a
 // settings read out of the span in which an advisory lock is held.
 type budgetLimits struct {
-	resendInterval   time.Duration
-	perPhoneHourly   int
-	perPhoneDaily    int
-	perSourceHourly  int
-	perSourceDaily   int
-	globalHourly     int
-	perAccountHourly int
+	resendInterval          time.Duration
+	perPhoneHourly          int
+	perPhoneDaily           int
+	perSourceHourly         int
+	perSourceDaily          int
+	perSourceDistinctHourly int
+	perSourceDistinctDaily  int
+	perSourceAttemptHourly  int
+	globalHourly            int
+	globalAttemptHourly     int
+	perAccountHourly        int
 }
 
 // readBudgetLimits reads every setting the budget check needs, including the
-// global budget of the purpose the send carries.
+// global send and attempt budgets of the purpose the send carries.
 func (p *product) readBudgetLimits(purpose string) budgetLimits {
 	return budgetLimits{
-		resendInterval:   p.settings.resendInterval(),
-		perPhoneHourly:   p.settings.perPhoneHourly(),
-		perPhoneDaily:    p.settings.perPhoneDaily(),
-		perSourceHourly:  p.settings.perSourceHourly(),
-		perSourceDaily:   p.settings.perSourceDaily(),
-		globalHourly:     p.settings.globalHourly(purpose),
-		perAccountHourly: p.settings.perAccountHourly(),
+		resendInterval:          p.settings.resendInterval(),
+		perPhoneHourly:          p.settings.perPhoneHourly(),
+		perPhoneDaily:           p.settings.perPhoneDaily(),
+		perSourceHourly:         p.settings.perSourceHourly(),
+		perSourceDaily:          p.settings.perSourceDaily(),
+		perSourceDistinctHourly: p.settings.perSourceDistinctHourly(),
+		perSourceDistinctDaily:  p.settings.perSourceDistinctDaily(),
+		perSourceAttemptHourly:  p.settings.perSourceAttemptHourly(),
+		globalHourly:            p.settings.globalHourly(purpose),
+		globalAttemptHourly:     p.settings.globalAttemptHourly(purpose),
+		perAccountHourly:        p.settings.perAccountHourly(),
 	}
 }
 
@@ -255,14 +322,22 @@ func isBudgetRefusal(err error) bool {
 // requests for numbers nobody registered cannot exhaust the deployment, while the
 // dimensions that stay asymmetric keep that fact unobservable. The source
 // dimension runs only when the send carries a source; an empty source is
-// fail-open and takes no source lock. Every dimension leaves out refunded rows:
-// a message the carrier certainly did not take gives its spend back, while an
-// uncertain outcome stays counted.
+// fail-open and takes no source lock. The send dimensions leave out refunded
+// rows: a message the carrier certainly did not take gives its spend back, while
+// an uncertain outcome stays counted. The distinct-destination dimension is one
+// of those send dimensions: it counts the different numbers a source sent to in
+// the window, and a refund removes a destination from it. The attempt dimensions
+// are the exception, and count the other way: they count only a row a certain
+// failure refunded, so a destination or carrier that always fails is what spends
+// the attempt budget, while a send that goes out does not. The per-source
+// attempt dimension counts suppressed rows like the source's other dimensions;
+// the deployment-wide attempt dimension counts only unsuppressed rows, like the
+// deployment-wide send budget.
 func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string, limits budgetLimits, now time.Time) error {
 	phoneMAC := p.database.BlindIndex(in.Phone)
 
 	if interval := limits.resendInterval; interval > 0 {
-		last, ok, err := p.register.lastCreatedForPhone(tx, phoneMAC)
+		last, ok, err := p.budgets.lastCreatedForPhone(tx, phoneMAC)
 		if err != nil {
 			return p.budgetReadFailed(err)
 		}
@@ -277,14 +352,14 @@ func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string
 	dailySince := now.Add(-24 * time.Hour)
 
 	if err := p.throttleOver(
-		func() (int64, error) { return p.register.countPhoneSince(tx, phoneMAC, hourlySince) },
-		func() (time.Time, bool, error) { return p.register.oldestPhoneSince(tx, phoneMAC, hourlySince) },
+		func() (int64, error) { return p.budgets.countPhoneSince(tx, phoneMAC, hourlySince) },
+		func() (time.Time, bool, error) { return p.budgets.oldestPhoneSince(tx, phoneMAC, hourlySince) },
 		limits.perPhoneHourly, time.Hour, now); err != nil {
 		return err
 	}
 	if err := p.throttleOver(
-		func() (int64, error) { return p.register.countPhoneSince(tx, phoneMAC, dailySince) },
-		func() (time.Time, bool, error) { return p.register.oldestPhoneSince(tx, phoneMAC, dailySince) },
+		func() (int64, error) { return p.budgets.countPhoneSince(tx, phoneMAC, dailySince) },
+		func() (time.Time, bool, error) { return p.budgets.oldestPhoneSince(tx, phoneMAC, dailySince) },
 		limits.perPhoneDaily, 24*time.Hour, now); err != nil {
 		return err
 	}
@@ -295,15 +370,43 @@ func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string
 	// put every send under one key.
 	if sourceMAC != nil {
 		if err := p.throttleOver(
-			func() (int64, error) { return p.register.countSourceSince(tx, *sourceMAC, hourlySince) },
-			func() (time.Time, bool, error) { return p.register.oldestSourceSince(tx, *sourceMAC, hourlySince) },
+			func() (int64, error) { return p.budgets.countSourceSince(tx, *sourceMAC, hourlySince) },
+			func() (time.Time, bool, error) { return p.budgets.oldestSourceSince(tx, *sourceMAC, hourlySince) },
 			limits.perSourceHourly, time.Hour, now); err != nil {
 			return err
 		}
 		if err := p.throttleOver(
-			func() (int64, error) { return p.register.countSourceSince(tx, *sourceMAC, dailySince) },
-			func() (time.Time, bool, error) { return p.register.oldestSourceSince(tx, *sourceMAC, dailySince) },
+			func() (int64, error) { return p.budgets.countSourceSince(tx, *sourceMAC, dailySince) },
+			func() (time.Time, bool, error) { return p.budgets.oldestSourceSince(tx, *sourceMAC, dailySince) },
 			limits.perSourceDaily, 24*time.Hour, now); err != nil {
+			return err
+		}
+		// The distinct-destination dimension leaves out refunded rows like the raw
+		// source count: a destination the carrier certainly did not take did not
+		// spend the diversity budget. The attempt dimension below counts those rows,
+		// which is what keeps a source from cycling destinations that always fail.
+		if err := p.throttleOver(
+			func() (int64, error) { return p.budgets.countSourceDistinctSince(tx, *sourceMAC, hourlySince) },
+			func() (time.Time, bool, error) {
+				return p.budgets.oldestSourceDistinctSince(tx, *sourceMAC, hourlySince)
+			},
+			limits.perSourceDistinctHourly, time.Hour, now); err != nil {
+			return err
+		}
+		if err := p.throttleOver(
+			func() (int64, error) { return p.budgets.countSourceDistinctSince(tx, *sourceMAC, dailySince) },
+			func() (time.Time, bool, error) {
+				return p.budgets.oldestSourceDistinctSince(tx, *sourceMAC, dailySince)
+			},
+			limits.perSourceDistinctDaily, 24*time.Hour, now); err != nil {
+			return err
+		}
+		if err := p.throttleOver(
+			func() (int64, error) { return p.budgets.countSourceAttemptsSince(tx, *sourceMAC, hourlySince) },
+			func() (time.Time, bool, error) {
+				return p.budgets.oldestSourceAttemptsSince(tx, *sourceMAC, hourlySince)
+			},
+			limits.perSourceAttemptHourly, time.Hour, now); err != nil {
 			return err
 		}
 	}
@@ -317,8 +420,25 @@ func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string
 	// answers the same throttled error and Retry-After as the other dimensions.
 	if limit := limits.globalHourly; limit > 0 {
 		if err := p.throttleOver(
-			func() (int64, error) { return p.register.countRealPurposeSince(tx, in.Purpose, hourlySince) },
-			func() (time.Time, bool, error) { return p.register.oldestRealPurposeSince(tx, in.Purpose, hourlySince) },
+			func() (int64, error) { return p.budgets.countRealPurposeSince(tx, in.Purpose, hourlySince) },
+			func() (time.Time, bool, error) { return p.budgets.oldestRealPurposeSince(tx, in.Purpose, hourlySince) },
+			limit, time.Hour, now); err != nil {
+			return err
+		}
+	}
+
+	// The deployment-wide attempt budget of the purpose counts the unsuppressed
+	// rows a certain failure refunded, so a send that went out does not spend it.
+	// It shares the global budget's asymmetry: a suppressed row reached no
+	// carrier, so anonymous requests for numbers nobody registered cannot
+	// exhaust it. The source and account dimensions still count suppressed rows,
+	// so refusal does not tell a registered number from an unregistered one.
+	if limit := limits.globalAttemptHourly; limit > 0 {
+		if err := p.throttleOver(
+			func() (int64, error) { return p.budgets.countPurposeAttemptsSince(tx, in.Purpose, hourlySince) },
+			func() (time.Time, bool, error) {
+				return p.budgets.oldestPurposeAttemptsSince(tx, in.Purpose, hourlySince)
+			},
 			limit, time.Hour, now); err != nil {
 			return err
 		}
@@ -330,8 +450,8 @@ func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string
 	if in.Purpose == purposeMFA || in.Purpose == purposeEnroll {
 		account := string(in.Account)
 		if err := p.throttleOver(
-			func() (int64, error) { return p.register.countAccountSince(tx, account, hourlySince) },
-			func() (time.Time, bool, error) { return p.register.oldestAccountSince(tx, account, hourlySince) },
+			func() (int64, error) { return p.budgets.countAccountSince(tx, account, hourlySince) },
+			func() (time.Time, bool, error) { return p.budgets.oldestAccountSince(tx, account, hourlySince) },
 			limits.perAccountHourly, time.Hour, now); err != nil {
 			return err
 		}

@@ -154,13 +154,14 @@ func (r *routes) recordSends(c *call, token string, raw []byte, rec *record, got
 
 // applyFirstSubmit advances a flow whose first-factor answer is a client
 // submission. It is the answer route's work for a flow in the first state.
-func (r *routes) applyFirstSubmit(c *call, token, echo string, rec record, raw []byte, fields map[string]string) {
+func (r *routes) applyFirstSubmit(c *call, token, echo string, rec record, raw []byte, fields map[string]string, proof string) {
 	m, ok := r.method(rec.Method)
 	if !ok {
 		r.fail(c, fmt.Errorf("%w: the flow names a method not taken in", authn.ErrFlowInvalid))
 		return
 	}
 	f := r.flowState(rec, token)
+	f.Proof = proof
 	in := authn.StepInput{Action: authn.InputSubmit, Fields: fields, Client: c.clientInfo()}
 	got, ok2 := r.invoke(c.ctx, rec.Method, func(cctx context.Context) (authn.Step, error) {
 		return m.Answer(cctx, f, in)
@@ -174,7 +175,7 @@ func (r *routes) applyFirstSubmit(c *call, token, echo string, rec record, raw [
 
 // applyFirstBegin runs the first call of a flow started at the first factor. It
 // is not a client answer, so it moves the step number but counts no answer.
-func (r *routes) applyFirstBegin(c *call, token, echo string, rec record, raw []byte, fields map[string]string) {
+func (r *routes) applyFirstBegin(c *call, token, echo string, rec record, raw []byte, fields map[string]string, proof string) {
 	m, ok := r.method(rec.Method)
 	if !ok {
 		r.fail(c, fmt.Errorf("%w: the flow names a method not taken in", authn.ErrFlowInvalid))
@@ -191,6 +192,7 @@ func (r *routes) applyFirstBegin(c *call, token, echo string, rec record, raw []
 		Client:    c.clientInfo(),
 		SendsLeft: r.sendsLeft(rec),
 		Locale:    rec.Locale,
+		Proof:     proof,
 	}
 	got, ok2 := r.invoke(c.ctx, rec.Method, func(cctx context.Context) (authn.Step, error) {
 		return m.Begin(cctx, s)

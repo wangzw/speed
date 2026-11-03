@@ -54,14 +54,15 @@ func turnstileSection() map[string]any {
 	}
 }
 
-// The gate is off without a configuration file, which is the product's default.
-func TestTheModeDefaultsToOff(t *testing.T) {
+// The gate runs the self-hosted proof of work without a configuration file,
+// which is the product's default.
+func TestTheModeDefaultsToPoW(t *testing.T) {
 	cfg, err := readBody(t, body(t, nil))
 	if err != nil {
 		t.Fatalf("resolving an empty section: %v", err)
 	}
-	if cfg.Mode != ModeOff {
-		t.Errorf("the default mode is %q, want %q", cfg.Mode, ModeOff)
+	if cfg.Mode != ModePoW {
+		t.Errorf("the default mode is %q, want %q", cfg.Mode, ModePoW)
 	}
 }
 

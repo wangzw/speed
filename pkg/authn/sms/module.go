@@ -27,6 +27,12 @@
 // log, no event and no metric, and lives only in the queued message and the
 // call to the sender. The number is not stored either; the searchable column
 // holds its keyed digest.
+//
+// The module takes the deployment's human-verification gate as an optional
+// seam. When the deployment requires a proof, Send checks it before it spends
+// any budget and consumes it once; the proof travels in SendCode, so a caller
+// must not check it itself. An assembly without a gate sends without asking for
+// one.
 package sms
 
 import (
@@ -121,6 +127,7 @@ func Module() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*sms.Registry)(nil)},
 			{Token: (*sms.Sender)(nil)},
+			{Token: (*authn.HumanVerifier)(nil), Optional: true},
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
@@ -231,14 +238,21 @@ type product struct {
 	resetSupported bool
 
 	register *register
-	pool     *pool
-	meters   *meters
+	// budgets is where the send budgets read their counts. It is the challenge
+	// table today; the shared cross-channel ledger replaces it behind the same
+	// surface without changing the call sites in checkBudgets.
+	budgets budgetSource
+	pool    *pool
+	meters  *meters
 
 	// What Init takes up. They are read-only after Init.
 	settings *reader
 	bus      event.Bus
 	audit    audit.Audit
 	logger   *slog.Logger
+	// human is the deployment's human-verification gate, absent when the
+	// assembly carries none.
+	human authn.HumanVerifier
 
 	clock clock.Source
 	seen  *seenEvents
@@ -300,6 +314,7 @@ func build(database db.Database, registry sms.Registry, sender sms.Sender, cfg r
 	// templateLocales writes an entry for the reset template only when the
 	// carrier declared it, so its presence is the support answer.
 	_, resetSupported := localesByTemplate[templateReset]
+	register := &register{handle: database.DB(), dialect: database.Dialect()}
 	return &product{
 		database:          database,
 		handle:            database.DB(),
@@ -308,7 +323,8 @@ func build(database db.Database, registry sms.Registry, sender sms.Sender, cfg r
 		defaultLocale:     defaultLocale,
 		localesByTemplate: localesByTemplate,
 		resetSupported:    resetSupported,
-		register:          &register{handle: database.DB(), dialect: database.Dialect()},
+		register:          register,
+		budgets:           register,
 		pool:              newPool(cfg.Workers, cfg.QueueSize),
 		meters:            &meters{},
 		settings:          newReader(nil, logger),
@@ -330,6 +346,9 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 	p.settings = newReader(store, p.logger)
+	if p.human, err = optional[authn.HumanVerifier](reg, "the human-verification gate"); err != nil {
+		return err
+	}
 
 	if p.audit, err = optional[audit.Audit](reg, "the audit capability"); err != nil {
 		return err

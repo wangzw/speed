@@ -133,7 +133,9 @@ func (f *factor) Enroll(ctx context.Context, fl authn.FlowState, in authn.StepIn
 //
 // The challenge identifier the code engine returned is kept in the answer's
 // private bytes, which the engine keeps as they stand and hands back as
-// FlowState.Private when the code is answered.
+// FlowState.Private when the code is answered. FlowState.Proof is the
+// human-verification proof the request presented; the code engine checks and
+// consumes it once before spending any budget.
 func (f *factor) Challenge(ctx context.Context, fl authn.FlowState, rec authn.FactorRecord) (authn.Step, error) {
 	if fl.SendsLeft <= 0 {
 		return authn.StepThrottled(0), nil
@@ -153,11 +155,18 @@ func (f *factor) Challenge(ctx context.Context, fl authn.FlowState, rec authn.Fa
 		Locale:  fl.Locale,
 		Deliver: true,
 		Source:  fl.Source,
+		Proof:   fl.Proof,
 	})
 	switch {
 	case err == nil:
 	case errors.Is(err, authn.ErrThrottled):
 		return authn.StepThrottled(throttledWait(err)), nil
+	case errors.Is(err, authn.ErrHumanVerificationRequired), errors.Is(err, authn.ErrInvalidArgument):
+		// The deployment requires a proof and this send presented none, an
+		// invalid one, or one over its limit. The code engine checked it before
+		// spending any budget; the engine answers the 403 or 400 rather than a
+		// failed login.
+		return authn.StepRefused(fmt.Errorf("authn.mfa.sms: %w", err)), nil
 	case errors.Is(err, authn.ErrUnsupportedRegion):
 		// The number's region is not in the allowed table, which the engine
 		// states as a refusal. The factor's answers have no separate shape for

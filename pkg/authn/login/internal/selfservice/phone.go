@@ -87,12 +87,6 @@ func (r *routes) startPhone(ctx context.Context, in startPhoneInput, meta *speed
 		c.fail(mount.CodeBadRequest)
 		return c.result()
 	}
-	// The gate is checked after the number is known to be one this route could
-	// send to and before the pending record is read or the code is sent, so a
-	// refused proof leaves the session's record and the send budgets untouched.
-	if !r.checkHumanProof(c, in.HumanProof) {
-		return c.result()
-	}
 	key := phoneKey(who.session)
 	if _, _, err := r.deps.KV.Get(c.ctx, key); err != nil {
 		logWarn(c.ctx, "the store of pending phone verifications cannot be read", err)
@@ -110,6 +104,7 @@ func (r *routes) startPhone(ctx context.Context, in startPhoneInput, meta *speed
 		Locale:  smsLocale(c.ctx),
 		Deliver: true,
 		Source:  c.clientIP,
+		Proof:   in.HumanProof,
 	})
 	if err != nil {
 		r.fail(c, err)

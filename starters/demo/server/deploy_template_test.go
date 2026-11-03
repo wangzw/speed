@@ -139,7 +139,7 @@ type humanverifySection struct {
 
 // TestTheDeployTemplateCarriesTheHumanVerificationSection holds the deployment
 // template to the section the human-verification module decodes. The entrypoint
-// defaults the mode to off and requires the Turnstile credentials only when the
+// defaults the mode to pow and requires the Turnstile credentials only when the
 // mode is turnstile; the template still has to place the mode, both credentials
 // and the expected hostname under the namespace the module reads, so a
 // deployment that turns the mechanism on finds them where it looks. The render

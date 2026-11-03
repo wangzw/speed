@@ -426,6 +426,12 @@ func declaredValue(key string) (any, bool) {
 		return defaults.PerSourceHourly, true
 	case perSourceDailyPath:
 		return defaults.PerSourceDaily, true
+	case perSourceDistinctHourlyPath:
+		return defaults.PerSourceDistinctHourly, true
+	case perSourceDistinctDailyPath:
+		return defaults.PerSourceDistinctDaily, true
+	case perSourceAttemptHourlyPath:
+		return defaults.PerSourceAttemptHourly, true
 	case globalLoginPath:
 		return defaults.GlobalLogin, true
 	case globalMFAPath:
@@ -434,6 +440,14 @@ func declaredValue(key string) (any, bool) {
 		return defaults.GlobalEnroll, true
 	case globalResetPath:
 		return defaults.GlobalReset, true
+	case globalAttemptLoginPath:
+		return defaults.GlobalAttemptLogin, true
+	case globalAttemptMFAPath:
+		return defaults.GlobalAttemptMFA, true
+	case globalAttemptEnrollPath:
+		return defaults.GlobalAttemptEnroll, true
+	case globalAttemptResetPath:
+		return defaults.GlobalAttemptReset, true
 	case perFlowSendsPath:
 		return defaults.PerFlowSends, true
 	case perAccountHourlyPath:

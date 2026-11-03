@@ -20,4 +20,10 @@ type SendCode struct {
 	// trustworthy origin, and the budget is fail-open rather than counting every
 	// such send under one key.
 	Source string
+	// Proof is the human-verification proof the request presented, if the
+	// deployment requires one. The code engine checks it before it spends any
+	// budget and consumes it once: a proof a caller already checked would be
+	// consumed twice, so the check belongs here and nowhere on the caller's
+	// side. Empty means the request presented nothing.
+	Proof string
 }

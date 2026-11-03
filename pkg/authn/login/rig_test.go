@@ -243,8 +243,11 @@ type fakeMFA struct {
 	required []requireCall
 	kinds    []authn.FactorKind
 	// challenges counts the times a factor's challenge was started, so a case
-	// can see whether an SMS factor reached its send.
-	challenges int
+	// can see whether an SMS factor reached its send. challengeStates records
+	// the FlowState each challenge ran with, so a case can see the proof the
+	// engine forwarded.
+	challenges      int
+	challengeStates []authn.FlowState
 }
 
 func (m *fakeMFA) Require(_ context.Context, proof, requirement authn.AccountID, first authn.Proof) (authn.MFAOutcome, []authn.FactorRecord, error) {
@@ -262,8 +265,9 @@ func (m *fakeMFA) Factors(context.Context, authn.AccountID) ([]authn.FactorRecor
 	return m.factors, m.reason
 }
 func (m *fakeMFA) Assurance(authn.Proof, *authn.Pass) authn.MFAResult { return m.assurance }
-func (m *fakeMFA) Challenge(_ context.Context, _ authn.FlowState, factorID string) (authn.Step, error) {
+func (m *fakeMFA) Challenge(_ context.Context, f authn.FlowState, factorID string) (authn.Step, error) {
 	m.challenges++
+	m.challengeStates = append(m.challengeStates, f)
 	if m.challenge != nil {
 		return m.challenge(factorID), nil
 	}

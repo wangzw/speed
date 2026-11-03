@@ -78,7 +78,7 @@ func TestAWidenedAllowedTableIsReported(t *testing.T) {
 func TestAWidenedSourceBudgetIsReported(t *testing.T) {
 	r := newRigSQLite(t)
 	r.deliverChange(settings.Change{Key: perSourceHourlyPath, Old: "30", New: "60"})
-	r.deliverChange(settings.Change{Key: perSourceDailyPath, Old: "", New: "200"})
+	r.deliverChange(settings.Change{Key: perSourceDailyPath, Old: "", New: "2000"})
 	if got := len(r.audit.entries()); got != 2 {
 		t.Fatalf("the audit holds %d rows, want 2: raising either source budget is a relaxation", got)
 	}

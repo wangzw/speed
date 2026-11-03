@@ -317,9 +317,12 @@ func (r *routes) addEmail(c *call, who caller, raw, proof string) {
 		c.fail(mount.CodeEmailTaken)
 		return
 	}
-	// The gate is checked after the address is known to be free and before the
-	// resend window, so a refused proof spends no window and no budget, and a
-	// taken address is answered as taken without asking for one.
+	// The gate is checked here, and not in the phone routes, because this code
+	// goes out over the email channel rather than through the SMS code engine
+	// that checks and consumes a proof for every send. It runs after the address
+	// is known to be free and before the resend window, so a refused proof spends
+	// no window and no budget, and a taken address is answered as taken without
+	// asking for one.
 	if !r.checkHumanProof(c, proof) {
 		return
 	}

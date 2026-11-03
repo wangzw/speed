@@ -166,8 +166,17 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 			t.Errorf("Requires[%d] = %v, want %v", i, required[i], tk)
 		}
 	}
-	if len(m.Requires) != len(want)+2 || !m.Requires[len(m.Requires)-2].Optional || !m.Requires[len(m.Requires)-1].Optional {
-		t.Errorf("Requires = %+v, want the settings store and the logging capability as the optional dependencies", m.Requires)
+	optional := m.Requires[len(want):]
+	if len(optional) != 3 {
+		t.Fatalf("Requires = %+v, want the human-verification gate, the settings store and the logging capability as the optional dependencies", m.Requires)
+	}
+	for _, r := range optional {
+		if !r.Optional {
+			t.Errorf("the requirement %+v is not optional", r)
+		}
+	}
+	if optional[0].Token != core.Token((*authn.HumanVerifier)(nil)) {
+		t.Errorf("Requires[%d] = %v, want the human-verification gate", len(want), optional[0].Token)
 	}
 }
 

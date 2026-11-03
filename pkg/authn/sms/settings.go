@@ -15,38 +15,58 @@ import (
 // The setting keys this module declares, relative to its namespace, and the
 // full paths a read goes by.
 const (
-	allowedPrefixesKey  = "allowed-prefixes"
-	codeLengthKey       = "code-length"
-	codeTTLKey          = "code-ttl"
-	codeAttemptsKey     = "code-attempts"
-	resendIntervalKey   = "resend-interval"
-	perPhoneHourlyKey   = "per-phone-hourly"
-	perPhoneDailyKey    = "per-phone-daily"
-	perSourceHourlyKey  = "per-source-hourly"
-	perSourceDailyKey   = "per-source-daily"
-	globalLoginKey      = "global-hourly-login"
-	globalMFAKey        = "global-hourly-mfa"
-	globalEnrollKey     = "global-hourly-enroll"
-	globalResetKey      = "global-hourly-reset"
+	allowedPrefixesKey = "allowed-prefixes"
+	codeLengthKey      = "code-length"
+	codeTTLKey         = "code-ttl"
+	codeAttemptsKey    = "code-attempts"
+	resendIntervalKey  = "resend-interval"
+	perPhoneHourlyKey  = "per-phone-hourly"
+	perPhoneDailyKey   = "per-phone-daily"
+	perSourceHourlyKey = "per-source-hourly"
+	perSourceDailyKey  = "per-source-daily"
+
+	perSourceDistinctHourlyKey = "per-source-distinct-hourly"
+	perSourceDistinctDailyKey  = "per-source-distinct-daily"
+	perSourceAttemptHourlyKey  = "per-source-attempt-hourly"
+
+	globalLoginKey         = "global-hourly-login"
+	globalMFAKey           = "global-hourly-mfa"
+	globalEnrollKey        = "global-hourly-enroll"
+	globalResetKey         = "global-hourly-reset"
+	globalAttemptLoginKey  = "global-attempt-hourly-login"
+	globalAttemptMFAKey    = "global-attempt-hourly-mfa"
+	globalAttemptEnrollKey = "global-attempt-hourly-enroll"
+	globalAttemptResetKey  = "global-attempt-hourly-reset"
+
 	perFlowSendsKey     = "per-flow-sends"
 	perAccountHourlyKey = "per-account-hourly"
 )
 
 // The full paths the reads and the relaxation watch go by.
 var (
-	allowedPrefixesPath  = ModuleName + "." + allowedPrefixesKey
-	codeLengthPath       = ModuleName + "." + codeLengthKey
-	codeTTLPath          = ModuleName + "." + codeTTLKey
-	codeAttemptsPath     = ModuleName + "." + codeAttemptsKey
-	resendIntervalPath   = ModuleName + "." + resendIntervalKey
-	perPhoneHourlyPath   = ModuleName + "." + perPhoneHourlyKey
-	perPhoneDailyPath    = ModuleName + "." + perPhoneDailyKey
-	perSourceHourlyPath  = ModuleName + "." + perSourceHourlyKey
-	perSourceDailyPath   = ModuleName + "." + perSourceDailyKey
-	globalLoginPath      = ModuleName + "." + globalLoginKey
-	globalMFAPath        = ModuleName + "." + globalMFAKey
-	globalEnrollPath     = ModuleName + "." + globalEnrollKey
-	globalResetPath      = ModuleName + "." + globalResetKey
+	allowedPrefixesPath = ModuleName + "." + allowedPrefixesKey
+	codeLengthPath      = ModuleName + "." + codeLengthKey
+	codeTTLPath         = ModuleName + "." + codeTTLKey
+	codeAttemptsPath    = ModuleName + "." + codeAttemptsKey
+	resendIntervalPath  = ModuleName + "." + resendIntervalKey
+	perPhoneHourlyPath  = ModuleName + "." + perPhoneHourlyKey
+	perPhoneDailyPath   = ModuleName + "." + perPhoneDailyKey
+	perSourceHourlyPath = ModuleName + "." + perSourceHourlyKey
+	perSourceDailyPath  = ModuleName + "." + perSourceDailyKey
+
+	perSourceDistinctHourlyPath = ModuleName + "." + perSourceDistinctHourlyKey
+	perSourceDistinctDailyPath  = ModuleName + "." + perSourceDistinctDailyKey
+	perSourceAttemptHourlyPath  = ModuleName + "." + perSourceAttemptHourlyKey
+
+	globalLoginPath         = ModuleName + "." + globalLoginKey
+	globalMFAPath           = ModuleName + "." + globalMFAKey
+	globalEnrollPath        = ModuleName + "." + globalEnrollKey
+	globalResetPath         = ModuleName + "." + globalResetKey
+	globalAttemptLoginPath  = ModuleName + "." + globalAttemptLoginKey
+	globalAttemptMFAPath    = ModuleName + "." + globalAttemptMFAKey
+	globalAttemptEnrollPath = ModuleName + "." + globalAttemptEnrollKey
+	globalAttemptResetPath  = ModuleName + "." + globalAttemptResetKey
+
 	perFlowSendsPath     = ModuleName + "." + perFlowSendsKey
 	perAccountHourlyPath = ModuleName + "." + perAccountHourlyKey
 )
@@ -77,6 +97,15 @@ const (
 	minPerSourceDaily = 1
 	maxPerSourceDaily = 100000
 
+	minPerSourceDistinctHourly = 1
+	maxPerSourceDistinctHourly = 10000
+
+	minPerSourceDistinctDaily = 1
+	maxPerSourceDistinctDaily = 100000
+
+	minPerSourceAttemptHourly = 1
+	maxPerSourceAttemptHourly = 100000
+
 	minGlobalHourly = 1
 	maxGlobalHourly = 1000000
 
@@ -92,42 +121,62 @@ const (
 // AllowedPrefixes is a string item holding JSON, because a setting item is a
 // scalar.
 type options struct {
-	AllowedPrefixes  string        `config:"allowed-prefixes"`
-	CodeLength       int           `config:"code-length"`
-	CodeTTL          time.Duration `config:"code-ttl"`
-	CodeAttempts     int           `config:"code-attempts"`
-	ResendInterval   time.Duration `config:"resend-interval"`
-	PerPhoneHourly   int           `config:"per-phone-hourly"`
-	PerPhoneDaily    int           `config:"per-phone-daily"`
-	PerSourceHourly  int           `config:"per-source-hourly"`
-	PerSourceDaily   int           `config:"per-source-daily"`
-	GlobalLogin      int           `config:"global-hourly-login"`
-	GlobalMFA        int           `config:"global-hourly-mfa"`
-	GlobalEnroll     int           `config:"global-hourly-enroll"`
-	GlobalReset      int           `config:"global-hourly-reset"`
-	PerFlowSends     int           `config:"per-flow-sends"`
-	PerAccountHourly int           `config:"per-account-hourly"`
+	AllowedPrefixes string        `config:"allowed-prefixes"`
+	CodeLength      int           `config:"code-length"`
+	CodeTTL         time.Duration `config:"code-ttl"`
+	CodeAttempts    int           `config:"code-attempts"`
+	ResendInterval  time.Duration `config:"resend-interval"`
+	PerPhoneHourly  int           `config:"per-phone-hourly"`
+	PerPhoneDaily   int           `config:"per-phone-daily"`
+	PerSourceHourly int           `config:"per-source-hourly"`
+	PerSourceDaily  int           `config:"per-source-daily"`
+
+	PerSourceDistinctHourly int `config:"per-source-distinct-hourly"`
+	PerSourceDistinctDaily  int `config:"per-source-distinct-daily"`
+	PerSourceAttemptHourly  int `config:"per-source-attempt-hourly"`
+
+	GlobalLogin         int `config:"global-hourly-login"`
+	GlobalMFA           int `config:"global-hourly-mfa"`
+	GlobalEnroll        int `config:"global-hourly-enroll"`
+	GlobalReset         int `config:"global-hourly-reset"`
+	GlobalAttemptLogin  int `config:"global-attempt-hourly-login"`
+	GlobalAttemptMFA    int `config:"global-attempt-hourly-mfa"`
+	GlobalAttemptEnroll int `config:"global-attempt-hourly-enroll"`
+	GlobalAttemptReset  int `config:"global-attempt-hourly-reset"`
+
+	PerFlowSends     int `config:"per-flow-sends"`
+	PerAccountHourly int `config:"per-account-hourly"`
 }
 
 // defaults is the declared default of each setting. The default of
 // AllowedPrefixes is the empty table, which admits no number: a deployment that
 // does not name a region sends nothing.
 var defaults = options{
-	AllowedPrefixes:  "[]",
-	CodeLength:       6,
-	CodeTTL:          5 * time.Minute,
-	CodeAttempts:     5,
-	ResendInterval:   60 * time.Second,
-	PerPhoneHourly:   5,
-	PerPhoneDaily:    10,
-	PerSourceHourly:  30,
-	PerSourceDaily:   100,
-	GlobalLogin:      300,
-	GlobalMFA:        300,
-	GlobalEnroll:     100,
-	GlobalReset:      100,
-	PerFlowSends:     3,
-	PerAccountHourly: 10,
+	AllowedPrefixes: "[]",
+	CodeLength:      6,
+	CodeTTL:         5 * time.Minute,
+	CodeAttempts:    5,
+	ResendInterval:  30 * time.Second,
+	PerPhoneHourly:  10,
+	PerPhoneDaily:   25,
+	PerSourceHourly: 300,
+	PerSourceDaily:  1000,
+
+	PerSourceDistinctHourly: 20,
+	PerSourceDistinctDaily:  60,
+	PerSourceAttemptHourly:  60,
+
+	GlobalLogin:         500,
+	GlobalMFA:           300,
+	GlobalEnroll:        100,
+	GlobalReset:         200,
+	GlobalAttemptLogin:  750,
+	GlobalAttemptMFA:    450,
+	GlobalAttemptEnroll: 150,
+	GlobalAttemptReset:  300,
+
+	PerFlowSends:     5,
+	PerAccountHourly: 20,
 }
 
 // The domains of the settings. Each is the one statement of its range.
@@ -149,6 +198,19 @@ func perSourceHourlyInDomain(n int) bool {
 func perSourceDailyInDomain(n int) bool {
 	return n >= minPerSourceDaily && n <= maxPerSourceDaily
 }
+
+func perSourceDistinctHourlyInDomain(n int) bool {
+	return n >= minPerSourceDistinctHourly && n <= maxPerSourceDistinctHourly
+}
+
+func perSourceDistinctDailyInDomain(n int) bool {
+	return n >= minPerSourceDistinctDaily && n <= maxPerSourceDistinctDaily
+}
+
+func perSourceAttemptHourlyInDomain(n int) bool {
+	return n >= minPerSourceAttemptHourly && n <= maxPerSourceAttemptHourly
+}
+
 func globalHourlyInDomain(n int) bool { return n >= minGlobalHourly && n <= maxGlobalHourly }
 func perFlowSendsInDomain(n int) bool { return n >= minPerFlowSends && n <= maxPerFlowSends }
 func perAccountHourlyInDomain(n int) bool {
@@ -223,6 +285,22 @@ func settingsSchema() settings.Schema {
 					"source address is not counted, because no trustworthy origin is known",
 				Domain: settings.DomainOf("whole numbers from 1 to 100000", perSourceDailyInDomain),
 			},
+			perSourceDistinctHourlyKey: {
+				Description: "the most different numbers one source address may send to in an hour; " +
+					"a send with no source address is not counted, because no trustworthy origin is known",
+				Domain: settings.DomainOf("whole numbers from 1 to 10000", perSourceDistinctHourlyInDomain),
+			},
+			perSourceDistinctDailyKey: {
+				Description: "the most different numbers one source address may send to in a day; " +
+					"a send with no source address is not counted, because no trustworthy origin is known",
+				Domain: settings.DomainOf("whole numbers from 1 to 100000", perSourceDistinctDailyInDomain),
+			},
+			perSourceAttemptHourlyKey: {
+				Description: "the most failed sends from one source address in an hour, counted only when " +
+					"the send was refunded after a definitive failure; a send with no source address is " +
+					"not counted, because no trustworthy origin is known",
+				Domain: settings.DomainOf("whole numbers from 1 to 100000", perSourceAttemptHourlyInDomain),
+			},
 			globalLoginKey: {
 				Description: "the most login codes sent in an hour, across every number",
 				Domain:      settings.DomainOf("whole numbers from 1 to 1000000", globalHourlyInDomain),
@@ -238,6 +316,28 @@ func settingsSchema() settings.Schema {
 			globalResetKey: {
 				Description: "the most password reset codes sent in an hour, across every number",
 				Domain:      settings.DomainOf("whole numbers from 1 to 1000000", globalHourlyInDomain),
+			},
+			globalAttemptLoginKey: {
+				Description: "the most failed login sends in an hour, across every number, counted only " +
+					"when the send was refunded after a definitive failure; suppressed rows are not counted",
+				Domain: settings.DomainOf("whole numbers from 1 to 1000000", globalHourlyInDomain),
+			},
+			globalAttemptMFAKey: {
+				Description: "the most failed multi-factor sends in an hour, across every number, " +
+					"counted only when the send was refunded after a definitive failure; suppressed rows " +
+					"are not counted",
+				Domain: settings.DomainOf("whole numbers from 1 to 1000000", globalHourlyInDomain),
+			},
+			globalAttemptEnrollKey: {
+				Description: "the most failed enrollment sends in an hour, across every number, counted " +
+					"only when the send was refunded after a definitive failure; suppressed rows are not counted",
+				Domain: settings.DomainOf("whole numbers from 1 to 1000000", globalHourlyInDomain),
+			},
+			globalAttemptResetKey: {
+				Description: "the most failed password reset sends in an hour, across every number, " +
+					"counted only when the send was refunded after a definitive failure; suppressed rows " +
+					"are not counted",
+				Domain: settings.DomainOf("whole numbers from 1 to 1000000", globalHourlyInDomain),
 			},
 			perFlowSendsKey: {
 				Description: "the most sends one login flow may make; declared here and checked by the " +
@@ -324,6 +424,18 @@ func (r *reader) perSourceDaily() int {
 	return readTuned(r, perSourceDailyPath, defaults.PerSourceDaily, perSourceDailyInDomain)
 }
 
+func (r *reader) perSourceDistinctHourly() int {
+	return readTuned(r, perSourceDistinctHourlyPath, defaults.PerSourceDistinctHourly, perSourceDistinctHourlyInDomain)
+}
+
+func (r *reader) perSourceDistinctDaily() int {
+	return readTuned(r, perSourceDistinctDailyPath, defaults.PerSourceDistinctDaily, perSourceDistinctDailyInDomain)
+}
+
+func (r *reader) perSourceAttemptHourly() int {
+	return readTuned(r, perSourceAttemptHourlyPath, defaults.PerSourceAttemptHourly, perSourceAttemptHourlyInDomain)
+}
+
 func (r *reader) perAccountHourly() int {
 	return readTuned(r, perAccountHourlyPath, defaults.PerAccountHourly, perAccountHourlyInDomain)
 }
@@ -342,6 +454,24 @@ func (r *reader) globalHourly(purpose string) int {
 		return readTuned(r, globalResetPath, defaults.GlobalReset, globalHourlyInDomain)
 	}
 	return defaults.GlobalLogin
+}
+
+// globalAttemptHourly reads the global attempt budget of one purpose: the most
+// failed sends the purpose may make in an hour, where a failed send is one a
+// definitive failure refunded. The purpose is one of the closed set, which the
+// caller has already held the input to.
+func (r *reader) globalAttemptHourly(purpose string) int {
+	switch purpose {
+	case authn.SMSPurposeLogin:
+		return readTuned(r, globalAttemptLoginPath, defaults.GlobalAttemptLogin, globalHourlyInDomain)
+	case authn.SMSPurposeMFA:
+		return readTuned(r, globalAttemptMFAPath, defaults.GlobalAttemptMFA, globalHourlyInDomain)
+	case authn.SMSPurposeEnroll:
+		return readTuned(r, globalAttemptEnrollPath, defaults.GlobalAttemptEnroll, globalHourlyInDomain)
+	case authn.SMSPurposeReset:
+		return readTuned(r, globalAttemptResetPath, defaults.GlobalAttemptReset, globalHourlyInDomain)
+	}
+	return defaults.GlobalAttemptLogin
 }
 
 // readTuned reads a tuning setting: one that fails to read, and one outside its

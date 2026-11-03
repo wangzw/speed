@@ -263,6 +263,107 @@ func (g *register) oldestSourceSince(q *gorm.DB, sourceMAC string, since time.Ti
 	return clock.UTC(out[0].CreatedAt), true, nil
 }
 
+// countSourceDistinctSince counts the different numbers one source address sent
+// to after since, of any purpose. It reads the same rows the raw source count
+// reads and leaves out the same refunded ones: a message the carrier certainly
+// did not take did not spend the source's distinct-destination budget either.
+// Suppressed rows are counted, so the point of refusal does not tell a
+// registered number from an unregistered one.
+func (g *register) countSourceDistinctSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error) {
+	var n int64
+	err := q.Table(challengeTable).
+		Select("COUNT(DISTINCT phone_mac)").
+		Where("source_mac = ? AND refunded_at IS NULL AND created_at > ?", sourceMAC, clock.UTC(since)).
+		Scan(&n).Error
+	if err != nil {
+		return 0, fmt.Errorf("counting the distinct numbers of a source: %w", err)
+	}
+	return n, nil
+}
+
+// oldestSourceDistinctSince reads the created_at of the oldest counted row of
+// the source after since, which is the earliest point at which the
+// distinct-destination count can fall. A destination leaves the window only when
+// its oldest counted row does, so this is a safe lower bound on the retry.
+func (g *register) oldestSourceDistinctSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error) {
+	var out []struct{ CreatedAt time.Time }
+	err := q.Table(challengeTable).Select("created_at").
+		Where("source_mac = ? AND refunded_at IS NULL AND created_at > ?", sourceMAC, clock.UTC(since)).
+		Order("created_at ASC").Limit(1).Scan(&out).Error
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("reading the oldest distinct-number send of a source: %w", err)
+	}
+	if len(out) == 0 {
+		return time.Time{}, false, nil
+	}
+	return clock.UTC(out[0].CreatedAt), true, nil
+}
+
+// countSourceAttemptsSince counts the failed rows from one source address
+// created after since, of any purpose: a row a certain failure refunded, whether
+// that failure was the carrier's or one that stopped the send before it. A send
+// that went out, or whose outcome is uncertain, is not counted, so successful
+// traffic spends the source's send budgets and never its attempt budget.
+// Suppressed rows are counted when they were refunded, like the source's other
+// dimensions.
+func (g *register) countSourceAttemptsSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error) {
+	var n int64
+	err := q.Table(challengeTable).
+		Where("source_mac = ? AND refunded_at IS NOT NULL AND created_at > ?", sourceMAC, clock.UTC(since)).Count(&n).Error
+	if err != nil {
+		return 0, fmt.Errorf("counting the failed attempts of a source: %w", err)
+	}
+	return n, nil
+}
+
+// oldestSourceAttemptsSince reads the created_at of the oldest failed attempt of
+// the source after since, which is when the window frees a slot.
+func (g *register) oldestSourceAttemptsSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error) {
+	var out []struct{ CreatedAt time.Time }
+	err := q.Table(challengeTable).Select("created_at").
+		Where("source_mac = ? AND refunded_at IS NOT NULL AND created_at > ?", sourceMAC, clock.UTC(since)).
+		Order("created_at ASC").Limit(1).Scan(&out).Error
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("reading the oldest attempt of a source: %w", err)
+	}
+	if len(out) == 0 {
+		return time.Time{}, false, nil
+	}
+	return clock.UTC(out[0].CreatedAt), true, nil
+}
+
+// countPurposeAttemptsSince counts the failed rows of one purpose created after
+// since that are not suppressed: a row a certain failure refunded. The
+// deployment-wide attempt budget keeps the global send budget's asymmetry: a
+// suppressed row reached no carrier, so anonymous requests for numbers nobody
+// registered cannot exhaust it. A send that went out, or whose outcome is
+// uncertain, is not counted; the failure is what the dimension is for.
+func (g *register) countPurposeAttemptsSince(q *gorm.DB, purpose string, since time.Time) (int64, error) {
+	var n int64
+	err := q.Table(challengeTable).
+		Where("purpose = ? AND suppressed = ? AND refunded_at IS NOT NULL AND created_at > ?", purpose, false, clock.UTC(since)).Count(&n).Error
+	if err != nil {
+		return 0, fmt.Errorf("counting the failed attempts of a purpose: %w", err)
+	}
+	return n, nil
+}
+
+// oldestPurposeAttemptsSince reads the created_at of the oldest counted failed
+// attempt of the purpose after since.
+func (g *register) oldestPurposeAttemptsSince(q *gorm.DB, purpose string, since time.Time) (time.Time, bool, error) {
+	var out []struct{ CreatedAt time.Time }
+	err := q.Table(challengeTable).Select("created_at").
+		Where("purpose = ? AND suppressed = ? AND refunded_at IS NOT NULL AND created_at > ?", purpose, false, clock.UTC(since)).
+		Order("created_at ASC").Limit(1).Scan(&out).Error
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("reading the oldest attempt of a purpose: %w", err)
+	}
+	if len(out) == 0 {
+		return time.Time{}, false, nil
+	}
+	return clock.UTC(out[0].CreatedAt), true, nil
+}
+
 // countRealPurposeSince counts the rows of one purpose created after since that
 // are not suppressed. Only the deployment-wide budget reads it: a suppressed row
 // is a request for a number nobody registered, and letting it spend the global

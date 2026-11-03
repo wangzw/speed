@@ -996,3 +996,59 @@ func (l *logBuffer) String() string {
 }
 
 func badCodeForTest() string { return "000000" }
+
+// TestThePhoneStepForwardsTheProofToTheCodeEngine holds the method's side of
+// the gate: the proof the engine put in Start or FlowState reaches the code
+// engine unchanged, on both the start and the answer that sends.
+func TestThePhoneStepForwardsTheProofToTheCodeEngine(t *testing.T) {
+	r := newRig()
+	r.registerActive()
+
+	start := loginStart(phoneFields(phoneNumber))
+	start.Proof = "proof-1"
+	if _, err := r.m.Begin(t.Context(), start); err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if len(r.sm.sends) != 1 || r.sm.sends[0].Proof != "proof-1" {
+		t.Fatalf("the code engine was handed %+v, want one send carrying proof-1", r.sm.sends)
+	}
+
+	fl := flowAt(stepPhone, nil)
+	fl.Proof = "proof-1"
+	if _, err := r.m.Answer(t.Context(), fl, submit(phoneFields(phoneNumber))); err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	if len(r.sm.sends) != 2 || r.sm.sends[1].Proof != "proof-1" {
+		t.Fatalf("the code engine was handed %+v, want a second send carrying proof-1", r.sm.sends)
+	}
+}
+
+// TestThePhoneStepRefusesWhenTheCodeEngineRefusesTheProof holds the method's
+// answer to the gate's two refusals: a refused step, so the engine answers the
+// 403 or 400 rather than a failed login.
+func TestThePhoneStepRefusesWhenTheCodeEngineRefusesTheProof(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"a missing or invalid proof", authn.ErrHumanVerificationRequired},
+		{"an over-long proof", authn.ErrInvalidArgument},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig()
+			r.registerActive()
+			r.sm.sendErr = tc.err
+
+			got, err := r.m.Begin(t.Context(), loginStart(phoneFields(phoneNumber)))
+			if err != nil {
+				t.Fatalf("Begin: %v", err)
+			}
+			if step.KindOf(got) != step.KindRefused {
+				t.Fatalf("Begin answered %s, want a refusal", step.KindOf(got))
+			}
+			if !errors.Is(step.CauseOf(got), tc.err) {
+				t.Errorf("the refusal cause = %v, want it to carry %v", step.CauseOf(got), tc.err)
+			}
+		})
+	}
+}

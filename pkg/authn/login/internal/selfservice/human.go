@@ -5,8 +5,12 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// checkHumanProof holds a send to the deployment's human-verification gate. A
-// deployment with no gate, and one whose gate is off, require nothing and are
+// checkHumanProof holds a send to the deployment's human-verification gate. It
+// is the email branch's check: the phone routes hand their proof to the code
+// engine, which checks and consumes it once, while the email code goes out over
+// the email channel and has no engine to check it.
+//
+// A deployment with no gate, and one whose gate is off, require nothing and are
 // skipped entirely. The proof is checked before any send budget is spent, so a
 // refused request costs none. A proof over the field's bound is a bad request
 // before any provider is asked; the provider's own failures map through the

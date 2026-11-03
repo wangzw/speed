@@ -262,6 +262,14 @@ func (r *routes) refusedStep(c *call, cause error) {
 		c.fail(mount.CodeUnsupportedRegion)
 	case errors.Is(cause, authn.ErrInvalidIdentifier):
 		c.fail(mount.CodeBadRequest)
+	case errors.Is(cause, authn.ErrHumanVerificationRequired):
+		// The code engine refused the proof before spending any budget. It is
+		// not a credential that did not hold, so it keeps the gate's own answer.
+		c.forbidden(mount.CodeHumanVerificationRequired)
+	case errors.Is(cause, authn.ErrInvalidArgument):
+		// A proof over the engine's bound reaches the engine as this argument
+		// error, and is the bad request the field's limit always was.
+		c.fail(mount.CodeBadRequest)
 	default:
 		c.unauthorized(mount.CodeLoginFailed)
 	}

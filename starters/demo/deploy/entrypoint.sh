@@ -132,13 +132,14 @@ check_scalar DEMO_GOOGLE_CLIENT_SECRET "$DEMO_GOOGLE_CLIENT_SECRET"
 check_scalar DEMO_GITHUB_CLIENT_ID "$DEMO_GITHUB_CLIENT_ID"
 check_scalar DEMO_GITHUB_CLIENT_SECRET "$DEMO_GITHUB_CLIENT_SECRET"
 
-# The human-verification gate runs off unless the deployment names a mode. The
-# proof-of-work mode is self-hosted and needs nothing rendered but the mode; the
-# turnstile mode needs the widget's site key and the secret that authenticates
-# siteverify, so both are required only when that mode is chosen. A deployment
-# that leaves the gate off carries no Turnstile credential, and the expected
-# hostname is always this deployment's own public domain.
-humanverify_mode=${DEMO_HUMANVERIFY_MODE:-off}
+# The human-verification gate runs the self-hosted proof of work unless the
+# deployment names a mode. The proof-of-work mode is self-hosted and needs
+# nothing rendered but the mode; the turnstile mode needs the widget's site key
+# and the secret that authenticates siteverify, so both are required only when
+# that mode is chosen. A deployment that leaves the gate on the proof of work,
+# or off, carries no Turnstile credential, and the expected hostname is always
+# this deployment's own public domain.
+humanverify_mode=${DEMO_HUMANVERIFY_MODE:-pow}
 # The Turnstile values are rendered only in the mode that reads them, so a gate
 # that runs off or on the self-hosted proof carries no credential in the
 # rendered configuration even when one is present in the environment.

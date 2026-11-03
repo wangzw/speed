@@ -18,10 +18,17 @@ func (r *rig) liftBudgets() {
 	r.store.set(perPhoneDailyPath, 1000)
 	r.store.set(perSourceHourlyPath, 1000)
 	r.store.set(perSourceDailyPath, 1000)
+	r.store.set(perSourceDistinctHourlyPath, 1000)
+	r.store.set(perSourceDistinctDailyPath, 1000)
+	r.store.set(perSourceAttemptHourlyPath, 100000)
 	r.store.set(globalLoginPath, 1000000)
 	r.store.set(globalMFAPath, 1000000)
 	r.store.set(globalEnrollPath, 1000000)
 	r.store.set(globalResetPath, 1000000)
+	r.store.set(globalAttemptLoginPath, 1000000)
+	r.store.set(globalAttemptMFAPath, 1000000)
+	r.store.set(globalAttemptEnrollPath, 1000000)
+	r.store.set(globalAttemptResetPath, 1000000)
 	r.store.set(perAccountHourlyPath, 1000)
 }
 

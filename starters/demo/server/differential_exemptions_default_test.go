@@ -20,8 +20,6 @@ var mayLeaveRouteCountUnchanged = map[string]string{
 	"workspace.personal": "its route is mounted only when workspace.personal.enabled is on; " +
 		"the baseline template leaves the host switch off (the baseline default), so this " +
 		"removal is vacuous",
-	"authn.humanverify": "its challenge route is mounted only when authn.humanverify.mode is pow; " +
-		"the baseline template leaves the gate off (the baseline default), so this removal is vacuous",
 	"sms.admin": "its management routes are mounted only on the endpoints sms.admin.endpoints names, " +
 		"and the item has no default: the baseline template mounts no SMS management surface because " +
 		"an SMS vendor account is not part of the baseline, so this removal is vacuous",
@@ -30,9 +28,9 @@ var mayLeaveRouteCountUnchanged = map[string]string{
 // TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration holds each
 // baseline exemption to its stated reason over the template this build's case
 // runs: dropping the module leaves every endpoint it describes at the same
-// route count. Turning the workspace switch on or the gate to pow mounts the
-// route, makes the removal lower the count, and reddens this case -- which is
-// what retires the exemption.
+// route count. Turning the workspace switch on mounts the route, makes the
+// removal lower the count, and reddens this case -- which is what retires the
+// exemption.
 func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T) {
 	names := make([]string, 0, len(mayLeaveRouteCountUnchanged))
 	for name := range mayLeaveRouteCountUnchanged {
