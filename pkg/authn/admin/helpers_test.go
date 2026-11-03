@@ -411,6 +411,7 @@ type fakeMemberships struct {
 	puts      []authn.Membership
 	rmd       int
 	listCalls int
+	lastQuery authn.MemberQuery
 	err       error
 }
 
@@ -433,10 +434,11 @@ func (f *fakeMemberships) Membership(_ context.Context, tenant string, id authn.
 	return m, ok, nil
 }
 
-func (f *fakeMemberships) Members(_ context.Context, tenant string, _ authn.Page) ([]authn.Membership, error) {
+func (f *fakeMemberships) Members(_ context.Context, tenant string, query authn.MemberQuery) ([]authn.Membership, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.listCalls++
+	f.lastQuery = query
 	var out []authn.Membership
 	for _, m := range f.member {
 		if m.Tenant == tenant {

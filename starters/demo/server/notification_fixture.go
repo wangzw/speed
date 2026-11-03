@@ -502,7 +502,7 @@ func (n *reviewNotifier) membersOf(ctx context.Context, tenantID string) ([]auth
 	var all []authn.Membership
 	after := ""
 	for {
-		page, err := n.members.Members(ctx, tenantID, authn.Page{After: after, Limit: pageSize})
+		page, err := n.members.Members(ctx, tenantID, authn.MemberQuery{Page: authn.Page{After: after, Limit: pageSize}})
 		if err != nil {
 			return nil, err
 		}

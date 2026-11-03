@@ -251,6 +251,17 @@ type Page struct {
 // otherwise.
 func (p Page) EffectiveLimit() int { return pageLimit(p.Limit) }
 
+// MemberQuery selects one page of a tenant's members, optionally narrowed to the
+// accounts whose display name or login identifiers begin with Query. The display
+// name is matched as a byte prefix of the stored value; an identifier is matched
+// after the query is lower-cased, because usernames and email addresses are
+// stored lower-cased and phone numbers are digits either way. An empty Query is
+// no filter.
+type MemberQuery struct {
+	Page
+	Query string
+}
+
 // ExternalBinding is one external identity bound to an account, as the account
 // module keeps it. A listing and an unbinding use its ID. It is not External,
 // which is the input a login method hands the engine, and it carries the subject

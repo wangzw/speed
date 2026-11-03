@@ -141,11 +141,12 @@ type AuthnAdminSecretCreated struct {
 type AuthnAdminMember struct {
 	_ struct{} `description:"One account's membership in one tenant."`
 
-	Account   string `json:"account" required:"true" description:"The member account's identifier."`
-	Tenant    string `json:"tenant" required:"true" description:"The tenant's identifier."`
-	Active    bool   `json:"active" required:"true" description:"True when the membership is in force; false means suspended, which reads as not a member."`
-	SSOExempt bool   `json:"sso_exempt" required:"true" description:"True when the member is exempt from the tenant's enforced SSO requirement."`
-	Source    string `json:"source" required:"true" description:"How the membership came to exist: admin, invite, import or jit:<provider identifier>."`
+	Account     string `json:"account" required:"true" description:"The member account's identifier."`
+	DisplayName string `json:"display_name" required:"true" description:"The account's display name, at most 100 characters and not used for any decision; the empty string when the account has none."`
+	Tenant      string `json:"tenant" required:"true" description:"The tenant's identifier."`
+	Active      bool   `json:"active" required:"true" description:"True when the membership is in force; false means suspended, which reads as not a member."`
+	SSOExempt   bool   `json:"sso_exempt" required:"true" description:"True when the member is exempt from the tenant's enforced SSO requirement."`
+	Source      string `json:"source" required:"true" description:"How the membership came to exist: admin, invite, import or jit:<provider identifier>."`
 }
 
 // AuthnAdminMemberList is one page of a tenant's memberships.

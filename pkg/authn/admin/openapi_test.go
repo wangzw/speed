@@ -106,7 +106,7 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		Config: config,
 		QueryParams: map[routecontract.Route]map[string]bool{
 			{Method: "GET", Path: "/api/v1/system/auth/accounts"}:                  accountListParams,
-			{Method: "GET", Path: "/api/v1/tenants/:tenant/members"}:               {"limit": true, "after": true},
+			{Method: "GET", Path: "/api/v1/tenants/:tenant/members"}:               {"query": true, "limit": true, "after": true},
 			{Method: "GET", Path: "/api/v1/system/tenants/:tenant/impersonations"}: {"limit": true, "after": true},
 		},
 	})

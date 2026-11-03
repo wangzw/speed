@@ -610,7 +610,7 @@ func TestSeedMembershipsAreIdempotent(t *testing.T) {
 	}
 	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
 		id := memberID(t, ctx, accounts)
-		members, err := memberships.Members(ctx, "demo", authn.Page{})
+		members, err := memberships.Members(ctx, "demo", authn.MemberQuery{})
 		if err != nil {
 			t.Fatalf("Members: %v", err)
 		}
@@ -1096,7 +1096,7 @@ func TestSeedWritesAMissingAdministratorsMembershipOnEveryRun(t *testing.T) {
 	if !active {
 		t.Error("the existing administrator's membership did not read back active")
 	}
-	members, err := memberships.Members(ctx, "acme", authn.Page{})
+	members, err := memberships.Members(ctx, "acme", authn.MemberQuery{})
 	if err != nil {
 		t.Fatalf("Members: %v", err)
 	}

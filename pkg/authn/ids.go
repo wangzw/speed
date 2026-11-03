@@ -308,6 +308,11 @@ const (
 // one that is not positive and MaxPageLimit as the ceiling.
 type Page = model.Page
 
+// MemberQuery selects one page of a tenant's memberships, optionally narrowed by
+// a text query; its zero value is the first page of the default size with no
+// filter.
+type MemberQuery = model.MemberQuery
+
 // VerifyResult is what a successful password check also reports.
 type VerifyResult = model.VerifyResult
 

@@ -1712,6 +1712,8 @@ export interface AuthnAdminMember {
   account: string;
   /** True when the membership is in force; false means suspended, which reads as not a member. */
   active: boolean;
+  /** The account's display name, at most 100 characters and not used for any decision; the empty string when the account has none. */
+  display_name: string;
   /** How the membership came to exist: admin, invite, import or jit:<provider identifier>. */
   source: string;
   /** True when the member is exempt from the tenant's enforced SSO requirement. */
@@ -2618,6 +2620,10 @@ export type AuthnInviteIssueBody = {
 };
 
 export type AuthnAdminMembersListParams = {
+/**
+ * Narrows the page to the members whose account display name or login identifiers begin with this text; absent or empty selects every member. The display name is matched as a byte prefix of the stored value, and an identifier after the query is lower-cased, the form usernames and email addresses are stored in.
+ */
+query?: string;
 /**
  * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
  */

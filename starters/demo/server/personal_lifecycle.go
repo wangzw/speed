@@ -190,9 +190,9 @@ func (p *personalProduct) lifecycleTenant(ctx context.Context, id tenant.ID) (te
 // personal tenant, and the deleted account's winding-up is not an explicit
 // removal from a domain that must stay governed.
 func (p *personalProduct) clearMemberships(ctx context.Context, tenantID string) error {
-	page := authn.Page{Limit: personalMemberPage}
+	query := authn.MemberQuery{Page: authn.Page{Limit: personalMemberPage}}
 	for {
-		members, err := p.memberships.Members(ctx, tenantID, page)
+		members, err := p.memberships.Members(ctx, tenantID, query)
 		if err != nil {
 			return fmt.Errorf("listing the personal tenant's members: %w", err)
 		}
@@ -201,10 +201,10 @@ func (p *personalProduct) clearMemberships(ctx context.Context, tenantID string)
 				return fmt.Errorf("removing a membership from the personal tenant: %w", err)
 			}
 		}
-		if len(members) < page.EffectiveLimit() {
+		if len(members) < query.EffectiveLimit() {
 			return nil
 		}
-		page.After = members[len(members)-1].Account.String()
+		query.After = members[len(members)-1].Account.String()
 	}
 }
 

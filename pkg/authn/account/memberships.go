@@ -78,20 +78,49 @@ func (p *product) Tenants(ctx context.Context, id authn.AccountID) ([]authn.Memb
 
 // Members lists the memberships of a tenant, one page at a time and in the order
 // of the account identifiers. The page's After is the account identifier of the
-// last membership of the page before.
-func (p *product) Members(ctx context.Context, tenant string, page authn.Page) ([]authn.Membership, error) {
+// last membership of the page before. A query narrows the page to the accounts
+// whose display name or login identifiers begin with it.
+func (p *product) Members(ctx context.Context, tenant string, query authn.MemberQuery) ([]authn.Membership, error) {
 	if tenant == "" {
 		return nil, nil
 	}
 	tx := p.conn(ctx).Where("tenant_id = ?", tenant)
-	if page.After != "" {
-		tx = tx.Where("account_id > ?", page.After)
+	if query.Query != "" {
+		tx = p.filterMembersByQuery(tx, query.Query)
+	}
+	if query.After != "" {
+		tx = tx.Where("account_id > ?", query.After)
 	}
 	var rows []membershipRow
-	if err := tx.Order("account_id").Limit(page.EffectiveLimit()).Find(&rows).Error; err != nil {
+	if err := tx.Order("account_id").Limit(query.EffectiveLimit()).Find(&rows).Error; err != nil {
 		return nil, failed("listing the members of a tenant", err)
 	}
 	return toMemberships(rows), nil
+}
+
+// filterMembersByQuery narrows a membership statement to the accounts whose
+// display name or login identifiers begin with text. The display name is
+// compared as written, by its bytes, the same range the account list's
+// display-name prefix reads. An identifier is compared after the text is
+// lower-cased, because usernames and email addresses are stored that way; a
+// text that is not printable ASCII begins no stored identifier and skips that
+// half rather than closing a range on a byte no identifier holds.
+func (p *product) filterMembersByQuery(tx *gorm.DB, text string) *gorm.DB {
+	conditions := make([]string, 0, 2)
+	args := make([]any, 0, 4)
+	if bound, bounded := displayNameBound(text); bounded {
+		conditions = append(conditions, "account_id IN (SELECT id FROM "+tableAccounts+" WHERE "+p.displayNameRange()+")")
+		args = append(args, text, bound)
+	} else {
+		conditions = append(conditions, "account_id IN (SELECT id FROM "+tableAccounts+" WHERE "+p.displayNameLowerRange()+")")
+		args = append(args, text)
+	}
+	lowered := strings.ToLower(text)
+	if printableASCII(lowered) {
+		conditions = append(conditions, "account_id IN (SELECT account_id FROM "+tableIdentifiers+" WHERE value >= ? AND value < ?)")
+		args = append(args, lowered, prefixBound(lowered))
+	}
+	return tx.Where("("+strings.Join(conditions, " OR ")+")", args...)
 }
 
 func toMemberships(rows []membershipRow) []authn.Membership {

@@ -157,6 +157,7 @@ type secretRevokeInput struct {
 // memberListInput is a tenant's member page.
 type memberListInput struct {
 	Tenant string `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
+	Query  string `query:"query" description:"Narrows the page to the members whose account display name or login identifiers begin with this text; absent or empty selects every member. The display name is matched as a byte prefix of the stored value, and an identifier after the query is lower-cased, the form usernames and email addresses are stored in."`
 	Limit  int    `query:"limit" description:"The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400."`
 	After  string `query:"after" description:"The account identifier of the last membership on the previous page, or empty for the first page."`
 }

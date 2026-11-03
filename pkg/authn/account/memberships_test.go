@@ -118,11 +118,11 @@ func TestMembersPagesByAccount(t *testing.T) {
 				t.Fatalf("joining %s: %v", name, err)
 			}
 		}
-		first, err := h.p.Members(ctx, "acme", authn.Page{Limit: 2})
+		first, err := h.p.Members(ctx, "acme", authn.MemberQuery{Page: authn.Page{Limit: 2}})
 		if err != nil || len(first) != 2 {
 			t.Fatalf("the first page is %d rows (%v), want two", len(first), err)
 		}
-		second, err := h.p.Members(ctx, "acme", authn.Page{After: first[len(first)-1].Account.String(), Limit: 2})
+		second, err := h.p.Members(ctx, "acme", authn.MemberQuery{Page: authn.Page{After: first[len(first)-1].Account.String(), Limit: 2}})
 		if err != nil || len(second) != 1 {
 			t.Fatalf("the second page is %d rows (%v), want one", len(second), err)
 		}
@@ -130,6 +130,68 @@ func TestMembersPagesByAccount(t *testing.T) {
 			t.Error("the first page is not in the order of the account identifiers")
 		}
 	})
+}
+
+// Members narrows a page to the accounts whose display name or login
+// identifiers begin with the query. The display name is matched as written, and
+// an identifier after the query is lower-cased, the form usernames and email
+// addresses are stored in.
+func TestMembersFiltersByDisplayNameOrIdentifier(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		named := h.user("alpha", "")
+		if err := h.p.SetDisplayName(ctx, named, "Ada Lovelace"); err != nil {
+			t.Fatalf("setting the display name: %v", err)
+		}
+		login := h.user("ada.login", "")
+		other := h.user("bob", "")
+		for _, id := range []authn.AccountID{named, login, other} {
+			if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: true, Source: "admin"}); err != nil {
+				t.Fatalf("joining %s: %v", id, err)
+			}
+		}
+
+		cases := []struct {
+			name  string
+			query string
+			want  []authn.AccountID
+		}{
+			{"every member with no query", "", []authn.AccountID{named, login, other}},
+			{"a display-name prefix", "Ada L", []authn.AccountID{named}},
+			{"an identifier prefix after lower-casing", "ada.log", []authn.AccountID{login}},
+			{"a query neither matches", "zzz", nil},
+		}
+		for _, c := range cases {
+			got, err := h.p.Members(ctx, "acme", authn.MemberQuery{Query: c.query})
+			if err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			ids := make([]authn.AccountID, len(got))
+			for i, m := range got {
+				ids[i] = m.Account
+			}
+			if !sameIDs(ids, c.want) {
+				t.Errorf("%s: members = %v, want %v", c.name, ids, c.want)
+			}
+		}
+	})
+}
+
+// sameIDs reports whether two identifier lists hold the same accounts.
+func sameIDs(got, want []authn.AccountID) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	seen := map[authn.AccountID]bool{}
+	for _, id := range got {
+		seen[id] = true
+	}
+	for _, id := range want {
+		if !seen[id] {
+			return false
+		}
+	}
+	return true
 }
 
 // Every statement of a per-tenant operation names the tenant, so that nothing
@@ -145,7 +207,7 @@ func TestEveryPerTenantStatementNamesTheTenant(t *testing.T) {
 		if _, _, err := h.p.Membership(ctx, "acme", id); err != nil {
 			t.Fatalf("reading a membership: %v", err)
 		}
-		if _, err := h.p.Members(ctx, "acme", authn.Page{}); err != nil {
+		if _, err := h.p.Members(ctx, "acme", authn.MemberQuery{}); err != nil {
 			t.Fatalf("listing members: %v", err)
 		}
 		if err := h.p.Remove(ctx, id, "acme"); err != nil {

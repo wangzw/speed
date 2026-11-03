@@ -76,7 +76,7 @@ var seamSignatures = map[string][]string{
 		"IsMember(ctx context.Context, id AccountID, tenant string) (bool, error)",
 		"Membership(ctx context.Context, tenant string, id AccountID) (Membership, bool, error)",
 		"Tenants(ctx context.Context, id AccountID) ([]Membership, error)",
-		"Members(ctx context.Context, tenant string, page Page) ([]Membership, error)",
+		"Members(ctx context.Context, tenant string, query MemberQuery) ([]Membership, error)",
 		"Put(ctx context.Context, m Membership) error",
 		"Remove(ctx context.Context, id AccountID, tenant string) error",
 	},

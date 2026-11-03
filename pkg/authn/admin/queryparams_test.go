@@ -42,7 +42,7 @@ func TestTheDeclaredQueryParametersAreTheOnesTheInputsCarry(t *testing.T) {
 func declaredQueryParams(t *testing.T) []string {
 	t.Helper()
 
-	var doc struct {
+	type document struct {
 		Paths map[string]map[string]struct {
 			Parameters []struct {
 				Name string `json:"name"`
@@ -50,16 +50,19 @@ func declaredQueryParams(t *testing.T) []string {
 			} `json:"parameters"`
 		} `json:"paths"`
 	}
-	if err := json.Unmarshal(adminFragment, &doc); err != nil {
-		t.Fatalf("the embedded OpenAPI fragment is not a JSON object: %v", err)
-	}
 
 	names := map[string]bool{}
-	for _, item := range doc.Paths {
-		for _, op := range item {
-			for _, p := range op.Parameters {
-				if p.In == "query" {
-					names[p.Name] = true
+	for _, raw := range [][]byte{adminFragment, adminTenantsFragment} {
+		var doc document
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("the embedded OpenAPI fragment is not a JSON object: %v", err)
+		}
+		for _, item := range doc.Paths {
+			for _, op := range item {
+				for _, p := range op.Parameters {
+					if p.In == "query" {
+						names[p.Name] = true
+					}
 				}
 			}
 		}

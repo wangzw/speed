@@ -25,8 +25,10 @@ type Memberships interface {
 	// Tenants lists every membership of an account across tenants, ordered by
 	// tenant identifier ascending.
 	Tenants(ctx context.Context, id AccountID) ([]Membership, error)
-	// Members lists the memberships of a tenant, one page at a time.
-	Members(ctx context.Context, tenant string, page Page) ([]Membership, error)
+	// Members lists the memberships of a tenant, one page at a time. A query on
+	// the page narrows the listing to the accounts whose display name or login
+	// identifiers begin with it; an empty query is no filter.
+	Members(ctx context.Context, tenant string, query MemberQuery) ([]Membership, error)
 	// Put writes a membership, idempotently: adding, suspending and resuming are
 	// one call with the Membership's values. An account that does not exist, a
 	// deleted one included, is ErrAccountNotFound, because the tables have no

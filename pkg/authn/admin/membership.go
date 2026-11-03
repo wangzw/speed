@@ -2,19 +2,23 @@ package admin
 
 import (
 	"context"
+	"errors"
+	"unicode/utf8"
 
 	"github.com/vislake/speed/pkg/authn"
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// memberViewOf builds one membership as the management routes show it.
-func memberViewOf(mem authn.Membership) AuthnAdminMember {
+// memberViewOf builds one membership as the management routes show it,
+// carrying the account's display name resolved outside the membership store.
+func memberViewOf(mem authn.Membership, displayName string) AuthnAdminMember {
 	return AuthnAdminMember{
-		Account:   string(mem.Account),
-		Tenant:    mem.Tenant,
-		Active:    mem.Active,
-		SSOExempt: mem.SSOExempt,
-		Source:    mem.Source,
+		Account:     string(mem.Account),
+		DisplayName: displayName,
+		Tenant:      mem.Tenant,
+		Active:      mem.Active,
+		SSOExempt:   mem.SSOExempt,
+		Source:      mem.Source,
 	}
 }
 
@@ -33,19 +37,48 @@ func (m *product) handleMemberList(ctx context.Context, in memberListInput) (Aut
 	if in.Limit < 0 {
 		return AuthnAdminMemberList{}, m.bad()
 	}
-	page := authn.Page{Limit: in.Limit, After: in.After}
+	if !utf8.ValidString(in.Query) {
+		return AuthnAdminMemberList{}, m.bad()
+	}
+	query := authn.MemberQuery{
+		Page:  authn.Page{Limit: in.Limit, After: in.After},
+		Query: in.Query,
+	}
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant}); err != nil {
 		return AuthnAdminMemberList{}, err
 	}
-	members, err := m.memberships.Members(ctx, in.Tenant, page)
+	members, err := m.memberships.Members(ctx, in.Tenant, query)
 	if err != nil {
 		return AuthnAdminMemberList{}, m.unavailable("listing members", err)
 	}
 	views := make([]AuthnAdminMember, len(members))
 	for i, mem := range members {
-		views[i] = memberViewOf(mem)
+		// The member read carries the account's display name so the workspace
+		// administration face needs no platform account read. The account read
+		// has no batch form, so the page resolves one row at a time; an account
+		// deleted between the two reads has no name, the empty display name the
+		// account model gives an account it never wrote.
+		name, err := m.memberDisplayName(ctx, mem.Account)
+		if err != nil {
+			return AuthnAdminMemberList{}, err
+		}
+		views[i] = memberViewOf(mem, name)
 	}
 	return AuthnAdminMemberList{Members: views}, nil
+}
+
+// memberDisplayName reads the display name of one member account. A missing
+// account is the empty name, not an outage: the membership row may outlive the
+// account by the time between the page read and this one.
+func (m *product) memberDisplayName(ctx context.Context, id authn.AccountID) (string, error) {
+	account, err := m.accounts.Get(ctx, id)
+	if errors.Is(err, authn.ErrAccountNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", m.unavailable("reading a member account", err)
+	}
+	return account.DisplayName, nil
 }
 
 // handleMemberPut answers PUT /admin/tenants/:tenant/members/:account: it adds,

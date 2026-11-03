@@ -203,7 +203,7 @@ func newFakeMemberships() *fakeMemberships {
 // Members lists one page of a tenant's memberships in account order, the way
 // the account module does: After is the last account identifier of the page
 // before.
-func (m *fakeMemberships) Members(_ context.Context, tenantID string, page authn.Page) ([]authn.Membership, error) {
+func (m *fakeMemberships) Members(_ context.Context, tenantID string, query authn.MemberQuery) ([]authn.Membership, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pages++
@@ -223,11 +223,11 @@ func (m *fakeMemberships) Members(_ context.Context, tenantID string, page authn
 		return strings.Compare(string(a.Account), string(b.Account))
 	})
 	start := 0
-	for start < len(all) && page.After != "" && string(all[start].Account) <= page.After {
+	for start < len(all) && query.After != "" && string(all[start].Account) <= query.After {
 		start++
 	}
 	all = all[start:]
-	if limit := page.EffectiveLimit(); len(all) > limit {
+	if limit := query.EffectiveLimit(); len(all) > limit {
 		all = all[:limit]
 	}
 	return append([]authn.Membership(nil), all...), nil
