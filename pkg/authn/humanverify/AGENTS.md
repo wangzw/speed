@@ -54,7 +54,15 @@ its parameters from the settings store when one is present.
 The provider draws three forms: an image of digits, a slider puzzle and an audio
 reading of digits. The image and the audio use
 [base64Captcha](https://github.com/mojocn/base64Captcha) (v1.3.8); the slider is
-drawn with the standard library's image operations. An empty form is the image.
+drawn with the standard library's image operations.
+
+Audio is the one form a client may choose, because it is the screen-reader
+alternative: `form=audio` gets the audio form. The image and the slider are the
+server's rotation choice. Each issuance draws one of them from `crypto/rand`,
+independent of anything the request carries, so a request naming `image` or
+`slider`, or naming no form, is answered with whichever form the rotation drew
+and the named value is not honoured. Any other form value is a 400. The rotation
+stores nothing of its own: it needs no key-value key.
 
 It issues a challenge on `POST /api/v1/auth/human/captcha/challenge`, which is
 a declared operation of this module's fragment -- so the generated client calls
