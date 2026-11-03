@@ -169,15 +169,15 @@ export function SMSSignInForm({
   // The deployment's human-verification gate and this form's proof. A host
   // that already read the discovery document hands the gate in; otherwise
   // the form reads it, so a standalone form still presents a proof.
-  const human = useHumanVerification(
-    session,
-    humanGate === undefined ? {} : { gate: humanGate },
-  )
+  const human = useHumanVerification(session, {
+    scope: 'phone',
+    ...(humanGate === undefined ? {} : { gate: humanGate }),
+  })
   // A send waits for a proof when the gate is known to require one. A gate
   // still being read does not block it: the phone takes longer to type
   // than the document takes to arrive, and the server judges a send that
   // races the read.
-  const needsProof = humanGateNeedsProof(human.gate)
+  const needsProof = humanGateNeedsProof(human.gate, 'phone')
   const proofBlocked = needsProof && human.proof === null
   // The host's preferred starting country, else the browser locale's own
   // region. Read once: it is the selector's starting value, not a value
@@ -545,11 +545,14 @@ export function SMSSignInForm({
   // required.
   const humanBlock = (
     <HumanVerification
+      scope="phone"
       gate={human.gate ?? undefined}
       proof={human.proof}
       status={human.status}
+      captcha={human.captcha}
       onToken={human.adoptToken}
       onRetry={human.retry}
+      onRefreshCaptcha={human.refreshCaptcha}
       disabled={driver.busy}
     />
   )

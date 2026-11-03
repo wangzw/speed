@@ -534,9 +534,8 @@ describe('PhoneSection', () => {
         <PhoneSection
           session={rig.session}
           humanGate={{
-            required: true,
-            provider: 'turnstile',
-            site_key: 'site-1',
+            phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
+            other: { required: false, provider: 'off' },
           }}
         />,
       )

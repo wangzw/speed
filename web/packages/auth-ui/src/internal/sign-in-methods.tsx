@@ -124,11 +124,14 @@ export function DescriptorSignInForm({
   // The deployment's gate and the proof this form's first step presents.
   // The hook is active only while that step renders: a parked step's proof
   // belongs to the shared step renderer below, which reads its own.
+  // A descriptor-only method's first step is not an SMS send, so it runs
+  // the other surface's mechanism.
   const human = useHumanVerification(session, {
+    scope: 'other',
     ...(humanGate === undefined ? {} : { gate: humanGate }),
     enabled: driver.step === null,
   })
-  const needsProof = humanGateNeedsProof(human.gate)
+  const needsProof = humanGateNeedsProof(human.gate, 'other')
   const proofBlocked = needsProof && human.proof === null
 
   const onSubmit: SubmitHandler<Record<string, string>> = async (values) => {
@@ -224,11 +227,14 @@ export function DescriptorSignInForm({
       ))}
       {needsProof ? (
         <HumanVerification
+          scope="other"
           gate={human.gate ?? undefined}
           proof={human.proof}
           status={human.status}
+          captcha={human.captcha}
           onToken={human.adoptToken}
           onRetry={human.retry}
+          onRefreshCaptcha={human.refreshCaptcha}
           disabled={driver.busy}
         />
       ) : null}

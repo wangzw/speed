@@ -148,7 +148,10 @@ describe('list methods', () => {
       ],
       signup: { enabled: true, password: { enabled: true } },
       mfa: { factors: ['totp'] },
-      human: { required: false, provider: 'off' },
+      human: {
+        phone: { required: false, provider: 'off' },
+        other: { required: false, provider: 'off' },
+      },
       password_reset: { enabled: false, methods: [] },
     })
     expect(harness.calls).toHaveLength(1)
@@ -167,7 +170,10 @@ describe('list methods', () => {
         ],
         signup: { enabled: true, password: { enabled: false } },
         mfa: { factors: [] },
-        human: { required: false, provider: 'off' },
+        human: {
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        },
       }),
     })
     await expectProtocolViolation(harness.session.listMethods(), harness)
@@ -186,7 +192,10 @@ describe('list methods', () => {
         methods: [{ name: 'password' }],
         signup: { enabled: true, password: { enabled: false } },
         mfa: { factors: [] },
-        human: { required: false, provider: 'off' },
+        human: {
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        },
       }),
     })
     await expectProtocolViolation(harness.session.listMethods(), harness)
@@ -197,7 +206,10 @@ describe('list methods', () => {
       [LOGIN_METHODS]: () => ({
         methods: [],
         mfa: { factors: [] },
-        human: { required: false, provider: 'off' },
+        human: {
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        },
       }),
     })
     await expectProtocolViolation(missingSignup.session.listMethods(), missingSignup)
@@ -205,7 +217,10 @@ describe('list methods', () => {
       [LOGIN_METHODS]: () => ({
         methods: [],
         signup: { enabled: false, password: { enabled: false } },
-        human: { required: false, provider: 'off' },
+        human: {
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        },
       }),
     })
     await expectProtocolViolation(missingMFA.session.listMethods(), missingMFA)
@@ -223,34 +238,46 @@ describe('list methods', () => {
       }),
     })
     const methods = await harness.session.listMethods()
-    expect(methods.human).toEqual({ required: false, provider: 'off' })
+    expect(methods.human).toEqual({
+      phone: { required: false, provider: 'off' },
+      other: { required: false, provider: 'off' },
+    })
   })
 
-  it('parses a required proof of work gate and a Turnstile gate', async () => {
+  it('parses the gates of both surfaces', async () => {
     const pow = makeHarness({
       [LOGIN_METHODS]: () => ({
         methods: [],
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
-        human: { required: true, provider: 'pow' },
+        human: {
+          phone: { required: true, provider: 'pow' },
+          other: { required: false, provider: 'off' },
+        },
       }),
     })
     expect((await pow.session.listMethods()).human).toEqual({
-      required: true,
-      provider: 'pow',
+      phone: { required: true, provider: 'pow' },
+      other: { required: false, provider: 'off' },
     })
     const turnstile = makeHarness({
       [LOGIN_METHODS]: () => ({
         methods: [],
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
-        human: { required: true, provider: 'turnstile', site_key: 'site-1' },
+        human: {
+          phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
+          other: {
+            required: true,
+            provider: 'turnstile',
+            site_key: 'site-other',
+          },
+        },
       }),
     })
     expect((await turnstile.session.listMethods()).human).toEqual({
-      required: true,
-      provider: 'turnstile',
-      site_key: 'site-1',
+      phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
+      other: { required: true, provider: 'turnstile', site_key: 'site-other' },
     })
   })
 
@@ -260,7 +287,10 @@ describe('list methods', () => {
         methods: [],
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
-        human: { required: false, provider: 7 },
+        human: {
+          phone: { required: false, provider: 7 },
+          other: { required: false, provider: 'off' },
+        },
       }),
     })
     await expectProtocolViolation(harness.session.listMethods(), harness)
@@ -272,7 +302,10 @@ describe('list methods', () => {
         methods: [],
         signup: { enabled: true, password: { enabled: 'yes' } },
         mfa: { factors: [] },
-        human: { required: false, provider: 'off' },
+        human: {
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        },
       }),
     })
     await expectProtocolViolation(harness.session.listMethods(), harness)
@@ -299,7 +332,10 @@ describe('list methods', () => {
         methods: [],
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
-        human: { required: false, provider: 'off' },
+        human: {
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        },
       }),
     })
     const methods = await harness.session.listMethods()
@@ -312,7 +348,10 @@ describe('list methods', () => {
         methods: [],
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
-        human: { required: false, provider: 'off' },
+        human: {
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        },
         password_reset: 'email',
       }),
     })
@@ -323,7 +362,10 @@ describe('list methods', () => {
         methods: [],
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
-        human: { required: false, provider: 'off' },
+        human: {
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        },
         password_reset: { enabled: 'yes', methods: [] },
       }),
     })
@@ -334,7 +376,10 @@ describe('list methods', () => {
         methods: [],
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
-        human: { required: false, provider: 'off' },
+        human: {
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        },
         password_reset: { enabled: true },
       }),
     })
@@ -345,7 +390,10 @@ describe('list methods', () => {
         methods: [],
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
-        human: { required: false, provider: 'off' },
+        human: {
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        },
         password_reset: { enabled: true, methods: ['email', 'post'] },
       }),
     })

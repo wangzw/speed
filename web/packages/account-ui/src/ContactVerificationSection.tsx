@@ -155,11 +155,13 @@ export function ContactVerificationSection({
   // The deployment's human-verification gate and this section's proof. The
   // send (a resend included) presents it; the code's verification sends
   // nothing, so it does not.
-  const human = useHumanVerification(
-    session,
-    humanGate === undefined ? {} : { gate: humanGate },
-  )
-  const needsProof = humanGateNeedsProof(human.gate)
+  // A verified-email send does not address a phone number: it runs the
+  // other surface's mechanism.
+  const human = useHumanVerification(session, {
+    scope: 'other',
+    ...(humanGate === undefined ? {} : { gate: humanGate }),
+  })
+  const needsProof = humanGateNeedsProof(human.gate, 'other')
   // Only a known gate that requires a proof blocks a manual send. The
   // automatic send additionally waits for the read to settle (see its
   // effect), because it has no visitor's click to obtain a proof with.
@@ -449,11 +451,14 @@ export function ContactVerificationSection({
   // current face shows. It renders nothing when no proof is required.
   const humanBlock = (
     <HumanVerification
+      scope="other"
       gate={human.gate ?? undefined}
       proof={human.proof}
       status={human.status}
+      captcha={human.captcha}
       onToken={human.adoptToken}
       onRetry={human.retry}
+      onRefreshCaptcha={human.refreshCaptcha}
       disabled={busy}
     />
   )

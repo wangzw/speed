@@ -113,11 +113,11 @@ export function PhoneSection({
   const defaultCountry = usePhoneCountryDefault()
   // The deployment's human-verification gate and this section's proof. The
   // send presents it; the verify step sends nothing, so it does not.
-  const human = useHumanVerification(
-    session,
-    humanGate === undefined ? {} : { gate: humanGate },
-  )
-  const needsProof = humanGateNeedsProof(human.gate)
+  const human = useHumanVerification(session, {
+    scope: 'phone',
+    ...(humanGate === undefined ? {} : { gate: humanGate }),
+  })
+  const needsProof = humanGateNeedsProof(human.gate, 'phone')
   // Only a known gate that requires a proof blocks the send. A gate still
   // being read does not: the form has long been filled by then, and the
   // server judges the send if the document arrives late.
@@ -273,11 +273,14 @@ export function PhoneSection({
               autoComplete="tel"
             />
             <HumanVerification
+              scope="phone"
               gate={human.gate ?? undefined}
               proof={human.proof}
               status={human.status}
+              captcha={human.captcha}
               onToken={human.adoptToken}
               onRetry={human.retry}
+              onRefreshCaptcha={human.refreshCaptcha}
               disabled={busy}
             />
             <ActionRow sx={{ width: '100%' }}>

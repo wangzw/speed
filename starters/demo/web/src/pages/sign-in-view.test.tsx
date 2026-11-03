@@ -55,7 +55,10 @@ const METHODS: AuthnMethodList = {
   ],
   signup: { enabled: false, password: { enabled: false } },
   mfa: { factors: [] },
-  human: { required: false, provider: 'off' },
+  human: {
+    phone: { required: false, provider: 'off' },
+    other: { required: false, provider: 'off' },
+  },
   password_reset: { enabled: false, methods: [] },
 }
 
@@ -163,7 +166,10 @@ describe('the sign-in surface', () => {
           methods: [{ name: 'password', kind: 'form' }],
           signup: { enabled: false, password: { enabled: false } },
           mfa: { factors: [] },
-          human: { required: false, provider: 'off' },
+          human: {
+            phone: { required: false, provider: 'off' },
+            other: { required: false, provider: 'off' },
+          },
           password_reset: { enabled: true, methods: ['email'] },
         }),
     })
@@ -209,7 +215,10 @@ describe('the sign-in surface', () => {
           methods: [{ name: 'password', kind: 'form', opens_account: true }],
           signup: { enabled: true, password: { enabled: false } },
           mfa: { factors: [] },
-          human: { required: false, provider: 'off' },
+          human: {
+            phone: { required: false, provider: 'off' },
+            other: { required: false, provider: 'off' },
+          },
           password_reset: { enabled: false, methods: [] },
         }),
     })

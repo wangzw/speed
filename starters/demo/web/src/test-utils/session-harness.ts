@@ -88,13 +88,33 @@ export function methodList(
     humanRequired?: boolean
     humanProvider?: string
     humanSiteKey?: string
+    humanPhoneProvider?: string
+    humanPhoneRequired?: boolean
+    humanPhoneSiteKey?: string
+    humanOtherProvider?: string
+    humanOtherRequired?: boolean
+    humanOtherSiteKey?: string
   } = {},
 ): {
   methods: MethodDescriptorBody[]
   signup: { enabled: boolean; password: { enabled: boolean } }
   mfa: { factors: string[] }
-  human: { required: boolean; provider: string; site_key?: string }
+  human: {
+    phone: { required: boolean; provider: string; site_key?: string }
+    other: { required: boolean; provider: string; site_key?: string }
+  }
 } {
+  const surface = (
+    provider: string | undefined,
+    required: boolean | undefined,
+    siteKey: string | undefined,
+  ): { required: boolean; provider: string; site_key?: string } => ({
+    required: required ?? overrides.humanRequired ?? false,
+    provider: provider ?? overrides.humanProvider ?? 'off',
+    ...(siteKey === undefined && overrides.humanSiteKey === undefined
+      ? {}
+      : { site_key: siteKey ?? overrides.humanSiteKey }),
+  })
   return {
     methods: methods.map((entry) =>
       typeof entry === 'string' ? { name: entry, kind: 'form' } : entry,
@@ -105,11 +125,16 @@ export function methodList(
     },
     mfa: { factors: [...(overrides.mfaFactors ?? [])] },
     human: {
-      required: overrides.humanRequired ?? false,
-      provider: overrides.humanProvider ?? 'off',
-      ...(overrides.humanSiteKey === undefined
-        ? {}
-        : { site_key: overrides.humanSiteKey }),
+      phone: surface(
+        overrides.humanPhoneProvider,
+        overrides.humanPhoneRequired,
+        overrides.humanPhoneSiteKey,
+      ),
+      other: surface(
+        overrides.humanOtherProvider,
+        overrides.humanOtherRequired,
+        overrides.humanOtherSiteKey,
+      ),
     },
   }
 }

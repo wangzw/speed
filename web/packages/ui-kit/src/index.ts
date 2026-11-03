@@ -110,8 +110,12 @@ export {
 } from './components/FormField.js'
 export {
   HumanVerification,
+  type HumanCaptchaChallenge,
+  type HumanCaptchaForm,
   type HumanVerificationGate,
+  type HumanVerificationGateSet,
   type HumanVerificationProps,
+  type HumanVerificationScope,
   type HumanVerificationStatus,
 } from './components/HumanVerification.js'
 export {

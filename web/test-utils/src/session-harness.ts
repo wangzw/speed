@@ -54,6 +54,8 @@ export const LOGIN_ANSWER = 'POST /api/v1/auth/flows/answer'
 export const LOGIN_CURRENT = 'GET /api/v1/auth/flows/current'
 export const LOGIN_ABANDON = 'DELETE /api/v1/auth/flows/current'
 export const HUMAN_CHALLENGE = 'POST /api/v1/auth/human/challenge'
+export const CAPTCHA_CHALLENGE =
+  'POST /api/v1/auth/human/captcha/challenge'
 export const SSO_DISCOVER = 'POST /api/v1/auth/sso/discover'
 export const LOGOUT = 'POST /api/v1/auth/logout'
 export const TOKEN_ISSUE = 'POST /api/v1/auth/token'
@@ -106,9 +108,21 @@ export function methodList(
     signup?: boolean
     signupPassword?: boolean
     mfaFactors?: readonly string[]
+    /** The mechanism both surfaces run; the per-surface overrides below
+     * narrow one of them. */
     humanRequired?: boolean
     humanProvider?: string
     humanSiteKey?: string
+    /** The phone surface alone: a send that delivers a message to a phone
+     * number. Unset members fall back to the shared overrides above. */
+    humanPhoneProvider?: string
+    humanPhoneRequired?: boolean
+    humanPhoneSiteKey?: string
+    /** The other surface alone: every send that does not address a phone
+     * number. Unset members fall back to the shared overrides above. */
+    humanOtherProvider?: string
+    humanOtherRequired?: boolean
+    humanOtherSiteKey?: string
     passwordReset?: boolean
     passwordResetMethods?: readonly string[]
   } = {},
@@ -116,9 +130,23 @@ export function methodList(
   methods: MethodDescriptorBody[]
   signup: { enabled: boolean; password: { enabled: boolean } }
   mfa: { factors: string[] }
-  human: { required: boolean; provider: string; site_key?: string }
+  human: {
+    phone: { required: boolean; provider: string; site_key?: string }
+    other: { required: boolean; provider: string; site_key?: string }
+  }
   password_reset: { enabled: boolean; methods: string[] }
 } {
+  const surface = (
+    provider: string | undefined,
+    required: boolean | undefined,
+    siteKey: string | undefined,
+  ): { required: boolean; provider: string; site_key?: string } => ({
+    required: required ?? overrides.humanRequired ?? false,
+    provider: provider ?? overrides.humanProvider ?? 'off',
+    ...(siteKey === undefined && overrides.humanSiteKey === undefined
+      ? {}
+      : { site_key: siteKey ?? overrides.humanSiteKey }),
+  })
   return {
     methods: methods.map((entry) =>
       typeof entry === 'string' ? { name: entry, kind: 'form' } : entry,
@@ -129,11 +157,16 @@ export function methodList(
     },
     mfa: { factors: [...(overrides.mfaFactors ?? [])] },
     human: {
-      required: overrides.humanRequired ?? false,
-      provider: overrides.humanProvider ?? 'off',
-      ...(overrides.humanSiteKey === undefined
-        ? {}
-        : { site_key: overrides.humanSiteKey }),
+      phone: surface(
+        overrides.humanPhoneProvider,
+        overrides.humanPhoneRequired,
+        overrides.humanPhoneSiteKey,
+      ),
+      other: surface(
+        overrides.humanOtherProvider,
+        overrides.humanOtherRequired,
+        overrides.humanOtherSiteKey,
+      ),
     },
     password_reset: {
       enabled: overrides.passwordReset ?? false,
@@ -163,6 +196,63 @@ export function challengeResponse(
     algorithm: 'sha256',
     challenge: overrides.challenge ?? 'AAAAAAAAAAAAAAAAAAAAAA',
     difficulty: overrides.difficulty ?? 4,
+    expires_in: overrides.expires_in ?? 300,
+  }
+}
+
+/** The POST /api/v1/auth/human/captcha/challenge body: one self-hosted
+ * captcha challenge of the requested form. Only the media of the form it
+ * names is carried, as the server answers it. */
+export function captchaChallenge(
+  overrides: {
+    form?: 'image' | 'slider' | 'audio'
+    instruction?: string
+    id?: string
+    image_url?: string
+    background_url?: string
+    piece_url?: string
+    audio_url?: string
+    expires_in?: number
+  } = {},
+): {
+  provider: string
+  form: 'image' | 'slider' | 'audio'
+  instruction: string
+  id: string
+  image_url?: string
+  background_url?: string
+  piece_url?: string
+  audio_url?: string
+  expires_in: number
+} {
+  const form = overrides.form ?? 'image'
+  const instruction =
+    overrides.instruction ??
+    (form === 'slider'
+      ? 'slide-the-piece'
+      : form === 'audio'
+        ? 'type-the-digits-you-hear'
+        : 'type-the-digits')
+  return {
+    provider: 'captcha',
+    form,
+    instruction,
+    id: overrides.id ?? 'Y2FwdGNoYS1jaGFsbGVuZ2U',
+    ...(form === 'image'
+      ? { image_url: overrides.image_url ?? '/api/v1/auth/human/captcha/image/1' }
+      : {}),
+    ...(form === 'slider'
+      ? {
+          background_url:
+            overrides.background_url ??
+            '/api/v1/auth/human/captcha/background/1',
+          piece_url:
+            overrides.piece_url ?? '/api/v1/auth/human/captcha/piece/1',
+        }
+      : {}),
+    ...(form === 'audio'
+      ? { audio_url: overrides.audio_url ?? '/api/v1/auth/human/captcha/audio/1' }
+      : {}),
     expires_in: overrides.expires_in ?? 300,
   }
 }

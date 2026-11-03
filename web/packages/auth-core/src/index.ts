@@ -108,11 +108,16 @@ export { useStepUpGate, stepUpReasonOf } from './step-up-gate.js'
 export type { StepUpGate, StepUpReason } from './step-up-gate.js'
 export {
   humanGateNeedsProof,
+  humanSurfaceGate,
+  parseCaptchaChallenge,
   powProofFromChallenge,
   requestPowProof,
   useHumanVerification,
 } from './human.js'
 export type {
+  HumanCaptchaChallenge,
+  HumanCaptchaForm,
+  HumanScope,
   HumanVerification,
   HumanVerificationStatus,
   UseHumanVerificationOptions,
@@ -129,6 +134,7 @@ export type {
   AuthnField,
   AuthnFlowState,
   AuthnHumanGate,
+  AuthnHumanSurfaceGate,
   AuthnIdentifier,
   AuthnLink,
   AuthnLoginRegisterBody,

@@ -231,8 +231,16 @@ function StepUpFlow({
     }
   }, [onSuccess])
   const returnPath = useAdminReturnPath()
-  const { phase, step, seq, errorCode, retryAfterSeconds, human, answer } =
-    useStepUp(session, true, elevated, undefined, returnPath)
+  const {
+    phase,
+    step,
+    seq,
+    errorCode,
+    retryAfterSeconds,
+    human,
+    humanScope,
+    answer,
+  } = useStepUp(session, true, elevated, undefined, returnPath)
   // The second factor the operator chose. The verification step that
   // follows it (the code challenge) is answered under the `factor` step
   // and must re-name the same factor alongside the code -- a challenge
@@ -355,13 +363,17 @@ function StepUpFlow({
               <Box sx={{ mt: 1 }}>
                 {step !== null ? (
                   <>
-                    {humanGateNeedsProof(human.gate) && stepMaySend(step) ? (
+                    {humanGateNeedsProof(human.gate, humanScope) &&
+                    stepMaySend(step) ? (
                       <HumanVerification
+                        scope={humanScope}
                         gate={human.gate ?? undefined}
                         proof={human.proof}
                         status={human.status}
+                        captcha={human.captcha}
                         onToken={human.adoptToken}
                         onRetry={human.retry}
+                        onRefreshCaptcha={human.refreshCaptcha}
                       />
                     ) : null}
                     <FlowStep

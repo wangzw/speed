@@ -373,7 +373,16 @@ function StepUpFlow({
   readonly notice?: string
 }): ReactElement {
   const { t } = useAccountUiTranslation()
-  const { phase, step, seq, errorCode, retryAfterSeconds, human, answer } =
+  const {
+    phase,
+    step,
+    seq,
+    errorCode,
+    retryAfterSeconds,
+    human,
+    humanScope,
+    answer,
+  } =
     useStepUp(
       session,
       active,
@@ -523,13 +532,17 @@ function StepUpFlow({
               <Box sx={{ mt: 1 }}>
                 {step !== null ? (
                   <>
-                    {humanGateNeedsProof(human.gate) && stepMaySend(step) ? (
+                    {humanGateNeedsProof(human.gate, humanScope) &&
+                    stepMaySend(step) ? (
                       <HumanVerification
+                        scope={humanScope}
                         gate={human.gate ?? undefined}
                         proof={human.proof}
                         status={human.status}
+                        captcha={human.captcha}
                         onToken={human.adoptToken}
                         onRetry={human.retry}
+                        onRefreshCaptcha={human.refreshCaptcha}
                       />
                     ) : null}
                     <FlowStep

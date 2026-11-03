@@ -59,7 +59,7 @@ const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
 function mount(
   respond: RealResponder,
-  humanGate?: {
+  gate?: {
     readonly required: boolean
     readonly provider: string
     readonly site_key?: string
@@ -67,6 +67,12 @@ function mount(
 ) {
   const rig = makeRealClientRig(respond)
   rig.store.set('access-1')
+  // The section's send adds an email, so the other surface is the one it
+  // reads; the phone surface stays off.
+  const humanGate =
+    gate === undefined
+      ? undefined
+      : { phone: { required: false, provider: 'off' }, other: gate }
   const rendered = renderWithProviders(
     <IdentifiersSection session={rig.session} humanGate={humanGate} />,
   )

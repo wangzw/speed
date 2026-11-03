@@ -98,7 +98,10 @@ function flowSession(): {
         methods: [{ name: 'password', kind: 'form' }],
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
-        human: { required: false, provider: 'off' },
+        human: {
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        },
         password_reset: { enabled: false, methods: [] },
       }),
     discoverSso: () => Promise.resolve([]),
@@ -297,7 +300,18 @@ describe('StepUpChallenge', () => {
             methods: [{ name: 'password', kind: 'form' }],
             signup: { enabled: false, password: { enabled: false } },
             mfa: { factors: [] },
-            human: { required: true, provider: 'turnstile', site_key: 'site-1' },
+            human: {
+              phone: {
+                required: true,
+                provider: 'turnstile',
+                site_key: 'site-1',
+              },
+              other: {
+                required: true,
+                provider: 'turnstile',
+                site_key: 'site-1',
+              },
+            },
             password_reset: { enabled: false, methods: [] },
           }),
         startAuthenticatedFlow: () =>

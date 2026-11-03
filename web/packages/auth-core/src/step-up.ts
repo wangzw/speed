@@ -88,7 +88,7 @@ import { useEffect, useRef, useState } from 'react'
 import { isApiError } from '@speed/api-client'
 import type { AuthSession, AuthnFlowState, AuthnStep } from './session.js'
 import { humanGateNeedsProof, useHumanVerification } from './human.js'
-import type { HumanVerification } from './human.js'
+import type { HumanScope, HumanVerification } from './human.js'
 
 /**
  * The code a refusal carries when the flow the request named is gone. The
@@ -143,6 +143,10 @@ export interface StepUpState {
    * holds. A step that may send a verification message renders its block;
    * an answer that sends presents the proof. */
   readonly human: HumanVerification
+  /** The surface the current step's send belongs to: `phone` when the
+   * step may send an SMS, `other` otherwise. The block rendered beside
+   * the step reads the same member of `human.gate`. */
+  readonly humanScope: HumanScope
   /** Answer the current step. Ignored while no step is parked. An answer
    * that may send a verification message carries the proof the gate
    * requires. */
@@ -157,6 +161,19 @@ export interface StepUpState {
  * applyFactor and challengeFactor), so a proof is presented exactly when
  * the answer may spend one.
  */
+function stepSends(step: AuthnStep | null): boolean {
+  if (step === null) {
+    return false
+  }
+  if (step.kind === 'factor') {
+    return step.factors.some((factor) => factor.kind === 'sms')
+  }
+  if (step.kind === 'challenge') {
+    return step.fields.some((field) => field.kind === 'phone')
+  }
+  return false
+}
+
 function answerSends(
   step: AuthnStep | null,
   value: AuthnFlowAnswer,
@@ -299,7 +316,14 @@ export function useStepUp(
   // is read here because a caller that opens the challenge has no other
   // discovery document to hand it, and it is read only while the challenge
   // is active: a closed challenge reads and solves nothing.
-  const human = useHumanVerification(session, { enabled: active })
+  // A step that may send reaches a phone number (an SMS factor, or the
+  // SMS first factor a step-up re-proves), so it runs the phone surface's
+  // mechanism; every other step runs the other surface's.
+  const humanScope: HumanScope = stepSends(step) ? 'phone' : 'other'
+  const human = useHumanVerification(session, {
+    scope: humanScope,
+    enabled: active,
+  })
 
   useEffect(() => {
     // A new opening answers its own ready step afresh.
@@ -473,7 +497,7 @@ export function useStepUp(
     // is consumed once presented, whatever the server answered, so the
     // block obtains a fresh one for the next attempt.
     const presented =
-      humanGateNeedsProof(human.gate) && answerSends(step, value)
+      humanGateNeedsProof(human.gate, humanScope) && answerSends(step, value)
         ? human.proof
         : null
     setSubmitting(true)
@@ -546,6 +570,7 @@ export function useStepUp(
     errorCode,
     retryAfterSeconds,
     human,
+    humanScope,
     answer,
   }
 }

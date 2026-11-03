@@ -43,7 +43,23 @@
     "working": "Confirming you are human…",
     "verified": "Human verification complete.",
     "failed": "Human verification failed. Please try again.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "captcha": {
+      "groupLabel": "Human verification",
+      "answerLabel": "Answer",
+      "submit": "Confirm",
+      "refresh": "New challenge",
+      "useAudio": "Use an audio challenge",
+      "useImage": "Use an image challenge",
+      "audioLabel": "Audio verification",
+      "sliderLabel": "Drag the slider to line the piece up with the gap",
+      "instruction": {
+        "typeTheDigits": "Enter the characters in the picture.",
+        "slideThePiece": "Drag the slider to line the piece up with the gap in the background.",
+        "typeTheDigitsYouHear": "Enter the digits you hear in the audio.",
+        "fallback": "Complete the human verification below."
+      }
+    }
   },
   "phoneNumber": {
     "incomplete": "This number is incomplete. Enter the full number for +{{code}}.",

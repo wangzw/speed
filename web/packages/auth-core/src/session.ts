@@ -172,6 +172,7 @@ import type {
   AuthnLoginField,
   AuthnLoginFlow,
   AuthnLoginHuman,
+  AuthnLoginHumanGate,
   AuthnLoginMethods,
   AuthnLoginPasswordReset,
   AuthnLoginRegisterBody,
@@ -296,12 +297,18 @@ export type AuthnMethodList = AuthnLoginMethods
  * discovery document's `password_reset.methods`. */
 export type PasswordResetChannel = 'email' | 'sms'
 
-/** The human-verification gate the discovery document reports: whether a
- * send must present a proof, which mechanism checks it, and the public
- * site key a Turnstile widget renders with. A document that omits the
- * gate is read as the off mechanism (see parseMethodList), because a
- * client newer than its server must not reject an older server's answer. */
+/** The human-verification gate the discovery document reports, once per
+ * surface: the phone surface guards the four SMS sends and the other
+ * surface guards every send that does not address a phone number. A
+ * document that omits the gate is read as the off mechanism on both
+ * surfaces (see parseMethodList), because a client newer than its server
+ * must not reject an older server's answer. */
 export type AuthnHumanGate = AuthnLoginHuman
+
+/** The human-verification mechanism one surface runs: whether a send on
+ * that surface must present a proof, which mechanism checks it, and the
+ * public site key a Turnstile widget renders with. */
+export type AuthnHumanSurfaceGate = AuthnLoginHumanGate
 
 /** One login method as the discovery endpoint reports it (a member of
  * GET /api/v1/auth/methods' `methods`): the generated descriptor. `kind` names
@@ -1070,34 +1077,58 @@ function parseMethodDescriptor(value: unknown): AuthnMethodDescriptorModel {
   return descriptor
 }
 
-/** The gate a methods document that carries no human section is read as:
- * the off mechanism. A client newer than its server must keep working
- * against the older answer rather than refusing every method. */
-const HUMAN_GATE_OFF: AuthnHumanGate = { required: false, provider: 'off' }
+/** A methods document that carries no human section is read as the off
+ * mechanism on both surfaces. A client newer than its server must keep
+ * working against the older answer rather than refusing every method. */
+function humanGateOff(): AuthnHumanGate {
+  return {
+    phone: { required: false, provider: 'off' },
+    other: { required: false, provider: 'off' },
+  }
+}
+
+/** Validates one surface's gate: its required and provider members are
+ * required, and a site key, when present, is a string. */
+function parseHumanSurfaceGate(
+  value: unknown,
+  surface: string,
+): AuthnHumanSurfaceGate {
+  const gate = asObject(value, `methods human ${surface} is not a document`)
+  if (typeof gate.required !== 'boolean') {
+    throw protocolViolation(
+      `methods human ${surface} carries no required boolean`,
+    )
+  }
+  const provider = requireString(
+    gate.provider,
+    `methods human ${surface} carries no provider string`,
+  )
+  const siteKey =
+    gate.site_key === undefined
+      ? undefined
+      : requireString(
+          gate.site_key,
+          `methods human ${surface} site_key is not a string`,
+        )
+  return {
+    required: gate.required,
+    provider,
+    ...(siteKey === undefined ? {} : { site_key: siteKey }),
+  }
+}
 
 /** Validates the human-verification gate of a methods answer. The member
  * is optional on the wire for the reason the off fallback exists; when it
- * is present, its required and provider members are required. */
+ * is present, both surfaces are required, because a deployment reports
+ * the mechanism each one runs. */
 function parseHumanGate(value: unknown): AuthnHumanGate {
   if (value === undefined) {
-    return { ...HUMAN_GATE_OFF }
+    return humanGateOff()
   }
   const human = asObject(value, 'methods human is not a document')
-  if (typeof human.required !== 'boolean') {
-    throw protocolViolation('methods human carries no required boolean')
-  }
-  const provider = requireString(
-    human.provider,
-    'methods human carries no provider string',
-  )
-  const siteKey =
-    human.site_key === undefined
-      ? undefined
-      : requireString(human.site_key, 'methods human site_key is not a string')
   return {
-    required: human.required,
-    provider,
-    ...(siteKey === undefined ? {} : { site_key: siteKey }),
+    phone: parseHumanSurfaceGate(human.phone, 'phone'),
+    other: parseHumanSurfaceGate(human.other, 'other'),
   }
 }
 

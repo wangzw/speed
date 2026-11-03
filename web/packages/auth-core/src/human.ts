@@ -2,8 +2,11 @@
  * The client half of the human-verification gate: what a surface does when
  * the deployment requires a proof before it sends a verification message.
  *
- * Two mechanisms are possible, and the discovery document names which one
- * this deployment runs:
+ * A deployment answers per surface -- the phone surface guards the four
+ * SMS sends and the other surface guards every send that does not address
+ * a phone number -- and may run a different mechanism on each. Three
+ * mechanisms are possible, and the discovery document names which one a
+ * surface runs:
  *
  *  - `pow` -- the self-hosted proof of work. The client asks
  *    `POST /api/v1/auth/human/challenge` for a challenge, solves it off the
@@ -12,24 +15,52 @@
  *    consumes it after every send and the control obtains a fresh one.
  *  - `turnstile` -- a third-party widget. Its token is obtained by the
  *    widget the ui-kit block renders; this module only stores it.
+ *  - `captcha` -- the self-hosted captcha. The client asks
+ *    `POST /api/v1/auth/human/captcha/challenge` for a challenge of the
+ *    form it renders, the block obtains the answer from the viewer, and
+ *    the proof is the challenge id and that answer joined by a dot. The
+ *    challenge is single-use and good for one attempt, so a consumed proof
+ *    is replaced with a fresh challenge.
  *
- * `useHumanVerification` owns both the discovery read and the proof state,
- * so every surface obtains the gate the same way. A read that fails is
- * read as the off mechanism: the server still judges the send, and a
- * client that cannot read the document must not block a deployment that
- * may require nothing. The proof itself is never persisted -- it is a
- * short-lived one-shot value held in memory for the send that presents it.
+ * `useHumanVerification` owns the discovery read, the proof state and the
+ * captcha challenge, so every surface obtains its gate the same way. A
+ * read that fails is read as the off mechanism: the server still judges
+ * the send, and a client that cannot read the document must not block a
+ * deployment that may require nothing. The proof itself is never
+ * persisted -- it is a short-lived one-shot value held in memory for the
+ * send that presents it.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { authnHumanverifyChallenge } from '@speed/api-sdk'
-import type { ChallengeResponse } from '@speed/api-sdk'
-import type { AuthSession, AuthnHumanGate } from './session.js'
+import {
+  authnHumanverifyCaptchaChallenge,
+  authnHumanverifyChallenge,
+} from '@speed/api-sdk'
+import type { CaptchaChallengeResponse, ChallengeResponse } from '@speed/api-sdk'
+import type {
+  AuthSession,
+  AuthnHumanGate,
+  AuthnHumanSurfaceGate,
+} from './session.js'
 import { POW_HASH, solvePowChallenge } from './pow.js'
+
+/** The surface a human-verification check belongs to: `phone` for a send
+ * that delivers a message to a phone number, `other` for every send that
+ * does not. */
+export type HumanScope = 'phone' | 'other'
 
 /** The proof state a surface renders. `working` covers both the initial
  * solve and a retry; `ready` carries a proof in `useHumanVerification`. */
 export type HumanVerificationStatus = 'idle' | 'working' | 'ready' | 'failed'
+
+/** The form a self-hosted captcha challenge takes: a picture of digits, a
+ * slider puzzle, or the audio alternative for screen-reader users. */
+export type HumanCaptchaForm = 'image' | 'slider' | 'audio'
+
+/** One issued self-hosted captcha challenge, as the challenge route
+ * answered it: the id a proof names, the form, the instruction key the
+ * block words, and the media paths the form carries. */
+export type HumanCaptchaChallenge = CaptchaChallengeResponse
 
 /** The control `useHumanVerification` hands to a surface. */
 export interface HumanVerification {
@@ -41,17 +72,36 @@ export interface HumanVerification {
   readonly pending: boolean
   /** The proof to present on the next send, or null while none is ready. */
   readonly proof: string | null
-  /** The proof-of-work state; the token mechanism reports `ready` once the
-   * widget yields a token. */
+  /** The proof-of-work or captcha state; the token mechanism reports
+   * `ready` once the widget yields a token. */
   readonly status: HumanVerificationStatus
-  /** Adopt a token the Turnstile widget yielded (null when it expired or
-   * failed). */
+  /** The issued self-hosted captcha challenge, or null while none is
+   * loaded (or the surface does not run the captcha). */
+  readonly captcha: HumanCaptchaChallenge | null
+  /** Adopt a token the Turnstile widget or the captcha block yielded
+   * (null when it expired or failed). */
   adoptToken(token: string | null): void
-  /** Solve once more after a failure. */
+  /** Ask for another proof after a failure: a fresh solve for `pow`, a
+   * fresh challenge for `captcha`. */
   retry(): void
   /** Give up the current proof after presenting it, so the control obtains
    * a fresh one for the next send. */
   consume(): void
+  /** Ask for a fresh captcha challenge in the given form (the current
+   * one's form when omitted), after a refresh or an audio switch. */
+  refreshCaptcha(form?: HumanCaptchaForm): void
+}
+
+/** The gate one surface runs, or null when the document is not readable. */
+export function humanSurfaceGate(
+  gate: AuthnHumanGate | null | undefined,
+  scope: HumanScope,
+): AuthnHumanSurfaceGate | null {
+  if (gate === null || gate === undefined) {
+    return null
+  }
+  const surface = gate[scope]
+  return surface === undefined ? null : surface
 }
 
 /** What a send must do about the gate: a proof is required only for the
@@ -60,11 +110,17 @@ export interface HumanVerification {
  * it. */
 export function humanGateNeedsProof(
   gate: AuthnHumanGate | null | undefined,
+  scope: HumanScope,
 ): boolean {
-  if (gate === null || gate === undefined || !gate.required) {
+  const surface = humanSurfaceGate(gate, scope)
+  if (surface === null || !surface.required) {
     return false
   }
-  return gate.provider === 'pow' || gate.provider === 'turnstile'
+  return (
+    surface.provider === 'pow' ||
+    surface.provider === 'turnstile' ||
+    surface.provider === 'captcha'
+  )
 }
 
 /**
@@ -117,8 +173,65 @@ export async function requestPowProof(
   return proof
 }
 
+/** The captcha forms the challenge route draws. */
+const CAPTCHA_FORMS = new Set<string>(['image', 'slider', 'audio'])
+
+/** The media paths a form must carry: an image its picture, a slider both
+ * the background and the piece that travels over it, audio its recording. */
+const CAPTCHA_MEDIA: Record<
+  HumanCaptchaForm,
+  readonly (keyof CaptchaChallengeResponse)[]
+> = {
+  image: ['image_url'],
+  slider: ['background_url', 'piece_url'],
+  audio: ['audio_url'],
+}
+
+/**
+ * Read a captcha challenge answer, refusing anything the block could not
+ * render as a contract violation before the first property access. A form
+ * whose media path is missing is refused too: the block would otherwise
+ * render a control with nothing in it.
+ */
+export function parseCaptchaChallenge(
+  body: unknown,
+): HumanCaptchaChallenge {
+  if (typeof body !== 'object' || body === null) {
+    throw new Error('auth-core: the captcha challenge answer is not a document')
+  }
+  const answer = body as Record<string, unknown>
+  if (answer.provider !== 'captcha') {
+    throw new Error('auth-core: the captcha challenge names another provider')
+  }
+  const form = answer.form
+  if (typeof form !== 'string' || !CAPTCHA_FORMS.has(form)) {
+    throw new Error('auth-core: the captcha challenge names an unknown form')
+  }
+  if (typeof answer.id !== 'string' || answer.id === '') {
+    throw new Error('auth-core: the captcha challenge carries no id')
+  }
+  if (typeof answer.instruction !== 'string' || answer.instruction === '') {
+    throw new Error('auth-core: the captcha challenge carries no instruction')
+  }
+  if (!Number.isInteger(answer.expires_in)) {
+    throw new Error('auth-core: the captcha challenge carries no lifetime')
+  }
+  for (const media of CAPTCHA_MEDIA[form as HumanCaptchaForm]) {
+    if (typeof answer[media] !== 'string' || answer[media] === '') {
+      throw new Error(
+        `auth-core: the captcha challenge carries no ${media} for its form`,
+      )
+    }
+  }
+  return answer as unknown as HumanCaptchaChallenge
+}
+
 /** The options `useHumanVerification` takes. */
 export interface UseHumanVerificationOptions {
+  /** The surface this surface sends on: the phone surface for a message
+   * delivered to a phone number, the other surface for every send that
+   * does not address one. */
+  readonly scope: HumanScope
   /** A gate the caller already read (the sign-in screen's discovery
    * document), so the hook does not read it again. */
   readonly gate?: AuthnHumanGate
@@ -127,6 +240,17 @@ export interface UseHumanVerificationOptions {
    * that has not opened) passes false so nothing is read or solved until
    * it is needed. */
   readonly enabled?: boolean
+}
+
+/** A stable key of a whole gate, so an inline object a caller passes does
+ * not restart the read on every render. */
+function gateKey(gate: AuthnHumanGate | undefined): string | undefined {
+  if (gate === undefined) {
+    return undefined
+  }
+  const surface = (s: AuthnHumanSurfaceGate): string =>
+    `${s.required}:${s.provider}:${s.site_key ?? ''}`
+  return `${surface(gate.phone)}|${surface(gate.other)}`
 }
 
 /**
@@ -151,24 +275,33 @@ async function solveChallenge(
 
 /**
  * Read the deployment's human-verification gate and hold the proof a send
- * presents.
+ * presents on one surface.
  *
  * A `pow` gate solves one challenge as soon as the gate is known, and
  * again after every consumed proof, so the surface always shows either a
- * ready proof or the work in progress. A `turnstile` gate waits for the
- * widget to yield a token through `adoptToken`. The off gate does nothing.
+ * ready proof or the work in progress. A `captcha` gate obtains one
+ * challenge and replaces it after every consumed proof, so the block
+ * always has a challenge to render or a reason it could not. A
+ * `turnstile` gate waits for the widget to yield a token through
+ * `adoptToken`. The off gate does nothing.
+ *
+ * A change of scope selects the other surface's gate: the proof and any
+ * challenge belong to the surface that issued them, so both are dropped
+ * and the new surface obtains its own.
  */
 export function useHumanVerification(
   session: AuthSession,
-  options: UseHumanVerificationOptions = {},
+  options: UseHumanVerificationOptions,
 ): HumanVerification {
+  const scope = options.scope
+  const enabled = options.enabled ?? true
   const [gate, setGate] = useState<AuthnHumanGate | null>(
     options.gate ?? null,
   )
-  const enabled = options.enabled ?? true
   const [pending, setPending] = useState(enabled && options.gate === undefined)
   const [proof, setProof] = useState<string | null>(null)
   const [status, setStatus] = useState<HumanVerificationStatus>('idle')
+  const [captcha, setCaptcha] = useState<HumanCaptchaChallenge | null>(null)
   // Bumped when a solve is superseded, so the effect below starts a solve
   // for the gate that replaced it instead of leaving the block waiting.
   const [solveTick, setSolveTick] = useState(0)
@@ -178,14 +311,25 @@ export function useHumanVerification(
   const generationRef = useRef(0)
   const injectedRef = useRef(options.gate)
   injectedRef.current = options.gate
-  const injectedRequired = options.gate?.required
-  const injectedProvider = options.gate?.provider
-  const injectedSiteKey = options.gate?.site_key
+  const injectedKey = gateKey(options.gate)
+  const lastCaptchaForm = useRef<HumanCaptchaForm>('image')
+
+  // A change of scope selects the other member of the same document. The
+  // proof and the challenge belong to the surface that issued them, so
+  // they are dropped and the new surface obtains its own; the document is
+  // already read and is not read again.
+  useEffect(() => {
+    generationRef.current += 1
+    setProof(null)
+    setStatus('idle')
+    setCaptcha(null)
+  }, [scope])
 
   useEffect(() => {
     generationRef.current += 1
     setProof(null)
     setStatus('idle')
+    setCaptcha(null)
     if (!enabled) {
       // An inactive surface reads nothing and solves nothing; it settles on
       // the off gate until it opens.
@@ -212,7 +356,10 @@ export function useHumanVerification(
         // The server still judges the send; a document this client cannot
         // read must not block one that may require nothing.
         if (active) {
-          setGate({ required: false, provider: 'off' })
+          setGate({
+            phone: { required: false, provider: 'off' },
+            other: { required: false, provider: 'off' },
+          })
         }
       } finally {
         if (active) {
@@ -223,7 +370,11 @@ export function useHumanVerification(
     return () => {
       active = false
     }
-  }, [session, injectedRequired, injectedProvider, injectedSiteKey, enabled])
+  }, [session, injectedKey, enabled])
+
+  const surface = humanSurfaceGate(gate, scope)
+  const provider = surface?.provider ?? 'off'
+  const required = surface?.required === true
 
   const solve = useCallback(async (): Promise<void> => {
     if (solvingRef.current) {
@@ -255,9 +406,45 @@ export function useHumanVerification(
     }
   }, [])
 
-  const active = humanGateNeedsProof(gate)
+  const requestCaptcha = useCallback(
+    async (form: HumanCaptchaForm): Promise<void> => {
+      lastCaptchaForm.current = form
+      const generation = generationRef.current
+      setProof(null)
+      setCaptcha(null)
+      setStatus('working')
+      try {
+        const answer = await authnHumanverifyCaptchaChallenge({ form })
+        if (generationRef.current !== generation) {
+          return
+        }
+        setCaptcha(parseCaptchaChallenge(answer))
+        setStatus('ready')
+      } catch {
+        if (generationRef.current !== generation) {
+          return
+        }
+        setCaptcha(null)
+        setStatus('failed')
+      }
+    },
+    [],
+  )
+
   const needsSolve =
-    active && gate?.provider === 'pow' && proof === null && status === 'idle'
+    enabled &&
+    required &&
+    provider === 'pow' &&
+    proof === null &&
+    status === 'idle'
+
+  const needsCaptcha =
+    enabled &&
+    required &&
+    provider === 'captcha' &&
+    proof === null &&
+    captcha === null &&
+    status === 'idle'
 
   useEffect(() => {
     if (needsSolve) {
@@ -265,19 +452,49 @@ export function useHumanVerification(
     }
   }, [needsSolve, solve, solveTick])
 
+  useEffect(() => {
+    if (needsCaptcha) {
+      void requestCaptcha(lastCaptchaForm.current)
+    }
+  }, [needsCaptcha, requestCaptcha])
+
   const adoptToken = useCallback((token: string | null): void => {
     setProof(token)
     setStatus(token === null ? 'idle' : 'ready')
   }, [])
 
   const retry = useCallback((): void => {
+    if (provider === 'captcha') {
+      void requestCaptcha(lastCaptchaForm.current)
+      return
+    }
     void solve()
-  }, [solve])
+  }, [provider, requestCaptcha, solve])
 
   const consume = useCallback((): void => {
     setProof(null)
     setStatus('idle')
+    // A captcha challenge is spent with the send that presented it, so the
+    // next send needs a new one; dropping it lets the effect obtain it.
+    setCaptcha(null)
   }, [])
 
-  return { gate, pending, proof, status, adoptToken, retry, consume }
+  const refreshCaptcha = useCallback(
+    (form?: HumanCaptchaForm): void => {
+      void requestCaptcha(form ?? lastCaptchaForm.current)
+    },
+    [requestCaptcha],
+  )
+
+  return {
+    gate,
+    pending,
+    proof,
+    status,
+    captcha,
+    adoptToken,
+    retry,
+    consume,
+    refreshCaptcha,
+  }
 }

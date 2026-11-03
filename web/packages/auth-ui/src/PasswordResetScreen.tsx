@@ -245,12 +245,6 @@ export function PasswordResetScreen({
   const identifierInput = useRef<HTMLInputElement>(null)
   const codeInput = useRef<HTMLInputElement>(null)
   const newPasswordInput = useRef<HTMLInputElement>(null)
-  const human = useHumanVerification(
-    session,
-    humanGate === undefined ? {} : { gate: humanGate },
-  )
-  const needsProof = humanGateNeedsProof(human.gate)
-
   // The published channel list is the deployment's: a choice that is no
   // longer offered falls back to the first one.
   const selectedChannel =
@@ -258,6 +252,14 @@ export function PasswordResetScreen({
       ? chosenChannel
       : (channels[0] ?? null)
   const sms = selectedChannel === 'sms'
+  // The channel names the surface: SMS reaches a phone number and runs the
+  // phone surface's mechanism, an email code runs the other surface's.
+  const humanScope = sms ? 'phone' : 'other'
+  const human = useHumanVerification(session, {
+    scope: humanScope,
+    ...(humanGate === undefined ? {} : { gate: humanGate }),
+  })
+  const needsProof = humanGateNeedsProof(human.gate, humanScope)
 
   // Resume the bound record once per mounted resume operation. A refused
   // read (no binding, an expired or failed record) starts the surface
@@ -799,11 +801,14 @@ export function PasswordResetScreen({
         )}
         {needsProof && canPresentProof ? (
           <HumanVerificationBlock
+            scope={humanScope}
             gate={human.gate ?? undefined}
             proof={human.proof}
             status={human.status}
+            captcha={human.captcha}
             onToken={human.adoptToken}
             onRetry={human.retry}
+            onRefreshCaptcha={human.refreshCaptcha}
             disabled={busy}
           />
         ) : null}

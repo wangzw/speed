@@ -325,11 +325,15 @@ export function HumanGatedFlowStep({
   onClientFailure,
   failure,
 }: HumanGatedFlowStepProps) {
-  const human = useHumanVerification(
-    session,
-    humanGate === undefined ? {} : { gate: humanGate },
-  )
-  const needsProof = humanGateNeedsProof(human.gate)
+  // The step names the surface: an answer that may send reaches a phone
+  // number, so it runs the phone surface's mechanism; a step that sends
+  // nothing runs the other surface's (and presents no proof either way).
+  const humanScope = stepMaySend(step) ? 'phone' : 'other'
+  const human = useHumanVerification(session, {
+    scope: humanScope,
+    ...(humanGate === undefined ? {} : { gate: humanGate }),
+  })
+  const needsProof = humanGateNeedsProof(human.gate, humanScope)
   const answer = (input: Record<string, string>): void => {
     const presented =
       needsProof && answerSends(step, input) ? human.proof : null
@@ -342,11 +346,14 @@ export function HumanGatedFlowStep({
     <>
       {needsProof && stepMaySend(step) ? (
         <HumanVerificationBlock
+          scope={humanScope}
           gate={human.gate ?? undefined}
           proof={human.proof}
           status={human.status}
+          captcha={human.captcha}
           onToken={human.adoptToken}
           onRetry={human.retry}
+          onRefreshCaptcha={human.refreshCaptcha}
           disabled={busy}
         />
       ) : null}

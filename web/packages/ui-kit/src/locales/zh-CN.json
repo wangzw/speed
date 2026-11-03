@@ -43,7 +43,23 @@
     "working": "正在确认你是真人…",
     "verified": "人机验证已完成。",
     "failed": "人机验证未通过，请重试。",
-    "retry": "重试"
+    "retry": "重试",
+    "captcha": {
+      "groupLabel": "人机验证",
+      "answerLabel": "答案",
+      "submit": "确认",
+      "refresh": "换一个挑战",
+      "useAudio": "使用语音挑战",
+      "useImage": "改用图片挑战",
+      "audioLabel": "语音验证码",
+      "sliderLabel": "拖动滑块，把拼图对准背景的空缺",
+      "instruction": {
+        "typeTheDigits": "请输入图片中的字符。",
+        "slideThePiece": "拖动滑块，把拼图对准背景的空缺处。",
+        "typeTheDigitsYouHear": "请输入你在语音中听到的数字。",
+        "fallback": "请完成下面的人机验证。"
+      }
+    }
   },
   "phoneNumber": {
     "incomplete": "该号码不完整，请补全 +{{code}} 的号码。",

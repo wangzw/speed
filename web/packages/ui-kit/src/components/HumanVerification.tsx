@@ -1,13 +1,13 @@
 /**
  * HumanVerification: the block a send renders when the deployment requires
- * a human-verification proof.
+ * a human-verification proof on its surface.
  *
  * Presentational only: the block renders the mechanism the deployment
- * named and reports what it obtains upward. The proof-of-work solve and
- * the proof's lifetime belong to the host (auth-core's
- * `useHumanVerification`), so this component carries no request, no
- * session and no business rule; a host that runs another mechanism gates
- * its send with its own state and renders nothing here.
+ * named for `scope` and reports what it obtains upward. The proof-of-work
+ * solve, the captcha challenge and the proof's lifetime belong to the host
+ * (auth-core's `useHumanVerification`), so this component carries no
+ * request, no session and no business rule; a host that runs another
+ * mechanism gates its send with its own state and renders nothing here.
  *
  *  - `off` (or a gate that requires nothing) renders nothing.
  *  - `turnstile` renders Cloudflare's widget in explicit-render mode and
@@ -16,45 +16,86 @@
  *    widget is reset so the next send can obtain a fresh one.
  *  - `pow` shows the work in progress and then its outcome. The solve is
  *    the host's; `onRetry` asks for another attempt after a failure.
+ *  - `captcha` renders the self-hosted challenge the host issued: the
+ *    image form shows the picture and an answer field, the slider form
+ *    shows the background and piece behind a native range input so it is
+ *    keyboard operable, and the audio form plays the spoken digits for a
+ *    screen-reader user. All three share one refresh control, one submit
+ *    that yields `<challenge id>.<answer>`, and one retry after a failed
+ *    issue.
  *
- * The gate is the wire shape the discovery document carries
- * (`site_key`), so a host can pass the document's `human` member
- * unmodified.
+ * The gate is the discovery document's `human` member (`{phone, other}`),
+ * so a host passes it unmodified; `scope` names the surface this block
+ * serves. The id prefix carries the scope, so two blocks on one page --
+ * such as a step-up dialog over an account section -- never share the
+ * answer field's id.
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useUiKitTranslation } from '../internal/translation.js'
 
-/** The discovery document's human-verification gate. */
+/** The surface a block serves. */
+export type HumanVerificationScope = 'phone' | 'other'
+
+/** The mechanism one surface runs, as the discovery document reports it. */
 export interface HumanVerificationGate {
-  /** Whether every send of a verification message must present a proof. */
+  /** Whether every send on this surface must present a proof. */
   readonly required: boolean
-  /** The mechanism: `off`, `pow` or `turnstile`. */
+  /** The mechanism: `off`, `pow`, `captcha` or `turnstile`. */
   readonly provider: string
   /** The public widget key a Turnstile gate renders with. */
   readonly site_key?: string
 }
 
+/** The discovery document's whole gate, one member per surface. */
+export interface HumanVerificationGateSet {
+  readonly phone: HumanVerificationGate
+  readonly other: HumanVerificationGate
+}
+
 /** The proof state the host holds. */
 export type HumanVerificationStatus = 'idle' | 'working' | 'ready' | 'failed'
 
+/** The form a self-hosted captcha challenge takes. */
+export type HumanCaptchaForm = 'image' | 'slider' | 'audio'
+
+/** One issued self-hosted captcha challenge, as the host read it. */
+export interface HumanCaptchaChallenge {
+  readonly id: string
+  readonly form: HumanCaptchaForm
+  /** The stable instruction key the server named; the block words it. */
+  readonly instruction: string
+  readonly image_url?: string
+  readonly background_url?: string
+  readonly piece_url?: string
+  readonly audio_url?: string
+  readonly expires_in: number
+}
+
 export interface HumanVerificationProps {
+  /** The surface this block serves. */
+  readonly scope: HumanVerificationScope
   /** The deployment's gate; absent, off or not required renders nothing. */
-  readonly gate?: HumanVerificationGate
+  readonly gate?: HumanVerificationGateSet
   /** The token or proof the host currently holds, or null. */
   readonly proof?: string | null
-  /** The proof-of-work state; the token mechanism ignores it. */
+  /** The mechanism's state; the token mechanism ignores it. */
   readonly status?: HumanVerificationStatus
-  /** Receives a Turnstile token, or null when the widget expires or
-   * fails. */
+  /** The host's issued captcha challenge, or null while none is loaded. */
+  readonly captcha?: HumanCaptchaChallenge | null
+  /** Receives a Turnstile token or a captcha proof, or null when the
+   * widget expires or fails. */
   readonly onToken: (token: string | null) => void
-  /** Asked for another proof-of-work attempt after a failure. */
+  /** Asked for another attempt after a failure. */
   readonly onRetry?: () => void
-  /** Disables the widget while the surrounding send is in flight. */
+  /** Asked for a fresh captcha challenge, in `form` when given. */
+  readonly onRefreshCaptcha?: (form?: HumanCaptchaForm) => void
+  /** Disables the widget or form while the surrounding send is in flight. */
   readonly disabled?: boolean
 }
 
@@ -259,33 +300,398 @@ function PowBlock({
   )
 }
 
+/** The instruction a challenge's stable key names, in this bundle's words.
+ * An unknown key is a contract the client does not yet word; the generic
+ * sentence keeps the form usable rather than showing a raw key. */
+function instructionText(
+  instruction: string,
+  t: (key: string) => string,
+): string {
+  switch (instruction) {
+    case 'type-the-digits':
+      return t('humanVerification.captcha.instruction.typeTheDigits')
+    case 'slide-the-piece':
+      return t('humanVerification.captcha.instruction.slideThePiece')
+    case 'type-the-digits-you-hear':
+      return t('humanVerification.captcha.instruction.typeTheDigitsYouHear')
+    default:
+      return t('humanVerification.captcha.instruction.fallback')
+  }
+}
+
+/** The media size of one image, read when the browser decodes it. */
+interface ImageSize {
+  readonly width: number
+  readonly height: number
+}
+
+/** The slider form: the background with the piece over the gap it was cut
+ * from, moved by a native range input. The range value is the piece's
+ * offset in the background's own pixels, which is the answer the server
+ * compares, so the control stays correct at any display size the browser
+ * renders the natural-size background at. */
+function CaptchaSlider({
+  challenge,
+  disabled,
+  onAnswer,
+}: {
+  readonly challenge: HumanCaptchaChallenge
+  readonly disabled: boolean
+  readonly onAnswer: (answer: string) => void
+}) {
+  const { t } = useUiKitTranslation()
+  const rangeId = useId()
+  const [background, setBackground] = useState<ImageSize | null>(null)
+  const [piece, setPiece] = useState<ImageSize | null>(null)
+  const [offset, setOffset] = useState(0)
+  const maxOffset =
+    background !== null && piece !== null
+      ? Math.max(0, background.width - piece.width)
+      : 0
+  const pieceTop =
+    background !== null && piece !== null
+      ? Math.max(0, Math.round((background.height - piece.height) / 2))
+      : 0
+  const instruction = instructionText(challenge.instruction, t)
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Typography variant="body2" id={`${rangeId}-instruction`}>
+        {instruction}
+      </Typography>
+      <Box
+        sx={{
+          position: 'relative',
+          width: background?.width ?? 320,
+          maxWidth: '100%',
+          overflow: 'hidden',
+          borderRadius: 1,
+          bgcolor: 'action.hover',
+        }}
+      >
+        <Box
+          component="img"
+          src={challenge.background_url}
+          alt=""
+          onLoad={(event) =>
+            setBackground({
+              width: event.currentTarget.naturalWidth,
+              height: event.currentTarget.naturalHeight,
+            })
+          }
+          sx={{ display: 'block', width: '100%' }}
+        />
+        <Box
+          component="img"
+          src={challenge.piece_url}
+          alt=""
+          onLoad={(event) =>
+            setPiece({
+              width: event.currentTarget.naturalWidth,
+              height: event.currentTarget.naturalHeight,
+            })
+          }
+          sx={{
+            position: 'absolute',
+            left: offset,
+            top: pieceTop,
+            width: piece?.width ?? undefined,
+            filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5))',
+          }}
+        />
+      </Box>
+      <Box
+        component="label"
+        htmlFor={rangeId}
+        sx={{ fontSize: 'body2.fontSize' }}
+      >
+        {t('humanVerification.captcha.sliderLabel')}
+      </Box>
+      <Box
+        component="input"
+        id={rangeId}
+        type="range"
+        min={0}
+        max={maxOffset}
+        step={1}
+        value={offset}
+        disabled={disabled || maxOffset === 0}
+        aria-describedby={`${rangeId}-instruction`}
+        onChange={(event) => setOffset(Number(event.currentTarget.value))}
+        sx={{ width: '100%' }}
+      />
+      <Button
+        type="button"
+        variant="outlined"
+        size="small"
+        disabled={disabled || maxOffset === 0}
+        onClick={() => onAnswer(String(offset))}
+      >
+        {t('humanVerification.captcha.submit')}
+      </Button>
+    </Box>
+  )
+}
+
+/** One issued captcha challenge and the answer control its form takes. The
+ * component is keyed by the challenge id, so a fresh challenge resets the
+ * answer the previous one held. */
+function CaptchaForm({
+  scope,
+  challenge,
+  disabled,
+  onToken,
+  onRefresh,
+}: {
+  readonly scope: HumanVerificationScope
+  readonly challenge: HumanCaptchaChallenge
+  readonly disabled: boolean
+  readonly onToken: (token: string | null) => void
+  readonly onRefresh?: (form?: HumanCaptchaForm) => void
+}) {
+  const { t } = useUiKitTranslation()
+  const answerId = `human-verification-${scope}-${useId()}`
+  const [answer, setAnswer] = useState('')
+  const instruction = instructionText(challenge.instruction, t)
+  const submit = (): void => {
+    const value = answer.trim()
+    if (value === '' || disabled) {
+      return
+    }
+    onToken(`${challenge.id}.${value}`)
+  }
+
+  return (
+    <Box
+      role="group"
+      aria-label={t('humanVerification.captcha.groupLabel')}
+      sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}
+    >
+      {challenge.form === 'image' && challenge.image_url !== undefined ? (
+        <Box
+          component="img"
+          src={challenge.image_url}
+          alt={instruction}
+          sx={{ display: 'block', maxWidth: '100%', borderRadius: 1 }}
+        />
+      ) : null}
+      {challenge.form === 'audio' && challenge.audio_url !== undefined ? (
+        <Box
+          component="audio"
+          controls={true}
+          src={challenge.audio_url}
+          aria-label={t('humanVerification.captcha.audioLabel')}
+          sx={{ width: '100%' }}
+        />
+      ) : null}
+      {challenge.form === 'slider' ? (
+        <CaptchaSlider
+          challenge={challenge}
+          disabled={disabled}
+          onAnswer={(value) => {
+            if (!disabled) {
+              onToken(`${challenge.id}.${value}`)
+            }
+          }}
+        />
+      ) : (
+        <>
+          <Typography variant="body2" id={`${answerId}-instruction`}>
+            {instruction}
+          </Typography>
+          <TextField
+            id={answerId}
+            label={t('humanVerification.captcha.answerLabel')}
+            value={answer}
+            disabled={disabled}
+            autoComplete="off"
+            slotProps={{
+              htmlInput: { 'aria-describedby': `${answerId}-instruction` },
+            }}
+            onChange={(event) => setAnswer(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                submit()
+              }
+            }}
+            fullWidth
+          />
+          <Button
+            type="button"
+            variant="outlined"
+            size="small"
+            disabled={disabled || answer.trim() === ''}
+            onClick={submit}
+          >
+            {t('humanVerification.captcha.submit')}
+          </Button>
+        </>
+      )}
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        {challenge.form === 'audio' ? (
+          <Button
+            type="button"
+            size="small"
+            disabled={disabled}
+            onClick={() => onRefresh?.('image')}
+          >
+            {t('humanVerification.captcha.useImage')}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="small"
+            disabled={disabled}
+            onClick={() => onRefresh?.('audio')}
+          >
+            {t('humanVerification.captcha.useAudio')}
+          </Button>
+        )}
+        <Button
+          type="button"
+          size="small"
+          disabled={disabled}
+          onClick={() => onRefresh?.(challenge.form)}
+        >
+          {t('humanVerification.captcha.refresh')}
+        </Button>
+      </Box>
+    </Box>
+  )
+}
+
+/** The self-hosted captcha: the host's challenge when it holds one, the
+ * issue in progress or its retry when it does not, and the verified state
+ * once the host holds the proof the block yielded. */
+function CaptchaBlock({
+  scope,
+  challenge,
+  proof,
+  status,
+  onToken,
+  onRetry,
+  onRefresh,
+  disabled,
+}: {
+  readonly scope: HumanVerificationScope
+  readonly challenge: HumanCaptchaChallenge | null
+  readonly proof: string | null
+  readonly status: HumanVerificationStatus
+  readonly onToken: (token: string | null) => void
+  readonly onRetry?: () => void
+  readonly onRefresh?: (form?: HumanCaptchaForm) => void
+  readonly disabled: boolean
+}) {
+  const { t } = useUiKitTranslation()
+  if (proof !== null) {
+    return (
+      <Box
+        role="status"
+        sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}
+      >
+        <Typography variant="body2" color="text.secondary">
+          {t('humanVerification.verified')}
+        </Typography>
+      </Box>
+    )
+  }
+  if (challenge === null) {
+    if (status === 'failed') {
+      return (
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+            flexWrap: 'wrap',
+          }}
+        >
+          <Typography variant="body2" color="error" role="alert">
+            {t('humanVerification.failed')}
+          </Typography>
+          <Button
+            type="button"
+            size="small"
+            variant="outlined"
+            disabled={disabled}
+            onClick={onRetry}
+          >
+            {t('humanVerification.retry')}
+          </Button>
+        </Box>
+      )
+    }
+    return (
+      <Box
+        role="status"
+        sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}
+      >
+        <CircularProgress size={16} aria-hidden={true} />
+        <Typography variant="body2" color="text.secondary">
+          {t('humanVerification.working')}
+        </Typography>
+      </Box>
+    )
+  }
+  return (
+    <CaptchaForm
+      key={`${challenge.id}:${challenge.form}`}
+      scope={scope}
+      challenge={challenge}
+      disabled={disabled}
+      onToken={onToken}
+      onRefresh={onRefresh}
+    />
+  )
+}
+
 /**
- * The human-verification block: nothing when the gate requires none,
- * Cloudflare's widget for `turnstile`, and the solve's state for `pow`.
+ * The human-verification block: nothing when the surface's gate requires
+ * none, Cloudflare's widget for `turnstile`, the solve's state for `pow`,
+ * and the issued challenge for `captcha`.
  */
 export function HumanVerification({
+  scope,
   gate,
   proof = null,
   status = 'idle',
+  captcha = null,
   onToken,
   onRetry,
+  onRefreshCaptcha,
   disabled = false,
 }: HumanVerificationProps) {
-  if (gate === undefined || !gate.required || gate.provider === 'off') {
+  const surface = gate?.[scope]
+  if (surface === undefined || !surface.required || surface.provider === 'off') {
     return null
   }
-  if (gate.provider === 'turnstile') {
+  if (surface.provider === 'turnstile') {
     return (
       <TurnstileBlock
-        siteKey={gate.site_key ?? ''}
+        siteKey={surface.site_key ?? ''}
         proof={proof}
         onToken={onToken}
         disabled={disabled}
       />
     )
   }
-  if (gate.provider === 'pow') {
+  if (surface.provider === 'pow') {
     return <PowBlock status={status} onRetry={onRetry} disabled={disabled} />
+  }
+  if (surface.provider === 'captcha') {
+    return (
+      <CaptchaBlock
+        scope={scope}
+        challenge={captcha}
+        proof={proof}
+        status={status}
+        onToken={onToken}
+        onRetry={onRetry}
+        onRefresh={onRefreshCaptcha}
+        disabled={disabled}
+      />
+    )
   }
   return null
 }

@@ -16,7 +16,12 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '@speed/api-client'
 import type { AuthSession } from '@speed/auth-core'
-import { apiError, makeHarness } from '@speed/test-utils/session-harness'
+import {
+  CAPTCHA_CHALLENGE,
+  apiError,
+  captchaChallenge,
+  makeHarness,
+} from '@speed/test-utils/session-harness'
 import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import { PasswordResetScreen } from './PasswordResetScreen.js'
 import type {
@@ -28,6 +33,7 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
+import uiKitZhCN from '../../ui-kit/src/locales/zh-CN.json' with { type: 'json' }
 
 const MAIL = 'alice@example.com'
 const CODE = '123456'
@@ -357,9 +363,8 @@ describe('PasswordResetScreen', () => {
           channels={['email']}
           operations={resetOperations({ requestReset })}
           humanGate={{
-            required: true,
-            provider: 'turnstile',
-            site_key: 'site-1',
+            phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
+            other: { required: true, provider: 'turnstile', site_key: 'site-1' },
           }}
         />,
       )
@@ -385,6 +390,55 @@ describe('PasswordResetScreen', () => {
     } finally {
       fake.restore()
     }
+  })
+
+  it('runs the other surface for an email reset', async () => {
+    const harness = makeHarness({
+      [CAPTCHA_CHALLENGE]: () => captchaChallenge(),
+    })
+    renderWithProviders(
+      <PasswordResetScreen
+        session={harness.session}
+        channels={['email']}
+        operations={resetOperations()}
+        humanGate={{
+          phone: { required: false, provider: 'off' },
+          other: { required: true, provider: 'captcha' },
+        }}
+      />,
+    )
+    expect(
+      await screen.findByLabelText(
+        uiKitZhCN.humanVerification.captcha.answerLabel,
+      ),
+    ).toBeInTheDocument()
+    expect(
+      harness.calls.filter(
+        (call) => call.path === '/api/v1/auth/human/captcha/challenge',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('runs the phone surface for an SMS reset', async () => {
+    const harness = makeHarness({
+      [CAPTCHA_CHALLENGE]: () => captchaChallenge(),
+    })
+    renderWithProviders(
+      <PasswordResetScreen
+        session={harness.session}
+        channels={['sms']}
+        operations={resetOperations()}
+        humanGate={{
+          phone: { required: true, provider: 'captcha' },
+          other: { required: false, provider: 'off' },
+        }}
+      />,
+    )
+    expect(
+      await screen.findByLabelText(
+        uiKitZhCN.humanVerification.captcha.answerLabel,
+      ),
+    ).toBeInTheDocument()
   })
 
   it('attach the collapsed wrong-code refusal to the code field and write no password', async () => {

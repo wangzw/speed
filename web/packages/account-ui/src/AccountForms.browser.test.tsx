@@ -280,7 +280,10 @@ describe('account-ui form geometry', () => {
           methods: [],
           signup: { enabled: false, password: { enabled: false } },
           mfa: { factors: ['totp'] },
-          human: { required: false, provider: 'off' },
+          human: {
+            phone: { required: false, provider: 'off' },
+            other: { required: false, provider: 'off' },
+          },
         })
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
@@ -392,7 +395,10 @@ describe('account-ui form geometry', () => {
           methods: [],
           signup: { enabled: false, password: { enabled: false } },
           mfa: { factors: ['totp'] },
-          human: { required: false, provider: 'off' },
+          human: {
+            phone: { required: false, provider: 'off' },
+            other: { required: false, provider: 'off' },
+          },
         })
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {

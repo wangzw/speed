@@ -68,9 +68,16 @@ function mount(
     readonly autoSend?: boolean
     readonly initialChangeOpen?: boolean
     readonly humanGate?: {
-      readonly required: boolean
-      readonly provider: string
-      readonly site_key?: string
+      readonly phone: {
+        readonly required: boolean
+        readonly provider: string
+        readonly site_key?: string
+      }
+      readonly other: {
+        readonly required: boolean
+        readonly provider: string
+        readonly site_key?: string
+      }
     }
   } = {},
 ) {
@@ -1401,9 +1408,8 @@ describe('ContactVerificationSection', () => {
       }
       const { rig } = mount(respond, {
         humanGate: {
-          required: true,
-          provider: 'turnstile',
-          site_key: 'site-1',
+          phone: { required: false, provider: 'off' },
+          other: { required: true, provider: 'turnstile', site_key: 'site-1' },
         },
       })
       const user = userEvent.setup()

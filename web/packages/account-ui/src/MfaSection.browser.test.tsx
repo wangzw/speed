@@ -57,7 +57,10 @@ describe('MfaSection row overflow menu', () => {
           methods: [],
           signup: { enabled: false, password: { enabled: false } },
           mfa: { factors: ['webauthn'] },
-          human: { required: false, provider: 'off' },
+          human: {
+            phone: { required: false, provider: 'off' },
+            other: { required: false, provider: 'off' },
+          },
         })
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
@@ -165,7 +168,10 @@ describe('MfaSection rename editor', () => {
           methods: [],
           signup: { enabled: false, password: { enabled: false } },
           mfa: { factors: ['webauthn'] },
-          human: { required: false, provider: 'off' },
+          human: {
+            phone: { required: false, provider: 'off' },
+            other: { required: false, provider: 'off' },
+          },
         })
       }
       if (call.method === 'GET' && call.path === FACTORS_PATH) {

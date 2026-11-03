@@ -477,9 +477,8 @@ describe('PasswordSignInForm', () => {
         <PasswordSignInForm
           session={harness.session}
           humanGate={{
-            required: true,
-            provider: 'turnstile',
-            site_key: 'site-1',
+            phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
+            other: { required: true, provider: 'turnstile', site_key: 'site-1' },
           }}
         />,
       )

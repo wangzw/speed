@@ -543,7 +543,10 @@ describe('BindingCallbackHandler', () => {
         methods: kinds.map((kind) => ({ name: kind, kind })),
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
-        human: { required: false, provider: 'off' },
+        human: {
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        },
       }
     }
 

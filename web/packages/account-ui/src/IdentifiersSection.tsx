@@ -628,11 +628,13 @@ export function IdentifiersSection({
   // The deployment's human-verification gate and this section's proof.
   // Only an email code send presents it: a username write and every
   // verification send no message.
-  const human = useHumanVerification(
-    session,
-    humanGate === undefined ? {} : { gate: humanGate },
-  )
-  const needsProof = humanGateNeedsProof(human.gate)
+  // Only an email code send presents a proof here, and an address is not a
+  // phone number: the section runs the other surface's mechanism.
+  const human = useHumanVerification(session, {
+    scope: 'other',
+    ...(humanGate === undefined ? {} : { gate: humanGate }),
+  })
+  const needsProof = humanGateNeedsProof(human.gate, 'other')
   // Only a known gate that requires a proof blocks an email send. A gate
   // still being read does not: the server judges the send if the document
   // arrives late.
@@ -1370,11 +1372,14 @@ export function IdentifiersSection({
   // required.
   const humanBlock = (
     <HumanVerification
+      scope="other"
       gate={human.gate ?? undefined}
       proof={human.proof}
       status={human.status}
+      captcha={human.captcha}
       onToken={human.adoptToken}
       onRetry={human.retry}
+      onRefreshCaptcha={human.refreshCaptcha}
       disabled={addBusy}
     />
   )

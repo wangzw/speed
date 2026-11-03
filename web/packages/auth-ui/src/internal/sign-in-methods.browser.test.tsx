@@ -55,9 +55,8 @@ describe('DescriptorSignInForm first-step human verification in Chromium', () =>
           method={METHOD}
           fields={FIELDS}
           humanGate={{
-            required: true,
-            provider: 'turnstile',
-            site_key: 'site-1',
+            phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
+            other: { required: true, provider: 'turnstile', site_key: 'site-1' },
           }}
         />,
         { language: 'en-US' },
@@ -98,7 +97,10 @@ describe('DescriptorSignInForm first-step human verification in Chromium', () =>
           session={harness.session}
           method={METHOD}
           fields={FIELDS}
-          humanGate={{ required: false, provider: 'off' }}
+          humanGate={{
+            phone: { required: false, provider: 'off' },
+            other: { required: false, provider: 'off' },
+          }}
         />,
         { language: 'en-US' },
       )

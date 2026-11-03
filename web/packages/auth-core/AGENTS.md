@@ -62,15 +62,21 @@ through `useCurrentTenant` and shapes a TanStack Query key from it, with
 `@tanstack/react-query` as a peer (the factory calls `removeQueries`,
 never constructs a `QueryClient`). The human-verification client in
 `src/human.ts` reads the deployment's gate from the methods document
-(a host may pass a gate it already read), holds the single-use proof a
-verification-message send presents, and solves a proof-of-work challenge
-off the main thread through the worker in `src/pow-worker*.ts` (falling
-back to the solver in `src/pow.ts` where no `Worker` exists). A methods
-document that omits the gate is read as the off mechanism, and a caller
-that holds an inactive surface passes `enabled: false` so nothing is read
-or solved until it opens. The step-up hook in `src/step-up.ts` exposes
-the gate and proof it obtains as `StepUpState.human` and presents the
-proof on an answer that sends a verification message. The package sits directly above
+(a host may pass a gate it already read), answers per surface -- `phone`
+for the four SMS sends and `other` for every send that does not address a
+phone number -- and holds the single-use proof a verification-message
+send presents. A `pow` surface solves its challenge off the main thread
+through the worker in `src/pow-worker*.ts` (falling back to the solver in
+`src/pow.ts` where no `Worker` exists); a `captcha` surface obtains a
+challenge from the module's own route and exposes it as
+`HumanVerification.captcha` for the block to render. A methods document
+that omits the gate is read as the off mechanism on both surfaces, and a
+caller that holds an inactive surface passes `enabled: false` so nothing
+is read or solved until it opens. The step-up hook in `src/step-up.ts`
+exposes the gate, the surface the current step belongs to
+(`StepUpState.humanScope`) and the proof it obtains as
+`StepUpState.human`, and presents the proof on an answer that sends a
+verification message. The package sits directly above
 `@speed/api-client` (an optional access-token store it receives is the
 same store that package reads on every send for a token session; the
 cookie path passes none) and `@speed/api-sdk` (the generated operations
@@ -290,8 +296,9 @@ tenant-scoped query-key convention (`tenantQueryKey`,
 `useTenantQueryKey`, `TenantQueryKey`, `evictTenantQueries`); and the
 human-verification client (`useHumanVerification(session, options?)`,
 its `HumanVerification` / `HumanVerificationStatus` /
-`UseHumanVerificationOptions` types,
-`humanGateNeedsProof`, `requestPowProof`, `powProofFromChallenge`, and
+`UseHumanVerificationOptions` / `HumanScope` / `HumanCaptchaChallenge` /
+`HumanCaptchaForm` types, `humanGateNeedsProof`, `humanSurfaceGate`,
+`parseCaptchaChallenge`, `requestPowProof`, `powProofFromChallenge`, and
 the solver's `solvePowChallenge` / `POW_HASH`). The
 `./webauthn` subpath exports its own surface (`runWebauthn(options,
 signal?)`, `webauthnStepOf(options)`, `WebauthnError`, `WebauthnStep`,
