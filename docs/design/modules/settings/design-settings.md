@@ -11,7 +11,7 @@
 ### 非职责
 
 - **不承载启动期的值。** 判据见划界：满足"数据库可用之前被需要"或"塑造启动结构、改变要重启"任一条的值落在配置一侧（[ADR-config-scope](../../../adr/adr-config-scope.md)）。
-- **不做授权判定。** 谁能改一项设置归 [authz](../design-authz.md)：读与写各是一个权限点，落点见它的承接的权限点一节，写面的调用点是宿主自己的代码或它写出的管理命令，在 handler 内用判定 API 询问（[ADR-settings-scope](../../../adr/adr-settings-scope.md)）。框架另有两个可直接纳入的管理面模块：[settings.admin](design-settings-admin.md) 服务全局层与平台侧的租户层，[settings.tenantadmin](design-settings-tenantadmin.md)（尚未实现）拟服务租户可达前缀下的租户层。它们是那个「管理命令」的模块化形态，不改变本条立场。
+- **不做授权判定。** 谁能改一项设置归 [authz](../design-authz.md)：读与写各是一个权限点，落点见它的承接的权限点一节，写面的调用点是宿主自己的代码或它写出的管理命令，在 handler 内用判定 API 询问（[ADR-settings-scope](../../../adr/adr-settings-scope.md)）。框架另有两个可直接纳入的管理面模块：[settings.admin](design-settings-admin.md) 服务全局层与平台侧的租户层，[settings.tenantadmin](design-settings-tenantadmin.md) 服务租户可达前缀下的租户层。它们是那个「管理命令」的模块化形态，不改变本条立场。
 - **不认识租户模块。** 租户标识是字符串，本模块不校验它在不在名册、不读请求上下文、不产生标识（[ADR-settings-scope](../../../adr/adr-settings-scope.md)）。
 - **不解释值的内容。** 通知模板在本模块是一段字符串；渲染与转义归消费方。一个值合不合声明方的用途，判据由声明方以取值域给出，本模块只在写入时执行它（见写入面），自己不为任何设置项定判据（[ADR-settings-domain](../../../adr/adr-settings-domain.md)）。
 - **不承载容器类型。** 映射与列表不在声明的类型集合里，需要它们的消费方把 JSON 文本存进字符串项自行解码（[ADR-settings-declaration](../../../adr/adr-settings-declaration.md)）。
@@ -290,7 +290,7 @@ type Change struct {
 - **把本模块静态级纳入施加迁移的命令。** 设置表与本模块的迁移集一起建立，依赖闭包够不到不运行的模块；`IncludeAllDeclarations` 是这类命令的推荐写法（见 [db](../design-db.md) 的迁移的应用）。
 - **不要把本模块放进根命令。** 后果与租户、认证记下的同一条：它进入施加迁移那条命令的参与集并要在那里启动，而其表在该命令下的建立不受影响（迁移集按声明集取材，本模块在其中且不会被消解排除），真正的代价是它的输入项升格为全局参数、出现在每条命令的帮助里。
 - **在自己的 `Init` 里读设置的模块声明 `Requires (*settings.Store)(nil)`。** 不声明，它的初始化次序由名字决定，排在本模块之前时读取报 `ErrNotLoaded`（见读取面）；在请求路径上读取的模块不受影响，那时每个模块的 `Init` 都已跑完。
-- **写入面的访问控制由宿主负责。** 本模块不做授权判定，一个暴露到网络的写入口要由宿主自己鉴权。框架提供的 [settings.admin](design-settings-admin.md) 与目标中的 [settings.tenantadmin](design-settings-tenantadmin.md)（尚未实现）就是两个写入口的模块化形态，它们自己判定后再写。租户侧那个对平台专用命名空间以外的设置开放，`ratelimit.*`、`tenant.admission.*` 与 `authn.*` 不向租户开放；租户路径不接受 `layer`／`tenant` 查询参数改写作用层。`settings.tenantadmin`（尚未实现）拟以宿主实现的 `authz.WriteSettings`（尚未实现）为必需依赖，个人租户的拒绝落在宿主一侧。宿主自建的写入口还要在它的权限判定之前执行注册验证状态的门控：发起者读作未验证时答 403 `contact-required`，读取状态失败答 503；这条门控只收紧、不放行。
+- **写入面的访问控制由宿主负责。** 本模块不做授权判定，一个暴露到网络的写入口要由宿主自己鉴权。框架提供的 [settings.admin](design-settings-admin.md) 与 [settings.tenantadmin](design-settings-tenantadmin.md) 就是两个写入口的模块化形态，它们自己判定后再写。租户侧那个对平台专用命名空间以外的设置开放，`ratelimit.*`、`tenant.admission.*` 与 `authn.*` 不向租户开放；租户路径不接受 `layer`／`tenant` 查询参数改写作用层。`settings.tenantadmin` 以宿主实现的 `authz.WriteSettings` 为必需依赖，个人租户的拒绝落在宿主一侧。宿主自建的写入口还要在它的权限判定之前执行注册验证状态的门控：发起者读作未验证时答 403 `contact-required`，读取状态失败答 503；这条门控只收紧、不放行。
 - **不把 `authn.*` 与 `tenant.admission.*` 命名空间下设置的写权限开放给租户或普通管理员。** 这两个命名空间的设置承载退避、短信预算、登录方式停用这类安全参数；本模块的写入面没有访问控制，持有写权限的主体即可在运行期把它们调松，认证模块只提供事后可见，不提供阻止（见 [authn-config](../authn/design-authn-config.md) 的设置项与放宽变更的监视）。
 - **不要在交付句柄上开着的事务里写、删或列举设置，要在同一件工作里做就先提交那个事务。** 写入、删除与列举另取一条连接，不加入这个事务（见写入路径）：只开一条连接的库上，它们等的是这个事务自己占着的连接，五秒后失败；SQLite 文件库与 PostgreSQL 上，这个事务占着的锁会让它们等锁，等多久、怎样失败照引擎的等锁规则，期限由定位符与会话设置决定，都不设时可能一直等下去（见 [db](../design-db.md) 的并发与事务边界）；其余情形下写入与这个事务无关，事务回滚撤销不了它。进程内总线在发布方的协程上调用订阅方，发布方在事务里发布时，订阅方同在此列。
 - **管理面自己遮蔽敏感项的值。** `Declared` 的列表不带敏感项的默认值，`List` 与 `Get` 却照常交出敏感项的值；把它们交给客户端的宿主，按列表里的 `Sensitive` 把这些值遮住。漏了这一步不报错，凭据随响应一起出去。
@@ -298,7 +298,7 @@ type Change struct {
 
 ### 对外接口面
 
-`Layer`、`Global`、`ForTenant`、`Store`、`Get`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Domain`、`DomainOf`、`Change`、`ChangedEventType`、`ModuleName` 与哨兵错误是本模块与其他模块之间的接口面。**设置读写用的权限码分两套**：全局层用 `settings.read`／`settings.write`；租户层（平台面的 `layer=tenant` 与租户可达前缀下的租户面）用 `settings.tenant.read`／`settings.tenant.write`，这是尚未实现的目标口径，当前平台面的 `layer=tenant` 仍询 `settings.read`／`settings.write`，租户可达前缀下的租户面尚未实现。平台员工要在某个租户读写租户层，须在该租户持有对应的租户码，通常经该租户的 `tenant-admin`（治理集）。两套码由授权能力承载，本模块不声明也不判定它们。一个设置项的取值域是声明方的接口面：给它声明或收窄取值域，以前写得进去的值随之被拒绝。键的路径派生规则与配置共用一条，改它同时改变两个模块的键名。变更事件的类型名与载荷字段名是发布方与订阅方之间的约定，改一个字段名会静默断开订阅方的读取（[event](../event/design-event.md) 记有同一条）。
+`Layer`、`Global`、`ForTenant`、`Store`、`Get`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Domain`、`DomainOf`、`Change`、`ChangedEventType`、`ModuleName` 与哨兵错误是本模块与其他模块之间的接口面。**设置读写用的权限码分两套**：全局层用 `settings.read`／`settings.write`；租户层（平台面的 `layer=tenant` 与租户可达前缀下的租户面）用 `settings.tenant.read`／`settings.tenant.write`。平台员工要在某个租户读写租户层，须在该租户持有对应的租户码，通常经该租户的 `tenant-admin`（治理集）。两套码由授权能力承载，本模块不声明也不判定它们。一个设置项的取值域是声明方的接口面：给它声明或收窄取值域，以前写得进去的值随之被拒绝。键的路径派生规则与配置共用一条，改它同时改变两个模块的键名。变更事件的类型名与载荷字段名是发布方与订阅方之间的约定，改一个字段名会静默断开订阅方的读取（[event](../event/design-event.md) 记有同一条）。
 
 表名、列名与迁移文件的组织是内部实现，不在对外接口面内。
 

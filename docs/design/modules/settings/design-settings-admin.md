@@ -36,7 +36,7 @@
 | 设置 | `PUT /api/v1/system/settings/:namespace/:key` | `settings.write` |
 | 设置 | `DELETE /api/v1/system/settings/:namespace/:key` | `settings.write` |
 
-**表里的码是全局层的。** 目标口径是 `layer=tenant` 时读路由改询 `settings.tenant.read`、写路由改询 `settings.tenant.write`，判定域仍是查询串点名的那个租户；这一层切换尚未实现，当前 `layer=tenant` 仍询 `settings.read`／`settings.write`。两套码不互相代替（见「访问控制」）。
+**表里的码是全局层的。** `layer=tenant` 时读路由询 `settings.tenant.read`、写路由询 `settings.tenant.write`，判定域是查询串点名的那个租户。两套码不互相代替（见「访问控制」）。
 
 查询串点名作用在哪一层：
 
@@ -66,7 +66,7 @@
 
 **注册验证状态的门控在权限判定之前。** 写路由（`PUT` 与 `DELETE`）在读完调用方身份之后、权限判定与解析正文、落强制档审计之前，读发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`）：发起者读作未验证（`SignupPending`：有邮箱而没有一条已证明的）时答 403 `contact-required`（`authn.ErrContactRequired`），动作不执行；服务账户与没有任何邮箱的账户（`SignupNone`）豁免，读路由不受这条门控影响。判据与账户怎么创建无关，管理员预置与导入的发起者带着未证明邮箱时同样被拦。读取状态失败答 503，不按放行处理。门控只收紧、不放行：它只多拒绝一类发起者，不改变权限判定本身，也不让任何未通过权限判定的请求通过。门控在服务端执行，不依赖前端的入口隐藏。
 
-**判定按层分，域由层选与查询串定出。** 全局层的读写是平台操作，在保留的平台域 `authz.PlatformDomain` 判定，权限码是 `settings.read`／`settings.write`。目标口径是租户层的读写落到查询串点名的那个租户，在该租户的域 `authz.Domain(id)` 判定，权限码是 `settings.tenant.read`／`settings.tenant.write`；这一层切换尚未实现，当前租户层仍询 `settings.read`／`settings.write`。两套码分开，是因为租户可达前缀下的租户面（[settings.tenantadmin](design-settings-tenantadmin.md)，尚未实现）也用后者：一个只持租户码的租户管理员不能凭这套码改全局层，一个只持平台码的平台员工也不能凭这套码改租户层。平台员工要在某个租户读写租户层，须在该租户持有对应的租户码，通常经该租户的 `tenant-admin`（治理集）。handler 经 `RequirePermissionIn(c, perm, domain)` 显式指定域，`domain` 按 `layer` 取 `authz.PlatformDomain` 或 `authz.Domain(tenant)`，`perm` 按 `layer` 取对应的一套码。
+**判定按层分，域由层选与查询串定出。** 全局层的读写是平台操作，在保留的平台域 `authz.PlatformDomain` 判定，权限码是 `settings.read`／`settings.write`。租户层的读写落到查询串点名的那个租户，在该租户的域 `authz.Domain(id)` 判定，权限码是 `settings.tenant.read`／`settings.tenant.write`。两套码分开，是因为租户可达前缀下的租户面（[settings.tenantadmin](design-settings-tenantadmin.md)）也用后者：一个只持租户码的租户管理员不能凭这套码改全局层，一个只持平台码的平台员工也不能凭这套码改租户层。平台员工要在某个租户读写租户层，须在该租户持有对应的租户码，通常经该租户的 `tenant-admin`（治理集）。handler 经 `RequirePermissionIn(c, perm, domain)` 显式指定域，`domain` 按 `layer` 取 `authz.PlatformDomain` 或 `authz.Domain(tenant)`，`perm` 按 `layer` 取对应的一套码。
 
 **租户标识的取值域由本模块就地复述。** `settings.ForTenant(id)` 对落在租户标识取值域之外的 id 当场 panic，与层选为零值同一档——它是调用点的编程错误；查询串里的 id 是外部输入，本模块因此在拼层选之前把它挡在取值域外：id 为空、或含空白与控制字符即 400。这条判据是租户标识的取值域，本模块复述而不 import 租户能力——按标识分层存放值的模块与租户能力的依赖是刻意缺席的，设置模块对同一取值域同样只作复述（[design-settings](design-settings.md)）。
 
@@ -85,12 +85,12 @@
 - **模块名**：`settings.admin`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
 - **配置命名空间与输入项**：`settings.admin` 下的 `endpoints`（字符串列表，必填，无缺省，只收具体端名、不收 `*`，取主配置源）。
 - **管理端点**：`settings.admin.endpoints` 列出的端，`/api/v1/system/settings/*` 下的设置读写路由（路由见「路由」）。
-- **权限**：全局层的读路由询 `settings.read`、写路由询 `settings.write`；租户层的读路由询 `settings.tenant.read`、写路由询 `settings.tenant.write` 是尚未实现的目标口径，当前租户层仍询 `settings.read`／`settings.write`。四者都由授权能力承载（`settings.read` 译成 `(settings, read)`、`settings.write` 译成 `(settings, write)`、`settings.tenant.read` 译成 `(tenant_settings, read)`、`settings.tenant.write` 译成 `(tenant_settings, write)`）；域随层选在平台域与租户域之间取。
+- **权限**：全局层的读路由询 `settings.read`、写路由询 `settings.write`；租户层的读路由询 `settings.tenant.read`、写路由询 `settings.tenant.write`。四者都由授权能力承载（`settings.read` 译成 `(settings, read)`、`settings.write` 译成 `(settings, write)`、`settings.tenant.read` 译成 `(tenant_settings, read)`、`settings.tenant.write` 译成 `(tenant_settings, write)`）；域随层选在平台域与租户域之间取。
 - **问题应答**：`Problem.Type` 前缀 `urn:speed:settings:`，其下的码 `bad-request`、`invalid-value`。写路由另在发起者为未验证账户时答 403 `contact-required`，这个码不属于该前缀。
 
 ### 对外接口面
 
-- 模块名 `settings.admin`、配置键 `settings.admin.endpoints`、管理面路由的路径与查询串的键（`layer`、`tenant` 及其取值）、每条路由询问的权限（全局层读 `settings.read`、写 `settings.write`；租户层读 `settings.tenant.read`、写 `settings.tenant.write` 是尚未实现的目标口径，当前租户层仍询 `settings.read`／`settings.write`）与域（平台域与租户域），以及 `Problem.Type` 前缀 `urn:speed:settings:` 及其下的码（`bad-request`、`invalid-value`），是本模块对宿主的接口面。写路由在发起者为未验证账户时答 403 `contact-required`，同样是接口面。改动它们是宿主可见的破坏性变更。
+- 模块名 `settings.admin`、配置键 `settings.admin.endpoints`、管理面路由的路径与查询串的键（`layer`、`tenant` 及其取值）、每条路由询问的权限（全局层读 `settings.read`、写 `settings.write`；租户层读 `settings.tenant.read`、写 `settings.tenant.write`）与域（平台域与租户域），以及 `Problem.Type` 前缀 `urn:speed:settings:` 及其下的码（`bad-request`、`invalid-value`），是本模块对宿主的接口面。写路由在发起者为未验证账户时答 403 `contact-required`，同样是接口面。改动它们是宿主可见的破坏性变更。
 - 设置项视图的字段名（`key`、`namespace`、`type`、`description`、`domain`、`sensitive`、`default`、`written`、`has_row`、`value`）与敏感项遮蔽的规则是应答形状：宿主与前端据此读应答。`has_row` 报所选层是否真的有一行，使「默认」与「已覆盖」不靠文本值推断（空串值是一行，无行则不是）。
 - 特性名 `settings.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 本模块可替换、可撤掉，不改变调用方或设置模块的代码。
@@ -248,7 +248,7 @@ sequenceDiagram
 |---|---|---|
 | 管理面 `settings.admin` 的全局层（路由、判定、审计、敏感遮蔽、回绝映射） | 已实现 | `pkg/settings/admin/admin.go` `Module`；`pkg/settings/admin/routes.go` `routes`、`mount`；`pkg/settings/admin/handlers.go` `handleList`、`handleListNamespace`、`handleSet`、`handleRemove`；`pkg/settings/admin/pipeline.go` `selectLayer`、`require`、`auditRequired`；`pkg/settings/admin/views.go` `maskedValue`、`viewOf` |
 | 管理面 `settings.admin` 的层选与判定域（`layer=tenant` 取 `ForTenant(tenant)` 与租户域，`layer=global` 取 `Global()` 与平台域） | 已实现 | `pkg/settings/admin/pipeline.go` `selectLayer`、`selectionOf`；`pkg/settings/admin/routes.go` `routes` |
-| 管理面 `settings.admin` 在 `layer=tenant` 下改询 `settings.tenant.read`／`settings.tenant.write` 的权限码切换 | 未实现 | — |
+| 管理面 `settings.admin` 在 `layer=tenant` 下改询 `settings.tenant.read`／`settings.tenant.write` 的权限码切换 | 已实现 | `pkg/settings/admin/routes.go` `guardRoute`、`routes` |
 | 管理面 `settings.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/settings/admin/operations.go`；`pkg/settings/admin/openapi_generated_test.go`；片段 `pkg/settings/admin/openapi/settings.admin.json` |
 | 静态特性 `settings.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/settings/admin/admin.go` `Module`；`pkg/settings/admin/feature_test.go` `TestTheModuleDeclaresTheSettingsAdminFeature` |
 | 设置写面的注册验证门控（读作 `SignupPending` 时答 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取） | 已实现 | `pkg/settings/admin/pipeline.go` `(*product).requireVerifiedAccount`；`pkg/settings/admin/routes.go` `(*product).guardRoute`、`routes`；`pkg/settings/admin/gate_test.go` |

@@ -363,7 +363,7 @@ const (
 - **想挂管理面的命令点名 `authz.admin` 并配 `authz.admin.endpoints`。** 不点名时没有 `/api/v1/system/*` 下的任何路由；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。这条命令还要纳入 `authn.account`：写路由经 `authn.SignupVerification` 读发起者的注册验证状态，缺席时依赖解析以缺提供者终止启动。
 - **想挂调用方自身权限读取的命令点名 `authz.self`、配 `authz.self.endpoints`，并把该端纳入网关所守的端。** 不点名时没有 `/api/v1/authz/me/permissions`；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。端不在网关的准入清单里时路由仍挂出，但没有身份检查之外的准入，任何已认证调用方都能读自己的权限。
 - **想挂租户管理面（尚未实现）的命令点名 `authz.tenantadmin`、配 `authz.tenantadmin.endpoints`，并把该端纳入租户解析、准入层与授权守卫。** 不点名时没有 `/api/v1/tenants/{tenant}/*` 下的角色路由；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。这条命令还要纳入 `authn.account`（`authn.SignupVerification`）、`tenant.catalog`（`tenant.Catalog`）与 `authz.policy`（`Manager`、`Catalog`、`SubjectPermissions`），并在装配里提供 `authz.MembershipChecker`；任一必需依赖缺席都在构造前以缺提供者终止启动。**不要给它 `Seeder` 或 `Reconciler`**：前者会打开 builtin 角色的授权增补路径，后者会打开删除路径，两者都只在宿主的种入步骤里。
-- **在所有 `ScopeTenants` 路由组上挂路径租户核对。** 路径段里的租户必须等于请求解析出的租户别名；路径段解析不到唯一租户、或解析到另一个租户，都以与一条不存在的租户同形的裸 404 作答。这条前置覆盖新模块与复用的成员、邀请与 SSO 路由组，不靠各 handler 自己记得比对。只挂授权守卫而不挂它时，一个在 A 租户获治理权限的调用方可以靠路径写 B 租户。
+- **在所有 `ScopeTenants` 路由组上挂路径租户核对。** 路径段里的租户必须等于请求解析出的租户，按标识比较，路径段可以写标识或当前别名；路径段解析不到唯一租户、或解析到另一个租户，都以与一条不存在的租户同形的裸 404 作答。这条前置覆盖新模块与复用的成员、邀请与 SSO 路由组，不靠各 handler 自己记得比对。只挂授权守卫而不挂它时，一个在 A 租户获治理权限的调用方可以靠路径写 B 租户。**平台域的拒绝不在这条共同前置里**：`authz.tenantadmin` 与 `settings.tenantadmin` 另以更严的守卫包裹自己的路由，路径或解析出的租户是 `PlatformDomain` 时答同样的裸 404；成员、邀请与 SSO 路由组管理 `system` 租户本身，以平台域寻址是正当的。
 - **个人租户的拒绝由宿主接缝回答。** 断言 `authz.WriteGuard` 拒绝对个人租户的策略写，并通过独立的 `authz.WriteSettings`（尚未实现）拒绝对个人租户的设置写；`WriteOp` 的封闭三元组不变，设置写不借用 `WriteGrant`。`WriteSettings` 拟是 `settings.tenantadmin`（尚未实现）的必需依赖，缺席即启动失败；`WriteGuard` 在租户管理面是可选取用，但启用个人租户的装配必须提供它。两个接缝都只收紧、不放行，读不出答复时调用方按 503 处置。
 
 ### 管理面
@@ -440,7 +440,7 @@ const (
 
 **判定由本模块在 handler 内做出，不经请求中间件的声明判定。** 路由在中间件的声明表里全部登记为开放，好让中间件把请求放行到 handler；handler 先读调用方的身份，再经 `RequirePermissionIn` 就这条路由的权限问一句，判定域是路径点名的那个租户，不是请求解析出的任意域。模块不给自己授予任何权限。
 
-**路径租户必须等于请求解析出的租户的别名。** 请求面以别名寻址，解析层把别名换成标识写进上下文；这是一层覆盖全部 `ScopeTenants` 路由组的共同前置，由宿主挂在租户作用域的端上，先于该组的 handler 运行：它取出路径里的 `{tenant}` 段与 `tenant.FromContext` 给出的标识，经名册快照取出后者的别名，两者不相等时以裸 404 作答——路径段解析不到唯一租户、或解析到另一个租户，都答这个 404，与一条不存在的租户同形，不透露路径里的租户是否存在。这层前置覆盖新的租户角色路由与复用的成员、邀请、SSO 路由组；只挂授权守卫而不挂它时，一个在 A 租户获治理权限的调用方可以靠路径里的 B 租户读写 B 的数据。**平台域不是租户管理目标**：路径或解析出的租户是 `PlatformDomain` 时同样答裸 404，租户面不管理平台域。
+**路径租户必须等于请求解析出的租户。** 请求面以标识或当前别名寻址，解析层把别名换成标识写进上下文；这是一层覆盖全部 `ScopeTenants` 路由组的共同前置，由宿主挂在租户作用域的端上，先于该组的 handler 运行：它取出路径里的 `{tenant}` 段，经名册快照解析成唯一的标识，与 `tenant.FromContext` 给出的标识比较，不相等时以裸 404 作答——路径段解析不到唯一租户、或解析到另一个租户，都答这个 404，与一条不存在的租户同形，不透露路径里的租户是否存在。这层前置覆盖租户角色路由与复用的成员、邀请、SSO 路由组；只挂授权守卫而不挂它时，一个在 A 租户获治理权限的调用方可以靠路径里的 B 租户读写 B 的数据。**平台域不是租户管理目标，而共同前置不拒绝它**：`authz.tenantadmin` 与 `settings.tenantadmin` 另套一层更严的守卫，路径或解析出的租户是 `PlatformDomain` 时同样答裸 404；成员、邀请与 SSO 路由组管理 `system` 租户本身，以平台域寻址是正当的。
 
 **判定顺序固定。** handler 先读调用方：请求没有身份是 401，只有状态、没有 `Type`，并带与管理面、准入层同形的 realm 质询，不询问 guard 即返回。写路由随后读发起者的注册验证状态：读作未验证（`SignupPending`）答 403 `contact-required`，读取失败答 503，动作不执行；服务账户与没有任何邮箱的账户（`SignupNone`）豁免。再向 guard 要本条路由的权限：不足即由 guard 写出它自己的 403 或 503。判定之后才分叉：写解析正文、做形状检查、跑全部防提权检查、问宿主的 `WriteGuard`、落强制档审计、调 `Manager`；读调 `Manager` 并应答。
 
@@ -735,7 +735,7 @@ flowchart TD
     result -- 否 --> deny
 ```
 
-下图给出一次租户管理面写请求的固定次序。它固定的是拒绝发生在哪一档：路径段与解析出的租户别名不是同一个、或目标是平台域时，请求不进入 handler；身份、注册验证、权限、形状与任一防提权检查拒绝时，都不到宿主写守卫、不落 `success` 审计行、不触 `Manager`；guard 读不出策略时答 503，同样不落审计、不读 `SubjectPermissions`、不触 `Manager`；`SubjectPermissions.Held` 在防提权检查之前读取，它喂给「不能授予自己没有的权限」这条规则。只有全部检查通过之后才写强制档审计，审计落不进是 503 且动作不执行。
+下图给出一次租户管理面写请求的固定次序。它固定的是拒绝发生在哪一档：路径段与解析出的租户标识不是同一个、或目标是平台域时，请求不进入 handler；身份、注册验证、权限、形状与任一防提权检查拒绝时，都不到宿主写守卫、不落 `success` 审计行、不触 `Manager`；guard 读不出策略时答 503，同样不落审计、不读 `SubjectPermissions`、不触 `Manager`；`SubjectPermissions.Held` 在防提权检查之前读取，它喂给「不能授予自己没有的权限」这条规则。只有全部检查通过之后才写强制档审计，审计落不进是 503 且动作不执行。
 
 ```mermaid
 sequenceDiagram
@@ -749,7 +749,7 @@ sequenceDiagram
     participant P as Manager
 
     C->>M: 租户面请求 /api/v1/tenants/{tenant}/...
-    alt 路径租户 ≠ 解析租户的别名，或目标是平台域
+    alt 路径租户 ≠ 解析租户的标识，或目标是平台域
         M-->>C: 裸 404
     else 同一租户
         M->>H: 放行
@@ -1155,9 +1155,10 @@ const (
 | `platform-admin` 取全量 `Declared()`、`tenant-admin` 取 `TenantGoverned()` 的种入分流 | 已实现 | `starters/demo/server/seed.go` `seedRosterAdministration`、`seedAdministration`；`starters/demo/server/tenancy.go` `declaredGrants`、`governedGrants`、`retiredTenantAdminGrants` |
 | 宿主的收表面 `Reconciler`：只收敛 builtin `tenant-admin`、目标集与废弃集由调用方给出、先补后删、单事务、重载快照与发布事件 | 已实现 | `pkg/authz/policy/reconciler.go` `(*product).ReconcileGrants`；`pkg/authz/capabilities.go` `Reconciler`；`starters/demo/server/seed.go` `reconcileTenantAdminGrants` |
 | 宿主的设置写守卫 `WriteSettings` | 未实现 | — |
-| 租户管理面 `authz.tenantadmin`（路由、判定、防提权、审计、回绝映射） | 未实现 | — |
-| 租户管理面的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 未实现 | — |
-| 静态特性 `authz.tenantadmin` 的 `feature.Spec` 声明 | 未实现 | — |
-| 配置 `authz.tenantadmin.endpoints` 的声明与读取 | 未实现 | — |
-| `ScopeTenants` 路由组的路径租户核对 | 未实现 | — |
-| `ErrReservedRole` 在租户管理面的映射 | 未实现 | — |
+| 租户管理面 `authz.tenantadmin`（路由、判定、防提权、审计、回绝映射） | 已实现 | `pkg/authz/tenantadmin/tenantadmin.go` `Module`、`newProduct`、`(*product).wire`；`pkg/authz/tenantadmin/routes.go` `routes`、`mount`、`declareOpen`；`pkg/authz/tenantadmin/pipeline.go` `(*product).guardRoute`、`requireVerifiedAccount`、`requireWriteAllowed`、`auditRequired`、`failureOf`；`pkg/authz/tenantadmin/escalation.go` 每条防提权检查；`pkg/authz/tenantadmin/role.go`、`grant.go`、`binding.go`、`catalog.go`；`pkg/authz/tenantadmin/audit.go` `mandatory`、`failedAudit` |
+| 租户管理面的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/authz/tenantadmin/operations.go`；`pkg/authz/tenantadmin/openapi_generated_test.go`；片段 `pkg/authz/tenantadmin/openapi/authz.tenantadmin.json` |
+| 静态特性 `authz.tenantadmin` 的 `feature.Spec` 声明 | 已实现 | `pkg/authz/tenantadmin/tenantadmin.go` `Module`；`pkg/authz/tenantadmin/feature_test.go` |
+| 配置 `authz.tenantadmin.endpoints` 的声明与读取 | 已实现 | `pkg/authz/tenantadmin/tenantadmin.go` `schema`、`resolve`、`readConfig`；`pkg/authz/tenantadmin/config_test.go` |
+| `ScopeTenants` 路由组的路径租户核对 | 已实现 | `pkg/tenant/pathguard` `New`；`pkg/tenant/resolve/resolve.go` `(*resolver).Guard`；`pkg/authn/mount/mounter.go` `register` |
+| 租户管理面对平台域的拒绝 | 已实现 | `pkg/tenant/pathguard` `NewTenantAdmin`；`pkg/tenant/resolve/resolve.go` `(*resolver).GuardTenantAdmin`；`pkg/authz/tenantadmin/routes.go` `mount`；`pkg/settings/tenantadmin/routes.go` `mount` |
+| `ErrReservedRole` 在租户管理面的映射 | 已实现 | `pkg/authz/tenantadmin/pipeline.go` `(*product).failureOf`；`pkg/authz/tenantadmin/escalation_test.go` `TestARoleTheManagerRefusesIsMapped` |
