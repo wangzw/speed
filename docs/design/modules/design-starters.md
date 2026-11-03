@@ -453,7 +453,7 @@ flowchart TD
 | 编译期能力上限 | 已实现 | `starters/demo/server/capabilities.go` `capabilityModules`；`starters/demo/server/main.go` `serve` 的 `Include` |
 | 本地开发回路（`make dev`、air、vite 与 `.env.example`） | 已实现 | `./Makefile` `dev`；`starters/demo/server/.air.toml`；`.env.example`；`.mise.toml` |
 | Fly.io 部署（镜像、单机卷、容器入口与部署工作流） | 已实现 | `starters/demo/Dockerfile`；`starters/demo/fly.toml`；`starters/demo/deploy/entrypoint.sh`、`starters/demo/deploy/fly.yaml.tmpl`；`.github/workflows/deploy.yml`；`./Makefile` `fly` |
-| 部署的人机验证配置：机制、Turnstile 凭据与主机名 | 已实现 | `starters/demo/deploy/fly.yaml.tmpl` 的 `humanverify` 节；`starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_MODE`、`DEMO_TURNSTILE_SITE_KEY`、`DEMO_TURNSTILE_SECRET_KEY`；`starters/demo/server/deploy_test.go` `TestTheDeployTemplateCarriesTheHumanVerificationSection` |
+| 部署的人机验证配置：机制、Turnstile 凭据与主机名 | 已实现 | `starters/demo/deploy/fly.yaml.tmpl` 的 `humanverify` 节；`starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_MODE`、`DEMO_TURNSTILE_SITE_KEY`、`DEMO_TURNSTILE_SECRET_KEY`；`starters/demo/server/deploy_template_test.go` `TestTheDeployTemplateCarriesTheHumanVerificationSection` |
 | 命令树与部署栈 | 已实现 | `starters/demo/server/main.go` `commandTree`、`addStack`；`starters/demo/server/host.go` `hostModule` |
 | 签名密钥的首次运行生成 | 已实现 | `starters/demo/server/signingkey.go` `ensureSigningKey`、`signingKeyPath`；`starters/demo/server/main.go` `run` |
 | 平台基线（`serve`/`worker` 的点名集与配置样例） | 已实现 | `starters/demo/server/main.go` `baselineServe`、`baselineWorker`；`starters/demo/server/capabilities.go` `capabilityModules`；`starters/demo/server/testdata/` |
