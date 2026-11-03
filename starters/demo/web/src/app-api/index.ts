@@ -2171,11 +2171,11 @@ export type AuthnLoginStartAuthenticatedBody = {
 
 export type AuthnHumanverifyCaptchaChallengeParams = {
 /**
- * The challenge form to draw: image (the default when the item is absent or empty), slider, or audio. Any other value is a 400 bad-request.
+ * The challenge form. Only audio is honoured: it draws the spoken reading of digits, the screen-reader alternative. The value image or slider, or an absent item, is ignored: the server rotates between those two forms from a cryptographic random source and answers whichever it drew. Any other value is a 400 bad-request.
  */
 form?: AuthnHumanverifyCaptchaChallengeForm;
 /**
- * The language the audio form's digits are spoken in, as a BCP 47 tag. The provider pronounces English, Japanese, Russian and Chinese; a tag naming another language is a 400. Absent or empty uses the request's active locale, falling back to English for a locale the provider does not pronounce. Ignored by the non-audio forms.
+ * The language the audio form's digits are spoken in, as a BCP 47 tag. The provider pronounces English, Japanese, Russian and Chinese; a tag naming another language is a 400. Absent or empty uses the request's active locale, falling back to English for a locale the provider does not pronounce. Ignored by the rotating forms.
  */
 lang?: string;
 };
@@ -3621,7 +3621,7 @@ export function useAuthnLoginCurrent<TData = Awaited<ReturnType<typeof authnLogi
 
 
 /**
- * Issues one human-verification challenge for the self-hosted captcha mechanism. The request names the form with the `form` query item: `image` draws digits and answers the media path of the picture, `slider` draws a background and a piece to slide over it, and `audio` draws a spoken reading of digits as the accessible alternative. The `lang` query item names the language an audio challenge is spoken in; the provider pronounces English, Japanese, Russian and Chinese, an unsupported language is a 400, and an absent item uses the request's active locale. The answer names the challenge id, the form, the instruction key a client words for that form, and the media paths the form carries. A proof is the challenge id and the answer joined by a dot; it is single-use and spends the challenge whether the answer matched or not. A source that asks for more challenges than its window allows is answered 429, and a key-value store that cannot answer is answered 503.
+ * Issues one human-verification challenge for the self-hosted captcha mechanism. Only the `audio` form may be chosen: the `form` query item naming it draws a spoken reading of digits as the screen-reader alternative. The server rotates between the image and the slider form from a cryptographic random source, so `form=image`, `form=slider` and an absent item are all answered with whichever of the two the rotation drew; the value is not honoured, and any other value is a 400. The `lang` query item names the language an audio challenge is spoken in; the provider pronounces English, Japanese, Russian and Chinese, an unsupported language is a 400, and an absent item uses the request's active locale. The answer names the challenge id, the form, the instruction key a client words for that form, and the media paths the form carries. A proof is the challenge id and the answer joined by a dot; it is single-use and spends the challenge whether the answer matched or not. A source that asks for more challenges than its window allows is answered 429, and a key-value store that cannot answer is answered 503.
  * @summary Obtain a captcha challenge
  */
 export const authnHumanverifyCaptchaChallenge = (

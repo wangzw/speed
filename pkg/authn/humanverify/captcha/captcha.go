@@ -19,9 +19,19 @@
 // proof cannot both pass, and then deletes the record and the media. A wrong
 // answer spends the record too: a challenge is good for one attempt.
 //
-// Issuance is bounded per source: each request spends one slot of the source's
-// counter over a one-minute fixed window, and a source past its bound is refused
-// before a challenge is drawn or stored.
+// Issuance is bounded per source over a one-minute fixed window, and a source
+// past its bound is refused before a challenge is drawn or stored. The visual
+// rotation has one counter (ten challenges a window); the accessibility
+// alternative has a separate, stricter one (one challenge a window), so neither
+// budget spends the other.
+//
+// The three forms are hardened against their own automation: the image driver
+// gets a random size, a larger skew and a denser dot field; the slider draws a
+// random background, a random piece size and per-pixel noise, and keeps its
+// tolerance at a few pixels; the audio is post-processed into a randomly
+// slowed or quickened reading with extra noise and a competing spoken stream.
+// The form's answer, storage and one-time semantics are unchanged by the
+// hardening.
 //
 // The proof is the challenge id and the answer joined by a dot. The id is
 // base64url without padding and the answer is digits, or a decimal offset for
@@ -93,18 +103,24 @@ const (
 // keys are derived from the challenge id, which this provider draws, so a
 // caller cannot choose a key.
 const (
-	keyPrefix      = "authn:human:captcha:"
-	issueKeyPrefix = "authn:human:captcha:issue:"
-	challengeTTL   = 5 * time.Minute
-	idBytes        = 16
-	saltBytes      = 16
-	maxProofLen    = 512
-	maxAnswerBytes = 64
-	// issueLimit is how many challenges one source may hold in IssueWindow. It
-	// is small on purpose: an anonymous caller is the reason the counter exists,
-	// and a challenge that lapses is served by a new request once the window
-	// expires.
+	keyPrefix           = "authn:human:captcha:"
+	issueKeyPrefix      = "authn:human:captcha:issue:"
+	audioIssueKeyPrefix = "authn:human:captcha:audio-issue:"
+	challengeTTL        = 5 * time.Minute
+	idBytes             = 16
+	saltBytes           = 16
+	maxProofLen         = 512
+	maxAnswerBytes      = 64
+	// issueLimit is how many visual challenges one source may hold in
+	// IssueWindow. It is small on purpose: an anonymous caller is the reason the
+	// counter exists, and a challenge that lapses is served by a new request once
+	// the window expires.
 	issueLimit = 10
+	// audioIssueLimit is the visual forms' counterpart for the accessibility
+	// alternative. Audio rendering is the most expensive form and it is requested
+	// explicitly rather than rotated, so one source gets one audio challenge per
+	// window; asking again is refused until the window expires.
+	audioIssueLimit = 1
 )
 
 // IssueWindow is the fixed window the per-source issuance counter covers: the
@@ -118,12 +134,23 @@ const IssueWindow = time.Minute
 // compared.
 var spentMarker = []byte("spent")
 
-// The parameter choices of the library-backed forms.
+// The parameter choices of the library-backed forms. The image's height, width,
+// skew and dot count are drawn per challenge: the driver fixes its font, so
+// varying the geometry is how the digit size changes, and the larger skew,
+// denser dots and the driver's own wave distortion and strike-through line make
+// the characters harder to segment. The digit count stays fixed so the answer
+// space and its digests are unchanged.
 const (
-	digitHeight = 60
-	digitWidth  = 240
-	digitLength = 5
-	audioLength = 5
+	digitHeightMin = 56
+	digitHeightMax = 72
+	digitWidthMin  = 220
+	digitWidthMax  = 280
+	digitSkewMin   = 0.9
+	digitSkewMax   = 1.4
+	digitDotMin    = 110
+	digitDotMax    = 170
+	digitLength    = 5
+	audioLength    = 5
 )
 
 // DefaultAudioLanguage is the language an audio challenge is spoken in when the
@@ -240,7 +267,7 @@ func (p *Provider) Issue(ctx context.Context, opts IssueOptions) (Challenge, err
 		}
 		language = resolved
 	}
-	if countErr := p.countIssue(ctx, opts.RemoteIP); countErr != nil {
+	if countErr := p.countIssue(ctx, form, opts.RemoteIP); countErr != nil {
 		return Challenge{}, countErr
 	}
 	id, idErr := newID()
@@ -419,9 +446,26 @@ func drawForm(form Form, salt, language string) (record, map[MediaKind]Media, er
 	}
 }
 
-// drawDigits draws the image form with the library's digit driver.
+// drawDigits draws the image form with the library's digit driver, with the
+// hardening parameters drawn per challenge.
 func drawDigits(salt string) (record, map[MediaKind]Media, error) {
-	driver := libcaptcha.NewDriverDigit(digitHeight, digitWidth, digitLength, 0.7, 80)
+	height, err := randomInt(digitHeightMin, digitHeightMax)
+	if err != nil {
+		return record{}, nil, fmt.Errorf("%w: captcha: choosing the image height: %w", authn.ErrUnavailable, err)
+	}
+	width, err := randomInt(digitWidthMin, digitWidthMax)
+	if err != nil {
+		return record{}, nil, fmt.Errorf("%w: captcha: choosing the image width: %w", authn.ErrUnavailable, err)
+	}
+	skew, err := randomFloat(digitSkewMin, digitSkewMax)
+	if err != nil {
+		return record{}, nil, fmt.Errorf("%w: captcha: choosing the digit skew: %w", authn.ErrUnavailable, err)
+	}
+	dots, err := randomInt(digitDotMin, digitDotMax)
+	if err != nil {
+		return record{}, nil, fmt.Errorf("%w: captcha: choosing the dot count: %w", authn.ErrUnavailable, err)
+	}
+	driver := libcaptcha.NewDriverDigit(height, width, digitLength, skew, dots)
 	_, question, answer := driver.GenerateIdQuestionAnswer()
 	item, err := driver.DrawCaptcha(question)
 	if err != nil {
@@ -447,6 +491,10 @@ func drawAudio(salt, language string) (record, map[MediaKind]Media, error) {
 	body, err := itemBytes(item)
 	if err != nil {
 		return record{}, nil, fmt.Errorf("%w: captcha: encoding the audio: %w", authn.ErrUnavailable, err)
+	}
+	body, err = hardenAudio(body, language)
+	if err != nil {
+		return record{}, nil, fmt.Errorf("%w: captcha: hardening the audio: %w", authn.ErrUnavailable, err)
 	}
 	return record{Form: FormAudio, Salt: salt, Digests: []string{digest(salt, answer)}},
 		map[MediaKind]Media{MediaAudio: {ContentType: "audio/wav", Body: body}}, nil
@@ -574,13 +622,20 @@ func audioLanguage(lang string) (string, error) {
 	return code, nil
 }
 
-// countIssue spends one slot of the source's issuance window.
-func (p *Provider) countIssue(ctx context.Context, remoteIP string) error {
-	issued, err := p.store.IncrByFloatWithTTL(ctx, issueKey(remoteIP), 1, IssueWindow)
+// countIssue spends one slot of the source's issuance window for the form. The
+// accessibility alternative has a counter of its own, in a separate key and
+// with a stricter bound, so audio requests neither spend nor are spent by the
+// visual rotation's allowance.
+func (p *Provider) countIssue(ctx context.Context, form Form, remoteIP string) error {
+	key, limit := issueKey(remoteIP), issueLimit
+	if form == FormAudio {
+		key, limit = audioIssueKey(remoteIP), audioIssueLimit
+	}
+	issued, err := p.store.IncrByFloatWithTTL(ctx, key, 1, IssueWindow)
 	if err != nil {
 		return fmt.Errorf("%w: captcha: counting the challenges issued to a source: %w", authn.ErrUnavailable, err)
 	}
-	if issued > issueLimit {
+	if issued > float64(limit) {
 		return ErrIssuanceLimited
 	}
 	return nil
@@ -625,11 +680,18 @@ func contentType(kind MediaKind) string {
 // challengeKey is where one challenge record is stored.
 func challengeKey(id string) string { return keyPrefix + id + ":challenge" }
 
-// issueKey is one source's issuance counter. The source is hashed because the
-// key is a value the store and its diagnostics may carry.
+// issueKey is one source's visual issuance counter. The source is hashed
+// because the key is a value the store and its diagnostics may carry.
 func issueKey(remoteIP string) string {
 	sum := sha256.Sum256([]byte(remoteIP))
 	return issueKeyPrefix + hex.EncodeToString(sum[:])
+}
+
+// audioIssueKey is one source's audio issuance counter, kept apart from the
+// visual one so the accessibility alternative has its own stricter budget.
+func audioIssueKey(remoteIP string) string {
+	sum := sha256.Sum256([]byte(remoteIP))
+	return audioIssueKeyPrefix + hex.EncodeToString(sum[:])
 }
 
 // mediaKey is where one media object of a challenge is stored.

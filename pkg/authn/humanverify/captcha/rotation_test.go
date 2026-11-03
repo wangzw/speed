@@ -12,8 +12,8 @@ import (
 // two-form rotation the chance that one form never appears is 2^-(rounds-1).
 const rotationRounds = 64
 
-// clearIssuance forgets the test source's issuance counter, so a case can make
-// more identical requests than the per-source bound without being throttled.
+// clearIssuance forgets the test source's visual issuance counter, so a case can
+// make more identical requests than the per-source bound without being throttled.
 func clearIssuance(t *testing.T, s *store) {
 	t.Helper()
 	if err := s.Delete(t.Context(), issueKey(source)); err != nil {

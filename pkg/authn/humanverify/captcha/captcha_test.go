@@ -163,11 +163,15 @@ const source = "203.0.113.7"
 // issue draws a challenge of one particular form for the test source. Audio is
 // requested the way a client requests it; the two rotating forms are pinned
 // through the provider's rotation seam, because the case is about that form's
-// look, answer or storage rather than about the rotation itself.
+// look, answer or storage rather than about the rotation itself. The audio
+// issuance counter is cleared first: the cases that use this helper are about
+// the form's semantics, and audio's own per-source bound has its own cases.
 func issue(t *testing.T, p *Provider, form Form) Challenge {
 	t.Helper()
 	if form != FormAudio {
 		p.rotate = func() (Form, error) { return form, nil }
+	} else if err := p.store.Delete(t.Context(), audioIssueKey(source)); err != nil {
+		t.Fatalf("clearing the audio issuance counter: %v", err)
 	}
 	issued, err := p.Issue(t.Context(), IssueOptions{Form: form, RemoteIP: source})
 	if err != nil {
@@ -209,7 +213,7 @@ func sliderRange(t *testing.T, s *store, id string) (min, max int) {
 	t.Helper()
 	rec := readRecord(t, s, id)
 	min, max = -1, -1
-	for offset := 0; offset <= sliderWidth-pieceSize; offset++ {
+	for offset := 0; offset <= sliderWidth; offset++ {
 		if matches(rec.Digests, digest(rec.Salt, strconv.Itoa(offset))) {
 			if min < 0 {
 				min = offset
@@ -226,11 +230,10 @@ func sliderRange(t *testing.T, s *store, id string) (min, max int) {
 // outsideSlider is one offset beyond an accepted range.
 func outsideSlider(t *testing.T, s *store, id string) int {
 	t.Helper()
-	min, max := sliderRange(t, s, id)
-	if max < sliderWidth-pieceSize {
-		return max + 1
-	}
-	return min - 1
+	_, max := sliderRange(t, s, id)
+	// The accepted range ends before the background's right edge, so the next
+	// offset is always inside the drawable range.
+	return max + 1
 }
 
 // proof is the token a client presents.
@@ -257,14 +260,19 @@ func TestAGeneratedChallengeVerifiesExactlyOnce(t *testing.T) {
 	}
 }
 
-// TestAnExpiredChallengeIsRefused holds the five-minute lifetime.
+// TestAnExpiredChallengeIsRefused holds the five-minute lifetime for every
+// hardened form.
 func TestAnExpiredChallengeIsRefused(t *testing.T) {
-	p, s := newProvider(t)
-	issued := issue(t, p, FormImage)
-	answer := solveDigits(t, s, issued.ID)
-	s.advance(challengeTTL + time.Second)
-	if err := p.Verify(t.Context(), proof(issued.ID, answer), authn.HumanScopePhone); !errors.Is(err, authn.ErrHumanVerificationRequired) {
-		t.Fatalf("an expired challenge resolved with %v, want ErrHumanVerificationRequired", err)
+	for _, form := range []Form{FormImage, FormSlider, FormAudio} {
+		t.Run(string(form), func(t *testing.T) {
+			p, s := newProvider(t)
+			issued := issue(t, p, form)
+			answer := answerOf(t, s, issued)
+			s.advance(challengeTTL + time.Second)
+			if err := p.Verify(t.Context(), proof(issued.ID, answer), authn.HumanScopePhone); !errors.Is(err, authn.ErrHumanVerificationRequired) {
+				t.Fatalf("an expired challenge resolved with %v, want ErrHumanVerificationRequired", err)
+			}
+		})
 	}
 }
 
@@ -505,12 +513,12 @@ func TestOneProofCannotBeSpentTwiceConcurrently(t *testing.T) {
 	}
 }
 
-// TestTheIssuanceCapBoundsOneSource holds the anti-fill bound for every form:
-// one source may hold a limited number of challenges at a time whatever form it
-// asks for, and a source that asks for more is refused while another source is
-// not affected.
+// TestTheIssuanceCapBoundsOneSource holds the anti-fill bound for the forms the
+// rotation draws: one source may hold a limited number of visual challenges at a
+// time, and a source that asks for more is refused while another source is not
+// affected.
 func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
-	for _, form := range []Form{FormImage, FormSlider, FormAudio} {
+	for _, form := range []Form{FormImage, FormSlider} {
 		t.Run(string(form), func(t *testing.T) {
 			p, _ := newProvider(t)
 			opts := IssueOptions{Form: form, RemoteIP: source}
@@ -526,6 +534,34 @@ func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
 				t.Fatalf("another source was refused with the first source's cap: %v", err)
 			}
 		})
+	}
+}
+
+// TestTheAudioIssuanceCapIsStricterThanTheVisualOne holds that audio carries its
+// own per-source budget: it is the accessibility alternative a client may ask
+// for, so one source may hold only one audio challenge in the window, while the
+// visual forms keep their larger bound and neither counter spends the other.
+func TestTheAudioIssuanceCapIsStricterThanTheVisualOne(t *testing.T) {
+	p, _ := newProvider(t)
+	audio := IssueOptions{Form: FormAudio, RemoteIP: source}
+	if _, err := p.Issue(t.Context(), audio); err != nil {
+		t.Fatalf("the first audio challenge: %v", err)
+	}
+	if _, err := p.Issue(t.Context(), audio); !errors.Is(err, ErrIssuanceLimited) {
+		t.Fatalf("a second audio challenge resolved with %v, want ErrIssuanceLimited", err)
+	}
+	// The refused audio request spent no visual allowance.
+	for i := 0; i < issueLimit; i++ {
+		if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: source}); err != nil {
+			t.Fatalf("visual issue %d after the audio cap: %v", i+1, err)
+		}
+	}
+	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: source}); !errors.Is(err, ErrIssuanceLimited) {
+		t.Fatalf("the visual cap resolved with %v, want ErrIssuanceLimited", err)
+	}
+	// The exhausted visual counter did not spend another source's audio budget.
+	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormAudio, RemoteIP: "203.0.113.8"}); err != nil {
+		t.Fatalf("another source was refused with the first source's caps: %v", err)
 	}
 }
 

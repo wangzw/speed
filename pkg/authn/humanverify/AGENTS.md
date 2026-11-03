@@ -87,10 +87,37 @@ proof is the challenge id and the answer joined by a dot, `id.answer`; the id is
 base64url without padding and the answer is digits, or a decimal offset for the
 slider.
 
-A per-source issuance counter at `authn:human:captcha:issue:<sha256(address) hex>`
-bounds how many challenges one address holds in a one-minute fixed window — ten — so an
-anonymous caller cannot fill the store. The route answers 429 when the bound is
-reached. A store that cannot answer is `authn.ErrUnavailable`, answered 503.
+Issuance is bounded per source over a one-minute fixed window, with a counter
+per kind of challenge so neither budget spends the other. The visual rotation
+counts at `authn:human:captcha:issue:<sha256(address) hex>` and allows ten
+challenges; the audio alternative counts at
+`authn:human:captcha:audio-issue:<sha256(address) hex>` and allows one, because
+it is requested explicitly and is the most expensive form to draw. The route
+answers 429 when the bound of the form it is about to draw is reached, and a
+store that cannot answer is `authn.ErrUnavailable`, answered 503.
+
+The three forms are hardened against automated solving:
+
+- **Image** — height, width, digit skew and dot count are drawn per challenge,
+  on top of the library's wave distortion and strike-through line. The library's
+  digit driver ships one fixed bitmap font, so the font itself cannot vary; the
+  digit size varies through the geometry instead.
+- **Slider** — the gradient palette, the circles and the lines are drawn per
+  challenge, the piece size is drawn from 40 to 56 pixels, and per-pixel noise is
+  applied to the piece and to the background separately. The tolerance stays at
+  four pixels. The piece is not rotated: the answer is a horizontal offset, so a
+  rotation would need a second answer dimension.
+- **Audio** — the library already varies each digit's speed, mixes reversed
+  digits into the background and adds a low noise floor. The WAV is then
+  resampled at a random whole-reading speed (0.86 to 1.16), given a stronger
+  noise floor, and mixed with a second spoken digit stream at a 10–16% level.
+  The library ships one voice per language, so the second stream is the same
+  voice pronouncing other digits, not a second voice.
+
+What remains weak: an OCR model trained on this generator's output, a template
+matcher that reconstructs the slider piece's round edge, and a speech recognizer
+robust to pace and noise can still solve these forms. The measures raise the
+cost; they do not make the forms unsolvable.
 
 The bound is per source only: there is no global issuance ceiling, so a set of
 source addresses can still make the process draw challenges, and the image,

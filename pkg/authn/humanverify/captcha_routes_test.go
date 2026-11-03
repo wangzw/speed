@@ -258,6 +258,45 @@ func TestTheCaptchaChallengeRouteAnswersThrottledAtTheIssuanceCap(t *testing.T) 
 	}
 }
 
+// TestTheCaptchaAudioFormHasItsOwnStricterLimit holds the audio budget at the
+// route: audio is the accessibility alternative and gets one issuance per source
+// per window, its refusal does not spend the visual rotation's larger allowance,
+// and another source keeps its own audio budget.
+func TestTheCaptchaAudioFormHasItsOwnStricterLimit(t *testing.T) {
+	rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
+	rig.drive(t)
+
+	audio := captchaChallengeFullPath + "?form=audio"
+	if recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, audio, nil)); recorder.Code != http.StatusOK {
+		t.Fatalf("the first audio challenge answered %d, want 200:\n%s", recorder.Code, recorder.Body)
+	}
+	refused := rig.mounter.Do(httptest.NewRequest(http.MethodPost, audio, nil))
+	if refused.Code != http.StatusTooManyRequests {
+		t.Fatalf("the second audio challenge answered %d, want 429:\n%s", refused.Code, refused.Body)
+	}
+	if got, want := refused.Header().Get("Retry-After"), strconv.Itoa(int(captcha.IssueWindow/time.Second)); got != want {
+		t.Errorf("Retry-After = %q, want the issuance window's %q", got, want)
+	}
+
+	// The visual rotation keeps its own bound: the audio refusal spent none of it.
+	for i := 0; i < 10; i++ {
+		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath, nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("visual request %d answered %d, want 200:\n%s", i+1, recorder.Code, recorder.Body)
+		}
+	}
+	if recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath, nil)); recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("the visual request past its cap answered %d, want 429:\n%s", recorder.Code, recorder.Body)
+	}
+
+	// Audio's bound is per source: another address still gets its one.
+	other := httptest.NewRequest(http.MethodPost, audio, nil)
+	other.RemoteAddr = "198.51.100.24:1234"
+	if recorder := rig.mounter.Do(other); recorder.Code != http.StatusOK {
+		t.Fatalf("another source's audio challenge answered %d, want 200:\n%s", recorder.Code, recorder.Body)
+	}
+}
+
 // TestTheCaptchaChallengeRouteRefusesAnUnsupportedAudioLanguage holds that an
 // audio language the provider cannot pronounce is a bad request rather than
 // silently drawn in English.

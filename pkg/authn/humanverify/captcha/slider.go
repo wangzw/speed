@@ -11,14 +11,16 @@ import (
 	"strconv"
 )
 
-// The slider's geometry: a background of a fixed size, a piece cut from a fixed
-// vertical position, and the tolerance by which a client's offset may miss the
-// cut position. The horizontal cut position is drawn fresh for every challenge
-// and is the answer.
+// The slider's geometry: a background of a fixed size, a piece of a size drawn
+// per challenge from a fixed vertical position, and the tolerance by which a
+// client's offset may miss the cut position. The horizontal cut position is
+// drawn fresh for every challenge and is the answer. The piece size varies so
+// the piece's silhouette is not a constant a template matcher can key on.
 const (
 	sliderWidth     = 320
 	sliderHeight    = 160
-	pieceSize       = 48
+	pieceSizeMin    = 40
+	pieceSizeMax    = 56
 	sliderTolerance = 4
 )
 
@@ -34,6 +36,10 @@ type sliderImages struct {
 // newSlider draws a background, cuts a piece out of it and records the digests
 // of the offsets that count as the right answer, keyed by the challenge's salt.
 func newSlider(salt string) (sliderImages, error) {
+	pieceSize, err := randomInt(pieceSizeMin, pieceSizeMax)
+	if err != nil {
+		return sliderImages{}, err
+	}
 	background, err := drawBackground()
 	if err != nil {
 		return sliderImages{}, err
@@ -46,8 +52,16 @@ func newSlider(salt string) (sliderImages, error) {
 		return sliderImages{}, err
 	}
 
-	piece := cutPiece(background, cut, pieceTop)
-	drawHole(background, cut+pieceSize/2, pieceTop+pieceSize/2)
+	piece := cutPiece(background, cut, pieceTop, pieceSize)
+	// The piece and the background are each noised after the cut, so the piece
+	// does not match the hole pixel for pixel even at the right offset.
+	if noiseErr := addImageNoise(piece); noiseErr != nil {
+		return sliderImages{}, noiseErr
+	}
+	drawHole(background, cut+pieceSize/2, pieceTop+pieceSize/2, pieceSize)
+	if noiseErr := addImageNoise(background); noiseErr != nil {
+		return sliderImages{}, noiseErr
+	}
 
 	backgroundPNG, err := encodePNG(background)
 	if err != nil {
@@ -68,37 +82,66 @@ func newSlider(salt string) (sliderImages, error) {
 	return sliderImages{background: backgroundPNG, piece: piecePNG, digests: digests}, nil
 }
 
-// drawBackground paints a vertical gradient with translucent circles and
-// diagonal lines over it, so the piece carries texture rather than a flat
-// colour.
+// drawBackground paints a vertical gradient whose colours, circles and lines are
+// all drawn per challenge, so two sliders do not share a background.
 func drawBackground() (*image.RGBA, error) {
 	img := image.NewRGBA(image.Rect(0, 0, sliderWidth, sliderHeight))
+	r0, err := randomInt(10, 70)
+	if err != nil {
+		return nil, err
+	}
+	g0, err := randomInt(20, 80)
+	if err != nil {
+		return nil, err
+	}
+	b0, err := randomInt(30, 90)
+	if err != nil {
+		return nil, err
+	}
+	dr, err := randomInt(70, 150)
+	if err != nil {
+		return nil, err
+	}
+	dg, err := randomInt(70, 150)
+	if err != nil {
+		return nil, err
+	}
+	db, err := randomInt(70, 150)
+	if err != nil {
+		return nil, err
+	}
 	for y := 0; y < sliderHeight; y++ {
 		t := float64(y) / float64(sliderHeight-1)
 		line := color.RGBA{
-			R: uint8(24 + 92*t),
-			G: uint8(42 + 118*t),
-			B: uint8(66 + 138*t),
+			R: clampByte(r0 + int(float64(dr)*t)),
+			G: clampByte(g0 + int(float64(dg)*t)),
+			B: clampByte(b0 + int(float64(db)*t)),
 			A: 255,
 		}
 		for x := 0; x < sliderWidth; x++ {
 			img.SetRGBA(x, y, line)
 		}
 	}
-	for i := 0; i < 18; i++ {
-		cx, err := randomInt(-pieceSize, sliderWidth+pieceSize)
+	circles, err := randomInt(14, 24)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < circles; i++ {
+		var cx, cy, radius int
+		cx, err = randomInt(-pieceSizeMax, sliderWidth+pieceSizeMax)
 		if err != nil {
 			return nil, err
 		}
-		cy, err := randomInt(-pieceSize, sliderHeight+pieceSize)
+		cy, err = randomInt(-pieceSizeMax, sliderHeight+pieceSizeMax)
 		if err != nil {
 			return nil, err
 		}
-		radius, err := randomInt(10, 46)
+		radius, err = randomInt(8, 46)
 		if err != nil {
 			return nil, err
 		}
-		shade, err := randomByte()
+		var shade uint8
+		shade, err = randomByte()
 		if err != nil {
 			return nil, err
 		}
@@ -113,20 +156,25 @@ func drawBackground() (*image.RGBA, error) {
 			A: 96,
 		})
 	}
-	for i := 0; i < 6; i++ {
-		x0, err := randomInt(0, sliderWidth)
+	lines, err := randomInt(4, 9)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < lines; i++ {
+		var x0, x1, y0, y1 int
+		x0, err = randomInt(0, sliderWidth)
 		if err != nil {
 			return nil, err
 		}
-		x1, err := randomInt(0, sliderWidth)
+		x1, err = randomInt(0, sliderWidth)
 		if err != nil {
 			return nil, err
 		}
-		y0, err := randomInt(0, sliderHeight)
+		y0, err = randomInt(0, sliderHeight)
 		if err != nil {
 			return nil, err
 		}
-		y1, err := randomInt(0, sliderHeight)
+		y1, err = randomInt(0, sliderHeight)
 		if err != nil {
 			return nil, err
 		}
@@ -135,16 +183,16 @@ func drawBackground() (*image.RGBA, error) {
 	return img, nil
 }
 
-// cutPiece copies the square at (left, top) into a round piece with a light
-// border. Everything outside the circle is transparent.
-func cutPiece(background *image.RGBA, left, top int) *image.RGBA {
-	piece := image.NewRGBA(image.Rect(0, 0, pieceSize, pieceSize))
+// cutPiece copies the square at (left, top) of the given size into a round piece
+// with a light border. Everything outside the circle is transparent.
+func cutPiece(background *image.RGBA, left, top, size int) *image.RGBA {
+	piece := image.NewRGBA(image.Rect(0, 0, size, size))
 	draw.Draw(piece, piece.Bounds(), background, image.Pt(left, top), draw.Src)
 
-	centre := pieceSize / 2
+	centre := size / 2
 	radius := centre - 2
-	for y := 0; y < pieceSize; y++ {
-		for x := 0; x < pieceSize; x++ {
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
 			dx, dy := x-centre, y-centre
 			distance := dx*dx + dy*dy
 			switch {
@@ -160,9 +208,37 @@ func cutPiece(background *image.RGBA, left, top int) *image.RGBA {
 
 // drawHole darkens the round area the piece was cut from, so the cut position is
 // a visible gap rather than a texture the piece still matches exactly.
-func drawHole(background *image.RGBA, cx, cy int) {
-	fillCircle(background, cx, cy, pieceSize/2-2, color.RGBA{R: 18, G: 24, B: 38, A: 208})
-	fillCircle(background, cx, cy, pieceSize/2-2, color.RGBA{R: 120, G: 142, B: 170, A: 34})
+func drawHole(background *image.RGBA, cx, cy, size int) {
+	fillCircle(background, cx, cy, size/2-2, color.RGBA{R: 18, G: 24, B: 38, A: 208})
+	fillCircle(background, cx, cy, size/2-2, color.RGBA{R: 120, G: 142, B: 170, A: 34})
+}
+
+// addImageNoise adds per-pixel noise in both directions to the image's colour
+// channels, leaving alpha alone. The amplitude is drawn per image.
+func addImageNoise(img *image.RGBA) error {
+	amplitude, err := randomInt(6, 14)
+	if err != nil {
+		return err
+	}
+	bounds := img.Bounds()
+	noise := make([]byte, bounds.Dx()*bounds.Dy())
+	if _, err := rand.Read(noise); err != nil {
+		return err
+	}
+	span := 2*amplitude + 1
+	i := 0
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			delta := int(noise[i])%span - amplitude
+			i++
+			c := img.RGBAAt(x, y)
+			c.R = clampByte(int(c.R) + delta)
+			c.G = clampByte(int(c.G) + delta)
+			c.B = clampByte(int(c.B) + delta)
+			img.SetRGBA(x, y, c)
+		}
+	}
+	return nil
 }
 
 // fillCircle blends col over the points of dst within radius of (cx, cy).
@@ -249,6 +325,28 @@ func randomInt(min, max int) (int, error) {
 	}
 	value := int(binary.BigEndian.Uint16(raw[:]))
 	return min + value%(max-min+1), nil
+}
+
+// randomFloat draws a value in [min, max).
+func randomFloat(min, max float64) (float64, error) {
+	var raw [2]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return 0, err
+	}
+	unit := float64(binary.BigEndian.Uint16(raw[:])) / (1 << 16)
+	return min + unit*(max-min), nil
+}
+
+// clampByte holds a colour channel inside the unsigned byte range.
+func clampByte(value int) uint8 {
+	switch {
+	case value < 0:
+		return 0
+	case value > 255:
+		return 255
+	default:
+		return uint8(value)
+	}
 }
 
 // randomByte draws one random byte.
