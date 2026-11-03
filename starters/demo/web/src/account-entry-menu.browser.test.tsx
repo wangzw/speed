@@ -19,6 +19,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { alpha } from '@mui/material/styles'
+import axe from 'axe-core'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { themePresets } from '@speed/theme-presets'
@@ -529,4 +530,33 @@ describe('the account menu across theme presets', () => {
       })
     }
   }
+})
+
+/**
+ * The trigger's Label in Name (WCAG 2.5.3), settled in Chromium because the
+ * rule needs the canvas text-measurement API: jsdom answers
+ * `getContext('2d')` with null, so the rule stays indeterminate there. The
+ * trigger renders the avatar's initials and the display name as two text
+ * nodes; without whitespace between them their text coalesces into one word
+ * that the accessible name does not contain.
+ */
+describe("the account trigger's Label in Name", () => {
+  it('keeps the visible initials and name inside its accessible name', async () => {
+    await page.viewport(1280, 900)
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+    const trigger = await screen.findByTestId('account-entry-trigger')
+    await document.fonts.ready
+
+    const result = await axe.run(trigger, {
+      runOnly: { type: 'rule', values: ['label-content-name-mismatch'] },
+    })
+    const findings = [...result.violations, ...result.incomplete].flatMap(
+      (rule) => rule.nodes.map((node) => `${rule.id}: ${node.html}`),
+    )
+    expect(findings).toEqual([])
+    // The rule must have judged the trigger, not skipped it as inapplicable.
+    expect(
+      result.passes.reduce((total, rule) => total + rule.nodes.length, 0),
+    ).toBeGreaterThan(0)
+  })
 })

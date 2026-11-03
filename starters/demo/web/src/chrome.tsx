@@ -1,9 +1,9 @@
 /**
  * The shell chrome the app's two areas share: the brand and the user menu the
- * tenant frame and the console frame both render in their top bar.
+ * tenant frame and the admin frame both render in their top bar.
  *
- * The tenant area (product-shell's frame) and the console area (console-ui's
- * frame) are two different shells -- the console carries no tenant switcher --
+ * The tenant area (product-shell's frame) and the admin area (admin-ui's
+ * frame) are two different shells -- the admin carries no tenant switcher --
  * but their top bars are the same chrome, so both render the brand and the
  * account controls from here. One definition keeps the two bars from drifting
  * into two products.
@@ -13,7 +13,7 @@
  *  - AppBrand: the demo namespace's product title.
  *  - TenantMenu: tenancy-ui's TenantSwitcher over the caller's own tenant
  *    list (the caller tenant read). product-shell places the switcher in the
- *    userMenu slot; the console banner, which resolves no tenant, does not
+ *    userMenu slot; the admin banner, which resolves no tenant, does not
  *    render it. Its switch confirmation is announced but never painted.
  *  - UserMenu: an avatar trigger opening a menu of profile / account-settings
  *    / sign-out, replacing the bare sign-out button. While an impersonation
@@ -293,7 +293,7 @@ export function AppBrand(): ReactElement {
 /**
  * The tenant switcher over the caller's own tenant list. The current tenant is
  * a host fact (a route change, not a session op), and product-shell places the
- * switcher in the userMenu slot; the console banner, which resolves no tenant,
+ * switcher in the userMenu slot; the admin banner, which resolves no tenant,
  * does not render it.
  *
  * Every row the host offers is rendered. A tenant record carries no display
@@ -766,6 +766,12 @@ export function AccountEntry({
           >
             <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
           </Box>
+          {/* The glyph's initials and the display name are two text nodes.
+              Without a separator their text coalesces into one word ("TUJane
+              Doe"), which is not a word of the trigger's accessible name and
+              so fails WCAG 2.5.3's token containment. A whitespace-only text
+              node is not a flex item, so neither child moves. */}
+          {' '}
           {narrow ? null : (
             <>
               <Box
