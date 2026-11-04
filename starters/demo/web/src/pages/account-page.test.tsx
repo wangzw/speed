@@ -68,11 +68,20 @@ const SOCIAL_METHODS: AuthnMethodList = {
 }
 
 const ADD_PATH = '/api/v1/auth/identifiers'
+/** The number the phone cases type into the local field and the E.164 form
+ * the control assembles from it (jsdom's locale resolves to the US). */
+const US_NATIONAL = '4155552671'
+const US_E164 = '+14155552671'
 const accountEnUS = accountUiResources['en-US'] as {
   readonly verification: Readonly<Record<string, string>>
   readonly bindingCallback: Readonly<Record<string, string>>
+  readonly errors: {
+    readonly unknown: string
+    readonly authn: Readonly<Record<string, string>>
+  }
   readonly profile: {
     readonly title: string
+    readonly saved: string
     readonly displayName: { readonly label: string }
   }
   readonly password: {
@@ -118,6 +127,13 @@ const accountEnUS = accountUiResources['en-US'] as {
       readonly defaultContact: string
     }
     readonly action: { readonly enable: string; readonly disable: string }
+  }
+  readonly phone: {
+    readonly added: string
+    readonly send: string
+    readonly verify: string
+    readonly phone: { readonly label: string }
+    readonly code: { readonly label: string }
   }
 }
 const bindingEnUS = accountEnUS.bindingCallback
@@ -972,8 +988,11 @@ describe('AccountSettingsPage block consistency', () => {
     )
   })
 
-  /** The profile with one phone number, whose deletion the server refuses. */
-  function refusedPhoneDeleteBackend(): RequestFn {
+  /** The profile with one phone number, whose deletion the server refuses
+   * with the given problem code. */
+  function refusedPhoneDeleteBackend(
+    code = 'authn.unavailable',
+  ): RequestFn {
     const backend = patchedBackend({
       identifiers: [
         {
@@ -997,14 +1016,14 @@ describe('AccountSettingsPage block consistency', () => {
       ) {
         throw Object.assign(new Error('refused'), {
           status: 503,
-          code: 'authn.unavailable',
+          code,
         })
       }
       return backend(path, requestOptions)
     }) as RequestFn
   }
 
-  /** Remove the bound phone and settle the failure banner. */
+  /** Remove the bound phone and return the block's one result region. */
   async function refusePhoneRemoval(
     user: ReturnType<typeof userEvent.setup>,
   ): Promise<HTMLElement> {
@@ -1022,31 +1041,40 @@ describe('AccountSettingsPage block consistency', () => {
         name: demoEnUS.account.phoneRemove.removeConfirm,
       }),
     )
-    return screen.findByText(demoEnUS.account.phoneRemove.removeFailed)
+    return within(phone).findByRole('alert')
   }
 
-  it('offers a dismiss control on the phone-removal failure', async () => {
+  it('reports a refused phone removal in the block\'s one result region', async () => {
     renderAccount('?section=profile', {
       features: ['authn.phone'],
       backend: refusedPhoneDeleteBackend(),
     })
     const user = userEvent.setup()
 
-    expect(await refusePhoneRemoval(user)).toBeInTheDocument()
+    const alert = await refusePhoneRemoval(user)
+    const sentence = accountEnUS.errors.authn.unavailable ?? ''
+    expect(sentence).not.toBe('')
+    // The same region that confirms an add carries the refusal, worded by
+    // the account-ui error vocabulary for the code the backend answered.
+    expect(alert).toHaveTextContent(sentence)
+  })
 
-    await user.click(
-      screen.getByRole('button', {
-        name: demoEnUS.account.phoneRemove.dismiss,
-      }),
-    )
-    expect(
-      screen.queryByText(demoEnUS.account.phoneRemove.removeFailed),
-    ).toBeNull()
+  it('renders the unknown sentence for a removal code the bundle lacks', async () => {
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: refusedPhoneDeleteBackend('authn.not_in_the_bundle'),
+    })
+    const user = userEvent.setup()
+
+    const alert = await refusePhoneRemoval(user)
+    expect(alert).toHaveTextContent(accountEnUS.errors.unknown)
+    // A code without a leaf never renders as a raw resource key.
+    expect(alert).not.toHaveTextContent('errors.')
   })
 
   it('clears the phone-removal failure when the visitor leaves the pane', async () => {
-    // The pane's route change reuses this page instance, so the banner must
-    // be settled on leaving rather than carried back to the phone block.
+    // The pane's route change reuses this page instance, so the block's
+    // result must be settled on leaving rather than carried back to it.
     renderAccount('?section=profile', {
       features: ['authn.phone'],
       backend: refusedPhoneDeleteBackend(),
@@ -1061,11 +1089,253 @@ describe('AccountSettingsPage block consistency', () => {
       name: demoEnUS.account.sections.security,
     })
     await chooseAccountSection(user, demoEnUS.account.sections.profile)
-    await screen.findByRole('region', {
+    const phone = await screen.findByRole('region', {
       name: demoEnUS.account.rows.label.phone,
     })
+    expect(within(phone).queryByRole('alert')).toBeNull()
+  })
+
+  /** The data backend whose profile gains the added number once the verify
+   * lands; the two phone writes answer their own paths. `holdRefresh` keeps
+   * the profile read that follows a landed verify pending until `settle`;
+   * `bindOnRefresh: false` answers that read without the number, as a read
+   * that raced the write. `refreshReads` counts the bound profile reads the
+   * invalidation issued, so a case can synchronize on the refetch actually
+   * starting rather than guessing at timings. */
+  function phoneAddBackend(
+    options: {
+      readonly holdRefresh?: boolean
+      readonly bindOnRefresh?: boolean
+    } = {},
+  ): {
+    readonly request: RequestFn
+    readonly settle: () => void
+    readonly refreshReads: () => number
+  } {
+    const backend = createBackend('data')
+    const bindOnRefresh = options.bindOnRefresh ?? true
+    let bound = false
+    let refreshReads = 0
+    let release = (): void => undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const request = (async (path: string, requestOptions?: RequestOptions) => {
+      const method = requestOptions?.method ?? 'GET'
+      if (path === '/api/v1/auth/phone' && method === 'POST') {
+        return { expires_in: 300, resend_after: 60 }
+      }
+      if (path === '/api/v1/auth/phone/verify' && method === 'POST') {
+        bound = true
+        return undefined
+      }
+      if (path === '/api/v1/auth/me' && method === 'GET' && bound) {
+        refreshReads += 1
+        if (options.holdRefresh === true) {
+          await held
+        }
+        const answer = await backend(path, requestOptions)
+        if (!bindOnRefresh) {
+          return answer
+        }
+        const profile = answer as { identifiers?: unknown[] }
+        return {
+          ...(answer as Record<string, unknown>),
+          identifiers: [
+            ...(profile.identifiers ?? []),
+            {
+              id: 'id-phone-new',
+              kind: 'phone',
+              value: US_E164,
+              proven: true,
+              contact: true,
+              default_contact: false,
+              sign_in: false,
+              verified_at: '2026-01-01T00:00:00Z',
+              verified_via: 'sms',
+            },
+          ],
+        }
+      }
+      return backend(path, requestOptions)
+    }) as RequestFn
+    return {
+      request,
+      settle: () => release(),
+      refreshReads: () => refreshReads,
+    }
+  }
+
+  /** Types the number and the code, then submits the verify. */
+  async function addPhone(
+    user: ReturnType<typeof userEvent.setup>,
+    phone: HTMLElement,
+  ): Promise<void> {
+    await user.click(
+      within(phone).getByRole('button', { name: demoEnUS.account.action.add }),
+    )
+    await user.type(
+      await within(phone).findByLabelText(accountEnUS.phone.phone.label, {
+        selector: 'input',
+      }),
+      US_NATIONAL,
+    )
+    await user.click(
+      within(phone).getByRole('button', { name: accountEnUS.phone.send }),
+    )
+    await user.type(
+      await within(phone).findByLabelText(accountEnUS.phone.code.label),
+      '123456',
+    )
+    await user.click(
+      within(phone).getByRole('button', { name: accountEnUS.phone.verify }),
+    )
+  }
+
+  it('closes the add form and confirms the number once the phone is verified', async () => {
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: phoneAddBackend().request,
+    })
+    const user = userEvent.setup()
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+    // The block's success region stands in the tree before there is anything
+    // to confirm: a region born together with its text is unreliable. The
+    // phone block is the only one with a standing status region here.
+    expect(within(phone).getByRole('status')).toBeInTheDocument()
+
+    await addPhone(user, phone)
+
+    const sentence = accountEnUS.phone.added.replace('{{phone}}', US_E164)
+
+    // The add form is gone: neither the number field nor the send action
+    // remains in the block.
+    await waitFor(() =>
+      expect(
+        within(phone).queryByRole('button', { name: accountEnUS.phone.send }),
+      ).toBeNull(),
+    )
     expect(
-      screen.queryByText(demoEnUS.account.phoneRemove.removeFailed),
+      within(phone).queryByLabelText(accountEnUS.phone.phone.label),
+    ).toBeNull()
+    // The bound number stands on the block's row ...
+    expect(await within(phone).findByText(US_E164)).toBeInTheDocument()
+    // ... the region carries the one confirmation that names it ...
+    await waitFor(() =>
+      expect(within(phone).getByRole('status')).toHaveTextContent(sentence),
+    )
+    // ... and the sentence appears exactly once once the queue drains.
+    await act(async () => {})
+    expect(within(phone).getAllByText(sentence)).toHaveLength(1)
+    // ... and the not-linked line is gone with the number bound.
+    expect(
+      within(phone).queryByText(demoEnUS.account.rows.value.notBound),
+    ).toBeNull()
+  })
+
+  it('holds the add form and the placeholder back while the refresh after verify is in flight', async () => {
+    const backend = phoneAddBackend({ holdRefresh: true })
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: backend.request,
+    })
+    const user = userEvent.setup()
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+
+    await addPhone(user, phone)
+
+    // Synchronize on the invalidated profile read actually starting: the
+    // verify landed and the refetch is open.
+    await waitFor(() => expect(backend.refreshReads()).toBeGreaterThanOrEqual(1))
+
+    const sentence = accountEnUS.phone.added.replace('{{phone}}', US_E164)
+
+    // The confirmation stands while the page has not read the number back:
+    // the add form is gone and the block makes no claim about a number it
+    // has not seen.
+    expect(await within(phone).findByText(sentence)).toBeInTheDocument()
+    expect(
+      within(phone).queryByRole('button', { name: accountEnUS.phone.send }),
+    ).toBeNull()
+    expect(
+      within(phone).queryByText(demoEnUS.account.rows.value.notBound),
+    ).toBeNull()
+
+    // Settling the read lands the number's row; the confirmation still
+    // stands once and the placeholder never returns.
+    await act(async () => {
+      backend.settle()
+      await Promise.resolve()
+    })
+    expect(await within(phone).findByText(US_E164)).toBeInTheDocument()
+    await act(async () => {})
+    expect(within(phone).getAllByText(sentence)).toHaveLength(1)
+    expect(
+      within(phone).queryByText(demoEnUS.account.rows.value.notBound),
+    ).toBeNull()
+  })
+
+  it('clears the phone confirmation when a sibling write on the pane succeeds', async () => {
+    // The page carries one result: the add confirmation lives in a feedback
+    // scope, so a later success in the identity block clears it. A banner
+    // outside the page's coordination would stand beside the new result.
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: phoneAddBackend().request,
+    })
+    const user = userEvent.setup()
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+
+    await addPhone(user, phone)
+    const sentence = accountEnUS.phone.added.replace('{{phone}}', US_E164)
+    await waitFor(() =>
+      expect(within(phone).getByRole('status')).toHaveTextContent(sentence),
+    )
+
+    // The identity block saves the display name on blur; its success is the
+    // later result on the page.
+    const nameField = screen.getByRole('textbox', {
+      name: accountEnUS.profile.displayName.label,
+    })
+    await user.clear(nameField)
+    await user.type(nameField, 'Renamed User')
+    await user.tab()
+
+    await screen.findByText(accountEnUS.profile.saved)
+    expect(within(phone).queryByText(sentence)).toBeNull()
+  })
+
+  it('keeps the placeholder back while a confirmation stands on a stale read', async () => {
+    // The refreshed read answers without the number (it raced the write):
+    // the confirmation must not stand beside a not-linked line.
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: phoneAddBackend({ bindOnRefresh: false }).request,
+    })
+    const user = userEvent.setup()
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+
+    await addPhone(user, phone)
+
+    expect(
+      await within(phone).findByText(
+        accountEnUS.phone.added.replace('{{phone}}', US_E164),
+      ),
+    ).toBeInTheDocument()
+    expect(within(phone).queryByText(US_E164)).toBeNull()
+    expect(
+      within(phone).queryByText(demoEnUS.account.rows.value.notBound),
+    ).toBeNull()
+    expect(
+      within(phone).queryByRole('button', { name: accountEnUS.phone.send }),
     ).toBeNull()
   })
 

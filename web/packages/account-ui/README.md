@@ -134,6 +134,10 @@ interface PasswordSectionProps {
 interface PhoneSectionProps {
   readonly session: AuthSession
   readonly humanGate?: AuthnHumanGate // a gate the host already read
+  // `onCancel` and `onAdded` are given together or not at all: a host that
+  // owns the add form's visibility gives both, a standalone mount neither.
+  readonly onCancel?: () => void // closes the host-owned form
+  readonly onAdded?: (phone: string) => void // the bound number in E.164, once the verification lands and the host's active profile read has finished
 }
 interface IdentifiersSectionProps {
   readonly session: AuthSession
@@ -216,8 +220,19 @@ into E.164 for the send and validated per country before any request --
 the same control and rules the SMS sign-in form uses, so the two cannot
 drift. The sent notice names the assembled number; the verify carries the code
 alone, because the number is the server's own record keyed to the session.
-A verified number refetches the profile and reports the addition; the write
-rotates no credential and revokes no other session.
+A verified number reports the addition in the section's own region and
+invalidates the profile query rather than subscribing to it, so the hand-over
+waits for the host's active profile read to finish; a host that mounts none is
+notified once the invalidation returns. A host that owns the add form's
+visibility gives `onCancel` and `onAdded` together or not at all: `onAdded`
+receives the bound number in E.164 once the verification lands and the host's
+read has finished, and `onCancel` closes the form. The success sentence
+settles the moment the write lands and stays on screen while the section waits
+to be dismissed; it is not a second result beside the host's block
+confirmation, because the section unmounts as the host confirms. A mount that
+gives neither callback is standalone: it resets to the number step and
+confirms in its own region. The write rotates no credential and revokes no
+other session.
 
 ### IdentifiersSection
 

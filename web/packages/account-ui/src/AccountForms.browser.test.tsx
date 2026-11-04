@@ -495,7 +495,11 @@ describe('account-ui form geometry', () => {
     rig.store.set('access-1')
     renderWithProviders(
       <PhoneCountryDefaultProvider country="US">
-        <PhoneSection session={rig.session} onCancel={() => undefined} />
+        <PhoneSection
+          session={rig.session}
+          onCancel={() => undefined}
+          onAdded={() => undefined}
+        />
       </PhoneCountryDefaultProvider>,
     )
     const user = userEvent.setup()

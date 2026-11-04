@@ -68,9 +68,8 @@
  */
 
 import type { MouseEventHandler, ReactElement, ReactNode } from 'react'
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import type { Theme } from '@mui/material/styles'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Chip from '@mui/material/Chip'
@@ -112,13 +111,14 @@ import type { AppThemeModePreference } from '@speed/ui-kit'
 import {
   ActionButton,
   ConfirmDialog,
-  errorCodeOf,
   FORM_MAX_WIDTH,
   PageHeader,
   PageLayout,
   SectionSurfaceProvider,
   useAppThemeMode,
   useAppThemePreset,
+  useWriteFeedback,
+  WriteFeedbackRegion,
 } from '@speed/ui-kit'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -486,7 +486,7 @@ export function AccountSettingsPage({
 }): ReactElement {
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const { t: tAccount } = useTranslation(ACCOUNT_UI_NAMESPACE)
+  const { t: tAccount, i18n: i18nAccount } = useTranslation(ACCOUNT_UI_NAMESPACE)
   // The account-ui bundle owns the identifiers' own vocabulary: the kind
   // names the sign-in summary lists and the badge a proved address carries.
   const { path: pathname, search } = useLocationPath()
@@ -552,16 +552,34 @@ export function AccountSettingsPage({
   const [openSecurityRow, setOpenSecurityRow] = useState<string | null>(null)
   const [addEmailSignal, setAddEmailSignal] = useState(0)
   const [phoneFormOpen, setPhoneFormOpen] = useState(false)
+  // The phone block's one result slot: an add confirmation and a removal
+  // refusal both settle here, and the block renders whichever settled last
+  // through a WriteFeedbackRegion. The page-level provider sees this scope,
+  // so a later success elsewhere clears it.
+  const phoneFeedback = useWriteFeedback()
+  // A failure code resolves through the account-ui error vocabulary, the
+  // same mapping the section family uses: the code's own leaf when the
+  // bundle lists it, the bundle's unknown line otherwise -- never a raw key.
+  // The resolver is stable across renders so the region is not re-settled
+  // by an identity change alone.
+  const resolvePhoneFailure = useCallback(
+    (code: string): string => {
+      const key = `errors.${code}`
+      return i18nAccount.exists(key, { ns: ACCOUNT_UI_NAMESPACE })
+        ? String(tAccount(key))
+        : String(tAccount('errors.unknown'))
+    },
+    [i18nAccount, tAccount],
+  )
   const [phoneRemoveOpen, setPhoneRemoveOpen] = useState(false)
-  const [phoneRemoveError, setPhoneRemoveError] = useState<string | null>(null)
-  // The failure belongs to the profile pane's phone block. The pane's route
+  // The result belongs to the profile pane's phone block. The pane's route
   // change reuses this page instance, so leaving the block (or the pane)
-  // settles the banner instead of carrying it to the next visit.
+  // settles the slot instead of carrying its result to the next visit.
   useEffect(() => {
     if (section !== 'profile') {
-      setPhoneRemoveError(null)
+      phoneFeedback.reset()
     }
-  }, [section])
+  }, [section, phoneFeedback.reset])
   // The sessions block's title-row slot: the list's bulk action is rendered
   // here instead of on a row of its own under the block heading.
   const [sessionsHeaderAction, setSessionsHeaderAction] =
@@ -596,12 +614,12 @@ export function AccountSettingsPage({
   })
   async function removePhone(id: string): Promise<void> {
     // A new attempt owns the result position, so the previous attempt's
-    // failure does not stand beside this one while it runs.
-    setPhoneRemoveError(null)
+    // failure or the previous add's confirmation does not stand beside this
+    // one while it runs.
+    phoneFeedback.reset()
     try {
       await removeIdentifier.mutateAsync({ id })
       setPhoneRemoveOpen(false)
-      setPhoneRemoveError(null)
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),
       })
@@ -610,8 +628,24 @@ export function AccountSettingsPage({
         return
       }
       setPhoneRemoveOpen(false)
-      setPhoneRemoveError(errorCodeOf(error) ?? 'client.unknown')
+      // The refusal settles in the block's one result region; the scope
+      // classifies the error into its code and the region resolves it.
+      phoneFeedback.fail(error)
     }
+  }
+  // The section hands the bound number in E.164 once the verification lands
+  // and its profile refresh has settled, so the number reaches this page
+  // before the confirmation does. The form's visibility belongs to this page,
+  // so the add closes here and the confirmation settles the block's feedback
+  // scope instead of the section's own region, which unmounts with the form.
+  const handlePhoneAdded = (phone: string): void => {
+    phoneFeedback.succeed(
+      tAccount('phone.added', {
+        phone,
+        interpolation: { escapeValue: false },
+      }),
+    )
+    setPhoneFormOpen(false)
   }
   return (
     <PageLayout title={t(`account.sections.${section}`)}>
@@ -734,7 +768,12 @@ export function AccountSettingsPage({
                         <Button
                           variant="outlined"
                           size="small"
-                          onClick={() => setPhoneFormOpen(true)}
+                          onClick={() => {
+                            // A new attempt must not stand beside the previous
+                            // result.
+                            phoneFeedback.reset()
+                            setPhoneFormOpen(true)
+                          }}
                         >
                           {t('account.action.add')}
                         </Button>
@@ -746,8 +785,9 @@ export function AccountSettingsPage({
                         <PhoneSection
                           session={session}
                           onCancel={() => setPhoneFormOpen(false)}
+                          onAdded={handlePhoneAdded}
                         />
-                      ) : (
+                      ) : phoneFeedback.outcome?.kind === 'success' ? null : (
                         <Typography variant="body2" color="text.secondary">
                           {t('account.rows.value.notBound')}
                         </Typography>
@@ -756,6 +796,7 @@ export function AccountSettingsPage({
                       <PhoneSection
                         session={session}
                         onCancel={() => setPhoneFormOpen(false)}
+                        onAdded={handlePhoneAdded}
                       />
                     ) : (
                       <Table
@@ -803,16 +844,11 @@ export function AccountSettingsPage({
                         </TableBody>
                       </Table>
                     )}
-                    {phoneRemoveError === null ? null : (
-                      <Alert
-                        severity="error"
-                        sx={{ mt: 1 }}
-                        onClose={() => setPhoneRemoveError(null)}
-                        closeText={t('account.phoneRemove.dismiss')}
-                      >
-                        {t('account.phoneRemove.removeFailed')}
-                      </Alert>
-                    )}
+                    <WriteFeedbackRegion
+                      outcome={phoneFeedback.outcome}
+                      resolve={resolvePhoneFailure}
+                      sx={{ alignSelf: 'stretch', width: '100%' }}
+                    />
                   </AccountSection>
                 ) : null}
               </>

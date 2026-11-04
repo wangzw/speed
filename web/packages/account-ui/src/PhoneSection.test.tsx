@@ -13,16 +13,29 @@
  * number fills the scope's region beneath the controls with a message
  * naming the number, while the sent notice stays outside the slot; a
  * refused send and a wrong code each render their code text in that
- * region; the way back to a different number returns to the number step;
+ * region; a landed verification settles its sentence before the profile
+ * re-read starts, so the slot is never blank while the refresh is in
+ * flight, contains a failed re-read instead of reporting the landed write
+ * as a failure, and then hands the bound number to the host through
+ * `onAdded` exactly once -- only while the section is still mounted, since
+ * a read that settles after it unmounted notifies nothing -- keeping its
+ * own success state on screen instead of the number-entry form while the
+ * host dismisses it, and offering a Close action during the wait that
+ * closes without a hand-over; the section's own confirmation still renders
+ * for a standalone mount; the way
+ * back to a different number
+ * returns to the number step;
  * the send carries no fresh authentication, so a step-up refusal of it
  * renders its code text in that region rather than opening a dialog, while a
- * refused verify opens the dialog and replays the same code.
+ * refused verify opens the dialog, settles nothing in the slot before the
+ * replay, and replays the same code.
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
+import { useState } from 'react'
 import { PhoneCountryDefaultProvider, uiKitResources } from '@speed/ui-kit'
 import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import enUS from './locales/en-US.json' with { type: 'json' }
@@ -144,6 +157,396 @@ describe('PhoneSection', () => {
     expect(rig.calls.find((call) => call.path === VERIFY_PATH)?.body).toEqual({
       code: '123456',
     })
+  })
+
+  it('hands the bound number to the host once on success and keeps its own confirmation', async () => {
+    // A host that owns the add form's visibility hands in the matched
+    // `onCancel`/`onAdded` pair, closes the form from `onAdded`, and still
+    // sees the section's confirmation while it is mounted.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onAdded = vi.fn()
+    renderWithProviders(
+      <PhoneSection
+        session={rig.session}
+        onCancel={() => undefined}
+        onAdded={onAdded}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.code.label),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
+
+    // The confirmation is on screen first; the notification follows the
+    // settled attempt, exactly once and with the bound number.
+    expect(
+      await screen.findByText(zhCN.phone.added.replace('{{phone}}', US_E164)),
+    ).toBeTruthy()
+    await waitFor(() => expect(onAdded).toHaveBeenCalledTimes(1))
+    expect(onAdded).toHaveBeenCalledWith(US_E164)
+    await act(async () => {})
+    expect(onAdded).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for the profile refresh before handing the number to the host', async () => {
+    // The host closes its add form from `onAdded`. Notifying before the
+    // profile read settles would leave the block behind the form showing
+    // the stale read (尚未绑定) beside the success sentence. The section
+    // therefore keeps its own success state -- never the number-entry form
+    // -- until the invalidation's refetch has landed, and only then
+    // notifies the host.
+    let profileReads = 0
+    let releaseHeldRead: (() => void) | undefined
+    const heldRead = new Promise<void>((resolve) => {
+      releaseHeldRead = resolve
+    })
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        profileReads += 1
+        // The mount read settles at once; the read the invalidation issues
+        // stays open until the case releases it.
+        return profileReads === 1
+          ? jsonResponse(200, profileBody())
+          : heldRead.then(() => jsonResponse(200, profileBody()))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onAdded = vi.fn()
+    renderWithProviders(
+      <>
+        <PhoneSection
+          session={rig.session}
+          onCancel={() => undefined}
+          onAdded={onAdded}
+        />
+        <ProfileQueryObserver />
+      </>,
+    )
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(profileReads).toBe(1))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.code.label),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
+
+    // The verify has landed and the invalidated profile read is in flight.
+    await waitFor(() => expect(profileReads).toBe(2))
+    expect(onAdded).not.toHaveBeenCalled()
+    // The sentence settled when the write landed, before the read returned:
+    // the card is never blank while the refresh is in flight.
+    const added = zhCN.phone.added.replace('{{phone}}', US_E164)
+    await waitFor(() => expect(screen.getByText(added)).toBeTruthy())
+    expect(screen.queryByRole('alert')).toBeNull()
+    // The section does not fall back to the number-entry form: that would
+    // put an empty add form beside the success sentence while the host is
+    // still waiting to dismiss it.
+    expect(
+      screen.queryByRole('button', { name: zhCN.phone.send }),
+    ).toBeNull()
+    expect(
+      screen.queryByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+    ).toBeNull()
+
+    // The refetch lands; the number is handed over exactly once.
+    await act(async () => {
+      releaseHeldRead?.()
+    })
+    await waitFor(() => expect(onAdded).toHaveBeenCalledTimes(1))
+    expect(onAdded).toHaveBeenCalledWith(US_E164)
+    // A late second call after the queue drains would still be a defect.
+    await act(async () => {})
+    expect(onAdded).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not hand the number to the host when the profile read settles after the section unmounts', async () => {
+    // The verify's async chain outlives the section: the host reuses one
+    // page across sections and may unmount this one while the profile
+    // re-read is still open. The late settlement must not fire the host
+    // callback on a page already left -- that would re-add a stale
+    // confirmation and clear a sibling scope's result.
+    let profileReads = 0
+    let releaseHeldRead: (() => void) | undefined
+    const heldRead = new Promise<void>((resolve) => {
+      releaseHeldRead = resolve
+    })
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        profileReads += 1
+        return profileReads === 1
+          ? jsonResponse(200, profileBody())
+          : heldRead.then(() => jsonResponse(200, profileBody()))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onAdded = vi.fn()
+    const { unmount } = renderWithProviders(
+      <>
+        <PhoneSection
+          session={rig.session}
+          onCancel={() => undefined}
+          onAdded={onAdded}
+        />
+        <ProfileQueryObserver />
+      </>,
+    )
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(profileReads).toBe(1))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.code.label),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
+
+    // The write landed and the invalidated profile read is in flight.
+    await waitFor(() => expect(profileReads).toBe(2))
+    expect(onAdded).not.toHaveBeenCalled()
+
+    // The host moves on to another section while the read is still open.
+    unmount()
+    await act(async () => {
+      releaseHeldRead?.()
+    })
+    await act(async () => {})
+
+    expect(onAdded).not.toHaveBeenCalled()
+  })
+
+  it('offers Close while the profile read is held, and closes without handing the number over', async () => {
+    // A hung refresh must not trap the reader. While the landed success is
+    // held, the section offers one Close action; leaving through it calls
+    // the host's cancel, and the late read still hands nothing over.
+    let profileReads = 0
+    let releaseHeldRead: (() => void) | undefined
+    const heldRead = new Promise<void>((resolve) => {
+      releaseHeldRead = resolve
+    })
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        profileReads += 1
+        return profileReads === 1
+          ? jsonResponse(200, profileBody())
+          : heldRead.then(() => jsonResponse(200, profileBody()))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onAdded = vi.fn()
+    const onCancelSpy = vi.fn()
+    // The host owns the form's visibility: its cancel dismisses the section.
+    function Host() {
+      const [visible, setVisible] = useState(true)
+      return (
+        <>
+          {visible ? (
+            <PhoneSection
+              session={rig.session}
+              onCancel={() => {
+                setVisible(false)
+                onCancelSpy()
+              }}
+              onAdded={onAdded}
+            />
+          ) : null}
+          <ProfileQueryObserver />
+        </>
+      )
+    }
+    renderWithProviders(<Host />)
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(profileReads).toBe(1))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.code.label),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
+
+    // The write landed and the read is held. The number-entry form is gone,
+    // and Close is the one control -- enabled, because the refresh may hang.
+    await waitFor(() => expect(profileReads).toBe(2))
+    expect(
+      screen.queryByRole('button', { name: zhCN.phone.send }),
+    ).toBeNull()
+    const close = screen.getByRole('button', { name: zhCN.phone.close })
+    expect(close).toBeEnabled()
+    await user.click(close)
+    expect(onCancelSpy).toHaveBeenCalledTimes(1)
+    expect(onAdded).not.toHaveBeenCalled()
+
+    // The host dismissed the section; the late read resolves on a page
+    // already left and hands nothing over.
+    await act(async () => {
+      releaseHeldRead?.()
+    })
+    await act(async () => {})
+    expect(onAdded).not.toHaveBeenCalled()
+  })
+
+  it('keeps the confirmation when the profile re-read fails', async () => {
+    // The write landed; only the follow-up read failed. A failed re-read
+    // must not turn the landed verification into a failure banner, and the
+    // number is still handed to the host exactly once.
+    let profileReads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        profileReads += 1
+        // The mount read settles; the read the invalidation issues fails.
+        return profileReads === 1
+          ? jsonResponse(200, profileBody())
+          : errorResponse(500, 'common.internal')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onAdded = vi.fn()
+    renderWithProviders(
+      <>
+        <PhoneSection
+          session={rig.session}
+          onCancel={() => undefined}
+          onAdded={onAdded}
+        />
+        <ProfileQueryObserver />
+      </>,
+    )
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(profileReads).toBe(1))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.code.label),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
+
+    // The re-read failed, but the landed write keeps its confirmation and
+    // renders no failure.
+    await waitFor(() => expect(profileReads).toBe(2))
+    const added = zhCN.phone.added.replace('{{phone}}', US_E164)
+    await waitFor(() => expect(screen.getByText(added)).toBeTruthy())
+    expect(screen.queryByRole('alert')).toBeNull()
+    await waitFor(() => expect(onAdded).toHaveBeenCalledTimes(1))
+    expect(onAdded).toHaveBeenCalledWith(US_E164)
+    await act(async () => {})
+    expect(onAdded).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not report a landed write as failed when the host callback throws', async () => {
+    // `onAdded` is a host callback, not part of the write. A throw from it
+    // must not turn the landed verification into a failure banner.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onAdded = vi.fn(() => {
+      throw new Error('host exploded')
+    })
+    renderWithProviders(
+      <PhoneSection
+        session={rig.session}
+        onCancel={() => undefined}
+        onAdded={onAdded}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.code.label),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
+
+    // The write's own confirmation stands, and no failure replaces it.
+    expect(
+      await screen.findByText(zhCN.phone.added.replace('{{phone}}', US_E164)),
+    ).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(onAdded).toHaveBeenCalledTimes(1)
+    expect(onAdded).toHaveBeenCalledWith(US_E164)
+    await act(async () => {})
+    expect(onAdded).toHaveBeenCalledTimes(1)
   })
 
   it('starts on the host\'s preferred country and assembles the number under it', async () => {
@@ -459,7 +862,16 @@ describe('PhoneSection', () => {
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    const { rig } = mount(respond)
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onAdded = vi.fn()
+    renderWithProviders(
+      <PhoneSection
+        session={rig.session}
+        onCancel={() => undefined}
+        onAdded={onAdded}
+      />,
+    )
     const user = userEvent.setup()
 
     await user.type(
@@ -475,6 +887,13 @@ describe('PhoneSection', () => {
 
     // The 401 opens the dialog; winning it replays the same code.
     await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
+    // The refused verify handed the write to the step-up gate and settled
+    // nothing in the slot: while the dialog is open and before the replay,
+    // there is neither a confirmation nor a failure.
+    expect(
+      screen.queryByText(zhCN.phone.added.replace('{{phone}}', US_E164)),
+    ).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
     await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
@@ -492,6 +911,12 @@ describe('PhoneSection', () => {
     expect(verifies).toHaveLength(2)
     expect(verifies[0]?.body).toEqual({ code: '123456' })
     expect(verifies[1]?.body).toEqual({ code: '123456' })
+    // The replay lands the write once; the host hears about it once, and
+    // the refused first attempt reports nothing.
+    await waitFor(() => expect(onAdded).toHaveBeenCalledTimes(1))
+    expect(onAdded).toHaveBeenCalledWith(US_E164)
+    await act(async () => {})
+    expect(onAdded).toHaveBeenCalledTimes(1)
   })
 
   it('proves a number without opening an identity-transition window', async () => {

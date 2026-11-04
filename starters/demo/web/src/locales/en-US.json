@@ -160,7 +160,6 @@
       "removeTitle": "Delete this phone number?",
       "removeMessage": "After it is deleted the number can no longer sign in or receive codes.",
       "removeConfirm": "Delete",
-      "removeFailed": "The number could not be deleted. Try again.",
       "dismiss": "Dismiss"
     }
   },
