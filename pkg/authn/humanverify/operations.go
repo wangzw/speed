@@ -101,8 +101,10 @@ var captchaChallengeOperation = speedhttp.NewReplyOperation[captchaChallengeInpu
 		"id, the form, the instruction key a client words for that form, and the media paths "+
 		"the form carries. A proof is the challenge id and the answer joined by a dot; it is "+
 		"single-use and spends the challenge whether the answer matched or not. A source that "+
-		"asks for more challenges than its window allows is answered 429, and a key-value "+
-		"store that cannot answer is answered 503.",
+		"asks for more challenges than the window of the form it is requesting allows is "+
+		"answered 429; the rotating forms keep a larger per-source bound, the audio form has "+
+		"its own stricter one, and the two counters neither spend nor are spent by the other. "+
+		"A key-value store that cannot answer is answered 503.",
 	nil,
 	[]speedhttp.Response{
 		{
@@ -114,7 +116,8 @@ var captchaChallengeOperation = speedhttp.NewReplyOperation[captchaChallengeInpu
 			"The form or audio language is not one this provider draws",
 			typePrefix+mount.CodeBadRequest),
 		speedhttp.ProblemResponseOf(http.StatusTooManyRequests,
-			"This source has asked for as many challenges as its window allows; retry later",
+			"This source has asked for as many challenges as the window of the form it is requesting allows; "+
+				"the audio form has its own, stricter per-source bound than the rotating forms. Retry later",
 			typePrefix+mount.CodeThrottled),
 		speedhttp.ProblemResponseOf(http.StatusServiceUnavailable,
 			"The challenge could not be issued because the key-value store was unavailable",

@@ -1175,7 +1175,7 @@
     },
     "/api/v1/auth/human/captcha/challenge": {
       "post": {
-        "description": "Issues one human-verification challenge for the self-hosted captcha mechanism. Only the `audio` form may be chosen: the `form` query item naming it draws a spoken reading of digits as the screen-reader alternative. The server rotates between the image and the slider form from a cryptographic random source, so `form=image`, `form=slider` and an absent item are all answered with whichever of the two the rotation drew; the value is not honoured, and any other value is a 400. The `lang` query item names the language an audio challenge is spoken in; the provider pronounces English, Japanese, Russian and Chinese, an unsupported language is a 400, and an absent item uses the request's active locale. The answer names the challenge id, the form, the instruction key a client words for that form, and the media paths the form carries. A proof is the challenge id and the answer joined by a dot; it is single-use and spends the challenge whether the answer matched or not. A source that asks for more challenges than its window allows is answered 429, and a key-value store that cannot answer is answered 503.",
+        "description": "Issues one human-verification challenge for the self-hosted captcha mechanism. Only the `audio` form may be chosen: the `form` query item naming it draws a spoken reading of digits as the screen-reader alternative. The server rotates between the image and the slider form from a cryptographic random source, so `form=image`, `form=slider` and an absent item are all answered with whichever of the two the rotation drew; the value is not honoured, and any other value is a 400. The `lang` query item names the language an audio challenge is spoken in; the provider pronounces English, Japanese, Russian and Chinese, an unsupported language is a 400, and an absent item uses the request's active locale. The answer names the challenge id, the form, the instruction key a client words for that form, and the media paths the form carries. A proof is the challenge id and the answer joined by a dot; it is single-use and spends the challenge whether the answer matched or not. A source that asks for more challenges than the window of the form it is requesting allows is answered 429; the rotating forms keep a larger per-source bound, the audio form has its own stricter one, and the two counters neither spend nor are spent by the other. A key-value store that cannot answer is answered 503.",
         "operationId": "authn.humanverify.captchaChallenge",
         "parameters": [
           {
@@ -1229,7 +1229,7 @@
                 }
               }
             },
-            "description": "This source has asked for as many challenges as its window allows; retry later"
+            "description": "This source has asked for as many challenges as the window of the form it is requesting allows; the audio form has its own, stricter per-source bound than the rotating forms. Retry later"
           },
           "503": {
             "content": {
