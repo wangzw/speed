@@ -152,7 +152,8 @@ language, first and second person, restating transitions, valueless counts,
 whether a non-functional number is sourced, whether a rejected option's reason is
 real, whether a requirement is testable, whether a word deserves a glossary entry
 at all and whether it belongs to the project glossary or to a local one, whether a
-normative sentence's literal scope is the one intended, whether a list is meant as
+normative sentence's literal scope is the one intended, whether a responsibility
+states an action rather than naming an artifact, whether a list is meant as
 a criterion or as an exhaustive set, whether a sentence that relies on an external
 source cites it, whether a cited source is one the reader would have attributed
 correctly unaided, whether a journey is a process the business actually runs, whether

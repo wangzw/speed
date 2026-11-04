@@ -74,7 +74,7 @@ Template: `templates/design-architecture.md`.
 
 Fixed section order, so modules can be read against each other and checked mechanically:
 
-1. **Responsibilities** — and, explicitly, **non-responsibilities**. Writing down what the module does not own is the cheapest available defence against scope creep.
+1. **Responsibilities** — and, explicitly, **non-responsibilities**. Writing down what the module does not own is the cheapest available defence against scope creep. **Each responsibility states an action the module performs and the result or boundary it produces.** A bare noun phrase naming a table, a queue or an artifact is not a responsibility statement: it says what the module stores, not what it does, and the reader cannot tell which behaviour is in scope. Persisted artifacts belong to Core Data Structures; the responsibility that writes, reads, expires or otherwise acts on them belongs here.
 2. **Glossary** — optional, and rare. The terms this document gives a meaning of its own, each stated with the scope it applies to and with its English counterpart. A term that holds project-wide belongs to the project glossary instead, never to both.
 3. **External interface contract** — what other modules may call, and what stability is promised. This is the most valuable part of a module document.
 4. **Dependencies** — what it depends on, and whether the direction satisfies the architecture invariants. A public external component the citation rule in `SKILL.md` catches is cited here, at its first mention, so that nothing the module embeds reads as something it built.
@@ -133,6 +133,7 @@ The common checklist in `SKILL.md` applies as well.
 - [ ] No diagram drawn to fill a template slot
 - [ ] Conditional sections that do not apply are deleted, not left empty
 - [ ] Module document follows the fixed section order, including non-responsibilities
+- [ ] Every responsibility states an action and its result or boundary; a bare inventory of owned tables, queues or artifacts is not a responsibility statement
 - [ ] External interface contract states what is callable and what stability is promised
 - [ ] Complexity analysis present for every performance-sensitive algorithm
 - [ ] Every implementation-status entry that claims implementation has a code anchor, and the entry states the status and no explanation

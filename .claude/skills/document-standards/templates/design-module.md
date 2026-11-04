@@ -14,7 +14,10 @@ name in the code, and never changes.
 
 ## Responsibilities
 
-<What the module owns.>
+<What the module does, and what it owns. Each responsibility states the
+action the module performs and the result or boundary it produces; a bare
+list of owned tables, queues or artifacts belongs to Core Data Structures,
+not here.>
 
 ### Non-Responsibilities
 
