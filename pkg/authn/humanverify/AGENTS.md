@@ -117,7 +117,10 @@ The three forms are hardened against automated solving:
 What remains weak: an OCR model trained on this generator's output, a template
 matcher that reconstructs the slider piece's round edge, and a speech recognizer
 robust to pace and noise can still solve these forms. The measures raise the
-cost; they do not make the forms unsolvable.
+cost; they do not make the forms unsolvable. Audio is the weakest of the three:
+it is kept as the accessibility path, so its cost is bounded by the stricter
+per-source issuance bound — one challenge per window — and the post-processing,
+not by the rotation that hides the choice of the visual forms.
 
 The bound is per source only: there is no global issuance ceiling, so a set of
 source addresses can still make the process draw challenges, and the image,

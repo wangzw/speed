@@ -47,10 +47,14 @@ thread, falling back to the calling thread where no `Worker` exists; for
 `turnstile` the surface adopts the widget's token; for the self-hosted
 `captcha` it obtains a challenge and exposes it as `captcha` for the
 caller's block to render, and the proof is the challenge id and the
-viewer's answer joined by a dot. The proof is consumed after every send,
-so the next send obtains a fresh one. A methods document that omits the
-gate is read as the off mechanism on both surfaces, so a newer client
-keeps working against an older server.
+viewer's answer joined by a dot. The request carries no form, so the
+server rotates between the visual forms; the one form the client may ask
+for is the audio accessibility alternative, through `requestAudio`. A
+refusal of that request that states a wait leaves the challenge on screen
+and reports the seconds in `audioRetryAfterSeconds`. The proof is consumed
+after every send, so the next send obtains a fresh one. A methods document
+that omits the gate is read as the off mechanism on both surfaces, so a
+newer client keeps working against an older server.
 
 The generated authn fragments declare their 2xx response schemas, so
 orval emits the response models. This package re-exports those generated
@@ -66,7 +70,7 @@ guards".
 | `hooks.ts` | `attachSession(session)`, `useAuthState()`, `usePermission(domain, permission)`, `useFeature(name)`, `useFeatureState()`, `featurePresence(state)`, `TenantProvider`, `useCurrentTenant()` |
 | `query-key.ts` | `tenantQueryKey(tenantId, ...tail)`, `useTenantQueryKey(bareKey)`, `TenantQueryKey`, `evictTenantQueries(queryClient, tenantId)` |
 | `step-up-gate.ts` | `useStepUpGate(onRetry, isShortfall?)`, `StepUpGate` |
-| `human.ts` | `useHumanVerification(session, options)`, `HumanVerification`, `HumanVerificationStatus`, `UseHumanVerificationOptions`, `HumanScope`, `HumanCaptchaChallenge`, `HumanCaptchaForm`, `HumanCaptchaRequestForm`, `humanSurfaceGate(gate, scope)`, `humanGateNeedsProof(gate, scope)`, `parseCaptchaChallenge(body)`, `requestPowProof(requestChallenge?)`, `powProofFromChallenge(answer)` |
+| `human.ts` | `useHumanVerification(session, options)`, `HumanVerification`, `HumanVerificationStatus`, `UseHumanVerificationOptions`, `HumanScope`, `HumanCaptchaChallenge`, `HumanCaptchaForm`, `humanSurfaceGate(gate, scope)`, `humanGateNeedsProof(gate, scope)`, `parseCaptchaChallenge(body)`, `requestPowProof(requestChallenge?)`, `powProofFromChallenge(answer)` |
 | `pow.ts` | `solvePowChallenge(challenge, difficulty)`, `POW_HASH` |
 | `tenant-refusal.ts` | `isTenantAdmissionRefusal(error)` |
 | `webauthn.ts` (the `@speed/auth-core/webauthn` subpath, not the main entry) | `runWebauthn(options, signal?)`, `webauthnStepOf(options)`, `WebauthnError`, `WebauthnStep`, `WebauthnFailure` |

@@ -101,7 +101,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `WriteFeedbackRegion` | `outcome`（`WriteOutcome` 或 `null`）、`resolve`（码到当前语言文本，第二个入参是拒绝声明的等待秒数）、`sx`（作用于区域根容器，在根容器的默认上边距之后应用） | — |
 | `ListSkeleton` | `label`、`rows` | — |
 | `AsyncSection` | `pending`、`payload`、`empty`、`loading`、`errorState`、`emptyState`、`headingLevel`、`emptyHeadingLevel`（空占位自己的标题级，含 `none`）、`staleState`（`{description, retryLabel, onRetry}`，由调用方在最近一次刷新失败、数据在屏且读不在进行中时给出，缺省不渲染）、`refusedState`（`{title, description}`，调用方判定为拒绝后给出；非 pending 时替换内容且不提供重试）、`children` | `errorState.onRetry`、`staleState.onRetry` |
-| `HumanVerification` | `scope`（`phone`／`other`）、`gate`（发现文档的 `{phone, other}`，本面缺省、不需证明或 `off` 时不渲染）、`proof`、`status`（`idle`／`working`／`ready`／`failed`）、`captcha`（本面的自托管人机验证码挑战）、`onToken`、`onRetry`、`onRefreshCaptcha`、`disabled` | `onToken`（Turnstile token 或 captcha 的 `<挑战标识>.<答案>`，过期或失败时 null，[REF-cloudflare-turnstile](../../../references.md)）、`onRetry`（PoW 失败后重试）、`onRefreshCaptcha`（换取新的人机验证码挑战；不指定形式时由服务端在图片与滑块之间轮换，可请求作为无障碍替代的 `audio`） |
+| `HumanVerification` | `scope`（`phone`／`other`）、`gate`（发现文档的 `{phone, other}`，本面缺省、不需证明或 `off` 时不渲染）、`proof`、`status`（`idle`／`working`／`ready`／`failed`）、`captcha`（本面的自托管人机验证码挑战）、`audioRetryAfterSeconds`（无障碍入口被拒绝时声明的等待秒数）、`onToken`、`onRetry`、`onRefreshCaptcha`、`onRequestAudio`、`disabled` | `onToken`（Turnstile token 或 captcha 的 `<挑战标识>.<答案>`，过期或失败时 null，[REF-cloudflare-turnstile](../../../references.md)）、`onRetry`（PoW 失败后重试）、`onRefreshCaptcha`（换取当前选择下的下一个挑战，不指定形式）、`onRequestAudio`（无障碍入口：显式请求音频替代） |
 | `RefreshButton` | `busy`、`disabled`、`writePending`、`describedBy`、`disabledReason`、`ariaLabel`、`label`（可见文字，缺省取命名空间键） | `onClick` |
 | `CopyButton` | `value`、`label`（可及名）、`copiedLabel`（播报文本）、`visibleLabel`（给出即渲染文字按钮）、`pinned` | 写入本机剪贴板并播报（不经网络） |
 | `OneTimeValuePanel` | `message`、`value`、`copyLabel`、`details`（在主值旁附带的带标签详情，每条各有自己的值、复制控件与文案）、`closeLabel`、`closeAriaLabel` | `onClose`（状态归调用方） |
@@ -117,7 +117,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 ### 人机验证块
 
-`HumanVerification` 只渲染宿主交来的状态，不发请求、不持有会话、不求解。`scope` 选择本块服务的发送面；`gate` 是发现文档的整份门槛（`{phone, other}`），本面缺省、`required` 为假或 `provider` 为 `off` 时不渲染。`turnstile` 以显式渲染模式加载 Cloudflare 的控件脚本（每页一次），把控件交出的 token 经 `onToken` 上交，并在宿主消费证明、`proof` 清空后重置控件；脚本被拦截或加载失败时不渲染自造的文案，宿主因没有 token 而保持发送不可用。`pow` 显示求解中、已完成或失败，失败时经 `onRetry` 请求重试；求解本身与证明的寿命在 auth-core，本包不 import 它。`captcha` 渲染宿主交来的挑战：数字图片形式显示图片与答案输入框，滑块形式把背景与拼图放在原生 `range` 输入之后（方向键移动、`End` 到边缘，因此键盘可操作），音频形式以播放控件读出数字作为屏幕阅读器的替代；三种形式共用一个刷新控件、一个把 `<挑战标识>.<答案>` 交出的提交与一个失败后重试。图片与滑块由服务端轮换，客户端不选择二者；块只在当前挑战不是音频时渲染一个音频切换控件，作为屏幕阅读器的无障碍替代。滑块背景随容器缩小时，拼图与偏移量按同一比例缩放，查看者对齐的位置仍映射回服务端比较的自然宽度偏移量。`disabled` 在宿主发送在途时置上，控件同时不接受指针事件。
+`HumanVerification` 只渲染宿主交来的状态，不发请求、不持有会话、不求解。`scope` 选择本块服务的发送面；`gate` 是发现文档的整份门槛（`{phone, other}`），本面缺省、`required` 为假或 `provider` 为 `off` 时不渲染。`turnstile` 以显式渲染模式加载 Cloudflare 的控件脚本（每页一次），把控件交出的 token 经 `onToken` 上交，并在宿主消费证明、`proof` 清空后重置控件；脚本被拦截或加载失败时不渲染自造的文案，宿主因没有 token 而保持发送不可用。`pow` 显示求解中、已完成或失败，失败时经 `onRetry` 请求重试；求解本身与证明的寿命在 auth-core，本包不 import 它。`captcha` 渲染宿主交来的挑战：数字图片形式显示图片与答案输入框，滑块形式把背景与拼图放在原生 `range` 输入之后（方向键移动、`End` 到边缘，因此键盘可操作），音频形式以播放控件读出数字作为屏幕阅读器的替代，出现时接收焦点并以 `lang` 标出朗读所用的活动语言；三种形式共用一个刷新控件、一个把 `<挑战标识>.<答案>` 交出的提交与一个失败后重试。图片与滑块由服务端轮换，块不提供二者之间的选择；唯一指名的形式是无障碍入口 `onRequestAudio`，它在当前挑战不是音频时渲染，`audioRetryAfterSeconds` 给出被拒绝时声明的等待时该入口被按住并显示秒数，刷新控件不受影响；音频形式在服务端按来源单独计数、上界比轮换形式更严，这次拒绝只关住无障碍入口，不涉及在屏的视觉挑战。滑块背景随容器缩小时，拼图与偏移量按同一比例缩放，查看者对齐的位置仍映射回服务端比较的自然宽度偏移量。`disabled` 在宿主发送在途时置上，控件同时不接受指针事件。
 
 ### 写入反馈
 

@@ -71,7 +71,7 @@ reads no bundle of its own.
 | `write-feedback.ts` | `useWriteFeedback`, `WriteFeedback`, `WriteOutcome` |
 | `components/ListSkeleton.tsx` | `ListSkeleton`, `ListSkeletonProps` |
 | `components/AsyncSection.tsx` | `AsyncSection`, `AsyncSectionProps`, `AsyncSectionErrorState`, `AsyncSectionEmptyState`, `AsyncSectionStaleState` |
-| `components/HumanVerification.tsx` | `HumanVerification`, `HumanVerificationProps`, `HumanVerificationScope`, `HumanVerificationGate`, `HumanVerificationGateSet`, `HumanVerificationStatus`, `HumanCaptchaChallenge`, `HumanCaptchaForm`, `HumanCaptchaRequestForm` |
+| `components/HumanVerification.tsx` | `HumanVerification`, `HumanVerificationProps`, `HumanVerificationScope`, `HumanVerificationGate`, `HumanVerificationGateSet`, `HumanVerificationStatus`, `HumanCaptchaChallenge`, `HumanCaptchaForm` |
 | `visually-hidden.ts` | `visuallyHiddenSx` |
 | `touch-target.ts` | `touchTargetSx` |
 | `resources.ts` | `UI_KIT_NAMESPACE`, `uiKitResources` |
