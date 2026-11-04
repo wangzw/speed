@@ -37,9 +37,9 @@
  * server and the status write invalidates it, so the disabled row leaves the
  * enabled-filtered page. The spec re-submits the same prefix with the disabled
  * status to observe the row, and returns the filter to enabled after the
- * restore. Paging is not driven: the review seed holds two accounts on one
+ * restore. Paging is not driven: the review seed holds its accounts on one
  * page. The filter's "applies only on submit" clause is observed before the
- * first submission, where the list still shows both accounts.
+ * first submission, where the list still shows every account.
  *
  * THE RESTORE PATH IS DRIVEN. After the operator restores the account the
  * member reloads the protected page, meets the sign-in surface, signs in with
@@ -449,8 +449,10 @@ test('account-offboarding: an operator disables a member and the member returns 
         }),
       ).toBeVisible()
 
-      // The unfiltered list holds the operator and the member.
-      await expect(accountsTable(page).locator('tbody tr')).toHaveCount(2)
+      // The unfiltered list holds the operator, the member, and acme's own
+      // administrator (the impersonation fixture keeps the operator outside
+      // acme and seeds its administrator account beside the ordinary member).
+      await expect(accountsTable(page).locator('tbody tr')).toHaveCount(3)
     })
 
     await test.step("step 2: the operator filters by the member's identifier and enabled status and opens the detail", async () => {
@@ -470,8 +472,9 @@ test('account-offboarding: an operator disables a member and the member returns 
         })
         .click()
 
-      // The draft filters apply nothing: the list still holds both accounts.
-      await expect(accountsTable(page).locator('tbody tr')).toHaveCount(2)
+      // The draft filters apply nothing: the list still holds all three
+      // accounts.
+      await expect(accountsTable(page).locator('tbody tr')).toHaveCount(3)
 
       await searchButton(page).click()
       await expect(accountsTable(page).locator('tbody tr')).toHaveCount(1)

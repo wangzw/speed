@@ -39,6 +39,10 @@ const settingsItem = "settings"
 // from.
 const membersItem = "members"
 
+// systemAdminsItem is the item the seed reads the accounts that administer the
+// system tenant without the platform-administrator role from.
+const systemAdminsItem = "system-admins"
+
 // seedMemberSource is the source written with a membership the seed creates.
 // The membership module records one of a closed set of sources — admin,
 // jit:<provider>, invite or import — and a seeded row is an administrator's
@@ -127,6 +131,16 @@ type seedInput struct {
 	// account the configuration does not carry, or declares one pair twice is
 	// refused before anything is written.
 	Members []seedMember `config:"members"`
+	// SystemAdmins are the accounts that administer the system tenant without
+	// holding the platform-administrator role. Each gets a membership in the
+	// system tenant and that tenant's tenant-admin binding, exactly as a
+	// business tenant's administrators do; the platform-administrator role is
+	// not written for them. Every name must be an account under Accounts. The
+	// system tenant itself is registered by the command and is not listed under
+	// Tenants, so this is the one way the configuration names who administers
+	// it besides the platform administrators the command derives from the
+	// account list.
+	SystemAdmins []string `config:"system-admins"`
 }
 
 // seedMember is one membership the seed writes.
@@ -206,6 +220,14 @@ type seedAccount struct {
 	// every permission the process declares. Without it the account signs in and
 	// reaches nothing that asks for a permission.
 	PlatformAdmin bool `config:"platform-admin"`
+	// ProvedEmail asks the review build to prove the account's email address
+	// after it is created, through the account module's own AddIdentifier with
+	// the same email-code way a completed verification flow writes. The address
+	// itself is stated by Identifier, which must then be an email address. A
+	// baseline build accepts the field and writes the address as the
+	// administrator's assertion it already writes every seeded address as: the
+	// proving path is a review fixture, not a deployment capability.
+	ProvedEmail bool `config:"proved-email"`
 }
 
 // check refuses an account the seed cannot write as the credential it is meant
@@ -255,7 +277,10 @@ func validateSeedInput(in seedInput) error {
 	if err := checkTenants(in); err != nil {
 		return err
 	}
-	return checkMembers(in)
+	if err := checkMembers(in); err != nil {
+		return err
+	}
+	return checkSystemAdmins(in)
 }
 
 // checkPlatformAdministrator refuses an account list with nobody the console
@@ -396,6 +421,43 @@ func checkMembers(in seedInput) error {
 	return nil
 }
 
+// checkSystemAdmins refuses a system-administrator list the seed cannot write.
+//
+// The system tenant is not listed under seed.tenants, so this list is held to
+// the account list instead: every name must be an account the run writes, and
+// one account cannot be named twice. Nothing else is checked here — the
+// membership and the binding are written through the same seams a business
+// tenant's administrators use, and the system tenant is always registered.
+func checkSystemAdmins(in seedInput) error {
+	accounts := make(map[string]bool, len(in.Accounts))
+	for _, a := range in.Accounts {
+		_, name, err := seedLoginName(a.Identifier)
+		if err != nil {
+			return err
+		}
+		accounts[name] = true
+	}
+	seen := make(map[string]bool, len(in.SystemAdmins))
+	for _, admin := range in.SystemAdmins {
+		if strings.TrimSpace(admin) == "" {
+			return fmt.Errorf("seed: a system administrator under seed.%s names no account", systemAdminsItem)
+		}
+		_, normalized, err := seedLoginName(admin)
+		if err != nil {
+			return fmt.Errorf("seed: the system administrator %q: %w", admin, err)
+		}
+		if !accounts[normalized] {
+			return fmt.Errorf("seed: the system administrator %q is not under seed.%s; "+
+				"add it there or correct the name", admin, accountsItem)
+		}
+		if seen[normalized] {
+			return fmt.Errorf("seed: the account %q administers the system tenant twice", admin)
+		}
+		seen[normalized] = true
+	}
+	return nil
+}
+
 // seedSchema declares the seed command's input items.
 //
 // The account list is one item and not a tree of them, because a list carries
@@ -442,6 +504,12 @@ func seedSchema() config.Schema {
 				Description: "the memberships the deployment starts with, each naming one of the " +
 					"tenants under seed.tenants and one of the accounts under seed.accounts; a " +
 					"member is active unless it is marked suspended",
+			},
+			systemAdminsItem: {
+				Origins: config.OriginPrimary | config.OriginEnv,
+				Description: "the accounts that administer the system tenant without the " +
+					"platform-administrator role, each named by a login name under seed.accounts; " +
+					"each gets a membership in the system tenant and its tenant-admin binding",
 			},
 		},
 	}
@@ -737,6 +805,16 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 		}
 	}
 
+	// Then the accounts that administer the system tenant without the
+	// platform-administrator role. The system tenant's tenant-admin role is
+	// already written above, and a platform administrator's binding to it is
+	// written in the loop before this one; this list is what lets a deployment
+	// name a system administrator who is not platform staff. The membership is
+	// reconciled the same way a business tenant administrator's is.
+	if err := seedSystemTenantAdmins(ctx, memberships, manager, in.SystemAdmins, accountIDs); err != nil {
+		return err
+	}
+
 	// No second factor is seeded in a default build. The public authn surface
 	// hands back a registration step it does not let a host read, so a seed
 	// cannot finish an enrollment; write-path testing needs a factor added in
@@ -782,6 +860,43 @@ func seedAdminMembership(ctx context.Context, memberships authn.Memberships,
 	}
 	fmt.Printf("seeded: member %s in %s (administrator)\n", id, tenantName)
 	return true, nil
+}
+
+// seedSystemTenantAdmins gives each account the configuration names under
+// seed.system-admins a membership in the system tenant and that tenant's
+// tenant-admin binding. It is the system tenant's counterpart of the business
+// tenant administrator loop: the membership is reconciled on every run, and an
+// account that is not an active member is reported and skipped. The
+// platform-administrator role is never written here, so an account named only
+// by this list administers the system tenant without platform staff power.
+func seedSystemTenantAdmins(ctx context.Context, memberships authn.Memberships, manager authz.Manager,
+	admins []string, accountIDs map[string]authn.AccountID,
+) error {
+	for _, adminName := range admins {
+		_, name, err := seedLoginName(adminName)
+		if err != nil {
+			return fmt.Errorf("seed: the system administrator %q: %w", adminName, err)
+		}
+		id, ok := accountIDs[name]
+		if !ok {
+			// checkSystemAdmins refused this before anything was written; the
+			// map only lacks the entry if the two disagree.
+			return fmt.Errorf("seed: the system administrator %q is not under seed.%s",
+				adminName, accountsItem)
+		}
+		member, err := seedAdminMembership(ctx, memberships, string(authz.PlatformDomain), id)
+		if err != nil {
+			return err
+		}
+		if !member {
+			fmt.Printf("skipped: system administrator %s (not an active member)\n", name)
+			continue
+		}
+		if err := seedBinding(ctx, manager, string(authz.PlatformDomain), tenantAdminRole, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // seedTenant registers one tenant the configuration names unless the roster

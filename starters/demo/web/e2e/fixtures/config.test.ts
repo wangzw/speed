@@ -13,7 +13,16 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { writeReviewConfig, type ReviewConfigInput } from './config'
+import {
+  reviewImpersonationAdmin,
+  reviewOrdinaryMember,
+  reviewSystemTenantAdmin,
+  reviewTenantAdmin,
+  reviewTenantSetting,
+  reviewUnprovedTenantAdmin,
+  writeReviewConfig,
+  type ReviewConfigInput,
+} from './config'
 
 // The fixture paths derive from `import.meta.url`, which the jsdom transform
 // does not turn into a file URL, so this suite names the templates from the
@@ -41,6 +50,23 @@ async function rendered(input: TemplateInput): Promise<string> {
     ...input,
   })
   return readFile(config.path, 'utf8')
+}
+
+/**
+ * The rendered `seed.accounts` entry that names an identifier, from its own
+ * `- identifier:` line to the next entry. A test uses it to read the flags a
+ * single account carries without matching a sibling's lines.
+ */
+function accountEntry(body: string, identifier: string): string {
+  const needle = `    - identifier: ${JSON.stringify(identifier)}`
+  const at = body.indexOf(needle)
+  if (at === -1) {
+    throw new Error(`the rendered configuration holds no account ${identifier}`)
+  }
+  const rest = body.slice(at + needle.length)
+  const nextAt = rest.search(/^ {4}- identifier:/m)
+  const end = nextAt === -1 ? body.length : at + needle.length + nextAt
+  return body.slice(at, end)
 }
 
 describe('the review configuration', () => {
@@ -79,12 +105,80 @@ describe('the review configuration', () => {
     const body = await rendered({ seedImpersonation: true })
     // The impersonation requirement is a target inside the tenant and an
     // initiator outside it, so the operator holds no grant in acme on this
-    // journey's server. The factors stay on: the impersonation option seeds
-    // them and turns the switch on, and nothing else.
+    // journey's server. The target is an ordinary member, not the tenant's
+    // administrator, so an account of the fixture's own administers acme.
     expect(body).toContain(
-      '    - name: acme\n      admins:\n        - member\n  members:',
+      `    - name: acme\n      admins:\n        - ${reviewImpersonationAdmin.identifier}\n  members:`,
+    )
+    expect(body).not.toContain(`        - ${reviewOrdinaryMember.identifier}\n`)
+    expect(body).toContain(
+      `    - identifier: ${JSON.stringify(reviewImpersonationAdmin.identifier)}`,
     )
     expect(body).toContain('\n  impersonation: true\n')
+  })
+
+  it('gives a tenant exactly the administrators the override names', async () => {
+    const body = await rendered({
+      seedTenantAdmin: true,
+      seedUnprovedTenantAdmin: true,
+      tenantAdmins: { acme: [reviewTenantAdmin.identifier] },
+    })
+    // Both administrators are seeded, but the override pins acme to one: not
+    // the unproved administrator the default list would add, the template's
+    // member, or the platform operator.
+    expect(body).toContain(
+      `    - name: acme\n      admins:\n        - ${reviewTenantAdmin.identifier}\n  members:`,
+    )
+    expect(body).not.toContain(`        - ${reviewUnprovedTenantAdmin.identifier}\n`)
+    expect(body).not.toContain(`        - ${reviewOrdinaryMember.identifier}\n`)
+    expect(body).not.toContain('        - operator@demo.test\n')
+  })
+
+  it('seeds the proved-email administrator as the tenant\'s only administrator', async () => {
+    const body = await rendered({ seedTenantAdmin: true })
+    expect(body).toContain(
+      `    - name: acme\n      admins:\n        - ${reviewTenantAdmin.identifier}\n  members:`,
+    )
+    // The address is the one the review build proves; the account carries the
+    // username it signs in with and no platform-administrator mark.
+    expect(body).toContain(
+      `    - identifier: ${JSON.stringify(reviewTenantAdmin.identifier)}\n` +
+        `      username: ${JSON.stringify(reviewTenantAdmin.username)}\n`,
+    )
+    expect(body).toContain('      proved-email: true')
+    const entry = accountEntry(body, reviewTenantAdmin.identifier)
+    expect(entry).not.toContain('platform-admin')
+  })
+
+  it('seeds the unproved-email administrator without a proof', async () => {
+    const body = await rendered({ seedUnprovedTenantAdmin: true })
+    expect(body).toContain(
+      `    - name: acme\n      admins:\n        - ${reviewUnprovedTenantAdmin.identifier}\n  members:`,
+    )
+    const entry = accountEntry(body, reviewUnprovedTenantAdmin.identifier)
+    expect(entry).toContain('username:')
+    expect(entry).not.toContain('proved-email')
+    expect(entry).not.toContain('platform-admin')
+  })
+
+  it('seeds a system tenant administrator outside the platform role', async () => {
+    const body = await rendered({ seedSystemTenantAdmin: true })
+    expect(body).toContain(
+      `\n  system-admins:\n    - ${reviewSystemTenantAdmin.identifier}\n  members:\n`,
+    )
+    const entry = accountEntry(body, reviewSystemTenantAdmin.identifier)
+    expect(entry).not.toContain('platform-admin')
+  })
+
+  it('names a declared tenant-writable setting outside the platform-only namespaces', () => {
+    expect(reviewTenantSetting.key).toBe(
+      `${reviewTenantSetting.namespace}.per-recipient-hourly`,
+    )
+    for (const platformOnly of ['ratelimit', 'tenant.admission', 'authn']) {
+      expect(reviewTenantSetting.namespace).not.toMatch(
+        new RegExp(`^${platformOnly.replace('.', '\\.')}(\\.|$)`),
+      )
+    }
   })
 
   it("registers the enterprise journey's second organization on request", async () => {

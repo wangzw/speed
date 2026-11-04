@@ -38,6 +38,13 @@
  * one that drives the admin. The employee's memberships themselves are
  * product writes: the spec adds them through the admin's member page, never
  * through this file.
+ *
+ * The administrators a tenant starts with are written from one explicit list
+ * (reviewTenants), never by appending to the template's acme entry. A journey
+ * that needs a tenant with exactly one tenant-admin binding names that
+ * binding through `tenantAdmins` or one of the tenant-admin opt-ins; the
+ * impersonation server names its own administrator because the account it
+ * impersonates must be an ordinary member.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -143,6 +150,36 @@ export interface ReviewConfigInput {
    * and a requirement already on would keep the page from being opened.
    */
   readonly tenantSSO?: boolean
+  /**
+   * Seed the tenant-admin journey's proved-email business administrator and
+   * make it acme's only tenant administrator. Off by default: the account owns
+   * a mailbox the notification fixture would address, and only the journey that
+   * drives the workspace admin surface needs it. The account is added through
+   * the binary's own seed, with the review build proving its address.
+   */
+  readonly seedTenantAdmin?: boolean
+  /**
+   * Seed the tenant-admin journey's unproved-email business administrator and
+   * make it acme's administrator. Off by default. It is what the journey signs
+   * in as on its refused-write branch; the seed asserts the address without
+   * proving it, which is the state the write gate refuses.
+   */
+  readonly seedUnprovedTenantAdmin?: boolean
+  /**
+   * Seed a system-tenant administrator outside the platform-administrator
+   * role, under the seed's `system-admins` list. Off by default: only the
+   * journey that proves the system tenant is not manageable through the
+   * workspace admin surface needs it.
+   */
+  readonly seedSystemTenantAdmin?: boolean
+  /**
+   * Replace the administrators each seeded tenant starts with, keyed by tenant
+   * name. An absent key keeps the tenant's default administrator list, and a
+   * key naming a tenant the default list does not carry adds that tenant. This
+   * is what lets a journey give a tenant exactly one `tenant-admin` binding
+   * instead of the two the default acme list carries.
+   */
+  readonly tenantAdmins?: Readonly<Record<string, readonly string[]>>
 }
 
 export interface ReviewConfig {
@@ -186,10 +223,11 @@ export const reviewMember = {
  *
  * The template's operator is a platform administrator and deliberately not a
  * member of the seeded tenant, because the impersonation journey targets that
- * tenant from outside and its initiator holds no permission there. Every other
- * server names this account acme's second administrator, and an administrator
- * is a member of the tenant it administers; see the seed-tenant section of
- * writeReviewConfig. The account and its credential are the template's own.
+ * tenant from outside and its initiator holds no permission there. Every server
+ * that does not opt into the tenant-admin or impersonation fixture names this
+ * account acme's second administrator, and an administrator is a member of the
+ * tenant it administers; see reviewTenants. The account and its credential are
+ * the template's own.
  */
 export const smsRolloutOperator = {
   tenant: 'acme',
@@ -261,6 +299,105 @@ export const tenantSSOAdmin = {
   displayName: 'Globex Administrator',
 } as const
 
+/**
+ * The business tenant administrator the tenant-admin journey signs in as.
+ *
+ * It is acme's only tenant administrator and holds no platform permission, so
+ * it reaches the workspace admin surface with the governed set alone. Its
+ * address is proved by the review seed, because an unproved address is refused
+ * every workspace admin write; the username is its login name. The account
+ * also owns the personal tenant every account gets at creation, which is the
+ * tenant the journey switches to and back from. A review value, not a
+ * credential.
+ */
+export const reviewTenantAdmin = {
+  tenant: 'acme',
+  identifier: 'tenant-admin@demo.test',
+  username: 'tenant-admin-review',
+  password: 'tenant-admin-review-secret',
+  displayName: 'Tenant Administrator',
+} as const
+
+/**
+ * The tenant-admin journey's second business administrator, whose address the
+ * seed asserts but does not prove. The journey drives the refused writes an
+ * unproved address causes and then proves the address in the account page; the
+ * seed never proves it, so the starting state is the one that gate describes.
+ */
+export const reviewUnprovedTenantAdmin = {
+  tenant: 'acme',
+  identifier: 'unproved-admin@demo.test',
+  username: 'unproved-admin-review',
+  password: 'unproved-admin-review-secret',
+  displayName: 'Unproved Tenant Administrator',
+} as const
+
+/**
+ * The system tenant's own administrator.
+ *
+ * It is seeded under `seed.system-admins`, so it holds the system tenant's
+ * tenant-admin role without the platform-administrator role. The platform
+ * console lists the account like any other, so the operator can see it there
+ * while the journey proves the system tenant is not manageable through the
+ * workspace admin surface. It is a username, so it signs in with a login name
+ * and needs no mailbox.
+ */
+export const reviewSystemTenantAdmin = {
+  tenant: 'system',
+  identifier: 'system-admin-review',
+  password: 'system-admin-review-secret',
+  displayName: 'System Tenant Administrator',
+} as const
+
+/**
+ * The impersonation journey's target: an ordinary member of acme that holds no
+ * role binding, so it covers no workspace admin page. It is the template's own
+ * `member` account, seeded without a mailbox on purpose: the notification
+ * fixture addresses every member with one, and an extra destination in acme
+ * would change the delivery counts another fixture asserts.
+ */
+export const reviewOrdinaryMember = {
+  tenant: 'acme',
+  identifier: 'member',
+  password: 'member-dev-secret',
+  displayName: 'Demo Member',
+} as const
+
+/**
+ * The administrator acme keeps on the impersonation journey's server.
+ *
+ * The impersonation requirement is an initiator outside the target tenant, so
+ * the platform operator cannot be acme's administrator there; the tenant still
+ * needs one, and the ordinary member the journey impersonates must not be it.
+ * The account is a username with no mailbox, which keeps the notification
+ * fixture's delivery counts where they were.
+ */
+export const reviewImpersonationAdmin = {
+  tenant: 'acme',
+  identifier: 'acme-owner',
+  password: 'acme-owner-secret',
+  displayName: 'Acme Owner',
+} as const
+
+/**
+ * A declared setting the tenant-admin journey writes on its tenant's layer.
+ *
+ * The namespace is the module that declares it and is outside the platform-only
+ * set (`ratelimit.*`, `tenant.admission.*`, `authn.*`), so the workspace admin
+ * settings page lists it as an editable row. `notification.delivery` is part of
+ * the review assembly, so its budget keys are declared on every review server.
+ * The value stays inside the declared domain of whole numbers from one to a
+ * thousand.
+ */
+export const reviewTenantSetting = {
+  namespace: 'notification.delivery',
+  key: 'notification.delivery.per-recipient-hourly',
+  /** The declared default the row resolves to before the tenant writes it. */
+  defaultValue: '20',
+  /** The value the journey writes on the tenant layer. */
+  value: '25',
+} as const
+
 /** The template's seeded operator entry; the member entry is appended to it. */
 const seedOperatorAccount = `    - identifier: operator@demo.test
       username: operator
@@ -309,6 +446,106 @@ function seedTenantSSOAdminAccount(): string {
       password: ${quoted(tenantSSOAdmin.password)}
       display-name: ${quoted(tenantSSOAdmin.displayName)}
       platform-admin: true`
+}
+
+/**
+ * One `seed.accounts` entry rendered for the list it joins. The username is
+ * written beside an email identifier, which the seed requires; `proved-email`
+ * asks the review build to prove the address, and `platform-admin` marks the
+ * account for the platform role. Both flags are emitted only when set, so an
+ * ordinary entry keeps the template's shape.
+ */
+function seedAccountEntry(
+  account: {
+    readonly identifier: string
+    readonly username?: string
+    readonly password: string
+    readonly displayName: string
+  },
+  options: { readonly provedEmail?: boolean; readonly platformAdmin?: boolean } = {},
+): string {
+  const lines = [`    - identifier: ${quoted(account.identifier)}`]
+  if (account.username !== undefined) {
+    lines.push(`      username: ${quoted(account.username)}`)
+  }
+  lines.push(`      password: ${quoted(account.password)}`)
+  lines.push(`      display-name: ${quoted(account.displayName)}`)
+  if (options.provedEmail === true) lines.push('      proved-email: true')
+  if (options.platformAdmin === true) lines.push('      platform-admin: true')
+  return lines.join('\n')
+}
+
+/** One seeded tenant and its explicit administrator list. */
+interface ReviewTenantAdmins {
+  readonly name: string
+  readonly admins: readonly string[]
+}
+
+/**
+ * The administrators a tenant starts with when the caller names none.
+ *
+ * The tenant-admin flags win over the impersonation default because the journey
+ * that sets them makes its account the tenant's administrator. The impersonation
+ * server demotes the ordinary member and names its own administrator, because
+ * the impersonated account must cover no workspace admin page and the operator
+ * is not a member of the tenant. Every other server keeps the template's member
+ * as an administrator and adds the platform operator, which is the tenant-domain
+ * grant the console's tenant-addressed pages decide on.
+ */
+function defaultTenantAdmins(input: ReviewConfigInput): ReviewTenantAdmins[] {
+  const entries: ReviewTenantAdmins[] = [
+    { name: 'acme', admins: defaultAcmeAdmins(input) },
+  ]
+  if (input.ssoProvider !== undefined) {
+    const globexAdmins: string[] = [smsRolloutOperator.identifier]
+    if (input.tenantSSO === true) globexAdmins.push(tenantSSOAdmin.identifier)
+    entries.push({ name: 'globex', admins: globexAdmins })
+  }
+  return entries
+}
+
+/** acme's default administrator list; see defaultTenantAdmins. */
+function defaultAcmeAdmins(input: ReviewConfigInput): string[] {
+  const admins: string[] = []
+  if (input.seedTenantAdmin === true) admins.push(reviewTenantAdmin.identifier)
+  if (input.seedUnprovedTenantAdmin === true) {
+    admins.push(reviewUnprovedTenantAdmin.identifier)
+  }
+  if (admins.length > 0) return admins
+  if (input.seedImpersonation === true) {
+    return [reviewImpersonationAdmin.identifier]
+  }
+  return [reviewOrdinaryMember.identifier, smsRolloutOperator.identifier]
+}
+
+/**
+ * The tenants the seed registers, in order. The per-tenant override replaces
+ * one tenant's administrator list and keeps every other default, so a journey
+ * that only pins acme's administrator does not drop the enterprise journey's
+ * second organization by accident.
+ */
+function reviewTenants(input: ReviewConfigInput): ReviewTenantAdmins[] {
+  const base = defaultTenantAdmins(input)
+  if (input.tenantAdmins === undefined) return base
+  const named = new Set(base.map((entry) => entry.name))
+  const out: ReviewTenantAdmins[] = base.map((entry) => ({
+    name: entry.name,
+    admins: input.tenantAdmins?.[entry.name] ?? entry.admins,
+  }))
+  for (const [name, admins] of Object.entries(input.tenantAdmins)) {
+    if (!named.has(name)) out.push({ name, admins })
+  }
+  return out
+}
+
+/** Render the tenants and their administrators as the template's YAML list. */
+function seedTenantEntries(entries: readonly ReviewTenantAdmins[]): string {
+  return entries
+    .map((entry) => {
+      const admins = entry.admins.map((admin) => `        - ${admin}`).join('\n')
+      return `    - name: ${entry.name}\n      admins:\n${admins}\n`
+    })
+    .join('')
 }
 
 /** Replace exactly one occurrence of a needle, or fail the fixture. */
@@ -483,21 +720,19 @@ export async function writeReviewConfig(
     // the API endpoint, and the admission layer judges a request in the
     // organization the request surface announces, so the spec moves the tenant
     // area to globex before the writes the requirement holds to.
-    const tenants =
-      input.tenantSSO === true
-        ? '    - name: acme\n      admins:\n        - member\n' +
-          '    - name: globex\n      admins:\n' +
-          '        - operator@demo.test\n' +
-          `        - ${quoted(tenantSSOAdmin.identifier)}\n`
-        : '    - name: acme\n      admins:\n        - member\n' +
-          '    - name: globex\n      admins:\n        - operator@demo.test\n'
-    body = replaceOnce(
-      body,
-      '    - name: acme\n      admins:\n        - member\n',
-      tenants,
-      'seed tenants',
-    )
   }
+  // The seeded tenants and their administrators are written from one explicit
+  // list, never by appending to the template's acme entry. The impersonation
+  // server and the tenant-admin journey both need a tenant whose administrator
+  // is not the template's member, and a per-tenant override is what lets a
+  // journey give a tenant exactly one tenant-admin binding. The enterprise
+  // opt-ins add their second organization to the same list.
+  body = replaceOnce(
+    body,
+    '    - name: acme\n      admins:\n        - member\n',
+    seedTenantEntries(reviewTenants(input)),
+    'seed tenants',
+  )
   // The WebAuthn relying party is the browser's host. The review template
   // pins it to localhost; a run that changed it would fail every ceremony with
   // an origin mismatch, so its absence is a template drift.
@@ -522,12 +757,41 @@ export async function writeReviewConfig(
   if (input.tenantSSO === true) {
     extraAccounts.push(seedTenantSSOAdminAccount())
   }
+  // The tenant-admin journey's accounts and the impersonation server's
+  // administrator. Each is opt-in: the tenant-admin accounts own mailboxes the
+  // notification fixture would address, and the impersonation administrator is
+  // an extra account the other two servers using that opt-in must count.
+  if (input.seedTenantAdmin === true) {
+    extraAccounts.push(seedAccountEntry(reviewTenantAdmin, { provedEmail: true }))
+  }
+  if (input.seedUnprovedTenantAdmin === true) {
+    extraAccounts.push(seedAccountEntry(reviewUnprovedTenantAdmin))
+  }
+  if (input.seedSystemTenantAdmin === true) {
+    extraAccounts.push(seedAccountEntry(reviewSystemTenantAdmin))
+  }
+  if (input.seedImpersonation === true) {
+    extraAccounts.push(seedAccountEntry(reviewImpersonationAdmin))
+  }
   if (extraAccounts.length > 0) {
     body = replaceOnce(
       body,
       seedOperatorAccount,
       `${seedOperatorAccount}\n${extraAccounts.join('\n')}`,
       'seed operator account',
+    )
+  }
+  // The system tenant is registered by the seed itself and must not be listed
+  // under seed.tenants, so an account that administers it outside the platform
+  // role is named by `seed.system-admins`. The seed writes the membership and
+  // the tenant-admin binding through its own seams; the platform console lists
+  // the account like any other.
+  if (input.seedSystemTenantAdmin === true) {
+    body = replaceOnce(
+      body,
+      '\n  members:\n',
+      `\n  system-admins:\n    - ${reviewSystemTenantAdmin.identifier}\n  members:\n`,
+      'seed members section',
     )
   }
   // An account a journey signs in as, when that journey also needs it to be a
@@ -585,22 +849,11 @@ export async function writeReviewConfig(
   // The impersonation fixture's second factors change how the seeded operator
   // signs in: every later sign-in must complete one. Only the journey that
   // needs it turns it on; every other server starts from the template's own
-  // seed with the factors off.
-  //
-  // The impersonation journey's server is also the one that keeps the operator
-  // outside acme: the requirement is a target inside the tenant and an initiator
-  // who is not a member and holds no permission there. Every other server names
-  // the operator acme's second administrator instead, which is the tenant-domain
-  // grant their tenant-addressed admin pages decide on. An administrator is a
-  // member of the tenant it administers; the template keeps its own single
-  // administrator, the impersonation target.
+  // seed with the factors off. The tenant's administrator list is decided by
+  // reviewTenants, not here: the impersonation server keeps the operator outside
+  // acme and names its own administrator, while every other server names the
+  // operator acme's second administrator.
   if (input.seedImpersonation !== true) {
-    body = replaceOnce(
-      body,
-      '\n        - member\n',
-      '\n        - member\n        - operator@demo.test\n',
-      'review tenant administrator',
-    )
     body = replaceOnce(
       body,
       '\n  impersonation: true\n',

@@ -103,6 +103,31 @@ export const test = base.extend<{
    */
   tenantSSO: boolean
   /**
+   * Seed the tenant-admin journey's proved-email business administrator and
+   * make it acme's only tenant administrator. A spec sets
+   * `test.use({ seedTenantAdmin: true })` when it drives the workspace admin
+   * surface; every other spec starts from the template's own seed.
+   */
+  seedTenantAdmin: boolean
+  /**
+   * Seed the tenant-admin journey's unproved-email administrator. A spec that
+   * drives the refused-write branch sets it; every other spec starts without
+   * that account.
+   */
+  seedUnprovedTenantAdmin: boolean
+  /**
+   * Seed a system-tenant administrator outside the platform role, so a spec can
+   * prove the system tenant is not manageable through the workspace admin
+   * surface.
+   */
+  seedSystemTenantAdmin: boolean
+  /**
+   * Replace the administrators of the named tenants. A spec that needs a tenant
+   * with exactly one tenant-admin binding sets this; every other spec keeps the
+   * default administrator list.
+   */
+  tenantAdmins: Readonly<Record<string, readonly string[]>> | undefined
+  /**
    * Lower the account self-service freshness window for this spec's server.
    * A journey that observes the window passing sets it to the setting's
    * domain floor; every other spec keeps the template's declared window.
@@ -129,6 +154,10 @@ export const test = base.extend<{
   socialIdentityProvider: [false, { option: true }],
   enterpriseSSO: [false, { option: true }],
   tenantSSO: [false, { option: true }],
+  seedTenantAdmin: [false, { option: true }],
+  seedUnprovedTenantAdmin: [false, { option: true }],
+  seedSystemTenantAdmin: [false, { option: true }],
+  tenantAdmins: [undefined, { option: true }],
   recentWindow: [undefined, { option: true }],
   mfaRequired: [false, { option: true }],
   schedulerTick: [undefined, { option: true }],
@@ -141,6 +170,10 @@ export const test = base.extend<{
       socialIdentityProvider,
       enterpriseSSO,
       tenantSSO,
+      seedTenantAdmin,
+      seedUnprovedTenantAdmin,
+      seedSystemTenantAdmin,
+      tenantAdmins,
       recentWindow,
       mfaRequired,
       schedulerTick,
@@ -156,6 +189,10 @@ export const test = base.extend<{
       socialIdentityProvider,
       enterpriseSSO,
       tenantSSO,
+      seedTenantAdmin,
+      seedUnprovedTenantAdmin,
+      seedSystemTenantAdmin,
+      tenantAdmins,
       recentWindow,
       mfaRequired,
       schedulerTick,

@@ -66,26 +66,26 @@ const reviewFactorAge = 2 * time.Hour
 // change how its administrator signs in.
 func reviewSeedsFactors(in seedInput) bool { return in.Impersonation }
 
-// reviewSeedExtras seeds the impersonation fixture after the accounts, tenants
-// and memberships are in place. It is a no-op in a default build, and a no-op
-// here when the deployment did not opt in.
-func reviewSeedExtras(ctx context.Context, reg *core.Registry, in seedInput) error {
-	if !in.Impersonation {
-		return nil
-	}
-	var operator *seedAccount
-	for i := range in.Accounts {
-		if in.Accounts[i].PlatformAdmin {
-			operator = &in.Accounts[i]
-			break
+// reviewSeedsProvedEmails reports whether any account asked the review build to
+// prove its address.
+func reviewSeedsProvedEmails(in seedInput) bool {
+	for _, a := range in.Accounts {
+		if a.ProvedEmail {
+			return true
 		}
 	}
-	if operator == nil {
+	return false
+}
+
+// reviewSeedExtras seeds the review build's account fixtures after the accounts
+// are in place. It is a no-op in a default build. Here it does two independent
+// things: the impersonation opt-in proves the operator's address and phone and
+// writes its two factors, and every account marked `proved-email` has its
+// address proved through the account module's own AddIdentifier. Either one
+// alone is enough to run this.
+func reviewSeedExtras(ctx context.Context, reg *core.Registry, in seedInput) error {
+	if !in.Impersonation && !reviewSeedsProvedEmails(in) {
 		return nil
-	}
-	database, err := core.Resolve[db.Database](reg)
-	if err != nil {
-		return fmt.Errorf("review fixture: taking up the database: %w", err)
 	}
 	accounts, err := core.Resolve[authn.Accounts](reg)
 	if err != nil {
@@ -95,18 +95,102 @@ func reviewSeedExtras(ctx context.Context, reg *core.Registry, in seedInput) err
 	if err != nil {
 		return fmt.Errorf("review fixture: taking up the account writes: %w", err)
 	}
-	kind, name, err := seedLoginName(operator.Identifier)
+
+	// sealed records the accounts this run has already addressed, so an
+	// account that is both the impersonation operator and marked proved-email
+	// is not proved twice.
+	sealed := make(map[authn.AccountID]bool)
+	if in.Impersonation {
+		var operator *seedAccount
+		for i := range in.Accounts {
+			if in.Accounts[i].PlatformAdmin {
+				operator = &in.Accounts[i]
+				break
+			}
+		}
+		if operator != nil {
+			database, err := core.Resolve[db.Database](reg)
+			if err != nil {
+				return fmt.Errorf("review fixture: taking up the database: %w", err)
+			}
+			id, err := seedReviewAccountID(ctx, accounts, *operator)
+			if err != nil {
+				return err
+			}
+			kind, name, err := seedLoginName(operator.Identifier)
+			if err != nil {
+				return err
+			}
+			if err := seedReviewIdentifiers(ctx, accounts, admin, id, kind, name); err != nil {
+				return err
+			}
+			if err := seedReviewFactors(ctx, database, id); err != nil {
+				return err
+			}
+			sealed[id] = true
+		}
+	}
+
+	for _, a := range in.Accounts {
+		if !a.ProvedEmail {
+			continue
+		}
+		id, err := seedReviewAccountID(ctx, accounts, a)
+		if err != nil {
+			return err
+		}
+		if sealed[id] {
+			continue
+		}
+		if err := seedReviewProvedEmail(ctx, accounts, admin, id, a); err != nil {
+			return err
+		}
+		sealed[id] = true
+	}
+	return nil
+}
+
+// seedReviewAccountID looks up one configured account the way the seed wrote it.
+func seedReviewAccountID(ctx context.Context, accounts authn.Accounts, a seedAccount,
+) (authn.AccountID, error) {
+	kind, name, err := seedLoginName(a.Identifier)
 	if err != nil {
-		return err
+		return "", err
 	}
 	id, err := accounts.Lookup(ctx, kind, name)
 	if err != nil {
-		return fmt.Errorf("review fixture: looking up the operator %q: %w", operator.Identifier, err)
+		return "", fmt.Errorf("review fixture: looking up the account %q: %w", a.Identifier, err)
 	}
-	if err := seedReviewIdentifiers(ctx, accounts, admin, id, kind, name); err != nil {
+	return id, nil
+}
+
+// seedReviewProvedEmail proves one account's address, through the same
+// AddIdentifier write a completed email-code flow performs. The address is the
+// account's own identifier, so an entry that is marked proved-email but names a
+// username is a fixture error rather than a provable address.
+func seedReviewProvedEmail(ctx context.Context, accounts authn.Accounts, admin authn.AccountAdmin,
+	id authn.AccountID, a seedAccount,
+) error {
+	kind, name, err := seedLoginName(a.Identifier)
+	if err != nil {
 		return err
 	}
-	return seedReviewFactors(ctx, database, id)
+	if kind != authn.IdentifierEmail {
+		return fmt.Errorf("review fixture: the account %q is marked proved-email but its "+
+			"identifier is not an email address", a.Identifier)
+	}
+	held, err := accounts.Identifiers(ctx, id)
+	if err != nil {
+		return fmt.Errorf("review fixture: reading the identifiers of %s: %w", id, err)
+	}
+	if holdsProved(held, authn.IdentifierEmail, name) {
+		return nil
+	}
+	via := authn.Verification{Via: authn.VerifiedViaEmailCode}
+	if err := admin.AddIdentifier(ctx, id, authn.IdentifierEmail, name, via); err != nil {
+		return fmt.Errorf("review fixture: proving the email of %s: %w", id, err)
+	}
+	return nil
 }
 
 // seedReviewIdentifiers proves the operator's email address when the account

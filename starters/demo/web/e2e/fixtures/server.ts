@@ -388,10 +388,15 @@ export interface ReviewServer {
  * the port in that window -- so it is retried with a fresh port, bounded by
  * MAX_BIND_ATTEMPTS.
  *
- * `seedMember`, `seedImpersonation`, `seedInvitee`, `seedSocialAccount` and
- * `recentWindow` are passed through to the configuration the binary seeds; a
- * spec that needs none leaves them off, so the template's own seed stays the
- * baseline.
+ * `seedMember`, `seedImpersonation`, `seedInvitee`, `seedSocialAccount`,
+ * `seedTenantAdmin`, `seedUnprovedTenantAdmin`, `seedSystemTenantAdmin`,
+ * `tenantAdmins` and `recentWindow` are passed through to the configuration the
+ * binary seeds; a spec that needs none leaves them off, so the template's own
+ * seed stays the baseline. The three tenant-admin opt-ins seed through the
+ * binary's own seed command: the proved administrator, the unproved one that
+ * the write gate refuses, and a system tenant administrator outside the platform
+ * role. `tenantAdmins` overrides the administrator list of a seeded tenant, so
+ * a journey can pin a tenant to exactly one tenant-admin binding.
  *
  * A spec that drives a social method turns on `socialIdentityProvider`. Only
  * then does the fixture start the local OpenID Connect provider, which mints
@@ -424,6 +429,10 @@ export async function startReviewServer(
     readonly socialIdentityProvider?: boolean
     readonly enterpriseSSO?: boolean
     readonly tenantSSO?: boolean
+    readonly seedTenantAdmin?: boolean
+    readonly seedUnprovedTenantAdmin?: boolean
+    readonly seedSystemTenantAdmin?: boolean
+    readonly tenantAdmins?: Readonly<Record<string, readonly string[]>>
     readonly recentWindow?: string
     readonly mfaRequired?: boolean
     readonly schedulerTick?: string
@@ -520,6 +529,10 @@ export async function startReviewServer(
       seedInvitee: options.seedInvitee,
       seedSocialAccount: options.seedSocialAccount,
       tenantSSO: options.tenantSSO,
+      seedTenantAdmin: options.seedTenantAdmin,
+      seedUnprovedTenantAdmin: options.seedUnprovedTenantAdmin,
+      seedSystemTenantAdmin: options.seedSystemTenantAdmin,
+      tenantAdmins: options.tenantAdmins,
       socialProvider,
       ssoProvider,
       recentWindow: options.recentWindow,
@@ -549,6 +562,10 @@ export async function startReviewServer(
         seedInvitee: options.seedInvitee,
         seedSocialAccount: options.seedSocialAccount,
         tenantSSO: options.tenantSSO,
+        seedTenantAdmin: options.seedTenantAdmin,
+        seedUnprovedTenantAdmin: options.seedUnprovedTenantAdmin,
+        seedSystemTenantAdmin: options.seedSystemTenantAdmin,
+        tenantAdmins: options.tenantAdmins,
         socialProvider,
         ssoProvider,
         recentWindow: options.recentWindow,

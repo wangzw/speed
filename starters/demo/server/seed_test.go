@@ -989,6 +989,75 @@ func TestSeedRefusesAnAdministratorItCannotName(t *testing.T) {
 	}
 }
 
+// A system administrator is named by a login name the account list carries:
+// the membership and binding would otherwise point at an account no run writes.
+func TestSeedRefusesASystemAdministratorItCannotName(t *testing.T) {
+	t.Parallel()
+	in := seedInput{
+		Accounts:     []seedAccount{{Identifier: "operator", Password: "operator-dev-secret", PlatformAdmin: true}},
+		SystemAdmins: []string{"ghost"},
+	}
+	err := checkSystemAdmins(in)
+	if err == nil {
+		t.Fatal("checkSystemAdmins accepted an account the configuration does not declare")
+	}
+	for _, want := range []string{"ghost", "seed.accounts"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal = %q, want it to name %q", err, want)
+		}
+	}
+}
+
+// One account cannot administer the system tenant twice.
+func TestSeedRefusesASystemAdministratorTwice(t *testing.T) {
+	t.Parallel()
+	in := seedInput{
+		Accounts:     []seedAccount{{Identifier: "operator", Password: "operator-dev-secret", PlatformAdmin: true}},
+		SystemAdmins: []string{"operator", "operator"},
+	}
+	err := checkSystemAdmins(in)
+	if err == nil {
+		t.Fatal("checkSystemAdmins accepted the same system administrator twice")
+	}
+	if !strings.Contains(err.Error(), "twice") {
+		t.Errorf("the refusal = %q, want it to name the duplicate", err)
+	}
+}
+
+// TestSeedWritesTheSystemAdministratorsMembershipAndTenantAdminBinding holds
+// the reason the list exists: an account named only under seed.system-admins
+// becomes an active member of the system tenant and holds its tenant-admin
+// role, and nothing writes the platform-administrator role for it.
+func TestSeedWritesTheSystemAdministratorsMembershipAndTenantAdminBinding(t *testing.T) {
+	t.Parallel()
+	memberships := newFakeMemberships()
+	manager := newFakeManager(newFakeGrants())
+	ids := map[string]authn.AccountID{"system-admin": "acct-system"}
+
+	if err := seedSystemTenantAdmins(t.Context(), memberships, manager,
+		[]string{"system-admin"}, ids); err != nil {
+		t.Fatalf("seedSystemTenantAdmins: %v", err)
+	}
+
+	held, found, err := memberships.Membership(t.Context(), string(authz.PlatformDomain), "acct-system")
+	if err != nil {
+		t.Fatalf("reading the membership: %v", err)
+	}
+	if !found || !held.Active {
+		t.Fatalf("the system membership = %+v, found %v; want an active row", held, found)
+	}
+	bindings, err := manager.BindingsOf(t.Context(), string(authz.PlatformDomain), "acct-system")
+	if err != nil {
+		t.Fatalf("reading the bindings: %v", err)
+	}
+	if !slices.ContainsFunc(bindings, func(b authz.Binding) bool { return b.Role == tenantAdminRole }) {
+		t.Fatalf("the system administrator's bindings = %+v, want the tenant-admin role", bindings)
+	}
+	if slices.ContainsFunc(bindings, func(b authz.Binding) bool { return b.Role == platformAdminRole }) {
+		t.Errorf("the system administrator holds the platform-administrator role: %+v", bindings)
+	}
+}
+
 // TestSeedRefusesAConfigurationWithNoPlatformAdministrator holds the deployment
 // floor: a copy with no platform administrator would start a console nobody can
 // reach, so the command refuses the account list and names the entries to
