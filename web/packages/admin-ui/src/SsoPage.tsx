@@ -892,6 +892,24 @@ function parseConfig(text: string): Record<string, unknown> | null {
   }
 }
 
+/**
+ * Renders a stored provider configuration as the JSON text the form edits.
+ * The provider read carries the configuration back, so an update starts from
+ * it rather than an empty field: the server refuses an empty config, and the
+ * operator should not have to retype what the provider already holds. A
+ * provider with no configuration starts empty.
+ */
+function configTextOf(config: unknown): string {
+  if (config === undefined || config === null) {
+    return ''
+  }
+  try {
+    return JSON.stringify(config, null, 2) ?? ''
+  } catch {
+    return ''
+  }
+}
+
 /** A three-state boolean field: left as it is, or set true or false. */
 type TriState = 'unchanged' | 'true' | 'false'
 
@@ -901,6 +919,9 @@ type TriState = 'unchanged' | 'true' | 'false'
  * takes the module's false default) and the path tenant is the form's, and
  * on an update they start from the provider and an unset boolean leaves the
  * stored flag. The configuration is JSON and the client secret is write-only.
+ * The configuration field starts from the provider's stored configuration on
+ * an update -- the read carries it back and the server refuses an empty one --
+ * so saving an unchanged provider needs no retype.
  *
  * The write reports through the page's provider-form scope (`feedback`), so
  * its result lands in the region the page renders directly under this form;
@@ -929,7 +950,7 @@ function SsoProviderWriteForm({
   const [allowIdpInitiated, setAllowIdpInitiated] = useState<TriState>('unchanged')
   const [allowSha1, setAllowSha1] = useState<TriState>('unchanged')
   const [mergeExisting, setMergeExisting] = useState<TriState>('unchanged')
-  const [config, setConfig] = useState('')
+  const [config, setConfig] = useState(() => configTextOf(provider?.config))
   const [clientSecret, setClientSecret] = useState('')
 
   const configInvalid = config.trim() !== '' && parseConfig(config) === null

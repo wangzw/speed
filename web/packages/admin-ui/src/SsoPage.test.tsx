@@ -795,6 +795,54 @@ describe('SsoPage', () => {
     })
   })
 
+  it('prefills the edit form with the stored configuration so an unchanged save needs no retype', async () => {
+    const user = userEvent.setup()
+    const updates: AdminWriteSsoProviderInput[] = []
+    const storedConfig = { issuer: 'https://idp.example', client_id: 'acme' }
+    const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([
+          providerFixture({
+            name: 'Acme IdP',
+            provisioning: 'manual',
+            config: storedConfig,
+          }),
+        ]),
+      updateSsoProvider: (input) => {
+        updates.push(input)
+        return Promise.resolve(providerFixture({ name: 'Acme IdP' }))
+      },
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.click(screen.getByLabelText(zhCN.sso.provider.editLabel))
+    await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
+
+    // The provider read carries the configuration back, so the field starts
+    // from it instead of empty: the server refuses an empty config, and the
+    // operator should not have to retype one the provider already holds.
+    expect(screen.getByLabelText(zhCN.sso.provider.configLabel)).toHaveValue(
+      JSON.stringify(storedConfig, null, 2),
+    )
+
+    // Saving unchanged succeeds -- no retype -- and the stored configuration
+    // travels with the write.
+    await user.click(screen.getByRole('button', { name: zhCN.sso.provider.updateSubmit }))
+    await vi.waitFor(() => {
+      expect(updates).toEqual([
+        {
+          id: 'idp-1',
+          tenant: 'acme',
+          protocol: 'oidc',
+          name: 'Acme IdP',
+          provisioning: 'manual',
+          config: storedConfig,
+        },
+      ])
+    })
+  })
+
   it('claims a domain through the bundle and shows the token', async () => {
     const user = userEvent.setup()
     const claims: AdminClaimSsoDomainInput[] = []
