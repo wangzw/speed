@@ -491,6 +491,12 @@ function CaptchaSlider({
             answer()
           }
         }}
+        // The track spans exactly the image frame, not the whole card: the
+        // drag distance then corresponds to the piece's travel at every
+        // rendered width. It shrinks with the container the same way the
+        // frame does (`maxWidth: '100%'`), while the instruction and label
+        // stay full width.
+        //
         // The native control paints its thumb and filled track with the
         // accent; the token keeps that accent on the active theme's
         // primary instead of the browser's default blue. `accentColor` is
@@ -498,7 +504,8 @@ function CaptchaSlider({
         // through the callback (a plain 'primary.main' string is emitted
         // as-is and the browser drops it).
         sx={{
-          width: '100%',
+          width: background?.width ?? 320,
+          maxWidth: '100%',
           accentColor: (theme) => theme.palette.primary.main,
         }}
       />

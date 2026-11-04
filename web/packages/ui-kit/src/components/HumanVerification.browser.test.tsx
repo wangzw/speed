@@ -78,6 +78,41 @@ describe('HumanVerification slider in Chromium', () => {
     expect(onToken).toHaveBeenCalledWith('challenge-1.272')
   })
 
+  it('spans exactly the image frame in a wide container', async () => {
+    // The card can be wider than the 320px challenge image. The track must
+    // cover the frame, not the card, or the drag distance stops matching
+    // the piece's travel: a full-width track on a 1000px card would move
+    // the piece a third as far as the thumb moves.
+    await page.viewport(1280, 900)
+    const { container } = renderWithProviders(
+      <HumanVerification
+        scope="phone"
+        gate={{ phone: CAPTCHA_GATE, other: CAPTCHA_GATE }}
+        captcha={CHALLENGE}
+        onToken={() => {}}
+        onRefreshCaptcha={() => {}}
+      />,
+    )
+    const range = screen.getByLabelText(
+      CAPTCHA_COPY.sliderLabel,
+    ) as HTMLInputElement
+    await waitFor(() => expect(range.max).toBe('272'))
+    const background = container.querySelectorAll('img')[0] as HTMLImageElement
+    const frame = background.parentElement as HTMLElement
+    // The form's own column really is wider than the image: without that,
+    // the equality below would hold even for a full-width track.
+    const group = screen.getByRole('group')
+    expect(group.getBoundingClientRect().width).toBeGreaterThan(320)
+    await waitFor(() =>
+      expect(background.getBoundingClientRect().width).toBe(320),
+    )
+    const frameRect = frame.getBoundingClientRect()
+    const rangeRect = range.getBoundingClientRect()
+    // The track is the image frame's width, not the card's.
+    expect(rangeRect.width).toBeCloseTo(frameRect.width, 1)
+    expect(rangeRect.width).toBeLessThan(group.getBoundingClientRect().width)
+  })
+
   it('keeps the piece aligned at a narrow rendered width', async () => {
     // The background scales down with the container while the piece and
     // its offset were drawn for the 320px natural width. A narrow viewport
@@ -109,6 +144,15 @@ describe('HumanVerification slider in Chromium', () => {
     await waitFor(() => expect(range.max).toBe('272'))
     await waitFor(() =>
       expect(background.getBoundingClientRect().width).toBeLessThan(320),
+    )
+    // The track shrinks with the frame here too, so the drag distance and
+    // the piece's travel stay in the same rendered pixels.
+    const frame = background.parentElement as HTMLElement
+    await waitFor(() =>
+      expect(range.getBoundingClientRect().width).toBeCloseTo(
+        frame.getBoundingClientRect().width,
+        1,
+      ),
     )
     range.focus()
     await browserUserEvent.keyboard('{End}')
