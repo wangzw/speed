@@ -570,6 +570,22 @@ function scriptedPhoneSession(
 }
 
 describe('StepUpChallenge', () => {
+  it('stacks the dialog body with one theme spacing gap', async () => {
+    // The body's direct children -- the notice, the failure alert, the
+    // explanation and the step fields -- all sit theme.spacing(2) apart, so
+    // the alert has the same gap above and below instead of being flushed
+    // against a neighbour. jsdom applies the injected stylesheet, so the
+    // computed style is the rendered one. The default token unit is 8.
+    mount(makeStepUpResponder())
+    const dialog = await screen.findByRole('dialog')
+    const body = dialog.querySelector<HTMLElement>('.MuiDialogContent-root')
+    expect(body).not.toBeNull()
+    const style = getComputedStyle(body as HTMLElement)
+    expect(style.display).toBe('flex')
+    expect(style.flexDirection).toBe('column')
+    expect(style.gap).toBe('16px')
+  })
+
   it('starts the flow, drives the factor then the code, and elevates', async () => {
     const { rig, onSuccess } = mount(makeStepUpResponder())
     const user = userEvent.setup()

@@ -249,6 +249,28 @@ function refusingStartSession(
 }
 
 describe('StepUpChallenge', () => {
+  it('stacks the dialog body with one theme spacing gap', async () => {
+    // The account and admin dialogs read the same: the body's direct
+    // children sit theme.spacing(2) apart, so the failure alert has the
+    // same gap above and below. The default token unit is 8.
+    bindFactors([ACTIVE_FACTOR])
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={flowSession().session}
+        onSuccess={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+    const dialog = await screen.findByRole('dialog')
+    const body = dialog.querySelector<HTMLElement>('.MuiDialogContent-root')
+    expect(body).not.toBeNull()
+    const style = getComputedStyle(body as HTMLElement)
+    expect(style.display).toBe('flex')
+    expect(style.flexDirection).toBe('column')
+    expect(style.gap).toBe('16px')
+  })
+
   it('sends the host’s path as the flow’s return_to', async () => {
     // A redirect method's round trip lands back on the admin page that
     // opened the dialog, so that page reads the refusal.

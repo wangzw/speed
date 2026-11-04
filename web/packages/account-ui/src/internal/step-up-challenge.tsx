@@ -118,6 +118,24 @@ import { useAccountUiTranslation } from './translation.js'
  * server's fixed FreshFirstFactor window, not a setting. */
 const FIRST_FACTOR_WINDOW_MS = 5 * 60 * 1000
 
+/** The dialog body is one vertical stack: every direct child -- the notice,
+ * the failure alert, the explanation, the step fields -- sits one spacing
+ * token (16px) apart, so the alert has the same gap above and below and no
+ * branch adds an ad-hoc margin of its own. */
+const DIALOG_BODY_SX = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+} as const
+
+/** The dialog's bottom action row: the body's own horizontal inset (24px)
+ * and enough vertical room that the actions do not crowd the last field. */
+const DIALOG_ACTIONS_SX = {
+  px: 3,
+  py: 2,
+  flex: '0 0 auto',
+} as const
+
 /** What a self-service write's refusal asked for, read from the session
  * view taken when the dialog opened: the multi-factor requirement (the
  * session already proves a fresh first factor), a fresh first factor
@@ -292,12 +310,12 @@ export function StepUpChallenge({
       {sso ? (
         <>
           <DialogTitle id={titleId}>{t('mfa.stepUp.ssoTitle')}</DialogTitle>
-          <DialogContent>
+          <DialogContent sx={DIALOG_BODY_SX}>
             <Typography variant="body2" color="text.secondary">
               {t('mfa.stepUp.ssoRequired')}
             </Typography>
           </DialogContent>
-          <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
+          <ActionRow sx={DIALOG_ACTIONS_SX}>
             <ActionButton onClick={onCancel}>
               {t('mfa.stepUp.cancelLabel')}
             </ActionButton>
@@ -483,28 +501,28 @@ function StepUpFlow({
   return (
     <>
       <DialogTitle id={titleId}>{t('mfa.stepUp.title')}</DialogTitle>
-      <DialogContent>
+      <DialogContent sx={DIALOG_BODY_SX}>
         {notice === undefined ? null : (
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mb: 1.5 }}
-          >
+          <Typography variant="body2" color="text.secondary">
             {notice}
           </Typography>
         )}
         {flowInvalid ? (
-          <InlineError
-            code={errorCode}
-            retryAfterSeconds={retryAfterSeconds ?? undefined}
-          />
-        ) : freshFirst ? (
+          // The alert is one full-width child, so the stack's gap places it
+          // the same distance from whatever precedes and follows it.
           <Box>
+            <InlineError
+              code={errorCode}
+              retryAfterSeconds={retryAfterSeconds ?? undefined}
+            />
+          </Box>
+        ) : freshFirst ? (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Typography variant="body2" color="text.secondary">
               {t('mfa.stepUp.noFactor')}
             </Typography>
             {accountHref !== undefined && (
-              <Link href={accountHref} variant="body2" sx={{ mt: 1 }}>
+              <Link href={accountHref} variant="body2">
                 {t('mfa.stepUp.accountSettingsLink')}
               </Link>
             )}
@@ -522,16 +540,20 @@ function StepUpFlow({
             <Typography variant="body2" color="text.secondary">
               {t('mfa.stepUp.description')}
             </Typography>
-            <InlineError
-              code={errorCode}
-              retryAfterSeconds={retryAfterSeconds ?? undefined}
-            />
+            {errorCode === null ? null : (
+              <Box>
+                <InlineError
+                  code={errorCode}
+                  retryAfterSeconds={retryAfterSeconds ?? undefined}
+                />
+              </Box>
+            )}
             {starting || autoCompleting ? (
-              <Typography variant="body2" sx={{ mt: 2 }}>
+              <Typography variant="body2">
                 {t('mfa.stepUp.starting')}
               </Typography>
             ) : (
-              <Box sx={{ mt: 1 }}>
+              <Box>
                 {step !== null ? (
                   <>
                     {pending ? (
@@ -570,7 +592,7 @@ function StepUpFlow({
         )}
       </DialogContent>
       {stepShown ? null : (
-        <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
+        <ActionRow sx={DIALOG_ACTIONS_SX}>
           {cancelButton}
           {flowInvalid ? (
             <ActionButton emphasis="primary" onClick={onRestart}>

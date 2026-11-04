@@ -85,6 +85,24 @@ import { InlineError } from './inline-error.js'
 import { AdminLink } from './navigation.js'
 import { useAdminUiTranslation } from './translation.js'
 
+/** The dialog body is one vertical stack: every direct child -- the
+ * explanation, the failure alert, the step fields -- sits one spacing token
+ * (16px) apart, so the alert has the same gap above and below and no branch
+ * adds an ad-hoc margin of its own. */
+const DIALOG_BODY_SX = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+} as const
+
+/** The dialog's bottom action row: the body's own horizontal inset (24px)
+ * and enough vertical room that the actions do not crowd the last field. */
+const DIALOG_ACTIONS_SX = {
+  px: 3,
+  py: 2,
+  flex: '0 0 auto',
+} as const
+
 export interface StepUpChallengeProps {
   /** Whether the dialog is showing. Opening starts a fresh flow. */
   readonly open: boolean
@@ -151,12 +169,12 @@ export function StepUpChallenge({
       </DialogTitle>
       {sso ? (
         <>
-          <DialogContent>
+          <DialogContent sx={DIALOG_BODY_SX}>
             <Typography variant="body2" color="text.secondary">
               {t('stepUp.ssoRequired')}
             </Typography>
           </DialogContent>
-          <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
+          <ActionRow sx={DIALOG_ACTIONS_SX}>
             <ActionButton onClick={onCancel}>{t('common.cancel')}</ActionButton>
             <ActionButton emphasis="primary" onClick={relogin}>
               {t('stepUp.relogin')}
@@ -165,28 +183,28 @@ export function StepUpChallenge({
         </>
       ) : noFactor ? (
         <>
-          <DialogContent>
+          <DialogContent sx={DIALOG_BODY_SX}>
             <Typography variant="body2" color="text.secondary">
               {t('stepUp.noFactor')}
             </Typography>
             {accountHref === undefined ? null : (
-              <Typography variant="body2" sx={{ mt: 1 }}>
+              <Typography variant="body2">
                 <AdminLink href={accountHref}>{t('stepUp.goToAccount')}</AdminLink>
               </Typography>
             )}
           </DialogContent>
-          <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
+          <ActionRow sx={DIALOG_ACTIONS_SX}>
             <ActionButton onClick={onCancel}>{t('common.cancel')}</ActionButton>
           </ActionRow>
         </>
       ) : checking ? (
         <>
-          <DialogContent>
-            <Typography variant="body2" sx={{ mt: 1 }}>
+          <DialogContent sx={DIALOG_BODY_SX}>
+            <Typography variant="body2">
               {t('stepUp.starting')}
             </Typography>
           </DialogContent>
-          <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
+          <ActionRow sx={DIALOG_ACTIONS_SX}>
             <ActionButton onClick={onCancel}>{t('common.cancel')}</ActionButton>
           </ActionRow>
         </>
@@ -334,14 +352,18 @@ function StepUpFlow({
 
   return (
     <>
-      <DialogContent>
+      <DialogContent sx={DIALOG_BODY_SX}>
         {terminalFailure ? (
           // No description and no step: there is nothing to answer, so the
           // code's banner and the restart action are the whole surface.
-          <InlineError
-            code={errorCode}
-            retryAfterSeconds={retryAfterSeconds ?? undefined}
-          />
+          // The alert is one full-width child, so the stack's gap places it
+          // the same distance from whatever precedes and follows it.
+          <Box>
+            <InlineError
+              code={errorCode}
+              retryAfterSeconds={retryAfterSeconds ?? undefined}
+            />
+          </Box>
         ) : unavailable ? (
           <Typography variant="body2" color="text.secondary">
             {t('stepUp.cannotElevate')}
@@ -352,17 +374,19 @@ function StepUpFlow({
               {t('stepUp.description')}
             </Typography>
             {serverFailure ? (
-              <InlineError
-                code={errorCode}
-                retryAfterSeconds={retryAfterSeconds ?? undefined}
-              />
+              <Box>
+                <InlineError
+                  code={errorCode}
+                  retryAfterSeconds={retryAfterSeconds ?? undefined}
+                />
+              </Box>
             ) : null}
             {starting || autoCompleting ? (
-              <Typography variant="body2" sx={{ mt: 2 }}>
+              <Typography variant="body2">
                 {t('stepUp.starting')}
               </Typography>
             ) : (
-              <Box sx={{ mt: 1 }}>
+              <Box>
                 {step !== null ? (
                   <>
                     {pending ? (
@@ -399,7 +423,7 @@ function StepUpFlow({
           </>
         )}
       </DialogContent>
-      <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
+      <ActionRow sx={DIALOG_ACTIONS_SX}>
         <ActionButton onClick={onCancel}>{t('common.cancel')}</ActionButton>
         {terminalFailure ? (
           <ActionButton
