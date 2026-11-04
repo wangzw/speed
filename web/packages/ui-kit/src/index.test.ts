@@ -172,7 +172,6 @@ const PUBLIC_EXPORTS = [
   'FormLayoutProps',
   'HumanCaptchaChallenge',
   'HumanCaptchaForm',
-  'HumanCaptchaRequestForm',
   'HumanVerification',
   'HumanVerificationGate',
   'HumanVerificationGateSet',

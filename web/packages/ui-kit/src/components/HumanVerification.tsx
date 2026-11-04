@@ -20,11 +20,13 @@
  *    image form shows the picture and an answer field, the slider form
  *    shows the background and piece behind a native range input so it is
  *    keyboard operable, and the audio form plays the spoken digits for a
- *    screen-reader user. The server chooses between the image and slider
- *    forms, so the block offers only the audio accessibility alternative
- *    as a switch; a refresh keeps the selected mode. All three share one
- *    submit that yields `<challenge id>.<answer>` and one retry after a
- *    failed issue.
+ *    screen-reader user, moving focus to the player and naming its
+ *    language. The server chooses between the image and slider forms, so
+ *    the block offers no form choice: the one accessibility entry asks
+ *    for the audio alternative, and a refusal that states a wait holds
+ *    that entry and shows the wait. A refresh keeps the selection. All
+ *    three forms share one submit that yields `<challenge id>.<answer>`
+ *    and one retry after a failed issue.
  *
  * The gate is the discovery document's `human` member (`{phone, other}`),
  * so a host passes it unmodified; `scope` names the surface this block
@@ -66,10 +68,6 @@ export type HumanVerificationStatus = 'idle' | 'working' | 'ready' | 'failed'
 /** The form a self-hosted captcha challenge takes. */
 export type HumanCaptchaForm = 'image' | 'slider' | 'audio'
 
-/** The form the block may ask the host for: only the audio accessibility
- * alternative. The image and slider forms are the server's choice. */
-export type HumanCaptchaRequestForm = 'audio'
-
 /** One issued self-hosted captcha challenge, as the host read it. */
 export interface HumanCaptchaChallenge {
   readonly id: string
@@ -99,9 +97,14 @@ export interface HumanVerificationProps {
   readonly onToken: (token: string | null) => void
   /** Asked for another attempt after a failure. */
   readonly onRetry?: () => void
-  /** Asked for a fresh captcha challenge: the server's choice when no form
-   * is given, or the audio accessibility alternative. */
-  readonly onRefreshCaptcha?: (form?: HumanCaptchaRequestForm) => void
+  /** Asked for a fresh captcha challenge in the selection in force: the
+   * server's rotation, or the audio alternative once it was chosen. */
+  readonly onRefreshCaptcha?: () => void
+  /** The accessibility entry: asked for the audio alternative explicitly. */
+  readonly onRequestAudio?: () => void
+  /** The wait a refused accessibility request stated, in whole seconds.
+   * While it is set the entry is held and the wait is shown. */
+  readonly audioRetryAfterSeconds?: number
   /** Disables the widget or form while the surrounding send is in flight. */
   readonly disabled?: boolean
 }
@@ -481,17 +484,36 @@ function CaptchaForm({
   disabled,
   onToken,
   onRefresh,
+  onRequestAudio,
+  audioRetryAfterSeconds,
 }: {
   readonly scope: HumanVerificationScope
   readonly challenge: HumanCaptchaChallenge
   readonly disabled: boolean
   readonly onToken: (token: string | null) => void
-  readonly onRefresh?: (form?: HumanCaptchaRequestForm) => void
+  readonly onRefresh?: () => void
+  readonly onRequestAudio?: () => void
+  readonly audioRetryAfterSeconds?: number
 }) {
-  const { t } = useUiKitTranslation()
+  const { t, i18n } = useUiKitTranslation()
   const answerId = `human-verification-${scope}-${useId()}`
   const [answer, setAnswer] = useState('')
   const instruction = instructionText(challenge.instruction, t)
+  // The audio form receives focus when it appears, so a screen-reader user
+  // lands on the player without hunting for it. The element names the
+  // language its digits are spoken in, which is the active locale the
+  // challenge was requested with.
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  useEffect(() => {
+    if (challenge.form === 'audio') {
+      audioRef.current?.focus()
+    }
+  }, [challenge.form])
+  const audioLanguage = i18n.resolvedLanguage ?? i18n.language
+  const audioWait =
+    audioRetryAfterSeconds === undefined || audioRetryAfterSeconds <= 0
+      ? undefined
+      : audioRetryAfterSeconds
   const submit = (): void => {
     const value = answer.trim()
     if (value === '' || disabled) {
@@ -517,8 +539,11 @@ function CaptchaForm({
       {challenge.form === 'audio' && challenge.audio_url !== undefined ? (
         <Box
           component="audio"
+          ref={audioRef}
           controls={true}
           src={challenge.audio_url}
+          lang={audioLanguage}
+          tabIndex={0}
           aria-label={t('humanVerification.captcha.audioLabel')}
           sx={{ width: '100%' }}
         />
@@ -567,29 +592,37 @@ function CaptchaForm({
           </Button>
         </>
       )}
-      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        {/* The image and slider forms are the server's choice; only the
-            audio accessibility alternative is a form the client may ask
-            for. A refresh keeps the selection: no form unless audio is
-            the alternative in use. */}
-        {challenge.form !== 'audio' ? (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          {/* The image and slider forms are the server's rotation, so the
+              block offers no form choice. The audio alternative is the one
+              accessibility entry, held while a refusal states a wait. */}
+          {challenge.form !== 'audio' ? (
+            <Button
+              type="button"
+              size="small"
+              disabled={disabled || audioWait !== undefined}
+              onClick={() => onRequestAudio?.()}
+            >
+              {t('humanVerification.captcha.useAudio')}
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="small"
             disabled={disabled}
-            onClick={() => onRefresh?.('audio')}
+            onClick={() => onRefresh?.()}
           >
-            {t('humanVerification.captcha.useAudio')}
+            {t('humanVerification.captcha.refresh')}
           </Button>
+        </Box>
+        {audioWait !== undefined ? (
+          <Typography variant="body2" color="text.secondary" role="status">
+            {t('humanVerification.captcha.audioWait', {
+              seconds: audioWait,
+            })}
+          </Typography>
         ) : null}
-        <Button
-          type="button"
-          size="small"
-          disabled={disabled}
-          onClick={() => onRefresh?.()}
-        >
-          {t('humanVerification.captcha.refresh')}
-        </Button>
       </Box>
     </Box>
   )
@@ -606,6 +639,8 @@ function CaptchaBlock({
   onToken,
   onRetry,
   onRefresh,
+  onRequestAudio,
+  audioRetryAfterSeconds,
   disabled,
 }: {
   readonly scope: HumanVerificationScope
@@ -614,7 +649,9 @@ function CaptchaBlock({
   readonly status: HumanVerificationStatus
   readonly onToken: (token: string | null) => void
   readonly onRetry?: () => void
-  readonly onRefresh?: (form?: HumanCaptchaRequestForm) => void
+  readonly onRefresh?: () => void
+  readonly onRequestAudio?: () => void
+  readonly audioRetryAfterSeconds?: number
   readonly disabled: boolean
 }) {
   const { t } = useUiKitTranslation()
@@ -676,6 +713,8 @@ function CaptchaBlock({
       disabled={disabled}
       onToken={onToken}
       onRefresh={onRefresh}
+      onRequestAudio={onRequestAudio}
+      audioRetryAfterSeconds={audioRetryAfterSeconds}
     />
   )
 }
@@ -694,6 +733,8 @@ export function HumanVerification({
   onToken,
   onRetry,
   onRefreshCaptcha,
+  onRequestAudio,
+  audioRetryAfterSeconds,
   disabled = false,
 }: HumanVerificationProps) {
   const surface = gate?.[scope]
@@ -723,6 +764,8 @@ export function HumanVerification({
         onToken={onToken}
         onRetry={onRetry}
         onRefresh={onRefreshCaptcha}
+        onRequestAudio={onRequestAudio}
+        audioRetryAfterSeconds={audioRetryAfterSeconds}
         disabled={disabled}
       />
     )

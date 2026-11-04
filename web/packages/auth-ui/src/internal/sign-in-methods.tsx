@@ -249,6 +249,8 @@ export function DescriptorSignInForm({
           onToken={human.adoptToken}
           onRetry={human.retry}
           onRefreshCaptcha={human.refreshCaptcha}
+          onRequestAudio={human.requestAudio}
+          audioRetryAfterSeconds={human.audioRetryAfterSeconds}
           disabled={driver.busy}
         />
       ) : null}

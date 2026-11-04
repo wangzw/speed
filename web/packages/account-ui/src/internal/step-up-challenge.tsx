@@ -543,6 +543,8 @@ function StepUpFlow({
                         onToken={human.adoptToken}
                         onRetry={human.retry}
                         onRefreshCaptcha={human.refreshCaptcha}
+                        onRequestAudio={human.requestAudio}
+                        audioRetryAfterSeconds={human.audioRetryAfterSeconds}
                       />
                     ) : null}
                     <FlowStep

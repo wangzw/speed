@@ -112,7 +112,6 @@ export {
   HumanVerification,
   type HumanCaptchaChallenge,
   type HumanCaptchaForm,
-  type HumanCaptchaRequestForm,
   type HumanVerificationGate,
   type HumanVerificationGateSet,
   type HumanVerificationProps,

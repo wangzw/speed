@@ -15,14 +15,18 @@
  *    consumes it after every send and the control obtains a fresh one.
  *  - `turnstile` -- a third-party widget. Its token is obtained by the
  *    widget the ui-kit block renders; this module only stores it.
- *  - `captcha` -- the self-hosted captcha. The default request carries no
- *    form: the server chooses between the image and slider forms and the
- *    client renders whichever it answers. Only the audio accessibility
- *    alternative is selectable, and that request names `form=audio`. The
- *    block obtains the answer from the viewer, and the proof is the
- *    challenge id and that answer joined by a dot. The challenge is
- *    single-use and good for one attempt, so a consumed proof is replaced
- *    with a fresh challenge in the same selection.
+ *  - `captcha` -- the self-hosted captcha. The request carries no form, so
+ *    the server chooses between the image and slider forms and the client
+ *    renders whichever it answers. The one choice a client may make is
+ *    the audio accessibility alternative, requested only through the
+ *    block's single accessibility entry (`requestAudio`). The block
+ *    obtains the answer from the viewer, and the proof is the challenge
+ *    id and that answer joined by a dot. The challenge is single-use and
+ *    good for one attempt, so a consumed proof is replaced with a fresh
+ *    challenge in the same selection. A refusal of the accessibility
+ *    request that states a wait (a 429 whose `Retry-After` parsed) leaves
+ *    the challenge on screen and reports the wait, so the viewer keeps a
+ *    form they can answer while the entry is held.
  *
  * `useHumanVerification` owns the discovery read, the proof state and the
  * captcha challenge, so every surface obtains its gate the same way. A
@@ -59,11 +63,6 @@ export type HumanVerificationStatus = 'idle' | 'working' | 'ready' | 'failed'
  * slider puzzle, or the audio alternative for screen-reader users. */
 export type HumanCaptchaForm = 'image' | 'slider' | 'audio'
 
-/** The form the client may ask the server for. The image and slider forms
- * are the server's choice; only the audio accessibility alternative is
- * selectable. */
-export type HumanCaptchaRequestForm = 'audio'
-
 /** One issued self-hosted captcha challenge, as the challenge route
  * answered it: the id a proof names, the form, the instruction key the
  * block words, and the media paths the form carries. */
@@ -85,6 +84,11 @@ export interface HumanVerification {
   /** The issued self-hosted captcha challenge, or null while none is
    * loaded (or the surface does not run the captcha). */
   readonly captcha: HumanCaptchaChallenge | null
+  /** The wait a refused accessibility request stated, in whole seconds,
+   * or undefined when no refusal is in force. A refusal that states a
+   * wait leaves the challenge on screen: the viewer keeps the form they
+   * can answer while the accessibility entry is held. */
+  readonly audioRetryAfterSeconds: number | undefined
   /** Adopt a token the Turnstile widget or the captcha block yielded
    * (null when it expired or failed). */
   adoptToken(token: string | null): void
@@ -94,10 +98,14 @@ export interface HumanVerification {
   /** Give up the current proof after presenting it, so the control obtains
    * a fresh one for the next send. */
   consume(): void
-  /** Ask for a fresh captcha challenge: the server's choice of the image
-   * or slider form when no form is named, or the audio accessibility
-   * alternative. The selection persists across a consumed challenge. */
-  refreshCaptcha(form?: HumanCaptchaRequestForm): void
+  /** Ask for a fresh captcha challenge in the selection in force: the
+   * server's rotation, or the audio accessibility alternative once it was
+   * chosen. */
+  refreshCaptcha(): void
+  /** The accessibility entry: ask for the audio alternative explicitly.
+   * A refusal that states a wait leaves the current challenge on screen
+   * and reports the wait in `audioRetryAfterSeconds`. */
+  requestAudio(): void
 }
 
 /** The gate one surface runs, or null when the document is not readable. */
@@ -261,6 +269,28 @@ function gateKey(gate: AuthnHumanGate | undefined): string | undefined {
   return `${surface(gate.phone)}|${surface(gate.other)}`
 }
 
+/** The wait a refusal stated, in whole seconds rounded up, or undefined
+ * when the failure states none. Only a 429 whose `Retry-After` parsed
+ * carries a wait; anything else is an outage, not a refusal to repeat. */
+function statedWaitSeconds(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined
+  }
+  let status: unknown
+  let wait: unknown
+  try {
+    status = (error as { status?: unknown }).status
+    wait = (error as { retryAfterMs?: unknown }).retryAfterMs
+  } catch {
+    // A throwing getter or a revoked proxy states no wait.
+    return undefined
+  }
+  if (status !== 429 || typeof wait !== 'number' || !Number.isFinite(wait)) {
+    return undefined
+  }
+  return Math.max(1, Math.ceil(wait / 1000))
+}
+
 /**
  * Solve a challenge off the main thread. The worker module is imported
  * only where the platform has a Worker, so a server render and jsdom never
@@ -288,11 +318,12 @@ async function solveChallenge(
  * A `pow` gate solves one challenge as soon as the gate is known, and
  * again after every consumed proof, so the surface always shows either a
  * ready proof or the work in progress. A `captcha` gate obtains one
- * challenge -- the server's choice of form unless the screen selected the
- * audio alternative -- and replaces it after every consumed proof in the
- * same selection, so the block always has a challenge to render or a
- * reason it could not. A `turnstile` gate waits for the widget to yield a
- * token through `adoptToken`. The off gate does nothing.
+ * challenge -- the server's rotation, or the audio accessibility
+ * alternative once the entry asked for it -- and replaces it after every
+ * consumed proof in the same selection, so the block always has a
+ * challenge to render or a reason it could not. A `turnstile` gate waits
+ * for the widget to yield a token through `adoptToken`. The off gate does
+ * nothing.
  *
  * A change of scope selects the other surface's gate: the proof and any
  * challenge belong to the surface that issued them, so both are dropped
@@ -311,6 +342,14 @@ export function useHumanVerification(
   const [proof, setProof] = useState<string | null>(null)
   const [status, setStatus] = useState<HumanVerificationStatus>('idle')
   const [captcha, setCaptcha] = useState<HumanCaptchaChallenge | null>(null)
+  // The wait a refused accessibility request stated, or undefined.
+  const [audioRetryAfterSeconds, setAudioRetryAfterSeconds] = useState<
+    number | undefined
+  >(undefined)
+  // The challenge on screen, read by a request that must keep it when the
+  // accessibility entry is refused.
+  const captchaRef = useRef<HumanCaptchaChallenge | null>(null)
+  captchaRef.current = captcha
   // Bumped when a solve is superseded, so the effect below starts a solve
   // for the gate that replaced it instead of leaving the block waiting.
   const [solveTick, setSolveTick] = useState(0)
@@ -322,8 +361,9 @@ export function useHumanVerification(
   injectedRef.current = options.gate
   const injectedKey = gateKey(options.gate)
   // The form the screen asked for, or undefined for the server's choice
-  // between the image and slider forms. Only audio is selectable.
-  const lastCaptchaForm = useRef<HumanCaptchaRequestForm | undefined>(undefined)
+  // between the image and slider forms. Only audio is selectable, and it
+  // is requested through the accessibility entry.
+  const lastCaptchaForm = useRef<'audio' | undefined>(undefined)
 
   // A change of scope selects the other member of the same document. The
   // proof and the challenge belong to the surface that issued them, so
@@ -334,6 +374,7 @@ export function useHumanVerification(
     setProof(null)
     setStatus('idle')
     setCaptcha(null)
+    setAudioRetryAfterSeconds(undefined)
   }, [scope])
 
   useEffect(() => {
@@ -341,6 +382,7 @@ export function useHumanVerification(
     setProof(null)
     setStatus('idle')
     setCaptcha(null)
+    setAudioRetryAfterSeconds(undefined)
     if (!enabled) {
       // An inactive surface reads nothing and solves nothing; it settles on
       // the off gate until it opens.
@@ -418,15 +460,20 @@ export function useHumanVerification(
   }, [])
 
   const requestCaptcha = useCallback(
-    async (form?: HumanCaptchaRequestForm): Promise<void> => {
+    async (form?: 'audio'): Promise<void> => {
       lastCaptchaForm.current = form
       const generation = generationRef.current
+      // A refusal of the accessibility entry must not spend the challenge
+      // the viewer can already answer, so the challenge on screen is kept
+      // when only the entry is refused.
+      const kept = form === 'audio' ? captchaRef.current : null
       setProof(null)
       setCaptcha(null)
       setStatus('working')
+      setAudioRetryAfterSeconds(undefined)
       try {
-        // A default request carries no form: the server chooses between the
-        // image and slider forms.
+        // A request with no form carries none: the server chooses between
+        // the image and slider forms.
         const answer = await authnHumanverifyCaptchaChallenge(
           form === undefined ? undefined : { form },
         )
@@ -435,8 +482,15 @@ export function useHumanVerification(
         }
         setCaptcha(parseCaptchaChallenge(answer))
         setStatus('ready')
-      } catch {
+      } catch (error) {
         if (generationRef.current !== generation) {
+          return
+        }
+        const wait = kept === null ? undefined : statedWaitSeconds(error)
+        if (kept !== null && wait !== undefined) {
+          setCaptcha(kept)
+          setStatus('ready')
+          setAudioRetryAfterSeconds(wait)
           return
         }
         setCaptcha(null)
@@ -492,14 +546,16 @@ export function useHumanVerification(
     // A captcha challenge is spent with the send that presented it, so the
     // next send needs a new one; dropping it lets the effect obtain it.
     setCaptcha(null)
+    setAudioRetryAfterSeconds(undefined)
   }, [])
 
-  const refreshCaptcha = useCallback(
-    (form?: HumanCaptchaRequestForm): void => {
-      void requestCaptcha(form ?? lastCaptchaForm.current)
-    },
-    [requestCaptcha],
-  )
+  const refreshCaptcha = useCallback((): void => {
+    void requestCaptcha(lastCaptchaForm.current)
+  }, [requestCaptcha])
+
+  const requestAudio = useCallback((): void => {
+    void requestCaptcha('audio')
+  }, [requestCaptcha])
 
   return {
     gate,
@@ -507,9 +563,11 @@ export function useHumanVerification(
     proof,
     status,
     captcha,
+    audioRetryAfterSeconds,
     adoptToken,
     retry,
     consume,
     refreshCaptcha,
+    requestAudio,
   }
 }

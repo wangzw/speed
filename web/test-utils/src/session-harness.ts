@@ -410,8 +410,17 @@ export function tokenResponse(
   }
 }
 
-export function apiError(status: number, code: string): ApiError {
-  return new ApiError({ status, code, attempts: 1 })
+export function apiError(
+  status: number,
+  code: string,
+  retryAfterMs?: number,
+): ApiError {
+  return new ApiError({
+    status,
+    code,
+    attempts: 1,
+    ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+  })
 }
 
 /** The scripted call a fake request function receives. */

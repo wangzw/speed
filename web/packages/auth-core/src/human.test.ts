@@ -17,6 +17,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   CAPTCHA_CHALLENGE,
+  apiError,
   captchaChallenge,
   challengeResponse,
   HUMAN_CHALLENGE,
@@ -275,7 +276,7 @@ describe('useHumanVerification', () => {
     expect(requests[0]?.options?.query).toBeUndefined()
   })
 
-  it('asks for audio when selected and keeps it across refresh and a consumed challenge', async () => {
+  it('asks for audio through the accessibility entry and keeps it across refresh and a consumed challenge', async () => {
     const forms: (string | undefined)[] = []
     const harness = makeHarness({
       [LOGIN_METHODS]: () =>
@@ -296,10 +297,20 @@ describe('useHumanVerification', () => {
     expect(forms).toEqual([undefined])
 
     act(() => {
-      result.current.refreshCaptcha('audio')
+      result.current.requestAudio()
     })
     await waitFor(() => expect(result.current.captcha?.form).toBe('audio'))
     expect(forms).toEqual([undefined, 'audio'])
+
+    // The refresh control names no form of its own: it re-requests the
+    // selection in force, which is the audio alternative once chosen.
+    act(() => {
+      result.current.refreshCaptcha()
+    })
+    await waitFor(() => expect(forms).toEqual([undefined, 'audio', 'audio']))
+    // The refresh put the challenge back in flight; the request only lands
+    // with the form, so wait for the challenge itself before reading its id.
+    await waitFor(() => expect(result.current.captcha).not.toBeNull())
 
     act(() => {
       result.current.adoptToken(`${result.current.captcha!.id}.12345`)
@@ -309,7 +320,72 @@ describe('useHumanVerification', () => {
       result.current.consume()
     })
     await waitFor(() => expect(result.current.captcha).not.toBeNull())
-    expect(forms).toEqual([undefined, 'audio', 'audio'])
+    expect(forms).toEqual([undefined, 'audio', 'audio', 'audio'])
+  })
+
+  it('keeps the challenge on screen and states the wait when the audio entry is refused', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () =>
+        methodList([], {
+          humanPhoneProvider: 'captcha',
+          humanPhoneRequired: true,
+        }),
+      [CAPTCHA_CHALLENGE]: ({ options }) => {
+        if (options?.query?.form === 'audio') {
+          // The accessibility entry is limited more strictly than the
+          // rotation, and the refusal names the wait.
+          throw apiError(429, 'authn.throttled', 42_000)
+        }
+        return captchaChallenge({ form: 'image' })
+      },
+    })
+    const { result } = renderHook(() =>
+      useHumanVerification(harness.session, { scope: 'phone' }),
+    )
+    await waitFor(() => expect(result.current.captcha?.form).toBe('image'))
+    expect(result.current.audioRetryAfterSeconds).toBeUndefined()
+
+    act(() => {
+      result.current.requestAudio()
+    })
+    await waitFor(() => expect(result.current.audioRetryAfterSeconds).toBe(42))
+    // The refusal did not spend the challenge on screen: the viewer can
+    // still answer the visual one, and the wait belongs to the entry.
+    expect(result.current.captcha?.form).toBe('image')
+    expect(result.current.status).toBe('ready')
+    expect(result.current.proof).toBeNull()
+  })
+
+  it('clears the stated wait once the audio entry obtains a challenge', async () => {
+    let refuse = true
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () =>
+        methodList([], {
+          humanPhoneProvider: 'captcha',
+          humanPhoneRequired: true,
+        }),
+      [CAPTCHA_CHALLENGE]: ({ options }) => {
+        const form = options?.query?.form as 'audio' | undefined
+        if (form === 'audio' && refuse) {
+          throw apiError(429, 'authn.throttled', 1_000)
+        }
+        return captchaChallenge({ form: form ?? 'image' })
+      },
+    })
+    const { result } = renderHook(() =>
+      useHumanVerification(harness.session, { scope: 'phone' }),
+    )
+    await waitFor(() => expect(result.current.captcha?.form).toBe('image'))
+    act(() => {
+      result.current.requestAudio()
+    })
+    await waitFor(() => expect(result.current.audioRetryAfterSeconds).toBe(1))
+    refuse = false
+    act(() => {
+      result.current.requestAudio()
+    })
+    await waitFor(() => expect(result.current.captcha?.form).toBe('audio'))
+    expect(result.current.audioRetryAfterSeconds).toBeUndefined()
   })
 
   it('offers a retry when the captcha challenge cannot be issued', async () => {

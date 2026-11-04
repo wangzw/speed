@@ -50,9 +50,8 @@
       "submit": "确认",
       "refresh": "换一个挑战",
       "useAudio": "使用语音挑战",
-      "useImage": "改用图片挑战",
-      "useSlider": "改用滑块挑战",
       "audioLabel": "语音验证码",
+      "audioWait": "语音挑战的次数已达上限，请在 {{seconds}} 秒后再试。",
       "sliderLabel": "拖动滑块，把拼图对准背景的空缺",
       "instruction": {
         "typeTheDigits": "请输入图片中的字符。",

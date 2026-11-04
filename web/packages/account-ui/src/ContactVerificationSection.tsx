@@ -459,6 +459,8 @@ export function ContactVerificationSection({
       onToken={human.adoptToken}
       onRetry={human.retry}
       onRefreshCaptcha={human.refreshCaptcha}
+      onRequestAudio={human.requestAudio}
+      audioRetryAfterSeconds={human.audioRetryAfterSeconds}
       disabled={busy}
     />
   )

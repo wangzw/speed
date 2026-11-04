@@ -20,6 +20,7 @@ import {
   CAPTCHA_CHALLENGE,
   LOGIN_METHODS,
   LOGIN_START,
+  apiError,
   captchaChallenge,
   makeHarness,
   methodList,
@@ -217,7 +218,7 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
     })
   })
 
-  it('switches to the audio alternative, requests form=audio and sends', async () => {
+  it('asks for audio through the accessibility entry, focuses and marks it, and sends', async () => {
     const harness = makeHarness({
       [LOGIN_METHODS]: () =>
         methodList(['sms'], {
@@ -238,24 +239,30 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
       </PhoneCountryDefaultProvider>,
     )
     // The default request carries no form, so the server answered the
-    // visual challenge.
+    // visual challenge; the client cannot ask for the image or slider.
     await screen.findByAltText(CAPTCHA_COPY.instruction.typeTheDigits)
     expect(captchaRequests(harness)[0]?.options?.query).toBeUndefined()
     await userEvent
       .setup()
       .click(screen.getByRole('button', { name: CAPTCHA_COPY.useAudio }))
-    // The audio switch is the one form the client names, and it names it.
+    // The accessibility entry is the one control that names a form, and
+    // it names the audio alternative.
     await waitFor(() =>
       expect(
         captchaRequests(harness).map((call) => call.options?.query?.form),
       ).toEqual([undefined, 'audio']),
     )
+    const audio = container.querySelector('audio')
     await waitFor(() =>
-      expect(container.querySelector('audio')).toHaveAttribute(
+      expect(audio).toHaveAttribute(
         'src',
         '/api/v1/auth/human/captcha/audio/1',
       ),
     )
+    // The player names the language its digits are spoken in and receives
+    // focus when it appears.
+    expect(audio).toHaveAttribute('lang', 'zh-CN')
+    expect(document.activeElement).toBe(audio)
     const user = userEvent.setup()
     await user.type(
       screen.getByLabelText(CAPTCHA_COPY.answerLabel),
@@ -274,6 +281,65 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
     expect(sends(harness)[0]?.options?.body).toMatchObject({
       method: 'sms',
       human_proof: 'Y2FwdGNoYS1jaGFsbGVuZ2U.65432',
+    })
+  })
+
+  it('holds the accessibility entry and states the wait when it is refused', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () =>
+        methodList(['sms'], {
+          humanPhoneProvider: 'captcha',
+          humanPhoneRequired: true,
+          humanOtherProvider: 'off',
+          humanOtherRequired: false,
+        }),
+      [CAPTCHA_CHALLENGE]: ({ options }) => {
+        if (options?.query?.form === 'audio') {
+          // The accessibility path is limited more strictly; the refusal
+          // names the wait.
+          throw apiError(429, 'authn.throttled', 42_000)
+        }
+        return captchaChallenge({ form: 'image' })
+      },
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(
+      <PhoneCountryDefaultProvider country="CN">
+        <SMSSignInForm session={harness.session} />
+      </PhoneCountryDefaultProvider>,
+    )
+    await screen.findByAltText(CAPTCHA_COPY.instruction.typeTheDigits)
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: CAPTCHA_COPY.useAudio }))
+    // The refused request did not spend the challenge on screen, and the
+    // entry states the wait it was given.
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          CAPTCHA_COPY.audioWait.replace('{{seconds}}', '42'),
+        ),
+      ).toBeInTheDocument(),
+    )
+    expect(
+      screen.getByRole('button', { name: CAPTCHA_COPY.useAudio }),
+    ).toBeDisabled()
+    expect(
+      screen.getByAltText(CAPTCHA_COPY.instruction.typeTheDigits),
+    ).toBeInTheDocument()
+    // The viewer can still answer the visual challenge and send.
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(CAPTCHA_COPY.answerLabel),
+      '12345',
+    )
+    await user.click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
+    const send = await fillPhone()
+    await waitFor(() => expect(send).toBeEnabled())
+    await user.click(send)
+    await waitFor(() => expect(sends(harness)).toHaveLength(1))
+    expect(sends(harness)[0]?.options?.body).toMatchObject({
+      human_proof: 'Y2FwdGNoYS1jaGFsbGVuZ2U.12345',
     })
   })
 })
