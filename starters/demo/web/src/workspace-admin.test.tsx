@@ -72,6 +72,27 @@ interface PermissionAnswer {
   readonly tenant: string[]
 }
 
+/** One row of the tenant roles read, in the shape the generated view carries. */
+interface TenantRoleRow {
+  readonly role: string
+  readonly builtin: boolean
+  readonly tenant: string
+  readonly description_key: string
+  readonly created_at: string
+}
+
+/** A non-builtin tenant role: the host's protected mark, not the server's,
+ * is what must lock the row this suite renders. */
+function tenantRole(role: string): TenantRoleRow {
+  return {
+    role,
+    builtin: false,
+    tenant: 'acme',
+    description_key: '',
+    created_at: '2026-10-01T00:00:00Z',
+  }
+}
+
 type PermissionsFor = (
   alias: string | null,
 ) => PermissionAnswer | Promise<PermissionAnswer>
@@ -85,6 +106,8 @@ function scriptReads(options: {
   /** Answers the caller tenant read instead of the static list or failure. */
   readonly tenantsRead?: () => Promise<{ readonly tenants: readonly TenantRow[] }>
   readonly permissionsFor: PermissionsFor
+  /** The rows the tenant roles read answers; absent leaves it empty. */
+  readonly roles?: readonly TenantRoleRow[]
   readonly impersonationGrant?: boolean
 }): { readonly requested: string[] } {
   const requested: string[] = []
@@ -139,7 +162,7 @@ function scriptReads(options: {
       return Promise.resolve({ grants: [] } as T)
     }
     if (path.endsWith('/roles')) {
-      return Promise.resolve({ roles: [] } as T)
+      return Promise.resolve({ roles: options.roles ?? [] } as T)
     }
     if (path.endsWith('/permissions')) {
       return Promise.resolve({ permissions: [] } as T)
@@ -174,6 +197,8 @@ function mountApp(options: {
   /** Answers the caller tenant read instead of the static list or failure. */
   readonly tenantsRead?: () => Promise<{ readonly tenants: readonly TenantRow[] }>
   readonly permissionsFor: PermissionsFor
+  /** The rows the tenant roles read answers; absent leaves it empty. */
+  readonly roles?: readonly TenantRoleRow[]
   readonly impersonating?: boolean
   readonly impersonationGrant?: boolean
   /** Mount the app with no session, as a fresh visitor would arrive. */
@@ -726,6 +751,63 @@ describe('the workspace admin route admission', () => {
     expect(requested.some((path) => path.startsWith('/api/v1/system'))).toBe(
       false,
     )
+  })
+
+  it('renders a host-configured protected role read-only', async () => {
+    // tenant-admin is the demo host's protected role (the seed writes and
+    // converges it). The read marks it non-builtin on purpose: the lock must
+    // come from the host's protectedRoles prop, not the server's builtin
+    // mark, so a page that dropped the prop would show its write controls.
+    mountApp({
+      path: '/workspace/admin/roles',
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      roles: [tenantRole('tenant-admin'), tenantRole('editor')],
+      permissionsFor: () => ({
+        platform: [],
+        tenant: ['authz.tenant.role.read'],
+      }),
+    })
+    expect(
+      await screen.findByRole('heading', { name: tAdmin('permissions.title') }),
+    ).toBeInTheDocument()
+    expect(await screen.findByText('tenant-admin')).toBeInTheDocument()
+
+    // The protected row keeps only the read-only grants entry.
+    expect(
+      screen.getByRole('button', {
+        name: tAdmin('permissions.roles.viewGrantsAria', {
+          role: 'tenant-admin',
+        }),
+      }),
+    ).toBeEnabled()
+    expect(
+      screen.queryByRole('button', {
+        name: tAdmin('permissions.roles.manageGrantsAria', {
+          role: 'tenant-admin',
+        }),
+      }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: tAdmin('permissions.roles.removeAria', { role: 'tenant-admin' }),
+      }),
+    ).toBeNull()
+    expect(
+      screen.getByText(tAdmin('permissions.roles.protectedReadOnly')),
+    ).toBeInTheDocument()
+
+    // An ordinary tenant role keeps its write controls, so the absence above
+    // distinguishes the host's protected mark from an empty action column.
+    expect(
+      screen.getByRole('button', {
+        name: tAdmin('permissions.roles.manageGrantsAria', { role: 'editor' }),
+      }),
+    ).toBeEnabled()
+    expect(
+      screen.getByRole('button', {
+        name: tAdmin('permissions.roles.removeAria', { role: 'editor' }),
+      }),
+    ).toBeEnabled()
   })
 
   it('serves the workspace settings page from the tenant namespace only', async () => {

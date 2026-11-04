@@ -42,6 +42,17 @@ import {
 import { useSelfTenantState } from './tenant-self.js'
 
 /**
+ * The role names the demo host seeds into every business tenant and keeps
+ * under its own control: the seed writes `tenant-admin`
+ * (starters/demo/server/seed.go) and converges its grants, so the workspace
+ * role page must render that row read-only even where the server's builtin
+ * mark is absent. The host hands the list to `WorkspaceAdminProvider`; the
+ * page locks exactly these names, the way the platform console locks a
+ * builtin role.
+ */
+export const workspaceAdminProtectedRoles: readonly string[] = ['tenant-admin']
+
+/**
  * The workspace declarations mapped onto their prefixed URLs. The workspace
  * root itself has no page: every declaration lives one segment below it.
  */

@@ -130,6 +130,7 @@ import { usePermissionRead } from './platform-permissions.js'
 import {
   useWorkspaceAdminAdmission,
   useWorkspaceAdminPermission,
+  workspaceAdminProtectedRoles,
 } from './workspace-admin.js'
 import { clearCallbackFragment, readCallbackError } from './sign-in-landing.js'
 import { DemoNavLabel } from './nav-label.js'
@@ -455,6 +456,7 @@ function AppFrame({
             onNavigate={navigate}
             breadcrumbs={breadcrumbs}
             invitationLink={invitationPath}
+            protectedRoles={workspaceAdminProtectedRoles}
           >
             <WorkspaceRouteGuard target={workspaceAdmission.target}>
               <RouteView />
