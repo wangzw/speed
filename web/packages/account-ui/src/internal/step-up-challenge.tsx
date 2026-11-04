@@ -591,9 +591,16 @@ function StepUpFlow({
  * could use. A read that has not settled yet, or one that failed, holds
  * none and leaves the decision to the flow's own refusal. */
 /** The values a challenge renders locked: the identifier a flow asks for is
- * the account's own login name, which the dialog already knows. Only a
- * challenge that actually carries an identifier field gets it, and only
- * when the snapshot names a username. */
+ * the account's own login name, and the phone a step-up asks for is the
+ * account's own proved number. Only a challenge that actually carries the
+ * field gets it. A phone challenge locks the number when the account proved
+ * exactly one -- the only number a code can go to -- and stays editable when it
+ * proved several, so the person picks one of their own. The phone is never
+ * locked while the session is impersonating: the snapshot names the
+ * impersonated account, but a step-up flow proves the initiator's own factor,
+ * so a locked snapshot number would be refused by the server and could not be
+ * corrected. The field stays editable for the initiator to type their own
+ * proved number; the server remains the judge. */
 function lockedFieldsOf(
   step: AuthnStep,
   session: AuthSession,
@@ -601,16 +608,32 @@ function lockedFieldsOf(
   if (step.kind !== 'challenge') {
     return undefined
   }
-  if (!step.fields.some((field) => field.name === 'identifier')) {
-    return undefined
+  const identifiers = session.getSnapshot().principal?.identifiers ?? []
+  const locked: Record<string, string> = {}
+  if (step.fields.some((field) => field.name === 'identifier')) {
+    const username = identifiers.find(
+      (identifier) => identifier.kind === 'username',
+    )?.value
+    if (username !== undefined && username !== '') {
+      locked.identifier = username
+    }
   }
-  const principal = session.getSnapshot().principal
-  const username = principal?.identifiers?.find(
-    (identifier) => identifier.kind === 'username',
-  )?.value
-  return username === undefined || username === ''
-    ? undefined
-    : { identifier: username }
+  if (
+    step.fields.some((field) => field.name === 'phone') &&
+    !session.getSnapshot().impersonating
+  ) {
+    const phones = identifiers.filter(
+      (identifier) =>
+        identifier.kind === 'phone' &&
+        identifier.proven &&
+        identifier.value !== '',
+    )
+    const only = phones.length === 1 ? phones[0] : undefined
+    if (only !== undefined) {
+      locked.phone = only.value
+    }
+  }
+  return Object.keys(locked).length === 0 ? undefined : locked
 }
 
 function activeFactorCount(

@@ -491,7 +491,16 @@ function CaptchaSlider({
             answer()
           }
         }}
-        sx={{ width: '100%' }}
+        // The native control paints its thumb and filled track with the
+        // accent; the token keeps that accent on the active theme's
+        // primary instead of the browser's default blue. `accentColor` is
+        // not one of the sx system props, so its theme path is read
+        // through the callback (a plain 'primary.main' string is emitted
+        // as-is and the browser drops it).
+        sx={{
+          width: '100%',
+          accentColor: (theme) => theme.palette.primary.main,
+        }}
       />
     </Box>
   )

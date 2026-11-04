@@ -167,11 +167,11 @@ describe('AdminArea', () => {
     expect(back.parentElement?.parentElement).toBe(toolbar)
   })
 
-  it('renders the account entry in the navigation column and no header avatar menu', async () => {
+  it('renders the account entry in the navigation column and the header avatar menu', async () => {
     renderAdminArea()
 
-    // ACCOUNT_ENTRY's default places the entry at the bottom of the column,
-    // after the navigation, and leaves the header without an avatar menu --
+    // ACCOUNT_ENTRY is 'both': the entry sits at the bottom of the column,
+    // after the navigation, and the header carries the same account menu --
     // the tenant frame's placement carried into the admin.
     const trigger = await screen.findByTestId('account-entry-trigger')
     const nav = screen.getByRole('navigation')
@@ -179,7 +179,7 @@ describe('AdminArea', () => {
     expect(
       nav.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
-    expect(screen.queryByTestId('user-menu-trigger')).toBeNull()
+    expect(screen.getByTestId('user-menu-trigger')).toBeInTheDocument()
   })
 
   it('groups the platform navigation by the admin group table', () => {

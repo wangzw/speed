@@ -53,10 +53,10 @@ export const ANONYMOUS_SNAPSHOT: AuthSnapshot = {
  * The authenticated snapshot with the given permission lists attached. Each
  * domain defaults to null -- an unknown set, the state a host that attaches
  * none leaves the session in. The feature state defaults to the platform
- * vocabulary a baseline deployment serves: every gated surface present, less
- * workspace.personal, whose host switch is off by default. A suite that needs
- * a narrowed document, a pending read, a failed one, or the personal tenant
- * passes its own.
+ * vocabulary a baseline deployment serves: every gated platform surface
+ * present. A suite that needs a narrowed document, a pending read, a failed
+ * one, or an application-owned feature such as the personal tenant passes its
+ * own.
  */
 export function authenticatedSnapshot(options: {
   readonly tenant?: readonly string[] | null

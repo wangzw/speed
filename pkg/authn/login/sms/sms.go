@@ -16,9 +16,11 @@
 // while registration is open; every other number gets a suppressed challenge,
 // which is counted against every budget but the deployment-wide one and answered
 // exactly as a real one, so that the answer tells nobody whether a number is
-// registered. A code that holds completes a login only for a number no account
-// holds or one its account chose as a sign-in way; an unchosen number is refused
-// as a code that did not hold.
+// registered. A step-up is the exception: it re-proves the first factor of an
+// account that is already signed in, so its code goes only to a number that
+// account proved. A code that holds completes a login only for a number no
+// account holds or one its account chose as a sign-in way; an unchosen number is
+// refused as a code that did not hold.
 //
 // A host takes the method in by writing ModuleName into a command alongside the
 // login engine, an SMS module and an account module. It delivers the login
@@ -218,7 +220,7 @@ func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	if !servesPurpose(s.Purpose) {
 		return refusePurpose(s.Purpose), nil
 	}
-	return m.phone(ctx, s.Fields, s.SendsLeft, s.Locale, s.Client.IP, s.Proof), nil
+	return m.phone(ctx, s.Fields, s.SendsLeft, s.Locale, s.Client.IP, s.Proof, s.Purpose, s.Account), nil
 }
 
 // Answer handles the client's answer to the previous step: the phone the method
@@ -234,7 +236,7 @@ func (m *method) Answer(ctx context.Context, f authn.FlowState, in authn.StepInp
 	}
 	switch f.Step {
 	case stepPhone:
-		return m.phone(ctx, in.Fields, f.SendsLeft, f.Locale, in.Client.IP, f.Proof), nil
+		return m.phone(ctx, in.Fields, f.SendsLeft, f.Locale, in.Client.IP, f.Proof, f.Purpose, f.Account), nil
 	case stepCode:
 		return m.code(ctx, f, in.Fields), nil
 	default:
@@ -279,13 +281,28 @@ func refusePurpose(purpose string) authn.Step {
 // engine applies no source budget. proof is the human-verification proof the
 // request presented; it travels to the code engine, which checks and consumes
 // it once before spending any budget.
-func (m *method) phone(ctx context.Context, fields map[string]string, sendsLeft int, locale, source, proof string) authn.Step {
+//
+// A step-up re-proves the first factor of an account that is already signed in,
+// so the code goes only to a number that account proved. account is the account
+// the flow proves -- the operator's own account under an impersonation, which
+// the engine already resolves -- and any other number is refused as a credential
+// that did not hold, without a send.
+func (m *method) phone(ctx context.Context, fields map[string]string, sendsLeft int, locale, source, proof, purpose string, account authn.AccountID) authn.Step {
 	phone := fields[fieldPhone]
 	if phone == "" {
 		return promptPhone()
 	}
 	if !phoneShape.MatchString(phone) {
 		return authn.StepRefused(fmt.Errorf("%w: the phone is not an E.164 number", authn.ErrInvalidIdentifier))
+	}
+	if purpose == authn.PurposeStepUp {
+		held, err := m.provedPhone(ctx, account, phone)
+		if err != nil {
+			return unavailable("reading the account's phone numbers", err)
+		}
+		if !held {
+			return authn.StepRefused(errRefused)
+		}
 	}
 	if sendsLeft <= 0 {
 		return authn.StepThrottled(0)
@@ -395,6 +412,30 @@ func (m *method) code(ctx context.Context, f authn.FlowState, fields map[string]
 	default:
 		return unavailable("checking the code", err)
 	}
+}
+
+// provedPhone reports whether phone is a proved phone identifier of account. A
+// step-up re-proves the first factor of an account that is already signed in, so
+// its code may go only to a number the account proved; any other number, and an
+// account the caller could not name, has none. The read failure is the
+// capability being unable to say, never a refusal, so it never turns into a
+// suppressed send.
+func (m *method) provedPhone(ctx context.Context, account authn.AccountID, phone string) (bool, error) {
+	if account == "" {
+		return false, nil
+	}
+	held, err := m.accounts.Identifiers(ctx, account)
+	if err != nil {
+		return false, err
+	}
+	for _, identifier := range held {
+		proves := authn.Verification{Via: identifier.VerifiedVia}.Proves()
+		if identifier.Kind == authn.IdentifierPhone && identifier.Value == phone &&
+			!identifier.VerifiedAt.IsZero() && proves {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // signsIn reports whether a number may complete a login: it belongs to no

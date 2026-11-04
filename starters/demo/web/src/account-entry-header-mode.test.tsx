@@ -1,8 +1,7 @@
 /**
  * The account entry placed in the header instead: the assembly's one-line
- * switch really moves it. With `ACCOUNT_ENTRY = 'header'` the header's
- * avatar menu carries the account settings and sign-out, and the
- * navigation column renders no account row.
+ * switch really moves it, and the header's avatar menu carries the same six
+ * entries the sidebar account entry offers.
  */
 
 import { screen, waitFor } from '@testing-library/react'
@@ -28,13 +27,15 @@ describe('the account entry in the header', () => {
 
     await user.click(trigger)
     expect(
-      await screen.findByRole('menuitem', {
-        name: demoEnUS.userMenu.accountSettings,
-      }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('menuitem', { name: demoEnUS.userMenu.signOut }),
-    ).toBeInTheDocument()
+      screen.getAllByRole('menuitem').map((item) => item.textContent),
+    ).toEqual([
+      demoEnUS.userMenu.messages,
+      demoEnUS.account.sections.profile,
+      demoEnUS.account.sections.security,
+      demoEnUS.account.sections.sessions,
+      demoEnUS.userMenu.preferences,
+      demoEnUS.userMenu.signOut,
+    ])
     await user.keyboard('{Escape}')
     await waitFor(() =>
       expect(screen.queryByRole('menu')).not.toBeInTheDocument(),

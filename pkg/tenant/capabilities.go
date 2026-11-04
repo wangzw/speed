@@ -114,8 +114,9 @@ type Catalog interface {
 	// Get returns the tenant with this identifier. The second result is
 	// false when the roster has no such row.
 	Get(ctx context.Context, id ID) (Tenant, bool, error)
-	// ByAlias returns the tenant this name belongs to, which is the lookup
-	// the resolving layer makes on every request.
+	// ByAlias returns the tenant this name belongs to, which is the first
+	// lookup the resolving layer makes on every request; a name that is no
+	// alias is then looked up as an identifier.
 	ByAlias(ctx context.Context, alias string) (Tenant, bool, error)
 	// Put registers a tenant, or rewrites the row its identifier already
 	// has. Alias, status and disable source are taken from the value as given.

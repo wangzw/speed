@@ -392,11 +392,13 @@ func TestACompletedVerificationBindsTheNumber(t *testing.T) {
 		t.Fatalf("POST /phone/verify = %d %s, want 204", w.Code, w.Body)
 	}
 	want := []string{
-		"kv.Get", "throttle.Check", "sms.Verify", "throttle.Succeed",
-		// What the proof would change is decided before it is written: the
-		// account's identifiers and factors say whether the number is an
-		// active SMS factor's target, and that consequence asks for freshness.
+		"kv.Get", "throttle.Check",
+		// What the proof would change is decided before the code is compared: the
+		// account's identifiers and factors say whether the number is an active
+		// SMS factor's target, and that consequence asks for freshness. Deciding
+		// it first is what leaves a step-up refusal with its challenge unspent.
 		"accounts.Identifiers", "mfa.Factors",
+		"sms.Verify", "throttle.Succeed",
 		"admin.AddIdentifier", "kv.Delete",
 	}
 	if got := h.log.names(); !slices.Equal(got, want) {
@@ -441,7 +443,42 @@ func TestACodeVerifiesOnce(t *testing.T) {
 	}
 }
 
-// TestVerifyWithoutAMatchingRecordIsFlowInvalid holds the three ways a record
+// TestAStepUpRefusalLeavesTheCodeReplayable holds the ordering the frontend
+// depends on: a verification whose consequence needs a fresh authentication is
+// refused before the single-use challenge is consumed, so the same code the
+// client submits again after stepping up still passes. A refusal that compared
+// the code first would spend it and turn the replay into a wrong code.
+func TestAStepUpRefusalLeavesTheCodeReplayable(t *testing.T) {
+	h := newHarness(t)
+	// An active SMS factor makes the new number its target; a second active
+	// factor holds the stale single-factor session to a fresh multi-factor proof.
+	h.mfa.factors = []authn.FactorRecord{
+		{ID: "factor-sms", Account: account, Kind: authn.FactorSMS, Status: authn.FactorActive},
+		{ID: "factor-totp", Account: account, Kind: authn.FactorTOTP, Status: authn.FactorActive},
+	}
+	h.startPhone()
+
+	w := h.post("/phone/verify", `{"code":"123456"}`)
+	if w.Code != http.StatusUnauthorized || problemType(t, w) != "insufficient_user_authentication" {
+		t.Fatalf("the stale verify answered %d %s, want 401 insufficient_user_authentication", w.Code, w.Body)
+	}
+	if h.log.count("sms.Verify") != 0 {
+		t.Fatalf("the step-up refusal compared the code and spent the challenge: %v", h.log.all())
+	}
+	if len(h.kv.keys()) != 1 {
+		t.Fatalf("the step-up refusal dropped the pending record: %v", h.kv.keys())
+	}
+
+	// The client steps up and replays the same code; the challenge is still there.
+	h.as(localMulti(time.Minute)...)
+	if w := h.post("/phone/verify", `{"code":"123456"}`); w.Code != http.StatusNoContent {
+		t.Fatalf("the replay answered %d %s, want 204", w.Code, w.Body)
+	}
+	if len(h.admin.added) != 1 {
+		t.Fatalf("the number was bound %d times, want once", len(h.admin.added))
+	}
+}
+
 // does not match the request, each a 401 flow-invalid that calls neither the
 // back-off nor the verifier: there is none, it is not valid JSON, and it was
 // written for another account.

@@ -28,9 +28,9 @@ authn 后端的自助写路由已经存在：档案（`authn.profile`）挂 `PAT
 
 ## 决策
 
-采纳：账户的自助写归 `@speed/account-ui`，新增四节——`ProfileSection`（显示名，`PATCH B/me`）、`PasswordSection`（`PUT B/password`）、`PhoneSection`（`POST B/phone` 与 `POST B/phone/verify` 两步）、`IdentifiersSection`（读 `GET B/me` 的 `identifiers` 字段、删 `DELETE B/identifiers/:id`）。四节中，`PasswordSection`、`PhoneSection` 与 `IdentifiersSection` 取 `AuthSession` 为属性；提权门控只由 `PasswordSection`（改口令）与 `IdentifiersSection`（添加用户名、登录方式的选择、默认联系地址的改选、删除标识）驱动一条 `purpose: 'step-up'` 流程，`PhoneSection` 的两步写本身不要求新鲜认证，门控不为它打开；`ProfileSection` 的显示名写同样不要求新鲜认证，不经门控。
+采纳：账户的自助写归 `@speed/account-ui`，新增四节——`ProfileSection`（显示名，`PATCH B/me`）、`PasswordSection`（`PUT B/password`）、`PhoneSection`（`POST B/phone` 与 `POST B/phone/verify` 两步）、`IdentifiersSection`（读 `GET B/me` 的 `identifiers` 字段、删 `DELETE B/identifiers/:id`）。四节中，`PasswordSection`、`PhoneSection` 与 `IdentifiersSection` 取 `AuthSession` 为属性；提权门控由 `PasswordSection`（改口令）、`IdentifiersSection`（添加用户名、登录方式的选择、默认联系地址的改选、删除标识）与受保护后果的验证驱动一条 `purpose: 'step-up'` 流程。发送（登记与更换目标地址）本身不要求新鲜认证，门控不为它打开；`PhoneSection` 与验证节的验证在后果受保护时经同一门控，拒绝后重放同一验证码恰好一次。`ProfileSection` 的显示名写同样不要求新鲜认证，不经门控。
 
-判据是「自助功能同处一页、同一访问令牌、要求新鲜认证的写同一提权门控」——这是这些写归包内的依据，不是每个写都满足它：登记与验证联系方式同在这一页、同用一条令牌，本身不要求新鲜认证、不经门控（其后果要求新鲜认证时按普通失败呈现）。这些写与包内既有的偏好、会话、绑定节共享同一个账户页与同一条访问令牌，都是一次性写而非可分页列表，与包内各节处在同一组件层。通用属性集（自由键值对）的编辑留在宿主：它是任意键值，不属于账户页的固定字段。
+判据是「自助功能同处一页、同一访问令牌、要求新鲜认证的写同一提权门控」——这是这些写归包内的依据，不是每个写都满足它：登记与验证联系方式同在这一页、同用一条令牌，发送（登记与更换目标地址）本身不要求新鲜认证、不经门控，被拒时按普通失败呈现且不重放；验证的后果要求新鲜认证时经同一门控，拒绝后重放同一验证码恰好一次。这些写与包内既有的偏好、会话、绑定节共享同一个账户页与同一条访问令牌，都是一次性写而非可分页列表，与包内各节处在同一组件层。通用属性集（自由键值对）的编辑留在宿主：它是任意键值，不属于账户页的固定字段。
 
 四节建为受控字段：MUI（[REF-mui](../references.md)）的 `TextField` 直接受控，不接入 ui-kit 的表单家族（`FormField`、`zodFormResolver`）——判据是被否决的表单家族方案。「本包不属表单家族」是这一决策的一部分：表单家族只服务于登录表单（`@speed/auth-ui`）。
 
@@ -42,7 +42,7 @@ authn 后端的自助写路由已经存在：档案（`authn.profile`）挂 `PAT
 
 - 包多担四条自助路由，测试范围随之扩大；提权门控由 `@speed/auth-core` 的 `useStepUpGate` 提供（[ADR-web-auth-seams](adr-web-auth-seams.md)）。
 - 通用属性集的编辑仍不在包内，账户页的档案写是不完整的一半：显示名在包内，自由属性在宿主。
-- 改口令、添加用户名、选作或取消登录方式、设置默认联系地址、删除标识与解绑外部身份要求新鲜认证，节必须处理提权 401；登记并验证一条联系方式本身不要求新鲜认证（其后果改变账户据以证明或找回自己的事实时服务端答提权 401，节按普通失败呈现），档案与偏好的写不要求新鲜认证，不经同一门控。
+- 改口令、添加用户名、选作或取消登录方式、设置默认联系地址、删除标识与解绑外部身份要求新鲜认证，节必须处理提权 401；登记联系方式（发送）本身不要求新鲜认证；验证的后果改变账户据以证明或找回自己的事实时服务端答提权 401，节开同一门控并重放同一验证码恰好一次；档案与偏好的写不要求新鲜认证，不经同一门控。
 - 四节不接表单家族：口令节的两条提交期检查以内联辅助文本渲染在各自字段上，不走 `FormField`；一个校验增长到需要 schema 驱动的新节要重新评估接入成本。
 
 ## 失效条件

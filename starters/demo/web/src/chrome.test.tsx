@@ -12,7 +12,7 @@
  * forms, so its text reaches an assistive reader without being painted.
  */
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -42,8 +42,10 @@ import {
   useTenantSelection,
 } from './chrome.js'
 import type { DemoTenant } from './chrome.js'
+import demoEnUS from './locales/en-US.json' with { type: 'json' }
+import { ACCOUNT_SECTION_PATHS, NOTIFICATIONS_PATH } from './paths.js'
 import { DEMO_NAMESPACE, demoResources } from './resources.js'
-import { createHarnessClient } from './test-utils/render.js'
+import { createHarnessClient, renderDemoApp } from './test-utils/render.js'
 import { authenticatedSnapshot, createTestSession } from './test-utils/session.js'
 import type { TestSession } from './test-utils/session.js'
 
@@ -378,4 +380,107 @@ describe('the colour mode preference', () => {
     expect(() => persistColorModePreference('dark')).not.toThrow()
     expect(initialColorModePreference()).toBe('system')
   })
+})
+
+/**
+ * The two account-menu surfaces, compared side by side: the header's avatar
+ * menu and the sidebar's account entry must offer one list, so a viewer
+ * switching between them never loses an entry. The placement is pinned to
+ * 'both' here because the comparison needs both mounted at once; the entries
+ * themselves come from the one shared list in chrome.tsx.
+ */
+vi.mock('./account-entry.js', () => ({ ACCOUNT_ENTRY: 'both' }))
+
+/** The entries every account menu carries, in render order. */
+const ACCOUNT_MENU_LABELS = [
+  demoEnUS.userMenu.messages,
+  demoEnUS.account.sections.profile,
+  demoEnUS.account.sections.security,
+  demoEnUS.account.sections.sessions,
+  demoEnUS.userMenu.preferences,
+  demoEnUS.userMenu.signOut,
+] as const
+
+/** The destination each entry that navigates opens. */
+const ACCOUNT_MENU_DESTINATIONS = [
+  { label: demoEnUS.userMenu.messages, path: NOTIFICATIONS_PATH },
+  {
+    label: demoEnUS.account.sections.profile,
+    path: ACCOUNT_SECTION_PATHS.profile,
+  },
+  {
+    label: demoEnUS.account.sections.security,
+    path: ACCOUNT_SECTION_PATHS.security,
+  },
+  {
+    label: demoEnUS.account.sections.sessions,
+    path: ACCOUNT_SECTION_PATHS.sessions,
+  },
+  {
+    label: demoEnUS.userMenu.preferences,
+    path: ACCOUNT_SECTION_PATHS.preferences,
+  },
+] as const
+
+const ACCOUNT_MENU_SURFACES = [
+  { name: 'header', trigger: 'user-menu-trigger' },
+  { name: 'sidebar', trigger: 'account-entry-trigger' },
+] as const
+
+/** Opens one surface's menu, reads its entry labels and closes it again. */
+async function accountMenuLabels(
+  user: ReturnType<typeof userEvent.setup>,
+  triggerId: string,
+): Promise<string[]> {
+  await user.click(screen.getByTestId(triggerId))
+  const labels = screen
+    .getAllByRole('menuitem')
+    .map((item) => item.textContent ?? '')
+  await user.keyboard('{Escape}')
+  await waitFor(() =>
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+  )
+  return labels
+}
+
+describe('the account menus', () => {
+  it('offers the same entries from the header and the sidebar', async () => {
+    window.history.replaceState({}, '', '/')
+    const user = userEvent.setup()
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    const header = await accountMenuLabels(user, 'user-menu-trigger')
+    const sidebar = await accountMenuLabels(user, 'account-entry-trigger')
+
+    // Both surfaces carry the whole list, and therefore the same set: an
+    // entry added to one cannot be missing from the other.
+    expect(header).toEqual([...ACCOUNT_MENU_LABELS])
+    expect(new Set(header)).toEqual(new Set(sidebar))
+  })
+
+  for (const surface of ACCOUNT_MENU_SURFACES) {
+    it(`navigates every entry from the ${surface.name} menu`, async () => {
+      const user = userEvent.setup()
+      renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+      for (const { label, path } of ACCOUNT_MENU_DESTINATIONS) {
+        await user.click(screen.getByTestId(surface.trigger))
+        await user.click(screen.getByRole('menuitem', { name: label }))
+        await waitFor(() => expect(window.location.pathname).toBe(path))
+      }
+    })
+
+    it(`signs out from the ${surface.name} menu`, async () => {
+      const user = userEvent.setup()
+      const session = createTestSession(authenticatedSnapshot())
+      const logout = vi.spyOn(session, 'logout')
+      renderDemoApp({ session })
+
+      await user.click(screen.getByTestId(surface.trigger))
+      await user.click(
+        screen.getByRole('menuitem', { name: demoEnUS.userMenu.signOut }),
+      )
+      await waitFor(() => expect(logout).toHaveBeenCalled())
+    })
+  }
 })

@@ -222,6 +222,7 @@
   },
   "flowStep": {
     "lockedIdentifierHelp": "This is the account you are signed in as.",
+    "lockedPhoneHelp": "This is a verified phone number of the account.",
     "redirectNotice": "Continue in the window that opens to finish this step.",
     "continueLabel": "Continue",
     "enrollTotpHelp": "Scan the QR code with your authenticator app, then enter the 6-digit code the app shows.",

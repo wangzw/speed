@@ -15,10 +15,11 @@
  *    list (the caller tenant read). product-shell places the switcher in the
  *    userMenu slot; the admin banner, which resolves no tenant, does not
  *    render it. Its switch confirmation is announced but never painted.
- *  - UserMenu: an avatar trigger opening a menu of profile / account-settings
- *    / sign-out, replacing the bare sign-out button. While an impersonation
- *    is in force, auth-ui's end item sits first: closing the banner must not
- *    strand the operator without a way to end it.
+ *  - UserMenu: an avatar trigger opening the account menu -- the same entries
+ *    the sidebar account entry carries, from one shared list: the
+ *    notification centre, the four account panes and sign-out. While an
+ *    impersonation is in force, auth-ui's end item sits first: closing the
+ *    banner must not strand the operator without a way to end it.
  *
  * The module also owns the device side of the color-mode preference: the
  * storage helpers the account page and the tenant frame use to mirror the
@@ -55,7 +56,6 @@ import {
   SessionsNavIcon,
 } from './nav-icons.js'
 import {
-  ACCOUNT_PATH,
   ACCOUNT_SECTION_PATHS,
   NOTIFICATIONS_PATH,
 } from './paths.js'
@@ -551,15 +551,24 @@ export function initialThemePreset(deploymentPreset?: string): string {
 }
 
 /**
- * The account menu: an avatar trigger opening account-settings / sign-out.
- * The trigger shows the signed-in user's initials (the avatar is
+ * The header's account menu: an avatar trigger opening the same entries the
+ * sidebar account entry offers (AccountMenuItems), so the two surfaces stay
+ * one menu. The trigger shows the signed-in user's initials (the avatar is
  * decorative) and its accessible name carries both the initials and the
  * display name -- the initials are visible text, so WCAG 2.5.3 requires them
- * inside the name; the generic label is used while anonymous. The account
- * page holds the settings surface (account-ui's sections span it), and the
- * avatar menu is the tenant navigation's single entry for it; sign-out
+ * inside the name; the generic label is used while anonymous. Sign-out
  * drives the session's logout, whose quiet terminal flip the shells observe.
  */
+/** The paper both account menus share: one width and surface, so the header
+ * dropdown and the sidebar column read as the same menu. */
+function accountMenuPaperSx(theme: Theme) {
+  return {
+    minWidth: theme.spacing(30),
+    border: `1px solid ${theme.palette.divider}`,
+    boxShadow: theme.shadows[12],
+  }
+}
+
 export function UserMenu({
   narrow = false,
 }: {
@@ -592,9 +601,9 @@ export function UserMenu({
         : `${initials} ${displayName}`
 
   const closeMenu = (): void => setAnchorEl(null)
-  const goToAccount = (): void => {
+  const goTo = (path: string): void => {
     closeMenu()
-    navigate(ACCOUNT_PATH)
+    navigate(path)
   }
   const signOut = (): void => {
     closeMenu()
@@ -630,15 +639,15 @@ export function UserMenu({
         onClose={closeMenu}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: accountMenuPaperSx } }}
       >
-        {/* Renders only inside an impersonation (and inside auth-ui's notice
-            provider); it starts the same end attempt the banner carries, so
-            the two are disabled and busy together. */}
-        <ImpersonationEndMenuItem divider onActivate={closeMenu} />
-        <MenuItem onClick={goToAccount}>
-          {t('userMenu.accountSettings')}
-        </MenuItem>
-        <MenuItem onClick={signOut}>{t('userMenu.signOut')}</MenuItem>
+        {/* The same entries the sidebar's account menu carries, from one
+            shared list. */}
+        <AccountMenuItems
+          onNavigate={goTo}
+          onSignOut={signOut}
+          onClose={closeMenu}
+        />
       </Menu>
     </Box>
   )
@@ -711,6 +720,71 @@ function SignOutIcon() {
       <path d="M10 8l-4 4 4 4" />
       <path d="M6 12h9" />
     </svg>
+  )
+}
+
+/**
+ * The account menu's entries, rendered by both surfaces that offer them: the
+ * header's avatar menu and the sidebar's account entry. One list keeps the
+ * two menus from drifting into two different sets of actions -- the
+ * notification centre, one entry per account pane, then sign-out, with the
+ * impersonation-end item first while an impersonation is in force.
+ *
+ * The callbacks carry each surface's own dismissal: it closes its menu (and,
+ * on the sidebar, a temporary drawer) before it navigates or signs out.
+ * `itemSx` is the only presentation difference the list accepts -- the
+ * sidebar passes its navigation-track inset, the header keeps the menu's
+ * default spacing -- so the entries themselves are identical.
+ */
+function AccountMenuItems({
+  onNavigate,
+  onSignOut,
+  onClose,
+  itemSx,
+}: {
+  /** Opens a destination; the surface closes itself first. */
+  readonly onNavigate: (path: string) => void
+  /** Signs the session out; the surface closes itself first. */
+  readonly onSignOut: () => void
+  /** Closes the surface after the impersonation-end item activates. */
+  readonly onClose: () => void
+  /** The entry inset the sidebar's navigation track needs; absent keeps the
+   * menu's default spacing. */
+  readonly itemSx?: typeof accountMenuItemSx
+}): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  return (
+    <>
+      {/* The same end attempt the banner carries: an impersonation ends from
+          wherever the account menu lives. */}
+      <ImpersonationEndMenuItem divider onActivate={onClose} />
+      <MenuItem onClick={() => onNavigate(NOTIFICATIONS_PATH)} sx={itemSx}>
+        <Box component="span" sx={accountMenuItemIconSx}>
+          <NotificationsNavIcon size={24} />
+        </Box>
+        {t('userMenu.messages')}
+      </MenuItem>
+      <Divider />
+      {ACCOUNT_MENU_PANES.map(({ section, key, icon }) => (
+        <MenuItem
+          key={section}
+          onClick={() => onNavigate(ACCOUNT_SECTION_PATHS[section])}
+          sx={itemSx}
+        >
+          <Box component="span" sx={accountMenuItemIconSx}>
+            {icon}
+          </Box>
+          {t(key)}
+        </MenuItem>
+      ))}
+      <Divider />
+      <MenuItem onClick={onSignOut} sx={itemSx}>
+        <Box component="span" sx={accountMenuItemIconSx}>
+          <SignOutIcon />
+        </Box>
+        {t('userMenu.signOut')}
+      </MenuItem>
+    </>
   )
 }
 
@@ -867,47 +941,22 @@ export function AccountEntry({
             // The paper keeps whatever fill the theme gives it -- glass and
             // the other presets stay translucent -- and takes only the
             // divider-coloured outline and the deeper shadow.
-            sx: {
-              width: 238,
+            sx: (theme) => ({
+              ...accountMenuPaperSx(theme),
               ml: '9px',
-              border: (theme) => `1px solid ${theme.palette.divider}`,
-              boxShadow: (theme) => theme.shadows[12],
-            },
+            }),
           },
         }}
       >
-        {/* The same end attempt the header menu carries: an impersonation
-            ends from wherever the account entry lives. */}
-        <ImpersonationEndMenuItem divider onActivate={closeMenu} />
-        <MenuItem
-          onClick={() => goTo(NOTIFICATIONS_PATH)}
-          sx={accountMenuItemSx}
-        >
-          <Box component="span" sx={accountMenuItemIconSx}>
-            <NotificationsNavIcon size={24} />
-          </Box>
-          {t('userMenu.messages')}
-        </MenuItem>
-        <Divider />
-        {ACCOUNT_MENU_PANES.map(({ section, key, icon }) => (
-          <MenuItem
-            key={section}
-            onClick={() => goTo(ACCOUNT_SECTION_PATHS[section])}
-            sx={accountMenuItemSx}
-          >
-            <Box component="span" sx={accountMenuItemIconSx}>
-              {icon}
-            </Box>
-            {t(key)}
-          </MenuItem>
-        ))}
-        <Divider />
-        <MenuItem onClick={signOut} sx={accountMenuItemSx}>
-          <Box component="span" sx={accountMenuItemIconSx}>
-            <SignOutIcon />
-          </Box>
-          {t('userMenu.signOut')}
-        </MenuItem>
+        {/* The same entries the header's avatar menu carries, from one list:
+            the impersonation-end item, the notification centre, the four
+            account panes and sign-out. */}
+        <AccountMenuItems
+          onNavigate={goTo}
+          onSignOut={signOut}
+          onClose={closeMenu}
+          itemSx={accountMenuItemSx}
+        />
       </Menu>
     </Box>
   )

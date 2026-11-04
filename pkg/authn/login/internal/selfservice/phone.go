@@ -130,9 +130,13 @@ func (r *routes) startPhone(ctx context.Context, in startPhoneInput, meta *speed
 // verifyPhone answers POST /phone/verify. The order is the one the back-off
 // needs: the record of the session is read, the number's back-off is checked,
 // and only then is the code compared, so a number in back-off is not offered to
-// a guess. A rejected code is counted against the number, an accepted one clears
-// it, and an answer that could not be had (the store, the back-off, the
-// verifier) is neither: it is a 503 and the attempt is not counted.
+// a guess. The freshness a protected consequence calls for is decided before the
+// code is compared as well, because a verification consumes its single-use
+// challenge on a pass: a step-up refusal after the comparison would spend the
+// code and leave the replay the client makes after stepping up with nothing. A
+// rejected code is counted against the number, an accepted one clears it, and an
+// answer that could not be had (the store, the back-off, the verifier) is
+// neither: it is a 503 and the attempt is not counted.
 //
 // An accepted code binds the number to the account as a verified identifier,
 // where the account module replaces a phone the account already has and refuses
@@ -179,6 +183,26 @@ func (r *routes) verifyPhone(ctx context.Context, in verifyPhoneInput, meta *spe
 		return c.result()
 	}
 
+	// Proving a number asks for no freshness by itself; replacing the number an
+	// active SMS factor sends its codes to does, because that would move the
+	// factor's target. The check runs before the code is compared, so a step-up
+	// refusal leaves the single-use challenge unspent and the code replayable.
+	needsFresh, proofErr := r.contactProofNeedsFreshness(c.ctx, who.account, authn.IdentifierPhone, rec.Phone)
+	if proofErr != nil {
+		r.fail(c, proofErr)
+		return c.result()
+	}
+	if needsFresh {
+		id, found := authn.FromContext(c.ctx)
+		if !found {
+			c.unauthorized("")
+			return c.result()
+		}
+		if !r.fresh(c, id, "") {
+			return c.result()
+		}
+	}
+
 	switch err := r.deps.SMSCodes.Verify(c.ctx, rec.ChallengeID, in.Code); {
 	case err == nil:
 	case errors.Is(err, authn.ErrInvalidCredentials):
@@ -199,25 +223,6 @@ func (r *routes) verifyPhone(ctx context.Context, in verifyPhoneInput, meta *spe
 	}
 	if err := r.deps.Throttle.Succeed(c.ctx, authn.ScopePhone, throttleKey); err != nil {
 		logWarn(c.ctx, "the back-off of a phone number cannot be cleared", err)
-	}
-
-	// Proving a number asks for no freshness by itself; replacing the number an
-	// active SMS factor sends its codes to does, because that would move the
-	// factor's target.
-	needsFresh, proofErr := r.contactProofNeedsFreshness(c.ctx, who.account, authn.IdentifierPhone, rec.Phone)
-	if proofErr != nil {
-		r.fail(c, proofErr)
-		return c.result()
-	}
-	if needsFresh {
-		id, found := authn.FromContext(c.ctx)
-		if !found {
-			c.unauthorized("")
-			return c.result()
-		}
-		if !r.fresh(c, id, "") {
-			return c.result()
-		}
 	}
 
 	bindErr := r.deps.Admin.AddIdentifier(c.ctx, who.account, authn.IdentifierPhone, rec.Phone,

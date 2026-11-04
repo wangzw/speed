@@ -349,8 +349,8 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantString(t, "objectstore.fs.root", doc.Objectstore.FS.Root, "./var/objects")
 	wantStrings(t, "objectstore.metadata.content-endpoints",
 		doc.Objectstore.Metadata.ContentEndpoints, []string{"content"})
-	if doc.Workspace.Personal.Enabled {
-		t.Error("workspace.personal.enabled is true, want the bare run's switch off")
+	if !doc.Workspace.Personal.Enabled {
+		t.Error("workspace.personal.enabled is false, want the bare run's switch on")
 	}
 
 	// The local seed a bare run starts from: the development operator, the

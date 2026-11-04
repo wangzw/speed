@@ -254,6 +254,11 @@ func emailGlobalHourlyInDomain(n int) bool {
 // assembled, and the assembly is the host's call (REQ-signin-039).
 const methodPassword = "password"
 
+// methodSMS is the SMS login method's stable name, which the module publishes.
+// The step-up start reads it to tell whether a session established by an SMS
+// code may re-prove that channel (REQ-security-016).
+const methodSMS = "sms"
+
 // deliveryModesTextInDomain reports whether a JSON array of strings is a legal
 // value of the delivery-modes setting.
 func deliveryModesTextInDomain(text string) bool {

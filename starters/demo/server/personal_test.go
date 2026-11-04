@@ -1468,15 +1468,17 @@ func TestTheEnsureAnswersTheTenantAndKind(t *testing.T) {
 
 // personalServe starts a seeded serve with the personal tenant switched as the
 // caller asks, and answers the backend base URL and the bearer token of an
-// account with no membership (the configuration's second seed account).
+// account with no membership (the configuration's second seed account). The
+// switch is on unless the caller turns it off: that is the compiled default.
 func personalServe(t *testing.T, enabled bool) (string, string) {
 	t.Helper()
 	ports := freePorts(t, listenerCount)
 	dsn := filepath.Join(t.TempDir(), "demo.db")
-	config := writeConfigWith(t, ports, dsn)
-	if enabled {
-		config = writeConfigReplacing(t, ports, dsn, "    enabled: false", "    enabled: true")
+	body := configBody(t, ports, dsn)
+	if !enabled {
+		body += "workspace:\n  personal:\n    enabled: false\n"
 	}
+	config := writeConfigFile(t, body)
 	if res := runCommand(t, config, "sqlite-memory", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}

@@ -32,6 +32,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthSession, AuthSnapshot, AuthnFlowState } from '@speed/auth-core'
+import type { AuthnProfileIdentifier } from '@speed/api-sdk'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { isApiError } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
@@ -491,6 +492,83 @@ function scriptedPasswordSession(
   }
 }
 
+/** One identifier row of the authenticated profile, as GET
+ * /api/v1/auth/me publishes it. */
+function profileIdentifier(
+  id: string,
+  kind: string,
+  value: string,
+  proven = true,
+): AuthnProfileIdentifier {
+  return {
+    id,
+    kind,
+    value,
+    proven,
+    contact: true,
+    default_contact: false,
+    sign_in: true,
+    verified_at: '2026-01-01T00:00:00Z',
+    verified_via: proven ? 'sms-code' : 'admin',
+  }
+}
+
+/** A session over an authenticated snapshot holding `identifiers`, whose
+ * step-up start asks for the phone number and whose answer elevates. The
+ * answer requests are collected for the assertions. `impersonating` makes
+ * the snapshot the impersonated account's, as a session started from an
+ * impersonation window carries it. */
+function scriptedPhoneSession(
+  requests: { body: unknown }[] = [],
+  identifiers: readonly AuthnProfileIdentifier[] = [],
+  options: { readonly impersonating?: boolean } = {},
+): AuthSession {
+  const snapshot: AuthSnapshot = {
+    ...AUTHENTICATED_SNAPSHOT,
+    impersonating: options.impersonating ?? false,
+    principal: {
+      ...AUTHENTICATED_SNAPSHOT.principal!,
+      identifiers: [...identifiers],
+    },
+  }
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: () => () => undefined,
+    isStepUpShortfall: () => false,
+    listMethods: unused,
+    discoverSso: unused,
+    register: unused,
+    startFlow: unused,
+    startAuthenticatedFlow: () =>
+      Promise.resolve({
+        seq: 1,
+        state: 'first',
+        next: {
+          kind: 'challenge',
+          fields: [{ name: 'phone', kind: 'phone' }],
+        },
+      } as AuthnFlowState),
+    answerFlow: (request) => {
+      requests.push({ body: request })
+      return Promise.resolve({
+        state: 'elevated',
+        token_type: 'Bearer',
+        access_token: 'access-2',
+        expires_in: 3600,
+      } as AuthnFlowState)
+    },
+    readFlow: unused,
+    abandonFlow: () => Promise.resolve(),
+    logout: () => Promise.resolve(),
+    restore: unused,
+    beginIdentityTransition: () => () => undefined,
+    refresh: unused,
+    retryFeatures: unused,
+    setPermissionSet: unused,
+    setDisplayName: unused,
+  }
+}
+
 describe('StepUpChallenge', () => {
   it('starts the flow, drives the factor then the code, and elevates', async () => {
     const { rig, onSuccess } = mount(makeStepUpResponder())
@@ -571,6 +649,103 @@ describe('StepUpChallenge', () => {
       step: 'answer',
       input: { identifier: 'ada', password: 'secret' },
     })
+  })
+
+  it("locks a phone challenge to the account's one proved phone", async () => {
+    // A step-up may send a code only to a number the account proved. With
+    // exactly one, there is nothing to choose: it is shown read-only, and the
+    // answer carries it.
+    bindFactors([
+      { id: 'factor-1', kind: 'totp', status: 'active' },
+    ])
+    const requests: { body: unknown }[] = []
+    mountSession(
+      scriptedPhoneSession(requests, [
+        profileIdentifier('phone-1', 'phone', '+8613800138000'),
+        profileIdentifier('username-1', 'username', 'ada'),
+      ]),
+    )
+    const user = userEvent.setup()
+
+    const phone = await screen.findByLabelText(zhCN.flowStep.field.phone)
+    expect(phone).toHaveValue('+8613800138000')
+    // Read-only, not disabled: it stays readable and focusable.
+    expect(phone).toHaveAttribute('readonly')
+    expect(phone).not.toBeDisabled()
+    expect(screen.getByText(zhCN.flowStep.lockedPhoneHelp)).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    await waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]?.body).toEqual({
+      seq: 1,
+      step: 'answer',
+      input: { phone: '+8613800138000' },
+    })
+  })
+
+  it('leaves a phone challenge editable while impersonating', async () => {
+    // The snapshot names the impersonated account, but a step-up flow proves
+    // the initiator's own factor: locking the snapshot's phone would only be
+    // refused by the server, and the field must stay open for the operator's
+    // own number.
+    bindFactors([
+      { id: 'factor-1', kind: 'totp', status: 'active' },
+    ])
+    mountSession(
+      scriptedPhoneSession(
+        [],
+        [profileIdentifier('phone-1', 'phone', '+8613800138000')],
+        { impersonating: true },
+      ),
+    )
+
+    const phone = await screen.findByLabelText(zhCN.flowStep.field.phone)
+    expect(phone).toHaveValue('')
+    expect(phone).not.toHaveAttribute('readonly')
+    expect(phone).not.toBeDisabled()
+    expect(
+      screen.queryByText(zhCN.flowStep.lockedPhoneHelp),
+    ).not.toBeInTheDocument()
+  })
+
+  it('leaves a phone challenge editable when the account proved several phones', async () => {
+    // Several proved numbers are the person's to choose from: the dialog does
+    // not pick one, and the field stays free text.
+    bindFactors([
+      { id: 'factor-1', kind: 'totp', status: 'active' },
+    ])
+    mountSession(
+      scriptedPhoneSession([], [
+        profileIdentifier('phone-1', 'phone', '+8613800138000'),
+        profileIdentifier('phone-2', 'phone', '+8613900139000'),
+      ]),
+    )
+
+    const phone = await screen.findByLabelText(zhCN.flowStep.field.phone)
+    expect(phone).toHaveValue('')
+    expect(phone).not.toHaveAttribute('readonly')
+    expect(
+      screen.queryByText(zhCN.flowStep.lockedPhoneHelp),
+    ).not.toBeInTheDocument()
+  })
+
+  it('does not lock a phone the account has not proved', async () => {
+    // A row without a proof is not a target the server accepts.
+    bindFactors([
+      { id: 'factor-1', kind: 'totp', status: 'active' },
+    ])
+    mountSession(
+      scriptedPhoneSession([], [
+        profileIdentifier('phone-1', 'phone', '+8613800138000', false),
+      ]),
+    )
+
+    const phone = await screen.findByLabelText(zhCN.flowStep.field.phone)
+    expect(phone).toHaveValue('')
+    expect(phone).not.toHaveAttribute('readonly')
   })
 
   it('answers the ready step on its own and elevates once', async () => {

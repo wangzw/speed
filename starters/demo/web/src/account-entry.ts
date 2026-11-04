@@ -11,8 +11,8 @@
  *    navigation column carries no account row.
  *  - 'both': both entries render; they open the same menu items.
  *
- * The default is 'sidebar'.
+ * The assembly uses 'both'.
  */
 export type AccountEntryPlacement = 'sidebar' | 'header' | 'both'
 
-export const ACCOUNT_ENTRY: AccountEntryPlacement = 'sidebar'
+export const ACCOUNT_ENTRY: AccountEntryPlacement = 'both'

@@ -284,7 +284,7 @@ type Proof struct {
 
 | 状态 | 码 | 场景 |
 |---|---|---|
-| 400 | `bad-request`、`unsupported-region` | 体不合法、字段缺失、未知字段、体超过 64 KiB 上限、方法不存在、`step-up` 显式命名 `password` 而账户没有口令可再证明、`return_to` 不合规；短信号码前缀不在放行表里。用户名格式不合或保留用户名同答此码，不占 409 `username-taken`；标识设置的字段不合法、`sign_in` 落在未证明的标识上、标识不属于本人或默认联系地址不是已证明邮箱 |
+| 400 | `bad-request`、`unsupported-region` | 体不合法、字段缺失、未知字段、体超过 64 KiB 上限、方法不存在、`step-up` 命名的方法与会话建立时的第一因素通道不符、`step-up` 显式命名 `password` 而账户没有口令可再证明、`return_to` 不合规；短信号码前缀不在放行表里。用户名格式不合或保留用户名同答此码，不占 409 `username-taken`；标识设置的字段不合法、`sign_in` 落在未证明的标识上、标识不属于本人或默认联系地址不是已证明邮箱 |
 | 401 | `login-failed` | 未知标识、错口令、停用、无口令、验证码错、方法内校验失败；**同一个应答**，成因是号码前缀不在放行表或标识无法规范化时按 400 答 |
 | 401 | `flow-invalid` | 流程过期、已用、绑定不符、步序不符、被并发消费 |
 | 401 | `link-required` | 社交或企业即时开通无绑定，而提供方声明的地址已登记在现有账户的邮箱标识上；登录不进入该账户，也不另开账户（REQ-signin-017） |
@@ -583,7 +583,8 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 |---|---|---|---|---|
 | `link` | `method`、`input` | 请求的 `method` | `first` | 账户安全类动作的要求；发起者须不是未验证账户，`SignupStateOf` 为 `SignupPending` 时在写记录之前即 403 `contact-required` |
 | `step-up`，账户有可用因素 | 不带 `method` | 空 | `second` | 无附加要求 |
-| `step-up`，账户没有因素 | `method` | 请求的 `method` | `first` | 无附加要求 |
+| `step-up`，账户没有因素 | `method`，且它与会话建立时的第一因素通道对应 | 请求的 `method` | `first` | 无附加要求 |
+| `step-up`，账户没有因素 | `method` 已装配但与会话建立时的第一因素通道不符 | — | 拒绝，400 `bad-request` | 无附加要求 |
 | `step-up`，账户的因素都在本次会话认证后启用 | 带 `method` 且部署收下它 | 请求的 `method` | `first` | 无附加要求 |
 | `step-up`，账户的因素都在本次会话认证后启用 | 不带 `method`，或带的 `method` 部署没有收下；账户有口令 | `password` | `first` | 无附加要求 |
 | `step-up`，账户的因素都在本次会话认证后启用 | 不带 `method`，或带的 `method` 部署没有收下；账户没有口令 | — | 拒绝，401 `insufficient_user_authentication` | 无附加要求 |
@@ -591,6 +592,8 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `enroll` | `input.kind`；可选 `input.label` | 空；因素种类交给 `MFA.Enroll` | `enroll` | 账户安全类动作的要求 |
 
 「账户安全类动作的要求」是 `Requirement`：生效账户有有效因素（`MFA.Factors` 里状态为启用的行）时为新鲜的本地多因素，没有因素时为新鲜的第一因素，取值与单位归 [authn-mfa](design-authn-mfa.md)。引擎以 `StatusFresh` 交回的 `Assurance`、`AuthTime`、`IDPAssured` 按 `Identity.Satisfies` 的同一判据核对。
+
+**账户没有因素时的第一因素通道。** 这种 `step-up` 只重新证明会话建立时使用的第一因素通道（REQ-security-016）：口令会话只接受 `password`，短信会话只接受 `sms`，社交或企业登录建立的会话只接受重定向方式。请求命名的方法已装配但与会话的通道不符时，引擎在写记录与调用方法之前答 400 `bad-request`；命名的方法未装配时同答此码。
 
 `step-up` 的可用清单这样产生：引擎以会话的方式集构造只含 `Methods` 的 `Proof`，调 `MFA.Require(证明账户, 生效账户, Proof)` 取认证方式与会话方式不相交的启用因素，再按启用时刻分成两类（`FactorRecord.ActivatedAt`）：启用时刻早于会话 `AuthTime` 的因素可直接加强会话；启用时刻不早于它的因素是本次会话期间登记的因素，只有在账户再次证明一个第一因素之后才可加强会话。证明账户是发起者自己的账户，不冒充时就是生效账户；结局按生效账户取定，清单取证明账户的因素。`Require` 的结局不是 `MFAFactor` 即生效账户没有因素，起始状态取 `first`；结局是 `MFAFactor` 且其中存在早于会话认证时刻的因素，起始状态取 `second`，清单是这类因素；结局是 `MFAFactor`、证明账户只有本次会话期间登记的因素时，请求带了部署收下的 `method`（显式命名 `password` 而账户没有口令可再证明时除外）的起始状态取 `first`、记录的 `method` 为该名，该第一因素证明后这些因素作为第二因素提供；请求没带 `method`、或带的是部署没有收下的名字时，账户有口令则起始状态取 `first`、记录的 `method` 为 `password`，没有口令则 401 `insufficient_user_authentication`，不写记录。清单为空在只有一种因素种类的装配里是常态：会话在登录时已答过该种类，没有不相交的因素可提供，所以这样的装配取到满足要求的 200 靠登录时完成第二因素，加强认证的入口留给种类多于一种的装配。
 
@@ -833,7 +836,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 
 ### 短信与其他方式
 
-- **短信（`sms`）**：`phone`（E.164）步与 `code` 步。号码前缀必须在放行表里，缺省为空即一律拒绝（`unsupported-region`）。发码、预算、挑战行与抑制行归 [authn-sms](design-authn-sms.md)；方法在发码前后按「短信发送的每流程上限」核对并报告条数；验证码通过时交 `StepProven`，`Proof.Identifier` 是被证明的手机，`Methods = [sms]`；已登记的手机只有被持有人选作登录方式时才完成登录，未被选中的号码按凭据失败处理，不进入开户（REQ-signin-011）；账户解析判定要开户时，引擎停在待建号收集用户名、可选的显示名与口令。**单凭短信码只算一个因素。** 发码时方法把请求的来源地址填进 `SendCode.Source`：`Begin` 取 `Start.Client.IP`，`Answer` 取 `StepInput.Client.IP`；引擎把两者都从本次请求填入，所以短信发送计入来源预算（[authn-sms](design-authn-sms.md) 的「预算维度」）。
+- **短信（`sms`）**：`phone`（E.164）步与 `code` 步。号码前缀必须在放行表里，缺省为空即一律拒绝（`unsupported-region`）。发码、预算、挑战行与抑制行归 [authn-sms](design-authn-sms.md)；方法在发码前后按「短信发送的每流程上限」核对并报告条数；验证码通过时交 `StepProven`，`Proof.Identifier` 是被证明的手机，`Methods = [sms]`；已登记的手机只有被持有人选作登录方式时才完成登录，未被选中的号码按凭据失败处理，不进入开户（REQ-signin-011）；账户解析判定要开户时，引擎停在待建号收集用户名、可选的显示名与口令。**单凭短信码只算一个因素。** `step-up` 的短信通道只向流程账户已证明的手机号发码：方法在调用 `SMSCodes.Send` 之前读该账户的标识，号码不是它已证明的手机号时按凭据失败拒绝，不发送；冒充期间核对的是发起者自己的账户。发码时方法把请求的来源地址填进 `SendCode.Source`：`Begin` 取 `Start.Client.IP`，`Answer` 取 `StepInput.Client.IP`；引擎把两者都从本次请求填入，所以短信发送计入来源预算（[authn-sms](design-authn-sms.md) 的「预算维度」）。
 - **通行密钥（`passkey`）**：WebAuthn 仪式数据放在 `FlowState.Private`，由 `StepData` 把选项交给客户端；登录断言要求用户验证（`userVerification: required`），因此 `Proof.UserVerified` 为真（[authn-mfa](design-authn-mfa.md)）。
 - **企业 OIDC 与 SAML**：提供方是库里的行，不是配置；校验与补充校验归 [authn-sso](design-authn-sso.md)。
 

@@ -1,8 +1,8 @@
 /**
- * The account entry's placement: by default the skeleton puts it at the
- * bottom of the navigation column and the header carries no account menu.
- * The menu carries six entries -- the notification centre, the four account
- * panes and sign-out -- each with its own glyph, and the navigation column
+ * The account entry's placement: the skeleton puts it at the bottom of the
+ * navigation column, and the header's avatar menu offers the same six
+ * entries. The menu carries the notification centre, the four account panes
+ * and sign-out -- each with its own glyph -- and the navigation column
  * itself holds the home entry alone. The collapsed rail keeps the avatar
  * alone with the account still named, and the menu is fully
  * keyboard-operated.
@@ -38,7 +38,7 @@ const menuLabels = [
 ]
 
 describe('the account entry in the navigation column', () => {
-  it('is the sidebar row, with the header carrying no account menu', async () => {
+  it('is the sidebar row, alongside the header avatar menu', async () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
     const trigger = await screen.findByTestId('account-entry-trigger')
@@ -46,8 +46,9 @@ describe('the account entry in the navigation column', () => {
       authenticatedSnapshot().principal?.display_name ?? ''
     ).trim()
     expect(trigger).toHaveAccessibleName(new RegExp(`${displayName}$`))
-    // The header keeps its tenant switcher and notices; no avatar menu.
-    expect(screen.queryByTestId('user-menu-trigger')).toBeNull()
+    // The header carries its own account menu over the same entries; the
+    // row at the bottom of the column is the sidebar's copy of it.
+    expect(screen.getByTestId('user-menu-trigger')).toBeInTheDocument()
   })
 
   it('puts a divider above the row, inset 16px on the navigation icon track', async () => {
@@ -92,10 +93,11 @@ describe('the account entry in the navigation column', () => {
     // One divider between Messages and the panes, one before sign-out.
     expect(screen.getAllByRole('separator')).toHaveLength(2)
 
-    // The paper sits 9px in from the column's edge and is 238px wide, with a
-    // divider-coloured outline over the theme's deep shadow.
+    // The paper sits 9px in from the column's edge and keeps the shared
+    // minimum width, with a divider-coloured outline over the theme's deep
+    // shadow.
     const paper = screen.getByRole('menu').parentElement as HTMLElement
-    expect(paper).toHaveStyle({ width: '238px', marginLeft: '9px' })
+    expect(paper).toHaveStyle({ minWidth: '240px', marginLeft: '9px' })
     expect(getComputedStyle(paper).borderWidth).toBe('1px')
     expect(getComputedStyle(paper).borderStyle).toBe('solid')
     expect(getComputedStyle(paper).boxShadow).not.toBe('none')

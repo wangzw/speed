@@ -732,16 +732,25 @@ describe('the impersonation shell', () => {
     // The switcher is not in the tree at all -- neither as a live affordance
     // nor as a disabled no-current-tenant button -- and the rest of the top
     // bar renders without it. The language switch is not there either: the
-    // account menu is the bar's only menu.
+    // bar's menus are the two account surfaces alone.
     expect(tenantSwitcherTrigger()).toBeNull()
-    expect(
-      screen
-        .getAllByRole('button')
-        .filter((button) => button.getAttribute('aria-haspopup') === 'menu'),
-    ).toEqual([screen.getByTestId('account-entry-trigger')])
-    expect(
-      screen.getByRole('button', { name: accountTriggerName('Target One') }),
-    ).toBeInTheDocument()
+    const menus = screen
+      .getAllByRole('button')
+      .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
+    expect(menus).toHaveLength(2)
+    expect(menus).toEqual(
+      expect.arrayContaining([
+        screen.getByTestId('user-menu-trigger'),
+        screen.getByTestId('account-entry-trigger'),
+      ]),
+    )
+    // Both placements carry the impersonated identity's accessible name.
+    expect(screen.getByTestId('user-menu-trigger')).toHaveAccessibleName(
+      accountTriggerName('Target One'),
+    )
+    expect(screen.getByTestId('account-entry-trigger')).toHaveAccessibleName(
+      accountTriggerName('Target One'),
+    )
   })
 
   it('remounts the tenant switcher once the impersonation ends', async () => {
@@ -2535,8 +2544,9 @@ describe('the impersonation shell', () => {
     expect(chip).toHaveFocus()
 
     // The account menu still carries the way out while the banner is
-    // hidden, and it is the same write attempt.
-    await user.click(screen.getByRole('button', { name: accountTriggerName('Target One') }))
+    // hidden, and it is the same write attempt. Both placements render, so
+    // address the sidebar entry by its test id rather than the shared name.
+    await user.click(screen.getByTestId('account-entry-trigger'))
     await user.click(
       screen.getByRole('menuitem', { name: tAuth('impersonation.end') }),
     )
@@ -2582,7 +2592,7 @@ describe('the impersonation shell', () => {
     )
     expect(banner()).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: accountTriggerName('Target One') }))
+    await user.click(screen.getByTestId('account-entry-trigger'))
     await user.click(
       screen.getByRole('menuitem', { name: tAuth('impersonation.end') }),
     )
@@ -2757,13 +2767,15 @@ describe('the impersonation shell', () => {
       screen.getByRole('link', { name: tLayout('appShell.skipToContent') }),
     ).toHaveFocus()
 
-    // Then the header's remaining control (the chip), then the banner's own
-    // controls: the account entry now lives in the navigation column, so it
-    // no longer sits between them.
+    // Then the header's remaining controls -- the chip, then the header's
+    // avatar menu -- then the banner's own controls: the sidebar's account
+    // entry lives in the navigation column and does not sit between them.
     const chip = screen.getByRole('button', {
       name: tAuth('impersonation.impersonating'),
     })
     chip.focus()
+    await user.tab()
+    expect(screen.getByTestId('user-menu-trigger')).toHaveFocus()
     await user.tab()
     expect(
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),

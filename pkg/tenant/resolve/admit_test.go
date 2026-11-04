@@ -284,6 +284,24 @@ func TestAnAdmittedRequestCarriesTheIdentifier(t *testing.T) {
 	}
 }
 
+// A request that announces the tenant's identifier is resolved to that
+// tenant just as its alias is. A tenant-addressed request carries the
+// identifier in its path, and the test asserts the same value can name the
+// tenant to the resolution layer: a tenant renamed after a client cached its
+// alias must still be reachable by the identifier the path names.
+func TestAnIdentifierNamesTheTenantItBelongsTo(t *testing.T) {
+	p := &probe{}
+	h := startHost(t, hostOptions{roster: standardRoster(), register: p.register})
+
+	got := h.get(t, "/orders", "t_acme")
+	if got.status != nethttp.StatusNoContent {
+		t.Fatalf("a tenant's identifier was answered %d, want the handler's 204", got.status)
+	}
+	if ids := p.handledIDs(); len(ids) != 1 || ids[0] != "t_acme" {
+		t.Fatalf("the handler read tenants %v, want the identifier t_acme once", ids)
+	}
+}
+
 // A handler that crosses tenants from its request's context gives up the
 // tenant on the logger too: a record about work done across tenants does not
 // name the tenant the request belonged to, because that work does not belong

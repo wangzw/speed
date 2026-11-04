@@ -346,7 +346,8 @@ func (noRedaction) AddKeys(...string)              {}
 func (noRedaction) AddPattern(string, log.Matcher) {}
 
 // fakeRoster answers ByAlias and Get from fixed tables, or with a fixed error.
-// The resolution layer calls ByAlias; the path guard calls both.
+// The resolution layer tries ByAlias and then Get, and the path guard calls
+// both.
 type fakeRoster struct {
 	byAlias map[string]tenant.Tenant
 	byID    map[tenant.ID]tenant.Tenant

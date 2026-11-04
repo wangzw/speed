@@ -146,13 +146,14 @@ program beside this directory embeds with `go:embed` and serves through
   announced through the status region but never painted beside the trigger.
   The tenant frame puts the actions in `headerActions` and the tenant switcher
   in `userMenu`. The account entry is placed by the literal constant
-  `ACCOUNT_ENTRY` in `src/account-entry.ts`: `'sidebar'` (the default) renders
+  `ACCOUNT_ENTRY` in `src/account-entry.ts`: `'sidebar'` renders
   `AccountEntry` at the bottom of the navigation column through AppShell's
   `navFooter` slot and no header avatar menu; `'header'` renders the
-  `UserMenu` in the `userMenu` slot and no column row; `'both'` renders both.
-  The admin frame follows the same `ACCOUNT_ENTRY` constant (default
-  `'sidebar'`: a row at the bottom of the column, no header avatar menu;
-  `'header'`: the header menu only; `'both'`: both), and it renders the
+  `UserMenu` in the `userMenu` slot and no column row; `'both'` renders both
+  from one shared item list. The assembly uses `'both'`.
+  The admin frame follows the same `ACCOUNT_ENTRY` constant (`'both'` at
+  present: a row at the bottom of the column and the header avatar menu),
+  and it renders the
   actions but not the switcher (the admin resolves no tenant). Entry-point actions in that chrome are always outlined; plain text
   is reserved for labels that are not clickable. The slot composition is identical in both `shellLayout` forms:
   AppShell moves the same slots into its drawer paper in the sidebar form, so

@@ -56,6 +56,13 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   that fails and a value outside the declared domain all read as closed, and a
   failed read or an out-of-domain value is reported at Error once for as long as
   the same fault stands.
+- **A step-up sends only to the account's proved phone.** A step-up re-proves
+  the first factor of an account already signed in, so the phone step reads the
+  flow account's identifiers before `SMSCodes.Send` and refuses a number that is
+  not one of its proved phone identifiers, as `StepRefused` carrying
+  `ErrInvalidCredentials` and with no send. `Start.Account` and
+  `FlowState.Account` name that account; under an impersonation it is the
+  operator's own account, which the engine resolves.
 - **The per-flow send budget is checked before every send.** A flow whose
   `SendsLeft` is not positive is answered `StepThrottled(0)` without a send. Each
   call makes at most one send and reports it with `Step.WithSends`, and a

@@ -76,11 +76,6 @@ authn:
       origins:
         - "http://localhost:8081"
 
-# The host's own personal-tenant policy; off in the baseline.
-workspace:
-  personal:
-    enabled: false
-
 # The object store's bytes are kept under this directory (created on startup).
 objectstore:
   fs:

@@ -394,8 +394,8 @@ var (
 		// otherwise refuse them 403 as undeclared. See management.go.
 		managementModuleName,
 
-		// The host's own personal-tenant policy: off by configuration in the
-		// baseline, on in the review assembly. When on it mounts
+		// The host's own personal-tenant policy: on by default, a deployment
+		// may turn it off. When on it mounts
 		// POST /api/v1/workspace/personal on the account endpoint and declares the
 		// conditional feature workspace.personal. It requires the kind resolver,
 		// which the module beside it delivers. See personal.go.

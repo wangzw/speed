@@ -16,9 +16,9 @@ package main
 // docs/adr/adr-starters-personal-tenant.md and in the starter
 // design's 个人租户 section. It is a host policy and not a capability: it sits
 // above the tenant roster, the account store's memberships and the
-// authorization layer, it is switched by this host's configuration (off by
-// default, on in the review assembly), and no pkg/ package gains a surface for
-// it.
+// authorization layer, it is switched by this host's configuration (on by
+// default, a deployment may turn it off), and no pkg/ package gains a surface
+// for it.
 //
 // The route is POST /api/v1/workspace/personal on the account endpoint. That endpoint
 // resolves no tenant, so the caller is served before any tenant context exists;

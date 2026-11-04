@@ -612,10 +612,15 @@ func TestNoSecretReachesACause(t *testing.T) {
 func TestTheMethodServesStepUpAsWellAsLogin(t *testing.T) {
 	r := newRig()
 	r.registerActive()
+	proved := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	r.ac.identifiers = map[authn.AccountID][]authn.Identifier{
+		testAccount: {{ID: "ident-phone", Kind: authn.IdentifierPhone, Value: phoneNumber, VerifiedAt: proved, VerifiedVia: authn.VerifiedViaSMSCode}},
+	}
 	ctx := t.Context()
 
 	start := loginStart(phoneFields(phoneNumber))
 	start.Purpose = authn.PurposeStepUp
+	start.Account = testAccount
 	asked, _ := r.m.Begin(ctx, start)
 	if step.KindOf(asked) != step.KindPrompt || step.NameOf(asked) != "code" {
 		t.Fatalf("a step-up Begin = %s, want a prompt for the code", describe(asked))
@@ -629,6 +634,7 @@ func TestTheMethodServesStepUpAsWellAsLogin(t *testing.T) {
 
 	flow := flowAt(stepCode, step.PrivateOf(asked))
 	flow.Purpose = authn.PurposeStepUp
+	flow.Account = testAccount
 	proven, _ := r.m.Answer(ctx, flow, submit(codeFields(goodCode)))
 	if step.KindOf(proven) != step.KindProven {
 		t.Fatalf("a step-up code step = %s, want a proof", describe(proven))
@@ -639,6 +645,145 @@ func TestTheMethodServesStepUpAsWellAsLogin(t *testing.T) {
 	}
 	if len(p.Methods) != 1 || p.Methods[0] != authn.MethodSMS {
 		t.Fatalf("the step-up proof holds methods %v, want [sms]", p.Methods)
+	}
+}
+
+// TestAStepUpSendsOnlyToTheAccountsProvedPhone holds the step-up's sending
+// target: the code goes only to a number the flow's account proved, and a number
+// it did not prove, whether named at the start or in an answer, is refused as a
+// credential that did not hold, with no send.
+func TestAStepUpSendsOnlyToTheAccountsProvedPhone(t *testing.T) {
+	r := newRig()
+	r.registerActive()
+	proved := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	r.ac.identifiers = map[authn.AccountID][]authn.Identifier{
+		testAccount: {
+			{ID: "ident-username", Kind: authn.IdentifierUsername, Value: "ada", VerifiedAt: proved},
+			{ID: "ident-phone", Kind: authn.IdentifierPhone, Value: phoneNumber, VerifiedAt: proved, VerifiedVia: authn.VerifiedViaSMSCode},
+		},
+	}
+	ctx := t.Context()
+
+	foreignStart := loginStart(phoneFields(otherPhone))
+	foreignStart.Purpose = authn.PurposeStepUp
+	foreignStart.Account = testAccount
+	foreign, _ := r.m.Begin(ctx, foreignStart)
+	if step.KindOf(foreign) != step.KindRefused || !errors.Is(step.CauseOf(foreign), authn.ErrInvalidCredentials) {
+		t.Fatalf("a foreign number at the start = %s, want a refusal carrying ErrInvalidCredentials", describe(foreign))
+	}
+	if len(r.sm.sends) != 0 {
+		t.Fatalf("a foreign number at the start reached Send %d times, want none", len(r.sm.sends))
+	}
+
+	ownStart := loginStart(phoneFields(phoneNumber))
+	ownStart.Purpose = authn.PurposeStepUp
+	ownStart.Account = testAccount
+	asked, _ := r.m.Begin(ctx, ownStart)
+	if step.KindOf(asked) != step.KindPrompt || step.NameOf(asked) != stepCode {
+		t.Fatalf("the account's own number at the start = %s, want a prompt for the code", describe(asked))
+	}
+	if len(r.sm.sends) != 1 || r.sm.sends[0].Phone != phoneNumber {
+		t.Fatalf("the account's own number reached Send %+v, want one send to %s", r.sm.sends, phoneNumber)
+	}
+
+	// A number asked for in an answer is held to the same target.
+	flow := flowAt(stepPhone, nil)
+	flow.Purpose = authn.PurposeStepUp
+	flow.Account = testAccount
+	foreignAnswer, _ := r.m.Answer(ctx, flow, submit(phoneFields(otherPhone)))
+	if step.KindOf(foreignAnswer) != step.KindRefused || !errors.Is(step.CauseOf(foreignAnswer), authn.ErrInvalidCredentials) {
+		t.Fatalf("a foreign number in an answer = %s, want a refusal carrying ErrInvalidCredentials", describe(foreignAnswer))
+	}
+	if len(r.sm.sends) != 1 {
+		t.Fatalf("a foreign number in an answer reached Send %d times, want the earlier send only", len(r.sm.sends))
+	}
+	ownAnswer, _ := r.m.Answer(ctx, flow, submit(phoneFields(phoneNumber)))
+	if step.KindOf(ownAnswer) != step.KindPrompt || step.NameOf(ownAnswer) != stepCode {
+		t.Fatalf("the account's own number in an answer = %s, want a prompt for the code", describe(ownAnswer))
+	}
+	if len(r.sm.sends) != 2 {
+		t.Fatalf("the account's own number in an answer reached Send %d times, want two sends", len(r.sm.sends))
+	}
+}
+
+// TestAStepUpAcceptsAnyPhoneTheAccountProved checks that the target is every
+// proved phone of the account, not one the method picks: an account holding two
+// proved numbers can re-prove with either.
+func TestAStepUpAcceptsAnyPhoneTheAccountProved(t *testing.T) {
+	r := newRig()
+	r.registerActive()
+	proved := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	r.ac.identifiers = map[authn.AccountID][]authn.Identifier{
+		testAccount: {
+			{ID: "ident-1", Kind: authn.IdentifierPhone, Value: phoneNumber, VerifiedAt: proved, VerifiedVia: authn.VerifiedViaSMSCode},
+			{ID: "ident-2", Kind: authn.IdentifierPhone, Value: otherPhone, VerifiedAt: proved, VerifiedVia: authn.VerifiedViaSMSCode},
+		},
+	}
+
+	for _, phone := range []string{phoneNumber, otherPhone} {
+		start := loginStart(phoneFields(phone))
+		start.Purpose = authn.PurposeStepUp
+		start.Account = testAccount
+		got, _ := r.m.Begin(t.Context(), start)
+		if step.KindOf(got) != step.KindPrompt || step.NameOf(got) != stepCode {
+			t.Errorf("a proved number %s = %s, want a prompt for the code", phone, describe(got))
+		}
+	}
+	if len(r.sm.sends) != 2 {
+		t.Fatalf("the account's proved numbers reached Send %d times, want two", len(r.sm.sends))
+	}
+}
+
+// TestAStepUpRefusesANumberTheAccountHasNotProved checks that an identifier row
+// without a proof is not a target: ownership is the proof, not the row. A row
+// whose ownership an administrator or an import asserted, and one that carries no
+// verification time at all, both read as unproved.
+func TestAStepUpRefusesANumberTheAccountHasNotProved(t *testing.T) {
+	verified := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for name, identifier := range map[string]authn.Identifier{
+		"no verification time": {ID: "ident-phone", Kind: authn.IdentifierPhone, Value: phoneNumber},
+		"asserted by an administrator": {
+			ID: "ident-phone", Kind: authn.IdentifierPhone, Value: phoneNumber,
+			VerifiedAt: verified, VerifiedVia: authn.VerifiedViaAdmin,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig()
+			r.registerActive()
+			r.ac.identifiers = map[authn.AccountID][]authn.Identifier{
+				testAccount: {identifier},
+			}
+			start := loginStart(phoneFields(phoneNumber))
+			start.Purpose = authn.PurposeStepUp
+			start.Account = testAccount
+			got, _ := r.m.Begin(t.Context(), start)
+			if step.KindOf(got) != step.KindRefused || !errors.Is(step.CauseOf(got), authn.ErrInvalidCredentials) {
+				t.Fatalf("an unproved number = %s, want a refusal carrying ErrInvalidCredentials", describe(got))
+			}
+			if len(r.sm.sends) != 0 {
+				t.Fatalf("an unproved number reached Send %d times, want none", len(r.sm.sends))
+			}
+		})
+	}
+}
+
+// TestAStepUpWithAnUnreadableAccountAnswersUnavailable checks that a failure to
+// read the account's identifiers is the capability being unable to say: no send
+// and a 503, never a refusal that could be read as a credential that did not
+// hold.
+func TestAStepUpWithAnUnreadableAccountAnswersUnavailable(t *testing.T) {
+	r := newRig()
+	r.registerActive()
+	r.ac.identifiersErr = errors.New("the account store is down")
+	start := loginStart(phoneFields(phoneNumber))
+	start.Purpose = authn.PurposeStepUp
+	start.Account = testAccount
+	got, _ := r.m.Begin(t.Context(), start)
+	if step.KindOf(got) != step.KindUnavailable {
+		t.Fatalf("an unreadable account = %s, want an unavailable answer", describe(got))
+	}
+	if len(r.sm.sends) != 0 {
+		t.Fatalf("an unreadable account reached Send %d times, want none", len(r.sm.sends))
 	}
 }
 

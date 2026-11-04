@@ -179,8 +179,9 @@ export interface FlowStepProps {
   /**
    * Values the step renders locked: a challenge field named here shows the
    * value read-only with the sentence saying what it is, and the answer
-   * carries it. The step-up dialog uses this for the identifier it already
-   * knows -- the account's own login name.
+   * carries it. The step-up dialog uses this for the identifier and the phone
+   * number it already knows -- the account's own login name and its proved
+   * number.
    */
   readonly lockedFields?: Readonly<Record<string, string>>
 }
@@ -344,7 +345,9 @@ export function FlowStep({
               helperText={
                 locked === undefined
                   ? undefined
-                  : t('flowStep.lockedIdentifierHelp')
+                  : field.name === 'phone'
+                    ? t('flowStep.lockedPhoneHelp')
+                    : t('flowStep.lockedIdentifierHelp')
               }
               disabled={busy}
               required={field.required === true}

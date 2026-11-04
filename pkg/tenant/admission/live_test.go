@@ -117,9 +117,13 @@ func (noRules) AddPattern(string, log.Matcher) {}
 type rosterStub struct{ tenant.Catalog }
 
 func (rosterStub) ByAlias(_ context.Context, name string) (tenant.Tenant, bool, error) {
-	switch name {
+	return rosterStub{}.Get(context.Background(), tenant.ID(name))
+}
+
+func (rosterStub) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
+	switch string(id) {
 	case acme, globex:
-		return tenant.Tenant{ID: tenant.ID(name), Alias: name, Status: tenant.StatusActive}, true, nil
+		return tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}, true, nil
 	}
 	return tenant.Tenant{}, false, nil
 }

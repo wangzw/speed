@@ -285,11 +285,12 @@ func platformDefaultsDocument() map[string]any {
 			"metadata": map[string]any{"content-endpoints": []any{"content"}},
 		},
 
-		// The host's own personal-tenant policy. Off in a bare run: the
-		// /workspace prefix is claimed either way, and with the switch off that
-		// path answers 404.
+		// The host's own personal-tenant policy. On in a bare run: every account
+		// gets a personal tenant when it is created. The /workspace prefix is
+		// claimed either way, and a deployment that turns the switch off makes
+		// that path answer 404.
 		"workspace": map[string]any{
-			"personal": map[string]any{"enabled": false},
+			"personal": map[string]any{"enabled": true},
 		},
 
 		// The local seed a bare run starts from: the development operator, the

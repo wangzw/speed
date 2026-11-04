@@ -91,14 +91,6 @@ authn:
       origins:
         - "http://localhost:8081"
 
-# The host's own personal-tenant policy. Off by default: when on, an account
-# with no membership gets a personal tenant from POST /workspace/personal so a
-# registration can use the tenant area at once. The /workspace prefix is
-# claimed either way; with the switch off that path answers 404.
-workspace:
-  personal:
-    enabled: false
-
 # The object store's bytes are kept under this directory (created on startup).
 objectstore:
   fs:

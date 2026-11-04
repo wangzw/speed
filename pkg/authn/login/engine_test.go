@@ -719,6 +719,64 @@ func TestAStepUpWithNoFactorNamingAPasswordTheAccountCannotProveIsRefused(t *tes
 	}
 }
 
+// TestAStepUpWithNoFactorRefusesAMethodTheSessionWasNotEstablishedWith holds
+// REQ-security-016's first-factor channel: an account with no factors re-proves
+// the channel its session was established with, so a password session naming an
+// assembled SMS method is a bad request at the start, and the method never
+// begins.
+func TestAStepUpWithNoFactorRefusesAMethodTheSessionWasNotEstablishedWith(t *testing.T) {
+	password := &fakeMethod{name: "password"}
+	sms := &fakeMethod{name: "sms"}
+	r := newRigMethods(t, password, sms)
+	r.loginAsAuthenticated("acct1", "sid") // a password session
+	r.mfa.outcome = authn.MFANone
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"step-up","method":"sms"}`)
+	if start.Code != http.StatusBadRequest {
+		t.Fatalf("a no-factor step-up naming a channel the session did not use answered %d, want 400: %s",
+			start.Code, start.Body.String())
+	}
+	if got := humanType(t, start.Body.String()); got != mount.CodeBadRequest {
+		t.Errorf("the refusal code = %q, want %q", got, mount.CodeBadRequest)
+	}
+	if sms.calls != 0 {
+		t.Errorf("the SMS method began %d times, want none", sms.calls)
+	}
+	if password.calls != 0 {
+		t.Errorf("the password method began %d times, want none", password.calls)
+	}
+}
+
+// TestAStepUpWithNoFactorStartsTheSessionChannel holds the positive half: a
+// session established by an SMS code may re-prove that code, and the method of
+// the same channel begins.
+func TestAStepUpWithNoFactorStartsTheSessionChannel(t *testing.T) {
+	password := &fakeMethod{name: "password"}
+	sms := &fakeMethod{name: "sms"}
+	sms.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("phone", nil,
+			authn.Field{Name: "phone", Kind: authn.FieldPhone, Required: true}), nil
+	}
+	r := newRigMethods(t, password, sms)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.sessions.status.Methods = []authn.Method{authn.MethodSMS}
+	r.mfa.outcome = authn.MFANone
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"step-up","method":"sms"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("a no-factor step-up naming the session's channel answered %d, want 200: %s",
+			start.Code, start.Body.String())
+	}
+	if sms.calls != 1 {
+		t.Errorf("the SMS method began %d times, want one", sms.calls)
+	}
+	if password.calls != 0 {
+		t.Errorf("the password method began %d times, want none", password.calls)
+	}
+}
+
 // TestAStepUpWithNoPasswordIsRefused holds the boundary: an account with no
 // password to prove again has no first factor that lets factors registered
 // during the session strengthen it, so the step-up is refused and the person

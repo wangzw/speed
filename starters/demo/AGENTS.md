@@ -1019,9 +1019,9 @@ names the fixed part of that wiring, and no configuration file repeats it:
   caller as the recipient (see "The review build's notification fixture").
 - **The personal tenant** is the host's own policy, not a platform capability
   (`workspace.personal`, `server/personal.go` and `server/personal_lifecycle.go`,
-  named in `baselineServe`). Its switch is `workspace.personal.enabled`, off in
-  every `testdata/` file and on in the review assembly
-  (`server/review/sqlite.yaml`). With it on, the module implements
+  named in `baselineServe`). Its switch is `workspace.personal.enabled`, on by
+  default; the `testdata/` files leave it there and the review assembly names it
+  too (`server/review/sqlite.yaml`). With it on, the module implements
   `authn.AccountLifecycle.AccountCreated`: the account is committed and then its
   personal tenant, membership and tenant-admin binding are built, so no account
   exists without a tenant. With the switch off the hook builds nothing, no route

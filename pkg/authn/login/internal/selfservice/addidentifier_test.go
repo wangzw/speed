@@ -183,6 +183,40 @@ func TestProvingTheAccountsOwnUnprovedEmailSucceeds(t *testing.T) {
 	}
 }
 
+// TestAStepUpRefusalLeavesAnEmailCodeReplayable holds the email branch's half of
+// the ordering: the pending record carries the digest of the code and is spent
+// only once the address is written, not when the code matches, so a step-up
+// refusal between the two leaves the code the client replays afterwards usable.
+func TestAStepUpRefusalLeavesAnEmailCodeReplayable(t *testing.T) {
+	h := emailHarness(t)
+	// An active factor holds the stale single-factor session to a fresh
+	// multi-factor proof; the account has no default contact, so proving the
+	// first address carries a protected consequence.
+	h.activeFactor()
+	h.as()
+	if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusOK || problemState(t, w) != "pending" {
+		t.Fatalf("the add answered %d %s, want 200 pending", w.Code, w.Body)
+	}
+	code := h.email.sent[0].code
+
+	w := h.post("/identifiers/verify", verifyBody(code))
+	if w.Code != http.StatusUnauthorized || problemType(t, w) != "insufficient_user_authentication" {
+		t.Fatalf("the stale verify answered %d %s, want 401 insufficient_user_authentication", w.Code, w.Body)
+	}
+	if _, _, ok := pendingEmailKey(h); !ok {
+		t.Fatal("the step-up refusal dropped the pending record, so the code cannot be replayed")
+	}
+
+	h.as(localMulti(time.Minute)...)
+	w = h.post("/identifiers/verify", verifyBody(code))
+	if w.Code != http.StatusOK || problemState(t, w) != "added" {
+		t.Fatalf("the replay answered %d %s, want 200 added", w.Code, w.Body)
+	}
+	if len(h.admin.added) != 1 {
+		t.Fatalf("the address was written %d times, want once", len(h.admin.added))
+	}
+}
+
 // TestARepeatedIdentifierRowStaysAConflict holds the defensive mapping: a row
 // the identifier table refuses as a duplicate, written around the reservation
 // table, still answers 409 conflict rather than email-taken.

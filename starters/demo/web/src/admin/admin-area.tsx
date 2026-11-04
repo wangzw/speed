@@ -223,8 +223,8 @@ function AdminHeaderActions({
           {t('admin.backToApp')}
         </Link>
       )}
-      {/* The header carries the account menu only when the host places it
-          there; the default sidebar placement keeps it in the column. */}
+      {/* The header carries the account menu when ACCOUNT_ENTRY includes the
+          header; the sidebar-only placement keeps it in the column. */}
       {ACCOUNT_ENTRY === 'sidebar' ? null : <UserMenu />}
     </>
   )

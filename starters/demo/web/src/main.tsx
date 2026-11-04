@@ -52,6 +52,7 @@ import { applyDocumentMetadata } from './document-metadata.js'
 import { PlatformPermissions } from './platform-permissions.js'
 import { DEMO_NAMESPACE, demoResources } from './resources.js'
 import { loadRuntimeConfig } from './runtime-config.js'
+import { tenantAddressedFetch } from './tenant-addressed-fetch.js'
 
 /** What a page's bootstrap produced, for hosts and harnesses that act on it. */
 export type DemoAppBootstrap = SpeedAppBootstrap
@@ -110,12 +111,19 @@ export async function bootstrapDemoApp(
     view: <DemoApp shellLayout={runtime.shellLayout} />,
     theme,
     baseUrl: runtime.apiOrigin,
-    // The tenant every request announces as X-Tenant: the host's current
-    // tenant's ALIAS, read per attempt (src/chrome.tsx holds the one value
-    // and resolves its alias). The server's tenant resolution layer looks the
-    // name up in the roster's alias column, so the call must carry the alias
-    // -- not the tenant id, which a rename leaves behind -- and a
-    // tenant-scoped call without it is refused 404.
+    client: {
+      // A tenant-addressed path names the tenant the request acts on, and
+      // the platform admin's tenant selector is a request argument rather
+      // than the host's current tenant (src/tenant-addressed-fetch.ts).
+      fetch: tenantAddressedFetch,
+    },
+    // The tenant every request announces as X-Tenant, except one whose path
+    // is tenant-addressed (that request's header is rewritten to the path's
+    // tenant identifier by `client.fetch` above): the host's current tenant's
+    // ALIAS, read per attempt (src/chrome.tsx holds the one value and
+    // resolves its alias). The server's tenant resolution layer looks the
+    // name up as an alias first, then as a tenant identifier; a tenant-scoped
+    // call that resolves to neither is refused 404.
     tenantProvider: getCurrentTenantAlias,
   })
   // The entry document's title follows the language the assembly resolved,

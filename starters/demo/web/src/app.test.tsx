@@ -849,16 +849,16 @@ describe('the admin area', () => {
 
     // The admin frame is a different shell (no tenant switcher), but its
     // banner is the same chrome the tenant frame carries: the brand in the
-    // header's own type. The account entry follows ACCOUNT_ENTRY's default,
-    // so it is the row at the bottom of the navigation column and the header
-    // carries no avatar menu. The routed page's PageHeader is also a <header>
+    // header's own type. ACCOUNT_ENTRY is 'both', so the account entry is the
+    // row at the bottom of the navigation column and the header carries its
+    // avatar menu too. The routed page's PageHeader is also a <header>
     // element, so scope to the banner that carries the brand.
     const brand = await screen.findByText(demoEnUS.app.title)
     const banner = brand.closest('header')
     expect(banner).not.toBeNull()
     expect(
-      within(banner as HTMLElement).queryByTestId('user-menu-trigger'),
-    ).toBeNull()
+      within(banner as HTMLElement).getByTestId('user-menu-trigger'),
+    ).toBeInTheDocument()
 
     // The account entry carries the signed-in principal's identity; its menu
     // carries the notification centre, one entry per account pane and
@@ -1102,15 +1102,20 @@ describe('the tenant area header controls', () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
     // The language entry lives on the account preferences page alone. The
-    // account entry is in the navigation column, so the header's only menu
-    // trigger is the tenant switcher; a second one would be a removed
-    // control.
+    // header carries exactly its two account surfaces -- the tenant switcher
+    // and the account menu -- so a third menu trigger is what a removed
+    // language switch would be.
     const [banner] = await screen.findAllByRole('banner')
     const menus = within(banner as HTMLElement)
       .getAllByRole('button')
       .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
-    expect(menus).toHaveLength(1)
-    expect(menus[0]).toHaveAccessibleName('acme')
+    expect(menus).toHaveLength(2)
+    expect(
+      within(banner as HTMLElement).getByRole('button', { name: 'acme' }),
+    ).toBeInTheDocument()
+    expect(
+      within(banner as HTMLElement).getByTestId('user-menu-trigger'),
+    ).toBeInTheDocument()
   })
 
   it('offers only the tenants the seeded deployment registers', async () => {
@@ -1399,13 +1404,16 @@ describe('the account page', () => {
         name: tAccount('preferences.language.label'),
       }),
     ).toBeInTheDocument()
-    // ...and the tenant header carries no language switch: its only menu
-    // is the tenant switcher, because the account entry is in the column.
+    // ...and the tenant header carries no language switch: its two menus are
+    // the tenant switcher and the account menu.
     const [banner] = screen.getAllByRole('banner')
     const menus = within(banner as HTMLElement)
       .getAllByRole('button')
       .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
-    expect(menus).toHaveLength(1)
+    expect(menus).toHaveLength(2)
+    expect(
+      within(banner as HTMLElement).getByTestId('user-menu-trigger'),
+    ).toBeInTheDocument()
   })
 
   it('applies a chosen preset at once, remembers it, and restores it on a remount', async () => {
@@ -1537,8 +1545,8 @@ describe('the sidebar shell layout', () => {
     // `<header>` (its PageHeader) inside main, so the absence is asserted
     // on the brand's containing element, not on every header in the page.
     expect(brand.closest('header')).toBeNull()
-    // The account entry follows ACCOUNT_ENTRY's default: the row at the
-    // bottom of the column, after the navigation, as in the tenant frame.
+    // The account entry is the row at the bottom of the column, after the
+    // navigation, as in the tenant frame.
     const account = screen.getByTestId('account-entry-trigger')
     expect(nav.contains(brand)).toBe(false)
     expect(nav.contains(account)).toBe(false)

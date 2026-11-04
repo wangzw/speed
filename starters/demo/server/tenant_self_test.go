@@ -23,7 +23,12 @@ import (
 func TestTheCallerTenantReadIsOnTheAccountEndpoint(t *testing.T) {
 	ports := freePorts(t, listenerCount)
 	dsn := filepath.Join(t.TempDir(), "demo.db")
-	config := writeConfigWith(t, ports, dsn)
+	// The personal tenant is switched off so the account the case signs in as
+	// holds no membership and the answer's empty list is the read's own result.
+	// The default is on; the switch is written out because this case is about
+	// the empty list, not about the default.
+	body := configBody(t, ports, dsn) + "workspace:\n  personal:\n    enabled: false\n"
+	config := writeConfigFile(t, body)
 	if res := runCommand(t, config, "sqlite-memory", seedCommand); res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}

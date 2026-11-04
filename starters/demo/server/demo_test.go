@@ -206,9 +206,6 @@ authn:
       rp-name: demo
       origins:
         - "http://localhost:8081"
-workspace:
-  personal:
-    enabled: false
 objectstore:
   fs:
     root: "%s"
@@ -1307,9 +1304,12 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	if err := json.Unmarshal(allowed.body, &listed); err != nil {
 		t.Fatalf("reading the roster: %v\n%s", err, allowed.body)
 	}
-	if len(listed.Tenants) != 2 {
-		t.Errorf("the roster holds %d tenant(s), want the system tenant and the one the seed registered",
-			len(listed.Tenants))
+	// The seed writes two accounts, and the default personal-tenant policy
+	// builds one for each: the roster is the system tenant, the business tenant
+	// the seed registered and the two personal tenants.
+	if len(listed.Tenants) != 4 {
+		t.Errorf("the roster holds %d tenant(s), want the system tenant, the one the seed registered "+
+			"and a personal tenant for each of the two seeded accounts", len(listed.Tenants))
 	}
 
 	// Both administration roles are builtin in the domains the seed wrote them:

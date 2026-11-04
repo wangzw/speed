@@ -308,7 +308,11 @@ type fakeSMS struct {
 	sendErr   error
 	verifyErr error
 	next      int
-	onSend    func() // runs inside Send, for a test that lets time pass there
+	// outstanding is the challenges a send issued that no pass has consumed yet.
+	// The real engine marks the row consumed on a pass, so a second Verify of the
+	// same challenge is a wrong code.
+	outstanding map[string]bool
+	onSend      func() // runs inside Send, for a test that lets time pass there
 }
 
 func (f *fakeSMS) Send(_ context.Context, in authn.SendCode) (string, error) {
@@ -321,13 +325,25 @@ func (f *fakeSMS) Send(_ context.Context, in authn.SendCode) (string, error) {
 		return "", f.sendErr
 	}
 	f.next++
-	return fmt.Sprintf("challenge-%d", f.next), nil
+	id := fmt.Sprintf("challenge-%d", f.next)
+	if f.outstanding == nil {
+		f.outstanding = map[string]bool{}
+	}
+	f.outstanding[id] = true
+	return id, nil
 }
 
 func (f *fakeSMS) Verify(_ context.Context, challengeID, code string) error {
 	f.log.add("sms.Verify")
 	f.verified = append(f.verified, verifyCall{challengeID, code})
-	return f.verifyErr
+	if f.verifyErr != nil {
+		return f.verifyErr
+	}
+	if !f.outstanding[challengeID] {
+		return authn.ErrInvalidCredentials
+	}
+	delete(f.outstanding, challengeID)
+	return nil
 }
 
 type sendEmailCall struct {

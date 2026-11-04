@@ -16,10 +16,11 @@ import (
 // fails. The review build has its own table in
 // differential_exemptions_review_test.go, because its configuration sets these
 // switches differently.
+//
+// workspace.personal is not exempt: the compiled default turns its switch on, so
+// the baseline template mounts its route and removing it lowers the account
+// endpoint's route count. See TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration.
 var mayLeaveRouteCountUnchanged = map[string]string{
-	"workspace.personal": "its route is mounted only when workspace.personal.enabled is on; " +
-		"the baseline template leaves the host switch off (the baseline default), so this " +
-		"removal is vacuous",
 	"sms.admin": "its management routes are mounted only on the endpoints sms.admin.endpoints names, " +
 		"and the item has no default: the baseline template mounts no SMS management surface because " +
 		"an SMS vendor account is not part of the baseline, so this removal is vacuous",
@@ -28,9 +29,11 @@ var mayLeaveRouteCountUnchanged = map[string]string{
 // TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration holds each
 // baseline exemption to its stated reason over the template this build's case
 // runs: dropping the module leaves every endpoint it describes at the same
-// route count. Turning the workspace switch on mounts the route, makes the
-// removal lower the count, and reddens this case -- which is what retires the
-// exemption.
+// route count. It also holds the personal module out of the table: the compiled
+// default enables workspace.personal, so removing it lowers the account
+// endpoint's route count and an exemption claiming otherwise would be false. A
+// configuration that turns the switch off reddens the workspace half, which is
+// the check retiring a default that moved back.
 func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T) {
 	names := make([]string, 0, len(mayLeaveRouteCountUnchanged))
 	for name := range mayLeaveRouteCountUnchanged {
@@ -38,16 +41,22 @@ func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T)
 	}
 	sort.Strings(names)
 
-	groups := make([]variantGroup, 0, len(names))
+	groups := make([]variantGroup, 0, len(names)+1)
 	for _, name := range names {
 		groups = append(groups, variantGroupNamed(t, name))
 	}
+	personal := variantGroupNamed(t, "workspace.personal")
+	if reason, exempt := mayLeaveRouteCountUnchanged["workspace.personal"]; exempt {
+		t.Errorf("the baseline build exempts workspace.personal (%q), but the compiled default "+
+			"enables its route: the exemption is false for this build", reason)
+	}
 
 	topo := topology{name: "exemptions", ports: listenerCount}
-	before, after := removalRouteCounts(t, topo, groups)
+	before, after := removalRouteCounts(t, topo, append(groups, personal))
 	for _, group := range groups {
 		assertRouteCountsUnchanged(t, group, before, after[group.id])
 	}
+	assertRouteCountsLowered(t, personal, before, after[personal.id])
 }
 
 // assertRouteCountsUnchanged holds an exemption's stated reason to the run:
