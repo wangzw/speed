@@ -28,5 +28,13 @@ linkWorkspacePackages: true
 # version jsdom's own range resolves in this lockfile, so the workspace pins the
 # floor here rather than waiting for jsdom to move. Remove it once jsdom's range
 # starts above 8.12.2 by itself.
+#
+# eslint and typescript-eslint still declare minimatch ^10.2.x, below the
+# 11.0.1 fix for GHSA-g3hv-75wg-m249 (glob parts amplification). No released
+# eslint or typescript-eslint line pulls 11 yet, so the workspace pins it
+# here. Both consumers only use the Minimatch class and minimatch() function,
+# which 11 keeps, and 11 still ships CommonJS and ESM entry points. Remove it
+# once their own ranges resolve 11 by themselves.
 overrides:
   undici: ^8.12.2
+  minimatch: ^11.0.1
