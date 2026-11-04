@@ -14,7 +14,7 @@
 - **不校验设置项的值。** 一个值的类型与取值域判据由声明方给出、由设置模块在写入时执行（`settings.ErrTypeMismatch`、`settings.ErrInvalidValue`）；本模块只做请求格式检查——查询串与路径参数的取值域、正文可读与否。
 - **不认识租户名册。** 租户标识取自查询串，本模块不校验它在不在名册、不读请求解析出的租户，也不写上下文里的租户。租户标识的取值域由本模块就地复述，与设置模块对同一取值域的复述同源（见「访问控制」）。
 - **不为请求认定租户，不建跨租户上下文。** 一条请求作用于哪一层由查询串点名；枚举声明项不是一次跨租户读。
-- **不给自己授予任何权限，也不声明权限点。** 它读取与写入用的 `settings.read` 与 `settings.write` 由授权能力为设置能力承载（`pkg/authz/permissions.go` 的 `PermissionSettingsRead`、`PermissionSettingsWrite`），本模块不另声明目录与翻译；它把每条路由在中间件的声明表里登记为开放，由 handler 在内部判定。
+- **不给自己授予任何权限，也不声明权限点。** 它读取与写入用的 `settings.read`／`settings.tenant.read` 与 `settings.write`／`settings.tenant.write` 由授权能力为设置能力承载（`pkg/authz/permissions.go` 的 `PermissionSettingsRead`、`PermissionTenantSettingsRead`、`PermissionSettingsWrite`、`PermissionTenantSettingsWrite`），本模块不另声明目录与翻译；它把每条路由在中间件的声明表里登记为开放，由 handler 在内部判定。
 - **不改变设置能力的立场。** `pkg/settings` 仍不做授权判定，仍不认识 HTTP；本模块把「宿主写出的管理命令」这一形态模块化，设置根包不因它背上管理面的依赖。
 
 ## 外部接口契约
@@ -100,7 +100,7 @@
 | 依赖 | 用途 |
 |---|---|
 | `pkg/settings` | `settings.Store`（`Get`、`Set`、`Delete`、`List`、`Declared`）、`settings.Layer`、`settings.Global`、`settings.ForTenant`、`settings.Write`、`settings.Entry`、`settings.DeclaredItem` 与哨兵 `settings.ErrUnknownKey`、`settings.ErrTypeMismatch`、`settings.ErrInvalidValue`、`settings.ErrNotLoaded` |
-| `pkg/authz`、`pkg/authz/guard` | 权限常量 `authz.PermissionSettingsRead`、`authz.PermissionSettingsWrite`、平台域 `authz.PlatformDomain`、租户域 `authz.Domain`、handler 内判定 `guard.Guard.RequirePermissionIn`、路由声明接口 `authz.Gate` |
+| `pkg/authz`、`pkg/authz/guard` | 权限常量 `authz.PermissionSettingsRead`、`authz.PermissionTenantSettingsRead`、`authz.PermissionSettingsWrite`、`authz.PermissionTenantSettingsWrite`、平台域 `authz.PlatformDomain`、租户域 `authz.Domain`、handler 内判定 `guard.Guard.RequirePermissionIn`、路由声明接口 `authz.Gate` |
 | `pkg/audit` | 强制档审计 |
 | `pkg/authn` | 读请求上的身份（`authn.FromContext`）与发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`） |
 | `pkg/http` | 路由挂载与问题应答（`speedhttp.Router`、`speedhttp.Endpoint`、`speedhttp.Fail`、`speedhttp.Problem`） |
@@ -187,7 +187,7 @@ sequenceDiagram
 
 ### 按层判定与域的选取
 
-层由查询串 `layer` 点名，域由层定出：`layer=global` 取 `authz.PlatformDomain`，`layer=tenant` 取 `authz.Domain(tenant)`。判定的主体是调用方的生效账户 `Identity.Account()`，对象与动作由权限经进程翻译给出（`settings.read` → `(settings, read)`，`settings.write` → `(settings, write)`），域是层选指名的那个。全局层的写因此要平台域的授予——若按请求解析出的租户判定，一个在某租户获授权的调用方就能靠请求头触到全局层。租户层的写落到那个租户：一个在该租户获 `settings.write` 的调用方可以改那个租户的层。
+层由查询串 `layer` 点名，域由层定出：`layer=global` 取 `authz.PlatformDomain`，`layer=tenant` 取 `authz.Domain(tenant)`。判定的主体是调用方的生效账户 `Identity.Account()`，对象与动作由权限经进程翻译按层给出（全局层 `settings.read` → `(settings, read)`、`settings.write` → `(settings, write)`；租户层 `settings.tenant.read` → `(tenant_settings, read)`、`settings.tenant.write` → `(tenant_settings, write)`），域是层选指名的那个。全局层的写因此要平台域的授予——若按请求解析出的租户判定，一个在某租户获授权的调用方就能靠请求头触到全局层。租户层的写落到那个租户：一个在该租户获 `settings.tenant.write` 的调用方可以改那个租户的层。
 
 ### 写一项设置
 

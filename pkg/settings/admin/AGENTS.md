@@ -52,10 +52,12 @@ contain a dot, as `authn.session` does); `:key` is the rest of the key under it,
 and the full key is `<namespace>.<key>`. A full key no declaration covers is a
 404; a namespace group no declared item belongs to is a 404.
 
-The two permissions are not this module's own: the settings capability names
-them, and the authorization directory carries them for it
-(`authz.PermissionSettingsRead`, `authz.PermissionSettingsWrite`). This module
-declares no catalog entry and no translation row.
+The permissions are not this module's own: the settings capability names them,
+and the authorization directory carries them for it — `authz.PermissionSettingsRead`
+and `authz.PermissionSettingsWrite` for the global layer,
+`authz.PermissionTenantSettingsRead` and `authz.PermissionTenantSettingsWrite`
+for the tenant layer. This module declares no catalog entry and no translation
+row.
 
 ### The query string names the layer
 
@@ -158,7 +160,7 @@ row's existence without revealing the text.
 - **The decision is made per layer, in the layer's own domain.** The global layer
   is a platform operation, decided in the platform domain `authz.PlatformDomain`;
   a tenant layer is decided in that tenant's domain `authz.Domain(id)`. The two
-  are two decisions on the same permission, so a caller authorized in one tenant
+  layers decide on different permissions, so a caller authorized in one tenant
   cannot reach the global layer by sending a tenant header. The route asks
   through the guard's explicit-domain form, so the request's own resolved tenant
   never steers it.
