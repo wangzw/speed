@@ -2,14 +2,14 @@
 
 ## 职责
 
-- **因素登记簿。** 账户的每个因素在 `authn_factors` 里占一行，登记簿统一放在 `authn.mfa`；只有种类专属的数据（TOTP 种子、通行密钥的凭据，[REF-rfc6238](../../../references.md)、[REF-webauthn](../../../references.md)）才放各因素子包自己的表。
+- **因素登记簿。** 记录账户的每个因素：每个因素在 `authn_factors` 里占一行，登记簿统一放在 `authn.mfa`；只有种类专属的数据（TOTP 种子、通行密钥的凭据，[REF-rfc6238](../../../references.md)、[REF-webauthn](../../../references.md)）才放各因素子包自己的表。
 - **第二因素的策略判定。** 第一因素通过之后，按账户级与全局级策略回答账户是否还要第二因素，并给出可用的因素清单。租户级策略在请求期执行，不在这里（[tenant.admission](../tenant/design-tenant-admission.md)）。
 - **因素的登记、发码与校验的编排。** `MFA` 驱动各因素实现；失败退避、审计记录与事件发布在 `MFA` 里统一做一遍，因素实现不做（[ADR-authn-mfa](../../../adr/adr-authn-mfa.md)）。
 - **保障等级的唯一合成处。** `MFA.Assurance` 是整个认证功能目录里计算保障等级的唯一位置；网关的校验后端、请求期的租户准入、`guard.Require` 与冒充发起读到的都是登录会话行里已记录的值。
 - **最高权限动作的因素门槛。** 回答 `MFA.Seasoned`；约定账户安全类动作对 `Requirement.Local` 与因素年龄的要求。
-- **因素的删除与重置，以及随账户删除的清理。** `MFA.Remove`、`MFA.Reset`，以及对账户生命周期钩子的实现。
+- **因素的删除与重置，以及随账户删除的清理。** `MFA.Remove` 先让因素实现清掉种类专属数据，再删掉因素行；`MFA.Reset` 置 `mfa_required`、停用账户的全部因素、经 `Sessions.RevokeAccount` 撤销账户的全部会话（`Sessions` 缺席时跳过），并在提交后发布 `authn.factor.changed`（`reset`）；账户删除钩子随账户删除清掉该账户的全部因素与 `authn_webauthn_users` 里的行。
 - **因素种类的实现。** TOTP、短信、WebAuthn 各是一个子包与一个模块，只做密码学与自己的状态。
-- **因素自助接口的路由。** `GET B/factors`、`DELETE B/factors/:id`、`PATCH B/factors/:id`；基路径 `B` 由 [authn-gate](design-authn-gate.md) 声明。这个接口以静态[特性](../../../glossary.md) `authn.mfa` 声明（见「声明的特性」）。
+- **因素自助接口的路由。** 挂出 `GET B/factors`、`DELETE B/factors/:id`、`PATCH B/factors/:id`，供账户持有人列出、删除与改名自己的因素；基路径 `B` 由 [authn-gate](design-authn-gate.md) 声明。这个接口以静态[特性](../../../glossary.md) `authn.mfa` 声明（见「声明的特性」）。
 
 认证功能目录的术语（因素、保障等级、认证方式、登录会话等）登记在 [authn](design-authn.md) 的模块局部术语表，本文沿用。
 

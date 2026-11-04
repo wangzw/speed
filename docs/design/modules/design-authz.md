@@ -9,7 +9,7 @@
 本功能目录由接口包与子包组成，判据同时是依赖闭包（[ADR-authz-packaging](../../adr/adr-authz-packaging.md)）：
 
 - **根包 `pkg/authz`** 定义接口、数据类型、权限常量、Casbin 模型文本与哨兵；**自身不登记模块**。根包被每一个使用方 import，把第三方库留在根包里会把它带进每一个使用方的闭包，所以根包只依赖标准库。
-- **`pkg/authz/policy`（模块 `authz.policy`）** 交付策略表与迁移、薄 adapter、Casbin 引擎、主体持有权限的读取、权限目录、`Manager` 与账户生命周期清理，并实现成员关系生命周期与成员关系守卫。它取用 `pkg/db`，因此把库依赖限制在需要策略存储的装配里。
+- **`pkg/authz/policy`（模块 `authz.policy`）** 随迁移建出策略表，迁移不种任何策略行；升级数据迁移撤销平台域以外的 `platform-admin` 角色、授予与绑定；策略数据由宿主经 `Manager` 写入。经薄 adapter 把 Casbin 引擎接到 `pkg/db`，由引擎按（主体，域，资源，动作）做出判定，读出一个主体在一个策略域里实际持有的权限，并把各已登记模块声明的权限汇成目录。`Manager` 交出这些行的读写；账户删除后经生命周期钩子与事件清理其绑定行；平台域的成员关系删除后撤销该账户在平台域的全部绑定；成员关系守卫在移除前拒绝会让某租户失去最后一条 `tenant-admin` 绑定的移除；移除绑定会让某域不再有租户管理员时拒绝，账户删除收尾的 `ClearAccountBindings` 除外。它取用 `pkg/db`，因此把库依赖限制在需要策略存储的装配里。
 - **`pkg/authz/guard`（模块 `authz.guard`）** 交付中间件、路由声明登记接口、handler 内判定 API，并**实现 `authn.Decider`**。中间件与 `Decider` 共用同一份声明表与同一处租户读取，拆成两个模块要为它们另立接口。
 - **`pkg/authz/admin`（模块 `authz.admin`）** 挂 `/api/v1/system/*` 下的平台管理面路由，不交付功能；它取用 `policy` 的 `Manager`，把平台管理面的依赖与业务判定的依赖分开。
 - **`pkg/authz/tenantadmin`（模块 `authz.tenantadmin`，尚未实现）** 拟挂 `/api/v1/tenants/{tenant}/*` 下的租户管理面路由，不交付功能；它拟取用 `policy` 的 `Manager` 与 `Catalog`，把租户域的角色、授权与绑定暴露给该租户的租户管理员，并执行防提权规则。它不取用 `Seeder`，也不取用宿主的 `Reconciler`。这个包与模块都尚未存在。

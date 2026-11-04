@@ -10,7 +10,7 @@
 - 在写入身份之前复核后端交出的 `Principal`：结构与界限、账户命名空间、能力声明，以及冒充身份的范围；全部通过才盖章。
 - 为每个受守端建立 401 的挑战头，登记凭据的脱敏规则，报出收口计数。
 - `authn.mount` 交付路由挂载口 `mount.Mounter`，使 authn 自己的路由与它的访问级别成对登记。
-- `authn.static` 是内置口令表后端，`basic` 的唯一认领者。
+- `authn.static` 交付内置口令表校验后端，作为 `basic` 的唯一认领者：按出示的用户名与口令查表，不在表里即判 `Denied`，通过时交出 `static.` 命名空间的 `Principal`。
 
 模块的登记形态与包的拆分见 [ADR-authn-packaging](../../../adr/adr-authn-packaging.md)，网关不依赖存储、不挂业务路由的判据见 [ADR-authn-wiring](../../../adr/adr-authn-wiring.md)，按载体认领与账户命名空间声明见 [ADR-authn-credential-dispatch](../../../adr/adr-authn-credential-dispatch.md)。
 

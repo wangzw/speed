@@ -9,7 +9,7 @@
 - 作为校验后端认领 `Authorization` 的 `bearer`（[REF-rfc6750](../../../references.md)）方案：把访问令牌校验成 `Principal`，交给网关盖章（[design-authn-gate](design-authn-gate.md)）。
 - 受理令牌端点：`client_credentials`（[REF-rfc6749](../../../references.md)）与 `refresh_token` 两个 grant（封闭集），以及 RFC 7009（[REF-rfc7009](../../../references.md)）的撤销。
 - 发布 JWKS（[REF-rfc7517](../../../references.md)），持有启动时装入的签名与验证密钥集。
-- 持有 `authn_refresh_tokens` 表与它的清扫。
+- 独占读写 `authn_refresh_tokens`：写入签发的刷新令牌与每次轮换的结果，并由周期清扫协程删除所属会话已不存在、已撤销、已过绝对期限或 `idle_expires_at` 已过的行，使这张表不无界增长。
 - 定义宿主向访问令牌追加声明的接口 `ClaimsContributor`，并在签发时调用它。
 
 ### 非职责

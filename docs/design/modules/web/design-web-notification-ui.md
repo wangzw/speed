@@ -9,9 +9,9 @@
 - **偏好矩阵**：`NotificationPreferences` 读按类型的渠道矩阵（`GET /api/v1/notifications/preferences`）与类型分类法（`GET /api/v1/notifications/types`，取每类型是否可退订），写入单个渠道的目标态（`PUT /api/v1/notifications/preferences/:typeKey/:channel`）。渠道列是 `in_app` 加宿主给出的、特性在场的可选渠道。
 - **通知界面**：`NotificationCenter` 是默认组合——收件箱与其下的偏好矩阵；特性 `notification.preferences` 缺席时只有收件箱。
 - **实时订阅**：`NotificationStreamProvider` 经宿主交来的开启器打开 `GET /api/v1/notifications/stream`，每来一帧 `message` 即失效当前租户的未读数与消息列表。
-- **特性在场的接收**：`NotificationPresenceProvider` 承载宿主给出的特性在场事实：偏好界面与各可选渠道。
+- **特性在场的接收**：`NotificationPresenceProvider` 接收宿主给出的特性在场事实——偏好界面是否在场与各可选渠道——使后代组件据此决定是否渲染偏好界面、显示哪些可选渠道。
 - **声明式入口**：`notificationRoutes` 是包对声明式注册表的贡献——通知界面在 `/notifications`，带标签因而贡献一条导航项，依赖特性 `notification.inbox`。
-- **文案命名空间**：`NOTIFICATION_UI_NAMESPACE` 与 `notificationUiResources`。
+- **文案命名空间**：本包以 `NOTIFICATION_UI_NAMESPACE` 声明裸名命名空间、以 `notificationUiResources` 交付双语资源，界面渲染自身文字时经它解析。
 
 ### 非职责
 

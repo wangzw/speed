@@ -10,9 +10,9 @@
 - **账户管理**：账户的列出、详情与写入，经 `/api/v1/system/auth/accounts`。
 - **会话管理**：按账户列出会话并撤销，经 `/api/v1/system/auth/accounts/:id/sessions` 与 `/api/v1/system/auth/sessions/:id`。
 - **冒充管理**：冒充记录的列出与终止，经 `/api/v1/system/tenants/{tenant}/impersonations`；运营者自身会话上的冒充状态读取、发起与结束，经 `/api/v1/auth/impersonation`。
-- **权限管理**：角色、授权、权限目录与账户绑定，经 `/api/v1/system`。
-- **邀请与成员**：按租户的邀请与成员，经 `/api/v1/tenants/{tenant}/invitations` 与 `/api/v1/tenants/{tenant}/members`。
-- **SSO 提供方**：按租户的提供方与域名，经 `/api/v1/tenants/{tenant}/sso/providers`。
+- **权限管理**：角色、授权与账户绑定的读写，权限目录的读，经 `/api/v1/system`。
+- **邀请与成员**：按租户读写邀请与成员，经 `/api/v1/tenants/{tenant}/invitations` 与 `/api/v1/tenants/{tenant}/members`。
+- **SSO 提供方**：按租户读写提供方与域名，经 `/api/v1/tenants/{tenant}/sso/providers`。
 - **设置读写**：运行期设置的读写，经 `/api/v1/system/settings`（[settings.admin](../settings/design-settings-admin.md)、[ADR-admin-settings](../../../adr/adr-admin-settings.md)）。
 - **短信模板**：运行期短信模板的读写，经 `/api/v1/system/sms`。
 - **审计查询**：审计记录的检索与导出，经 `/api/v1/system/audit`（[audit.admin](../audit/design-audit-admin.md)、[ADR-audit-admin](../../../adr/adr-audit-admin.md)）。

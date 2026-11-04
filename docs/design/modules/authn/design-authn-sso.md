@@ -8,7 +8,7 @@
 
 - **提供方登记。** `SSOProviders` 由 `authn.sso` 排他交付，读写 `authn_idps`。提供方是表里的数据，不是模块，不进设置也不进配置：运行期才出现、数量不定、带秘密的配置是数据（[ADR-authn-sso](../../../adr/adr-authn-sso.md)）。`client_secret` 在加密列里，读取接口不交出它。
 - **域所有权与发现。** 租户为提供方声明邮箱域，经 DNS TXT 证明所有权；已验证的域全局唯一；`POST B/sso/discover` 按已验证的域返回入口列表。数据在 `authn_idp_domains`。
-- **SAML 登录方式。** `authn.sso.saml` 交付 `LoginMethod`（名 `saml`）：发起、SP 元数据、断言消费与逐项补充校验。断言标识的去重表 `authn_saml_assertions` 由 `authn.sso` 持有。
+- **SAML 登录方式。** `authn.sso.saml` 交付 `LoginMethod`（名 `saml`）：发起、SP 元数据、断言消费与逐项补充校验。断言标识的去重由 `authn.sso` 承担：`authn.sso` 经 `RememberAssertion` 把 `authn.sso.saml` 在断言消费时交来的断言标识写入 `authn_saml_assertions`，撞唯一约束即返回 `ErrAssertionReplay` 拒绝重放；清扫删除 `not_on_or_after` 已过的行。
 - **企业 OIDC 登录方式。** `authn.sso.oidc` 交付 `LoginMethod`（名 `oidc`），与社交登录的 Google 走同一条校验代码路径，差别只在配置来源。
 - **元数据刷新。** `authn.sso.saml` 交付 `SSOMetadataRefresher`，由管理员或宿主触发，不在后台自动运行。
 - **受限出站客户端。** `pkg/authn/internal/egress` 提供发现文档（[REF-openid-connect-discovery](../../../references.md)）、JWKS（[REF-rfc7517](../../../references.md)）、元数据与 userinfo 一类出站请求共用的 `http.Client`，因为这些 URL 来自租户管理员的输入。

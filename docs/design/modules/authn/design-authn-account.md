@@ -4,15 +4,15 @@
 
 `authn.account` 是 authn 的账户存储模块，包 `pkg/authn/account`，登记名 `authn.account`。
 
-- 持有账户、标识、联系方式预留、外部身份绑定、成员关系、口令凭据、服务密钥与失败退避的表及其迁移集，经 `pkg/db` 读写；表结构见[核心数据结构](#核心数据结构)。
+- 声明账户、标识、联系方式预留、外部身份绑定、成员关系、口令凭据、服务密钥与失败退避的表及其迁移集，启动时探测这些表是否存在；读写只经 `pkg/db`，其他 authn 子包经本模块的接口读写，授权功能目录经接口只读，都不直接读写这些表；表结构见[核心数据结构](#核心数据结构)。
 - 排他交付 `Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`Throttle` 这些根包能力接口，每个接口各自是一个排他功能。
 - 生成账户标识 `AccountID`（库里是 UUIDv7（[REF-rfc9562](../../../references.md)）文本），保证它不可变、不复用。
 - 规范化标识：用户名、邮箱、手机在写入与查询两侧经同一个函数规范化；用户名还过保留字校验，校验只在写入口做。用户名一经写入，在账户存续期内不可删除、不可更换，删除用户名返回 `authn.ErrUsernameImmutable`；账户整体删除不受此限。
 - 持有邮箱与手机的联系方式与登录方式：每条邮箱或手机记录恒为联系方式，另带持有人选择的登录方式标记，以及账户在已证明邮箱中的默认联系地址：账户有已证明邮箱时恰有一封，持有人未指定时取最早证明的那一封并可以改选，没有已证明邮箱时没有（REQ-account-061、REQ-account-063、REQ-account-064）。账户只有一条邮箱地址时，它在被证明后由系统选作登录方式，之后持有人可以取消，取消的门槛是账户仍留有别的登录方式（REQ-account-068、REQ-account-069）。社交与企业外部身份是一类独立的登录方式，列在登录方式中，不在联系方式中（REQ-account-067）。
-- 持有口令类凭据的全部校验细节：口令规范化、查找、PHC（[REF-phc-string-format](../../../references.md)）编解码与界限、诱饵派生、再哈希、服务密钥的摘要比对。
+- 校验口令类凭据：按标识查找并校验出示的口令，PHC（[REF-phc-string-format](../../../references.md)）解码与参数界限在校验内核对，未知标识、停用账户与无口令账户做等成本诱饵派生后统一返回 `ErrInvalidCredentials`，校验成功而库中条目弱于当前设置时就地再哈希；服务密钥按摘要比对。
 - 执行账户的创建与状态迁移：创建、停用、启用、删除在本模块的事务里写自己的表，提交之后同步调用全部 `AccountLifecycle`。
 - 执行成员关系的显式删除：删除之前询问全部可选的 `MembershipGuard`，提交之后同步调用全部 `MembershipLifecycle`。
-- 持有失败退避的算法与表，以及 `authn_throttles`、`authn_service_secrets` 的清扫协程。
+- 维护失败退避：按 `ThrottleScope` 与键在 `authn_throttles` 里记录失败次数与解锁时刻，前 `throttle-free-attempts` 次失败不退避，之后每多一次失败退避 `min(throttle-max-delay, 2^(n-free) 秒)`，标识级与注册的 `signup-username` 退避经 `RetryAfter` 报告剩余等待，账户级退避静默计数，成功清零；`Start` 起的清扫协程删除 `last_failure_at` 早于 `now - throttle-decay` 且 `locked_until` 为空或已过的退避行，以及 `expires_at` 或 `revoked_at` 早于 `now - secret-retention` 的 `authn_service_secrets` 行。
 - 承载外部身份绑定、首登开户、自助注册开户与账户解析的规则。规则约束的是本模块的数据（绑定、标识、联系方式记录、成员关系）与账户的会话和口令；首登开户的执行者是 `authn.login` 的账户解析步（[design-authn-login](design-authn-login.md)），自助注册开户经本模块的 `Signups.Register`。
 
 选型与取舍见 [ADR-authn-accounts](../../../adr/adr-authn-accounts.md)、[ADR-authn-account-lifecycle](../../../adr/adr-authn-account-lifecycle.md)、[ADR-authn-external-binding](../../../adr/adr-authn-external-binding.md)、[ADR-authn-password-hash](../../../adr/adr-authn-password-hash.md)、[ADR-authn-throttling](../../../adr/adr-authn-throttling.md)、[ADR-authn-signup](../../../adr/adr-authn-signup.md)、[ADR-authn-contact-claim](../../../adr/adr-authn-contact-claim.md)、[ADR-authn-contact-and-login-ways](../../../adr/adr-authn-contact-and-login-ways.md)；模块在 authn 里的位置与依赖图见 [design-authn](design-authn.md)。
