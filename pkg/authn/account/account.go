@@ -86,6 +86,7 @@ var (
 	_ authn.SignupVerification = (*product)(nil)
 	_ authn.Passwords          = (*product)(nil)
 	_ authn.Memberships        = (*product)(nil)
+	_ authn.MembershipCleanup  = (*product)(nil)
 	_ authn.Throttle           = (*product)(nil)
 )
 
@@ -96,7 +97,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 //
 // The database is required and is the one exclusive capability the module
 // stands on: a command without a database has no account store, and the module
-// that finds none stops the startup before anything is built. The seven
+// that finds none stops the startup before anything is built. The eight
 // capabilities are each delivered exclusively, so two providers of any of them
 // is a startup failure and not two stores a read could land in.
 //
