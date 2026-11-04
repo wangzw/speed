@@ -65,12 +65,13 @@ type Deps struct {
 	// reserved is answered as taken instead of being silently left unsent.
 	Signup authn.SignupVerification
 
-	// Human is the deployment's human-verification gate. It is optional: without
-	// it, or with a gate that requires nothing, the email branch sends without
-	// asking for a proof. With a gate that requires one, the email branch
-	// presents a valid, single-use proof, checked before any budget is spent.
-	// The phone routes do not use it: their proof travels to the code engine and
-	// is checked once there.
+	// Human is the deployment's human-verification gate. The login engine
+	// requires it, so a service the engine builds always carries one; the gate
+	// itself may be off, and then the email branch sends without asking for a
+	// proof. With a gate that requires one, the email branch presents a valid,
+	// single-use proof, checked before any budget is spent. The phone routes do
+	// not use it: their proof travels to the code engine and is checked once
+	// there.
 	Human authn.HumanVerifier
 
 	// Settings is read for authn.mfa.recent-window, for the two authn.sms

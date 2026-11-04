@@ -109,7 +109,10 @@
  * withheld while the profile's `verification.state` is `pending`, because that
  * section and the host's banner already offer the same code and two concurrent
  * requests would overwrite the one pending record. It is also withheld on a
- * deployment with no email channel, which could not send the code.
+ * deployment with no email channel, which could not send the code. After a
+ * send the row's resend is held for the server's interval; when the send
+ * succeeded, the row's own note states that wait. A throttled attempt's
+ * hold gets no note: its failure banner names the wait and counts it down.
  *
  * Below the lists is the add face: POST /api/v1/auth/identifiers
  * (authn.login.addIdentifier) with a kind and a value. An account holds at
@@ -196,11 +199,14 @@
  *
  * An email code send also presents the deployment's human-verification
  * proof when its gate requires one. The gate comes from the methods
- * document (or from a `humanGate` a host already read); the add face and
- * a row's resend show the block and wait for a proof. A username write
- * and every verification send no message, so they present none and are
- * not gated by the block. Each landing or refused send obtains a fresh
- * proof, because the single-use one was spent.
+ * document (or from a `humanGate` a host already read). The block appears
+ * only once an email send has been asked for: the add face and a row show
+ * no challenge until then, and the send the viewer asked for leaves by
+ * itself when the proof arrives. The control that asked gives way to the
+ * block while the proof is outstanding. A username write and every
+ * verification send no message, so they present none and are not gated by
+ * the block. Each landing or refused send obtains a fresh proof, because
+ * the single-use one was spent.
  */
 
 import type { ReactElement } from 'react'
@@ -429,6 +435,12 @@ const KNOWN_IDENTIFIER_KINDS = new Set<string>([
  * added through its own two-step surface (the SMS routes), not this one. */
 type AddKind = 'email' | 'username'
 
+/** The email send a pending proof is waiting on: the add face's address, or
+ * a row's resend to the address it already shows. */
+type PendingSend =
+  | { readonly step: 'add'; readonly value: string }
+  | { readonly step: 'row'; readonly address: string }
+
 /** The change the sign-in switch asks for. */
 type AxisChange = {
   readonly signIn: boolean
@@ -467,7 +479,7 @@ type SectionAction =
       readonly changes: readonly SignInSelectionChange[]
     }
 
-/** The resend note's id, referenced by the row flow's resend control while it
+/** The row flow's resend note id, referenced by the resend control while it
  * counts down. */
 const ROW_RESEND_NOTE_ID = 'identifiers-row-resend-note'
 
@@ -625,6 +637,11 @@ export function IdentifiersSection({
   const addIdentifier = useAuthnLoginAddIdentifier()
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
   const updateIdentifier = useAuthnLoginUpdateIdentifier()
+  // The email send waiting on a proof the gate requires: the add face's
+  // address, or a row's resend. The gate is read and the proof obtained
+  // only while this is set, so neither face shows a challenge until its
+  // send is asked for. Once the proof arrives the send leaves by itself.
+  const [pendingSend, setPendingSend] = useState<PendingSend | null>(null)
   // The deployment's human-verification gate and this section's proof.
   // Only an email code send presents it: a username write and every
   // verification send no message.
@@ -632,12 +649,15 @@ export function IdentifiersSection({
   // phone number: the section runs the other surface's mechanism.
   const human = useHumanVerification(session, {
     scope: 'other',
+    enabled: pendingSend !== null,
     ...(humanGate === undefined ? {} : { gate: humanGate }),
   })
-  const needsProof = humanGateNeedsProof(human.gate, 'other')
-  // Only a known gate that requires a proof blocks an email send. A gate
-  // still being read does not: the server judges the send if the document
-  // arrives late.
+  // A host that already read the discovery document hands the gate in; a
+  // standalone section learns it through the hook once a send asks for one.
+  const gateDocument = humanGate ?? human.gate
+  const needsProof = humanGateNeedsProof(gateDocument, 'other')
+  // The last-line guard of the send itself: a required proof that is not
+  // in hand keeps an email send from leaving.
   const proofBlocked = needsProof && human.proof === null
 
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
@@ -692,6 +712,10 @@ export function IdentifiersSection({
   const [rowCode, setRowCode] = useState('')
   const [rowCodeInvalid, setRowCodeInvalid] = useState(false)
   const [rowResendUntil, setRowResendUntil] = useState(0)
+  // Whether that hold came from a landed send's `resend_after`. Only that
+  // hold gets the row's note: a hold a throttled failure started is
+  // explained by the shared banner, which counts the same wait down.
+  const [rowResendFromSuccess, setRowResendFromSuccess] = useState(false)
   const [rowNow, setRowNow] = useState(() => Date.now())
 
   // Arm the sent notice's live region one commit after the code step mounts,
@@ -929,6 +953,7 @@ export function IdentifiersSection({
    * step all belong to the form that is going away. */
   function closeAdd(): void {
     setAddOpen(false)
+    setPendingSend(null)
     setSentTo(null)
     setAddValue('')
     setCode('')
@@ -1251,16 +1276,19 @@ export function IdentifiersSection({
     setRowCode('')
     setRowSentTo(null)
     setRowResendUntil(0)
+    setRowResendFromSuccess(false)
     setRowVerify({ key, value })
   }
 
   /** Settle the row flow back to closed with no trace of the attempt. */
   function closeRowVerify(): void {
+    setPendingSend(null)
     setRowVerify(null)
     setRowSentTo(null)
     setRowCode('')
     setRowCodeInvalid(false)
     setRowResendUntil(0)
+    setRowResendFromSuccess(false)
     clearFailure()
   }
 
@@ -1287,7 +1315,11 @@ export function IdentifiersSection({
         }
         const interval =
           typeof result.resend_after === 'number' ? result.resend_after : 0
-        setRowResendUntil(interval > 0 ? Date.now() + interval * 1000 : 0)
+        const held = interval > 0
+        setRowResendUntil(held ? Date.now() + interval * 1000 : 0)
+        // A successful send leaves no banner, so its own note is the wait's
+        // only visible explanation.
+        setRowResendFromSuccess(held)
         setRowNow(Date.now())
         setRowSentTo(address)
         setRowCode('')
@@ -1301,6 +1333,9 @@ export function IdentifiersSection({
         const retryAfter = retryAfterMsOf(error)
         if (retryAfter !== undefined) {
           setRowResendUntil(Date.now() + retryAfter)
+          // The failure's banner carries this hold's countdown; the row's
+          // note would repeat it.
+          setRowResendFromSuccess(false)
           setRowNow(Date.now())
         }
         throw error
@@ -1308,9 +1343,85 @@ export function IdentifiersSection({
     })
   }
 
+  const addRef = useRef(add)
+  addRef.current = add
+  const rowSendRef = useRef(rowSend)
+  rowSendRef.current = rowSend
+
+  /**
+   * Ask for an email code from the add face: send now when the gate is
+   * known to want no proof, otherwise hold the send and let the block
+   * obtain one; the effect below sends when it arrives.
+   */
+  function askAddEmail(value: string): void {
+    if (pendingSend !== null) {
+      // A send is already waiting on its proof; asking again changes nothing.
+      return
+    }
+    // The attempt begins here, whichever path it takes: the previous
+    // result must not stand beside the verification the new one renders.
+    clearFailure()
+    setFieldErrorKey(null)
+    if (
+      !human.pending &&
+      gateDocument !== null &&
+      (!needsProof || human.proof !== null)
+    ) {
+      void add('email', value)
+      return
+    }
+    setPendingSend({ step: 'add', value })
+  }
+
+  /**
+   * Ask a row to resend to the address it already shows: the same awaited
+   * path as the add face, so one proof path serves both sends.
+   */
+  function askRowSend(address: string): void {
+    if (pendingSend !== null) {
+      return
+    }
+    clearFailure()
+    setRowCodeInvalid(false)
+    if (
+      !human.pending &&
+      gateDocument !== null &&
+      (!needsProof || human.proof !== null)
+    ) {
+      void rowSend(address)
+      return
+    }
+    setPendingSend({ step: 'row', address })
+  }
+
+  // A send asked for while the gate held it leaves as soon as the gate is
+  // known and the proof it wants is in hand: the viewer's one request is
+  // not turned into a click followed by a second one. A gate still being
+  // read keeps the send waiting; a gate that wants nothing sends at once.
+  useEffect(() => {
+    if (pendingSend === null || human.pending || gateDocument === null) {
+      return
+    }
+    if (needsProof && human.proof === null) {
+      return
+    }
+    const send = pendingSend
+    setPendingSend(null)
+    if (send.step === 'add') {
+      void addRef.current('email', send.value)
+      return
+    }
+    void rowSendRef.current(send.address)
+  }, [pendingSend, human.pending, gateDocument, needsProof, human.proof])
+
   /** Submit the row flow's code. The write proves the address the send just
    * named, so the refetched row loses its unverified chip. */
   function rowVerifyCode(nextCode: string): Promise<void> {
+    // Verifying the code already in hand calls off a row resend waiting on
+    // its proof: the late token must not send a second code that invalidates
+    // the one being proved, and the wait it left behind must not block later
+    // sends.
+    setPendingSend(null)
     const address = rowSentTo ?? rowVerify?.value ?? ''
     setRowCodeInvalid(false)
     return feedback.run(async () => {
@@ -1326,6 +1437,7 @@ export function IdentifiersSection({
         setRowSentTo(null)
         setRowCode('')
         setRowResendUntil(0)
+        setRowResendFromSuccess(false)
         await invalidateProfile()
       } catch (error) {
         const failure = errorCodeOf(error)
@@ -1367,13 +1479,13 @@ export function IdentifiersSection({
       ? t('identifiers.add.value.helperEmail')
       : t('identifiers.add.value.helperUsername')
 
-  // The deployment's human-verification block, above the send control of
-  // whichever email flow is open. It renders nothing when no proof is
-  // required.
+  // The deployment's human-verification block. An email face renders it
+  // only while the send it asked for waits on a proof; it renders nothing
+  // when no proof is required.
   const humanBlock = (
     <HumanVerification
       scope="other"
-      gate={human.gate ?? undefined}
+      gate={human.gate ?? humanGate}
       proof={human.proof}
       status={human.status}
       captcha={human.captcha}
@@ -1707,8 +1819,11 @@ export function IdentifiersSection({
    * fixed; the human-verification block; the code field once a code is out;
    * and one action row whose controls keep one order -- cancel on the left,
    * the resend in the middle once a code is out, and the primary send or
-   * verify closing the row on the right. After a send the resend counts down
-   * and a note states the wait.
+   * verify closing the row on the right. After a send the resend stays
+   * disabled for the server's interval. A hold a successful send started
+   * states the wait in the row's own note; a hold a throttled failure
+   * started gets no note, because the failure's banner names that wait and
+   * counts it down.
    */
   function renderRowVerifyForm(address: string) {
     return (
@@ -1718,7 +1833,7 @@ export function IdentifiersSection({
         onSubmit={(event) => {
           event.preventDefault()
           if (rowSentTo === null) {
-            void rowSend(address)
+            askRowSend(address)
             return
           }
           if (rowCode.trim() !== '') {
@@ -1737,7 +1852,11 @@ export function IdentifiersSection({
             slotProps={{ htmlInput: { readOnly: true } }}
             disabled={addBusy}
           />
-          {humanBlock}
+          {/* The email face's block appears only while a send it asked for
+              waits on its proof. */}
+          {pendingSend !== null && pendingSend.step === 'row'
+            ? humanBlock
+            : null}
           {rowSentTo === null ? null : (
             <TextField
               fullWidth
@@ -1771,12 +1890,16 @@ export function IdentifiersSection({
             {rowSentTo === null ? null : (
               <ActionButton
                 type="button"
-                disabled={addBusy || proofBlocked || rowRemainingSeconds > 0}
+                disabled={
+                  addBusy || pendingSend !== null || rowRemainingSeconds > 0
+                }
                 loading={addIdentifier.isPending}
                 aria-describedby={
-                  rowRemainingSeconds > 0 ? ROW_RESEND_NOTE_ID : undefined
+                  rowRemainingSeconds > 0 && rowResendFromSuccess
+                    ? ROW_RESEND_NOTE_ID
+                    : undefined
                 }
-                onClick={() => void rowSend(address)}
+                onClick={() => askRowSend(address)}
               >
                 {t('verification.resend')}
               </ActionButton>
@@ -1785,7 +1908,7 @@ export function IdentifiersSection({
               <ActionButton
                 type="submit"
                 emphasis="primary"
-                disabled={addBusy || proofBlocked}
+                disabled={addBusy || pendingSend !== null}
                 loading={addIdentifier.isPending}
               >
                 {t('identifiers.add.submitEmail')}
@@ -1794,14 +1917,21 @@ export function IdentifiersSection({
               <ActionButton
                 type="submit"
                 emphasis="primary"
-                disabled={addBusy || rowCode.trim() === ''}
+                disabled={
+                  addBusy || pendingSend !== null || rowCode.trim() === ''
+                }
                 loading={verifyIdentifier.isPending}
               >
                 {t('identifiers.add.verify')}
               </ActionButton>
             )}
           </ActionRow>
-          {rowSentTo !== null && rowRemainingSeconds > 0 ? (
+          {/* A successful send's hold has no banner to explain it, so the
+              note states its wait. A throttled failure's banner counts the
+              same wait down, so this note stays away then. */}
+          {rowSentTo !== null &&
+          rowRemainingSeconds > 0 &&
+          rowResendFromSuccess ? (
             <Typography
               id={ROW_RESEND_NOTE_ID}
               variant="body2"
@@ -2195,7 +2325,7 @@ export function IdentifiersSection({
                     setFieldErrorKey('identifiers.add.invalidEmail')
                     return
                   }
-                  void add('email', address)
+                  askAddEmail(address)
                   return
                 }
                 const username = addValue.trim()
@@ -2222,6 +2352,9 @@ export function IdentifiersSection({
                       value={formKind}
                       disabled={addBusy}
                       onChange={(event) => {
+                        // Changing the kind abandons a send waiting on its
+                        // proof.
+                        setPendingSend(null)
                         setAddKind(event.target.value as AddKind)
                         setFieldErrorKey(null)
                       }}
@@ -2256,13 +2389,16 @@ export function IdentifiersSection({
                     value={addValue}
                     disabled={addBusy}
                     onChange={(event) => {
+                      // Editing the value abandons a send waiting on its
+                      // proof.
+                      setPendingSend(null)
                       setAddValue(event.target.value)
                       if (fieldErrorKey !== null) {
                         setFieldErrorKey(null)
                       }
                     }}
                   />
-                  {axis === 'contact' || formKind === 'email'
+                  {pendingSend !== null && pendingSend.step === 'add'
                     ? humanBlock
                     : null}
                   {/* Cancel leads the inline form's action row; the
@@ -2280,8 +2416,7 @@ export function IdentifiersSection({
                       emphasis="primary"
                       disabled={
                         addBusy ||
-                        ((axis === 'contact' || formKind === 'email') &&
-                          proofBlocked) ||
+                        pendingSend !== null ||
                         addValue.trim() === ''
                       }
                     >

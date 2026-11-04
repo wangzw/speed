@@ -2051,6 +2051,53 @@ describe('SignInScreen', () => {
     }
   })
 
+  it('clear a refused passkey answer once the viewer turns to another channel', async () => {
+    // A refusal belongs to the passkey entry's own attempt. Focusing another
+    // channel starts a new attempt for that entry, so the entry remounts and
+    // the refusal never stands beside the work now in progress elsewhere.
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: { kind: 'webauthn', options: { challenge: 'abc', rpId: 'x' } },
+        }),
+      [LOGIN_ANSWER]: () => {
+        throw apiError(401, 'authn.login_failed')
+      },
+    })
+    const get = vi.fn().mockResolvedValue(assertionCredential())
+    const restore = stubCredentials({ get, create: vi.fn() })
+    try {
+      renderWithProviders(
+        <SignInScreen
+          session={harness.session}
+          discovery={methodList([
+            { name: 'password', kind: 'form' },
+            { name: 'passkey', kind: 'webauthn', label: 'Passkey' },
+          ])}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Passkey' }))
+      // The ceremony returns a credential and the server refuses the answer.
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        zhCN.signInFlow.passkeyRefused,
+      )
+      // Turning to the password channel's field is that new attempt: the
+      // entry remounts without the banner it was showing.
+      await user.type(
+        screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+        MAIL,
+      )
+      await waitFor(() =>
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument(),
+      )
+    } finally {
+      restore()
+    }
+  })
+
   it('keep the ceremony failure and the server failure banner mutually exclusive', async () => {
     // One channel component renders at most one whole-attempt failure: the
     // passkey ceremony's client-side message and the channel's own wording

@@ -20,6 +20,7 @@ import {
   reviewTenantAdmin,
   reviewTenantSetting,
   reviewUnprovedTenantAdmin,
+  writeDeployConfig,
   writeReviewConfig,
   type ReviewConfigInput,
 } from './config'
@@ -29,7 +30,7 @@ import {
 // package's working directory instead. Vitest runs from the package directory.
 vi.mock('./paths', () => ({
   REVIEW_CONFIG_TEMPLATE: `${process.cwd()}/../server/review/sqlite.yaml`,
-  DEPLOY_CONFIG_TEMPLATE: `${process.cwd()}/../server/deploy/fly.yaml.tmpl`,
+  DEPLOY_CONFIG_TEMPLATE: `${process.cwd()}/../deploy/fly.yaml.tmpl`,
 }))
 
 const dirs: string[] = []
@@ -189,5 +190,24 @@ describe('the review configuration', () => {
       '    - name: globex\n      admins:\n        - operator@demo.test',
     )
     expect(body.match(/^    - name: globex$/gm)).toHaveLength(1)
+  })
+})
+
+describe('the deployment configuration', () => {
+  it('renders every placeholder, the Turnstile action included', async () => {
+    const volume = await mkdtemp(join(tmpdir(), 'speed-e2e-deploy-'))
+    dirs.push(volume)
+    const config = await writeDeployConfig({
+      volume,
+      backendPort: 41081,
+      opsPort: 41082,
+    })
+    const body = await readFile(config.path, 'utf8')
+    // A leftover placeholder fails writeDeployConfig itself; this states the
+    // whole document, the action included, is rendered.
+    expect(body).not.toMatch(/__[A-Z][A-Z0-9_]*__/)
+    // The entrypoint defaults the widget action to login, so the fixture
+    // renders the same action a deployment without the secret would carry.
+    expect(body).toContain('    action: "login"')
   })
 })

@@ -118,6 +118,7 @@ var seamSignatures = map[string][]string{
 		"Required(scope HumanScope) bool",
 		"Provider(scope HumanScope) string",
 		"SiteKey(scope HumanScope) string",
+		"Action(scope HumanScope) string",
 		"Verify(ctx context.Context, p HumanProof, scope HumanScope) error",
 	},
 	"Sessions": {

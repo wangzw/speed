@@ -179,9 +179,11 @@ func resolveOutcome(err error) string {
 	return outcomeRejected
 }
 
-// checkProof holds a send to the deployment's human-verification gate, if it
-// has one. A gate that requires nothing, and an assembly with no gate, are
-// skipped entirely: the send goes on as it did before. A proof over the field's
+// checkProof holds a send to the deployment's human-verification gate, which the
+// descriptor makes a required dependency. A gate that requires nothing is
+// skipped entirely: the send goes on as it did before. The nil check is
+// unreachable defence for a product built without one; a resolved assembly
+// always carries the gate. A proof over the field's
 // bound is a bad request before the provider is asked. The provider's own
 // failures are carried out as they are: a missing, invalid, expired or used
 // proof is ErrHumanVerificationRequired, an over-long proof is

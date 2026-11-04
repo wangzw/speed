@@ -50,6 +50,7 @@
 | `authn.sms` | [design-authn-sms](design-authn-sms.md) | 配置与设置 |
 | `authn.humanverify` | [design-authn](design-authn.md) | 配置 |
 | `authn.humanverify.pow` | [design-authn](design-authn.md) | 设置 |
+| `authn.humanverify.captcha` | [design-authn](design-authn.md) | 设置 |
 | `authn.sso` | [design-authn-sso](design-authn-sso.md) | 配置与设置 |
 | `authn.sso.saml` | [design-authn-sso](design-authn-sso.md) | 配置 |
 | `authn.impersonation` | [design-authn-impersonation](design-authn-impersonation.md) | 设置 |
@@ -133,9 +134,9 @@
 
 `authn.mfa.webauthn` 的 `Timeouts.*.Enforce` 固定为真，不做成配置项。
 
-下表是人机验证的配置项（封闭集合）。两个发送面各选一种机制：手机号面由 `authn.humanverify.phone-mode` 选择，缺省自托管人机验证码；其余面由 `authn.humanverify.mode` 选择，缺省自托管工作量证明。两个键都有缺省值，因此都不是必填。Turnstile（[REF-cloudflare-turnstile](../../../references.md)）的几项由选中 Turnstile 的面判定，不由加载器判定：两个面都关闭或运行自托管机制时，它们不必给值；任一面选 `turnstile` 时要求站点键、密钥与主机名齐备，缺任一项即 `ErrInvalidConfig`，不退回其它机制。缺省值由 `pkg/authn/humanverify/config.go` 的 `configDefaults` 给出；评审装配在 `starters/demo/server/review/sqlite.yaml` 显式把两个面写成 `off`，端到端走查夹具在 `starters/demo/web/e2e/fixtures/config.ts` 同样把两个面写成 `off`，本地回路的模板 `starters/demo/server/local.yaml.example` 也显式写两个面 `off`：`make dev` 的短信与邮件都经日志载体发送，一份证明会挡住每一次发送。部署入口 `starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_PHONE_MODE` 以 `captcha` 为缺省、`DEMO_HUMANVERIFY_MODE` 以 `pow` 为缺省。
+下表是人机验证的配置项（封闭集合）。两个发送面各选一种机制：手机号面由 `authn.humanverify.phone-mode` 选择，缺省自托管人机验证码；其余面由 `authn.humanverify.mode` 选择，缺省自托管工作量证明。两个键都有缺省值，因此都不是必填。Turnstile（[REF-cloudflare-turnstile](../../../references.md)）的几项由选中 Turnstile 的面判定，不由加载器判定：两个面都关闭或运行自托管机制时，它们不必给值；任一面选 `turnstile` 时要求站点键、密钥、主机名与 action 齐备，缺任一项即 `ErrInvalidConfig`，不退回其它机制；Turnstile 还要求键值存储，因为它在那里声明已消费的令牌。缺省值由 `pkg/authn/humanverify/config.go` 的 `configDefaults` 给出；评审装配在 `starters/demo/server/review/sqlite.yaml` 显式把两个面写成 `off`，端到端走查夹具在 `starters/demo/web/e2e/fixtures/config.ts` 同样把两个面写成 `off`，本地回路的模板 `starters/demo/server/local.yaml.example` 也显式写两个面 `off`：`make dev` 的短信与邮件都经日志载体发送，一份证明会挡住每一次发送。部署入口 `starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_PHONE_MODE` 以 `captcha` 为缺省、`DEMO_HUMANVERIFY_MODE` 以 `pow` 为缺省。
 
-**既有配置的迁移。** `authn.humanverify.mode` 只选择其余面；手机号面由新增的 `authn.humanverify.phone-mode` 选择，不写时取 `captcha`。只写过 `mode` 的配置因此按下列方式迁移：`mode` 为 `off` 只关闭其余面，要两个面都不设闸须同时写 `phone-mode: off`；`mode` 为 `turnstile` 的配置仍因手机号面缺省 `captcha` 而要求键值存储与路由挂载口，除非把 `phone-mode` 也写成 `off` 或 `turnstile`，或补齐这两项依赖；`mode` 省略时其余面运行 `pow`、手机号面运行 `captcha`。迁移是宿主可见的变更：升级后两个面都要求证明，且机制与从前不同。
+**既有配置的迁移。** `authn.humanverify.mode` 只选择其余面；手机号面由新增的 `authn.humanverify.phone-mode` 选择，不写时取 `captcha`。只写过 `mode` 的配置因此按下列方式迁移：`mode` 为 `off` 只关闭其余面，要两个面都不设闸须同时写 `phone-mode: off`；`mode` 为 `turnstile` 的配置无论手机号面取什么机制都要求键值存储，并在手机号面运行 `pow` 或 `captcha` 时另要求路由挂载口（手机号面缺省 `captcha`，因此缺省情况下两项依赖都要）；`mode` 省略时其余面运行 `pow`、手机号面运行 `captcha`。迁移是宿主可见的变更：升级后两个面都要求证明，且机制与从前不同。
 
 | 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
 |---|---|---|---|---|---|
@@ -145,7 +146,7 @@
 | `authn.humanverify.secret-key` | 字符串 | 空 | 默认 | 敏 | 认证 siteverify 调用的密钥；任一面选 `turnstile` 时必填，登记为日志的字面量脱敏规则 |
 | `authn.humanverify.verify-url` | 字符串 | `https://challenges.cloudflare.com/turnstile/v0/siteverify` | 默认 | | siteverify 端点；须是带主机的绝对 https URL |
 | `authn.humanverify.hostname` | 字符串 | 空 | 默认 | | 控件必须运行的主机名；任一面选 `turnstile` 时必填 |
-| `authn.humanverify.action` | 字符串 | 空 | 默认 | | 控件渲染时使用的 action；空接受任意 |
+| `authn.humanverify.action` | 字符串 | 空 | 默认 | | 控件渲染时使用的 action；任一面选 `turnstile` 时必填，提供方的答案必须报出它 |
 | `authn.humanverify.timeout` | `time.Duration` | `10s` | 默认 | | 一次校验的总时限，取值 1s 到 30s |
 
 下表是短信、企业 SSO 与租户准入的配置项（封闭集合）。
@@ -287,8 +288,10 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.mfa.max-per-kind` | 整数 | `5` | 1 到 20 | | |
 | `authn.mfa.pending-ttl` | `time.Duration` | `1h` | 5m 到 24h | | |
 | `authn.mfa.sensitive-min-age` | `time.Duration` | `24h` | 1h 到 720h | | 减小 |
-| `authn.humanverify.pow.difficulty` | 整数 | `18` | 16 到 22 | | 减小 |
+| `authn.humanverify.pow.difficulty` | 整数 | `20` | 18 到 22 | | 减小 |
 | `authn.humanverify.pow.challenge-ttl` | `time.Duration` | `5m` | 1m 到 15m | | 增大 |
+| `authn.humanverify.pow.global-issue-limit` | 整数 | `600` | 1 到 1000000 | | 增大 |
+| `authn.humanverify.captcha.global-issue-limit` | 整数 | `600` | 1 到 1000000 | | 增大 |
 
 补充：
 
@@ -303,7 +306,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 
 匿名口令重置复用同一组数值设置，但按用途使用独立的计数键。邮箱的按地址、按来源、按账户与全局预算，以及短信的按号码、按来源、按来源不同目的地、按来源确定失败、按用途与跨渠道上界的预算，超限时一律抑制发送并仍答同样的成功，不作为账户存在性的信号；只有同一 cookie 的重发间隔与登录的 `ip-limit` 答 429。短信的 `reset` 用途不填 `Account`，不设按账户维度。
 - `authn.mfa.sensitive-min-age` 是冒充发起与管理员重置因素所要求的因素启用年龄。
-- `authn.humanverify.pow.difficulty` 与 `challenge-ttl` 只在 `pow` 模式读取，请求期取值：设置存储缺席、读取失败或取值越出取值域时都取声明默认值，闸因此不会因设置故障停止签发挑战。`difficulty` 是证明必须达到的前导零位数，加大它使一次证明的代价指数增长；`challenge-ttl` 是一个挑战从签发到失效的时长。
+- `authn.humanverify.pow.difficulty`、`challenge-ttl` 与 `global-issue-limit` 只在 `pow` 模式读取，`authn.humanverify.captcha.global-issue-limit` 只在 `captcha` 模式读取，都是请求期取值：设置存储缺席、读取失败或取值越出取值域时都取声明默认值，闸因此不会因设置故障停止签发挑战。`difficulty` 是证明必须达到的前导零位数，加大它使一次证明的代价指数增长；`challenge-ttl` 是一个挑战从签发到失效的时长；两个 `global-issue-limit` 分别限定 `pow` 与 `captcha` 在分钟固定窗口内发给全部来源的挑战总数，`captcha` 的那个覆盖图片、滑块与音频三种形式。两者与按来源的上界同时生效，任一达到即答 429 `throttled`。
 
 下表是企业 SSO、冒充与租户准入的设置项（封闭集合）。
 
@@ -524,12 +527,12 @@ flowchart TD
 | 签名与验证密钥文件可读、解析成功、算法一致、RSA 至少 2048 位、`kid` 不重复 | `ErrInvalidKey` |
 | 每个口令表条目可解析且主体名合法；表非空 | `ErrInvalidClaim`；条目读不了时同时包住 `static.ErrMalformedHash` |
 | `authn.login.wechat-web` 与 `authn.login.wechat-mp` 各自的凭据只给一半（两项都空时方法自行关闭，不算失败）；`authn.mfa.webauthn.rp-id` 等于基址主机或其父域；短信模板覆盖本模块所需的（模板，语言，参数）组合（在 `New` 核对载体声明）；SAML 的 `sign_requests` 有 SP 密钥；`authn.account.password-memory-budget-mib` 不低于 `m` 取值域上限的两倍 | `ErrInvalidConfig` |
-| `authn.humanverify.mode` 或 `authn.humanverify.phone-mode` 不在 `off`、`pow`、`captcha`、`turnstile` 内；任一面选 `turnstile` 而 `site-key`、`secret-key`、`hostname` 为空，`verify-url` 不是带主机的绝对 https URL，或 `timeout` 不在 1s 到 30s；任一面选 `pow` 或 `captcha` 而运行没有交付键值存储或路由挂载口 | `ErrInvalidConfig` |
+| `authn.humanverify.mode` 或 `authn.humanverify.phone-mode` 不在 `off`、`pow`、`captcha`、`turnstile` 内；任一面选 `turnstile` 而 `site-key`、`secret-key`、`hostname` 或 `action` 为空，`verify-url` 不是带主机的绝对 https URL，或 `timeout` 不在 1s 到 30s；任一面选 `pow`、`captcha` 或 `turnstile` 而运行没有交付键值存储；任一面选 `pow` 或 `captcha` 而没有路由挂载口 | `ErrInvalidConfig` |
 | 纳入 `authn.login` 而没有任何 `LoginMethod`；纳入 `authn.mfa` 而没有任何 `Factor`，却设了 `global-required` 或库里已有账户登记了某个种类而该种类没有实现 | `ErrNoLoginMethod`、`ErrNoFactor` |
 | 带表模块的迁移已施加（`Start` 里探测自己的表） | `ErrNotMigrated` |
 | `Requires` 里的排他功能齐备（在构造之前） | `core.ErrMissingProvider` |
 
-阶段：`authn.gate.mount.public-url` 与 `authn.gate.mount.bases` 的每一项由需要它们的模块在自己的 `Prepare` 里判；`mount.endpoints` 的每一项是否被网关所守，以及各作用域与租户两层的覆盖关系，由网关在 `Start` 里核对；`authn.mount` 在 `Init` 里定下 `default`（无端可挑即 `ErrRoutesUnconfigured`），并在登记时拒绝落在未配置租户端上的租户作用域路由；加密列往返与迁移探测在 `Start` 里做，因为 `New` 里表还没建。人机验证的两个面各自的机制与 Turnstile 的必填项在 `Prepare` 判，`pow` 或 `captcha` 所需的键值存储在 `New` 判、路由挂载口在 `Init` 判。
+阶段：`authn.gate.mount.public-url` 与 `authn.gate.mount.bases` 的每一项由需要它们的模块在自己的 `Prepare` 里判；`mount.endpoints` 的每一项是否被网关所守，以及各作用域与租户两层的覆盖关系，由网关在 `Start` 里核对；`authn.mount` 在 `Init` 里定下 `default`（无端可挑即 `ErrRoutesUnconfigured`），并在登记时拒绝落在未配置租户端上的租户作用域路由；加密列往返与迁移探测在 `Start` 里做，因为 `New` 里表还没建。人机验证的两个面各自的机制与 Turnstile 的必填项在 `Prepare` 判，`pow`、`captcha` 或 `turnstile` 所需的键值存储在 `New` 判、`pow` 或 `captcha` 的路由挂载口在 `Init` 判。
 
 ### 加密列往返自检
 
@@ -622,8 +625,8 @@ flowchart TD
 | 网关的配置项 | 已实现 | `pkg/authn/gate/config.go` `schema`、`moduleConfig`、`(moduleConfig).resolve` |
 | 口令表后端的配置项与设置 | 已实现 | `pkg/authn/static/config.go` `schema`、`settingsSchema`、`(moduleConfig).resolve` |
 | 账户、会话、令牌、登录方式、多因素、短信、SSO 与租户准入的配置项 | 已实现 | `pkg/authn/account/config.go` `schema`、`settingsSchema`；`pkg/authn/session/config.go`；`pkg/authn/token/config.go` `schema`、`(moduleConfig).resolve`；`pkg/authn/mfa/settings.go` `settingsSchema`、`pkg/authn/mfa/totp/config.go`、`pkg/authn/mfa/webauthn/config.go`；`pkg/authn/login/config.go`；`pkg/authn/login/google/config.go`、`pkg/authn/login/github/config.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go`；`pkg/authn/mount/config.go`；`pkg/authn/sms/config.go`；`pkg/authn/sso/config.go`、`pkg/authn/sso/saml/config.go`；`pkg/tenant/admission/config.go` |
-| 人机验证的配置项与证明机制的设置项 | 已实现 | `pkg/authn/humanverify/config.go` `schema`、`(moduleConfig).resolve`、`resolveSurface`、`resolveTurnstile`；`pkg/authn/humanverify/pow/settings.go` `Schema`、`difficulty`、`challengeTTL` |
-| 其余设置项的声明与取值域 | 部分实现 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingsSchema`；`pkg/authn/mfa/settings.go`；`pkg/authn/login/config.go`；`pkg/authn/sms/settings.go` `settingsSchema`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `settingsSchema`；`pkg/authn/sso/config.go` `settingsSchema`；`pkg/authn/impersonation/settings.go` `settingsSchema`；`pkg/authn/humanverify/pow/settings.go` `Schema` |
+| 人机验证的配置项与证明机制的设置项 | 已实现 | `pkg/authn/humanverify/config.go` `schema`、`(moduleConfig).resolve`、`resolveSurface`、`resolveTurnstile`；`pkg/authn/humanverify/pow/settings.go` `Schema`、`difficulty`、`challengeTTL`、`globalIssueLimit`；`pkg/authn/humanverify/captcha/settings.go` `Schema`、`globalIssueLimit` |
+| 其余设置项的声明与取值域 | 部分实现 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingsSchema`；`pkg/authn/mfa/settings.go`；`pkg/authn/login/config.go`；`pkg/authn/sms/settings.go` `settingsSchema`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `settingsSchema`；`pkg/authn/sso/config.go` `settingsSchema`；`pkg/authn/impersonation/settings.go` `settingsSchema`；`pkg/authn/humanverify/pow/settings.go` `Schema`；`pkg/authn/humanverify/captcha/settings.go` `Schema` |
 | `authn.account.reserved-usernames` 的设置项与内置清单 | 已实现 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/account/reserved.go` |
 | 设置缺席的降级与读取出错的方向 | 已实现 | `pkg/authn/account/relax.go`、`pkg/authn/account/params.go`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingReader`、`readSetting`；`pkg/authn/mfa/settings.go`；`pkg/authn/sms/settings.go`；`pkg/tenant/admission/config.go`；`pkg/authn/sso/config.go`；`pkg/authn/impersonation/settings.go` `readTuned`、`report`；`pkg/authn/login/sms/sms.go` `signupOpen`、`reportFault`、`clearFault` |
 | 放宽开关的声明与运行期监视：`authn.account.signup`、`authn.token.check-session` | 已实现 | `pkg/authn/account/config.go` `settingsSchema`、`relax.go`；`pkg/authn/token/settings.go` `settingsSchema`、`relax.go`；`pkg/authn/login`（按路径读取 `authn.account.*`）、`pkg/authn/login/sms`（按路径读取 `authn.account.signup`） |

@@ -9,18 +9,22 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DescriptorSignInForm, EnterpriseSignIn } from './sign-in-methods.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import {
   CAPTCHA_CHALLENGE,
+  LOGIN_START,
   SSO_DISCOVER,
+  apiError,
   captchaChallenge,
   makeHarness,
+  openFlow,
   ssoProviders,
 } from '@speed/test-utils/session-harness'
-import type { AuthnHumanGate } from '@speed/auth-core'
+import { installFakeTurnstile } from '@speed/test-utils/turnstile'
+import type { AuthnFlowState, AuthnHumanGate } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import uiKitZhCN from '../../../ui-kit/src/locales/zh-CN.json' with { type: 'json' }
 
@@ -53,6 +57,45 @@ async function findNotice(text: string): Promise<HTMLElement> {
   })
   return notice as HTMLElement
 }
+
+/** The failure banner's sentence naming a whole-second wait. */
+function waitSentence(seconds: number): string {
+  const [before = '', after = ''] = zhCN.throttle.retryAfter.split('{{seconds}}')
+  return `${before}${seconds}${after}`
+}
+
+describe('EnterpriseSignIn throttled answers', () => {
+  it('name the wait of a throttled discovery in the entry banner', async () => {
+    const harness = makeHarness({
+      [SSO_DISCOVER]: () => {
+        throw apiError(429, 'authn.throttled', 3000)
+      },
+    })
+    renderWithProviders(<EnterpriseSignIn session={harness.session} />)
+    await discoverEmail()
+    const alert = await screen.findByRole('alert')
+    // The wait the answer stated is named, not a bare "try later".
+    expect(alert).toHaveTextContent(waitSentence(3))
+  })
+
+  it('name the wait of a throttled provider start', async () => {
+    const harness = makeHarness({
+      [SSO_DISCOVER]: () =>
+        ssoProviders([{ id: 'idp-1', name: 'Acme Okta', protocol: 'oidc' }]),
+      [LOGIN_START]: () => {
+        throw apiError(429, 'authn.throttled', 5000)
+      },
+    })
+    renderWithProviders(<EnterpriseSignIn session={harness.session} />)
+    await discoverEmail()
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: 'Acme Okta' }),
+    )
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(waitSentence(5))
+  })
+})
 
 describe('EnterpriseSignIn discovery notices', () => {
   it('fill a status region that stood empty with the no-match notice', async () => {
@@ -114,6 +157,13 @@ const OTHER_CAPTCHA: AuthnHumanGate = {
   other: { required: true, provider: 'captcha' },
 }
 
+/** A gate whose other surface runs Turnstile and whose phone surface is
+ * off. */
+const OTHER_TURNSTILE: AuthnHumanGate = {
+  phone: { required: false, provider: 'off' },
+  other: { required: true, provider: 'turnstile', site_key: 'site-1' },
+}
+
 describe('DescriptorSignInForm human-verification surface', () => {
   it('derives the phone surface from a phone field', async () => {
     const harness = makeHarness({
@@ -127,9 +177,25 @@ describe('DescriptorSignInForm human-verification surface', () => {
         humanGate={PHONE_CAPTCHA}
       />,
     )
-    // The form's first step sends SMS, so the phone surface's captcha is
-    // what it must present.
-    await screen.findByLabelText(uiKitZhCN.humanVerification.captcha.answerLabel)
+    // Entering the form reads and solves nothing.
+    expect(
+      harness.calls.filter(
+        (call) => call.path === '/api/v1/auth/human/captcha/challenge',
+      ),
+    ).toHaveLength(0)
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+      '13800000001',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+    // The form's first step sends SMS, so asking to start opens the phone
+    // surface's captcha.
+    await screen.findByLabelText(
+      uiKitZhCN.humanVerification.captcha.answerLabel,
+    )
     expect(
       harness.calls.filter(
         (call) => call.path === '/api/v1/auth/human/captcha/challenge',
@@ -149,7 +215,14 @@ describe('DescriptorSignInForm human-verification surface', () => {
         humanGate={OTHER_CAPTCHA}
       />,
     )
-    await screen.findByLabelText(uiKitZhCN.humanVerification.captcha.answerLabel)
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(zhCN.register.emailLabel), MAIL)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+    await screen.findByLabelText(
+      uiKitZhCN.humanVerification.captcha.answerLabel,
+    )
   })
 
   it('carries a send surface the host names', async () => {
@@ -165,6 +238,64 @@ describe('DescriptorSignInForm human-verification surface', () => {
         humanScope="phone"
       />,
     )
-    await screen.findByLabelText(uiKitZhCN.humanVerification.captcha.answerLabel)
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      MAIL,
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+    await screen.findByLabelText(
+      uiKitZhCN.humanVerification.captcha.answerLabel,
+    )
+  })
+
+  it('keeps the submit disabled while the deferred start is in flight', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      let releaseStart: ((reply: AuthnFlowState) => void) | null = null
+      const harness = makeHarness({
+        [LOGIN_START]: () =>
+          new Promise<AuthnFlowState>((resolve) => {
+            releaseStart = resolve
+          }),
+      })
+      renderWithProviders(
+        <DescriptorSignInForm
+          session={harness.session}
+          method="email-code"
+          fields={[{ name: 'email', kind: 'text', required: true }]}
+          humanGate={OTHER_TURNSTILE}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.type(screen.getByLabelText(zhCN.register.emailLabel), MAIL)
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      )
+      // The start waits on its proof: the submit gives way to the block.
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      act(() => {
+        fake.token('token-1')
+      })
+      // The proof arrived and the deferred start left; its request is still
+      // in flight, so the submit that came back must stay disabled.
+      const submit = await screen.findByRole('button', {
+        name: zhCN.signInFlow.submit,
+      })
+      await waitFor(() => expect(submit).toBeDisabled())
+      // A stray activation cannot begin a second flow while the first
+      // start is in flight.
+      fireEvent.click(submit)
+      expect(
+        harness.calls.filter((call) => call.path === '/api/v1/auth/flows'),
+      ).toHaveLength(1)
+      act(() => {
+        releaseStart?.(openFlow())
+      })
+    } finally {
+      fake.restore()
+    }
   })
 })

@@ -42,15 +42,16 @@ func readBody(t *testing.T, document string) (resolved, error) {
 	return cfg.resolve()
 }
 
-// turnstileSection is a Turnstile section complete enough to resolve: the mode
-// and the three items its provider requires. A case removes one to see it
-// refused.
+// turnstileSection is a Turnstile section complete enough to resolve: the mode,
+// the site key, the secret, the expected hostname and the action its provider
+// requires. A case removes one to see it refused.
 func turnstileSection() map[string]any {
 	return map[string]any{
 		"mode":       ModeTurnstile,
 		"site-key":   "1x00000000000000000000AA",
 		"secret-key": "turnstile-secret-2f7a91c4",
 		"hostname":   "login.example.com",
+		"action":     "login",
 	}
 }
 
@@ -99,6 +100,7 @@ func TestEveryModeInTheClosedSetResolves(t *testing.T) {
 						"site-key":   "1x00000000000000000000AA",
 						"secret-key": "turnstile-secret-2f7a91c4",
 						"hostname":   "login.example.com",
+						"action":     "login",
 					}
 				}
 				cfg, err := readBody(t, body(t, section))
@@ -187,10 +189,10 @@ func TestTurnstileDefaultsTheVerifyEndpointAndTimeout(t *testing.T) {
 	}
 }
 
-// The Turnstile mode cannot run without the site key, the secret and the
-// expected hostname, and the failure names the item to supply.
-func TestTurnstileNeedsItsSiteKeySecretAndHostname(t *testing.T) {
-	for _, item := range []string{"site-key", "secret-key", "hostname"} {
+// The Turnstile mode cannot run without the site key, the secret, the expected
+// hostname and the action, and the failure names the item to supply.
+func TestTurnstileNeedsItsSiteKeySecretHostnameAndAction(t *testing.T) {
+	for _, item := range []string{"site-key", "secret-key", "hostname", "action"} {
 		t.Run(item, func(t *testing.T) {
 			section := turnstileSection()
 			delete(section, item)
@@ -206,11 +208,11 @@ func TestTurnstileNeedsItsSiteKeySecretAndHostname(t *testing.T) {
 }
 
 // The Turnstile credential rule holds per surface: the phone surface selecting
-// the mechanism without its site key, secret or hostname stops the startup
-// naming the item, exactly as the other surface's selection does. The surfaces
-// share the one credential set, so a phone-only selection is held to all three.
+// the mechanism without its site key, secret, hostname or action stops the
+// startup naming the item, exactly as the other surface's selection does. The
+// surfaces share the one set, so a phone-only selection is held to all four.
 func TestTurnstileOnThePhoneSurfaceNeedsItsCredentials(t *testing.T) {
-	for _, item := range []string{siteKeyItem, secretKeyItem, hostnameItem} {
+	for _, item := range []string{siteKeyItem, secretKeyItem, hostnameItem, actionItem} {
 		t.Run(item, func(t *testing.T) {
 			section := turnstileSection()
 			delete(section, modeItem)
@@ -240,6 +242,34 @@ func TestTurnstileOnThePhoneSurfaceNeedsItsCredentials(t *testing.T) {
 			t.Errorf("the other surface's mode is %q, want its default %q", cfg.other.mode, ModePoW)
 		}
 	})
+}
+
+// The action is part of the check, not an optional refinement: a surface that
+// selects Turnstile without one would accept a token obtained under any action,
+// so the startup stops naming the item.
+func TestTurnstileNeedsItsAction(t *testing.T) {
+	section := turnstileSection()
+	delete(section, actionItem)
+	_, err := readBody(t, body(t, section))
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("a Turnstile section without an action resolved with %v, want ErrInvalidConfig", err)
+	}
+	if !strings.Contains(err.Error(), ConfigNamespace+"."+actionItem) {
+		t.Errorf("the failure %q does not name %s.%s", err, ConfigNamespace, actionItem)
+	}
+}
+
+// The action the deployment configures is the action the surface reports to a
+// client, so the widget is rendered with the one the provider's answer is
+// checked against.
+func TestTurnstileCarriesItsActionToTheSurface(t *testing.T) {
+	cfg, err := readBody(t, body(t, turnstileSection()))
+	if err != nil {
+		t.Fatalf("resolving a Turnstile section: %v", err)
+	}
+	if got, want := cfg.other.action, "login"; got != want {
+		t.Errorf("the other surface's action is %q, want %q", got, want)
+	}
 }
 
 // The siteverify endpoint is an https URL: the restricted egress client speaks

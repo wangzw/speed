@@ -31,6 +31,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/account"
 	"github.com/vislake/speed/pkg/authn/gate"
+	"github.com/vislake/speed/pkg/authn/humanverify"
 	"github.com/vislake/speed/pkg/authn/login"
 	passmethod "github.com/vislake/speed/pkg/authn/login/password"
 	"github.com/vislake/speed/pkg/authn/mfa"
@@ -319,6 +320,9 @@ func runSummary(t *testing.T, use func(h *summaryHost)) {
 				"issuer":           "https://auth.example.com",
 				"signing-key-file": keyPath,
 			},
+			// The gate is a required dependency of the login engine, and these cases
+			// present no proof: both surfaces run the off mechanism.
+			"humanverify": map[string]any{"mode": "off", "phone-mode": "off"},
 		},
 	}
 	body, err := json.Marshal(document)
@@ -329,6 +333,7 @@ func runSummary(t *testing.T, use func(h *summaryHost)) {
 	modules := []core.Module{
 		sqlite.Module(), logModule, kvModule, speedhttp.Module(),
 		eventmemory.Module(), settings.Module(), mount.Module(), gate.Module(),
+		humanverify.Module(),
 		account.Module(), session.Module(), mfa.Module(), login.Module(),
 		passmethod.Module(), token.Module(),
 	}

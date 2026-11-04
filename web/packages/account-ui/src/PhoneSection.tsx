@@ -29,6 +29,8 @@
  * code named. A refusal resolves through the code whitelist into the
  * section's write-feedback region beneath the controls (a number another
  * account holds is the 409 conflict; a wrong code is the 401 login-failed).
+ * A throttled refusal's banner names the wait the answer stated and counts
+ * it down, so the section renders no separate wait note.
  * A verified number refetches the profile so the identifiers surface shows
  * it, and the region confirms with a message naming the number. The "code
  * sent" notice is the code step's own state, not a settled action, so it
@@ -43,14 +45,16 @@
  *
  * The send also presents the deployment's human-verification proof when
  * its gate requires one. The gate comes from the methods document (or
- * from a `humanGate` a host already read), the block stands above the
- * send control, and the control stays disabled until a proof is ready.
- * The proof is single-use, so every attempt -- a refusal included -- is
- * followed by a fresh one. The verify step sends nothing and presents
- * none.
+ * from a `humanGate` a host already read). The block appears only once a
+ * send has been asked for: entering a number shows no challenge, and the
+ * send the viewer asked for leaves by itself when the proof arrives. The
+ * control that asked gives way to the block while the proof is
+ * outstanding, so one action is on screen at a time. The proof is
+ * single-use, so every attempt -- a refusal included -- is followed by a
+ * fresh one. The verify step sends nothing and presents none.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -111,16 +115,23 @@ export function PhoneSection({
   // The host's preferred starting country when one is provided, otherwise
   // the browser-locale answer (ui-kit's context does the fallback).
   const defaultCountry = usePhoneCountryDefault()
+  // The number a send the viewer asked for is waiting on, because the gate
+  // wants a proof this client does not hold yet. The gate is read and the
+  // proof obtained only while this is set, so the number step shows no
+  // challenge until its send is asked for. Once the proof arrives the send
+  // the viewer already asked for leaves by itself.
+  const [pendingSend, setPendingSend] = useState<string | null>(null)
   // The deployment's human-verification gate and this section's proof. The
   // send presents it; the verify step sends nothing, so it does not.
   const human = useHumanVerification(session, {
     scope: 'phone',
+    enabled: pendingSend !== null,
     ...(humanGate === undefined ? {} : { gate: humanGate }),
   })
-  const needsProof = humanGateNeedsProof(human.gate, 'phone')
-  // Only a known gate that requires a proof blocks the send. A gate still
-  // being read does not: the form has long been filled by then, and the
-  // server judges the send if the document arrives late.
+  // A host that already read the discovery document hands the gate in; a
+  // standalone section learns it through the hook once a send asks for one.
+  const gateDocument = humanGate ?? human.gate
+  const needsProof = humanGateNeedsProof(gateDocument, 'phone')
   const proofBlocked = needsProof && human.proof === null
 
   const [country, setCountry] = useState(defaultCountry)
@@ -159,12 +170,12 @@ export function PhoneSection({
   }, [sentTo])
 
   function sendCode(nextPhone: string): Promise<void> {
-    // A required proof that is not ready keeps the send from leaving. A gate
-    // still being read does not: the server judges a send that races the
-    // read.
+    // A required proof that is not ready yet keeps the send from leaving:
+    // the block above the control is already showing why.
     if (proofBlocked) {
       return Promise.resolve()
     }
+    setPendingSend(null)
     return feedback.run(async () => {
       const presented = needsProof ? human.proof : null
       try {
@@ -192,6 +203,49 @@ export function PhoneSection({
       return null
     })
   }
+
+  const sendCodeRef = useRef(sendCode)
+  sendCodeRef.current = sendCode
+
+  /**
+   * Ask for a code: send now when the gate is known to want no proof,
+   * otherwise hold the send and let the block obtain one; the effect that
+   * watches the postponed send sends when it arrives.
+   */
+  function askToSend(phone: string): void {
+    if (pendingSend !== null) {
+      // A send is already waiting on its proof; asking again changes nothing.
+      return
+    }
+    // The attempt begins here, whichever path it takes: the previous
+    // result must not stand beside the verification the new one renders.
+    feedback.reset()
+    if (
+      !human.pending &&
+      gateDocument !== null &&
+      (!needsProof || human.proof !== null)
+    ) {
+      void sendCode(phone)
+      return
+    }
+    setPendingSend(phone)
+  }
+
+  // A send asked for while the gate held it leaves as soon as the gate is
+  // known and the proof it wants is in hand: the viewer's one request is
+  // not turned into a click followed by a second one. A gate still being
+  // read keeps the send waiting; a gate that wants nothing sends at once.
+  useEffect(() => {
+    if (pendingSend === null || human.pending || gateDocument === null) {
+      return
+    }
+    if (needsProof && human.proof === null) {
+      return
+    }
+    const phone = pendingSend
+    setPendingSend(null)
+    void sendCodeRef.current(phone)
+  }, [pendingSend, human.pending, gateDocument, needsProof, human.proof])
 
   function verifyCode(nextCode: string): Promise<void> {
     // The step shows the verify controls only after a send, so the number
@@ -245,7 +299,7 @@ export function PhoneSection({
                 return
               }
               setPhoneAttempted(false)
-              void sendCode(phone)
+              askToSend(phone)
             } else {
               void verifyCode(code)
             }
@@ -263,8 +317,14 @@ export function PhoneSection({
             <PhoneNumberField
               country={country}
               nationalNumber={nationalNumber}
-              onCountryChange={setCountry}
-              onNationalNumberChange={setNationalNumber}
+              onCountryChange={(next) => {
+                setPendingSend(null)
+                setCountry(next)
+              }}
+              onNationalNumberChange={(next) => {
+                setPendingSend(null)
+                setNationalNumber(next)
+              }}
               countryLabel={t('phone.country.label')}
               numberLabel={t('phone.phone.label')}
               numberHelperText={t('phone.phone.helper')}
@@ -272,33 +332,44 @@ export function PhoneSection({
               disabled={busy}
               autoComplete="tel"
             />
-            <HumanVerification
-              scope="phone"
-              gate={human.gate ?? undefined}
-              proof={human.proof}
-              status={human.status}
-              captcha={human.captcha}
-              onToken={human.adoptToken}
-              onRetry={human.retry}
-              onRefreshCaptcha={human.refreshCaptcha}
-              onRequestAudio={human.requestAudio}
-              audioRetryAfterSeconds={human.audioRetryAfterSeconds}
-              disabled={busy}
-            />
-            <ActionRow sx={{ width: '100%' }}>
-              {onCancel === undefined ? null : (
-                <ActionButton type="button" disabled={busy} onClick={onCancel}>
-                  {t('phone.close')}
-                </ActionButton>
-              )}
-              <ActionButton
-                type="submit"
-                emphasis="primary"
-                disabled={busy || proofBlocked || nationalNumber === ''}
-              >
-                {t('phone.send')}
-              </ActionButton>
-            </ActionRow>
+            {/* The first send needs a proof too, so the block appears only
+                after the viewer asks for that send and no proof is in hand. */}
+            {pendingSend !== null ? (
+              <HumanVerification
+                scope="phone"
+                gate={human.gate ?? humanGate}
+                proof={human.proof}
+                status={human.status}
+                captcha={human.captcha}
+                onToken={human.adoptToken}
+                onRetry={human.retry}
+                onRefreshCaptcha={human.refreshCaptcha}
+                onRequestAudio={human.requestAudio}
+                audioRetryAfterSeconds={human.audioRetryAfterSeconds}
+                disabled={busy}
+              />
+            ) : null}
+            {onCancel === undefined && pendingSend !== null ? null : (
+              <ActionRow sx={{ width: '100%' }}>
+                {onCancel === undefined ? null : (
+                  <ActionButton type="button" disabled={busy} onClick={onCancel}>
+                    {t('phone.close')}
+                  </ActionButton>
+                )}
+                {/* The control that asked gives way to the block while the
+                    proof is outstanding, so one action is on screen at a
+                    time. */}
+                {pendingSend === null ? (
+                  <ActionButton
+                    type="submit"
+                    emphasis="primary"
+                    disabled={busy || nationalNumber === ''}
+                  >
+                    {t('phone.send')}
+                  </ActionButton>
+                ) : null}
+              </ActionRow>
+            )}
           </>
         ) : (
           <>

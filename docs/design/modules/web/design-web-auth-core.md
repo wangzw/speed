@@ -164,6 +164,19 @@ export function featurePresence(state: FeatureState):
   | { readonly state: 'ready'; readonly has: (name: string) => boolean }
 export function useStepUp(session: AuthSession, active: boolean, onElevated: () => void, method?: string, returnPath?: string, excludeFactorId?: string): StepUpState
 
+export interface StepUpState {
+  readonly phase: StepUpPhase
+  readonly step: AuthnStep | null
+  readonly seq: number | null
+  readonly submitting: boolean
+  readonly pending: boolean          // 答复被扣住：只在此时读门槛并取得证明，证明到手后答复自行发出
+  readonly errorCode: string | null
+  readonly retryAfterSeconds: number | null
+  readonly human: HumanVerification
+  readonly humanScope: HumanScope
+  readonly answer: (answer: AuthnFlowAnswer) => void
+}
+
 export function useStepUpGate<A>(
   onRetry: (action: A) => void,
   isShortfall?: (error: unknown) => boolean,
@@ -189,7 +202,7 @@ export function isTenantAdmissionRefusal(error: unknown): boolean
 - **`useFeature` 是纯集合查询，fail-closed**：只在特性态为 `ready` 且集合含该名时为 true；`none`、`pending`、`failed` 与接上会话之前都为 false。参数取 `FeatureName`，拼错的名字编译失败。
 - **`useFeatureState` 交出特性态本身**，接上会话之前为 `none`。宿主需要区分读取中、读取失败与特性缺席时用它。
 - **`featurePresence` 把特性态映射为路由层的在场判定。** 它是纯函数：`ready` 映射为带 `has` 的就绪态，`failed` 映射为失败态，`pending` 与 `none` 都映射为读取中——匿名时没有特性态，按失败即关处理。它的结果与 [route-kit](design-web-route-kit.md) 的 `RoutePresence` 结构相同，本包不 import route-kit。
-- **`useStepUp` 驱动一次步进认证。** `active` 为真时在入参的会话上开一个 `purpose: 'step-up'` 的流程并停在首步；入参可带 `method`：账户没有启用因素时，步进要求的是重新证明第一因素，调用方带上会话建立时用的第一因素的方法名（短信会话带 `sms`，口令会话带 `password`），流程停在该方法的首步，完成后提权刷新认证时刻；账户有因素时不带 `method`；`StepUpState` 的 `answer` 逐步转交答复；流程落到就绪状态、下一步是 `complete` 时，这一步没有输入，hook 自动以 `{step: 'complete'}` 提交它（同一 `seq` 只自动提交一次，提交期间 `submitting` 为真）；自动提交被拒时停在 `failed` 并把该步留在 `step` 上，由调用方渲染该步自带的确认按钮手动重试；流程认定加强完成时 `onElevated` 触发一次，调用方据此重跑被拒的动作；`active` 转为假时放弃在途流程。会话以 401 拒绝开启步进时（有因素，但没有能强化本会话的），`phase` 停在 `unavailable`；其余失败（400 等）停在 `failed` 并带错误码。答复或起手被 429（或 503）拒绝并带 `Retry-After` 时，`StepUpState.retryAfterSeconds` 给出该等待的剩余整秒数并每秒递减；到点后该字段清零、停着的步骤恢复可提交，引起它的 `errorCode` 保留并渲染该码无秒数的句子，下一次答复或重开时清掉。本 hook 不登录、不导航，不读接上的会话，只用入参的会话。会发送验证消息的答复——选中短信第二因素，或短信第一因素复证提交手机号——先出示部署要求的证明；`StepUpState.human` 与 `StepUpState.humanScope` 暴露门槛、当前步骤所属的面与证明，调用方据此在会发送的步骤上渲染证明块，证明出示后消耗。
+- **`useStepUp` 驱动一次步进认证。** `active` 为真时在入参的会话上开一个 `purpose: 'step-up'` 的流程并停在首步；入参可带 `method`：账户没有启用因素时，步进要求的是重新证明第一因素，调用方带上会话建立时用的第一因素的方法名（短信会话带 `sms`，口令会话带 `password`），流程停在该方法的首步，完成后提权刷新认证时刻；账户有因素时不带 `method`；`StepUpState` 的 `answer` 逐步转交答复；流程落到就绪状态、下一步是 `complete` 时，这一步没有输入，hook 自动以 `{step: 'complete'}` 提交它（同一 `seq` 只自动提交一次，提交期间 `submitting` 为真）；自动提交被拒时停在 `failed` 并把该步留在 `step` 上，由调用方渲染该步自带的确认按钮手动重试；流程认定加强完成时 `onElevated` 触发一次，调用方据此重跑被拒的动作；`active` 转为假时放弃在途流程。会话以 401 拒绝开启步进时（有因素，但没有能强化本会话的），`phase` 停在 `unavailable`；其余失败（400 等）停在 `failed` 并带错误码。答复或起手被 429（或 503）拒绝并带 `Retry-After` 时，`StepUpState.retryAfterSeconds` 给出该等待的剩余整秒数并每秒递减；到点后该字段清零、停着的步骤恢复可提交，引起它的 `errorCode` 保留并渲染该码无秒数的句子，下一次答复或重开时清掉。本 hook 不登录、不导航，不读接上的会话，只用入参的会话。会发送验证消息的答复——选中短信第二因素，或短信第一因素复证提交手机号——先出示部署要求的证明：`answer` 把这条答复扣住，只在 `StepUpState.pending` 为真时读门槛并取得证明，证明到手后自行转交这条答复；`StepUpState.human` 与 `StepUpState.humanScope` 暴露门槛、当前步骤所属的面与证明，调用方只在 `pending` 为真时渲染证明块并让该步自己的动作让位，证明出示后消耗，不发消息的答复不消耗证明。
 - **特性的 hook 与 `featurePresence` 只由宿主使用。** 能力 UI 包不调用它们，特性在场信息由宿主经属性或上下文组件交给它们（[web](design-web.md) 的「特性门控」、ADR-web-feature-state）。
 - **`useStepUpGate` 记住一次被步进拒绝的动作并在挑战通过后原样重放它一次。** `arm` 记下动作（表单字段、行标识、重发写入的闭包），`succeed` 经 `onRetry` 重放一次并清空，`cancel` 什么都不重放；`intercept(error, action)` 是失败侧的同一条接线：判别为步进强度不足时记下动作、置 `open` 并答 true，其余失败答 false 且不动门控。缺省判别认平台自己的两个拒绝码——`status` 为 401 且 `code` 为 `authn.insufficient_user_authentication`（本地多因素）或 `authn.sso_required`（经租户的提供方重新登录）；只看 401 不够，一个结束了会话的 401 没有可提升的会话。门控用 `stepUpReasonOf(code)` 记下原因是 `'mfa'` 还是 `'sso'`，对话框据此开本地因素流程或只给企业单点登录的重新登录出口；`arm` 的第二个入参可显式给出原因，缺省为 `'mfa'`。会话自身已能区分两者的调用方把 `session.isStepUpShortfall` 作为第二入参传入；它的错误仍带这两个码之一，故原因照读，其余码退回本地因素。`onRetry` 与 `isShortfall` 经 ref 读取，调用方每次渲染传新闭包不会改变 `succeed` 的身份。
 - **`isTenantAdmissionRefusal` 按结构判定准入层的裸 404。** 准入层拒绝一个调用者不可进入的租户时答裸 404（不带模块码），`@speed/api-client` 为它合成保留码 `client.http.404`；模块自己的类型化 404（`objectstore.not_found` 等）在同一状态上保留模块码。判定读码不读状态：`code` 为 `client.http.404` 即为准入拒绝；或 `status` 为 404 且 `code` 缺失或落在保留的 `client.` 命名空间里（合成之前同一应答的形态）。带模块码的 404 一律不是它。
@@ -236,6 +249,7 @@ export function humanGateNeedsProof(
 ): boolean
 export function parseCaptchaChallenge(body: unknown): HumanCaptchaChallenge
 export function requestPowProof(
+  scope: HumanScope,
   requestChallenge?: () => Promise<ChallengeResponse>,
 ): Promise<string>
 export function powProofFromChallenge(answer: ChallengeResponse): string | null
@@ -245,13 +259,13 @@ export type AuthnHumanGate = AuthnLoginHuman
 export type AuthnHumanSurfaceGate = AuthnLoginHumanGate
 ```
 
-- **门槛按面取自发现文档的 `human`。** `AuthnHumanGate` 是生成模型 `AuthnLoginHuman`，两面的门槛各是 `AuthnHumanSurfaceGate`（生成模型 `AuthnLoginHumanGate`）：`required` 表示该面的每次发送是否必须先交证明，`provider` 是 `off`、`pow`、`captcha` 或 `turnstile`，`site_key` 是 Turnstile（[REF-cloudflare-turnstile](../../../references.md)）控件渲染用的公开标识，`off`、`pow` 与 `captcha` 不带。`humanSurfaceGate` 按面取出门槛；文档省略 `human` 时两面都视为 `{required: false, provider: 'off'}`，比服务端新的客户端因此不会拒绝旧服务端的应答；旧服务端给出平铺的 `required`、`provider` 与 `site_key` 时，同一份门槛映射到两面；`human` 在场时两面的 `required` 与 `provider` 必填，`site_key` 出现时必须是字符串。宿主已经把文档读到手时经 `options.gate` 传入，hook 不再读一次。
-- **`scope` 选择面。** 手机号面覆盖四条短信发送（登录、第二因素、手机登记与匿名短信重置），其余面覆盖不落地到手机号的发送（匿名重置的邮箱分支与自助添加邮箱）。一次发送命名自己所在的面；`scope` 改变时证明与挑战都属于原面，一并丢弃并由新面取得自己的，发现文档已经读到则不重读。
-- **`pow` 在 Worker 中求解。** `requestPowProof` 读 `POST /api/v1/auth/human/challenge`，校验应答的 `provider: 'pow'`、`algorithm: 'sha256'`、挑战与难度，再找满足难度的 nonce；证明是 `challenge.nonce`，与提供方 `Verify` 的解析结构一致。求解默认在 Web Worker 中运行（`src/pow.ts` 的紧凑 SHA-256，难度来自挑战）；平台没有 `Worker`、Worker 构造失败或加载失败时在调用线程求解。`powProofFromChallenge` 是不经 Worker 的同步入口，`solvePowChallenge` 是纯求解器。
+- **门槛按面取自发现文档的 `human`。** `AuthnHumanGate` 是生成模型 `AuthnLoginHuman`，两面的门槛各是 `AuthnHumanSurfaceGate`（生成模型 `AuthnLoginHumanGate`）：`required` 表示该面的每次发送是否必须先交证明，`provider` 是 `off`、`pow`、`captcha` 或 `turnstile`，`site_key` 与 `action` 是 Turnstile（[REF-cloudflare-turnstile](../../../references.md)）控件用的公开值——控件以 `site_key` 渲染，以 `action` 渲染，提供方的应答必须带同名动作——`off`、`pow` 与 `captcha` 不带。`humanSurfaceGate` 按面取出门槛；文档省略 `human` 时两面都视为 `{required: false, provider: 'off'}`，比服务端新的客户端因此不会拒绝旧服务端的应答；旧服务端给出平铺的 `required`、`provider` 与 `site_key` 时，同一份门槛映射到两面；`human` 在场时两面的 `required` 与 `provider` 必填，`site_key` 与 `action` 出现时必须是字符串。宿主已经把文档读到手时经 `options.gate` 传入，hook 不再读一次。
+- **`scope` 选择面。** 手机号面覆盖四条短信发送（登录、第二因素、手机登记与匿名短信重置），其余面覆盖不落地到手机号的发送（匿名重置的邮箱分支与自助添加邮箱）。一次发送命名自己所在的面；挑战请求总带 `scope`，服务端把证明绑定到该面，一面取得的挑战不能在另一面使用；`scope` 改变时证明与挑战都属于原面，一并丢弃并由新面取得自己的，发现文档已经读到则不重读。
+- **`pow` 在 Worker 中求解。** `requestPowProof(scope)` 读 `POST /api/v1/auth/human/challenge`，校验应答的 `provider: 'pow'`、`algorithm: 'sha256'`、挑战与难度，再找满足难度的 nonce；证明是 `challenge.nonce`，与提供方 `Verify` 的解析结构一致。求解默认在 Web Worker 中运行（`src/pow.ts` 的紧凑 SHA-256，难度来自挑战）；平台没有 `Worker`、Worker 构造失败或加载失败时在调用线程求解。`powProofFromChallenge` 是不经 Worker 的同步入口，`solvePowChallenge` 是纯求解器。
 - **`captcha` 由本包取挑战。** hook 读 `POST /api/v1/auth/human/captcha/challenge`，默认请求不带 `form`，由服务端在图片与滑块之间轮换；唯一能请求且会被采纳的形式是作为无障碍替代的 `audio`，只经 `requestAudio` 请求。经 `parseCaptchaChallenge` 校验应答：`provider` 为 `captcha`、`form` 已知、`id`、`instruction` 与整数的 `expires_in` 非空，且对应形式带 media 路径。挑战存进状态并经 `captcha` 交给块渲染，证明是 `<挑战标识>.<答案>`。`refreshCaptcha` 不指形式，换取当前选择下的下一个挑战：未被无障碍入口选中时由服务端轮换，选中过音频后仍是音频。
 - **无障碍入口的拒绝。** 音频形式在服务端按来源单独计数，上界比图片与滑块的轮换更严（一分钟一个），因此 `requestAudio` 的 429 来自音频自己的额度，不影响视觉挑战。`requestAudio` 被 429 且应答带可解析的 `Retry-After` 时，被拒的只是这次入口请求：在屏挑战保留、`status` 仍为 `ready`，等待按秒向上取整落在 `audioRetryAfterSeconds`，取得新挑战后清空。没有在屏挑战时该拒绝按一般的取挑战失败处理，停在 `failed`。
 - **`turnstile` 的 token 由控件交出。** 本包只经 `adoptToken` 存下 ui-kit 控件交来的 token，或在其过期、失败时清空；token 的取得与重置于本包无涉。
-- **证明一次性。** 每次发送之后调用 `consume()`：证明清空，`pow` 立刻取一份新的，`captcha` 丢弃旧挑战并取得新的，`turnstile` 的控件在证明清空时重置。`humanGateNeedsProof` 只对该面为 `pow`、`captcha` 或 `turnstile` 的门槛答真；未知机制不阻塞发送，由服务端判定。
+- **证明一次性。** 每次发送之后调用 `consume()`：证明清空，`pow` 与 `captcha` 的挑战一并丢弃，`turnstile` 的控件在证明清空时重置。此时 hook 已被停用（这一次答复已经发出，调用方不再扣着它），故新的证明不在消耗后立即取得，而是在 hook 为下一条发送重新启用时才取得。`humanGateNeedsProof` 只对该面为 `pow`、`captcha` 或 `turnstile` 的门槛答真；未知机制不阻塞发送，由服务端判定。
 - **发现读失败视为 off，求解失败停在 `failed`。** 发现文档读失败不阻塞发送（服务端仍判定）；挑战读取或求解失败时 `status` 为 `failed`，控件提供重试，发送在取得证明之前保持不可用。`pending` 表示发现读仍在途。
 - **`enabled` 决定是否读发现、求证明。** 缺省为真；持有未激活界面的调用方（关闭的对话框、尚未开启的挑战）传假，hook 不读方法文档也不求解，停在 off 且 `pending` 为假，直到 `enabled` 变真才读一次。
 
@@ -365,7 +379,7 @@ stateDiagram-v2
 | 企业提供方 | `AuthnSsoProvider` | 生成模型：`id`、`name`、`protocol`（oidc 或 saml，[REF-openid-connect-core](../../../references.md)、[REF-saml2](../../../references.md)） |
 | 已校验的签发应答 | `IssuedTokens`（内部） | `accessToken`、`refreshToken`（未铸造时为 null）、`principal` |
 | 落败的竞态 | `OperationSupersededError` | 带当前（胜者）快照的拒绝 |
-| 人机门槛 | `AuthnHumanGate` | 生成模型 `AuthnLoginHuman`：`phone` 与 `other` 两面各一份 `AuthnHumanSurfaceGate`（`required`、`provider` 取 `off`／`pow`／`captcha`／`turnstile` 与 `site_key`，Turnstile 控件用）；文档省略时两面都视为 off |
+| 人机门槛 | `AuthnHumanGate` | 生成模型 `AuthnLoginHuman`：`phone` 与 `other` 两面各一份 `AuthnHumanSurfaceGate`（`required`、`provider` 取 `off`／`pow`／`captcha`／`turnstile`，Turnstile 控件用 `site_key` 与 `action`）；文档省略时两面都视为 off |
 | 人机证明 | `HumanVerification` | 按面的门槛、发现读在途、当前证明、求解状态、按面的挑战与 `adoptToken`／`retry`／`consume`／`refreshCaptcha` |
 | 租户 query 键 | `TenantQueryKey`（本项） | `tenantId` 与以租户标识为最外层段的键 |
 

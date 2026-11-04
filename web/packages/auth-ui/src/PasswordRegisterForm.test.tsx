@@ -12,8 +12,9 @@
  * keeps the opened account (notice plus a retry that re-runs only the
  * login), a settled auto-login shows the signed-in line, a parked step
  * replaces the fields, a superseded answer stays quiet, a throwing start
- * gate opens nothing, a stated Retry-After holds the submit until it
- * elapses, the submit is busy for the flight, and the tree passes axe.
+ * gate opens nothing, a stated Retry-After counts down while it holds the
+ * submit and leaves the banner after it elapses, the submit is busy for the
+ * flight, and the tree passes axe.
  * Text expectations read the bundle values, never inline language.
  */
 
@@ -41,6 +42,22 @@ const REGISTER = 'POST /api/v1/auth/register'
 const USERNAME = 'ada'
 const MAIL = 'ada@example.com'
 const PASSWORD = 's3cret-pass'
+
+/** The failure banner's sentence naming a whole-second wait. */
+function waitSentence(seconds: number): string {
+  const [before = '', after = ''] = zhCN.throttle.retryAfter.split('{{seconds}}')
+  return `${before}${seconds}${after}`
+}
+
+/** The alert's painted (aria-hidden) sentence, which follows the countdown. */
+function visibleSentence(alert: HTMLElement): HTMLElement | null {
+  return alert.querySelector<HTMLElement>('span[aria-hidden="true"]')
+}
+
+/** The alert's accessible (clipped) sentence, which never changes. */
+function stableSentence(alert: HTMLElement): HTMLElement | null {
+  return alert.querySelector<HTMLElement>('span:not([aria-hidden])')
+}
 
 interface RegisterLabels {
   readonly username: string
@@ -570,7 +587,7 @@ describe('PasswordRegisterForm', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('disable the submit for a stated Retry-After wait and re-enable it when it elapses', async () => {
+  it('count a stated Retry-After wait down, re-enable the submit and keep the banner', async () => {
     vi.useFakeTimers()
     try {
       const harness = makeHarness({
@@ -605,22 +622,42 @@ describe('PasswordRegisterForm', () => {
         name: zhCN.register.submit,
       })
       expect(submit).toBeDisabled()
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        zhCN.register.retryAfter.replace('{{seconds}}', '3'),
-      )
-      // The wait ends on its own: the key re-enables and the stale
-      // throttle banner goes away. One millisecond before the stated
-      // boundary the control is still disabled, so an implementation
-      // that waits less than the header says cannot pass.
+
+      const alert = screen.getByRole('alert')
+      // The banner names the wait the answer stated; the sentence assistive
+      // technology reads is fixed at that starting point.
+      expect(visibleSentence(alert)).toHaveTextContent(waitSentence(3))
+      expect(stableSentence(alert)).toHaveTextContent(waitSentence(3))
+
+      // The painted sentence follows the clock; the announced one does not.
       act(() => {
-        vi.advanceTimersByTime(2999)
+        vi.advanceTimersByTime(1000)
+      })
+      expect(visibleSentence(alert)).toHaveTextContent(waitSentence(2))
+      expect(stableSentence(alert)).toHaveTextContent(waitSentence(3))
+      expect(submit).toBeDisabled()
+
+      // One millisecond before the stated boundary the control is still
+      // disabled, so an implementation that waits less than the header
+      // says cannot pass.
+      act(() => {
+        vi.advanceTimersByTime(1999)
       })
       expect(submit).toBeDisabled()
+
+      // At the boundary the key re-enables and the painted sentence drops
+      // the number -- with no stale "0 seconds" -- while the banner itself
+      // stays (no timer clears a result).
       act(() => {
         vi.advanceTimersByTime(1)
       })
       expect(submit).toBeEnabled()
-      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(visibleSentence(alert)).toHaveTextContent(
+        zhCN.errors.authn.throttled,
+      )
+      expect(visibleSentence(alert)).not.toHaveTextContent('0')
+      expect(stableSentence(alert)).toHaveTextContent(waitSentence(3))
+      expect(screen.getByRole('alert')).toBe(alert)
       expect(harness.calls).toHaveLength(1)
     } finally {
       vi.useRealTimers()

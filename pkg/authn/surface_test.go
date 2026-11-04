@@ -578,6 +578,7 @@ var exportedSurface = []string{
 	"method Gate.Impersonable",
 	"method Gate.Optional",
 	"method GrantQuery.EffectiveLimit",
+	"method HumanVerifier.Action",
 	"method HumanVerifier.Provider",
 	"method HumanVerifier.Required",
 	"method HumanVerifier.SiteKey",

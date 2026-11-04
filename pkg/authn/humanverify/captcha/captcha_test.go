@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // store is an in-memory kv.KV with a clock a case advances, so an expiry is
@@ -83,15 +84,21 @@ func (s *store) IncrByFloat(context.Context, string, float64) (float64, error) {
 	return 0, errors.New("not used")
 }
 
-func (s *store) IncrByFloatWithTTL(_ context.Context, key string, delta float64, _ time.Duration) (float64, error) {
+func (s *store) IncrByFloatWithTTL(_ context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var current float64
+	var expires time.Time
 	if v, ok := s.live(key); ok {
 		current, _ = strconv.ParseFloat(string(v.body), 64)
+		// A live key keeps the expiry it already has; ttl is ignored, as the
+		// interface requires, so a fixed window does not slide forward.
+		expires = v.expires
+	} else if ttl > 0 {
+		expires = s.now.Add(ttl)
 	}
 	current += delta
-	s.values[key] = value{body: []byte(strconv.FormatFloat(current, 'g', -1, 64))}
+	s.values[key] = value{body: []byte(strconv.FormatFloat(current, 'g', -1, 64)), expires: expires}
 	return current, nil
 }
 
@@ -127,7 +134,7 @@ func (s *store) SetIfAbsent(_ context.Context, key string, body []byte, ttl time
 func newProvider(t *testing.T) (*Provider, *store) {
 	t.Helper()
 	s := newStore()
-	p, err := New(s)
+	p, err := New(s, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -173,7 +180,7 @@ func issue(t *testing.T, p *Provider, form Form) Challenge {
 	} else if err := p.store.Delete(t.Context(), audioIssueKey(source)); err != nil {
 		t.Fatalf("clearing the audio issuance counter: %v", err)
 	}
-	issued, err := p.Issue(t.Context(), IssueOptions{Form: form, RemoteIP: source})
+	issued, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: form, RemoteIP: source})
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -276,6 +283,35 @@ func TestAnExpiredChallengeIsRefused(t *testing.T) {
 	}
 }
 
+// TestAProofIsBoundToItsScope holds the scope binding: a proof issued for one
+// surface is refused on the other, and the refusal consumes nothing, so the
+// proof is still accepted on the surface it was issued for.
+func TestAProofIsBoundToItsScope(t *testing.T) {
+	p, s := newProvider(t)
+	p.rotate = func() (Form, error) { return FormImage, nil }
+	issued, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormImage, RemoteIP: source})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	presented := proof(issued.ID, answerOf(t, s, issued))
+
+	if err := p.Verify(t.Context(), presented, authn.HumanScopeOther); !errors.Is(err, authn.ErrHumanVerificationRequired) {
+		t.Fatalf("a proof issued for the phone surface resolved with %v on the other surface, want ErrHumanVerificationRequired", err)
+	}
+	if err := p.Verify(t.Context(), presented, authn.HumanScopePhone); err != nil {
+		t.Fatalf("the refused proof was no longer accepted on its own surface: %v", err)
+	}
+}
+
+// TestAnUnknownScopeIsRefused holds that a challenge can only be issued for one
+// of the two surfaces the gate serves.
+func TestAnUnknownScopeIsRefused(t *testing.T) {
+	p, _ := newProvider(t)
+	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScope("email"), Form: FormImage, RemoteIP: source}); !errors.Is(err, ErrUnknownScope) {
+		t.Fatalf("an unknown scope resolved with %v, want ErrUnknownScope", err)
+	}
+}
+
 // TestAWrongAnswerSpendsTheChallenge holds that a failed attempt is the only
 // attempt: the correct answer no longer works once a wrong one was presented.
 func TestAWrongAnswerSpendsTheChallenge(t *testing.T) {
@@ -329,6 +365,35 @@ func TestTheSliderAcceptsAnOffsetWithinItsTolerance(t *testing.T) {
 	outside := outsideSlider(t, s, failed.ID)
 	if verifyErr := p.Verify(t.Context(), proof(failed.ID, strconv.Itoa(outside)), authn.HumanScopePhone); !errors.Is(verifyErr, authn.ErrHumanVerificationRequired) {
 		t.Fatalf("an offset outside the tolerance resolved with %v, want ErrHumanVerificationRequired", verifyErr)
+	}
+}
+
+// TestTheSliderToleranceIsTwoPixels holds the declared tolerance and the
+// accepted offsets it produces: the cut position plus and minus two pixels,
+// five offsets in all. One pixel outside the range on either side is refused.
+func TestTheSliderToleranceIsTwoPixels(t *testing.T) {
+	if sliderTolerance != 2 {
+		t.Fatalf("the slider tolerance is %d, want 2", sliderTolerance)
+	}
+	p, s := newProvider(t)
+	issued := issue(t, p, FormSlider)
+	min, max := sliderRange(t, s, issued.ID)
+	if got := max - min + 1; got != 2*sliderTolerance+1 {
+		t.Errorf("the slider accepts %d offsets, want %d", got, 2*sliderTolerance+1)
+	}
+
+	for _, side := range []string{"below", "above"} {
+		t.Run(side, func(t *testing.T) {
+			failed := issue(t, p, FormSlider)
+			low, high := sliderRange(t, s, failed.ID)
+			outside := low - 1
+			if side == "above" {
+				outside = high + 1
+			}
+			if verifyErr := p.Verify(t.Context(), proof(failed.ID, strconv.Itoa(outside)), authn.HumanScopePhone); !errors.Is(verifyErr, authn.ErrHumanVerificationRequired) {
+				t.Fatalf("the offset %d %s the accepted range resolved with %v, want ErrHumanVerificationRequired", outside, side, verifyErr)
+			}
+		})
 	}
 }
 
@@ -459,7 +524,7 @@ func TestAProofOverTheLimitIsRefused(t *testing.T) {
 // TestAnUnknownFormIsRefused holds the closed set of forms.
 func TestAnUnknownFormIsRefused(t *testing.T) {
 	p, _ := newProvider(t)
-	if _, err := p.Issue(t.Context(), IssueOptions{Form: Form("puzzle"), RemoteIP: source}); !errors.Is(err, ErrUnknownForm) {
+	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: Form("puzzle"), RemoteIP: source}); !errors.Is(err, ErrUnknownForm) {
 		t.Fatalf("Issue with an unknown form resolved with %v, want ErrUnknownForm", err)
 	}
 }
@@ -468,11 +533,11 @@ func TestAnUnknownFormIsRefused(t *testing.T) {
 // challenge issued by one provider over a store is verified by another.
 func TestTwoProvidersShareOneChallenge(t *testing.T) {
 	s := newStore()
-	first, err := New(s)
+	first, err := New(s, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	second, err := New(s)
+	second, err := New(s, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -521,7 +586,7 @@ func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
 	for _, form := range []Form{FormImage, FormSlider} {
 		t.Run(string(form), func(t *testing.T) {
 			p, _ := newProvider(t)
-			opts := IssueOptions{Form: form, RemoteIP: source}
+			opts := IssueOptions{Scope: authn.HumanScopePhone, Form: form, RemoteIP: source}
 			for i := 0; i < issueLimit; i++ {
 				if _, err := p.Issue(t.Context(), opts); err != nil {
 					t.Fatalf("Issue %d: %v", i+1, err)
@@ -530,7 +595,7 @@ func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
 			if _, err := p.Issue(t.Context(), opts); !errors.Is(err, ErrIssuanceLimited) {
 				t.Fatalf("the cap resolved with %v, want ErrIssuanceLimited", err)
 			}
-			if _, err := p.Issue(t.Context(), IssueOptions{Form: form, RemoteIP: "203.0.113.8"}); err != nil {
+			if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: form, RemoteIP: "203.0.113.8"}); err != nil {
 				t.Fatalf("another source was refused with the first source's cap: %v", err)
 			}
 		})
@@ -543,7 +608,7 @@ func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
 // visual forms keep their larger bound and neither counter spends the other.
 func TestTheAudioIssuanceCapIsStricterThanTheVisualOne(t *testing.T) {
 	p, _ := newProvider(t)
-	audio := IssueOptions{Form: FormAudio, RemoteIP: source}
+	audio := IssueOptions{Scope: authn.HumanScopePhone, Form: FormAudio, RemoteIP: source}
 	if _, err := p.Issue(t.Context(), audio); err != nil {
 		t.Fatalf("the first audio challenge: %v", err)
 	}
@@ -552,16 +617,92 @@ func TestTheAudioIssuanceCapIsStricterThanTheVisualOne(t *testing.T) {
 	}
 	// The refused audio request spent no visual allowance.
 	for i := 0; i < issueLimit; i++ {
-		if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: source}); err != nil {
+		if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormImage, RemoteIP: source}); err != nil {
 			t.Fatalf("visual issue %d after the audio cap: %v", i+1, err)
 		}
 	}
-	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: source}); !errors.Is(err, ErrIssuanceLimited) {
+	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormImage, RemoteIP: source}); !errors.Is(err, ErrIssuanceLimited) {
 		t.Fatalf("the visual cap resolved with %v, want ErrIssuanceLimited", err)
 	}
 	// The exhausted visual counter did not spend another source's audio budget.
-	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormAudio, RemoteIP: "203.0.113.8"}); err != nil {
+	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormAudio, RemoteIP: "203.0.113.8"}); err != nil {
 		t.Fatalf("another source was refused with the first source's caps: %v", err)
+	}
+}
+
+// captchaSettings is the settings reader a case scripts.
+type captchaSettings struct {
+	global int
+	err    error
+}
+
+func (s captchaSettings) Get(_ settings.Layer, key string, target any) error {
+	if s.err != nil {
+		return s.err
+	}
+	if key != globalIssueLimitPath {
+		return settings.ErrUnknownKey
+	}
+	p, ok := target.(*int)
+	if !ok {
+		return settings.ErrTypeMismatch
+	}
+	*p = s.global
+	return nil
+}
+
+// TestTheGlobalIssuanceCapBoundsAllSources holds the whole-deployment bound: a
+// set of source addresses cannot issue more challenges together than the
+// configured limit, however far below their per-source allowances each stays,
+// and the bound lifts when its window expires.
+func TestTheGlobalIssuanceCapBoundsAllSources(t *testing.T) {
+	const limit = 3
+	s := newStore()
+	p, err := New(s, captchaSettings{global: limit})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	p.rotate = func() (Form, error) { return FormImage, nil }
+
+	sources := []string{"203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.4"}
+	for i, address := range sources[:limit] {
+		opts := IssueOptions{Scope: authn.HumanScopePhone, Form: FormImage, RemoteIP: address}
+		if _, err := p.Issue(t.Context(), opts); err != nil {
+			t.Fatalf("Issue %d from %s: %v", i+1, address, err)
+		}
+	}
+	refused := IssueOptions{Scope: authn.HumanScopePhone, Form: FormImage, RemoteIP: sources[limit]}
+	if _, err := p.Issue(t.Context(), refused); !errors.Is(err, ErrIssuanceLimited) {
+		t.Fatalf("the global cap resolved with %v, want ErrIssuanceLimited", err)
+	}
+
+	s.advance(IssueWindow + time.Second)
+	if _, err := p.Issue(t.Context(), refused); err != nil {
+		t.Fatalf("the global counter did not expire with its window: %v", err)
+	}
+}
+
+// TestTheGlobalCounterCoversEveryForm holds that the counter is the provider's,
+// not the form's: an audio challenge and a visual one from two different sources
+// still share one bound.
+func TestTheGlobalCounterCoversEveryForm(t *testing.T) {
+	const limit = 1
+	s := newStore()
+	p, err := New(s, captchaSettings{global: limit})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	p.rotate = func() (Form, error) { return FormImage, nil }
+
+	if _, err := p.Issue(t.Context(), IssueOptions{
+		Scope: authn.HumanScopePhone, Form: FormAudio, RemoteIP: "203.0.113.1",
+	}); err != nil {
+		t.Fatalf("the audio challenge: %v", err)
+	}
+	if _, err := p.Issue(t.Context(), IssueOptions{
+		Scope: authn.HumanScopePhone, Form: FormImage, RemoteIP: "203.0.113.2",
+	}); !errors.Is(err, ErrIssuanceLimited) {
+		t.Fatalf("a visual challenge from another source resolved with %v, want ErrIssuanceLimited", err)
 	}
 }
 
@@ -576,12 +717,12 @@ func TestAMalformedIssueDoesNotSpendTheCap(t *testing.T) {
 	}{
 		{
 			name:    "unknown form",
-			opts:    IssueOptions{Form: Form("puzzle"), RemoteIP: source},
+			opts:    IssueOptions{Scope: authn.HumanScopePhone, Form: Form("puzzle"), RemoteIP: source},
 			wantErr: ErrUnknownForm,
 		},
 		{
 			name:    "unknown audio language",
-			opts:    IssueOptions{Form: FormAudio, Lang: "klingon", RemoteIP: source},
+			opts:    IssueOptions{Scope: authn.HumanScopePhone, Form: FormAudio, Lang: "klingon", RemoteIP: source},
 			wantErr: ErrUnknownAudioLanguage,
 		},
 	}
@@ -592,11 +733,11 @@ func TestAMalformedIssueDoesNotSpendTheCap(t *testing.T) {
 				t.Fatalf("the malformed request resolved with %v, want %v", err, tc.wantErr)
 			}
 			for i := 0; i < issueLimit; i++ {
-				if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: source}); err != nil {
+				if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormImage, RemoteIP: source}); err != nil {
 					t.Fatalf("Issue %d after a malformed request: %v", i+1, err)
 				}
 			}
-			if _, err := p.Issue(t.Context(), IssueOptions{Form: FormImage, RemoteIP: source}); !errors.Is(err, ErrIssuanceLimited) {
+			if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormImage, RemoteIP: source}); !errors.Is(err, ErrIssuanceLimited) {
 				t.Fatalf("the cap resolved with %v, want ErrIssuanceLimited", err)
 			}
 		})
@@ -663,7 +804,7 @@ func TestARecordWithoutItsSaltIsRefused(t *testing.T) {
 // silently draw an unsupported language in English.
 func TestAnUnsupportedAudioLanguageIsRefused(t *testing.T) {
 	p, _ := newProvider(t)
-	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormAudio, Lang: "klingon", RemoteIP: source}); !errors.Is(err, ErrUnknownAudioLanguage) {
+	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormAudio, Lang: "klingon", RemoteIP: source}); !errors.Is(err, ErrUnknownAudioLanguage) {
 		t.Fatalf("an unsupported audio language resolved with %v, want ErrUnknownAudioLanguage", err)
 	}
 }
@@ -688,14 +829,14 @@ func TestASupportedAudioLanguageIsAccepted(t *testing.T) {
 		})
 	}
 	p, _ := newProvider(t)
-	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormAudio, Lang: "zh-CN", RemoteIP: source}); err != nil {
+	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormAudio, Lang: "zh-CN", RemoteIP: source}); err != nil {
 		t.Fatalf("Issue in Chinese: %v", err)
 	}
 }
 
 // TestNewRequiresAStore holds the constructor's precondition.
 func TestNewRequiresAStore(t *testing.T) {
-	if _, err := New(nil); err == nil {
+	if _, err := New(nil, nil); err == nil {
 		t.Fatal("New accepted no store")
 	}
 }

@@ -46,6 +46,22 @@ const SENT = {
 }
 const VERIFIED = { state: 'verified' as const, expiresIn: 600 }
 
+/** The failure banner's sentence naming a whole-second wait. */
+function waitSentence(seconds: number): string {
+  const [before = '', after = ''] = zhCN.throttle.retryAfter.split('{{seconds}}')
+  return `${before}${seconds}${after}`
+}
+
+/** The alert's painted (aria-hidden) sentence, which follows the countdown. */
+function visibleSentence(alert: HTMLElement): HTMLElement | null {
+  return alert.querySelector<HTMLElement>('span[aria-hidden="true"]')
+}
+
+/** The alert's accessible (clipped) sentence, which never changes. */
+function stableSentence(alert: HTMLElement): HTMLElement | null {
+  return alert.querySelector<HTMLElement>('span:not([aria-hidden])')
+}
+
 function resetOperations(
   overrides: Partial<PasswordResetOperations> = {},
 ): PasswordResetOperations {
@@ -333,9 +349,7 @@ describe('PasswordResetScreen', () => {
         )
         await Promise.resolve()
       })
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        zhCN.passwordReset.retryAfter.replace('{{seconds}}', '30'),
-      )
+      expect(screen.getByRole('alert')).toHaveTextContent(waitSentence(30))
       expect(
         screen.getByRole('button', { name: zhCN.passwordReset.send }),
       ).toBeDisabled()
@@ -370,16 +384,25 @@ describe('PasswordResetScreen', () => {
       )
       const user = userEvent.setup()
       await fillIdentifier()
+      // The request form alone reads and solves nothing: the block appears
+      // only once the viewer asks for the send its gate holds.
+      expect(fake.widgets).toHaveLength(0)
       const send = screen.getByRole('button', {
         name: zhCN.passwordReset.send,
       })
-      // No token yet: the required verifier blocks the send.
+      await user.click(send)
+      // The block stands where the send was asked for; the control that
+      // asked gives way until the proof is in hand.
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(fake.widgets[0]?.siteKey).toBe('site-1')
       expect(send).toBeDisabled()
+      expect(requestReset).not.toHaveBeenCalled()
+
       act(() => {
         fake.token('proof-1')
       })
-      expect(send).toBeEnabled()
-      await user.click(send)
+      // The send the viewer already asked for leaves by itself, carrying
+      // the proof the block obtained.
       await waitFor(() =>
         expect(requestReset).toHaveBeenCalledWith({
           channel: 'email',
@@ -406,6 +429,12 @@ describe('PasswordResetScreen', () => {
           other: { required: true, provider: 'captcha' },
         }}
       />,
+    )
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(zhCN.passwordReset.emailLabel), MAIL)
+    // Asking for the send is what opens the block.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordReset.send }),
     )
     expect(
       await screen.findByLabelText(
@@ -434,11 +463,25 @@ describe('PasswordResetScreen', () => {
         }}
       />,
     )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordReset.phoneLabel),
+      '+8613800138000',
+    )
+    // Asking for the send is what opens the phone surface's block.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordReset.send }),
+    )
     expect(
       await screen.findByLabelText(
         uiKitZhCN.humanVerification.captcha.answerLabel,
       ),
     ).toBeInTheDocument()
+    expect(
+      harness.calls.filter(
+        (call) => call.path === '/api/v1/auth/human/captcha/challenge',
+      ),
+    ).toHaveLength(1)
   })
 
   it('attach the collapsed wrong-code refusal to the code field and write no password', async () => {
@@ -573,7 +616,7 @@ describe('PasswordResetScreen', () => {
     }
   })
 
-  it('wait out a stated throttled retry and re-enable the send', async () => {
+  it('count a stated throttled retry down, re-enable the send and keep the banner', async () => {
     vi.useFakeTimers()
     try {
       const requestReset = vi.fn(() =>
@@ -607,18 +650,41 @@ describe('PasswordResetScreen', () => {
         name: zhCN.passwordReset.send,
       })
       expect(send).toBeDisabled()
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        zhCN.passwordReset.retryAfter.replace('{{seconds}}', '3'),
-      )
+
+      const alert = screen.getByRole('alert')
+      // The banner names the wait the answer stated; the sentence assistive
+      // technology reads is fixed at that starting point.
+      expect(visibleSentence(alert)).toHaveTextContent(waitSentence(3))
+      expect(stableSentence(alert)).toHaveTextContent(waitSentence(3))
+
+      // The painted sentence follows the clock; the announced one does not.
       act(() => {
-        vi.advanceTimersByTime(2999)
+        vi.advanceTimersByTime(1000)
+      })
+      expect(visibleSentence(alert)).toHaveTextContent(waitSentence(2))
+      expect(stableSentence(alert)).toHaveTextContent(waitSentence(3))
+      expect(send).toBeDisabled()
+
+      // One millisecond before the stated boundary the control is still
+      // disabled, so an implementation that waits less cannot pass.
+      act(() => {
+        vi.advanceTimersByTime(1999)
       })
       expect(send).toBeDisabled()
+
+      // At the boundary the control re-enables and the painted sentence
+      // drops the number -- with no stale "0 seconds" -- while the banner
+      // itself stays (no timer clears a result).
       act(() => {
         vi.advanceTimersByTime(1)
       })
       expect(send).toBeEnabled()
-      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(visibleSentence(alert)).toHaveTextContent(
+        zhCN.errors.authn.throttled,
+      )
+      expect(visibleSentence(alert)).not.toHaveTextContent('0')
+      expect(stableSentence(alert)).toHaveTextContent(waitSentence(3))
+      expect(screen.getByRole('alert')).toBe(alert)
     } finally {
       vi.useRealTimers()
     }

@@ -31,6 +31,16 @@ type (
 	stubReader      struct{}
 )
 
+// stubHuman is the required human-verification gate the login engine takes up,
+// with both surfaces off: this case never sends.
+type stubHuman struct{}
+
+func (stubHuman) Required(authn.HumanScope) bool                                   { return false }
+func (stubHuman) Provider(authn.HumanScope) string                                 { return "off" }
+func (stubHuman) SiteKey(authn.HumanScope) string                                  { return "" }
+func (stubHuman) Action(authn.HumanScope) string                                   { return "" }
+func (stubHuman) Verify(context.Context, authn.HumanProof, authn.HumanScope) error { return nil }
+
 // Decode reads nothing: every value the login module reads from the
 // configuration keeps its zero value, which the module's own defaults cover.
 func (stubReader) Decode(string, any) error { return nil }
@@ -79,6 +89,7 @@ func driveCoexist(t *testing.T, m *mounttest.Mounter) (err error) {
 		standIn("stand-in.throttle", stubThrottle{}, (*authn.Throttle)(nil)),
 		standIn("stand-in.sessions", stubSessions{}, (*authn.Sessions)(nil)),
 		standIn("stand-in.mfa", stubMFA{}, (*authn.MFA)(nil)),
+		standIn("stand-in.human", stubHuman{}, (*authn.HumanVerifier)(nil)),
 		standIn("stand-in.login-method", stubMethod{name: "password"}, (*authn.LoginMethod)(nil)),
 	}
 

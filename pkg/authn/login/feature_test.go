@@ -122,6 +122,7 @@ func driveWithBoard(t *testing.T, sms, email bool) (*mounttest.Mounter, []string
 	register(standIn("stand-in.throttle", &stubThrottle{}, true, (*authn.Throttle)(nil)))
 	register(standIn("stand-in.sessions", &stubSessions{}, true, (*authn.Sessions)(nil)))
 	register(standIn("stand-in.mfa", &stubMFA{}, true, (*authn.MFA)(nil)))
+	register(standIn("stand-in.human", stubHuman{}, true, (*authn.HumanVerifier)(nil)))
 	register(methodModule(0, "password"))
 	register(standIn("stand-in.router", router, true, (*speedhttp.Router)(nil)))
 	register(standIn("stand-in.authn-gate", openGate{}, true, (*authn.Gate)(nil)))

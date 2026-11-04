@@ -53,6 +53,7 @@ func (h *fakeHuman) Required(scope authn.HumanScope) bool {
 }
 func (h *fakeHuman) Provider(authn.HumanScope) string { return h.provider }
 func (h *fakeHuman) SiteKey(authn.HumanScope) string  { return h.siteKey }
+func (h *fakeHuman) Action(authn.HumanScope) string   { return "" }
 
 func (h *fakeHuman) Verify(_ context.Context, p authn.HumanProof, scope authn.HumanScope) error {
 	h.mu.Lock()
@@ -195,21 +196,20 @@ func TestSendConsumesTheProofOnceAndSendsOnce(t *testing.T) {
 	}
 }
 
-// TestSendWithoutAGateSendsWithoutAProof holds the two legal absences: an
-// assembly with no verifier and a gate that requires nothing both send without
-// asking for a proof.
-func TestSendWithoutAGateSendsWithoutAProof(t *testing.T) {
-	for _, human := range []authn.HumanVerifier{nil, &fakeHuman{required: false, provider: "off"}} {
-		r := newRigSQLite(t)
-		r.allow()
-		r.p.human = human
+// TestSendWithAnOffGateSendsWithoutAProof holds the off mechanism: a gate that
+// requires nothing sends without asking for a proof. The descriptor makes the
+// gate a required dependency, so this is the shape of a deployment that runs it
+// off, not an absence of one.
+func TestSendWithAnOffGateSendsWithoutAProof(t *testing.T) {
+	r := newRigSQLite(t)
+	r.allow()
+	r.p.human = &fakeHuman{required: false, provider: "off"}
 
-		if _, err := r.sendLogin(); err != nil {
-			t.Fatalf("a send with no gate resolved with %v", err)
-		}
-		if n := r.rowCount(); n != 1 {
-			t.Errorf("the challenge table holds %d rows, want one", n)
-		}
+	if _, err := r.sendLogin(); err != nil {
+		t.Fatalf("a send with an off gate resolved with %v", err)
+	}
+	if n := r.rowCount(); n != 1 {
+		t.Errorf("the challenge table holds %d rows, want one", n)
 	}
 }
 

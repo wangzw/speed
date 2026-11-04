@@ -919,10 +919,12 @@ export interface AuthnLoginToken {
 export type AuthnLoginAnswer = AuthnLoginFlow | AuthnLoginSession | AuthnLoginToken | AuthnLoginActionResult;
 
 /**
- * The human-verification gate one surface runs: whether a proof is required, the mechanism that checks it, and the public identifier a client-side widget needs. A surface that takes no gate in reports the off mechanism and requires nothing.
+ * The human-verification gate one surface runs: whether a proof is required, the mechanism that checks it, the public identifier a client-side widget needs, and the action that widget must be rendered with. A surface whose gate is off reports the off mechanism and requires nothing.
  */
 export interface AuthnLoginHumanGate {
-  /** The mechanism that checks a proof on this surface: `off` when no gate is configured, `pow` for the self-hosted proof of work, `captcha` for the self-hosted captcha, or `turnstile` for Cloudflare's widget */
+  /** The action a client-side widget must be rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`. The provider's answer must name it. */
+  action?: string;
+  /** The mechanism that checks a proof on this surface: `off` when the gate is off, `pow` for the self-hosted proof of work, `captcha` for the self-hosted captcha, or `turnstile` for Cloudflare's widget */
   provider: string;
   /** Whether every send on this surface must first present a valid, single-use proof */
   required: boolean;
@@ -931,7 +933,7 @@ export interface AuthnLoginHumanGate {
 }
 
 /**
- * The human-verification gate a deployment puts in front of every send of a verification message, reported once per surface. A deployment may run a different mechanism on each: the phone surface guards the four SMS sends, and the other surface guards every send that does not address a phone number. A deployment that takes no gate in reports the off mechanism on both surfaces.
+ * The human-verification gate a deployment puts in front of every send of a verification message, reported once per surface. A deployment may run a different mechanism on each: the phone surface guards the four SMS sends, and the other surface guards every send that does not address a phone number. A deployment whose gate is off reports the off mechanism on both surfaces.
  */
 export interface AuthnLoginHuman {
   /** The gate on every send that does not address a phone number: an email reset code and a self-service email addition. */
@@ -2171,6 +2173,10 @@ export type AuthnLoginStartAuthenticatedBody = {
 
 export type AuthnHumanverifyCaptchaChallengeParams = {
 /**
+ * The surface the challenge is issued for: phone for a send that delivers a message to a phone number, other for every send that does not. Required; a missing or unknown value is a 400. A proof is bound to it: presenting it on the other surface is refused.
+ */
+scope: AuthnHumanverifyCaptchaChallengeScope;
+/**
  * The challenge form. Only audio is honoured: it draws the spoken reading of digits, the screen-reader alternative. The value image or slider, or an absent item, is ignored: the server rotates between those two forms from a cryptographic random source and answers whichever it drew. Any other value is a 400 bad-request.
  */
 form?: AuthnHumanverifyCaptchaChallengeForm;
@@ -2180,6 +2186,14 @@ form?: AuthnHumanverifyCaptchaChallengeForm;
 lang?: string;
 };
 
+export type AuthnHumanverifyCaptchaChallengeScope = typeof AuthnHumanverifyCaptchaChallengeScope[keyof typeof AuthnHumanverifyCaptchaChallengeScope];
+
+
+export const AuthnHumanverifyCaptchaChallengeScope = {
+  phone: 'phone',
+  other: 'other',
+} as const;
+
 export type AuthnHumanverifyCaptchaChallengeForm = typeof AuthnHumanverifyCaptchaChallengeForm[keyof typeof AuthnHumanverifyCaptchaChallengeForm];
 
 
@@ -2187,6 +2201,21 @@ export const AuthnHumanverifyCaptchaChallengeForm = {
   image: 'image',
   slider: 'slider',
   audio: 'audio',
+} as const;
+
+export type AuthnHumanverifyChallengeParams = {
+/**
+ * The surface the challenge is issued for: phone for a send that delivers a message to a phone number, other for every send that does not. Required; a missing or unknown value is a 400. A proof is bound to it: presenting it on the other surface is refused.
+ */
+scope: AuthnHumanverifyChallengeScope;
+};
+
+export type AuthnHumanverifyChallengeScope = typeof AuthnHumanverifyChallengeScope[keyof typeof AuthnHumanverifyChallengeScope];
+
+
+export const AuthnHumanverifyChallengeScope = {
+  phone: 'phone',
+  other: 'other',
 } as const;
 
 /**
@@ -3621,11 +3650,11 @@ export function useAuthnLoginCurrent<TData = Awaited<ReturnType<typeof authnLogi
 
 
 /**
- * Issues one human-verification challenge for the self-hosted captcha mechanism. Only the `audio` form may be chosen: the `form` query item naming it draws a spoken reading of digits as the screen-reader alternative. The server rotates between the image and the slider form from a cryptographic random source, so `form=image`, `form=slider` and an absent item are all answered with whichever of the two the rotation drew; the value is not honoured, and any other value is a 400. The `lang` query item names the language an audio challenge is spoken in; the provider pronounces English, Japanese, Russian and Chinese, an unsupported language is a 400, and an absent item uses the request's active locale. The answer names the challenge id, the form, the instruction key a client words for that form, and the media paths the form carries. A proof is the challenge id and the answer joined by a dot; it is single-use and spends the challenge whether the answer matched or not. A source that asks for more challenges than the window of the form it is requesting allows is answered 429; the rotating forms keep a larger per-source bound, the audio form has its own stricter one, and the two counters neither spend nor are spent by the other. A key-value store that cannot answer is answered 503.
+ * Issues one human-verification challenge for the self-hosted captcha mechanism. Only the `audio` form may be chosen: the `form` query item naming it draws a spoken reading of digits as the screen-reader alternative. The `scope` query item names the surface the challenge is issued for: `phone` for a send that delivers a message to a phone number, `other` for every send that does not. It is required, and a missing or unknown value is a 400. The server rotates between the image and the slider form from a cryptographic random source, so `form=image`, `form=slider` and an absent item are all answered with whichever of the two the rotation drew; the value is not honoured, and any other value is a 400. The `lang` query item names the language an audio challenge is spoken in; the provider pronounces English, Japanese, Russian and Chinese, an unsupported language is a 400, and an absent item uses the request's active locale. The answer names the challenge id, the form, the instruction key a client words for that form, and the media paths the form carries. A proof is the challenge id and the answer joined by a dot; it is single-use, bound to the scope it was issued for, and spends the challenge whether the answer matched or not. A source that asks for more challenges than the window of the form it is requesting allows, or than the deployment-wide bound leaves for all sources together, is answered 429; the rotating forms keep a larger per-source bound, the audio form has its own stricter one, and the two counters neither spend nor are spent by the other. A key-value store that cannot answer is answered 503.
  * @summary Obtain a captcha challenge
  */
 export const authnHumanverifyCaptchaChallenge = (
-    params?: AuthnHumanverifyCaptchaChallengeParams,
+    params: AuthnHumanverifyCaptchaChallengeParams,
  signal?: AbortSignal
 ) => {
 
@@ -3640,8 +3669,8 @@ export const authnHumanverifyCaptchaChallenge = (
 
 
 export const getAuthnHumanverifyCaptchaChallengeMutationOptions = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>, TError,{params?: AuthnHumanverifyCaptchaChallengeParams}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>, TError,{params?: AuthnHumanverifyCaptchaChallengeParams}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>, TError,{params: AuthnHumanverifyCaptchaChallengeParams}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>, TError,{params: AuthnHumanverifyCaptchaChallengeParams}, TContext> => {
 
 const mutationKey = ['authnHumanverifyCaptchaChallenge'];
 const {mutation: mutationOptions} = options ?
@@ -3653,7 +3682,7 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>, {params?: AuthnHumanverifyCaptchaChallengeParams}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>, {params: AuthnHumanverifyCaptchaChallengeParams}> = (props) => {
           const {params} = props ?? {};
 
           return  authnHumanverifyCaptchaChallenge(params,)
@@ -3674,28 +3703,29 @@ const {mutation: mutationOptions} = options ?
  * @summary Obtain a captcha challenge
  */
 export const useAuthnHumanverifyCaptchaChallenge = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>, TError,{params?: AuthnHumanverifyCaptchaChallengeParams}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>, TError,{params: AuthnHumanverifyCaptchaChallengeParams}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnHumanverifyCaptchaChallenge>>,
         TError,
-        {params?: AuthnHumanverifyCaptchaChallengeParams},
+        {params: AuthnHumanverifyCaptchaChallengeParams},
         TContext
       > => {
       return useMutation(getAuthnHumanverifyCaptchaChallengeMutationOptions(options), queryClient);
     }
 
 /**
- * Issues one human-verification challenge for the proof-of-work mechanism. The client solves the challenge by finding a nonce whose SHA-256 hash, over the decoded challenge followed by the nonce in big-endian, carries at least `difficulty` leading zero bits, then presents `challenge.nonce` as the proof to the send it wants to make. A proof is single-use: the challenge is spent when it is accepted. A source that asks for more challenges than its window allows is answered 429, and a key-value store that cannot answer is answered 503.
+ * Issues one human-verification challenge for the proof-of-work mechanism. The `scope` query item names the surface the challenge is issued for: `phone` for a send that delivers a message to a phone number, `other` for every send that does not. It is required, and a missing or unknown value is a 400. The client solves the challenge by finding a nonce whose SHA-256 hash, over the decoded challenge followed by the nonce in big-endian, carries at least `difficulty` leading zero bits, then presents `challenge.nonce` as the proof to the send it wants to make. A proof is single-use and bound to the scope it was issued for: the challenge is spent when it is accepted, and presenting the proof on the other surface is refused. A source that asks for more challenges than its own window allows, or than the deployment-wide bound leaves for all sources together, is answered 429; a key-value store that cannot answer is answered 503.
  * @summary Obtain a proof-of-work challenge
  */
 export const authnHumanverifyChallenge = (
-
+    params: AuthnHumanverifyChallengeParams,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<ChallengeResponse>(
-      {url: `/api/v1/auth/human/challenge`, method: 'POST', signal
+      {url: `/api/v1/auth/human/challenge`, method: 'POST',
+        params, signal
     },
       );
     }
@@ -3703,8 +3733,8 @@ export const authnHumanverifyChallenge = (
 
 
 export const getAuthnHumanverifyChallengeMutationOptions = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyChallenge>>, TError,void, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyChallenge>>, TError,void, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyChallenge>>, TError,{params: AuthnHumanverifyChallengeParams}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyChallenge>>, TError,{params: AuthnHumanverifyChallengeParams}, TContext> => {
 
 const mutationKey = ['authnHumanverifyChallenge'];
 const {mutation: mutationOptions} = options ?
@@ -3716,10 +3746,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnHumanverifyChallenge>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnHumanverifyChallenge>>, {params: AuthnHumanverifyChallengeParams}> = (props) => {
+          const {params} = props ?? {};
 
-
-          return  authnHumanverifyChallenge()
+          return  authnHumanverifyChallenge(params,)
         }
 
 
@@ -3737,11 +3767,11 @@ const {mutation: mutationOptions} = options ?
  * @summary Obtain a proof-of-work challenge
  */
 export const useAuthnHumanverifyChallenge = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyChallenge>>, TError,void, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnHumanverifyChallenge>>, TError,{params: AuthnHumanverifyChallengeParams}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof authnHumanverifyChallenge>>,
         TError,
-        void,
+        {params: AuthnHumanverifyChallengeParams},
         TContext
       > => {
       return useMutation(getAuthnHumanverifyChallengeMutationOptions(options), queryClient);

@@ -29,6 +29,7 @@ const (
 	dbModule       = "stand-in.db"
 	registryModule = "stand-in.registry"
 	senderModule   = "stand-in.sender"
+	humanModule    = "stand-in.human"
 )
 
 // standIn is a module that declares the tokens names, exclusively when told to,
@@ -46,9 +47,9 @@ func standIn(name string, instance any, exclusive bool, tokens ...core.Token) co
 }
 
 // assembly is one drive of a real registry through this module's descriptor. The
-// database and the sending seam are supplied as stand-in modules of their own;
-// what the case varies is whether each is present and whether the table and the
-// root key are there.
+// database, the sending seam and the human-verification gate are supplied as
+// stand-in modules of their own; what the case varies is whether each is present
+// and whether the table and the root key are there.
 type assembly struct {
 	// sender, when non-nil, is supplied to a stand-in for the carrier module.
 	sender sms.Sender
@@ -58,6 +59,9 @@ type assembly struct {
 	// secondSender adds a second carrier stand-in, for the exclusive-conflict
 	// case.
 	secondSender bool
+	// omitHuman leaves the human-verification gate out, for the case that holds a
+	// command naming this module without one to a resolution refusal.
+	omitHuman bool
 	// store is supplied to a stand-in for the settings module.
 	store settings.Store
 	// keyless builds the database without a root key.
@@ -131,6 +135,13 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 		reg.Register(standIn("stand-in.settings", a.store, true, (*settings.Store)(nil)))
 		names = append(names, "stand-in.settings")
 	}
+	if !a.omitHuman {
+		// The gate is a required dependency. An off gate is the composition of the
+		// humanverify module with both surfaces at mode off, which is the
+		// assembly these cases run: none of them asks about a proof.
+		reg.Register(standIn(humanModule, &fakeHuman{required: false, provider: "off"}, true, (*authn.HumanVerifier)(nil)))
+		names = append(names, humanModule)
+	}
 
 	return reg.Drive(t.Context(), core.Drive{
 		Depth:        core.StageStart,
@@ -141,9 +152,10 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 
 // TestTheDescriptorNamesWhatItDeliversAndRequires holds the descriptor's shape:
 // the SMS capability is claimed exclusively, the account lifecycle hook travels
-// with it without being claimed, and the database, the template registry and the
-// sending seam are required — each delivered exclusively by another module, so
-// the closure does not pull them in.
+// with it without being claimed, and the database, the template registry, the
+// sending seam, the shared ledger and the human-verification gate are required
+// — each delivered exclusively by another module except the ledger, so the
+// closure does not pull them in.
 func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.sms" {
@@ -165,7 +177,10 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 			required = append(required, r.Token)
 		}
 	}
-	want := []core.Token{(*db.Database)(nil), (*sms.Registry)(nil), (*sms.Sender)(nil), (*budget.Store)(nil)}
+	want := []core.Token{
+		(*db.Database)(nil), (*sms.Registry)(nil), (*sms.Sender)(nil), (*budget.Store)(nil),
+		(*authn.HumanVerifier)(nil),
+	}
 	if len(required) != len(want) {
 		t.Fatalf("Requires = %+v, want %v", m.Requires, want)
 	}
@@ -175,16 +190,13 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 		}
 	}
 	optional := m.Requires[len(want):]
-	if len(optional) != 3 {
-		t.Fatalf("Requires = %+v, want the human-verification gate, the settings store and the logging capability as the optional dependencies", m.Requires)
+	if len(optional) != 2 {
+		t.Fatalf("Requires = %+v, want the settings store and the logging capability as the optional dependencies", m.Requires)
 	}
 	for _, r := range optional {
 		if !r.Optional {
 			t.Errorf("the requirement %+v is not optional", r)
 		}
-	}
-	if optional[0].Token != core.Token((*authn.HumanVerifier)(nil)) {
-		t.Errorf("Requires[%d] = %v, want the human-verification gate", len(want), optional[0].Token)
 	}
 }
 
@@ -316,6 +328,31 @@ func TestTheDriveFailsWithoutARegistry(t *testing.T) {
 	}
 	if !errors.Is(err, core.ErrMissingProvider) {
 		t.Errorf("the drive returned %v, want a missing-provider failure", err)
+	}
+}
+
+// TestTheDriveFailsWithoutAHumanVerifier holds the required gate: a command that
+// names this module and no human-verification gate fails in resolution. Before
+// the requirement the drive succeeded, so a deployment whose configuration named
+// a mode ran its sends ungated.
+func TestTheDriveFailsWithoutAHumanVerifier(t *testing.T) {
+	err := assembly{
+		sender:    newSender(),
+		registry:  newRegistry(),
+		migrate:   true,
+		omitHuman: true,
+	}.drive(t, func(context.Context, *core.Registry) error {
+		t.Error("the drive reached its action with no human-verification gate")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("the drive succeeded with no human-verification gate, want a resolution failure")
+	}
+	if !errors.Is(err, core.ErrMissingProvider) {
+		t.Errorf("the drive returned %v, want a missing-provider failure", err)
+	}
+	if !strings.Contains(err.Error(), "HumanVerifier") {
+		t.Errorf("the failure %q does not name the missing human-verification gate", err.Error())
 	}
 }
 

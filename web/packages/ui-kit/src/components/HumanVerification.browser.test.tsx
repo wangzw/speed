@@ -2,8 +2,8 @@
  * The self-hosted captcha's slider form in a real browser: the challenge's
  * background and piece are decoded images, so the control can read their
  * natural size, and the native range input must be operable from the
- * keyboard -- an arrow key moves the piece, End takes it to the far edge.
- * A press of the submit control yields the offset the server compares.
+ * keyboard -- an arrow key moves the piece, End takes it to the far edge,
+ * and Enter on the focused range yields the offset the server compares.
  *
  * The cases run in Chromium because jsdom decodes no image and lays no
  * control out; the unit suite covers the same form's markup with supplied
@@ -11,7 +11,6 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 // The provider-backed keyboard performs the browser's own default action
 // (the DOM-simulating user-event does not move a native range).
 import { page, userEvent as browserUserEvent } from 'vitest/browser'
@@ -71,9 +70,9 @@ describe('HumanVerification slider in Chromium', () => {
     expect(range.value).toBe('1')
     await browserUserEvent.keyboard('{End}')
     expect(range.value).toBe('272')
-    await userEvent
-      .setup()
-      .click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
+    // The slider is the answer: Enter on the focused range submits its
+    // offset, the same way releasing the pointer does.
+    await browserUserEvent.keyboard('{Enter}')
     expect(onToken).toHaveBeenCalledWith('challenge-1.272')
   })
 
@@ -121,15 +120,13 @@ describe('HumanVerification slider in Chromium', () => {
     // natural coordinates the server compares.
     expect(pieceRect.width).toBeCloseTo(48 * scale, 0)
     const naturalOffset = (pieceRect.left - backgroundRect.left) / scale
-    // The server accepts an offset within 4px of the cut
+    // The server accepts an offset within 2px of the cut
     // (pkg/authn/humanverify/captcha/slider.go's sliderTolerance). The
     // position the viewer aligned maps back to a natural offset there, so
     // the submitted value lands inside the band the server accepts.
-    expect(Math.abs(naturalOffset - 272)).toBeLessThanOrEqual(4)
+    expect(Math.abs(naturalOffset - 272)).toBeLessThanOrEqual(2)
 
-    await userEvent
-      .setup()
-      .click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
+    await browserUserEvent.keyboard('{Enter}')
     expect(onToken).toHaveBeenCalledWith('challenge-1.272')
     // A real cutout cannot be asserted from this side: the cut position is
     // the server's secret, absent from the challenge document, and these

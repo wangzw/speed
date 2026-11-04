@@ -29,9 +29,9 @@ func TestTheCaptchaChallengeRouteRotatesInsteadOfHonouringAForm(t *testing.T) {
 
 			seen := map[string]int{}
 			for i := 0; i < routeRotationRounds; i++ {
-				target := captchaChallengeFullPath
+				target := captchaChallengeFullPath + "?scope=phone"
 				if requested != "" {
-					target += "?form=" + requested
+					target += "&form=" + requested
 				}
 				request := httptest.NewRequest(http.MethodPost, target, nil)
 				// A distinct source per request keeps the per-source issuance

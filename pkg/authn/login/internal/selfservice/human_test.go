@@ -37,6 +37,7 @@ func (h *fakeHuman) Required(scope authn.HumanScope) bool {
 }
 func (h *fakeHuman) Provider(authn.HumanScope) string { return h.provider }
 func (h *fakeHuman) SiteKey(authn.HumanScope) string  { return h.siteKey }
+func (h *fakeHuman) Action(authn.HumanScope) string   { return "" }
 
 func (h *fakeHuman) Verify(_ context.Context, p authn.HumanProof, scope authn.HumanScope) error {
 	h.calls = append(h.calls, p)
@@ -251,21 +252,34 @@ func TestTheUsernameBranchNeedsNoProof(t *testing.T) {
 	}
 }
 
-// TestAnEmailAddWithNoGateProceeds holds the default: a deployment with no gate,
-// or one that requires nothing, sends the email code without asking for a proof.
-func TestAnEmailAddWithNoGateProceeds(t *testing.T) {
-	for _, human := range []authn.HumanVerifier{nil, &fakeHuman{required: false, provider: "off"}} {
-		h := newHarness(t, func(c *config) {
-			c.email = true
-			c.mutateDeps = func(d *selfservice.Deps) { d.Human = human }
-		})
-		rec := h.post("/identifiers", `{"kind":"email","value":"ada@example.org"}`)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("an email send with no gate answered %d: %s", rec.Code, rec.Body.String())
-		}
-		if len(h.email.sent) != 1 {
-			t.Errorf("the email channel was handed %d messages, want one", len(h.email.sent))
-		}
+// TestAnEmailAddWithAnOffGateProceeds holds the off gate: a deployment whose
+// gate requires nothing sends the email code without asking for a proof.
+func TestAnEmailAddWithAnOffGateProceeds(t *testing.T) {
+	h := newHarness(t, func(c *config) {
+		c.email = true
+		c.mutateDeps = func(d *selfservice.Deps) { d.Human = &fakeHuman{provider: "off"} }
+	})
+	rec := h.post("/identifiers", `{"kind":"email","value":"ada@example.org"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("an email send with an off gate answered %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(h.email.sent) != 1 {
+		t.Errorf("the email channel was handed %d messages, want one", len(h.email.sent))
+	}
+}
+
+// TestAnEmailAddWithNoGateOnAHandBuiltServiceProceeds holds the defence a
+// hand-constructed service relies on. The login engine requires the gate, so a
+// service built by the engine always carries one; this case builds the service
+// by hand with none, which no assembly produces.
+func TestAnEmailAddWithNoGateOnAHandBuiltServiceProceeds(t *testing.T) {
+	h := newHarness(t, func(c *config) { c.email = true })
+	rec := h.post("/identifiers", `{"kind":"email","value":"ada@example.org"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("an email send with no gate answered %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(h.email.sent) != 1 {
+		t.Errorf("the email channel was handed %d messages, want one", len(h.email.sent))
 	}
 }
 

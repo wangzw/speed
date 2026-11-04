@@ -148,14 +148,16 @@ interface DiscoveryMethod {
 /**
  * The login methods the deploy assembly serves, as the discovery document
  * reports them: the two social methods (redirect buttons), the passkey
- * ceremony, and password (a form). These are the document's own stable method
- * names, not interface copy, so they are literals.
+ * ceremony, password and the log SMS carrier (each a form). These are the
+ * document's own stable method names, not interface copy, so they are
+ * literals. The list is sorted by method name, matching the document.
  */
 const DISCOVERY_METHODS = [
   { name: 'github', kind: 'redirect' },
   { name: 'google', kind: 'redirect' },
   { name: 'passkey', kind: 'webauthn' },
   { name: 'password', kind: 'form' },
+  { name: 'sms', kind: 'form' },
 ] as const
 
 /** The profile pane's heading, the page's one h1. */
@@ -320,10 +322,11 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     expect(methods.contentType).toContain('application/json')
 
     // The discovery document lists exactly the methods this assembly serves
-    // and not one it does not: password, the passkey ceremony and the two
-    // social methods, each with the kind that says how the surface renders it.
-    // The document is sorted by method name. (REQ-signin-001's runtime-toggle
-    // half is not driven; see the file header.)
+    // and not one it does not: password, the log SMS carrier, the passkey
+    // ceremony and the two social methods, each with the kind that says how
+    // the surface renders it. The document is sorted by method name.
+    // (REQ-signin-001's runtime-toggle half is not driven; see the file
+    // header.)
     const discovery = jsonBody(methods)
     const entries = (discovery.methods as readonly DiscoveryMethod[]).map(
       ({ name, kind }) => ({ name, kind }),

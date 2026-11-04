@@ -22,8 +22,10 @@ func isHumanProofRejection(err error) bool {
 // SMSCodes.Send, which checks and consumes it once before any budget; the email
 // code does not pass through that sender, so its route checks the proof here.
 //
-// A deployment with no gate, and one whose gate is off, require nothing and are
-// skipped entirely. The proof is checked before any send budget is spent, so a
+// A gate that is off requires nothing and is skipped entirely. The descriptor
+// makes the gate a required dependency, so an engine the registry resolved
+// always carries one; the nil check is unreachable defence for a product built
+// without one. The proof is checked before any send budget is spent, so a
 // refused request costs none. A proof over the field's bound is a bad request
 // before any provider is asked; the provider's own failures map through the
 // engine's table: a missing, invalid, expired or used proof is 403

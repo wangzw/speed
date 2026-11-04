@@ -1322,36 +1322,6 @@ func removalRouteCounts(t *testing.T, topo topology, groups []variantGroup) (map
 	return before, after
 }
 
-// assertRouteCountsUnchanged holds an exemption's stated reason to the run:
-// every endpoint the removed modules describe keeps its route count, so the
-// removal is vacuous and only the build's exemption lets it pass. A
-// configuration that mounts the route reddens this assertion, which is what
-// retires the exemption.
-func assertRouteCountsUnchanged(t *testing.T, group variantGroup, before, after map[string]chainLine) {
-	t.Helper()
-	measured := false
-	for _, removed := range group.modules {
-		for _, endpoint := range endpointOfModule(t, removed) {
-			measured = true
-			was, known := before[endpoint]
-			now, seen := after[endpoint]
-			if !known || !seen {
-				t.Errorf("the run wrote no chain for endpoint %q, so the removal of %q cannot be measured",
-					endpoint, removed)
-				continue
-			}
-			if now.routes != was.routes {
-				t.Errorf("dropping %v left endpoint %q with %d route(s), want the baseline's unchanged %d: "+
-					"the exemption's stated reason does not hold for this configuration",
-					group.modules, endpoint, now.routes, was.routes)
-			}
-		}
-	}
-	if !measured {
-		t.Errorf("the variant %q describes no endpoint, so its removal cannot be measured", group.id)
-	}
-}
-
 // assertRouteCountsLowered holds a removal that no exemption may excuse: every
 // endpoint the removed modules describe loses routes. It is the review build's
 // proof that the baseline template's exemption would be false there.

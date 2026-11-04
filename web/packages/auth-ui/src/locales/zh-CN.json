@@ -52,6 +52,7 @@
     "codeUsed": "该验证码已被使用，请重新获取。",
     "resendCode": "重新发送",
     "resendIn": "{{seconds}} 秒后可重新获取验证码。",
+    "cancelResend": "取消重发",
     "editPhone": "更换手机号"
   },
   "signInFlow": {

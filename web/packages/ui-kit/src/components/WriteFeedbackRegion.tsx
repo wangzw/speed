@@ -13,18 +13,51 @@
  * The region carries no copy of its own. The success message is host
  * text -- the string the host translated when it settled the attempt --
  * and a failure code resolves through `resolve`, the calling package's
- * own error-text resolver. The one spacing unit of top margin belongs to
+ * own error-text resolver. A failure that stated a wait carries its
+ * deadline, so the region counts the remaining seconds down itself: one
+ * tick per second while the deadline is ahead, passed to `InlineError`
+ * beside the wait the answer stated. The caller supplies no clock state.
+ * The one spacing unit of top margin belongs to
  * a rendered banner, not to the always-mounted root: an empty region
  * keeps its live region mounted and takes no height, so a control
  * group's own rhythm is never widened by a slot with nothing to say.
  * The caller's `sx` applies after the margin and may override it.
  */
 
+import { useEffect, useState } from 'react'
 import type { SxProps, Theme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import type { WriteOutcome } from '../write-feedback.js'
 import { InlineError } from './InlineError.js'
 import { InlineSuccess } from './InlineSuccess.js'
+
+/**
+ * The whole seconds left before `waitUntil`, ticking once a second while
+ * the deadline is ahead. `undefined` while no deadline is armed; `0`
+ * from the tick that crosses it, so a caller renders the wait-free
+ * sentence rather than a stale zero-second one.
+ */
+function useLiveWaitSeconds(waitUntil: number | undefined): number | undefined {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (waitUntil === undefined || Date.now() >= waitUntil) {
+      return undefined
+    }
+    const timer = setInterval(() => {
+      setTick((tick) => tick + 1)
+      if (Date.now() >= waitUntil) {
+        clearInterval(timer)
+      }
+    }, 1000)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [waitUntil])
+  if (waitUntil === undefined) {
+    return undefined
+  }
+  return Math.max(0, Math.ceil((waitUntil - Date.now()) / 1000))
+}
 
 export type WriteFeedbackRegionProps = {
   /** The scope's slot; `null` renders no visible feedback. */
@@ -46,6 +79,8 @@ export function WriteFeedbackRegion({
   const failureCode = outcome?.kind === 'failure' ? outcome.code : null
   const retryAfterSeconds =
     outcome?.kind === 'failure' ? outcome.retryAfterSeconds : undefined
+  const waitUntil = outcome?.kind === 'failure' ? outcome.waitUntil : undefined
+  const liveRetryAfterSeconds = useLiveWaitSeconds(waitUntil)
   return (
     <Box
       sx={[
@@ -58,6 +93,7 @@ export function WriteFeedbackRegion({
         code={failureCode}
         resolve={resolve}
         retryAfterSeconds={retryAfterSeconds}
+        liveRetryAfterSeconds={liveRetryAfterSeconds}
       />
     </Box>
   )

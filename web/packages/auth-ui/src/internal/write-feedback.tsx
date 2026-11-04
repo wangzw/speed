@@ -43,8 +43,12 @@ export interface ChannelFeedback {
   readonly localFailure: string | null
   /** A new attempt: clears every failure source of the scope. */
   readonly reset: () => void
-  /** Settles the slot with a failure code; clears the client-side source. */
-  readonly fail: (code: string) => void
+  /**
+   * Settles the slot with a failure code; clears the client-side source.
+   * The wait a refused attempt stated rides along so the sentence can name
+   * how long the viewer has to wait.
+   */
+  readonly fail: (code: string, retryAfterMs?: number) => void
   /** Raises the channel's own failure text (a bundle key); clears the slot. */
   readonly failLocal: (key: string) => void
   /** Clears the channel's own failure text only (a retry begins in the same scope). */
@@ -66,11 +70,14 @@ export function useChannelFeedback(): ChannelFeedback {
   }, [resetSlot])
 
   const fail = useCallback(
-    (code: string) => {
+    (code: string, retryAfterMs?: number) => {
       setLocalFailure(null)
-      // The slot classifies a thrown value through errorCodeOf; the code is
-      // already the family's judgement, so it rides as an object carrying it.
-      failSlot({ code })
+      // The slot classifies a thrown value through errorCodeOf and reads the
+      // wait through retryAfterSecondsOf, so the code and the wait the
+      // refusal stated ride on the one object.
+      failSlot(
+        retryAfterMs === undefined ? { code } : { code, retryAfterMs },
+      )
     },
     [failSlot],
   )
@@ -119,7 +126,7 @@ export function ChannelFeedbackRegion({
         sx={{ display: 'contents' }}
       />
       {feedback.localFailure === null ? null : (
-        <Alert severity="error" role="alert" sx={{ width: '100%', mt: 1 }}>
+        <Alert severity="error" role="alert" sx={{ width: '100%' }}>
           {t(feedback.localFailure)}
         </Alert>
       )}

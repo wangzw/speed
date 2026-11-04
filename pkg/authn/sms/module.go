@@ -29,11 +29,13 @@
 // call to the sender. The number is not stored either; the searchable column
 // holds its keyed digest.
 //
-// The module takes the deployment's human-verification gate as an optional
-// seam. When the deployment requires a proof, Send checks it before it spends
-// any budget and consumes it once; the proof travels in SendCode, so a caller
-// must not check it itself. An assembly without a gate sends without asking for
-// one.
+// The module takes the deployment's human-verification gate as a required
+// dependency. When the deployment requires a proof, Send checks it before it
+// spends any budget and consumes it once; the proof travels in SendCode, so a
+// caller must not check it itself. The human-verification module delivers a gate
+// in every mode, off included, so naming it forces no mechanism; an assembly
+// that names this module without one fails in resolution instead of sending
+// ungated.
 package sms
 
 import (
@@ -104,14 +106,18 @@ var (
 
 // Module is the descriptor a host registers.
 //
-// The database, the template registry, the sending seam and the shared SMS
-// ledger are required, and each is delivered exclusively by another module
-// except the ledger, which is the one both sending channels share. The registry
-// and the sending seam are functional, exclusive requirements: a command that
-// names no provider delivering one fails in resolution, and two at once
-// conflict. The registry is taken up before the sending seam, because this
-// module checks its templates against what the registry declares and hands the
-// carrier only what the registry resolved.
+// The database, the template registry, the sending seam, the shared SMS ledger
+// and the human-verification gate are required, and each is delivered
+// exclusively by another module except the ledger, which is the one both
+// sending channels share. The registry, the sending seam and the gate are
+// functional, exclusive requirements: a command that names no provider
+// delivering one fails in resolution, and two at once conflict. The gate is
+// required because sending without it would run ungated whenever the
+// configuration names a mode; the human-verification module delivers one in
+// every mode, so the requirement forces no mechanism. The registry is taken up
+// before the sending seam, because this module checks its templates against
+// what the registry declares and hands the carrier only what the registry
+// resolved.
 //
 // The settings store is required as optional only so that it is initialised
 // before this one and its snapshot is loaded when Init reads the settings; the
@@ -130,7 +136,7 @@ func Module() core.Module {
 			{Token: (*sms.Registry)(nil)},
 			{Token: (*sms.Sender)(nil)},
 			{Token: (*budget.Store)(nil)},
-			{Token: (*authn.HumanVerifier)(nil), Optional: true},
+			{Token: (*authn.HumanVerifier)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
@@ -254,8 +260,8 @@ type product struct {
 	bus      event.Bus
 	audit    audit.Audit
 	logger   *slog.Logger
-	// human is the deployment's human-verification gate, absent when the
-	// assembly carries none.
+	// human is the deployment's human-verification gate. The descriptor requires
+	// it, so an assembly the registry resolved always carries one.
 	human authn.HumanVerifier
 
 	clock clock.Source
@@ -296,6 +302,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the shared SMS ledger: %w", diagnosticPrefix, ModuleName, err)
 	}
+	human, err := core.Resolve[authn.HumanVerifier](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s%s: taking up the human-verification gate: %w", diagnosticPrefix, ModuleName, err)
+	}
 	// The default language is the shared i18n item, so a run reads one statement
 	// of it whatever engine is assembled; an assembly with no i18n engine keeps
 	// the fallback.
@@ -311,7 +321,9 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err := checkSender(declared, defaultLocale); err != nil {
 		return nil, fmt.Errorf("%s%s: %w", diagnosticPrefix, ModuleName, err)
 	}
-	return build(database, registry, sender, ledger, cfg, defaultLocale, templateLocales(declared)), nil
+	p := build(database, registry, sender, ledger, cfg, defaultLocale, templateLocales(declared))
+	p.human = human
+	return p, nil
 }
 
 // build assembles a product from its parts. The optional parts start absent and
@@ -344,7 +356,9 @@ func build(database db.Database, registry sms.Registry, sender sms.Sender, ledge
 }
 
 // wire runs in Init, where every instance exists: it takes up the optional
-// capabilities and subscribes to the two events the module follows.
+// capabilities and subscribes to the two events the module follows. The
+// required capabilities, the human-verification gate included, were taken up by
+// New.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
@@ -354,9 +368,6 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 	p.settings = newReader(store, p.logger)
-	if p.human, err = optional[authn.HumanVerifier](reg, "the human-verification gate"); err != nil {
-		return err
-	}
 
 	if p.audit, err = optional[audit.Audit](reg, "the audit capability"); err != nil {
 		return err

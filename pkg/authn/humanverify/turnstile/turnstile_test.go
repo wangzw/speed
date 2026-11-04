@@ -3,6 +3,7 @@ package turnstile
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
 	"errors"
 	"io"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/egress"
+	"github.com/vislake/speed/pkg/kv"
 	speedlog "github.com/vislake/speed/pkg/log"
 )
 
@@ -81,8 +83,18 @@ func siteverify(t *testing.T, answers ...answer) (*httptest.Server, *x509.CertPo
 }
 
 // providerFor builds a provider pointed at the mock server through the
-// restricted client, with the case's own changes applied.
+// restricted client, with the case's own changes applied and a fresh claim
+// store.
 func providerFor(t *testing.T, srv *httptest.Server, pool *x509.CertPool, change func(*Options)) *Provider {
+	t.Helper()
+	return providerWithStore(t, srv, pool, newClaimStore(), change)
+}
+
+// providerWithStore is providerFor over a store the case keeps, so a case can
+// inspect the claim or arm a fault.
+func providerWithStore(t *testing.T, srv *httptest.Server, pool *x509.CertPool,
+	store kv.KV, change func(*Options),
+) *Provider {
 	t.Helper()
 	o := Options{
 		SiteKey:   testSiteKey,
@@ -92,6 +104,7 @@ func providerFor(t *testing.T, srv *httptest.Server, pool *x509.CertPool, change
 		Action:    testAction,
 		Timeout:   2 * time.Second,
 		HTTP:      egress.New(egress.Options{AllowLoopback: true, RootCAs: pool}),
+		Store:     store,
 	}
 	if change != nil {
 		change(&o)
@@ -101,6 +114,81 @@ func providerFor(t *testing.T, srv *httptest.Server, pool *x509.CertPool, change
 		t.Fatalf("New: %v", err)
 	}
 	return p
+}
+
+// claimStore is an in-memory kv.KV for the claim cases: it records each claim's
+// value and expiry and can be armed to fail the set-if-absent.
+type claimStore struct {
+	mu     sync.Mutex
+	values map[string][]byte
+	ttls   map[string]time.Duration
+	setErr error
+}
+
+func newClaimStore() *claimStore {
+	return &claimStore{values: map[string][]byte{}, ttls: map[string]time.Duration{}}
+}
+
+var _ kv.KV = (*claimStore)(nil)
+
+func (s *claimStore) Get(_ context.Context, key string) ([]byte, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	value, present := s.values[key]
+	return append([]byte(nil), value...), present, nil
+}
+
+func (s *claimStore) Set(_ context.Context, key string, value []byte, ttl time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.values[key] = append([]byte(nil), value...)
+	s.ttls[key] = ttl
+	return nil
+}
+
+func (s *claimStore) Delete(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.values, key)
+	delete(s.ttls, key)
+	return nil
+}
+
+func (s *claimStore) IncrByFloat(context.Context, string, float64) (float64, error) {
+	return 0, errors.New("not used")
+}
+
+func (s *claimStore) IncrByFloatWithTTL(context.Context, string, float64, time.Duration) (float64, error) {
+	return 0, errors.New("not used")
+}
+
+func (s *claimStore) CompareAndSwap(context.Context, string, []byte, []byte) (bool, error) {
+	return false, errors.New("not used")
+}
+
+func (s *claimStore) SetIfAbsent(_ context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.setErr != nil {
+		return false, s.setErr
+	}
+	if _, present := s.values[key]; present {
+		return false, nil
+	}
+	s.values[key] = append([]byte(nil), value...)
+	s.ttls[key] = ttl
+	return true, nil
+}
+
+// keys lists the claims the store holds.
+func (s *claimStore) keys() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.values))
+	for key := range s.values {
+		out = append(out, key)
+	}
+	return out
 }
 
 // accepted is a siteverify answer accepting a proof from the expected hostname
@@ -255,17 +343,26 @@ func TestAnActionMismatchIsUnavailable(t *testing.T) {
 	}
 }
 
-// The action is optional: a deployment that names none accepts the answer's
-// action, whatever the widget was rendered with.
-func TestAnUnnamedActionIsNotChecked(t *testing.T) {
-	srv, pool, _ := siteverify(t, answer{
-		http.StatusOK,
-		`{"success":true,"hostname":"` + testHostname + `","action":"anything"}`,
-	})
-	p := providerFor(t, srv, pool, func(o *Options) { o.Action = "" })
+// The action is required: a provider built without one cannot compare the
+// answer's action, so New refuses it rather than accepting a token obtained
+// under any action.
+func TestAnEmptyActionIsRefused(t *testing.T) {
+	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
 
-	if err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther); err != nil {
-		t.Fatalf("Verify with no expected action: %v", err)
+	_, err := New(Options{
+		SiteKey:   testSiteKey,
+		Secret:    testSecret,
+		VerifyURL: srv.URL,
+		Hostname:  testHostname,
+		Action:    "",
+		Timeout:   2 * time.Second,
+		HTTP:      egress.New(egress.Options{AllowLoopback: true, RootCAs: pool}),
+	})
+	if err == nil {
+		t.Fatal("New with no action resolved; a provider without one cannot check the answer's action")
+	}
+	if !strings.Contains(err.Error(), "action") {
+		t.Errorf("the failure %q does not name the missing action", err)
 	}
 }
 
@@ -371,5 +468,135 @@ func TestAnUnreachableProviderIsUnavailable(t *testing.T) {
 	err := p.Verify(context.Background(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("an unreachable provider resolved with %v, want ErrUnavailable", err)
+	}
+}
+
+// A token is refused locally on its second presentation even when siteverify
+// answers success both times. This is what the local claim buys: single use
+// does not depend on the upstream refusing the duplicate. The second call is
+// made against the upstream -- its answer is success -- and the refusal is the
+// local claim's.
+func TestAReplayedTokenIsRefusedEvenWhenTheUpstreamAcceptsIt(t *testing.T) {
+	srv, pool, calls := siteverify(t, answer{http.StatusOK, accepted})
+	p := providerFor(t, srv, pool, nil)
+
+	if err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther); err != nil {
+		t.Fatalf("first Verify: %v", err)
+	}
+	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther)
+	if !errors.Is(err, authn.ErrHumanVerificationRequired) {
+		t.Fatalf("a replayed token resolved with %v, want ErrHumanVerificationRequired", err)
+	}
+	if errors.Is(err, authn.ErrUnavailable) {
+		t.Errorf("a replayed token reads as an outage: %v", err)
+	}
+	if got := len(calls()); got != 2 {
+		t.Errorf("siteverify judged %d presentations, want 2: the replay has to reach the local guard", got)
+	}
+}
+
+// Two concurrent presentations of one token are resolved by the store's
+// set-if-absent: exactly one is accepted, whatever the upstream answers.
+func TestConcurrentClaimsAdmitExactlyOne(t *testing.T) {
+	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
+	p := providerFor(t, srv, pool, nil)
+
+	const racers = 8
+	errs := make([]error, racers)
+	var wait sync.WaitGroup
+	ctx := t.Context()
+	for i := range errs {
+		wait.Add(1)
+		go func(i int) {
+			defer wait.Done()
+			errs[i] = p.Verify(ctx, authn.HumanProof{Token: testToken}, authn.HumanScopeOther)
+		}(i)
+	}
+	wait.Wait()
+
+	accepted := 0
+	for i, err := range errs {
+		switch {
+		case err == nil:
+			accepted++
+		case errors.Is(err, authn.ErrHumanVerificationRequired):
+		default:
+			t.Errorf("racer %d resolved with %v, want acceptance or ErrHumanVerificationRequired", i, err)
+		}
+	}
+	if accepted != 1 {
+		t.Errorf("%d racers accepted the same token, want exactly 1", accepted)
+	}
+}
+
+// The store is a requirement: a provider built without one has only the
+// upstream's duplicate refusal, not this deployment's single-use guarantee.
+func TestAnEmptyStoreIsRefused(t *testing.T) {
+	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
+	_, err := New(Options{
+		SiteKey:   testSiteKey,
+		Secret:    testSecret,
+		VerifyURL: srv.URL,
+		Hostname:  testHostname,
+		Action:    testAction,
+		Timeout:   2 * time.Second,
+		HTTP:      egress.New(egress.Options{AllowLoopback: true, RootCAs: pool}),
+	})
+	if err == nil {
+		t.Fatal("New with no store resolved; a provider without one cannot record a spent token")
+	}
+	if !strings.Contains(err.Error(), "store") {
+		t.Errorf("the failure %q does not name the missing store", err)
+	}
+}
+
+// A store that cannot record the claim is an outage: the proof was judged but
+// not recorded, and accepting it would leave it replayable.
+func TestAClaimFaultIsUnavailable(t *testing.T) {
+	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
+	store := newClaimStore()
+	store.setErr = errors.New("the store is unavailable")
+	p := providerWithStore(t, srv, pool, store, nil)
+
+	err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther)
+	if !errors.Is(err, authn.ErrUnavailable) {
+		t.Fatalf("a claim fault resolved with %v, want ErrUnavailable", err)
+	}
+	if errors.Is(err, authn.ErrHumanVerificationRequired) {
+		t.Errorf("a claim fault reads as an invalid proof: %v", err)
+	}
+}
+
+// The claim is the token's digest under the spent prefix, with the whole token
+// nowhere in the store, and it carries the lifetime that covers the token's
+// validity.
+func TestTheClaimStoresTheTokenDigestAndItsLifetime(t *testing.T) {
+	srv, pool, _ := siteverify(t, answer{http.StatusOK, accepted})
+	store := newClaimStore()
+	p := providerWithStore(t, srv, pool, store, nil)
+
+	if err := p.Verify(t.Context(), authn.HumanProof{Token: testToken}, authn.HumanScopeOther); err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	sum := sha256.Sum256([]byte(testToken))
+	want := spentKey(sum[:])
+	keys := store.keys()
+	if len(keys) != 1 || keys[0] != want {
+		t.Fatalf("the store holds %v, want the one claim under %q", keys, want)
+	}
+	for _, key := range keys {
+		if strings.Contains(key, testToken) {
+			t.Errorf("the store key %q carries the token itself", key)
+		}
+	}
+	store.mu.Lock()
+	ttl := store.ttls[want]
+	value := string(store.values[want])
+	store.mu.Unlock()
+	if value != "spent" {
+		t.Errorf("the claim holds %q, want the spent marker", value)
+	}
+	if ttl != ClaimTTL {
+		t.Errorf("the claim expires in %v, want %v", ttl, ClaimTTL)
 	}
 }

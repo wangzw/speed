@@ -10,10 +10,11 @@
  * mechanism gates its send with its own state and renders nothing here.
  *
  *  - `off` (or a gate that requires nothing) renders nothing.
- *  - `turnstile` renders Cloudflare's widget in explicit-render mode and
- *    yields the token it calls back with; an expired or failed widget
- *    yields null. Once the host consumes a token and clears `proof`, the
- *    widget is reset so the next send can obtain a fresh one.
+ *  - `turnstile` renders Cloudflare's widget in explicit-render mode,
+ *    under the action the gate names, and yields the token it calls back
+ *    with; an expired or failed widget yields null. Once the host consumes
+ *    a token and clears `proof`, the widget is reset so the next send can
+ *    obtain a fresh one.
  *  - `pow` shows the work in progress and then its outcome. The solve is
  *    the host's; `onRetry` asks for another attempt after a failure.
  *  - `captcha` renders the self-hosted challenge the host issued: the
@@ -24,9 +25,12 @@
  *    language. The server chooses between the image and slider forms, so
  *    the block offers no form choice: the one accessibility entry asks
  *    for the audio alternative, and a refusal that states a wait holds
- *    that entry and shows the wait. A refresh keeps the selection. All
- *    three forms share one submit that yields `<challenge id>.<answer>`
- *    and one retry after a failed issue.
+ *    that entry and shows the wait. A refresh keeps the selection. The
+ *    image and audio forms yield `<challenge id>.<answer>` from their
+ *    answer field's submit (or Enter in it); the slider is the answer
+ *    itself, yielding the same shape when it is released, or when Enter
+ *    is pressed after the keyboard moved it. A failed issue offers one
+ *    retry.
  *
  * The gate is the discovery document's `human` member (`{phone, other}`),
  * so a host passes it unmodified; `scope` names the surface this block
@@ -54,6 +58,8 @@ export interface HumanVerificationGate {
   readonly provider: string
   /** The public widget key a Turnstile gate renders with. */
   readonly site_key?: string
+  /** The action a Turnstile gate renders its widget with. */
+  readonly action?: string
 }
 
 /** The discovery document's whole gate, one member per surface. */
@@ -119,6 +125,7 @@ interface TurnstileApi {
     container: HTMLElement,
     options: {
       sitekey: string
+      action?: string
       callback: (token: string) => void
       'expired-callback'?: () => void
       'error-callback'?: () => void
@@ -174,11 +181,13 @@ function loadTurnstile(): Promise<TurnstileApi> {
  * once the host clears the proof it consumed. */
 function TurnstileBlock({
   siteKey,
+  action,
   proof,
   onToken,
   disabled,
 }: {
   readonly siteKey: string
+  readonly action: string | undefined
   readonly proof: string | null
   readonly onToken: (token: string | null) => void
   readonly disabled: boolean
@@ -205,6 +214,7 @@ function TurnstileBlock({
         }
         widgetRef.current = api.render(container, {
           sitekey: siteKey,
+          ...(action === undefined || action === '' ? {} : { action }),
           callback: (token) => {
             onTokenRef.current(token === '' ? null : token)
           },
@@ -231,7 +241,7 @@ function TurnstileBlock({
         api.remove(widget)
       }
     }
-  }, [siteKey])
+  }, [siteKey, action])
 
   useEffect(() => {
     if (previousProof.current !== null && proof === null) {
@@ -301,7 +311,10 @@ function PowBlock({
       {working ? (
         <CircularProgress size={16} aria-hidden={true} />
       ) : null}
-      <Typography variant="body2" color="text.secondary">
+      <Typography
+        variant={working ? 'body2' : 'caption'}
+        color="text.secondary"
+      >
         {working
           ? t('humanVerification.working')
           : t('humanVerification.verified')}
@@ -393,6 +406,16 @@ function CaptchaSlider({
       ? Math.max(0, Math.round((background.height - piece.height) / 2))
       : 0
   const instruction = instructionText(challenge.instruction, t)
+  // The slider is the answer: releasing it (or pressing Enter after the
+  // keyboard has moved it) hands the offset to the host, so aligning the
+  // piece is the whole interaction and no separate confirmation stands
+  // between the viewer and the next step.
+  const answer = (): void => {
+    if (disabled || maxOffset === 0) {
+      return
+    }
+    onAnswer(String(offset))
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -459,18 +482,17 @@ function CaptchaSlider({
         value={offset}
         disabled={disabled || maxOffset === 0}
         aria-describedby={`${rangeId}-instruction`}
+        aria-keyshortcuts="Enter"
         onChange={(event) => setOffset(Number(event.currentTarget.value))}
+        onPointerUp={answer}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            answer()
+          }
+        }}
         sx={{ width: '100%' }}
       />
-      <Button
-        type="button"
-        variant="outlined"
-        size="small"
-        disabled={disabled || maxOffset === 0}
-        onClick={() => onAnswer(String(offset))}
-      >
-        {t('humanVerification.captcha.submit')}
-      </Button>
     </Box>
   )
 }
@@ -661,7 +683,7 @@ function CaptchaBlock({
         role="status"
         sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}
       >
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="caption" color="text.secondary">
           {t('humanVerification.verified')}
         </Typography>
       </Box>
@@ -745,6 +767,7 @@ export function HumanVerification({
     return (
       <TurnstileBlock
         siteKey={surface.site_key ?? ''}
+        action={surface.action}
         proof={proof}
         onToken={onToken}
         disabled={disabled}

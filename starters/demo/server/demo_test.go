@@ -2277,6 +2277,7 @@ func renderDeployTemplate(t *testing.T) string {
 		"__HUMANVERIFY_PHONE_MODE__": "pow",
 		"__TURNSTILE_SITE_KEY__":     "turnstile-site-key.example.test",
 		"__TURNSTILE_SECRET_KEY__":   "turnstile-client-secret",
+		"__TURNSTILE_ACTION__":       "login",
 	} {
 		if !strings.Contains(rendered, placeholder) {
 			t.Fatalf("the deployment template carries no %s placeholder to render", placeholder)

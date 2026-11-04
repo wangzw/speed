@@ -68,21 +68,22 @@ type AuthnLoginPasswordReset struct {
 // surface guards the sends that reach a phone number, and the other surface
 // guards every send that does not.
 type AuthnLoginHuman struct {
-	_ struct{} `description:"The human-verification gate a deployment puts in front of every send of a verification message, reported once per surface. A deployment may run a different mechanism on each: the phone surface guards the four SMS sends, and the other surface guards every send that does not address a phone number. A deployment that takes no gate in reports the off mechanism on both surfaces."`
+	_ struct{} `description:"The human-verification gate a deployment puts in front of every send of a verification message, reported once per surface. A deployment may run a different mechanism on each: the phone surface guards the four SMS sends, and the other surface guards every send that does not address a phone number. A deployment whose gate is off reports the off mechanism on both surfaces."`
 
 	Phone AuthnLoginHumanGate `json:"phone" required:"true" description:"The gate on a send that delivers a message to a phone number: login, second factor, enrollment and anonymous reset by SMS."`
 	Other AuthnLoginHumanGate `json:"other" required:"true" description:"The gate on every send that does not address a phone number: an email reset code and a self-service email addition."`
 }
 
 // AuthnLoginHumanGate is one surface's human-verification gate: whether a proof
-// is required, the mechanism that checks it, and the public identifier a
-// client-side widget needs.
+// is required, the mechanism that checks it, the public identifier a
+// client-side widget needs and the action that widget must be rendered with.
 type AuthnLoginHumanGate struct {
-	_ struct{} `description:"The human-verification gate one surface runs: whether a proof is required, the mechanism that checks it, and the public identifier a client-side widget needs. A surface that takes no gate in reports the off mechanism and requires nothing."`
+	_ struct{} `description:"The human-verification gate one surface runs: whether a proof is required, the mechanism that checks it, the public identifier a client-side widget needs, and the action that widget must be rendered with. A surface whose gate is off reports the off mechanism and requires nothing."`
 
 	Required bool   "json:\"required\" required:\"true\" description:\"Whether every send on this surface must first present a valid, single-use proof\""
-	Provider string "json:\"provider\" required:\"true\" description:\"The mechanism that checks a proof on this surface: `off` when no gate is configured, `pow` for the self-hosted proof of work, `captcha` for the self-hosted captcha, or `turnstile` for Cloudflare's widget\""
+	Provider string "json:\"provider\" required:\"true\" description:\"The mechanism that checks a proof on this surface: `off` when the gate is off, `pow` for the self-hosted proof of work, `captcha` for the self-hosted captcha, or `turnstile` for Cloudflare's widget\""
 	SiteKey  string "json:\"site_key,omitempty\" description:\"The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`\""
+	Action   string "json:\"action,omitempty\" description:\"The action a client-side widget must be rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`. The provider's answer must name it.\""
 }
 
 // AuthnMethodDescriptor is one login method as the discovery document reports

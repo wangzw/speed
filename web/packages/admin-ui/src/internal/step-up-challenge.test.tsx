@@ -348,19 +348,27 @@ describe('StepUpChallenge', () => {
         />,
       )
       const user = userEvent.setup()
-      await screen.findByRole('button', {
+      // The block is not on screen before anything asks for a send: the
+      // factor choice is what asks for the proof.
+      const sms = await screen.findByRole('button', {
         name: zhCN.stepUp.factorKind.sms,
       })
-      // The block renders above the SMS factor choice; its widget yields a
-      // single-use token the answer presents.
+      expect(fake.widgets).toHaveLength(0)
+      await user.click(sms)
+
+      // Asking for the SMS answer renders the block above the factor choice,
+      // and the control that asked gives way while the proof is outstanding:
+      // no request leaves until the widget yields its single-use token.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
+      expect(
+        screen.getByRole('button', { name: zhCN.stepUp.factorKind.sms }),
+      ).toBeDisabled()
+      expect(requests).toHaveLength(0)
+
       act(() => {
         fake.token('token-1')
       })
-      await user.click(
-        screen.getByRole('button', { name: zhCN.stepUp.factorKind.sms }),
-      )
       await waitFor(() => expect(requests).toHaveLength(1))
       expect(requests[0]).toMatchObject({
         step: 'factor',

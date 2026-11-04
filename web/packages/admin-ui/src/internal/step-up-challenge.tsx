@@ -75,8 +75,8 @@ import {
   useAuthnMfaFactors,
 } from '@speed/api-sdk'
 import type { AuthSession, StepUpReason } from '@speed/auth-core'
-import type { AuthnFlowAnswer, AuthnStep } from '@speed/auth-core'
-import { humanGateNeedsProof, useStepUp } from '@speed/auth-core'
+import type { AuthnFlowAnswer } from '@speed/auth-core'
+import { useStepUp } from '@speed/auth-core'
 import { ActionButton, ActionRow, HumanVerification } from '@speed/ui-kit'
 import { useAdminAccountHref } from './account-href.js'
 import { useAdminReturnPath } from './return-path.js'
@@ -235,6 +235,8 @@ function StepUpFlow({
     phase,
     step,
     seq,
+    submitting,
+    pending,
     errorCode,
     retryAfterSeconds,
     human,
@@ -363,8 +365,7 @@ function StepUpFlow({
               <Box sx={{ mt: 1 }}>
                 {step !== null ? (
                   <>
-                    {humanGateNeedsProof(human.gate, humanScope) &&
-                    stepMaySend(step) ? (
+                    {pending ? (
                       <HumanVerification
                         scope={humanScope}
                         gate={human.gate ?? undefined}
@@ -387,7 +388,7 @@ function StepUpFlow({
                       answerStep={answerStep}
                       submitLabel={t('stepUp.submit')}
                       onSubmit={handleAnswer}
-                      submitDisabled={waiting}
+                      submitDisabled={waiting || submitting || pending}
                       ceremonyError={ceremonyError}
                       onCeremonyError={setCeremonyError}
                     />
@@ -429,19 +430,6 @@ function ordinaryStartRefusal(
   errorCode: string | null,
 ): boolean {
   return errorCode === 'authn.bad_request' && session.getSnapshot().state === 'authenticated'
-}
-
-/** Whether a step-up step could send a verification message: an SMS second
- * factor to choose, or a first-factor re-proof that asks for the phone. The
- * proof block renders above such a step. */
-function stepMaySend(step: AuthnStep): boolean {
-  if (step.kind === 'factor') {
-    return step.factors.some((factor) => factor.kind === 'sms')
-  }
-  if (step.kind === 'challenge') {
-    return step.fields.some((field) => field.kind === 'phone')
-  }
-  return false
 }
 
 /** The factors a factor read names as active, which are the ones a step-up

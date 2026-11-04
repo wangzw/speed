@@ -30,9 +30,10 @@ const (
 	stateEnrolled = "enrolled"
 )
 
-// humanProviderOff is the mechanism the discovery document names when this
-// deployment has no human-verification gate, either because no seam was
-// delivered or because the seam it was handed is the off mechanism.
+// humanProviderOff is the mechanism the discovery document names when the gate
+// this deployment runs reports off. The engine requires a gate, so a command
+// without one fails construction; this covers a hand-built routes value and a
+// gate whose mechanism is the off mechanism, neither of which takes a proof.
 const humanProviderOff = "off"
 
 // wire writes a body as the answer route's union when the call is the answer
@@ -237,9 +238,10 @@ func (r *routes) methods(ctx context.Context, _ struct{}, meta *speedhttp.Meta) 
 }
 
 // humanGate reports the human-verification gate this deployment runs, one entry
-// per surface. No seam and the off mechanism both read as the off mechanism on
-// every surface: a caller needs one answer whether the deployment has no gate or
-// has the gate turned off, because in both cases it presents no proof.
+// per surface. The off mechanism reads as the off mechanism on every surface.
+// The engine requires a gate, so a product always carries one; the nil check is
+// defence for a hand-built routes value, and it answers the same way because a
+// caller presents no proof either.
 func (r *routes) humanGate() humanView {
 	if r.human == nil {
 		off := humanSurfaceView{Provider: humanProviderOff}
@@ -257,6 +259,7 @@ func humanSurfaceGate(h authn.HumanVerifier, scope authn.HumanScope) humanSurfac
 		Required: h.Required(scope),
 		Provider: h.Provider(scope),
 		SiteKey:  h.SiteKey(scope),
+		Action:   h.Action(scope),
 	}
 }
 

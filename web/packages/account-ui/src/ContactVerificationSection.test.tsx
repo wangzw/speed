@@ -15,7 +15,8 @@
  * profile read renders the error state and its retry re-reads; 429 and 503
  * render their code text; a 401 authn.insufficient_user_authentication of the
  * send renders as an ordinary failure rather than opening a step-up dialog,
- * while a refused verify opens the dialog and replays the same code.
+ * while a refused verify opens the dialog and replays the same code; a send
+ * waiting on its proof is dropped when the code already in hand verifies.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -89,7 +90,9 @@ function mount(
   return { rig, ...rendered }
 }
 
-/** The resend-countdown note's expected text for any whole second count. */
+/** Matches the section's resend note: the wait a successful send's
+ * `resend_after` holds the control for. A throttled failure starts no note --
+ * its shared banner counts the same wait down. */
 function resendNote(before: string, after: string) {
   return (content: string): boolean =>
     content.startsWith(before) && content.endsWith(after)
@@ -465,7 +468,9 @@ describe('ContactVerificationSection', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.verification.send }),
     )
-    await screen.findByLabelText(zhCN.verification.codeLabel)
+    // The send waits on the deployment's gate read before it leaves; wait for
+    // the code step it lands on (the resend control) before answering it.
+    await screen.findByRole('button', { name: zhCN.verification.resend })
     await user.type(
       screen.getByLabelText(zhCN.verification.codeLabel),
       '123456',
@@ -556,7 +561,14 @@ describe('ContactVerificationSection', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.verification.send }),
     )
-    await screen.findByLabelText(zhCN.verification.codeLabel)
+    // The gate is read only once the send is asked for; the resend control
+    // appearing and becoming usable is the send settling, so the
+    // verification starts from the code step's own state rather than under
+    // the send's pending scope.
+    const resend = await screen.findByRole('button', {
+      name: zhCN.verification.resend,
+    })
+    await waitFor(() => expect(resend).toBeEnabled())
     await user.type(
       screen.getByLabelText(zhCN.verification.codeLabel),
       '123456',
@@ -783,10 +795,15 @@ describe('ContactVerificationSection', () => {
     expect(
       screen.getByRole('button', { name: zhCN.verification.send }),
     ).toBeDisabled()
+    // The banner is the one wait indicator: no second note counts down
+    // beside it, and the control points at no note.
     const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
     expect(
-      screen.getByText(resendNote(before ?? '', after ?? '')),
-    ).toBeTruthy()
+      screen.queryByText(resendNote(before ?? '', after ?? '')),
+    ).toBeNull()
+    expect(
+      screen.getByRole('button', { name: zhCN.verification.send }),
+    ).not.toHaveAttribute('aria-describedby')
   })
 
   it('states the automatic step-up refusal instead of opening the dialog, then retries the send on the visitor click', async () => {
@@ -965,7 +982,7 @@ describe('ContactVerificationSection', () => {
     })
   })
 
-  it('disables the resend control for the server interval and states why', async () => {
+  it('disables the resend control for the server interval and states the wait in its note', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
@@ -990,11 +1007,13 @@ describe('ContactVerificationSection', () => {
       name: zhCN.verification.resend,
     })
     expect(resend).toBeDisabled()
-    expect(resend).toHaveAttribute('aria-describedby')
+    // A successful send leaves no banner, so the note is the wait's only
+    // visible explanation, and the control points at it.
     const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
-    expect(
-      screen.getByText(resendNote(before ?? '', after ?? '')),
-    ).toBeTruthy()
+    const note = await screen.findByText(
+      resendNote(before ?? '', after ?? ''),
+    )
+    expect(resend).toHaveAttribute('aria-describedby', note.id)
   })
 
   it('stops the resend countdown timer when its interval expires', async () => {
@@ -1011,13 +1030,19 @@ describe('ContactVerificationSection', () => {
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    const { rig } = mount(respond)
-
-    // The mount's reads settle on the real clock; the countdown itself runs
-    // on the fake one so the five seconds pass instantly.
+    // The gate is stated up front: this case is about the countdown, and a
+    // gate that wants nothing sends as soon as the viewer asks.
+    const { rig } = mount(respond, {
+      humanGate: {
+        phone: { required: false, provider: 'off' },
+        other: { required: false, provider: 'off' },
+      },
+    })
     const send = await screen.findByRole('button', {
       name: zhCN.verification.send,
     })
+    // The mount's reads settled on the real clock; the send and its
+    // countdown run on the fake one so the five seconds pass instantly.
     vi.useFakeTimers()
     try {
       const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
@@ -1030,6 +1055,11 @@ describe('ContactVerificationSection', () => {
       expect(
         screen.getByRole('button', { name: zhCN.verification.resend }),
       ).toBeDisabled()
+      // The successful send states its hold in the section's own note.
+      const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
+      expect(
+        screen.getByText(resendNote(before ?? '', after ?? '')),
+      ).toBeTruthy()
       const timerId = setIntervalSpy.mock.results.at(-1)?.value
       expect(timerId).toBeDefined()
 
@@ -1039,10 +1069,11 @@ describe('ContactVerificationSection', () => {
       })
 
       // The timer is gone at its own expiry, not left ticking for the rest
-      // of the mount, and the note it drove is gone with it.
+      // of the mount, and the note leaves with the hold it stated.
       expect(clearIntervalSpy).toHaveBeenCalledWith(timerId)
-      const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
-      expect(screen.queryByText(resendNote(before ?? '', after ?? ''))).toBeNull()
+      expect(
+        screen.queryByText(resendNote(before ?? '', after ?? '')),
+      ).toBeNull()
       expect(
         rig.calls.filter(
           (call) => call.method === 'POST' && call.path === ADD_PATH,
@@ -1390,7 +1421,7 @@ describe('ContactVerificationSection', () => {
     expect(rig.endedEdges()).toBe(1)
   })
 
-  it('refuses the code request until the required verifier holds a token, then sends it', async () => {
+  it('asks for the verifier only when the code is requested, then sends it with the proof', async () => {
     const fake = installFakeTurnstile()
     try {
       const respond: RealResponder = (call: RealCall) => {
@@ -1401,7 +1432,7 @@ describe('ContactVerificationSection', () => {
           return jsonResponse(200, {
             state: 'pending',
             expires_in: 600,
-            resend_after: 60,
+            resend_after: 0,
           })
         }
         throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -1417,14 +1448,29 @@ describe('ContactVerificationSection', () => {
       const send = await screen.findByRole('button', {
         name: zhCN.verification.send,
       })
-      // A proof is required and the widget holds no token yet.
-      expect(send).toBeDisabled()
+      // The step shows no challenge until its send is asked for, and the
+      // control stays usable while no proof is outstanding.
+      expect(fake.widgets).toHaveLength(0)
+      expect(send).toBeEnabled()
+      await user.click(send)
+
+      // The send waits on the proof: the block renders and the control that
+      // asked gives way.
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(fake.widgets[0]?.siteKey).toBe('site-1')
+      expect(
+        screen.getByRole('button', { name: zhCN.verification.send }),
+      ).toBeDisabled()
+      expect(
+        rig.calls.filter(
+          (call) => call.method === 'POST' && call.path === ADD_PATH,
+        ),
+      ).toHaveLength(0)
+
+      // The proof arrives and the send leaves by itself.
       act(() => {
         fake.token('token-1')
       })
-      await waitFor(() => expect(send).toBeEnabled())
-      await user.click(send)
-
       await waitFor(() =>
         expect(
           rig.calls.filter(
@@ -1435,12 +1481,131 @@ describe('ContactVerificationSection', () => {
       const posts = rig.calls.filter(
         (call) => call.method === 'POST' && call.path === ADD_PATH,
       )
-      expect(posts).toHaveLength(1)
       expect(posts[0]?.body).toEqual({
         kind: 'email',
         value: 'ada@x.test',
         human_proof: 'token-1',
       })
+
+      // The proof is spent with the send: a resend asks for a fresh one and
+      // does not leave until the new widget yields it.
+      await user.click(
+        await screen.findByRole('button', { name: zhCN.verification.resend }),
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(2))
+      expect(
+        rig.calls.filter(
+          (call) => call.method === 'POST' && call.path === ADD_PATH,
+        ),
+      ).toHaveLength(1)
+      act(() => {
+        fake.token('token-2')
+      })
+      await waitFor(() =>
+        expect(
+          rig.calls.filter(
+            (call) => call.method === 'POST' && call.path === ADD_PATH,
+          ),
+        ).toHaveLength(2),
+      )
+      expect(
+        rig.calls.filter(
+          (call) => call.method === 'POST' && call.path === ADD_PATH,
+        )[1]?.body,
+      ).toEqual({
+        kind: 'email',
+        value: 'ada@x.test',
+        human_proof: 'token-2',
+      })
+    } finally {
+      fake.restore()
+    }
+  })
+
+  it('drops a resend waiting on its proof when the code in hand verifies', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      let verified = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileVerification(
+              verified ? 'verified' : 'pending',
+              'ada@x.test',
+            ),
+          )
+        }
+        if (call.method === 'POST' && call.path === ADD_PATH) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 0,
+          })
+        }
+        if (call.method === 'POST' && call.path === VERIFY_PATH) {
+          verified = true
+          return jsonResponse(200, { state: 'verified' })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond, {
+        humanGate: {
+          phone: { required: false, provider: 'off' },
+          other: { required: true, provider: 'turnstile', site_key: 'site-1' },
+        },
+      })
+      const user = userEvent.setup()
+      const sends = () =>
+        rig.calls.filter(
+          (call) => call.method === 'POST' && call.path === ADD_PATH,
+        )
+
+      // The first send carries its proof and lands.
+      await user.click(
+        await screen.findByRole('button', { name: zhCN.verification.send }),
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      act(() => {
+        fake.token('token-1')
+      })
+      await waitFor(() => expect(sends()).toHaveLength(1))
+
+      // A resend waits on a fresh proof: the block is the only thing to act
+      // on, and the verify control is held with it.
+      const codeField = screen.getByLabelText(zhCN.verification.codeLabel)
+      await user.type(codeField, '123456')
+      const resend = await screen.findByRole('button', {
+        name: zhCN.verification.resend,
+      })
+      await waitFor(() => expect(resend).toBeEnabled())
+      await user.click(resend)
+      await waitFor(() => expect(fake.widgets).toHaveLength(2))
+      expect(
+        screen.getByRole('button', { name: zhCN.verification.verify }),
+      ).toBeDisabled()
+
+      // A verification can still begin while the wait is outstanding: a
+      // step-up replay of a code the visitor already tried reaches verify
+      // directly. It calls the wait off, so the late proof never sends and
+      // the code just proved is not invalidated by a second one.
+      fireEvent.submit(codeField.closest('form') as HTMLFormElement)
+      await waitFor(() =>
+        expect(
+          rig.calls.filter(
+            (call) => call.method === 'POST' && call.path === VERIFY_PATH,
+          ),
+        ).toHaveLength(1),
+      )
+      act(() => {
+        fake.token('token-2')
+      })
+      expect(
+        await screen.findByRole('heading', {
+          name: zhCN.verification.verifiedTitle,
+        }),
+      ).toBeTruthy()
+      expect(sends()).toHaveLength(1)
     } finally {
       fake.restore()
     }

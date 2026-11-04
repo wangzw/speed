@@ -75,7 +75,7 @@ func TestTheCaptchaChallengeRouteAnswersTheAudioForm(t *testing.T) {
 	rig.drive(t)
 
 	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost,
-		captchaChallengeFullPath+"?form=audio", nil))
+		captchaChallengeFullPath+"?scope=phone&form=audio", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("the challenge route answered %d, want 200:\n%s", recorder.Code, recorder.Body)
 	}
@@ -107,6 +107,31 @@ func TestTheCaptchaChallengeRouteAnswersTheAudioForm(t *testing.T) {
 	assertMedia(t, rig, answer.AudioURL, "audio")
 }
 
+// TestTheCaptchaChallengeRouteRefusesAMissingOrUnknownScope holds the required
+// scope: a request that names none, or names a surface the gate does not serve,
+// is a bad request.
+func TestTheCaptchaChallengeRouteRefusesAMissingOrUnknownScope(t *testing.T) {
+	for _, target := range []string{captchaChallengeFullPath, captchaChallengeFullPath + "?scope=email"} {
+		t.Run(target, func(t *testing.T) {
+			rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
+			rig.drive(t)
+			recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, target, nil))
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("the challenge route answered %d, want 400:\n%s", recorder.Code, recorder.Body)
+			}
+			var problem struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
+				t.Fatalf("the answer is not JSON: %v\n%s", err, recorder.Body)
+			}
+			if problem.Type != "urn:speed:authn:bad-request" {
+				t.Errorf("the problem type is %q, want urn:speed:authn:bad-request", problem.Type)
+			}
+		})
+	}
+}
+
 // TestTheCaptchaChallengeRouteAnswersARotatedForm holds that a request naming
 // image or slider, and one naming no form, answers one of the rotating forms:
 // the form the rotation drew, its instruction key and only that form's media.
@@ -120,9 +145,9 @@ func TestTheCaptchaChallengeRouteAnswersARotatedForm(t *testing.T) {
 			rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
 			rig.drive(t)
 
-			target := captchaChallengeFullPath
+			target := captchaChallengeFullPath + "?scope=phone"
 			if requested != "" {
-				target += "?form=" + requested
+				target += "&form=" + requested
 			}
 			recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, target, nil))
 			if recorder.Code != http.StatusOK {
@@ -233,12 +258,12 @@ func TestTheCaptchaChallengeRouteAnswersThrottledAtTheIssuanceCap(t *testing.T) 
 	rig.drive(t)
 
 	for i := 0; i < 10; i++ {
-		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath, nil))
+		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath+"?scope=phone", nil))
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("request %d answered %d, want 200:\n%s", i+1, recorder.Code, recorder.Body)
 		}
 	}
-	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath, nil))
+	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath+"?scope=phone", nil))
 	if recorder.Code != http.StatusTooManyRequests {
 		t.Fatalf("the request past the cap answered %d, want 429:\n%s", recorder.Code, recorder.Body)
 	}
@@ -266,7 +291,7 @@ func TestTheCaptchaAudioFormHasItsOwnStricterLimit(t *testing.T) {
 	rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
 	rig.drive(t)
 
-	audio := captchaChallengeFullPath + "?form=audio"
+	audio := captchaChallengeFullPath + "?scope=phone&form=audio"
 	if recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, audio, nil)); recorder.Code != http.StatusOK {
 		t.Fatalf("the first audio challenge answered %d, want 200:\n%s", recorder.Code, recorder.Body)
 	}
@@ -280,12 +305,12 @@ func TestTheCaptchaAudioFormHasItsOwnStricterLimit(t *testing.T) {
 
 	// The visual rotation keeps its own bound: the audio refusal spent none of it.
 	for i := 0; i < 10; i++ {
-		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath, nil))
+		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath+"?scope=phone", nil))
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("visual request %d answered %d, want 200:\n%s", i+1, recorder.Code, recorder.Body)
 		}
 	}
-	if recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath, nil)); recorder.Code != http.StatusTooManyRequests {
+	if recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath+"?scope=phone", nil)); recorder.Code != http.StatusTooManyRequests {
 		t.Fatalf("the visual request past its cap answered %d, want 429:\n%s", recorder.Code, recorder.Body)
 	}
 
@@ -305,7 +330,7 @@ func TestTheCaptchaChallengeRouteRefusesAnUnsupportedAudioLanguage(t *testing.T)
 	rig.drive(t)
 
 	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost,
-		captchaChallengeFullPath+"?form=audio&lang=klingon", nil))
+		captchaChallengeFullPath+"?scope=phone&form=audio&lang=klingon", nil))
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("an unsupported audio language answered %d, want 400:\n%s", recorder.Code, recorder.Body)
 	}
@@ -318,7 +343,7 @@ func TestTheCaptchaChallengeRouteRefusesAnUnknownForm(t *testing.T) {
 	rig.drive(t)
 
 	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost,
-		captchaChallengeFullPath+"?form=puzzle", nil))
+		captchaChallengeFullPath+"?scope=phone&form=puzzle", nil))
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("an unknown form answered %d, want 400:\n%s", recorder.Code, recorder.Body)
 	}
@@ -341,7 +366,7 @@ func TestTheCaptchaRoutesAnswerUnavailableWhenTheStoreFails(t *testing.T) {
 		rig.drive(t)
 		rig.store.setErr = errStubKV
 
-		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath, nil))
+		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath+"?scope=phone", nil))
 		if recorder.Code != http.StatusServiceUnavailable {
 			t.Fatalf("a store fault answered %d, want 503:\n%s", recorder.Code, recorder.Body)
 		}
@@ -353,7 +378,7 @@ func TestTheCaptchaRoutesAnswerUnavailableWhenTheStoreFails(t *testing.T) {
 		// Audio is the form a client may choose, so the media path is known
 		// without depending on the rotation.
 		issued := rig.mounter.Do(httptest.NewRequest(http.MethodPost,
-			captchaChallengeFullPath+"?form=audio", nil))
+			captchaChallengeFullPath+"?scope=phone&form=audio", nil))
 		if issued.Code != http.StatusOK {
 			t.Fatalf("the challenge route answered %d:\n%s", issued.Code, issued.Body)
 		}
@@ -388,7 +413,7 @@ func TestAudioLanguageFollowsTheActiveLocale(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			target := captchaChallengeFullPath + "?form=audio"
+			target := captchaChallengeFullPath + "?scope=phone&form=audio"
 			if tc.lang != "" {
 				target += "&lang=" + tc.lang
 			}

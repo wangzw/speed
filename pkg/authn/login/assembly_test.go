@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -50,6 +51,18 @@ type (
 	stubMFA         struct{ authn.MFA }
 )
 
+// stubHuman is the required human-verification gate a test assembly resolves,
+// with both surfaces off: none of these cases presents a proof.
+type stubHuman struct{}
+
+var _ authn.HumanVerifier = stubHuman{}
+
+func (stubHuman) Required(authn.HumanScope) bool                                   { return false }
+func (stubHuman) Provider(authn.HumanScope) string                                 { return "off" }
+func (stubHuman) SiteKey(authn.HumanScope) string                                  { return "" }
+func (stubHuman) Action(authn.HumanScope) string                                   { return "" }
+func (stubHuman) Verify(context.Context, authn.HumanProof, authn.HumanScope) error { return nil }
+
 // standIn is a module delivering one instance for the tokens given.
 func standIn(name string, instance any, exclusive bool, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
@@ -75,6 +88,14 @@ func methodModule(i int, name string) core.Module {
 // given method modules, to the stage named.
 func driveEngine(t *testing.T, mounter *mounttest.Mounter, names []string, methods []string) error {
 	t.Helper()
+	return driveEngineWith(t, mounter, names, methods, true)
+}
+
+// driveEngineWith is driveEngine with a switch over the required
+// human-verification gate, for the case that holds a command naming the engine
+// without one to a resolution refusal.
+func driveEngineWith(t *testing.T, mounter *mounttest.Mounter, names []string, methods []string, human bool) error {
+	t.Helper()
 	reader := loadConfig(t, "{}")
 
 	reg := core.New()
@@ -96,6 +117,9 @@ func driveEngine(t *testing.T, mounter *mounttest.Mounter, names []string, metho
 	register(standIn("stand-in.throttle", &stubThrottle{}, true, (*authn.Throttle)(nil)))
 	register(standIn("stand-in.sessions", &stubSessions{}, true, (*authn.Sessions)(nil)))
 	register(standIn("stand-in.mfa", &stubMFA{}, true, (*authn.MFA)(nil)))
+	if human {
+		register(standIn("stand-in.human", stubHuman{}, true, (*authn.HumanVerifier)(nil)))
+	}
 	for i, name := range methods {
 		register(methodModule(i, name))
 	}
@@ -178,9 +202,10 @@ func TestOneMethodRegistersTheRoutes(t *testing.T) {
 
 // TestTheDescriptorRequiresWhatTheEngineNeeds holds the descriptor's shape: the
 // capabilities another module delivers exclusively are required, and the
-// settings store, the logging capability and the human-verification seam are
-// optional, so the first two are initialised first and an assembly without a
-// gate still sends.
+// settings store and the logging capability are optional, so the settings store
+// is initialised first. The human-verification gate is required, so an assembly
+// that names the engine without one fails in resolution instead of sending
+// ungated.
 func TestTheDescriptorRequiresWhatTheEngineNeeds(t *testing.T) {
 	m := login.Module()
 	if m.Name != login.ModuleName || login.ModuleName != "authn.login" {
@@ -202,23 +227,37 @@ func TestTheDescriptorRequiresWhatTheEngineNeeds(t *testing.T) {
 		(*mount.Mounter)(nil), (*kv.KV)(nil), (*authn.Accounts)(nil), (*authn.AccountAdmin)(nil),
 		(*authn.Signups)(nil), (*authn.SignupVerification)(nil), (*authn.Passwords)(nil),
 		(*authn.Memberships)(nil), (*authn.Throttle)(nil),
-		(*authn.Sessions)(nil), (*authn.MFA)(nil),
+		(*authn.Sessions)(nil), (*authn.MFA)(nil), (*authn.HumanVerifier)(nil),
 	} {
 		if !required[tk] {
 			t.Errorf("Requires is missing %v", tk)
 		}
 	}
 	for _, tk := range []core.Token{
-		(*settings.Store)(nil), (*log.Logger)(nil), (*authn.HumanVerifier)(nil),
+		(*settings.Store)(nil), (*log.Logger)(nil),
 	} {
 		if !optional[tk] {
 			t.Errorf("Requires does not hold %v as optional", tk)
 		}
 	}
-	if len(m.Requires) != len(required)+3 || !m.Requires[len(m.Requires)-3].Optional ||
-		!m.Requires[len(m.Requires)-2].Optional || !m.Requires[len(m.Requires)-1].Optional {
-		t.Errorf("Requires = %+v, want the settings store, the logging capability and the human-verification "+
-			"seam as the optional dependencies", m.Requires)
+	if len(m.Requires) != len(required)+2 || !m.Requires[len(m.Requires)-2].Optional ||
+		!m.Requires[len(m.Requires)-1].Optional {
+		t.Errorf("Requires = %+v, want the settings store and the logging capability as the optional "+
+			"dependencies", m.Requires)
+	}
+}
+
+// TestTheDriveFailsWithoutAHumanVerifier holds the required gate: a command that
+// names the engine and no human-verification gate fails in resolution. Before the
+// requirement the drive succeeded, so a deployment whose configuration named a
+// mode sent ungated.
+func TestTheDriveFailsWithoutAHumanVerifier(t *testing.T) {
+	err := driveEngineWith(t, mounttest.New(t), nil, []string{"password"}, false)
+	if !errors.Is(err, core.ErrMissingProvider) {
+		t.Fatalf("the drive returned %v, want ErrMissingProvider", err)
+	}
+	if !strings.Contains(err.Error(), "HumanVerifier") {
+		t.Errorf("the failure %q does not name the missing human-verification gate", err.Error())
 	}
 }
 

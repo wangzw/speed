@@ -35,19 +35,27 @@ startup in `Prepare` with `authn.ErrInvalidConfig` naming
 | `turnstile` | Cloudflare Turnstile | true | `pkg/authn/humanverify/turnstile` |
 
 The `off` gate accepts every proof, an empty one included, and reports an empty
-site key. A deployment states it to run no gate on a surface; that surface needs
-no key-value store, no settings store and no route mounter.
+site key and an empty action. A deployment states it to run no gate on a
+surface; that surface needs no key-value store, no settings store and no route
+mounter.
 
-The `turnstile` mode needs a site key, a secret key and the expected hostname.
-A command that names the mode on either surface without any of them fails the
-startup with `authn.ErrInvalidConfig` naming the absent item. The provider posts
-the proof to Cloudflare's siteverify endpoint and judges the answer; see below.
+The `turnstile` mode needs a site key, a secret key, the expected hostname and
+the action the widget is rendered with. It also needs the key-value store it
+claims spent tokens in: without it the single-use property would be only
+Cloudflare's promise, not this deployment's. A command that names the mode on
+either surface without any of them fails the startup with
+`authn.ErrInvalidConfig` naming the absent item. The provider posts the proof to
+Cloudflare's siteverify endpoint and judges the answer; see below.
 
 The `pow` and `captcha` modes need the key-value store their challenges live in
 and the route mounter that serves the challenge routes. A command that names
 either mode without the store fails the startup in `New`; one without the
-mounter fails it in `Init`; both name what is absent. The `pow` mode also reads
-its parameters from the settings store when one is present.
+mounter fails it in `Init`; both name what is absent. The self-hosted modes also
+read their issuance limits from the settings store when one is present.
+
+The descriptor declares the key-value store as optional, because the `off` gate
+needs none and a run with both surfaces off starts without it. A configuration
+that selects a mechanism needing the store fails in `New`, not at registration.
 
 ## The self-hosted captcha
 
@@ -66,10 +74,13 @@ stores nothing of its own: it needs no key-value key.
 
 It issues a challenge on `POST /api/v1/auth/human/captcha/challenge`, which is
 a declared operation of this module's fragment -- so the generated client calls
-it -- and is mounted, publicly, only when a surface runs `captcha`. The answer
-carries the provider name (`captcha`), the form, an instruction key, the
-challenge id, the paths of the media that form fetches, and the lifetime in
-whole seconds. The media routes are public, addressed by the unguessable id, and
+it -- and is mounted, publicly, only when a surface runs `captcha`. The request
+names the surface it issues for with the `scope` query item (`phone` or `other`);
+a missing or unknown value is a 400. The proof is bound to that surface, so
+presenting it on the other one is refused. The answer carries the provider name
+(`captcha`), the form, an instruction key, the challenge id, the paths of the
+media that form fetches, and the lifetime in whole seconds. The media routes are
+public, addressed by the unguessable id, and
 are not declared: the client reads their paths from the challenge answer and
 fetches them as images or audio, never through the API client.
 
@@ -79,22 +90,26 @@ fetches them as images or audio, never through the API client.
 - `GET /api/v1/auth/human/captcha/audio/:id` — the audio reading.
 
 A challenge and its media stay in the key-value store for five minutes. The
-record holds the answer as HMAC-SHA-256 digests keyed by a random per-challenge
-salt rather than text; the salt is stored beside the digests, so a digest copied
+record holds the surface the challenge was issued for and the answer as
+HMAC-SHA-256 digests keyed by a random per-challenge salt rather than text; the
+salt is stored beside the digests, so a digest copied
 out of the record without its salt cannot be enumerated over the five-digit
 answer space. The slider records one digest per offset within its tolerance. The
 proof is the challenge id and the answer joined by a dot, `id.answer`; the id is
 base64url without padding and the answer is digits, or a decimal offset for the
 slider.
 
-Issuance is bounded per source over a one-minute fixed window, with a counter
-per kind of challenge so neither budget spends the other. The visual rotation
-counts at `authn:human:captcha:issue:<sha256(address) hex>` and allows ten
-challenges; the audio alternative counts at
+Issuance is bounded twice over a one-minute fixed window. The per-source bound
+keeps a counter per kind of challenge, so neither budget spends the other. The
+visual rotation counts at `authn:human:captcha:issue:<sha256(address) hex>` and
+allows ten challenges; the audio alternative counts at
 `authn:human:captcha:audio-issue:<sha256(address) hex>` and allows one, because
-it is requested explicitly and is the most expensive form to draw. The route
-answers 429 when the bound of the form it is about to draw is reached, and a
-store that cannot answer is `authn.ErrUnavailable`, answered 503.
+it is requested explicitly and is the most expensive form to draw. Every
+challenge, of whichever form, also spends the provider's global counter at
+`authn:human:captcha:issue:global`, which bounds all sources together at the
+`authn.humanverify.captcha.global-issue-limit` setting (default 600, domain 1 to
+1000000). The route answers 429 when either bound is reached, and a store that
+cannot answer is `authn.ErrUnavailable`, answered 503.
 
 The three forms are hardened against automated solving:
 
@@ -105,7 +120,7 @@ The three forms are hardened against automated solving:
 - **Slider** — the gradient palette, the circles and the lines are drawn per
   challenge, the piece size is drawn from 40 to 56 pixels, and per-pixel noise is
   applied to the piece and to the background separately. The tolerance stays at
-  four pixels. The piece is not rotated: the answer is a horizontal offset, so a
+  two pixels. The piece is not rotated: the answer is a horizontal offset, so a
   rotation would need a second answer dimension.
 - **Audio** — the library already varies each digit's speed, mixes reversed
   digits into the background and adds a low noise floor. The WAV is then
@@ -122,12 +137,11 @@ it is kept as the accessibility path, so its cost is bounded by the stricter
 per-source issuance bound — one challenge per window — and the post-processing,
 not by the rotation that hides the choice of the visual forms.
 
-The bound is per source only: there is no global issuance ceiling, so a set of
-source addresses can still make the process draw challenges, and the image,
-slider and audio rendering plus the store writes are the work that costs. The
-bound on total work is the deployment's request-rate limit, which has to cover
-the endpoint the challenge routes mount on; this module adds no global cap of
-its own.
+The global counter covers all sources and all three forms, so a set of source
+addresses cannot multiply the image, slider and audio rendering plus the store
+writes without bound. The deployment's request-rate limit still has to cover the
+endpoint the challenge routes mount on; the global counter bounds issued
+challenges, not requests that are refused before counting.
 
 `Verify` reads the record, compares the answer in constant time, spends the
 record with a compare-and-swap so two presentations of one proof cannot both
@@ -156,15 +170,17 @@ single-use and lifetime semantics as the other two forms.
 The provider posts `secret`, `response` and, when the send names one,
 `remoteip` to the configured siteverify endpoint and reads the answer. It
 accepts the proof only when `success` is true, the answer's `hostname` equals
-the expected hostname (case-insensitively), and — when an action is configured —
-the answer's `action` equals it.
+the expected hostname (case-insensitively), and the answer's `action` equals
+the configured action. The action is required whenever a surface runs
+Turnstile: a token obtained under one action must not be accepted for another.
 
 The failures answer as the seam's three cases:
 
 - `success` false — the duplicate and timeout codes included, so a replayed
-  token is refused — is `authn.ErrHumanVerificationRequired` (403). The
-  provider's `error-codes` are logged at Warn with the request's logger and
-  never reach the client or the returned error.
+  token is refused — is `authn.ErrHumanVerificationRequired` (403). A token
+  already claimed in the local store is refused the same way, even when the
+  answer was success. The provider's `error-codes` are logged at Warn with the
+  request's logger and never reach the client or the returned error.
 - A non-2xx status, a transport failure, a body that is not the provider's
   response, or an answer accepted for another hostname or action is
   `authn.ErrUnavailable` (503): the proof was not judged, so nothing is sent.
@@ -179,32 +195,55 @@ secret is registered with the logging capability as a literal redaction rule in
 and still starts.
 
 The site key is public: `SiteKey()` reports it for a surface that runs
-Turnstile, so a client-side widget can be rendered. The secret and the token are
+Turnstile, so a client-side widget can be rendered, and `Action()` reports the
+action that widget must be rendered with. The secret and the token are
 credentials and never reach a log line, an error text, an event or a metric.
+
+Single use has a local half as well as Cloudflare's. After siteverify accepts a
+proof and the hostname and action match, the provider claims the token's
+SHA-256 digest in the key-value store at
+`authn:human:turnstile:spent:<sha256(token) hex>` with a set-if-absent, and
+refuses a token whose digest is already claimed with
+`authn.ErrHumanVerificationRequired`. The claim carries a five-minute expiry,
+which covers the whole time a Turnstile token is valid. The token itself never
+reaches the store, so a store dump carries no credential. The set-if-absent is
+what makes two concurrent presentations admit exactly one, and a replay is
+refused even when the upstream verifier would accept it again. A store that
+cannot record the claim is `authn.ErrUnavailable`: accepting a proof nobody
+recorded would leave it replayable.
 
 ## The proof of work
 
 The provider issues a challenge on `POST /api/v1/auth/human/challenge`, which is
-mounted, publicly, only when a surface runs `pow`. The answer carries the
-provider name (`pow`), the hash (`sha256`), the challenge, the difficulty and
-the lifetime in whole seconds.
+mounted, publicly, only when a surface runs `pow`. The request names the surface
+it issues for with the `scope` query item (`phone` or `other`); a missing or
+unknown value is a 400. The proof is bound to that surface, so presenting it on
+the other one is refused. The answer carries the provider name (`pow`), the hash
+(`sha256`), the challenge, the difficulty and the lifetime in whole seconds.
 
 A challenge is 16 random bytes, base64url without padding. The client finds a
 nonce such that SHA-256 of the decoded challenge followed by the nonce in
 eight-byte big-endian carries at least `difficulty` leading zero bits, and
-presents `challenge.nonce` as the proof. `Verify` reads the work from the
-challenge's stored difficulty, then spends the challenge with a
-compare-and-swap, so two concurrent presentations of one proof cannot both pass
-and a proof accepted once is refused afterwards.
+presents `challenge.nonce` as the proof. `Verify` reads the scope and difficulty
+from the challenge's stored record, refuses a proof presented on another
+surface, then spends the challenge with a compare-and-swap, so two concurrent
+presentations of one proof cannot both pass, and a proof accepted once is
+refused afterwards.
 
-The challenge is stored under `authn:human:pow:<sha256(challenge) hex>`, with
-the difficulty as its value and the challenge's lifetime as its expiry. A
-missing, expired, spent or unparsable entry is `authn.ErrHumanVerificationRequired`.
+The challenge is stored under `authn:human:pow:<sha256(challenge) hex>`, with a
+`{scope,difficulty}` record as its value and the challenge's lifetime as its
+expiry. A missing, expired, spent or unparsable entry, and a record naming an
+unknown surface, are `authn.ErrHumanVerificationRequired`.
 
 A per-source issuance counter at `authn:human:pow:issue:<sha256(address) hex>`
-bounds how many challenges one address holds in a one-minute fixed window — ten — so an
-anonymous caller cannot fill the store. The route answers 429 when the bound is
-reached. A store that cannot answer is `authn.ErrUnavailable`, answered 503.
+bounds how many challenges one address holds in a one-minute fixed window — ten —
+so an anonymous caller cannot fill the store. A second counter at
+`authn:human:pow:issue:global` bounds all sources together at the
+`authn.humanverify.pow.global-issue-limit` setting (default 600, domain 1 to
+1000000), so a set of addresses cannot multiply the total challenge work. The
+source's bound is checked first, so a source past its own allowance does not
+spend the shared one. The route answers 429 when either bound is reached. A
+store that cannot answer is `authn.ErrUnavailable`, answered 503.
 
 A proof longer than 512 bytes is refused with `authn.ErrInvalidArgument` (400):
 a valid proof is 22 base64url characters, a dot and a nonce of at most twenty
@@ -212,9 +251,9 @@ decimal digits.
 
 ## The seam's contract
 
-- **Every answer is per surface.** `Required`, `Provider`, `SiteKey` and
-  `Verify` take a `HumanScope` (`phone` or `other`) and answer for that surface
-  alone. A deployment may run a different mechanism on each. An unknown scope
+- **Every answer is per surface.** `Required`, `Provider`, `SiteKey`, `Action`
+  and `Verify` take a `HumanScope` (`phone` or `other`) and answer for that
+  surface alone. A deployment may run a different mechanism on each. An unknown scope
   answers as the phone surface when that surface is gated, otherwise as the
   gated other surface; it resolves to off only when both surfaces are off.
 - **A proof is single-use.** A token accepted once is refused when it is
@@ -245,8 +284,8 @@ Input items under the module's own namespace:
 - `verify-url` — the siteverify endpoint; default
   `https://challenges.cloudflare.com/turnstile/v0/siteverify`, and an absolute
   https URL.
-- `action` — the action the widget was rendered with; optional, empty accepts
-  any.
+- `action` — the action the widget is rendered with; required when either
+  surface runs `turnstile`, and the provider's answer must name it.
 - `timeout` — the whole time one verification may take; default 10s, domain 1s
   to 30s.
 
@@ -254,16 +293,24 @@ Input items under the module's own namespace:
 which.** A section that names no mode runs the captcha on the phone surface and
 the proof of work on the other, and nothing is required of the Turnstile items.
 Naming `turnstile` on either surface is a deployment asking for that mechanism;
-if any of `site-key`, `secret-key` or `hostname` is absent, that is a
+if any of `site-key`, `secret-key`, `hostname` or `action` is absent, that is a
 half-configured gate, and Prepare fails the start naming the item rather than
 coming up with a gate that cannot check a proof and sending anyway. There is no
 stand-down state here: the module's absence from a run is the host leaving it
 out of the command, not a configuration its own section could express.
 
-The proof-of-work mode reads two settings under `authn.humanverify.pow`:
+The self-hosted modes read their issuance limits from settings:
 
-- `difficulty` — leading zero bits a proof must reach; default 18, domain 16..22.
-- `challenge-ttl` — how long a challenge stays valid; default 5m, domain 1m..15m.
+- `authn.humanverify.pow.difficulty` — leading zero bits a proof must reach;
+  default 20, domain 18..22.
+- `authn.humanverify.pow.challenge-ttl` — how long a challenge stays valid;
+  default 5m, domain 1m..15m.
+- `authn.humanverify.pow.global-issue-limit` — proof-of-work challenges all
+  sources together may be issued in one one-minute window; default 600, domain
+  1..1000000.
+- `authn.humanverify.captcha.global-issue-limit` — captcha challenges all
+  sources and all forms together may be issued in one one-minute window; default
+  600, domain 1..1000000.
 
 A settings store that is absent, a read that fails and a value outside the
 domain all read as the declared default, so a gate that is on does not stop
@@ -276,8 +323,8 @@ issuing challenges over a settings fault.
   senders. This module answers one question about one proof.
 - **The gate adds no budget of its own.** It is checked before the send
   budgets, so a refusal costs none of them, and it consumes no counter. Each
-  self-hosted mechanism's per-source issuance counter bounds challenge issuance,
-  not sends.
+  self-hosted mechanism's per-source and global issuance counters bound
+  challenge issuance, not sends.
 - **A deployment that wants another mechanism supplies the seam itself.** The
   module claims the seam exclusively, so its own implementation and a bundled
   one cannot both stand; the host leaves this module out of the command.

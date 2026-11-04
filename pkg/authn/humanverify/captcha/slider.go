@@ -21,7 +21,7 @@ const (
 	sliderHeight    = 160
 	pieceSizeMin    = 40
 	pieceSizeMax    = 56
-	sliderTolerance = 4
+	sliderTolerance = 2
 )
 
 // sliderImages is what one slider challenge is served with.

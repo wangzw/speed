@@ -52,8 +52,10 @@ compatibility break for a dashboard written against it.
   the phone surface.** `SendCode.Proof` is the proof the caller presented;
   `Send` asks the deployment's gate on `authn.HumanScopePhone` before the
   allowed-prefix table, the queue and every budget, so a refused proof spends
-  nothing and reveals nothing about the number. An assembly with no gate, and a
-  gate that requires nothing on the phone surface, skips the check entirely.
+  nothing and reveals nothing about the number. The gate is a required
+  dependency: an assembly that names this module supplies one, and one with no
+  gate fails at resolution. Only a gate that requires nothing on the phone
+  surface, which is the off mechanism, skips the check entirely.
   The proof is single-use, so this is the one place it is consumed:
   the email code branch sends over the mail channel and keeps its own check on
   the other surface, because it has no code engine to hand the proof to. A missing, invalid,

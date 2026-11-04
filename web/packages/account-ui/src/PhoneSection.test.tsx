@@ -19,8 +19,8 @@
  * refused verify opens the dialog and replays the same code.
  */
 
-import { describe, expect, it } from 'vitest'
-import { act, screen, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { PhoneCountryDefaultProvider, uiKitResources } from '@speed/ui-kit'
@@ -252,6 +252,86 @@ describe('PhoneSection', () => {
         .compareDocumentPosition(alert) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
+  })
+
+  it('names a throttled send\'s wait in the shared banner and counts it down live', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return new Response(
+          JSON.stringify({ code: 'authn.throttled', traceId: 'trace-1' }),
+          {
+            status: 429,
+            headers: {
+              'content-type': 'application/json',
+              'retry-after': '3',
+            },
+          },
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <PhoneSection
+        session={rig.session}
+        // This case is about the banner's countdown: a gate that wants
+        // nothing sends as soon as the viewer asks.
+        humanGate={{
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        }}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+
+    // The type-ahead runs on the real clock; the send, the refusal and the
+    // countdown run on the fake one so the wait passes instantly.
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: zhCN.phone.send }))
+        for (let turn = 0; turn < 10; turn += 1) {
+          await Promise.resolve()
+        }
+      })
+
+      const sentence = (seconds: number) =>
+        zhCN.throttle.retryAfter.replace('{{seconds}}', String(seconds))
+      const alert = screen.getByRole('alert')
+      // The stable sentence the alert announces names the initial wait.
+      expect(alert.textContent).toContain(sentence(3))
+      // The visible sentence is the one that changes, and it is hidden from
+      // assistive technology so the alert never re-announces on a tick.
+      const visible = Array.from(
+        alert.querySelectorAll('[aria-hidden="true"]'),
+      ).find((node) => (node.textContent ?? '').includes('3'))
+      expect(visible).toBeDefined()
+      expect(visible?.textContent).toContain(sentence(3))
+
+      // One second on, only the visible sentence moves; the accessible
+      // sentence stays the initial one.
+      act(() => {
+        vi.advanceTimersByTime(1000)
+      })
+      expect(alert.textContent).toContain(sentence(3))
+      expect(visible?.textContent).toContain(sentence(2))
+
+      // At the deadline the visible sentence drops the number instead of
+      // standing at a stale zero, and the banner is not auto-cleared.
+      act(() => {
+        vi.advanceTimersByTime(2000)
+      })
+      expect(visible?.textContent).toBe(zhCN.errors.authn.throttled)
+      expect(screen.getByRole('alert')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('renders a refused verification beneath the code controls', async () => {
@@ -519,7 +599,7 @@ describe('PhoneSection', () => {
     expect(rig.endedEdges()).toBe(1)
   })
 
-  it('refuses the send until the required verifier holds a token, then sends it', async () => {
+  it('asks for the verifier only when the send is requested, then sends it with the proof', async () => {
     const fake = installFakeTurnstile()
     try {
       const respond: RealResponder = (call: RealCall) => {
@@ -541,20 +621,32 @@ describe('PhoneSection', () => {
       )
       const user = userEvent.setup()
 
-      const send = screen.getByRole('button', { name: zhCN.phone.send })
       await user.type(
         screen.getByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
         US_NATIONAL,
       )
-      // A proof is required and the widget holds no token yet.
-      expect(send).toBeDisabled()
+      // Entering the number shows no challenge: the block belongs to a send
+      // the viewer asked for.
+      expect(fake.widgets).toHaveLength(0)
+      const send = screen.getByRole('button', { name: zhCN.phone.send })
+      expect(send).toBeEnabled()
+      await user.click(send)
+
+      // The send waits on a proof: the block renders and the control that
+      // asked gives way, so one action is on screen at a time.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(fake.widgets[0]?.siteKey).toBe('site-1')
+      expect(
+        screen.queryByRole('button', { name: zhCN.phone.send }),
+      ).toBeNull()
+      expect(rig.calls.filter((call) => call.path === PHONE_PATH)).toHaveLength(
+        0,
+      )
+
+      // The proof arrives and the send the viewer asked for leaves by itself.
       act(() => {
         fake.token('token-1')
       })
-      await waitFor(() => expect(send).toBeEnabled())
-      await user.click(send)
-
       await waitFor(() =>
         expect(
           rig.calls.filter((call) => call.path === PHONE_PATH),

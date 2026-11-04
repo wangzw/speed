@@ -19,14 +19,16 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { AuthnField, AuthnStep } from '@speed/auth-core'
+import type { AuthnField, AuthnHumanGate, AuthnStep } from '@speed/auth-core'
 import { createAppTheme } from '@speed/ui-kit'
+import { makeHarness } from '@speed/test-utils/session-harness'
+import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
-import { FlowStepFields } from './flow-step.js'
+import { FlowStepFields, HumanGatedFlowStep } from './flow-step.js'
 import type { OpenFlowState } from './flow.js'
 
 function step(next: AuthnStep): OpenFlowState {
@@ -1329,5 +1331,82 @@ describe('FlowStepFields unsupported step', () => {
       }),
     )
     expect(onUnsupported).toHaveBeenCalledTimes(1)
+  })
+})
+
+/** A gate whose phone surface runs Turnstile and whose other surface is
+ * off: choosing the SMS factor is a send that needs a proof. */
+const PHONE_TURNSTILE: AuthnHumanGate = {
+  phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
+  other: { required: false, provider: 'off' },
+}
+
+describe('HumanGatedFlowStep held answer', () => {
+  it('cancel the held answer and leave the step answerable', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      const onAnswer = vi.fn()
+      const harness = makeHarness({})
+      const factorStep: OpenFlowState = {
+        seq: 2,
+        state: 'second',
+        next: {
+          kind: 'factor',
+          factors: [{ id: 'mfa-1', kind: 'sms' }],
+        },
+      }
+      renderWithProviders(
+        <>
+          <h1>Two-factor sign-in</h1>
+          <HumanGatedFlowStep
+            session={harness.session}
+            humanGate={PHONE_TURNSTILE}
+            step={factorStep}
+            busy={false}
+            onAnswer={onAnswer}
+            onUnsupported={vi.fn()}
+          />
+        </>,
+      )
+      const user = userEvent.setup()
+      const smsChoice = screen.getByRole('button', {
+        name: zhCN.signInFlow.factorKind.sms,
+      })
+
+      // The SMS factor is a send, so the answer waits for the proof and the
+      // whole step is busy meanwhile.
+      await user.click(smsChoice)
+      await waitFor(() => expect(smsChoice).toBeDisabled())
+      expect(fake.widgets).toHaveLength(1)
+      expect(onAnswer).not.toHaveBeenCalled()
+
+      // The cancel control drops the wait even when the proof never comes.
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
+      )
+      await waitFor(() => expect(smsChoice).toBeEnabled())
+      expect(
+        screen.queryByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
+      ).toBeNull()
+      expect(onAnswer).not.toHaveBeenCalled()
+
+      // The step is answerable again: the same choice holds again, and this
+      // time the proof it obtains sends the answer.
+      await user.click(smsChoice)
+      await waitFor(() => expect(fake.widgets).toHaveLength(2))
+      act(() => {
+        fake.token('token-1')
+      })
+      await waitFor(() =>
+        expect(onAnswer).toHaveBeenCalledWith(
+          { factor: 'mfa-1' },
+          'token-1',
+        ),
+      )
+      expect(onAnswer).toHaveBeenCalledTimes(1)
+      await expectNoAxeViolations()
+    } finally {
+      fake.restore()
+    }
   })
 })

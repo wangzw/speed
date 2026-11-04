@@ -952,6 +952,11 @@ const deployValues = {
   humanverifyPhoneMode: 'off',
   turnstileSiteKey: '',
   turnstileSecretKey: '',
+  // The action the widget is rendered with, which the provider's answer is
+  // checked against. The entrypoint defaults DEMO_TURNSTILE_ACTION to login;
+  // the fixture mirrors that default so a rendered deployment carries the same
+  // action one without the secret would.
+  turnstileAction: 'login',
 } as const
 
 export interface DeployConfigInput {
@@ -1052,6 +1057,7 @@ export async function writeDeployConfig(
     ['__HUMANVERIFY_PHONE_MODE__', deployValues.humanverifyPhoneMode, 1],
     ['__TURNSTILE_SITE_KEY__', deployValues.turnstileSiteKey, 1],
     ['__TURNSTILE_SECRET_KEY__', deployValues.turnstileSecretKey, 1],
+    ['__TURNSTILE_ACTION__', deployValues.turnstileAction, 1],
   ]
   for (const [needle, replacement, expected] of replacements) {
     body = replaceAll(body, needle, replacement, expected, `deploy ${needle}`)

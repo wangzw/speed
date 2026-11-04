@@ -1151,7 +1151,19 @@ no API message and no cross-language fallback can reach a user.
 `errorCodeOf` is the companion classifier: an ApiError-shaped failure
 keeps its code, anything else collapses to a code no resolver lists
 (rendered as the family's unknown fallback).
-Props: `code` (required, `string | null`), `resolve` (required).
+
+A refusal that states a wait (a throttled answer's Retry-After) passes
+it as `retryAfterSeconds`; `resolve` receives it as its second argument
+and renders the sentence that names it. A stated wait renders as two
+sentences: the one resolved with the stated wait stays in the
+accessibility tree but is clipped from view, so a screen reader
+announces the failure once; the painted one is `aria-hidden` and follows
+`liveRetryAfterSeconds`, the remaining seconds the host counts down. At
+zero the visible sentence resolves the code without a wait -- only the
+number is dropped, the result stays. Omitting the live value keeps the
+painted sentence on the stated wait.
+Props: `code` (required, `string | null`), `resolve` (required),
+`retryAfterSeconds?`, `liveRetryAfterSeconds?`, `detail?`.
 
 ### InlineSuccess (the success banner)
 
@@ -1195,6 +1207,14 @@ The success message is the string the host translated when it called
 `succeed` -- the slot stores it, so a later language switch does not
 rewrite it. Failure codes are stored as codes and resolved by the
 region's `resolve`, so they follow the active language.
+
+A failure whose answer stated a wait carries `retryAfterSeconds` and the
+`waitUntil` deadline recorded when the outcome settles, so the region
+counts the remaining seconds down itself and no caller holds clock
+state. The accessible sentence stays fixed at the stated wait while the
+visible sentence decrements; at expiry only the number is dropped and
+the result stays. `resolve` receives the wait as its second argument,
+so the sentence can name how long to retry.
 
 ```tsx
 import { useState } from 'react'

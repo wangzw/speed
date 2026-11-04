@@ -52,6 +52,7 @@
     "codeUsed": "That code has already been used. Request a new one.",
     "resendCode": "Resend code",
     "resendIn": "You can request another code in {{seconds}} seconds.",
+    "cancelResend": "Cancel resend",
     "editPhone": "Change phone number"
   },
   "signInFlow": {

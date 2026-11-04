@@ -55,6 +55,7 @@ import {
   useChannelFeedback,
 } from './internal/write-feedback.js'
 import { HumanGatedFlowStep } from './internal/flow-step.js'
+import { retryWaitMs } from './internal/retry-wait.js'
 import { stepKey, useStepFocus } from './internal/step-focus.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
 import type { SignInBeforeStart } from './internal/start-gate.js'
@@ -125,7 +126,7 @@ export function PasswordSignInForm({
 
   const driver = useFlowDriver(session, {
     beforeStart,
-    onFailure: (code) => {
+    onFailure: (code, error) => {
       if (code === LOGIN_FAILED && credentialsMounted.current) {
         // The password field carries the refusal: the same helper-text
         // channel its validation errors use, which MUI associates with the
@@ -139,7 +140,7 @@ export function PasswordSignInForm({
         feedback.reset()
         return
       }
-      feedback.fail(code)
+      feedback.fail(code, retryWaitMs(error))
     },
     onSettled: () => {
       try {
@@ -196,6 +197,7 @@ export function PasswordSignInForm({
           humanGate={humanGate}
           step={driver.step}
           busy={driver.busy}
+          onAttemptStart={() => feedback.reset()}
           onAnswer={(input, proof) => {
             // Answering a step is a new attempt: the previous failure must
             // not stand beside the step this answer parks.

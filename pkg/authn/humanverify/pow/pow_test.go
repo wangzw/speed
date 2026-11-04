@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"math/bits"
 	"sort"
@@ -187,10 +188,12 @@ func (k *fakeKV) keys() []string {
 	return out
 }
 
-// settingsStub is the settings reader a case scripts.
+// settingsStub is the settings reader a case scripts. A zero global limit is
+// outside the domain and therefore reads as the declared default.
 type settingsStub struct {
 	difficulty int
 	ttl        time.Duration
+	global     int
 	err        error
 }
 
@@ -211,6 +214,12 @@ func (s settingsStub) Get(_ settings.Layer, key string, target any) error {
 			return settings.ErrTypeMismatch
 		}
 		*p = s.ttl
+	case globalIssueLimitPath:
+		p, ok := target.(*int)
+		if !ok {
+			return settings.ErrTypeMismatch
+		}
+		*p = s.global
 	default:
 		return settings.ErrUnknownKey
 	}
@@ -295,18 +304,28 @@ func solveBetween(t *testing.T, challenge string, atLeast, below int) string {
 
 func mustIssue(t *testing.T, p *Provider, address string) Challenge {
 	t.Helper()
-	c, err := p.Issue(t.Context(), address)
+	c, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: address})
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
 	return c
 }
 
+// storedRecord is the value a challenge key holds, encoded as Issue writes it.
+func storedRecord(t *testing.T, rec record) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatalf("encoding the record: %v", err)
+	}
+	return encoded
+}
+
 // TestACorrectNonceIsAcceptedOnce is the single-use contract: the proof that a
 // challenge and its solved nonce make is accepted once, and the same proof
 // presented again is refused rather than accepted twice.
 func TestACorrectNonceIsAcceptedOnce(t *testing.T) {
-	p, _, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	c := mustIssue(t, p, "203.0.113.7")
 	proof := authn.HumanProof{Token: c.Challenge + "." + solve(t, c.Challenge, c.Difficulty), RemoteIP: "203.0.113.7"}
 
@@ -323,7 +342,7 @@ func TestACorrectNonceIsAcceptedOnce(t *testing.T) {
 // two requests presenting one proof at the same time cannot both pass, which is
 // what the compare-and-swap that spends the challenge buys.
 func TestOneProofCannotPassTwiceConcurrently(t *testing.T) {
-	p, _, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	c := mustIssue(t, p, "203.0.113.7")
 	proof := authn.HumanProof{Token: c.Challenge + "." + solve(t, c.Challenge, c.Difficulty)}
 
@@ -359,7 +378,7 @@ func TestOneProofCannotPassTwiceConcurrently(t *testing.T) {
 // fewer leading zero bits than the challenge was issued with is refused even
 // though it names a live challenge.
 func TestAShortProofIsRefused(t *testing.T) {
-	p, _, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	c := mustIssue(t, p, "203.0.113.7")
 	proof := authn.HumanProof{Token: c.Challenge + "." + insufficient(t, c.Challenge, c.Difficulty)}
 
@@ -375,7 +394,7 @@ func TestAShortProofIsRefused(t *testing.T) {
 // TestAnExpiredChallengeIsRefused holds the TTL: once the store stops serving
 // the challenge, a proof that names it is refused as an invalid one.
 func TestAnExpiredChallengeIsRefused(t *testing.T) {
-	p, _, clock := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+	p, _, clock := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	c := mustIssue(t, p, "203.0.113.7")
 	proof := authn.HumanProof{Token: c.Challenge + "." + solve(t, c.Challenge, c.Difficulty)}
 
@@ -390,7 +409,7 @@ func TestAnExpiredChallengeIsRefused(t *testing.T) {
 // read and write the check performs.
 func TestAKVFaultAnswersUnavailable(t *testing.T) {
 	t.Run("reading the challenge", func(t *testing.T) {
-		p, store, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+		p, store, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 		c := mustIssue(t, p, "203.0.113.7")
 		store.getErr = errKV
 		err := p.Verify(t.Context(), authn.HumanProof{Token: c.Challenge + "." + solve(t, c.Challenge, c.Difficulty)}, authn.HumanScopeOther)
@@ -403,7 +422,7 @@ func TestAKVFaultAnswersUnavailable(t *testing.T) {
 	})
 
 	t.Run("spending the challenge", func(t *testing.T) {
-		p, store, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+		p, store, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 		c := mustIssue(t, p, "203.0.113.7")
 		store.casErr = errKV
 		err := p.Verify(t.Context(), authn.HumanProof{Token: c.Challenge + "." + solve(t, c.Challenge, c.Difficulty)}, authn.HumanScopeOther)
@@ -413,17 +432,17 @@ func TestAKVFaultAnswersUnavailable(t *testing.T) {
 	})
 
 	t.Run("issuing a challenge", func(t *testing.T) {
-		p, store, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+		p, store, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 		store.incErr = errKV
-		if _, err := p.Issue(t.Context(), "203.0.113.7"); !errors.Is(err, authn.ErrUnavailable) {
+		if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: "203.0.113.7"}); !errors.Is(err, authn.ErrUnavailable) {
 			t.Fatalf("a counter fault resolved with %v, want ErrUnavailable", err)
 		}
 	})
 
 	t.Run("storing a challenge", func(t *testing.T) {
-		p, store, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+		p, store, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 		store.setErr = errKV
-		if _, err := p.Issue(t.Context(), "203.0.113.7"); !errors.Is(err, authn.ErrUnavailable) {
+		if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: "203.0.113.7"}); !errors.Is(err, authn.ErrUnavailable) {
 			t.Fatalf("a store fault resolved with %v, want ErrUnavailable", err)
 		}
 	})
@@ -433,7 +452,7 @@ func TestAKVFaultAnswersUnavailable(t *testing.T) {
 // three failures: a proof longer than the provider admits is a bad request, not
 // an invalid proof and not an outage.
 func TestAnOverLongProofIsRefusedAsHumanProofTooLong(t *testing.T) {
-	p, _, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	err := p.Verify(t.Context(), authn.HumanProof{Token: strings.Repeat("a", maxProofLen+1)}, authn.HumanScopeOther)
 	if !errors.Is(err, authn.ErrHumanProofTooLong) {
 		t.Fatalf("an over-long proof resolved with %v, want ErrHumanProofTooLong", err)
@@ -446,7 +465,7 @@ func TestAnOverLongProofIsRefusedAsHumanProofTooLong(t *testing.T) {
 // TestAMalformedProofIsRefused holds the proof's grammar: anything that is not
 // a base64url challenge, a dot and a decimal nonce is an invalid proof.
 func TestAMalformedProofIsRefused(t *testing.T) {
-	p, _, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	for _, token := range []string{
 		"no dot at all",
 		".123",
@@ -468,10 +487,10 @@ func TestAMalformedProofIsRefused(t *testing.T) {
 // stored value outside the domain is refused rather than trusted.
 func TestTheStoredDifficultyDecidesTheThreshold(t *testing.T) {
 	t.Run("a stored value outside the domain", func(t *testing.T) {
-		p, store, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+		p, store, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 		c := mustIssue(t, p, "203.0.113.7")
 		key := challengeKeyFor(c.Challenge)
-		if err := store.Set(t.Context(), key, []byte("23"), time.Minute); err != nil {
+		if err := store.Set(t.Context(), key, storedRecord(t, record{Scope: authn.HumanScopeOther, Difficulty: 23}), time.Minute); err != nil {
 			t.Fatalf("overwriting the stored difficulty: %v", err)
 		}
 		err := p.Verify(t.Context(), authn.HumanProof{Token: c.Challenge + "." + insufficient(t, c.Challenge, c.Difficulty)}, authn.HumanScopeOther)
@@ -481,13 +500,13 @@ func TestTheStoredDifficultyDecidesTheThreshold(t *testing.T) {
 	})
 
 	t.Run("a raised threshold", func(t *testing.T) {
-		p, store, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+		p, store, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 		c := mustIssue(t, p, "203.0.113.7")
 		key := challengeKeyFor(c.Challenge)
-		if err := store.Set(t.Context(), key, []byte("18"), time.Minute); err != nil {
+		if err := store.Set(t.Context(), key, storedRecord(t, record{Scope: authn.HumanScopeOther, Difficulty: 20}), time.Minute); err != nil {
 			t.Fatalf("overwriting the stored difficulty: %v", err)
 		}
-		proof := c.Challenge + "." + solveBetween(t, c.Challenge, 16, 18)
+		proof := c.Challenge + "." + solveBetween(t, c.Challenge, 18, 20)
 		err := p.Verify(t.Context(), authn.HumanProof{Token: proof}, authn.HumanScopeOther)
 		if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 			t.Fatalf("a proof below the stored difficulty resolved with %v, want ErrHumanVerificationRequired", err)
@@ -496,10 +515,10 @@ func TestTheStoredDifficultyDecidesTheThreshold(t *testing.T) {
 }
 
 // TestIssueStoresTheChallengeUnderItsDigest holds the storage shape: the key is
-// the digest of the challenge, the value is the difficulty, and the entry
-// carries the configured lifetime.
+// the digest of the challenge, the value is the record of the surface and the
+// difficulty, and the entry carries the configured lifetime.
 func TestIssueStoresTheChallengeUnderItsDigest(t *testing.T) {
-	p, store, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: 2 * time.Minute})
+	p, store, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: 2 * time.Minute})
 	c := mustIssue(t, p, "203.0.113.7")
 
 	sum := sha256.Sum256([]byte(c.Challenge))
@@ -511,8 +530,15 @@ func TestIssueStoresTheChallengeUnderItsDigest(t *testing.T) {
 	if !present {
 		t.Fatalf("the challenge is not stored under %q; keys are %v", key, store.keys())
 	}
-	if got := string(value); got != strconv.Itoa(c.Difficulty) {
-		t.Errorf("the stored value is %q, want the difficulty %d", got, c.Difficulty)
+	var rec record
+	if err := json.Unmarshal(value, &rec); err != nil {
+		t.Fatalf("the stored value is not a record: %v (%q)", err, value)
+	}
+	if rec.Scope != authn.HumanScopeOther {
+		t.Errorf("the stored scope is %q, want %q", rec.Scope, authn.HumanScopeOther)
+	}
+	if rec.Difficulty != c.Difficulty {
+		t.Errorf("the stored difficulty is %d, want the difficulty %d", rec.Difficulty, c.Difficulty)
 	}
 	store.mu.Lock()
 	expires := store.exp[key]
@@ -522,27 +548,102 @@ func TestIssueStoresTheChallengeUnderItsDigest(t *testing.T) {
 	}
 }
 
+// TestAProofIsBoundToItsScope holds the scope binding: a proof issued for one
+// surface is refused on the other, and the refusal consumes nothing, so the
+// proof is still accepted on the surface it was issued for.
+func TestAProofIsBoundToItsScope(t *testing.T) {
+	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
+	c, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, RemoteIP: "203.0.113.7"})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	proof := authn.HumanProof{Token: c.Challenge + "." + solve(t, c.Challenge, c.Difficulty)}
+
+	err = p.Verify(t.Context(), proof, authn.HumanScopeOther)
+	if !errors.Is(err, authn.ErrHumanVerificationRequired) {
+		t.Fatalf("a proof issued for the phone surface resolved with %v on the other surface, want ErrHumanVerificationRequired", err)
+	}
+	if err := p.Verify(t.Context(), proof, authn.HumanScopePhone); err != nil {
+		t.Fatalf("the refused proof was no longer accepted on its own surface: %v", err)
+	}
+}
+
+// TestAnUnknownScopeIsRefused holds that a challenge can only be issued for one
+// of the two surfaces the gate serves.
+func TestAnUnknownScopeIsRefused(t *testing.T) {
+	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
+	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScope("email"), RemoteIP: "203.0.113.7"}); !errors.Is(err, ErrUnknownScope) {
+		t.Fatalf("an unknown scope resolved with %v, want ErrUnknownScope", err)
+	}
+}
+
 // TestTheIssuanceCapBoundsOneSource holds the anti-fill bound: one address may
 // hold a limited number of challenges at a time, and another address is not
 // affected by it.
 func TestTheIssuanceCapBoundsOneSource(t *testing.T) {
-	p, _, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	for i := 0; i < issueLimit; i++ {
-		if _, err := p.Issue(t.Context(), "203.0.113.7"); err != nil {
+		if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: "203.0.113.7"}); err != nil {
 			t.Fatalf("Issue %d: %v", i+1, err)
 		}
 	}
-	if _, err := p.Issue(t.Context(), "203.0.113.7"); !errors.Is(err, ErrIssuanceLimited) {
+	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: "203.0.113.7"}); !errors.Is(err, ErrIssuanceLimited) {
 		t.Fatalf("the cap resolved with %v, want ErrIssuanceLimited", err)
 	}
-	if _, err := p.Issue(t.Context(), "203.0.113.8"); err != nil {
+	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: "203.0.113.8"}); err != nil {
 		t.Fatalf("another source was refused with the first source's cap: %v", err)
+	}
+}
+
+// TestTheGlobalIssuanceCapBoundsAllSources holds the whole-deployment bound: a
+// set of source addresses cannot issue more challenges together than the
+// configured limit, however far below their per-source allowances each stays,
+// and the bound lifts when its window expires.
+func TestTheGlobalIssuanceCapBoundsAllSources(t *testing.T) {
+	const limit = 3
+	p, _, clock := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute, global: limit})
+
+	sources := []string{"203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.4"}
+	for i, address := range sources[:limit] {
+		if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: address}); err != nil {
+			t.Fatalf("Issue %d from %s: %v", i+1, address, err)
+		}
+	}
+	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: sources[limit]}); !errors.Is(err, ErrIssuanceLimited) {
+		t.Fatalf("the global cap resolved with %v, want ErrIssuanceLimited", err)
+	}
+
+	clock.advance(issueWindow + time.Second)
+	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: sources[limit]}); err != nil {
+		t.Fatalf("the global counter did not expire with its window: %v", err)
+	}
+}
+
+// TestTheGlobalCounterCoversTheSameWindowAsTheSourceOne holds the counter's
+// expiry: after the window passes, an exhausted global counter admits issuance
+// again without the process restarting.
+func TestTheGlobalCounterCoversTheSameWindowAsTheSourceOne(t *testing.T) {
+	const limit = 2
+	p, store, clock := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute, global: limit})
+
+	for i := 0; i < limit; i++ {
+		address := []string{"203.0.113.1", "203.0.113.2"}[i]
+		if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: address}); err != nil {
+			t.Fatalf("Issue %d: %v", i+1, err)
+		}
+	}
+	if _, present, _ := store.Get(t.Context(), globalIssueKey()); !present {
+		t.Fatal("the global counter is not stored")
+	}
+	clock.advance(issueWindow + time.Second)
+	if _, present, _ := store.Get(t.Context(), globalIssueKey()); present {
+		t.Error("the global counter survived its window")
 	}
 }
 
 // TestTheProviderAnswersTheSeamContract pins the three constant answers.
 func TestTheProviderAnswersTheSeamContract(t *testing.T) {
-	p, _, _ := newTestProvider(t, settingsStub{difficulty: 16, ttl: time.Minute})
+	p, _, _ := newTestProvider(t, settingsStub{difficulty: 18, ttl: time.Minute})
 	if !p.Required(authn.HumanScopeOther) {
 		t.Error("Required is false, want true")
 	}

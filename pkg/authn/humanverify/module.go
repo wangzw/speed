@@ -17,8 +17,14 @@
 // captcha mechanism issues a challenge on POST
 // /api/v1/auth/human/captcha/challenge and serves its image, background, piece
 // and audio on the routes under that path. The turnstile mechanism posts the
-// proof to Cloudflare's siteverify endpoint and accepts it once the answer names
-// the deployment's hostname and, when configured, its action.
+// proof to Cloudflare's siteverify endpoint, accepts it once the answer names
+// the deployment's hostname and action, and records the token's digest in the
+// key-value store so a replay is refused even if the upstream would accept it.
+//
+// Every mechanism that needs the key-value store states that need as optional
+// on the descriptor, because the off gate needs none: a run with the gate off
+// starts without the store. A run whose configuration selects a mechanism that
+// needs it fails in New, naming the absent capability.
 package humanverify
 
 import (
@@ -28,6 +34,7 @@ import (
 	"fmt"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/humanverify/captcha"
 	"github.com/vislake/speed/pkg/authn/humanverify/pow"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/config"
@@ -83,11 +90,12 @@ func init() { core.ProcessRegistry.Register(Module()) }
 //
 // The key-value store, the settings store, the route mounter and logging are
 // required as optional only: the off gate needs none of them, so an assembly
-// that leaves the gate off starts without them. The proof-of-work mode needs the
-// store its challenges live in and a mounter to serve the challenge route, and
-// New or Init names the missing one when the mode asks for it. The turnstile
-// mode registers its secret as a literal redaction rule when a logging
-// capability is present.
+// that leaves the gate off starts without them. The proof-of-work and captcha
+// modes need the store their challenges live in and a mounter to serve the
+// challenge route; Turnstile needs the store it claims spent tokens in. New or
+// Init names the missing one when the mode asks for it. The turnstile mode
+// registers its secret as a literal redaction rule when a logging capability is
+// present.
 //
 // Prepare states StateEnabled in every mode, including the default proof of
 // work: a mode
@@ -106,7 +114,7 @@ func Module() core.Module {
 		Provides: []core.Provision{
 			{Token: (*authn.HumanVerifier)(nil), Exclusive: true},
 		},
-		Resources: []any{schema(), pow.Schema(), humanverifySpec},
+		Resources: []any{schema(), pow.Schema(), captcha.Schema(), humanverifySpec},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)
@@ -167,23 +175,26 @@ func Module() core.Module {
 	}
 }
 
-// dependencies takes up what the resolved modes need. The off and turnstile
-// gates need nothing, so a run that carries neither the store nor the mounter
-// still starts with both surfaces off. The settings store is taken up only when
-// a surface runs the proof of work, which is the one mechanism that reads it.
+// dependencies takes up what the resolved modes need. The off gate needs
+// nothing, so a run that carries neither the store nor the mounter still starts
+// with both surfaces off. The key-value store is taken up when a surface runs a
+// self-hosted mechanism or Turnstile. The settings store is taken up only when
+// a surface runs a self-hosted mechanism, which reads its issuance limits there.
 func dependencies(cfg resolved, reg *core.Registry) (deps, error) {
 	var taken deps
 	if cfg.needsStore() {
 		store, err := core.Resolve[kv.KV](reg)
 		if err != nil {
-			return deps{}, fmt.Errorf("%w: the mechanisms named by %s.%s and %s.%s keep their "+
-				"challenges in the key-value store, which this run did not deliver. Name a key-value "+
-				"backend on the command, or run those surfaces without a self-hosted mechanism: %w",
+			return deps{}, fmt.Errorf("%w: a mechanism named by %s.%s and %s.%s needs the "+
+				"key-value store, which this run did not deliver: the self-hosted mechanisms keep "+
+				"their challenges there and Turnstile records the digest of every token it accepts "+
+				"there so a replay is refused. Name a key-value backend on the command, or leave "+
+				"those surfaces off: %w",
 				authn.ErrInvalidConfig, ConfigNamespace, modeItem, ConfigNamespace, phoneModeItem, err)
 		}
 		taken.store = store
 	}
-	if !cfg.usesPoW() {
+	if !cfg.usesSettings() {
 		return taken, nil
 	}
 	settingsStore, err := core.Resolve[settings.Store](reg)

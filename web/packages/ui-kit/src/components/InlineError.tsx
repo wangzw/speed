@@ -21,6 +21,15 @@
  * branch from an HTTP status (a refusal, a missing record) read it
  * structurally instead of re-implementing the two shapes
  * (`error.status`, or the `client.http.<n>` code) at every call site.
+ *
+ * A refusal that states a wait renders as two sentences. The sentence
+ * resolved with the stated wait (`retryAfterSeconds`) stays in the
+ * accessibility tree but is clipped from view, so a screen reader
+ * announces the refusal once; the painted sentence is `aria-hidden`,
+ * follows `liveRetryAfterSeconds` (the remaining seconds the host counts
+ * down), and at zero resolves the code without a wait -- only the number
+ * is dropped, the result stays. Omitting the live value keeps the painted
+ * sentence on the stated wait.
  */
 
 import { forwardRef } from 'react'
@@ -29,6 +38,7 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import { layerSx } from '../internal/root-style-props.js'
 import type { RootStyleProps } from '../internal/root-style-props.js'
+import { visuallyHiddenSx } from '../visually-hidden.js'
 
 /** Collapses an arbitrary thrown value to the code InlineError renders. */
 export function errorCodeOf(error: unknown): string {
@@ -140,9 +150,18 @@ export interface InlineErrorProps extends RootStyleProps {
   /**
    * The wait a throttled answer stated, in whole seconds. Given, the
    * resolver renders the sentence that names it; a resolver that ignores
-   * the argument keeps its own text.
+   * the argument keeps its own text. This value is the sentence's fixed
+   * starting point: it is the text assistive technology reads, so the
+   * alert's announcement does not change while the wait runs down.
    */
   readonly retryAfterSeconds?: number
+  /**
+   * The wait still remaining, in whole seconds, when the host counts the
+   * stated wait down. The visible sentence follows this value; at zero it
+   * resolves the code without a wait, so no stale "0 seconds" remains.
+   * Omitted, the visible sentence carries the initial wait unchanged.
+   */
+  readonly liveRetryAfterSeconds?: number
   /**
    * Content rendered inside the alert, below the resolved sentence. A
    * failure that names something -- the address a refusal collided on --
@@ -155,15 +174,31 @@ export interface InlineErrorProps extends RootStyleProps {
 /**
  * The whole-attempt failure banner, one role="alert" per error. With no
  * error nothing renders, so a host ref stays unattached.
+ *
+ * A stated wait renders as two sentences: the stable one, resolved with
+ * the wait the answer stated, is present in the accessibility tree but
+ * clipped from view; the painted one is `aria-hidden` and follows the
+ * remaining seconds, dropping the number once the wait ends. The alert's
+ * accessible text therefore never changes as the countdown ticks, so a
+ * screen reader announces the failure once instead of every second.
  */
 export const InlineError = forwardRef<HTMLDivElement, InlineErrorProps>(
   function InlineError(
-    { code, resolve, retryAfterSeconds, detail, sx, className },
+    {
+      code,
+      resolve,
+      retryAfterSeconds,
+      liveRetryAfterSeconds,
+      detail,
+      sx,
+      className,
+    },
     ref,
   ) {
     if (code === null) {
       return null
     }
+    const liveSeconds = liveRetryAfterSeconds ?? retryAfterSeconds
     return (
       <Alert
         ref={ref}
@@ -172,7 +207,18 @@ export const InlineError = forwardRef<HTMLDivElement, InlineErrorProps>(
         role="alert"
         sx={layerSx({ width: '100%' }, sx)}
       >
-        {resolve(code, retryAfterSeconds)}
+        {retryAfterSeconds === undefined ? (
+          resolve(code)
+        ) : (
+          <>
+            <Box component="span" sx={visuallyHiddenSx}>
+              {resolve(code, retryAfterSeconds)}
+            </Box>
+            <Box component="span" aria-hidden="true">
+              {liveSeconds === 0 ? resolve(code) : resolve(code, liveSeconds)}
+            </Box>
+          </>
+        )}
         {detail === undefined ? null : (
           <Box component="div" sx={{ mt: 0.5 }}>
             {detail}

@@ -4,23 +4,49 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/vislake/speed/pkg/authn"
 )
 
 // TestTheDeclaredDefaultsAreTheProductDefaults holds the values a deployment
 // that configures nothing runs on.
 func TestTheDeclaredDefaultsAreTheProductDefaults(t *testing.T) {
-	if DefaultDifficulty != 18 {
-		t.Errorf("the default difficulty is %d, want 18", DefaultDifficulty)
+	if DefaultDifficulty != 20 {
+		t.Errorf("the default difficulty is %d, want 20", DefaultDifficulty)
+	}
+	if DifficultyMin != 18 {
+		t.Errorf("the difficulty minimum is %d, want 18", DifficultyMin)
+	}
+	if DifficultyMax != 22 {
+		t.Errorf("the difficulty maximum is %d, want 22", DifficultyMax)
 	}
 	if DefaultChallengeTTL != 5*time.Minute {
 		t.Errorf("the default challenge lifetime is %v, want 5m", DefaultChallengeTTL)
 	}
+	if DefaultGlobalIssueLimit != 600 {
+		t.Errorf("the default global issuance limit is %d, want 600", DefaultGlobalIssueLimit)
+	}
 }
 
-// TestTheDifficultyDomain holds the declared range: sixteen to twenty-two
+// TestTheGlobalIssueLimitDomain holds the declared range: one to a million
+// challenges a window, inclusive.
+func TestTheGlobalIssueLimitDomain(t *testing.T) {
+	for _, value := range []int{GlobalIssueLimitMin, 600, GlobalIssueLimitMax} {
+		if !globalIssueLimitInDomain(value) {
+			t.Errorf("the domain refuses %d", value)
+		}
+	}
+	for _, value := range []int{GlobalIssueLimitMin - 1, GlobalIssueLimitMax + 1, 0, -1} {
+		if globalIssueLimitInDomain(value) {
+			t.Errorf("the domain admits %d", value)
+		}
+	}
+}
+
+// TestTheDifficultyDomain holds the declared range: eighteen to twenty-two
 // leading zero bits, inclusive.
 func TestTheDifficultyDomain(t *testing.T) {
-	for _, value := range []int{DifficultyMin, 18, DifficultyMax} {
+	for _, value := range []int{DifficultyMin, 20, DifficultyMax} {
 		if !difficultyInDomain(value) {
 			t.Errorf("the domain refuses %d", value)
 		}
@@ -57,11 +83,14 @@ func TestTheFullKeyPathsAreTheNamespacedOnes(t *testing.T) {
 	if challengeTTLPath != "authn.humanverify.pow.challenge-ttl" {
 		t.Errorf("challengeTTLPath = %q", challengeTTLPath)
 	}
+	if globalIssueLimitPath != "authn.humanverify.pow.global-issue-limit" {
+		t.Errorf("globalIssueLimitPath = %q", globalIssueLimitPath)
+	}
 }
 
-// TestTheSchemaDeclaresTheTwoItems holds the declaration's shape: the namespace
-// the keys live under, the two items, and the mounted defaults.
-func TestTheSchemaDeclaresTheTwoItems(t *testing.T) {
+// TestTheSchemaDeclaresTheThreeItems holds the declaration's shape: the
+// namespace the keys live under, the three items, and the mounted defaults.
+func TestTheSchemaDeclaresTheThreeItems(t *testing.T) {
 	s := Schema()
 	if s.Namespace != Namespace {
 		t.Errorf("the schema namespace is %q, want %q", s.Namespace, Namespace)
@@ -72,6 +101,9 @@ func TestTheSchemaDeclaresTheTwoItems(t *testing.T) {
 	if _, ok := s.Items[ChallengeTTLKey]; !ok {
 		t.Errorf("the schema declares no %q item", ChallengeTTLKey)
 	}
+	if _, ok := s.Items[GlobalIssueLimitKey]; !ok {
+		t.Errorf("the schema declares no %q item", GlobalIssueLimitKey)
+	}
 	if len(s.Mounts) != 1 {
 		t.Fatalf("the schema mounts %+v, want the one defaults struct", s.Mounts)
 	}
@@ -79,9 +111,10 @@ func TestTheSchemaDeclaresTheTwoItems(t *testing.T) {
 	if !ok {
 		t.Fatalf("the schema mounts %T, want *settingsOptions", s.Mounts[0].Value)
 	}
-	if mounted.Difficulty != DefaultDifficulty || mounted.ChallengeTTL != DefaultChallengeTTL {
-		t.Errorf("the mounted defaults are %+v, want %d and %v",
-			*mounted, DefaultDifficulty, DefaultChallengeTTL)
+	if mounted.Difficulty != DefaultDifficulty || mounted.ChallengeTTL != DefaultChallengeTTL ||
+		mounted.GlobalIssueLimit != DefaultGlobalIssueLimit {
+		t.Errorf("the mounted defaults are %+v, want %d, %v and %d",
+			*mounted, DefaultDifficulty, DefaultChallengeTTL, DefaultGlobalIssueLimit)
 	}
 }
 
@@ -109,13 +142,13 @@ func TestAnUnreadableOrOutOfDomainSettingFallsBackToTheDefault(t *testing.T) {
 		},
 		{
 			"ttl outside the domain",
-			settingsStub{difficulty: 16, ttl: time.Hour},
-			16, DefaultChallengeTTL,
+			settingsStub{difficulty: 18, ttl: time.Hour},
+			18, DefaultChallengeTTL,
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			p, _, _ := newTestProvider(t, c.cfg)
-			challenge, err := p.Issue(t.Context(), "203.0.113.7")
+			challenge, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: "203.0.113.7"})
 			if err != nil {
 				t.Fatalf("Issue: %v", err)
 			}
@@ -132,13 +165,13 @@ func TestAnUnreadableOrOutOfDomainSettingFallsBackToTheDefault(t *testing.T) {
 // TestAConfiguredSettingIsUsed holds the read direction the other way: what the
 // store answers is what the challenge carries.
 func TestAConfiguredSettingIsUsed(t *testing.T) {
-	p, _, _ := newTestProvider(t, settingsStub{difficulty: 17, ttl: 3 * time.Minute})
-	c, err := p.Issue(t.Context(), "203.0.113.7")
+	p, _, _ := newTestProvider(t, settingsStub{difficulty: 19, ttl: 3 * time.Minute})
+	c, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopeOther, RemoteIP: "203.0.113.7"})
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	if c.Difficulty != 17 {
-		t.Errorf("the challenge carries difficulty %d, want 17", c.Difficulty)
+	if c.Difficulty != 19 {
+		t.Errorf("the challenge carries difficulty %d, want 19", c.Difficulty)
 	}
 	if c.ExpiresIn != 3*time.Minute {
 		t.Errorf("the challenge expires in %v, want 3m", c.ExpiresIn)

@@ -16,7 +16,9 @@
  * authn.insufficient_user_authentication opens the step-up dialog, a won
  * step-up re-running it once; an account with no identifiers renders the
  * empty state; and an answer that omitted the identifiers key renders the
- * error state (never a "no identifiers" claim).
+ * error state (never a "no identifiers" claim). An email send waits on the
+ * verifier its proof requires, and a row resend waiting on its proof is
+ * dropped when the code already in hand verifies.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -602,7 +604,7 @@ describe('IdentifiersSection', () => {
   })
 
   it.each(['contact', 'both'] as const)(
-    'gives the %s view the resend path and countdown after a send',
+    'gives the %s view the resend path and holds it for the server interval',
     async (axis) => {
       const respond: RealResponder = (call: RealCall) => {
         if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -642,7 +644,16 @@ describe('IdentifiersSection', () => {
       const rig = makeRealClientRig(respond)
       rig.store.set('access-1')
       renderWithProviders(
-        <IdentifiersSection session={rig.session} axis={axis} />,
+        <IdentifiersSection
+          session={rig.session}
+          axis={axis}
+          // This case is about the resend path and its countdown: a gate
+          // that wants nothing sends as soon as the viewer asks.
+          humanGate={{
+            phone: { required: false, provider: 'off' },
+            other: { required: false, provider: 'off' },
+          }}
+        />,
       )
       const user = userEvent.setup()
 
@@ -689,17 +700,25 @@ describe('IdentifiersSection', () => {
           name: zhCN.verification.resend,
         })
         expect(resend).toBeDisabled()
-        const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
-        const note = `${before}5${after}`
-        expect(scoped.getByText(note)).toBeTruthy()
+        // A successful send leaves no banner, so the row's own note states
+        // the wait, and the resend points at it.
+        const note = scoped.getByText(
+          zhCN.verification.resendIn.replace('{{seconds}}', '5'),
+        )
+        expect(resend).toHaveAttribute('aria-describedby', note.id)
 
-        // Once the wait expires the resend becomes usable and its note
-        // clears.
+        // Once the wait expires the resend becomes usable and the note
+        // leaves with the hold it stated.
         act(() => {
           vi.advanceTimersByTime(5000)
         })
         expect(resend).toBeEnabled()
-        expect(scoped.queryByText(note)).toBeNull()
+        expect(
+          scoped.queryByText(
+            zhCN.verification.resendIn.replace('{{seconds}}', '5'),
+          ),
+        ).toBeNull()
+        expect(resend).not.toHaveAttribute('aria-describedby')
 
         await act(async () => {
           fireEvent.click(resend)
@@ -723,6 +742,110 @@ describe('IdentifiersSection', () => {
       }
     },
   )
+
+  it('names a throttled row resend in the banner and renders no row note', async () => {
+    // The first send lands with no interval, so the resend control exists and
+    // is usable; the resend it triggers is the throttled attempt. That
+    // failure's hold belongs to the banner, not to the row's note.
+    let sends = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            verification: {
+              state: 'verified',
+              email: 'ada@x.test',
+              since: '',
+            },
+            identifiers: [
+              identifier({
+                id: 'id-unproved',
+                kind: 'email',
+                value: 'ada@x.test',
+                proven: false,
+                verified_at: '',
+                verified_via: '',
+              }),
+            ],
+          }),
+        )
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        sends += 1
+        if (sends === 1) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 0,
+          })
+        }
+        return new Response(
+          JSON.stringify({
+            type: 'urn:speed:authn:throttled',
+            title: 'Too Many Requests',
+            status: 429,
+          }),
+          {
+            status: 429,
+            headers: {
+              'content-type': 'application/json',
+              'retry-after': '30',
+            },
+          },
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <IdentifiersSection
+        session={rig.session}
+        // A gate that wants nothing lets the send leave on the click.
+        humanGate={{
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        }}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await screen.findAllByText('ada@x.test')
+    await clickRowAction(user, 'ada@x.test', zhCN.identifiers.verify)
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.identifiers.add.submitEmail,
+      }),
+    )
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.verification.resend,
+      }),
+    )
+
+    // The 429's banner states the wait and counts it down; the row renders
+    // no second note and points its control at none.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      zhCN.throttle.retryAfter.replace('{{seconds}}', '30'),
+    )
+    const address = screen.getByLabelText(
+      zhCN.identifiers.add.value.labelEmail,
+    )
+    const scoped = within(address.closest('form') as HTMLElement)
+    const resend = scoped.getByRole('button', {
+      name: zhCN.verification.resend,
+    })
+    expect(resend).toBeDisabled()
+    const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
+    expect(
+      scoped.queryByText((content) =>
+        content.startsWith(before ?? '') && content.endsWith(after ?? ''),
+      ),
+    ).toBeNull()
+    expect(resend).not.toHaveAttribute('aria-describedby')
+  })
 
   it('does not offer the row verify action while the account is pending', async () => {
     // The pending state's one code record belongs to the verification
@@ -2543,7 +2666,7 @@ describe('IdentifiersSection', () => {
     expect(rig.endedEdges()).toBe(1)
   })
 
-  it('refuses an email add until the required verifier holds a token, then sends it', async () => {
+  it('asks for the verifier only when the add is requested, then sends it with the proof', async () => {
     const fake = installFakeTurnstile()
     try {
       const respond: RealResponder = (call: RealCall) => {
@@ -2576,17 +2699,33 @@ describe('IdentifiersSection', () => {
         screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
         'new@x.test',
       )
-      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      // The form shows no challenge until its send is asked for.
+      expect(fake.widgets).toHaveLength(0)
       const submit = screen.getByRole('button', {
         name: zhCN.identifiers.add.submitEmail,
       })
-      expect(submit).toBeDisabled()
+      expect(submit).toBeEnabled()
+      await user.click(submit)
+
+      // The send waits on the proof: the block renders and the control that
+      // asked gives way.
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(fake.widgets[0]?.siteKey).toBe('site-1')
+      expect(
+        screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+      ).toBeDisabled()
+      expect(
+        rig.calls.filter(
+          (call) =>
+            call.method === 'POST' &&
+            call.path === '/api/v1/auth/identifiers',
+        ),
+      ).toHaveLength(0)
+
+      // The proof arrives and the send leaves by itself.
       act(() => {
         fake.token('token-1')
       })
-      await waitFor(() => expect(submit).toBeEnabled())
-      await user.click(submit)
-
       await waitFor(() =>
         expect(
           rig.calls.filter(
@@ -2601,12 +2740,129 @@ describe('IdentifiersSection', () => {
           call.method === 'POST' &&
           call.path === '/api/v1/auth/identifiers',
       )
-      expect(posts).toHaveLength(1)
       expect(posts[0]?.body).toEqual({
         kind: 'email',
         value: 'new@x.test',
         human_proof: 'token-1',
       })
+    } finally {
+      fake.restore()
+    }
+  })
+
+  it('drops a row resend waiting on its proof when the code in hand verifies', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      let proven = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              verification: {
+                state: 'verified',
+                email: 'ada@x.test',
+                since: '',
+              },
+              identifiers: [
+                identifier({
+                  id: 'id-primary',
+                  kind: 'email',
+                  value: 'ada@x.test',
+                }),
+                identifier({
+                  id: 'id-secondary',
+                  kind: 'email',
+                  value: 'second@x.test',
+                  proven,
+                  verified_via: proven ? 'email-code' : 'admin',
+                }),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers'
+        ) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 0,
+          })
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers/verify'
+        ) {
+          proven = true
+          return jsonResponse(200, { state: 'added' })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond, {
+        required: true,
+        provider: 'turnstile',
+        site_key: 'site-1',
+      })
+      const user = userEvent.setup()
+      const sends = () =>
+        rig.calls.filter(
+          (call) =>
+            call.method === 'POST' &&
+            call.path === '/api/v1/auth/identifiers',
+        )
+
+      // The row's first send carries its proof and lands.
+      await clickRowAction(user, 'second@x.test', zhCN.identifiers.verify)
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      act(() => {
+        fake.token('token-1')
+      })
+      await waitFor(() => expect(sends()).toHaveLength(1))
+
+      // A resend waits on a fresh proof: the verify control is held with it.
+      const codeField = await screen.findByLabelText(
+        zhCN.identifiers.add.code.label,
+      )
+      const form = codeField.closest('form') as HTMLFormElement
+      await user.type(codeField, '123456')
+      const resend = within(form).getByRole('button', {
+        name: zhCN.verification.resend,
+      })
+      await waitFor(() => expect(resend).toBeEnabled())
+      await user.click(resend)
+      await waitFor(() => expect(fake.widgets).toHaveLength(2))
+      expect(
+        within(form).getByRole('button', {
+          name: zhCN.identifiers.add.verify,
+        }),
+      ).toBeDisabled()
+
+      // A verification can still begin while the wait is outstanding: a
+      // step-up replay of a code the visitor already tried reaches it
+      // directly. It calls the wait off, so the late proof never sends and
+      // the code just proved is not invalidated by a second one.
+      fireEvent.submit(form)
+      await waitFor(() =>
+        expect(
+          rig.calls.filter(
+            (call) =>
+              call.method === 'POST' &&
+              call.path === '/api/v1/auth/identifiers/verify',
+          ),
+        ).toHaveLength(1),
+      )
+      act(() => {
+        fake.token('token-2')
+      })
+      await waitFor(() =>
+        expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2),
+      )
+      expect(sends()).toHaveLength(1)
     } finally {
       fake.restore()
     }

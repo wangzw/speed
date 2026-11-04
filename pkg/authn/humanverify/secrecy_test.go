@@ -67,7 +67,9 @@ func TestAVerificationFailureNeverRepeatsTheTurnstileSecret(t *testing.T) {
 		Secret:    secretSentinel,
 		VerifyURL: srv.URL,
 		Hostname:  "login.example.com",
+		Action:    "login",
 		HTTP:      egress.New(egress.Options{AllowLoopback: true, RootCAs: pool}),
+		Store:     newStubKV(),
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)

@@ -6,7 +6,11 @@
  * the discovery document into `channels`, binds the generated reset
  * operations, and navigates on `onDone` / `onBackToSignIn`. The session
  * prop is used only for the deployment's human-verification gate and
- * proof, because a send may have to present one.
+ * proof, because a send may have to present one. The block appears only
+ * once the viewer asks for a send the gate holds for a proof, and that send
+ * leaves by itself when the proof arrives; a send waiting on its proof
+ * holds back the control that asked, while the back-to-sign-in exit stays
+ * reachable.
  *
  * The surface has four states. In `request` the viewer picks one of the
  * published channels, enters that channel's identifier and asks for a
@@ -28,8 +32,10 @@
  * on the verified surface with the new-password field, and a closed
  * deployment, an unavailable dependency or an invalidated flow render
  * through the family's error banner. A stated Retry-After wait disables
- * the send control until it elapses; the resend control states its own
- * remaining interval. Switching channels in the request state drops the
+ * the send control until it elapses and counts down in the banner; once it
+ * does, the control re-enables and the banner stays with the wait-free
+ * sentence. The resend control states its own remaining interval.
+ * Switching channels in the request state drops the
  * previous channel's whole-attempt failure, its stated wait and its field
  * errors, so no channel's error crosses to the next face.
  *
@@ -158,13 +164,17 @@ type Stage =
   | { readonly kind: 'done' }
 
 /** One whole-attempt failure: a reachable problem code, or a sentence the
- * screen words itself (the invalidated flow and the stated retry wait).
+ * screen words itself (the invalidated flow). A throttle is the code with
+ * the wait the answer stated, so the banner counts it down.
  * `restart` marks the refusals after which the bound record cannot
  * continue, so the surface offers a start-over exit with the banner. */
 interface Failure {
   readonly kind: 'code' | 'text'
   readonly value: string
   readonly restart: boolean
+  /** The wait a throttled answer stated, in whole seconds: the stable
+   * sentence assistive technology reads while the visible one counts down. */
+  readonly retryAfterSeconds?: number
 }
 
 interface ResetFields {
@@ -181,9 +191,9 @@ const LOGIN_FAILED = 'authn.login_failed'
 /** The password write's only 400 is the password policy. */
 const BAD_REQUEST = 'authn.bad_request'
 
-/** The failure value that marks the stated Retry-After wait; the sentence
- * is filled from the deadline at render time. */
-const RETRY_TEXT = 'retry'
+/** The code a throttled send answers with: its sentence names the wait the
+ * response stated, and stays as the generic sentence once the wait ends. */
+const THROTTLED = 'authn.throttled'
 
 /** The failure value that marks an invalidated flow, whose dedicated text
  * is the reset surface's own (the generic flow-invalid sentence speaks of
@@ -240,6 +250,8 @@ export function PasswordResetScreen({
   // The tick the resend countdown re-renders on; it is only a clock, never
   // a second source of the deadline.
   const [now, setNow] = useState(() => Date.now())
+  // The tick the throttle banner re-renders on: also only a clock.
+  const [, setRetryTick] = useState(0)
   const [chosenChannel, setChosenChannel] =
     useState<PasswordResetChannel | null>(channels[0] ?? null)
   const identifierInput = useRef<HTMLInputElement>(null)
@@ -252,14 +264,33 @@ export function PasswordResetScreen({
       ? chosenChannel
       : (channels[0] ?? null)
   const sms = selectedChannel === 'sms'
+  // The send the viewer asked for, waiting on the gate and the proof that
+  // send needs: the channel and the identifier it will send to. The gate is
+  // read and the proof obtained only while this is set, so the request form
+  // on its own shows no challenge. Both the first send and a resend wait
+  // here.
+  const [pendingSend, setPendingSend] = useState<{
+    readonly channel: PasswordResetChannel
+    readonly identifier: string
+  } | null>(null)
+  // One send at a time: the direct path and the deferred path that waits
+  // for a proof can both reach the send in the same tick.
+  const sendingRef = useRef(false)
   // The channel names the surface: SMS reaches a phone number and runs the
   // phone surface's mechanism, an email code runs the other surface's.
   const humanScope = sms ? 'phone' : 'other'
   const human = useHumanVerification(session, {
     scope: humanScope,
+    // The gate is read and the proof obtained only once the viewer asks for
+    // a send the gate holds; the request form alone reads and solves
+    // nothing.
+    enabled: pendingSend !== null,
     ...(humanGate === undefined ? {} : { gate: humanGate }),
   })
-  const needsProof = humanGateNeedsProof(human.gate, humanScope)
+  // A gate the host already read is known before the hook reads anything; a
+  // screen without one learns it through the hook once a send asks for it.
+  const gateDocument = humanGate ?? human.gate
+  const needsProof = humanGateNeedsProof(gateDocument, humanScope)
 
   // Resume the bound record once per mounted resume operation. A refused
   // read (no binding, an expired or failed record) starts the surface
@@ -295,20 +326,28 @@ export function PasswordResetScreen({
     }
   }, [resume])
 
-  // A stated Retry-After wait ends on its own: the send control
-  // re-enables and the stale wait sentence goes away.
+  // A stated Retry-After wait counts down on its own: one tick a second
+  // re-renders the banner while the deadline is ahead, and the tick that
+  // crosses it clears the deadline so the send control re-enables. The
+  // failure itself stays, so the banner remains with the wait-free sentence
+  // instead of vanishing.
   useEffect(() => {
     if (retryUntil === null) {
       return undefined
     }
-    const timer = setTimeout(
-      () => {
+    if (Date.now() >= retryUntil) {
+      setRetryUntil(null)
+      return undefined
+    }
+    const timer = setInterval(() => {
+      if (Date.now() >= retryUntil) {
         setRetryUntil(null)
-        setFailure((held) => (held?.value === RETRY_TEXT ? null : held))
-      },
-      Math.max(0, retryUntil - Date.now()),
-    )
-    return () => clearTimeout(timer)
+        clearInterval(timer)
+        return
+      }
+      setRetryTick((tick) => tick + 1)
+    }, 1000)
+    return () => clearInterval(timer)
   }, [retryUntil])
 
   // The resend countdown ticks while its deadline is ahead and stops at
@@ -332,6 +371,12 @@ export function PasswordResetScreen({
   const retryRemaining =
     retryUntil === null ? 0 : Math.max(0, retryUntil - Date.now())
   const waiting = retryRemaining > 0
+  // The seconds the shared banner paints: 0 once the deadline is cleared,
+  // so the visible sentence drops its number while the failure remains.
+  const liveRetryAfterSeconds =
+    retryUntil === null
+      ? 0
+      : Math.max(0, Math.ceil((retryUntil - Date.now()) / 1000))
   const resendRemaining =
     resendAt === null ? 0 : Math.max(0, Math.ceil((resendAt - now) / 1000))
 
@@ -362,9 +407,12 @@ export function PasswordResetScreen({
     const wait = retryWaitMs(error)
     if (wait !== undefined) {
       setRetryUntil(Date.now() + wait)
-      // The sentence is rendered from the deadline, so its placeholder is
-      // filled at render time rather than stored as a fixed number.
-      setFailure({ kind: 'text', value: RETRY_TEXT, restart: false })
+      setFailure({
+        kind: 'code',
+        value: THROTTLED,
+        restart: false,
+        retryAfterSeconds: Math.max(1, Math.ceil(wait / 1000)),
+      })
       return
     }
     if (errorCodeOf(error) === BAD_REQUEST && stage.kind === 'request') {
@@ -382,12 +430,18 @@ export function PasswordResetScreen({
     channel: PasswordResetChannel,
     identifier: string,
   ): Promise<void> => {
+    if (sendingRef.current) {
+      return
+    }
     setFailure(null)
     form.clearErrors()
     const proof = needsProof ? (human.proof ?? undefined) : undefined
     if (needsProof && proof === undefined) {
+      // A required proof that is not ready yet keeps the send from leaving:
+      // the block above the control is already showing why.
       return
     }
+    sendingRef.current = true
     setBusy(true)
     try {
       const pending = operations.requestReset({
@@ -413,9 +467,56 @@ export function PasswordResetScreen({
     } catch (error) {
       waitOrFail(error)
     } finally {
+      sendingRef.current = false
       setBusy(false)
     }
   }
+
+  const sendRef = useRef(send)
+  sendRef.current = send
+
+  /**
+   * Ask for a code: send now when the gate is known to want no proof,
+   * otherwise hold the send and let the block obtain one; the effect below
+   * sends the postponed request when the proof arrives. A new attempt
+   * clears the previous failure and field errors here, whichever path it
+   * takes.
+   */
+  const askToSend = (
+    channel: PasswordResetChannel,
+    identifier: string,
+  ): void => {
+    if (pendingSend !== null) {
+      // A send is already waiting on its proof; asking again changes nothing.
+      return
+    }
+    setFailure(null)
+    form.clearErrors()
+    if (
+      !human.pending &&
+      gateDocument !== null &&
+      (!needsProof || human.proof !== null)
+    ) {
+      void send(channel, identifier)
+      return
+    }
+    setPendingSend({ channel, identifier })
+  }
+
+  // A send asked for while the gate held it leaves as soon as the gate is
+  // known and the proof it wants is in hand: the viewer's one request is
+  // not turned into a click followed by a second one.
+  useEffect(() => {
+    if (pendingSend === null || human.pending || gateDocument === null) {
+      return
+    }
+    if (needsProof && human.proof === null) {
+      return
+    }
+    const { channel, identifier } = pendingSend
+    setPendingSend(null)
+    void sendRef.current(channel, identifier)
+  }, [pendingSend, human.pending, gateDocument, needsProof, human.proof])
 
   const writePassword = async (newPassword: string): Promise<void> => {
     setBusy(true)
@@ -438,7 +539,7 @@ export function PasswordResetScreen({
         newPasswordInput.current?.focus()
         return
       }
-      fail(error)
+      waitOrFail(error)
     } finally {
       setBusy(false)
     }
@@ -461,7 +562,7 @@ export function PasswordResetScreen({
         codeInput.current?.focus()
         return
       }
-      fail(error)
+      waitOrFail(error)
       return
     } finally {
       setBusy(false)
@@ -470,7 +571,7 @@ export function PasswordResetScreen({
   }
 
   const onSubmit: SubmitHandler<ResetFields> = async (values) => {
-    if (busy || waiting) {
+    if (busy || waiting || pendingSend !== null) {
       return
     }
     setFailure(null)
@@ -487,7 +588,7 @@ export function PasswordResetScreen({
           // nothing is sent.
           return
         }
-        await send(selectedChannel, phone)
+        askToSend(selectedChannel, phone)
         return
       }
       const identifier = values.identifier.trim()
@@ -498,7 +599,7 @@ export function PasswordResetScreen({
         })
         return
       }
-      await send(selectedChannel, identifier)
+      askToSend(selectedChannel, identifier)
       return
     }
     if (stage.kind !== 'sent' && stage.kind !== 'verified') {
@@ -538,6 +639,7 @@ export function PasswordResetScreen({
     setFailure(null)
     setRetryUntil(null)
     setResendAt(null)
+    setPendingSend(null)
     form.reset()
     setStage({ kind: 'request' })
   }
@@ -612,25 +714,20 @@ export function PasswordResetScreen({
   const identifierLabel = sms
     ? t('passwordReset.phoneLabel')
     : t('passwordReset.emailLabel')
-  const sendDisabled =
-    busy ||
-    waiting ||
-    (showingRequest && needsProof && human.proof === null)
+  // One action at a time: while a send waits on its proof the primary
+  // control is held in either stage, so the block is the only thing to act
+  // on until the proof arrives or an edit cancels the wait.
+  const sendDisabled = busy || waiting || pendingSend !== null
   const canResend =
     showingSent &&
     stage.channel !== null &&
     stage.identifier !== null &&
-    resendRemaining === 0 &&
-    (!needsProof || human.proof !== null)
+    resendRemaining === 0
   const resendLabel =
     resendRemaining > 0
       ? t('passwordReset.resendIn', { seconds: resendRemaining })
       : t('passwordReset.resend')
   const submitLabel = t('passwordReset.submit')
-  // A proof is only useful where the surface can send: the request form,
-  // or a sent flow this mount started (a resumed sent flow cannot resend).
-  const canPresentProof =
-    showingRequest || (showingSent && stage.channel !== null)
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -656,7 +753,10 @@ export function PasswordResetScreen({
                 {t('passwordReset.backToSignIn')}
               </ActionButton>
             )}
-            {showingSent && stage.channel !== null && stage.identifier !== null ? (
+            {showingSent &&
+            stage.channel !== null &&
+            stage.identifier !== null &&
+            pendingSend === null ? (
               <ActionButton
                 type="button"
                 disabled={busy || waiting || !canResend}
@@ -664,7 +764,7 @@ export function PasswordResetScreen({
                   if (stage.channel === null || stage.identifier === null) {
                     return
                   }
-                  void send(stage.channel, stage.identifier)
+                  askToSend(stage.channel, stage.identifier)
                 }}
               >
                 {resendLabel}
@@ -692,10 +792,13 @@ export function PasswordResetScreen({
                   }
                   // Leaving a channel drops its whole-attempt failure, its
                   // stated wait and its field errors: a channel's errors do
-                  // not cross to the next face.
+                  // not cross to the next face. A send waiting on a proof
+                  // belongs to the channel that asked for it, so it is
+                  // dropped too.
                   setFailure(null)
                   setRetryUntil(null)
                   form.clearErrors()
+                  setPendingSend(null)
                   setChosenChannel(value)
                 }}
                 aria-label={t('passwordReset.channelLegend')}
@@ -714,10 +817,15 @@ export function PasswordResetScreen({
                   nationalNumber={nationalNumber}
                   onCountryChange={(next) => {
                     form.clearErrors('identifier')
+                    // A send waiting on its proof names the identifier it
+                    // was asked for; editing the field cancels it rather
+                    // than sending to a value no longer on screen.
+                    setPendingSend(null)
                     setCountry(next)
                   }}
                   onNationalNumberChange={(next) => {
                     form.clearErrors('identifier')
+                    setPendingSend(null)
                     setNationalNumber(next)
                   }}
                   countryLabel={t('smsSignIn.countryLabel')}
@@ -734,6 +842,13 @@ export function PasswordResetScreen({
                   <TextField
                     {...field}
                     inputRef={identifierInput}
+                    onChange={(event) => {
+                      field.onChange(event)
+                      // A send waiting on its proof names the identifier it
+                      // was asked for; editing the field cancels it rather
+                      // than sending to a value no longer on screen.
+                      setPendingSend(null)
+                    }}
                     label={identifierLabel}
                     type="email"
                     inputMode="email"
@@ -756,6 +871,13 @@ export function PasswordResetScreen({
                   <TextField
                     {...field}
                     inputRef={codeInput}
+                    onChange={(event) => {
+                      field.onChange(event)
+                      // Typing the code the viewer already holds ends a
+                      // resend still waiting on its proof: the next code
+                      // would invalidate what they are entering.
+                      setPendingSend(null)
+                    }}
                     label={t('passwordReset.codeLabel')}
                     inputMode="numeric"
                     autoComplete="one-time-code"
@@ -773,6 +895,10 @@ export function PasswordResetScreen({
                 <TextField
                   {...field}
                   inputRef={newPasswordInput}
+                  onChange={(event) => {
+                    field.onChange(event)
+                    setPendingSend(null)
+                  }}
                   label={t('passwordReset.newPasswordLabel')}
                   type="password"
                   autoComplete="new-password"
@@ -788,6 +914,10 @@ export function PasswordResetScreen({
               render={({ field, invalid, errorText }) => (
                 <TextField
                   {...field}
+                  onChange={(event) => {
+                    field.onChange(event)
+                    setPendingSend(null)
+                  }}
                   label={t('passwordReset.confirmPasswordLabel')}
                   type="password"
                   autoComplete="new-password"
@@ -799,10 +929,14 @@ export function PasswordResetScreen({
             />
           </>
         )}
-        {needsProof && canPresentProof ? (
+        {/* The deployment's human-verification block. It appears only once
+            the viewer asks for a send the gate holds for a proof, so the
+            request form on its own shows no challenge; the send leaves by
+            itself when the proof arrives. */}
+        {pendingSend !== null ? (
           <HumanVerificationBlock
             scope={humanScope}
-            gate={human.gate ?? undefined}
+            gate={human.gate ?? humanGate}
             proof={human.proof}
             status={human.status}
             captcha={human.captcha}
@@ -817,16 +951,20 @@ export function PasswordResetScreen({
       </FormLayout>
 
       {failure === null ? null : failure.kind === 'code' ? (
-        <InlineError code={failure.value} />
+        <InlineError
+          code={failure.value}
+          retryAfterSeconds={failure.retryAfterSeconds}
+          liveRetryAfterSeconds={
+            failure.retryAfterSeconds === undefined
+              ? undefined
+              : liveRetryAfterSeconds
+          }
+        />
       ) : (
         <Alert severity="error" role="alert" sx={{ width: '100%' }}>
-          {failure.value === RETRY_TEXT
-            ? t('passwordReset.retryAfter', {
-                seconds: Math.max(1, Math.ceil(retryRemaining / 1000)),
-              })
-            : failure.value === FLOW_INVALID_TEXT
-              ? t('passwordReset.flowInvalid')
-              : failure.value}
+          {failure.value === FLOW_INVALID_TEXT
+            ? t('passwordReset.flowInvalid')
+            : failure.value}
         </Alert>
       )}
 

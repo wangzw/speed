@@ -60,12 +60,14 @@
  *
  * A step-up sends a verification message when the chosen second factor is
  * an SMS one, or when the first-factor re-proof supplies the phone an SMS
- * method asks for. Those answers present the deployment's
- * human-verification proof. The hook obtains the gate and the proof
- * through auth-core's useHumanVerification and exposes them as `human`, so
- * the caller renders the proof block on the step that may send; a
- * presented proof is consumed, and an answer that sends nothing leaves it
- * unspent.
+ * method asks for. Such an answer waits for the deployment's
+ * human-verification proof: `answer` holds it as pending, obtains the gate
+ * and the proof through auth-core's useHumanVerification only while one is
+ * pending, and forwards it by itself once the gate settles with the proof
+ * in hand, so one request never becomes a click followed by a second one.
+ * The caller renders the proof block only while `pending` and holds the
+ * step's own action back; a presented proof is consumed, and an answer
+ * that sends nothing leaves it unspent.
  *
  * A flow that reaches its ready state parks on a `complete` step -- one
  * that collects nothing and only confirms, taking the result with
@@ -127,6 +129,11 @@ export interface StepUpState {
   /** Whether an answer is in flight. An answer sent while this is true is
    * ignored, so a caller that must send reliably waits for it to clear. */
   readonly submitting: boolean
+  /** Whether an answer is held while the gate is read and the proof it
+   * requires is obtained. The caller renders the proof block only while
+   * this is true and holds the step's own action back; the answer leaves
+   * by itself once the proof is in hand. */
+  readonly pending: boolean
   /** The last failure's resolved code, or null. */
   readonly errorCode: string | null
   /**
@@ -140,16 +147,19 @@ export interface StepUpState {
    */
   readonly retryAfterSeconds: number | null
   /** The deployment's human-verification gate and the proof this challenge
-   * holds. A step that may send a verification message renders its block;
-   * an answer that sends presents the proof. */
+   * holds. The gate is read and the proof obtained only while an answer is
+   * pending: the caller renders the proof block only while `pending` is
+   * true and holds the step's own action back, and the answer is forwarded
+   * by itself once the proof is in hand. */
   readonly human: HumanVerification
   /** The surface the current step's send belongs to: `phone` when the
    * step may send an SMS, `other` otherwise. The block rendered beside
    * the step reads the same member of `human.gate`. */
   readonly humanScope: HumanScope
-  /** Answer the current step. Ignored while no step is parked. An answer
-   * that may send a verification message carries the proof the gate
-   * requires. */
+  /** Answer the current step. Ignored while no step is parked, while an
+   * answer is in flight, or while a previous answer is held for its proof.
+   * An answer that may send a verification message is held as `pending`
+   * until the gate settles with the proof in hand, then forwarded. */
   readonly answer: (answer: AuthnFlowAnswer) => void
 }
 
@@ -269,6 +279,16 @@ export function useStepUp(
   // A stream of answers is in flight; a further answer is ignored, so a
   // step cannot be double-submitted.
   const [submitting, setSubmitting] = useState(false)
+  // The answer the viewer asked for, held while the gate is read and the
+  // proof it requires is obtained. The proof block renders only while this
+  // is set, and the effect below forwards the answer by itself once the
+  // gate settles, so one request is not turned into a second click.
+  const [pendingAnswer, setPendingAnswer] = useState<AuthnFlowAnswer | null>(
+    null,
+  )
+  // One answer at a time: the immediate path and the deferred one that
+  // waited for a proof can both reach the send in the same tick.
+  const sendingRef = useRef(false)
   // The deadline of the wait the last refusal stated, and the clock the
   // remaining seconds are read against. Both are null/now-free when no wait
   // is armed. The deadline (not a decremented counter) is the state, so a
@@ -312,17 +332,18 @@ export function useStepUp(
   sessionRef.current = session
   // The deployment's gate and this challenge's proof. A step that may send
   // (an SMS second factor, or the SMS first factor a step-up re-proves)
-  // renders the block; the answer that sends presents the proof. The gate
-  // is read here because a caller that opens the challenge has no other
-  // discovery document to hand it, and it is read only while the challenge
-  // is active: a closed challenge reads and solves nothing.
+  // renders the block while an answer waits on its proof; the answer that
+  // sends presents the proof. The gate is read here because a caller that
+  // opens the challenge has no other discovery document to hand it, and it
+  // is read only while an answer is pending: a step that may send shows no
+  // challenge until the viewer asks for the answer that needs one.
   // A step that may send reaches a phone number (an SMS factor, or the
   // SMS first factor a step-up re-proves), so it runs the phone surface's
   // mechanism; every other step runs the other surface's.
   const humanScope: HumanScope = stepSends(step) ? 'phone' : 'other'
   const human = useHumanVerification(session, {
     scope: humanScope,
-    enabled: active,
+    enabled: active && pendingAnswer !== null,
   })
 
   useEffect(() => {
@@ -338,6 +359,7 @@ export function useStepUp(
       setSeq(null)
       setErrorCode(null)
       setSubmitting(false)
+      setPendingAnswer(null)
       setWaitUntil(null)
       if (openRef.current) {
         openRef.current = false
@@ -351,6 +373,7 @@ export function useStepUp(
     setSeq(null)
     setErrorCode(null)
     setSubmitting(false)
+    setPendingAnswer(null)
     setWaitUntil(null)
     void (async () => {
       try {
@@ -489,21 +512,25 @@ export function useStepUp(
     setPhase('failed')
   }
 
-  const answer = (value: AuthnFlowAnswer): void => {
-    if (submitting || seq === null) {
+  /**
+   * Forward one answer to the flow. `presented` is the proof the answer
+   * spends, or null when it sends nothing. An answer that may send with no
+   * proof in hand is refused here -- the last line of defence behind the
+   * pending gate -- so a stale path can never spend what it does not hold.
+   */
+  function sendAnswer(value: AuthnFlowAnswer, presented: string | null): void {
+    if (seq === null || sendingRef.current) {
       return
     }
-    // The proof the answer presents, when it may send. A single-use proof
-    // is consumed once presented, whatever the server answered, so the
-    // block obtains a fresh one for the next attempt.
-    const presented =
-      humanGateNeedsProof(human.gate, humanScope) && answerSends(step, value)
-        ? human.proof
-        : null
+    if (
+      answerSends(step, value) &&
+      humanGateNeedsProof(human.gate, humanScope) &&
+      presented === null
+    ) {
+      return
+    }
+    sendingRef.current = true
     setSubmitting(true)
-    setErrorCode(null)
-    // A retry disarms the previous refusal's wait.
-    setWaitUntil(null)
     const run = runRef.current
     void (async () => {
       try {
@@ -539,9 +566,61 @@ export function useStepUp(
           }
           setSubmitting(false)
         }
+        sendingRef.current = false
       }
     })()
   }
+
+  const answer = (value: AuthnFlowAnswer): void => {
+    if (submitting || seq === null || pendingAnswer !== null) {
+      return
+    }
+    // The attempt begins here, whichever path it takes: the previous
+    // refusal and its wait must not stand beside the verification this one
+    // renders.
+    setErrorCode(null)
+    setWaitUntil(null)
+    const maySend = answerSends(step, value)
+    const gateKnown = !human.pending && human.gate !== null
+    const needsProof = gateKnown && humanGateNeedsProof(human.gate, humanScope)
+    if (maySend && (!gateKnown || (needsProof && human.proof === null))) {
+      // A send whose gate is unread, or whose proof this challenge does not
+      // hold, waits here. The effect below reads the gate and forwards the
+      // answer once the proof is in hand; until then the proof block is the
+      // surface and the step's own action gives way.
+      setPendingAnswer(value)
+      return
+    }
+    sendAnswer(value, needsProof ? human.proof : null)
+  }
+
+  // A held answer leaves by itself once the gate is settled and the proof
+  // it requires is in hand: the viewer's one request is not turned into a
+  // click followed by a second one. A gate still being read keeps it
+  // waiting; a gate that wants nothing sends at once. Closing the challenge
+  // drops the held answer instead: there is no flow left to answer.
+  useEffect(() => {
+    if (!active || pendingAnswer === null || human.pending) {
+      return
+    }
+    if (human.gate === null) {
+      return
+    }
+    const needsProof = humanGateNeedsProof(human.gate, humanScope)
+    if (needsProof && human.proof === null) {
+      return
+    }
+    setPendingAnswer(null)
+    sendAnswer(pendingAnswer, needsProof ? human.proof : null)
+  }, [
+    active,
+    pendingAnswer,
+    human.pending,
+    human.gate,
+    human.proof,
+    humanScope,
+    sendAnswer,
+  ])
 
   // A `complete` step collects nothing and only confirms, so the hook
   // answers it on its own rather than leaving the caller a contextless
@@ -567,6 +646,7 @@ export function useStepUp(
     step,
     seq,
     submitting,
+    pending: pendingAnswer !== null,
     errorCode,
     retryAfterSeconds,
     human,

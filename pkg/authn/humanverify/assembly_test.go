@@ -10,6 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/internal/configtest"
+	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -43,8 +44,9 @@ func TestTheDescriptorDeliversTheHumanVerifierExclusively(t *testing.T) {
 	if !hasLog {
 		t.Error("the descriptor takes up no logging capability, so the Turnstile secret could not be redacted")
 	}
-	if len(m.Resources) != 3 {
-		t.Errorf("Resources = %v, want the input-item schema, the proof-of-work settings schema and the fragment", m.Resources)
+	if len(m.Resources) != 4 {
+		t.Errorf("Resources = %v, want the input-item schema, the proof-of-work and captcha settings "+
+			"schemas and the fragment", m.Resources)
 	}
 }
 
@@ -76,6 +78,7 @@ type otherVerifier struct{}
 func (otherVerifier) Required(authn.HumanScope) bool   { return true }
 func (otherVerifier) Provider(authn.HumanScope) string { return "other" }
 func (otherVerifier) SiteKey(authn.HumanScope) string  { return "" }
+func (otherVerifier) Action(authn.HumanScope) string   { return "" }
 func (otherVerifier) Verify(context.Context, authn.HumanProof, authn.HumanScope) error {
 	return nil
 }
@@ -114,8 +117,8 @@ func TestTheTurnstileSecretIsRegisteredAsARedactionRule(t *testing.T) {
 	const secret = "turnstile-secret-2f7a91c4"
 	section := turnstileSection()
 	section["secret-key"] = secret
-	// This case delivers no key-value store, so the phone surface is off; the
-	// Turnstile secret is what the case is about.
+	// Turnstile needs the key-value store it records spent tokens in, so the
+	// case supplies one; the secret is what the case is about.
 	section[phoneModeItem] = ModeOff
 
 	recorder := newRecordingLogger()
@@ -123,11 +126,13 @@ func TestTheTurnstileSecretIsRegisteredAsARedactionRule(t *testing.T) {
 	reg.Register(config.Module())
 	reg.Register(Module())
 	reg.Register(standInLog())
+	reg.Register(standIn(kvStandIn, (*kv.KV)(nil)))
 	reg.Supply(configtest.Reader(t, body(t, section), Module()), config.ModuleName)
 	reg.Supply(recorder, logStandIn)
+	reg.Supply(newStubKV(), kvStandIn)
 	err := reg.Drive(t.Context(), core.Drive{
 		Depth:        core.StageInit,
-		Participants: []string{ModuleName, config.ModuleName, logStandIn},
+		Participants: []string{ModuleName, config.ModuleName, logStandIn, kvStandIn},
 		Action:       func(context.Context, *core.Registry) error { return nil },
 	})
 	if err != nil {

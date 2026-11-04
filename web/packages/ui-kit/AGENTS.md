@@ -221,8 +221,15 @@ plumbing and deliberately not exported.
   `run`; the slot is empty from the attempt's own reset, and a result
   filled later by an overlapping attempt or by `succeed` / `fail` stays),
   and a throw becomes a code
-  through `errorCodeOf`; `run` never rejects. The success message is the string the host translated
-  at `succeed` time and does not follow a later language switch; failure
+  through `errorCodeOf`; `run` never rejects. A failure whose answer
+  stated a wait carries `retryAfterSeconds` and the `waitUntil` deadline
+  recorded at settlement; `WriteFeedbackRegion` counts the remaining
+  seconds down itself and hands them to `InlineError` as
+  `liveRetryAfterSeconds`, whose accessible sentence stays fixed at the
+  stated wait while the visible, `aria-hidden` sentence decrements and
+  at expiry drops only the number. The success message is the string
+  the host translated at `succeed` time and does not follow a later
+  language switch; failure
   codes resolve at render time, so they do. The region carries no copy
   of its own: the host passes the success text and binds its package's
   error-code resolver into its own `internal/` wrapper, so call sites

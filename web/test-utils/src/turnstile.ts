@@ -14,6 +14,8 @@ export interface FakeTurnstileWidget {
   readonly id: string
   readonly container: HTMLElement
   readonly siteKey: string
+  /** The action the block rendered the widget with, when it named one. */
+  readonly action: string | undefined
   /** Answer the widget's token callback. */
   token(value: string): void
   /** Fire the widget's expiry callback. */
@@ -42,6 +44,7 @@ export interface FakeTurnstile {
 /** The fake's own view of the options the block passes. */
 interface FakeRenderOptions {
   readonly sitekey: string
+  readonly action?: string
   readonly callback: (token: string) => void
   readonly 'expired-callback'?: () => void
   readonly 'error-callback'?: () => void
@@ -67,6 +70,7 @@ export function installFakeTurnstile(): FakeTurnstile {
         id,
         container,
         siteKey: options.sitekey,
+        action: options.action,
         token: (value) => options.callback(value),
         expire: () => options['expired-callback']?.(),
         fail: () => options['error-callback']?.(),

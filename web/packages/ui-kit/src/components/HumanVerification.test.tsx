@@ -72,6 +72,24 @@ function captcha(
 
 const CAPTCHA_COPY = zhCN.humanVerification.captcha
 
+/** Give the slider's two images the decoded sizes jsdom does not report: a
+ * 320x160 background and a 48x48 piece, so the range takes 272 steps. */
+function loadSliderImages(container: HTMLElement): void {
+  const images = container.querySelectorAll('img')
+  expect(images).toHaveLength(2)
+  for (const [index, image] of Array.from(images).entries()) {
+    Object.defineProperty(image, 'naturalWidth', {
+      configurable: true,
+      value: index === 0 ? 320 : 48,
+    })
+    Object.defineProperty(image, 'naturalHeight', {
+      configurable: true,
+      value: index === 0 ? 160 : 48,
+    })
+    fireEvent.load(image)
+  }
+}
+
 describe('HumanVerification', () => {
   it('renders nothing when the gate is absent, off, or requires nothing', () => {
     const { container, rerender } = renderWithProviders(
@@ -181,6 +199,7 @@ describe('HumanVerification', () => {
               required: true,
               provider: 'turnstile',
               site_key: 'site-1',
+              action: 'login',
             })}
             proof={proof}
             onToken={(token) => {
@@ -198,6 +217,7 @@ describe('HumanVerification', () => {
     const { unmount } = renderWithProviders(<Host />)
     await waitFor(() => expect(fake.widgets).toHaveLength(1))
     expect(fake.widgets[0]?.siteKey).toBe('site-1')
+    expect(fake.widgets[0]?.action).toBe('login')
 
     act(() => {
       fake.token('token-1')
@@ -210,6 +230,39 @@ describe('HumanVerification', () => {
 
     unmount()
     expect(fake.removed).toHaveLength(1)
+    fake.restore()
+  })
+
+  it('re-renders the Turnstile widget when the gate changes its action', async () => {
+    const fake = installFakeTurnstile()
+    const gate = (action: string) =>
+      gateSet(OFF, {
+        required: true,
+        provider: 'turnstile',
+        site_key: 'site-1',
+        action,
+      })
+    const { rerender, unmount } = renderWithProviders(
+      <HumanVerification
+        scope="other"
+        gate={gate('login')}
+        onToken={() => {}}
+      />,
+    )
+    await waitFor(() => expect(fake.widgets).toHaveLength(1))
+    expect(fake.widgets[0]?.action).toBe('login')
+
+    rerender(
+      <HumanVerification
+        scope="other"
+        gate={gate('reset')}
+        onToken={() => {}}
+      />,
+    )
+    await waitFor(() => expect(fake.widgets).toHaveLength(2))
+    expect(fake.widgets[1]?.action).toBe('reset')
+
+    unmount()
     fake.restore()
   })
 
@@ -328,14 +381,18 @@ describe('HumanVerification', () => {
       )
       // The server chooses between the image and slider forms; the client
       // cannot force either one. The only form-naming control is the audio
-      // accessibility entry, and the refresh takes no form.
+      // accessibility entry, and the refresh takes no form. The image form
+      // also carries its answer's submit; the slider submits on release,
+      // so it has no separate confirm button.
       expect(
         screen.getByRole('button', { name: CAPTCHA_COPY.useAudio }),
       ).toBeInTheDocument()
       expect(
         screen.getByRole('button', { name: CAPTCHA_COPY.refresh }),
       ).toBeInTheDocument()
-      expect(screen.getAllByRole('button')).toHaveLength(3)
+      expect(screen.getAllByRole('button')).toHaveLength(
+        form === 'image' ? 3 : 2,
+      )
       unmount()
     }
   })
@@ -397,7 +454,7 @@ describe('HumanVerification', () => {
     }
   })
 
-  it('renders the slider behind a native range input and submits its offset', async () => {
+  it('renders the slider behind a native range input and submits its offset on release', async () => {
     const onToken = vi.fn()
     const { container } = renderWithProviders(
       <HumanVerification
@@ -408,28 +465,16 @@ describe('HumanVerification', () => {
         onRefreshCaptcha={() => {}}
       />,
     )
-    const images = container.querySelectorAll('img')
-    expect(images).toHaveLength(2)
-    // The browser reports the decoded size; jsdom does not decode, so the
-    // case supplies it the way a loaded image would.
-    for (const image of images) {
-      Object.defineProperty(image, 'naturalWidth', {
-        configurable: true,
-        value: image === images[0] ? 320 : 48,
-      })
-      Object.defineProperty(image, 'naturalHeight', {
-        configurable: true,
-        value: image === images[0] ? 160 : 48,
-      })
-      fireEvent.load(image)
-    }
+    loadSliderImages(container)
     const range = screen.getByLabelText(CAPTCHA_COPY.sliderLabel)
     expect(range).toHaveAttribute('type', 'range')
     await waitFor(() => expect(range).toHaveAttribute('max', '272'))
     fireEvent.change(range, { target: { value: '140' } })
-    await userEvent
-      .setup()
-      .click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
+    // Moving the control is not submitting it: the offset travels on
+    // release, not on every change the browser reports while dragging.
+    expect(onToken).not.toHaveBeenCalled()
+    fireEvent.pointerUp(range)
+    expect(onToken).toHaveBeenCalledTimes(1)
     expect(onToken).toHaveBeenCalledWith('challenge-1.140')
     // The slider was the server's rotation: the client offers no control
     // to ask for it, only the audio accessibility entry and the refresh.
@@ -439,7 +484,32 @@ describe('HumanVerification', () => {
     expect(
       screen.getByRole('button', { name: CAPTCHA_COPY.refresh }),
     ).toBeInTheDocument()
-    expect(screen.getAllByRole('button')).toHaveLength(3)
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+  })
+
+  it('submits the slider once on Enter after the keyboard moved it', async () => {
+    const onToken = vi.fn()
+    const { container } = renderWithProviders(
+      <HumanVerification
+        scope="phone"
+        gate={gateSet({ required: true, provider: 'captcha' })}
+        captcha={captcha('slider')}
+        onToken={onToken}
+        onRefreshCaptcha={() => {}}
+      />,
+    )
+    loadSliderImages(container)
+    const range = screen.getByLabelText(CAPTCHA_COPY.sliderLabel)
+    await waitFor(() => expect(range).toHaveAttribute('max', '272'))
+    // A native range moves on the arrow keys and the browser reports each
+    // move as a change; the component itself submits on Enter, and only
+    // the offset in force when it is pressed travels.
+    fireEvent.change(range, { target: { value: '80' } })
+    fireEvent.change(range, { target: { value: '210' } })
+    expect(onToken).not.toHaveBeenCalled()
+    fireEvent.keyDown(range, { key: 'Enter' })
+    expect(onToken).toHaveBeenCalledTimes(1)
+    expect(onToken).toHaveBeenCalledWith('challenge-1.210')
   })
 
   it('shows the verified state once the host holds the captcha proof', () => {

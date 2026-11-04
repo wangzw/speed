@@ -492,16 +492,17 @@ describe('PasswordSignInForm', () => {
         's3cret-pass',
       )
       await user.click(screen.getByRole('button', { name: SUBMIT_ZH }))
-      // The flow parks on an SMS second factor: the proof block stands above
-      // the choices.
+      // The flow parks on an SMS second factor. Choosing that factor is an
+      // answer that may send, so the choice is held while the gate is read
+      // and its proof obtained; the block appears only for that held answer.
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.factorKind.sms }),
+      )
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
       act(() => {
         fake.token('token-1')
       })
-      await user.click(
-        screen.getByRole('button', { name: zhCN.signInFlow.factorKind.sms }),
-      )
       await waitFor(() =>
         expect(
           harness.calls.find(

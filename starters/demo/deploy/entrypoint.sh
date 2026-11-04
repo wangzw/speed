@@ -144,9 +144,12 @@ check_scalar DEMO_GITHUB_CLIENT_SECRET "$DEMO_GITHUB_CLIENT_SECRET"
 # authenticates siteverify, so both are required only when a selected surface
 # is turnstile. A deployment that runs both surfaces off or on a self-hosted
 # mechanism carries no Turnstile credential, and the expected hostname is
-# always this deployment's own public domain.
+# always this deployment's own public domain. The action the widget is rendered
+# with comes from DEMO_TURNSTILE_ACTION and defaults to login; the siteverify
+# answer is checked against it.
 humanverify_mode=${DEMO_HUMANVERIFY_MODE:-pow}
 humanverify_phone_mode=${DEMO_HUMANVERIFY_PHONE_MODE:-captcha}
+turnstile_action=${DEMO_TURNSTILE_ACTION:-login}
 case $humanverify_mode in
     off | pow | captcha | turnstile) ;;
     *) die "DEMO_HUMANVERIFY_MODE must be off, pow, captcha or turnstile" ;;
@@ -168,6 +171,7 @@ if [ "$humanverify_mode" = turnstile ] || [ "$humanverify_phone_mode" = turnstil
     turnstile_site_key=$DEMO_TURNSTILE_SITE_KEY
     turnstile_secret_key=$DEMO_TURNSTILE_SECRET_KEY
 fi
+check_scalar DEMO_TURNSTILE_ACTION "$turnstile_action"
 
 mkdir -p /data/var /data/objects
 
@@ -192,7 +196,8 @@ awk -v origin="$public_origin" \
     -v humanverify_mode="$humanverify_mode" \
     -v humanverify_phone_mode="$humanverify_phone_mode" \
     -v turnstile_site_key="$turnstile_site_key" \
-    -v turnstile_secret_key="$turnstile_secret_key" '
+    -v turnstile_secret_key="$turnstile_secret_key" \
+    -v turnstile_action="$turnstile_action" '
     function replace(line, needle, repl,   out, i) {
         out = ""
         while ((i = index(line, needle)) > 0) {
@@ -223,6 +228,7 @@ awk -v origin="$public_origin" \
         line = replace(line, "__HUMANVERIFY_PHONE_MODE__", humanverify_phone_mode)
         line = replace(line, "__TURNSTILE_SITE_KEY__", turnstile_site_key)
         line = replace(line, "__TURNSTILE_SECRET_KEY__", turnstile_secret_key)
+        line = replace(line, "__TURNSTILE_ACTION__", turnstile_action)
         print line
     }
 ' "$template" >"$config.new"
@@ -239,7 +245,8 @@ chmod 0600 "$config"
 unset DEMO_OPERATOR_USERNAME DEMO_OPERATOR_EMAIL DEMO_OPERATOR_PASSWORD DEMO_DB_ENCRYPTION_KEY DEMO_PUBLIC_URL \
     DEMO_SMTP_HOST DEMO_SMTP_PORT DEMO_SMTP_TLS DEMO_SMTP_USERNAME DEMO_SMTP_PASSWORD DEMO_SMTP_FROM \
     DEMO_GOOGLE_CLIENT_ID DEMO_GOOGLE_CLIENT_SECRET DEMO_GITHUB_CLIENT_ID DEMO_GITHUB_CLIENT_SECRET \
-    DEMO_HUMANVERIFY_MODE DEMO_HUMANVERIFY_PHONE_MODE DEMO_TURNSTILE_SITE_KEY DEMO_TURNSTILE_SECRET_KEY
+    DEMO_HUMANVERIFY_MODE DEMO_HUMANVERIFY_PHONE_MODE DEMO_TURNSTILE_SITE_KEY DEMO_TURNSTILE_SECRET_KEY \
+    DEMO_TURNSTILE_ACTION
 
 su-exec demo /usr/local/bin/demo --config file:///data/config.yaml sqlite seed
 exec su-exec demo /usr/local/bin/demo --config file:///data/config.yaml sqlite serve

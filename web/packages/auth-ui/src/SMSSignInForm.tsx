@@ -13,10 +13,13 @@
  * before writing the same sentence again, so a successful repeat is
  * announced rather than read as an unchanged string. A resend is held for
  * the interval the server states -- the `resend_after` a challenge carried,
- * or the `Retry-After` of a 429 -- and the control states how many seconds
- * remain; the countdown timer stops at its own expiry. A fresh code starts
- * the code field empty: a successful send (the first, a resend, or a
- * request for a changed phone) resets any code typed against the one it
+ * or the `Retry-After` of a 429 -- and the countdown timer stops at its own
+ * expiry. The hold a successful send's `resend_after` imposes is explained
+ * by a note beside the control, which counts the seconds down; when the
+ * hold instead came from a throttled send, the failure banner's own
+ * countdown is the only indicator and no note stands beside it. A fresh
+ * code starts the code field empty: a successful send (the first, a resend,
+ * or a request for a changed phone) resets any code typed against the one it
  * invalidates, so a stale code can never ride along to a new code session.
  *
  * The phone field is the shared two-part control: a country/region
@@ -79,9 +82,14 @@
  * Every send -- the first code, a resend, and a parked second factor whose
  * SMS choice sends one -- presents the deployment's human-verification
  * proof when its gate requires one. The block stands above the step's
- * send control; a send consumes the single-use proof, so the block obtains
- * a fresh one for the next attempt. A host that already read the discovery
- * document passes the gate as `humanGate`; otherwise the form reads it.
+ * send control, and on the two SMS steps it appears only once a send has
+ * been asked for: entering the phone step or waiting for a code shows no
+ * challenge, and the send the viewer asked for leaves by itself when the
+ * proof arrives. The control that asked gives way to the block while the
+ * proof is outstanding, so one action is on screen at a time. A send consumes the single-use proof, so the block
+ * obtains a fresh one for the next attempt. A host that already read the
+ * discovery document passes the gate as `humanGate`; otherwise the form
+ * reads it.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -105,13 +113,12 @@ import {
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
 import { humanGateNeedsProof, useHumanVerification } from '@speed/auth-core'
 import type { OpenFlowState } from './internal/flow.js'
-import { answerSends } from './internal/flow.js'
 import { useAuthUiTranslation } from './internal/translation.js'
 import {
   ChannelFeedbackRegion,
   useChannelFeedback,
 } from './internal/write-feedback.js'
-import { FlowStepFields, signupFieldRefusal } from './internal/flow-step.js'
+import { HumanGatedFlowStep, signupFieldRefusal } from './internal/flow-step.js'
 import { FlowExpired } from './internal/flow-expired.js'
 import { retryWaitMs } from './internal/retry-wait.js'
 import { stepKey, useStepFocus } from './internal/step-focus.js'
@@ -142,7 +149,8 @@ interface SmsFields {
   code: string
 }
 
-/** The resend note's id, referenced by the resend control while it counts down. */
+/** The resend note's id, referenced by the resend control while it counts
+ * down for a successful send's stated interval. */
 const RESEND_NOTE_ID = 'sms-sign-in-resend-note'
 
 /** The form's one live status region (sent notice and phone refusal). */
@@ -166,19 +174,12 @@ export function SMSSignInForm({
   humanGate,
 }: SMSSignInFormProps) {
   const { t } = useAuthUiTranslation()
-  // The deployment's human-verification gate and this form's proof. A host
-  // that already read the discovery document hands the gate in; otherwise
-  // the form reads it, so a standalone form still presents a proof.
-  const human = useHumanVerification(session, {
-    scope: 'phone',
-    ...(humanGate === undefined ? {} : { gate: humanGate }),
-  })
-  // A send waits for a proof when the gate is known to require one. A gate
-  // still being read does not block it: the phone takes longer to type
-  // than the document takes to arrive, and the server judges a send that
-  // races the read.
-  const needsProof = humanGateNeedsProof(human.gate, 'phone')
-  const proofBlocked = needsProof && human.proof === null
+  // The number a send the viewer asked for is waiting on, because the gate
+  // wants a proof this client does not hold yet. The gate is read and the
+  // proof obtained only while this is set, so entering the phone step or
+  // waiting for a code shows no challenge. Once the proof arrives the send
+  // the viewer already asked for leaves by itself.
+  const [pendingSend, setPendingSend] = useState<string | null>(null)
   // The host's preferred starting country, else the browser locale's own
   // region. Read once: it is the selector's starting value, not a value
   // that follows a later provider change.
@@ -211,6 +212,9 @@ export function SMSSignInForm({
   // repeated sentence must pass through empty to be spoken.
   const [sentNotice, setSentNotice] = useState('')
   const [sentSeq, setSentSeq] = useState(0)
+  // One send at a time: the resend control's direct path and the deferred
+  // path that waits for a proof can both reach the send in the same tick.
+  const sendingRef = useRef(false)
   // The channel's feedback scope: failure codes settle its slot, while the
   // SMS step's own two notices (this step's code refusal and the used-code
   // notice) are bundle copy rather than codes. The local notice shares the
@@ -220,8 +224,13 @@ export function SMSSignInForm({
     'refused' | 'used' | null
   >(null)
   // The instant the resend control becomes usable again, and the ticking
-  // clock its note reads.
+  // clock its disabled state reads.
   const [resendUntil, setResendUntil] = useState(0)
+  // Whether that hold came from a refused send rather than a successful
+  // one's stated interval: a failure's wait is counted down by the failure
+  // banner itself, so only a successful send's hold gets the note beside
+  // the control.
+  const [holdFromFailure, setHoldFromFailure] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   // The exact code a superseded answer proved spent, kept until the next
   // code request ISSUES a fresh code (a request the server refuses issues
@@ -263,9 +272,12 @@ export function SMSSignInForm({
   }
 
   /** Hold the resend control for the interval the server asked for: a
-   * positive `resend_after` from the challenge, or a 429's `Retry-After`. */
-  function holdResend(waitMs: number): void {
+   * positive `resend_after` from the challenge, or a 429's `Retry-After`.
+   * `fromFailure` says which of the two asked for the hold, because only a
+   * successful send's interval needs the note beside the control. */
+  function holdResend(waitMs: number, fromFailure: boolean): void {
     setResendUntil(waitMs > 0 ? Date.now() + waitMs : 0)
+    setHoldFromFailure(fromFailure)
     setNow(Date.now())
   }
 
@@ -280,6 +292,9 @@ export function SMSSignInForm({
         feedback.reset()
         return
       }
+      // The wait the server stated rides into the banner with the code, so
+      // a throttled send names how long the viewer has to wait.
+      const wait = retryWaitMs(error)
       if (code === LOGIN_FAILED && answeringCodeRef.current) {
         // The code step's own refusal: this surface's copy names no
         // password it has no field for. It shares the scope's one failure
@@ -288,11 +303,10 @@ export function SMSSignInForm({
         feedback.reset()
       } else {
         setLocalNotice(null)
-        feedback.fail(code)
+        feedback.fail(code, wait)
       }
-      const wait = retryWaitMs(error)
       if (wait !== undefined) {
-        holdResend(wait)
+        holdResend(wait, true)
       }
     },
     onSuperseded: () => {
@@ -315,6 +329,24 @@ export function SMSSignInForm({
       }
     },
   })
+
+  const onCodeStep =
+    driver.step !== null && isCodePrompt(driver.step)
+  // The two SMS steps read the gate and obtain a proof only once a send is
+  // asked for. A parked step the flow later shows is the shared renderer's,
+  // which carries its own gate and proof. A host that already read the
+  // discovery document hands the gate in; otherwise the form reads it, so a
+  // standalone form still presents a proof.
+  const human = useHumanVerification(session, {
+    scope: 'phone',
+    enabled: pendingSend !== null,
+    ...(humanGate === undefined ? {} : { gate: humanGate }),
+  })
+  // The gate the host handed in is known before the hook reads anything; a
+  // standalone form learns it through the hook once a send asks for one.
+  const gateDocument = humanGate ?? human.gate
+  const needsProof = humanGateNeedsProof(gateDocument, 'phone')
+  const proofBlocked = needsProof && human.proof === null
 
   // After a refused submit the control has rendered its per-country
   // message under the number; mirror that same text into the status
@@ -374,13 +406,18 @@ export function SMSSignInForm({
     Math.ceil((resendUntil - now) / 1000),
   )
 
-  const requestCode = async (phone: string): Promise<void> => {
+  const sendCode = async (phone: string): Promise<void> => {
     // A required proof that is not ready yet keeps the send from leaving:
     // the block above the control is already showing why.
     if (proofBlocked) {
       return
     }
     resetScope()
+    setPendingSend(null)
+    // The previous send's notice describes a code this attempt replaces: it
+    // goes before the request leaves, so a refusal never leaves an older
+    // "sent to" sentence standing beside the new failure.
+    setSentNotice('')
     answeringCodeRef.current = false
     answeredSignupRef.current = false
     // A request does not yet open a new code session: whether one opens is
@@ -422,7 +459,51 @@ export function SMSSignInForm({
       parked !== null && parked.next.kind === 'challenge'
         ? parked.next.resend_after
         : undefined
-    holdResend(typeof seconds === 'number' ? seconds * 1000 : 0)
+    holdResend(typeof seconds === 'number' ? seconds * 1000 : 0, false)
+  }
+
+  /** One send at a time, whichever path asked for it: the control's direct
+   * path and the deferred one that waited for a proof. */
+  const requestCode = async (phone: string): Promise<void> => {
+    if (sendingRef.current) {
+      return
+    }
+    sendingRef.current = true
+    try {
+      await sendCode(phone)
+    } finally {
+      sendingRef.current = false
+    }
+  }
+
+  const requestCodeRef = useRef(requestCode)
+  requestCodeRef.current = requestCode
+
+  /**
+   * Ask for a code: send now when the gate is known to want no proof,
+   * otherwise hold the send and let the block obtain one; the effect that
+   * watches the postponed send sends when it arrives.
+   */
+  const askToSend = (phone: string): void => {
+    if (pendingSend !== null) {
+      // A send is already waiting on its proof; asking again changes nothing.
+      return
+    }
+    // The attempt begins here, whichever path it takes: the previous
+    // refusal must not stand beside the verification the new one renders.
+    resetScope()
+    if (
+      !human.pending &&
+      gateDocument !== null &&
+      (!needsProof || human.proof !== null)
+    ) {
+      void requestCode(phone)
+      return
+    }
+    // The notice the code step carried stays in state but is not rendered
+    // while the verification owns the step: cancelling returns to it, and a
+    // send that actually leaves replaces it.
+    setPendingSend(phone)
   }
 
   const onSubmit: SubmitHandler<SmsFields> = async (values) => {
@@ -447,7 +528,12 @@ export function SMSSignInForm({
       }
       setPhoneAttempted(false)
       setPhoneNotice('')
-      await requestCode(phone)
+      askToSend(phone)
+      return
+    }
+    if (pendingSend !== null) {
+      // A resend still waiting on its proof owns the step: the code entry
+      // is not on screen, so a stray submit answers nothing.
       return
     }
     resetScope()
@@ -472,32 +558,34 @@ export function SMSSignInForm({
   }
 
   /** Answer a further step the flow parked (a second factor, an
-   * enrollment). The proof rides with it, and is consumed when the answer
-   * may have sent a message. */
+   * enrollment). The shared renderer obtained the proof the answer spends. */
   const answerFurther = async (
     input: Record<string, string>,
+    presented?: string,
   ): Promise<void> => {
     const current = driver.step
-    const presented = needsProof ? human.proof : null
-    const sends = current !== null && answerSends(current, input)
     // A further step's answer is a new attempt too: the previous refusal's
     // banner goes before the reply lands.
     resetScope()
     answeringCodeRef.current = false
     answeredSignupRef.current = current !== null && current.state === 'signup'
-    await driver.answer(input, presented ?? undefined)
-    if (sends && presented !== null) {
-      human.consume()
-    }
+    await driver.answer(input, presented)
   }
 
   const editPhone = (): void => {
     resetScope()
+    setSentNotice('')
+    setPendingSend(null)
     setSignupExpired(false)
     // Leaving the code step clears its attempt state: the code-entry
     // surface unmounts with it, and re-entering requires a code request
     // the server accepts.
     setSpentCode(null)
+    // The hold belonged to the old number's code session, and the note that
+    // explained it lived on the code step this leaves. The new number's
+    // send must not inherit that wait: nothing on the phone step would say
+    // why its control was held.
+    holdResend(0, false)
     sentToRef.current = ''
     driver.reset()
   }
@@ -511,11 +599,24 @@ export function SMSSignInForm({
     if (phone === '') {
       return
     }
-    void requestCode(phone)
+    askToSend(phone)
   }
 
-  const onCodeStep =
-    driver.step !== null && isCodePrompt(driver.step)
+  // A send asked for while the gate held it leaves as soon as the gate is
+  // known and the proof it wants is in hand: the viewer's one request is
+  // not turned into a click followed by a second one. A gate still being
+  // read keeps the send waiting; a gate that wants nothing sends at once.
+  useEffect(() => {
+    if (pendingSend === null || human.pending || gateDocument === null) {
+      return
+    }
+    if (needsProof && human.proof === null) {
+      return
+    }
+    const phone = pendingSend
+    setPendingSend(null)
+    void requestCodeRef.current(phone)
+  }, [pendingSend, human.pending, gateDocument, needsProof, human.proof])
 
   // The surface this form renders now: the phone step and the code step
   // are its own, anything else is a parked step. A switch to another
@@ -540,13 +641,13 @@ export function SMSSignInForm({
       ? signupFieldRefusal(driver.step, parkedFailure)
       : null
 
-  // The deployment's human-verification block, above whichever send
-  // control the current step shows. It renders nothing when no proof is
-  // required.
+  // The deployment's human-verification block. A step renders it only while
+  // a send it asked for waits on a proof (a parked step renders it above its
+  // answer control); it renders nothing when no proof is required.
   const humanBlock = (
     <HumanVerification
       scope="phone"
-      gate={human.gate ?? undefined}
+      gate={human.gate ?? humanGate}
       proof={human.proof}
       status={human.status}
       captcha={human.captcha}
@@ -576,11 +677,13 @@ export function SMSSignInForm({
   if (driver.step !== null && !onCodeStep) {
     return (
       <Box ref={surfaceRef} sx={{ display: 'contents' }}>
-        {humanBlock}
-        <FlowStepFields
+        <HumanGatedFlowStep
+          session={session}
+          humanGate={humanGate}
           step={driver.step}
           busy={driver.busy}
-          onAnswer={(input) => void answerFurther(input)}
+          onAttemptStart={resetScope}
+          onAnswer={(input, proof) => void answerFurther(input, proof)}
           onUnsupported={editPhone}
           clientFailure={feedback.localFailure}
           onClientFailure={(key) =>
@@ -592,6 +695,21 @@ export function SMSSignInForm({
           <ChannelFeedbackRegion feedback={feedback} />
         ) : null}
       </Box>
+    )
+  }
+
+  // The resend's proof comes before the new code: the code step gives way
+  // to that one task, with a way back to the code the viewer already holds.
+  if (onCodeStep && pendingSend !== null) {
+    return (
+      <FormLayout ref={surfaceRef} form={form} onSubmit={onSubmit}>
+        {humanBlock}
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button size="small" onClick={() => setPendingSend(null)}>
+            {t('smsSignIn.cancelResend')}
+          </Button>
+        </Box>
+      </FormLayout>
     )
   }
 
@@ -609,15 +727,15 @@ export function SMSSignInForm({
           >
             {t('smsSignIn.submit')}
           </ActionButton>
-        ) : (
+        ) : pendingSend === null ? (
           <ActionButton
             type="submit"
             emphasis="primary"
-            disabled={driver.busy || proofBlocked}
+            disabled={driver.busy || remainingSeconds > 0}
           >
             {t('smsSignIn.sendCode')}
           </ActionButton>
-        )
+        ) : undefined
       }
     >
       {/* The form's one status region: the sent notice on the code step,
@@ -633,7 +751,11 @@ export function SMSSignInForm({
         id={SMS_NOTICE_ID}
         severity="info"
         role="status"
-        sx={onCodeStep ? { width: '100%' } : visuallyHiddenSx}
+        sx={
+          onCodeStep && sentNotice !== ''
+            ? { width: '100%' }
+            : visuallyHiddenSx
+        }
       >
         {onCodeStep
           ? sentNotice
@@ -660,17 +782,33 @@ export function SMSSignInForm({
               />
             )}
           />
-          {/* The resend action starts a fresh flow that sends another
-              code, so it needs its own proof; the block stays on this step
-              for it. */}
-          {humanBlock}
+          {/* Every failure of this step stands directly under the field it
+              answers: the scope's slot, then this step's own two notices,
+              before the controls a resend needs. */}
+          <ChannelFeedbackRegion feedback={feedback} />
+          {localNotice === 'used' ? (
+            <Alert severity="error" role="alert" sx={{ width: '100%' }}>
+              {t('smsSignIn.codeUsed')}
+            </Alert>
+          ) : localNotice === 'refused' ? (
+            // The code step's own refusal: the server collapses a wrong,
+            // expired, spent or exhausted code into this one answer, so the
+            // text says what this step can promise -- try it again or ask
+            // for a new code -- and never names a password this surface has
+            // no field for.
+            <Alert severity="error" role="alert" sx={{ width: '100%' }}>
+              {t('smsSignIn.loginFailed')}
+            </Alert>
+          ) : null}
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Button
               size="small"
-              onClick={() => void requestCode(sentToRef.current)}
-              disabled={driver.busy || proofBlocked || remainingSeconds > 0}
+              onClick={() => askToSend(sentToRef.current)}
+              disabled={driver.busy || remainingSeconds > 0}
               aria-describedby={
-                remainingSeconds > 0 ? RESEND_NOTE_ID : undefined
+                remainingSeconds > 0 && !holdFromFailure
+                  ? RESEND_NOTE_ID
+                  : undefined
               }
             >
               {t('smsSignIn.resendCode')}
@@ -679,9 +817,11 @@ export function SMSSignInForm({
               {t('smsSignIn.editPhone')}
             </Button>
           </Box>
-          {/* The server's stated wait, filled while the control is held and
-              removed when it ends. */}
-          {remainingSeconds > 0 ? (
+          {/* A successful send's stated interval, filled while the control
+              is held and removed when it ends. A throttled send's wait is
+              the failure banner's countdown instead, so no note stands
+              beside that one. */}
+          {remainingSeconds > 0 && !holdFromFailure ? (
             <Typography
               id={RESEND_NOTE_ID}
               variant="body2"
@@ -699,10 +839,12 @@ export function SMSSignInForm({
               nationalNumber={nationalNumber}
               onCountryChange={(next) => {
                 clearAttempt()
+                setPendingSend(null)
                 setCountry(next)
               }}
               onNationalNumberChange={(next) => {
                 clearAttempt()
+                setPendingSend(null)
                 setNationalNumber(next)
               }}
               countryLabel={t('smsSignIn.countryLabel')}
@@ -712,24 +854,15 @@ export function SMSSignInForm({
               autoComplete="tel"
             />
           </Box>
-          {humanBlock}
+          {/* The first send needs a proof too, so the block appears only
+              after the viewer asks for that send and no proof is in hand. */}
+          {pendingSend !== null ? humanBlock : null}
+          {/* A send the server throttled states the wait and counts it down
+              in its own banner; the control is held for the same deadline
+              without a second note. */}
+          <ChannelFeedbackRegion feedback={feedback} />
         </>
       )}
-      <ChannelFeedbackRegion feedback={feedback} />
-      {localNotice === 'used' ? (
-        <Alert severity="error" role="alert" sx={{ width: '100%', mt: 1 }}>
-          {t('smsSignIn.codeUsed')}
-        </Alert>
-      ) : localNotice === 'refused' ? (
-        // The code step's own refusal: the server collapses a wrong,
-        // expired, spent or exhausted code into this one answer, so the
-        // text says what this step can promise -- try it again or ask
-        // for a new code -- and never names a password this surface has
-        // no field for.
-        <Alert severity="error" role="alert" sx={{ width: '100%', mt: 1 }}>
-          {t('smsSignIn.loginFailed')}
-        </Alert>
-      ) : null}
     </FormLayout>
   )
 }

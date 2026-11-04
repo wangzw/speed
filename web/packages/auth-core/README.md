@@ -70,7 +70,7 @@ guards".
 | `hooks.ts` | `attachSession(session)`, `useAuthState()`, `usePermission(domain, permission)`, `useFeature(name)`, `useFeatureState()`, `featurePresence(state)`, `TenantProvider`, `useCurrentTenant()` |
 | `query-key.ts` | `tenantQueryKey(tenantId, ...tail)`, `useTenantQueryKey(bareKey)`, `TenantQueryKey`, `evictTenantQueries(queryClient, tenantId)` |
 | `step-up-gate.ts` | `useStepUpGate(onRetry, isShortfall?)`, `StepUpGate` |
-| `human.ts` | `useHumanVerification(session, options)`, `HumanVerification`, `HumanVerificationStatus`, `UseHumanVerificationOptions`, `HumanScope`, `HumanCaptchaChallenge`, `HumanCaptchaForm`, `humanSurfaceGate(gate, scope)`, `humanGateNeedsProof(gate, scope)`, `parseCaptchaChallenge(body)`, `requestPowProof(requestChallenge?)`, `powProofFromChallenge(answer)` |
+| `human.ts` | `useHumanVerification(session, options)`, `HumanVerification`, `HumanVerificationStatus`, `UseHumanVerificationOptions`, `HumanScope`, `HumanCaptchaChallenge`, `HumanCaptchaForm`, `humanSurfaceGate(gate, scope)`, `humanGateNeedsProof(gate, scope)`, `parseCaptchaChallenge(body)`, `requestPowProof(scope, requestChallenge?)`, `powProofFromChallenge(answer)` |
 | `pow.ts` | `solvePowChallenge(challenge, difficulty)`, `POW_HASH` |
 | `tenant-refusal.ts` | `isTenantAdmissionRefusal(error)` |
 | `webauthn.ts` (the `@speed/auth-core/webauthn` subpath, not the main entry) | `runWebauthn(options, signal?)`, `webauthnStepOf(options)`, `WebauthnError`, `WebauthnStep`, `WebauthnFailure` |

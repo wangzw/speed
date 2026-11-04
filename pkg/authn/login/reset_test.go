@@ -995,6 +995,7 @@ type onceHuman struct {
 func (h *onceHuman) Required(authn.HumanScope) bool   { return true }
 func (h *onceHuman) Provider(authn.HumanScope) string { return "pow" }
 func (h *onceHuman) SiteKey(authn.HumanScope) string  { return "" }
+func (h *onceHuman) Action(authn.HumanScope) string   { return "" }
 
 func (h *onceHuman) Verify(_ context.Context, p authn.HumanProof, _ authn.HumanScope) error {
 	h.mu.Lock()

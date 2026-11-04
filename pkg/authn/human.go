@@ -46,20 +46,22 @@ type HumanProof struct {
 // proof, and one that turns a mechanism on requires one.
 //
 // Every answer is per scope. A deployment may run one mechanism on the phone
-// surface and another on the other surface, so Required, Provider, SiteKey and
-// Verify each take the scope of the send being checked and answer for that
-// surface alone. A caller names the scope it is sending on; a surface that asks
-// the wrong one is asking about a different gate. Only HumanScopePhone and
-// HumanScopeOther are scopes: an implementation handed anything else answers as
+// surface and another on the other surface, so Required, Provider, SiteKey,
+// Action and Verify each take the scope of the send being checked and answer
+// for that surface alone. A caller names the scope it is sending on; a surface
+// that asks the wrong one is asking about a different gate. Only
+// HumanScopePhone and HumanScopeOther are scopes: an implementation handed
+// anything else answers as
 // the phone surface when that surface is gated, otherwise as the gated other
 // surface, so it answers as off only when both surfaces are off.
 //
-// The seam answers three questions about the deployment and checks one proof.
+// The seam answers four questions about the deployment and checks one proof.
 // Required says whether a proof is a condition of sending on that scope at all;
 // Provider names the mechanism the scope runs, which is a constant of the
 // provider's code; SiteKey is the public identifier a client-side widget needs,
-// empty when the mechanism needs none or the gate is off; and Verify checks the
-// proof the caller presented for that scope.
+// empty when the mechanism needs none or the gate is off; Action is the action
+// that widget must be rendered with, empty when the mechanism has none; and
+// Verify checks the proof the caller presented for that scope.
 //
 // A proof is single-use. Verify consumes the token it accepts: a token that was
 // accepted once is refused when it is presented again, whether the second
@@ -95,6 +97,12 @@ type HumanVerifier interface {
 	// none — a self-hosted proof of work and a self-hosted captcha do — and when
 	// the gate is off.
 	SiteKey(scope HumanScope) string
+
+	// Action returns the action a client-side widget must be rendered with, so
+	// the proof it yields names the action the provider checks. It is empty
+	// when the mechanism has no widget — a self-hosted proof of work and a
+	// self-hosted captcha have none — and when the gate is off.
+	Action(scope HumanScope) string
 
 	// Verify checks that p is a valid, unused proof for scope and consumes it. An
 	// empty Token is a caller that presented nothing and is refused with

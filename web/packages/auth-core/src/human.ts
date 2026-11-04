@@ -4,7 +4,9 @@
  *
  * A deployment answers per surface -- the phone surface guards the four
  * SMS sends and the other surface guards every send that does not address
- * a phone number -- and may run a different mechanism on each. Three
+ * a phone number -- and may run a different mechanism on each. Every
+ * challenge request names the surface, and the server binds the proof to
+ * it, so a proof obtained for one surface is refused on the other. Three
  * mechanisms are possible, and the discovery document names which one a
  * surface runs:
  *
@@ -85,9 +87,10 @@ export interface HumanVerification {
    * loaded (or the surface does not run the captcha). */
   readonly captcha: HumanCaptchaChallenge | null
   /** The wait a refused accessibility request stated, in whole seconds,
-   * or undefined when no refusal is in force. A refusal that states a
-   * wait leaves the challenge on screen: the viewer keeps the form they
-   * can answer while the accessibility entry is held. */
+   * counted down while it is in force and undefined once it elapses. A
+   * refusal that states a wait leaves the challenge on screen: the viewer
+   * keeps the form they can answer while the accessibility entry is
+   * held. */
   readonly audioRetryAfterSeconds: number | undefined
   /** Adopt a token the Turnstile widget or the captcha block yielded
    * (null when it expired or failed). */
@@ -159,16 +162,19 @@ export function powProofFromChallenge(answer: ChallengeResponse): string | null 
 }
 
 /**
- * Ask for one challenge and solve it into the proof a send presents. The
- * challenge request is the generated operation, so the host's bound
- * transport (base URL, credentials, retry) applies as it does to every
- * other call. The solve runs off the main thread where the platform has
- * a Worker. `requestChallenge` is injectable so a test can drive the
- * answer without a network.
+ * Ask for one challenge for a surface and solve it into the proof a send
+ * presents. The challenge request is the generated operation, so the host's
+ * bound transport (base URL, credentials, retry) applies as it does to every
+ * other call. The scope is sent with the request and the server binds the
+ * proof to it, so a challenge obtained for one surface cannot be spent on
+ * the other. The solve runs off the main thread where the platform has a
+ * Worker. `requestChallenge` is injectable so a test can drive the answer
+ * without a network.
  */
 export async function requestPowProof(
+  scope: HumanScope,
   requestChallenge: () => Promise<ChallengeResponse> = () =>
-    authnHumanverifyChallenge(),
+    authnHumanverifyChallenge({ scope }),
 ): Promise<string> {
   const answer = await requestChallenge()
   if (
@@ -265,7 +271,7 @@ function gateKey(gate: AuthnHumanGate | undefined): string | undefined {
     return undefined
   }
   const surface = (s: AuthnHumanSurfaceGate): string =>
-    `${s.required}:${s.provider}:${s.site_key ?? ''}`
+    `${s.required}:${s.provider}:${s.site_key ?? ''}:${s.action ?? ''}`
   return `${surface(gate.phone)}|${surface(gate.other)}`
 }
 
@@ -342,10 +348,17 @@ export function useHumanVerification(
   const [proof, setProof] = useState<string | null>(null)
   const [status, setStatus] = useState<HumanVerificationStatus>('idle')
   const [captcha, setCaptcha] = useState<HumanCaptchaChallenge | null>(null)
-  // The wait a refused accessibility request stated, or undefined.
+  // The wait a refused accessibility request stated, in whole seconds, as
+  // the countdown effect below publishes it, or undefined when none is in
+  // force.
   const [audioRetryAfterSeconds, setAudioRetryAfterSeconds] = useState<
     number | undefined
   >(undefined)
+  // The deadline of that wait in epoch milliseconds, or null when no
+  // refusal is in force. The deadline (not a decremented counter) is kept
+  // in a ref, so a timer that fires late still reads the true remaining
+  // time instead of drifting.
+  const audioRetryDeadlineRef = useRef<number | null>(null)
   // The challenge on screen, read by a request that must keep it when the
   // accessibility entry is refused.
   const captchaRef = useRef<HumanCaptchaChallenge | null>(null)
@@ -374,6 +387,7 @@ export function useHumanVerification(
     setProof(null)
     setStatus('idle')
     setCaptcha(null)
+    audioRetryDeadlineRef.current = null
     setAudioRetryAfterSeconds(undefined)
   }, [scope])
 
@@ -382,6 +396,7 @@ export function useHumanVerification(
     setProof(null)
     setStatus('idle')
     setCaptcha(null)
+    audioRetryDeadlineRef.current = null
     setAudioRetryAfterSeconds(undefined)
     if (!enabled) {
       // An inactive surface reads nothing and solves nothing; it settles on
@@ -425,6 +440,36 @@ export function useHumanVerification(
     }
   }, [session, injectedKey, enabled])
 
+  // Count the stated wait down while it is in force: one tick a second
+  // republishes the remaining whole seconds, so every consumer renders the
+  // time left rather than the number the refusal named. At the deadline the
+  // wait clears to undefined, which re-enables the accessibility entry and
+  // removes its message. The deadline lives in a ref, so a tick that fires
+  // late still reports the true remainder; the state write is what makes
+  // consumers re-render.
+  const audioWaitActive = audioRetryAfterSeconds !== undefined
+  useEffect(() => {
+    if (!audioWaitActive) {
+      return undefined
+    }
+    const timer = setInterval(() => {
+      const deadline = audioRetryDeadlineRef.current
+      if (deadline === null) {
+        return
+      }
+      const remaining = Math.ceil((deadline - Date.now()) / 1000)
+      if (remaining <= 0) {
+        audioRetryDeadlineRef.current = null
+        setAudioRetryAfterSeconds(undefined)
+        return
+      }
+      setAudioRetryAfterSeconds(remaining)
+    }, 1000)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [audioWaitActive])
+
   const surface = humanSurfaceGate(gate, scope)
   const provider = surface?.provider ?? 'off'
   const required = surface?.required === true
@@ -437,7 +482,7 @@ export function useHumanVerification(
     const generation = generationRef.current
     setStatus('working')
     try {
-      const next = await requestPowProof()
+      const next = await requestPowProof(scope)
       if (generationRef.current !== generation) {
         return
       }
@@ -457,7 +502,7 @@ export function useHumanVerification(
         setSolveTick((tick) => tick + 1)
       }
     }
-  }, [])
+  }, [scope])
 
   const requestCaptcha = useCallback(
     async (form?: 'audio'): Promise<void> => {
@@ -470,12 +515,14 @@ export function useHumanVerification(
       setProof(null)
       setCaptcha(null)
       setStatus('working')
+      audioRetryDeadlineRef.current = null
       setAudioRetryAfterSeconds(undefined)
       try {
         // A request with no form carries none: the server chooses between
-        // the image and slider forms.
+        // the image and slider forms. The scope is always sent: the server
+        // binds the proof to the surface it was issued for.
         const answer = await authnHumanverifyCaptchaChallenge(
-          form === undefined ? undefined : { form },
+          form === undefined ? { scope } : { form, scope },
         )
         if (generationRef.current !== generation) {
           return
@@ -490,6 +537,9 @@ export function useHumanVerification(
         if (kept !== null && wait !== undefined) {
           setCaptcha(kept)
           setStatus('ready')
+          // The wait is stored as its deadline, so the countdown effect
+          // expires it instead of leaving the entry disabled forever.
+          audioRetryDeadlineRef.current = Date.now() + wait * 1000
           setAudioRetryAfterSeconds(wait)
           return
         }
@@ -497,7 +547,7 @@ export function useHumanVerification(
         setStatus('failed')
       }
     },
-    [],
+    [scope],
   )
 
   const needsSolve =
@@ -546,6 +596,7 @@ export function useHumanVerification(
     // A captcha challenge is spent with the send that presented it, so the
     // next send needs a new one; dropping it lets the effect obtain it.
     setCaptcha(null)
+    audioRetryDeadlineRef.current = null
     setAudioRetryAfterSeconds(undefined)
   }, [])
 

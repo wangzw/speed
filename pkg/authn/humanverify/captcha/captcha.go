@@ -19,11 +19,14 @@
 // proof cannot both pass, and then deletes the record and the media. A wrong
 // answer spends the record too: a challenge is good for one attempt.
 //
-// Issuance is bounded per source over a one-minute fixed window, and a source
-// past its bound is refused before a challenge is drawn or stored. The visual
-// rotation has one counter (ten challenges a window); the accessibility
-// alternative has a separate, stricter one (one challenge a window), so neither
-// budget spends the other.
+// Issuance is bounded per source and, over the same one-minute fixed window,
+// across the whole deployment: a source past its bound is refused before a
+// challenge is drawn or stored, and so is any request once the global bound is
+// reached. The visual rotation has one per-source counter (ten challenges a
+// window); the accessibility alternative has a separate, stricter one (one
+// challenge a window), so neither budget spends the other. Every challenge, of
+// whichever form, spends one slot of the shared global counter, which stops a
+// set of source addresses from multiplying the total challenge work.
 //
 // The three forms are hardened against their own automation: the image driver
 // gets a random size, a larger skew and a denser dot field; the slider draws a
@@ -58,10 +61,29 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // ProviderName is the mechanism name this implementation reports to the seam.
 const ProviderName = "captcha"
+
+// Namespace is the settings namespace this provider reads its issuance limit
+// from.
+const Namespace = "authn.humanverify.captcha"
+
+// The issuance-limit setting and the value it holds without a settings store.
+const (
+	// GlobalIssueLimitKey is how many challenges all sources together may be
+	// issued in one issuance window.
+	GlobalIssueLimitKey = "global-issue-limit"
+
+	// DefaultGlobalIssueLimit is the whole-deployment bound. It is well above
+	// the ordinary traffic of a small deployment and far below the work a set
+	// of source addresses could otherwise amplify it to.
+	DefaultGlobalIssueLimit = 600
+	GlobalIssueLimitMin     = 1
+	GlobalIssueLimitMax     = 1000000
+)
 
 // Form is one challenge form this provider draws.
 type Form string
@@ -169,10 +191,13 @@ var (
 	ErrUnknownAudioLanguage = errors.New("captcha: the library pronounces no digits in this language")
 	// ErrChallengeNotFound reports that no challenge is stored under the id.
 	ErrChallengeNotFound = errors.New("captcha: the challenge is missing or expired")
-	// ErrIssuanceLimited reports that one source has asked for as many
-	// challenges as it may hold in the current window. It is not an outage:
-	// retrying later works, and the answer is a 429.
-	ErrIssuanceLimited = errors.New("captcha: too many challenges were issued to this source")
+	// ErrIssuanceLimited reports that the per-source bound or the
+	// whole-deployment bound of the current window has been reached. It is not
+	// an outage: retrying later works, and the answer is a 429.
+	ErrIssuanceLimited = errors.New("captcha: too many challenges were issued in this window")
+	// ErrUnknownScope reports a surface that is not one of the two the gate
+	// serves.
+	ErrUnknownScope = errors.New("captcha: unknown human scope")
 )
 
 // Challenge is what Issue answers: the id a proof names, the form it takes and
@@ -192,9 +217,16 @@ type Media struct {
 // formRotation chooses the form of a challenge a client may not name.
 type formRotation func() (Form, error)
 
+// SettingReader is the part of the settings store this provider reads. It keeps
+// the provider from depending on the whole store surface.
+type SettingReader interface {
+	Get(layer settings.Layer, key string, target any) error
+}
+
 // Provider is the self-hosted captcha verifier.
 type Provider struct {
-	store kv.KV
+	store    kv.KV
+	settings SettingReader
 	// rotate draws the form of a challenge whose form the client did not
 	// choose. Production sets randomForm; a test that needs a known form
 	// injects its own through newProviderWithRotation.
@@ -203,23 +235,24 @@ type Provider struct {
 
 var _ authn.HumanVerifier = (*Provider)(nil)
 
-// New builds the provider over a key-value store. The rotating forms are drawn
-// from crypto/rand.
-func New(store kv.KV) (*Provider, error) {
-	return newProviderWithRotation(store, randomForm)
+// New builds the provider over a key-value store and the settings reader. The
+// rotating forms are drawn from crypto/rand. A nil settings reader reads the
+// declared issuance limit.
+func New(store kv.KV, reader SettingReader) (*Provider, error) {
+	return newProviderWithRotation(store, reader, randomForm)
 }
 
 // newProviderWithRotation builds the provider with the given rotation source.
 // It is the seam the package's own tests use to pin a form; production callers
 // use New, whose rotation is random.
-func newProviderWithRotation(store kv.KV, rotate formRotation) (*Provider, error) {
+func newProviderWithRotation(store kv.KV, reader SettingReader, rotate formRotation) (*Provider, error) {
 	if store == nil {
 		return nil, errors.New("captcha: a key-value store is required")
 	}
 	if rotate == nil {
 		return nil, errors.New("captcha: a form rotation is required")
 	}
-	return &Provider{store: store, rotate: rotate}, nil
+	return &Provider{store: store, settings: reader, rotate: rotate}, nil
 }
 
 // Required reports true: a captcha gate is a condition of sending.
@@ -230,6 +263,9 @@ func (p *Provider) Provider(authn.HumanScope) string { return ProviderName }
 
 // SiteKey is empty: a self-hosted captcha needs no widget key.
 func (p *Provider) SiteKey(authn.HumanScope) string { return "" }
+
+// Action is empty: a self-hosted captcha renders no action-bearing widget.
+func (p *Provider) Action(authn.HumanScope) string { return "" }
 
 // IssueOptions is what a caller asks a challenge with.
 type IssueOptions struct {
@@ -244,6 +280,9 @@ type IssueOptions struct {
 	// library pronounces English, Japanese, Russian and Chinese, so a tag whose
 	// primary subtag is none of those is ErrUnknownAudioLanguage.
 	Lang string
+	// Scope is the surface the challenge is issued for. A proof is bound to
+	// it: presenting it on the other surface is refused.
+	Scope authn.HumanScope
 	// RemoteIP is the source the issuance counter is spent for. It is hashed
 	// before it reaches the store, because the key is a value the store and its
 	// diagnostics may carry.
@@ -253,8 +292,13 @@ type IssueOptions struct {
 // Issue draws a challenge of the resolved form and stores its answer and media.
 // Audio is the only form the caller may choose; the rotating forms are drawn by
 // the provider. The source's issuance counter is spent before anything is
-// drawn, so an address past its bound is refused and cannot fill the store.
+// drawn, so an address past its bound is refused and cannot fill the store. The
+// scope is stored with the challenge, so a proof issued for one surface cannot
+// be presented on the other.
 func (p *Provider) Issue(ctx context.Context, opts IssueOptions) (Challenge, error) {
+	if !validScope(opts.Scope) {
+		return Challenge{}, fmt.Errorf("%w: %q", ErrUnknownScope, opts.Scope)
+	}
 	form, err := p.resolveForm(opts.Form)
 	if err != nil {
 		return Challenge{}, err
@@ -283,6 +327,7 @@ func (p *Provider) Issue(ctx context.Context, opts IssueOptions) (Challenge, err
 	if err != nil {
 		return Challenge{}, err
 	}
+	rec.Scope = opts.Scope
 	encoded, err := json.Marshal(rec)
 	if err != nil {
 		return Challenge{}, fmt.Errorf("%w: captcha: encoding the challenge: %w", authn.ErrUnavailable, err)
@@ -325,12 +370,15 @@ func (p *Provider) Media(ctx context.Context, id string, kind MediaKind) (Media,
 	return Media{ContentType: contentType(kind), Body: body}, nil
 }
 
-// Verify checks a proof and spends the challenge it names. The answer is
-// compared against digests stored with the challenge, and the challenge is then
-// spent with a compare-and-swap requiring the value that was read, so two
-// concurrent presentations cannot both pass. The record and its media are
-// deleted whether the answer matched or not: one challenge is one attempt.
-func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, _ authn.HumanScope) error {
+// Verify checks a proof and spends the challenge it names. The scope has to be
+// the one the challenge was issued for: a proof fetched for one surface is
+// refused on the other, and that refusal consumes nothing, so the client can
+// still present it on the surface it was issued for. The answer is compared
+// against digests stored with the challenge, and the challenge is then spent
+// with a compare-and-swap requiring the value that was read, so two concurrent
+// presentations cannot both pass. The record and its media are deleted whether
+// the answer matched or not: one challenge is one attempt.
+func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, scope authn.HumanScope) error {
 	if proof.Token == "" {
 		return fmt.Errorf("%w: captcha: no proof was presented", authn.ErrHumanVerificationRequired)
 	}
@@ -352,13 +400,18 @@ func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, _ authn.H
 	}
 
 	var rec record
-	if decodeErr := json.Unmarshal(stored, &rec); decodeErr != nil || !rec.Form.Valid() || rec.Salt == "" {
+	if decodeErr := json.Unmarshal(stored, &rec); decodeErr != nil || !rec.Form.Valid() || !validScope(rec.Scope) || rec.Salt == "" {
 		// A record this package cannot read is spent rather than left for a
 		// second attempt. A record with no salt is not one this provider drew,
 		// and its digests cannot be checked.
 		_, _ = p.store.CompareAndSwap(ctx, key, stored, spentMarker)
 		p.discard(ctx, key)
 		return fmt.Errorf("%w: captcha: the challenge is not usable", authn.ErrHumanVerificationRequired)
+	}
+	if rec.Scope != scope {
+		// The challenge is left unspent: it is still usable on the surface it
+		// was issued for.
+		return fmt.Errorf("%w: captcha: the challenge was issued for another surface", authn.ErrHumanVerificationRequired)
 	}
 
 	matched := false
@@ -380,16 +433,29 @@ func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, _ authn.H
 	return nil
 }
 
-// record is what a challenge key holds: the form the challenge takes, the random
-// salt its digests are keyed by, and the digests of the answers it accepts. An
-// answer is never stored as text, and the slider stores one digest per offset
-// within its tolerance. The salt is drawn per challenge and stored beside the
-// digests, so a digest copied out of the record without its salt cannot be
-// reversed over a five-digit answer space.
+// record is what a challenge key holds: the surface the challenge was issued
+// for, the form the challenge takes, the random salt its digests are keyed by,
+// and the digests of the answers it accepts. An answer is never stored as text,
+// and the slider stores one digest per offset within its tolerance. The salt is
+// drawn per challenge and stored beside the digests, so a digest copied out of
+// the record without its salt cannot be reversed over a five-digit answer
+// space.
 type record struct {
-	Form    Form     `json:"form"`
-	Salt    string   `json:"salt"`
-	Digests []string `json:"digests"`
+	Scope   authn.HumanScope `json:"scope"`
+	Form    Form             `json:"form"`
+	Salt    string           `json:"salt"`
+	Digests []string         `json:"digests"`
+}
+
+// validScope reports whether scope is one of the two surfaces a challenge may
+// be issued for.
+func validScope(scope authn.HumanScope) bool {
+	switch scope {
+	case authn.HumanScopePhone, authn.HumanScopeOther:
+		return true
+	default:
+		return false
+	}
 }
 
 // resolveForm decides the form of one challenge. Audio is the only form a
@@ -622,10 +688,14 @@ func audioLanguage(lang string) (string, error) {
 	return code, nil
 }
 
-// countIssue spends one slot of the source's issuance window for the form. The
-// accessibility alternative has a counter of its own, in a separate key and
-// with a stricter bound, so audio requests neither spend nor are spent by the
-// visual rotation's allowance.
+// countIssue spends one slot of the source's issuance window for the form and
+// one slot of the whole deployment's. The accessibility alternative has a
+// counter of its own, in a separate key and with a stricter bound, so audio
+// requests neither spend nor are spent by the visual rotation's allowance. Every
+// form, audio included, spends the shared global counter, which is what stops a
+// set of source addresses from multiplying the total challenge work. The
+// source's bound is checked first, so a source that exhausted its own allowance
+// does not spend the shared one.
 func (p *Provider) countIssue(ctx context.Context, form Form, remoteIP string) error {
 	key, limit := issueKey(remoteIP), issueLimit
 	if form == FormAudio {
@@ -636,6 +706,13 @@ func (p *Provider) countIssue(ctx context.Context, form Form, remoteIP string) e
 		return fmt.Errorf("%w: captcha: counting the challenges issued to a source: %w", authn.ErrUnavailable, err)
 	}
 	if issued > float64(limit) {
+		return ErrIssuanceLimited
+	}
+	total, err := p.store.IncrByFloatWithTTL(ctx, globalIssueKey(), 1, IssueWindow)
+	if err != nil {
+		return fmt.Errorf("%w: captcha: counting the challenges issued in the window: %w", authn.ErrUnavailable, err)
+	}
+	if total > float64(p.globalIssueLimit()) {
 		return ErrIssuanceLimited
 	}
 	return nil
@@ -693,6 +770,11 @@ func audioIssueKey(remoteIP string) string {
 	sum := sha256.Sum256([]byte(remoteIP))
 	return audioIssueKeyPrefix + hex.EncodeToString(sum[:])
 }
+
+// globalIssueKey is the issuance counter shared by every source and every form.
+// It is a fixed name, not a digest, and cannot collide with a source key, whose
+// suffix is hexadecimal.
+func globalIssueKey() string { return issueKeyPrefix + "global" }
 
 // mediaKey is where one media object of a challenge is stored.
 func mediaKey(id string, kind MediaKind) string {

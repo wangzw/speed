@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/humanverify/captcha"
 	"github.com/vislake/speed/pkg/authn/humanverify/pow"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
@@ -23,15 +24,37 @@ import (
 // answer types, the fragment and the route are one source.
 func mountChallenge(mounter mount.Mounter, provider *pow.Provider) {
 	mount.Declared(mounter, challengeOperation, mountRel(challengeOperation.Path),
-		challengeOperation.Handle(func(ctx context.Context, _ struct{}, meta *speedhttp.Meta) (speedhttp.Reply, error) {
-			return issueChallenge(ctx, provider, meta)
+		challengeOperation.Handle(func(ctx context.Context, in challengeInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+			scope, ok := parseScope(in.Scope)
+			if !ok {
+				return nil, badRequest()
+			}
+			return issueChallenge(ctx, provider, scope, meta)
 		}))
 }
 
+// parseScope reads the scope query item of a challenge request. Only the two
+// surfaces the gate serves are scopes, so anything else is a bad request.
+func parseScope(raw string) (authn.HumanScope, bool) {
+	scope := authn.HumanScope(raw)
+	switch scope {
+	case authn.HumanScopePhone, authn.HumanScopeOther:
+		return scope, true
+	default:
+		return "", false
+	}
+}
+
+// badRequest is the answer to a challenge request that names no usable
+// surface.
+func badRequest() error {
+	return speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + mount.CodeBadRequest}
+}
+
 // issueChallenge answers the challenge route with the challenge the provider
-// draws for the request's source address.
-func issueChallenge(ctx context.Context, provider *pow.Provider, meta *speedhttp.Meta) (speedhttp.Reply, error) {
-	challenge, err := provider.Issue(ctx, meta.ClientIP)
+// draws for the request's source address and the surface it names.
+func issueChallenge(ctx context.Context, provider *pow.Provider, scope authn.HumanScope, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	challenge, err := provider.Issue(ctx, pow.IssueOptions{Scope: scope, RemoteIP: meta.ClientIP})
 	if err != nil {
 		return nil, answerIssue(err)
 	}
@@ -47,13 +70,17 @@ func issueChallenge(ctx context.Context, provider *pow.Provider, meta *speedhttp
 }
 
 // answerIssue maps an issuance failure onto the route's declared answers. The
-// per-source cap is a retryable refusal; everything else is the outage that
-// sends no challenge.
+// per-source cap is a retryable refusal, an unknown surface is a bad request,
+// and everything else is the outage that sends no challenge.
 func answerIssue(err error) error {
-	if errors.Is(err, pow.ErrIssuanceLimited) {
+	switch {
+	case errors.Is(err, pow.ErrIssuanceLimited):
 		return speedhttp.Fault{Status: http.StatusTooManyRequests, Type: typePrefix + mount.CodeThrottled}
+	case errors.Is(err, pow.ErrUnknownScope):
+		return badRequest()
+	default:
+		return speedhttp.Fault{Status: http.StatusServiceUnavailable, Type: typePrefix + mount.CodeUnavailable}
 	}
-	return speedhttp.Fault{Status: http.StatusServiceUnavailable, Type: typePrefix + mount.CodeUnavailable}
 }
 
 // mountRel turns the declared route into the relative path the mounter joins to
@@ -126,6 +153,11 @@ func mountCaptcha(mounter mount.Mounter, provider *captcha.Provider) {
 func captchaChallenge(mounter mount.Mounter, provider *captcha.Provider) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
+		scope, ok := parseScope(c.Query("scope"))
+		if !ok {
+			mount.Fail(c, mount.CodeBadRequest)
+			return
+		}
 		form := captcha.Form(c.Query("form"))
 		language := captcha.DefaultAudioLanguage
 		if form == captcha.FormAudio {
@@ -139,10 +171,13 @@ func captchaChallenge(mounter mount.Mounter, provider *captcha.Provider) gin.Han
 		issued, err := provider.Issue(ctx, captcha.IssueOptions{
 			Form:     form,
 			Lang:     language,
+			Scope:    scope,
 			RemoteIP: c.ClientIP(),
 		})
 		switch {
-		case errors.Is(err, captcha.ErrUnknownForm), errors.Is(err, captcha.ErrUnknownAudioLanguage):
+		case errors.Is(err, captcha.ErrUnknownScope),
+			errors.Is(err, captcha.ErrUnknownForm),
+			errors.Is(err, captcha.ErrUnknownAudioLanguage):
 			mount.Fail(c, mount.CodeBadRequest)
 			return
 		case errors.Is(err, captcha.ErrIssuanceLimited):

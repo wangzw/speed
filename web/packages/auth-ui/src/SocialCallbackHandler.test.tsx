@@ -23,7 +23,7 @@
 import { StrictMode } from 'react'
 import { flushSync } from 'react-dom'
 import { describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SocialCallbackHandler } from './SocialCallbackHandler.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -43,6 +43,22 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
+
+/** The failure banner's sentence naming a whole-second wait. */
+function waitSentence(seconds: number): string {
+  const [before = '', after = ''] = zhCN.throttle.retryAfter.split('{{seconds}}')
+  return `${before}${seconds}${after}`
+}
+
+/** The alert's painted (aria-hidden) sentence, which follows the countdown. */
+function visibleSentence(alert: HTMLElement): HTMLElement | null {
+  return alert.querySelector<HTMLElement>('span[aria-hidden="true"]')
+}
+
+/** The alert's accessible (clipped) sentence, which never changes. */
+function stableSentence(alert: HTMLElement): HTMLElement | null {
+  return alert.querySelector<HTMLElement>('span:not([aria-hidden])')
+}
 
 /** The username step a first login parks at while it waits for a name. */
 function signupFlow() {
@@ -213,8 +229,12 @@ describe('SocialCallbackHandler', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toBeInTheDocument(),
     )
-    // The failed state carries no live region: nothing to announce.
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    // The failed state announces nothing through a live region: the only
+    // status node it carries is the feedback slot's always-mounted,
+    // still-empty success region.
+    for (const region of screen.queryAllByRole('status')) {
+      expect(region.textContent).toBe('')
+    }
     act(() => {
       flushSync(() => {
         screen
@@ -620,6 +640,117 @@ describe('SocialCallbackHandler', () => {
     expect(
       harness.calls.filter((call) => call.path === '/api/v1/auth/flows/current'),
     ).toHaveLength(1)
+  })
+
+  it('count a throttled read failure down in its banner without changing the announced text', async () => {
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => {
+        throw apiError(429, 'authn.throttled', 2000)
+      },
+    })
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        renderWithProviders(<SocialCallbackHandler session={harness.session} />)
+        for (let turn = 0; turn < 20; turn += 1) {
+          await Promise.resolve()
+        }
+      })
+      const alert = screen.getByRole('alert')
+      // The banner names the wait the answer stated; the sentence assistive
+      // technology reads is fixed at that starting point.
+      expect(visibleSentence(alert)).toHaveTextContent(waitSentence(2))
+      expect(stableSentence(alert)).toHaveTextContent(waitSentence(2))
+
+      // The painted sentence follows the clock; the announced one does not.
+      act(() => {
+        vi.advanceTimersByTime(1000)
+      })
+      expect(visibleSentence(alert)).toHaveTextContent(waitSentence(1))
+      expect(stableSentence(alert)).toHaveTextContent(waitSentence(2))
+
+      // At expiry the number is gone -- never a stale "0 seconds" -- and
+      // the banner itself stays (no timer clears a result).
+      act(() => {
+        vi.advanceTimersByTime(1000)
+      })
+      expect(visibleSentence(alert)).toHaveTextContent(
+        zhCN.errors.authn.throttled,
+      )
+      expect(visibleSentence(alert)).not.toHaveTextContent('0')
+      expect(stableSentence(alert)).toHaveTextContent(waitSentence(2))
+      expect(screen.getByRole('alert')).toBe(alert)
+      expect(
+        screen.getByRole('button', { name: zhCN.socialCallback.retry }),
+      ).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('count a throttled answer down in the banner beside the parked step', async () => {
+    let answers = 0
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'code', secret: true }],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) => {
+        const step = (call.options?.body as { step?: string }).step
+        if (step === 'complete') {
+          return authenticatedCompletion()
+        }
+        answers += 1
+        if (answers === 1) {
+          throw apiError(429, 'authn.throttled', 3000)
+        }
+        return completeFlow(2)
+      },
+      [PROFILE_GET]: () => principal(),
+    })
+    renderWithProviders(<SocialCallbackHandler session={harness.session} />)
+    const user = userEvent.setup()
+    const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+    await user.type(code, '123456')
+
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+        )
+        for (let turn = 0; turn < 10; turn += 1) {
+          await Promise.resolve()
+        }
+      })
+      const alert = screen.getByRole('alert')
+      expect(visibleSentence(alert)).toHaveTextContent(waitSentence(3))
+      // The parked step keeps its own controls, with the banner beneath it.
+      expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toHaveValue(
+        '123456',
+      )
+
+      act(() => {
+        vi.advanceTimersByTime(1000)
+      })
+      expect(visibleSentence(alert)).toHaveTextContent(waitSentence(2))
+      expect(stableSentence(alert)).toHaveTextContent(waitSentence(3))
+
+      act(() => {
+        vi.advanceTimersByTime(2000)
+      })
+      expect(visibleSentence(alert)).toHaveTextContent(
+        zhCN.errors.authn.throttled,
+      )
+      expect(screen.getByRole('alert')).toBe(alert)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it.each([

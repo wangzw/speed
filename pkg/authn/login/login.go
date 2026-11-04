@@ -99,12 +99,14 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // verification read, the password capability, the member reads, the failure
 // back-off, the session store and the multi-factor module are required, and each
 // is delivered exclusively by another module, so a command that names this one
-// fails before anything is built unless it names them too. The settings store is
-// required as optional only so that it is initialised first and its snapshot is
-// loaded when Init reads a setting, the human-verification seam is optional
-// so that an assembly without one sends without asking for a proof, and the
-// impersonation capability is optional so that an assembly without one refuses
-// the completion of a flow an impersonating identity started.
+// fails before anything is built unless it names them too. The human-verification
+// gate is required: the humanverify module delivers one in every mode, off
+// included, so the requirement forces no mechanism, while an engine without one
+// would send ungated whenever the configuration names a mode. The settings store
+// is required as optional only so that it is initialised first and its snapshot
+// is loaded when Init reads a setting, and the impersonation capability is
+// optional so that an assembly without one refuses the completion of a flow an
+// impersonating identity started.
 //
 // The stance is StateEnabled and never StateAuto: the module is taken in at run
 // level, so it has no way to stand itself down.
@@ -123,9 +125,9 @@ func Module() core.Module {
 			{Token: (*authn.Throttle)(nil)},
 			{Token: (*authn.Sessions)(nil)},
 			{Token: (*authn.MFA)(nil)},
+			{Token: (*authn.HumanVerifier)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
-			{Token: (*authn.HumanVerifier)(nil), Optional: true},
 		},
 		Resources: []any{
 			settingsSchema(),
@@ -185,6 +187,7 @@ type product struct {
 	throttle     authn.Throttle
 	sessions     authn.Sessions
 	mfa          authn.MFA
+	human        authn.HumanVerifier
 
 	// Optional capabilities, taken up by Init and read-only afterwards.
 	tokens        authn.Tokens
@@ -194,7 +197,6 @@ type product struct {
 	emailReset    authn.EmailResetCodeSender
 	sso           authn.SSOProviders
 	provisioner   authn.Provisioner
-	human         authn.HumanVerifier
 	store         settings.Store
 	audit         audit.Audit
 	bus           event.Bus
@@ -248,6 +250,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 		{"the failure back-off", func() (err error) { p.throttle, err = core.Resolve[authn.Throttle](reg); return }},
 		{"the session store", func() (err error) { p.sessions, err = core.Resolve[authn.Sessions](reg); return }},
 		{"the multi-factor module", func() (err error) { p.mfa, err = core.Resolve[authn.MFA](reg); return }},
+		{"the human-verification gate", func() (err error) { p.human, err = core.Resolve[authn.HumanVerifier](reg); return }},
 	}
 	for _, s := range steps {
 		if err := s.take(); err != nil {
@@ -283,9 +286,6 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 	if p.provisioner, err = optional[authn.Provisioner](reg, "the provisioning hook"); err != nil {
-		return err
-	}
-	if p.human, err = optional[authn.HumanVerifier](reg, "the human-verification gate"); err != nil {
 		return err
 	}
 	if p.audit, err = optional[audit.Audit](reg, "the audit capability"); err != nil {

@@ -9,7 +9,8 @@
 
 import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { act, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { alertClasses } from '@mui/material/Alert'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
@@ -391,5 +392,92 @@ describe('WriteFeedbackRegion', () => {
     )
     expect(view.queryByRole('alert')).toBeNull()
     expect(view.getByRole('status')).toHaveTextContent('Saved')
+  })
+})
+
+/** A resolver that spells out both the code and the wait it was handed,
+ * so a test can tell the live sentence from the stable one. */
+const waitResolver = (code: string, seconds?: number): string =>
+  seconds === undefined ? `${code}:no-wait` : `${code}:${seconds}s`
+
+describe('WriteFeedbackRegion wait countdown', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('counts the visible sentence down against the deadline while the accessible sentence stays fixed', () => {
+    vi.useFakeTimers()
+    const waitUntil = Date.now() + 3_000
+    const view = renderWithProviders(
+      <WriteFeedbackRegion
+        outcome={{
+          kind: 'failure',
+          code: 'authn.throttled',
+          retryAfterSeconds: 3,
+          waitUntil,
+        }}
+        resolve={waitResolver}
+      />,
+    )
+    const alert = view.getByRole('alert')
+    // The sentence assistive technology reads is fixed at the stated wait,
+    // clipped from view.
+    const [stable] = within(alert).getAllByText('authn.throttled:3s')
+    expect(stable).not.toHaveAttribute('aria-hidden')
+    expect(stable).toHaveStyle(CLIPPED)
+    // The painted sentence is hidden from assistive technology and follows
+    // the remaining time.
+    const visible = alert.querySelector('span[aria-hidden="true"]')
+    expect(visible).toHaveTextContent('authn.throttled:3s')
+
+    act(() => {
+      vi.advanceTimersByTime(1_000)
+    })
+    expect(visible).toHaveTextContent('authn.throttled:2s')
+    // The accessible text did not change with the tick: the same node, same
+    // sentence, so role="alert" does not re-announce every second.
+    expect(within(alert).getByText('authn.throttled:3s')).toBe(stable)
+  })
+
+  it('drops the number at expiry without clearing the result', () => {
+    vi.useFakeTimers()
+    const waitUntil = Date.now() + 2_000
+    const view = renderWithProviders(
+      <WriteFeedbackRegion
+        outcome={{
+          kind: 'failure',
+          code: 'authn.throttled',
+          retryAfterSeconds: 2,
+          waitUntil,
+        }}
+        resolve={waitResolver}
+      />,
+    )
+    const alert = view.getByRole('alert')
+    const [stable] = within(alert).getAllByText('authn.throttled:2s')
+    const visible = alert.querySelector('span[aria-hidden="true"]')
+
+    act(() => {
+      vi.advanceTimersByTime(2_000)
+    })
+    expect(visible).toHaveTextContent('authn.throttled:no-wait')
+    // The banner is not auto-cleared: only a new attempt or a context change
+    // replaces the result, never a timer.
+    expect(view.getByRole('alert')).toBe(alert)
+    expect(within(alert).getByText('authn.throttled:2s')).toBe(stable)
+  })
+
+  it('renders a failure with no stated wait unchanged', () => {
+    vi.useFakeTimers()
+    const view = renderWithProviders(
+      <WriteFeedbackRegion
+        outcome={{ kind: 'failure', code: 'write_failed' }}
+        resolve={waitResolver}
+      />,
+    )
+    const alert = view.getByRole('alert')
+    expect(alert).toHaveTextContent('write_failed:no-wait')
+    expect(alert.querySelector('span[aria-hidden="true"]')).toBeNull()
+    expect(within(alert).getAllByText('write_failed:no-wait')).toHaveLength(1)
   })
 })

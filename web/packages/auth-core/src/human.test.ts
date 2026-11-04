@@ -14,7 +14,7 @@
 
 import { createHash } from 'node:crypto'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CAPTCHA_CHALLENGE,
   apiError,
@@ -36,6 +36,7 @@ import { decodeBase64Url } from './pow.js'
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
 })
 
 /** The leading zero bits of a proof's hash, recomputed as the provider
@@ -62,20 +63,20 @@ describe('requestPowProof', () => {
   it('turns a challenge answer into a proof the provider accepts', async () => {
     const challenge = 'AQIDBAUGBwgJCgsMDQ4PEA'
     const answer = challengeResponse({ challenge, difficulty: 8 })
-    const proof = await requestPowProof(async () => answer)
+    const proof = await requestPowProof('other', async () => answer)
     expect(proof.slice(0, proof.lastIndexOf('.'))).toBe(challenge)
     expect(proofZeroBits(challenge, proof)).toBeGreaterThanOrEqual(8)
   })
 
   it('refuses an answer that names another mechanism or hash', async () => {
     await expect(
-      requestPowProof(async () => ({
+      requestPowProof('phone', async () => ({
         ...challengeResponse(),
         provider: 'turnstile',
       })),
     ).rejects.toThrow()
     await expect(
-      requestPowProof(async () => ({
+      requestPowProof('phone', async () => ({
         ...challengeResponse(),
         algorithm: 'sha512',
       })),
@@ -220,11 +221,33 @@ describe('useHumanVerification', () => {
       site_key: 'site-other',
     })
     expect(result.current.proof).not.toBeNull()
-    expect(
-      harness.calls.filter(
-        (call) => call.path === '/api/v1/auth/human/challenge',
-      ),
-    ).toHaveLength(1)
+    const challenges = harness.calls.filter(
+      (call) => call.path === '/api/v1/auth/human/challenge',
+    )
+    expect(challenges).toHaveLength(1)
+    // The challenge names the surface it is issued for, so the proof the
+    // server hands back is bound to the phone surface.
+    expect(challenges[0]?.options?.query).toEqual({ scope: 'phone' })
+  })
+
+  it('solves a proof-of-work gate for the other surface with its own scope', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () =>
+        methodList([], {
+          humanOtherProvider: 'pow',
+          humanOtherRequired: true,
+        }),
+      [HUMAN_CHALLENGE]: () => challengeResponse({ difficulty: 4 }),
+    })
+    const { result } = renderHook(() =>
+      useHumanVerification(harness.session, { scope: 'other' }),
+    )
+    await waitFor(() => expect(result.current.status).toBe('ready'))
+    const challenges = harness.calls.filter(
+      (call) => call.path === '/api/v1/auth/human/challenge',
+    )
+    expect(challenges).toHaveLength(1)
+    expect(challenges[0]?.options?.query).toEqual({ scope: 'other' })
   })
 
   it('reads the other surface without solving the phone surface work', async () => {
@@ -273,7 +296,8 @@ describe('useHumanVerification', () => {
       (call) => call.path === '/api/v1/auth/human/captcha/challenge',
     )
     expect(requests).toHaveLength(1)
-    expect(requests[0]?.options?.query).toBeUndefined()
+    // No form is named, but the surface always is.
+    expect(requests[0]?.options?.query).toEqual({ scope: 'phone' })
   })
 
   it('asks for audio through the accessibility entry and keeps it across refresh and a consumed challenge', async () => {
@@ -386,6 +410,71 @@ describe('useHumanVerification', () => {
     })
     await waitFor(() => expect(result.current.captcha?.form).toBe('audio'))
     expect(result.current.audioRetryAfterSeconds).toBeUndefined()
+  })
+
+  /** A harness whose accessibility entry is always refused with the given
+   * wait, while the rotation keeps issuing the visual form. */
+  function refusedAudioHarness(retryAfterMs: number) {
+    return makeHarness({
+      [LOGIN_METHODS]: () =>
+        methodList([], {
+          humanPhoneProvider: 'captcha',
+          humanPhoneRequired: true,
+        }),
+      [CAPTCHA_CHALLENGE]: ({ options }) => {
+        if (options?.query?.form === 'audio') {
+          throw apiError(429, 'authn.throttled', retryAfterMs)
+        }
+        return captchaChallenge({ form: 'image' })
+      },
+    })
+  }
+
+  it('counts the stated wait down after the audio entry is refused', async () => {
+    // The wait is a live countdown: the message shows the time left, not
+    // the number the refusal named, so consumers re-render each second.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const harness = refusedAudioHarness(42_000)
+    const { result } = renderHook(() =>
+      useHumanVerification(harness.session, { scope: 'phone' }),
+    )
+    await waitFor(() => expect(result.current.captcha?.form).toBe('image'))
+    act(() => {
+      result.current.requestAudio()
+    })
+    await waitFor(() => expect(result.current.audioRetryAfterSeconds).toBe(42))
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+    expect(result.current.audioRetryAfterSeconds).toBe(41)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+    expect(result.current.audioRetryAfterSeconds).toBe(40)
+  })
+
+  it('clears the stated wait at its deadline so the audio entry re-enables', async () => {
+    // Storing the wait without expiring it left the only screen-reader
+    // entry disabled forever; at the deadline it must be undefined again.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const harness = refusedAudioHarness(42_000)
+    const { result } = renderHook(() =>
+      useHumanVerification(harness.session, { scope: 'phone' }),
+    )
+    await waitFor(() => expect(result.current.captcha?.form).toBe('image'))
+    act(() => {
+      result.current.requestAudio()
+    })
+    await waitFor(() => expect(result.current.audioRetryAfterSeconds).toBe(42))
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(42_000)
+    })
+    expect(result.current.audioRetryAfterSeconds).toBeUndefined()
+    // The refusal kept the visual challenge on screen; it stays answerable.
+    expect(result.current.captcha?.form).toBe('image')
+    expect(result.current.status).toBe('ready')
   })
 
   it('offers a retry when the captcha challenge cannot be issued', async () => {

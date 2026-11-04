@@ -292,6 +292,14 @@ export function SignInScreen({
 }: SignInScreenProps) {
   const { t } = useAuthUiTranslation()
   const [attempt, setAttempt] = useState(0)
+  // Any interaction with a channel other than the passkey entry is a new
+  // attempt for that entry: it bumps this epoch, and the entry remounts so a
+  // refusal from the previous ceremony never stands beside the work now in
+  // progress elsewhere on the screen.
+  const [interactionEpoch, setInteractionEpoch] = useState(0)
+  const noteInteraction = (): void => {
+    setInteractionEpoch((value) => value + 1)
+  }
   const fetched = useSignInDiscovery(session, {
     enabled: discovery === undefined,
     attempt,
@@ -671,28 +679,50 @@ export function SignInScreen({
     const headingVariant = group === firstGroup ? 'plain' : 'or'
     switch (group) {
       case 'form':
-        return <Fragment key="form">{formBlock}</Fragment>
+        return (
+          <Fragment key="form">
+            <Box
+              sx={{ display: 'contents' }}
+              onFocusCapture={noteInteraction}
+              onPointerDownCapture={noteInteraction}
+            >
+              {formBlock}
+            </Box>
+          </Fragment>
+        )
       case 'redirect':
         return (
           <GroupHeadingProvider key="redirect" value={headingVariant}>
-            <SocialSignInSection
-              session={session}
-              providers={redirectConfigs}
-              onAuthorizeUrl={social?.onAuthorizeUrl}
-              providerIcon={providerIcon}
-              beforeStart={startGate}
-            />
+            <Box
+              sx={{ display: 'contents' }}
+              onFocusCapture={noteInteraction}
+              onPointerDownCapture={noteInteraction}
+            >
+              <SocialSignInSection
+                session={session}
+                providers={redirectConfigs}
+                onAuthorizeUrl={social?.onAuthorizeUrl}
+                providerIcon={providerIcon}
+                beforeStart={startGate}
+              />
+            </Box>
           </GroupHeadingProvider>
         )
       case 'enterprise':
         return (
           <GroupHeadingProvider key="enterprise" value={headingVariant}>
-            <EnterpriseSignIn
-              session={session}
-              returnTo={social?.returnTo}
-              onAuthorizeUrl={social?.onAuthorizeUrl}
-              beforeStart={startGate}
-            />
+            <Box
+              sx={{ display: 'contents' }}
+              onFocusCapture={noteInteraction}
+              onPointerDownCapture={noteInteraction}
+            >
+              <EnterpriseSignIn
+                session={session}
+                returnTo={social?.returnTo}
+                onAuthorizeUrl={social?.onAuthorizeUrl}
+                beforeStart={startGate}
+              />
+            </Box>
           </GroupHeadingProvider>
         )
       case 'webauthn':
@@ -700,7 +730,10 @@ export function SignInScreen({
           <GroupHeadingProvider key="webauthn" value={headingVariant}>
             {visibleWebauthn.map((method) => (
               <PasskeySignIn
-                key={method.name}
+                // A switch of mode or form channel is a new attempt: the
+                // passkey entry remounts, so the previous ceremony's refusal
+                // and its retry never stand beside the channel now in use.
+                key={`${method.name}:${activeMode}:${selected}:${interactionEpoch}`}
                 session={session}
                 method={method}
                 beforeStart={startGate}

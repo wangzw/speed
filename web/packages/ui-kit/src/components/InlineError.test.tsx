@@ -14,7 +14,7 @@
 
 import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import {
   InlineError,
   errorCodeOf,
@@ -83,6 +83,91 @@ describe('InlineError', () => {
     expect(resolver).toHaveBeenCalledWith('authn.throttled', 45)
   })
 
+  it('keeps the accessible sentence fixed while the visible one follows the live wait', () => {
+    const resolver = (code: string, seconds?: number): string =>
+      seconds === undefined ? `${code}:no-wait` : `${code}:${seconds}s`
+    renderWithProviders(
+      <InlineError
+        code="authn.throttled"
+        resolve={resolver}
+        retryAfterSeconds={46}
+        liveRetryAfterSeconds={45}
+      />,
+    )
+    const alert = screen.getByRole('alert')
+    // The stable sentence is in the accessibility tree but clipped from view.
+    const stable = within(alert).getByText('authn.throttled:46s')
+    expect(stable).toHaveStyle({
+      position: 'absolute',
+      width: '1px',
+      height: '1px',
+    })
+    expect(stable).not.toHaveAttribute('aria-hidden')
+    // The painted sentence is hidden from assistive technology and carries
+    // the seconds still remaining.
+    const visible = alert.querySelector('span[aria-hidden="true"]')
+    expect(visible).toHaveTextContent('authn.throttled:45s')
+  })
+
+  it('drops the number from the visible sentence once the wait is over', () => {
+    const resolver = (code: string, seconds?: number): string =>
+      seconds === undefined ? `${code}:no-wait` : `${code}:${seconds}s`
+    const view = renderWithProviders(
+      <InlineError
+        code="authn.throttled"
+        resolve={resolver}
+        retryAfterSeconds={2}
+        liveRetryAfterSeconds={1}
+      />,
+    )
+    const alert = view.getByRole('alert')
+    const visible = alert.querySelector('span[aria-hidden="true"]')
+    expect(visible).toHaveTextContent('authn.throttled:1s')
+
+    view.rerender(
+      <InlineError
+        code="authn.throttled"
+        resolve={resolver}
+        retryAfterSeconds={2}
+        liveRetryAfterSeconds={0}
+      />,
+    )
+    // No stale "0 seconds": the visible sentence is the wait-free one, while
+    // the accessible sentence still names the wait the answer stated.
+    const after = view.getByRole('alert')
+    expect(after.querySelector('span[aria-hidden="true"]')).toHaveTextContent(
+      'authn.throttled:no-wait',
+    )
+    expect(within(after).getByText('authn.throttled:2s')).toHaveStyle({
+      position: 'absolute',
+    })
+  })
+
+  it('renders the initial wait in both sentences when no live value is passed', () => {
+    const resolver = (code: string, seconds?: number): string =>
+      seconds === undefined ? `${code}:no-wait` : `${code}:${seconds}s`
+    renderWithProviders(
+      <InlineError
+        code="authn.throttled"
+        resolve={resolver}
+        retryAfterSeconds={30}
+      />,
+    )
+    const alert = screen.getByRole('alert')
+    const [stable, visible] = within(alert).getAllByText('authn.throttled:30s')
+    expect(stable).not.toHaveAttribute('aria-hidden')
+    expect(visible).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('renders a failure with no stated wait unchanged', () => {
+    renderWithProviders(
+      <InlineError code="authn.session_revoked" resolve={resolverOf()} />,
+    )
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('authn.session_revoked text')
+    expect(alert.querySelector('span[aria-hidden="true"]')).toBeNull()
+  })
+
   it('takes its text from the passed resolver alone, never another source', () => {
     const first = vi.fn(resolverOf({ 'authn.session_revoked': 'first source' }))
     const firstView = renderWithProviders(
@@ -90,8 +175,9 @@ describe('InlineError', () => {
     )
     expect(screen.getByRole('alert')).toHaveTextContent('first source')
     // The wait the error states rides as the resolver's second argument, so
-    // a surface that names it can; one that ignores it keeps its text.
-    expect(first).toHaveBeenCalledWith('authn.session_revoked', undefined)
+    // a surface that names it can; one that ignores it keeps its text. With
+    // no wait stated the code is resolved without a seconds argument.
+    expect(first).toHaveBeenCalledWith('authn.session_revoked')
     firstView.unmount()
 
     renderWithProviders(

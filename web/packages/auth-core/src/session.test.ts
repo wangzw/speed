@@ -266,19 +266,55 @@ describe('list methods', () => {
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
         human: {
-          phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
+          phone: {
+            required: true,
+            provider: 'turnstile',
+            site_key: 'site-1',
+            action: 'login',
+          },
           other: {
             required: true,
             provider: 'turnstile',
             site_key: 'site-other',
+            action: 'reset',
           },
         },
       }),
     })
     expect((await turnstile.session.listMethods()).human).toEqual({
-      phone: { required: true, provider: 'turnstile', site_key: 'site-1' },
-      other: { required: true, provider: 'turnstile', site_key: 'site-other' },
+      phone: {
+        required: true,
+        provider: 'turnstile',
+        site_key: 'site-1',
+        action: 'login',
+      },
+      other: {
+        required: true,
+        provider: 'turnstile',
+        site_key: 'site-other',
+        action: 'reset',
+      },
     })
+  })
+
+  it('refuses a gate whose action is not a string', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+        human: {
+          phone: {
+            required: true,
+            provider: 'turnstile',
+            site_key: 'site-1',
+            action: 1,
+          },
+          other: { required: false, provider: 'off' },
+        },
+      }),
+    })
+    await expectProtocolViolation(harness.session.listMethods(), harness)
   })
 
   it('reads an older flat human gate as the same gate on both surfaces', async () => {

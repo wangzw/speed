@@ -109,18 +109,24 @@ account-resolution outcome where the deployment enables that.
   read as a failed sign-in. A step
   the server answers `authn.flow_invalid` returns the form to its
   channel's first step.
-- **A parked step that may send carries the proof block.**
+- **A held sending answer carries the proof block.**
   `HumanGatedFlowStep` (in `src/internal/flow-step.tsx`) wraps the shared
-  step renderer: when the deployment's gate requires a proof and the step
-  could send a verification message (an SMS second factor, or a challenge
-  that declares a phone), it renders ui-kit's `HumanVerification` above the
-  step and presents the proof on the answer that sends, consuming it.
-  `answerSends` and `stepMaySend` in `src/internal/flow.ts` mirror the
-  server's rule, so an answer that sends nothing leaves the proof unspent.
-  Every channel form renders it for a parked step, so a password, register,
-  social-callback, descriptor or passkey login reaches an SMS second factor
-  with a proof. `useFlowDriver.answer` carries the proof in the answer
-  body's `human_proof` member.
+  step renderer. An answer the viewer chooses leaves at once unless it may
+  send a verification message (an SMS second factor, or a challenge that
+  declares a phone); a sending answer is held by itself, not by disabling
+  the step's other controls. Only while such an answer is held does the
+  wrapper enable the gate hook and render ui-kit's `HumanVerification`
+  above the step: the hook reads the gate then, the step's own controls
+  give way, and the proof is presented on that answer and consumed. A
+  cancel control beside the block discards the held answer and returns the
+  step to its answerable state, which is the only exit when the mechanism
+  cannot produce a proof. `answerSends` and `stepMaySend` in
+  `src/internal/flow.ts` mirror the server's rule, so an answer that sends
+  nothing never waits and leaves the proof unspent. Every channel form
+  renders the wrapper for a parked step, so a password, register,
+  social-callback, descriptor or passkey login reaches an SMS second
+  factor with a proof. `useFlowDriver.answer` carries the proof in the
+  answer body's `human_proof` member.
 - **Headless logic lives in `@speed/auth-core`.** `startFlow`,
   `answerFlow`, `startAuthenticatedFlow`, `readFlow`, `abandonFlow`,
   `register`, `listMethods`, `discoverSso`, `logout`, `refresh` -- the

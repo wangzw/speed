@@ -25,6 +25,12 @@
  * the username field, and a bad request on the face that asked for a
  * password is the password policy's message under the password field.
  *
+ * A throttled refusal's stated wait is named in its banner and counted
+ * down there, whichever placement the banner takes. The sentence assistive
+ * technology reads stays fixed at the wait the answer first stated; only
+ * the painted sentence follows the clock, and once the wait ends it drops
+ * the number (the banner itself stays -- no timer clears a result).
+ *
  * A refusal with no step left to keep -- the flow is gone
  * (`authn.flow_invalid`), whether the answer was a parked step's or a ready
  * flow's `complete` -- is definitive, as is a step this route cannot render
@@ -71,13 +77,17 @@ import Typography from '@mui/material/Typography'
 import type { AuthSession, AuthnMethodList } from '@speed/auth-core'
 import { errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
-import { InlineError } from './internal/inline-error.js'
+import {
+  ChannelFeedbackRegion,
+  useChannelFeedback,
+} from './internal/write-feedback.js'
 import { RetryAction } from './internal/retry-action.js'
 import {
   HumanGatedFlowStep,
   signupFieldRefusal,
 } from './internal/flow-step.js'
 import { FlowExpired } from './internal/flow-expired.js'
+import { retryWaitMs } from './internal/retry-wait.js'
 import { stepKey, useStepFocus } from './internal/step-focus.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
 
@@ -140,11 +150,15 @@ export function SocialCallbackHandler({
   onSignIn,
 }: SocialCallbackHandlerProps) {
   const { t } = useAuthUiTranslation()
-  const [errorCode, setErrorCode] = useState<string | null>(null)
+  // The handler's one failure slot: a refusal of the read or of an answer
+  // settles it, and the shared region names the wait a throttled answer
+  // stated and counts it down. A parked step keeps its own surface; its
+  // banner is this same slot rendered beneath the step, and the two
+  // placements never stand together.
+  const feedback = useChannelFeedback()
+  // Stable identities, read by the mount effect without re-arming it.
+  const { fail: failFeedback, reset: resetFeedback } = feedback
   const [failed, setFailed] = useState(false)
-  // A refusal of a still-parked step's answer: the step stays, and this
-  // code renders beside it. Cleared as the next answer begins.
-  const [stepFailure, setStepFailure] = useState<string | null>(null)
   // The flow turned out to be gone -- or parked on a step this route cannot
   // render -- so there is no answer or step left to retry and the terminal
   // notice takes the surface's place.
@@ -153,28 +167,28 @@ export function SocialCallbackHandler({
   const [attempt, setAttempt] = useState(0)
 
   const driver = useFlowDriver(session, {
-    onFailure: (code) => {
+    onFailure: (code, error) => {
       if (code === NO_FLOW && onSignIn !== undefined) {
         // The flow is gone: no answer or re-read can change that, so render
         // the terminal notice instead of a banner whose retry would read the
         // same dead record again.
         setFlowExpired(true)
-        setStepFailure(null)
+        feedback.reset()
         return
       }
       // A refusal that leaves the flow parked on its step keeps that step:
-      // the banner rides beside it and the step's own controls are the
-      // retry. A ready step's result renders nothing and has no control to
-      // retry with, and a gone flow has no step at all: without the host's
-      // exit those fall back to the banner with the retry that reads the
-      // flow back.
+      // the banner rides beside it (the same slot, rendered below the step)
+      // and the step's own controls are the retry. A ready step's result
+      // renders nothing and has no control to retry with, and a gone flow
+      // has no step at all: without the host's exit those fall back to the
+      // surface-wide banner with the retry that reads the flow back.
       const parked = driverRef.current.currentStep()
-      if (parked !== null && parked.next.kind !== 'complete') {
-        setStepFailure(code)
-        return
+      if (parked === null || parked.next.kind === 'complete') {
+        setFailed(true)
       }
-      setErrorCode(code)
-      setFailed(true)
+      // The wait a throttled answer stated rides into the banner, which
+      // counts it down live (the slot owns the deadline).
+      feedback.fail(code, retryWaitMs(error))
     },
     onSettled: () => {
       try {
@@ -253,7 +267,7 @@ export function SocialCallbackHandler({
       try {
         reply = await session.readFlow()
       } catch (error) {
-        setErrorCode(errorCodeOf(error))
+        failFeedback(errorCodeOf(error), retryWaitMs(error))
         setFailed(true)
         return
       }
@@ -283,18 +297,19 @@ export function SocialCallbackHandler({
           setFlowExpired(true)
           return
         }
-        setErrorCode(NO_FLOW)
+        // The read found nothing and there is no host exit to offer: the
+        // gone flow's banner carries no wait (nothing stated one).
+        failFeedback(NO_FLOW)
         setFailed(true)
         return
       }
       await driverRef.current.absorb(reply)
     })()
-  }, [absent, attempt, session, onSignedIn])
+  }, [absent, attempt, session, onSignedIn, failFeedback])
 
   const retry = (): void => {
-    setErrorCode(null)
+    resetFeedback()
     setFailed(false)
-    setStepFailure(null)
     setFlowExpired(false)
     setAttempt((value) => value + 1)
   }
@@ -310,12 +325,16 @@ export function SocialCallbackHandler({
   // field they name (the username's three, or a password policy on the
   // face that asked for a password) and never as the whole-attempt banner.
   // Every other code, and every other step, keeps the banner.
+  const failureCode =
+    feedback.outcome === null || feedback.outcome.kind !== 'failure'
+      ? null
+      : feedback.outcome.code
   const fieldRefusal =
-    driver.step !== null && stepFailure !== null
-      ? signupFieldRefusal(driver.step, stepFailure)
+    driver.step !== null && failureCode !== null
+      ? signupFieldRefusal(driver.step, failureCode)
       : null
   const bannerFailure =
-    stepFailure === null || fieldRefusal !== null ? null : stepFailure
+    failureCode === null || fieldRefusal !== null ? null : failureCode
 
   // The host's card around this handler's own content; the absent view is
   // the host's page and is returned unwrapped.
@@ -357,7 +376,7 @@ export function SocialCallbackHandler({
               width: '100%',
             }}
           >
-            <InlineError code={errorCode} />
+            <ChannelFeedbackRegion feedback={feedback} />
             <RetryAction label={t('socialCallback.retry')} onClick={retry} />
           </Box>,
         )}
@@ -379,8 +398,9 @@ export function SocialCallbackHandler({
               session={session}
               step={driver.step}
               busy={driver.busy}
+              onAttemptStart={resetFeedback}
               onAnswer={(input, proof) => {
-                setStepFailure(null)
+                resetFeedback()
                 void driver.answer(input, proof)
               }}
               onUnsupported={
@@ -392,11 +412,15 @@ export function SocialCallbackHandler({
                   : () => setFlowExpired(true)
               }
               unsupportedLabel={t('socialCallback.retry')}
-              failure={stepFailure}
+              failure={failureCode}
             />
+            {/* A refused answer that left the flow on this step keeps its
+                banner beneath the step; the shared slot counts a stated
+                wait down in place. A signup field refusal is the field's
+                own and renders under it instead. */}
             {bannerFailure === null ? null : (
               <Box sx={{ mt: 1, width: '100%' }}>
-                <InlineError code={bannerFailure} />
+                <ChannelFeedbackRegion feedback={feedback} />
               </Box>
             )}
           </Box>,

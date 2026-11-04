@@ -1,10 +1,11 @@
 /**
  * DescriptorSignInForm's first step under the deployment's human-verification
  * gate, in a real browser: the form the sign-in screen renders for a
- * descriptor-only method starts the method's flow itself, so a gate that
- * requires a proof must stand on that first step and the proof it holds must
- * ride the start request as `human_proof`. A deployment that configures no
- * gate keeps the bare form -- no proof control, no proof on the wire.
+ * descriptor-only method starts the method's flow itself, so a start the
+ * viewer asks for is held while the gate is read and the proof its surface
+ * requires is obtained, and that proof rides the start request as
+ * `human_proof`. A deployment that configures no gate starts at once -- no
+ * proof control, no proof on the wire.
  *
  * The cases drive the Turnstile mechanism through the shared fake widget, so
  * the assertion is the control the block renders and the body the flow
@@ -45,7 +46,7 @@ async function fillFirstStep(): Promise<ReturnType<typeof userEvent.setup>> {
 }
 
 describe('DescriptorSignInForm first-step human verification in Chromium', () => {
-  it('renders the proof control under a gate that requires one and starts with its proof', async () => {
+  it('holds a start under a gate that requires a proof and sends it once the proof arrives', async () => {
     const fake = installFakeTurnstile()
     try {
       const harness = makeHarness({ [LOGIN_START]: () => openFlow() })
@@ -62,21 +63,21 @@ describe('DescriptorSignInForm first-step human verification in Chromium', () =>
         { language: 'en-US' },
       )
       const user = await fillFirstStep()
-      // The deployment requires a proof: its control stands on the step
-      // the form starts from.
-      await waitFor(() => expect(fake.widgets).toHaveLength(1))
-      expect(fake.widgets[0]?.siteKey).toBe('site-1')
       const submit = screen.getByRole('button', {
         name: enUS.signInFlow.submit,
       })
-      // No proof yet: the step does not start the flow.
-      expect(submit).toBeDisabled()
+      // Entering the form reads and solves nothing: the viewer's submit is
+      // held while the gate is read and the proof its surface requires is
+      // obtained.
+      await user.click(submit)
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(fake.widgets[0]?.siteKey).toBe('site-1')
       expect(starts(harness)).toHaveLength(0)
       act(() => {
         fake.token('token-1')
       })
-      await waitFor(() => expect(submit).toBeEnabled())
-      await user.click(submit)
+      // The held start leaves by itself once the proof arrives: the viewer
+      // does not click a second time.
       await waitFor(() => expect(starts(harness)).toHaveLength(1))
       expect(starts(harness)[0]?.options?.body).toMatchObject({
         method: METHOD,

@@ -62,8 +62,9 @@ type moduleConfig struct {
 	// Hostname is the hostname the widget must have run on, as the provider
 	// reports it.
 	Hostname string `config:"hostname"`
-	// Action, when non-empty, is the action the widget was rendered with; the
-	// provider's answer must name it.
+	// Action is the action the widget is rendered with, and the provider's
+	// answer must name it. A surface that runs Turnstile requires it: a proof
+	// obtained under one action must not be accepted for another.
 	Action string `config:"action"`
 	// Timeout bounds one verification as a whole.
 	Timeout time.Duration `config:"timeout"`
@@ -74,7 +75,7 @@ type moduleConfig struct {
 // self-hosted proof of work: both need no credential and no hostname, so the
 // default deployment gates every send without reaching a third party. Only the
 // Turnstile endpoint and its timeout have a value, and a deployment that turns
-// Turnstile on supplies its own site key, secret and hostname.
+// Turnstile on supplies its own site key, secret, hostname and action.
 var configDefaults = moduleConfig{
 	Mode:      ModePoW,
 	PhoneMode: ModeCaptcha,
@@ -100,15 +101,17 @@ type resolved struct {
 	phone surface
 }
 
-// needsStore reports whether either surface runs a mechanism whose challenges
-// live in the key-value store.
+// needsStore reports whether either surface runs a mechanism that needs the
+// key-value store: the self-hosted mechanisms keep their challenges there, and
+// Turnstile records the digest of every token it accepts there so a replay is
+// refused locally.
 func (r resolved) needsStore() bool {
 	return storeMode(r.other.mode) || storeMode(r.phone.mode)
 }
 
-// storeMode reports whether mode keeps its challenges in the key-value store.
+// storeMode reports whether mode needs the key-value store.
 func storeMode(mode string) bool {
-	return mode == ModePoW || mode == ModeCaptcha
+	return mode == ModePoW || mode == ModeCaptcha || mode == ModeTurnstile
 }
 
 // usesTurnstile reports whether either surface runs Turnstile, which is what
@@ -117,10 +120,21 @@ func (r resolved) usesTurnstile() bool {
 	return r.other.mode == ModeTurnstile || r.phone.mode == ModeTurnstile
 }
 
-// usesPoW reports whether either surface runs the proof of work, the one
-// mechanism that reads the settings store.
+// usesPoW reports whether either surface runs the proof of work.
 func (r resolved) usesPoW() bool {
 	return r.other.mode == ModePoW || r.phone.mode == ModePoW
+}
+
+// usesCaptcha reports whether either surface runs the self-hosted captcha.
+func (r resolved) usesCaptcha() bool {
+	return r.other.mode == ModeCaptcha || r.phone.mode == ModeCaptcha
+}
+
+// usesSettings reports whether either surface runs a self-hosted mechanism,
+// which is what decides whether the settings store is taken up for its
+// issuance limits. Turnstile reads no setting.
+func (r resolved) usesSettings() bool {
+	return r.usesPoW() || r.usesCaptcha()
 }
 
 // resolve holds each surface's mode to the closed set and resolves the Turnstile
@@ -156,10 +170,11 @@ func (c moduleConfig) resolveSurface(mode, item string) (surface, error) {
 }
 
 // resolveTurnstile holds the Turnstile section to what its provider needs for
-// the surface selected by item. The site key, the secret and the expected
-// hostname are all required: a deployment that turns the mechanism on without
-// them cannot check a proof, and starting anyway would send messages on a check
-// nobody supplied.
+// the surface selected by item. The site key, the secret, the expected hostname
+// and the action are all required: a deployment that turns the mechanism on
+// without them cannot check a proof, and starting anyway would send messages on
+// a check nobody supplied. The action is part of the check because a token
+// obtained under one action must not be accepted for another.
 func (c moduleConfig) resolveTurnstile(item string) (surface, error) {
 	siteKey := strings.TrimSpace(c.SiteKey)
 	if siteKey == "" {
@@ -179,6 +194,12 @@ func (c moduleConfig) resolveTurnstile(item string) (surface, error) {
 			"a proof the provider issued for that hostname", authn.ErrInvalidConfig, ConfigNamespace,
 			hostnameItem, ModeTurnstile, ConfigNamespace, item)
 	}
+	action := strings.TrimSpace(c.Action)
+	if action == "" {
+		return surface{}, fmt.Errorf("%w: %s.%s is empty, and the %q mode named by %s.%s renders its "+
+			"widget with it and accepts only a proof the provider issued for that action",
+			authn.ErrInvalidConfig, ConfigNamespace, actionItem, ModeTurnstile, ConfigNamespace, item)
+	}
 	verifyURL := strings.TrimSpace(c.VerifyURL)
 	parsed, err := url.Parse(verifyURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
@@ -197,7 +218,7 @@ func (c moduleConfig) resolveTurnstile(item string) (surface, error) {
 		secretKey: secretKey,
 		verifyURL: verifyURL,
 		hostname:  hostname,
-		action:    strings.TrimSpace(c.Action),
+		action:    action,
 		timeout:   timeout,
 	}, nil
 }
@@ -234,7 +255,8 @@ func schema() config.Schema {
 				Description: "the hostname the Turnstile widget must have run on",
 			},
 			actionItem: {
-				Description: "the optional Turnstile action the widget was rendered with; empty accepts any",
+				Description: "the Turnstile action the widget is rendered with; required when a surface " +
+					"runs turnstile, and the provider's answer must name it",
 			},
 			timeoutItem: {
 				Description: "the whole time one Turnstile verification may take",

@@ -41,7 +41,7 @@
 
 | 包 | 模块名 | 交付 | 排他 | 构造期依赖 | 其余取用（缺席合法） | 表 |
 |---|---|---|---|---|---|---|
-| `pkg/authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | `SMSCodes` 排他 | `db.Database`、`sms.Registry`、`sms.Sender`、`budget.Store`、`authn.HumanVerifier`（可选） | `settings.Store`、`event.Bus`、`audit.Audit`、`log.Logger`、`observability.MeterProvider` | `authn_challenges` |
+| `pkg/authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | `SMSCodes` 排他 | `db.Database`、`sms.Registry`、`sms.Sender`、`budget.Store`、`authn.HumanVerifier` | `settings.Store`、`event.Bus`、`audit.Audit`、`log.Logger`、`observability.MeterProvider` | `authn_challenges` |
 
 `SMSCodes` 的接口定义在 `pkg/authn` 根包，根包自身不登记模块。`sms.Registry` 与 `sms.Sender` 的接口定义在 `pkg/sms` 根包（结构见 [design-sms](../design-sms.md)）；`budget.Store` 定义在 `pkg/sms/budget`。每个登记模块的包导出 `ModuleName`，配置命名空间取同一个取值。模板注册表与发送方各由顶层发送能力的一个登记模块交付，本模块经 `sms.Registry` 与 `sms.Sender` 取用。发送能力可以同时编入多个载体，`sms.carrier` 在运行期选定一个；两个载体同时显式启用才在消解阶段以排他冲突失败。
 
@@ -97,7 +97,7 @@ type SMSCodes interface {
 契约的内容如下：
 
 - **`Send` 的调用方责任。** `Purpose` 取自封闭集，`Phone` 已规范化，`mfa` 与 `enroll` 的 `Account` 非空；`login` 与 `reset` 不要求 `Account`。违反即调用方缺陷，`Send` 返回普通错误，不属于哨兵集。每流程发送上限由调用方在 `Send` 之前核对。`Proof` 由调用方原样交出，本模块负责校验并消费一次；调用方不自行校验，一次性证明被两个部件各校验一次时，第二次必然被拒。
-- **证明先于一切发送状态。** `Send` 以手机号面在放行表、队列容量与任何预算之前核对人机验证证明：本模块的每次发送都落地到手机号，所以它问的是 `phone` 面，其余面的机制与它无关。部署在手机号面没有闸或闸关闭时整步跳过；证明过长以 `ErrHumanProofTooLong` 拒绝；缺失、无效、过期或重放以 `ErrHumanVerificationRequired` 拒绝；提供方或其存储不可用以 `ErrUnavailable` 拒绝。三者都发生在任何行写入之前，因此不写台账、不写挑战行、不占任何预算。
+- **证明先于一切发送状态。** `Send` 以手机号面在放行表、队列容量与任何预算之前核对人机验证证明：本模块的每次发送都落地到手机号，所以它问的是 `phone` 面，其余面的机制与它无关。部署在手机号面把闸关闭（机制为 `off`）时整步跳过；闸是构造期依赖，缺席时本模块的构造失败，装配不会走到发送。证明过长以 `ErrHumanProofTooLong` 拒绝；缺失、无效、过期或重放以 `ErrHumanVerificationRequired` 拒绝；提供方或其存储不可用以 `ErrUnavailable` 拒绝。三者都发生在任何行写入之前，因此不写台账、不写挑战行、不占任何预算。
 - **用途的可用性经可选接口报告。** 本模块可以实现可选接口 `PurposeSupport` 的 `SupportsPurpose(purpose string) bool`：对 `login`、`mfa`、`enroll` 恒为真，对 `reset` 当且仅当模板注册表声明了 `authn.code.reset` 模板时为真。调用方以它决定是否提供短信重置渠道；不实现该接口的实现在调用方看来不支持 `reset`。这条接口不改变 `SMSCodes` 的方法集。
 - **`Source` 为空即不施加来源维度。** `Source` 是调用方从请求上取得的来源地址。非空时本模块先经 `netip.ParseAddr` 规范成地址的规范文本，再经 `BlindIndex` 算摘要，只把摘要写进台账行、只按摘要计数；明文地址不写表、不写日志。为空表示调用方没有可信来源：不取来源锁、不核对来源预算，这条发送不计入任何来源的窗口，台账行的来源列写 NULL（fail-open）。判据是不把「解析不了来源」与「同一个来源」混为一谈——把全部无名来源压到一把键上，会让一个没配置可信代理的部署把全站算作一个来源。
 - **`Send` 对 `Deliver` 为真与为假的调用走同一条路径。** 应答只有 `challengeID` 一种结构，调用方无法从返回值、状态码或错误形态区分抑制行与真实行（耗时见「非保证」）。
@@ -123,7 +123,7 @@ type SMSCodes interface {
 | 设置，`authn.sms` | `global-attempt-hourly-login`、`-mfa`、`-enroll`、`-reset` | 按用途分设的全局每小时确定失败数，只计未抑制的行 |
 | 设置，`authn.sms` | `per-flow-sends`、`per-account-hourly` | 每流程发送上限（由调用方核对）与每账户每小时上限（只对 `mfa`、`enroll` 计；`login` 与 `reset` 不计） |
 | 设置，`sms`（台账模块声明） | `ceiling-hourly` | 部署的跨渠道小时上界，认证与通知共读同一个键，先于本模块其余每一项 |
-| 设置，`authn.humanverify.pow` | `difficulty`、`challenge-ttl` | 工作量证明的难度与挑战有效期；只在 `pow` 模式读取 |
+| 设置，`authn.humanverify.pow` | `difficulty`、`challenge-ttl`、`global-issue-limit` | 工作量证明的难度、挑战有效期，以及全部来源合计在一分钟窗口内的签发上限（缺省 600，取值域 1 到 1000000）；只在 `pow` 模式读取 |
 
 本模块不声明语言闭集：`SendCode.Locale` 的取值由该用途模板声明的语言集与配置的默认语言共同给出，请求语言按主子标签解析到前者、落不到时用后者。`pkg/sms` 不声明语言闭集，把语言当作不透明字符串（[design-sms](../design-sms.md)）。配置的默认语言来自 i18n 能力目录的 `i18n.default-locale` 项，与那个引擎读的是同一个，一处声明服务两个能力目录。
 
@@ -146,7 +146,7 @@ type SMSCodes interface {
 | `sms.Registry` | `Requires`（排他功能） | 取得模板注册表；核对模板覆盖、解出可发送的结构；没有已启用的载体、或同一接口的两个实现同时启用时启动失败 | 构造失败 |
 | `sms.Sender` | `Requires`（排他功能） | 取得发送方；没有已启用的载体、或同一接口的两个实现同时启用时启动失败 | 构造失败 |
 | `budget.Store` | `Requires` | 写台账行、读各预算的计数、读跨渠道上界 | 构造失败；没有台账就无法核对任何预算 |
-| `authn.HumanVerifier` | `Requires`（可选） | 在发送前核对并消费人机验证证明 | 整步跳过，发送照常 |
+| `authn.HumanVerifier` | `Requires` | 在发送前核对并消费人机验证证明 | 构造失败；闸关闭（`off`）时校验整步跳过，发送照常 |
 | `settings.Store` | 取用，缺席合法 | 放行表、预算与验证码参数 | 各项取声明的缺省值；放行表缺省为空，所以没有设置模块的装配里短信一律不发 |
 | `event.Bus` | 取用，缺席合法 | 订阅 `authn.account.deleted` 与 `settings.changed` | 只剩同步钩子，没有事件补偿；不影响正确性底线 |
 | `audit.Audit` | 取用，缺席合法 | 放宽设置的尽力档审计 | 只写 `Warn` |
@@ -224,7 +224,7 @@ classDiagram
     SmsEngine ..> Registry : Requires
     SmsEngine ..> Sender : Requires
     SmsEngine ..> Store : Requires
-    SmsEngine ..> HumanVerifier : Requires optional
+    SmsEngine ..> HumanVerifier : Requires
     LoginSms ..> SMSCodes : purpose login
     MfaSms ..> SMSCodes : purpose mfa and enroll
     SMSCodes ..> SendCode

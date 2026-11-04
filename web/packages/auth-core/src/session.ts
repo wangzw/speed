@@ -306,8 +306,9 @@ export type PasswordResetChannel = 'email' | 'sms'
 export type AuthnHumanGate = AuthnLoginHuman
 
 /** The human-verification mechanism one surface runs: whether a send on
- * that surface must present a proof, which mechanism checks it, and the
- * public site key a Turnstile widget renders with. */
+ * that surface must present a proof, which mechanism checks it, the public
+ * site key a Turnstile widget renders with, and the action that widget is
+ * rendered with. */
 export type AuthnHumanSurfaceGate = AuthnLoginHumanGate
 
 /** One login method as the discovery endpoint reports it (a member of
@@ -1088,7 +1089,7 @@ function humanGateOff(): AuthnHumanGate {
 }
 
 /** Validates one surface's gate: its required and provider members are
- * required, and a site key, when present, is a string. */
+ * required, and a site key and an action, when present, are strings. */
 function parseHumanSurfaceGate(
   value: unknown,
   surface: string,
@@ -1110,10 +1111,18 @@ function parseHumanSurfaceGate(
           gate.site_key,
           `methods human ${surface} site_key is not a string`,
         )
+  const action =
+    gate.action === undefined
+      ? undefined
+      : requireString(
+          gate.action,
+          `methods human ${surface} action is not a string`,
+        )
   return {
     required: gate.required,
     provider,
     ...(siteKey === undefined ? {} : { site_key: siteKey }),
+    ...(action === undefined ? {} : { action }),
   }
 }
 

@@ -16,12 +16,14 @@ import { ApiError } from '@speed/api-client'
 import {
   LOGIN_ABANDON,
   LOGIN_ANSWER,
+  LOGIN_METHODS,
   LOGIN_START_AUTHENTICATED,
   PROFILE_GET,
   SESSION_GET,
   apiError,
   completeFlow,
   makeCookieHarness,
+  methodList,
   openFlow,
   principal,
   sessionCompletion,
@@ -396,6 +398,111 @@ describe('useStepUp', () => {
 
     const start = calls.find((c) => c.path === '/api/v1/auth/flows/authenticated')
     expect(start?.options?.body).toEqual({ purpose: 'step-up', method: 'sms' })
+  })
+
+  it('holds a sending answer until its proof arrives, then forwards it once', async () => {
+    // Choosing an SMS second factor sends a verification message, so the
+    // answer waits for the deployment's human-verification proof: the hook
+    // parks it as pending, and forwards the one request by itself once the
+    // widget yields its token.
+    const { session, calls } = makeCookieHarness({
+      [LOGIN_METHODS]: () =>
+        methodList([], {
+          humanPhoneProvider: 'turnstile',
+          humanPhoneRequired: true,
+          humanPhoneSiteKey: 'site-1',
+        }),
+      [LOGIN_START_AUTHENTICATED]: () =>
+        openFlow({
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'sms' }] },
+        }),
+      [LOGIN_ANSWER]: () => sessionCompletion(),
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    const onElevated = vi.fn()
+    const { result } = renderHook(() =>
+      useStepUp(session, true, onElevated),
+    )
+    await waitFor(() => {
+      expect(result.current.phase).toBe('step')
+    })
+    expect(result.current.pending).toBe(false)
+    expect(result.current.humanScope).toBe('phone')
+
+    act(() => {
+      result.current.answer({ step: 'factor', input: { factor: 'f1' } })
+    })
+
+    // The answer sends, so it is held for its proof: no flow request leaves
+    // while the block waits for the widget's token.
+    await waitFor(() => {
+      expect(result.current.pending).toBe(true)
+    })
+    expect(
+      calls.filter((call) => call.path === '/api/v1/auth/flows/answer'),
+    ).toHaveLength(0)
+
+    act(() => {
+      result.current.human.adoptToken('token-1')
+    })
+
+    await waitFor(() => {
+      expect(result.current.phase).toBe('elevated')
+    })
+    expect(onElevated).toHaveBeenCalledTimes(1)
+    // One request, forwarded by the hook itself: the viewer's one ask is not
+    // turned into a second click, and the proof it held is the one presented.
+    const answers = calls.filter(
+      (call) => call.path === '/api/v1/auth/flows/answer',
+    )
+    expect(answers.map((call) => call.options?.body)).toEqual([
+      {
+        seq: 1,
+        step: 'factor',
+        input: { factor: 'f1' },
+        human_proof: 'token-1',
+      },
+    ])
+    // A presented proof is consumed: the challenge holds none afterwards.
+    expect(result.current.human.proof).toBeNull()
+  })
+
+  it('forwards a gate-free send with no proof', async () => {
+    // The deployment requires no proof on the phone surface, so the answer
+    // that sends leaves directly and presents no proof.
+    const { session, calls } = makeCookieHarness({
+      [LOGIN_METHODS]: () => methodList([]),
+      [LOGIN_START_AUTHENTICATED]: () =>
+        openFlow({
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'sms' }] },
+        }),
+      [LOGIN_ANSWER]: () => sessionCompletion(),
+      [LOGIN_ABANDON]: () => ({}),
+    })
+    const onElevated = vi.fn()
+    const { result } = renderHook(() =>
+      useStepUp(session, true, onElevated),
+    )
+    await waitFor(() => {
+      expect(result.current.phase).toBe('step')
+    })
+
+    act(() => {
+      result.current.answer({ step: 'factor', input: { factor: 'f1' } })
+    })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('elevated')
+    })
+    expect(onElevated).toHaveBeenCalledTimes(1)
+    const body = calls.find(
+      (call) => call.path === '/api/v1/auth/flows/answer',
+    )?.options?.body
+    expect(body).toMatchObject({
+      seq: 1,
+      step: 'factor',
+      input: { factor: 'f1' },
+    })
+    expect(body).not.toHaveProperty('human_proof')
   })
 
   it('arms the wait a throttled answer stated and clears it at its deadline', async () => {

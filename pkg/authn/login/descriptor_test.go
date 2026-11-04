@@ -25,6 +25,7 @@ func (h scopedHuman) Provider(scope authn.HumanScope) string {
 	return h.verifier(scope).Provider(scope)
 }
 func (h scopedHuman) SiteKey(scope authn.HumanScope) string { return h.verifier(scope).SiteKey(scope) }
+func (h scopedHuman) Action(scope authn.HumanScope) string  { return h.verifier(scope).Action(scope) }
 func (h scopedHuman) Verify(ctx context.Context, p authn.HumanProof, scope authn.HumanScope) error {
 	return h.verifier(scope).Verify(ctx, p, scope)
 }
@@ -135,6 +136,9 @@ func TestTheMethodsListingReportsTheHumanGatePerScope(t *testing.T) {
 	if v, present := phone["site_key"]; present {
 		t.Errorf("human.phone carries site_key = %v, want it absent: a captcha has no widget key", v)
 	}
+	if v, present := phone["action"]; present {
+		t.Errorf("human.phone carries action = %v, want it absent: a captcha has no widget action", v)
+	}
 
 	other, ok := human["other"].(map[string]any)
 	if !ok {
@@ -142,6 +146,37 @@ func TestTheMethodsListingReportsTheHumanGatePerScope(t *testing.T) {
 	}
 	if other["required"] != true || other["provider"] != "pow" {
 		t.Errorf("human.other = %v, want a required proof of work", other)
+	}
+	if v, present := other["action"]; present {
+		t.Errorf("human.other carries action = %v, want it absent: a proof of work has no widget action", v)
+	}
+}
+
+// TestTheMethodsListingReportsTheTurnstileAction holds that a Turnstile
+// surface publishes both the widget key and the action the widget must be
+// rendered with: a token obtained under one action is not accepted for
+// another, so the client must render the widget under the configured action.
+func TestTheMethodsListingReportsTheTurnstileAction(t *testing.T) {
+	r := newRigMethods(t, &fakeMethod{name: "password"})
+	r.p.settings = newReader(signupStore(), r.p.logger)
+	r.p.human = scopedHuman{
+		authn.HumanScopePhone: &fakeHuman{
+			required: true, provider: "turnstile", siteKey: "site-1", action: "login",
+		},
+	}
+
+	body := decode(t, r.send(http.MethodGet, "/api/v1/auth/methods", "").Body.String())
+	human := body["human"].(map[string]any)
+	phone := human["phone"].(map[string]any)
+	if phone["site_key"] != "site-1" {
+		t.Errorf("human.phone.site_key = %v, want site-1", phone["site_key"])
+	}
+	if phone["action"] != "login" {
+		t.Errorf("human.phone.action = %v, want login", phone["action"])
+	}
+	other := human["other"].(map[string]any)
+	if v, present := other["action"]; present {
+		t.Errorf("human.other carries action = %v, want it absent: the surface is off", v)
 	}
 }
 

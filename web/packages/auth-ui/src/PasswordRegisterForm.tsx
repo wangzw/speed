@@ -46,8 +46,9 @@
  *
  * A registration refused with 429 is a throttle. When the response
  * stated a `Retry-After` wait, the submit key is disabled until it
- * elapses and the banner counts the seconds; the wait ends on its own
- * and the key re-enables without the viewer reloading. A throttle that
+ * elapses and the banner counts the seconds down; once it does, the key
+ * re-enables without the viewer reloading and the banner stays with the
+ * wait-free sentence. A throttle that
  * stated no wait keeps the key available at once and says so through
  * the same register-section text.
  *
@@ -155,10 +156,16 @@ export function PasswordRegisterForm({
     },
   })
   // A mapped refusal with its own text, or any other code for the shared
-  // error banner.
+  // error banner. A throttle carries the wait the answer stated, so the
+  // banner can count it down.
   const [failure, setFailure] = useState<
-    { readonly text: string } | { readonly code: string } | null
+    | { readonly text: string }
+    | { readonly code: string; readonly retryAfterSeconds?: number }
+    | null
   >(null)
+  // The tick the throttle banner re-renders on; it is only a clock, never
+  // a second source of the deadline.
+  const [, setRetryTick] = useState(0)
   // `created` announces the opened account; `signInRequired` is the
   // auto-login refusal that is not a registration failure; `signedIn`
   // is a settled auto-login the host may not have navigated away from.
@@ -214,20 +221,28 @@ export function PasswordRegisterForm({
     },
   })
 
-  // A stated Retry-After wait ends on its own: the submit key
-  // re-enables and the stale throttle banner goes away.
+  // A stated Retry-After wait counts down on its own: one tick a second
+  // re-renders the banner while the deadline is ahead, and the tick that
+  // crosses it clears the deadline so the submit key re-enables. The
+  // failure itself stays, so the banner remains with the wait-free
+  // sentence instead of vanishing.
   useEffect(() => {
     if (retryUntil === null) {
       return undefined
     }
-    const timer = setTimeout(
-      () => {
+    if (Date.now() >= retryUntil) {
+      setRetryUntil(null)
+      return undefined
+    }
+    const timer = setInterval(() => {
+      if (Date.now() >= retryUntil) {
         setRetryUntil(null)
-        setFailure(null)
-      },
-      Math.max(0, retryUntil - Date.now()),
-    )
-    return () => clearTimeout(timer)
+        clearInterval(timer)
+        return
+      }
+      setRetryTick((tick) => tick + 1)
+    }, 1000)
+    return () => clearInterval(timer)
   }, [retryUntil])
 
   const startSignIn = async (): Promise<void> => {
@@ -298,9 +313,8 @@ export function PasswordRegisterForm({
       if (wait !== undefined) {
         setRetryUntil(Date.now() + wait)
         setFailure({
-          text: t('register.retryAfter', {
-            seconds: Math.max(1, Math.ceil(wait / 1000)),
-          }),
+          code: 'authn.throttled',
+          retryAfterSeconds: Math.max(1, Math.ceil(wait / 1000)),
         })
         return
       }
@@ -345,6 +359,7 @@ export function PasswordRegisterForm({
           humanGate={humanGate}
           step={shownStep}
           busy={driver.busy}
+          onAttemptStart={() => setFailure(null)}
           onAnswer={(input, proof) => void driver.answer(input, proof)}
           onUnsupported={() => driver.reset()}
         />
@@ -508,7 +523,17 @@ export function PasswordRegisterForm({
             {failure.text}
           </Alert>
         ) : (
-          <InlineError code={failure.code} />
+          <InlineError
+            code={failure.code}
+            retryAfterSeconds={failure.retryAfterSeconds}
+            liveRetryAfterSeconds={
+              failure.retryAfterSeconds === undefined
+                ? undefined
+                : retryUntil === null
+                  ? 0
+                  : Math.max(0, Math.ceil((retryUntil - Date.now()) / 1000))
+            }
+          />
         )
       ) : null}
     </FormLayout>

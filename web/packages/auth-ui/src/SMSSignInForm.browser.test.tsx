@@ -102,25 +102,19 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
         <SMSSignInForm session={harness.session} />
       </PhoneCountryDefaultProvider>,
     )
-    // The block asks for a challenge on mount and renders the picture with
-    // its instruction.
+    // The block appears only after the viewer asks for the send: entering
+    // the phone step alone reads and solves nothing.
+    const send = await fillPhone()
+    await userEvent.setup().click(send)
+    // The asked-for send is held while the gate is read and its challenge
+    // obtained, and the block collects the answer.
     const answer = await screen.findByLabelText(CAPTCHA_COPY.answerLabel)
     expect(
       screen.getByAltText(CAPTCHA_COPY.instruction.typeTheDigits),
     ).toBeInTheDocument()
-    const send = await fillPhone()
-    // No proof yet: the send waits for the answer.
-    expect(send).toBeDisabled()
     const user = userEvent.setup()
     await user.type(answer, '12345')
     await user.click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
-    await waitFor(() =>
-      expect(
-        screen.getByText(uiKitZhCN.humanVerification.verified),
-      ).toBeInTheDocument(),
-    )
-    await waitFor(() => expect(send).toBeEnabled())
-    await user.click(send)
     await waitFor(() => expect(sends(harness)).toHaveLength(1))
     expect(sends(harness)[0]?.options?.body).toMatchObject({
       method: 'sms',
@@ -151,6 +145,10 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
         <SMSSignInForm session={harness.session} />
       </PhoneCountryDefaultProvider>,
     )
+    // Asking for the send holds it and opens the block, which obtains the
+    // first challenge.
+    const send = await fillPhone()
+    await userEvent.setup().click(send)
     await waitFor(() => expect(issued).toBe(1))
     const image = await screen.findByAltText(
       CAPTCHA_COPY.instruction.typeTheDigits,
@@ -188,10 +186,13 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
         <SMSSignInForm session={harness.session} />
       </PhoneCountryDefaultProvider>,
     )
-    // The client cannot force the slider: the challenge request carries no
-    // `form`, and the block renders the form the server answered with.
+    // Asking for the send holds it and opens the block. The client cannot
+    // force the slider: the challenge request carries no `form`, and the
+    // block renders the form the server answered with.
+    const send = await fillPhone()
+    await userEvent.setup().click(send)
     await waitFor(() => expect(captchaRequests(harness)).toHaveLength(1))
-    expect(captchaRequests(harness)[0]?.options?.query).toBeUndefined()
+    expect(captchaRequests(harness)[0]?.options?.query?.form).toBeUndefined()
     const range = (await screen.findByLabelText(
       CAPTCHA_COPY.sliderLabel,
     )) as HTMLInputElement
@@ -200,17 +201,9 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
     range.focus()
     await browserUserEvent.keyboard('{End}')
     expect(range.value).toBe('272')
-    await userEvent
-      .setup()
-      .click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
-    await waitFor(() =>
-      expect(
-        screen.getByText(uiKitZhCN.humanVerification.verified),
-      ).toBeInTheDocument(),
-    )
-    const send = await fillPhone()
-    await waitFor(() => expect(send).toBeEnabled())
-    await userEvent.setup().click(send)
+    // Aligning the piece is the whole interaction: Enter hands the offset
+    // to the host, and the held send leaves by itself.
+    await browserUserEvent.keyboard('{Enter}')
     await waitFor(() => expect(sends(harness)).toHaveLength(1))
     expect(sends(harness)[0]?.options?.body).toMatchObject({
       method: 'sms',
@@ -238,10 +231,13 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
         <SMSSignInForm session={harness.session} />
       </PhoneCountryDefaultProvider>,
     )
-    // The default request carries no form, so the server answered the
-    // visual challenge; the client cannot ask for the image or slider.
+    // Asking for the send holds it and opens the block. The default request
+    // carries no form, so the server answered the visual challenge; the
+    // client cannot ask for the image or slider.
+    const send = await fillPhone()
+    await userEvent.setup().click(send)
     await screen.findByAltText(CAPTCHA_COPY.instruction.typeTheDigits)
-    expect(captchaRequests(harness)[0]?.options?.query).toBeUndefined()
+    expect(captchaRequests(harness)[0]?.options?.query?.form).toBeUndefined()
     await userEvent
       .setup()
       .click(screen.getByRole('button', { name: CAPTCHA_COPY.useAudio }))
@@ -269,14 +265,7 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
       '65432',
     )
     await user.click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
-    await waitFor(() =>
-      expect(
-        screen.getByText(uiKitZhCN.humanVerification.verified),
-      ).toBeInTheDocument(),
-    )
-    const send = await fillPhone()
-    await waitFor(() => expect(send).toBeEnabled())
-    await user.click(send)
+    // The held send leaves by itself once the proof arrives.
     await waitFor(() => expect(sends(harness)).toHaveLength(1))
     expect(sends(harness)[0]?.options?.body).toMatchObject({
       method: 'sms',
@@ -308,6 +297,9 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
         <SMSSignInForm session={harness.session} />
       </PhoneCountryDefaultProvider>,
     )
+    // Asking for the send holds it and opens the block.
+    const send = await fillPhone()
+    await userEvent.setup().click(send)
     await screen.findByAltText(CAPTCHA_COPY.instruction.typeTheDigits)
     await userEvent
       .setup()
@@ -334,9 +326,7 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
       '12345',
     )
     await user.click(screen.getByRole('button', { name: CAPTCHA_COPY.submit }))
-    const send = await fillPhone()
-    await waitFor(() => expect(send).toBeEnabled())
-    await user.click(send)
+    // The held send leaves by itself once the proof arrives.
     await waitFor(() => expect(sends(harness)).toHaveLength(1))
     expect(sends(harness)[0]?.options?.body).toMatchObject({
       human_proof: 'Y2FwdGNoYS1jaGFsbGVuZ2U.12345',

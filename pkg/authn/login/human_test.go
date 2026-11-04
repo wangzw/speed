@@ -27,6 +27,7 @@ type fakeHuman struct {
 	byScope        map[authn.HumanScope]bool
 	provider       string
 	siteKey        string
+	action         string
 	accept         map[string]bool
 	err            error
 	calls          []authn.HumanProof
@@ -43,6 +44,7 @@ func (h *fakeHuman) Required(scope authn.HumanScope) bool {
 }
 func (h *fakeHuman) Provider(authn.HumanScope) string { return h.provider }
 func (h *fakeHuman) SiteKey(authn.HumanScope) string  { return h.siteKey }
+func (h *fakeHuman) Action(authn.HumanScope) string   { return h.action }
 
 func (h *fakeHuman) Verify(_ context.Context, p authn.HumanProof, scope authn.HumanScope) error {
 	h.calls = append(h.calls, p)

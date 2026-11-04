@@ -20,12 +20,31 @@ import { useAuthUiErrorText } from './error-text.js'
 export interface InlineErrorProps {
   /** The code to render, or null for no error (renders nothing). */
   readonly code: string | null
+  /** The wait a throttled answer stated, in whole seconds. */
+  readonly retryAfterSeconds?: number
+  /** The wait still remaining, in whole seconds, when the caller counts the
+   * stated wait down. Omitted, the visible sentence carries the initial
+   * wait unchanged. */
+  readonly liveRetryAfterSeconds?: number
   /** Content rendered inside the banner, below the message. */
   readonly detail?: ReactNode
 }
 
 /** The family's whole-attempt failure banner, one role="alert" per error. */
-export function InlineError({ code, detail }: InlineErrorProps) {
+export function InlineError({
+  code,
+  retryAfterSeconds,
+  liveRetryAfterSeconds,
+  detail,
+}: InlineErrorProps) {
   const resolve = useAuthUiErrorText()
-  return <SharedInlineError code={code} resolve={resolve} detail={detail} />
+  return (
+    <SharedInlineError
+      code={code}
+      resolve={resolve}
+      retryAfterSeconds={retryAfterSeconds}
+      liveRetryAfterSeconds={liveRetryAfterSeconds}
+      detail={detail}
+    />
+  )
 }

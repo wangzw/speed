@@ -20,6 +20,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/account"
 	"github.com/vislake/speed/pkg/authn/gate"
+	"github.com/vislake/speed/pkg/authn/humanverify"
 	"github.com/vislake/speed/pkg/authn/login"
 	"github.com/vislake/speed/pkg/authn/login/password"
 	"github.com/vislake/speed/pkg/authn/mfa"
@@ -168,6 +169,9 @@ func assembleWithSections(t *testing.T, extra []core.Module, sections map[string
 				"endpoints":  map[string]any{"default": "public"},
 				"public-url": "http://127.0.0.1", "allow-insecure": true,
 			}},
+			// The gate is a required dependency of the login engine, and these cases
+			// present no proof: both surfaces run the off mechanism.
+			"humanverify": map[string]any{"mode": "off", "phone-mode": "off"},
 		},
 		"settings": map[string]any{},
 		"event":    map[string]any{},
@@ -183,6 +187,7 @@ func assembleWithSections(t *testing.T, extra []core.Module, sections map[string
 	modules := []core.Module{
 		sqlite.Module(), logModule, speedhttp.Module(), kvmemory.Module(),
 		eventmemory.Module(), settings.Module(), mount.Module(), gate.Module(),
+		humanverify.Module(),
 		account.Module(), session.Module(), mfa.Module(), login.Module(), password.Module(),
 	}
 	modules = append(modules, extra...)

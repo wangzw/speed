@@ -81,7 +81,16 @@
  * presented. Which answers send is ./flow's answerSends -- choosing an
  * SMS second factor, or supplying a phone a challenge declared -- so a
  * factor the deployment verifies another way answers without a proof and
- * leaves the current one unspent.
+ * leaves the current one unspent. While the gate wants a proof this step
+ * does not hold yet, the step's answer controls are held: a send answered
+ * without the proof would be refused by the server and would spend the
+ * viewer's click on what the block above already says. The renderer
+ * cannot tell per option which answers send, so the whole form is busy;
+ * an answer that would send is still refused in code if it reaches the
+ * callback anyway. A cancel control beside the proof block drops the held
+ * answer, so a mechanism that cannot produce a proof leaves the viewer a
+ * way back instead of a permanently busy form; the step returns to its
+ * normal state and can be answered again.
  */
 
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react'
@@ -300,14 +309,27 @@ export interface HumanGatedFlowStepProps {
   readonly onClientFailure?: (key: string | null) => void
   /** See FlowStepFieldsProps.failure. */
   readonly failure?: string | null
+  /** An attempt is beginning, immediately or as a held answer: the caller
+   * clears whatever result the previous attempt left beside this step. */
+  readonly onAttemptStart?: () => void
 }
 
 /**
  * A step renderer with the deployment's human-verification block above it.
- * The block renders when the step may send a verification message, and an
- * answer that does send presents the proof the surface holds. The proof is
- * single-use, so presenting it consumes it and the block obtains the next
- * one; an answer that sends nothing leaves it unspent.
+ * The block renders only while an answer that may send waits on its proof;
+ * an answer that sends presents that proof. The proof is single-use, so
+ * presenting it consumes it and the block obtains the next one; an answer
+ * that sends nothing leaves it unspent.
+ *
+ * The choice comes first, not the block: an answer that sends nothing
+ * leaves at once, and a sending answer whose gate is unread or whose proof
+ * is not in hand is held by itself, not by disabling the other options.
+ * The block appears for that held answer, and the answer leaves by itself
+ * once the gate settles and the proof is in hand. While it is held the
+ * step's controls are busy, so a second choice cannot race the first; the
+ * cancel control beside the block drops the held answer and returns the
+ * step to its normal, answerable state, which is the only way out when the
+ * mechanism cannot produce a proof at all.
  *
  * The hook lives here rather than in each channel form, so a form whose
  * own first step sends nothing reads no discovery document until a parked
@@ -324,44 +346,110 @@ export function HumanGatedFlowStep({
   clientFailure,
   onClientFailure,
   failure,
+  onAttemptStart,
 }: HumanGatedFlowStepProps) {
+  const { t } = useAuthUiTranslation()
   // The step names the surface: an answer that may send reaches a phone
   // number, so it runs the phone surface's mechanism; a step that sends
   // nothing runs the other surface's (and presents no proof either way).
   const humanScope = stepMaySend(step) ? 'phone' : 'other'
+  // The answer the viewer chose, held while the gate is read and its proof
+  // obtained. The block renders only while one is held.
+  const [pending, setPending] = useState<Record<string, string> | null>(null)
   const human = useHumanVerification(session, {
     scope: humanScope,
+    enabled: pending !== null,
     ...(humanGate === undefined ? {} : { gate: humanGate }),
   })
-  const needsProof = humanGateNeedsProof(human.gate, humanScope)
+  // The host's gate is known before the hook reads anything; a standalone
+  // form learns it through the hook once an answer asks for one.
+  const gateDocument = humanGate ?? human.gate
+  const needsProof = humanGateNeedsProof(gateDocument, humanScope)
+  // The caller's callback behind a ref: the deferred path must forward the
+  // answer to the callback the latest render supplied.
+  const onAnswerRef = useRef(onAnswer)
+  onAnswerRef.current = onAnswer
+
   const answer = (input: Record<string, string>): void => {
-    const presented =
-      needsProof && answerSends(step, input) ? human.proof : null
-    onAnswer(input, presented ?? undefined)
+    if (pending !== null) {
+      return
+    }
+    // The attempt begins here, whichever path it takes: the previous result
+    // must not stand beside the verification a new answer renders.
+    onAttemptStart?.()
+    const sending = answerSends(step, input)
+    const gateKnown = !human.pending && gateDocument !== null
+    if (sending && (!gateKnown || (needsProof && human.proof === null))) {
+      // A send whose gate is unread, or whose proof this step does not hold
+      // yet, waits by itself; an answer that sends nothing never waits.
+      setPending(input)
+      return
+    }
+    const presented = sending && needsProof ? human.proof : null
+    onAnswerRef.current(input, presented ?? undefined)
     if (presented !== null) {
       human.consume()
     }
   }
+
+  // A held answer leaves by itself once the gate is settled and the proof
+  // it requires is in hand: the viewer's one choice is not turned into a
+  // click followed by a second one.
+  useEffect(() => {
+    if (pending === null || human.pending || gateDocument === null) {
+      return
+    }
+    if (needsProof && human.proof === null) {
+      return
+    }
+    const input = pending
+    setPending(null)
+    const presented = answerSends(step, input) && needsProof ? human.proof : null
+    onAnswerRef.current(input, presented ?? undefined)
+    if (presented !== null) {
+      human.consume()
+    }
+  }, [
+    pending,
+    human.pending,
+    human.proof,
+    human.consume,
+    gateDocument,
+    needsProof,
+    step,
+  ])
+
   return (
     <>
-      {needsProof && stepMaySend(step) ? (
-        <HumanVerificationBlock
-          scope={humanScope}
-          gate={human.gate ?? undefined}
-          proof={human.proof}
-          status={human.status}
-          captcha={human.captcha}
-          onToken={human.adoptToken}
-          onRetry={human.retry}
-          onRefreshCaptcha={human.refreshCaptcha}
-          onRequestAudio={human.requestAudio}
-          audioRetryAfterSeconds={human.audioRetryAfterSeconds}
-          disabled={busy}
-        />
+      {pending !== null ? (
+        <>
+          <HumanVerificationBlock
+            scope={humanScope}
+            gate={human.gate ?? humanGate}
+            proof={human.proof}
+            status={human.status}
+            captcha={human.captcha}
+            onToken={human.adoptToken}
+            onRetry={human.retry}
+            onRefreshCaptcha={human.refreshCaptcha}
+            onRequestAudio={human.requestAudio}
+            audioRetryAfterSeconds={human.audioRetryAfterSeconds}
+            disabled={busy}
+          />
+          {/* The held answer owns the step until it leaves; this is the
+              viewer's way back when the proof cannot be obtained. Dropping
+              it re-enables the step, and a new answer opens the block
+              again. */}
+          <ActionRow>
+            <ActionButton type="button" onClick={() => setPending(null)}>
+              {t('signInFlow.passkeyCancel')}
+            </ActionButton>
+          </ActionRow>
+        </>
       ) : null}
       <FlowStepFields
         step={step}
-        busy={busy}
+        busy={busy || pending !== null}
         onAnswer={answer}
         onUnsupported={onUnsupported}
         unsupportedLabel={unsupportedLabel}

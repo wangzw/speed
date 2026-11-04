@@ -96,6 +96,7 @@ type (
 	decider          struct{ authn.Decider }
 	smsCodes         struct{ authn.SMSCodes }
 	emailCodeSender  struct{ authn.EmailCodeSender }
+	humanVerifier    struct{ authn.HumanVerifier }
 	auditCap         struct{ audit.Audit }
 	settingsStore    struct{ settings.Store }
 )
@@ -197,6 +198,9 @@ var standIns = map[core.Token]func() core.Module{
 	(*authn.SMSCodes)(nil):      func() core.Module { return standIn("sms-codes", &smsCodes{}, (*authn.SMSCodes)(nil)) },
 	(*authn.EmailCodeSender)(nil): func() core.Module {
 		return standIn("email-code-sender", &emailCodeSender{}, (*authn.EmailCodeSender)(nil))
+	},
+	(*authn.HumanVerifier)(nil): func() core.Module {
+		return standIn("human-verifier", &humanVerifier{}, (*authn.HumanVerifier)(nil))
 	},
 	(*audit.Audit)(nil):    func() core.Module { return standIn("audit", &auditCap{}, (*audit.Audit)(nil)) },
 	(*settings.Store)(nil): func() core.Module { return standIn("settings-store", &settingsStore{}, (*settings.Store)(nil)) },

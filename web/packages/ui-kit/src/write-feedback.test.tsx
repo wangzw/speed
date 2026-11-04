@@ -16,7 +16,7 @@
 import { act, renderHook, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createContext, useContext, useEffect } from 'react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { switchLanguage, useTranslation } from '@speed/i18n'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
@@ -42,20 +42,54 @@ function deferred<Value>(): Deferred<Value> {
 }
 
 describe('useWriteFeedback', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('carries the wait a throttled refusal stated into the slot', async () => {
+    vi.useFakeTimers()
     const { result } = renderHook(() => useWriteFeedback())
+    const attempt = deferred<string | null>()
+
+    let runPromise!: Promise<void>
+    act(() => {
+      runPromise = result.current.run(() => attempt.promise)
+    })
+    // The deadline is read when the attempt settles, not when it starts.
+    act(() => {
+      vi.advanceTimersByTime(5_000)
+    })
     await act(async () => {
-      await result.current.run(async () => {
-        throw Object.assign(new Error('throttled'), {
+      attempt.reject(
+        Object.assign(new Error('throttled'), {
           code: 'authn.throttled',
           retryAfterMs: 45_500,
-        })
-      })
+        }),
+      )
+      await runPromise
     })
     expect(result.current.outcome).toEqual({
       kind: 'failure',
       code: 'authn.throttled',
       retryAfterSeconds: 46,
+      waitUntil: Date.now() + 46_000,
+    })
+  })
+
+  it('records the wait deadline through fail as well', () => {
+    vi.useFakeTimers()
+    const { result } = renderHook(() => useWriteFeedback())
+    act(() => {
+      result.current.fail({
+        code: 'authn.throttled',
+        retryAfterMs: 1_500,
+      })
+    })
+    expect(result.current.outcome).toEqual({
+      kind: 'failure',
+      code: 'authn.throttled',
+      retryAfterSeconds: 2,
+      waitUntil: Date.now() + 2_000,
     })
   })
 

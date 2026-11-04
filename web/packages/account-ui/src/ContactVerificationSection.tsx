@@ -48,8 +48,9 @@
  * closed: that visitor arrived to replace the address, and a code for the
  * old one is not what they asked for. A 401 of the automatic send leaves the
  * manual send action in place with an explanation; the visitor's click then
- * retries the send like any other. A 429 still starts the resend countdown,
- * and any other failure renders the failure banner.
+ * retries the send like any other. A 429 still holds the resend control for
+ * the stated wait, and its banner names that wait, and any other failure
+ * renders the failure banner.
  *
  * Registering a contact address asks for no fresh authentication, so a 401
  * authn.insufficient_user_authentication of the send renders through the
@@ -57,10 +58,13 @@
  * a step-up dialog. The verify may be refused when its proof changes how the
  * account signs in, and then opens the dialog and replays the same code. A
  * resend control is disabled
- * for the interval the server asked for (or the Retry-After a 429 carried)
- * and states why, and the interval's timer stops once it expires; the "code
- * sent" notice is announced once through a role="status" region that is
- * mounted empty and filled on landing, and focus moves to the code field.
+ * for the interval the server asked for (or the Retry-After a 429 carried),
+ * and the interval's timer stops once it expires. A hold a successful send's
+ * `resend_after` started states the wait in the section's own note, because
+ * that send leaves no banner; a hold a throttled failure started gets no
+ * note, because the failure's banner names that wait and counts it down. The
+ * "code sent" notice is announced once through a role="status" region that
+ * is mounted empty and filled on landing, and focus moves to the code field.
  *
  * A resend addresses the same target the section displays (the address a send
  * in this mount landed on, else the profile's pending contact), so a resend
@@ -76,11 +80,14 @@
  *
  * A send also presents the deployment's human-verification proof when its
  * gate requires one. The gate comes from the methods document (or from a
- * `humanGate` a host already read), and the block stands above the send
- * controls; the send waits for a proof, and a resend obtains a fresh one
- * because the previous proof was spent. The automatic landing send has no
- * visitor's click to obtain a proof with, so it waits for the block to
- * hold one before it goes, and stays a manual action otherwise.
+ * `humanGate` a host already read). The block appears only once a send has
+ * been asked for: a step showing its send controls shows no challenge, and
+ * the send the viewer asked for leaves by itself when the proof arrives.
+ * The control that asked gives way to the block while the proof is
+ * outstanding. A resend obtains a fresh proof because the previous one was
+ * spent. The automatic landing send has no visitor's click of its own, so
+ * it takes the same awaited path as one and leaves as soon as the block
+ * holds a proof; a refused automatic send stays a manual action.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -114,7 +121,8 @@ import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
-/** The resend note's id, referenced by the resend control while it counts down. */
+/** The resend note's id, referenced by the resend control while it counts
+ * down. */
 const RESEND_NOTE_ID = 'contact-verification-resend-note'
 
 export interface ContactVerificationSectionProps {
@@ -152,6 +160,14 @@ export function ContactVerificationSection({
   const { data, isPending, isFetching, error, refetch } = useProfileQuery()
   const addIdentifier = useAuthnLoginAddIdentifier()
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
+  // The address a send the viewer (or the landing's automatic send) asked
+  // for is waiting on, because the gate wants a proof this client does not
+  // hold yet. The gate is read and the proof obtained only while this is
+  // set, so no challenge shows until a send is asked for.
+  const [pending, setPending] = useState<{
+    readonly address: string
+    readonly automatic: boolean
+  } | null>(null)
   // The deployment's human-verification gate and this section's proof. The
   // send (a resend included) presents it; the code's verification sends
   // nothing, so it does not.
@@ -159,12 +175,15 @@ export function ContactVerificationSection({
   // other surface's mechanism.
   const human = useHumanVerification(session, {
     scope: 'other',
+    enabled: pending !== null,
     ...(humanGate === undefined ? {} : { gate: humanGate }),
   })
-  const needsProof = humanGateNeedsProof(human.gate, 'other')
-  // Only a known gate that requires a proof blocks a manual send. The
-  // automatic send additionally waits for the read to settle (see its
-  // effect), because it has no visitor's click to obtain a proof with.
+  // A host that already read the discovery document hands the gate in; a
+  // standalone section learns it through the hook once a send asks for one.
+  const gateDocument = humanGate ?? human.gate
+  const needsProof = humanGateNeedsProof(gateDocument, 'other')
+  // The last-line guard of the send itself: a required proof that is not
+  // in hand keeps a request from leaving.
   const proofBlocked = needsProof && human.proof === null
 
   // The address a code went to during this mount. Null until a send lands;
@@ -195,8 +214,12 @@ export function ContactVerificationSection({
   const [emailEntry, setEmailEntry] = useState('')
   const [entryOpen, setEntryOpen] = useState(initialChangeOpen)
   // The instant the resend control becomes usable again, and the ticking
-  // clock the note and the disabled state read.
+  // clock its disabled state and its note read.
   const [resendUntil, setResendUntil] = useState(0)
+  // Whether that hold came from a landed send's `resend_after`. Only that
+  // hold gets the section's note: a hold a throttled failure started is
+  // explained by the failure's banner, which counts the same wait down.
+  const [resendFromSuccess, setResendFromSuccess] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   // Whether the mount's automatic send was refused for step-up. The
   // automatic send never opens the dialog the visitor did not ask for, so it
@@ -283,9 +306,8 @@ export function ContactVerificationSection({
   }
 
   function send(nextEmail: string, automatic = false): Promise<void> {
-    // A send waits for the gate and for a required proof. The automatic
-    // send's effect re-runs when the proof arrives, so it proceeds then
-    // instead of sending blind.
+    // The last-line guard: a required proof that is not ready keeps the
+    // send from leaving. The caller has already waited for it.
     if (proofBlocked) {
       return Promise.resolve()
     }
@@ -327,6 +349,9 @@ export function ContactVerificationSection({
         const retryAfter = retryAfterMsOf(error)
         if (retryAfter !== undefined) {
           setResendUntil(Date.now() + retryAfter)
+          // The failure's banner carries this hold's countdown; the note
+          // would repeat it.
+          setResendFromSuccess(false)
           setNow(Date.now())
         }
         throw error
@@ -336,7 +361,11 @@ export function ContactVerificationSection({
       }
       const interval =
         typeof result.resend_after === 'number' ? result.resend_after : 0
-      setResendUntil(interval > 0 ? Date.now() + interval * 1000 : 0)
+      const held = interval > 0
+      setResendUntil(held ? Date.now() + interval * 1000 : 0)
+      // A successful send leaves no banner, so its own note is the wait's
+      // only visible explanation.
+      setResendFromSuccess(held)
       setNow(Date.now())
       // A send to another address is a change of context: the code step now
       // addresses a different target, so the old one's result is dropped.
@@ -357,7 +386,63 @@ export function ContactVerificationSection({
     })
   }
 
+  const sendRef = useRef(send)
+  sendRef.current = send
+
+  /**
+   * Ask for a code: send now when the gate is known to want no proof,
+   * otherwise hold the send and let the block obtain one; the effect below
+   * sends when it arrives. The automatic landing send takes this path too,
+   * so a disabled hook cannot let it leave without a proof.
+   */
+  function askToSend(address: string, automatic = false): void {
+    if (pending !== null) {
+      // A send is already waiting on its proof; asking again changes nothing.
+      return
+    }
+    // The attempt begins here, whichever path it takes: the previous
+    // answer must not stand beside the verification the new one renders.
+    setVerifyFailureText(null)
+    setCodeInvalid(false)
+    setAutoStepUp(false)
+    feedback.reset()
+    if (
+      !human.pending &&
+      gateDocument !== null &&
+      (!needsProof || human.proof !== null)
+    ) {
+      void send(address, automatic)
+      return
+    }
+    setPending({ address, automatic })
+  }
+
+  const askToSendRef = useRef(askToSend)
+  askToSendRef.current = askToSend
+
+  // A send asked for while the gate held it leaves as soon as the gate is
+  // known and the proof it wants is in hand: the viewer's one request (or
+  // the landing's one automatic attempt) is not turned into a second click.
+  // A gate still being read keeps the send waiting; a gate that wants
+  // nothing sends at once.
+  useEffect(() => {
+    if (pending === null || human.pending || gateDocument === null) {
+      return
+    }
+    if (needsProof && human.proof === null) {
+      return
+    }
+    const { address, automatic } = pending
+    setPending(null)
+    void sendRef.current(address, automatic)
+  }, [pending, human.pending, gateDocument, needsProof, human.proof])
+
   function verify(nextCode: string): Promise<void> {
+    // Verifying the code already in hand calls off a send waiting on its
+    // proof: the late token must not send a second code that invalidates the
+    // one being proved, and the wait it left behind must not block later
+    // sends.
+    setPending(null)
     setCodeInvalid(false)
     // A verification is a new attempt in the shared result position, so the
     // automatic send's step-up explanation does not stand beside its answer.
@@ -373,6 +458,7 @@ export function ContactVerificationSection({
         setCode('')
         setSentTo(null)
         setResendUntil(0)
+        setResendFromSuccess(false)
         await invalidateAfterWrite()
       } catch (error) {
         const failureCode = errorCodeOf(error)
@@ -405,7 +491,9 @@ export function ContactVerificationSection({
   // The verification landing's single automatic send: it fires when the
   // profile first settles on a pending target with the change form closed,
   // and the mount-local refs keep every later render, refetch and
-  // form close from sending.
+  // form close from sending. It waits on the same pending path as a
+  // visitor's click, because it has no click of its own to obtain a proof
+  // with.
   useEffect(() => {
     if (
       !autoSend ||
@@ -418,14 +506,9 @@ export function ContactVerificationSection({
     if (state !== 'pending' || targetEmail === '') {
       return
     }
-    // An automatic send has no visitor's click to obtain a proof with; it
-    // waits until the gate is known and the block has one, then goes.
-    if (human.pending || proofBlocked) {
-      return
-    }
     autoSent.current = true
-    void send(targetEmail, true)
-  }, [autoSend, entryOpen, state, targetEmail, send, human.pending, proofBlocked])
+    askToSendRef.current(targetEmail, true)
+  }, [autoSend, entryOpen, state, targetEmail])
 
   // A settled answer with no body is the error variant, never "nothing to
   // verify" (the async section below renders the retry). A settled state
@@ -447,12 +530,13 @@ export function ContactVerificationSection({
   const sentNotice = sentTo ?? targetEmail
   const hasTarget = targetEmail !== ''
 
-  // The deployment's human-verification block, above the send control the
-  // current face shows. It renders nothing when no proof is required.
+  // The deployment's human-verification block. A send renders it only while
+  // that send waits on a proof; it renders nothing when no proof is
+  // required.
   const humanBlock = (
     <HumanVerification
       scope="other"
-      gate={human.gate ?? undefined}
+      gate={human.gate ?? humanGate}
       proof={human.proof}
       status={human.status}
       captcha={human.captcha}
@@ -505,7 +589,7 @@ export function ContactVerificationSection({
         onSubmit={(event) => {
           event.preventDefault()
           if (emailEntry.trim() !== '') {
-            void send(emailEntry)
+            askToSend(emailEntry)
           }
         }}
         sx={{
@@ -523,16 +607,20 @@ export function ContactVerificationSection({
           label={t('verification.addLabel')}
           value={emailEntry}
           disabled={busy}
-          onChange={(event) => setEmailEntry(event.target.value)}
+          onChange={(event) => {
+            // Editing the address abandons a send waiting on its proof.
+            setPending(null)
+            setEmailEntry(event.target.value)
+          }}
         />
-        {humanBlock}
+        {pending !== null ? humanBlock : null}
         {/* The step's only action is its primary; it still closes its
             action row at the field's right edge. */}
         <ActionRow sx={{ width: '100%' }}>
           <ActionButton
             type="submit"
             emphasis="primary"
-            disabled={busy || proofBlocked || emailEntry.trim() === ''}
+            disabled={busy || pending !== null || emailEntry.trim() === ''}
             loading={addIdentifier.isPending}
           >
             {t('verification.addSubmit')}
@@ -614,19 +702,21 @@ export function ContactVerificationSection({
           {/* The action row: resend and change-address are secondary and
               stand on the left, verify is the step's primary action and
               closes the row on the right. All three share one line and one
-              baseline. The proof block stands above the row, because a
-              resend sends another code. The group's one result sits
-              directly below the row. */}
-          {humanBlock}
+              baseline. The block stands above the row, because a send it
+              waits on is the one that asked for the proof. The group's one
+              result sits directly below the row. */}
+          {pending !== null ? humanBlock : null}
           <ActionRow sx={{ width: '100%' }}>
             <ActionButton
               type="button"
-              disabled={busy || proofBlocked || remainingSeconds > 0}
+              disabled={busy || pending !== null || remainingSeconds > 0}
               loading={addIdentifier.isPending}
               aria-describedby={
-                remainingSeconds > 0 ? RESEND_NOTE_ID : undefined
+                remainingSeconds > 0 && resendFromSuccess
+                  ? RESEND_NOTE_ID
+                  : undefined
               }
-              onClick={() => void send(sentNotice)}
+              onClick={() => askToSend(sentNotice)}
             >
               {sentTo === null
                 ? t('verification.send')
@@ -636,6 +726,9 @@ export function ContactVerificationSection({
               type="button"
               disabled={busy}
               onClick={() => {
+                // Closing the change entry abandons a send waiting on its
+                // proof, so no code goes to the address it replaced.
+                setPending(null)
                 setEntryOpen((open) => !open)
                 setEmailEntry('')
               }}
@@ -647,7 +740,7 @@ export function ContactVerificationSection({
             <ActionButton
               type="submit"
               emphasis="primary"
-              disabled={busy || code.trim() === ''}
+              disabled={busy || pending !== null || code.trim() === ''}
               loading={verifyIdentifier.isPending}
             >
               {t('verification.verify')}
@@ -659,7 +752,10 @@ export function ContactVerificationSection({
               produced it. */}
           {feedbackRegion}
           {verifyFailureBanner}
-          {remainingSeconds > 0 ? (
+          {/* A successful send's hold has no banner to explain it, so the
+              note states its wait. A throttled failure's banner counts the
+              same wait down, so this note stays away then. */}
+          {remainingSeconds > 0 && resendFromSuccess ? (
             <Typography
               id={RESEND_NOTE_ID}
               variant="body2"
@@ -678,7 +774,7 @@ export function ContactVerificationSection({
             onSubmit={(event) => {
               event.preventDefault()
               if (emailEntry.trim() !== '') {
-                void send(emailEntry)
+                askToSend(emailEntry)
               }
             }}
             sx={{ mt: 2, maxWidth: FORM_MAX_WIDTH }}
@@ -703,13 +799,19 @@ export function ContactVerificationSection({
                 label={t('verification.changeLabel')}
                 value={emailEntry}
                 disabled={busy}
-                onChange={(event) => setEmailEntry(event.target.value)}
+                onChange={(event) => {
+                  // Editing the address abandons a send waiting on its proof.
+                  setPending(null)
+                  setEmailEntry(event.target.value)
+                }}
               />
               <ActionRow sx={{ width: '100%' }}>
                 <ActionButton
                   type="submit"
                   emphasis="primary"
-                  disabled={busy || proofBlocked || emailEntry.trim() === ''}
+                  disabled={
+                    busy || pending !== null || emailEntry.trim() === ''
+                  }
                 >
                   {t('verification.changeSubmit')}
                 </ActionButton>

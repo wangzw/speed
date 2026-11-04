@@ -129,7 +129,9 @@ authn:
   # DEMO_TURNSTILE_SECRET_KEY. The entrypoint requires the two credentials only
   # when a selected surface is turnstile. The hostname the widget must have run
   # on is always this deployment's own public domain, so it takes the same
-  # placeholder the WebAuthn relying party does. Set a surface's mode to off to
+  # placeholder the WebAuthn relying party does. The action the widget is
+  # rendered with is DEMO_TURNSTILE_ACTION, defaulting to login, and the answer
+  # the provider gives is checked against it. Set a surface's mode to off to
   # run no gate there; a deployment that only wants Turnstile can leave the
   # surface it does not use off.
   humanverify:
@@ -138,6 +140,7 @@ authn:
     site-key: "__TURNSTILE_SITE_KEY__"
     secret-key: "__TURNSTILE_SECRET_KEY__"
     hostname: "__PUBLIC_DOMAIN__"
+    action: "__TURNSTILE_ACTION__"
 
 # The mail carrier the registration flow sends verification codes through.
 # The image is built with the deploy tag, which adds mail.smtp and

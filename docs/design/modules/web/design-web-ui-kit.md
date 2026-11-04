@@ -96,7 +96,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `PhoneNumberField` | `country`、`nationalNumber`、国家/电话两个标签、帮助文本、`disabled`、`showValidationError`、自动填充标记、`preferredCountries`（置顶列出的国家码，按给定次序；缺省即原次序） | `onCountryChange`、`onNationalNumberChange`；帮助文本**平铺在整行之下**（国家/地区选择器与号码字段之下），不挂在号码字段的 helper 上；逐国家的校验错误仍出现在号码字段下方并替换帮助文本；两者都以 `aria-describedby` 关联到号码输入 |
 | `DataTable` | `rows`、`columns`、`rowKey`、`loading`、`sort`、`filter`（可选 `label`／`placeholder`）、选择、分页、空态文案、`rowVerticalAlign`（整行纵向对齐，缺省 MUI 的居中）、`pinLastColumn`（可选：钉住最后一列，仅在表格实际溢出容器时生效）、`ariaLabel`／`ariaLabelledBy`（替换命名空间默认的可及名） | `onSortChange`、`filter.onValueChange`、`onSelectionChange`、分页回调 |
 | `FileUploader` | `rows`、选取/取消/重试/移除回调、`multiple`、`accept`、`allowDrop`、`disabled`、标签 | `onSelectFiles`、`onCancel`、`onRetry`、`onRemove` |
-| `InlineError` | `code`、`resolve`（第二个入参是等待秒数）、`retryAfterSeconds`（拒绝声明的等待，整秒）、`detail`（渲染在同一横幅内的补充内容） | — |
+| `InlineError` | `code`、`resolve`（第二个入参是等待秒数）、`retryAfterSeconds`（拒绝声明的等待，整秒；可及句按它固定）、`liveRetryAfterSeconds`（宿主倒数时的剩余整秒；可见句随它变化，到零只去掉数字）、`detail`（渲染在同一横幅内的补充内容） | — |
 | `InlineSuccess` | `message`（`null` 时静默，仍挂载一个裁剪的 `role="status"` 区域；`severity` 恒为 success） | — |
 | `WriteFeedbackRegion` | `outcome`（`WriteOutcome` 或 `null`）、`resolve`（码到当前语言文本，第二个入参是拒绝声明的等待秒数）、`sx`（作用于区域根容器，在根容器的默认上边距之后应用） | — |
 | `ListSkeleton` | `label`、`rows` | — |
@@ -117,14 +117,19 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 ### 人机验证块
 
-`HumanVerification` 只渲染宿主交来的状态，不发请求、不持有会话、不求解。`scope` 选择本块服务的发送面；`gate` 是发现文档的整份门槛（`{phone, other}`），本面缺省、`required` 为假或 `provider` 为 `off` 时不渲染。`turnstile` 以显式渲染模式加载 Cloudflare 的控件脚本（每页一次），把控件交出的 token 经 `onToken` 上交，并在宿主消费证明、`proof` 清空后重置控件；脚本被拦截或加载失败时不渲染自造的文案，宿主因没有 token 而保持发送不可用。`pow` 显示求解中、已完成或失败，失败时经 `onRetry` 请求重试；求解本身与证明的寿命在 auth-core，本包不 import 它。`captcha` 渲染宿主交来的挑战：数字图片形式显示图片与答案输入框，滑块形式把背景与拼图放在原生 `range` 输入之后（方向键移动、`End` 到边缘，因此键盘可操作），音频形式以播放控件读出数字作为屏幕阅读器的替代，出现时接收焦点并以 `lang` 标出朗读所用的活动语言；三种形式共用一个刷新控件、一个把 `<挑战标识>.<答案>` 交出的提交与一个失败后重试。图片与滑块由服务端轮换，块不提供二者之间的选择；唯一指名的形式是无障碍入口 `onRequestAudio`，它在当前挑战不是音频时渲染，`audioRetryAfterSeconds` 给出被拒绝时声明的等待时该入口被按住并显示秒数，刷新控件不受影响；音频形式在服务端按来源单独计数、上界比轮换形式更严，这次拒绝只关住无障碍入口，不涉及在屏的视觉挑战。滑块背景随容器缩小时，拼图与偏移量按同一比例缩放，查看者对齐的位置仍映射回服务端比较的自然宽度偏移量。`disabled` 在宿主发送在途时置上，控件同时不接受指针事件。
+`HumanVerification` 只渲染宿主交来的状态，不发请求、不持有会话、不求解。`scope` 选择本块服务的发送面；`gate` 是发现文档的整份门槛（`{phone, other}`），本面缺省、`required` 为假或 `provider` 为 `off` 时不渲染。`turnstile` 以显式渲染模式加载 Cloudflare 的控件脚本（每页一次），控件以门槛在发现文档里给出的 `action` 渲染，把控件交出的 token 经 `onToken` 上交，并在宿主消费证明、`proof` 清空后重置控件；脚本被拦截或加载失败时不渲染自造的文案，宿主因没有 token 而保持发送不可用。`pow` 显示求解中、已完成或失败，失败时经 `onRetry` 请求重试；求解本身与证明的寿命在 auth-core，本包不 import 它。`captcha` 渲染宿主交来的挑战：数字图片形式显示图片与答案输入框，滑块形式把背景与拼图放在原生 `range` 输入之后（方向键移动、`End` 到边缘，因此键盘可操作），音频形式以播放控件读出数字作为屏幕阅读器的替代，出现时接收焦点并以 `lang` 标出朗读所用的活动语言；三种形式共用一个刷新控件与一个失败后重试；图片与音频经各自的答案控件交出 `<挑战标识>.<答案>`，滑块在松开或按 Enter 时把偏移量交出。图片与滑块由服务端轮换，块不提供二者之间的选择；唯一指名的形式是无障碍入口 `onRequestAudio`，它在当前挑战不是音频时渲染，`audioRetryAfterSeconds` 给出被拒绝时声明的等待时该入口被按住并显示秒数，刷新控件不受影响；音频形式在服务端按来源单独计数、上界比轮换形式更严，这次拒绝只关住无障碍入口，不涉及在屏的视觉挑战。滑块背景随容器缩小时，拼图与偏移量按同一比例缩放，查看者对齐的位置仍映射回服务端比较的自然宽度偏移量。`disabled` 在宿主发送在途时置上，控件同时不接受指针事件。
 
 ### 写入反馈
 
 ```ts
 export type WriteOutcome =
   | { readonly kind: 'success'; readonly message: string }
-  | { readonly kind: 'failure'; readonly code: string }
+  | {
+      readonly kind: 'failure'
+      readonly code: string
+      readonly retryAfterSeconds?: number   // 拒绝声明的等待，整秒
+      readonly waitUntil?: number           // 该等待的截止时刻（epoch 毫秒），落定时记录
+    }
 
 export interface WriteFeedback {
   readonly outcome: WriteOutcome | null          // 作用域的槽；null 即空
@@ -144,7 +149,7 @@ export interface WriteFeedbackRegionProps {
 export function WriteFeedbackRegion(props: WriteFeedbackRegionProps): JSX.Element
 ```
 
-`run` 是一次尝试的标准形态：先 `reset`，把在途计数加一（`pending` 为真），再等待 `attempt`；`attempt` 以字符串落定即以该串调用 `succeed`，以 `null` 落定则不碰槽位（提权门控接管的写，见「写入的反馈」；槽位在本次尝试自己的 `reset` 之后为空，之后由重叠的尝试或 `succeed`、`fail` 填入的结果照旧保留），抛出则调用 `fail`；最后把在途计数减一。`run` 自身从不抛出。`succeed`、`fail` 与 `reset` 供不能表达为单个 promise 的流程使用，例如登录的逐步答复。`useWriteFeedback` 不取数、不认识 react-query（[REF-tanstack-query](../../../references.md)），状态属于调用它的宿主组件，各回调在组件存续期内引用稳定。宿主可用 `WriteFeedbackPageProvider` 提供页面级协调：作用域挂载时向它登记自己的清除回调，任一作用域写入时由它清空同页其余作用域的槽（见「写入的反馈」的「单槽」）。一次失败的槽还带上该次拒绝声明的等待（`retryAfterSecondsOf` 从错误的 `retryAfterMs` 读整秒），随 `resolve` 的第二个入参交给包的解析器，由它在自己的文案里说出「多久之后再试」。`WriteFeedbackRegion` 把槽渲染为 `InlineSuccess`（成功文案，始终挂载）与 `InlineError`（失败码，失败时才挂载），自己没有文案：成功文案由宿主翻译，失败文本经 `resolve` 取自各包自己的命名空间。各包把 `resolve` 绑定进自己的 `internal/` 包装，与 `InlineError` 的包装一致，调用点只传槽。区域的根容器默认带一个间距单位的上边距，成功与失败两部分共用它，调用方的 `sx` 在其后应用；调用点不单独渲染 `InlineSuccess`。使用条款见「写入的反馈」。
+`run` 是一次尝试的标准形态：先 `reset`，把在途计数加一（`pending` 为真），再等待 `attempt`；`attempt` 以字符串落定即以该串调用 `succeed`，以 `null` 落定则不碰槽位（提权门控接管的写，见「写入的反馈」；槽位在本次尝试自己的 `reset` 之后为空，之后由重叠的尝试或 `succeed`、`fail` 填入的结果照旧保留），抛出则调用 `fail`；最后把在途计数减一。`run` 自身从不抛出。`succeed`、`fail` 与 `reset` 供不能表达为单个 promise 的流程使用，例如登录的逐步答复。`useWriteFeedback` 不取数、不认识 react-query（[REF-tanstack-query](../../../references.md)），状态属于调用它的宿主组件，各回调在组件存续期内引用稳定。宿主可用 `WriteFeedbackPageProvider` 提供页面级协调：作用域挂载时向它登记自己的清除回调，任一作用域写入时由它清空同页其余作用域的槽（见「写入的反馈」的「单槽」）。一次失败的槽还带上该次拒绝声明的等待：`retryAfterSecondsOf` 从错误的 `retryAfterMs` 读出整秒存入 `retryAfterSeconds`，并在落定时记下该等待的截止时刻 `waitUntil`（epoch 毫秒），使区域无需调用方持有任何时钟即可自己倒数剩余秒数；两者随 `resolve` 的第二个入参交给包的解析器，由它在自己的文案里说出「多久之后再试」。`WriteFeedbackRegion` 把槽渲染为 `InlineSuccess`（成功文案，始终挂载）与 `InlineError`（失败码，失败时才挂载），自己没有文案：成功文案由宿主翻译，失败文本经 `resolve` 取自各包自己的命名空间。各包把 `resolve` 绑定进自己的 `internal/` 包装，与 `InlineError` 的包装一致，调用点只传槽。区域的根容器默认带一个间距单位的上边距，成功与失败两部分共用它，调用方的 `sx` 在其后应用；调用点不单独渲染 `InlineSuccess`。使用条款见「写入的反馈」。
 
 ### 表单校验桥
 
@@ -404,6 +409,8 @@ admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 
 一次写入的结果落在一个**反馈作用域**里：作用域是一个 `useWriteFeedback` 实例加一个 `WriteFeedbackRegion`，区域紧贴发起写入的控件组之下。**一个结果位置只有一个槽**：共用同一个结果位置的写控件属于同一个控件组，也只有一个作用域，不按动作各开一个。**控件组**是共用同一个结果位置的一组写控件，通常是页面上一个带标题的节，含它的表单与表内行内动作；一张表及其行内动作是一组。这条说明是判据，各包按自己的页面应用它，具体划分在各包的设计文档里。下列条款绑定每一个以反馈作用域报告写入结果的界面，各 UI 包以自己的错误码解析器与文案使用它们（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。
 
 **单槽，后落定的结果替换前一条。** 作用域持有至多一个结果。`reset` 清空槽位，不取消在途的尝试；`succeed(message)` 与 `fail(error)` 各自替换槽位，后落定的结果因此替换先落定的那条，同一结果位置不会同时出现两条结果，成功与失败也不会同时出现在一个作用域里。**宿主挂了 `WriteFeedbackPageProvider` 时，同页至多一条结果**：任一作用域的 `run` 开始、`succeed` 或 `fail` 落定先清空同页其它作用域的槽，以最后落定者为准；`reset` 只清自己，取消或上下文变化不清掉别组的确认。provider 只做协调，不持有槽、不渲染界面；没有 provider 时各作用域的槽互不影响，库的独立使用保持单作用域语义。`pending` 在任一在途尝试落定之前为真。每次新的写尝试以 `reset` 开头，包括被客户端校验拒绝、没有发出请求的提交，使上一次的服务端失败不与本次的字段错误并存。上下文变化也调用 `reset`，判据是变化之后旧结果会被读成描述另一个上下文，例如租户或所选对象改变、翻页、操作者点击的刷新与离开该节；自动重读不是上下文变化，不调用 `reset`。结果不自动消失：本接口不设置计时器，槽里的结果保留到下一次尝试的 `reset` 或上下文变化，`WriteFeedbackRegion` 与 `useWriteFeedback` 都不加自动清除。`fail` 经 `errorCodeOf` 把任意抛出值折成码，文本由区域的 `resolve` 解析，不取 API 的 `message`。成功文案是调用 `succeed` 时刻的译文快照，不随之后的语言切换更新，语言切换也不是 `reset` 的触发；失败码经 `resolve` 随活动语言重新渲染。写入本身会切换语言的动作（偏好节的语言写入）在切换落定之后才调用 `succeed`，使确认文案取自新语言。
+
+**声明的等待只在可见句里倒数，可及句不动。** 失败横幅带拒绝声明的等待时，区域把该等待渲染为两句话：按声明等待解析出的句子留在可及树里但被裁剪出视野，读屏因此只在拒绝出现时播报这一次；可见的一句带 `aria-hidden`，随剩余整秒递减，由区域按落定时记下的截止时刻每秒重算，调用方不持有时钟。到零时可见句按无等待的文本解析，只去掉数字，结果本身仍在屏上。`InlineError` 的 `retryAfterSeconds` 是两句共同的起点，`liveRetryAfterSeconds` 是可见那句的当前值；只给前者时可见句不再递减。
 
 **写入在途时，改变其作用域上下文的控件禁用。** 在途尝试落定时照常替换槽位，不因 `reset` 被丢弃；改变某作用域上下文的控件（租户选择器、所选对象的选择器、翻页与刷新）因此在该作用域 `pending` 时禁用，使 `reset` 之后不会有先前上下文发起的尝试落定。
 

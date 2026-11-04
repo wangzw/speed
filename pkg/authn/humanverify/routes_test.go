@@ -54,7 +54,7 @@ func TestTheChallengeRouteAnswersTheDeclaredShape(t *testing.T) {
 	rig := newRig(t, body(t, sectionFor(ModePoW)))
 	verifier := rig.drive(t)
 
-	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, challengeFullPath, nil))
+	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, challengeFullPath+"?scope=other", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("the challenge route answered %d, want 200:\n%s", recorder.Code, recorder.Body)
 	}
@@ -71,8 +71,8 @@ func TestTheChallengeRouteAnswersTheDeclaredShape(t *testing.T) {
 	if answer.Challenge == "" {
 		t.Error("the answer carries no challenge")
 	}
-	if answer.Difficulty < 16 || answer.Difficulty > 22 {
-		t.Errorf("difficulty = %d, want a value in 16..22", answer.Difficulty)
+	if answer.Difficulty < 18 || answer.Difficulty > 22 {
+		t.Errorf("difficulty = %d, want a value in 18..22", answer.Difficulty)
 	}
 	if answer.ExpiresIn != 300 {
 		t.Errorf("expires_in = %d, want the default 300 seconds", answer.ExpiresIn)
@@ -87,6 +87,31 @@ func TestTheChallengeRouteAnswersTheDeclaredShape(t *testing.T) {
 	}
 }
 
+// TestTheChallengeRouteRefusesAMissingOrUnknownScope holds the required scope:
+// a request that names none, or names a surface the gate does not serve, is a
+// bad request.
+func TestTheChallengeRouteRefusesAMissingOrUnknownScope(t *testing.T) {
+	for _, target := range []string{challengeFullPath, challengeFullPath + "?scope=email"} {
+		t.Run(target, func(t *testing.T) {
+			rig := newRig(t, body(t, sectionFor(ModePoW)))
+			rig.drive(t)
+			recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, target, nil))
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("the challenge route answered %d, want 400:\n%s", recorder.Code, recorder.Body)
+			}
+			var problem struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
+				t.Fatalf("the answer is not JSON: %v\n%s", err, recorder.Body)
+			}
+			if problem.Type != "urn:speed:authn:bad-request" {
+				t.Errorf("the problem type is %q, want urn:speed:authn:bad-request", problem.Type)
+			}
+		})
+	}
+}
+
 // TestTheChallengeRouteAnswersUnavailableWhenTheStoreFails holds the outage
 // answer: a store that cannot count or store answers 503 and issues nothing.
 func TestTheChallengeRouteAnswersUnavailableWhenTheStoreFails(t *testing.T) {
@@ -94,7 +119,7 @@ func TestTheChallengeRouteAnswersUnavailableWhenTheStoreFails(t *testing.T) {
 	rig.drive(t)
 	rig.store.incErr = errStubKV
 
-	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, challengeFullPath, nil))
+	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, challengeFullPath+"?scope=other", nil))
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("a store fault answered %d, want 503:\n%s", recorder.Code, recorder.Body)
 	}
@@ -117,12 +142,12 @@ func TestTheChallengeRouteAnswersThrottledAtTheIssuanceCap(t *testing.T) {
 	rig.drive(t)
 
 	for i := 0; i < 10; i++ {
-		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, challengeFullPath, nil))
+		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, challengeFullPath+"?scope=other", nil))
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("request %d answered %d, want 200:\n%s", i+1, recorder.Code, recorder.Body)
 		}
 	}
-	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, challengeFullPath, nil))
+	recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, challengeFullPath+"?scope=other", nil))
 	if recorder.Code != http.StatusTooManyRequests {
 		t.Fatalf("the request past the cap answered %d, want 429:\n%s", recorder.Code, recorder.Body)
 	}

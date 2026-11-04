@@ -157,6 +157,19 @@ func TestTurnstileReportsItsSiteKey(t *testing.T) {
 	}
 }
 
+// The Turnstile provider reports the action its widget must be rendered with,
+// so a client cannot obtain a token under one action and present it for
+// another.
+func TestTurnstileReportsItsAction(t *testing.T) {
+	v := driveVerifier(t, body(t, turnstileSection()))
+	if got, want := v.Action(authn.HumanScopeOther), "login"; got != want {
+		t.Errorf("Action = %q, want %q", got, want)
+	}
+	if got := v.Action(authn.HumanScopePhone); got != "" {
+		t.Errorf("the phone surface's action is %q, want none: it runs the captcha", got)
+	}
+}
+
 // A deployment can run a different mechanism on each surface, and every answer
 // is the answer of the surface named.
 func TestEachSurfaceAnswersItsOwnMechanism(t *testing.T) {
@@ -191,6 +204,7 @@ func TestSiteKeyIsPerSurface(t *testing.T) {
 		siteKeyItem:   siteKey,
 		secretKeyItem: "turnstile-secret-2f7a91c4",
 		hostnameItem:  "login.example.com",
+		actionItem:    "login",
 	}))
 	if got := v.SiteKey(authn.HumanScopeOther); got != siteKey {
 		t.Errorf("the other surface's site key is %q, want %q", got, siteKey)
@@ -435,6 +449,31 @@ func TestPrepareRefusesAnUnknownModeNamingTheKey(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), ConfigNamespace+"."+modeItem) {
 		t.Errorf("the failure %q does not name %s.%s", err, ConfigNamespace, modeItem)
+	}
+}
+
+// The Turnstile mode needs the key-value store it claims spent tokens in: a
+// command that selects it on a surface and delivers no store fails at
+// construction, rather than starting a gate whose single-use property is only
+// the upstream service's promise.
+func TestTurnstileWithoutAKeyValueStoreFailsTheStartup(t *testing.T) {
+	section := turnstileSection()
+	section[phoneModeItem] = ModeOff
+	reader := configtest.Reader(t, body(t, section), Module())
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Register(Module())
+	reg.Supply(reader, config.ModuleName)
+
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageNew,
+		Participants: []string{ModuleName, config.ModuleName},
+	})
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("a Turnstile mode without a store resolved with %v, want ErrInvalidConfig", err)
+	}
+	if !strings.Contains(err.Error(), "key-value store") {
+		t.Errorf("the failure %q does not name the missing key-value store", err)
 	}
 }
 

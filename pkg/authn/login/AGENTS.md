@@ -172,10 +172,11 @@ does.
   re-adding the account's own address after its code comes back succeeds rather
   than conflicting.
 - **A verification-message send presents the deployment's human-verification
-  proof first.** `authn.HumanVerifier` is optional in `Requires` and resolved in
-  `Init`; an assembly without one, or with the off mechanism, sends without
-  asking for a proof. When the gate requires one, the engine checks a non-empty
-  `human_proof` before every send and before any send budget is spent: a start
+  proof first.** `authn.HumanVerifier` is a required dependency, resolved in
+  `New`: an assembly that names this module carries one, and only a gate with the
+  off mechanism sends without asking for a proof. When the gate requires one,
+  the engine checks a non-empty `human_proof` before every send and before any
+  send budget is spent: a start
   whose method descriptor declares a phone field and whose submission supplies
   it, the authenticated start for the same case, a first-factor answer that
   carries it, the SMS second-factor challenge (the kind read from the offered
@@ -188,7 +189,7 @@ does.
   and 503 for a provider or store that cannot answer; none of the three sends.
   Registration is not gated, because it sends nothing. The discovery document
   reports the gate as `human` with `required`, `provider` and, for a mechanism
-  that needs one, `site_key`; no seam and the off mechanism both read
+  that needs one, `site_key` and `action`; the off mechanism reads
   `provider: "off"`.
 - **Removing a login identifier is refused when it would strand a password
   account.** `DELETE /auth/identifiers/:id` maps the account module's

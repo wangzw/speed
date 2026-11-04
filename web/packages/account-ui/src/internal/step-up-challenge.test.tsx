@@ -814,18 +814,28 @@ describe('StepUpChallenge', () => {
       const user = userEvent.setup()
 
       await screen.findByRole('button', { name: zhCN.mfa.factor.kind.sms })
-      // The block renders above the SMS factor choice; its widget yields a
-      // single-use token.
-      await waitFor(() => expect(fake.widgets).toHaveLength(1))
-      expect(fake.widgets[0]?.siteKey).toBe('site-1')
-      act(() => {
-        fake.token('token-1')
-      })
+      // The factor step shows no challenge before the answer is asked for.
+      expect(fake.widgets).toHaveLength(0)
 
       await user.click(
         screen.getByRole('button', { name: zhCN.mfa.factor.kind.sms }),
       )
 
+      // The answer waits on the proof: the block renders above the step and
+      // the step's own action gives way until the widget yields a
+      // single-use token.
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(fake.widgets[0]?.siteKey).toBe('site-1')
+      expect(
+        rig.calls.filter(
+          (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
+        ),
+      ).toHaveLength(0)
+      act(() => {
+        fake.token('token-1')
+      })
+
+      // The proof arrives and the answer leaves by itself.
       await waitFor(() => {
         const body = rig.calls.find(
           (call) => call.method === 'POST' && call.path === FLOW_ANSWER,

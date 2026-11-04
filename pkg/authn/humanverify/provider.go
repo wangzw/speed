@@ -12,9 +12,10 @@ import (
 )
 
 // deps is what the mechanism constructors need. The off gate needs nothing; the
-// self-hosted mechanisms need the store their challenges live in, and the
-// proof-of-work provider also reads its parameters from settings. A mode that
-// does not use a part leaves it nil.
+// self-hosted mechanisms need the store their challenges live in, Turnstile
+// needs the store it records spent tokens in, and the self-hosted mechanisms
+// read their parameters from settings when a store answers. A mode that does
+// not use a part leaves it nil.
 type deps struct {
 	store    kv.KV
 	settings pow.SettingReader
@@ -69,6 +70,9 @@ func (g *gate) Provider(scope authn.HumanScope) string { return g.forScope(scope
 // SiteKey reports the surface's public widget key.
 func (g *gate) SiteKey(scope authn.HumanScope) string { return g.forScope(scope).SiteKey(scope) }
 
+// Action reports the action the surface's widget must be rendered with.
+func (g *gate) Action(scope authn.HumanScope) string { return g.forScope(scope).Action(scope) }
+
 // Verify checks a proof against the surface's mechanism.
 func (g *gate) Verify(ctx context.Context, proof authn.HumanProof, scope authn.HumanScope) error {
 	return g.forScope(scope).Verify(ctx, proof, scope)
@@ -99,7 +103,7 @@ func newProvider(cfg resolved, d deps) (*gate, error) {
 			return powProvider, nil
 		case ModeCaptcha:
 			if captchaProvider == nil {
-				provider, err := captcha.New(d.store)
+				provider, err := captcha.New(d.store, d.settings)
 				if err != nil {
 					return nil, fmt.Errorf("%w: %s: %w", authn.ErrInvalidConfig, ModuleName, err)
 				}
@@ -114,6 +118,7 @@ func newProvider(cfg resolved, d deps) (*gate, error) {
 				Hostname:  s.hostname,
 				Action:    s.action,
 				Timeout:   s.timeout,
+				Store:     d.store,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("%w: %s: %w", authn.ErrInvalidConfig, ModuleName, err)
@@ -153,6 +158,9 @@ func (offVerifier) Provider(authn.HumanScope) string { return ModeOff }
 
 // SiteKey is empty: an off gate has no widget to key.
 func (offVerifier) SiteKey(authn.HumanScope) string { return "" }
+
+// Action is empty: an off gate has no widget to render.
+func (offVerifier) Action(authn.HumanScope) string { return "" }
 
 // Verify accepts any proof. The check is not skipped as a failure; off means
 // there is nothing to check.

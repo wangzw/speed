@@ -30,7 +30,7 @@ func TestIssueRotatesBetweenTheImageAndSliderForms(t *testing.T) {
 	seen := map[Form]int{}
 	for i := 0; i < rotationRounds; i++ {
 		clearIssuance(t, s)
-		issued, err := p.Issue(t.Context(), IssueOptions{RemoteIP: source})
+		issued, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, RemoteIP: source})
 		if err != nil {
 			t.Fatalf("Issue %d: %v", i+1, err)
 		}
@@ -55,7 +55,7 @@ func TestARequestedImageOrSliderFormDoesNotPinTheChallenge(t *testing.T) {
 			seen := map[Form]int{}
 			for i := 0; i < rotationRounds; i++ {
 				clearIssuance(t, s)
-				issued, err := p.Issue(t.Context(), IssueOptions{Form: requested, RemoteIP: source})
+				issued, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: requested, RemoteIP: source})
 				if err != nil {
 					t.Fatalf("Issue %d: %v", i+1, err)
 				}
@@ -91,7 +91,7 @@ func TestAnAudioRequestReturnsTheAudioForm(t *testing.T) {
 		}
 	}
 	// The language item still governs the audio form.
-	if _, err := p.Issue(t.Context(), IssueOptions{Form: FormAudio, Lang: "klingon", RemoteIP: "203.0.113.8"}); !errors.Is(err, ErrUnknownAudioLanguage) {
+	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormAudio, Lang: "klingon", RemoteIP: "203.0.113.8"}); !errors.Is(err, ErrUnknownAudioLanguage) {
 		t.Errorf("an unsupported audio language resolved with %v, want ErrUnknownAudioLanguage", err)
 	}
 }
@@ -101,24 +101,24 @@ func TestAnAudioRequestReturnsTheAudioForm(t *testing.T) {
 // issuance counter is spent.
 func TestARotationFailureIssuesNothing(t *testing.T) {
 	s := newStore()
-	p, err := newProviderWithRotation(s, func() (Form, error) {
+	p, err := newProviderWithRotation(s, nil, func() (Form, error) {
 		return "", errors.New("the random source is unavailable")
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	for i := 0; i < issueLimit; i++ {
-		if _, issueErr := p.Issue(t.Context(), IssueOptions{RemoteIP: source}); !errors.Is(issueErr, authn.ErrUnavailable) {
+		if _, issueErr := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, RemoteIP: source}); !errors.Is(issueErr, authn.ErrUnavailable) {
 			t.Fatalf("Issue %d resolved with %v, want ErrUnavailable", i+1, issueErr)
 		}
 	}
 	// The cap was never spent, so a provider with a working rotation still has
 	// the source's full allowance.
-	working, err := newProviderWithRotation(s, func() (Form, error) { return FormImage, nil })
+	working, err := newProviderWithRotation(s, nil, func() (Form, error) { return FormImage, nil })
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if _, err := working.Issue(t.Context(), IssueOptions{RemoteIP: source}); err != nil {
+	if _, err := working.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, RemoteIP: source}); err != nil {
 		t.Fatalf("a failed rotation spent the source's issuance allowance: %v", err)
 	}
 }
@@ -129,11 +129,11 @@ func TestARotationFailureIssuesNothing(t *testing.T) {
 func TestTheRotationCannotWidenTheDrawnForms(t *testing.T) {
 	for _, form := range []Form{FormAudio, Form("puzzle"), ""} {
 		t.Run(string(form), func(t *testing.T) {
-			p, err := newProviderWithRotation(newStore(), func() (Form, error) { return form, nil })
+			p, err := newProviderWithRotation(newStore(), nil, func() (Form, error) { return form, nil })
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
-			if _, err := p.Issue(t.Context(), IssueOptions{RemoteIP: source}); !errors.Is(err, authn.ErrUnavailable) {
+			if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, RemoteIP: source}); !errors.Is(err, authn.ErrUnavailable) {
 				t.Fatalf("a rotation returning %q resolved with %v, want ErrUnavailable", form, err)
 			}
 		})
@@ -142,7 +142,7 @@ func TestTheRotationCannotWidenTheDrawnForms(t *testing.T) {
 
 // TestNewRequiresARotation holds the constructor's other precondition.
 func TestNewRequiresARotation(t *testing.T) {
-	if _, err := newProviderWithRotation(newStore(), nil); err == nil {
+	if _, err := newProviderWithRotation(newStore(), nil, nil); err == nil {
 		t.Fatal("newProviderWithRotation accepted no rotation")
 	}
 }
@@ -153,7 +153,7 @@ func drawRotated(t *testing.T, p *Provider, s *store, form Form) Challenge {
 	const attempts = 256
 	for i := 0; i < attempts; i++ {
 		clearIssuance(t, s)
-		issued, err := p.Issue(t.Context(), IssueOptions{RemoteIP: source})
+		issued, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, RemoteIP: source})
 		if err != nil {
 			t.Fatalf("Issue %d: %v", i+1, err)
 		}

@@ -10,9 +10,13 @@
  *    parked step through the shared step renderer. The two known form
  *    methods (password, sms) keep their bespoke components; everything
  *    else a deployment adds is driven by its descriptor. A deployment that
- *    requires a human-verification proof renders its control on that first
- *    step, because the start may send a verification message, and the
- *    start presents the proof the control holds.
+ *    requires a human-verification proof renders its control only once the
+ *    viewer asks to start and the gate turns out to want one: the start is
+ *    held until the proof arrives, the submit control gives way to the
+ *    block meanwhile, and editing a field abandons the wait. The start
+ *    presents the proof the control holds. Once the held start leaves, the
+ *    submit is back on screen and stays disabled while that request is in
+ *    flight, so it cannot begin a second flow.
  *  - `EnterpriseSignIn` is an `enterprise` method's email-first entry: the
  *    viewer gives an email, the session discovers the identity providers
  *    its domain maps to (`session.discoverSso`), and picking one starts
@@ -26,7 +30,7 @@
  * comes from the discovery document, not the bundle (see ./labels).
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -58,6 +62,7 @@ import {
   useChannelFeedback,
 } from './write-feedback.js'
 import { HumanGatedFlowStep } from './flow-step.js'
+import { retryWaitMs } from './retry-wait.js'
 import { stepKey, useStepFocus } from './step-focus.js'
 import { useFlowDriver } from './use-flow-driver.js'
 import { isOpenFlow } from './flow.js'
@@ -116,10 +121,18 @@ export function DescriptorSignInForm({
   }
   const form = useForm<Record<string, string>>({ defaultValues: defaults })
   const feedback = useChannelFeedback()
+  // The values a start the viewer asked for is waiting on, because the gate
+  // wants a proof this client does not hold yet. The gate is read and the
+  // proof obtained only while this is set, so entering the form shows no
+  // challenge. Once the proof arrives the start the viewer already asked
+  // for leaves by itself.
+  const [pendingStart, setPendingStart] = useState<
+    Record<string, string> | null
+  >(null)
 
   const driver = useFlowDriver(session, {
     beforeStart,
-    onFailure: (code) => feedback.fail(code),
+    onFailure: (code, error) => feedback.fail(code, retryWaitMs(error)),
     onSettled: () => {
       try {
         onSignedIn?.()
@@ -131,30 +144,36 @@ export function DescriptorSignInForm({
   })
 
   // The deployment's gate and the proof this form's first step presents.
-  // The hook is active only while that step renders: a parked step's proof
-  // belongs to the shared step renderer below, which reads its own.
-  // The first step's surface follows the descriptor: a method whose first
-  // step asks for a phone number sends SMS, so it must satisfy the phone
-  // surface's mechanism; anything else runs the other surface's. A host
-  // that knows better names the surface itself.
+  // The hook stays inactive until the viewer asks to start and the gate
+  // turns out to want a proof, so entering the form reads and solves
+  // nothing; a parked step's proof belongs to the shared step renderer
+  // below, which reads its own. The first step's surface follows the
+  // descriptor: a method whose first step asks for a phone number sends
+  // SMS, so it must satisfy the phone surface's mechanism; anything else
+  // runs the other surface's. A host that knows better names the surface
+  // itself.
   const sendScope: HumanScope =
     humanScope ??
     (fields.some((field) => field.kind === 'phone') ? 'phone' : 'other')
   const human = useHumanVerification(session, {
     scope: sendScope,
     ...(humanGate === undefined ? {} : { gate: humanGate }),
-    enabled: driver.step === null,
+    enabled: pendingStart !== null,
   })
-  const needsProof = humanGateNeedsProof(human.gate, sendScope)
+  // The gate the host handed in is known before the hook reads anything; a
+  // standalone form learns it through the hook once a start asks for one.
+  const gateDocument = humanGate ?? human.gate
+  const needsProof = humanGateNeedsProof(gateDocument, sendScope)
   const proofBlocked = needsProof && human.proof === null
 
-  const onSubmit: SubmitHandler<Record<string, string>> = async (values) => {
-    // A required proof that is not ready yet keeps the start from leaving:
-    // the block on this step is already showing why.
+  /** Start the flow with the values the viewer submitted. The proof rides
+   * along when the gate wants one, and is consumed for the next attempt. */
+  const start = async (values: Record<string, string>): Promise<void> => {
+    // Last line of defence: a required proof that is not ready yet keeps
+    // the start from leaving, whatever path reached this.
     if (proofBlocked) {
       return
     }
-    feedback.reset()
     // The proof is single-use: the start spends it, so the control obtains
     // a fresh one for the next attempt.
     const presented = needsProof ? human.proof : null
@@ -167,6 +186,58 @@ export function DescriptorSignInForm({
     if (presented !== null) {
       human.consume()
     }
+  }
+
+  const startRef = useRef(start)
+  startRef.current = start
+
+  /**
+   * Ask to start: run now when the gate is known to want no proof (or one
+   * is in hand), otherwise hold the values and let the block obtain the
+   * proof; the effect below starts when it arrives. A start is asked for
+   * only once: while one is held or already in flight, another ask is
+   * ignored.
+   */
+  const askToStart = async (
+    values: Record<string, string>,
+  ): Promise<void> => {
+    if (driver.busy || pendingStart !== null) {
+      // The start is already in flight, or waiting on its proof: asking
+      // again changes nothing and must not begin a second flow.
+      return
+    }
+    // The attempt begins here, whichever path it takes: the previous
+    // refusal must not stand beside the verification the new one renders.
+    feedback.reset()
+    if (
+      !human.pending &&
+      gateDocument !== null &&
+      (!needsProof || human.proof !== null)
+    ) {
+      await start(values)
+      return
+    }
+    setPendingStart(values)
+  }
+
+  // A start asked for while the gate held it leaves as soon as the gate is
+  // known and the proof it wants is in hand: the viewer's one request is
+  // not turned into a click followed by a second one. A gate still being
+  // read keeps the start waiting; a gate that wants nothing starts at once.
+  useEffect(() => {
+    if (pendingStart === null || human.pending || gateDocument === null) {
+      return
+    }
+    if (needsProof && human.proof === null) {
+      return
+    }
+    const values = pendingStart
+    setPendingStart(null)
+    void startRef.current(values)
+  }, [pendingStart, human.pending, gateDocument, needsProof, human.proof])
+
+  const onSubmit: SubmitHandler<Record<string, string>> = async (values) => {
+    await askToStart(values)
   }
 
   // The descriptor's own fields and a parked step are two surfaces of
@@ -183,6 +254,7 @@ export function DescriptorSignInForm({
           humanGate={humanGate}
           step={driver.step}
           busy={driver.busy}
+          onAttemptStart={() => feedback.reset()}
           onAnswer={(input, proof) => {
             feedback.reset()
             void driver.answer(input, proof)
@@ -207,13 +279,15 @@ export function DescriptorSignInForm({
       form={form}
       onSubmit={onSubmit}
       actions={
-        <ActionButton
-          type="submit"
-          emphasis="primary"
-          disabled={form.formState.isSubmitting || proofBlocked}
-        >
-          {t('signInFlow.submit')}
-        </ActionButton>
+        pendingStart === null ? (
+          <ActionButton
+            type="submit"
+            emphasis="primary"
+            disabled={form.formState.isSubmitting || driver.busy}
+          >
+            {t('signInFlow.submit')}
+          </ActionButton>
+        ) : undefined
       }
     >
       {fields.map((field) => (
@@ -224,6 +298,13 @@ export function DescriptorSignInForm({
           render={({ field: bound, invalid, errorText }) => (
             <TextField
               {...bound}
+              onChange={(event) => {
+                bound.onChange(event)
+                // Editing a field abandons a start held for its proof: the
+                // values the wait would send no longer describe what the
+                // viewer typed.
+                setPendingStart(null)
+              }}
               label={fieldLabel(field, t)}
               type={
                 field.kind === 'password' || field.secret === true
@@ -239,10 +320,10 @@ export function DescriptorSignInForm({
           )}
         />
       ))}
-      {needsProof ? (
+      {pendingStart !== null ? (
         <HumanVerification
           scope={sendScope}
-          gate={human.gate ?? undefined}
+          gate={human.gate ?? humanGate}
           proof={human.proof}
           status={human.status}
           captcha={human.captcha}
@@ -301,7 +382,8 @@ export function EnterpriseSignIn({
     try {
       setProviders(await session.discoverSso(email))
     } catch (error) {
-      feedback.fail(errorCodeOf(error))
+      // A throttled discovery states its wait; the banner names it.
+      feedback.fail(errorCodeOf(error), retryWaitMs(error))
     } finally {
       setBusy(false)
     }
@@ -321,6 +403,7 @@ export function EnterpriseSignIn({
     feedback.reset()
     let authorizeUrl: string | null = null
     let failure: string | null = null
+    let wait: number | undefined
     try {
       const request = {
         method: provider.protocol,
@@ -336,11 +419,14 @@ export function EnterpriseSignIn({
       }
     } catch (error) {
       failure = errorCodeOf(error)
+      // The wait a throttled start stated rides with its code, so the
+      // banner names how long the viewer has to wait.
+      wait = retryWaitMs(error)
     } finally {
       setBusy(false)
     }
     if (failure !== null) {
-      feedback.fail(failure)
+      feedback.fail(failure, wait)
       return
     }
     if (authorizeUrl !== null) {
@@ -476,7 +562,7 @@ export function PasskeySignIn({
 
   const driver = useFlowDriver(session, {
     beforeStart,
-    onFailure: (code) => {
+    onFailure: (code, error) => {
       // The server answers every refused assertion with the uniform
       // login_failed code. Its sentence names credentials this channel never
       // asked for, so this channel words that code itself; the wire stays
@@ -485,7 +571,7 @@ export function PasskeySignIn({
         feedback.failLocal('signInFlow.passkeyRefused')
         return
       }
-      feedback.fail(code)
+      feedback.fail(code, retryWaitMs(error))
     },
     onSettled: () => {
       try {
@@ -533,6 +619,7 @@ export function PasskeySignIn({
           humanGate={humanGate}
           step={driver.step}
           busy={driver.busy}
+          onAttemptStart={() => feedback.reset()}
           onAnswer={(input, proof) => {
             feedback.reset()
             void driver.answer(input, proof)

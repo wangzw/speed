@@ -48,14 +48,36 @@ import { useWriteFeedbackPageCoordination } from './write-feedback-page.js'
 
 /** One slot's worth of feedback: a success message or a failure code. A
  * failure carries the wait a throttled answer stated, when it stated one,
- * so the sentence the slot renders can name how long to wait. */
+ * so the sentence the slot renders can name how long to wait. The wait's
+ * deadline (epoch milliseconds) is recorded when the outcome settles, so
+ * the region can count the remaining seconds down without every caller
+ * holding clock state of its own. */
 export type WriteOutcome =
   | { readonly kind: 'success'; readonly message: string }
   | {
       readonly kind: 'failure'
       readonly code: string
       readonly retryAfterSeconds?: number
+      readonly waitUntil?: number
     }
+
+/**
+ * The failure outcome for a settled attempt: its code, and -- when the
+ * answer stated a wait -- both the wait in whole seconds and the instant
+ * it ends, read from the clock when the attempt settles.
+ */
+function failureOutcome(error: unknown): WriteOutcome {
+  const retryAfterSeconds = retryAfterSecondsOf(error)
+  if (retryAfterSeconds === undefined) {
+    return { kind: 'failure', code: errorCodeOf(error) }
+  }
+  return {
+    kind: 'failure',
+    code: errorCodeOf(error),
+    retryAfterSeconds,
+    waitUntil: Date.now() + retryAfterSeconds * 1000,
+  }
+}
 
 /** The write-feedback scope: the slot, its in-flight count and its setters. */
 export interface WriteFeedback {
@@ -130,11 +152,7 @@ export function useWriteFeedback(): WriteFeedback {
   const fail = useCallback(
     (error: unknown) => {
       clearSiblings()
-      setOutcome({
-        kind: 'failure',
-        code: errorCodeOf(error),
-        retryAfterSeconds: retryAfterSecondsOf(error),
-      })
+      setOutcome(failureOutcome(error))
     },
     [clearSiblings],
   )
@@ -152,11 +170,7 @@ export function useWriteFeedback(): WriteFeedback {
         }
       } catch (error) {
         clearSiblings()
-        setOutcome({
-          kind: 'failure',
-          code: errorCodeOf(error),
-          retryAfterSeconds: retryAfterSecondsOf(error),
-        })
+        setOutcome(failureOutcome(error))
       } finally {
         setInFlight((count) => count - 1)
       }

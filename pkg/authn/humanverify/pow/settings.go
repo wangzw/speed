@@ -9,14 +9,16 @@ import (
 // settingsOptions is the carrier struct the settings module reads the declared
 // defaults off. It never receives a value.
 type settingsOptions struct {
-	Difficulty   int           `config:"difficulty"`
-	ChallengeTTL time.Duration `config:"challenge-ttl"`
+	Difficulty       int           `config:"difficulty"`
+	ChallengeTTL     time.Duration `config:"challenge-ttl"`
+	GlobalIssueLimit int           `config:"global-issue-limit"`
 }
 
 // settingDefaults is what each item reads as when no settings store answers.
 var settingDefaults = settingsOptions{
-	Difficulty:   DefaultDifficulty,
-	ChallengeTTL: DefaultChallengeTTL,
+	Difficulty:       DefaultDifficulty,
+	ChallengeTTL:     DefaultChallengeTTL,
+	GlobalIssueLimit: DefaultGlobalIssueLimit,
 }
 
 // difficultyInDomain and challengeTTLInDomain are the declared ranges. A read
@@ -30,6 +32,10 @@ func challengeTTLInDomain(value time.Duration) bool {
 	return value >= ChallengeTTLMin && value <= ChallengeTTLMax
 }
 
+func globalIssueLimitInDomain(value int) bool {
+	return value >= GlobalIssueLimitMin && value <= GlobalIssueLimitMax
+}
+
 // Schema declares the items this provider reads, under the module's own
 // subsection of the authentication namespace.
 func Schema() settings.Schema {
@@ -40,12 +46,18 @@ func Schema() settings.Schema {
 			DifficultyKey: {
 				Description: "the number of leading zero bits a proof-of-work hash must carry; " +
 					"higher values take exponentially more work",
-				Domain: settings.DomainOf("integers from 16 to 22", difficultyInDomain),
+				Domain: settings.DomainOf("integers from 18 to 22", difficultyInDomain),
 			},
 			ChallengeTTLKey: {
 				Description: "how long an issued proof-of-work challenge stays valid, which bounds the " +
 					"time a client has to solve it",
 				Domain: settings.DomainOf("durations from 1m to 15m", challengeTTLInDomain),
+			},
+			GlobalIssueLimitKey: {
+				Description: "how many proof-of-work challenges all sources together may be issued in " +
+					"one one-minute window; a set of source addresses cannot multiply the total work " +
+					"past this bound",
+				Domain: settings.DomainOf("integers from 1 to 1000000", globalIssueLimitInDomain),
 			},
 		},
 	}
@@ -54,8 +66,9 @@ func Schema() settings.Schema {
 // The full key paths, as the settings store names them: the namespace the
 // schema declares joined to the item's own key.
 const (
-	difficultyPath   = Namespace + "." + DifficultyKey
-	challengeTTLPath = Namespace + "." + ChallengeTTLKey
+	difficultyPath       = Namespace + "." + DifficultyKey
+	challengeTTLPath     = Namespace + "." + ChallengeTTLKey
+	globalIssueLimitPath = Namespace + "." + GlobalIssueLimitKey
 )
 
 // difficulty is the configured difficulty, or the declared default.
@@ -84,6 +97,22 @@ func (p *Provider) challengeTTL() time.Duration {
 	}
 	if !challengeTTLInDomain(value) {
 		return settingDefaults.ChallengeTTL
+	}
+	return value
+}
+
+// globalIssueLimit is the configured whole-deployment bound, or the declared
+// default.
+func (p *Provider) globalIssueLimit() int {
+	if p.settings == nil {
+		return settingDefaults.GlobalIssueLimit
+	}
+	var value int
+	if err := p.settings.Get(settings.Global(), globalIssueLimitPath, &value); err != nil {
+		return settingDefaults.GlobalIssueLimit
+	}
+	if !globalIssueLimitInDomain(value) {
+		return settingDefaults.GlobalIssueLimit
 	}
 	return value
 }

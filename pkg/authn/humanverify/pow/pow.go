@@ -6,6 +6,11 @@
 // the hash from the challenge and the nonce, and spends the challenge in the
 // key-value store in the same step, so a proof accepted once is refused when it
 // is presented again.
+//
+// Issuance is bounded twice over a one-minute fixed window: a per-source counter
+// stops one address from filling the store, and a global counter stops a set of
+// addresses from multiplying the total work. Both bounds answer
+// [ErrIssuanceLimited].
 package pow
 
 import (
@@ -14,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/bits"
@@ -43,13 +49,23 @@ const (
 	DifficultyKey = "difficulty"
 	// ChallengeTTLKey is how long an issued challenge stays valid.
 	ChallengeTTLKey = "challenge-ttl"
+	// GlobalIssueLimitKey is how many challenges all sources together may be
+	// issued in one issuance window.
+	GlobalIssueLimitKey = "global-issue-limit"
 
-	DefaultDifficulty   = 18
-	DifficultyMin       = 16
+	DefaultDifficulty   = 20
+	DifficultyMin       = 18
 	DifficultyMax       = 22
 	DefaultChallengeTTL = 5 * time.Minute
 	ChallengeTTLMin     = time.Minute
 	ChallengeTTLMax     = 15 * time.Minute
+	// DefaultGlobalIssueLimit is the whole-deployment bound: sixty distinct
+	// sources each at the per-source bound of ten in one window. It is a small
+	// deployment's ordinary traffic and far below the work a set of source
+	// addresses could otherwise amplify it to.
+	DefaultGlobalIssueLimit = 600
+	GlobalIssueLimitMin     = 1
+	GlobalIssueLimitMax     = 1000000
 )
 
 // Storage constants.
@@ -78,10 +94,44 @@ const issueWindow = time.Minute
 // any work is checked.
 var spentMarker = []byte("spent")
 
-// ErrIssuanceLimited reports that one source has asked for as many challenges as
-// it may hold in the current window. It is not an outage: retrying later works,
-// and the answer is a 429.
-var ErrIssuanceLimited = errors.New("pow: too many challenges were issued to this source")
+// ErrIssuanceLimited reports that the per-source bound or the whole-deployment
+// bound of the current window has been reached. It is not an outage: retrying
+// later works, and the answer is a 429.
+var ErrIssuanceLimited = errors.New("pow: too many challenges were issued in this window")
+
+// ErrUnknownScope reports a surface that is not one of the two the gate
+// serves.
+var ErrUnknownScope = errors.New("pow: unknown human scope")
+
+// IssueOptions is what a caller asks a challenge with.
+type IssueOptions struct {
+	// Scope is the surface the challenge is issued for. A proof is bound to
+	// it: presenting it on the other surface is refused.
+	Scope authn.HumanScope
+	// RemoteIP is the source the issuance counter is spent for. It is hashed
+	// before it reaches the store, because the key is a value the store and
+	// its diagnostics may carry.
+	RemoteIP string
+}
+
+// record is what a challenge key holds: the surface the challenge was issued
+// for and the difficulty its proof must reach. The spent marker is not a
+// record, so a second presentation is refused before any work is checked.
+type record struct {
+	Scope      authn.HumanScope `json:"scope"`
+	Difficulty int              `json:"difficulty"`
+}
+
+// validScope reports whether scope is one of the two surfaces a challenge may
+// be issued for.
+func validScope(scope authn.HumanScope) bool {
+	switch scope {
+	case authn.HumanScopePhone, authn.HumanScopeOther:
+		return true
+	default:
+		return false
+	}
+}
 
 // Challenge is what Issue answers: the random challenge a client solves, the
 // difficulty its proof must reach, and how long it stays valid.
@@ -125,12 +175,21 @@ func (p *Provider) Provider(authn.HumanScope) string { return ProviderName }
 // key.
 func (p *Provider) SiteKey(authn.HumanScope) string { return "" }
 
-// Issue returns a fresh challenge. The source's issuance counter is spent
-// first, so an address that has asked for as many challenges as the window
-// allows is refused before any random value is drawn or stored, and an
-// anonymous caller cannot fill the store.
-func (p *Provider) Issue(ctx context.Context, remoteIP string) (Challenge, error) {
-	if err := p.countIssue(ctx, remoteIP); err != nil {
+// Action is empty for every scope: a self-hosted proof of work renders no
+// widget.
+func (p *Provider) Action(authn.HumanScope) string { return "" }
+
+// Issue returns a fresh challenge for one surface. The source's issuance
+// counter is spent first, so an address that has asked for as many challenges
+// as the window allows is refused before any random value is drawn or stored,
+// and an anonymous caller cannot fill the store. The scope is stored with the
+// challenge, so a proof issued for one surface cannot be presented on the
+// other.
+func (p *Provider) Issue(ctx context.Context, opts IssueOptions) (Challenge, error) {
+	if !validScope(opts.Scope) {
+		return Challenge{}, fmt.Errorf("%w: %q", ErrUnknownScope, opts.Scope)
+	}
+	if err := p.countIssue(ctx, opts.RemoteIP); err != nil {
 		return Challenge{}, err
 	}
 	raw := make([]byte, challengeBytes)
@@ -140,19 +199,26 @@ func (p *Provider) Issue(ctx context.Context, remoteIP string) (Challenge, error
 	challenge := base64.RawURLEncoding.EncodeToString(raw)
 	difficulty := p.difficulty()
 	ttl := p.challengeTTL()
-	if err := p.store.Set(ctx, challengeKey(challenge), []byte(strconv.Itoa(difficulty)), ttl); err != nil {
+	stored, err := json.Marshal(record{Scope: opts.Scope, Difficulty: difficulty})
+	if err != nil {
+		return Challenge{}, fmt.Errorf("%w: encoding the challenge: %w", authn.ErrUnavailable, err)
+	}
+	if err := p.store.Set(ctx, challengeKey(challenge), stored, ttl); err != nil {
 		return Challenge{}, fmt.Errorf("%w: storing the challenge: %w", authn.ErrUnavailable, err)
 	}
 	return Challenge{Challenge: challenge, Difficulty: difficulty, ExpiresIn: ttl}, nil
 }
 
-// Verify checks a proof and spends the challenge it names. The challenge's
-// stored difficulty is the threshold, so the parameters a deployment was
-// running when the challenge was issued decide what the proof has to reach.
-// The challenge is spent with a compare-and-swap that requires the value that
-// was just read, which is what makes two concurrent presentations of one proof
-// unable to both pass.
-func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, _ authn.HumanScope) error {
+// Verify checks a proof and spends the challenge it names. The scope has to be
+// the one the challenge was issued for: a proof fetched for one surface is
+// refused on the other, and that refusal consumes nothing, so the client can
+// still present it on the surface it was issued for. The challenge's stored
+// difficulty is the threshold, so the parameters a deployment was running when
+// the challenge was issued decide what the proof has to reach. The challenge is
+// spent with a compare-and-swap that requires the value that was just read,
+// which is what makes two concurrent presentations of one proof unable to both
+// pass.
+func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, scope authn.HumanScope) error {
 	if proof.Token == "" {
 		return fmt.Errorf("%w: no proof was presented", authn.ErrHumanVerificationRequired)
 	}
@@ -171,13 +237,18 @@ func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, _ authn.H
 	if !present {
 		return fmt.Errorf("%w: the challenge is missing or expired", authn.ErrHumanVerificationRequired)
 	}
-	difficulty, err := strconv.Atoi(string(stored))
-	if err != nil || !difficultyInDomain(difficulty) {
-		// A spent marker lands here too: it is not a difficulty, so the
-		// challenge reads as one that cannot be checked again.
-		return fmt.Errorf("%w: the challenge does not carry a usable difficulty", authn.ErrHumanVerificationRequired)
+	var rec record
+	if decodeErr := json.Unmarshal(stored, &rec); decodeErr != nil || !validScope(rec.Scope) || !difficultyInDomain(rec.Difficulty) {
+		// A spent marker lands here too: it is not a record, so the challenge
+		// reads as one that cannot be checked again.
+		return fmt.Errorf("%w: the challenge does not carry a usable record", authn.ErrHumanVerificationRequired)
 	}
-	if !meetsDifficulty(challenge, nonce, difficulty) {
+	if rec.Scope != scope {
+		// The challenge is left unspent: it is still usable on the surface it
+		// was issued for.
+		return fmt.Errorf("%w: the challenge was issued for another surface", authn.ErrHumanVerificationRequired)
+	}
+	if !meetsDifficulty(challenge, nonce, rec.Difficulty) {
 		return fmt.Errorf("%w: the proof does not reach the stored difficulty", authn.ErrHumanVerificationRequired)
 	}
 	spent, err := p.store.CompareAndSwap(ctx, key, stored, spentMarker)
@@ -190,13 +261,24 @@ func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof, _ authn.H
 	return nil
 }
 
-// countIssue spends one slot of the source's issuance window.
+// countIssue spends one slot of the source's issuance window and one slot of
+// the whole deployment's. The source's bound is checked first, so a source that
+// has exhausted its own allowance does not spend the shared one. Both counters
+// cover the same fixed window; the global one is what stops a set of source
+// addresses from multiplying the total challenge work.
 func (p *Provider) countIssue(ctx context.Context, remoteIP string) error {
 	issued, err := p.store.IncrByFloatWithTTL(ctx, issueKey(remoteIP), 1, issueWindow)
 	if err != nil {
 		return fmt.Errorf("%w: counting the challenges issued to a source: %w", authn.ErrUnavailable, err)
 	}
 	if issued > issueLimit {
+		return ErrIssuanceLimited
+	}
+	total, err := p.store.IncrByFloatWithTTL(ctx, globalIssueKey(), 1, issueWindow)
+	if err != nil {
+		return fmt.Errorf("%w: counting the challenges issued in the window: %w", authn.ErrUnavailable, err)
+	}
+	if total > float64(p.globalIssueLimit()) {
 		return ErrIssuanceLimited
 	}
 	return nil
@@ -260,6 +342,10 @@ func issueKey(remoteIP string) string {
 	sum := sha256.Sum256([]byte(remoteIP))
 	return issueKeyPrefix + hexEncode(sum[:])
 }
+
+// globalIssueKey is the counter shared by every source. It is a fixed name, not
+// a digest, and cannot collide with a source key, whose suffix is hexadecimal.
+func globalIssueKey() string { return issueKeyPrefix + "global" }
 
 // hexEncode is the lowercase hexadecimal form of raw.
 func hexEncode(raw []byte) string {
