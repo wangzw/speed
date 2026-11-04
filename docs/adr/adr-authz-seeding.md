@@ -52,7 +52,7 @@
 
 **提交之后。** 事务提交之后，本进程重装策略快照并原子替换指针，再发布 `authz.policy.changed`；发布失败不回滚写入，其余副本由事件或周期重载跟进（[ADR-authz-cache](adr-authz-cache.md)）。
 
-**管理面的墙不变。** `authz.admin` 只取用 `Manager`，不取用 `Seeder` 或 `Reconciler`；`authz.tenantadmin`（尚未实现）同样都拿不到。因此 `/api/v1/system/*` 与 `/api/v1/tenants/{tenant}/*` 下的任何写路由在类型上都够不到种入与收敛路径。管理面对内建角色的写继续以 `ErrBuiltinRole` 拒绝，映射为 409。
+**管理面的墙不变。** `authz.admin` 只取用 `Manager`，不取用 `Seeder` 或 `Reconciler`；`authz.tenantadmin` 同样都拿不到。因此 `/api/v1/system/*` 与 `/api/v1/tenants/{tenant}/*` 下的任何写路由在类型上都够不到种入与收敛路径。管理面对内建角色的写继续以 `ErrBuiltinRole` 拒绝，映射为 409。
 
 机制在设计文档 [design-authz](../design/modules/design-authz.md) 的「种入接口」一节。
 

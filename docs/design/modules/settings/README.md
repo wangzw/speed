@@ -15,4 +15,4 @@
 | 子模块 | 状态 |
 |---|---|
 | [settings-admin](design-settings-admin.md) | 部分实现 |
-| [settings-tenantadmin](design-settings-tenantadmin.md) | 未实现 |
+| [settings-tenantadmin](design-settings-tenantadmin.md) | 已实现 |
