@@ -5,10 +5,10 @@
 `authn.account` 是 authn 的账户存储模块，包 `pkg/authn/account`，登记名 `authn.account`。
 
 - 声明账户、标识、联系方式预留、外部身份绑定、成员关系、口令凭据、服务密钥与失败退避的表及其迁移集，启动时探测这些表是否存在；读写只经 `pkg/db`，其他 authn 子包经本模块的接口读写，授权功能目录经接口只读，都不直接读写这些表；表结构见[核心数据结构](#核心数据结构)。
-- 排他交付 `Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`Throttle` 这些根包能力接口，每个接口各自是一个排他功能。
+- 排他交付 `Accounts`、`AccountAdmin`、`Signups`、`SignupVerification`、`Passwords`、`Memberships`、`MembershipCleanup`、`Throttle` 这些根包能力接口，每个接口各自是一个排他功能。
 - 生成账户标识 `AccountID`（库里是 UUIDv7（[REF-rfc9562](../../../references.md)）文本），保证它不可变、不复用。
 - 规范化标识：用户名、邮箱、手机在写入与查询两侧经同一个函数规范化；用户名还过保留字校验，校验只在写入口做。用户名一经写入，在账户存续期内不可删除、不可更换，删除用户名返回 `authn.ErrUsernameImmutable`；账户整体删除不受此限。
-- 持有邮箱与手机的联系方式与登录方式：每条邮箱或手机记录恒为联系方式，另带持有人选择的登录方式标记，以及账户在已证明邮箱中的默认联系地址：账户有已证明邮箱时恰有一封，持有人未指定时取最早证明的那一封并可以改选，没有已证明邮箱时没有（REQ-account-061、REQ-account-063、REQ-account-064）。账户只有一条邮箱地址时，它在被证明后由系统选作登录方式，之后持有人可以取消，取消的门槛是账户仍留有别的登录方式（REQ-account-068、REQ-account-069）。社交与企业外部身份是一类独立的登录方式，列在登录方式中，不在联系方式中（REQ-account-067）。
+- 持有邮箱与手机的联系方式与登录方式：每条邮箱或手机记录恒为联系方式，另带持有人选择的登录方式标记，短信首登开户写下的手机在建号时即由系统置为登录方式，以及账户在已证明邮箱中的默认联系地址：账户有已证明邮箱时恰有一封，持有人未指定时取最早证明的那一封并可以改选，没有已证明邮箱时没有（REQ-account-061、REQ-account-063、REQ-account-064）。账户只有一条邮箱地址时，它在被证明后由系统选作登录方式，之后持有人可以取消，取消的门槛是账户仍留有别的登录方式（REQ-account-068、REQ-account-069）。社交与企业外部身份是一类独立的登录方式，列在登录方式中，不在联系方式中（REQ-account-067）。
 - 校验口令类凭据：按标识查找并校验出示的口令，PHC（[REF-phc-string-format](../../../references.md)）解码与参数界限在校验内核对，未知标识、停用账户与无口令账户做等成本诱饵派生后统一返回 `ErrInvalidCredentials`，校验成功而库中条目弱于当前设置时就地再哈希；服务密钥按摘要比对。
 - 执行账户的创建与状态迁移：创建、停用、启用、删除在本模块的事务里写自己的表，提交之后同步调用全部 `AccountLifecycle`。
 - 执行成员关系的显式删除：删除之前询问全部可选的 `MembershipGuard`，提交之后同步调用全部 `MembershipLifecycle`。
@@ -58,6 +58,7 @@
 | `SignupVerification` | 只读 | `authn.profile`、`authn.admin`、`authn.impersonation`、`authn.login`、`authn.invite`、`authz.admin`、`settings.admin`、`tenant.admin`、宿主 |
 | `Passwords` | 口令与服务密钥的校验与写入 | `authn.login.password`、`authn.token`、`authn.login` |
 | `Memberships` | 成员关系的读写 | `tenant.admission`、`authn.login`、`authn.impersonation`、`authn.admin`、`authz.policy` |
+| `MembershipCleanup` | 账户删除收尾的成员关系清理 | 宿主 |
 | `Throttle` | 失败退避的存取 | `authn.login`、`authn.login.password`、`authn.mfa`、`authn.token` |
 
 调用方列表是例举，不是封闭集；判据是调用方在 `Requires` 或 `Init` 里取用了对应接口。
@@ -1097,7 +1098,7 @@ type Provisioner interface {
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 账户、标识、联系方式预留、外部绑定、成员关系、口令凭据、服务密钥、退避的表与迁移集 | 已实现 | `pkg/authn/account/rows.go` `tables`；`pkg/authn/account/migrations/postgres`、`pkg/authn/account/migrations/sqlite` |
-| `Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`Throttle` 的根包接口与排他交付 | 已实现 | `pkg/authn/account/account.go` `Module`、`(*product)` 的编译期断言与五个 `Exclusive` 交付；`pkg/authn/account.go` `Accounts`、`AccountAdmin`、`Passwords`；`pkg/authn/membership.go` `Memberships`；`pkg/authn/throttle.go` `Throttle`、`ThrottleScope`、`ErrThrottled`、`ThrottledError` |
+| `Accounts`、`AccountAdmin`、`Signups`、`SignupVerification`、`Passwords`、`Memberships`、`MembershipCleanup`、`Throttle` 的根包接口与排他交付 | 已实现 | `pkg/authn/account/account.go` `Module`、`(*product)` 的编译期断言与八个 `Exclusive` 交付；`pkg/authn/account.go` `Accounts`、`AccountAdmin`、`Passwords`；`pkg/authn/signup.go` `Signups`、`SignupVerification`；`pkg/authn/membership.go` `Memberships`、`MembershipCleanup`；`pkg/authn/throttle.go` `Throttle`、`ThrottleScope`、`ErrThrottled`、`ThrottledError` |
 | 值类型 `AccountID`、`Account`、`Identifier`、`External`、`Membership` 与哨兵 | 已实现 | `pkg/authn/internal/model/account.go` `AccountID`、`ParseAccountID`；`pkg/authn/internal/model/directory.go` `Account`、`Membership`、`Verification`、`CreateAccount`、`AccountQuery`、`Page`；`pkg/authn/internal/model/identifier.go` `Identifier`；`pkg/authn/internal/model/login.go` `External`；`pkg/authn/ids.go`；`pkg/authn/errors.go` `ErrAccountNotFound`、`ErrAccountExists`、`ErrContactTaken`、`ErrInvalidArgument` |
 | 标识规范化 `NormalizeIdentifier` | 部分实现 | `pkg/authn/account/normalize.go` `NormalizeIdentifier`、`normalizeUsername`、`normalizePrefix`；`pkg/authn/account/config.go` `settingsSchema`；写入口 `pkg/authn/account/signup.go` `(*product).Register`、`pkg/authn/account/admin.go` `(*product).Create`、`(*product).AddIdentifier` |
 | 账户快照的进程内缓存 `internal/acctcache`：有效期、容量上限、按键与整体清除 | 已实现 | `pkg/authn/internal/acctcache/acctcache.go` `Cache`、`New`、`Invalidate`、`Purge` |

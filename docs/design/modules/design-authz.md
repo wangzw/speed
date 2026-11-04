@@ -12,7 +12,7 @@
 - **`pkg/authz/policy`（模块 `authz.policy`）** 随迁移建出策略表，迁移不种任何策略行；升级数据迁移撤销平台域以外的 `platform-admin` 角色、授予与绑定；策略数据由宿主经 `Manager` 写入。经薄 adapter 把 Casbin 引擎接到 `pkg/db`，由引擎按（主体，域，资源，动作）做出判定，读出一个主体在一个策略域里实际持有的权限，并把各已登记模块声明的权限汇成目录。`Manager` 交出这些行的读写；账户删除后经生命周期钩子与事件清理其绑定行；平台域的成员关系删除后撤销该账户在平台域的全部绑定；成员关系守卫在移除前拒绝会让某租户失去最后一条 `tenant-admin` 绑定的移除；移除绑定会让某域不再有租户管理员时拒绝，账户删除收尾的 `ClearAccountBindings` 除外。它取用 `pkg/db`，因此把库依赖限制在需要策略存储的装配里。
 - **`pkg/authz/guard`（模块 `authz.guard`）** 交付中间件、路由声明登记接口、handler 内判定 API，并**实现 `authn.Decider`**。中间件与 `Decider` 共用同一份声明表与同一处租户读取，拆成两个模块要为它们另立接口。
 - **`pkg/authz/admin`（模块 `authz.admin`）** 挂 `/api/v1/system/*` 下的平台管理面路由，不交付功能；它取用 `policy` 的 `Manager`，把平台管理面的依赖与业务判定的依赖分开。
-- **`pkg/authz/tenantadmin`（模块 `authz.tenantadmin`，尚未实现）** 拟挂 `/api/v1/tenants/{tenant}/*` 下的租户管理面路由，不交付功能；它拟取用 `policy` 的 `Manager` 与 `Catalog`，把租户域的角色、授权与绑定暴露给该租户的租户管理员，并执行防提权规则。它不取用 `Seeder`，也不取用宿主的 `Reconciler`。这个包与模块都尚未存在。
+- **`pkg/authz/tenantadmin`（模块 `authz.tenantadmin`）** 挂在 `/api/v1/tenants/{tenant}/*` 下的租户管理面路由，不交付功能；它取用 `policy` 的 `Manager` 与 `Catalog`，把租户域的角色、授权与绑定暴露给该租户的租户管理员，并执行防提权规则。它不取用 `Seeder`，也不取用宿主的 `Reconciler`。
 - **`pkg/authz/self`（模块 `authz.self`）** 挂 `/api/v1/authz/me/permissions`，把主体持有的权限读给调用方自身，不交付功能；它取用 `policy` 的 `SubjectPermissions`，因此不需要管理面或强制点。
 - **`pkg/authz/internal/persist`、`pkg/authz/internal/policy` 与 `pkg/authz/authztest`** 不登记模块：两个 `internal` 包是库包，`authztest` 是测试构造夹具。
 
@@ -25,11 +25,11 @@
 - **不做认证，不认定身份。** 谁是调用方由认证的网关认定，本模块只读网关写进上下文的身份；它不读凭据，不解释 `Authorization` 头，也不产生身份。
 - **不管理成员关系。** 「账户是不是租户的成员」是认证的表 `authn_memberships` 的事实，归 `authn.account`；本模块只按（账户，租户）绑定角色，不读、不写成员关系。平台管理员绑定前的成员资格经宿主提供的 `MembershipChecker` 扩展点询问（见[管理员角色](#管理员角色)），本模块不直接读认证的表。
 - **不做租户解析，不读租户名册解释请求的租户。** 请求属于哪个租户由 `tenant.resolve` 认定，本模块读 `tenant.FromContext` 的标识（[tenant](tenant/design-tenant.md)）。平台域的保留值只用于策略裁决，不构成一次租户解析。
-- **不把角色放进令牌，也不把它们放进任何凭据。** 访问令牌不带角色（[authn-token](authn/design-authn-token.md)）；角色在请求期由本模块按生效账户实时查自己的绑定，令牌有效期内改绑定即时生效的方向与认证的取态一致。
-- **不做审计的存储与脱敏。** 判定与拒绝路径经请求级捕获进入审计，审计行的补全、脱敏与存放归 [audit](audit/design-audit.md)；这些路径不调 `Audit.Record`，不写审计表，也不决定明细里遮蔽哪些键。**两个管理面是仅有的例外**：`authz.admin` 与 `authz.tenantadmin`（尚未实现）的每次写拟在动作之前经强制档审计调用一次 `Audit.Record`（见[管理面](#管理面)与[租户管理面](#租户管理面)），两者目标上都只落这一笔强制行，失败时另补一行 `failed`；遮蔽哪些键仍归 audit。
+- **不把角色放进令牌，也不把它们放进任何凭据。** 访问令牌不带角色（[authn-token](authn/design-authn-token.md)）；角色在请求期由本模块按生效账户读自己的绑定，令牌有效期内的改绑定在换指针窗口与准入层缓存的下一个刷新点生效，延迟有界且不为零，方向与认证的取态一致。
+- **不做审计的存储与脱敏。** 判定与拒绝路径经请求级捕获进入审计，审计行的补全、脱敏与存放归 [audit](audit/design-audit.md)；这些路径不调 `Audit.Record`，不写审计表，也不决定明细里遮蔽哪些键。**两个管理面是仅有的例外**：`authz.admin` 与 `authz.tenantadmin` 的每次写在动作之前经强制档审计调用一次 `Audit.Record`（见[管理面](#管理面)与[租户管理面](#租户管理面)），两者目标上都只落这一笔强制行，失败时另补一行 `failed`；遮蔽哪些键仍归 audit。
 - **不定义响应体的结构。** 本模块决定拒绝的状态码、`Problem.Type` 与必要的响应头；响应体经入口模块的 `Fail` 写出，结构由入口模块的默认结构或交付 `ErrorResponder` 的模块决定（[http](http/design-http.md)）。
 - **写出缺身份时的 401，且它与准入层的无身份 401 一致。** 这条不推翻「不做认证」：它是「路由需要认证而没有身份」的拒绝，与准入层写出的那个 401 是同一个判定，结构也保持相同——同为 `Problem{Status: 401}`（不带 `Type`），头按准入层无身份 401 的同一规则组装（[authn-gate](authn/design-authn-gate.md)）。它出现在这里，因为授权阶段也在网关之内：网关缺席或没守这个端时，授权层是链上唯一还能拒绝匿名请求的层，而准入层只在它自己所守的端上运行；两处写出同一个结构，调用方就不必按「谁拒的」分辨它们的读法（[tenant-admission](tenant/design-tenant-admission.md)、[authn](authn/design-authn.md)）。
-- **不实现管理面的访问控制之外的任何业务动作。** `authz.admin` 只把权限目录、角色、权限授予与角色绑定的读写暴露成平台 HTTP 路由，`authz.tenantadmin`（尚未实现）拟只把同一批表操作暴露成租户域 HTTP 路由；动作本身是 `policy` 的表操作。
+- **不实现管理面的访问控制之外的任何业务动作。** `authz.admin` 只把角色、权限授予与角色绑定的读写、以及权限目录的读暴露成平台 HTTP 路由；`authz.tenantadmin` 只把同一批表操作与治理集的目录读暴露成租户域 HTTP 路由。写动作本身是 `policy` 的表操作，目录读经 `policy` 的 `Catalog`。
 - **不判定一个租户是不是个人租户。** 个人租户是宿主的策略；本模块经宿主的 `WriteGuard` 与 `WriteSettings`（尚未实现）扩展点得到拒绝，不按标识前缀、名称或权限集自行推断。
 - **不替租户管理员决定它可以拥有哪些权限。** 治理集是平台定义的封闭集（见[治理权限与权限矩阵](#治理权限与权限矩阵)）；本模块只按它过滤目录与授予，不把「某模块新声明了一条权限」视为「租户管理员自动获得它」。
 - **不决定哪条命令纳入本模块。** 每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`；是否运行是命令树上的决定（[ADR-command-tree](../../adr/adr-command-tree.md)）。
@@ -63,11 +63,11 @@
 | `pkg/authz/policy` | `authz.policy` | 表与迁移、薄 adapter、Casbin 引擎、权限目录、`Manager`、`AccountLifecycle`、`authn.MembershipLifecycle`、`authn.MembershipGuard` | 是 |
 | `pkg/authz/guard` | `authz.guard` | 中间件、路由声明登记接口、handler 内 API、实现 `authn.Decider` | 是 |
 | `pkg/authz/admin` | `authz.admin` | 平台管理面 HTTP 路由（不交付功能） | — |
-| `pkg/authz/tenantadmin`（尚未实现） | `authz.tenantadmin`（尚未实现） | 租户域管理面 HTTP 路由（不交付功能） | — |
+| `pkg/authz/tenantadmin` | `authz.tenantadmin` | 租户域管理面 HTTP 路由（不交付功能） | — |
 | `pkg/authz/self` | `authz.self` | 调用方自身权限的读取路由（不交付功能） | — |
 | `pkg/authz/internal/{persist,policy}`、`pkg/authz/authztest` | 不登记 | 库包与夹具 | — |
 
-每个登记模块的包导出自己的 `ModuleName` 常量，配置与设置的命名空间取同一个取值，管理面模块的 OpenAPI 分组也取同一个名字。名字的每一段只用小写字母、数字与短横线。`policy`、`guard`、`admin` 与 `self` 各带一份 `AGENTS.md`，写它的边界与怎么跑；`tenantadmin` 的 `AGENTS.md` 未实现。
+每个登记模块的包导出自己的 `ModuleName` 常量，配置与设置的命名空间取同一个取值，管理面模块的 OpenAPI 分组也取同一个名字。名字的每一段只用小写字母、数字与短横线。`policy`、`guard`、`admin`、`self` 与 `tenantadmin` 各带一份 `AGENTS.md`，写它的边界与怎么跑。
 
 **命名空间之间的约束。** 两个模块不得声明同一个输入项路径，也不得一个路径是某模块的叶子而另一个模块的内部节点。`authz` 本身不得是任何模块的叶子。
 
@@ -294,7 +294,7 @@ const (
 
 - **审计的检索与导出**：权限 `audit.read` 与 `audit.export`。审计不提供查询接口（[audit](audit/design-audit.md)），检索与导出的端点由审计的检索单元 [audit.admin](audit/design-audit-admin.md) 挂出，两者的判定都经本模块的 handler 内 API 落到 `audit.read` 上；`audit.export` 仍由本模块携带，框架内没有模块询问它，一个按另一份权限判定的导出由宿主自建（[ADR-audit-export](../../adr/adr-audit-export.md)）。
 - **设置的写入接口**：目标口径是权限 `settings.read` 与 `settings.write` 只服务全局层，权限 `settings.tenant.read` 与 `settings.tenant.write` 服务租户层，包括平台侧的 `layer=tenant` 与租户可达前缀下的租户侧。当前代码尚未改到这一步：`settings.admin` 在 `layer=tenant` 下仍询 `settings.read`／`settings.write`，权限码切换在 `settings.tenantadmin` 落地前不生效（[settings](settings/design-settings.md)、[settings.tenantadmin](settings/design-settings-tenantadmin.md)）。平台员工要在某个租户读写租户层，须在该租户持有对应的租户码（通常经该租户的 `tenant-admin`，即治理集）。设置的写入接口没有访问控制，由宿主经本模块鉴权。
-- **租户域的角色**：权限 `authz.tenant.role.read` 与 `authz.tenant.role.manage`，端点拟由 [authz.tenantadmin](#租户管理面)（尚未实现）挂在 `/api/v1/tenants/{tenant}/*` 下，判定在该租户域。它们与平台侧的 `authz.role.read`／`authz.role.manage` 各翻译、各授予；平台管理员取全量声明集，租户管理员只取治理集。
+- **租户域的角色**：权限 `authz.tenant.role.read` 与 `authz.tenant.role.manage`，端点由 [authz.tenantadmin](#租户管理面) 挂在 `/api/v1/tenants/{tenant}/*` 下，判定在该租户域。它们与平台侧的 `authz.role.read`／`authz.role.manage` 各翻译、各授予；平台管理员取全量声明集，租户管理员只取治理集。
 - **口令表主体（`static.*`）的角色**：本模块只提供结构——保留的平台域 `system`、内建的运营角色以及绑定表；口令表主体的平台角色由宿主写入，不在迁移里种。`Identity.Account().IsStatic()` 的主体读不到任何成员关系，其权限只来自平台域上的绑定。
 - **谁有权冒充谁**：权限 `authn.impersonation.start`、`authn.impersonation.read`、`authn.impersonation.revoke`，在平台域上判定。冒充是平台能力：请求路径或正文里的租户是冒充记录被限定的数据，不是策略域，调用方不需要在目标租户持有任何权限；只在目标租户持有 `tenant-admin` 的调用方不通过，平台管理员不必是目标租户的成员。目标必须是目标租户的有效成员这条结构性限制不变。冒充的结构性限制（发起者、目标、参数、并发）由 `authn.impersonation` 核对，本模块在其之上收紧「谁能冒充谁」（[authn-impersonation](authn/design-authn-impersonation.md)）。
 
@@ -347,7 +347,7 @@ const (
 - **`authz.policy.load-timeout`**（配置，时长，缺省 `5s`）：启动期全量装载策略的时限。超时即启动失败（`ErrPolicyUnavailable`），不带着半份快照开始服务。
 - **`authz.policy.refresh-interval`**（配置，时长，缺省 `0s`）：无事件总线时的周期重载间隔。`0` 表示不重载，负值在启动期以 `authn.ErrInvalidConfig` 拒绝。**它归配置，因为它设定 `Start` 建立的 ticker，改值要重启进程才生效**；周期性重载因此不依赖设置存储，一个只有数据库、没有事件总线也没有设置存储的装配可以直接配置它；宿主要把非零间隔写进配置文件。
 - **`authz.admin.endpoints`**（配置，字符串列表）：管理面路由所挂的端，按入口模块自身配置给它们的名字。**必填、无缺省、不接受 `*`**——把管理面路由挂到每个端会挂到公开端上，那里没有网关守它们；只取主配置源。本模块没有自己的失败哨兵，一个跑不了的格式——空清单、空名、`*`、重名——是 `authn.ErrInvalidConfig`；入口模块不声明的端名是启动期 `ErrUnknownEndpoint`。
-- **`authz.tenantadmin.endpoints`**（配置，尚未实现，字符串列表）：租户管理面路由所挂的端，按入口模块自身配置给它们的名字。**必填、无缺省、不接受 `*`**——这组路由要在租户解析与准入层所守的端上，只收 `api` 这类租户可达的端；挂到平台专属的端上，租户管理员就够不到它。只取主配置源。格式不合法与 `authz.admin.endpoints` 同口径：空清单、空名、`*`、重名是 `authn.ErrInvalidConfig`，入口模块不声明的端名是启动期 `ErrUnknownEndpoint`。
+- **`authz.tenantadmin.endpoints`**（配置，字符串列表）：租户管理面路由所挂的端，按入口模块自身配置给它们的名字。**必填、无缺省、不接受 `*`**——这组路由要在租户解析与准入层所守的端上，只收 `api` 这类租户可达的端；挂到平台专属的端上，租户管理员就够不到它。只取主配置源。格式不合法与 `authz.admin.endpoints` 同口径：空清单、空名、`*`、重名是 `authn.ErrInvalidConfig`，入口模块不声明的端名是启动期 `ErrUnknownEndpoint`。
 - **`authz.self.endpoints`**（配置，字符串列表）：调用方自身权限读取所挂的端，按入口模块自身配置给它们的名字。**必填、无缺省、不接受 `*`**——这条读取属于已认证调用方，挂在没有网关的端上就只剩 handler 自己写的 401；只取主配置源。格式不合法与 `authz.admin.endpoints` 同口径：空清单、空名、`*`、重名是 `authn.ErrInvalidConfig`，入口模块不声明的端名是启动期 `ErrUnknownEndpoint`。
 
 **配置承载启动必须项与改值要重启才生效的项，其余能在运行期生效的值一律归设置**（[ADR-config-scope](../../adr/adr-config-scope.md)）：`endpoints`、`load-timeout` 与 `refresh-interval` 都属配置——`endpoints` 与 `load-timeout` 在装配期或启动装载时就要读出来，`refresh-interval` 设定 `Start` 建立的 ticker，改值要重启进程才生效。**本模块没有设置型的放宽开关**：唯一会放宽的方向是 `undeclared`，它是配置项，改它要重启。
@@ -356,19 +356,19 @@ const (
 
 - **把 `authz.guard`、`authz.policy` 的模块名写进需要授权的命令。** 只挂中间件而不点名 `policy` 时，`guard` 的 `Enforcer` 缺席，本模块判定不可用，全部受守路由答 503；两者要么一起点名，要么都不点。
 - **`endpoints` 写成业务端。** 与 `tenant.admission.endpoints` 一致；`authz.guard` 只在它守的端上登记中间件。
-- **策略数据由宿主写入。** 迁移只建表，不种角色、不种权限授予、不种绑定；平台域 `system` 的运营角色、口令表主体的绑定、各租户的角色与绑定都经 `Manager` 或管理面路由写入。一个已置 `builtin` 的角色，其授权只经 `Seeder.SeedGrants` 增补、经 `Reconciler.ReconcileGrants` 收敛：`Manager`、`authz.admin` 与 `authz.tenantadmin`（尚未实现）的写路由拟都拒绝它，两个管理面模块也都不持有这两个能力。
+- **策略数据由宿主写入。** 迁移只建表，不种角色、不种权限授予、不种绑定；平台域 `system` 的运营角色、口令表主体的绑定、各租户的角色与绑定都经 `Manager` 或管理面路由写入。一个已置 `builtin` 的角色，其授权只经 `Seeder.SeedGrants` 增补、经 `Reconciler.ReconcileGrants` 收敛：`Manager`、`authz.admin` 与 `authz.tenantadmin` 的写路由都拒绝它，两个管理面模块也都不持有这两个能力。
 - **`platform-admin` 与 `tenant-admin` 的授权集分开种。** 平台域的 `platform-admin` 取 `Catalog.Declared()` 的全量，永不被治理集收窄；业务租户与 `system` 域的 `tenant-admin` 取 `Catalog.TenantGoverned()` 的全量，由宿主置 `builtin` 并经 `Reconciler` 收敛到当前版本的治理集；个人租户的 `tenant-admin` 取 `(personalBusinessPermissions ∩ Catalog.TenantGoverned()) − personalExcludedPermissions`，不置 `builtin`，也不经 `Reconciler` 收敛。宿主在每次种入时按角色分流。
 - **名册里必须有标识为 `system` 的租户。** 平台域的策略行挂在这个标识上；`authz.policy` 在启动时经 `tenant.Catalog` 读名册，没有即以 `ErrPlatformDomainMissing` 终止启动。没有租户模块的装配里没有名册，这条核对不执行。该租户不可停用、不可删除，由名册的写保护拒绝。
 - **想让权限随撤销尽快生效的装配里要提供事件总线。** 没有 `event.Bus` 时，策略变更靠 `refresh-interval` 兜底，撤销的生效延迟以它为界。
 - **想挂管理面的命令点名 `authz.admin` 并配 `authz.admin.endpoints`。** 不点名时没有 `/api/v1/system/*` 下的任何路由；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。这条命令还要纳入 `authn.account`：写路由经 `authn.SignupVerification` 读发起者的注册验证状态，缺席时依赖解析以缺提供者终止启动。
 - **想挂调用方自身权限读取的命令点名 `authz.self`、配 `authz.self.endpoints`，并把该端纳入网关所守的端。** 不点名时没有 `/api/v1/authz/me/permissions`；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。端不在网关的准入清单里时路由仍挂出，但没有身份检查之外的准入，任何已认证调用方都能读自己的权限。
-- **想挂租户管理面（尚未实现）的命令点名 `authz.tenantadmin`、配 `authz.tenantadmin.endpoints`，并把该端纳入租户解析、准入层与授权守卫。** 不点名时没有 `/api/v1/tenants/{tenant}/*` 下的角色路由；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。这条命令还要纳入 `authn.account`（`authn.SignupVerification`）、`tenant.catalog`（`tenant.Catalog`）与 `authz.policy`（`Manager`、`Catalog`、`SubjectPermissions`），并在装配里提供 `authz.MembershipChecker`；任一必需依赖缺席都在构造前以缺提供者终止启动。**不要给它 `Seeder` 或 `Reconciler`**：前者会打开 builtin 角色的授权增补路径，后者会打开删除路径，两者都只在宿主的种入步骤里。
+- **想挂租户管理面的命令点名 `authz.tenantadmin`、配 `authz.tenantadmin.endpoints`，并把该端纳入租户解析、准入层与授权守卫。** 不点名时没有 `/api/v1/tenants/{tenant}/*` 下的角色路由；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。这条命令还要纳入 `authn.account`（`authn.SignupVerification`）、`tenant.catalog`（`tenant.Catalog`）与 `authz.policy`（`Manager`、`Catalog`、`SubjectPermissions`），并在装配里提供 `authz.MembershipChecker`；任一必需依赖缺席都在构造前以缺提供者终止启动。**不要给它 `Seeder` 或 `Reconciler`**：前者会打开 builtin 角色的授权增补路径，后者会打开删除路径，两者都只在宿主的种入步骤里。
 - **在所有 `ScopeTenants` 路由组上挂路径租户核对。** 路径段里的租户必须等于请求解析出的租户，按标识比较，路径段可以写标识或当前别名；路径段解析不到唯一租户，或解析到另一个租户，都以与一条不存在的租户一致的裸 404 作答。这条前置覆盖新模块与复用的成员、邀请与 SSO 路由组，不靠各 handler 自己记得比对。只挂授权守卫而不挂它时，一个在 A 租户获治理权限的调用方可以靠路径写 B 租户。**平台域的拒绝不在这条共同前置里**：`authz.tenantadmin` 与 `settings.tenantadmin` 另以更严的守卫包裹自己的路由，路径或解析出的租户是 `PlatformDomain` 时答同样的裸 404；成员、邀请与 SSO 路由组管理 `system` 租户本身，以平台域寻址是正当的。
 - **个人租户的拒绝由宿主扩展点回答。** 断言 `authz.WriteGuard` 拒绝对个人租户的策略写，并通过独立的 `authz.WriteSettings`（尚未实现）拒绝对个人租户的设置写；`WriteOp` 的封闭三元组不变，设置写不借用 `WriteGrant`。`WriteSettings` 拟是 `settings.tenantadmin`（尚未实现）的必需依赖，缺席即启动失败；`WriteGuard` 在租户管理面是可选取用，但启用个人租户的装配必须提供它。两个扩展点都只收紧、不放行，读不出答复时调用方按 503 处置。
 
 ### 管理面
 
-`authz.admin` 是挂在固定基路径 `/api/v1/system` 下的管理面模块，不交付任何功能接口，只把权限目录、角色、权限授予与角色绑定的读写暴露成 HTTP 路由；每条路由的动作是 `policy` 的 `Manager` 的一次表操作。路由挂在配置 `authz.admin.endpoints` 列出的端上，基路径不做可配置。路由不暴露任何不透明的行标识：每条路由按自然键——租户、角色、权限、账户——寻址。
+`authz.admin` 是挂在固定基路径 `/api/v1/system` 下的管理面模块，不交付任何功能接口，只把角色、权限授予与角色绑定的读写以及权限目录的读暴露成 HTTP 路由；写路由的动作是 `policy` 的 `Manager` 的一次表操作，目录读经 `policy` 的 `Catalog`。路由挂在配置 `authz.admin.endpoints` 列出的端上，基路径不做可配置。路由不暴露任何不透明的行标识：每条路由按自然键——租户、角色、权限、账户——寻址。
 
 **访问控制由本模块在 handler 内做出，不经 `Decider`。** 管理面路由在中间件的声明表里全部登记为开放，好让中间件把请求放行到 handler；handler 先读调用方的身份，再经 `authz.guard` 的 handler 内判定 API 就这条路由的权限问一句，不足即回绝。模块不给自己授予任何权限，只提供目录已经声明的词表。
 
@@ -410,13 +410,13 @@ const (
 
 ### 租户管理面
 
-`authz.tenantadmin`（尚未实现）拟挂在租户作用域基路径 `/api/v1/tenants/{tenant}` 下，是一个管理面模块，不交付任何功能接口，只把租户域的角色、权限授予与角色绑定的读写暴露成 HTTP 路由。它拟与管理面共用 `policy` 的 `Manager` 与 `Catalog`，差别在判定域、权限码与防提权规则：管理面的判定固定在平台域，租户管理面的判定在路径点名的那个租户域。模块不持数据、不持规则，每条路由的动作是一次 `Manager` 调用。
+`authz.tenantadmin` 挂在租户作用域基路径 `/api/v1/tenants/{tenant}` 下，是一个管理面模块，不交付任何功能接口，只把租户域的角色、权限授予与角色绑定的读写暴露成 HTTP 路由。它与管理面共用 `policy` 的 `Manager` 与 `Catalog`，差别在判定域、权限码与防提权规则：管理面的判定固定在平台域，租户管理面的判定在路径点名的那个租户域。模块不持数据、不持规则，每条路由的动作是一次 `Manager` 调用。
 
 **租户侧的一切请求都在租户可达的前缀下。** `/api/v1/system/*` 是平台专属前缀，生产部署可以不向租户开放；路径在 `/system` 下而判定在租户域的路由不能给租户侧复用。租户侧因此只使用 `/api/v1/tenants/{tenant}/...`，与成员、邀请、SSO 与租户设置同处一个前缀。租户是地址的一部分，不是查询值。
 
 #### 路由
 
-下表是本模块拟挂出的路由全集（封闭集）：方法、路径与每条需要的权限。读路由问 `authz.tenant.role.read`，写路由问 `authz.tenant.role.manage`；两者都只属于治理集。
+下表是本模块挂出的路由全集（封闭集）：方法、路径与每条需要的权限。读路由问 `authz.tenant.role.read`，写路由问 `authz.tenant.role.manage`；两者都只属于治理集。
 
 | 组 | 方法 路径 | 权限 |
 |---|---|---|
@@ -487,9 +487,9 @@ const (
 
 #### 声明与配置
 
-**租户管理面拟以静态[特性](../../glossary.md) `authz.tenantadmin` 声明。** 描述符的 `Resources` 拟带 `feature.Spec{Name: "authz.tenantadmin"}`；这个特性在场，表示本进程挂出上表的路由。模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../architecture.md#架构不变量)）。
+**租户管理面以静态[特性](../../glossary.md) `authz.tenantadmin` 声明。** 描述符的 `Resources` 带 `feature.Spec{Name: "authz.tenantadmin"}`；这个特性在场，表示本进程挂出上表的路由。模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../architecture.md#架构不变量)）。
 
-模块名、配置命名空间、特性名与 OpenAPI 分组同名，都是 `authz.tenantadmin`。它拟不声明新的权限码与翻译行：租户侧的权限码由本能力在 `policy` 的集中声明里携带。
+模块名、配置命名空间、特性名与 OpenAPI 分组同名，都是 `authz.tenantadmin`。它不声明新的权限码与翻译行：租户侧的权限码由本能力在 `policy` 的集中声明里携带。
 
 ### 调用方自身的权限读取
 
@@ -517,12 +517,12 @@ const (
 - `ModelText` 的模型文本，与动作到查询的翻译：内置行（本能力自己携带的行），各模块经 `authz.TranslationSpec` 声明自有翻译行的机制，以及「未被任何行覆盖的权限即拒、模块声明的行与既有行不一致即启动失败」这两条语义；一个模块新声明的行是这份翻译的扩展，不是对已有行的破坏。
 - 平台域的保留值 `"system"`。
 - 中间件在链上代表的功能标识：描述符的 `Provides` 与中间件的 `Provides` 同为 `(*authz.Gate)(nil)`——链上锚点住在根包（别的模块为排序 import 的是接口包，不是实现子包），而 handler 内判定 API `Guard` 因签名取 `*gin.Context` 落在 `pkg/authz/guard`，它不作为锚点。别的模块据这个标识排序，取值与它所属的阶段属于对外接口，改动它是破坏性变更。
-- 配置键 `authz.guard.endpoints`、`authz.guard.undeclared`、`authz.policy.load-timeout`、`authz.policy.refresh-interval`、`authz.admin.endpoints`、`authz.tenantadmin.endpoints`（尚未实现）、`authz.self.endpoints`，以及 `Endpoints` 的必填与不接受 `*`。
+- 配置键 `authz.guard.endpoints`、`authz.guard.undeclared`、`authz.policy.load-timeout`、`authz.policy.refresh-interval`、`authz.admin.endpoints`、`authz.tenantadmin.endpoints`、`authz.self.endpoints`，以及 `Endpoints` 的必填与不接受 `*`。
 - 管理面路由的路径与每条路由询问的权限（读 `authz.role.read`、写 `authz.role.manage`）；租户管理面路由的路径与每条路由询问的权限（读 `authz.tenant.role.read`、写 `authz.tenant.role.manage`）；路由集本身随模块是否被点名变化，不在对外接口内。治理集的成员、`TenantGoverned` 的取值与租户侧目录只列治理集这一条同样在接口上：前端与生成的客户端据它决定哪些权限可以授予。
 - `Reconciler` 的签名与语义：只作用于 builtin `tenant-admin`、目标集与废弃集都由调用方给出、只删除废弃集与当前持有集的交集、先补后删、单事务、返回增删行数、写后重载并发布 `authz.policy.changed`、幂等可重试、调用方在收敛前落强制档审计；它排他交付，只交给宿主的种入步骤，不交给任何管理面模块。
 - `WriteSettings` 的签名与语义（尚未实现）：`Denied(ctx, tenant)` 只收紧、不放行，读不出答复是 503；它与 `WriteGuard` 分开，`WriteOp` 的封闭三元组不变。
 - 调用方自身权限的读取路径 `GET /api/v1/authz/me/permissions`、它的应答成员 `platform` 与 `tenant` 及其含义、`[]` 而非 `null` 的空结果写法，以及它要求已认证、不要求权限这一条；前端与生成的客户端据这些取值分支。
-- `authz.admin` 声明的特性名 `authz.admin`，以及 `authz.tenantadmin` 拟声明的特性名 `authz.tenantadmin`（尚未实现）。前端经生成的特性名类型引用它们，改名或撤去是宿主可见的破坏性变更。
+- `authz.admin` 声明的特性名 `authz.admin`，以及 `authz.tenantadmin` 声明的特性名 `authz.tenantadmin`。前端经生成的特性名类型引用它们，改名或撤去是宿主可见的破坏性变更。
 - `Problem.Type` 的前缀 `urn:speed:authz:` 与它下面的四个码——403 的策略拒绝 `forbidden`、403 的防提权与宿主写守卫拒绝 `protected`、400 的 `bad-request`、409 的 `conflict`，它们是客户端据以分支的对外接口；管理面与租户管理面的写路由在发起者为未验证账户时另答 403 `contact-required`，这个码不属于该前缀，同样是客户端据以分支的对外接口；租户管理面对路径段与解析出的租户别名不符，以及平台域目标的裸 404 同样在接口上；指标名 `authz.guard.decisions` 与其属性 `outcome` 的取值，以及拒绝状态码的封闭集。
 
 ## 依赖
@@ -534,10 +534,10 @@ const (
 | `authz/policy` | `authz.policy` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`、`Reconciler`；`authn.AccountLifecycle`、`authn.MembershipLifecycle`、`authn.MembershipGuard` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`、`Reconciler` 各自是 | `db.Database` | `tenant.Catalog` ○、`MembershipChecker` ○、`event.Bus` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
 | `authz/guard` | `authz.guard` | `Guard`、`Gate`；`authn.Decider` | 各自是 | `Enforcer`、`Catalog` | `SubjectPermissions`、`http.Router`、`tenant` 的上下文读取、`log.Logger` ○、`observability.MeterProvider` ○ | 无 |
 | `authz/admin` | `authz.admin` | 无（只挂 `/api/v1/system/*` 下的路由） | — | `Manager`、`Catalog`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` | `http.Router`、`authz.Gate` ○、`authz.WriteGuard` ○、`i18n.Localizer` ○、`log.Logger` ○ | 无 |
-| `authz/tenantadmin` | `authz.tenantadmin`（尚未实现） | 无（只挂 `/api/v1/tenants/{tenant}/*` 下的路由） | — | `Manager`、`Catalog`、`SubjectPermissions`、`MembershipChecker`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` | `http.Router`、`authz.Gate` ○、`authz.WriteGuard` ○、`i18n.Localizer` ○、`log.Logger` ○ | 无 |
+| `authz/tenantadmin` | `authz.tenantadmin` | 无（只挂 `/api/v1/tenants/{tenant}/*` 下的路由） | — | `Manager`、`Catalog`、`SubjectPermissions`、`MembershipChecker`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` | `http.Router`、`authz.Gate` ○、`authz.WriteGuard` ○、`i18n.Localizer` ○、`log.Logger` ○ | 无 |
 | `authz/self` | `authz.self` | 无（只挂 `/api/v1/authz/me/permissions`） | — | `SubjectPermissions` | `http.Router`、`authz.Gate` ○、`log.Logger` ○ | 无 |
 
-`authz/guard` 以 `Enforcer` 与 `Catalog` 为必需依赖（各自排他），缺任一个即 `core.ErrMissingProvider`，早于迁移：没有引擎的中间件只能把所有受守路由答成 503，没有目录的路由声明接口核对不了登记的权限。`SubjectPermissions` 可选取用：它在场的装配里用于「目标不持平台权限」这一冒充条件；缺席意味着这个进程没有策略，没有账户持有平台权限，条件自然成立。`Catalog` 是随中间件落地的路由声明接口所读的那一项——decider 不读它，但它与 `Enforcer` 同为必需依赖：一个必需能力没有提供方，无论哪个回调读它，启动都失败。`authn.Decider` 由 `authz.guard` 交付——它是排他功能，取用方（`authn.admin`、`authn.impersonation`、`tenant.admission`）在 `Init` 里以 `Optional` 取用，`authz.guard` 在场即提供了它。`authz.policy` 取 `tenant.Catalog` 只为启动期核对平台域对应的 `system` 租户存在：它是可选取用，没有租户模块的装配里没有名册可核对，这条检查不执行，也不因此启动失败。它另可选取用 `MembershipChecker`：缺席时平台域的 `PlatformAdminRole` 绑定写入以 `ErrMissingMembershipChecker` 拒绝，不按放行处理；装配里没有平台管理员绑定的路径时，缺席不阻碍启动。`authz.admin` 以 `Manager`、`Catalog`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` 为必需依赖：`Manager` 是它的写入接口、`Catalog` 是授予的核对接口、`guard.Guard` 是它在 handler 内判定所用的 handler 内 API、`audit.Audit` 是强制档审计的落点、`authn.SignupVerification` 是写路由读取发起者注册验证状态的读取接口——审计或注册验证状态任一缺席，都在任何实例构造之前以 `core.ErrMissingProvider` 失败，而不是留到第一次写才发现。入口模块的路由功能 `http.Router` 在 `Init` 里必需，挂管理面路由而没有入口模块是 `ErrNoRouter`；路由声明接口 `authz.Gate`、`i18n.Localizer`、`authz.WriteGuard` 与 `log.Logger` 在 `Init` 里可选取用，没有声明接口的装配里管理面路由不带声明、受守的端把它们按未声明处置，没有本地化器的装配里目录视图的说明是空串，没有写守卫的装配里写路由不经过这一档拒绝。`authz.self` 以 `SubjectPermissions` 为唯一必需依赖；入口模块的路由功能在 `Init` 里必需，挂读取路由而没有入口模块是 `ErrNoRouter`，路由声明接口与日志可选取用。`authz.tenantadmin`（尚未实现）拟以 `Manager`、`Catalog`、`SubjectPermissions`、`MembershipChecker`、`guard.Guard`、`audit.Audit` 与 `authn.SignupVerification` 为必需依赖：`Manager` 是它的写入接口、`Catalog` 是治理集与授予的核对接口、`SubjectPermissions` 是「不能授予自己没有的权限」的读取接口、`MembershipChecker` 是绑定成员资格的读取接口、`guard.Guard` 是 handler 内判定、`audit.Audit` 是强制档审计的落点、`authn.SignupVerification` 是写路由的注册验证门控——任一缺席都在实例构造之前以 `core.ErrMissingProvider` 失败。它**不取用 `Seeder` 与 `Reconciler`**：这两个能力只在宿主的种入步骤里，管理面拿不到它们。入口模块的路由功能在 `Init` 里必需，挂租户侧路由而没有入口模块是 `ErrNoRouter`；路由声明接口、`WriteGuard`、`i18n.Localizer` 与日志可选取用，缺席时的行为与管理面同口径。
+`authz/guard` 以 `Enforcer` 与 `Catalog` 为必需依赖（各自排他），缺任一个即 `core.ErrMissingProvider`，早于迁移：没有引擎的中间件只能把所有受守路由答成 503，没有目录的路由声明接口核对不了登记的权限。`SubjectPermissions` 可选取用：它在场的装配里用于「目标不持平台权限」这一冒充条件；缺席意味着这个进程没有策略，没有账户持有平台权限，条件自然成立。`Catalog` 是随中间件落地的路由声明接口所读的那一项——decider 不读它，但它与 `Enforcer` 同为必需依赖：一个必需能力没有提供方，无论哪个回调读它，启动都失败。`authn.Decider` 由 `authz.guard` 交付——它是排他功能，取用方（`authn.admin`、`authn.impersonation`、`tenant.admission`）在 `Init` 里以 `Optional` 取用，`authz.guard` 在场即提供了它。`authz.policy` 取 `tenant.Catalog` 只为启动期核对平台域对应的 `system` 租户存在：它是可选取用，没有租户模块的装配里没有名册可核对，这条检查不执行，也不因此启动失败。它另可选取用 `MembershipChecker`：缺席时平台域的 `PlatformAdminRole` 绑定写入以 `ErrMissingMembershipChecker` 拒绝，不按放行处理；装配里没有平台管理员绑定的路径时，缺席不阻碍启动。`authz.admin` 以 `Manager`、`Catalog`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` 为必需依赖：`Manager` 是它的写入接口、`Catalog` 是授予的核对接口、`guard.Guard` 是它在 handler 内判定所用的 handler 内 API、`audit.Audit` 是强制档审计的落点、`authn.SignupVerification` 是写路由读取发起者注册验证状态的读取接口——审计或注册验证状态任一缺席，都在任何实例构造之前以 `core.ErrMissingProvider` 失败，而不是留到第一次写才发现。入口模块的路由功能 `http.Router` 在 `Init` 里必需，挂管理面路由而没有入口模块是 `ErrNoRouter`；路由声明接口 `authz.Gate`、`i18n.Localizer`、`authz.WriteGuard` 与 `log.Logger` 在 `Init` 里可选取用，没有声明接口的装配里管理面路由不带声明、受守的端把它们按未声明处置，没有本地化器的装配里目录视图的说明是空串，没有写守卫的装配里写路由不经过这一档拒绝。`authz.self` 以 `SubjectPermissions` 为唯一必需依赖；入口模块的路由功能在 `Init` 里必需，挂读取路由而没有入口模块是 `ErrNoRouter`，路由声明接口与日志可选取用。`authz.tenantadmin` 以 `Manager`、`Catalog`、`SubjectPermissions`、`MembershipChecker`、`guard.Guard`、`audit.Audit` 与 `authn.SignupVerification` 为必需依赖：`Manager` 是它的写入接口、`Catalog` 是治理集与授予的核对接口、`SubjectPermissions` 是「不能授予自己没有的权限」的读取接口、`MembershipChecker` 是绑定成员资格的读取接口、`guard.Guard` 是 handler 内判定、`audit.Audit` 是强制档审计的落点、`authn.SignupVerification` 是写路由的注册验证门控——任一缺席都在实例构造之前以 `core.ErrMissingProvider` 失败。它**不取用 `Seeder` 与 `Reconciler`**：这两个能力只在宿主的种入步骤里，管理面拿不到它们。入口模块的路由功能在 `Init` 里必需，挂租户侧路由而没有入口模块是 `ErrNoRouter`；路由声明接口、`WriteGuard`、`i18n.Localizer` 与日志可选取用，缺席时的行为与管理面同口径。
 
 ### 依赖方向
 
@@ -546,7 +546,7 @@ const (
 - **本模块 import `pkg/authn` 根包并交付其中的接口，认证不 import 本模块**（[ADR-authn-scope](../../adr/adr-authn-scope.md)）。`authz/guard` 实现 `authn.Decider`，读 `Identity` 的方法集；方向是授权指向认证。
 - **本模块 import `pkg/tenant` 根包取 `tenant.FromContext` 与 `tenant.CrossTenant`，不 import 它的子包。** 准入层交付的 `(*tenant.Admission)(nil)` 是授权阶段内的定序锚点，本模块的中间件用 `After` 指向它（[tenant-admission](tenant/design-tenant-admission.md)）。
 - **两个管理面模块 import `pkg/feature` 根包以声明特性，`feature.board` import 本模块的根包以登记开放路由。** `pkg/feature` 根包只依赖标准库，不扩大两个管理面模块的闭包；本模块的任何包都不 import `pkg/feature/board`（[feature](design-feature.md)）。
-- **`authz.tenantadmin`（尚未实现）拟只 import 本模块的根包与 `guard` 子包，不 import `policy`。** 它拟取用接口 `Manager`、`Catalog`、`SubjectPermissions`、`MembershipChecker`、`WriteGuard` 与 `guard.Guard`，因此一个只挂租户侧的命令不把 Casbin 与策略存储带进来；`policy` 由宿主在命令树上点名。它拟 import `pkg/authn` 根包读身份与注册验证状态、`pkg/tenant` 根包读 `FromContext`、`pkg/audit` 与 `pkg/http`，不 import 这两个能力的子包。
+- **`authz.tenantadmin` 只 import 本模块的根包与 `guard` 子包，不 import `policy`。** 它取用接口 `Manager`、`Catalog`、`SubjectPermissions`、`MembershipChecker`、`WriteGuard` 与 `guard.Guard`，因此一个只挂租户侧的命令不把 Casbin 与策略存储带进来；`policy` 由宿主在命令树上点名。它 import `pkg/authn` 根包读身份与注册验证状态、`pkg/tenant` 根包读 `FromContext`、`pkg/audit` 与 `pkg/http`，不 import 这两个能力的子包。
 - 方向满足架构不变量（[architecture](../architecture.md)）：本模块位于 `core`、`config`、`log`、`http`、`observability`、`db`、`event`、`authn`、`tenant` 之上，不被其中任何一个 import。本模块不 import `pkg/settings`：策略参数中塑造启动结构的部分在配置一侧，判定与装载不读设置存储。
 
 ## UML 图
@@ -663,7 +663,7 @@ classDiagram
     guardProduct --> Gate : 读声明
 ```
 
-`guardProduct` 未导出，它持有声明表、引擎引用与租户读取（见[请求期判定](#请求期判定)）。模块的一个实例要交付描述符声明的每一项能力，所以 `guardProduct` 同时交付 `Gate`、`Guard` 与 `Decider`，其中 `Gate` 经它持有的声明表委托实现。`Guard` 的写出方法因此名为 `RequirePermission` 而非 `Require`：一个 Go 类型不能有两个同名方法，而产品另要承载 `Gate.Require(method, path, perm)`。`RequirePermissionIn` 是 `RequirePermission` 的显式域形式，供判定域不是请求解析出的租户的 handler 用：管理面把路径里的租户当数据、判定固定在平台域，经它点名域（见[管理面](#管理面)）。`Guard` 与 `Decider` 由 `authz.guard` 交付、都不在根包；`Gate` 与 `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`、`Reconciler`、`WriteGuard`、`WriteSettings` 连同各数据类型的定义都在根包。`Seeder` 与 `Reconciler` 是独立于 `Manager` 的两个种入接口，两个管理面模块都拟不取用它们（[种入接口](#种入接口)）。`WriteGuard` 是宿主实现的可选扩展点：`authz.admin` 与 `authz.tenantadmin`（尚未实现）拟在 `Init` 里取用它，缺席时装配合法（见[管理员角色](#管理员角色)）。`WriteSettings`（尚未实现）拟是宿主实现、`settings.tenantadmin`（尚未实现）必需依赖的扩展点：缺席在依赖解析处终止启动。它不触策略表，只在设置写路径上收紧。链上锚点取根包的 `(*authz.Gate)(nil)`——`Guard` 因签名取 `*gin.Context` 落在 `pkg/authz/guard`，不作为锚点。
+`guardProduct` 未导出，它持有声明表、引擎引用与租户读取（见[请求期判定](#请求期判定)）。模块的一个实例要交付描述符声明的每一项能力，所以 `guardProduct` 同时交付 `Gate`、`Guard` 与 `Decider`，其中 `Gate` 经它持有的声明表委托实现。`Guard` 的写出方法因此名为 `RequirePermission` 而非 `Require`：一个 Go 类型不能有两个同名方法，而产品另要承载 `Gate.Require(method, path, perm)`。`RequirePermissionIn` 是 `RequirePermission` 的显式域形式，供判定域不是请求解析出的租户的 handler 用：管理面把路径里的租户当数据、判定固定在平台域，经它点名域（见[管理面](#管理面)）。`Guard` 与 `Decider` 由 `authz.guard` 交付、都不在根包；`Gate` 与 `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`、`Reconciler`、`WriteGuard`、`WriteSettings` 连同各数据类型的定义都在根包。`Seeder` 与 `Reconciler` 是独立于 `Manager` 的两个种入接口，两个管理面模块都不取用它们（[种入接口](#种入接口)）。`WriteGuard` 是宿主实现的可选扩展点：`authz.admin` 与 `authz.tenantadmin` 在 `Init` 里取用它，缺席时装配合法（见[管理员角色](#管理员角色)）。`WriteSettings`（尚未实现）拟是宿主实现、`settings.tenantadmin`（尚未实现）必需依赖的扩展点：缺席在依赖解析处终止启动。它不触策略表，只在设置写路径上收紧。链上锚点取根包的 `(*authz.Gate)(nil)`——`Guard` 因签名取 `*gin.Context` 落在 `pkg/authz/guard`，不作为锚点。
 
 下图给出一条受守路由从进入授权阶段到 403 或放行的路径。它固定的是读的次序与拒绝的划分：声明先于身份，身份先于租户，引擎出错是 503 而不是 403，未声明路由在缺省下也走 403。
 
@@ -990,7 +990,7 @@ const (
 
 **`Seeder` 是独立于 `Manager` 的种入能力，由 `authz.policy` 排他交付**（[ADR-authz-seeding](../../adr/adr-authz-seeding.md)）。它只有 `SeedGrants(ctx, tenant, role, grants) (int, error)` 一个方法：给一个已存在的角色（`builtin` 与否都可以）添加它尚未持有的（资源，动作）对，返回本次实际写入的行数。
 
-**它是独立接口而不是 `Manager` 上的一个方法，因为两个管理面只取用 `Manager`。** `authz.admin` 与 `authz.tenantadmin`（尚未实现）的模块声明里拟都没有 `Seeder`，它们的 handler 也拟不持有它，因此 `/api/v1/system/*` 与 `/api/v1/tenants/{tenant}/*` 下的任何写路由都触不到这条路径——这不是 handler 里的分支约定，而是由这两个模块拿到的类型决定的（[管理面](#管理面)、[租户管理面](#租户管理面)）。
+**它是独立接口而不是 `Manager` 上的一个方法，因为两个管理面只取用 `Manager`。** `authz.admin` 与 `authz.tenantadmin` 的模块声明里都没有 `Seeder`，它们的 handler 也不持有它，因此 `/api/v1/system/*` 与 `/api/v1/tenants/{tenant}/*` 下的任何写路由都触不到这条路径——这不是 handler 里的分支约定，而是由这两个模块拿到的类型决定的（[管理面](#管理面)、[租户管理面](#租户管理面)）。
 
 **种入是幂等且只增的。** 已持有的授予不写、不报错、不计数，所以同一份声明重复种入返回零、不写行、不重载快照、不发 `authz.policy.changed`。它不删除、不改写、不重写时间戳；`builtin` 角色既有的授权因此不会被一次种入撤销。
 
@@ -1061,9 +1061,9 @@ const (
 
 - **403** 是策略的拒绝：一条路由需要权限而引擎匹配为假，或一条未声明路由在 `undeclared=closed` 下被拒。它经 `pkg/http` 的 `Fail` 与 `Problem` 写出，`Problem.Type` 是 `urn:speed:authz:forbidden`，`Detail` **只写原因类、不写权限名**：说出被拒的权限会让应答成为探查策略的口子。
 - **503** 是依赖不可用：引擎快照损坏、存储读失败、启动自检失败。**引擎或存储不可用一律 503，绝不改判 403。** 把故障读成拒绝会让客户端把一次可恢复的失败当作永久的权限结论，把故障读成放行则更糟。应答不区分是哪个依赖失败，成因只进日志。
-- **两个管理面的强制档审计都是 503 的又一来源。** `authz.admin` 与 `authz.tenantadmin`（尚未实现）的写拟在其强制档审计行没落盘时答 503、动作不执行（见[管理面](#管理面)与[租户管理面](#租户管理面)）：审计是这次写的先决条件，一行记录不下来的改动不做。它与「依赖不可用」同类——503 说的是一个依赖答不了，从不说拒了什么。
-- **注册验证状态的门控写 403 `contact-required`，与策略拒绝分开。** 两个管理面的写路由（租户管理面尚未实现）在权限判定之前读发起者的注册验证状态；视为未验证（`SignupPending`：有邮箱而没有一条已证明的）的发起者答这个码，服务账户与没有任何邮箱的账户（`SignupNone`）不受影响，读取失败答 503。它只收紧、不放行，不改变引擎的匹配结论，`Problem.Type` 也不取 `urn:speed:authz:forbidden`。
-- **宿主写守卫的拒绝是 403 `protected`，读不出是 503。** 两个管理面的写路由（租户管理面尚未实现）在格式与防提权检查之后问可选的 `WriteGuard`；答复拒绝即 403、`Problem.Type` 为 `urn:speed:authz:protected`（与策略拒绝的 `urn:speed:authz:forbidden` 分开：原因是域受保护或目标被保留，不是权限不足），动作不执行、审计行不落、`Manager` 不被调用；答复读不出来时与引擎不可用同处置——503，绝不改判放行。`WriteGuard` 缺席时没有这一档拒绝；`WriteSettings`（尚未实现）拟不可选，`settings.tenantadmin`（尚未实现）的装配没有它即启动失败，读不出答复同样是这一档 503。**租户管理面的防提权拒绝也写这个码**：内建角色、调用方没有的权限与高于自己的角色，原因都是目标不允许这次写，不是发起者少了一条权限；授予一条不在治理集里的权限不是这一类，它是请求点名了一个租户侧不可授予的码，按 400 拒绝。
+- **两个管理面的强制档审计都是 503 的又一来源。** `authz.admin` 与 `authz.tenantadmin` 的写在其强制档审计行没落盘时答 503、动作不执行（见[管理面](#管理面)与[租户管理面](#租户管理面)）：审计是这次写的先决条件，一行记录不下来的改动不做。它与「依赖不可用」同类——503 说的是一个依赖答不了，从不说拒了什么。
+- **注册验证状态的门控写 403 `contact-required`，与策略拒绝分开。** 两个管理面的写路由在权限判定之前读发起者的注册验证状态；视为未验证（`SignupPending`：有邮箱而没有一条已证明的）的发起者答这个码，服务账户与没有任何邮箱的账户（`SignupNone`）不受影响，读取失败答 503。它只收紧、不放行，不改变引擎的匹配结论，`Problem.Type` 也不取 `urn:speed:authz:forbidden`。
+- **宿主写守卫的拒绝是 403 `protected`，读不出是 503。** 两个管理面的写路由在格式与防提权检查之后问可选的 `WriteGuard`；答复拒绝即 403、`Problem.Type` 为 `urn:speed:authz:protected`（与策略拒绝的 `urn:speed:authz:forbidden` 分开：原因是域受保护或目标被保留，不是权限不足），动作不执行、审计行不落、`Manager` 不被调用；答复读不出来时与引擎不可用同处置——503，绝不改判放行。`WriteGuard` 缺席时没有这一档拒绝；`WriteSettings`（尚未实现）拟不可选，`settings.tenantadmin`（尚未实现）的装配没有它即启动失败，读不出答复同样是这一档 503。**租户管理面的防提权拒绝也写这个码**：内建角色、调用方没有的权限与高于自己的角色，原因都是目标不允许这次写，不是发起者少了一条权限；授予一条不在治理集里的权限不是这一类，它是请求点名了一个租户侧不可授予的码，按 400 拒绝。
 - **路径段与解析出的租户别名不符、或目标是平台域时写裸 404。** 它与一条不存在的租户一致，不带 `Problem.Type`，也不进 `Manager`：这个回答不区分「没有这个租户」与「路径段里的租户与本次请求解析出的租户别名不是同一个」。
 
 ### 非保证
@@ -1077,7 +1077,7 @@ const (
 - **不保证未纳入本模块的端上有任何权限层。** `authz.guard` 只在 `authz.guard.endpoints` 清单列出的端上登记中间件（清单必填、无缺省），清单外的端上全部路由没有权限判定；启动期不失败。察觉靠启动诊断里展开后的受守端名清单。
 - **不保证目录里的权限所属的模块在本进程运行。** 目录与翻译取全部已登记模块的声明，`authz.policy` 还无条件声明认证、审计与设置的权限；一个权限在目录里、可以被授予，不表示服务它的接口在本进程挂出。目录是词汇，权限因而可以先于装配变更授予；一个接口在不在由[特性文档](../../glossary.md)回答（[feature](design-feature.md)），管理面的目录读照列目录的全部权限，不按特性收窄。
 - **不保证 `system` 之外的域名与租户名册一致。** 本模块只核对 `system` 与名册不冲突；策略行里的租户标识与准入层解析出的标识是否对应，由准入层与宿主负责，本模块只按标识匹配。
-- **不保证管理面的调用方是谁。** 管理面路由自己经 handler 内判定 API（`authz.guard` 的 `RequirePermission`，管理面经它的显式域形式在平台域判）判 `authz.role.read`／`authz.role.manage`，身份由网关认定；租户管理面（尚未实现）拟经 `RequirePermissionIn` 在路径点名的租户域判 `authz.tenant.role.read`／`authz.tenant.role.manage`。本模块不给自己授权、只提供词汇（`Gate` 与判定 API），因此「这条管理路由挂在哪、谁来判」仍由宿主装配决定。
+- **不保证管理面的调用方是谁。** 管理面路由自己经 handler 内判定 API（`authz.guard` 的 `RequirePermission`，管理面经它的显式域形式在平台域判）判 `authz.role.read`／`authz.role.manage`，身份由网关认定；租户管理面经 `RequirePermissionIn` 在路径点名的租户域判 `authz.tenant.role.read`／`authz.tenant.role.manage`。本模块不给自己授权、只提供词汇（`Gate` 与判定 API），因此「这条管理路由挂在哪、谁来判」仍由宿主装配决定。
 - **不保证 `ScopeTenants` 组之外的路由得到路径租户核对。** 这层前置只覆盖 `ScopeTenants` 路由组；平台侧与普通路由不按租户路径寻址，不需要它。一个宿主把租户域路由挂到没有这层前置的路径结构下，路径里的租户就不受这条核对约束——这是装配的缺口，不是本模块能补的。
 - **不保证滚动发布期间各副本的治理集一致。** 新旧版本的治理集可能不同；`Reconciler` 只删除调用方列出的废弃项，不按「不在目标集里」推断删除，因此旧副本不会删掉新版本刚声明为治理的授予。旧版本的租户侧不会列出、也不会授予它不认识的权限，直到该副本升级。一份漏列废弃项会留下一条旧授予，一份多列会收回一条仍被使用的权限；这份清单没有类型系统强制。
 
@@ -1145,7 +1145,7 @@ const (
 | 配置 `authz.self.endpoints` 的声明与读取 | 已实现 | `pkg/authz/self/self.go` `schema`、`resolve`、`readConfig` |
 | 模块 `authz.self` 的读取路由 `GET /api/v1/authz/me/permissions` 与它的 401/503 写出 | 已实现 | `pkg/authz/self/self.go` `Module`、`(*product).wire`；`pkg/authz/self/routes.go` `mount`、`declareOpen`；`pkg/authz/self/handler.go` `(*product).requireIdentity`、`(*product).handlePermissions`、`writeNoIdentity401` |
 | `authz.self` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/authz/self/operations.go`；`pkg/authz/self/openapi_generated_test.go`；片段 `pkg/authz/self/openapi/authz.self.json` |
-| 模块 `authz.admin` 的管理面路由（权限目录、角色、权限授予、绑定的读写） | 已实现 | `pkg/authz/admin/admin.go` `Module`、`newProduct`、`product.wire`、`diagnose`；`pkg/authz/admin/routes.go` `routes`、`mount`、`declareOpen`；`pkg/authz/admin/pipeline.go` `caller`、`require`、`requireWriteAllowed`、`auditRequired`、`answer`；`pkg/authz/admin/catalog.go` `handlePermissionList`；`pkg/authz/admin/views.go` `(*product).permissionViewOf`、`AuthzAdminPermissionView`、`roleView`、`grantView`、`bindingView`；`pkg/authz/admin/role.go` `handleRoleList`、`handleRolePut`、`handleRoleDelete`；`pkg/authz/admin/grant.go` `handleGrantList`、`handleGrantPut`、`handleGrantDelete`；`pkg/authz/admin/binding.go` `handleBindingList`、`handleBindingOf`、`handleBindingPut`、`handleBindingDelete`；`pkg/authz/admin/audit.go` `mandatory`、`failedAudit` |
+| 模块 `authz.admin` 的管理面路由（角色、权限授予、绑定的读写与权限目录的读） | 已实现 | `pkg/authz/admin/admin.go` `Module`、`newProduct`、`product.wire`、`diagnose`；`pkg/authz/admin/routes.go` `routes`、`mount`、`declareOpen`；`pkg/authz/admin/pipeline.go` `caller`、`require`、`requireWriteAllowed`、`auditRequired`、`answer`；`pkg/authz/admin/catalog.go` `handlePermissionList`；`pkg/authz/admin/views.go` `(*product).permissionViewOf`、`AuthzAdminPermissionView`、`roleView`、`grantView`、`bindingView`；`pkg/authz/admin/role.go` `handleRoleList`、`handleRolePut`、`handleRoleDelete`；`pkg/authz/admin/grant.go` `handleGrantList`、`handleGrantPut`、`handleGrantDelete`；`pkg/authz/admin/binding.go` `handleBindingList`、`handleBindingOf`、`handleBindingPut`、`handleBindingDelete`；`pkg/authz/admin/audit.go` `mandatory`、`failedAudit` |
 | 管理面 `authz.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/authz/admin/operations.go`；`pkg/authz/admin/openapi_generated_test.go`；片段 `pkg/authz/admin/openapi/authz.admin.json` |
 | 静态特性 `authz.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/authz/admin/admin.go` `Module`；`pkg/authz/admin/feature_test.go` `TestTheModuleDeclaresTheAuthorizationAdminFeature` |
 | 词表对齐守卫与根包依赖守卫 | 已实现 | `pkg/authz/action_parity_test.go`、`pkg/authz/deps_test.go` |
