@@ -25,7 +25,7 @@ _.file = ".env"
 
 [tools]
 # Mirror of go.work's `go` directive.
-go = "1.26.8"
+go = "1.26.10"
 # Mirror of web/.nvmrc; the frontend leg of `make check` runs on this Node.
 node = "24"
 # Mirror of web/package.json's packageManager; `make web-check` runs on this pnpm.

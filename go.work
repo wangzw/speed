@@ -1,4 +1,4 @@
-go 1.26.8
+go 1.26.10
 
 use (
 	./pkg
@@ -14,4 +14,3 @@ use (
 // pre-split one, so only the split modules provide those packages. Naming the
 // version keeps a later monolith release from being pinned to this one.
 replace google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55 => google.golang.org/genproto v0.0.0-20260819154853-08b0e4226688
-
