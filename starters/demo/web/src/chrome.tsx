@@ -17,7 +17,8 @@
  *    render it. Its switch confirmation is announced but never painted.
  *  - UserMenu: an avatar trigger opening the account menu -- the same entries
  *    the sidebar account entry carries, from one shared list: the
- *    notification centre, the four account panes and sign-out. While an
+ *    notification centre, the four account panes, the workspace admin group
+ *    (only while the caller's admission supplies it) and sign-out. While an
  *    impersonation is in force, auth-ui's end item sits first: closing the
  *    banner must not strand the operator without a way to end it.
  *
@@ -42,6 +43,7 @@ import { evictTenantQueries, useAuthState } from '@speed/auth-core'
 import { ImpersonationEndMenuItem } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
 import { Avatar, avatarInitials } from '@speed/layout-kit'
+import type { AppShellNavItem } from '@speed/layout-kit'
 import { useNavigate } from '@speed/route-kit'
 import { TenantSwitcher } from '@speed/tenancy-ui'
 import type { TenantOption } from '@speed/tenancy-ui'
@@ -558,6 +560,21 @@ export function initialThemePreset(deploymentPreset?: string): string {
  * display name -- the initials are visible text, so WCAG 2.5.3 requires them
  * inside the name; the generic label is used while anonymous. Sign-out
  * drives the session's logout, whose quiet terminal flip the shells observe.
+ *
+ * `workspaceItems` is the host's workspace admin group: the route-kit
+ * entries the caller's tenant admits, supplied only while the admission is
+ * `allowed`. Each account menu receives it from its host surface -- the app
+ * passes the same list to this menu and to the sidebar's account entry -- so
+ * both menus show the same group; absent leaves the group out of each.
+ *
+ * `closeDrawer` is the slot's temporary-drawer channel, and the host passes
+ * AppShell's `rail.closeDrawer` in every layout. In the sidebar shell layout
+ * below `md`, AppShell renders this menu inside the temporary drawer, so a
+ * chosen destination must dismiss the drawer as well as the menu -- otherwise
+ * it stays open over the page it just opened. Elsewhere the channel is a
+ * no-op: the top-bar layout's temporary drawer cannot be open while the bar
+ * is reachable, and the sidebar layout's permanent drawer supplies a no-op
+ * close.
  */
 /** The paper both account menus share: one width and surface, so the header
  * dropdown and the sidebar column read as the same menu. */
@@ -571,10 +588,19 @@ function accountMenuPaperSx(theme: Theme) {
 
 export function UserMenu({
   narrow = false,
+  closeDrawer,
+  workspaceItems,
 }: {
   /** Tightens the trigger for the collapsed sidebar rail, where the stock
    * padding would push it past the paper's edge. */
   readonly narrow?: boolean
+  /** Closes the temporary (mobile) drawer this menu may be mounted in, before
+   * navigating or signing out. The host passes the drawer slot's channel in
+   * every layout; on a surface outside that drawer it is a no-op. */
+  readonly closeDrawer?: () => void
+  /** The workspace admin group's entries, supplied only while the caller's
+   * admission allows it; absent leaves the group out. */
+  readonly workspaceItems?: readonly AppShellNavItem[]
 } = {}): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
@@ -601,12 +627,22 @@ export function UserMenu({
         : `${initials} ${displayName}`
 
   const closeMenu = (): void => setAnchorEl(null)
-  const goTo = (path: string): void => {
+  // The surface may sit inside AppShell's temporary drawer (the sidebar shell
+  // layout below md), so dismissing it closes the drawer too. The host always
+  // passes rail.closeDrawer: in the top-bar layout it is the navigation
+  // drawer's controller (a no-op while the bar is reachable), and in the
+  // sidebar layout's permanent drawer it is a no-op, so those placements get
+  // the menu close alone.
+  const dismissSurface = (): void => {
     closeMenu()
+    closeDrawer?.()
+  }
+  const goTo = (path: string): void => {
+    dismissSurface()
     navigate(path)
   }
   const signOut = (): void => {
-    closeMenu()
+    dismissSurface()
     // Logout is terminal either way (auth-core clears the local session and
     // the shell flips to its ended/sign-in branch), so a refused server
     // revocation has nothing left to retry against and needs no banner.
@@ -647,6 +683,8 @@ export function UserMenu({
           onNavigate={goTo}
           onSignOut={signOut}
           onClose={closeMenu}
+          onDismiss={dismissSurface}
+          workspaceItems={workspaceItems}
         />
       </Menu>
     </Box>
@@ -727,20 +765,29 @@ function SignOutIcon() {
  * The account menu's entries, rendered by both surfaces that offer them: the
  * header's avatar menu and the sidebar's account entry. One list keeps the
  * two menus from drifting into two different sets of actions -- the
- * notification centre, one entry per account pane, then sign-out, with the
+ * notification centre, one entry per account pane, the workspace admin group
+ * when the caller's admission supplies it, then sign-out, with the
  * impersonation-end item first while an impersonation is in force.
  *
- * The callbacks carry each surface's own dismissal: it closes its menu (and,
- * on the sidebar, a temporary drawer) before it navigates or signs out.
- * `itemSx` is the only presentation difference the list accepts -- the
- * sidebar passes its navigation-track inset, the header keeps the menu's
- * default spacing -- so the entries themselves are identical.
+ * The workspace group sits after the account panes and before the divider
+ * that precedes sign-out. Its label is a plain group heading -- not a
+ * menuitem and not focusable -- and each entry is a real link carrying
+ * route-kit's href and click handler, so a modified or new-tab click keeps
+ * the browser's behavior.
+ *
+ * The callbacks carry each surface's own dismissal: it closes its menu and,
+ * when it is mounted in AppShell's temporary drawer, that drawer too, before
+ * it navigates or signs out. `itemSx` is the only presentation difference the
+ * list accepts -- the sidebar passes its navigation-track inset, the header
+ * keeps the menu's default spacing -- so the entries themselves are identical.
  */
 function AccountMenuItems({
   onNavigate,
   onSignOut,
   onClose,
+  onDismiss,
   itemSx,
+  workspaceItems,
 }: {
   /** Opens a destination; the surface closes itself first. */
   readonly onNavigate: (path: string) => void
@@ -748,11 +795,18 @@ function AccountMenuItems({
   readonly onSignOut: () => void
   /** Closes the surface after the impersonation-end item activates. */
   readonly onClose: () => void
+  /** Closes the surface after a workspace entry activates; when the surface
+   * sits in a temporary drawer, it closes that too. */
+  readonly onDismiss?: () => void
   /** The entry inset the sidebar's navigation track needs; absent keeps the
    * menu's default spacing. */
   readonly itemSx?: typeof accountMenuItemSx
+  /** The workspace admin group's entries, in the admission's order. Absent or
+   * empty leaves the group out. */
+  readonly workspaceItems?: readonly AppShellNavItem[]
 }): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
+  const workspaceLabelId = useId()
   return (
     <>
       {/* The same end attempt the banner carries: an impersonation ends from
@@ -777,6 +831,51 @@ function AccountMenuItems({
           {t(key)}
         </MenuItem>
       ))}
+      {workspaceItems !== undefined && workspaceItems.length > 0 ? (
+        <>
+          <Divider />
+          {/* The group's heading names the group for assistive technology and
+              is not itself an action: a plain div inside role="group", never
+              a menuitem, so the menu's focus cycle skips it. */}
+          <Box role="group" aria-labelledby={workspaceLabelId}>
+            <Typography
+              id={workspaceLabelId}
+              component="div"
+              variant="caption"
+              sx={{
+                display: 'block',
+                px: 2,
+                py: 0.5,
+                color: 'text.secondary',
+              }}
+            >
+              {t('nav.workspaceAdmin')}
+            </Typography>
+            {workspaceItems.map((item) => (
+              <MenuItem
+                key={item.id}
+                component="a"
+                href={item.href}
+                onClick={(event) => {
+                  // route-kit's handler navigates a plain click in place and
+                  // leaves a modified one to the browser; the surface then
+                  // closes itself either way.
+                  item.onClick?.(event)
+                  onDismiss?.()
+                }}
+                sx={itemSx}
+              >
+                {item.icon === undefined ? null : (
+                  <Box component="span" sx={accountMenuItemIconSx}>
+                    {item.icon}
+                  </Box>
+                )}
+                {item.label}
+              </MenuItem>
+            ))}
+          </Box>
+        </>
+      ) : null}
       <Divider />
       <MenuItem onClick={onSignOut} sx={itemSx}>
         <Box component="span" sx={accountMenuItemIconSx}>
@@ -792,7 +891,10 @@ function AccountMenuItems({
  * The account entry at the bottom of the navigation column: a divider above a
  * row carrying the signed-in user's avatar, display name and disclosure
  * chevron. The menu opens upward over the navigation column with the
- * notification centre, the four account panes and sign-out.
+ * notification centre, the four account panes, the workspace admin group and
+ * sign-out. `workspaceItems` is the same group the header menu receives, so
+ * both surfaces offer the workspace entries when the caller's admission
+ * allows them.
  *
  * The row shares the navigation's own icon track in absolute pixels -- a 16px
  * leading inset and a 36px icon box -- so the avatar starts on the navigation
@@ -808,11 +910,15 @@ function AccountMenuItems({
 export function AccountEntry({
   narrow = false,
   closeDrawer,
+  workspaceItems,
 }: {
   /** The collapsed rail's icon-only form. */
   readonly narrow?: boolean
   /** Closes a temporary (mobile) drawer before navigating. */
   readonly closeDrawer?: () => void
+  /** The workspace admin group's entries, supplied only while the caller's
+   * admission allows it; absent leaves the group out. */
+  readonly workspaceItems?: readonly AppShellNavItem[]
 }): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
@@ -835,14 +941,16 @@ export function AccountEntry({
         : `${initials} ${displayName}`
 
   const closeMenu = (): void => setAnchorEl(null)
-  const goTo = (path: string): void => {
+  const dismissSurface = (): void => {
     closeMenu()
     closeDrawer?.()
+  }
+  const goTo = (path: string): void => {
+    dismissSurface()
     navigate(path)
   }
   const signOut = (): void => {
-    closeMenu()
-    closeDrawer?.()
+    dismissSurface()
     // Logout is terminal either way (auth-core clears the local session and
     // the shell flips to its ended/sign-in branch), so a refused server
     // revocation has nothing left to retry against and needs no banner.
@@ -950,12 +1058,14 @@ export function AccountEntry({
       >
         {/* The same entries the header's avatar menu carries, from one list:
             the impersonation-end item, the notification centre, the four
-            account panes and sign-out. */}
+            account panes, the workspace admin group and sign-out. */}
         <AccountMenuItems
           onNavigate={goTo}
           onSignOut={signOut}
           onClose={closeMenu}
+          onDismiss={dismissSurface}
           itemSx={accountMenuItemSx}
+          workspaceItems={workspaceItems}
         />
       </Menu>
     </Box>

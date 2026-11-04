@@ -5,8 +5,8 @@
  * declarations arrive from @speed/admin-ui relative to a host-chosen root
  * and mount under WORKSPACE_ADMIN_PREFIX (/workspace/admin). The host
  * narrows them with the feature-presence predicate, then derives both
- * entries -- the navigation parent and the home card -- from the same
- * answer, so the two never disagree.
+ * entries -- the account menu's workspace group and the home card -- from
+ * the same answer, so the two never disagree.
  *
  * Admission is fail-closed at every step. The surface is offered only when
  * the session is authenticated and not impersonating, the current tenant is
@@ -62,7 +62,8 @@ export const workspaceAdminShellRoutes: AdminRouteTable =
     path: `${WORKSPACE_ADMIN_PREFIX}${route.path}`,
   }))
 
-/** The entry both the navigation parent and the home card render. */
+/** The entry both the account menu's workspace group and the home card
+ * render. */
 export interface WorkspaceAdminEntry {
   /** The current tenant the surface acts on; every request names it. */
   readonly tenantId: string
@@ -71,7 +72,7 @@ export interface WorkspaceAdminEntry {
   /** The narrowed declarations, prefixed. */
   readonly routes: readonly AdminRoute[]
   /** The route-kit navigation entries for the declarations the caller may
-   * open, ready to sit under the parent entry. */
+   * open, ready to sit in the account menu's workspace group. */
   readonly children: readonly AppShellNavItem[]
 }
 
@@ -116,9 +117,9 @@ export function useWorkspaceAdminPermission(
  * The workspace surface's admission and entry for the current render.
  *
  * Hooks are called unconditionally; the returned status carries the
- * decision. Callers render the entry (navigation parent, home card) only on
- * `allowed`, wait on `pending`, show a retryable failure on `failed`, and
- * send the viewer home on `denied`.
+ * decision. Callers render the entry (account menu's workspace group, home
+ * card) only on `allowed`, wait on `pending`, show a retryable failure on
+ * `failed`, and send the viewer home on `denied`.
  */
 export function useWorkspaceAdminAdmission(): WorkspaceAdminAdmission {
   const snapshot = useAuthState()
@@ -217,8 +218,8 @@ export function useWorkspaceAdminAdmission(): WorkspaceAdminAdmission {
   )
   // The children come from route-kit's own navigation derivation -- the
   // same entries, hrefs, selection and click handler the rest of the shell
-  // uses -- restricted to the declarations the caller may open. The parent
-  // is therefore an entry over real links, never a hand-built list.
+  // uses -- restricted to the declarations the caller may open. The group is
+  // therefore an entry over real links, never a hand-built list.
   const children = navItems
     .filter((item) => openablePaths.has(item.id))
     .map(

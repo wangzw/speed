@@ -12,18 +12,21 @@
  * forms, so its text reaches an assistive reader without being painted.
  */
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { attachSession, tenantQueryKey, useAuthState } from '@speed/auth-core'
 import type { AuthDomain } from '@speed/auth-core'
+import { LAYOUT_KIT_NAMESPACE, type AppShellNavItem } from '@speed/layout-kit'
 import {
   createQueryClient,
   createSpeedI18n,
   SpeedAppProviders,
 } from '@speed/product-shell/bootstrap'
 import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
+import { RouteProvider, useRouteLinkProps } from '@speed/route-kit'
 import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import { AppServicesProvider } from './app-services.js'
 import {
@@ -39,19 +42,39 @@ import {
   setTenantAliases,
   tenantAlias,
   TenantMenu,
+  UserMenu,
   useTenantSelection,
 } from './chrome.js'
 import type { DemoTenant } from './chrome.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { ACCOUNT_SECTION_PATHS, NOTIFICATIONS_PATH } from './paths.js'
+import { PlatformPermissions } from './platform-permissions.js'
 import { DEMO_NAMESPACE, demoResources } from './resources.js'
+import { mockMatchMedia } from './test-utils/matchMedia.js'
 import { createHarnessClient, renderDemoApp } from './test-utils/render.js'
-import { authenticatedSnapshot, createTestSession } from './test-utils/session.js'
+import {
+  authenticatedSnapshot,
+  createTestSession,
+  readyFeatures,
+} from './test-utils/session.js'
 import type { TestSession } from './test-utils/session.js'
+
+/** The shell's own strings, resolved from the framework bundle the assembly
+ * registers by default rather than from a local copy. */
+const tLayout = createSpeedI18n({
+  supportedLanguages: ['en-US', 'zh-CN'],
+  defaultLanguage: 'en-US',
+  storage: null,
+  urlParameterName: null,
+  navigatorLanguages: [],
+}).getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
 
 afterEach(() => {
   setTenantAliases(new Map())
   setCurrentTenantId(null)
+  // The suite setup installs the desktop branch once per file; restore it
+  // after the narrow-viewport case.
+  mockMatchMedia(true)
 })
 
 describe('the tenant alias layer', () => {
@@ -391,7 +414,9 @@ describe('the colour mode preference', () => {
  */
 vi.mock('./account-entry.js', () => ({ ACCOUNT_ENTRY: 'both' }))
 
-/** The entries every account menu carries, in render order. */
+/** The entries every account menu carries unconditionally, in render order.
+ * The workspace admin group joins the list only while the caller's admission
+ * allows it. */
 const ACCOUNT_MENU_LABELS = [
   demoEnUS.userMenu.messages,
   demoEnUS.account.sections.profile,
@@ -452,8 +477,8 @@ describe('the account menus', () => {
     const header = await accountMenuLabels(user, 'user-menu-trigger')
     const sidebar = await accountMenuLabels(user, 'account-entry-trigger')
 
-    // Both surfaces carry the whole list, and therefore the same set: an
-    // entry added to one cannot be missing from the other.
+    // Both surfaces carry the same unconditional entries: an entry added to
+    // one cannot be missing from the other.
     expect(header).toEqual([...ACCOUNT_MENU_LABELS])
     expect(new Set(header)).toEqual(new Set(sidebar))
   })
@@ -483,4 +508,164 @@ describe('the account menus', () => {
       await waitFor(() => expect(logout).toHaveBeenCalled())
     })
   }
+})
+
+/** UserMenu with one workspace entry whose link pair is route-kit's own, so a
+ * plain click navigates in place exactly as it does from the app's slot. */
+function UserMenuHarness({
+  closeDrawer,
+  target,
+}: {
+  readonly closeDrawer?: () => void
+  readonly target: string
+}): ReactElement {
+  const link = useRouteLinkProps(target)
+  const items: readonly AppShellNavItem[] = [
+    {
+      id: target,
+      label: 'Invitations',
+      href: link.href,
+      onClick: link.onClick,
+    },
+  ]
+  return <UserMenu closeDrawer={closeDrawer} workspaceItems={items} />
+}
+
+/** Renders UserMenu alone, under the production provider stack and the app
+ * services it reads, so a case can supply its drawer close channel. */
+function renderUserMenu(options: {
+  readonly closeDrawer?: () => void
+  readonly target: string
+}) {
+  const i18n = createSpeedI18n({
+    supportedLanguages: ['zh-CN', 'en-US'],
+    defaultLanguage: 'en-US',
+    storage: null,
+    urlParameterName: null,
+    navigatorLanguages: [],
+    namespaces: [{ namespace: DEMO_NAMESPACE, resources: demoResources }],
+  })
+  const queryClient = createQueryClient()
+  const session = createTestSession(authenticatedSnapshot())
+  attachSession(session)
+  const services: SpeedAppServices = {
+    session,
+    api: createHarnessClient(),
+    queryClient,
+  }
+  return render(
+    <SpeedAppProviders i18n={i18n} queryClient={queryClient}>
+      <AppServicesProvider services={services}>
+        <RouteProvider table={[]} fallback={() => null}>
+          <UserMenuHarness
+            closeDrawer={options.closeDrawer}
+            target={options.target}
+          />
+        </RouteProvider>
+      </AppServicesProvider>
+    </SpeedAppProviders>,
+  )
+}
+
+describe('the header account menu in the temporary drawer', () => {
+  it('closes the drawer as well as the menu when a workspace entry is chosen', async () => {
+    window.history.replaceState({}, '', '/')
+    const user = userEvent.setup()
+    const closeDrawer = vi.fn()
+    renderUserMenu({ closeDrawer, target: '/workspace/admin/invitations' })
+
+    await user.click(screen.getByTestId('user-menu-trigger'))
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Invitations' }),
+    )
+
+    // In the sidebar shell layout below md this menu sits in AppShell's
+    // temporary drawer: choosing a destination must close both surfaces, or
+    // the drawer covers the page it just opened.
+    expect(closeDrawer).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(window.location.pathname).toBe('/workspace/admin/invitations'),
+    )
+    await waitFor(() =>
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('closes the app\'s temporary drawer when a workspace entry is chosen', async () => {
+    // The case above injects the close channel into UserMenu, so it cannot
+    // prove the assembled app passes the slot's own channel through. This
+    // case drives the app instead: the sidebar shell below md, its temporary
+    // drawer, and the avatar menu inside it.
+    mockMatchMedia(false)
+    window.history.replaceState({}, '', '/')
+    setCurrentTenantId('acme')
+    setTenantAliases(new Map([['acme', 'acme']]))
+    bindRequestFn(<T,>(path: string): Promise<T> => {
+      if (path === '/api/v1/auth/me/tenants') {
+        return Promise.resolve({
+          tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+        } as T)
+      }
+      if (path === '/api/v1/authz/me/permissions') {
+        return Promise.resolve({
+          platform: [],
+          tenant: ['authn.membership.manage'],
+        } as T)
+      }
+      // The workspace landing page reads its first declaration's list.
+      if (path.endsWith('/invitations')) {
+        return Promise.resolve({ invitations: [], next_cursor: '' } as T)
+      }
+      return Promise.reject(new Error(`unexpected request: ${path}`))
+    })
+    const user = userEvent.setup()
+    const session = createTestSession(
+      authenticatedSnapshot({
+        features: readyFeatures(
+          'authn.admin',
+          'authn.invitations',
+          'authn.admin.sso',
+          'authz.tenantadmin',
+          'settings.tenantadmin',
+        ),
+      }),
+    )
+    renderDemoApp({
+      session,
+      shellLayout: 'sidebar',
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    await screen.findByText(demoEnUS.home.heading)
+
+    // Below md the sidebar shell moves its chrome rows into the temporary
+    // drawer; the minimal top bar carries only the trigger.
+    await user.click(
+      screen.getByRole('button', { name: tLayout('appShell.openNav') }),
+    )
+
+    // The avatar menu is the drawer's userMenu slot. Its workspace group is
+    // the admission's entries, resolved from the scripted reads.
+    await user.click(screen.getByTestId('user-menu-trigger'))
+    const menu = await screen.findByRole('menu')
+    const group = await within(menu).findByRole('group', {
+      name: demoEnUS.nav.workspaceAdmin,
+    })
+    const firstEntry = within(group).getAllByRole('menuitem')[0]
+    expect(firstEntry).toBeDefined()
+    await user.click(firstEntry as HTMLElement)
+
+    // The route-kit entry navigates in place...
+    await waitFor(() =>
+      expect(window.location.pathname).toBe('/workspace/admin/invitations'),
+    )
+    // ...and the slot's closeDrawer closed the temporary drawer around it.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: tLayout('appShell.openNav') }),
+      ).toHaveAttribute('aria-expanded', 'false'),
+    )
+  })
 })

@@ -1011,51 +1011,44 @@ function TenantFrame({
 
   const items = useNavItems()
   const adminRoutes = presentDeclarations(adminShellRoutes, presence)
-  // The workspace admin entry: the navigation parent and the home card read
-  // this one derivation (src/workspace-admin.ts), so they never disagree
-  // about whether the surface is offered or where it starts. The parent's
-  // children are route-kit's own entries for the workspace declarations the
-  // caller may open, ordered as the declarations are.
+  // The workspace admin entry: the account menu's workspace group and the
+  // home card read this one derivation (src/workspace-admin.ts), so they
+  // never disagree about whether the surface is offered or where it starts.
+  // The group's children are route-kit's own entries for the workspace
+  // declarations the caller may open, ordered as the declarations are, and
+  // only while the admission is `allowed`.
   const workspaceAdmission = useWorkspaceAdminAdmission()
+  const workspaceItems: readonly AppShellNavItem[] | undefined =
+    workspaceAdmission.status === 'allowed'
+      ? workspaceAdmission.children
+      : undefined
 
   // The tenant navigation is the home entry alone. The admin's pages are
   // filtered out (the admin entry lives in the header's action slot, offered
-  // only to platform staff), the workspace admin's pages are folded into the
-  // entry below rather than listed top-level, and the notification centre and
-  // the account settings are destinations of the account entry at the bottom
-  // of the column, not navigation entries. The entry's href/onClick pair is
-  // route-kit's -- a plain click navigates in place while a modified or
-  // new-tab click stays with the browser -- and its icon is the one its
-  // declaration carries (src/routes.tsx), looked up by the entry id that
-  // declaration path supplies.
-  const navItems: readonly AppShellNavItem[] = [
-    ...items
-      .filter((item) => !isAdminPath(item.id))
-      .filter((item) => !isWorkspaceAdminPath(item.id))
-      .filter(
-        (item) => item.id !== NOTIFICATIONS_PATH && item.id !== ACCOUNT_PATH,
-      )
-      .map(
-        (item): AppShellNavItem => ({
-          id: item.id,
-          label: item.label,
-          icon: navIconFor(item.id),
-          href: item.href,
-          selected: item.selected,
-          onClick: item.onClick,
-        }),
-      ),
-    ...(workspaceAdmission.status === 'allowed'
-      ? [
-          {
-            id: 'workspace-admin',
-            label: <DemoNavLabel labelKey="nav.workspaceAdmin" />,
-            icon: <AdminNavIcon />,
-            children: workspaceAdmission.children,
-          } satisfies AppShellNavItem,
-        ]
-      : []),
-  ]
+  // only to platform staff), the workspace admin's pages are destinations of
+  // the account menu's workspace group rather than navigation entries, and
+  // the notification centre and the account settings are destinations of the
+  // account entry at the bottom of the column, not navigation entries. The
+  // entry's href/onClick pair is route-kit's -- a plain click navigates in
+  // place while a modified or new-tab click stays with the browser -- and its
+  // icon is the one its declaration carries (src/routes.tsx), looked up by
+  // the entry id that declaration path supplies.
+  const navItems: readonly AppShellNavItem[] = items
+    .filter((item) => !isAdminPath(item.id))
+    .filter((item) => !isWorkspaceAdminPath(item.id))
+    .filter(
+      (item) => item.id !== NOTIFICATIONS_PATH && item.id !== ACCOUNT_PATH,
+    )
+    .map(
+      (item): AppShellNavItem => ({
+        id: item.id,
+        label: item.label,
+        icon: navIconFor(item.id),
+        href: item.href,
+        selected: item.selected,
+        onClick: item.onClick,
+      }),
+    )
 
   return (
     <TenantProvider tenantId={tenantId}>
@@ -1154,6 +1147,7 @@ function TenantFrame({
               <AccountEntry
                 narrow={rail.narrow}
                 closeDrawer={rail.closeDrawer}
+                workspaceItems={workspaceItems}
               />
             )
           }
@@ -1182,7 +1176,11 @@ function TenantFrame({
                   moves focus here). */}
               <ImpersonationChip narrow={rail.narrow} />
               {ACCOUNT_ENTRY === 'sidebar' ? null : (
-                <UserMenu narrow={rail.narrow} />
+                <UserMenu
+                  narrow={rail.narrow}
+                  closeDrawer={rail.closeDrawer}
+                  workspaceItems={workspaceItems}
+                />
               )}
             </>
           )}
@@ -1505,8 +1503,8 @@ function TenantHomeRedirect(): null {
  * declaration the URL matched exactly and checks it against the tenant
  * permission set scoped to the current tenant. A code the caller does not
  * hold sends the viewer to `target`, the first workspace page it may open
- * (the same entry the navigation parent and home card point at); no
- * permitted page at all is a `denied` admission, handled above.
+ * (the same entry the account menu's workspace group and home card point at);
+ * no permitted page at all is a `denied` admission, handled above.
  */
 function WorkspaceRouteGuard({
   target,

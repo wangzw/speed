@@ -1,7 +1,7 @@
 /**
  * The account entry placed in the header instead: the assembly's one-line
- * switch really moves it, and the header's avatar menu carries the same six
- * entries the sidebar account entry offers.
+ * switch really moves it, and the header's avatar menu carries the same
+ * unconditional entries the sidebar account entry offers.
  */
 
 import { screen, waitFor } from '@testing-library/react'

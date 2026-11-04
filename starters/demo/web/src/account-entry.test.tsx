@@ -1,20 +1,33 @@
 /**
  * The account entry's placement: the skeleton puts it at the bottom of the
- * navigation column, and the header's avatar menu offers the same six
- * entries. The menu carries the notification centre, the four account panes
- * and sign-out -- each with its own glyph -- and the navigation column
- * itself holds the home entry alone. The collapsed rail keeps the avatar
- * alone with the account still named, and the menu is fully
+ * navigation column, and the header's avatar menu offers the same
+ * unconditional entries. The menu carries the notification centre, the four
+ * account panes and sign-out -- each with its own glyph; the workspace admin
+ * group joins it only while the caller's admission allows it. The navigation
+ * column itself holds the home entry alone. The collapsed rail keeps the
+ * avatar alone with the account still named, and the menu is fully
  * keyboard-operated.
  */
 
-import { screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { attachSession } from '@speed/auth-core'
 import { layoutKitResources } from '@speed/layout-kit'
+import type { AppShellNavItem } from '@speed/layout-kit'
+import {
+  createQueryClient,
+  createSpeedI18n,
+  SpeedAppProviders,
+} from '@speed/product-shell/bootstrap'
+import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
+import { RouteProvider } from '@speed/route-kit'
+import { AppServicesProvider } from './app-services.js'
+import { AccountEntry } from './chrome.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import demoZhCN from './locales/zh-CN.json' with { type: 'json' }
-import { renderDemoApp } from './test-utils/render.js'
+import { DEMO_NAMESPACE, demoResources } from './resources.js'
+import { createHarnessClient, renderDemoApp } from './test-utils/render.js'
 import {
   authenticatedSnapshot,
   createTestSession,
@@ -27,7 +40,51 @@ const layoutEn = layoutKitResources['en-US'] as {
   }
 }
 
-/** The menu's six labels, in render order. */
+/** The workspace entries this suite hands the account entry: the shape the
+ * tenant frame passes while the caller's admission allows the surface. The
+ * fixture carries no `href` so the activation does not make jsdom attempt a
+ * navigation it does not implement; the case asserts the dismiss channel. */
+const WORKSPACE_ITEMS: readonly AppShellNavItem[] = [
+  { id: '/workspace/admin/invitations', label: 'Invitations' },
+]
+
+/** Renders AccountEntry alone, under the production provider stack and the
+ * app services it reads, so a case can supply its drawer close channel. */
+function renderAccountEntry(options: {
+  readonly closeDrawer?: () => void
+  readonly workspaceItems?: readonly AppShellNavItem[]
+}) {
+  const i18n = createSpeedI18n({
+    supportedLanguages: ['zh-CN', 'en-US'],
+    defaultLanguage: 'en-US',
+    storage: null,
+    urlParameterName: null,
+    navigatorLanguages: [],
+    namespaces: [{ namespace: DEMO_NAMESPACE, resources: demoResources }],
+  })
+  const queryClient = createQueryClient()
+  const session = createTestSession(authenticatedSnapshot())
+  attachSession(session)
+  const services: SpeedAppServices = {
+    session,
+    api: createHarnessClient(),
+    queryClient,
+  }
+  return render(
+    <SpeedAppProviders i18n={i18n} queryClient={queryClient}>
+      <AppServicesProvider services={services}>
+        <RouteProvider table={[]} fallback={() => null}>
+          <AccountEntry
+            closeDrawer={options.closeDrawer}
+            workspaceItems={options.workspaceItems}
+          />
+        </RouteProvider>
+      </AppServicesProvider>
+    </SpeedAppProviders>,
+  )
+}
+
+/** The menu's unconditional labels, in render order. */
 const menuLabels = [
   demoEnUS.userMenu.messages,
   demoEnUS.account.sections.profile,
@@ -66,7 +123,7 @@ describe('the account entry in the navigation column', () => {
     expect(iconBox).toHaveStyle({ width: '36px' })
   })
 
-  it('opens the six menu entries, each with a glyph, upward', async () => {
+  it('opens the unconditional menu entries, each with a glyph, upward', async () => {
     const user = userEvent.setup()
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
     const trigger = await screen.findByTestId('account-entry-trigger')
@@ -172,5 +229,23 @@ describe('the account entry in the navigation column', () => {
     expect(narrow).toHaveAccessibleName(new RegExp(displayName))
     // The glyph is still visible text inside the control.
     expect((narrow.textContent ?? '').trim()).not.toBe('')
+  })
+
+  it('closes a temporary drawer when a workspace entry is chosen', async () => {
+    const user = userEvent.setup()
+    const closeDrawer = vi.fn()
+    renderAccountEntry({ closeDrawer, workspaceItems: WORKSPACE_ITEMS })
+
+    await user.click(await screen.findByTestId('account-entry-trigger'))
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Invitations' }),
+    )
+
+    // The sidebar surface owns both dismissals: its menu and the temporary
+    // drawer it may be mounted in.
+    expect(closeDrawer).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+    )
   })
 })

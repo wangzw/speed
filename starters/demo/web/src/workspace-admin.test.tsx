@@ -2,9 +2,10 @@
  * The workspace admin area in the demo host: its entry derivation and its
  * route admission.
  *
- * The entry (navigation parent and home card) is one derivation over the
- * feature-narrowed workspace declarations and the tenant-domain permission
- * set scoped to the current tenant. These cases drive the real composition:
+ * The entry (the account menu's workspace group and the home card) is one
+ * derivation over the feature-narrowed workspace declarations and the
+ * tenant-domain permission set scoped to the current tenant. These cases
+ * drive the real composition:
  * the app under the production provider stack, the caller tenant read and
  * the permission read scripted at the api-sdk request seam.
  *
@@ -15,7 +16,7 @@
  * tenant's permissions.
  */
 
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
@@ -229,17 +230,104 @@ function mountApp(options: {
   return { requested, session }
 }
 
-/** The navigation parent and the home card, both named by the demo
- * namespace. */
-function workspaceEntry() {
-  const nav = screen.queryByRole('button', {
-    name: demoEnUS.nav.workspaceAdmin,
-  })
+/**
+ * One account menu's workspace group, its entry names in order, the href of
+ * its first entry, and the element carrying the group -- null when the menu
+ * offers no workspace section. The menu is closed again before the caller
+ * moves on.
+ */
+async function accountMenuWorkspace(
+  user: ReturnType<typeof userEvent.setup>,
+  triggerId: string,
+  waitForGroup: boolean,
+): Promise<{
+  readonly group: HTMLElement | null
+  readonly names: readonly string[]
+  readonly firstHref: string | null
+}> {
+  await user.click(screen.getByTestId(triggerId))
+  const menu = await screen.findByRole('menu')
+  const group = waitForGroup
+    ? await within(menu).findByRole('group', {
+        name: demoEnUS.nav.workspaceAdmin,
+      })
+    : within(menu).queryByRole('group', {
+        name: demoEnUS.nav.workspaceAdmin,
+      })
+  const entries = group === null ? [] : within(group).getAllByRole('menuitem')
+  const names = entries.map((entry) => entry.textContent ?? '')
+  const firstHref = entries[0]?.getAttribute('href') ?? null
+  await user.keyboard('{Escape}')
+  await waitFor(() =>
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+  )
+  return { group, names, firstHref }
+}
+
+/** The workspace group on both account-menu surfaces (the header's and the
+ * sidebar's), plus the home card beside them. Every case reads both surfaces,
+ * so a group that survives in one of them cannot pass as absent. `card` is
+ * null unless the card is on the settled page. */
+async function workspaceEntry(
+  user: ReturnType<typeof userEvent.setup>,
+  options: {
+    /** Waits for the groups to appear (the admission may still be settling). */
+    readonly waitForGroup?: boolean
+  } = {},
+): Promise<{
+  readonly header: {
+    readonly group: HTMLElement | null
+    readonly names: readonly string[]
+    readonly firstHref: string | null
+  }
+  readonly sidebar: {
+    readonly group: HTMLElement | null
+    readonly names: readonly string[]
+    readonly firstHref: string | null
+  }
+  readonly card: HTMLElement | null
+}> {
+  const waitForGroup = options.waitForGroup === true
+  const header = await accountMenuWorkspace(
+    user,
+    'user-menu-trigger',
+    waitForGroup,
+  )
+  const sidebar = await accountMenuWorkspace(
+    user,
+    'account-entry-trigger',
+    waitForGroup,
+  )
   const card = within(screen.getByRole('main')).queryByText(
     demoEnUS.home.cards.workspaceAdmin.title,
   )
-  return { nav, card }
+  return { header, sidebar, card }
 }
+
+/** The entry is offered by neither account menu, and the home card is absent. */
+function expectWorkspaceAbsent(
+  entry: Awaited<ReturnType<typeof workspaceEntry>>,
+): void {
+  expect(entry.header.group).toBeNull()
+  expect(entry.sidebar.group).toBeNull()
+  expect(entry.card).toBeNull()
+}
+
+/** The four workspace entries' labels, in the declarations' order. */
+const WORKSPACE_ENTRY_LABELS = [
+  tAdmin('workspace.nav.invitations'),
+  tAdmin('workspace.nav.sso'),
+  tAdmin('workspace.nav.roles'),
+  tAdmin('workspace.nav.settings'),
+] as const
+
+/** Every workspace permission, so all four declarations are openable. */
+const ALL_WORKSPACE_PERMISSIONS = [
+  'authn.membership.manage',
+  'authn.idp.manage',
+  'authz.tenant.role.read',
+  'settings.tenant.read',
+] as const
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
@@ -249,24 +337,46 @@ beforeEach(() => {
 })
 
 describe('the workspace admin entry', () => {
-  it('appears for a business tenant that grants a workspace permission', async () => {
+  it('appears in both account menus for a business tenant that grants the workspace permissions', async () => {
+    const user = userEvent.setup()
     mountApp({
       tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
-      permissionsFor: () => ({ platform: [], tenant: ['authn.membership.manage'] }),
-    })
-    expect(
-      await screen.findByRole('button', {
-        name: demoEnUS.nav.workspaceAdmin,
+      permissionsFor: () => ({
+        platform: [],
+        tenant: [...ALL_WORKSPACE_PERMISSIONS],
       }),
-    ).toBeInTheDocument()
-    expect(
-      within(screen.getByRole('main')).getByText(
-        demoEnUS.home.cards.workspaceAdmin.title,
-      ),
-    ).toBeInTheDocument()
+    })
+    await screen.findByText(demoEnUS.home.heading)
+
+    const entry = await workspaceEntry(user, { waitForGroup: true })
+    expect(entry.header.group).not.toBeNull()
+    expect(entry.header.names).toEqual([...WORKSPACE_ENTRY_LABELS])
+    // Both surfaces carry the same section because they share one list.
+    expect(entry.sidebar.names).toEqual([...WORKSPACE_ENTRY_LABELS])
+    expect(entry.card).toBeInTheDocument()
+
+    // The home card and the group's first entry are the two halves of the
+    // same entry: the card's anchor must open exactly the page the group
+    // lists first, or a card that drifts to another page passes unnoticed.
+    const cardAnchor = entry.card?.closest('a')
+    const firstHref = entry.header.firstHref
+    expect(firstHref).toBe('/workspace/admin/invitations')
+    expect(entry.sidebar.firstHref).toBe(firstHref)
+    expect(cardAnchor?.getAttribute('href')).toBe(firstHref)
+
+    // The sidebar offers no workspace control of its own any more: no
+    // landmark of the navigation column carries the group's name.
+    const navigation = screen.getAllByRole('navigation')
+    expect(navigation.length).toBeGreaterThan(0)
+    for (const landmark of navigation) {
+      expect(
+        within(landmark).queryByText(demoEnUS.nav.workspaceAdmin),
+      ).toBeNull()
+    }
   })
 
   it('does not appear for a personal tenant', async () => {
+    const user = userEvent.setup()
     setCurrentTenantId('personal-account-1')
     setTenantAliases(new Map([['personal-account-1', 'personal-account-1']]))
     mountApp({
@@ -281,11 +391,11 @@ describe('the workspace admin entry', () => {
     })
     await screen.findByText(demoEnUS.home.heading)
     await flushReads()
-    expect(workspaceEntry().nav).toBeNull()
-    expect(workspaceEntry().card).toBeNull()
+    expectWorkspaceAbsent(await workspaceEntry(user))
   })
 
   it('does not appear for the system tenant', async () => {
+    const user = userEvent.setup()
     setCurrentTenantId('system')
     setTenantAliases(new Map([['system', 'system']]))
     mountApp({
@@ -294,11 +404,11 @@ describe('the workspace admin entry', () => {
     })
     await screen.findByText(demoEnUS.home.heading)
     await flushReads()
-    expect(workspaceEntry().nav).toBeNull()
-    expect(workspaceEntry().card).toBeNull()
+    expectWorkspaceAbsent(await workspaceEntry(user))
   })
 
   it('does not appear while the session impersonates another account', async () => {
+    const user = userEvent.setup()
     mountApp({
       tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
       permissionsFor: () => ({ platform: [], tenant: ['authn.membership.manage'] }),
@@ -310,11 +420,11 @@ describe('the workspace admin entry', () => {
     await screen.findByText(demoEnUS.home.heading)
     await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
     await flushReads()
-    expect(workspaceEntry().nav).toBeNull()
-    expect(workspaceEntry().card).toBeNull()
+    expectWorkspaceAbsent(await workspaceEntry(user))
   })
 
   it('does not appear while the tenant permission read is pending', async () => {
+    const user = userEvent.setup()
     const { requested } = mountApp({
       tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
       // A read that never answers: the entry must wait, not guess.
@@ -323,8 +433,7 @@ describe('the workspace admin entry', () => {
     await screen.findByText(demoEnUS.home.heading)
     await waitFor(() => expect(requested).toContain(PERMISSIONS_PATH))
     await flushReads()
-    expect(workspaceEntry().nav).toBeNull()
-    expect(workspaceEntry().card).toBeNull()
+    expectWorkspaceAbsent(await workspaceEntry(user))
   })
 
   it('hides the entry while the set still belongs to the tenant just left', async () => {
@@ -342,11 +451,16 @@ describe('the workspace admin entry', () => {
               settleGlobex = resolve
             }),
     })
-    expect(
-      await screen.findByRole('button', {
-        name: demoEnUS.nav.workspaceAdmin,
-      }),
-    ).toBeInTheDocument()
+    await screen.findByText(demoEnUS.home.heading)
+    const beforeSwitch = await workspaceEntry(user, { waitForGroup: true })
+    // Exactly the openable page: only invitations' code is held, so a group
+    // that also listed the un-openable declarations must fail here.
+    expect(beforeSwitch.header.names).toEqual([
+      tAdmin('workspace.nav.invitations'),
+    ])
+    expect(beforeSwitch.sidebar.names).toEqual([
+      tAdmin('workspace.nav.invitations'),
+    ])
 
     await user.click(screen.getByRole('button', { name: 'acme' }))
     await user.click(await screen.findByRole('menuitem', { name: 'globex' }))
@@ -354,21 +468,132 @@ describe('the workspace admin entry', () => {
     // The switch clears the tenant domain and the read for globex has not
     // answered: the old tenant's set must not stand in for the new tenant.
     await waitFor(() => expect(getCurrentTenantId()).toBe('globex'))
-    await waitFor(() =>
-      expect(
-        screen.queryByRole('button', { name: demoEnUS.nav.workspaceAdmin }),
-      ).toBeNull(),
-    )
+    const whileStale = await workspaceEntry(user)
+    expect(whileStale.header.group).toBeNull()
+    expect(whileStale.sidebar.group).toBeNull()
 
     settleGlobex({ platform: [], tenant: ['authn.membership.manage'] })
-    expect(
-      await screen.findByRole('button', {
-        name: demoEnUS.nav.workspaceAdmin,
-      }),
-    ).toBeInTheDocument()
+    const afterSwitch = await workspaceEntry(user, { waitForGroup: true })
+    expect(afterSwitch.header.names).toEqual([
+      tAdmin('workspace.nav.invitations'),
+    ])
+    expect(afterSwitch.sidebar.names).toEqual([
+      tAdmin('workspace.nav.invitations'),
+    ])
     expect(
       requested.filter((path) => path === PERMISSIONS_PATH),
     ).toHaveLength(2)
+  })
+
+  it('navigates to each workspace page from the account menu', async () => {
+    const user = userEvent.setup()
+    mountApp({
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      permissionsFor: () => ({
+        platform: [],
+        tenant: [...ALL_WORKSPACE_PERMISSIONS],
+      }),
+    })
+    await screen.findByText(demoEnUS.home.heading)
+
+    const destinations = [
+      [tAdmin('workspace.nav.invitations'), '/workspace/admin/invitations'],
+      [tAdmin('workspace.nav.sso'), '/workspace/admin/sso'],
+      [tAdmin('workspace.nav.roles'), '/workspace/admin/roles'],
+      [tAdmin('workspace.nav.settings'), '/workspace/admin/settings'],
+    ] as const
+    for (const [label, path] of destinations) {
+      await user.click(screen.getByTestId('user-menu-trigger'))
+      await user.click(await screen.findByRole('menuitem', { name: label }))
+      await waitFor(() => expect(window.location.pathname).toBe(path))
+      // The menu is dismissed by the activation, so the next entry starts
+      // from a closed menu.
+      await waitFor(() =>
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+      )
+    }
+  })
+
+  it('renders each workspace entry as an anchor to its route', async () => {
+    const user = userEvent.setup()
+    mountApp({
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      permissionsFor: () => ({
+        platform: [],
+        tenant: [...ALL_WORKSPACE_PERMISSIONS],
+      }),
+    })
+    await screen.findByText(demoEnUS.home.heading)
+
+    const destinations = [
+      [tAdmin('workspace.nav.invitations'), '/workspace/admin/invitations'],
+      [tAdmin('workspace.nav.sso'), '/workspace/admin/sso'],
+      [tAdmin('workspace.nav.roles'), '/workspace/admin/roles'],
+      [tAdmin('workspace.nav.settings'), '/workspace/admin/settings'],
+    ] as const
+    await user.click(screen.getByTestId('user-menu-trigger'))
+    const menu = await screen.findByRole('menu')
+    const group = await within(menu).findByRole('group', {
+      name: demoEnUS.nav.workspaceAdmin,
+    })
+    const items = within(group).getAllByRole('menuitem')
+    expect(items).toHaveLength(destinations.length)
+    destinations.forEach(([label, path], index) => {
+      const item = items[index]
+      if (item === undefined) {
+        throw new Error(`the workspace group has no entry at index ${index}`)
+      }
+      expect(item).toHaveTextContent(label)
+      // An entry is a real link: its href is the route the declaration names,
+      // so a modified click, a middle click and a copied address all reach
+      // the same page without the app intercepting them.
+      expect(item.tagName).toBe('A')
+      expect(item).toHaveAttribute('href', path)
+    })
+  })
+
+  it('leaves a modified click on a workspace entry to the browser', async () => {
+    const user = userEvent.setup()
+    mountApp({
+      tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
+      permissionsFor: () => ({
+        platform: [],
+        tenant: [...ALL_WORKSPACE_PERMISSIONS],
+      }),
+    })
+    await screen.findByText(demoEnUS.home.heading)
+
+    await user.click(screen.getByTestId('user-menu-trigger'))
+    const item = await screen.findByRole('menuitem', {
+      name: tAdmin('workspace.nav.invitations'),
+    })
+    // jsdom has no navigation implementation and reports the browser's
+    // follow-up as a warning. The listener runs after React's root handler,
+    // so route-kit has already judged the click; it records whether the app
+    // cancelled the browser's own action before keeping jsdom from attempting
+    // the navigation route-kit left to the browser.
+    let preventedByTheApp = true
+    const cancelBrowserNavigation = (event: Event): void => {
+      preventedByTheApp = event.defaultPrevented
+      event.preventDefault()
+    }
+    document.addEventListener('click', cancelBrowserNavigation)
+    try {
+      fireEvent.click(item, { metaKey: true })
+    } finally {
+      document.removeEventListener('click', cancelBrowserNavigation)
+    }
+    // A modified click is the browser's: the app must not have called
+    // preventDefault before this listener ran. A regression that intercepts
+    // it (opening the page in place instead of a new tab) fails here.
+    expect(preventedByTheApp).toBe(false)
+    // route-kit declines the modified click and leaves it to the browser;
+    // jsdom does not follow the anchor, so the app's location stays put. The
+    // surface still dismisses itself.
+    expect(window.location.pathname).toBe('/')
+    await waitFor(() =>
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+    )
   })
 })
 
@@ -433,15 +658,10 @@ describe('the workspace admin route admission', () => {
     await waitFor(() => expect(window.location.pathname).toBe('/'))
 
     // Re-entering under the new tenant starts a fresh page: the draft did
-    // not cross the switch. The parent entry starts expanded, so its child
-    // links are already in view.
-    expect(
-      await screen.findByRole('button', {
-        name: demoEnUS.nav.workspaceAdmin,
-      }),
-    ).toBeInTheDocument()
+    // not cross the switch. The entry lives in the account menu.
+    await user.click(screen.getByTestId('user-menu-trigger'))
     await user.click(
-      await screen.findByRole('link', {
+      await screen.findByRole('menuitem', {
         name: tAdmin('workspace.nav.invitations'),
       }),
     )
@@ -472,6 +692,10 @@ describe('the workspace admin route admission', () => {
       }),
     ).toBeInTheDocument()
 
+    // A failed read offers no entry either: neither account menu carries the
+    // workspace group, and the home card is absent.
+    expectWorkspaceAbsent(await workspaceEntry(user))
+
     // The retry re-issues the read that failed rather than leaving the page
     // stuck on a failure the viewer cannot clear.
     const before = requested.filter((path) => path === SELF_TENANTS_PATH).length
@@ -488,6 +712,7 @@ describe('the workspace admin route admission', () => {
   })
 
   it('renders the failure page when the permission read fails instead of sending the viewer home', async () => {
+    const user = userEvent.setup()
     mountApp({
       path: '/workspace/admin/invitations',
       tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
@@ -507,9 +732,14 @@ describe('the workspace admin route admission', () => {
         name: demoEnUS.workspace.accessFailed.retry,
       }),
     ).toBeInTheDocument()
+
+    // An unknown permission set offers no entry: the workspace group is
+    // absent from both account menus and the home card is gone.
+    expectWorkspaceAbsent(await workspaceEntry(user))
   })
 
   it('renders the failure page when the feature document read failed', async () => {
+    const user = userEvent.setup()
     mountApp({
       path: '/workspace/admin/invitations',
       tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
@@ -532,8 +762,7 @@ describe('the workspace admin route admission', () => {
       demoEnUS.workspace.accessFailed.title,
     )
     await flushReads()
-    expect(workspaceEntry().nav).toBeNull()
-    expect(workspaceEntry().card).toBeNull()
+    expectWorkspaceAbsent(await workspaceEntry(user))
     expect(window.location.pathname).toBe('/workspace/admin/invitations')
   })
 
@@ -665,6 +894,7 @@ describe('the workspace admin route admission', () => {
   })
 
   it('denies an ordinary member with no workspace permission', async () => {
+    const user = userEvent.setup()
     mountApp({
       path: '/workspace/admin/invitations',
       tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
@@ -673,13 +903,14 @@ describe('the workspace admin route admission', () => {
     })
     await waitFor(() => expect(window.location.pathname).toBe('/'))
     await flushReads()
-    expect(workspaceEntry().nav).toBeNull()
+    expectWorkspaceAbsent(await workspaceEntry(user))
     expect(
       screen.queryByRole('heading', { name: tAdmin('invitations.title') }),
     ).toBeNull()
   })
 
   it('denies the surface when no workspace declaration is served', async () => {
+    const user = userEvent.setup()
     mountApp({
       path: '/workspace/admin/invitations',
       tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
@@ -692,13 +923,14 @@ describe('the workspace admin route admission', () => {
       }),
     })
     await waitFor(() => expect(window.location.pathname).toBe('/'))
-    expect(workspaceEntry().nav).toBeNull()
+    expectWorkspaceAbsent(await workspaceEntry(user))
     expect(
       screen.queryByRole('heading', { name: tAdmin('invitations.title') }),
     ).toBeNull()
   })
 
   it('does not admit the page while the feature document is not ready', async () => {
+    const user = userEvent.setup()
     mountApp({
       path: '/workspace/admin/invitations',
       tenants: [{ id: 'acme', alias: 'acme', kind: 'business' }],
@@ -710,7 +942,7 @@ describe('the workspace admin route admission', () => {
     })
     await flushReads()
     // An unsettled feature document admits nothing: no entry, no page.
-    expect(workspaceEntry().nav).toBeNull()
+    expectWorkspaceAbsent(await workspaceEntry(user))
     expect(
       screen.queryByRole('heading', { name: tAdmin('invitations.title') }),
     ).toBeNull()

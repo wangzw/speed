@@ -451,11 +451,14 @@ pages in tenant mode:
 
 None of the four wrappers issues an `/api/v1/system` request.
 
-The navigation parent and the home card are the host's composition: the
-host derives them from the narrowed `workspaceAdminRoutes` and hides them
-while impersonating, in the system tenant, in a personal tenant, while the
-tenant permission read is pending, and when the set belongs to another
-tenant. The workspace page wrappers publish the breadcrumb through
+The account menu's workspace group and the home card are the host's
+composition: the host derives them from the narrowed
+`workspaceAdminRoutes` and hides them while impersonating, in the system
+tenant, in a personal tenant, while the tenant permission read is pending,
+and when the set belongs to another tenant. The group carries a heading and
+lists the openable declarations as links in both the avatar account menu and
+the sidebar account menu; the home card opens the first openable declaration. The
+workspace page wrappers publish the breadcrumb through
 `WorkspaceAdminBreadcrumbProvider`; the shared pages' `PageHeader` prefers
 that context and falls back to its own platform trail otherwise.
 

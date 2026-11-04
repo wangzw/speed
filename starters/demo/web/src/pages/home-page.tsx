@@ -213,10 +213,10 @@ function AdminStartCard(): ReactElement | null {
  * admission allows it -- a business tenant other than `system`, no
  * impersonation, at least one served workspace declaration, and the
  * tenant-domain permission set for THIS tenant holding one of its codes.
- * It calls the same useWorkspaceAdminAdmission the navigation parent does
- * (src/workspace-admin.ts), so the card and the parent never disagree; a
- * pending or foreign-tenant permission read fails closed and the card stays
- * hidden.
+ * It calls the same useWorkspaceAdminAdmission the account menu's workspace
+ * group does (src/workspace-admin.ts), so the card and the group never
+ * disagree; a pending or foreign-tenant permission read fails closed and the
+ * card stays hidden.
  */
 function WorkspaceAdminStartCard(): ReactElement | null {
   const admission = useWorkspaceAdminAdmission()

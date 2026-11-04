@@ -2,10 +2,11 @@
  * The workspace administration surface's rendered landmarks.
  *
  * The workspace pages are the shared admin-ui pages mounted inside the tenant
- * frame at `/workspace/admin/*`. The host's entry is a navigation parent (a
- * disclosure button) plus a start card; there is no separate header entry.
- * These helpers address that frame and the sections the pages render, so a
- * journey names a landmark once instead of repeating its role query.
+ * frame at `/workspace/admin/*`. The host's entry is a group of links inside
+ * the account menu, plus a start card on the tenant home; the sidebar carries
+ * no workspace navigation. These helpers open the account menu, address the
+ * group and the sections the pages render, so a journey names a landmark once
+ * instead of repeating its role query.
  *
  * Every expected string comes from the shipped bundles through `copy`; a
  * renamed label or section title fails in the helper rather than silently
@@ -32,16 +33,55 @@ export function mainNavigation(page: Page): Locator {
   })
 }
 
+/** The two account-menu surfaces. The header's avatar is the deployment's
+ * primary; the sidebar's row at the bottom of the navigation column opens the
+ * same shared menu. */
+export type AccountMenuSurface = 'header' | 'sidebar'
+
+/** The account menu's trigger on one surface. */
+function accountMenuTrigger(
+  page: Page,
+  surface: AccountMenuSurface,
+): Locator {
+  return page.getByTestId(
+    surface === 'header' ? 'user-menu-trigger' : 'account-entry-trigger',
+  )
+}
+
 /**
- * The workspace admin entry: the navigation parent, a disclosure button. Its
- * presence and its `aria-expanded` state are the entry's own signals; the
- * children are real links under it.
+ * Open one surface's account menu and leave it open for the caller's
+ * assertions. The trigger's own `aria-expanded` says whether it is already
+ * open, so opening an already-open menu (which would toggle it closed) cannot
+ * happen.
  */
-export function workspaceEntry(page: Page): Locator {
-  return mainNavigation(page).getByRole('button', {
-    name: copy('demo', 'nav.workspaceAdmin'),
-    exact: true,
-  })
+export async function openAccountMenu(
+  page: Page,
+  surface: AccountMenuSurface = 'header',
+): Promise<Locator> {
+  const trigger = accountMenuTrigger(page, surface)
+  await expect(trigger).toBeVisible()
+  if ((await trigger.getAttribute('aria-expanded')) !== 'true') {
+    await trigger.click()
+  }
+  const menu = page.getByRole('menu')
+  await expect(menu).toBeVisible()
+  return menu
+}
+
+/** Close one surface's account menu if it is open, leaving the page as it was.
+ * MUI's Grow transition keeps the `role="menu"` element in the DOM after the
+ * trigger reports `aria-expanded="false"`, so the close also waits for the
+ * menu to leave: the next open must match exactly one menu under strict mode. */
+export async function closeAccountMenu(
+  page: Page,
+  surface: AccountMenuSurface = 'header',
+): Promise<void> {
+  const trigger = accountMenuTrigger(page, surface)
+  if ((await trigger.getAttribute('aria-expanded')) === 'true') {
+    await page.keyboard.press('Escape')
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  }
+  await expect(page.getByRole('menu')).toHaveCount(0)
 }
 
 /** The home page's workspace admin card, as the anchor it is. */
@@ -63,6 +103,14 @@ export function workspacePath(path: string): string {
 /** The workspace pages, each by its navigation label and page title. */
 export type WorkspacePageKey = 'invitations' | 'sso' | 'roles' | 'settings'
 
+/** The workspace pages in the order the account menu lists them. */
+export const WORKSPACE_PAGE_KEYS: readonly WorkspacePageKey[] = [
+  'invitations',
+  'sso',
+  'roles',
+  'settings',
+]
+
 const WORKSPACE_PAGES: Record<
   WorkspacePageKey,
   { readonly nav: string; readonly title: string }
@@ -77,22 +125,57 @@ const WORKSPACE_PAGES: Record<
 }
 
 /**
- * Open one workspace page through the navigation parent's child link,
- * expanding the parent first if it is collapsed, and wait for the page's h1.
+ * The workspace admin group's heading inside the account menu. The menu
+ * renders it as a plain, non-interactive label above the group's entries. The
+ * query is scoped to the menu because the home card carries the same copy.
+ */
+export function workspaceGroupLabel(page: Page): Locator {
+  return page
+    .getByRole('menu')
+    .getByText(copy('demo', 'nav.workspaceAdmin'), { exact: true })
+}
+
+/** One workspace page's entry in the open account menu, as a menuitem link. */
+export function workspaceMenuItem(
+  page: Page,
+  key: WorkspacePageKey,
+): Locator {
+  return page.getByRole('menu').getByRole('menuitem', {
+    name: copy('adminUi', WORKSPACE_PAGES[key].nav),
+    exact: true,
+  })
+}
+
+/**
+ * Open one account-menu surface (the header's by default) and return its
+ * workspace admin entries: one menuitem per page the caller's admission
+ * allows, in admission order. The menu stays open for the caller's
+ * assertions.
+ */
+export async function workspaceEntry(
+  page: Page,
+  surface: AccountMenuSurface = 'header',
+): Promise<Locator> {
+  const menu = await openAccountMenu(page, surface)
+  return menu
+    .getByRole('group', {
+      name: copy('demo', 'nav.workspaceAdmin'),
+      exact: true,
+    })
+    .getByRole('menuitem')
+}
+
+/**
+ * Open one workspace page through its account-menu entry, opening the menu if
+ * it is closed, and wait for the page's h1.
  */
 export async function openWorkspacePage(
   page: Page,
   key: WorkspacePageKey,
 ): Promise<void> {
-  const entry = workspaceEntry(page)
-  await expect(entry).toBeVisible()
-  if ((await entry.getAttribute('aria-expanded')) === 'false') {
-    await entry.click()
-  }
+  await openAccountMenu(page)
   const target = WORKSPACE_PAGES[key]
-  await mainNavigation(page)
-    .getByRole('link', { name: copy('adminUi', target.nav), exact: true })
-    .click()
+  await workspaceMenuItem(page, key).click()
   await expect(
     page.getByRole('heading', {
       level: 1,
@@ -204,25 +287,66 @@ export async function switchTenant(
 }
 
 /**
- * The entry and the home card are both gone. The navigation children are
- * asserted too: the parent is their only container, so a parent that a
- * regression hides while leaving a stray link behind still fails.
+ * The workspace entry and the home card are both gone. The sidebar is asserted
+ * to carry no workspace control either: the entry moved into the account menu,
+ * so a regression that brings the old navigation-column control back must
+ * fail. Both
+ * account menus are then opened in turn -- the header's and the sidebar's --
+ * because they share one list and an absence in only one of them is a live
+ * regression. The sidebar and card checks run before a menu opens, because an
+ * open menu's backdrop hides the rest of the app from role queries and would
+ * make the absence assertions pass vacuously.
  */
 export async function expectWorkspaceEntryAbsent(page: Page): Promise<void> {
-  await expect(workspaceEntry(page)).toHaveCount(0)
   await expect(workspaceHomeCard(page)).toHaveCount(0)
-  await expect(
-    mainNavigation(page).getByRole('link', {
-      name: copy('adminUi', 'workspace.nav.invitations'),
-      exact: true,
-    }),
-  ).toHaveCount(0)
+  const navigation = mainNavigation(page)
+  for (const role of ['button', 'link'] as const) {
+    await expect(
+      navigation.getByRole(role, {
+        name: copy('demo', 'nav.workspaceAdmin'),
+        exact: true,
+      }),
+    ).toHaveCount(0)
+  }
+  for (const key of WORKSPACE_PAGE_KEYS) {
+    await expect(
+      navigation.getByRole('link', {
+        name: copy('adminUi', WORKSPACE_PAGES[key].nav),
+        exact: true,
+      }),
+    ).toHaveCount(0)
+  }
+
+  for (const surface of ['header', 'sidebar'] as const) {
+    const entries = await workspaceEntry(page, surface)
+    await expect(entries).toHaveCount(0)
+    await expect(workspaceGroupLabel(page)).toHaveCount(0)
+    for (const key of WORKSPACE_PAGE_KEYS) {
+      await expect(workspaceMenuItem(page, key)).toHaveCount(0)
+    }
+    await closeAccountMenu(page, surface)
+  }
 }
 
-/** The entry and the home card are both offered. */
+/**
+ * The account menu's workspace group and the home card are both offered on
+ * both account-menu surfaces: the group label, one entry per page, and the
+ * start card. Each surface is opened, asserted and closed in turn, because the
+ * two share one list and an entry present in only one of them is a live
+ * regression. The menus are closed before returning so the caller's next click
+ * lands on the page rather than the menu's backdrop.
+ */
 export async function expectWorkspaceEntryPresent(page: Page): Promise<void> {
-  await expect(workspaceEntry(page)).toBeVisible()
   await expect(workspaceHomeCard(page)).toBeVisible()
+  for (const surface of ['header', 'sidebar'] as const) {
+    const entries = await workspaceEntry(page, surface)
+    await expect(workspaceGroupLabel(page)).toBeVisible()
+    await expect(entries).toHaveCount(WORKSPACE_PAGE_KEYS.length)
+    for (const key of WORKSPACE_PAGE_KEYS) {
+      await expect(workspaceMenuItem(page, key)).toBeVisible()
+    }
+    await closeAccountMenu(page, surface)
+  }
 }
 
 /** The email-verification notice under the app bar. */

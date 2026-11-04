@@ -4,11 +4,11 @@
  * A business tenant's administrator -- a member holding the tenant's governed
  * permissions and no platform permission -- reaches the workspace admin area
  * from the tenant home. This spec drives that surface the way the person
- * does: the navigation parent and the start card, the members and invitations
- * pages, the invitation handed to a colleague in a second browser context,
- * the tenant roles and grants, the bindings, the tenant settings layer, the
- * tenant switch, the enterprise providers, the `system` tenant and an
- * impersonated session.
+ * does: the account menu's workspace group and the start card, the members and
+ * invitations pages, the invitation handed to a colleague in a second browser
+ * context, the tenant roles and grants, the bindings, the tenant settings
+ * layer, the tenant switch, the enterprise providers, the `system` tenant and
+ * an impersonated session.
  *
  * The administrator signs in as the review fixture's proved-email account
  * (`reviewTenantAdmin`). The seed makes it acme's only tenant administrator,
@@ -100,7 +100,6 @@ import {
   tenantSwitcher,
   verificationBanner,
   verificationSection,
-  workspaceEntry,
   workspaceHomeCard,
   workspacePath,
 } from '../helpers/workspace-admin'
@@ -329,26 +328,13 @@ test.describe('the tenant administrator manages the workspace', () => {
         })
         await expect(homeHeading(page)).toBeVisible()
 
-        // REQ-tenant-admin-001: a tenant administrator holding no platform
-        // permission still sees the navigation parent and the start card.
+        // REQ-tenant-admin-001 / REQ-tenant-admin-002: a tenant administrator
+        // holding no platform permission still sees the account menu's
+        // workspace group -- on both account-menu surfaces -- and the start
+        // card, with one real link per openable page. The helper asserts the
+        // group label and every entry and closes each menu, so the caller's
+        // next click lands on the page.
         await expectWorkspaceEntryPresent(page)
-        // REQ-tenant-admin-002: the parent lists every page this account may
-        // open, as real links, and starts expanded.
-        const entry = workspaceEntry(page)
-        await expect(entry).toHaveAttribute('aria-expanded', 'true')
-        for (const navKey of [
-          'workspace.nav.invitations',
-          'workspace.nav.sso',
-          'workspace.nav.roles',
-          'workspace.nav.settings',
-        ]) {
-          await expect(
-            mainNavigation(page).getByRole('link', {
-              name: copy('adminUi', navKey),
-              exact: true,
-            }),
-          ).toBeVisible()
-        }
       })
 
       await test.step('step 2: the card and the entry land on the same first page', async () => {
@@ -1093,8 +1079,8 @@ test.describe('the tenant administrator manages the workspace', () => {
       await test.step('step 13: a personal-tenant switch retracts the entry and a direct visit returns home', async () => {
         const personal = copy('demo', 'workspace.personal')
 
-        // REQ-tenant-admin-003/006: the switch retracts the entry, the parent
-        // and the card at once.
+        // REQ-tenant-admin-003/006: the switch retracts the entry, the account
+        // menu's workspace group and the card at once.
         await switchTenant(page, TENANT, personal)
         await expect(homeHeading(page)).toBeVisible()
         await expectWorkspaceEntryAbsent(page)
