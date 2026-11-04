@@ -97,4 +97,4 @@ through `go.work` like every other.
 | `docs/glossary.md` | The shared vocabulary. A term used in a design document means what this file says it means. |
 | `docs/references.md` | The shared register of external sources. A `REF-<slug>` cited in any document names an entry of this file. |
 | `<module>/AGENTS.md` | The module's own contract: its boundaries and how to run it. |
-| `.claude/skills/` | For work under `pkg/` and `starters/`: `document-standards` before writing under the documentation paths, `commit-convention` for the commit message. |
+| `.claude/skills/` | For work under `pkg/` and `starters/`: `document-standards` before writing under the documentation paths, `commit-convention` for the commit message, `browser-review` before opening a headed browser against the demo (every command carries `-s=speed-review`, and `open` carries the fixed profile). |

@@ -72,3 +72,8 @@ coverage/
 /docs/site/.hugo_build.lock
 
 .claude/dashboard/
+# Personal Claude Code overrides; shared skills live under .claude/skills/.
+.claude/settings.local.json
+# playwright-cli's per-run artifacts and the review browser profile: local
+# state, never committed.
+.playwright-cli/
