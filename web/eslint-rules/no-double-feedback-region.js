@@ -103,6 +103,12 @@ export const WRITE_FEEDBACK_REGION_EXEMPTIONS = [
     reason:
       'The invitations table and the members table are separate control groups, each with its region under its own table.',
   },
+  {
+    file: 'packages/admin-ui/src/OrganizationMembersPage.tsx',
+    component: 'OrganizationMembersPage',
+    reason:
+      'The members table and the invitations table are separate control groups, each with its region under its own table.',
+  },
 ]
 
 /** The path in a message, relative to the repository for a host source

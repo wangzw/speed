@@ -80,6 +80,11 @@ export interface RenderWithProvidersOptions extends BaseOptions {
    * fail-closed default.
    */
   readonly hasFeature?: ((name: FeatureName) => boolean) | null
+  /**
+   * The theme's starting color mode; omitted, the provider's light default.
+   * A suite that renders both modes passes the mode it wants.
+   */
+  readonly defaultMode?: 'light' | 'dark' | 'system'
 }
 
 export interface RenderWithProvidersResult extends BaseResult {
@@ -102,7 +107,13 @@ export function renderWithProviders(
   ui: ReactElement,
   options: RenderWithProvidersOptions = {},
 ): RenderWithProvidersResult {
-  const { language = 'zh-CN', i18n, operations, session } = options
+  const {
+    language = 'zh-CN',
+    i18n,
+    operations,
+    session,
+    defaultMode,
+  } = options
   const hasFeature =
     options.hasFeature === undefined ? () => true : options.hasFeature
   const instance = i18n ?? createAdminUiI18n(language)
@@ -121,7 +132,7 @@ export function renderWithProviders(
   }
   const result = render(
     <I18nextProvider i18n={instance}>
-      <AppThemeProvider i18n={instance}>
+      <AppThemeProvider i18n={instance} defaultMode={defaultMode}>
         <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
       </AppThemeProvider>
     </I18nextProvider>,

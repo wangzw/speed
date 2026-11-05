@@ -2,15 +2,15 @@
  * The organization administration surface's page wrappers.
  *
  * Each wrapper is a thin composition: it reads the current tenant the host
- * installed on `OrganizationAdminProvider` and hands it to the shared page
- * component as a controlled tenant. The page then renders without its
- * tenant selector and addresses every read and write at that tenant's
- * namespace; the page's own layout, feedback scopes and refresh actions are
- * unchanged. The invitations wrapper also turns on tenant mode, so the page
- * resolves member and inviter identities from the tenant's member read and
- * drops the platform-account member write form instead of reaching the
- * platform account surface. The roles wrapper hands over the host's
- * protected role names so the tenant role page renders them read-only.
+ * installed on `OrganizationAdminProvider` and hands it to the page
+ * component. The shared pages take it as a controlled tenant and then render
+ * without their tenant selector, addressing every read and write at that
+ * tenant's namespace; their own layout, feedback scopes and refresh actions
+ * are unchanged. The members and invitations wrapper mounts the
+ * organization-only page (`OrganizationMembersPage`), whose identities
+ * resolve from the tenant's member read and which never reaches the platform
+ * account surface. The roles wrapper hands over the host's protected role
+ * names so the tenant role page renders them read-only.
  *
  * The wrappers exist for the organization pages whose tenant-scoped surface
  * the package ships: invitations and membership, SSO providers, tenant
@@ -22,15 +22,15 @@ import {
   useOrganizationAdminProtectedRoles,
   useOrganizationAdminTenant,
 } from './OrganizationAdminProvider.js'
-import { InvitationsPage } from './InvitationsPage.js'
+import { OrganizationMembersPage } from './OrganizationMembersPage.js'
 import { PermissionsPage } from './PermissionsPage.js'
 import { SettingsPage } from './SettingsPage.js'
 import { SsoPage } from './SsoPage.js'
 
-/** Invitations and membership, scoped to the host's current tenant. */
+/** Members and invitations, scoped to the host's current tenant. */
 export function OrganizationInvitationsPage(): ReactElement {
   const tenant = useOrganizationAdminTenant()
-  return <InvitationsPage tenant={tenant} tenantMode />
+  return <OrganizationMembersPage tenant={tenant} />
 }
 
 /** SSO providers, scoped to the host's current tenant. */

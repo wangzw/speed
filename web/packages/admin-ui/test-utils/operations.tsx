@@ -178,8 +178,14 @@ export interface AdminBackend {
   ) => Promise<readonly AdminImpersonation[]>
   revokeImpersonation: (input: AdminImpersonationRef) => Promise<void>
 
-  // Invitation + membership surfaces (tenant-scoped).
-  listInvitations: (tenant: string) => Promise<AdminInvitationPage>
+  // Invitation + membership surfaces (tenant-scoped). The invitation read
+  // takes the same page parameters production's bundle forwards (limit,
+  // after, status); a test that only cares about the bare list may omit the
+  // second argument, and the page still sees a settled first page.
+  listInvitations: (
+    tenant: string,
+    params?: Parameters<AdminOperations['useInvitations']>[1],
+  ) => Promise<AdminInvitationPage>
   issueInvitation: (
     input: AdminIssueInvitationInput,
   ) => Promise<AdminIssuedInvitation>
@@ -909,10 +915,20 @@ export function createAdminOperations(
       })
     },
 
-    useInvitations: (tenant: string) =>
+    useInvitations: (tenant: string, params) =>
       useQuery({
-        queryKey: invitationsKey(tenant),
-        queryFn: () => backend.listInvitations(tenant),
+        // A caller that passes page parameters (the organization members
+        // page's status filter and cursor) keys by them too, so a filter
+        // change is a new read rather than a reused first page. A caller
+        // that passes none keeps the bare key the platform page always used.
+        queryKey:
+          params === undefined
+            ? invitationsKey(tenant)
+            : [...invitationsKey(tenant), params],
+        queryFn: () =>
+          params === undefined
+            ? backend.listInvitations(tenant)
+            : backend.listInvitations(tenant, params),
         enabled: tenant !== '',
       }),
     useIssueInvitation: () => {
