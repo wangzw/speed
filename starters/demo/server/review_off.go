@@ -20,6 +20,12 @@ var reviewModules []string
 // review.go.
 var reviewFeatureNames []string
 
+// settingsWriteGuardReviewDenial answers false in a default build: the review
+// build's read-only fixture is compiled only under the review tag, so no such
+// tenant exists and settingsWriteGuard refuses no tenant beyond the personal
+// domain. See review.go.
+func settingsWriteGuardReviewDenial(string) bool { return false }
+
 // reviewSeedExtras seeds nothing in a default build: the impersonation fixture's
 // second factors are a review-only exception, and the baseline seed writes no
 // factor at all.

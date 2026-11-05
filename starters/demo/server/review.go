@@ -28,6 +28,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -62,6 +63,23 @@ var reviewModules = []string{
 var reviewFeatureNames = []string{
 	reviewSMSControlFeature,
 	reviewNotificationControlFeature,
+}
+
+// protectedTestTenantPrefix marks a business tenant the review build's test
+// assembly constructs to exercise the settings surface's read-only state. The
+// settings write guard refuses it while every other management seam still
+// admits it, so organization administration opens and the settings page shows
+// the protected notice. The prefix and the refusal are compiled only under the
+// review tag: review_off.go answers the same seam with false, so no default
+// build knows the fixture.
+const protectedTestTenantPrefix = "protected-"
+
+// settingsWriteGuardReviewDenial reports whether the review build refuses a
+// tenant beyond the host's personal-domain policy. It is the review-only half
+// of settingsWriteGuard.Denied; the default build compiles the false answer in
+// review_off.go instead.
+func settingsWriteGuardReviewDenial(tenantID string) bool {
+	return strings.HasPrefix(tenantID, protectedTestTenantPrefix)
 }
 
 // init registers the guard. Importing this file is what puts it in the available

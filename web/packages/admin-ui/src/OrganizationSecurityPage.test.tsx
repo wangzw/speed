@@ -273,7 +273,12 @@ describe('OrganizationSecurityPage', () => {
     })
   })
 
-  it('asks once when a declaration is dangerous but not critical', async () => {
+  // Forward-compatible: the server's declaration validation admits only the
+  // empty value and "critical" today, so this value is not a reachable
+  // declaration. The case pins what the page does if that closed set grows: a
+  // danger that is not "critical" gets the ordinary single-step confirmation,
+  // not the two-step guard and not a silent save.
+  it('asks once for a danger outside the current closed set (forward-compatible)', async () => {
     const user = userEvent.setup()
     const writes: unknown[] = []
     renderPage({
@@ -301,8 +306,9 @@ describe('OrganizationSecurityPage', () => {
     })
     await user.click(mfaSwitch)
 
-    // A declared danger that is not "critical" gets the ordinary
-    // single-step confirmation, not the two-step guard.
+    // A declared danger that is not "critical" would get the ordinary
+    // single-step confirmation, not the two-step guard. This server declares
+    // none today; the assertion is the page's forward-compatible branch.
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(writes).toHaveLength(0)
     await user.click(

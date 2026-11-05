@@ -15,7 +15,9 @@
  * Turning a policy off follows the declaration's danger: "critical" asks
  * through the danger dialog's two-step confirmation, a declaration that
  * carries no danger saves immediately, and any other value gets the
- * ordinary single-step confirmation. Turning one on saves immediately. A
+ * ordinary single-step confirmation. The server's closed set today is the
+ * empty value and "critical"; the other-value branch is forward-compatible,
+ * not a state the current server declares. Turning one on saves immediately. A
  * switch saves on its own and reports the result beside itself (a short
  * "saved" note, or the resolved refusal), so the page has no save bar and
  * no batch.
@@ -429,9 +431,11 @@ export function OrganizationSecurityPage({
   const toggle = (setting: AdminTenantSetting, next: boolean): void => {
     if (!next) {
       // The declaration decides the guard. A policy that declares no danger
-      // saves without a dialog; "critical" gets the two-step guard; any other
+      // saves without a dialog; "critical" gets the two-step guard. Any other
       // declared danger gets the ordinary single-step confirmation rather
-      // than being treated as harmless.
+      // than being treated as harmless, but the server's closed set admits
+      // only the empty value and "critical" today, so that branch is
+      // forward-compatible rather than a reachable declaration.
       if (setting.danger === '') {
         void apply(setting, false)
         return
