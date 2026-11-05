@@ -95,6 +95,9 @@ func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenant
 	}
 	created := tenant.Tenant{
 		ID: tenant.ID(in.ID), Alias: in.Alias, Status: tenant.StatusActive, Profile: profile,
+		// The creator is the organization's first owner unless a transfer
+		// hands it on; the provisioner binds the same account as tenant-admin.
+		OwnerAccount: id.Actor().String(),
 	}
 	if err := p.provisioner.Provision(ctx, created, id.Actor().String()); err != nil {
 		p.auditBestEffort(ctx, failedAudit(actionTenantCreate, in.ID, actionID))
@@ -114,24 +117,22 @@ func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenant
 	return tenantCreatedBody{Tenant: tenantViewOf(written)}, nil
 }
 
-// aliasBody is the transitional alias request's body as a case builds it. The
-// route's declared input pairs the same alias with the path's identifier.
-type aliasBody struct {
-	Alias string `json:"alias"`
-}
-
-// handleTenantSetAlias answers PATCH /api/v1/system/tenants/:tenant: it refuses
-// every alias change and writes nothing. It is a write, so the action is
-// tenant.manage.
+// handleTenantTransferOwner answers PUT /api/v1/system/tenants/:tenant/owner:
+// it hands one tenant's ownership to an active member. It is a write, so the
+// action is tenant.manage.
 //
-// It is a transitional compatibility route, to be removed in T6. An alias is
-// immutable once a tenant is registered, so the only answer an otherwise-valid
-// request gets is a 409 urn:speed:tenant:alias-immutable. The roster is read so
-// an identifier no row carries stays a 404 and a tombstone stays a 409, but the
-// route calls no write method, changes no column, and writes no audit row:
-// there is no successful write to record.
-func (p *product) handleTenantSetAlias(ctx context.Context, in setAliasInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	if !tenant.IsIdentifier(in.ID) || !tenant.IsAlias(in.Alias) {
+// The tenant is read first so an identifier no row carries is a bare 404 and a
+// tombstone a 409, both before the audit. The mandatory audit row lands before
+// the transfer; a refusal closes it with a linked failed row. The transfer
+// itself is the host seam's: it grants the target tenant-admin if needed, writes
+// the owner, and removes the previous owner's bindings and membership in one
+// transaction. A target that is not an active member, and a transfer that lost
+// the row to a deletion, are 409.
+func (p *product) handleTenantTransferOwner(ctx context.Context, in transferOwnerInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	if !tenant.IsIdentifier(in.ID) {
+		return nil, badRequest()
+	}
+	if _, err := authn.ParseAccountID(in.Account); err != nil {
 		return nil, badRequest()
 	}
 	got, ok, err := p.catalog.Get(ctx, tenant.ID(in.ID))
@@ -144,7 +145,78 @@ func (p *product) handleTenantSetAlias(ctx context.Context, in setAliasInput, _ 
 	if got.Status == tenant.StatusDeleted {
 		return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
 	}
-	return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + aliasImmutableCode}
+
+	actionID := newActionID()
+	if err := p.auditRequired(ctx, mandatory(actionTenantOwnerTransfer, in.ID, map[string]string{
+		detailActionID: actionID,
+		detailTenant:   in.ID,
+		detailSurface:  surfacePlatform,
+	})); err != nil {
+		return nil, err
+	}
+	if err := p.organization.TransferOwner(ctx, tenant.ID(in.ID), in.Account); err != nil {
+		p.auditBestEffort(ctx, failedAudit(actionTenantOwnerTransfer, in.ID, actionID))
+		return nil, p.failureOf("transferring a tenant's owner", err)
+	}
+	return speedhttp.EmptyReply(http.StatusNoContent), nil
+}
+
+// handleTenantDelete answers DELETE /api/v1/system/tenants/:tenant: it writes
+// the tenant's tombstone and cleans its core relations. It is a write, so the
+// action is tenant.manage for platform staff and the owner's own authority for
+// an owner.
+//
+// The route's guard has already decided that the caller is platform staff or
+// the organization's owner. The tenant is read for the existence answers before
+// the audit: an identifier no row carries is a bare 404 and a tombstone a 409.
+// A protected tenant is refused by the host's write guard, as the status route
+// refuses a disable. The mandatory audit row lands before the deletion; a
+// refusal closes it with a linked failed row.
+//
+// An owner-initiated deletion carries the owner it observed, so a transfer that
+// wins the race leaves the deletion a 409 rather than deleting the organization
+// the owner no longer governs. Platform staff carry no such expectation.
+func (p *product) handleTenantDelete(ctx context.Context, in getTenantInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	if !tenant.IsIdentifier(in.ID) {
+		return nil, badRequest()
+	}
+	got, ok, err := p.catalog.Get(ctx, tenant.ID(in.ID))
+	if err != nil {
+		return p.replyFailure("reading a tenant", err)
+	}
+	if !ok {
+		return speedhttp.EmptyReply(http.StatusNotFound), nil
+	}
+	if got.Status == tenant.StatusDeleted {
+		return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
+	}
+	denied, err := p.writeGuard.Denied(ctx, tenant.ID(in.ID), tenant.WriteDelete)
+	if err != nil {
+		p.logger.Error(ModuleName+": the write guard could not answer, so the deletion was not carried out",
+			slog.String("tenant", in.ID), slog.String("cause", err.Error()))
+		return nil, speedhttp.Fault{Status: http.StatusServiceUnavailable}
+	}
+	if denied {
+		return nil, speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + protectedCode}
+	}
+
+	expectedOwner := ""
+	if !isPlatformStaff(ctx) {
+		expectedOwner = got.OwnerAccount
+	}
+	actionID := newActionID()
+	if err := p.auditRequired(ctx, mandatory(actionTenantDelete, in.ID, map[string]string{
+		detailActionID: actionID,
+		detailTenant:   in.ID,
+		detailSurface:  surfacePlatform,
+	})); err != nil {
+		return nil, err
+	}
+	if err := p.organization.DeleteOrganization(ctx, tenant.ID(in.ID), expectedOwner); err != nil {
+		p.auditBestEffort(ctx, failedAudit(actionTenantDelete, in.ID, actionID))
+		return nil, p.failureOf("deleting a tenant", err)
+	}
+	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }
 
 // handleTenantSetProfile answers PATCH /api/v1/system/tenants/:tenant/profile:

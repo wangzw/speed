@@ -58,9 +58,9 @@ type managementAssembly struct {
 	// body is the configuration. The zero value uses managementBody.
 	body string
 	// noCatalog, noGuard, noAudit, noVerification, noWriteGuard and
-	// noProvisioner leave out the stand-in for the required capability named, so
-	// the drive reaches resolution without it.
-	noCatalog, noGuard, noAudit, noVerification, noWriteGuard, noProvisioner bool
+	// noProvisioner and noOrganization leave out the stand-in for the required
+	// capability named, so the drive reaches resolution without it.
+	noCatalog, noGuard, noAudit, noVerification, noWriteGuard, noProvisioner, noOrganization bool
 	// noRouter leaves the entry point out, which fails Init.
 	noRouter bool
 	// catalog is the roster stand-in delivered as that capability.
@@ -68,8 +68,9 @@ type managementAssembly struct {
 	// writeGuard and provisioner are the host-supplied seams delivered as those
 	// capabilities; nil uses a permissive guard and a provisioner that accepts
 	// every registration.
-	writeGuard  tenant.WriteGuard
-	provisioner tenant.Provisioner
+	writeGuard   tenant.WriteGuard
+	provisioner  tenant.Provisioner
+	organization tenant.OrganizationWriter
 	// verification is the signup-state read stand-in; nil uses one that reports
 	// no self-registration.
 	verification authn.SignupVerification
@@ -129,6 +130,14 @@ func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ct
 		}
 		reg.Register(standIn("stand-in.provisioner", p, (*tenant.Provisioner)(nil)))
 		names = append(names, "stand-in.provisioner")
+	}
+	if !a.noOrganization {
+		o := a.organization
+		if o == nil {
+			o = &stubOrganization{}
+		}
+		reg.Register(standIn("stand-in.organization", o, (*tenant.OrganizationWriter)(nil)))
+		names = append(names, "stand-in.organization")
 	}
 	if !a.noAudit {
 		reg.Register(standIn("stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)))
@@ -196,6 +205,7 @@ func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 		"no verification": {noVerification: true},
 		"no write guard":  {noWriteGuard: true},
 		"no provisioner":  {noProvisioner: true},
+		"no organization": {noOrganization: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var built any
@@ -244,12 +254,16 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 	catalog := &stubCatalog{}
 	writeGuard := &stubWriteGuard{}
 	provisioner := &stubProvisioner{}
+	organization := &stubOrganization{}
 	gate := authztest.NewGate()
 	logger := (&logBuffer{}).logger()
 
 	t.Run("New takes the required capabilities up", func(t *testing.T) {
 		var instance any
-		err := managementAssembly{catalog: catalog, writeGuard: writeGuard, provisioner: provisioner, record: &instance}.
+		err := managementAssembly{
+			catalog: catalog, writeGuard: writeGuard, provisioner: provisioner,
+			organization: organization, record: &instance,
+		}.
 			drive(t, core.StageNew, nil)
 		if err != nil {
 			t.Fatalf("the drive failed: %v", err)
@@ -263,6 +277,9 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 		}
 		if any(p.provisioner) != any(provisioner) {
 			t.Errorf("New took up provisioner %v, want the delivered %v", p.provisioner, provisioner)
+		}
+		if any(p.organization) != any(organization) {
+			t.Errorf("New took up organization writer %v, want the delivered %v", p.organization, organization)
 		}
 		if p.audit == nil || p.guard == nil {
 			t.Error("New did not take up the guard or the audit capability")
@@ -301,7 +318,8 @@ func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 		{http.MethodGet, "/api/v1/system/tenants"}:                   true,
 		{http.MethodPost, "/api/v1/system/tenants"}:                  true,
 		{http.MethodGet, "/api/v1/system/tenants/:tenant"}:           true,
-		{http.MethodPatch, "/api/v1/system/tenants/:tenant"}:         true,
+		{http.MethodPut, "/api/v1/system/tenants/:tenant/owner"}:     true,
+		{http.MethodDelete, "/api/v1/system/tenants/:tenant"}:        true,
 		{http.MethodPatch, "/api/v1/system/tenants/:tenant/profile"}: true,
 		{http.MethodPost, "/api/v1/system/tenants/:tenant/status"}:   true,
 	}
@@ -414,6 +432,7 @@ func TestTheDeclaredRowsReachTheProcessTranslation(t *testing.T) {
 		{"stand-in.roster", &stubCatalog{}, (*tenant.Catalog)(nil)},
 		{"stand-in.write-guard", &stubWriteGuard{}, (*tenant.WriteGuard)(nil)},
 		{"stand-in.provisioner", &stubProvisioner{}, (*tenant.Provisioner)(nil)},
+		{"stand-in.organization", &stubOrganization{}, (*tenant.OrganizationWriter)(nil)},
 		{"stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)},
 		{"stand-in.verification", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)},
 		{"stand-in.router", newStubRouter("public"), (*speedhttp.Router)(nil)},

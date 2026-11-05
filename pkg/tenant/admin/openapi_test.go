@@ -18,6 +18,7 @@ type seams struct {
 	tenant.Catalog
 	tenant.WriteGuard
 	tenant.Provisioner
+	tenant.OrganizationWriter
 	guard.Guard
 	audit.Audit
 	authn.SignupVerification
@@ -36,6 +37,7 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		Stubs: []core.Module{
 			routecontract.StandIn("stand-in.seams", &seams{},
 				(*tenant.Catalog)(nil), (*tenant.WriteGuard)(nil), (*tenant.Provisioner)(nil),
+				(*tenant.OrganizationWriter)(nil),
 				(*guard.Guard)(nil), (*audit.Audit)(nil),
 				(*authn.SignupVerification)(nil)),
 		},

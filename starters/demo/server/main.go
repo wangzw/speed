@@ -106,6 +106,7 @@ import (
 	tenantadmin "github.com/vislake/speed/pkg/tenant/admin"
 	"github.com/vislake/speed/pkg/tenant/admission"
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
+	tenantownership "github.com/vislake/speed/pkg/tenant/ownership"
 	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 	tenantprofile "github.com/vislake/speed/pkg/tenant/profile"
 	"github.com/vislake/speed/pkg/tenant/resolve"
@@ -333,6 +334,10 @@ var (
 		admission.ModuleName,
 		tenantcatalog.ModuleName,
 		tenantadmin.ModuleName,
+		// The owner transfer and organization deletion: the writes that span
+		// the roster, the policy store and the membership store in one
+		// transaction. The platform management surface requires it.
+		tenantownership.ModuleName,
 		tenantself.ModuleName,
 		// The organization profile surface: a tenant administrator edits its
 		// own organization's display name, description, contact email and

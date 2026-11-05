@@ -15,6 +15,8 @@ const (
 	actionTenantCreate        = "tenant.create"
 	actionTenantStatus        = "tenant.status"
 	actionTenantProfileUpdate = "tenant.profile.update"
+	actionTenantOwnerTransfer = "tenant.owner.transfer"
+	actionTenantDelete        = "tenant.delete"
 )
 
 // The outcomes this module writes. The permitted value of a mandatory row is

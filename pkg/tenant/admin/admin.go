@@ -152,6 +152,7 @@ func Module() core.Module {
 			{Token: (*authn.SignupVerification)(nil)},
 			{Token: (*tenant.WriteGuard)(nil)},
 			{Token: (*tenant.Provisioner)(nil)},
+			{Token: (*tenant.OrganizationWriter)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
@@ -218,6 +219,10 @@ type product struct {
 	// provisioner creates a tenant together with its first administrator, so
 	// the registration route never calls Catalog.Create itself.
 	provisioner tenant.Provisioner
+	// organization performs the owner transfer and the organization deletion,
+	// the two writes that span the roster, the policy store and the membership
+	// store and therefore have to be one transaction.
+	organization tenant.OrganizationWriter
 
 	// gate is the route-declaration surface, nil when the assembly delivers
 	// none. When it is there, Init declares every management route open on it so
@@ -255,6 +260,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the tenant provisioner: %w", ModuleName, err)
 	}
+	organization, err := core.Resolve[tenant.OrganizationWriter](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the organization writer: %w", ModuleName, err)
+	}
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the configuration reader: %w", ModuleName, err)
@@ -270,6 +279,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 		verification: verification,
 		writeGuard:   writeGuard,
 		provisioner:  provisioner,
+		organization: organization,
 		logger:       log.Default(),
 		cfg:          cfg,
 	}, nil

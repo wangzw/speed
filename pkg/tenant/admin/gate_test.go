@@ -35,8 +35,11 @@ var gateWrites = []struct {
 		},
 	},
 	{
-		"the alias change", http.MethodPatch, "/api/v1/system/tenants/acme",
-		map[string]any{"alias": "acme-labs"},
+		"the owner transfer", http.MethodPut, "/api/v1/system/tenants/acme/owner",
+		map[string]any{"account": "acc-2"},
+	},
+	{
+		"the deletion", http.MethodDelete, "/api/v1/system/tenants/acme", nil,
 	},
 	{
 		"the status change", http.MethodPost, "/api/v1/system/tenants/acme/status",

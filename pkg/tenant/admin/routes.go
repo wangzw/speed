@@ -18,6 +18,7 @@ var (
 	pathTenant        = tenantAdminSpec.ResolvePath(pathTenantFragment)
 	pathTenantProfile = tenantAdminSpec.ResolvePath(pathTenantProfileFragment)
 	pathTenantStatus  = tenantAdminSpec.ResolvePath(pathTenantStatusFragment)
+	pathTenantOwner   = tenantAdminSpec.ResolvePath(pathTenantOwnerFragment)
 )
 
 // managementGroups names the route groups in the order the start diagnostic
@@ -74,10 +75,12 @@ func (p *product) routes() []route {
 			getOperation.Handle(p.handleTenantGet),
 		},
 		{
-			// Transitional compatibility route, to be removed in T6: aliases are
-			// immutable, so this route only refuses the change.
-			http.MethodPatch, pathTenant, PermissionTenantManage,
-			prescreenJSON[setAliasInput](p, setAliasOperation.Handle(p.handleTenantSetAlias)),
+			http.MethodPut, pathTenantOwner, PermissionTenantManage,
+			prescreenJSON[transferOwnerInput](p, transferOwnerOperation.Handle(p.handleTenantTransferOwner)),
+		},
+		{
+			http.MethodDelete, pathTenant, PermissionTenantManage,
+			deleteOperation.Handle(p.handleTenantDelete),
 		},
 		{
 			http.MethodPatch, pathTenantProfile, PermissionTenantManage,
@@ -90,6 +93,13 @@ func (p *product) routes() []route {
 		},
 	}
 	for i := range routes {
+		// The deletion route is the one management route whose caller may be
+		// platform staff or the organization's own owner, so its guard is the
+		// two-answer one.
+		if routes[i].method == http.MethodDelete && routes[i].path == pathTenant {
+			routes[i].handler = p.guardDeleteRoute(routes[i].handler)
+			continue
+		}
 		routes[i].handler = p.guardRoute(routes[i].method, routes[i].perm, routes[i].handler)
 	}
 	return routes

@@ -22,6 +22,7 @@ const (
 	pathTenantFragment        = "/tenants/:tenant"
 	pathTenantStatusFragment  = "/tenants/:tenant/status"
 	pathTenantProfileFragment = "/tenants/:tenant/profile"
+	pathTenantOwnerFragment   = "/tenants/:tenant/owner"
 )
 
 // The success bodies. Each is an alias of an anonymous struct, so the fragment
@@ -70,13 +71,11 @@ type getTenantInput struct {
 	ID string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
 }
 
-// setAliasInput is the request of the transitional alias route: the identifier
-// in the path and the alias the caller asked for in the body. The body stays in
-// the declaration so a generated client keeps the method it had before aliases
-// became immutable; the route refuses every value.
-type setAliasInput struct {
-	ID    string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
-	Alias string `json:"alias" required:"true" description:"The alias the caller asked for. The route refuses every value, because an alias cannot change after creation."`
+// transferOwnerInput is the request of an owner transfer: the tenant in the
+// path and the account that becomes its owner in the body.
+type transferOwnerInput struct {
+	ID      string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
+	Account string `json:"account" required:"true" description:"The account identifier of the active member that becomes the organization's owner."`
 }
 
 // setProfileInput is the request of a profile update: the identifier in the
@@ -199,28 +198,32 @@ var getOperation = speedhttp.NewReplyOperation[getTenantInput](
 	},
 )
 
-// setAliasOperation declares PATCH /tenants/:tenant as a transitional
-// compatibility route, to be removed in T6. Aliases are immutable once a tenant
-// is registered, so the route refuses every change instead of applying it. Its
-// handler builds the answer because an unknown tenant is a bare 404.
-var setAliasOperation = speedhttp.NewReplyOperation[setAliasInput](
-	"tenant.admin.tenants.setAlias",
-	http.MethodPatch,
-	pathTenantFragment,
-	"Refuse a tenant alias change",
-	"Transitional compatibility route, to be removed in T6. Every tenant alias is immutable after creation, "+
-		"so this route refuses the change instead of applying it: the path identifier and the body's alias "+
-		"must both be well formed, a tenant the roster does not hold is a 404, a tombstone is a 409, and any "+
-		"other request is a 409 with the problem type urn:speed:tenant:alias-immutable. It never writes the "+
-		"alias or any other column and writes no audit row, because no successful write happens.",
+// transferOwnerOperation declares PUT /tenants/:tenant/owner: it hands one
+// tenant's ownership to an active member. Its handler builds the answer because
+// an unknown tenant is a bare 404.
+var transferOwnerOperation = speedhttp.NewReplyOperation[transferOwnerInput](
+	"tenant.admin.tenants.transferOwner",
+	http.MethodPut,
+	pathTenantOwnerFragment,
+	"Transfer one tenant's owner",
+	"Hands one tenant's ownership to an active member. The target must already be an active member of the "+
+		"organization; the transfer grants it tenant-admin if it does not hold it, and the previous owner "+
+		"loses every binding in the organization and is removed from it. The transfer and those writes are "+
+		"one transaction. A mandatory audit row lands before the write; if it cannot, nothing is written and "+
+		"the request is answered 503.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
-		Description: "The alias the caller asked for. The route refuses every value, because an alias cannot change after creation.",
+		Description: "The account identifier of the active member that becomes the owner.",
 		Required:    true,
+		Name:        "TenantAdminTenantOwnerTransfer",
 	},
 	[]speedhttp.Response{
+		{
+			Status:      http.StatusNoContent,
+			Description: "The ownership was transferred",
+		},
 		speedhttp.ProblemResponse(http.StatusBadRequest,
-			"The identifier or the alias is outside its domain, or the request body is not one JSON object"),
+			"The identifier is outside the identifier domain, the request body is not one JSON object, or the account member is absent"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
 			"The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
@@ -229,7 +232,42 @@ var setAliasOperation = speedhttp.NewReplyOperation[setAliasInput](
 			Description: "No tenant carries the identifier",
 		},
 		speedhttp.ProblemResponse(http.StatusConflict,
-			"The alias cannot be changed after creation (urn:speed:tenant:alias-immutable), or the tenant is a tombstone"),
+			"The target is not an active member of the organization, or the tenant is a tombstone"),
+		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
+	},
+)
+
+// deleteOperation declares DELETE /tenants/:tenant: it writes the tenant's
+// tombstone and cleans its core relations. Its handler builds the answer because
+// an unknown tenant is a bare 404.
+var deleteOperation = speedhttp.NewReplyOperation[getTenantInput](
+	"tenant.admin.tenants.delete",
+	http.MethodDelete,
+	pathTenantFragment,
+	"Delete one tenant",
+	"Deletes one tenant the owner or platform staff names. The write is a tombstone: the identifier and the "+
+		"alias stay and are never reusable, and the organization's memberships, bindings, roles and grants are "+
+		"removed in the same transaction. Other modules' tenant data is cleaned under the tombstone and is not "+
+		"part of this write. A mandatory audit row lands before the write; if it cannot, nothing is written "+
+		"and the request is answered 503. A tombstone is a 409: deletion is terminal.",
+	nil,
+	[]speedhttp.Response{
+		{
+			Status:      http.StatusNoContent,
+			Description: "The tenant was deleted",
+		},
+		speedhttp.ProblemResponse(http.StatusBadRequest,
+			"The identifier is outside the identifier domain"),
+		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
+		speedhttp.ProblemResponse(http.StatusForbidden,
+			"The caller is neither platform staff nor the organization's owner, the caller has not proved an "+
+				"email address (contact-required), or the tenant is protected (urn:speed:tenant:protected)"),
+		{
+			Status:      http.StatusNotFound,
+			Description: "No tenant carries the identifier",
+		},
+		speedhttp.ProblemResponse(http.StatusConflict,
+			"The tenant is a tombstone, or an owner-initiated deletion lost the organization to a transfer"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
 )
@@ -323,7 +361,8 @@ var operations = speedhttp.Operations{
 	listOperation,
 	createOperation,
 	getOperation,
-	setAliasOperation,
+	transferOwnerOperation,
+	deleteOperation,
 	setProfileOperation,
 	setStatusOperation,
 }

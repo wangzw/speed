@@ -22,10 +22,9 @@ import (
 )
 
 // The problem types this module writes. typePrefix is the tenant capability's
-// namespace; badRequest and conflict are this surface's two codes in it,
+// namespace; badRequest and conflict are this surface's two codes in it, and
 // protected is the write guard's refusal of a tenant the host declares
-// off-limits, and aliasImmutable is the transitional alias route's refusal of
-// every change. A 404 and a 503 are written with no type: they say something is
+// off-limits. A 404 and a 503 are written with no type: they say something is
 // not there or a dependency could not answer, and not which kind of refusal it
 // was, so naming a kind would separate the failures the answer is meant to keep
 // apart.
@@ -37,11 +36,10 @@ import (
 // authn.ContactRequiredProblemType, written at the one refusal below rather than
 // copied here.
 const (
-	typePrefix         = "urn:speed:tenant:"
-	badRequestCode     = "bad-request"
-	conflictCode       = "conflict"
-	protectedCode      = "protected"
-	aliasImmutableCode = "alias-immutable"
+	typePrefix     = "urn:speed:tenant:"
+	badRequestCode = "bad-request"
+	conflictCode   = "conflict"
+	protectedCode  = "protected"
 )
 
 // realmOf reads back the endpoint a management route was mounted on, the name
@@ -127,6 +125,67 @@ func (p *product) guardRoute(method string, perm authz.Permission, next gin.Hand
 			return
 		}
 		next(c)
+	}
+}
+
+// platformStaffKey is where guardDeleteRoute puts its answer for the deletion
+// handler: whether the caller reached the route as platform staff rather than
+// as the organization's owner.
+type platformStaffKey struct{}
+
+// withPlatformStaff records the deletion guard's answer on the request context.
+func withPlatformStaff(c *gin.Context, staff bool) {
+	ctx := context.WithValue(c.Request.Context(), platformStaffKey{}, staff)
+	c.Request = c.Request.WithContext(ctx)
+}
+
+// isPlatformStaff reads the deletion guard's answer. The zero value is false: a
+// handler reached without the guard is treated as an owner, so the ownership
+// check stays in force.
+func isPlatformStaff(ctx context.Context) bool {
+	staff, _ := ctx.Value(platformStaffKey{}).(bool)
+	return staff
+}
+
+// guardDeleteRoute puts the organization-deletion route's decision in front of
+// its handler. The caller may be platform staff holding tenant.manage in the
+// platform domain, or the organization's own owner. A tenant administrator who
+// is neither is refused.
+//
+// The identity and registration checks are the same as guardRoute's. The
+// platform permission is asked without writing its refusal first, because a
+// denial falls through to the ownership check; only a caller that is neither
+// platform staff nor the owner gets the guard's own 403.
+func (p *product) guardDeleteRoute(next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := authn.FromContext(c.Request.Context())
+		if !ok {
+			writeNoIdentity401(c, realmOf(c))
+			return
+		}
+		if !p.requireVerifiedAccount(c, id) {
+			return
+		}
+		// The owner is decided first: an owner needs no platform permission to
+		// end the organization they own. Everybody else must hold tenant.manage
+		// in the platform domain, and the guard writes that refusal itself.
+		segment := c.Param("tenant")
+		got, found, err := p.catalog.Get(c.Request.Context(), tenant.ID(segment))
+		if err != nil {
+			p.logger.Error(ModuleName+": the tenant could not be read, so the deletion was not carried out",
+				slog.String("cause", err.Error()))
+			speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
+			return
+		}
+		if found && got.OwnerAccount != "" && got.OwnerAccount == id.Actor().String() {
+			withPlatformStaff(c, false)
+			next(c)
+			return
+		}
+		if p.guard.RequirePermissionIn(c, PermissionTenantManage, authz.PlatformDomain) {
+			withPlatformStaff(c, true)
+			next(c)
+		}
 	}
 }
 
@@ -283,7 +342,8 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 func (p *product) failureOf(op string, err error) error {
 	switch {
 	case errors.Is(err, tenant.ErrTenantExists), errors.Is(err, tenant.ErrAliasConflict),
-		errors.Is(err, tenant.ErrTenantDeleted):
+		errors.Is(err, tenant.ErrTenantDeleted), errors.Is(err, tenant.ErrOwnerNotMember),
+		errors.Is(err, tenant.ErrOwnerChanged):
 		return speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
 	case errors.Is(err, tenant.ErrInvalidTenant):
 		return speedhttp.Fault{Status: http.StatusNotFound}

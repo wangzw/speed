@@ -123,7 +123,10 @@ func TestTheCreateGoesThroughTheProvisionerNotTheRoster(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("the provisioner was asked %d time(s), want once: %+v", len(calls), calls)
 	}
-	want := tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+	want := tenant.Tenant{
+		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		OwnerAccount: authntest.DefaultAccount.String(),
+	}
 	if calls[0].tenant != want {
 		t.Errorf("the provisioner got %+v, want %+v", calls[0].tenant, want)
 	}
@@ -283,6 +286,20 @@ func TestTheWriteGuardIsAskedForADisableAndNotForAnEnable(t *testing.T) {
 			t.Fatalf("an enable asked the write guard %+v, want nothing", asked)
 		}
 	})
+
+	t.Run("a deletion asks the guard", func(t *testing.T) {
+		r := newRig(t)
+		r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+		r.catalog.found = true
+		w := r.do(http.MethodDelete, pathTenants+"/t_acme", nil)
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want 204 (body %s)", w.Code, w.Body.String())
+		}
+		asked := r.writeGuard.recorded()
+		if len(asked) != 1 || asked[0].id != "t_acme" || asked[0].op != tenant.WriteDelete {
+			t.Fatalf("the write guard was asked %+v, want one WriteDelete of t_acme", asked)
+		}
+	})
 }
 
 // TestTheWriteGuardIsAskedAfterTheShapeChecks holds the guard behind the shape:
@@ -322,11 +339,11 @@ func TestTheWriteGuardIsNotAskedOnAnyOtherRoute(t *testing.T) {
 		target string
 		body   any
 	}{
-		"list":    {http.MethodGet, pathTenants, nil},
-		"get":     {http.MethodGet, pathTenants + "/t_acme", nil},
-		"create":  {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "acme"}},
-		"alias":   {http.MethodPatch, pathTenants + "/t_acme", aliasBody{Alias: "acme-labs"}},
-		"profile": {http.MethodPatch, pathTenants + "/t_acme/profile", fullProfile()},
+		"list":     {http.MethodGet, pathTenants, nil},
+		"get":      {http.MethodGet, pathTenants + "/t_acme", nil},
+		"create":   {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "acme"}},
+		"transfer": {http.MethodPut, pathTenants + "/t_acme/owner", map[string]any{"account": "acc-2"}},
+		"profile":  {http.MethodPatch, pathTenants + "/t_acme/profile", fullProfile()},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

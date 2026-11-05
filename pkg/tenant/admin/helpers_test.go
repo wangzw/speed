@@ -30,14 +30,15 @@ import (
 // The stubs implement the seams the module takes up, so a stub and an interface
 // cannot drift apart without failing the build.
 var (
-	_ tenant.Catalog     = (*stubCatalog)(nil)
-	_ tenant.WriteGuard  = (*stubWriteGuard)(nil)
-	_ tenant.Provisioner = (*stubProvisioner)(nil)
-	_ guard.Guard        = (*stubGuard)(nil)
-	_ audit.Audit        = (*recordingAudit)(nil)
-	_ speedhttp.Router   = (*stubRouter)(nil)
-	_ speedhttp.Endpoint = (*stubEndpoint)(nil)
-	_ log.Logger         = loggerStub{}
+	_ tenant.Catalog            = (*stubCatalog)(nil)
+	_ tenant.WriteGuard         = (*stubWriteGuard)(nil)
+	_ tenant.Provisioner        = (*stubProvisioner)(nil)
+	_ tenant.OrganizationWriter = (*stubOrganization)(nil)
+	_ guard.Guard               = (*stubGuard)(nil)
+	_ audit.Audit               = (*recordingAudit)(nil)
+	_ speedhttp.Router          = (*stubRouter)(nil)
+	_ speedhttp.Endpoint        = (*stubEndpoint)(nil)
+	_ log.Logger                = loggerStub{}
 )
 
 // catalogCall is one call the stub roster recorded: the method's name and the
@@ -412,16 +413,17 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 // real path parameters and the real JSON binding, with the roster and the other
 // capabilities stood in for.
 type rig struct {
-	t           *testing.T
-	p           *product
-	catalog     *stubCatalog
-	writeGuard  *stubWriteGuard
-	provisioner *stubProvisioner
-	guard       *stubGuard
-	audit       *recordingAudit
-	router      *stubRouter
-	logs        *logBuffer
-	engine      *gin.Engine
+	t            *testing.T
+	p            *product
+	catalog      *stubCatalog
+	writeGuard   *stubWriteGuard
+	provisioner  *stubProvisioner
+	organization *stubOrganization
+	guard        *stubGuard
+	audit        *recordingAudit
+	router       *stubRouter
+	logs         *logBuffer
+	engine       *gin.Engine
 	// signup answers the acting account's self-registration state. Its zero
 	// value reports SignupNone, which is what an account created outside
 	// self-registration reads as.
@@ -434,20 +436,22 @@ func newRig(t *testing.T) *rig {
 	t.Helper()
 	logs := &logBuffer{}
 	r := &rig{
-		t:          t,
-		catalog:    &stubCatalog{},
-		writeGuard: &stubWriteGuard{},
-		guard:      &stubGuard{allow: true},
-		audit:      &recordingAudit{},
-		router:     newStubRouter("public"),
-		logs:       logs,
-		signup:     &fakeSignupVerification{},
+		t:            t,
+		catalog:      &stubCatalog{},
+		writeGuard:   &stubWriteGuard{},
+		organization: &stubOrganization{},
+		guard:        &stubGuard{allow: true},
+		audit:        &recordingAudit{},
+		router:       newStubRouter("public"),
+		logs:         logs,
+		signup:       &fakeSignupVerification{},
 	}
 	r.provisioner = &stubProvisioner{roster: r.catalog}
 	r.p = &product{
 		catalog:      r.catalog,
 		writeGuard:   r.writeGuard,
 		provisioner:  r.provisioner,
+		organization: r.organization,
 		guard:        r.guard,
 		audit:        r.audit,
 		verification: r.signup,
@@ -457,6 +461,50 @@ func newRig(t *testing.T) *rig {
 	r.engine = r.mount()
 	return r
 }
+
+// organizationCall is one call the organization writer recorded.
+type organizationCall struct {
+	op            string
+	id            tenant.ID
+	owner         string
+	expectedOwner string
+}
+
+// stubOrganization records the owner transfers and organization deletions a
+// case sends. during runs before the call is recorded, so a case can hold what
+// had already happened (the audit row).
+type stubOrganization struct {
+	mu     sync.Mutex
+	err    error
+	calls  []organizationCall
+	during func()
+}
+
+func (o *stubOrganization) TransferOwner(_ context.Context, id tenant.ID, target string) error {
+	return o.record(organizationCall{op: "TransferOwner", id: id, owner: target})
+}
+
+func (o *stubOrganization) DeleteOrganization(_ context.Context, id tenant.ID, expectedOwner string) error {
+	return o.record(organizationCall{op: "DeleteOrganization", id: id, expectedOwner: expectedOwner})
+}
+
+func (o *stubOrganization) record(c organizationCall) error {
+	if o.during != nil {
+		o.during()
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.calls = append(o.calls, c)
+	return o.err
+}
+
+func (o *stubOrganization) recorded() []organizationCall {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]organizationCall(nil), o.calls...)
+}
+
+func (o *stubOrganization) fail(err error) { o.mu.Lock(); o.err = err; o.mu.Unlock() }
 
 // mount registers the module's whole route set on a fresh gin engine, the way
 // the real entry point mounts them, and binds the realm each handler reads. A

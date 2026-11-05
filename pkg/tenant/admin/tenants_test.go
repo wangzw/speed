@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -74,78 +75,21 @@ func TestTheGetOfAnUnknownTenantIs404(t *testing.T) {
 	}
 }
 
-// The alias route is the transitional compatibility route, to be removed in
-// T6. It reads the tenant and refuses every change with the alias-immutable
-// problem type: it never calls a write method, so the alias and the rest of the
-// row stay as they were, and it writes no audit row because no successful write
-// happened.
-func TestTheAliasRouteRefusesEveryChange(t *testing.T) {
+// Aliases are immutable after creation and the alias-change route is gone: a
+// PATCH on a tenant path reaches no handler, so the request is a bare 404 and
+// nothing reaches the roster or the audit.
+func TestTheAliasChangeRouteIsGone(t *testing.T) {
 	r := newRig(t)
-	r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
-	r.catalog.found = true
-
-	w := r.do(http.MethodPatch, pathTenants+"/t_acme", aliasBody{Alias: "acme-labs"})
-	if w.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409 (body %s)", w.Code, w.Body.String())
+	w := r.do(http.MethodPatch, pathTenants+"/t_acme", map[string]string{"alias": "acme-labs"})
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (body %s)", w.Code, w.Body.String())
 	}
-	if got := problemOf(t, w); got.Type != typePrefix+aliasImmutableCode {
-		t.Errorf("problem type = %q, want %q", got.Type, typePrefix+aliasImmutableCode)
-	}
-
-	// The route read the tenant and called nothing else: no write path was
-	// reached, so the alias and the rest of the row are unchanged.
-	calls := r.catalog.recorded()
-	if len(calls) != 1 || calls[0].op != "Get" || calls[0].id != "t_acme" {
-		t.Fatalf("roster calls = %+v, want one Get of t_acme and no write", calls)
-	}
-	if got := r.catalog.held; got.ID != "t_acme" || got.Alias != "acme" || got.Status != tenant.StatusActive {
-		t.Errorf("the row = %+v, want it unchanged", got)
+	if calls := r.catalog.recorded(); len(calls) != 0 {
+		t.Errorf("roster calls = %+v, want none: no route reads the roster", calls)
 	}
 	if rows := r.audit.entries(); len(rows) != 0 {
-		t.Errorf("audit rows = %+v, want none: the route performs no successful write", rows)
+		t.Errorf("audit rows = %+v, want none", rows)
 	}
-}
-
-// The alias route still reads the tenant for its two existence answers: an
-// identifier no row carries is a 404, and a tombstone is a 409 conflict. Neither
-// reaches a write method or the audit.
-func TestTheAliasRouteRefusesUnknownTenantsAndTombstones(t *testing.T) {
-	t.Run("unknown tenant", func(t *testing.T) {
-		r := newRig(t)
-		w := r.do(http.MethodPatch, pathTenants+"/t_ghost", aliasBody{Alias: "ghost-labs"})
-		if w.Code != http.StatusNotFound {
-			t.Fatalf("status = %d, want 404 (body %s)", w.Code, w.Body.String())
-		}
-		if w.Body.Len() != 0 {
-			t.Errorf("a 404 carried a body %q, want a bare status", w.Body.String())
-		}
-		if calls := r.catalog.recorded(); len(calls) != 1 || calls[0].op != "Get" {
-			t.Errorf("roster calls = %+v, want one read and no write", calls)
-		}
-		if rows := r.audit.entries(); len(rows) != 0 {
-			t.Errorf("audit rows = %+v, want none", rows)
-		}
-	})
-
-	t.Run("tombstone", func(t *testing.T) {
-		r := newRig(t)
-		r.catalog.held = tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted}
-		r.catalog.found = true
-
-		w := r.do(http.MethodPatch, pathTenants+"/t_acme", aliasBody{Alias: "acme-labs"})
-		if w.Code != http.StatusConflict {
-			t.Fatalf("status = %d, want 409 (body %s)", w.Code, w.Body.String())
-		}
-		if got := problemOf(t, w); got.Type != typePrefix+conflictCode {
-			t.Errorf("problem type = %q, want %q", got.Type, typePrefix+conflictCode)
-		}
-		if calls := r.catalog.recorded(); len(calls) != 1 || calls[0].op != "Get" {
-			t.Errorf("roster calls = %+v, want one read and no write", calls)
-		}
-		if rows := r.audit.entries(); len(rows) != 0 {
-			t.Errorf("audit rows = %+v, want none", rows)
-		}
-	})
 }
 
 func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
@@ -170,7 +114,10 @@ func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("the provisioner was asked %+v, want one registration", calls)
 	}
-	want := tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+	want := tenant.Tenant{
+		ID: "t_acme", Alias: "acme", Status: tenant.StatusActive,
+		OwnerAccount: authntest.DefaultAccount.String(),
+	}
 	if calls[0].tenant != want {
 		t.Errorf("the row passed on = %+v, want %+v", calls[0].tenant, want)
 	}
@@ -199,23 +146,34 @@ func TestTheDecisionIsAskedPerMethodInThePlatformDomain(t *testing.T) {
 		body   any
 		want   authz.Permission
 	}{
-		"list":   {http.MethodGet, pathTenants, nil, PermissionTenantRead},
-		"get":    {http.MethodGet, pathTenants + "/t", nil, PermissionTenantRead},
-		"create": {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"}, PermissionTenantManage},
-		"alias":  {http.MethodPatch, pathTenants + "/t", aliasBody{Alias: "abc"}, PermissionTenantManage},
-		"status": {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "active"}, PermissionTenantManage},
+		"list":     {http.MethodGet, pathTenants, nil, PermissionTenantRead},
+		"get":      {http.MethodGet, pathTenants + "/t", nil, PermissionTenantRead},
+		"create":   {http.MethodPost, pathTenants, createBody{ID: "t", Alias: "abc"}, PermissionTenantManage},
+		"transfer": {http.MethodPut, pathTenants + "/t/owner", map[string]any{"account": "acc-2"}, PermissionTenantManage},
+		"delete":   {http.MethodDelete, pathTenants + "/t", nil, PermissionTenantManage},
+		"status":   {http.MethodPost, pathTenants + "/t/status", statusBody{Status: "active"}, PermissionTenantManage},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			g := newRig(t)
 			g.do(tc.method, tc.target, tc.body)
 			asked := g.guard.askedFor()
-			if len(asked) != 1 || asked[0] != tc.want {
-				t.Fatalf("the guard was asked %v, want exactly [%q]", asked, tc.want)
+			if len(asked) == 0 {
+				t.Fatalf("the guard was not asked, want [%q]", tc.want)
+			}
+			for _, perm := range asked {
+				if perm != tc.want {
+					t.Fatalf("the guard was asked %v, want only %q", asked, tc.want)
+				}
 			}
 			domains := g.guard.domainsAsked()
-			if len(domains) != 1 || domains[0] != authz.PlatformDomain {
-				t.Fatalf("the decision was made in %v, want [%q]", domains, authz.PlatformDomain)
+			if len(domains) == 0 {
+				t.Fatalf("the decision named no domain, want %q", authz.PlatformDomain)
+			}
+			for _, domain := range domains {
+				if domain != authz.PlatformDomain {
+					t.Fatalf("the decision was made in %v, want only %q", domains, authz.PlatformDomain)
+				}
 			}
 		})
 	}
@@ -470,8 +428,8 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 		"create with a short alias":         {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "ab"}},
 		"create with an underscored alias":  {http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "a_b"}},
 		"create with a body it cannot read": {http.MethodPost, pathTenants, "not-an-object"},
-		"alias with a blank alias":          {http.MethodPatch, pathTenants + "/t_acme", aliasBody{Alias: "a b"}},
-		"alias with a blank identifier":     {http.MethodPatch, pathTenants + "/t%20acme", aliasBody{Alias: "acme-labs"}},
+		"delete with a blank identifier":    {http.MethodDelete, pathTenants + "/t%20acme", nil},
+		"transfer with an invalid account":  {http.MethodPut, pathTenants + "/t_acme/owner", map[string]any{"account": "not an account"}},
 		"status outside the closed set":     {http.MethodPost, pathTenants + "/t_acme/status", statusBody{Status: "pending"}},
 		"status the closed set keeps for deletion": {
 			http.MethodPost, pathTenants + "/t_acme/status", statusBody{Status: "deleted"},
@@ -487,7 +445,7 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 				t.Fatalf("status = %d, want 400 (body %s)", w.Code, w.Body.String())
 			}
 			if got := problemOf(t, w); got.Type != typePrefix+badRequestCode {
-				t.Errorf("problem type = %q, want %q", got.Type, typePrefix+badRequestCode)
+				t.Errorf("problem type = %q, want %q (body %s)", got.Type, typePrefix+badRequestCode, w.Body.String())
 			}
 			for _, call := range r.catalog.recorded() {
 				if call.op != "Get" {

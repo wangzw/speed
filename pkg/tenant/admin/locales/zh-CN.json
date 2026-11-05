@@ -1,4 +1,4 @@
 {
-  "tenant.permission.manage": "管理租户：注册租户、修改名称或更改状态",
+  "tenant.permission.manage": "管理租户：注册租户、转移所有者、删除组织或更改状态",
   "tenant.permission.read": "读取租户名册：列出全部租户或读取单个租户"
 }
