@@ -351,19 +351,19 @@
 
 ### REQ-signup-039
 
-口令注册完成后的落点与个人租户特性是否启用无关；短信首登的落点按 REQ-signup-052 的规定，社交首登与企业即时开通的落点按 REQ-signup-053 的规定。
+口令注册完成后的落点是账户页的邮箱验证节；短信首登的落点按 REQ-signup-052 的规定，社交首登与企业即时开通的落点按 REQ-signup-053 的规定。
 
-- **验收**：启用与不启用个人租户的两种装配下，口令注册完成后的落点都是账户页的邮箱验证节。
+- **验收**：口令注册完成后的落点是账户页的邮箱验证节。
 - **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-signup-052
 
-短信首登开户成功后，系统必须按部署是否启用个人租户特性决定落点：启用时落在租户区首页，未启用时落在账户页；从邀请链接发起的短信首登开户不得导航离开该链接的接受页，账户建立后停留在该页。
+短信首登开户成功后，系统必须把当事人落在租户区首页，当前组织是个人组织；从邀请链接发起的短信首登开户不得导航离开该链接的接受页，账户建立后停留在该页。
 
-- **验收**：启用个人租户的装配下，经短信首登完成开户后页面落在租户区首页，当前组织是个人组织；未启用个人租户的装配下，落在账户页；从邀请链接发起的短信首登开户完成后仍停留在该邀请的接受页，不发生导航。
-- **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`（启用个人租户的短信开户）；`starters/demo/web/src/pages/sign-in-view.test.tsx` `lands a registration completed through SMS on the account profile page`（未启用个人租户的短信开户）、`lands a registration in the tenant area when the personal tenant is in force`（启用个人租户的短信开户）；`starters/demo/web/src/pages/accept-invitation-page.test.tsx` `returns an SMS registration made on the invitation URL to its accept page`（从邀请链接发起的短信开户不导航）
+- **验收**：经短信首登完成开户后页面落在租户区首页，当前组织是个人组织；从邀请链接发起的短信首登开户完成后仍停留在该邀请的接受页，不发生导航。
+- **状态**：未实现
+- **端到端测试**：未实现
 
 ### REQ-signup-053
 
@@ -373,21 +373,29 @@
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens the account face and keeps the provider address as a contact`（社交首登开户落在租户区首页）；`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: a just-in-time provider asks for a username before it opens an account`（企业即时开通开户落在租户区首页）；`starters/demo/web/src/pages/auth-callback-page.test.tsx` `lands a viewer home when the provider detour started elsewhere`（回调落在租户区首页）、`returns a viewer who left an invitation link to that landing`（从邀请链接发起的回调回到该链接）
 
+### REQ-signup-054
+
+配置为即时开户的企业身份提供方必须声明确定用户名的策略：从提供方声明映射，或在开户前由用户确认；系统不得在用户名未确定时建立账户。
+
+- **验收**：声明映射的提供方从允许的提供方声明取值并规范化为合法用户名，缺失、不合规或与已用名称冲突时拒绝登录并提示改用开户前确认；声明开户前确认的提供方在账户建立前要求用户确认用户名，确认后不可变；预置账户提供方不需要该策略；未声明策略的即时开户提供方不能被启用。
+- **状态**：未实现
+- **端到端测试**：未实现
+
 ### REQ-signup-029
 
-启用个人租户的部署中，没有任何其他成员关系的账户必须得到一个个人租户。
+每个用户账户在账户建立时必须得到一个个人租户。
 
-- **验收**：在启用个人租户的部署中，没有任何成员关系的账户得到一个个人租户，并持有其非内建 `tenant-admin` 角色；邮箱是否已证明不影响这一结果。
-- **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
+- **验收**：用户账户建立后立即得到一个个人租户，并持有其非内建 `tenant-admin` 角色；邮箱是否已证明、是否已属于其他组织都不影响这一结果。
+- **状态**：未实现
+- **端到端测试**：未实现
 
 ### REQ-signup-040
 
-已有其他成员关系的账户不得得到个人租户。
+已有其他成员关系不得阻止个人租户的建立。
 
-- **验收**：一个已是某一租户成员的账户请求个人租户时，没有新的租户产生，其成员关系不变。
-- **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-organization.spec.ts` `first-registration: a new visitor reaches a personal organization, and occupancy is refused`
+- **验收**：一个已是某一租户成员的账户在建立时同样得到一个个人租户，其原有成员关系不变。
+- **状态**：未实现
+- **端到端测试**：未实现
 
 ### REQ-signup-031
 
