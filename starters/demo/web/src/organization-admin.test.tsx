@@ -78,18 +78,24 @@ interface TenantRoleRow {
   readonly role: string
   readonly builtin: boolean
   readonly tenant: string
+  readonly can_manage: boolean
+  readonly description: string
   readonly description_key: string
+  readonly permission_count: number
   readonly created_at: string
 }
 
-/** A non-builtin tenant role: the host's protected mark, not the server's,
- * is what must lock the row this suite renders. */
+/** A non-builtin, caller-manageable tenant role: the host's protected mark,
+ * not the server's can_manage, is what must lock the row this suite renders. */
 function tenantRole(role: string): TenantRoleRow {
   return {
     role,
     builtin: false,
     tenant: 'acme',
+    can_manage: true,
+    description: '',
     description_key: '',
+    permission_count: 0,
     created_at: '2026-10-01T00:00:00Z',
   }
 }
