@@ -85,7 +85,7 @@
 
 ### 视图
 
-**读的应答是 200 加一个信封，落地的写与删是 204 无正文。** 信封的字段是 `settings`、`writable` 与 `read_only_reason`：`settings` 是可见项数组，`writable` 表示宿主的写守卫是否放行该租户，`read_only_reason` 在只读时是封闭的拒绝码（当前只有 `protected`），可写时为空串。视图逐字段构造，从不把设置模块的值原样交给客户端。
+**读的应答是 200 加一个信封，落地的写与删是 204 无正文。** 信封的字段是 `settings`、`writable` 与 `read_only_reason`：`settings` 是可见项数组，`writable` 表示该租户的设置能否在这个面上写，`read_only_reason` 在只读时是封闭的拒绝码，只有 `protected` 与 `unavailable` 两种取值，可写时为空串。`protected` 表示宿主的写守卫拒绝该租户，写路由答 403；`unavailable` 表示宿主的写 seam 读不出答案，读路径仍答 200，把读到的设置与 `writable=false`、`read_only_reason=unavailable` 一并交出——一个关于写的问题不能连累租户本可读到的设置，seam 的原因只进日志、不进正文；写路径对同一个 seam 仍答 503，因为写不能在未获准的情况下执行。视图逐字段构造，从不把设置模块的值原样交给客户端。
 
 设置项视图的字段：`key`、`title`、`description`、`type`（声明类型自己的文本形式）、`control`、`danger`、`effect`、`tenant_access`、`effective_value`、`platform_value`、`tenant_value`、`locked_by_platform`、`has_row`、`source`。`effective_value`、`platform_value`、`tenant_value` 都是声明类型的文本形式；`has_row` 表示租户层是否有显式行。时间不在此列。
 
@@ -214,7 +214,7 @@ sequenceDiagram
 
 | 概念 | 结构 | 说明 |
 |---|---|---|
-| 读信封 | `{settings, writable, read_only_reason}` | `settings` 是可见项数组；`writable` 来自宿主写守卫；只读时 `read_only_reason` 是封闭拒绝码，可写时为空串 |
+| 读信封 | `{settings, writable, read_only_reason}` | `settings` 是可见项数组；`writable` 在宿主写守卫拒绝该租户或写 seam 读不出答案时为假；只读时 `read_only_reason` 是封闭拒绝码，取 `protected` 或 `unavailable`，可写时为空串 |
 | 设置项视图 | `{key, title, description, type, control, danger, effect, tenant_access, effective_value, platform_value, tenant_value, locked_by_platform, has_row, source}` | 声明部分取自 `settings.DeclaredItem`，标题与描述按请求语言渲染；值部分是平台值与租户值及其 OR；`source` 取 `tenant`、`global` 或 `default`；敏感项的三个值字段遮蔽 |
 | 写正文 | `{value}` | `PUT .../settings/{namespace}/{key}` 的正文；值按设置模块的声明类型编码 |
 | 层选 | `settings.Layer` | 由路径里的租户构造：`settings.ForTenant(tenant)` |

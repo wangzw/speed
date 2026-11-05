@@ -2007,11 +2007,11 @@ export interface SettingsTenantAdminSetting {
  * The tenant settings surface's read answer: the declared items it exposes and whether the tenant's settings may be written at all.
  */
 export interface SettingsTenantAdminSettings {
-  /** Why the surface is read-only, empty when writable is true. The closed set is the refusal code this capability writes for the same condition; currently only "protected". */
+  /** Why the surface is read-only, empty when writable is true. The closed set is the refusal code this capability writes for the same condition: "protected" when the host's settings write seam refuses the tenant, "unavailable" when the seam cannot answer. The listing still answers 200 with the settings it read in both cases. */
   read_only_reason: string;
   /** The items whose declarations expose them to a tenant, each with its platform value, tenant value and effective value. */
   settings: SettingsTenantAdminSetting[];
-  /** Whether this tenant's settings may be written through this surface. False when the host's settings write seam refuses the tenant, in which case every write route answers 403 protected. */
+  /** Whether this tenant's settings may be written through this surface. False when the host's settings write seam refuses the tenant, in which case every write route answers 403 protected, and when the seam cannot answer, in which case every write route answers 503. */
   writable: boolean;
 }
 
